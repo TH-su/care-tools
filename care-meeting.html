@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Bw4cs0B60Wspu7swC6oe7rhfXgJhP1C1EZJg9hYWgqc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-i6Zgyj3G1sQf5e9VTjMhdU9iSoz7O4Q2iL4R73+/DlI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 会議の記録（要配慮の情報）を扱うためキャッシュ無効 -->
@@ -15,7 +15,7 @@
 <script src="su-perf.js?v=2026-10-24"></script>
 <script src="su-facility.js?v=2026-10-14"></script>
 <script src="su-print.js?v=2026-09-12"></script>
-<script src="care-meeting-calc.js?v=2026-10-23"></script>
+<script src="care-meeting-calc.js?v=2026-10-25"></script>
 <style>
 /* サービス担当者会議の記録（2026-10-23 代表者の決定・段階2）。
    配色はフェイスシートと同じ「無彩色を基調に、意味のある色だけ」（アクセント・危険・注意の3つ）。
@@ -172,6 +172,29 @@ h3{font-size:1.0625rem; margin:14px 0 6px}
 .att-ng{grid-column:1/-1; color:var(--ng); font-weight:700; font-size:0.9375rem}
 .att-foot{display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center}
 .att-n{font-size:0.9375rem; color:var(--g7)}
+/* 出席者の✔︎（この方の前回までの出席者から選ぶ・2026-10-25 代表者の決定）。✔︎は文字の「✔︎」でも示す（色だけにしない） */
+.att-pick{border:1px solid var(--g3); border-radius:10px; padding:6px 12px 12px; margin:0 0 12px; min-width:0}
+.att-pick legend{font-weight:700; padding:0 4px; color:var(--g9)}
+.att-pick .fhint{display:block; margin:0 0 8px}
+.ap-list{display:flex; flex-wrap:wrap; gap:8px}
+.ap{display:inline-flex; align-items:center; gap:8px; min-height:44px; padding:6px 14px 6px 10px; border:1px solid var(--g5); border-radius:22px;
+  background:#fff; color:var(--g9); cursor:pointer; max-width:100%}
+.ap input{width:22px; height:22px; margin:0; flex:0 0 auto}
+.ap span{overflow-wrap:anywhere}
+.ap.on{border-color:var(--ok); background:var(--ok-l); font-weight:700}
+.ap:focus-within{outline:3px solid var(--focus); outline-offset:2px}
+/* 過去の記録の取り込み（E表別紙・管理者だけ・2026-10-25 代表者の決定） */
+.imp{margin-top:20px; padding-top:16px; border-top:1px solid var(--g3)}
+.imp h2{margin:0 0 8px}
+.imp-btns{display:flex; flex-wrap:wrap; gap:8px; margin:10px 0}
+.imp-sum{font-weight:700; margin:8px 0}
+.imp-g{margin:8px 0; border:1px solid var(--g3); border-radius:10px; padding:0 10px}
+.imp-g summary{min-height:44px; display:flex; align-items:center; font-weight:700; cursor:pointer}
+.imp-tw{overflow-x:auto; margin:0 0 10px}
+.imp-t{border-collapse:collapse; width:100%; font-size:0.9375rem}
+.imp-t th,.imp-t td{border:1px solid var(--g3); padding:6px 8px; text-align:left; vertical-align:top}
+.imp-t th{background:var(--g1)}
+.imp-chk{min-height:44px; font-weight:700; white-space:nowrap}
 .att-n.ng{color:var(--ng); font-weight:700}
 .ed-act{position:sticky; bottom:0; background:#fff; border-top:1px solid var(--g3); margin:12px -14px -14px; padding:10px 14px;
   border-radius:0 0 var(--r) var(--r); z-index:5}
@@ -277,6 +300,8 @@ h3{font-size:1.0625rem; margin:14px 0 6px}
    - 事務所PCだけ。現場端末（su_device_role==='field'）では何も取りに行かず、案内だけを出す
    - 端末に残すのは UI の状態だけ（sessionStorage の cm_open_meeting＝会議の番号だけ）。会議の中身・氏名・入院の記録・
      介護度の履歴は localStorage にも sessionStorage にも書かない。描画はすべて esc() を通す
+     （ログイン中の端末で選ぶ一覧を開くと、取り込みの欄を出すかを決めるため共通の su-auth.js が管理者か確かめ、その控え
+      su_auth_ok_v1＝役割・表示名・期限を sessionStorage に置く。入居者の情報ではない・2026-10-25）
    - 接続は入居者マスタと同じ rmaster_cfg を読むだけ。通信の形は facesheet.html と同じ（POST・text/plain・
      redirect:'follow'・本文に token）。読み取りの自動やり直しは1回まで、書き込みはやり直さない
    - 記録した人は画面から名前を送らない。ログイン中ならその証明（accessToken）を書き込みに添え、GAS が確かめて記録する
@@ -622,7 +647,7 @@ function prevHtml_(p){
 function pickerHtml_(rs,sum,state,err){
   var list=(rs&&rs.ok?rs.residents:[]).filter(function(r){return r.active});
   var h='<h2 id="cm-pick-h">入居者を選ぶ</h2>';
-  if(!list.length) return h+'<p class="hint">共有の名簿がまだありません。<a href="resident-master.html">入居者マスタ</a>を一度開いてから、この画面を開き直してください。</p>';
+  if(!list.length) return h+'<p class="hint">共有の名簿がまだありません。<a href="resident-master.html">入居者マスタ</a>を一度開いてから、この画面を開き直してください。</p>'+impHtml_();
   h+='<p class="hint">在籍している方の一覧です（最終開催日は確定した記録の日付）。</p>';
   if(state==='loading') h+='<p class="hint" role="status">最終開催日を読み込み中…</p>';
   else if(state!=='ok') h+='<p class="msg ng" role="alert">⚠ '+esc(err||'最終開催日を読めませんでした')+'</p>';
@@ -633,7 +658,117 @@ function pickerHtml_(rs,sum,state,err){
     h+='<li><button type="button" class="pi" data-act="pick" data-id="'+esc(r.masterId)+'"><span class="pi-n">'+esc(r.name||'（名前なし）')+'</span>'+
       '<span class="pi-r">'+esc(roomText_(r.room))+'</span>'+(last?'<span class="pi-l">'+esc(last)+'</span>':'')+'</button></li>';
   });
-  return h+'</ul>';
+  return h+'</ul>'+impHtml_();
+}
+/* ═══════════ 過去の記録の取り込み（E表別紙・管理者だけ・2026-10-25 代表者の決定） ═══════════
+   スプレッドシート「E表別紙 サービス担当者会議の要点」の各タブを GAS（meeting.gs の importScan・importApply）が読み、
+   名簿の1名にだけ一致した記録を「確定」・開催の理由は空欄・出どころ「取り込み」で入れる（欄が足りない記録も確定で入れる）。
+   ・出すのは、管理者（Google＋2段階認証）でログインしている事務所PCだけ（impGate_）。最後に決めるのは GAS（管理者の証明を確かめる）
+   ・まず書かずに一覧を作り（importScan）、確かめてから取り込む（importApply・取り込める分の gid だけを送る）
+   ・同じタブを2回入れない（GAS が送信の印 imp-<gid> で見分ける）。取り込みはやり直さない（分からない時は一覧を作り直して確かめる）
+   ・一覧（タブ名・氏名を含む）はメモリにだけ置く。端末に残さない・ログに出さない。描画は選ぶ一覧（pickerHtml_）の中で esc を通す
+   ・「取り込める」の各行に✔︎（最初は全部付いている）。外した行は送らない（名簿の同じ名前の別の方など、一覧を見て怪しい行を外せる） */
+var impSt=null, impGen=0, impAdmin=false;
+var IMP_GROUPS=[['new','取り込める（名簿の1名に一致・まだ入っていない）',true],['unmatched','名簿と照合できない（取り込みません）',true],['ambiguous','名簿に同じ名前の方が2人以上（取り込みません）',true],['toolong','欄が長すぎる（取り込みません）',true],['future','開催日が先の日付（取り込みません）',true],['samedate','同じ方・同じ開催日の記録がある（取り込みません）',true],['exists','取り込み済み',false]];
+function impGate_(){
+  var g=impGen;
+  impAdmin=false;
+  if(isField()||!CFG.url||!cmHasLogin_()||typeof Promise==='undefined') return Promise.resolve(false);
+  return cmAuthLoad_().then(function(){ return window.SUAuth.check(); }).then(function(st){
+    if(g!==impGen||isField()) return false;
+    impAdmin=!!(st&&st.status===window.SUAuth.STATUS.OK&&st.role==='admin');
+    impPaint_();
+    return impAdmin;
+  })['catch'](function(){ return false; });
+}
+function impPaint_(){ if(cmView==='pick') paintPicker_(); }
+function impHtml_(){
+  if(!impAdmin) return '';
+  var s=impSt||{phase:'idle'}, busy=s.phase==='scanning'||s.phase==='applying';
+  var h='<section class="imp" aria-labelledby="cm-imp-h"><h2 id="cm-imp-h">過去の記録の取り込み（E表別紙・管理者だけ）</h2>'+
+    '<p class="hint">スプレッドシート「E表別紙 サービス担当者会議の要点」の各タブを読み、名簿の1名にだけ一致した記録を「確定」として入れます（開催の理由は空欄・欄が足りない記録も確定で入れます・元のスプレッドシートには書きません）。まず書かずに一覧を作り、確かめてから取り込みます。同じタブを2回入れることはありません。</p>';
+  if(s.msg) h+='<p class="msg'+(s.err?' ng':'')+'" role="'+(s.err?'alert':'status')+'">'+(s.err?'⚠ ':'')+esc(s.msg)+'</p>';
+  var n=impPicked_(s).length;
+  h+='<div class="imp-btns"><button type="button" class="btn" data-act="imp-scan"'+(busy?' disabled':'')+'>'+(s.res?'一覧を作り直す（書かない）':'一覧を作る（書かない）')+'</button>';
+  if(s.res&&s.phase!=='applying'&&n>0) h+='<button type="button" class="btn pri" data-act="imp-apply"'+(busy?' disabled':'')+'>取り込める '+n+' 件を取り込む（確定）</button>';
+  h+='</div>';
+  if(s.res) h+=impListHtml_(s.res);
+  return h+'</section>';
+}
+/* 取り込める行のうち✔︎が付いている gid（文字の配列） */
+function impPicked_(s){
+  if(!s||!s.res||!Array.isArray(s.res.items)) return [];
+  var skip=s.skip||{};
+  return s.res.items.filter(function(x){ return x&&x.status==='new'&&!skip[String(x.gid)]; }).map(function(x){ return String(x.gid); });
+}
+function impListHtml_(res){
+  var items=Array.isArray(res.items)?res.items:[], c=res.counts||{}, skip=(impSt&&impSt.skip)||{}, lock=!!(impSt&&impSt.phase==='applying');
+  var h='<p class="imp-sum">タブ '+esc(String(res.total!=null?res.total:items.length))+' 件：'+
+    IMP_GROUPS.map(function(g){ return esc(g[1].replace(/（.*$/,''))+' '+esc(String(Number(c[g[0]])||0))+' 件'; }).join('／')+'</p>';
+  IMP_GROUPS.forEach(function(g){
+    var list=items.filter(function(x){ return x&&x.status===g[0]; }); if(!list.length) return;
+    var pick=g[0]==='new';
+    h+='<details class="imp-g"'+(g[2]?' open':'')+'><summary>'+esc(g[1])+'：'+list.length+' 件</summary><div class="imp-tw"><table class="imp-t"><thead><tr>'+
+      (pick?'<th scope="col">取り込む</th>':'')+'<th scope="col">タブ</th><th scope="col">開催日</th><th scope="col">名簿の方</th><th scope="col">議事録の利用者名</th><th scope="col">出席者</th><th scope="col">足りない欄</th></tr></thead><tbody>';
+    list.forEach(function(x){
+      var miss=Array.isArray(x.missing)?x.missing.map(String).join('・'):'';
+      var gid=String(x.gid), on=!skip[gid];
+      h+='<tr>'+(pick?'<td><label class="chk imp-chk"><input type="checkbox" data-impg="'+esc(gid)+'"'+(on?' checked':'')+(lock?' disabled':'')+' aria-label="'+esc(String(x.tab)+' を取り込む')+'">'+(on?'✔︎':'外す')+'</label></td>':'')+
+        '<td>'+esc(x.tab)+'</td><td>'+esc(x.heldDate?fmtDate_(String(x.heldDate)):'（読めない）')+'</td><td>'+esc(x.residentName||'—')+'</td><td>'+
+        esc(x.sourceName||'（空）')+'</td><td>'+esc(String(Number(x.attendees)||0))+' 名</td><td>'+esc(miss||'なし')+'</td></tr>';
+    });
+    h+='</tbody></table></div></details>';
+  });
+  return h;
+}
+function impErr_(d){
+  var c=d&&d.code;
+  if(c==='not_admin') return '管理者（Google＋2段階認証）でログインしている時だけ使えます。ログインし直してから押してください（何も書いていません）';
+  return codeMsg_(classify_(d),d);   // ほかの断りは画面のほかの操作と同じ文（読み分けは code だけ）
+}
+function impPost_(body){
+  return cmAccessToken_().then(function(at){
+    if(isField()) return {skip:true};
+    if(at) body.accessToken=at;
+    return meetingPost_(body,380000).then(function(d){ return {d:d}; },function(e){ return {e:e}; });   // GAS の上限（6分）より長く待つ
+  }).then(function(r){ delete body.accessToken; return r; });
+}
+function impScan_(){
+  if(!impAdmin||isField()||!CFG.url) return Promise.resolve(false);
+  if(impSt&&(impSt.phase==='scanning'||impSt.phase==='applying')) return Promise.resolve(false);
+  var g=++impGen;
+  impSt={phase:'scanning',res:null,msg:'E表別紙を読んでいます…（1〜3分かかります。この画面を開いたままにしてください）',err:false};
+  impPaint_();
+  return impPost_({action:'meeting',op:'importScan'}).then(function(r){
+    if(!r||r.skip||g!==impGen||isField()) return false;
+    if(r.e){ impSt={phase:'idle',res:null,msg:'一覧を作れませんでした（'+String(r.e&&r.e.message||r.e)+'）。少し待ってから、もう一度押してください',err:true}; impPaint_(); return false; }
+    if(!r.d||r.d.ok!==true){ impSt={phase:'idle',res:null,msg:impErr_(r.d),err:true}; impPaint_(); return false; }
+    impSt={phase:'scanned',res:r.d,msg:'一覧を作りました（まだ何も書いていません）',err:false}; impPaint_();
+    return true;
+  });
+}
+function impApply_(){
+  var s=impSt;
+  if(!impAdmin||isField()||!s||s.phase!=='scanned'||!s.res) return Promise.resolve(false);
+  var gids=impPicked_(s);   // 取り込める行のうち✔︎が付いているものだけ
+  if(!gids.length) return Promise.resolve(false);
+  return askConfirm_('過去の記録を取り込みます',[gids.length+' 件を「確定」として取り込みます（開催の理由は空欄）。','元のスプレッドシートには書きません。同じタブを2回入れることはありません。'],'取り込む',false).then(function(ok){
+    if(!ok||impSt!==s||s.phase!=='scanned'||isField()) return false;
+    var g=++impGen;
+    s.phase='applying'; s.msg='取り込んでいます…（1〜3分かかります。この画面を開いたままにしてください）'; s.err=false; impPaint_();
+    return impPost_({action:'meeting',op:'importApply',gids:gids}).then(function(r){
+      if(!r||r.skip||g!==impGen||isField()) return false;
+      if(r.e||(r.d&&r.d.ok!==true&&(r.d.unknown||classify_(r.d)==='unknown'))){
+        impSt={phase:'idle',res:null,err:true,msg:'取り込めたか分かりません（'+(r.e?String(r.e&&r.e.message||r.e):'書いた後の確かめができませんでした')+'）。5分ほど待ってから「一覧を作る」を押すと、入った分は「取り込み済み」と出ます（2回入ることはありません）'};
+        impPaint_(); return false;
+      }
+      if(!r.d||r.d.ok!==true){ impSt={phase:'idle',res:null,msg:impErr_(r.d),err:true}; impPaint_(); return false; }
+      var chg=Number(r.d.changed)||0;
+      impSt={phase:'done',res:null,err:false,msg:(Number(r.d.written)||0)+' 件を取り込みました。'+(chg?'取り込みの間に名簿が変わった '+chg+' 件は入れていません（一覧を作り直して確かめてください）。':'')+'もう一度「一覧を作る」を押すと、取り込み済みとして出ます'};
+      if(cmView==='pick') showPicker_(); else impPaint_();
+      return true;
+    });
+  });
 }
 function edTitle_(e){
   if(e.mode==='new') return '新しい記録（まだ保存していません）';
@@ -673,9 +808,25 @@ function attCountText_(n){
   var M=CareMeetingCalc.ATTENDEE_MAX, P=CareMeetingCalc.ATTENDEE_PRINT;
   return n>M?'⚠ '+n+' 名います。保存できるのは '+M+' 名までです':n+' 名（保存は '+M+' 名まで・印刷の表は '+P+' 名。10名目からは表の下に続けて出します）';
 }
-function attHtml_(list){
+/* 出席者の✔︎の候補（この方のほかの会議＝下書きも含む・開いている記録を除く、の出席者・開催日の新しい順）。一覧を読めていない時は出さない */
+function attCands_(e){
+  if(listState!=='ok'||!e) return [];
+  return CareMeetingCalc.attendeeCandidates(meetings,e.mode==='edit'?e.meetingId:'',30);
+}
+function attPickHtml_(a,cands){
+  if(!cands||!cands.length) return '';
+  var have={}; cleanAtt_(a).forEach(function(x){ have[CareMeetingCalc.attKey(x)]=1; });
+  /* ★data-apk は並びの番号ではなく組の印（attKey）。一覧を読み直して並びが変わっても、押した人と別の人が入らない（2026-10-25 反証レビュー 中1） */
+  var h='<fieldset class="att-pick"><legend>前回までの出席者から選ぶ</legend><span class="fhint">✔︎を付けると下の出席者に入り、外すと消えます。所属・氏名は入った後で直せます</span><div class="ap-list">';
+  cands.forEach(function(c){
+    var k=CareMeetingCalc.attKey(c), on=!!have[k], t=[c.role,c.name].filter(function(v){ return v; }).join('／');
+    h+='<label class="ap'+(on?' on':'')+'"><input type="checkbox" data-apk="'+esc(k)+'"'+(on?' checked':'')+'><span>'+(on?'✔︎ ':'')+esc(t)+'</span></label>';
+  });
+  return h+'</div></fieldset>';
+}
+function attHtml_(list,cands){
   var a=Array.isArray(list)?list:[], n=cleanAtt_(a).length, L=CareMeetingCalc.ATTENDEE_LEN, rows=a.length?a:[{role:'',name:''}];
-  var h='<div class="att" role="group" aria-labelledby="cm-att-h"><h3 id="cm-att-h" class="fl">出席者（所属（職種）と氏名）</h3>'+
+  var h='<div class="att" role="group" aria-labelledby="cm-att-h"><h3 id="cm-att-h" class="fl">出席者（所属（職種）と氏名）</h3>'+attPickHtml_(a,cands)+
     '<div class="att-hd" aria-hidden="true"><span>所属（職種）</span><span>氏名</span><span></span></div>';
   rows.forEach(function(x,i){
     var over=String(x.role||'').trim().length>L||String(x.name||'').trim().length>L;
@@ -758,24 +909,25 @@ function editorHtml_(e,c){
   h+=inputHtml_('author','作成担当者','text',r.author)+inputHtml_('createdDate','作成年月日','date',r.createdDate)+inputHtml_('heldDate','開催日','date',r.heldDate)+
     inputHtml_('place','開催場所','text',r.place)+inputHtml_('timeText','開催時間','text',r.timeText,'例 14:00〜15:00')+inputHtml_('count','開催回数','num',r.count,'例 3');
   h+='</div>';
-  h+=attHtml_(r.attendees);
+  h+=attHtml_(r.attendees,attCands_(e));
   h+=textareaHtml_('items','検討した項目',r.items,false)+textareaHtml_('content','検討内容',r.content,true)+textareaHtml_('conclusion','結論',r.conclusion,false)+
     textareaHtml_('issues','残された課題',r.issues,false)+inputHtml_('nextText','次回の開催時期','text',r.nextText);
   h+='</fieldset>';
   return h+actionsHtml_(e);
 }
-/* 紙面（今の様式の配置）。開催の理由は紙に出さない（今の様式に欄が無いため）。下書きは表題の横に「下書き」 */
+/* 紙面（今の様式の配置）。開催の理由は紙に出さない（今の様式に欄が無いため）。下書きは表題の横に「下書き」
+   見出しの列はどの表も 12%（2026-10-25: 文字を最大16pxまで大きくしたので「検討した項目」「次回の開催時期」が折り返さない幅にそろえた） */
 function printHtml_(c,rec,status){
   rec=sendRec_(rec);   // 保存と同じ形（1行の欄の改行は空白1つ・出席者の空の行は落とす）で紙に出す
   var att=rec.attendees, P=CareMeetingCalc.ATTENDEE_PRINT, td=function(v){return '<td>'+esc(v)+'</td>'};
   /* 出席者の枠は、空でも人が入った枠と同じ高さにする（空の段が細く潰れないよう、空の枠には空白1文字を置く＝様式の3段×3組の見た目） */
   var tdA=function(v){return '<td class="pv-ac">'+(v?esc(v):'&nbsp;')+'</td>'};
   var h='<div class="pv"><div class="pv-h"><span class="pv-title">サービス担当者会議の要点</span>'+(status==='final'?'':'<span class="pv-draft">下書き</span>')+'</div>';
-  h+='<table class="pv-t"><colgroup><col style="width:10%"><col style="width:28%"><col style="width:9%"><col style="width:22%"><col style="width:9%"><col style="width:22%"></colgroup>'+
+  h+='<table class="pv-t"><colgroup><col style="width:12%"><col style="width:26%"><col style="width:10%"><col style="width:20%"><col style="width:10%"><col style="width:22%"></colgroup>'+
     '<tr><th>利用者名</th>'+td(c.name)+'<th>作成担当者</th>'+td(rec.author)+'<th>作成年月日</th>'+td(fmtDate_(rec.createdDate))+'</tr></table>';
-  h+='<table class="pv-t"><colgroup><col style="width:10%"><col style="width:16%"><col style="width:8%"><col style="width:26%"><col style="width:8%"><col style="width:16%"><col style="width:8%"><col style="width:8%"></colgroup>'+
+  h+='<table class="pv-t"><colgroup><col style="width:12%"><col style="width:15%"><col style="width:9%"><col style="width:23%"><col style="width:9%"><col style="width:14%"><col style="width:9%"><col style="width:9%"></colgroup>'+
     '<tr><th>開催日</th>'+td(fmtDate_(rec.heldDate))+'<th>開催場所</th>'+td(rec.place)+'<th>開催時間</th>'+td(rec.timeText)+'<th>開催回数</th>'+td(countText_(rec.count))+'</tr></table>';
-  h+='<table class="pv-t pv-att"><colgroup><col style="width:10%"><col style="width:15%"><col style="width:15%"><col style="width:15%"><col style="width:15%"><col style="width:15%"><col style="width:15%"></colgroup>'+
+  h+='<table class="pv-t pv-att"><colgroup><col style="width:12%"><col style="width:14.66%"><col style="width:14.66%"><col style="width:14.67%"><col style="width:14.67%"><col style="width:14.67%"><col style="width:14.67%"></colgroup>'+
     '<tr><th rowspan="4">会議出席者</th><th class="pv-ath">所属（職種）</th><th class="pv-ath">氏名</th><th class="pv-ath">所属（職種）</th><th class="pv-ath">氏名</th><th class="pv-ath">所属（職種）</th><th class="pv-ath">氏名</th></tr>';
   for(var i=0;i<3;i++){
     h+='<tr>';
@@ -784,11 +936,11 @@ function printHtml_(c,rec,status){
   }
   h+='</table>';
   if(att.length>P) h+='<p class="pv-more">（出席者の続き）'+esc(att.slice(P).map(function(a){return (a.role?a.role+'／':'')+a.name}).join('、'))+'</p>';
-  h+='<table class="pv-t"><colgroup><col style="width:10%"><col style="width:90%"></colgroup>';
+  h+='<table class="pv-t pv-body"><colgroup><col style="width:12%"><col style="width:88%"></colgroup>';
   [['items','検討した項目'],['content','検討内容'],['conclusion','結論'],['issues','残された課題']].forEach(function(f){
     h+='<tr><th>'+esc(f[1])+'</th><td class="pv-pre">'+esc(rec[f[0]])+'</td></tr>';
   });
-  h+='</table><table class="pv-t"><colgroup><col style="width:10%"><col style="width:90%"></colgroup><tr><th>次回の開催時期</th><td class="pv-pre">'+esc(rec.nextText)+'</td></tr></table></div>';
+  h+='</table><table class="pv-t"><colgroup><col style="width:12%"><col style="width:88%"></colgroup><tr><th>次回の開催時期</th><td class="pv-pre">'+esc(rec.nextText)+'</td></tr></table></div>';
   return h;
 }
 
@@ -799,6 +951,7 @@ function showOnly_(which){
 /* 現場端末：何も取りに行かず、案内だけを出す（開いていた方の中身もメモリから捨てる） */
 function showFieldOnly_(){
   cmView='field'; cur=null; meetings=[]; ed=null; summary=null; roster=null;
+  impSt=null; impAdmin=false; impGen++;   // 過去の記録の取り込みの一覧（タブ名・氏名を含む）も捨てる
   ['cm-who','cm-alerts','cm-list','cm-detail','cm-prev','cm-pick'].forEach(function(id){ var el=$(id); if(el) el.innerHTML=''; });
   var g=$('cm-gate'); if(g) g.innerHTML='<p>担当者会議の記録は事務所PCだけで使えます</p>';
   showOnly_('cm-gate'); setSync('');
@@ -812,8 +965,10 @@ function showGate_(kind){
 function paintPicker_(){
   var el=$('cm-pick'); if(!el) return;
   cmView='pick';
+  var ae=document.activeElement, fa=(ae&&el.contains&&el.contains(ae)&&ae.getAttribute)?ae.getAttribute('data-act'):null;
   el.innerHTML=pickerHtml_(roster,summary,summaryState,summaryErr);
   showOnly_('cm-pick');
+  if(fa==='imp-scan'||fa==='imp-apply'){ var nb=el.querySelector('[data-act="'+fa+'"]')||el.querySelector('[data-act="imp-scan"]'); if(nb) try{ nb.focus(); }catch(e){} }
 }
 function paintWho_(){ var el=$('cm-who'); if(el) el.innerHTML=whoHtml_(cur); }
 function paintAlerts_(){
@@ -899,6 +1054,7 @@ function loadList_(){
     if(g!==gen||seq!==listSeq||isField()) return false;
     applyList_(l);
     paintAlerts_(); paintList_(); paintPrev_();
+    if(ed&&!ed.view&&!ed.busy) paintEditor_();   // ✔︎の候補を今の一覧にそろえる（2026-10-25 反証レビュー 中1）
     return listState==='ok';
   });
 }
@@ -914,6 +1070,8 @@ function showPicker_(){
   openId=''; cur=null; personErr=''; meetings=[]; ed=null; edNotice=''; writeStop=false; saveOpenMeeting_(null);
   roster=readRoster_(); summary=null; summaryState='loading'; summaryErr='';
   paintPicker_(); setSync('');
+  if(!impAdmin) impGate_();   // 過去の記録の取り込み（管理者だけ）。入居者マスタから来て「ほかの方を選ぶ」で戻った時も
+
   if(!roster.ok) return Promise.resolve();
   return meetingRead_({action:'meeting',op:'summary'}).then(function(d){return{d:d}},function(e){return{e:e}}).then(function(r){
     if(g!==gen||isField()) return;
@@ -1284,9 +1442,33 @@ function onEdInput_(ev){
 }
 function onEdChange_(ev){
   var t=ev.target; if(!ed||ed.view||!t||!t.getAttribute) return;
+  var ak=t.getAttribute('data-apk'); if(ak!=null){ attPick_(String(ak),t.checked===true); return; }
   var f=t.getAttribute('data-f');
   if(f==='nameChecked'){ setField_('nameChecked',t.checked===true); paintNameBand_(); }
   else if(f==='kind'||f==='heldDate'||f==='createdDate'){ setField_(f,t.value); if(f==='heldDate') paintPrev_(); }
+}
+/* ✔︎を付けた・外した（k は候補の組の印 attKey）。付けた時は空の行があればそこへ、無ければ末尾へ入れる。外した時は同じ組の行を消す。
+   今の候補に無い印（並びが変わった後の古い画面など）なら何もせず描き直す */
+function attPick_(k,on){
+  if(!ed||ed.view||ed.busy) return;
+  k=String(k==null?'':k);
+  var c=null; attCands_(ed).some(function(x){ if(CareMeetingCalc.attKey(x)===k){ c=x; return true; } return false; });
+  if(!c){ paintEditor_(); return; }
+  var a=ed.rec.attendees;
+  if(on){
+    if(!a.some(function(x){ return CareMeetingCalc.attKey(x)===k; })){
+      var blank=-1;
+      for(var j=0;j<a.length;j++){ if(!String(a[j].role||'').trim()&&!String(a[j].name||'').trim()){ blank=j; break; } }
+      if(blank<0&&a.length>=CareMeetingCalc.ATTENDEE_MAX) toast('出席者は '+CareMeetingCalc.ATTENDEE_MAX+' 名までです');
+      else{ if(blank>=0) a[blank]={role:c.role,name:c.name}; else a.push({role:c.role,name:c.name}); ed.touched=true; }
+    }
+  } else {
+    var keep=a.filter(function(x){ return CareMeetingCalc.attKey(x)!==k; });
+    if(keep.length!==a.length){ ed.rec.attendees=keep; ed.touched=true; }
+  }
+  paintEditor_();
+  var cbs=document.querySelectorAll('#cm-detail [data-apk]');
+  for(var q=0;q<cbs.length;q++){ if(cbs[q].getAttribute('data-apk')===k){ try{ cbs[q].focus(); }catch(err){} break; } }
 }
 function attAdd_(){
   if(!ed||ed.view||ed.busy) return;
@@ -1337,9 +1519,23 @@ function onWhoClick_(ev){
   if(a==='other') goOther_();
   else if(a==='retry-person'&&openId) openPerson_(openId);
 }
+/* 取り込める行の✔︎（外した行は送らない）。描き直しの後も同じ✔︎へ焦点を戻す */
+function onPickChange_(ev){
+  var t=ev.target; if(!t||!t.getAttribute) return;
+  var g=t.getAttribute('data-impg'); if(g==null) return;
+  var s=impSt; if(!s||s.phase!=='scanned') return;
+  s.skip=s.skip||{};
+  if(t.checked) delete s.skip[String(g)]; else s.skip[String(g)]=true;
+  impPaint_();
+  var el=$('cm-pick'), cbs=el?el.querySelectorAll('[data-impg]'):[];
+  for(var i=0;i<cbs.length;i++){ if(cbs[i].getAttribute('data-impg')===String(g)){ try{ cbs[i].focus(); }catch(e){} break; } }
+}
 function onPickClick_(ev){
-  var b=ev.target&&ev.target.closest?ev.target.closest('[data-act="pick"]'):null; if(!b) return;
-  pickPerson_(b.getAttribute('data-id'));
+  var t=ev.target&&ev.target.closest?ev.target.closest('[data-act]'):null; if(!t||t.disabled) return;
+  var act=t.getAttribute('data-act');
+  if(act==='imp-scan'){ impScan_(); return; }
+  if(act==='imp-apply'){ impApply_(); return; }
+  if(act==='pick') pickPerson_(t.getAttribute('data-id'));
 }
 
 /* ═══════════ 確かめの窓（確定・取り消し・理由の入力） ═══════════ */
@@ -1392,12 +1588,42 @@ function openDlg_(o){
 function definePrint_(){
   if(!window.SUPrint) return;
   SUPrint.define('meeting',{label:'担当者会議の要点',paper:'A4 landscape',margin:8,root:'#cm-print',
-    fit:{mode:'height',cssVar:'--cm-fs',base:12,min:7,step:0.25},
+    /* 文字は 7〜16px の間で1枚に収まるいちばん大きい値（2026-10-25 代表者の決定「A4 横に目一杯」）。余った高さは cmFitApply_ が本文の4欄へ配る */
+    fit:{mode:'height',cssVar:'--cm-fs',base:12,min:7,max:16,step:0.25,slack:{h:24},apply:cmFitApply_},
     /* 記録を開いていない時は準備しない（Cmd/Ctrl+P で空の紙を作らない） */
     when:function(){ return !!(ed&&cur); },
     before:function(){ var p=$('cm-print'); if(p&&ed&&cur) p.innerHTML=printHtml_(cur,ed.rec,ed.status); },
     /* 氏名を含む紙面は印刷の後に必ず捨てる */
     after:function(){ var p=$('cm-print'); if(p) p.innerHTML=''; }});
+}
+/* su-print の文字の大きさの当て方（2026-10-25）
+   ・探している間（isFinal でない）は、配った高さを先に外してから大きさを当てる（伸ばした高さで文字を小さく見積もらない）
+   ・確定の時（isFinal・採寸の窓の中）だけ、紙の高さの残り（安全の余裕 CM_STRETCH_SAFE を引く・収める段階の slack と同じ値）を、本文の4欄の今の高さの比で配る
+   ・px=null（後始末）は全部外す。紙面は印刷の後に中身ごと捨てるので、配った高さも残らない */
+var CM_STRETCH_SAFE=24;   // 16px の1行（約21.6px）より大きく（紙の上で折り返しが1行違っても2枚目へ落ちない・2026-10-25 反証レビュー 低8）
+function cmFitApply_(px,target,state,isFinal){
+  var root=target||$('cm-print'); if(!root) return;
+  var cells=root.querySelectorAll('.pv-body td');
+  for(var i=0;i<cells.length;i++) cells[i].style.height='';
+  if(px==null){ root.style.removeProperty('--cm-fs'); return; }
+  root.style.setProperty('--cm-fs',px+'px');
+  if(!isFinal||!cells.length) return;
+  var hPx=state&&state.metrics&&state.metrics.hPx;
+  if(hPx>0) cmStretch_(root,cells,hPx-CM_STRETCH_SAFE);
+}
+/* 余った高さ（avail − 今の高さ）を cells の今の高さの比で配る。配った後に avail を超えたら少しずつ減らし、だめなら配らない。配った高さを返す */
+function cmStretch_(root,cells,avail){
+  var extra=avail-root.scrollHeight; if(!(extra>4)) return 0;
+  var hs=[], sum=0, i;
+  for(i=0;i<cells.length;i++){ var h=cells[i].getBoundingClientRect().height; hs.push(h); sum+=h; }
+  if(!(sum>0)) return 0;
+  for(var k=0;k<6&&extra>4;k++){
+    for(i=0;i<cells.length;i++) cells[i].style.height=(hs[i]+extra*hs[i]/sum)+'px';
+    if(root.scrollHeight<=avail) return extra;
+    extra=Math.floor(extra*0.8);
+  }
+  for(i=0;i<cells.length;i++) cells[i].style.height='';
+  return 0;
 }
 function cmPrint_(){
   if(!ed||!cur) return Promise.resolve(false);
@@ -1419,7 +1645,7 @@ function onDeviceRoleChange_(e){
   cmReload_();
 }
 function onBeforeUnload_(e){
-  if(isDirty_(ed)||(ed&&ed.busy)){ e.preventDefault(); e.returnValue=''; return ''; }
+  if(isDirty_(ed)||(ed&&ed.busy)||(impSt&&impSt.phase==='applying')){ e.preventDefault(); e.returnValue=''; return ''; }
 }
 function onCommonRoster_(e){
   if(!e||e.key!==COMMON_KEY||isField()) return;
@@ -1435,6 +1661,7 @@ function bindEvents_(){
   $('cm-alerts').addEventListener('click',onAlertsClick_);
   $('cm-who').addEventListener('click',onWhoClick_);
   $('cm-pick').addEventListener('click',onPickClick_);
+  $('cm-pick').addEventListener('change',onPickChange_);
   $('cm-new').addEventListener('click',function(){ openNew_('').then(function(ok){ if(ok) scrollToEditor_(); }); });
   window.addEventListener('beforeunload',onBeforeUnload_);
   window.addEventListener('storage',function(e){ try{ onCommonRoster_(e); }catch(err){ cmNote_('共有名簿の更新', err); } });

@@ -16,6 +16,7 @@
     10. 応答の読み分けは ok と code だけ（error の文で分けない）
      ほか: 読み込む部品の並び（§2）・紙面（§7）・未保存の止め（§5）・再読み込みで戻す（§6）
     12. innerHTML の全数点検（2026-10-25 本人指示・xss_facesheet_admission_test.js と同じやり方）
+    13. 出席者の✔︎（この方の前回までの出席者から選ぶ）・印刷を A4 横いっぱいに・過去の記録の取り込み（管理者だけ）（2026-10-25 代表者の決定）
 
    ── 12 の点検表（innerHTML への代入17か所。insertAdjacentHTML・outerHTML は0か所。行番号は 2026-10-25 時点の目安） ──
    画面のスクリプトの innerHTML への代入を全部洗い、入る値が記録・名簿・自由入力・サーバーの文に由来するものは
@@ -122,8 +123,8 @@ function load(opt) {
     setTimeout(fn, ms) { if (!(ms >= 5000)) setImmediate(fn); return 0; },
     clearTimeout() {},
     localStorage: ls, sessionStorage: ss,
-    window: { addEventListener() {} },
-    document: { activeElement: null, getElementById: el, querySelectorAll() { return []; }, scripts: [],
+    window: Object.assign({ addEventListener() {} }, opt.window || {}),
+    document: { activeElement: null, getElementById: el, querySelector() { return null; }, querySelectorAll() { return []; }, scripts: [],
       createElement(tag) { const x = { tag, setAttribute() {} }; cnt.created.push(x); return x; },
       head: { appendChild(x) { if (x && x.onerror) setImmediate(() => x.onerror()); } } },
     location: { search: opt.search || '', pathname: '/care-meeting.html', reload() { cnt.reload++; } },
@@ -209,7 +210,7 @@ async function opened(opt) {
     const head = HTML.slice(0, HTML.indexOf('</head>'));
     const srcs = [...head.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]);
     t('head の部品は su-errors → su-perf → su-facility → su-print → care-meeting-calc の順', JSON.stringify(srcs) === JSON.stringify(
-      ['su-errors.js?v=2026-10-08', 'su-perf.js?v=2026-10-24', 'su-facility.js?v=2026-10-14', 'su-print.js?v=2026-09-12', 'care-meeting-calc.js?v=2026-10-23']), srcs);
+      ['su-errors.js?v=2026-10-08', 'su-perf.js?v=2026-10-24', 'su-facility.js?v=2026-10-14', 'su-print.js?v=2026-09-12', 'care-meeting-calc.js?v=2026-10-25']), srcs);
     t('su-print.css を読み、su-errors.js より前にスクリプトが無い', /<link rel="stylesheet" href="su-print\.css\?v=2026-09-12">/.test(head) && head.indexOf('<script') === head.indexOf('<script src="su-errors.js'));
     t('CSP・拡大を禁止しない viewport・no-store・noindex・題', /data-su-csp/.test(head) && /<meta name="viewport" content="width=device-width,initial-scale=1">/.test(head) && !/user-scalable=no|maximum-scale=1[^.0-9]/.test(head) &&
       /Cache-Control" content="no-store"/.test(head) && /robots" content="noindex/.test(head) && /<title>担当者会議の記録<\/title>/.test(head));
@@ -994,12 +995,171 @@ async function opened(opt) {
     t('出席者の表は9名、10名目からは表の下に続けて書く', /架空8<\/td>/.test(d) && /class="pv-more">（出席者の続き）職種9／架空9、職種10／架空10</.test(d));
     t('見出しの欄（利用者名・作成担当者・作成年月日・開催日・開催場所・開催時間・開催回数・検討した項目・検討内容・結論・残された課題・次回の開催時期）',
       ['利用者名', '作成担当者', '作成年月日', '開催日', '開催場所', '開催時間', '開催回数', '会議出席者', '検討した項目', '検討内容', '結論', '残された課題', '次回の開催時期'].every((w) => d.indexOf('<th>' + w + '</th>') >= 0 || d.indexOf('>' + w + '</th>') >= 0));
-    t('SUPrint.define は A4 横・余白8・root #cm-print・--cm-fs で高さに合わせる（12→7・0.25刻み）',
-      /SUPrint\.define\('meeting',\{label:'担当者会議の要点',paper:'A4 landscape',margin:8,root:'#cm-print',\n    fit:\{mode:'height',cssVar:'--cm-fs',base:12,min:7,step:0\.25\}/.test(S));
+    t('SUPrint.define は A4 横・余白8・root #cm-print・--cm-fs で高さに合わせる（7〜16px・0.25刻み・当て方は cmFitApply_・2026-10-25 A4 横に目一杯）',
+      /SUPrint\.define\('meeting',\{label:'担当者会議の要点',paper:'A4 landscape',margin:8,root:'#cm-print',\n[^\n]*\n    fit:\{mode:'height',cssVar:'--cm-fs',base:12,min:7,max:16,step:0\.25,slack:\{h:24\},apply:cmFitApply_\}/.test(S) && /var CM_STRETCH_SAFE=24;/.test(S));
     t('印刷の前に SUPrint.estimate で枚数を見て、2枚以上なら「1枚に収まりません（約Nページ）」', /SUPrint\.estimate\('meeting'\)/.test(cutF(S, 'cmPrint_')) && /'1枚に収まりません（約'\+est\.pages\+'ページ）'/.test(cutF(S, 'cmPrint_')));
     const css = HTML.slice(HTML.indexOf('<style>'), HTML.indexOf('</style>'));
     t('zoom・transform:scale を使わず、画面だけの部品は @media print で消す', !/zoom\s*:|scale\(/.test(css) && /@media print\{[\s\S]*\.hdr,#cm-main,#toast,\.dlg\{display:none !important\}/.test(css));
     t('印刷の後は紙面を空にする（氏名を DOM に残さない）', /after:function\(\)\{ var p=\$\('cm-print'\); if\(p\) p\.innerHTML=''; \}/.test(S));
+  }
+
+
+  group('13. 出席者の✔︎・印刷を A4 横いっぱいに・過去の記録の取り込み（2026-10-25 代表者の決定）');
+  {
+    /* 13-1. 候補の並べ方（計算の部品） */
+    const L = [
+      row({ meetingId: 'M1', heldDate: '2026-03-01', attendees: [{ role: '本人', name: '架空 一郎' }, { role: '施設', name: '架空 看護' }] }),
+      row({ meetingId: 'M2', heldDate: '2026-09-01', attendees: [{ role: '本人', name: '架空　一郎' }, { role: '長女', name: '架空 花子' }, { role: '', name: '' }] }),
+      row({ meetingId: 'M3', heldDate: '2026-10-01', deleted: true, attendees: [{ role: '取り消し', name: '架空 消し' }] }),
+      row({ meetingId: 'M4', heldDate: '2026-10-10', attendees: [{ role: '開いている記録', name: '架空 今' }] })
+    ];
+    const C = CALC.attendeeCandidates(L, 'M4', 30);
+    t('候補は新しい会議の出席者から並べ、所属と氏名の組で重ねない（全角の空白も同じ人）', JSON.stringify(C.map((x) => x.role + '／' + x.name)) === JSON.stringify(['本人／架空　一郎', '長女／架空 花子', '施設／架空 看護']), C);
+    t('取り消し済みの記録・開いている記録の出席者・空の行は候補にしない', !C.some((x) => /消し|今/.test(x.name)) && !C.some((x) => !x.role && !x.name));
+    t('候補は max 名まで', CALC.attendeeCandidates(L, '', 2).length === 2);
+    t('同じ組の見分けは互換の文字と空白をそろえる', CALC.attKey({ role: '施設', name: '架空　看護' }) === CALC.attKey({ role: ' 施設', name: '架空 看護 ' }));
+  }
+  {
+    /* 13-2. 画面: 新しい記録で✔︎を付ける・外す */
+    const rows = [row({ meetingId: 'M20260901100000' + '1111', heldDate: '2026-09-01', attendees: [{ role: '本人', name: '架空 一郎' }, { role: '長女', name: '架空 <b>花子</b>' }] })];
+    const T = await opened({ gas: { list: () => ({ ok: true, rows }) } });
+    await T.ctx.openNew_(''); await settle();
+    const h = T.el('cm-detail').innerHTML;
+    const K = (i) => CALC.attKey(T.ctx.attCands_(T.ctx.ed)[i]);
+    t('「前回までの出席者から選ぶ」に、前回の出席者が✔︎の候補で出る（印は並びの番号ではなく組の印）', /前回までの出席者から選ぶ/.test(h) && (h.match(/data-apk="/g) || []).length === 2 && h.indexOf('data-apk="本人|架空一郎"') >= 0, h.match(/data-apk="[^"]*"/g));
+    t('候補の文字は esc を通る', h.indexOf('<b>花子</b>') < 0 && h.indexOf('&lt;b&gt;花子&lt;/b&gt;') >= 0);
+    T.ctx.attAdd_();   // 「＋ 出席者を足す」で空の行が2つある状態
+    T.ctx.attPick_(K(1), true);
+    t('✔︎を付けると、空の行があればそこへ入る（行が増えすぎない）', T.ctx.ed.rec.attendees.length === 2 && T.ctx.ed.rec.attendees[0].role === '長女' && T.ctx.ed.rec.attendees[0].name === '架空 <b>花子</b>' && T.ctx.ed.touched === true, T.ctx.ed.rec.attendees);
+    T.ctx.attPick_(K(0), true);
+    t('続けて付けると、残りの空の行に入る', T.ctx.ed.rec.attendees.map((a) => a.role).join(',') === '長女,本人', T.ctx.ed.rec.attendees);
+    const h2 = T.el('cm-detail').innerHTML;
+    t('入っている人の✔︎は付いた形で出る（色だけでなく「✔︎」の字でも）', /data-apk="本人\|架空一郎" checked/.test(h2) && /class="ap on"><input type="checkbox" data-apk="長女\|架空&lt;b&gt;花子&lt;\/b&gt;" checked><span>✔︎ /.test(h2), h2.match(/<label class="ap[^]*?<\/label>/g));
+    T.ctx.attPick_(K(1), false);
+    t('✔︎を外すと、その人の行が消える', !T.ctx.ed.rec.attendees.some((a) => a.role === '長女'), T.ctx.ed.rec.attendees);
+    T.ctx.attPick_(K(0), true);
+    t('もう入っている人を付け直しても2行にしない', T.ctx.ed.rec.attendees.filter((a) => a.role === '本人').length === 1);
+    T.ctx.ed.rec.attendees = Array.from({ length: 20 }, (_, i) => ({ role: '職種' + i, name: '架空' + i }));
+    T.ctx.attPick_(K(1), true);
+    t('20名いる時は足さずに知らせる', T.ctx.ed.rec.attendees.length === 20 && T.cnt.toast.some((m) => /20 名まで/.test(m)));
+    T.ctx.listState = 'error';
+    t('一覧を読めていない時は候補を出さない', T.ctx.attCands_(T.ctx.ed).length === 0);
+    T.ctx.listState = 'ok';
+    T.ctx.ed.rec.attendees = [{ role: '本人', name: '架空 一郎' }];
+    T.ctx.ed.view = true; const before = JSON.stringify(T.ctx.ed.rec.attendees); T.ctx.attPick_(K(0), false);
+    t('確定した記録の表示中は✔︎で変えない', JSON.stringify(T.ctx.ed.rec.attendees) === before);
+    t('受け口: 変更の時に data-apk（組の印）を見て attPick_ へ', /var ak=t\.getAttribute\('data-apk'\); if\(ak!=null\)\{ attPick_\(String\(ak\),t\.checked===true\); return; \}/.test(cutF(S, 'onEdChange_')));
+    T.ctx.ed.view = false; T.ctx.ed.rec.attendees = [];
+    T.ctx.attPick_('ほかの人|架空', true);
+    t('★今の候補に無い印（並びが変わった後の古い画面）では、だれも入れない', T.ctx.ed.rec.attendees.length === 0);
+    t('★一覧を読み直した後は、編集の欄（✔︎の候補）も描き直す', /paintAlerts_\(\); paintList_\(\); paintPrev_\(\);\n    if\(ed&&!ed\.view&&!ed\.busy\) paintEditor_\(\);/.test(cutF(S, 'loadList_')));
+    const rows2 = [row({ meetingId: 'M20260902100000' + '2222', heldDate: '2026-09-02', attendees: [{ role: '主治医', name: '' }] })];
+    const T2 = await opened({ gas: { list: () => ({ ok: true, rows: rows2 }) } });
+    await T2.ctx.openNew_(''); await settle();
+    t('氏名の無い候補は「主治医」だけで出す（末尾に「／」を付けない）', /<span>主治医<\/span>/.test(T2.el('cm-detail').innerHTML), T2.el('cm-detail').innerHTML.match(/<label class="ap[^]*?<\/label>/g));
+    const css = HTML.slice(HTML.indexOf('<style>'), HTML.indexOf('</style>'));
+    t('✔︎の候補は押せる所が 44px 以上', /\.ap\{display:inline-flex; align-items:center; gap:8px; min-height:44px;/.test(css));
+  }
+  {
+    /* 13-3. 印刷: 文字を当て、確定の時だけ余った高さを本文の4欄へ配る */
+    const T = load();
+    const mkRoot = (base, hs, k) => {
+      const vars = {};
+      const cells = hs.map((h) => ({ h, style: { height: '' }, getBoundingClientRect() { return { height: this.h }; } }));
+      const cur = (c) => (c.style.height ? parseFloat(c.style.height) : c.h);
+      return { cells, vars, style: { setProperty(n, v) { vars[n] = v; }, removeProperty(n) { delete vars[n]; } },
+        querySelectorAll(sel) { return sel === '.pv-body td' ? cells : []; },
+        get scrollHeight() { return base + cells.reduce((s, c) => s + cur(c), 0) * (k || 1); } };
+    };
+    const st = { metrics: { hPx: 733 } };
+    let R = mkRoot(200, [40, 120, 60, 30]);
+    T.ctx.cmFitApply_(12, R, st, false);
+    t('探している間は文字の大きさだけを当て、高さは配らない', R.vars['--cm-fs'] === '12px' && R.cells.every((c) => c.style.height === ''));
+    T.ctx.cmFitApply_(14, R, st, true);
+    const sum = R.cells.reduce((s, c) => s + parseFloat(c.style.height || c.h), 0);
+    t('確定の時は、紙の高さの残り（余裕24px）を本文の4欄へ配り、紙の高さを超えない', R.vars['--cm-fs'] === '14px' && Math.abs(R.scrollHeight - (733 - 24)) <= 1 && R.scrollHeight <= 733 - 24, [R.scrollHeight, sum]);
+    const ratio = parseFloat(R.cells[1].style.height) / parseFloat(R.cells[0].style.height);
+    t('配る高さは各欄の今の高さの比（検討内容が多ければ多く伸ばす）', Math.abs(ratio - 3) < 0.01, ratio);
+    T.ctx.cmFitApply_(13, R, st, false);
+    t('次に探す時は、配った高さを先に外してから測る', R.cells.every((c) => c.style.height === ''));
+    T.ctx.cmFitApply_(null, R, st, false);
+    t('後始末（px=null）は文字の大きさも外す', !('--cm-fs' in R.vars) && R.cells.every((c) => c.style.height === ''));
+    R = mkRoot(700, [10, 10, 10, 10]);
+    T.ctx.cmFitApply_(12, R, st, true);
+    t('余りが無い（4px 以下）時は配らない', R.cells.every((c) => c.style.height === ''));
+    R = mkRoot(-1500, [100, 100, 100, 100], 5);
+    T.ctx.cmFitApply_(12, R, st, true);
+    t('配ると紙を超えてしまう時は、減らしても超えるなら配らない（2枚目へ落とさない）', R.scrollHeight <= 733 - 24 || R.cells.every((c) => c.style.height === ''), R.scrollHeight);
+    t('本文の表には pv-body の印がある（配る相手）', /<table class="pv-t pv-body">/.test(cutF(S, 'printHtml_')));
+  }
+  {
+    /* 13-4. 過去の記録の取り込み（管理者だけ） */
+    const SU = (role) => ({ STATUS: { OK: 'ok' }, check: () => Promise.resolve({ status: 'ok', role }), client: () => ({ auth: { getSession: () => Promise.resolve({ data: { session: { access_token: 'at-kakuu' } } }) } }) });
+    const items = [
+      { gid: '11', tab: 'R8.1.28架空', residentId: '901', residentName: '架空 一郎', sourceName: '架空　一郎', heldDate: '2026-01-28', attendees: 3, missing: [], status: 'new' },
+      { gid: '12', tab: 'R8.2.3<b>架空</b>', residentId: '', residentName: '', sourceName: '架空 太郎', heldDate: '2026-02-03', attendees: 2, missing: ['結論'], status: 'unmatched' },
+      { gid: '13', tab: 'R8.2.4架空', residentId: '902', residentName: '架空 二郎', sourceName: '架空 二郎', heldDate: '', attendees: 0, missing: ['開催日', '出席者'], status: 'new' },
+      { gid: '14', tab: 'R8.1.5架空', residentId: '901', residentName: '架空 一郎', sourceName: '架空 一郎', heldDate: '2026-01-05', attendees: 4, missing: [], status: 'exists' }
+    ];
+    const scanRes = { ok: true, total: 4, counts: { new: 2, exists: 1, unmatched: 1, ambiguous: 0, toolong: 0 }, items };
+    const mk = async (role, gasOpt, extra) => {
+      const T = load(Object.assign({ roster: ROSTER, window: { SUAuth: SU(role) }, handler: gas(gasOpt) }, extra || {}));
+      T.ls.m.set('sb-kakuu-auth-token', '{}');
+      T.ctx.showPicker_(); await settle();
+      await T.ctx.impGate_(); await settle();
+      return T;
+    };
+    const N = await mk('office', {});
+    t('管理者でない時は、取り込みの欄を出さない', N.ctx.impAdmin === false && !/過去の記録の取り込み/.test(N.el('cm-pick').innerHTML));
+    const N2 = load({ roster: ROSTER, handler: gas({}) }); N2.ctx.showPicker_(); await settle(); await N2.ctx.impGate_();
+    t('ログインの印が端末に無ければ、管理者か確かめに行かない（部品も読み込まない）', N2.ctx.impAdmin === false && N2.cnt.created.length === 0);
+    const A = await mk('admin', { importScan: () => scanRes, importApply: (b) => ({ ok: true, written: b.gids.length, counts: scanRes.counts }) });
+    t('管理者なら、選ぶ一覧の下に「過去の記録の取り込み」と「一覧を作る（書かない）」が出る', A.ctx.impAdmin === true && /過去の記録の取り込み（E表別紙・管理者だけ）/.test(A.el('cm-pick').innerHTML) && /data-act="imp-scan"/.test(A.el('cm-pick').innerHTML));
+    await A.ctx.impScan_(); await settle();
+    const sc = A.meetCalls().filter((c) => c.body.op === 'importScan');
+    t('「一覧を作る」は importScan を1回だけ送り、ログインの証明を添える（gids は送らない）', sc.length === 1 && sc[0].body.accessToken === 'at-kakuu' && !('gids' in sc[0].body));
+    t('送り終えたら、証明を本文から外す（控えない）', /\.then\(function\(r\)\{ delete body\.accessToken; return r; \}\)/.test(cutF(S, 'impPost_')));
+    const ph = A.el('cm-pick').innerHTML;
+    t('一覧の件数と、取り込める・照合できない・取り込み済みの表が出る（タブ名は esc を通る）', /タブ 4 件：取り込める 2 件／名簿と照合できない 1 件／名簿に同じ名前の方が2人以上 0 件／欄が長すぎる 0 件／開催日が先の日付 0 件／同じ方・同じ開催日の記録がある 0 件／取り込み済み 1 件/.test(ph) &&
+      ph.indexOf('<b>架空</b>') < 0 && ph.indexOf('&lt;b&gt;架空&lt;/b&gt;') >= 0 && /（読めない）/.test(ph) && /開催日・出席者/.test(ph), ph.slice(0, 400));
+    t('取り込める件数のボタンが出る', /data-act="imp-apply">取り込める 2 件を取り込む（確定）</.test(ph));
+    t('取り込める行には✔︎が付いて出る（最初は全部）・ほかの組には付けない', (ph.match(/data-impg="/g) || []).length === 2 && /data-impg="11" checked/.test(ph) && /data-impg="13" checked/.test(ph) && ph.indexOf('data-impg="12"') < 0);
+    A.ctx.onPickChange_({ target: { getAttribute: (k) => (k === 'data-impg' ? '13' : null), checked: false } });
+    t('★✔︎を外すと、ボタンの件数が減る', /data-act="imp-apply">取り込める 1 件を取り込む（確定）</.test(A.el('cm-pick').innerHTML) && /data-impg="13" aria-label="[^"]*">外す/.test(A.el('cm-pick').innerHTML), (A.el('cm-pick').innerHTML.match(/data-act="imp-apply">[^<]*|data-impg="13"[^<]*/g)));
+    A.ctx.onPickChange_({ target: { getAttribute: (k) => (k === 'data-impg' ? '13' : null), checked: true } });
+    A.ctx.onPickChange_({ target: { getAttribute: (k) => (k === 'data-impg' ? '11' : null), checked: false } });
+    await A.ctx.impApply_(); await settle();
+    const ap = A.meetCalls().filter((c) => c.body.op === 'importApply');
+    t('取り込む前に確かめの窓を出す（✔︎の付いた件数で）', A.cnt.ask.some((x) => x.title === '過去の記録を取り込みます' && /1 件を「確定」として/.test(x.lines[0])));
+    t('★importApply は「取り込める」で✔︎の付いた gid だけを送る（外した行・照合できない・取り込み済みは送らない）', ap.length === 1 && JSON.stringify(ap[0].body.gids) === JSON.stringify(['13']) && ap[0].body.accessToken === 'at-kakuu', ap.map((c) => c.body.gids));
+    t('取り込んだ件数を知らせ、一覧の最終開催日を読み直す', /1 件を取り込みました/.test(A.el('cm-pick').innerHTML) && A.ops().filter((o) => o === 'summary').length >= 2, A.ops());
+    const G = await mk('admin', { importScan: () => scanRes, importApply: () => ({ ok: true, written: 1, changed: 1 }) });
+    await G.ctx.impScan_(); await settle(); await G.ctx.impApply_(); await settle();
+    t('取り込みの間に名簿が変わって入れなかった数を知らせる', /名簿が変わった 1 件は入れていません/.test(G.el('cm-pick').innerHTML));
+    t('受け口: 選ぶ一覧の変更で data-impg を見る', /\$\('cm-pick'\)\.addEventListener\('change',onPickChange_\)/.test(cutF(S, 'bindEvents_')));
+    t('取り込みの間も localStorage・sessionStorage に書かない（選ぶ一覧へ戻る時に「開いていた会議の番号」を消すだけ）', A.writes.every((w) => w[1] === 'remove' && w[2] === 'cm_open_meeting'), A.writes);
+    const Q = await mk('admin', { importScan: () => scanRes }, { answer: false });
+    await Q.ctx.impScan_(); await settle(); await Q.ctx.impApply_(); await settle();
+    t('確かめの窓で「やめる」を押したら送らない', Q.ops().indexOf('importApply') < 0);
+    const U = await mk('admin', { importScan: () => scanRes, importApply: () => NET });
+    await U.ctx.impScan_(); await settle(); await U.ctx.impApply_(); await settle();
+    t('通信が切れたら「取り込めたか分かりません」と出し、やり直さない（一覧を作り直せば入った分が分かる）', /取り込めたか分かりません/.test(U.el('cm-pick').innerHTML) && U.ops().filter((o) => o === 'importApply').length === 1);
+    const D = await mk('admin', { importScan: () => ({ ok: false, code: 'not_admin', error: 'x' }) });
+    await D.ctx.impScan_(); await settle();
+    t('GAS が管理者でないと断ったら、分かる言葉で出す', /管理者（Google＋2段階認証）でログインしている時だけ使えます/.test(D.el('cm-pick').innerHTML));
+    const B = await mk('admin', { importScan: () => scanRes, importApply: () => new Promise(() => {}) });
+    await B.ctx.impScan_(); await settle(); B.ctx.impApply_(); await settle();
+    const ev = { prevented: false, preventDefault() { this.prevented = true; } };
+    B.ctx.onBeforeUnload_(ev);
+    t('取り込みの途中は、閉じる・読み込み直す前に止める', ev.prevented === true && B.ctx.impSt.phase === 'applying');
+    t('取り込みの途中はボタンを押せない', !/data-act="imp-scan">/.test(B.el('cm-pick').innerHTML) || /data-act="imp-scan" disabled/.test(B.el('cm-pick').innerHTML));
+    B.ctx.showFieldOnly_();
+    t('現場用へ切り替わったら、取り込みの一覧（タブ名・氏名）も管理者の印も捨てる', B.ctx.impSt === null && B.ctx.impAdmin === false);
+    t('受け口: 選ぶ一覧のクリックで imp-scan・imp-apply を見分ける', /act==='imp-scan'/.test(cutF(S, 'onPickClick_')) && /act==='imp-apply'/.test(cutF(S, 'onPickClick_')));
+    t('選ぶ一覧を出すたびに、まだ確かめていなければ管理者か確かめる（入居者マスタから来て「ほかの方を選ぶ」で戻った時も）', /if\(!impAdmin\) impGate_\(\);/.test(cutF(S, 'showPicker_')) && !/impGate_/.test(cutF(S, 'boot')));
+    t('「取り込める」の表も開いて出す（確定で書く中身を見てから押せる）', /\['new','取り込める（名簿の1名に一致・まだ入っていない）',true\]/.test(S));
+    t('取り込みは GAS の上限（6分）より長く待つ', /meetingPost_\(body,380000\)/.test(cutF(S, 'impPost_')));
+    t('分からない時は code unknown でも見分ける', /classify_\(r\.d\)==='unknown'/.test(cutF(S, 'impApply_')));
   }
 
   say('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');

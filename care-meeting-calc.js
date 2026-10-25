@@ -15,7 +15,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-10-23c';
+  var VERSION = '2026-10-25a';
   /* 様式の欄（並びは様式どおり）。max は1欄の上限の文字数（GAS の meeting.gs と同じ値）。optional は無くても知らせない欄 */
   var FIELDS = [
     { key: 'sourceName', label: '利用者名', max: 40 },
@@ -370,10 +370,40 @@
       .map(function (a) { delete a._i; return a; });
   }
 
+  /* 出席者の✔︎の候補（2026-10-25 代表者の決定「この方の前回までの出席者」）。
+     この方の記録の一覧（取り消し済み・開いている記録を除く）を開催日の新しい順に見て、出席者を「所属と氏名の組」で
+     重ねずに並べる（新しい会議に出た人ほど前）。所属・氏名の比べ方は互換の文字をそろえ、空白を除く。max 名まで（既定 30） */
+  function attKey(a) {
+    var n = function (s) { s = String(s == null ? '' : s); if (s.normalize) s = s.normalize('NFKC'); return s.replace(/\s+/g, ''); };
+    return n(a && a.role) + '|' + n(a && a.name);
+  }
+  function attendeeCandidates(list, excludeId, max) {
+    var out = [], seen = {}, lim = max > 0 ? max : 30;
+    var ms = (Array.isArray(list) ? list : []).filter(function (m) {
+      return m && !m.deleted && !(excludeId != null && excludeId !== '' && String(m.meetingId) === String(excludeId));
+    }).map(function (m, i) { return { m: m, i: i }; });
+    ms.sort(function (a, b) {
+      var x = String(a.m.heldDate || ''), y = String(b.m.heldDate || '');
+      return x !== y ? (x < y ? 1 : -1) : a.i - b.i;
+    });
+    ms.forEach(function (o) {
+      (Array.isArray(o.m.attendees) ? o.m.attendees : []).forEach(function (a) {
+        if (out.length >= lim || !a) return;
+        var role = String(a.role == null ? '' : a.role).trim(), name = String(a.name == null ? '' : a.name).trim();
+        if (!role && !name) return;
+        var k = attKey({ role: role, name: name });
+        if (seen[k]) return;
+        seen[k] = 1; out.push({ role: role, name: name });
+      });
+    });
+    return out;
+  }
+
   var api = { VERSION: VERSION, FIELDS: FIELDS, KINDS: KINDS, ATTENDEE_MAX: ATTENDEE_MAX, ATTENDEE_LEN: ATTENDEE_LEN, ATTENDEE_PRINT: ATTENDEE_PRINT, INPUT_MAX: INPUT_MAX,
     parse: parse, normDate: normDate, normTime: normTime, normCount: normCount, normKind: normKind, parseAttendees: parseAttendees,
     residentMatch: residentMatch, checkSave: checkSave, checkFinal: checkFinal, dueAlerts: dueAlerts, lastHeld: lastHeld,
-    addMonths: addMonths, todayJST: todayJST, hospitalState: hospitalState, lastCareChange: lastCareChange };
+    addMonths: addMonths, todayJST: todayJST, hospitalState: hospitalState, lastCareChange: lastCareChange,
+    attKey: attKey, attendeeCandidates: attendeeCandidates };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.CareMeetingCalc = api;
 })(typeof window !== 'undefined' ? window : this);
