@@ -3,7 +3,7 @@
 <head>
   <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-57U3W+p3DhDj3MlW8+Ff0bg8ijFDhGOaFURbocVrKoE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-YBOVjhP4qez4+FUnwO6o/DGFM5+oncFseItYIKZ+LXk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="stfm-build" content="2026-10-11.1">
@@ -1473,7 +1473,7 @@ body.cmt-print{page:cmt}
 <script src="su-facility.js?v=2026-10-14"></script>
 <script src="staff-master-calc.js?v=2026-10-11.2"></script>
 <!-- 職員の氏名の写し（不具合報告の伏せ字の名簿・2026-10-14）。事務所・管理者でログインしている時だけ書く。失敗しても画面は変わらない -->
-<script src="su-staff-names.js?v=2026-10-20"></script>
+<script src="su-staff-names.js?v=2026-10-24"></script>
 <script>
 'use strict';
 
@@ -1816,7 +1816,7 @@ function stfmAuthLoad_() {
     : (has(/^supabase-js-/) ? wait(function () { return !!window.supabase; }) : load('supabase-js-2.112.4.js'));
   return p.then(function () {
     if (window.SUAuth) return null;
-    return has(/^su-auth\.js/) ? wait(function () { return !!window.SUAuth; }) : load('su-auth.js?v=2026-10-20');
+    return has(/^su-auth\.js/) ? wait(function () { return !!window.SUAuth; }) : load('su-auth.js?v=2026-10-24');
   });
 }
 function stfmAccessToken_() {
@@ -6939,6 +6939,6 @@ if (document.readyState === 'loading') {
 }
 </script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
-<script src="su-report.js?v=2026-10-20" data-tool="職員マスタ"></script>
+<script src="su-report.js?v=2026-10-24" data-tool="職員マスタ"></script>
 </body>
 </html>

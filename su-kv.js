@@ -32,6 +32,7 @@
  *   ②スイッチを入れる PR を取り込む（この間の保存は 'shadow' で断られ、入力は端末に残る）
  *   ③管理者が写しの見比べ画面で「切り替える」（kv_set_family_mode live・週間計画とワークスケジュールをまとめて）。
  *   戻す時は逆順: ①スイッチを切る PR ②「戻す」（shadow）。
+ *   ★スイッチを切→入にする時は、裏に回したタブを一度表に出すか閉じてから（裏の間はスイッチを読み直さないため。2026-10-24）。
  *   ★戻す前に、統合 GAS のスクリプトプロパティ KV_SWITCHED_FAMILIES からその種類を外す（外さないと、Google へ戻した後の
  *     全端末の保存が断られる）。
  */
@@ -52,7 +53,6 @@
   var FLAGS_LS = 'su_backend_flags';
   var ROUTED_ACTIONS = { get: 1, put: 1, head: 1, history: 1 };
   var MIRROR_WAIT_MS = 20000;
-  var AUTH_TTL_MS = 5 * 60 * 1000;
 
   var flags = null, flagsTriedAt = 0, flagsPromise = null;
   try { flags = JSON.parse(localStorage.getItem(FLAGS_LS) || 'null'); } catch (e) { flags = null; }
@@ -112,14 +112,16 @@
     return p.then(function () {
       if (window.SUAuth) return null;
       if (hasTag('su-auth.js')) return waitFor(function () { return !!window.SUAuth; }, 8000);
-      return loadScript('su-auth.js?v=2026-10-20');
+      return loadScript('su-auth.js?v=2026-10-24');
     });
   }
-  var authCache = null, authAt = 0;
+  // ログインの状態は毎回 SUAuth.check に聞く（2026-10-24）。同じアカウントの「使える」は su-auth.js が同じタブの中で5分控えるので、
+  // データベースへの往復は増えない（増えるのは端末の中のログインと控えの読み取りだけ）。ここでも5分持つと su-auth.js の控えと重なり、
+  // 役割が最大約10分古くなっていた。authCache は最後に確かめた結果で、marksOnlyFor が同期で答えるためだけに持つ（使い回さない）
+  var authCache = null;
   function authState() {
-    if (authCache && Date.now() - authAt < AUTH_TTL_MS) return Promise.resolve(authCache);
     return ensureAuth().then(function () { return window.SUAuth.check(); }).then(function (st) {
-      authCache = st; authAt = Date.now();
+      authCache = st;
       return st;
     });
   }
@@ -554,8 +556,16 @@
   }
 
   // 起動時に一度スイッチを読み、以後1分ごとに読み直す（開いたままの画面も一斉に切り替わる）
+  // ★裏のタブ（隠れている間）は1分ごとの読み直しを休み、見えた時に前回から1分を過ぎていれば1回読む
+  //   （2026-10-24・アプリ間連携の見直し 段1）。読む URL の ?t= は外さない（外すと GitHub Pages の控えを挟み、
+  //   スイッチを戻した時の効きが最大10分遅れる）。保存・写し返しの入口（ensureFlags）は隠れていても今までどおり読む
   fetchFlags();
-  setInterval(fetchFlags, 60000);
+  setInterval(function () { if (document.visibilityState !== 'hidden') fetchFlags(); }, 60000);
+  try {
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible' && !(flagsTriedAt && Date.now() - flagsTriedAt < 60000)) fetchFlags();
+    });
+  } catch (e) { /* 聞けない環境では1分ごとの読み直しだけ */ }
 
   /** このキーの保存が「印だけ」（現場のアカウント・kv_put_marks）になるか。最後に確かめたアカウントで同期で答える。
    *  true / false、まだアカウントを確かめていなければ null（画面は別の手がかりを使う）。画面が取り込み方を選ぶのに使う（2026-10-12） */

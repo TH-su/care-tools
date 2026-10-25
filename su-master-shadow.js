@@ -87,7 +87,7 @@
   function ensureAuth() {
     if (window.SUAuth) return Promise.resolve();
     var p = window.supabase ? Promise.resolve() : loadScript('supabase-js-2.112.4.js');
-    return p.then(function () { return window.SUAuth ? null : loadScript('su-auth.js?v=2026-10-20'); });
+    return p.then(function () { return window.SUAuth ? null : loadScript('su-auth.js?v=2026-10-24'); });
   }
 
   /* 正本が一覧と一緒に返した版数（数でなければ null＝版数なし。読む側は版数なしの記録を使わない） */

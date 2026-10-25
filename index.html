@@ -28,7 +28,7 @@
 <script src="su-errors.js?v=2026-10-08"></script>
 <script src="su-cfg-hint.js?v=2026-10-01.2"></script>
 <script src="su-perf.js?v=2026-10-24"></script>
-<script src="su-menu.js?v=2026-10-23"></script>
+<script src="su-menu.js?v=2026-10-24"></script>
 <script>
 (function(){
   function apply(){try{
@@ -316,6 +316,14 @@ main {
      "note": "通所の今日の記録",
      "ext": true,
      "_why": "デイ（通所の事業所名つき・2026-10-23 本人指示）。ケアログのデイの今日の画面を直接開く。ケアログの次。名前の事業所名は施設情報から入れる（{{通所}}・施設名を直接書かない）。officeOnly を付けない: 現場で記録を入れる画面のため"
+    },
+    {
+     "href": "care-meeting.html",
+     "ic": "🤝",
+     "nm": "担当者会議の記録",
+     "note": "サービス担当者会議の要点",
+     "officeOnly": true,
+     "_why": "担当者会議の記録（2026-10-25 本人指示）。区分の末尾（デイの次）に足す。途中へ挿すと、管理者が「メニューの設定」を保存済みの時に su-menu.js が設定に無いボタンを末尾へ回して既定の並びとずれ、フェイスシートの newrow が外れてケアログ・デイの行割りも崩れるため（2026-10-25 審査の指摘）。officeOnly: 会議記録は要配慮の情報で、使えるのは事務所PCだけという代表者の決定（2026-10-23）のため現場端末では出さない（アプリ側も現場端末ではブロックする＝二重）"
     }
    ]
   },
@@ -527,7 +535,7 @@ main {
   <!-- 共通ログイン（統合 Phase 1）: 氏名・記録を持たないので現場端末でも出す。2026-10-10「試験中」を外した（10/09 から事務所PCの保存に必須・代表者の決定） -->
   <a href="login.html">ログイン（Google）</a></footer>
 
-<script src="su-report.js?v=2026-10-20" data-tool="介護ツール メニュー"></script>
+<script src="su-report.js?v=2026-10-24" data-tool="介護ツール メニュー"></script>
 <!-- 事業所の呼び名は施設情報（facility-profile.json）から差し込む。読めない時は一般名のまま -->
 <script src="su-facility.js?v=2026-10-14"></script>
 <script>

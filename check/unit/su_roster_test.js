@@ -11,6 +11,8 @@
        NOTE_KIND と同じ「保存・同期の失敗」、場所・例外の名前が報告の式に合う。予想どおりの戻り（スイッチ切・現場・未ログイン・
        古い写し・版数の違い・人数の違い）は記録しない（2026-10-22・反証レビューの指摘）
      G 写しの並びは利用者No の順（数字だけの番号は数の順）
+     H 写しの記録と写しの本体は、ログインの確かめの後に同時に取る（2026-10-24・アプリ間連携の見直し 段2）。
+       記録が古い・失敗あり・版数の違いの時は、取った本体を捨てて Google へ戻す（本体の失敗も記録しない）。判定・応答の形は今までと同じ
    ★部品の本物を vm で動かす。偽物にするのは、スイッチの控え・ログインの状態・データベースの応答・Google の読み取りだけ。
    実行: node check/unit/su_roster_test.js
    架空データのみ。 */
@@ -53,7 +55,7 @@ function sandbox(cfg) {
   const ls = {};
   if (cfg.flags !== undefined) ls.su_backend_flags = JSON.stringify(cfg.flags);
   if (cfg.device) ls.su_device_role = cfg.device;
-  const notes = [], queries = [];
+  const notes = [], queries = [], events = [];
   let fetches = 0;
   const revCalls = [];
   const later = v => new Promise(r => setTimeout(() => r(v), cfg.delay || 0));
@@ -68,7 +70,8 @@ function sandbox(cfg) {
         let v;
         if (table === 'master_sync_runs') v = cfg.runsErr ? { error: { code: 'X' } } : { data: cfg.runs !== undefined ? cfg.runs : [run()] };
         else v = cfg.rowsErr ? { error: { code: 'X' } } : { data: cfg.rows !== undefined ? cfg.rows : rows() };
-        return later(v).then(ok, ng);
+        events.push('start:' + table);
+        return later(v).then(x => { events.push('end:' + table); return x; }).then(ok, ng);
       }
     };
     return api;
@@ -100,7 +103,7 @@ function sandbox(cfg) {
   let gasCalls = 0;
   const GAS = { roster: [{ id: 1, name: 'Google の名簿' }], stateRev: 5, srev: 7 };
   const gas = () => { gasCalls++; return Promise.resolve(GAS); };
-  return { R: win.SURoster, ctx: win, gas, GAS, notes, queries, ls, revCalls, get gasCalls() { return gasCalls; }, get fetches() { return fetches; } };
+  return { R: win.SURoster, ctx: win, gas, GAS, notes, queries, events, ls, revCalls, get gasCalls() { return gasCalls; }, get fetches() { return fetches; } };
 }
 const ON = { supabase: { care_schedule_v2: true, master_roster_read: true } };
 
@@ -256,7 +259,7 @@ const ON = { supabase: { care_schedule_v2: true, master_roster_read: true } };
       'var DB=null;this.__renders=0;function render(){__renders++;}function refresh(){__renders++;}' +
       grab(pre + 'MasterCfg') + grab(pre + 'FetchHosp') + grab(pre + 'WatchState') +
       ';this.__get=function(){return {map:' + pre + 'HospMap,rev:' + pre + 'HospRev,busy:' + pre + 'HospBusy};};';
-    t(file + ': su-roster.js を su-kv.js の後に読む', /<script src="su-kv\.js\?v=[^"]+"><\/script>\n<!--[^\n]*-->\n<script src="su-roster\.js\?v=2026-10-22"><\/script>/.test(html));
+    t(file + ': su-roster.js を su-kv.js の後に読む', /<script src="su-kv\.js\?v=[^"]+"><\/script>\n<!--[^\n]*-->\n<script src="su-roster\.js\?v=2026-10-24"><\/script>/.test(html));
     async function go(withPart, cfg) {
       const s = sandbox(cfg);
       const calls = [];
@@ -319,6 +322,63 @@ const ON = { supabase: { care_schedule_v2: true, master_roster_read: true } };
     const s = sandbox({ flags: ON, rows: rs, runs: [run({ source_count: ids.length })] });
     const j = await s.R.getRoster(s.gas, OPT());
     t('利用者No の順（数字だけの番号は数の順・その後に文字の番号を文字の順）', j && j.roster && j.roster.map(r => r.id).join() === '2,9,10,100,R001,R002', j && j.roster && j.roster.map(r => r.id));
+  }
+  console.log('H 写しの記録と本体を同時に取る');
+  {
+    const s = sandbox({ flags: ON, delay: 20 });
+    const j = await s.R.getRoster(s.gas, OPT());
+    const iRows = s.events.indexOf('start:master_residents'), iRunsEnd = s.events.indexOf('end:master_sync_runs');
+    t('★H 写しの本体は、写しの記録の応答を待たずに取り始める（同時に取る）', iRows >= 0 && iRunsEnd >= 0 && iRows < iRunsEnd, s.events);
+    t('H 同時に取っても、写しから返す応答は今までと同じ（Google を呼ばない・記録しない）', j && j.roster && j.roster.length === 3 && s.gasCalls === 0 && s.notes.length === 0);
+    t('H 写しの記録・本体とも1回ずつだけ取る', s.queries.filter(x => x.table === 'master_sync_runs').length === 1 && s.queries.filter(x => x.table === 'master_residents').length === 1);
+  }
+  {
+    const s = sandbox({ flags: ON, auth: { status: 'ok', role: 'field' } });
+    await s.R.getRoster(s.gas, OPT());
+    t('H ログインの確かめが通らない時は、記録も本体も取らない（今までどおり）', s.queries.length === 0 && s.gasCalls === 1);
+  }
+  for (const [label, cfg] of [
+    ['Google の版数（rev）が記録と違う', { gasRev: { ok: true, rev: 42, srev: 1761100000000 } }],
+    ['Google の srev が記録と違う', { gasRev: { ok: true, rev: 41, srev: 1761100009999 } }],
+    ['記録に版数が無い', { runs: [run({ state_rev: null, srev: null })] }],
+    ['写しの記録が古い', { runs: [run({ at: iso(NOW - 25 * 60 * 60 * 1000) })] }],
+    ['写しの記録に失敗がある', { runs: [run({ failed: 1 })] }],
+    ['写しの記録が無い', { runs: [] }]
+  ]) {
+    const s = sandbox(Object.assign({ flags: ON, delay: 5 }, cfg));
+    const j = await s.R.getRoster(s.gas, OPT());
+    t('★H ' + label + ': 同時に取った本体を捨てて Google へ戻す（記録しない）',
+      j === s.GAS && s.gasCalls === 1 && s.queries.some(x => x.table === 'master_residents') && s.notes.length === 0, { gas: s.gasCalls, notes: s.notes.length, ev: s.events });
+  }
+  {
+    const s = sandbox({ flags: ON, gasRev: { ok: true, rev: 42, srev: 1761100000000 }, rowsErr: true });
+    const j = await s.R.getRoster(s.gas, OPT());
+    t('H 版数が違う時は、本体の読み取りが失敗していても記録しない（本体を見ずに捨てる＝今までと同じ）', j === s.GAS && s.gasCalls === 1 && s.notes.length === 0, s.notes);
+  }
+  {
+    const s = sandbox({ flags: ON, runsErr: true, rowsErr: true });
+    await s.R.getRoster(s.gas, OPT());
+    t('H 記録と本体の両方が失敗した時は、記録の失敗として1件だけ残す（今までと同じ理由の名前）', s.notes.length === 1 && s.notes[0].where === 'roster:visit.db' && s.gasCalls === 1, s.notes.map(x => x.where));
+  }
+  {
+    const s = sandbox({ flags: ON, rows: rows().slice(0, 2) });
+    const j = await s.R.getRoster(s.gas, OPT());
+    t('H 人数が記録と違う時は Google（記録しない・今までどおり）', j === s.GAS && s.gasCalls === 1 && s.notes.length === 0);
+  }
+  {
+    let unhandled = 0;
+    const onU = () => { unhandled++; };
+    process.on('unhandledRejection', onU);
+    const rejectRows = sandbox({ flags: ON, runs: [] });
+    rejectRows.ctx.SUAuth.client = () => ({ from: (table) => {
+      const api = { select() { return api; }, order() { return api; }, limit() { return api; },
+        then(ok, ng) { return (table === 'master_residents' ? Promise.reject(new TypeError('Failed to fetch')) : Promise.resolve({ data: [] })).then(ok, ng); } };
+      return api;
+    } });
+    const j = await rejectRows.R.getRoster(rejectRows.gas, OPT());
+    await wait(30);
+    process.removeListener('unhandledRejection', onU);
+    t('H 捨てる本体の読み取りが例外で終わっても、未処理の失敗にしない・記録しない', j === rejectRows.GAS && unhandled === 0 && rejectRows.notes.length === 0, { unhandled, notes: rejectRows.notes.length });
   }
   t('打ち切りの既定は8秒・鮮度は24時間', sandbox().R.TIMEOUT_MS === 8000 && sandbox().R.FRESH_MS === 86400000);
   t('部品は console.log を使わない', !/console\.log/.test(SRC));

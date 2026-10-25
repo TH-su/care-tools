@@ -8,7 +8,8 @@
      5 並びを変えた区分では「新しい行から始める」を外す。並びが既定のままの区分では残す
      6 元の定義を書き換えない。事務所専用の印（officeOnly）は並べ替えても残る（現場端末で出さない仕組みを外さない）
      7 端末の控えは役割が分からない時・ログインの記録が無い時は使わない
-     8 メニュー（index.html）の定義に、ケアログが入居者の区分の末尾にある
+     8 メニュー（index.html）の定義に、ケアログ・デイが並び、入居者の区分の末尾に担当者会議の記録がある。
+       後から足したボタンを区分の末尾に置くので、前の定義で保存した設定でも並びと「新しい行から始める」が崩れない
    画面のコードは書き換えず、su-menu.js をそのまま読み込んで動かす。 */
 'use strict';
 const fs = require('fs');
@@ -110,11 +111,19 @@ t('7e ログインの記録が無い端末では控えを使わない（ログ�
 
 console.log('8 ケアログのボタン');
 const resTiles = DEF.sections.find(s => s.id === 'sec-resident').tiles;
-const care = resTiles.slice(-2)[0], day = resTiles.slice(-1)[0];
-t('8a 入居者の区分の末尾から2枚目にケアログ（別サイト・事務所専用ではない）',
+const care = resTiles.slice(-3)[0], day = resTiles.slice(-2)[0], mtg = resTiles.slice(-1)[0];
+t('8a 入居者の区分の末尾から3枚目にケアログ（別サイト・事務所専用ではない）',
   care.href === 'https://th-su.github.io/care-log/' && care.nm === 'ケアログ' && care.ext === true && !care.officeOnly, care);
-t('8c 末尾はデイ（ケアログのデイの画面・名前の事業所名は施設情報から・別サイト・事務所専用ではない）',
+t('8c ケアログの次はデイ（ケアログのデイの画面・名前の事業所名は施設情報から・別サイト・事務所専用ではない）',
   day.href === 'https://th-su.github.io/care-log/#/record/daycare' && day.nm === 'デイ {{通所}}' && day.ext === true && !day.officeOnly, day);
+t('8d 末尾は担当者会議の記録（事務所専用・2026-10-25）',
+  mtg.href === 'care-meeting.html' && mtg.nm === '担当者会議の記録' && mtg.officeOnly === true && !mtg.ext, mtg);
+t('8e 担当者会議の記録を足す前の並びで保存した設定でも、入居者の区分の並びは既定のまま・フェイスシートの新しい行の印も残る（2026-10-25 審査の指摘）', (function () {
+  const prev = {}; DEF.sections.forEach(s => { prev[s.id] = s.tiles.map(x => x.href).filter(h => h !== 'care-meeting.html'); });
+  const out = M.arrange(DEF, { ver: 1, order: prev, secs: DEF.sections.map(s => s.id) }, 'office');
+  const got = out.sections.find(s => s.id === 'sec-resident').tiles;
+  return got.map(x => x.href).join('|') === resTiles.map(x => x.href).join('|') && got.some(x => x.href === 'facesheet.html' && x.newrow === true);
+})());
 t('8b ボタンの鍵（リンク先）はすべてデータベースの検査に通る形・重複なし', (function () {
   const all = []; DEF.sections.forEach(s => s.tiles.forEach(x => all.push(x.href)));
   return all.every(h => /^[A-Za-z0-9_.:\/?=&#%~-]{1,200}$/.test(h)) && new Set(all).size === all.length
