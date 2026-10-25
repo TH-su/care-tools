@@ -16,6 +16,14 @@
  *   Supabase は呼んだ関数の名前（kv_get・token 等の URL の最後の区切り）だけ、同じサイトの通信は
  *   JSON のファイル名（su-backend.json 等）だけを残す（2026-10-17。どちらもクエリと鍵は残さない）。
  *
+ * 見えている時／裏にある時（2026-10-24・記録の版 3）:
+ *   画面が裏にあった時間帯（ほかのタブ・アプリに切り替えていた間）を visibilitychange で控え、
+ *   通信の開始時刻がその時間帯に入るかで「見えている時」「裏にある時」に分けて、画面を閉じるまでの合計を数える
+ *   （GAS・Supabase・同じサイトの JSON・CDN 等ごとの回数と ms、JSON はファイル名ごとの回数も）。
+ *   GAS の呼び出しの種類は、GET なら URL のクエリの action の値だけを読み、POST ならデータ層（su-data-gas.js）が
+ *   送る直前に付ける印（performance.mark 'su:gas:<action>'）を数える。英数字と _ の24字までの名前だけを残し、
+ *   合わない名前は「その他」。ほかのクエリ・URL の全体は残さない。起動20秒の明細は今までどおり。
+ *
  * 残す場所:
  *   IndexedDB（su_perf）。localStorage は容量の上限に近いツールがあり（週間計画の世代の控え等）、
  *   ここで食うと本業の保存が失敗しうるため使わない。新しい方から 1500 件まで。
@@ -26,7 +34,8 @@
  * ツール側からの追加（任意）:
  *   window.SUPerf.ready() … 「画面が使えるようになった」時に呼ぶと、開いてからの時間を残す（最初の1回だけ）。
  *   2026-10-17 から8画面（週間計画・入居者マスタ・フェイスシート・申送ビューア・体重・通所利用表・
- *   ワークスケジュール・シフト作成）が呼ぶ。
+ *   ワークスケジュール・シフト作成）が呼ぶ。2026-10-24 からメニュー・入居調整・接続設定・貼り薬カレンダー・
+ *   週間計画俯瞰も、最初の画面を描いた直後に呼ぶ。
  */
 (function () {
   'use strict';
@@ -54,14 +63,86 @@
     conn: conn(),
     ready: null,
     tbt: null,
-    v: 2,                                         /* 記録の版（2＝Supabase・JSON も数える・2026-10-17） */
+    v: 3,                                         /* 記録の版（2＝Supabase・JSON も数える・2026-10-17／3＝見えている時・裏にある時も数える・2026-10-24） */
     gasN: 0, gasMs: 0, gas: [],                   /* GAS: 起動時の分だけ明細、合計は画面を閉じるまで */
     sbN: 0, sbMs: 0, sb: [],                      /* Supabase: 同上 */
     jsonN: 0, jsonMs: 0, json: [],                /* 同じサイトの JSON（su-backend.json 等）: 同上 */
-    ext: []                                       /* CDN 等の外部ファイル（起動時のみ） */
+    ext: [],                                      /* CDN 等の外部ファイル（起動時のみ） */
+    /* 画面を閉じるまでの合計を、見えている時（vN・vMs）／裏にある時（hN・hMs）に分けて（2026-10-24） */
+    vis: { gas: visTotal(), sb: visTotal(), json: visTotal(), ext: visTotal() },
+    gasAct: [],                                   /* GAS の種類ごとの回数 [{a: 種類, v: 見えている時, h: 裏にある時}] */
+    jsonF: []                                     /* 同じサイトの JSON のファイルごとの回数 [{f: ファイル名, v, h}] */
   };
   var seen = {};                                  /* 同じ entry を二重に数えない */
   var tbt = 0, hasLongTask = false;
+  var MAX_KIND = 30;                              /* 種類・ファイルを数え分ける上限（超えた分は「その他」へまとめる） */
+
+  /* PERF_PURE_BEGIN 純関数（check/unit/su_perf_visibility_test.js が印の間を切り出して試す） */
+  function visTotal() { return { vN: 0, vMs: 0, hN: 0, hMs: 0 }; }
+  /* t（performance.now() の目盛り）が裏にあった時間帯 [始まり, 終わり) のどれかに入るか。終わりが null＝今も裏 */
+  function inHidden(spans, t) {
+    if (typeof t !== 'number' || !isFinite(t)) return false;
+    for (var i = 0; i < spans.length; i++) {
+      var sp = spans[i];
+      if (t >= sp[0] && (sp[1] == null || t < sp[1])) return true;
+    }
+    return false;
+  }
+  /* GAS の種類の名前。英数字と _ の24字までだけを残し、合わなければ「その他」 */
+  function actName(a) { return (typeof a === 'string' && /^[A-Za-z0-9_]{1,24}$/.test(a)) ? a : 'その他'; }
+  /* GET の GAS の URL から、クエリの action の値だけを取り出す。action が無ければ null（POST は印で数える）。
+     ほかのクエリ（合言葉など）は読まない・残さない */
+  function gasActionFromUrl(url) {
+    var q = String(url).split('#')[0];
+    var at = q.indexOf('?');
+    if (at < 0) return null;
+    var ps = q.slice(at + 1).split('&');
+    for (var i = 0; i < ps.length; i++) {
+      var eq = ps[i].indexOf('=');
+      if ((eq < 0 ? ps[i] : ps[i].slice(0, eq)) !== 'action') continue;
+      var val = eq < 0 ? '' : ps[i].slice(eq + 1);
+      try { val = decodeURIComponent(val.replace(/\+/g, ' ')); } catch (e) { val = ''; }
+      return actName(val);
+    }
+    return null;
+  }
+  /* データ層が GAS へ送る直前に付ける印（'su:gas:<action>'）から種類を取り出す。印でなければ null */
+  function gasActionFromMark(name) {
+    if (typeof name !== 'string' || name.indexOf('su:gas:') !== 0) return null;
+    return actName(name.slice(7));
+  }
+  /* 種類・ファイルの一覧 list（[{<key>: 名前, v, h}]）の name を1つ数える。上限を超えた新しい名前は「その他」へ */
+  function bumpKind(list, key, name, hidden, max) {
+    var hit = null, i;
+    for (i = 0; i < list.length; i++) if (list[i][key] === name) { hit = list[i]; break; }
+    if (!hit && list.length >= max && name !== 'その他') {
+      name = 'その他';
+      for (i = 0; i < list.length; i++) if (list[i][key] === name) { hit = list[i]; break; }
+    }
+    if (!hit) { hit = { v: 0, h: 0 }; hit[key] = name; list.push(hit); }
+    if (hidden) hit.h++; else hit.v++;
+  }
+  /* PERF_PURE_END */
+
+  /* 画面が裏にあった時間帯 [始まり, 終わり]（performance.now() の目盛り）。開いた時に裏なら 0 から裏とみなす。
+     時間帯そのものは記録に残さない（回数と ms を分けるのに使うだけ） */
+  var hiddenSpans = [];
+  try { if (document.visibilityState === 'hidden') hiddenSpans.push([0, null]); } catch (e) {}
+  function noteVisibility() {
+    try {
+      var now = performance.now(), last = hiddenSpans[hiddenSpans.length - 1];
+      if (document.visibilityState === 'hidden') { if (!last || last[1] != null) hiddenSpans.push([now, null]); }
+      else if (last && last[1] == null) last[1] = now;
+    } catch (e) {}
+  }
+  /* 合計を見えている時／裏にある時に分けて数える。裏で数えた時は早めに保存する
+     （裏のタブは、閉じる時の保存が走らないまま端末に捨てられることがあるため） */
+  function countVis(cat, startTime, ms) {
+    var hid = inHidden(hiddenSpans, startTime), o = rec.vis[cat];
+    if (hid) { o.hN++; o.hMs += ms; } else { o.vN++; o.vMs += ms; }
+    try { if (hid || document.visibilityState === 'hidden') saveSoon(); } catch (e) {}
+    return hid;
+  }
 
   function appName() {
     try {
@@ -131,6 +212,8 @@
         if (!isSameOriginJson(e.name)) return;
         rec.jsonN++;
         rec.jsonMs += r(e.duration) || 0;
+        var jh = countVis('json', e.startTime, r(e.duration) || 0);
+        bumpKind(rec.jsonF, 'f', jsonLabel(e.name), jh, MAX_KIND);
         if (e.startTime <= STARTUP_MS && rec.json.length < MAX_LIST) {
           rec.json.push({ s: r(e.startTime), d: r(e.duration), f: jsonLabel(e.name) });
           saveSoon();
@@ -140,6 +223,9 @@
       if (isGas(e.name)) {
         rec.gasN++;
         rec.gasMs += r(e.duration) || 0;
+        var gh = countVis('gas', e.startTime, r(e.duration) || 0);
+        var act = gasActionFromUrl(e.name);   /* GET の action だけ。無い＝POST は印（takeMark）で数える */
+        if (act != null) bumpKind(rec.gasAct, 'a', act, gh, MAX_KIND);
         if (e.startTime <= STARTUP_MS && rec.gas.length < MAX_LIST) {
           rec.gas.push({ s: r(e.startTime), d: r(e.duration), ep: gasLabel(e.name) });
           saveSoon();
@@ -147,14 +233,18 @@
       } else if (isSupabase(e.name)) {
         rec.sbN++;
         rec.sbMs += r(e.duration) || 0;
+        countVis('sb', e.startTime, r(e.duration) || 0);
         if (e.startTime <= STARTUP_MS && rec.sb.length < MAX_LIST) {
           rec.sb.push({ s: r(e.startTime), d: r(e.duration), ep: sbLabel(e.name) });
           saveSoon();
         }
-      } else if (e.startTime <= STARTUP_MS && rec.ext.length < 10) {
-        var host = '';
-        try { host = new URL(e.name).host; } catch (e2) {}
-        rec.ext.push({ h: host.slice(0, 40), d: r(e.duration), kb: r((e.transferSize || 0) / 1024) });
+      } else {
+        countVis('ext', e.startTime, r(e.duration) || 0);
+        if (e.startTime <= STARTUP_MS && rec.ext.length < 10) {
+          var host = '';
+          try { host = new URL(e.name).host; } catch (e2) {}
+          rec.ext.push({ h: host.slice(0, 40), d: r(e.duration), kb: r((e.transferSize || 0) / 1024) });
+        }
       }
     } catch (err) {}
   }
@@ -216,6 +306,7 @@
     try {
       takeNavigation();
       pollResources();
+      pollMarks();
       finishStats();
       var copy = JSON.parse(JSON.stringify(rec));
       openDb().then(function (db) {
@@ -249,6 +340,30 @@
     } catch (e) {}
   }
 
+  /* GAS の種類の印（データ層が POST の直前に付ける 'su:gas:<action>'）を数える。印は消さない（ほかの処理の状態に触らない） */
+  function takeMark(m) {
+    try {
+      var act = gasActionFromMark(m.name);
+      if (act == null) return;
+      bumpKind(rec.gasAct, 'a', act, inHidden(hiddenSpans, m.startTime), MAX_KIND);
+    } catch (e) {}
+  }
+  /* 印を数えるのはここだけ。前回読んだ件数から先の印だけを数える（2026-10-24 審査の指摘で直した）。
+     「名前＋時刻」で二重を防ぐと、同じ action の POST を同時に2本出した時（Promise.all など）に、
+     時刻の目盛りが粗い端末（Safari は 1ms）で2本目を捨ててしまうため。
+     印は時刻順に後ろへ足されていき、このリポジトリに clearMarks を呼ぶ所は無い（消されて件数が減った時は、
+     二重に数えないよう、その時点の件数から読み直す）。
+     印（User Timing）は resource の250件の上限（バッファ）の対象外の決まりなので、件数で読んでも取りこぼさない（実機では未検証） */
+  var marksRead = 0;
+  function pollMarks() {
+    try {
+      var list = performance.getEntriesByType('mark');
+      if (list.length < marksRead) marksRead = list.length;
+      for (var i = marksRead; i < list.length; i++) takeMark(list[i]);
+      marksRead = list.length;
+    } catch (e) {}
+  }
+
   /* 取りこぼし防止: バッファ（既定250件）が埋まった後の通信も数えるため、届いた時点で拾う */
   try {
     if (window.PerformanceObserver) {
@@ -256,6 +371,21 @@
         var es = l.getEntries();
         for (var i = 0; i < es.length; i++) takeResource(es[i]);
       }).observe({ type: 'resource', buffered: true });
+    }
+  } catch (e) {}
+  /* GAS の種類の印が届いた時、裏にある時なら早めの保存を予約するだけ（数えるのは保存の時の pollMarks だけ＝二重にしない） */
+  try {
+    if (window.PerformanceObserver && (!PerformanceObserver.supportedEntryTypes ||
+        PerformanceObserver.supportedEntryTypes.indexOf('mark') >= 0)) {
+      new PerformanceObserver(function (l) {
+        try {
+          var es = l.getEntries();
+          for (var i = 0; i < es.length; i++) {
+            if (gasActionFromMark(es[i].name) == null) continue;
+            if (inHidden(hiddenSpans, es[i].startTime) || document.visibilityState === 'hidden') { saveSoon(); break; }
+          }
+        } catch (e2) {}
+      }).observe({ type: 'mark', buffered: true });
     }
   } catch (e) {}
   /* 端末の処理で固まった時間（50ms を超えた分の合計）。Chrome 系だけが対応。 */
@@ -289,6 +419,7 @@
   else window.addEventListener('load', arm);
   window.addEventListener('pagehide', save);
   document.addEventListener('visibilitychange', function () {
+    noteVisibility();                             /* 裏にあった時間帯の控えを先に更新してから保存する（2026-10-24） */
     if (document.visibilityState === 'hidden') save();
   });
 

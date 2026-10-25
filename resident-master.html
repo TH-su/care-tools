@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-8OMFd7/OAtV5McTfWniOpgVNxCfc3kZFPB2F16p99/8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-GXhQQNn6CyS7/jSgcyPemgS3L9gbnCVOQBiSH572ykI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -527,6 +527,18 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .mh-prev summary{cursor:pointer; padding:12px 0; line-height:20px; font-size:0.8125rem; color:var(--g7)}
 .mh-prev summary:focus-visible{outline:2px solid var(--pri); outline-offset:2px}
 @media print{.sec-medshist{display:none !important}}
+/* ── 薬情の反映記録（30日）（2026-10-24 代表者の決定）。記録はサーバー（gas/med-cand.gs）だけが書く。
+   ★事務所PCだけ・画面だけ＝印刷しない。詳細画面の「定期薬の変更履歴」の下に出す ── */
+.sec-yjlog .yjl-e{border-bottom:1px dotted var(--g3)}
+.sec-yjlog .yjl-e:last-child{border-bottom:none}
+.yjl-e summary{cursor:pointer; padding:12px 0; line-height:20px; display:flex; flex-wrap:wrap; gap:2px 10px; align-items:baseline}
+.yjl-e summary:focus-visible{outline:2px solid var(--pri); outline-offset:2px}
+.yjl-lbl{font-size:0.8125rem; font-weight:700; color:var(--g7); margin:6px 0 2px}
+.yjl-pre{margin:0 0 4px; white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; font:inherit; font-size:0.875rem}
+@media print{.sec-yjlog,.yjl-slot{display:none !important}}
+/* ── 担当者会議（2026-10-25 本人指示）。詳細画面の「意向・人生会議（ACP）」の直後に、担当者会議のページへのリンクだけを置く。
+   ★事務所PCだけ・画面だけ＝印刷しない（PRINT_SECS に入れない・data-k を付けない） ── */
+@media print{.sec-cmeet{display:none !important}}
 /* ── 薬の変更候補（2026-10-06 代表者の決定・案B）。管理者だけ・画面だけ（印刷しない）。既存の .modal には触れない ──
    ★追加・変更・中止は変更履歴と同じ文字の札（.mh-tag）で示す。注意は黄色＋⚠の文字（色だけで伝えない） */
 .mc-bar{display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; margin:0 0 8px}
@@ -1459,6 +1471,7 @@ body.meal-on #sc-list{max-width:none}
 @media print{ .glance, .vtoc{display:none !important} }
 /* 医療支援経過の本文（2026-10-20）。見出しの下の文は2文字下げる。画面と紙で同じ */
 .ml-l{white-space:pre-wrap; word-break:break-word}
+.ml-rx{font-weight:700}   /* 処方の変更の印（2026-10-25）。色に頼らず太字と文言で示す（紙も同じ） */
 .ml-ind{padding-left:2em}
 /* ── 第3弾（2026-10-17）: 副食の入力の手助け・未入力の一覧・その方らしさの紙 ── */
 .mside-aid{display:flex; flex-wrap:wrap; align-items:center; gap:6px}
@@ -1900,15 +1913,15 @@ function rmNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
 </script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <!-- 同期データの保存先の切り替え（統合 0005/0007）。見るだけの画面は切り替え後に Supabase から読む（未ログインは Google） -->
-<script src="su-kv.js?v=2026-10-20"></script>
-<script src="su-perf.js?v=2026-10-17"></script>
+<script src="su-kv.js?v=2026-10-24.2"></script>
+<script src="su-perf.js?v=2026-10-24"></script>
 <script src="su-facility.js?v=2026-10-14"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>
 <!-- 薬情の取り込みの判定・組み立て（純関数・2026-10-22）。読めない時は入口のボタンを出さない（yjCalcOk_） -->
-<script src="yakujo-calc.js?v=2026-10-22"></script>
+<script src="yakujo-calc.js?v=2026-10-24"></script>
 <script src="su-print.js?v=2026-09-12"></script>
 <!-- 入居者マスタの写し（統合 0004）。supabase-js と su-auth.js は写す時にだけ読み込む -->
-<script src="su-master-shadow.js?v=2026-10-22"></script>
+<script src="su-master-shadow.js?v=2026-10-24"></script>
 <script>
 /* ═══════════════════════════════════════════════════════════════
    入居者マスタ / 管理アプリ
@@ -5251,7 +5264,7 @@ function msAuthLoad_(){
     : (has(/^supabase-js-/) ? wait(function(){ return !!window.supabase; }) : load('supabase-js-2.112.4.js'));
   return p.then(function(){
     if(window.SUAuth) return null;
-    return has(/^su-auth\.js/) ? wait(function(){ return !!window.SUAuth; }) : load('su-auth.js?v=2026-10-20');
+    return has(/^su-auth\.js/) ? wait(function(){ return !!window.SUAuth; }) : load('su-auth.js?v=2026-10-24');
   });
 }
 function msOpen_(){
@@ -6952,12 +6965,12 @@ function yjOpen_(){
   try{ $('mYakujoH').focus(); }catch(e){}
   yjPing_();
 }
-/* 入居者マスタGASが「薬情」を受け付ける版か（貼り替えの前は反映できない） */
+/* 入居者マスタGASが「薬情」を受け付け、変更記録（反映記録）を残す版か（貼り替えの前は反映できない・2026-10-24） */
 function yjPing_(){
   var st=yjSt, dg=devGen;   /* ★世代（yjGen）ではなく開いた時の窓で判定する（確認表を開いて世代が進んでも、版の答えを捨てない） */
   apiPostRaw({action:'medCand', op:'ping'},20000).then(function(r){
     if(yjSt!==st||dg!==devGen) return;
-    st.server=(r&&r.ok!==false&&/薬情/.test(String(r.build||'')))?'ok':'old';
+    st.server=(r&&r.ok!==false&&/反映記録/.test(String(r.build||'')))?'ok':'old';
   }).catch(function(e){
     if(yjSt!==st||dg!==devGen) return;
     st.server=/不明なaction/.test(String(e&&e.message||e))?'old':'ng';
@@ -6979,6 +6992,7 @@ function yjClose_(){
 /* 現場用へ切り替わった時は、中身ごと捨てる（applyDeviceGuard から呼ぶ） */
 function yjPurge_(){
   yjSt=null; yjGen++; yjBy='';
+  if(typeof yjlReset_==='function') yjlReset_();   /* 薬情の反映記録（定期薬を持つ）も捨てる（2026-10-24） */
   yjpPurge_();   /* 写真を入れる帯（2026-10-23） */
   try{ $('mYakujo').classList.remove('on'); $('yjBody').innerHTML=''; var b=$('yjOpen'); if(b) b.hidden=true; }catch(e){}
 }
@@ -7188,9 +7202,17 @@ function yjApply_(){
     srcText:('薬情の取り込み・調剤日 '+date+(j.importDay?'（書類から読めず取り込んだ日）':'')+'・書類'+x.d.no+'（'+(x.d.type==='pdf'?'PDF '+x.d.pages.length+'ページ':'写真')+'）・薬の行 '+c.rows.filter(function(r){ return r.kind!=='left'; }).length+'・文字読み取り（薬情よみとり）'),
     before:before, after:sent, note:'', by:yjBy};
   if(c.ack) body.ackSameDay=true;
+  /* 変更記録に残す「書類の行と扱い」（確認表の行・人が選んだ扱い・2026-10-24 代表者の決定） */
+  body.docRows=YakujoCalc.logRows(c.rows);
   c.busy=true; c.writing=true; c.msg='反映しています…'; yjPaint_();
-  apiPostRaw(body,40000).then(function(r){
+  /* ログインの証明を添える（保存と同じ取り方・GAS が確かめて変更記録に確かめたメールを残す）。取れない時は送らない */
+  rmAccessToken_()['catch'](function(){ return ''; }).then(function(at){
+  if(dg!==devGen) return;
+  if(!at){ c.msg='ログインし直してから反映してください（何も書いていません）'; return; }
+  body.accessToken=at;
+  return apiPostRaw(body,40000).then(function(r){
     if(dg!==devGen) return;
+    if(r&&r.unverified){ c.msg='ログインを確かめられませんでした。ログインし直してから反映してください（何も書いていません）'; return; }
     if(r&&r.ok===true){
       if(fullMap&&fullMap[c.id]) fullMap[c.id].medsRegular=sent;
       x.status='done'; c.touched=false;
@@ -7215,6 +7237,7 @@ function yjApply_(){
     /* ★書き込みは再試行しない。届いたか分からない時は確かめ中にする */
     if(mcNoWrite_(m)){ c.msg=(/不明なaction/.test(m)?'入居者マスタGASの貼り替えがまだです':'反映できませんでした（'+m+'）')+'（何も書いていません）'; return; }
     x.status='unsure'; if(yjSt&&yjSt.cur===c){ yjSt.cur=null; yjSt.phase='queue'; }
+  });
   }).then(function(){ c.busy=false; c.writing=false; if(yjSt) yjPaint_(); });
 }
 
@@ -8380,6 +8403,7 @@ function openResident(id){
   /* 前の方の情報を先に捨てる。取得成功時にだけ入れ直す */
   curResident=null; setViewActions(false);
   hospPend_={}; hospOpening_=String(id);   // 入院/退院の結果の控えは、この開き直しの間に届いた分だけを使う（2026-10-02）
+  if(typeof yjlReset_==='function') yjlReset_();   // 薬情の反映記録は開き直すたびに取り直す（反映の直後も新しい記録が出る）（2026-10-24）
   $('viewBox').innerHTML='<div class="loading">読み込み中…</div>';
   if($('viewToc'))$('viewToc').hidden=true;   /* 前の方の目次を残さない（2026-10-16 第2弾） */
   paintHospBtn(null);   // 取得できるまでは入院トグルを出さない（前の人の状態で押させない）
@@ -9142,6 +9166,64 @@ function medsHistHtml_(arr){
   return '<div class="sec sec-medshist"><div class="sec-lbl">定期薬の変更履歴</div><div class="sec-body">'+
     '<div class="cell" style="border-right:none;border-bottom:none">'+body+'</div></div></div>';
 }
+/* ── 薬情の反映記録（30日）（2026-10-24 代表者の決定）──
+   入居者マスタGAS（med-cand.gs の op 'yjLog'）から、その方の薬情の取り込みの反映記録（30日以内・新しい順）を読み、
+   詳細画面の「定期薬の変更履歴」の下に出す。★事務所PCだけ（現場端末では取りに行かない・出さない）。管理者に限らない
+   ★記録はメモリにだけ置く（localStorage に書かない）。開き直すと取り直す。0件・読めない時は欄ごと出さない
+   ★応答は、開いている方（curResident.id）と世代（yjlGen・devGen）が出した時と同じ時だけ使う
+   ★印刷しない（@media print で消す・PRINT_SECS に入れない） */
+var yjlGen=0, yjlMem={id:'', rows:null};
+/* 控えを捨てて世代を進める（開き直し・現場用への切り替えで呼ぶ。届いた応答は世代で捨てる） */
+function yjlReset_(){ yjlMem={id:'', rows:null}; yjlGen++; }
+/* at（ISO）を日本時間の yyyy-MM-dd HH:mm にする */
+function yjlAt_(s){
+  var t=String(s==null?'':s), d=new Date(t); if(!t||isNaN(d.getTime())) return t;
+  var j=new Date(d.getTime()+9*3600000); function p2(n){ return ('0'+n).slice(-2); }
+  return j.getUTCFullYear()+'-'+p2(j.getUTCMonth()+1)+'-'+p2(j.getUTCDate())+' '+p2(j.getUTCHours())+':'+p2(j.getUTCMinutes());
+}
+function yjlHtml_(rows){
+  var str=function(v){ return typeof v==='string'?v:''; };
+  var list=Array.isArray(rows)?rows.filter(function(e){ return e&&typeof e==='object'&&!Array.isArray(e); }):[];
+  if(!list.length) return '';
+  var body=list.map(function(e){
+    return '<details class="yjl-e"><summary><span class="mh-at">'+esc(yjlAt_(e.at))+'</span>'+
+      '<span class="mh-via">調剤日 '+esc(str(e.srcDate))+'</span><span class="mh-via">確かめた人 '+esc(str(e.by))+'</span></summary>'+
+      '<div class="yjl-lbl">書類の行と扱い</div><pre class="yjl-pre">'+esc(str(e.docRows))+'</pre>'+
+      '<div class="yjl-lbl">反映前</div><pre class="yjl-pre">'+esc(str(e.before)||'（記載なし）')+'</pre>'+
+      '<div class="yjl-lbl">反映後</div><pre class="yjl-pre">'+esc(str(e.after))+'</pre></details>';
+  }).join('');
+  return '<div class="sec sec-yjlog"><div class="sec-lbl">薬情の反映記録（30日）</div><div class="sec-body">'+
+    '<div class="cell" style="border-right:none;border-bottom:none">'+body+'</div></div></div>';
+}
+/* 詳細画面の枠（renderView が置く）。この方の記録をまだ取っていなければ取りに行く。届いたら枠の中身だけ入れる */
+function yjlSlot_(r){
+  if(getDeviceRole()==='field'||!r||r.id==null||r.id==='') return '';
+  var id=String(r.id);
+  if(yjlMem.id!==id){ yjlMem={id:id, rows:null}; yjlLoad_(id); }
+  return '<div class="yjl-slot" id="yjlSlot" data-id="'+esc(id)+'">'+(yjlMem.rows?yjlHtml_(yjlMem.rows):'')+'</div>';
+}
+/* 詳細画面の「担当者会議」の欄（2026-10-25 本人指示）。担当者会議のページへのリンクだけを出す。
+   ★渡すのは利用者No（resident=）だけ。氏名・居室は URL に載せない（あちらがサーバーから読む）
+   ★現場端末では欄ごと出さない（担当者会議のページも現場端末では使えないため）。印刷しない（.sec-cmeet を @media print で消す）
+   ★他の画面へのリンク（この方を各アプリで開く）と同じく別タブで開く＝マスタで見ていた内容を失わない */
+function meetingLinkHtml_(r){
+  if(getDeviceRole()==='field'||!r||r.id==null||r.id==='') return '';
+  return '<div class="sec sec-cmeet"><div class="sec-lbl">担当者会議</div><div class="sec-body">'+
+    '<div class="cell" style="border-right:none;border-bottom:none">'+
+    '<a class="rlink" target="_blank" rel="noopener" href="'+esc('care-meeting.html?resident='+encodeURIComponent(String(r.id)))+'">📋 担当者会議の記録を開く</a>'+
+    '</div></div></div>';
+}
+function yjlLoad_(id){
+  if(getDeviceRole()==='field'||!CFG.url) return;
+  var gen=++yjlGen, dg=devGen;
+  apiPostRaw({action:'medCand', op:'yjLog', id:id},25000).then(function(r){
+    if(gen!==yjlGen||dg!==devGen||getDeviceRole()==='field') return;
+    if(!curResident||String(curResident.id)!==id||yjlMem.id!==id) return;   /* 開いている方が違えば捨てる */
+    if(!r||r.ok!==true||!Array.isArray(r.rows)) return;                    /* 古いGAS・読めない時は欄を出さない */
+    yjlMem.rows=r.rows;
+    var el=$('yjlSlot'); if(el&&el.getAttribute('data-id')===id) el.innerHTML=yjlHtml_(r.rows);
+  })['catch'](function(){ /* 読めない時は欄を出さない（画面は止めない） */ });
+}
 function applyPrintHide(box,r){
   if(!box)return;
   var hid=printHideSet(r), lab2key={};
@@ -9250,6 +9332,53 @@ function medlogBodyHtml_(text){
    それに「処方:」「処方：」で始まる行（見出しの付かない処方の行も含め、全部出さない＝同日の追加指示）。
    ★行の途中に「処方」の字があるだけの行（所見の文など）は出す */
 var MEDLOG_HIDE_RE=/■処方歴?■|■残なし■|^[\s　]*処方[\s　]*[:：]/;
+/* 処方の変更の印（2026-10-25 本人指示）。医療支援経過で出さない処方の行（MEDLOG_HIDE_RE）の中身を比べ、変わった記録に印を立てる。
+   ★複数の病院・クリニックから処方がある方に対応（同日の追加指示）: 比べる相手は【同じ医療機関（clinic）】の、
+     処方の行がある直前の記録（日付が前で、処方の行を持ついちばん新しい記録）。医療機関が交互に並んでも、入れ替わりだけでは立てない。
+   ★その医療機関の最初の処方でも、ほかの医療機関の処方が前にある時は立てる（処方元が増えた＝薬剤情報に足す必要がある）。
+     いちばん古い処方（どの医療機関の処方も前に無い）には立てない（比べる相手が無い）。
+   ★医療機関名は全角半角・空白をそろえて比べる。空欄の記録（手入力）は空欄どうしで比べる。
+   ★比べるのは処方の行だけ（■残なし■ は除く）。行の頭の印・空白（全角・半角・連続）・行の並びの違いは同じとみなす。処方の行が無い記録には立てない。
+   ★同じ日付の中は保存の並びで先の方を新しいとみなす。医療機関名は片方がもう片方を含む名前（4文字以上）を同じとみなし、
+     空欄（手入力）の後に医療機関名つきが初めて来た時は空欄の前回と比べる。
+   list は保存の並びのまま（日付の新旧は問わない）。戻り値 {changed:[真偽…], clinics:医療機関の数（処方の行がある記録の、空欄を除く）}。
+   表示だけで記録は変えない */
+function medlogClinicKey_(c){
+  var t=String(c==null?'':c); try{ t=t.normalize('NFKC'); }catch(e){}
+  return t.replace(/[\s　]+/g,'');
+}
+function medlogRxChanged_(list){
+  var arr=Array.isArray(list)?list:[], out=arr.map(function(){ return false; });
+  /* 比べる中身: 処方の行（■残なし■ は残薬の知らせで処方の中身ではないので外す）。行の頭の印（■処方歴■・■処方■・処方:）を外し、
+     空白をそろえ、並びを問わない（10/25 反証レビュー指摘2・3） */
+  var keyOf=function(s){
+    var ls=String((s&&s.text)||'').split('\n').filter(function(ln){ return MEDLOG_HIDE_RE.test(ln) && !/■残なし■/.test(ln); })
+      .map(function(ln){ return ln.replace(/■処方歴?■/g,' ').replace(/^[\s　]*処方[\s　]*[:：]/,' ').replace(/[\s　]+/g,' ').trim(); }).filter(String);
+    return ls.length?ls.sort().join('\n'):null;
+  };
+  /* 同じ日付の中は、保存の並びで先の方を新しいとみなす（手入力は先頭に足す・画面の上が新しい・指摘1） */
+  var idx=arr.map(function(s,i){ return {i:i, d:String((s&&s.date)||''), c:medlogClinicKey_(s&&s.clinic), k:keyOf(s)}; })
+    .sort(function(a,b){ return a.d<b.d?-1:a.d>b.d?1:b.i-a.i; });
+  /* 医療機関名は、片方がもう片方を含む名前（4文字以上）を同じ医療機関とみなす（「医療法人…」の有無など・指摘4） */
+  var known=[], canon=function(c){
+    if(!c) return '';
+    for(var j=0;j<known.length;j++){ var q=known[j]; if(q===c || (Math.min(q.length,c.length)>=4 && (q.indexOf(c)>=0 || c.indexOf(q)>=0))) return q; }
+    known.push(c); return c;
+  };
+  var prev={}, any=false, names={}, n=0;
+  idx.forEach(function(x){
+    if(x.k===null) return;
+    var c=canon(x.c);
+    if(c&&!names[c]){ names[c]=1; n++; }
+    var has=Object.prototype.hasOwnProperty;
+    if(has.call(prev,c)){ if(x.k!==prev[c]) out[x.i]=true; }
+    else if(c && has.call(prev,'')){ if(x.k!==prev['']) out[x.i]=true; }   /* 空欄（手入力）の後に医療機関名つきが初めて来た時は、空欄の前回と比べる（指摘3） */
+    else if(any) out[x.i]=true;   /* この医療機関の最初の処方で、ほかの医療機関の処方が前にある＝処方元が増えた */
+    prev[c]=x.k; any=true;
+  });
+  return {changed:out, clinics:n};
+}
+var MEDLOG_RX_NOTE='処方の変更あり（薬剤情報を確認）';
 var CERT_NEAR_DAYS=60;   /* 認定期限の「近い」の範囲（2026-10-16 代表者の決定）。タブの人数とひと目カードで共用 */
 function glanceVal_(v, cls){
   var t=String(v==null?'':v).trim();
@@ -9777,6 +9906,7 @@ function renderView(r){
   // 定期薬の変更履歴（自動記録・新しい順・画面だけ）（2026-10-02 管理者指示）
   h+=mcDetailSlot_(r);   // 薬の変更候補の印（管理者に候補がある時だけ中身が入る・印刷しない）（2026-10-06）
   h+=medsHistHtml_(r.medsHistory);
+  h+=yjlSlot_(r);   // 薬情の反映記録（30日）（事務所PCだけ・記録がある時だけ中身が入る・印刷しない）（2026-10-24）
   /* ADL・状態（外部様式の大表）。様式と同じく1つの表にまとめる＝紙が原本と同じ見え方になる。
      ★移乗・更衣・嚥下・水分・視力・聴力・褥瘡は様式に無い項目なので、従来どおり下に残す
        （様式に無い＝消してよい、ではない。原則1） */
@@ -9859,6 +9989,7 @@ function renderView(r){
     '<div class="cell"><span class="lab">看取り・終末期の意向（ACP）</span><div class="fulltext">'+esc(r.acp||'　')+'</div></div>'+
     '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">本人の強み（ストレングス）</span><div class="fulltext">'+esc(r.strengths||'　')+'</div></div>'+
   '</div></div>';
+  h+=meetingLinkHtml_(r);   // 担当者会議（事務所PCだけ・リンクだけ・印刷しない）（2026-10-25 本人指示）
   // 支援経過（新しい順）
   var slog=Array.isArray(r.supportLog)?r.supportLog.slice():[];
   slog.sort(function(a,b){return String((b&&b.date)||'').localeCompare(String((a&&a.date)||''))});
@@ -9877,11 +10008,13 @@ function renderView(r){
     /* ★訪問診療アプリから毎回入る「■処方歴■」の行と「■残なし■」の行は、画面と紙に出さない（2026-10-20 代表者の決定・行ごと）。
        定期薬は薬剤情報の欄で見られるため。★記録（保存の中身）は1文字も変えない＝編集画面では全部見える。
        行を除いて何も残らない記録は、日付だけの行になるので出さない。 */
-    mlog=mlog.map(function(s){
+    /* 処方の行を消す前に、前回と比べて処方の中身が変わった記録に印を付ける（2026-10-25 本人指示・medlogRxChanged_） */
+    var rxRes=medlogRxChanged_(mlog), rxCh=rxRes.changed, rxMulti=rxRes.clinics>=2;
+    mlog=mlog.map(function(s,i){
       var t=String((s&&s.text)||'').split('\n').filter(function(ln){ return !MEDLOG_HIDE_RE.test(ln); }).join('\n').replace(/^\n+|\n+$/g,'');
       var o={}; for(var k in s) if(Object.prototype.hasOwnProperty.call(s,k)) o[k]=s[k];
-      o.text=t; return o;
-    }).filter(function(s){ return String(s.text||'').trim()!==''; });
+      o.text=t; o.rxChanged=!!rxCh[i]; o.rxClinic=rxMulti?String((s&&s.clinic)||'').trim():''; return o;
+    }).filter(function(s){ return String(s.text||'').trim()!=='' || s.rxChanged; });   /* 処方の行しか無くても、変わった記録は印だけで出す */
     /* ★医師名・医療機関名の行と「[訪問診療]」の印も出さない（2026-10-20 代表者の決定。毎回同じで、縦に長くなるだけのため）。
        かかりつけ・主治医は医療情報の欄で見られる。★記録（doctor・clinic・source）は変えない＝編集画面では見える。
        本文が無く医師名だけの記録は、日付だけの行になるので出さない */
@@ -9889,6 +10022,9 @@ function renderView(r){
        「【診察の結果】」は「【診察結果】」と出す／2つの見出しの下の文は2文字下げて出す（medlogBodyHtml_）。表示だけで記録は変えない */
     var mlogHtml=mlog.map(function(s){
       var body=medlogBodyHtml_(s.text);
+      /* 処方の変更の印は記録の先頭に1行（画面と紙の両方・2026-10-25 本人指示） */
+      /* 医療機関が2つ以上の方は、どの医療機関の処方かを後ろに添える（指定の文言は変えない・同日の追加指示） */
+      if(s.rxChanged) body='<div class="ml-l ml-rx">'+esc(MEDLOG_RX_NOTE)+(s.rxClinic?'〔'+esc(s.rxClinic)+'〕':'')+'</div>'+body;
       if(!body) return '';
       /* 日付の欄は「2026年12月31日」が入る幅にそろえる（日付の長さで見出しの左端がずれないように・2026-10-20） */
       return'<div style="display:flex;gap:10px;padding:1px 0"><span style="flex-shrink:0;font-weight:700;color:var(--pri-d);width:8.2em;white-space:nowrap">'+esc(fmtJDate(s.date)||s.date||'')+'</span><div style="flex:1;min-width:0">'+body+'</div></div>';
@@ -14084,6 +14220,6 @@ window.addEventListener('storage',function(e){ if(e.key===null || /^sb-[a-z0-9]+
 document.addEventListener('visibilitychange',function(){ if(!document.hidden){ try{ rmResolveWho_(); }catch(e){} } });
 </script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
-<script src="su-report.js?v=2026-10-20" data-tool="入居者マスタ"></script>
+<script src="su-report.js?v=2026-10-24" data-tool="入居者マスタ"></script>
 </body>
 </html>

@@ -57,7 +57,7 @@ function sandboxKv(tags) {
 (async () => {
   console.log('\n— B su-kv.js —');
   {
-    const tags = ['supabase-js-2.112.4.js', 'su-auth.js?v=2026-10-20'];
+    const tags = ['supabase-js-2.112.4.js', 'su-auth.js?v=2026-10-24'];
     const k = sandboxKv(tags);
     const p = k.box.SUKv.call({ action: 'get', key: 'care_schedule_v2' }, () => Promise.resolve({ ok: true }));
     await settle();
@@ -74,7 +74,7 @@ function sandboxKv(tags) {
     t('B ライブラリの札だけがある時は、それを入れ直さずに待つ', k.appended.length === 0, k.appended);
     k.box.supabase = { createClient() {} };
     await new Promise(r => setTimeout(r, 250)); await settle();
-    t('B ライブラリが読み終わったら、su-auth.js を1本だけ入れる', JSON.stringify(k.appended) === '["su-auth.js?v=2026-10-20"]', k.appended);
+    t('B ライブラリが読み終わったら、su-auth.js を1本だけ入れる', JSON.stringify(k.appended) === '["su-auth.js?v=2026-10-24"]', k.appended);
   }
   {
     const k = sandboxKv([]);
