@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-w5LDXpzdvgd95/uX1GlCOZwhskARAfxhiodvfMmCyDk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-Gpv9kJzy992XTBn/cpxTc9WlT9ZcabpmKuWG8AMREeU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -4357,7 +4357,7 @@ function renderList(){
     const monthRecCount = cur ? DB.records.filter(x=> x.residentId===r.id && x.yearMonth===listMonth).length : 0;
     const dateSub = cur
       ? `<div class="ls-sub">${
-          cur.measuredOn ? cur.measuredOn.slice(5).replace('-','/') : ymFmt(cur.yearMonth)
+          cur.measuredOn ? escapeHtml(cur.measuredOn.slice(5).replace('-','/')) : ymFmt(cur.yearMonth)
         }${monthRecCount>1 ? `<span class="ls-multi" style="margin-left:3px;padding:0 4px;background:var(--g1);color:var(--g7);border-radius:4px;font-weight:700">最新/${monthRecCount}件</span>` : ''}${bmiHtml}</div>`
       : '';
     const wtHtml = cur
@@ -4696,10 +4696,10 @@ function renderBulkList(){
     let prevHtml = '<span style="color:var(--g5)">未登録</span>';
     if(latestAny){
       const dstr = latestAny.measuredOn || ymFmt(latestAny.yearMonth);
-      prevHtml = `<div>前回<br><b>${latestAny.weight.toFixed(1)}</b><small>kg</small></div><div style="color:var(--g6);font-size:0.9375rem">${dstr}</div>`;
+      prevHtml = `<div>前回<br><b>${latestAny.weight.toFixed(1)}</b><small>kg</small></div><div style="color:var(--g6);font-size:0.9375rem">${escapeHtml(dstr)}</div>`;
     }
     const chairBadge = isChair ? `<span class="bk-wc">車椅子 ${chairKg.toFixed(1)}kg</span>` : '';
-    const existBadge = existingRec ? `<span class="bk-ex">${date} に既存記録あり（上書き）</span>` : '';
+    const existBadge = existingRec ? `<span class="bk-ex">${escapeHtml(date)} に既存記録あり（上書き）</span>` : '';
     const chairHint  = isChair ? `<span class="bk-ch">実測</span>` : '';
     const placeholder = latestAny
       ? (isChair
@@ -5334,7 +5334,7 @@ function updateWeightHint(){
   const sign = diff>0?'+':'';
   const col = Math.abs(pct)>=3 ? 'var(--ng)' : Math.abs(pct)>=2 ? 'var(--warn-tx)' : 'var(--ok)';
   const prevLabel = prevRec.measuredOn || ymFmt(prevRec.yearMonth);
-  hint.innerHTML = `前回（${prevLabel} ${prevRec.weight.toFixed(1)}kg）比 <b style="color:${col}">${sign}${diff.toFixed(1)}kg (${sign}${pct.toFixed(1)}%)</b> ${bmiPart}`;
+  hint.innerHTML = `前回（${escapeHtml(prevLabel)} ${prevRec.weight.toFixed(1)}kg）比 <b style="color:${col}">${sign}${diff.toFixed(1)}kg (${sign}${pct.toFixed(1)}%)</b> ${bmiPart}`;
 }
 
 function getLatestBefore(rid, ym){
@@ -5744,7 +5744,7 @@ function renderInputExistingList(){
     const badge = r.measureMode==='chair' ? '<span class="wc-badge">車椅子</span>' : '';
     const editing = r.id===editingRecordId ? ' editing' : '';
     return `<div class="iex-row${editing}" data-rid="${escapeHtml(r.id)}">
-      <div class="iex-d"><b>${r.measuredOn || ymFmt(r.yearMonth)}</b> <span class="iex-ym">${ymFmt(r.yearMonth)}</span></div>
+      <div class="iex-d"><b>${escapeHtml(r.measuredOn || ymFmt(r.yearMonth))}</b> <span class="iex-ym">${ymFmt(r.yearMonth)}</span></div>
       <div class="iex-w"><b>${wrWeightOk(r) ? r.weight.toFixed(1) : '—'}</b><small>kg</small>${badge}</div>
       <div class="iex-act">
         <button type="button" class="bn bo bsm" data-iex-edit="${escapeHtml(r.id)}">編集</button>
@@ -6702,14 +6702,14 @@ function drawHist(rid){
     /* 記録した人・直した人と変更の履歴（監査10月版 第2版 7）。画面だけ（印刷の手書きの「記録者」欄は変えない） */
     const whoTxt = [r.recordedBy ? ('記録 ' + r.recordedBy) : '', r.updatedBy ? ('直した人 ' + r.updatedBy) : ''].filter(Boolean).join('・');
     const dateLabel = moLabel +
-                      `<br><small style="color:var(--g6);font-weight:400">入力 ${stampLabel}${updatedTag}</small>` +
+                      `<br><small style="color:var(--g6);font-weight:400">入力 ${escapeHtml(stampLabel)}${updatedTag}</small>` +
                       (whoTxt ? `<br><small class="wr-who">${escapeHtml(whoTxt)}</small>` : '') + wrHistHtml_(r);
     tr.innerHTML = `
       <td style="text-align:start;padding-left:10px">${dateLabel}</td>
       <td><b>${wrWeightOk(r) ? r.weight.toFixed(1) : '—'}</b>${chairBadge?`<br>${chairBadge}`:''}${r.recheck === 'confirmed' ? '<br><span class="rc-badge" title="前回から大きく変わったため、測り直して同じ値だったことを確かめた記録">測り直し済み</span>' : ''}</td>
       <td>${bmiHtml}</td>
       <td>${diffHtml}</td>
-      <td>${mainLabel(r.stapleForm)}${r.stapleAmount!=null?`<span class="sa-chip">${r.stapleAmount}g</span>`:''}</td>
+      <td>${mainLabel(r.stapleForm)}${r.stapleAmount!=null?`<span class="sa-chip">${escapeHtml(r.stapleAmount)}g</span>`:''}</td>
       <td>${sideLabel(r.sideForm)}</td>
       <td>${TOGGLES.filter(t=>r[t.k]).map(t=>`<span class="tg-chip">${t.short}</span>`).join('') || '<span style="color:var(--g5)">—</span>'}</td>
       <td style="text-align:start;max-width:180px;word-break:break-word;white-space:normal">${r.note?escapeHtml(r.note):'<span style="color:var(--g5)">—</span>'}</td>
@@ -6901,7 +6901,7 @@ function renderAlerts(){
           <div class="al-ms">
             ${a.reasons.map(x=>`<div>${x}</div>`).join('')}
             ${ack ? `<div class="al-ack-info">✓ ${escapeHtml(wrAckText(ack))}</div>` : ''}
-            <div style="margin-top:4px;color:var(--g6)">対象月：<b>${ymFmt(ym)}</b>　体重：<b>${a.cur.weight.toFixed(1)}kg</b>${(()=>{const b=bmiOf(a.cur.weight,resident.heightCm);return b!=null?`　BMI：<b>${b.toFixed(1)}</b>`:'';})()}　食事：<b>${mainLabel(a.cur.stapleForm)}${a.cur.stapleAmount!=null?` ${a.cur.stapleAmount}g`:''}/${sideLabel(a.cur.sideForm)}</b>${(()=>{const t=TOGGLES.filter(x=>a.cur[x.k]).map(x=>x.n);return t.length?`　<b>${t.join('・')}</b>`:'';})()}</div>
+            <div style="margin-top:4px;color:var(--g6)">対象月：<b>${ymFmt(ym)}</b>　体重：<b>${a.cur.weight.toFixed(1)}kg</b>${(()=>{const b=bmiOf(a.cur.weight,resident.heightCm);return b!=null?`　BMI：<b>${b.toFixed(1)}</b>`:'';})()}　食事：<b>${mainLabel(a.cur.stapleForm)}${a.cur.stapleAmount!=null?` ${escapeHtml(a.cur.stapleAmount)}g`:''}/${sideLabel(a.cur.sideForm)}</b>${(()=>{const t=TOGGLES.filter(x=>a.cur[x.k]).map(x=>x.n);return t.length?`　<b>${t.join('・')}</b>`:'';})()}</div>
           </div>
         </div>
       `;
@@ -7784,7 +7784,7 @@ function renderThrEditor(){
   body.innerHTML = THR_ROWS.map(({k,label})=>{
     const t = THR[k];
     const mk = (field, step) =>
-      `<input type="number" min="0" step="${step}" data-thr="${k}.${field}" value="${t[field]}">`;
+      `<input type="number" min="0" step="${step}" data-thr="${k}.${field}" value="${escapeHtml(t[field])}">`;
     return `<tr>
       <td>${label}</td>
       <td class="th-w">${mk('wKg','0.1')}</td>
