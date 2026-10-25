@@ -604,10 +604,54 @@
   }
   function srcKey(id, date, after) { return 'S|' + String(id) + '|' + String(date) + '|' + fnv8(after); }
 
+  /* ── 10. 変更記録の「書類の行と扱い」（2026-10-24 代表者の決定）──
+     確認表の行（buildRows の戻り値・人が選んだ action を含む）から、1行1件「扱い｜書類の行｜反映する行」を作る。
+     扱いの語は action に合わせる（keep＝変えない／書類に無い今の行は残す・change＝変える・add＝足す・stop＝中止・skip＝入れない）。
+     書類に無い今の行（kind 'left'）は書類の欄を「（書類に無い今の行）」にする。全体を LOG_MAX 字に収める（超える時は末尾を「…（以下 N 行）」で切る） */
+  var LOG_MAX = 8000;
+  function logOne(s) { return String(s == null ? '' : s).replace(/[\r\n]+/g, ' ').trim(); }
+  function logRows(rows) {
+    var list = (Array.isArray(rows) ? rows : []).filter(function (r) { return r && typeof r === 'object'; });
+    /* ★扱いの語は「実際に定期薬へ効いたか」で決める（judge が数える条件と同じ・10/25 反証レビュー指摘1）。
+       選んだ扱いが「変える」「足す」でも、反映先が空・今の行と同じなら定期薬は変わらないので、そう書く */
+    var out = list.map(function (r) {
+      var a = String(r.action || ''), left = r.kind === 'left', cur = logOne(r.cur), line = logOne(r.line);
+      var doc = left ? '（書類に無い今の行）' : logOne(r.raw), word, to;
+      if (r.kind === 'change' && a === 'change' && r.line && r.line !== r.cur) { word = '変える'; to = line; }
+      else if (r.kind === 'add' && a === 'add' && r.line) { word = '足す'; to = line; }
+      else if (left && a === 'stop') { word = '中止'; to = '（中止）'; }
+      else if (a === 'change' || a === 'add') {
+        word = r.kind === 'add' ? '入れない（反映先が空）' : '変えない（反映先が空か今の行と同じ）';
+        to = cur || '（入れない）';
+      }
+      else if (a === 'skip') { word = '入れない'; to = cur || '（入れない）'; }
+      else if (a === 'keep') { word = left ? '残す' : '変えない'; to = cur || line; }
+      else { word = '（未選択）'; to = cur || line; }
+      return word + '｜' + doc + '｜' + to;
+    });
+    var all = out.join('\n');
+    if (all.length <= LOG_MAX) return all;
+    var keep = [], len = 0;
+    for (var i = 0; i < out.length; i++) {
+      var tail = '…（以下 ' + (out.length - i - 1) + ' 行）';
+      var add = (keep.length ? 1 : 0) + out[i].length;
+      var rest = out.length - i - 1;
+      /* この行を入れた後に残りがあれば、その知らせの分も空けておく */
+      if (len + add + (rest ? 1 + tail.length : 0) > LOG_MAX) break;
+      keep.push(out[i]); len += add;
+    }
+    if (!keep.length) {
+      /* 1行目だけで収まらない時は、1行目を切って「…」を付ける（残りの行があれば、その知らせも付ける） */
+      var more1 = out.length > 1 ? '\n…（以下 ' + (out.length - 1) + ' 行）' : '';
+      return out[0].slice(0, LOG_MAX - 1 - more1.length) + '…' + more1;
+    }
+    return keep.join('\n') + '\n…（以下 ' + (out.length - keep.length) + ' 行）';
+  }
+
   var api = { parseResult: parseResult, assign: assign, findDates: findDates, datesIn: datesIn, parseUse: parseUse,
     parseRows: parseRows, looksDrug: looksDrug, stripEnum: stripEnum, snap: snap, lineSpec: lineSpec, shortDays: shortDays, splitMaker: splitMaker, stem: stem, matchCurrent: matchCurrent, sameMeaning: sameMeaning, buildRows: buildRows, judge: judge, buildAfter: buildAfter,
     startDate: startDate, useDate: useDate,
-    fnv8: fnv8, srcKey: srcKey, nz: nz, kn: kn, dist: dist };
+    fnv8: fnv8, srcKey: srcKey, logRows: logRows, nz: nz, kn: kn, dist: dist };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.YakujoCalc = api;
 })(typeof window !== 'undefined' ? window : this);

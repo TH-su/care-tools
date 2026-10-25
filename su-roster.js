@@ -108,7 +108,7 @@
     return p.then(function () {
       if (window.SUAuth) return null;
       if (hasTag('su-auth.js')) return waitFor(function () { return !!window.SUAuth; }, 8000);
-      return loadScript('su-auth.js?v=2026-10-20');
+      return loadScript('su-auth.js?v=2026-10-24');
     });
   }
 
@@ -196,7 +196,12 @@
         var S = window.SUAuth.STATUS;
         if (!st || st.status !== S.OK || (st.role !== 'office' && st.role !== 'admin')) return { skip: 'login' };
         var sb = window.SUAuth.client();
-        return sb.from('master_sync_runs').select('at,source_count,missing,failed,state_rev,srev').order('at', { ascending: false }).limit(1)
+        // 写しの記録と写しの本体は同時に取る（2026-10-24・アプリ間連携の見直し 段2）。判定は今までと同じ順で、
+        // 記録が古い・失敗あり・版数の違いの時は本体を見ずに捨てて Google へ戻す（本体の失敗も記録しない＝今までと同じ）
+        var runsP = Promise.resolve(sb.from('master_sync_runs').select('at,source_count,missing,failed,state_rev,srev').order('at', { ascending: false }).limit(1));
+        var rowsP = Promise.resolve(sb.from('master_residents').select(COLS).order('source_id', { ascending: true }));
+        rowsP.then(null, function () { /* 使う時に受け取る（捨てる時は未処理の失敗にしない） */ });
+        return runsP
           .then(function (r) {
             if (r.error) throw named('DataError', r.error.code || 'runs');
             var run = Array.isArray(r.data) ? r.data[0] : null;
@@ -205,7 +210,7 @@
             if (run.failed !== 0) return { skip: 'failed' };
             return gasRev.then(function (g) {
               if (!sameRev(run, g)) return { skip: 'rev' };
-              return sb.from('master_residents').select(COLS).order('source_id', { ascending: true }).then(function (m) {
+              return rowsP.then(function (m) {
                 if (m.error) throw named('DataError', m.error.code || 'rows');
                 var roster = toRoster(m.data);
                 if (!roster) throw named('ShapeError', 'shape');

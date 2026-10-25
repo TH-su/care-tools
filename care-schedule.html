@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-UkoX1iLO5GizKNg+APZyFob/PwRPDJUiRgXMwPt0IZ4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-2dL58Xjn/1sf9PrUsZ7GktrOuylbsaAZBwVow87fvKc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -1755,11 +1755,11 @@ function csNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
 </script>
 <script src="su-facility.js?v=2026-10-14"></script>   <!-- 施設情報（報酬マスタの「自治体」の既定・監査10月版 #10） -->
 <script src="su-cfg-hint.js?v=2026-10-01.2"></script>
-<script src="su-perf.js?v=2026-10-17"></script>
+<script src="su-perf.js?v=2026-10-24"></script>
 <!-- 同期データの写し（統合 0005・写しの期間）。supabase-js と su-auth.js は写す時にだけ読み込む -->
-<script src="su-kv-shadow.js?v=2026-10-20b"></script>
+<script src="su-kv-shadow.js?v=2026-10-24"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
-<script src="su-kv.js?v=2026-10-20"></script>
+<script src="su-kv.js?v=2026-10-24.2"></script>
 <script>
 /* ══ 画面が黙って壊れないようにする（2026-08-29 追加）════════════════════════
  * これまで window.onerror も unhandledrejection も無く、描画中や非同期処理の例外は
@@ -3381,7 +3381,7 @@ function csAuthLoad_() {
     : (has(/^supabase-js-/) ? wait(() => !!window.supabase) : load('supabase-js-2.112.4.js'));
   return p.then(() => {
     if (window.SUAuth) return null;
-    return has(/^su-auth\.js/) ? wait(() => !!window.SUAuth) : load('su-auth.js?v=2026-10-20');
+    return has(/^su-auth\.js/) ? wait(() => !!window.SUAuth) : load('su-auth.js?v=2026-10-24');
   });
 }
 /* 起動時・別タブでのログイン/ログアウト（storage）・画面に戻った時（visibilitychange）に取り直す。
@@ -9600,6 +9600,6 @@ function csRunAction_(el, type, e) {
 });
 </script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
-<script src="su-report.js?v=2026-10-20" data-tool="週間計画"></script>
+<script src="su-report.js?v=2026-10-24" data-tool="週間計画"></script>
 </body>
 </html>

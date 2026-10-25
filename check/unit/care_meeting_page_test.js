@@ -15,6 +15,32 @@
      9. 知らせの reason から「臨時の会議を記録」を押すと、開催の理由が選ばれた状態で開く
     10. 応答の読み分けは ok と code だけ（error の文で分けない）
      ほか: 読み込む部品の並び（§2）・紙面（§7）・未保存の止め（§5）・再読み込みで戻す（§6）
+    12. innerHTML の全数点検（2026-10-25 本人指示・xss_facesheet_admission_test.js と同じやり方）
+
+   ── 12 の点検表（innerHTML への代入17か所。insertAdjacentHTML・outerHTML は0か所。行番号は 2026-10-25 時点の目安） ──
+   画面のスクリプトの innerHTML への代入を全部洗い、入る値が記録・名簿・自由入力・サーバーの文に由来するものは
+   esc を通っていることを確かめた。漏れは見つからなかった（直した所なし）。
+      1 showFieldOnly_  6つの箱を空にする（''）                         … 固定文だけ
+      2 showFieldOnly_  現場端末の案内                                    … 固定文だけ
+      3 showGate_       接続設定が無い時の案内                            … 固定文だけ
+      4 paintPicker_    pickerHtml_（名簿の氏名・居室・最終開催日・下書きの件数・読めない理由） … esc を通る
+      5 paintWho_       whoHtml_（開いている方の氏名・居室・介護度・読めない理由）          … esc を通る
+      6 paintAlerts_    空にする（''）                                    … 固定文だけ
+      7 paintAlerts_    一覧を読めていない時の案内                        … 固定文だけ
+      8 paintAlerts_    alertsHtml_（知らせの文・開催の理由＝data-reason の属性）           … esc を通る（段階は表で決めた文字だけ）
+      9 paintList_      listHtml_（開催日・開催の理由・回数・結論の頭・会議の番号＝data-mid・読めない理由） … esc を通る
+     10 paintPrev_      空にする（''）                                    … 固定文だけ
+     11 paintPrev_      prevHtml_（前回の記録の開催日・開催の理由・結論・残された課題・検討した項目） … esc を通る
+     12 paintEditor_    editorHtml_（入力欄の value・textarea の中身・貼り付け欄・振り分けの知らせ・
+                        ほかの端末との見比べ・確定した記録の表示・知らせの文・閉じた理由）  … esc を通る
+     13 paintNameBand_  nameStateHtml_（議事録の利用者名・開いている方の氏名。文を組んでから esc）… esc を通る
+     14 openDlg_        確かめの窓（題・各行・ボタンの文字。行に記録の値が入ることがある） … esc を通る
+     15 openDlg_        閉じた時に空にする（''）                          … 固定文だけ
+     16 definePrint_    印刷の前の紙面 printHtml_（利用者名と記録の全欄・出席者の続き）     … esc を通る
+     17 definePrint_    印刷の後に空にする（''）                          … 固定文だけ
+   固定する約束（記録の各欄・NotebookLM から振り分ける欄・名簿・サーバーの文に <img src=x onerror=…> や "><script> を
+   入れても、出来上がった HTML に実行される形＝img・script 要素や属性を抜けた on〜 が入らない。値は文字として残る）。
+   CARE_MEETING_HTML で差し替えるのは、わざと esc を外した版で落ちるかの確認用（既定は care-meeting.html）。
    ★氏名・本文はすべて架空。出力に console を使わない（個人情報を出力に流さない作法に合わせる）。 */
 'use strict';
 const fs = require('fs');
@@ -23,7 +49,7 @@ const vm = require('vm');
 const nodeCrypto = require('crypto');
 
 const ROOT = path.join(__dirname, '..', '..');
-const HTML = fs.readFileSync(path.join(ROOT, 'care-meeting.html'), 'utf8');
+const HTML = fs.readFileSync(process.env.CARE_MEETING_HTML || path.join(ROOT, 'care-meeting.html'), 'utf8');
 const CALC = require(path.join(ROOT, 'care-meeting-calc.js'));
 
 let pass = 0, fail = 0;
@@ -183,11 +209,11 @@ async function opened(opt) {
     const head = HTML.slice(0, HTML.indexOf('</head>'));
     const srcs = [...head.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]);
     t('head の部品は su-errors → su-perf → su-facility → su-print → care-meeting-calc の順', JSON.stringify(srcs) === JSON.stringify(
-      ['su-errors.js?v=2026-10-08', 'su-perf.js?v=2026-10-17', 'su-facility.js?v=2026-10-14', 'su-print.js?v=2026-09-12', 'care-meeting-calc.js?v=2026-10-23']), srcs);
+      ['su-errors.js?v=2026-10-08', 'su-perf.js?v=2026-10-24', 'su-facility.js?v=2026-10-14', 'su-print.js?v=2026-09-12', 'care-meeting-calc.js?v=2026-10-23']), srcs);
     t('su-print.css を読み、su-errors.js より前にスクリプトが無い', /<link rel="stylesheet" href="su-print\.css\?v=2026-09-12">/.test(head) && head.indexOf('<script') === head.indexOf('<script src="su-errors.js'));
     t('CSP・拡大を禁止しない viewport・no-store・noindex・題', /data-su-csp/.test(head) && /<meta name="viewport" content="width=device-width,initial-scale=1">/.test(head) && !/user-scalable=no|maximum-scale=1[^.0-9]/.test(head) &&
       /Cache-Control" content="no-store"/.test(head) && /robots" content="noindex/.test(head) && /<title>担当者会議の記録<\/title>/.test(head));
-    t('</body> の直前に su-report.js（data-tool="担当者会議の記録"）', /<script src="su-report\.js\?v=2026-10-20" data-tool="担当者会議の記録"><\/script>\n<\/body>/.test(HTML));
+    t('</body> の直前に su-report.js（data-tool="担当者会議の記録"）', /<script src="su-report\.js\?v=2026-10-24" data-tool="担当者会議の記録"><\/script>\n<\/body>/.test(HTML));
     t('インラインのイベント属性・javascript: を使わない', !/\son[a-z]+=["']/.test(HTML) && !/javascript:/i.test(HTML));
     t('console を足していない', !/console\./.test(S));
     t('切り出した関数が揃う（' + FN_NAMES.length + '本）', FN_NAMES.length > 80 && ['boot', 'openPerson_', 'cmSave_', 'cmFinal_', 'classify_', 'printHtml_'].every((n) => FN_NAMES.indexOf(n) >= 0));
@@ -315,12 +341,22 @@ async function opened(opt) {
     U.ss.m.set('cm_open_meeting', 'M-NAI');
     await U.ctx.openPerson_('901'); await settle();
     t('一覧に無い番号は開かずに消す', U.ctx.ed === null && U.ss.getItem('cm_open_meeting') === null);
-    const V = load({ roster: ROSTER, handler: gas(), search: '?masterId=901' });
+    const V = load({ roster: ROSTER, handler: gas(), search: '?resident=901' });
     V.ctx.boot(); await settle();
-    t('利用者No は URL の masterId で戻る', V.ctx.cur && V.ctx.cur.id === '901');
-    const W = load({ roster: ROSTER, handler: gas(), search: '?masterId=%3Cb%3E' });
+    t('利用者No は URL の resident で戻る（2026-10-25 本人指示で masterId から変えた）', V.ctx.cur && V.ctx.cur.id === '901');
+    const W = load({ roster: ROSTER, handler: gas(), search: '?resident=%3Cb%3E' });
     W.ctx.boot(); await settle();
-    t('形の合わない masterId は開かずに知らせ、選ぶ一覧を出す', W.ctx.cur === null && W.ctx.cmView === 'pick' && W.cnt.toast.some((m) => /形が違う/.test(m)) && !W.calls.some((c) => c.body.action === 'getResident'));
+    t('形の合わない resident は開かずに知らせ、選ぶ一覧を出す', W.ctx.cur === null && W.ctx.cmView === 'pick' && W.cnt.toast.some((m) => /形が違う/.test(m)) && !W.calls.some((c) => c.body.action === 'getResident'));
+    const M = load({ roster: ROSTER, handler: gas(), search: '?masterId=901' });
+    M.ctx.boot(); await settle();
+    t('masterId= は読まない＝引数なしと同じ（選ぶ一覧・知らせなし・入居者を読みに行かない）',
+      M.ctx.cur === null && M.ctx.cmView === 'pick' && M.cnt.toast.length === 0 && !M.calls.some((c) => c.body.action === 'getResident'), [M.ctx.cmView, M.cnt.toast]);
+    const M2 = load({ roster: ROSTER, handler: gas(), search: '?masterId=%3Cb%3E' });
+    M2.ctx.boot(); await settle();
+    t('形の合わない masterId= も読まない（形が違うの知らせも出さない）', M2.ctx.cur === null && M2.ctx.cmView === 'pick' && M2.cnt.toast.length === 0);
+    const P = load({ roster: ROSTER, handler: gas() });
+    P.ctx.pickPerson_('902'); await settle();
+    t('一覧から選んだ時に書き換える URL も ?resident= だけ', P.cnt.replace.length === 1 && P.cnt.replace[0] === '?resident=902', P.cnt.replace);
     t('氏名は URL ではなくサーバーの値を出す', /架空 一郎/.test(V.el('cm-who').innerHTML));
   }
 
@@ -838,6 +874,114 @@ async function opened(opt) {
     await W.ctx.cmRemove_(); await settle();
     const rm2 = W.meetCalls().find((c) => c.body.op === 'remove');
     t('下書きの取り消しは確かめだけ（理由は送らない）', rm2 && !('editNote' in rm2.body) && W.cnt.ask.some((a) => /取り消しますか/.test(a.title)));
+  }
+
+  group('12. innerHTML の全数点検（17か所・2026-10-25）');
+  {
+    const EVIL = '<img src=x onerror=alert(1)>', BREAK = '"><script>alert(1)</script>', ATTR = '" onmouseover="alert(1)';
+    /* 実行される形が入っていないこと。esc を通った値は &lt;img … の文字になり、ここには当たらない
+       （欄名の空白を詰めた「<imgsrc=…」も拾えるよう \b を付けない） */
+    const unsafe = (h) => /<img/i.test(h) || /<script/i.test(h) || /["']\s*on[a-z]+\s*=/i.test(h) || /<\/textarea>\s*</i.test(h.replace(/<\/textarea>(?=<(?:span|\/div|div|button)\b)/g, ''));
+    const kept = (h) => h.indexOf('&lt;img src=x onerror=alert(1)&gt;') >= 0;
+    const kept2 = (h) => h.indexOf('&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;') >= 0;
+    const okH = (h) => !unsafe(h) && kept(h);
+
+    /* 全数: 代入の数と、固定文だけの代入が本当に固定文か */
+    const assigns = S.split('\n').filter((l) => /\.innerHTML\s*=(?!=)/.test(l)).reduce((n, l) => n + (l.match(/\.innerHTML\s*=(?!=)/g) || []).length, 0);
+    t('innerHTML への代入は17か所（増えたら点検表に足す）', assigns === 17, assigns);
+    t('insertAdjacentHTML・outerHTML・document.write は使わない', !/insertAdjacentHTML|outerHTML|document\.write/.test(S));
+    const fixed = [...S.matchAll(/\.innerHTML\s*=\s*('(?:[^'\\]|\\.)*')\s*;/g)].map((m) => m[1]);
+    t('固定文だけの代入は8か所で、文字列に値をつないでいない', fixed.length === 8 && fixed.every((x) => x.indexOf("'+") < 0), fixed.length);
+
+    /* 名簿・入居者・記録・サーバーの文のすべてに入れる */
+    const ROS = { v: 1, residents: [{ masterId: '901', name: EVIL, room: BREAK, active: true }, { masterId: '902', name: BREAK, room: ATTR, active: true }] };
+    const bad = row({ meetingId: 'M20260401100000' + '7001', status: 'final', heldDate: '2026-04-01', kind: EVIL, count: BREAK, place: EVIL, timeText: BREAK, author: EVIL,
+      sourceName: EVIL, items: EVIL, content: BREAK, conclusion: EVIL, issues: BREAK, nextText: EVIL, createdDate: EVIL,
+      attendees: Array.from({ length: 11 }, (_, i) => ({ role: i % 2 ? EVIL : BREAK, name: i % 2 ? BREAK : EVIL })) });
+    const badDraft = Object.assign({}, bad, { meetingId: 'M20260501100000' + '7002', status: 'draft', heldDate: '2026-05-01' });
+    const RESX = { id: 901, name: EVIL, room: BREAK, careLevel: ATTR, careCertStart: '2026-04-01', careCertEnd: '2027-03-31' };
+    const T = await opened({ roster: ROS, gas: { getResident: () => ({ record: JSON.parse(JSON.stringify(RESX)) }), list: () => ({ ok: true, rows: [bad, badDraft] }) } });
+
+    /* 5 paintWho_ */
+    t('5 開いている方（paintWho_→whoHtml_）：氏名・居室・介護度', okH(T.el('cm-who').innerHTML) && kept2(T.el('cm-who').innerHTML), T.el('cm-who').innerHTML);
+    /* 9 paintList_ */
+    t('9 記録の一覧（paintList_→listHtml_）：開催の理由・回数・結論', okH(T.el('cm-list').innerHTML) && kept2(T.el('cm-list').innerHTML), T.el('cm-list').innerHTML);
+    /* 9 会議の番号（data-mid の属性）。サーバーが返した番号は一覧では形を絞らない＝守りは esc だけ（10/25 反証レビュー指摘） */
+    {
+      const midA = Object.assign({}, badDraft, { meetingId: ATTR, heldDate: '2026-06-01' }), midB = Object.assign({}, badDraft, { meetingId: BREAK, heldDate: '2026-06-02' });
+      const TM = await opened({ roster: ROS, gas: { getResident: () => ({ record: JSON.parse(JSON.stringify(RESX)) }), list: () => ({ ok: true, rows: [bad, midA, midB] }) } });
+      const lh = TM.el('cm-list').innerHTML;
+      t('9 記録の一覧：会議の番号（data-mid の属性）に壊れた値が来ても属性を抜けない', okH(lh) && lh.indexOf('data-mid="&quot; onmouseover=&quot;alert(1)"') >= 0, lh.slice(0, 600));
+    }
+    /* 8 paintAlerts_ と alertsHtml_（知らせの文・開催の理由は属性にも入る） */
+    t('8 期限の知らせ（paintAlerts_）', !unsafe(T.el('cm-alerts').innerHTML), T.el('cm-alerts').innerHTML);
+    const al = T.ctx.alertsHtml_([{ kind: 'x', level: ATTR, text: EVIL, reason: ATTR }, { kind: 'y', level: 'high', text: BREAK, reason: BREAK }]);
+    t('8 期限の知らせ（alertsHtml_）：文・開催の理由（data-reason・aria-label の属性）・段階', okH(al) && kept2(al), al);
+    /* 12 paintEditor_（下書きを開く＝入力欄の value・textarea） */
+    await T.ctx.openMeeting_(badDraft.meetingId, true); T.ctx.paintEditor_();
+    const edH = T.el('cm-detail').innerHTML;
+    t('12 下書きの入力欄（paintEditor_→editorHtml_）：value 属性・textarea の中身・開催の理由の選択肢・出席者', okH(edH) && kept2(edH) && edH.indexOf('value="&quot;&gt;&lt;script&gt;') >= 0, edH.slice(0, 400));
+    /* 11 paintPrev_（下書きより前の確定＝bad） */
+    T.ctx.paintPrev_();
+    t('11 前回の記録（paintPrev_→prevHtml_）：開催の理由・結論・残された課題・検討した項目', okH(T.el('cm-prev').innerHTML) && kept2(T.el('cm-prev').innerHTML), T.el('cm-prev').innerHTML);
+    /* 13 paintNameBand_（議事録の利用者名が開いている方と違う＝文に両方の名前が入る） */
+    T.ctx.ed.rec.sourceName = BREAK; T.ctx.paintNameBand_();
+    t('13 利用者名の帯（paintNameBand_→nameStateHtml_）：議事録の利用者名・開いている方の氏名', okH(T.el('cm-nb-st').innerHTML) && kept2(T.el('cm-nb-st').innerHTML), T.el('cm-nb-st').innerHTML);
+    T.ctx.ed.rec.sourceName = EVIL; T.ctx.paintNameBand_();
+    t('13 利用者名の帯（一致した時の文）', okH(T.el('cm-nb-st').innerHTML), T.el('cm-nb-st').innerHTML);
+    /* 12 ほかの端末との見比べ・知らせの文（サーバーの文）・ほかの方の閉じた理由 */
+    T.ctx.ed.conflict = bad; T.ctx.ed.msg = T.ctx.codeMsg_('error', { error: EVIL + BREAK }); T.ctx.ed.msgKind = ATTR; T.ctx.paintEditor_();
+    t('12 ほかの端末との見比べ・サーバーの断りの文・知らせの種類', okH(T.el('cm-detail').innerHTML) && kept2(T.el('cm-detail').innerHTML), T.el('cm-detail').innerHTML.slice(0, 400));
+    T.ctx.ed.conflict = null; T.ctx.ed.msg = '';
+    /* 12 確定した記録の表示 */
+    await T.ctx.openMeeting_(bad.meetingId, true); T.ctx.paintEditor_();
+    t('12 確定した記録の表示（viewHtml_）：全部の欄と出席者', okH(T.el('cm-detail').innerHTML) && kept2(T.el('cm-detail').innerHTML) && T.ctx.ed.view === true, T.el('cm-detail').innerHTML.slice(0, 400));
+    /* 16・17 印刷の紙面（SUPrint の before / after を偽物で受けて実行する） */
+    let pdef = null;
+    T.ctx.SUPrint = { define(n, d) { pdef = d; } }; T.ctx.window.SUPrint = T.ctx.SUPrint;
+    T.ctx.definePrint_();
+    pdef.before();
+    const pv = T.el('cm-print').innerHTML;
+    t('16 印刷の紙面（definePrint_ の before→printHtml_）：利用者名・全欄・出席者の表と続き', okH(pv) && kept2(pv) && /class="pv-more"/.test(pv), pv.slice(0, 400));
+    pdef.after();
+    t('17 印刷の後は紙面を空にする', T.el('cm-print').innerHTML === '');
+    /* 12 NotebookLM の議事録を貼って振り分ける（cmParse_ → applyParse_ → paintEditor_） */
+    await T.ctx.openNew_('');
+    T.el('cm-paste').value = [EVIL + '最初の印より前', '◆利用者名：' + EVIL, '◆開催の理由：' + BREAK, '◆作成担当者：' + EVIL, '◆作成年月日：' + EVIL,
+      '◆開催日：2026/04/01', '◆開催場所：' + BREAK, '◆開催時間：' + EVIL, '◆開催回数：' + BREAK, '◆出席者：', EVIL + '／' + BREAK, BREAK + '／' + EVIL,
+      '◆検討した項目：' + EVIL, '◆' + EVIL + '：知らない印', '◆検討内容：' + BREAK, '◆結論：' + EVIL, '◆残された課題：' + BREAK, '◆次回の開催時期：' + EVIL].join('\n');
+    const parsed = await T.ctx.cmParse_();
+    const pz = T.el('cm-detail').innerHTML;
+    t('12 振り分けた後の入力欄・振り分けの知らせ（知らない印・前書き・読めない日付）・貼り付け欄', parsed === true && okH(pz) && kept2(pz) &&
+      T.ctx.ed.rec.items.indexOf(EVIL) === 0 && T.ctx.ed.parse.unknown.length === 1 && !!T.ctx.ed.parse.preamble, pz.slice(0, 600));
+    /* 14・15 確かめの窓（題・行・ボタンに記録の値が入っても） */
+    const dlg = T.el('cm-dlg'); dlg.showModal = () => {}; dlg.removeEventListener = () => {};
+    const realDlg = vm.runInContext('openDlg_', T.ctx);
+    realDlg({ title: EVIL, lines: [BREAK, EVIL], ok: ATTR, danger: true, input: true });
+    t('14 確かめの窓（openDlg_）：題・各行・ボタンの文字', okH(dlg.innerHTML) && kept2(dlg.innerHTML), dlg.innerHTML);
+    t('15 確かめの窓を閉じた時は空の固定文（\'\'）', /d\.innerHTML='';/.test(cutF(S, 'openDlg_')));
+    /* 4 paintPicker_（名簿の氏名・居室・最終開催日・下書きの件数・読めない理由） */
+    const P = load({ roster: ROS, handler: gas({ summary: () => ({ ok: true, residents: { 901: { lastHeld: EVIL, drafts: BREAK } } }) }) });
+    await P.ctx.showPicker_(); await settle();
+    t('4 入居者を選ぶ一覧（paintPicker_→pickerHtml_）：氏名・居室・最終開催日・下書きの件数', okH(P.el('cm-pick').innerHTML) && kept2(P.el('cm-pick').innerHTML), P.el('cm-pick').innerHTML);
+    const Q = load({ roster: ROS, handler: gas({ summary: () => ({ ok: false, code: 'bad_input', error: EVIL }) }) });
+    await Q.ctx.showPicker_(); await settle();
+    t('4 入居者を選ぶ一覧：読めない理由（サーバーの文）', okH(Q.el('cm-pick').innerHTML), Q.el('cm-pick').innerHTML);
+    /* 5・9 読めない理由（サーバーの文・通信の失敗の文） */
+    const R = load({ roster: ROS, handler: (b) => (b.action === 'getResident' ? Promise.reject(new Error(EVIL)) : { ok: false, code: 'bad_input', error: BREAK }) });
+    await R.ctx.openPerson_('901'); await settle();
+    t('5 開いている方を読めない理由', okH(R.el('cm-who').innerHTML), R.el('cm-who').innerHTML);
+    const R2 = load({ roster: ROS, handler: gas({ list: () => ({ ok: false, code: 'bad_input', error: EVIL }) }) });
+    await R2.ctx.openPerson_('901'); await settle();
+    t('9 記録の一覧を読めない理由', okH(R2.el('cm-list').innerHTML), R2.el('cm-list').innerHTML);
+    /* 12 ほかの端末で取り消されて閉じた理由（edNotice） */
+    R2.ctx.ed = null; R2.ctx.edNotice = EVIL; R2.ctx.paintEditor_();
+    t('12 閉じた理由の知らせ（edNotice）', okH(R2.el('cm-detail').innerHTML), R2.el('cm-detail').innerHTML);
+    /* 1・2・3・6・7・10 固定文 */
+    R2.ctx.showGate_('nocfg');
+    t('3 接続設定の案内は固定文', R2.el('cm-gate').innerHTML.indexOf('接続設定を開く') >= 0 && !unsafe(R2.el('cm-gate').innerHTML));
+    const F = load({ role: 'field', roster: ROS, handler: gas() }); F.ctx.boot();
+    t('1・2 現場端末は箱を空にして固定の案内だけ', F.el('cm-who').innerHTML === '' && F.el('cm-pick').innerHTML === '' && /事務所PCだけで使えます/.test(F.el('cm-gate').innerHTML));
   }
 
   group('ほか: 紙面（仕様 §7）');
