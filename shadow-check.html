@@ -28,6 +28,9 @@
   ★貼り薬の写し（段階2「送るだけ」・2026-10-17）: サーバーの行数（patch_get）と、この端末の控え（apc2_res）との差を入居者IDだけで出す。
     読むだけ（この画面からは送らない）。su-patch-sync.js は比べ方（diff）と控えの読み方だけを使う。
   ★一覧に出す氏名は伏せる（姓の1字目＋○・2026-10-09 監査10月版 #16）。見分けるのは居室と利用者No。
+  ★訪問日・かかりつけ病院の写し（移行 0022・2026-10-24 代表者の決定4・段2b）: ボタンを押した時だけ、この端末の入居者マスタの接続先
+    （rmaster_cfg・読むだけ）で Google の名簿を読み、Supabase の master_residents_care と利用者No で見比べる。合言葉は Google へだけ送る。
+    出すのは人数と、違いのある利用者No と項目名だけ。氏名・病院名・曜日の中身は出さない。
   ★勤務表の戻し用（2026-10-16・管理者だけ）: 「勤務表を Google へ写し返す」（写しの期間の時だけ・Supabase を正として中身が違う
     勤務表を Google へ force で書く）と、Supabase 側の厳格モードの表示・入切（今の状態は操作記録 audit_log から出す）。
 
@@ -73,6 +76,16 @@
       <ul class="acct" id="cmp-list"></ul>
       <div class="acts"><a class="btn" href="resident-master.html">入居者マスタを開く（写しが最新になる）</a>
         <button type="button" class="btn" id="b-reload">見比べ直す</button></div>
+    </section>
+
+    <section class="cd">
+      <h2>訪問日・かかりつけ病院の写し（通所 利用表の☆）</h2>
+      <p class="muted">事務所・管理者が入居者マスタを開くたびに、名簿の訪問日とかかりつけ病院が写されます（現場のアカウントは読めない写しです）。ボタンを押した時だけ、この端末の入居者マスタの接続先（Google）から名簿を読んで見比べます。人数と、違いのある利用者No だけを出し、氏名・病院名・曜日は出しません。</p>
+      <div class="kpis" id="care-kpis"></div>
+      <p id="care-verdict" class="msg"></p>
+      <ul class="acct" id="care-list"></ul>
+      <div class="acts"><a class="btn" href="resident-master.html">入居者マスタを開く（写しが最新になる）</a>
+        <button type="button" class="btn" id="b-care-check">Google の名簿と見比べる</button></div>
     </section>
 
     <section class="cd">
@@ -174,10 +187,10 @@
 
 <script src="supabase-js-2.112.4.js"></script>
 <script src="su-auth.js?v=2026-10-24"></script>
-<script src="su-master-shadow.js?v=2026-10-24"></script>
+<script src="su-master-shadow.js?v=2026-10-24.2"></script>
 <script src="su-kv.js?v=2026-10-24.2"></script>
 <script src="su-kv-shadow.js?v=2026-10-24"></script>
 <script src="su-patch-sync.js?v=2026-10-24.2"></script>
-<script src="shadow-check.js?v=2026-10-21"></script>
+<script src="shadow-check.js?v=2026-10-24"></script>
 </body>
 </html>

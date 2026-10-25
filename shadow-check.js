@@ -5,6 +5,9 @@
  * 切り替え前の点検（統合 0007）: ボタンを押した時だけ、Google（統合同期バックエンド）の全キーの版（list）と写しの版（kv_index）を見比べる。
  *   「足りない分を写す」は Google から中身を取り（pull・8件ずつ）、そのまま写す（kv_import＝古い版では上書きしない）。
  *   Google への合言葉は Google へだけ送る。画面に出すのはキー名（日付・月）と版と件数だけで、中身・氏名は出さない。
+ * 訪問日・かかりつけ病院の写し（移行 0022・2026-10-24 代表者の決定4・段2b）: ボタンを押した時だけ、正本＝Google の入居者マスタの名簿
+ *   （getRoster・この端末の rmaster_cfg の URL と合言葉。合言葉は Google へだけ送る）と、写し＝Supabase の master_residents_care を
+ *   利用者No で突き合わせる。出すのは人数と、違いのある利用者No と項目名だけ（氏名・病院名・曜日の中身は出さない）。どちらにも書かない。
  */
 (function () {
   'use strict';
@@ -144,6 +147,104 @@
     return li;
   }
 
+  /* 訪問日・かかりつけ病院の写しの見比べ（純関数）。gasRoster＝Google の getRoster の roster、careRows＝master_residents_care の行。
+   * 返すのは人数と利用者No と項目名だけ（値は返さない）:
+   *   same 一致の人数・diff [{id, fields:[項目名]}]・notInCopy 写しに無い利用者No・notInSource 正本に無い利用者No・
+   *   noField 正本の名簿に2項目のキーが無い利用者No（古い GAS・現場用の名簿＝比べられない） */
+  var CARE_CMP = [['visit_day', 'visitDay', '訪問日'], ['hospital', 'hospital', 'かかりつけ病院']];
+  function careCompare(gasRoster, careRows) {
+    var byId = {}, seen = {}, same = 0, diff = [], notInCopy = [], noField = [];
+    (Array.isArray(careRows) ? careRows : []).forEach(function (c) { if (c && typeof c.source_id === 'string') byId[c.source_id] = c; });
+    (Array.isArray(gasRoster) ? gasRoster : []).forEach(function (x) {
+      if (!x || typeof x !== 'object') return;
+      var id = String(x.id == null ? '' : x.id).trim();
+      if (!id || seen[id]) return;
+      seen[id] = true;
+      if (!Object.prototype.hasOwnProperty.call(x, 'visitDay') || !Object.prototype.hasOwnProperty.call(x, 'hospital')) { noField.push(id); return; }
+      var c = byId[id];
+      if (!c) { notInCopy.push(id); return; }
+      var fields = CARE_CMP.filter(function (f) {
+        return String(x[f[1]] == null ? '' : x[f[1]]) !== String(c[f[0]] == null ? '' : c[f[0]]);
+      }).map(function (f) { return f[2]; });
+      if (fields.length) diff.push({ id: id, fields: fields }); else same++;
+    });
+    var notInSource = Object.keys(byId).filter(function (id) { return !seen[id]; }).sort();
+    return { same: same, diff: diff, notInCopy: notInCopy, notInSource: notInSource, noField: noField };
+  }
+  // 入居者マスタの接続先は接続設定と同じく Workspace ドメイン形式（/a/macros/<domain>/s/…/exec）も通す（Google の /exec だけ）
+  var RMASTER_RE = /^https:\/\/script\.google\.com\/[^?#\s]*\/exec$/;
+  function rmasterTarget() {
+    try {
+      var o = JSON.parse(localStorage.getItem('rmaster_cfg') || 'null');
+      var u = String(o && o.url || '').trim(), t = String(o && o.token || '').trim();
+      return RMASTER_RE.test(u) && t ? { url: u, token: t } : null;
+    } catch (e) { return null; }
+  }
+  /* 入居者マスタの名簿を Google から読む（各画面の getRoster と同じ送り方: POST・text/plain・合言葉は本文）。1分で見切る */
+  function rmasterRoster(tgt) {
+    var ctl = new AbortController();
+    var tm = setTimeout(function () { ctl.abort(); }, 60000);
+    return fetch(tgt.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                            body: JSON.stringify({ action: 'getRoster', token: tgt.token }), cache: 'no-store', redirect: 'follow', signal: ctl.signal })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        clearTimeout(tm);
+        if (!j || j.error || !Array.isArray(j.roster)) throw new Error('Google が名簿を返しませんでした（接続先の合言葉を確かめてください）');
+        return j.roster;
+      }, function (e) { clearTimeout(tm); throw (e && e.name === 'AbortError') ? new Error('Google の応答がありません（時間切れ）') : new Error('Google に届きませんでした'); });
+  }
+  function careNoTable(err) {
+    var c = String(err && err.code || '');
+    return c === 'PGRST205' || c === 'PGRST202' || c === '42P01';
+  }
+  var CARE_LIST_MAX = 50;
+  async function runCareCheck() {
+    var kk = $('care-kpis'), v = $('care-verdict'), ul = $('care-list'), btn = $('b-care-check');
+    kk.replaceChildren(); ul.replaceChildren();
+    function say(t, kind) { v.className = 'msg' + (kind ? ' ' + kind : ''); v.textContent = t; }
+    var tgt = rmasterTarget();
+    if (!tgt) { say('この端末には入居者マスタの接続先（Google）がありません。この端末で入居者マスタを開いてから、見比べ直してください。', 'warn'); return; }
+    btn.disabled = true;
+    say('見比べています…（Google から名簿を読んでいます）');
+    try {
+      var sb = SUAuth.client();
+      var q = await Promise.all([rmasterRoster(tgt), sb.from('master_residents_care').select('source_id,visit_day,hospital')]);
+      var c = q[1];
+      if (c.error) {
+        say(careNoTable(c.error) ? '訪問日・かかりつけ病院の写しはまだ読めません（データベースの準備 0022 が未適用の可能性）。'
+          : '訪問日・かかりつけ病院の写しを読めませんでした（' + String(c.error.code || '') + '）。', 'warn');
+        return;
+      }
+      var d = careCompare(q[0], c.data || []);
+      kk.appendChild(kpi('一致', d.same, '人'));
+      kk.appendChild(kpi('違いあり', d.diff.length, '人'));
+      kk.appendChild(kpi('写しに無い', d.notInCopy.length, '人'));
+      kk.appendChild(kpi('正本に無い', d.notInSource.length, '人'));
+      if (d.noField.length) kk.appendChild(kpi('正本に項目が無い', d.noField.length, '人'));
+      var bad = d.diff.length + d.notInCopy.length + d.notInSource.length + d.noField.length;
+      if (d.noField.length) say('Google の名簿に訪問日・かかりつけ病院がありません（入居者マスタの GAS が古いか、接続先の合言葉が現場用の可能性）。', 'warn');
+      else if (bad) say('違いがあります。入居者マスタを開き直すと写しが最新になります。開き直しても残る違いは、下の利用者No を入居者マスタで確かめてください。', 'warn');
+      else say('Google の名簿と写しの訪問日・かかりつけ病院は一致しています（' + d.same + '人）。', 'ok');
+      var items = [];
+      d.diff.forEach(function (x) { items.push([x.id, '違う項目: ' + x.fields.join('・')]); });
+      d.notInCopy.forEach(function (id) { items.push([id, '写しにまだありません']); });
+      d.notInSource.forEach(function (id) { items.push([id, '正本（Google の名簿）にいません']); });
+      d.noField.forEach(function (id) { items.push([id, '正本の名簿に項目がありません']); });
+      items.slice(0, CARE_LIST_MAX).forEach(function (it) {
+        var li = el('li'), left = el('div');
+        left.appendChild(el('div', 'nm', '利用者No ' + it[0]));
+        left.appendChild(el('div', 'em', it[1]));
+        li.appendChild(left);
+        ul.appendChild(li);
+      });
+      if (items.length > CARE_LIST_MAX) ul.appendChild(el('li', null, 'ほか ' + (items.length - CARE_LIST_MAX) + '件'));
+    } catch (e) {
+      say('見比べられませんでした: ' + String(e && e.message || e), 'warn');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
   function renderRuns(runs) {
     var ul = $('runs');
     ul.replaceChildren();
@@ -152,10 +253,12 @@
       var li = el('li');
       var left = el('div');
       left.appendChild(el('div', 'nm', fmtTime(r.at) + (r.device_label ? '　' + r.device_label : '')));
+      // 訪問日・かかりつけ病院を書けなかった人数（移行 0022 の care_failed・基本項目の failed とは別に数える）も同じ書き方で出す
       left.appendChild(el('div', 'em', '正本 ' + r.source_count + '人／新規 ' + r.inserted + '・更新 ' + r.updated +
-        '・変化なし ' + r.unchanged + '・正本に無い ' + r.missing + (r.failed ? '・失敗 ' + r.failed : '')));
+        '・変化なし ' + r.unchanged + '・正本に無い ' + r.missing + (r.failed ? '・失敗 ' + r.failed : '') +
+        (r.care_failed ? '・訪問日・病院 失敗 ' + r.care_failed : '')));
       li.appendChild(left);
-      if (r.failed) { var t = el('div', 'ops'); t.appendChild(el('span', 'tag', '要確認')); li.appendChild(t); }
+      if (r.failed || r.care_failed) { var t = el('div', 'ops'); t.appendChild(el('span', 'tag', '要確認')); li.appendChild(t); }
       ul.appendChild(li);
     });
   }
@@ -947,13 +1050,26 @@
     await runCheck();
   }
 
+  /* 写しを取った記録（最新20件）。訪問日・病院を書けなかった人数（care_failed・移行 0022）も読む。
+     0022 を流す前のデータベースでは列が無く読み取り全体が断られるので、その時だけ care_failed を外して読み直す
+     （写しの部品 su-master-shadow.js の「列が無い時は外して残し直す」と同じ考え方） */
+  var RUN_COLS = 'at,device_label,source_count,inserted,updated,unchanged,missing,failed';
+  function noCareFailedColumn(err) {
+    var c = String(err && err.code || ''), m = String(err && err.message || '');
+    return /care_failed/.test(m) && (c === '42703' || c === 'PGRST204' || /does not exist|could not find/i.test(m));
+  }
+  async function readRuns(sb) {
+    var b = await sb.from('master_sync_runs').select(RUN_COLS + ',care_failed').order('at', { ascending: false }).limit(20);
+    if (b.error && noCareFailedColumn(b.error)) b = await sb.from('master_sync_runs').select(RUN_COLS).order('at', { ascending: false }).limit(20);
+    return b;
+  }
+
   async function load() {
     var sb = SUAuth.client();
     var cols = 'source_id,' + SUMasterShadow.FIELDS.join(',');
     var a = await sb.from('master_residents').select(cols).order('room', { ascending: true });
     if (a.error) throw a.error;
-    var b = await sb.from('master_sync_runs').select('at,device_label,source_count,inserted,updated,unchanged,missing,failed')
-      .order('at', { ascending: false }).limit(20);
+    var b = await readRuns(sb);
     if (b.error) throw b.error;
     renderCompare(a.data || []);
     renderRuns(b.data || []);
@@ -1109,6 +1225,7 @@
   $('b-live-shift').addEventListener('click', function () { setShiftMode('live'); });
   $('b-shadow-shift').addEventListener('click', function () { setShiftMode('shadow'); });
   $('b-reload').addEventListener('click', function () { msg(''); load().catch(function (e) { msg(String(e && e.message || e)); }); });
+  $('b-care-check').addEventListener('click', function () { msg(''); runCareCheck(); });
   $('b-check').addEventListener('click', function () { msg(''); runCheck(); });
   $('b-mirror-check').addEventListener('click', function () { msg(''); runMirrorCheck(); });
   $('b-mirror-fix').addEventListener('click', function () { msg(''); runMirrorFix(); });

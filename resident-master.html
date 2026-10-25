@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-GXhQQNn6CyS7/jSgcyPemgS3L9gbnCVOQBiSH572ykI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-0lfhqAPg03ePA//wIAVOeTnQ1hyCrrL1YClsWpy/Evg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -1921,7 +1921,7 @@ function rmNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
 <script src="yakujo-calc.js?v=2026-10-24"></script>
 <script src="su-print.js?v=2026-09-12"></script>
 <!-- 入居者マスタの写し（統合 0004）。supabase-js と su-auth.js は写す時にだけ読み込む -->
-<script src="su-master-shadow.js?v=2026-10-24"></script>
+<script src="su-master-shadow.js?v=2026-10-24.2"></script>
 <script>
 /* ═══════════════════════════════════════════════════════════════
    入居者マスタ / 管理アプリ
@@ -2354,7 +2354,9 @@ function refreshRoster(){
            ログインしている時だけ書く（それ以外・現場端末では何もしない）。失敗しても一覧の動きは変えない */
         /* 写しの記録には、この一覧と一緒に届いた版数（stateRev・srev）も残す（移行 0019・2026-10-22・反証レビューの指摘）。
            名簿を写しから読む画面は、Google の今の版数と同じ時だけ写しを使う */
-        if(window.SUMasterShadow&&getDeviceRole()!=='field')SUMasterShadow.push(roster,{stateRev:d&&d.stateRev,srev:srevPickMeta(d)});
+        /* 訪問日・かかりつけ病院の写し（移行 0022・代表者の決定 2026-10-24）: 正規化する前の名簿（list）を渡し、部品が利用者No と2項目だけを拾う。
+           一覧（roster）・端末の控え・共有名簿には2項目を入れない（normRosterRow は変えない） */
+        if(window.SUMasterShadow&&getDeviceRole()!=='field')SUMasterShadow.push(roster,{stateRev:d&&d.stateRev,srev:srevPickMeta(d),care:list});
       }
     }
     if(emptyGuarded){setSync('要確認（サーバー応答が空）','err');}else{setSync('同期OK','ok');}
