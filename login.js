@@ -76,7 +76,8 @@
   async function refresh() {
     show('loading');
     var st;
-    try { st = await SUAuth.check(); }
+    // ログイン画面の確かめ直しは、同じタブの控え（su-auth.js）を使わず必ずデータベースに確かめる（2026-10-24 代表者の決定5）
+    try { st = await SUAuth.check({ fresh: true }); }
     catch (e) { st = { status: S.ERROR, message: String(e && e.message || e) }; }
     current = st;
     switch (st.status) {

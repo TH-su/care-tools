@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-5hCcOBKBbw0wBiNK7gv64r7o8wyUCi+VmIWIUyj7hgA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-2dL58Xjn/1sf9PrUsZ7GktrOuylbsaAZBwVow87fvKc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -1755,11 +1755,11 @@ function csNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
 </script>
 <script src="su-facility.js?v=2026-10-14"></script>   <!-- 施設情報（報酬マスタの「自治体」の既定・監査10月版 #10） -->
 <script src="su-cfg-hint.js?v=2026-10-01.2"></script>
-<script src="su-perf.js?v=2026-10-17"></script>
+<script src="su-perf.js?v=2026-10-24"></script>
 <!-- 同期データの写し（統合 0005・写しの期間）。supabase-js と su-auth.js は写す時にだけ読み込む -->
-<script src="su-kv-shadow.js?v=2026-10-20b"></script>
+<script src="su-kv-shadow.js?v=2026-10-24"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
-<script src="su-kv.js?v=2026-10-20"></script>
+<script src="su-kv.js?v=2026-10-24.2"></script>
 <script>
 /* ══ 画面が黙って壊れないようにする（2026-08-29 追加）════════════════════════
  * これまで window.onerror も unhandledrejection も無く、描画中や非同期処理の例外は
@@ -3011,7 +3011,8 @@ const CS_GENS_BUDGET  = 1200000;                      // 世代の合計文字�
    古い日から落とす（最新の日の控えと最新1件は必ず残す）。 */
 const CS_GENS_DAYS    = 7;
 
-/* 長さ＋FNV-1a 風の簡易ハッシュ。衝突しても実害は「余計に1回マージする」だけなので暗号強度は不要。 */
+/* 長さ＋FNV-1a 風の簡易ハッシュ。衝突しても実害は「余計に1回マージする」だけなので暗号強度は不要。
+   世代の控えでは、衝突すると1世代を積まない（次の変更で回復する）。 */
 function csFingerprint_(json) {
   const t = String(json == null ? '' : json);
   let h = 2166136261;
@@ -3380,7 +3381,7 @@ function csAuthLoad_() {
     : (has(/^supabase-js-/) ? wait(() => !!window.supabase) : load('supabase-js-2.112.4.js'));
   return p.then(() => {
     if (window.SUAuth) return null;
-    return has(/^su-auth\.js/) ? wait(() => !!window.SUAuth) : load('su-auth.js?v=2026-10-20');
+    return has(/^su-auth\.js/) ? wait(() => !!window.SUAuth) : load('su-auth.js?v=2026-10-24');
   });
 }
 /* 起動時・別タブでのログイン/ログアウト（storage）・画面に戻った時（visibilitychange）に取り直す。
@@ -3475,7 +3476,7 @@ function csMergeLocalBeforePush_() {
   if (gained > 0) {
     try { showToast('別タブの更新 ' + gained + '件を取り込んでから保存します'); } catch (e) {}
   }
-  try { renderAll(); } catch (e) {}
+  try { csRenderOrDefer_(); } catch (e) {}   // 送信の予約（2秒後）から裏で走ることがある＝裏なら見えた時に描く
   return gained;
 }
 
@@ -3566,6 +3567,16 @@ function csWriteGens_(gens) {
   csNote_('世代の控え', new Error('減らしても書けない'));
   return false;
 }
+/* 最後に【書き込みが成功した】世代の中身の指紋（長さ＋FNV-1a・csFingerprint_）。2026-10-24 段3。
+   保存のたびに世代の控え（上限 約2.4MB）を全部読み直して比べていたため、今回の中身がこの指紋と同じなら
+   控えを読まず・書かずに戻る（下の「最後の世代と同じなら積まない」と同じ判定を、読む前に済ませる）。
+   ★持つのは書き込みが成功した時だけ。書けなかった時は空にする＝次の保存で今どおり読み直して積み直す。
+   ★起動直後（メモリなので空）と、別のタブが世代の控えを書いた時（storage）は空＝次の保存は今どおり読む。
+   世代の数・上限・剪定の順・控えの形は変えていない。 */
+let _csGensLastFp = null;
+window.addEventListener('storage', function (e) {
+  if (!e || e.key === null || e.key === CS_GENS_KEY) _csGensLastFp = null;
+});
 /* 保存のたびに1世代積む。内容が変わっていなければ積まない（同じ姿で埋め尽くさない）。
    force=true のときだけ、内容が同じでも積む（＝その日の最初の控えを作る経路）。 */
 function csPushBackupGen_(force) {
@@ -3573,12 +3584,14 @@ function csPushBackupGen_(force) {
   try {
     if (csLooksLikeSampleOnly(DB.residents) || csRealResidentCount(DB.residents) === 0) return;
     const json = JSON.stringify(DB.residents);
+    const fp = csFingerprint_(json);
+    if (!force && _csGensLastFp !== null && fp === _csGensLastFp) return;   // 前回書けた世代と同じ中身＝読まない
     const gens = csReadGens_();
     if (!force && gens.length && gens[gens.length - 1].json === json) return;
     const at = Date.now();
     gens.push({ at: at, day: csJstDay_(at), res: csRealResidentCount(DB.residents),
                 ev: csCountEventsAll_(DB.residents), json: json });
-    csWriteGens_(csTrimGens_(gens));
+    _csGensLastFp = csWriteGens_(csTrimGens_(gens)) ? fp : null;   // 書けた時だけ持つ（剪定は最新の1件を必ず残す）
   } catch(e){ csNote_('世代の控え', e); }
 }
 
@@ -4444,7 +4457,7 @@ const SYNC = {
        （職員が自分でセレクトを変えた後は csMasterRid が破棄済みなので何もしない）。 */
     try { csApplyMasterIdParam(true); } catch (e) {}
     populateResidentSelect();
-    renderAll();
+    csRenderOrDefer_();   // 30秒ごとの照会の応答は裏でも届く＝裏なら見えた時に描く
     return true;
   },
 
@@ -4687,7 +4700,7 @@ const SYNC = {
         }
         saveLocalOnly();
         try { recalcAllEventUnits(); } catch(e) {}
-        renderAll();
+        csRenderOrDefer_();                           // 送信の応答＝裏なら見えた時に描く
         if (!this._rebasing) {                        // 1回だけ再push（再競合の無限ループ防止）
           this._rebasing = true;
           try { await this.push(); } finally { this._rebasing = false; }
@@ -5497,7 +5510,7 @@ function csStateRevTick_(){
      取得失敗時は版数を採用しない＝次tickで自動リトライ（ワースケ「取り込み済みrev基準」の型） */
 function csStateRevRefresh_(cfg, rev, srev){
   function applyChanged(changed){
-    if (changed){ try{ populateResidentSelect(); renderAll(); }catch(e){} }   // adopt() と同じ反映経路
+    if (changed){ try{ populateResidentSelect(); csRenderOrDefer_(); }catch(e){} }   // adopt() と同じ反映経路（裏なら見えた時に描く）
   }
   if (!cfg.token){
     /* トークン無し端末は直取得できない。LS再マージだけ行い版数を採用（変化時のみ動く）。
@@ -5982,6 +5995,24 @@ function restoreResident(id) {
   showToast(`「${res.name}」を復帰しました`);
   if (ok) csReassertResidentFlag_(id, 'movedOut', false, '復帰');
 }
+
+/* ── 裏にある間は盤面を描き直さない（2026-10-24 段3）──────────────────────────────
+   他端末の取り込み（30秒ごとの照会の応答）・別タブの書き込み（storage）・名簿の版の変化・送信の前の取り込みは、
+   画面が裏（別のタブ・最小化）にある間も届き、そのたびに盤面を全部作り直していた。
+   裏にある間は「描き直しが必要」の印だけ立てて戻り、見えた時に1回だけ描く。
+   ★renderAll の本体では止めない。印刷の準備（beforeprint → fitPrintToText_）は renderAll の直後に
+     予定の箱の高さを測り、印刷の後の戻し（restoreWeekPrint_）は直後にスクロール位置を戻すため、その場で描く必要がある。
+     ここを通すのは裏で走りうる経路（取り込み・storage・タイマーの送信・通信の応答）だけ。人の操作・印刷・試算は今どおり。 */
+let _csRenderPending = false;
+function csRenderOrDefer_() {
+  if (document.hidden) { _csRenderPending = true; return; }
+  renderAll();
+}
+document.addEventListener('visibilitychange', function () {
+  if (document.hidden || !_csRenderPending) return;
+  _csRenderPending = false;
+  try { renderAll(); } catch (e) {}   // 取り込み経路の描き直しと同じく、描けなくても運用を止めない
+});
 
 // ── Calendar render ──
 function renderAll() {
@@ -9406,13 +9437,13 @@ function csScheduleStorageAdopt_(delay) {
         const r = csAbsorbForeignWrite_();
         /* ★変わった時だけ書き戻す。無条件に書くと相手タブの storage を叩き、
            未送信どうしのタブが書き合って止まらない（レビュー M-3）。 */
-        if (r && r.changed) { saveLocalOnly(); populateResidentSelect(); renderAll(); }
+        if (r && r.changed) { saveLocalOnly(); populateResidentSelect(); csRenderOrDefer_(); }
       } catch (err) {}
       return;
     }
     /* loadDB 内で csApplyDeviceSelection_(false) が走る。ここでは通知ありで呼び直し、
        他タブ・他端末で削除された場合に理由が分かるようにする（表示は自タブの選択のまま）。 */
-    try { loadDB(); csApplyDeviceSelection_(true); populateResidentSelect(); renderAll(); } catch (err) {}
+    try { loadDB(); csApplyDeviceSelection_(true); populateResidentSelect(); csRenderOrDefer_(); } catch (err) {}   // 別タブの書き込みは裏でも届く＝裏なら見えた時に描く
   }, delay);
 }
 /* 別タブ（ワースケ・別ウィンドウの週間計画）が care_schedule_v2 を書いた時の受け口。
@@ -9569,6 +9600,6 @@ function csRunAction_(el, type, e) {
 });
 </script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
-<script src="su-report.js?v=2026-10-20" data-tool="週間計画"></script>
+<script src="su-report.js?v=2026-10-24" data-tool="週間計画"></script>
 </body>
 </html>

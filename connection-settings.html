@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Otq9/7jnb3dC9rXEM/WBLpbIs5S7iAsMSD2+c4oAjYk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-hYNJ9k73lvyCL2n1u9dxomHPGpMPNgtVIn6YK5y6Kmw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <meta name="robots" content="noindex,nofollow">
@@ -303,7 +303,7 @@ main {
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-08"></script>
-<script src="su-perf.js?v=2026-10-17"></script>
+<script src="su-perf.js?v=2026-10-24"></script>
 <script src="su-facility.js?v=2026-10-14"></script>
 <script>
 (function(){
@@ -1056,6 +1056,7 @@ function init(){
   });
 
   setupBackup(cards);
+  try{ if(window.SUPerf) SUPerf.ready(); }catch(e){}
 }
 
 /* ═══════════ 設定の控え（2026-09-27）═══════════
@@ -1187,6 +1188,6 @@ else init();
 </script>
 
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
-<script src="su-report.js?v=2026-10-20" data-tool="接続設定"></script>
+<script src="su-report.js?v=2026-10-24" data-tool="接続設定"></script>
 </body>
 </html>
