@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-cGNLJI99/+OBNwgG9RBS1NXRX8ZG+SBkA6SjK3XEhQ0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Kqq8Ji3+PsXIxbJvR6CMyhiEVB9pPA0e//k17zhHJgk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -431,9 +431,9 @@ html.su-field #frCSV,
 html.su-field #frdCSV { display: none !important; }
 </style>
 <script src="su-errors.js?v=2026-10-08"></script>
-<script src="su-perf.js?v=2026-10-17"></script>
-<script src="su-kv.js?v=2026-10-20"></script>
-<script src="su-kv-shadow.js?v=2026-10-20b"></script>
+<script src="su-perf.js?v=2026-10-24"></script>
+<script src="su-kv.js?v=2026-10-24.2"></script>
+<script src="su-kv-shadow.js?v=2026-10-24"></script>
 </head>
 <body>
 <div id="toolbar">
@@ -6241,9 +6241,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       h += '<div class="pal-section">セルの色（使った色は下に残ります）</div><div class="palcolors">';
       var recents = ctx.recentColors || [];
       for (var rc = 0; rc < recents.length; rc++) {
-        h += '<span class="colorsw" data-c="' + recents[rc] + '" style="background:' + recents[rc] + '" title="' + recents[rc] + '"></span>';
+        h += '<span class="colorsw" data-c="' + esc(recents[rc]) + '" style="background:' + esc(recents[rc]) + '" title="' + esc(recents[rc]) + '"></span>';
       }
-      h += '<input type="color" id="palColor" value="' + (recents[0] || '#fff3a0') + '" title="新しい色を選ぶ">';
+      h += '<input type="color" id="palColor" value="' + esc(recents[0] || '#fff3a0') + '" title="新しい色を選ぶ">';
       h += '<button class="palcolbtn" data-act="paint">塗る</button><button class="palcolbtn" data-act="uncolor">色なし</button></div>';
       h += '<div class="pal-actions"><button data-act="bold"><b>太字</b> 切替</button><button data-act="clear">記号クリア</button><button data-act="close">閉じる</button></div>';
       pal.innerHTML = h;
@@ -6786,7 +6786,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       h += '<label>連勤上限</label><input type="number" id="edMaxCons" min="1" max="10" value="' + mcVal + '" style="width:70px" placeholder="既定4">';
       h += '<div class="muted">空欄＝既定4連勤を超えたら画面にオレンジ枠。値を入れるとその職員はオレンジを出しません（自動作成の上限には反映されます）。オレンジ枠は印刷されません。</div>';
       h += '<label>月間出勤目標</label><input type="number" id="edTarget" min="0" max="31" value="' + esc(r.monthlyTarget || '') + '" style="width:70px" placeholder="なし">';
-      h += '<label>遅番回数上限</label><input type="number" id="edLateMax" min="0" max="31" value="' + (r.lateMax || '') + '" style="width:70px" placeholder="なし">';
+      h += '<label>遅番回数上限</label><input type="number" id="edLateMax" min="0" max="31" value="' + esc(r.lateMax || '') + '" style="width:70px" placeholder="なし">';
       h += '<label>固定休曜日</label><div id="edFixedOff">';
       var dows = ['日', '月', '火', '水', '木', '金', '土'];
       for (var w = 0; w < 7; w++) {
@@ -12404,7 +12404,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   } catch (e) {
     try {
       document.body.insertAdjacentHTML('afterbegin',
-        '<div style="background:#c0392b;color:#fff;padding:10px">初期化エラー: ' + String(e.message || e) + '</div>');
+        '<div style="background:#c0392b;color:#fff;padding:10px">初期化エラー: ' + escText(String(e.message || e)) + '</div>');
     } catch (e2) {}
   }
 
@@ -12414,6 +12414,6 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 })();
 </script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
-<script src="su-report.js?v=2026-10-20" data-tool="シフト作成・管理"></script>
+<script src="su-report.js?v=2026-10-24" data-tool="シフト作成・管理"></script>
 </body>
 </html>
