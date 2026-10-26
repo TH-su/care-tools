@@ -1,0 +1,1477 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-qBzp0Uv+cUr3/BYhGGENDZpeIwnlA+LO1YGrc3xabd4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<!-- 応募者の情報を扱うためキャッシュ無効 -->
+<meta http-equiv="Cache-Control" content="no-store">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>採用管理</title>
+<link rel="stylesheet" href="su-print.css?v=2026-09-12">
+<!-- 画面が黙って壊れないようにする共通部品（いちばん先に読む）→ 速さの記録 → 施設情報 → 印刷 → 職員マスタの日付の規則 → 採用管理の計算 -->
+<script src="su-errors.js?v=2026-10-08"></script>
+<script src="su-perf.js?v=2026-10-24"></script>
+<script src="su-facility.js?v=2026-10-26"></script>
+<script src="su-print.js?v=2026-09-12"></script>
+<script src="staff-master-calc.js?v=2026-10-11.2"></script>
+<script src="ats-calc.js?v=2026-10-26"></script>
+<style>
+/* 採用管理（2026-10-26 代表者承認の凍結仕様 v1）。
+   色は担当者会議のページと同じ濃さ（コントラスト7:1目標）。ライト固定。段階は色でなく番号と名前で示す。
+   文字は 17px・押せる所は 44px 以上・フォーカスは 3px の枠。 */
+:root{
+  --pri:#0b57d0; --pri-l:#ecf3fe; --pri-d:#0842a0;
+  --ok:#1e6b23; --ok-l:#e8f5e9; --ng:#b3261e; --ng-l:#fdecea;
+  --warn-bg:#fdf3e3; --warn-tx:#8a5200;
+  --g0:#f7f8f9; --g1:#f1f3f4; --g2:#e5e7ea; --g3:#d2d5d9;
+  --g5:#6b7075; --g6:#5f6368; --g7:#4b4f52; --g9:#1f2124;
+  --r:12px; --sh:0 1px 4px rgba(0,0,0,.10);
+  --focus:#0b57d0;
+}
+:focus-visible{outline:3px solid var(--focus); outline-offset:2px}
+@media (prefers-reduced-motion: reduce){
+  *{transition:none !important; animation:none !important}
+}
+*{box-sizing:border-box}
+html,body{margin:0; padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP",Meiryo,sans-serif;
+  background:var(--g0); color:var(--g9); font-size:1.0625rem; line-height:1.6; padding-bottom:64px; overflow-wrap:anywhere}
+button,input,select,textarea{font-family:inherit; font-size:1.0625rem; color:inherit}
+button{cursor:pointer}
+a{color:var(--pri-d)}
+[hidden]{display:none !important}
+.sr{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; margin:-1px; padding:0; border:0}
+
+/* ── 見出し ── */
+.hdr{position:sticky; top:0; z-index:50; background:var(--pri); color:#fff; padding:8px 14px;
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap; box-shadow:var(--sh)}
+.hdr h1{font-size:1.0625rem; margin:0; font-weight:700; flex:1; white-space:nowrap}
+.hdr-btn{display:inline-flex; align-items:center; min-height:44px; background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.5);
+  color:#fff; border-radius:8px; padding:6px 12px; font-size:1rem; text-decoration:none; white-space:nowrap}
+.hdr-btn:hover{background:rgba(255,255,255,.28)}
+.hdr-btn:focus-visible{outline:3px solid #fff; outline-offset:1px}
+.hdr .sync{font-size:0.9375rem; background:rgba(0,0,0,.22); padding:2px 10px; border-radius:14px; white-space:nowrap}
+.hdr .sync:empty{display:none}
+
+#a-main{max-width:1600px; margin:0 auto; padding:12px}
+.cd{background:#fff; border-radius:var(--r); box-shadow:var(--sh); padding:14px; margin-bottom:12px; min-width:0}
+h2{font-size:1.125rem; margin:0 0 10px}
+h3{font-size:1.0625rem; margin:14px 0 6px}
+.hint{color:var(--g7); margin:6px 0}
+.muted{color:var(--g6)}
+.msg{margin:8px 0; padding:8px 12px; border-radius:8px}
+.msg:empty{display:none}
+.msg.ng{background:var(--ng-l); color:var(--ng); border:1px solid var(--ng); font-weight:600}
+.msg.ok{background:var(--ok-l); color:var(--ok); border:1px solid var(--ok)}
+.msg.warn{background:var(--warn-bg); color:var(--warn-tx); border:1px solid var(--warn-tx); font-weight:600}
+.msg.busy{background:var(--g1); color:var(--g9); border:1px solid var(--g5)}
+.gate{font-size:1.125rem}
+.gate p{margin:6px 0}
+
+/* ── ボタン ── */
+.btn{display:inline-flex; align-items:center; justify-content:center; min-height:44px; min-width:44px; padding:8px 16px;
+  border-radius:10px; border:1px solid var(--g5); background:#fff; color:var(--g9); font-weight:600; text-decoration:none}
+.btn:hover{background:var(--g1)}
+.btn.pri{background:var(--pri); border-color:var(--pri); color:#fff}
+.btn.pri:hover{background:var(--pri-d)}
+.btn.ng{color:var(--ng); border-color:var(--ng)}
+.btn.ngf{background:var(--ng); border-color:var(--ng); color:#fff}
+.btn.sm{padding:6px 10px}
+.btn:disabled{opacity:.45; cursor:not-allowed}
+.acts{display:flex; flex-wrap:wrap; gap:8px; align-items:center}
+
+/* ── タブ ── */
+.tabs{display:flex; flex-wrap:wrap; gap:6px; margin:0 0 12px}
+.tab{min-height:44px; padding:8px 14px; border-radius:10px; border:1px solid var(--g5); background:#fff; font-weight:600}
+.tab[aria-selected="true"]{background:var(--pri); border-color:var(--pri); color:#fff}
+
+/* ── 選考ボード ── */
+.bar{display:flex; flex-wrap:wrap; gap:8px 12px; align-items:flex-end; margin:0 0 10px}
+.fi{display:flex; flex-direction:column; gap:3px; min-width:0}
+.fi label,.fl{font-weight:700; font-size:1rem}
+.fi input,.fi select,.fi textarea,.dlg textarea,.dlg select,.dlg input{width:100%; min-height:44px; padding:8px 10px; border:1px solid var(--g5); border-radius:8px; background:#fff; min-width:0}
+.fi textarea,.dlg textarea{line-height:1.6; resize:vertical; min-height:88px}
+.cols{display:grid; grid-template-columns:repeat(6,minmax(180px,1fr)); gap:10px; overflow-x:auto; align-items:start}
+.col{background:var(--g1); border:2px solid transparent; border-radius:var(--r); padding:8px; min-height:160px; min-width:0}
+.col h3{margin:0 0 8px; font-size:1rem}
+.col.drop-ok{border:2px dashed var(--pri); background:var(--pri-l)}
+.col.drop-no{opacity:.55}
+.cards{list-style:none; margin:0; padding:0; display:grid; gap:8px}
+.card{background:#fff; border:1px solid var(--g3); border-radius:10px; padding:8px 10px; display:flex; flex-direction:column; gap:4px}
+.card.late{border:3px solid var(--ng)}
+.card.soon{background:var(--warn-bg)}
+.card-n{font-weight:700; text-align:left; background:none; border:0; padding:4px 0; min-height:44px; color:var(--pri-d); text-decoration:underline}
+.card-s{color:var(--g7); font-size:0.9375rem}
+.card-late{color:var(--ng); font-weight:700; font-size:0.9375rem}
+.card-due{color:var(--warn-tx); font-weight:700; font-size:0.9375rem}
+.card-due.past{color:var(--ng)}
+.undo{position:fixed; left:50%; bottom:20px; transform:translateX(-50%); z-index:120; background:var(--g9); color:#fff; border-radius:14px;
+  padding:8px 10px 8px 16px; display:flex; align-items:center; gap:10px; max-width:94vw; box-shadow:0 6px 20px rgba(0,0,0,.3)}
+.undo .btn{background:#fff; color:var(--g9)}
+.m-stage{display:none}
+.tbl{width:100%; border-collapse:collapse; background:#fff}
+.tbl th,.tbl td{border:1px solid var(--g3); padding:6px 8px; text-align:left; vertical-align:top}
+.tbl th{background:var(--g1)}
+.tbl td.num,.tbl th.num{text-align:right; white-space:nowrap}
+.tbl tr.few td{color:var(--g6)}
+.tbl-wrap{overflow-x:auto}
+.ok-t{color:var(--ok); font-weight:700}
+.ng-t{color:var(--ng); font-weight:700}
+
+/* ── 詳細（右から出る板） ── */
+.pane{position:fixed; top:0; right:0; bottom:0; width:min(560px,100vw); background:#fff; z-index:90; box-shadow:-4px 0 20px rgba(0,0,0,.2);
+  overflow-y:auto; padding:0 16px 80px}
+.pane-h{position:sticky; top:0; background:#fff; z-index:2; display:flex; align-items:center; gap:8px; padding:10px 0; border-bottom:1px solid var(--g3)}
+.pane-h h2{flex:1; margin:0; font-size:1.25rem}
+.sec{border-top:1px solid var(--g3); padding:8px 0 12px}
+.sec h3{margin:8px 0}
+.fgrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,220px),1fr)); gap:10px 12px; margin:0 0 8px}
+.list{list-style:none; margin:0; padding:0; display:grid; gap:6px}
+.list li{border:1px solid var(--g3); border-radius:10px; padding:8px 10px}
+.chk{display:flex; align-items:center; gap:8px; min-height:44px; font-weight:600; cursor:pointer}
+.chk input{width:24px; height:24px; flex:0 0 auto}
+.chks{display:flex; flex-wrap:wrap; gap:0 14px}
+.rt{border-collapse:collapse; width:100%}
+.rt th,.rt td{border:1px solid var(--g3); padding:6px 8px; text-align:left}
+
+/* ── 確かめの窓・評価の窓 ── */
+.dlg{border:0; border-radius:14px; padding:0; max-width:min(94vw,720px); width:100%; box-shadow:0 12px 40px rgba(0,0,0,.25); color:var(--g9)}
+.dlg::backdrop{background:rgba(0,0,0,.4)}
+.dlg-in{padding:18px 20px 16px; max-height:86vh; overflow-y:auto}
+.dlg-in h2{margin:0 0 8px}
+.dlg-in p{margin:0 0 6px}
+.dlg-btns{display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; margin-top:12px}
+.score{border:0; margin:0 0 10px; padding:0}
+.score legend{font-weight:700; padding:0}
+.score-r{display:flex; gap:6px; flex-wrap:wrap}
+.score-r label{display:inline-flex; align-items:center; justify-content:center; min-width:44px; min-height:44px; border:1px solid var(--g5); border-radius:8px; gap:4px; padding:0 8px; cursor:pointer}
+.score-r input{width:20px; height:20px}
+
+#toast{position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px); background:var(--g9); color:#fff;
+  padding:10px 18px; border-radius:22px; font-size:1rem; z-index:200; opacity:0; transition:.25s; pointer-events:none; max-width:90%; text-align:center}
+#toast.on{opacity:1; transform:translateX(-50%) translateY(0)}
+.chart-box{max-width:720px; height:280px}
+
+/* ── iPhone（幅700px以下だけ）: ボードは段階の選択＋縦の一覧・詳細は全画面・事務所の操作は隠す ── */
+.m-only{display:none}
+@media (max-width:700px){
+  .m-stage{display:flex}
+  .cols{grid-template-columns:minmax(0,1fr)}
+  .col.m-off{display:none}
+  .pane{width:100vw}
+  .pc-only{display:none !important}
+  .m-only{display:block}
+  input,select,textarea{font-size:16px}
+}
+
+/* ── 紙面（面接予定・白紙の評価シート）。印刷の準備の時だけ中身を作り、終わったら空にする ── */
+#a-print{display:none}
+.pv{color:#000; line-height:1.4}
+.pv h1{font-size:1.5em; margin:0 0 .4em}
+.pv h2{font-size:1.15em; margin:.8em 0 .3em}
+.pv-t{width:100%; border-collapse:collapse}
+.pv-t th,.pv-t td{border:1px solid #000; padding:.3em .4em; text-align:left; vertical-align:top; font-size:1em}
+.pv-t th{background:#eee}
+.pv-box{height:5em}
+.pv-sc{white-space:nowrap; letter-spacing:.6em}
+@media print{
+  html,body{background:#fff !important}
+  body{padding:0 !important}
+  .hdr,#a-main,#toast,.dlg,.pane,.undo{display:none !important}
+  #a-print{display:block; font-size:var(--ap-fs,12px)}
+}
+</style>
+</head>
+<body>
+
+<header class="hdr">
+  <a class="hdr-btn" href="index.html">← メニュー</a>
+  <h1>採用管理</h1>
+  <span class="sync" id="a-sync" role="status" aria-live="polite"></span>
+</header>
+
+<main id="a-main">
+  <!-- 現場端末・管理者でない時の案内 -->
+  <div class="cd gate" id="a-gate" hidden></div>
+
+  <section id="a-app" hidden>
+    <nav class="tabs" role="tablist" aria-label="採用管理の画面">
+      <button type="button" class="tab" role="tab" id="t-board" data-tab="board" aria-controls="p-board">選考</button>
+      <button type="button" class="tab" role="tab" id="t-sched" data-tab="sched" aria-controls="p-sched">面接予定</button>
+      <button type="button" class="tab" role="tab" id="t-dash" data-tab="dash" aria-controls="p-dash">集計</button>
+      <button type="button" class="tab" role="tab" id="t-import" data-tab="import" aria-controls="p-import">取り込み</button>
+      <button type="button" class="tab" role="tab" id="t-expire" data-tab="expire" aria-controls="p-expire">保管期限</button>
+      <button type="button" class="tab" role="tab" id="t-settings" data-tab="settings" aria-controls="p-settings">設定</button>
+    </nav>
+    <div class="msg" id="a-msg" role="alert"></div>
+
+    <section class="cd" id="p-board" role="tabpanel" aria-labelledby="t-board" hidden></section>
+    <section class="cd" id="p-sched" role="tabpanel" aria-labelledby="t-sched" hidden></section>
+    <section class="cd" id="p-dash" role="tabpanel" aria-labelledby="t-dash" hidden></section>
+    <section class="cd" id="p-import" role="tabpanel" aria-labelledby="t-import" hidden></section>
+    <section class="cd" id="p-expire" role="tabpanel" aria-labelledby="t-expire" hidden></section>
+    <section class="cd" id="p-settings" role="tabpanel" aria-labelledby="t-settings" hidden></section>
+  </section>
+</main>
+
+<!-- 応募者の詳細（右から出る板・iPhone では全画面） -->
+<aside class="pane" id="a-pane" aria-labelledby="a-pane-h" hidden></aside>
+<div class="undo" id="a-undo" role="status" aria-live="polite" hidden></div>
+<!-- 印刷する紙面（印刷の準備の時だけ中身を作り、終わったら空にする＝氏名を DOM に残さない） -->
+<div id="a-print"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<dialog class="dlg" id="a-dlg" aria-labelledby="a-dlg-h"></dialog>
+<dialog class="dlg" id="a-evdlg" aria-labelledby="a-ev-h"></dialog>
+
+<script>
+'use strict';
+/* ═══════════════════════════════════════════════════════════════
+   採用管理（2026-10-26 代表者承認の凍結仕様 v1）
+   - 応募者の情報の正本は共通ログインのデータベース（care-backend 0026・ats_*）。読み書きできるのは管理者＋2段階認証だけ
+     （最終の判定はデータベースの RLS と RPC）。この画面は読む・RPC を呼ぶだけ
+   - 事務所PCだけ。現場端末（su_device_role==='field'）では何も取りに行かず、案内だけを出す（ログインの部品も読まない）
+   - 端末に残すのは UI の状態だけ: localStorage の ats_view（タブ）、sessionStorage の ats_open（開いている応募者の id）と
+     ats_filter（職種・経路の絞り込み）。応募者の情報は端末に置かない。URL に氏名・番号を載せない
+   - 職員マスタへの登録は、職員マスタの接続先（stfm_cfg を読むだけ・書かない）へ、職員マスタと同じ形で送る。
+     先に保留の印（ats_mark_staff_pending）を保存し、保存できなければ送らない。「登録しました」は id を受け取った時だけ
+   - 描画はすべて esc() を通す（数字・日付も）
+   ═══════════════════════════════════════════════════════════════ */
+var DEVICE_KEY='su_device_role';
+var VIEW_KEY='ats_view';               // タブの名前だけ（localStorage・原則11）
+var OPEN_KEY='ats_open';               // 開いている応募者の id だけ（sessionStorage）
+var FILTER_KEY='ats_filter';           // 職種・経路の絞り込みだけ（sessionStorage）
+var STF_CFG_KEY='stfm_cfg';            // 職員マスタの接続設定（読むだけ・書かない）
+var TABS=['board','sched','dash','import','expire','settings'];
+var ID_RE=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+var STF_URL_OK_RE=/^(https:\/\/|http:\/\/127\.0\.0\.1[:\/])/;
+/* 職員マスタの GAS（staff-api.gs）の FLUSH_FAIL_MSG の写し。★1文字も違えない（違うと「確かめ中」を見分けられない） */
+var FLUSH_FAIL_MSG='保存を確定できたか確かめられませんでした。画面を開き直して、保存されているか確かめてください';
+var STF_TIMEOUT_MS=45000;
+var UNDO_MS=10000;
+var SU_FAC_WAIT_MS = 3000;
+var SU_FAC_NG_MSG = '⚠️ 施設情報が読めません。印刷を中止しました。通信を確かめて画面を再読み込みしてから、もう一度押してください';
+
+var gen=0;              // 世代。用途が現場に変わった・読み直した時に進め、出した時と違う応答は捨てる
+var view='';            // 'field' | 'gate' | 'app'
+var tab='board';
+var apps=[];            // 応募者（メモリだけ）
+var ivs=[];             // 面接（メモリだけ）
+var settings=null;      // 設定（評価項目・保管月数・連絡途絶の日数）
+var staffNames=[];      // 面接官の候補（職員の表示名・在籍だけ）
+var myUid='';           // 自分の利用者 id（自分の評価を見分ける）
+var curId='';           // 詳細で開いている応募者
+var contacts=[];        // 開いている応募者の連絡の記録
+var contactsFor='';
+var evalStat={};        // 面接の id → {submitted,total}
+var enums=null;         // 職員マスタの選択肢（雇用区分・資格）
+var enumsState='idle';  // 'loading' | 'ok' | 'nocfg' | 'error'
+var reg={};             // 応募者の id → 登録の途中の状態 {state,msg,resend,busy,staffId}
+var dragId='';
+var undoT=null;
+var importPlan=null;
+var importMsg='';
+var dashPeriod='month';
+var stageLog=null;      // 集計のための段階の履歴（応募者の id と移った先だけ）
+var chartObj=null;
+var chartLoading=null;
+var edDirty=false;      // 詳細の入力を保存していない
+var ivEdit='';          // 直している面接の id（'' は新しい面接）
+var evalCtx=null;       // 評価の窓の中身
+var filter={job:'',src:''};
+var showEnded=false;
+var mStage='applied';
+var printIv='';
+var expireSel={};
+var dlgDone_=null;
+
+function $(id){return document.getElementById(id)}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+function toast(m){var t=$('toast');if(!t)return;t.textContent=m;t.classList.add('on');clearTimeout(toast._t);toast._t=setTimeout(function(){t.classList.remove('on')},3200)}
+function setSync(t){var e=$('a-sync');if(e)e.textContent=t||''}
+function setMsg(t,kind){var e=$('a-msg');if(!e)return;e.className='msg'+(t?' '+(kind||'ng'):'');e.textContent=t||''}
+/* 黙って捨てると後で原因が追えない失敗だけを記録に残す（画面には出さない・su-errors の note） */
+function atsNote_(where,e){ try{ if(window.SUErrors&&typeof window.SUErrors.note==='function') window.SUErrors.note('採用管理', e, 'ats:'+where); }catch(_){} }
+function getDeviceRole(){try{return localStorage.getItem(DEVICE_KEY)||'office'}catch(e){return'office'}}
+function isField(){return getDeviceRole()==='field'}
+function today_(){return AtsCalc.todayJST()}
+/* データベースの断りを職員に分かる言葉にする（コード・技術用語を出さない） */
+function friendly_(e){
+  var code=e&&e.code, m=String(e&&e.message||e||'');
+  if(code==='42501'||/permission denied|row-level security/i.test(m)) return 'この操作をする権限がありません。管理者として2段階認証まで済んでいるか確かめてください。';
+  if(code==='PGRST202'||code==='42P01'||code==='PGRST205') return 'データベースに採用管理の仕組みがまだありません（データベースの更新が必要です）。管理者に知らせてください。';
+  if(/failed to fetch|network|load failed|timeout|タイムアウト/i.test(m)) return '通信できませんでした。電波・Wi-Fi を確かめてから、もう一度試してください。';
+  return 'うまくいきませんでした。少し待ってから、もう一度試してください。';
+}
+
+/* ═══════════ ログインの部品（事務所PCで初めて読む・現場端末では読まない） ═══════════ */
+function authLoad_(){
+  if(window.SUAuth) return Promise.resolve();
+  function has(re){ return Array.prototype.some.call(document.scripts,function(s){ return re.test(s.getAttribute('src')||''); }); }
+  function load(src){
+    return new Promise(function(ok,ng){
+      var s=document.createElement('script'); s.src=src; s.async=true;
+      s.onload=function(){ ok(); }; s.onerror=function(){ ng(new Error('load')); };
+      document.head.appendChild(s);
+    });
+  }
+  function wait(ready){
+    return new Promise(function(ok,ng){
+      var n=0; (function tick(){ if(ready()) return ok(); if(++n>100) return ng(new Error('timeout')); setTimeout(tick,100); })();
+    });
+  }
+  var p=window.supabase ? Promise.resolve()
+    : (has(/^supabase-js-/) ? wait(function(){ return !!window.supabase; }) : load('supabase-js-2.112.4.js'));
+  return p.then(function(){
+    if(window.SUAuth) return null;
+    return has(/^su-auth\.js/) ? wait(function(){ return !!window.SUAuth; }) : load('su-auth.js?v=2026-10-24');
+  });
+}
+/* データベースの窓口（読み・表への書き込み）。通信はこれと rpc_ と stfPost_ の3つだけを通す */
+function db_(){ return window.SUAuth.client(); }
+function rpc_(name,args){
+  return Promise.resolve().then(function(){ return db_().rpc(name,args||{}); }).then(function(r){
+    if(r&&r.error) throw r.error;
+    return r?r.data:null;
+  });
+}
+function rows_(r){ if(r&&r.error) throw r.error; return (r&&Array.isArray(r.data))?r.data:[]; }
+
+/* ═══════════ 職員マスタ（GAS）への送信（職員マスタの apiPost と同じ形） ═══════════
+   POST・本文は JSON の文字列・redirect:'follow'・res.json() 相当。Content-Type は足さない（職員マスタと同じ）。
+   ★断りの { ok:false } も投げずに返す（応答の読み分けは AtsCalc.staffResult）。投げるのは、届いたか分からない時
+     （通信の失敗・時間切れ・HTTP が成功でない・JSON でない）だけ＝呼び手は「確かめ中」として扱う */
+function readStfCfg_(){
+  try{ var o=JSON.parse(localStorage.getItem(STF_CFG_KEY)||'{}'); if(o&&typeof o==='object') return {url:String(o.url||''),token:String(o.token||'')}; }catch(e){ atsNote_('職員マスタの接続設定の読込', e); }
+  return {url:'',token:''};
+}
+function stfReady_(){ var c=readStfCfg_(); return STF_URL_OK_RE.test(c.url)&&!!c.token; }
+function stfPost_(payload,timeoutMs){
+  var cfg=readStfCfg_();
+  if(!STF_URL_OK_RE.test(cfg.url)||!cfg.token) return Promise.reject({nocfg:true});
+  payload.token=cfg.token;
+  var ctl=(typeof AbortController==='function')?new AbortController():null;
+  var ms=Number(timeoutMs)>0?Number(timeoutMs):STF_TIMEOUT_MS;
+  var timer=ctl?setTimeout(function(){ ctl.abort(); },ms):0;
+  var opt={method:'POST',body:JSON.stringify(payload),redirect:'follow'};
+  if(ctl) opt.signal=ctl.signal;
+  return fetch(cfg.url,opt).then(function(res){
+    if(!res.ok) throw {noAnswer:true,why:'HTTP '+res.status};
+    return res.text();
+  }).then(function(t){
+    var d=null; try{ d=JSON.parse(t); }catch(e){ throw {noAnswer:true,why:'応答を読めません'}; }
+    if(!d||typeof d!=='object') throw {noAnswer:true,why:'応答が空です'};
+    if(timer) clearTimeout(timer);
+    return d;
+  },function(e){
+    if(timer) clearTimeout(timer);
+    if(e&&e.noAnswer) throw e;
+    throw {noAnswer:true,why:(e&&e.name==='AbortError')?'応答がないため中断しました':'通信に失敗しました'};
+  });
+}
+/* 書く送信にだけログインの証明を添える（職員マスタの GAS が書いた人を確かめる・3秒で返らなければ添えない・端末に残さない） */
+function stfToken_(){
+  var get=Promise.resolve().then(function(){ return db_().auth.getSession(); })
+    .then(function(r){ return (r&&r.data&&r.data.session&&r.data.session.access_token)||''; })['catch'](function(){ return ''; });
+  return Promise.race([get,new Promise(function(ok){ setTimeout(function(){ ok(''); },3000); })]);
+}
+/* 受付番号（16進32文字）。職員マスタの GAS の /^[A-Za-z0-9_-]{16,64}$/ に合う */
+function newReqId_(){
+  try{
+    var a=crypto.getRandomValues(new Uint8Array(16)), s='', i;
+    for(i=0;i<a.length;i++) s+=(a[i]<16?'0':'')+a[i].toString(16);
+    return s;
+  }catch(e){ atsNote_('受付番号', e); }
+  var out=Date.now().toString(36);
+  while(out.length<32) out+=Math.floor(Math.random()*4294967296).toString(36);
+  return out.slice(0,32);
+}
+
+/* ═══════════ 起動・端末の用途・ログイン ═══════════ */
+function showFieldOnly_(){
+  view='field';
+  $('a-app').hidden=true; $('a-pane').hidden=true;
+  var g=$('a-gate'); g.hidden=false;
+  g.innerHTML='<h2>この画面は事務所のパソコンで使います</h2><p>この端末は「現場」として設定されているため、採用管理は開きません。</p><p><a class="btn" href="index.html">メニューへ戻る</a></p>';
+}
+function showGate_(why){
+  view='gate';
+  $('a-app').hidden=true; $('a-pane').hidden=true;
+  var g=$('a-gate'); g.hidden=false;
+  g.innerHTML='<h2>管理者だけが使える画面です</h2><p>'+esc(why)+'</p><p><a class="btn pri" href="login.html?next=ats.html">ログインの画面へ</a></p>';
+}
+function boot_(){
+  gen++;
+  if(isField()){ showFieldOnly_(); return Promise.resolve('field'); }
+  var my=gen;
+  setSync('確かめています…');
+  return authLoad_().then(function(){ return window.SUAuth.check(); }).then(function(st){
+    if(my!==gen) return 'stale';
+    setSync('');
+    var S=window.SUAuth.STATUS;
+    if(!st||st.status!==S.OK||st.role!=='admin'||!st.mfa){
+      var why='管理者のアカウントで、2段階認証（認証アプリの6桁）まで済ませてから開いてください。';
+      if(st&&(st.status===S.MFA_VERIFY||st.status===S.MFA_ENROLL)) why='管理者として使うには、ログインの画面で2段階認証（認証アプリの6桁）を済ませてください。';
+      else if(st&&st.status===S.SIGNED_OUT) why='ログインしていません。管理者のアカウントでログインしてください。';
+      else if(st&&st.status===S.ERROR) why='ログインを確かめられませんでした。通信を確かめてから、読み込み直してください。';
+      showGate_(why);
+      return 'gate';
+    }
+    return loadAll_().then(function(){ return 'app'; });
+  })['catch'](function(e){
+    if(my!==gen) return 'stale';
+    setSync('');
+    atsNote_('起動', e);
+    showGate_('画面の部品を読み込めませんでした。電波・Wi-Fi を確かめてから、読み込み直してください。');
+    return 'gate';
+  });
+}
+/* 全部を読み直す（応募者・面接・設定・面接官の候補・自分の id） */
+function loadAll_(){
+  var my=gen;
+  setSync('読み込んでいます…');
+  var c=db_();
+  return Promise.all([
+    c.from('ats_applicants').select('*').order('received_on',{ascending:false}),
+    c.from('ats_interviews').select('*').order('held_at',{ascending:true}),
+    c.from('ats_settings').select('*'),
+    c.from('staff_names').select('name').eq('active',true),
+    c.auth.getSession()
+  ]).then(function(r){
+    if(my!==gen) return;
+    apps=rows_(r[0]); ivs=rows_(r[1]);
+    var st=rows_(r[2]); settings=AtsCalc.normSettings(st[0]||null);
+    try{ staffNames=rows_(r[3]).map(function(x){ return String(x&&x.name||''); }).filter(Boolean).sort(); }catch(e){ staffNames=[]; atsNote_('面接官の候補', e); }
+    myUid=(r[4]&&r[4].data&&r[4].data.session&&r[4].data.session.user&&r[4].data.session.user.id)||'';
+    view='app';
+    $('a-gate').hidden=true; $('a-app').hidden=false;
+    setSync('');
+    restoreUi_();
+    paintAll_();
+    var open=readOpen_();
+    if(open&&rowById_(open)) openDetail_(open);
+  })['catch'](function(e){
+    if(my!==gen) return;
+    setSync('');
+    atsNote_('読み込み', e);
+    showGate_(friendly_(e));
+  });
+}
+function rowById_(id){ for(var i=0;i<apps.length;i++) if(apps[i]&&apps[i].id===id) return apps[i]; return null; }
+function replaceRow_(row){
+  if(!row||!row.id) return;
+  for(var i=0;i<apps.length;i++) if(apps[i].id===row.id){ apps[i]=row; return; }
+  apps.unshift(row);
+}
+/* 開いたまま別のタブで用途が現場用に変わった時：世代を進め、中身を消してから読み込み直す（起動時の守りに任せる） */
+function onStorage_(e){
+  if(!e||e.key!==DEVICE_KEY) return;
+  if(e.newValue==='field'){
+    gen++; apps=[]; ivs=[]; contacts=[]; importPlan=null; evalCtx=null;
+    try{ $('a-pane').innerHTML=''; $('a-print').innerHTML=''; }catch(_){}
+    try{ location.reload(); }catch(err){ atsNote_('読み込み直し', err); }
+  }
+}
+
+/* ═══════════ 端末に残す UI の状態 ═══════════ */
+function readView_(){ try{ var v=localStorage.getItem(VIEW_KEY); return TABS.indexOf(v)>=0?v:''; }catch(e){ return ''; } }
+function saveView_(t){ try{ localStorage.setItem(VIEW_KEY,t); }catch(e){ atsNote_('タブの保存', e); } }
+function readOpen_(){ try{ var v=sessionStorage.getItem(OPEN_KEY); return (v&&ID_RE.test(v))?v:''; }catch(e){ return ''; } }
+function saveOpen_(id){ try{ if(id&&ID_RE.test(id)) sessionStorage.setItem(OPEN_KEY,id); else sessionStorage.removeItem(OPEN_KEY); }catch(e){ atsNote_('開いている応募者の保存', e); } }
+function readFilter_(){
+  try{ var o=JSON.parse(sessionStorage.getItem(FILTER_KEY)||'null'); if(o&&typeof o==='object') return {job:String(o.job||'').slice(0,60),src:String(o.src||'').slice(0,60)}; }catch(e){ atsNote_('絞り込みの読込', e); }
+  return {job:'',src:''};
+}
+function saveFilter_(){ try{ sessionStorage.setItem(FILTER_KEY,JSON.stringify({job:filter.job,src:filter.src})); }catch(e){ atsNote_('絞り込みの保存', e); } }
+function tabFromHash_(){ var h=String(location.hash||'').replace(/^#/,''); return TABS.indexOf(h)>=0?h:''; }
+function restoreUi_(){
+  tab=tabFromHash_()||readView_()||'board';
+  filter=readFilter_();
+}
+function setTab_(t){
+  if(TABS.indexOf(t)<0) t='board';
+  tab=t; saveView_(t);
+  try{ if(location.hash!=='#'+t) history.replaceState(null,'','#'+t); }catch(e){ atsNote_('タブの印', e); }
+  try{ if(window.SUPrint) SUPrint.setActive(t==='sched'?'sched':null); }catch(e){ atsNote_('印刷の対象', e); }
+  paintAll_();
+}
+function onHash_(){ var t=tabFromHash_()||'board'; if(t!==tab) setTab_(t); }
+
+/* ═══════════ 描画（全体） ═══════════ */
+function paintAll_(){
+  if(view!=='app') return;
+  TABS.forEach(function(t){
+    var b=$('t-'+t), p=$('p-'+t);
+    if(b){ b.setAttribute('aria-selected',t===tab?'true':'false'); b.tabIndex=t===tab?0:-1; }
+    if(p) p.hidden=t!==tab;
+  });
+  if(tab==='board') paintBoard_();
+  else if(tab==='sched') paintSched_();
+  else if(tab==='dash') paintDash_();
+  else if(tab==='import') paintImport_();
+  else if(tab==='expire') paintExpire_();
+  else if(tab==='settings') paintSettings_();
+}
+
+/* ═══════════ 選考ボード ═══════════ */
+function filtered_(){
+  return apps.filter(function(a){
+    if(filter.job&&(a.jobs||[]).indexOf(filter.job)<0) return false;
+    if(filter.src&&(a.sources||[]).indexOf(filter.src)<0) return false;
+    return true;
+  });
+}
+function optionsOf_(key){
+  var seen={};
+  apps.forEach(function(a){ (a[key]||[]).forEach(function(x){ if(x) seen[x]=1; }); });
+  return Object.keys(seen).sort();
+}
+function nextIv_(id){
+  var now=Date.now(), best=null;
+  ivs.forEach(function(v){ var t=Date.parse(v.held_at||''); if(v.applicant_id===id&&isFinite(t)&&t>=now-3600000&&(!best||t<Date.parse(best.held_at))) best=v; });
+  return best;
+}
+function fmtDT_(iso){
+  var t=Date.parse(iso||''); if(!isFinite(t)) return '';
+  var d=new Date(t+9*3600000);
+  return (d.getUTCMonth()+1)+'/'+d.getUTCDate()+' '+String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
+}
+function cardHtml_(a){
+  var late=AtsCalc.firstContactLate(a,Date.now()), due=AtsCalc.replyDueState(a.reply_due,today_()), nx=nextIv_(a.id);
+  var days=AtsCalc.daysBetween(a.received_on,today_());
+  var next=AtsCalc.nextStage(a.stage);
+  return '<li class="card'+(late?' late':'')+(due?' soon':'')+'" draggable="true" data-id="'+esc(a.id)+'">'+
+    '<button type="button" class="card-n" data-act="open" data-id="'+esc(a.id)+'">'+esc(a.name)+'</button>'+
+    '<span class="card-s">'+esc((a.jobs||[]).join('・')||'職種なし')+'／'+esc((a.sources||[]).join('・')||'経路なし')+'</span>'+
+    '<span class="card-s">応募から '+esc(days==null?'—':days+'日')+'</span>'+
+    (late?'<span class="card-late">⚠ 初動遅れ（'+esc(late)+'時間）</span>':'')+
+    (nx?'<span class="card-s">次の面接 '+esc(fmtDT_(nx.held_at))+'</span>':'')+
+    (due?'<span class="card-due'+(due==='past'?' past':'')+'">⏰ 返答期限 '+esc(a.reply_due)+(due==='past'?'（過ぎています）':'')+'</span>':'')+
+    (next?'<button type="button" class="btn sm" data-act="next" data-id="'+esc(a.id)+'">次の段階へ</button>':'')+
+    '</li>';
+}
+function boardHtml_(){
+  var list=filtered_(), ended=list.filter(function(a){ return AtsCalc.isEnd(a.stage); });
+  var jobs=optionsOf_('jobs'), srcs=optionsOf_('sources');
+  var opt=function(vals,cur){ return '<option value="">すべて</option>'+vals.map(function(v){ return '<option value="'+esc(v)+'"'+(v===cur?' selected':'')+'>'+esc(v)+'</option>'; }).join(''); };
+  var h='<h2 id="b-h">選考</h2><div class="bar">'+
+    '<div class="fi"><label for="b-job">職種</label><select id="b-job" data-filter="job">'+opt(jobs,filter.job)+'</select></div>'+
+    '<div class="fi"><label for="b-src">経路</label><select id="b-src" data-filter="src">'+opt(srcs,filter.src)+'</select></div>'+
+    '<div class="fi m-stage"><label for="b-mstage">段階</label><select id="b-mstage">'+AtsCalc.STAGES.map(function(s){
+      var n=list.filter(function(a){ return a.stage===s.id; }).length;
+      return '<option value="'+esc(s.id)+'"'+(s.id===mStage?' selected':'')+'>'+esc(s.no+'. '+s.label+'（'+n+'件）')+'</option>'; }).join('')+'</select></div>'+
+    '<button type="button" class="btn pri" data-act="new">＋ 応募者を足す</button>'+
+    '<button type="button" class="btn" data-act="ended" aria-expanded="'+(showEnded?'true':'false')+'">終わった人 '+esc(ended.length)+'件</button></div>'+
+    '<p class="hint pc-only">カードをつかんで別の列へ動かせます（置ける列は青い点線になります。Esc でやめます）。終わりにする時は名前を押して「終わりにする…」から。</p>';
+  if(showEnded){
+    h+='<div class="tbl-wrap"><table class="tbl"><caption class="sr">終わった人</caption><thead><tr><th>氏名</th><th>終わり方</th><th>終わった日</th><th>理由</th></tr></thead><tbody>'+
+      (ended.length?ended.map(function(a){ return '<tr><td><button type="button" class="btn sm" data-act="open" data-id="'+esc(a.id)+'">'+esc(a.name)+'</button></td><td>'+esc(AtsCalc.stageLabel(a.stage))+'</td><td>'+esc(a.closed_on||'')+'</td><td>'+esc(a.outcome_reason||'')+'</td></tr>'; }).join('')
+        :'<tr><td colspan="4">終わった人はいません。</td></tr>')+'</tbody></table></div>';
+  }
+  h+='<div class="cols">'+AtsCalc.STAGES.map(function(s){
+    var cs=list.filter(function(a){ return a.stage===s.id; });
+    return '<section class="col'+(s.id===mStage?'':' m-off')+'" data-stage="'+esc(s.id)+'" aria-label="'+esc(s.no+'. '+s.label)+'"><h3>'+esc(s.no+'. '+s.label)+'（'+esc(cs.length)+'）</h3><ul class="cards">'+cs.map(cardHtml_).join('')+'</ul></section>';
+  }).join('')+'</div>';
+  return h;
+}
+function paintBoard_(){ var p=$('p-board'); if(p) p.innerHTML=boardHtml_(); }
+
+/* ── ドラッグ（マウス・HTML5）。置ける列だけ強調し、Esc（ブラウザが止める）・外で離した時は何もしない ── */
+function onDragStart_(e){
+  var c=e.target&&e.target.closest?e.target.closest('.card'):null; if(!c) return;
+  var a=rowById_(c.getAttribute('data-id')); if(!a||AtsCalc.isEnd(a.stage)){ e.preventDefault(); return; }
+  dragId=a.id;
+  try{ e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain','ats'); }catch(err){ atsNote_('ドラッグ', err); }
+  Array.prototype.forEach.call(document.querySelectorAll('.col'),function(col){
+    var ok=AtsCalc.canMove(a.stage,col.getAttribute('data-stage'),!!a.staff_id).ok;
+    col.classList.add(ok?'drop-ok':'drop-no');
+  });
+}
+function clearDrop_(){ Array.prototype.forEach.call(document.querySelectorAll('.col'),function(col){ col.classList.remove('drop-ok'); col.classList.remove('drop-no'); }); }
+function onDragOver_(e){
+  if(!dragId) return;
+  var col=e.target&&e.target.closest?e.target.closest('.col'):null;
+  if(col&&col.classList.contains('drop-ok')) e.preventDefault();
+}
+function onDrop_(e){
+  var col=e.target&&e.target.closest?e.target.closest('.col'):null;
+  var id=dragId; dragId=''; clearDrop_();
+  if(!id||!col||!col.classList) return;
+  e.preventDefault();
+  var a=rowById_(id), to=col.getAttribute('data-stage');
+  if(!a||a.stage===to) return;
+  tryMove_(a,to);
+}
+function onDragEnd_(){ dragId=''; clearDrop_(); }
+/* 段階を動かす前の確かめ（入職完了は登録済みの時だけ） */
+function tryMove_(a,to){
+  var cm=AtsCalc.canMove(a.stage,to,!!a.staff_id);
+  if(!cm.ok){
+    if(cm.reason==='not_registered') toast('先に職員マスタへ登録してください');
+    else if(cm.reason==='hired') toast('入職完了の方は動かせません');
+    return Promise.resolve(false);
+  }
+  return moveStage_(a.id,to,'','',false);
+}
+function moveStage_(id,to,reason,note,isUndo){
+  var a=rowById_(id); if(!a) return Promise.resolve(false);
+  var from=a.stage, my=gen;
+  setSync('保存しています…');
+  return rpc_('ats_set_stage',{p_id:id,p_to:to,p_rev:a.rev,p_reason:reason||null,p_note:note||null}).then(function(d){
+    if(my!==gen) return false;
+    setSync('');
+    if(d&&d.ok===true&&d.row){
+      replaceRow_(d.row); paintAll_(); if(curId===id) paintDetail_();
+      if(!isUndo) showUndo_('「'+d.row.name+'」を'+AtsCalc.stageLabel(to)+'へ移しました',function(){ return moveStage_(id,from,'','',true); });
+      else toast('元に戻しました');
+      return true;
+    }
+    if(d&&d.conflict){ if(d.row) replaceRow_(d.row); paintAll_(); if(curId===id) paintDetail_(); setMsg('他で直されました。読み直してから、もう一度動かしてください。','warn'); return false; }
+    if(d&&d.reason==='not_registered'){ toast('先に職員マスタへ登録してください'); return false; }
+    setMsg('段階を動かせませんでした。','ng'); return false;
+  },function(e){
+    if(my!==gen) return false;
+    setSync(''); atsNote_('段階', e); setMsg(friendly_(e)); return false;
+  });
+}
+function showUndo_(text,fn){
+  var u=$('a-undo'); if(!u) return;
+  clearTimeout(undoT);
+  u.innerHTML='<span>'+esc(text)+'</span><button type="button" class="btn sm" data-act="undo">元に戻す</button>';
+  u.hidden=false;
+  showUndo_.fn=fn;
+  undoT=setTimeout(hideUndo_,UNDO_MS);
+}
+function hideUndo_(){ var u=$('a-undo'); if(u){ u.hidden=true; u.innerHTML=''; } showUndo_.fn=null; }
+/* 終わりにする（不採用・辞退・連絡途絶）。理由とメモを聞いてから */
+function askEnd_(a){
+  var body='<div class="fi"><label for="d-end">終わり方</label><select id="d-end">'+AtsCalc.END_STAGES.map(function(s){ return '<option value="'+esc(s.id)+'">'+esc(s.label)+'</option>'; }).join('')+'</select></div>'+
+    '<div class="fi"><label for="d-reason">理由</label><select id="d-reason"><option value="">選んでください</option>'+AtsCalc.OUTCOME_REASONS.map(function(r){ return '<option>'+esc(r)+'</option>'; }).join('')+'</select></div>'+
+    '<div class="fi"><label for="d-note">メモ（任意・200字まで）</label><textarea id="d-note" maxlength="200"></textarea></div>';
+  return openDlg_({title:'選考を終わりにする',lines:['「'+a.name+'」の選考を終わりにします。終わった日から'+settings.retainMonths+'か月で、保管期限の一覧に出ます。'],bodyHtml:body,ok:'終わりにする',
+    collect:function(){ var r=$('d-reason').value; if(!r){ toast('理由を選んでください'); return null; } return {to:$('d-end').value,reason:r,note:String($('d-note').value).trim().slice(0,200)}; }})
+  .then(function(v){ if(!v) return false; return moveStage_(a.id,v.to,v.reason,v.note,false); });
+}
+
+/* ═══════════ 詳細 ═══════════ */
+function openDetail_(id){
+  var go=function(){
+    var a=rowById_(id); if(!a) return;
+    curId=id; saveOpen_(id); edDirty=false; ivEdit='';
+    if(contactsFor!==id){ contacts=[]; contactsFor=''; }
+    $('a-pane').hidden=false;
+    paintDetail_();
+    loadContacts_(id); loadEvalStat_(id);
+    if(!enums&&enumsState!=='loading') loadEnums_();
+    if(a.staff_pending_at&&!a.staff_id) regCheck_(id,true);
+    try{ var h=$('a-pane-h'); if(h) h.focus(); }catch(e){ atsNote_('詳細の手元', e); }
+  };
+  if(edDirty&&curId&&curId!==id) return askConfirm_('保存していない入力があります',['開いている方の入力を捨てて、別の方を開きますか？'],'捨てて開く',true).then(function(ok){ if(ok){ edDirty=false; go(); } });
+  go(); return Promise.resolve();
+}
+function closeDetail_(force){
+  var go=function(){ curId=''; saveOpen_(''); edDirty=false; contacts=[]; contactsFor=''; var p=$('a-pane'); p.hidden=true; p.innerHTML=''; };
+  if(edDirty&&!force) return askConfirm_('保存していない入力があります',['入力を捨てて閉じますか？'],'捨てて閉じる',true).then(function(ok){ if(ok) go(); return ok; });
+  go(); return Promise.resolve(true);
+}
+function val_(id){ var e=$(id); return e?String(e.value==null?'':e.value).trim():''; }
+function fi_(id,label,value,type,extra){
+  return '<div class="fi"><label for="'+id+'">'+esc(label)+'</label><input id="'+id+'" type="'+(type||'text')+'" value="'+esc(value==null?'':value)+'"'+(extra||'')+' data-dirty="1"></div>';
+}
+function ta_(id,label,value){ return '<div class="fi"><label for="'+id+'">'+esc(label)+'</label><textarea id="'+id+'" data-dirty="1">'+esc(value||'')+'</textarea></div>'; }
+function detailHtml_(a){
+  var ended=AtsCalc.isEnd(a.stage), next=AtsCalc.nextStage(a.stage);
+  var h='<div class="pane-h"><h2 id="a-pane-h" tabindex="-1">'+esc(a.name)+'</h2><button type="button" class="btn" data-act="close" aria-label="詳細を閉じる">閉じる</button></div>';
+  h+='<div class="acts" style="margin:10px 0"><div class="fi"><label for="d-stage">段階</label><select id="d-stage">'+
+    (ended?'<option value="'+esc(a.stage)+'" selected>'+esc(AtsCalc.stageLabel(a.stage)+'（終わり）')+'</option>':'')+
+    AtsCalc.STAGES.map(function(s){ return '<option value="'+esc(s.id)+'"'+(s.id===a.stage?' selected':'')+'>'+esc(s.no+'. '+s.label)+'</option>'; }).join('')+'</select></div>'+
+    (next&&!ended?'<button type="button" class="btn pri" data-act="next" data-id="'+esc(a.id)+'">次の段階へ</button>':'')+
+    (!ended&&a.stage!=='hired'?'<button type="button" class="btn ng" data-act="end">終わりにする…</button>':'')+'</div>';
+  if(ended) h+='<p class="hint">終わり方: '+esc(AtsCalc.stageLabel(a.stage))+'（'+esc(a.closed_on||'')+'・'+esc(a.outcome_reason||'')+'）。保管期限 '+esc(a.retain_until||'')+'</p>';
+  h+='<div class="msg" id="d-msg" role="status"></div>';
+  /* 基本情報 */
+  h+='<section class="sec" aria-labelledby="s-basic"><h3 id="s-basic">基本情報</h3><div class="fgrid">'+
+    fi_('f-name','氏名',a.name)+fi_('f-kana','フリガナ',a.kana)+
+    '<div class="fi"><label for="f-gender">性別</label><select id="f-gender" data-dirty="1"><option value="">—</option><option value="M"'+(a.gender==='M'?' selected':'')+'>男</option><option value="F"'+(a.gender==='F'?' selected':'')+'>女</option></select></div>'+
+    fi_('f-birth','生年月日',a.birth_date,'date')+fi_('f-recv','受付日',a.received_on,'date')+
+    fi_('f-src','経路（「・」で区切る）',(a.sources||[]).join('・'))+fi_('f-jobs','職種（「・」で区切る）',(a.jobs||[]).join('・'))+
+    fi_('f-quals','資格',a.quals_text)+fi_('f-addr','住所',a.address)+
+    ta_('f-phones','電話（1行に1つ。古い番号は先頭に「旧」）',(a.phones||[]).map(function(p){ return (p.label?p.label+' ':'')+p.num; }).join('\n'))+
+    fi_('f-email','メール',a.email,'email')+fi_('f-wish','本人希望',a.wish_text)+ta_('f-cond','条件',a.cond_text)+ta_('f-note','備考',a.note_text)+
+    fi_('f-due','返答期限',a.reply_due,'date')+fi_('f-start','入職予定日',a.start_on,'date')+
+    '</div><button type="button" class="btn pri" data-act="save-basic">基本情報を保存</button></section>';
+  /* 連絡の記録 */
+  h+='<section class="sec" aria-labelledby="s-ct"><h3 id="s-ct">連絡の記録</h3>'+
+    (contactsFor===a.id?(contacts.length?'<ul class="list">'+contacts.map(function(c){ return '<li><b>'+esc(fmtDT_(c.at))+'</b> '+esc(c.channel||'')+'（'+esc(c.direction==='out'?'こちらから':'先方から')+'）<br>'+esc(c.summary||'')+'</li>'; }).join('')+'</ul>':'<p class="muted">まだありません。</p>'):'<p class="muted">読み込んでいます…</p>')+
+    '<div class="fgrid"><div class="fi"><label for="c-ch">手段</label><select id="c-ch">'+AtsCalc.CHANNELS.map(function(c){ return '<option>'+esc(c)+'</option>'; }).join('')+'</select></div>'+
+    '<div class="fi"><label for="c-dir">向き</label><select id="c-dir"><option value="out">こちらから</option><option value="in">先方から</option></select></div></div>'+
+    '<div class="fi"><label for="c-sum">内容</label><textarea id="c-sum" maxlength="2000"></textarea></div>'+
+    '<button type="button" class="btn" data-act="add-contact">連絡を記録</button></section>';
+  /* 面接 */
+  var mine=ivs.filter(function(v){ return v.applicant_id===a.id; }).sort(function(x,y){ return (x.round||0)-(y.round||0); });
+  h+='<section class="sec" aria-labelledby="s-iv"><h3 id="s-iv">面接</h3>'+(mine.length?'<ul class="list">'+mine.map(function(v){
+      var st=evalStat[v.id], tot=(st&&st.total!=null)?st.total:(v.interviewers||[]).length;
+      return '<li><b>第'+esc(v.round)+'回</b> '+esc(fmtDT_(v.held_at))+' '+esc(v.place||'')+'<br>面接官: '+esc((v.interviewers||[]).join('・')||'未定')+
+        '<br>評価: '+esc(st?AtsCalc.evalStatusText(st.submitted,tot):'数えています…')+(v.memo?'<br>'+esc(v.memo):'')+
+        '<div class="acts"><button type="button" class="btn sm pri" data-act="eval" data-iv="'+esc(v.id)+'">評価を入れる</button><button type="button" class="btn sm" data-act="iv-edit" data-iv="'+esc(v.id)+'">直す</button></div></li>';
+    }).join('')+'</ul>':'<p class="muted">まだありません。</p>')+ivFormHtml_(a,mine)+'</section>';
+  /* 入職準備と職員マスタへの登録 */
+  h+=prepHtml_(a);
+  return h;
+}
+function ivFormHtml_(a,mine){
+  var v=null; mine.forEach(function(x){ if(x.id===ivEdit) v=x; });
+  var local=v&&v.held_at?toLocalInput_(v.held_at):'';
+  var picked=v?(v.interviewers||[]):[];
+  var manual=picked.filter(function(n){ return staffNames.indexOf(n)<0; });
+  return '<h3>'+(v?'第'+esc(v.round)+'回の面接を直す':'面接を足す')+'</h3><div class="fgrid">'+
+    '<div class="fi"><label for="i-at">日時</label><input id="i-at" type="datetime-local" value="'+esc(local)+'"></div>'+
+    '<div class="fi"><label for="i-place">場所</label><input id="i-place" type="text" maxlength="100" value="'+esc(v?v.place||'':'')+'"></div></div>'+
+    '<fieldset class="score"><legend>面接官</legend><div class="chks">'+staffNames.map(function(n,i){
+      return '<label class="chk"><input type="checkbox" data-ivname="'+esc(n)+'" id="i-n'+i+'"'+(picked.indexOf(n)>=0?' checked':'')+'>'+esc(n)+'</label>'; }).join('')+'</div>'+
+    '<div class="fi"><label for="i-manual">候補に無い面接官（「・」で区切る）</label><input id="i-manual" type="text" value="'+esc(manual.join('・'))+'"></div></fieldset>'+
+    '<div class="fi"><label for="i-memo">メモ</label><textarea id="i-memo" maxlength="1000">'+esc(v?v.memo||'':'')+'</textarea></div>'+
+    '<div class="acts"><button type="button" class="btn" data-act="iv-save">'+(v?'面接を保存':'面接を足す')+'</button>'+(v?'<button type="button" class="btn" data-act="iv-cancel">直すのをやめる</button>':'')+'</div>';
+}
+function toLocalInput_(iso){
+  var t=Date.parse(iso||''); if(!isFinite(t)) return '';
+  var d=new Date(t+9*3600000);
+  return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0')+'T'+String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
+}
+/* 画面の日時（日本時間）→ ISO（+09:00） */
+function fromLocalInput_(v){ return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v)?v+':00+09:00':''; }
+function paintDetail_(){
+  var a=rowById_(curId), p=$('a-pane');
+  if(!a||!p){ if(p){ p.hidden=true; p.innerHTML=''; } return; }
+  p.innerHTML=detailHtml_(a);
+}
+function dMsg_(t,kind){ var e=$('d-msg'); if(!e) return; e.className='msg'+(t?' '+(kind||'ng'):''); e.textContent=t||''; }
+function readBasic_(a){
+  var lines=val_('f-phones').split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
+  var phones=lines.map(function(l){ var old=/^旧[\s　]*/.test(l); return {num:l.replace(/^旧[\s　]*/,'').slice(0,40),label:old?'旧':''}; }).slice(0,6);
+  var split=function(s){ return s.split(/[・、,]/).map(function(x){ return x.trim(); }).filter(Boolean).slice(0,10); };
+  return {id:a.id,name:val_('f-name'),kana:val_('f-kana')||null,gender:val_('f-gender'),birth_date:val_('f-birth')||null,received_on:val_('f-recv')||null,
+    sources:split(val_('f-src')),jobs:split(val_('f-jobs')),quals_text:val_('f-quals')||null,address:val_('f-addr')||null,phones:phones,
+    email:val_('f-email')||null,wish_text:val_('f-wish')||null,cond_text:val_('f-cond')||null,note_text:val_('f-note')||null,
+    reply_due:val_('f-due')||null,start_on:val_('f-start')||null};
+}
+function putRow_(row,rev){
+  var my=gen;
+  return rpc_('ats_put',{p_row:row,p_rev:rev}).then(function(d){
+    if(my!==gen) return 'stale';
+    if(d&&d.ok===true&&d.row){ replaceRow_(d.row); return 'ok'; }
+    if(d&&d.conflict){ return 'conflict'; }
+    return 'ng';
+  });
+}
+function saveBasic_(){
+  var a=rowById_(curId); if(!a) return Promise.resolve('none');
+  var row=readBasic_(a);
+  if(!row.name){ dMsg_('氏名を入れてください。'); return Promise.resolve('bad'); }
+  dMsg_('保存しています…','busy');
+  return putRow_(row,a.rev).then(function(r){
+    if(r==='ok'){ edDirty=false; paintAll_(); paintDetail_(); dMsg_('保存しました。','ok'); }
+    else if(r==='conflict') dMsg_('他で直されました。読み直してください（「閉じる」を押してから、画面を読み込み直します）。','warn');
+    else if(r==='ng') dMsg_('保存できませんでした。');
+    return r;
+  },function(e){ atsNote_('基本情報の保存', e); dMsg_(friendly_(e)); return 'error'; });
+}
+function newApplicant_(){
+  var body='<div class="fi"><label for="d-nname">氏名</label><input id="d-nname" type="text" maxlength="60"></div>'+
+    '<div class="fi"><label for="d-nrecv">受付日</label><input id="d-nrecv" type="date" value="'+esc(today_())+'"></div>';
+  return openDlg_({title:'応募者を足す',lines:['氏名と受付日を入れてください。ほかの項目は、足した後の詳細で入れます。'],bodyHtml:body,ok:'足す',
+    collect:function(){ var n=val_('d-nname'), r=val_('d-nrecv'); if(!n||!AtsCalc.isDate(r)){ toast('氏名と受付日を入れてください'); return null; } return {name:n,received_on:r}; }})
+  .then(function(v){
+    if(!v) return false;
+    var my=gen;
+    return rpc_('ats_put',{p_row:{name:v.name,received_on:v.received_on,stage:'applied',sources:[],jobs:[],phones:[]},p_rev:null}).then(function(d){
+      if(my!==gen) return false;
+      if(d&&d.ok===true&&d.row){ replaceRow_(d.row); paintAll_(); openDetail_(d.row.id); return true; }
+      setMsg('足せませんでした。'); return false;
+    },function(e){ atsNote_('応募者を足す', e); setMsg(friendly_(e)); return false; });
+  });
+}
+
+/* ── 連絡の記録（初めての「こちらから」で最初の連絡の時刻を付ける） ── */
+function loadContacts_(id){
+  var my=gen;
+  return Promise.resolve().then(function(){ return db_().from('ats_contacts').select('*').eq('applicant_id',id).order('at',{ascending:false}); }).then(function(r){
+    if(my!==gen||curId!==id) return;
+    contacts=rows_(r); contactsFor=id; paintDetail_();
+  })['catch'](function(e){ if(my!==gen||curId!==id) return; atsNote_('連絡の記録の読込', e); dMsg_(friendly_(e)); });
+}
+function addContact_(){
+  var a=rowById_(curId); if(!a) return Promise.resolve(false);
+  var sum=val_('c-sum'), dir=val_('c-dir')==='in'?'in':'out', ch=val_('c-ch');
+  if(!sum){ dMsg_('内容を入れてください。'); return Promise.resolve(false); }
+  var my=gen, id=a.id, at=new Date().toISOString();
+  return Promise.resolve().then(function(){ return db_().from('ats_contacts').insert({applicant_id:id,at:at,channel:ch,direction:dir,summary:sum.slice(0,2000)}); }).then(function(r){
+    if(r&&r.error) throw r.error;
+    if(my!==gen) return false;
+    var cur=rowById_(id);
+    var first=(dir==='out'&&cur&&!cur.first_contact_at)?putRow_({id:id,first_contact_at:at},cur.rev):Promise.resolve('ok');
+    return first.then(function(){ paintAll_(); return loadContacts_(id); }).then(function(){ dMsg_('連絡を記録しました。','ok'); return true; });
+  })['catch'](function(e){ atsNote_('連絡の記録', e); dMsg_(friendly_(e)); return false; });
+}
+
+/* ── 面接 ── */
+function loadEvalStat_(id){
+  var my=gen;
+  ivs.filter(function(v){ return v.applicant_id===id; }).forEach(function(v){
+    rpc_('ats_eval_status',{p_interview_id:v.id}).then(function(d){
+      if(my!==gen) return;
+      evalStat[v.id]={submitted:Number(d&&d.submitted)||0,total:(d&&d.interviewers!=null)?Number(d.interviewers):(v.interviewers||[]).length};
+      if(curId===id) paintDetail_();
+    },function(e){ atsNote_('評価の件数', e); });
+  });
+}
+function saveInterview_(){
+  var a=rowById_(curId); if(!a) return Promise.resolve(false);
+  var at=fromLocalInput_(val_('i-at'));
+  if(!at){ dMsg_('面接の日時を入れてください。'); return Promise.resolve(false); }
+  var names=[];
+  Array.prototype.forEach.call(document.querySelectorAll('[data-ivname]'),function(c){ if(c.checked) names.push(c.getAttribute('data-ivname')); });
+  val_('i-manual').split(/[・、,]/).forEach(function(n){ n=n.trim(); if(n&&names.indexOf(n)<0) names.push(n.slice(0,40)); });
+  var row={held_at:at,place:val_('i-place').slice(0,100),interviewers:names.slice(0,10),memo:val_('i-memo').slice(0,1000)};
+  var my=gen, id=a.id, editing=ivEdit;
+  var mine=ivs.filter(function(v){ return v.applicant_id===id; });
+  var q=editing?function(){ return db_().from('ats_interviews').update(row).eq('id',editing).select(); }
+    :function(){ row.applicant_id=id; row.round=mine.reduce(function(m,v){ return Math.max(m,Number(v.round)||0); },0)+1; return db_().from('ats_interviews').insert(row).select(); };
+  return Promise.resolve().then(q).then(function(r){
+    var got=rows_(r);
+    if(my!==gen) return false;
+    got.forEach(function(v){ var i; for(i=0;i<ivs.length;i++) if(ivs[i].id===v.id){ ivs[i]=v; return; } ivs.push(v); });
+    ivEdit=''; paintAll_(); paintDetail_(); loadEvalStat_(id); dMsg_('面接を保存しました。','ok'); return true;
+  })['catch'](function(e){ atsNote_('面接の保存', e); dMsg_(friendly_(e)); return false; });
+}
+
+/* ── 評価の入力（面接官ごとに1件。管理者が紙の評価を代わりに入れられる＝面接官をその面接の面接官から選ぶ） ──
+   表から読めるのは自分が入れた行だけ。ほかの評価は ats_eval_peek（提出済みだけ）で見る */
+function evalRowOf_(e,who){ var r=null; e.mine.forEach(function(x){ if(x&&x.interviewer===who) r=x; }); return r; }
+function evalLoad_(e,who){
+  e.who=who; e.row=evalRowOf_(e,who);
+  e.scores=Object.assign({},e.row&&e.row.scores||{}); e.overall=e.row?e.row.overall:null; e.comment=e.row?e.row.comment||'':'';
+  e.dirty=false; e.peek=null; e.msg='';
+}
+function openEval_(ivId){
+  var v=null; ivs.forEach(function(x){ if(x.id===ivId) v=x; }); if(!v) return Promise.resolve(false);
+  var my=gen;
+  return Promise.resolve().then(function(){ return db_().from('ats_evaluations').select('*').eq('interview_id',ivId); }).then(function(r){
+    if(my!==gen) return false;
+    var mine=rows_(r), names=(v.interviewers||[]).slice();
+    var first=''; names.forEach(function(n){ if(!first&&!mine.some(function(x){ return x.interviewer===n; })) first=n; });
+    evalCtx={iv:v,mine:mine};
+    evalLoad_(evalCtx,first||names[0]||'');
+    paintEval_();
+    var d=$('a-evdlg'); if(d&&typeof d.showModal==='function'&&!d.open) d.showModal();
+    return true;
+  })['catch'](function(e){ atsNote_('評価の読込', e); dMsg_(friendly_(e)); return false; });
+}
+function evalHtml_(){
+  var e=evalCtx, items=settings.evalItems, a=rowById_(e.iv.applicant_id)||{}, names=e.iv.interviewers||[];
+  var radios=function(name,cur){ var s=''; for(var n=1;n<=5;n++) s+='<label><input type="radio" name="'+esc(name)+'" value="'+n+'"'+(Number(cur)===n?' checked':'')+'>'+n+'</label>'; return s; };
+  var submitted=e.mine.some(AtsCalc.evalVisible);
+  var h='<div class="dlg-in"><h2 id="a-ev-h">評価を入れる（'+esc(a.name||'')+'・第'+esc(e.iv.round)+'回）</h2>';
+  if(!names.length) return h+'<p class="msg warn">先にこの面接の面接官を決めてください（詳細の「面接」の「直す」）。</p><div class="dlg-btns"><button type="button" class="btn" data-ev="close">閉じる</button></div></div>';
+  h+='<div class="fi" style="max-width:360px"><label for="ev-who">面接官（紙の評価を代わりに入れる時も、その面接官を選ぶ）</label><select id="ev-who">'+names.map(function(n){
+      var r=evalRowOf_(e,n); return '<option value="'+esc(n)+'"'+(n===e.who?' selected':'')+'>'+esc(n+(r?(r.status==='submitted'?'（提出済み）':'（下書き）')+(r.edited_after_peek?'（ほかの評価を見た後に入力）':''):''))+'</option>'; }).join('')+'</select></div>'+
+    '<p class="hint">1（よくない）〜5（とてもよい）。ほかの面接官の評価は、評価を1つ提出すると見られます。</p>'+
+    (e.row&&e.row.edited_after_peek?'<p class="msg warn">この評価は、ほかの評価を見た後に入力されています。</p>':'')+
+    (e.row&&e.row.peeked_at&&!e.row.edited_after_peek?'<p class="msg warn">ほかの面接官の評価を見た後に直すと、直した印が残ります。</p>':'')+
+    items.map(function(k,i){ return '<fieldset class="score"><legend>'+esc(k)+'</legend><div class="score-r">'+radios('ev'+i,e.scores[k])+'</div></fieldset>'; }).join('')+
+    '<fieldset class="score"><legend>総合の点</legend><div class="score-r">'+radios('evo',e.overall)+'</div></fieldset>'+
+    '<div class="fi"><label for="ev-c">コメント</label><textarea id="ev-c" maxlength="4000">'+esc(e.comment)+'</textarea></div>'+
+    '<div class="msg'+(e.msg?' warn':'')+'" role="status">'+esc(e.msg)+'</div>';
+  if(e.peek) h+='<h3>ほかの面接官の評価（提出済み）</h3>'+(e.peek.length?'<ul class="list">'+e.peek.map(function(p){
+      return '<li><b>'+esc(p.interviewer||'')+'</b> 総合 '+esc(p.overall==null?'—':p.overall)+(p.edited_after_peek?'（ほかの評価を見た後に入力）':'')+'<br>'+
+        items.map(function(k){ return esc(k)+' '+esc(p.scores&&p.scores[k]!=null?p.scores[k]:'—'); }).join('・')+(p.comment?'<br>'+esc(p.comment):'')+'</li>'; }).join('')+'</ul>':'<p class="muted">ほかの提出済みの評価はまだありません。</p>');
+  h+='<div class="dlg-btns">'+(submitted?'<button type="button" class="btn" data-ev="peek">ほかの評価を見る</button>':'<span class="muted">提出すると見られます</span>')+
+    '<button type="button" class="btn" data-ev="close">閉じる</button><button type="button" class="btn" data-ev="draft">下書き保存</button><button type="button" class="btn pri" data-ev="submit">提出</button></div></div>';
+  return h;
+}
+function paintEval_(){ var d=$('a-evdlg'); if(d&&evalCtx) d.innerHTML=evalHtml_(); }
+function readEval_(){
+  var e=evalCtx; if(!e) return;
+  settings.evalItems.forEach(function(k,i){ var c=document.querySelector('input[name="ev'+i+'"]:checked'); if(c) e.scores[k]=Number(c.value); });
+  var o=document.querySelector('input[name="evo"]:checked'); if(o) e.overall=Number(o.value);
+  var t=$('ev-c'); if(t) e.comment=String(t.value);
+}
+function evalKeep_(e,row){
+  if(!row) return;
+  e.row=row;
+  for(var i=0;i<e.mine.length;i++) if(e.mine[i].id===row.id){ e.mine[i]=row; return; }
+  e.mine.push(row);
+}
+/* 面接官を選び直す（書きかけがあれば確かめてから） */
+function evalSwitch_(who){
+  var e=evalCtx; if(!e||who===e.who) return Promise.resolve(false);
+  var go=function(){ evalLoad_(e,who); paintEval_(); return true; };
+  if(e.dirty) return askConfirm_('保存していない評価があります',['書きかけの評価を捨てて、面接官を変えますか？'],'捨てて変える',true).then(function(ok){ if(ok) return go(); paintEval_(); return false; });
+  return Promise.resolve(go());
+}
+function saveEval_(submit){
+  readEval_();
+  var e=evalCtx; if(!e||!e.who) return Promise.resolve(false);
+  var scores={};
+  settings.evalItems.forEach(function(k){ var n=Number(e.scores[k]); if(n>=1&&n<=5) scores[k]=n; });
+  var chk=AtsCalc.evalCheck(settings.evalItems,scores,e.overall,submit);
+  if(!chk.ok){ e.msg='提出するには全部の点を選んでください（'+chk.missing.join('・')+'）。'; paintEval_(); return Promise.resolve(false); }
+  var my=gen;
+  return rpc_('ats_eval_put',{p_interview_id:e.iv.id,p_interviewer:e.who,p_scores:scores,p_overall:e.overall||null,p_comment:String(e.comment).slice(0,4000),p_submit:!!submit,p_rev:e.row?e.row.rev:null}).then(function(d){
+    if(my!==gen||evalCtx!==e) return false;
+    if(d&&d.ok===true&&d.row){ evalKeep_(e,d.row); e.dirty=false; e.msg=submit?'提出しました。':'下書きを保存しました。'; paintEval_(); loadEvalStat_(e.iv.applicant_id); return true; }
+    if(d&&d.conflict){ if(d.row) evalKeep_(e,d.row); e.msg='他で直されました。閉じてから、もう一度開いてください。'; paintEval_(); return false; }
+    if(d&&d.reason==='other_author'){ e.msg='この評価はほかの方が入れたため直せません。'; paintEval_(); return false; }
+    if(d&&d.error==='badinterviewer'){ e.msg='面接官の名前を確かめてください（1〜80字）。'; paintEval_(); return false; }
+    e.msg='保存できませんでした。'; paintEval_(); return false;
+  },function(err){ atsNote_('評価の保存', err); e.msg=friendly_(err); paintEval_(); return false; });
+}
+function peekEval_(){
+  var e=evalCtx; if(!e) return Promise.resolve(false);
+  readEval_();
+  var my=gen;
+  return rpc_('ats_eval_peek',evalPeekArgs_(e)).then(function(d){
+    if(my!==gen||evalCtx!==e) return false;
+    /* 見た時刻を書くと自分の行の版が上がる＝返ってきた own の版で次を保存する */
+    if(d&&d.ok===true){
+      var cur=e.row;
+      (Array.isArray(d.own)?d.own:[]).forEach(function(x){ evalKeep_(e,x); });
+      e.row=evalRowOf_(e,e.who)||cur;
+      /* ほかの方が入れた提出済みと、自分が代わりに入れたほかの面接官の提出済み */
+      e.peek=(Array.isArray(d.rows)?d.rows:[]).concat(e.mine.filter(function(x){ return x&&x.interviewer!==e.who; }))
+        .filter(function(x){ return x&&x.status==='submitted'&&x.interviewer!==e.who; });
+      paintEval_(); return true;
+    }
+    e.msg='この評価を提出してから見られます。'; paintEval_(); return false;
+  },function(err){ atsNote_('ほかの評価', err); e.msg=friendly_(err); paintEval_(); return false; });
+}
+function evalPeekArgs_(e){ return {p_interview_id:e.iv.id}; }
+function closeEval_(force){
+  var go=function(){ var d=$('a-evdlg'); evalCtx=null; try{ if(d.open) d.close(); }catch(e){ atsNote_('評価の窓', e); } d.innerHTML=''; };
+  if(evalCtx&&evalCtx.dirty&&!force) return askConfirm_('保存していない評価があります',['書きかけの評価を捨てて閉じますか？'],'捨てて閉じる',true).then(function(ok){ if(ok) go(); return ok; });
+  go(); return Promise.resolve(true);
+}
+
+/* ═══════════ 入職準備と職員マスタへの登録 ═══════════ */
+function loadEnums_(){
+  if(!stfReady_()){ enumsState='nocfg'; if(curId) paintDetail_(); return Promise.resolve(false); }
+  enumsState='loading';
+  var my=gen;
+  return stfPost_({action:'getEnums'},30000).then(function(d){
+    if(my!==gen) return false;
+    if(d&&d.ok===true&&d.enums){ enums=d.enums; enumsState='ok'; }
+    else enumsState='error';
+    if(curId) paintDetail_();
+    return enumsState==='ok';
+  },function(e){ if(my!==gen) return false; if(!(e&&e.nocfg)) atsNote_('職員マスタの選択肢', e&&e.why); enumsState=(e&&e.nocfg)?'nocfg':'error'; if(curId) paintDetail_(); return false; });
+}
+function prepHtml_(a){
+  var p=(a.prep&&typeof a.prep==='object')?a.prep:{}, sites=p.sites||{}, q=Array.isArray(p.quals)?p.quals:[], em=p.emergency||{};
+  var et=(enums&&enums.employmentType)||[], qc=(enums&&enums.qualCodes)||[];
+  var sel=function(id,list,cur,lab){ return '<div class="fi"><label for="'+id+'">'+esc(lab)+'</label><select id="'+id+'" data-dirty="1"><option value="">選んでください</option>'+list.map(function(x){ return '<option value="'+esc(x.code)+'"'+(x.code===cur?' selected':'')+'>'+esc(x.label)+'</option>'; }).join('')+'</select></div>'; };
+  var ws=Object.keys(AtsCalc.WORK_LABEL).map(function(k){ return {code:k,label:AtsCalc.WORK_LABEL[k]}; });
+  var st=Object.keys(AtsCalc.SITE_LABEL).map(function(k){ return {code:k,label:AtsCalc.SITE_LABEL[k]}; });
+  var h='<section class="sec" aria-labelledby="s-prep"><h3 id="s-prep">入職準備</h3><div class="fgrid">'+
+    fi_('p-kana','カナ',p.kana||a.kana)+fi_('p-birth','生年月日（和暦も可）',p.birthDate||a.birth_date)+
+    '<div class="fi"><label for="p-gender">性別</label><select id="p-gender" data-dirty="1"><option value="">—</option><option value="M"'+((p.gender||a.gender)==='M'?' selected':'')+'>男</option><option value="F"'+((p.gender||a.gender)==='F'?' selected':'')+'>女</option></select></div>'+
+    sel('p-emp',et.filter(function(x){ return !x.hidden; }),p.employmentType,'雇用形態')+sel('p-ws',ws,p.workStyle,'勤務形態')+
+    fi_('p-job','職種',p.jobTitle||(a.jobs||[])[0]||'')+fi_('p-phone','電話（主番号）',p.phone||'')+fi_('p-addr','住所',p.address||a.address)+
+    fi_('p-hire','入職日',p.hireDate||a.start_on,'date')+'</div>'+
+    '<fieldset class="score"><legend>所属事業所</legend><div class="chks">'+st.map(function(s){ return '<label class="chk"><input type="checkbox" id="p-site-'+esc(s.code)+'" data-dirty="1"'+(sites[s.code]===true?' checked':'')+'>'+esc(s.label)+'</label>'; }).join('')+'</div>'+
+    sel('p-primary',st,p.primarySite,'主所属')+'</fieldset>'+
+    '<fieldset class="score"><legend>資格（取得日は任意）</legend>'+[0,1,2].map(function(i){ var x=q[i]||{}; return '<div class="fgrid">'+sel('p-q'+i,qc.filter(function(c){ return !c.hidden; }),x.code,'資格 '+(i+1))+fi_('p-qd'+i,'取得日',x.acquiredOn,'date')+'</div>'; }).join('')+'</fieldset>'+
+    '<fieldset class="score"><legend>緊急連絡先</legend><div class="fgrid">'+fi_('p-em-n','氏名',em.name)+fi_('p-em-r','続柄',em.relation)+fi_('p-em-p','電話',em.phone)+'</div></fieldset>'+
+    '<div class="acts pc-only"><button type="button" class="btn" data-act="save-prep">入職準備を保存</button></div>'+regHtml_(a)+'</section>';
+  return h;
+}
+function readPrep_(a){
+  var bd=val_('p-birth'), bn=bd?(AtsCalc.normDate(bd)||bd):'';
+  var quals=[0,1,2].map(function(i){ var c=val_('p-q'+i); return c?(val_('p-qd'+i)?{code:c,acquiredOn:val_('p-qd'+i)}:{code:c}):null; }).filter(Boolean);
+  var sites={}; Object.keys(AtsCalc.SITE_LABEL).forEach(function(k){ var c=$('p-site-'+k); sites[k]=!!(c&&c.checked); });
+  return {kana:val_('p-kana'),birthDate:bn,gender:val_('p-gender'),employmentType:val_('p-emp'),workStyle:val_('p-ws'),jobTitle:val_('p-job'),
+    phone:val_('p-phone'),address:val_('p-addr'),sites:sites,primarySite:val_('p-primary'),quals:quals,
+    emergency:{name:val_('p-em-n'),relation:val_('p-em-r'),phone:val_('p-em-p')},hireDate:val_('p-hire')};
+}
+function savePrep_(){
+  var a=rowById_(curId); if(!a) return Promise.resolve('none');
+  var p=readPrep_(a);
+  if(p.birthDate&&!AtsCalc.isDate(p.birthDate)){ dMsg_('生年月日を読めません（例: 1990-04-01・平成2年4月1日）。'); return Promise.resolve('bad'); }
+  dMsg_('保存しています…','busy');
+  return putRow_({id:a.id,prep:p,start_on:p.hireDate||a.start_on||null},a.rev).then(function(r){
+    if(r==='ok'){ edDirty=false; paintAll_(); paintDetail_(); dMsg_('入職準備を保存しました。','ok'); }
+    else if(r==='conflict') dMsg_('他で直されました。読み直してください（「閉じる」を押してから、画面を読み込み直します）。','warn');
+    else if(r==='ng') dMsg_('保存できませんでした。');
+    return r;
+  },function(e){ atsNote_('入職準備の保存', e); dMsg_(friendly_(e)); return 'error'; });
+}
+function regOf_(id){ return reg[id]||(reg[id]={state:'',msg:'',resend:null,busy:false,staffId:''}); }
+function regHtml_(a){
+  var r=regOf_(a.id);
+  var h='<div class="pc-only" id="reg-box"><h3>職員マスタへの登録</h3>';
+  if(a.staff_id) return h+'<p class="ok-t">✓ 登録済み</p><p><a class="btn" href="staff-master.html">職員マスタで開く</a></p></div>';
+  if(r.msg) h+='<p class="msg '+esc(r.state==='ng'?'ng':(r.state==='ok'?'ok':'warn'))+'" role="status">'+esc(r.msg)+'</p>';
+  if(a.staff_pending_at||r.state==='unsure'){
+    return h+'<p class="msg warn">登録できたか確かめ中です。職員マスタを読み直して、登録されたかを確かめます（送ったのは '+esc(fmtDT_(a.staff_pending_at)||'少し前')+'）。</p>'+
+      '<button type="button" class="btn pri" data-act="reg-check"'+(r.busy?' disabled':'')+'>職員マスタを読み直して確かめる</button></div>';
+  }
+  if(r.state==='ok') return h+'</div>';
+  if(r.resend){
+    h+='<button type="button" class="btn pri" data-act="reg-resend"'+(r.busy?' disabled':'')+'>同じ受付番号で送り直す</button>';
+  }
+  if(enumsState==='nocfg') return h+'<p class="msg ng">職員マスタの接続先が見つかりません（接続設定）。</p><button type="button" class="btn pri" disabled>職員マスタへ登録</button></div>';
+  if(enumsState==='loading'||enumsState==='idle') return h+'<p class="muted">職員マスタの選択肢を読み込んでいます…</p><button type="button" class="btn pri" disabled>職員マスタへ登録</button></div>';
+  if(enumsState==='error') return h+'<p class="msg ng">職員マスタの選択肢を読めませんでした。</p><button type="button" class="btn" data-act="enums-retry">もう一度読む</button> <button type="button" class="btn pri" disabled>職員マスタへ登録</button></div>';
+  var b=AtsCalc.buildStaffCreate(a,enums);
+  var why=b.missing.length?AtsCalc.missingText(b.missing):(b.issues.length?b.issues.map(function(x){ return x.reason; }).join('・'):'');
+  if(r.resend) return h+'</div>';
+  return h+(why?'<p class="hint">'+esc(why)+'</p>':'<p class="hint">保存した入職準備の内容で登録します。</p>')+
+    '<button type="button" class="btn pri" data-act="reg-start"'+((b.ready&&!r.busy)?'':' disabled')+'>職員マスタへ登録</button></div>';
+}
+/* 登録: 1. 確認の窓 → 2. 保留の印を先に保存（できなければ送らない）→ 3. 職員マスタへ送る → 4〜6. 応答で分ける */
+function regStart_(){
+  var a=rowById_(curId); if(!a||a.staff_id||a.staff_pending_at) return Promise.resolve('blocked');
+  var r=regOf_(a.id); if(r.busy) return Promise.resolve('busy');
+  if(edDirty){ dMsg_('先に「入職準備を保存」を押してください（保存した内容で登録します）。','warn'); return Promise.resolve('dirty'); }
+  var b=AtsCalc.buildStaffCreate(a,enums);
+  if(!b.ready) return Promise.resolve('notready');
+  var body='<div class="tbl-wrap"><table class="rt"><thead><tr><th>採用管理の項目</th><th>値</th><th>職員マスタの欄</th></tr></thead><tbody>'+
+    b.rows.map(function(x){ return '<tr><td>'+esc(x.label)+'</td><td>'+esc(x.value)+'</td><td>'+esc(x.target)+'</td></tr>'; }).join('')+'</tbody></table></div>';
+  r.busy=true;
+  return openDlg_({title:'職員マスタへ登録しますか？',lines:['本人希望などの文章は送りません。'],bodyHtml:body,ok:'登録する'}).then(function(ok){
+    if(!ok){ r.busy=false; return 'cancel'; }
+    return regSend_(a.id,newReqId_(),b.fields);
+  });
+}
+function regSend_(id,reqId,fields){
+  var a=rowById_(id), r=regOf_(id), my=gen, key=AtsCalc.sentKey(fields);
+  if(!a){ r.busy=false; return Promise.resolve('none'); }
+  r.busy=true; r.msg='送っています…'; r.state='busy'; r.resend=null; if(curId===id) paintDetail_();
+  var sent={name:fields.name,hireDate:fields.hireDate,birthDate:fields.birthDate||''};
+  r.sent=sent; r.reqId=reqId; r.key=key; r.fields=fields;
+  return rpc_('ats_mark_staff_pending',{p_id:id,p_req_id:reqId,p_sent_key:key,p_rev:a.rev}).then(function(d){
+    if(my!==gen) return 'stale';
+    if(!(d&&d.ok===true)){
+      if(d&&d.row) replaceRow_(d.row);
+      r.busy=false; r.state='ng'; r.msg=(d&&d.conflict)?'他で直されました。読み直してから、もう一度押してください（職員マスタへは送っていません）。':'登録の準備を保存できなかったため、職員マスタへは送っていません。';
+      if(curId===id) paintDetail_(); return 'nomark';
+    }
+    if(d.row) replaceRow_(d.row);
+    return stfToken_().then(function(at){
+      var payload={action:'bulkSave',creates:[{tempId:'ats1',fields:fields}],reqId:reqId};
+      if(at) payload.accessToken=at;
+      return stfPost_(payload).then(function(res){ return res; },function(e){ return {__noAnswer:true,why:e&&e.why}; });
+    }).then(function(res){
+      if(my!==gen) return 'stale';
+      var k=res&&res.__noAnswer?{kind:'unsure',id:''}:AtsCalc.staffResult(res,FLUSH_FAIL_MSG);
+      if(k.kind==='ok') return regDone_(id,k.id,'登録しました。');
+      if(k.kind==='ng'){
+        return rpc_('ats_clear_staff_pending',{p_id:id}).then(function(c){ if(c&&c.row) replaceRow_(c.row); else { var x=rowById_(id); if(x) x.staff_pending_at=null; } },function(e){ atsNote_('保留を外す', e); }).then(function(){
+          r.busy=false; r.state='ng'; r.msg='登録できませんでした（'+(k.error||'理由不明')+'）。'; if(curId===id) paintDetail_(); paintAll_(); return 'ng';
+        });
+      }
+      r.busy=false; r.state='unsure'; r.msg='登録できたか確かめ中です'+(res&&res.__noAnswer&&res.why?'（'+res.why+'）':'')+'。';
+      var x=rowById_(id); if(x&&!x.staff_pending_at) x.staff_pending_at=new Date().toISOString();
+      if(curId===id) paintDetail_(); return 'unsure';
+    });
+  },function(e){
+    if(my!==gen) return 'stale';
+    atsNote_('登録の準備', e); r.busy=false; r.state='ng'; r.msg=friendly_(e)+'（職員マスタへは送っていません）'; if(curId===id) paintDetail_(); return 'nomark';
+  });
+}
+/* 職員 ID を控える（控えられた時だけ「登録しました」） */
+function regDone_(id,staffId,okText){
+  var r=regOf_(id), my=gen;
+  r.staffId=staffId;
+  return rpc_('ats_mark_staff',{p_id:id,p_staff_id:staffId}).then(function(d){
+    if(my!==gen) return 'stale';
+    if(d&&d.ok===true){ if(d.row) replaceRow_(d.row); else { var x=rowById_(id); if(x){ x.staff_id=staffId; x.stage='hired'; x.staff_pending_at=null; } } r.busy=false; r.state='ok'; r.msg=okText; paintAll_(); if(curId===id) paintDetail_(); return 'ok'; }
+    r.busy=false; r.state='unsure'; r.msg='職員マスタには登録できました（職員ID '+staffId+'）が、採用管理に控えられませんでした。「職員マスタを読み直して確かめる」を押してください。'; if(curId===id) paintDetail_(); return 'markfail';
+  },function(e){
+    if(my!==gen) return 'stale';
+    atsNote_('職員IDを控える', e); r.busy=false; r.state='unsure'; r.msg='職員マスタには登録できました（職員ID '+staffId+'）が、採用管理に控えられませんでした。「職員マスタを読み直して確かめる」を押してください。'; if(curId===id) paintDetail_(); return 'markfail';
+  });
+}
+/* 職員マスタを読み直して確かめる（1件→控える／0件で6分未満→待つ／6分以上→保留を外して同じ受付番号で送り直せる／2件以上→止める） */
+function regCheck_(id,auto){
+  var a=rowById_(id), r=regOf_(id), my=gen;
+  if(!a||r.busy) return Promise.resolve('busy');
+  r.busy=true; if(!auto){ r.msg='確かめています…'; } if(curId===id) paintDetail_();
+  var fields=r.fields||AtsCalc.buildStaffCreate(a,enums).fields;
+  var sent=r.sent||{name:fields.name,hireDate:fields.hireDate,birthDate:fields.birthDate||''};
+  return stfPost_({action:'list'},45000).then(function(d){
+    if(my!==gen) return 'stale';
+    if(!(d&&d.ok===true&&Array.isArray(d.rows))) throw {noAnswer:true,why:'一覧を読めません'};
+    var hits=AtsCalc.staffMatches(d.rows,sent);
+    if(hits.length===1) return regDone_(id,String(hits[0].id),'登録を確かめました（職員ID '+hits[0].id+'）。');
+    if(hits.length>1){ r.busy=false; r.state='unsure'; r.msg='氏名・入職日・生年月日が同じ方が職員マスタに'+hits.length+'人います。職員マスタで確かめてください（ここでは決めません）。'; if(curId===id) paintDetail_(); return 'many'; }
+    var cur=rowById_(id)||a, v=AtsCalc.staffVerdict(null,cur.staff_pending_at,Date.now());
+    if(v==='wait'){ r.busy=false; r.state='unsure'; r.msg='まだ見つかりません。職員マスタが書き込んでいる途中のことがあるため、あと'+AtsCalc.staffWaitMinutes(cur.staff_pending_at,Date.now())+'分ほど待ってから、もう一度確かめてください。'; if(curId===id) paintDetail_(); return 'wait'; }
+    /* 6分たっても見つからない＝入っていない。受付番号は外す前にメモリへ控え、同じ番号で送り直せるようにする */
+    var keep={reqId:cur.staff_req_id||r.reqId||'',key:cur.staff_sent_key||r.key||''};
+    return rpc_('ats_clear_staff_pending',{p_id:id}).then(function(c){
+      if(my!==gen) return 'stale';
+      if(c&&c.row) replaceRow_(c.row); else { var x=rowById_(id); if(x) x.staff_pending_at=null; }
+      r.busy=false; r.state='absent'; r.resend=keep.reqId?keep:null;
+      r.msg='職員マスタに登録されていませんでした。'+(keep.reqId?'「同じ受付番号で送り直す」を押してください。':'もう一度「職員マスタへ登録」を押してください。');
+      if(curId===id) paintDetail_(); return 'absent';
+    });
+  })['catch'](function(e){
+    if(my!==gen) return 'stale';
+    r.busy=false; r.state='unsure';
+    r.msg=(e&&e.nocfg)?'職員マスタの接続先が見つかりません（接続設定）。':'職員マスタを読めませんでした（'+((e&&e.why)||friendly_(e))+'）。少し待ってから、もう一度確かめてください。';
+    if(!(e&&e.noAnswer)&&!(e&&e.nocfg)) atsNote_('登録の確かめ', e);
+    if(curId===id) paintDetail_(); return 'error';
+  });
+}
+/* 同じ受付番号で送り直す（入職準備の中身を変えていれば、職員マスタが前の答えを返さないよう新しい番号にする） */
+function regResend_(){
+  var a=rowById_(curId), r=a?regOf_(a.id):null;
+  if(!a||!r||!r.resend||r.busy||a.staff_id||a.staff_pending_at) return Promise.resolve('blocked');
+  var b=AtsCalc.buildStaffCreate(a,enums);
+  if(!b.ready) return Promise.resolve('notready');
+  var same=AtsCalc.sentKey(b.fields)===r.resend.key;
+  return regSend_(a.id,same?r.resend.reqId:newReqId_(),b.fields);
+}
+
+/* ═══════════ 面接予定 ═══════════ */
+function schedRows_(list){
+  return list.map(function(v){
+    var a=rowById_(v.applicant_id)||{};
+    return '<tr><td>'+esc(fmtDT_(v.held_at))+'</td><td><button type="button" class="btn sm" data-act="open" data-id="'+esc(v.applicant_id)+'">'+esc(a.name||'')+'</button></td><td>'+esc((a.jobs||[]).join('・'))+'</td><td>'+esc((v.interviewers||[]).join('・'))+'</td><td class="num">'+esc(v.round)+'</td><td>'+esc(v.place||'')+'</td>'+
+      '<td class="pc-only"><button type="button" class="btn sm" data-act="print-sheet" data-iv="'+esc(v.id)+'">白紙の評価シート</button></td></tr>';
+  }).join('');
+}
+function paintSched_(){
+  var b=AtsCalc.scheduleBuckets(ivs,Date.now()), p=$('p-sched'); if(!p) return;
+  var tb=function(title,list){ return '<h3>'+esc(title)+'（'+esc(list.length)+'件）</h3>'+(list.length?'<div class="tbl-wrap"><table class="tbl"><thead><tr><th>時刻</th><th>氏名</th><th>職種</th><th>面接官</th><th class="num">回</th><th>場所</th><th class="pc-only">印刷</th></tr></thead><tbody>'+schedRows_(list)+'</tbody></table></div>':'<p class="muted">ありません。</p>'); };
+  var html='<h2>面接予定</h2><div class="acts pc-only"><button type="button" class="btn" data-act="print-sched">面接予定（今日・明日）を印刷</button></div>'+
+    tb('今日',b.today)+tb('明日',b.tomorrow)+tb('それ以降（7日先まで）',b.later);
+  p.innerHTML=html;
+}
+/* 印刷の前に施設情報を待つ（入居者マスタ・デイ利用表・フェイスシートと同じ作り） */
+function suFacReady_(ms) {
+  return new Promise(function (ok) {
+    var F = window.SUFacility, done = false, tm = null;
+    function fin() {
+      if (done) return;
+      done = true;
+      if (tm) clearTimeout(tm);
+      var r = false;
+      try { r = !!F.ready(); } catch (e) { r = false; }
+      ok(r);
+    }
+    if (!F || typeof F.ready !== 'function') { ok(false); return; }
+    try { if (F.ready()) { ok(true); return; } } catch (e) { ok(false); return; }
+    tm = setTimeout(fin, ms == null ? SU_FAC_WAIT_MS : ms);
+    try { if (typeof F.onReady === 'function') F.onReady(fin); } catch (e) { /* 呼べなくても、上でかけた時計で必ず終わる */ }
+  });
+}
+function printSchedHtml_(){
+  var b=AtsCalc.scheduleBuckets(ivs,Date.now());
+  var tb=function(title,list){ return '<h2>'+esc(title)+'</h2><table class="pv-t"><thead><tr><th>時刻</th><th>氏名</th><th>職種</th><th>面接官</th><th>回</th><th>場所</th></tr></thead><tbody>'+
+    (list.length?list.map(function(v){ var a=rowById_(v.applicant_id)||{}; return '<tr><td>'+esc(fmtDT_(v.held_at))+'</td><td>'+esc(a.name||'')+'</td><td>'+esc((a.jobs||[]).join('・'))+'</td><td>'+esc((v.interviewers||[]).join('・'))+'</td><td>'+esc(v.round)+'</td><td>'+esc(v.place||'')+'</td></tr>'; }).join('')
+      :'<tr><td colspan="6">ありません</td></tr>')+'</tbody></table>'; };
+  return '<div class="pv"><h1>面接予定（'+esc(today_())+' 現在）</h1>'+tb('今日',b.today)+tb('明日',b.tomorrow)+'</div>';
+}
+function printSheetHtml_(ivId){
+  var v=null; ivs.forEach(function(x){ if(x.id===ivId) v=x; }); if(!v) return '';
+  var a=rowById_(v.applicant_id)||{};
+  return '<div class="pv"><h1>面接評価シート</h1><table class="pv-t"><tbody><tr><th>氏名</th><td>'+esc(a.name||'')+'</td><th>回</th><td>第'+esc(v.round)+'回</td></tr>'+
+    '<tr><th>日時</th><td>'+esc(fmtDT_(v.held_at))+'</td><th>面接官</th><td></td></tr></tbody></table>'+
+    '<h2>評価（1 よくない 〜 5 とてもよい）</h2><table class="pv-t"><thead><tr><th>項目</th><th>点（丸で囲む）</th><th>コメント</th></tr></thead><tbody>'+
+    settings.evalItems.map(function(k){ return '<tr><td>'+esc(k)+'</td><td class="pv-sc">1 2 3 4 5</td><td class="pv-box"></td></tr>'; }).join('')+
+    '<tr><td>総合の点</td><td class="pv-sc">1 2 3 4 5</td><td class="pv-box"></td></tr></tbody></table><h2>総合のコメント</h2><div class="pv-box" style="border:1px solid #000;height:9em"></div></div>';
+}
+function definePrint_(){
+  if(!window.SUPrint) return;
+  SUPrint.define('sched',{label:'面接予定',paper:'A4 portrait',margin:10,root:'#a-print',
+    fit:{mode:'height',cssVar:'--ap-fs',base:12,min:8,max:14,step:0.25},
+    when:function(){ return view==='app'&&tab==='sched'&&!printIv; },
+    before:function(){ var p=$('a-print'); if(p) p.innerHTML=printSchedHtml_(); },
+    after:function(){ var p=$('a-print'); if(p) p.innerHTML=''; }});
+  SUPrint.define('evalsheet',{label:'面接評価シート',paper:'A4 portrait',margin:10,root:'#a-print',
+    fit:{mode:'height',cssVar:'--ap-fs',base:13,min:8,max:16,step:0.25},
+    when:function(){ return view==='app'&&!!printIv; },
+    before:function(){ var p=$('a-print'); if(p) p.innerHTML=printSheetHtml_(printIv); },
+    after:function(){ var p=$('a-print'); if(p) p.innerHTML=''; printIv=''; }});
+  SUPrint.setActive(null);
+}
+function printGo_(name,ivId){
+  if(!window.SUPrint){ toast('印刷の部品を読み込めていません。ページを読み込み直してください'); return Promise.resolve(false); }
+  return suFacReady_().then(function(ok){
+    if(!ok){ toast(SU_FAC_NG_MSG); return false; }
+    printIv=ivId||'';
+    SUPrint.print(name);
+    return true;
+  });
+}
+
+/* ═══════════ 集計 ═══════════ */
+function loadStageLog_(){
+  var my=gen;
+  return Promise.resolve().then(function(){ return db_().from('ats_stage_log').select('applicant_id,to_stage'); }).then(function(r){
+    if(my!==gen) return;
+    stageLog=rows_(r); if(tab==='dash') paintDash_();
+  })['catch'](function(e){ atsNote_('段階の履歴', e); stageLog=[]; if(tab==='dash') paintDash_(); });
+}
+function dashData_(){
+  var reached={}, ivn={};
+  (stageLog||[]).forEach(function(l){ var k=l.applicant_id; if(AtsCalc.stageRank(l.to_stage)>AtsCalc.stageRank(reached[k])) reached[k]=l.to_stage; });
+  ivs.forEach(function(v){ ivn[v.applicant_id]=(ivn[v.applicant_id]||0)+1; });
+  var list=apps.map(function(a){ return {stage:a.stage,sources:a.sources,received_on:a.received_on,reached:reached[a.id]||'',interviews:ivn[a.id]||0}; });
+  var rg=AtsCalc.periodRange(dashPeriod,today_());
+  return AtsCalc.funnel(list,rg.from,rg.to);
+}
+function paintDash_(){
+  var p=$('p-dash'); if(!p) return;
+  if(stageLog==null){ p.innerHTML='<h2>集計</h2><p class="muted">読み込んでいます…</p>'; loadStageLog_(); return; }
+  var f=dashData_(), all=AtsCalc.STAGES.concat(AtsCalc.END_STAGES);
+  var per=[['month','今月'],['3m','3か月'],['fy','今年度'],['all','全期間']];
+  var html='<h2>集計</h2><div class="fi" style="max-width:260px"><label for="dash-per">期間（受付日）</label><select id="dash-per">'+per.map(function(x){ return '<option value="'+x[0]+'"'+(x[0]===dashPeriod?' selected':'')+'>'+esc(x[1])+'</option>'; }).join('')+'</select></div>'+
+    '<h3>段階ごとの人数（'+esc(f.total)+'人）</h3><div class="chart-box"><canvas id="dash-chart" role="img" aria-label="段階ごとの人数の横棒（下の表と同じ数）"></canvas></div>'+
+    '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>段階</th><th class="num">人数</th></tr></thead><tbody>'+all.map(function(s){ return '<tr><td>'+esc(AtsCalc.stageLabel(s.id))+'</td><td class="num">'+esc(f.stages[s.id])+'</td></tr>'; }).join('')+'</tbody></table></div>'+
+    '<h3>経路ごと</h3><div class="tbl-wrap"><table class="tbl"><thead><tr><th>経路</th><th class="num">応募</th><th class="num">面接率</th><th class="num">内定率</th><th class="num">入職率</th><th class="num">辞退率</th></tr></thead><tbody>'+
+    (f.sources.length?f.sources.map(function(s){ return '<tr'+(s.few?' class="few"':'')+'><td>'+esc(s.source)+(s.few?'（少数）':'')+'</td><td class="num">'+esc(s.n)+'</td><td class="num">'+esc(AtsCalc.rate(s.interviewed,s.n))+'</td><td class="num">'+esc(AtsCalc.rate(s.offered,s.n))+'</td><td class="num">'+esc(AtsCalc.rate(s.hired,s.n))+'</td><td class="num">'+esc(AtsCalc.rate(s.declined,s.n))+'</td></tr>'; }).join('')
+      :'<tr><td colspan="6">この期間の応募はありません。</td></tr>')+'</tbody></table></div>'+
+    '<p class="hint">面接率＝面接を1回以上した人／応募。内定率＝内定以上に進んだ人／応募。入職率＝入職完了／応募。辞退率＝辞退／応募。10件未満の経路は灰色で「少数」と出します。'+(f.multiSource?'経路が2つ以上の応募（'+esc(f.multiSource)+'件）は、それぞれの経路に1件ずつ数えています。':'')+'</p>';
+  p.innerHTML=html;
+  drawChart_(f);
+}
+function drawChart_(f){
+  var go=function(){
+    var cv=$('dash-chart'); if(!cv||!window.Chart) return;
+    if(chartObj){ try{ chartObj.destroy(); }catch(e){ atsNote_('グラフの片付け', e); } chartObj=null; }
+    var ids=AtsCalc.STAGES.concat(AtsCalc.END_STAGES).map(function(s){ return s.id; });
+    chartObj=new window.Chart(cv,{type:'bar',data:{labels:ids.map(AtsCalc.stageLabel),datasets:[{data:ids.map(function(k){ return f.stages[k]; }),backgroundColor:'#0b57d0'}]},
+      options:{indexAxis:'y',animation:false,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{precision:0}}}}});
+  };
+  if(window.Chart){ go(); return; }
+  if(!chartLoading) chartLoading=new Promise(function(ok,ng){ var s=document.createElement('script'); s.src='chart-js-4.4.1.umd.js'; s.async=true; s.onload=function(){ ok(); }; s.onerror=function(){ ng(new Error('chart')); }; document.head.appendChild(s); });
+  chartLoading.then(go,function(e){ chartLoading=null; atsNote_('グラフの部品', e); });
+}
+
+/* ═══════════ 取り込み ═══════════ */
+function paintImport_(){
+  var p=$('p-import'); if(!p) return;
+  var h='<h2>取り込み</h2><p class="m-only msg warn">この操作は事務所のパソコンで行ってください。</p><div class="pc-only">'+
+    '<p class="hint">前の採用の一覧（CSV・UTF-8 か Shift_JIS）を選ぶと、取り込む前に試算の一覧を出します。氏名と受付日が同じ方は1人として数え、取り込み済みの方は外します。選んだファイルの中身は端末に保存しません。</p>'+
+    '<div class="fi" style="max-width:420px"><label for="imp-file">CSV のファイル</label><input id="imp-file" type="file" accept=".csv,text/csv"></div>'+
+    '<div class="msg'+(importMsg?' ok':'')+'" role="status">'+esc(importMsg)+'</div>';
+  if(importPlan){
+    if(!importPlan.ok) h+='<p class="msg ng">'+esc(importPlan.error)+'</p>';
+    else{
+      var n=importPlan.count;
+      h+='<p>入れられる行 '+esc(n)+'件／入れない行 '+esc(importPlan.items.length-n)+'件'+(importPlan.tooMany?'（1回に入れられるのは'+esc(AtsCalc.IMPORT_MAX)+'件までです。ファイルを分けてください）':'')+'</p>'+
+        (importPlan.unknown&&importPlan.unknown.length?'<p class="hint">読まない見出し: '+esc(importPlan.unknown.join('・'))+'</p>':'')+
+        '<div class="tbl-wrap"><table class="tbl"><thead><tr><th class="num">行</th><th>取り込み</th><th>氏名</th><th>受付日</th><th>段階</th><th>入れられない理由</th></tr></thead><tbody>'+
+        importPlan.items.map(function(it){ return '<tr><td class="num">'+esc(it.line)+'</td><td>'+(it.ok?'<span class="ok-t">✔ 入れる</span>':'<span class="ng-t">✗ 入れない</span>')+'</td><td>'+esc(it.row.name)+'</td><td>'+esc(it.row.received_on||'')+'</td><td>'+esc(it.row.stage?AtsCalc.stageLabel(it.row.stage):'')+'</td><td>'+esc(it.issues.join('・'))+'</td></tr>'; }).join('')+
+        '</tbody></table></div><div class="acts" style="margin-top:10px"><button type="button" class="btn pri" data-act="imp-run"'+(n&&!importPlan.tooMany?'':' disabled')+'>'+esc(n)+'件を取り込む</button><button type="button" class="btn" data-act="imp-clear">やめる</button></div>';
+    }
+  }
+  p.innerHTML=h+'</div>';
+}
+function onImportFile_(file){
+  if(!file) return Promise.resolve(false);
+  importMsg='';
+  return new Promise(function(ok){
+    var fr=new FileReader();
+    fr.onload=function(){ ok(new Uint8Array(fr.result)); };
+    fr.onerror=function(){ ok(null); };
+    fr.readAsArrayBuffer(file);
+  }).then(function(bytes){
+    if(!bytes){ importPlan={ok:false,error:'ファイルを読めませんでした。',items:[]}; paintImport_(); return false; }
+    var dec=AtsCalc.decodeCsv(bytes,function(l){ return new TextDecoder(l,{fatal:false}); });
+    var have=apps.map(function(a){ return a.import_key; }).filter(Boolean);
+    importPlan=AtsCalc.planImport(dec.text,today_(),settings,have);
+    paintImport_(); return true;
+  });
+}
+function runImport_(){
+  if(!importPlan||!importPlan.ok||!importPlan.count||importPlan.tooMany) return Promise.resolve(false);
+  var rows=importPlan.items.filter(function(it){ return it.ok; }).map(function(it){ return it.row; });
+  return askConfirm_(rows.length+'件を取り込みますか？',['試算の一覧で「✔ 入れる」の行だけを入れます。取り込み済みの方は、データベースでも外します。'],'取り込む',false).then(function(ok){
+    if(!ok) return false;
+    var my=gen;
+    setSync('取り込んでいます…');
+    return rpc_('ats_import',{p_rows:rows}).then(function(d){
+      if(my!==gen) return false;
+      setSync('');
+      if(d&&d.ok===true){ importPlan=null; importMsg=Number(d.inserted||0)+'件を取り込みました（取り込み済みで外した行 '+Number(d.skipped||0)+'件）。'; return loadAll_().then(function(){ return true; }); }
+      setMsg('取り込めませんでした。'); return false;
+    },function(e){ if(my!==gen) return false; setSync(''); atsNote_('取り込み', e); setMsg(friendly_(e)); return false; });
+  });
+}
+
+/* ═══════════ 保管期限 ═══════════ */
+function paintExpire_(){
+  var p=$('p-expire'); if(!p) return;
+  var list=AtsCalc.purgeable(apps,today_()), n=list.filter(function(a){ return expireSel[a.id]; }).length;
+  var html='<h2>保管期限</h2><p class="m-only msg warn">この操作は事務所のパソコンで行ってください。</p><div class="pc-only">'+
+    '<p class="hint">選考が終わった日から'+esc(settings.retainMonths)+'か月を過ぎた方です（職員マスタへ登録した方は出ません）。消すと、連絡の記録・面接・評価も一緒に消え、元に戻せません。</p>'+
+    (list.length?'<div class="tbl-wrap"><table class="tbl"><thead><tr><th>選ぶ</th><th>氏名</th><th>終わった日</th><th>終わり方</th><th>期限</th></tr></thead><tbody>'+list.map(function(a,i){
+      return '<tr><td><label class="chk"><input type="checkbox" data-exp="'+esc(a.id)+'" id="exp-'+i+'"'+(expireSel[a.id]?' checked':'')+'><span class="sr">'+esc(a.name)+'を選ぶ</span></label></td><td>'+esc(a.name)+'</td><td>'+esc(a.closed_on||'')+'</td><td>'+esc(AtsCalc.stageLabel(a.stage))+(a.outcome_reason?'（'+esc(a.outcome_reason)+'）':'')+'</td><td>'+esc(a.retain_until)+'</td></tr>'; }).join('')+
+      '</tbody></table></div><div class="acts" style="margin-top:10px"><button type="button" class="btn ngf" data-act="purge"'+(n?'':' disabled')+'>選んだ'+esc(n)+'件を消す</button></div>'
+      :'<p class="muted">保管期限を過ぎた方はいません。</p>')+'</div>';
+  p.innerHTML=html;
+}
+function runPurge_(){
+  var ids=AtsCalc.purgeable(apps,today_()).filter(function(a){ return expireSel[a.id]; }).map(function(a){ return a.id; });
+  if(!ids.length) return Promise.resolve(false);
+  return openDlg_({title:'選んだ'+ids.length+'件を消しますか？',lines:['連絡の記録・面接・評価も一緒に消え、元に戻せません。'],ok:'消す',danger:true}).then(function(ok){
+    if(!ok) return false;
+    var my=gen;
+    return rpc_('ats_purge',{p_ids:ids}).then(function(d){
+      if(my!==gen) return false;
+      expireSel={};
+      var n=Number(d&&(d.deleted!=null?d.deleted:d.count))||0;
+      return loadAll_().then(function(){ setMsg(n+'件を消しました。','ok'); return true; });
+    },function(e){ atsNote_('保管期限の削除', e); setMsg(friendly_(e)); return false; });
+  });
+}
+
+/* ═══════════ 設定 ═══════════ */
+function paintSettings_(){
+  var p=$('p-settings'); if(!p) return;
+  var html='<h2>設定</h2><p class="m-only msg warn">この操作は事務所のパソコンで行ってください。</p><div class="pc-only">'+
+    '<div class="fi" style="max-width:520px"><label for="set-items">評価項目（1行に1つ・12項目まで・1項目30字まで）</label><textarea id="set-items" rows="8">'+esc(settings.evalItems.join('\n'))+'</textarea></div>'+
+    '<div class="fgrid" style="max-width:520px"><div class="fi"><label for="set-retain">保管する月数（選考が終わった日から）</label><input id="set-retain" type="number" min="1" max="60" value="'+esc(settings.retainMonths)+'"></div>'+
+    '<div class="fi"><label for="set-lost">連絡途絶とみなす日数（取り込みで使う）</label><input id="set-lost" type="number" min="7" max="365" value="'+esc(settings.lostDays)+'"></div></div>'+
+    '<button type="button" class="btn pri" data-act="save-settings">設定を保存</button></div>';
+  p.innerHTML=html;
+}
+function saveSettings_(){
+  var items=AtsCalc.normEvalItems(val_('set-items').split('\n'));
+  var rm=Number(val_('set-retain')), ld=Number(val_('set-lost'));
+  if(!items.length){ setMsg('評価項目を1つ以上入れてください。'); return Promise.resolve(false); }
+  if(!(rm>=1&&rm<=60)||!(ld>=7&&ld<=365)){ setMsg('月数は1〜60、日数は7〜365で入れてください。'); return Promise.resolve(false); }
+  var my=gen;
+  return rpc_('ats_settings_put',{p_eval_items:items,p_retain_months:Math.floor(rm),p_lost_days:Math.floor(ld)}).then(function(d){
+    if(my!==gen) return false;
+    if(d&&d.ok===true){ settings=AtsCalc.normSettings({eval_items:items,retain_months:rm,lost_days:ld}); paintAll_(); setMsg('設定を保存しました。','ok'); return true; }
+    setMsg('設定を保存できませんでした。'); return false;
+  },function(e){ atsNote_('設定の保存', e); setMsg(friendly_(e)); return false; });
+}
+
+/* ═══════════ 確かめの窓 ═══════════ */
+function openDlg_(o){
+  var d=$('a-dlg');
+  if(!d||typeof d.showModal!=='function'){
+    if(o.bodyHtml) { toast('このブラウザでは開けません。新しいブラウザで開いてください'); return Promise.resolve(null); }
+    return Promise.resolve(window.confirm(o.title+'\n'+(o.lines||[]).join('\n')));
+  }
+  if(dlgDone_){ var old=dlgDone_; dlgDone_=null; old(null); }
+  var back=document.activeElement;
+  d.innerHTML='<div class="dlg-in"><h2 id="a-dlg-h">'+esc(o.title)+'</h2>'+(o.lines||[]).map(function(l){ return '<p>'+esc(l)+'</p>'; }).join('')+(o.bodyHtml||'')+
+    '<div class="dlg-btns"><button type="button" class="btn" data-dlg="no">やめる</button><button type="button" class="btn '+(o.danger?'ngf':'pri')+'" data-dlg="ok">'+esc(o.ok)+'</button></div></div>';
+  return new Promise(function(resolve){
+    var done=function(v){
+      if(dlgDone_!==done) return;
+      dlgDone_=null; d.removeEventListener('click',onClick); d.removeEventListener('cancel',onCancel);
+      try{ if(d.open) d.close(); }catch(e){ atsNote_('確かめの窓', e); }
+      d.innerHTML='';
+      try{ if(back&&back.focus) back.focus(); }catch(e){ atsNote_('手元を戻す', e); }
+      resolve(v);
+    };
+    var onClick=function(ev){
+      var b=ev.target&&ev.target.closest?ev.target.closest('[data-dlg]'):null; if(!b) return;
+      if(b.getAttribute('data-dlg')==='no'){ done(o.collect?null:false); return; }
+      if(o.collect){ var v=o.collect(); if(v!=null) done(v); return; }
+      done(true);
+    };
+    var onCancel=function(ev){ ev.preventDefault(); done(o.collect?null:false); };
+    dlgDone_=done;
+    d.addEventListener('click',onClick); d.addEventListener('cancel',onCancel);
+    d.showModal();
+    /* 初めの手元は「やめる」（消す・登録するなどの取り返しのつかない操作を Enter で進めない） */
+    try{ d.querySelector('[data-dlg="no"]').focus(); }catch(e){ atsNote_('窓の手元', e); }
+  });
+}
+function askConfirm_(title,lines,ok,danger){ return openDlg_({title:title,lines:lines,ok:ok,danger:danger}).then(function(v){ return !!v; }); }
+
+/* ═══════════ 操作の受け口（インラインの on〜 は使わない・CSP） ═══════════ */
+function onClick_(e){
+  var t=e.target&&e.target.closest?e.target.closest('[data-act],[data-tab],[data-ev]'):null; if(!t) return;
+  if(t.hasAttribute('data-tab')){ setTab_(t.getAttribute('data-tab')); return; }
+  if(t.hasAttribute('data-ev')){
+    var k=t.getAttribute('data-ev');
+    if(k==='draft') saveEval_(false); else if(k==='submit') saveEval_(true); else if(k==='peek') peekEval_(); else if(k==='close') closeEval_(false);
+    return;
+  }
+  var act=t.getAttribute('data-act'), id=t.getAttribute('data-id')||'', a=id?rowById_(id):rowById_(curId);
+  if(act==='open'&&id) openDetail_(id);
+  else if(act==='next'&&a){ var nx=AtsCalc.nextStage(a.stage); if(nx) tryMove_(a,nx); }
+  else if(act==='new') newApplicant_();
+  else if(act==='ended'){ showEnded=!showEnded; paintBoard_(); }
+  else if(act==='undo'){ var fn=showUndo_.fn; hideUndo_(); if(fn) fn(); }
+  else if(act==='close') closeDetail_(false);
+  else if(act==='end'&&a) askEnd_(a);
+  else if(act==='save-basic') saveBasic_();
+  else if(act==='add-contact') addContact_();
+  else if(act==='iv-save') saveInterview_();
+  else if(act==='iv-edit'){ ivEdit=t.getAttribute('data-iv')||''; paintDetail_(); }
+  else if(act==='iv-cancel'){ ivEdit=''; paintDetail_(); }
+  else if(act==='eval') openEval_(t.getAttribute('data-iv')||'');
+  else if(act==='save-prep') savePrep_();
+  else if(act==='reg-start') regStart_();
+  else if(act==='reg-check'&&curId) regCheck_(curId,false);
+  else if(act==='reg-resend') regResend_();
+  else if(act==='enums-retry') loadEnums_();
+  else if(act==='print-sched') printGo_('sched','');
+  else if(act==='print-sheet') printGo_('evalsheet',t.getAttribute('data-iv')||'');
+  else if(act==='imp-run') runImport_();
+  else if(act==='imp-clear'){ importPlan=null; paintImport_(); }
+  else if(act==='purge') runPurge_();
+  else if(act==='save-settings') saveSettings_();
+}
+function onChange_(e){
+  var t=e.target; if(!t) return;
+  if(t.hasAttribute&&t.hasAttribute('data-filter')){ filter[t.getAttribute('data-filter')]=String(t.value||''); saveFilter_(); paintBoard_(); return; }
+  if(t.id==='b-mstage'){ mStage=String(t.value); paintBoard_(); return; }
+  if(t.id==='d-stage'){ var a=rowById_(curId); if(a&&t.value!==a.stage){ tryMove_(a,t.value).then(function(){ paintDetail_(); }); } return; }
+  if(t.id==='ev-who'){ evalSwitch_(String(t.value)); return; }
+  if(t.id==='dash-per'){ dashPeriod=['month','3m','fy','all'].indexOf(t.value)>=0?t.value:'month'; paintDash_(); return; }
+  if(t.id==='imp-file'){ onImportFile_(t.files&&t.files[0]); try{ t.value=''; }catch(err){ atsNote_('ファイルの選択', err); } return; }
+  if(t.hasAttribute&&t.hasAttribute('data-exp')){ expireSel[t.getAttribute('data-exp')]=!!t.checked; paintExpire_(); return; }
+  if(t.closest&&t.closest('#a-evdlg')&&evalCtx){ evalCtx.dirty=true; return; }
+  if(t.hasAttribute&&t.hasAttribute('data-dirty')) edDirty=true;
+}
+function onInput_(e){
+  var t=e.target; if(!t) return;
+  if(t.closest&&t.closest('#a-evdlg')&&evalCtx){ evalCtx.dirty=true; return; }
+  if(t.hasAttribute&&t.hasAttribute('data-dirty')) edDirty=true;
+}
+function onKey_(e){
+  if(e.key==='Escape'){
+    if(dragId){ dragId=''; clearDrop_(); return; }
+    var ev=$('a-evdlg'); if(ev&&ev.open) return;
+    var dl=$('a-dlg'); if(dl&&dl.open) return;
+    if(curId) closeDetail_(false);
+  }
+}
+function onEvCancel_(e){ e.preventDefault(); closeEval_(false); }
+function onBeforeUnload_(e){ if(edDirty||(evalCtx&&evalCtx.dirty)){ e.preventDefault(); e.returnValue=''; } }
+function wire_(){
+  document.addEventListener('click',onClick_);
+  document.addEventListener('change',onChange_);
+  document.addEventListener('input',onInput_);
+  document.addEventListener('keydown',onKey_);
+  document.addEventListener('dragstart',onDragStart_);
+  document.addEventListener('dragover',onDragOver_);
+  document.addEventListener('drop',onDrop_);
+  document.addEventListener('dragend',onDragEnd_);
+  window.addEventListener('hashchange',onHash_);
+  window.addEventListener('storage',onStorage_);
+  window.addEventListener('beforeunload',onBeforeUnload_);
+  var ev=$('a-evdlg'); if(ev) ev.addEventListener('cancel',onEvCancel_);
+  definePrint_();
+}
+wire_();
+boot_();
+</script>
+
+<script src="su-report.js?v=2026-10-24" data-tool="採用管理"></script>
+</body>
+</html>

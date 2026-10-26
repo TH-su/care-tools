@@ -91,7 +91,9 @@ t('6行目: 採用＋就業開始日（年なしは受付日から補う）→ �
 t('件数は入れられる行だけ・行番号は CSV の行', plan.count === 2 && it[0].line === 3, { count: plan.count, line: it[0].line });
 t('見出しの無い CSV は理由つきで止める', C.planImport('a,b\n1,2', '2026-10-26').ok === false);
 const lost = C.normApplicant({ name: 0, received: 1 }, ['己野 六子', '2026/06/01'], '2026-10-26', C.DEFAULT_SETTINGS).row;
-t('連絡途絶で入る行は終わった日・終わり方・保管期限が付く', lost.stage === 'lost' && lost.closed_on === '2026-10-26' && lost.outcome_reason === '連絡途絶' && lost.retain_until === '2027-04-26', lost);
+t('連絡途絶で入る行は終わった日・終わり方が付く（保管期限はデータベースが付ける＝送らない）', lost.stage === 'lost' && lost.closed_on === '2026-10-26' && lost.outcome_reason === '連絡途絶' && !('retain_until' in lost), lost);
+const IMPORT_KEYS = ['legacy_no', 'received_on', 'sources', 'name', 'kana', 'gender', 'birth_date', 'jobs', 'quals_text', 'address', 'phones', 'email', 'wish_text', 'cond_text', 'note_text', 'reply_due', 'outcome_reason', 'outcome_note', 'start_on', 'prep', 'first_contact_at', 'stage', 'closed_on', 'import_key'];
+t('取り込みの行のキーはデータベース（ats_import）が受ける名前だけ', it.every((x) => Object.keys(x.row).every((k) => IMPORT_KEYS.indexOf(k) >= 0)), Object.keys(it[0].row));
 const sj = C.decodeCsv(new Uint8Array([0x82, 0xa0]), (l) => new TextDecoder(l));
 t('UTF-8 で読めない時は Shift_JIS で読む', sj.enc === 'Shift_JIS' && sj.text === 'あ', sj);
 t('UTF-8 で読めればそのまま', C.decodeCsv(new TextEncoder().encode('氏名'), (l) => new TextDecoder(l)).enc === 'UTF-8');

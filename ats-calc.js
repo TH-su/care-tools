@@ -320,6 +320,7 @@
     if (ds.note) notes.push(ds.note);
     if (cell('note')) notes.push(cell('note'));
     var stage = ds.stage;
+    /* 終わった日は取り込んだ日（保管期限はデータベースが設定の月数で付ける） */
     var closed = stage && isEnd(stage) ? today : null;
     var row = {
       legacy_no: cell('no') || null,
@@ -342,7 +343,6 @@
       closed_on: closed,
       outcome_reason: stage === 'lost' ? '連絡途絶' : null,
       start_on: startOn,
-      retain_until: closed ? retainUntil(closed, st.retainMonths) : null,
       import_key: name && received ? importKey(name, received) : ''
     };
     return { row: row, issues: issues };
