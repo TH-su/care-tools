@@ -45,7 +45,7 @@
      ★名前は英数字と / . _ - だけを受ける（よその階層へ展開させない・どの解凍ソフトでも同じ名前にする）。
        名前が重なった時・4GB を超えた時・65535 個を超えた時は作らずに例外（途中まで作った物を渡さない）。 */
   var NAME_RE = /^[A-Za-z0-9_\-]+(\/[A-Za-z0-9_\-]+)*\.[A-Za-z0-9]+$/;
-  function zip(files, when) {
+  function zipParts(files, when) {
     var d = dosTime(when || new Date());
     var seen = {}, parts = [], central = [], offset = 0;
     if (files.length > 65535) throw new Error('ファイルが多すぎます');
@@ -98,19 +98,26 @@
     end.setUint16(10, files.length, true);
     end.setUint32(12, csize, true);
     end.setUint32(16, offset, true);
-    var all = parts.concat(central, [new Uint8Array(end.buffer)]);
-    var out = new Uint8Array(offset + csize + 22), p = 0;
+    return parts.concat(central, [new Uint8Array(end.buffer)]);
+  }
+  /* 1つの配列にした ZIP（試験・小さい物用。画面は zipParts を Blob にする） */
+  function zip(files, when) {
+    var all = zipParts(files, when);
+    var out = new Uint8Array(all.reduce(function (s, a) { return s + a.length; }, 0)), p = 0;
     all.forEach(function (a) { out.set(a, p); p += a.length; });
     return out;
   }
 
   /* ── CSV ── */
   var RISKY = /^[=+\-@\t\r]/;
+  var CELL_MAX = 32000;
   function cell(v) {
     var s;
     if (v === null || v === undefined) s = '';
     else if (typeof v === 'object') s = JSON.stringify(v);
     else s = String(v);
+    /* Excel の1つのセルの上限（32,767 字）を越える値は、切れた値を見せずに JSON を見るよう書く */
+    if (s.length > CELL_MAX) s = '（長すぎるため JSON の方を見てください：' + s.length + ' 字）';
     if (RISKY.test(s)) s = "'" + s;
     if (/[",\r\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
     return s;
@@ -191,6 +198,7 @@
     L.push('■ CSV について');
     L.push('・先頭が = + - @ の値は、表計算ソフトで式として動かないよう、頭に \' を付けています。');
     L.push('・JSON の値（同期データの中身など）は、1つのセルに JSON の文字で入っています。');
+    L.push('・32,000 字を越える値は、表計算ソフトのセルに入らないため「JSON の方を見てください」と書いてあります。');
     L.push('・元の値に戻す・ほかの仕組みへ移す時は、CSV ではなく JSON を使ってください。');
     L.push('');
     L.push('■ データベース（Supabase）の表  合計 ' + m.dbTotal + ' 行');
@@ -198,6 +206,7 @@
       L.push('');
       L.push('【' + t.name + '】 ' + t.count + ' 行（' + (SCOPE[t.scope] || t.scope) + '）');
       L.push('  ' + (t.comment || '（説明なし）'));
+      if (t.hidden && t.hidden.length) L.push('  書き出していない列（合言葉・鍵の類）: ' + t.hidden.join('、'));
       L.push('  列: ' + (t.columns || []).map(function (c) {
         return c.name + '（' + c.type + (c.comment ? '・' + c.comment : '') + '）';
       }).join('、'));
@@ -211,11 +220,11 @@
     L.push('');
     L.push('■ 入っていないもの');
     L.push('・ログインの表（Supabase が管理）・ファイル置き場（Storage）・設定と合言葉の類（private の領域）');
-    L.push('・勤務表の編集券の合言葉（shift_leases の token の列）');
+    L.push('・合言葉・鍵の類の列（名前に token・secret・password・api_key・pin・private_key を含む文字の列。表ごとに上に書いてあります）');
     m.notIncluded.forEach(function (s) { L.push('・' + s); });
     L.push('');
     return '﻿' + L.join('\r\n');
   }
 
-  global.SUExport = { zip: zip, crc32: crc32, csv: csv, columnsOf: columnsOf, tableOf: tableOf, readme: readme, counts: counts, NAME_RE: NAME_RE };
+  global.SUExport = { zip: zip, zipParts: zipParts, crc32: crc32, csv: csv, columnsOf: columnsOf, tableOf: tableOf, readme: readme, counts: counts, NAME_RE: NAME_RE };
 })(typeof window !== 'undefined' ? window : globalThis);

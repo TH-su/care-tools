@@ -96,6 +96,15 @@
     return out;
   }
 
+  /* 1件ずつ読む系統: 1件が読めなくても残りは残す（読めなかった数だけ返す。全部だめなら系統ごと「入っていない」） */
+  async function missCount(list, n, fn) {
+    var miss = 0;
+    await each(list, n, async function (x) { try { await fn(x); } catch (e) { miss++; } });
+    if (list.length && miss === list.length) throw Refused();
+    return miss;
+  }
+  function missNote(miss) { return miss ? miss + ' 件は読めなかった（もう一度書き出すと読めることがある）' : ''; }
+
   /* 系統ごとの読み方。parts は {部分の名前: 値}。count は「件」として数えるもの */
   var GAS = [
     { id: 'ws', title: '週間計画・ワースケ・勤務表（統合同期）',
@@ -115,21 +124,22 @@
         var rows = (idx.data && idx.data.rows && typeof idx.data.rows === 'object') ? idx.data.rows : {};
         var ids = Object.keys(rows).filter(function (k) { return /^[0-9A-Za-z_-]{1,32}$/.test(k); });
         var docs = {};
-        await each(ids, 3, async function (id) {
+        var miss = await missCount(ids, 3, async function (id) {
           var j = need(await post(t, { action: 'get', key: 'training_plan:' + id }));
           docs[id] = j.data == null ? null : j.data;
         });
-        return { parts: { index: idx.data == null ? null : idx.data, plans: docs }, count: ids.length, unit: '人分' };
+        return { parts: { index: idx.data == null ? null : idx.data, plans: docs }, count: ids.length - miss, unit: '人分', note: missNote(miss) };
       } },
     { id: 'master', title: '入居者マスタ',
       read: async function (t) {
         var j = need(await post(t, { action: 'getRoster' }));
         var roster = Array.isArray(j.roster) ? j.roster : [];
-        var recs = await each(roster, 4, async function (r) {
+        var recs = [];
+        var miss = await missCount(roster, 4, async function (r) {
           var g = need(await post(t, { action: 'getResident', id: r.id }));
-          return g.record == null ? null : g.record;
+          if (g.record != null) recs.push(g.record);
         });
-        return { parts: { roster: roster, residents: recs.filter(function (x) { return x != null; }) }, count: roster.length, unit: '人' };
+        return { parts: { roster: roster, residents: recs }, count: roster.length - miss, unit: '人', note: missNote(miss) };
       } },
     { id: 'haiben', title: '排泄ケア記録',
       read: async function (t) {
@@ -150,11 +160,12 @@
       read: async function (t) {
         var j = need(await post(t, { action: 'list' }));
         var items = Array.isArray(j.items) ? j.items : [];
-        var docs = await each(items, 3, async function (it) {
+        var docs = [];
+        var miss = await missCount(items, 3, async function (it) {
           var g = need(await post(t, { action: 'get', name: it.name }));
-          return { name: it.name, updatedAt: it.updatedAt, doc: g.doc == null ? null : g.doc };
+          docs.push({ name: it.name, updatedAt: it.updatedAt, doc: g.doc == null ? null : g.doc });
         });
-        return { parts: { docs: docs }, count: docs.length, unit: '枚' };
+        return { parts: { list: items, docs: docs }, count: docs.length, unit: '枚', note: missNote(miss) };
       } },
     { id: 'analyzer', title: '過去シフト分析',
       read: async function (t) {
@@ -167,7 +178,8 @@
   var NOT_INCLUDED = [
     '申送ビューア（申し送りの正本は Google のスプレッドシート。入居者ごとに抜き出す読み口だけで、全部を読む口が無い）',
     '薬学管理・職員マスタ・消耗品管理（接続設定に無い系統。それぞれの画面の書き出しを使う）',
-    '入居調整の添付ファイル・不具合の報告先（受け付けるだけ）・タイミー通知・申送抽出・決裁箱（介護の記録ではない）'
+    '入居調整の添付ファイル・不具合の報告先（受け付けるだけ）・タイミー通知・申送抽出・決裁箱（介護の記録ではない）',
+    '統合同期・過去シフト分析の過去の版（今の版だけ。過去の版は Google ドライブの history に残っている）'
   ];
 
   async function readGas(onStep) {
@@ -204,7 +216,7 @@
     var manifest = {
       kind: 'care-tools-export', version: 1,
       run_id: b.run_id, started_at: b.started_at, tenant_id: b.tenant_id, tenant_name: b.tenant_name, actor_email: b.actor_email,
-      db: tables.map(function (t) { return { table: t.name, scope: t.scope, count: (data[t.name] || []).length, columns: (t.columns || []).map(function (c) { return c.name; }) }; }),
+      db: tables.map(function (t) { return { table: t.name, scope: t.scope, count: (data[t.name] || []).length, columns: (t.columns || []).map(function (c) { return c.name; }), hidden: t.hidden || [] }; }),
       gas: gas.map(function (g) { return { id: g.id, title: g.title, ok: g.ok, count: g.count, note: g.note || '' }; })
     };
     files.push({ name: 'README.txt', data: X.readme({
@@ -217,12 +229,12 @@
     files.push({ name: 'manifest.json', data: JSON.stringify(manifest, null, 2) });
     tables.forEach(function (t) {
       var rows = data[t.name] || [];
-      files.push({ name: 'db/' + t.name + '.json', data: JSON.stringify(rows, null, 1) });
+      files.push({ name: 'db/' + t.name + '.json', data: JSON.stringify(rows) });
       files.push({ name: 'db/' + t.name + '.csv', data: X.csv(rows, (t.columns || []).map(function (c) { return c.name; })) });
     });
     gas.forEach(function (g) {
       if (!g.ok) return;
-      files.push({ name: 'gas/' + g.id + '.json', data: JSON.stringify(g.parts, null, 1) });
+      files.push({ name: 'gas/' + g.id + '.json', data: JSON.stringify(g.parts) });
       Object.keys(g.parts).forEach(function (k) {
         if (!/^[A-Za-z0-9_-]+$/.test(k)) return;
         var rows = X.tableOf(g.parts[k]);
@@ -232,8 +244,8 @@
     return files;
   }
 
-  function save(bytes, name) {
-    var url = URL.createObjectURL(new Blob([bytes], { type: 'application/zip' }));
+  function save(parts, name) {
+    var url = URL.createObjectURL(new Blob(parts, { type: 'application/zip' }));
     var a = el('a');
     a.href = url;
     a.download = name;
@@ -267,14 +279,16 @@
       if (rb.error) throw rb.error;
       var b = rb.data, data = {}, tables = b.tables || [];
       for (var i = 0; i < tables.length; i++) {
-        var t = tables[i], rows = [];
-        for (var off = 0; ; off += PAGE) {
+        var t = tables[i], rows = [], after = null;
+        /* 続きは「最後に読んだ行の後」から（データベースが次の印 next を返す。1回は最大 2000 行・約 8MB） */
+        for (var guard = 0; guard < 100000; guard++) {
           prog('データベース ' + (i + 1) + ' / ' + tables.length + ' 表（' + t.name + '・' + rows.length + ' / ' + t.count + ' 行）');
-          var rp = await c.rpc('export_page', { p_run: b.run_id, p_table: t.name, p_offset: off, p_limit: PAGE });
+          var rp = await c.rpc('export_page', { p_run: b.run_id, p_table: t.name, p_after: after, p_limit: PAGE });
           if (rp.error) throw rp.error;
-          var part = Array.isArray(rp.data) ? rp.data : [];
-          rows = rows.concat(part);
-          if (part.length < PAGE) break;
+          var part = (rp.data && Array.isArray(rp.data.rows)) ? rp.data.rows : [];
+          for (var q = 0; q < part.length; q++) rows.push(part[q]);
+          after = rp.data ? rp.data.next : null;
+          if (after == null) break;
         }
         data[t.name] = rows;
       }
@@ -282,19 +296,24 @@
       prog('ZIP を作っています…');
       var started = new Date(b.started_at);
       var name = '全データ_' + stamp(isNaN(started) ? new Date() : started) + '.zip';
-      var bytes = window.SUExport.zip(buildFiles(b, data, gas), isNaN(started) ? new Date() : started);
-      save(bytes, name);
+      /* ZIP は部分の並びのまま Blob にする（最後に1つの大きな配列へ写さない＝メモリを2倍にしない） */
+      var parts = window.SUExport.zipParts(buildFiles(b, data, gas), isNaN(started) ? new Date() : started);
+      var size = parts.reduce(function (s2, p2) { return s2 + p2.length; }, 0);
+      save(parts, name);
+      parts = null;
       var got = window.SUExport.counts(data);
       var gasRec = {};
       gas.forEach(function (g) { gasRec[g.title] = { ok: g.ok, count: g.count, note: g.note || '' }; });
       var rf = await c.rpc('export_finish', { p_run: b.run_id, p_got: got, p_gas: gasRec, p_file: name });
       var gasOk = gas.filter(function (g) { return g.ok; }).length;
       var sum = 'データベース ' + tables.length + ' 表・' + Object.keys(got).reduce(function (s, k) { return s + got[k]; }, 0) + ' 行、Google ' +
-                gasOk + ' / ' + gas.length + ' 系統（' + Math.round(bytes.length / 1024) + ' KB）';
+                gasOk + ' / ' + gas.length + ' 系統（' + Math.round(size / 1024) + ' KB）';
       if (rf.error) {
         note('ZIP は保存しましたが、書き出しの記録の仕上げに失敗しました（始めた日時・人・件数は残っています）。' + sum, 'warn');
       } else if (rf.data && rf.data.match === false) {
-        note('ZIP は保存しましたが、数えた件数と受け取った件数が違います（書き出しの途中で記録が増えた・減った可能性）。もう一度書き出してください。' + sum, 'warn');
+        var diff = Object.keys(got).filter(function (k) { return b.tables.some(function (x) { return x.name === k && x.count !== got[k]; }); });
+        note('「' + name + '」を保存しました。' + sum + '。書き出している間に増えた・減った行があります（' + diff.join('・') +
+             '）。ZIP はそれぞれの表を読んだ時点の中身です。', 'warn');
       } else {
         note('「' + name + '」を保存しました。' + sum + (gasOk < gas.length ? '。入っていない Google の系統は ZIP の README.txt に理由があります' : ''), 'ok');
       }

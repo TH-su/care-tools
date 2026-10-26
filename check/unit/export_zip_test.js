@@ -185,6 +185,11 @@ console.log('\n— 3. CSV —');
   t('列は出てきた順にそろう（後から出た列は後ろ）', JSON.stringify(b.SUExport.columnsOf([{ a: 1 }, { b: 2, a: 3 }])) === '["a","b"]', '');
   t('tableOf: オブジェクトの配列・値の配列・キーと中身・それ以外', JSON.stringify(b.SUExport.tableOf([1, 'x'])) === '[{"値":1},{"値":"x"}]' &&
     JSON.stringify(b.SUExport.tableOf({ k: 1 })) === '[{"キー":"k","中身":1}]' && b.SUExport.tableOf('x') === null && b.SUExport.tableOf(null) === null, '');
+  const long = b.SUExport.csv([{ a: 'x'.repeat(40000) }]);
+  t('Excel のセルに入らない長さ（32,000 字超）は「JSON を見て」と書く（切れた値を見せない）', long.includes('（長すぎるため JSON の方を見てください：40000 字）') && long.length < 200, long.length);
+  const zp = b.SUExport.zipParts([{ name: 'a.txt', data: 'abc' }], new Date(2026, 0, 1));
+  const z1 = b.SUExport.zip([{ name: 'a.txt', data: 'abc' }], new Date(2026, 0, 1));
+  t('部分の並び（画面が Blob にする形）をつなぐと、1つの ZIP と同じバイト列', Buffer.concat(zp.map(x => Buffer.from(x))).equals(Buffer.from(z1)), '');
   t('数え方: 配列の長さ（配列でないものは0）', JSON.stringify(b.SUExport.counts({ a: [1, 2], b: [], c: null })) === '{"a":2,"b":0,"c":0}', '');
 }
 
@@ -218,7 +223,8 @@ console.log('\n— 5. GAS の読み方 —');
     if (url.includes('/WS/')) res = { ok: true, entries: { care_schedule_v2: { key: 'care_schedule_v2', rev: 1 } } };
     else if (url.includes('/WT/')) res = { ok: true, residents: [{ id: 'r1' }], records: [{ id: 'w1' }, { id: 'w2' }], thresholds: {} };
     else if (url.includes('/GE/')) res = { ok: false, error: 'この図は権限がありません（架空の断りの文・氏名入り）' };
-    else if (url.includes('/MA/')) res = body.action === 'getRoster' ? { roster: [{ id: 'X1' }, { id: 'X2' }] } : { record: { id: body.id, name: '架空' } };
+    else if (url.includes('/MA/')) res = body.action === 'getRoster' ? { roster: [{ id: 'X1' }, { id: 'X2' }, { id: 'X3' }] }
+      : (body.id === 'X2' ? { error: '認証エラー' } : { record: { id: body.id, name: '架空' } });
     return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(res) });
   };
   const b = box({ fetch, AbortController, localStorage: { getItem: k => (k in store ? store[k] : null) } });
@@ -231,8 +237,9 @@ console.log('\n— 5. GAS の読み方 —');
   t('8つの系統を順に読む', steps.join(',') === '1/8,2/8,3/8,4/8,5/8,6/8,7/8,8/8' && out.length === 8, steps);
   t('統合同期: pull でキーの数を数える', by.ws.ok && by.ws.count === 1 && by.ws.parts.entries.care_schedule_v2.rev === 1, by.ws);
   t('体重管理: 合言葉なし（サーバー側で未設定の運用）でも読む・記録の数を数える', by.weight.ok && by.weight.count === 2, by.weight);
-  t('入居者マスタ: 名簿のあと1人ずつ読む', by.master.ok && by.master.count === 2 && by.master.parts.residents.length === 2 &&
-    calls.filter(c => c.url.includes('/MA/')).length === 3, by.master);
+  t('入居者マスタ: 名簿のあと1人ずつ読む・1人読めなくても残りは残し、読めなかった数を書く', by.master.ok && by.master.count === 2 &&
+    by.master.parts.residents.length === 2 && by.master.parts.roster.length === 3 && /1 件は読めなかった/.test(by.master.note) &&
+    calls.filter(c => c.url.includes('/MA/')).length === 4, by.master);
   t('ジェノグラム: 断られたら「入っていない」・断りの文（氏名が混ざりうる）は記録に写さない',
     !by.geno.ok && by.geno.count === 0 && !/権限がありません/.test(by.geno.note) && !by.geno.parts, by.geno);
   t('入居調整: 接続先が Google の /exec でなければ送らない', !by.adm.ok && !calls.some(c => c.url.includes('evil')), by.adm);

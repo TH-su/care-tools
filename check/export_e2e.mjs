@@ -63,9 +63,12 @@ function fakeDb(state) {
                            total: tables.reduce((s, x) => s + x.count, 0), tables });
       }
       if (rpc[1] === 'export_page') {
-        state.pages.push(a.p_table + '@' + a.p_offset);
+        /* 0023 と同じ形: {rows, next}。続きの印は「最後に読んだ行の位置」（本物は主キー。ここは配列の位置で真似る） */
+        const from = a.p_after ? a.p_after.i + 1 : 0;
+        state.pages.push(a.p_table + '@' + from);
         if (a.p_run !== 41 || !DB[a.p_table] || a.p_limit > 2000) return send(403, { code: '42501', message: 'x' });
-        return send(200, DB[a.p_table].slice(a.p_offset, a.p_offset + a.p_limit));
+        const rows = DB[a.p_table].slice(from, from + a.p_limit);
+        return send(200, { rows, next: rows.length === a.p_limit ? { i: from + rows.length - 1 } : null });
       }
       if (rpc[1] === 'export_finish') {
         state.finish = a;
