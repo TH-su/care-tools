@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-0lfhqAPg03ePA//wIAVOeTnQ1hyCrrL1YClsWpy/Evg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-ndSfN2IK6DCMgzNU+lcRxdmUezwhzDjRVkv5IUHgIvw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -638,6 +638,7 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .yj-tbl th:nth-child(5){width:11em}
 .yj-w{margin-top:6px; color:#8a3a00; font-size:0.875rem}
 .yj-after{margin:12px 0 0}
+.yj-met{margin:0 0 8px; font-size:0.875rem; color:var(--g7)}
 @media (max-width:900px){ .yj-work{grid-template-columns:1fr} .yj-pages{position:static; max-height:none} .yj-arow{grid-template-columns:1fr} }
 @media print{ #mYakujo,#yjOpen{display:none !important} }
 /* 薬情・お薬シールの写真を入れる帯（2026-10-23 代表者の決定）。詳細画面の「薬剤情報」の欄の上。
@@ -1874,6 +1875,8 @@ body.meal-on #sc-list{max-width:none}
       <h2 id="mYakujoH" tabindex="-1">📥 薬情の取り込み</h2>
       <span><button class="btn btn-gray" id="yjClose" type="button">閉じる</button></span>
     </div>
+    <!-- 取り込みの一致率（2026-10-26 代表者の決定）。中身は yjMetPaint_ が textContent で入れる -->
+    <p class="yj-met" id="yjMetric"></p>
     <div class="yj-body" id="yjBody"></div>
   </div>
 </div>
@@ -1918,7 +1921,7 @@ function rmNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
 <script src="su-facility.js?v=2026-10-26"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>
 <!-- 薬情の取り込みの判定・組み立て（純関数・2026-10-22）。読めない時は入口のボタンを出さない（yjCalcOk_） -->
-<script src="yakujo-calc.js?v=2026-10-24"></script>
+<script src="yakujo-calc.js?v=2026-10-26"></script>
 <script src="su-print.js?v=2026-09-12"></script>
 <!-- 入居者マスタの写し（統合 0004）。supabase-js と su-auth.js は写す時にだけ読み込む -->
 <script src="su-master-shadow.js?v=2026-10-24.2"></script>
@@ -6963,6 +6966,7 @@ function yjOpen_(){
   yjGen++;
   yjSt={phase:'open', res:null, docs:[], cur:null, server:'', msg:''};
   $('mYakujo').classList.add('on'); navEnter();
+  yjMetPaint_();
   yjPaint_();
   try{ $('mYakujoH').focus(); }catch(e){}
   yjPing_();
@@ -6997,6 +7001,29 @@ function yjPurge_(){
   if(typeof yjlReset_==='function') yjlReset_();   /* 薬情の反映記録（定期薬を持つ）も捨てる（2026-10-24） */
   yjpPurge_();   /* 写真を入れる帯（2026-10-23） */
   try{ $('mYakujo').classList.remove('on'); $('yjBody').innerHTML=''; var b=$('yjOpen'); if(b) b.hidden=true; }catch(e){}
+  try{ var mt=$('yjMetric'); if(mt) mt.textContent=''; }catch(e){}   /* 一致率の欄も消す（端末の記録は消さない） */
+}
+
+/* ── 取り込みの一致率（2026-10-26 代表者の決定）──
+   書類ごとに、日時・薬名の行数・名簿の一致・人が直した行数と種類だけを、この端末（localStorage 'yj_metrics'・形の版 v）に直近30件置き、
+   取り込み画面の欄に集計を出す。形を作る・確かめる・数えるのは YakujoCalc（metricOf・metricsLoad・metricsSave・summarize・metricText）。
+   ★氏名・薬名・入居者の番号・行の文字は置かない。★読めない・壊れている時は空として扱い、画面を止めない。
+   ★記録するのは反映できた時（応答 ok）だけ。★現場端末では記録も表示もしない。★欄は textContent で入れる・印刷しない（#mYakujo ごと） */
+var YJ_MET_KEY='yj_metrics';
+function yjMetOk_(){ return yjCalcOk_()&&typeof YakujoCalc.metricsLoad==='function'; }
+function yjMetRead_(){
+  if(getDeviceRole()==='field'||!yjMetOk_()) return [];
+  try{ return YakujoCalc.metricsLoad(localStorage.getItem(YJ_MET_KEY)); }catch(e){ return []; }
+}
+function yjMetAdd_(rec){
+  if(getDeviceRole()==='field'||!yjMetOk_()||!rec) return;
+  try{ rec.at=new Date().toISOString(); localStorage.setItem(YJ_MET_KEY, YakujoCalc.metricsSave(yjMetRead_(), rec)); }catch(e){}
+  yjMetPaint_();
+}
+function yjMetPaint_(){
+  var el=$('yjMetric'); if(!el) return;
+  if(getDeviceRole()==='field'||!yjMetOk_()){ el.textContent=''; return; }
+  el.textContent=YakujoCalc.metricText(YakujoCalc.summarize(yjMetRead_()));
 }
 
 /* ── 1. 結果のファイルを読む ── */
@@ -7206,6 +7233,8 @@ function yjApply_(){
   if(c.ack) body.ackSameDay=true;
   /* 変更記録に残す「書類の行と扱い」（確認表の行・人が選んだ扱い・2026-10-24 代表者の決定） */
   body.docRows=YakujoCalc.logRows(c.rows);
+  /* 取り込みの一致率の記録（数だけ）。送る時点の確認表で作り、反映できた時だけ端末に置く */
+  var met=yjMetOk_()?YakujoCalc.metricOf({autoId:x.a&&x.a.id, pickId:x.pick, rows:c.rows}):null;
   c.busy=true; c.writing=true; c.msg='反映しています…'; yjPaint_();
   /* ログインの証明を添える（保存と同じ取り方・GAS が確かめて変更記録に確かめたメールを残す）。取れない時は送らない */
   rmAccessToken_()['catch'](function(){ return ''; }).then(function(at){
@@ -7218,6 +7247,7 @@ function yjApply_(){
     if(r&&r.ok===true){
       if(fullMap&&fullMap[c.id]) fullMap[c.id].medsRegular=sent;
       x.status='done'; c.touched=false;
+      yjMetAdd_(met);
       toast('✅ 定期薬を書き換えました（変更履歴にも残りました）');
       if(yjSt&&yjSt.cur===c){ yjSt.cur=null; yjSt.phase='queue'; }
       if(curResident&&String(curResident.id)===c.id&&$('sc-view')&&$('sc-view').classList.contains('on')) openResident(c.id);

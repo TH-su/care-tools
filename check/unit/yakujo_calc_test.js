@@ -483,5 +483,126 @@ console.log('\n— 11. 変更記録の「書類の行と扱い」（logRows・20
   t('見出しは日時・調剤日・確かめた人で、中身は details の中', /<details class="yjl-e"><summary>.*2026-10-18.*kakuu@example\.com.*<\/summary>.*書類の行と扱い.*反映前.*反映後.*<\/details>/.test(hh));
 }
 
+console.log('\n— 12. 取り込みの一致率（correctionKinds・metricOf・summarize・2026-10-26）—');
+{
+  const K = (a, b) => { const k = Y.correctionKinds(a, b); return ['name', 'dose', 'unit', 'time', 'other'].filter(n => k[n]).join(',') + (k.changed ? '' : '(なし)'); };
+  const A = '架空錠A5mg 2錠分2 朝夕食後';
+  t('直していない行（同じ文字）は直しにしない', K(A, A) === '(なし)', K(A, A));
+  t('空白・全角半角だけの違いは直しにしない', K(A, '架空錠A5mg  ２錠分2　朝夕食後') === '(なし)', K(A, '架空錠A5mg  ２錠分2　朝夕食後'));
+  t('★薬名だけ', K(A, '架空錠B5mg 2錠分2 朝夕食後') === 'name', K(A, '架空錠B5mg 2錠分2 朝夕食後'));
+  t('★屋号の違いも薬名', K(A, '架空錠A5mg「見本」 2錠分2 朝夕食後') === 'name');
+  t('★規格の違い（5mg→10mg）は薬名に数える（drugKey で別の品目）', K(A, '架空錠A10mg 2錠分2 朝夕食後') === 'name', K(A, '架空錠A10mg 2錠分2 朝夕食後'));
+  t('★【般】などの頭書きだけの違いは薬名にしない（その他）', K(A, '【般】架空錠A5mg 2錠分2 朝夕食後') === 'other', K(A, '【般】架空錠A5mg 2錠分2 朝夕食後'));
+  t('★量だけ', K(A, '架空錠A5mg 4錠分2 朝夕食後') === 'dose', K(A, '架空錠A5mg 4錠分2 朝夕食後'));
+  t('★1日量と1回量の書き方違い（同じ量）は直しにしない種類（その他）', K(A, '架空錠A5mg 1回1錠 朝夕食後') === 'other', K(A, '架空錠A5mg 1回1錠 朝夕食後'));
+  t('★単位だけ', K(A, '架空錠A5mg 2包分2 朝夕食後') === 'unit', K(A, '架空錠A5mg 2包分2 朝夕食後'));
+  t('★時点だけ（朝夕→朝・就寝前）', K(A, '架空錠A5mg 2錠分2 朝食後・就寝前') === 'time', K(A, '架空錠A5mg 2錠分2 朝食後・就寝前'));
+  t('★食前後だけでも時点', K(A, '架空錠A5mg 2錠分2 朝夕食前') === 'time');
+  t('★複数の種類（薬名・量・時点）', K(A, '架空錠B5mg 3錠分3 毎食後') === 'name,dose,time', K(A, '架空錠B5mg 3錠分3 毎食後'));
+  t('★読めない直し（用法を読めない行の書き換え）は「その他」', K('架空錠A5mg 用法は原本を見る', '架空錠A5mg 用法は医師に聞く') === 'other', K('架空錠A5mg 用法は原本を見る', '架空錠A5mg 用法は医師に聞く'));
+  t('★読めない行を読める行に直したら、量・単位・時点に数える（その他にしない）', K('架空錠A5mg 用法不明', A) === 'dose,unit,time', K('架空錠A5mg 用法不明', A));
+  t('★起床時などの書き足しは「その他」', K(A, A + ' 起床時') === 'other', K(A, A + ' 起床時'));
+
+  /* buildRows は自動で作った行（auto）を持つ */
+  const mb = Y.matchCurrent([{ line: '架空錠N 1錠分1 夕食後', spec: {}, raw: '架空錠N' }, { line: '架空錠Z 2錠分1 朝食後', spec: {}, raw: '架空錠Z' }], '架空錠Z 1錠分1 朝食後\n架空錠Y 1錠分1 朝食後');
+  const br = Y.buildRows(mb.pairs, mb.left, [{ warn: [], skip: false, spec: {} }, { warn: [], skip: false, spec: {} }], {});
+  t('★buildRows は行ごとに自動で作った行（auto）を持つ（人が直す前の line と同じ）', br.length === 3 && br.every(r => typeof r.auto === 'string' && r.auto === r.line), br.map(r => [r.kind, r.auto, r.line]));
+  /* metricOf: 書類1件の記録 */
+  const rows = [
+    { kind: 'same', action: 'keep', auto: '架空錠S 1錠分1 朝食後', line: '架空錠S 1錠分1 朝食後', cur: '架空錠S 1錠分1 朝食後', raw: '架空錠S' },
+    { kind: 'change', action: 'change', auto: A, line: '架空錠A10mg 4錠分2 朝夕食後', cur: '架空錠A5mg 1錠分1 朝食後', raw: '架空錠A5mg' },
+    { kind: 'add', action: 'add', auto: '架空錠N 1錠分1 夕食後', line: '架空錠N 1錠分1 夕食後', cur: '', raw: '架空錠N' },
+    { kind: 'add', action: 'add', auto: '架空錠M 1錠分1 夕食後', line: '架空錠M 1包分1 夕食前', cur: '', raw: '架空錠M' },
+    { kind: 'add', action: 'skip', auto: '架空錠H 頓用', line: '架空錠H 1錠 頓用 痛い時', cur: '', raw: '架空錠H 頓用' },
+    { kind: 'change', action: 'keep', auto: '架空錠K 2錠分2 朝夕食後', line: '架空錠K 9錠分2 朝夕食後', cur: '架空錠K 1錠分1 朝食後', raw: '架空錠K' },
+    { kind: 'add', action: 'add', auto: '架空錠Q 用法は原本', line: '架空錠Q 用法は原本を見る', cur: '', raw: '架空錠Q' },
+    { kind: 'left', action: 'stop', auto: '架空錠Z 1錠分1 朝食後', line: '架空錠Z 1錠分1 朝食後', cur: '架空錠Z 1錠分1 朝食後', raw: '' },
+  ];
+  const m = Y.metricOf({ at: '2026-10-26T01:00:00.000Z', autoId: '11', pickId: '11', rows });
+  t('★薬名の行数は書類から読めた行（書類に無い今の行は数えない）', m.rows === 7, m);
+  t('★人が直した行は、反映に使った行（変える・足す）で自動の行と違うものだけ（入れない・今の行のままは数えない）', m.fixed === 3, m);
+  t('★種類ごと（1行で複数の種類は各種類に1ずつ）', m.name === 1 && m.dose === 1 && m.unit === 1 && m.time === 1 && m.other === 1, m);
+  t('★名簿の一致: 自動の方を人がそのまま使った', m.match === true);
+  t('★名簿の不一致: 人が選び直した', Y.metricOf({ autoId: '11', pickId: '12', rows }).match === false);
+  t('★名簿の不一致: 自動で振り分けられなかった', Y.metricOf({ autoId: '', pickId: '12', rows }).match === false);
+  t('★自動で振り分けられなかった時は、人の方が空・未定でも一致にしない', Y.metricOf({ autoId: '', pickId: '', rows }).match === false && Y.metricOf({ rows }).match === false);
+  t('記録の項目は決まった9つだけ', Object.keys(m).sort().join() === 'at,dose,fixed,match,name,other,rows,time,unit', Object.keys(m));
+  const leak = JSON.stringify(Y.metricOf({ at: '2026-10-26T01:00:00.000Z', autoId: '架空 太郎', pickId: '架空 太郎', name: '架空 太郎', rows }));
+  t('★記録に氏名・薬名・入居者の番号・行の文字が入らない', !/架空|錠|朝食|太郎/.test(leak) && leak.indexOf('"11"') < 0, leak);
+  t('★反映先を空にした行（judge が反映しない行）は直しに数えない', Y.metricOf({ rows: [{ kind: 'add', action: 'add', auto: A, line: '  ' }, { kind: 'change', action: 'change', auto: A, line: '' }] }).fixed === 0);
+  t('auto の無い行（古い確認表）は直しに数えない', Y.metricOf({ rows: [{ kind: 'add', action: 'add', line: 'x 1錠分1 朝食後' }] }).fixed === 0);
+  t('行が無い・壊れている時も0で返す', Y.metricOf(null).rows === 0 && Y.metricOf({ rows: [null, 3, 'a'] }).rows === 0);
+
+  /* 置く・読む */
+  const rec = (i, match, o) => Object.assign({ at: '2026-10-' + String(1 + (i % 28)).padStart(2, '0') + 'T00:00:' + String(i % 60).padStart(2, '0') + '.000Z', rows: 5, match, fixed: 1, name: 1, dose: 0, unit: 0, time: 0, other: 0, seq: i }, o || {});
+  let raw = null;
+  for (let i = 0; i < 35; i++) raw = Y.metricsSave(Y.metricsLoad(raw), rec(i, i % 2 === 0));
+  const ld = Y.metricsLoad(raw);
+  t('★直近30件だけ置き、古いものから落とす', ld.length === 30 && ld[0].at === rec(5, false).at && ld[29].at === rec(34, true).at, ld.length);
+  t('★置く形は {v:1, list} で、決まった項目以外は捨てる', JSON.parse(raw).v === 1 && !/seq/.test(raw));
+  t('★端末に置く文字列そのものが30件まで（読む側で切るだけにしない）', JSON.parse(raw).list.length === 30 && JSON.parse(Y.metricsSave(Array.from({ length: 40 }, (_, i) => rec(i, true)), rec(40, true))).list.length === 30);
+  t('★壊れた JSON は空', Y.metricsLoad('{') .length === 0);
+  t('★版が違えば空', Y.metricsLoad(JSON.stringify({ v: 2, list: [rec(1, true)] })).length === 0);
+  t('★形が違えば空（配列そのもの・null・空）', Y.metricsLoad(JSON.stringify([rec(1, true)])).length === 0 && Y.metricsLoad(null).length === 0 && Y.metricsLoad('').length === 0);
+  const mixed = Y.metricsLoad(JSON.stringify({ v: 1, list: [rec(1, true), { at: 'x', rows: 1, match: true }, rec(2, false, { rows: -1 }), rec(3, true, { fixed: 9 }), rec(4, 'yes'), rec(5, true, { name: '架空 太郎' }), null, rec(6, false)] }));
+  t('★壊れた1件は捨て、正しい件だけ残す', mixed.length === 2 && mixed[0].match === true && mixed[1].match === false, mixed);
+  t('★壊れた記録に新しい1件を足すと、新しい1件だけになる（画面を止めない）', Y.metricsLoad(Y.metricsSave(Y.metricsLoad('壊れた'), rec(1, true))).length === 1);
+  t('★記録の形が壊れた1件は足さない', Y.metricsLoad(Y.metricsSave([], { at: '架空 太郎', rows: 1, match: true })).length === 0);
+
+  /* 集計と表示の文 */
+  const sm = Y.summarize([rec(1, true, { rows: 6, fixed: 2, name: 1, dose: 1, unit: 0, time: 1, other: 0 }), rec(2, false, { rows: 4, fixed: 1, name: 0, dose: 0, unit: 1, time: 0, other: 1 }), rec(3, true, { rows: 0, fixed: 0, name: 0 })]);
+  t('集計', sm.n === 3 && sm.match === 2 && sm.rows === 10 && sm.fixed === 3 && sm.name === 1 && sm.dose === 1 && sm.unit === 1 && sm.time === 1 && sm.other === 1, sm);
+  t('★表示の文', Y.metricText(sm) === '直近 3 件：名簿の一致 2/3 件（67%）・人が直した行 3/10 行（薬名 1・量 1・単位 1・時点 1・その他 1）', Y.metricText(sm));
+  t('★0件の時は「まだ記録がありません」', Y.metricText(Y.summarize([])) === 'まだ記録がありません' && Y.metricText(Y.summarize(null)) === 'まだ記録がありません');
+  t('集計も直近30件まで', Y.summarize(Array.from({ length: 40 }, (_, i) => rec(i, true))).n === 30);
+
+  /* 画面の配線（切り出して偽の localStorage で動かす） */
+  const RM3 = fs.readFileSync(path.join(ROOT, 'resident-master.html'), 'utf8');
+  const cut3 = (src, name) => { const h = src.indexOf('function ' + name + '('); if (h < 0) throw new Error('関数が見つかりません: ' + name);
+    let i = src.indexOf('{', h), d = 0; for (; i < src.length; i++) { if (src[i] === '{') d++; else if (src[i] === '}') { d--; if (d === 0) return src.slice(h, i + 1); } } };
+  const mkBox = (role, stored) => {
+    const store = {}, el = { textContent: '前の文' }, sets = [];
+    if (stored !== undefined) store.yj_metrics = stored;
+    const b = { YakujoCalc: Y, String, JSON, Date, role,
+      localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { sets.push(k); store[k] = String(v); } },
+      $: id => (id === 'yjMetric' ? el : null), store, el, sets };
+    b.getDeviceRole = () => b.role;
+    vm.createContext(b);
+    vm.runInContext(RM3.match(/var YJ_MET_KEY='[^']*';/)[0] + '\n' + ['yjCalcOk_', 'yjMetOk_', 'yjMetRead_', 'yjMetAdd_', 'yjMetPaint_'].map(n => cut3(RM3, n)).join('\n'), b);
+    return b;
+  };
+  const off = mkBox('office');
+  off.yjMetPaint_();
+  t('★事務所PC・0件: 欄は「まだ記録がありません」', off.el.textContent === 'まだ記録がありません', off.el.textContent);
+  off.yjMetAdd_(Y.metricOf({ autoId: '11', pickId: '11', rows }));
+  const saved = JSON.parse(off.store.yj_metrics);
+  t('★事務所PC: 反映した書類を1件記録し、キーは yj_ で始まる', off.sets.length === 1 && off.sets[0] === 'yj_metrics' && saved.v === 1 && saved.list.length === 1 && /^\d{4}-\d{2}-\d{2}T/.test(saved.list[0].at), saved);
+  t('★記録した後、欄を描き直す', /^直近 1 件：名簿の一致 1\/1 件（100%）・人が直した行 3\/7 行/.test(off.el.textContent), off.el.textContent);
+  const fld = mkBox('field', JSON.stringify({ v: 1, list: [rec(1, true)] }));
+  fld.yjMetAdd_(Y.metricOf({ autoId: '11', pickId: '11', rows }));
+  fld.yjMetPaint_();
+  t('★現場端末では記録しない', fld.sets.length === 0, fld.sets);
+  t('★現場端末では表示しない（欄は空）', fld.el.textContent === '', fld.el.textContent);
+  t('★現場端末では読まない', fld.yjMetRead_().length === 0);
+  const brk = mkBox('office', '{壊れた');
+  let threw = false; try { brk.yjMetPaint_(); brk.yjMetAdd_(Y.metricOf({ autoId: '', pickId: '12', rows: [] })); } catch (e) { threw = true; }
+  t('★端末の記録が壊れていても止めず、空として扱う', !threw && /^直近 1 件：名簿の一致 0\/1 件（0%）/.test(brk.el.textContent), brk.el.textContent);
+  const thr = mkBox('office'); thr.localStorage.getItem = () => { throw new Error('使えない'); }; thr.localStorage.setItem = () => { throw new Error('使えない'); };
+  threw = false; try { thr.yjMetPaint_(); thr.yjMetAdd_(Y.metricOf({ rows })); } catch (e) { threw = true; }
+  t('★localStorage が使えなくても止めない', !threw && thr.el.textContent === 'まだ記録がありません', thr.el.textContent);
+  const ap3 = cut3(RM3, 'yjApply_');
+  const okBranch = ap3.slice(ap3.indexOf('if(r&&r.ok===true){'), ap3.indexOf('if(r&&r.already)'));
+  t('★記録は「反映できた」（応答 ok）の分岐の中だけで、ほかの分岐（既に反映・確かめ中・食い違い・失敗）では記録しない', (ap3.match(/yjMetAdd_\(/g) || []).length === 1 && /yjMetAdd_\(met\)/.test(okBranch), okBranch);
+  t('★記録の材料は送る時点の確認表で作る（自動の方 x.a.id と人が決めた方 x.pick）', /var met=yjMetOk_\(\)\?YakujoCalc\.metricOf\(\{autoId:x\.a&&x\.a\.id, pickId:x\.pick, rows:c\.rows\}\):null;/.test(ap3) && ap3.indexOf('var met=') < ap3.indexOf('c.busy=true; c.writing=true'));
+  t('★ほかの場所から記録しない（変更なし・一覧に戻る・閉じるでは記録しない）', (RM3.match(/yjMetAdd_\(/g) || []).length === 2, (RM3.match(/yjMetAdd_\(/g) || []).length);
+  const pt = cut3(RM3, 'yjMetPaint_');
+  t('★欄は textContent で入れる（innerHTML を使わない）', /el\.textContent=YakujoCalc\.metricText/.test(pt) && !/innerHTML/.test(pt + cut3(RM3, 'yjMetAdd_') + cut3(RM3, 'yjMetRead_')));
+  t('★取り込みを開いた時に欄を描く', /yjMetPaint_\(\)/.test(cut3(RM3, 'yjOpen_')));
+  t('★現場用への切り替えでは欄を空にする（端末の記録は消さない）', /mt\.textContent=''/.test(cut3(RM3, 'yjPurge_')) && !/removeItem/.test(cut3(RM3, 'yjPurge_')));
+  const modal = RM3.slice(RM3.indexOf('<div class="modal" id="mYakujo"'), RM3.indexOf('<!-- 端末用途ガード'));
+  t('★欄は取り込みの窓（#mYakujo）の中にあり、窓ごと印刷しない', /<div class="box">[\s\S]*<p class="yj-met" id="yjMetric"><\/p>\s*<div class="yj-body" id="yjBody"><\/div>\s*<\/div>\s*<\/div>\s*$/.test(modal.trim() + '\n') && /@media print\{ #mYakujo,#yjOpen\{display:none !important\} \}/.test(RM3));
+  t('共有部品の版（?v=）を上げた', /yakujo-calc\.js\?v=2026-10-26/.test(RM3));
+}
+
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);
