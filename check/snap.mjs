@@ -17,6 +17,13 @@
  *   画面全体を撮る時だけ、入力欄・選択欄の文字の描き方がまれに入れ替わることがある（2026-10-04 実測: 貼り薬カレンダーの iPhone 幅で約1割）。
  *   どの絵が何回出たかは metrics.json の wobble に残す。
  * --merge: 出力先の metrics.json を消さず、撮った画面の分だけ書き換える（一部の画面の撮り直し用）。
+ *
+ * 帳票の紙（2026-10-26 追加）: check/fixtures/<画面名>.mjs がある画面は、架空の入居者を読ませて帳票の紙も撮る。
+ *   <画面>__<帳票>.print.png … その帳票を印刷する時の見た目（印刷部品 SUPrint で準備した状態）
+ *   metrics.json の sheets   … 帳票ごとの印刷ページ数・エラー
+ *   接続先が無い画面だけを撮ると帳票は空のままで、直した場所そのものを比べられないため（試験 B で判明）。
+ *   通信は撮影の間だけ横取りして決まった応答を返す（ネットへは出ない）。画面のコードは変えない。
+ *   材料は道具の側（この snap.mjs の隣）から読む＝直す前（base）も直した後と同じ架空データで撮る。
  */
 import fs from 'node:fs';
 import crypto from 'node:crypto';
@@ -40,6 +47,7 @@ const srv = await startServer(repoDir);
 const browser = await chromium.launch({ args: ['--disable-font-subpixel-positioning'] });
 const prev = MERGE ? readJsonSafe(path.join(outDir, 'metrics.json')) : null;
 const metrics = (prev && prev.pages) || {};
+const sheetMetrics = (prev && prev.sheets) || {};
 function readJsonSafe(f) { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { return null; } }
 /* いちばん多かった絵を選ぶ。同数なら先に撮れた方 */
 function majority(bufs) {
@@ -118,9 +126,63 @@ for (const file of pages) {
   metrics[file] = m;
   const ov = VIEWS.map((v) => `${v.key}=${m[v.key] ? m[v.key].overflowPx : '?'}`).join(' ');
   console.log(`${file}: 横はみ出し ${ov} / 印刷 ${m.printPages == null ? '?' : m.printPages}ページ` + (Object.values(m.errors).some((a) => a.length) ? ' / 画面のエラーあり' : ''));
+
+  const fx = await loadFixture(name);
+  if (fx) for (const sh of fx.sheets) await shootSheet(file, name, fx, sh);
 }
 
-writeJson(path.join(outDir, 'metrics.json'), { at: new Date().toISOString(), fixedTime: FIXED_TIME.toISOString(), hideReport, repeat: REPEAT, pages: metrics });
+/* 帳票の材料（check/fixtures/<画面名>.mjs）。無ければ null＝帳票は撮らない */
+async function loadFixture(name) {
+  const f = new URL(`./fixtures/${name}.mjs`, import.meta.url);
+  if (!fs.existsSync(f)) return null;
+  return import(f.href);
+}
+
+/* 架空データを読ませて帳票を出し、印刷部品で準備した状態の紙を撮る（PC 幅だけ） */
+async function shootSheet(file, name, fx, sh) {
+  const key = `${name}__${sh.key}`;
+  const m = { file, sheet: sh.key, errors: [] };
+  const shots = [];
+  for (let r = 0; r < REPEAT; r++) {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 1, locale: 'ja-JP', timezoneId: 'Asia/Tokyo' });
+    await context.route(fx.match, (route) => {
+      let body = {};
+      try { body = JSON.parse(route.request().postData() || '{}'); } catch (e) { /* 本文の無い要求は空で答える */ }
+      route.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify(fx.respond(body)) });
+    });
+    await context.addInitScript((st) => { try { for (const k of Object.keys(st)) localStorage.setItem(k, st[k]); } catch (e) { /* 保存できない時は空の帳票になり、下の ready 待ちで失敗が分かる */ } }, fx.storage);
+    const o = await open(context, null, file);
+    const p = o.p;
+    try {
+      await p.evaluate((v) => window.setView(v), sh.view);
+      await p.waitForSelector(sh.ready, { timeout: 15000 });
+      await p.waitForTimeout(500);
+      /* 印刷のダイアログは開かない（window.print を空にする）。準備（用紙・文字の大きさの採寸）は画面と同じ道を通る。
+         後始末の保険タイマーは入居者マスタでは60秒なので、撮り終わるまで準備は外れない */
+      const ready = await p.evaluate((k) => { window.print = function () {}; window.SUPrint.print(k); return document.body.classList.contains('su-printing'); }, sh.print);
+      if (!ready) throw new Error('印刷の準備ができない（' + sh.print + '）');
+      await p.emulateMedia({ media: 'print' });
+      await p.waitForTimeout(300);
+      shots.push(await p.screenshot({ fullPage: true, animations: 'disabled', caret: 'hide' }));
+      if (r === 0) {
+        const pdf = path.join(outDir, `${key}.pdf`);
+        await p.pdf({ path: pdf, preferCSSPageSize: true, printBackground: true });
+        m.printPages = pdfPages(pdf);
+      }
+    } catch (e) { if (r === 0) m.errors.push('帳票: ' + String(e.message || e).split('\n')[0].slice(0, 160)); }
+    if (r === 0) m.errors.push(...o.errors);
+    await context.close();
+  }
+  if (shots.length) {
+    const pick = majority(shots);
+    fs.writeFileSync(path.join(outDir, `${key}.print.png`), pick.buf);
+    if (pick.kinds > 1) m.wobble = `${REPEAT}回中 ${pick.kinds}通りの絵・多数派 ${pick.top}回`;
+  }
+  sheetMetrics[key] = m;
+  console.log(`${file} の帳票「${sh.key}」: 印刷 ${m.printPages == null ? '?' : m.printPages}ページ` + (m.errors.some((e) => e.startsWith('帳票: ')) ? ' / 撮れなかった' : ''));
+}
+
+writeJson(path.join(outDir, 'metrics.json'), { at: new Date().toISOString(), fixedTime: FIXED_TIME.toISOString(), hideReport, repeat: REPEAT, pages: metrics, sheets: sheetMetrics });
 await browser.close();
 await srv.close();
 /* 撮影そのものの失敗（開けない・撮れない・PDF）は終了コード 1。画面の JS エラー（pageerror）は記録だけ（比較側で増減を見る） */

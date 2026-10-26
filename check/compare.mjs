@@ -10,6 +10,10 @@
  *
  * 比べ方は Node に画像ライブラリを入れず、Chromium の canvas で行う（依存を増やさない）。
  *
+ * 帳票の紙（2026-10-26 追加）: snap.mjs が架空データで撮った <画面>__<帳票>.print.png も同じく比べる。
+ *   「帳票の印刷（架空データ）」の行に分けて出す。--allow に画面を挙げると、その画面の帳票も「変えてよい」。
+ *   帳票の印刷ページ数も見比べる。直した後で撮れなくなった帳票は失敗にする（撮れないまま「一致」と言わない）。
+ *
  * ★色の揺れ（--tol・既定 2）: 1画素の赤・緑・青のどれもが 2 以内しか違わない時は「同じ」とみなす。
  *   角の丸み・文字のにじみの描き方が撮るたびに 1 だけずれることがある（2026-10-04 実測: 消耗品管理の角で ±1）。
  *   位置・形・文字が変わると差は数十〜二百になるので、この幅で本当の違いを見落とすことはない。
@@ -25,6 +29,9 @@ const headDir = path.resolve(args.head || 'check/out/head');
 const outDir = ensureDir(path.resolve(args.out || 'check/out/compare'));
 const TOL = Math.max(0, Number(args.tol == null ? 2 : args.tol) || 0);
 const allow = new Set((args.allow ? String(args.allow).split(',') : []).map((s) => s.trim().replace(/\.html$/, '')).filter(Boolean));
+/* 帳票（<画面>__<帳票>）は、その画面を許していれば許す */
+const allowed = (name) => allow.has(name) || allow.has(String(name).split('__')[0]);
+const isSheet = (name) => String(name).includes('__');
 
 const { chromium } = loadPlaywright();
 const browser = await chromium.launch();
@@ -73,6 +80,13 @@ for (const file of Object.keys(mh.pages)) {
   const pb = mb.pages[file].printPages, ph = mh.pages[file].printPages;
   printRows.push({ file, base: pb == null ? null : pb, head: ph == null ? null : ph, same: pb === ph });
 }
+/* 帳票の印刷ページ数（直す前に撮れていた帳票だけ比べる） */
+const sb = mb.sheets || {}, sh = mh.sheets || {};
+for (const key of Object.keys(sh)) {
+  if (!sb[key] || sb[key].printPages == null) continue;
+  const pb = sb[key].printPages, ph = sh[key].printPages;
+  printRows.push({ file: key, base: pb, head: ph == null ? null : ph, same: pb === ph });
+}
 
 /* 画面の JS エラー（撮影時の pageerror）が直した後で増えていないか */
 const errRows = [];
@@ -81,6 +95,11 @@ for (const file of Object.keys(mh.pages)) {
   const eh = Object.values(mh.pages[file].errors || {}).flat();
   const added = eh.filter((e) => !eb.includes(e));
   if (added.length) errRows.push({ file, added });
+}
+for (const key of Object.keys(sh)) {
+  const eb = sb[key] ? (sb[key].errors || []) : [];
+  const added = (sh[key].errors || []).filter((e) => !eb.includes(e));
+  if (added.length) errRows.push({ file: key, added });
 }
 
 /* 報告（CLAUDE.md §6 の言い方で） */
@@ -92,23 +111,30 @@ const expected = [];
 for (const file of Object.keys(mh.pages)) for (const v of ['pc', 'print', 'ph100', 'ph200']) expected.push(`${file.replace(/\.html$/, '')}.${v}.png`);
 const missingPng = expected.filter((f) => !fs.existsSync(path.join(headDir, f)));
 if (missingPng.length) { lines.push(`撮れていない画面がある（${missingPng.join('、')}）`); fail++; }
+/* 帳票: 直す前に撮れていたのに、直した後で撮れなかったもの（直す前から撮れない帳票は比べられないと書くだけ） */
+const lostSheets = Object.keys(sb).filter((k) => fs.existsSync(path.join(baseDir, `${k}.print.png`)) && !fs.existsSync(path.join(headDir, `${k}.print.png`)));
+if (lostSheets.length) { lines.push(`帳票の印刷: 直した後で撮れなくなった（${lostSheets.join('、')}）`); fail++; }
+const noBaseSheets = Object.keys(sh).filter((k) => !fs.existsSync(path.join(baseDir, `${k}.print.png`)));
 const byView = (v) => results.filter((r) => r.view === v);
-const missing = results.filter((r) => r.status === 'base無し').map((r) => r.name).filter((v, i, a) => a.indexOf(v) === i);
+const missing = results.filter((r) => r.status === 'base無し' && !isSheet(r.name)).map((r) => r.name).filter((v, i, a) => a.indexOf(v) === i);
 if (missing.length) lines.push(`直す前に無い画面（新しい画面＝比べない）: ${missing.join('、')}`);
-for (const v of ['pc', 'print', 'ph100', 'ph200']) {
-  const rows = byView(v).filter((r) => r.status !== 'base無し');
+for (const v of ['pc', 'print', 'sheet', 'ph100', 'ph200']) {
+  const rows = (v === 'sheet' ? byView('print').filter((r) => isSheet(r.name)) : byView(v).filter((r) => !isSheet(r.name))).filter((r) => r.status !== 'base無し');
+  if (v === 'sheet' && !rows.length && !noBaseSheets.length) continue;   // 帳票の材料がある画面を撮っていない時は行を出さない
   const changed = rows.filter((r) => r.status !== '一致');
-  const label = { pc: 'PC の画面', print: '印刷の見た目', ph100: 'iPhone 100%', ph200: 'iPhone 200%' }[v];
-  if (!changed.length) lines.push(`${label}: ${rows.length}画面すべて画素一致${TOL ? '（色の揺れ±' + TOL + '以内は同じとみなす）' : ''}`);
+  const label = { pc: 'PC の画面', print: '印刷の見た目', sheet: '帳票の印刷（架空データ）', ph100: 'iPhone 100%', ph200: 'iPhone 200%' }[v];
+  const unit = v === 'sheet' ? '枚' : '画面';
+  const extra = v === 'sheet' && noBaseSheets.length ? `（直す前に撮れず比べていない: ${noBaseSheets.join('、')}）` : '';
+  if (!changed.length) lines.push(`${label}: ${rows.length}${unit}すべて画素一致${TOL ? '（色の揺れ±' + TOL + '以内は同じとみなす）' : ''}${extra}`);
   else {
-    lines.push(`${label}: ${rows.length - changed.length}画面は画素一致・${changed.length}画面に違い（${changed.map((r) => r.name + (allow.has(r.name) ? '〔許可〕' : '') + (r.pixels ? ` ${r.pixels}px` : '')).join('、')}）`);
-    if (v === 'pc' || v === 'print') fail += changed.filter((r) => !allow.has(r.name)).length;
+    lines.push(`${label}: ${rows.length - changed.length}${unit}は画素一致・${changed.length}${unit}に違い（${changed.map((r) => r.name + (allowed(r.name) ? '〔許可〕' : '') + (r.pixels ? ` ${r.pixels}px` : '')).join('、')}）${extra}`);
+    if (v === 'pc' || v === 'print' || v === 'sheet') fail += changed.filter((r) => !allowed(r.name)).length;
   }
 }
 const totalPages = printRows.reduce((s, r) => s + (r.head || 0), 0);
 const pageDiff = printRows.filter((r) => !r.same);
 lines.push(pageDiff.length ? `印刷ページ数: 違いあり（${pageDiff.map((r) => `${r.file} ${r.base}→${r.head}`).join('、')}）` : `印刷ページ数: 全${totalPages}ページ一致`);
-if (pageDiff.some((r) => !allow.has(r.file.replace(/\.html$/, '')))) fail++;
+if (pageDiff.some((r) => !allowed(r.file.replace(/\.html$/, '')))) fail++;
 if (errRows.length) { lines.push(`画面のエラー: 直した後で増えた（${errRows.map((r) => `${r.file}: ${r.added.join(' / ').slice(0, 120)}`).join('、')}）`); fail++; }
 else lines.push('画面のエラー: 直す前から増えていない');
 
