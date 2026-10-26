@@ -494,6 +494,7 @@ const CENSUS = {
   "su-data-gas.js": [],
   "su-data.js": [],
   "su-errors.js": [],
+  "su-export-crypt.js": [],
   "su-export.js": [],
   "su-facility.js": [],
   "su-kv-shadow.js": [],

@@ -262,8 +262,11 @@ console.log('\n— 5. GAS の読み方 —');
     /script-src 'self';/.test(HTML), '');
   t('部品の読み込みは accounts.js より前', HTML.indexOf('su-export.js?v=') < HTML.indexOf('accounts-export.js?v=') && HTML.indexOf('accounts-export.js?v=') < HTML.indexOf('accounts.js?v='), '');
   t('書き出しの枠は最初は隠れている（管理者と分かってから出す）', /<section class="cd" id="sec-export" hidden>/.test(HTML), '');
-  t('現場の端末では書き出さない（su_device_role が field なら止める）', /role === 'field'/.test(SRC_A) && SRC_A.indexOf("role === 'field'") < SRC_A.indexOf("c.rpc('export_begin')"), '');
-  t('始める前に個人情報の注意で確かめる', SRC_A.indexOf('confirm(') < SRC_A.indexOf("c.rpc('export_begin')"), '');
+  /* 2026-10-26: export_begin は暗号化の有無と理由を渡す形（0025）になったので、呼び出しの目印は「c.rpc('export_begin',」 */
+  const BEGIN = SRC_A.indexOf("c.rpc('export_begin',");
+  t('現場の端末では書き出さない（su_device_role が field なら止める）', BEGIN > 0 && /role === 'field'/.test(SRC_A) && SRC_A.indexOf("role === 'field'") < BEGIN &&
+    SRC_A.indexOf('if (isField())') > 0 && SRC_A.indexOf('if (isField())') < BEGIN, BEGIN);
+  t('始める前に個人情報の注意で確かめる', BEGIN > 0 && SRC_A.indexOf('confirm(') < BEGIN, BEGIN);
 
   console.log('\n' + pass + ' 件合格 / ' + fail + ' 件不合格');
   process.exit(fail ? 1 : 0);
