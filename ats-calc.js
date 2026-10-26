@@ -138,17 +138,20 @@
     if (!s) return null;
     return c.normDate(s, { aheadYears: 2 }) || null;
   }
-  /* 年の無い日付（'1/31' '1月31日'）を受付日などの基準日から補う。月が基準日の月より前なら翌年。
-     年のある日付はそのまま読む。読めなければ null */
+  /* 年の無い日付（'1/31' '1月31日'）を基準日から補う。年のある日付はそのまま読む。読めなければ null。
+     dir が 'past' でない時（就業開始日・返答期限など受付日より後の日付）: 月が基準日の月より前なら翌年。
+     dir が 'past' の時（受付日を今日から補う）: 基準日より後の日付になるなら前の年（受付日は先の日付にならない） */
   var RE_MD = /^(\d{1,2})[\/\-.月](\d{1,2})日?$/;
-  function completeYear(text, baseDate) {
+  function completeYear(text, baseDate, dir) {
     var s = nfkc(text).replace(/[\s　]+/g, '').replace(/[（(][日月火水木金土祝・]+[)）]$/, '');
     if (!s) return null;
     var full = normDate(s);
     if (full) return full;
     var m = RE_MD.exec(s), b = ymd(baseDate);
     if (!m || !b) return null;
-    var mo = +m[1], d = +m[2], y = mo < b.m ? b.y + 1 : b.y;
+    var mo = +m[1], d = +m[2], y;
+    if (dir === 'past') y = (mo > b.m || (mo === b.m && d > b.d)) ? b.y - 1 : b.y;
+    else y = mo < b.m ? b.y + 1 : b.y;
     if (mo < 1 || mo > 12 || d < 1 || d > lastDay(y, mo)) return null;
     return y + '-' + pad2(mo) + '-' + pad2(d);
   }
@@ -190,7 +193,8 @@
     return out;
   }
 
-  /* 取り込みの採用可否 → 段階。採用＋就業開始日は「入職完了」にはできない（職員マスタへの登録が要る）ので入職準備にして印を残す */
+  /* 取り込みの採用可否 → 段階。「採用」＋就業開始日は「入職完了」にはできない（職員マスタへの登録が要る）ので入職準備にして印を残す。
+     印を付けるのは採用可否が「採用」の行だけ（「内定」「合格」などは就業開始日があっても内定のまま・印なし） */
   var RE_HIRED = /^(採用|採用決定|内定|合格)$/;
   var RE_REJECT = /^(不採用|不合格|見送り|お見送り)$/;
   var RE_DECLINE = /^(本人断り|辞退|採用辞退|内定辞退|本人辞退)$/;
@@ -200,7 +204,7 @@
     var days = Number(lostDays) >= 1 ? Math.floor(Number(lostDays)) : DEFAULT_SETTINGS.lostDays;
     if (res) {
       if (RE_HIRED.test(res)) {
-        if (r.startOn) return { stage: 'prep', note: '入職済みの印（取り込み元の就業開始日 ' + r.startOn + '）', issue: '' };
+        if (r.startOn && res === '採用') return { stage: 'prep', note: '入職済みの印（取り込み元の就業開始日 ' + r.startOn + '）', issue: '' };
         return { stage: 'offer', note: '', issue: '' };
       }
       if (RE_REJECT.test(res)) return { stage: 'rejected', note: '', issue: '' };
@@ -294,7 +298,7 @@
     function cell(k) { return (k in map) ? trim(c[map[k]]) : ''; }
     var name = trim(nfkc(cell('name')).replace(/[\s　]+/g, ' '));
     if (!name) issues.push('氏名がありません');
-    var recText = cell('received'), received = recText ? (normDate(recText) || completeYear(recText, today)) : null;
+    var recText = cell('received'), received = recText ? (normDate(recText) || completeYear(recText, today, 'past')) : null;
     if (!recText) issues.push('受付日がありません');
     else if (!received) issues.push('受付日を読めません');
     var base = received || today;
