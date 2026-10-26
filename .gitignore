@@ -61,6 +61,10 @@
 !/check/routine
 /check/routine/*
 !/check/routine/nightly-fix.md
+# 帳票の紙を架空データで撮るための材料（2026-10-26・snap.mjs が画面名で探す）
+!/check/fixtures
+/check/fixtures/*
+!/check/fixtures/*.mjs
 !/care-schedule.html
 !/facesheet.html
 !/genogram.html

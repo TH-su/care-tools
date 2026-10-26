@@ -56,7 +56,7 @@ try {
   cmpStatus = run('画素比較', [cmpJs, ...cmp]);
   /* ③' 揺れの確かめ: 違いの出た画面だけ 5 回ずつ撮り直して比べ直す */
   const first = readJson(path.join(out, 'compare', 'compare.json'), null);
-  const diffPages = first ? [...new Set(first.results.filter((r) => r.status === '違いあり' || r.status === '大きさが違う').map((r) => r.name + '.html'))] : [];
+  const diffPages = first ? [...new Set(first.results.filter((r) => r.status === '違いあり' || r.status === '大きさが違う').map((r) => r.name.split('__')[0] + '.html'))] : [];   // 帳票（<画面>__<帳票>）に違いが出た時は、その画面ごと撮り直す
   if (diffPages.length && args.recheck !== '0' && wt) {
     const N = '5';
     const hide = args['hide-report'] === 'true' ? ['--hide-report'] : [];
