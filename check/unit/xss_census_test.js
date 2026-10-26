@@ -486,6 +486,7 @@ const CENSUS = {
   ],
   "su-roster.js": [],
   "su-staff-names.js": [],
+  "su-sync-stale.js": [],
   "su-weight-shadow.js": [],
   "supplies-calc.js": [],
   "supplies.html": [],
