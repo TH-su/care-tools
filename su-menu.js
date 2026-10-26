@@ -36,6 +36,8 @@
  *   SUMenu.ball()                     → 今の毬の柄 'kiku' | 'asanoha'（端末の選択 → 施設の既定 → 菊かがり）
  *   SUMenu.getBall() / setBall(kind)  → 端末の選択（無い・壊れている時は null）／端末の選択を残す（成功で true）
  *   SUMenu.chooseBall(device, config) → 柄の決め方の純関数（config は clean() を通したもの）
+ *   SUMenu.hasLogin() / loadAuth()    → この端末にログインの記録があるか／ログインの部品を読み込む（二重に入れない）。
+ *                                       写しが止まっている時の札（su-sync-stale.js）が使う（2026-10-26 本人指示）
  */
 (function () {
   'use strict';
@@ -320,5 +322,7 @@
   }
 
   window.SUMenu = { arrange: arrange, layout: layout, clean: clean, readCache: readCache, clearCache: clearCache, startSync: startSync, ROLES: ROLES, KEEP: KEEP,
-    ball: ball, getBall: getBall, setBall: setBall, chooseBall: chooseBall, BALLS: BALLS.slice() };
+    ball: ball, getBall: getBall, setBall: setBall, chooseBall: chooseBall, BALLS: BALLS.slice(),
+    // 写しが止まっている時の札（su-sync-stale.js・2026-10-26 本人指示）が、同じログインの部品を二重に読み込まないために使う
+    hasLogin: hasLogin, loadAuth: loadAuth };
 })();
