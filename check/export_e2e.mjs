@@ -4,7 +4,7 @@
  *
  * 本物の Chromium で accounts.html を開き、ログイン（su-auth.js）とデータベース・GAS だけを偽物に差し替えて、
  * 架空の事業者 C を書き出す → 保存された ZIP を開く → 中の JSON が架空のデータと1文字も違わないことを確かめる。
- *   ・データベースの偽物は、0023 の export_begin・export_page・export_finish と同じ形で返す
+ *   ・データベースの偽物は、0024 の export_begin・export_page・export_finish と同じ形で返す
  *     （同期データの表は 4,500 行＝2000 行ずつ3回に分けて読むことも確かめる。中身の規則そのものは care-backend の試験）
  *   ・GAS の偽物は script.google.com への送信を横取りして返す（外へは出ない）。接続設定は架空の値を端末に入れる
  *   ・確かめること: 書き出しの記録に、画面が受け取った件数・GAS の分・ファイル名が届く／現場の端末では始まらない／
@@ -63,7 +63,7 @@ function fakeDb(state) {
                            total: tables.reduce((s, x) => s + x.count, 0), tables });
       }
       if (rpc[1] === 'export_page') {
-        /* 0023 と同じ形: {rows, next}。続きの印は「最後に読んだ行の位置」（本物は主キー。ここは配列の位置で真似る） */
+        /* 0024 と同じ形: {rows, next}。続きの印は「最後に読んだ行の位置」（本物は主キー。ここは配列の位置で真似る） */
         const from = a.p_after ? a.p_after.i + 1 : 0;
         state.pages.push(a.p_table + '@' + from);
         if (a.p_run !== 41 || !DB[a.p_table] || a.p_limit > 2000) return send(403, { code: '42501', message: 'x' });

@@ -38,7 +38,7 @@
       return '書き出せませんでした。管理者として2段階認証まで済んでいるか確かめて、ログインし直してからもう一度試してください。';
     }
     if (code === 'PGRST202' || /could not find the function/i.test(m)) {
-      return '書き出しの準備（データベースの 0023）がまだできていません。';
+      return '書き出しの準備（データベースの 0024）がまだできていません。';
     }
     if (/failed to fetch|network|load failed/i.test(m)) return '通信できませんでした。電波・Wi-Fi を確かめてから、もう一度試してください。';
     return 'うまくいきませんでした。もう一度試してください。';
