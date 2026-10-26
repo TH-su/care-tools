@@ -10,11 +10,9 @@
 # ・試験の終わる順が入れ替わった時（続けて2本取り込んだ時、前の版の試験が後に終わる）に古い版で上書きしないよう、
 #   試験した版が今の main の先頭でなければ配らない（実行は成功のまま・後の版の試験の成功で配られる）。
 #   その間 care-publish-pr.sh は「公開中の中身が main と違う」と出す（後の版の配信を待てば一致する）
-# ・公開できなかった時は代表者へ知らせる（2026-10-25 本人指示・代表者の決定「GitHub の Issue」）。
-#   main の試験が落ちた（配らずに飛ばした）時と、配る仕事が失敗した（施設情報の Secret の不備など）時に、
-#   ラベル「公開の失敗」の Issue を立てる（担当＝リポジトリの持ち主＝GitHub がメールとスマホへ知らせる）。
-#   続けて失敗した時は同じ Issue に書き足し、次に配れた時に閉じる。知らせには前に配った版の日時（日本時間）と版の番号を入れる。
-#   ★公開リポジトリなので、書くのは版の番号・コミットの題・日時・失敗の種類・実行の記録へのリンクだけ（個人情報・Secret の中身は書かない）
+# ・公開できなかった時の知らせは、実行の記録の赤い×と GitHub からの失敗のメールだけにする（2026-10-26 代表者の決定 B）。
+#   2026-10-25 に入れた「公開の失敗」の Issue を立てる仕事は外した（このリポジトリは Issue 機能を切っていて立てられず、
+#   その仕事自体が失敗していた）。Issue 機能は入れない。
 name: 公開
 
 on:
@@ -116,91 +114,3 @@ jobs:
         id: deploy
         uses: actions/deploy-pages@v4
 
-  # 公開できなかった時の知らせ・配れた時の後始末（2026-10-25 本人指示）。この仕事が失敗しても公開そのものには触れない
-  notify:
-    needs: deploy
-    if: >-
-      always() &&
-      (github.event_name == 'workflow_dispatch' ||
-       (github.event.workflow_run.event == 'push' &&
-        github.event.workflow_run.head_branch == 'main' &&
-        github.event.workflow_run.head_repository.full_name == github.repository))
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      issues: write
-      actions: read
-    steps:
-      - name: 公開できなかったら知らせる・配れたら知らせを閉じる
-        env:
-          GH_TOKEN: ${{ github.token }}
-          R: ${{ github.repository }}
-          OWNER: ${{ github.repository_owner }}
-          TEST_RESULT: ${{ github.event.workflow_run.conclusion || 'manual' }}
-          TEST_URL: ${{ github.event.workflow_run.html_url || '' }}
-          DEPLOY_RESULT: ${{ needs.deploy.result }}
-          DEPLOY_GO: ${{ needs.deploy.outputs.go }}
-          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          # PAGES-NOTIFY-BEGIN（check/unit/pages_notify_test.js がこの区間を切り出して偽の gh で動かす）
-          LABEL='公開の失敗'
-          kind=''
-          case "$TEST_RESULT" in
-            success|manual|cancelled|skipped|neutral) : ;;   # 成功・手動の配信・人が止めた・飛ばした
-            *) kind="試験の失敗（main の「試験」が ${TEST_RESULT} で終わったので配っていません）" ;;   # failure・timed_out・startup_failure 等
-          esac
-          if [ -z "$kind" ]; then
-            case "$DEPLOY_RESULT" in
-              success|skipped) : ;;
-              *) kind='配信の失敗（施設情報の Secret FACILITY_PROFILE_JSON の不備か、配る処理の失敗・時間切れ）' ;;
-            esac
-          fi
-          # 落ちた版が今の main の先頭でなければ知らせない（後の版がもう配られているか、後の版の実行が知らせる）
-          if [ -n "$kind" ] && [ "$TEST_RESULT" != "manual" ]; then
-            head=$(gh api "repos/$R/commits/main" --jq '.sha' 2>/dev/null || true)
-            if [ -n "$head" ] && [ "$head" != "$SHA" ]; then
-              echo "落ちた版 ${SHA:0:7} は今の main の先頭 ${head:0:7} ではないので知らせません"
-              exit 0
-            fi
-          fi
-          open_no=$(gh issue list -R "$R" --label "$LABEL" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)
-          if [ -z "$kind" ]; then
-            # 配れた時（試験した版が main の先頭で、配る仕事が成功）だけ、開いている知らせを閉じる
-            if [ "$DEPLOY_RESULT" = "success" ] && [ "$DEPLOY_GO" = "1" ] && [ -n "$open_no" ]; then
-              gh issue comment "$open_no" -R "$R" --body "配れました（版 ${SHA:0:7}・$(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M')）。この知らせを閉じます。実行の記録: $RUN_URL" || true
-              gh issue close "$open_no" -R "$R" || true
-            fi
-            echo "知らせることはありません（試験: $TEST_RESULT・配信: $DEPLOY_RESULT）"
-            exit 0
-          fi
-          # 前に配った版＝公開の実行のうち「配る」の手順が成功したいちばん新しい実行（配らずに飛ばした実行は数えない）
-          prev='（読めませんでした。公開の実行の記録で、最後に「配る」が成功した実行を確かめてください）'
-          for rid in $(gh api "repos/$R/actions/workflows/pages.yml/runs?status=success&per_page=30" --jq '.workflow_runs[] | select(.id != '"$GITHUB_RUN_ID"') | .id' 2>/dev/null || true); do
-            at=$(gh api "repos/$R/actions/runs/$rid/jobs" --jq '[.jobs[] | select(.name == "deploy") | .steps[] | select(.name == "配る" and .conclusion == "success")][0].completed_at // empty' 2>/dev/null || true)
-            if [ -n "$at" ]; then
-              psha=$(gh api "repos/$R/actions/runs/$rid" --jq '.head_sha' 2>/dev/null || true)
-              prev="$(TZ=Asia/Tokyo date -d "$at" '+%Y-%m-%d %H:%M')（日本時間・版 ${psha:0:7}）"
-              break
-            fi
-          done
-          title=$(gh api "repos/$R/commits/$SHA" --jq '.commit.message | split("\n")[0]' 2>/dev/null || true)
-          now=$(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M')
-          body="**公開できませんでした**（$now 日本時間）
-
-          - 失敗の種類: $kind
-          - 失敗した版: ${SHA:0:7} ${title}
-          - **前に配った版: $prev**（今もこの版が公開され続けています）
-          - 実行の記録: $RUN_URL"
-          [ -n "$TEST_URL" ] && [ "$TEST_RESULT" != "success" ] && [ "$TEST_RESULT" != "manual" ] && body="$body
-          - 試験の記録: $TEST_URL"
-          body=$(printf '%s\n' "$body" | sed 's/^          //')
-          gh label create "$LABEL" -R "$R" --color B60205 --description '公開（pages.yml）が失敗した時に自動で立つ' --force >/dev/null 2>&1 || true
-          if [ -n "$open_no" ]; then
-            gh issue comment "$open_no" -R "$R" --body "$body"
-          else
-            gh issue create -R "$R" --title "公開の失敗：${kind%%（*}（版 ${SHA:0:7}）" --label "$LABEL" --assignee "$OWNER" --body "$body"
-          fi
-          echo "$body" >> "$GITHUB_STEP_SUMMARY"
-          # PAGES-NOTIFY-END

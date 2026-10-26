@@ -97,8 +97,7 @@ function facility(profile) {
   t('配るのは試験が main への送信で成功した時だけ（PR の試験・失敗・別のリポジトリでは配らない）',
     /workflow_run\.conclusion == 'success'/.test(Y) && /workflow_run\.event == 'push'/.test(Y) && /workflow_run\.head_branch == 'main'/.test(Y) && /head_repository\.full_name == github\.repository/.test(Y));
   t('取り出すのは試験に合格した版', /ref: \$\{\{ github\.event\.workflow_run\.head_sha \|\| github\.sha \}\}/.test(Y));
-  /* 配る仕事（deploy）の手順だけを見る。後ろの知らせの仕事（notify・2026-10-25）は別の仕事で、先頭の判定とは関係ない */
-  const steps = (Y.indexOf('\n  notify:') > 0 ? Y.slice(0, Y.indexOf('\n  notify:')) : Y).split('\n      - name: ').slice(1);
+  const steps = Y.split('\n      - name: ').slice(1);
   const after = steps.slice(steps.findIndex(x => /^試験した版が今の main の先頭か/.test(x)) + 1);
   t('試験した版が main の先頭でなければ、その後の手順を全部飛ばす（古い版で上書きしない）',
     /git ls-remote origin refs\/heads\/main/.test(Y) && after.length >= 5 && after.every(x => /\n        if: steps\.head\.outputs\.go == '1'\n/.test(x)), after.length);
@@ -107,6 +106,9 @@ function facility(profile) {
   t('壊れた JSON・事業所のそろわない設定・見本のままの設定では止める', /施設情報の JSON を読めません/.test(Y) && /施設・訪問・通所 がそろっていません/.test(Y) && /見本（架空の施設）のままです/.test(Y));
   t('配るのは git で管理しているファイル＋本番の施設情報', /git ls-files -z \| xargs -0 cp --parents/.test(Y) && /cp facility-profile\.json "\$RUNNER_TEMP\/site\/facility-profile\.json"/.test(Y));
   t('Secret の中身をログに出さない（echo "$FP" をしない）', !/echo[^\n]*\$FP/.test(Y));
+  /* 2026-10-26 代表者の決定 B: Issue 機能を切ったリポジトリで Issue を立てる仕事が失敗していた。知らせは赤い×と失敗のメールだけ */
+  t('失敗の知らせに Issue を使わない（仕事は deploy だけ・Issue の権限を持たない）',
+    !/gh issue|issues: write|\n  notify:/.test(Y) && (Y.slice(Y.indexOf('\njobs:')).match(/^  [a-z][\w-]*:\n/mg) || []).length === 1, Y.slice(Y.indexOf('\njobs:')).match(/^  [a-z][\w-]*:\n/mg));
 
   console.log('\n— F. 撮影・手元の確かめの道具 —');
   const lib = await import(path.join(ROOT, 'check', 'lib.mjs'));
