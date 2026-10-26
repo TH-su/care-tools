@@ -53,6 +53,7 @@
 !/check/unit/run-all.mjs
 !/check/unit/*.src.txt
 !/check/ci-allow.mjs
+!/check/facility-secret-check.mjs
 !/check/annot-render.mjs
 !/check/gas
 /check/gas/*
