@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-uDNKYzCBEiiXkxr67Y/qpjmHENnDBQA62qCnlcc0huU=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-s7gGC402NIqZSz5P+ZfOYk5IizWRNhjJErvcEpKLUwo=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 検索エンジンにこのページと配下ツールを辿らせない。
@@ -16,6 +16,8 @@
        役割と並びは共通ログイン（Supabase の menu_get）から読み、端末に su_menu_v1 として控える（リンク先と区分 id だけ）。
        ほかに、事務所の端末でだけ、個別機能訓練計画書が数えて端末に残した期限の件数（tp_menu_due・件数と数えた日だけ・氏名なし）を
        読み、そのタイルに札として出す（2026-10-24 代表者の決定 案A）。メニューから書かない・送らない。
+       管理者（Google＋2段階認証）でログイン中の事務所の端末でだけ、写しの記録（master_sync_runs の at・failed だけ）を読み、
+       最後の成功が24時間より前なら入居者マスタのタイルに札を出す（su-sync-stale.js・2026-10-26 本人指示）。札に出すのは時刻だけ。
      ★端末に書くのは、見出しの毬を押した時の毬の柄（su_menu_ball・値は 'kiku'・'asanoha' だけ）だけで、
        書くのは su-menu.js の SUMenu.setBall だけ（このページは保存領域へ直接書かない・2026-10-26 代表者の決定）。
      ★<body> より前に class を付けるのは、タイルが一瞬見えてから消える「ちらつき」を防ぐため
@@ -30,9 +32,11 @@
 <script src="su-errors.js?v=2026-10-08"></script>
 <script src="su-cfg-hint.js?v=2026-10-01.2"></script>
 <script src="su-perf.js?v=2026-10-24"></script>
-<script src="su-menu.js?v=2026-10-26.2"></script>
+<script src="su-menu.js?v=2026-10-26.3"></script>
 <!-- メニューの毬（菊かがり・麻の葉）を描く部品（2026-10-26 代表者の決定）。読めなくてもメニューは動く（毬のボタンを出さないだけ） -->
 <script src="su-itomari.js?v=2026-10-26"></script>
+<!-- 写しが止まっている時の札（2026-10-26 本人指示）。現場端末では何も読まない・読めなくてもメニューは動く -->
+<script src="su-sync-stale.js?v=2026-10-26"></script>
 <script>
 (function(){
   function apply(){try{
@@ -152,6 +156,8 @@ main {
 .tile .note { font-size: 0.6875rem; color: var(--g7); font-weight: 400; }
 /* 期限の件数の札（2026-10-24 代表者の決定 案A）。色だけに頼らず「超過」等の語で書く */
 .tile .due { font-size: 0.6875rem; color: var(--due-tx); font-weight: 700; line-height: 1.4; }
+/* 写しが止まっている時の札（2026-10-26 本人指示）。期限の件数の札と同じ見た目 */
+.tile .stale { font-size: 0.6875rem; color: var(--due-tx); font-weight: 700; line-height: 1.4; }
 /* 定義の一部が壊れていた時の帯（2026-10-10）。#7a4200 on #fff4e5 で約 7.6:1 */
 /* 困った時の区分の問い合わせ先の1行（2026-10-26 本人指示）。選んで写せる文字（tel: のリンクにしない）。--g7 は白地・--g0 地で 5.9:1 以上 */
 .sec .sup { margin: 8px 2px 0; font-size: 0.8125rem; color: var(--g7); line-height: 1.6; -webkit-user-select: text; user-select: text; }
@@ -581,8 +587,13 @@ main {
       build(arranged(cfg, role));
       fill();
       drawBall();
+      staleApply();
     });
   } catch (e) { /* 設定を読めなくても既定のメニューで動く */ }
+  /* 写しが止まっている時の札（2026-10-26 本人指示・su-sync-stale.js）。確かめるのは読み込みが終わってから裏で。
+     組み立て直した後は、確かめた結果を付け直すだけ（通信しない） */
+  function staleApply() { try { if (window.SUSyncStale) SUSyncStale.apply(main); } catch (e) { /* 付けられなくても動く */ } }
+  try { if (window.SUSyncStale) SUSyncStale.start(main); } catch (e) { /* 確かめられなくても動く */ }
   function fill() {
     if (!window.SUFacility || !SUFacility.ready || !SUFacility.ready()) return;
     var els = document.querySelectorAll('[data-fac-name]');
