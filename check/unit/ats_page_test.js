@@ -359,6 +359,58 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
     t('必須がそろうまでボタンは無効・「あと2項目（雇用形態・入職日）」', /あと2項目（雇用形態・入職日）/.test(h) && /data-act="reg-start" disabled/.test(h), h.slice(0, 300));
   }
 
+  group('5b2. 外すかどうかは、その場で読み直した行の印で決める（最終の指摘）');
+  /* 画面B（古い控えの行を持つ）が開いた時、データベースの今の行を偽物で差し替える */
+  const dbNow = (L, rowFn) => { L.db.from = ((orig) => (tb) => { const b = orig(tb); if (tb === 'ats_applicants' && b) { const th = b.then; b.then = (ok, ng) => { const o = b.ops.find((x) => x[0] === 'eq'); if (!o) return th.call(b, ok, ng); L.log.push({ kind: 'table', table: tb, ops: b.ops }); return Promise.resolve({ data: [rowFn()].filter(Boolean), error: null }).then(ok, ng); }; } return b; })(L.db.from.bind(L.db)); };
+  {
+    const REQ = 'k'.repeat(32), OLD = ago(9), NEW = ago(1);
+    /* 偽のデータベースの今の印。ats_clear_staff_pending は受付番号と時刻の両方が今の印と同じ時だけ外す */
+    const cur = { req: REQ, at: NEW };
+    const clears = [];
+    const L = await opened({ row: app({ staff_pending_at: OLD, staff_req_id: REQ }), stf: LIST0,
+      rpc: { ats_clear_staff_pending: (a) => { clears.push(a); return (a.p_req_id === cur.req && a.p_pending_at === cur.at) ? clearOk() : { ok: false, reason: 'other_send' }; } } });
+    dbNow(L, () => app({ staff_pending_at: cur.at, staff_req_id: cur.req }));
+    L.ctx.curId = ''; L.ctx.reg = {};
+    await L.ctx.openDetail_(UID(1)); await settle(60);
+    t('画面Aが同じ番号で送り直して印の時刻が新しくなった後、古い控えの画面Bが開いても外さない（読み直して8分未満＝待つ）', clears.length === 0 && /分ほど待って/.test(regMsg(L)) && L.ctx.rowById_(UID(1)).staff_pending_at === NEW, { clears, m: regMsg(L) });
+    cur.at = ago(10);
+    const L2 = await opened({ row: app({ staff_pending_at: OLD, staff_req_id: REQ }), stf: LIST0,
+      rpc: { ats_clear_staff_pending: (a) => { clears.push(a); return (a.p_req_id === cur.req && a.p_pending_at === NEW) ? clearOk() : { ok: false, reason: 'other_send' }; } } });
+    dbNow(L2, () => app({ staff_pending_at: cur.at, staff_req_id: cur.req }));
+    const r2 = await L2.ctx.regCheck_(UID(1), true); await settle();
+    const c2 = clears[clears.length - 1];
+    t('外す時は読み直した行の受付番号と時刻をそのまま渡す（{p_id, p_req_id, p_pending_at}）', c2 && Object.keys(c2).sort().join() === 'p_id,p_pending_at,p_req_id' && c2.p_req_id === REQ && c2.p_pending_at === cur.at, c2);
+    t('データベースの印と合わない（その間に送り直された）→ other_send の文言で読み直す・送り直しは出さない', r2 === 'other_send' && /ほかの画面で送り直しています。読み直しました/.test(regMsg(L2)) && !L2.ctx.reg[UID(1)].resend, { r2, m: regMsg(L2) });
+  }
+  {
+    /* データベースの時刻はマイクロ秒まで持つ。読んだ文字列をそのまま渡す（Date に通すとマイクロ秒が落ちて一致しない） */
+    const d = new Date(Date.now() - 10 * 60000), MICRO = d.toISOString().slice(0, 19) + '.123456+00:00';
+    const got = [];
+    const L = await opened({ row: app({ staff_pending_at: MICRO, staff_req_id: 'n'.repeat(32) }), stf: LIST0, rpc: { ats_clear_staff_pending: (x) => { got.push(x); return x.p_pending_at === MICRO ? clearOk() : { ok: false, reason: 'other_send' }; } } });
+    dbNow(L, () => app({ staff_pending_at: MICRO, staff_req_id: 'n'.repeat(32) }));
+    const r = await L.ctx.regCheck_(UID(1), false); await settle();
+    t('印の時刻はマイクロ秒つきの文字列のまま渡す（作り直さない）', r === 'absent' && got.length === 1 && got[0].p_pending_at === MICRO, { r, got });
+  }
+  {
+    /* other_send が続いても、読み直し→開く→自動の確かめ…を繰り返さない */
+    let n = 0;
+    const L = await opened({ row: app({ staff_pending_at: ago(9), staff_req_id: 'p'.repeat(32) }), stf: LIST0, rpc: { ats_clear_staff_pending: () => { n++; return { ok: false, reason: 'other_send' }; } } });
+    L.ctx.saveOpen_(UID(1));
+    L.ctx.curId = ''; L.ctx.reg = {};
+    await L.ctx.openDetail_(UID(1)); await settle(120);
+    t('other_send の後の読み直しでは、開いた時の自動の確かめを走らせない（外す呼び出しは1回だけ）', n === 1, n);
+  }
+  {
+    const L = await opened({ row: app({ staff_pending_at: ago(9), staff_req_id: 'm'.repeat(32) }), stf: LIST0, rpc: { ats_clear_staff_pending: clearOk } });
+    dbNow(L, () => app({ staff_pending_at: null, staff_req_id: null }));
+    const r = await L.ctx.regCheck_(UID(1), false); await settle();
+    t('読み直した行に印が無い → 外さず、印の無い表示に直す', r === 'cleared' && !L.rpcs().length && !L.ctx.rowById_(UID(1)).staff_pending_at && /data-act="reg-start"/.test(L.ctx.regHtml_(L.ctx.rowById_(UID(1)))), { r });
+    const L2 = await opened({ row: app({ staff_pending_at: ago(9) }), stf: LIST0, rpc: { ats_clear_staff_pending: clearOk } });
+    dbNow(L2, () => app({ staff_pending_at: null, staff_id: 'S0700', stage: 'hired' }));
+    const r2 = await L2.ctx.regCheck_(UID(1), false); await settle();
+    t('読み直した行に職員IDがある → 外さず「登録済み」に直す', r2 === 'registered' && !L2.rpcs().length && /✓ 登録済み/.test(L2.ctx.regHtml_(L2.ctx.rowById_(UID(1)))), { r2 });
+  }
+
   group('5c. 確かめ中は送った中身を直させない（反証レビュー 2026-10-26）');
   {
     const PEND = app({ staff_pending_at: ago(1), staff_req_id: 'f'.repeat(32) });

@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ECFDP6wtZ3jeiQYxLGOohRkXV7wz/yE2nI90mroNyKY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Y7qC8gfoeHBkLAKRvmIAwoFsF7J+vppIWKbMzhc6sbE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
@@ -672,7 +672,8 @@ function openDetail_(id){
     paintDetail_();
     loadContacts_(id); loadEvalStat_(id);
     if(!enums&&enumsState!=='loading') loadEnums_();
-    if(a.staff_pending_at&&!a.staff_id) regCheck_(id,true);
+    /* 開いた時の自動の確かめは、ほかの画面の送り直しで読み直した直後には走らせない（読み直し→開く→確かめ…の繰り返しを止める） */
+    if(a.staff_pending_at&&!a.staff_id&&!regOf_(id).holdAuto) regCheck_(id,true);
     try{ var h=$('a-pane-h'); if(h) h.focus(); }catch(e){ atsNote_('詳細の手元', e); }
   };
   if(edDirty&&curId&&curId!==id) return askConfirm_('保存していない入力があります',['開いている方の入力を捨てて、別の方を開きますか？'],'捨てて開く',true).then(function(ok){ if(ok){ edDirty=false; go(); } });
@@ -1127,7 +1128,7 @@ function regLink_(id,b,sent,hit){
 /* 保留を外そうとしたら、ほかの画面が送り直していた（受付番号が違う）＝そう知らせて読み直す */
 function regOtherSend_(id){
   var r=regOf_(id);
-  r.busy=false; r.state='unsure'; r.resend=null; r.msg='ほかの画面で送り直しています。読み直しました。';
+  r.busy=false; r.state='unsure'; r.resend=null; r.holdAuto=true; r.msg='ほかの画面で送り直しています。読み直しました。';
   return loadAll_().then(function(){ if(curId===id) paintDetail_(); return 'other_send'; });
 }
 /* すでに登録済み（ほかの画面・端末で済んでいた）と言われた時は、そう知らせて全部を読み直す */
@@ -1161,7 +1162,8 @@ function regSend_(id,reqId,fields){
       var k=res&&res.__noAnswer?{kind:'unsure',id:''}:AtsCalc.staffResult(res,FLUSH_FAIL_MSG);
       if(k.kind==='ok') return regDone_(id,k.id,'登録しました。');
       if(k.kind==='ng'){
-        return rpc_('ats_clear_staff_pending',{p_id:id,p_req_id:reqId}).then(function(c){
+        var pend=rowById_(id);
+        return rpc_('ats_clear_staff_pending',{p_id:id,p_req_id:reqId,p_pending_at:pend?pend.staff_pending_at:null}).then(function(c){
           if(c&&c.reason==='other_send') return 'other';
           if(c&&c.row) replaceRow_(c.row); else { var x=rowById_(id); if(x) x.staff_pending_at=null; }
         },function(e){ atsNote_('保留を外す', e); }).then(function(o){
@@ -1196,7 +1198,7 @@ function regDone_(id,staffId,okText){
 function regCheck_(id,auto){
   var a=rowById_(id), r=regOf_(id), my=gen;
   if(!a||r.busy) return Promise.resolve('busy');
-  r.busy=true; if(!auto){ r.msg='確かめています…'; } if(curId===id) paintDetail_();
+  r.busy=true; if(!auto){ r.msg='確かめています…'; r.holdAuto=false; } if(curId===id) paintDetail_();
   var fields=r.fields||AtsCalc.buildStaffCreate(a,enums).fields;
   var sent=r.sent||{name:fields.name,hireDate:fields.hireDate,birthDate:fields.birthDate||''};
   return stfPost_({action:'list'},45000).then(function(d){
@@ -1205,17 +1207,27 @@ function regCheck_(id,auto){
     var hits=AtsCalc.staffMatches(d.rows,sent);
     if(hits.length===1) return regDone_(id,String(hits[0].id),'登録を確かめました（職員ID '+hits[0].id+'）。');
     if(hits.length>1){ r.busy=false; r.state='unsure'; r.msg='氏名・入職日・生年月日が同じ方が職員マスタに'+hits.length+'人います。職員マスタで確かめてください（ここでは決めません）。'; if(curId===id) paintDetail_(); return 'many'; }
-    var cur=rowById_(id)||a, v=AtsCalc.staffVerdict(null,cur.staff_pending_at,Date.now());
+    /* 外すかどうかは、端末の控えの行ではなく、その場でデータベースから読み直した行の印（時刻・受付番号）で決める
+       （ほかの画面が同じ番号で送り直して印の時刻が新しくなっていても、古い控えで外さない） */
+    return Promise.resolve().then(function(){ return db_().from('ats_applicants').select('*').eq('id',id); }).then(function(res){
+    if(my!==gen) return 'stale';
+    var cur=rows_(res)[0];
+    if(!cur){ r.busy=false; r.state=''; r.msg=''; return loadAll_().then(function(){ return 'gone'; }); }
+    replaceRow_(cur);
+    if(cur.staff_id){ r.busy=false; r.state='ok'; r.msg=REGISTERED_MSG+'。'; paintAll_(); if(curId===id) paintDetail_(); return 'registered'; }
+    if(!cur.staff_pending_at){ r.busy=false; r.state=''; r.msg='登録の確かめはもう済んでいます（ほかの画面で印が外れていました）。読み直しました。'; paintAll_(); if(curId===id) paintDetail_(); return 'cleared'; }
+    var v=AtsCalc.staffVerdict(null,cur.staff_pending_at,Date.now());
     if(v==='wait'){ r.busy=false; r.state='unsure'; r.msg='まだ見つかりません。職員マスタが書き込んでいる途中のことがあるため、あと'+AtsCalc.staffWaitMinutes(cur.staff_pending_at,Date.now())+'分ほど待ってから、もう一度確かめてください。'; if(curId===id) paintDetail_(); return 'wait'; }
     /* 8分たっても見つからない＝入っていない（職員マスタの処理中の印 7分より長く待った）。受付番号は外す前にメモリへ控え、同じ番号で送り直せるようにする */
-    var keep={reqId:cur.staff_req_id||r.reqId||'',key:cur.staff_sent_key||r.key||''};
-    return rpc_('ats_clear_staff_pending',{p_id:id,p_req_id:keep.reqId}).then(function(c){
+    var keep={reqId:cur.staff_req_id||'',key:cur.staff_sent_key||r.key||''};
+    return rpc_('ats_clear_staff_pending',{p_id:id,p_req_id:keep.reqId,p_pending_at:cur.staff_pending_at}).then(function(c){
       if(my!==gen) return 'stale';
       if(c&&c.reason==='other_send') return regOtherSend_(id);
       if(c&&c.row) replaceRow_(c.row); else { var x=rowById_(id); if(x) x.staff_pending_at=null; }
       r.busy=false; r.state='absent'; r.resend=keep.reqId?keep:null;
       r.msg='職員マスタに登録されていませんでした。'+(keep.reqId?'「同じ受付番号で送り直す」を押してください。':'もう一度「職員マスタへ登録」を押してください。');
       if(curId===id) paintDetail_(); return 'absent';
+    });
     });
   })['catch'](function(e){
     if(my!==gen) return 'stale';
