@@ -20,11 +20,11 @@ function good() {
   const p = JSON.parse(SAMPLE_SRC);
   p.corpName = '試験の丘株式会社';
   p.facilityName = '試験の丘ホーム';
-  p.offices.forEach((o, i) => { o.name = '試験の丘' + o.kind; o.tel = i === 1 ? '' : '096-111-22' + (10 + i); });
-  p.support = { contactName: '試験の丘ホーム 事務所', contactTel: '096-111-2210', hours: '平日 9:00〜17:00', emergency: '試験の丘ホーム 事務所 096-111-2210（時間外は施設の職員へ）', replyTarget: '受け付けてから3営業日以内' };
+  p.offices.forEach((o, i) => { o.name = '試験の丘' + o.kind; o.tel = i === 1 ? '' : '096-000-22' + (10 + i); });
+  p.support = { contactName: '試験の丘ホーム 事務所', contactTel: '096-000-2210', hours: '平日 9:00〜17:00', emergency: '試験の丘ホーム 事務所 096-000-2210（時間外は施設の職員へ）', replyTarget: '受け付けてから3営業日以内' };
   return p;
 }
-const SECRET_WORDS = ['試験の丘', '096-111-22', '090-9999-0001', '080-9999-0002'];
+const SECRET_WORDS = ['試験の丘', '096-000-22', '090-0000-0001', '080-0000-0002'];
 const leaks = (lines) => lines.filter(l => SECRET_WORDS.some(w => l.includes(w)));
 
 (async () => {
@@ -59,15 +59,15 @@ const leaks = (lines) => lines.filter(l => SECRET_WORDS.some(w => l.includes(w))
   ng('施設名が空', noName, /^facilityName：文字が入っていません/);
   const numName = good(); numName.corpName = 123;
   ng('法人名が数', numName, /^corpName：文字が入っていません/);
-  const badTel = good(); badTel.support.contactTel = '096-111-22';
+  const badTel = good(); badTel.support.contactTel = '096-000-22';
   ng('問い合わせ先の電話が電話の形でない', badTel, /^support\.contactTel：電話の形ではありません/);
-  const mob = good(); mob.support.contactTel = '090-9999-0001';
+  const mob = good(); mob.support.contactTel = '090-0000-0001';
   ng('問い合わせ先の電話が携帯の形', mob, /^support\.contactTel：携帯の番号の形/);
-  const mobE = good(); mobE.support.emergency = '当番 080-9999-0002';
+  const mobE = good(); mobE.support.emergency = '当番 080-0000-0002';
   ng('緊急時の連絡先に携帯の番号', mobE, /^support\.emergency：携帯の番号の形/);
   const ph = good(); ph.support.hours = '【書き換える】例 平日';
   ng('【書き換える】が残っている', ph, /^support\.hours：見本の値/);
-  const supArr = good(); supArr.support = ['096-111-2210'];
+  const supArr = good(); supArr.support = ['096-000-2210'];
   ng('support がかたまりでない', supArr, /^support：\{ \} のかたまりではありません/);
   const supNum = good(); supNum.support.replyTarget = 3;
   ng('support の項目が文字でない', supNum, /^support\.replyTarget：文字ではありません/);
