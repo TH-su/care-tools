@@ -6,13 +6,16 @@
 <meta name="color-scheme" content="light">
 <meta name="robots" content="noindex,nofollow">
 <meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-36B0Nx8CT+kjN8LjV/HLwj7CKdPZrNKvLH/5EOGuv4s='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>使い方・困った時</title>
 <!--
   使い方・困った時（2026-10-09 新設・監査10月版 #15・本人決定 3a）
   ════════════════════════════════════════════════════════════════
   メニューの「困った時」のタイルから開く。現場端末でも開ける。
-  ★問い合わせ先は「不具合を報告」の案内だけ（電話番号・個人の連絡先は書かない＝本人決定 3a）。
+  ★問い合わせ先は、2026-10-26 本人指示で、施設情報の support（公表済みの事業所の番号だけ）を出すように改めた。
+    値は su-facility.js から読み、文字（textContent）で入れる。この画面のコードに電話番号・個人の連絡先は書かない。
+    画面の中のスクリプトは CSP の指紋（sha256）で許している（check/csp.mjs の対象外の画面なので、中身を変えたら下の meta の指紋を手で直す。
+    check/unit/facility_support_test.js が指紋と中身の一致を確かめる）。
   ★施設の名前は書かない（どの施設で使っても同じ文で済むように）。氏名・記録・合言葉は扱わない。
 -->
 <script src="su-errors.js?v=2026-10-08"></script>
@@ -35,6 +38,9 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
 .cd p, .cd li { margin: 0 0 8px; }
 .cd ol, .cd ul { margin: 0; padding-left: 1.4em; }
 .muted { color: var(--g7); font-size: 0.9375rem; }
+.sup { margin: 0; }
+.sup dt { font-weight: 700; }
+.sup dd { margin: 0 0 8px; -webkit-user-select: text; user-select: text; }
 .key { display: inline-block; padding: 0 8px; border: 1px solid var(--g3); border-radius: 999px; background: var(--pri-l); white-space: nowrap; }
 </style>
 </head>
@@ -57,10 +63,20 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
     <p class="muted">端末の種類や画面の状態は、ボタンが自動で添えます。報告は、直す担当が見る公開の場所に載ります。<strong>入居者・職員の氏名、居室番号、病名は書かないでください</strong>。</p>
   </section>
 
+  <section class="cd" aria-labelledby="h-contact">
+    <h2 id="h-contact">問い合わせ先</h2>
+    <dl class="sup">
+      <dt>問い合わせ先</dt><dd data-sup="contact">施設の管理者にお問い合わせください</dd>
+      <dt>受付時間</dt><dd data-sup="hours">施設の管理者にお問い合わせください</dd>
+      <dt>緊急時の連絡先</dt><dd data-sup="emergency">施設の管理者にお問い合わせください</dd>
+      <dt>不具合報告の返事の目安</dt><dd data-sup="replyTarget">施設の管理者にお問い合わせください</dd>
+    </dl>
+  </section>
+
   <section class="cd" aria-labelledby="h-basic">
     <h2 id="h-basic">使い方の基本</h2>
     <ul>
-      <li>画面がおかしい時は、まず再読み込み（画面を下に引く・ブラウザの ↻）をしてください。入力して保存した内容は消えません。</li>
+      <li>画面がおかしい時は、まず再読み込み（画面を下に引く・ブラウザの ↻）をしてください。入力して保存した内容は、まずこの端末に残り、つながった時にサーバーへ送られます。送り終わる前に、ブラウザの履歴やデータを消したり、端末を替えたりしないでください。</li>
       <li>再読み込みしても、さっき見ていた画面に戻ります。</li>
       <li>記録を入れる画面の多くは、端末の中に先に保存して、つながった時にサーバーへ送ります。電波が弱い所でも入力を続けられます。</li>
     </ul>
@@ -87,6 +103,32 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
     <p>現場の端末で帯が出た時は、その端末では保存せず、事務所PCで行ってください。</p>
   </section>
 </main>
+
+<!-- 問い合わせ先は施設情報（facility-profile.json）の support から差し込む。読めない時・空の項目は決まりの文言のまま -->
+<script src="su-facility.js?v=2026-10-26"></script>
+<script>
+/* HELP_SUPPORT（2026-10-26 本人指示）。文字は textContent で入れる（電話も tel: のリンクにせず、選んで写せる文字のまま） */
+(function () {
+  var NONE = '施設の管理者にお問い合わせください';
+  function show() {
+    try {
+      if (!window.SUFacility || !SUFacility.ready || !SUFacility.ready() || !SUFacility.support) return;
+      var s = SUFacility.support();
+      var v = {
+        contact: [s.contactName, s.contactTel].filter(function (x) { return typeof x === 'string' && x; }).join(' '),
+        hours: s.hours, emergency: s.emergency, replyTarget: s.replyTarget
+      };
+      var els = document.querySelectorAll('[data-sup]');
+      for (var i = 0; i < els.length; i++) {
+        var x = v[els[i].getAttribute('data-sup')];
+        els[i].textContent = (typeof x === 'string' && x) ? x : NONE;
+      }
+    } catch (e) { /* 埋められなくても決まりの文言のまま出る */ }
+  }
+  show();
+  try { if (window.SUFacility) SUFacility.onReady(show); } catch (e) {}
+})();
+</script>
 
 <script src="su-report.js?v=2026-10-24" data-tool="使い方・困った時"></script>
 </body>
