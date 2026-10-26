@@ -162,6 +162,7 @@ async function opened(opt) {
   L.ctx.enums = ENUMS; L.ctx.enumsState = 'ok';
   return L;
 }
+const LIST0 = (b) => b.action === 'list' ? { ok: true, rows: [] } : { ok: true };
 const stfCalls = (L) => L.fetches.map((f) => f.body.action);
 const bodiesOf = (L, act) => L.fetches.filter((f) => f.body.action === act).map((f) => f.body);
 const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(1)].msg || '');
@@ -240,7 +241,7 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
   const markOk = (a) => ({ ok: true, row: Object.assign(app(), { staff_id: a.p_staff_id, stage: 'hired', rev: 5 }) });
   const clearOk = () => ({ ok: true, row: Object.assign(app(), { staff_pending_at: null, rev: 6 }) });
   {
-    const L = await opened({ rpc: { ats_mark_staff_pending: pendOk, ats_mark_staff: markOk }, stf: (b) => b.action === 'bulkSave' ? { ok: true, created: [{ tempId: 'ats1', id: 'S0101', rev: 1 }] } : { ok: true } });
+    const L = await opened({ rpc: { ats_mark_staff_pending: pendOk, ats_mark_staff: markOk }, stf: (b) => b.action === 'bulkSave' ? { ok: true, created: [{ tempId: 'ats1', id: 'S0101', rev: 1 }] } : { ok: true, rows: [] } });
     const r = await L.ctx.regStart_(); await settle();
     const names = L.rpcs().map((x) => x.name);
     t('ok で職員IDを受け取った → 控えてから「登録しました」', r === 'ok' && names.join() === 'ats_mark_staff_pending,ats_mark_staff' && regMsg(L) === '登録しました。' && L.ctx.rowById_(UID(1)).staff_id === 'S0101', { r, names, msg: regMsg(L) });
@@ -252,24 +253,24 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
     t('保留の印（送る内容の指紋）を送る前に保存', L.log.findIndex((x) => x.name === 'ats_mark_staff_pending') >= 0 && L.rpcs()[0].args.p_sent_key === CALC.sentKey(b.creates[0].fields));
   }
   {
-    const L = await opened({ rpc: { ats_mark_staff_pending: () => ({ ok: false, conflict: true, row: app({ rev: 9 }) }) } });
+    const L = await opened({ rpc: { ats_mark_staff_pending: () => ({ ok: false, conflict: true, row: app({ rev: 9 }) }) }, stf: LIST0 });
     const r = await L.ctx.regStart_(); await settle();
-    t('保留の印を保存できない → 職員マスタへ送らない', r === 'nomark' && L.fetches.length === 0 && !/登録しました/.test(regMsg(L)), { r, f: L.fetches.length });
+    t('保留の印を保存できない → 職員マスタへ送らない', r === 'nomark' && bodiesOf(L, 'bulkSave').length === 0 && !/登録しました/.test(regMsg(L)), { r, f: L.fetches.length });
   }
   {
-    const L = await opened({ rpc: { ats_mark_staff_pending: () => ({ __error: { message: 'Failed to fetch' } }) } });
+    const L = await opened({ rpc: { ats_mark_staff_pending: () => ({ __error: { message: 'Failed to fetch' } }) }, stf: LIST0 });
     const r = await L.ctx.regStart_(); await settle();
-    t('保留の印の保存が通信で失敗 → 送らない', r === 'nomark' && L.fetches.length === 0);
+    t('保留の印の保存が通信で失敗 → 送らない', r === 'nomark' && bodiesOf(L, 'bulkSave').length === 0);
   }
   {
-    const L = await opened({ rpc: { ats_mark_staff_pending: pendOk, ats_clear_staff_pending: clearOk }, stf: () => ({ ok: false, error: '合言葉が違います' }) });
+    const L = await opened({ rpc: { ats_mark_staff_pending: pendOk, ats_clear_staff_pending: clearOk }, stf: (b) => b.action === 'list' ? { ok: true, rows: [] } : ({ ok: false, error: '合言葉が違います' }) });
     const r = await L.ctx.regStart_(); await settle();
     t('ok:false（partial なし）→ 保留を外して「登録できませんでした（理由）」', r === 'ng' && L.rpcs().map((x) => x.name).join() === 'ats_mark_staff_pending,ats_clear_staff_pending' && /^登録できませんでした（合言葉が違います）/.test(regMsg(L)), { r, m: regMsg(L) });
   }
   for (const [label, stf] of [['応答なし（通信の失敗）', () => 'NET'], ['読めない応答', () => '<html>'], ['FLUSH_FAIL_MSG', () => ({ ok: false, error: FLUSH })],
     ['処理中（inProgress）', () => ({ ok: false, inProgress: true, error: '処理中' })], ['partial で id なし', () => ({ ok: false, partial: true, created: [] })],
     ['partial で id あり', () => ({ ok: false, partial: true, created: [{ id: 'S0102' }], error: FLUSH })], ['ok なのに id なし', () => ({ ok: true, created: [] })]]) {
-    const L = await opened({ rpc: { ats_mark_staff_pending: pendOk }, stf: (b) => b.action === 'bulkSave' ? stf() : { ok: true } });
+    const L = await opened({ rpc: { ats_mark_staff_pending: pendOk }, stf: (b) => b.action === 'bulkSave' ? stf() : { ok: true, rows: [] } });
     const r = await L.ctx.regStart_(); await settle();
     const html = L.ctx.regHtml_(L.ctx.rowById_(UID(1)));
     t(label + ' → 「確かめ中」（保留は外さない・控えない・登録しましたと言わない）', r === 'unsure' && !L.rpcs().some((x) => x.name === 'ats_clear_staff_pending' || x.name === 'ats_mark_staff') && !/登録しました/.test(regMsg(L) + html) && /確かめ中/.test(html) && /data-act="reg-check"/.test(html) && !/data-act="reg-start"/.test(html), { r, m: regMsg(L) });
@@ -281,7 +282,7 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
     t('登録済みは「✓ 登録済み」とリンクだけ（ボタンなし）', /✓ 登録済み/.test(L2.ctx.regHtml_(L2.ctx.rowById_(UID(1)))) && !/reg-start/.test(L2.ctx.regHtml_(L2.ctx.rowById_(UID(1)))) && (await L2.ctx.regStart_()) === 'blocked');
     let release; const gate = new Promise((r) => { release = r; });
     const L3 = await opened({ rpc: { ats_mark_staff_pending: pendOk, ats_mark_staff: markOk }, stf: () => gate.then(() => ({ ok: true, created: [{ id: 'S0103' }] })) });
-    L3.ctx.fetch = function (u, o) { L3.fetches.push({ url: u, opt: o, body: JSON.parse(o.body) }); return gate.then(() => ({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify({ ok: true, created: [{ id: 'S0103' }] })) })); };
+    L3.ctx.fetch = function (u, o) { L3.fetches.push({ url: u, opt: o, body: JSON.parse(o.body) }); if (JSON.parse(o.body).action === 'list') return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('{"ok":true,"rows":[]}') }); return gate.then(() => ({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify({ ok: true, created: [{ id: 'S0103' }] })) })); };
     const p1 = L3.ctx.regStart_(); await settle();
     const r2 = await L3.ctx.regStart_();
     release(); await p1; await settle();
@@ -340,6 +341,77 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
     t('必須がそろうまでボタンは無効・「あと2項目（雇用形態・入職日）」', /あと2項目（雇用形態・入職日）/.test(h) && /data-act="reg-start" disabled/.test(h), h.slice(0, 300));
   }
 
+  group('5c. 確かめ中は送った中身を直させない（反証レビュー 2026-10-26）');
+  {
+    const PEND = app({ staff_pending_at: ago(1), staff_req_id: 'f'.repeat(32) });
+    const L = await opened({ row: PEND, rpc: { ats_put: () => ({ ok: false, reason: 'pending', row: PEND }), ats_set_stage: () => ({ ok: false, reason: 'pending', row: PEND }) }, stf: LIST0 });
+    const h = L.ctx.detailHtml_(L.ctx.rowById_(UID(1)));
+    const dis = (id) => new RegExp('id="' + id + '"[^>]*disabled').test(h);
+    t('氏名・カナ・生年月日・性別・電話・住所・入職予定日は入力できない', ['f-name', 'f-kana', 'f-birth', 'f-gender', 'f-phones', 'f-addr', 'f-start'].every(dis), ['f-name', 'f-kana', 'f-birth', 'f-gender', 'f-phones', 'f-addr', 'f-start'].filter((x) => !dis(x)));
+    t('受付日・本人希望などは入力できる', !dis('f-recv') && !dis('f-wish') && !dis('f-email'));
+    t('入職準備は全部入力できない（項目の枠ごと止める）', /<fieldset class="lockfs" disabled>/.test(h));
+    t('「職員マスタへの登録を確かめ中のため直せません」と出す', /職員マスタへの登録を確かめ中のため直せません/.test(h));
+    t('［終わりにする…］を出さない', !/data-act="end"/.test(h));
+    L.ctx.readBasic_ = () => ({ id: UID(1), name: '別の名前', kana: 'x', gender: 'F', birth_date: '1991-01-01', phones: [], address: 'x', start_on: '2030-01-01', received_on: '2026-10-01', wish_text: '架空', email: null });
+    const r = await L.ctx.saveBasic_(); await settle();
+    const put = L.rpcs().find((x) => x.name === 'ats_put');
+    t('確かめ中の保存は、直せない項目を送らない', put && ['name', 'kana', 'gender', 'birth_date', 'phones', 'address', 'start_on', 'prep'].every((k) => !(k in put.args.p_row)) && put.args.p_row.received_on === '2026-10-01', put && Object.keys(put.args.p_row));
+    t('ats_put が reason:pending → 同じ文言', r === 'pending');
+    const before = L.rpcs().length;
+    t('入職準備の保存は送らない', (await L.ctx.savePrep_()) === 'pending' && L.rpcs().length === before);
+    t('同じ受付番号の送り直しは確かめ中には出せない（保留を外した後だけ）', (await L.ctx.regResend_()) === 'blocked' && (await L.ctx.regStart_()) === 'blocked');
+    await L.ctx.moveStage_(UID(1), 'offer', '', '', false); await settle();
+    t('段階を動かして reason:pending → 文言を出す', /確かめ中のため直せません/.test(L.els['a-msg'].textContent));
+    const old = L.ctx.apps[0]; L.ctx.apps = [old, app({ id: UID(2), stage: 'lost', retain_until: '2000-01-01', staff_pending_at: NOW_ISO }), app({ id: UID(3), stage: 'lost', retain_until: '2000-01-01' })];
+    L.ctx.paintExpire_();
+    const ex = L.els['p-expire'].innerHTML;
+    t('保管期限の一覧: 確かめ中の方には✔を出さない', !ex.includes('data-exp="' + UID(2) + '"') && ex.includes('data-exp="' + UID(3) + '"') && /登録を確かめ中/.test(ex));
+    L.ctx.expireSel = { [UID(2)]: true, [UID(3)]: true };
+    L.asks.length = 0;
+    await L.ctx.runPurge_(); await settle();
+    const pg = L.rpcs().find((x) => x.name === 'ats_purge');
+    t('消す時も確かめ中の方を入れない', pg && JSON.stringify(pg.args.p_ids) === JSON.stringify([UID(3)]), pg && pg.args);
+  }
+  {
+    const L = load({ row: null, tables: { ats_applicants: [app({ staff_pending_at: ago(1) })], ats_interviews: [], ats_settings: [], staff_names: [], ats_contacts: [] },
+      rpc: { ats_mark_staff: markOk }, stf: (b) => b.action === 'list' ? { ok: true, rows: LIST1 } : { ok: true }, session: { ats_open: UID(1) } });
+    await L.ctx.boot_(); await settle(60);
+    t('開き直した時は先に照合する（送った時の値＝確かめ中は変わらない値で）', L.ctx.curId === UID(1) && stfCalls(L).indexOf('list') >= 0 && stfCalls(L).indexOf('bulkSave') < 0 && L.rpcs().some((x) => x.name === 'ats_mark_staff' && x.args.p_staff_id === 'S0201'), { f: stfCalls(L), r: L.rpcs().map((x) => x.name) });
+  }
+  group('5d. 送る前に職員マスタの一覧で同じ方を探す');
+  {
+    const L = await opened({ rpc: { ats_mark_staff: markOk }, stf: (b) => b.action === 'list' ? { ok: true, rows: LIST1 } : { ok: true, created: [{ id: 'S0999' }] } });
+    const r = await L.ctx.regStart_(); await settle();
+    t('1件いる → 「職員マスタにもういらっしゃいます」→ つなぐ（新しく作らない・保留の印も使わない）', r === 'ok' && /もういらっしゃいます/.test(L.asks[0].title) && bodiesOf(L, 'bulkSave').length === 0 && L.rpcs().map((x) => x.name).join() === 'ats_mark_staff' && L.rpcs()[0].args.p_staff_id === 'S0201' && /つなぎました/.test(regMsg(L)), { r, n: L.rpcs().map((x) => x.name), m: regMsg(L) });
+    const L2 = await opened({ answer: false, stf: (b) => b.action === 'list' ? { ok: true, rows: LIST1 } : { ok: true } });
+    t('つながないを選ぶ → 何も書かない・送らない', (await L2.ctx.regStart_()) === 'cancel' && L2.rpcs().length === 0 && bodiesOf(L2, 'bulkSave').length === 0);
+    const L3 = await opened({ stf: (b) => b.action === 'list' ? { ok: true, rows: LIST1.concat([Object.assign({}, LIST1[0], { id: 'S0202' })]) } : { ok: true } });
+    t('2件以上 → 止めて「職員マスタで確かめてください」', (await L3.ctx.regStart_()) === 'many' && L3.rpcs().length === 0 && bodiesOf(L3, 'bulkSave').length === 0 && /職員マスタで確かめてください/.test(regMsg(L3)));
+    const L4 = await opened({ stf: () => 'NET' });
+    t('一覧を読めない → 送らない（保留の印も付けない）', (await L4.ctx.regStart_()) === 'nolist' && L4.rpcs().length === 0 && bodiesOf(L4, 'bulkSave').length === 0 && !/登録しました/.test(regMsg(L4)));
+    const L5 = await opened({ stf: (b) => b.action === 'list' ? { ok: true, rows: [{ id: 'S0203', name: '甲野一郎', hireDate: app().start_on, birthDate: '' }] } : { ok: true } , row: app({ birth_date: null }), rpc: { ats_mark_staff: markOk } });
+    t('生年月日が無い方は氏名＋入職日で探す', (await L5.ctx.regStart_()) === 'ok' && L5.rpcs()[0].args.p_staff_id === 'S0203');
+  }
+  group('5e. すでに登録済み・開いていた行が消えた時');
+  {
+    const L = await opened({ rpc: { ats_mark_staff_pending: () => ({ ok: false, reason: 'registered', row: app({ staff_id: 'S0001', stage: 'hired' }) }) }, stf: LIST0 });
+    const reads0 = L.reads().length;
+    const r = await L.ctx.regStart_(); await settle();
+    t('保留の印で reason:registered → 「すでに…登録が済んでいます」と出して読み直す（送らない）', r === 'registered' && /すでに職員マスタへの登録が済んでいます/.test(regMsg(L)) && L.reads().length > reads0 && bodiesOf(L, 'bulkSave').length === 0, { r, m: regMsg(L) });
+    const L2 = await opened({ rpc: { ats_mark_staff: () => ({ ok: false, reason: 'registered' }) }, stf: (b) => b.action === 'list' ? { ok: true, rows: LIST1 } : { ok: true } });
+    t('職員IDを控えて reason:registered → 同じく読み直す（控えられませんでしたと言わない）', (await L2.ctx.regStart_()) === 'registered' && !/控えられませんでした/.test(regMsg(L2)));
+    const L3 = await opened({ rpc: { ats_purge: () => ({ ok: true, deleted: 1 }) } });
+    L3.ctx.openDetail_(UID(1)); await settle();
+    L3.db.from = ((orig) => (tb) => { const b = orig(tb); if (tb === 'ats_applicants') { b.then = (ok, ng) => Promise.resolve({ data: [], error: null }).then(ok, ng); } return b; })(L3.db.from.bind(L3.db));
+    await L3.ctx.loadAll_(); await settle();
+    t('読み直して開いていた方の行が消えた → 詳細の板を閉じる', L3.ctx.curId === '' && L3.els['a-pane'].hidden === true);
+  }
+  {
+    const L = await opened();
+    const h = L.ctx.detailHtml_(L.ctx.rowById_(UID(1)));
+    t('入力の上限をデータベースに合わせる（氏名80・住所200・メール200・本人希望などは4000）', /id="f-name"[^>]*maxlength="80"/.test(h) && /id="f-addr"[^>]*maxlength="200"/.test(h) && /id="f-email"[^>]*maxlength="200"/.test(h) && /id="f-note"[^>]*maxlength="4000"/.test(h) && /id="i-place"[^>]*maxlength="200"/.test(h));
+  }
+
   group('6. 評価（面接官ごと・見た後は own の版）');
   {
     const IV = { id: UID(7), applicant_id: UID(1), round: 1, held_at: NOW_ISO, interviewers: ['乙川 花子', '丙山 三郎'] };
@@ -368,6 +440,10 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
     L2.ctx.ivs = [IV];
     await L2.ctx.openEval_(UID(7)); await settle();
     L2.ctx.evalCtx.overall = 2;
+    L2.ctx.evalCtx.who = '手で入れた名前';
+    const nPut = L2.rpcs().length;
+    t('面接官は、その面接の面接官からだけ（それ以外は送らない）', (await L2.ctx.saveEval_(false)) === false && L2.rpcs().length === nPut && /この面接の面接官から選んで/.test(L2.ctx.evalCtx.msg));
+    L2.ctx.evalCtx.who = '丙山 三郎';
     t('ほかの方が入れた評価を直そうとした → 「この評価はほかの方が入れたため直せません」', (await L2.ctx.saveEval_(false)) === false && L2.ctx.evalCtx.msg === 'この評価はほかの方が入れたため直せません。');
     await L.ctx.loadEvalStat_(UID(1)); await settle();
     t('評価の件数は submitted と interviewers から（2人中1人提出）', JSON.stringify(L.ctx.evalStat[UID(7)]) === JSON.stringify({ submitted: 1, total: 2 }), L.ctx.evalStat);
