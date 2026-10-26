@@ -209,8 +209,9 @@
   }
 
   /* ZIP に入れるファイルを組む（純粋に組み立てるだけ。試験は check/unit/export_zip_test.js） */
-  function buildFiles(b, data, gas) {
+  function buildFiles(b, data, gas, release) {
     var X = window.SUExport;
+    var enc = new TextEncoder();
     var files = [];
     var tables = b.tables || [];
     var manifest = {
@@ -229,8 +230,10 @@
     files.push({ name: 'manifest.json', data: JSON.stringify(manifest, null, 2) });
     tables.forEach(function (t) {
       var rows = data[t.name] || [];
-      files.push({ name: 'db/' + t.name + '.json', data: JSON.stringify(rows) });
-      files.push({ name: 'db/' + t.name + '.csv', data: X.csv(rows, (t.columns || []).map(function (c) { return c.name; })) });
+      /* その場でバイト列にして文字列を手放す。release の時は行も手放す（本番の目安 約340MB の表で、持つ物を減らす） */
+      files.push({ name: 'db/' + t.name + '.json', data: enc.encode(JSON.stringify(rows)) });
+      files.push({ name: 'db/' + t.name + '.csv', data: enc.encode(X.csv(rows, (t.columns || []).map(function (c) { return c.name; }))) });
+      if (release) data[t.name] = null;
     });
     gas.forEach(function (g) {
       if (!g.ok) return;
@@ -297,11 +300,12 @@
       var started = new Date(b.started_at);
       var name = '全データ_' + stamp(isNaN(started) ? new Date() : started) + '.zip';
       /* ZIP は部分の並びのまま Blob にする（最後に1つの大きな配列へ写さない＝メモリを2倍にしない） */
-      var parts = window.SUExport.zipParts(buildFiles(b, data, gas), isNaN(started) ? new Date() : started);
+      var got = window.SUExport.counts(data);   // 行を手放す前に数える
+      var parts = window.SUExport.zipParts(buildFiles(b, data, gas, true), isNaN(started) ? new Date() : started);
+      data = null;
       var size = parts.reduce(function (s2, p2) { return s2 + p2.length; }, 0);
       save(parts, name);
       parts = null;
-      var got = window.SUExport.counts(data);
       var gasRec = {};
       gas.forEach(function (g) { gasRec[g.title] = { ok: g.ok, count: g.count, note: g.note || '' }; });
       var rf = await c.rpc('export_finish', { p_run: b.run_id, p_got: got, p_gas: gasRec, p_file: name });
