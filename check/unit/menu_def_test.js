@@ -25,8 +25,8 @@ t('定義が JSON として読める', !!def && Array.isArray(def.sections), m ?
 const secs = def ? def.sections : [];
 t('区分は 職員・入居者・デイ・厨房・設定・困った時 の順（デイは 2026-10-26 本人指示）', secs.map(s => s.title).join() === '職員,入居者,デイ {{通所}},厨房,設定,困った時', secs.map(s => s.title));
 const tiles = [].concat.apply([], secs.map(s => s.tiles));
-t('タイルは24枚（以前の20枚＋困った時＋ケアログ・デイ 2026-10-23＋担当者会議の記録 2026-10-25）', tiles.length === 24, tiles.length);
-const want = ['shift-app.html', 'work-schedule.html', 'shift-analyzer.html', 'staff-master.html',
+t('タイルは25枚（以前の20枚＋困った時＋ケアログ・デイ 2026-10-23＋担当者会議の記録 2026-10-25＋採用管理 2026-10-26）', tiles.length === 25, tiles.length);
+const want = ['shift-app.html', 'work-schedule.html', 'shift-analyzer.html', 'staff-master.html', 'ats.html',
   'https://th-su.github.io/haiben-record/haiben-record.html', 'weight-record.html', 'care-schedule.html', 'visit-overview.html',
   'facesheet.html', 'genogram.html', 'resident-master.html', 'patch-calendar.html', 'moushiokuri-viewer.html', 'resident-master.html?view=bday',
   'admission-flow.html', 'supplies.html', 'https://th-su.github.io/care-log/', 'care-meeting.html',
@@ -34,7 +34,7 @@ const want = ['shift-app.html', 'work-schedule.html', 'shift-analyzer.html', 'st
   'https://kitchen-app-9o7.pages.dev/', 'connection-settings.html', 'help.html'];
 t('行き先と並び順（入居者の区分の末尾にケアログ・担当者会議の記録、その次のデイの区分にデイ利用表・訓練計画・デイ（2026-10-26）、最後に help.html）', tiles.map(x => x.href).join('|') === want.join('|'), tiles.map(x => x.href));
 const office = tiles.filter(x => x.officeOnly).map(x => x.href).sort().join();
-t('現場端末で出さないタイルは5枚（職員マスタ・誕生日一覧・入居調整・訓練計画・担当者会議の記録）＋設定の区分', office === ['admission-flow.html', 'care-meeting.html', 'resident-master.html?view=bday', 'staff-master.html', 'training-plan.html'].sort().join()
+t('現場端末で出さないタイルは6枚（職員マスタ・採用管理・誕生日一覧・入居調整・訓練計画・担当者会議の記録）＋設定の区分', office === ['admission-flow.html', 'ats.html', 'care-meeting.html', 'resident-master.html?view=bday', 'staff-master.html', 'training-plan.html'].sort().join()
   && secs.find(s => s.id === 'sec-setup').officeOnly === true, office);
 t('別サイトの印（ext）は排泄ケア記録・ケアログ・デイ・厨房の4枚', tiles.filter(x => x.ext).map(x => x.nm).sort().join() === ['排泄ケア記録', 'ケアログ', 'デイ {{通所}}', '厨房メニュー管理'].sort().join(), tiles.filter(x => x.ext).map(x => x.nm));
 t('新しい行から始める印（newrow）はフェイスシートだけ', tiles.filter(x => x.newrow).map(x => x.href).join() === 'facesheet.html', '');

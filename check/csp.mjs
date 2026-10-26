@@ -22,7 +22,7 @@ export const SUPABASE = 'https://jhbernqawjrzqwrmqrih.supabase.co';
 /* 対象: テーマで作る業務画面。すでに自分の CSP を持つ画面（accounts・help・login・perf-report・shadow-check）は触らない。
    配信で作る3画面（work-schedule・shift-app・shift-analyzer）は、それぞれの組み立て（build）がこの道具を呼ぶ */
 export const PAGES = [
-  'admission-flow.html', 'care-meeting.html', 'care-schedule.html', 'connection-settings.html', 'daycare-roster.html', 'facesheet.html',
+  'admission-flow.html', 'ats.html', 'care-meeting.html', 'care-schedule.html', 'connection-settings.html', 'daycare-roster.html', 'facesheet.html',
   'genogram.html', 'index.html', 'moushiokuri-viewer.html', 'overview-compare.html', 'patch-calendar.html',
   'resident-master.html', 'staff-master.html', 'supplies.html', 'support-overview.html', 'training-plan.html',
   'visit-overview.html', 'weight-record.html',
