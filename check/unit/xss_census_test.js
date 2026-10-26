@@ -183,6 +183,7 @@ const F = '固定の文', E = 'esc を通る', N = '数だけ';
 const KINDS = [F, E, N];
 const CENSUS = {
   "accounts.html": [],
+  "accounts-export.js": [],
   "accounts.js": [],
   "admission-flow.html": [
     [N, "$('sumbar').innerHTML = fpill('month', '今月の問い合わせ', inThisMonth) + fpill('working', '進行中', working) + fpill('movein', '今月入居予定', moveThisMonth) + fpill('nudge', '連絡待ち', nudgeAll, 'border-color:#ffcc80') + fpill('over', '期限超過', overAll, 'border-color:#f5c6c0') + (listFilter ? '<button class=\"pill f\" id=\"clearF\" type=\"button\">✕ しぼりこみを解除</button>' : '') + (delCount ? '<button class=\"pill\" id=\"toggleDel\" type=\"button\" style=\"cursor:pointer\">' + (showDeleted ? '削除済みを隠す' : '削除済みも表示 (' + delCount + ')') + '</button>' : '') + (canUndo() ? '<button class=\"pill\" id=\"undoBtn\" type=\"button\" style=\"cursor:pointer\">↩ 元に戻す</button>' : '')"],   /* 件数と固定のボタン */
@@ -466,6 +467,7 @@ const CENSUS = {
   "su-data-gas.js": [],
   "su-data.js": [],
   "su-errors.js": [],
+  "su-export.js": [],
   "su-facility.js": [],
   "su-kv-shadow.js": [],
   "su-kv.js": [],
