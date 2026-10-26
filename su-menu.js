@@ -12,11 +12,18 @@
  * ★ログインの記録がこの端末に無ければ、ログインの部品（supabase-js）も読み込まない（重い部品を待たせない）。
  *
  * 設定（config）の形（共通 DB 0020 menu_settings と同じ）:
- *   { ver:1, order:{区分id:[ボタンの鍵…]}, hide:{admin|office|field:[ボタンの鍵…]}, secs:[区分id…] }
+ *   { ver:1, order:{区分id:[ボタンの鍵…]}, hide:{admin|office|field:[ボタンの鍵…]}, secs:[区分id…],
+ *     sdef:{区分id:{mk, title}}, gone:[区分id…], mv:{ボタンの鍵:区分id} }      ← sdef・gone・mv は 0023（2026-10-26 本人指示）
  *   ボタンの鍵はリンク先（href）。設定に無いボタン（後から足したもの）は既定の位置関係のまま末尾・全員に出す。
+ *   sdef  最初からある区分の名前・絵文字の上書き、または管理者が作った区分（id がページの定義に無いもの）
+ *   gone  消した最初からある区分。中にボタンが残る時（後から足したボタン・移し先が消えた等）は消さずに出す＝ボタンを失わない
+ *   mv    既定と違う区分へ移したボタン。移し先が無い・消した区分なら既定の区分に出す。
+ *         事務所専用の区分（officeOnly）から移したボタンは、移した先でも事務所専用のまま（現場端末で出さない仕組みを外さない）
+ *   設定に無い区分（後から足した区分）は、既定で前にある区分の直後に置く（末尾に回さない）。
  *
  * 使い方:
  *   SUMenu.arrange(def, config, role) → 並べ替え・非表示を当てた定義（元の def は変えない）。純関数（check/unit/menu_arrange_test.js）
+ *   SUMenu.layout(def, cleaned)        → 非表示を当てる前の区分とボタンの配置（メニューの設定の画面が使う）。空の区分も残す
  *   SUMenu.readCache()                → 端末の控え {role, config} か null
  *   SUMenu.startSync(onChange)        → ページの読み込みが終わってから設定を読み、控えと違えば onChange(config, role) を呼ぶ
  */
@@ -28,6 +35,7 @@
   var ROLES = ['admin', 'office', 'field'];
   var KEY_RE = /^[A-Za-z0-9_.:\/?=&#%~-]{1,200}$/;
   var SEC_RE = /^[A-Za-z0-9_-]{1,40}$/;
+  var CTRL_RE = /[\u0000-\u001f\u007f-\u009f]/;
   // 隠せないボタン（全部を隠してもメニューが空にならないよう、困った時の入口だけは必ず残す）
   var KEEP = { 'help.html': 1 };
   // ログインの部品。各画面が読む時と同じ版を書く（su-auth.js を直して ?v= を上げたら、ここも上げる・su-report.js と同じ）
@@ -39,10 +47,20 @@
     return a;
   }
 
+  function isObj(o) { return !!o && typeof o === 'object' && !Array.isArray(o); }
+  /* 名前・絵文字の字数はコードポイントで数える（データベースの char_length と同じ。ふつうの絵文字は1字、肌色つき・結合の絵文字は数字になる）。
+     制御文字の範囲もデータベース（0023）と同じ U+0000〜001F・U+007F〜009F */
+  function textOk(t, min, max) {
+    if (typeof t !== 'string' || CTRL_RE.test(t)) return false;
+    var n = Array.from(t).length;
+    return n >= min && n <= max;
+  }
+  function copy(o) { var n = {}; Object.keys(o).forEach(function (k) { n[k] = o[k]; }); return n; }
+
   /* 形の合わない設定は「設定なし」として扱う（壊れた設定でメニューが出なくなるのを防ぐ）。データベースの検査と同じ規則 */
   function clean(cfg) {
     if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg) || cfg.ver !== 1) return null;
-    var out = { ver: 1, order: {}, hide: {}, secs: null };
+    var out = { ver: 1, order: {}, hide: {}, secs: null, sdef: {}, gone: [], mv: {} };
     if (cfg.order && typeof cfg.order === 'object' && !Array.isArray(cfg.order)) {
       Object.keys(cfg.order).forEach(function (k) {
         var a = SEC_RE.test(k) ? strArr(cfg.order[k], KEY_RE) : null;
@@ -53,6 +71,15 @@
       ROLES.forEach(function (r) { var a = strArr(cfg.hide[r], KEY_RE); if (a) out.hide[r] = a; });
     }
     out.secs = strArr(cfg.secs, SEC_RE);
+    // 0023 のキーは1件ずつ確かめ、形の違う1件だけを捨てる（ほかの並び・非表示は効かせる）
+    if (isObj(cfg.sdef)) Object.keys(cfg.sdef).forEach(function (k) {
+      var v = cfg.sdef[k];
+      if (SEC_RE.test(k) && isObj(v) && textOk(v.title, 1, 20) && textOk(v.mk, 0, 8)) out.sdef[k] = { mk: v.mk, title: v.title };
+    });
+    out.gone = strArr(cfg.gone, SEC_RE) || [];
+    if (isObj(cfg.mv)) Object.keys(cfg.mv).forEach(function (k) {
+      if (KEY_RE.test(k) && typeof cfg.mv[k] === 'string' && SEC_RE.test(cfg.mv[k])) out.mv[k] = cfg.mv[k];
+    });
     return out;
   }
 
@@ -66,28 +93,84 @@
     return out;
   }
 
+  /* 区分の並び: 先に list の順。list に無い区分（後から足したもの）は、既定で前にある区分の直後へ置く
+     （例: 入居者の直後に足した区分は、前の定義で保存した並びでも入居者の直後に出る） */
+  function reorderAnchored(items, keyOf, list) {
+    var out = reorder(items.filter(function (it) { var k = keyOf(it); return k != null && list.indexOf(k) >= 0; }), keyOf, list);
+    var prev = null;
+    items.forEach(function (it) {
+      if (out.indexOf(it) >= 0) { prev = it; return; }
+      out.splice(prev ? out.indexOf(prev) + 1 : 0, 0, it);
+      prev = it;
+    });
+    return out;
+  }
+
+  function hrefOf(t) { return t && typeof t.href === 'string' ? t.href : null; }
+
+  /* 非表示を当てる前の配置。cfg は clean() を通したもの */
+  function layout(def, cfg) {
+    var gone = {};
+    cfg.gone.forEach(function (id) { gone[id] = 1; });
+    var defIds = {};
+    var shells = def.sections.map(function (s) {
+      if (!s || typeof s.id !== 'string' || !Array.isArray(s.tiles)) return s;   // 壊れた区分はそのまま（組み立ての側で数える）
+      defIds[s.id] = 1;
+      var ns = copy(s);
+      var d = cfg.sdef[s.id];
+      if (d) { ns.mk = d.mk; ns.title = d.title; }
+      ns.tiles = [];
+      return ns;
+    });
+    Object.keys(cfg.sdef).forEach(function (id) {
+      if (defIds[id] || gone[id]) return;
+      shells.push({ id: id, mk: cfg.sdef[id].mk, title: cfg.sdef[id].title, tiles: [], custom: true });
+    });
+    var byId = {};
+    shells.forEach(function (s, i) { if (s && s !== def.sections[i] && !(s.id in byId)) byId[s.id] = s; });
+    var moved = [];   // 既定と違う区分へ移すボタン（既定の区分のボタンを先に並べ、移してきたボタンはその後ろ）
+    def.sections.forEach(function (s, i) {
+      var home = shells[i];
+      if (home === s) return;
+      s.tiles.forEach(function (t) {
+        var h = hrefOf(t), to = h != null ? cfg.mv[h] : null;
+        var dest = (to && byId[to] && !gone[to]) ? byId[to] : home;
+        // 隠せないボタン（使い方・困った時）は事務所専用の区分へ移さない（現場端末から消えないように）
+        if (dest !== home && KEEP[h] && dest.officeOnly) dest = home;
+        if (dest === home) { home.tiles.push(t); return; }
+        if (s.officeOnly && t && !t.officeOnly) { t = copy(t); t.officeOnly = true; }
+        moved.push([dest, t]);
+      });
+    });
+    moved.forEach(function (m) { m[0].tiles.push(m[1]); });
+    var out = [];
+    shells.forEach(function (ns, i) {
+      if (!ns || !Array.isArray(ns.tiles) || ns === def.sections[i]) { out.push(ns); return; }
+      if (gone[ns.id] && !ns.tiles.length) return;   // 消した区分は、ボタンが残っていなければ出さない
+      var orig = i < def.sections.length ? def.sections[i].tiles : [];
+      var tiles = reorder(ns.tiles, hrefOf, cfg.order[ns.id]);
+      // 並びを変えた区分・ボタンが出入りした区分では「新しい行から始める（newrow）」を効かせない（指定のペアの行割りは既定の並びにだけ意味がある）
+      var changed = tiles.length !== orig.length || tiles.some(function (t, j) { return t !== orig[j]; });
+      ns.tiles = !changed ? tiles : tiles.map(function (t) {
+        if (!t || !t.newrow) return t;
+        var nt = copy(t); delete nt.newrow; return nt;
+      });
+      out.push(ns);
+    });
+    return cfg.secs ? reorderAnchored(out, function (s) { return s && typeof s.id === 'string' ? s.id : null; }, cfg.secs) : out;
+  }
+
   function arrange(def, config, role) {
     if (!def || typeof def !== 'object' || !Array.isArray(def.sections)) return def;
     var cfg = clean(config);
     if (!cfg) return def;
     var hide = {};
     if (ROLES.indexOf(role) >= 0) (cfg.hide[role] || []).forEach(function (k) { if (!KEEP[k]) hide[k] = 1; });
-    var secs = reorder(def.sections, function (s) { return s && typeof s.id === 'string' ? s.id : null; }, cfg.secs);
-    var out = {};
-    Object.keys(def).forEach(function (k) { out[k] = def[k]; });
-    out.sections = secs.map(function (s) {
+    var out = copy(def);
+    out.sections = layout(def, cfg).map(function (s) {
       if (!s || !Array.isArray(s.tiles)) return s;
-      var tiles = reorder(s.tiles, function (t) { return t && typeof t.href === 'string' ? t.href : null; }, cfg.order[s.id]);
-      // 並びを変えた区分では「新しい行から始める（newrow）」を効かせない（指定のペアの行割りは既定の並びにだけ意味がある）
-      var moved = tiles.some(function (t, i) { return t !== s.tiles[i]; });
-      var ns = {};
-      Object.keys(s).forEach(function (k) { ns[k] = s[k]; });
-      ns.tiles = tiles.filter(function (t) { return !(t && hide[t.href]); }).map(function (t) {
-        if (!moved || !t || !t.newrow) return t;
-        var nt = {};
-        Object.keys(t).forEach(function (k) { if (k !== 'newrow') nt[k] = t[k]; });
-        return nt;
-      });
+      var ns = copy(s);
+      ns.tiles = s.tiles.filter(function (t) { return !(t && hide[t.href]); });
       return ns;
     });
     return out;
@@ -198,5 +281,5 @@
     window.addEventListener('pageshow', function (e) { if (e.persisted) run(); });
   }
 
-  window.SUMenu = { arrange: arrange, clean: clean, readCache: readCache, clearCache: clearCache, startSync: startSync, ROLES: ROLES, KEEP: KEEP };
+  window.SUMenu = { arrange: arrange, layout: layout, clean: clean, readCache: readCache, clearCache: clearCache, startSync: startSync, ROLES: ROLES, KEEP: KEEP };
 })();

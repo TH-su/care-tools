@@ -23,18 +23,20 @@ try { def = JSON.parse(m[1]); } catch (e) { def = null; }
 console.log('\n— 1. 定義の中身 —');
 t('定義が JSON として読める', !!def && Array.isArray(def.sections), m ? 'parse error' : 'no def');
 const secs = def ? def.sections : [];
-t('区分は 職員・入居者・厨房・設定・困った時 の順', secs.map(s => s.title).join() === '職員,入居者,厨房,設定,困った時', secs.map(s => s.title));
+t('区分は 職員・入居者・デイ・厨房・設定・困った時 の順（デイは 2026-10-26 本人指示）', secs.map(s => s.title).join() === '職員,入居者,デイ {{通所}},厨房,設定,困った時', secs.map(s => s.title));
 const tiles = [].concat.apply([], secs.map(s => s.tiles));
 t('タイルは24枚（以前の20枚＋困った時＋ケアログ・デイ 2026-10-23＋担当者会議の記録 2026-10-25）', tiles.length === 24, tiles.length);
 const want = ['shift-app.html', 'work-schedule.html', 'shift-analyzer.html', 'staff-master.html',
-  'https://th-su.github.io/haiben-record/haiben-record.html', 'weight-record.html', 'care-schedule.html', 'daycare-roster.html', 'visit-overview.html',
+  'https://th-su.github.io/haiben-record/haiben-record.html', 'weight-record.html', 'care-schedule.html', 'visit-overview.html',
   'facesheet.html', 'genogram.html', 'resident-master.html', 'patch-calendar.html', 'moushiokuri-viewer.html', 'resident-master.html?view=bday',
-  'admission-flow.html', 'training-plan.html', 'supplies.html', 'https://th-su.github.io/care-log/', 'https://th-su.github.io/care-log/#/record/daycare', 'care-meeting.html', 'https://kitchen-app-9o7.pages.dev/', 'connection-settings.html', 'help.html'];
-t('行き先と並び順が以前と同じ（入居者の区分の末尾にケアログ・デイ・担当者会議の記録・最後に help.html）', tiles.map(x => x.href).join('|') === want.join('|'), tiles.map(x => x.href));
+  'admission-flow.html', 'supplies.html', 'https://th-su.github.io/care-log/', 'care-meeting.html',
+  'daycare-roster.html', 'training-plan.html', 'https://th-su.github.io/care-log/#/record/daycare',
+  'https://kitchen-app-9o7.pages.dev/', 'connection-settings.html', 'help.html'];
+t('行き先と並び順（入居者の区分の末尾にケアログ・担当者会議の記録、その次のデイの区分にデイ利用表・訓練計画・デイ（2026-10-26）、最後に help.html）', tiles.map(x => x.href).join('|') === want.join('|'), tiles.map(x => x.href));
 const office = tiles.filter(x => x.officeOnly).map(x => x.href).sort().join();
 t('現場端末で出さないタイルは5枚（職員マスタ・誕生日一覧・入居調整・訓練計画・担当者会議の記録）＋設定の区分', office === ['admission-flow.html', 'care-meeting.html', 'resident-master.html?view=bday', 'staff-master.html', 'training-plan.html'].sort().join()
   && secs.find(s => s.id === 'sec-setup').officeOnly === true, office);
-t('別サイトの印（ext）は排泄ケア記録・ケアログ・デイ・厨房の4枚', tiles.filter(x => x.ext).map(x => x.nm).join() === '排泄ケア記録,ケアログ,デイ {{通所}},厨房メニュー管理', tiles.filter(x => x.ext).map(x => x.nm));
+t('別サイトの印（ext）は排泄ケア記録・ケアログ・デイ・厨房の4枚', tiles.filter(x => x.ext).map(x => x.nm).sort().join() === ['排泄ケア記録', 'ケアログ', 'デイ {{通所}}', '厨房メニュー管理'].sort().join(), tiles.filter(x => x.ext).map(x => x.nm));
 t('新しい行から始める印（newrow）はフェイスシートだけ', tiles.filter(x => x.newrow).map(x => x.href).join() === 'facesheet.html', '');
 t('訓練計画の説明は事業所名を施設情報から入れる（{{通所}}）', /^\{\{通所\}\}/.test(tiles.find(x => x.href === 'training-plan.html').note), '');
 t('どのタイルにも名前・絵文字・説明がある', tiles.every(x => x.nm && x.ic && typeof x.note === 'string'), '');
