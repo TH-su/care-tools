@@ -42,7 +42,7 @@
   var NAMES = { kiku: '菊かがり', asanoha: '麻の葉' };
   var FAMILY_NAMES = ['記録', 'くすり・もの', '入居者', '計画', '職員'];
   var OTHER = 2;   // 表に無いリンク先は「入居者」
-  // リンク先 → 分野（メニューの定義 #menuDef の業務ツール 22本・2026-10-26）。新しいツールは表に足す（足さなければ入居者の色）
+  // リンク先 → 分野（メニューの定義 #menuDef の業務ツール 23本・2026-10-26）。新しいツールは表に足す（足さなければ入居者の色）
   var FAMILY = {
     'https://th-su.github.io/care-log/': 0,
     'https://th-su.github.io/care-log/#/record/daycare': 0,
@@ -65,7 +65,8 @@
     'shift-app.html': 4,
     'work-schedule.html': 4,
     'shift-analyzer.html': 4,
-    'staff-master.html': 4
+    'staff-master.html': 4,
+    'ats.html': 4
   };
   var SLOTS = 32;
   var R = 48, CX = 50, CY = 50;   // viewBox 0 0 100 100
