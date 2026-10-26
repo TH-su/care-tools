@@ -2,13 +2,19 @@
  * menu-settings.js — メニューの設定（menu-settings.html）の動き（2026-10-23 代表者の決定）。
  * 書けるかどうかはデータベース（menu_put・管理者＋2段階認証だけ）が決める。この画面は見せ方を整えるだけ。
  * ボタンの一覧は index.html の中の定義（#menuDef）を読む。並べ替え・非表示の当て方は su-menu.js（メニューと同じ部品）。
+ * 区分の作成・名前と絵文字の変更・削除・ボタンを別の区分へ移す（2026-10-26 本人指示）。保存には移行 0023 が要る。
+ *   0023 の前でも、区分に触らない変更（並び・非表示）は今までどおり保存できる（sdef・gone・mv は空なら設定に書かない）。
  */
 (function () {
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
   var ROLES = [['admin', '管理者'], ['office', '事務所'], ['field', '現場']];
   var def = null;          // index.html の定義
-  var model = null;        // { secs:[{id, mk, title, officeOnly, tiles:[tile…]}], hide:{admin:{href:1}…} }
+  var model = null;        // { secs:[{id, mk, title, officeOnly, custom, tiles:[tile…]}], hide:{admin:{href:1}…} }
+  var defSec = {};         // 最初からある区分 id → {mk, title, officeOnly}
+  var homeOf = {};         // ボタンの鍵 → 既定の区分 id
+  var editing = null;      // 名前を変えている区分の id
+  var MAX_SECS = 30;
   var baseline = '';       // 読んだ時（保存した時）の設定の JSON。変更の有無を見る
   var updatedAt = null;    // 読んだ時の保存日時（menu_put に返す＝他の画面の保存を消さない）
   var busy = false;
@@ -42,8 +48,11 @@
     conflict: 'ほかの画面で先に保存されていました。画面を読み直してから、もう一度変えてください。',
     badshape: '設定の形が正しくありません。', badver: '設定の形が正しくありません。', badorder: '並びの形が正しくありません。',
     badhide: '表示の設定の形が正しくありません。', badsecs: '区分の並びの形が正しくありません。',
-    badkey: 'ボタンのリンク先に使えない文字があります。', toolarge: '設定が大きすぎます。'
+    badkey: 'ボタンのリンク先に使えない文字があります。', toolarge: '設定が大きすぎます。',
+    badsdef: '区分の名前・絵文字の形が正しくありません（名前は1〜20字・絵文字は8字まで）。', badgone: '消した区分の形が正しくありません。',
+    badmv: 'ボタンの移し先の形が正しくありません。'
   };
+  var NEED_0023 = '区分の追加・名前の変更・削除・ボタンの移動を保存するには、データベースの更新（移行 0023）が必要です。区分を変えた設定が残っている間は、並び・表示の変更も保存できません。その時は区分の変更を元に戻すか、「既定に戻す」を押してください。';
 
   // ── 定義を読む（index.html の中の JSON。定義の正本は1つ）──
   async function loadDef() {
@@ -52,36 +61,86 @@
     var doc = new DOMParser().parseFromString(await r.text(), 'text/html');
     var j = JSON.parse(doc.getElementById('menuDef').textContent);
     if (!j || !Array.isArray(j.sections)) throw new Error('メニューの定義の形が違います。');
+    defSec = {}; homeOf = {};
+    j.sections.forEach(function (s) {
+      if (!s || typeof s.id !== 'string' || !Array.isArray(s.tiles)) return;
+      defSec[s.id] = { mk: s.mk || '', title: s.title || s.id, officeOnly: !!s.officeOnly };
+      s.tiles.forEach(function (t) { if (t && typeof t.href === 'string' && !(t.href in homeOf)) homeOf[t.href] = s.id; });
+    });
     return j;
   }
 
-  // 定義＋保存済みの設定 → 画面で動かす形（並びは su-menu.js の arrange と同じ規則。非表示は役割ごとに持つ）
+  // 定義＋保存済みの設定 → 画面で動かす形（配置は su-menu.js の layout と同じ規則＝メニューと同じ。非表示は役割ごとに持つ）
   function toModel(cfg) {
-    var c = SUMenu.clean(cfg);
-    var ordered = SUMenu.arrange(def, c ? { ver: 1, order: c.order, secs: c.secs } : null, null);
+    var c = SUMenu.clean(cfg) || SUMenu.clean({ ver: 1 });
     var hide = {};
     ROLES.forEach(function (r) {
       hide[r[0]] = {};
-      ((c && c.hide[r[0]]) || []).forEach(function (k) { if (!SUMenu.KEEP[k]) hide[r[0]][k] = 1; });
+      (c.hide[r[0]] || []).forEach(function (k) { if (!SUMenu.KEEP[k]) hide[r[0]][k] = 1; });
     });
     return {
-      secs: ordered.sections.filter(function (s) { return s && Array.isArray(s.tiles); }).map(function (s) {
-        return { id: s.id, mk: s.mk, title: s.title, officeOnly: !!s.officeOnly,
+      secs: SUMenu.layout(def, c).filter(function (s) { return s && typeof s.id === 'string' && Array.isArray(s.tiles); }).map(function (s) {
+        return { id: s.id, mk: s.mk || '', title: s.title || s.id, officeOnly: !!s.officeOnly, custom: !defSec[s.id],
                  tiles: s.tiles.filter(function (t) { return t && typeof t.href === 'string' && t.href; }) };
       }),
       hide: hide
     };
   }
   // 画面の形 → 保存する設定（並びは全部書く。後から足したボタンは載らない＝メニューでは区分の末尾・全員に出る）
+  // 区分の名前（sdef）・消した区分（gone）・移し先（mv）は、ある時だけ書く（移行 0023 の前でも並び・非表示を保存できるように）
   function toConfig() {
-    var order = {}, hide = {};
-    model.secs.forEach(function (s) { order[s.id] = s.tiles.map(function (t) { return t.href; }); });
+    var order = {}, hide = {}, sdef = {}, mv = {}, gone = [], here = {};
+    model.secs.forEach(function (s) {
+      here[s.id] = 1;
+      order[s.id] = s.tiles.map(function (t) { return t.href; });
+      var d = defSec[s.id];
+      if (!d || d.mk !== s.mk || d.title !== s.title) sdef[s.id] = { mk: s.mk, title: s.title };
+      s.tiles.forEach(function (t) { if (homeOf[t.href] && homeOf[t.href] !== s.id) mv[t.href] = s.id; });
+    });
+    Object.keys(defSec).forEach(function (id) { if (!here[id]) gone.push(id); });
     ROLES.forEach(function (r) {
       var list = [];
       model.secs.forEach(function (s) { s.tiles.forEach(function (t) { if (model.hide[r[0]][t.href]) list.push(t.href); }); });
       hide[r[0]] = list;
     });
-    return { ver: 1, secs: model.secs.map(function (s) { return s.id; }), order: order, hide: hide };
+    var cfg = { ver: 1, secs: model.secs.map(function (s) { return s.id; }), order: order, hide: hide };
+    if (Object.keys(sdef).length) cfg.sdef = sdef;
+    if (gone.length) cfg.gone = gone;
+    if (Object.keys(mv).length) cfg.mv = mv;
+    return cfg;
+  }
+  function needs0023(cfg) { return !!(cfg && (cfg.sdef || cfg.gone || cfg.mv)); }
+  // 区分の名前・絵文字の形（データベースの検査と同じ: 名前1〜20字・絵文字8字まで・制御文字なし。字数はコードポイントで数える）
+  function textLen(t) { return Array.from(String(t)).length; }
+  function badText(t) { return /[\u0000-\u001f\u007f-\u009f]/.test(t); }
+  function newSecId() {
+    var id;
+    do { id = 'c-' + Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36); }
+    while (model.secs.some(function (s) { return s.id === id; }) || defSec[id]);
+    return id;
+  }
+  // この区分にボタンが残っている時は消せない（消すとボタンがメニューから消えるため。先に別の区分へ移す）
+  function removeSec(si) {
+    var s = model.secs[si];
+    if (s.tiles.length) return;
+    if (!confirm('区分「' + label(s.title) + '」を消しますか？\n\n「保存する」を押すまでは、各端末のメニューは変わりません。')) return;
+    model.secs.splice(si, 1);
+    if (editing === s.id) editing = null;
+    var next = model.secs[Math.min(si, model.secs.length - 1)];
+    render(next ? 'sec:' + next.id + ':edit' : 'add');
+  }
+  function moveTile(fromSi, ti, toId) {
+    var from = model.secs[fromSi], to = null;
+    model.secs.forEach(function (s) { if (s.id === toId) to = s; });
+    if (!to || to === from) return;
+    var t = from.tiles.splice(ti, 1)[0];
+    to.tiles.push(t);
+    render('move:' + t.href);   // 手元（キーボードの位置）は移した先の区分の欄へ付いていく＝画面もそこへ動く
+  }
+  // ボタンが現場端末で出ないか（ボタン自身・既定の区分・今の区分のどれかが事務所専用なら出ない＝メニューと同じ）
+  function officeOnlyTile(t, s) {
+    var home = defSec[homeOf[t.href]];
+    return !!(t.officeOnly || (home && home.officeOnly) || s.officeOnly);
   }
   function dirty() { return JSON.stringify(toConfig()) !== baseline; }
   function refreshState() {
@@ -110,6 +169,58 @@
   }
   function swap(arr, i, j) { var x = arr[i]; arr[i] = arr[j]; arr[j] = x; }
 
+  // 区分の名前・絵文字を変える欄（「決める」で画面の中だけ変わる。各端末へは「保存する」で届く）
+  function editForm(s) {
+    var f = el('div', 'ms-edit');
+    var d = defSec[s.id];
+    var lt = el('label', 'ms-field');
+    lt.appendChild(el('span', null, '名前（20字まで）'));
+    var it = document.createElement('input');
+    it.type = 'text'; it.value = label(s.title); it.maxLength = 40; it.autocomplete = 'off';
+    it.setAttribute('data-focus', 'sec:' + s.id + ':title');
+    lt.appendChild(it);
+    var lm = el('label', 'ms-field mk');
+    lm.appendChild(el('span', null, '絵文字（なくてもよい）'));
+    var im = document.createElement('input');
+    im.type = 'text'; im.value = s.mk || ''; im.maxLength = 16; im.autocomplete = 'off';
+    lm.appendChild(im);
+    var err = el('p', 'ms-err');
+    err.setAttribute('role', 'alert');
+    var acts = el('div', 'acts');
+    var ok = el('button', 'btn pri sm', '決める');
+    ok.type = 'button';
+    ok.addEventListener('click', function () {
+      var title = it.value.trim(), mk = im.value.trim();
+      if (!title) { err.textContent = '名前を入れてください。'; it.focus(); return; }
+      if (textLen(title) > 20 || badText(title)) { err.textContent = '名前は20字までにしてください（改行などは使えません）。'; it.focus(); return; }
+      if (textLen(mk) > 8 || badText(mk)) { err.textContent = '絵文字は8字までにしてください。'; im.focus(); return; }
+      // 名前を変えていない時は今の書き方（{{通所}} など）のまま。最初からある区分で既定と同じ名前を入れた時は既定の書き方に戻す＝上書きしない
+      if (title !== label(s.title)) s.title = (d && title === label(d.title)) ? d.title : title;
+      else if (textLen(s.title) > 20) s.title = title;
+      s.mk = mk;
+      editing = null;
+      render('sec:' + s.id + ':edit');
+    });
+    var ng = el('button', 'btn sm', 'やめる');
+    ng.type = 'button';
+    ng.addEventListener('click', function () { editing = null; render('sec:' + s.id + ':edit'); });
+    acts.appendChild(ok); acts.appendChild(ng);
+    if (d && (d.title !== s.title || d.mk !== s.mk)) {
+      var rb = el('button', 'btn sm', '最初の名前に戻す');
+      rb.type = 'button';
+      rb.addEventListener('click', function () { s.title = d.title; s.mk = d.mk; editing = null; render('sec:' + s.id + ':edit'); });
+      acts.appendChild(rb);
+    }
+    [it, im].forEach(function (inp) {
+      inp.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); ok.click(); }
+        if (e.key === 'Escape') { e.preventDefault(); ng.click(); }
+      });
+    });
+    f.appendChild(lt); f.appendChild(lm); f.appendChild(err); f.appendChild(acts);
+    return f;
+  }
+
   function render(focusKey) {
     var box = $('secs');
     var frag = document.createDocumentFragment();
@@ -118,14 +229,35 @@
       var head = el('div', 'ms-head');
       var h2 = el('h2');
       var mk = el('span', 'mk', s.mk || ''); mk.setAttribute('aria-hidden', 'true');
-      h2.appendChild(mk); h2.appendChild(document.createTextNode(s.title || s.id));
+      h2.appendChild(mk); h2.appendChild(document.createTextNode(label(s.title) || s.id));
       head.appendChild(h2);
       if (s.officeOnly) head.appendChild(el('span', 'tag', '区分ごと現場端末では出ません'));
+      if (s.custom) head.appendChild(el('span', 'tag me', '追加した区分'));
       var ops = el('div', 'ms-ops');
-      ops.appendChild(moveBtn('区分「' + s.title + '」', -1, si === 0, function () { swap(model.secs, si, si - 1); render('sec:' + s.id + ':up'); }, 'sec:' + s.id));
-      ops.appendChild(moveBtn('区分「' + s.title + '」', 1, si === model.secs.length - 1, function () { swap(model.secs, si, si + 1); render('sec:' + s.id + ':down'); }, 'sec:' + s.id));
+      var nm = label(s.title);
+      ops.appendChild(moveBtn('区分「' + nm + '」', -1, si === 0, function () { swap(model.secs, si, si - 1); render('sec:' + s.id + ':up'); }, 'sec:' + s.id));
+      ops.appendChild(moveBtn('区分「' + nm + '」', 1, si === model.secs.length - 1, function () { swap(model.secs, si, si + 1); render('sec:' + s.id + ':down'); }, 'sec:' + s.id));
+      var eb = el('button', 'btn sm', '名前を変える');
+      eb.type = 'button';
+      eb.setAttribute('aria-label', '区分「' + nm + '」の名前と絵文字を変える');
+      eb.setAttribute('aria-expanded', editing === s.id ? 'true' : 'false');
+      eb.setAttribute('data-focus', 'sec:' + s.id + ':edit');
+      eb.disabled = busy;
+      eb.addEventListener('click', function () { editing = editing === s.id ? null : s.id; render(editing ? 'sec:' + s.id + ':title' : 'sec:' + s.id + ':edit'); });
+      ops.appendChild(eb);
+      var db = el('button', 'btn sm ng', '消す');
+      db.type = 'button';
+      db.setAttribute('aria-label', '区分「' + nm + '」を消す');
+      db.setAttribute('data-focus', 'sec:' + s.id + ':del');
+      db.disabled = busy || s.tiles.length > 0 || model.secs.length <= 1;
+      db.addEventListener('click', function () { removeSec(si); });
+      ops.appendChild(db);
       head.appendChild(ops);
       cd.appendChild(head);
+      if (!s.tiles.length) {
+        cd.appendChild(el('p', 'muted ms-hint', 'ボタンが無い区分はメニューに出ません。ほかの区分のボタンの「区分」の欄でここを選ぶと移せます。'));
+      }
+      if (editing === s.id) cd.appendChild(editForm(s));
 
       var ul = el('ul', 'ms-list');
       s.tiles.forEach(function (t, ti) {
@@ -136,7 +268,8 @@
         var txt = el('div');
         txt.appendChild(el('div', 'nm', label(t.nm) + (t.ext ? ' ↗' : '')));
         var tags = el('div', 'tags');
-        if (t.officeOnly || s.officeOnly) tags.appendChild(el('span', 'tag', '現場端末では出ません'));
+        if (officeOnlyTile(t, s)) tags.appendChild(el('span', 'tag', '現場端末では出ません'));
+        if (homeOf[t.href] && homeOf[t.href] !== s.id) tags.appendChild(el('span', 'tag me', '移したボタン'));
         if (SUMenu.KEEP[t.href]) tags.appendChild(el('span', 'tag me', '全員に出ます'));
         if (tags.children.length) txt.appendChild(tags);
         nmBox.appendChild(txt);
@@ -161,6 +294,24 @@
         });
         li.appendChild(chk);
 
+        var sel = el('label', 'ms-to');
+        sel.appendChild(el('span', null, '区分'));
+        var dd = document.createElement('select');
+        dd.setAttribute('aria-label', label(t.nm) + ' を置く区分');
+        dd.setAttribute('data-focus', 'move:' + t.href);
+        dd.disabled = busy || model.secs.length <= 1;
+        model.secs.forEach(function (o) {
+          // 隠せないボタン（使い方・困った時）は事務所専用の区分へ移せない（現場端末から消えないように・メニューの側も移さない）
+          if (SUMenu.KEEP[t.href] && o.officeOnly && o.id !== s.id) return;
+          var op = el('option', null, label(o.title) || o.id);
+          op.value = o.id;
+          if (o.id === s.id) op.selected = true;
+          dd.appendChild(op);
+        });
+        dd.addEventListener('change', function () { moveTile(si, ti, dd.value); });
+        sel.appendChild(dd);
+        li.appendChild(sel);
+
         var mv = el('div', 'ms-ops');
         var key = 'tile:' + s.id + ':' + t.href;
         mv.appendChild(moveBtn(label(t.nm), -1, ti === 0, function () { swap(s.tiles, ti, ti - 1); render(key + ':up'); }, key));
@@ -171,6 +322,20 @@
       cd.appendChild(ul);
       frag.appendChild(cd);
     });
+    var add = el('section', 'cd ms-add');
+    var ab = el('button', 'btn', '＋ 区分を追加');
+    ab.type = 'button';
+    ab.setAttribute('data-focus', 'add');
+    ab.disabled = busy || model.secs.length >= MAX_SECS;
+    ab.addEventListener('click', function () {
+      var id = newSecId();
+      model.secs.push({ id: id, mk: '', title: '新しい区分', officeOnly: false, custom: true, tiles: [] });
+      editing = id;
+      render('sec:' + id + ':title');
+    });
+    add.appendChild(ab);
+    if (model.secs.length >= MAX_SECS) add.appendChild(el('p', 'muted', '区分は' + MAX_SECS + 'までです。'));
+    frag.appendChild(add);
     box.replaceChildren(frag);
     refreshState();
     if (focusKey) {
@@ -182,8 +347,9 @@
         if (f === focusKey) hit = all[i];
         if (f === other) alt = all[i];
       }
+      if (!hit) hit = box.querySelector('[data-focus="' + (window.CSS && CSS.escape ? CSS.escape(focusKey) : focusKey) + '"]');
       var target = (hit && !hit.disabled) ? hit : alt;
-      if (target) target.focus();
+      if (target) { target.focus(); if (target.select && target.tagName === 'INPUT') target.select(); }
     }
   }
 
@@ -198,7 +364,7 @@
     var d = r.data || {};
     if (d.ok !== true) {
       render();
-      msg(ERR[d.error] || ('保存できませんでした（' + (d.error || '理由不明') + '）。'));
+      msg((d.error === 'badshape' && needs0023(cfg)) ? NEED_0023 : (ERR[d.error] || ('保存できませんでした（' + (d.error || '理由不明') + '）。')));
       if (d.error === 'conflict' && confirm(ERR.conflict + '\n\n今すぐ読み直しますか？（この画面の変更は消えます）')) {
         window.removeEventListener('beforeunload', guard);
         location.reload();
@@ -206,6 +372,7 @@
       return;
     }
     updatedAt = d.updatedAt;
+    editing = null;
     model = toModel(cfg);
     baseline = JSON.stringify(toConfig());
     render();
@@ -218,11 +385,12 @@
   });
   $('b-undo').addEventListener('click', function () {
     if (!confirm('保存していない変更を取り消して、保存されている設定に戻しますか？')) return;
+    editing = null;
     model = toModel(JSON.parse(baseline));
     render(); msg('');
   });
   $('b-reset').addEventListener('click', function () {
-    if (!confirm('メニューを既定の並びに戻し、すべての役割に全部のボタンを出しますか？\n\n保存されている並び・非表示の設定は消えます。')) return;
+    if (!confirm('メニューを既定の並びに戻し、すべての役割に全部のボタンを出しますか？\n\n保存されている並び・非表示・区分の名前・追加した区分・ボタンの移動の設定は消えます。')) return;
     save(null, '既定に戻しました。各端末でメニューを開き直すと反映されます。');
   });
 

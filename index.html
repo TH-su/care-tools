@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-Ap09DIWaMFOn8zW8rP1OqZ5WySzryV3Ms1ruYiB0yQ0=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-HnP6/bRc+pOWyvBWtKXp3dlnE3xkWf3EYzbzTpSdrII=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 検索エンジンにこのページと配下ツールを辿らせない。
@@ -28,7 +28,7 @@
 <script src="su-errors.js?v=2026-10-08"></script>
 <script src="su-cfg-hint.js?v=2026-10-01.2"></script>
 <script src="su-perf.js?v=2026-10-24"></script>
-<script src="su-menu.js?v=2026-10-24"></script>
+<script src="su-menu.js?v=2026-10-26"></script>
 <script>
 (function(){
   function apply(){try{
@@ -166,7 +166,7 @@ main {
 <!-- メニューの定義（JSON）。画面はここから組み立てる（2026-10-09・監査10月版 #15）。読めなかった時は、この下の script が案内を出す -->
 <script type="application/json" id="menuDef">
 {
- "_note": "メニューのタイルの定義（2026-10-09・監査10月版 #15）。この定義から画面を組み立てる（下の script）。新しいツールはここに1件足す。区分（sections）の中の順番がそのまま画面の並び＝2列の行割り。tile の項目: href・ic（絵文字）・nm（名前）・note（説明）・ext（別サイト）・newrow（新しい行から始める）・officeOnly（現場端末では出さない）・due（期限の件数の札を出す時の端末の控えの名前・2026-10-24）・_why（理由のメモ・画面には出ない）。名前と説明の {{通所}} 等は施設情報の事業所名。ログインの役割ごとの並び・非表示は管理者が「メニューの設定」（menu-settings.html）で決め、su-menu.js がこの定義に当てる（2026-10-23）。ボタンの鍵は href なので、href を変えると設定の並び・非表示が外れて既定の位置に戻る",
+ "_note": "メニューのタイルの定義（2026-10-09・監査10月版 #15）。この定義から画面を組み立てる（下の script）。新しいツールはここに1件足す。区分（sections）の中の順番がそのまま画面の並び＝2列の行割り。区分の項目: id・mk（絵文字）・title（名前・{{通所}} 等は事業所名）・officeOnly・tiles。tile の項目: href・ic（絵文字）・nm（名前）・note（説明）・ext（別サイト）・newrow（新しい行から始める）・officeOnly（現場端末では出さない）・due（期限の件数の札を出す時の端末の控えの名前・2026-10-24）・_why（理由のメモ・画面には出ない）。名前と説明の {{通所}} 等は施設情報の事業所名。ログインの役割ごとの並び・非表示は管理者が「メニューの設定」（menu-settings.html）で決め、su-menu.js がこの定義に当てる（2026-10-23）。ボタンの鍵は href なので、href を変えると設定の並び・非表示が外れて既定の位置に戻る",
  "sections": [
   {
    "id": "sec-staff",
@@ -226,12 +226,6 @@ main {
      "note": "週間ケア計画の作成"
     },
     {
-     "href": "daycare-roster.html",
-     "ic": "☀️",
-     "nm": "デイ利用表",
-     "note": "通所の利用予定"
-    },
-    {
      "href": "visit-overview.html",
      "ic": "🗺️",
      "nm": "週間計画俯瞰",
@@ -286,15 +280,6 @@ main {
      "_why": "区分の末尾に足す（途中へ挿すと上の指定ペアの行割りが崩れる）。officeOnly: 入居前の相談者の連絡先・保険情報を扱う事務所業務のため現場端末では出さない（アプリ側も su_device_role==='field' でブロックする＝二重）"
     },
     {
-     "href": "training-plan.html",
-     "ic": "🏃",
-     "nm": "個別機能訓練計画書",
-     "note": "{{通所}}・3か月ごとの計画と印刷",
-     "officeOnly": true,
-     "due": "tp_menu_due",
-     "_why": "個別機能訓練計画書（通所）: 疾患名・治療経過を含む要配慮情報を扱う事務所業務のため現場端末では出さない（アプリ側も su_device_role==='field' でブロックする＝二重）"
-    },
-    {
      "href": "supplies.html",
      "ic": "🧻",
      "nm": "消耗品管理",
@@ -310,20 +295,43 @@ main {
      "_why": "ケアログ（2026-10-23 本人指示・代表者の決定で入居者の区分の末尾）。別サイト（care-log）。officeOnly を付けない: 現場で記録を入れるアプリのため（誰が何を読めるかはケアログとデータベースが決める）"
     },
     {
-     "href": "https://th-su.github.io/care-log/#/record/daycare",
-     "ic": "🌊",
-     "nm": "デイ {{通所}}",
-     "note": "通所の今日の記録",
-     "ext": true,
-     "_why": "デイ（通所の事業所名つき・2026-10-23 本人指示）。ケアログのデイの今日の画面を直接開く。ケアログの次。名前の事業所名は施設情報から入れる（{{通所}}・施設名を直接書かない）。officeOnly を付けない: 現場で記録を入れる画面のため"
-    },
-    {
      "href": "care-meeting.html",
      "ic": "🤝",
      "nm": "担当者会議の記録",
      "note": "サービス担当者会議の要点",
      "officeOnly": true,
      "_why": "担当者会議の記録（2026-10-25 本人指示）。区分の末尾（デイの次）に足す。途中へ挿すと、管理者が「メニューの設定」を保存済みの時に su-menu.js が設定に無いボタンを末尾へ回して既定の並びとずれ、フェイスシートの newrow が外れてケアログ・デイの行割りも崩れるため（2026-10-25 審査の指摘）。officeOnly: 会議記録は要配慮の情報で、使えるのは事務所PCだけという代表者の決定（2026-10-23）のため現場端末では出さない（アプリ側も現場端末ではブロックする＝二重）"
+    }
+   ]
+  },
+  {
+   "id": "sec-daycare",
+   "mk": "🌊",
+   "title": "デイ {{通所}}",
+   "_why": "デイの区分（2026-10-26 本人指示）。入居者の区分の直後に置き、デイ利用表・個別機能訓練計画書・デイの今日の記録を入居者の区分から移した。名前の事業所名は施設情報から入れる（{{通所}}）。前の定義で保存したメニューの設定でも、su-menu.js が入居者の直後に置き、入居者の区分の並びに残っていても既定のこの区分に出す（移し先 mv だけが区分をまたぐ）",
+   "tiles": [
+    {
+     "href": "daycare-roster.html",
+     "ic": "☀️",
+     "nm": "デイ利用表",
+     "note": "通所の利用予定"
+    },
+    {
+     "href": "training-plan.html",
+     "ic": "🏃",
+     "nm": "個別機能訓練計画書",
+     "note": "{{通所}}・3か月ごとの計画と印刷",
+     "officeOnly": true,
+     "due": "tp_menu_due",
+     "_why": "個別機能訓練計画書（通所）: 疾患名・治療経過を含む要配慮情報を扱う事務所業務のため現場端末では出さない（アプリ側も su_device_role==='field' でブロックする＝二重）"
+    },
+    {
+     "href": "https://th-su.github.io/care-log/#/record/daycare",
+     "ic": "🌊",
+     "nm": "デイ {{通所}}",
+     "note": "通所の今日の記録",
+     "ext": true,
+     "_why": "デイ（通所の事業所名つき・2026-10-23 本人指示）。ケアログのデイの今日の画面を直接開く。2026-10-26 本人指示で入居者の区分からデイの区分へ移した。名前の事業所名は施設情報から入れる（{{通所}}・施設名を直接書かない）。officeOnly を付けない: 現場で記録を入れる画面のため"
     }
    ]
   },
@@ -382,7 +390,7 @@ main {
 (function () {
   var main = document.getElementById('menu');
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
-  /* {{通所}} などは施設情報（su-facility.js）の事業所名に差し替える（前後に文字があってよい・名前と説明の両方・2026-10-23）。
+  /* {{通所}} などは施設情報（su-facility.js）の事業所名に差し替える（前後に文字があってよい・名前と説明の両方・2026-10-23。区分の名前も・2026-10-26）。
      施設名を画面のコードに直接書かないため。読めない時は一般名のまま */
   function facText(cls, t) {
     var span = el('span', cls);
@@ -490,7 +498,7 @@ main {
       if (s.officeOnly) sec.setAttribute('data-office-only', '');
       var h2 = el('h2'); h2.id = s.id;
       var mk = el('span', 'mk', s.mk); mk.setAttribute('aria-hidden', 'true');
-      h2.appendChild(mk); h2.appendChild(document.createTextNode(s.title));
+      h2.appendChild(mk); h2.appendChild(facText(null, s.title));
       var grid = el('div', 'grid');
       if (!Array.isArray(s.tiles)) throw new Error('区分 ' + s.id + ' のタイルの一覧が無い');
       var open = false;   // 現場端末でも出るタイルがあるか
