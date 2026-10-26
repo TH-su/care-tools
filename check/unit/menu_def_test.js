@@ -1,7 +1,8 @@
 /* メニュー（index.html）を定義（JSON）から組み立てることの検証（2026-10-09・監査10月版 #15・本人決定 3a）。
    1. 定義が JSON として読め、以前の手書きの20枚（区分4つ）がそのまま入っている（名前・行き先・現場端末の出し分け）
    2. 組み立ては textContent で行い、定義の文字を HTML として実行しない。fetch・トークン・氏名を持ち込まない
-   3. 「困った時」の区分（help.html）は現場端末でも出す。help.html に電話番号・メールなどの連絡先を書かない */
+   3. 「困った時」の区分（help.html）は現場端末でも出す。help.html のコードに電話番号・メールなどの連絡先を書かない
+      （問い合わせ先は 2026-10-26 本人指示で施設情報の support から画面に出す＝コードには書かない。check/unit/facility_support_test.js） */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -52,7 +53,7 @@ console.log('\n— 3. 困った時 —');
 const help = secs.find(s => s.id === 'sec-help');
 t('困った時の区分は現場端末でも出す（officeOnly なし）', !!help && !help.officeOnly && !help.tiles[0].officeOnly, help);
 const hp = read('help.html');
-t('help.html に電話番号・メールアドレスを書かない（本人決定 3a）', !/\d{2,4}-\d{2,4}-\d{3,4}/.test(hp) && !/@[a-z0-9.-]+\.[a-z]{2,}/i.test(hp), '');
+t('help.html のコードに電話番号・メールアドレスを書かない（問い合わせ先は施設情報から出す・2026-10-26 本人指示）', !/\d{2,4}-\d{2,4}-\d{3,4}/.test(hp) && !/@[a-z0-9.-]+\.[a-z]{2,}/i.test(hp), '');
 t('help.html は「不具合を報告」の案内と、氏名・居室番号・病名を書かない注意を載せる', /不具合を報告/.test(hp) && /氏名、居室番号、病名は書かないでください/.test(hp), '');
 t('★送り先が無い端末（「この内容をコピー」だけ）の時の案内もある', /この内容をコピー<\/span> だけが出ます/.test(hp), '');
 t('help.html の CSP は管理者のログイン確認（Supabase）を止めない', /connect-src[^;]*https:\/\/jhbernqawjrzqwrmqrih\.supabase\.co/.test(hp), '');

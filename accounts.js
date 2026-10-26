@@ -198,6 +198,7 @@
       if (!tenantId) throw new Error('自分の行が見つかりません。');
       render(list);
       view('admin');
+      if (window.SUAccountsExport) window.SUAccountsExport.show();   // 全データの書き出し（2026-10-26・accounts-export.js）
     } catch (e) {
       $('gate-why').textContent = friendly(e);
       view('gate');

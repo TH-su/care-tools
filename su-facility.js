@@ -23,6 +23,7 @@
  *   SUFacility.visitingClinics()  … 訪問診療の医療機関 [{name, aliases[]}]（facility-profile.json の visitingClinics）。書いていなければ空の配列（2026-10-14）
  *   SUFacility.clinicOf(text)     … かかりつけ欄の文字が当たる医療機関の name（name か aliases のどれかを含む）。当たらなければ空
  *   SUFacility.corpSettings()     … 法人設定 {homeGuidelineName, homeGuidelineUrl}（未設定なら空文字。URL は https:// だけ）（2026-10-11・#10）
+ *   SUFacility.support()          … 困った時の問い合わせ先 {contactName, contactTel, hours, emergency, replyTarget}（文字列だけ・未設定なら空文字）（2026-10-26 本人指示）
  *
  * 端末の控え:
  *   読めた設定を localStorage（su_facility_json_v1）に控え、次の起動ではまず控えを使う（通信できなくても表示が崩れない）。
@@ -47,7 +48,8 @@
   function norm(p) {
     if (!p || typeof p !== 'object' || !Array.isArray(p.offices)) return null;
     var out = { version: 1, corpName: str(p.corpName), facilityName: str(p.facilityName), municipality: str(p.municipality), offices: [], floors: [], roomPlan: null,
-                corpSettings: { homeGuidelineName: '', homeGuidelineUrl: '' }, apps: null, visitingClinics: [] };
+                corpSettings: { homeGuidelineName: '', homeGuidelineUrl: '' }, apps: null, visitingClinics: [],
+                support: { contactName: '', contactTel: '', hours: '', emergency: '', replyTarget: '' } };
     /* 訪問診療の医療機関（2026-10-14）。name は1〜40字、aliases は1〜40字の文字列だけ（空の名前・空の別名は捨てる＝空文字は何にでも当たるため） */
     if (Array.isArray(p.visitingClinics)) {
       for (var vc = 0; vc < p.visitingClinics.length && out.visitingClinics.length < 20; vc++) {
@@ -68,6 +70,15 @@
       out.corpSettings.homeGuidelineName = str(p.corpSettings.homeGuidelineName).trim().slice(0, 80);
       var gu = str(p.corpSettings.homeGuidelineUrl).trim();
       out.corpSettings.homeGuidelineUrl = /^https:\/\/[^\s"<>]+$/.test(gu) ? gu.slice(0, 300) : '';
+    }
+    /* 困った時の問い合わせ先（2026-10-26 本人指示）。使い方・困った時とメニューに文字として出す。文字列だけを持ち、
+       文字列でない値は空にする（数や配列を文字にして出さない）。公開サイトで誰でも読めるので、電話は公表済みの事業所の番号だけを書く決まり */
+    if (p.support && typeof p.support === 'object' && !Array.isArray(p.support)) {
+      out.support.contactName = str(p.support.contactName).trim().slice(0, 60);
+      out.support.contactTel = str(p.support.contactTel).trim().slice(0, 30);
+      out.support.hours = str(p.support.hours).trim().slice(0, 80);
+      out.support.emergency = str(p.support.emergency).trim().slice(0, 120);
+      out.support.replyTarget = str(p.support.replyTarget).trim().slice(0, 80);
     }
     if (Array.isArray(p.floors)) {
       for (var fl = 0; fl < p.floors.length; fl++) {
@@ -190,6 +201,10 @@
     corpSettings: function () {
       var c = data && data.corpSettings;
       return { homeGuidelineName: (c && c.homeGuidelineName) || '', homeGuidelineUrl: (c && c.homeGuidelineUrl) || '' };
+    },
+    support: function () {
+      var c = (data && data.support) || {};
+      return { contactName: c.contactName || '', contactTel: c.contactTel || '', hours: c.hours || '', emergency: c.emergency || '', replyTarget: c.replyTarget || '' };
     },
     aliases: function () {
       var map = {};

@@ -44,6 +44,7 @@
 !/check/name-guard.mjs
 !/check/run.mjs
 !/check/serve.mjs
+!/check/export_e2e.mjs
 # 画面・共通部品の純関数の試験（2026-10-08・CI の「試験」で回す）。*.js は試験、run-all.mjs は全部を回す道具
 !/check/unit
 /check/unit/*
@@ -174,6 +175,8 @@ mailer/.DS_Store
 # 使える人の管理（許可リスト・管理者だけ）と、ログイン画面と共通の見た目。氏名・メールはデータベースにだけあり、ファイルには含まない
 !/accounts.html
 !/accounts.js
+!/accounts-export.js
+!/su-export.js
 !/su-auth.css
 # メニューの役割ごとの表示・並び（2026-10-23 代表者の決定）。ボタンのリンク先と区分 id だけを扱い、氏名・記録・合言葉は含まない
 !/su-menu.js
