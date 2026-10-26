@@ -15,7 +15,10 @@
  *      ・tenant_id は B に替える。列は JSON にある列だけ。identity の列は OVERRIDING SYSTEM VALUE。外部キーの順に入れる
  *      ・戻す時は表の利用者のトリガ（操作の記録・控え・更新者の印）を止める（pg_restore と同じ考え。外部キーの確かめは止めない）
  *      ・同じ DB の中で戻すと、identity の番号（記録の表など）が A の行とぶつかるため、戻し先は別の DB にした
- *   5. 表ごとに、B の件数と manifest の件数が一致することを確かめる
+ *   5. 表ごとに、B の件数と manifest の件数が一致することを確かめる。
+ *      さらに B の各表の行を ZIP の db/<表>.json の行と、キーの列（private.export_keycols。無ければ全列）で突き合わせ、
+ *      tenant_id・書き出さない列を除いた全列の値が一致することを確かめる（jsonb・text[]・改行・引用符・先頭が = の値を含む）。
+ *      突き合わせが空振りしていないことを、戻し先の値をわざと変えて見つけられるかでも確かめる
  *      入れられなかった表・列は「名前と理由（SQLSTATE）」だけを出す。値は出さない。
  *      書き出さない列（export_hidden＝合言葉・鍵の類）が NOT NULL で戻せない表は「戻せない列」として出す（失敗には数えない）
  * export_begin の形: 0025 があれば export_begin(true, null)、0024 までなら古い export_begin()。どちらで回したかを出す。
@@ -273,8 +276,9 @@ try {
   const zip = W.SUExport.zip(files, new Date(b.started_at));
   const X = loadCrypt();
   const PASS = 'kakuu-import-0001';   // 架空
-  const sealed = await X.encrypt(zip, PASS);
-  const opened = await X.decrypt(sealed, PASS);
+  /* 画面と同じく、ZIP の部品の並び（zipParts）をそのまま区切りごとに暗号にする。区切りは小さくして（64KiB）区切りの多いファイルにする */
+  const sealed = Buffer.concat((await X.encrypt(W.SUExport.zipParts(files, new Date(b.started_at)), PASS, { chunkSize: 64 * 1024 })).map((c) => Buffer.from(c)));
+  const opened = new Uint8Array(Buffer.concat((await X.decrypt(sealed, PASS)).map((c) => Buffer.from(c))));
   t('暗号化して戻した ZIP は、元の ZIP と1バイトも違わない（' + Math.round(zip.length / 1024) + ' KB）', Buffer.from(opened).equals(Buffer.from(zip)), opened.length);
   const z = unzip(opened);
   const man = JSON.parse(new TextDecoder().decode(z['manifest.json']));
@@ -347,11 +351,69 @@ commit;`, { allowFail: true });
     if (!ok && d.scope !== 'shared') bad.push(d.table);
     console.log('    ' + (ok ? '一致  ' : '不一致') + ' ' + d.table.padEnd(24) + ' 目録 ' + String(d.count).padStart(5) + ' / 戻し先 ' + String(bcnt[d.table]).padStart(5));
   }
-  const unrestorableTables = report.unrestorableCols.map((s) => s.split('.')[0]);
-  const realBad = bad.filter((n) => !unrestorableTables.includes(n));
-  t('表ごとの件数が目録と一致する（戻せない列のある表を除く）', realBad.length === 0, realBad.join('、'));
+  /* 「戻せない列」がある表も除かない（件数も残りの列の値も確かめる） */
+  t('入れられなかった表・列が無い', report.notRestored.length === 0, report.notRestored.join('、'));
+  t('表ごとの件数が目録と一致する（' + man.db.length + ' 表）', bad.length === 0, bad.join('、'));
   console.log('    合計: 目録 ' + man.db.reduce((s, d) => s + d.count, 0) + ' 行 / 戻し先 ' + man.db.reduce((s, d) => s + (bcnt[d.table] || 0), 0) + ' 行');
-  t('戻し先の B には A の tenant_id の行が1行も無い', JSON.parse(psql('restore', 'select coalesce(sum(n), 0) from (' + tenTables.map((n) =>
+
+  console.log('\n— 6. 値の突き合わせ（キーの列で行を合わせ、tenant_id・書き出さない列を除いた全列を比べる）—');
+  /* 試験の行に、戻しで崩れやすい値が入っていることを先に確かめる（入っていなければ突き合わせが素通りになる） */
+  const zj = (n) => JSON.stringify(json[n] || []);
+  t('突き合わせる行に jsonb・text[]・改行・引用符・先頭が = の値が入っている',
+    /"data":\{/.test(zj('kv_entries')) && /\\n/.test(zj('kv_entries')) && /\\"a\\"/.test(zj('kv_entries')) &&
+    (json.master_residents || []).some((r) => Array.isArray(r.target_apps) && r.target_apps.includes('b,c')) &&
+    (json.master_residents || []).some((r) => r.name === '=1+1') && (json.allowed_accounts || []).some((r) => /^=/.test(r.label || '')), '');
+  /* キーを並べ替えた JSON の文字（jsonb の並びの違いで食い違いにしない） */
+  const canon = (v) => Array.isArray(v) ? '[' + v.map(canon).join(',') + ']' :
+    (v && typeof v === 'object') ? '{' + Object.keys(v).sort().map((k) => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}' : JSON.stringify(v);
+  function compareAll() {
+  const valBad = [];
+  let compared = 0;
+  for (const d of man.db) {
+    if (d.scope !== 'tenant') continue;   // tenants（self）は戻し先の B の行そのもの・ケアログ（shared）は戻さない
+    const drop = ['tenant_id'].concat(d.hidden || []);
+    const strip = (r) => { const o = {}; Object.keys(r).forEach((k) => { if (!drop.includes(k)) o[k] = r[k]; }); return o; };
+    let keys = JSON.parse(psql('restore', `select coalesce(to_jsonb(private.export_keycols(${q(d.table)})), 'null'::jsonb)::text;`).trim());
+    keys = Array.isArray(keys) ? keys.filter((k) => k !== 'tenant_id') : null;
+    if (keys && !keys.length) keys = null;   // キーが tenant_id だけの表（事業者ごとに1行）は全列で合わせる
+    const arr = 'array[' + drop.map(q).join(',') + ']::text[]';
+    const bRows = JSON.parse(psql('restore', `select coalesce(jsonb_agg(to_jsonb(t) - ${arr}), '[]'::jsonb)::text from public."${d.table}" t where tenant_id = '${B}';`).trim());
+    const zRows = (json[d.table] || []).map(strip);
+    const keyOf = (r) => keys ? canon(keys.map((k) => r[k])) : canon(r);
+    const bm = new Map();
+    for (const r of bRows) { const k = keyOf(r); (bm.get(k) || bm.set(k, []).get(k)).push(r); }
+    let missing = 0, diffRows = 0;
+    const diffCols = new Set();
+    for (const r of zRows) {
+      const list = bm.get(keyOf(r));
+      if (!list || !list.length) { missing++; continue; }
+      const b2 = list.shift();
+      let rowDiff = false;
+      for (const c of new Set([...Object.keys(r), ...Object.keys(b2)])) {
+        if (canon(r[c]) !== canon(b2[c])) { diffCols.add(c); rowDiff = true; }
+      }
+      if (rowDiff) diffRows++;
+      compared++;
+    }
+    const extra = [...bm.values()].reduce((s2, l) => s2 + l.length, 0);
+    if (missing || extra || diffRows) {
+      /* 値は出さない。表・列の名前と件数だけ */
+      valBad.push(d.table + '（' + [missing ? 'B に無い行 ' + missing : '', extra ? 'ZIP に無い行 ' + extra : '',
+        diffRows ? '値が違う行 ' + diffRows + '・列 ' + [...diffCols].join('・') : ''].filter(Boolean).join('／') + '）');
+    }
+  }
+  return { valBad, compared };
+  }
+  const cmp = compareAll();
+  t('戻し先 B の行の値が、ZIP の db/<表>.json の行と全列一致する（' + cmp.compared + ' 行・キーの列で突き合わせ）', cmp.valBad.length === 0, cmp.valBad.join('、'));
+  /* 突き合わせが空振りしていないことの確かめ: 戻し先の1行の1列・配列の1つを、わざと変えて見つけられるか */
+  psql('restore', `alter table public.master_residents disable trigger user;
+update public.master_residents set kana = kana || 'x', target_apps = array['a'] where tenant_id = '${B}' and source_id = 'X001';
+alter table public.master_residents enable trigger user;`);
+  const cmp2 = compareAll();
+  t('わざと変えた値（master_residents の2列）を、表と列の名前で見つける', cmp2.valBad.length === 1 && /^master_residents（値が違う行 1・列 /.test(cmp2.valBad[0]) &&
+    /kana/.test(cmp2.valBad[0]) && /target_apps/.test(cmp2.valBad[0]), cmp2.valBad.join('、'));
+  t('戻し先の B には A の tenant_id の行が1行も無い（別の DB に戻すため参考）', JSON.parse(psql('restore', 'select coalesce(sum(n), 0) from (' + tenTables.map((n) =>
     `select count(*) n from public."${n}" where tenant_id = '${A}'`).join(' union all ') + ') x;').trim()) === 0, '');
 
   console.log('\n結果:');

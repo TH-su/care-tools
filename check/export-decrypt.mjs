@@ -5,6 +5,8 @@
  * ・パスフレーズは端末のプロンプトで聞く（打った文字は表示しない）。引数では受けない（コマンドの履歴に残るため）。
  *   環境変数 SU_EXPORT_PASS は試験用にだけ読む（ふだんは使わない）
  * ・暗号の方式は画面と同じ su-export-crypt.js を vm で読んで使う（同じ1本＝画面で作った物は必ずここで開ける）
+ * ・区切りごとに読み、戻した区切りをそのまま書く（全体を一度に読まない・持たない）。書いている途中のファイルは「出力.part-番号」で、
+ *   全部の区切りが開けた時だけ出力の名前にする。途中で失敗したら書きかけを消す（壊れた・切れたファイルから半端な ZIP を残さない）
  * ・出力の既定は、入力の名前から .suenc を外した名前（同じフォルダ）。すでにある時は上書きしない
  * ・中身の値・パスフレーズは画面（ターミナル）に出さない。出すのはファイル名と大きさだけ
  * ・外への通信はしない
@@ -74,16 +76,28 @@ async function main(argv) {
   if (fs.existsSync(output)) usage('出力先にもうファイルがあります（上書きしません）: ' + output);
 
   const X = loadCrypt();
-  const bytes = fs.readFileSync(input);
   let pass = process.env.SU_EXPORT_PASS != null ? process.env.SU_EXPORT_PASS : await askHidden('パスフレーズ: ');
-  let plain;
+  const fin = fs.openSync(input, 'r');
+  const size = fs.fstatSync(fin).size;
+  /* 読み口: 頼まれた範囲だけを読む */
+  const src = { size, read: (s, e) => { const b = Buffer.alloc(e - s); const n = fs.readSync(fin, b, 0, e - s, s); return Promise.resolve(b.subarray(0, n)); } };
+  const part = output + '.part-' + process.pid;
+  let fout = null, written = 0, ok = false;
   try {
-    plain = await X.decrypt(bytes, pass);
+    fout = fs.openSync(part, 'wx', 0o600);
+    await X.decrypt(src, pass, { onChunk: (c) => { fs.writeSync(fout, c); written += c.length; } });
+    ok = true;
   } finally {
     pass = null;
+    fs.closeSync(fin);
+    if (fout != null) fs.closeSync(fout);
+    try {
+      if (ok) fs.linkSync(part, output);   // link は出力が既にあれば失敗する（上書きしない）
+    } finally {
+      if (fout != null) fs.unlinkSync(part);
+    }
   }
-  fs.writeFileSync(output, plain, { flag: 'wx', mode: 0o600 });
-  console.error('戻しました: ' + output + '（' + Math.round(plain.length / 1024) + ' KB）');
+  console.error('戻しました: ' + output + '（' + Math.round(written / 1024) + ' KB）');
 }
 
 function isMain() {

@@ -122,10 +122,12 @@ const browser = await chromium.launch();
 const tmp = fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'export-e2e-'));
 const PASS = 'kakuu-pass-0001';   // 架空のパスフレーズ
 const X = loadCrypt();
-async function openPage({ role = 'office', mfa = true, dialog = 'accept', denyAll = false, no0025 = false, viewport = { width: 1280, height: 900 } } = {}) {
+async function openPage({ role = 'office', mfa = true, dialog = 'accept', denyAll = false, no0025 = false, noCrypt = false, viewport = { width: 1280, height: 900 } } = {}) {
   const state = { calls: [], pages: [], gas: [], finish: null, begin: null, denyAll, no0025, dialogs: [], errors: [], posts: [] };
   const context = await browser.newContext({ acceptDownloads: true, viewport });
   await context.route('**/su-auth.js*', (r) => r.fulfill({ status: 200, contentType: 'text/javascript', body: fakeAuth(mfa) }));
+  /* 暗号の部品が読み込めなかった端末の真似（中身の無いスクリプトを返す） */
+  if (noCrypt) await context.route('**/su-export-crypt.js*', (r) => r.fulfill({ status: 200, contentType: 'text/javascript', body: '/* 読み込めなかった */' }));
   await context.route('https://jhbernqawjrzqwrmqrih.supabase.co/**', fakeDb(state));
   await context.route('https://script.google.com/**', fakeGas(state));
   await context.addInitScript((r) => {
@@ -149,7 +151,7 @@ try {
     await page.waitForSelector('#sec-export:not([hidden])', { timeout: 15000 });
     t('管理者には書き出しの枠が出る', await page.isVisible('#b-export'), '');
     t('既定は「暗号化する」が選ばれていて、パスフレーズの2欄が出る', await page.isChecked('#ex-enc-on') && await page.isVisible('#ex-pass') && await page.isVisible('#ex-pass2') && !(await page.isVisible('#ex-reason')), '');
-    t('パスフレーズの欄は type=password・autocomplete=new-password', await page.evaluate(() => ['ex-pass', 'ex-pass2'].every((id) => {
+    t('パスフレーズの欄（開く方も）は type=password・autocomplete=new-password', await page.evaluate(() => ['ex-pass', 'ex-pass2', 'dx-pass'].every((id) => {
       const e = document.getElementById(id); return e.type === 'password' && e.getAttribute('autocomplete') === 'new-password'; })), '');
     if (shots) { fs.mkdirSync(shots, { recursive: true }); await page.locator('#sec-export').screenshot({ path: path.join(shots, 'export-before.png') }); }
     await page.fill('#ex-pass', PASS);
@@ -158,8 +160,8 @@ try {
     const epath = path.join(tmp, dl.suggestedFilename());   // 画面で開く時の名前の扱いも見るため、保存された名前のまま置く
     await dl.saveAs(epath);
     const sealed = fs.readFileSync(epath);
-    t('保存物は暗号ファイル（印 SUEXP1 で始まり、ZIP の印 PK では始まらない）', sealed.subarray(0, 8).equals(Buffer.from('SUEXP1\n\0', 'latin1')) && sealed.indexOf(Buffer.from('PK\u0003\u0004', 'latin1')) !== 0, sealed.subarray(0, 8));
-    const plainZip = Buffer.from(await X.decrypt(sealed, PASS));
+    t('保存物は暗号ファイル（印 SUEXP2 で始まり、ZIP の印 PK では始まらない）', sealed.subarray(0, 8).equals(Buffer.from('SUEXP2\n\0', 'latin1')) && sealed.indexOf(Buffer.from('PK\u0003\u0004', 'latin1')) !== 0, sealed.subarray(0, 8));
+    const plainZip = Buffer.concat((await X.decrypt(sealed, PASS)).map((c) => Buffer.from(c)));
     const zpath = path.join(tmp, 'c.zip');
     fs.writeFileSync(zpath, plainZip);
     t('違うパスフレーズでは戻せない', await X.decrypt(sealed, PASS + '!').then(() => false, (e) => e.code === 'auth'), '');
@@ -280,6 +282,22 @@ try {
     await page.waitForTimeout(300);
     t('2つが合わない: 始めない・一致しないと出す・欄を空にする', !state.calls.includes('export_begin') && state.dialogs.length === 0 &&
       /一致しません/.test(await page.textContent('#ex-msg')) && (await page.inputValue('#ex-pass2')) === '', await page.textContent('#ex-msg'));
+    await context.close();
+  }
+  {
+    const { context, page, state } = await openPage({ noCrypt: true });
+    await page.waitForSelector('#sec-export:not([hidden])', { timeout: 15000 });
+    await page.fill('#ex-pass', PASS); await page.fill('#ex-pass2', PASS);
+    await page.click('#b-export');
+    await page.waitForTimeout(300);
+    t('暗号の部品が無い端末: export_begin を呼ぶ前に断る（確かめも出さない・GAS に送らない）・欄を空にする',
+      !state.calls.includes('export_begin') && state.dialogs.length === 0 && state.gas.length === 0 && /暗号化を扱えません/.test(await page.textContent('#ex-msg')) &&
+      (await page.inputValue('#ex-pass')) === '' && (await page.inputValue('#ex-pass2')) === '', await page.textContent('#ex-msg'));
+    await page.fill('#dx-pass', PASS);
+    await page.click('#b-decrypt');
+    await page.waitForTimeout(300);
+    t('暗号の部品が無い端末: 開く方も断り、欄を空にする', /暗号化を扱えません/.test(await page.textContent('#dx-msg')) && (await page.inputValue('#dx-pass')) === '', await page.textContent('#dx-msg'));
+    t('暗号の部品が無い端末: 画面のエラーなし', state.errors.length === 0, state.errors);
     await context.close();
   }
   {

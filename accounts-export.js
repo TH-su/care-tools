@@ -284,11 +284,14 @@
     var n = Array.from(r).length;
     return (n >= 5 && n <= 200) ? r : null;
   }
-  function concat(parts) {
-    var out = new Uint8Array(parts.reduce(function (s, p) { return s + p.length; }, 0)), at = 0;
-    for (var i = 0; i < parts.length; i++) { out.set(parts[i], at); at += parts[i].length; parts[i] = null; }
-    return out;
+  /* 暗号の部品（su-export-crypt.js）とこの端末の crypto.subtle が使えるか。使えなければ null（例外を外に出さない） */
+  function cryptOk() {
+    try {
+      var XC = window.SUExportCrypt;
+      return (XC && typeof XC.available === 'function' && XC.available() && XC.MIN_PASS >= 8) ? XC : null;
+    } catch (e) { return null; }
   }
+  var NO_CRYPT = 'この端末のブラウザでは暗号化を扱えません（https で開いているか、ブラウザが新しいかを確かめてください）。';
 
   var busy = false;
   async function run() {
@@ -299,13 +302,16 @@
       note('この端末は「現場」の端末として設定されているため、書き出せません。事務所の PC で開いてください。');
       return;
     }
-    var enc = encOn(), pass = null, reason = null;
+    var enc = encOn(), pass = null, reason = null, XC = null;
     if (enc) {
+      /* 暗号の部品が使えるかは、データベースに何か頼む前に確かめる（読み込めていない・crypto.subtle が無い端末では始めない） */
+      XC = cryptOk();
+      if (!XC) { clearPass(); note(NO_CRYPT); return; }
       pass = $('ex-pass').value;
       var pass2 = $('ex-pass2').value;
-      if (pass.length < window.SUExportCrypt.MIN_PASS) {
+      if (pass.length < XC.MIN_PASS) {
         pass = pass2 = null; clearPass();
-        note('パスフレーズは ' + window.SUExportCrypt.MIN_PASS + ' 文字以上にしてください。');
+        note('パスフレーズは ' + XC.MIN_PASS + ' 文字以上にしてください。');
         return;
       }
       if (pass !== pass2) {
@@ -358,21 +364,20 @@
       prog('ZIP を作っています…');
       var started = new Date(b.started_at);
       var name = '全データ_' + stamp(isNaN(started) ? new Date() : started) + '.zip';
-      /* ZIP は部分の並びのまま Blob にする（最後に1つの大きな配列へ写さない＝メモリを2倍にしない） */
+      /* ZIP は部分の並びのまま Blob にする（最後に1つの大きな配列へ写さない＝メモリを2倍にしない）。
+         暗号化する時も、部品の並びを区切り（4MiB）ごとに暗号にして、暗号文の並びのまま Blob にする（全体をつながない）。
+         su-export-crypt.js は読み終えた部品を手放すので、持つのはおよそ ZIP 1つ分＋区切り1つ分 */
       var got = window.SUExport.counts(data);   // 行を手放す前に数える
       var parts = window.SUExport.zipParts(buildFiles(b, data, gas, true), isNaN(started) ? new Date() : started);
       data = null;
       var size;
       if (enc) {
-        /* 暗号は1つのつながった中身にしかかけられない（crypto.subtle は少しずつ暗号にできない）。並びをつなげて、つないだ分から手放す */
         prog('暗号化しています…');
-        var plain = concat(parts);
-        parts = null;
-        var sealed = await window.SUExportCrypt.encrypt(plain, pass);
-        pass = null; plain = null;
+        var sealed = await XC.encrypt(parts, pass);
+        pass = null; parts = null;
         name = name + '.suenc';
-        size = sealed.length;
-        save([sealed], name, 'application/octet-stream');
+        size = sealed.reduce(function (s2, p2) { return s2 + p2.length; }, 0);
+        save(sealed, name, 'application/octet-stream');
         sealed = null;
       } else {
         size = parts.reduce(function (s2, p2) { return s2 + p2.length; }, 0);
@@ -418,17 +423,19 @@
       dxNote('この端末は「現場」の端末として設定されているため、開けません。事務所の PC で開いてください。');
       return;
     }
+    var XC = cryptOk();
+    if (!XC) { passEl.value = ''; dxNote(NO_CRYPT); return; }
     var f = $('dx-file').files && $('dx-file').files[0];
     if (!f) { passEl.value = ''; dxNote('暗号化した書き出し（.suenc）のファイルを選んでください。'); return; }
     dxBusy = true;
     btn.disabled = true;
     var pass = passEl.value;
     try {
-      var bytes = new Uint8Array(await f.arrayBuffer());
-      var plain = await window.SUExportCrypt.decrypt(bytes, pass);
-      pass = null; bytes = null;
+      /* 区切りごとに File.slice で読み、復号した区切りの並びのまま Blob にする（全体を一度に読まない・つながない） */
+      var plain = await XC.decrypt(XC.fromBlob(f), pass);
+      pass = null;
       var out = /\.suenc$/i.test(f.name) ? f.name.replace(/\.suenc$/i, '') : f.name + '.zip';
-      save([plain], out);
+      save(plain, out);
       plain = null;
       dxNote('「' + out + '」を保存しました。使い終わったら消してください。', 'ok');
     } catch (e) {
