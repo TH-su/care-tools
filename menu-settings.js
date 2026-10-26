@@ -4,13 +4,16 @@
  * ボタンの一覧は index.html の中の定義（#menuDef）を読む。並べ替え・非表示の当て方は su-menu.js（メニューと同じ部品）。
  * 区分の作成・名前と絵文字の変更・削除・ボタンを別の区分へ移す（2026-10-26 本人指示）。保存には移行 0023 が要る。
  *   0023 の前でも、区分に触らない変更（並び・非表示）は今までどおり保存できる（sdef・gone・mv は空なら設定に書かない）。
+ * メニューの毬の柄（施設の既定・2026-10-26 代表者の決定）。保存には移行 0025 が要る。
+ *   画面の中では柄を持っておき（toModel で読む）、保存の時は麻の葉の時だけ ball:'asanoha' を書く（菊かがりは書かない＝無い時は菊かがり）。
+ *   麻の葉にした後でほかの設定だけ直して保存しても、柄は消えない。0025 の前でも菊かがりのままなら今までどおり保存できる。
  */
 (function () {
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
   var ROLES = [['admin', '管理者'], ['office', '事務所'], ['field', '現場']];
   var def = null;          // index.html の定義
-  var model = null;        // { secs:[{id, mk, title, officeOnly, custom, tiles:[tile…]}], hide:{admin:{href:1}…} }
+  var model = null;        // { secs:[{id, mk, title, officeOnly, custom, tiles:[tile…]}], hide:{admin:{href:1}…}, ball:'kiku'|'asanoha' }
   var defSec = {};         // 最初からある区分 id → {mk, title, officeOnly}
   var homeOf = {};         // ボタンの鍵 → 既定の区分 id
   var editing = null;      // 名前を変えている区分の id
@@ -50,8 +53,10 @@
     badhide: '表示の設定の形が正しくありません。', badsecs: '区分の並びの形が正しくありません。',
     badkey: 'ボタンのリンク先に使えない文字があります。', toolarge: '設定が大きすぎます。',
     badsdef: '区分の名前・絵文字の形が正しくありません（名前は1〜20字・絵文字は8字まで）。', badgone: '消した区分の形が正しくありません。',
-    badmv: 'ボタンの移し先の形が正しくありません。'
+    badmv: 'ボタンの移し先の形が正しくありません。',
+    badball: 'メニューの毬の柄の形が正しくありません。「菊かがり」か「麻の葉」を選び直してから、もう一度保存してください。'
   };
+  var NEED_0025 = 'メニューの毬の柄を「麻の葉」にして保存するには、データベースの更新（移行 0025）が必要です。毬の柄を「菊かがり」に戻すと、ほかの変更は保存できます。';
   var NEED_0023 = '区分の追加・名前の変更・削除・ボタンの移動を保存するには、データベースの更新（移行 0023）が必要です。区分を変えた設定が残っている間は、並び・表示の変更も保存できません。その時は区分の変更を元に戻すか、「既定に戻す」を押してください。';
 
   // ── 定義を読む（index.html の中の JSON。定義の正本は1つ）──
@@ -83,7 +88,8 @@
         return { id: s.id, mk: s.mk || '', title: s.title || s.id, officeOnly: !!s.officeOnly, custom: !defSec[s.id],
                  tiles: s.tiles.filter(function (t) { return t && typeof t.href === 'string' && t.href; }) };
       }),
-      hide: hide
+      hide: hide,
+      ball: c.ball === 'asanoha' ? 'asanoha' : 'kiku'
     };
   }
   // 画面の形 → 保存する設定（並びは全部書く。後から足したボタンは載らない＝メニューでは区分の末尾・全員に出る）
@@ -107,6 +113,7 @@
     if (Object.keys(sdef).length) cfg.sdef = sdef;
     if (gone.length) cfg.gone = gone;
     if (Object.keys(mv).length) cfg.mv = mv;
+    if (model.ball === 'asanoha') cfg.ball = 'asanoha';   // 菊かがりは書かない（無い＝菊かがり・0025 の前でも保存できる）
     return cfg;
   }
   function needs0023(cfg) { return !!(cfg && (cfg.sdef || cfg.gone || cfg.mv)); }
@@ -337,6 +344,7 @@
     if (model.secs.length >= MAX_SECS) add.appendChild(el('p', 'muted', '区分は' + MAX_SECS + 'までです。'));
     frag.appendChild(add);
     box.replaceChildren(frag);
+    syncBall();
     refreshState();
     if (focusKey) {
       // 動かしたボタンへ手元を戻す（端まで行って押せなくなった時は、反対向きのボタンへ）
@@ -353,6 +361,39 @@
     }
   }
 
+  // メニューの毬の柄（施設の既定）。選択は画面の中の model.ball だけを変え、各端末へは「保存する」で届く
+  function ballRadios() { return document.querySelectorAll('#ball-card input[name="ball"]'); }
+  function syncBall() {
+    var rs = ballRadios();
+    for (var i = 0; i < rs.length; i++) { rs[i].checked = !!model && rs[i].value === model.ball; rs[i].disabled = busy; }
+  }
+  (function () {
+    var rs = ballRadios();
+    for (var i = 0; i < rs.length; i++) rs[i].addEventListener('change', function (e) {
+      if (!model || !e.target.checked || (e.target.value !== 'kiku' && e.target.value !== 'asanoha')) return;
+      model.ball = e.target.value;
+      refreshState();
+    });
+  })();
+  // 見本（完成した毬・メニューの見出しと同じ小さい描き方）。部品（su-itomari.js）が無い・描けない時は見本なしで選べる
+  function drawBallPreviews() {
+    try {
+      if (!window.SUItomari || !def) return;
+      var all = [];
+      def.sections.forEach(function (s) {
+        if (!s || typeof s.id !== 'string' || !Array.isArray(s.tiles) || s.id === 'sec-setup' || s.id === 'sec-help') return;
+        s.tiles.forEach(function (t) { if (t && typeof t.href === 'string' && t.href && homeOf[t.href] === s.id && all.indexOf(t.href) < 0) all.push(t.href); });
+      });
+      var pv = document.querySelectorAll('#ball-card .ms-ball-pv');
+      for (var i = 0; i < pv.length; i++) {
+        var svg = SUItomari.render({ kind: pv[i].getAttribute('data-ball'), small: true, shown: all, all: all, px: 56 });
+        if (svg) pv[i].replaceChildren(svg);
+      }
+    } catch (e) {
+      try { if (window.SUErrors && SUErrors.note) SUErrors.note('メニューの毬', e, 'menu-settings.js'); } catch (e2) { /* 見本なしで選べる */ }
+    }
+  }
+
   async function save(cfg, label) {
     busy = true; render(); msg('');
     var r;
@@ -364,7 +405,9 @@
     var d = r.data || {};
     if (d.ok !== true) {
       render();
-      msg((d.error === 'badshape' && needs0023(cfg)) ? NEED_0023 : (ERR[d.error] || ('保存できませんでした（' + (d.error || '理由不明') + '）。')));
+      // 0025 の前の menu_put は ball のキーを badshape で断る（0023 の区分のキーと同じ書き方）
+      msg((d.error === 'badshape' && cfg && cfg.ball) ? NEED_0025
+        : (d.error === 'badshape' && needs0023(cfg)) ? NEED_0023 : (ERR[d.error] || ('保存できませんでした（' + (d.error || '理由不明') + '）。')));
       if (d.error === 'conflict' && confirm(ERR.conflict + '\n\n今すぐ読み直しますか？（この画面の変更は消えます）')) {
         window.removeEventListener('beforeunload', guard);
         location.reload();
@@ -390,7 +433,7 @@
     render(); msg('');
   });
   $('b-reset').addEventListener('click', function () {
-    if (!confirm('メニューを既定の並びに戻し、すべての役割に全部のボタンを出しますか？\n\n保存されている並び・非表示・区分の名前・追加した区分・ボタンの移動の設定は消えます。')) return;
+    if (!confirm('メニューを既定の並びに戻し、すべての役割に全部のボタンを出しますか？\n\n保存されている並び・非表示・区分の名前・追加した区分・ボタンの移動・毬の柄（施設の既定）の設定は消えます。')) return;
     save(null, '既定に戻しました。各端末でメニューを開き直すと反映されます。');
   });
 
@@ -427,6 +470,7 @@
       model = toModel(r.data.config);
       baseline = JSON.stringify(toConfig());
       render();
+      drawBallPreviews();
       view('admin');
       // 施設情報が後から届いたら名前を差し替えて描き直す（入力中の変更は model に残っているので消えない）
       try { if (window.SUFacility && SUFacility.onReady) SUFacility.onReady(function () { if (model) render(); }); } catch (e) { /* 一般名のまま */ }

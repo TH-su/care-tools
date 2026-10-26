@@ -5,6 +5,7 @@
      1. 計画書が端末に残すのは件数と数えた日だけ（氏名・利用者Noを入れない）。一覧の絞込に関係なく「在籍デイ利用者」で数える
      2. 一覧の情報・名簿（入居者マスタ）・デイ利用者の判定（週間計画）の3つが読めた時だけ書く。現場端末では書かない
      3. メニューは読むだけ（書かない・送らない）。現場端末では読まない。形が違う・数えた日が今日より先・件数が整数でない時は出さない
+        （メニューが端末に書くのは毬の柄だけで、su-menu.js の SUMenu.setBall を通す・2026-10-26 代表者の決定）
      4. 0件の項目は書かず、全部0件なら札を出さない（今と同じ見た目）
    ★日付・件数はすべて架空。 */
 'use strict';
@@ -98,7 +99,8 @@ const badge = INDEX.slice(INDEX.indexOf('function dueBadge'), INDEX.indexOf('fun
 t('現場端末（is-field）では読まない', /classList\.contains\('is-field'\)\) return null;/.test(badge), '');
 t('読めない・壊れている時は札を出さない（例外を外に出さない）', /\} catch \(e\) \{ return null; \}/.test(badge), '');
 t('札の文字は textContent で入れる（el を使う）', /el\('span', 'due', txt\)/.test(badge), '');
-t('メニューは端末の保存領域へ書かない・通信しない', !/localStorage\.(setItem|removeItem|clear)\(/.test(INDEX) && !/fetch\(|XMLHttpRequest/.test(INDEX), '');
+t('メニューは端末の保存領域へ直接書かない・通信しない（書くのは毬の柄だけで SUMenu.setBall を通す）', !/localStorage\.(setItem|removeItem|clear)\(/.test(INDEX) && !/fetch\(|XMLHttpRequest/.test(INDEX)
+  && (INDEX.match(/SUMenu\.setBall\(/g) || []).length === 1 && !/tp_menu_due/.test(INDEX.slice(INDEX.indexOf('function drawBall'), INDEX.indexOf('function drawBall') + 2000)), '');
 const def = JSON.parse(INDEX.slice(INDEX.indexOf('>', INDEX.indexOf('id="menuDef"')) + 1, INDEX.indexOf('</script>', INDEX.indexOf('id="menuDef"'))));
 const tiles = def.sections.flatMap((s) => s.tiles);
 const withDue = tiles.filter((x) => x.due);

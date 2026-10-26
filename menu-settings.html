@@ -18,9 +18,11 @@
   ★これは入口の整理であって守りではない。隠したボタンのアプリも、URL を知っていれば開ける（守りは各アプリと RLS）。
   ★現場の端末では、事務所専用のボタンはこの設定にかかわらず出ない（index.html の is-field の仕組み）。
   ★表示はすべて textContent。氏名・記録は扱わない。
+  ★メニューの毬の柄（施設の既定・2026-10-26 代表者の決定・移行 0025）。麻の葉の時だけ設定に ball を書く（菊かがりは書かない＝無い時は菊かがり）。
+    見本は su-itomari.js が図形を1つずつ作って描く（style を使わない＝この画面の CSP のまま）。
 -->
 <link rel="stylesheet" href="su-auth.css?v=2026-09-26">
-<link rel="stylesheet" href="menu-settings.css?v=2026-10-26">
+<link rel="stylesheet" href="menu-settings.css?v=2026-10-26.2">
 </head>
 <body>
 <header class="hdr">
@@ -51,6 +53,14 @@
       </ul>
       <p class="muted">「現場端末では出ません」の付いたボタンは、端末の用途が「現場」の端末では、この設定にかかわらず出ません。「使い方・困った時」は全員に出ます。</p>
     </section>
+    <section class="cd" id="ball-card">
+      <h2 id="ball-h">メニューの毬の柄（施設の既定）</h2>
+      <div class="ms-ball" role="radiogroup" aria-labelledby="ball-h">
+        <label class="ms-ball-opt"><input type="radio" name="ball" value="kiku"><span class="ms-ball-pv" data-ball="kiku"></span><span class="ms-ball-nm">菊かがり</span></label>
+        <label class="ms-ball-opt"><input type="radio" name="ball" value="asanoha"><span class="ms-ball-pv" data-ball="asanoha"></span><span class="ms-ball-nm">麻の葉</span></label>
+      </div>
+      <p class="muted">各端末でメニューの毬を押して選んだ柄は、その端末ではこの既定より優先されます。</p>
+    </section>
     <div id="secs"></div>
     <section class="cd sticky-acts">
       <p class="muted" id="state">まだ保存していない変更はありません。</p>
@@ -64,8 +74,9 @@
 </main>
 <script src="supabase-js-2.112.4.js"></script>
 <script src="su-auth.js?v=2026-10-24"></script>
-<script src="su-menu.js?v=2026-10-26"></script>
+<script src="su-menu.js?v=2026-10-26.2"></script>
+<script src="su-itomari.js?v=2026-10-26"></script>
 <script src="su-facility.js?v=2026-10-26"></script>
-<script src="menu-settings.js?v=2026-10-26"></script>
+<script src="menu-settings.js?v=2026-10-26.2"></script>
 </body>
 </html>

@@ -13,25 +13,37 @@
  *
  * 設定（config）の形（共通 DB 0020 menu_settings と同じ）:
  *   { ver:1, order:{区分id:[ボタンの鍵…]}, hide:{admin|office|field:[ボタンの鍵…]}, secs:[区分id…],
- *     sdef:{区分id:{mk, title}}, gone:[区分id…], mv:{ボタンの鍵:区分id} }      ← sdef・gone・mv は 0023（2026-10-26 本人指示）
+ *     sdef:{区分id:{mk, title}}, gone:[区分id…], mv:{ボタンの鍵:区分id}, ball:'asanoha' }
+ *     ← sdef・gone・mv は 0023（2026-10-26 本人指示）。ball は 0025（施設の既定の毬の柄・2026-10-26 代表者の決定）
  *   ボタンの鍵はリンク先（href）。設定に無いボタン（後から足したもの）は既定の位置関係のまま末尾・全員に出す。
  *   sdef  最初からある区分の名前・絵文字の上書き、または管理者が作った区分（id がページの定義に無いもの）
  *   gone  消した最初からある区分。中にボタンが残る時（後から足したボタン・移し先が消えた等）は消さずに出す＝ボタンを失わない
  *   mv    既定と違う区分へ移したボタン。移し先が無い・消した区分なら既定の区分に出す。
  *         事務所専用の区分（officeOnly）から移したボタンは、移した先でも事務所専用のまま（現場端末で出さない仕組みを外さない）
  *   設定に無い区分（後から足した区分）は、既定で前にある区分の直後に置く（末尾に回さない）。
+ *   ball  施設の既定の毬の柄。'asanoha' の時だけ書く（無い＝菊かがり）。'kiku' やほかの値は捨てる
+ *
+ * 毬の柄（2026-10-26 代表者の決定）:
+ *   ★端末に書いてよいのは鍵 su_menu_ball だけ、値は 'kiku'・'asanoha' だけ。書くのはここの setBall だけ（メニューの画面は書かない）。
+ *   柄の決め方: 端末の選択 → 施設の既定（ログインして読めた設定の控えだけ）→ 菊かがり。
+ *   選んだ柄が施設の既定と同じ時は鍵を消す（端末の選択を解いて、施設の既定に従う状態に戻す）。
  *
  * 使い方:
  *   SUMenu.arrange(def, config, role) → 並べ替え・非表示を当てた定義（元の def は変えない）。純関数（check/unit/menu_arrange_test.js）
  *   SUMenu.layout(def, cleaned)        → 非表示を当てる前の区分とボタンの配置（メニューの設定の画面が使う）。空の区分も残す
  *   SUMenu.readCache()                → 端末の控え {role, config} か null
  *   SUMenu.startSync(onChange)        → ページの読み込みが終わってから設定を読み、控えと違えば onChange(config, role) を呼ぶ
+ *   SUMenu.ball()                     → 今の毬の柄 'kiku' | 'asanoha'（端末の選択 → 施設の既定 → 菊かがり）
+ *   SUMenu.getBall() / setBall(kind)  → 端末の選択（無い・壊れている時は null）／端末の選択を残す（成功で true）
+ *   SUMenu.chooseBall(device, config) → 柄の決め方の純関数（config は clean() を通したもの）
  */
 (function () {
   'use strict';
   if (window.SUMenu) return;
 
   var CACHE_KEY = 'su_menu_v1';
+  var BALL_KEY = 'su_menu_ball';
+  var BALLS = ['kiku', 'asanoha'];
   var ROLES = ['admin', 'office', 'field'];
   var KEY_RE = /^[A-Za-z0-9_.:\/?=&#%~-]{1,200}$/;
   var SEC_RE = /^[A-Za-z0-9_-]{1,40}$/;
@@ -80,6 +92,8 @@
     if (isObj(cfg.mv)) Object.keys(cfg.mv).forEach(function (k) {
       if (KEY_RE.test(k) && typeof cfg.mv[k] === 'string' && SEC_RE.test(cfg.mv[k])) out.mv[k] = cfg.mv[k];
     });
+    // 0025 の施設の既定の毬の柄。'asanoha' の時だけ持つ（'kiku'・ほかの値は捨てる＝無い時は菊かがり）
+    if (cfg.ball === 'asanoha') out.ball = 'asanoha';
     return out;
   }
 
@@ -254,6 +268,30 @@
 
   function same(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
 
+  /* ── 毬の柄（2026-10-26 代表者の決定）── */
+  function chooseBall(device, config) {
+    if (BALLS.indexOf(device) >= 0) return device;
+    return (config && typeof config === 'object' && config.ball === 'asanoha') ? 'asanoha' : 'kiku';
+  }
+  function getBall() {
+    try { var v = localStorage.getItem(BALL_KEY); return BALLS.indexOf(v) >= 0 ? v : null; } catch (e) { return null; }
+  }
+  /* 施設の既定（ログインして読めた設定の控えだけ。ログインしていない端末は菊かがり） */
+  function cachedConfig() {
+    try { var c = readCache(); return c && c.config; } catch (e) { return null; }
+  }
+  function ball() { return chooseBall(getBall(), cachedConfig()); }
+  function setBall(kind) {
+    if (BALLS.indexOf(kind) < 0) return false;
+    try {
+      // 鍵を消すのは施設の既定が分かっている時だけ（ログイン直後・電波が無い間は控えが無く、既定を菊かがりと決めつけると最後に選んだ柄が残らない）
+      var c = cachedConfig();
+      if (c && kind === chooseBall(null, c)) localStorage.removeItem(BALL_KEY);
+      else localStorage.setItem(BALL_KEY, kind);
+      return true;
+    } catch (e) { return false; }
+  }
+
   function startSync(onChange) {
     if (typeof Promise === 'undefined') return;
     function run() {
@@ -281,5 +319,6 @@
     window.addEventListener('pageshow', function (e) { if (e.persisted) run(); });
   }
 
-  window.SUMenu = { arrange: arrange, layout: layout, clean: clean, readCache: readCache, clearCache: clearCache, startSync: startSync, ROLES: ROLES, KEEP: KEEP };
+  window.SUMenu = { arrange: arrange, layout: layout, clean: clean, readCache: readCache, clearCache: clearCache, startSync: startSync, ROLES: ROLES, KEEP: KEEP,
+    ball: ball, getBall: getBall, setBall: setBall, chooseBall: chooseBall, BALLS: BALLS.slice() };
 })();
