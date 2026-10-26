@@ -10,6 +10,12 @@
      7 端末の控えは役割が分からない時・ログインの記録が無い時は使わない
      8 メニュー（index.html）の定義に、ケアログ・デイが並び、入居者の区分の末尾に担当者会議の記録がある。
        後から足したボタンを区分の末尾に置くので、前の定義で保存した設定でも並びと「新しい行から始める」が崩れない
+     9 区分の作成・名前・削除・ボタンの移し先（0023・2026-10-26 本人指示）
+       - デイの区分は入居者の直後。前の定義で保存した設定（入居者の並びにデイのボタンが残る）でも、デイの区分に出て入居者の直後に置く
+       - 作った区分・名前の上書き・移し先が効く。移し先が無い・消した区分なら既定の区分へ（ボタンを失わない）
+       - 消した区分は、ボタンが残る時だけ出す。事務所専用の区分から移したボタンは事務所専用のまま
+       - 形の違う1件だけを捨てる（名前が長い・制御文字など）
+       - 隠せないボタン（使い方・困った時）は事務所専用の区分へ移さない
    画面のコードは書き換えず、su-menu.js をそのまま読み込んで動かす。 */
 'use strict';
 const fs = require('fs');
@@ -64,8 +70,12 @@ const v2 = M.arrange(DEF, { ver: 1, order: { 'sec-resident': want.concat(['no-su
 const got = hrefs(v2, 'sec-resident');
 t('2a 区分の中: 設定の順が先・存在しない鍵と重複は飛ばす', got[0] === want[0] && got[1] === want[1], got.slice(0, 3));
 t('2b 残りは既定の位置関係のまま末尾（数も同じ）', JSON.stringify(got.slice(2)) === JSON.stringify(r0.filter(h => want.indexOf(h) < 0)) && got.length === r0.length);
-t('2c 区分の並び: 設定の順が先・残りは既定の順', JSON.stringify(v2.sections.map(s => s.id)) ===
-  JSON.stringify(['sec-kitchen', 'sec-staff'].concat(DEF.sections.map(s => s.id).filter(id => id !== 'sec-kitchen' && id !== 'sec-staff'))));
+t('2c 区分の並び: 設定の順が先・設定に無い区分は既定で前にある区分の直後（2026-10-26 から。前は末尾）', (function () {
+  const got = v2.sections.map(s => s.id), ids = DEF.sections.map(s => s.id);
+  if (got.length !== ids.length || got.indexOf('sec-kitchen') > got.indexOf('sec-staff')) return false;
+  // 設定に無い区分は、既定で1つ前の区分のすぐ後ろ（先頭の区分なら先頭）
+  return ids.every((id, i) => ['sec-kitchen', 'sec-staff'].indexOf(id) >= 0 || (i === 0 ? got[0] === id : got[got.indexOf(ids[i - 1]) + 1] === id));
+})(), v2.sections.map(s => s.id));
 t('2d 並べ替えない区分は同じ並び', JSON.stringify(hrefs(v2, 'sec-staff')) === JSON.stringify(res('sec-staff')));
 
 console.log('3 役割ごとの非表示');
@@ -97,7 +107,7 @@ t('6a 元の定義は書き換わらない', JSON.stringify(DEF) === DEF_TEXT);
 const off = DEF.sections.find(s => s.id === 'sec-resident').tiles.filter(x => x.officeOnly).map(x => x.href);
 const v6 = M.arrange(DEF, { ver: 1, order: { 'sec-resident': r0.slice().reverse() } }, 'admin');
 t('6b 並べ替えても事務所専用の印は残る', off.length > 0 && off.every(h => v6.sections.find(s => s.id === 'sec-resident').tiles.find(x => x.href === h).officeOnly === true));
-t('6c 区分ごとの事務所専用の印も残る', M.arrange(DEF, { ver: 1, secs: ['sec-setup'] }, 'admin').sections[0].officeOnly === true);
+t('6c 区分ごとの事務所専用の印も残る', M.arrange(DEF, { ver: 1, secs: ['sec-setup'] }, 'admin').sections.find(s => s.id === 'sec-setup').officeOnly === true);
 
 console.log('7 端末の控え');
 t('7a 控えが無い → null', load().readCache() === null);
@@ -111,10 +121,10 @@ t('7e ログインの記録が無い端末では控えを使わない（ログ�
 
 console.log('8 ケアログのボタン');
 const resTiles = DEF.sections.find(s => s.id === 'sec-resident').tiles;
-const care = resTiles.slice(-3)[0], day = resTiles.slice(-2)[0], mtg = resTiles.slice(-1)[0];
-t('8a 入居者の区分の末尾から3枚目にケアログ（別サイト・事務所専用ではない）',
+const care = resTiles.slice(-2)[0], day = DEF.sections.find(s => s.id === 'sec-daycare').tiles.slice(-1)[0], mtg = resTiles.slice(-1)[0];
+t('8a 入居者の区分の末尾から2枚目にケアログ（別サイト・事務所専用ではない。デイは 2026-10-26 にデイの区分へ移した）',
   care.href === 'https://th-su.github.io/care-log/' && care.nm === 'ケアログ' && care.ext === true && !care.officeOnly, care);
-t('8c ケアログの次はデイ（ケアログのデイの画面・名前の事業所名は施設情報から・別サイト・事務所専用ではない）',
+t('8c デイの区分の末尾はデイ（ケアログのデイの画面・名前の事業所名は施設情報から・別サイト・事務所専用ではない）',
   day.href === 'https://th-su.github.io/care-log/#/record/daycare' && day.nm === 'デイ {{通所}}' && day.ext === true && !day.officeOnly, day);
 t('8d 末尾は担当者会議の記録（事務所専用・2026-10-25）',
   mtg.href === 'care-meeting.html' && mtg.nm === '担当者会議の記録' && mtg.officeOnly === true && !mtg.ext, mtg);
@@ -129,6 +139,56 @@ t('8b ボタンの鍵（リンク先）はすべてデータベースの検査�
   return all.every(h => /^[A-Za-z0-9_.:\/?=&#%~-]{1,200}$/.test(h)) && new Set(all).size === all.length
     && DEF.sections.every(s => /^[A-Za-z0-9_-]{1,40}$/.test(s.id));
 })());
+
+console.log('9 区分の作成・名前・削除・ボタンの移し先');
+const ids = v => v.sections.map(s => s && s.id);
+const DAY = ['daycare-roster.html', 'training-plan.html', 'https://th-su.github.io/care-log/#/record/daycare'];
+const daySec = DEF.sections.find(s => s.id === 'sec-daycare');
+t('9a 定義: デイの区分は入居者の直後・名前は「デイ {{通所}}」・3つのボタン', !!daySec && ids(DEF)[ids(DEF).indexOf('sec-resident') + 1] === 'sec-daycare'
+  && daySec.title === 'デイ {{通所}}' && JSON.stringify(daySec.tiles.map(x => x.href)) === JSON.stringify(DAY), daySec && daySec.tiles.map(x => x.href));
+t('9b 定義: 3つのボタンは入居者の区分にもう無い', DAY.every(h => res('sec-resident').indexOf(h) < 0));
+t('9c 定義: 訓練計画は事務所専用・期限の札の印のまま', daySec.tiles[1].officeOnly === true && daySec.tiles[1].due === 'tp_menu_due');
+const OLD = { ver: 1, secs: ['sec-staff', 'sec-resident', 'sec-kitchen', 'sec-setup', 'sec-help'],
+  order: { 'sec-resident': res('sec-resident').slice(0, 3).concat(DAY).concat(res('sec-resident').slice(3)) } };
+const v9 = M.arrange(DEF, OLD, 'office');
+t('9d 前の定義で保存した設定: デイの区分は入居者の直後に出る（末尾に回らない）', ids(v9)[ids(v9).indexOf('sec-resident') + 1] === 'sec-daycare', ids(v9));
+t('9e 前の定義で保存した設定: 入居者の並びに残ったデイのボタンはデイの区分に出る（入居者には出ない）',
+  JSON.stringify(hrefs(v9, 'sec-daycare')) === JSON.stringify(DAY) && DAY.every(h => hrefs(v9, 'sec-resident').indexOf(h) < 0));
+t('9f 前の定義で保存した設定: 入居者の並びは既定のまま・フェイスシートの新しい行の印も残る',
+  hrefs(v9, 'sec-resident').join('|') === res('sec-resident').join('|') && v9.sections.find(s => s.id === 'sec-resident').tiles.some(x => x.href === 'facesheet.html' && x.newrow));
+const C9 = { ver: 1, secs: ['sec-staff', 'c-new1', 'sec-resident'],
+  sdef: { 'c-new1': { mk: '🧪', title: '試しの区分' }, 'sec-staff': { mk: '', title: '職員さん' } },
+  mv: { 'weight-record.html': 'c-new1', 'connection-settings.html': 'sec-staff', 'supplies.html': 'no-such', 'shift-app.html': 'sec-kitchen' },
+  gone: ['sec-kitchen'], order: { 'c-new1': ['weight-record.html'] } };
+const w = M.arrange(DEF, C9, 'admin');
+const sec = (v, id) => v.sections.find(s => s.id === id);
+t('9g 作った区分が設定の位置に出て、名前・絵文字・移したボタンが入る', ids(w)[1] === 'c-new1' && sec(w, 'c-new1').title === '試しの区分' && sec(w, 'c-new1').mk === '🧪'
+  && hrefs(w, 'c-new1').join() === 'weight-record.html' && sec(w, 'c-new1').custom === true, ids(w));
+t('9h 最初からある区分の名前・絵文字を上書きできる（絵文字は空でもよい）', sec(w, 'sec-staff').title === '職員さん' && sec(w, 'sec-staff').mk === '');
+t('9i 移したボタンは元の区分に無い', hrefs(w, 'sec-resident').indexOf('weight-record.html') < 0);
+t('9j 移し先が無い区分なら既定の区分に出す', hrefs(w, 'sec-resident').indexOf('supplies.html') >= 0);
+t('9k 消した区分へは移せない（既定の区分に出す）', hrefs(w, 'sec-staff').indexOf('shift-app.html') >= 0);
+t('9l 消した区分は、ボタンが残っていると消さずに出す（後から足したボタンを失わない）', !!sec(w, 'sec-kitchen'));
+const w2 = M.arrange(DEF, Object.assign({}, C9, { mv: Object.assign({}, C9.mv, { 'https://kitchen-app-9o7.pages.dev/': 'sec-staff' }) }), 'admin');
+t('9m 消した区分は、ボタンを全部移せば出ない', !sec(w2, 'sec-kitchen') && hrefs(w2, 'sec-staff').indexOf('https://kitchen-app-9o7.pages.dev/') >= 0);
+const cs = sec(w, 'sec-staff').tiles.find(x => x.href === 'connection-settings.html');
+t('9n 事務所専用の区分（設定）から移したボタンは、移した先でも事務所専用', cs && cs.officeOnly === true);
+t('9o 移したボタンの元の定義は書き換わらない', !DEF.sections.find(s => s.id === 'sec-setup').tiles[0].officeOnly && JSON.stringify(DEF) === DEF_TEXT);
+t('9p ボタンが出入りした区分では「新しい行から始める」を外す', !sec(w, 'sec-resident').tiles.some(x => x.newrow));
+t('9q 役割の非表示は移した先でも効く', hrefs(M.arrange(DEF, Object.assign({}, C9, { hide: { field: ['weight-record.html'] } }), 'field'), 'c-new1').length === 0);
+const e9 = M.clean({ ver: 1, sdef: { 'c-a': { mk: '', title: 'あ'.repeat(21) }, 'c-b': { mk: '', title: 'a\nb' }, 'c-c': { mk: '123456789', title: 'x' },
+  'c-d': { title: 'x' }, 'c ok': { mk: '', title: 'x' }, 'c-e': { mk: '🌊', title: 'あ'.repeat(20) } }, gone: 'x', mv: { 'a b': 'sec-a', 'x.html': 'sec/a', 'y.html': 'sec-a' } });
+t('9r 形の違う1件だけを捨てる（名前21字・改行・絵文字9字・絵文字なし・区分idが変）', JSON.stringify(Object.keys(e9.sdef)) === '["c-e"]', e9.sdef);
+t('9s 名前の字数は文字で数える（絵文字1つで1字）', !!M.clean({ ver: 1, sdef: { 'c-a': { mk: '🏃‍♀️', title: 'x' } } }).sdef['c-a'] === (Array.from('🏃‍♀️').length <= 8));
+t('9t 形の違う gone・mv は捨てる（ほかは効く）', e9.gone.length === 0 && JSON.stringify(e9.mv) === '{"y.html":"sec-a"}', e9);
+t('9u 作った区分はボタンが無くても配置（layout）に残る（設定の画面で中を空にしても消えない）',
+  M.layout(DEF, M.clean({ ver: 1, sdef: { 'c-z': { mk: '', title: '空' } } })).some(s => s.id === 'c-z' && s.tiles.length === 0));
+t('9w 「使い方・困った時」は事務所専用の区分（設定）へ移さない（現場端末から消えないように・反証レビューの指摘）', (function () {
+  const v = M.arrange(DEF, { ver: 1, mv: { 'help.html': 'sec-setup' }, gone: ['sec-help'] }, 'field');
+  return hrefs(v, 'sec-help').join() === 'help.html' && hrefs(v, 'sec-setup').indexOf('help.html') < 0;
+})());
+t('9x 「使い方・困った時」はふつうの区分へは移せる', hrefs(M.arrange(DEF, { ver: 1, mv: { 'help.html': 'sec-staff' } }, 'field'), 'sec-staff').indexOf('help.html') >= 0);
+t('9v 0023 のキーだけの設定でも、区分の並びは既定のまま', ids(M.arrange(DEF, { ver: 1, sdef: { 'sec-staff': { mk: '', title: 'x' } } }, 'admin')).join() === ids(DEF).join());
 
 console.log(`\n合格 ${pass} / 不合格 ${fail}`);
 process.exit(fail ? 1 : 0);

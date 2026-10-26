@@ -3,7 +3,7 @@
 .ms-head h2 { margin: 0; font-size: 1.1875rem; font-weight: 700; flex: 1; display: flex; align-items: center; gap: 8px; }
 .ms-list { list-style: none; margin: 0; padding: 0; }
 .ms-list li {
-  display: grid; grid-template-columns: 1fr auto auto; gap: 8px 14px; align-items: center;
+  display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px 14px; align-items: center;
   padding: 10px 0; border-top: 1px solid var(--g2);
 }
 .ms-list li:first-child { border-top: 0; }
@@ -23,11 +23,33 @@
 .ms-ops { display: flex; gap: 6px; }
 .btn.mv { min-width: 44px; min-height: 44px; padding: 0 10px; font-size: 1.125rem; }
 .sticky-acts { position: sticky; bottom: 0; z-index: 5; margin-bottom: 0; }
+/* 区分の作成・名前・削除・ボタンの移し先（2026-10-26 本人指示） */
+.ms-head .ms-ops { flex-wrap: wrap; }
+.ms-ops .btn.sm { min-height: 44px; }
+.ms-hint { margin: 2px 0 6px; }
+.ms-to { display: inline-flex; align-items: center; gap: 6px; font-size: 0.9375rem; font-weight: 700; color: var(--g7); }
+.ms-to select, .ms-field input {
+  min-height: 44px; padding: 6px 10px; border: 1px solid var(--g3); border-radius: 10px;
+  font: inherit; font-size: 1rem; color: var(--g9); max-width: 14em;   /* 下地は画面の既定（color-scheme: light ＝白）*/
+}
+.ms-to select:focus-visible { outline: 3px solid var(--pri); outline-offset: 2px; }
+.ms-edit { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; padding: 12px; margin: 4px 0 8px; border: 1px solid var(--g3); border-radius: 12px; background: var(--g1); }
+.ms-edit .acts { margin-top: 0; }
+.ms-field { display: flex; flex-direction: column; gap: 4px; font-size: 0.9375rem; font-weight: 700; }
+.ms-field input { max-width: none; width: 16em; }
+.ms-field.mk input { width: 6em; }
+.ms-err { flex-basis: 100%; margin: 0; color: var(--ng); font-weight: 700; }
+.ms-err:empty { display: none; }
+.ms-add { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ms-add .btn { min-height: 44px; }
 @media (max-width: 600px) {
-  .ms-list li { grid-template-columns: 1fr auto; grid-template-areas: "nm ops" "roles roles"; }
+  .ms-list li { grid-template-columns: 1fr auto; grid-template-areas: "nm ops" "roles roles" "to to"; }
   .ms-list li > .ms-nm { grid-area: nm; }
   .ms-list li > .ms-ops { grid-area: ops; }
   .ms-list li > .ms-roles { grid-area: roles; }
+  .ms-list li > .ms-to { grid-area: to; }
+  .ms-to select { max-width: none; flex: 1; }
+  .ms-field, .ms-field input { width: 100%; }
 }
 /* スマホでは下に張り付く保存欄を薄くする（一覧が見える高さを残す） */
 @media (max-width: 600px) {
