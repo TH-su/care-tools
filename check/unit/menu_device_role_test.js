@@ -8,7 +8,8 @@
      2. 「戻る」でページがそのまま戻った時（pageshow の persisted）だけ測り直し、印を今の役割に合わせる。普通の表示では測り直さない
      3. 印を付ける処理は <body> より前にある（タイルが一瞬見えてから消える「ちらつき」を出さない）。
         印のある時に事務所専用（data-office-only）のタイルを隠す CSS は !important 付き。
-        このページは su_device_role を読むだけで、端末の保存領域へ書かない
+        このページは su_device_role を読むだけで、端末の保存領域へ直接書かない。
+        書いてよいのは毬の柄（鍵 su_menu_ball・値は 'kiku'・'asanoha' だけ）だけで、書くのは su-menu.js の setBall だけ（2026-10-26 代表者の決定）
      4. 事業所名の差し込み（data-fac-name）は、施設情報が読めた時だけ officeName の名前に置き換える。
         読めていない時は一般名のまま触らず、読めた時（onReady）に置き換える。施設情報の部品が無くても止まらない */
 'use strict';
@@ -97,7 +98,20 @@ const bodyAt = HTML.search(/^<body>/m);   // 先頭のコメントにも「<body
 t('役割の判定は <body> より前（head の中）にある', ROLE.at > 0 && ROLE.at < bodyAt && ROLE.at < HTML.indexOf('</head>'), [ROLE.at, bodyAt]);
 t('印のある時に data-office-only を隠す CSS が !important 付きである', /\.is-field \[data-office-only\]\s*\{\s*display:\s*none\s*!important\s*;?\s*\}/.test(HTML), '');
 t('隠す CSS は <body> より前にある', HTML.indexOf('.is-field [data-office-only]') > 0 && HTML.indexOf('.is-field [data-office-only]') < bodyAt, '');
-t('ページのどこにも端末の保存領域への書き込み（setItem・removeItem・clear）が無い', !/localStorage\.(setItem|removeItem|clear)\(/.test(HTML), '');
+t('ページのどこにも端末の保存領域への直接の書き込み（setItem・removeItem・clear）が無い', !/localStorage\.(setItem|removeItem|clear)\(/.test(HTML), '');
+{
+  /* 毬の柄だけは書いてよい（2026-10-26 代表者の決定）。ページは SUMenu.setBall を通すだけ。su-menu.js の書き込みは控え（su_menu_v1）と毬の柄だけで、
+     毬の柄の鍵を書くのは setBall の中だけ */
+  const SM = fs.readFileSync(path.join(ROOT, 'su-menu.js'), 'utf8');
+  t('ページが端末に書く道は SUMenu.setBall の1か所だけ', (HTML.match(/SUMenu\.setBall\(/g) || []).length === 1, (HTML.match(/SUMenu\.setBall\(/g) || []).length);
+  t("su-menu.js の毬の柄の鍵は su_menu_ball・値は 'kiku'・'asanoha' だけ", /var BALL_KEY = 'su_menu_ball';/.test(SM) && /var BALLS = \['kiku', 'asanoha'\];/.test(SM), '');
+  const writes = SM.match(/localStorage\.(setItem|removeItem)\(([A-Z_]+)/g) || [];
+  t('su-menu.js が書く鍵は控え（CACHE_KEY）と毬の柄（BALL_KEY）だけ', writes.length > 0 && writes.every(w => /\((CACHE_KEY|BALL_KEY)$/.test(w)), writes);
+  const sb = SM.slice(SM.indexOf('function setBall'), SM.indexOf('\n  }\n', SM.indexOf('function setBall')));
+  const outside = SM.replace(sb, '');
+  t('毬の柄の鍵を書く・消すのは setBall の中だけで、書く前に値を確かめる', /if \(BALLS\.indexOf\(kind\) < 0\) return false;/.test(sb) && /localStorage\.setItem\(BALL_KEY, kind\)/.test(sb)
+    && !/localStorage\.(setItem|removeItem)\(BALL_KEY/.test(outside), '');
+}
 t('役割の判定が読むのは su_device_role だけ', (ROLE.src.match(/getItem\('([^']+)'\)/g) || []).join() === "getItem('su_device_role')", ROLE.src.match(/getItem\([^)]*\)/g));
 
 console.log('\n— 4. 事業所名の差し込み —');

@@ -51,6 +51,19 @@
   .ms-to select { max-width: none; flex: 1; }
   .ms-field, .ms-field input { width: 100%; }
 }
+/* メニューの毬の柄（施設の既定・2026-10-26 代表者の決定）。見本つきの2つの選択。文字ごと押せる・押せる高さは44px以上（HIG） */
+.ms-ball { display: flex; gap: 10px; flex-wrap: wrap; margin: 4px 0 8px; }
+.ms-ball-opt {
+  display: inline-flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 14px 8px 10px;
+  border: 1px solid var(--g3); border-radius: 12px; font-size: 1rem; font-weight: 700; cursor: pointer;
+}
+.ms-ball-opt input { width: 20px; height: 20px; margin: 0; accent-color: var(--pri); }
+.ms-ball-opt:has(input:checked) { border-color: var(--pri); background: var(--pri-l); }
+.ms-ball-opt:has(input:focus-visible) { outline: 3px solid var(--pri); outline-offset: 2px; }
+.ms-ball-opt:has(input:disabled) { cursor: default; }
+.ms-ball-pv { display: inline-block; width: 56px; height: 56px; flex: none; }
+.ms-ball-pv:empty { display: none; }
+.ms-ball-pv svg { display: block; width: 56px; height: 56px; }
 /* スマホでは下に張り付く保存欄を薄くする（一覧が見える高さを残す） */
 @media (max-width: 600px) {
   .sticky-acts { padding: 10px 12px; }
