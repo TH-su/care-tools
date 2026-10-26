@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-HnP6/bRc+pOWyvBWtKXp3dlnE3xkWf3EYzbzTpSdrII=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-+UfpHm4wvzmTGi/CshJos/S8ElhbDMp9lIQcO6ktiKw=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 検索エンジンにこのページと配下ツールを辿らせない。
@@ -132,6 +132,10 @@ main {
 /* 期限の件数の札（2026-10-24 代表者の決定 案A）。色だけに頼らず「超過」等の語で書く */
 .tile .due { font-size: 0.6875rem; color: var(--due-tx); font-weight: 700; line-height: 1.4; }
 /* 定義の一部が壊れていた時の帯（2026-10-10）。#7a4200 on #fff4e5 で約 7.6:1 */
+/* 困った時の区分の問い合わせ先の1行（2026-10-26 本人指示）。選んで写せる文字（tel: のリンクにしない）。--g7 は白地・--g0 地で 5.9:1 以上 */
+.sec .sup { margin: 8px 2px 0; font-size: 0.8125rem; color: var(--g7); line-height: 1.6; -webkit-user-select: text; user-select: text; }
+/* 印刷には出さない（メニューの印刷のページ数を変えないため） */
+@media print { .sec .sup { display: none; } }
 .menu-broken { margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; background: #fff4e5; color: #7a4200; font-size: 0.9375rem; line-height: 1.5; }
 
 /* 別サイトへ移動するタイルの目印。色だけに意味を持たせず「↗」と注記を併用する（HIG） */
@@ -368,7 +372,7 @@ main {
    "id": "sec-help",
    "mk": "💬",
    "title": "困った時",
-   "_why": "2026-10-09（監査10月版 #15・本人決定 3a）。現場端末でも出す。問い合わせ先は「不具合を報告」の案内だけ（電話番号などは書かない）",
+   "_why": "2026-10-09（監査10月版 #15・本人決定 3a）。現場端末でも出す。2026-10-26 本人指示で、タイルの下に施設情報の support の問い合わせ先と受付時間を1行出す（公表済みの事業所の番号だけ・下の script）",
    "tiles": [
     {
      "href": "help.html",
@@ -405,6 +409,18 @@ main {
     return span;
   }
   function note(t) { return facText('note', t); }
+  /* 困った時の区分の問い合わせ先の1行（2026-10-26 本人指示）。施設情報の support の問い合わせ先と受付時間だけ。
+     値が無い・施設情報を読めない時は決まりの文言。文字は textContent で入れる（電話も tel: のリンクにせず文字のまま） */
+  var SUP_NONE = '施設の管理者にお問い合わせください';
+  function supportLine() {
+    var s = null;
+    try { if (window.SUFacility && SUFacility.ready && SUFacility.ready() && SUFacility.support) s = SUFacility.support(); } catch (e) { s = null; }
+    if (!s) return SUP_NONE;
+    var who = [s.contactName, s.contactTel].filter(function (x) { return typeof x === 'string' && x; }).join(' ');
+    var hours = typeof s.hours === 'string' ? s.hours : '';
+    if (!who && !hours) return SUP_NONE;
+    return '問い合わせ先：' + (who || SUP_NONE) + (hours ? '（受付時間：' + hours + '）' : '');
+  }
   /* DUE_TEXT_BEGIN 期限の件数の札の文字（2026-10-24 代表者の決定 案A・純関数・check/unit/menu_due_badge_test.js）。
      raw は端末の控えの文字列 {"v":1,"at":"YYYY-MM-DD","overdue":n,"warn":n,"none":n}。today は今日の YYYY-MM-DD。
      形が違う・数えた日が今日より先・件数が整数でない時は出さない（''）。0件の項目は書かず、全部0件なら出さない＝今と同じ見た目 */
@@ -469,7 +485,16 @@ main {
     if (!window.SUFacility || !SUFacility.ready || !SUFacility.ready()) return;
     var els = document.querySelectorAll('[data-fac-name]');
     for (var i = 0; i < els.length; i++) els[i].textContent = SUFacility.officeName(els[i].getAttribute('data-fac-name'));
+    var sp = document.querySelectorAll('[data-fac-support]');
+    for (var j = 0; j < sp.length; j++) sp[j].textContent = supportLine();
   }
+  /* 施設情報（su-facility.js）はこの後ろで読む。読み込んだ直後（端末の控えがあればその値）と、読み終わった（読めないと分かった）時に問い合わせ先の1行を埋める。
+     事業所の呼び名は下の script が埋めるが、ここでも同じ値で埋める（同じ文字を入れ直すだけ） */
+  try {
+    document.addEventListener('DOMContentLoaded', function () {
+      try { if (window.SUFacility) { fill(); SUFacility.onReady(function () { fill(); }); } } catch (e) {}
+    });
+  } catch (e) { /* 登録できなくても決まりの文言のまま出る */ }
   /* 札だけを付け直す（組み立て直さない）。「戻る」で前の表示のまま戻った時（bfcache）と、
      同じ端末の別のタブで計画書が件数を書き換えた時に、古い件数を出したままにしないため */
   function refreshDue() {
@@ -519,6 +544,7 @@ main {
       // 役割の設定で残ったのが事務所専用のタイルだけになった区分は、区分ごと現場端末で出さない（見出しだけが残らないように・2026-10-23）
       if (!open) sec.setAttribute('data-office-only', '');
       sec.appendChild(h2); sec.appendChild(grid);
+      if (s.id === 'sec-help') { var sup = el('p', 'sup', supportLine()); sup.setAttribute('data-fac-support', ''); sec.appendChild(sup); }
       main.appendChild(sec);
     } catch (e) { fail(e); }
   });
@@ -545,7 +571,7 @@ main {
 
 <script src="su-report.js?v=2026-10-24" data-tool="介護ツール メニュー"></script>
 <!-- 事業所の呼び名は施設情報（facility-profile.json）から差し込む。読めない時は一般名のまま -->
-<script src="su-facility.js?v=2026-10-14"></script>
+<script src="su-facility.js?v=2026-10-26"></script>
 <script>
 (function () {
   function fill() {

@@ -87,7 +87,7 @@ console.log('\n— 5. この施設の設定 —');
 const prof = JSON.parse(read('facility-profile.sample.json'));
 t('★見本は apps を書かない＝全部使う（本番も apps を書かず、画面は今までどおり）', !('apps' in prof));
 t('apps の書き方の注記がある（id の一覧）', /apps に id の配列/.test(prof._noteApps || '') && /msk（申送ビューア）/.test(prof._noteApps || ''));
-t('接続設定は新しい版の施設情報の部品を読む', /<script src="su-facility\.js\?v=2026-10-14"><\/script>/.test(CS));
+t('接続設定は新しい版の施設情報の部品を読む', /<script src="su-facility\.js\?v=2026-10-26"><\/script>/.test(CS));
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);
