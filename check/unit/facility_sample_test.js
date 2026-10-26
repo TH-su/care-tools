@@ -103,7 +103,9 @@ function facility(profile) {
     /git ls-remote origin refs\/heads\/main/.test(Y) && after.length >= 5 && after.every(x => /\n        if: steps\.head\.outputs\.go == '1'\n/.test(x)), after.length);
   t('本番の施設情報は Secret FACILITY_PROFILE_JSON から置く', /FP: \$\{\{ secrets\.FACILITY_PROFILE_JSON \}\}/.test(Y) && /printf '%s' "\$FP" > facility-profile\.json/.test(Y));
   t('Secret が無ければ止める（前の版を残す）', /if \[ -z "\$FP" \]; then[\s\S]{0,200}exit 1/.test(Y));
-  t('壊れた JSON・事業所のそろわない設定・見本のままの設定では止める', /施設情報の JSON を読めません/.test(Y) && /施設・訪問・通所 がそろっていません/.test(Y) && /見本（架空の施設）のままです/.test(Y));
+  /* 2026-10-26 本人指示: 判定は check/facility-secret-check.mjs の1つの関数にまとめ、公開の手順もそれを呼ぶ（中身の試験は facility_secret_check_test.js） */
+  t('壊れた JSON・事業所のそろわない設定・見本のままの設定では止める（手元の道具と同じ判定を呼ぶ）',
+    /\n          node check\/facility-secret-check\.mjs --github facility-profile\.json\n/.test(Y) && !/python3 - <<'PY'/.test(Y) && /^!\/check\/facility-secret-check\.mjs$/m.test(GI));
   t('配るのは git で管理しているファイル＋本番の施設情報', /git ls-files -z \| xargs -0 cp --parents/.test(Y) && /cp facility-profile\.json "\$RUNNER_TEMP\/site\/facility-profile\.json"/.test(Y));
   t('Secret の中身をログに出さない（echo "$FP" をしない）', !/echo[^\n]*\$FP/.test(Y));
   /* 2026-10-26 代表者の決定 B: Issue 機能を切ったリポジトリで Issue を立てる仕事が失敗していた。知らせは赤い×と失敗のメールだけ */
