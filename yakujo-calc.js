@@ -508,10 +508,12 @@
         if (sp.spec && sp.spec.free) { r.action = 'keep'; r.warns.push('書類の用法を読めなかったので、今の行のままにしています（原本と見比べてください）'); }
         else r.action = 'change';
       } else if (p.kind === 'add') r.action = sp.skip ? 'skip' : 'add';
+      /* 自動で作った行（人が直す前）。取り込みの一致率（metricOf）が「人が直したか」を比べる元（2026-10-26 代表者の決定） */
+      r.auto = r.line;
       rows.push(r);
     });
     (left || []).forEach(function (l) {
-      rows.push({ kind: 'left', cur: l, line: l, raw: '', page: 0, box: null, warns: [], action: '', checked: false });
+      rows.push({ kind: 'left', cur: l, line: l, raw: '', page: 0, box: null, warns: [], action: '', checked: false, auto: l });
     });
     var nameOf = function (l) { return drugKey(splitMaker(lineName(l)).base); };
     var lefts = rows.filter(function (r) { return r.kind === 'left'; });
@@ -648,10 +650,112 @@
     return keep.join('\n') + '\n…（以下 ' + (out.length - keep.length) + ' 行）';
   }
 
+  /* ── 11. 取り込みの一致率（2026-10-26 代表者の決定）──
+     書類ごとに「薬名の行数・名簿の一致・人が直した行数と直した種類」を、氏名・薬名・入居者の番号なしで記録し、
+     この端末に直近 METRIC_MAX 件だけ置く（置く・読むのは画面。ここは形を作る・確かめる・数えるだけ）。
+     直した種類（correctionKinds）: 自動で作った行と人が直した後の行を比べる。比べ方は sameMeaning と同じ読み方
+       薬名 … 行の頭の名前を drugKey（空白・【般】などの頭書きを除く・規格の数字は残す）と屋号で比べる。
+              規格（5mg→10mg）の違いは薬名の直しに数える（drugKey・薬価基準の一字一致では別の品目＝読み違いの直し）
+       量   … 1日量（1回量×時点の数に直す）と1回量のどちらかが違う
+       単位 … 錠・包・g など（parseUse の単位）
+       時点 … 朝・昼・夕・眠前と食前後
+     どの種類にも当たらない直し（用法を読めない行・起床時などの書き足し・語の並べ替え）は「その他」に数える */
+  var METRIC_MAX = 30, METRIC_V = 1;
+  var METRIC_KINDS = ['name', 'dose', 'unit', 'time'];
+  function cmpLine(s) { return nfkc(s).replace(/\s+/g, ' ').trim(); }
+  function lineFacts(l) {
+    var c = cmpLine(l), head = lineName(c), nm = splitMaker(head);
+    var u = parseUse(c.slice(head.length), 'day'), n = u.slots.length;
+    var ok = !!(n && u.amount > 0);
+    return { name: drugKey(nm.base) + '「' + nfkc(nm.maker) + '」',
+      day: ok ? Math.round((u.per === 'dose' ? u.amount * n : u.amount) * 1000) / 1000 : 0,
+      once: ok ? Math.round((u.per === 'dose' ? u.amount : u.amount / n) * 1000) / 1000 : 0,
+      amount: u.amount, unit: nfkc(u.unit), time: u.slots.join('・') + '|' + (u.meal || '') };
+  }
+  /* 戻り値 {changed, name, dose, unit, time, other}（どれも真偽）。changed が偽なら他は全部偽 */
+  function correctionKinds(autoLine, fixedLine) {
+    var res = { changed: false, name: false, dose: false, unit: false, time: false, other: false };
+    if (cmpLine(autoLine) === cmpLine(fixedLine)) return res;
+    res.changed = true;
+    var a = lineFacts(autoLine), b = lineFacts(fixedLine);
+    res.name = a.name !== b.name;
+    res.dose = (a.day || b.day) ? (a.day !== b.day || a.once !== b.once) : a.amount !== b.amount;
+    res.unit = a.unit !== b.unit;
+    res.time = a.time !== b.time;
+    res.other = !(res.name || res.dose || res.unit || res.time);
+    return res;
+  }
+  /* 書類1件の記録。in: {at（ISO の日時）, autoId（自動で振り分けた方）, pickId（人が決めた方）, rows（確認表の行・auto を持つ）}
+     ★返すのは数と日時だけ（id・氏名・薬名・行の文字は入れない）。
+     薬名の行数＝書類から読めた行（kind 'left' 以外）。人が直した行＝反映に使った行（変える・足す・反映先が空でない）で、自動の行と文字が違うもの
+     （今の行と同じ文字に直し戻した行も、読み違いの直しとして数える。扱いの切り替えだけ（今の行のまま・足さない）は数えない） */
+  function metricOf(inp) {
+    inp = inp || {};
+    var rows = (Array.isArray(inp.rows) ? inp.rows : []).filter(function (r) { return r && typeof r === 'object'; });
+    var rec = { at: String(inp.at || ''), rows: 0, match: !!inp.autoId && String(inp.autoId) === String(inp.pickId == null ? '' : inp.pickId),
+      fixed: 0, name: 0, dose: 0, unit: 0, time: 0, other: 0 };
+    rows.forEach(function (r) {
+      if (r.kind === 'left') return;
+      rec.rows++;
+      /* 反映に使った行（judge と同じく、反映先が空の行は使っていない） */
+      var used = ((r.kind === 'change' && r.action === 'change') || (r.kind === 'add' && r.action === 'add')) && !!String(r.line || '').trim();
+      if (!used || typeof r.auto !== 'string') return;
+      var k = correctionKinds(r.auto, r.line);
+      if (!k.changed) return;
+      rec.fixed++;
+      METRIC_KINDS.concat('other').forEach(function (n) { if (k[n]) rec[n]++; });
+    });
+    return rec;
+  }
+  /* 1件を確かめる（決まった項目だけを拾い直す・ほかの項目は捨てる）。壊れていれば null */
+  function cleanMetric(o) {
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return null;
+    var at = String(o.at || '');
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(at) || isNaN(Date.parse(at))) return null;
+    if (typeof o.match !== 'boolean') return null;
+    var rec = { at: at, rows: 0, match: o.match, fixed: 0, name: 0, dose: 0, unit: 0, time: 0, other: 0 }, bad = false;
+    ['rows', 'fixed', 'name', 'dose', 'unit', 'time', 'other'].forEach(function (k) {
+      var n = o[k];
+      if (typeof n !== 'number' || !isFinite(n) || n < 0 || n > 10000 || Math.floor(n) !== n) bad = true; else rec[k] = n;
+    });
+    if (bad || rec.fixed > rec.rows) return null;
+    return rec;
+  }
+  /* 端末に置いた文字列 → 記録の並び（古い順）。読めない・版が違う・形が違う時は空（壊れた1件は捨てる） */
+  function metricsLoad(raw) {
+    var o;
+    try { o = JSON.parse(String(raw == null ? '' : raw)); } catch (e) { return []; }
+    if (!o || typeof o !== 'object' || o.v !== METRIC_V || !Array.isArray(o.list)) return [];
+    return o.list.map(cleanMetric).filter(function (x) { return x; }).slice(-METRIC_MAX);
+  }
+  /* 1件足して、古いものから落として METRIC_MAX 件にする → 端末に置く文字列 */
+  function metricsSave(list, rec) {
+    var l = (Array.isArray(list) ? list : []).map(cleanMetric).filter(function (x) { return x; });
+    var r = cleanMetric(rec); if (r) l.push(r);
+    return JSON.stringify({ v: METRIC_V, list: l.slice(-METRIC_MAX) });
+  }
+  /* 直近の集計。{n, match, rows, fixed, name, dose, unit, time, other} */
+  function summarize(list) {
+    var s = { n: 0, match: 0, rows: 0, fixed: 0, name: 0, dose: 0, unit: 0, time: 0, other: 0 };
+    (Array.isArray(list) ? list : []).map(cleanMetric).filter(function (x) { return x; }).slice(-METRIC_MAX).forEach(function (r) {
+      s.n++; if (r.match) s.match++;
+      ['rows', 'fixed', 'name', 'dose', 'unit', 'time', 'other'].forEach(function (k) { s[k] += r[k]; });
+    });
+    return s;
+  }
+  /* 取り込み画面の欄の文（画面は textContent で入れる） */
+  function metricText(s) {
+    if (!s || !(s.n > 0)) return 'まだ記録がありません';
+    return '直近 ' + s.n + ' 件：名簿の一致 ' + s.match + '/' + s.n + ' 件（' + Math.round(s.match / s.n * 100) + '%）・人が直した行 ' +
+      s.fixed + '/' + s.rows + ' 行（薬名 ' + s.name + '・量 ' + s.dose + '・単位 ' + s.unit + '・時点 ' + s.time + '・その他 ' + s.other + '）';
+  }
+
   var api = { parseResult: parseResult, assign: assign, findDates: findDates, datesIn: datesIn, parseUse: parseUse,
     parseRows: parseRows, looksDrug: looksDrug, stripEnum: stripEnum, snap: snap, lineSpec: lineSpec, shortDays: shortDays, splitMaker: splitMaker, stem: stem, matchCurrent: matchCurrent, sameMeaning: sameMeaning, buildRows: buildRows, judge: judge, buildAfter: buildAfter,
     startDate: startDate, useDate: useDate,
-    fnv8: fnv8, srcKey: srcKey, logRows: logRows, nz: nz, kn: kn, dist: dist };
+    fnv8: fnv8, srcKey: srcKey, logRows: logRows, nz: nz, kn: kn, dist: dist,
+    correctionKinds: correctionKinds, metricOf: metricOf, metricsLoad: metricsLoad, metricsSave: metricsSave, summarize: summarize, metricText: metricText,
+    METRIC_MAX: METRIC_MAX };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.YakujoCalc = api;
 })(typeof window !== 'undefined' ? window : this);
