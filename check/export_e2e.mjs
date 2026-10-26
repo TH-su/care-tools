@@ -4,7 +4,12 @@
  *
  * 本物の Chromium で accounts.html を開き、ログイン（su-auth.js）とデータベース・GAS だけを偽物に差し替えて、
  * 架空の事業者 C を書き出す → 保存された ZIP を開く → 中の JSON が架空のデータと1文字も違わないことを確かめる。
- *   ・データベースの偽物は、0024 の export_begin・export_page・export_finish と同じ形で返す
+ *   ・2026-10-26: 既定は「暗号化する」。保存物は「元の名前.suenc」で、Node 側で su-export-crypt.js（vm）と
+ *     ターミナルの道具 check/export-decrypt.mjs の両方で戻し、今までと同じ ZIP の中身であることを確かめる。
+ *     暗号化しない時は理由が要る（空なら始まらない・あれば export_begin に false と理由が届く）。
+ *     パスフレーズが localStorage・sessionStorage・送信のどこにも残らないこと、使い終えた入力欄が空になることも見る。
+ *     「暗号化した書き出しを開く」で、データベース・GAS に触らずに元の ZIP を保存できることも確かめる
+ *   ・データベースの偽物は、0025 の export_begin（p_encrypted・p_plain_reason）と 0024 の export_page・export_finish と同じ形で返す
  *     （同期データの表は 4,500 行＝2000 行ずつ3回に分けて読むことも確かめる。中身の規則そのものは care-backend の試験）
  *   ・GAS の偽物は script.google.com への送信を横取りして返す（外へは出ない）。接続設定は架空の値を端末に入れる
  *   ・確かめること: 書き出しの記録に、画面が受け取った件数・GAS の分・ファイル名が届く／現場の端末では始まらない／
@@ -17,6 +22,7 @@ import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { loadPlaywright, startServer, parseArgs } from './lib.mjs';
+import { loadCrypt } from './export-decrypt.mjs';
 
 const repoDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = parseArgs(process.argv.slice(2));
@@ -56,7 +62,14 @@ function fakeDb(state) {
       const a = req.postDataJSON() || {};
       state.calls.push(rpc[1]);
       if (state.denyAll) return send(403, { code: '42501', message: 'permission denied' });
+      if (rpc[1] === 'export_begin' && state.no0025) return send(404, { code: 'PGRST202', message: 'Could not find the function public.export_begin(p_encrypted) in the schema cache' });
       if (rpc[1] === 'export_begin') {
+        state.begin = a;
+        /* 0025 と同じ断り: 暗号化の有無が無い・暗号化しないのに理由が 5〜200 文字でない → 22023 */
+        if (typeof a.p_encrypted !== 'boolean' ||
+            (a.p_encrypted === false && !(typeof a.p_plain_reason === 'string' && a.p_plain_reason.trim().length >= 5 && a.p_plain_reason.trim().length <= 200))) {
+          return send(400, { code: '22023', message: 'reason' });
+        }
         const tables = Object.keys(DB).map((n) => ({ name: n, scope: SCOPE[n] || 'tenant', count: DB[n].length, comment: n === 'kv_entries' ? '同期データの本体' : '', columns: COLS[n] }));
         state.run = { id: 41, db_counts: Object.fromEntries(tables.map((x) => [x.name, x.count])) };
         return send(200, { run_id: 41, started_at: '2026-10-26T01:02:03+00:00', tenant_id: TEN, tenant_name: DB.tenants[0].name, actor_email: ME,
@@ -107,8 +120,10 @@ function fakeAuth(mfa) {
 const srv = await startServer(repoDir);
 const browser = await chromium.launch();
 const tmp = fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'export-e2e-'));
-async function openPage({ role = 'office', mfa = true, dialog = 'accept', denyAll = false, viewport = { width: 1280, height: 900 } } = {}) {
-  const state = { calls: [], pages: [], gas: [], finish: null, denyAll, dialogs: [], errors: [] };
+const PASS = 'kakuu-pass-0001';   // 架空のパスフレーズ
+const X = loadCrypt();
+async function openPage({ role = 'office', mfa = true, dialog = 'accept', denyAll = false, no0025 = false, viewport = { width: 1280, height: 900 } } = {}) {
+  const state = { calls: [], pages: [], gas: [], finish: null, begin: null, denyAll, no0025, dialogs: [], errors: [], posts: [] };
   const context = await browser.newContext({ acceptDownloads: true, viewport });
   await context.route('**/su-auth.js*', (r) => r.fulfill({ status: 200, contentType: 'text/javascript', body: fakeAuth(mfa) }));
   await context.route('https://jhbernqawjrzqwrmqrih.supabase.co/**', fakeDb(state));
@@ -121,6 +136,7 @@ async function openPage({ role = 'office', mfa = true, dialog = 'accept', denyAl
   }, role);
   const page = await context.newPage();
   page.on('pageerror', (e) => state.errors.push(String(e.message).slice(0, 160)));
+  page.on('request', (r) => { if (r.method() === 'POST') state.posts.push(String(r.postData() || '')); });
   page.on('dialog', (d) => { state.dialogs.push(d.message()); (dialog === 'accept' ? d.accept() : d.dismiss()).catch(() => {}); });
   await page.goto(srv.url + '/accounts.html', { waitUntil: 'load' });
   return { context, page, state };
@@ -132,15 +148,41 @@ try {
     const { context, page, state } = await openPage();
     await page.waitForSelector('#sec-export:not([hidden])', { timeout: 15000 });
     t('管理者には書き出しの枠が出る', await page.isVisible('#b-export'), '');
+    t('既定は「暗号化する」が選ばれていて、パスフレーズの2欄が出る', await page.isChecked('#ex-enc-on') && await page.isVisible('#ex-pass') && await page.isVisible('#ex-pass2') && !(await page.isVisible('#ex-reason')), '');
+    t('パスフレーズの欄は type=password・autocomplete=new-password', await page.evaluate(() => ['ex-pass', 'ex-pass2'].every((id) => {
+      const e = document.getElementById(id); return e.type === 'password' && e.getAttribute('autocomplete') === 'new-password'; })), '');
     if (shots) { fs.mkdirSync(shots, { recursive: true }); await page.locator('#sec-export').screenshot({ path: path.join(shots, 'export-before.png') }); }
+    await page.fill('#ex-pass', PASS);
+    await page.fill('#ex-pass2', PASS);
     const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.click('#b-export')]);
+    const epath = path.join(tmp, dl.suggestedFilename());   // 画面で開く時の名前の扱いも見るため、保存された名前のまま置く
+    await dl.saveAs(epath);
+    const sealed = fs.readFileSync(epath);
+    t('保存物は暗号ファイル（印 SUEXP1 で始まり、ZIP の印 PK では始まらない）', sealed.subarray(0, 8).equals(Buffer.from('SUEXP1\n\0', 'latin1')) && sealed.indexOf(Buffer.from('PK\u0003\u0004', 'latin1')) !== 0, sealed.subarray(0, 8));
+    const plainZip = Buffer.from(await X.decrypt(sealed, PASS));
     const zpath = path.join(tmp, 'c.zip');
-    await dl.saveAs(zpath);
+    fs.writeFileSync(zpath, plainZip);
+    t('違うパスフレーズでは戻せない', await X.decrypt(sealed, PASS + '!').then(() => false, (e) => e.code === 'auth'), '');
+    /* ターミナルの道具でも戻せる（パスフレーズは試験用の環境変数だけ・端末に値を出さない） */
+    const tpath = path.join(tmp, 'tool.zip');
+    const toolOut = execFileSync(process.execPath, [path.join(repoDir, 'check', 'export-decrypt.mjs'), epath, '-o', tpath],
+      { env: Object.assign({}, process.env, { SU_EXPORT_PASS: PASS }), stdio: ['ignore', 'pipe', 'pipe'] }).toString();
+    t('ターミナルの道具（export-decrypt.mjs）で戻すと、同じ ZIP になる', fs.readFileSync(tpath).equals(plainZip), fs.statSync(tpath).size);
+    t('ターミナルの道具は値・パスフレーズを出さない', !toolOut.includes(PASS), toolOut);
+    let toolNg = '';
+    try { execFileSync(process.execPath, [path.join(repoDir, 'check', 'export-decrypt.mjs'), epath, '-o', path.join(tmp, 'ng.zip')],
+      { env: Object.assign({}, process.env, { SU_EXPORT_PASS: 'wrong-pass-00' }), stdio: ['ignore', 'pipe', 'pipe'] }); } catch (e) { toolNg = String(e.stderr || '') + '#' + e.status; }
+    t('ターミナルの道具: 違うパスフレーズは「パスフレーズが違うか…」で止まり、何も書かない', /パスフレーズが違うか/.test(toolNg) && /#1$/.test(toolNg) && !fs.existsSync(path.join(tmp, 'ng.zip')), toolNg);
     await page.waitForFunction(() => document.getElementById('ex-msg').className.includes('ok') && document.querySelectorAll('#ex-runs li').length === 1, null, { timeout: 15000 });
     const msgText = await page.textContent('#ex-msg');
     if (shots) await page.locator('#sec-export').screenshot({ path: path.join(shots, 'export-after.png') });
-    t('始める前に個人情報の注意を出した', state.dialogs.length === 1 && /個人情報/.test(state.dialogs[0]) && /鍵はかかりません/.test(state.dialogs[0]), state.dialogs);
-    t('ファイル名は「全データ_日時.zip」', /^全データ_\d{8}-\d{4}\.zip$/.test(dl.suggestedFilename()), dl.suggestedFilename());
+    t('始める前に個人情報の注意を出した（暗号化してパスフレーズが要る旨）', state.dialogs.length === 1 && /個人情報/.test(state.dialogs[0]) && /パスフレーズ/.test(state.dialogs[0]) && !/鍵はかかりません/.test(state.dialogs[0]), state.dialogs);
+    t('ファイル名は「全データ_日時.zip.suenc」', /^全データ_\d{8}-\d{4}\.zip\.suenc$/.test(dl.suggestedFilename()), dl.suggestedFilename());
+    t('export_begin に「暗号化する」が届き、理由は送らない', state.begin && state.begin.p_encrypted === true && !('p_plain_reason' in state.begin), state.begin);
+    t('使い終えたパスフレーズの欄は空', (await page.inputValue('#ex-pass')) === '' && (await page.inputValue('#ex-pass2')) === '', '');
+    const store = await page.evaluate(() => { const o = []; for (const s of [localStorage, sessionStorage]) for (let i = 0; i < s.length; i++) { const k = s.key(i); o.push(k + '=' + s.getItem(k)); } return o.join('\n'); });
+    t('パスフレーズは localStorage・sessionStorage に残らない', !store.includes(PASS), store.length);
+    t('パスフレーズはどこにも送らない（データベース・GAS への送信の本文に無い）', state.posts.length > 0 && state.posts.every((b) => !b.includes(PASS)), state.posts.length);
     t('同期データは 2000 行ずつ3回に分けて読んだ', ['kv_entries@0', 'kv_entries@2000', 'kv_entries@4000'].every((x) => state.pages.includes(x)) && state.pages.filter((x) => x.startsWith('kv_entries')).length === 3, state.pages);
     t('呼んだ順: 始める → 表ごと → 終える', state.calls[0] === 'export_begin' && state.calls[state.calls.length - 1] === 'export_finish', state.calls);
     t('終わりの記録: 受け取った件数が数えた件数と同じ・GAS の分・ファイル名',
@@ -149,7 +191,7 @@ try {
     t('終わりの記録に合言葉・接続先の URL は入らない', !/tok-|script\.google/.test(JSON.stringify(state.finish)), '');
     t('GAS: 接続設定のある2系統だけに送った（POST・text/plain・合言葉は本文だけ）',
       state.gas.length === 2 && state.gas.every((g) => /text\/plain/.test(g.ct) && !/tok-/.test(g.url) && /"token":"tok-/.test(g.body)), state.gas.map((g) => g.url));
-    t('画面: 保存した旨と件数（4,504 行・Google 2 / 8 系統）を出す', /保存しました/.test(msgText) && /4504 行/.test(msgText) && /Google 2 \/ 8 系統/.test(msgText), msgText);
+    t('画面: 保存した旨と件数（4,504 行・Google 2 / 8 系統）を出す', /\.suenc」を保存しました/.test(msgText) && /4504 行/.test(msgText) && /Google 2 \/ 8 系統/.test(msgText), msgText);
     t('画面: これまでの書き出しに今回の1行が出る', /保存まで済み/.test(await page.textContent('#ex-runs')), await page.textContent('#ex-runs'));
     t('画面のエラーなし', state.errors.length === 0, state.errors);
 
@@ -169,6 +211,87 @@ try {
     t('説明書き: 事業者・人・件数・表の説明・入っていない系統の理由', r.readme.includes('試験用 書き出し事業者') && r.readme.includes(ME) && r.readme.includes('【kv_entries】 4500 行') &&
       r.readme.includes('同期データの本体') && /ジェノグラム.*入っていません: この端末の接続設定に無い/.test(r.readme), r.readme.slice(0, 300));
     t("CSV: 先頭が = の値に ' が付く（表計算ソフトで式にしない）", r.csv.includes("'=架空の現場"), r.csv);
+
+    console.log('\n— 1b. 暗号化した書き出しを、この画面で開く（データベース・GAS には触らない）—');
+    const before = { calls: state.calls.length, gas: state.gas.length, posts: state.posts.length };
+    await page.setInputFiles('#dx-file', epath);
+    await page.fill('#dx-pass', PASS + 'x');
+    await page.click('#b-decrypt');
+    await page.waitForFunction(() => document.getElementById('dx-msg').textContent !== '', null, { timeout: 15000 });
+    t('違うパスフレーズ: 「パスフレーズが違うか、ファイルが壊れています。」と出し、欄を空にする',
+      (await page.textContent('#dx-msg')) === 'パスフレーズが違うか、ファイルが壊れています。' && (await page.inputValue('#dx-pass')) === '', await page.textContent('#dx-msg'));
+    if (shots) await page.locator('#sec-decrypt').screenshot({ path: path.join(shots, 'decrypt-ng.png') });
+    await page.fill('#dx-pass', PASS);
+    const [dl2] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.click('#b-decrypt')]);
+    const opath = path.join(tmp, 'opened.zip');
+    await dl2.saveAs(opath);
+    t('開いた ZIP の名前は .suenc を外した名前', dl2.suggestedFilename() === dl.suggestedFilename().replace(/\.suenc$/, ''), dl2.suggestedFilename());
+    t('画面で開いた ZIP は、Node で戻した ZIP と1バイトも違わない', fs.readFileSync(opath).equals(plainZip), fs.statSync(opath).size);
+    await page.waitForFunction(() => /保存しました/.test(document.getElementById('dx-msg').textContent), null, { timeout: 15000 });
+    t('開いた後、パスフレーズの欄は空', (await page.inputValue('#dx-pass')) === '', '');
+    t('開く時はデータベースにも GAS にも送らない', state.calls.length === before.calls && state.gas.length === before.gas && state.posts.length === before.posts, [state.calls.length - before.calls, state.gas.length - before.gas]);
+    const store2 = await page.evaluate(() => { const o = []; for (const s of [localStorage, sessionStorage]) for (let i = 0; i < s.length; i++) { const k = s.key(i); o.push(k + '=' + s.getItem(k)); } return o.join('\n'); });
+    t('開いた後も、パスフレーズは localStorage・sessionStorage に残らない', !store2.includes(PASS), '');
+    t('画面のエラーなし（開く時）', state.errors.length === 0, state.errors);
+    if (shots) await page.locator('#sec-decrypt').screenshot({ path: path.join(shots, 'decrypt-ok.png') });
+    await context.close();
+  }
+
+  console.log('\n— 1c. 暗号化しないを選ぶ（理由が要る・記録に届く）—');
+  {
+    const { context, page, state } = await openPage();
+    await page.waitForSelector('#sec-export:not([hidden])', { timeout: 15000 });
+    await page.check('#ex-enc-off');
+    t('「暗号化しない」を選ぶと、理由の欄と注意の文が出て、パスフレーズの欄は隠れる',
+      await page.isVisible('#ex-reason') && /鍵はかかりません/.test(await page.textContent('#ex-plain-box')) && !(await page.isVisible('#ex-pass')), '');
+    if (shots) await page.locator('#sec-export').screenshot({ path: path.join(shots, 'export-plain.png') });
+    await page.click('#b-export');
+    await page.waitForTimeout(400);
+    t('理由が空: 確かめも出さず始めない（データベース・GAS に送らない）', state.dialogs.length === 0 && !state.calls.includes('export_begin') && state.gas.length === 0, state.calls);
+    t('理由が空: 理由を書くよう出す', /理由を 5〜200 文字/.test(await page.textContent('#ex-msg')), await page.textContent('#ex-msg'));
+    await page.fill('#ex-reason', '  移行  ');
+    await page.click('#b-export');
+    await page.waitForTimeout(400);
+    t('理由が短い（前後の空白を除いて 4 文字）: 始めない', !state.calls.includes('export_begin'), state.calls);
+    const REASON = '税理士へ渡す試験の控え（架空）';
+    await page.fill('#ex-reason', REASON);
+    const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.click('#b-export')]);
+    const zp = path.join(tmp, 'plain.zip');
+    await dl.saveAs(zp);
+    await page.waitForFunction(() => document.getElementById('ex-msg').className.includes('ok'), null, { timeout: 15000 });
+    t('確かめの文は「鍵はかかりません」', state.dialogs.length === 1 && /鍵はかかりません/.test(state.dialogs[0]), state.dialogs);
+    t('export_begin に「暗号化しない」と理由が届く', state.begin && state.begin.p_encrypted === false && state.begin.p_plain_reason === REASON, state.begin);
+    t('保存物は ZIP（.zip・印 PK）で、終わりの記録のファイル名も同じ', /^全データ_\d{8}-\d{4}\.zip$/.test(dl.suggestedFilename()) &&
+      fs.readFileSync(zp).subarray(0, 4).equals(Buffer.from('PK\u0003\u0004', 'latin1')) && state.finish && state.finish.p_file === dl.suggestedFilename(), dl.suggestedFilename());
+    await context.close();
+  }
+
+  console.log('\n— 1d. パスフレーズが短い・合わない時は始めない／0025 が無い時 —');
+  {
+    const { context, page, state } = await openPage();
+    await page.waitForSelector('#sec-export:not([hidden])', { timeout: 15000 });
+    await page.fill('#ex-pass', 'short7c'); await page.fill('#ex-pass2', 'short7c');
+    await page.click('#b-export');
+    await page.waitForTimeout(300);
+    t('7 文字: 始めない・8 文字以上と出す・欄を空にする', !state.calls.includes('export_begin') && state.dialogs.length === 0 &&
+      /8 文字以上/.test(await page.textContent('#ex-msg')) && (await page.inputValue('#ex-pass')) === '', await page.textContent('#ex-msg'));
+    await page.fill('#ex-pass', PASS); await page.fill('#ex-pass2', PASS + 'x');
+    await page.click('#b-export');
+    await page.waitForTimeout(300);
+    t('2つが合わない: 始めない・一致しないと出す・欄を空にする', !state.calls.includes('export_begin') && state.dialogs.length === 0 &&
+      /一致しません/.test(await page.textContent('#ex-msg')) && (await page.inputValue('#ex-pass2')) === '', await page.textContent('#ex-msg'));
+    await context.close();
+  }
+  {
+    const { context, page, state } = await openPage({ no0025: true });
+    await page.waitForSelector('#sec-export:not([hidden])', { timeout: 15000 });
+    let downloaded = false; page.on('download', () => { downloaded = true; });
+    await page.fill('#ex-pass', PASS); await page.fill('#ex-pass2', PASS);
+    await page.click('#b-export');
+    await page.waitForFunction(() => /0025/.test(document.getElementById('ex-msg').textContent), null, { timeout: 15000 });
+    t('データベースに 0025 が無い（PGRST202）: 「書き出しの準備（データベースの 0025）がまだできていません。」・保存しない・GAS に送らない',
+      (await page.textContent('#ex-msg')) === '書き出しの準備（データベースの 0025）がまだできていません。' && !downloaded && state.gas.length === 0, await page.textContent('#ex-msg'));
+    t('失敗の後もパスフレーズの欄は空', (await page.inputValue('#ex-pass')) === '' && (await page.inputValue('#ex-pass2')) === '', '');
     await context.close();
   }
 
@@ -180,20 +303,26 @@ try {
     await page.waitForTimeout(500);
     t('現場の端末: 確かめも出さず、データベースにも GAS にも送らない', state.dialogs.length === 0 && !state.calls.includes('export_begin') && state.gas.length === 0, state.calls);
     t('現場の端末: 理由を出す', /現場/.test(await page.textContent('#ex-msg')), await page.textContent('#ex-msg'));
+    await page.click('#b-decrypt');
+    await page.waitForTimeout(300);
+    t('現場の端末: 暗号化した書き出しも開かない（理由を出す）', /現場/.test(await page.textContent('#dx-msg')), await page.textContent('#dx-msg'));
     await context.close();
   }
   {
     const { context, page, state } = await openPage({ dialog: 'dismiss' });
     await page.waitForSelector('#sec-export:not([hidden])', { timeout: 15000 });
+    await page.fill('#ex-pass', PASS); await page.fill('#ex-pass2', PASS);
     await page.click('#b-export');
     await page.waitForTimeout(500);
     t('注意の確かめで「キャンセル」: 何も読まない・保存しない', state.dialogs.length === 1 && !state.calls.includes('export_begin') && state.gas.length === 0, state.calls);
+    t('キャンセルの後、パスフレーズの欄は空', (await page.inputValue('#ex-pass')) === '' && (await page.inputValue('#ex-pass2')) === '', '');
     await context.close();
   }
   {
     const { context, page, state } = await openPage({ denyAll: true });
     await page.waitForSelector('#sec-export:not([hidden])', { timeout: 15000 });
     let downloaded = false; page.on('download', () => { downloaded = true; });
+    await page.fill('#ex-pass', PASS); await page.fill('#ex-pass2', PASS);
     await page.click('#b-export');
     await page.waitForFunction(() => /2段階認証/.test(document.getElementById('ex-msg').textContent), null, { timeout: 15000 });
     t('データベースが断ったら（42501）: 保存しない・GAS にも送らない・2段階認証を確かめるよう出す', !downloaded && state.gas.length === 0, state.calls);
@@ -213,6 +342,10 @@ try {
     t('iPhone の幅: 横にはみ出さない', over <= 0, over);
     const box = await page.locator('#b-export').boundingBox();
     t('iPhone の幅: ボタンは押しやすい高さ（44px 以上）', box && box.height >= 44, box);
+    const hs = await page.evaluate(() => ['ex-enc-on', 'ex-enc-off'].map((id) => document.querySelector('label[for="' + id + '"]').getBoundingClientRect().height)
+      .concat([document.getElementById('b-decrypt').getBoundingClientRect().height, document.getElementById('ex-pass').getBoundingClientRect().height]));
+    t('iPhone の幅: 暗号化の選択・パスフレーズの欄・開くボタンも 44px 以上', hs.every((h) => h >= 44), hs);
+    if (shots) await page.locator('#sec-decrypt').screenshot({ path: path.join(shots, 'decrypt-iphone.png') });
     if (shots) await page.locator('#sec-export').screenshot({ path: path.join(shots, 'export-iphone.png') });
     await context.close();
   }

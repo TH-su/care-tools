@@ -11,6 +11,11 @@
  * ★中身は端末に残さない（メモリで ZIP を作り、保存の後に URL を捨てる）。GAS の合言葉は画面に出さない・記録に書かない。
  * ★GAS への送り方は su-data-gas.js の post と同じ形（text/plain・redirect:'follow'・res.json()・合言葉は本文の token）。
  * ★表示はすべて textContent。
+ * ★暗号化（2026-10-26 本人指示・代表者の決定）: 既定は「暗号化する」。ZIP を su-export-crypt.js（接続設定の控えと同じ方式）で
+ *   暗号化して「元の名前.suenc」で保存する。暗号化しない時は理由（5〜200文字）を export_begin に渡し、データベースの記録に残す（0025）。
+ *   0024 の決定「ZIP に鍵はかけない」は、この決定で置き換わった。
+ *   パスフレーズは保存しない（localStorage・sessionStorage・記録・送信のどれにも入れない）。使い終えたら（成功・失敗とも）入力欄を空にし、変数も手放す。
+ * ★「暗号化した書き出しを開く」: .suenc とパスフレーズから元の ZIP をこの端末に保存する。データベース・GAS には触らない。事務所 PC だけ。
  */
 (function () {
   'use strict';
@@ -38,7 +43,7 @@
       return '書き出せませんでした。管理者として2段階認証まで済んでいるか確かめて、ログインし直してからもう一度試してください。';
     }
     if (code === 'PGRST202' || /could not find the function/i.test(m)) {
-      return '書き出しの準備（データベースの 0024）がまだできていません。';
+      return '書き出しの準備（データベースの 0025）がまだできていません。';
     }
     if (/failed to fetch|network|load failed/i.test(m)) return '通信できませんでした。電波・Wi-Fi を確かめてから、もう一度試してください。';
     return 'うまくいきませんでした。もう一度試してください。';
@@ -247,8 +252,8 @@
     return files;
   }
 
-  function save(parts, name) {
-    var url = URL.createObjectURL(new Blob(parts, { type: 'application/zip' }));
+  function save(parts, name, type) {
+    var url = URL.createObjectURL(new Blob(parts, { type: type || 'application/zip' }));
     var a = el('a');
     a.href = url;
     a.download = name;
@@ -259,27 +264,81 @@
     setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
   }
 
+  function isField() {
+    var role = 'office';
+    try { role = localStorage.getItem('su_device_role') || 'office'; } catch (e) {}
+    return role === 'field';
+  }
+  function encOn() { return !$('ex-enc-off').checked; }
+  /* パスフレーズの欄を空にする（成功・失敗・取りやめのどれでも） */
+  function clearPass() { $('ex-pass').value = ''; $('ex-pass2').value = ''; }
+  function showMode() {
+    var on = encOn();
+    $('ex-enc-box').hidden = !on;
+    $('ex-plain-box').hidden = on;
+    if (!on) clearPass();
+  }
+  /* 合わせて 200 文字・前後の空白を除いて 5 文字以上（データベースの btrim と同じ数え方） */
+  function reasonOf(v) {
+    var r = String(v || '').replace(/^\s+|\s+$/g, '');
+    var n = Array.from(r).length;
+    return (n >= 5 && n <= 200) ? r : null;
+  }
+  function concat(parts) {
+    var out = new Uint8Array(parts.reduce(function (s, p) { return s + p.length; }, 0)), at = 0;
+    for (var i = 0; i < parts.length; i++) { out.set(parts[i], at); at += parts[i].length; parts[i] = null; }
+    return out;
+  }
+
   var busy = false;
   async function run() {
     if (busy) return;
     note('');
-    var role = 'office';
-    try { role = localStorage.getItem('su_device_role') || 'office'; } catch (e) {}
-    if (role === 'field') {
+    if (isField()) {
+      clearPass();
       note('この端末は「現場」の端末として設定されているため、書き出せません。事務所の PC で開いてください。');
       return;
     }
-    if (!confirm('この事業者の全部のデータを、1つの ZIP にしてこの端末に保存します。\n\n' +
-                 'ZIP には入居者・ご家族・職員の個人情報がそのまま入り、鍵はかかりません。\n' +
-                 '共有フォルダ・メール・チャットに置かず、使い終わったら消してください。\n\n書き出しますか？')) return;
+    var enc = encOn(), pass = null, reason = null;
+    if (enc) {
+      pass = $('ex-pass').value;
+      var pass2 = $('ex-pass2').value;
+      if (pass.length < window.SUExportCrypt.MIN_PASS) {
+        pass = pass2 = null; clearPass();
+        note('パスフレーズは ' + window.SUExportCrypt.MIN_PASS + ' 文字以上にしてください。');
+        return;
+      }
+      if (pass !== pass2) {
+        pass = pass2 = null; clearPass();
+        note('2つのパスフレーズが一致しません。もう一度、両方に入れてください。');
+        return;
+      }
+      pass2 = null;
+    } else {
+      reason = reasonOf($('ex-reason').value);
+      if (reason == null) { note('暗号化しない理由を 5〜200 文字で書いてください（記録に残ります）。'); return; }
+    }
+    if (!confirm(enc ?
+                 ('この事業者の全部のデータを、1つの ZIP にして暗号化し、この端末に保存します。\n\n' +
+                  '中には入居者・ご家族・職員の個人情報が入ります。開くにはパスフレーズが要ります（忘れると開けません）。\n' +
+                  '共有フォルダ・メール・チャットに置かず、使い終わったら消してください。\n\n書き出しますか？') :
+                 ('この事業者の全部のデータを、1つの ZIP にしてこの端末に保存します。\n\n' +
+                  'ZIP には入居者・ご家族・職員の個人情報がそのまま入り、鍵はかかりません。\n' +
+                  '共有フォルダ・メール・チャットに置かず、使い終わったら消してください。\n\n書き出しますか？'))) {
+      pass = null; clearPass();
+      return;
+    }
     busy = true;
     var btn = $('b-export');
     btn.disabled = true;
     try {
       var c = SUAuth.client();
       prog('データベースの表を数えています…');
-      var rb = await c.rpc('export_begin');
-      if (rb.error) throw rb.error;
+      var rb = await c.rpc('export_begin', enc ? { p_encrypted: true } : { p_encrypted: false, p_plain_reason: reason });
+      if (rb.error) {
+        if (rb.error.code === '22023') throw new Error('reason');
+        throw rb.error;
+      }
       var b = rb.data, data = {}, tables = b.tables || [];
       for (var i = 0; i < tables.length; i++) {
         var t = tables[i], rows = [], after = null;
@@ -303,9 +362,23 @@
       var got = window.SUExport.counts(data);   // 行を手放す前に数える
       var parts = window.SUExport.zipParts(buildFiles(b, data, gas, true), isNaN(started) ? new Date() : started);
       data = null;
-      var size = parts.reduce(function (s2, p2) { return s2 + p2.length; }, 0);
-      save(parts, name);
-      parts = null;
+      var size;
+      if (enc) {
+        /* 暗号は1つのつながった中身にしかかけられない（crypto.subtle は少しずつ暗号にできない）。並びをつなげて、つないだ分から手放す */
+        prog('暗号化しています…');
+        var plain = concat(parts);
+        parts = null;
+        var sealed = await window.SUExportCrypt.encrypt(plain, pass);
+        pass = null; plain = null;
+        name = name + '.suenc';
+        size = sealed.length;
+        save([sealed], name, 'application/octet-stream');
+        sealed = null;
+      } else {
+        size = parts.reduce(function (s2, p2) { return s2 + p2.length; }, 0);
+        save(parts, name);
+        parts = null;
+      }
       var gasRec = {};
       gas.forEach(function (g) { gasRec[g.title] = { ok: g.ok, count: g.count, note: g.note || '' }; });
       var rf = await c.rpc('export_finish', { p_run: b.run_id, p_got: got, p_gas: gasRec, p_file: name });
@@ -322,12 +395,51 @@
         note('「' + name + '」を保存しました。' + sum + (gasOk < gas.length ? '。入っていない Google の系統は ZIP の README.txt に理由があります' : ''), 'ok');
       }
     } catch (e) {
-      note(friendly(e));
+      note(e && e.message === 'reason' ? '暗号化しない理由を 5〜200 文字で書いてください（記録に残ります）。' : friendly(e));
     } finally {
+      pass = null;
+      clearPass();
       prog('');
       busy = false;
       btn.disabled = false;
       loadRuns();
+    }
+  }
+
+  /* 暗号化した書き出しを開く（.suenc → 元の ZIP をこの端末に保存。データベース・GAS には触らない） */
+  var dxBusy = false;
+  function dxNote(text, kind) { var m = $('dx-msg'); m.className = 'msg ' + (kind || 'ng'); m.textContent = text || ''; }
+  async function openSealed() {
+    if (dxBusy) return;
+    dxNote('');
+    var passEl = $('dx-pass'), btn = $('b-decrypt');
+    if (isField()) {
+      passEl.value = '';
+      dxNote('この端末は「現場」の端末として設定されているため、開けません。事務所の PC で開いてください。');
+      return;
+    }
+    var f = $('dx-file').files && $('dx-file').files[0];
+    if (!f) { passEl.value = ''; dxNote('暗号化した書き出し（.suenc）のファイルを選んでください。'); return; }
+    dxBusy = true;
+    btn.disabled = true;
+    var pass = passEl.value;
+    try {
+      var bytes = new Uint8Array(await f.arrayBuffer());
+      var plain = await window.SUExportCrypt.decrypt(bytes, pass);
+      pass = null; bytes = null;
+      var out = /\.suenc$/i.test(f.name) ? f.name.replace(/\.suenc$/i, '') : f.name + '.zip';
+      save([plain], out);
+      plain = null;
+      dxNote('「' + out + '」を保存しました。使い終わったら消してください。', 'ok');
+    } catch (e) {
+      /* 文は su-export-crypt.js の決まった文だけ（値・パスフレーズは入らない） */
+      var known = e && (e.code === 'magic' || e.code === 'short' || e.code === 'auth' || e.code === 'nocrypto');
+      dxNote(known ? (/。$/.test(e.message) ? e.message : e.message + '。') : '開けませんでした。もう一度試してください。');
+    } finally {
+      pass = null;
+      passEl.value = '';
+      dxBusy = false;
+      btn.disabled = false;
     }
   }
 
@@ -361,7 +473,12 @@
   window.SUAccountsExport = {
     show: function () {
       $('sec-export').hidden = false;
+      $('sec-decrypt').hidden = false;
+      $('ex-enc-on').addEventListener('change', showMode);
+      $('ex-enc-off').addEventListener('change', showMode);
+      showMode();
       $('b-export').addEventListener('click', run);
+      $('b-decrypt').addEventListener('click', openSealed);
       loadRuns();
     },
     _buildFiles: buildFiles, _GAS: GAS, _cfg: cfg

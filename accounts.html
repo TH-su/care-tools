@@ -21,6 +21,10 @@
   ★「全データの書き出し」（2026-10-26 追加・accounts-export.js / su-export.js）: この事業者のデータベースの全部の表と、
     この端末の接続設定で読める Google（GAS）の分を1つの ZIP にする。できるのは管理者＋2段階認証だけ（データベースの 0024 が判定）。
     GAS を読むため connect-src に script.google.com・script.googleusercontent.com を足した（GAS の応答はそこへ転送される）。
+  ★書き出しの暗号化（2026-10-26 本人指示・代表者の決定・su-export-crypt.js）: 既定は「暗号化する」（パスフレーズ 8 文字以上を2回）。
+    暗号化しない時は理由（5〜200文字）を求め、データベースの記録に残す（0025 の export_begin）。0024 の決定「ZIP に鍵はかけない」はこれで置き換わった。
+    暗号化した書き出し（.suenc）は、下の「暗号化した書き出しを開く」か、ターミナルの check/export-decrypt.mjs で元の ZIP に戻す。
+    パスフレーズは保存しない（端末にも記録にも送信にも入れない。使い終えたら入力欄を空にする）。
 -->
 <link rel="stylesheet" href="su-auth.css?v=2026-09-26">
 </head>
@@ -89,12 +93,53 @@
     <section class="cd" id="sec-export" hidden>
       <h2>全データの書き出し</h2>
       <p class="muted">この事業者のデータベースの全部の表と、この端末の接続設定で読める Google の分を、1つの ZIP（JSON・表計算用の CSV・表の説明書き）にして、この端末に保存します。書き出した日時・人・件数は記録に残ります。</p>
-      <p class="msg warn">ZIP には入居者・ご家族・職員の個人情報がそのまま入り、鍵はかかりません。共有フォルダ・メール・チャットに置かず、使い終わったら消してください。</p>
+      <div class="fld" role="radiogroup" aria-labelledby="ex-mode-lb">
+        <span id="ex-mode-lb"><b>書き出しの暗号化</b></span>
+        <div class="acts">
+          <label class="btn" for="ex-enc-on"><input type="radio" name="ex-mode" id="ex-enc-on" value="enc" checked> 暗号化する（おすすめ）</label>
+          <label class="btn" for="ex-enc-off"><input type="radio" name="ex-mode" id="ex-enc-off" value="plain"> 暗号化しない</label>
+        </div>
+      </div>
+      <div id="ex-enc-box">
+        <div class="grid2">
+          <div class="fld">
+            <label for="ex-pass">パスフレーズ（8文字以上）</label>
+            <input id="ex-pass" class="inp" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false">
+          </div>
+          <div class="fld">
+            <label for="ex-pass2">パスフレーズ（確かめのため、もう一度）</label>
+            <input id="ex-pass2" class="inp" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false">
+          </div>
+        </div>
+        <p class="muted">ZIP をこのパスフレーズで暗号化して「.suenc」のファイルにします。パスフレーズは保存しません。忘れると開けないため、別の安全な場所に控えてください。</p>
+      </div>
+      <div id="ex-plain-box" hidden>
+        <p class="msg warn">ZIP には入居者・ご家族・職員の個人情報がそのまま入り、鍵はかかりません。共有フォルダ・メール・チャットに置かず、使い終わったら消してください。</p>
+        <div class="fld">
+          <label for="ex-reason">暗号化しない理由（5〜200文字・記録に残ります）</label>
+          <input id="ex-reason" class="inp" type="text" autocomplete="off" maxlength="200">
+        </div>
+      </div>
       <div id="ex-msg" class="msg" role="status" aria-live="polite"></div>
       <div class="acts"><button type="button" class="btn pri" id="b-export">全データを書き出す</button></div>
       <p class="muted" id="ex-prog" aria-live="polite"></p>
       <h3>これまでの書き出し（直近10回）</h3>
       <ul class="acct" id="ex-runs"></ul>
+    </section>
+
+    <section class="cd" id="sec-decrypt" hidden>
+      <h2>暗号化した書き出しを開く</h2>
+      <p class="muted">「.suenc」のファイルとパスフレーズから、元の ZIP をこの端末に保存します。データベース・Google には何も送りません。</p>
+      <div class="fld">
+        <label for="dx-file">暗号化した書き出し（.suenc）</label>
+        <input id="dx-file" class="inp" type="file" accept=".suenc">
+      </div>
+      <div class="fld">
+        <label for="dx-pass">パスフレーズ</label>
+        <input id="dx-pass" class="inp" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
+      </div>
+      <div id="dx-msg" class="msg" role="status" aria-live="polite"></div>
+      <div class="acts"><button type="button" class="btn" id="b-decrypt">開いて ZIP を保存する</button></div>
     </section>
   </section>
 </main>
@@ -104,7 +149,8 @@
 <script src="supabase-js-2.112.4.js"></script>
 <script src="su-auth.js?v=2026-10-24"></script>
 <script src="su-export.js?v=2026-10-26"></script>
-<script src="accounts-export.js?v=2026-10-26"></script>
+<script src="su-export-crypt.js?v=2026-10-26"></script>
+<script src="accounts-export.js?v=2026-10-26.2"></script>
 <script src="accounts.js?v=2026-10-26"></script>
 </body>
 </html>
