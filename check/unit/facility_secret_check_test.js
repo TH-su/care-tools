@@ -48,6 +48,10 @@ const leaks = (lines) => lines.filter(l => SECRET_WORDS.some(w => l.includes(w))
   t('JSON のエラー文（中身の一部を含みうる）を出さない', br.errors.every(e => !/Unexpected|Expected|position|JSON at/.test(e)), br.errors);
   ng('全角の引用符が混ざった JSON は、全角の注意を添える', JSON.stringify(good()).replace('"version"', '“version”'), /全角/);
   ng('空', '   ', /空です/);
+  /* 2026-10-26: --clip でコマンドの文字を読んだ時、位置が出ず原因が分からなかった。先頭が { でない時はそう出す */
+  const cmd = ng('コマンドの文字を読んだ（先頭が { でない）', 'cd ~/Claude/Repos/care-tools && node check/facility-secret-check.mjs --clip', /^全体：先頭が \{ ではありません/);
+  t('先頭が { でない時は、JSON の読み取りの文を重ねない', cmd.errors.length === 1, cmd.errors);
+  ng('前に空白や改行があっても { から始まれば読む（壊れていれば位置を出す）', '\n\n  {"corpName": "x",}', /JSON として読めません（\d+ 行目 \d+ 文字目のあたり）/);
   const frag = ng('support の部分だけを貼った', JSON.stringify(good().support), /corpName：ありません/);
   t('一部分だけの時は offices も無いと出す', has(frag, /^offices：ありません/), frag.errors);
   ng('一覧（[ ]）を貼った', [good()], /1つのかたまりではありません/);
@@ -99,6 +103,8 @@ const leaks = (lines) => lines.filter(l => SECRET_WORDS.some(w => l.includes(w))
     t('--github では ::error:: の形で出す', c.status === 1 && /^::error::施設情報 support\.contactTel/m.test(c.stdout), c.stdout);
     const d = spawnSync(process.execPath, [TOOL], { input: JSON.stringify(good()), encoding: 'utf8' });
     t('標準入力からも確かめられる', d.status === 0 && /形はOK/.test(d.stdout), [d.status, d.stdout]);
+    const w = spawnSync(process.execPath, [TOOL, '--clip'], { input: '', encoding: 'utf8', timeout: 10000 });
+    t('--clip は、ターミナルでない時（試験・パイプ）は Enter を待たない', w.error === undefined && !/Enter を押して/.test(w.stdout) && [0, 1, 2].includes(w.status), [w.status, w.error && w.error.code]);
     const e = spawnSync(process.execPath, [TOOL, path.join(tmp, 'nothing.json')], { encoding: 'utf8' });
     t('ファイルが無い時は 2 で終わり、パスの中身を読まない', e.status === 2, [e.status, e.stderr]);
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }

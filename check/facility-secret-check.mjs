@@ -9,7 +9,9 @@
 //
 // 使い方（ターミナル・care-tools のフォルダで）:
 //   node check/facility-secret-check.mjs 施設情報.json      … ファイルを確かめる
-//   node check/facility-secret-check.mjs --clip             … クリップボードの中身を確かめる（Mac の pbpaste）
+//   node check/facility-secret-check.mjs --clip             … クリップボードの中身を確かめる（Mac の pbpaste）。
+//     ターミナルから動かすと「コピーしてから Enter」と出て待つ（このコマンドを貼った時点でクリップボードがコマンドの文字に
+//     置き換わるため。待っている間に施設情報の全体をコピーし直す）。待たずに読む時は --no-wait
 //   pbpaste | node check/facility-secret-check.mjs          … 標準入力から
 //   --github を付けると NG を ::error:: の形で出す（公開の手順用）
 //   終了コード: 0＝OK／1＝NG／2＝使い方の誤り・ファイルが読めない
@@ -33,7 +35,10 @@ const filled = (v) => isStr(v) && v.trim() !== '';
 
 /* JSON の位置（文字数）から行と文字の位置を出す。エラー文の中身は使わない */
 function posOf(text, err) {
-  const m = /position (\d+)/.exec(String(err && err.message));
+  const msg = String(err && err.message);
+  const lc = /line (\d+) column (\d+)/.exec(msg);
+  if (lc) return `（${lc[1]} 行目 ${lc[2]} 文字目のあたり）`;
+  const m = /position (\d+)/.exec(msg);
   if (!m) return '';
   const at = Math.min(Number(m[1]), text.length);
   const before = text.slice(0, at);
@@ -52,8 +57,13 @@ export function checkFacilityProfile(text, sampleText) {
   const errors = [];
   const ng = (where, why) => errors.push(`${where}：${why}`);
   if (!isStr(text) || text.trim() === '') return { ok: false, errors: ['全体：空です（何も貼られていません）'], summary: '' };
+  const body = text.replace(/^\uFEFF/, '');
+  const head = body.trimStart().charAt(0);
+  if (head !== '{' && head !== '[') {
+    return { ok: false, errors: ['全体：先頭が { ではありません。施設情報ではないもの（コマンドの文字など）が入っていないかを見てください。--clip の時は、施設情報の全体をコピーし直してから確かめてください'], summary: '' };
+  }
   let p;
-  try { p = JSON.parse(text.replace(/^﻿/, '')); } catch (e) {
+  try { p = JSON.parse(body); } catch (e) {
     const fw = /[“”＂：，｛｝]/.test(text) ? '。全角の “ ” ： ， ｛ ｝ が混ざっていないかも見てください' : '';
     return { ok: false, errors: [`全体：JSON として読めません${posOf(text, e)}。カンマの抜け・余り、かっこの対応を見てください${fw}`], summary: '' };
   }
@@ -146,7 +156,13 @@ function main(argv) {
   const files = argv.filter((a) => !a.startsWith('--'));
   let text;
   try {
-    if (clip) text = execFileSync('pbpaste', { encoding: 'utf8' });
+    if (clip) {
+      if (process.stdin.isTTY && !argv.includes('--no-wait')) {
+        process.stdout.write('施設情報の全体（{ から } まで）をコピーしてから、ここで Enter を押してください: ');
+        try { fs.readSync(0, Buffer.alloc(1024)); } catch (e) { /* 読めなければ待たずに進む */ }
+      }
+      text = execFileSync('pbpaste', { encoding: 'utf8' });
+    }
     else if (files[0]) text = fs.readFileSync(files[0], 'utf8');
     else if (!process.stdin.isTTY) text = fs.readFileSync(0, 'utf8');
     else { console.error('使い方: node check/facility-secret-check.mjs <ファイル>｜--clip｜（標準入力）'); return 2; }
