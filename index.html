@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-+UfpHm4wvzmTGi/CshJos/S8ElhbDMp9lIQcO6ktiKw=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-uDNKYzCBEiiXkxr67Y/qpjmHENnDBQA62qCnlcc0huU=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 検索エンジンにこのページと配下ツールを辿らせない。
@@ -16,6 +16,8 @@
        役割と並びは共通ログイン（Supabase の menu_get）から読み、端末に su_menu_v1 として控える（リンク先と区分 id だけ）。
        ほかに、事務所の端末でだけ、個別機能訓練計画書が数えて端末に残した期限の件数（tp_menu_due・件数と数えた日だけ・氏名なし）を
        読み、そのタイルに札として出す（2026-10-24 代表者の決定 案A）。メニューから書かない・送らない。
+     ★端末に書くのは、見出しの毬を押した時の毬の柄（su_menu_ball・値は 'kiku'・'asanoha' だけ）だけで、
+       書くのは su-menu.js の SUMenu.setBall だけ（このページは保存領域へ直接書かない・2026-10-26 代表者の決定）。
      ★<body> より前に class を付けるのは、タイルが一瞬見えてから消える「ちらつき」を防ぐため
        （描画後に JS で消すと現場端末で一度は見えてしまう）。
      ★localStorage が使えない環境（Safari プライベート等）は判定不能なので【出す】側に倒す。
@@ -28,7 +30,9 @@
 <script src="su-errors.js?v=2026-10-08"></script>
 <script src="su-cfg-hint.js?v=2026-10-01.2"></script>
 <script src="su-perf.js?v=2026-10-24"></script>
-<script src="su-menu.js?v=2026-10-26"></script>
+<script src="su-menu.js?v=2026-10-26.2"></script>
+<!-- メニューの毬（菊かがり・麻の葉）を描く部品（2026-10-26 代表者の決定）。読めなくてもメニューは動く（毬のボタンを出さないだけ） -->
+<script src="su-itomari.js?v=2026-10-26"></script>
 <script>
 (function(){
   function apply(){try{
@@ -42,7 +46,7 @@
 <style>
 /* care-tools 共通の CSS 変数体系（各アプリと同じ見た目に揃える）。
    このページは氏名・記録を持たない。localStorage は読み取りのみ（端末用途 su_device_role・メニューの設定の控え su_menu_v1・
-   期限の件数の控え tp_menu_due）。 */
+   期限の件数の控え tp_menu_due・毬の柄 su_menu_ball）。毬の柄だけは、毬を押した時に su-menu.js の SUMenu.setBall が書く。 */
 /* 現場端末では事務所専用のタイルを出さない（押してもブロック画面になるだけの行き止まりを作らない）。
    ★data-office-only を付ける条件＝リンク先が su_device_role==='field' で起動をブロックするタイル。
    ★現在この属性が付いているのは誕生日一覧・入居調整・接続設定の3つ
@@ -88,6 +92,23 @@ body {
 .hdr h1 { margin: 0; font-size: 1.1875rem; font-weight: 700; letter-spacing: .02em; }
 /* opacity を掛けると白が --pri と合成され 4.06:1 まで落ちて AA を割るため、白のまま使う（4.50:1） */
 .hdr .sub { margin: 2px 0 0; font-size: 0.75rem; }
+/* メニューの毬（2026-10-26 代表者の決定）。見出しの左の押せる毬（56px）。並びを変えるのは画面だけで、
+   印刷では毬を出さず、紙の見出しは今と同じ。毬の部品が読めない時はボタンも has-ball も無い＝今と同じ見出し */
+@media screen {
+  .hdr.has-ball { display: grid; grid-template-columns: 56px 1fr; column-gap: 12px; align-items: center; }
+  .hdr.has-ball .ball { grid-row: 1 / span 2; }
+  .hdr.has-ball h1 { grid-column: 2; align-self: end; }
+  .hdr.has-ball .sub { grid-column: 2; align-self: start; }
+}
+.hdr .ball {
+  display: block; width: 56px; height: 56px; margin: 0; padding: 0; border: 0; border-radius: 50%;
+  background: transparent; cursor: pointer; transition: transform .12s ease;
+}
+.hdr .ball svg { display: block; width: 56px; height: 56px; }
+.hdr .ball:active { transform: scale(.94); }
+/* 青い帯の上でも見えるフォーカスの枠（白。--pri の枠は帯と同じ色で見えない・HIG） */
+.hdr .ball:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+@media print { .hdr .ball { display: none !important; } }
 
 main {
   /* 2列を保つため幅を抑える（広げて3列にすると指定のペアが分断される。M-2 参照） */
@@ -155,6 +176,8 @@ main {
      ここで色の変化を与えないと「押せたか分からない」状態になる（HIG: 即座の視覚フィードバック）。 */
   .tile { transition: none; }
   .tile:active { transform: none; background: var(--pri-l); border-color: var(--pri); }
+  .hdr .ball { transition: none; }
+  .hdr .ball:active { transform: none; opacity: .8; }
 }
 </style>
 </head>
@@ -471,6 +494,75 @@ main {
   var def = null, broken = 0, firstErr = null;
   function fail(e) { broken++; if (!firstErr) firstErr = e; }
   try { def = JSON.parse(document.getElementById('menuDef').textContent); } catch (e) { firstErr = e; }
+  /* メニューの毬（2026-10-26 代表者の決定）。見出しの左に、出ている業務ツールの数で育つ毬を出し、押すと柄（菊かがり・麻の葉）を切り替える。
+     ★柄はこの端末だけに残す。書くのは su-menu.js の SUMenu.setBall だけ（このページは保存領域へ直接書かない）。
+     ★業務ツール＝定義の「既定の区分」が設定・困った時でないもの（管理者が移した先の区分では決めない）。分母は定義の業務ツールの数。
+       分子は組み立てたボタンのうち業務ツールで、現場端末では自分も親も事務所専用でないもの（CSS で隠れているものは数えない）。
+     ★数え直すのは、組み立てた後・設定を読み直した後・「戻る」で開き直した時。
+     ★毬の部品（su-itomari.js）か su-menu.js が無い・描けない時はボタンを出さない（メニューはそのまま動く） */
+  var NOT_BIZ = { 'sec-setup': 1, 'sec-help': 1 };
+  var ballBtn = null, ballPick = null;
+  function bizHrefs() {
+    var home = {}, out = [];
+    (def && Array.isArray(def.sections) ? def.sections : []).forEach(function (s) {
+      if (!s || typeof s.id !== 'string' || !Array.isArray(s.tiles)) return;
+      s.tiles.forEach(function (t) {
+        if (!t || typeof t.href !== 'string' || !t.href || Object.prototype.hasOwnProperty.call(home, t.href)) return;
+        home[t.href] = s.id;
+        if (!NOT_BIZ[s.id]) out.push(t.href);
+      });
+    });
+    return out;
+  }
+  function shownHrefs(biz) {
+    var set = {}, out = [];
+    biz.forEach(function (h) { set[h] = 1; });
+    var field = document.documentElement.classList.contains('is-field');
+    var tiles = main.querySelectorAll('a.tile');
+    for (var i = 0; i < tiles.length; i++) {
+      var h = tiles[i].getAttribute('href');
+      if (!Object.prototype.hasOwnProperty.call(set, h)) continue;
+      if (field && tiles[i].closest('[data-office-only]')) continue;
+      delete set[h];   // 同じリンク先のボタンが2枚あっても1本と数える
+      out.push(h);
+    }
+    return out;
+  }
+  function ballNote(e) { try { if (window.SUErrors && SUErrors.note) SUErrors.note('メニューの毬', e, 'index.html'); } catch (e2) { /* 記録できなくても動く */ } }
+  function drawBall() {
+    try {
+      if (!window.SUItomari || !window.SUMenu) return;
+      var hdr = document.querySelector('header.hdr');
+      if (!hdr) return;
+      var kind = ballPick || SUMenu.ball();
+      var all = bizHrefs(), shown = shownHrefs(all);
+      var svg = SUItomari.render({ kind: kind, small: true, shown: shown, all: all, px: 56 });
+      if (!svg) {
+        if (ballBtn && ballBtn.parentNode) ballBtn.parentNode.removeChild(ballBtn);
+        ballBtn = null; hdr.classList.remove('has-ball');
+        return;
+      }
+      if (!ballBtn) {
+        ballBtn = el('button', 'ball');
+        ballBtn.type = 'button';
+        ballBtn.addEventListener('click', function () {
+          try {
+            var next = SUItomari.other(ballPick || SUMenu.ball());
+            SUMenu.setBall(next);
+            // 端末に残せない時（保存領域が使えない端末）も、開いている間はこの画面で切り替える
+            ballPick = SUMenu.ball() === next ? null : next;
+          } catch (e) { ballNote(e); }
+          drawBall();
+        });
+        hdr.insertBefore(ballBtn, hdr.firstChild);
+        hdr.classList.add('has-ball');
+      }
+      while (ballBtn.firstChild) ballBtn.removeChild(ballBtn.firstChild);
+      ballBtn.appendChild(svg);
+      var t = SUItomari.tally(shown, all);
+      ballBtn.setAttribute('aria-label', SUItomari.label(kind, t.n, t.N));
+    } catch (e) { ballNote(e); }
+  }
   /* ログインの役割ごとの並び・非表示（2026-10-23 代表者の決定）。端末の控え（前に読めた役割と設定）で先に組み立て、
      ページの読み込みが終わってから su-menu.js が今の設定を読み、違えば組み立て直す。su-menu.js が無い・壊れている時は既定のまま。
      現場端末で事務所専用を出さない仕組み（is-field・data-office-only）はこの後も同じに効く＝設定で現場端末に出すことはできない */
@@ -480,6 +572,7 @@ main {
   var cache = null;
   try { cache = window.SUMenu ? SUMenu.readCache() : null; } catch (e) { cache = null; }
   build(arranged(cache && cache.config, cache && cache.role));
+  drawBall();
   try { if (window.SUPerf) SUPerf.ready(); } catch (e) {}
   try {
     if (window.SUMenu) SUMenu.startSync(function (cfg, role) {
@@ -487,6 +580,7 @@ main {
       while (main.firstChild) main.removeChild(main.firstChild);
       build(arranged(cfg, role));
       fill();
+      drawBall();
     });
   } catch (e) { /* 設定を読めなくても既定のメニューで動く */ }
   function fill() {
@@ -523,6 +617,8 @@ main {
       if (!e.key || (/^[a-z0-9_]{1,40}$/.test(e.key) && main.querySelector('a.tile[data-due="' + e.key + '"]'))) refreshDue();
     });
   } catch (e) { /* 付け直しの登録ができなくても動く */ }
+  /* 毬の数え直し（「戻る」で前の表示のまま戻った時。現場端末の印は head の script が先に付け直す） */
+  try { window.addEventListener('pageshow', function (e) { if (e.persisted) drawBall(); }); } catch (e) { /* 登録できなくても毬は開いた時の数のまま */ }
   function build(view) {
   if (view && typeof view === 'object') (Array.isArray(view.sections) ? view.sections : []).forEach(function (s) {
     try {

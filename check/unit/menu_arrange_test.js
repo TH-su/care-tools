@@ -16,6 +16,9 @@
        - 消した区分は、ボタンが残る時だけ出す。事務所専用の区分から移したボタンは事務所専用のまま
        - 形の違う1件だけを捨てる（名前が長い・制御文字など）
        - 隠せないボタン（使い方・困った時）は事務所専用の区分へ移さない
+    10 施設の既定の毬の柄（ball・0025・2026-10-26 代表者の決定）
+       - 'asanoha' だけを受け付ける。'kiku'・不正な値は捨てる（キーごと持たない＝無い時は菊かがり）
+       - ball の有無で並び・非表示は変わらない
    画面のコードは書き換えず、su-menu.js をそのまま読み込んで動かす。 */
 'use strict';
 const fs = require('fs');
@@ -189,6 +192,16 @@ t('9w 「使い方・困った時」は事務所専用の区分（設定）へ�
 })());
 t('9x 「使い方・困った時」はふつうの区分へは移せる', hrefs(M.arrange(DEF, { ver: 1, mv: { 'help.html': 'sec-staff' } }, 'field'), 'sec-staff').indexOf('help.html') >= 0);
 t('9v 0023 のキーだけの設定でも、区分の並びは既定のまま', ids(M.arrange(DEF, { ver: 1, sdef: { 'sec-staff': { mk: '', title: 'x' } } }, 'admin')).join() === ids(DEF).join());
+
+console.log('10 施設の既定の毬の柄');
+t('10a ball:"asanoha" は受け付ける', M.clean({ ver: 1, ball: 'asanoha' }).ball === 'asanoha');
+t('10b ball:"kiku" は捨てる（キーごと持たない）', !('ball' in M.clean({ ver: 1, ball: 'kiku' })));
+t('10c 不正な値（大文字・空白つき・数・null・配列・オブジェクト）は捨てる',
+  ['ASANOHA', ' asanoha', 'asanoha ', '', 1, null, ['asanoha'], { k: 'asanoha' }, true].every(v => !('ball' in M.clean({ ver: 1, ball: v }))));
+t('10d ball が無い設定は今までどおり（キーを足さない）', !('ball' in M.clean({ ver: 1 })));
+t('10e 形の違う ball があっても、ほかの並び・非表示は効く', hrefs(M.arrange(DEF, { ver: 1, ball: 7, hide: { field: ['weight-record.html'] } }, 'field'), 'sec-resident').indexOf('weight-record.html') < 0);
+t('10f ball の有無で並び・非表示は変わらない', JSON.stringify(M.arrange(DEF, { ver: 1, ball: 'asanoha', order: { 'sec-resident': sw } }, 'admin')) === JSON.stringify(M.arrange(DEF, { ver: 1, order: { 'sec-resident': sw } }, 'admin')));
+t('10g ver が違う設定の ball は効かない（設定ごと無し）', M.clean({ ver: 2, ball: 'asanoha' }) === null);
 
 console.log(`\n合格 ${pass} / 不合格 ${fail}`);
 process.exit(fail ? 1 : 0);

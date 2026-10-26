@@ -58,7 +58,7 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
 | 予定・支援 | `care-schedule.html`（週間計画） `work-schedule.html` `visit-overview.html` `support-overview.html` `overview-compare.html` `daycare-roster.html` |
 | 職員・勤務 | `shift-app.html` `shift-analyzer.html` `staff-master.html` |
 | 運営 | `supplies.html` `connection-settings.html` `accounts.html` `menu-settings.html` `login.html` `perf-report.html` `shadow-check.html` |
-| 共通部品 | `su-errors.js` `su-perf.js` `su-cfg-hint.js` `su-facility.js` + `facility-profile.json` `su-print.js` + `su-print.css` `su-report.js` + `su-annot.js` `su-data.js` + `su-data-gas.js` `su-kv.js` `su-kv-shadow.js` `su-master-shadow.js` `su-roster.js` `su-weight-shadow.js` `su-patch-sync.js` `su-auth.js` + `supabase-js-*.js` |
+| 共通部品 | `su-errors.js` `su-perf.js` `su-cfg-hint.js` `su-facility.js` + `facility-profile.json` `su-print.js` + `su-print.css` `su-report.js` + `su-annot.js` `su-data.js` + `su-data-gas.js` `su-kv.js` `su-kv-shadow.js` `su-master-shadow.js` `su-roster.js` `su-weight-shadow.js` `su-patch-sync.js` `su-auth.js` + `supabase-js-*.js` `su-itomari.js`（メニューの毬の絵） |
 | 検証道具 | `check/`（撮影・画素比較・JS構文・実名ガード・配置図の絵・受け口 GAS・夜の定期タスクの指示書。配布物ではない）・`.github/workflows/pixel-check.yml`（PR ごとの画素の見比べ）・`.github/workflows/report-image.yml`（画面の指摘に配置図の絵を付ける） |
 | 辞書 | `meds-effect-dict.js`（薬効辞書） `meds-yakka-naiyo.js`（厚労省 薬価基準収載品目を加工した候補） |
 | 薬情の取り込み | `yakujo-calc.js`（入居者マスタの「📥 薬情の取り込み」の振り分け・組み立て・反映を止める規則の純関数。試験は `check/unit/yakujo_calc_test.js`） |
@@ -91,6 +91,7 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
 - 担当者会議の記録の出席者は、この方の前回までの会議の出席者を✔︎で選べる（所属と氏名の組で重ねない・入った後で直せる・候補に無い人は手で足す）。印刷は A4 横1枚で、文字を 7〜16px の間で1枚に収まるいちばん大きい値にし、余った高さは本文の4欄（検討した項目・検討内容・結論・残された課題）へ配る（代表者の決定 2026-10-25）。
 - 過去の担当者会議（E表別紙）の取り込みは、管理者（Google＋2段階認証）だけ・まず書かずに一覧を作ってから行う。名簿の1名にだけ一致した記録を、欄が足りなくても「確定」・開催の理由は空欄・出どころ「取り込み」で入れ、同じタブを2回入れない。開催日が先の日付の記録と、同じ方・同じ開催日の記録がもうある時は入れない。一覧の「取り込める」は行ごとに外せる。元のスプレッドシートには書かない（代表者の決定 2026-10-25）。
 - メニュー（index.html）のボタンは、ログインの役割（管理者・事務所・現場）ごとに、管理者が「メニューの設定」（menu-settings.html・管理者＋2段階認証だけ）で決めた並び・非表示で出す。並べ替え・非表示の当て方は `su-menu.js`（試験は `check/unit/menu_arrange_test.js`）、保存先は共通 DB の menu_settings。ログインしていない端末・設定を読めない時は既定の並びで全部出す。現場端末で事務所専用を出さない仕組みは設定で外せない。「使い方・困った時」は隠せない。これは入口の整理で守りではない（代表者の決定 2026-10-23）。
+- メニューの見出しの毬は、菊かがりと麻の葉の2つの柄で、出ている業務ツールの数で育つ（数えるのは設定・困った時の区分を除いたツール。現場端末で隠れる事務所専用は数えない）。毬を押した柄はその端末だけに残し（`su_menu_ball`・書くのは `su-menu.js` だけ）、施設の既定は「メニューの設定」で選ぶ（共通 DB は統合 0025）。毬は図形の属性だけで描き、外からの文字を入れない。アプリのアイコンは菊かがりの完成形のまま（代表者の決定 2026-10-26）。
 - メニューの区分（職員・入居者など）は、管理者が「メニューの設定」で作る・名前と絵文字を変える・消す（中のボタンを全部ほかの区分へ移した後だけ）・ボタンを別の区分へ移すことができる（保存は共通 DB 0023 の sdef・gone・mv）。施設名を含む区分の名前は定義に `{{通所}}` 等で書く。設定に無い区分（後から足した区分）は既定で前にある区分の直後に出し、事務所専用の区分から移したボタンは移した先でも現場端末に出さない。入居者の直後に「デイ {{通所}}」の区分を置き、デイ利用表・個別機能訓練計画書・デイの今日の記録を入れる（本人指示 2026-10-26）。
 - 使える人の管理の「全データの書き出し」は、既定で暗号化する（パスフレーズ 8 文字以上を2回入れる・どこにも保存しない・`su-export-crypt.js` は接続設定の控えと同じ方式）。暗号化しない時は理由（5〜200文字）を求め、データベースの記録に残す（0025）。暗号化した書き出し（.suenc）は、同じ画面の「暗号化した書き出しを開く」か `node check/export-decrypt.mjs` で開く。戻すのは試験（`check/import_e2e.mjs`）だけで、本番の「戻す」機能は作らない（代表者の決定 2026-10-26）。
 - 採用管理（ats.html）は、応募者の情報を共通ログインのデータベースにだけ置き、事務所PCの管理者（Google＋2段階認証）だけが使う。端末に残すのはタブ・開いている応募者の id・絞り込みだけ。職員マスタへの登録は確認の窓を出し、送る前に保留の印を保存してから送り、職員IDを受け取って控えた時だけ「登録しました」と出す（書けたか分からない時は職員マスタを読み直して確かめる）。本人希望・条件・備考の文章は職員マスタへ送らない。終わった選考は終わった日から設定の月数で保管期限の一覧に出し、消すのは管理者が選んだ時だけ（代表者承認 2026-10-26）。

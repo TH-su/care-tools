@@ -45,7 +45,8 @@ console.log('\n— 2. 組み立て方 —');
 const body = html.slice(html.indexOf('<body>'));
 t('メニューの本体は空の <main id="menu"> だけ（手書きのタイルは残っていない）', /<main id="menu"><\/main>/.test(html) && !/<a class="tile/.test(body), '');
 t('文字は textContent で入れる（innerHTML を使わない）', !/innerHTML/.test(body), '');
-t('fetch・XMLHttpRequest・localStorage の書き込みを持ち込まない', !/fetch\(|XMLHttpRequest|setItem\(/.test(html), '');
+t('fetch・XMLHttpRequest・localStorage の直接の書き込みを持ち込まない', !/fetch\(|XMLHttpRequest|setItem\(/.test(html), '');
+t('端末に書くのは見出しの毬の柄だけで、su-menu.js の SUMenu.setBall を通す（2026-10-26 代表者の決定）', (html.match(/SUMenu\.setBall\(/g) || []).length === 1 && !/localStorage\.(removeItem|clear)\(/.test(html), '');
 t('組み立てに失敗した時は、案内を出して不具合として知らせる', /メニューを組み立てられませんでした/.test(html) && /SUErrors\.report\('メニュー'/.test(html), '');
 t('事業所名を差し込む処理（data-fac-name）は組み立ての後に走る', html.indexOf('id="menuDef"') < html.indexOf("querySelectorAll('[data-fac-name]')"), '');
 
