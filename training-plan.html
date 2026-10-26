@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-QZzN1cLY9m8W4HvfaVHKBIF//Cly5d8ZBt8E0mCvxRU=' 'sha256-D6ogULTQtXH3kMufb5X/Lnse5oPeAD3k6r/maZTnCXU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-QZzN1cLY9m8W4HvfaVHKBIF//Cly5d8ZBt8E0mCvxRU=' 'sha256-t3vJdemBIgJXmGdVpSaW9t5kAgGj+ZtMM3UZLPyppCM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- 要配慮情報（疾患・訓練内容）を表示する画面。ブラウザキャッシュ・検索索引に残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -938,6 +938,8 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
 <script src="su-perf.js?v=2026-10-24"></script>
 <script src="su-data.js"></script>
 <script src="su-data-gas.js?v=2026-10-24"></script>
+<!-- 週間計画の保存先の切り替え（統合 0005/0007）。デイ利用者の判定は、切り替え後は Supabase から読む（未ログインは Google） -->
+<script src="su-kv.js?v=2026-10-24.2"></script>
 <script src="su-facility.js?v=2026-10-26"></script>
 <script src="training-plan-form.js?v=2026-09-24"></script>
 <script>
@@ -2335,7 +2337,14 @@ function loadDaySet() {
     DAY_MSG = '週間計画の接続先が未設定のため、デイ利用者を絞り込めません。「全員」で表示しています。';
     return Promise.resolve(false);
   }
-  return withTimeout(SU.data.kvGet('care_schedule_v2', { endpoint: SCFG.endpoint, token: SCFG.token }), 30000)
+  /* 週間計画の保存先を Supabase に切り替えた後は、ログインしている端末だけ Supabase から読む（フェイスシート・入居者マスタと同じ）。
+     スイッチが切・未ログイン・失敗の時は null＝今までどおり Google（写し返しの写し）。読むだけ（2026-10-26 代表者の決定・M1 段0）。 */
+  var viaKv = (window.SUKv && SUKv.readRouted) ? SUKv.readRouted({ action: 'get', key: 'care_schedule_v2' }) : Promise.resolve(null);
+  /* Supabase 側の応答が止まっても Google の持ち時間（30秒）を削らない: 8秒で見切って Google へ（反証レビュー指摘） */
+  var viaKvCapped = Promise.race([viaKv, new Promise(function (ok) { setTimeout(function () { ok(null); }, 8000); })]);
+  return viaKvCapped.then(function (v) {
+    return v || withTimeout(SU.data.kvGet('care_schedule_v2', { endpoint: SCFG.endpoint, token: SCFG.token }), 30000);
+  })
     .then(function (j) {
       if (!j || !j.ok) throw new Error(s_((j && j.error) || '応答エラー'));
       var list = (j.data && Object.prototype.toString.call(j.data.residents) === '[object Array]') ? j.data.residents : null;
