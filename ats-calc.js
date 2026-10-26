@@ -9,7 +9,8 @@
  *   3. 取り込みは推測で埋めない。読めない日付・知らない採用可否の語は空にして「入れられない理由」を返す
  *   4. 職員マスタへ送る項目は、職員マスタの GAS（staff-api.gs の STAFF_FIELDS）が受け付けるキーだけ。
  *      本人希望・条件・備考の文章は送らない
- *   5. 「登録できたか」の6分の判定は入居調整の masterWriteVerdict と同じ（staffVerdict）
+ *   5. 「登録できたか」の判定の分かれ方は入居調整の masterWriteVerdict と同じ（staffVerdict）。待つのは8分
+ *      （職員マスタの GAS の処理中の印 420秒＝7分より長く）
  */
 (function (root) {
   'use strict';
@@ -45,7 +46,7 @@
   var DEFAULT_EVAL_ITEMS = ['経験・技術', '人柄・話し方', '勤務の希望が合うか', '通勤', '長く続けられそうか', '総合'];
   var DEFAULT_SETTINGS = { evalItems: DEFAULT_EVAL_ITEMS.slice(), retainMonths: 6, lostDays: 90 };
   var FIRST_CONTACT_HOURS = 24;
-  var SETTLE_MS = 6 * 60 * 1000;   // 入居調整の MASTER_SETTLE_MS と同じ（GAS の1回の実行は最長6分）
+  var SETTLE_MS = 8 * 60 * 1000;   // 職員マスタの GAS の処理中の印（420秒）より長く待つ（2026-10-26 反証レビュー）
 
   function stageOf(id) {
     var i;
@@ -477,8 +478,15 @@
     if (str(row.hireDate) !== str(sent.hireDate)) return false;
     return !sent.birthDate || str(row.birthDate) === str(sent.birthDate);
   }
+  /* 退職日のある職員は照合から外す（辞めた方につながない） */
+  function isActiveStaff(r) { return !!r && !trim(r.retireDate); }
   function staffMatches(list, sent) {
-    return (Array.isArray(list) ? list : []).filter(function (r) { return sameStaff(r, sent); });
+    return (Array.isArray(list) ? list : []).filter(function (r) { return isActiveStaff(r) && sameStaff(r, sent); });
+  }
+  /* 氏名だけ一致する在籍の職員（入職日・生年月日は違う）。新しく登録する前に確かめるため */
+  function sameNameActive(list, name) {
+    var n = normName(name);
+    return n ? (Array.isArray(list) ? list : []).filter(function (r) { return isActiveStaff(r) && normName(r.name) === n; }) : [];
   }
   /* 'hit'＝登録済み／'wait'＝まだ言い切れない（送り直させない）／'absent'＝入っていないと言い切れる
      （入居調整の masterWriteVerdict と同じ分かれ方） */
@@ -643,7 +651,7 @@
     parseContacts: parseContacts, deriveStage: deriveStage, parseCsv: parseCsv, detectHeader: detectHeader,
     normApplicant: normApplicant, planImport: planImport,
     buildStaffCreate: buildStaffCreate, missingText: missingText, sentKey: sentKey, labelOf: labelOf,
-    sameStaff: sameStaff, staffMatches: staffMatches, staffVerdict: staffVerdict, staffWaitMinutes: staffWaitMinutes, staffResult: staffResult,
+    sameStaff: sameStaff, staffMatches: staffMatches, sameNameActive: sameNameActive, staffVerdict: staffVerdict, staffWaitMinutes: staffWaitMinutes, staffResult: staffResult,
     firstContactLate: firstContactLate, replyDueState: replyDueState, evalStatusText: evalStatusText, evalVisible: evalVisible,
     evalCheck: evalCheck, normEvalItems: normEvalItems, normSettings: normSettings,
     scheduleBuckets: scheduleBuckets, periodRange: periodRange, rate: rate, funnel: funnel,

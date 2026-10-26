@@ -8,7 +8,7 @@
      3. 危険な値（氏名に <img onerror> など）が文字のまま出る
      4. タブは hash → 端末の控え → 選考 の順で戻す（既知の名前だけ）。端末に書くのは UI の状態だけ
      5. 職員マスタへの登録の全経路で「登録しました」と偽らない
-        （ok／ok:false／応答なし／FLUSH／処理中／保留の印を保存できない／確かめ: 1件・0件で6分未満・6分以上・2件以上／
+        （ok／ok:false／応答なし／FLUSH／処理中／保留の印を保存できない／確かめ: 1件・0件で8分未満・8分以上・2件以上／
          同じ受付番号の送り直し／2回押し）
      6. 送り方は職員マスタの apiPost と同じ形（POST・本文は JSON の文字列・redirect:'follow'・Content-Type を足さない）
      7. FLUSH_FAIL_MSG は職員マスタの画面の写し（＝GAS の定数）と1文字も違わない
@@ -301,21 +301,39 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
   {
     const L = await opened({ row: app({ staff_pending_at: ago(2), staff_req_id: 'b'.repeat(32) }), stf: (b) => b.action === 'list' ? { ok: true, rows: [] } : { ok: true } });
     const r = await L.ctx.regCheck_(UID(1), false); await settle();
-    t('0件・送ってから6分未満 → 待つ（保留を外さない・送り直さない）', r === 'wait' && L.rpcs().length === 0 && /分ほど待って/.test(regMsg(L)) && !/登録しました/.test(regMsg(L)), { r, m: regMsg(L) });
+    t('0件・送ってから8分未満 → 待つ（保留を外さない・送り直さない）', r === 'wait' && L.rpcs().length === 0 && /分ほど待って/.test(regMsg(L)) && !/登録しました/.test(regMsg(L)), { r, m: regMsg(L) });
   }
   {
     const REQ = 'c'.repeat(32);
-    const L = await opened({ row: app({ staff_pending_at: ago(7), staff_req_id: REQ, staff_sent_key: CALC.sentKey(CALC.buildStaffCreate(app(), ENUMS).fields) }),
+    const L = await opened({ row: app({ staff_pending_at: ago(9), staff_req_id: REQ, staff_sent_key: CALC.sentKey(CALC.buildStaffCreate(app(), ENUMS).fields) }),
       rpc: { ats_clear_staff_pending: clearOk, ats_mark_staff_pending: pendOk, ats_mark_staff: markOk },
       stf: (b) => b.action === 'list' ? { ok: true, rows: [] } : { ok: true, created: [{ id: 'S0301' }] } });
     const r = await L.ctx.regCheck_(UID(1), false); await settle();
-    t('0件・6分以上 → 保留を外し「同じ受付番号で送り直す」を出す', r === 'absent' && L.rpcs().map((x) => x.name).join() === 'ats_clear_staff_pending' && /data-act="reg-resend"/.test(L.ctx.regHtml_(L.ctx.rowById_(UID(1)))) && !/登録しました/.test(regMsg(L)), { r, m: regMsg(L) });
+    t('0件・8分以上 → 保留を外し（自分の受付番号を添える）「同じ受付番号で送り直す」を出す', r === 'absent' && L.rpcs().map((x) => x.name).join() === 'ats_clear_staff_pending' && L.rpcs()[0].args.p_req_id === REQ && /data-act="reg-resend"/.test(L.ctx.regHtml_(L.ctx.rowById_(UID(1)))) && !/登録しました/.test(regMsg(L)), { r, m: regMsg(L) });
     const r2 = await L.ctx.regResend_(); await settle();
     const b = bodiesOf(L, 'bulkSave')[0];
     t('送り直しは同じ受付番号（保留の印も同じ番号）', r2 === 'ok' && b && b.reqId === REQ && L.rpcs().find((x) => x.name === 'ats_mark_staff_pending').args.p_req_id === REQ, { r2, req: b && b.reqId });
+    t('送り直しも送る前に職員マスタの一覧で照合する', stfCalls(L).filter((x) => x === 'list').length === 2 && stfCalls(L).indexOf('bulkSave') > stfCalls(L).lastIndexOf('list'));
+  }
+  for (const [label, listRes, want] of [['送り直しの前の照合で1人見つかった → 送らずにつなぐ窓', { ok: true, rows: [{ id: 'S0401', name: '甲野 一郎', hireDate: app().start_on, birthDate: '1990-04-01' }] }, 'cancel'],
+    ['送り直しの前の照合で2人以上 → 送らない', { ok: true, rows: [{ id: 'S0401', name: '甲野 一郎', hireDate: app().start_on, birthDate: '1990-04-01' }, { id: 'S0402', name: '甲野 一郎', hireDate: app().start_on, birthDate: '1990-04-01' }] }, 'many'],
+    ['送り直しの前の照合で一覧を読めない → 送らない', 'NET', 'nolist']]) {
+    const REQ = 'g'.repeat(32);
+    let n = 0;
+    const L = await opened({ answer: false, row: app({ staff_pending_at: ago(9), staff_req_id: REQ }), rpc: { ats_clear_staff_pending: clearOk, ats_mark_staff_pending: pendOk },
+      stf: (b) => { if (b.action !== 'list') return { ok: true, created: [{ id: 'S0999' }] }; n++; return n === 1 ? { ok: true, rows: [] } : listRes; } });
+    await L.ctx.regCheck_(UID(1), false); await settle();
+    const r2 = await L.ctx.regResend_(); await settle();
+    t(label, r2 === want && bodiesOf(L, 'bulkSave').length === 0 && !L.rpcs().some((x) => x.name === 'ats_mark_staff_pending'), { r2 });
   }
   {
-    const L = await opened({ row: app({ staff_pending_at: ago(7), staff_req_id: 'd'.repeat(32), staff_sent_key: 'old-key' }),
+    const L = await opened({ row: app({ staff_pending_at: ago(9), staff_req_id: 'h'.repeat(32) }), rpc: { ats_clear_staff_pending: () => ({ ok: false, reason: 'other_send' }) }, stf: LIST0 });
+    const reads0 = L.reads().length;
+    const r = await L.ctx.regCheck_(UID(1), false); await settle();
+    t('保留を外す時に reason:other_send → 「ほかの画面で送り直しています。読み直しました」と出して読み直す（送り直しは出さない）', r === 'other_send' && /ほかの画面で送り直しています。読み直しました/.test(regMsg(L)) && L.reads().length > reads0 && !L.ctx.reg[UID(1)].resend, { r, m: regMsg(L) });
+  }
+  {
+    const L = await opened({ row: app({ staff_pending_at: ago(9), staff_req_id: 'd'.repeat(32), staff_sent_key: 'old-key' }),
       rpc: { ats_clear_staff_pending: clearOk, ats_mark_staff_pending: pendOk, ats_mark_staff: markOk }, stf: (b) => b.action === 'list' ? { ok: true, rows: [] } : { ok: true, created: [{ id: 'S0302' }] } });
     await L.ctx.regCheck_(UID(1), false); await settle();
     await L.ctx.regResend_(); await settle();
@@ -347,15 +365,15 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
     const L = await opened({ row: PEND, rpc: { ats_put: () => ({ ok: false, reason: 'pending', row: PEND }), ats_set_stage: () => ({ ok: false, reason: 'pending', row: PEND }) }, stf: LIST0 });
     const h = L.ctx.detailHtml_(L.ctx.rowById_(UID(1)));
     const dis = (id) => new RegExp('id="' + id + '"[^>]*disabled').test(h);
-    t('氏名・カナ・生年月日・性別・電話・住所・入職予定日は入力できない', ['f-name', 'f-kana', 'f-birth', 'f-gender', 'f-phones', 'f-addr', 'f-start'].every(dis), ['f-name', 'f-kana', 'f-birth', 'f-gender', 'f-phones', 'f-addr', 'f-start'].filter((x) => !dis(x)));
+    t('氏名・カナ・生年月日・性別・職種・電話・住所・入職予定日は入力できない', ['f-name', 'f-kana', 'f-birth', 'f-gender', 'f-jobs', 'f-phones', 'f-addr', 'f-start'].every(dis), ['f-name', 'f-kana', 'f-birth', 'f-gender', 'f-jobs', 'f-phones', 'f-addr', 'f-start'].filter((x) => !dis(x)));
     t('受付日・本人希望などは入力できる', !dis('f-recv') && !dis('f-wish') && !dis('f-email'));
     t('入職準備は全部入力できない（項目の枠ごと止める）', /<fieldset class="lockfs" disabled>/.test(h));
     t('「職員マスタへの登録を確かめ中のため直せません」と出す', /職員マスタへの登録を確かめ中のため直せません/.test(h));
     t('［終わりにする…］を出さない', !/data-act="end"/.test(h));
-    L.ctx.readBasic_ = () => ({ id: UID(1), name: '別の名前', kana: 'x', gender: 'F', birth_date: '1991-01-01', phones: [], address: 'x', start_on: '2030-01-01', received_on: '2026-10-01', wish_text: '架空', email: null });
+    L.ctx.readBasic_ = () => ({ id: UID(1), name: '別の名前', kana: 'x', gender: 'F', jobs: ['別の職種'], birth_date: '1991-01-01', phones: [], address: 'x', start_on: '2030-01-01', received_on: '2026-10-01', wish_text: '架空', email: null });
     const r = await L.ctx.saveBasic_(); await settle();
     const put = L.rpcs().find((x) => x.name === 'ats_put');
-    t('確かめ中の保存は、直せない項目を送らない', put && ['name', 'kana', 'gender', 'birth_date', 'phones', 'address', 'start_on', 'prep'].every((k) => !(k in put.args.p_row)) && put.args.p_row.received_on === '2026-10-01', put && Object.keys(put.args.p_row));
+    t('確かめ中の保存は、直せない項目を送らない', put && ['name', 'kana', 'gender', 'birth_date', 'jobs', 'phones', 'address', 'start_on', 'prep'].every((k) => !(k in put.args.p_row)) && put.args.p_row.received_on === '2026-10-01', put && Object.keys(put.args.p_row));
     t('ats_put が reason:pending → 同じ文言', r === 'pending');
     const before = L.rpcs().length;
     t('入職準備の保存は送らない', (await L.ctx.savePrep_()) === 'pending' && L.rpcs().length === before);
@@ -371,6 +389,10 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
     await L.ctx.runPurge_(); await settle();
     const pg = L.rpcs().find((x) => x.name === 'ats_purge');
     t('消す時も確かめ中の方を入れない', pg && JSON.stringify(pg.args.p_ids) === JSON.stringify([UID(3)]), pg && pg.args);
+    const L9 = await opened({ rpc: { ats_purge: () => ({ ok: true, deleted: 1, skipped_pending: 2 }) } });
+    L9.ctx.apps = [app({ id: UID(3), stage: 'lost', retain_until: '2000-01-01' })]; L9.ctx.expireSel = { [UID(3)]: true };
+    await L9.ctx.runPurge_(); await settle();
+    t('削除の結果に skipped_pending が1件以上 → 「確かめ中の n件は消しませんでした」を添える', /1件を消しました。確かめ中の2件は消しませんでした。/.test(L9.els['a-msg'].textContent), L9.els['a-msg'].textContent);
   }
   {
     const L = load({ row: null, tables: { ats_applicants: [app({ staff_pending_at: ago(1) })], ats_interviews: [], ats_settings: [], staff_names: [], ats_contacts: [] },
@@ -391,6 +413,23 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
     t('一覧を読めない → 送らない（保留の印も付けない）', (await L4.ctx.regStart_()) === 'nolist' && L4.rpcs().length === 0 && bodiesOf(L4, 'bulkSave').length === 0 && !/登録しました/.test(regMsg(L4)));
     const L5 = await opened({ stf: (b) => b.action === 'list' ? { ok: true, rows: [{ id: 'S0203', name: '甲野一郎', hireDate: app().start_on, birthDate: '' }] } : { ok: true } , row: app({ birth_date: null }), rpc: { ats_mark_staff: markOk } });
     t('生年月日が無い方は氏名＋入職日で探す', (await L5.ctx.regStart_()) === 'ok' && L5.rpcs()[0].args.p_staff_id === 'S0203');
+  }
+  {
+    const L = await opened({ rpc: { ats_mark_staff: markOk }, stf: (b) => b.action === 'list' ? { ok: true, rows: [Object.assign({ kana: 'コウノ イチロウ' }, LIST1[0])] } : { ok: true } });
+    await L.ctx.regStart_(); await settle();
+    const body = L.asks[0] && L.asks[0].bodyHtml || '';
+    t('つなぐ窓は採用管理と職員マスタの氏名・フリガナ・生年月日・入職日を並べる', /<th>採用管理<\/th><th>職員マスタ（職員ID S0201）<\/th>/.test(body) && ['氏名', 'フリガナ', '生年月日', '入職日'].every((k) => body.includes('<td>' + k + '</td>')) && body.includes('甲野　一郎') && body.includes('甲野 一郎'), body.slice(0, 300));
+    t('つなぐ直前に応募者の行を読み直す', L.reads().some((x) => x.table === 'ats_applicants' && x.ops.some((o) => o[0] === 'eq' && o[2] === UID(1))));
+    const L2 = await opened({ rpc: { ats_mark_staff: markOk }, stf: (b) => b.action === 'list' ? { ok: true, rows: LIST1 } : { ok: true } });
+    L2.db.from = ((orig) => (tb) => { const b = orig(tb); if (tb === 'ats_applicants') b.then = (ok, ng) => Promise.resolve({ data: [app({ name: '甲野 二郎' })], error: null }).then(ok, ng); return b; })(L2.db.from.bind(L2.db));
+    const r2 = await L2.ctx.regStart_(); await settle();
+    t('窓を開いた後に氏名・入職日・生年月日が変わっていた → 止めて「内容が変わりました。もう一度押してください」（つながない）', r2 === 'changed' && L2.rpcs().length === 0 && regMsg(L2) === '内容が変わりました。もう一度押してください。', { r2, m: regMsg(L2) });
+    const L3 = await opened({ rpc: { ats_mark_staff_pending: pendOk, ats_mark_staff: markOk }, stf: (b) => b.action === 'list' ? { ok: true, rows: [Object.assign({}, LIST1[0], { retireDate: '2025-03-31' })] } : { ok: true, created: [{ id: 'S0501' }] } });
+    const r3 = await L3.ctx.regStart_(); await settle();
+    t('退職日のある職員は照合から外す（つながず新しく登録する）', r3 === 'ok' && bodiesOf(L3, 'bulkSave').length === 1 && !/もういらっしゃいます|同じ氏名/.test(L3.asks.map((x) => x.title).join()), { r3, asks: L3.asks.map((x) => x.title) });
+    const L4 = await opened({ answer: false, stf: (b) => b.action === 'list' ? { ok: true, rows: [{ id: 'S0601', name: '甲野 一郎', hireDate: '2020-04-01', birthDate: '1980-01-01' }] } : { ok: true } });
+    const r4 = await L4.ctx.regStart_(); await settle();
+    t('氏名だけ一致する在籍の職員 → 「同じ氏名の職員がいます（入職日が違います）」と聞く・やめれば送らない', r4 === 'cancel' && L4.asks[0].title === '同じ氏名の職員がいます（入職日が違います）' && /それでも新しく登録しますか/.test(L4.asks[0].lines.join()) && bodiesOf(L4, 'bulkSave').length === 0 && L4.rpcs().length === 0, { r4 });
   }
   group('5e. すでに登録済み・開いていた行が消えた時');
   {

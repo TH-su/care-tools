@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Sa8ygjy9yXMPnD1/3Fj/Qq+3ebxWDljq18duu48R0bM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ECFDP6wtZ3jeiQYxLGOohRkXV7wz/yE2nI90mroNyKY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
@@ -703,11 +703,11 @@ function detailHtml_(a){
   h+='<div class="msg" id="d-msg" role="status"></div>';
   /* 基本情報 */
   var lk=isPending_(a)?' disabled':'';
-  h+='<section class="sec" aria-labelledby="s-basic"><h3 id="s-basic">基本情報</h3>'+(lk?'<p class="msg warn">'+esc(PENDING_MSG)+'（氏名・フリガナ・生年月日・性別・電話・住所・入職予定日・入職準備）。</p>':'')+'<div class="fgrid">'+
+  h+='<section class="sec" aria-labelledby="s-basic"><h3 id="s-basic">基本情報</h3>'+(lk?'<p class="msg warn">'+esc(PENDING_MSG)+'（氏名・フリガナ・生年月日・性別・職種・電話・住所・入職予定日・入職準備）。</p>':'')+'<div class="fgrid">'+
     fi_('f-name','氏名',a.name,'text',' maxlength="80"'+lk)+fi_('f-kana','フリガナ',a.kana,'text',' maxlength="80"'+lk)+
     '<div class="fi"><label for="f-gender">性別</label><select id="f-gender" data-dirty="1"'+lk+'><option value="">—</option><option value="M"'+(a.gender==='M'?' selected':'')+'>男</option><option value="F"'+(a.gender==='F'?' selected':'')+'>女</option></select></div>'+
     fi_('f-birth','生年月日',a.birth_date,'date',lk)+fi_('f-recv','受付日',a.received_on,'date')+
-    fi_('f-src','経路（「・」で区切る）',(a.sources||[]).join('・'),'text',' maxlength="400"')+fi_('f-jobs','職種（「・」で区切る）',(a.jobs||[]).join('・'),'text',' maxlength="400"')+
+    fi_('f-src','経路（「・」で区切る）',(a.sources||[]).join('・'),'text',' maxlength="400"')+fi_('f-jobs','職種（「・」で区切る）',(a.jobs||[]).join('・'),'text',' maxlength="400"'+lk)+
     fi_('f-quals','資格',a.quals_text,'text',' maxlength="1000"')+fi_('f-addr','住所',a.address,'text',' maxlength="200"'+lk)+
     ta_('f-phones','電話（1行に1つ。古い番号は先頭に「旧」）',(a.phones||[]).map(function(p){ return (p.label?p.label+' ':'')+p.num; }).join('\n'),' maxlength="300"'+lk)+
     fi_('f-email','メール',a.email,'email',' maxlength="200"')+ta_('f-wish','本人希望',a.wish_text,' maxlength="4000"')+ta_('f-cond','条件',a.cond_text,' maxlength="4000"')+ta_('f-note','備考',a.note_text,' maxlength="4000"')+
@@ -769,7 +769,7 @@ function readBasic_(a){
     reply_due:val_('f-due')||null,start_on:val_('f-start')||null};
 }
 /* 確かめ中は、直せない項目を送らない（送った中身を変えない） */
-var LOCKED_KEYS=['name','kana','gender','birth_date','phones','address','start_on','prep'];
+var LOCKED_KEYS=['name','kana','gender','birth_date','jobs','phones','address','start_on','prep'];
 function readBasicSafe_(a){
   var row=readBasic_(a);
   if(isPending_(a)) LOCKED_KEYS.forEach(function(k){ delete row[k]; });
@@ -1052,7 +1052,7 @@ function regHtml_(a){
   return h+(why?'<p class="hint">'+esc(why)+'</p>':'<p class="hint">保存した入職準備の内容で登録します。</p>')+
     '<button type="button" class="btn pri" data-act="reg-start"'+((b.ready&&!r.busy)?'':' disabled')+'>職員マスタへ登録</button></div>';
 }
-/* 登録: 0. 職員マスタの一覧で同じ方がいないか確かめる（読めなければ送らない）→ 1. 確認の窓 →
+/* 登録: 0. 職員マスタの一覧で同じ方がいないか確かめる（regPrecheck_・読めなければ送らない）→ 1. 確認の窓 →
    2. 保留の印を先に保存（できなければ送らない）→ 3. 職員マスタへ送る → 4〜6. 応答で分ける */
 function regStart_(){
   var a=rowById_(curId); if(!a||a.staff_id||a.staff_pending_at) return Promise.resolve('blocked');
@@ -1060,36 +1060,75 @@ function regStart_(){
   if(edDirty){ dMsg_('先に「入職準備を保存」を押してください（保存した内容で登録します）。','warn'); return Promise.resolve('dirty'); }
   var b=AtsCalc.buildStaffCreate(a,enums);
   if(!b.ready) return Promise.resolve('notready');
-  var id=a.id, my=gen;
-  r.busy=true; r.state='busy'; r.msg='職員マスタに同じ方がいないか確かめています…'; r.resend=null; if(curId===id) paintDetail_();
-  var sent={name:b.fields.name,hireDate:b.fields.hireDate,birthDate:b.fields.birthDate||''};
-  return stfPost_({action:'list'},45000).then(function(d){
-    if(!(d&&d.ok===true&&Array.isArray(d.rows))) throw {noAnswer:true,why:'一覧を読めません'};
-    return d.rows;
-  }).then(function(list){
-    if(my!==gen) return 'stale';
-    var hits=AtsCalc.staffMatches(list,sent);
-    if(hits.length>1){ r.busy=false; r.state='unsure'; r.msg='氏名・入職日・生年月日が同じ方が職員マスタに'+hits.length+'人います。職員マスタで確かめてください（送っていません）。'; if(curId===id) paintDetail_(); return 'many'; }
-    if(hits.length===1){
-      var sid=String(hits[0].id||'');
-      return openDlg_({title:'職員マスタにもういらっしゃいます',lines:['職員ID '+sid+' の方が、氏名・入職日'+(sent.birthDate?'・生年月日':'')+'とも同じです。','新しく作らず、この方につなぎますか？'],ok:'この方につなぐ'}).then(function(ok){
-        if(!ok){ r.busy=false; r.state=''; r.msg='職員マスタへは送っていません。'; if(curId===id) paintDetail_(); return 'cancel'; }
-        return regDone_(id,sid,'職員マスタの方（職員ID '+sid+'）につなぎました。');
-      });
-    }
+  var id=a.id;
+  r.resend=null;
+  return regPrecheck_(id,b).then(function(pc){
+    if(pc!=='go') return pc;
     var body='<div class="tbl-wrap"><table class="rt"><thead><tr><th>採用管理の項目</th><th>値</th><th>職員マスタの欄</th></tr></thead><tbody>'+
       b.rows.map(function(x){ return '<tr><td>'+esc(x.label)+'</td><td>'+esc(x.value)+'</td><td>'+esc(x.target)+'</td></tr>'; }).join('')+'</tbody></table></div>';
     return openDlg_({title:'職員マスタへ登録しますか？',lines:['本人希望などの文章は送りません。'],bodyHtml:body,ok:'登録する'}).then(function(ok){
       if(!ok){ r.busy=false; r.state=''; r.msg=''; if(curId===id) paintDetail_(); return 'cancel'; }
       return regSend_(id,newReqId_(),b.fields);
     });
+  });
+}
+/* 送る前の照合（新しい登録・送り直しの両方が必ず通す）。返りは 'go'（送ってよい）か、送らなかった理由
+   ・同じ方（氏名＋入職日＋生年月日・退職した方は除く）が1人 → 見比べの窓で聞いてからつなぐ（つなぐ直前に応募者の行を読み直す）
+   ・2人以上 → 止める ・一覧を読めない → 送らない
+   ・氏名だけ一致する在籍の職員がいる → 「それでも新しく登録しますか」と聞く */
+function regPrecheck_(id,b){
+  var r=regOf_(id), my=gen;
+  r.busy=true; r.state='busy'; r.msg='職員マスタに同じ方がいないか確かめています…'; if(curId===id) paintDetail_();
+  var sent={name:b.fields.name,hireDate:b.fields.hireDate,birthDate:b.fields.birthDate||''};
+  var stop=function(kind,state,msg){ r.busy=false; r.state=state; r.msg=msg; if(curId===id) paintDetail_(); return kind; };
+  return stfPost_({action:'list'},45000).then(function(d){
+    if(!(d&&d.ok===true&&Array.isArray(d.rows))) throw {noAnswer:true,why:'一覧を読めません'};
+    return d.rows;
+  }).then(function(list){
+    if(my!==gen) return 'stale';
+    var hits=AtsCalc.staffMatches(list,sent);
+    if(hits.length>1) return stop('many','unsure','氏名・入職日・生年月日が同じ方が職員マスタに'+hits.length+'人います。職員マスタで確かめてください（送っていません）。');
+    if(hits.length===1) return regLink_(id,b,sent,hits[0]);
+    var same=AtsCalc.sameNameActive(list,sent.name);
+    if(!same.length) return 'go';
+    return openDlg_({title:'同じ氏名の職員がいます（入職日が違います）',lines:['職員マスタに同じ氏名の在籍の職員がいます（職員ID '+same.map(function(x){ return String(x.id||''); }).join('・')+'）。','それでも新しく登録しますか？'],ok:'新しく登録する'}).then(function(ok){
+      if(!ok) return stop('cancel','','職員マスタへは送っていません。');
+      return 'go';
+    });
   },function(e){
     if(my!==gen) return 'stale';
-    r.busy=false; r.state='ng';
-    r.msg=(e&&e.nocfg)?'職員マスタの接続先が見つかりません（接続設定）。送っていません。':'職員マスタの一覧を読めなかったため、送っていません（'+((e&&e.why)||friendly_(e))+'）。少し待ってから、もう一度押してください。';
     if(!(e&&(e.noAnswer||e.nocfg))) atsNote_('登録の前の確かめ', e);
-    if(curId===id) paintDetail_(); return 'nolist';
+    return stop('nolist','ng',(e&&e.nocfg)?'職員マスタの接続先が見つかりません（接続設定）。送っていません。':'職員マスタの一覧を読めなかったため、送っていません（'+((e&&e.why)||friendly_(e))+'）。少し待ってから、もう一度押してください。');
   });
+}
+/* 職員マスタにいる方につなぐ。採用管理と職員マスタの値を並べて見せ、つなぐ直前に応募者の行を読み直して、窓を開いた時と変わっていれば止める */
+function regLink_(id,b,sent,hit){
+  var r=regOf_(id), my=gen, sid=String(hit.id||'');
+  var row=function(lab,x,y){ return '<tr><td>'+esc(lab)+'</td><td>'+esc(x||'—')+'</td><td>'+esc(y||'—')+'</td></tr>'; };
+  var body='<div class="tbl-wrap"><table class="rt"><thead><tr><th>項目</th><th>採用管理</th><th>職員マスタ（職員ID '+esc(sid)+'）</th></tr></thead><tbody>'+
+    row('氏名',sent.name,hit.name)+row('フリガナ',b.fields.kana,hit.kana)+row('生年月日',sent.birthDate,hit.birthDate)+row('入職日',sent.hireDate,hit.hireDate)+'</tbody></table></div>';
+  return openDlg_({title:'職員マスタにもういらっしゃいます',lines:['氏名・入職日'+(sent.birthDate?'・生年月日':'')+'が同じ方がいます。見比べてください。','新しく作らず、この方につなぎますか？'],bodyHtml:body,ok:'この方につなぐ'}).then(function(ok){
+    if(!ok){ r.busy=false; r.state=''; r.msg='職員マスタへは送っていません。'; if(curId===id) paintDetail_(); return 'cancel'; }
+    return Promise.resolve().then(function(){ return db_().from('ats_applicants').select('*').eq('id',id); }).then(function(res){
+      if(my!==gen) return 'stale';
+      var now=rows_(res)[0];
+      var f=now?AtsCalc.buildStaffCreate(now,enums).fields:{};
+      if(!now||String(f.name||'')!==sent.name||String(f.hireDate||'')!==sent.hireDate||String(f.birthDate||'')!==sent.birthDate){
+        if(now) replaceRow_(now);
+        r.busy=false; r.state='ng'; r.msg='内容が変わりました。もう一度押してください。'; paintAll_(); if(curId===id) paintDetail_(); return 'changed';
+      }
+      return regDone_(id,sid,'職員マスタの方（職員ID '+sid+'）につなぎました。');
+    },function(e){
+      if(my!==gen) return 'stale';
+      atsNote_('つなぐ前の読み直し', e); r.busy=false; r.state='ng'; r.msg=friendly_(e)+'（つないでいません）'; if(curId===id) paintDetail_(); return 'error';
+    });
+  });
+}
+/* 保留を外そうとしたら、ほかの画面が送り直していた（受付番号が違う）＝そう知らせて読み直す */
+function regOtherSend_(id){
+  var r=regOf_(id);
+  r.busy=false; r.state='unsure'; r.resend=null; r.msg='ほかの画面で送り直しています。読み直しました。';
+  return loadAll_().then(function(){ if(curId===id) paintDetail_(); return 'other_send'; });
 }
 /* すでに登録済み（ほかの画面・端末で済んでいた）と言われた時は、そう知らせて全部を読み直す */
 function regRegistered_(id){
@@ -1122,7 +1161,11 @@ function regSend_(id,reqId,fields){
       var k=res&&res.__noAnswer?{kind:'unsure',id:''}:AtsCalc.staffResult(res,FLUSH_FAIL_MSG);
       if(k.kind==='ok') return regDone_(id,k.id,'登録しました。');
       if(k.kind==='ng'){
-        return rpc_('ats_clear_staff_pending',{p_id:id}).then(function(c){ if(c&&c.row) replaceRow_(c.row); else { var x=rowById_(id); if(x) x.staff_pending_at=null; } },function(e){ atsNote_('保留を外す', e); }).then(function(){
+        return rpc_('ats_clear_staff_pending',{p_id:id,p_req_id:reqId}).then(function(c){
+          if(c&&c.reason==='other_send') return 'other';
+          if(c&&c.row) replaceRow_(c.row); else { var x=rowById_(id); if(x) x.staff_pending_at=null; }
+        },function(e){ atsNote_('保留を外す', e); }).then(function(o){
+          if(o==='other') return regOtherSend_(id);
           r.busy=false; r.state='ng'; r.msg='登録できませんでした（'+(k.error||'理由不明')+'）。'; if(curId===id) paintDetail_(); paintAll_(); return 'ng';
         });
       }
@@ -1149,7 +1192,7 @@ function regDone_(id,staffId,okText){
     atsNote_('職員IDを控える', e); r.busy=false; r.state='unsure'; r.msg='職員マスタには登録できました（職員ID '+staffId+'）が、採用管理に控えられませんでした。「職員マスタを読み直して確かめる」を押してください。'; if(curId===id) paintDetail_(); return 'markfail';
   });
 }
-/* 職員マスタを読み直して確かめる（1件→控える／0件で6分未満→待つ／6分以上→保留を外して同じ受付番号で送り直せる／2件以上→止める） */
+/* 職員マスタを読み直して確かめる（1件→控える／0件で8分未満→待つ／8分以上→保留を外して同じ受付番号で送り直せる／2件以上→止める） */
 function regCheck_(id,auto){
   var a=rowById_(id), r=regOf_(id), my=gen;
   if(!a||r.busy) return Promise.resolve('busy');
@@ -1164,10 +1207,11 @@ function regCheck_(id,auto){
     if(hits.length>1){ r.busy=false; r.state='unsure'; r.msg='氏名・入職日・生年月日が同じ方が職員マスタに'+hits.length+'人います。職員マスタで確かめてください（ここでは決めません）。'; if(curId===id) paintDetail_(); return 'many'; }
     var cur=rowById_(id)||a, v=AtsCalc.staffVerdict(null,cur.staff_pending_at,Date.now());
     if(v==='wait'){ r.busy=false; r.state='unsure'; r.msg='まだ見つかりません。職員マスタが書き込んでいる途中のことがあるため、あと'+AtsCalc.staffWaitMinutes(cur.staff_pending_at,Date.now())+'分ほど待ってから、もう一度確かめてください。'; if(curId===id) paintDetail_(); return 'wait'; }
-    /* 6分たっても見つからない＝入っていない。受付番号は外す前にメモリへ控え、同じ番号で送り直せるようにする */
+    /* 8分たっても見つからない＝入っていない（職員マスタの処理中の印 7分より長く待った）。受付番号は外す前にメモリへ控え、同じ番号で送り直せるようにする */
     var keep={reqId:cur.staff_req_id||r.reqId||'',key:cur.staff_sent_key||r.key||''};
-    return rpc_('ats_clear_staff_pending',{p_id:id}).then(function(c){
+    return rpc_('ats_clear_staff_pending',{p_id:id,p_req_id:keep.reqId}).then(function(c){
       if(my!==gen) return 'stale';
+      if(c&&c.reason==='other_send') return regOtherSend_(id);
       if(c&&c.row) replaceRow_(c.row); else { var x=rowById_(id); if(x) x.staff_pending_at=null; }
       r.busy=false; r.state='absent'; r.resend=keep.reqId?keep:null;
       r.msg='職員マスタに登録されていませんでした。'+(keep.reqId?'「同じ受付番号で送り直す」を押してください。':'もう一度「職員マスタへ登録」を押してください。');
@@ -1187,8 +1231,12 @@ function regResend_(){
   if(!a||!r||!r.resend||r.busy||a.staff_id||a.staff_pending_at) return Promise.resolve('blocked');
   var b=AtsCalc.buildStaffCreate(a,enums);
   if(!b.ready) return Promise.resolve('notready');
-  var same=AtsCalc.sentKey(b.fields)===r.resend.key;
-  return regSend_(a.id,same?r.resend.reqId:newReqId_(),b.fields);
+  var same=AtsCalc.sentKey(b.fields)===r.resend.key, keep=r.resend, id=a.id;
+  /* 送り直しも、送る前の照合を必ず通す（見つかった・2人以上・読めない時は送らない） */
+  return regPrecheck_(id,b).then(function(pc){
+    if(pc!=='go') return pc;
+    return regSend_(id,same?keep.reqId:newReqId_(),b.fields);
+  });
 }
 
 /* ═══════════ 面接予定 ═══════════ */
@@ -1381,9 +1429,8 @@ function runPurge_(){
     return rpc_('ats_purge',{p_ids:ids}).then(function(d){
       if(my!==gen) return false;
       expireSel={};
-      if(d&&d.reason==='pending') return loadAll_().then(function(){ setMsg('職員マスタへの登録を確かめ中の方がいるため消せません。読み直しました。','warn'); return false; });
-      var n=Number(d&&(d.deleted!=null?d.deleted:d.count))||0;
-      return loadAll_().then(function(){ setMsg(n+'件を消しました。','ok'); return true; });
+      var n=Number(d&&(d.deleted!=null?d.deleted:d.count))||0, sk=Number(d&&d.skipped_pending)||0;
+      return loadAll_().then(function(){ setMsg(n+'件を消しました。'+(sk>0?'確かめ中の'+sk+'件は消しませんでした。':''),'ok'); return true; });
     },function(e){ atsNote_('保管期限の削除', e); setMsg(friendly_(e)); return false; });
   });
 }

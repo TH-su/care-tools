@@ -126,12 +126,14 @@ t('指紋は同じ中身なら同じ・違えば違う（キーの順に関係�
 console.log('\n— 7. 登録できたかの判定 —');
 const now = Date.parse('2026-10-26T01:00:00Z');
 t('見つかった → hit', C.staffVerdict({ id: 'S0001' }, '2026-10-26T00:59:00Z', now) === 'hit');
-t('送ってから6分未満 → wait', C.staffVerdict(null, '2026-10-26T00:55:00Z', now) === 'wait');
-t('6分以上 → absent', C.staffVerdict(null, '2026-10-26T00:54:00Z', now) === 'absent');
-t('送った時刻が読めない → absent・6分より先の未来 → absent', C.staffVerdict(null, '', now) === 'absent' && C.staffVerdict(null, '2026-10-26T01:07:00Z', now) === 'absent');
-t('残りの分', C.staffWaitMinutes('2026-10-26T00:58:00Z', now) === 4);
+t('送ってから8分未満 → wait（職員マスタの処理中の印 7分より長く待つ）', C.staffVerdict(null, '2026-10-26T00:55:00Z', now) === 'wait' && C.staffVerdict(null, '2026-10-26T00:53:00Z', now) === 'wait');
+t('8分以上 → absent', C.staffVerdict(null, '2026-10-26T00:52:00Z', now) === 'absent');
+t('送った時刻が読めない → absent・6分より先の未来 → absent', C.staffVerdict(null, '', now) === 'absent' && C.staffVerdict(null, '2026-10-26T01:09:00Z', now) === 'absent');
+t('残りの分', C.staffWaitMinutes('2026-10-26T00:58:00Z', now) === 6);
 const LIST = [{ id: 'S0001', name: '甲野　一郎', hireDate: '2026-11-01', birthDate: '1990-04-01' }, { id: 'S0002', name: '甲野 一郎', hireDate: '2025-04-01' }];
 t('照合は氏名（空白を除く）＋入職日＋生年月日', C.staffMatches(LIST, { name: '甲野一郎', hireDate: '2026-11-01', birthDate: '1990-04-01' }).length === 1);
+t('退職日のある職員は照合から外す', C.staffMatches([Object.assign({}, LIST[0], { retireDate: '2026-03-31' })], { name: '甲野一郎', hireDate: '2026-11-01', birthDate: '1990-04-01' }).length === 0);
+t('氏名だけ一致する在籍の職員（退職した方は数えない）', J(C.sameNameActive(LIST.concat([{ id: 'S0009', name: '甲野 一郎', retireDate: '2020-01-01' }]), '甲野一郎').map((x) => x.id)) === J(['S0001', 'S0002']) && C.sameNameActive(LIST, '').length === 0);
 t('生年月日が違えば別の方', C.staffMatches(LIST, { name: '甲野一郎', hireDate: '2026-11-01', birthDate: '1991-04-01' }).length === 0);
 t('応答: ok で id → ok', J(C.staffResult({ ok: true, created: [{ tempId: 'a1', id: 'S0003', rev: 1 }] }, FLUSH)) === J({ kind: 'ok', id: 'S0003' }));
 t('応答: ok なのに id が無い → unsure（登録しましたと言わない）', C.staffResult({ ok: true, created: [] }, FLUSH).kind === 'unsure');
