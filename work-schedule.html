@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-q5473m1PK1D42umFysSwkEAJZxaxWH5fib1Ypv820FI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-rDaUZyJkJfpMoyLRT2DVhUVgYBfOwhclX27oxrFOECU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -684,12 +684,53 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
 #stSameBldOut th, #stSameBldOut td { border: 1px solid #c9c9c9; padding: 2px 6px; text-align: right; white-space: nowrap; }
 #stSameBldOut th { background: #f3f3f3; text-align: center; }
 #stSameBldOut td:first-child { text-align: left; }
+
+/* ===== 24時間配置・食事対応表（A4縦・2026-10-27 本人指示） =====
+ * 紙面 #rp-print は画面では出さず、su-print が印刷の間だけ body に su-print-staff24 を付けて出す（盤面の A3 印刷の規則は変えない）。
+ * 紙面と画面のプレビュー（#rpPreview）は同じ .rp-sheet の規則で描く。文字は --rp-fs（su-print が A4 縦1枚に収まる大きさを当てる）。
+ * 空白・枠のない食事は、色だけでなく斜線・太枠・記号（×）・語で示す（白黒で刷っても分かる） */
+#btnStaff24[hidden] { display: none; }
+#rp-print { display: none; }
+body.su-print-staff24 #rp-print { display: block; }
+.rp-sheet { font-size: var(--rp-fs, 11px); line-height: 1.35; color: #000; background: #fff; }
+.rp-sheet .rp-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1em; border-bottom: 2px solid #000; padding-bottom: .4em; margin-bottom: .6em; }
+.rp-sheet .rp-fac { font-size: 1.15em; font-weight: 700; flex: 1 1 0; }
+.rp-sheet .rp-title { font-size: 1.45em; font-weight: 700; text-align: center; flex: 0 1 auto; }
+.rp-sheet .rp-date { flex: 1 1 0; text-align: right; white-space: nowrap; }
+.rp-sheet .rp-sum { border: 1.5px solid #000; padding: .35em .6em; margin-bottom: .6em; font-weight: 700; }
+.rp-sheet .rp-sum .ng { text-decoration: underline; }
+.rp-sheet table { width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: .6em; }
+.rp-sheet th, .rp-sheet td { border: 1px solid #000; padding: .2em .4em; vertical-align: top; word-break: break-all; text-align: left; }
+.rp-sheet thead th { background: #e6e6e6; font-weight: 700; }
+.rp-sheet .rp-t { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rp-sheet .rp-n { text-align: center; }
+.rp-sheet tr.rp-gap td { background: repeating-linear-gradient(135deg, #fff 0 4px, #c8c8c8 4px 6px); border-top-width: 2.5px; border-bottom-width: 2.5px; font-weight: 700; }
+.rp-sheet .rp-notes { font-size: .9em; margin-bottom: .6em; }
+.rp-sheet .rp-sign { display: flex; justify-content: flex-end; gap: 6mm; margin-top: .8em; }
+.rp-sheet .rp-box { width: 22mm; height: 22mm; border: 1px solid #000; position: relative; }
+.rp-sheet .rp-box span { position: absolute; left: 0; right: 0; top: 0; text-align: center; border-bottom: 1px solid #000; font-size: .9em; padding: .1em 0; }
+/* 画面のプレビュー（モーダル）。紙の幅に近い広さで見せる */
+#mStaff24 { max-width: 860px; }
+#mStaff24 .rp-msg { font-size: 0.9375rem; margin-bottom: 10px; line-height: 1.5; }
+#mStaff24 .rp-msg .ng { color: var(--ng); font-weight: 700; }
+#mStaff24 .rp-prev { border: 1px solid var(--g3); background: #fff; padding: 12px; max-height: 58vh; overflow: auto; }
+#mStaff24 .btn { min-height: 44px; font-size: 1rem; }
+/* この画面でサ責を選ぶ欄（2026-10-27 本人指示）。画面だけ（.modal は印刷に出ない） */
+#mStaff24 .rp-sm { border: 1px solid var(--g3); border-radius: 8px; padding: 8px 12px; margin-bottom: 10px; }
+#mStaff24 .rp-sm legend { font-size: 0.875rem; font-weight: 700; color: var(--g8); padding: 0 4px; }
+#mStaff24 .rp-sm-list { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+#mStaff24 .rp-sm-list label { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; font-size: 1rem; cursor: pointer; }
+#mStaff24 .rp-sm-list input { width: 20px; height: 20px; }
+#mStaff24 .rp-sm-list .off { color: var(--g7); font-size: 0.875rem; }
+#mStaff24 .hint { font-size: 0.875rem; color: var(--g7); }
 </style>
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
 <script src="su-kv.js?v=2026-10-27.2"></script>
 <script src="su-kv-shadow.js?v=2026-10-24"></script>
+<link rel="stylesheet" href="su-print.css?v=2026-09-12">
+<script src="su-print.js?v=2026-09-12"></script>
 </head>
 <body>
 <div class="hdr">
@@ -710,6 +751,8 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
   <span class="hdr-field" id="shiftFallbackBanner" role="status" aria-live="polite" hidden>勤務表を Supabase から読めず、Google の写しから表示しています（古い可能性があります）</span>
   <button class="hdr-btn app-link" id="btnOpenCare" title="利用者ごとの週間計画アプリを開く">📅 週間計画</button>
   <button class="hdr-btn app-link" id="btnOpenShift" title="シフト作成アプリを開く">👥 シフト</button>
+  <!-- 24時間配置・食事対応表（A4縦・2026-10-27 本人指示）。事務所PCだけ出す（現場の端末では隠す）。見出しの中なので盤面の印刷には出ない -->
+  <button class="hdr-btn app-link" id="btnStaff24" title="この日の施設職員の24時間の配置と、食事の時間帯の食事対応の枠を A4 縦1枚の確認表にします" hidden>🧾 24時間配置表</button>
   <span class="hdr-sp"></span>
   <!-- シフト側に未反映の変更がある間【ずっと】点灯する（2026-08-03）。
        盤面は書き換えない（ロック＝勝手に反映しない／自動反映OFF＝端末の設定を尊重）が、
@@ -1113,6 +1156,21 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
   </div>
   <div class="btn-row"><button class="btn" id="fcSkip">あとで設定する</button><span class="sp"></span><button class="btn pri" id="fcSave">保存</button></div>
 </div>
+
+<!-- 24時間配置・食事対応表（A4縦・2026-10-27 本人指示）。画面のプレビュー。.modal なので盤面の A3 印刷には出ない -->
+<div class="modal" id="mStaff24" role="dialog" aria-modal="true" aria-labelledby="rpTitle">
+  <h3 id="rpTitle">24時間施設職員配置・食事対応確認表（A4縦）</h3>
+  <div class="rp-msg" id="rpMsg" role="status" aria-live="polite"></div>
+  <fieldset class="rp-sm" id="rpSm">
+    <legend>サ責として表から外す職員（この画面だけ）</legend>
+    <div class="rp-sm-list" id="rpSmList"></div>
+    <div class="hint">選んだ人は、施設業務が入っていても表から外します。この PC だけに覚えます（名簿の番号だけ・氏名は覚えません）。紙には名前も理由も出しません。</div>
+  </fieldset>
+  <div class="rp-prev"><div class="rp-sheet" id="rpPreview"></div></div>
+  <div class="btn-row"><button class="btn" id="rpClose" type="button">閉じる</button><span class="sp"></span><button class="btn pri" id="rpPrint" type="button">🖨 印刷（A4縦）</button></div>
+</div>
+<!-- 印刷用の紙面（画面では出さない）。印刷の直前に作り、印刷が終わったら中身を捨てる（氏名を残さない） -->
+<div class="rp-sheet" id="rp-print"></div>
 
 <div id="toast"></div>
 <script>
@@ -8473,6 +8531,344 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.WSExport = api;
 })();
+/* ===== src/logic/staffing.js ===== */
+/* staffing.js — 24時間配置・食事対応表（A4縦）の計算（純関数・2026-10-27 本人指示）
+ * 表示中の日の盤面（day = {staff, columns, tasks}）から、0:00〜24:00 の施設職員の配置と、
+ * 食事の時間帯に食事対応の枠があるかを数える。盤面・保存・通信には一切触れない（入力は読むだけ・書き換えない）。
+ *
+ * 数え方（代表者の決定 2026-10-27）:
+ *  - 施設の列の職員と、夜勤（施設）の列の職員は、勤務の時間をそのまま「施設にいる」と数える。
+ *  - 訪問の列の職員は、施設業務（kind 'facility'）の枠に入っている時間だけを数える。夜勤（訪問）の列は数えない。
+ *  - サービス提供責任者は訪問介護の仕事以外をしないため、施設業務が入っていても表から外す（大前提）。
+ *    見分けはシフト作成の職員の「サービス提供責任者」の印（roster の serviceManager）。名簿が読めない時は表を作らない。
+ *  - 名前の無い枠・休みにした職員は数えない。休憩は差し引かない。通所など他の事業所に出ている時間は差し引かず注記に出す。
+ *  - 食事対応の枠は、施設業務の枠のうち名前に「食事」か「配膳」を含むもの（職員が置かれている枠だけ）。
+ * 夜勤は盤面の上で「明け 0:00〜朝」と「入り 夜〜24:00」が別の行になっている（前日の盤面は見ない）。
+ * 旧Safari互換のため ?. / ?? / replaceAll / アロー関数は使用しない。console は使わない。 */
+(function () {
+  'use strict';
+
+  var DAY_MIN = 1440;
+  /* 食事の時間帯の既定（代表者の決定 2026-10-27） */
+  var DEFAULT_MEALS = [
+    { key: 'breakfast', label: '朝食', from: 480, to: 510 },
+    { key: 'lunch', label: '昼食', from: 720, to: 750 },
+    { key: 'dinner', label: '夕食', from: 1050, to: 1080 }
+  ];
+  var MEAL_WORDS = ['食事', '配膳'];
+
+  function normName(s) { return String(s === undefined || s === null ? '' : s).replace(/[\s　]/g, ''); }
+  /* リーダーの印（(L)・L・リーダー 等）を外した照合の鍵。importers.js の normLeaderName_ と同じ規則（試験で一致を確かめる）。
+   * 盤面の列名は手で「(L)甲野」等に変えられるため、外さないとサービス提供責任者を見落とす（反証レビュー 2026-10-27 H1） */
+  var LEADER_MARK_RE = /^(?:[LＬlｌ]|リーダー|ﾘｰﾀﾞｰ|[Ll][Ee][Aa][Dd][Ee][Rr])$/;
+  var LEADER_BR_TAIL_RE = /[（(\[［【]([^（()）\[\]［］【】]{1,8})[)）\]］】]$/;
+  var LEADER_BR_HEAD_RE = /^[（(\[［【]([^（()）\[\]［］【】]{1,8})[)）\]］】]/;
+  var LEADER_BARE_TAIL_RE = /[LＬlｌ]$/;
+  var LEADER_BARE_HEAD_RE = /^[LＬlｌ]/;
+  function leaderRest_(t) { return t.length >= 1 && /[^\x00-\x7F]/.test(t); }
+  function normKey(n) {
+    var s = normName(n), m, t;
+    m = s.match(LEADER_BR_TAIL_RE);
+    if (m && LEADER_MARK_RE.test(m[1])) { t = s.slice(0, s.length - m[0].length); if (leaderRest_(t)) s = t; }
+    m = s.match(LEADER_BR_HEAD_RE);
+    if (m && LEADER_MARK_RE.test(m[1])) { t = s.slice(m[0].length); if (leaderRest_(t)) s = t; }
+    t = s.replace(LEADER_BARE_TAIL_RE, ''); if (t !== s && leaderRest_(t)) s = t;
+    t = s.replace(LEADER_BARE_HEAD_RE, ''); if (t !== s && leaderRest_(t)) s = t;
+    return s;
+  }
+  function isNum(n) { return typeof n === 'number' && isFinite(n); }
+  function clamp(n) { return n < 0 ? 0 : (n > DAY_MIN ? DAY_MIN : n); }
+
+  /* サービス提供責任者かどうか。照合はワースケの特例の印（shiftbridge flagsForName）と同じ
+   * 「空白を除いた氏名がどちらかの前方で一致」。一致した人に1人でも印があれば外す（同じ姓の別の人がいる時も外し、
+   * 'ambiguous' で知らせる＝施設にいたと多く数える側へは倒さない）。名簿のどの人とも一致しない名前も、
+   * サービス提供責任者でないと確かめられないので 'unknown' として外す。返値: 'yes' | 'no' | 'ambiguous' | 'unknown' */
+  /* 名簿のうち、盤面の名前と一致する人（照合の規則は下の serviceManagerOf と同じ） */
+  function rosterMatches(roster, name) {
+    var s = normKey(name), out = [];
+    if (s === '' || !roster || !roster.length) return out;
+    for (var i = 0; i < roster.length; i++) {
+      var r = roster[i];
+      if (!r) continue;
+      var rn = normKey(r.name);
+      if (rn === '') continue;
+      if (s.indexOf(rn) === 0 || rn.indexOf(s) === 0) out.push(r);
+    }
+    return out;
+  }
+  /* extra: この画面で選んだサ責（名簿の id → true・2026-10-27 本人指示）。名簿の印が無くても、ここで選んだ人は外す。
+   * 返値の 'yesLocal' は「この画面で選んだサ責だけ」（紙には出さない） */
+  function serviceManagerOf(roster, name, extra) {
+    var hits = rosterMatches(roster, name);
+    if (!hits.length) return 'unknown';
+    var hitYes = 0, hitLocal = 0, hitNo = 0;
+    for (var i = 0; i < hits.length; i++) {
+      if (hits[i].serviceManager) hitYes++;
+      else if (extra && hits[i].id != null && extra['.' + hits[i].id]) hitLocal++;
+      else hitNo++;
+    }
+    if (!hitYes && !hitLocal) return 'no';
+    if (hitNo) return 'ambiguous';
+    return hitYes ? 'yes' : 'yesLocal';
+  }
+  /* この画面でサ責として選べる人の一覧。盤面に名前がある（休みでない）職員のうち、名簿の1人だけに一致する人。
+   * 返値 [{id: 名簿の id, name: 盤面の名前, official: 名簿にサ責の印がある}]（同じ id は1つにまとめる） */
+  function smCandidates(day, roster) {
+    var out = [], seen = {};
+    if (!day || !day.staff) return out;
+    for (var i = 0; i < day.staff.length; i++) {
+      var st = day.staff[i];
+      if (!st || !st.name || st.absent) continue;
+      var hits = rosterMatches(roster, st.name);
+      if (hits.length !== 1 || hits[0].id == null || seen['.' + hits[0].id]) continue;
+      seen['.' + hits[0].id] = true;
+      out.push({ id: String(hits[0].id), name: st.name, official: !!hits[0].serviceManager });
+    }
+    return out;
+  }
+
+  function minToHM(m) {
+    var h = Math.floor(m / 60), mm = m % 60;
+    return (h < 10 ? '0' : '') + h + ':' + (mm < 10 ? '0' : '') + mm;
+  }
+
+  /* 列の見分け: 'facility' 施設 / 'nightFac' 夜勤（施設） / 'visit' 訪問 / 'nightVisit' 夜勤（訪問） / 'nightUnknown' / null */
+  function colKind(col, st) {
+    if (!col) return null;
+    if (col.zone === 'facility') return 'facility';
+    if (col.zone === 'visit') return 'visit';
+    if (col.zone === 'night') {
+      var dv = col.division || (st && st.division) || '';
+      if (dv === '施設') return 'nightFac';
+      if (dv === '訪問') return 'nightVisit';
+      return 'nightUnknown';
+    }
+    return null;
+  }
+
+  function hasMealWord(label, words) {
+    var s = String(label === undefined || label === null ? '' : label);
+    for (var i = 0; i < words.length; i++) if (s.indexOf(words[i]) >= 0) return true;
+    return false;
+  }
+
+  /* 本体。opts = { roster: 職員名簿（null なら作らない）, meals: 食事の時間帯, mealWords: 食事の枠の語 }
+   * 返値 { ok, reason, rows:[{from,to,people:[{name,col,how}],works:[]}], gaps:[{from,to}], covered24,
+   *        meals:[{key,label,from,to,ok,frames:[{start,end,label,name}]}], excluded:[{name,why}], notes:[] } */
+  function build(day, opts) {
+    opts = opts || {};
+    var out = { ok: false, reason: '', rows: [], gaps: [], covered24: false, meals: [], excluded: [], notes: [] };
+    if (!day || !day.staff || !day.columns || !day.tasks) { out.reason = 'この日の盤面がありません'; return out; }
+    var roster = opts.roster;
+    if (!roster || !roster.length) { out.reason = 'サービス提供責任者を確かめるための職員名簿（シフト作成）が読めません'; return out; }
+    var meals = opts.meals || DEFAULT_MEALS;
+    var extraSet = {};
+    if (opts.extraSM) for (var xi = 0; xi < opts.extraSM.length; xi++) extraSet['.' + opts.extraSM[xi]] = true;
+    var words = opts.mealWords || MEAL_WORDS;
+
+    var colOf = {}, i, j, c;
+    for (i = 0; i < day.columns.length; i++) {
+      c = day.columns[i];
+      if (!c || !c.staffIds) continue;
+      for (j = 0; j < c.staffIds.length; j++) colOf['.' + c.staffIds[j]] = c;
+    }
+
+    /* 数える人と、その人が施設にいる区間 */
+    var ivs = [];                 /* {from,to,name,col,how} */
+    var ivsOf = {};               /* staffId → その人の数えた区間 */
+    var okStaff = {};             /* staffId → {name,col}（食事の枠の担当に使う） */
+    var smSeen = {}, unkNight = false;
+    for (i = 0; i < day.staff.length; i++) {
+      var st = day.staff[i];
+      if (!st || !st.name || st.absent) continue;
+      if (!isNum(st.workStart) || !isNum(st.workEnd)) continue;
+      var col = colOf['.' + st.id];
+      var kind = colKind(col, st);
+      if (!kind) continue;
+      var sm = serviceManagerOf(roster, st.name, extraSet);
+      if (sm !== 'no') {
+        var nk = normKey(st.name);
+        if (!smSeen[nk]) {
+          smSeen[nk] = true;
+          out.excluded.push({ name: st.name, why: sm === 'yes' ? 'サービス提供責任者'
+            : sm === 'yesLocal' ? 'この画面で選んだサービス提供責任者（紙には出しません）'
+            : sm === 'ambiguous' ? 'サービス提供責任者と同じ名前の職員がいるため外しました（確認してください）'
+            : 'シフト作成の職員名簿に無い名前のため外しました（確認してください）',
+            paper: sm !== 'yesLocal' });   /* この画面で選んだサ責は紙に出さない（現場に知らせていないため・本人指示 2026-10-27） */
+        }
+        continue;
+      }
+      var ws = clamp(st.workStart), we = clamp(st.workEnd);
+      if (!(we > ws)) continue;   /* 古い形（日をまたぐ1行）は数えない */
+      var cl = col.label || '';
+      if (kind === 'facility' || kind === 'nightFac') {
+        ivs.push({ from: ws, to: we, name: st.name, col: cl, how: kind === 'nightFac' ? '夜勤' : '勤務' });
+        (ivsOf['.' + st.id] = ivsOf['.' + st.id] || []).push({ from: ws, to: we });
+        okStaff['.' + st.id] = { name: st.name, col: cl };
+        if (st.otherOffice) out.notes.push(st.name + '：' + String(st.otherOffice) + '（他の事業所に出ている時間。表では差し引いていません）');
+      } else if (kind === 'visit') {
+        okStaff['.' + st.id] = { name: st.name, col: cl };
+        if (st.otherOffice) out.notes.push(st.name + '：' + String(st.otherOffice) + '（他の事業所に出ている時間。表では差し引いていません）');
+        for (j = 0; j < day.tasks.length; j++) {
+          var t = day.tasks[j];
+          if (!t || t.kind !== 'facility' || t.parked || t.staffId !== st.id) continue;
+          if (!isNum(t.start) || !isNum(t.end)) continue;
+          var ts = clamp(Math.max(t.start, ws)), te = clamp(Math.min(t.end, we));
+          if (te > ts) { ivs.push({ from: ts, to: te, name: st.name, col: cl, how: '施設業務' }); (ivsOf['.' + st.id] = ivsOf['.' + st.id] || []).push({ from: ts, to: te }); }
+        }
+      } else if (kind === 'nightUnknown') {
+        unkNight = true;
+      }
+    }
+    if (unkNight) out.notes.push('施設か訪問か分からない夜勤の列があります（数えていません）');
+
+    /* 区切りの時刻ごとに行を作る（その間にいる人は同じ） */
+    var cuts = { 0: true }; cuts[DAY_MIN] = true;
+    for (i = 0; i < ivs.length; i++) { cuts[ivs[i].from] = true; cuts[ivs[i].to] = true; }
+    var pts = [];
+    for (var k in cuts) if (Object.prototype.hasOwnProperty.call(cuts, k)) pts.push(+k);
+    pts.sort(function (a, b) { return a - b; });
+
+    var rows = [];
+    for (i = 0; i + 1 < pts.length; i++) {
+      var a = pts[i], b = pts[i + 1];
+      var ppl = [], seen = {};
+      for (j = 0; j < ivs.length; j++) {
+        var v = ivs[j];
+        if (v.from <= a && v.to >= b) {
+          var key = normName(v.name) + '|' + v.col;
+          if (seen[key]) continue;
+          seen[key] = true;
+          ppl.push({ name: v.name, col: v.col, how: v.how });
+        }
+      }
+      /* 担当業務: この時間にかかる、数えた人の施設業務・自由枠の名前（重ねない） */
+      var works = [], wseen = {};
+      for (j = 0; j < day.tasks.length; j++) {
+        var tk = day.tasks[j];
+        if (!tk || tk.parked || !tk.staffId || !okStaff['.' + tk.staffId]) continue;
+        if (tk.kind !== 'facility' && tk.kind !== 'free') continue;
+        if (!(tk.start < b && tk.end > a)) continue;
+        var lb = String(tk.label || '').trim();
+        if (lb === '' || wseen[lb]) continue;
+        wseen[lb] = true; works.push(lb);
+      }
+      var prev = rows.length ? rows[rows.length - 1] : null;
+      /* 同じ人・同じ業務が続く行はつなげる（表を短くする） */
+      if (prev && sameRow(prev, ppl, works)) prev.to = b;
+      else rows.push({ from: a, to: b, people: ppl, works: works });
+    }
+    out.rows = rows;
+    for (i = 0; i < rows.length; i++) {
+      if (rows[i].people.length) continue;
+      var g = out.gaps.length ? out.gaps[out.gaps.length - 1] : null;
+      if (g && g.to === rows[i].from) g.to = rows[i].to;
+      else out.gaps.push({ from: rows[i].from, to: rows[i].to });
+    }
+    out.covered24 = out.gaps.length === 0;
+
+    /* 食事の時間帯ごとの食事対応の枠 */
+    for (i = 0; i < meals.length; i++) {
+      var ml = meals[i], frames = [];
+      for (j = 0; j < day.tasks.length; j++) {
+        var f = day.tasks[j];
+        if (!f || f.kind !== 'facility' || f.parked || !f.staffId) continue;
+        var who = okStaff['.' + f.staffId];
+        if (!who || !hasMealWord(f.label, words)) continue;
+        if (!(f.start < ml.to && f.end > ml.from)) continue;
+        /* その職員が施設にいると数えた時間（勤務時間・施設業務の枠）と、食事の時間帯の両方に重なる枠だけ
+         * （勤務時間の外に置いた枠で「○」と出さない・反証レビュー 2026-10-27 H2） */
+        if (!coveredBy(ivsOf['.' + f.staffId], Math.max(f.start, ml.from), Math.min(f.end, ml.to))) continue;
+        frames.push({ start: f.start, end: f.end, label: String(f.label), name: who.name });
+      }
+      frames.sort(function (x, y) { return x.start - y.start || (x.label < y.label ? -1 : x.label > y.label ? 1 : 0); });
+      out.meals.push({ key: ml.key, label: ml.label, from: ml.from, to: ml.to, ok: frames.length > 0, frames: frames });
+    }
+    out.ok = true;
+    return out;
+  }
+
+  /* [a,b) が区間のどれかと1分以上重なるか */
+  function coveredBy(list, a, b) {
+    if (!list || !(b > a)) return false;
+    for (var i = 0; i < list.length; i++) if (list[i].from < b && list[i].to > a) return true;
+    return false;
+  }
+  function sameRow(prev, ppl, works) {
+    if (prev.people.length !== ppl.length || prev.works.length !== works.length) return false;
+    for (var i = 0; i < ppl.length; i++) {
+      var p = prev.people[i], q = ppl[i];
+      if (p.name !== q.name || p.col !== q.col || p.how !== q.how) return false;
+    }
+    for (i = 0; i < works.length; i++) if (prev.works[i] !== works[i]) return false;
+    return true;
+  }
+
+  /* 引用符も変える（exports.js の esc と同じ）。外から入る氏名・枠の名前・施設名は必ずここを通す */
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function span(a, b) { return minToHM(a) + '〜' + minToHM(b); }
+  var WORKS_MAX = 6;   /* 担当業務は1行に6つまで（紙を1枚に収めるため。残りは件数で出す） */
+
+  /* 紙面（とプレビュー）の中身。r は build の返値（ok のもの）、info = { facility, dateText, madeText, altName }。
+   * 色だけで伝えない（白黒で刷っても分かるよう、記号＋語＋斜線で示す） */
+  function paperHtml(r, info) {
+    info = info || {};
+    var h = [], i, j;
+    h.push('<div class="rp-head"><div class="rp-fac">' + esc(info.facility) + '</div>' +
+      '<div class="rp-title">24時間施設職員配置・食事対応確認表' + (info.altName ? '（案：' + esc(info.altName) + '）' : '') + '</div>' +
+      '<div class="rp-date">対象日 ' + esc(info.dateText) + '<br>作成日 ' + esc(info.madeText) + '</div></div>');
+    var mealNg = [];
+    for (i = 0; i < r.meals.length; i++) if (!r.meals[i].ok) mealNg.push(r.meals[i].label);
+    h.push('<div class="rp-sum">' +
+      '<div class="' + (r.covered24 ? 'ok' : 'ng') + '">24時間の配置：' + (r.covered24 ? '○ 0:00〜24:00 途切れなし'
+        : '× 配置のない時間帯あり（' + r.gaps.map(function (g) { return esc(span(g.from, g.to)); }).join('・') + '）') + '</div>' +
+      '<div class="' + (mealNg.length ? 'ng' : 'ok') + '">食事対応：' + (mealNg.length ? '× 枠のない食事あり（' + esc(mealNg.join('・')) + '）' : '○ 朝食・昼食・夕食とも枠あり') + '</div></div>');
+
+    h.push('<table class="rp-meal"><colgroup><col style="width:12%"><col style="width:20%"><col style="width:12%"><col></colgroup>' +
+      '<thead><tr><th>食事</th><th>時間帯</th><th>判定</th><th>食事対応の枠（時刻・枠の名前・職員）</th></tr></thead><tbody>');
+    for (i = 0; i < r.meals.length; i++) {
+      var m = r.meals[i], fr = [];
+      for (j = 0; j < m.frames.length; j++) fr.push(esc(span(m.frames[j].start, m.frames[j].end)) + ' ' + esc(m.frames[j].label) + '　' + esc(m.frames[j].name));
+      h.push('<tr' + (m.ok ? '' : ' class="rp-gap"') + '><td>' + esc(m.label) + '</td><td class="rp-t">' + esc(span(m.from, m.to)) + '</td>' +
+        '<td>' + (m.ok ? '○ あり' : '× なし') + '</td><td>' + (fr.length ? fr.join('<br>') : '※ 食事対応の枠がありません') + '</td></tr>');
+    }
+    h.push('</tbody></table>');
+
+    h.push('<table class="rp-tl"><colgroup><col style="width:17%"><col style="width:7%"><col style="width:46%"><col></colgroup>' +
+      '<thead><tr><th>時間帯</th><th>人数</th><th>施設職員（列）</th><th>担当業務</th></tr></thead><tbody>');
+    for (i = 0; i < r.rows.length; i++) {
+      var row = r.rows[i];
+      if (!row.people.length) {
+        h.push('<tr class="rp-gap"><td class="rp-t">' + esc(span(row.from, row.to)) + '</td><td class="rp-n">0</td><td colspan="2">※ 空白（施設職員の配置なし）</td></tr>');
+        continue;
+      }
+      var ppl = [];
+      for (j = 0; j < row.people.length; j++) {
+        var p = row.people[j];
+        ppl.push(esc(p.name) + '（' + esc(p.col) + (p.how === '施設業務' ? '・施設業務' : '') + '）');
+      }
+      var ws = row.works.slice(0, WORKS_MAX).map(esc).join('・');
+      if (row.works.length > WORKS_MAX) ws += ' ほか' + (row.works.length - WORKS_MAX) + '件';
+      h.push('<tr><td class="rp-t">' + esc(span(row.from, row.to)) + '</td><td class="rp-n">' + row.people.length + '</td><td>' + ppl.join('、') + '</td><td>' + ws + '</td></tr>');
+    }
+    h.push('</tbody></table>');
+
+    var notes = [];
+    for (i = 0; i < r.excluded.length; i++) if (r.excluded[i].paper !== false) notes.push('表から外した職員：' + esc(r.excluded[i].name) + '（' + esc(r.excluded[i].why) + '）');
+    for (i = 0; i < r.notes.length; i++) notes.push(esc(r.notes[i]));
+    if (notes.length) h.push('<div class="rp-notes">' + notes.join('<br>') + '</div>');
+    h.push('<div class="rp-sign"><div class="rp-box"><span>管理者</span></div><div class="rp-box"><span>作成者</span></div></div>');
+    return h.join('');
+  }
+
+  var api = { build: build, paperHtml: paperHtml, normKey: normKey, smCandidates: smCandidates, serviceManagerOf: serviceManagerOf, minToHM: minToHM, DEFAULT_MEALS: DEFAULT_MEALS, MEAL_WORDS: MEAL_WORDS };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') window.WSStaffing = api;
+})();
 /* ===== src/ui/board.js ===== */
 /* board.js — ボード描画（二重時間軸: 左=日中 / 右=夜勤・2026-06版ワースケ準拠）
  * 旧Safari互換のため ?. / ?? / replaceAll は使用しない */
@@ -13672,6 +14068,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function renderFieldBanner_() {
     var b = $('fieldBanner'), f = wsIsFieldDevice_(), lk = $('chkLock');
     if (b) b.hidden = !f;
+    if ($('btnStaff24')) $('btnStaff24').hidden = f;   /* 24時間配置表は事務所PCだけ（2026-10-27） */
     if (lk) { lk.disabled = f; if (f) lk.title = '現場の端末ではロックを変えられません（事務所PCで変えてください）'; }
   }
   function lunchLogStamp_(d) {
@@ -14125,6 +14522,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     s.margin = ''; s.minWidth = ''; s.width = ''; s.height = '';
   }
   function fitPrint() {
+    /* 24時間配置・食事対応表（A4縦・su-print）の印刷中は盤面の A3 の準備をしない（2026-10-27）。
+     * su-print が印刷の準備で body に su-printing を付けている時だけ当たる＝盤面の A3 印刷の3つの経路（印刷ボタン・Cmd+P・旧Safari）では常に素通り */
+    if (document.body.classList.contains('su-printing')) {
+      if (staff24Open_()) return;
+      /* 表の窓が閉じているのに準備が残っている（afterprint が来ない環境）時は、それを片付けて盤面の A3 を刷る（反証レビュー 2026-10-27 L1） */
+      try { if (window.SUPrint) window.SUPrint.clear(); } catch (eSc) { wsNote_('24時間配置表の後始末', eSc); }
+      if (document.body.classList.contains('su-printing')) return;
+    }
     var board = $('board');
     var day = (store && store.get) ? store.get() : null;
     if (!day || !day.columns.length) return;
@@ -14199,6 +14604,140 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try { renderNotes(); } catch (e) {}   /* 印刷中に抑止していたノート再描画を復帰 */
     /* 印刷中に止めていたサーバー取込を取り戻す（20秒ギャップを外して1回だけ即pull） */
     try { if (syncOn()) { lastPullAt = 0; pullAll(false); } } catch (e) {}
+  }
+
+  /* ===== 24時間配置・食事対応表（A4縦・2026-10-27 本人指示） =====
+   * 表示中の日の盤面を読むだけで作る（盤面・保存・通信には触れない）。計算と紙面の中身は src/logic/staffing.js（WSStaffing）。
+   * 印刷は共通の su-print（view 'staff24'）。プレビューを開いている時だけ対象になり（when）、盤面の A3 印刷（fitPrint）とは別の経路。
+   * 事務所PCだけ（現場の端末・現場のアカウントでは開かない）。紙面の中身（氏名）は印刷の後に捨てる。 */
+  function staff24Open_() {
+    /* 自前の印を持たない（hideModals で閉じられても残らない）。印刷の準備中は su-print が外側を隠す印（su-print-hidden）を
+     * 足すので、className の一致ではなく on の有無で見る（一致で見ると印刷の瞬間に「閉じている」と判断して A3 が出た・2026-10-27 実測） */
+    var m = $('mStaff24');
+    return !!(m && m.classList.contains('on'));
+  }
+  function staff24Now_() {
+    var d = new Date(), p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '/' + p(d.getMonth() + 1) + '/' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+  /* 今の盤面から表を作る。{ r, info, err } を返す（err があれば紙にしない） */
+  function staff24State_() {
+    var out = { r: null, info: null, err: '' };
+    if (!window.WSStaffing) { out.err = '表を作る部品を読み込めていません。ページを読み込み直してください'; return out; }
+    var day = (store && store.get) ? store.get() : null;
+    var roster = null;
+    try { roster = getRosterStaff_(); } catch (e) { roster = null; }
+    var r = window.WSStaffing.build(day, { roster: roster, extraSM: staff24SmGet_() });
+    if (!r.ok) { out.err = r.reason + '。表は作れません'; return out; }
+    var fac = '';
+    try { fac = (window.SUFacility && window.SUFacility.loadFacilityProfile().facilityName) || ''; } catch (eF) { fac = ''; }
+    if (!String(fac).trim()) { out.err = '施設情報の施設名が空です。設定の「施設情報」で施設名を入れてから、もう一度開いてください'; return out; }
+    var alt = ui.altId ? findAlt_(ui.altId) : null;
+    out.r = r;
+    out.info = { facility: fac, dateText: ui.currentDate.split('-').join('/') + '（' + WD_JA[dateObj(ui.currentDate).getDay()] + '）',
+                 madeText: staff24Now_(), altName: ui.altId ? ((alt && alt.name) || '名前なし') : '' };
+    return out;
+  }
+  function staff24Render_() {
+    var st = staff24State_(), msg = [], prev = $('rpPreview');
+    $('rpPrint').disabled = !!st.err;
+    if (st.err) {
+      $('rpMsg').innerHTML = '<span class="ng">' + escH_(st.err) + '</span>';
+      prev.innerHTML = '';
+      return;
+    }
+    var r = st.r, i;
+    if (!r.covered24) msg.push('<span class="ng">× 施設職員の配置のない時間帯があります：' + r.gaps.map(function (g) { return escH_(WSStaffing.minToHM(g.from) + '〜' + WSStaffing.minToHM(g.to)); }).join('・') + '</span>');
+    for (i = 0; i < r.meals.length; i++) if (!r.meals[i].ok) msg.push('<span class="ng">× ' + escH_(r.meals[i].label) + '（' + escH_(WSStaffing.minToHM(r.meals[i].from) + '〜' + WSStaffing.minToHM(r.meals[i].to)) + '）に食事対応の枠がありません</span>');
+    for (i = 0; i < r.excluded.length; i++) if (r.excluded[i].why !== 'サービス提供責任者') msg.push('<span class="ng">' + escH_(r.excluded[i].name) + '：' + escH_(r.excluded[i].why) + '</span>');
+    if (ui.altId) msg.push('<span class="ng">控えの案を表示しています。紙の見出しに「（案：' + escH_(st.info.altName) + '）」と出ます</span>');
+    try { if (isDayDirty_(ui.currentDate)) msg.push('まだ送っていない変更があります（この端末の盤面で作っています）'); } catch (eD) {}
+    if (!msg.length) msg.push('24時間の配置・食事対応の枠とも、抜けはありません。');
+    msg.push('このプレビューは開いた時点の盤面です。印刷する時に、その時点の盤面で作り直します。');
+    $('rpMsg').innerHTML = msg.join('<br>');
+    prev.innerHTML = WSStaffing.paperHtml(r, st.info);
+  }
+  function escH_(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  /* この画面で選んだサ責（2026-10-27 本人指示「この機能の画面でのみサ責を選択して反映」・代表者の決定: この PC だけに覚える／紙には出さない）。
+   * 覚えるのは名簿（シフト作成）の id だけ。氏名・盤面・サーバーには入れない。読む時は形を確かめ、壊れていれば空として扱う */
+  var STAFF24_SM_LS = 'ws_staff24_sm_v1';
+  function staff24SmGet_() {
+    try {
+      var a = JSON.parse(localStorage.getItem(STAFF24_SM_LS) || '[]'), out = [];
+      if (Object.prototype.toString.call(a) !== '[object Array]') return [];
+      for (var i = 0; i < a.length && out.length < 200; i++) if (typeof a[i] === 'string' && /^[\w.:-]{1,64}$/.test(a[i])) out.push(a[i]);
+      return out;
+    } catch (e) { return []; }
+  }
+  function staff24SmSet_(id, on) {
+    var a = staff24SmGet_(), i = a.indexOf(id);
+    if (on && i < 0) a.push(id);
+    if (!on && i >= 0) a.splice(i, 1);
+    try { localStorage.setItem(STAFF24_SM_LS, JSON.stringify(a)); return true; }
+    catch (e) { wsNote_('24時間配置表のサ責の選択', e); toast('選んだサ責をこの PC に覚えられませんでした', true); return false; }
+  }
+  function staff24RenderSm_() {
+    var host = $('rpSmList');
+    if (!host) return;
+    var roster = null;
+    try { roster = getRosterStaff_(); } catch (e) { roster = null; }
+    var day = (store && store.get) ? store.get() : null;
+    var cs = (window.WSStaffing && roster) ? window.WSStaffing.smCandidates(day, roster) : [];
+    if (!cs.length) { host.innerHTML = '<span class="off">選べる職員がいません（職員名簿が読めない・名簿の1人に決まらない職員は選べません）</span>'; return; }
+    var sel = staff24SmGet_(), h = [];
+    for (var i = 0; i < cs.length; i++) {
+      var c = cs[i], on = c.official || sel.indexOf(c.id) >= 0;
+      h.push('<label><input type="checkbox" data-smid="' + escH_(c.id) + '"' + (on ? ' checked' : '') + (c.official ? ' disabled' : '') + '>' +
+        escH_(c.name) + (c.official ? '<span class="off">（職員名簿でサ責）</span>' : '') + '</label>');
+    }
+    host.innerHTML = h.join('');
+  }
+  function openStaff24_() {
+    if (wsIsFieldDevice_() || fieldMarksOnly_()) { toast('この表は事務所PCで作ってください', true); return; }
+    showModal('mStaff24');
+    staff24RenderSm_();
+    staff24Render_();
+    try { ($('rpPrint').disabled ? $('rpClose') : $('rpPrint')).focus(); } catch (e) {}
+  }
+  function closeStaff24_() {
+    hideModals();
+    var p = $('rpPreview'); if (p) p.innerHTML = '';
+    var sl = $('rpSmList'); if (sl) sl.innerHTML = '';
+    try { $('btnStaff24').focus(); } catch (e) {}
+  }
+  function printStaff24_() {
+    if (!window.SUPrint) { toast('印刷の部品（su-print.js）を読み込めていません。ページを読み込み直してください', true); return; }
+    staff24Render_();
+    if ($('rpPrint').disabled) return;
+    var est = null;
+    try { est = SUPrint.estimate('staff24'); } catch (e) { est = null; wsNote_('24時間配置表の見込み', e); }
+    if (est && est.pages > 1 && !window.confirm('1枚に収まりません（約' + est.pages + 'ページ）\n文字をいちばん小さくしても A4 縦1枚に入りません。そのまま2ページ目へ続けて印刷しますか？')) return;
+    SUPrint.print('staff24');
+  }
+  var staff24Scroll_ = null;
+  function defineStaff24Print_() {
+    if (!window.SUPrint) return;
+    SUPrint.define('staff24', {
+      label: '24時間配置・食事対応表', paper: 'A4 portrait', margin: 8, root: '#rp-print',
+      allowUser: [],   /* 用紙は A4 縦に固定（代表者の決定 2026-10-27） */
+      fit: { mode: 'height', cssVar: '--rp-fs', base: 11, min: 8, max: 13, step: 0.25, slack: { h: 16 } },
+      clearDelay: 60000,   /* afterprint が来ない環境で、プレビュー中に紙面が外れないように長めにする */
+      /* プレビューを開いていて、表が作れる時だけ（盤面を見ている時の Cmd+P は今までどおり A3 の盤面） */
+      when: function () { return staff24Open_() && !staff24State_().err; },
+      before: function () {
+        var w = $('boardWrap');   /* 採寸の間は盤面が隠れるので、横・縦のスクロール位置を控えて後で戻す（反証レビュー 2026-10-27 M2） */
+        staff24Scroll_ = w ? { l: w.scrollLeft, t: w.scrollTop } : null;
+        var st = staff24State_(); $('rp-print').innerHTML = st.err ? '' : WSStaffing.paperHtml(st.r, st.info);
+      },
+      after: function () {
+        $('rp-print').innerHTML = '';   /* 氏名を含む紙面は印刷の後に捨てる */
+        var w = $('boardWrap'), sc = staff24Scroll_;
+        staff24Scroll_ = null;
+        if (w && sc) setTimeout(function () { w.scrollLeft = sc.l; w.scrollTop = sc.t; }, 0);   /* 隠れが解けた後に戻す */
+      }
+    });
   }
 
   /* ===== 全体コメント（独立フロート・リーダー線なし・印刷反映） =====
@@ -19032,6 +19571,21 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if ($('altClose')) $('altClose').addEventListener('click', hideModals);
     if ($('btnAbsent')) $('btnAbsent').addEventListener('click', openAbsentModal_);
     if ($('absClose')) $('absClose').addEventListener('click', hideModals);
+    /* 24時間配置・食事対応表（A4縦・2026-10-27） */
+    defineStaff24Print_();
+    $('btnStaff24').addEventListener('click', openStaff24_);
+    $('rpClose').addEventListener('click', closeStaff24_);
+    $('rpPrint').addEventListener('click', printStaff24_);
+    $('rpSmList').addEventListener('change', function (e) {
+      var t = e.target, id = t && t.getAttribute ? t.getAttribute('data-smid') : null;
+      if (!id) return;
+      if (!staff24SmSet_(id, !!t.checked)) t.checked = !t.checked;   /* 覚えられなかった時は見た目を戻す */
+      staff24Render_();
+    });
+    $('modalBg').addEventListener('click', function () { var p = $('rpPreview'), sl = $('rpSmList'); if (p) p.innerHTML = ''; if (sl) sl.innerHTML = ''; });   /* 背景で閉じた時もプレビューの氏名を残さない */
+    document.addEventListener('keydown', function (e) {
+      if ((e.key === 'Escape' || e.keyCode === 27) && staff24Open_()) { e.preventDefault(); closeStaff24_(); }   /* この表の窓だけを閉じる */
+    });
     $('navPrint').addEventListener('click', function () {
       hideModals();
       fitPrint();
@@ -19823,7 +20377,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261025202656';
+  var WS_BUILD = '20261027101936';
   var WS_APP_VER = 2026101706;   /* 2026-10-23 トレイへ入った理由の印（parkedByHand・absentMoved・routineTray）を知らない前の版の画面が、手で戻した札・休みで移した札を印なしで残し、
                                   * 新しい版がそれを列へ戻してしまわないよう上げた
                                   * （2026101705: 2026-10-22 名前つきの自由枠の印（oohHold）を支援だけの印と思う前の版（10/21・10/22 朝）の画面が、どの操作でも印を外して
