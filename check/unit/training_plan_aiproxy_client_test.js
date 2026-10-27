@@ -12,6 +12,14 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+/* 本物の su-data.js（入口 SU.data.training）を読み、その先の kvRaw・kvPut だけを差し替える（2026-10-27・M1 段0） */
+function realSuData(kvRaw, kvPut) {
+  const w = { localStorage: { getItem: () => null, setItem() {} } };
+  vm.runInNewContext(require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'su-data.js'), 'utf8'), { window: w });
+  w.SU.data.kvRaw = kvRaw;
+  if (kvPut) w.SU.data.kvPut = kvPut;
+  return w.SU.data;
+}
 
 const HTML = process.env.TP_HTML || path.join(__dirname, '..', '..', 'training-plan.html');
 const src = fs.readFileSync(HTML, 'utf8');
@@ -73,13 +81,14 @@ function makeEnv() {
       p.then((v) => { if (!done) { done = true; clearTimeout(tm); res(v); } },
              (e) => { if (!done) { done = true; clearTimeout(tm); rej(e); } });
     }),
-    SU: { data: { kvRaw: (payload, target) => {
+    /* 本物の su-data.js の入口（SU.data.training.ai）を通し、その先の kvRaw だけを偽物にする（2026-10-27） */
+    SU: { data: realSuData((payload, target) => {
       calls.push({ payload: JSON.parse(JSON.stringify(payload)), target: target });
       const r = typeof sb.resp === 'function' ? sb.resp(payload, calls.length) : sb.resp;
       if (r instanceof Error) return Promise.reject(r);
       if (r === 'hang') return new Promise(() => {});
       return Promise.resolve(r);
-    } } },
+    }) },
     Promise, JSON, Object, Number, String, Error, setTimeout, clearTimeout
   };
   vm.createContext(sb);
