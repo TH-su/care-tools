@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-Z6HqVCgtOmd/lbuvp3JE/LGXAOisHO3TXVFiti8nxbs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-3cqeFjQrs3Eh531J+3O1t/GksEzPOG/+n4IwAeSstNo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -1914,7 +1914,7 @@ body.meal-on #sc-list{max-width:none}
    ★どの script より先に定義する（起動中の catch から呼んでも未定義にならないように）。note が無い古いキャッシュでは何もしない。 */
 function rmNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('保存・同期の失敗', e, 'master:' + where); }catch(_){} }
 </script>
-<script src="su-cfg-hint.js?v=2026-09-27"></script>
+<script src="su-cfg-hint.js?v=2026-10-27"></script>
 <!-- 同期データの保存先の切り替え（統合 0005/0007）。見るだけの画面は切り替え後に Supabase から読む（未ログインは Google） -->
 <script src="su-kv.js?v=2026-10-27.2"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
@@ -4919,7 +4919,10 @@ function rmRoomOnFacility_(tries){
   }
   var sig=null; try{ sig=JSON.stringify(roomPlanData()); }catch(e){ sig=null; }
   if(sig!==null&&sig===rmRoomPlanSig_) return;
-  try{ renderRoster(); }catch(e){}
+  /* 描き直しの例外は外に出さないまま、記録だけ残す（2026-10-27・改善プロンプト第6弾の2）。
+     ★種類は保存・同期の失敗と分ける。渡すのは例外の名前（TypeError 等）だけ＝例外の文・名簿の中身は送らない
+     ★記録できなくても続きの動きは変えない（note の呼び出しも try で包む） */
+  try{ renderRoster(); }catch(e){ try{ if(window.SUErrors&&typeof window.SUErrors.note==='function') window.SUErrors.note('描き直しの失敗', String((e&&e.name)||'Error').slice(0,40), 'master:roster.render'); }catch(_){} }
 }
 document.addEventListener('DOMContentLoaded',function(){
   try{ if(window.SUFacility&&typeof SUFacility.onReady==='function') SUFacility.onReady(function(){ setTimeout(rmRoomOnFacility_,0); }); }catch(e){}

@@ -4,7 +4,8 @@
                既存の表・列・目安は変えていない。版 3 より前の記録は新しい表に数えない（項目が無いため）
    2026-10-27: 「黙って失敗した回数（この端末）」の表を足した（su-perf.js が入れ物 silent に数えた分・本人指示）。
                入れ物を足すため IndexedDB を版 2 で開く（su-perf.js と同じ版）。「この端末の記録を消す」は silent も消す。
-               期間の選択・コピー・CSV には入れていない（最初に数え始めてからの累計を表に出すだけ） */
+               期間の選択・コピー・CSV には入れていない（最初に数え始めてからの累計を表に出すだけ）
+   2026-10-27: 画面の名前の表に担当者会議の記録（care-meeting.html）を足した。表の中身・数え方は変えていない */
 (function () {
   'use strict';
   var DB = 'su_perf', STORE = 'views', DB_VER = 2, SILENT = 'silent';
@@ -15,7 +16,7 @@
     'support-overview.html': '全支援俯瞰', 'overview-compare.html': '左右比較', 'facesheet.html': 'フェイスシート',
     'genogram.html': 'ジェノグラム', 'resident-master.html': '入居者マスタ', 'patch-calendar.html': '貼り薬カレンダー',
     'moushiokuri-viewer.html': '申送ビューア', 'admission-flow.html': '入居調整', 'training-plan.html': '個別機能訓練計画書',
-    'supplies.html': '消耗品管理', 'connection-settings.html': '接続設定'
+    'supplies.html': '消耗品管理', 'connection-settings.html': '接続設定', 'care-meeting.html': '担当者会議の記録'
   };
   /* 目安（秒）。画面が出るまで 2秒／通信が終わるまで 3秒を超えると「待たされている」と感じやすい */
   var TH = { dcl: [1.0, 2.0], done: [1.5, 3.0], one: [1.0, 2.0], tbt: [0.3, 1.0] };
