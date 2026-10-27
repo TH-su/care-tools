@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-lOr4LWIESiB4cKANSnuX6TjTNNKMTxzeHU0GFnBKaHI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-YP0IKnfXOemBEMVRY5wv1xePIfmlqwxKMvYHjBIOnpc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
@@ -18,7 +18,7 @@
 <script src="su-facility.js?v=2026-10-26"></script>
 <script src="su-print.js?v=2026-09-12"></script>
 <script src="staff-master-calc.js?v=2026-10-11.2"></script>
-<script src="ats-calc.js?v=2026-10-27"></script>
+<script src="ats-calc.js?v=2026-10-27.2"></script>
 <style>
 /* 採用管理（2026-10-26 代表者承認の凍結仕様 v1）。
    色は担当者会議のページと同じ濃さ（コントラスト7:1目標）。ライト固定。段階は色でなく番号と名前で示す。
@@ -109,6 +109,38 @@ h3{font-size:1.0625rem; margin:14px 0 6px}
 .card-late{color:var(--ng); font-weight:700; font-size:0.9375rem}
 .card-due{color:var(--warn-tx); font-weight:700; font-size:0.9375rem}
 .card-due.past{color:var(--ng)}
+/* 職種の札（氏名の横・入らなければ下へ） */
+.card-h{display:flex; flex-wrap:wrap; align-items:center; gap:2px 8px}
+.job-tag{display:inline-block; background:var(--pri-l); color:var(--pri-d); border:1px solid var(--pri-d); border-radius:999px; padding:1px 10px; font-weight:700; font-size:0.9375rem; line-height:1.5}
+.job-tag.none{background:var(--g1); color:var(--g7); border-color:var(--g5); font-weight:600}
+/* カレンダー（選考ボードの下・画面だけ） */
+.calw{margin-top:18px; border-top:1px solid var(--g3); padding-top:12px}
+.calw h2{margin:0 0 8px}
+.cal-bar{display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:8px}
+.cal-ym{font-size:1.125rem; font-weight:700; min-width:8.5em; text-align:center}
+.cal-kinds{display:flex; flex-wrap:wrap; gap:6px; border:0; margin:0 0 8px; padding:0}
+.cal-kinds label{display:inline-flex; align-items:center; gap:6px; min-height:44px; padding:0 10px; border:1px solid var(--g5); border-radius:8px; background:#fff; cursor:pointer}
+.cal{width:100%; border-collapse:collapse; table-layout:fixed}
+.cal th{background:var(--g1); border:1px solid var(--g3); padding:4px; font-size:0.9375rem}
+.cal td{border:1px solid var(--g3); vertical-align:top; padding:4px; height:88px; min-width:0}
+.cal td.out{background:var(--g0)}
+.cal td.today{outline:3px solid var(--pri); outline-offset:-3px}
+.cal .sun{color:var(--ng)} .cal .sat{color:var(--pri-d)}
+.cal-d{font-weight:700; font-size:0.9375rem}
+.cal-evs{list-style:none; margin:2px 0 0; padding:0; display:grid; gap:3px}
+.cal-ev{display:block; width:100%; text-align:left; border:1px solid var(--g3); border-left:5px solid var(--g5); border-radius:6px; background:#fff; color:var(--g9);
+  padding:2px 4px; font-size:0.875rem; line-height:1.35; min-height:28px; cursor:pointer; overflow-wrap:anywhere}
+.cal-ev:hover{background:var(--g1)}
+.cal-ev .k{font-weight:700; margin-right:4px}
+.cal-ev.iv{border-left-color:var(--pri)} .cal-ev.iv .k{color:var(--pri-d)}
+.cal-ev.start{border-left-color:var(--ok)} .cal-ev.start .k{color:var(--ok)}
+.cal-ev.due{border-left-color:var(--warn-tx)} .cal-ev.due .k{color:var(--warn-tx)}
+.cal-ev.recv{border-left-color:var(--g6)} .cal-ev.recv .k{color:var(--g7)}
+.cal-sw{display:inline-block; width:12px; height:12px; border-radius:3px; background:var(--g6)}
+.cal-sw.iv{background:var(--pri)} .cal-sw.start{background:var(--ok)} .cal-sw.due{background:var(--warn-tx)}
+.cal-ag{list-style:none; margin:0; padding:0; display:grid; gap:8px}
+.cal-ag h3{margin:0 0 4px; font-size:1rem}
+.cal-ag .cal-ev{min-height:44px; font-size:1rem; padding:6px 8px}
 .undo{position:fixed; left:50%; bottom:20px; transform:translateX(-50%); z-index:120; background:var(--g9); color:#fff; border-radius:14px;
   padding:8px 10px 8px 16px; display:flex; align-items:center; gap:10px; max-width:94vw; box-shadow:0 6px 20px rgba(0,0,0,.3)}
 .undo .btn{background:#fff; color:var(--g9)}
@@ -163,6 +195,7 @@ h3{font-size:1.0625rem; margin:14px 0 6px}
 /* ── iPhone（幅700px以下だけ）: ボードは段階の選択＋縦の一覧・詳細は全画面・事務所の操作は隠す ── */
 .m-only{display:none}
 @media (max-width:700px){
+  .cal-ag.m-only{display:grid}
   .m-stage{display:flex}
   .cols{grid-template-columns:minmax(0,1fr)}
   .col.m-off{display:none}
@@ -239,7 +272,9 @@ h3{font-size:1.0625rem; margin:14px 0 6px}
      （最終の判定はデータベースの RLS と RPC）。この画面は読む・RPC を呼ぶだけ
    - 事務所PCだけ。現場端末（su_device_role==='field'）では何も取りに行かず、案内だけを出す（ログインの部品も読まない）
    - 端末に残すのは UI の状態だけ: localStorage の ats_view（タブ）、sessionStorage の ats_open（開いている応募者の id）と
-     ats_filter（職種・経路の絞り込み）。応募者の情報は端末に置かない。URL に氏名・番号を載せない
+     ats_filter（職種・経路の絞り込み）、カレンダーの月（sessionStorage の ats_cal_ym）と出す種類（localStorage の ats_cal_kinds）。
+     応募者の情報は端末に置かない。URL に氏名・番号を載せない
+   - 「応募の知らせから足す」は、貼った文面をメモリで読むだけで、どこにも保存しない（拾った値を確かめてから足す）
    - 職員マスタへの登録は、職員マスタの接続先（stfm_cfg を読むだけ・書かない）へ、職員マスタと同じ形で送る。
      先に保留の印（ats_mark_staff_pending）を保存し、保存できなければ送らない。「登録しました」は id を受け取った時だけ
    - 描画はすべて esc() を通す（数字・日付も）
@@ -248,6 +283,8 @@ var DEVICE_KEY='su_device_role';
 var VIEW_KEY='ats_view';               // タブの名前だけ（localStorage・原則11）
 var OPEN_KEY='ats_open';               // 開いている応募者の id だけ（sessionStorage）
 var FILTER_KEY='ats_filter';           // 職種・経路の絞り込みだけ（sessionStorage）
+var CAL_YM_KEY='ats_cal_ym';           // カレンダーの月だけ（sessionStorage）
+var CAL_KINDS_KEY='ats_cal_kinds';     // カレンダーに出す種類の id だけ（localStorage）
 var STF_CFG_KEY='stfm_cfg';            // 職員マスタの接続設定（読むだけ・書かない）
 var TABS=['board','sched','dash','import','expire','settings'];
 var ID_RE=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -289,6 +326,8 @@ var edDirty=false;      // 詳細の入力を保存していない
 var ivEdit='';          // 直している面接の id（'' は新しい面接）
 var evalCtx=null;       // 評価の窓の中身
 var filter={job:'',src:''};
+var calYm='';           // カレンダーの月（'YYYY-MM'）
+var calKinds=null;      // カレンダーに出す種類 {iv:true,...}
 var showEnded=false;
 var mStage='applied';
 var printIv='';
@@ -498,7 +537,21 @@ function tabFromHash_(){ var h=String(location.hash||'').replace(/^#/,''); retur
 function restoreUi_(){
   tab=tabFromHash_()||readView_()||'board';
   filter=readFilter_();
+  calYm=readCalYm_();
+  calKinds=readCalKinds_();
 }
+/* カレンダーの月・種類の控え（既知の形だけ戻す。壊れた値は既定へ） */
+function readCalYm_(){ try{ var v=sessionStorage.getItem(CAL_YM_KEY)||''; if(AtsCalc.isYm(v)) return v; }catch(e){ atsNote_('カレンダーの月の読込', e); } return ''; }
+function saveCalYm_(){ try{ sessionStorage.setItem(CAL_YM_KEY,calYm); }catch(e){ atsNote_('カレンダーの月の保存', e); } }
+function calKindAll_(){ var o={}; AtsCalc.CAL_KINDS.forEach(function(k){ o[k.id]=true; }); return o; }
+function readCalKinds_(){
+  try{
+    var a=JSON.parse(localStorage.getItem(CAL_KINDS_KEY)||'null');
+    if(Array.isArray(a)){ var o={}; AtsCalc.CAL_KINDS.forEach(function(k){ o[k.id]=a.indexOf(k.id)>=0; }); return o; }
+  }catch(e){ atsNote_('カレンダーの種類の読込', e); }
+  return calKindAll_();
+}
+function saveCalKinds_(){ try{ localStorage.setItem(CAL_KINDS_KEY,JSON.stringify(AtsCalc.CAL_KINDS.filter(function(k){ return calKinds[k.id]; }).map(function(k){ return k.id; }))); }catch(e){ atsNote_('カレンダーの種類の保存', e); } }
 function setTab_(t){
   if(TABS.indexOf(t)<0) t='board';
   tab=t; saveView_(t);
@@ -552,8 +605,9 @@ function cardHtml_(a){
   var days=AtsCalc.daysBetween(a.received_on,today_());
   var next=AtsCalc.nextStage(a.stage);
   return '<li class="card'+(late?' late':'')+(due?' soon':'')+'" draggable="true" data-id="'+esc(a.id)+'">'+
-    '<button type="button" class="card-n" data-act="open" data-id="'+esc(a.id)+'">'+esc(a.name)+'</button>'+
-    '<span class="card-s">'+esc((a.jobs||[]).join('・')||'職種なし')+'／'+esc((a.sources||[]).join('・')||'経路なし')+'</span>'+
+    '<div class="card-h"><button type="button" class="card-n" data-act="open" data-id="'+esc(a.id)+'">'+esc(a.name)+'</button>'+
+    ((a.jobs||[]).length?'<span class="job-tag">'+esc(a.jobs.join('・'))+'</span>':'<span class="job-tag none">職種未入力</span>')+'</div>'+
+    '<span class="card-s">'+esc((a.sources||[]).join('・')||'経路なし')+'</span>'+
     '<span class="card-s">応募から '+esc(days==null?'—':days+'日')+'</span>'+
     (late?'<span class="card-late">⚠ 初動遅れ（'+esc(late)+'時間）</span>':'')+
     (nx?'<span class="card-s">次の面接 '+esc(fmtDT_(nx.held_at))+'</span>':'')+
@@ -575,6 +629,7 @@ function boardHtml_(){
       var n=list.filter(function(a){ return a.stage===s.id; }).length;
       return '<option value="'+esc(s.id)+'"'+(s.id===mStage?' selected':'')+'>'+esc(s.no+'. '+s.label+'（'+n+'件）')+'</option>'; }).join('')+'</select></div>'+
     '<button type="button" class="btn pri" data-act="new">＋ 応募者を足す</button>'+
+    '<button type="button" class="btn" data-act="paste">📋 応募の知らせから足す</button>'+
     '<button type="button" class="btn" data-act="ended" aria-expanded="'+(showEnded?'true':'false')+'">終わった人 '+esc(ended.length)+'件</button></div>'+
     '<p class="hint pc-only">カードをつかんで別の列へ動かせます（置ける列は青い点線になります。Esc でやめます）。終わりにする時は名前を押して「終わりにする…」から。</p>';
   if(showEnded){
@@ -586,8 +641,45 @@ function boardHtml_(){
     var cs=list.filter(function(a){ return a.stage===s.id; });
     return '<section class="col'+(s.id===mStage?'':' m-off')+'" data-stage="'+esc(s.id)+'" aria-label="'+esc(s.no+'. '+s.label)+'"><h3>'+esc(s.no+'. '+s.label)+'（'+esc(cs.length)+'）</h3><ul class="cards">'+cs.map(cardHtml_).join('')+'</ul></section>';
   }).join('')+'</div>';
-  return h;
+  return h+calHtml_(all);
 }
+/* ── カレンダー（ボードの下。上の職種・経路の絞り込みがそのまま効く。押すとその方の詳細を開く） ── */
+var WD=['日','月','火','水','木','金','土'];
+function calEvText_(e){
+  return (e.time?e.time+' ':'')+e.name+((e.jobs||[]).length?'（'+e.jobs.join('・')+'）':'')+(e.kind==='iv'&&e.round?' 第'+e.round+'回':'');
+}
+function calEvBtn_(e){
+  return '<li><button type="button" class="cal-ev '+esc(e.kind)+'" data-act="open" data-id="'+esc(e.id)+'"><span class="k">'+esc(e.label)+'</span>'+esc(calEvText_(e))+'</button></li>';
+}
+function calHtml_(list){
+  var today=today_(), m=AtsCalc.calMonth(calYm,today), by=AtsCalc.calEvents(list,ivs,calKinds||calKindAll_(),m.ym);
+  var ym=m.ym.split('-'), days=Object.keys(by).sort();
+  var h='<section class="calw" aria-labelledby="cal-h"><h2 id="cal-h">カレンダー</h2>'+
+    '<div class="cal-bar"><button type="button" class="btn" id="cal-prev" data-act="cal-go" data-ym="'+esc(m.prev)+'">← 前の月</button>'+
+    '<span class="cal-ym" role="status" aria-live="polite">'+esc(Number(ym[0])+'年'+Number(ym[1])+'月')+'</span>'+
+    '<button type="button" class="btn" id="cal-next" data-act="cal-go" data-ym="'+esc(m.next)+'">次の月 →</button>'+
+    '<button type="button" class="btn" id="cal-now" data-act="cal-go" data-ym="'+esc(today.slice(0,7))+'"'+(m.ym===today.slice(0,7)?' disabled':'')+'>今月</button></div>'+
+    '<fieldset class="cal-kinds"><legend class="sr">カレンダーに出すもの</legend>'+AtsCalc.CAL_KINDS.map(function(k){
+      return '<label><input type="checkbox" id="cal-k-'+esc(k.id)+'" data-calk="'+esc(k.id)+'"'+((calKinds||{})[k.id]?' checked':'')+'><span class="cal-sw '+esc(k.id)+'" aria-hidden="true"></span>'+esc(k.label)+'</label>'; }).join('')+'</fieldset>';
+  /* PC: 7列の月の表 */
+  h+='<div class="pc-only"><table class="cal"><caption class="sr">'+esc(Number(ym[0])+'年'+Number(ym[1])+'月の予定')+'</caption><thead><tr>'+
+    WD.map(function(w,i){ return '<th scope="col" class="'+(i===0?'sun':i===6?'sat':'')+'">'+esc(w)+'</th>'; }).join('')+'</tr></thead><tbody>'+
+    m.weeks.map(function(wk){ return '<tr>'+wk.map(function(d,i){
+      if(!d) return '<td class="out"></td>';
+      var evs=by[d]||[];
+      return '<td class="'+(d===today?'today':'')+'"><div class="cal-d '+(i===0?'sun':i===6?'sat':'')+'">'+esc(Number(d.slice(8)))+(d===today?'<span class="sr">（今日）</span>':'')+'</div>'+
+        (evs.length?'<ul class="cal-evs">'+evs.map(calEvBtn_).join('')+'</ul>':'')+'</td>';
+    }).join('')+'</tr>'; }).join('')+'</tbody></table></div>';
+  /* iPhone: 予定のある日だけの一覧 */
+  h+='<ol class="cal-ag m-only">'+(days.length?days.map(function(d){
+      var wd=WD[new Date(Date.UTC(+d.slice(0,4),+d.slice(5,7)-1,+d.slice(8))).getUTCDay()];
+      return '<li><h3>'+esc(Number(d.slice(5,7))+'/'+Number(d.slice(8))+'（'+wd+'）')+(d===today?' 今日':'')+'</h3><ul class="cal-evs">'+by[d].map(calEvBtn_).join('')+'</ul></li>';
+    }).join(''):'')+'</ol>';
+  if(!days.length) h+='<p class="muted">この月に出す予定はありません。</p>';
+  return h+'</section>';
+}
+/* 描き直した後も、押したボタン・チェックに手元を戻す（キーボード・読み上げで迷わせない） */
+function refocus_(id){ var e=id?$(id):null; if(e&&!e.disabled&&e.focus) try{ e.focus(); }catch(err){ atsNote_('手元を戻す', err); } }
 function paintBoard_(){ var p=$('p-board'); if(p) p.innerHTML=boardHtml_(); }
 
 /* ── ドラッグ（マウス・HTML5）。置ける列だけ強調し、Esc（ブラウザが止める）・外で離した時は何もしない ── */
@@ -818,6 +910,65 @@ function newApplicant_(){
       if(d&&d.ok===true&&d.row){ replaceRow_(d.row); paintAll_(); openDetail_(d.row.id); return true; }
       setMsg('足せませんでした。'); return false;
     },function(e){ atsNote_('応募者を足す', e); setMsg(friendly_(e)); return false; });
+  });
+}
+
+/* ── 応募の知らせから足す（2026-10-27 本人指示）──
+   1つ目の窓で貼る → 拾った値を2つ目の窓の入力欄に出す → 確かめて「足す」。貼った文面はメモリで読むだけで、どこにも保存しない。
+   同じ会員番号の方・同じ氏名と受付日の方がもういる時は足さない（取り込み済みの方を二重に作らない） */
+function pasteApplicant_(){
+  var body='<div class="fi"><label for="d-paste">知らせの文面</label><textarea id="d-paste" rows="10" maxlength="60000"></textarea></div>';
+  return openDlg_({title:'応募の知らせから足す',lines:['求人サイトの応募の知らせ（メールの本文、または求人サイトの応募者の画面）を全部選んでコピーし、下に貼ってください。','貼った文面は読むだけで、保存しません。'],
+    bodyHtml:body,ok:'読み取る',
+    collect:function(){ var v=$('d-paste')?String($('d-paste').value||''):''; if(!v.trim()){ toast('文面を貼ってください'); return null; } return v.slice(0,60000); }})
+  .then(function(text){
+    if(!text) return false;
+    var p=AtsCalc.parsePosting(text,{today:today_(),knownJobs:optionsOf_('jobs')});
+    return pasteConfirm_(p);
+  });
+}
+function pasteConfirm_(p){
+  var srcs=p.site?[p.site]:[];
+  var gsel=function(v){ return '<option value="">—</option><option value="M"'+(v==='M'?' selected':'')+'>男</option><option value="F"'+(v==='F'?' selected':'')+'>女</option>'; };
+  var lines=[p.found.length?'読み取れた項目: '+p.found.join('・')+'。':'読み取れた項目はありませんでした。入力欄に入れてください。'].concat(p.warns);
+  var body='<div class="fgrid">'+
+    '<div class="fi"><label for="d-pname">氏名（必須）</label><input id="d-pname" type="text" maxlength="80" value="'+esc(p.name)+'"></div>'+
+    '<div class="fi"><label for="d-pkana">フリガナ</label><input id="d-pkana" type="text" maxlength="80" value="'+esc(p.kana)+'"></div>'+
+    '<div class="fi"><label for="d-precv">受付日（必須）</label><input id="d-precv" type="date" value="'+esc(p.received_on)+'"></div>'+
+    '<div class="fi"><label for="d-psrc">経路（「・」で区切る）</label><input id="d-psrc" type="text" maxlength="400" value="'+esc(srcs.join('・'))+'"></div>'+
+    '<div class="fi"><label for="d-pjobs">職種（「・」で区切る）</label><input id="d-pjobs" type="text" maxlength="400" value="'+esc(p.jobs.join('・'))+'"></div>'+
+    '<div class="fi"><label for="d-pquals">資格</label><input id="d-pquals" type="text" maxlength="1000" value="'+esc(p.quals_text)+'"></div>'+
+    '<div class="fi"><label for="d-pgender">性別</label><select id="d-pgender">'+gsel(p.gender)+'</select></div>'+
+    '<div class="fi"><label for="d-pbirth">生年月日</label><input id="d-pbirth" type="date" value="'+esc(p.birth_date)+'"></div>'+
+    '<div class="fi"><label for="d-pphone">電話（1行に1つ）</label><textarea id="d-pphone" rows="2" maxlength="300">'+esc(p.phones.map(function(x){ return x.num; }).join('\n'))+'</textarea></div>'+
+    '<div class="fi"><label for="d-pmail">メール</label><input id="d-pmail" type="email" maxlength="200" value="'+esc(p.email)+'"></div>'+
+    '<div class="fi"><label for="d-paddr">住所</label><input id="d-paddr" type="text" maxlength="200" value="'+esc(p.address)+'"></div>'+
+    '<div class="fi"><label for="d-pnote">備考</label><textarea id="d-pnote" rows="4" maxlength="20000">'+esc(p.note_text)+'</textarea></div></div>';
+  return openDlg_({title:'読み取った内容を確かめる',lines:lines,bodyHtml:body,ok:'足す',
+    collect:function(){
+      var split=function(s){ return s.split(/[・、,]/).map(function(x){ return x.trim(); }).filter(Boolean).slice(0,10); };
+      var row={name:val_('d-pname'),kana:val_('d-pkana')||null,received_on:val_('d-precv'),stage:'applied',
+        sources:split(val_('d-psrc')).map(function(x){ return x.slice(0,60); }),jobs:split(val_('d-pjobs')).map(function(x){ return x.slice(0,60); }),
+        quals_text:val_('d-pquals')||null,gender:val_('d-pgender')==='M'||val_('d-pgender')==='F'?val_('d-pgender'):null,
+        birth_date:AtsCalc.isDate(val_('d-pbirth'))?val_('d-pbirth'):null,
+        phones:val_('d-pphone').split('\n').map(function(l){ return l.trim(); }).filter(Boolean).slice(0,6).map(function(l){ return {num:l.slice(0,40),label:''}; }),
+        email:val_('d-pmail')||null,address:val_('d-paddr')||null,note_text:val_('d-pnote')||null};
+      if(!row.name||!AtsCalc.isDate(row.received_on)){ toast('氏名と受付日を入れてください'); return null; }
+      if(row.received_on>today_()){ toast('受付日が先の日付になっています'); return null; }
+      var dup=AtsCalc.postingDup({name:row.name,received_on:row.received_on,member_no:p.member_no,receivedGuess:p.receivedGuess},apps);
+      if(dup){ toast(dup.kind==='member'?'同じ会員番号の方がもういます（'+dup.name+'）。ボードから開いてください':(p.receivedGuess?'同じ氏名の方が近い受付日でもういます':'同じ氏名・同じ受付日の方がもういます')+'。ボードから開いてください'); return null; }
+      return row;
+    }})
+  .then(function(row){
+    if(!row) return false;
+    var my=gen;
+    setSync('足しています…');
+    return rpc_('ats_put',{p_row:row,p_rev:null}).then(function(d){
+      if(my!==gen) return false;
+      setSync('');
+      if(d&&d.ok===true&&d.row){ replaceRow_(d.row); paintAll_(); openDetail_(d.row.id); toast('足しました'); return true; }
+      setMsg(d&&d.error==='badvalue'?'足せませんでした（1件も入っていません）。入れた値をデータベースが受け付けませんでした。日付・メールの形を確かめてください。':'足せませんでした（1件も入っていません）。'); return false;
+    },function(e){ if(my!==gen) return false; setSync(''); atsNote_('応募の知らせから足す', e); setMsg(friendly_(e)); return false; });
   });
 }
 
@@ -1578,6 +1729,8 @@ function onClick_(e){
   if(act==='open'&&id) openDetail_(id);
   else if(act==='next'&&a){ var nx=AtsCalc.nextStage(a.stage); if(nx) tryMove_(a,nx); }
   else if(act==='new') newApplicant_();
+  else if(act==='paste') pasteApplicant_();
+  else if(act==='cal-go'){ var ym=t.getAttribute('data-ym')||''; if(AtsCalc.isYm(ym)){ calYm=ym; saveCalYm_(); paintBoard_(); refocus_(t.id==='cal-now'?'cal-prev':t.id); } }
   else if(act==='ended'){ showEnded=!showEnded; paintBoard_(); }
   else if(act==='undo'){ var fn=showUndo_.fn; hideUndo_(); if(fn) fn(); }
   else if(act==='close') closeDetail_(false);
@@ -1603,6 +1756,7 @@ function onClick_(e){
 function onChange_(e){
   var t=e.target; if(!t) return;
   if(t.hasAttribute&&t.hasAttribute('data-filter')){ filter[t.getAttribute('data-filter')]=String(t.value||''); saveFilter_(); paintBoard_(); return; }
+  if(t.hasAttribute&&t.hasAttribute('data-calk')){ var ck=t.getAttribute('data-calk'); if(AtsCalc.CAL_KINDS.some(function(k){ return k.id===ck; })){ calKinds=calKinds||calKindAll_(); calKinds[ck]=!!t.checked; saveCalKinds_(); paintBoard_(); refocus_('cal-k-'+ck); } return; }
   if(t.id==='b-mstage'){ mStage=String(t.value); paintBoard_(); return; }
   if(t.id==='d-stage'){ var a=rowById_(curId); if(a&&t.value!==a.stage){ tryMove_(a,t.value).then(function(){ paintDetail_(); }); } return; }
   if(t.id==='ev-who'){ evalSwitch_(String(t.value)); return; }
