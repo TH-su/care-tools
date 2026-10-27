@@ -1,7 +1,7 @@
 /* check/tap-latency.mjs — 押してから画面が描き変わるまでの遅れを、架空データで測る（2026-10-27 新設）
  *
  *   node check/tap-latency.mjs [--pages work-schedule.html,care-schedule.html] [--rates 4,1] [--reps 5]
- *                              [--profile 3] [--out check/out] [--dir .]
+ *                              [--profile 3] [--out check/out] [--dir .] [--delay ms]
  *
  * やること（画面のコードは1行も変えない・道具の側で測るだけ）:
  *   1. check/fixtures/<画面名>.mjs の架空データを読ませて画面を開く（統合同期 GAS への要求を横取りして決まった応答を返す・
@@ -32,6 +32,8 @@ const RATES = String(args.rates || '4,1').split(',').map(Number).filter((n) => n
 const REPS = Math.max(1, Number(args.reps || 5));
 const PROFILE_N = Math.max(0, Number(args.profile == null ? 3 : args.profile));
 const QUIET_MS = 300, SETTLE_CAP_MS = 8000;
+/* --delay ms: 見本の GAS の応答をわざと遅らせる（本番の往復 1〜3秒の代わり。描画が取り寄せを待っているかを見分ける） */
+const DELAY_MS = Math.max(0, Number(args.delay || 0));
 
 const { chromium } = loadPlaywright();
 const srv = await startServer(repoDir, 0);
@@ -134,7 +136,7 @@ async function openPage(file, rate) {
       net.pending++; net.lastAt = Date.now();
       let body = {}; try { body = JSON.parse(route.request().postData() || '{}'); } catch (e) { /* 本文の無い要求は空で答える */ }
       net.log.push(String(body.action || '-') + (body.action === 'get' || body.action === 'put' ? ':' + String(body.key || '').replace(/_\d{4}-\d{2}-\d{2}$/, '_日') : ''));
-      try { await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify(K.respond(body)) }); }
+      try { const ans = JSON.stringify(K.respond(body)); if (DELAY_MS) await sleep(DELAY_MS); await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: ans }); }
       finally { net.pending--; net.lastAt = Date.now(); }
       return;
     }
@@ -402,7 +404,7 @@ try {
 function report(results, ranked, profiles) {
   const L = [];
   L.push('# 押してから描き変わるまで（架空データ・tap-latency.mjs）', '');
-  L.push(`測った日時: ${new Date().toISOString()}／各操作 ${REPS} 回／CPU ${RATES.join('倍・')}倍（4倍＝スマートフォン相当・1倍＝事務所PC）`, '');
+  L.push(`測った日時: ${new Date().toISOString()}／各操作 ${REPS} 回／CPU ${RATES.join('倍・')}倍（4倍＝スマートフォン相当・1倍＝事務所PC）` + (DELAY_MS ? `／見本の応答を ${DELAY_MS}ms 遅らせた` : ''), '');
   L.push('- 描画まで: 入力イベント → requestAnimationFrame 2回目（その後の最初の描画が済んだ所）');
   L.push(`- 落ち着くまで: 同じ起点 → 長い処理と材料への要求が ${QUIET_MS}ms 来なくなった所（上限 ${SETTLE_CAP_MS}ms）`);
   L.push('- longtask: 起点〜落ち着くまでの 50ms 超の処理の合計（中央値）', '');
