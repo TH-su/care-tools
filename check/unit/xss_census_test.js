@@ -644,6 +644,9 @@ const CENSUS = {
     [F, "if (p) p.innerHTML = ''"],
     [F, "if (sl) sl.innerHTML = ''"],
     [E, "$('rp-print').innerHTML = st.err ? '' : WSStaffing.paperHtml(st.r, st.info)"],
+    [F, "$('rp-print').innerHTML = ''"],
+    /* 24時間配置表の期間のまとめて印刷（2026-10-27）。紙面は1日の表と同じ paperHtml を日ごとに並べる（xss_work_schedule_test の W12） */
+    [E, "$('rp-print').innerHTML = (st && st.br) ? WSStaffing.rangePaperHtml(st.br.items, staff24RangeInfo_) : ''"],
     [F, "$('rp-print').innerHTML = ''"]
   ],
   "yakujo-calc.js": []
