@@ -1,6 +1,7 @@
 /* xss_work_schedule_test.js — ワークスケジュールの innerHTML の全数点検の守り（2026-10-25・本人指示）
  *
  * 公開の work-schedule.html の innerHTML への代入（41か所。insertAdjacentHTML・outerHTML・document.write は0か所）を全部洗った。
+ * 2026-10-27 に24時間配置・食事対応表で12か所（空にする7・固定文1・組み立て5）を足した＝53か所。組み立ては W11 で確かめる。
  * 形は4つで、利用者・職員の入力（氏名・自由枠の名前・ケア内容・案の名前・サーバーの盤面）が HTML として入る所は無かった＝直す所なし。
  *   1. 空にするだけ（= ''）… 20か所
  *   2. 固定の骨組み（'<span class="am"></span>…' や「なし 🎉」「読み込み中…」）を入れ、値は後から querySelector(…).textContent で入れる … 17か所
@@ -15,7 +16,8 @@
  *   W1 未配置トレイ（renderTray）  W2 控えの案（renderAltModal_）  W3 休みにする（renderAbsentModal_）
  *   W4 アラート一覧（openAlerts: 未配置・休憩なし・退避・勤務時間外・重なり）  W5 編集の選択肢（staffOptions・residentDatalist・renderContentChips）
  *   W6 出力タブの昼食後薬（renderExportPane）  W7 カレンダー（renderCal）  W8 施設情報の定休日（renderFcDow）
- *   W9 同一建物減算の表（sameBldRender_）  W10 innerHTML へ組み立てた値を入れる所は上の3か所と el の第3引数だけ（増えたら点検し直す）
+ *   W9 同一建物減算の表（sameBldRender_）  W10 innerHTML へ組み立てた値を入れる所は上の3か所・el の第3引数・W11 の5か所だけ（増えたら点検し直す）
+ *   W11 24時間配置・食事対応表（WSStaffing.paperHtml・staff24Render_・staff24RenderSm_）
  * 実物の画面のソースから関数を切り出して動かす（写経しない）。timescale・model は画面の中の本物をそのまま動かす。
  * WS_HTML で差し替えるのは、ワークスケジュールの正本から作った版・わざと壊した版で確かめる時。固定値の氏名はすべて架空。
  */
@@ -242,11 +244,15 @@ t('W8 定休日：保存された値が壊れていても実行される形に�
     if (m[2] === '=' && /^'[^']*'$/.test(rhs)) continue;   /* 空・固定文 */
     built.push(m[1] + '.innerHTML ' + m[2] + ' ' + rhs);
   }
-  const known = ['e.innerHTML = html', 'host.innerHTML = html', "$('calGrid').innerHTML = h", 'outEl.innerHTML = res.html'];
+  const known = ['e.innerHTML = html', 'host.innerHTML = html', "$('calGrid').innerHTML = h", 'outEl.innerHTML = res.html',
+    /* 24時間配置・食事対応表（2026-10-27・W11） */
+    "$('rpMsg').innerHTML = '<span class=\"ng\">' + escH_(st.err) + '</span>'", "$('rpMsg').innerHTML = msg.join('<br>')",
+    'prev.innerHTML = WSStaffing.paperHtml(r, st.info)', "host.innerHTML = h.join('')",
+    "$('rp-print').innerHTML = st.err ? '' : WSStaffing.paperHtml(st.r, st.info)"];
   const extra = built.filter((s) => !known.some((k) => s.endsWith(k)));   /* 既知の右辺に値を足した形も「増えた」とみなす（10/25 反証レビュー指摘2） */
   const total = (WS.match(/\.innerHTML\s*\+?=(?!=)/g) || []).length;   /* 受け手の書き方（arr[0].innerHTML など）を問わず全部数える */
-  t('W10 innerHTML への代入は点検した41か所のまま（増えたら点検して表に足してから通す）', total === 41, total);
-  t('W10 組み立てた値を入れる所は el・renderFcDow・renderCal・sameBldRender_ の4か所だけ（全 ' + n + ' か所）', extra.length === 0 && built.length === 4, built.join(' / '));
+  t('W10 innerHTML への代入は点検した53か所のまま（増えたら点検して表に足してから通す）', total === 53, total);
+  t('W10 組み立てた値を入れる所は el・renderFcDow・renderCal・sameBldRender_ と24時間配置表の5か所だけ（全 ' + n + ' か所）', extra.length === 0 && built.length === 9, built.join(' / '));
   t('W10 insertAdjacentHTML・outerHTML への代入・document.write は使っていない',
     !/insertAdjacentHTML|\.outerHTML\s*\+?=|document\.write/.test(WS), (WS.match(/insertAdjacentHTML|\.outerHTML\s*\+?=|document\.write/) || [''])[0]);
   /* el(tag, cls, html) の第3引数は盤面の中で使っていない＝固定文すら入らない */
@@ -255,6 +261,50 @@ t('W8 定休日：保存された値が壊れていても実行される形に�
   t('W10 盤面の el(tag, cls, html) は第3引数（HTML）で呼ばれていない・外へ出していない',
     calls.length > 10 && three.length === 0 && !/window\.WSBoard\s*=\s*\{[^}]*\bel\s*:/.test(BOARD),
     three.join(' / '));
+}
+
+/* W11 24時間配置・食事対応表（2026-10-27）。職員の氏名・枠の名前・施設名・案の名前に入れても、紙面・プレビュー・
+ * 画面の知らせ・サ責を選ぶ欄に実行される形が入らない。計算と紙面は画面の中の本物（src/logic/staffing.js）を動かす */
+{
+  vm.runInContext(section(WS, 'src/logic/staffing.js', 'src/ui/board.js'), box);
+  const LS = {};
+  vm.runInContext([
+    'var WD_JA = ["日","月","火","水","木","金","土"]; var ROSTER = null;',
+    'var localStorage = { getItem: function (k) { return Object.prototype.hasOwnProperty.call(LSX, k) ? LSX[k] : null; }, setItem: function (k, v) { LSX[k] = String(v); } };',
+    'function getRosterStaff_() { return ROSTER; } function isDayDirty_() { return false; } function wsNote_() {}',
+    'function findAlt_() { return { name: ' + JSON.stringify(EVIL) + ' }; }',
+    'window.SUFacility = { loadFacilityProfile: function () { return { facilityName: ' + JSON.stringify(BREAK) + ' }; } };',
+    grabFn(APP, 'escH_'), grabFn(APP, 'staff24Now_'), grabFn(APP, 'staff24SmGet_'), grabFn(APP, 'staff24State_'),
+    grabFn(APP, 'staff24Render_'), grabFn(APP, 'staff24RenderSm_')
+  ].join('\n'), Object.assign(box, { LSX: LS }));
+  const day = {
+    meta: { date: '2026-10-25' },
+    columns: [{ col: 0, zone: 'facility', label: ATTR, staffIds: ['s1'] }, { col: 1, zone: 'visit', label: '訪問1', staffIds: ['s2'] }],
+    staff: [
+      { id: 's1', name: EVIL, workStart: 0, workEnd: 1440, otherOffice: BREAK },
+      { id: 's2', name: BREAK + ATTR, workStart: 480, workEnd: 1020 }
+    ],
+    tasks: [
+      { id: 't1', kind: 'facility', label: '食事' + EVIL, staffId: 's1', start: 480, end: 510 },
+      { id: 't2', kind: 'free', label: ATTR + BREAK, staffId: 's1', start: 600, end: 660 },
+      { id: 't3', kind: 'facility', label: '配膳' + ATTR, staffId: 's2', start: 720, end: 750 }
+    ]
+  };
+  box.DAY = day;
+  box.ROSTER = [{ id: 'r1' + ATTR, name: EVIL }, { id: 'r2', name: BREAK + ATTR, serviceManager: true }];
+  box.ui.altId = 'a1';
+  resetLog();
+  box.staff24RenderSm_(); box.staff24Render_();
+  const prev = dom.els.rpPreview ? dom.els.rpPreview.innerHTML : '';
+  t('W11 24時間配置表：プレビュー・知らせ・サ責の欄に実行される形が入らない', !unsafe(htmlAll()) && prev.length > 0, htmlAll());
+  t('W11 値は文字として残る（エスケープして表に出る）', prev.includes('&lt;img src=x onerror=alert(1)&gt;') && prev.includes('&lt;script&gt;'), prev.slice(0, 400));
+  const st = box.staff24State_();
+  const paper = box.WSStaffing.paperHtml(st.r, st.info);
+  t('W11 紙面（印刷の直前に作る中身）にも実行される形が入らない', !unsafe(paper) && paper.length > 0, paper.slice(0, 400));
+  box.ROSTER = null; resetLog();
+  box.staff24RenderSm_(); box.staff24Render_();
+  t('W11 職員名簿が読めない時は知らせだけ（実行される形なし）', !unsafe(htmlAll()) && /職員名簿/.test(htmlAll()), htmlAll());
+  box.ui.altId = null;
 }
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
