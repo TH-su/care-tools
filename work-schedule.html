@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-m2oQVMKqF2v0O1yp8NkMEddwSStlUBvvIrNkz4i5fFk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-elA3h/FbTtCDikcTdqq20VCiXadg/8sYjRmPSUO3m0Q='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -11009,10 +11009,22 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * 既存の無圧縮 wsday_ も decodeDay_ がそのまま読める（後方互換＝既存データ無損失）。
    * クラウドpushは data オブジェクトを送る（localStorage 表現に非依存）。 */
   var LZ_MAGIC = String.fromCharCode(1);   /* 制御文字。JSONにもUTF16圧縮出力にも現れない＝平文/圧縮の判別子 */
+  /* 同じ盤面を2回圧縮しない（2026-10-27・日送りの軽量化）: 直近に圧縮した4件の「JSON の文字列 → 圧縮した文字列」を覚え、
+   * 同じ文字列なら圧縮し直さずに使い回す（日の保存 lsSetDay_ と土台 saveBase_ が同じ盤面を続けて書く時など）。
+   * 覚えるのは関数の持ち物（encodeDay_.memo_）＝切り出して試す試験でも外の変数に頼らない。結果は圧縮し直した時と同じ文字列 */
   function encodeDay_(obj) {
     var s = JSON.stringify(obj);
+    var memo = encodeDay_.memo_ || (encodeDay_.memo_ = []), mi;
+    for (mi = 0; mi < memo.length; mi++) if (memo[mi].s === s) return memo[mi].e;
     if (typeof LZString !== 'undefined' && LZString && LZString.compressToUTF16) {
-      try { var c = LZString.compressToUTF16(s); if (c) return LZ_MAGIC + c; } catch (e) {}
+      try {
+        var c = LZString.compressToUTF16(s);
+        if (c) {
+          memo.push({ s: s, e: LZ_MAGIC + c });
+          if (memo.length > 4) memo.shift();
+          return LZ_MAGIC + c;
+        }
+      } catch (e) {}
     }
     return s;   /* 圧縮不可環境は平文フォールバック */
   }
@@ -11087,12 +11099,45 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function wsNote_(where, e) {
     try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('保存・同期の失敗', e, 'ws:' + where); } catch (_) {}
   }
+  /* 端末に書けた盤面の控え（2026-10-27・日送りの軽量化）。キー（wsday_／wsbase_）ごとに、書けた（または読んだ）時の
+   * 中身の指紋（meta.updatedAt を除いた JSON）・保存の時刻・端末に入っている文字列そのものを覚える。
+   * 同じ中身をもう一度書く時は、圧縮も書き込みもしない。ただし端末の文字列が覚えた物と違う（ほかのタブが書いた・
+   * 容量の回収で消えた・前の書き込みが容量不足で失敗した）時は必ず書く＝「書けた物と同じ」の判定は端末の実物で確かめる */
+  var lsStored_ = {};
+  function dayFp_(obj) {
+    var m = obj && obj.meta;
+    return JSON.stringify(obj, function (k, v) { return (k === 'updatedAt' && this === m) ? undefined : v; });
+  }
+  function lsNoteStored_(key, obj, raw) {
+    if (typeof lsStored_ !== 'object' || !lsStored_) return;
+    try {
+      var w = lsStored_[key];
+      if (w && w.raw === raw) return;   /* 同じ文字列はもう覚えている（読み直しのたびに数え直さない） */
+      if (w) delete lsStored_[key];   /* 入れ直して新しい方へ並べる */
+      lsStored_[key] = { fp: dayFp_(obj), at: (obj && obj.meta) ? obj.meta.updatedAt : undefined, raw: raw };
+      /* 覚えるのは新しい方から24キーまで（据え置きで何十日も開いたままの端末でメモリを食わない）。忘れたキーは次に書く＝今までどおり */
+      var ks = Object.keys(lsStored_);
+      while (ks.length > 24) delete lsStored_[ks.shift()];
+    } catch (e) { try { delete lsStored_[key]; } catch (e2) {} }
+  }
+  /* ignoreAt=true … 保存の時刻（meta.updatedAt）の違いは見ない（doSave が「中身は前のまま」を見分ける時だけ） */
+  function lsSameAsStored_(key, obj, ignoreAt) {
+    if (typeof lsStored_ !== 'object' || !lsStored_) return false;
+    var w = lsStored_[key];
+    if (!w) return false;
+    try {
+      if (!ignoreAt && ((obj && obj.meta) ? obj.meta.updatedAt : undefined) !== w.at) return false;
+      if (localStorage.getItem(key) !== w.raw) return false;
+      return dayFp_(obj) === w.fp;
+    } catch (e) { return false; }
+  }
   function lsSetDay_(date, obj) {
+    if (typeof lsSameAsStored_ === 'function' && lsSameAsStored_(dayKey(date), obj, false)) return true;   /* 書けている物と同じ＝書かない */
     var enc = encodeDay_(obj);
-    try { localStorage.setItem(dayKey(date), enc); return true; }
+    try { localStorage.setItem(dayKey(date), enc); if (typeof lsNoteStored_ === 'function') lsNoteStored_(dayKey(date), obj, enc); return true; }
     catch (e) {
       if (reclaimSpaceWs_(date)) {
-        try { localStorage.setItem(dayKey(date), enc); return true; } catch (e2) { wsNote_('日の保存（空けた後）', e2); return false; }
+        try { localStorage.setItem(dayKey(date), enc); if (typeof lsNoteStored_ === 'function') lsNoteStored_(dayKey(date), obj, enc); return true; } catch (e2) { wsNote_('日の保存（空けた後）', e2); return false; }
       }
       wsNote_('日の保存', e);
       return false;
@@ -11122,6 +11167,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (!raw) return null;
       var p = decodeDay_(raw);
       if (p && p.meta && p.staff && p.tasks) {
+        if (typeof lsNoteStored_ === 'function') lsNoteStored_(dayKey(date), p, raw);   /* 端末に入っている中身を覚える（読込の整形より前＝実物の指紋） */
         p.tasks = M.sanitizeTasks(p.tasks);   /* 読込時に退化枠（5分ゴースト枠等）を一掃 */
         /* 重複の収束（2026-09-21）: ロック日も、まだ開いていない日も含めて【必ず】通す。
          * ここに置く理由: INIT_DAY（＝その日を開いた時）だけだと、開かない日に溜まった重複が
@@ -11334,6 +11380,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (typeof ui !== 'undefined' && ui.altId) { altSaveLocal_(); return; }   /* 案を表示中は案として保存する（本番の wsday_ へは書かない・2026-10-20） */
     var day = store.get();
     if (!day.meta.date) return;
+    /* 保存の時刻のほかは端末に書けている中身と同じなら、時刻を進めず書かない（2026-10-27・日送りの軽量化）。
+     * 日を開くたびに予約される保存（INIT_DAY→scheduleSave）が、開いただけの盤面を圧縮し直して書いていた */
+    if (typeof lsSameAsStored_ === 'function' && lsSameAsStored_(dayKey(day.meta.date), day, true)) {
+      var d0_ = new Date();
+      $('saveState').textContent = '保存 ' + pad2(d0_.getHours()) + ':' + pad2(d0_.getMinutes());
+      return;
+    }
     day.meta.updatedAt = new Date().toISOString();
     if (lsSetDay_(day.meta.date, day)) {
       var d = new Date();
@@ -11441,7 +11494,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      * 最新化しておかないと、古い care でクラウドの配置済みケアを誤削除しうる(多端末競合の保護)。
      * 同期OFF時は pullCareNow が即 done を呼び、pullDayNow も即 return＝従来挙動のまま。 */
     try {
-      pullCareNow(false, function () {
+      pullCareLight_(function () {
         pullDayNow(date, false, null, function () {
           try { store.auto(migrateDay); } catch (eM) {}   /* migrateDay の自動書換を履歴非汚染に */
           /* 並びの当てはめはシフトの反映が済んでから（前回の勤務で列を決めない） */
@@ -15565,10 +15618,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * reclaim は当日（date）の土台・未送信編集の日・競合の退避を消さない。 */
   function saveBase_(date, dayObj) {
     var enc = null;
-    try { enc = encodeDay_(dayObj); localStorage.setItem(baseKey_(date), enc); }
+    if (typeof lsSameAsStored_ === 'function' && lsSameAsStored_(baseKey_(date), dayObj, false)) return;   /* 書けている土台と同じ＝書かない（2026-10-27） */
+    try { enc = encodeDay_(dayObj); localStorage.setItem(baseKey_(date), enc); if (typeof lsNoteStored_ === 'function') lsNoteStored_(baseKey_(date), dayObj, enc); }
     catch (e) {
       if (enc !== null && reclaimSpaceWs_(date)) {
-        try { localStorage.setItem(baseKey_(date), enc); } catch (e2) { wsNote_('土台の控え（空けた後）', e2); }
+        try { localStorage.setItem(baseKey_(date), enc); if (typeof lsNoteStored_ === 'function') lsNoteStored_(baseKey_(date), dayObj, enc); } catch (e2) { wsNote_('土台の控え（空けた後）', e2); }
         return;
       }
       wsNote_('土台の控え', e);
@@ -15819,6 +15873,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     } catch (e) { wsNote_('版の控えの読み込み', e); return {}; }
   }
   function saveRevsPatch(p) {
+    /* 週間計画の版を控える時は、その時の道（Supabase か Google か）もメモリにだけ控える（2026-10-27・pullCareLight_ が使う。保存の形は変えない） */
+    if (p && Object.prototype.hasOwnProperty.call(p, 'care') && typeof careRoute_ === 'function') careRevRoute_ = careRoute_();
     var r = loadRevs();
     for (var k in p) if (Object.prototype.hasOwnProperty.call(p, k)) r[k] = p[k];
     try { localStorage.setItem(REVS_KEY, JSON.stringify(r)); } catch (e) { wsNote_('版の控え', e); }
@@ -19332,6 +19388,38 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* done(任意): care 取得が一段落した後に呼ぶ best-effort コールバック。
    * pullAll はこれを使って「care 取得完了 → 当日盤面 pull」の順序を担保する
    * （pull後 reconcile の剪定強化が、古いローカル care で配置済みケアを誤削除するのを防ぐ）。 */
+  /* 日送りの時の週間計画の確かめ（2026-10-27・日送りの軽量化）。日を移るたびに週間計画の全文（本番で約146KB）を get していた。
+   * 手元の版（ws_sync_revs の care）があり、手元の週間計画が最後に送った・取った物（lastPushed.care）のままなら、
+   * 先に head で版だけを見て、同じ版なら全文を取らない（同じ版の get がする事＝手元とサーバーが同じかの確かめは、
+   * 手元が lastPushed.care のままであることで足りる）。版が無い・手元に未送信の変更がある・初回の取得前・head が失敗した・
+   * 版が違う時は、今までどおり pullCareNow（get）。要求の形は既存の head（headRev_）と get のまま */
+  /* ★get を省くのは、週間計画が今 Supabase で読み書きされていて（su-kv の振り分け SUKv.routed）、手元の版を控えた時の道も
+   * Supabase だった時だけ（2026-10-27 反証レビュー指摘 中・低3）。Google の GAS の head の版は通知用の控えで、Drive の実体と
+   * 最長60秒〜10分食い違う（gas/Code.gs）＝同じ版に見えても古い週間計画で当日の照合（剪定）が走り、配置済みの支援を消して
+   * 送り返すおそれがある。Google と Supabase を切り替えた直後は、版の数字がたまたま同じでも別の物なので省かない。
+   * 道を判定できない（su-kv が無い等）・控えた時の道が分からない（再読み込みの後の最初の日送り）時も省かない */
+  var careRevRoute_ = null;   /* 'sb' / 'gas' / null。手元の週間計画の版を控えた時の道（メモリだけ） */
+  function careRoute_() {
+    try { if (window.SUKv && typeof window.SUKv.routed === 'function') return window.SUKv.routed(CARE_KEY) ? 'sb' : 'gas'; } catch (e) {}
+    return null;
+  }
+  function pullCareLight_(done) {
+    function fin() { if (done) { try { done(); } catch (e) {} } }
+    var localRev = 0, raw = '';
+    try { localRev = loadRevs().care || 0; raw = localStorage.getItem(CARE_KEY) || ''; } catch (e) { localRev = 0; }
+    if (!syncOn() || printing_() || !careInitDone || localRev <= 0 || !raw || raw !== lastPushed.care ||
+        careRoute_() !== 'sb' || careRevRoute_ !== 'sb') { pullCareNow(false, done); return; }
+    headRev_(CARE_KEY, function (rev) {
+      var rawNow = '';
+      try { rawNow = localStorage.getItem(CARE_KEY) || ''; } catch (e2) {}
+      /* head の往復の間に手元が変わった・版が進んだ（または無くなった）・道が変わった・head が失敗した時は今までどおり全文を取る。
+       * head の失敗で get へ上げる（その分遅れる）のは、古い週間計画で照合しないため＝データを守る側に倒している（反証レビュー指摘 低2・そのまま） */
+      if (typeof rev !== 'number' || rev !== (loadRevs().care || 0) || rawNow !== lastPushed.care ||
+          careRoute_() !== 'sb' || careRevRoute_ !== 'sb') { pullCareNow(false, done); return; }
+      noteSyncSuccess_();
+      fin();
+    });
+  }
   function pullCareNow(notify, done) {
     function fin() { if (done) { try { done(); } catch (e) {} } }
     if (!syncOn()) { fin(); return; }
@@ -20949,7 +21037,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261027200646';
+  var WS_BUILD = '20261027214738';
   var WS_APP_VER = 2026102701;   /* 2026-10-27 まだ届いていないロックを「外した」に変えて送り、版の進んでいない古い未送信を退避して捨てる前の版の画面が、仕上げたロックの盤面を前の版で上書きしないよう上げた（代表者承認 A・B）
                                   * （2026101706: 2026-10-23 トレイへ入った理由の印（parkedByHand・absentMoved・routineTray）を知らない前の版の画面が、手で戻した札・休みで移した札を印なしで残し、
                                   * 新しい版がそれを列へ戻してしまわないよう上げた）
