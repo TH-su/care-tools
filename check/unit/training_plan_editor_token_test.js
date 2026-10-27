@@ -11,6 +11,14 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+/* 本物の su-data.js（入口 SU.data.training）を読み、その先の kvRaw・kvPut だけを差し替える（2026-10-27・M1 段0） */
+function realSuData(kvRaw, kvPut) {
+  const w = { localStorage: { getItem: () => null, setItem() {} } };
+  vm.runInNewContext(require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'su-data.js'), 'utf8'), { window: w });
+  w.SU.data.kvRaw = kvRaw;
+  if (kvPut) w.SU.data.kvPut = kvPut;
+  return w.SU.data;
+}
 
 const ROOT = path.join(__dirname, '..', '..');
 const SRC = fs.readFileSync(process.env.TP_HTML || path.join(ROOT, 'training-plan.html'), 'utf8');
@@ -50,8 +58,9 @@ function box(opt) {
     document: { scripts: [], head: { appendChild: s => { loads.push(s.src); } }, createElement: () => ({}) },
     setTimeout: (fn, ms) => { timers.push(ms); return timers.length; }, clearTimeout() {},
     SU_READY: o.noLayer ? false : true,
-    SU: { data: { kvRaw: (body, tgt) => { sent.push({ body: JSON.parse(JSON.stringify(body)), tgt }); return Promise.resolve({ ok: true, rev: 2 }); },
-                  kvPut: () => { throw new Error('kvPut は使わない'); } } },
+    /* 本物の su-data.js の入口（SU.data.training.put）を通し、その先の kvRaw だけを偽物にする（2026-10-27） */
+    SU: { data: realSuData((body, tgt) => { sent.push({ body: JSON.parse(JSON.stringify(body)), tgt }); return Promise.resolve({ ok: true, rev: 2 }); },
+                  () => { throw new Error('kvPut は使わない'); }) },
     tpTarget: () => ({ endpoint: 'https://script.google.com/macros/s/EXAMPLE/exec', token: 'aikotoba' }),
     withTimeout: (p) => p,
     Promise, Date, String, Math, Array, Object, JSON, Number, Error

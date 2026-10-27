@@ -58,7 +58,7 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
 | 予定・支援 | `care-schedule.html`（週間計画） `work-schedule.html` `visit-overview.html` `support-overview.html` `overview-compare.html` `daycare-roster.html` |
 | 職員・勤務 | `shift-app.html` `shift-analyzer.html` `staff-master.html` |
 | 運営 | `supplies.html` `connection-settings.html` `accounts.html` `menu-settings.html` `login.html` `perf-report.html` `shadow-check.html` |
-| 共通部品 | `su-errors.js` `su-perf.js` `su-cfg-hint.js` `su-facility.js` + `facility-profile.json` `su-print.js` + `su-print.css` `su-report.js` + `su-annot.js` `su-data.js` + `su-data-gas.js` `su-kv.js` `su-kv-shadow.js` `su-master-shadow.js` `su-roster.js` `su-weight-shadow.js` `su-patch-sync.js` `su-auth.js` + `supabase-js-*.js` `su-itomari.js`（メニューの毬の絵） |
+| 共通部品 | `su-errors.js` `su-perf.js` `su-cfg-hint.js` `su-facility.js` + `facility-profile.json` `su-print.js` + `su-print.css` `su-report.js` + `su-annot.js` `su-data.js` + `su-data-gas.js` + `su-data-supabase.js` `su-kv.js` `su-kv-shadow.js` `su-master-shadow.js` `su-roster.js` `su-weight-shadow.js` `su-patch-sync.js` `su-auth.js` + `supabase-js-*.js` `su-itomari.js`（メニューの毬の絵） |
 | 検証道具 | `check/`（撮影・画素比較・JS構文・実名ガード・配置図の絵・受け口 GAS・夜の定期タスクの指示書。配布物ではない）・`.github/workflows/pixel-check.yml`（PR ごとの画素の見比べ）・`.github/workflows/report-image.yml`（画面の指摘に配置図の絵を付ける） |
 | 辞書 | `meds-effect-dict.js`（薬効辞書） `meds-yakka-naiyo.js`（厚労省 薬価基準収載品目を加工した候補） |
 | 薬情の取り込み | `yakujo-calc.js`（入居者マスタの「📥 薬情の取り込み」の振り分け・組み立て・反映を止める規則の純関数。試験は `check/unit/yakujo_calc_test.js`） |
@@ -96,6 +96,7 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
 - 使える人の管理の「全データの書き出し」は、既定で暗号化する（パスフレーズ 8 文字以上を2回入れる・どこにも保存しない・`su-export-crypt.js` は接続設定の控えと同じ方式）。暗号化しない時は理由（5〜200文字）を求め、データベースの記録に残す（0025）。暗号化した書き出し（.suenc）は、同じ画面の「暗号化した書き出しを開く」か `node check/export-decrypt.mjs` で開く。戻すのは試験（`check/import_e2e.mjs`）だけで、本番の「戻す」機能は作らない（代表者の決定 2026-10-26）。
 - 採用管理（ats.html）は、応募者の情報を共通ログインのデータベースにだけ置き、事務所PCの管理者（Google＋2段階認証）だけが使う。端末に残すのはタブ・開いている応募者の id・絞り込みだけ。職員マスタへの登録は確認の窓を出し、送る前に保留の印を保存してから送り、職員IDを受け取って控えた時だけ「登録しました」と出す（書けたか分からない時は職員マスタを読み直して確かめる）。本人希望・条件・備考の文章は職員マスタへ送らない。終わった選考は終わった日から設定の月数で保管期限の一覧に出し、消すのは管理者が選んだ時だけ（代表者承認 2026-10-26）。
 - 部品・画面ごとの決まり（2026-10 の開発の記録から集めたもの・2026-10-26 にここへ移した）
+  - 共通データ部品（`su-data.js`）の道は、切り替えスイッチで名前付きの入口（`SU.data.training` 等）ごとに決める（ページ全体・端末ごとでは決めない）。入口を通らない呼び出し（kvGet・kvPut・kvRaw・入居者の4つ）は Google のまま。Supabase の道（`su-data-supabase.js`）は KV の箱を持たない（`su-kv.js` が正）。スイッチが入なのに断られた時は Google へ流さない（代表者の決定 2026-10-27）。
   - 切り替えスイッチの読み直し（`su-kv.js`）は、画面が隠れている間は休む。読み直しの住所に付ける `?t=` は外さない。
   - ログインの確かめは、「使える」の時だけ同じタブに短く控えてよい。控えるのは状態・役割・表示名・期限・利用者 id の指紋だけで、管理者の操作は2段階認証の状態の時だけ控えを使う。ログインの画面は必ずデータベースに確かめる。
   - ログインの部品（`su-auth.js`）は二重に動かさない（2回目の読み込みは何もしない）。

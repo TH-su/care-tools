@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-QZzN1cLY9m8W4HvfaVHKBIF//Cly5d8ZBt8E0mCvxRU=' 'sha256-t3vJdemBIgJXmGdVpSaW9t5kAgGj+ZtMM3UZLPyppCM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-QZzN1cLY9m8W4HvfaVHKBIF//Cly5d8ZBt8E0mCvxRU=' 'sha256-EXExZ3DFlDoYoicr9/P38gnC2+YMgEoas9T98zyJKTo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- 要配慮情報（疾患・訓練内容）を表示する画面。ブラウザキャッシュ・検索索引に残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -936,8 +936,9 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
 <script src="su-errors.js?v=2026-10-08"></script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <script src="su-perf.js?v=2026-10-24"></script>
-<script src="su-data.js"></script>
+<script src="su-data.js?v=2026-10-27"></script>
 <script src="su-data-gas.js?v=2026-10-24"></script>
+<script src="su-data-supabase.js?v=2026-10-27"></script>
 <!-- 週間計画の保存先の切り替え（統合 0005/0007）。デイ利用者の判定は、切り替え後は Supabase から読む（未ログインは Google） -->
 <script src="su-kv.js?v=2026-10-24.2"></script>
 <script src="su-facility.js?v=2026-10-26"></script>
@@ -2064,7 +2065,7 @@ function withTimeout(p, ms) {
 }
 function tpGet(key) {
   if (!SU_READY) return Promise.reject(new Error('NO_DATA_LAYER'));
-  return withTimeout(SU.data.kvGet(key, tpTarget()), 30000);
+  return withTimeout(SU.data.training.get(key, tpTarget()), 30000);
 }
 /* ログインの証明（Supabase の access_token）を取り出す（2026-10-17・入居者マスタの rmAccessToken_ と同じ考え方・改善プロンプト第2弾の6）。
    計画書GAS（training-plan-api.gs の verifyEditor_）が確かめ、この保存で直した計画の「直した人」（audit.updatedBy）を決める
@@ -2105,26 +2106,27 @@ function tpAccessToken_() {
     .then(function (r) { return (r && r.data && r.data.session && r.data.session.access_token) || ''; })['catch'](function () { return ''; });
   return Promise.race([get, new Promise(function (ok) { setTimeout(function () { ok(''); }, 3000); })]);
 }
-/* 保存の本文は kvPut と同じ形（action・key・data・rev）に、証明がある時だけ accessToken を足す（kvRaw は本文をそのまま送る） */
-function tpPutBody_(body) {
+/* 保存の本文は kvPut と同じ形（action・key・data・rev）に、証明がある時だけ accessToken を足す（入口 SU.data.training.put が本文を組む） */
+function tpPutBody_(key, data, rev, allowDrop) {
   return tpAccessToken_().then(function (at) {
-    if (at) body.accessToken = at;
-    return withTimeout(SU.data.kvRaw(body, tpTarget()), 30000);
+    var extra = { allowDrop: allowDrop === true };
+    if (at) extra.accessToken = at;
+    return withTimeout(SU.data.training.put(key, data, rev, extra, tpTarget()), 30000);
   });
 }
 function tpPut(key, data, rev) {
   if (!SU_READY) return Promise.reject(new Error('NO_DATA_LAYER'));
-  return tpPutBody_({ action: 'put', key: key, data: data, rev: rev });
+  return tpPutBody_(key, data, rev, false);
 }
 function tpPing() {
   if (!SU_READY) return Promise.reject(new Error('NO_DATA_LAYER'));
-  return withTimeout(SU.data.kvRaw({ action: 'ping' }, tpTarget()), 20000);
+  return withTimeout(SU.data.training.ping(tpTarget()), 20000);
 }
 /* 「完全に削除」だけがこの経路を使う。合計件数（plans+trash）が1件減る保存を、この1回だけ通す。
    force は使わない（D32・専用GAS側は 2026-09-04 から allowDrop:true を件数-1の保存だけ通す）。 */
 function tpPutAllowDrop(key, data, rev) {
   if (!SU_READY) return Promise.reject(new Error('NO_DATA_LAYER'));
-  return tpPutBody_({ action: 'put', key: key, data: data, rev: rev, allowDrop: true });
+  return tpPutBody_(key, data, rev, true);
 }
 function docKey(masterId) { return 'training_plan:' + masterId; }
 var IDX_KEY = 'training_plan:index';
@@ -6040,7 +6042,7 @@ function aiFetch(body) {
        {ok:false, error:'ai_no_key'|'ai_limit'|'ai_bad_request'|'ai_fetch'|'ai_busy'|'unauthorized'|'unknown action'}
        {ok:true, status:<Anthropicの状態>, data:<Anthropicの応答>}  … 2xx
        {ok:true, status:<4xx/5xx>, detail:<理由>}                    … Anthropic が断った */
-  var pr = SU.data.kvRaw({ action: 'ai', body: body }, tpTarget()).then(function (r) {
+  var pr = SU.data.training.ai(body, tpTarget()).then(function (r) {
     if (!r || typeof r !== 'object') throw new Error('AI_BAD_JSON');
     if (r.ok !== true) {
       var ge = s_(r.error);
@@ -8697,7 +8699,7 @@ function bindUI() {
     var chk = subjectCheck();
     if (!chk.ok) return;                       /* 照合できない内容は最後まで書かない */
     if (docTotal(DOC) < DOC_COUNT) return;  /* 件数（計画＋取り消し置き場）が減る送信はしない */
-    try { SU.data.kvPutBeacon(docKey(curMasterId), DOC, DOC_REV, tpTarget()); } catch (e) {}
+    try { SU.data.training.putBeacon(docKey(curMasterId), DOC, DOC_REV, tpTarget()); } catch (e) {}
   }
   window.addEventListener('pagehide', flushOnExit);
   window.addEventListener('beforeunload', function (ev) {
