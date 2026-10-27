@@ -1,10 +1,13 @@
 /* perf-report.html の処理（2026-10-09 に HTML から分けた・監査10月版 #16）。中身は分ける前と同じ
    2026-10-17: Supabase と JSON の通信も数える（su-perf.js の記録の版 2）。「使えるまで」の列と通信回数の内訳を足した
    2026-10-24: 見えている時／裏にある時の回数（記録の版 3）。GAS の種類ごと・JSON のファイルごと・分類ごとの合計の表と、CSV の末尾の列を足した。
-               既存の表・列・目安は変えていない。版 3 より前の記録は新しい表に数えない（項目が無いため） */
+               既存の表・列・目安は変えていない。版 3 より前の記録は新しい表に数えない（項目が無いため）
+   2026-10-27: 「黙って失敗した回数（この端末）」の表を足した（su-perf.js が入れ物 silent に数えた分・本人指示）。
+               入れ物を足すため IndexedDB を版 2 で開く（su-perf.js と同じ版）。「この端末の記録を消す」は silent も消す。
+               期間の選択・コピー・CSV には入れていない（最初に数え始めてからの累計を表に出すだけ） */
 (function () {
   'use strict';
-  var DB = 'su_perf', STORE = 'views';
+  var DB = 'su_perf', STORE = 'views', DB_VER = 2, SILENT = 'silent';
   var NAMES = {
     'index.html': 'メニュー', 'shift-app.html': 'シフト', 'work-schedule.html': 'ワークスケジュール',
     'shift-analyzer.html': '過去シフト分析', 'staff-master.html': '職員マスタ', 'weight-record.html': '体重管理',
@@ -17,43 +20,64 @@
   /* 目安（秒）。画面が出るまで 2秒／通信が終わるまで 3秒を超えると「待たされている」と感じやすい */
   var TH = { dcl: [1.0, 2.0], done: [1.5, 3.0], one: [1.0, 2.0], tbt: [0.3, 1.0] };
 
-  var all = [];
+  var all = [], silentAll = [], dbBlocked = false;
   var $ = function (id) { return document.getElementById(id); };
 
   function toast(msg) {
     var el = $('toast'); el.textContent = msg; el.classList.add('on');
     clearTimeout(toast._t); toast._t = setTimeout(function () { el.classList.remove('on'); }, 3000);
   }
+  /* 版 2 で開く（2026-10-27）。版を上げる時は入れ物を足すだけ（views の記録は消えない）。
+     古い版で開いたままのタブがあって待たされた時は、空の結果で描き、その旨を出す（閉じてから開き直せば読める） */
+  function openDb(cb, fail) {
+    var req = indexedDB.open(DB, DB_VER);
+    req.onupgradeneeded = function () {
+      var db = req.result;
+      if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(SILENT)) db.createObjectStore(SILENT, { keyPath: 'k' });
+    };
+    req.onblocked = function () { dbBlocked = true; fail(); };
+    req.onerror = function () { fail(); };
+    req.onsuccess = function () {
+      var db = req.result;
+      try { db.onversionchange = function () { try { db.close(); } catch (e) {} }; } catch (e) {}
+      cb(db);
+    };
+  }
+  function getAll(db, name) {
+    return new Promise(function (resolve) {
+      try {
+        if (!db.objectStoreNames.contains(name)) return resolve([]);
+        var g = db.transaction(name, 'readonly').objectStore(name).getAll();
+        g.onsuccess = function () { resolve(g.result || []); };
+        g.onerror = function () { resolve([]); };
+      } catch (e) { resolve([]); }
+    });
+  }
   function load() {
     return new Promise(function (resolve) {
-      if (!window.indexedDB) return resolve([]);
-      var req = indexedDB.open(DB, 1);
-      req.onupgradeneeded = function () {
-        var db = req.result;
-        if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: 'id' });
-      };
-      req.onerror = function () { resolve([]); };
-      req.onsuccess = function () {
-        try {
-          var g = req.result.transaction(STORE, 'readonly').objectStore(STORE).getAll();
-          g.onsuccess = function () { resolve(g.result || []); };
-          g.onerror = function () { resolve([]); };
-        } catch (e) { resolve([]); }
-      };
+      if (!window.indexedDB) return resolve({ rows: [], silent: [] });
+      var done = false;
+      var fin = function (v) { if (!done) { done = true; resolve(v); } };
+      openDb(function (db) {
+        Promise.all([getAll(db, STORE), getAll(db, SILENT)]).then(function (r) { fin({ rows: r[0], silent: r[1] }); });
+      }, function () { fin({ rows: [], silent: [] }); });
     });
   }
   function clearAll() {
     return new Promise(function (resolve) {
-      var req = indexedDB.open(DB, 1);
-      req.onsuccess = function () {
+      var done = false;
+      var fin = function () { if (!done) { done = true; resolve(); } };
+      openDb(function (db) {
         try {
-          var tx = req.result.transaction(STORE, 'readwrite');
-          tx.objectStore(STORE).clear();
-          tx.oncomplete = function () { resolve(); };
-          tx.onerror = function () { resolve(); };
-        } catch (e) { resolve(); }
-      };
-      req.onerror = function () { resolve(); };
+          var names = [STORE];
+          if (db.objectStoreNames.contains(SILENT)) names.push(SILENT);
+          var tx = db.transaction(names, 'readwrite');
+          names.forEach(function (n) { tx.objectStore(n).clear(); });
+          tx.oncomplete = fin;
+          tx.onerror = fin;
+        } catch (e) { fin(); }
+      }, fin);
     });
   }
 
@@ -132,6 +156,27 @@
       .sort(function (x, y) { return x.name < y.name ? -1 : x.name > y.name ? 1 : 0; });
     return { n: appList.reduce(function (s, a) { return s + a.n; }, 0), apps: appList, kinds: list(kinds), files: list(files) };
   }
+
+  /* SILENT_REPORT_BEGIN 「黙って失敗した回数」の表の行（check/unit/ws_silent_note_test.js が印の間を切り出して試す）。
+     入れ物 silent の記録 [{k, app, where, n, last}] を、アプリの名前・回数の多い順に並べ、表に出す文字にする。
+     形の合わない記録は飛ばす。表示は textContent で入れる（ここでは文字を作るだけ） */
+  function silentTime(t) {
+    if (typeof t !== 'number' || !isFinite(t)) return '—';
+    var d = new Date(t), p2 = function (n) { return (n < 10 ? '0' : '') + n; };
+    return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes());
+  }
+  function silentRows(list, names) {
+    names = names || {};
+    return (Array.isArray(list) ? list : []).filter(function (r) {
+      return r && typeof r.app === 'string' && typeof r.where === 'string' && typeof r.n === 'number' && isFinite(r.n) && r.n > 0;
+    }).map(function (r) {
+      var nm = Object.prototype.hasOwnProperty.call(names, r.app) ? names[r.app] : r.app;
+      return { app: nm, where: r.where, n: Math.floor(r.n), last: silentTime(r.last), t: typeof r.last === 'number' ? r.last : 0 };
+    }).sort(function (a, b) {
+      return a.app < b.app ? -1 : a.app > b.app ? 1 : (b.n - a.n) || (b.t - a.t);
+    }).map(function (r) { return [r.app, r.where, String(r.n), r.last]; });
+  }
+  /* SILENT_REPORT_END */
 
   function summarize(rows) {
     var by = {};
@@ -229,6 +274,7 @@
         }).join('') + '</tbody>'
       : '<tr><td class="empty">記録がありません</td></tr>';
     renderVis(s.vis);
+    renderSilent();
     return s;
   }
   /* 見えている時／裏にある時の3つの表（2026-10-24） */
@@ -259,6 +305,31 @@
       ? '<thead><tr><th>アプリ</th><th>記録した<br>回数</th><th>分類</th><th>見えている時<br>回数</th><th>見えている時<br>合計秒</th>' +
         '<th>裏にある時<br>回数</th><th>裏にある時<br>合計秒</th></tr></thead><tbody>' + catRows.join('') + '</tbody>'
       : none;
+  }
+  /* 黙って失敗した回数の表（2026-10-27）。文字はすべて textContent で入れる */
+  function renderSilent() {
+    var tb = $('tSilent');
+    while (tb.firstChild) tb.removeChild(tb.firstChild);
+    var rows = silentRows(silentAll, NAMES);
+    var td = function (tr, tag, text) { var c = document.createElement(tag); c.textContent = text; tr.appendChild(c); return c; };
+    if (!rows.length) {
+      var tr0 = document.createElement('tr');
+      var c0 = td(tr0, 'td', dbBlocked ? 'ほかのタブで開いている画面があるため読めませんでした。ほかのタブを閉じてから、この画面を開き直してください'
+        : '記録がありません（2026-10-27 の更新より後に数えた分だけを出します）');
+      c0.className = 'empty';
+      tb.appendChild(tr0);
+      return;
+    }
+    var th = document.createElement('thead'), hr = document.createElement('tr');
+    ['アプリ', '場所', '回数', '最後の時刻'].forEach(function (h) { td(hr, 'th', h); });
+    th.appendChild(hr); tb.appendChild(th);
+    var body = document.createElement('tbody');
+    rows.forEach(function (r) {
+      var tr = document.createElement('tr');
+      r.forEach(function (v) { td(tr, 'td', v); });
+      body.appendChild(tr);
+    });
+    tb.appendChild(body);
   }
   function kpi(lb, v, u) {
     return '<div class="kpi"><div class="lb">' + esc(lb) + '</div><div class="v">' + esc(v) + '<span class="u">' + esc(u) + '</span></div></div>';
@@ -354,8 +425,8 @@
   });
   $('clear').addEventListener('click', function () {
     if (!confirm('この端末の「動作の速さの記録」を消します。アプリのデータ（記録・名簿など）は消えません。よろしいですか？')) return;
-    clearAll().then(function () { all = []; render(); toast('記録を消しました'); });
+    clearAll().then(function () { all = []; silentAll = []; render(); toast('記録を消しました'); });
   });
 
-  load().then(function (rows) { all = rows; render(); });
+  load().then(function (r) { all = r.rows; silentAll = r.silent; render(); });
 })();

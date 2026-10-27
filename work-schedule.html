@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-V5ARBufTHssr53uondoL9c8vgOSyJeu5lij5BM6DYWE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-q5473m1PK1D42umFysSwkEAJZxaxWH5fib1Ypv820FI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -685,8 +685,8 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
 #stSameBldOut th { background: #f3f3f3; text-align: center; }
 #stSameBldOut td:first-child { text-align: left; }
 </style>
-<script src="su-errors.js?v=2026-10-08"></script>
-<script src="su-perf.js?v=2026-10-17"></script>
+<script src="su-errors.js?v=2026-10-27"></script>
+<script src="su-perf.js?v=2026-10-27"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
 <script src="su-kv.js?v=2026-10-24.2"></script>
 <script src="su-kv-shadow.js?v=2026-10-24"></script>
@@ -10814,10 +10814,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * localStorage保存(doSave)は同期＝確実に永続化（自由枠等のデバウンス中データ消失を根治）。
    * クラウドpushはbest-effort（visibilitychangeでは概ね完了・pagehideでは未完でもlocalStorageで保全）。 */
   function flushAll_() {
-    try { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; doSave(); } } catch (e) {}
-    try { altPushNow_(); } catch (eA) {}   /* 案の控え（ベストエフォート。送れなければ端末の控えから次に送る） */
-    try { if (pushDayTimer) { clearTimeout(pushDayTimer); pushDayTimer = null; pushDayNow(); } } catch (e2) {}
-    try { if (pushCareTimer) { clearTimeout(pushCareTimer); pushCareTimer = null; pushCareNow(); } } catch (e3) {}
+    try { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; doSave(); } } catch (e) { wsNote_('flushAll.save', e); }
+    try { altPushNow_(); } catch (eA) { wsNote_('flushAll.alt', eA); }   /* 案の控え（ベストエフォート。送れなければ端末の控えから次に送る） */
+    try { if (pushDayTimer) { clearTimeout(pushDayTimer); pushDayTimer = null; pushDayNow(); } } catch (e2) { wsNote_('flushAll.day', e2); }
+    try { if (pushCareTimer) { clearTimeout(pushCareTimer); pushCareTimer = null; pushCareNow(); } } catch (e3) { wsNote_('flushAll.care', e3); }
   }
   /* 手動保存（💾ボタン / Ctrl・Cmd+S）。編集中入力を確定→localStorage即保存(400msデバウンス迂回)→クラウドへ即時push。
    * 同期先未設定でも端末には保存される。 */
@@ -10951,7 +10951,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return new Promise(function (ok, ng) {
       var t0 = Date.now();
       (function wait() {
-        try { if (window.SUAuth && window.SUAuth.client) { var c = window.SUAuth.client(); if (c) { ok(c); return; } } } catch (e) {}
+        try { if (window.SUAuth && window.SUAuth.client) { var c = window.SUAuth.client(); if (c) { ok(c); return; } } } catch (e) { wsNote_('altClient', e); }
         if (Date.now() - t0 > 8000) { ng(new Error('noauth')); return; }
         setTimeout(wait, 200);
       })();
@@ -13577,7 +13577,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var o = unlockIntentGet_();
       if (on) o[date] = Date.now(); else delete o[date];
       localStorage.setItem(UNLOCK_LS, JSON.stringify(o));
-    } catch (e) {}
+    } catch (e) { wsNote_('unlockIntent', e); }
   }
   /* 人が確かめて外してから60分以内か（代表者の決定 2026-10-13 F・オフラインで外して少し後に届く場合も考えて60分）。それより古い「外した」状態は、眠っていた端末が
    * 後から送り直して全端末のロックを外すことがあったので使わない（10/14 16:41） */
@@ -14836,7 +14836,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     } catch (eR) { pending_ = false; }
     if (pending_) {
       /* タイマーが生きていれば scheduleRetry_ は何もしない＝間隔を縮めない */
-      try { scheduleRetry_(); } catch (eR2) {}
+      try { scheduleRetry_(); } catch (eR2) { wsNote_('syncOk.retry', eR2); }
     } else {
       clearRetry_();
     }
@@ -15566,7 +15566,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         try { copies.push(j ? JSON.parse(JSON.stringify(j)) : j); } catch (eC) { copies.push(null); }
       }
       try { cb(j); } finally {
-        try { noteSyncResult_(j); } catch (eN) {}
+        try { noteSyncResult_(j); } catch (eN) { wsNote_('gas.syncResult', eN); }
         for (var k = 0; k < riders.length; k++) { try { riders[k](copies[k]); } catch (eR) {} }
       }
     }, false);
@@ -15904,7 +15904,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (typeof ui !== 'undefined' && ui.altId) return;   /* 案を表示中は本番を送らない（本番の未送信は pushDayFor_ が端末の控えから送る・2026-10-20） */
     var day = store.get();
     if (!day.meta.date) return;
-    try { seededUntouched_(day.meta.date); } catch (eSu) {}   /* 人の編集が入ったら「仮の盤面」の印をすぐ消す（読み込み直しに残さない） */
+    try { seededUntouched_(day.meta.date); } catch (eSu) { wsNote_('schedulePush.seeded', eSu); }   /* 人の編集が入ったら「仮の盤面」の印をすぐ消す（読み込み直しに残さない） */
     /* 取り直し待ちの日は、この端末で新しく編集された時だけ待ちを解除して通常の送信へ戻す。
      * 自動処理（マスタ反映・週間計画の照合・シフト反映）では解除しない＝押した「取り直す」が
      * 次の描画で無効化されない（2026-09-24）。 */
@@ -15963,13 +15963,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       try { cur = (ui.currentDate === date && !ui.altId) ? store.get() : loadDayData(date); } catch (eC) { cur = null; }
       if (cur && daySig(cur) === sig) clearDayDirty_(date);   /* 送信後に編集が入っていれば印は残す */
       if ((ui.currentDate === date && !ui.altId)) {
-        try { store.dispatch({ type: 'SET_META', patch: { rev: g.rev || 0 }, nohist: true }); } catch (eM) {}
+        try { store.dispatch({ type: 'SET_META', patch: { rev: g.rev || 0 }, nohist: true }); } catch (eM) { wsNote_('verify.meta', eM); }
       } else {
-        try { if (cur) { cur.meta.rev = g.rev || 0; lsSetDay_(date, cur); } } catch (eL) {}
+        try { if (cur) { cur.meta.rev = g.rev || 0; lsSetDay_(date, cur); } } catch (eL) { wsNote_('verify.ls', eL); }
       }
       /* 届いた＝送信の成功と同じ後始末。解除の印は、届いた版が実際にロックを外していた時だけ消す
        * （ロックありの内容が届いただけなら、外す意図はまだ残っている・反証レビュー 2026-10-13） */
-      try { clearSeeded_(date); if (!(srv.meta && srv.meta.locked === true)) unlockIntentSet_(date, false); } catch (eVc) {}
+      try { clearSeeded_(date); if (!(srv.meta && srv.meta.locked === true)) unlockIntentSet_(date, false); } catch (eVc) { wsNote_('verify.after', eVc); }
       notePush_(date, 'ok', '時間切れだったが届いていた');
       noteSyncSuccess_();
       toast('送信は時間切れになりましたが、クラウドには届いていました（' + date + '）');
@@ -16022,7 +16022,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (same_) clearDayDirty_(date);
         notePush_(date, same_ ? 'ok' : 'changed', '', Date.now() - pushT0_);
         if (altNowP_) {
-          try { var ldP_ = loadDayData(date); if (ldP_) { ldP_.meta.rev = j.rev; lsSetDay_(date, ldP_); } } catch (eLp) {}
+          try { var ldP_ = loadDayData(date); if (ldP_) { ldP_.meta.rev = j.rev; lsSetDay_(date, ldP_); } } catch (eLp) { wsNote_('pushDay.altRev', eLp); }
           if (!same_) scheduleRetry_();
         } else if (store.get().meta.date === date) {
           /* 版番号は同期の控え＝取り消し履歴に積まない（2026-10-07）。積むと送信のたびに Ctrl+Z が1回空振りしていた */
@@ -16060,7 +16060,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         showOfflineIfPersistent_();
         scheduleRetry_();
         notePush_(date, 'fail', failReason_(j && j.error), Date.now() - pushT0_);
-        if (!j) { try { verifyPutLanded_(date, sig); } catch (eV) {} }   /* B: 時間切れでも届いていたか確認 */
+        if (!j) { try { verifyPutLanded_(date, sig); } catch (eV) { wsNote_('pushDay.verify', eV); } }   /* B: 時間切れでも届いていたか確認 */
         if (report) $('stResult').textContent = '送信エラー: ' + friendlyErr(j && j.error);
       }
       try { updateSyncBadge_(); } catch (eSb1) {}   /* 「送信中」の表示を降ろす */
@@ -18107,7 +18107,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (!syncOn()) return;
     if (carePushBusy_) { carePushAgain_ = true; return; }
     var raw = '';
-    try { raw = localStorage.getItem(CARE_KEY) || ''; } catch (e) {}
+    try { raw = localStorage.getItem(CARE_KEY) || ''; } catch (e) { wsNote_('pushCare.read', e); }
     if (!raw) return;
     var data = null;
     try { data = JSON.parse(raw); } catch (e) { return; }
@@ -19837,7 +19837,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      * 「盤面が同じか」の比べ合い（サーバーは印を残さない）が毎回ずれて取り直しが増えるので付けない（反証レビュー指摘） */
     try {
       if (window.SUKv && typeof window.SUKv.marksOnlyFor === 'function' && window.SUKv.marksOnlyFor(dayKey((day && day.meta && day.meta.date) || ui.currentDate)) === true) return day;
-    } catch (eF) {}   /* 送り先を決めるのはアカウント（端末の用途ではない）＝事務所のアカウントなら現場の端末でも印を付ける */
+    } catch (eF) { wsNote_('appVer', eF); }   /* 送り先を決めるのはアカウント（端末の用途ではない）＝事務所のアカウントなら現場の端末でも印を付ける */
     var o = {}, k;
     for (k in day) if (Object.prototype.hasOwnProperty.call(day, k)) o[k] = day[k];
     o.meta = {};

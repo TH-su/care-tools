@@ -201,7 +201,7 @@ const PAGES = [
 ];
 for (const [file, fn, tag, want] of PAGES) {
   const html = fs.readFileSync(path.join(ROOT, file), 'utf8');
-  const tagAt = html.indexOf('<script src="su-errors.js?v=2026-10-08"></script>');
+  const tagAt = html.indexOf('<script src="su-errors.js?v=2026-10-27"></script>');
   const defAt = html.indexOf('function ' + fn + '(');
   const firstOther = (() => {
     const re = /<script\b[^>]*>/g; let m;
@@ -213,7 +213,7 @@ for (const [file, fn, tag, want] of PAGES) {
     }
     return -1;
   })();
-  t(file + ': su-errors.js を新しい版（?v=2026-10-08）で読む', tagAt > 0 && html.indexOf('su-errors.js?v=2026-10-04') < 0, tagAt);
+  t(file + ': su-errors.js を新しい版（?v=2026-10-27）で読む', tagAt > 0 && html.indexOf('su-errors.js?v=2026-10-04') < 0, tagAt);
   t(file + ': 記録の口を su-errors.js の直後、ほかのどの script より先に定義', defAt > tagAt && defAt - tagAt < 800 && (firstOther < 0 || firstOther > defAt), [tagAt, defAt, firstOther]);
   /* 実物の記録の口を切り出して動かす */
   const line = html.slice(defAt, html.indexOf('\n', defAt));
