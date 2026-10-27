@@ -15,7 +15,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-10-26';
+  var VERSION = '2026-10-27';
 
   /* 職員マスタの算出モジュール（日付の正規化をそのまま使う）。node では同じフォルダから読む */
   var SC = null;
@@ -157,18 +157,19 @@
     return y + '-' + pad2(mo) + '-' + pad2(d);
   }
   /* 「1/31見学のみ」→ {date:'YYYY-01-31', note:'見学のみ'}。日付が無ければ date:null で文章は note に残す。
-     日付が2つ以上ある時は決めずに date:null・issue を返す（推測で選ばない） */
+     日付が2つ以上ある時は決めずに date:null・issue を返す（推測で選ばない）。
+     dir は completeYear と同じ（'past' なら年の無い日付を基準日から前へ補う）。yearless は年の無い日付から補った印 */
   var RE_DATE_ANY = /(\d{4}[\/\-.年]\d{1,2}[\/\-.月]\d{1,2}日?|(?:令和|平成|昭和|[RHS])\d{1,2}[\/\-.年]\d{1,2}[\/\-.月]\d{1,2}日?|\d{1,2}[\/月]\d{1,2}日?)/g;
-  function splitDateNote(text, baseDate) {
+  function splitDateNote(text, baseDate, dir) {
     var s = trim(nfkc(text));
     if (!s) return { date: null, note: '', issue: '' };
     var hits = s.match(RE_DATE_ANY) || [];
     if (!hits.length) return { date: null, note: s, issue: '' };
     if (hits.length > 1) return { date: null, note: s, issue: '日付が2つ以上あります' };
-    var d = completeYear(hits[0], baseDate);
+    var d = completeYear(hits[0], baseDate, dir);
     if (!d) return { date: null, note: s, issue: '日付を読めません' };
     var note = trim(s.replace(hits[0], '').replace(/^[\s　]*[（(][日月火水木金土祝]+[)）]/, '').replace(/^[\s　、,・:：]+/, ''));
-    return { date: d, note: note, issue: '' };
+    return { date: d, note: note, issue: '', yearless: !completeYear(hits[0], '') };
   }
   /* 連絡先の欄 → {phones:[{num,label}], email, issues}。改行・空白で区切り、「↓」より前は旧番号。@ を含むものはメール */
   function parseContacts(text) {
@@ -200,9 +201,20 @@
   var RE_REJECT = /^(不採用|不合格|見送り|お見送り)$/;
   var RE_DECLINE = /^(本人断り|辞退|採用辞退|内定辞退|本人辞退)$/;
   var RE_LOST = /^(連絡途絶|連絡なし|音信不通)$/;
-  function deriveStage(row, today, lostDays) {
+  /* past が true の行（受付日が今日より連絡途絶の日数以上前・受付日の無い行）は、終わった選考として決める（2026-10-27 本人指示）:
+       採用可否が「採用」（採用決定・内定・合格を含む）、または空欄で就業開始日がある → 入職完了（取り込み元で入職済みの印 legacy:true）
+       辞退の語 → 辞退／不採用の語 → 不採用／空欄（就業開始日なし）→ 連絡途絶／知らない語 → 入れない */
+  function deriveStage(row, today, lostDays, past) {
     var r = row || {}, res = trim(nfkc(r.result)).replace(/[\s　]+/g, '');
     var days = Number(lostDays) >= 1 ? Math.floor(Number(lostDays)) : DEFAULT_SETTINGS.lostDays;
+    if (past === true) {
+      if (!res) return r.startOn ? { stage: 'hired', note: '', issue: '', legacy: true } : { stage: 'lost', note: '', issue: '', legacy: false };
+      if (RE_HIRED.test(res)) return { stage: 'hired', note: '', issue: '', legacy: true };
+      if (RE_REJECT.test(res)) return { stage: 'rejected', note: '', issue: '', legacy: false };
+      if (RE_DECLINE.test(res)) return { stage: 'declined', note: '', issue: '', legacy: false };
+      if (RE_LOST.test(res)) return { stage: 'lost', note: '', issue: '', legacy: false };
+      return { stage: null, note: '', issue: '採用可否の「' + res.slice(0, 20) + '」を読めません', legacy: false };
+    }
     if (res) {
       if (RE_HIRED.test(res)) {
         if (r.startOn && res === '採用') return { stage: 'prep', note: '入職済みの印（取り込み元の就業開始日 ' + r.startOn + '）', issue: '' };
@@ -260,7 +272,9 @@
     interview: ['面接日', '面接', '面接日時'],
     result: ['採用可否', '結果', '合否', '選考結果'],
     startOn: ['就業開始日', '入職日', '勤務開始日', '入職予定日'],
-    replyDue: ['返答期限', '回答期限']
+    replyDue: ['返答期限', '回答期限', '返答期限目安', '返答期限の目安'],
+    age: ['年齢'],
+    resultOn: ['可否連絡日', '結果連絡日', '合否連絡日']
   };
   function headKey(cell) {
     var h = nfkc(cell).replace(/[\s　]+/g, '').toLowerCase(), k, i;
@@ -289,86 +303,234 @@
   function splitList(s) {
     return trim(nfkc(s)).split(/[\s　]*[、,・\/／\n][\s　]*/).map(trim).filter(Boolean);
   }
+  /* ── 応募の経路の名寄せ（2026-10-27 本人指示） ──
+     経路は決まった名前にそろえる。大小文字・全角半角・空白・記号の揺れは吸収する。表に無い語は「その他」にし、元の書き方を返す。
+     媒体の名前を先に当て、当たらない時に「紹介」「様」を含むかを見る（「ハローワーク紹介」はハローワーク） */
+  var SOURCE_NAMES = ['Indeed', 'ジョブメドレー', 'ハローワーク', '求人ボックス', 'タイミー', 'ホームページ', '紹介', '求人誌', 'マイベストジョブ', 'その他'];
+  var SOURCE_RULES = [
+    ['Indeed', /indeed|インディード/],
+    ['ジョブメドレー', /jobmedley|ジョブメドレー|メドレー/],
+    ['ハローワーク', /ハローワーク|ハロワ|hellowork|職業安定所|職安/],
+    ['求人ボックス', /求人ボックス|求人box|kyujinbox/],
+    ['タイミー', /タイミー|timee/],
+    ['マイベストジョブ', /マイベストジョブ|mybestjob/],
+    ['ホームページ', /ホームページ|^(自社|当社)?hp$|^(自社|当社)?(web|ウェブ)(サイト)?$|website/],
+    ['求人誌', /求人誌|求人情報誌|情報誌|フリーペーパー/]
+  ];
+  /* 照合用の形（NFKC・小文字・空白と「-_.・」を除く） */
+  function sourceKey(s) { return nfkc(s).toLowerCase().replace(/[\s　\-_.・･]+/g, ''); }
+  /* 1語 → 決まった名前。表に無い語は 'その他' */
+  function canonSource(token) {
+    var k = sourceKey(token), i;
+    if (!k) return '';
+    for (i = 0; i < SOURCE_RULES.length; i++) if (SOURCE_RULES[i][1].test(k)) return SOURCE_RULES[i][0];
+    if (/紹介|様/.test(k)) return '紹介';
+    return 'その他';
+  }
+  /* 経路の欄 → {list:[決まった名前（重なりなし）], others:[その他にした元の書き方]}。「＆」「&」「・」「、」「,」「/」「+」改行で分ける */
+  function canonSources(text) {
+    var out = { list: [], others: [] };
+    nfkc(text).split(/[&、,，・･\/／+＋\r\n]+/).forEach(function (raw) {
+      var tok = trim(raw);
+      if (!tok) return;
+      var c = canonSource(tok);
+      if (!c) return;
+      if (out.list.indexOf(c) < 0) out.list.push(c);
+      if (c === 'その他' && sourceKey(tok) !== 'その他' && out.others.indexOf(tok) < 0) out.others.push(tok);
+    });
+    return out;
+  }
+
+  /* 取り込み元で入職した方を職員マスタの一覧（退職した方も含む）から探す。
+     正規化した氏名が同じで、入職日が就業開始日の前後30日以内の職員がちょうど1人の時だけ見つかったとする。
+     返り {state:'found', id} ／ 'none'（いない・2人以上・就業開始日なし）／ 'nolist'（一覧を読めていない） */
+  var LEGACY_MATCH_DAYS = 30;
+  function legacyStaffMatch(list, name, startOn) {
+    if (!Array.isArray(list)) return { state: 'nolist', id: '' };
+    var n = normName(name);
+    if (!n || !isDate(startOn)) return { state: 'none', id: '' };
+    var hits = list.filter(function (r) {
+      if (!r || normName(r.name) !== n || !isDate(r.hireDate)) return false;
+      var d = daysBetween(startOn, r.hireDate);
+      return d != null && Math.abs(d) <= LEGACY_MATCH_DAYS;
+    });
+    return hits.length === 1 && trim(hits[0].id) ? { state: 'found', id: trim(hits[0].id).slice(0, 40) } : { state: 'none', id: '' };
+  }
+
+  var TEXT_MAX = 20000;   // 本人希望・条件・備考（note_text）の上限（データベース 0030）
   var GENDER = { '男': 'M', '男性': 'M', 'M': 'M', 'm': 'M', '女': 'F', '女性': 'F', 'F': 'F', 'f': 'F' };
 
-  /* 取り込みの1行 → {row（ats_import に渡す1行）, issues:[理由]}。issues があれば入れない。
-     ★面接日は応募者の表に欄が無いため、日付と文章を備考の先頭に「面接日: …」として残す（段階の判定にも使う） */
-  function normApplicant(headerMap, cells, today, settings) {
-    var map = headerMap || {}, c = cells || [], issues = [];
+  /* 取り込みの1行 → {row（ats_import に渡す1行）, issues:[入れない理由], warns:[元の書き方を備考に残した項目], staff:{state,id}, others:[その他にした経路]}。
+     issues があれば入れない。面接者ノートの全部の列を、項目か備考（note_text）の見出しつきの行に残す（2026-10-27 本人指示）。
+     ・受付日が空・読めない時は 面接日 → 可否連絡日 → 就業開始日 の順で最初に読める日付を使い、元の書き方を備考に残す。
+       どれも読めなければ受付日は空のまま入れ、取り込みの鍵は「正規化氏名|no:元のNo」
+     ・今日より連絡途絶の日数以上前の行（受付日の無い行を含む）は、終わった選考として段階を決める（deriveStage の past）
+     ・性別・連絡先・生年月日・就業開始日・返答期限・面接日を読めない時は、入れずに止めず、元の書き方を備考に残す */
+  function normApplicant(headerMap, cells, today, settings, staffList) {
+    var map = headerMap || {}, c = cells || [], issues = [], warns = [], notes = [];
     var st = settings || DEFAULT_SETTINGS;
+    var days = Number(st.lostDays) >= 1 ? Math.floor(Number(st.lostDays)) : DEFAULT_SETTINGS.lostDays;
     function cell(k) { return (k in map) ? trim(c[map[k]]) : ''; }
+    function keep(label, text) { notes.push(label + ': ' + text); }
+    function warn(label, text) { warns.push(label); keep(label + '（元の書き方）', text); }
     var name = trim(nfkc(cell('name')).replace(/[\s　]+/g, ' '));
     if (!name) issues.push('氏名がありません');
-    var recText = cell('received'), received = recText ? (normDate(recText) || completeYear(recText, today, 'past')) : null;
-    if (!recText) issues.push('受付日がありません');
-    else if (!received) issues.push('受付日を読めません');
+    else if (name.length > 80) issues.push('氏名が80字を超えています');
+    /* データベースの表の上限（0026・0030）は試算で確かめる（1行の違反で全部が断られないように）。
+       資格・住所・メールは超えたら備考へ全文、No は備考へ、採用可否の語は80字に切って全文を備考へ */
+    if (cell('kana').length > 80) issues.push('カナが長すぎます');
+    var noText = cell('no'), legacyNo = noText.length <= 40 ? noText : '';
+    if (noText && !legacyNo) keep('No（元の書き方）', noText);
+    /* 日付の欄（受付日を補う時は年の無い日付を今日から前へ補う） */
+    var recText = cell('received'), ivText = cell('interview'), roText = cell('resultOn'), stText = cell('startOn');
+    function readPast(t) { return t ? (normDate(t) || completeYear(t, today, 'past')) : null; }
+    /* 年があるか（基準日なしで読めれば年がある） */
+    function hasYear(t) { return !!completeYear(t, ''); }
+    var received = readPast(recText), recFrom = '', recYearless = false;
+    if (!received) {
+      /* 代わりに使う日付は、年が無ければ今日から前へ補う（先の日付にしない・2026-10-27 反証レビュー） */
+      var ivPast = ivText ? splitDateNote(ivText, today, 'past') : null;
+      var cands = [['面接日', ivPast && ivPast.date, !!(ivPast && ivPast.yearless)], ['可否連絡日', readPast(roText), !!roText && !hasYear(roText)], ['就業開始日', readPast(stText), !!stText && !hasYear(stText)]];
+      for (var ci = 0; ci < cands.length; ci++) if (cands[ci][1]) { received = cands[ci][1]; recFrom = cands[ci][0]; recYearless = cands[ci][2]; break; }
+      keep('受付日（元の書き方）', (recText || '空欄') + (received ? '（' + recFrom + 'の日付を受付日にしました）' : '（読める日付がありません）'));
+    }
     var base = received || today;
-    var birthText = cell('birth'), birth = birthText ? normDate(birthText) : null;
-    if (birthText && !birth) issues.push('生年月日を読めません');
+    var age = received ? daysBetween(received, today) : null;
+    /* 年の無い日付から補った受付日の行は、補った年が取り込む日で変わるので過去の行として決める */
+    var past = age == null || age >= days || recYearless;
+    /* 経路 */
+    var srcText = cell('sources'), src = canonSources(srcText);
+    if (srcText) keep('求人媒体（元の書き方）', srcText);
+    /* 性別・年齢・生年月日 */
     var g = trim(nfkc(cell('gender')));
-    var gender = g ? GENDER[g] : '';
-    if (g && !gender) issues.push('性別を読めません');
-    var ct = parseContacts(cell('contacts'));
+    var gender = g ? (GENDER[g] || '') : '';
+    if (g && !gender) warn('性別', g);
+    if (cell('age')) keep('年齢', cell('age'));
+    var birthText = cell('birth'), birth = birthText ? normDate(birthText) : null;
+    if (birthText && !birth) warn('生年月日', birthText);
+    /* 資格・住所（上限を超えたら備考へ全文） */
+    var quals = cell('quals'), address = cell('address');
+    if (quals.length > 1000) { warn('資格', quals); quals = ''; }
+    if (address.length > 200) { warn('住所', address); address = ''; }
+    /* 連絡先 */
+    var ctText = cell('contacts'), ct = parseContacts(ctText);
     var email = cell('email') ? trim(nfkc(cell('email'))) : ct.email;
-    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { issues.push('メールの形が違います'); email = ''; }
-    ct.issues.forEach(function (x) { if (issues.indexOf(x) < 0) issues.push(x); });
-    var iv = splitDateNote(cell('interview'), base);
-    if (iv.issue) issues.push('面接日: ' + iv.issue);
-    var stText = cell('startOn'), startOn = stText ? completeYear(stText, base) : null;
-    if (stText && !startOn) issues.push('就業開始日を読めません');
+    if (cell('email') && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { warn('メール', cell('email')); email = ''; }
+    if (email.length > 200) { warn('メール', email); email = ''; }
+    if (ct.issues.length) warn('連絡先', ctText);
+    /* 面接日（見学だけの行は面接にしない） */
+    var iv = splitDateNote(ivText, base, recYearless ? 'past' : undefined);
+    if (ivText) keep('面接日', iv.date ? iv.date + (iv.note ? ' ' + iv.note : '') : ivText);
+    if (iv.issue) warns.push('面接日');
+    var visitOnly = !!iv.date && /見学/.test(iv.note) && !/面接/.test(iv.note);
+    var interviewOn = iv.date && !visitOnly ? iv.date : null;
+    /* 返答期限目安・就業開始日 */
     var rdText = cell('replyDue'), replyDue = rdText ? completeYear(rdText, base) : null;
-    if (rdText && !replyDue) issues.push('返答期限を読めません');
-    var ds = deriveStage({ result: cell('result'), startOn: startOn, received: received, interviewOn: iv.date }, today, st.lostDays);
+    if (rdText && !replyDue) warn('返答期限目安', rdText);
+    var startOn = stText ? completeYear(stText, base) : null;
+    if (stText && !startOn) warn('就業開始日', stText);
+    /* 採用可否・可否連絡日 */
+    var resText = cell('result');
+    if (resText) keep('採用可否（元の書き方）', resText);
+    if (roText) keep('可否連絡日', roText);
+    var ds = deriveStage({ result: resText, startOn: startOn, received: received, interviewOn: iv.date }, today, days, past);
     if (ds.issue) issues.push(ds.issue);
-    var notes = [];
-    if (iv.date || iv.note) notes.push('面接日: ' + (iv.date || '') + (iv.date && iv.note ? ' ' : '') + (iv.note || ''));
     if (ds.note) notes.push(ds.note);
+    /* 本人希望・条件・備考は切らずに全文（2万字まで） */
+    var wish = cell('wish'), cond = cell('cond');
     if (cell('note')) notes.push(cell('note'));
+    var noteText = notes.join('\n');
+    if (wish.length > TEXT_MAX) issues.push('本人希望が2万字を超えています');
+    if (cond.length > TEXT_MAX) issues.push('条件が2万字を超えています');
+    if (noteText.length > TEXT_MAX) issues.push('備考が2万字を超えています');
     var stage = ds.stage;
-    /* 終わった日は取り込んだ日（保管期限はデータベースが設定の月数で付ける） */
-    var closed = stage && isEnd(stage) ? today : null;
+    /* 終わった日は取り込み元の終わった日（可否連絡日 → 面接日 → 受付日の順で読める日付・どれも無ければ取り込んだ日）。
+       取り込んだ記録は保管期限の対象外（データベースが retain_until を空にする・代表者の決定 2026-10-27） */
+    var closed = null;   // データベース（0030）が使うのは不採用・辞退・連絡途絶の行だけ。入職完了の行には送らない
+    if (stage && isEnd(stage)) closed = (roText ? completeYear(roText, base) : null) || iv.date || received || today;
+    var key = '';
+    /* 年の無い日付から補った受付日の行は、取り込む日で鍵が変わらないよう元の No で鍵を作る */
+    if (name && received && recYearless && legacyNo) key = normName(name) + '|no:' + legacyNo;
+    else if (name && received) key = importKey(name, received);
+    else if (name && legacyNo) key = normName(name) + '|no:' + legacyNo;
+    else if (name) issues.push('受付日も No もありません');
     var row = {
-      legacy_no: cell('no') || null,
+      legacy_no: legacyNo || null,
       received_on: received,
-      sources: splitList(cell('sources')),
+      sources: src.list,
       name: name,
       kana: cell('kana') || null,
-      gender: gender || '',
+      gender: gender,
       birth_date: birth,
       jobs: splitList(cell('jobs')),
-      quals_text: cell('quals') || null,
-      address: cell('address') || null,
+      quals_text: quals || null,
+      address: address || null,
       phones: ct.phones,
       email: email || null,
-      wish_text: cell('wish') || null,
-      cond_text: cell('cond') || null,
-      note_text: notes.join('\n') || null,
+      wish_text: wish || null,
+      cond_text: cond || null,
+      note_text: noteText || null,
       reply_due: replyDue,
       stage: stage,
       closed_on: closed,
       outcome_reason: stage === 'lost' ? '連絡途絶' : null,
       start_on: startOn,
-      import_key: name && received ? importKey(name, received) : ''
+      import_key: key
     };
-    return { row: row, issues: issues };
+    /* 取り込み元で入職済みの方（データベース 0030 の項目）。職員マスタで1人だけ見つかれば職員IDを付ける */
+    var staff = { state: '', id: '' };
+    /* legacy_hired は毎行送る（0030 は項目の無い送信を古い画面として断る） */
+    row.legacy_hired = !!ds.legacy;
+    if (ds.legacy) {
+      if (resText) row.legacy_result = trim(nfkc(resText)).slice(0, 80);
+      staff = legacyStaffMatch(staffList, name, startOn);
+      if (staff.state === 'found') row.staff_id = staff.id;
+    }
+    if (interviewOn) {
+      row.interview_on = interviewOn;
+      if (iv.note) row.interview_note = iv.note.slice(0, 200);
+    }
+    return { row: row, issues: issues, warns: warns, staff: staff, others: src.others, past: past };
   }
-  /* CSV の全体 → 試算一覧。have は取り込み済みの import_key の一覧（重複は外す）。1回300行まで */
+  /* CSV の全体 → 試算一覧。have は取り込み済みの import_key の一覧（重複は外す）。1回300行まで。
+     staffList は職員マスタの一覧（読めなかった時は null＝職員IDを付けず、取り込み元で入職済みの印だけ）。
+     summary: 入れられる行の段階ごと・職員マスタで見つかった／見つからなかった採用・面接日のある行・経路ごとの件数、
+              入れられない行の理由ごとの件数、その他にした経路の元の書き方（全部の行から・件数つき） */
   var IMPORT_MAX = 300;
-  function planImport(text, today, settings, have) {
+  function planImport(text, today, settings, have, staffList) {
     var rows = parseCsv(text), hd = detectHeader(rows);
     if (!hd) return { ok: false, error: '見出しの行（氏名・受付日など）が見つかりません', items: [] };
     var seen = {}, known = {}, items = [];
+    var sum = { stages: {}, staffFound: 0, staffMissing: 0, staffList: Array.isArray(staffList), interviewOn: 0, reasons: {}, sources: {}, others: [], warned: 0 };
+    var otherN = {};
     (have || []).forEach(function (k) { known[k] = 1; });
     rows.slice(hd.index + 1).forEach(function (cells, i) {
-      var r = normApplicant(hd.map, cells, today, settings), why = r.issues.slice();
+      var r = normApplicant(hd.map, cells, today, settings, staffList), why = r.issues.slice();
       var k = r.row.import_key;
       if (k && known[k]) why.push('取り込み済みです');
-      else if (k && seen[k]) why.push('同じ氏名・受付日の行が上にあります');
+      else if (k && seen[k]) why.push(r.row.received_on ? '同じ氏名・受付日の行が上にあります' : '同じ氏名・No の行が上にあります');
       if (k) seen[k] = 1;
-      items.push({ line: hd.index + i + 2, row: r.row, issues: why, ok: !why.length });
+      r.others.forEach(function (o) { otherN[o] = (otherN[o] || 0) + 1; });
+      items.push({ line: hd.index + i + 2, row: r.row, issues: why, warns: r.warns, staff: r.staff, ok: !why.length });
     });
+    /* 同じ職員IDが取り込みの中で2行以上に当たったら、どの行にも付けない（取り込み元で入職済みの印だけ・2026-10-27 反証レビュー） */
+    var sidN = {};
+    items.forEach(function (x) { if (x.ok && x.row.staff_id) sidN[x.row.staff_id] = (sidN[x.row.staff_id] || 0) + 1; });
+    items.forEach(function (x) {
+      if (x.ok && x.row.staff_id && sidN[x.row.staff_id] > 1) { delete x.row.staff_id; x.staff = { state: 'dup', id: '' }; }
+    });
+    items.forEach(function (x) {
+      var r = { row: x.row, warns: x.warns };
+      if (!x.ok) { x.issues.forEach(function (w) { var rk = /^採用可否の「/.test(w) ? '採用可否を読めません' : w; sum.reasons[rk] = (sum.reasons[rk] || 0) + 1; }); return; }
+      sum.stages[r.row.stage] = (sum.stages[r.row.stage] || 0) + 1;
+      if (r.row.legacy_hired) { if (r.row.staff_id) sum.staffFound++; else sum.staffMissing++; }
+      if (r.row.interview_on) sum.interviewOn++;
+      if (r.warns.length) sum.warned++;
+      (r.row.sources.length ? r.row.sources : ['（経路なし）']).forEach(function (s) { sum.sources[s] = (sum.sources[s] || 0) + 1; });
+    });
+    sum.others = Object.keys(otherN).sort().map(function (o) { return { text: o, n: otherN[o] }; });
     var n = items.filter(function (x) { return x.ok; }).length;
-    return { ok: true, items: items, count: n, tooMany: n > IMPORT_MAX, unknown: hd.unknown };
+    return { ok: true, items: items, count: n, tooMany: n > IMPORT_MAX, unknown: hd.unknown, summary: sum };
   }
 
   /* ── 職員マスタへの登録 ── */
@@ -583,7 +745,7 @@
   }
 
   /* ── 集計 ── */
-  /* 期間の始まりと終わり（'month' 今月／'3m' 3か月／'fy' 今年度（4月始まり）／'all' 全期間） */
+  /* 期間の始まりと終わり（'month' 今月／'3m' 3か月／'fy' 今年度（4月始まり）／'all' 全期間・'year' 年ごと（全期間を年で分ける）） */
   function periodRange(kind, today) {
     var o = ymd(today);
     if (!o) return { from: '', to: '' };
@@ -595,6 +757,20 @@
   function rate(num, den) {
     if (!(den > 0)) return '—';
     return num + '/' + den + '（' + Math.round(num * 100 / den) + '%）';
+  }
+  /* 1人の数え方（集計の表と年ごとの表で同じ）:
+       面接＝面接の行がある（取り込みで作った面接を含む）か、取り込みの面接日（interview_on）がある
+       採用＝内定以上に進んだ（これまでに進んだいちばん先の段階）か、取り込み元で入職済み（legacy_hired）
+       入職＝入職完了（取り込み元で入職済みを含む）／辞退＝辞退 */
+  function countsOf(a) {
+    var reached = Math.max(stageRank(a.stage), stageRank(a.reached));
+    return {
+      interviewed: (Number(a.interviews) || 0) > 0 || isDate(a.interview_on),
+      offered: reached >= stageRank('offer'),
+      accepted: reached >= stageRank('offer') || a.legacy_hired === true,
+      hired: a.stage === 'hired',
+      declined: a.stage === 'declined'
+    };
   }
   /* 受付日が期間に入る応募者を数える。a.reached はこれまでに進んだいちばん先の段階（無ければ今の段階）、
      a.interviews は面接の回数。経路が複数の応募はそれぞれの経路に1件ずつ数える */
@@ -608,21 +784,53 @@
     STAGES.concat(END_STAGES).forEach(function (s) { stages[s.id] = 0; });
     list.forEach(function (a) {
       if (a.stage in stages) stages[a.stage]++;
-      var reached = Math.max(stageRank(a.stage), stageRank(a.reached));
+      var k = countsOf(a);
       var srcs = Array.isArray(a.sources) && a.sources.length ? a.sources : ['（経路なし）'];
       if (srcs.length > 1) multi++;
       srcs.forEach(function (s) {
-        var b = bySrc[s] || (bySrc[s] = { source: s, n: 0, interviewed: 0, offered: 0, hired: 0, declined: 0 });
+        var b = bySrc[s] || (bySrc[s] = { source: s, n: 0, interviewed: 0, offered: 0, accepted: 0, hired: 0, declined: 0 });
         b.n++;
-        if ((Number(a.interviews) || 0) > 0) b.interviewed++;
-        if (reached >= stageRank('offer')) b.offered++;
-        if (a.stage === 'hired') b.hired++;
-        if (a.stage === 'declined') b.declined++;
+        if (k.interviewed) b.interviewed++;
+        if (k.offered) b.offered++;
+        if (k.accepted) b.accepted++;
+        if (k.hired) b.hired++;
+        if (k.declined) b.declined++;
       });
     });
     var sources = Object.keys(bySrc).map(function (k) { var b = bySrc[k]; b.few = b.n < 10; return b; })
       .sort(function (x, y) { return y.n - x.n || (x.source < y.source ? -1 : 1); });
     return { total: list.length, stages: stages, sources: sources, multiSource: multi };
+  }
+  /* 年ごとの表（受付日の年 × 応募・面接・採用・入職・辞退）。古い年から並べ、受付日の無い方は最後の「（受付日なし）」の行 */
+  var NO_YEAR = '（受付日なし）';
+  function yearTable(applicants) {
+    var by = {};
+    (applicants || []).forEach(function (a) {
+      if (!a) return;
+      var o = ymd(a.received_on), y = o ? String(o.y) : NO_YEAR, k = countsOf(a);
+      var r = by[y] || (by[y] = { year: y, n: 0, interviewed: 0, accepted: 0, hired: 0, declined: 0 });
+      r.n++;
+      if (k.interviewed) r.interviewed++;
+      if (k.accepted) r.accepted++;
+      if (k.hired) r.hired++;
+      if (k.declined) r.declined++;
+    });
+    return Object.keys(by).sort(function (x, y) { return x === NO_YEAR ? 1 : y === NO_YEAR ? -1 : (x < y ? -1 : 1); }).map(function (y) { return by[y]; });
+  }
+  /* 集計の期間の既定: 今月の応募が1件も無ければ全期間 */
+  function defaultPeriod(applicants, today) {
+    var rg = periodRange('month', today);
+    var any = (applicants || []).some(function (a) { var d = str(a && a.received_on); return d && d >= rg.from && d <= rg.to; });
+    return any ? 'month' : 'all';
+  }
+  /* 選考ボードに出さない方: 取り込み元で入職済み・入職日（start_on）が60日より前の入職完了（「終わった人」の一覧に出す） */
+  var BOARD_HIRED_DAYS = 60;
+  function boardHidden(a, today) {
+    if (!a) return false;
+    if (a.legacy_hired === true) return true;
+    if (a.stage !== 'hired' || !isDate(a.start_on)) return false;
+    var d = daysBetween(a.start_on, today);
+    return d != null && d > BOARD_HIRED_DAYS;
   }
 
   /* ── 保管期限 ── */
@@ -650,6 +858,8 @@
     normName: normName, importKey: importKey, normDate: normDate, completeYear: completeYear, splitDateNote: splitDateNote,
     parseContacts: parseContacts, deriveStage: deriveStage, parseCsv: parseCsv, detectHeader: detectHeader,
     normApplicant: normApplicant, planImport: planImport,
+    SOURCE_NAMES: SOURCE_NAMES, canonSource: canonSource, canonSources: canonSources, legacyStaffMatch: legacyStaffMatch, TEXT_MAX: TEXT_MAX,
+    yearTable: yearTable, defaultPeriod: defaultPeriod, boardHidden: boardHidden, countsOf: countsOf,
     buildStaffCreate: buildStaffCreate, missingText: missingText, sentKey: sentKey, labelOf: labelOf,
     sameStaff: sameStaff, staffMatches: staffMatches, sameNameActive: sameNameActive, staffVerdict: staffVerdict, staffWaitMinutes: staffWaitMinutes, staffResult: staffResult,
     firstContactLate: firstContactLate, replyDueState: replyDueState, evalStatusText: evalStatusText, evalVisible: evalVisible,

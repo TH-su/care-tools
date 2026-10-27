@@ -13,6 +13,7 @@
      6. 送り方は職員マスタの apiPost と同じ形（POST・本文は JSON の文字列・redirect:'follow'・Content-Type を足さない）
      7. FLUSH_FAIL_MSG は職員マスタの画面の写し（＝GAS の定数）と1文字も違わない
      8. 評価は面接官ごと（p_interviewer）。ほかの評価を見た後は own の版で保存する
+     9. 取り込みの試算は職員マスタの一覧を1回読む（読めなければ職員IDなし）・まとめの件数・ボードに出さない入職完了・採用率と年ごと（2026-10-27）
      ほか: 読み込む部品の並び・CSP・インラインの on〜 なし・console なし
    ★氏名・電話・メールはすべて架空（甲野 一郎・000-0000-0001・x@example.com）。出力に console を使わない。 */
 'use strict';
@@ -500,7 +501,7 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
   {
     const L = await opened();
     const h = L.ctx.detailHtml_(L.ctx.rowById_(UID(1)));
-    t('入力の上限をデータベースに合わせる（氏名80・住所200・メール200・本人希望などは4000）', /id="f-name"[^>]*maxlength="80"/.test(h) && /id="f-addr"[^>]*maxlength="200"/.test(h) && /id="f-email"[^>]*maxlength="200"/.test(h) && /id="f-note"[^>]*maxlength="4000"/.test(h) && /id="i-place"[^>]*maxlength="200"/.test(h));
+    t('入力の上限をデータベースに合わせる（氏名80・住所200・メール200・本人希望・条件・備考は2万字＝0030）', /id="f-name"[^>]*maxlength="80"/.test(h) && /id="f-addr"[^>]*maxlength="200"/.test(h) && /id="f-email"[^>]*maxlength="200"/.test(h) && ['f-wish', 'f-cond', 'f-note'].every((k) => new RegExp('id="' + k + '"[^>]*maxlength="20000"').test(h)) && /id="i-place"[^>]*maxlength="200"/.test(h));
   }
 
   group('6. 評価（面接官ごと・見た後は own の版）');
@@ -538,6 +539,102 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
     t('ほかの方が入れた評価を直そうとした → 「この評価はほかの方が入れたため直せません」', (await L2.ctx.saveEval_(false)) === false && L2.ctx.evalCtx.msg === 'この評価はほかの方が入れたため直せません。');
     await L.ctx.loadEvalStat_(UID(1)); await settle();
     t('評価の件数は submitted と interviewers から（2人中1人提出）', JSON.stringify(L.ctx.evalStat[UID(7)]) === JSON.stringify({ submitted: 1, total: 2 }), L.ctx.evalStat);
+  }
+
+  group('6b. 面接者ノートの取り込み・ボード・集計（2026-10-27 本人指示）');
+  {
+    const T = CALC.todayJST();
+    const old = CALC.addDays(T, -61), recent = CALC.addDays(T, -10);
+    const rows = [
+      app({ id: UID(1), name: '甲野 一郎', stage: 'hired', staff_id: 'S0001', start_on: recent }),
+      app({ id: UID(2), name: '乙川 花子', stage: 'hired', staff_id: 'S0002', start_on: old }),
+      app({ id: UID(3), name: '丙山 三郎', stage: 'hired', legacy_hired: true, staff_id: null, start_on: '2019-05-01', received_on: '2019-04-01', retain_until: null, closed_on: '2019-04-15' }),
+      app({ id: UID(4), name: '丁田 四郎', stage: 'lost', received_on: '2019-07-04', retain_until: null, closed_on: '2019-07-04' })
+    ];
+    const L = await opened({ tables: { ats_applicants: rows, ats_interviews: [], ats_settings: [], staff_names: [], ats_contacts: [] } });
+    L.ctx.tab = 'board'; L.ctx.showEnded = true; L.ctx.paintBoard_();
+    const b = L.els['p-board'].innerHTML;
+    const cols = b.slice(b.indexOf('<div class="cols">'));
+    const endTbl = b.slice(0, b.indexOf('<div class="cols">'));
+    t('ボード: 入職日が60日以内の入職完了は「6. 入職完了」に出す', cols.includes('data-id="' + UID(1) + '"'));
+    t('ボード: 取り込み元で入職済み・入職日が60日より前の入職完了は列に出さない', !cols.includes('data-id="' + UID(2) + '"') && !cols.includes('data-id="' + UID(3) + '"'));
+    t('「終わった人」に入職完了（隠した方）も出し、開くボタンを付ける', endTbl.includes('data-act="open" data-id="' + UID(2) + '"') && endTbl.includes('data-act="open" data-id="' + UID(3) + '"') && /取り込み元で入職済み/.test(endTbl) && !endTbl.includes('data-id="' + UID(1) + '"'), endTbl.slice(0, 400));
+    t('「終わった人」の件数に隠した入職完了を含める（連絡途絶1＋入職完了2）', /終わった人 3件/.test(b));
+    t('取り込み元で入職済みの方は職員マスタへ登録するボタンを出さない・押しても送らない', (L.ctx.curId = UID(3), !/data-act="reg-start"/.test(L.ctx.regHtml_(L.ctx.rowById_(UID(3))))) && (await L.ctx.regStart_()) === 'blocked' && L.fetches.length === 0);
+    L.ctx.paintExpire_();
+    t('保管期限: 取り込んだ記録（retain_until が空）は消せる一覧に出ない', !L.els['p-expire'].innerHTML.includes(UID(3)) && !L.els['p-expire'].innerHTML.includes(UID(4)) && /保管期限を過ぎた方はいません/.test(L.els['p-expire'].innerHTML));
+
+    /* 集計 */
+    L.ctx.stageLog = []; L.ctx.dashPeriod = ''; L.ctx.ivs = [];
+    L.ctx.apps = rows.map((r) => Object.assign({}, r, { received_on: r.received_on === T ? '2019-01-01' : r.received_on }));
+    L.ctx.paintDash_();
+    let d = L.els['p-dash'].innerHTML;
+    t('集計: 今月に1件も無い時は期間の既定を全期間にする', L.ctx.dashPeriod === 'all' && /<option value="all" selected>全期間/.test(d));
+    t('集計: 経路ごとの表に採用率の列・定義を1行ずつ', /<th class="num">採用率<\/th>/.test(d) && ['面接率＝', '内定率＝', '採用率＝', '入職率＝', '辞退率＝'].every((k) => d.includes('<p class="hint">' + k)), d.slice(-900));
+    t('集計: 期間の選択に「年ごと」', /<option value="year">年ごと<\/option>/.test(d));
+    L.ctx.dashPeriod = 'year'; L.ctx.paintDash_(); d = L.els['p-dash'].innerHTML;
+    t('年ごと: 年×（応募・面接・採用・入職・辞退）の表を出す', /<h3>年ごと（受付日の年）<\/h3>/.test(d) && /<th>年<\/th><th class="num">応募<\/th><th class="num">面接<\/th><th class="num">採用<\/th><th class="num">入職<\/th><th class="num">辞退<\/th>/.test(d) && /<td>2019<\/td><td class="num">4<\/td><td class="num">0<\/td><td class="num">3<\/td><td class="num">3<\/td><td class="num">0<\/td>/.test(d), d.slice(0, 900));
+    L.ctx.onChange_({ target: { id: 'dash-per', value: 'zzz', hasAttribute() { return false; } } });
+    t('知らない期間の値は今月にする', L.ctx.dashPeriod === 'month');
+    L.ctx.apps = rows; L.ctx.dashPeriod = ''; L.ctx.paintDash_();
+    t('今月に応募があれば既定は今月', L.ctx.dashPeriod === 'month');
+  }
+  {
+    const CSVN = 'No,受付日,求人媒体,氏名,性別,年齢,面接日,採用可否,可否連絡日,就業開始日,備考\n' +
+      '1,2019/04/01,job Medley,甲野 一郎,男,40,4/10,採用,4/15,5/1,架空の備考\n' +
+      '2,,タウン情報,乙川 花子,女,,2020/3/3,不採用,,,\n' +
+      '3,2019/06/01,知人紹介,丙山 三郎,男,,,,,7/1,\n' +
+      '4,2019/06/02,Indeed,,男,,,,,,';
+    const STF = [{ id: 'S0101', name: '甲野一郎', hireDate: '2019-05-10', retireDate: '2020-01-31' }];
+    const L = await opened({ stf: (b) => b.action === 'list' ? { ok: true, rows: STF } : { ok: true }, rpc: { ats_import: () => ({ ok: true, inserted: 3, skipped: 0 }) } });
+    L.ctx.tab = 'import';
+    const r = await L.ctx.planFromText_(CSVN); await settle();
+    const h = L.els['p-import'].innerHTML;
+    t('試算の前に職員マスタの一覧を1回だけ読む（list だけ・書く送信なし）', r === true && stfCalls(L).join() === 'list', stfCalls(L));
+    t('取り込み元で入職済みの方に職員IDを付ける（退職した方も探す）', L.ctx.importPlan.items[0].row.staff_id === 'S0101' && L.ctx.importPlan.items[0].row.legacy_hired === true);
+    t('試算のまとめ: 段階ごと・職員マスタで見つかった／見つからなかった・面接日・入れられない理由・経路ごと',
+      /段階ごと（入れられる行）/.test(h) && /<td>6\. 入職完了<\/td><td class="num">2<\/td>/.test(h) && /<td>職員マスタで見つかった<\/td><td class="num">1<\/td>/.test(h) && /<td>見つからなかった<\/td><td class="num">1<\/td>/.test(h)
+      && /<td>面接日のある行（面接の記録を作る）<\/td><td class="num">2<\/td>/.test(h) && /<td>氏名がありません<\/td><td class="num">1<\/td>/.test(h) && /<td>ジョブメドレー<\/td><td class="num">1<\/td>/.test(h), h.slice(0, 1500));
+    t('その他にした元の書き方を種類の数つきで一覧に出す', /その他にした元の書き方（1種類）/.test(h) && /<li>タウン情報（1件）<\/li>/.test(h));
+    t('「取り込んだ記録は保管期限の対象外です（ずっと残ります）」と1行出す', (h.match(/取り込んだ記録は保管期限の対象外です（ずっと残ります）。/g) || []).length === 1);
+    t('受付日が空の行も入れられる（面接日の日付を受付日に）', L.ctx.importPlan.items[1].ok && L.ctx.importPlan.items[1].row.received_on === '2020-03-03');
+    await L.ctx.runImport_(); await settle();
+    const imp = L.rpcs().find((x) => x.name === 'ats_import');
+    const sent = imp && imp.args.p_rows;
+    t('取り込み: ✔ の行だけ・取り込み元で入職済みの項目と面接日をそのまま送る', sent && sent.length === 3 && sent[0].legacy_hired === true && sent[0].staff_id === 'S0101' && sent[0].legacy_result === '採用' && sent[0].interview_on === '2019-04-10' && sent[0].closed_on === null && sent[1].closed_on === '2020-03-03' && sent[2].legacy_hired === true && !('staff_id' in sent[2]), sent && sent.map((x) => Object.keys(x)));
+    const Lx = await opened({ stf: (b) => b.action === 'list' ? { ok: true, rows: STF } : { ok: true }, rpc: { ats_import: () => ({ ok: false, error: 'badvalue', index: 1 }) } });
+    Lx.ctx.tab = 'import';
+    await Lx.ctx.planFromText_(CSVN); await settle();
+    await Lx.ctx.runImport_(); await settle();
+    t('データベースが1行を断った → 「1件も入っていません」と CSV の何行目かを出す（取り込みましたと言わない）', /取り込めませんでした（1件も入っていません）。CSV の 3行目の値/.test(Lx.els['a-msg'].textContent) && Lx.ctx.importPlan !== null, Lx.els['a-msg'].textContent);
+    t('取り込み: legacy_hired を毎行送る（0030 は項目の無い送信を古い画面として断る）', sent && sent.every((x) => typeof x.legacy_hired === 'boolean'));
+    for (const [err, re] of [['badshape', /^取り込めませんでした（1件も入っていません）。データベースの更新（0030）がまだです。代表者に確かめてください。$/], ['oldscreen', /^取り込めませんでした（1件も入っていません）。画面が古いままです。読み込み直してください。$/]]) {
+      const Ly = await opened({ stf: (b) => b.action === 'list' ? { ok: true, rows: STF } : { ok: true }, rpc: { ats_import: () => ({ ok: false, error: err, index: 0 }) } });
+      Ly.ctx.tab = 'import';
+      await Ly.ctx.planFromText_(CSVN); await settle();
+      await Ly.ctx.runImport_(); await settle();
+      t('データベースが ' + err + ' → 専用の文言（CSV の何行目とは出さない）', re.test(Ly.els['a-msg'].textContent) && !/行目/.test(Ly.els['a-msg'].textContent), Ly.els['a-msg'].textContent);
+    }
+    t('取り込みで本人希望などを端末に書かない', !L.writes.some((w) => /甲野|架空の備考|タウン情報/.test(w[3] || '')));
+    const L2 = await opened({ stf: () => 'NET' });
+    L2.ctx.tab = 'import';
+    await L2.ctx.planFromText_(CSVN); await settle();
+    const h2 = L2.els['p-import'].innerHTML;
+    t('職員マスタの一覧を読めない → 職員IDを付けずに試算し、そう知らせる', L2.ctx.importPlan.count === 3 && L2.ctx.importPlan.items.every((x) => !('staff_id' in x.row)) && /職員マスタの一覧を読めなかったため、職員IDは付けず「取り込み元で入職済み」の印だけで入れます/.test(h2));
+    const L3 = await opened({ local: { stfm_cfg: '{}' } });
+    L3.ctx.tab = 'import';
+    await L3.ctx.planFromText_(CSVN); await settle();
+    t('職員マスタの接続先が無い → 送らずに試算し「接続先が見つからない」と知らせる', L3.fetches.length === 0 && L3.ctx.importPlan.count === 3 && /職員マスタの接続先が見つからないため（接続設定）/.test(L3.els['p-import'].innerHTML));
+    const L4 = await opened({ stf: (b) => b.action === 'list' ? { ok: true, rows: STF } : { ok: true } });
+    L4.ctx.tab = 'import';
+    const p4 = L4.ctx.planFromText_(CSVN); L4.ctx.gen++; const r4 = await p4; await settle();
+    t('一覧を待つ間に世代が変わった → 試算を捨てる', r4 === false && L4.ctx.importPlan === null);
+    const BAD = '<img src=x onerror=alert(1)>';
+    const L5 = await opened({ stf: (b) => b.action === 'list' ? { ok: true, rows: [] } : { ok: true } });
+    L5.ctx.tab = 'import';
+    await L5.ctx.planFromText_('氏名,受付日,求人媒体,性別\n甲野 一郎,2019/01/01,"' + BAD.replace(/"/g, '""') + '","' + BAD.replace(/"/g, '""') + '"');
+    await settle();
+    t('その他にした元の書き方・備考に残した値も文字のまま出す', !/<img/i.test(L5.els['p-import'].innerHTML) && /&lt;img src=x onerror=alert\(1\)&gt;（1件）/.test(L5.els['p-import'].innerHTML));
   }
 
   group('7. 文字・部品・CSP');
