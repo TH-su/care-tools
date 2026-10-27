@@ -214,7 +214,7 @@ async function opened(opt) {
     t('su-print.css を読み、su-errors.js より前にスクリプトが無い', /<link rel="stylesheet" href="su-print\.css\?v=2026-09-12">/.test(head) && head.indexOf('<script') === head.indexOf('<script src="su-errors.js'));
     t('CSP・拡大を禁止しない viewport・no-store・noindex・題', /data-su-csp/.test(head) && /<meta name="viewport" content="width=device-width,initial-scale=1">/.test(head) && !/user-scalable=no|maximum-scale=1[^.0-9]/.test(head) &&
       /Cache-Control" content="no-store"/.test(head) && /robots" content="noindex/.test(head) && /<title>担当者会議の記録<\/title>/.test(head));
-    t('</body> の直前に su-report.js（data-tool="担当者会議の記録"）', /<script src="su-report\.js\?v=2026-10-24" data-tool="担当者会議の記録"><\/script>\n<\/body>/.test(HTML));
+    t('</body> の直前に su-report.js（data-tool="担当者会議の記録"）', /<script src="su-report\.js\?v=2026-10-27" data-tool="担当者会議の記録"><\/script>\n<\/body>/.test(HTML));
     t('インラインのイベント属性・javascript: を使わない', !/\son[a-z]+=["']/.test(HTML) && !/javascript:/i.test(HTML));
     t('console を足していない', !/console\./.test(S));
     t('切り出した関数が揃う（' + FN_NAMES.length + '本）', FN_NAMES.length > 80 && ['boot', 'openPerson_', 'cmSave_', 'cmFinal_', 'classify_', 'printHtml_'].every((n) => FN_NAMES.indexOf(n) >= 0));

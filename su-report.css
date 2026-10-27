@@ -1,0 +1,60 @@
+/* 「不具合を報告」（su-report.js）と画面の指摘（su-annot.js）の見た目（2026-10-27 代表者の決定「共通部品を直す」）
+ * 以前は su-report.js / su-annot.js が <style> を差し込んで付けていたが、CSP で直書きの style を禁じる画面
+ * （メニューの設定＝style-src 'self'）では差し込みが止まり、ボタンが右下の丸にならなかった。同じサイトのこのファイルを
+ * su-report.js が <link> で読む。中身は差し込んでいた文字列と一字一句同じ（並びも同じ）＝見た目は変えていない。
+ * 読めなかった時もボタンは出る（素のボタンになるだけ・su-report.js が待ちきれなければ出す）。 */
+
+/* ── 不具合を報告（su-report.js）──
+   z-index は画面のモーダル（各画面 40〜1000）より下に置く＝モーダルが開いている間はその下に隠れ、「保存」などを覆わない。
+   接続先の案内の帯（su-cfg-hint）はこのボタンの実寸を測って上に乗るので、重ならない */
+.sur-fab{position:fixed;right:14px;bottom:14px;z-index:30;min-height:44px;min-width:44px;padding:10px 16px;border:0;border-radius:999px;background:var(--pri,#0b57d0);color:#fff;font:600 14px/1.2 system-ui,sans-serif;box-shadow:var(--sh,0 1px 6px rgba(0,0,0,.12));cursor:pointer}
+.sur-fab:focus-visible{outline:3px solid #ffbf47;outline-offset:2px}
+.sur-dlg{border:0;border-radius:var(--r,12px);padding:0;width:min(560px,94vw);box-shadow:0 8px 30px rgba(0,0,0,.25)}
+.sur-dlg::backdrop{background:rgba(0,0,0,.45)}
+.sur-dlg.sur-fallback{position:fixed;left:3vw;top:5vh;z-index:2147483001;display:none;max-height:90vh;overflow:auto}
+.sur-dlg.sur-fallback.sur-open{display:block}
+.sur-in{padding:18px;font:14px/1.6 system-ui,sans-serif;color:var(--g9,#202124);background:#fff}
+.sur-in h2{margin:0 0 4px;font-size:17px}
+.sur-in p{margin:0 0 12px;color:var(--g7,#5f6368);font-size:13px}
+.sur-in p.sur-warn{color:#8a3a00;font-weight:600}
+.sur-in label{display:block;font-weight:600;margin:12px 0 4px}
+.sur-in textarea{width:100%;min-height:88px;padding:10px;border:1px solid var(--g3,#dadce0);border-radius:8px;font:inherit;box-sizing:border-box}
+.sur-pre{white-space:pre-wrap;background:var(--g0,#f8f9fa);border:1px solid var(--g2,#e8eaed);border-radius:8px;padding:10px;font:12px/1.5 ui-monospace,monospace;max-height:34vh;overflow:auto;margin-top:6px}
+.sur-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.sur-btn{min-height:44px;padding:10px 16px;border-radius:8px;border:1px solid var(--g3,#dadce0);background:#fff;font:600 14px system-ui;cursor:pointer}
+.sur-btn.pri{background:var(--pri,#0b57d0);color:#fff;border-color:transparent}
+.sur-ok{margin-top:10px;color:#0842a0;font-weight:600}
+.sur-note{margin-top:10px;font-size:12px;color:var(--g7,#5f6368)}
+.sur-ann{margin-top:10px}
+.sur-ann ol{margin:4px 0 0;padding-left:1.6em}
+.sur-ann li{margin:2px 0}
+.sur-ann canvas{display:block;max-width:100%;max-height:40vh;margin-top:8px;border:1px solid var(--g3,#dadce0);border-radius:8px}
+/* hidden 属性は上の display:block に負けて隠れない。配置図を描けなかった時に空の枠が出ていた（2026-10-09） */
+.sur-ann canvas[hidden]{display:none}
+.sur-fab.sur-hide{visibility:hidden}
+/* 表示200%（CSS幅200px前後）では小さめにして中身を隠しすぎない */
+@media (max-width:260px){.sur-fab{padding:8px 10px;font-size:13px}}
+@media print{.sur-fab,.sur-dlg{display:none!important}}
+
+/* ── 画面の指摘（su-annot.js・管理者が「画面の場所を指して報告」を押した時だけ出る部品）── */
+.sua-root{position:fixed;inset:0;z-index:2147483000;pointer-events:none;font:14px/1.5 system-ui,sans-serif}
+.sua-board{position:fixed;inset:0;pointer-events:auto;cursor:crosshair;background:transparent;touch-action:auto}
+.sua-hover{position:fixed;pointer-events:none;outline:2px dashed #0b57d0;outline-offset:1px;background:rgba(11,87,208,.08);display:none}
+.sua-cur{position:fixed;pointer-events:none;outline:3px solid #0b57d0;outline-offset:1px;background:rgba(11,87,208,.10);display:none}
+.sua-mark{position:fixed;pointer-events:none;outline:3px solid #d93025;outline-offset:1px}
+.sua-badge{position:absolute;left:-12px;top:-12px;min-width:24px;height:24px;border-radius:12px;background:#d93025;color:#fff;font:700 13px/24px system-ui,sans-serif;text-align:center;pointer-events:auto;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.sua-bar{position:fixed;left:8px;right:8px;top:8px;pointer-events:auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border-radius:12px;background:#202124;color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.3)}
+.sua-bar.sua-low{top:auto;bottom:8px}
+.sua-bar .sua-t{flex:1 1 220px;font-weight:600}
+.sua-btn{min-height:44px;min-width:44px;padding:8px 14px;border-radius:8px;border:1px solid #dadce0;background:#fff;color:#202124;font:600 14px system-ui,sans-serif;cursor:pointer}
+.sua-btn.pri{background:#0b57d0;border-color:transparent;color:#fff}
+.sua-btn:focus-visible{outline:3px solid #ffbf47;outline-offset:2px}
+.sua-bar .sua-btn.sub{background:transparent;color:#fff;border-color:#5f6368}
+.sua-pop{position:fixed;pointer-events:auto;width:min(340px,calc(100vw - 16px));box-sizing:border-box;padding:12px;border-radius:12px;background:#fff;color:#202124;box-shadow:0 8px 30px rgba(0,0,0,.3)}
+.sua-pop h3{margin:0 0 6px;font-size:15px}
+.sua-pop .sua-tag{margin-left:6px;font:12px ui-monospace,monospace;color:#5f6368}
+.sua-pop textarea{width:100%;min-height:64px;box-sizing:border-box;padding:8px;border:1px solid #dadce0;border-radius:8px;font:inherit}
+.sua-pop .sua-w{margin:4px 0 0;font-size:12px;color:#8a3a00;font-weight:600}
+.sua-pop .sua-e{margin:4px 0 0;font-size:12px;color:#b3261e;font-weight:600}
+.sua-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+@media print{.sua-root{display:none!important}}

@@ -340,44 +340,64 @@
   }
 
   /* ── 指す操作 ── */
-  var CSS = [
-    '.sua-root{position:fixed;inset:0;z-index:2147483000;pointer-events:none;font:14px/1.5 system-ui,sans-serif}',
-    '.sua-board{position:fixed;inset:0;pointer-events:auto;cursor:crosshair;background:transparent;touch-action:auto}',
-    '.sua-hover{position:fixed;pointer-events:none;outline:2px dashed #0b57d0;outline-offset:1px;background:rgba(11,87,208,.08);display:none}',
-    '.sua-cur{position:fixed;pointer-events:none;outline:3px solid #0b57d0;outline-offset:1px;background:rgba(11,87,208,.10);display:none}',
-    '.sua-mark{position:fixed;pointer-events:none;outline:3px solid ' + RED + ';outline-offset:1px}',
-    '.sua-badge{position:absolute;left:-12px;top:-12px;min-width:24px;height:24px;border-radius:12px;background:' + RED + ';color:#fff;',
-    'font:700 13px/24px system-ui,sans-serif;text-align:center;pointer-events:auto;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.3)}',
-    '.sua-bar{position:fixed;left:8px;right:8px;top:8px;pointer-events:auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px;',
-    'padding:10px 12px;border-radius:12px;background:#202124;color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.3)}',
-    '.sua-bar.sua-low{top:auto;bottom:8px}',
-    '.sua-bar .sua-t{flex:1 1 220px;font-weight:600}',
-    '.sua-btn{min-height:44px;min-width:44px;padding:8px 14px;border-radius:8px;border:1px solid #dadce0;background:#fff;color:#202124;font:600 14px system-ui,sans-serif;cursor:pointer}',
-    '.sua-btn.pri{background:#0b57d0;border-color:transparent;color:#fff}',
-    '.sua-btn:focus-visible{outline:3px solid #ffbf47;outline-offset:2px}',
-    '.sua-bar .sua-btn.sub{background:transparent;color:#fff;border-color:#5f6368}',
-    '.sua-pop{position:fixed;pointer-events:auto;width:min(340px,calc(100vw - 16px));box-sizing:border-box;padding:12px;border-radius:12px;',
-    'background:#fff;color:#202124;box-shadow:0 8px 30px rgba(0,0,0,.3)}',
-    '.sua-pop h3{margin:0 0 6px;font-size:15px}',
-    '.sua-pop .sua-tag{margin-left:6px;font:12px ui-monospace,monospace;color:#5f6368}',
-    '.sua-pop textarea{width:100%;min-height:64px;box-sizing:border-box;padding:8px;border:1px solid #dadce0;border-radius:8px;font:inherit}',
-    '.sua-pop .sua-w{margin:4px 0 0;font-size:12px;color:#8a3a00;font-weight:600}',
-    '.sua-pop .sua-e{margin:4px 0 0;font-size:12px;color:#b3261e;font-weight:600}',
-    '.sua-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}',
-    '@media print{.sua-root{display:none!important}}'
-  ].join('');
+  /* 見た目は su-report.css に入れてある（2026-10-27 代表者の決定「共通部品を直す」）。以前はここで <style> を差し込んでいたが、
+     CSP で直書きの style を禁じる画面では止まる。
+   ★見た目が効いていないまま始めない（2026-10-27 反証レビュー）: 透明の板（.sua-board）が画面全体を覆わないと、
+     管理者の押下が裏の画面の本物のボタン（保存・削除など）に届く。起きる場面は (a) su-report.css が読めない・遅い、
+     (b) 取り込み前から開いたままの画面（古い su-report.js は su-report.css を読まない）。
+     そこで始める前に su-report.css が効いているかを確かめ、効いていなければ自分で <link> を足して待つ。
+     それでも効かなければ始めずに「今は使えません」と出す。CSS_HREF は su-report.js と同じ版にする（試験で確かめる） */
+  var CSS_HREF = 'su-report.css?v=2026-10-27';
+  var CSS_WAIT_MS = 4000;
+  function cssOk() {
+    try {
+      var probe = document.createElement('div');
+      probe.className = 'sua-root';
+      probe.hidden = true;             // 画面には出さない（hidden でも position の計算値は CSS のとおりに出る）
+      document.body.appendChild(probe);
+      var ok = window.getComputedStyle(probe).position === 'fixed';
+      probe.remove();
+      return ok;
+    } catch (e) { return false; }
+  }
+  function ensureCss(done) {
+    var fin = false;
+    function end() { if (fin) return; fin = true; done(); }
+    try {
+      var l = document.createElement('link');
+      l.rel = 'stylesheet';
+      l.onload = end; l.onerror = end;
+      l.href = CSS_HREF;
+      document.head.appendChild(l);
+    } catch (e) { end(); return; }
+    setTimeout(end, CSS_WAIT_MS);
+  }
+  function unavailable(opt) {
+    try {
+      if (typeof opt.onUnavailable === 'function') { opt.onUnavailable(); return; }
+      try { window.alert('画面の指摘は今は使えません（画面の部品を読み込めませんでした）。電波を確かめてから、もう一度押してください。'); } catch (e) { /* 出せなくても止める */ }
+      if (typeof opt.onCancel === 'function') opt.onCancel();
+    } catch (e) { /* 呼び出し側の失敗を外に出さない */ }
+  }
 
-  var active = false;
+  var active = false, pending = false;
   function start(opt) {
     opt = opt || {};
+    if (active || pending) return false;
+    if (cssOk()) return begin(opt);
+    pending = true;
+    ensureCss(function () {
+      pending = false;
+      if (!(cssOk() && begin(opt))) unavailable(opt);
+    });
+    return true;
+  }
+  function begin(opt) {
     if (active) return false;
     active = true;
     var onDone = typeof opt.onDone === 'function' ? opt.onDone : function () {};
     var onCancel = typeof opt.onCancel === 'function' ? opt.onCancel : function () {};
 
-    var style = document.createElement('style');
-    style.textContent = CSS;
-    document.head.appendChild(style);
     var root = document.createElement('div');
     root.className = 'sua-root';
     root.innerHTML =
@@ -390,6 +410,14 @@
       '</div>';
     document.body.appendChild(root);
     var board = root.querySelector('.sua-board'), hover = root.querySelector('.sua-hover'), cur = root.querySelector('.sua-cur');
+    /* 押下を受ける板と root の位置・全面・前面だけは要素に直接付ける（CSSOM は CSP の style-src 'self' でも効く）。
+       値は su-report.css と同じ＝見た目は変わらない。CSS があとで外れても、裏の画面に押下を通さない */
+    try {
+      root.style.position = 'fixed'; root.style.top = root.style.right = root.style.bottom = root.style.left = '0';
+      root.style.zIndex = '2147483000'; root.style.pointerEvents = 'none';
+      board.style.position = 'fixed'; board.style.top = board.style.right = board.style.bottom = board.style.left = '0';
+      board.style.pointerEvents = 'auto';
+    } catch (e) { /* 付けられなくても CSS で覆う（効いていることは始める前に確かめた） */ }
     var marksBox = root.querySelector('.sua-marks'), bar = root.querySelector('.sua-bar'), msg = root.querySelector('.sua-t');
     function isOurs(e) {
       if (!e || e.nodeType !== 1) return false;
@@ -623,7 +651,7 @@
       active = false;
       if (raf) cancelAnimationFrame(raf);
       ['keydown', 'keyup', 'keypress'].forEach(function (t) { window.removeEventListener(t, onKey, true); });
-      root.remove(); style.remove();
+      root.remove();
       try { if (res) onDone(res); else onCancel(); } catch (e) { /* 呼び出し側の失敗を外に出さない */ }
     }
 
