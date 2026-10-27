@@ -924,6 +924,8 @@
     return false;
   }
   /* 見出しの値: 「見出し：値」「見出し 値」（同じ行）／「見出し」だけの行の次の行（次の行が見出しなら無し） */
+  /* 「見出し 値」（空白区切り）は、値の形を確かめられる項目だけで読む（文の行「名前 を入力して…」を値にしない） */
+  var POST_SPACE_OK = { gender: 1, birth: 1, age: 1, phone: 1, email: 1 };
   function postValue(lines, key) {
     var labels = POST_LABELS[key].map(postLabelKey), i, j;
     for (i = 0; i < lines.length; i++) {
@@ -934,7 +936,7 @@
         continue;
       }
       /* 同じ行: 「【見出し】値」「見出し：値」「見出し（タブ）値」「見出し 値」 */
-      var ms = [/^[【\[]([^】\]]+)[】\]][\s　]*(.+)$/.exec(raw), /^([^:：\t]+?)[\s　]*[:：\t][\s　]*(.+)$/.exec(raw), /^([^\s　]+)[\s　]+(.+)$/.exec(raw)];
+      var ms = [/^[【\[]([^】\]]+)[】\]][\s　]*(.+)$/.exec(raw), /^([^:：\t]+?)[\s　]*[:：\t][\s　]*(.+)$/.exec(raw), POST_SPACE_OK[key] ? /^([^\s　]+)[\s　]+(.+)$/.exec(raw) : null];
       for (j = 0; j < ms.length; j++) if (ms[j] && labels.indexOf(postLabelKey(ms[j][1])) >= 0 && trim(ms[j][2])) return trim(ms[j][2]);
     }
     return '';
@@ -991,18 +993,14 @@
     if (b && b < today) { out.birth_date = b; found('生年月日'); }
     var ag = /(\d{1,3})[\s　]*歳/.exec(postValue(lines, 'age') || bd || '');
     if (ag && +ag[1] >= 15 && +ag[1] <= 100) { out.age = ag[1]; found('年齢'); }
-    /* 電話: 見出しの値。無ければ「0から始まる・ハイフンつき」の番号（郵便番号・URL の行は見ない） */
-    var ph = postValue(lines, 'phone'), nums = [];
+    /* 電話: 見出しの値だけ（本文の番号は求人サイトの窓口・当方の番号のことがあるため拾わない）。「FAX」より後は見ない */
+    var ph = postValue(lines, 'phone').split(/fax|ファックス|ファクス/i)[0], nums = [];
     function addNum(s) { var n = trim(s).replace(/[^\d\-]/g, ''); if (/^0\d{8,10}$/.test(n.replace(/-/g, '')) && nums.indexOf(n) < 0) nums.push(n); }
     if (ph) ph.split(/[\s　,、\/／]+/).forEach(addNum);
-    if (!nums.length) lines.forEach(function (l) {
-      if (/〒|https?:|www\./i.test(l)) return;
-      (l.match(/(?:^|[^\d\-])(0\d{1,4}-\d{1,4}-\d{3,4})(?![\d\-])/g) || []).forEach(function (m) { addNum(m); });
-    });
     if (nums.length) { out.phones = nums.slice(0, 3).map(function (n) { return { num: n, label: '' }; }); found('電話'); }
-    /* メール: 見出しの値。無ければ文面のアドレスのうち、送り元（no-reply など・求人サイトの代表）でないもの */
+    /* メール: 見出しの値。無ければ Indeed の応募者への返信用アドレス（@indeedemail.com）だけ（本文のほかのアドレスは当方・窓口のことがある） */
     var em = postValue(lines, 'email'), ems = [];
-    (em + '\n' + all).replace(/[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/g, function (a) { if (!POST_SKIP_MAIL.test(a) && ems.indexOf(a) < 0) ems.push(a); return a; });
+    (em || (all.match(/[A-Za-z0-9._%+\-]+@indeedemail\.com/g) || []).join('\n')).replace(/[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/g, function (a) { if (!POST_SKIP_MAIL.test(a) && ems.indexOf(a) < 0) ems.push(a); return a; });
     if (ems.length) { out.email = ems[0].slice(0, 200); found('メール'); }
     var ad = postValue(lines, 'address');
     if (ad && ad.length <= 200) { out.address = ad; found('住所'); }
@@ -1046,13 +1044,19 @@
     return out;
   }
   /* 足す前の重なりの確かめ: 同じ会員番号（備考の「会員番号: N」）の方 → 'member'、同じ氏名・同じ受付日の方 → 'name'。無ければ null */
+  /* 受付日が知らせに書かれていなかった時（receivedGuess）は、同じ氏名で受付日が前後60日以内の方も重なりとみなす（翌日に貼り直しても二重にしない） */
+  var POST_DUP_DAYS = 60;
   function postingDup(p, applicants) {
-    var list = applicants || [], hit = null, key = p && p.name ? importKey(p.name, p.received_on) : '';
+    var list = applicants || [], hit = null, key = p && p.name ? importKey(p.name, p.received_on) : '', nn = p && p.name ? normName(p.name) : '';
     var mem = p && p.member_no ? new RegExp('(^|\\n)会員番号: ' + String(p.member_no).replace(/\D/g, '') + '(\\n|$)') : null;
     list.some(function (a) {
       if (!a) return false;
       if (mem && mem.test(nfkc(a.note_text || ''))) { hit = { kind: 'member', id: a.id, name: a.name }; return true; }
       if (key && importKey(a.name, a.received_on) === key) { hit = { kind: 'name', id: a.id, name: a.name }; return true; }
+      if (p.receivedGuess && nn && normName(a.name) === nn) {
+        var gap = daysBetween(a.received_on, p.received_on);
+        if (gap != null && Math.abs(gap) <= POST_DUP_DAYS) { hit = { kind: 'name', id: a.id, name: a.name }; return true; }
+      }
       return false;
     });
     return hit;
@@ -1107,8 +1111,8 @@
     Object.keys(byId).forEach(function (id) {
       var a = byId[id];
       if (isDate(a.interview_on) && !ivDay[id + '|' + a.interview_on]) push('iv', a.interview_on, '', a, null);
-      push('start', a.start_on, '', a);
-      push('due', a.reply_due, '', a);
+      /* 不採用・辞退・連絡途絶の方は、入職予定日・返答期限を出さない（面接と応募は記録として出す） */
+      if (!isEnd(a.stage)) { push('start', a.start_on, '', a); push('due', a.reply_due, '', a); }
       push('recv', a.received_on, '', a);
     });
     Object.keys(by).forEach(function (d) {

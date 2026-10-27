@@ -396,6 +396,17 @@ t('重なり: 会員番号の一部一致は重なりにしない', C.postingDup
 t('重なり: 同じ氏名（空白の違いは同じ）・同じ受付日 → name／受付日が違えば重ならない', (C.postingDup({ name: '乙川 花子', received_on: '2026-10-26' }, HAVE) || {}).kind === 'name'
   && C.postingDup({ name: '乙川 花子', received_on: '2026-10-25' }, HAVE) === null);
 
+/* 反証レビュー（2026-10-27）の指摘の再発防止 */
+const P0 = (x) => C.parsePosting(x, { today: '2026-10-27' });
+t('文の行（見出し 空白 文）を値にしない: 氏名・フリガナ・職種・応募求人・受付日', P0('名前 を入力して返信してください').name === '' && P0('お名前 の確認をお願いします').name === '' && P0('カナ 入力の場合は全角でお願いします').kana === ''
+  && P0('職種 にかかわらず歓迎します').jobs.length === 0 && P0('求人 一覧はこちら https://example.com').posting === '' && !/https/.test(P0('求人 一覧はこちら https://example.com').note_text)
+  && P0('応募日 から3日以内に返信してください 10/30').receivedGuess === true);
+t('見出しの無い本文の電話・アドレス（窓口・当方の宛先）は拾わない', (() => { const r = P0('お問い合わせ\nジョブメドレー運営事務局 03-0000-0000\nこのメールは recruit@kakuu-jigyosho.example 宛にお送りしています'); return r.phones.length === 0 && r.email === ''; })()
+  && P0('お問い合わせ 096-000-0000（平日9時〜18時）').phones.length === 0);
+t('「TEL 番号 FAX 番号」は FAX を電話にしない', J(P0('TEL 096-000-0001 FAX 096-000-0002').phones) === J([{ num: '096-000-0001', label: '' }]));
+t('重なり: 受付日が書かれていない知らせは、同じ氏名で前後60日以内の方も重なり（翌日の貼り直し）', (C.postingDup({ name: '乙川 花子', received_on: '2026-10-27', receivedGuess: true }, HAVE) || {}).kind === 'name'
+  && C.postingDup({ name: '乙川 花子', received_on: '2027-02-27', receivedGuess: true }, HAVE) === null && C.postingDup({ name: '乙川 花子', received_on: '2026-10-27' }, HAVE) === null);
+
 console.log('\n— 13. カレンダー（2026-10-27） —');
 let cm = C.calMonth('2026-10', '2026-10-27');
 t('月の表: 日曜はじまり・2026年10月は木曜1日・5週', cm.ym === '2026-10' && cm.weeks.length === 5 && cm.weeks[0][4] === '2026-10-01' && cm.weeks[0][3] === '' && cm.weeks[4][6] === '2026-10-31' && cm.prev === '2026-09' && cm.next === '2026-11', cm);
@@ -417,6 +428,7 @@ t('翌月には入職が出る', C.calEvents(CA, CI, ALLK, '2026-11')['2026-11-0
 t('出さない種類は出さない', !Object.values(C.calEvents(CA, CI, { iv: true }, '2026-10')).flat().some((e) => e.kind !== 'iv') && J(C.calEvents(CA, CI, {}, '2026-10')) === '{}');
 const SAME = C.calEvents([{ id: 'q', name: '甲', received_on: '2026-10-03', reply_due: '2026-10-03', start_on: '2026-10-03' }], [{ applicant_id: 'q', held_at: '2026-10-03T05:00:00Z' }, { applicant_id: 'q', held_at: '2026-10-03T00:00:00Z' }], ALLK, '2026-10')['2026-10-03'];
 t('同じ日の並び: 面接（時刻順）→ 入職 → 返答期限 → 応募', J(SAME.map((e) => e.kind + e.time)) === J(['iv09:00', 'iv14:00', 'start', 'due', 'recv']), SAME.map((e) => e.kind + e.time));
+t('不採用・辞退・連絡途絶の方は入職・返答期限を出さない（面接・応募は出す）', (() => { const e = C.calEvents([{ id: 'r', name: '甲', stage: 'declined', received_on: '2026-10-03', reply_due: '2026-10-04', start_on: '2026-10-05', interview_on: '2026-10-06' }], [], ALLK, '2026-10'); return J(Object.keys(e).sort()) === J(['2026-10-03', '2026-10-06']); })());
 t('壊れた値でも落ちない', J(C.calEvents(null, null, ALLK, '2026-10')) === '{}' && J(C.calEvents([{ id: 'x', name: 'x', start_on: 'あした' }], [{ applicant_id: 'x', held_at: 'x' }], ALLK, '2026-10')) === '{}' && J(C.calEvents(CA, CI, ALLK, 'x')) === '{}');
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');

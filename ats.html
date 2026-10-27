@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-mo+6SmC0Gb0lbowcPGPLva0M5kXkqMLgT3Mxafc6qVg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-YP0IKnfXOemBEMVRY5wv1xePIfmlqwxKMvYHjBIOnpc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
@@ -955,8 +955,8 @@ function pasteConfirm_(p){
         email:val_('d-pmail')||null,address:val_('d-paddr')||null,note_text:val_('d-pnote')||null};
       if(!row.name||!AtsCalc.isDate(row.received_on)){ toast('氏名と受付日を入れてください'); return null; }
       if(row.received_on>today_()){ toast('受付日が先の日付になっています'); return null; }
-      var dup=AtsCalc.postingDup({name:row.name,received_on:row.received_on,member_no:p.member_no},apps);
-      if(dup){ toast(dup.kind==='member'?'同じ会員番号の方がもういます（'+dup.name+'）。ボードから開いてください':'同じ氏名・同じ受付日の方がもういます。ボードから開いてください'); return null; }
+      var dup=AtsCalc.postingDup({name:row.name,received_on:row.received_on,member_no:p.member_no,receivedGuess:p.receivedGuess},apps);
+      if(dup){ toast(dup.kind==='member'?'同じ会員番号の方がもういます（'+dup.name+'）。ボードから開いてください':(p.receivedGuess?'同じ氏名の方が近い受付日でもういます':'同じ氏名・同じ受付日の方がもういます')+'。ボードから開いてください'); return null; }
       return row;
     }})
   .then(function(row){
