@@ -21,6 +21,7 @@
   ★2026-10-09（監査10月版 #16）: スクリプトと見た目を perf-report.js・perf-report.css に分け、CSP で自分のファイル以外を読まない・送らないようにした。
   ★2026-10-17: Supabase と JSON の通信も数えるようにした（以前の記録は内訳が空）
   ★2026-10-24: 見えている時／裏にある時の回数（GAS の種類ごと・JSON のファイルごと・分類ごとの合計）の表を足した（それより前の記録は数えない）
+  ★2026-10-27: 「黙って失敗した回数（この端末）」の表を足した（画面に出さずに記録だけ残した失敗を、アプリと場所ごとに数えたもの・本人指示）
 -->
 <link rel="stylesheet" href="perf-report.css?v=2026-10-09">
 </head>
@@ -91,10 +92,16 @@
     <p class="muted">通信の回数と、かかった時間の合計（秒）です。「記録した回数」は、その画面を開いて数えた回数です。</p>
     <div class="tw"><table id="tVis"></table></div>
   </section>
+
+  <section class="cd" aria-labelledby="h-silent">
+    <h2 id="h-silent">黙って失敗した回数（この端末）</h2>
+    <p class="muted">保存・同期の途中で失敗したのに、画面には何も出さずに続けた回数です。「場所」は失敗した処理の名前です。同じ失敗（種類・内容・場所が同じもの）は30秒に1回しか数えていないので、続けて起きた時は実際より少なく出ます。上の「期間」は効かず、数え始めてからの合計です。氏名や記録の中身は残していません。</p>
+    <div class="tw"><table id="tSilent"></table></div>
+  </section>
 </main>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="perf-report.js?v=2026-10-24"></script>
+<script src="perf-report.js?v=2026-10-27"></script>
 </body>
 </html>
