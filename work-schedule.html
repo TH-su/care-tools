@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-elA3h/FbTtCDikcTdqq20VCiXadg/8sYjRmPSUO3m0Q='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-YK0cAGfiINom8jRwE9gHVEw4JFbXvliKPG5xMaT5lrY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -8194,6 +8194,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      * 取り直し待ちが解除されてしまう。app 側はこの2つを組にして基準を取り直す。 */
     var initSeq = 0;
     var autoBase = null, autoInit = false;
+    /* store.auto の中の通知は、最外周の終わりに1回だけ出す（2026-10-27・起動の長い処理の解消）。
+     * 以前は auto の中でも dispatch のたびに購読者（保存・送信の予約・盤面の描き直し）へ通知していたため、
+     * 週間計画との照合（札ごとの dispatch）で盤面全体の描き直しと送信の判定（daySig）が札の数だけ走っていた。
+     * 購読者は「その時の最終の盤面」を見て予約・描画するだけ（途中の盤面ごとの記録は持たない）ので、最後の1回で同じ結果になる。
+     * 重なりの整理（enforce_）と取り出し（takeRepair）は元から最外周の終わりに1回。auto の外の dispatch は今までどおり1回ずつ通知する */
+    var autoPending = false;
     var repair = { bumped: [], clipped: 0, removed: 0 };
 
     /* 取り消し・やり直しで戻すのは盤面の中身だけ。版番号（meta.rev）は同期の控えなので今の値を引き継ぐ
@@ -8298,7 +8304,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           userSeq++;   /* 本人の編集（Undo できる操作）だけを数える */
         }
         day = next;
-        notify();
+        if (autoDepth > 0) autoPending = true;   /* 最外周の終わりにまとめて通知する */
+        else notify();
       },
       /* 本人の編集回数（自動処理では増えない）。取り直し待ちの解除判定に使う。
          initSeq とセットで見る＝別の日を編集しただけで解除しない */
@@ -8312,11 +8319,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           autoDepth--;
           if (autoDepth === 0) {
             var base = autoBase; autoBase = null;
-            if (base !== day || autoInit) {
-              var fixed = enforce_(autoInit ? null : (base ? base.tasks : null), day);
-              if (fixed !== day) { day = fixed; notify(); }
+            /* 中で例外が出ても（fn・enforce_ のどちらでも）、溜めた通知は必ず1回出す＝止めたままにしない */
+            try {
+              if (base !== day || autoInit) {
+                var fixed = enforce_(autoInit ? null : (base ? base.tasks : null), day);
+                if (fixed !== day) { day = fixed; autoPending = true; }
+              }
+            } finally {
+              autoInit = false;
+              if (autoPending) { autoPending = false; notify(); }   /* 最終の盤面で1回だけ */
             }
-            autoInit = false;
           }
         }
       },
@@ -21037,7 +21049,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261027214738';
+  var WS_BUILD = '20261027222139';
   var WS_APP_VER = 2026102701;   /* 2026-10-27 まだ届いていないロックを「外した」に変えて送り、版の進んでいない古い未送信を退避して捨てる前の版の画面が、仕上げたロックの盤面を前の版で上書きしないよう上げた（代表者承認 A・B）
                                   * （2026101706: 2026-10-23 トレイへ入った理由の印（parkedByHand・absentMoved・routineTray）を知らない前の版の画面が、手で戻した札・休みで移した札を印なしで残し、
                                   * 新しい版がそれを列へ戻してしまわないよう上げた）
