@@ -2,6 +2,8 @@
  *
  * 公開の work-schedule.html の innerHTML への代入（41か所。insertAdjacentHTML・outerHTML・document.write は0か所）を全部洗った。
  * 2026-10-27 に24時間配置・食事対応表で12か所（空にする7・固定文1・組み立て5）を足した＝53か所。組み立ては W11 で確かめる。
+ * 同じ日に期間のまとめて印刷で2か所（空にする1・組み立て1＝WSStaffing.rangePaperHtml）を足した＝55か所。組み立ては W12 で確かめる。
+ * 期間の一覧と知らせ（staff24RangeShow_）は innerHTML を使わず、要素を作って textContent で入れる。
  * 形は4つで、利用者・職員の入力（氏名・自由枠の名前・ケア内容・案の名前・サーバーの盤面）が HTML として入る所は無かった＝直す所なし。
  *   1. 空にするだけ（= ''）… 20か所
  *   2. 固定の骨組み（'<span class="am"></span>…' や「なし 🎉」「読み込み中…」）を入れ、値は後から querySelector(…).textContent で入れる … 17か所
@@ -18,6 +20,7 @@
  *   W6 出力タブの昼食後薬（renderExportPane）  W7 カレンダー（renderCal）  W8 施設情報の定休日（renderFcDow）
  *   W9 同一建物減算の表（sameBldRender_）  W10 innerHTML へ組み立てた値を入れる所は上の3か所・el の第3引数・W11 の5か所だけ（増えたら点検し直す）
  *   W11 24時間配置・食事対応表（WSStaffing.paperHtml・staff24Render_・staff24RenderSm_）
+ *   W12 24時間配置表の期間（staff24RangeShow_ の一覧・知らせ／まとめて印刷の紙面 WSStaffing.rangePaperHtml）
  * 実物の画面のソースから関数を切り出して動かす（写経しない）。timescale・model は画面の中の本物をそのまま動かす。
  * WS_HTML で差し替えるのは、ワークスケジュールの正本から作った版・わざと壊した版で確かめる時。固定値の氏名はすべて架空。
  */
@@ -248,11 +251,13 @@ t('W8 定休日：保存された値が壊れていても実行される形に�
     /* 24時間配置・食事対応表（2026-10-27・W11） */
     "$('rpMsg').innerHTML = '<span class=\"ng\">' + escH_(st.err) + '</span>'", "$('rpMsg').innerHTML = msg.join('<br>')",
     'prev.innerHTML = WSStaffing.paperHtml(r, st.info)', "host.innerHTML = h.join('')",
-    "$('rp-print').innerHTML = st.err ? '' : WSStaffing.paperHtml(st.r, st.info)"];
+    "$('rp-print').innerHTML = st.err ? '' : WSStaffing.paperHtml(st.r, st.info)",
+    /* 24時間配置表の期間のまとめて印刷（2026-10-27・W12） */
+    "$('rp-print').innerHTML = (st && st.br) ? WSStaffing.rangePaperHtml(st.br.items, staff24RangeInfo_) : ''"];
   const extra = built.filter((s) => !known.some((k) => s.endsWith(k)));   /* 既知の右辺に値を足した形も「増えた」とみなす（10/25 反証レビュー指摘2） */
   const total = (WS.match(/\.innerHTML\s*\+?=(?!=)/g) || []).length;   /* 受け手の書き方（arr[0].innerHTML など）を問わず全部数える */
-  t('W10 innerHTML への代入は点検した53か所のまま（増えたら点検して表に足してから通す）', total === 53, total);
-  t('W10 組み立てた値を入れる所は el・renderFcDow・renderCal・sameBldRender_ と24時間配置表の5か所だけ（全 ' + n + ' か所）', extra.length === 0 && built.length === 9, built.join(' / '));
+  t('W10 innerHTML への代入は点検した55か所のまま（増えたら点検して表に足してから通す）', total === 55, total);
+  t('W10 組み立てた値を入れる所は el・renderFcDow・renderCal・sameBldRender_ と24時間配置表の6か所だけ（全 ' + n + ' か所）', extra.length === 0 && built.length === 10, built.join(' / '));
   t('W10 insertAdjacentHTML・outerHTML への代入・document.write は使っていない',
     !/insertAdjacentHTML|\.outerHTML\s*\+?=|document\.write/.test(WS), (WS.match(/insertAdjacentHTML|\.outerHTML\s*\+?=|document\.write/) || [''])[0]);
   /* el(tag, cls, html) の第3引数は盤面の中で使っていない＝固定文すら入らない */
@@ -305,6 +310,41 @@ t('W8 定休日：保存された値が壊れていても実行される形に�
   box.staff24RenderSm_(); box.staff24Render_();
   t('W11 職員名簿が読めない時は知らせだけ（実行される形なし）', !unsafe(htmlAll()) && /職員名簿/.test(htmlAll()), htmlAll());
   box.ui.altId = null;
+}
+
+/* W12 24時間配置表の期間（2026-10-27）。期間の一覧・知らせは文字だけで入れ（innerHTML を使わない）、
+ * まとめて印刷の紙面（印刷の直前に作る中身）にも職員の氏名・枠の名前・施設名から実行される形が入らない */
+{
+  vm.runInContext([
+    'var staff24RangeGen_ = 0, staff24Range_ = null, staff24RangeArm_ = false, staff24RangeMade_ = "2026/10/25 9:00", staff24Scroll_ = null;',
+    'function dirtyDayList_() { return ["2026-10-26"]; } function syncOn() { return true; } function fieldMarksOnly_() { return false; }',
+    'function staff24Open_() { return true; } function setTimeout() {} var PRINT_SPEC = null; window.SUPrint = { define: function (n, s) { PRINT_SPEC = s; } };',
+    grabFn(APP, 'dateLabel'), grabFn(APP, 'staff24RangeLine_'), grabFn(APP, 'staff24RangeLabels_'), grabFn(APP, 'staff24RangeShow_'),
+    grabFn(APP, 'staff24RangeInfo_'), grabFn(APP, 'defineStaff24RangePrint_')
+  ].join('\n'), box);
+  const mk = (gap) => ({
+    meta: { date: '2026-10-25' },
+    columns: [{ col: 0, zone: 'facility', label: ATTR, staffIds: ['s1'] }],
+    staff: [{ id: 's1', name: EVIL, workStart: 0, workEnd: gap ? 1380 : 1440, otherOffice: BREAK }],
+    tasks: [{ id: 't1', kind: 'facility', label: '食事' + EVIL, staffId: 's1', start: 480, end: 510 }]
+  });
+  box.ROSTER = [{ id: 'r1', name: EVIL }];
+  box.staff24Range_ = { dates: ['2026-10-25', '2026-10-26', '2026-10-27'], entries: [{ date: '2026-10-25', day: mk(true) }, { date: '2026-10-26', day: mk(false) }],
+    noBoard: ['2026-10-27'], failed: [], br: null };
+  resetLog();
+  box.staff24RangeShow_();
+  t('W12 期間の一覧・知らせは innerHTML を使わない（文字だけ）', LOG.html.length === 0, htmlAll());
+  t('W12 施設職員がいない時間・盤面のない日・未送信の日を知らせる', /× 施設職員なし 23:00〜24:00/.test(textAll()) && /盤面をまだ作っていない日/.test(textAll()) && /まだ送っていない変更がある日/.test(textAll()), textAll());
+  t('W12 まとめて印刷のボタンが使えるようになる（枚数つき）', dom.els.rpRangePrint && dom.els.rpRangePrint.disabled === false && /2枚/.test(dom.els.rpRangePrint.textContent), dom.els.rpRangePrint && dom.els.rpRangePrint.textContent);
+  box.defineStaff24RangePrint_();
+  resetLog();
+  box.PRINT_SPEC.before({});
+  const paper = dom.els['rp-print'] ? dom.els['rp-print'].innerHTML : '';
+  t('W12 まとめて印刷の紙面に実行される形が入らない', !unsafe(paper) && (paper.match(/class="rp-page"/g) || []).length === 2, paper.slice(0, 400));
+  t('W12 値は文字として残る（エスケープして紙に出る）', paper.includes('&lt;img src=x onerror=alert(1)&gt;') && paper.includes('&lt;script&gt;'), paper.slice(0, 400));
+  box.PRINT_SPEC.after({});
+  t('W12 印刷の後に紙面（氏名）を捨てる', dom.els['rp-print'].innerHTML === '', dom.els['rp-print'].innerHTML.slice(0, 80));
+  box.staff24Range_ = null;
 }
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
