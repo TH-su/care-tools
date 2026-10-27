@@ -169,15 +169,16 @@ console.log('\n— F. 名前・事業所・在籍 —');
   t('敬称つきの名前も結ぶ', A.length === 1 && A[0].id === '103', A.map(c => c.id));
 }
 
-console.log('\n— G. 画面の表示と AI へ渡す記録 —');
+console.log('\n— G. 画面の表示 —');
 {
-  const work = cut('mcWorkHtml_'), paint = cut('mcPaintModal_'), item = cut('mcItemHtml_'), ai = cut('mcAiRun_');
+  const work = cut('mcWorkHtml_'), paint = cut('mcPaintModal_'), item = cut('mcItemHtml_');
   t('★候補の中身で、要約は参考として「他の方の内容が混ざることがあります」と添える', /AI 要約（参考・他の方の内容が混ざることがあります）/.test(work));
   t('★候補の中身の先頭は、この候補の原文の行', work.indexOf('この候補の原文') >= 0 && work.indexOf('この候補の原文') < work.indexOf('AI 要約'));
   t('要約は候補の本文（c.text）ではなく c.sums から出す', /c\.sums/.test(work) && !/mc-sum">'\+esc\(c\.text\)/.test(work));
   t('★要約にだけある記録の件数を一覧に出す', /mcSt\.sumOnly/.test(paint) && /他の方の内容が混ざることがある/.test(paint));
   t('一覧に同じ日の判断の印（反映しない・保留）を出す', /c\.daySkip/.test(item) && /c\.dayHold/.test(item));
-  t('AI へは候補の行と、同じ日のほかの薬の行を渡す（同じ行を二重に送らない）', /String\(e\.body\)!==cur\.c\.text/.test(ai));
+  /* AI の直し案は止めた（代表者の決定 2026-10-27）。AI へ何も送らないことは master_mc_no_ai_test.js で確かめる */
+  t('★AI の直し案（mcAiRun_）は無い', src.indexOf('function mcAiRun_(') < 0);
 }
 
 console.log('\n— H. 反証レビュー（10/10）の場面 —');
