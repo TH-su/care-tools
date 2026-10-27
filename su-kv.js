@@ -555,6 +555,36 @@
     }).catch(function () { return { ok: false, error: '通信失敗' }; });
   }
 
+  /* ── 勤務表の「最終更新：誰・いつ」（care-backend 0026・2026-10-27 本人指示・代表者の決定）──
+   * 渡したキー（勤務表のキーだけ・最大20）ごとの、いちばん新しい保存の時刻と保存した人の表示名を返す:
+   *   { "<key>": { at: '…', by: '表示名'（無ければ ''） } }（記録が無いキーは入らない）。
+   * 次の時は null（呼び手は何も出さない）: スイッチ shift が切・ログインの控えが無い・ログインが確かめられない・
+   *   関数がまだ無い（PGRST202）・断り・通信の失敗。★帯（ログインしてください）は出さない＝見るだけの飾りで画面の動きを変えない。
+   * Google への通信（rawGas）は使わない・変えない。例外は外に出さない。
+   * by にメールらしい値（@ を含む）が来ても返さない（データベースも返さない約束。二重の守り）。 */
+  var LAST_UPDATE_MAX = 20;
+  function shiftLastUpdate(keys) {
+    return ensureFlags().then(function () {
+      if (!shiftOn() || !hasSession()) return null;
+      var ks = (Array.isArray(keys) ? keys : []).filter(isShiftKey).slice(0, LAST_UPDATE_MAX);
+      if (!ks.length) return null;
+      return authState().then(function (st) {
+        if (!st || st.status !== window.SUAuth.STATUS.OK) return null;
+        return rpc('shift_last_update', { p_keys: ks }).then(function (r) {
+          if (!r || r.error || !r.data || r.data.ok !== true || !r.data.items || typeof r.data.items !== 'object') return null;
+          var out = {};
+          ks.forEach(function (k) {
+            var it = Object.prototype.hasOwnProperty.call(r.data.items, k) ? r.data.items[k] : null;
+            if (!it || typeof it.at !== 'string' || !it.at) return;
+            var by = typeof it.by === 'string' && it.by.indexOf('@') < 0 ? it.by : '';
+            out[k] = { at: it.at, by: by };
+          });
+          return out;
+        });
+      });
+    }).catch(function () { return null; });
+  }
+
   // 起動時に一度スイッチを読み、以後1分ごとに読み直す（開いたままの画面も一斉に切り替わる）
   // ★裏のタブ（隠れている間）は1分ごとの読み直しを休み、見えた時に前回から1分を過ぎていれば1回読む
   //   （2026-10-24・アプリ間連携の見直し 段1）。読む URL の ?t= は外さない（外すと GitHub Pages の控えを挟み、
@@ -575,5 +605,5 @@
     return authCache.role === 'field';
   }
   window.SUKv = { handles: handles, call: call, routed: routed, flagOf: flagOf, readRouted: readRouted, marksOnlyFor: marksOnlyFor,
-                  handlesShift: handlesShift, callShift: callShift, _flags: function () { return flags; } };
+                  handlesShift: handlesShift, callShift: callShift, shiftLastUpdate: shiftLastUpdate, _flags: function () { return flags; } };
 })();

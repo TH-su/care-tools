@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Kqq8Ji3+PsXIxbJvR6CMyhiEVB9pPA0e//k17zhHJgk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-8aDJyhRDCQEoot60C4W3AzEscsQe+7gsYOZbvX9q5to='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -74,6 +74,9 @@ body { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-s
 #syncBadge.readonly { background: var(--st-ro); }
 #syncBadge.conflict { background: var(--st-conflict); }
 #syncBadge.storeerror { background: var(--st-storeerr); }
+/* 最終更新：誰・いつ（2026-10-27）。空の間は hidden で消す（ツールバーの隙間を増やさない）。色はツールバーの文字色を継ぐ */
+#lastUpdate { font-size: 0.75rem; white-space: nowrap; }
+#lastUpdate[hidden] { display: none; }
 
 /* ── 編集モード（サーバー発行の編集権を1台だけが持つ・2026-08-17） ──
    閲覧中は編集操作を受け付けない。状態は「帯の色」だけでなく必ず文字（✎/👁）でも示す。 */
@@ -432,7 +435,7 @@ html.su-field #frdCSV { display: none !important; }
 </style>
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
-<script src="su-kv.js?v=2026-10-24.2"></script>
+<script src="su-kv.js?v=2026-10-27"></script>
 <script src="su-kv-shadow.js?v=2026-10-24"></script>
 </head>
 <body>
@@ -485,6 +488,8 @@ html.su-field #frdCSV { display: none !important; }
   </label>
   <!-- /DO NOT DELETE: 非表示列(行)表示機能 -->
   <span id="syncBadge" class="nosync" title="クリックで今すぐ同期">同期未設定</span>
+  <!-- 最終更新：誰・いつ（Supabase に保存している時だけ出る・印刷には出さない・2026-10-27） -->
+  <span id="lastUpdate" class="noprint" hidden></span>
 </div>
 
 <div id="lockBanner" class="noprint" style="display:none;background:#fff3cd;border-bottom:1px solid #ffe69c;color:#7a5b00;padding:6px 12px;font-size:0.8125rem">🔒 この月はロック中（確定版）です。編集するにはツールバーの「🔒 ロック」のチェックを外してください。実績・行政提出用もこの月の名簿（確定版）に従います。</div>
@@ -9501,6 +9506,53 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       /* 表示月がローカル未取得/窓外なら on-demand で keyed pull（月ごと1回・再入ガード付き） */
       this.maybePullMonth_(this.ym);
       this.maybePullDraftBody_();
+      this.refreshLastUpdate_();
+    },
+
+    /* ── 「最終更新：誰・いつ」（2026-10-27 本人指示・代表者の決定）──
+     * 今見ている月の勤務表のキー（monthSyncKeys_）のうち、いちばん新しい保存の時刻と保存した人の表示名を
+     * ツールバーの #lastUpdate に出す。保存先が Supabase（スイッチ shift 入り）でログイン中の時だけ値が来る
+     * （SUKv.shiftLastUpdate）。null・空の時は何も出さない（Google のまま・未ログイン・関数がまだ無い時）。
+     * 表示は textContent だけ。印刷には出さない（noprint・ツールバーごと印刷で消える）。
+     * 月を切り替えた後に遅れて届いた応答は捨てる（出した時の月と世代が違えば書かない）。 */
+    refreshLastUpdate_: function () {
+      var el = document.getElementById('lastUpdate');
+      if (!el) return;
+      var self = this, ym = this.ym, gen = (this._luGen = (this._luGen || 0) + 1);
+      var keys = this.monthSyncKeys_(ym);
+      var p = null;
+      try { p = (window.SUKv && typeof SUKv.shiftLastUpdate === 'function') ? SUKv.shiftLastUpdate(keys) : null; } catch (e) { p = null; }
+      if (!p || typeof p.then !== 'function') { this.showLastUpdate_(el, ''); return; }
+      p.then(function (items) {
+        if (gen !== self._luGen || ym !== self.ym) return;
+        self.showLastUpdate_(el, self.lastUpdateText_(items, keys));
+      }, function () {
+        if (gen === self._luGen) self.showLastUpdate_(el, '');
+      });
+    },
+    showLastUpdate_: function (el, text) {
+      el.textContent = text || '';
+      el.hidden = !text;
+    },
+    /* 表示の文字を作る（純関数・this を使わない）。items={key:{at,by}}／keys=見るキー。
+     * いちばん新しい at を選び「最終更新：表示名・M/D HH:mm」（日本時間）。表示名が空なら「名前なし」。
+     * 読めない時刻・空・null は ''（何も出さない）。 */
+    lastUpdateText_: function (items, keys) {
+      if (!items || typeof items !== 'object') return '';
+      var best = null, bestMs = -Infinity, i, it, ms;
+      for (i = 0; i < (keys || []).length; i++) {
+        it = Object.prototype.hasOwnProperty.call(items, keys[i]) ? items[keys[i]] : null;
+        if (!it || typeof it.at !== 'string') continue;
+        ms = Date.parse(it.at.replace(/(\.\d{3})\d+/, '$1'));   /* データベースの時刻は小数6桁＝古い Safari でも読めるよう3桁に切る */
+        if (!isFinite(ms)) continue;
+        if (ms > bestMs) { bestMs = ms; best = it; }
+      }
+      if (!best) return '';
+      var d = new Date(bestMs + 9 * 60 * 60 * 1000);   /* 日本時間（端末の時間帯に頼らない） */
+      var hh = d.getUTCHours(), mm = d.getUTCMinutes();
+      var by = (typeof best.by === 'string' && best.by.replace(/\s+/g, '') !== '') ? best.by : '名前なし';
+      return '最終更新：' + by + '・' + (d.getUTCMonth() + 1) + '/' + d.getUTCDate() + ' ' +
+             (hh < 10 ? '0' : '') + hh + ':' + (mm < 10 ? '0' : '') + mm;
     },
 
     /* ── 月別ロック＆職員スナップショット（過去データ保護） ──
@@ -12327,7 +12379,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var self = this;
       var badge = document.getElementById('syncBadge');
       this._storeErrorShown = false;
+      var prevStatus = null;
       Store.onChange(function (status, detail) {
+        /* 取得・保存が終わった時（同期中→同期済み）に「最終更新」を読み直す（2026-10-27） */
+        if (status === 'synced' && prevStatus === 'syncing') self.refreshLastUpdate_();
+        prevStatus = status;
         badge.className = status;
         var t = { nosync: '同期未設定', synced: '✓ 同期済み', dirty: '● 未送信あり', syncing: '⟳ 同期中…',
           offline: '⚠ オフライン', conflict: '⚠ 競合', storeerror: '⚠ 保存失敗', readonly: '👁 閲覧専用' };
