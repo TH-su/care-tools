@@ -22,6 +22,7 @@
     'visit-overview.html': SYNC,
     'resident-master.html': [['rmaster_cfg', 'url']],
     'facesheet.html': [['rmaster_cfg', 'url']],
+    'care-meeting.html': [['rmaster_cfg', 'url']],   // 担当者会議の記録（入居者マスタと共通の接続設定を読む・2026-10-27）
     'weight-record.html': [['wtmgr_api_url', null]],
     'moushiokuri-viewer.html': [['msk_cfg', 'url']],
     'genogram.html': [['genogram:cloudCfg', 'gasUrl']],
