@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-eV/OVkAkPAaGE4Y8KIM1cxIcgE7S0aNw+xpDuIpvEZk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-BFsQH+ETKOrRe5WNM25pU4iSCRlGk0cLc+wMpAuPGJo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -688,7 +688,7 @@ body.printing .b-axis:not(.r), body.printing .b-heads > .b-head:first-child { po
 /* ===== 24時間配置・食事対応表（A4縦・2026-10-27 本人指示） =====
  * 紙面 #rp-print は画面では出さず、su-print が印刷の間だけ body に su-print-staff24 を付けて出す（盤面の A3 印刷の規則は変えない）。
  * 紙面と画面のプレビュー（#rpPreview）は同じ .rp-sheet の規則で描く。文字は --rp-fs（su-print が A4 縦1枚に収まる大きさを当てる）。
- * 空白・枠のない食事は、色だけでなく斜線・太枠・記号（×）・語で示す（白黒で刷っても分かる） */
+ * 空白・枠のない食事は、色だけでなく灰色の塗り・太枠・記号（×）・語で示す（白黒で刷っても分かる） */
 #btnStaff24[hidden] { display: none; }
 #rp-print { display: none; }
 body.su-print-staff24 #rp-print { display: block; }
@@ -704,7 +704,8 @@ body.su-print-staff24 #rp-print { display: block; }
 .rp-sheet thead th { background: #e6e6e6; font-weight: 700; }
 .rp-sheet .rp-t { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .rp-sheet .rp-n { text-align: center; }
-.rp-sheet tr.rp-gap td { background: repeating-linear-gradient(135deg, #fff 0 4px, #c8c8c8 4px 6px); border-top-width: 2.5px; border-bottom-width: 2.5px; font-weight: 700; }
+/* 斜線（繰り返しの模様）は行が多いと PDF の作成が極端に遅くなり印刷が止まった（2026-10-27 実測）ので、灰色の塗り・太枠・太字・語で示す */
+.rp-sheet tr.rp-gap td { background: #d0d0d0; border-top-width: 2.5px; border-bottom-width: 2.5px; font-weight: 700; }
 .rp-sheet .rp-notes { font-size: .9em; margin-bottom: .6em; }
 .rp-sheet .rp-sign { display: flex; justify-content: flex-end; gap: 6mm; margin-top: .8em; }
 .rp-sheet .rp-box { width: 22mm; height: 22mm; border: 1px solid #000; position: relative; }
@@ -8766,6 +8767,26 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       else out.gaps.push({ from: rows[i].from, to: rows[i].to });
     }
     out.covered24 = out.gaps.length === 0;
+    /* 1時間ごとの表（2026-10-27 本人指示「表左の時間は1時間ごと・職員名だけを1時間の枠ごとに」）。
+     * names はその1時間に少しでもいた職員（重ねない）。gaps はその1時間の中で誰もいない時間（最低1名が前提＝あればアラート） */
+    out.hours = [];
+    for (var hh = 0; hh < 24; hh++) {
+      var ha = hh * 60, hb = ha + 60, nm = [], nseen = {}, hg = [];
+      for (j = 0; j < rows.length; j++) {
+        var rw = rows[j];
+        if (!(rw.from < hb && rw.to > ha)) continue;
+        for (var pk = 0; pk < rw.people.length; pk++) {
+          var pn = rw.people[pk].name;
+          if (nseen['.' + pn]) continue;
+          nseen['.' + pn] = true; nm.push(pn);
+        }
+      }
+      for (j = 0; j < out.gaps.length; j++) {
+        var ga = Math.max(out.gaps[j].from, ha), gb = Math.min(out.gaps[j].to, hb);
+        if (gb > ga) hg.push({ from: ga, to: gb });
+      }
+      out.hours.push({ from: ha, to: hb, names: nm, gaps: hg });
+    }
 
     /* 食事の時間帯ごとの食事対応の枠 */
     for (i = 0; i < meals.length; i++) {
@@ -8811,10 +8832,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
   function span(a, b) { return minToHM(a) + '〜' + minToHM(b); }
-  var WORKS_MAX = 6;   /* 担当業務は1行に6つまで（紙を1枚に収めるため。残りは件数で出す） */
 
   /* 紙面（とプレビュー）の中身。r は build の返値（ok のもの）、info = { facility, dateText, madeText, altName }。
-   * 色だけで伝えない（白黒で刷っても分かるよう、記号＋語＋斜線で示す） */
+   * 色だけで伝えない（白黒で刷っても分かるよう、記号＋語＋灰色の塗りで示す） */
   function paperHtml(r, info) {
     info = info || {};
     var h = [], i, j;
@@ -8838,22 +8858,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
     h.push('</tbody></table>');
 
-    h.push('<table class="rp-tl"><colgroup><col style="width:17%"><col style="width:7%"><col style="width:46%"><col></colgroup>' +
-      '<thead><tr><th>時間帯</th><th>人数</th><th>施設職員（列）</th><th>担当業務</th></tr></thead><tbody>');
-    for (i = 0; i < r.rows.length; i++) {
-      var row = r.rows[i];
-      if (!row.people.length) {
-        h.push('<tr class="rp-gap"><td class="rp-t">' + esc(span(row.from, row.to)) + '</td><td class="rp-n">0</td><td colspan="2">※ 空白（施設職員の配置なし）</td></tr>');
-        continue;
+    /* 時間帯（1時間ごと）と職員名だけ。その1時間に誰もいない時間があれば、灰色の塗り・太字と「※ 配置なし（時刻）」で示す */
+    h.push('<table class="rp-tl"><colgroup><col style="width:18%"><col></colgroup>' +
+      '<thead><tr><th>時間帯</th><th>施設職員</th></tr></thead><tbody>');
+    for (i = 0; i < r.hours.length; i++) {
+      var hr = r.hours[i], cell = r.hours[i].names.map(esc).join('、');
+      if (hr.gaps.length) {
+        var gt = '※ 配置なし（' + hr.gaps.map(function (g) { return esc(span(g.from, g.to)); }).join('・') + '）';
+        cell = cell ? cell + '　' + gt : gt;
       }
-      var ppl = [];
-      for (j = 0; j < row.people.length; j++) {
-        var p = row.people[j];
-        ppl.push(esc(p.name) + '（' + esc(p.col) + (p.how === '施設業務' ? '・施設業務' : '') + '）');
-      }
-      var ws = row.works.slice(0, WORKS_MAX).map(esc).join('・');
-      if (row.works.length > WORKS_MAX) ws += ' ほか' + (row.works.length - WORKS_MAX) + '件';
-      h.push('<tr><td class="rp-t">' + esc(span(row.from, row.to)) + '</td><td class="rp-n">' + row.people.length + '</td><td>' + ppl.join('、') + '</td><td>' + ws + '</td></tr>');
+      h.push('<tr' + (hr.gaps.length ? ' class="rp-gap"' : '') + '><td class="rp-t">' + esc(span(hr.from, hr.to)) + '</td><td>' + cell + '</td></tr>');
     }
     h.push('</tbody></table>');
 
@@ -14701,6 +14715,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     staff24RenderSm_();
     staff24Render_();
     try { ($('rpPrint').disabled ? $('rpClose') : $('rpPrint')).focus(); } catch (e) {}
+    /* 施設職員は最低1名が前提。誰もいない時間があれば、開いた時にアラートで知らせる（2026-10-27 本人指示）。窓を描いてから出す */
+    setTimeout(function () {
+      var st = staff24State_();
+      if (st.err || !st.r || st.r.covered24 || !staff24Open_()) return;
+      window.alert('施設職員が誰もいない時間帯があります。\n' +
+        st.r.gaps.map(function (g) { return WSStaffing.minToHM(g.from) + '〜' + WSStaffing.minToHM(g.to); }).join('\n') +
+        '\n\n盤面で職員を配置してから、もう一度開いてください。');
+    }, 50);
   }
   function closeStaff24_() {
     hideModals();
@@ -20378,7 +20400,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261027103000';
+  var WS_BUILD = '20261027111053';
   var WS_APP_VER = 2026101706;   /* 2026-10-23 トレイへ入った理由の印（parkedByHand・absentMoved・routineTray）を知らない前の版の画面が、手で戻した札・休みで移した札を印なしで残し、
                                   * 新しい版がそれを列へ戻してしまわないよう上げた
                                   * （2026101705: 2026-10-22 名前つきの自由枠の印（oohHold）を支援だけの印と思う前の版（10/21・10/22 朝）の画面が、どの操作でも印を外して
