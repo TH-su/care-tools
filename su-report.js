@@ -217,7 +217,7 @@
 
   // ── 画面の指摘（管理者だけ）──
   var annot = null;   // { marks: [{ n, note, sel, desc, el }], layout }
-  var ANNOT_SRC = 'su-annot.js?v=2026-10-04';
+  var ANNOT_SRC = 'su-annot.js?v=2026-10-27';
   // 管理者かどうかを聞くための部品。各画面が読む時と同じ版を書く（su-auth.js を直して ?v= を上げたら、ここも上げる）
   var AUTH_SRC = ['supabase-js-2.112.4.js', 'su-auth.js?v=2026-10-24'];
   var loading = {};
@@ -350,42 +350,29 @@
   try { inFrame = window.top !== window.self; } catch (e) { inFrame = true; }
   if (inFrame) return;
 
-  var css = document.createElement('style');
-  css.textContent = [
-    /* z-index は画面のモーダル（各画面 40〜1000）より下に置く＝モーダルが開いている間はその下に隠れ、「保存」などを覆わない。
-       接続先の案内の帯（su-cfg-hint）はこのボタンの実寸を測って上に乗るので、重ならない */
-    '.sur-fab{position:fixed;right:14px;bottom:14px;z-index:30;min-height:44px;min-width:44px;',
-    'padding:10px 16px;border:0;border-radius:999px;background:var(--pri,#0b57d0);color:#fff;font:600 14px/1.2 system-ui,sans-serif;',
-    'box-shadow:var(--sh,0 1px 6px rgba(0,0,0,.12));cursor:pointer}',
-    '.sur-fab:focus-visible{outline:3px solid #ffbf47;outline-offset:2px}',
-    '.sur-dlg{border:0;border-radius:var(--r,12px);padding:0;width:min(560px,94vw);box-shadow:0 8px 30px rgba(0,0,0,.25)}',
-    '.sur-dlg::backdrop{background:rgba(0,0,0,.45)}',
-    '.sur-dlg.sur-fallback{position:fixed;left:3vw;top:5vh;z-index:2147483001;display:none;max-height:90vh;overflow:auto}',
-    '.sur-dlg.sur-fallback.sur-open{display:block}',
-    '.sur-in{padding:18px;font:14px/1.6 system-ui,sans-serif;color:var(--g9,#202124);background:#fff}',
-    '.sur-in h2{margin:0 0 4px;font-size:17px}',
-    '.sur-in p{margin:0 0 12px;color:var(--g7,#5f6368);font-size:13px}',
-    '.sur-in p.sur-warn{color:#8a3a00;font-weight:600}',
-    '.sur-in label{display:block;font-weight:600;margin:12px 0 4px}',
-    '.sur-in textarea{width:100%;min-height:88px;padding:10px;border:1px solid var(--g3,#dadce0);border-radius:8px;font:inherit;box-sizing:border-box}',
-    '.sur-pre{white-space:pre-wrap;background:var(--g0,#f8f9fa);border:1px solid var(--g2,#e8eaed);border-radius:8px;padding:10px;',
-    'font:12px/1.5 ui-monospace,monospace;max-height:34vh;overflow:auto;margin-top:6px}',
-    '.sur-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}',
-    '.sur-btn{min-height:44px;padding:10px 16px;border-radius:8px;border:1px solid var(--g3,#dadce0);background:#fff;font:600 14px system-ui;cursor:pointer}',
-    '.sur-btn.pri{background:var(--pri,#0b57d0);color:#fff;border-color:transparent}',
-    '.sur-ok{margin-top:10px;color:#0842a0;font-weight:600}',
-    '.sur-note{margin-top:10px;font-size:12px;color:var(--g7,#5f6368)}',
-    '.sur-ann{margin-top:10px}',
-    '.sur-ann ol{margin:4px 0 0;padding-left:1.6em}',
-    '.sur-ann li{margin:2px 0}',
-    '.sur-ann canvas{display:block;max-width:100%;max-height:40vh;margin-top:8px;border:1px solid var(--g3,#dadce0);border-radius:8px}',
-    /* hidden 属性は上の display:block に負けて隠れない。配置図を描けなかった時に空の枠が出ていた（2026-10-09） */
-    '.sur-ann canvas[hidden]{display:none}',
-    '.sur-fab.sur-hide{visibility:hidden}',
-    '@media (max-width:260px){.sur-fab{padding:8px 10px;font-size:13px}}',   /* 表示200%（CSS幅200px前後）では小さめにして中身を隠しすぎない */
-    '@media print{.sur-fab,.sur-dlg{display:none!important}}'
-  ].join('');
-  document.head.appendChild(css);
+  /* 見た目は同じサイトの su-report.css から読む（2026-10-27 代表者の決定「共通部品を直す」）。
+     以前は <style> を差し込んでいたが、CSP で直書きの style を禁じる画面（メニューの設定）では止まり、
+     ボタンがページの途中に素のボタンで出ていた。<link> の外部 CSS は style-src 'self' で効く。中身は差し込んでいた文字列と同じ。
+     ボタンは CSS が届いてから置く（届く前に置くと一瞬ページの途中に出る）。届かない・遅い時も CSS_WAIT_MS で置く＝素のボタンでも報告はできる */
+  var CSS_HREF = 'su-report.css?v=2026-10-27';
+  var CSS_WAIT_MS = 3000;
+  var cssReady = false, cssWaiters = [];
+  function cssDone() {
+    if (cssReady) return;
+    cssReady = true;
+    var w = cssWaiters; cssWaiters = [];
+    for (var i = 0; i < w.length; i++) { try { w[i](); } catch (e) { /* 何もしない */ } }
+  }
+  function whenCss(fn) { if (cssReady) fn(); else cssWaiters.push(fn); }
+  try {
+    var css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.onload = cssDone;
+    css.onerror = cssDone;   // 読めなくてもボタンは出す
+    css.href = CSS_HREF;
+    document.head.appendChild(css);
+  } catch (e) { cssDone(); }
+  setTimeout(cssDone, CSS_WAIT_MS);
 
   var fab = document.createElement('button');
   fab.className = 'sur-fab';
@@ -540,9 +527,11 @@
   }
 
   document.addEventListener('DOMContentLoaded', function () {
-    document.body.appendChild(fab);
-    document.body.appendChild(dlg);
-    place();
+    whenCss(function () {   // 見た目（su-report.css）が届いてから置く
+      document.body.appendChild(fab);
+      document.body.appendChild(dlg);
+      place();
+    });
     setTimeout(place, 1000);
     setTimeout(place, 3000);
     window.addEventListener('resize', place);

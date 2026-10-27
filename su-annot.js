@@ -340,32 +340,8 @@
   }
 
   /* ── 指す操作 ── */
-  var CSS = [
-    '.sua-root{position:fixed;inset:0;z-index:2147483000;pointer-events:none;font:14px/1.5 system-ui,sans-serif}',
-    '.sua-board{position:fixed;inset:0;pointer-events:auto;cursor:crosshair;background:transparent;touch-action:auto}',
-    '.sua-hover{position:fixed;pointer-events:none;outline:2px dashed #0b57d0;outline-offset:1px;background:rgba(11,87,208,.08);display:none}',
-    '.sua-cur{position:fixed;pointer-events:none;outline:3px solid #0b57d0;outline-offset:1px;background:rgba(11,87,208,.10);display:none}',
-    '.sua-mark{position:fixed;pointer-events:none;outline:3px solid ' + RED + ';outline-offset:1px}',
-    '.sua-badge{position:absolute;left:-12px;top:-12px;min-width:24px;height:24px;border-radius:12px;background:' + RED + ';color:#fff;',
-    'font:700 13px/24px system-ui,sans-serif;text-align:center;pointer-events:auto;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.3)}',
-    '.sua-bar{position:fixed;left:8px;right:8px;top:8px;pointer-events:auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px;',
-    'padding:10px 12px;border-radius:12px;background:#202124;color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.3)}',
-    '.sua-bar.sua-low{top:auto;bottom:8px}',
-    '.sua-bar .sua-t{flex:1 1 220px;font-weight:600}',
-    '.sua-btn{min-height:44px;min-width:44px;padding:8px 14px;border-radius:8px;border:1px solid #dadce0;background:#fff;color:#202124;font:600 14px system-ui,sans-serif;cursor:pointer}',
-    '.sua-btn.pri{background:#0b57d0;border-color:transparent;color:#fff}',
-    '.sua-btn:focus-visible{outline:3px solid #ffbf47;outline-offset:2px}',
-    '.sua-bar .sua-btn.sub{background:transparent;color:#fff;border-color:#5f6368}',
-    '.sua-pop{position:fixed;pointer-events:auto;width:min(340px,calc(100vw - 16px));box-sizing:border-box;padding:12px;border-radius:12px;',
-    'background:#fff;color:#202124;box-shadow:0 8px 30px rgba(0,0,0,.3)}',
-    '.sua-pop h3{margin:0 0 6px;font-size:15px}',
-    '.sua-pop .sua-tag{margin-left:6px;font:12px ui-monospace,monospace;color:#5f6368}',
-    '.sua-pop textarea{width:100%;min-height:64px;box-sizing:border-box;padding:8px;border:1px solid #dadce0;border-radius:8px;font:inherit}',
-    '.sua-pop .sua-w{margin:4px 0 0;font-size:12px;color:#8a3a00;font-weight:600}',
-    '.sua-pop .sua-e{margin:4px 0 0;font-size:12px;color:#b3261e;font-weight:600}',
-    '.sua-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}',
-    '@media print{.sua-root{display:none!important}}'
-  ].join('');
+  /* 見た目は su-report.css に入れてある（2026-10-27 代表者の決定「共通部品を直す」）。以前はここで <style> を差し込んでいたが、
+     CSP で直書きの style を禁じる画面では止まる。このファイルを読むのは su-report.js だけで、その時には su-report.css が読み込み済み */
 
   var active = false;
   function start(opt) {
@@ -375,9 +351,6 @@
     var onDone = typeof opt.onDone === 'function' ? opt.onDone : function () {};
     var onCancel = typeof opt.onCancel === 'function' ? opt.onCancel : function () {};
 
-    var style = document.createElement('style');
-    style.textContent = CSS;
-    document.head.appendChild(style);
     var root = document.createElement('div');
     root.className = 'sua-root';
     root.innerHTML =
@@ -623,7 +596,7 @@
       active = false;
       if (raf) cancelAnimationFrame(raf);
       ['keydown', 'keyup', 'keypress'].forEach(function (t) { window.removeEventListener(t, onKey, true); });
-      root.remove(); style.remove();
+      root.remove();
       try { if (res) onDone(res); else onCancel(); } catch (e) { /* 呼び出し側の失敗を外に出さない */ }
     }
 
