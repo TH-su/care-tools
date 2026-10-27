@@ -48,6 +48,8 @@
 !/check/import_e2e.mjs
 !/check/export-decrypt.mjs
 !/check/menu_sync_stale_e2e.mjs
+# 押してから描き変わるまでの遅れを架空データで測る道具（2026-10-27）
+!/check/tap-latency.mjs
 # 画面・共通部品の純関数の試験（2026-10-08・CI の「試験」で回す）。*.js は試験、run-all.mjs は全部を回す道具
 !/check/unit
 /check/unit/*
