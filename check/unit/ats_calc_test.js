@@ -223,7 +223,7 @@ t('職員マスタ（退職した方も含む）で氏名が同じ・入職日�
 t('過去の採用で職員マスタにいない → 職員IDなし・入職済みの印だけ', nr(1).stage === 'hired' && nr(1).legacy_hired === true && !('staff_id' in nr(1)), nr(1));
 t('過去・採用可否が空で就業開始日あり → 入職完了（元の語は無いので送らない）・職員IDを付ける', nr(2).stage === 'hired' && nr(2).legacy_hired === true && !('legacy_result' in nr(2)) && nr(2).staff_id === 'S0102', nr(2));
 t('過去・採用辞退／本人断り → 辞退、不採用 → 不採用、空欄 → 連絡途絶', nr(3).stage === 'declined' && nr(4).stage === 'declined' && nr(5).stage === 'rejected' && nr(6).stage === 'lost' && nr(6).outcome_reason === '連絡途絶');
-t('入職済みの印は入職完了の行だけ', [3, 4, 5, 6].every((i) => !('legacy_hired' in nr(i))));
+t('入職済みの印は入職完了の行だけ（ほかの行も false を毎行送る＝0030 は項目の無い送信を古い画面として断る）', [3, 4, 5, 6].every((i) => nr(i).legacy_hired === false) && ni.every((x) => typeof x.row.legacy_hired === 'boolean'));
 t('終わった日は取り込み元の日付（可否連絡日 → 面接日 → 受付日）・入職完了の行には送らない（0030 は終わりの3つだけ使う）', nr(3).closed_on === '2019-07-10' && nr(7).closed_on === '2020-03-03' && nr(4).closed_on === '2019-07-02' && nr(0).closed_on === null && nr(1).closed_on === null, [nr(0).closed_on, nr(3).closed_on, nr(4).closed_on, nr(7).closed_on]);
 t('0030 の形: interview_note は interview_on がある行だけ・staff_id は40字まで・入職済みの行の段階は hired', ni.every((x) => !('interview_note' in x.row) || x.row.interview_on) && ni.every((x) => !x.row.staff_id || x.row.staff_id.length <= 40) && ni.every((x) => !(x.row.legacy_hired || x.row.staff_id) || x.row.stage === 'hired'));
 t('面接日のある行は interview_on（文章は interview_note）', nr(0).interview_on === '2019-04-10' && nr(3).interview_on === '2019-07-05' && nr(7).interview_on === '2020-03-03' && nr(7).interview_note === '面接');
@@ -233,7 +233,7 @@ t('受付日が空 → 面接日の日付・読めない → 可否連絡日・�
   && nr(9).received_on === '2020-05-05' && nr(9).stage === 'hired' && nr(9).import_key === '癸田十郎|2020-05-05', [nr(7).received_on, nr(8).received_on, nr(9).received_on]);
 t('見学だけの行は interview_on にしない（備考に残す）', !('interview_on' in nr(10)) && /面接日: 2021-01-31 見学のみ|面接日: 2020-01-31 見学のみ/.test(nr(10).note_text), nr(10).note_text);
 t('性別・連絡先を読めない → 止めずに元の書き方を備考へ', nr(10).gender === '' && /性別（元の書き方）: 不明/.test(nr(10).note_text) && /連絡先（元の書き方）: 12-34/.test(nr(10).note_text) && J(ni[10].warns) === J(['性別', '連絡先']), ni[10].warns);
-t('新しい行は今の決め方のまま（採用＋就業開始日 → 入職準備・入職済みの印なし）', nr(11).stage === 'prep' && !('legacy_hired' in nr(11)) && nr(11).closed_on === null);
+t('新しい行は今の決め方のまま（採用＋就業開始日 → 入職準備・入職済みの印なし）', nr(11).stage === 'prep' && nr(11).legacy_hired === false && nr(11).closed_on === null);
 const S9 = np.summary;
 t('試算のまとめ: 段階ごと・職員マスタで見つかった／見つからなかった採用・面接日・経路ごと',
   J(S9.stages) === J({ hired: 4, declined: 3, rejected: 3, lost: 1, prep: 1 }) && S9.staffFound === 2 && S9.staffMissing === 2 && S9.interviewOn === 4 && S9.staffList === true
@@ -286,6 +286,38 @@ t('選考ボード: 取り込み元で入職済み・入職日が60日より前�
   C.boardHidden({ stage: 'hired', legacy_hired: true }, '2026-10-26') && C.boardHidden({ stage: 'hired', start_on: '2026-08-26' }, '2026-10-26') && !C.boardHidden({ stage: 'hired', start_on: '2026-08-27' }, '2026-10-26')
   && !C.boardHidden({ stage: 'prep', start_on: '2020-01-01' }, '2026-10-26') && !C.boardHidden({ stage: 'hired' }, '2026-10-26'));
 t('保管期限: 取り込んだ記録（retain_until が空）は消せる一覧に出ない（代表者の決定 2026-10-27）', C.purgeable([{ id: 'x', stage: 'lost', closed_on: '2019-07-04', retain_until: null }, { id: 'y', stage: 'hired', legacy_hired: true, retain_until: null }], '2026-10-26').length === 0);
+
+console.log('\n— 12. 反証レビューの直し（2026-10-27） —');
+const RV = (csv) => C.planImport(csv, '2026-10-27', C.DEFAULT_SETTINGS, [], []);
+let rv = RV('No,受付日,氏名,面接日,採用可否\n7,,甲野 一郎,3/5,採用');
+let r0 = rv.items[0].row;
+t('受付日が空・年の無い面接日「3/5」・採用 → 受付日は今日より後にならない（2026-03-05）', r0.received_on === '2026-03-05' && r0.received_on <= '2026-10-27', r0.received_on);
+t('同じ行: 過去の行として入職完了（取り込み元で入職済み）', r0.stage === 'hired' && r0.legacy_hired === true, r0.stage);
+t('同じ行: 鍵は「氏名|no:元のNo」（取り込む日で鍵が変わらない）', r0.import_key === '甲野一郎|no:7', r0.import_key);
+t('同じ行: 面接の日も今日より後にならない', r0.interview_on === '2026-03-05');
+rv = RV('No,受付日,氏名,面接日,採用可否\n8,,乙川 花子,11/20 見学のみ,');
+r0 = rv.items[0].row;
+t('受付日が空・「11/20 見学のみ」→ 前の年（2025-11-20）・面接にしない・連絡途絶', r0.received_on === '2025-11-20' && !('interview_on' in r0) && r0.stage === 'lost' && r0.import_key === '乙川花子|no:8', r0);
+rv = RV('No,受付日,氏名,可否連絡日,採用可否,就業開始日\n9,,丙山 三郎,12/1,採用,12/10');
+r0 = rv.items[0].row;
+t('可否連絡日から補う時も前の年・就業開始日は受付日から先へ', r0.received_on === '2025-12-01' && r0.start_on === '2025-12-10' && r0.stage === 'hired' && r0.import_key === '丙山三郎|no:9', r0);
+rv = RV('No,受付日,氏名,面接日,採用可否\n10,,丁田 四郎,2026/3/5,採用');
+t('年のある日付から補った受付日の鍵は今までどおり「氏名|受付日」', rv.items[0].row.import_key === '丁田四郎|2026-03-05');
+rv = RV('No,受付日,氏名,フリガナ\n1,2019/01/01,甲野 一郎,' + 'ア'.repeat(81) + '\n2,2019/01/02,乙川 花子,' + 'ア'.repeat(80));
+t('カナが80字を超える → 試算で「カナが長すぎます」として外す（80字は入れる）', !rv.items[0].ok && rv.items[0].issues.indexOf('カナが長すぎます') >= 0 && rv.items[1].ok);
+rv = RV('No,受付日,氏名,住所,資格,メール,採用可否\n1,2019/01/01,甲野 一郎,' + 'い'.repeat(201) + ',' + 'う'.repeat(1001) + ',' + 'a'.repeat(200) + '@x.jp,' + '採用'.repeat(50));
+r0 = rv.items[0].row;
+t('住所200・資格1000・メール200を超えたら備考へ全文（行は外さない）', rv.items[0].ok === false && rv.items[0].issues.join() === '採用可否の「採用採用採用採用採用採用採用採用採用採用」を読めません' && r0.address === null && r0.quals_text === null && r0.email === null, rv.items[0].issues);
+const LIM = { name: 80, kana: 80, legacy_no: 40, quals_text: 1000, address: 200, email: 200, wish_text: 20000, cond_text: 20000, note_text: 20000, legacy_result: 80, staff_id: 40, interview_note: 200, import_key: 200 };
+const LONGCSV = 'No,受付日,氏名,フリガナ,資格,住所,連絡先,面接日,本人希望,条件,採用可否,就業開始日,備考\n' +
+  'n'.repeat(41) + ',2019/01/01,' + '甲'.repeat(80) + ',' + 'ア'.repeat(80) + ',' + 'う'.repeat(1001) + ',' + 'い'.repeat(201) + ',' + 'b'.repeat(201) + '@x.jp,2019/1/5 ' + 'め'.repeat(300) + ',' + 'き'.repeat(20000) + ',' + 'じ'.repeat(20000) + ',採用,2019/2/1,' + 'び'.repeat(1000);
+rv = C.planImport(LONGCSV, '2026-10-27', C.DEFAULT_SETTINGS, [], [{ id: 'S'.repeat(60), name: '甲'.repeat(80), hireDate: '2019-02-01' }]);
+r0 = rv.items[0].row;
+t('上限ぎりぎりの長い行: 入れられる行は表の上限（0026・0030）を1つも超えない', rv.items[0].ok && Object.keys(LIM).every((k) => r0[k] == null || String(r0[k]).length <= LIM[k]), Object.keys(LIM).filter((k) => r0[k] != null && String(r0[k]).length > LIM[k]));
+const dupPlan = C.planImport('No,受付日,氏名,採用可否,就業開始日\n1,2019/01/01,甲野 一郎,採用,2019/02/01\n2,2019/03/01,甲野　一郎,採用,2019/02/20\n3,2019/04/01,乙川 花子,採用,2019/05/01', '2026-10-27', C.DEFAULT_SETTINGS, [],
+  [{ id: 'S0101', name: '甲野一郎', hireDate: '2019-02-10' }, { id: 'S0102', name: '乙川花子', hireDate: '2019-05-01' }]);
+t('同じ職員IDが取り込みの中で2行に当たる → どちらにも付けない（入職済みの印だけ）・ほかの行は付ける', !('staff_id' in dupPlan.items[0].row) && !('staff_id' in dupPlan.items[1].row) && dupPlan.items[0].row.legacy_hired === true && dupPlan.items[2].row.staff_id === 'S0102' && dupPlan.items[0].staff.state === 'dup', dupPlan.items.map((x) => x.row.staff_id));
+t('「職員マスタで見つかった」の数も合わせる（見つかった1・見つからなかった2）', dupPlan.summary.staffFound === 1 && dupPlan.summary.staffMissing === 2, dupPlan.summary);
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);

@@ -607,6 +607,14 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
     await Lx.ctx.planFromText_(CSVN); await settle();
     await Lx.ctx.runImport_(); await settle();
     t('データベースが1行を断った → 「1件も入っていません」と CSV の何行目かを出す（取り込みましたと言わない）', /取り込めませんでした（1件も入っていません）。CSV の 3行目の値/.test(Lx.els['a-msg'].textContent) && Lx.ctx.importPlan !== null, Lx.els['a-msg'].textContent);
+    t('取り込み: legacy_hired を毎行送る（0030 は項目の無い送信を古い画面として断る）', sent && sent.every((x) => typeof x.legacy_hired === 'boolean'));
+    for (const [err, re] of [['badshape', /^取り込めませんでした（1件も入っていません）。データベースの更新（0030）がまだです。代表者に確かめてください。$/], ['oldscreen', /^取り込めませんでした（1件も入っていません）。画面が古いままです。読み込み直してください。$/]]) {
+      const Ly = await opened({ stf: (b) => b.action === 'list' ? { ok: true, rows: STF } : { ok: true }, rpc: { ats_import: () => ({ ok: false, error: err, index: 0 }) } });
+      Ly.ctx.tab = 'import';
+      await Ly.ctx.planFromText_(CSVN); await settle();
+      await Ly.ctx.runImport_(); await settle();
+      t('データベースが ' + err + ' → 専用の文言（CSV の何行目とは出さない）', re.test(Ly.els['a-msg'].textContent) && !/行目/.test(Ly.els['a-msg'].textContent), Ly.els['a-msg'].textContent);
+    }
     t('取り込みで本人希望などを端末に書かない', !L.writes.some((w) => /甲野|架空の備考|タウン情報/.test(w[3] || '')));
     const L2 = await opened({ stf: () => 'NET' });
     L2.ctx.tab = 'import';

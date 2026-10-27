@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-cbDhg1xmR+8KeKc7tqtVVEEN4udo96n0/x6VVcsCfo4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-lOr4LWIESiB4cKANSnuX6TjTNNKMTxzeHU0GFnBKaHI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
@@ -1470,6 +1470,9 @@ function runImport_(){
       setSync('');
       if(d&&d.ok===true){ importPlan=null; importMsg=Number(d.inserted||0)+'件を取り込みました（取り込み済みで外した行 '+Number(d.skipped||0)+'件）。'; return loadAll_().then(function(){ return true; }); }
       /* 1行でも形が違えば1行も入らない。返った index（入れる行の何番目か）から CSV の行を知らせる */
+      /* badshape＝データベースが新しい項目を知らない（0030 の前）。oldscreen＝データベースが古い画面の送信と見た */
+      if(d&&d.error==='badshape'){ setMsg('取り込めませんでした（1件も入っていません）。データベースの更新（0030）がまだです。代表者に確かめてください。'); return false; }
+      if(d&&d.error==='oldscreen'){ setMsg('取り込めませんでした（1件も入っていません）。画面が古いままです。読み込み直してください。'); return false; }
       var bad=(d&&typeof d.index==='number'&&okItems[d.index])?okItems[d.index]:null;
       setMsg('取り込めませんでした（1件も入っていません）。'+(bad?'CSV の '+bad.line+'行目の値をデータベースが受け付けませんでした。':'')); return false;
     },function(e){ if(my!==gen) return false; setSync(''); atsNote_('取り込み', e); setMsg(friendly_(e)); return false; });
