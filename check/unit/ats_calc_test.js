@@ -10,6 +10,7 @@
      7. 登録できたかの判定（6分）と応答の読み分け（ok で id がある時だけ「登録済み」）
      8. 集計（経路ごとの率・母数0は「—」・10件未満は少数・複数経路は各経路に数える）・保管期限・面接予定・評価の表示
      9〜11. 面接者ノートの全部の列を写す・受付日の補い・過去の行の段階と職員マスタの照合・経路の名寄せ・採用率と年ごとの表・ボードに出さない入職完了（2026-10-27）
+     12〜13. 応募の知らせの貼り付け（ジョブメドレー・Indeed・見出しつきの書き方・重なり）・カレンダーの月の表と予定（2026-10-27）
    ★氏名・電話・メールはすべて架空（甲野 一郎・000-0000-0001・x@example.com）。 */
 'use strict';
 const path = require('path');
@@ -348,6 +349,75 @@ t('媒体の名前はその名前のまま（括弧の注記を外す）', CS('�
 t('「ネット」だけはその他（元の書き方に出す）・表に無い語もその他', CS('ネット') === 'その他' && J(C.canonSources('ネット').others) === J(['ネット']) && CS('架空の媒体ABC') === 'その他');
 const ALLSRC = ['indeel', 'ジョブメソレー', '経由なし', '知人', 'Ａ様', '派遣', 'ミラクス', '求人案件', 'タウンワーク', 'コメディカル.com', 'ネット', '甲野', '架空の媒体ABC', 'ハローワーク紹介'];
 t('名寄せの結果は必ず決まった名前の一覧の中', ALLSRC.every((x) => C.SOURCE_NAMES.indexOf(CS(x)) >= 0), ALLSRC.map(CS));
+
+console.log('\n— 12. 応募の知らせの貼り付け（2026-10-27） —');
+/* 架空の知らせ（事業所名・会員番号・氏名はすべて架空。見えない文字や表の記号が混じる形も試す） */
+const JM = [
+  '架空株式会社', '架空 太郎 様', '------------------------------------', '重要', '------------------------------------',
+  '架空事業所 生活相談員（契約職員）求人に応募がありました。', '応募を確認する', 'https://customers.job-medley.com/customers/selections/?member_id=1234567',
+  '------------------------------------', '応募情報', '------------------------------------',
+  '■応募求人', '架空事業所 生活相談員（契約職員）', '', '■応募者', '会員番号 1234567', '', '■希望職種', '保育士, 幼稚園教諭...', '',
+  '■保有資格', '社会福祉主事任用資格, 保育士...', '', 'ご不明な点がありましたら、ジョブメドレー運営事務局までお問い合わせください。'
+].join('\n');
+let pp = C.parsePosting(JM, { today: '2026-10-27', knownJobs: [] });
+t('ジョブメドレー: 経路・会員番号・応募求人・雇用形態・職種（題名から）・資格（「...」を外す）', pp.site === 'ジョブメドレー' && pp.member_no === '1234567' && pp.posting === '架空事業所 生活相談員(契約職員)'
+  && pp.employment === '契約職員' && J(pp.jobs) === J(['生活相談員']) && pp.quals_text === '社会福祉主事任用資格・保育士', pp);
+t('ジョブメドレー: 氏名は拾わない（宛名の「様」・「会員番号」を氏名にしない）・受付日は今日で直せる印', pp.name === '' && pp.received_on === '2026-10-27' && pp.receivedGuess === true
+  && pp.warns.some((w) => /氏名を読めません/.test(w)) && pp.warns.some((w) => /一部しか/.test(w)), pp);
+t('ジョブメドレー: 備考は会員番号・応募求人・雇用形態・希望職種だけ（URL・本文を残さない）', /会員番号: 1234567/.test(pp.note_text) && /応募求人: 架空事業所 生活相談員\(契約職員\)/.test(pp.note_text)
+  && /希望職種: 保育士・幼稚園教諭/.test(pp.note_text) && !/https?:|重要|ご不明/.test(pp.note_text), pp.note_text);
+t('ジョブメドレー: 電話・メールは無い（求人サイトの URL の数字を電話にしない）', pp.phones.length === 0 && pp.email === '', pp);
+pp = C.parsePosting(JM, { today: '2026-10-27', knownJobs: ['相談員', '生活相談員', '介護職員'] });
+t('画面で使っている職種のうち題名に含まれる最も長いものを選ぶ', J(pp.jobs) === J(['生活相談員']), pp.jobs);
+const IND = [
+  ' 甲野 一郎が入浴介助/デイサービス/午前中心の架空県 架空市の求人に応募しました', '͏­ ͏­ ͏­',
+  '| # 甲野 一郎さんから応募がありました |', '| 入浴介助/デイサービス/午前中心 • 架空県 架空市 |',
+  '| 候補者の応答率が最も高いのは求人応募から3日以内のため、早めの返信をおすすめします。 |',
+  '| 今すぐ返信する [](kouno0000_x@indeedemail.com?subject=応募) |', '© 2026 Indeed Japan K.K. 〒100-0000 | 架空都 |', 'no-reply@indeed.com'
+].join('\n');
+pp = C.parsePosting(IND, { today: '2026-10-27', knownJobs: [] });
+t('Indeed: 経路・氏名（「さんから応募がありました」）・応募求人（「•」の前）・職種（決まった言葉）', pp.site === 'Indeed' && pp.name === '甲野 一郎' && pp.posting === '入浴介助/デイサービス/午前中心'
+  && J(pp.jobs) === J(['入浴介助']), pp);
+t('Indeed: 返信用のアドレスは拾い、no-reply は拾わない・郵便番号を電話にしない', pp.email === 'kouno0000_x@indeedemail.com' && pp.phones.length === 0, pp);
+t('Indeed: 件名の「Re: 題名 - 氏名さんから応募がありました」でも氏名だけを拾う', C.parsePosting('Re: 介護職員/日勤 - 乙川 花子さんから応募がありました', { today: '2026-10-27' }).name === '乙川 花子');
+const GEN = ['【氏名】丙田 三郎', 'フリガナ：ヘイタ サブロウ', '性別 男性', '生年月日：1990年4月1日（36歳）', '電話番号', '000-0000-0001',
+  'メールアドレス: x@example.com', '住所：架空県架空市1-2-3', '応募職種：介護職員・看護師', '応募日：10/26', '求人ボックス'].join('\n');
+pp = C.parsePosting(GEN, { today: '2026-10-27' });
+t('見出し：値・見出しの次の行の値を拾う（未確認の書き方の受け口）', pp.site === '求人ボックス' && pp.name === '丙田 三郎' && pp.kana === 'ヘイタ サブロウ' && pp.gender === 'M' && pp.birth_date === '1990-04-01'
+  && pp.age === '36' && J(pp.phones) === J([{ num: '000-0000-0001', label: '' }]) && pp.email === 'x@example.com' && pp.address === '架空県架空市1-2-3'
+  && J(pp.jobs) === J(['介護職員', '看護師']) && pp.received_on === '2026-10-26' && pp.receivedGuess === false, pp);
+t('年の無い応募日は今日から前へ補う・先の日付は使わない', C.parsePosting('氏名：甲野 一郎\n応募日：12/31', { today: '2026-10-27' }).received_on === '2025-12-31'
+  && C.parsePosting('氏名：甲野 一郎\n応募日：2026/12/31', { today: '2026-10-27' }).receivedGuess === true);
+t('空・読めない文面は空の結果（落ちない）', C.parsePosting('', {}).name === '' && C.parsePosting(null, {}).found.length === 0 && C.parsePosting('あいうえお', { today: '2026-10-27' }).note_text === '');
+t('危険な文字はそのまま値として返す（画面で esc する）', C.parsePosting('氏名：<b>甲</b>', { today: '2026-10-27' }).name === '<b>甲</b>');
+const HAVE = [{ id: 'a1', name: '甲野 一郎', received_on: '2026-10-20', note_text: '（応募の知らせから）\n会員番号: 1234567' }, { id: 'a2', name: '乙川　花子', received_on: '2026-10-26', note_text: '' }];
+t('重なり: 同じ会員番号 → member（氏名が空でも）', J(C.postingDup({ name: '', received_on: '2026-10-27', member_no: '1234567' }, HAVE)) === J({ kind: 'member', id: 'a1', name: '甲野 一郎' }));
+t('重なり: 会員番号の一部一致は重なりにしない', C.postingDup({ name: '丁', received_on: '2026-10-27', member_no: '123456' }, HAVE) === null && C.postingDup({ name: '丁', received_on: '2026-10-27', member_no: '12345678' }, HAVE) === null);
+t('重なり: 同じ氏名（空白の違いは同じ）・同じ受付日 → name／受付日が違えば重ならない', (C.postingDup({ name: '乙川 花子', received_on: '2026-10-26' }, HAVE) || {}).kind === 'name'
+  && C.postingDup({ name: '乙川 花子', received_on: '2026-10-25' }, HAVE) === null);
+
+console.log('\n— 13. カレンダー（2026-10-27） —');
+let cm = C.calMonth('2026-10', '2026-10-27');
+t('月の表: 日曜はじまり・2026年10月は木曜1日・5週', cm.ym === '2026-10' && cm.weeks.length === 5 && cm.weeks[0][4] === '2026-10-01' && cm.weeks[0][3] === '' && cm.weeks[4][6] === '2026-10-31' && cm.prev === '2026-09' && cm.next === '2026-11', cm);
+t('月の表: 年をまたぐ前後・うるう年の2月', C.calMonth('2026-01', '2026-10-27').prev === '2025-12' && C.calMonth('2026-12', '2026-10-27').next === '2027-01' && C.calMonth('2028-02').weeks.flat().filter(Boolean).length === 29);
+t('月の表: 壊れた月は今日の月へ', C.calMonth('2026-13', '2026-10-27').ym === '2026-10' && C.calMonth('<x>', '2026-10-27').ym === '2026-10' && C.isYm('2026-10') && !C.isYm('2026-1') && !C.isYm('1999-10'));
+const CA = [
+  { id: 'p1', name: '甲野 一郎', jobs: ['介護職員'], received_on: '2026-10-02', reply_due: '2026-10-20', start_on: '2026-11-01', interview_on: '2026-10-05' },
+  { id: 'p2', name: '乙川 花子', jobs: [], received_on: '2026-09-30', interview_on: '2026-10-07' }
+];
+const CI = [{ applicant_id: 'p1', held_at: '2026-10-05T01:30:00Z', round: 1 }, { applicant_id: 'p1', held_at: '2026-10-09T15:30:00Z', round: 2 }, { applicant_id: 'zz', held_at: '2026-10-05T02:00:00Z', round: 1 }];
+const ALLK = { iv: true, start: true, due: true, recv: true };
+let ce = C.calEvents(CA, CI, ALLK, '2026-10');
+t('面接は日本時間の日と時刻（15:30Z は翌日の 00:30）・回を持つ', ce['2026-10-05'][0].kind === 'iv' && ce['2026-10-05'][0].time === '10:30' && ce['2026-10-05'][0].round === 1
+  && ce['2026-10-10'] && ce['2026-10-10'][0].time === '00:30' && !ce['2026-10-09'], ce);
+t('取り込みの面接日は、その日に面接の記録がある方は二重に出さない・無い方は時刻なしで出す', ce['2026-10-05'].filter((e) => e.kind === 'iv').length === 1 && ce['2026-10-07'][0].kind === 'iv' && ce['2026-10-07'][0].time === '' && ce['2026-10-07'][0].name === '乙川 花子', ce['2026-10-07']);
+t('一覧に無い方（絞り込みで外れた方）の面接は出さない', !Object.values(ce).flat().some((e) => e.id === 'zz'));
+t('返答期限・応募はその月の分だけ・入職予定日は翌月なので出ない', ce['2026-10-20'][0].kind === 'due' && ce['2026-10-02'][0].kind === 'recv' && !ce['2026-09-30'] && !Object.values(ce).flat().some((e) => e.kind === 'start'));
+t('翌月には入職が出る', C.calEvents(CA, CI, ALLK, '2026-11')['2026-11-01'][0].kind === 'start');
+t('出さない種類は出さない', !Object.values(C.calEvents(CA, CI, { iv: true }, '2026-10')).flat().some((e) => e.kind !== 'iv') && J(C.calEvents(CA, CI, {}, '2026-10')) === '{}');
+const SAME = C.calEvents([{ id: 'q', name: '甲', received_on: '2026-10-03', reply_due: '2026-10-03', start_on: '2026-10-03' }], [{ applicant_id: 'q', held_at: '2026-10-03T05:00:00Z' }, { applicant_id: 'q', held_at: '2026-10-03T00:00:00Z' }], ALLK, '2026-10')['2026-10-03'];
+t('同じ日の並び: 面接（時刻順）→ 入職 → 返答期限 → 応募', J(SAME.map((e) => e.kind + e.time)) === J(['iv09:00', 'iv14:00', 'start', 'due', 'recv']), SAME.map((e) => e.kind + e.time));
+t('壊れた値でも落ちない', J(C.calEvents(null, null, ALLK, '2026-10')) === '{}' && J(C.calEvents([{ id: 'x', name: 'x', start_on: 'あした' }], [{ applicant_id: 'x', held_at: 'x' }], ALLK, '2026-10')) === '{}' && J(C.calEvents(CA, CI, ALLK, 'x')) === '{}');
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);

@@ -14,6 +14,7 @@
      7. FLUSH_FAIL_MSG は職員マスタの画面の写し（＝GAS の定数）と1文字も違わない
      8. 評価は面接官ごと（p_interviewer）。ほかの評価を見た後は own の版で保存する
      9. 取り込みの試算は職員マスタの一覧を1回読む（読めなければ職員IDなし）・まとめの件数・ボードに出さない入職完了・採用率と年ごと（2026-10-27）
+     12. 職種の札・カレンダー（押すと詳細・絞り込みが効く・月と種類だけを端末に控える）・応募の知らせから足す（貼った文面を保存しない・重なりを足さない）（2026-10-27）
      ほか: 読み込む部品の並び・CSP・インラインの on〜 なし・console なし
    ★氏名・電話・メールはすべて架空（甲野 一郎・000-0000-0001・x@example.com）。出力に console を使わない。 */
 'use strict';
@@ -554,7 +555,7 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
     const L = await opened({ tables: { ats_applicants: rows, ats_interviews: [], ats_settings: [], staff_names: [], ats_contacts: [] } });
     L.ctx.tab = 'board'; L.ctx.showEnded = true; L.ctx.paintBoard_();
     const b = L.els['p-board'].innerHTML;
-    const cols = b.slice(b.indexOf('<div class="cols">'));
+    const cols = b.slice(b.indexOf('<div class="cols">'), b.indexOf('<section class="calw"'));
     const endTbl = b.slice(0, b.indexOf('<div class="cols">'));
     t('ボード: 入職日が60日以内の入職完了は「6. 入職完了」に出す', cols.includes('data-id="' + UID(1) + '"'));
     t('ボード: 取り込み元で入職済み・入職日が60日より前の入職完了は列に出さない', !cols.includes('data-id="' + UID(2) + '"') && !cols.includes('data-id="' + UID(3) + '"'));
@@ -649,6 +650,81 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
   t('[hidden] を必ず隠す指定がある', /\[hidden\]\{display:none !important\}/.test(HTML));
   t('iPhone（700px 以下）だけで事務所の操作を隠す', /@media \(max-width:700px\)\{[\s\S]*?\.pc-only\{display:none !important\}/.test(HTML));
   t('URL に氏名・番号を載せない（hash はタブの名前だけ）', /history\.replaceState\(null,'','#'\+t\)/.test(S) && !/location\.hash\s*=/.test(S));
+
+  group('12. 職種の札・カレンダー・応募の知らせから足す（2026-10-27）');
+  {
+    const T = CALC.todayJST(), YM = T.slice(0, 7);
+    const BAD = '<img src=x onerror=alert(1)>';
+    const rows = [
+      app({ id: UID(1), name: '甲野 一郎', stage: 'interview', jobs: ['生活相談員'], received_on: T, reply_due: T, start_on: null }),
+      app({ id: UID(2), name: BAD, stage: 'applied', jobs: [], received_on: T, start_on: null, sources: ['ジョブメドレー'] })
+    ];
+    const ivRows = [{ id: UID(9), applicant_id: UID(1), held_at: T + 'T10:00:00+09:00', round: 2, interviewers: [] }];
+    const L = await opened({ tables: { ats_applicants: rows, ats_interviews: ivRows, ats_settings: [], staff_names: [], ats_contacts: [] } });
+    L.ctx.tab = 'board'; L.ctx.paintBoard_();
+    const b = L.els['p-board'].innerHTML;
+    const cols = b.slice(b.indexOf('<div class="cols">'), b.indexOf('<section class="calw"'));
+    t('カード: 氏名の横に職種の札・空の方は「職種未入力」・経路は別の行', /<span class="job-tag">生活相談員<\/span>/.test(cols) && /<span class="job-tag none">職種未入力<\/span>/.test(cols) && /<span class="card-s">ジョブメドレー<\/span>/.test(cols) && !/職種なし／/.test(cols));
+    const cal = b.slice(b.indexOf('<section class="calw"'));
+    t('カレンダーはボードの下にある', b.indexOf('<section class="calw"') > b.indexOf('<div class="cols">'));
+    t('カレンダー: 面接（時刻・氏名・職種・回）・返答期限・応募を出し、押すと詳細を開く', /<span class="k">面接<\/span>10:00 甲野 一郎（生活相談員） 第2回/.test(cal) && /<span class="k">返答期限<\/span>/.test(cal) && /<span class="k">応募<\/span>/.test(cal)
+      && cal.includes('data-act="open" data-id="' + UID(1) + '"'), cal.slice(0, 300));
+    t('カレンダー: 危険な氏名は文字のまま', !cal.includes(BAD) && cal.includes('&lt;img src=x onerror=alert(1)&gt;'));
+    t('カレンダー: iPhone 用の一覧（予定のある日だけ）と PC 用の表の両方を作る', /<ol class="cal-ag m-only">/.test(cal) && /<div class="pc-only"><table class="cal">/.test(cal));
+    L.ctx.filter = { job: '生活相談員', src: '' }; L.ctx.paintBoard_();
+    t('カレンダー: 職種の絞り込みが効く', !L.els['p-board'].innerHTML.slice(L.els['p-board'].innerHTML.indexOf('<section class="calw"')).includes('data-id="' + UID(2) + '"'));
+    L.ctx.filter = { job: '', src: '' };
+    const n0 = L.writes.length;
+    L.ctx.onClick_({ target: { closest: () => ({ hasAttribute: (k) => k === 'data-act', getAttribute: (k) => (k === 'data-act' ? 'cal-go' : k === 'data-ym' ? '2027-01' : null), id: 'cal-next' }) } });
+    t('前・次の月: 月を変えて sessionStorage の ats_cal_ym に月だけを書く', L.ctx.calYm === '2027-01' && L.ss.m.get('ats_cal_ym') === '2027-01' && L.writes.slice(n0).every((w) => w[2] === 'ats_cal_ym'), L.writes.slice(n0));
+    L.ctx.onClick_({ target: { closest: () => ({ hasAttribute: (k) => k === 'data-act', getAttribute: (k) => (k === 'data-act' ? 'cal-go' : k === 'data-ym' ? '2027-13"><x' : null), id: 'cal-next' }) } });
+    t('前・次の月: 知らない形の月は受け付けない', L.ctx.calYm === '2027-01');
+    L.ctx.onChange_({ target: { hasAttribute: (k) => k === 'data-calk', getAttribute: () => 'recv', checked: false } });
+    t('種類の切り替え: localStorage の ats_cal_kinds に種類の id だけを書く', JSON.parse(L.ls.m.get('ats_cal_kinds')).join() === 'iv,start,due' && L.ctx.calKinds.recv === false);
+    L.ctx.onChange_({ target: { hasAttribute: (k) => k === 'data-calk', getAttribute: () => 'zzz', checked: true } });
+    t('種類の切り替え: 知らない種類は無視する', !('zzz' in L.ctx.calKinds));
+    let R = load({ session: { ats_cal_ym: '2026-02' }, local: { ats_cal_kinds: '["iv","bad"]' } }); R.ctx.restoreUi_();
+    t('戻す: 月と種類（知っている種類だけ）', R.ctx.calYm === '2026-02' && JSON.stringify(R.ctx.calKinds) === JSON.stringify({ iv: true, start: false, due: false, recv: false }));
+    R = load({ session: { ats_cal_ym: '<x>' }, local: { ats_cal_kinds: '{壊れた' } }); R.ctx.restoreUi_();
+    t('戻す: 壊れた控えは既定（今月・全部の種類）', R.ctx.calYm === '' && Object.values(R.ctx.calKinds).every(Boolean));
+    void YM;
+  }
+  {
+    /* 応募の知らせから足す: 1つ目の窓は文面、2つ目の窓は確かめた行 */
+    const JM = ['■応募求人', '架空事業所 生活相談員（契約職員）', '■応募者', '会員番号 7654321', 'ジョブメドレー'].join('\n');
+    const L = await opened({ tables: { ats_applicants: [app({ id: UID(1), note_text: '（応募の知らせから）\n会員番号: 1111111' })], ats_interviews: [], ats_settings: [], staff_names: [], ats_contacts: [] },
+      rpc: { ats_put: (a) => ({ ok: true, row: Object.assign({ id: UID(5), rev: 1, no: 2 }, a.p_row) }) } });
+    const seen = [];
+    let second = null;
+    L.ctx.openDlg_ = (o) => { seen.push(o); if (seen.length === 1) return Promise.resolve(JM); second = o; return Promise.resolve(null); };
+    L.ctx.openDetail_ = () => {};
+    const n0 = L.writes.length;
+    await L.ctx.pasteApplicant_(); await settle();
+    t('読み取った値を2つ目の窓の入力欄に入れる（経路・職種・備考の会員番号）', second && /value="ジョブメドレー"/.test(second.bodyHtml) && /value="生活相談員"/.test(second.bodyHtml) && /会員番号: 7654321/.test(second.bodyHtml) && /氏名を読めません/.test(second.lines.join('')), second && second.lines);
+    t('やめた時はデータベースへ送らない・端末に何も書かない（貼った文面を保存しない）', L.rpcs().length === 0 && L.writes.length === n0, L.writes.slice(n0));
+    const L2 = await opened({ tables: { ats_applicants: [app({ id: UID(1), note_text: '（応募の知らせから）\n会員番号: 1111111' })], ats_interviews: [], ats_settings: [], staff_names: [], ats_contacts: [] },
+      rpc: { ats_put: (a) => ({ ok: true, row: Object.assign({ id: UID(5), rev: 1, no: 2 }, a.p_row) }) } });
+    const ROW = { name: '丙田 三郎', kana: null, received_on: CALC.todayJST(), stage: 'applied', sources: ['ジョブメドレー'], jobs: ['生活相談員'], quals_text: null, gender: null, birth_date: null, phones: [], email: null, address: null, note_text: '（応募の知らせから）\n会員番号: 7654321' };
+    let k = 0; L2.ctx.openDlg_ = () => Promise.resolve(++k === 1 ? JM : ROW);
+    let opened5 = '';
+    L2.ctx.openDetail_ = (id) => { opened5 = id; };
+    const ok = await L2.ctx.pasteApplicant_(); await settle();
+    const put = L2.rpcs().filter((x) => x.name === 'ats_put');
+    t('足す: ats_put を新規（p_rev なし）で1回・段階は応募受付・足した方の詳細を開く', ok === true && put.length === 1 && put[0].args.p_rev === null && put[0].args.p_row.stage === 'applied' && put[0].args.p_row.name === '丙田 三郎' && opened5 === UID(5) && L2.ctx.apps.length === 2, put);
+    t('足す: 本文・URL など貼った文面は送らない（備考は会員番号の行だけ）', !/■|応募求人\n架空/.test(JSON.stringify(put[0].args.p_row)));
+    /* 重なり: 窓の collect を本物で動かす（同じ会員番号の方がいる） */
+    const L3 = await opened({ tables: { ats_applicants: [app({ id: UID(1), note_text: '（応募の知らせから）\n会員番号: 7654321' })], ats_interviews: [], ats_settings: [], staff_names: [], ats_contacts: [] } });
+    const vals = { 'd-pname': '丙田 三郎', 'd-precv': CALC.todayJST(), 'd-psrc': 'ジョブメドレー', 'd-pjobs': '生活相談員' };
+    let col = null; let j = 0;
+    L3.ctx.openDlg_ = (o) => { if (++j === 1) return Promise.resolve(JM); col = o.collect; return Promise.resolve(null); };
+    L3.ctx.val_ = (id) => vals[id] || '';
+    await L3.ctx.pasteApplicant_(); await settle();
+    t('重なり: 同じ会員番号の方がいれば足さない（窓を閉じない・知らせる）', col && col() === null && L3.toasts.some((m) => /同じ会員番号の方がもういます/.test(m)), L3.toasts);
+    vals['d-pname'] = '';
+    t('氏名が空なら足さない', col() === null && L3.toasts.some((m) => /氏名と受付日を入れてください/.test(m)));
+    vals['d-pname'] = '丁田 四郎'; vals['d-precv'] = CALC.addDays(CALC.todayJST(), 1);
+    t('受付日が先の日付なら足さない', col() === null && L3.toasts.some((m) => /先の日付/.test(m)));
+  }
 
   say('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
   process.exit(fail ? 1 : 0);

@@ -15,7 +15,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-10-27';
+  var VERSION = '2026-10-27.2';
 
   /* 職員マスタの算出モジュール（日付の正規化をそのまま使う）。node では同じフォルダから読む */
   var SC = null;
@@ -887,6 +887,238 @@
     return (applicants || []).filter(function (a) { return a && !a.staff_id && isDate(a.retain_until) && a.retain_until < today; });
   }
 
+  /* ── 応募の知らせの貼り付け（2026-10-27 本人指示） ──
+     求人サイトの応募の知らせ（メール本文・管理画面の応募者の欄）を貼ると、読める項目だけを拾って返す。
+     貼った文面はここで読むだけで、返すのは拾った値だけ（文面そのものは返さない・保存しない）。
+     確かめた書き方: ジョブメドレーの知らせ（氏名は無い・会員番号／応募求人／希望職種／保有資格）、Indeed の知らせ（「〜さんから応募がありました」）。
+     そのほかの書き方は「見出し：値」または「見出し」の次の行の値を拾う（求人ボックス・管理画面の写しは未確認の書き方として扱う） */
+  var POST_LABELS = {
+    name: ['氏名', 'お名前', '名前', '応募者名', '応募者氏名'],
+    kana: ['フリガナ', 'ふりがな', 'カナ', '氏名(カナ)', '氏名(フリガナ)', 'お名前(フリガナ)'],
+    gender: ['性別'],
+    birth: ['生年月日'],
+    age: ['年齢'],
+    phone: ['電話番号', '電話', '携帯電話', '携帯電話番号', '携帯番号', 'TEL', '連絡先電話番号'],
+    email: ['メールアドレス', 'メール', 'Eメール', 'E-mail', 'Email'],
+    address: ['住所', '現住所'],
+    quals: ['保有資格', '資格', '所有資格'],
+    wantJobs: ['希望職種'],
+    jobs: ['応募職種', '職種', '募集職種'],
+    posting: ['応募求人', '応募した求人', '求人名', '求人タイトル', '求人'],
+    received: ['応募日', '応募日時', '応募受付日', '応募受付日時']
+  };
+  /* 求人の題名から職種を拾う時の言葉（長いものを先に当てる） */
+  var JOB_WORDS = ['サービス提供責任者', '機能訓練指導員', '介護支援専門員', 'ケアマネージャー', '生活相談員', '理学療法士', '作業療法士', '言語聴覚士',
+    '准看護師', '看護職員', '看護師', '介護福祉士', '介護職員', '介護スタッフ', '介護職', '訪問介護員', 'ホームヘルパー', 'ヘルパー', '入浴介助',
+    '送迎ドライバー', 'ドライバー', '調理師', '調理員', '調理補助', '事務員', '医療事務', '事務', '管理者', '看護助手', '夜勤専従', '清掃'];
+  var POST_INVISIBLE = /[­͏؜ᅟᅠ឴឵᠎​-‏‪-‮⁠-⁤ㅤ﻿ﾠ]/g;
+  function postLines(text) {
+    return nfkc(text).replace(POST_INVISIBLE, '').replace(/\r\n?/g, '\n').split('\n').map(function (l) {
+      return trim(l.replace(/^[\s|#>]+|[\s|]+$/g, ''));
+    }).filter(Boolean);
+  }
+  function postLabelKey(s) { return nfkc(s).replace(/^[■□●○◆◇▼▽・*【\[]+|[】\]]+$/g, '').replace(/[\s　]+/g, '').toLowerCase(); }
+  function isPostLabel(line) {
+    var k = postLabelKey(line), key, i;
+    for (key in POST_LABELS) for (i = 0; i < POST_LABELS[key].length; i++) if (postLabelKey(POST_LABELS[key][i]) === k) return true;
+    return false;
+  }
+  /* 見出しの値: 「見出し：値」「見出し 値」（同じ行）／「見出し」だけの行の次の行（次の行が見出しなら無し） */
+  function postValue(lines, key) {
+    var labels = POST_LABELS[key].map(postLabelKey), i, j;
+    for (i = 0; i < lines.length; i++) {
+      var raw = lines[i].replace(/^[■□●○◆◇▼▽・*]+/, ''), head = postLabelKey(raw);
+      if (labels.indexOf(head) >= 0) {
+        var nx = lines[i + 1];
+        if (nx && !isPostLabel(nx) && !/^-{3,}$/.test(nx)) return trim(nx);
+        continue;
+      }
+      /* 同じ行: 「【見出し】値」「見出し：値」「見出し（タブ）値」「見出し 値」 */
+      var ms = [/^[【\[]([^】\]]+)[】\]][\s　]*(.+)$/.exec(raw), /^([^:：\t]+?)[\s　]*[:：\t][\s　]*(.+)$/.exec(raw), /^([^\s　]+)[\s　]+(.+)$/.exec(raw)];
+      for (j = 0; j < ms.length; j++) if (ms[j] && labels.indexOf(postLabelKey(ms[j][1])) >= 0 && trim(ms[j][2])) return trim(ms[j][2]);
+    }
+    return '';
+  }
+  function cutEllipsis(s) { return trim(str(s).replace(/(\.{2,}|…+)$/, '')); }
+  function postList(s) { return cutEllipsis(s).split(/[\s　]*[、,，・\/／][\s　]*/).map(trim).filter(Boolean); }
+  /* 求人の題名 → 職種（1）画面で使っている職種のうち題名に含まれる最も長いもの（2）ジョブメドレーの「〜 職種（雇用形態）」
+     （3）決まった言葉のうち題名に含まれるもの（4）Indeed の「職種/…」の先頭。拾えなければ '' */
+  function jobFromPosting(posting, site, knownJobs) {
+    var p = nfkc(posting), best = '';
+    (knownJobs || []).forEach(function (j) { var t = trim(nfkc(j)); if (t && p.indexOf(t) >= 0 && t.length > best.length) best = t; });
+    if (best) return best;
+    if (site === 'ジョブメドレー') {
+      var m = /([^\s　]+?)[（(]([^）)]+)[）)][\s　]*$/.exec(p);
+      if (m) return m[1];
+    }
+    for (var i = 0; i < JOB_WORDS.length; i++) if (p.indexOf(JOB_WORDS[i]) >= 0) return JOB_WORDS[i];
+    var head = trim(p.split(/[\/／•|]/)[0]);
+    return head && head.length <= 20 ? head : '';
+  }
+  var POST_SKIP_MAIL = /^(no-?reply|noreply|system|info|support|notice|do-?not-?reply)@|@(job-medley\.com|indeed\.com|kyujinbox\.com)$/i;
+  /* 貼った文面 → {site, name, kana, gender, birth_date, age, phones:[{num,label}], email, address, quals_text, jobs:[], received_on,
+     receivedGuess, member_no, posting, employment, note_text, warns:[], found:[拾えた項目の名前]}。today は 'YYYY-MM-DD' */
+  function parsePosting(text, opts) {
+    var o = opts || {}, today = isDate(o.today) ? o.today : todayJST();
+    var lines = postLines(text), all = lines.join('\n'), out = {
+      site: '', name: '', kana: '', gender: '', birth_date: '', age: '', phones: [], email: '', address: '', quals_text: '', jobs: [],
+      received_on: today, receivedGuess: true, member_no: '', posting: '', employment: '', note_text: '', warns: [], found: []
+    };
+    if (!lines.length) return out;
+    if (/job-?medley|ジョブメドレー/i.test(all)) out.site = 'ジョブメドレー';
+    else if (/求人ボックス|kyujinbox/i.test(all)) out.site = '求人ボックス';
+    else if (/indeed/i.test(all)) out.site = 'Indeed';
+    function found(n) { if (out.found.indexOf(n) < 0) out.found.push(n); }
+    /* 氏名: 見出しから。無ければ Indeed の「〜さんから応募がありました」「〜さんが…の求人に応募しました」 */
+    var nm = postValue(lines, 'name');
+    if (!nm) {
+      lines.some(function (l) {
+        var m = /^(.*?)さん(?:から応募がありました|が.+の求人に応募しました)/.exec(l);
+        if (!m) return false;
+        var s = m[1].split(/\s-\s/).pop().replace(/^(re|fw|fwd)\s*:\s*/i, '').replace(/^\[[^\]]*\]\s*/, '');
+        nm = trim(s);
+        return !!nm;
+      });
+    }
+    nm = trim(nm.replace(/[\s　]*(様|さん)$/, ''));
+    if (nm && nm.length <= 40 && !/[@\d:：]|会員番号/.test(nm)) { out.name = nm; found('氏名'); }
+    var kana = postValue(lines, 'kana');
+    if (kana && kana.length <= 80) { out.kana = trim(kana); found('フリガナ'); }
+    var g = postValue(lines, 'gender');
+    if (/^男/.test(g)) { out.gender = 'M'; found('性別'); } else if (/^女/.test(g)) { out.gender = 'F'; found('性別'); }
+    var bd = postValue(lines, 'birth'), bm = bd && /(\d{4}[\/\-.年]\d{1,2}[\/\-.月]\d{1,2}日?|(?:令和|平成|昭和|[RHS])\d{1,2}[\/\-.年]\d{1,2}[\/\-.月]\d{1,2}日?)/.exec(bd);
+    var b = bm ? normDate(bm[1]) : null;
+    if (b && b < today) { out.birth_date = b; found('生年月日'); }
+    var ag = /(\d{1,3})[\s　]*歳/.exec(postValue(lines, 'age') || bd || '');
+    if (ag && +ag[1] >= 15 && +ag[1] <= 100) { out.age = ag[1]; found('年齢'); }
+    /* 電話: 見出しの値。無ければ「0から始まる・ハイフンつき」の番号（郵便番号・URL の行は見ない） */
+    var ph = postValue(lines, 'phone'), nums = [];
+    function addNum(s) { var n = trim(s).replace(/[^\d\-]/g, ''); if (/^0\d{8,10}$/.test(n.replace(/-/g, '')) && nums.indexOf(n) < 0) nums.push(n); }
+    if (ph) ph.split(/[\s　,、\/／]+/).forEach(addNum);
+    if (!nums.length) lines.forEach(function (l) {
+      if (/〒|https?:|www\./i.test(l)) return;
+      (l.match(/(?:^|[^\d\-])(0\d{1,4}-\d{1,4}-\d{3,4})(?![\d\-])/g) || []).forEach(function (m) { addNum(m); });
+    });
+    if (nums.length) { out.phones = nums.slice(0, 3).map(function (n) { return { num: n, label: '' }; }); found('電話'); }
+    /* メール: 見出しの値。無ければ文面のアドレスのうち、送り元（no-reply など・求人サイトの代表）でないもの */
+    var em = postValue(lines, 'email'), ems = [];
+    (em + '\n' + all).replace(/[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/g, function (a) { if (!POST_SKIP_MAIL.test(a) && ems.indexOf(a) < 0) ems.push(a); return a; });
+    if (ems.length) { out.email = ems[0].slice(0, 200); found('メール'); }
+    var ad = postValue(lines, 'address');
+    if (ad && ad.length <= 200) { out.address = ad; found('住所'); }
+    var q = postValue(lines, 'quals');
+    if (q) {
+      out.quals_text = postList(q).join('・').slice(0, 1000); found('資格');
+      if (/(\.{2,}|…+)$/.test(q)) out.warns.push('資格は知らせの中では一部しか出ていません。求人サイトの画面で確かめてください。');
+    }
+    var mem = /会員番号[\s　]*[:：]?[\s　]*(\d{4,12})/.exec(all);
+    if (mem) { out.member_no = mem[1]; found('会員番号'); }
+    /* 応募した求人: 見出し。無ければ Indeed の「題名 • 地域」「〜さんが（題名）の求人に応募しました」 */
+    var post = postValue(lines, 'posting');
+    if (!post) lines.some(function (l) { var m = /^(.+?)[\s　]+•[\s　]+/.exec(l); if (m && !/さん/.test(m[1])) { post = m[1]; return true; } return false; });
+    if (!post) lines.some(function (l) { var m = /さんが(.+?)の求人に応募しました/.exec(l); if (m) { post = m[1]; return true; } return false; });
+    out.posting = trim(post).slice(0, 200);
+    if (out.posting) found('応募求人');
+    var emp = /[（(](正職員|正社員|契約職員|契約社員|パート・アルバイト|パート|アルバイト|業務委託|派遣)[）)]/.exec(out.posting);
+    if (emp) out.employment = emp[1];
+    /* 職種: 応募職種の見出し → 求人の題名 → 希望職種の見出し（応募者の希望・知らせでは一部だけのことがある） */
+    var jl = postList(postValue(lines, 'jobs'));
+    if (!jl.length && out.posting) { var jp = jobFromPosting(out.posting, out.site, o.knownJobs); if (jp) jl = [jp]; }
+    var want = postValue(lines, 'wantJobs');
+    if (!jl.length && want) jl = postList(want);
+    out.jobs = jl.slice(0, 10).map(function (x) { return x.slice(0, 60); });
+    if (out.jobs.length) found('職種');
+    /* 受付日: 見出しの日付（年が無ければ今日から前へ補う）。無ければ今日（貼った人が直せる） */
+    var rv = postValue(lines, 'received'), rm = rv && RE_DATE_ANY.exec(rv);
+    RE_DATE_ANY.lastIndex = 0;
+    var rd = rm ? completeYear(rm[1], today, 'past') : null;
+    if (rd && rd <= today) { out.received_on = rd; out.receivedGuess = false; found('受付日'); }
+    if (!out.name) out.warns.push('氏名を読めませんでした（ジョブメドレーの知らせには氏名がありません）。氏名を入れてください。');
+    if (out.receivedGuess) out.warns.push('受付日が書かれていないため、今日の日付にしています。違う時は直してください。');
+    /* 備考に残すのは、会員番号・応募した求人・雇用形態・希望職種・年齢だけ（貼った文面そのものは残さない） */
+    var notes = ['（応募の知らせから）'];
+    if (out.member_no) notes.push('会員番号: ' + out.member_no);
+    if (out.posting) notes.push('応募求人: ' + out.posting);
+    if (out.employment) notes.push('雇用形態: ' + out.employment);
+    if (want) notes.push('希望職種: ' + postList(want).join('・'));
+    if (out.age && !out.birth_date) notes.push('年齢: ' + out.age + '歳（応募時）');
+    out.note_text = notes.length > 1 ? notes.join('\n') : '';
+    return out;
+  }
+  /* 足す前の重なりの確かめ: 同じ会員番号（備考の「会員番号: N」）の方 → 'member'、同じ氏名・同じ受付日の方 → 'name'。無ければ null */
+  function postingDup(p, applicants) {
+    var list = applicants || [], hit = null, key = p && p.name ? importKey(p.name, p.received_on) : '';
+    var mem = p && p.member_no ? new RegExp('(^|\\n)会員番号: ' + String(p.member_no).replace(/\D/g, '') + '(\\n|$)') : null;
+    list.some(function (a) {
+      if (!a) return false;
+      if (mem && mem.test(nfkc(a.note_text || ''))) { hit = { kind: 'member', id: a.id, name: a.name }; return true; }
+      if (key && importKey(a.name, a.received_on) === key) { hit = { kind: 'name', id: a.id, name: a.name }; return true; }
+      return false;
+    });
+    return hit;
+  }
+
+  /* ── カレンダー（選考ボードの下・2026-10-27 本人指示） ──
+     日付は日本時間で数える（面接の時刻は ISO を +9 時間して日と時刻を出す）。週は日曜はじまり */
+  var CAL_KINDS = [
+    { id: 'iv', label: '面接' }, { id: 'start', label: '入職' }, { id: 'due', label: '返答期限' }, { id: 'recv', label: '応募' }
+  ];
+  function isYm(s) { var m = /^(\d{4})-(\d{2})$/.exec(str(s)); return !!(m && +m[2] >= 1 && +m[2] <= 12 && +m[1] >= 2000 && +m[1] <= 2100); }
+  function ymAdd(ym, n) {
+    var m = /^(\d{4})-(\d{2})$/.exec(str(ym)), k = (+m[1]) * 12 + (+m[2] - 1) + n;
+    return Math.floor(k / 12) + '-' + pad2(k % 12 + 1);
+  }
+  /* 月の表: {ym, prev, next, weeks:[[ 'YYYY-MM-DD' | '' ×7 ]]}。ym が正しくなければ today の月 */
+  function calMonth(ym, today) {
+    var t = isDate(today) ? today : todayJST();
+    if (!isYm(ym)) ym = t.slice(0, 7);
+    var y = +ym.slice(0, 4), mo = +ym.slice(5, 7), first = new Date(Date.UTC(y, mo - 1, 1)).getUTCDay(), last = lastDay(y, mo);
+    var cells = [], d, weeks = [];
+    for (d = 0; d < first; d++) cells.push('');
+    for (d = 1; d <= last; d++) cells.push(ym + '-' + pad2(d));
+    while (cells.length % 7) cells.push('');
+    for (d = 0; d < cells.length; d += 7) weeks.push(cells.slice(d, d + 7));
+    return { ym: ym, prev: ymAdd(ym, -1), next: ymAdd(ym, 1), weeks: weeks };
+  }
+  function jstParts(iso) {
+    var t = Date.parse(iso || '');
+    if (!isFinite(t)) return null;
+    var x = new Date(t + 9 * 3600000);
+    return { date: x.getUTCFullYear() + '-' + pad2(x.getUTCMonth() + 1) + '-' + pad2(x.getUTCDate()), time: pad2(x.getUTCHours()) + ':' + pad2(x.getUTCMinutes()) };
+  }
+  /* その月の予定: {'YYYY-MM-DD': [{kind, label, date, time, id, name, jobs, round}]}。
+     apps は画面で絞り込んだ後の応募者（ここに無い方の面接は出さない）。kinds は {iv:true,...}。
+     取り込みで入れた面接日（interview_on）は、その方のその日の面接の記録が無い時だけ出す（二重に出さない） */
+  function calEvents(apps, ivs, kinds, ym) {
+    var on = kinds || {}, by = {}, byId = {}, ivDay = {}, order = { iv: 0, start: 1, due: 2, recv: 3 };
+    if (!isYm(ym)) return by;
+    (apps || []).forEach(function (a) { if (a && a.id) byId[a.id] = a; });
+    function push(kind, date, time, a, round) {
+      if (!on[kind] || !isDate(date) || date.slice(0, 7) !== ym) return;
+      (by[date] = by[date] || []).push({ kind: kind, label: (CAL_KINDS.filter(function (k) { return k.id === kind; })[0] || {}).label || '', date: date, time: time || '',
+        id: a.id, name: str(a.name), jobs: (a.jobs || []).slice(), round: round == null ? null : round });
+    }
+    (ivs || []).forEach(function (v) {
+      var a = v && byId[v.applicant_id], p = v && jstParts(v.held_at);
+      if (!a || !p) return;
+      ivDay[a.id + '|' + p.date] = 1;
+      push('iv', p.date, p.time, a, Number(v.round) || null);
+    });
+    Object.keys(byId).forEach(function (id) {
+      var a = byId[id];
+      if (isDate(a.interview_on) && !ivDay[id + '|' + a.interview_on]) push('iv', a.interview_on, '', a, null);
+      push('start', a.start_on, '', a);
+      push('due', a.reply_due, '', a);
+      push('recv', a.received_on, '', a);
+    });
+    Object.keys(by).forEach(function (d) {
+      by[d].sort(function (x, y) {
+        return (order[x.kind] - order[y.kind]) || (x.time < y.time ? -1 : x.time > y.time ? 1 : 0) || (x.name < y.name ? -1 : x.name > y.name ? 1 : 0);
+      });
+    });
+    return by;
+  }
+
   /* ── 取り込みの文字コード ── */
   /* UTF-8 として読んで置き換え文字（U+FFFD）が出たら Shift_JIS で読み直す。decoder(label) は TextDecoder を作る関数 */
   function decodeCsv(bytes, decoder) {
@@ -914,6 +1146,7 @@
     evalCheck: evalCheck, normEvalItems: normEvalItems, normSettings: normSettings,
     scheduleBuckets: scheduleBuckets, periodRange: periodRange, rate: rate, funnel: funnel,
     retainUntil: retainUntil, purgeable: purgeable, decodeCsv: decodeCsv,
+    parsePosting: parsePosting, postingDup: postingDup, JOB_WORDS: JOB_WORDS, CAL_KINDS: CAL_KINDS, isYm: isYm, calMonth: calMonth, calEvents: calEvents,
     todayJST: todayJST, addDays: addDays, addMonths: addMonths, daysBetween: daysBetween, isDate: isDate
   };
   if (typeof module === 'object' && module.exports) module.exports = api;
