@@ -51,7 +51,7 @@ function buildMaster() {
 
 /* 勤務表: 職員 30名（訪問 18・施設 9・通所 3）。1日に 15〜20名が出勤するように回す */
 const SEI = ['見本', '試験', '架空', '仮名', '模擬', '例題'];
-const MEI = ['一郎', '花子', '二郎', '春子', '三郎'];
+const MEI = ['甲', '乙', '丙', '丁', '戊'];
 const STAFF_N = 30;
 function buildStaff() {
   const out = [];
