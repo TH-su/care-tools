@@ -385,6 +385,15 @@
   dlg.setAttribute('aria-label', '不具合の報告');
   var canModal = typeof dlg.showModal === 'function';
   if (!canModal) dlg.className += ' sur-fallback';   // <dialog> が無い古いブラウザでは、普通の枠として出す
+  /* su-report.css が読めない時の守り（2026-10-27 反証レビュー）: 置き場所（右下の固定）だけは要素に直接付ける。
+     要素への直接の指定（CSSOM）は CSP の style-src 'self' でも効く。値は su-report.css と同じ＝CSS が効いている時の見た目は変わらない。
+     付けないと、素のボタンがページの並びに割り込む（body が flex の画面では並びが崩れる）。印刷では隠す（CSS の @media print の代わり） */
+  try {
+    fab.style.position = 'fixed'; fab.style.right = '14px'; fab.style.bottom = '14px'; fab.style.zIndex = '30';
+    dlg.style.position = 'fixed';
+    window.addEventListener('beforeprint', function () { fab.style.display = 'none'; dlg.style.display = 'none'; });
+    window.addEventListener('afterprint', function () { fab.style.display = ''; dlg.style.display = ''; });
+  } catch (e) { /* 付けられなくても CSS の指定で出る */ }
   dlg.innerHTML =
     '<div class="sur-in">' +
     '<h2>不具合を報告する</h2>' +
@@ -452,7 +461,13 @@
       var ok = window.SUAnnot.start({
         marks: annot ? annot.marks : null,
         onDone: function (res) { annot = res && res.marks && res.marks.length ? res : null; back(); },
-        onCancel: back
+        onCancel: back,
+        /* 見た目（su-report.css）を効かせられず、指摘を始めなかった時（裏の画面に押下を通さないため） */
+        onUnavailable: function () {
+          back();
+          msg.hidden = false;
+          msg.textContent = '画面の指摘は今は使えません（画面の部品を読み込めませんでした）。電波を確かめてから、もう一度押してください。';
+        }
       });
       if (!ok) back();
     }).catch(function () {

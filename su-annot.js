@@ -341,11 +341,58 @@
 
   /* ── 指す操作 ── */
   /* 見た目は su-report.css に入れてある（2026-10-27 代表者の決定「共通部品を直す」）。以前はここで <style> を差し込んでいたが、
-     CSP で直書きの style を禁じる画面では止まる。このファイルを読むのは su-report.js だけで、その時には su-report.css が読み込み済み */
+     CSP で直書きの style を禁じる画面では止まる。
+   ★見た目が効いていないまま始めない（2026-10-27 反証レビュー）: 透明の板（.sua-board）が画面全体を覆わないと、
+     管理者の押下が裏の画面の本物のボタン（保存・削除など）に届く。起きる場面は (a) su-report.css が読めない・遅い、
+     (b) 取り込み前から開いたままの画面（古い su-report.js は su-report.css を読まない）。
+     そこで始める前に su-report.css が効いているかを確かめ、効いていなければ自分で <link> を足して待つ。
+     それでも効かなければ始めずに「今は使えません」と出す。CSS_HREF は su-report.js と同じ版にする（試験で確かめる） */
+  var CSS_HREF = 'su-report.css?v=2026-10-27';
+  var CSS_WAIT_MS = 4000;
+  function cssOk() {
+    try {
+      var probe = document.createElement('div');
+      probe.className = 'sua-root';
+      probe.hidden = true;             // 画面には出さない（hidden でも position の計算値は CSS のとおりに出る）
+      document.body.appendChild(probe);
+      var ok = window.getComputedStyle(probe).position === 'fixed';
+      probe.remove();
+      return ok;
+    } catch (e) { return false; }
+  }
+  function ensureCss(done) {
+    var fin = false;
+    function end() { if (fin) return; fin = true; done(); }
+    try {
+      var l = document.createElement('link');
+      l.rel = 'stylesheet';
+      l.onload = end; l.onerror = end;
+      l.href = CSS_HREF;
+      document.head.appendChild(l);
+    } catch (e) { end(); return; }
+    setTimeout(end, CSS_WAIT_MS);
+  }
+  function unavailable(opt) {
+    try {
+      if (typeof opt.onUnavailable === 'function') { opt.onUnavailable(); return; }
+      try { window.alert('画面の指摘は今は使えません（画面の部品を読み込めませんでした）。電波を確かめてから、もう一度押してください。'); } catch (e) { /* 出せなくても止める */ }
+      if (typeof opt.onCancel === 'function') opt.onCancel();
+    } catch (e) { /* 呼び出し側の失敗を外に出さない */ }
+  }
 
-  var active = false;
+  var active = false, pending = false;
   function start(opt) {
     opt = opt || {};
+    if (active || pending) return false;
+    if (cssOk()) return begin(opt);
+    pending = true;
+    ensureCss(function () {
+      pending = false;
+      if (!(cssOk() && begin(opt))) unavailable(opt);
+    });
+    return true;
+  }
+  function begin(opt) {
     if (active) return false;
     active = true;
     var onDone = typeof opt.onDone === 'function' ? opt.onDone : function () {};
@@ -363,6 +410,14 @@
       '</div>';
     document.body.appendChild(root);
     var board = root.querySelector('.sua-board'), hover = root.querySelector('.sua-hover'), cur = root.querySelector('.sua-cur');
+    /* 押下を受ける板と root の位置・全面・前面だけは要素に直接付ける（CSSOM は CSP の style-src 'self' でも効く）。
+       値は su-report.css と同じ＝見た目は変わらない。CSS があとで外れても、裏の画面に押下を通さない */
+    try {
+      root.style.position = 'fixed'; root.style.top = root.style.right = root.style.bottom = root.style.left = '0';
+      root.style.zIndex = '2147483000'; root.style.pointerEvents = 'none';
+      board.style.position = 'fixed'; board.style.top = board.style.right = board.style.bottom = board.style.left = '0';
+      board.style.pointerEvents = 'auto';
+    } catch (e) { /* 付けられなくても CSS で覆う（効いていることは始める前に確かめた） */ }
     var marksBox = root.querySelector('.sua-marks'), bar = root.querySelector('.sua-bar'), msg = root.querySelector('.sua-t');
     function isOurs(e) {
       if (!e || e.nodeType !== 1) return false;
