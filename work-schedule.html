@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ZHxD5VV9ULOfYzglB2y0ElWC3PWC7LjDq2RXDw1HEfk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-qhJu8BFtfK0m7aD+EEyDopTxhuJRWtF5ew38eTs+0kM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -2882,7 +2882,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         var c = {}, kk, pp = patches[i];
         for (kk in t) if (Object.prototype.hasOwnProperty.call(t, kk)) c[kk] = t[kk];
         for (kk in pp) if (Object.prototype.hasOwnProperty.call(pp, kk)) c[kk] = pp[kk];  /* パッチ適用: staffId＋手動カスタマイズ移譲（start/end は残す札を維持） */
-        if (pp.staffId !== undefined && pp.staffId !== null) { delete c.parked; delete c.bumped; }   /* 配置済みになった札にトレイ印/退避印を残さない */
+        if (pp.staffId !== undefined && pp.staffId !== null) {   /* 配置済みになった札にトレイ印/退避印を残さない */
+          delete c.parked; delete c.bumped;
+          delete c.parkedByHand; delete c.absentMoved; delete c.routineTray;   /* トレイにいた理由の印も外す（patchTask・自動配置・並びと同じ扱い・2026-10-27） */
+        }
         out.push(c);
       } else out.push(t);
     }
@@ -13026,6 +13029,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
            * 通ると同じ盤面なのに署名が割れて余分な送信が1往復出る。 */
           if (!kept_.parked && orig_.parked) { upd_.parked = undefined; hasUpd_ = true; }
           if (!kept_.bumped && orig_.bumped) { upd_.bumped = undefined; hasUpd_ = true; }
+          /* トレイにいた理由の印（手で戻した・休み・並びごと）の解除も同じく反映（2026-10-27） */
+          if (!kept_.parkedByHand && orig_.parkedByHand) { upd_.parkedByHand = undefined; hasUpd_ = true; }
+          if (!kept_.absentMoved && orig_.absentMoved) { upd_.absentMoved = undefined; hasUpd_ = true; }
+          if (!kept_.routineTray && orig_.routineTray) { upd_.routineTray = undefined; hasUpd_ = true; }
           if (hasUpd_) store.dispatch({ type: 'UPDATE_TASK', id: orig_.id, patch: upd_ });
         }
       }
@@ -18722,17 +18729,33 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * 以前の並びの固定は、押した日にトレイだった札を、翌日に列にある札まで「本人が戻した」印（parked）付きでトレイへ引き抜き、
    * 毎日の押し直しで続いていた。今日以降のロックしていない日で、トレイにある起床・就寝の時間帯の支援の parked を外す。
    * 外さない札: 手で戻した印（parkedByHand）・休みで移した印（absentMoved）・並びごとトレイへ残した札（routineTray）・今日の重なりの退避（bumped）。
-   * 明日以降の重なりの退避は外す（翌週へコピーが古い退避の札を写していた・置ける列が無ければ退避の印のままトレイに残る） */
+   * 明日以降の重なりの退避は外す（翌週へコピーが古い退避の札を写していた・置ける列が無ければ退避の印のままトレイに残る）。
+   * 戻すのは前日に職員の列にいた札だけ（2026-10-27 代表者の決定）。印が入る前の旧データで本人が手で戻した札（印なしの parked）が、
+   * 一度だけ列へ戻っていたため。前日もトレイ・前日に無い札・前日の盤面が端末に無い時はトレイのまま。
+   * 前日の同じ札の見分けは並びの当てはめ（M.applyRoutines）と同じ: 週間計画の予定 id、無ければ利用者と開始 */
   function releaseRoutineTray_() {
     if (autoHeld_() || ui.currentDate < todayKey()) return false;
     /* 現場の端末・サーバーの盤面をまだ取れていない日は触らない（並びの当てはめ routineAllowed_ と同じ守り・2026-10-23 反証レビュー） */
     if (fieldMarksOnly_(ui.currentDate) || (syncOn() && !dayPullOk_[ui.currentDate])) return false;
+    /* 前日の盤面は端末の控えを読むだけ（loadDayData は重なりの畳み・列の並べ直しをするので使わない） */
+    var pv = readLS_(dayKey(shiftDate(ui.currentDate, -1)));
+    if (!pv || !Array.isArray(pv.tasks)) return false;
+    var pvEv = {}, pvRidS = {}, pi, pt;
+    for (pi = 0; pi < pv.tasks.length; pi++) {
+      pt = pv.tasks[pi];
+      if (!pt || pt.kind !== 'care') continue;
+      if (pt.weeklyRef && pt.weeklyRef.evId && !pvEv['.' + pt.weeklyRef.evId]) pvEv['.' + pt.weeklyRef.evId] = pt;
+      if (pt.residentId && !pvRidS['.' + pt.residentId + '|' + pt.start]) pvRidS['.' + pt.residentId + '|' + pt.start] = pt;
+    }
     var d = store.get(), ch = false;
     var tasks = d.tasks.map(function (t) {
       if (!t || t.kind !== 'care' || (t.staffId !== null && t.staffId !== undefined) || !t.parked) return t;
       if (t.parkedByHand || t.absentMoved || t.routineTray || M.routineBand(t.start) === null) return t;
       /* 重なりの退避（bumped）は、明日以降の日だけ戻す（翌週へコピーが古い退避の札を毎週写していたため）。今日の退避は本人に任せる（置き直す列を選んでもらう） */
       if (t.bumped && !(ui.currentDate > todayKey())) return t;
+      var ph = (t.weeklyRef && t.weeklyRef.evId) ? (pvEv['.' + t.weeklyRef.evId] || null) : null;
+      if (!ph && t.residentId) ph = pvRidS['.' + t.residentId + '|' + t.start] || null;
+      if (!ph || ph.staffId === null || ph.staffId === undefined) return t;   /* 前日に職員の列にいなかった札はトレイのまま */
       var o = {}, k;
       for (k in t) if (Object.prototype.hasOwnProperty.call(t, k) && k !== 'parked') o[k] = t[k];
       ch = true;
@@ -20672,8 +20695,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261027154400';
-  var WS_APP_VER = 2026101706;   /* 2026-10-23 トレイへ入った理由の印（parkedByHand・absentMoved・routineTray）を知らない前の版の画面が、手で戻した札・休みで移した札を印なしで残し、
+  var WS_BUILD = '20261027175746';
+  var WS_APP_VER = 2026102702;   /* 2026-10-27 開いた時に列へ戻す札を前日に列にいた札だけにし、重複の札をまとめた時にトレイにいた理由の印も外すよう変えたので、
+                                  * 前の版の画面が旧データの手で戻した札を列へ戻して送らないよう上げた（代表者の決定 2026-10-27）
+                                  * （2026101706: 2026-10-23 トレイへ入った理由の印（parkedByHand・absentMoved・routineTray）を知らない前の版の画面が、手で戻した札・休みで移した札を印なしで残し、
                                   * 新しい版がそれを列へ戻してしまわないよう上げた
                                   * （2026101705: 2026-10-22 名前つきの自由枠の印（oohHold）を支援だけの印と思う前の版（10/21・10/22 朝）の画面が、どの操作でも印を外して
                                   * 空けた所を施設業務で埋めて送らないよう上げた（3ebdccc。反証レビュー2回の指摘: 印が恒久的に消え、本人指摘の症状が戻る）
