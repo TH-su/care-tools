@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Y7qC8gfoeHBkLAKRvmIAwoFsF7J+vppIWKbMzhc6sbE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-lOr4LWIESiB4cKANSnuX6TjTNNKMTxzeHU0GFnBKaHI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
@@ -18,7 +18,7 @@
 <script src="su-facility.js?v=2026-10-26"></script>
 <script src="su-print.js?v=2026-09-12"></script>
 <script src="staff-master-calc.js?v=2026-10-11.2"></script>
-<script src="ats-calc.js?v=2026-10-26"></script>
+<script src="ats-calc.js?v=2026-10-27"></script>
 <style>
 /* 採用管理（2026-10-26 代表者承認の凍結仕様 v1）。
    色は担当者会議のページと同じ濃さ（コントラスト7:1目標）。ライト固定。段階は色でなく番号と名前で示す。
@@ -119,6 +119,8 @@ h3{font-size:1.0625rem; margin:14px 0 6px}
 .tbl td.num,.tbl th.num{text-align:right; white-space:nowrap}
 .tbl tr.few td{color:var(--g6)}
 .tbl-wrap{overflow-x:auto}
+.tbl caption{text-align:left; font-weight:700; padding:4px 0}
+.imp-sum{display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:10px; margin:8px 0}
 .ok-t{color:var(--ok); font-weight:700}
 .ng-t{color:var(--ng); font-weight:700}
 
@@ -277,8 +279,9 @@ var reg={};             // 応募者の id → 登録の途中の状態 {state,m
 var dragId='';
 var undoT=null;
 var importPlan=null;
+var importStaff='';     // 試算の時に職員マスタの一覧を読めたか（'ok'／'ng'／'nocfg'）
 var importMsg='';
-var dashPeriod='month';
+var dashPeriod='';      // 集計の期間（'' は未選択＝初めて開いた時に今月の件数で決める）
 var stageLog=null;      // 集計のための段階の履歴（応募者の id と移った先だけ）
 var chartObj=null;
 var chartLoading=null;
@@ -559,7 +562,10 @@ function cardHtml_(a){
     '</li>';
 }
 function boardHtml_(){
-  var list=filtered_(), ended=list.filter(function(a){ return AtsCalc.isEnd(a.stage); });
+  /* 取り込み元で入職済みの方・入職日が60日より前の入職完了の方はボードに出さず、「終わった人」の一覧から開く（2026-10-27 本人指示） */
+  var today=today_(), all=filtered_();
+  var list=all.filter(function(a){ return !AtsCalc.boardHidden(a,today); });
+  var ended=all.filter(function(a){ return AtsCalc.isEnd(a.stage)||AtsCalc.boardHidden(a,today); });
   var jobs=optionsOf_('jobs'), srcs=optionsOf_('sources');
   var opt=function(vals,cur){ return '<option value="">すべて</option>'+vals.map(function(v){ return '<option value="'+esc(v)+'"'+(v===cur?' selected':'')+'>'+esc(v)+'</option>'; }).join(''); };
   var h='<h2 id="b-h">選考</h2><div class="bar">'+
@@ -573,7 +579,7 @@ function boardHtml_(){
     '<p class="hint pc-only">カードをつかんで別の列へ動かせます（置ける列は青い点線になります。Esc でやめます）。終わりにする時は名前を押して「終わりにする…」から。</p>';
   if(showEnded){
     h+='<div class="tbl-wrap"><table class="tbl"><caption class="sr">終わった人</caption><thead><tr><th>氏名</th><th>終わり方</th><th>終わった日</th><th>理由</th></tr></thead><tbody>'+
-      (ended.length?ended.map(function(a){ return '<tr><td><button type="button" class="btn sm" data-act="open" data-id="'+esc(a.id)+'">'+esc(a.name)+'</button></td><td>'+esc(AtsCalc.stageLabel(a.stage))+'</td><td>'+esc(a.closed_on||'')+'</td><td>'+esc(a.outcome_reason||'')+'</td></tr>'; }).join('')
+      (ended.length?ended.map(function(a){ var hired=a.stage==='hired'; return '<tr><td><button type="button" class="btn sm" data-act="open" data-id="'+esc(a.id)+'">'+esc(a.name)+'</button></td><td>'+esc(AtsCalc.stageLabel(a.stage))+(hired&&a.legacy_hired?'（取り込み元で入職済み）':'')+'</td><td>'+esc(hired?(a.start_on||a.closed_on||''):(a.closed_on||''))+'</td><td>'+esc(a.outcome_reason||'')+'</td></tr>'; }).join('')
         :'<tr><td colspan="4">終わった人はいません。</td></tr>')+'</tbody></table></div>';
   }
   h+='<div class="cols">'+AtsCalc.STAGES.map(function(s){
@@ -711,7 +717,7 @@ function detailHtml_(a){
     fi_('f-src','経路（「・」で区切る）',(a.sources||[]).join('・'),'text',' maxlength="400"')+fi_('f-jobs','職種（「・」で区切る）',(a.jobs||[]).join('・'),'text',' maxlength="400"'+lk)+
     fi_('f-quals','資格',a.quals_text,'text',' maxlength="1000"')+fi_('f-addr','住所',a.address,'text',' maxlength="200"'+lk)+
     ta_('f-phones','電話（1行に1つ。古い番号は先頭に「旧」）',(a.phones||[]).map(function(p){ return (p.label?p.label+' ':'')+p.num; }).join('\n'),' maxlength="300"'+lk)+
-    fi_('f-email','メール',a.email,'email',' maxlength="200"')+ta_('f-wish','本人希望',a.wish_text,' maxlength="4000"')+ta_('f-cond','条件',a.cond_text,' maxlength="4000"')+ta_('f-note','備考',a.note_text,' maxlength="4000"')+
+    fi_('f-email','メール',a.email,'email',' maxlength="200"')+ta_('f-wish','本人希望',a.wish_text,' maxlength="20000"')+ta_('f-cond','条件',a.cond_text,' maxlength="20000"')+ta_('f-note','備考',a.note_text,' maxlength="20000"')+
     fi_('f-due','返答期限',a.reply_due,'date')+fi_('f-start','入職予定日',a.start_on,'date',lk)+
     '</div><button type="button" class="btn pri" data-act="save-basic">基本情報を保存</button></section>';
   /* 連絡の記録 */
@@ -1035,6 +1041,8 @@ function regHtml_(a){
   var r=regOf_(a.id);
   var h='<div class="pc-only" id="reg-box"><h3>職員マスタへの登録</h3>';
   if(a.staff_id) return h+'<p class="ok-t">✓ 登録済み</p><p><a class="btn" href="staff-master.html">職員マスタで開く</a></p></div>';
+  /* 取り込み元で入職済みの方は、ここから職員マスタへ新しく登録しない（昔の入職を二重に作らない） */
+  if(a.legacy_hired===true) return h+'<p class="muted">取り込み元で入職済みの方です（職員マスタの職員IDは見つかっていません）。ここからは登録しません。</p></div>';
   if(r.msg) h+='<p class="msg '+esc(r.state==='ng'?'ng':(r.state==='ok'?'ok':'warn'))+'" role="status">'+esc(r.msg)+'</p>';
   if(a.staff_pending_at||r.state==='unsure'){
     return h+'<p class="msg warn">登録できたか確かめ中です。職員マスタを読み直して、登録されたかを確かめます（送ったのは '+esc(fmtDT_(a.staff_pending_at)||'少し前')+'）。</p>'+
@@ -1056,7 +1064,7 @@ function regHtml_(a){
 /* 登録: 0. 職員マスタの一覧で同じ方がいないか確かめる（regPrecheck_・読めなければ送らない）→ 1. 確認の窓 →
    2. 保留の印を先に保存（できなければ送らない）→ 3. 職員マスタへ送る → 4〜6. 応答で分ける */
 function regStart_(){
-  var a=rowById_(curId); if(!a||a.staff_id||a.staff_pending_at) return Promise.resolve('blocked');
+  var a=rowById_(curId); if(!a||a.staff_id||a.staff_pending_at||a.legacy_hired===true) return Promise.resolve('blocked');
   var r=regOf_(a.id); if(r.busy) return Promise.resolve('busy');
   if(edDirty){ dMsg_('先に「入職準備を保存」を押してください（保存した内容で登録します）。','warn'); return Promise.resolve('dirty'); }
   var b=AtsCalc.buildStaffCreate(a,enums);
@@ -1332,26 +1340,37 @@ function loadStageLog_(){
     stageLog=rows_(r); if(tab==='dash') paintDash_();
   })['catch'](function(e){ atsNote_('段階の履歴', e); stageLog=[]; if(tab==='dash') paintDash_(); });
 }
+var DASH_PERIODS=[['month','今月'],['3m','3か月'],['fy','今年度'],['all','全期間'],['year','年ごと']];
 function dashData_(){
   var reached={}, ivn={};
   (stageLog||[]).forEach(function(l){ var k=l.applicant_id; if(AtsCalc.stageRank(l.to_stage)>AtsCalc.stageRank(reached[k])) reached[k]=l.to_stage; });
   ivs.forEach(function(v){ ivn[v.applicant_id]=(ivn[v.applicant_id]||0)+1; });
-  var list=apps.map(function(a){ return {stage:a.stage,sources:a.sources,received_on:a.received_on,reached:reached[a.id]||'',interviews:ivn[a.id]||0}; });
+  var list=apps.map(function(a){ return {stage:a.stage,sources:a.sources,received_on:a.received_on,reached:reached[a.id]||'',interviews:ivn[a.id]||0,legacy_hired:a.legacy_hired===true,interview_on:a.interview_on||''}; });
   var rg=AtsCalc.periodRange(dashPeriod,today_());
-  return AtsCalc.funnel(list,rg.from,rg.to);
+  var f=AtsCalc.funnel(list,rg.from,rg.to);
+  if(dashPeriod==='year') f.years=AtsCalc.yearTable(list);
+  return f;
 }
 function paintDash_(){
   var p=$('p-dash'); if(!p) return;
   if(stageLog==null){ p.innerHTML='<h2>集計</h2><p class="muted">読み込んでいます…</p>'; loadStageLog_(); return; }
+  if(!dashPeriod) dashPeriod=AtsCalc.defaultPeriod(apps,today_());
   var f=dashData_(), all=AtsCalc.STAGES.concat(AtsCalc.END_STAGES);
-  var per=[['month','今月'],['3m','3か月'],['fy','今年度'],['all','全期間']];
+  var per=DASH_PERIODS;
   var html='<h2>集計</h2><div class="fi" style="max-width:260px"><label for="dash-per">期間（受付日）</label><select id="dash-per">'+per.map(function(x){ return '<option value="'+x[0]+'"'+(x[0]===dashPeriod?' selected':'')+'>'+esc(x[1])+'</option>'; }).join('')+'</select></div>'+
+    (f.years?'<h3>年ごと（受付日の年）</h3><div class="tbl-wrap"><table class="tbl"><thead><tr><th>年</th><th class="num">応募</th><th class="num">面接</th><th class="num">採用</th><th class="num">入職</th><th class="num">辞退</th></tr></thead><tbody>'+
+      (f.years.length?f.years.map(function(y){ return '<tr><td>'+esc(y.year)+'</td><td class="num">'+esc(y.n)+'</td><td class="num">'+esc(y.interviewed)+'</td><td class="num">'+esc(y.accepted)+'</td><td class="num">'+esc(y.hired)+'</td><td class="num">'+esc(y.declined)+'</td></tr>'; }).join(''):'<tr><td colspan="6">応募はありません。</td></tr>')+'</tbody></table></div>':'')+
     '<h3>段階ごとの人数（'+esc(f.total)+'人）</h3><div class="chart-box"><canvas id="dash-chart" role="img" aria-label="段階ごとの人数の横棒（下の表と同じ数）"></canvas></div>'+
     '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>段階</th><th class="num">人数</th></tr></thead><tbody>'+all.map(function(s){ return '<tr><td>'+esc(AtsCalc.stageLabel(s.id))+'</td><td class="num">'+esc(f.stages[s.id])+'</td></tr>'; }).join('')+'</tbody></table></div>'+
-    '<h3>経路ごと</h3><div class="tbl-wrap"><table class="tbl"><thead><tr><th>経路</th><th class="num">応募</th><th class="num">面接率</th><th class="num">内定率</th><th class="num">入職率</th><th class="num">辞退率</th></tr></thead><tbody>'+
-    (f.sources.length?f.sources.map(function(s){ return '<tr'+(s.few?' class="few"':'')+'><td>'+esc(s.source)+(s.few?'（少数）':'')+'</td><td class="num">'+esc(s.n)+'</td><td class="num">'+esc(AtsCalc.rate(s.interviewed,s.n))+'</td><td class="num">'+esc(AtsCalc.rate(s.offered,s.n))+'</td><td class="num">'+esc(AtsCalc.rate(s.hired,s.n))+'</td><td class="num">'+esc(AtsCalc.rate(s.declined,s.n))+'</td></tr>'; }).join('')
-      :'<tr><td colspan="6">この期間の応募はありません。</td></tr>')+'</tbody></table></div>'+
-    '<p class="hint">面接率＝面接を1回以上した人／応募。内定率＝内定以上に進んだ人／応募。入職率＝入職完了／応募。辞退率＝辞退／応募。10件未満の経路は灰色で「少数」と出します。'+(f.multiSource?'経路が2つ以上の応募（'+esc(f.multiSource)+'件）は、それぞれの経路に1件ずつ数えています。':'')+'</p>';
+    '<h3>経路ごと</h3><div class="tbl-wrap"><table class="tbl"><thead><tr><th>経路</th><th class="num">応募</th><th class="num">面接率</th><th class="num">内定率</th><th class="num">採用率</th><th class="num">入職率</th><th class="num">辞退率</th></tr></thead><tbody>'+
+    (f.sources.length?f.sources.map(function(s){ return '<tr'+(s.few?' class="few"':'')+'><td>'+esc(s.source)+(s.few?'（少数）':'')+'</td><td class="num">'+esc(s.n)+'</td><td class="num">'+esc(AtsCalc.rate(s.interviewed,s.n))+'</td><td class="num">'+esc(AtsCalc.rate(s.offered,s.n))+'</td><td class="num">'+esc(AtsCalc.rate(s.accepted,s.n))+'</td><td class="num">'+esc(AtsCalc.rate(s.hired,s.n))+'</td><td class="num">'+esc(AtsCalc.rate(s.declined,s.n))+'</td></tr>'; }).join('')
+      :'<tr><td colspan="7">この期間の応募はありません。</td></tr>')+'</tbody></table></div>'+
+    '<p class="hint">面接率＝面接の記録がある人（取り込みで入れた面接日を含む）／応募。</p>'+
+    '<p class="hint">内定率＝内定以上に進んだ人／応募。</p>'+
+    '<p class="hint">採用率＝内定以上に進んだ人と、取り込み元で入職済みの人／応募。</p>'+
+    '<p class="hint">入職率＝入職完了（取り込み元で入職済みを含む）／応募。</p>'+
+    '<p class="hint">辞退率＝辞退／応募。</p>'+
+    '<p class="hint">10件未満の経路は灰色で「少数」と出します。'+(f.multiSource?'経路が2つ以上の応募（'+esc(f.multiSource)+'件）は、それぞれの経路に1件ずつ数えています。':'')+'</p>';
   p.innerHTML=html;
   drawChart_(f);
 }
@@ -1380,9 +1399,9 @@ function paintImport_(){
     else{
       var n=importPlan.count;
       h+='<p>入れられる行 '+esc(n)+'件／入れない行 '+esc(importPlan.items.length-n)+'件'+(importPlan.tooMany?'（1回に入れられるのは'+esc(AtsCalc.IMPORT_MAX)+'件までです。ファイルを分けてください）':'')+'</p>'+
-        (importPlan.unknown&&importPlan.unknown.length?'<p class="hint">読まない見出し: '+esc(importPlan.unknown.join('・'))+'</p>':'')+
+        (importPlan.unknown&&importPlan.unknown.length?'<p class="hint">読まない見出し: '+esc(importPlan.unknown.join('・'))+'</p>':'')+importSummaryHtml_(importPlan)+
         '<div class="tbl-wrap"><table class="tbl"><thead><tr><th class="num">行</th><th>取り込み</th><th>氏名</th><th>受付日</th><th>段階</th><th>入れられない理由</th></tr></thead><tbody>'+
-        importPlan.items.map(function(it){ return '<tr><td class="num">'+esc(it.line)+'</td><td>'+(it.ok?'<span class="ok-t">✔ 入れる</span>':'<span class="ng-t">✗ 入れない</span>')+'</td><td>'+esc(it.row.name)+'</td><td>'+esc(it.row.received_on||'')+'</td><td>'+esc(it.row.stage?AtsCalc.stageLabel(it.row.stage):'')+'</td><td>'+esc(it.issues.join('・'))+'</td></tr>'; }).join('')+
+        importPlan.items.map(function(it){ return '<tr><td class="num">'+esc(it.line)+'</td><td>'+(it.ok?'<span class="ok-t">✔ 入れる</span>':'<span class="ng-t">✗ 入れない</span>')+'</td><td>'+esc(it.row.name)+'</td><td>'+esc(it.row.received_on||'')+'</td><td>'+esc(it.row.stage?AtsCalc.stageLabel(it.row.stage):'')+(it.row.legacy_hired?(it.row.staff_id?'（職員ID '+esc(it.row.staff_id)+'）':'（取り込み元で入職済み）'):'')+'</td><td>'+esc(it.issues.join('・'))+(it.ok&&it.warns&&it.warns.length?'<span class="muted">備考に残した値: '+esc(it.warns.join('・'))+'</span>':'')+'</td></tr>'; }).join('')+
         '</tbody></table></div><div class="acts" style="margin-top:10px"><button type="button" class="btn pri" data-act="imp-run"'+(n&&!importPlan.tooMany?'':' disabled')+'>'+esc(n)+'件を取り込む</button><button type="button" class="btn" data-act="imp-clear">やめる</button></div>';
     }
   }
@@ -1399,14 +1418,49 @@ function onImportFile_(file){
   }).then(function(bytes){
     if(!bytes){ importPlan={ok:false,error:'ファイルを読めませんでした。',items:[]}; paintImport_(); return false; }
     var dec=AtsCalc.decodeCsv(bytes,function(l){ return new TextDecoder(l,{fatal:false}); });
+    return planFromText_(dec.text);
+  });
+}
+/* 試算: 先に職員マスタの一覧（退職した方も含む）を1回読み、取り込み元で入職済みの方に職員IDを付ける。
+   読めない時は職員IDを付けずに試算する（入職済みの印だけ）。ファイルの中身・一覧は端末に保存しない（メモリだけ） */
+function planFromText_(text){
+  var my=gen;
+  importPlan=null; importStaff=''; setSync('職員マスタの一覧を読んでいます…'); paintImport_();
+  var read=stfReady_()?stfPost_({action:'list'},45000).then(function(d){
+    if(!(d&&d.ok===true&&Array.isArray(d.rows))) throw {noAnswer:true,why:'一覧を読めません'};
+    return d.rows;
+  }):Promise.reject({nocfg:true});
+  return read.then(function(rows){ return {rows:rows,state:'ok'}; },function(e){
+    if(!(e&&(e.noAnswer||e.nocfg))) atsNote_('取り込みの職員マスタの一覧', e);
+    return {rows:null,state:(e&&e.nocfg)?'nocfg':'ng'};
+  }).then(function(r){
+    if(my!==gen) return false;
+    setSync('');
     var have=apps.map(function(a){ return a.import_key; }).filter(Boolean);
-    importPlan=AtsCalc.planImport(dec.text,today_(),settings,have);
+    importPlan=AtsCalc.planImport(text,today_(),settings,have,r.rows);
+    importStaff=r.state;
     paintImport_(); return true;
   });
 }
+/* 試算のまとめ（取り込む前に件数を見る・2026-10-27 本人指示） */
+function importSummaryHtml_(pl){
+  var sm=pl.summary||{}, li=function(k,v){ return '<tr><td>'+esc(k)+'</td><td class="num">'+esc(v)+'</td></tr>'; };
+  var tbl=function(cap,rows){ return '<div class="tbl-wrap"><table class="tbl"><caption>'+esc(cap)+'</caption><thead><tr><th>内訳</th><th class="num">件数</th></tr></thead><tbody>'+(rows||'<tr><td colspan="2">ありません。</td></tr>')+'</tbody></table></div>'; };
+  var st=AtsCalc.STAGES.concat(AtsCalc.END_STAGES).filter(function(x){ return sm.stages&&sm.stages[x.id]; }).map(function(x){ return li(AtsCalc.stageLabel(x.id),sm.stages[x.id]); }).join('');
+  var src=Object.keys(sm.sources||{}).sort(function(a,b){ return sm.sources[b]-sm.sources[a]||(a<b?-1:1); }).map(function(k){ return li(k,sm.sources[k]); }).join('');
+  var rs=Object.keys(sm.reasons||{}).sort().map(function(k){ return li(k,sm.reasons[k]); }).join('');
+  var staffMsg=importStaff==='ok'?'':(importStaff==='nocfg'?'職員マスタの接続先が見つからないため（接続設定）、':'職員マスタの一覧を読めなかったため、')+(importStaff==='ok'?'':'職員IDは付けず「取り込み元で入職済み」の印だけで入れます。');
+  return '<h3>試算のまとめ</h3><p class="hint">取り込んだ記録は保管期限の対象外です（ずっと残ります）。</p>'+
+    (staffMsg?'<p class="msg warn">'+esc(staffMsg)+'</p>':'')+
+    '<div class="imp-sum">'+tbl('段階ごと（入れられる行）',st)+
+    tbl('職員マスタとの照合（取り込み元で入職済みの方）',li('職員マスタで見つかった',sm.staffFound||0)+li('見つからなかった',sm.staffMissing||0))+
+    tbl('面接',li('面接日のある行（面接の記録を作る）',sm.interviewOn||0)+li('読めない値を備考に残した行',sm.warned||0))+
+    tbl('入れられない行の理由',rs)+tbl('経路ごと（入れられる行）',src)+'</div>'+
+    (sm.others&&sm.others.length?'<h3>その他にした元の書き方（'+esc(sm.others.length)+'種類）</h3><ul class="list">'+sm.others.map(function(o){ return '<li>'+esc(o.text)+'（'+esc(o.n)+'件）</li>'; }).join('')+'</ul>':'');
+}
 function runImport_(){
   if(!importPlan||!importPlan.ok||!importPlan.count||importPlan.tooMany) return Promise.resolve(false);
-  var rows=importPlan.items.filter(function(it){ return it.ok; }).map(function(it){ return it.row; });
+  var okItems=importPlan.items.filter(function(it){ return it.ok; }), rows=okItems.map(function(it){ return it.row; });
   return askConfirm_(rows.length+'件を取り込みますか？',['試算の一覧で「✔ 入れる」の行だけを入れます。取り込み済みの方は、データベースでも外します。'],'取り込む',false).then(function(ok){
     if(!ok) return false;
     var my=gen;
@@ -1415,7 +1469,12 @@ function runImport_(){
       if(my!==gen) return false;
       setSync('');
       if(d&&d.ok===true){ importPlan=null; importMsg=Number(d.inserted||0)+'件を取り込みました（取り込み済みで外した行 '+Number(d.skipped||0)+'件）。'; return loadAll_().then(function(){ return true; }); }
-      setMsg('取り込めませんでした。'); return false;
+      /* 1行でも形が違えば1行も入らない。返った index（入れる行の何番目か）から CSV の行を知らせる */
+      /* badshape＝データベースが新しい項目を知らない（0030 の前）。oldscreen＝データベースが古い画面の送信と見た */
+      if(d&&d.error==='badshape'){ setMsg('取り込めませんでした（1件も入っていません）。データベースの更新（0030）がまだです。代表者に確かめてください。'); return false; }
+      if(d&&d.error==='oldscreen'){ setMsg('取り込めませんでした（1件も入っていません）。画面が古いままです。読み込み直してください。'); return false; }
+      var bad=(d&&typeof d.index==='number'&&okItems[d.index])?okItems[d.index]:null;
+      setMsg('取り込めませんでした（1件も入っていません）。'+(bad?'CSV の '+bad.line+'行目の値をデータベースが受け付けませんでした。':'')); return false;
     },function(e){ if(my!==gen) return false; setSync(''); atsNote_('取り込み', e); setMsg(friendly_(e)); return false; });
   });
 }
@@ -1537,7 +1596,7 @@ function onClick_(e){
   else if(act==='print-sched') printGo_('sched','');
   else if(act==='print-sheet') printGo_('evalsheet',t.getAttribute('data-iv')||'');
   else if(act==='imp-run') runImport_();
-  else if(act==='imp-clear'){ importPlan=null; paintImport_(); }
+  else if(act==='imp-clear'){ importPlan=null; importStaff=''; paintImport_(); }
   else if(act==='purge') runPurge_();
   else if(act==='save-settings') saveSettings_();
 }
@@ -1547,7 +1606,7 @@ function onChange_(e){
   if(t.id==='b-mstage'){ mStage=String(t.value); paintBoard_(); return; }
   if(t.id==='d-stage'){ var a=rowById_(curId); if(a&&t.value!==a.stage){ tryMove_(a,t.value).then(function(){ paintDetail_(); }); } return; }
   if(t.id==='ev-who'){ evalSwitch_(String(t.value)); return; }
-  if(t.id==='dash-per'){ dashPeriod=['month','3m','fy','all'].indexOf(t.value)>=0?t.value:'month'; paintDash_(); return; }
+  if(t.id==='dash-per'){ dashPeriod=DASH_PERIODS.some(function(x){ return x[0]===t.value; })?t.value:'month'; paintDash_(); return; }
   if(t.id==='imp-file'){ onImportFile_(t.files&&t.files[0]); try{ t.value=''; }catch(err){ atsNote_('ファイルの選択', err); } return; }
   if(t.hasAttribute&&t.hasAttribute('data-exp')){ expireSel[t.getAttribute('data-exp')]=!!t.checked; paintExpire_(); return; }
   if(t.closest&&t.closest('#a-evdlg')&&evalCtx){ evalCtx.dirty=true; return; }
