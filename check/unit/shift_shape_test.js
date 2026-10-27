@@ -261,6 +261,27 @@ const same = (a, b) => JSON.stringify(shape(a)) === JSON.stringify(shape(b));
       t('I いちばん新しい保存を出す', fn({ 'sched:2026-10:plan': { at: '2026-10-01T00:00:00Z', by: '古' }, 'req:2026-10': { at: '2026-10-02T00:00:00Z', by: '新' } }, K) === '最終更新：新・10/2 09:00');
       t('I null・空・読めない時刻は何も出さない（空の文字）', fn(null, K) === '' && fn({}, K) === '' && fn({ 'req:2026-10': { at: 'x', by: 'A' } }, K) === '');
     }
+    /* 月を切り替えた直後（新しい月の応答が届く前）は、前の月の「最終更新」を消しておく（反証レビューの指摘・2026-10-27） */
+    const methodOf = (name) => { const s = HTML.indexOf('    ' + name + ': function'); return s < 0 ? '' : HTML.slice(s, HTML.indexOf('\n    },', s) + 6); };
+    let cleared = null;
+    try {
+      const el = { textContent: '', hidden: true };
+      const resolvers = [];
+      const sukv = { shiftLastUpdate: () => new Promise(ok => resolvers.push(ok)) };
+      const app = new Function('document', 'window', 'SUKv', 'return {' + ['refreshLastUpdate_', 'showLastUpdate_', 'lastUpdateText_'].map(methodOf).join(',\n') + '};')(
+        { getElementById: id => (id === 'lastUpdate' ? el : null) }, { SUKv: sukv }, sukv);
+      app.ym = '2026-10';
+      app.monthSyncKeys_ = ym => ['sched:' + ym + ':plan', 'req:' + ym];
+      app.refreshLastUpdate_();
+      resolvers[0]({ 'sched:2026-10:plan': { at: '2026-10-02T00:00:00Z', by: '十月' } });
+      for (let i = 0; i < 5; i++) await new Promise(r => setImmediate(r));
+      const before = el.textContent;
+      app.ym = '2026-11';
+      app.refreshLastUpdate_();
+      cleared = { before, after: el.textContent, hidden: el.hidden };
+    } catch (e) { cleared = { error: String(e) }; }
+    t('★I 月を切り替えた直後（応答が届く前）は前の月の「最終更新」が消えている',
+      cleared && cleared.before === '最終更新：十月・10/2 09:00' && cleared.after === '' && cleared.hidden === true, cleared);
     t('★I 置き場はツールバーの同期の札（#syncBadge）の直後・noprint・最初は hidden・data-k なし',
       /<span id="syncBadge"[^\n]*<\/span>\n[^\n]*\n\s*<span id="lastUpdate" class="noprint" hidden><\/span>/.test(HTML) && !/id="lastUpdate"[^>]*data-k/.test(HTML));
     t('I 印刷ではツールバーと noprint を消す（@media print）', /@media print \{[\s\S]{0,200}#toolbar,[^}]*\.noprint[^}]*display: none !important/.test(HTML));
