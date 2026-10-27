@@ -201,29 +201,44 @@
   var RE_REJECT = /^(不採用|不合格|見送り|お見送り)$/;
   var RE_DECLINE = /^(本人断り|辞退|採用辞退|内定辞退|本人辞退)$/;
   var RE_LOST = /^(連絡途絶|連絡なし|音信不通)$/;
+  /* 採用可否の語の揺れを読む（2026-10-27 本物の面接者ノートの試算から）。返りは 'hired'／'rejected'／'declined'／'lost'／'hold'／''（読めない）。
+     先頭の括弧の前の語（head）と、含む語で決める。辞退・断り・離脱（「採用→…保留」も）は辞退を優先、
+     次に不採用・否・不可・見送り は不採用、採用・内定・合格・可 は採用、連絡途絶の語は連絡途絶、保留は保留 */
+  function resultHead(res) { return trim(nfkc(res)).replace(/[\s　]+/g, '').split(/[(（]/)[0]; }
+  function classifyResult(res) {
+    var all = trim(nfkc(res)).replace(/[\s　]+/g, ''), head = resultHead(res);
+    if (!all) return '';
+    if (/辞退|断り|離脱/.test(all) || /採用.*保留/.test(all)) return 'declined';
+    if (/不採用|不合格|見送り|否|不可/.test(all)) return 'rejected';
+    if (/採用|内定|合格/.test(head) || head === '可') return 'hired';
+    if (/連絡途絶|連絡なし|音信不通|途絶/.test(all)) return 'lost';
+    if (/保留/.test(all)) return 'hold';
+    return '';
+  }
   /* past が true の行（受付日が今日より連絡途絶の日数以上前・受付日の無い行）は、終わった選考として決める（2026-10-27 本人指示）:
-       採用可否が「採用」（採用決定・内定・合格を含む）、または空欄で就業開始日がある → 入職完了（取り込み元で入職済みの印 legacy:true）
-       辞退の語 → 辞退／不採用の語 → 不採用／空欄（就業開始日なし）→ 連絡途絶／知らない語 → 入れない */
+       採用可否が採用（採用決定・内定・合格・可を含む）、または空欄で就業開始日がある → 入職完了（取り込み元で入職済みの印 legacy:true）
+       辞退の語 → 辞退／不採用の語 → 不採用／空欄（就業開始日なし）・保留 → 連絡途絶／知らない語 → 入れない
+     新しい行: 採用（「採用」「可」だけの時に就業開始日があれば入職準備＋印）→ 内定、保留 → 面接、ほかは同じ */
   function deriveStage(row, today, lostDays, past) {
     var r = row || {}, res = trim(nfkc(r.result)).replace(/[\s　]+/g, '');
     var days = Number(lostDays) >= 1 ? Math.floor(Number(lostDays)) : DEFAULT_SETTINGS.lostDays;
+    var cls = classifyResult(res), head = resultHead(res);
+    var unknown = { stage: null, note: '', issue: '採用可否の「' + res.slice(0, 20) + '」を読めません', legacy: false };
     if (past === true) {
       if (!res) return r.startOn ? { stage: 'hired', note: '', issue: '', legacy: true } : { stage: 'lost', note: '', issue: '', legacy: false };
-      if (RE_HIRED.test(res)) return { stage: 'hired', note: '', issue: '', legacy: true };
-      if (RE_REJECT.test(res)) return { stage: 'rejected', note: '', issue: '', legacy: false };
-      if (RE_DECLINE.test(res)) return { stage: 'declined', note: '', issue: '', legacy: false };
-      if (RE_LOST.test(res)) return { stage: 'lost', note: '', issue: '', legacy: false };
-      return { stage: null, note: '', issue: '採用可否の「' + res.slice(0, 20) + '」を読めません', legacy: false };
+      if (cls === 'hired') return { stage: 'hired', note: '', issue: '', legacy: true };
+      if (cls === 'rejected' || cls === 'declined' || cls === 'lost') return { stage: cls, note: '', issue: '', legacy: false };
+      if (cls === 'hold') return { stage: 'lost', note: '', issue: '', legacy: false };
+      return unknown;
     }
     if (res) {
-      if (RE_HIRED.test(res)) {
-        if (r.startOn && res === '採用') return { stage: 'prep', note: '入職済みの印（取り込み元の就業開始日 ' + r.startOn + '）', issue: '' };
+      if (cls === 'hired') {
+        if (r.startOn && (head === '採用' || head === '可')) return { stage: 'prep', note: '入職済みの印（取り込み元の就業開始日 ' + r.startOn + '）', issue: '' };
         return { stage: 'offer', note: '', issue: '' };
       }
-      if (RE_REJECT.test(res)) return { stage: 'rejected', note: '', issue: '' };
-      if (RE_DECLINE.test(res)) return { stage: 'declined', note: '', issue: '' };
-      if (RE_LOST.test(res)) return { stage: 'lost', note: '', issue: '' };
-      return { stage: null, note: '', issue: '採用可否の「' + res.slice(0, 20) + '」を読めません' };
+      if (cls === 'rejected' || cls === 'declined' || cls === 'lost') return { stage: cls, note: '', issue: '' };
+      if (cls === 'hold') return { stage: 'interview', note: '', issue: '' };
+      return { stage: null, note: '', issue: unknown.issue };
     }
     var age = r.received ? daysBetween(r.received, today) : null;
     if (age != null && age > days) return { stage: 'lost', note: '', issue: '' };
@@ -306,25 +321,46 @@
   /* ── 応募の経路の名寄せ（2026-10-27 本人指示） ──
      経路は決まった名前にそろえる。大小文字・全角半角・空白・記号の揺れは吸収する。表に無い語は「その他」にし、元の書き方を返す。
      媒体の名前を先に当て、当たらない時に「紹介」「様」を含むかを見る（「ハローワーク紹介」はハローワーク） */
-  var SOURCE_NAMES = ['Indeed', 'ジョブメドレー', 'ハローワーク', '求人ボックス', 'タイミー', 'ホームページ', '紹介', '求人誌', 'マイベストジョブ', 'その他'];
+  var SOURCE_NAMES = ['Indeed', 'ジョブメドレー', 'ハローワーク', '求人ボックス', 'タイミー', 'ホームページ', '紹介', '求人誌', 'マイベストジョブ',
+    '求人案内', 'タウンワーク', 'マッハバイト', 'みんジョブ', 'コメディカル.com', '介護ジョブ', '介護求人ネット', '介護求人ナビ', 'あつまるHD', '介護あるある', 'すぱいす',
+    '直接応募', '派遣・紹介会社', 'その他'];
+  /* 媒体の名前（打ち間違い・大小文字・全角半角を吸収）。照合は括弧の注記を外した形で行う */
   var SOURCE_RULES = [
-    ['Indeed', /indeed|インディード/],
-    ['ジョブメドレー', /jobmedley|ジョブメドレー|メドレー/],
+    ['Indeed', /indee[dl]|インディード/],
+    ['ジョブメドレー', /jobmedley|ジョブメ[ドソト]レー|メドレー/],
     ['ハローワーク', /ハローワーク|ハロワ|hellowork|職業安定所|職安/],
     ['求人ボックス', /求人ボックス|求人box|kyujinbox/],
     ['タイミー', /タイミー|timee/],
     ['マイベストジョブ', /マイベストジョブ|mybestjob/],
+    ['タウンワーク', /タウンワーク|townwork/],
+    ['マッハバイト', /マッハバイト/],
+    ['みんジョブ', /みんジョブ|みんなのジョブ/],
+    ['コメディカル.com', /コメディカル/],
+    ['介護求人ネット', /介護求人ネット/],
+    /* 「（地名）介護求人ナビ」は地名を名前に含むため、決まった名前を「介護求人ナビ」にする（公開リポジトリに地名を書かない） */
+    ['介護求人ナビ', /介護求人ナビ/],
+    ['介護ジョブ', /介護ジョブ/],
+    ['あつまるHD', /あつまる/],
+    ['介護あるある', /介護あるある/],
+    ['すぱいす', /すぱいす|スパイス/],
     ['ホームページ', /ホームページ|^(自社|当社)?hp$|^(自社|当社)?(web|ウェブ)(サイト)?$|website/],
-    ['求人誌', /求人誌|求人情報誌|情報誌|フリーペーパー/]
+    ['求人案内', /求人案内|求人案件/],
+    ['求人誌', /求人誌|求人情報誌|情報誌|フリーペーパー/],
+    ['派遣・紹介会社', /派遣|担当|紹介会社|人材|セントメディア|日研|ミラクス/]
   ];
   /* 照合用の形（NFKC・小文字・空白と「-_.・」を除く） */
   function sourceKey(s) { return nfkc(s).toLowerCase().replace(/[\s　\-_.・･]+/g, ''); }
-  /* 1語 → 決まった名前。表に無い語は 'その他' */
+  /* 1語 → 決まった名前。順に: 媒体の名前 → 派遣・紹介会社 → 紹介（知人・元職員・ケアマネ・様・さん・教会・紹介）→
+     直接応募（経由なし・直接・直電）→「ネット」だけはその他 → 漢字1〜4字だけの語（人の名字とみなす）は紹介 → 表に無い語はその他 */
   function canonSource(token) {
     var k = sourceKey(token), i;
     if (!k) return '';
-    for (i = 0; i < SOURCE_RULES.length; i++) if (SOURCE_RULES[i][1].test(k)) return SOURCE_RULES[i][0];
-    if (/紹介|様/.test(k)) return '紹介';
+    var core = k.replace(/[(（][^)）]*[)）]/g, '').replace(/^[→⇒]+/, '');
+    for (i = 0; i < SOURCE_RULES.length; i++) if (core && SOURCE_RULES[i][1].test(core)) return SOURCE_RULES[i][0];
+    if (core && /知人|元職員|ケアマネ|様|さん|教会|紹介/.test(core)) return '紹介';
+    if (/経由なし|直接|直電/.test(k)) return '直接応募';
+    if (core === 'ネット') return 'その他';
+    if (/^[一-鿿々]{1,4}$/.test(core)) return '紹介';
     return 'その他';
   }
   /* 経路の欄 → {list:[決まった名前（重なりなし）], others:[その他にした元の書き方]}。「＆」「&」「・」「、」「,」「/」「+」改行で分ける */
@@ -360,6 +396,17 @@
   var TEXT_MAX = 20000;   // 本人希望・条件・備考（note_text）の上限（データベース 0030）
   var GENDER = { '男': 'M', '男性': 'M', 'M': 'M', 'm': 'M', '女': 'F', '女性': 'F', 'F': 'F', 'f': 'F' };
 
+  /* 行の指紋（行の全部のセルを NFKC・前後の空白を除いてタブでつなぎ、FNV-1a 32bit を2回＝16進12桁）。決まった計算で、同じ行なら同じ値 */
+  function rowHash(cells) {
+    var t = (Array.isArray(cells) ? cells : []).map(function (x) { return trim(nfkc(x)); }).join('\t');
+    function fnv(seed) {
+      var h = seed >>> 0, i;
+      for (i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+      return h >>> 0;
+    }
+    var a = fnv(2166136261), b = fnv(a ^ 0x9e3779b9);
+    return ('00000000' + a.toString(16)).slice(-8) + ('0000' + (b >>> 16).toString(16)).slice(-4);
+  }
   /* 取り込みの1行 → {row（ats_import に渡す1行）, issues:[入れない理由], warns:[元の書き方を備考に残した項目], staff:{state,id}, others:[その他にした経路]}。
      issues があれば入れない。面接者ノートの全部の列を、項目か備考（note_text）の見出しつきの行に残す（2026-10-27 本人指示）。
      ・受付日が空・読めない時は 面接日 → 可否連絡日 → 就業開始日 の順で最初に読める日付を使い、元の書き方を備考に残す。
@@ -450,10 +497,10 @@
     if (stage && isEnd(stage)) closed = (roText ? completeYear(roText, base) : null) || iv.date || received || today;
     var key = '';
     /* 年の無い日付から補った受付日の行は、取り込む日で鍵が変わらないよう元の No で鍵を作る */
-    if (name && received && recYearless && legacyNo) key = normName(name) + '|no:' + legacyNo;
-    else if (name && received) key = importKey(name, received);
+    if (name && received && !recYearless) key = importKey(name, received);
     else if (name && legacyNo) key = normName(name) + '|no:' + legacyNo;
-    else if (name) issues.push('受付日も No もありません');
+    /* 日付も No も無い行（年の無い日付から補って No も無い行を含む）は、行の全部のセルの指紋で鍵を作る（同じ行なら同じ鍵・2026-10-27） */
+    else if (name) key = normName(name) + '|h:' + rowHash(c);
     var row = {
       legacy_no: legacyNo || null,
       received_on: received,
@@ -481,8 +528,9 @@
     var staff = { state: '', id: '' };
     /* legacy_hired は毎行送る（0030 は項目の無い送信を古い画面として断る） */
     row.legacy_hired = !!ds.legacy;
+    /* 採用可否の元の語は、どの段階の行でも legacy_result（80字）と備考（全文）に残す */
+    if (resText) row.legacy_result = trim(nfkc(resText)).slice(0, 80);
     if (ds.legacy) {
-      if (resText) row.legacy_result = trim(nfkc(resText)).slice(0, 80);
       staff = legacyStaffMatch(staffList, name, startOn);
       if (staff.state === 'found') row.staff_id = staff.id;
     }
@@ -508,7 +556,7 @@
       var r = normApplicant(hd.map, cells, today, settings, staffList), why = r.issues.slice();
       var k = r.row.import_key;
       if (k && known[k]) why.push('取り込み済みです');
-      else if (k && seen[k]) why.push(r.row.received_on ? '同じ氏名・受付日の行が上にあります' : '同じ氏名・No の行が上にあります');
+      else if (k && seen[k]) why.push(/\|h:/.test(k) ? '同じ内容の行が上にあります' : /\|no:/.test(k) ? '同じ氏名・No の行が上にあります' : '同じ氏名・受付日の行が上にあります');
       if (k) seen[k] = 1;
       r.others.forEach(function (o) { otherN[o] = (otherN[o] || 0) + 1; });
       items.push({ line: hd.index + i + 2, row: r.row, issues: why, warns: r.warns, staff: r.staff, ok: !why.length });
@@ -858,7 +906,7 @@
     normName: normName, importKey: importKey, normDate: normDate, completeYear: completeYear, splitDateNote: splitDateNote,
     parseContacts: parseContacts, deriveStage: deriveStage, parseCsv: parseCsv, detectHeader: detectHeader,
     normApplicant: normApplicant, planImport: planImport,
-    SOURCE_NAMES: SOURCE_NAMES, canonSource: canonSource, canonSources: canonSources, legacyStaffMatch: legacyStaffMatch, TEXT_MAX: TEXT_MAX,
+    SOURCE_NAMES: SOURCE_NAMES, canonSource: canonSource, canonSources: canonSources, legacyStaffMatch: legacyStaffMatch, rowHash: rowHash, classifyResult: classifyResult, TEXT_MAX: TEXT_MAX,
     yearTable: yearTable, defaultPeriod: defaultPeriod, boardHidden: boardHidden, countsOf: countsOf,
     buildStaffCreate: buildStaffCreate, missingText: missingText, sentKey: sentKey, labelOf: labelOf,
     sameStaff: sameStaff, staffMatches: staffMatches, sameNameActive: sameNameActive, staffVerdict: staffVerdict, staffWaitMinutes: staffWaitMinutes, staffResult: staffResult,

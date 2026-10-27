@@ -631,7 +631,20 @@ const CENSUS = {
     [F, "if (!ol.length) ov.innerHTML = '<div class=\"ai\"><span class=\"am\">なし 🎉</span></div>'"],
     [F, "d.innerHTML = '<span class=\"am\"></span><span class=\"as\"></span>'"],
     [F, "if (outEl) outEl.innerHTML = ''"],
-    [N, "if (outEl) outEl.innerHTML = res.html"]
+    [N, "if (outEl) outEl.innerHTML = res.html"],
+    /* 24時間配置・食事対応表（2026-10-27）。氏名・枠の名前・施設名・案の名前は WSStaffing.paperHtml の esc と画面の escH_ を通る（xss_work_schedule_test の W11 が確かめる） */
+    [F, "if (p) p.innerHTML = ''"],
+    [F, "if (sl) sl.innerHTML = ''"],
+    [E, "$('rpMsg').innerHTML = '<span class=\"ng\">' + escH_(st.err) + '</span>'"],
+    [F, "prev.innerHTML = ''"],
+    [E, "$('rpMsg').innerHTML = msg.join('<br>')"],
+    [E, "prev.innerHTML = WSStaffing.paperHtml(r, st.info)"],
+    [F, "host.innerHTML = '<span class=\"off\">選べる職員がいません（職員名簿が読めない・名簿の1人に決まらない職員は選べません）</span>'"],
+    [E, "host.innerHTML = h.join('')"],
+    [F, "if (p) p.innerHTML = ''"],
+    [F, "if (sl) sl.innerHTML = ''"],
+    [E, "$('rp-print').innerHTML = st.err ? '' : WSStaffing.paperHtml(st.r, st.info)"],
+    [F, "$('rp-print').innerHTML = ''"]
   ],
   "yakujo-calc.js": []
 };
