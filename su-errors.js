@@ -27,6 +27,8 @@
  *                                   後で原因が追えない失敗に使う。コンソール（warn）と onReport の記録先にだけ渡し、
  *                                   トースト・帯は出さない（現場の画面に警告が続けて出ないように）。
  *                                   同じ組み合わせは30秒に1回（report と違い、組み合わせごとに数える＝交互に起きても止まる）。
+ *                                   onReport の記録先には、note から来た時だけ4つ目に 'note' を渡す（2026-10-27。速さの記録が
+ *                                   「黙って失敗した回数」を report と分けて数えるため。report の時は渡さない＝今までの記録先は3つだけ読めばよい）。
  *   使わないツールの動きは今までと同じ。
  */
 (function () {
@@ -123,7 +125,7 @@
       noteAt[sig] = now;
       try { console.warn('[su-errors] ' + kind + '：' + brief + (where ? '（' + where + '）' : '')); } catch (e) {}
       recentNotes.push([kind, brief, where]); if (recentNotes.length > 3) recentNotes.shift();
-      for (var i = 0; i < hooks.length; i++) { try { hooks[i](kind, brief, where); } catch (e) {} }
+      for (var i = 0; i < hooks.length; i++) { try { hooks[i](kind, brief, where, 'note'); } catch (e) {} }
     } catch (e) {}
   }
 
@@ -149,7 +151,7 @@
       if (typeof fn !== 'function') return;
       hooks.push(fn);
       for (var i = 0; i < recent.length; i++) { try { fn(recent[i][0], recent[i][1], recent[i][2]); } catch (e) {} }
-      for (var j = 0; j < recentNotes.length; j++) { try { fn(recentNotes[j][0], recentNotes[j][1], recentNotes[j][2]); } catch (e) {} }
+      for (var j = 0; j < recentNotes.length; j++) { try { fn(recentNotes[j][0], recentNotes[j][1], recentNotes[j][2], 'note'); } catch (e) {} }
     }
   };
 })();

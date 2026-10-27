@@ -36,6 +36,15 @@
  *   2026-10-17 から8画面（週間計画・入居者マスタ・フェイスシート・申送ビューア・体重・通所利用表・
  *   ワークスケジュール・シフト作成）が呼ぶ。2026-10-24 からメニュー・入居調整・接続設定・貼り薬カレンダー・
  *   週間計画俯瞰も、最初の画面を描いた直後に呼ぶ。
+ *
+ * 黙って失敗した回数（2026-10-27・ワークスケジュールの空の catch を置き換えた時に足した・本人指示）:
+ *   su-errors.js の note（画面に出さない記録）が来るたびに、アプリと場所（where）ごとの回数と最後の時刻を、
+ *   同じ IndexedDB（su_perf）の別の入れ物（silent）に数える。perf-report.html の「黙って失敗した回数」の表で見る。
+ *   残すのはアプリのファイル名・場所の名前・回数・時刻だけ。例外の文（brief）と種類（kind）は残さない。
+ *   場所の名前は「ws:flushAll.save」のような決まった形だけを残し、空白・引用符・区切りの入った名前は「その他」にまとめる。
+ *   report（画面に帯が出る方）は数えない（su-errors.js が note の時だけ4つ目に 'note' を渡す）。
+ *   su-errors.js は同じ組み合わせを30秒に1回に間引くので、間引かれた分は数えない。外へは送らない（この端末の中だけ）。
+ *   入れ物を足すため、IndexedDB の版を 1→2 に上げた（perf-report.js も同じ版で開く）。
  */
 (function () {
   'use strict';
@@ -49,6 +58,7 @@
   }
 
   var DB = 'su_perf', STORE = 'views', KEEP = 1500;
+  var DB_VER = 2, SILENT = 'silent';              /* 版2で「黙って失敗した回数」の入れ物を足した（2026-10-27） */
   var STARTUP_MS = 20000;                         /* 開いてから20秒以内に始まった通信＝「起動時の通信」 */
   var FIRST_SAVE_MS = 25000;                      /* 起動時の通信が出そろう頃に一度保存する */
   var MAX_LIST = 40;                              /* 1画面あたりに細かく残す通信の上限 */
@@ -123,6 +133,19 @@
     if (hidden) hit.h++; else hit.v++;
   }
   /* PERF_PURE_END */
+
+  /* SILENT_PURE_BEGIN 純関数（check/unit/ws_silent_note_test.js が印の間を切り出して試す）
+     場所の名前: 「英数字._- の48字まで」か「それ＋ : ＋空白・区切り・引用符を含まない48字まで」だけを残す。合わなければ「その他」 */
+  function silentWhere(w) {
+    var s = typeof w === 'string' ? w : '';
+    return /^[A-Za-z0-9._-]{1,48}(:[^\s:\/?#<>"'&`\\]{1,48})?$/.test(s) ? s : 'その他';
+  }
+  /* 1回分を足した新しい記録。残すのは k・app・where・n・last の5つだけ（old にほかの項目があっても引き継がない） */
+  function silentBump(old, app, where, at) {
+    var n = (old && typeof old.n === 'number' && isFinite(old.n) && old.n > 0) ? Math.floor(old.n) : 0;
+    return { k: app + '|' + where, app: app, where: where, n: n + 1, last: at };
+  }
+  /* SILENT_PURE_END */
 
   /* 画面が裏にあった時間帯 [始まり, 終わり]（performance.now() の目盛り）。開いた時に裏なら 0 から裏とみなす。
      時間帯そのものは記録に残さない（回数と ms を分けるのに使うだけ） */
@@ -290,14 +313,20 @@
   function openDb() {
     if (dbp) return dbp;
     dbp = new Promise(function (resolve, reject) {
-      var req = indexedDB.open(DB, 1);
+      var req = indexedDB.open(DB, DB_VER);
       req.onupgradeneeded = function () {
         var db = req.result;
         if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: 'id' });
+        if (!db.objectStoreNames.contains(SILENT)) db.createObjectStore(SILENT, { keyPath: 'k' });
       };
-      req.onsuccess = function () { resolve(req.result); };
-      req.onerror = function () { reject(req.error); };
-      req.onblocked = function () { reject(new Error('blocked')); };
+      req.onsuccess = function () {
+        var db = req.result;
+        /* ほかのタブが版を上げる時は閉じて譲る（開いたままだと、相手の版上げがいつまでも待たされる）。次の保存で開き直す */
+        try { db.onversionchange = function () { try { db.close(); } catch (e) {} dbp = null; }; } catch (e) {}
+        resolve(db);
+      };
+      req.onerror = function () { dbp = null; reject(req.error); };
+      req.onblocked = function () { dbp = null; reject(new Error('blocked')); };   /* 古い版で開いたままのタブがある。次の保存で開き直す */
     });
     return dbp;
   }
@@ -422,6 +451,22 @@
     noteVisibility();                             /* 裏にあった時間帯の控えを先に更新してから保存する（2026-10-24） */
     if (document.visibilityState === 'hidden') save();
   });
+
+  /* 黙って失敗した回数を数える（2026-10-27）。note の時だけ（4つ目が 'note'）。数えられなくても何もしない */
+  function countSilent(kind, brief, where, src) {
+    if (src !== 'note') return;
+    try {
+      var app = rec.app, w = silentWhere(where), at = Date.now();
+      openDb().then(function (db) {
+        var st = db.transaction(SILENT, 'readwrite').objectStore(SILENT);
+        var g = st.get(app + '|' + w);
+        g.onsuccess = function () { try { st.put(silentBump(g.result, app, w, at)); } catch (e) {} };
+      })['catch'](function () {});
+    } catch (e) {}
+  }
+  try {
+    if (window.SUErrors && typeof window.SUErrors.onReport === 'function') window.SUErrors.onReport(countSilent);
+  } catch (e) {}
 
   window.SUPerf = {
     ready: function () {
