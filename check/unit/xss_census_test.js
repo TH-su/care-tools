@@ -492,6 +492,7 @@ const CENSUS = {
   "su-auth.js": [],
   "su-cfg-hint.js": [],
   "su-data-gas.js": [],
+  "su-data-supabase.js": [],
   "su-data.js": [],
   "su-errors.js": [],
   "su-export-crypt.js": [],

@@ -12,6 +12,14 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+/* 本物の su-data.js（入口 SU.data.training）を読み、その先の kvRaw・kvPut だけを差し替える（2026-10-27・M1 段0） */
+function realSuData(kvRaw, kvPut) {
+  const w = { localStorage: { getItem: () => null, setItem() {} } };
+  vm.runInNewContext(require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'su-data.js'), 'utf8'), { window: w });
+  w.SU.data.kvRaw = kvRaw;
+  if (kvPut) w.SU.data.kvPut = kvPut;
+  return w.SU.data;
+}
 
 const HTML = process.env.TP_HTML || path.join(__dirname, '..', '..', 'training-plan.html');
 const src = fs.readFileSync(HTML, 'utf8');
@@ -73,13 +81,14 @@ function makeEnv() {
       p.then((v) => { if (!done) { done = true; clearTimeout(tm); res(v); } },
              (e) => { if (!done) { done = true; clearTimeout(tm); rej(e); } });
     }),
-    SU: { data: { kvRaw: (payload, target) => {
+    /* 本物の su-data.js の入口（SU.data.training.ai）を通し、その先の kvRaw だけを偽物にする（2026-10-27） */
+    SU: { data: realSuData((payload, target) => {
       calls.push({ payload: JSON.parse(JSON.stringify(payload)), target: target });
       const r = typeof sb.resp === 'function' ? sb.resp(payload, calls.length) : sb.resp;
       if (r instanceof Error) return Promise.reject(r);
       if (r === 'hang') return new Promise(() => {});
       return Promise.resolve(r);
-    } } },
+    }) },
     Promise, JSON, Object, Number, String, Error, setTimeout, clearTimeout
   };
   vm.createContext(sb);
@@ -214,34 +223,12 @@ async function msgOf(sb, body) {
     em = ''; try { await rb.mdAiAsk(['x']); } catch (e) { em = e.message; }
     t('★接続先の無い端末は AI_NO_PROXY（送らない）', em === 'AI_NO_PROXY' && sent.length === 2, em);
     t('★設定や版の問題・時間切れは割って尋ね直さずに止める（二重に払わない）', /AI_NO_KEY\|AI_NO_PROXY\|AI_LIMIT\|AI_PROXY_OLD\|AI_PROXY_AUTH\|AI_BAD_REQUEST\|AI_TIMEOUT(\|AI_FETCH)?(\|STALE)?\)\$\/\.test/.test(rsrc));
-    /* 薬の変更候補の AI 下書き（mcAiAsk_・10/06 に main で追加）も同じ中継を通る（2026-10-10 合流時に移した） */
-    store.tp_cfg = JSON.stringify({ url: 'https://script.google.com/macros/s/TEST/exec', token: 'tok-test' });
-    reply = { ok: true, status: 200, data: { content: [{ type: 'text', text: '{"isChange":true,"after":["薬A 1錠 朝食後"],"changes":[],"unsure":[],"reason":"r"}' }] } };
-    const before = sent.length;
-    vm.runInContext(cutR('mcAiAsk_') + '\n' + cutR('mcAiParse_') + '\nfunction mcLines_(b){ return String(b||"").split("\\n").filter(Boolean); }\nfunction mcMask_(t){ return t; }', rb);
-    let mo = null, me = '';
-    try { mo = await rb.mcAiAsk_('薬A 1錠 朝食後', '架空の記録'); } catch (e) { me = e.message; }
-    const sm = sent[before];
-    t('★薬の変更候補の下書きも訓練計画の専用GASへ action:"ai" で頼む', !me && !!sm && sm.url === 'https://script.google.com/macros/s/TEST/exec' && JSON.parse(sm.opt.body).action === 'ai', me || (sm && sm.url));
-    t('★薬の変更候補の下書きも端末の鍵を送らない', !!sm && sm.opt.body.indexOf('sk-ant') < 0 && !('x-api-key' in (sm.opt.headers || {})), '');
-    t('薬の変更候補の下書きは中継の応答を読める', !!mo && mo.isChange === true, mo);
-    delete store.tp_cfg;
-    me = ''; try { await rb.mcAiAsk_('a', 'b'); } catch (e) { me = e.message; }
-    t('★接続先の無い端末では薬の変更候補の下書きも送らない（AI_NO_PROXY）', me === 'AI_NO_PROXY' && sent.length === before + 1, me);
+    /* 薬の変更候補の AI 下書き（mcAiAsk_）は止めた（代表者の決定 2026-10-27・外部 AI へ処方を送らない）。
+       中継を呼ぶのは薬効の下書き（mdAiAsk）だけ。変更候補の流れの試験は master_mc_no_ai_test.js */
+    t('★薬の変更候補の AI 下書き（mcAiAsk_・mcAiRun_・mcMask_）が入居者マスタに無い', !/function mc(AiAsk_|AiRun_|Mask_)\(/.test(rsrc), '');
+    t('★入居者マスタで中継（mdAiProxy_）を呼ぶのは薬効の下書きの1か所だけ', (rsrc.match(/mdAiProxy_\(/g) || []).length === 2, (rsrc.match(/mdAiProxy_\(/g) || []).length);
     t('★入居者マスタに端末の鍵で直接呼ぶ所が残っていない', !/x-api-key|dangerous-direct-browser|mdAiKey\(|MD_AI_URL/.test(rsrc), '');
-    /* 本物の伏せ字（mcMask_）を通して、中継へ送る本文で氏名・居室が伏せられていること（審査の指摘4） */
-    store.tp_cfg = JSON.stringify({ url: 'https://script.google.com/macros/s/TEST/exec', token: 'tok-test' });
-    const mb = { localStorage: rb.localStorage, fetch: rb.fetch, MD_AI_MODEL: 'claude-sonnet-5', MD_AI_TIMEOUT: 500,
-      roster: [{ name: '架空 一郎', kana: 'カクウ イチロウ', room: '203' }],
-      Promise, JSON, Object, String, Number, Error, RegExp, setTimeout, clearTimeout };
-    vm.createContext(mb);
-    vm.runInContext([cutR('mcNfkc_'), cutR('mcMask_'), cutR('mdAiCfg'), cutR('mdAiProxy_'), cutR('mcAiAsk_'), cutR('mcAiParse_'),
-                     'function mcLines_(b){ return String(b||"").split("\\n").filter(Boolean); }'].join('\n'), mb);
-    const mbefore = sent.length;
-    try { await mb.mcAiAsk_('薬A 1錠 朝食後', '架空 一郎様（203号室）の薬Aを中止'); } catch (e) { /* 応答は読めなくてもよい */ }
-    const content = sent[mbefore] ? JSON.parse(sent[mbefore].opt.body).body.messages[0].content : '';
-    t('★薬の変更候補の下書きは、中継へ送る前に氏名と居室を伏せる', !!content && content.indexOf('架空') < 0 && content.indexOf('203') < 0 && content.indexOf('○○') >= 0, content.slice(-60));
-    /* 断りの案内（効能と変更候補で共通） */
+    /* 断りの案内（効能の下書き） */
     const wb = { String, RegExp };
     vm.createContext(wb);
     vm.runInContext(cutR('mdAiWhy_'), wb);

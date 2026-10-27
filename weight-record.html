@@ -11,7 +11,7 @@
 <title>体重管理システム</title>
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
-<script src="su-errors.js?v=2026-10-08"></script>
+<script src="su-errors.js?v=2026-10-27"></script>
 <script>
 /* 黙ると困る失敗（保存・同期の補助）を、画面には出さずに記録へ残す（2026-10-08・監査10月版 #8）。
    行き先は su-errors.js の note＝コンソールと記録先（同期ログ・不具合報告の控えと自動報告）。トーストは出さない。
@@ -53,7 +53,7 @@ try{ const t = (JSON.parse(localStorage.getItem('wtmgr_ui_v1') || '{}') || {}).t
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <!-- 体重の写し（統合 0008・写しの期間）。supabase-js と su-auth.js は写す時にだけ読み込む -->
 <script src="su-weight-shadow.js?v=2026-10-24"></script>
-<script src="su-perf.js?v=2026-10-24"></script>
+<script src="su-perf.js?v=2026-10-27"></script>
 <style>
 :root{
   --pri:#0b57d0;--pri-l:#ecf3fe;--pri-d:#0842a0;
