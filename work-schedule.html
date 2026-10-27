@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Y0zUQ0b4mPr1pRAav36cDLN4I2v1ObSEfq1alf6rt6M='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ZHxD5VV9ULOfYzglB2y0ElWC3PWC7LjDq2RXDw1HEfk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -1180,7 +1180,7 @@ body.su-print-staff24 #rp-print, body.su-print-staff24range #rp-print { display:
   <fieldset class="rp-sm" id="rpSm">
     <legend>サ責として表から外す職員（この画面だけ）</legend>
     <div class="rp-sm-list" id="rpSmList"></div>
-    <div class="hint">選んだ人は、施設業務が入っていても表から外します。この PC だけに覚えます（名簿の番号だけ・氏名は覚えません）。紙には名前も理由も出しません。</div>
+    <div class="hint">選んだ人は、施設業務・自由枠が入っていても表から外します。この PC だけに覚えます（名簿の番号だけ・氏名は覚えません）。紙には名前も理由も出しません。</div>
   </fieldset>
   <!-- 期間を選んで、施設職員がいない時間のある日を調べる・まとめて印刷する（2026-10-27 本人指示）。画面だけ（.modal は印刷に出ない） -->
   <fieldset class="rp-sm rp-range" id="rpRange">
@@ -8569,11 +8569,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
  *
  * 数え方（代表者の決定 2026-10-27）:
  *  - 施設の列の職員と、夜勤（施設）の列の職員は、勤務の時間をそのまま「施設にいる」と数える。
- *  - 訪問の列の職員は、施設業務（kind 'facility'）の枠に入っている時間だけを数える。夜勤（訪問）の列は数えない。
+ *  - 訪問の列の職員は、施設業務（kind 'facility'）と自由枠（kind 'free'・名前を書いた札も含む）に入っている時間だけを数える
+ *    （自由枠は施設職員として数える・本人指示 2026-10-27）。夜勤（訪問）の列は数えない。
  *  - サービス提供責任者は訪問介護の仕事以外をしないため、施設業務が入っていても表から外す（大前提）。
  *    見分けはシフト作成の職員の「サービス提供責任者」の印（roster の serviceManager）。名簿が読めない時は表を作らない。
  *  - 名前の無い枠・休みにした職員は数えない。休憩は差し引かない。通所など他の事業所に出ている時間は差し引かず注記に出す。
- *  - 食事対応の枠は、施設業務の枠のうち名前に「食事」か「配膳」を含むもの（職員が置かれている枠だけ）。
+ *  - 食事対応の枠は、施設業務・自由枠の枠のうち名前に「食事」か「配膳」を含むもの（職員が置かれている枠だけ・自由枠は本人指示 2026-10-27）。
  * 夜勤は盤面の上で「明け 0:00〜朝」と「入り 夜〜24:00」が別の行になっている（前日の盤面は見ない）。
  * 旧Safari互換のため ?. / ?? / replaceAll / アロー関数は使用しない。console は使わない。 */
 (function () {
@@ -8742,10 +8743,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (st.otherOffice) out.notes.push(st.name + '：' + String(st.otherOffice) + '（他の事業所に出ている時間。表では差し引いていません）');
         for (j = 0; j < day.tasks.length; j++) {
           var t = day.tasks[j];
-          if (!t || t.kind !== 'facility' || t.parked || t.staffId !== st.id) continue;
+          if (!t || (t.kind !== 'facility' && t.kind !== 'free') || t.parked || t.staffId !== st.id) continue;
           if (!isNum(t.start) || !isNum(t.end)) continue;
           var ts = clamp(Math.max(t.start, ws)), te = clamp(Math.min(t.end, we));
-          if (te > ts) { ivs.push({ from: ts, to: te, name: st.name, col: cl, how: '施設業務' }); (ivsOf['.' + st.id] = ivsOf['.' + st.id] || []).push({ from: ts, to: te }); }
+          if (te > ts) { ivs.push({ from: ts, to: te, name: st.name, col: cl, how: t.kind === 'free' ? '自由枠' : '施設業務' }); (ivsOf['.' + st.id] = ivsOf['.' + st.id] || []).push({ from: ts, to: te }); }
         }
       } else if (kind === 'nightUnknown') {
         unkNight = true;
@@ -8823,11 +8824,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var ml = meals[i], frames = [];
       for (j = 0; j < day.tasks.length; j++) {
         var f = day.tasks[j];
-        if (!f || f.kind !== 'facility' || f.parked || !f.staffId) continue;
+        if (!f || (f.kind !== 'facility' && f.kind !== 'free') || f.parked || !f.staffId) continue;
         var who = okStaff['.' + f.staffId];
         if (!who || !hasMealWord(f.label, words)) continue;
         if (!(f.start < ml.to && f.end > ml.from)) continue;
-        /* その職員が施設にいると数えた時間（勤務時間・施設業務の枠）と、食事の時間帯の両方に重なる枠だけ
+        /* その職員が施設にいると数えた時間（勤務時間・施設業務と自由枠の枠）と、食事の時間帯の両方に重なる枠だけ
          * （勤務時間の外に置いた枠で「○」と出さない・反証レビュー 2026-10-27 H2） */
         if (!coveredBy(ivsOf['.' + f.staffId], Math.max(f.start, ml.from), Math.min(f.end, ml.to))) continue;
         frames.push({ start: f.start, end: f.end, label: String(f.label), name: who.name });
@@ -20671,7 +20672,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261027131909';
+  var WS_BUILD = '20261027154400';
   var WS_APP_VER = 2026101706;   /* 2026-10-23 トレイへ入った理由の印（parkedByHand・absentMoved・routineTray）を知らない前の版の画面が、手で戻した札・休みで移した札を印なしで残し、
                                   * 新しい版がそれを列へ戻してしまわないよう上げた
                                   * （2026101705: 2026-10-22 名前つきの自由枠の印（oohHold）を支援だけの印と思う前の版（10/21・10/22 朝）の画面が、どの操作でも印を外して
