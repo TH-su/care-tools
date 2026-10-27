@@ -63,8 +63,8 @@ t('空欄・受付から90日超 → 連絡途絶', D({ result: '', received: '2
 t('空欄・ちょうど90日 → 連絡途絶にしない', D({ result: '', received: '2026-07-28' }).stage === 'applied');
 t('空欄・面接日あり → 面接', D({ result: '', received: '2026-10-01', interviewOn: '2026-10-20' }).stage === 'interview');
 t('空欄・面接日なし → 応募受付', D({ result: '', received: '2026-10-01' }).stage === 'applied');
-const unk = D({ result: '保留' });
-t('知らない語 → null＋issue', unk.stage === null && /保留/.test(unk.issue), unk);
+const unk = D({ result: '検討中' });
+t('知らない語 → null＋issue', unk.stage === null && /検討中/.test(unk.issue), unk);
 t('連絡途絶の日数は設定で変わる', C.deriveStage({ received: '2026-10-01' }, '2026-10-26', 20).stage === 'lost');
 
 console.log('\n— 5. 見出しと取り込みの試算 —');
@@ -73,7 +73,7 @@ const CSV = [
   'No,受付日,経路,氏名,フリガナ,性別,連絡先,本人希望,面接日,採用可否,就業開始日,知らない列',
   '1,2026/10/01,ハローワーク・紹介,甲野 一郎,コウノ イチロウ,男,000-0000-0001 x@example.com,"夜勤なし,土日休み",10/20見学のみ,,,',
   '2,2026/07/01,求人サイト,乙川 花子,オツカワ ハナコ,女,000-0000-0002,,,,,',
-  '3,2026/10/02,紹介,丙山 三郎,,男,,,,保留,,',
+  '3,2026/10/02,紹介,丙山 三郎,,男,,,,検討中,,',
   '4,,紹介,丁田 四郎,,男,,,,,,',
   '5,2026/10/01,ハローワーク,甲野　一郎,,男,,,,,,',
   '6,2026/09/01,紹介,戊川 五郎,,男,,,,採用,11/1,'
@@ -88,7 +88,7 @@ const it = plan.items;
 t('1行目: 入れられる・面接日を備考に残し段階は面接・経路を分ける・見学だけの行は interview_on にしない', it[0].ok && it[0].row.stage === 'interview' && /\n面接日: 2026-10-20 見学のみ/.test(it[0].row.note_text) && J(it[0].row.sources) === J(['ハローワーク', '紹介']) && !('interview_on' in it[0].row), it[0]);
 t('1行目: 連絡先とメール・本人希望の文章・取り込みの鍵', it[0].row.email === 'x@example.com' && it[0].row.phones[0].num === '000-0000-0001' && it[0].row.wish_text === '夜勤なし,土日休み' && it[0].row.import_key === '甲野一郎|2026-10-01' && it[0].row.gender === 'M', it[0].row);
 t('2行目: 取り込み済み（have にある）→ 外す', !it[1].ok && it[1].issues.indexOf('取り込み済みです') >= 0, it[1]);
-t('3行目: 知らない採用可否 → 外す', !it[2].ok && it[2].issues.some((x) => /保留/.test(x)), it[2]);
+t('3行目: 知らない採用可否 → 外す', !it[2].ok && it[2].issues.some((x) => /検討中/.test(x)), it[2]);
 t('4行目: 受付日も代わりの日付も無い → 受付日は空のまま入れ、鍵は「氏名|no:元のNo」・受付日の元の書き方を備考に残す（2026-10-27）', it[3].ok && it[3].row.received_on === null && it[3].row.import_key === '丁田四郎|no:4' && /受付日（元の書き方）: 空欄/.test(it[3].row.note_text), it[3]);
 t('5行目: 全角空白違いの同じ氏名・受付日 → 重複で外す', !it[4].ok && it[4].issues.some((x) => /同じ氏名・受付日/.test(x)), it[4]);
 t('6行目: 採用＋就業開始日（年なしは受付日から補う）→ 入職準備・入職予定日', it[5].ok && it[5].row.stage === 'prep' && it[5].row.start_on === '2026-11-01', it[5].row);
@@ -248,9 +248,10 @@ t('職員マスタ: 31日離れていれば見つからない・2人いれば付
   && C.legacyStaffMatch([{ id: 'A', name: '甲野一郎', hireDate: '2019-05-31' }], '甲野 一郎', '2019-05-01').id === 'A');
 const big = C.planImport('氏名,受付日,備考\n甲野 一郎,2019/01/01,' + 'い'.repeat(20001), '2026-10-26', C.DEFAULT_SETTINGS, []);
 t('備考などが2万字を超えたら入れない（理由つき）・理由ごとの件数', !big.items[0].ok && big.items[0].issues.indexOf('備考が2万字を超えています') >= 0 && big.summary.reasons['備考が2万字を超えています'] === 1, big.items[0].issues);
-const unk9 = C.planImport('氏名,受付日,採用可否\n甲野 一郎,2019/01/01,保留\n乙川 花子,2019/01/02,検討中', '2026-10-26', C.DEFAULT_SETTINGS, []);
+const unk9 = C.planImport('氏名,受付日,採用可否\n甲野 一郎,2019/01/01,未定\n乙川 花子,2019/01/02,検討中', '2026-10-26', C.DEFAULT_SETTINGS, []);
 t('入れられない理由は種類ごとに数える（採用可否の語はまとめる）', unk9.summary.reasons['採用可否を読めません'] === 2, unk9.summary.reasons);
-t('受付日も No も無い行 → 入れない（鍵が作れない）', C.normApplicant({ name: 0 }, ['甲野 一郎'], '2026-10-26', C.DEFAULT_SETTINGS).issues.indexOf('受付日も No もありません') >= 0);
+const nk = C.normApplicant({ name: 0, note: 1 }, ['甲野 一郎', '架空の本文'], '2026-10-26', C.DEFAULT_SETTINGS);
+t('受付日も No も無い行 → 入れる（鍵は「氏名|h:行の指紋」・受付日は空・過去の行）', !nk.issues.length && /^甲野一郎\|h:[0-9a-f]{12}$/.test(nk.row.import_key) && nk.row.received_on === null && nk.past === true && nk.row.stage === 'lost', nk.row.import_key);
 
 console.log('\n— 10. 経路の名寄せ —');
 const CS = (x) => C.canonSource(x);
@@ -262,7 +263,7 @@ t('「〜紹介」「〜様」は紹介（媒体の名前が先：ハローワ�
 t('表に無い語はその他', CS('タウン情報') === 'その他' && CS('その他') === 'その他' && CS('') === '');
 const cs = C.canonSources('Indeed＆知人紹介、ハローワーク・indeed\nタウン情報/その他');
 t('「＆」「、」「・」改行「/」で分け、重なりは1つ・元の書き方は「その他」にした語だけ（「その他」そのものは出さない）', J(cs.list) === J(['Indeed', '紹介', 'ハローワーク', 'その他']) && J(cs.others) === J(['タウン情報']), cs);
-t('決まった名前の一覧', J(C.SOURCE_NAMES) === J(['Indeed', 'ジョブメドレー', 'ハローワーク', '求人ボックス', 'タイミー', 'ホームページ', '紹介', '求人誌', 'マイベストジョブ', 'その他']));
+t('決まった名前の一覧（名寄せの結果は必ずこの中）', J(C.SOURCE_NAMES.slice(0, 9)) === J(['Indeed', 'ジョブメドレー', 'ハローワーク', '求人ボックス', 'タイミー', 'ホームページ', '紹介', '求人誌', 'マイベストジョブ']) && C.SOURCE_NAMES.indexOf('直接応募') >= 0 && C.SOURCE_NAMES.indexOf('派遣・紹介会社') >= 0 && C.SOURCE_NAMES[C.SOURCE_NAMES.length - 1] === 'その他');
 
 console.log('\n— 11. 集計（採用率・年ごと）・選考ボード・保管期限 —');
 const AP2 = [
@@ -307,7 +308,7 @@ rv = RV('No,受付日,氏名,フリガナ\n1,2019/01/01,甲野 一郎,' + 'ア'.
 t('カナが80字を超える → 試算で「カナが長すぎます」として外す（80字は入れる）', !rv.items[0].ok && rv.items[0].issues.indexOf('カナが長すぎます') >= 0 && rv.items[1].ok);
 rv = RV('No,受付日,氏名,住所,資格,メール,採用可否\n1,2019/01/01,甲野 一郎,' + 'い'.repeat(201) + ',' + 'う'.repeat(1001) + ',' + 'a'.repeat(200) + '@x.jp,' + '採用'.repeat(50));
 r0 = rv.items[0].row;
-t('住所200・資格1000・メール200を超えたら備考へ全文（行は外さない）', rv.items[0].ok === false && rv.items[0].issues.join() === '採用可否の「採用採用採用採用採用採用採用採用採用採用」を読めません' && r0.address === null && r0.quals_text === null && r0.email === null, rv.items[0].issues);
+t('住所200・資格1000・メール200を超えたら備考へ全文（行は外さない）・採用可否の元の語は80字に切って全文を備考へ', rv.items[0].ok && r0.address === null && r0.quals_text === null && r0.email === null && r0.legacy_result.length === 80 && /住所（元の書き方）: い{201}/.test(r0.note_text) && /採用可否（元の書き方）: (採用){50}/.test(r0.note_text), rv.items[0].issues);
 const LIM = { name: 80, kana: 80, legacy_no: 40, quals_text: 1000, address: 200, email: 200, wish_text: 20000, cond_text: 20000, note_text: 20000, legacy_result: 80, staff_id: 40, interview_note: 200, import_key: 200 };
 const LONGCSV = 'No,受付日,氏名,フリガナ,資格,住所,連絡先,面接日,本人希望,条件,採用可否,就業開始日,備考\n' +
   'n'.repeat(41) + ',2019/01/01,' + '甲'.repeat(80) + ',' + 'ア'.repeat(80) + ',' + 'う'.repeat(1001) + ',' + 'い'.repeat(201) + ',' + 'b'.repeat(201) + '@x.jp,2019/1/5 ' + 'め'.repeat(300) + ',' + 'き'.repeat(20000) + ',' + 'じ'.repeat(20000) + ',採用,2019/2/1,' + 'び'.repeat(1000);
@@ -318,6 +319,35 @@ const dupPlan = C.planImport('No,受付日,氏名,採用可否,就業開始日\n
   [{ id: 'S0101', name: '甲野一郎', hireDate: '2019-02-10' }, { id: 'S0102', name: '乙川花子', hireDate: '2019-05-01' }]);
 t('同じ職員IDが取り込みの中で2行に当たる → どちらにも付けない（入職済みの印だけ）・ほかの行は付ける', !('staff_id' in dupPlan.items[0].row) && !('staff_id' in dupPlan.items[1].row) && dupPlan.items[0].row.legacy_hired === true && dupPlan.items[2].row.staff_id === 'S0102' && dupPlan.items[0].staff.state === 'dup', dupPlan.items.map((x) => x.row.staff_id));
 t('「職員マスタで見つかった」の数も合わせる（見つかった1・見つからなかった2）', dupPlan.summary.staffFound === 1 && dupPlan.summary.staffMissing === 2, dupPlan.summary);
+
+console.log('\n— 13. 本物の面接者ノートの試算から（2026-10-27） —');
+const KEYCSV = '氏名,受付日,面接日,可否連絡日,就業開始日,No,本人希望,備考\n甲野 一郎,,,,,,架空の希望,架空の本文\n甲野 一郎,,,,,,架空の希望,架空の本文\n甲野 一郎,,,,,,架空の希望,別の本文\n乙川 花子,,,,,,,';
+const kp = C.planImport(KEYCSV, '2026-10-27', C.DEFAULT_SETTINGS, [], []);
+const k0 = kp.items[0].row.import_key;
+t('日付も No も無い行: 鍵は「正規化氏名|h:16進12桁」・受付日は空・過去の行として連絡途絶', /^甲野一郎\|h:[0-9a-f]{12}$/.test(k0) && kp.items[0].ok && kp.items[0].row.received_on === null && kp.items[0].row.stage === 'lost', kp.items[0]);
+t('同じ中身の行は同じ鍵（2行目は「同じ内容の行が上にあります」で外す）・中身が違えば別の鍵・氏名だけの行も入る', !kp.items[1].ok && kp.items[1].issues.join() === '同じ内容の行が上にあります' && kp.items[1].row.import_key === k0 && kp.items[2].ok && kp.items[2].row.import_key !== k0 && kp.items[3].ok, kp.items.map((x) => [x.row.import_key, x.issues]));
+t('行の指紋は決まった計算（取り込む日・回数で変わらない）・セルの前後の空白と全角半角に左右されない', C.planImport(KEYCSV, '2027-05-01', C.DEFAULT_SETTINGS, [], []).items[0].row.import_key === k0 && C.rowHash(['ａ ', 'b']) === C.rowHash(['a', 'b']) && C.rowHash(['a', 'b']) !== C.rowHash(['ab', '']) && /^[0-9a-f]{12}$/.test(C.rowHash([])));
+const nk2 = C.normApplicant({ name: 0, interview: 1 }, ['丙山 三郎', '3/5'], '2026-10-27', C.DEFAULT_SETTINGS).row;
+t('年の無い日付から受付日を補い No も無い行も、鍵は行の指紋（取り込む日で変わらない）', /^丙山三郎\|h:[0-9a-f]{12}$/.test(nk2.import_key) && nk2.import_key === C.normApplicant({ name: 0, interview: 1 }, ['丙山 三郎', '3/5'], '2027-04-01', C.DEFAULT_SETTINGS).row.import_key, nk2.import_key);
+const CR = C.classifyResult;
+t('採用可否の揺れ → 辞退（本人断り(理由…)・辞退の連絡あり・辞退の入電あり・採用するも辞退・採用→本人より一旦保留・離脱）',
+  ['本人断り(他で決まった)', '本人断り（架空の理由）', '辞退の連絡あり', '辞退の入電あり', '採用するも辞退', '採用→本人より一旦保留', '離脱'].every((x) => CR(x) === 'declined'));
+t('採用可否の揺れ → 不採用（不採用(郵送)・否）・採用（可）・保留', CR('不採用(郵送)') === 'rejected' && CR('不採用（郵送）') === 'rejected' && CR('否') === 'rejected' && CR('可') === 'hired' && CR('採用') === 'hired' && CR('保留') === 'hold' && CR('検討中') === '' && CR('') === '');
+const DP = (r) => C.deriveStage({ result: r }, '2026-10-27', 90, true), DN = (r, o) => C.deriveStage(Object.assign({ result: r, received: '2026-10-20' }, o || {}), '2026-10-27', 90, false);
+t('過去の行: 可 → 入職完了（取り込み元で入職済み）・保留 → 連絡途絶・辞退の揺れ → 辞退・不採用(郵送) → 不採用', DP('可').stage === 'hired' && DP('可').legacy === true && DP('保留').stage === 'lost' && DP('辞退の入電あり').stage === 'declined' && DP('不採用(郵送)').stage === 'rejected' && DP('採用→本人より一旦保留').stage === 'declined');
+t('新しい行: 保留 → 面接・可＋就業開始日 → 入職準備・可だけ → 内定・採用するも辞退 → 辞退', DN('保留').stage === 'interview' && DN('可', { startOn: '2026-11-01' }).stage === 'prep' && DN('可').stage === 'offer' && DN('採用するも辞退').stage === 'declined');
+const lr = C.planImport('氏名,受付日,採用可否\n甲野 一郎,2019/01/01,本人断り(架空の理由)\n乙川 花子,2019/01/02,否', '2026-10-27', C.DEFAULT_SETTINGS, [], []);
+t('元の語は legacy_result と備考に残す（入職完了でない行も）', lr.items[0].row.legacy_result === '本人断り(架空の理由)' && /採用可否（元の書き方）: 本人断り\(架空の理由\)/.test(lr.items[0].row.note_text) && lr.items[0].row.stage === 'declined' && lr.items[1].row.legacy_result === '否' && lr.items[1].row.stage === 'rejected');
+t('経路の打ち間違い（indeel・ジョブメソレー）', CS('indeel') === 'Indeed' && CS('Indeel') === 'Indeed' && CS('ジョブメソレー') === 'ジョブメドレー');
+t('経由なし・(経由なし)・直接・直電・→直接雇用 → 直接応募', ['経由なし', '(経由なし)', '（経由なし）', '直接', '直電', '→直接雇用'].every((x) => CS(x) === '直接応募'), ['経由なし', '(経由なし)', '直接', '直電', '→直接雇用'].map(CS));
+t('知人・元職員・ケアマネ・様・さん・教会を含む語、漢字1〜4字だけの語（名字）→ 紹介', ['知人', '元職員の紹介', 'ケアマネ', 'Ａ様', 'Ａさん', '架空教会', '甲', '甲野', '甲乙丙丁'].every((x) => CS(x) === '紹介') && CS('甲乙丙丁戊') === 'その他', ['知人', 'ケアマネ', 'Ａさん', '甲', '甲乙丙丁戊'].map(CS));
+t('派遣・担当を含む語・人材会社 → 派遣・紹介会社', ['派遣', '派遣会社', '架空担当', 'セントメディア', '日研メディカルケア', 'ミラクス', '人材紹介会社'].every((x) => CS(x) === '派遣・紹介会社'), ['派遣', '架空担当', 'ミラクス', '人材紹介会社'].map(CS));
+t('媒体の名前はその名前のまま（括弧の注記を外す）', CS('求人案内') === '求人案内' && CS('求人案件') === '求人案内' && CS('タウンワーク') === 'タウンワーク' && CS('マッハバイト') === 'マッハバイト' && CS('みんジョブ') === 'みんジョブ'
+  && CS('コメディカル.com') === 'コメディカル.com' && CS('介護ジョブ') === '介護ジョブ' && CS('介護求人ネット') === '介護求人ネット' && CS('架空県介護求人ナビ') === '介護求人ナビ' && CS('あつまるHD') === 'あつまるHD'
+  && CS('介護あるある') === '介護あるある' && CS('すぱいす') === 'すぱいす' && CS('タウンワーク(経由なし)') === 'タウンワーク' && CS('Indeed（経由なし）') === 'Indeed');
+t('「ネット」だけはその他（元の書き方に出す）・表に無い語もその他', CS('ネット') === 'その他' && J(C.canonSources('ネット').others) === J(['ネット']) && CS('架空の媒体ABC') === 'その他');
+const ALLSRC = ['indeel', 'ジョブメソレー', '経由なし', '知人', 'Ａ様', '派遣', 'ミラクス', '求人案件', 'タウンワーク', 'コメディカル.com', 'ネット', '甲野', '架空の媒体ABC', 'ハローワーク紹介'];
+t('名寄せの結果は必ず決まった名前の一覧の中', ALLSRC.every((x) => C.SOURCE_NAMES.indexOf(CS(x)) >= 0), ALLSRC.map(CS));
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);
