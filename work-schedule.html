@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ZHxD5VV9ULOfYzglB2y0ElWC3PWC7LjDq2RXDw1HEfk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-HTS4xysWuOd+2PJW8mbxH+3hKPH8uNXYu3cTHglUfR4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -89,6 +89,23 @@ body {
 .badge.mute { background: var(--g2); color: var(--g8); }     /* 同期状態バッジ「同期なし」「確認中」 */
 .badge.off { display: none; }
 .save-state { font-size: 0.6875rem; opacity: .85; white-space: nowrap; }
+/* 退避した控えから戻す（2026-10-27 代表者承認 C）。見出しの中＝印刷では .hdr ごと隠れる。押しやすさは高さ44px */
+#btnConflictRestore { min-height: 44px; white-space: nowrap; font-weight: 700; background: #fff3e0; color: #7a3a00; border-color: #ffb74d; }
+#btnConflictRestore[hidden] { display: none; }
+/* 送れていない変更の帯（2026-10-27 代表者承認 D）。見出しのすぐ下に出す。印刷（盤面の A3・24時間配置表）には出さない */
+.unsent-bar {
+  flex-shrink: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 6px 12px; background: #b71c1c; color: #fff; font-size: 0.9375rem; font-weight: 700; z-index: 99;
+}
+.unsent-bar[hidden] { display: none; }
+.unsent-bar-msg { flex: 1 1 260px; }
+.unsent-bar-btn[hidden] { display: none; }
+.unsent-bar-btn {
+  min-height: 44px; padding: 0 16px; border-radius: 8px; border: 2px solid #fff; background: #fff; color: #b71c1c;
+  font-size: 0.9375rem; font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+body.printing .unsent-bar { display: none !important; }
+@media print { .unsent-bar { display: none !important; } }
 
 /* ===== 未配置トレイ ===== */
 .tray {
@@ -783,11 +800,21 @@ body.su-print-staff24 #rp-print, body.su-print-staff24range #rp-print { display:
   <button class="badge ng off" id="badgeOoh" title="担当の職員の勤務時間の外にある支援（赤い札）。誰かの勤務時間へ動かしてください。クリックで一覧">時間外 0</button>
   <button class="hdr-btn" id="btnUndo" disabled aria-label="元に戻す" title="元に戻す (Ctrl/Cmd+Z)">↩</button>
   <button class="hdr-btn" id="btnRedo" disabled aria-label="やり直す" title="やり直す (Ctrl/Cmd+Shift+Z)">↪</button>
+  <!-- 退避した控えから戻す（2026-10-27 代表者承認 C）。表示中の日にこの端末の控え（wsbase_conflict_）がある時だけ出す。
+       現場の端末・案を表示中は出さない。出し入れは app.js の paintConflictRestore_。見出しの中なので印刷には出ない -->
+  <button class="hdr-btn" id="btnConflictRestore" title="この端末に退避した控えの盤面に戻します（確かめてから入れ替え、ほかの端末へ送ります）" hidden>↺ 控えから戻す</button>
   <!-- 同期状態（常時表示・2026-09-23）。#saveState は保存のたびに上書きされる一時表示のため、
        再読み込み前の「✓ 同期済み」確認はこちらで行う。状態・文言は app.js の syncBadgeState_ が決める。 -->
   <button class="badge mute" id="badgeSync" aria-label="⟳ 確認中" title="この起動ではまだ同期先と通信できていません">⟳ 確認中</button>
   <button class="hdr-btn savebtn" id="btnSave" data-label="💾 保存" title="今すぐ保存＋クラウド同期 (Ctrl/Cmd+S)">💾 保存</button>
   <span class="save-state" id="saveState"></span>
+</div>
+
+<!-- 送れていない変更の帯（2026-10-27 代表者承認 D）。未送信の印が5分を超えて残った日がある間だけ出す。送れたら消える。
+     出し入れと文言は app.js の paintUnsentBar_。印刷には出さない（styles.css） -->
+<div class="unsent-bar" id="unsentBar" role="alert" hidden>
+  <span class="unsent-bar-msg" id="unsentBarMsg"></span>
+  <button class="unsent-bar-btn" id="unsentBarSend">今すぐ送信する</button>
 </div>
 
 <div class="tray" id="tray">
@@ -7872,6 +7899,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         mR.fromAlt = true;
         if (typeof action.shiftStamp === 'string') mR.shiftStamp = action.shiftStamp;
       }
+      /* 退避した控えから戻した日（2026-10-27）: 勤務表の反映の印は控えのもの。控えに無ければ外す（盤面の職員は控えの職員＝反映済みに見せない） */
+      if (action.restore) {
+        if (typeof action.shiftStamp === 'string') mR.shiftStamp = action.shiftStamp;
+        else delete mR.shiftStamp;
+      }
       return { meta: mR, staff: action.staff, columns: action.columns, tasks: action.tasks };
     }
     if (type === 'MARK_ABSENT') {
@@ -13315,6 +13347,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     B.markHeadAlerts($('board'), day, alerts.noBreak);
 
     try { paintAltBadge_(); } catch (eAb) {}   /* 表示中の案（2026-10-20） */
+    try { paintConflictRestore_(); } catch (eCr) { wsNote_('控えから戻すの表示', eCr); }   /* 退避した控えから戻す入口（2026-10-27） */
     paintShiftChgBadge_();   /* ロック中のシフト変化バッジ（日付切替・再描画でも消えないよう毎回塗り直す） */
     paintWeeklyChgBadge_();   /* 週間計画の未反映（日付が変われば 0 として消える・2026-10-16） */
     var bu = $('badgeUn'), bb = $('badgeBr');
@@ -15516,7 +15549,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
               }
             }
           } else {
-            try { adoptServerDay_(date, g.data, g.rev || 0, false); ok++; } catch (eA) { ng++; }
+            try { adoptServerDay_(date, g.data, g.rev || 0, false, false, g.updatedAt); ok++; } catch (eA) { ng++; }
           }
         }
         } finally { step(); }
@@ -16128,6 +16161,84 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function syncBadgeTick_() {
     if (document.hidden) return;
     updateSyncBadge_();
+    /* typeof＝この関数だけを切り出して試す試験（sync-badge.test.js W7）でも落ちない */
+    if (typeof paintUnsentBar_ === 'function') { try { paintUnsentBar_(); } catch (eU) { wsNote_('未送信の帯', eU); } }
+  }
+  /* ═══ 送れていない変更の帯（#unsentBar・2026-10-27 代表者承認 D）═══════════════════
+     未送信の印（ws_dirty_v1）が付いてから UNSENT_BAR_MS を超えても送れていない日があれば、画面の上に帯を出す。送れたら消える。
+     見直しは同期状態バッジの定期更新（SYNC_BADGE_REFRESH_MS）と同じ契機。印刷には出さない（styles.css）。現場の端末でも出す。
+     印の時刻は人が編集するたびに今へ進む（noteHumanEdit_）ため、この起動で最初に印を見た時刻（メモリだけ）とのうち古い方から数える
+     ＝回線が切れたまま編集を続けても帯が出る。取り直し待ちの日は送らない日なので数えない（バッジに出る） */
+  var UNSENT_BAR_MS = 5 * 60 * 1000;
+  var unsentSeen_ = {};   /* date -> この起動で最初に未送信の印を見た時刻（端末に保存しない） */
+  /* 入力 days … ws_dirty_v1 の days（date -> 印を付けた時刻・古い印は 1）、seen … 上の unsentSeen_、skip … 数えない日 → 5分を超えた日（昇順） */
+  function unsentLateDays_(days, seen, now, ms, skip) {
+    var out = [], k, v, at;
+    for (k in (days || {})) {
+      if (!Object.prototype.hasOwnProperty.call(days, k) || !days[k]) continue;
+      if (skip && skip[k]) continue;
+      v = days[k];
+      at = (typeof v === 'number' && v >= 1e12) ? v : 0;   /* 付けた時刻が分からない古い印は「ずっと前」 */
+      if (seen && seen[k] && seen[k] < at) at = seen[k];
+      if (now - at > ms) out.push(k);
+    }
+    return out.sort();
+  }
+  function unsentBarText_(dates, reason) {
+    var md = function (d) { var p = String(d).split('-'); return p.length === 3 ? (Number(p[1]) + '/' + Number(p[2])) : String(d); };
+    var list = dates.slice(0, 3).map(md).join('・') + (dates.length > 3 ? ' ほか' + (dates.length - 3) + '日' : '');
+    return 'この端末の変更がまだ送れていません（' + list + '）。' + (reason || 'インターネットのつながりを確かめてください。');
+  }
+  /* 送れていない理由で言い分ける（2026-10-27 反証レビュー指摘）。理由は送信の記録（notePush_ の res・err）と、ログイン・権限の止め（authBlock_）から決める。
+   * 人が直すまで送らない日（ログイン・古い画面・保留）は［今すぐ送信する］を出さない（send:false）。理由が分からない時は回線の案内（send:true）。
+   * 入力 dates … 5分を超えた日、logs … 送信の記録（date -> {res, err}）、auth … authBlock_ → { text, send } */
+  var UNSENT_REASONS_ = [
+    { k: 'login', t: 'ログインが切れています。ログインし直してください。' },
+    { k: 'old', t: '画面が古いため送れません。読み込み直してください。' },
+    { k: 'staff0', t: '職員名が0人のため、送らずに止めています。この日を開き直すと、シフトから職員が戻ります。' },
+    { k: 'locked', t: 'ほかの端末でロックされた日のため、送らずに止めています。この日を開き直して確定版を確かめてください。' },
+    { k: 'refetch', t: 'クラウドから取り直す設定のため、この端末からは送りません。' },
+    { k: 'net', t: 'インターネットのつながりを確かめてください。' }
+  ];
+  function unsentReasonKind_(r, auth) {
+    if (auth === 'login' || auth === 'forbidden') return 'login';
+    if (!r || r.res !== 'blocked') return 'net';
+    if (r.err === 'ログインが必要' || r.err === '保存の権限なし') return 'login';
+    if (r.err === '古い版の書き込みを断られた') return 'old';
+    if (r.err === '職員名が0人') return 'staff0';
+    if (r.err === 'ロック中の日') return 'locked';
+    if (r.err === '取り直し待ち') return 'refetch';
+    return 'net';
+  }
+  function unsentBarPlan_(dates, logs, auth) {
+    var by = {}, i, k, parts = [];
+    for (i = 0; i < dates.length; i++) {
+      k = unsentReasonKind_(logs ? logs[dates[i]] : null, auth);
+      (by[k] = by[k] || []).push(dates[i]);
+    }
+    for (i = 0; i < UNSENT_REASONS_.length; i++) {
+      k = UNSENT_REASONS_[i].k;
+      if (by[k]) parts.push(unsentBarText_(by[k], UNSENT_REASONS_[i].t));
+    }
+    return { text: parts.join(' '), send: !!by.net };
+  }
+  function paintUnsentBar_() {
+    var bar = $('unsentBar'), msg = $('unsentBarMsg'), btn = $('unsentBarSend');
+    if (!bar || !msg) return;
+    var late = [];
+    if (syncOn()) {
+      var days = loadDirty_().days || {}, now = Date.now(), k, skip = {}, held = refetchList_();
+      for (k in unsentSeen_) if (Object.prototype.hasOwnProperty.call(unsentSeen_, k) && !days[k]) delete unsentSeen_[k];
+      for (k in days) if (Object.prototype.hasOwnProperty.call(days, k) && days[k] && !unsentSeen_[k]) unsentSeen_[k] = now;
+      for (k = 0; k < held.length; k++) skip[held[k]] = 1;
+      late = unsentLateDays_(days, unsentSeen_, now, UNSENT_BAR_MS, skip);
+    }
+    if (late.length) {
+      var plan = unsentBarPlan_(late, loadPushLog_(), authBlock_);
+      if (msg.textContent !== plan.text) msg.textContent = plan.text;
+      if (btn && btn.hidden !== !plan.send) btn.hidden = !plan.send;
+    }
+    if (bar.hidden !== !late.length) bar.hidden = !late.length;
   }
   /* バッジを押した時: 未送信があれば既存の回収経路(recoverNow_)で送る。連打・重ね掛けはしない
    * （押してから SYNC_BADGE_CLICK_GUARD_MS の間は2回目を起こさない）。回線が明確に切れていれば
@@ -16224,7 +16335,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         /* 既に退避がある日（＝2回目の押下）は上書きしない。保留中も自動調整後の盤面が
          * wsday_ に書かれ続けるため、上書きすると最初に捨てた版＝復旧資産が失われる。 */
         if (rawB_ && localStorage.getItem('wsbase_conflict_' + rows[i].date) === null) {
-          localStorage.setItem('wsbase_conflict_' + rows[i].date, rawB_);
+          /* 戻せる控えの印（2026-10-27）を付ける。読めない時はそのまま写す（印の無い控えは「控えから戻す」に出さない） */
+          var dB_ = (typeof stashTag_ === 'function') ? decodeDay_(rawB_) : null;
+          localStorage.setItem('wsbase_conflict_' + rows[i].date, (dB_ && dB_.meta) ? encodeDay_(stashTag_(dB_, 'discard')) : rawB_);
         }
       } catch (eB0) { wsNote_('破棄前の退避', eB0); }
       markRefetch_(rows[i].date);
@@ -16272,6 +16385,116 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     });
   }
 
+  /* ═══ 退避した控えから戻す（#btnConflictRestore・2026-10-27 代表者承認 C）═══════════════
+     統合せずに最新の盤面を採った時などに、この端末の盤面は控え（wsbase_conflict_<日付>）へ退避している。表示中の日に控えがあれば
+     「控えから戻す」を出し、確かめてから控えの盤面を人の操作として入れる（元に戻すで戻せる）。入れた後は未送信になり、ふつうに送る。
+     控えは戻した後も消さない（次の退避で上書きされるまで残る）。現場の端末・控えの案を表示中は出さない。今の盤面と同じなら出さない */
+  /* 人の変更を捨てた退避だけを「戻せる控え」にする（2026-10-27 反証レビュー指摘）。控えの meta に理由（stashWhy）と時刻（stashAt）を入れる。
+   * 入口に出すのは STASH_RESTORABLE_ の理由だけ: 古い未送信（stale）・ロックで断られた／ロックの受信（lockrecv）・統合の重なりの止め（overlap）・
+   * 取り直しの破棄（discard）。職員名0人の診断用の退避と、統合ができた時の統合前の控え（土台なし）は印を付けない＝出さない。
+   * 元の盤面は書き換えない（写しに印を付ける） */
+  var STASH_RESTORABLE_ = { stale: 1, lockrecv: 1, overlap: 1, discard: 1 };
+  function stashTag_(d, why) {
+    var o = {}, k;
+    for (k in d) if (Object.prototype.hasOwnProperty.call(d, k)) o[k] = d[k];
+    o.meta = {};
+    for (k in (d.meta || {})) if (Object.prototype.hasOwnProperty.call(d.meta, k)) o.meta[k] = d.meta[k];
+    o.meta.stashWhy = why;
+    o.meta.stashAt = new Date().toISOString();
+    return o;
+  }
+  /* 戻せる控え（印つき）が既にあるか（2026-10-27）。印の無い退避（職員名0人の診断用・土台なしの統合前）は、戻せる控えを上書きしない */
+  function hasRestorableStash_(date) {
+    try {
+      var d = decodeDay_(localStorage.getItem('wsbase_conflict_' + date));
+      var why = (d && d.meta && typeof d.meta.stashWhy === 'string') ? d.meta.stashWhy : '';
+      return !!(why && Object.prototype.hasOwnProperty.call(STASH_RESTORABLE_, why));
+    } catch (e) { wsNote_('戻せる控えの確かめ', e); return true; }   /* 確かめられない時は上書きしない側 */
+  }
+  var conflictCache_ = { raw: null, day: null, sig: '' };
+  function conflictStashFor_(date) {
+    var raw = null;
+    try { raw = localStorage.getItem('wsbase_conflict_' + date); } catch (e) { wsNote_('控えの読み込み', e); return null; }
+    if (raw === null || raw === '') return null;
+    if (conflictCache_.raw !== raw) {
+      var d = decodeDay_(raw);
+      conflictCache_ = { raw: raw, day: (d && d.staff && d.tasks && d.columns) ? d : null, sig: '' };
+      if (conflictCache_.day) { conflictCache_.day.meta = conflictCache_.day.meta || {}; conflictCache_.sig = daySig(conflictCache_.day); }
+    }
+    if (!conflictCache_.day) return null;
+    var why = String(conflictCache_.day.meta.stashWhy || '');
+    return { day: conflictCache_.day, sig: conflictCache_.sig, why: why, ok: !!(why && Object.prototype.hasOwnProperty.call(STASH_RESTORABLE_, why)) };
+  }
+  /* 入口を出すか（純関数）。o = { has, ok（戻せる理由の印がある）, field, altId, same } */
+  function conflictRestoreOffer_(o) {
+    return !!(o && o.has && o.ok && !o.field && !o.altId && !o.same);
+  }
+  /* 確認の窓に出す数（純関数・氏名は数えない）: 札の数・列に置いた札の数・ロックの有無・職員の数（名前の入った列）・退避した時刻 */
+  function conflictStashSummary_(d) {
+    var ts = (d && d.tasks) || [], ss = (d && d.staff) || [], placed = 0, staff = 0, i;
+    for (i = 0; i < ts.length; i++) if (ts[i] && ts[i].staffId !== null && ts[i].staffId !== undefined && ts[i].staffId !== '') placed++;
+    for (i = 0; i < ss.length; i++) if (ss[i] && typeof ss[i].name === 'string' && ss[i].name.replace(/\s/g, '')) staff++;
+    var at = Date.parse((d && d.meta && typeof d.meta.stashAt === 'string') ? d.meta.stashAt : ''), atTxt = '';
+    if (isFinite(at)) { var t = new Date(at); atTxt = (t.getMonth() + 1) + '/' + t.getDate() + ' ' + pad2(t.getHours()) + ':' + pad2(t.getMinutes()); }
+    return { cards: ts.length, placed: placed, staff: staff, locked: !!(d && d.meta && d.meta.locked === true), at: atTxt };
+  }
+  function paintConflictRestore_() {
+    var b = $('btnConflictRestore');
+    if (!b) return;
+    var field = wsIsFieldDevice_(), st = null;
+    if (!field && !ui.altId) st = conflictStashFor_(ui.currentDate);
+    var on = conflictRestoreOffer_({ has: !!st, ok: !!(st && st.ok), field: field, altId: ui.altId, same: !!(st && st.sig === daySig(store.get())) });
+    if (b.hidden !== !on) b.hidden = !on;
+  }
+  function restoreConflictStash_() {
+    var date = ui.currentDate;
+    if (wsIsFieldDevice_()) { toast(FIELD_BOARD_MSG, true); return; }
+    if (ui.altId) { toast('案を表示している間は控えから戻せません（本番に戻してから押してください）', true); return; }
+    var st = conflictStashFor_(date);
+    if (!st || !st.ok) { toast('この日の戻せる控えが見つかりません', true); paintConflictRestore_(); return; }
+    var bk = JSON.parse(JSON.stringify(st.day)), sm = conflictStashSummary_(bk), cur = store.get();
+    var curLocked = !!(cur.meta && cur.meta.locked === true);
+    var lockTxt = sm.locked ? (curLocked ? 'あり' : 'あり（戻すとこの日をロックします）') : (curLocked ? 'なし（今のロックはそのままです）' : 'なし');
+    var msg = (curLocked && !sm.locked ? '⚠ ロックした確定版を、ロック前の編集で置き換えます。\n\n' : '') +
+      dateLabel(date) + ' の、この端末に退避した控えの盤面に戻しますか？\n\n' +
+      '控えの盤面' + (sm.at ? '（' + sm.at + ' に退避）' : '') + ': 職員 ' + sm.staff + '人・札 ' + sm.cards + '件（うち職員の列に置いた札 ' + sm.placed + '件）・ロック ' + lockTxt + '\n\n' +
+      '退避した後にほかの端末で直した配置は、控えの配置に置き換わります。実施・チェック・札のコメントは、控えの同じ札へ移します。\n' +
+      '今の盤面は控えの盤面に入れ替わり、ほかの端末へ送ります。\n入れ替えた後でも「元に戻す」（↩）で今の盤面に戻せます' +
+      (sm.locked && !curLocked ? '（ロックは残ります。外す時は🔒ロックのチェックを外してください）' : '') + '。控えはこの端末に残ります。';
+    if (!window.confirm(msg)) return;
+    if (ui.currentDate !== date || ui.altId) return;
+    /* 退避の後にほかの端末で付いた実施・チェック・札のコメントを、控えの同じ札へ移す（案を本番にする時と同じ carryMarks_） */
+    var now_ = store.get(), cInfo = {};
+    var lost = carryMarks_(now_.tasks || [], bk.tasks || [], cInfo, now_.staff, bk.staff);
+    /* 今の盤面で「本日のみ削除」した支援は、控えにあっても戻さない（案を本番にする時と同じ・2026-10-27 反証レビュー指摘）。
+     * 今の墓標に当たり、今の盤面に同じ予定の札が無いものだけ除く */
+    var skipN = 0, nowRefs = {}, skipSet = {};
+    ((now_.meta && now_.meta.skipRefs) || []).forEach(function (x) { var r = (x && typeof x === 'object') ? x.ref : x; if (r) skipSet[r] = 1; });
+    var refOf_ = function (t) { return (t && t.weeklyRef) ? (t.weeklyRef.evId || (t.residentName + '|' + t.weeklyRef.start)) : null; };
+    (now_.tasks || []).forEach(function (t) { var r = refOf_(t); if (r) nowRefs[r] = 1; });
+    var tasksR = (bk.tasks || []).filter(function (t) { var r = refOf_(t); if (r && skipSet[r] && !nowRefs[r]) { skipN++; return false; } return true; });
+    runManual_(function () {
+      /* ロックは盤面より先に掛ける＝ロックした控えの重なり（確定した実績）を、入れ替えの時の重なりの整理で動かさない（store の enforce_ はロック中の盤面を組み替えない） */
+      if (sm.locked && !curLocked) {
+        store.dispatch({ type: 'SET_META', patch: { locked: true, lockedAt: (bk.meta && bk.meta.lockedAt) || new Date().toISOString() } });
+        delete unlockForceDates_[date];
+        unlockIntentSet_(date, false);   /* ロックし直した＝外す意図は終わり（ロックの切り替えと同じ） */
+      }
+      /* 勤務表の反映の印（shiftStamp）は控えのものにする（盤面の職員は控えの職員）。控えに無ければ外す＝勤務表との違いを見直させる（2026-10-27 反証レビュー指摘） */
+      store.dispatch({ type: 'REPLACE_BOARD', staff: bk.staff, columns: bk.columns, tasks: tasksR, restore: true,
+                       shiftStamp: (bk.meta && typeof bk.meta.shiftStamp === 'string') ? bk.meta.shiftStamp : undefined,
+                       skipRefs: (bk.meta && bk.meta.skipRefs) || [], notes: (bk.meta && bk.meta.notes) || [] });
+    });
+    lastPushed.day = '';
+    try { schedulePushDay(); } catch (eP) { wsNote_('控えから戻す（送信）', eP); }
+    try { flushAll_(); } catch (eF) { wsNote_('控えから戻す（保存）', eF); }
+    var notes_ = [];
+    if (lost) notes_.push('実施・チェック・コメントの付いた札 ' + lost + '件は、控えに同じ札が無く移せませんでした（「元に戻す」で今の盤面に戻せます）');
+    if (cInfo.moved) notes_.push('実施・チェックの付いた札 ' + cInfo.moved + '件は、控えでは担当が違う札へ印を移しました。実施した人を確かめてください');
+    if (skipN) notes_.push('今の盤面で本日のみ削除した支援 ' + skipN + '件は戻しませんでした');
+    toast('控えの盤面に戻しました。ほかの端末へ送ります（「元に戻す」で戻せます）' + (notes_.length ? '（' + notes_.join('。') + '）' : ''), !!(lost || cInfo.moved), notes_.length ? 8000 : 2600);
+    try { paintConflictRestore_(); } catch (eR) { wsNote_('控えから戻す（表示）', eR); }
+  }
   function syncBadgeClick_() {
     /* ログイン・権限で止めている時は、止めを外してもう一度だけ試す（また断られたら同じ表示に戻る） */
     if (clearAuthBlock_(true)) { toast('もう一度送ってみます'); return; }
@@ -16748,7 +16971,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try { base = decodeDay_(localStorage.getItem(baseKey_(date))); } catch (e) { base = null; }
     if (!base || M.countNamedStaff(base.staff) === 0) return false;
     if (!peek) {
-      try { localStorage.setItem('wsbase_conflict_' + date, encodeDay_(day)); } catch (eB) { wsNote_('競合の退避（職員の空上書き）', eB); }   /* 診断用退避 */
+      try { if (!(typeof hasRestorableStash_ === 'function' && hasRestorableStash_(date))) localStorage.setItem('wsbase_conflict_' + date, encodeDay_(day)); } catch (eB) { wsNote_('競合の退避（職員の空上書き）', eB); }   /* 診断用退避（戻せる控えは上書きしない・2026-10-27） */
     }
     return true;
   }
@@ -16899,7 +17122,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     gas({ action: 'get', key: dayKey(date) }, function (j) {
       if (!j || !j.ok) { scheduleRetry_(); return; }
       if (!j.data) { resetDayRevAndPush_(date); return; }   /* サーバーに無い＝rev不整合。ローカルを正として送り直す */
-      adoptServerDay_(date, j.data, j.rev || 0, !quiet);
+      adoptServerDay_(date, j.data, j.rev || 0, !quiet, false, j.updatedAt);
     }, true);
   }
   /* ロック日への上書き拒否(error:'locked')の処理: この端末はロック未受信。ロック中の実績を尊重し、
@@ -16928,7 +17151,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           if ((ui.currentDate === date && !ui.altId)) { schedulePushDay(); } else { scheduleRetry_(); }
           return;
         }
-        adoptServerDay_(date, g0.data, g0.rev || 0, false);
+        adoptServerDay_(date, g0.data, g0.rev || 0, false, false, g0.updatedAt);
         toast('この日(' + date + ')はロックされています。ロック中の変更は保存されません（確定版を表示）', true);
       }, true);
       return;
@@ -16939,7 +17162,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        * 未送信編集を wsbase_conflict_ へ退避してから dirty解除→確定版採用を一貫実行する。先に解除すると
        * 退避条件(isDayDirty_)が偽になり、push先着時だけ編集が退避されず完全消失する非対称が生じる。
        * サーバーが実は未ロックだった場合も dirty維持のまま3-wayマージへ落ち、安全側に倒れる。 */
-      adoptServerDay_(date, g.data, g.rev || 0, false);
+      adoptServerDay_(date, g.data, g.rev || 0, false, false, g.updatedAt);
       toast('この日(' + date + ')はロックされています。ロック中の変更は保存されません（確定版を表示）', true);
     }, true);
   }
@@ -16970,8 +17193,27 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* 古い未送信の判定（2026-10-17）: 印を付けてから STALE_DIRTY_MS を過ぎていて、かつ祖先（最後に同期した版）から
    * サーバーの版が変わっている＝その間にほかの端末が書いた。祖先が無い時は変わったとみなす（どちらが新しいか分からない） */
   var STALE_DIRTY_MS = 2 * 60 * 60 * 1000;
-  function staleDirty_(date, serverDay, ignoreLock) {
-    if (dirtyAge_(date) <= STALE_DIRTY_MS) return false;
+  /* serverRev・localRev（2026-10-27 代表者承認 B）: この端末が最後にそろえた版（手元の盤面の meta.rev＝取り込み・送信の成功の時だけ進む）から
+   * サーバーの版が進んでいなければ、その後にほかの端末は書いていない＝古くても退避しない（祖先が無い時も同じ）。
+   * 土台（wsbase_）の rev は送信の成功の前に控えるため1つ古いことがあり、使わない。手元の版が 0（版を持たない控え）の時は分からないので今までどおり */
+  /* 時刻（2026-10-27 反証レビュー指摘・代表者承認 B の作り直し）: ふつうの取得は「サーバーの版が手元より進んだ時」しか取り込まないため、
+   * 版の比べ合いだけでは本番の経路で働かない（10/31 はサーバーの版が前日にほかの人が書いたもので、手元の版より進んでいた）。
+   * そこで、サーバーの版を書いた時刻（盤面の meta.updatedAt＝書いた端末が保存した時刻）が、この端末の最後の人の編集（未送信の印の時刻＝
+   * noteHumanEdit_ が進める値）より前なら、ほかの端末はこの端末の編集の後に書いていない＝退避せず、ふつうの統合で手元の変更を活かして送る。
+   * 書いた時刻が無い・読めない時、未送信の印の時刻が分からない（古い印）時は、今までどおり退避する（安全側）。
+   * 眠っていた PC の 1日半前の編集（10/24 型）は、ほかの PC がその後に書いているので今までどおり退避する */
+  /* 2026-10-27 2回目の反証レビュー指摘: 時刻はサーバーが書いた時刻（srvAtRaw＝Supabase の updated_at・GAS の updatedAt。取得・競合の応答の updatedAt）を
+   * 盤面の meta.updatedAt（書いた端末の時計・現場の印の保存や裏の送信では進まないことがある）より優先する。現場の印の保存（kv_put_marks）も
+   * サーバーの updated_at を進めるので「ほかの端末の変更」に数わる。PC どうしの時計のずれを見込み、サーバーの版がこの端末の最後の人の編集より
+   * STALE_TIME_MARGIN_MS 以上前に書かれた時だけ退避しない（それ以外は今までどおり退避＝安全側） */
+  var STALE_TIME_MARGIN_MS = 10 * 60 * 1000;
+  function staleDirty_(date, serverDay, ignoreLock, serverRev, localRev, srvAtRaw) {
+    var age = dirtyAge_(date);
+    if (age <= STALE_DIRTY_MS) return false;
+    if (localRev > 0 && serverRev <= localRev) return false;
+    var srvAt = (typeof srvAtRaw === 'string' && srvAtRaw) ? Date.parse(srvAtRaw) : NaN;
+    if (!isFinite(srvAt)) srvAt = Date.parse((serverDay && serverDay.meta && typeof serverDay.meta.updatedAt === 'string') ? serverDay.meta.updatedAt : '');
+    if (age !== Infinity && isFinite(srvAt) && srvAt <= Date.now() - age - STALE_TIME_MARGIN_MS) return false;
     var base = loadBase_(date);
     if (!base || !base.meta) return true;
     /* サーバーの版に外した印を補った時（lockHeal_）は、ロックの印の違いを「ほかの端末の変更」に数えない（2026-10-17・反証レビュー指摘） */
@@ -17011,13 +17253,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var mk = overlapPairKeys_(mView), lk = localDay ? overlapPairKeys_(localDay) : {}, sk = overlapPairKeys_(serverDay), n = 0, k;
     for (k in mk) { if (Object.prototype.hasOwnProperty.call(mk, k) && !lk[k] && !sk[k]) n++; }
     if (!n) return false;
-    try { if (localDay) localStorage.setItem('wsbase_conflict_' + date, encodeDay_(localDay)); } catch (eG) { wsNote_('統合の重なりの退避', eG); }
+    try { if (localDay) localStorage.setItem('wsbase_conflict_' + date, encodeDay_(typeof stashTag_ === 'function' ? stashTag_(localDay, 'overlap') : localDay)); } catch (eG) { wsNote_('統合の重なりの退避', eG); }
     clearDayDirty_(date);
     toast(dateLabel(date) + ' はロックした日です。この端末の変更をほかの端末の変更と合わせると重なりが ' + n + '組できるため、合わせずに最新の盤面にしました（この端末の変更は控えに退避）', true);
     return true;
   }
   /* サーバー版盤面の採用（pull/競合 共通）。未送信編集(dirty)があれば3-wayマージで統合し再送する */
-  function adoptServerDay_(date, serverDay, serverRev, notify) {
+  /* noHeal（2026-10-27 反証レビュー指摘）: 統合の重なりの止めから取り込み直す時に、まだ届いていないロックを「外した」に変えない */
+  /* srvAt（2026-10-27）: 取得・競合の応答のサーバーの時刻（updatedAt）。古い未送信の判定（staleDirty_）だけに使う */
+  function adoptServerDay_(date, serverDay, serverRev, notify, noHeal, srvAt) {
     serverDay.meta = serverDay.meta || {};
     /* ★サーバー版に重複が含まれていたら、採用する版だけを畳む（2026-09-21）。
      * 祖先(saveBase_)は【サーバーが実際に持っていた版】のまま残す。祖先まで畳むと、次の3-wayで
@@ -17043,7 +17287,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
      * 欄が消えるのは不具合の時だけ（一度ロックした日は true と false の間でしか変わらない）。10/13・10/15 に翌週へコピーが欄を消し、
      * 全部の PC がその欄なしを採ったため、10/17 に古い控えのロックが勝つ統合へ入った。現場（印だけを書く）は盤面の印を送らないので直さない */
     var lockHeal_ = false;
-    if (serverDay.meta.locked === undefined && !fieldMarksOnly_(date) &&
+    /* ★まだ届いていないロック（2026-10-27 代表者承認 A）: サーバーにも土台にもロックの欄が無く、手元だけが送っていないロック（true）なら、
+     * それは欄が消えたのではなく、この端末で掛けたロックがまだ一度も届いていない。「外した」に変えずに、下の「端末ロック・サーバー欄なし」の
+     * 統合でロックしたまま送る。10/31: 仕上げてロックした盤面が届かないまま、外した印＋前日の版に置き換わって送られた */
+    var lockUnsent_ = !!(serverDay.meta.locked === undefined && localDay && localDay.meta && localDay.meta.locked === true &&
+        isDayDirty_(date) && !onceLockedMeta_(loadBase_(date)));
+    if (serverDay.meta.locked === undefined && !fieldMarksOnly_(date) && !lockUnsent_ && !noHeal &&
         (onceLockedMeta_(localDay) || onceLockedMeta_(loadBase_(date)))) {
       keepOnceLocked_(serverDay, onceLockedMeta_(localDay) ? localDay : loadBase_(date));
       lockHeal_ = true;
@@ -17051,8 +17300,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* 古い未送信（2026-10-17・本人選択「自動では統合しない」）: この端末の未送信の変更が STALE_DIRTY_MS より前のもので、
      * その後にほかの端末がこの日を変えていたら、統合せずに控え（wsbase_conflict_）へ退避して最新の盤面を採る。
      * 眠っていた PC が1日半前の変更を送り、その間のほかの PC の調整を上書きした（10/25・10/24）ため */
-    if (localDay && !fieldMarksOnly_(date) && isDayDirty_(date) && staleDirty_(date, serverDay, lockHeal_) && daySig(localDay) !== daySig(serverDay)) {   /* 現場の端末は盤面を変えない＝印を移す取り込みに任せる */
-      try { localStorage.setItem('wsbase_conflict_' + date, encodeDay_(localDay)); } catch (eSt) { wsNote_('古い未送信の退避', eSt); }
+    if (localDay && !fieldMarksOnly_(date) && isDayDirty_(date) && staleDirty_(date, serverDay, lockHeal_, serverRev, (localDay.meta && localDay.meta.rev) || 0, srvAt) && daySig(localDay) !== daySig(serverDay)) {   /* 現場の端末は盤面を変えない＝印を移す取り込みに任せる */
+      try { localStorage.setItem('wsbase_conflict_' + date, encodeDay_(typeof stashTag_ === 'function' ? stashTag_(localDay, 'stale') : localDay)); } catch (eSt) { wsNote_('古い未送信の退避', eSt); }
       clearDayDirty_(date);
       toast(dateLabel(date) + ' はこの端末に前の送っていない変更が残っていましたが、その後にほかの端末で変わっていたため、送らずに最新の盤面にしました（変更は控えに退避）', true);
     }
@@ -17091,7 +17340,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       reportWipeGuard_(mergedLk_, date);
       mergedLk_.meta = mergedLk_.meta || {};
       mergedLk_.meta.locked = true;   /* ロック保持端末が正＝解除は明示操作(lockOverride)でのみ行う */
-      if (mergeOverlapGuard_(date, mergedLk_, localDay, serverDay)) { adoptServerDay_(date, serverDay, serverRev, notify); if (lockHeal_) healPushAfter_(date, isCur); return; }
+      /* 統合を捨てて取り込み直す時、まだ届いていないロック（lockUnsent_）は取り込み直しの中でも「外した」に変えない（手元の盤面は控えに退避済み・控えから戻せる） */
+      if (mergeOverlapGuard_(date, mergedLk_, localDay, serverDay)) { adoptServerDay_(date, serverDay, serverRev, notify, lockUnsent_, srvAt); if (lockHeal_) healPushAfter_(date, isCur); return; }
       mergedLk_.meta.date = date;
       mergedLk_.meta.rev = serverRev;
       saveBase_(date, serverDay);     /* 祖先＝サーバーが実際に持っていた版（locked は付け足さない） */
@@ -17113,7 +17363,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (serverDay.meta.locked === true && !(localDay && localDay.meta && localDay.meta.locked) && !unlockStillMine_(date, serverDay)) {
       var hadEdits_ = !!(localDay && (isDayDirty_(date) || isRefetchHeld_(date)) && daySig(localDay) !== daySig(serverDay));
       if (hadEdits_) {
-        try { localStorage.setItem('wsbase_conflict_' + date, encodeDay_(localDay)); } catch (eLk) { wsNote_('競合の退避（取り込み前）', eLk); }
+        try { localStorage.setItem('wsbase_conflict_' + date, encodeDay_(typeof stashTag_ === 'function' ? stashTag_(localDay, 'lockrecv') : localDay)); } catch (eLk) { wsNote_('競合の退避（取り込み前）', eLk); }
       }
       clearDayDirty_(date);   /* 以降 dirty=false ＝ rebase/repairBoard_ を通さずサーバーの凍結版を採用 */
       /* 未送信編集が確定版へ置き換わることを必ず告知する(無告知で消えたように見えるのを防ぐ)。退避先は wsbase_conflict_。 */
@@ -17153,7 +17403,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* 未送信編集あり → 3-wayマージ（祖先欠損時はローカルを退避してunion＝消失させない） */
     var anc = loadBase_(date);
     if (!anc) {
-      try { localStorage.setItem('wsbase_conflict_' + date, encodeDay_(localDay)); } catch (eB) { wsNote_('競合の退避（土台なし）', eB); }
+      try { if (!(typeof hasRestorableStash_ === 'function' && hasRestorableStash_(date))) localStorage.setItem('wsbase_conflict_' + date, encodeDay_(localDay)); } catch (eB) { wsNote_('競合の退避（土台なし）', eB); }   /* 戻せる控えは上書きしない（2026-10-27） */
     }
     var merged, fieldLost_ = 0;
     if (fieldMarksOnly_(date)) {
@@ -17179,7 +17429,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (!unlockStillMine_(date, serverDay)) { if (merged.meta.locked !== true) merged.meta.locked = true; }
       else if (localDay && localDay.meta && localDay.meta.locked !== true) merged.meta.locked = false;   /* 人が外したばかり＝外したまま送り直す */
     }
-    if (!fieldMarksOnly_(date) && mergeOverlapGuard_(date, merged, localDay, serverDay)) { adoptServerDay_(date, serverDay, serverRev, notify); if (lockHeal_) healPushAfter_(date, isCur); return; }
+    if (!fieldMarksOnly_(date) && mergeOverlapGuard_(date, merged, localDay, serverDay)) { adoptServerDay_(date, serverDay, serverRev, notify, false, srvAt); if (lockHeal_) healPushAfter_(date, isCur); return; }
     merged.meta.date = date;
     merged.meta.rev = serverRev;
     saveBase_(date, serverDay);   /* 祖先＝いま取り込んだサーバー版（マージ結果のpush成功で更新） */
@@ -17207,7 +17457,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var day = loadDayData(date);
     if (!day) { clearDayDirty_(date); return; }   /* データ無し＝送るものが無い（容量回収等） */
     day.meta.date = date;
-    if (staffWipeBlocked_(date, day)) return;   /* Fix4: 氏名空ワイプは背景pushでも保留(dirty維持・server保護)。開き直し(Fix3)で自己修復 */
+    /* 送信の結果を記録する（2026-10-27 反証レビュー指摘: 送れていない帯の理由が古い記録のまま残らないように）。typeof＝切り出して試す試験でも落ちない */
+    var noteF_ = function (res, err) { if (typeof notePush_ === 'function') notePush_(date, res, err); };
+    if (staffWipeBlocked_(date, day)) { noteF_('blocked', '職員名が0人'); return; }   /* Fix4: 氏名空ワイプは背景pushでも保留(dirty維持・server保護)。開き直し(Fix3)で自己修復 */
     var reqPutF_ = { action: 'put', key: dayKey(date), rev: day.meta.rev || 0, data: (typeof withAppVer_ === 'function' ? withAppVer_(day) : day) };
     if (unlockForceDates_[date] && !unlockFresh_(date)) delete unlockForceDates_[date];   /* 外してから60分を過ぎた解除は送らない（F） */
     if (unlockForceDates_[date]) reqPutF_.lockOverride = true;   /* 解除putだけロック防波堤を通す(rev/staffwipe保護は維持) */
@@ -17219,6 +17471,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         /* 飛行中(最長15秒)にこの日付が表示中へ切替わっていたら、送信前スナップショットで
          * localStorage/盤面を巻き戻さない（現在の編集を消さない）。表示中の内容は store 側が管理し、
          * rev据置のまま次の pushDayNow が送る（古rev→競合→3-wayマージで安全に収束）。 */
+        noteF_('ok', '');
         if ((ui.currentDate === date && !ui.altId)) { noteSyncSuccess_(); return; }
         day.meta.rev = j.rev;
         lsSetDay_(date, day);
@@ -17228,17 +17481,21 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       } else if (j && j.error === 'oldapp') {
         if (typeof handleOldAppReject_ === 'function') handleOldAppReject_(date);   /* 古い版の画面の書き込みをサーバーが断った（2026-10-17） */
       } else if (j && j.error === 'locked') {
+        noteF_('blocked', 'ロック中の日');
         handleLockedReject_(date);   /* ロック日への非ロック上書き拒否＝確定版を採用(ローカル変更破棄) */
       } else if (j && (j.conflict || j.error === 'staffwipe')) {
+        noteF_('conflict', '');
         /* staffwipe(Fix5拒否)も競合と同様にサーバー版採用へ＝背景日でも氏名消失を自己修復(オフライン誤判定/無限リトライを回避) */
         gas({ action: 'get', key: dayKey(date) }, function (g) {
           if (!g || !g.ok) { scheduleRetry_(); return; }
           if (!g.data) { resetDayRevAndPush_(date); return; }   /* サーバーに無い＝rev不整合を修復 */
-          adoptServerDay_(date, g.data, g.rev || 0, false);
+          adoptServerDay_(date, g.data, g.rev || 0, false, false, g.updatedAt);
         }, true);
       } else if (j && isAuthBlockErr_(j.error)) {
         noteAuthBlock_(j.error);   /* ログイン・権限で断られた＝再試行しない（2026-10-11） */
+        noteF_('blocked', j.error === 'login' ? 'ログインが必要' : '保存の権限なし');
       } else {
+        noteF_('fail', typeof failReason_ === 'function' ? failReason_(j && j.error) : '');
         scheduleRetry_();
         if (!j) { try { verifyPutLanded_(date, daySig(day)); } catch (eV) {} }   /* B: 時間切れでも届いていたか確認 */
       }
@@ -17270,7 +17527,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var curRev = (ui.currentDate === date && !ui.altId) ? (store.get().meta.rev || 0)
         : (function () { var d = loadDayData(date); return d && d.meta ? (d.meta.rev || 0) : 0; })();
       if (j.data && (j.rev || 0) > curRev) {
-        adoptServerDay_(date, j.data, j.rev || 0, notify);
+        adoptServerDay_(date, j.data, j.rev || 0, notify, false, j.updatedAt);
         if (report) $('stResult').textContent = '取得完了（rev ' + j.rev + '）';
       } else if (!j.data) {
         if ((ui.currentDate === date && !ui.altId) && store.get().tasks.length) { lastPushed.day = ''; schedulePushDay(); }
@@ -19526,6 +19783,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if ($('btnSave')) $('btnSave').addEventListener('click', function () { manualSave(); });
     /* 同期状態バッジ: 未送信があれば既存の回収経路(recoverNow_)で今すぐ送る。それ以外は表示の更新だけ。 */
     if ($('badgeSync')) $('badgeSync').addEventListener('click', syncBadgeClick_);
+    if ($('btnConflictRestore')) $('btnConflictRestore').addEventListener('click', restoreConflictStash_);   /* 控えから戻す（2026-10-27） */
+    if ($('unsentBarSend')) $('unsentBarSend').addEventListener('click', syncBadgeClick_);   /* 送れていない変更の帯の［今すぐ送信する］＝同期状態バッジを押した時と同じ */
     $('badgeUn').addEventListener('click', openAlerts);
     $('badgeBr').addEventListener('click', openAlerts);
     if ($('badgeOv')) $('badgeOv').addEventListener('click', openAlerts);
@@ -20672,9 +20931,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261027154400';
-  var WS_APP_VER = 2026101706;   /* 2026-10-23 トレイへ入った理由の印（parkedByHand・absentMoved・routineTray）を知らない前の版の画面が、手で戻した札・休みで移した札を印なしで残し、
-                                  * 新しい版がそれを列へ戻してしまわないよう上げた
+  var WS_BUILD = '20261027181103';
+  var WS_APP_VER = 2026102701;   /* 2026-10-27 まだ届いていないロックを「外した」に変えて送り、版の進んでいない古い未送信を退避して捨てる前の版の画面が、仕上げたロックの盤面を前の版で上書きしないよう上げた（代表者承認 A・B）
+                                  * （2026101706: 2026-10-23 トレイへ入った理由の印（parkedByHand・absentMoved・routineTray）を知らない前の版の画面が、手で戻した札・休みで移した札を印なしで残し、
+                                  * 新しい版がそれを列へ戻してしまわないよう上げた）
                                   * （2026101705: 2026-10-22 名前つきの自由枠の印（oohHold）を支援だけの印と思う前の版（10/21・10/22 朝）の画面が、どの操作でも印を外して
                                   * 空けた所を施設業務で埋めて送らないよう上げた（3ebdccc。反証レビュー2回の指摘: 印が恒久的に消え、本人指摘の症状が戻る）
                                   * （2026101704: 2026-10-21 元の場所の印（oohHold）を知らない前の版の画面が、印を残したまま送ったり空けた所を埋めて送らないよう上げた）
@@ -20848,6 +21108,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* 接続先が本当に同期GASかを1回だけ確認。全端末の一斉再読み込みで同じ瞬間に集中しないよう3〜10秒ばらす（2026-09-25） */
     setTimeout(function () { try { checkEndpointIdentity_(); } catch (eCe) {} }, NP.startJitterMs(3000, 10000));
     try { updateSyncBadge_(); } catch (eSb) {}
+    try { paintUnsentBar_(); } catch (eUb) { wsNote_('未送信の帯', eUb); }
     /* 同期状態バッジの定期更新（通信はしない・オフライン表示の時間条件などを拾う）。boot二重呼び対策に一度だけ束縛。
      * 裏のタブでは飛ばし、見えた時に1回更新する（2026-10-24・アプリ間連携の見直し 段1） */
     if (!syncBadgeBound_) {
