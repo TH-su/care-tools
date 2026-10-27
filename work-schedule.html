@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-wE2l5F8iv7vQL/cJGAcclnAg5n97pj3z4PgIKAYY+8I='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-m2oQVMKqF2v0O1yp8NkMEddwSStlUBvvIrNkz4i5fFk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -2909,10 +2909,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         var c = {}, kk, pp = patches[i];
         for (kk in t) if (Object.prototype.hasOwnProperty.call(t, kk)) c[kk] = t[kk];
         for (kk in pp) if (Object.prototype.hasOwnProperty.call(pp, kk)) c[kk] = pp[kk];  /* パッチ適用: staffId＋手動カスタマイズ移譲（start/end は残す札を維持） */
-        if (pp.staffId !== undefined && pp.staffId !== null) {   /* 配置済みになった札にトレイ印/退避印を残さない */
-          delete c.parked; delete c.bumped;
-          delete c.parkedByHand; delete c.absentMoved; delete c.routineTray;   /* トレイにいた理由の印も外す（patchTask・自動配置・並びと同じ扱い・2026-10-27） */
-        }
+        if (pp.staffId !== undefined && pp.staffId !== null) { delete c.parked; delete c.bumped; }   /* 配置済みになった札にトレイ印/退避印を残さない */
         out.push(c);
       } else out.push(t);
     }
@@ -13061,10 +13058,6 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
            * 通ると同じ盤面なのに署名が割れて余分な送信が1往復出る。 */
           if (!kept_.parked && orig_.parked) { upd_.parked = undefined; hasUpd_ = true; }
           if (!kept_.bumped && orig_.bumped) { upd_.bumped = undefined; hasUpd_ = true; }
-          /* トレイにいた理由の印（手で戻した・休み・並びごと）の解除も同じく反映（2026-10-27） */
-          if (!kept_.parkedByHand && orig_.parkedByHand) { upd_.parkedByHand = undefined; hasUpd_ = true; }
-          if (!kept_.absentMoved && orig_.absentMoved) { upd_.absentMoved = undefined; hasUpd_ = true; }
-          if (!kept_.routineTray && orig_.routineTray) { upd_.routineTray = undefined; hasUpd_ = true; }
           if (hasUpd_) store.dispatch({ type: 'UPDATE_TASK', id: orig_.id, patch: upd_ });
         }
       }
@@ -16643,6 +16636,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *    記録（wsNote_）は種類ごとに一度だけ
    * 戻り値: 受け持った＝true（cb はこちらで必ず1回だけ呼ぶ）／受け持たない＝false */
   var shiftReadNoted_ = {};
+  /* 勤務表の版の確かめ（head）が失敗し続けているかの見張り（2026-10-27・本人指示「エラーの洗い出しと改善」）。
+   * head は15秒ごとに打つ見張りで、失敗しても次の確かめ（30→60→120秒）で自然に戻る。PC の目覚めた直後などの
+   * 一度だけの失敗を記録すると、記録がそのまま不具合報告になり（su-report.js の自動報告）、直す症状のない報告が届いていた。
+   * そこで最初の失敗の時刻を控え、その25秒後よりあとにまだ失敗している時だけ記録する。
+   * 回数でなく時刻で見るのは、見張りと勤務表の取り直し（headRev_）が同じ数秒の通信断に同時に当たっても1つと数えるため。
+   * 前の失敗から3分より空いた失敗（間に確かめが無かった＝タブが裏・PC が眠っていた）と、時計が戻った時は新しい1回目にする
+   * （続く失敗なら最大でおよそ155秒おき＝間隔120秒・刻み15秒・打ち切り20秒で確かめるので、3分の内に次が来る）。
+   * 版・勤務表が読めた時と、スイッチ切と分かった時に控えを消す。pull の失敗・手順違いの記録は今までどおり1回目から残す。 */
+  var shiftHeadFailAt_ = 0;
+  var shiftHeadFailLast_ = 0;
   var SHIFT_READ_TIMEOUT_MS = 20000;
   /* 勤務表を Supabase から読めず Google の写しへ戻した間の知らせ（2026-10-17・改善プロンプト第2弾の8）。
    * スイッチ入りで pull を Google へ戻して Google から読めた時に出し、次に Supabase から読めた時・スイッチが切と分かった時に消す。
@@ -16672,7 +16675,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* スイッチが読めていて、明らかに切＝今までどおり（callShift のスイッチの読み込み待ちを足さない） */
     try {
       var fl = (typeof K._flags === 'function') ? K._flags() : null;
-      if (fl && fl.supabase && fl.supabase.shift !== true) { try { shiftFallbackBanner_(false); } catch (eB) {} return false; }
+      if (fl && fl.supabase && fl.supabase.shift !== true) { shiftHeadFailAt_ = 0; try { shiftFallbackBanner_(false); } catch (eB) {} return false; }
     } catch (eF) {}
     function isShiftKey(k) { return typeof k === 'string' && !!k && K.handlesShift({ action: 'head', keys: [k] }); }
     var single = false, shiftKeys = [], rest = [];
@@ -16715,7 +16718,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
     function failed(why) {
       if (payload.action === 'pull') { note('pull', why); pullFromGoogle(); }
-      else { note('head', why); out(null); }
+      else {
+        var nowF = Date.now();
+        /* 1回目・前の失敗から3分より空いた（間に確かめが無かった）・時計が戻った時は、新しい1回目として控える */
+        if (!shiftHeadFailAt_ || nowF < shiftHeadFailAt_ || nowF - shiftHeadFailLast_ > 180000) shiftHeadFailAt_ = shiftHeadFailLast_ = nowF;
+        else { shiftHeadFailLast_ = nowF; if (nowF - shiftHeadFailAt_ >= 25000) note('head', why); }   /* 25秒たってもまだ失敗している */
+        out(null);
+      }
     }
     /* callShift の段の結果は1回だけ受ける（20秒の打ち切りと、遅れて届いた応答の二重処理を防ぐ） */
     var settled = false, off = false, tmr = null;
@@ -16733,7 +16742,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     } catch (eC) { settle(function () { failed('例外'); }); return true; }
     Promise.resolve(p).then(function (j) {
       settle(function () {
-        if (off) { try { shiftFallbackBanner_(false); } catch (eB) {} asBefore(); return; }   /* スイッチ切＝何も変えない（Google が正本＝知らせは消す） */
+        if (off) { shiftHeadFailAt_ = 0; try { shiftFallbackBanner_(false); } catch (eB) {} asBefore(); return; }   /* スイッチ切＝何も変えない（Google が正本＝知らせは消す） */
         if (payload.action === 'pull') {
           if (!(j && j.ok === true && j.entries && typeof j.entries === 'object')) { failed(j && j.error); return; }
           /* 成功なのに勤務表のキーが1つも無い＝手順違い（読む範囲・権限の取り違え）。空の勤務表を取り込まない */
@@ -16741,11 +16750,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
             note('empty', 'empty');
             pullFromGoogle(); return;
           }
+          shiftHeadFailAt_ = 0;   /* 勤務表が読めた＝失敗の続きは途切れた */
           try { shiftFallbackBanner_(false); } catch (eB) {}   /* Supabase から読めた＝知らせを消す */
           out(j); return;
         }
         var okRevs = !!(j && j.ok === true && j.revs && shiftKeys.every(function (k) { return typeof j.revs[k] === 'number'; }));
         if (!okRevs) { failed(j && j.error); return; }
+        shiftHeadFailAt_ = 0;   /* 版が読めた＝失敗の続きは途切れた */
         if (single) { out({ ok: true, rev: j.revs[payload.key] }); return; }
         var mine = {};
         shiftKeys.forEach(function (k) { mine[k] = j.revs[k]; });
@@ -16762,7 +16773,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         });
       });
     }, function () {
-      settle(function () { if (off) { try { shiftFallbackBanner_(false); } catch (eB) {} asBefore(); } else failed('例外'); });
+      settle(function () { if (off) { shiftHeadFailAt_ = 0; try { shiftFallbackBanner_(false); } catch (eB) {} asBefore(); } else failed('例外'); });
     });
     return true;
   }
@@ -18986,38 +18997,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * 以前の並びの固定は、押した日にトレイだった札を、翌日に列にある札まで「本人が戻した」印（parked）付きでトレイへ引き抜き、
    * 毎日の押し直しで続いていた。今日以降のロックしていない日で、トレイにある起床・就寝の時間帯の支援の parked を外す。
    * 外さない札: 手で戻した印（parkedByHand）・休みで移した印（absentMoved）・並びごとトレイへ残した札（routineTray）・今日の重なりの退避（bumped）。
-   * 明日以降の重なりの退避は外す（翌週へコピーが古い退避の札を写していた・置ける列が無ければ退避の印のままトレイに残る）。
-   * 戻すのは前日に職員の列にいた札だけ（2026-10-27 代表者の決定）。印が入る前の旧データで本人が手で戻した札（印なしの parked）が、
-   * 一度だけ列へ戻っていたため。前日もトレイ・前日に無い札・前日の盤面が端末に無い時はトレイのまま。
-   * 前日の同じ札の見分けは並びの当てはめ（M.applyRoutines）と同じ: 週間計画の予定 id、または利用者と開始。
-   * 前日の盤面は、この画面でサーバーから取れた日（dayPullOk_）の時だけ使う（2026-10-27 反証レビュー: 別の PC が後で前日をトレイへ戻した・
-   * 翌週へコピーで書いただけの古い控えで列へ戻して送っていた）。取れていなければ戻さない。前日をわざわざ取りに行かない（通信の形を変えない）。
-   * 前日に同じ予定の札が複数ある時は、1枚でも職員の列にいれば列にいたとみなす（最初の1枚だけで決めない） */
+   * 明日以降の重なりの退避は外す（翌週へコピーが古い退避の札を写していた・置ける列が無ければ退避の印のままトレイに残る） */
   function releaseRoutineTray_() {
     if (autoHeld_() || ui.currentDate < todayKey()) return false;
     /* 現場の端末・サーバーの盤面をまだ取れていない日は触らない（並びの当てはめ routineAllowed_ と同じ守り・2026-10-23 反証レビュー） */
     if (fieldMarksOnly_(ui.currentDate) || (syncOn() && !dayPullOk_[ui.currentDate])) return false;
-    /* 前日の盤面は端末の控えを読むだけ（loadDayData は重なりの畳み・列の並べ直しをするので使わない）。同期中は、この画面でサーバーから取れた日だけ */
-    var pvDate = shiftDate(ui.currentDate, -1);
-    if (syncOn() && !dayPullOk_[pvDate]) return false;
-    var pv = readLS_(dayKey(pvDate));
-    if (!pv || !Array.isArray(pv.tasks)) return false;
-    /* 前日に職員の列にいた札の予定 id と、利用者と開始（同じ札が複数あっても1枚でも列にいれば数える） */
-    var pvEv = {}, pvRidS = {}, pi, pt;
-    for (pi = 0; pi < pv.tasks.length; pi++) {
-      pt = pv.tasks[pi];
-      if (!pt || pt.kind !== 'care' || pt.staffId === null || pt.staffId === undefined) continue;
-      if (pt.weeklyRef && pt.weeklyRef.evId) pvEv['.' + pt.weeklyRef.evId] = 1;
-      if (pt.residentId) pvRidS['.' + pt.residentId + '|' + pt.start] = 1;
-    }
     var d = store.get(), ch = false;
     var tasks = d.tasks.map(function (t) {
       if (!t || t.kind !== 'care' || (t.staffId !== null && t.staffId !== undefined) || !t.parked) return t;
       if (t.parkedByHand || t.absentMoved || t.routineTray || M.routineBand(t.start) === null) return t;
       /* 重なりの退避（bumped）は、明日以降の日だけ戻す（翌週へコピーが古い退避の札を毎週写していたため）。今日の退避は本人に任せる（置き直す列を選んでもらう） */
       if (t.bumped && !(ui.currentDate > todayKey())) return t;
-      var onCol = !!((t.weeklyRef && t.weeklyRef.evId && pvEv['.' + t.weeklyRef.evId]) || (t.residentId && pvRidS['.' + t.residentId + '|' + t.start]));
-      if (!onCol) return t;   /* 前日に職員の列にいなかった札はトレイのまま */
       var o = {}, k;
       for (k in t) if (Object.prototype.hasOwnProperty.call(t, k) && k !== 'parked') o[k] = t[k];
       ch = true;
@@ -20959,10 +20949,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261027182228';
-  var WS_APP_VER = 2026102702;   /* 2026-10-27 開いた時に列へ戻す札を前日に列にいた札だけにし、重複の札をまとめた時にトレイにいた理由の印も外すよう変えたので、
-                                  * 前の版の画面が旧データの手で戻した札を列へ戻して送らないよう上げた（代表者の決定 2026-10-27）
-                                  * （2026102701: 2026-10-27 まだ届いていないロックを「外した」に変えて送り、版の進んでいない古い未送信を退避して捨てる前の版の画面が、仕上げたロックの盤面を前の版で上書きしないよう上げた（代表者承認 A・B））
+  var WS_BUILD = '20261027200646';
+  var WS_APP_VER = 2026102701;   /* 2026-10-27 まだ届いていないロックを「外した」に変えて送り、版の進んでいない古い未送信を退避して捨てる前の版の画面が、仕上げたロックの盤面を前の版で上書きしないよう上げた（代表者承認 A・B）
                                   * （2026101706: 2026-10-23 トレイへ入った理由の印（parkedByHand・absentMoved・routineTray）を知らない前の版の画面が、手で戻した札・休みで移した札を印なしで残し、
                                   * 新しい版がそれを列へ戻してしまわないよう上げた）
                                   * （2026101705: 2026-10-22 名前つきの自由枠の印（oohHold）を支援だけの印と思う前の版（10/21・10/22 朝）の画面が、どの操作でも印を外して
