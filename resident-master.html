@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-3cqeFjQrs3Eh531J+3O1t/GksEzPOG/+n4IwAeSstNo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-AwWvRQ5XfiWnkFA7Iaep/nvlkEL4wJCupcQEFXlan6E='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -3208,6 +3208,13 @@ function secHtml(title,people,extraClass){
     people.map(rcardHtml).join('')+'</div></div>';
 }
 
+/* 一覧の並べ替えの比べ方（2026-10-28）。localeCompare(…,'ja') は呼ぶたびに比べ方の表を作り直して遅い
+   （起動のたび・検索の1打鍵ごとに通る）。同じ 'ja' の Intl.Collator を1つ作って使い回す＝並び順は同じ。
+   作れない古いブラウザでは今までの localeCompare に戻す */
+var rmJaCmp_=(function(){
+  try{ var c=new Intl.Collator('ja'); return function(a,b){ return c.compare(a,b); }; }
+  catch(e){ return function(a,b){ return a.localeCompare(b,'ja'); }; }
+})();
 function renderRoster(){
   var q=($('q').value||'').trim().toLowerCase();
   var box=$('rosterBox');
@@ -3216,7 +3223,7 @@ function renderRoster(){
     if(curFilter==='out'&&r.active!==false)return false;
     if(q){var hay=((r.name||'')+' '+(r.kana||'')+' '+(r.room||'')).toLowerCase();if(hay.indexOf(q)<0)return false}
     return true;
-  }).sort(function(a,b){return String(a.room||'').localeCompare(String(b.room||''),'ja')||String(a.kana||'').localeCompare(String(b.kana||''),'ja')});
+  }).sort(function(a,b){return rmJaCmp_(String(a.room||''),String(b.room||''))||rmJaCmp_(String(a.kana||''),String(b.kana||''))});
   /* 体重の索引は描画のたびに作り直す。体重アプリで記録した後、再読込すれば反映される。
      体重アプリ未使用の端末では空になり、体重タグが出ないだけで一覧は従来どおり出る。 */
   try{ weightIdx=buildWeightIndex(list); }catch(e){ weightIdx={}; }   // 体重が出ないだけで一覧は必ず描画する
