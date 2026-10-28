@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-8Z1XPSQ3RlBZVFMWui16ye6fQUwlIW4F86CyYUnh51w='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-lDpldHCV8jwYnWKQ9kSFeoo8i/3eP4JceBimLth7uV8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -3714,8 +3714,8 @@ function wrAuthLoad_(){
    （2026-10-10）。取り直さないと、途中で人が替わっても前の人の名前で記録が残る。ログアウトしたら「未確認」へ戻す（2026-10-13）。
    世代番号で、遅れて届いた古い確認の結果を捨てる。 */
 var wrWhoGen_ = 0;
-/* ログインしていない端末に帯を出す（2026-10-28 本人指示）。ログインの控えが無い・確かめてログインしていなかった時だけ出し、
-   通信の失敗などで確かめられない時は今の表示のまま（ログインしている端末に誤って出さない） */
+/* ログインしていない端末に帯を出す（2026-10-28 本人指示）。ログインの控えが無い時と、確かめて「ログインしていない」
+   「使えないアカウント」と分かった時だけ出す。通信の失敗などで確かめられない時は消す（ログインしている端末に誤って残さない・同日の本人指示） */
 function wrNoLoginBand_(show){
   try{ const el = document.getElementById('wrNoLogin'); if(el) el.hidden = !show; }catch(e){}
 }
@@ -3726,9 +3726,9 @@ function wrResolveWho_(){
   if(!has){ wrWhoAcct_ = ''; wrNoLoginBand_(true); return; }
   wrAuthLoad_().then(() => (window.SUAuth ? SUAuth.check() : null)).then(st => {
     if(gen !== wrWhoGen_) return;
-    if(!st || st.status === 'error') return;   // 確かめられなかった（通信など）＝前の値のまま
+    if(!st || st.status === 'error'){ wrNoLoginBand_(false); return; }   // 確かめられなかった（通信など）＝記録した人は前の値のまま・帯は消す
     wrWhoAcct_ = wrWhoLabel_(st);   // 未ログイン・許可リスト外は空＝役割の名前
-    wrNoLoginBand_(!wrWhoAcct_ && st.status !== 'ok');   // ログイン中（2段階の6桁がまだの管理者も含む）なら出さない
+    wrNoLoginBand_(st.status === 'signed_out' || st.status === 'denied');   // ログイン中（2段階の6桁がまだの管理者も含む）なら出さない
   }).catch(() => {});   // 読めない時は前の値のまま（記録も保存も止めない）
 }
 /* 直した記録の変更前の値（2026-10-10・監査10月版 第2版 7・本人決定「直近5件」）。
@@ -8715,6 +8715,8 @@ try{ wrResolveWho_(); }catch(e){ /* 記録した人の確認の失敗は運用�
 /* 別のタブでのログイン・ログアウトと、画面に戻った時に、記録した人を取り直す（2026-10-10） */
 window.addEventListener('storage', function(e){ if(e.key === null || WR_SESSION_RE.test(e.key)){ try{ wrResolveWho_(); }catch(e2){} } });
 document.addEventListener('visibilitychange', function(){ if(!document.hidden){ try{ wrResolveWho_(); }catch(e){} } });
+/* 戻るボタンで戻った時（ページを読み直さずに前の画面を出す時）も確かめ直す（2026-10-28 本人指示） */
+window.addEventListener('pageshow', function(e){ if(e && e.persisted){ try{ wrResolveWho_(); }catch(e2){} } });
 (function(){ var t=document.getElementById('wrShowNonTarget'); if(t) t.addEventListener('change', function(){
   wrShowNonTargets = this.checked; wrRefreshViews();
 }); })();

@@ -255,7 +255,9 @@ const liveRpc = (name, args) => name === 'weight_get_all' ? { data: LIVE_ALL, er
     t('I 帯は見出しのすぐ下', /<\/header>\n<div class="wr-nologin" id="wrNoLogin"/.test(PAGE));
     t('I 帯は印刷しない・hidden で必ず隠れる', /@media print\{\.wr-nologin\{display:none !important\}\}/.test(PAGE) && /\.wr-nologin\[hidden\]\{display:none\}/.test(PAGE));
     t('I ログインの控えが無ければ帯を出す', /if\(!has\)\{ wrWhoAcct_ = ''; wrNoLoginBand_\(true\); return; \}/.test(PAGE));
-    t('I 確かめてログイン中なら帯を消す・確かめられない時は変えない', /if\(!st \|\| st\.status === 'error'\) return;[\s\S]{0,200}wrNoLoginBand_\(!wrWhoAcct_ && st\.status !== 'ok'\);/.test(PAGE));
+    t('I 確かめられない時（通信の失敗）は帯を消す', /if\(!st \|\| st\.status === 'error'\)\{ wrNoLoginBand_\(false\); return; \}/.test(PAGE));
+    t('I 帯を出すのは「ログインしていない」「使えないアカウント」と確かめた時だけ', /wrNoLoginBand_\(st\.status === 'signed_out' \|\| st\.status === 'denied'\);/.test(PAGE));
+    t('I 戻るボタンで戻った時も確かめ直す', /addEventListener\('pageshow', function\(e\)\{ if\(e && e\.persisted\)\{ try\{ wrResolveWho_\(\); \}/.test(PAGE));
     t('I 部品は2回読み込んでも1つ', /if \(window\.SUWeightLive\) return;/.test(LIVE));
   }
   {
