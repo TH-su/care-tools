@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-GBBpqPhraFe+tyPHA8GvA7/pWU/an59QDTlUnVlEtrQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-y+IC1LhUxpZu2VbfOLV3kU+6uDMBDqDFthmlJuvBFGs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -761,6 +761,7 @@ body.su-print-staff24 #rp-print, body.su-print-staff24range #rp-print { display:
 <script src="su-perf.js?v=2026-10-27"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
 <script src="su-kv.js?v=2026-10-27.2"></script>
+<script src="su-roster.js?v=2026-10-24.2"></script>
 <script src="su-kv-shadow.js?v=2026-10-24"></script>
 <link rel="stylesheet" href="su-print.css?v=2026-09-12">
 <script src="su-print.js?v=2026-09-12"></script>
@@ -12539,9 +12540,18 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (wsHospBusy) return Promise.resolve(false);
     var c = wsMasterCfg_(); if (!c || !c.token) return Promise.resolve(false);
     wsHospBusy = true;
-    return fetch(c.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                          body: JSON.stringify({ action: 'getRoster', token: c.token }), cache: 'no-store', redirect: 'follow' })
-      .then(function (r) { return r.json(); })
+    /* 2026-10-28（入居者マスタの Supabase 移行 B①・代表者の決定）: 名簿の読み取りは入口（su-roster.js・SURoster）を通す。
+       スイッチ master_roster_read が入・事務所/管理者のログイン・写しが Google と同じ版数の時だけ写しから読み、
+       それ以外は raw（今までどおりの Google への要求・形は変えていない）。 */
+    var raw = function () {
+      return fetch(c.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                            body: JSON.stringify({ action: 'getRoster', token: c.token }), cache: 'no-store', redirect: 'follow' })
+        .then(function (r) { return r.json(); });
+    };
+    var rp;
+    try { rp = window.SURoster ? window.SURoster.getRoster(raw, { where: 'ws', masterUrl: c.url, withRev: true }) : raw(); }
+    catch (eR) { rp = raw(); }
+    return rp
       .then(function (j) {
         if (!j || !Array.isArray(j.roster)) return false;
         var m = {};

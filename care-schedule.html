@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-2dL58Xjn/1sf9PrUsZ7GktrOuylbsaAZBwVow87fvKc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-2gDcOsqk6Q+e7w6H++ACN1G7N7jeTrlirFZaRHeHf1M='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -1760,6 +1760,7 @@ function csNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
 <script src="su-kv-shadow.js?v=2026-10-24"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
 <script src="su-kv.js?v=2026-10-27.2"></script>
+<script src="su-roster.js?v=2026-10-24.2"></script>
 <script>
 /* ══ 画面が黙って壊れないようにする（2026-08-29 追加）════════════════════════
  * これまで window.onerror も unhandledrejection も無く、描画中や非同期処理の例外は
@@ -5524,11 +5525,20 @@ function csStateRevRefresh_(cfg, rev, srev){
   }
   /* ★2026-09-23: 合言葉を URL に載せないため getRoster は POST 本文へ。GAS の doPost は読み取り action を受ける
      （gas/README.md）。合言葉の無い stateRev 照会（csStateRevTick_）は GET のまま。 */
-  csFetchTimeout_(cfg.url,
+  /* 2026-10-28（入居者マスタの Supabase 移行 B①・代表者の決定）: 名簿の読み取りは入口（su-roster.js・SURoster）を通す。
+     スイッチ master_roster_read が入・事務所/管理者のログイン・写しが Google と同じ版数の時だけ写しから読み、
+     それ以外は raw（今までどおりの Google への要求・形は変えていない）。 */
+  var csRosterRaw_ = function(){
+    return csFetchTimeout_(cfg.url,
                   { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify({ action: 'getRoster', token: cfg.token }), redirect: 'follow' },
                   CS_STATEREV_ROSTER_TIMEOUT_MS)
-    .then(function(r){ return r.json(); })
+      .then(function(r){ return r.json(); });
+  };
+  var csRosterP_;
+  try{ csRosterP_ = window.SURoster ? window.SURoster.getRoster(csRosterRaw_, { where: 'care', masterUrl: cfg.url, withRev: true }) : csRosterRaw_(); }
+  catch(eR){ csRosterP_ = csRosterRaw_(); }
+  csRosterP_
     .then(function(d){
       var list = (d && Array.isArray(d.roster)) ? d.roster : null;
       if (!list || !list.length){                      // 空/認証エラー/不正応答: 取り込まない（空上書き保護と同思想）

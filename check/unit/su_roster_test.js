@@ -381,6 +381,62 @@ const ON = { supabase: { care_schedule_v2: true, master_roster_read: true } };
     t('H 捨てる本体の読み取りが例外で終わっても、未処理の失敗にしない・記録しない', j === rejectRows.GAS && unhandled === 0 && rejectRows.notes.length === 0, { unhandled, notes: rejectRows.notes.length });
   }
   t('打ち切りの既定は8秒・鮮度は24時間', sandbox().R.TIMEOUT_MS === 8000 && sandbox().R.FRESH_MS === 86400000);
+  console.log('G ワークスケジュール・週間計画のつなぎ（2026-10-28・入居者マスタの Supabase 移行 B①）');
+  {
+    const html = fs.readFileSync(path.join(ROOT, 'work-schedule.html'), 'utf8');
+    const grab = name => { const i = html.indexOf('function ' + name + '('); let d = 0, j = html.indexOf('{', i); for (; j < html.length; j++) { if (html[j] === '{') d++; else if (html[j] === '}' && --d === 0) break; } return html.slice(i, j + 1); };
+    const code = "var WS_RM_CFG_KEY='rmaster_cfg';var wsHospMap=null,wsHospRev=null,wsHospBusy=false;var careNamesCache_=null;" +
+      grab('wsMasterCfg_') + grab('wsFetchHosp_') + ';this.__get=function(){return {map:wsHospMap,rev:wsHospRev,busy:wsHospBusy};};';
+    t('work-schedule.html: su-roster.js を su-kv.js の直後に読む', /<script src="su-kv\.js\?v=[^"]+"><\/script>\n<script src="su-roster\.js\?v=2026-10-24\.2"><\/script>/.test(html));
+    async function goWs(withPart, cfg) {
+      const s = sandbox(cfg);
+      const calls = [];
+      const ctx = s.ctx;
+      ctx.localStorage.setItem('rmaster_cfg', JSON.stringify({ url: MURL, token: 'tok-dummy' }));
+      ctx.gasNow = { rev: 41, srev: 1761100000000 };
+      ctx.fetch = (url, o) => {
+        calls.push([url, o]);
+        if (/action=stateRev/.test(url)) return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, rev: ctx.gasNow.rev, srev: ctx.gasNow.srev }) });
+        if (/su-backend\.json/.test(url)) return Promise.resolve({ ok: true, json: () => Promise.resolve(cfg.flags) });
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ roster: [{ id: 7, hospitalized: true }, { id: 8 }], stateRev: ctx.gasNow.rev, srev: ctx.gasNow.srev }) });
+      };
+      ctx.document.hidden = false;
+      if (!withPart) delete ctx.SURoster;
+      vm.runInContext(code, ctx);
+      const ok = await vm.runInContext('wsFetchHosp_()', ctx);
+      return { ok, calls, st: ctx.__get() };
+    }
+    const before = { url: MURL, o: { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'getRoster', token: 'tok-dummy' }), cache: 'no-store', redirect: 'follow' } };
+    for (const withPart of [true, false]) {
+      const r = await goWs(withPart, { flags: { supabase: { care_schedule_v2: true } } });
+      t('work-schedule.html' + (withPart ? '' : '（部品なし）') + ': スイッチ切では Google への要求が1回・URL・中身・順番まで今までと同じ',
+        r.ok === true && r.calls.length === 1 && r.calls[0][0] === before.url && JSON.stringify(r.calls[0][1]) === JSON.stringify(before.o), r.calls);
+      t('work-schedule.html' + (withPart ? '' : '（部品なし）') + ': 入院の表と版数は Google の応答から作る（今までどおり）',
+        JSON.stringify(r.st.map) === '{"7":true}' && r.st.rev.rev === 41 && r.st.busy === false, r.st);
+    }
+    {
+      const r = await goWs(true, { flags: ON });
+      t('work-schedule.html: スイッチ入り・事務所のログインでは Google の名簿を呼ばず、写しから入院の表を作る',
+        r.ok === true && r.calls.filter(c => c[0] === before.url && c[1] && c[1].method === 'POST').length === 0 && JSON.stringify(r.st.map) === '{"R001":false,"R002":true}' && r.st.busy === false, r.st);
+    }
+    {
+      const r = await goWs(true, { flags: ON, runs: [] });
+      t('work-schedule.html: スイッチ入りでも写しが古ければ Google（要求は今までと同じ）',
+        r.ok === true && r.calls.filter(c => c[0] === before.url).length === 1 && JSON.stringify(r.calls.find(c => c[0] === before.url)[1]) === JSON.stringify(before.o), r.calls.map(c => c[0]));
+    }
+  }
+  {
+    const html = fs.readFileSync(path.join(ROOT, 'care-schedule.html'), 'utf8');
+    t('care-schedule.html: su-roster.js を su-kv.js の直後に読む', /<script src="su-kv\.js\?v=[^"]+"><\/script>\n<script src="su-roster\.js\?v=2026-10-24\.2"><\/script>/.test(html));
+    const i = html.indexOf('function csStateRevRefresh_('), body = html.slice(i, html.indexOf('\n}\n', i));
+    t('care-schedule.html: 名簿の取り直しは入口を通す（場所 care・版数つき・入居者マスタの URL）',
+      /window\.SURoster \? window\.SURoster\.getRoster\(csRosterRaw_, \{ where: 'care', masterUrl: cfg\.url, withRev: true \}\) : csRosterRaw_\(\)/.test(body));
+    t('care-schedule.html: Google への要求（raw）は今までと同じ本文・同じ打ち切り',
+      body.indexOf("body: JSON.stringify({ action: 'getRoster', token: cfg.token }), redirect: 'follow' },\n                  CS_STATEREV_ROSTER_TIMEOUT_MS)\n      .then(function(r){ return r.json(); });") > 0);
+    t('care-schedule.html: 入口が無い・例外の時は今までどおり Google', /catch\(eR\)\{ csRosterP_ = csRosterRaw_\(\); \}/.test(body));
+  }
+
   t('部品は console.log を使わない', !/console\.log/.test(SRC));
 
   console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
