@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-YK0cAGfiINom8jRwE9gHVEw4JFbXvliKPG5xMaT5lrY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-GBBpqPhraFe+tyPHA8GvA7/pWU/an59QDTlUnVlEtrQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -11055,6 +11055,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function readLS_(key) {
     try { return decodeDay_(localStorage.getItem(key)); } catch (e) { return null; }
   }
+  /* 容量の回収で必ず残す日（日付→1）: 引数の日・表示中の日・URL の日・今日・明日。1段目の土台の控え（wsbase_）と
+   * 2段目（reclaimSyncedDayWs_）が同じ集合を使う。null で呼ばれた時（saveDirty_ の付け直し）も表示中の日を残す
+   * （消すと表示中の日が「控えなし」になり、次の統合でほかの端末の変更を黙って巻き戻す・2026-10-28 反証レビュー指摘） */
+  function reclaimKeepDays_(keepDate) {
+    var keep = {}, t = null;
+    if (keepDate) keep[keepDate] = 1;
+    try { if (typeof ui !== 'undefined' && ui && ui.currentDate) keep[ui.currentDate] = 1; } catch (eU) {}
+    try { var h = parseDateHash_(location.hash); if (h) keep[h] = 1; } catch (eH) {}
+    try { t = todayKey(); keep[t] = 1; keep[shiftDate(t, 1)] = 1; } catch (eT) {}
+    return keep;
+  }
   /* quota時: 冗長/古いデータを解放（当日/将来日 wsday_・care_schedule_v2本体・master・共有キーは不可侵）。 */
   function reclaimSpaceWs_(keepDate) {
     var freed = false;
@@ -11067,6 +11078,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        * pruneOld と下の wsbase_ 解放は元から同じ保護を持っており、ここだけ抜けていた。 */
       var dl = localEditDays_(), dirty = {}, di;
       for (di = 0; di < dl.length; di++) dirty[dl[di]] = 1;
+      /* 未送信の印を書けなかった日（容量いっぱいで印の書き込みが先に失敗した日）も同じく残す。印を付け直すために
+       * saveDirty_ がここを呼ぶため、入れないとその日の土台の控え（wsbase_）を消し「未送信あり・控えなし」の日ができ、
+       * 次の統合でほかの端末の変更を黙って巻き戻す（2026-10-28 反証レビュー指摘） */
+      if (typeof dirtyWriteFailed_ === 'object' && dirtyWriteFailed_) for (di in dirtyWriteFailed_) { if (Object.prototype.hasOwnProperty.call(dirtyWriteFailed_, di)) dirty[di] = 1; }
       var dates = listSavedDates(), i;
       for (i = 0; i < dates.length; i++) {
         if (dates[i] < limit && dates[i] !== keepDate && !dirty[dates[i]]) {
@@ -11079,16 +11094,81 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       /* 最後の手段として週間計画の世代退避も解放する（本体 care_schedule_v2 と
          未送信データには触れない）。ここまで来ている＝日データの解放でも足りていない。 */
       try { if (localStorage.getItem(CARE_KEY + '_gens_ws') !== null) { localStorage.removeItem(CARE_KEY + '_gens_ws'); freed = true; } } catch (e5) {}
+      var keepB = (typeof reclaimKeepDays_ === 'function') ? reclaimKeepDays_(keepDate) : {};   /* 表示中の日・今日・明日の土台は残す */
       for (i = localStorage.length - 1; i >= 0; i--) {
         var k = localStorage.key(i);
         if (!k || k.indexOf('wsbase_') !== 0) continue;
         if (k.indexOf('wsbase_conflict_') === 0) continue;   /* 競合退避=復旧資産は温存 */
         if (k === 'wsbase_' + keepDate) continue;
+        if (keepB[k.substring(7)]) continue;                  /* 表示中の日・URL の日・今日・明日の3-way祖先は温存 */
         if (dirty[k.substring(7)]) continue;                  /* 未送信編集の3-way祖先は温存 */
         try { localStorage.removeItem(k); freed = true; } catch (e4) {}
       }
     } catch (e3) {}
     return freed;
+  }
+  /* quota の2段目（2026-10-28・現場報告 #3／#4 の「保存・同期の失敗」）: 上の回収でも書けない時だけ、
+   * 保持期限の内側でも【サーバーへ届いている過去の日】の wsday_ を古い順に1日だけ消す。成功true／消せる日が無いfalse。
+   * 保持90日の既存端末は期限内の日だけで上限に達し、上の回収では1日も空かず、今日・明日の盤面が端末に保存できなかった。
+   * 消してよい日（全部を満たす日だけ）: 同期ON（サーバーに正本がある）／今日より前／書く日・表示中の日・URL の日でない／
+   * 未送信編集・取り直し待ちが無い／保存版の rev>0（サーバーが受け取った版）。読めない日は残す。
+   * 消した日は保持期限を過ぎて pruneOld が消した日と同じ扱い＝開いた時にサーバーから読み直す。
+   * ★同期OFF（接続先が空）の間に保存した日がある端末では、2段目を動かさない（反証レビュー指摘）。その間の直しには未送信の印が
+   *   付かず、rev も前に同期した時の値のまま残る＝rev>0 でも中身がサーバーと同じとは言えない。その端末は markOffline_ の印で見分ける。
+   *   印が読めない時も1日も消さない（安全側）。 */
+  /* 同期OFFの印（ws_offline_v1・値は印を書いた時刻の数字1つ＝日ごとに大きくならない・2026-10-28 反証レビュー指摘）。
+   * 接続先を空にした時と、起動した時に同期OFFならその時に書く。日の保存（lsSetDay_）の成否はこの印に左右させない。
+   * 書けない時は1段目で空けて1回だけ書き直し、それでも書けなければメモリに控える（offlineHeld_）＝同じ画面の間は2段目を止める。
+   * 印を一度も書けなかった端末で読み込み直すと控えが消える穴は残る（low・承知の上）。
+   * 印を消す処理はまだ無い（消す決まりは未決・それまで印のある端末では2段目は動かない＝今までどおり保存失敗を出す側に倒す） */
+  var OFFLINE_KEY = 'ws_offline_v1';
+  var offlineHeld_ = false;   /* 印を書けなかった時の控え（書こうとした時刻の文字列）。false＝控えなし */
+  function markOffline_() {
+    if (syncOn()) return true;
+    try { if (localStorage.getItem(OFFLINE_KEY) !== null) return true; } catch (eG) {}
+    var v = String(Date.now());
+    try { localStorage.setItem(OFFLINE_KEY, v); offlineHeld_ = false; return true; }
+    catch (e) {
+      try { if (reclaimSpaceWs_(null)) { localStorage.setItem(OFFLINE_KEY, v); offlineHeld_ = false; return true; } } catch (e2) {}
+      offlineHeld_ = v;   /* 控えは書こうとした時刻（同期OFFになった時刻）＝後で書き直す時もこの値を書く */
+      wsNote_('同期OFFの印', e);
+      return false;
+    }
+  }
+  function reclaimSyncedDayWs_(keepDate) {
+    try {
+      if (!syncOn()) return false;
+      /* 同期OFFの印がある端末・メモリに控えがある画面では消さない（控えがある時は、空いていれば印を書き直しておく） */
+      if (typeof offlineHeld_ !== 'undefined' && offlineHeld_) {
+        try { localStorage.setItem(OFFLINE_KEY, String(offlineHeld_)); offlineHeld_ = false; } catch (eO) {}
+        return false;
+      }
+      if (localStorage.getItem(OFFLINE_KEY) !== null) return false;   /* 読めない＝catch で何も消さない */
+      var today = todayKey(), keep = reclaimKeepDays_(keepDate);   /* 書く日・表示中の日・URL の日・今日・明日（1段目の土台と同じ集合） */
+      var edits = localEditDays_(), held = {}, i, d, p;   /* 未送信編集＋取り直し待ち */
+      for (i = 0; i < edits.length; i++) held[edits[i]] = 1;
+      /* 未送信の印を書けなかった日も消さない（容量いっぱいで印の書き込みが日の保存より先に失敗する・反証レビュー指摘） */
+      if (typeof dirtyWriteFailed_ === 'object' && dirtyWriteFailed_) for (d in dirtyWriteFailed_) { if (Object.prototype.hasOwnProperty.call(dirtyWriteFailed_, d)) held[d] = 1; }
+      var dates = listSavedDates();   /* 古い順 */
+      for (i = 0; i < dates.length; i++) {
+        d = dates[i];
+        if (d >= today || keep[d] || held[d]) continue;
+        p = null;
+        try { p = decodeDay_(localStorage.getItem(dayKey(d))); } catch (eD) { p = null; }
+        if (!p || !p.meta || !((p.meta.rev || 0) > 0)) continue;
+        localStorage.removeItem(dayKey(d));
+        if (typeof retryDirtyMarks_ === 'function') { try { retryDirtyMarks_(); } catch (eR) {} }   /* 空けた場所で印を先に付け直す */
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+  /* 2段目の回収で1日ずつ空けては書き直す。書けたら true。書けないまま空けられる日が尽きたら false */
+  function lsWriteFreeingSynced_(key, enc, keepDate) {
+    while (reclaimSyncedDayWs_(keepDate)) {
+      try { localStorage.setItem(key, enc); return true; } catch (e) {}
+    }
+    return false;
   }
   /* wsday_ 書込（圧縮）。quota時は reclaim して1回だけ再試行。成功true/失敗false。 */
   /* 保存・同期の失敗を、画面には出さずに記録だけ残す（2026-10-12・監査10月版 第3版 2・週間計画の csNote_ と同じ形）。
@@ -11149,8 +11229,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try { localStorage.setItem(dayKey(date), enc); if (typeof lsNoteStored_ === 'function') lsNoteStored_(dayKey(date), obj, enc); return true; }
     catch (e) {
       if (reclaimSpaceWs_(date)) {
-        try { localStorage.setItem(dayKey(date), enc); if (typeof lsNoteStored_ === 'function') lsNoteStored_(dayKey(date), obj, enc); return true; } catch (e2) { wsNote_('日の保存（空けた後）', e2); return false; }
+        try { localStorage.setItem(dayKey(date), enc); if (typeof lsNoteStored_ === 'function') lsNoteStored_(dayKey(date), obj, enc); return true; } catch (e2) {
+          if (typeof lsWriteFreeingSynced_ === 'function' && lsWriteFreeingSynced_(dayKey(date), enc, date)) { if (typeof lsNoteStored_ === 'function') lsNoteStored_(dayKey(date), obj, enc); return true; }
+          wsNote_('日の保存（空けた後）', e2); return false;
+        }
       }
+      if (typeof lsWriteFreeingSynced_ === 'function' && lsWriteFreeingSynced_(dayKey(date), enc, date)) { if (typeof lsNoteStored_ === 'function') lsNoteStored_(dayKey(date), obj, enc); return true; }
       wsNote_('日の保存', e);
       return false;
     }
@@ -11479,7 +11563,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var day = loadDayData(date) || S.emptyDay(date);
     day.meta.date = date;
     var wasDirtySw = false;
-    try { wasDirtySw = isDayDirty_(date); } catch (eDs) {}
+    try { wasDirtySw = isDayDirty_(date) || !!(typeof dirtyWriteFailed_ === 'object' && dirtyWriteFailed_ && dirtyWriteFailed_[date]); } catch (eDs) {}   /* 印を書けず控えだけの日も未送信（偽dirty補正で控えを落とさない） */
     store.dispatch({ type: 'INIT_DAY', day: day, frozen: initFrozen_(day) });
     try { rearmSeeded_(day.meta.date || ui.currentDate); } catch (eRs) {}
     try { noteLoadMark_(date, wasDirtySw); } catch (eLm) {}
@@ -15385,10 +15469,56 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       return (d && typeof d === 'object') ? d : {};
     } catch (e) { wsNote_('未送信の印の読み込み', e); return {}; }
   }
+  /* 未送信の印を書けなかった日（日付→印の時刻・メモリだけ）。容量いっぱいの時は印の書き込みが日の保存より先に失敗するため、
+   * 容量の2段目（reclaimSyncedDayWs_）がこの日を「サーバーへ届いた日」とみなして消さないように控える（2026-10-28 反証レビュー指摘）。
+   * 書けた時・印を外した時（clearDayDirty_）に外す。2段目で場所を空けた時に付け直す（retryDirtyMarks_） */
+  var dirtyWriteFailed_ = {};
+  var dirtyFreeing_ = false;   /* 印を書くために容量を空けている最中（入れ子で空け直さない） */
   /* ws_dirty_v1 への書込みはここだけ＝同期状態バッジ(#badgeSync)もここで更新する */
   function saveDirty_(d) {
-    try { localStorage.setItem(DIRTY_KEY, JSON.stringify(d)); } catch (e) { wsNote_('未送信の印', e); }
+    var ok = false, k, err = null;
+    /* 書けなかった印の控えも一緒に書く（場所が空いていれば、別の日の印を書くついでに付け直す・書けた日だけ下で控えから外す・2026-10-28 反証レビュー指摘）。
+     * 控えから外すのは clearDayDirty_ が先に済ませる（送れた・送らない日を書き戻さない） */
+    try {
+      if (typeof dirtyWriteFailed_ === 'object' && dirtyWriteFailed_ && d) {
+        for (k in dirtyWriteFailed_) {
+          if (!Object.prototype.hasOwnProperty.call(dirtyWriteFailed_, k)) continue;
+          if (!d.days) d.days = {};
+          if (!d.days[k]) d.days[k] = dirtyWriteFailed_[k];
+        }
+      }
+    } catch (eM) {}
+    try { localStorage.setItem(DIRTY_KEY, JSON.stringify(d)); ok = true; } catch (e) { err = e; }
+    try {
+      if (typeof dirtyWriteFailed_ === 'object' && dirtyWriteFailed_ && d && d.days) {
+        if (ok) { for (k in dirtyWriteFailed_) { if (Object.prototype.hasOwnProperty.call(dirtyWriteFailed_, k) && d.days[k]) delete dirtyWriteFailed_[k]; } }
+        else { for (k in d.days) { if (Object.prototype.hasOwnProperty.call(d.days, k) && !dirtyWriteFailed_[k]) dirtyWriteFailed_[k] = d.days[k]; } }
+      }
+    } catch (eF) {}
+    /* 容量いっぱいで印が書けない時は、その場で1段目・2段目の順に空けて付け直す（2026-10-28 反証レビュー指摘）。
+     * メモリの控えだけでは、読み込み直す・閉じると守りが消え、次に容量が足りない時に2段目がその日を
+     * 「サーバーへ届いた日」とみなして消す。2段目は控えた日を消さない。空けても書けなければ今までどおり控えのまま */
+    if (!ok && typeof dirtyFreeing_ === 'boolean' && !dirtyFreeing_ && typeof retryDirtyMarks_ === 'function') {
+      dirtyFreeing_ = true;
+      try {
+        var left_ = function () { for (var j in dirtyWriteFailed_) { if (Object.prototype.hasOwnProperty.call(dirtyWriteFailed_, j)) return true; } return false; };
+        if (typeof reclaimSpaceWs_ === 'function' && reclaimSpaceWs_(null)) retryDirtyMarks_();
+        while (left_() && typeof reclaimSyncedDayWs_ === 'function' && reclaimSyncedDayWs_(null)) {}   /* 2段目は1日空けるたびに retryDirtyMarks_ を呼ぶ */
+        ok = !left_();
+      } catch (eR) {} finally { dirtyFreeing_ = false; }
+    }
+    if (!ok && err && !(typeof dirtyFreeing_ === 'boolean' && dirtyFreeing_)) wsNote_('未送信の印', err);
     try { updateSyncBadge_(); } catch (eB) {}
+  }
+  /* 書けなかった未送信の印を付け直す（容量の2段目で場所を空けた直後に呼ぶ）。書けなければメモリの控えのまま残す */
+  function retryDirtyMarks_() {
+    var k, d, add = false;
+    for (k in dirtyWriteFailed_) { if (Object.prototype.hasOwnProperty.call(dirtyWriteFailed_, k)) { add = true; break; } }
+    if (!add) return;
+    d = loadDirty_();
+    if (!d.days) d.days = {};
+    for (k in dirtyWriteFailed_) { if (Object.prototype.hasOwnProperty.call(dirtyWriteFailed_, k) && !d.days[k]) d.days[k] = dirtyWriteFailed_[k]; }
+    saveDirty_(d);
   }
   function markDayDirty_(date) {
     if (!date) return;
@@ -15424,6 +15554,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return Math.max(0, Date.now() - v);
   }
   function clearDayDirty_(date) {
+    try { if (date && typeof dirtyWriteFailed_ === 'object' && dirtyWriteFailed_) delete dirtyWriteFailed_[date]; } catch (eF) {}   /* 送れた・送らない日＝書けなかった印の控えからも外す */
     var d = loadDirty_();
     if (d.days && d.days[date]) { delete d.days[date]; saveDirty_(d); }
   }
@@ -15634,9 +15765,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try { enc = encodeDay_(dayObj); localStorage.setItem(baseKey_(date), enc); if (typeof lsNoteStored_ === 'function') lsNoteStored_(baseKey_(date), dayObj, enc); }
     catch (e) {
       if (enc !== null && reclaimSpaceWs_(date)) {
-        try { localStorage.setItem(baseKey_(date), enc); if (typeof lsNoteStored_ === 'function') lsNoteStored_(baseKey_(date), dayObj, enc); } catch (e2) { wsNote_('土台の控え（空けた後）', e2); }
+        try { localStorage.setItem(baseKey_(date), enc); if (typeof lsNoteStored_ === 'function') lsNoteStored_(baseKey_(date), dayObj, enc); } catch (e2) {
+          if (typeof lsWriteFreeingSynced_ === 'function' && lsWriteFreeingSynced_(baseKey_(date), enc, date)) { if (typeof lsNoteStored_ === 'function') lsNoteStored_(baseKey_(date), dayObj, enc); return; }
+          wsNote_('土台の控え（空けた後）', e2);
+        }
         return;
       }
+      if (enc !== null && typeof lsWriteFreeingSynced_ === 'function' && lsWriteFreeingSynced_(baseKey_(date), enc, date)) { if (typeof lsNoteStored_ === 'function') lsNoteStored_(baseKey_(date), dayObj, enc); return; }
       wsNote_('土台の控え', e);
     }
   }
@@ -20493,6 +20628,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (prevSyncSig_ !== settings.endpoint + '|' + settings.token) { try { resetSyncStat_(); } catch (eRs) {} }
       try { updateSyncBadge_(); } catch (eSb) {}   /* 同期の設定・解除をすぐ反映 */
       try { clearAuthBlock_(true); } catch (eAb) {}   /* 設定を変えた＝ログイン・権限の止めを外して試し直す（2026-10-11） */
+      if (!settings.endpoint) { try { markOffline_(); } catch (eOf) {} }   /* 接続先を空にした＝同期OFFの印を書く（印が既にあれば何もしない） */
       hideModals();
       renderAll();
       /* 「頭数外を出さない」を切り替えたら、表示中の日へ即座に反映する。
@@ -21049,7 +21185,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261027222139';
+  var WS_BUILD = '20261028144456';
   var WS_APP_VER = 2026102701;   /* 2026-10-27 まだ届いていないロックを「外した」に変えて送り、版の進んでいない古い未送信を退避して捨てる前の版の画面が、仕上げたロックの盤面を前の版で上書きしないよう上げた（代表者承認 A・B）
                                   * （2026101706: 2026-10-23 トレイへ入った理由の印（parkedByHand・absentMoved・routineTray）を知らない前の版の画面が、手で戻した札・休みで移した札を印なしで残し、
                                   * 新しい版がそれを列へ戻してしまわないよう上げた）
@@ -21160,6 +21296,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     startVersionWatch_();   /* ほかの visibilitychange より先に登録する＝戻った時の送信より前に止める */
     try { loadSettings(); } catch (e) {}
     try { pruneOld(); } catch (e) {}
+    try { markOffline_(); } catch (eOf) {}   /* 同期OFFで起動した＝同期OFFの印を書く（容量の2段目を止める・印が既にあれば何もしない） */
     /* serviceDict(サービスコード辞書)を初回 renderAll 前に確実に適用する素振り。
      * reconcileWeekly→loadCareDb 経路は dayLocked_ 時に走らず、renderAll は loadCareDb を経由しない
      * （careNameSets_ は raw を直読み）ため、boot での適用を保証する。戻り値は未使用（メモ化で冪等）。 */
@@ -21345,6 +21482,6 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 })();
 </script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
-<script src="su-report.js?v=2026-10-24" data-tool="ワークスケジュール"></script>
+<script src="su-report.js?v=2026-10-27" data-tool="ワークスケジュール"></script>
 </body>
 </html>
