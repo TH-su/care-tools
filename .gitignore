@@ -220,5 +220,6 @@ mailer/.DS_Store
 !/su-cfg-hint.js
 # 体重の写し（統合 0008・2026-09-27）。個人情報なし（中身は画面が読んだものを Supabase へ渡すだけ）
 !/su-weight-shadow.js
+!/su-weight-live.js
 # 貼り薬カレンダーの設定を Supabase へ送る部品（段階2「送るだけ」・2026-10-17）。送るのは入居者IDと設定だけで、氏名は含まない
 !/su-patch-sync.js

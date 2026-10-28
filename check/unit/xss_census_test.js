@@ -516,6 +516,7 @@ const CENSUS = {
   "su-staff-names.js": [],
   "su-sync-stale.js": [],
   "su-weight-shadow.js": [],
+  "su-weight-live.js": [],
   "supplies-calc.js": [],
   "supplies.html": [],
   "support-overview.html": [],

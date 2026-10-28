@@ -125,6 +125,8 @@ const tick = () => new Promise(r => setTimeout(r, 20));
     vm.createContext(ctx);
     /* 2026-10-17: apiPost は入居者の行から alertAck を外す部品（wrResForSend_）を通す。部品が無い古い版でも動くように */
     if (src.indexOf('function wrResForSend_(') >= 0) vm.runInContext('function wrServerLacksResident(){ return false; }\n' + cut('wrResForSend_'), ctx);
+    /* 2026-10-28（統合 0032）: Google へ送る本体は apiPostGas_。apiPost は切り替えの部品が無ければそのまま apiPostGas_ へ渡す */
+    if (src.indexOf('function apiPostGas_(') >= 0) vm.runInContext('async ' + cut('apiPostGas_'), ctx);
     vm.runInContext('async ' + cut('apiPost'), ctx);   // 本体は async function（cut は async を含まない）
     await ctx.apiPost('delRecord', { id: 'w1', by: '事務 太郎（staff1）' });
     await ctx.apiPost('saveRecord', { record: { id: 'w2', recordedBy: '現場端末' } });

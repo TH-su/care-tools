@@ -62,6 +62,8 @@
   function fromGetAll(residents, records, thresholds) {
     try {
       if (!hasSession() || Date.now() < deniedUntil) return;
+      // 切り替えた後（統合 0032）は Supabase から読んだ中身なので写さない（データベースも 'live' で断る）
+      if (window.SUWeightLive && window.SUWeightLive.readFromSupabase()) return;
       if (!Array.isArray(residents) || !Array.isArray(records)) return;
       var snap = JSON.stringify({ r: residents, c: records, t: (thresholds && typeof thresholds === 'object') ? thresholds : null });
       if (snap === lastSent) return;
