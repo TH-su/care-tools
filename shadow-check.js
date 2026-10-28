@@ -1165,10 +1165,59 @@
     if (items.length > PT_LIST_MAX) ul.appendChild(el('li', null, 'ほか ' + (items.length - PT_LIST_MAX) + '件'));
   }
 
+  /* 体重の切り替え（統合 0032）: 印（weight_mode）を読んで出す。表がまだ無い（0032 の前）時は '' */
+  var weightMode = '';
+  var WT_MIRROR_LS = 'wtmgr_mirror_q';
+  function weightMirrorCount() { try { var q = JSON.parse(localStorage.getItem(WT_MIRROR_LS) || '[]'); return Array.isArray(q) ? q.length : 0; } catch (e) { return 0; } }
+  function weightSwitch() { var sw = window.SUKv ? SUKv._flags() : null; return !!(sw && sw.supabase && sw.supabase.weight === true); }
+  async function loadWeightMode(sb) {
+    var m = $('wt-mode');
+    weightMode = '';
+    var r = await sb.from('weight_mode').select('mode,updated_at').limit(1);
+    if (r.error) { m.className = 'msg'; m.textContent = '体重の切り替えの準備（データベース 0032）はまだです。今は写しの期間です。'; return; }
+    var row = (r.data || [])[0];
+    weightMode = row && row.mode === 'live' ? 'live' : 'shadow';
+    var mc = weightMirrorCount();
+    m.className = 'msg ' + (weightMode === 'live' ? 'ok' : '');
+    m.textContent = (weightMode === 'live'
+      ? '体重の保存先: Supabase（本番）。切り替えた日時 ' + fmtTime(row.updated_at) + '。'
+      : '体重の保存先: Google（写しの期間）。切り替えスイッチ weight は「' + (weightSwitch() ? '入' : '切') + '」です。')
+      + (mc ? '　この端末に Google への写し返し待ちが ' + mc + '件あります（体重管理を開くと送ります）。' : '');
+  }
+  /* 管理者だけ: 体重の保存先の切り替え・戻し（weight_set_mode）。確認を2回とる。
+   * 切り替えはスイッチ weight が入の時だけ（データベースは30分以内の写しがある時だけ受け付ける）。戻すのはいつでも */
+  function weightModeBlock(mode, sw) {
+    if (mode === 'live' && !sw) return '体重の切り替えスイッチ（weight）がまだ「入」になっていません。先にスイッチを入れる PR を取り込み、1分ほど待ってから画面を開き直してください。';
+    return '';
+  }
+  async function setWeightMode(mode) {
+    if (!(me && me.role === 'admin' && me.status === SUAuth.STATUS.OK)) { msg('管理者（二段階認証済み）のアカウントで開いてください。', 'warn'); return; }
+    var why0 = weightModeBlock(mode, weightSwitch());
+    if (why0) { msg(why0, 'warn'); return; }
+    var q = mode === 'live'
+      ? '体重の保存先を Supabase（本番）に切り替えますか？\n\n30分以内に事務所PCで体重管理を開き、写しを最新にしてから進めてください。切り替えた後も、Google へは各端末が写し返します。'
+      : '体重を「写しの期間」に戻しますか？\n\n各端末は次の通信から Google へ送ります（端末に残っている Google への写し返しを先に送ります）。';
+    if (!confirm(q)) return;
+    if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
+    var r = await SUAuth.client().rpc('weight_set_mode', { p_mode: mode });
+    if (r.error || !r.data || !r.data.ok) {
+      var why = String((r.error && (r.error.code || r.error.message)) || (r.data && r.data.error) || '');
+      msg('変更できませんでした: ' + (why === 'stale' ? '写しが30分より前か、最後の写しを受け付けていません。事務所PCで体重管理を開き、数秒待ってから、もう一度押してください。'
+        : /PGRST202|42883/.test(why) ? 'データベースの準備（0032）がまだです。'
+        : why === '42501' ? '管理者（二段階認証済み）のアカウントで開いてください。' : why));
+      return;
+    }
+    msg(mode === 'live' ? '体重の保存先を Supabase（本番）にしました。各端末は次の通信から Supabase へ送ります。'
+                        : '体重を写しの期間に戻しました。各端末は次の通信から Google へ送ります。', 'ok');
+    await loadWeight(SUAuth.client());
+  }
+
   /* 体重の写し（統合 0008）: 写しの件数と、写しを取った記録（件数だけ） */
   async function loadWeight(sb) {
     var kk = $('wt-kpis'), v = $('wt-verdict'), ul = $('wt-runs');
     kk.replaceChildren(); ul.replaceChildren();
+    $('wt-admin').hidden = !(me && me.role === 'admin');
+    try { await loadWeightMode(sb); } catch (e) { weightMode = ''; }
     var q = await Promise.all([
       sb.from('weight_residents').select('id', { count: 'exact', head: true }).is('deleted_at', null),
       sb.from('weight_records').select('id', { count: 'exact', head: true }).is('deleted_at', null),
@@ -1186,10 +1235,15 @@
     }
     var last = runs[0];
     kk.appendChild(kpi('最後に写した時刻', fmtTime(last.at)));
+    if (weightMode === 'live') {
+      v.className = 'msg ok';
+      v.textContent = '切り替え済みです（体重の正本は Supabase）。写しは止めてあります（下の記録は切り替える前のものです）。';
+    } else {
     v.className = 'msg ' + (last.refused ? 'warn' : 'ok');
     v.textContent = last.refused
       ? '最後の写しは受け付けませんでした（' + (last.refused === 'shrink' ? '件数が急に減っていたため。読み込みの途中切れの可能性' : last.refused) + '）。体重管理を開き直してください。'
       : '体重の写しは、最後に体重管理が読んだ全件と同じです。';
+    }
     runs.forEach(function (r) {
       var li = el('li'), left = el('div');
       left.appendChild(el('div', 'nm', fmtTime(r.at)));
@@ -1223,6 +1277,8 @@
   $('b-live').addEventListener('click', function () { setMode('live'); });
   $('b-shadow').addEventListener('click', function () { setMode('shadow'); });
   $('b-live-shift').addEventListener('click', function () { setShiftMode('live'); });
+  $('b-live-weight').addEventListener('click', function () { setWeightMode('live').catch(function (e) { msg(String(e && e.message || e)); }); });
+  $('b-shadow-weight').addEventListener('click', function () { setWeightMode('shadow').catch(function (e) { msg(String(e && e.message || e)); }); });
   $('b-shadow-shift').addEventListener('click', function () { setShiftMode('shadow'); });
   $('b-reload').addEventListener('click', function () { msg(''); load().catch(function (e) { msg(String(e && e.message || e)); }); });
   $('b-care-check').addEventListener('click', function () { msg(''); runCareCheck(); });

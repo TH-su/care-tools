@@ -164,6 +164,18 @@
       <p id="wt-verdict" class="msg"></p>
       <ul class="acct" id="wt-runs"></ul>
       <div class="acts"><a class="btn" href="weight-record.html">体重管理を開く（写しが最新になる）</a></div>
+      <p id="wt-mode" class="msg"></p>
+      <div id="wt-admin" hidden>
+        <!-- 体重の切り替え（統合 0032・2026-10-28）: 印はデータベース（weight_mode）が持ち、書く度にデータベースが Google か Supabase かを答える。
+             切り替える順番: 1. 体重の切り替えスイッチ weight を入れる PR を取り込む（印が写しの期間の間は何も変わらない）
+             2. 事務所PCで体重管理を開いて写しを最新にする（30分以内）3. ここで「体重を Supabase の本番にする」。
+             戻す時は「体重を写しの期間に戻す」だけで、各端末は次の通信から Google へ送る（端末に残る写し返しを先に送る） -->
+        <p class="muted mt">管理者だけの操作です。切り替える順番: 手順1 体重の切り替えスイッチ（weight）を入れる PR を取り込む（この時点では何も変わりません）→手順2 事務所PCで体重管理を開き、写しを最新にする→手順3 30分以内に「体重を Supabase の本番にする」。戻す時は「体重を写しの期間に戻す」を押すだけで、各端末は次の通信から Google へ送ります。</p>
+        <div class="acts">
+          <button type="button" class="btn ng" id="b-live-weight">体重を Supabase の本番にする</button>
+          <button type="button" class="btn" id="b-shadow-weight">体重を写しの期間に戻す</button>
+        </div>
+      </div>
     </section>
 
     <section class="cd">
@@ -191,6 +203,6 @@
 <script src="su-kv.js?v=2026-10-27.2"></script>
 <script src="su-kv-shadow.js?v=2026-10-24"></script>
 <script src="su-patch-sync.js?v=2026-10-25"></script>
-<script src="shadow-check.js?v=2026-10-24"></script>
+<script src="shadow-check.js?v=2026-10-28"></script>
 </body>
 </html>
