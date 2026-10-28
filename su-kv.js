@@ -112,7 +112,7 @@
     return p.then(function () {
       if (window.SUAuth) return null;
       if (hasTag('su-auth.js')) return waitFor(function () { return !!window.SUAuth; }, 8000);
-      return loadScript('su-auth.js?v=2026-10-24');
+      return loadScript('su-auth.js?v=2026-10-28');
     });
   }
   // ログインの状態は毎回 SUAuth.check に聞く（2026-10-24）。同じアカウントの「使える」は su-auth.js が同じタブの中で5分控えるので、

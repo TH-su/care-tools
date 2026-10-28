@@ -259,7 +259,7 @@ const ON = { supabase: { care_schedule_v2: true, master_roster_read: true } };
       'var DB=null;this.__renders=0;function render(){__renders++;}function refresh(){__renders++;}' +
       grab(pre + 'MasterCfg') + grab(pre + 'FetchHosp') + grab(pre + 'WatchState') +
       ';this.__get=function(){return {map:' + pre + 'HospMap,rev:' + pre + 'HospRev,busy:' + pre + 'HospBusy};};';
-    t(file + ': su-roster.js を su-kv.js の後に読む', /<script src="su-kv\.js\?v=[^"]+"><\/script>\n<!--[^\n]*-->\n<script src="su-roster\.js\?v=2026-10-24\.2"><\/script>/.test(html));
+    t(file + ': su-roster.js を su-kv.js の後に読む', /<script src="su-kv\.js\?v=[^"]+"><\/script>\n<!--[^\n]*-->\n<script src="su-roster\.js\?v=2026-10-28"><\/script>/.test(html));
     async function go(withPart, cfg) {
       const s = sandbox(cfg);
       const calls = [];
