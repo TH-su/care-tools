@@ -248,6 +248,35 @@ console.log('\n— 5. GAS の読み方 —');
     calls.every(c => c.opt.method === 'POST' && c.opt.headers['Content-Type'] === 'text/plain;charset=utf-8' && c.opt.redirect === 'follow'), '');
   t('合言葉は本文の token だけ（URL に載せない）',
     calls.every(c => !/tok-/.test(c.url)) && JSON.parse(calls[0].opt.body).token === 'tok-ws', calls.map(c => c.url));
+  /* 排泄ケア記録: 控えのシートへ移した古い記録も、getArchive をページ分けで読んで入れる（2026-10-28） */
+  for (const mode of ['new', 'old', 'refuse']) {
+    const hc = [];
+    const arcRows = Array.from({ length: 7001 }, (_, i) => ({ id: 'a' + i, date: '2026-01-01' }));
+    const hfetch = (url, opt) => {
+      const body = JSON.parse(opt.body); hc.push(body);
+      let res;
+      if (body.action === 'getAll') res = { ok: true, residents: [{ id: 1 }], records: [{ id: 'h1' }, { id: 'h2' }], cfg: {} };
+      else if (body.action === 'getArchive') res = mode === 'old' ? { ok: false, error: 'unknown action: getArchive' }
+        : mode === 'refuse' ? { ok: false, error: 'サーバーで処理できませんでした（架空）' }
+        : { ok: true, total: arcRows.length, offset: body.offset, archivedBefore: '2026-04-11', records: arcRows.slice(body.offset, body.offset + body.limit).concat(body.offset === 0 ? [{ id: 'h1', date: '2026-01-01' }] : []) };
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(res) });
+    };
+    const hb = box({ fetch: hfetch, AbortController, localStorage: { getItem: k => ({ hbcr_api_url: 'https://script.google.com/macros/s/HB/exec', hbcr_api_token: 'tok-hb' })[k] || null } });
+    vm.runInContext('var GAS = SUAccountsExport._GAS, cfg = SUAccountsExport._cfg, RE_GAS = /^https:\\/\\/script\\.google\\.com\\/.*\\/exec(\\?|#|$)/;' + src + ';this.readGas = readGas;', hb);
+    const hout = await hb.readGas(() => {});
+    const h = hout.find(g => g.id === 'haiben');
+    if (mode === 'new') {
+      t('排泄: 控えのシートの記録を5000行ずつ全部読み、件数に足す（2+7001・getAll と同じ id の h1 は重ねない）',
+        h.ok && h.count === 7003 && h.parts.archive.length === 7001 && new Set(h.parts.archive.map(r => r.id)).size === 7001 &&
+        h.parts.archivedBefore === '2026-04-11' && h.parts.records.length === 2 && hc.filter(c => c.action === 'getArchive').length === 2, { count: h.count, n: hc.length });
+    } else if (mode === 'refuse') {
+      t('排泄: 控えだけ断られた時は getAll の分を残し、「控えの分は読めなかった」と書く（断りの文は写さない）',
+        h.ok && h.count === 2 && !('archive' in h.parts) && /読めなかった/.test(h.note) && !/架空/.test(h.note), { count: h.count, note: h.note });
+    } else {
+      t('排泄: 控えの口を知らない旧い GAS では、今までどおり getAll の分だけ（控えは足さない）',
+        h.ok && h.count === 2 && !('archive' in h.parts), { count: h.count, ok: h.ok });
+    }
+  }
   const SRC_GAS = fs.readFileSync(path.join(ROOT, 'su-data-gas.js'), 'utf8');
   t('su-data-gas.js の post の形（ヘッダー・redirect）がこのファイルと同じ文',
     SRC_GAS.includes("headers: { 'Content-Type': 'text/plain;charset=utf-8' }") && SRC_A.includes("headers: { 'Content-Type': 'text/plain;charset=utf-8' }") &&
