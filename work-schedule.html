@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-GBBpqPhraFe+tyPHA8GvA7/pWU/an59QDTlUnVlEtrQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-28A5PZgApCs66KAMJhzVFADbKwgI5+ssDGMFC6I317g='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -760,8 +760,8 @@ body.su-print-staff24 #rp-print, body.su-print-staff24range #rp-print { display:
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
-<script src="su-kv.js?v=2026-10-27.2"></script>
-<script src="su-kv-shadow.js?v=2026-10-24"></script>
+<script src="su-kv.js?v=2026-10-28"></script>
+<script src="su-kv-shadow.js?v=2026-10-28"></script>
 <link rel="stylesheet" href="su-print.css?v=2026-09-12">
 <script src="su-print.js?v=2026-09-12"></script>
 </head>
@@ -16026,6 +16026,61 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     for (var k in p) if (Object.prototype.hasOwnProperty.call(p, k)) r[k] = p[k];
     try { localStorage.setItem(REVS_KEY, JSON.stringify(r)); } catch (e) { wsNote_('版の控え', e); }
   }
+  /* ===== 起動の軽い道の印（2026-10-28・本人指示「起動の時に、版が手元の控えと同じなら全文を取り直さない」）=====
+   * 起動のたびに週の型（ws_weekly_master_v1）と週間計画（care_schedule_v2）を全文で get していた。
+   * 版（ws_sync_revs）だけでは「手元の中身が、その版でサーバーにある中身と同じか」が分からない
+   * （週間計画のタブは版を進めずに手元だけ書く＝起動の同版の get が「中身が違う→送る」で運んでいる）。
+   * そこで、手元とサーバーが同じだと分かった時（送れた・取り込んだ・同版で中身が一致した）に、版・道・中身の指紋を控える。
+   * 起動では、印の版と道が今と同じ・手元の中身の指紋が印と同じ・未送信が無い時だけ head で版を確かめ、同じなら get を省く。
+   *  - 控えるのは版の数字・道（'sb' / 'gas'）・指紋（長さと数字）だけ。氏名や中身は控えない
+   *  - ws_sync_revs の形は変えない（共有の版のキー）。この印はワースケだけが読み書きする
+   *  - 印が無い・壊れている・読めない時は、今までどおり全文を取る */
+  var SYNC_SEAL_KEY = 'ws_sync_seal_v1';
+  /* 中身の指紋（長さ＋2通りの32ビットの数）。一致の見落としは「全文を取る」に倒れるだけ。偶然の一致は約2^-64 */
+  function syncFp_(s) {
+    s = String(s == null ? '' : s);
+    var a = 2166136261, b = 5381, i, c;
+    for (i = 0; i < s.length; i++) {
+      c = s.charCodeAt(i);
+      a ^= c; a = Math.imul(a, 16777619) >>> 0;
+      b = (Math.imul(b, 33) + c) >>> 0;
+    }
+    return s.length + ':' + a.toString(16) + ':' + b.toString(16);
+  }
+  function loadSeal_() {
+    try {
+      var o = JSON.parse(localStorage.getItem(SYNC_SEAL_KEY) || '{}');
+      return (o && typeof o === 'object') ? o : {};
+    } catch (e) { return {}; }
+  }
+  function saveSeal_(name, v) {
+    var o = loadSeal_();
+    o[name] = v;
+    try { localStorage.setItem(SYNC_SEAL_KEY, JSON.stringify(o)); }
+    catch (e) {
+      /* 書けない時は印を消す（古い印を残すと、次の起動で古い中身と同じ版だと取り違える） */
+      try { delete o[name]; localStorage.setItem(SYNC_SEAL_KEY, JSON.stringify(o)); } catch (e2) { try { localStorage.removeItem(SYNC_SEAL_KEY); } catch (e3) {} }
+      wsNote_('起動の印', e);
+    }
+  }
+  function kvRoute_(key) {
+    try { if (window.SUKv && typeof window.SUKv.routed === 'function') return window.SUKv.routed(key) ? 'sb' : 'gas'; } catch (e) {}
+    return null;
+  }
+  /* 週間計画: サーバーから受け取った中身 raw が、その版 rev のサーバーの中身だと分かった時に呼ぶ（取り込んだ時・同版で中身が一致した時）。
+   * ★送れた時（pushCareNow）は書かずに外す: Supabase は保存の直前に週間計画の中身を書き換える（care-backend 0013 の editedBy の刻み）
+   *   ＝送れた版のサーバーの中身は手元の raw と同じでない。次の起動で全文を取れば、書き換えた中身も受け取れる（反証レビュー指摘）
+   * route0 は要求を出す前に控えた道。応答が届いた時の道と違えば書かずに外す（往復の間に Google と Supabase が切り替わった・反証レビュー指摘） */
+  function noteCareSeal_(raw, rev, route0) {
+    if (!raw || typeof rev !== 'number' || rev <= 0 || !route0 || route0 !== kvRoute_(CARE_KEY)) { saveSeal_('care', null); return; }
+    saveSeal_('care', { rev: rev, route: route0, fp: syncFp_(raw) });
+  }
+  /* 週の型: 同版の get は何もしない（中身を比べない）ので、版と道だけを控える。送れた時も書く
+   * （Supabase の kv_put は週の型の中身を書き換えない＝0013 の刻みは週間計画だけ・0017 の印の取り除きは日データだけ）。道の扱いは週間計画と同じ */
+  function noteMasterSeal_(rev, route0) {
+    if (typeof rev !== 'number' || rev <= 0 || !route0 || route0 !== kvRoute_(MASTER_KEY)) { saveSeal_('master', null); return; }
+    saveSeal_('master', { rev: rev, route: route0 });
+  }
   /* ═══ 通信ポリシー（netpolicy.js）と通信診断 ═══════════════════════════════
      1回の失敗で「同期先が見つかりません」「オフライン」を出さないための状態。
      net.failStreak＝連続失敗数（成功で0）、net.lastOkAt＝最後に成功した時刻。
@@ -16798,6 +16853,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   （2026-09-25 レビュー指摘）。rev の新旧を確かめて取り込む呼び手（pullDayNow・pullCareNow・pullMasterNow）は相乗りでよい。 */
   var getInFlight_ = {};
   function gas(payload, cb, fresh) {
+    /* 起動の先出し（bootPrefetch_・2026-10-28）: 書き込みが出たら、そのキーの取っておいた応答を捨てる／
+     * 同じ要求なら、取っておいた応答（または返事待ちの要求）を1回だけ使う。要求の形は変えない */
+    if (typeof bootPreDrop_ === 'function') {
+      try { bootPreDrop_(payload); if (!fresh && bootPreTake_(payload, cb)) return; } catch (eBp) { wsNote_('起動の先出し', eBp); }
+    }
     var ck = '';
     if (!fresh && payload && payload.action === 'get' && typeof payload.key === 'string' && payload.key &&
         Object.keys(payload).length === 2) ck = payload.key;
@@ -19156,12 +19216,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* 並びにできなかったグループも知らせる（2026-10-23: 落ちた組が黙って登録から外れていた） */
     if (res.skipped) okMsg += '。起床・就寝の時間帯のグループ ' + res.skipped + '組は並びにできませんでした（札が2つの列に分かれている・休憩を含む・4時間を超える など）';
     if (res.partial) okMsg += '。' + res.partial + '組は、未配置の札を除いて並びにしました';
-    function keepLocal(base, rev) {
+    function keepLocal(base, rev, route0) {
       base.routines = R;
       IM.stripMasterDaycare_(base);
       var raw = JSON.stringify(base);
       try { localStorage.setItem(MASTER_KEY, raw); } catch (e) { return false; }
-      if (typeof rev === 'number') { saveRevsPatch({ master: rev }); lastPushed.master = raw; }
+      if (typeof rev === 'number') {
+        saveRevsPatch({ master: rev }); lastPushed.master = raw;
+        if (typeof noteMasterSeal_ === 'function') noteMasterSeal_(rev, route0);   /* 起動の軽い道の印（2026-10-28・送れた版。道は送る前に控えた物） */
+      }
       return true;
     }
     if (!syncOn()) {
@@ -19182,9 +19245,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (!base) { toast('支援マスタがサーバーに無いため、並びを固定できません', true); return; }
         base.routines = R;
         IM.stripMasterDaycare_(base);
+        var route0 = (typeof kvRoute_ === 'function') ? kvRoute_(MASTER_KEY) : null;   /* 要求を出す前の道（起動の軽い道の印・2026-10-28） */
         gas({ action: 'put', key: MASTER_KEY, rev: j.rev || 0, data: base }, function (p) {
           if (p && p.ok) {
-            if (!keepLocal(base, p.rev)) { toast('送信はできましたが、この端末への保存に失敗しました（容量不足の可能性）', true); return; }
+            if (!keepLocal(base, p.rev, route0)) { toast('送信はできましたが、この端末への保存に失敗しました（容量不足の可能性）', true); return; }
             toast(okMsg);
             return;
           }
@@ -19416,6 +19480,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (j && j.ok) {
         saveRevsPatch({ care: j.rev });
         lastPushed.care = raw;
+        if (typeof noteCareSeal_ === 'function') noteCareSeal_('', 0);   /* 送れた版のサーバーの中身は手元と同じでない（0013 の刻み）＝印を外し、次の起動は全文を取る（2026-10-28 反証レビュー指摘） */
         dropCareOpsThrough_(opsMax);
         noteSyncSuccess_();
         careWipeNotified_ = false;   /* 一度成功したら次の拒否も必ず知らせる（繰り返し失敗を無言にしない） */
@@ -19494,7 +19559,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        （保留中の版をそのまま当てると、待っている間の他端末の更新を落とす）。 */
     try { pullCareNow(notify); } catch (e) {}
   }
-  function adoptCare(data, rev, notify) {
+  function adoptCare(data, rev, notify, route0) {
     if (careEditingElsewhere_()) {
       carePendingAdopt_ = { notify: notify,
         since: (carePendingAdopt_ && carePendingAdopt_.since) || Date.now() };
@@ -19513,6 +19578,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     } catch (e) { return; }
     saveRevsPatch({ care: rev });
     lastPushed.care = raw;
+    if (typeof noteCareSeal_ === 'function') noteCareSeal_(raw, rev, route0);   /* 起動の軽い道の印（2026-10-28）。この後の再適用で手元が変われば、印と指紋が合わず次の起動は全文を取る */
     /* サーバー版採用でローカル未送信のcare編集（詳細/入院/昼薬）が巻き戻らないよう再適用（冪等）。
      * マスタ一括適用分は stamp 判定付きの syncCareFromMaster が自然に再適用する。
      * 再適用で raw が変われば saveCareDb→schedulePushCare が自動でマージ結果を再送する。 */
@@ -19571,26 +19637,29 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     function fin() { if (done) { try { done(); } catch (e) {} } }
     if (!syncOn()) { fin(); return; }
     if (printing_()) { fin(); return; }   /* 印刷中は取込しない（§10保護・done は必ず呼ぶ） */
+    var route0 = (typeof kvRoute_ === 'function') ? kvRoute_(CARE_KEY) : null;   /* 要求を出す前の道（起動の軽い道の印・2026-10-28） */
     gas({ action: 'get', key: CARE_KEY }, function (j) {
       if (!j || !j.ok) { scheduleRetry_(); markCareInit(); fin(); return; }
       noteSyncSuccess_();
-      if (j.data && (j.rev || 0) > (loadRevs().care || 0)) { adoptCare(j.data, j.rev, notify); markCareInit(); fin(); return; }
+      if (j.data && (j.rev || 0) > (loadRevs().care || 0)) { adoptCare(j.data, j.rev, notify, route0); markCareInit(); fin(); return; }
       if (!j.data) {
         /* サーバーに care が無いのにローカル rev>0 ＝rev不整合（新規サーバー/データ消失）。
          * rev を 0 に戻して送り直す（conflict→pull→data無し の無限ループを断ち、ローカルを復元送信）。 */
         if ((loadRevs().care || 0) > 0) saveRevsPatch({ care: 0 });
+        if (typeof noteCareSeal_ === 'function') noteCareSeal_('', 0);   /* 起動の軽い道の印も外す（2026-10-28） */
         markCareInit(); schedulePushCare(); fin(); return;
       }
       /* サーバーと同版: 週間計画アプリ単独で行われた未送信編集を検出して push する
        * （一方向同期化後、care_schedule_v2 をクラウドへ運ぶのはワースケの役目のため） */
       var raw = '';
       try { raw = localStorage.getItem(CARE_KEY) || ''; } catch (e) {}
-      if (!raw) { adoptCare(j.data, j.rev || 0, false); markCareInit(); fin(); return; }
+      if (!raw) { adoptCare(j.data, j.rev || 0, false, route0); markCareInit(); fin(); return; }
       var serverRaw = '';
       try { serverRaw = JSON.stringify(j.data); } catch (e2) {}
       if (raw === serverRaw) {
         lastPushed.care = raw;
         saveRevsPatch({ care: j.rev || 0 });
+        if (typeof noteCareSeal_ === 'function') noteCareSeal_(raw, j.rev || 0, route0);   /* 起動の軽い道の印（2026-10-28） */
       } else {
         schedulePushCare();
       }
@@ -19617,9 +19686,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var data = null;
     try { data = JSON.parse(raw); } catch (e) { return; }
     setMasterUnsent_(true);
+    var route0 = (typeof kvRoute_ === 'function') ? kvRoute_(MASTER_KEY) : null;   /* 要求を出す前の道（起動の軽い道の印・2026-10-28） */
     gas({ action: 'put', key: MASTER_KEY, rev: loadRevs().master || 0, data: data }, function (j) {
       if (j && j.ok) {
         saveRevsPatch({ master: j.rev }); lastPushed.master = raw;
+        if (typeof noteMasterSeal_ === 'function') noteMasterSeal_(j.rev, route0);   /* 起動の軽い道の印（2026-10-28） */
         var nowRaw_ = '';
         try { nowRaw_ = localStorage.getItem(MASTER_KEY) || ''; } catch (eR) {}
         if (nowRaw_ === raw) setMasterUnsent_(false);   /* 送信中に変わっていたら印は残す（次の送信で降ろす） */
@@ -19631,6 +19702,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
   function pullMasterNow() {
     if (!syncOn()) return;
+    var route0 = (typeof kvRoute_ === 'function') ? kvRoute_(MASTER_KEY) : null;   /* 要求を出す前の道（起動の軽い道の印・2026-10-28） */
     gas({ action: 'get', key: MASTER_KEY }, function (j) {
       if (!j || !j.ok) return;
       if (j.data && (j.rev || 0) > (loadRevs().master || 0)) {
@@ -19643,6 +19715,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         try { localStorage.setItem(MASTER_KEY, after_); } catch (e) { return; }
         saveRevsPatch({ master: j.rev });
         lastPushed.master = (before_ === after_) ? after_ : '';
+        /* 起動の軽い道の印（2026-10-28）。デイ入りを落とした時（手元とサーバーの中身が違う＝この後送り直す）は外す */
+        if (typeof noteMasterSeal_ === 'function') noteMasterSeal_(before_ === after_ ? j.rev : 0, route0);
         if (before_ === after_ && masterUnsent_()) setMasterUnsent_(false);   /* サーバー版を採用＝送る物は無い */
         toast('支援マスタを同期しました');
         if (before_ !== after_) { try { pushMasterNow(); } catch (e5) {} }   /* サーバーの汚染版を治す */
@@ -19654,6 +19728,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       } else if (!j.data) {
         /* サーバーに無いのにローカル rev>0 ＝rev不整合。rev を 0 に戻して送り直す（無限競合の防止） */
         if ((loadRevs().master || 0) > 0) saveRevsPatch({ master: 0 });
+        if (typeof noteMasterSeal_ === 'function') noteMasterSeal_(0, null);   /* 起動の軽い道の印も外す（2026-10-28） */
         pushMasterNow();
       }
     });
@@ -19674,6 +19749,131 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (settings.shiftAuto) { try { applyShiftForDate(d0, { auto: true }, function () { routineAfterPull_(d0); }); } catch (e) {} }
         else routineAfterPull_(d0);
       });
+    });
+  }
+
+  /* ===== 起動の取得（2026-10-28・本人指示「起動の時に、週の型と週間計画の版が手元の控えと同じなら全文を取り直さない」）=====
+   * 起動（boot）だけの入口。focus・回線の復帰・画面の復帰・巡回の取り直しは今までどおり pullAll。
+   * 1. 週の型・週間計画は、起動の軽い道の印（SYNC_SEAL_KEY）が使える時だけ head（1往復）で版を確かめ、同じ版なら全文を取らない。
+   *    印が無い・版や道や中身の指紋が印と違う・未送信がある・head が失敗した・版が違う・往復の間に手元が変わった時は今までどおり全文を取る。
+   *    ★Supabase の道だけ。Google の GAS の head の版は通知用の控え（CacheService）で、Drive の実体と最長10分食い違う
+   *    （gas/Code.gs「版番号の控え」）＝同じ版に見えても古い中身で照合しうる。pullCareLight_ と同じ理由
+   * 2. その日の盤面と勤務表は、週間計画を待たずに要求だけ先に出す（bootPrefetch_）。応答は取っておくだけで、
+   *    取り込みの順番（週間計画 → その日の盤面 → 勤務表の反映 → 並び）は今までどおり。順番が来た時の get / pull が、取っておいた応答を使う。
+   *    ・取っておくのは成功の応答だけ・1回だけ・出してから30秒まで。そのキーへの書き込みが出たら捨てる（自分の送信より古い応答を使わない）
+   *    ・失敗した・古くなった・使われなかった時は、順番が来た時に今までどおり要求を出す
+   *    ・勤務表は、自動で反映する設定で、端末の勤務表を先に当てている間でなく、手元にその月の勤務表が無い時だけ（起動の本体取得と同じ条件） */
+  var bootPre_ = {};          /* 要求の印 → { at, has, j, waiter } */
+  var BOOT_PRE_TTL_MS = 30000;
+  function bootPreSig_(payload) {
+    if (!payload || typeof payload !== 'object') return '';
+    var n = Object.keys(payload).length;
+    if (n !== 2) return '';
+    if (payload.action === 'get' && typeof payload.key === 'string' && payload.key) return 'get|' + payload.key;
+    if (payload.action === 'pull' && Array.isArray(payload.keys) && payload.keys.length) return 'pull|' + payload.keys.join(',');
+    return '';
+  }
+  var BOOT_PRE_READS_ = { get: 1, head: 1, pull: 1, ping: 1, list: 1, history: 1, lockStatus: 1, shiftStatus: 1 };
+  /* 書き込み（put 等）が出たら、同じキーの取っておいた応答を捨てる。キーが分からない書き込みは全部捨てる */
+  function bootPreDrop_(payload) {
+    if (!payload || BOOT_PRE_READS_[payload.action] === 1) return;
+    var ks = (typeof payload.key === 'string') ? [payload.key] : null;
+    for (var sig in bootPre_) {
+      if (!Object.prototype.hasOwnProperty.call(bootPre_, sig)) continue;
+      var sk = sig.slice(sig.indexOf('|') + 1).split(','), hit = !ks;
+      for (var i = 0; !hit && i < sk.length; i++) if (sk[i] === ks[0]) hit = true;
+      if (hit) delete bootPre_[sig];
+    }
+  }
+  /* 同じ要求の取っておいた応答を使う（使ったら true）。返事待ちなら、届いた時にこの cb へ渡す */
+  function bootPreTake_(payload, cb) {
+    var sig = bootPreSig_(payload);
+    var e = sig ? bootPre_[sig] : null;
+    if (!e) return false;
+    delete bootPre_[sig];   /* 1回だけ */
+    if (Date.now() - e.at > BOOT_PRE_TTL_MS) { e.waiter = null; e.dead = true; return false; }   /* 古い＝今までどおり要求を出す */
+    if (e.has) {
+      var j = e.j;
+      setTimeout(function () { try { cb(j); } catch (er) {} }, 0);   /* 応答が届いた時と同じく、後で呼ぶ */
+      return true;
+    }
+    e.waiter = cb;
+    return true;
+  }
+  function bootPrefetch_(payload) {
+    var sig = bootPreSig_(payload);
+    if (!sig || bootPre_[sig]) return;
+    var e = { at: Date.now(), has: false, j: null, waiter: null, dead: false };
+    bootPre_[sig] = e;
+    gas(payload, function (j) {
+      if (e.waiter) { var w = e.waiter; e.waiter = null; try { w(j); } catch (er) {} return; }
+      if (e.dead || bootPre_[sig] !== e) return;          /* 捨てられた（書き込みが出た・古くなった） */
+      if (!j || j.ok === false) { delete bootPre_[sig]; return; }   /* 失敗は取っておかない＝順番が来た時に出し直す */
+      e.has = true; e.j = j;
+    }, true);   /* fresh＝自分の先出しを自分で使わない */
+  }
+  /* 起動の軽い道の門。使える時は手元の週間計画の文字列を返す（使えない時は ''） */
+  function careBootSealOk_() {
+    var s = loadSeal_().care, rev = 0, raw = '';
+    try { rev = loadRevs().care || 0; raw = localStorage.getItem(CARE_KEY) || ''; } catch (e) { return ''; }
+    if (!s || typeof s !== 'object' || rev <= 0 || s.rev !== rev || !raw) return '';
+    if (s.route !== 'sb' || kvRoute_(CARE_KEY) !== 'sb') return '';
+    if (careEditingElsewhere_()) return '';                     /* 週間計画のタブに未送信がある */
+    try { if (loadCareOps_().ops.length) return ''; } catch (e2) { return ''; }   /* ワースケの週間計画の編集が未送信 */
+    if (s.fp !== syncFp_(raw)) return '';                       /* 手元の中身が、最後に送った・取った物と違う */
+    return raw;
+  }
+  function masterBootSealOk_() {
+    var s = loadSeal_().master, rev = 0;
+    try { rev = loadRevs().master || 0; if (!localStorage.getItem(MASTER_KEY)) return false; } catch (e) { return false; }
+    if (!s || typeof s !== 'object' || rev <= 0 || s.rev !== rev) return false;
+    if (s.route !== 'sb' || kvRoute_(MASTER_KEY) !== 'sb') return false;
+    if (masterUnsent_()) return false;
+    return true;
+  }
+  function pullAllBoot_() {
+    if (!syncOn() || printing_()) { pullAll(false); return; }   /* 取らない時の扱いは pullAll に任せる */
+    lastPullAt = Date.now();
+    var d0 = ui.currentDate;
+    try {
+      if (!versionHold_ && !dayPushBusy_) bootPrefetch_({ action: 'get', key: dayKey(d0) });
+      var ym0 = shiftMonth(d0);
+      if (settings.shiftAuto && !shiftHoldActive_(ym0) && !(shiftCache.ym === ym0 && shiftCache.plan)) {
+        bootPrefetch_({ action: 'pull', keys: [cloudStaffKey(), cloudSymbolsKey(), cloudPlanKey(ym0)] });
+      }
+    } catch (ePf) { wsNote_('起動の先出し', ePf); }
+    var masterLight = masterBootSealOk_(), careLight = !!careBootSealOk_();
+    /* ★この中は pullAll の pullCareNow の後ろと一字一句同じにする（notify は false）。試験 boot-light.test.js が比べる */
+    function afterCare() {
+      pullDayNow(d0, false, null, function () {
+        try { store.auto(migrateDay); } catch (eM) {}   /* migrateDay の自動書換を履歴非汚染に */
+        if (settings.shiftAuto) { try { applyShiftForDate(d0, { auto: true }, function () { routineAfterPull_(d0); }); } catch (e) {} }
+        else routineAfterPull_(d0);
+      });
+    }
+    if (!masterLight) pullMasterNow();
+    if (!careLight) pullCareNow(false, afterCare);
+    if (!masterLight && !careLight) return;
+    var hk = [];
+    if (careLight) hk.push(CARE_KEY);
+    if (masterLight) hk.push(MASTER_KEY);
+    gas({ action: 'head', keys: hk }, function (j) {
+      var r = (j && j.ok !== false && j.revs && typeof j.revs === 'object') ? j.revs : null;
+      if (masterLight) {
+        /* 同じ版なら何もしない（同版の get も何もしない）。それ以外は今までどおり全文 */
+        if (!(r && typeof r[MASTER_KEY] === 'number' && r[MASTER_KEY] === (loadRevs().master || 0) && masterBootSealOk_())) pullMasterNow();
+      }
+      if (careLight) {
+        var raw = careBootSealOk_();   /* 往復の間に手元・版・道・未送信が変わっていないかを確かめ直す */
+        if (r && typeof r[CARE_KEY] === 'number' && raw && r[CARE_KEY] === (loadRevs().care || 0)) {
+          /* 同版の get で中身が一致した時と同じ（pullCareNow の raw === serverRaw の分岐） */
+          lastPushed.care = raw;
+          saveRevsPatch({ care: r[CARE_KEY] });
+          noteSyncSuccess_();
+          markCareInit();
+          afterCare();
+        } else pullCareNow(false, afterCare);
+      }
     });
   }
 
@@ -21185,7 +21385,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261028144456';
+  var WS_BUILD = '20261028221945';
   var WS_APP_VER = 2026102701;   /* 2026-10-27 まだ届いていないロックを「外した」に変えて送り、版の進んでいない古い未送信を退避して捨てる前の版の画面が、仕上げたロックの盤面を前の版で上書きしないよう上げた（代表者承認 A・B）
                                   * （2026101706: 2026-10-23 トレイへ入った理由の印（parkedByHand・absentMoved・routineTray）を知らない前の版の画面が、手で戻した札・休みで移した札を印なしで残し、
                                   * 新しい版がそれを列へ戻してしまわないよう上げた）
@@ -21358,7 +21558,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       if (syncOn() && (dirtyDayList_().length || refetchList_().length || loadCareOps_().ops.length || masterUnsent_())) scheduleRetry_();
     } catch (eDirty) {}
-    try { pullAll(false); } catch (e) {}
+    try { pullAllBoot_(); } catch (e) {}   /* 起動だけの入口（2026-10-28・版が同じなら全文を取らない・日と勤務表は先に要求を出す） */
     try { runRefetch_(); } catch (eRf0) {}   /* 起動時: 取り直し待ちの日を取り直す（前回オフラインで取れなかった分） */
     /* 接続先が本当に同期GASかを1回だけ確認。全端末の一斉再読み込みで同じ瞬間に集中しないよう3〜10秒ばらす（2026-09-25） */
     setTimeout(function () { try { checkEndpointIdentity_(); } catch (eCe) {} }, NP.startJitterMs(3000, 10000));
