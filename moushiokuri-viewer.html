@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ja543R5EfA0NJBdcE4m3gZ3muLFKiXWUAvv7U9hid90='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-/N8UTqFdxvqogkPVUfmjk/LCtLI/2gC6+cIsvI343iM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -878,6 +878,9 @@ var DATA = { from:'', to:'', reqFrom:'', reqTo:'', reqMode:'', reqDays:0,
      （入居者別・日付別・検索・まとめコピー・カテゴリの印）。戻す時はここを true にする。 */
 var SHOW_AI_SUMMARY = false;
 function ledgerRows(v){ return SHOW_AI_SUMMARY ? normRows(v) : []; }
+/* 出来事（events）を読む時の引数。要約を出さない間は GAS に「要約を返さない」（noLedger）を頼み、応答を軽くする（2026-10-28 本人指示）。
+   ★古い GAS は知らない引数を無視して要約入りで返すが、上の ledgerRows が捨てるので画面の動きは同じ */
+function evParams(o){ if(!SHOW_AI_SUMMARY) o.noLedger = 1; return o; }
 var SEL = '';        // 選択中の入居者（正規化キー）
 var ROSTER = [];     // su_residents_common の写し（読取専用）
 
@@ -1369,7 +1372,7 @@ function load(opts){
   if(baseStale()) rgClearBase();
   else if($('scr-search').classList.contains('on')) renderSearch();
   rgSetStatus('読み込み中…');
-  return apiGet('events', { from:r.from, to:r.to }).then(function(res){
+  return apiGet('events', evParams({ from:r.from, to:r.to })).then(function(res){
     DATA = { from:(okYmd(res.from) ? res.from : r.from), to:(okYmd(res.to) ? res.to : r.to),
              reqFrom:r.from, reqTo:r.to, reqMode:r.mode, reqDays:rgDays(),
              events:normRows(res.events), ledger:ledgerRows(res.ledger),
@@ -1788,7 +1791,7 @@ function renderDateView(force){
   $('dateFresh').hidden = true;
   $('dstatus').textContent = '読み込み中…';
   $('dateGo').disabled = true;
-  apiGet('events', { from:d, to:d }).then(function(res){
+  apiGet('events', evParams({ from:d, to:d })).then(function(res){
     if(seq !== DV_SEQ) return;              // 後から出した要求がある＝この応答は使わない
     box.textContent = '';                   // 採用する応答の直前に消す（前回分と混ざらないように）
     var evs = normRows(res.events), lgs = ledgerRows(res.ledger);
