@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-AwWvRQ5XfiWnkFA7Iaep/nvlkEL4wJCupcQEFXlan6E='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-Dn6cpkMMWMqqgadArwsgJqt4xY8v+Mr66QJ6/H27seQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -4541,7 +4541,11 @@ function rmPrint_(kind){
    ★家族・病名・処方は【共有名簿にも getBulk にも無い】。1名ずつ getResident で取る。
      在籍32名で32回。同時に5本までにして、進み具合を画面に出す（無言で30秒待たせない）。
    ★取れなかった方は【空欄にせず「取得できず」と出す】。空欄だと「家族なし」「薬なし」に読める。
-   ★読み取り専用。この2ビューはマスタを1バイトも更新しない。 */
+   ★読み取り専用。この2ビューはマスタを1バイトも更新しない。
+   ★2026-10-28（本人指示）: まず GAS の getListFull で在籍者の5項目（家族・病名・病名の旧自由文・既往歴・定期薬）を1回で読む。
+     1人ずつだと在籍40名ほどで40往復・約3.5MB を受け取り、使うのは約30KB だけだった。
+     読み取り口の無い古い GAS（不明なaction）・通信の失敗の時は全員を、rows に居ない方（名簿とシートのずれ）だけは、今までどおり1人ずつ取る。
+     rows の行は「オブジェクトで id が null でない」ものだけを使う（受け取った値を信じない）。 */
 var fullMap=null, fullLoading=false, fullErr='', fullDone=0, fullTotal=0, fullBad=null, fullGen=0;
 function fullEnsure(force){
   /* ★現場端末では取りに行かない（薬効辞書の mdLoad_ と同じ。fullMap は処方を持つ） */
@@ -4553,21 +4557,52 @@ function fullEnsure(force){
   if(!ids.length){ fullErr='在籍者が居ません'; paintShBars(); return; }
   var gen=++fullGen;
   fullLoading=true; fullErr=''; fullDone=0; fullTotal=ids.length;
-  var got={}, bad=[], i=0, LANES=5;
+  var got={}, bad=[], LANES=5;
   paintShBars();
-  function next(){
-    if(gen!==fullGen) return Promise.resolve();          /* 取り直しに追い越されたら捨てる */
-    if(i>=ids.length) return Promise.resolve();
-    var id=ids[i++];
-    return apiGet({action:'getResident',id:id},30000).then(function(d){
-      if(gen!==fullGen) return;                            /* 世代が変わった後に届いた応答は控えにも入れない */
-      var rec=(d&&d.record)||null;
-      if(rec&&rec.id!=null) got[String(id)]=rec; else bad.push(id);
-    }).catch(function(){ bad.push(id); })
-      .then(function(){ if(gen!==fullGen) return; fullDone++; paintShBars(); return next(); });
+  /* 1人ずつ取る道（同時5本）。list に渡した方だけを取る */
+  function oneByOne(list){
+    var i=0;
+    function next(){
+      if(gen!==fullGen) return Promise.resolve();          /* 取り直しに追い越されたら捨てる */
+      if(i>=list.length) return Promise.resolve();
+      var id=list[i++];
+      return apiGet({action:'getResident',id:id},30000).then(function(d){
+        if(gen!==fullGen) return;                            /* 世代が変わった後に届いた応答は控えにも入れない */
+        var rec=(d&&d.record)||null;
+        if(rec&&rec.id!=null) got[String(id)]=rec; else bad.push(id);
+      }).catch(function(){ bad.push(id); })
+        .then(function(){ if(gen!==fullGen) return; fullDone++; paintShBars(); return next(); });
+    }
+    var lanes=[]; for(var k=0;k<LANES;k++) lanes.push(next());
+    return Promise.all(lanes);
   }
-  var lanes=[]; for(var k=0;k<LANES;k++) lanes.push(next());
-  Promise.all(lanes).then(function(){
+  /* まとめて読む道。戻り値は「1人ずつ取る方の id の並び」（世代が変わっていたら null＝何もしない） */
+  apiGet({action:'getListFull'},60000).then(function(d){
+    if(gen!==fullGen) return null;                          /* 世代が変わった後に届いた応答は控えにも入れない */
+    if(!d||!Array.isArray(d.rows)) return ids;              /* rows が無い応答は古い GAS とみなして全員を1人ずつ */
+    var byId=Object.create(null);
+    d.rows.forEach(function(row){
+      if(!row||typeof row!=='object'||Array.isArray(row)||row.id==null) return;
+      var k=String(row.id);
+      if(!(k in byId)) byId[k]=row;                         /* 同じ id が2つ来たら先の行（GAS と同じ先勝ち） */
+    });
+    var rest=[];
+    ids.forEach(function(id){ var k=String(id); if(k in byId) got[k]=byId[k]; else rest.push(id); });
+    fullDone=ids.length-rest.length; paintShBars();
+    return rest;
+  }, function(e){
+    if(gen!==fullGen) return null;
+    /* ★古い GAS の「不明なaction」以外で断られた時だけ記録に残す。黙って1人ずつに戻ると、
+       新しい GAS を配った後も遅いままなのに誰も気づけない（記録するのは失敗の種類だけ） */
+    var em=String((e&&e.message)||'');
+    if(em.indexOf('不明なaction')<0){
+      try{ if(window.SUErrors&&typeof window.SUErrors.note==='function') window.SUErrors.note('まとめ読みの失敗', em==='タイムアウト'?'タイムアウト':String((e&&e.name)||'Error').slice(0,40), 'master:listFull'); }catch(_){}
+    }
+    return ids;                                             /* 古い GAS（不明なaction）・通信の失敗は全員を1人ずつ */
+  }).then(function(rest){
+    if(rest===null||gen!==fullGen) return;
+    if(rest.length) return oneByOne(rest);
+  }).then(function(){
     if(gen!==fullGen) return;
     /* ★1件も取れなければ成功として扱わない（全員空欄の帳票を正しい結果として刷らせない） */
     if(!Object.keys(got).length){ fullErr='取得できませんでした'; return; }

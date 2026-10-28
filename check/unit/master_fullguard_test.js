@@ -66,6 +66,7 @@ const OLD_MARK = '旧世代の目印 架空薬Z 1錠 夕';
 function load(src){
   const store = new Map();
   const calls = [];        // apiGet の呼び出し記録 {id, args, timeout, resolve, reject, done}
+  const listFullCalls = []; // getListFull の呼び出し記録（古い GAS として断った分）
   const cnt = { paintShBars: 0, renderRoster: 0, fitHistSheet: 0, saveOpenId: [], mdClearPending_: 0 };
   const els = {};
   function fakeEl(id){
@@ -92,6 +93,10 @@ function load(src){
     curView: 'hist',
     shBase(){ return IDS.map(id => ({ id: id, room: id.slice(1) })); },
     apiGet(args, timeout){
+      /* 2026-10-28 から fullEnsure は最初に getListFull（まとめ読み）を1本送る。この試験は1人ずつの道の
+         世代・端末の守りを見るため、getListFull は古い GAS と同じく「不明なaction」で断る（calls には数えない）。
+         まとめ読みの道は check/unit/master_list_full_test.js で確かめる */
+      if(args && args.action === 'getListFull'){ listFullCalls.push(args); return Promise.reject(new Error('不明なaction')); }
       let res, rej;
       const p = new Promise((a, b) => { res = a; rej = b; });
       const c = { id: args && args.id, args, timeout, done: false,
