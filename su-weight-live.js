@@ -13,7 +13,9 @@
  *       失敗として返す（画面は未送信に残して後で送り直す＝「保存しました」と出さない）。
  *     ★Supabase に保存できたら、同じ書き込みを Google へも写し返す（戻せるように）。写し返しは端末の送信待ち
  *       （wtmgr_mirror_q）に積んで1件ずつ送り、Google が受け取った時だけ外す。スイッチを切った後・写しの期間に戻った後は、
- *       Google へ直接送る前に、残っている写し返しを先に送る（順番を入れ替えない）。
+ *       Google へ直接送る前に、残っている写し返しを先に送る（順番を入れ替えない）。送れない時は Google へ直接送らず失敗にする
+ *       （画面の未送信に残る）。写し返しを送るのは1つのタブだけ（navigator.locks）。送信待ちが MIRROR_MAX 件に達したら、
+ *       Supabase へ書く前に断る（あふれた分を捨てない）。
  *   ・ログインの控えが無い端末でスイッチが入っている時は、読み書きとも「ログインしてください」の失敗にする
  *     （切り替え済みかどうかを確かめられないため、Google へは流さない）。
  *   ・読み込み・書き込みとも、データベースに関数が無い（0032 を流す前）時は、写しの期間と同じく Google。
@@ -34,8 +36,12 @@
     toomany: '短い間に消す操作が多すぎるため、いったん止めました（記録はこの端末に残っています）。しばらくしてから自動で送り直します',
     badrow: 'この記録の形が正しくないため、サーバーに保存できませんでした（記録はこの端末に残っています）。事務所に連絡してください',
     toolarge: 'この記録が大きすぎるため、サーバーに保存できませんでした（記録はこの端末に残っています）。事務所に連絡してください',
-    timeout: 'サーバーの応答が時間内にありませんでした（記録はこの端末に残っています）。通信を確かめてください'
+    timeout: 'サーバーの応答が時間内にありませんでした（記録はこの端末に残っています）。通信を確かめてください',
+    server: 'サーバーで保存できませんでした（記録はこの端末に残っています）。しばらくしてから自動で送り直します',
+    mirror: 'Google へまだ送れていない記録があります（記録はこの端末に残っています）。順番が入れ替わらないよう、それを送れてから続きを送ります',
+    full: 'Google へまだ送れていない記録が多すぎるため、いったん止めました（記録はこの端末に残っています）。通信を確かめてください'
   };
+  var LOGIN_CODES = { PGRST301: 1, PGRST302: 1, '401': 1 };
 
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function lsJson(k) { try { return JSON.parse(lsGet(k) || 'null'); } catch (e) { return null; } }
@@ -108,6 +114,13 @@
     return Promise.race([call, limit]);
   }
   function errCode(r) { return String((r && r.error && (r.error.code || r.error.message)) || ''); }
+  /* データベースの断りを職員向けの文にする（権限・ログインの切れ・それ以外） */
+  function errMsg(r) {
+    var code = errCode(r), m = String((r && r.error && r.error.message) || '');
+    if (code === '42501') return MSG.denied;
+    if (LOGIN_CODES[code] || /jwt/i.test(m)) return MSG.login;
+    return MSG.server;
+  }
 
   // ── Google へ写し返す送信待ち（端末に積み、1件ずつ・受け取った時だけ外す）──
   function mirrorLoad() { var q = lsJson(MIRROR_LS); return Array.isArray(q) ? q : []; }
@@ -118,16 +131,23 @@
   function mirrorPush(action, data) {
     var q = mirrorLoad();
     q.push({ action: action, data: data, at: Date.now() });
-    if (q.length > MIRROR_MAX) { note('写し返しの送信待ちがあふれた', new Error(String(q.length - MIRROR_MAX))); q = q.slice(-MIRROR_MAX); }
     mirrorSave(q);
   }
   var gasPost = null, draining = null, retryTimer = 0;
-  /* 残っている写し返しを先頭から送る。失敗したらそこで止める（順番を入れ替えない）。同時に2本は走らせない */
+  /* 残っている写し返しを先頭から送る。失敗したらそこで止める（順番を入れ替えない）。同時に2本は走らせない。
+   * 戻り値は「全部送れた」か。タブが2つある時は、ブラウザの鍵（navigator.locks）で1つのタブだけが送る
+   * （鍵の無いブラウザでは、このタブの中だけで1本） */
+  function withLock(fn) {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.locks && typeof navigator.locks.request === 'function') return navigator.locks.request('wtmgr_mirror_q', fn);
+    } catch (e) { /* 鍵が使えなければ、このタブの中だけで1本 */ }
+    return fn();
+  }
   function drainMirror(post) {
     if (post) gasPost = post;
     if (draining) return draining;
     if (!gasPost || !mirrorLoad().length) return Promise.resolve(true);
-    draining = (function next() {
+    draining = withLock(function next() {
       var q = mirrorLoad();
       if (!q.length) return Promise.resolve(true);
       var it = q[0];
@@ -139,7 +159,7 @@
           if (cur.length && cur[0].at === it.at && cur[0].action === it.action) { cur.shift(); mirrorSave(cur); }
           return next();
         }, function () { return false; });
-    })().then(function (done) {
+    }).then(function (done) {
       draining = null;
       if (!done) {
         clearTimeout(retryTimer);
@@ -171,15 +191,15 @@
   function getAll(post) {
     if (post) gasPost = post;
     return ensureFlags().then(function () {
-      if (!switchOn()) { lastFrom = ''; return drainMirror().then(function () { return null; }); }
+      if (!switchOn()) { lastFrom = ''; return drainMirror().then(function (done) { return done ? null : { error: MSG.mirror }; }); }
       if (!hasSession()) { lastFrom = ''; return { error: MSG.login }; }
       return rpc('weight_get_all', {}).then(function (r) {
         var code = errCode(r);
         if (NO_FUNC[code] || (!r.error && r.data && r.data.error === 'shadow')) {
           lastFrom = '';
-          return drainMirror().then(function () { return null; });
+          return drainMirror().then(function (done) { return done ? null : { error: MSG.mirror }; });
         }
-        if (r.error) { lastFrom = ''; return { error: code === '42501' ? MSG.denied : MSG.login }; }
+        if (r.error) { lastFrom = ''; return { error: errMsg(r) }; }
         var d = r.data || {};
         if (!d.ok) { lastFrom = ''; return { error: String(d.error || '') || MSG.denied }; }
         lastFrom = 'supabase';
@@ -200,12 +220,15 @@
   function post(action, payload, data, postFn) {
     if (postFn) gasPost = postFn;
     return ensureFlags().then(function () {
-      if (!switchOn()) return drainMirror().then(function () { return null; });
+      if (!switchOn()) return drainMirror().then(function (done) { return done ? null : { ok: false, error: MSG.mirror }; });
       if (!hasSession()) return { ok: false, error: MSG.login };
+      if (mirrorLoad().length >= MIRROR_MAX) { drainMirror(); return { ok: false, error: MSG.full }; }
       return rpc('weight_write', { p_action: action, p_payload: payload || {} }).then(function (r) {
         var code = errCode(r);
-        if (NO_FUNC[code] || (!r.error && r.data && r.data.error === 'shadow')) return drainMirror().then(function () { return null; });
-        if (r.error) return { ok: false, error: code === '42501' ? MSG.denied : MSG.login };
+        if (NO_FUNC[code] || (!r.error && r.data && r.data.error === 'shadow')) {
+          return drainMirror().then(function (done) { return done ? null : { ok: false, error: MSG.mirror }; });
+        }
+        if (r.error) return { ok: false, error: errMsg(r) };
         var d = r.data || {};
         if (!d.ok) return { ok: false, error: MSG[d.error] || String(d.error || '') || MSG.denied };
         try { mirrorPush(action, JSON.parse(JSON.stringify(data || {}))); } catch (e) { note('写し返しの積み込み', e); }

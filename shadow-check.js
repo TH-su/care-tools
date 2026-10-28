@@ -1195,14 +1195,15 @@
     var why0 = weightModeBlock(mode, weightSwitch());
     if (why0) { msg(why0, 'warn'); return; }
     var q = mode === 'live'
-      ? '体重の保存先を Supabase（本番）に切り替えますか？\n\n30分以内に事務所PCで体重管理を開き、写しを最新にしてから進めてください。切り替えた後も、Google へは各端末が写し返します。'
+      ? '体重の保存先を Supabase（本番）に切り替えますか？\n\n15分以内に事務所PCで体重管理を開き、写しを最新にしてから進めてください。切り替えた後も、Google へは各端末が写し返します。'
       : '体重を「写しの期間」に戻しますか？\n\n各端末は次の通信から Google へ送ります（端末に残っている Google への写し返しを先に送ります）。';
     if (!confirm(q)) return;
     if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
     var r = await SUAuth.client().rpc('weight_set_mode', { p_mode: mode });
     if (r.error || !r.data || !r.data.ok) {
       var why = String((r.error && (r.error.code || r.error.message)) || (r.data && r.data.error) || '');
-      msg('変更できませんでした: ' + (why === 'stale' ? '写しが30分より前か、最後の写しを受け付けていません。事務所PCで体重管理を開き、数秒待ってから、もう一度押してください。'
+      msg('変更できませんでした: ' + (why === 'stale' ? '写しが15分より前か、最後の写しを受け付けていません。事務所PCで体重管理を開き、数秒待ってから、もう一度押してください。'
+        : why === 'writes' ? '最後の写しの後に（または写しの直前に）体重の保存がありました。体重を入れていない時に、事務所PCで体重管理を開き直し、6分ほど待ってから、もう一度押してください。'
         : /PGRST202|42883/.test(why) ? 'データベースの準備（0032）がまだです。'
         : why === '42501' ? '管理者（二段階認証済み）のアカウントで開いてください。' : why));
       return;
@@ -1221,7 +1222,7 @@
     var q = await Promise.all([
       sb.from('weight_residents').select('id', { count: 'exact', head: true }).is('deleted_at', null),
       sb.from('weight_records').select('id', { count: 'exact', head: true }).is('deleted_at', null),
-      sb.from('weight_sync_runs').select('at,residents,records,inserted,updated,unchanged,deleted,refused').order('at', { ascending: false }).limit(5)
+      sb.from('weight_sync_runs').select('*').order('at', { ascending: false }).limit(5)
     ]);
     var err = q.filter(function (r) { return r.error; })[0];
     if (err) throw err.error;
@@ -1248,7 +1249,8 @@
       var li = el('li'), left = el('div');
       left.appendChild(el('div', 'nm', fmtTime(r.at)));
       left.appendChild(el('div', 'em', r.refused ? '受け付けず（' + r.refused + '）　入居者 ' + r.residents + '人・記録 ' + r.records + '件'
-        : '入居者 ' + r.residents + '人・記録 ' + r.records + '件／追加 ' + r.inserted + '・更新 ' + r.updated + '・変化なし ' + r.unchanged + '・消えた印 ' + r.deleted));
+        : '入居者 ' + r.residents + '人・記録 ' + r.records + '件／追加 ' + r.inserted + '・更新 ' + r.updated + '・変化なし ' + r.unchanged + '・消えた印 ' + r.deleted
+          + (r.kept ? '・切り替え中の書き込みを守った ' + r.kept : '')));
       li.appendChild(left);
       ul.appendChild(li);
     });

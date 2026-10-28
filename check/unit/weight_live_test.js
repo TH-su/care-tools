@@ -66,6 +66,8 @@ function box(o) {
     clearTimeout: () => {},
     console, JSON, Date, Promise, Object, Array, String, Number, Math, Error
   };
+  if (o.locks) ctx.navigator = { locks: { request: (name, fn) => { (b0.lockNames = b0.lockNames || []).push(name); return Promise.resolve().then(fn); } } };
+  const b0 = {};
   const auth = {
     client: () => ({ rpc: (name, args) => { rpcs.push([name, JSON.parse(JSON.stringify(args))]); return Promise.resolve(o.rpc ? o.rpc(name, args) : { data: null, error: { code: 'x' } }); } })
   };
@@ -74,7 +76,7 @@ function box(o) {
   vm.createContext(ctx);
   vm.runInContext(LIVE, ctx);
   const post = (action, data) => { gas.push([action, JSON.parse(JSON.stringify(data))]); return Promise.resolve(o.gas ? o.gas(action, data) : { ok: true, ver: 2 }); };
-  return { L: ctx.window.SUWeightLive, store, rpcs, gas, loads, fetches, post, timers, o };
+  return { L: ctx.window.SUWeightLive, store, rpcs, gas, loads, fetches, post, timers, o, b0 };
 }
 const mirror = b => JSON.parse(b.store.wtmgr_mirror_q || '[]');
 const LIVE_ALL = { ok: true, ver: 2, residents: [{ id: 'r1', name: '見本A', room: '101' }, { id: 'r2', name: '見本B', wheelchairKg: 12 }],
@@ -171,7 +173,8 @@ const liveRpc = (name, args) => name === 'weight_get_all' ? { data: LIVE_ALL, er
     ['消しすぎ', { data: { ok: false, error: 'toomany' }, error: null }, /多すぎる/],
     ['形の違い', { data: { ok: false, error: 'badrow' }, error: null }, /形が正しくない/],
     ['大きすぎ', { data: { ok: false, error: 'toolarge' }, error: null }, /大きすぎる/],
-    ['知らない操作', { data: { ok: false, error: 'unknown action: x' }, error: null }, /unknown action/]]) {
+    ['知らない操作', { data: { ok: false, error: 'unknown action: x' }, error: null }, /unknown action/],
+    ['サーバーの不具合（500）', { data: null, error: { code: 'XX000', message: 'internal' } }, /サーバーで保存できません/]]) {
     const b = box({ flags: { weight: true }, session: true, rpc: () => rep });
     const p = await b.L.post('delRecord', { id: 'w1' }, { id: 'w1' }, b.post);
     await settle();
@@ -192,6 +195,27 @@ const liveRpc = (name, args) => name === 'weight_get_all' ? { data: LIVE_ALL, er
     const b = box({ flags: { weight: true }, session: true, store, rpc: () => ({ data: { ok: false, error: 'shadow' }, error: null }) });
     const g = await b.L.getAll(b.post);
     t('G 写しの期間に戻った後の読み込みも、残りを先に送ってから null', g === null && b.gas.length === 1 && b.gas[0][0] === 'saveThr', b.gas);
+  }
+
+  {
+    const store = { wtmgr_mirror_q: JSON.stringify([{ action: 'saveRecord', data: { record: { id: 'm1' } }, at: 1 }]) };
+    const b = box({ flags: {}, session: true, store, gas: () => ({ ok: false, error: 'timeout' }) });
+    const p = await b.L.post('saveRecord', { record: { id: 'new' } }, { record: { id: 'new' } }, b.post);
+    t('G 残りの写し返しを送れない時は、Google へ直接送らず失敗（順番を入れ替えない）', p && p.ok === false && /まだ送れていない/.test(p.error)
+      && b.gas.length === 1 && b.gas[0][1].record.id === 'm1', [p, b.gas]);
+    const g = await b.L.getAll(b.post);
+    t('G 残りを送れない時は、Google から読まない（古い中身で戻さない）', g && /まだ送れていない/.test(g.error || '') && !b.gas.some(x => x[0] === 'getAll'), g);
+  }
+  {
+    const many = []; for (let i = 0; i < 2000; i++) many.push({ action: 'saveRecord', data: { record: { id: 'q' + i } }, at: i });
+    const b = box({ flags: { weight: true }, session: true, rpc: liveRpc, store: { wtmgr_mirror_q: JSON.stringify(many) }, gas: () => ({ ok: false }) });
+    const p = await b.L.post('saveRecord', { record: { id: 'x' } }, { record: { id: 'x' } }, b.post);
+    t('G 写し返しが2000件たまったら、Supabase へ書く前に断る（捨てない）', p && p.ok === false && /多すぎる/.test(p.error) && !b.rpcs.some(x => x[0] === 'weight_write') && mirror(b).length === 2000, p);
+  }
+  {
+    const b = box({ flags: { weight: true }, session: true, rpc: liveRpc, locks: true });
+    await b.L.post('saveRecord', { record: { id: 'a' } }, { record: { id: 'a' } }, b.post); await settle();
+    t('G タブが2つでも1つだけが送る（ブラウザの鍵 wtmgr_mirror_q を取って送る）', (b.b0.lockNames || []).indexOf('wtmgr_mirror_q') >= 0 && mirror(b).length === 0, b.b0);
   }
 
   console.log('H 応答が来ない');
