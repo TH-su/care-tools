@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-QdyH2v5arjhi3RnWs4gcdD6LhF4rHwBqD0Y8cHugpFs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-8Z1XPSQ3RlBZVFMWui16ye6fQUwlIW4F86CyYUnh51w='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -107,6 +107,10 @@ body{font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic UI','Mei
 /* 現場端末で接続先が無い時の帯（記録がこの端末にしか残らないことを隠さない） */
 .wr-noapi{background:#fff3e0;color:#8a2c00;border-bottom:1px solid #ffb74d;padding:8px 16px;font-size:0.9375rem;font-weight:700;line-height:1.5}
 .wr-noapi[hidden]{display:none}
+/* ログインしていない端末の帯（2026-10-28 本人指示・統合 0032 の切り替えの前に、ログインしていない端末を見つけるため）。画面だけ */
+.wr-nologin{background:#fff8c5;color:#4d3d00;border-bottom:1px solid #e0c200;padding:8px 16px;font-size:0.9375rem;font-weight:700;line-height:1.5}
+.wr-nologin[hidden]{display:none}
+@media print{.wr-nologin{display:none !important}}
 .tnav button{flex:1;min-width:84px;display:flex;align-items:center;justify-content:center;gap:6px;
   padding:12px 10px;border:none;background:none;color:var(--g7);font-size:0.9375rem;font-weight:700;
   cursor:pointer;font-family:inherit;border-bottom:3px solid transparent;
@@ -882,6 +886,7 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
     <div class="hdr-r" id="hdrDate"></div>
   </div>
 </header>
+<div class="wr-nologin" id="wrNoLogin" role="status" hidden>この端末はログインしていません。体重の保存先を切り替えた後は、ログインしていないと体重をサーバーへ送れません。メニューの『ログイン』からログインしてください。</div>
 <div class="wr-noapi" id="wrNoApi" role="status" hidden>⚠ この端末はサーバーに接続されていません。記録はこの端末にしか残らず、事務所PCや他の端末には届きません。事務所に連絡してください（接続先は事務所PCとして設定します）。</div>
 
 <!-- loading overlay for sync -->
@@ -3709,15 +3714,21 @@ function wrAuthLoad_(){
    （2026-10-10）。取り直さないと、途中で人が替わっても前の人の名前で記録が残る。ログアウトしたら「未確認」へ戻す（2026-10-13）。
    世代番号で、遅れて届いた古い確認の結果を捨てる。 */
 var wrWhoGen_ = 0;
+/* ログインしていない端末に帯を出す（2026-10-28 本人指示）。ログインの控えが無い・確かめてログインしていなかった時だけ出し、
+   通信の失敗などで確かめられない時は今の表示のまま（ログインしている端末に誤って出さない） */
+function wrNoLoginBand_(show){
+  try{ const el = document.getElementById('wrNoLogin'); if(el) el.hidden = !show; }catch(e){}
+}
 function wrResolveWho_(){
   const gen = ++wrWhoGen_;
   let has = false;
   has = wrHasSession_();
-  if(!has){ wrWhoAcct_ = ''; return; }
+  if(!has){ wrWhoAcct_ = ''; wrNoLoginBand_(true); return; }
   wrAuthLoad_().then(() => (window.SUAuth ? SUAuth.check() : null)).then(st => {
     if(gen !== wrWhoGen_) return;
     if(!st || st.status === 'error') return;   // 確かめられなかった（通信など）＝前の値のまま
     wrWhoAcct_ = wrWhoLabel_(st);   // 未ログイン・許可リスト外は空＝役割の名前
+    wrNoLoginBand_(!wrWhoAcct_ && st.status !== 'ok');   // ログイン中（2段階の6桁がまだの管理者も含む）なら出さない
   }).catch(() => {});   // 読めない時は前の値のまま（記録も保存も止めない）
 }
 /* 直した記録の変更前の値（2026-10-10・監査10月版 第2版 7・本人決定「直近5件」）。

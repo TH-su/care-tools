@@ -95,7 +95,7 @@ console.log('\n— D. 記録した人の取り直し（体重）—');
       wrAuthLoad_: () => Promise.resolve(), wrIsField: () => false, window: {} };
     wb.SUAuth = { check: () => Promise.resolve(reply) }; wb.window.SUAuth = wb.SUAuth;
     vm.createContext(wb);
-    vm.runInContext([(SRC.match(/var WR_SESSION_RE = [^\n]*/) || [''])[0], cut(SRC, 'wrHasSession_'), 'var wrWhoAcct_ = "";', 'var wrWhoGen_ = 0;', cut(SRC, 'wrWho_'), cut(SRC, 'wrWhoLabel_'), cut(SRC, 'wrResolveWho_')].join('\n'), wb);
+    vm.runInContext([(SRC.match(/var WR_SESSION_RE = [^\n]*/) || [''])[0], cut(SRC, 'wrHasSession_'), 'var wrWhoAcct_ = "";', 'var wrWhoGen_ = 0;', cut(SRC, 'wrWho_'), cut(SRC, 'wrWhoLabel_'), (SRC.indexOf('function wrNoLoginBand_(') >= 0 ? cut(SRC, 'wrNoLoginBand_') : ''), cut(SRC, 'wrResolveWho_')].join('\n'), wb);
     wb.wrResolveWho_(); await tick(); await tick();
     t('ログインの控えが無ければ「未確認」', wb.wrWho_() === '未確認');
     ls.set(wb.SK, '{}'); wb.wrResolveWho_(); await tick(); await tick();
