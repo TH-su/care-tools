@@ -53,7 +53,7 @@
   // 隠せないボタン（全部を隠してもメニューが空にならないよう、困った時の入口だけは必ず残す）
   var KEEP = { 'help.html': 1 };
   // ログインの部品。各画面が読む時と同じ版を書く（su-auth.js を直して ?v= を上げたら、ここも上げる・su-report.js と同じ）
-  var AUTH_SRC = ['supabase-js-2.112.4.js', 'su-auth.js?v=2026-10-24'];
+  var AUTH_SRC = ['supabase-js-2.112.4.js', 'su-auth.js?v=2026-10-28'];
 
   function strArr(a, re) {
     if (!Array.isArray(a)) return null;

@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-YP0IKnfXOemBEMVRY5wv1xePIfmlqwxKMvYHjBIOnpc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-nbtaHYaJiN+p9p6hfKYSLIHAlF35J8Gc5xpE/+gWgoo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
@@ -373,7 +373,7 @@ function authLoad_(){
     : (has(/^supabase-js-/) ? wait(function(){ return !!window.supabase; }) : load('supabase-js-2.112.4.js'));
   return p.then(function(){
     if(window.SUAuth) return null;
-    return has(/^su-auth\.js/) ? wait(function(){ return !!window.SUAuth; }) : load('su-auth.js?v=2026-10-24');
+    return has(/^su-auth\.js/) ? wait(function(){ return !!window.SUAuth; }) : load('su-auth.js?v=2026-10-28');
   });
 }
 /* データベースの窓口（読み・表への書き込み）。通信はこれと rpc_ と stfPost_ の3つだけを通す */
@@ -1800,6 +1800,6 @@ wire_();
 boot_();
 </script>
 
-<script src="su-report.js?v=2026-10-27" data-tool="採用管理"></script>
+<script src="su-report.js?v=2026-10-28" data-tool="採用管理"></script>
 </body>
 </html>

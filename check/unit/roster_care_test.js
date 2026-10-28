@@ -474,7 +474,7 @@ async function seed(s, roster, opts) {
   }
   t('★F 通所 利用表は名簿を入口から { care: true, withRev: true } で読み、場所は daycare',
     /window\.SURoster\.getRoster\(raw, \{ where: 'daycare', masterUrl: cfg\.url, care: true, withRev: true \}\)/.test(DCR));
-  t('F 通所 利用表は su-roster.js を su-kv.js の後に新しい版で読む', /<script src="su-kv\.js\?v=[^"]+"><\/script>\n<!--[^\n]*-->\n<script src="su-roster\.js\?v=2026-10-24\.2"><\/script>/.test(DCR));
+  t('F 通所 利用表は su-roster.js を su-kv.js の後に新しい版で読む', /<script src="su-kv\.js\?v=[^"]+"><\/script>\n<!--[^\n]*-->\n<script src="su-roster\.js\?v=2026-10-28"><\/script>/.test(DCR));
   t('★F 入居者マスタは正規化する前の名簿（list）を写しの部品に渡す（一覧・共有名簿には2項目を入れない）',
     RM.indexOf("SUMasterShadow.push(roster,{stateRev:d&&d.stateRev,srev:srevPickMeta(d),care:list})") >= 0 && !/visitDay/.test(grabFrom(RM, 'normRosterRow')));
 
@@ -607,10 +607,10 @@ async function seed(s, roster, opts) {
 
   console.log('\nH 版の印');
   for (const f of ['visit-overview.html', 'support-overview.html', 'daycare-roster.html']) {
-    t('H ' + f + ' は su-roster.js?v=2026-10-24.2 を読む', read(f).indexOf('<script src="su-roster.js?v=2026-10-24.2"></script>') >= 0);
+    t('H ' + f + ' は su-roster.js?v=2026-10-28 を読む', read(f).indexOf('<script src="su-roster.js?v=2026-10-28"></script>') >= 0);
   }
   for (const f of ['resident-master.html', 'shadow-check.html']) {
-    t('H ' + f + ' は su-master-shadow.js?v=2026-10-24.2 を読む', read(f).indexOf('<script src="su-master-shadow.js?v=2026-10-24.2"></script>') >= 0);
+    t('H ' + f + ' は su-master-shadow.js?v=2026-10-28 を読む', read(f).indexOf('<script src="su-master-shadow.js?v=2026-10-28"></script>') >= 0);
   }
   t('部品は console.log を使わない', !/console\.log/.test(ROSTER_SRC) && !/console\.log/.test(SHADOW_SRC) && !/console\.log/.test(SC));
 

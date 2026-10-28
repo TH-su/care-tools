@@ -232,7 +232,7 @@ const liveRpc = (name, args) => name === 'weight_get_all' ? { data: LIVE_ALL, er
 
   console.log('I 画面のつなぎ');
   {
-    t('I 部品を読み込む（写しの部品の直後）', /<script src="su-weight-shadow\.js\?v=2026-10-28"><\/script>\n<script src="su-weight-live\.js\?v=2026-10-28"><\/script>/.test(PAGE));
+    t('I 部品を読み込む（写しの部品の直後）', /<script src="su-weight-shadow\.js\?v=2026-10-28\.2"><\/script>\n<script src="su-weight-live\.js\?v=2026-10-28\.2"><\/script>/.test(PAGE));
     const getBody = PAGE.slice(PAGE.indexOf('async function apiGet(){'), PAGE.indexOf('async function apiGet(){') + 2400);
     const iLive = getBody.indexOf('SUWeightLive.getAll(apiPostGas_)'), iGas = getBody.indexOf('fetchTO(');
     t('I 読み込みは Google の前に切り替えを確かめる', iLive > 0 && iGas > iLive);

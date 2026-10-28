@@ -66,7 +66,7 @@
   function ensureAuth() {
     if (window.SUAuth) return Promise.resolve();
     var p = window.supabase ? Promise.resolve() : loadScript('supabase-js-2.112.4.js');
-    return p.then(function () { return window.SUAuth ? null : loadScript('su-auth.js?v=2026-10-24'); });
+    return p.then(function () { return window.SUAuth ? null : loadScript('su-auth.js?v=2026-10-28'); });
   }
 
   function schedule() {

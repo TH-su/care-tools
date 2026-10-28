@@ -104,7 +104,7 @@
     return p.then(function () {
       if (window.SUAuth) return null;
       if (hasTag('su-auth.js')) return waitFor(function () { return !!window.SUAuth; }, 8000);
-      return loadScript('su-auth.js?v=2026-10-24');
+      return loadScript('su-auth.js?v=2026-10-28');
     });
   }
   /* データベースの関数を呼ぶ。{data} か {error:{code,message}}。時間切れ・ネットの失敗は例外（画面の失敗の扱いへ） */

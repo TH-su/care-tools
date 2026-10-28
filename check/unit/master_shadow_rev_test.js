@@ -83,7 +83,7 @@ function sandbox(cfg) {
   t('4 入居者マスタは一覧の応答の stateRev と srev を写しに渡す',
     RM.indexOf("SUMasterShadow.push(roster,{stateRev:d&&d.stateRev,srev:srevPickMeta(d),care:list})") >= 0);   // care は 2026-10-24 段2b（roster_care_test.js）
   t('4 入居者マスタと写しの見比べは新しい版の部品を読む',
-    /<script src="su-master-shadow\.js\?v=2026-10-24\.2"><\/script>/.test(RM) && /<script src="su-master-shadow\.js\?v=2026-10-24\.2"><\/script>/.test(fs.readFileSync(path.join(ROOT, 'shadow-check.html'), 'utf8')));
+    /<script src="su-master-shadow\.js\?v=2026-10-28"><\/script>/.test(RM) && /<script src="su-master-shadow\.js\?v=2026-10-28"><\/script>/.test(fs.readFileSync(path.join(ROOT, 'shadow-check.html'), 'utf8')));
   t('部品は console.log を使わない', !/console\.log/.test(SRC));
 
   console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
