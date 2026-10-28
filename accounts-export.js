@@ -152,7 +152,31 @@
         var parts = {}, n = 0;
         Object.keys(j).forEach(function (k) { if (k !== 'ok') parts[k] = j[k]; });
         if (Array.isArray(j.records)) n = j.records.length;
-        return { parts: parts, count: n, unit: '記録' };
+        /* 控えのシートへ移した古い記録（2026-10-28・排泄ケア記録の GAS が約200日より前の記録を RecordsArchive へ移す）も入れる。
+           getAll は Records だけを返すので、getArchive をページ分けで読み、parts.archive に入れる。
+           ★その口を知らない旧い GAS（'unknown action'）は控えのシートを持たない＝何も足さない。ほかの断りは系統ごと「入っていない」 */
+        /* ★getAll と同じ id の記録が控えにもある時（読む間に移した・移している途中）は、getAll の方を残し控えの分は入れない。
+           ★控えを読めなかった時（getAll は読めたのに断られた・通信の失敗）は、getAll の分だけを入れ「控えの分は入っていない」と書く */
+        var arc = [], before = '', off = 0, total = 0, guard = 0, arcNote = '';
+        var seenId = {};
+        (Array.isArray(j.records) ? j.records : []).forEach(function (r) { if (r && r.id != null) seenId[String(r.id)] = 1; });
+        try {
+          do {
+            var a = await post(t, { action: 'getArchive', offset: off, limit: 5000 });
+            if (a && a.ok === false && typeof a.error === 'string' && a.error.indexOf('unknown action') === 0) { arc = null; break; }
+            need(a);
+            total = Number(a.total) || 0; before = a.archivedBefore || '';
+            (Array.isArray(a.records) ? a.records : []).forEach(function (r) {
+              if (!r || r.id == null || seenId[String(r.id)]) return;
+              seenId[String(r.id)] = 1; arc.push(r);
+            });
+            off += 5000;
+          } while (off < total && ++guard < 200);
+        } catch (e) {
+          arc = null; arcNote = '古い記録（控えのシート）は読めなかった（もう一度書き出すと読めることがある）';
+        }
+        if (arc) { parts.archive = arc; parts.archivedBefore = before; n += arc.length; }
+        return { parts: parts, count: n, unit: '記録', note: arcNote };
       } },
     { id: 'weight', title: '体重管理',
       read: async function (t) {
