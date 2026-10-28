@@ -62,7 +62,7 @@ function makeCtx(opt) {
     lineOf(/var wrWhoAcct_ = [^\n]*/),
     lineOf(/var wrWhoGen_ = [^\n]*/),
     cut('suGetDeviceRole'), cut('wrIsField'), cut('wrWho_'), cut('wrWhoLabel_'),
-    cut('wrAuthLoad_'), cut('wrResolveWho_'), cut('apiPush')
+    cut('wrAuthLoad_'), (src.indexOf('function wrNoLoginBand_(') >= 0 ? cut('wrNoLoginBand_') : ''), cut('wrResolveWho_'), cut('apiPush')
   ].join('\n'), ctx, { filename: 'weight-record.html' });
   ctx._loaded = loaded;
   return ctx;

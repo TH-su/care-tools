@@ -250,6 +250,12 @@ const liveRpc = (name, args) => name === 'weight_get_all' ? { data: LIVE_ALL, er
     }
     t('I 写しの部品は Supabase から読んだ中身を写さない', /if \(window\.SUWeightLive && window\.SUWeightLive\.readFromSupabase\(\)\) return;/.test(SHADOW));
     t('I 部品は console.log を使わない', !/console\.log/.test(LIVE));
+    // ログインしていない端末の帯（2026-10-28 本人指示・文言は一字も変えない）
+    t('I 帯の文言は指示どおり・最初は隠れている', PAGE.indexOf('<div class="wr-nologin" id="wrNoLogin" role="status" hidden>この端末はログインしていません。体重の保存先を切り替えた後は、ログインしていないと体重をサーバーへ送れません。メニューの『ログイン』からログインしてください。</div>') > 0);
+    t('I 帯は見出しのすぐ下', /<\/header>\n<div class="wr-nologin" id="wrNoLogin"/.test(PAGE));
+    t('I 帯は印刷しない・hidden で必ず隠れる', /@media print\{\.wr-nologin\{display:none !important\}\}/.test(PAGE) && /\.wr-nologin\[hidden\]\{display:none\}/.test(PAGE));
+    t('I ログインの控えが無ければ帯を出す', /if\(!has\)\{ wrWhoAcct_ = ''; wrNoLoginBand_\(true\); return; \}/.test(PAGE));
+    t('I 確かめてログイン中なら帯を消す・確かめられない時は変えない', /if\(!st \|\| st\.status === 'error'\) return;[\s\S]{0,200}wrNoLoginBand_\(!wrWhoAcct_ && st\.status !== 'ok'\);/.test(PAGE));
     t('I 部品は2回読み込んでも1つ', /if \(window\.SUWeightLive\) return;/.test(LIVE));
   }
   {
