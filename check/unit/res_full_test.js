@@ -264,6 +264,66 @@ function world(o) {
       && /\.rfband\[hidden\]\{display:none !important\}/.test(RM) && /el\.textContent=t/.test(fn) && !/innerHTML/.test(fn));
   }
 
+  console.log('K 切り替える・戻す（cutover・back）');
+  function cw(o) {
+    o = o || {};
+    const order = [];
+    const st = { switched: false, mode: 'shadow', tabs: {} };
+    const w = world({ rpc: {
+      res_import_mark_frozen: a => { order.push('frozen'); return { data: { ok: !o.frozenFail }, error: null }; },
+      res_tabs_import: a => { order.push('tab:' + a.p_name); if (o.tabFail === a.p_name) return { data: { ok: false, error: 'live' }, error: null }; st.tabs[a.p_name] = a.p_rows; return { data: { ok: true }, error: null }; },
+      res_set_mode: a => { order.push('mode:' + a.p_mode); if (o.modeErr && a.p_mode === 'live') return { data: { ok: false, error: o.modeErr }, error: null }; st.mode = a.p_mode; return { data: { ok: true, mode: a.p_mode }, error: null }; }
+    }, mangle: o.mangle });
+    const g0 = w.gas;
+    w.gas = async body => {
+      if (body.action === 'resCutover') {
+        order.push('cut:' + body.on);
+        if (body.accessToken !== 'h.p.s') return { error: 'Error: refused: ログイン' };
+        if (body.on) { st.switched = true; return { ok: true, switched: true }; }
+        if (o.mirrorMore && o.mirrorMore-- > 0) return { error: 'Error: refused: 写し返しが残っています。もう一度押してください' };
+        st.switched = false; return { ok: true, switched: false, records: 2 };
+      }
+      if (body.action === 'exportTabs') { order.push('export'); return { ok: true, tabs: { med_dict: [['薬剤名'], ['見本薬']], meta: [[1]] } }; }
+      return g0(body);
+    };
+    w.token = async () => (o.noToken ? null : 'h.p.s');
+    return { w, order, st };
+  }
+  {
+    const { w, order, st } = cw();
+    const r = await R.cutover(w);
+    t('切り替える: 止める→止めた後の写し→タブ7つ→切り替えの順', r.ok === true && order.join(',') === 'cut:true,frozen,export,tab:med_cand,tab:master_meeting,tab:master_meeting_hist,tab:master_yakujo_log,tab:master_dataJson_bak,tab:med_dict,tab:meta,mode:live'
+      && st.mode === 'live' && st.switched === true && JSON.stringify(st.tabs.med_cand) === '[]' && JSON.stringify(st.tabs.med_dict) === '[["薬剤名"],["見本薬"]]', order);
+    t('切り替える: 止めた後の写しは始まりの直後に印を付ける（写しの塊より前）', w.rpcs.map(x => x.name).indexOf('res_import_mark_frozen') === w.rpcs.map(x => x.name).indexOf('res_import_begin') + 1);
+  }
+  for (const [label, o, re] of [['写しが Google と違う方がいる', { mangle: r => Object.assign({}, r, { room: '違う' }) }, /違う方が 3人/],
+                                ['止めた後の印を付けられない', { frozenFail: true }, /止めた後の写しの印/],
+                                ['タブを写せない', { tabFail: 'med_dict' }, /もう切り替わっています/],
+                                ['切り替えが断られた（notabs）', { modeErr: 'notabs' }, /タブ/]]) {
+    const { w, order, st } = cw(o);
+    const r = await R.cutover(w);
+    t('切り替える: ' + label + ' → 止めて Google の保存を戻す', r.ok === false && re.test(r.why) && order[order.length - 1] === 'cut:false' && st.switched === false && st.mode === 'shadow', [r, order]);
+  }
+  {
+    const { w, order } = cw({ noToken: true });
+    const r = await R.cutover(w);
+    t('切り替える: ログインの証明が無い時は何もしない', r.ok === false && /ログイン/.test(r.why) && order.length === 0 && w.rpcs.length === 0, [r, order]);
+  }
+  {
+    const { w, order, st } = cw({ mirrorMore: 2 });
+    st.mode = 'live'; st.switched = true;
+    const r = await R.back(w);
+    t('戻す: 写しの期間に戻してから、写し返しが残る間は続けて写し返し、印を外す', r.ok === true && r.records === 2 && order.join(',') === 'mode:shadow,cut:false,cut:false,cut:false'
+      && st.mode === 'shadow' && st.switched === false, [r, order]);
+  }
+  {
+    const { w, order, st } = cw({ noToken: true });
+    st.mode = 'live'; st.switched = true;
+    const r = await R.back(w);
+    t('戻す: 写し返しが済まない時は、戻したことと押し直しを伝える', r.ok === false && /写しの期間には戻しました/.test(r.why) && st.mode === 'shadow' && st.switched === true, [r, order]);
+  }
+  t('切り替え・戻すは端末に保存しない', touched.length === 0);
+
   finished = true;
   console.log(`\n合格 ${pass} / 不合格 ${fail}`);
   process.exitCode = fail ? 1 : 0;
