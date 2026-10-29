@@ -140,7 +140,9 @@
           var j = need(await post(t, { action: 'get', key: 'training_plan:' + id }));
           docs[id] = j.data == null ? null : j.data;
         });
-        return { parts: { index: idx.data == null ? null : idx.data, plans: docs }, count: ids.length - miss, unit: '人分', note: missNote(miss) };
+        // 計画書を新しい保存先へ切り替えた後（GAS の応答に switched）は、Google の中身は写し返しの分だけ遅れていることがある（計画書の反証レビュー 指摘6）
+        var lag = idx.switched === true ? '新しい保存先へ切り替えた後のため、Google の計画書は写し返しの分だけ遅れていることがあります（正本は新しい保存先）' : '';
+        return { parts: { index: idx.data == null ? null : idx.data, plans: docs }, count: ids.length - miss, unit: '人分', note: [missNote(miss), lag].filter(Boolean).join('・') };
       } },
     { id: 'master', title: '入居者マスタ',
       read: async function (t) {

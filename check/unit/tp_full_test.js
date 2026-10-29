@@ -211,7 +211,7 @@ function world(o) {
     const A = { STATUS: { OK: 'ok' }, check: async () => ({ status: 'ok', role: 'admin' }),
       client: () => ({ from: () => ({ select: () => ({ order: () => ({ limit: async () => ({ data: [], error: null }) }) }) }), rpc: async (n) => { calls.push(n); return n === 'tp_op_busy' ? { data: true, error: null } : { data: null, error: { code: 'x' } }; } }) };
     const r = await R.auto({ gas: async () => ({}), rosterIds: async () => [], auth: async () => A });
-    t('自動の写し: 切り替える・戻すが動いている間は写さない', r.skip === 'op' && calls.join(',') === 'tp_op_busy', [r, calls]);
+    t('自動の写し: 切り替える・戻すが動いている間は写さない', r.skip === 'op' && calls.join(',') === 'tp_mode_get,tp_op_busy', [r, calls]);
   }
   {
     const SH = read('SHADOW_HTML', 'shadow-check.html'), SJ = read('SHADOW_JS', 'shadow-check.js');
@@ -221,6 +221,13 @@ function world(o) {
       && /if \(!\(me && me\.role === 'admin'\)\) return;/.test(fn) && /bc\.hidden = live \|\| stuck \|\| !on \|\| !tt \|\| !mt;/.test(fn) && /bb\.hidden = !\(live \|\| stuck\) \|\| !tt;/.test(fn));
     t('写しの見比べ: 押した時も管理者・現場の端末・スイッチを確かめ、2回確かめてから行う・textContent', /me\.status === SUAuth\.STATUS\.OK/.test(fn) && /role === 'field'/.test(fn)
       && /if \(!trainingOn\(\)\)/.test(fn) && (fn.match(/confirm\(/g) || []).length === 3 && !/innerHTML/.test(fn));
+  }
+
+  {
+    const A = { STATUS: { OK: 'ok' }, check: async () => ({ status: 'ok', role: 'admin' }),
+      client: () => ({ from: () => { throw new Error('読まない'); }, rpc: async (n) => (n === 'tp_mode_get' ? { data: { ok: true, mode: 'live' }, error: null } : { data: null, error: { code: 'x' } }) }) };
+    const r = await R.auto({ gas: async () => { throw new Error('読まない'); }, rosterIds: async () => [], auth: async () => A });
+    t('自動の写し: 切り替えた後は Google を読まずに何もしない', r.skip === 'live', r);
   }
 
   finished = true;

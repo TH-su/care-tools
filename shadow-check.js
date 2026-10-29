@@ -1357,7 +1357,8 @@
     var live = r.data.mode === 'live', on = trainingOn(), stuck = false;
     var tt = tpTarget(), mt = rmasterTarget();
     if (!live && tt) { try { var pg = await rmasterPost(tt, { action: 'ping' }); stuck = !!(pg && pg.switched === true); } catch (e) { stuck = false; } }
-    if (live) { line.className = 'msg ok'; line.textContent = '計画書の正本は新しい保存先（Supabase）です。Google へは保存のたびに写し返しています。'; }
+    if (live && !on) { line.className = 'msg warn'; line.textContent = '計画書は新しい保存先へ切り替えた後ですが、切り替えスイッチ（training）が切です。画面が古い Google の中身を読まないよう、スイッチを入れ直すか「計画書を写しの期間に戻す」を押してください。'; }
+    else if (live) { line.className = 'msg ok'; line.textContent = '計画書の正本は新しい保存先（Supabase）です。Google へは保存のたびに写し返しています。'; }
     else if (stuck) { line.className = 'msg warn'; line.textContent = '前の「計画書を写しの期間に戻す」が途中です（Google の保存を止めたままです）。もう一度押して、最後まで済ませてください。'; }
     else line.textContent = '計画書の正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（training）を入れる PR の取り込みが要ります。');
     bc.hidden = live || stuck || !on || !tt || !mt;
@@ -1422,7 +1423,8 @@
     var live = r.data.mode === 'live', on = masterLiveOn(), stuck = false;
     var tgt = rmasterTarget();
     if (!live && tgt) { try { var pg = await rmasterPost(tgt, { action: 'ping' }); stuck = !!(pg && pg.switched === true); } catch (e) { stuck = false; } }
-    if (live) { line.className = 'msg ok'; line.textContent = '入居者マスタの正本は新しい保存先（Supabase）です。Google へは保存のたびに写し返しています。'; }
+    if (live && !on) { line.className = 'msg warn'; line.textContent = '入居者マスタは新しい保存先へ切り替えた後ですが、切り替えスイッチ（master_live）が切です。画面が古い Google の中身を読まないよう、スイッチを入れ直すか「写しの期間に戻す」を押してください。'; }
+    else if (live) { line.className = 'msg ok'; line.textContent = '入居者マスタの正本は新しい保存先（Supabase）です。Google へは保存のたびに写し返しています。'; }
     else if (stuck) { line.className = 'msg warn'; line.textContent = '前の「写しの期間に戻す」が途中です（Google の保存を止めたままです）。「写しの期間に戻す」をもう一度押して、最後まで済ませてください。'; }
     else line.textContent = '入居者マスタの正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（master_live）を入れる PR の取り込みが要ります。');
     bc.hidden = live || stuck || !on || !tgt;
