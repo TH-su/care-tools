@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Cache-Control" content="no-store">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; base-uri 'none'; form-action 'none'; object-src 'none'">
+<title>アプリの使える人</title>
+<!--
+  アプリの使える人（2026-10-29 本人指示・代表者の決定）
+  ════════════════════════════════════════════════════════════════
+  目的: 事務所向けのアプリ（入居者マスタ・職員マスタ・入居調整・担当者会議の記録・個別機能訓練計画書・接続設定）を、
+        どの役割・どのアカウントが開けるかを、1枚の表（アプリ×人）で見て、その表の上で変える。
+        保存先は共通ログインのデータベース（app_access・care-backend 0033）。各アプリは開く時に su-app-gate.js で確かめる。
+  ★開けるのは管理者（Google ＋ 2段階認証）だけ。書けるかどうかはデータベース（app_access_put）が決める。
+  ★アプリの一覧と既定は su-app-gate.js（APPS）が正本。開けるかの計算も同じ部品の effective を使う（アプリの確かめと食い違わない）。
+  ★管理者はいつでも開ける（締め出し防止）。採用管理・使える人の管理・メニューの設定・この画面は管理者＋2段階認証に固定。
+  ★端末の用途が「現場」の端末では、この設定にかかわらず開けない（各アプリの端末の止めが先に効く）。
+  ★メニューに出すかどうかは「メニューの設定」（menu_settings）で別に決める。この画面は役割の行に「メニューに出ない」の印を出すだけ。
+  ★名前（メモ）・メールアドレスはデータベースからだけ読み、このファイルには含まれない。表示はすべて textContent。
+  ★端末に残すのは表の絞り込み（aac_filter・全員／管理者／事務所／現場）だけ。
+-->
+<link rel="stylesheet" href="su-auth.css?v=2026-09-26">
+<link rel="stylesheet" href="app-access.css?v=2026-10-29">
+</head>
+<body>
+<header class="hdr">
+  <a class="back" href="login.html" aria-label="ログインの画面へ戻る">‹ 戻る</a>
+  <h1>アプリの使える人</h1>
+</header>
+<main class="aac">
+  <div id="msg" class="msg" role="alert" aria-live="assertive"></div>
+  <section class="cd" id="v-loading" aria-live="polite">
+    <p class="spin">確かめています…</p>
+  </section>
+  <section class="cd" id="v-gate" hidden>
+    <h2>管理者だけが使える画面です</h2>
+    <p id="gate-why">管理者のアカウントで、2段階認証（認証アプリの6桁）まで済ませてから開いてください。</p>
+    <div class="acts"><a class="btn pri" href="login.html?next=app-access.html">ログインの画面へ</a></div>
+  </section>
+  <section id="v-admin" hidden>
+    <section class="cd">
+      <h2>見方と変え方</h2>
+      <ul class="roles">
+        <li>横がアプリ、縦が人です。ます目を見ると、その人がそのアプリを開けるかが分かります。</li>
+        <li>上の3行「役割の決まり」は、その役割の人の基本です。ます目を押すと、開ける・開けないを変えられます。</li>
+        <li>人の行のます目を押すと、その人だけの決まり（役割の決まりより優先）を付けたり外したりできます。</li>
+        <li>最後に下の「保存する」を押すと、各アプリを次に開いた時から効きます（開いている画面は、画面に戻った時に確かめ直します）。</li>
+      </ul>
+      <div class="lgd" aria-label="ます目の見方">
+        <span class="lg"><span class="cell-demo ok" aria-hidden="true">✓ 開ける</span>開ける</span>
+        <span class="lg"><span class="cell-demo ng" aria-hidden="true">✕ 開けない</span>開けない</span>
+        <span class="lg"><span class="bdg own">この人だけ</span>役割の決まりと別に決めた人</span>
+        <span class="lg"><span class="bdg dflt">既定</span>まだ決めていない（最初の決まりのまま）</span>
+        <span class="lg"><span class="bdg chg">未保存</span>保存していない変更</span>
+        <span class="lg"><span class="bdg menu">メニューに出ない</span>メニューの設定で隠している</span>
+        <span class="lg"><span class="cell-demo lock" aria-hidden="true">🔒</span>変えられない（管理者は常に開ける）</span>
+      </div>
+      <p class="muted">端末の用途が「現場」の端末では、この表にかかわらず事務所向けのアプリは開きません。ログインしていない端末でも開きません。</p>
+    </section>
+
+    <section class="cd mx-card">
+      <div class="mx-bar">
+        <h2 id="mx-h">アプリ × 人</h2>
+        <div class="seg" role="radiogroup" aria-label="表に出す人">
+          <button type="button" role="radio" class="seg-b" data-f="all">全員</button>
+          <button type="button" role="radio" class="seg-b" data-f="admin">管理者</button>
+          <button type="button" role="radio" class="seg-b" data-f="office">事務所</button>
+          <button type="button" role="radio" class="seg-b" data-f="field">現場</button>
+        </div>
+      </div>
+      <p class="muted mx-hint">表が画面に入りきらない時は、横に動かして見てください。左の名前の列は止まったままです。</p>
+      <div class="mx-wrap" tabindex="0" role="region" aria-labelledby="mx-h">
+        <table class="mx" id="mx"></table>
+      </div>
+    </section>
+
+    <section class="cd">
+      <h2>管理者だけの画面（変えられません）</h2>
+      <ul class="fixed" id="fixed"></ul>
+    </section>
+
+    <section class="cd sticky-acts" aria-live="polite">
+      <p class="muted" id="state">まだ保存していない変更はありません。</p>
+      <div class="acts">
+        <button type="button" class="btn pri" id="b-save" disabled>保存する</button>
+        <button type="button" class="btn" id="b-undo" disabled>変更を取り消す</button>
+        <button type="button" class="btn ng" id="b-reset">全部を既定に戻す</button>
+      </div>
+    </section>
+  </section>
+</main>
+
+<dialog class="pick" id="pick" aria-labelledby="pick-h">
+  <form method="dialog" class="pick-in">
+    <p class="pick-app" id="pick-app"></p>
+    <h2 id="pick-h">決まりを選ぶ</h2>
+    <p class="pick-now" id="pick-now"></p>
+    <div class="pick-opts" id="pick-opts"></div>
+    <div class="acts"><button type="submit" class="btn" value="cancel">やめる</button></div>
+  </form>
+</dialog>
+
+<script src="supabase-js-2.112.4.js"></script>
+<script src="su-auth.js?v=2026-10-28"></script>
+<script src="su-app-gate.js?v=2026-10-29"></script>
+<script src="su-menu.js?v=2026-10-28"></script>
+<script src="app-access.js?v=2026-10-29"></script>
+<script src="su-report.js?v=2026-10-28" data-tool="アプリの使える人"></script>
+</body>
+</html>

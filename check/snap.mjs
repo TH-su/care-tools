@@ -150,6 +150,8 @@ async function shootSheet(file, name, fx, sh) {
       try { body = JSON.parse(route.request().postData() || '{}'); } catch (e) { /* 本文の無い要求は空で答える */ }
       route.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify(fx.respond(body)) });
     });
+    /* 材料が足した通信の横取り（例: ログインの確かめに答える Supabase の架空の応答・2026-10-29）。材料に無ければ何もしない */
+    for (const rt of (fx.routes || [])) await context.route(rt.match, rt.handle);
     await context.addInitScript((st) => { try { for (const k of Object.keys(st)) localStorage.setItem(k, st[k]); } catch (e) { /* 保存できない時は空の帳票になり、下の ready 待ちで失敗が分かる */ } }, fx.storage);
     const o = await open(context, null, file);
     const p = o.p;

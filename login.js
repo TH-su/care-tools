@@ -103,6 +103,7 @@
     show('ok', st);
     $('b-accounts').hidden = st.role !== 'admin';
     $('b-menu').hidden = st.role !== 'admin';
+    $('b-access').hidden = st.role !== 'admin';
     $('b-shadow').hidden = st.role !== 'admin' && st.role !== 'office';
     var n = nextPage();
     var b = $('b-next');

@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-NYXvvmHhqA42jUQiQE/vAD8FSNt8EuIVnFHqw1IuScQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-SBlNlKhjRfXrCpgC5381OQ8aVJB/uqCkoIsZPpwngR8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
@@ -700,6 +700,7 @@ details.dcd > .dbody > .cd > h3 { display: none; }   /* 見出しは summary に
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
+<script src="su-app-gate.js?v=2026-10-29"></script>
 <script src="su-facility.js?v=2026-10-26"></script>
 <script src="su-data.js?v=2026-10-27"></script>
 <script src="su-data-gas.js?v=2026-10-24"></script>
@@ -1769,17 +1770,20 @@ window.addEventListener('beforeunload', function (ev) {
   if (editing && editDirty) { ev.preventDefault(); ev.returnValue = ''; return ''; }
 });
 /* 画面へ戻ってきた時、5分以上経っていたら取り直す。ただし編集中は保留（rev を進めないので次回拾える） */
+/* 確かめ（su-app-gate.js）が通るまでは、取り直し・別タブの控えの取り込みをしない（2026-10-29） */
+var afGateOk_ = false;
 document.addEventListener('visibilitychange', function () {
-  if (document.hidden) return;
+  if (!afGateOk_ || document.hidden) return;
   if (busyEditing()) return;
   if (Date.now() - lastPullAt > 5 * 60000) pull(false);
 });
 window.addEventListener('online', function () {
+  if (!afGateOk_) return;
   if (dirty) { retryWait = 0; push(); } else if (Date.now() - lastPullAt > 60000) pull(false);
 });
 /* 同じ端末の別タブが書いた時に取り込む。編集中・未送信中は取り込まない */
 window.addEventListener('storage', function (ev) {
-  if (!ev || ev.key !== CACHE_KEY) return;
+  if (!afGateOk_ || !ev || ev.key !== CACHE_KEY) return;
   if (dirty || busyEditing()) return;
   clearTimeout(window.__admStorageTm);
   window.__admStorageTm = setTimeout(function () {
@@ -5107,6 +5111,21 @@ $('reloadBtn').addEventListener('click', function () {
   applyFacilityNames();
   if (window.SUFacility) SUFacility.onReady(function () { applyFacilityNames(); try { renderAll(); } catch (e) {} });
   if (applyDeviceGuard()) return;
+  /* ログインの役割の確かめ（2026-10-29 代表者の決定・su-app-gate.js）。端末の用途の止めの後・端末の控え（admf_cache）や台帳を読む前に確かめる。
+     開けない時（現場のアカウント・ログインなし・確かめられない）は何も読まず、覆いの画面だけを出す。端末の控えは消さない（事務所PCの未送信を守る）。
+     部品が読めない時も開かない */
+  if (!window.SUAppGate) {
+    document.body.textContent = '';
+    var gp = document.createElement('p');
+    gp.textContent = 'ログインを確かめる部品を読み込めませんでした。ページを読み込み直してください。';
+    document.body.appendChild(gp);
+    return;
+  }
+  window.SUAppGate.run('admission-flow', { dirty: function () { return dirty || busyEditing(); } })
+    .then(function (ok) { if (ok) afStart_(); });
+})();
+function afStart_() {
+  afGateOk_ = true;
   if (!SU_DATA_READY) {
     toast('データ層を読み込めていません（su-data.js）。同期はできませんが、この端末内では使えます');
   }
@@ -5130,7 +5149,7 @@ $('reloadBtn').addEventListener('click', function () {
   try { afResolveWho_(); } catch (e) { /* 直した人の確認の失敗は運用を止めない */ }
   window.addEventListener('storage', function (e) { if (e.key === null || AF_SESSION_RE.test(e.key || '')) { try { afResolveWho_(); } catch (e2) {} } });
   document.addEventListener('visibilitychange', function () { if (!document.hidden) { try { afResolveWho_(); } catch (e) {} } });
-})();
+}
 
 })();
 </script>

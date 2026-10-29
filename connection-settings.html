@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-hYNJ9k73lvyCL2n1u9dxomHPGpMPNgtVIn6YK5y6Kmw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-P8sZEtvL3+L878KNlVBBjSehHHhGRlFWevUWX0sC3cI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <meta name="robots" content="noindex,nofollow">
@@ -304,6 +304,7 @@ main {
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
+<script src="su-app-gate.js?v=2026-10-29"></script>
 <script src="su-facility.js?v=2026-10-26"></script>
 <script>
 (function(){
@@ -977,6 +978,18 @@ function init(){
     $('deviceBlock').classList.add('on');
     return;                      /* 入力欄そのものを作らない＝合言葉を画面に出さない */
   }
+  /* ログインの役割の確かめ（2026-10-29 代表者の決定・su-app-gate.js）。端末の用途の止めの後・入力欄（合言葉）を作る前に確かめる。
+     開けない時（現場のアカウント・ログインなし・確かめられない）は入力欄を作らず、覆いの画面だけを出す。部品が読めない時も開かない。
+     開いた後にログインが変わった時は、入力の途中かどうかを見分けないため、読み込み直さず覆いだけを出す（入力を黙って捨てない） */
+  if(!window.SUAppGate){
+    document.body.textContent='';
+    var gp=document.createElement('p'); gp.textContent='ログインを確かめる部品を読み込めませんでした。ページを読み込み直してください。';
+    document.body.appendChild(gp);
+    return;
+  }
+  window.SUAppGate.run('connection-settings',{dirty:function(){ return true; }}).then(function(ok){ if(ok) startApp_(); });
+}
+function startApp_(){
 
   var cards=[], box=$('cards');
   for(var i=0;i<SYSTEMS.length;i++){

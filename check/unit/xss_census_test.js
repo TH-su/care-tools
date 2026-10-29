@@ -185,6 +185,8 @@ const CENSUS = {
   "accounts.html": [],
   "accounts-export.js": [],
   "accounts.js": [],
+  "app-access.html": [],
+  "app-access.js": [],
   "admission-flow.html": [
     [N, "$('sumbar').innerHTML = fpill('month', '今月の問い合わせ', inThisMonth) + fpill('working', '進行中', working) + fpill('movein', '今月入居予定', moveThisMonth) + fpill('nudge', '連絡待ち', nudgeAll, 'border-color:#ffcc80') + fpill('over', '期限超過', overAll, 'border-color:#f5c6c0') + (listFilter ? '<button class=\"pill f\" id=\"clearF\" type=\"button\">✕ しぼりこみを解除</button>' : '') + (delCount ? '<button class=\"pill\" id=\"toggleDel\" type=\"button\" style=\"cursor:pointer\">' + (showDeleted ? '削除済みを隠す' : '削除済みも表示 (' + delCount + ')') + '</button>' : '') + (canUndo() ? '<button class=\"pill\" id=\"undoBtn\" type=\"button\" style=\"cursor:pointer\">↩ 元に戻す</button>' : '')"],   /* 件数と固定のボタン */
     [F, "box.innerHTML = (listQ || listFilter) ? '<div class=\"empty\">条件に合う案件がありません。<br>検索語を消すか、しぼりこみを解除してください。</div>' : '<div class=\"empty\">まだ案件がありません。<br>問い合わせが来たら右下の「＋」で起票してください。</div>'"],
@@ -349,6 +351,7 @@ const CENSUS = {
   "meds-yakka-naiyo.js": [],
   "menu-settings.html": [],
   "menu-settings.js": [],
+  "su-app-gate.js": [],
   "moushiokuri-viewer.html": [],
   "overview-compare.html": [],
   "patch-calendar.html": [],
