@@ -383,7 +383,7 @@ console.log('\n— 5. 毬の部品が無い・描けない時 —');
   t('5g 毬の処理は組み立ての script の中（定義と組み立ての間に別の script を足していない）', /function drawBall\(\)/.test(BUILD) && HTML.slice(defEnd + 9, sStart - 8).trim() === '', '');
   t('5h 印刷では毬を出さない・見出しの並びを変えるのは画面だけ', /@media print \{ \.hdr \.ball \{ display: none !important; \} \}/.test(HTML)
     && /@media screen \{\s*\.hdr\.has-ball \{ display: grid;/.test(HTML) && !/^\.hdr\.has-ball/m.test(HTML), '');
-  t('5i 青い帯の上で見えるフォーカスの枠（白）・押せる大きさ 56px', /\.hdr \.ball:focus-visible \{ outline: 3px solid #fff;/.test(HTML) && /\.hdr \.ball \{\s*display: block; width: 56px; height: 56px;/.test(HTML), '');
+  t('5i 生成りの見出しの上で見えるフォーカスの枠（藍・2026-10-29）・押せる大きさ 56px', /\.hdr \.ball:focus-visible \{ outline: 3px solid #1F2A44;/.test(HTML) && /\.hdr \.ball \{\s*display: block; width: 56px; height: 56px;/.test(HTML), '');
 }
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
