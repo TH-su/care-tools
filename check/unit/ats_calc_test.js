@@ -157,8 +157,9 @@ t('評価の状態の文', C.evalStatusText(1, 2) === '2人中1人提出' && C.e
 t('他の評価は自分が提出した後だけ見られる', C.evalVisible({ status: 'submitted' }) && !C.evalVisible({ status: 'draft' }) && !C.evalVisible(null));
 t('評価の確かめ: 提出は全部要る・下書きは欠けてよい', !C.evalCheck(['経験・技術', '通勤'], { '経験・技術': 3 }, 4, true).ok && C.evalCheck(['経験・技術', '通勤'], { '経験・技術': 3 }, null, false).ok
   && J(C.evalCheck(['経験・技術', '通勤'], { '経験・技術': 3 }, 9, true).missing) === J(['通勤', '総合の点']));
-t('設定: 評価項目の既定6つ・保管6か月・連絡途絶90日', J(C.normSettings(null)) === J({ evalItems: ['経験・技術', '人柄・話し方', '勤務の希望が合うか', '通勤', '長く続けられそうか', '総合'], retainMonths: 6, lostDays: 90 }));
-t('設定: 重なり・空・31字以上の項目は外す・範囲外の数は既定', J(C.normSettings({ eval_items: ['通勤', ' 通勤 ', '', 'あ'.repeat(31), '経験'], retain_months: 0, lost_days: 400 })) === J({ evalItems: ['通勤', '経験'], retainMonths: 6, lostDays: 90 }));
+t('設定: 評価項目の既定6つ・保管6か月・連絡途絶90日', J(C.normSettings(null)) === J({ evalItems: ['経験・技術', '人柄・話し方', '勤務の希望が合うか', '通勤', '長く続けられそうか', '総合'], retainMonths: 6, lostDays: 90, defaultInterviewer: '' }));
+t('設定: 重なり・空・31字以上の項目は外す・範囲外の数は既定', J(C.normSettings({ eval_items: ['通勤', ' 通勤 ', '', 'あ'.repeat(31), '経験'], retain_months: 0, lost_days: 400 })) === J({ evalItems: ['通勤', '経験'], retainMonths: 6, lostDays: 90, defaultInterviewer: '' }));
+t('設定: いつもの面接官は前後の空白を落として80字まで（0035）', C.normSettings({ default_interviewer: '　架空 面接官甲 ' }).defaultInterviewer === '架空 面接官甲' && C.normSettings({ default_interviewer: 'あ'.repeat(90) }).defaultInterviewer.length === 80 && C.normSettings({ default_interviewer: null }).defaultInterviewer === '');
 const ivs = [{ id: 1, held_at: '2026-10-26T05:00:00Z' }, { id: 2, held_at: '2026-10-26T01:00:00Z' }, { id: 3, held_at: '2026-10-27T01:00:00Z' }, { id: 4, held_at: '2026-11-02T01:00:00Z' }, { id: 5, held_at: '2026-11-03T01:00:00Z' }, { id: 6, held_at: '2026-10-25T01:00:00Z' }];
 const bk = C.scheduleBuckets(ivs, now);
 t('面接予定: 今日（時刻順）・明日・7日先まで（それより先と過去は出さない）', J(bk.today.map((x) => x.id)) === J([2, 1]) && J(bk.tomorrow.map((x) => x.id)) === J([3]) && J(bk.later.map((x) => x.id)) === J([4]), bk);
@@ -430,6 +431,28 @@ const SAME = C.calEvents([{ id: 'q', name: '甲', received_on: '2026-10-03', rep
 t('同じ日の並び: 面接（時刻順）→ 入職 → 返答期限 → 応募', J(SAME.map((e) => e.kind + e.time)) === J(['iv09:00', 'iv14:00', 'start', 'due', 'recv']), SAME.map((e) => e.kind + e.time));
 t('不採用・辞退・連絡途絶の方は入職・返答期限を出さない（面接・応募は出す）', (() => { const e = C.calEvents([{ id: 'r', name: '甲', stage: 'declined', received_on: '2026-10-03', reply_due: '2026-10-04', start_on: '2026-10-05', interview_on: '2026-10-06' }], [], ALLK, '2026-10'); return J(Object.keys(e).sort()) === J(['2026-10-03', '2026-10-06']); })());
 t('壊れた値でも落ちない', J(C.calEvents(null, null, ALLK, '2026-10')) === '{}' && J(C.calEvents([{ id: 'x', name: 'x', start_on: 'あした' }], [{ applicant_id: 'x', held_at: 'x' }], ALLK, '2026-10')) === '{}' && J(C.calEvents(CA, CI, ALLK, 'x')) === '{}');
+
+console.log('\n— 14. 生年月日（和暦も可・満年齢）と書類の確かめ（2026-10-29）—');
+const TD = '2026-10-29';
+const bi = (v) => C.birthInfo(v, TD);
+t('西暦・和暦・略号・全角・8桁を同じ日に読む', ['1980-04-03', '1980/4/3', '昭和55年4月3日', 'S55.4.3', 's55.4.3', '昭和５５年４月３日', '19800403', '昭和55年4月3日生'].every((v) => bi(v).ymd === '1980-04-03' && bi(v).state === 'ok'),
+  ['1980/4/3', 'S55.4.3', '昭和５５年４月３日', '19800403'].map((v) => bi(v)));
+t('読み下しは和暦と満年齢', bi('1980-04-03').note === '昭和55年4月3日・満46歳' && bi('平成2年4月1日').note === '平成2年4月1日・満36歳', [bi('1980-04-03').note, bi('平成2年4月1日').note]);
+t('満年齢は誕生日の当日に1つ上がる（前日はまだ）', C.ageOn('1980-10-29', TD) === 46 && C.ageOn('1980-10-30', TD) === 45);
+t('2/29 生まれは平年の 2/28 に1つ上がる', C.ageOn('2000-02-29', '2025-02-28') === 25 && C.ageOn('2000-02-29', '2025-02-27') === 24 && C.ageOn('2000-02-29', '2024-02-29') === 24);
+t('元年は「元年」と出す', bi('令和元年5月1日').note.startsWith('令和元年5月1日・満7歳'), bi('令和元年5月1日'));
+t('空は empty（保存は止めない・読み下しなし）', J(bi('')) === J({ state: 'empty', ymd: '', note: '' }) && bi('　').state === 'empty' && bi(null).state === 'empty');
+t('読めない値は bad（保存を止める・例を出す）', bi('あした').state === 'bad' && bi('1980').state === 'bad' && bi('4/3').state === 'bad' && bi('昭和99年1月1日').state === 'bad' && /平成2年4月1日/.test(bi('あした').note), [bi('1980'), bi('4/3')]);
+t('和暦の元号の範囲を超えた年は bad（昭和99年を令和として通さない）・改元の境目は正しく分ける', bi('昭和99年1月1日').state === 'bad' && /昭和の範囲/.test(bi('昭和99年1月1日').note)
+  && bi('昭和64年1月7日').ymd === '1989-01-07' && bi('昭和64年1月8日').state === 'bad' && bi('平成31年4月30日').ymd === '2019-04-30' && bi('H31.5.1').state === 'bad', [bi('昭和64年1月8日'), bi('H31.5.1')]);
+t('今日より先は bad', bi('2026-10-30').state === 'bad' && /今日より先/.test(bi('2026-10-30').note) && bi('2026-10-29').state !== 'bad');
+t('15歳未満・90歳以上は warn（保存は止めない・読み下しに注意を足す）', bi('2015-01-01').state === 'warn' && /15歳未満/.test(bi('2015-01-01').note) && bi('1930-01-01').state === 'warn' && /90歳以上/.test(bi('1930-01-01').note) && bi('1937-01-01').state === 'ok');
+t('ありえない日（2/30）は bad', bi('2001-02-30').state === 'bad' && bi('平成13年2月30日').state === 'bad');
+t('PDF: 名前か種類が PDF で、先頭が %PDF- なら置ける', C.pdfCheck({ name: '履歴書.pdf', type: '', size: 10, head: '%PDF-' }) === '' && C.pdfCheck({ name: 'scan', type: 'application/pdf', size: 10, head: '%PDF-' }) === '' && C.pdfCheck({ name: 'A.PDF', type: '', size: 10, head: null }) === '');
+t('PDF: 画像・中身が PDF でない・空・20MB 超は置かない', /PDF ではありません/.test(C.pdfCheck({ name: 'a.jpg', type: 'image/jpeg', size: 10 })) && /中身が PDF/.test(C.pdfCheck({ name: 'a.pdf', type: 'application/pdf', size: 10, head: '<html' }))
+  && /空/.test(C.pdfCheck({ name: 'a.pdf', size: 0 })) && /20MB/.test(C.pdfCheck({ name: 'a.pdf', size: C.FILE_MAX + 1 })) && C.pdfCheck({ name: 'a.pdf', size: C.FILE_MAX, head: '%PDF-' }) === '' && /読めません/.test(C.pdfCheck(null)));
+t('台帳に残す名前: 改行などの制御文字を落とす・全角のかっこ・異体字は直さない・200字まで・空は「書類.pdf」', C.fileName(' 履歴書\n（架空）髙﨑.pdf ') === '履歴書（架空）髙﨑.pdf' && C.fileName('あ'.repeat(250)).length === 200 && C.fileName('') === '書類.pdf' && C.fileName(null) === '書類.pdf');
+t('大きさの表示', C.fileSizeText(900) === '900 B' && C.fileSizeText(2048) === '2 KB' && C.fileSizeText(1536000) === '1.5 MB' && C.fileSizeText(null) === '0 B');
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);

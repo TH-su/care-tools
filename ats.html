@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-W3ZAmamQ8lLk7f6pi9R8w58NfKvbXQ81V+Ox4jw4O68='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-x+oJNHfP+38I90MHgRtxd26zktQWHMEik8w8sdtaMiM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
@@ -19,7 +19,7 @@
 <script src="su-facility.js?v=2026-10-26"></script>
 <script src="su-print.js?v=2026-09-12"></script>
 <script src="staff-master-calc.js?v=2026-10-11.2"></script>
-<script src="ats-calc.js?v=2026-10-27.2"></script>
+<script src="ats-calc.js?v=2026-10-29"></script>
 <style>
 /* 採用管理（2026-10-26 代表者承認の凍結仕様 v1）。
    色は担当者会議のページと同じ濃さ（コントラスト7:1目標）。ライト固定。段階は色でなく番号と名前で示す。
@@ -96,6 +96,11 @@ h3{font-size:1.0625rem; margin:14px 0 6px}
 .fi label,.fl{font-weight:700; font-size:1rem}
 .fi input,.fi select,.fi textarea,.dlg textarea,.dlg select,.dlg input{width:100%; min-height:44px; padding:8px 10px; border:1px solid var(--g5); border-radius:8px; background:#fff; min-width:0}
 .fi textarea,.dlg textarea{line-height:1.6; resize:vertical; min-height:88px}
+/* 生年月日の読み下し（和暦・満年齢）。打ち間違いの疑いは注意の色、読めない時は赤 */
+.bnote{margin:0; font-size:0.9375rem; color:var(--g7); min-height:1.4em}
+.bnote.warn{color:var(--warn-tx); font-weight:700}
+.bnote.ng{color:var(--ng); font-weight:700}
+.fi input[aria-invalid="true"]{border:2px solid var(--ng)}
 .cols{display:grid; grid-template-columns:repeat(6,minmax(180px,1fr)); gap:10px; overflow-x:auto; align-items:start}
 .col{background:var(--g1); border:2px solid transparent; border-radius:var(--r); padding:8px; min-height:160px; min-width:0}
 .col h3{margin:0 0 8px; font-size:1rem}
@@ -172,6 +177,12 @@ h3{font-size:1.0625rem; margin:14px 0 6px}
 .chk{display:flex; align-items:center; gap:8px; min-height:44px; font-weight:600; cursor:pointer}
 .chk input{width:24px; height:24px; flex:0 0 auto}
 .chks{display:flex; flex-wrap:wrap; gap:0 14px}
+/* 書類（PDF）の置き場。ドラッグ中は枠の色を変える */
+.drop{border:2px dashed var(--g5); border-radius:10px; padding:14px; background:var(--g1); display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:8px 12px; text-align:center; margin:0 0 8px}
+.drop.on{border-color:var(--pri); background:var(--pri-l)}
+.files li{display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px}
+.files .fn{flex:1 1 200px; min-width:0; overflow-wrap:anywhere}
+.files .fbtns{display:flex; gap:6px; margin-left:auto}
 .rt{border-collapse:collapse; width:100%}
 .rt th,.rt td{border:1px solid var(--g3); padding:6px 8px; text-align:left}
 
@@ -279,6 +290,11 @@ h3{font-size:1.0625rem; margin:14px 0 6px}
    - 職員マスタへの登録は、職員マスタの接続先（stfm_cfg を読むだけ・書かない）へ、職員マスタと同じ形で送る。
      先に保留の印（ats_mark_staff_pending）を保存し、保存できなければ送らない。「登録しました」は id を受け取った時だけ
    - 描画はすべて esc() を通す（数字・日付も）
+   - 生年月日は西暦・和暦のどちらでも打てる。読めた時は和暦と満年齢を欄の下に出し、保存するのは 'YYYY-MM-DD' だけ。
+     読めない・今日より先の値は保存しない（2026-10-29 本人指示「入力の正を取るため」）
+   - 面接官は設定の「いつもの面接官」を初めから入れておき、臨時でほかの方が対応した時だけ手で打ち替える（職員の一覧は読まない・2026-10-29 本人指示）
+   - 書類（履歴書などの PDF・0035）は Supabase の非公開の置き場 ats-files に「事業者/応募者/書類の id.pdf」の名前で置き、台帳 ats_files に1行。
+     開く時は期限2分のリンクを作って新しいタブで開く。端末には残さない。保管期限で消す時は、書類を先に消してから応募者を消す
    ═══════════════════════════════════════════════════════════════ */
 var DEVICE_KEY='su_device_role';
 var VIEW_KEY='ats_view';               // タブの名前だけ（localStorage・原則11）
@@ -305,7 +321,12 @@ var tab='board';
 var apps=[];            // 応募者（メモリだけ）
 var ivs=[];             // 面接（メモリだけ）
 var settings=null;      // 設定（評価項目・保管月数・連絡途絶の日数）
-var staffNames=[];      // 面接官の候補（職員の表示名・在籍だけ）
+var files=[];           // 開いている応募者の書類の台帳（メモリだけ）
+var filesFor='';
+var filesState='idle';  // 'loading' | 'ok' | 'nodb'（0035 がまだ）| 'error'
+var upBusy=false;       // 書類を置いている間
+var fileMsg='';         // 書類の欄の知らせ
+var fileMsgKind='';
 var myUid='';           // 自分の利用者 id（自分の評価を見分ける）
 var curId='';           // 詳細で開いている応募者
 var contacts=[];        // 開いている応募者の連絡の記録
@@ -481,7 +502,7 @@ function boot_(){
     return 'gate';
   });
 }
-/* 全部を読み直す（応募者・面接・設定・面接官の候補・自分の id） */
+/* 全部を読み直す（応募者・面接・設定・自分の id） */
 function loadAll_(){
   var my=gen;
   setSync('読み込んでいます…');
@@ -490,14 +511,12 @@ function loadAll_(){
     c.from('ats_applicants').select('*').order('received_on',{ascending:false}),
     c.from('ats_interviews').select('*').order('held_at',{ascending:true}),
     c.from('ats_settings').select('*'),
-    c.from('staff_names').select('name').eq('active',true),
     c.auth.getSession()
   ]).then(function(r){
     if(my!==gen) return;
     apps=rows_(r[0]); ivs=rows_(r[1]);
     var st=rows_(r[2]); settings=AtsCalc.normSettings(st[0]||null);
-    try{ staffNames=rows_(r[3]).map(function(x){ return String(x&&x.name||''); }).filter(Boolean).sort(); }catch(e){ staffNames=[]; atsNote_('面接官の候補', e); }
-    myUid=(r[4]&&r[4].data&&r[4].data.session&&r[4].data.session.user&&r[4].data.session.user.id)||'';
+    myUid=(r[3]&&r[3].data&&r[3].data.session&&r[3].data.session.user&&r[3].data.session.user.id)||'';
     view='app';
     $('a-gate').hidden=true; $('a-app').hidden=false;
     setSync('');
@@ -700,12 +719,30 @@ function onDragStart_(e){
   });
 }
 function clearDrop_(){ Array.prototype.forEach.call(document.querySelectorAll('.col'),function(col){ col.classList.remove('drop-ok'); col.classList.remove('drop-no'); }); }
+/* 書類（ファイル）のドラッグか（選考のカードのドラッグとは別） */
+function isFileDrag_(e){ var dt=e&&e.dataTransfer; return !!(dt&&dt.types&&Array.prototype.indexOf.call(dt.types,'Files')>=0); }
+function dropZoneOf_(e){ return e.target&&e.target.closest?e.target.closest('[data-drop]'):null; }
+/* ファイルを選ぶ欄（取り込みの CSV など）の上では、ブラウザの動きのまま（その欄へ落とせる） */
+function onFileInput_(e){ return !!(e.target&&e.target.closest&&e.target.closest('input[type=file]')); }
 function onDragOver_(e){
+  if(!dragId&&isFileDrag_(e)&&!onFileInput_(e)){
+    /* 置き場の外で離しても、ブラウザが PDF を開いてこの画面を離れないよう、いつも止める */
+    e.preventDefault();
+    var z=dropZoneOf_(e);
+    try{ e.dataTransfer.dropEffect=(z&&!upBusy)?'copy':'none'; }catch(err){ atsNote_('書類のドラッグ', err); }
+    setDropOn_(!!z&&!upBusy);
+    return;
+  }
   if(!dragId) return;
   var col=e.target&&e.target.closest?e.target.closest('.col'):null;
   if(col&&col.classList.contains('drop-ok')) e.preventDefault();
 }
 function onDrop_(e){
+  if(!dragId&&isFileDrag_(e)&&!onFileInput_(e)){
+    e.preventDefault(); setDropOn_(false);
+    if(dropZoneOf_(e)&&!upBusy) uploadFiles_(e.dataTransfer.files);
+    return;
+  }
   var col=e.target&&e.target.closest?e.target.closest('.col'):null;
   var id=dragId; dragId=''; clearDrop_();
   if(!id||!col||!col.classList) return;
@@ -715,6 +752,7 @@ function onDrop_(e){
   tryMove_(a,to);
 }
 function onDragEnd_(){ dragId=''; clearDrop_(); }
+function onDragLeave_(e){ if(isFileDrag_(e)&&dropZoneOf_(e)&&!(e.relatedTarget&&dropZoneOf_({target:e.relatedTarget}))) setDropOn_(false); }
 /* 段階を動かす前の確かめ（入職完了は登録済みの時だけ） */
 function tryMove_(a,to){
   var cm=AtsCalc.canMove(a.stage,to,!!a.staff_id);
@@ -772,9 +810,11 @@ function openDetail_(id){
     var a=rowById_(id); if(!a) return;
     curId=id; saveOpen_(id); edDirty=false; ivEdit='';
     if(contactsFor!==id){ contacts=[]; contactsFor=''; }
+    if(filesFor!==id){ files=[]; filesFor=id; filesState='idle'; }
+    fileMsg=''; fileMsgKind='';
     $('a-pane').hidden=false;
     paintDetail_();
-    loadContacts_(id); loadEvalStat_(id);
+    loadContacts_(id); loadEvalStat_(id); loadFiles_(id);
     if(!enums&&enumsState!=='loading') loadEnums_();
     /* 開いた時の自動の確かめは、ほかの画面の送り直しで読み直した直後には走らせない（読み直し→開く→確かめ…の繰り返しを止める） */
     if(a.staff_pending_at&&!a.staff_id&&!regOf_(id).holdAuto) regCheck_(id,true);
@@ -784,7 +824,7 @@ function openDetail_(id){
   go(); return Promise.resolve();
 }
 function closeDetail_(force){
-  var go=function(){ curId=''; saveOpen_(''); edDirty=false; contacts=[]; contactsFor=''; var p=$('a-pane'); p.hidden=true; p.innerHTML=''; };
+  var go=function(){ curId=''; saveOpen_(''); edDirty=false; contacts=[]; contactsFor=''; files=[]; filesFor=''; filesState='idle'; fileMsg=''; var p=$('a-pane'); p.hidden=true; p.innerHTML=''; };
   if(edDirty&&!force) return askConfirm_('保存していない入力があります',['入力を捨てて閉じますか？'],'捨てて閉じる',true).then(function(ok){ if(ok) go(); return ok; });
   go(); return Promise.resolve(true);
 }
@@ -796,6 +836,22 @@ function fi_(id,label,value,type,extra){
   return '<div class="fi"><label for="'+id+'">'+esc(label)+'</label><input id="'+id+'" type="'+(type||'text')+'" value="'+esc(value==null?'':value)+'"'+(extra||'')+' data-dirty="1"></div>';
 }
 function ta_(id,label,value,extra){ return '<div class="fi"><label for="'+id+'">'+esc(label)+'</label><textarea id="'+id+'"'+(extra||'')+' data-dirty="1">'+esc(value||'')+'</textarea></div>'; }
+/* 生年月日の欄（西暦・和暦のどちらでも打てる。打つたびに和暦と満年齢を下に出す。欄を離れた時に 'YYYY-MM-DD' へ直す）。
+   dirty が false の欄（足す窓の中）は詳細の「保存していない入力」に数えない */
+function birthFi_(id,label,value,extra,dirty){
+  var b=AtsCalc.birthInfo(value,today_());
+  return '<div class="fi"><label for="'+id+'">'+esc(label)+'</label><input id="'+id+'" type="text" maxlength="20" autocomplete="off" placeholder="例: 1990-04-01・平成2年4月1日" value="'+esc(value==null?'':value)+'"'+
+    ' data-birth="1" aria-describedby="'+id+'-n" aria-invalid="'+(b.state==='bad'?'true':'false')+'"'+(extra||'')+(dirty===false?'':' data-dirty="1"')+'>'+
+    '<p class="bnote'+bnoteCls_(b)+'" id="'+id+'-n" aria-live="polite">'+esc(b.note)+'</p></div>';
+}
+function bnoteCls_(b){ return b.state==='bad'?' ng':(b.state==='warn'?' warn':''); }
+function birthNote_(el){
+  var b=AtsCalc.birthInfo(el.value,today_()), n=$(el.id+'-n');
+  if(n){ n.textContent=b.note; n.className='bnote'+bnoteCls_(b); }
+  try{ el.setAttribute('aria-invalid',b.state==='bad'?'true':'false'); }catch(e){ atsNote_('生年月日の印', e); }
+  return b;
+}
+function birthNorm_(el){ var b=birthNote_(el); if((b.state==='ok'||b.state==='warn')&&el.value!==b.ymd) el.value=b.ymd; return b; }
 function detailHtml_(a){
   var ended=AtsCalc.isEnd(a.stage), next=AtsCalc.nextStage(a.stage);
   var h='<div class="pane-h"><h2 id="a-pane-h" tabindex="-1">'+esc(a.name)+'</h2><button type="button" class="btn" data-act="close" aria-label="詳細を閉じる">閉じる</button></div>';
@@ -811,13 +867,15 @@ function detailHtml_(a){
   h+='<section class="sec" aria-labelledby="s-basic"><h3 id="s-basic">基本情報</h3>'+(lk?'<p class="msg warn">'+esc(PENDING_MSG)+'（氏名・フリガナ・生年月日・性別・職種・電話・住所・入職予定日・入職準備）。</p>':'')+'<div class="fgrid">'+
     fi_('f-name','氏名',a.name,'text',' maxlength="80"'+lk)+fi_('f-kana','フリガナ',a.kana,'text',' maxlength="80"'+lk)+
     '<div class="fi"><label for="f-gender">性別</label><select id="f-gender" data-dirty="1"'+lk+'><option value="">—</option><option value="M"'+(a.gender==='M'?' selected':'')+'>男</option><option value="F"'+(a.gender==='F'?' selected':'')+'>女</option></select></div>'+
-    fi_('f-birth','生年月日',a.birth_date,'date',lk)+fi_('f-recv','受付日',a.received_on,'date')+
+    birthFi_('f-birth','生年月日（和暦も可）',a.birth_date,lk)+fi_('f-recv','受付日',a.received_on,'date')+
     fi_('f-src','経路（「・」で区切る）',(a.sources||[]).join('・'),'text',' maxlength="400"')+fi_('f-jobs','職種（「・」で区切る）',(a.jobs||[]).join('・'),'text',' maxlength="400"'+lk)+
     fi_('f-quals','資格',a.quals_text,'text',' maxlength="1000"')+fi_('f-addr','住所',a.address,'text',' maxlength="200"'+lk)+
     ta_('f-phones','電話（1行に1つ。古い番号は先頭に「旧」）',(a.phones||[]).map(function(p){ return (p.label?p.label+' ':'')+p.num; }).join('\n'),' maxlength="300"'+lk)+
     fi_('f-email','メール',a.email,'email',' maxlength="200"')+ta_('f-wish','本人希望',a.wish_text,' maxlength="20000"')+ta_('f-cond','条件',a.cond_text,' maxlength="20000"')+ta_('f-note','備考',a.note_text,' maxlength="20000"')+
     fi_('f-due','返答期限',a.reply_due,'date')+fi_('f-start','入職予定日',a.start_on,'date',lk)+
     '</div><button type="button" class="btn pri" data-act="save-basic">基本情報を保存</button></section>';
+  /* 書類（PDF） */
+  h+='<section class="sec" aria-labelledby="s-docs"><h3 id="s-docs">書類（履歴書など・PDF）</h3><div id="d-files">'+filesInner_(a)+'</div></section>';
   /* 連絡の記録 */
   h+='<section class="sec" aria-labelledby="s-ct"><h3 id="s-ct">連絡の記録</h3>'+
     (contactsFor===a.id?(contacts.length?'<ul class="list">'+contacts.map(function(c){ return '<li><b>'+esc(fmtDT_(c.at))+'</b> '+esc(c.channel||'')+'（'+esc(c.direction==='out'?'こちらから':'先方から')+'）<br>'+esc(c.summary||'')+'</li>'; }).join('')+'</ul>':'<p class="muted">まだありません。</p>'):'<p class="muted">読み込んでいます…</p>')+
@@ -840,14 +898,13 @@ function detailHtml_(a){
 function ivFormHtml_(a,mine){
   var v=null; mine.forEach(function(x){ if(x.id===ivEdit) v=x; });
   var local=v&&v.held_at?toLocalInput_(v.held_at):'';
-  var picked=v?(v.interviewers||[]):[];
-  var manual=picked.filter(function(n){ return staffNames.indexOf(n)<0; });
+  /* 新しい面接は設定の「いつもの面接官」を初めから入れる。直す時は保存してある面接官のまま */
+  var names=v?(v.interviewers||[]):(settings&&settings.defaultInterviewer?[settings.defaultInterviewer]:[]);
   return '<h3>'+(v?'第'+esc(v.round)+'回の面接を直す':'面接を足す')+'</h3><div class="fgrid">'+
     '<div class="fi"><label for="i-at">日時</label><input id="i-at" type="datetime-local" value="'+esc(local)+'"></div>'+
     '<div class="fi"><label for="i-place">場所</label><input id="i-place" type="text" maxlength="200" value="'+esc(v?v.place||'':'')+'"></div></div>'+
-    '<fieldset class="score"><legend>面接官</legend><div class="chks">'+staffNames.map(function(n,i){
-      return '<label class="chk"><input type="checkbox" data-ivname="'+esc(n)+'" id="i-n'+i+'"'+(picked.indexOf(n)>=0?' checked':'')+'>'+esc(n)+'</label>'; }).join('')+'</div>'+
-    '<div class="fi"><label for="i-manual">候補に無い面接官（「・」で区切る）</label><input id="i-manual" type="text" value="'+esc(manual.join('・'))+'"></div></fieldset>'+
+    '<div class="fi"><label for="i-names">面接官</label><input id="i-names" type="text" maxlength="400" value="'+esc(names.join('・'))+'" aria-describedby="i-names-h">'+
+      '<p class="hint" id="i-names-h">'+(settings&&settings.defaultInterviewer?'ふだんはこのまま。臨時でほかの方が対応した時だけ、名前を打ち替えてください（2人以上は「・」で区切る）。':'面接官の名前を打ってください（2人以上は「・」で区切る）。いつもの面接官は「設定」で決められます。')+'</p></div>'+
     '<div class="fi"><label for="i-memo">メモ</label><textarea id="i-memo" maxlength="4000">'+esc(v?v.memo||'':'')+'</textarea></div>'+
     '<div class="acts"><button type="button" class="btn" data-act="iv-save">'+(v?'面接を保存':'面接を足す')+'</button>'+(v?'<button type="button" class="btn" data-act="iv-cancel">直すのをやめる</button>':'')+'</div>';
 }
@@ -868,7 +925,7 @@ function readBasic_(a){
   var lines=val_('f-phones').split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
   var phones=lines.map(function(l){ var old=/^旧[\s　]*/.test(l); return {num:l.replace(/^旧[\s　]*/,'').slice(0,40),label:old?'旧':''}; }).slice(0,6);
   var split=function(s){ return s.split(/[・、,]/).map(function(x){ return x.trim(); }).filter(Boolean).slice(0,10); };
-  return {id:a.id,name:val_('f-name'),kana:val_('f-kana')||null,gender:val_('f-gender'),birth_date:val_('f-birth')||null,received_on:val_('f-recv')||null,
+  return {id:a.id,name:val_('f-name'),kana:val_('f-kana')||null,gender:val_('f-gender'),birth_date:AtsCalc.birthInfo(val_('f-birth'),today_()).ymd||null,received_on:val_('f-recv')||null,
     sources:split(val_('f-src')),jobs:split(val_('f-jobs')),quals_text:val_('f-quals')||null,address:val_('f-addr')||null,phones:phones,
     email:val_('f-email')||null,wish_text:val_('f-wish')||null,cond_text:val_('f-cond')||null,note_text:val_('f-note')||null,
     reply_due:val_('f-due')||null,start_on:val_('f-start')||null};
@@ -894,6 +951,8 @@ function saveBasic_(){
   var a=rowById_(curId); if(!a) return Promise.resolve('none');
   var row=readBasicSafe_(a);
   if(!isPending_(a)&&!row.name){ dMsg_('氏名を入れてください。'); return Promise.resolve('bad'); }
+  var bi=AtsCalc.birthInfo(val_('f-birth'),today_());
+  if(!isPending_(a)&&bi.state==='bad'){ dMsg_(bi.note+'。保存していません。'); return Promise.resolve('bad'); }
   dMsg_('保存しています…','busy');
   return putRow_(row,a.rev).then(function(r){
     if(r==='ok'){ edDirty=false; paintAll_(); paintDetail_(); dMsg_('保存しました。','ok'); }
@@ -945,7 +1004,7 @@ function pasteConfirm_(p){
     '<div class="fi"><label for="d-pjobs">職種（「・」で区切る）</label><input id="d-pjobs" type="text" maxlength="400" value="'+esc(p.jobs.join('・'))+'"></div>'+
     '<div class="fi"><label for="d-pquals">資格</label><input id="d-pquals" type="text" maxlength="1000" value="'+esc(p.quals_text)+'"></div>'+
     '<div class="fi"><label for="d-pgender">性別</label><select id="d-pgender">'+gsel(p.gender)+'</select></div>'+
-    '<div class="fi"><label for="d-pbirth">生年月日</label><input id="d-pbirth" type="date" value="'+esc(p.birth_date)+'"></div>'+
+    birthFi_('d-pbirth','生年月日（和暦も可）',p.birth_date,'',false)+
     '<div class="fi"><label for="d-pphone">電話（1行に1つ）</label><textarea id="d-pphone" rows="2" maxlength="300">'+esc(p.phones.map(function(x){ return x.num; }).join('\n'))+'</textarea></div>'+
     '<div class="fi"><label for="d-pmail">メール</label><input id="d-pmail" type="email" maxlength="200" value="'+esc(p.email)+'"></div>'+
     '<div class="fi"><label for="d-paddr">住所</label><input id="d-paddr" type="text" maxlength="200" value="'+esc(p.address)+'"></div>'+
@@ -956,11 +1015,12 @@ function pasteConfirm_(p){
       var row={name:val_('d-pname'),kana:val_('d-pkana')||null,received_on:val_('d-precv'),stage:'applied',
         sources:split(val_('d-psrc')).map(function(x){ return x.slice(0,60); }),jobs:split(val_('d-pjobs')).map(function(x){ return x.slice(0,60); }),
         quals_text:val_('d-pquals')||null,gender:val_('d-pgender')==='M'||val_('d-pgender')==='F'?val_('d-pgender'):null,
-        birth_date:AtsCalc.isDate(val_('d-pbirth'))?val_('d-pbirth'):null,
+        birth_date:AtsCalc.birthInfo(val_('d-pbirth'),today_()).ymd||null,
         phones:val_('d-pphone').split('\n').map(function(l){ return l.trim(); }).filter(Boolean).slice(0,6).map(function(l){ return {num:l.slice(0,40),label:''}; }),
         email:val_('d-pmail')||null,address:val_('d-paddr')||null,note_text:val_('d-pnote')||null};
       if(!row.name||!AtsCalc.isDate(row.received_on)){ toast('氏名と受付日を入れてください'); return null; }
       if(row.received_on>today_()){ toast('受付日が先の日付になっています'); return null; }
+      var pb=AtsCalc.birthInfo(val_('d-pbirth'),today_()); if(pb.state==='bad'){ toast(pb.note); return null; }
       var dup=AtsCalc.postingDup({name:row.name,received_on:row.received_on,member_no:p.member_no,receivedGuess:p.receivedGuess},apps);
       if(dup){ toast(dup.kind==='member'?'同じ会員番号の方がもういます（'+dup.name+'）。ボードから開いてください':(p.receivedGuess?'同じ氏名の方が近い受付日でもういます':'同じ氏名・同じ受付日の方がもういます')+'。ボードから開いてください'); return null; }
       return row;
@@ -1000,6 +1060,180 @@ function addContact_(){
   })['catch'](function(e){ atsNote_('連絡の記録', e); dMsg_(friendly_(e)); return false; });
 }
 
+/* ── 書類（履歴書などの PDF・0035・2026-10-29 本人指示「pdf を d&d で保存できる機能」）──
+   置く: 先頭5文字で PDF か確かめる → 置き場へ（上書きしない）→ 台帳に1行（ats_file_add は置き場に本当にある時だけ足す）。
+         台帳に入らなかった時は置いた中身を消す（台帳に無い＝画面から見えない個人情報を残さない）
+   消す: 置き場から消す → 台帳から消す（ats_file_del は置き場にまだ中身がある時は断る）
+   開く: 押した時にすぐ新しいタブを開き、期限2分のリンクを作ってから行き先を入れる（リンクを作った後に開くとポップアップとして止められる）。
+   中身・リンクは端末に残さない。詳細の再描画で打ちかけの入力を消さないよう、書類の欄（#d-files）だけを描き直す */
+var FILE_BUCKET='ats-files';
+var FILE_LINK_SEC=120;
+function noDb_(e){ var c=e&&e.code; return c==='42P01'||c==='PGRST205'||c==='PGRST202'; }
+function fileById_(fid){ for(var i=0;i<files.length;i++) if(files[i]&&files[i].id===fid) return files[i]; return null; }
+function setFileMsg_(t,kind){ fileMsg=t||''; fileMsgKind=t?(kind||'ng'):''; var e=$('d-fmsg'); if(e){ e.className='msg'+(fileMsgKind?' '+fileMsgKind:''); e.textContent=fileMsg; } }
+function paintFiles_(){ var c=$('d-files'), a=rowById_(curId); if(c&&a) c.innerHTML=filesInner_(a); }
+function setDropOn_(on){ var z=$('d-drop'); if(z&&z.classList){ if(on) z.classList.add('on'); else z.classList.remove('on'); } }
+function filesInner_(a){
+  if(filesFor!==a.id||filesState==='loading'||filesState==='idle') return '<p class="muted">読み込んでいます…</p>';
+  if(filesState==='nodb') return '<p class="msg warn">書類の置き場がまだ準備中です（データベースの更新 0035 が必要です）。管理者に知らせてください。</p>';
+  if(filesState==='error') return '<p class="msg ng">書類の一覧を読めませんでした。</p><button type="button" class="btn" data-act="file-reload">もう一度読む</button>';
+  var full=files.length>=AtsCalc.FILE_PER_APPLICANT;
+  return '<div class="drop" id="d-drop" data-drop="1"><span>'+(full?'1人'+esc(AtsCalc.FILE_PER_APPLICANT)+'件までです。要らない書類を消してから置いてください。':'ここに PDF をドラッグして置く（1つ20MBまで・いくつでも）')+'</span>'+
+      '<button type="button" class="btn" data-act="file-pick"'+(upBusy||full?' disabled':'')+'>PDF を選ぶ</button>'+
+      '<input id="d-file" type="file" accept="application/pdf,.pdf" multiple hidden aria-label="置く PDF を選ぶ"></div>'+
+    '<p class="msg'+(fileMsgKind?' '+fileMsgKind:'')+'" id="d-fmsg" role="status">'+esc(fileMsg)+'</p>'+
+    (files.length?'<ul class="list files">'+files.map(function(f){
+      return '<li><span class="fn">'+esc(f.file_name)+'</span><span class="muted">'+esc(AtsCalc.fileSizeText(f.size_bytes))+'・'+esc(fmtDT_(f.created_at))+'</span>'+
+        '<span class="fbtns"><button type="button" class="btn sm pri" data-act="file-open" data-fid="'+esc(f.id)+'">開く</button>'+
+        '<button type="button" class="btn sm ng" data-act="file-del" data-fid="'+esc(f.id)+'"'+(upBusy?' disabled':'')+'>消す</button></span></li>';
+    }).join('')+'</ul>':'<p class="muted">まだありません。</p>');
+}
+function loadFiles_(id){
+  var my=gen;
+  if(filesFor!==id){ files=[]; filesFor=id; }
+  filesState='loading';
+  return Promise.resolve().then(function(){ return db_().from('ats_files').select('*').eq('applicant_id',id).order('created_at',{ascending:true}); }).then(function(r){
+    if(my!==gen||filesFor!==id) return;
+    files=rows_(r); filesState='ok';
+    if(curId===id) paintFiles_();
+  })['catch'](function(e){
+    if(my!==gen||filesFor!==id) return;
+    files=[]; filesState=noDb_(e)?'nodb':'error';
+    if(filesState==='error') atsNote_('書類の読み込み', e);
+    if(curId===id) paintFiles_();
+  });
+}
+/* 置き場（Storage）の断りを職員に分かる文に */
+function fileFriendly_(e){
+  var m=String(e&&(e.message||e.error)||e||''), sc=String(e&&(e.statusCode||e.status)||'');
+  if(/bucket not found/i.test(m)) return '書類の置き場がまだ準備中です（データベースの更新 0035 が必要です）。';
+  if(/mime|content.?type/i.test(m)) return 'PDF ではありません。';
+  if(sc==='413'||/too large|exceeded the maximum/i.test(m)) return '20MB を超えています。';
+  if(/row-level security|unauthorized|forbidden/i.test(m)||sc==='403') return 'この操作をする権限がありません。管理者として2段階認証まで済んでいるか確かめてください。';
+  if(/not.?found/i.test(m)||sc==='404') return '書類が見つかりません。一覧を読み直してください。';
+  return friendly_(e);
+}
+function fileErr_(code){
+  return code==='toomany'?'1人'+AtsCalc.FILE_PER_APPLICANT+'件までです':code==='noobject'?'置き場に届いたか確かめられませんでした':code==='notfound'?'応募者が見つかりません'
+    :code==='exists'?'もう置いてあります':code==='badvalue'?'ファイル名か大きさを受け付けられません':'台帳に入れられませんでした';
+}
+function headOf_(file){
+  return Promise.resolve().then(function(){ return file.slice(0,5).arrayBuffer(); })
+    .then(function(b){ return String.fromCharCode.apply(null,Array.prototype.slice.call(new Uint8Array(b))); },function(e){ atsNote_('書類の先頭を読む', e); return null; });
+}
+function newId_(){
+  var c=window.crypto;
+  if(c&&typeof c.randomUUID==='function') return c.randomUUID();
+  var b=new Uint8Array(16); c.getRandomValues(b); b[6]=(b[6]&15)|64; b[8]=(b[8]&63)|128;
+  var h=Array.prototype.map.call(b,function(x){ return (x<16?'0':'')+x.toString(16); }).join('');
+  return h.slice(0,8)+'-'+h.slice(8,12)+'-'+h.slice(12,16)+'-'+h.slice(16,20)+'-'+h.slice(20);
+}
+function uploadFiles_(list){
+  var a=rowById_(curId), arr=Array.prototype.slice.call(list||[]);
+  if(!a||upBusy||!arr.length) return Promise.resolve(0);
+  if(filesState!=='ok'){ setFileMsg_(filesState==='nodb'?'書類の置き場がまだ準備中です。':'書類の一覧を読めていないため、置けません。','ng'); return Promise.resolve(0); }
+  var id=a.id, who=a.name||'', tenant=String(a.tenant_id||''), my=gen, done=0, ng=[], have=files.length;
+  if(!ID_RE.test(tenant)){ setFileMsg_('事業者の情報を読めないため置けません。画面を読み込み直してください。','ng'); return Promise.resolve(0); }
+  var st=db_().storage.from(FILE_BUCKET);
+  upBusy=true; paintFiles_(); setFileMsg_('置いています…（'+arr.length+'件）','busy');
+  var chain=Promise.resolve();
+  arr.forEach(function(file){
+    chain=chain.then(function(){
+      if(my!==gen) return;
+      var name=AtsCalc.fileName(file&&file.name);
+      if(have+done>=AtsCalc.FILE_PER_APPLICANT){ ng.push(name+': '+fileErr_('toomany')); return; }
+      return headOf_(file).then(function(head){
+        var why=AtsCalc.pdfCheck({name:file.name,type:file.type,size:file.size,head:head});
+        if(why){ ng.push(name+': '+why); return; }
+        var fid=newId_(), key=tenant+'/'+id+'/'+fid+'.pdf';
+        var undo=function(){ return Promise.resolve().then(function(){ return st.remove([key]); }).then(function(r){ if(r&&r.error) throw r.error; return true; })['catch'](function(e){ atsNote_('書類の後片付け', e); return false; }); };
+        return Promise.resolve().then(function(){ return st.upload(key,file,{contentType:'application/pdf',upsert:false,cacheControl:'0'}); }).then(function(r){
+          if(r&&r.error) throw r.error;
+          return rpc_('ats_file_add',{p_applicant_id:id,p_file_id:fid,p_name:name,p_size:file.size}).then(function(d){
+            if(d&&d.ok===true&&d.row){ done++; if(filesFor===id) files.push(d.row); return; }
+            return undo().then(function(gone){ ng.push(name+': '+fileErr_(d&&d.error)+(gone?'':'（置いた中身を消せませんでした。管理者に知らせてください）')); });
+          },function(e){ return undo().then(function(gone){ if(!gone) e.left=true; throw e; }); });
+        })['catch'](function(e){ atsNote_('書類を置く', e); ng.push(name+': '+fileFriendly_(e)+(e&&e.left?'（置いた中身を消せませんでした。管理者に知らせてください）':'')); });
+      });
+    });
+  });
+  return chain.then(function(){
+    upBusy=false;
+    if(my!==gen) return done;
+    var text=(done?done+'件を置きました。':'')+(ng.length?'置けなかったもの: '+ng.join('／'):''), kind=ng.length?(done?'warn':'ng'):'ok';
+    if(curId===id&&filesFor===id){ paintFiles_(); setFileMsg_(text,kind); }
+    else{ if(curId) paintFiles_(); toast(who+'さんの書類: '+text); }  /* 途中で別の方を開いた時は、その方の欄に書かない */
+    return done;
+  });
+}
+function openFile_(fid){
+  var f=fileById_(fid); if(!f) return Promise.resolve(false);
+  var w=null;
+  try{ w=window.open('about:blank','_blank'); }catch(e){ w=null; atsNote_('新しいタブ', e); }
+  if(w){ try{ w.opener=null; }catch(e){ atsNote_('新しいタブの元', e); } }
+  return Promise.resolve().then(function(){ return db_().storage.from(FILE_BUCKET).createSignedUrl(f.object_key,FILE_LINK_SEC); }).then(function(r){
+    if(r&&r.error) throw r.error;
+    var url=r&&r.data&&r.data.signedUrl;
+    if(!url||!/^https?:\/\//.test(String(url))) throw new Error('nolink');
+    if(w&&!w.closed){ w.location.replace(url); setFileMsg_('',''); return true; }
+    setFileMsg_('新しいタブを開けませんでした。ブラウザでこの画面のポップアップを許可してから、もう一度「開く」を押してください。','warn'); return false;
+  })['catch'](function(e){
+    try{ if(w&&!w.closed) w.close(); }catch(x){ atsNote_('新しいタブを閉じる', x); }
+    atsNote_('書類を開く', e); setFileMsg_(fileFriendly_(e),'ng'); return false;
+  });
+}
+/* 書類を消す（置き場→台帳の順）。返り {ok:消した件数, ng:[理由]} */
+function removeFiles_(list){
+  var res={ok:0,ng:[]};
+  if(!list.length) return Promise.resolve(res);
+  var st=db_().storage.from(FILE_BUCKET);
+  return Promise.resolve().then(function(){ return st.remove(list.map(function(f){ return f.object_key; })); }).then(function(r){
+    if(r&&r.error) throw r.error;
+    var chain=Promise.resolve();
+    list.forEach(function(f){
+      chain=chain.then(function(){ return rpc_('ats_file_del',{p_id:f.id}); }).then(function(d){
+        if(d&&d.ok===true) res.ok++; else res.ng.push(AtsCalc.fileName(f.file_name)+': '+(d&&d.error==='still_there'?'置き場から消えていません':'消せませんでした'));
+      });
+    });
+    return chain.then(function(){ return res; });
+  });
+}
+function delFile_(fid){
+  var f=fileById_(fid); if(!f||upBusy) return Promise.resolve(false);
+  return askConfirm_('書類を消しますか？',['「'+AtsCalc.fileName(f.file_name)+'」を消します。元に戻せません。'],'消す',true).then(function(ok){
+    if(!ok) return false;
+    var my=gen, id=curId;
+    upBusy=true; paintFiles_(); setFileMsg_('消しています…','busy');
+    return removeFiles_([f]).then(function(r){
+      upBusy=false;
+      if(my!==gen) return false;
+      if(r.ok&&filesFor===id) files=files.filter(function(x){ return x.id!==f.id; });
+      if(curId===id) paintFiles_();
+      setFileMsg_(r.ng.length?r.ng.join('／'):'消しました。',r.ng.length?'ng':'ok');
+      return r.ok>0;
+    },function(e){
+      upBusy=false; atsNote_('書類を消す', e);
+      if(curId===id) paintFiles_();
+      setFileMsg_(fileFriendly_(e),'ng'); return false;
+    });
+  });
+}
+/* 保管期限で消す前に、その方々の書類を消す（書類が残っていると ats_purge は外部キーで止まる）。台帳がまだ無い（0035 の前）なら書類も無い */
+function purgeFilesFirst_(ids){
+  /* 消す直前に応募者をデータベースから読み直し、ats_purge が消す見込みの方（職員の番号なし・確かめ中でない・期限を過ぎた）の書類だけを消す
+     （別の端末で登録・段階の戻しがあった方の書類を先に消してしまわないように） */
+  return Promise.resolve().then(function(){ return db_().from('ats_applicants').select('id,staff_id,staff_pending_at,retain_until').in('id',ids); })
+    .then(function(r){
+      var ok=rows_(r).filter(function(x){ return x&&!x.staff_id&&!x.staff_pending_at&&AtsCalc.isDate(x.retain_until)&&x.retain_until<today_(); }).map(function(x){ return x.id; });
+      return ok.length?purgeFilesOf_(ok):{ok:0,ng:[]};
+    });
+}
+function purgeFilesOf_(ids){
+  return Promise.resolve().then(function(){ return db_().from('ats_files').select('id,object_key,file_name,applicant_id').in('applicant_id',ids); })
+    .then(function(r){ return rows_(r); })['catch'](function(e){ if(noDb_(e)) return []; throw e; })
+    .then(removeFiles_);
+}
+
 /* ── 面接 ── */
 function loadEvalStat_(id){
   var my=gen;
@@ -1016,8 +1250,7 @@ function saveInterview_(){
   var at=fromLocalInput_(val_('i-at'));
   if(!at){ dMsg_('面接の日時を入れてください。'); return Promise.resolve(false); }
   var names=[];
-  Array.prototype.forEach.call(document.querySelectorAll('[data-ivname]'),function(c){ if(c.checked) names.push(c.getAttribute('data-ivname')); });
-  val_('i-manual').split(/[・、,]/).forEach(function(n){ n=n.trim(); if(n&&names.indexOf(n)<0) names.push(n.slice(0,80)); });
+  val_('i-names').split(/[・、,]/).forEach(function(n){ n=n.trim().slice(0,80); if(n&&names.indexOf(n)<0) names.push(n); });
   var row={held_at:at,place:val_('i-place').slice(0,200),interviewers:names.slice(0,10),memo:val_('i-memo').slice(0,4000)};
   var my=gen, id=a.id, editing=ivEdit;
   var mine=ivs.filter(function(v){ return v.applicant_id===id; });
@@ -1159,7 +1392,7 @@ function prepHtml_(a){
   var ws=Object.keys(AtsCalc.WORK_LABEL).map(function(k){ return {code:k,label:AtsCalc.WORK_LABEL[k]}; });
   var st=Object.keys(AtsCalc.SITE_LABEL).map(function(k){ return {code:k,label:AtsCalc.SITE_LABEL[k]}; });
   var h='<section class="sec" aria-labelledby="s-prep"><h3 id="s-prep">入職準備</h3><fieldset class="lockfs"'+(isPending_(a)?' disabled':'')+'><legend class="sr">入職準備の項目</legend><div class="fgrid">'+
-    fi_('p-kana','カナ',p.kana||a.kana,'text',' maxlength="60"')+fi_('p-birth','生年月日（和暦も可）',p.birthDate||a.birth_date,'text',' maxlength="20"')+
+    fi_('p-kana','カナ',p.kana||a.kana,'text',' maxlength="60"')+birthFi_('p-birth','生年月日（和暦も可）',p.birthDate||a.birth_date,'')+
     '<div class="fi"><label for="p-gender">性別</label><select id="p-gender" data-dirty="1"><option value="">—</option><option value="M"'+((p.gender||a.gender)==='M'?' selected':'')+'>男</option><option value="F"'+((p.gender||a.gender)==='F'?' selected':'')+'>女</option></select></div>'+
     sel('p-emp',et.filter(function(x){ return !x.hidden; }),p.employmentType,'雇用形態')+sel('p-ws',ws,p.workStyle,'勤務形態')+
     fi_('p-job','職種',p.jobTitle||(a.jobs||[])[0]||'','text',' maxlength="60"')+fi_('p-phone','電話（主番号）',p.phone||'','text',' maxlength="40"')+fi_('p-addr','住所',p.address||a.address,'text',' maxlength="200"')+
@@ -1183,7 +1416,8 @@ function savePrep_(){
   var a=rowById_(curId); if(!a) return Promise.resolve('none');
   if(isPending_(a)){ dMsg_(PENDING_MSG+'。','warn'); return Promise.resolve('pending'); }
   var p=readPrep_(a);
-  if(p.birthDate&&!AtsCalc.isDate(p.birthDate)){ dMsg_('生年月日を読めません（例: 1990-04-01・平成2年4月1日）。'); return Promise.resolve('bad'); }
+  var pbi=AtsCalc.birthInfo(val_('p-birth'),today_());
+  if(pbi.state==='bad'){ dMsg_(pbi.note+'。保存していません。'); return Promise.resolve('bad'); }
   dMsg_('保存しています…','busy');
   return putRow_({id:a.id,prep:p,start_on:p.hireDate||a.start_on||null},a.rev).then(function(r){
     if(r==='ok'){ edDirty=false; paintAll_(); paintDetail_(); dMsg_('入職準備を保存しました。','ok'); }
@@ -1641,7 +1875,7 @@ function paintExpire_(){
   var p=$('p-expire'); if(!p) return;
   var list=AtsCalc.purgeable(apps,today_()), n=list.filter(function(a){ return expireSel[a.id]&&!isPending_(a); }).length;
   var html='<h2>保管期限</h2><p class="m-only msg warn">この操作は事務所のパソコンで行ってください。</p><div class="pc-only">'+
-    '<p class="hint">選考が終わった日から'+esc(settings.retainMonths)+'か月を過ぎた方です（職員マスタへ登録した方は出ません）。消すと、連絡の記録・面接・評価も一緒に消え、元に戻せません。</p>'+
+    '<p class="hint">選考が終わった日から'+esc(settings.retainMonths)+'か月を過ぎた方です（職員マスタへ登録した方は出ません）。消すと、連絡の記録・面接・評価・書類（PDF）も一緒に消え、元に戻せません。</p>'+
     (list.length?'<div class="tbl-wrap"><table class="tbl"><thead><tr><th>選ぶ</th><th>氏名</th><th>終わった日</th><th>終わり方</th><th>期限</th></tr></thead><tbody>'+list.map(function(a,i){
       return '<tr><td>'+(isPending_(a)?'<span class="muted">登録を確かめ中</span>':'<label class="chk"><input type="checkbox" data-exp="'+esc(a.id)+'" id="exp-'+i+'"'+(expireSel[a.id]?' checked':'')+'><span class="sr">'+esc(a.name)+'を選ぶ</span></label>')+'</td><td>'+esc(a.name)+'</td><td>'+esc(a.closed_on||'')+'</td><td>'+esc(AtsCalc.stageLabel(a.stage))+(a.outcome_reason?'（'+esc(a.outcome_reason)+'）':'')+'</td><td>'+esc(a.retain_until)+'</td></tr>'; }).join('')+
       '</tbody></table></div><div class="acts" style="margin-top:10px"><button type="button" class="btn ngf" data-act="purge"'+(n?'':' disabled')+'>選んだ'+esc(n)+'件を消す</button></div>'
@@ -1651,15 +1885,24 @@ function paintExpire_(){
 function runPurge_(){
   var ids=AtsCalc.purgeable(apps,today_()).filter(function(a){ return expireSel[a.id]&&!isPending_(a); }).map(function(a){ return a.id; });
   if(!ids.length) return Promise.resolve(false);
-  return openDlg_({title:'選んだ'+ids.length+'件を消しますか？',lines:['連絡の記録・面接・評価も一緒に消え、元に戻せません。'],ok:'消す',danger:true}).then(function(ok){
+  return openDlg_({title:'選んだ'+ids.length+'件を消しますか？',lines:['連絡の記録・面接・評価・書類（PDF）も一緒に消え、元に戻せません。'],ok:'消す',danger:true}).then(function(ok){
     if(!ok) return false;
     var my=gen;
-    return rpc_('ats_purge',{p_ids:ids}).then(function(d){
+    /* 書類を先に消す。1件でも消せなければ応募者は消さない（書類だけが残らないように） */
+    return purgeFilesFirst_(ids).then(function(fr){
+      if(my!==gen) return null;
+      if(fr.ng.length){ setMsg('書類（PDF）を消せなかったため、応募者は消していません（'+fr.ng.join('／')+'）。'); return null; }
+      return rpc_('ats_purge',{p_ids:ids});
+    }).then(function(d){
+      if(d===null) return false;
       if(my!==gen) return false;
       expireSel={};
       var n=Number(d&&(d.deleted!=null?d.deleted:d.count))||0, sk=Number(d&&d.skipped_pending)||0;
       return loadAll_().then(function(){ setMsg(n+'件を消しました。'+(sk>0?'確かめ中の'+sk+'件は消しませんでした。':''),'ok'); return true; });
-    },function(e){ atsNote_('保管期限の削除', e); setMsg(friendly_(e)); return false; });
+    },function(e){
+      atsNote_('保管期限の削除', e);
+      setMsg(e&&e.code==='23503'?'書類（PDF）が残っている方がいるため、1件も消していません。画面を読み込み直してから、もう一度試してください。':fileFriendly_(e)); return false;
+    });
   });
 }
 
@@ -1670,6 +1913,7 @@ function paintSettings_(){
     '<div class="fi" style="max-width:520px"><label for="set-items">評価項目（1行に1つ・12項目まで・1項目30字まで）</label><textarea id="set-items" rows="8">'+esc(settings.evalItems.join('\n'))+'</textarea></div>'+
     '<div class="fgrid" style="max-width:520px"><div class="fi"><label for="set-retain">保管する月数（選考が終わった日から）</label><input id="set-retain" type="number" min="1" max="60" value="'+esc(settings.retainMonths)+'"></div>'+
     '<div class="fi"><label for="set-lost">連絡途絶とみなす日数（取り込みで使う）</label><input id="set-lost" type="number" min="7" max="365" value="'+esc(settings.lostDays)+'"></div></div>'+
+    '<div class="fi" style="max-width:520px"><label for="set-iv">いつもの面接官（面接を足す時に初めから入る。臨時の時だけ面接の欄で打ち替える）</label><input id="set-iv" type="text" maxlength="80" value="'+esc(settings.defaultInterviewer)+'"></div>'+
     '<button type="button" class="btn pri" data-act="save-settings">設定を保存</button></div>';
   p.innerHTML=html;
 }
@@ -1678,11 +1922,20 @@ function saveSettings_(){
   var rm=Number(val_('set-retain')), ld=Number(val_('set-lost'));
   if(!items.length){ setMsg('評価項目を1つ以上入れてください。'); return Promise.resolve(false); }
   if(!(rm>=1&&rm<=60)||!(ld>=7&&ld<=365)){ setMsg('月数は1〜60、日数は7〜365で入れてください。'); return Promise.resolve(false); }
+  var iv=val_('set-iv').slice(0,80), ivChanged=iv!==settings.defaultInterviewer;
   var my=gen;
   return rpc_('ats_settings_put',{p_eval_items:items,p_retain_months:Math.floor(rm),p_lost_days:Math.floor(ld)}).then(function(d){
     if(my!==gen) return false;
-    if(d&&d.ok===true){ settings=AtsCalc.normSettings({eval_items:items,retain_months:rm,lost_days:ld}); paintAll_(); setMsg('設定を保存しました。','ok'); return true; }
-    setMsg('設定を保存できませんでした。'); return false;
+    if(!(d&&d.ok===true)){ setMsg('設定を保存できませんでした。'); return false; }
+    var keepIv=settings.defaultInterviewer;
+    settings=AtsCalc.normSettings({eval_items:items,retain_months:rm,lost_days:ld,default_interviewer:keepIv});
+    if(!ivChanged){ paintAll_(); setMsg('設定を保存しました。','ok'); return true; }
+    /* いつもの面接官（0035）。ほかの設定は保存済み */
+    return rpc_('ats_iv_default_put',{p_name:iv}).then(function(d2){
+      if(my!==gen) return false;
+      if(d2&&d2.ok===true){ settings=AtsCalc.normSettings({eval_items:items,retain_months:rm,lost_days:ld,default_interviewer:d2.row&&d2.row.default_interviewer}); paintAll_(); setMsg('設定を保存しました。','ok'); return true; }
+      paintAll_(); setMsg('いつもの面接官を保存できませんでした（ほかの設定は保存しました）。'); return false;
+    },function(e){ atsNote_('いつもの面接官の保存', e); paintAll_(); setMsg('いつもの面接官を保存できませんでした（ほかの設定は保存しました）。'+(noDb_(e)?'データベースの更新（0035）がまだです。':friendly_(e))); return false; });
   },function(e){ atsNote_('設定の保存', e); setMsg(friendly_(e)); return false; });
 }
 
@@ -1757,6 +2010,10 @@ function onClick_(e){
   else if(act==='imp-run') runImport_();
   else if(act==='imp-clear'){ importPlan=null; importStaff=''; paintImport_(); }
   else if(act==='purge') runPurge_();
+  else if(act==='file-pick'){ var fp=$('d-file'); if(fp&&!upBusy) fp.click(); }
+  else if(act==='file-open') openFile_(t.getAttribute('data-fid')||'');
+  else if(act==='file-del') delFile_(t.getAttribute('data-fid')||'');
+  else if(act==='file-reload'&&curId) loadFiles_(curId);
   else if(act==='save-settings') saveSettings_();
 }
 function onChange_(e){
@@ -1767,6 +2024,8 @@ function onChange_(e){
   if(t.id==='d-stage'){ var a=rowById_(curId); if(a&&t.value!==a.stage){ tryMove_(a,t.value).then(function(){ paintDetail_(); }); } return; }
   if(t.id==='ev-who'){ evalSwitch_(String(t.value)); return; }
   if(t.id==='dash-per'){ dashPeriod=DASH_PERIODS.some(function(x){ return x[0]===t.value; })?t.value:'month'; paintDash_(); return; }
+  if(t.id==='d-file'){ uploadFiles_(t.files); try{ t.value=''; }catch(err){ atsNote_('書類の選択', err); } return; }
+  if(t.hasAttribute&&t.hasAttribute('data-birth')) birthNorm_(t);
   if(t.id==='imp-file'){ onImportFile_(t.files&&t.files[0]); try{ t.value=''; }catch(err){ atsNote_('ファイルの選択', err); } return; }
   if(t.hasAttribute&&t.hasAttribute('data-exp')){ expireSel[t.getAttribute('data-exp')]=!!t.checked; paintExpire_(); return; }
   if(t.closest&&t.closest('#a-evdlg')&&evalCtx){ evalCtx.dirty=true; return; }
@@ -1774,6 +2033,7 @@ function onChange_(e){
 }
 function onInput_(e){
   var t=e.target; if(!t) return;
+  if(t.hasAttribute&&t.hasAttribute('data-birth')) birthNote_(t);
   if(t.closest&&t.closest('#a-evdlg')&&evalCtx){ evalCtx.dirty=true; return; }
   if(t.hasAttribute&&t.hasAttribute('data-dirty')) edDirty=true;
 }
@@ -1796,6 +2056,7 @@ function wire_(){
   document.addEventListener('dragover',onDragOver_);
   document.addEventListener('drop',onDrop_);
   document.addEventListener('dragend',onDragEnd_);
+  document.addEventListener('dragleave',onDragLeave_);
   window.addEventListener('hashchange',onHash_);
   window.addEventListener('storage',onStorage_);
   window.addEventListener('beforeunload',onBeforeUnload_);

@@ -217,6 +217,7 @@ const CENSUS = {
     [F, "p.innerHTML=''"],
     [F, "p.innerHTML=''"],
     [E, "p.innerHTML=detailHtml_(a)"],
+    [E, "if(c&&a) c.innerHTML=filesInner_(a)"],
     [E, "if(d&&evalCtx) d.innerHTML=evalHtml_()"],
     [F, "d.innerHTML=''"],
     [F, "d.innerHTML=''"],
