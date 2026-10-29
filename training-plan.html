@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-QZzN1cLY9m8W4HvfaVHKBIF//Cly5d8ZBt8E0mCvxRU=' 'sha256-xZ3BgENar6jTqtbvfOW/2JQEs7BoX4LQwbT2O2WwzGI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-QZzN1cLY9m8W4HvfaVHKBIF//Cly5d8ZBt8E0mCvxRU=' 'sha256-i4rIGRqf/nf9XXBqxCMxbARPqXzsvB9DvUhYkTl00Kw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- 要配慮情報（疾患・訓練内容）を表示する画面。ブラウザキャッシュ・検索索引に残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -934,11 +934,12 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-27"></script>
+<script src="su-gas-auth.js?v=2026-10-29"></script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-app-gate.js?v=2026-10-29"></script>
-<script src="su-data.js?v=2026-10-27"></script>
-<script src="su-data-gas.js?v=2026-10-24"></script>
+<script src="su-data.js?v=2026-10-29"></script>
+<script src="su-data-gas.js?v=2026-10-29"></script>
 <script src="su-data-supabase.js?v=2026-10-27"></script>
 <!-- 週間計画の保存先の切り替え（統合 0005/0007）。デイ利用者の判定は、切り替え後は Supabase から読む（未ログインは Google） -->
 <script src="su-kv.js?v=2026-10-28"></script>
@@ -2066,7 +2067,7 @@ function withTimeout(p, ms) {
 }
 function tpGet(key) {
   if (!SU_READY) return Promise.reject(new Error('NO_DATA_LAYER'));
-  return withTimeout(SU.data.training.get(key, tpTarget()), 30000);
+  return withTimeout(SU.data.training.get(key, tpTarget()), 40000);   /* ログインの証明を待つ間（最大10秒・su-gas-auth.js）も時計が進むので、その分を足す（2026-10-29） */
 }
 /* ログインの証明（Supabase の access_token）を取り出す（2026-10-17・入居者マスタの rmAccessToken_ と同じ考え方・改善プロンプト第2弾の6）。
    計画書GAS（training-plan-api.gs の verifyEditor_）が確かめ、この保存で直した計画の「直した人」（audit.updatedBy）を決める
@@ -2112,7 +2113,7 @@ function tpPutBody_(key, data, rev, allowDrop) {
   return tpAccessToken_().then(function (at) {
     var extra = { allowDrop: allowDrop === true };
     if (at) extra.accessToken = at;
-    return withTimeout(SU.data.training.put(key, data, rev, extra, tpTarget()), 30000);
+    return withTimeout(SU.data.training.put(key, data, rev, extra, tpTarget()), 40000);   /* 同上（証明の待ちの10秒を足す） */
   });
 }
 function tpPut(key, data, rev) {
@@ -2121,7 +2122,7 @@ function tpPut(key, data, rev) {
 }
 function tpPing() {
   if (!SU_READY) return Promise.reject(new Error('NO_DATA_LAYER'));
-  return withTimeout(SU.data.training.ping(tpTarget()), 20000);
+  return withTimeout(SU.data.training.ping(tpTarget()), 30000);   /* 同上（証明の待ちの10秒を足す） */
 }
 /* 「完全に削除」だけがこの経路を使う。合計件数（plans+trash）が1件減る保存を、この1回だけ通す。
    force は使わない（D32・専用GAS側は 2026-09-04 から allowDrop:true を件数-1の保存だけ通す）。 */
@@ -2146,7 +2147,8 @@ function mGet(params, timeoutMs) {
     if (params[k] === undefined || params[k] === null) continue;
     body[k] = String(params[k]);
   }
-  return withTimeout(SU.data.kvRaw(body, { endpoint: MCFG.url, token: MCFG.token }), timeoutMs || 25000)
+  /* 宛先は入居者マスタの GAS（読み取り）＝ログインしている時だけ証明を添える印（gasAuth・2026-10-29） */
+  return withTimeout(SU.data.kvRaw(body, { endpoint: MCFG.url, token: MCFG.token, gasAuth: true }), (timeoutMs || 25000) + 10000)   /* 同上（証明の待ちの10秒を足す） */
     .then(function (d) {
       if (d && d.error) throw new Error(s_(d.error));
       return d;
@@ -6008,7 +6010,7 @@ function aiSchema(mode, fields) {
    ★返事が来ないまま止まらないように必ず時間切れを付ける（専用GASの呼び出しと同じ作法） */
 /* 中継（GASの起動・ロック待ち最大10秒・Anthropic の応答）を待つ時間。GAS 側は画面が諦めても最後まで呼ぶ＝
    早く諦めてやり直すと同じ依頼が2回実行されて料金も回数も2回分かかるので、長めに待つ（2026-09-24） */
-var AI_TIMEOUT_MS = 150000;
+var AI_TIMEOUT_MS = 160000;   /* ログインの証明を待つ間（最大10秒・su-gas-auth.js）の分を足した（2026-10-29） */
 /* 外部AIへ初めて送る前に、送る先・送るもの・送らないものを職員に示して確かめる（端末ごとに1回）。
    ★保存するのは「確かめた」という印だけ（UI状態）。氏名・記録は保存しない */
 var AI_NOTICE_KEY = 'tp_ai_notice_v1';
@@ -6046,6 +6048,8 @@ function aiFetch(body) {
   var pr = SU.data.training.ai(body, tpTarget()).then(function (r) {
     if (!r || typeof r !== 'object') throw new Error('AI_BAD_JSON');
     if (r.ok !== true) {
+      /* ログインの役割で止められた時（code 'readrole'・GAS の READ_ROLE_CHECK・代表者の決定 2026-10-29）は、GAS の文をそのまま出す */
+      if (s_(r.code) === 'readrole') { var rre = new Error('AI_READROLE'); rre.detail = s_(r.error); throw rre; }
       var ge = s_(r.error);
       var map = { ai_no_key: 'AI_NO_KEY', ai_limit: 'AI_LIMIT', ai_bad_request: 'AI_BAD_REQUEST',
                   ai_fetch: 'AI_FETCH', ai_busy: 'AI_BUSY', unauthorized: 'AI_PROXY_AUTH', 'unknown action': 'AI_PROXY_OLD' };
@@ -6222,6 +6226,7 @@ function aiErrText(e) {
   var m = s_(e && e.message ? e.message : e);
   var d = s_(e && e.detail);
   var why = d ? ('　AIの返答: ' + d) : '';
+  if (m === 'AI_READROLE') return d || 'このアカウントではAIを使えません。事務所・管理者のアカウントでログインし直してください';
   if (m === 'AI_NO_KEY') return 'いまはAIを使えません。管理者に伝えてください（管理者向け：サーバーのスクリプトプロパティ ANTHROPIC_API_KEY が空です）';
   if (m === 'AI_NO_PROXY') return '計画書の接続先が未設定のため、AIを使えません（設定画面の「接続」を確かめてください）';
   if (m === 'AI_LIMIT') return '今日のAIの利用回数の上限に達しました。明日もう一度お試しください（管理者向け：上限はサーバーの AI_DAILY_LIMIT で変えられます）';
@@ -6763,7 +6768,7 @@ var BATCH_STOP_REASON = '';
 var BATCH_FAIL_MAX = 5;          /* 人をまたいで連続5期失敗したら全体を止める */
 var BATCH_FAIL_MAX_ONE = 3;      /* 同じ方で連続3期失敗したら全体を止める */
 /* 再試行しても直らないエラー（鍵・設定の問題）。この時は残りの期を試さずにその場で止める */
-function aiErrFatal(e) { return /AI_NO_KEY|AI_NO_PROXY|AI_LIMIT|AI_PROXY_OLD|AI_PROXY_AUTH|AI_BAD_REQUEST|AI_DECLINED|AI_NO_SUBJECT|AI_HTTP_(400|401|403|404)/.test(s_(e && e.message)); }
+function aiErrFatal(e) { return /AI_READROLE|AI_NO_KEY|AI_NO_PROXY|AI_LIMIT|AI_PROXY_OLD|AI_PROXY_AUTH|AI_BAD_REQUEST|AI_DECLINED|AI_NO_SUBJECT|AI_HTTP_(400|401|403|404)/.test(s_(e && e.message)); }
 /* 一括の要約はメモリだけに持ち、描き直しのたびに出し直す（一覧の再描画で消えないようにする）。
    ★氏名を含むため localStorage には置かない */
 var BATCH_LAST_SUMMARY = null;
@@ -6985,7 +6990,7 @@ function runBatchAiForOpenResident(opts) {
         failRunOne++; BATCH_FAIL_RUN++;
         if (aiErrFatal(e)) {
           BATCH_STOP = true;
-          BATCH_STOP_REASON = /AI_DECLINED|AI_NO_SUBJECT/.test(s_(e && e.message))
+          BATCH_STOP_REASON = /AI_DECLINED|AI_NO_SUBJECT|AI_READROLE/.test(s_(e && e.message))
             ? ('止めました（' + aiErrText(e) + '）')
             : ('AIの設定か接続に問題があるため止めました（' + aiErrText(e) + '）。設定画面の「AIの接続を確かめる」で状態を確かめてください');
         } else if (failRunOne >= BATCH_FAIL_MAX_ONE || BATCH_FAIL_RUN >= BATCH_FAIL_MAX) {

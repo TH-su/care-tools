@@ -57,9 +57,10 @@
     var o;
     switch (id) {
       case 'ws':       o = lsObj('su_sync_common'); return { url: o.endpoint, token: o.token };
-      case 'adm':      o = lsObj('adm_cfg'); return { url: o.url, token: o.token };
-      case 'tp':       o = lsObj('tp_cfg'); return { url: o.url, token: o.token };
-      case 'master':   o = lsObj('rmaster_cfg'); return { url: o.url, token: o.token };
+      /* readAuth: 読み取りでログインの証明を確かめる GAS（入居調整・訓練計画書・入居者マスタ）。この3つにだけ証明を添える（2026-10-29） */
+      case 'adm':      o = lsObj('adm_cfg'); return { url: o.url, token: o.token, readAuth: true };
+      case 'tp':       o = lsObj('tp_cfg'); return { url: o.url, token: o.token, readAuth: true };
+      case 'master':   o = lsObj('rmaster_cfg'); return { url: o.url, token: o.token, readAuth: true };
       case 'haiben':   return { url: lsStr('hbcr_api_url'), token: lsStr('hbcr_api_token') };
       case 'weight':   return { url: lsStr('wtmgr_api_url'), token: lsStr('wtmgr_api_token'), tokenOptional: true };
       case 'geno':     o = lsObj('genogram:cloudCfg'); return { url: o.gasUrl, token: o.gasToken };
@@ -74,13 +75,19 @@
     for (var k in payload) if (Object.prototype.hasOwnProperty.call(payload, k)) body[k] = payload[k];
     body.token = t.token;
     var ac = typeof AbortController === 'function' ? new AbortController() : null;
-    var timer = ac ? setTimeout(function () { ac.abort(); }, GAS_TIMEOUT_MS) : null;
-    return fetch(t.url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(body),
-      redirect: 'follow',
-      signal: ac ? ac.signal : undefined
+    var timer = null;
+    /* 読み取りで証明を確かめる GAS（t.readAuth）にだけ、ログインしている時に証明を添える（su-gas-auth.js・代表者の決定 2026-10-29）。
+       排泄・体重・家族構成図・シフト分析・統合同期には添えない。打ち切りの時計は証明を取った後に始める（待ち時間を減らさない） */
+    var ga = (t && t.readAuth === true && window.SUGasAuth) ? window.SUGasAuth : null;
+    return (ga ? ga.addTo(body) : Promise.resolve(body)).then(function (b) {
+      timer = ac ? setTimeout(function () { ac.abort(); }, GAS_TIMEOUT_MS) : null;
+      return fetch(t.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(b),
+        redirect: 'follow',
+        signal: ac ? ac.signal : undefined
+      });
     }).then(function (res) {
       if (!res.ok) throw new Error('HTTP ' + res.status);
       return res.json();

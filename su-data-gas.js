@@ -17,18 +17,24 @@
 
   /* GAS への POST。全アプリで同一の形にする。
      text/plain にするのは CORS preflight を発生させないため（GAS は OPTIONS に応答しない）。 */
-  function post(payload, t, opts) {   // opts は現状未使用（契約の形を揃えるため受ける）
+  function post(payload, t, opts) {   // opts は gasAuth の印だけを見る（ほかは契約の形を揃えるため受ける）
     if (!t || !t.endpoint) return Promise.reject(new Error('同期先が未設定です'));
     var body = {};
     for (var k in payload) if (Object.prototype.hasOwnProperty.call(payload, k)) body[k] = payload[k];
     body.token = t.token;          // 接続先の合言葉を正とする（payload 側の token では上書きさせない）
     /* 動作の速さの記録（su-perf.js）が GAS の呼び出しの種類を数えるための印（2026-10-24）。送る中身・形には触れない */
     try { if (typeof body.action === 'string' && /^[A-Za-z0-9_]{1,24}$/.test(body.action)) performance.mark('su:gas:' + body.action); } catch (e) {}
-    return fetch(t.endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(body),
-      redirect: 'follow'
+    /* 読み取りで証明を確かめる GAS（入居調整・訓練計画書・入居者マスタ）への要求（opts.gasAuth の印・su-data.js が付ける）にだけ、
+       ログインしている時に証明（accessToken）を添える（su-gas-auth.js・GAS が READ_ROLE_CHECK の時に役割を確かめる・代表者の決定 2026-10-29）。
+       統合 KV には添えない。部品が無い・ログインしていない・現場の端末・もう証明がある時は本文をそのまま送る。送り方は変えない */
+    var ga = (opts && opts.gasAuth === true) ? global.SUGasAuth : null;
+    return (ga && typeof ga.addTo === 'function' ? ga.addTo(body) : Promise.resolve(body)).then(function (b) {
+      return fetch(t.endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(b),
+        redirect: 'follow'
+      });
     }).then(function (res) {
       if (!res.ok) throw new Error('HTTP ' + res.status);
       return res.json();
@@ -41,6 +47,9 @@
      合言葉を渡さない呼び出し（stateRev）は body.token が空のまま届き、GAS 側は認証前に応答する。
      旧呼び出しが opts.transport:'GET' を渡しても無視する（落とさない）。
      （移設時 2026-08-13 の記録: 旧 GET も res.ok を判定していた。post() も同じ判定なので画面の挙動は変わらない） */
+
+  /* 入居者マスタの読み取り（宛先は入居者マスタの GAS と決まっている）＝証明を添えてよい印 */
+  var MASTER_READ = { gasAuth: true };
 
   var GAS = {
     // ── 汎用KV ──
@@ -65,18 +74,18 @@
 
     /* ★2026-09-23: transport:'GET' は廃止＝渡されても無視して常に POST 本文で送る（合言葉を URL に載せない）。 */
     kvRaw: function (payload, t, opts) {
-      return post(payload, t);
+      return post(payload, t, opts);
     },
 
     // ── 入居者マスタ（master.gs）──
     listResidents: function (t, opts) {
-      return post({ action: (opts && opts.scope === 'safe') ? 'getRoster' : 'list' }, t);
+      return post({ action: (opts && opts.scope === 'safe') ? 'getRoster' : 'list' }, t, MASTER_READ);
     },
-    getResident: function (id, t, opts) { return post({ action: 'get', id: id }, t, opts); },
+    getResident: function (id, t, opts) { return post({ action: 'get', id: id }, t, MASTER_READ); },
     saveResident: function (id, patch, t, opts) { return post({ action: 'save', id: id, patch: patch }, t, opts); },
     /* ★2026-09-23: transport:'GET' は廃止＝渡されても無視して常に POST 本文で送る（合言葉を URL に載せない）。 */
     getRoster: function (t, opts) {
-      return post({ action: 'getRoster' }, t);
+      return post({ action: 'getRoster' }, t, MASTER_READ);
     },
 
     /* ── 認可コンテキスト ──

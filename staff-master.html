@@ -3,7 +3,7 @@
 <head>
   <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-XZ0GA6YfxePdKXLCKrlHAYUdhwwKwu3aCJmHcOGwIb8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-MsCYL9a50qt+2/1PaJuf6km/yRZSh4z3rld3ojqDLg0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="stfm-build" content="2026-10-11.1">
@@ -1466,6 +1466,7 @@ body.cmt-print{page:cmt}
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-27"></script>
+<script src="su-gas-auth.js?v=2026-10-29"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-app-gate.js?v=2026-10-29"></script>
 <!-- ?v= は staff-master-calc.js の VERSION と必ず一緒に動かす。ここが古いままだと、
@@ -1842,16 +1843,22 @@ function apiPost(action, body, timeoutMs) {
   var ctl = (typeof AbortController === 'function') ? new AbortController() : null;
   var ms = Number(timeoutMs);
   if (!isFinite(ms) || ms <= 0) ms = 45000;
-  var timer = ctl ? setTimeout(function () { ctl.abort(); }, ms) : 0;
-  function send() {
-    var opt = { method: 'POST', body: JSON.stringify(payload), redirect: 'follow' };
+  var timer = 0;
+  function arm() { timer = ctl ? setTimeout(function () { ctl.abort(); }, ms) : 0; }
+  function send(p) {
+    var opt = { method: 'POST', body: JSON.stringify(p), redirect: 'follow' };
     if (ctl) opt.signal = ctl.signal;
     return fetch(cfg.url, opt);
   }
-  /* 書く action にだけログインの証明を添える（2026-10-15）。ログインの控えが無い端末は今までどおりすぐ送る */
+  /* 書く action にだけログインの証明を添える（2026-10-15）。ログインの控えが無い端末は今までどおりすぐ送る。
+     読む action は、ログインしている時だけ su-gas-auth.js で証明を添える（GAS が READ_ROLE_CHECK の時に役割を確かめる・代表者の決定 2026-10-29） */
+  /* 打ち切りの時計: 読む action で証明を取る時は、証明を取った後に始める（待ち時間を減らさない・2026-10-29）。ほかは今までどおり先に始める */
+  var viaAuth = REQ_WRITE_ACTIONS.indexOf(action) < 0 && !!window.SUGasAuth;
+  if (!viaAuth) arm();
   var sent = (REQ_WRITE_ACTIONS.indexOf(action) >= 0 && stfmHasLogin_())
-    ? stfmAccessToken_().then(function (at) { if (at) payload.accessToken = at; return send(); })
-    : send();
+    ? stfmAccessToken_().then(function (at) { if (at) payload.accessToken = at; return send(payload); })
+    : viaAuth ? window.SUGasAuth.addTo(payload).then(function (p) { arm(); return send(p); })
+    : send(payload);
   return sent.then(function (res) {
     if (!res.ok) throw markNoAnswer(mkErr('サーバーが応答しませんでした（HTTP ' + res.status + '）', '通信環境を確かめ、時間をおいてもう一度お試しください。'));
     return res.text();

@@ -183,9 +183,16 @@
   /* 入居者マスタの名簿を Google から読む（各画面の getRoster と同じ送り方: POST・text/plain・合言葉は本文）。1分で見切る */
   function rmasterRoster(tgt) {
     var ctl = new AbortController();
-    var tm = setTimeout(function () { ctl.abort(); }, 60000);
-    return fetch(tgt.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                            body: JSON.stringify({ action: 'getRoster', token: tgt.token }), cache: 'no-store', redirect: 'follow', signal: ctl.signal })
+    var tm = null;
+    /* ログインしている時だけ証明を添える（su-gas-auth.js・GAS が READ_ROLE_CHECK の時に役割を確かめる・代表者の決定 2026-10-29）。
+       1分の時計は証明を取った後に始める（待ち時間を減らさない） */
+    var rb = { action: 'getRoster', token: tgt.token };
+    var ga = (typeof SUGasAuth !== 'undefined') ? SUGasAuth : null;
+    return (ga ? ga.addTo(rb) : Promise.resolve(rb)).then(function (b) {
+      tm = setTimeout(function () { ctl.abort(); }, 60000);
+      return fetch(tgt.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                            body: JSON.stringify(b), cache: 'no-store', redirect: 'follow', signal: ctl.signal });
+    })
       .then(function (r) { return r.json(); })
       .then(function (j) {
         clearTimeout(tm);

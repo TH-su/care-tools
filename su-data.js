@@ -29,6 +29,7 @@
   var cfg = {
     appId: '',              // ログ・監査用のアプリ識別子
     resolveTarget: null,    // function() -> {endpoint, token}
+    gasAuth: false          // resolveTarget の GAS が読み取りでログインの証明を確かめるか（init の gasAuth:true・2026-10-29）
   };
 
   /* ドライバ登録。ドライバ側ファイルが読み込まれた時点で自分を差し込む。 */
@@ -130,6 +131,23 @@
     return { endpoint: '', token: '' };
   }
   function badTarget(t) { return !t || t.endpoint === MISSING_TARGET; }
+  /* ドライバへ渡す opts（2026-10-29・代表者の決定）。ログインの証明を添えてよい宛先の時だけ gasAuth:true の印を付ける。
+     印を付けるのは、呼び手が opts.gasAuth:true を渡した時と、接続先を明示せず resolveTarget を使い、そのアプリが init で gasAuth:true を宣言した時だけ。
+     統合 KV など、印の無い宛先には何も添えない（宛先は URL の文字で推し量らない）。印は本文には入らない */
+  function drvOpts(opts) {
+    var o = {}, k;
+    if (opts && typeof opts === 'object') for (k in opts) if (Object.prototype.hasOwnProperty.call(opts, k)) o[k] = opts[k];
+    var explicit = !!(opts && Object.prototype.hasOwnProperty.call(opts, 'endpoint'));
+    if (o.gasAuth !== true && !explicit && cfg.gasAuth === true) o.gasAuth = true;
+    return o;
+  }
+  /* 名前付きの入口（訓練計画書）から送る時の印。宛先は訓練計画書の GAS と決まっている */
+  function authed(opts) {
+    var o = {}, k;
+    if (opts && typeof opts === 'object') for (k in opts) if (Object.prototype.hasOwnProperty.call(opts, k)) o[k] = opts[k];
+    o.gasAuth = true;
+    return o;
+  }
 
   var SU_DATA = {
     /* ── 初期化 ──
@@ -139,6 +157,7 @@
       opts = opts || {};
       if (opts.appId) cfg.appId = String(opts.appId);
       if (typeof opts.resolveTarget === 'function') cfg.resolveTarget = opts.resolveTarget;
+      if (opts.gasAuth === true) cfg.gasAuth = true;
       return this;
     },
 
@@ -151,11 +170,11 @@
        care-schedule / work-schedule / weight-record / daycare-roster 等が使う。
        戻り値は現行GASの応答をそのまま返す: {ok, data, rev, error} */
     kvGet: function (key, opts) { var t = target(opts); return badTarget(t)
-      ? Promise.reject(new Error('同期先が未設定です')) : call('kvGet', [key, t, opts || {}]); },
+      ? Promise.reject(new Error('同期先が未設定です')) : call('kvGet', [key, t, drvOpts(opts)]); },
 
     /* rev 不一致はGASが競合を返す。既存の競合UIをそのまま使えるよう応答は素通しする。 */
     kvPut: function (key, value, rev, opts) { var t = target(opts); return badTarget(t)
-      ? Promise.reject(new Error('同期先が未設定です')) : call('kvPut', [key, value, rev, t, opts || {}]); },
+      ? Promise.reject(new Error('同期先が未設定です')) : call('kvPut', [key, value, rev, t, drvOpts(opts)]); },
 
     /* ページを閉じる直前の最終送信（ベストエフォート）。
        fetch は unload で中断されるため sendBeacon を使う経路が既にあり、これも契約へ含める。
@@ -171,7 +190,7 @@
     /* 移行期間の逃げ道。head/list/ping など名前付き契約に無い action をそのまま通す。
        ★新しい呼び出しをこれで増やさない（増やすほど後のドライバ差し替えが重くなる）。 */
     kvRaw: function (payload, opts) { var t = target(opts); return badTarget(t)
-      ? Promise.reject(new Error('同期先が未設定です')) : call('kvRaw', [payload || {}, t, opts || {}]); },
+      ? Promise.reject(new Error('同期先が未設定です')) : call('kvRaw', [payload || {}, t, drvOpts(opts)]); },
 
     /* ── 入居者（master.gs の後継）── */
     listResidents: function (opts) { var t = target(opts); return badTarget(t)
@@ -204,7 +223,7 @@
     training: {
       /* 計画書・索引の読み取り {action:'get', key} */
       get: function (key, opts) {
-        return entryCall('training', 'training', 'get', [key, opts], function () { return SU_DATA.kvGet(key, opts); });
+        return entryCall('training', 'training', 'get', [key, opts], function () { return SU_DATA.kvGet(key, authed(opts)); });
       },
       /* 保存 {action:'put', key, data, rev[, allowDrop:true][, accessToken]}。extra.allowDrop は「完全に削除」の1回だけ。
          extra.accessToken はログインの証明（ある時だけ本文に添える） */
@@ -213,7 +232,7 @@
           var body = { action: 'put', key: key, data: data, rev: rev };
           if (extra && extra.allowDrop === true) body.allowDrop = true;
           if (extra && extra.accessToken) body.accessToken = extra.accessToken;
-          return SU_DATA.kvRaw(body, opts);
+          return SU_DATA.kvRaw(body, authed(opts));
         });
       },
       /* ページを閉じる直前の最終送信。戻り値は送信を受け付けたかだけ。supabase の道では送らない（false） */
@@ -223,11 +242,11 @@
       },
       /* 接続の確かめ・守り一覧 {action:'ping'} */
       ping: function (opts) {
-        return entryCall('training', 'training', 'ping', [opts], function () { return SU_DATA.kvRaw({ action: 'ping' }, opts); });
+        return entryCall('training', 'training', 'ping', [opts], function () { return SU_DATA.kvRaw({ action: 'ping' }, authed(opts)); });
       },
       /* AI の中継 {action:'ai', body} */
       ai: function (body, opts) {
-        return entryCall('training_ai', 'training', 'ai', [body, opts], function () { return SU_DATA.kvRaw({ action: 'ai', body: body }, opts); });
+        return entryCall('training_ai', 'training', 'ai', [body, opts], function () { return SU_DATA.kvRaw({ action: 'ai', body: body }, authed(opts)); });
       }
     },
     _entryRoute: entryRoute,

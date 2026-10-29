@@ -218,7 +218,7 @@ function sameShape(p) { return p && p.url === TP_URL && p.method === 'POST' && p
     !/SU\.data\.kvRaw\(\s*body\s*,\s*tpTarget\(\)/.test(HTML) && !/SU\.data\.kvRaw\(\{\s*action:\s*'(ping|ai)'/.test(HTML) &&
     !/SU\.data\.kvGet\(key,\s*tpTarget\(\)\)/.test(HTML) && !/SU\.data\.kvPutBeacon\(/.test(HTML));
   t('AI の中継は入口（SU.data.training.ai）を通す', /SU\.data\.training\.ai\(body,\s*tpTarget\(\)\)/.test(HTML));
-  t('入居者マスタ宛て（mGet）は kvRaw に入居者マスタの接続先を渡す形のまま', /SU\.data\.kvRaw\(body,\s*\{\s*endpoint:\s*MCFG\.url,\s*token:\s*MCFG\.token\s*\}\)/.test(HTML));
+  t('入居者マスタ宛て（mGet）は kvRaw に入居者マスタの接続先を渡す形のまま', /SU\.data\.kvRaw\(body,\s*\{\s*endpoint:\s*MCFG\.url,\s*token:\s*MCFG\.token,\s*gasAuth:\s*true\s*\}\)/.test(HTML));   // gasAuth は証明を添えてよい宛先の印（本文には入らない・2026-10-29）
   t('読み込みの順: su-data.js → su-data-gas.js → su-data-supabase.js → su-kv.js',
     /su-data\.js\?v=[^"]+"><\/script>\s*<script src="su-data-gas\.js\?v=[^"]+"><\/script>\s*<script src="su-data-supabase\.js\?v=[^"]+"><\/script>[\s\S]*?su-kv\.js/.test(HTML));
   const SUPA = read('su-data-supabase.js');

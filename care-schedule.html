@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-iC3PPpqyfpjqmCDuV74XmEPP7lJ/+zNPUXdCPPqzCZg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-y8rtgoJbX6ZlJzAer5/o8z73xDY67SyjXaRsEJXreVs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -1747,6 +1747,7 @@ function _handle(e, method) {
 
 <!-- 共通のエラー捕捉（2026-09-24 から週間計画も使う）。本体の <script> より前に置く＝起動時の例外も拾う -->
 <script src="su-errors.js?v=2026-10-27"></script>
+<script src="su-gas-auth.js?v=2026-10-29"></script>
 <script>
 /* 黙ると困る失敗（保存・同期の補助）を、画面には出さずに記録へ残す（2026-10-08・監査10月版 #8）。
    行き先は su-errors.js の note＝コンソールと記録先（同期ログ・不具合報告の控えと自動報告）。トーストは出さない。
@@ -5528,11 +5529,15 @@ function csStateRevRefresh_(cfg, rev, srev){
   /* 2026-10-28（入居者マスタの Supabase 移行 B①・代表者の決定）: 名簿の読み取りは入口（su-roster.js・SURoster）を通す。
      スイッチ master_roster_read が入・事務所/管理者のログイン・写しが Google と同じ版数の時だけ写しから読み、
      それ以外は raw（今までどおりの Google への要求・形は変えていない）。 */
+  /* ログインしている時だけ証明を添える（su-gas-auth.js・GAS が READ_ROLE_CHECK の時に役割を確かめる・代表者の決定 2026-10-29） */
   var csRosterRaw_ = function(){
-    return csFetchTimeout_(cfg.url,
+    var rb = { action: 'getRoster', token: cfg.token };
+    return (window.SUGasAuth ? window.SUGasAuth.addTo(rb) : Promise.resolve(rb)).then(function(b){
+      return csFetchTimeout_(cfg.url,
                   { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({ action: 'getRoster', token: cfg.token }), redirect: 'follow' },
-                  CS_STATEREV_ROSTER_TIMEOUT_MS)
+                    body: JSON.stringify(b), redirect: 'follow' },
+                  CS_STATEREV_ROSTER_TIMEOUT_MS);
+    })
       .then(function(r){ return r.json(); });
   };
   var csRosterP_;

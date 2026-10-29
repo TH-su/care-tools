@@ -433,7 +433,8 @@ const ON = { supabase: { care_schedule_v2: true, master_roster_read: true } };
     t('care-schedule.html: 名簿の取り直しは入口を通す（場所 care・版数つき・入居者マスタの URL）',
       /window\.SURoster \? window\.SURoster\.getRoster\(csRosterRaw_, \{ where: 'care', masterUrl: cfg\.url, withRev: true \}\) : csRosterRaw_\(\)/.test(body));
     t('care-schedule.html: Google への要求（raw）は今までと同じ本文・同じ打ち切り',
-      body.indexOf("body: JSON.stringify({ action: 'getRoster', token: cfg.token }), redirect: 'follow' },\n                  CS_STATEREV_ROSTER_TIMEOUT_MS)\n      .then(function(r){ return r.json(); });") > 0);
+      body.indexOf("var rb = { action: 'getRoster', token: cfg.token };") > 0 &&
+      body.indexOf("body: JSON.stringify(b), redirect: 'follow' },\n                  CS_STATEREV_ROSTER_TIMEOUT_MS);\n    })\n      .then(function(r){ return r.json(); });") > 0);
     t('care-schedule.html: 入口が無い・例外の時は今までどおり Google', /catch\(eR\)\{ csRosterP_ = csRosterRaw_\(\); \}/.test(body));
   }
 

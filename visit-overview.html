@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-SAU2hQmDifKEvFjWOiXDU5KJWxEQpXKM97d7GHVqktc=' 'sha256-fiiCHD0MBlF2wV+NudqERX+mzEI9CHzGp+FncjfxYa4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-FS8cIZ+aQt59ss/tPU07NtS9+d6P/xlb8fBHiwwh3I8=' 'sha256-fiiCHD0MBlF2wV+NudqERX+mzEI9CHzGp+FncjfxYa4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -266,6 +266,7 @@ body {
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-27"></script>
+<script src="su-gas-auth.js?v=2026-10-29"></script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <!-- 同期データの保存先の切り替え（統合 0005/0007）。見るだけの画面は切り替え後に Supabase から読む（未ログインは Google） -->
 <script src="su-kv.js?v=2026-10-28"></script>
@@ -571,9 +572,13 @@ function voFetchHosp(){
   if(voHospBusy) return Promise.resolve(false);
   var c = voMasterCfg(); if(!c || !c.token) return Promise.resolve(false);
   voHospBusy = true;
+  /* ログインしている時だけ証明を添える（su-gas-auth.js・GAS が READ_ROLE_CHECK の時に役割を確かめる・代表者の決定 2026-10-29） */
   var raw = function(){
-    return fetch(c.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
-                        body:JSON.stringify({action:'getRoster',token:c.token}),cache:'no-store',redirect:'follow'})
+    var rb = {action:'getRoster',token:c.token};
+    return (window.SUGasAuth?window.SUGasAuth.addTo(rb):Promise.resolve(rb)).then(function(b){
+      return fetch(c.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+                        body:JSON.stringify(b),cache:'no-store',redirect:'follow'});
+    })
       .then(function(r){return r.json()});
   };
   /* 名簿の読み取りは入口（su-roster.js・SURoster）を通す（2026-10-22・入居者マスタの Supabase 移行 段階1）。
