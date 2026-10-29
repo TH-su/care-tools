@@ -187,7 +187,7 @@ async function msgOf(sb, body) {
     t('ボタンの表示を取り直す', sb.painted === 1, sb.painted);
     t('★aiReady はサーバーのキー無しを見る', /function aiReady\(\)[^\n]*AI_SRV\.key === false/.test(src));
     t('★一括作成は時間切れをやり直さない（二重に払わない）', /var again = \/AI_HTTP_\(429\|500\|502\|503\|529\)\/\.test\(m\);/.test(src));
-    t('★待ち時間は 150 秒（GAS 起動・ロック待ち・応答の合計を待つ）', /var AI_TIMEOUT_MS = 150000;/.test(src));
+    t('★待ち時間は 160 秒（GAS 起動・ロック待ち・応答の合計に、ログインの証明を待つ最大10秒を足す・2026-10-29）', /var AI_TIMEOUT_MS = 160000;/.test(src));
     t('★起動時の ping の後でも AI のボタン表示を取り直す', /noteAiSrv\(j\);\s*\/\*[^*]*\*\/\s*try \{ syncBatchAiVisibility\(\); renderSample\(\);/.test(src));
     /* 2026-10-16 使いやすさ第1段: 職員向けの短い案内を先に出し、理由は（管理者向け：…）に入れる形にした（意図した期待値の変更） */
     t('★キーが無いと分かった時の案内は理由を言う', /function aiUnreadyWhy\(\)[\s\S]*?AI_SRV\.key === false\) return 'いまはAIを使えません。管理者に伝えてください（管理者向け：サーバーにAIのキーが無いか/.test(src));

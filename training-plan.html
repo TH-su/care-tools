@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-QZzN1cLY9m8W4HvfaVHKBIF//Cly5d8ZBt8E0mCvxRU=' 'sha256-MhIPviSnnhreJ6IvJGdwv4Sux9Gx1G6igSbuBp+Tyus='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-QZzN1cLY9m8W4HvfaVHKBIF//Cly5d8ZBt8E0mCvxRU=' 'sha256-i4rIGRqf/nf9XXBqxCMxbARPqXzsvB9DvUhYkTl00Kw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- 要配慮情報（疾患・訓練内容）を表示する画面。ブラウザキャッシュ・検索索引に残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -2067,7 +2067,7 @@ function withTimeout(p, ms) {
 }
 function tpGet(key) {
   if (!SU_READY) return Promise.reject(new Error('NO_DATA_LAYER'));
-  return withTimeout(SU.data.training.get(key, tpTarget()), 30000);
+  return withTimeout(SU.data.training.get(key, tpTarget()), 40000);   /* ログインの証明を待つ間（最大10秒・su-gas-auth.js）も時計が進むので、その分を足す（2026-10-29） */
 }
 /* ログインの証明（Supabase の access_token）を取り出す（2026-10-17・入居者マスタの rmAccessToken_ と同じ考え方・改善プロンプト第2弾の6）。
    計画書GAS（training-plan-api.gs の verifyEditor_）が確かめ、この保存で直した計画の「直した人」（audit.updatedBy）を決める
@@ -2113,7 +2113,7 @@ function tpPutBody_(key, data, rev, allowDrop) {
   return tpAccessToken_().then(function (at) {
     var extra = { allowDrop: allowDrop === true };
     if (at) extra.accessToken = at;
-    return withTimeout(SU.data.training.put(key, data, rev, extra, tpTarget()), 30000);
+    return withTimeout(SU.data.training.put(key, data, rev, extra, tpTarget()), 40000);   /* 同上（証明の待ちの10秒を足す） */
   });
 }
 function tpPut(key, data, rev) {
@@ -2122,7 +2122,7 @@ function tpPut(key, data, rev) {
 }
 function tpPing() {
   if (!SU_READY) return Promise.reject(new Error('NO_DATA_LAYER'));
-  return withTimeout(SU.data.training.ping(tpTarget()), 20000);
+  return withTimeout(SU.data.training.ping(tpTarget()), 30000);   /* 同上（証明の待ちの10秒を足す） */
 }
 /* 「完全に削除」だけがこの経路を使う。合計件数（plans+trash）が1件減る保存を、この1回だけ通す。
    force は使わない（D32・専用GAS側は 2026-09-04 から allowDrop:true を件数-1の保存だけ通す）。 */
@@ -2148,7 +2148,7 @@ function mGet(params, timeoutMs) {
     body[k] = String(params[k]);
   }
   /* 宛先は入居者マスタの GAS（読み取り）＝ログインしている時だけ証明を添える印（gasAuth・2026-10-29） */
-  return withTimeout(SU.data.kvRaw(body, { endpoint: MCFG.url, token: MCFG.token, gasAuth: true }), timeoutMs || 25000)
+  return withTimeout(SU.data.kvRaw(body, { endpoint: MCFG.url, token: MCFG.token, gasAuth: true }), (timeoutMs || 25000) + 10000)   /* 同上（証明の待ちの10秒を足す） */
     .then(function (d) {
       if (d && d.error) throw new Error(s_(d.error));
       return d;
@@ -6010,7 +6010,7 @@ function aiSchema(mode, fields) {
    ★返事が来ないまま止まらないように必ず時間切れを付ける（専用GASの呼び出しと同じ作法） */
 /* 中継（GASの起動・ロック待ち最大10秒・Anthropic の応答）を待つ時間。GAS 側は画面が諦めても最後まで呼ぶ＝
    早く諦めてやり直すと同じ依頼が2回実行されて料金も回数も2回分かかるので、長めに待つ（2026-09-24） */
-var AI_TIMEOUT_MS = 150000;
+var AI_TIMEOUT_MS = 160000;   /* ログインの証明を待つ間（最大10秒・su-gas-auth.js）の分を足した（2026-10-29） */
 /* 外部AIへ初めて送る前に、送る先・送るもの・送らないものを職員に示して確かめる（端末ごとに1回）。
    ★保存するのは「確かめた」という印だけ（UI状態）。氏名・記録は保存しない */
 var AI_NOTICE_KEY = 'tp_ai_notice_v1';
