@@ -128,7 +128,9 @@
     { id: 'adm', title: '入居調整',
       read: async function (t) {
         var j = need(await post(t, { action: 'get', key: 'admission_flow_v1' }));
-        return { parts: { ledger: j.data == null ? null : j.data }, count: j.data == null ? 0 : 1, unit: '台帳', note: '添付ファイルは入っていません' };
+        // 入居調整を新しい保存先へ切り替えた後（GAS の応答に switched）は、Google の台帳は写し返しの分だけ遅れていることがある（入居調整の反証レビュー 指摘4）
+        var lag = j.switched === true ? '。新しい保存先へ切り替えた後のため、Google の台帳は写し返しの分だけ遅れていることがあります（正本は新しい保存先）' : '';
+        return { parts: { ledger: j.data == null ? null : j.data }, count: j.data == null ? 0 : 1, unit: '台帳', note: '添付ファイルは入っていません' + lag };
       } },
     { id: 'tp', title: '個別機能訓練計画書',
       read: async function (t) {

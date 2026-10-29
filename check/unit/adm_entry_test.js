@@ -140,6 +140,9 @@ async function both(oldFn, newFn, o) {
     t('台帳の保存は入口（force・証明は extra で渡す）', /return SU\.data\.admission\.put\(KV_KEY, snap, rev, ex\);/.test(H) && !/action: 'put', key: KV_KEY/.test(H));
     t('閉じる直前の送信・ping は入口', /SU\.data\.admission\.putBeacon\(KV_KEY, DB, kvRev\)/.test(H) && /SU\.data\.admission\.ping\(\)/.test(H) && !/SU\.data\.kvPutBeacon/.test(H));
     t('添付書類の操作は今までどおり kvRaw（Google）', /function apiFiles\(payload\) \{[\s\S]{0,300}return SU\.data\.kvRaw\(payload\);/.test(H));
+    t('中身が同じかの見比べは項目の並びを問わない（反証レビュー 指摘6）', (H.match(/var same = afCanon_\(/g) || []).length === 2 && /function afCanon_\(v\)/.test(H));
+    t('送れていない変更があり、閉じる直前の送信もできなかった時は閉じる前に止める（反証レビュー 指摘11）', /if \(dirty && afBeaconLost_\) \{ ev\.preventDefault\(\);/.test(H)
+      && /afBeaconLost_ = SU\.data\.admission\.putBeacon\(KV_KEY, DB, kvRev\) === false;/.test(H));
     t('Supabase の道を読み込む（gas の道の後）', H.indexOf('su-data-supabase.js?v=') > H.indexOf('su-data-gas.js?v=') && H.indexOf('su-data-gas.js?v=') > 0);
   }
 
