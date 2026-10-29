@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-QZzN1cLY9m8W4HvfaVHKBIF//Cly5d8ZBt8E0mCvxRU=' 'sha256-u9fR6Td0+Bp1EUNEwYV89fLBSwo4N48sRfMdOQJiQ6g='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-QZzN1cLY9m8W4HvfaVHKBIF//Cly5d8ZBt8E0mCvxRU=' 'sha256-M5MHL18QD0OMRTb2OMGzTMp+tZ06TqBfqkAJVaOTp48='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- 要配慮情報（疾患・訓練内容）を表示する画面。ブラウザキャッシュ・検索索引に残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -195,6 +195,11 @@ textarea{resize:vertical;min-height:5.5rem}
 .tp-warn{border-radius:var(--r-md);padding:var(--sp-2) var(--sp-3);margin-bottom:var(--sp-2);
   background:var(--c-warn-bg);color:var(--c-warn);font-size:var(--fs-2xs);font-weight:var(--fw-bold)}
 @media print{.tp-warn{display:none !important}}
+/* 計画書の写し（自動）で違い・止まった時だけ出す帯（画面だけ・印刷しない・統合 0037） */
+.tpf-band{margin:var(--sp-2) var(--sp-3);border-radius:var(--r-md);padding:var(--sp-2) var(--sp-3);
+  background:var(--c-warn-bg);color:var(--c-warn);font-size:var(--fs-2xs);font-weight:var(--fw-bold)}
+.tpf-band[hidden]{display:none !important}
+@media print{.tpf-band{display:none !important}}
 
 /* ── 2カラム編集（欄ごとに前回と今回を同じ行へ）── */
 .fldrow{border:1px solid var(--c-border);border-radius:var(--r-md);
@@ -349,6 +354,7 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
   <label class="sr-only" for="staffSel">操作している職員</label>
   <select id="staffSel" aria-label="操作している職員"><option value="">職員未選択</option></select>
 </header>
+<div class="tpf-band" id="tpfBand" role="status" hidden></div>
 
 <main>
 
@@ -936,6 +942,7 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
 <script src="su-res-read.js?v=2026-10-29.3"></script>
+<script src="su-tp-full.js?v=2026-10-29"></script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-app-gate.js?v=2026-10-29"></script>
@@ -8394,8 +8401,31 @@ function refreshAll() {
       renderStaffSelects();
       renderList();
       setSync(CFG.url ? (IDX_OK ? '同期OK' : '未接続') : '未接続', (CFG.url && IDX_OK) ? 'ok' : 'err');
+      tpFullAuto_();
       try { if (window.SUPerf) SUPerf.ready(); } catch (e) {}
     });
+}
+/* 計画書の写し（統合 0037・2026-10-29 代表者の決定「入居者マスタと同じ作り方で進める」）: 管理者（2段階認証）が事務所PCで開き、
+   索引と名簿を Google から読めた時に、その日（日本時間）まだ写していなければ裏で写す（su-tp-full.js・1ページで1回・20秒後）。
+   Google へは読む操作（get）だけ。全件一致なら何も出さず、違い・止まった時だけ見出しの下に帯で知らせる（画面だけ・印刷しない・文字は textContent） */
+var tpFullDone_ = false;
+function tpFullAuto_() {
+  if (tpFullDone_ || !window.SUTpFull || isFieldDevice() || !CFG.url || !IDX_OK || ROSTER_SRC !== 'gas') return;
+  tpFullDone_ = true;
+  setTimeout(function () {
+    if (isFieldDevice() || document.hidden) return;
+    SUTpFull.auto({
+      gas: function (b) { return tpGet(b.key); },
+      rosterIds: function () { return Promise.resolve(ROSTER.map(function (r) { return r.masterId; })); }
+    }).then(function (res) {
+      if (isFieldDevice()) return;
+      var t = SUTpFull.autoNote(res), el = document.getElementById('tpfBand');
+      if (!el || !t) return;
+      el.textContent = t; el.hidden = false;
+    }).catch(function (e) {
+      try { if (window.SUErrors && typeof SUErrors.note === 'function') SUErrors.note('計画書の写し（自動）', e && e.message || e); } catch (x) { /* 記録できなくても止めない */ }
+    });
+  }, 20000);
 }
 function announceOverdue() {
   var c = TP.alertCounts(listRows());
