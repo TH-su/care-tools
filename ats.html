@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-YxhPcEQLKm8ON0p7Hh+qCtRTmNezQL7Qqg9jLk/EcgQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-x+oJNHfP+38I90MHgRtxd26zktQWHMEik8w8sdtaMiM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
@@ -1132,7 +1132,7 @@ function uploadFiles_(list){
   var a=rowById_(curId), arr=Array.prototype.slice.call(list||[]);
   if(!a||upBusy||!arr.length) return Promise.resolve(0);
   if(filesState!=='ok'){ setFileMsg_(filesState==='nodb'?'書類の置き場がまだ準備中です。':'書類の一覧を読めていないため、置けません。','ng'); return Promise.resolve(0); }
-  var id=a.id, tenant=String(a.tenant_id||''), my=gen, done=0, ng=[];
+  var id=a.id, who=a.name||'', tenant=String(a.tenant_id||''), my=gen, done=0, ng=[], have=files.length;
   if(!ID_RE.test(tenant)){ setFileMsg_('事業者の情報を読めないため置けません。画面を読み込み直してください。','ng'); return Promise.resolve(0); }
   var st=db_().storage.from(FILE_BUCKET);
   upBusy=true; paintFiles_(); setFileMsg_('置いています…（'+arr.length+'件）','busy');
@@ -1141,27 +1141,28 @@ function uploadFiles_(list){
     chain=chain.then(function(){
       if(my!==gen) return;
       var name=AtsCalc.fileName(file&&file.name);
-      if(files.length>=AtsCalc.FILE_PER_APPLICANT){ ng.push(name+': '+fileErr_('toomany')); return; }
+      if(have+done>=AtsCalc.FILE_PER_APPLICANT){ ng.push(name+': '+fileErr_('toomany')); return; }
       return headOf_(file).then(function(head){
         var why=AtsCalc.pdfCheck({name:file.name,type:file.type,size:file.size,head:head});
         if(why){ ng.push(name+': '+why); return; }
         var fid=newId_(), key=tenant+'/'+id+'/'+fid+'.pdf';
-        var undo=function(){ return Promise.resolve().then(function(){ return st.remove([key]); }).then(function(r){ if(r&&r.error) throw r.error; return true; },function(e){ atsNote_('書類の後片付け', e); return false; }); };
+        var undo=function(){ return Promise.resolve().then(function(){ return st.remove([key]); }).then(function(r){ if(r&&r.error) throw r.error; return true; })['catch'](function(e){ atsNote_('書類の後片付け', e); return false; }); };
         return Promise.resolve().then(function(){ return st.upload(key,file,{contentType:'application/pdf',upsert:false,cacheControl:'0'}); }).then(function(r){
           if(r&&r.error) throw r.error;
           return rpc_('ats_file_add',{p_applicant_id:id,p_file_id:fid,p_name:name,p_size:file.size}).then(function(d){
             if(d&&d.ok===true&&d.row){ done++; if(filesFor===id) files.push(d.row); return; }
             return undo().then(function(gone){ ng.push(name+': '+fileErr_(d&&d.error)+(gone?'':'（置いた中身を消せませんでした。管理者に知らせてください）')); });
-          },function(e){ return undo().then(function(){ throw e; }); });
-        })['catch'](function(e){ atsNote_('書類を置く', e); ng.push(name+': '+fileFriendly_(e)); });
+          },function(e){ return undo().then(function(gone){ if(!gone) e.left=true; throw e; }); });
+        })['catch'](function(e){ atsNote_('書類を置く', e); ng.push(name+': '+fileFriendly_(e)+(e&&e.left?'（置いた中身を消せませんでした。管理者に知らせてください）':'')); });
       });
     });
   });
   return chain.then(function(){
     upBusy=false;
     if(my!==gen) return done;
-    if(curId===id) paintFiles_();
-    setFileMsg_((done?done+'件を置きました。':'')+(ng.length?'置けなかったもの: '+ng.join('／'):''),ng.length?(done?'warn':'ng'):'ok');
+    var text=(done?done+'件を置きました。':'')+(ng.length?'置けなかったもの: '+ng.join('／'):''), kind=ng.length?(done?'warn':'ng'):'ok';
+    if(curId===id&&filesFor===id){ paintFiles_(); setFileMsg_(text,kind); }
+    else{ if(curId) paintFiles_(); toast(who+'さんの書類: '+text); }  /* 途中で別の方を開いた時は、その方の欄に書かない */
     return done;
   });
 }
@@ -1219,6 +1220,15 @@ function delFile_(fid){
 }
 /* 保管期限で消す前に、その方々の書類を消す（書類が残っていると ats_purge は外部キーで止まる）。台帳がまだ無い（0035 の前）なら書類も無い */
 function purgeFilesFirst_(ids){
+  /* 消す直前に応募者をデータベースから読み直し、ats_purge が消す見込みの方（職員の番号なし・確かめ中でない・期限を過ぎた）の書類だけを消す
+     （別の端末で登録・段階の戻しがあった方の書類を先に消してしまわないように） */
+  return Promise.resolve().then(function(){ return db_().from('ats_applicants').select('id,staff_id,staff_pending_at,retain_until').in('id',ids); })
+    .then(function(r){
+      var ok=rows_(r).filter(function(x){ return x&&!x.staff_id&&!x.staff_pending_at&&AtsCalc.isDate(x.retain_until)&&x.retain_until<today_(); }).map(function(x){ return x.id; });
+      return ok.length?purgeFilesOf_(ok):{ok:0,ng:[]};
+    });
+}
+function purgeFilesOf_(ids){
   return Promise.resolve().then(function(){ return db_().from('ats_files').select('id,object_key,file_name,applicant_id').in('applicant_id',ids); })
     .then(function(r){ return rows_(r); })['catch'](function(e){ if(noDb_(e)) return []; throw e; })
     .then(removeFiles_);

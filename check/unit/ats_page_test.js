@@ -869,6 +869,23 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
       storage: { upload: () => ({ data: null, error: { statusCode: '403', message: 'new row violates row-level security policy' } }) } });
     await L2.ctx.loadFiles_(UID(1)); await settle();
     await L2.ctx.uploadFiles_([pdfFile('履歴書.pdf', '%PDF-')]); await settle();
+    /* 台帳へ届かず（通信の失敗）、後片付けも失敗した時は「管理者に知らせて」を出す */
+    const L3 = await opened({ row, tables: { ats_applicants: [row], ats_interviews: [], ats_settings: [], ats_contacts: [], ats_files: [] },
+      rpc: { ats_file_add: () => ({ __error: { message: 'Failed to fetch' } }) }, storage: { remove: () => ({ data: null, error: { message: 'Failed to fetch' } }) } });
+    await L3.ctx.loadFiles_(UID(1)); await settle();
+    await L3.ctx.uploadFiles_([pdfFile('履歴書.pdf', '%PDF-')]); await settle();
+    t('台帳へ届かず後片付けもできない時は「管理者に知らせて」を出す', /通信できませんでした/.test(L3.ctx.fileMsg) && /管理者に知らせてください/.test(L3.ctx.fileMsg), L3.ctx.fileMsg);
+    /* 置いている途中に別の方を開いたら、その方の欄に知らせを書かない */
+    const rowB = app({ id: UID(2), name: '乙川 花子', tenant_id: TEN });
+    let release; const gate = new Promise((r) => { release = r; });
+    const L4 = await opened({ row, tables: { ats_applicants: [row, rowB], ats_interviews: [], ats_settings: [], ats_contacts: [], ats_files: [] },
+      storage: { upload: () => gate.then(() => ({ data: {}, error: null })) },
+      rpc: { ats_file_add: (a) => ({ ok: true, row: { id: a.p_file_id, applicant_id: a.p_applicant_id, object_key: 'k', file_name: a.p_name, size_bytes: 1 } }) } });
+    await L4.ctx.loadFiles_(UID(1)); await settle();
+    const pr = L4.ctx.uploadFiles_([pdfFile('履歴書.pdf', '%PDF-')]); await settle();
+    L4.ctx.curId = UID(2); L4.ctx.filesFor = UID(2); L4.ctx.files = []; L4.ctx.fileMsg = '';
+    release(); await pr; await settle();
+    t('途中で別の方を開いたら、知らせはその方の欄に書かず、誰の分かを添えて出す', L4.ctx.fileMsg === '' && L4.toasts.some((m) => /甲野 一郎さんの書類: 1件を置きました/.test(m)) && L4.ctx.files.length === 0, { msg: L4.ctx.fileMsg, toasts: L4.toasts });
     t('置き場が断ったら台帳に足さない（権限の文を出す）', !L2.rpcs().some((x) => x.name === 'ats_file_add') && /権限がありません/.test(L2.ctx.fileMsg), L2.ctx.fileMsg);
   }
   {
@@ -906,6 +923,11 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
       storage: { remove: () => ({ data: null, error: { statusCode: '500', message: 'internal' } }) } });
     L2.ctx.apps = rows; L2.ctx.expireSel = { [UID(3)]: true };
     await L2.ctx.runPurge_(); await settle();
+    const L5 = await opened({ tables: { ats_applicants: [app({ id: UID(3), stage: 'lost', retain_until: '2000-01-01', staff_pending_at: NOW_ISO, tenant_id: TEN })], ats_interviews: [], ats_settings: [], ats_contacts: [], ats_files: [fileRow] },
+      rpc: { ats_purge: () => ({ ok: true, deleted: 0, skipped_pending: 1 }) } });
+    L5.ctx.apps = rows; L5.ctx.expireSel = { [UID(3)]: true };
+    await L5.ctx.runPurge_(); await settle();
+    t('保管期限: 読み直して別の端末で確かめ中になっていた方の書類は消さない', L5.stores().length === 0 && !L5.rpcs().some((x) => x.name === 'ats_file_del'));
     t('保管期限: 書類を消せなければ応募者は消さない', !L2.rpcs().some((x) => x.name === 'ats_purge') && L2.els['a-msg'].textContent.length > 0, L2.els['a-msg'].textContent);
     const L3 = await opened({ tables: { ats_applicants: rows, ats_interviews: [], ats_settings: [], ats_contacts: [] }, tableErr: { ats_files: { code: '42P01' } },
       rpc: { ats_purge: () => ({ ok: true, deleted: 1, skipped_pending: 0 }) } });
