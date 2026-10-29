@@ -278,15 +278,16 @@ console.log('\n— 3. 描いた SVG —');
 }
 
 console.log('\n— 4. メニューの数え方と切り替え（index.html）—');
+// 採用管理は管理者専用（adminOnly・2026-10-29 本人承認）。管理者以外・ログインしていない時は出ないので、出ている数は1本少ない
 {
   const p = page({});
-  t('4a 事務所の端末・設定なし: 毬のボタンを見出しの先頭に出し、23本中23本', !p.err && !!p.btn() && p.hdr.children[0] === p.btn() && p.label() === L('菊かがり', 23, 23), [p.err, p.label()]);
+  t('4a 事務所の端末・設定なし: 毬のボタンを見出しの先頭に出し、23本中22本', !p.err && !!p.btn() && p.hdr.children[0] === p.btn() && p.label() === L('菊かがり', 22, 23), [p.err, p.label()]);
   t('4b ボタンは type=button・見出しに has-ball の印・中は SVG だけ', p.btn().type === 'button' && p.hdr.classList.contains('has-ball') && p.btn().children.length === 1 && p.btn().children[0].tagName === 'svg');
-  t('4c タイルは今までどおり全部出る・帯も知らせも無い', p.tiles().length === 25 && p.reports.length === 0 && p.notes.length === 0, [p.tiles().length, p.reports, p.notes]);
+  t('4c タイルは今までどおり全部出る・帯も知らせも無い', p.tiles().length === 24 && p.reports.length === 0 && p.notes.length === 0, [p.tiles().length, p.reports, p.notes]);
   p.btn().click();
-  t('4d 押すと麻の葉に切り替わり、読み上げの名前も変わる・端末に asanoha を書く', p.label() === L('麻の葉', 23, 23) && p.ls._d.su_menu_ball === 'asanoha', [p.label(), p.ls._d]);
+  t('4d 押すと麻の葉に切り替わり、読み上げの名前も変わる・端末に asanoha を書く', p.label() === L('麻の葉', 22, 23) && p.ls._d.su_menu_ball === 'asanoha', [p.label(), p.ls._d]);
   p.btn().click();
-  t('4e もう一度押すと菊かがりに戻る（ログインの控えが無く施設の既定が分からないので kiku を残す）', p.label() === L('菊かがり', 23, 23) && p.ls._d.su_menu_ball === 'kiku', [p.label(), p.ls._d]);
+  t('4e もう一度押すと菊かがりに戻る（ログインの控えが無く施設の既定が分からないので kiku を残す）', p.label() === L('菊かがり', 22, 23) && p.ls._d.su_menu_ball === 'kiku', [p.label(), p.ls._d]);
   t('4f 書いたのは su_menu_ball だけ', p.ls.writes.every(w => w[0] === 'su_menu_ball'), p.ls.writes);
   t('4g 同じボタンを使い続ける（押した後もボタンは1つ・手元が外れない）', p.hdr.querySelectorAll('button.ball').length === 1);
 }
@@ -297,23 +298,23 @@ console.log('\n— 4. メニューの数え方と切り替え（index.html）—
   p.fire('pageshow', { persisted: false });
   t('4i 普通の表示（persisted=false）では数え直さない', p.label() === L('菊かがり', 17, 23), p.label());
   p.fire('pageshow', { persisted: true });
-  t('4j 「戻る」で開き直した時（persisted=true）は数え直す（現場→事務所で23本）', p.label() === L('菊かがり', 23, 23), p.label());
+  t('4j 「戻る」で開き直した時（persisted=true）は数え直す（現場→事務所で22本）', p.label() === L('菊かがり', 22, 23), p.label());
 }
 {
   const store = Object.assign({ su_menu_v1: cacheOf({ ver: 1, hide: { office: ['weight-record.html', 'supplies.html', 'connection-settings.html'] } }, 'office') }, LOGIN);
   const p = page({ store });
-  t('4k 役割で隠したボタンは数えない（業務2本＋設定1本を隠す → 23本中21本・分母は23のまま）', p.label() === L('菊かがり', 21, 23), p.label());
+  t('4k 役割で隠したボタンは数えない（業務2本＋設定1本を隠す → 23本中20本・分母は23のまま）', p.label() === L('菊かがり', 20, 23), p.label());
   // 本物の流れと同じく、控えを書いてから組み立て直しを呼ぶ（su-menu.js の startSync は writeCache の後に onChange）
   const cfg2 = { ver: 1, hide: { office: ['weight-record.html'] }, ball: 'asanoha' };
   p.ls._d.su_menu_v1 = cacheOf(cfg2, 'office');
   p.resync(cfg2, 'office');
-  t('4l 設定を読み直した後に数え直し、施設の既定の柄（麻の葉）も効く（23本中22本）', p.label() === L('麻の葉', 22, 23), p.label());
+  t('4l 設定を読み直した後に数え直し、施設の既定の柄（麻の葉）も効く（23本中21本）', p.label() === L('麻の葉', 21, 23), p.label());
 }
 {
   const cfg = { ver: 1, mv: { 'weight-record.html': 'sec-setup', 'connection-settings.html': 'sec-staff', 'shift-app.html': 'sec-kitchen' } };
   const store = Object.assign({ su_menu_v1: cacheOf(cfg, 'office') }, LOGIN);
   const p = page({ store });
-  t('4m 区分を移したボタン: 業務かどうかは既定の区分で決める（設定の区分へ移しても数える・接続設定を移しても数えない）→ 23本中23本', p.label() === L('菊かがり', 23, 23), p.label());
+  t('4m 区分を移したボタン: 業務かどうかは既定の区分で決める（設定の区分へ移しても数える・接続設定を移しても数えない）→ 23本中22本', p.label() === L('菊かがり', 22, 23), p.label());
   const f = page({ store, field: true });
   t('4n 現場端末では、事務所専用の区分（設定）へ移したボタンは隠れるので数えない → 23本中16本', f.label() === L('菊かがり', 16, 23), f.label());
 }
@@ -321,7 +322,7 @@ console.log('\n— 4. メニューの数え方と切り替え（index.html）—
   const d = JSON.parse(DEF_TEXT);
   d.sections[0].tiles = d.sections[0].tiles.concat(Array.from({ length: 18 }, (_, i) => ({ href: 'fake-tool-' + i + '.html', ic: '🧪', nm: '架空' + i, note: '' })));
   const p = page({ def: JSON.stringify(d), store: { su_menu_ball: 'asanoha' } });
-  t('4o 業務ツールが32本を超えても数える（41本中41本・麻の葉）', p.label() === L('麻の葉', 41, 41) && !!p.btn().children[0], p.label());
+  t('4o 業務ツールが32本を超えても数える（41本中40本・麻の葉）', p.label() === L('麻の葉', 40, 41) && !!p.btn().children[0], p.label());
 }
 {
   const d = JSON.parse(DEF_TEXT);
@@ -333,7 +334,7 @@ console.log('\n— 4. メニューの数え方と切り替え（index.html）—
   const d = JSON.parse(DEF_TEXT);
   d.sections[3].tiles.push({ href: 'shift-app.html', ic: '🗓️', nm: '二つ目', note: '' });
   const p = page({ def: JSON.stringify(d) });
-  t('4q 同じリンク先が2枚あっても、出ている数は全体で止める（23本中23本）', p.label() === L('菊かがり', 23, 23) && p.tiles().length === 26, [p.label(), p.tiles().length]);
+  t('4q 同じリンク先が2枚あっても、出ている数は全体で止める（23本中22本）', p.label() === L('菊かがり', 22, 23) && p.tiles().length === 25, [p.label(), p.tiles().length]);
 }
 {
   const d = JSON.parse(DEF_TEXT);
@@ -344,28 +345,36 @@ console.log('\n— 4. メニューの数え方と切り替え（index.html）—
 }
 {
   const p = page({ throws: true });
-  t('4r 保存領域が使えない端末でも毬は出て、押すとこの画面では切り替わる', !p.err && p.label() === L('菊かがり', 23, 23) && (p.btn().click(), p.label() === L('麻の葉', 23, 23)), [p.err, p.label()]);
+  t('4r 保存領域が使えない端末でも毬は出て、押すとこの画面では切り替わる', !p.err && p.label() === L('菊かがり', 22, 23) && (p.btn().click(), p.label() === L('麻の葉', 22, 23)), [p.err, p.label()]);
 }
 {
   const p = page({ store: Object.assign({ su_menu_v1: cacheOf({ ver: 1, ball: 'asanoha' }) }, LOGIN) });
-  t('4s 施設の既定が麻の葉（ログインして読めた控え）→ 麻の葉で出る', p.label() === L('麻の葉', 23, 23), p.label());
+  t('4s 施設の既定が麻の葉（ログインして読めた控え）→ 麻の葉で出る', p.label() === L('麻の葉', 22, 23), p.label());
 }
 
+{
+  const p = page({ store: Object.assign({ su_menu_v1: JSON.stringify({ role: 'admin', config: null, at: '2026-10-29T00:00:00Z' }) }, LOGIN) });
+  t('4u 管理者（設定なしの控え）: 採用管理も出る → 23本中23本・タイル25枚', p.label() === L('菊かがり', 23, 23) && p.tiles().length === 25, [p.label(), p.tiles().length]);
+}
+{
+  const p = page({ store: Object.assign({}, LOGIN) });
+  t('4v ログインの記録はあるが役割が分からない間: 事務所専用を出さない → 23本中17本', p.label() === L('菊かがり', 17, 23), p.label());
+}
 console.log('\n— 5. 毬の部品が無い・描けない時 —');
 {
   const p = page({ itomari: false });
   t('5a 部品が無い: ボタンを出さず、見出しは今のまま（h1・説明の2つだけ・has-ball なし）', !p.err && !p.btn() && p.hdr.children.length === 2 && !p.hdr.classList.contains('has-ball'), [p.err, p.hdr.children.length]);
-  t('5b 部品が無い: タイルは全部出る・帯も知らせも無い', p.tiles().length === 25 && p.reports.length === 0 && !p.main.querySelector('p.menu-broken'), [p.tiles().length, p.reports]);
+  t('5b 部品が無い: タイルは全部出る・帯も知らせも無い', p.tiles().length === 24 && p.reports.length === 0 && !p.main.querySelector('p.menu-broken'), [p.tiles().length, p.reports]);
   p.fire('pageshow', { persisted: true });
   t('5c 部品が無い: 「戻る」で開き直しても止まらない', !p.btn());
 }
 {
   const p = page({ render: () => null });
-  t('5d 描けない（null）時: ボタンを出さず、メニューは全部出る', !p.err && !p.btn() && p.tiles().length === 25 && !p.hdr.classList.contains('has-ball'), [p.err]);
+  t('5d 描けない（null）時: ボタンを出さず、メニューは全部出る', !p.err && !p.btn() && p.tiles().length === 24 && !p.hdr.classList.contains('has-ball'), [p.err]);
 }
 {
   const p = page({ render: () => { throw new Error('描けない'); } });
-  t('5e 部品が例外を出しても: メニューは全部出て、記録（note）に残す', !p.err && p.tiles().length === 25 && p.reports.length === 0 && p.notes.length === 1, [p.err, p.notes]);
+  t('5e 部品が例外を出しても: メニューは全部出て、記録（note）に残す', !p.err && p.tiles().length === 24 && p.reports.length === 0 && p.notes.length === 1, [p.err, p.notes]);
 }
 {
   const at = HTML.indexOf('<script src="su-itomari.js');

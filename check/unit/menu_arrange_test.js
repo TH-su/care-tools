@@ -19,6 +19,11 @@
     10 施設の既定の毬の柄（ball・0025・2026-10-26 代表者の決定）
        - 'asanoha' だけを受け付ける。'kiku'・不正な値は捨てる（キーごと持たない＝無い時は菊かがり）
        - ball の有無で並び・非表示は変わらない
+    11 役割の決まり（SUMenu.view・2026-10-29 本人承認。メニューの設定では外せない）
+       - 管理者専用（採用管理）は管理者にだけ出す。事務所・現場・ログインしていない・役割が分からない間は出さない
+       - 事務所専用（ボタン・区分）は現場のアカウントと役割が分からない間（pending）は出さない。事務所・管理者・ログインしていない時は出す
+       - 設定が無くても効く。設定で事務所専用の区分へ移したボタン・別の区分へ移した管理者専用も同じに効く
+       - 使い方・困った時は必ず出る。何も削らない時は渡した形をそのまま返す。元の定義を書き換えない
    画面のコードは書き換えず、su-menu.js をそのまま読み込んで動かす。 */
 'use strict';
 const fs = require('fs');
@@ -202,6 +207,41 @@ t('10d ball が無い設定は今までどおり（キーを足さない）', !(
 t('10e 形の違う ball があっても、ほかの並び・非表示は効く', hrefs(M.arrange(DEF, { ver: 1, ball: 7, hide: { field: ['weight-record.html'] } }, 'field'), 'sec-resident').indexOf('weight-record.html') < 0);
 t('10f ball の有無で並び・非表示は変わらない', JSON.stringify(M.arrange(DEF, { ver: 1, ball: 'asanoha', order: { 'sec-resident': sw } }, 'admin')) === JSON.stringify(M.arrange(DEF, { ver: 1, order: { 'sec-resident': sw } }, 'admin')));
 t('10g ver が違う設定の ball は効かない（設定ごと無し）', M.clean({ ver: 2, ball: 'asanoha' }) === null);
+
+console.log('11 役割の決まり');
+const all = v => v.sections.reduce((a, s) => a.concat((s.tiles || []).map(x => x.href)), []);
+const OFFICE = [];
+DEF.sections.forEach(s => s.tiles.forEach(x => { if (x.officeOnly || s.officeOnly) OFFICE.push(x.href); }));
+const ADMIN = [];
+DEF.sections.forEach(s => s.tiles.forEach(x => { if (x.adminOnly) ADMIN.push(x.href); }));
+t('11a 定義で採用管理に管理者専用の印がある', ADMIN.length === 1 && ADMIN[0] === 'ats.html', ADMIN);
+t('11b 事務所専用の印のボタンが定義にある（試験の前提）', OFFICE.length >= 5, OFFICE);
+const before11 = JSON.stringify(DEF);
+for (const cfg of [null, { ver: 1 }]) {
+  const tag = cfg ? '設定あり' : '設定なし';
+  const va = all(M.view(DEF, cfg, 'admin')), vo = all(M.view(DEF, cfg, 'office')), vf = all(M.view(DEF, cfg, 'field'));
+  const vn = all(M.view(DEF, cfg, null)), vp = all(M.view(DEF, cfg, 'pending'));
+  t('11c ' + tag + ': 管理者には全部出る', va.length === all(DEF).length && va.indexOf('ats.html') >= 0);
+  t('11d ' + tag + ': 事務所には採用管理だけ出ない', vo.length === all(DEF).length - 1 && vo.indexOf('ats.html') < 0);
+  t('11e ' + tag + ': 現場には事務所専用（採用管理を含む）が全部出ない', OFFICE.every(h => vf.indexOf(h) < 0) && vf.length === all(DEF).length - OFFICE.length, vf);
+  t('11f ' + tag + ': ログインしていない時は採用管理だけ出ない', vn.length === all(DEF).length - 1 && vn.indexOf('ats.html') < 0);
+  t('11g ' + tag + ': 役割が分からない間は事務所専用が出ない', OFFICE.every(h => vp.indexOf(h) < 0) && vp.length === vf.length);
+  t('11h ' + tag + ': 使い方・困った時はどの役割でも出る', [va, vo, vf, vn, vp].every(v => v.indexOf('help.html') >= 0));
+}
+t('11i 元の定義を書き換えない', JSON.stringify(DEF) === before11);
+t('11j 何も削らない時は渡した形をそのまま返す', M.roleView(DEF, 'admin') === DEF);
+t('11k 知らない役割はログインしていない時と同じ（管理者専用だけ出ない）', all(M.view(DEF, null, 'guest')).indexOf('ats.html') < 0 && all(M.view(DEF, null, 'guest')).length === all(DEF).length - 1);
+// 設定で移したボタン
+const toOff = M.view(DEF, { ver: 1, mv: { 'weight-record.html': 'sec-setup' } }, 'field');
+t('11l 事務所専用の区分へ移したボタンは現場に出ない', all(toOff).indexOf('weight-record.html') < 0);
+t('11m 同じボタンは事務所には出る', all(M.view(DEF, { ver: 1, mv: { 'weight-record.html': 'sec-setup' } }, 'office')).indexOf('weight-record.html') >= 0);
+const atsMv = { ver: 1, mv: { 'ats.html': 'sec-resident' } };
+t('11n 別の区分へ移した採用管理も事務所には出ない', all(M.view(DEF, atsMv, 'office')).indexOf('ats.html') < 0 && hrefs(M.view(DEF, atsMv, 'admin'), 'sec-resident').indexOf('ats.html') >= 0);
+t('11o 設定の非表示と役割の決まりは両方効く', (() => { const v = all(M.view(DEF, { ver: 1, hide: { office: ['weight-record.html'] } }, 'office')); return v.indexOf('weight-record.html') < 0 && v.indexOf('ats.html') < 0; })());
+t('11p 設定で採用管理を隠さなくても、管理者以外には出ない（設定では外せない）', all(M.view(DEF, { ver: 1, hide: { office: [] } }, 'office')).indexOf('ats.html') < 0);
+t('11q autoHidden: 区分の事務所専用も見る', M.autoHidden({ href: 'x.html' }, true, 'field') === true && M.autoHidden({ href: 'x.html' }, true, 'office') === false);
+t('11r autoHidden: 使い方・困った時は出す', M.autoHidden({ href: 'help.html', adminOnly: true, officeOnly: true }, true, 'field') === false);
+t('11s 壊れた定義（区分の一覧が無い）はそのまま返す', M.view({ x: 1 }, null, 'field').x === 1);
 
 console.log(`\n合格 ${pass} / 不合格 ${fail}`);
 process.exit(fail ? 1 : 0);

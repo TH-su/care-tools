@@ -275,7 +275,8 @@
         var txt = el('div');
         txt.appendChild(el('div', 'nm', label(t.nm) + (t.ext ? ' ↗' : '')));
         var tags = el('div', 'tags');
-        if (officeOnlyTile(t, s)) tags.appendChild(el('span', 'tag', '現場端末では出ません'));
+        if (officeOnlyTile(t, s)) tags.appendChild(el('span', 'tag', '現場端末・現場のアカウントには出ません'));
+        if (t.adminOnly) tags.appendChild(el('span', 'tag', '管理者にだけ出ます'));
         if (homeOf[t.href] && homeOf[t.href] !== s.id) tags.appendChild(el('span', 'tag me', '移したボタン'));
         if (SUMenu.KEEP[t.href]) tags.appendChild(el('span', 'tag me', '全員に出ます'));
         if (tags.children.length) txt.appendChild(tags);
@@ -289,8 +290,12 @@
           var lb = el('label', 'ms-chk');
           var cb = document.createElement('input');
           cb.type = 'checkbox';
-          cb.checked = !model.hide[r[0]][t.href];
-          cb.disabled = busy || !!SUMenu.KEEP[t.href];
+          // 役割の決まりで出ないボタン（2026-10-29 本人承認）は、外せないことが分かるように外れた形で押せなくする。
+          // 保存する非表示（model.hide）は変えない（決まりが変わった時に、管理者が決めた非表示が残るように）
+          var auto = !!(SUMenu.autoHidden && SUMenu.autoHidden(t, officeOnlyTile(t, s), r[0]));
+          cb.checked = !auto && !model.hide[r[0]][t.href];
+          cb.disabled = busy || auto || !!SUMenu.KEEP[t.href];
+          if (auto) { lb.title = '自動で出ません（役割の決まり）'; cb.setAttribute('aria-label', r[1] + '（自動で出ません）'); }
           cb.addEventListener('change', function () {
             if (cb.checked) delete model.hide[r[0]][t.href]; else model.hide[r[0]][t.href] = 1;
             refreshState();
