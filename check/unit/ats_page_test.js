@@ -15,6 +15,9 @@
      8. 評価は面接官ごと（p_interviewer）。ほかの評価を見た後は own の版で保存する
      9. 取り込みの試算は職員マスタの一覧を1回読む（読めなければ職員IDなし）・まとめの件数・ボードに出さない入職完了・採用率と年ごと（2026-10-27）
      12. 職種の札・カレンダー（押すと詳細・絞り込みが効く・月と種類だけを端末に控える）・応募の知らせから足す（貼った文面を保存しない・重なりを足さない）（2026-10-27）
+     13. 生年月日は和暦も可・満年齢を出す・読めない値は保存しない／面接官はいつもの面接官を初めから入れ、職員の一覧を読まない／
+         書類（PDF）: PDF だけ置く・置き場→台帳の順・台帳に入らなければ中身を消す・消すのは置き場→台帳・保管期限では書類を先に消す・
+         ファイルのドラッグでブラウザが画面を離れない（2026-10-29 本人指示）
      ほか: 読み込む部品の並び・CSP・インラインの on〜 なし・console なし
    ★氏名・電話・メールはすべて架空（甲野 一郎・000-0000-0001・x@example.com）。出力に console を使わない。 */
 'use strict';
@@ -86,10 +89,12 @@ function fakeDb(opt, log) {
   const tables = opt.tables || {};
   function builder(table) {
     const b = { table, ops: [] };
-    const chain = ['select', 'eq', 'order', 'insert', 'update', 'gte', 'lte'];
+    const chain = ['select', 'eq', 'order', 'insert', 'update', 'gte', 'lte', 'in'];
     chain.forEach((k) => { b[k] = function () { b.ops.push([k].concat([].slice.call(arguments))); return b; }; });
     b.then = function (ok, ng) {
       log.push({ kind: 'table', table, ops: b.ops });
+      const te = (opt.tableErr || {})[table];
+      if (te) return Promise.resolve({ data: null, error: te }).then(ok, ng);
       const ins = b.ops.find((o) => o[0] === 'insert');
       const data = ins ? [Object.assign({ id: 'new-' + table }, ins[1])] : (tables[table] || []);
       return Promise.resolve({ data: JSON.parse(JSON.stringify(data)), error: null }).then(ok, ng);
@@ -104,7 +109,19 @@ function fakeDb(opt, log) {
       const v = f ? f(args) : { ok: true };
       return Promise.resolve(v && v.__error ? { data: null, error: v.__error } : { data: v, error: null });
     },
-    auth: { getSession() { return Promise.resolve({ data: { session: { access_token: 'at-kakuu', user: { id: 'u-kakuu' } } } }); } }
+    auth: { getSession() { return Promise.resolve({ data: { session: { access_token: 'at-kakuu', user: { id: 'u-kakuu' } } } }); } },
+    /* 偽の置き場（Storage）。opt.storage で各操作の応答を差し替える */
+    storage: {
+      from(bucket) {
+        const st = opt.storage || {};
+        const call = (op, args, def) => { log.push({ kind: 'storage', bucket, op, args }); const f = st[op]; return Promise.resolve(f ? f.apply(null, args) : def); };
+        return {
+          upload(key, file, o) { return call('upload', [key, file && file.name, o], { data: { path: key }, error: null }); },
+          remove(keys) { return call('remove', [keys], { data: keys.map((k) => ({ name: k })), error: null }); },
+          createSignedUrl(key, sec) { return call('createSignedUrl', [key, sec], { data: { signedUrl: 'https://kakuu.example/s/' + key + '?token=x' }, error: null }); }
+        };
+      }
+    }
   };
 }
 const OK_ST = { status: 'ok', role: 'admin', mfa: true };
@@ -121,7 +138,7 @@ function load(opt) {
   const db = fakeDb(opt, log);
   const SUAuth = { STATUS: { SIGNED_OUT: 'signed_out', DENIED: 'denied', MFA_ENROLL: 'mfa_enroll', MFA_VERIFY: 'mfa_verify', OK: 'ok', ERROR: 'error' },
     check() { log.push({ kind: 'check' }); return Promise.resolve(opt.status || OK_ST); }, client() { return db; } };
-  const win = { addEventListener() {}, SUAuth: opt.noAuth ? undefined : SUAuth, supabase: {} };
+  const win = { addEventListener() {}, SUAuth: opt.noAuth ? undefined : SUAuth, supabase: {}, crypto: nodeCrypto.webcrypto };
   const ctx = {
     Promise, JSON, Object, Array, String, Number, Math, Date, RegExp, Error, Uint8Array, parseInt, isFinite, encodeURIComponent,
     crypto: nodeCrypto.webcrypto, TextDecoder,
@@ -146,7 +163,8 @@ function load(opt) {
   ctx.openDlg_ = (o) => { asks.push(o); return Promise.resolve(opt.answer === undefined ? (o.collect ? null : true) : opt.answer); };
   const rpcs = () => log.filter((x) => x.kind === 'rpc');
   const reads = () => log.filter((x) => x.kind === 'table');
-  return { ctx, ls, ss, writes, log, fetches, created, el, els, toasts, asks, rpcs, reads, db };
+  const stores = () => log.filter((x) => x.kind === 'storage');
+  return { ctx, ls, ss, writes, log, fetches, created, el, els, toasts, asks, rpcs, reads, stores, db };
 }
 const UID = (n) => '00000000-0000-4000-8000-' + String(n).padStart(12, '0');
 const NOW_ISO = new Date().toISOString();
@@ -191,7 +209,7 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
     const L = load({ tables: { ats_applicants: [app()] } });
     const r = await L.ctx.boot_(); await settle();
     t('管理者＋2段階認証: 読み込んでアプリの欄を出す', r === 'app' && !L.els['a-app'].hidden && L.els['a-gate'].hidden && L.ctx.apps.length === 1, r);
-    t('読むのは応募者・面接・設定・面接官の候補（表から読むだけ・RPC は呼ばない）', L.reads().map((x) => x.table).sort().join() === 'ats_applicants,ats_interviews,ats_settings,staff_names' && L.rpcs().length === 0, L.reads().map((x) => x.table));
+    t('読むのは応募者・面接・設定だけ（職員の一覧は読まない・表から読むだけ・RPC は呼ばない）', L.reads().map((x) => x.table).sort().join() === 'ats_applicants,ats_interviews,ats_settings' && L.rpcs().length === 0, L.reads().map((x) => x.table));
     t('起動では職員マスタへ送らない', L.fetches.length === 0);
   }
 
@@ -724,6 +742,173 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
     t('氏名が空なら足さない', col() === null && L3.toasts.some((m) => /氏名と受付日を入れてください/.test(m)));
     vals['d-pname'] = '丁田 四郎'; vals['d-precv'] = CALC.addDays(CALC.todayJST(), 1);
     t('受付日が先の日付なら足さない', col() === null && L3.toasts.some((m) => /先の日付/.test(m)));
+  }
+
+  group('13. 生年月日（和暦も可・満年齢）・面接官（いつもの面接官）・書類（PDF）（2026-10-29）');
+  const TEN = '00000000-0000-4000-8000-000000000001';
+  const pdfFile = (name, head, size) => ({ name, type: /\.pdf$/i.test(name) ? 'application/pdf' : 'image/png', size: size == null ? 1000 : size,
+    slice() { return { arrayBuffer: () => Promise.resolve(Uint8Array.from(Buffer.from(head)).buffer) }; } });
+  {
+    const L = await opened({ row: app({ birth_date: '1980-04-03' }) });
+    L.ctx.paintDetail_();
+    const h = L.els['a-pane'].innerHTML;
+    t('詳細の生年月日は文字の欄（和暦も打てる）で、和暦と満年齢を下に出す', /id="f-birth" type="text"[^>]*data-birth="1"/.test(h) && h.includes('昭和55年4月3日・満' + CALC.ageOn('1980-04-03', CALC.todayJST()) + '歳') && !/id="f-birth" type="date"/.test(h));
+    t('入職準備の生年月日にも同じ読み下しを出す', /id="p-birth" type="text"[^>]*data-birth="1"/.test(h) && /id="p-birth-n"/.test(h));
+    /* 打つたびに読み下し、欄を離れた時（change）に西暦へ直す */
+    const inp = L.el('f-birth'); inp.value = 'H2.4.1';
+    L.ctx.onInput_({ target: Object.assign(inp, { hasAttribute: (k) => k === 'data-birth' || k === 'data-dirty', closest: () => null }) });
+    t('打つたびに和暦と満年齢を出す（値はまだ直さない）', /^平成2年4月1日・満\d+歳$/.test(L.els['f-birth-n'].textContent) && inp.value === 'H2.4.1', L.els['f-birth-n'].textContent);
+    L.ctx.onChange_({ target: inp });
+    t('欄を離れたら YYYY-MM-DD に直す', inp.value === '1990-04-01');
+    inp.value = 'あした';
+    L.ctx.onInput_({ target: inp });
+    t('読めない値は赤い知らせ', /読めません/.test(L.els['f-birth-n'].textContent) && /ng/.test(L.els['f-birth-n'].className));
+    L.el('f-name').value = '甲野 一郎';
+    const n0 = L.rpcs().length;
+    const r = await L.ctx.saveBasic_(); await settle();
+    t('読めない生年月日は保存しない（送らない・理由を出す）', r === 'bad' && L.rpcs().length === n0 && /読めません/.test(L.els['d-msg'].textContent), L.els['d-msg'].textContent);
+    inp.value = '昭和55年4月3日';
+    await L.ctx.saveBasic_(); await settle();
+    const put = L.rpcs().filter((x) => x.name === 'ats_put').pop();
+    t('和暦で打っても保存するのは YYYY-MM-DD', put && put.args.p_row.birth_date === '1980-04-03', put && put.args.p_row.birth_date);
+    inp.value = CALC.addDays(CALC.todayJST(), 1);
+    t('今日より先の生年月日も保存しない', (await L.ctx.saveBasic_()) === 'bad');
+    L.el('p-birth').value = '昭和99年1月1日';
+    t('入職準備: 元号の範囲を超えた年は保存しない', (await L.ctx.savePrep_()) === 'bad' && /昭和の範囲/.test(L.els['d-msg'].textContent));
+  }
+  {
+    /* 応募の知らせから足す窓: 読めない生年月日は足さない・和暦は西暦で足す */
+    const L = await opened({});
+    let col = null; let j = 0;
+    const vals = { 'd-pname': '丙田 三郎', 'd-precv': CALC.todayJST(), 'd-pbirth': 'S55.4.3' };
+    L.ctx.openDlg_ = (o) => { if (++j === 1) return Promise.resolve('（貼った文面）'); col = o.collect; return Promise.resolve(null); };
+    L.ctx.val_ = (id) => vals[id] || '';
+    await L.ctx.pasteApplicant_(); await settle();
+    t('足す窓の生年月日も和暦で打てる（西暦で足す）', col && col() && col().birth_date === '1980-04-03');
+    vals['d-pbirth'] = '平成99年';
+    t('足す窓: 読めない生年月日は足さない', col() === null && L.toasts.some((m) => /読めません/.test(m)), L.toasts);
+  }
+  {
+    /* 面接官: いつもの面接官を初めから入れる・職員の一覧のチェックは無い */
+    const L = await opened({ tables: { ats_applicants: [app()], ats_interviews: [], ats_settings: [{ default_interviewer: '架空 面接官甲' }], ats_contacts: [] } });
+    L.ctx.paintDetail_();
+    const h = L.els['a-pane'].innerHTML;
+    t('新しい面接の面接官の欄に、いつもの面接官が入っている', /id="i-names" type="text"[^>]*value="架空 面接官甲"/.test(h) && /臨時でほかの方が対応した時だけ/.test(h));
+    t('職員の一覧のチェック表は無い', !/data-ivname/.test(h) && !/i-manual/.test(h));
+    L.ctx.ivs = [{ id: UID(9), applicant_id: UID(1), round: 1, held_at: NOW_ISO, interviewers: ['架空 面接官乙'] }];
+    L.ctx.ivEdit = UID(9); L.ctx.paintDetail_();
+    t('直す時は保存してある面接官のまま（いつもの面接官で上書きしない）', /id="i-names" type="text"[^>]*value="架空 面接官乙"/.test(L.els['a-pane'].innerHTML));
+    L.ctx.ivEdit = '';
+    L.el('i-at').value = '2026-11-02T10:00'; L.el('i-names').value = ' 架空 面接官甲・架空 面接官丙 、架空 面接官甲';
+    await L.ctx.saveInterview_(); await settle();
+    const ins = L.reads().filter((x) => x.table === 'ats_interviews' && x.ops.some((o) => o[0] === 'insert')).pop();
+    t('打った面接官を「・」「、」で分け、重なりを外して保存', ins && JSON.stringify(ins.ops.find((o) => o[0] === 'insert')[1].interviewers) === JSON.stringify(['架空 面接官甲', '架空 面接官丙']), ins && ins.ops);
+    /* 設定: いつもの面接官を変えた時だけ ats_iv_default_put を呼ぶ */
+    L.ctx.paintSettings_();
+    t('設定にいつもの面接官の欄がある', /id="set-iv"[^>]*value="架空 面接官甲"/.test(L.els['p-settings'].innerHTML));
+    L.el('set-items').value = '通勤'; L.el('set-retain').value = '6'; L.el('set-lost').value = '90'; L.el('set-iv').value = '架空 面接官甲';
+    await L.ctx.saveSettings_(); await settle();
+    t('変えていなければ ats_iv_default_put は呼ばない', !L.rpcs().some((x) => x.name === 'ats_iv_default_put'));
+    L.el('set-iv').value = '架空 面接官乙';
+    L.db.rpc = ((orig) => function (name, args) { if (name === 'ats_iv_default_put') { L.log.push({ kind: 'rpc', name, args }); return Promise.resolve({ data: { ok: true, row: { default_interviewer: args.p_name } }, error: null }); } return orig.call(this, name, args); })(L.db.rpc);
+    await L.ctx.saveSettings_(); await settle();
+    t('変えた時は ats_iv_default_put で保存し、次の面接から入る', L.rpcs().some((x) => x.name === 'ats_iv_default_put' && x.args.p_name === '架空 面接官乙') && L.ctx.settings.defaultInterviewer === '架空 面接官乙');
+  }
+  {
+    /* 書類: 台帳がまだ無い（0035 の前） */
+    const L = await opened({ tableErr: { ats_files: { code: 'PGRST205', message: 'Could not find the table' } } });
+    await L.ctx.loadFiles_(UID(1)); await settle();
+    t('台帳がまだ無い時は「準備中」を出し、置く欄を出さない', L.ctx.filesState === 'nodb' && /準備中/.test(L.ctx.filesInner_(L.ctx.apps[0])) && !/d-drop/.test(L.ctx.filesInner_(L.ctx.apps[0])));
+    const n0 = L.stores().length;
+    await L.ctx.uploadFiles_([pdfFile('履歴書.pdf', '%PDF-')]); await settle();
+    t('準備中の時は置かない', L.stores().length === n0);
+  }
+  {
+    const row = app({ tenant_id: TEN });
+    const L = await opened({ row, tables: { ats_applicants: [row], ats_interviews: [], ats_settings: [], ats_contacts: [], ats_files: [] },
+      rpc: { ats_file_add: (a) => ({ ok: true, row: { id: a.p_file_id, applicant_id: a.p_applicant_id, object_key: TEN + '/' + UID(1) + '/' + a.p_file_id + '.pdf', file_name: a.p_name, size_bytes: a.p_size, created_at: NOW_ISO } }) } });
+    await L.ctx.loadFiles_(UID(1)); await settle();
+    const inner = L.ctx.filesInner_(L.ctx.apps[0]);
+    t('置く欄: ドラッグの枠と「PDF を選ぶ」ボタン（ドラッグだけにしない）', /data-drop="1"/.test(inner) && /data-act="file-pick"/.test(inner) && /accept="application\/pdf,\.pdf"/.test(inner));
+    await L.ctx.uploadFiles_([pdfFile('写真.png', '\x89PNG'), pdfFile('偽.pdf', '<html')]); await settle();
+    t('PDF でないもの（名前・中身）は置き場へ送らない', L.stores().length === 0 && /写真\.png: PDF ではありません/.test(L.ctx.fileMsg) && /偽\.pdf: PDF ではありません（中身/.test(L.ctx.fileMsg), L.ctx.fileMsg);
+    await L.ctx.uploadFiles_([pdfFile(' 履歴書（架空）.pdf ', '%PDF-1.7', 1234)]); await settle();
+    const up = L.stores().find((x) => x.op === 'upload');
+    const add = L.rpcs().find((x) => x.name === 'ats_file_add');
+    const KEY_RE = new RegExp('^' + TEN + '/' + UID(1) + '/[0-9a-f-]{36}\\.pdf$');
+    t('置き場の名前は 事業者/応募者/書類の id.pdf（氏名・ファイル名を入れない）・上書きしない・PDF として置く', up && KEY_RE.test(up.args[0]) && up.args[2].upsert === false && up.args[2].contentType === 'application/pdf' && up.bucket === 'ats-files', up);
+    t('置いた後に台帳へ（同じ id・名前は前後の空白を落とす・大きさ）', add && up.args[0].endsWith(add.args.p_file_id + '.pdf') && add.args.p_name === '履歴書（架空）.pdf' && add.args.p_size === 1234 && add.args.p_applicant_id === UID(1), add && add.args);
+    t('置けたら一覧に出し、知らせる', L.ctx.files.length === 1 && /1件を置きました/.test(L.ctx.fileMsg) && /履歴書（架空）\.pdf/.test(L.ctx.filesInner_(L.ctx.apps[0])));
+    t('端末に書類の名前・中身を残さない', !L.writes.some((w) => /履歴書|pdf/i.test(String(w[3] || ''))), L.writes);
+    /* 開く: 押した時にすぐ新しいタブを開き、後から行き先を入れる */
+    const opens = []; let tab = null;
+    L.ctx.window.open = (u, n) => { opens.push([u, n, L.stores().length]); tab = { closed: false, location: { replace(x) { tab.went = x; } } }; return tab; };
+    const fid = L.ctx.files[0].id;
+    const p = L.ctx.openFile_(fid);
+    t('開く: リンクを作る前に新しいタブを開く（ポップアップとして止められない）', opens.length === 1 && opens[0][2] === L.stores().length && opens[0][1] === '_blank');
+    await p; await settle();
+    const sg = L.stores().find((x) => x.op === 'createSignedUrl');
+    t('開く: 期限2分のリンクを作り、開いたタブの行き先にする（元の画面を触らせない）', sg && sg.args[1] === 120 && tab.went && tab.went.includes(L.ctx.files[0].object_key) && tab.opener === null, sg);
+    /* 消す: 置き場 → 台帳の順 */
+    L.ctx.openDlg_ = () => Promise.resolve(true);
+    L.db.rpc = ((orig) => function (name, args) { if (name === 'ats_file_del') { L.log.push({ kind: 'rpc', name, args }); return Promise.resolve({ data: { ok: true, deleted: 1 }, error: null }); } return orig.call(this, name, args); })(L.db.rpc);
+    await L.ctx.delFile_(fid); await settle();
+    const iRm = L.log.findIndex((x) => x.kind === 'storage' && x.op === 'remove'), iDel = L.log.findIndex((x) => x.kind === 'rpc' && x.name === 'ats_file_del');
+    t('消す: 置き場から消してから台帳を消す', iRm >= 0 && iDel > iRm && L.log[iRm].args[0][0].endsWith(fid + '.pdf') && L.ctx.files.length === 0 && /消しました/.test(L.ctx.fileMsg));
+  }
+  {
+    /* 台帳に入らなかった時は、置いた中身を消す（見えない中身を残さない） */
+    const row = app({ tenant_id: TEN });
+    const L = await opened({ row, tables: { ats_applicants: [row], ats_interviews: [], ats_settings: [], ats_contacts: [], ats_files: [] }, rpc: { ats_file_add: () => ({ ok: false, error: 'toomany' }) } });
+    await L.ctx.loadFiles_(UID(1)); await settle();
+    await L.ctx.uploadFiles_([pdfFile('履歴書.pdf', '%PDF-')]); await settle();
+    const up = L.stores().find((x) => x.op === 'upload'), rm = L.stores().find((x) => x.op === 'remove');
+    t('台帳に入らなければ、置いた中身を消して理由を出す', up && rm && rm.args[0][0] === up.args[0] && /30件まで/.test(L.ctx.fileMsg) && L.ctx.files.length === 0, L.ctx.fileMsg);
+    /* 置き場が断った時は台帳へ行かない */
+    const L2 = await opened({ row, tables: { ats_applicants: [row], ats_interviews: [], ats_settings: [], ats_contacts: [], ats_files: [] },
+      storage: { upload: () => ({ data: null, error: { statusCode: '403', message: 'new row violates row-level security policy' } }) } });
+    await L2.ctx.loadFiles_(UID(1)); await settle();
+    await L2.ctx.uploadFiles_([pdfFile('履歴書.pdf', '%PDF-')]); await settle();
+    t('置き場が断ったら台帳に足さない（権限の文を出す）', !L2.rpcs().some((x) => x.name === 'ats_file_add') && /権限がありません/.test(L2.ctx.fileMsg), L2.ctx.fileMsg);
+  }
+  {
+    /* ドラッグ: 置き場の外で離してもブラウザが PDF を開かない／選考のカードのドラッグは今までどおり */
+    const L = await opened({});
+    const ev = (inZone) => { const e = { prevented: false, preventDefault() { e.prevented = true; }, dataTransfer: { types: ['Files'], files: [], dropEffect: '' }, target: { closest: (sel) => (sel === '[data-drop]' && inZone ? {} : null) } }; return e; };
+    const out = ev(false); L.ctx.onDragOver_(out);
+    t('ファイルを置き場の外で持っている時も既定の動き（開く）を止め、置けない印にする', out.prevented && out.dataTransfer.dropEffect === 'none');
+    const inz = ev(true); L.ctx.onDragOver_(inz);
+    t('置き場の上では「写す」の印', inz.prevented && inz.dataTransfer.dropEffect === 'copy');
+    let upCalled = 0; L.ctx.uploadFiles_ = () => { upCalled++; return Promise.resolve(0); };
+    const dOut = ev(false); L.ctx.onDrop_(dOut);
+    const dIn = ev(true); L.ctx.onDrop_(dIn);
+    t('置き場の外で離したら何もしない（画面を離れない）・置き場で離したら置く', dOut.prevented && dIn.prevented && upCalled === 1);
+    const card = { prevented: false, preventDefault() { card.prevented = true; }, dataTransfer: { types: ['text/plain'] }, target: { closest: () => null } };
+    L.ctx.onDragOver_(card);
+    t('選考のカードを持っていない時の文字のドラッグには手を出さない', !card.prevented);
+  }
+  {
+    /* 保管期限: 書類を先に消してから応募者を消す。書類を消せなければ応募者を消さない */
+    const rows = [app({ id: UID(3), stage: 'lost', retain_until: '2000-01-01', tenant_id: TEN })];
+    const fileRow = { id: UID(31), applicant_id: UID(3), object_key: TEN + '/' + UID(3) + '/' + UID(31) + '.pdf', file_name: '履歴書.pdf' };
+    const L = await opened({ tables: { ats_applicants: rows, ats_interviews: [], ats_settings: [], ats_contacts: [], ats_files: [fileRow] },
+      rpc: { ats_file_del: () => ({ ok: true, deleted: 1 }), ats_purge: () => ({ ok: true, deleted: 1, skipped_pending: 0 }) } });
+    L.ctx.apps = rows; L.ctx.expireSel = { [UID(3)]: true };
+    await L.ctx.runPurge_(); await settle();
+    const rd = L.reads().find((x) => x.table === 'ats_files' && x.ops.some((o) => o[0] === 'in'));
+    const order = L.log.filter((x) => (x.kind === 'storage' && x.op === 'remove') || (x.kind === 'rpc' && /ats_file_del|ats_purge/.test(x.name))).map((x) => x.op || x.name);
+    t('保管期限: 選んだ方の書類を読み、置き場→台帳→応募者の順に消す', rd && JSON.stringify(rd.ops.find((o) => o[0] === 'in')[2]) === JSON.stringify([UID(3)]) && JSON.stringify(order) === JSON.stringify(['remove', 'ats_file_del', 'ats_purge']), order);
+    t('確かめの窓に「書類（PDF）も消える」と出す', L.asks.some((a) => (a.lines || []).some((l) => /書類（PDF）/.test(l))));
+    const L2 = await opened({ tables: { ats_applicants: rows, ats_interviews: [], ats_settings: [], ats_contacts: [], ats_files: [fileRow] },
+      storage: { remove: () => ({ data: null, error: { statusCode: '500', message: 'internal' } }) } });
+    L2.ctx.apps = rows; L2.ctx.expireSel = { [UID(3)]: true };
+    await L2.ctx.runPurge_(); await settle();
+    t('保管期限: 書類を消せなければ応募者は消さない', !L2.rpcs().some((x) => x.name === 'ats_purge') && L2.els['a-msg'].textContent.length > 0, L2.els['a-msg'].textContent);
+    const L3 = await opened({ tables: { ats_applicants: rows, ats_interviews: [], ats_settings: [], ats_contacts: [] }, tableErr: { ats_files: { code: '42P01' } },
+      rpc: { ats_purge: () => ({ ok: true, deleted: 1, skipped_pending: 0 }) } });
+    L3.ctx.apps = rows; L3.ctx.expireSel = { [UID(3)]: true };
+    await L3.ctx.runPurge_(); await settle();
+    t('保管期限: 台帳がまだ無い（0035 の前）なら今までどおり消せる', L3.rpcs().some((x) => x.name === 'ats_purge') && L3.stores().length === 0);
   }
 
   say('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
