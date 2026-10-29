@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-k71SqM1hhGDc2ktxndsGqmWbWsiKh4urreAfGUIAa94=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-Pala0fth6mcHC74RJNn/++AQFCndRxs3uXxAEjyWYqI=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 検索エンジンにこのページと配下ツールを辿らせない。
@@ -120,12 +120,13 @@ body {
 }
 .hdr .ball svg { display: block; width: 56px; height: 56px; }
 .hdr .ball:active { transform: scale(.94); }
-/* 青い帯の上でも見えるフォーカスの枠（白。--pri の枠は帯と同じ色で見えない・HIG） */
-.hdr .ball:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+/* 生成りの見出しの上で見えるフォーカスの枠（藍・HIG。2026-10-29 に見出しを青い帯から生成りへ替えたので白から藍へ） */
+.hdr .ball:focus-visible { outline: 3px solid #1F2A44; outline-offset: 2px; }
 @media print { .hdr .ball { display: none !important; } }
 
 main {
-  /* 2列を保つため幅を抑える（広げて3列にすると指定のペアが分断される。M-2 参照） */
+  /* 狭い画面は2列を保つため幅を抑える（広げて3列にすると指定のペアが分断される。M-2 参照）。
+     PC（幅900px以上）は4列で左から順に詰める（下の「つむぐケアの色味」の区画・代表者の決定 2026-10-29） */
   max-width: 620px; margin: 0 auto;
   padding: 16px max(14px, env(safe-area-inset-left)) 0 max(14px, env(safe-area-inset-right));
 }
@@ -141,7 +142,7 @@ main {
 .sec > h2 .mk { font-size: 1.0625rem; }
 
 /* ── タイル配置 ──
-   指定の並び順どおりに左上から流し込む。★列数は常に2で固定する。
+   指定の並び順どおりに左上から流し込む。★狭い画面では列数を2で固定する（PC は4列・2026-10-29 代表者の決定）。
    3列にすると「シフトの下が過去シフト分析」「週間計画とデイ利用表が横並び」等の
    指定されたペアが分断されるため、広い画面では列を増やさず main の幅で抑える。 */
 .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
@@ -209,6 +210,41 @@ main {
   .tile:active { transform: none; background: var(--pri-l); border-color: var(--pri); }
   .hdr .ball { transition: none; }
   .hdr .ball:active { transform: none; opacity: .8; }
+}
+/* ── つむぐケアの色味と PC の4列（2026-10-29 本人指示・代表者の決定。立ち上がりの絵の着地点をまねる） ──
+   見出しは生成りの地に藍の字。PC のボタンの絵の地は毬のロゴの5色（業務ツールの分野ごと・data-fam。設定・困った時と、毬の部品が無い時は無地）。
+   PC（幅900px以上）は4列で、並び順のまま左から詰め（組の行割り newrow は使わない）、絵の右に名前を置く。
+   それより狭い画面（iPhone）は色味（地・字・枠の色）だけ変え、ボタンの形と高さ（絵の下に名前）・2列・組の行割りは今のまま。
+   印刷は変えない（全部 @media screen の中）。文字の色は白地・生成りの地で 7:1 以上（藍 #1F2A44・補助 #4A5468） */
+@media screen {
+  :root { --tc-navy: #1F2A44; --tc-paper: #FBF8F2; --tc-line: #E4DED2; --tc-gold: #B8913F; --tc-ink2: #4A5468; }
+  body { background: var(--tc-paper); color: var(--tc-navy); }
+  .hdr { background: var(--tc-paper); color: var(--tc-navy); box-shadow: none; border-bottom: 1px solid var(--tc-line); }
+  .hdr .sub { color: var(--tc-ink2); }
+  .sec > h2 { color: var(--tc-navy); border-bottom-color: var(--tc-line); }
+  .tile { border-color: var(--tc-line); box-shadow: 0 1px 3px rgba(31,42,68,.08); color: var(--tc-navy); }
+  .tile:hover:not(:active) { border-color: var(--tc-gold); box-shadow: 0 2px 10px rgba(31,42,68,.12); }   /* 押している間は既存の決まり（動きを減らす設定の藍の枠）を残す */
+  .tile:focus-visible { outline-color: var(--tc-navy); }
+  .tile .note, .tile.ext .nm::after, .sec .sup, .foot { color: var(--tc-ink2); }
+}
+@media screen and (min-width: 900px) {
+  main, .foot { max-width: 1120px; }
+  .role-band { max-width: min(1092px, calc(100% - 28px)); }
+  .hdr { padding-left: max(16px, calc((100% - 1092px) / 2)); padding-right: max(16px, calc((100% - 1092px) / 2)); }
+  .grid { grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .tile.newrow { grid-column-start: auto; }
+  .tile { display: grid; grid-template-columns: 48px 1fr; column-gap: 12px; row-gap: 2px; align-content: center; justify-content: stretch; text-align: left; padding: 14px; }
+  .tile > * { grid-column: 2; }
+  /* 絵の四角と地の色は PC だけ（狭い画面は「色味だけ」の決定どおり、ボタンの形・高さを今のままにする） */
+  .tile .ic { grid-column: 1; grid-row: 1 / span 4; align-self: center; width: 48px; height: 48px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center; background: #F1ECE2; }
+  .tile[data-fam="0"] .ic { background: #FBE3E0; }   /* 記録（朱） */
+  .tile[data-fam="1"] .ic { background: #FCEFD2; }   /* くすり・もの（山吹） */
+  .tile[data-fam="2"] .ic { background: #E3F0DE; }   /* 入居者（若竹） */
+  .tile[data-fam="3"] .ic { background: #DCEFF2; }   /* 計画（浅葱） */
+  .tile[data-fam="4"] .ic { background: #FBE6EC; }   /* 職員（桃） */
+  .tile .nm { font-size: 0.9375rem; }
+  .tile .note { font-size: 0.8125rem; }
 }
 </style>
 </head>
@@ -706,6 +742,8 @@ main {
         var a = el('a', 'tile' + (t.ext ? ' ext' : '') + (t.newrow ? ' newrow' : ''));
         if (t.officeOnly) a.setAttribute('data-office-only', '');
         a.setAttribute('href', t.href);
+        /* 絵の地の色の分野（毬のロゴの5色・2026-10-29 本人指示）。業務ツールでない区分（設定・困った時）と、毬の部品が無い時は付けない＝無地のまま出す */
+        if (s.id !== 'sec-setup' && s.id !== 'sec-help' && window.SUItomari && typeof SUItomari.familyOf === 'function') { var fam = SUItomari.familyOf(t.href); if (fam >= 0 && fam <= 4) a.setAttribute('data-fam', String(fam)); }
         var ic = el('span', 'ic', t.ic); ic.setAttribute('aria-hidden', 'true');
         a.appendChild(ic); a.appendChild(facText('nm', t.nm)); a.appendChild(note(t.note));
         if (typeof t.due === 'string') { a.setAttribute('data-due', t.due); var db = dueBadge(t.due); if (db) a.appendChild(db); }
