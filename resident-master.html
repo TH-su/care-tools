@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-JxBTwqOzKL7RYzaCUJmrFwr8ygJ7YoUCpedHr7znM+Q='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-HUTssZG2+J8mQgeBkYX5Fxg+92yur5MnLk4wpPWgjZM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -1908,6 +1908,7 @@ body.meal-on #sc-list{max-width:none}
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-27"></script>
+<script src="su-gas-auth.js?v=2026-10-29"></script>
 <script>
 /* 黙ると困る失敗（保存・同期の補助）を、画面には出さずに記録へ残す（2026-10-08・監査10月版 #8）。
    行き先は su-errors.js の note＝コンソールと記録先（同期ログ・不具合報告の控えと自動報告）。トーストは出さない。
@@ -2283,7 +2284,10 @@ function apiGet(params,timeoutMs){
   var body={};
   Object.keys(params).forEach(function(k){body[k]=String(params[k])});
   body.token=CFG.token;
-  return fetchWithTimeout(CFG.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)},timeoutMs||25000).then(parseJson);
+  /* ログインしている時だけ証明を添える（su-gas-auth.js・GAS が READ_ROLE_CHECK の時に役割を確かめる・代表者の決定 2026-10-29） */
+  return (window.SUGasAuth?window.SUGasAuth.addTo(body):Promise.resolve(body)).then(function(b){
+    return fetchWithTimeout(CFG.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(b)},timeoutMs||25000);
+  }).then(parseJson);
 }
 /* ★投げない版。`{ok:false, error, detail}` を throw せずそのまま返す。
    既存の apiPost は error があれば必ず throw するため、savePartial の
@@ -2292,7 +2296,12 @@ function apiGet(params,timeoutMs){
 function apiPostRaw(body,timeoutMs){
   if(!CFG.url)return Promise.reject(new Error('NO_URL'));
   body.token=CFG.token;
-  return fetchWithTimeout(CFG.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)},timeoutMs||35000)
+  /* 薬の変更候補（medCand）だけ、ログインしている時に証明を添える（su-gas-auth.js・代表者の決定 2026-10-29）。
+     ほかの書き込み（savePartial・saveMealList）の本文は今までどおり */
+  var sendP=(body.action==='medCand'&&window.SUGasAuth)?window.SUGasAuth.addTo(body):Promise.resolve(body);
+  return sendP.then(function(b){
+    return fetchWithTimeout(CFG.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(b)},timeoutMs||35000);
+  })
     .then(function(r){ return r.text().then(function(t){
       var d; try{ d=JSON.parse(t); }catch(e){ throw new Error('応答が不正です'); }
       if(d && d.ok===undefined && d.error) throw new Error(d.error);   // ok を持たない応答は従来どおり
@@ -7637,12 +7646,16 @@ function mdAiProxy_(body){
   var cfg=mdAiCfg();
   if(!cfg) return Promise.reject(new Error('AI_NO_PROXY'));
   /* text/plain で送る（CORS の事前確認を起こさない・su-data-gas.js と同じ作法）。合言葉は本文にだけ載せる */
-  var opt={method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, redirect:'follow',
-           body:JSON.stringify({action:'ai', token:cfg.token, body:body})};
+  /* ログインしている時だけ証明を添える（su-gas-auth.js・計画書の GAS が READ_ROLE_CHECK の時に役割を確かめる・代表者の決定 2026-10-29） */
+  var req={action:'ai', token:cfg.token, body:body};
   var to=null;
   var pr=new Promise(function(res,rej){
     to=setTimeout(function(){ rej(new Error('AI_TIMEOUT')); }, MD_AI_TIMEOUT);
-    fetch(cfg.url,opt).then(function(r){
+    (window.SUGasAuth?window.SUGasAuth.addTo(req):Promise.resolve(req)).then(function(b){
+      var opt={method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, redirect:'follow',
+               body:JSON.stringify(b)};
+      return fetch(cfg.url,opt);
+    }).then(function(r){
       if(!r.ok) throw new Error('AI_NETWORK');
       return r.json().then(function(j){
         if(!j||typeof j!=='object') throw new Error('AI_BAD_JSON');

@@ -75,12 +75,15 @@
     body.token = t.token;
     var ac = typeof AbortController === 'function' ? new AbortController() : null;
     var timer = ac ? setTimeout(function () { ac.abort(); }, GAS_TIMEOUT_MS) : null;
-    return fetch(t.url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(body),
-      redirect: 'follow',
-      signal: ac ? ac.signal : undefined
+    /* ログインしている時だけ証明を添える（su-gas-auth.js・GAS が READ_ROLE_CHECK の時に役割を確かめる・代表者の決定 2026-10-29） */
+    return (window.SUGasAuth ? window.SUGasAuth.addTo(body) : Promise.resolve(body)).then(function (b) {
+      return fetch(t.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(b),
+        redirect: 'follow',
+        signal: ac ? ac.signal : undefined
+      });
     }).then(function (res) {
       if (!res.ok) throw new Error('HTTP ' + res.status);
       return res.json();

@@ -206,6 +206,7 @@ async function msgOf(sb, body) {
     const rb = { localStorage: { getItem: (k) => (k in store ? store[k] : null) },
       fetch: (url, opt) => { sent.push({ url: url, opt: opt }); return Promise.resolve({ ok: true, json: () => Promise.resolve(reply) }); },
       mdKey: (x) => String(x || '').trim(), MD_AI_MODEL: 'claude-sonnet-5', MD_AI_MAXTOK: 8000, MD_AI_TIMEOUT: 500,
+      window: {},   // 証明を添える部品（su-gas-auth.js）が無い画面＝今までどおりの本文（2026-10-29）
       Promise, JSON, Object, String, Number, Error, setTimeout, clearTimeout };
     vm.createContext(rb);
     vm.runInContext(cutR('mdAiCfg') + '\n' + cutR('mdAiAsk') + '\n' + cutR('mdAiProxy_') + '\n' + cutR('mdAiParse'), rb);

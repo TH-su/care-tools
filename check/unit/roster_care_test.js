@@ -498,7 +498,7 @@ async function seed(s, roster, opts) {
     const all = env.careCompare(gasRoster(), gasRoster().map(r => ({ source_id: String(r.id), visit_day: r.visitDay, hospital: r.hospital })));
     t('G 写しの部品が書いたとおりなら全員一致', all.same === 5 && !all.diff.length && !all.notInCopy.length && !all.notInSource.length && !all.noField.length, all);
     t('G 見比べは Google の名簿をボタンを押した時だけ読み、合言葉は本文で Google へだけ送る（各画面の getRoster と同じ送り方）',
-      /body: JSON\.stringify\(\{ action: 'getRoster', token: tgt\.token \}\)/.test(SC) && /'Content-Type': 'text\/plain;charset=utf-8'/.test(SC) &&
+      /var rb = \{ action: 'getRoster', token: tgt\.token \};[\s\S]{0,400}body: JSON\.stringify\(b\)/.test(SC) && /'Content-Type': 'text\/plain;charset=utf-8'/.test(SC) &&
       /\$\('b-care-check'\)\.addEventListener\('click'/.test(SC));
     // 砂場: ボタンを押した時の流れ（Google・データベースの応答だけ偽物）。画面に出る文字に値が入らないこと
     async function scRun(o) {

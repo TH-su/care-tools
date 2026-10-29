@@ -352,6 +352,7 @@ const CENSUS = {
   "menu-settings.html": [],
   "menu-settings.js": [],
   "su-app-gate.js": [],
+  "su-gas-auth.js": [],
   "moushiokuri-viewer.html": [],
   "overview-compare.html": [],
   "patch-calendar.html": [],

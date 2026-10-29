@@ -24,11 +24,16 @@
     body.token = t.token;          // 接続先の合言葉を正とする（payload 側の token では上書きさせない）
     /* 動作の速さの記録（su-perf.js）が GAS の呼び出しの種類を数えるための印（2026-10-24）。送る中身・形には触れない */
     try { if (typeof body.action === 'string' && /^[A-Za-z0-9_]{1,24}$/.test(body.action)) performance.mark('su:gas:' + body.action); } catch (e) {}
-    return fetch(t.endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(body),
-      redirect: 'follow'
+    /* ログインしている時だけ証明（accessToken）を添える（su-gas-auth.js・GAS が READ_ROLE_CHECK の時に役割を確かめる・代表者の決定 2026-10-29）。
+       部品が無い・ログインしていない・現場の端末・もう証明がある時は本文をそのまま送る。送り方は変えない */
+    var ga = global.SUGasAuth;
+    return (ga && typeof ga.addTo === 'function' ? ga.addTo(body) : Promise.resolve(body)).then(function (b) {
+      return fetch(t.endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(b),
+        redirect: 'follow'
+      });
     }).then(function (res) {
       if (!res.ok) throw new Error('HTTP ' + res.status);
       return res.json();
