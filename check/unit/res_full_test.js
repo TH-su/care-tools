@@ -239,7 +239,7 @@ function world(o) {
       w0 = world({ n: 2 });
       const m = mkAuth(role, runs, err);
       const r = await R.auto({ gas: w0.gas, auth: async () => m.A, now: NOW });
-      t(label, r.skip === want && m.calls.length === 0 && w0.gasCalls.length === 0, r);
+      t(label, r.skip === want && m.calls.every(c => c === 'res_mode_get') && w0.gasCalls.length === 0, [r, m.calls]);   // 印（切り替えた後か）だけは先に確かめる
     }
     w0 = world({ n: 2 });
     const m = mkAuth('admin', [{ at: '2026-10-28T14:59:00Z', status: 'done' }], false);   // 日本時間で前の日の 23:59
@@ -347,7 +347,7 @@ function world(o) {
     const A = { STATUS: { OK: 'ok' }, check: async () => ({ status: 'ok', role: 'admin' }),
       client: () => ({ from: () => ({ select: () => ({ order: () => ({ limit: async () => ({ data: [], error: null }) }) }) }), rpc: async (n) => { calls.push(n); return n === 'res_op_busy' ? { data: true, error: null } : { data: null, error: { code: 'x' } }; } }) };
     const r = await R.auto({ gas: async () => ({}), auth: async () => A });
-    t('自動の写し: 切り替える・戻すが動いている間は写さない', r.skip === 'op' && calls.join(',') === 'res_op_busy', [r, calls]);
+    t('自動の写し: 切り替える・戻すが動いている間は写さない', r.skip === 'op' && calls.join(',') === 'res_mode_get,res_op_busy', [r, calls]);
   }
   {
     const fn = SHADOW.slice(SHADOW.indexOf('function masterLiveOn'), SHADOW.indexOf('/* 体重の切り替え（統合 0032）'));
@@ -359,6 +359,13 @@ function world(o) {
       && /role === 'field'/.test(fn) && /if \(!masterLiveOn\(\)\)/.test(fn) && (fn.match(/confirm\(/g) || []).length === 3 && /textContent = /.test(fn) && !/innerHTML/.test(fn));
   }
   t('切り替え・戻すは端末に保存しない', touched.length === 0);
+
+  {
+    const A = { STATUS: { OK: 'ok' }, check: async () => ({ status: 'ok', role: 'admin' }),
+      client: () => ({ from: () => { throw new Error('読まない'); }, rpc: async (n) => (n === 'res_mode_get' ? { data: { ok: true, mode: 'live' }, error: null } : { data: null, error: { code: 'x' } }) }) };
+    const r = await R.auto({ gas: async () => { throw new Error('読まない'); }, rosterIds: async () => [], auth: async () => A });
+    t('自動の写し: 切り替えた後は Google を読まずに何もしない', r.skip === 'live', r);
+  }
 
   finished = true;
   console.log(`\n合格 ${pass} / 不合格 ${fail}`);

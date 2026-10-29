@@ -267,6 +267,10 @@
       var st = await A.check();
       if (!st || st.status !== A.STATUS.OK || st.role !== 'admin') return { skip: 'role' };
       var sb = A.client();
+      // 切り替えた後は写さない（写しの始まりが断るので、毎回 Google の全件を読んでから失敗しないように先に確かめる・計画書の反証レビュー 指摘11）
+      var md = null;
+      try { md = await sb.rpc('res_mode_get'); } catch (e) { md = null; }
+      if (md && md.data && md.data.mode === 'live') return { skip: 'live' };
       var q = await sb.from('res_sync_runs').select('at,status').order('at', { ascending: false }).limit(10);
       if (q.error) return { skip: 'nodb' };
       var now = io.now || Date.now(), rows = Array.isArray(q.data) ? q.data : [];

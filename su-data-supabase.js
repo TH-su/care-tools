@@ -117,12 +117,21 @@
             if (method === 'get' && !caughtUp) { caughtUp = true; mirrorSoon(A, opts); }   // 開いた時に1回、写し返しの残りを追いつかせる
             return invoke(A, trainingBody(method, args)).then(function (res) {
               if (method === 'put' && res && res.ok === true) mirrorSoon(A, opts);
+              // AI の中継はまだ Google（計画書の GAS）にあるので、ping の AI の状態（キーの有無・回数）は Google の ping から取る（計画書の反証レビュー 指摘2）
+              if (method === 'ping' && res && res.ok === true && typeof gasFn === 'function') {
+                return Promise.resolve(gasFn()).then(function (g) {
+                  if (g && g.ok === true && g.ai) res.ai = g.ai; else delete res.ai;
+                  return res;
+                }, function () { delete res.ai; return res; });
+              }
               return res;
             });
           });
         });
       });
     },
+    /* 閉じる直前の送信を Google へ送ってよいか（印が「切り替える前」と1分以内に確かめてある時だけ） */
+    beaconGas: function () { return modeCache === 'shadow' && Date.now() - modeAt < 60000; },
     _reset: function () { modeCache = null; modeAt = 0; mirroring = null; mirrorAgain = false; caughtUp = false; }
   };
   var caughtUp = false;
