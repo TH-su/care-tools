@@ -1028,6 +1028,28 @@
     return (applicants || []).filter(function (a) { return a && !a.staff_id && isDate(a.retain_until) && a.retain_until < today; });
   }
 
+  /* 保管期限で消した記録の1行（操作記録 audit_log の ats_purge の行）を画面に出す形にする（2026-10-29 本人指示「消した件数を記録に残して」）。
+     fields は ['count:人数', 'files:台帳の書類の件数', 'removed:置き場から消した件数']（files・removed は 0039 から。それより前の行は null＝記録なし）。人数が読めない行は null */
+  function purgeLogRow(r) {
+    if (!r || !Array.isArray(r.fields)) return null;
+    var count = null, files = null, removed = null;
+    r.fields.forEach(function (f) {
+      var m = /^(count|files|removed):(\d{1,6})$/.exec(String(f));
+      if (m && m[1] === 'count') count = Number(m[2]);
+      else if (m && m[1] === 'files') files = Number(m[2]);
+      else if (m) removed = Number(m[2]);
+    });
+    /* 書類の件数は、置き場から消した件数（removed・台帳に無い PDF を含む）があればそれ、無ければ台帳の件数 */
+    if (removed !== null) files = Math.max(removed, files || 0);
+    if (count === null) return null;
+    var t = new Date(r.at), at = '';
+    if (!isNaN(t.getTime())) {
+      var j = new Date(t.getTime() + 9 * 3600 * 1000);
+      at = j.toISOString().slice(0, 10) + ' ' + j.toISOString().slice(11, 16);
+    }
+    return { at: at, by: typeof r.actor_email === 'string' ? r.actor_email : '', count: count, files: files };
+  }
+
   /* ── 応募の知らせの貼り付け（2026-10-27 本人指示） ──
      求人サイトの応募の知らせ（メール本文・管理画面の応募者の欄）を貼ると、読める項目だけを拾って返す。
      貼った文面はここで読むだけで、返すのは拾った値だけ（文面そのものは返さない・保存しない）。
@@ -1293,7 +1315,7 @@
     firstContactLate: firstContactLate, replyDueState: replyDueState, evalStatusText: evalStatusText, evalVisible: evalVisible,
     evalCheck: evalCheck, normEvalItems: normEvalItems, normSettings: normSettings,
     scheduleBuckets: scheduleBuckets, periodRange: periodRange, rate: rate, funnel: funnel,
-    retainUntil: retainUntil, purgeable: purgeable, decodeCsv: decodeCsv,
+    retainUntil: retainUntil, purgeable: purgeable, purgeLogRow: purgeLogRow, decodeCsv: decodeCsv,
     parsePosting: parsePosting, postingDup: postingDup, JOB_WORDS: JOB_WORDS, CAL_KINDS: CAL_KINDS, isYm: isYm, calMonth: calMonth, calEvents: calEvents,
     todayJST: todayJST, addDays: addDays, addMonths: addMonths, daysBetween: daysBetween, isDate: isDate
   };

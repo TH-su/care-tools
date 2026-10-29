@@ -104,7 +104,20 @@ t('メニューは端末の保存領域へ直接書かない・通信しない�
 const def = JSON.parse(INDEX.slice(INDEX.indexOf('>', INDEX.indexOf('id="menuDef"')) + 1, INDEX.indexOf('</script>', INDEX.indexOf('id="menuDef"'))));
 const tiles = def.sections.flatMap((s) => s.tiles);
 const withDue = tiles.filter((x) => x.due);
-t('札を出すのは個別機能訓練計画書のタイルだけで、事務所専用（officeOnly）', withDue.length === 1 && withDue[0].href === 'training-plan.html' && withDue[0].officeOnly === true && withDue[0].due === 'tp_menu_due', withDue);
+t('札を出すのは個別機能訓練計画書と採用管理（2026-10-29）のタイルだけで、どちらも事務所専用（officeOnly）・採用管理は管理者だけ（adminOnly）',
+  withDue.length === 2 && withDue.every((x) => x.officeOnly === true)
+  && withDue.some((x) => x.href === 'training-plan.html' && x.due === 'tp_menu_due')
+  && withDue.some((x) => x.href === 'ats.html' && x.due === 'ats_menu_due' && x.adminOnly === true), withDue);
+/* 採用管理の保管期限（2026-10-29 本人指示）: 端末に残すのは期限の日付だけ。メニューが今日の日付で数える */
+const ex = (dates, at) => J({ v: 1, at: at || TODAY, overdue: 0, warn: 0, none: 0, expire: dates });
+t('保管期限: 今日より前の日付の数を「保管期限切れn」と書く（今日の日付ちょうどはまだ切れていない）',
+  dueText(ex(['2026-10-01', '2026-10-23', '2026-10-24', '2026-11-30']), TODAY) === '保管期限切れ2（10/24時点）', dueText(ex(['2026-10-01', '2026-10-23', '2026-10-24', '2026-11-30']), TODAY));
+t('保管期限: 前に数えた日のままでも、今日の日付で期限を過ぎた分が出る（採用管理を開かない日が続いても札が出る）',
+  dueText(ex(['2026-10-10', '2026-10-20'], '2026-10-01'), TODAY) === '保管期限切れ2（10/1時点）', dueText(ex(['2026-10-10', '2026-10-20'], '2026-10-01'), TODAY));
+t('保管期限: 期限を過ぎた方がいなければ出さない・空の並びも出さない', dueText(ex(['2026-10-24', '2027-01-01']), TODAY) === '' && dueText(ex([]), TODAY) === '', '');
+t('保管期限: 形の違う日付・並びでない・2000件を超える時は出さない（壊れた値で札を出さない）',
+  dueText(ex(['2026-10-01', '甲野']), TODAY) === '' && dueText(ex(['2026-13-01']), TODAY) === '' && dueText(ex([20261001]), TODAY) === ''
+  && dueText(ex('2026-10-01'), TODAY) === '' && dueText(ex(Array(2001).fill('2026-10-01')), TODAY) === '', '');
 t('札の色は変数で持ち、白地で 7:1 以上（--due-tx: #a50e0e）', /--due-tx: #a50e0e;/.test(INDEX) && /\.tile \.due \{[^}]*color: var\(--due-tx\)/.test(INDEX), '');
 t('「戻る」で戻った時（pageshow の persisted）と、別のタブで件数が書き換わった時（storage）に札だけ付け直す', /addEventListener\('pageshow', function \(e\) \{ if \(e\.persisted\) refreshDue\(\); \}\)/.test(INDEX) && /addEventListener\('storage', function \(e\) \{\s*if \(!e\.key \|\| \(\/\^\[a-z0-9_\]\{1,40\}\$\/\.test\(e\.key\) && main\.querySelector\('a\.tile\[data-due="' \+ e\.key \+ '"\]'\)\)\) refreshDue\(\);/.test(INDEX), '');
 t('付け直しは札のあるタイル（data-due）だけを読み、古い札を外してから付ける', /querySelectorAll\('a\.tile\[data-due\]'\)/.test(INDEX) && /if \(old\) tiles\[i\]\.removeChild\(old\);/.test(INDEX), '');
