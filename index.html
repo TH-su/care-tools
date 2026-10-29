@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-i3TB3hQJoFV68KHaiVCWEQH6HelJguLw/IPxCL/D7g4=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-k71SqM1hhGDc2ktxndsGqmWbWsiKh4urreAfGUIAa94=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 検索エンジンにこのページと配下ツールを辿らせない。
@@ -632,6 +632,8 @@ main {
     }, function (kind) {
       // 役割が分からないまま（控えが無く、ログインしていない・確かめられない）なら、ログインしていない時の既定に倒す
       if (role === 'pending' && kind !== 'ok') { role = null; rebuild(null, null); }
+      // ログアウトした後に「戻る」で戻った時（控えもログインの記録も消えていて onChange が呼ばれない）も、前の役割の並びを残さない
+      else if (kind === 'out' && role !== null) { role = null; rebuild(null, null); }
       if (kind === 'error' && role !== null) return;   // 確かめられない時は、出している控えの役割のまま
       drawRole(kind === 'error' ? 'unsure' : (role || 'none'));
     });
