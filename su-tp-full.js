@@ -69,6 +69,13 @@
     if (c === 'norun') return '別の端末で写しが始まったため、この写しは止めました。';
     if (c === 'badrow') return '形の合わない計画書がありました。';
     if (c === 'toolarge') return '大きすぎる計画書がありました。';
+    if (c === 'stale') return '15分以内の写しがありません。もう一度押してください。';
+    if (c === 'notfrozen') return 'Google の保存を止めた後の写しではありません。もう一度押してください。';
+    if (c === 'noop') return '切り替えの操作が時間切れになりました。もう一度押してください。';
+    if (c === 'live') return 'もう切り替わっています。';
+    if (c === 'mirror') return 'Google への写し返しが済んでいません。先に「写しの期間に戻す」を最後まで済ませてください。';
+    if (c === 'busy') return '別の画面で「切り替える」か「写しの期間に戻す」が動いています。終わるのを待ってから押してください（30分たつと押せます）。';
+    if (c === 'pending') return 'Google への写し返しが残っています。もう一度押してください。';
     return 'データベースが受け付けませんでした（' + c + '）。';
   }
   function pool(items, n, fn) {
@@ -126,6 +133,10 @@
       var b = await rpc('tp_import_begin');
       if (!b || !b.ok) return fail(dbWhy(b && b.error));
       runId = b.run;
+      if (io.frozen) {   // 切り替えの時は「Google の保存を止めた後の写し」の印を付ける（tp_set_mode が確かめる）
+        var fz = await rpc('tp_import_mark_frozen', { p_run: runId });
+        if (!fz || !fz.ok) return stop('止めた後の写しの印を付けられませんでした。');
+      }
       var tot = { inserted: 0, updated: 0, unchanged: 0 };
       for (var i = 0; i < ck.chunks.length; i++) {
         var r = await rpc('tp_import_chunk', { p_run: runId, p_rows: ck.chunks[i] });
@@ -179,6 +190,10 @@
       var now = io.now || Date.now(), rows = Array.isArray(q.data) ? q.data : [];
       if (rows.some(function (r) { return r.status === 'done' && jstDay(r.at) === jstDay(now); })) return { skip: 'today' };
       if (rows.length && now - new Date(rows[0].at).getTime() < AUTO_GAP_MS) return { skip: 'recent' };
+      // 切り替える・戻すの操作が動いている間は写さない（その写しが切り替えの写しを取り消すため）
+      var busy = null;
+      try { busy = await sb.rpc('tp_op_busy'); } catch (e) { busy = null; }   // 0038 の前（関数が無い）は今までどおり
+      if (busy && busy.data === true) return { skip: 'op' };
       return await run({ gas: io.gas, rosterIds: io.rosterIds, screen: 'training-plan', rpc: function (name, args) { return sb.rpc(name, args); }, progress: function () {} });
     } catch (e) { return { skip: 'error' }; }
   }
@@ -191,5 +206,72 @@
     return '';
   }
 
-  root.SUTpFull = { run: run, auto: auto, autoNote: autoNote, _keysOf: keysOf, _chunk: chunk, _compare: compare, _dbWhy: dbWhy, _jstDay: jstDay };
+  /* ── 切り替える・戻す（統合 0038・入居者マスタの su-res-full.js と同じ手順）──
+   * io = run と同じ（gas・rosterIds・rpc・progress）＋ token()（ログインの証明を返す）
+   * 切り替える: 札 → 計画書の GAS の保存を止める → 止めた後の写し（全件一致の時だけ）→ 切り替える → 札を返す。途中で止まったら GAS の保存を戻す
+   * 戻す: 札 → 写しの期間に戻す → Google へ最後まで写し返して止める印を外す → 札を返す */
+  async function gasAdmin(io, body) {
+    var at = await io.token();
+    if (!at) throw new Error('ログインしてからもう一度押してください');
+    var j = await io.gas(Object.assign({}, body, { accessToken: at }));
+    if (!j || j.ok !== true) throw new Error(String(j && j.error || 'Google が受け付けませんでした').replace(/^Error: (refused: )?/, ''));
+    return j;
+  }
+  async function opBegin(io, op) {
+    var r = await io.rpc('tp_op_begin', { p_op: op });
+    if (!r || r.error || !r.data || r.data.ok !== true) throw new Error(dbWhy(r && (r.error || r.data && r.data.error)));
+    return r.data.token;
+  }
+  async function opEnd(io, tok) { try { await io.rpc('tp_op_end', { p_token: tok }); } catch (e) { /* 30分で失効する */ } }
+  async function cutover(io) {
+    var say = io.progress || function () {};
+    var frozen = false, tok = null;
+    async function undo(why) {
+      if (frozen) { try { await gasAdmin(io, { action: 'tpCutover', on: false, opToken: tok }); } catch (e) { why += '（Google の保存を止めたままの可能性があります。もう一度「切り替える」か「写しの期間に戻す」を押してください）'; } }
+      return { ok: false, why: why };
+    }
+    try {
+      try { tok = await opBegin(io, 'cutover'); } catch (e) { return { ok: false, why: String(e && e.message || e) }; }
+      say('計画書の Google への直接の保存を止めています…');
+      frozen = true;
+      await gasAdmin(io, { action: 'tpCutover', on: true, opToken: tok });
+      var r = await run(Object.assign({}, io, { frozen: true }));
+      if (!r.ok) return await undo(r.why);
+      var bad = r.cmp.diff.length + r.cmp.notInCopy.length;
+      if (bad) return await undo('写しが Google と違う計画書が ' + bad + '件あったので、切り替えを止めました。');
+      say('切り替えています…');
+      var m = await io.rpc('tp_set_mode', { p_mode: 'live' });
+      if (!m || m.error || !m.data || m.data.ok !== true) {
+        var g = null;
+        try { g = await io.rpc('tp_mode_get', {}); } catch (e) { g = null; }
+        if (!(g && g.data && g.data.mode === 'live')) return await undo(dbWhy(m && (m.error || m.data && m.data.error)));
+      }
+      return { ok: true, docs: r.docs };
+    } catch (e) {
+      return await undo(String(e && e.message || e));
+    } finally {
+      if (tok) await opEnd(io, tok);
+    }
+  }
+  async function back(io) {
+    var say = io.progress || function () {};
+    var tok = null;
+    try {
+      try { tok = await opBegin(io, 'back'); } catch (e) { return { ok: false, why: String(e && e.message || e) }; }
+      say('写しの期間に戻しています…');
+      var m = await io.rpc('tp_set_mode', { p_mode: 'shadow' });
+      if (!m || m.error || !m.data || m.data.ok !== true) return { ok: false, why: dbWhy(m && (m.error || m.data && m.data.error)) };
+      say('Google へ写し返しています…');
+      var last = null;
+      for (var i = 0; i < 5; i++) {
+        try { last = await gasAdmin(io, { action: 'tpCutover', on: false, opToken: tok }); break; }
+        catch (e) { last = e; if (!/残っています/.test(String(e && e.message))) break; }
+      }
+      if (!last || last instanceof Error) return { ok: false, why: '写しの期間には戻しました。Google への写し返しが終わっていません: ' + String(last && last.message || '') + '　もう一度「写しの期間に戻す」を押してください。' };
+      return { ok: true, docs: last.docs || 0 };
+    } catch (e) { return { ok: false, why: String(e && e.message || e) }; }
+    finally { if (tok) await opEnd(io, tok); }
+  }
+
+  root.SUTpFull = { run: run, auto: auto, autoNote: autoNote, cutover: cutover, back: back, _keysOf: keysOf, _chunk: chunk, _compare: compare, _dbWhy: dbWhy, _jstDay: jstDay };
 })(typeof window !== 'undefined' ? window : this);

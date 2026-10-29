@@ -3,7 +3,8 @@
      A 訓練計画書の専用GASへ送る本文が、入口へ置き換える前と一字一句同じ（get・put・put＋証明・完全に削除・ping・ai・閉じる直前の送信）
        期待する文字列は置き換え前のコード（kvGet・kvRaw・kvPutBeacon を直接呼んでいた形）から書き写したもの
      B スイッチが切・無い・読めない・Supabase の道が読み込まれていない時は gas の道
-     C スイッチが入なら Supabase の道で「まだ使えません」と断り、Google へは流さない
+     C スイッチが入なら Supabase の道へ。ログインできない時は断り、Google へは流さない（AI の中継は「まだ使えません」）
+     F 計画書の道（2026-10-29）: 印が切り替える前・0038 の前なら gas の道を同じ本文で。切り替えた後は tp-write へ（合言葉なし）、保存できたら写し返し
      D 入口を通らない呼び出し（kvGet・kvRaw・入居者の4つ・context）は、端末の su_backend が 'supabase' でもスイッチが入でも gas の道
        （入居者マスタの GAS 宛ての mGet は巻き込まれない）
      E 読み込んだだけでは通信しない。スイッチの読み直しは入口が呼ばれた時だけ・1分に1回
@@ -58,6 +59,7 @@ function box(o) {
     Date: { now: () => now },
     Promise, JSON, Object, Array, String, Number, Error, setTimeout, clearTimeout
   };
+  if (o.auth) w.SUAuth = o.auth;
   w.window = w;
   vm.createContext(w);
   vm.runInContext(read('su-data.js'), w);
@@ -143,7 +145,7 @@ function sameShape(p) { return p && p.url === TP_URL && p.method === 'POST' && p
     for (const f of [() => x.w.tpGet('training_plan:index'), () => x.w.tpPut('training_plan:M1', DOC, 3), () => x.w.tpPutAllowDrop('training_plan:M1', DOC, 3), () => x.w.tpPing()]) {
       try { await f(); errs.push('OK'); } catch (e) { errs.push(String(e && e.message)); }
     }
-    t('get・put・完全に削除・ping はすべて「まだ使えません」で断る', errs.length === 4 && errs.every(m => /まだ使えません/.test(m)), errs);
+    t('ログインの部品が無い時、get・put・完全に削除・ping はすべて断る', errs.length === 4 && errs.every(m => /ログイン/.test(m)), errs);
     t('計画書の GAS へは1本も送らない', x.posts.length === 0, x.posts);
     t('閉じる直前の送信もしない（false）', x.w.SU.data.training.putBeacon('training_plan:M1', DOC, 3, x.w.tpTarget()) === false && x.beacons.length === 0);
     await x.w.SU.data.training.ai(AIB, x.w.tpTarget());
@@ -161,6 +163,70 @@ function sameShape(p) { return p && p.url === TP_URL && p.method === 'POST' && p
     let threw = false, isP = false;
     try { const p = x.w.SU.data.training.put('k', {}, 1, {}, x.w.tpTarget()); isP = !!(p && typeof p.then === 'function'); await p.catch(() => {}); } catch (e) { threw = true; }
     t('断りは同期に throw せず Promise で返す', isP && !threw);
+  }
+
+  console.log('\n— F. 計画書の道（スイッチ training が入）—');
+  function fakeAuth(o) {
+    const calls = [];
+    return { calls, A: {
+      STATUS: { OK: 'ok' },
+      check: async () => (o.signedOut ? { status: 'signed_out' } : { status: 'ok', role: 'office' }),
+      client: () => ({
+        rpc: async (n) => { calls.push(['rpc', n]); return o.modeErr ? { data: null, error: o.modeErr } : { data: { ok: true, mode: o.mode || 'shadow' }, error: null }; },
+        functions: { invoke: async (name, opt) => { calls.push(['invoke', name, JSON.parse(JSON.stringify(opt.body))]);
+          if (o.netErr) return { data: null, error: { message: 'x' } };
+          if (o.refuse) return { data: null, error: { context: { json: async () => o.refuse } } };
+          return { data: o.reply || { ok: true, rev: 4 }, error: null }; } },
+        auth: { getSession: async () => ({ data: { session: { access_token: 'jwt.h.s' } } }) }
+      }) } };
+  }
+  {
+    const f = fakeAuth({ signedOut: true });
+    const x = box({ flags: { supabase: { training: true } }, auth: f.A });
+    let m = 'OK'; try { await x.w.tpPut('training_plan:M1', DOC, 3); } catch (e) { m = e.message; }
+    t('ログインしていない → 断る・Google へ流さない', /ログインしていません/.test(m) && x.posts.length === 0, [m, x.posts.length]);
+  }
+  for (const [label, o] of [['印が切り替える前', { mode: 'shadow' }], ['0038 の前（関数が無い）', { modeErr: { code: 'PGRST202' } }]]) {
+    const f = fakeAuth(o);
+    const x = box({ flags: { supabase: { training: true } }, auth: f.A, accessToken: 'aaa.bbb.ccc' });
+    await x.w.tpGet('training_plan:index');
+    await x.w.tpPut('training_plan:M1', DOC, 3);
+    t(label + ' → gas の道を置き換え前と一字一句同じ本文で・tp-write は呼ばない', x.posts.length === 2 && x.posts[0].body === EXP.get && x.posts[1].body === EXP.putAt
+      && sameShape(x.posts[1]) && !f.calls.some(c => c[0] === 'invoke'), x.posts.map(p => p.body));
+  }
+  {
+    const f = fakeAuth({ mode: 'live' });
+    const x = box({ flags: { supabase: { training: true } }, auth: f.A, accessToken: 'aaa.bbb.ccc' });
+    const r = await x.w.tpPut('training_plan:M1', DOC, 3);
+    await settle(30);
+    const inv = f.calls.filter(c => c[0] === 'invoke');
+    t('切り替えた後: 保存は tp-write へ同じ本文（合言葉なし）・応答をそのまま返す', inv.length === 1 && inv[0][1] === 'tp-write'
+      && JSON.stringify(inv[0][2]) === '{"action":"put","key":"training_plan:M1","data":' + JSON.stringify(DOC) + ',"rev":3,"accessToken":"aaa.bbb.ccc"}' && r && r.ok === true, [inv, r]);
+    t('保存できたら計画書の GAS へ写し返し（tpMirror・ログインの証明・合言葉は GAS へだけ）', x.posts.length === 1 && x.posts[0].url === TP_URL
+      && x.posts[0].body === '{"action":"tpMirror","accessToken":"jwt.h.s","token":"tok-tp"}', x.posts.map(p => p.body));
+    await x.w.tpGet('training_plan:M1');
+    await x.w.tpGet('training_plan:M2');
+    await settle(30);
+    t('開いた時（最初の読み取り）に1回だけ写し返しの残りを追いつかせる', x.posts.length === 2 && f.calls.filter(c => c[0] === 'invoke').length === 3, x.posts.length);
+  }
+  {
+    const f = fakeAuth({ mode: 'live', refuse: { ok: false, error: '保存できませんでした（新しい保存先が受け付けませんでした）', code: 'badrow' } });
+    const x = box({ flags: { supabase: { training: true } }, auth: f.A });
+    const r = await x.w.SU.data.training.put('training_plan:M1', DOC, 3, {}, x.w.tpTarget());
+    await settle(30);
+    t('tp-write の断りは GAS と同じ形のまま返す・写し返しは送らない', r && r.ok === false && r.code === 'badrow' && x.posts.length === 0, [r, x.posts.length]);
+  }
+  {
+    const f = fakeAuth({ mode: 'live', netErr: true });
+    const x = box({ flags: { supabase: { training: true } }, auth: f.A });
+    let m = 'OK'; try { await x.w.SU.data.training.put('training_plan:M1', DOC, 3, {}, x.w.tpTarget()); } catch (e) { m = e.message; }
+    t('届かない時は失敗・Google へ流さない', /届きませんでした/.test(m) && x.posts.length === 0, [m, x.posts.length]);
+  }
+  {
+    const f = fakeAuth({ mode: 'live' });
+    const x = box({ flags: { supabase: { training_ai: true } }, auth: f.A });
+    let m = 'OK'; try { await x.w.SU.data.training.ai(AIB, x.w.tpTarget()); } catch (e) { m = e.message; }
+    t('AI の中継は、まだこの道に無い（まだ使えません・Google へ流さない）', /まだ使えません/.test(m) && x.posts.length === 0, m);
   }
 
   console.log('\n— D. 入口を通らない呼び出しは常に gas —');
@@ -201,7 +267,7 @@ function sameShape(p) { return p && p.url === TP_URL && p.method === 'POST' && p
     await settle();
     t('読めたスイッチを控えに書く', JSON.parse(x.store.su_backend_flags || 'null').supabase.training === true, x.store.su_backend_flags);
     let m = 'OK'; try { await x.w.tpPing(); } catch (e) { m = e.message; }
-    t('次の呼び出しから新しいスイッチで決める（入＝断る）', /まだ使えません/.test(m) && x.posts.length === 1, m);
+    t('次の呼び出しから新しいスイッチで決める（入＝新しい保存先の道・ログインの部品が無ければ断る）', /ログイン/.test(m) && x.posts.length === 1, m);
     t('1分以内は読み直さない', x.flagFetches.length === 1, x.flagFetches.length);
     x.advance(61000);
     try { await x.w.tpPing(); } catch (e) { /* 断り */ }

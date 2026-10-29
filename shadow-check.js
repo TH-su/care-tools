@@ -1096,6 +1096,7 @@
     catch (e) { $('rf-verdict').className = 'msg warn'; $('rf-verdict').textContent = '全項目の写しの記録を読めませんでした。'; }
     try { await loadResMode(sb); } catch (e) { /* 0036 の前・読めない時はボタンを出さない */ }
     try { await loadTpRuns(sb); } catch (e) { $('tpf-verdict').className = 'msg warn'; $('tpf-verdict').textContent = '計画書の写しの記録を読めませんでした。'; }
+    try { await loadTpMode(sb); } catch (e) { /* 0038 の前・読めない時はボタンを出さない */ }
     try { await loadPatch(sb); }
     catch (e) {
       $('pt-verdict').className = 'msg warn';
@@ -1343,6 +1344,69 @@
     }
   }
 
+  /* 個別機能訓練計画書の正本の切り替え（統合 0038・2026-10-29）: 入居者マスタと同じ手順（su-tp-full.js の cutover・back）。管理者だけ・事務所PCだけ。
+   * 切り替えボタンは切り替えスイッチ training が入で、この端末に計画書と入居者マスタの接続先がある時だけ出す。
+   * 計画書の GAS の印が立ったまま（前の戻しが途中）の時は、知らせて「写しの期間に戻す」を出す */
+  function trainingOn() { var sw = window.SUKv ? SUKv._flags() : null; return !!(sw && sw.supabase && sw.supabase.training === true); }
+  async function loadTpMode(sb) {
+    var line = $('tpf-mode'), bc = $('b-tp-cut'), bb = $('b-tp-back');
+    bc.hidden = true; bb.hidden = true; line.className = 'msg'; line.textContent = '';
+    if (!(me && me.role === 'admin')) return;
+    var r = await sb.rpc('tp_mode_get');
+    if (r.error || !r.data) return;
+    var live = r.data.mode === 'live', on = trainingOn(), stuck = false;
+    var tt = tpTarget(), mt = rmasterTarget();
+    if (!live && tt) { try { var pg = await rmasterPost(tt, { action: 'ping' }); stuck = !!(pg && pg.switched === true); } catch (e) { stuck = false; } }
+    if (live) { line.className = 'msg ok'; line.textContent = '計画書の正本は新しい保存先（Supabase）です。Google へは保存のたびに写し返しています。'; }
+    else if (stuck) { line.className = 'msg warn'; line.textContent = '前の「計画書を写しの期間に戻す」が途中です（Google の保存を止めたままです）。もう一度押して、最後まで済ませてください。'; }
+    else line.textContent = '計画書の正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（training）を入れる PR の取り込みが要ります。');
+    bc.hidden = live || stuck || !on || !tt || !mt;
+    bb.hidden = !(live || stuck) || !tt;
+  }
+  async function runTpOp(kind) {
+    var v = $('tpf-mode');
+    function say(t, k) { v.className = 'msg' + (k ? ' ' + k : ''); v.textContent = t; }
+    if (!(me && me.role === 'admin' && me.status === SUAuth.STATUS.OK)) { say('管理者（二段階認証済み）のアカウントで開いてください。', 'warn'); return; }
+    var role = ''; try { role = localStorage.getItem('su_device_role') || ''; } catch (e) { role = ''; }
+    if (role === 'field') { say('この端末は「現場」です。事務所のパソコンで行ってください。', 'warn'); return; }
+    var tt = tpTarget(), mt = rmasterTarget();
+    if (!tt || (kind === 'cut' && !mt)) { say('この端末には計画書・入居者マスタの接続先（Google）がありません。この端末で両方を開いてから、押し直してください。', 'warn'); return; }
+    if (kind === 'cut') {
+      if (!trainingOn()) { say('切り替えスイッチ（training）が入っていません。', 'warn'); return; }
+      if (!confirm('個別機能訓練計画書の正本を新しい保存先（Supabase）へ切り替えますか？\n\n数分かかります。その間は計画書の保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、保存のたびに Google へ写し返します。いつでも「計画書を写しの期間に戻す」で戻せます。')) return;
+    } else {
+      if (!confirm('個別機能訓練計画書を写しの期間に戻しますか？\n\n新しい保存先での保存を止め、切り替えていた間の保存を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。')) return;
+    }
+    if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
+    var bc = $('b-tp-cut'), bb = $('b-tp-back');
+    bc.disabled = true; bb.disabled = true;
+    var sb = SUAuth.client();
+    try {
+      var io = {
+        gas: function (body) { return rmasterPost(tt, body); },
+        rosterIds: async function () {
+          var j = await rmasterPost(mt, { action: 'getRoster' });
+          if (!j || !Array.isArray(j.roster)) throw new Error('名簿');
+          return j.roster.map(function (x) { return x && x.id; });
+        },
+        rpc: function (name, args) { return sb.rpc(name, args); },
+        token: async function () { var s2 = await sb.auth.getSession(); return s2 && s2.data && s2.data.session ? s2.data.session.access_token : null; },
+        progress: function (t) { say(t); }
+      };
+      var res = kind === 'cut' ? await SUTpFull.cutover(io) : await SUTpFull.back(io);
+      if (!res.ok) { say((kind === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + res.why, 'warn'); return; }
+      say(kind === 'cut' ? '切り替えました（計画書 ' + res.docs + '件）。計画書の画面は読み込み直すと新しい保存先で保存します。'
+                         : '写しの期間に戻しました（Google へ写し返した計画書 ' + res.docs + '件）。正本は Google です。', 'ok');
+    } catch (e) {
+      say('止まりました: ' + String(e && e.message || e), 'warn');
+    } finally {
+      bc.disabled = false; bb.disabled = false;
+      var keep = v.textContent, kc = v.className;
+      try { await loadTpMode(sb); await loadTpRuns(sb); } catch (e) { /* 読み直せなくても結果の文は残す */ }
+      v.className = kc; v.textContent = keep;
+    }
+  }
+
   /* 入居者マスタの正本の切り替え（統合 0036・2026-10-29 代表者の決定 案1）: 管理者だけ・事務所PCだけ。
    * 切り替える＝Google の保存を止める→止めた後の全項目の写し→全員一致の時だけタブを写す→切り替える（su-res-full.js の cutover）。
    * 戻す＝写しの期間に戻す→Google へ最後まで写し返してから止める印を外す（back）。どちらもデータベースの操作の札を取ってから行う。
@@ -1528,6 +1592,8 @@
   $('b-res-full').addEventListener('click', function () { msg(''); runResFull(); });
   $('b-res-cut').addEventListener('click', function () { msg(''); runResOp('cut'); });
   $('b-tp-full').addEventListener('click', function () { msg(''); runTpFull(); });
+  $('b-tp-cut').addEventListener('click', function () { msg(''); runTpOp('cut'); });
+  $('b-tp-back').addEventListener('click', function () { msg(''); runTpOp('back'); });
   $('b-res-back').addEventListener('click', function () { msg(''); runResOp('back'); });
   $('b-check').addEventListener('click', function () { msg(''); runCheck(); });
   $('b-mirror-check').addEventListener('click', function () { msg(''); runMirrorCheck(); });
