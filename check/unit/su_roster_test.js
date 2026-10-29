@@ -259,7 +259,7 @@ const ON = { supabase: { care_schedule_v2: true, master_roster_read: true } };
       'var DB=null;this.__renders=0;function render(){__renders++;}function refresh(){__renders++;}' +
       grab(pre + 'MasterCfg') + grab(pre + 'FetchHosp') + grab(pre + 'WatchState') +
       ';this.__get=function(){return {map:' + pre + 'HospMap,rev:' + pre + 'HospRev,busy:' + pre + 'HospBusy};};';
-    t(file + ': su-roster.js を su-kv.js の後に読む', /<script src="su-kv\.js\?v=[^"]+"><\/script>\n<!--[^\n]*-->\n<script src="su-roster\.js\?v=2026-10-24\.2"><\/script>/.test(html));
+    t(file + ': su-roster.js を su-kv.js の後に読む', /<script src="su-kv\.js\?v=[^"]+"><\/script>\n<!--[^\n]*-->\n<script src="su-roster\.js\?v=2026-10-28"><\/script>/.test(html));
     async function go(withPart, cfg) {
       const s = sandbox(cfg);
       const calls = [];
@@ -387,7 +387,7 @@ const ON = { supabase: { care_schedule_v2: true, master_roster_read: true } };
     const grab = name => { const i = html.indexOf('function ' + name + '('); let d = 0, j = html.indexOf('{', i); for (; j < html.length; j++) { if (html[j] === '{') d++; else if (html[j] === '}' && --d === 0) break; } return html.slice(i, j + 1); };
     const code = "var WS_RM_CFG_KEY='rmaster_cfg';var wsHospMap=null,wsHospRev=null,wsHospBusy=false;var careNamesCache_=null;" +
       grab('wsMasterCfg_') + grab('wsFetchHosp_') + ';this.__get=function(){return {map:wsHospMap,rev:wsHospRev,busy:wsHospBusy};};';
-    t('work-schedule.html: su-roster.js を su-kv.js の直後に読む', /<script src="su-kv\.js\?v=[^"]+"><\/script>\n<script src="su-roster\.js\?v=2026-10-24\.2"><\/script>/.test(html));
+    t('work-schedule.html: su-roster.js を su-kv.js の直後に読む', /<script src="su-kv\.js\?v=[^"]+"><\/script>\n<script src="su-roster\.js\?v=2026-10-28"><\/script>/.test(html));
     async function goWs(withPart, cfg) {
       const s = sandbox(cfg);
       const calls = [];
@@ -428,7 +428,7 @@ const ON = { supabase: { care_schedule_v2: true, master_roster_read: true } };
   }
   {
     const html = fs.readFileSync(path.join(ROOT, 'care-schedule.html'), 'utf8');
-    t('care-schedule.html: su-roster.js を su-kv.js の直後に読む', /<script src="su-kv\.js\?v=[^"]+"><\/script>\n<script src="su-roster\.js\?v=2026-10-24\.2"><\/script>/.test(html));
+    t('care-schedule.html: su-roster.js を su-kv.js の直後に読む', /<script src="su-kv\.js\?v=[^"]+"><\/script>\n<script src="su-roster\.js\?v=2026-10-28"><\/script>/.test(html));
     const i = html.indexOf('function csStateRevRefresh_('), body = html.slice(i, html.indexOf('\n}\n', i));
     t('care-schedule.html: 名簿の取り直しは入口を通す（場所 care・版数つき・入居者マスタの URL）',
       /window\.SURoster \? window\.SURoster\.getRoster\(csRosterRaw_, \{ where: 'care', masterUrl: cfg\.url, withRev: true \}\) : csRosterRaw_\(\)/.test(body));

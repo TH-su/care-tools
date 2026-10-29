@@ -17,6 +17,7 @@
  * 使い方: <script src="supabase-js-2.112.4.js"></script><script src="su-auth.js"></script>
  *   SUAuth.check()           → 今の状態 {status, email, role, ...}（status は下の STATUS）。同じタブの5分以内は控えを使う（下の「控え」）
  *   SUAuth.check({ fresh: true }) → 控えを使わず、必ずデータベースに確かめる（ログイン画面の確かめ直し）
+ *   同時に呼ばれた同じ確かめは1本にまとめ、答えを使い回す（下の「走っている確かめの使い回し」）
  *   SUAuth.signInGoogle()    → Google の画面へ移る（戻り先はこのページ）
  *   SUAuth.signOut()         → この端末だけログアウト
  *   SUAuth.enrollTotp() / SUAuth.verifyTotp(factorId, code) → 管理者の2段階認証
@@ -139,9 +140,21 @@
       sessionStorage.setItem(MEMO_KEY, JSON.stringify({ v: 1, s: STATUS.OK, r: st.role, l: String(st.label || ''), u: Date.now() + MEMO_TTL_MS, f: who }));
     } catch (e) { /* 書けなくても毎回確かめるだけ */ }
   }
+  // ─── 走っている確かめの使い回し（2026-10-28 本人指示）───
+  // 起動の時に、同期の部品（su-kv.js の読み書き）と画面（週間計画の「直した人」）などが同時に check() を呼ぶと、
+  // 控えは1本目が終わってから書かれるため、全部がデータベースへ確かめに行っていた（my_account・allowed_accounts が2本ずつ）。
+  // ・同じ確かめ（同じ利用者 id の指紋・同じ2段階認証の段階・強制かどうか・同じ世代）が走っている間に呼ばれたら、その答えを待って使う
+  // ・終わったら（成功でも失敗でも）外す＝次に呼ばれた時は控えの規則どおりに確かめ直す（失敗を貼り付けない）
+  // ・強制（fresh）の確かめは強制どうしだけでまとめ、走っている強制でない確かめには相乗りしない（ログイン・2段階認証の直後に古い答えを返さない）
+  // ・ログアウト・2段階認証の後・別のタブでログインの印が変わった時は世代を進める＝前の確かめには相乗りせず、前の確かめの答えは控えに書かない
+  // ・相乗りした呼び出しには答えの写しを返す（呼ぶ側どうしで同じ入れ物を共有しない）
+  var inflight = {};
+  var INFLIGHT_SHARE_MS = 8000;   // これより前に出た確かめには相乗りしない（止まった通信につながり続けない）
+  var authGen = 0;
+  function authChanged() { authGen++; inflight = {}; }
   try {
     window.addEventListener('storage', function (ev) {
-      if (!ev || ev.key === null || SESSION_KEY_RE.test(String(ev.key))) memoForget();
+      if (!ev || ev.key === null || SESSION_KEY_RE.test(String(ev.key))) { memoForget(); authChanged(); }
     });
   } catch (e) { /* 聞けない環境では、利用者 id の照合と5分の期限だけで守る */ }
 
@@ -178,11 +191,32 @@
         });
       }
     }
-    var st, seen = {};
-    try { st = await checkRemote(c, base, seen); } catch (e) { memoForget(); throw e; }
-    // OK の時だけ控える（OK 以外は前の控えも消す）。本人の行（管理者かどうか）を読めなかった時の OK も控えない
-    memoWrite(who, seen.rowOk ? st : null);
-    return st;
+    // ★相乗りするのは強制でない確かめだけ・出てから INFLIGHT_SHARE_MS 以内のものだけ。
+    //   強制（ログイン画面の「再試行」など）は毎回データベースに聞く。通信が止まった確かめに後の呼び出しが
+    //   全部つながると、再試行も保存の前の確かめも、ブラウザが通信を諦めるまで動かなくなるため（反証レビューの指摘）
+    var slot = 'N|' + authGen + '|' + who + '|' + base.aal + '|' + base.email;
+    var ent = fresh ? null : inflight[slot];
+    if (ent && Date.now() - ent.t < INFLIGHT_SHARE_MS) {
+      var shared = await ent.run;
+      return Object.assign({}, shared);
+    }
+    var gen = authGen;
+    var run = (async function () {
+      var st, seen = {};
+      try { st = await checkRemote(c, base, seen); } catch (e) { memoForget(); throw e; }
+      // OK の時だけ控える（OK 以外は前の控えも消す）。本人の行（管理者かどうか）を読めなかった時の OK も控えない
+      // 確かめている間にログインが変わった（世代が進んだ）時は、前の確かめの答えを控えに書かない
+      if (gen === authGen) memoWrite(who, seen.rowOk ? st : null);
+      return st;
+    })();
+    var mine = fresh ? null : { run: run, t: Date.now() };
+    if (mine) inflight[slot] = mine;
+    try {
+      var own = await run;
+      return Object.assign({}, own);
+    } finally {
+      if (mine && inflight[slot] === mine) delete inflight[slot];
+    }
   }
 
   async function checkRemote(c, base, seen) {
@@ -229,7 +263,8 @@
 
   async function signOut() {
     memoForget();                                // 先に消す（通信に失敗しても前の人の控えを残さない）
-    try { await sb().auth.signOut({ scope: 'local' }); } finally { memoForget(); }
+    authChanged();                               // 走っている確かめの答えを、この後の呼び出しに渡さない
+    try { await sb().auth.signOut({ scope: 'local' }); } finally { memoForget(); authChanged(); }
   }
 
   // 2段階認証の登録。途中でやめた「未確認の登録」が残っていると新しく作れないので、先に片付ける
@@ -247,6 +282,7 @@
   async function verifyTotp(factorId, code) {
     var r = await sb().auth.mfa.challengeAndVerify({ factorId: factorId, code: String(code).replace(/\D/g, '') });
     memoForget();                                // 2段階認証の後は控えを使わず確かめ直す
+    authChanged();                               // 2段階認証の前に走り出した確かめには相乗りしない
     if (r.error) throw new Error(friendly(r.error.message));
   }
 
