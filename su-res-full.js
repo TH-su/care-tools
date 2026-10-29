@@ -229,5 +229,54 @@
     }
   }
 
-  root.SUResFull = { run: run, _rosterIds: rosterIds, _nulKeys: nulKeys, _chunk: chunk, _diffKeys: diffKeys, _compare: compare, _dbWhy: dbWhy, _pool: pool };
+  /* ── 自動で写す（代表者の決定 2026-10-29「自動で写す」）──
+   * 管理者が事務所PCで入居者マスタを開いた時に、その日（日本時間）まだ写していなければ写す（1日1回）。
+   * 前の試みから1時間たっていない時（止まった・走っている途中を含む）は試さない（失敗の繰り返しで Google を混ませない）。
+   * 管理者（2段階認証）でない・データベースに 0034 が無い時は何もしない。例外は外へ出さない。
+   * io = { gas(body), auth?() → Promise<SUAuth>, now? }。返す: { skip:'理由' } か run の結果 */
+  var AUTO_GAP_MS = 60 * 60 * 1000;
+  function jstDay(t) { return new Date(new Date(t).getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10); }
+  function loadScript(src) {
+    return new Promise(function (ok, ng) {
+      var s = document.createElement('script');
+      s.src = src; s.onload = function () { ok(); }; s.onerror = function () { ng(new Error('load')); };
+      document.head.appendChild(s);
+    });
+  }
+  function loadAuth() {   // supabase-js と su-auth.js を必要な時だけ読む（入居者マスタの写しの部品と同じ版）
+    if (root.SUAuth) return Promise.resolve(root.SUAuth);
+    var p = root.supabase ? Promise.resolve() : loadScript('supabase-js-2.112.4.js');
+    return p.then(function () { return root.SUAuth ? null : loadScript('su-auth.js?v=2026-10-28'); }).then(function () { return root.SUAuth || null; });
+  }
+  async function auto(io) {
+    try {
+      var A = await (io.auth ? io.auth() : loadAuth());
+      if (!A) return { skip: 'noauth' };
+      var st = await A.check();
+      if (!st || st.status !== A.STATUS.OK || st.role !== 'admin') return { skip: 'role' };
+      var sb = A.client();
+      var q = await sb.from('res_sync_runs').select('at,status').order('at', { ascending: false }).limit(10);
+      if (q.error) return { skip: 'nodb' };
+      var now = io.now || Date.now(), rows = Array.isArray(q.data) ? q.data : [];
+      if (rows.some(function (r) { return r.status === 'done' && jstDay(r.at) === jstDay(now); })) return { skip: 'today' };
+      if (rows.length && now - new Date(rows[0].at).getTime() < AUTO_GAP_MS) return { skip: 'recent' };
+      return await run({
+        gas: io.gas,
+        rpc: function (name, args) { return sb.rpc(name, args); },
+        lastRun: async function (id) { var r = await sb.from('res_sync_runs').select('unknown_keys').eq('id', id).limit(1); return r.error ? null : (r.data || [])[0]; },
+        progress: function () {}
+      });
+    } catch (e) { return { skip: 'error' }; }
+  }
+  /* 自動で写した結果を、職員向けの1文にする。何も知らせなくてよい時（全項目一致・試さなかった）は '' */
+  function autoNote(res) {
+    if (!res || res.skip) return '';
+    if (!res.ok) return '入居者マスタの写し（自動）が取れませんでした: ' + res.why + '　写しの見比べの画面で確かめてください。';
+    var bad = res.cmp.diff.length + res.cmp.notInCopy.length;
+    if (bad) return '入居者マスタの写し（自動）で、Google と違う方が ' + bad + '人いました。写しの見比べの画面で「入居者マスタを全部写す」を押して確かめてください。';
+    if (res.run.unknown.length) return '入居者マスタの写し（自動）に、区分の決まっていない項目がありました（' + res.run.unknown.join('・') + '）。開発の担当へ知らせてください。';
+    return '';
+  }
+
+  root.SUResFull = { run: run, auto: auto, autoNote: autoNote, _jstDay: jstDay, _rosterIds: rosterIds, _nulKeys: nulKeys, _chunk: chunk, _diffKeys: diffKeys, _compare: compare, _dbWhy: dbWhy, _pool: pool };
 })(typeof window !== 'undefined' ? window : this);

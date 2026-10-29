@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-Y5gAygKWv+m9iFkzdfIVsXvoCxa/rNJISHuy31mf4uA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-oGyffsFSK8xoa6xJ8wC4uWS6YAOc8BTmfotIlUpdL70='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -1505,6 +1505,10 @@ body.meal-on #sc-list{max-width:none}
 .wis-k{display:block; font-size:.8em; font-weight:700; color:#333}
 .wis-v{display:block; white-space:pre-wrap; word-break:break-word}
 .wis-ft{margin-top:auto; font-size:.75em; color:#333; text-align:end}
+/* 入居者マスタの全項目の写し（自動・統合 0034）の知らせの帯。違い・止まった時だけ出す（画面だけ・印刷しない） */
+.rfband{margin:6px 12px;padding:8px 12px;border-radius:8px;background:#fff4e5;color:#7a3e00;border:1px solid #f0c38a;font-size:14px;line-height:1.5}
+.rfband[hidden]{display:none !important}
+@media print{.rfband{display:none !important}}
 /* 動きを減らす設定への対応（2026-08-10 追加・通常表示に影響なし） */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -1527,6 +1531,7 @@ body.meal-on #sc-list{max-width:none}
   <h1>🗂️ 入居者マスタ</h1>
   <span class="sync" id="syncStatus">未接続</span>
 </div>
+<div class="rfband" id="rfBand" role="status" hidden></div>
 
 <!-- ════════ 一覧 ════════ -->
 <section class="scr on" id="sc-list">
@@ -1927,6 +1932,7 @@ function rmNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
 <script src="su-print.js?v=2026-09-12"></script>
 <!-- 入居者マスタの写し（統合 0004）。supabase-js と su-auth.js は写す時にだけ読み込む -->
 <script src="su-master-shadow.js?v=2026-10-28"></script>
+<script src="su-res-full.js?v=2026-10-29.2"></script>
 <script>
 /* ═══════════════════════════════════════════════════════════════
    入居者マスタ / 管理アプリ
@@ -2334,6 +2340,32 @@ function fetchWithTimeout(url,opt,ms){
     fetch(url,opt).then(function(r){clearTimeout(t);res(r)}).catch(function(e){clearTimeout(t);rej(e)});
   });
 }
+/* 入居者マスタの全項目の写し（統合 0034・代表者の決定 2026-10-29「自動で写す」）: 管理者が事務所PCで開いて一覧を読めた時、
+   その日まだ写していなければ、20秒後に裏で全員分を写す（su-res-full.js・1ページで1回だけ・同時に3本まで読む）。
+   全項目一致なら何も出さず、違い・止まった時だけ見出しの下に帯で知らせる（画面だけ・印刷しない）。
+   管理者以外・ログインしていない・現場端末では何もしない。用途が変わった後（devGen）・画面が隠れている時は始めない。
+   Google へは読むだけで、送り方は apiGet と同じ形（POST・text/plain・合言葉は本文・ログイン中は証明を添える）。
+   断りの応答（ok:false）も写しの部品が見分けるので、apiGet の parseJson（error で投げる）は通さない */
+var rmResFullDone_=false;
+function rmResFullAuto_(){
+  if(rmResFullDone_||!window.SUResFull||getDeviceRole()==='field'||!CFG.url)return;
+  rmResFullDone_=true;
+  var dg=devGen;
+  setTimeout(function(){
+    if(dg!==devGen||getDeviceRole()==='field'||document.hidden)return;
+    SUResFull.auto({gas:function(b){
+      var body=Object.assign({},b,{token:CFG.token});
+      return (window.SUGasAuth?window.SUGasAuth.addTo(body):Promise.resolve(body)).then(function(x){
+        return fetchWithTimeout(CFG.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(x)},60000);
+      }).then(function(r){return r.json()});
+    }}).then(function(res){
+      if(dg!==devGen||getDeviceRole()==='field')return;
+      var t=SUResFull.autoNote(res), el=document.getElementById('rfBand');
+      if(!el||!t)return;
+      el.textContent=t; el.hidden=false;
+    }).catch(function(e){ rmNote_('全項目の写し（自動）', e); });
+  },20000);
+}
 function parseJson(r){return r.text().then(function(t){var d;try{d=JSON.parse(t)}catch(e){throw new Error('応答が不正です')}if(d&&d.error)throw new Error(d.error);return d})}
 
 /* ═══════════ roster（軽量一覧） ═══════════ */
@@ -2370,6 +2402,7 @@ function refreshRoster(){
         /* 訪問日・かかりつけ病院の写し（移行 0022・代表者の決定 2026-10-24）: 正規化する前の名簿（list）を渡し、部品が利用者No と2項目だけを拾う。
            一覧（roster）・端末の控え・共有名簿には2項目を入れない（normRosterRow は変えない） */
         if(window.SUMasterShadow&&getDeviceRole()!=='field')SUMasterShadow.push(roster,{stateRev:d&&d.stateRev,srev:srevPickMeta(d),care:list});
+        if(typeof rmResFullAuto_==='function')rmResFullAuto_();   // 全項目の写し（自動・1日1回）。一覧の動きには関わらない
       }
     }
     if(emptyGuarded){setSync('要確認（サーバー応答が空）','err');}else{setSync('同期OK','ok');}
