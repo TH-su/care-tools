@@ -12,6 +12,10 @@
  *   ・ログインしていない・印を読めない・届かない時は失敗にし、Google へ流さない（スイッチが入なのに Google へ流すと保存先が2つに割れる・CLAUDE.md §4）
  *   AI の中継（training_ai）はまだこの道に無い（「まだ使えません」で断る）。
  *
+ * ── 入居調整の台帳（入口 admission の get・put・ping・2026-10-29 代表者「入居調整の切り替えの土台に進む」）──
+ *   計画書と同じ流れ。印は adm_mode（統合 0042）、受け口は adm-write、写し返しは入居調整の GAS の admMirror。
+ *   添付書類の操作はこの道に来ない（Drive のまま＝案A・画面は今までどおり kvRaw で Google へ送る）。
+ *
  * 読み込み方: su-data.js → su-data-gas.js → su-data-supabase.js の順（gas の道が先に居る＝これが読めなくても gas で動く）
  */
 (function (global) {
@@ -22,8 +26,17 @@
   var CALL_MS = 40000;
 
   function fail(text, code) { var e = new Error(text); e.code = code || 'supabase'; return e; }
-  function note(where, e) {
-    try { if (global.SUErrors && typeof global.SUErrors.note === 'function') global.SUErrors.note('計画書の新しい保存先: ' + where, e && e.message || e); } catch (x) { /* 記録できなくても止めない */ }
+  /* 入口のまとまりごとの決まり（印を読む関数・受け口・Google への写し返しの action・名前） */
+  var GROUPS = {
+    training:  { modeFn: 'tp_mode_get',  fn: 'tp-write',  mirror: 'tpMirror',  label: '計画書',   noRight: '計画書を開く権限がありません。ログインし直してください。' },
+    admission: { modeFn: 'adm_mode_get', fn: 'adm-write', mirror: 'admMirror', label: '入居調整', noRight: '入居調整を開く権限がありません。ログインし直してください。' }
+  };
+  var state = {};
+  function st(group) {
+    return state[group] || (state[group] = { modeCache: null, modeAt: 0, mirroring: null, mirrorAgain: false, caughtUp: false });
+  }
+  function note(group, where, e) {
+    try { if (global.SUErrors && typeof global.SUErrors.note === 'function') global.SUErrors.note(GROUPS[group].label + 'の新しい保存先: ' + where, e && e.message || e); } catch (x) { /* 記録できなくても止めない */ }
   }
   function loadScript(src) {
     return new Promise(function (ok, ng) {
@@ -39,23 +52,23 @@
     return p.then(function () { return global.SUAuth ? null : loadScript('su-auth.js?v=2026-10-28'); }).then(function () { return global.SUAuth || null; });
   }
 
-  /* データベースの印（1分の控え）。0038 の前（関数が無い）は 'shadow' */
-  var modeCache = null, modeAt = 0;
-  function tpMode(A) {
-    if (modeCache && Date.now() - modeAt < 60000) return Promise.resolve(modeCache);
-    return Promise.resolve(A.client().rpc('tp_mode_get')).then(function (r) {
+  /* データベースの印（1分の控え）。0038・0042 の前（関数が無い）は 'shadow' */
+  function readMode(group, A) {
+    var S = st(group);
+    if (S.modeCache && Date.now() - S.modeAt < 60000) return Promise.resolve(S.modeCache);
+    return Promise.resolve(A.client().rpc(GROUPS[group].modeFn)).then(function (r) {
       var c = String(r && r.error && (r.error.code || '') || '');
       if (r && r.error && /PGRST202|42883/.test(c)) return 'shadow';
-      if (c === '42501') throw fail('計画書を開く権限がありません。ログインし直してください。', c);
+      if (c === '42501') throw fail(GROUPS[group].noRight, c);
       if (!r || r.error || !r.data) throw fail('新しい保存先の状態を読めませんでした。少し待ってから、もう一度お試しください。', 'db');
-      modeCache = r.data.mode === 'live' ? 'live' : 'shadow'; modeAt = Date.now();
-      return modeCache;
+      S.modeCache = r.data.mode === 'live' ? 'live' : 'shadow'; S.modeAt = Date.now();
+      return S.modeCache;
     });
   }
 
-  /* tp-write へ送る。断り（{ok:false, error, code}）は GAS と同じ形のまま返す。届かない・時間切れは失敗 */
-  function invoke(A, body) {
-    var call = Promise.resolve(A.client().functions.invoke('tp-write', { body: body }));
+  /* 受け口（tp-write・adm-write）へ送る。断り（{ok:false, error, code}）は GAS と同じ形のまま返す。届かない・時間切れは失敗 */
+  function invoke(group, A, body) {
+    var call = Promise.resolve(A.client().functions.invoke(GROUPS[group].fn, { body: body }));
     var timer = new Promise(function (ok) { setTimeout(function () { ok({ timeout: true }); }, CALL_MS); });
     return Promise.race([call, timer]).then(function (r) {
       if (r && r.timeout) throw fail('新しい保存先の応答がありません（時間切れ）。保存されたか、画面を開き直して確かめてください。', 'timeout');
@@ -63,7 +76,7 @@
         var ctx = r.error.context;
         return Promise.resolve(ctx && typeof ctx.json === 'function' ? ctx.json().catch(function () { return null; }) : null).then(function (d) {
           if (d && typeof d === 'object' && d.error) {
-            if (d.code === 'shadow') { modeCache = null; }   // 印が変わった＝次は読み直す
+            if (d.code === 'shadow') { st(group).modeCache = null; }   // 印が変わった＝次は読み直す
             return d;
           }
           throw fail('新しい保存先に届きませんでした。保存されたか、画面を開き直して確かめてください。', 'network');
@@ -74,31 +87,32 @@
   }
 
   /* Google への写し返し（保存できた後・待たない）。1本ずつ送り、送っている間の次の保存は終わった後に1回だけ */
-  var mirroring = null, mirrorAgain = false;
-  function mirrorSoon(A, opts) {
-    if (mirroring) { mirrorAgain = true; return mirroring; }
-    mirroring = Promise.resolve(A.client().auth.getSession()).then(function (s) {
+  function mirrorSoon(group, A, opts) {
+    var S = st(group);
+    if (S.mirroring) { S.mirrorAgain = true; return S.mirroring; }
+    S.mirroring = Promise.resolve(A.client().auth.getSession()).then(function (s) {
       var at = s && s.data && s.data.session && s.data.session.access_token;
       if (!at || !global.SU.data || typeof global.SU.data.kvRaw !== 'function') return null;
-      return global.SU.data.kvRaw({ action: 'tpMirror', accessToken: at }, opts).then(function (j) {
-        if (!j || j.ok !== true) note('Google が写し返しを受け付けませんでした', j && j.error);
-        else if (j.more === true) mirrorAgain = true;
+      return global.SU.data.kvRaw({ action: GROUPS[group].mirror, accessToken: at }, opts).then(function (j) {
+        if (!j || j.ok !== true) note(group, 'Google が写し返しを受け付けませんでした', j && j.error);
+        else if (j.more === true) S.mirrorAgain = true;
         return j;
       });
-    }).catch(function (e) { note('写し返しを送れませんでした', e); return null; }).then(function (j) {
-      mirroring = null;
-      if (mirrorAgain) { mirrorAgain = false; return mirrorSoon(A, opts); }
+    }).catch(function (e) { note(group, '写し返しを送れませんでした', e); return null; }).then(function (j) {
+      S.mirroring = null;
+      if (S.mirrorAgain) { S.mirrorAgain = false; return mirrorSoon(group, A, opts); }
       return j;
     });
-    return mirroring;
+    return S.mirroring;
   }
 
-  function trainingBody(method, args) {
+  function bodyOf(group, method, args) {
     if (method === 'get') return { action: 'get', key: args[0] };
     if (method === 'ping') return { action: 'ping' };
     var body = { action: 'put', key: args[0], data: args[1], rev: args[2] };
     var extra = args[3];
-    if (extra && extra.allowDrop === true) body.allowDrop = true;
+    if (group === 'training' && extra && extra.allowDrop === true) body.allowDrop = true;
+    if (group === 'admission' && extra && extra.force === true) body.force = true;
     if (extra && extra.accessToken) body.accessToken = extra.accessToken;
     return body;
   }
@@ -106,19 +120,20 @@
   var SUPA = {
     /* 名前付きの入口から呼ばれる。group＝入口のまとまり（training 等）・method＝関数の名前・args＝画面が渡した引数・gasFn＝gas の道 */
     entry: function (group, method, args, gasFn) {
-      if (group !== 'training' || ['get', 'put', 'ping'].indexOf(method) < 0) return Promise.reject(fail(NOT_YET, 'supabase_not_ready'));
+      if (!Object.prototype.hasOwnProperty.call(GROUPS, group) || ['get', 'put', 'ping'].indexOf(method) < 0) return Promise.reject(fail(NOT_YET, 'supabase_not_ready'));
+      var S = st(group);
       return loadAuth().then(function (A) {
         if (!A) throw fail('ログインの部品を読み込めませんでした。ページを読み込み直してください。', 'noauth');
         return Promise.resolve(A.check()).then(function (st) {
           if (!st || st.status !== A.STATUS.OK) throw fail('この端末はログインしていません。ログインしてから開いてください。', 'signed_out');
-          return tpMode(A).then(function (m) {
+          return readMode(group, A).then(function (m) {
             if (m !== 'live') return typeof gasFn === 'function' ? gasFn() : Promise.reject(fail(NOT_YET, 'supabase_not_ready'));
             var opts = method === 'put' ? args[4] : method === 'get' ? args[1] : args[0];
-            if (method === 'get' && !caughtUp) { caughtUp = true; mirrorSoon(A, opts); }   // 開いた時に1回、写し返しの残りを追いつかせる
-            return invoke(A, trainingBody(method, args)).then(function (res) {
-              if (method === 'put' && res && res.ok === true) mirrorSoon(A, opts);
+            if (method === 'get' && !S.caughtUp) { S.caughtUp = true; mirrorSoon(group, A, opts); }   // 開いた時に1回、写し返しの残りを追いつかせる
+            return invoke(group, A, bodyOf(group, method, args)).then(function (res) {
+              if (method === 'put' && res && res.ok === true) mirrorSoon(group, A, opts);
               // AI の中継はまだ Google（計画書の GAS）にあるので、ping の AI の状態（キーの有無・回数）は Google の ping から取る（計画書の反証レビュー 指摘2）
-              if (method === 'ping' && res && res.ok === true && typeof gasFn === 'function') {
+              if (group === 'training' && method === 'ping' && res && res.ok === true && typeof gasFn === 'function') {
                 return Promise.resolve(gasFn()).then(function (g) {
                   if (g && g.ok === true && g.ai) res.ai = g.ai; else delete res.ai;
                   return res;
@@ -130,11 +145,10 @@
         });
       });
     },
-    /* 閉じる直前の送信を Google へ送ってよいか（印が「切り替える前」と1分以内に確かめてある時だけ） */
-    beaconGas: function () { return modeCache === 'shadow' && Date.now() - modeAt < 60000; },
-    _reset: function () { modeCache = null; modeAt = 0; mirroring = null; mirrorAgain = false; caughtUp = false; }
+    /* 閉じる直前の送信を Google へ送ってよいか（印が「切り替える前」と1分以内に確かめてある時だけ）。group を省くと計画書 */
+    beaconGas: function (group) { var S = st(GROUPS[group] ? group : 'training'); return S.modeCache === 'shadow' && Date.now() - S.modeAt < 60000; },
+    _reset: function () { state = {}; }
   };
-  var caughtUp = false;
 
   global.SU.data.register('supabase', SUPA);
 })(window);

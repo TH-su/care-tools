@@ -1098,6 +1098,7 @@
     try { await loadTpRuns(sb); } catch (e) { $('tpf-verdict').className = 'msg warn'; $('tpf-verdict').textContent = '計画書の写しの記録を読めませんでした。'; }
     try { await loadTpMode(sb); } catch (e) { /* 0038 の前・読めない時はボタンを出さない */ }
     try { await loadAdmRuns(sb); } catch (e) { $('admf-verdict').className = 'msg warn'; $('admf-verdict').textContent = '入居調整の写しの記録を読めませんでした。'; }
+    try { await loadAdmMode(sb); } catch (e) { /* 0042 の前・読めない時はボタンを出さない */ }
     try { await loadPatch(sb); }
     catch (e) {
       $('pt-verdict').className = 'msg warn';
@@ -1403,6 +1404,65 @@
     }
   }
 
+  /* 入居調整の台帳の正本の切り替え（統合 0042・2026-10-29）: 計画書と同じ手順（su-adm-full.js の cutover・back）。管理者だけ・事務所PCだけ。
+   * 切り替えボタンは、切り替えスイッチ admission が入の時だけ出す。添付書類（Drive）はどちらでも触らない（案A）。
+   * Google の印が立ったまま（前の戻しが途中）の時は、知らせて「写しの期間に戻す」を出す */
+  function admissionOn() { var sw = window.SUKv ? SUKv._flags() : null; return !!(sw && sw.supabase && sw.supabase.admission === true); }
+  async function loadAdmMode(sb) {
+    var line = $('admf-mode'), bc = $('b-adm-cut'), bb = $('b-adm-back');
+    bc.hidden = true; bb.hidden = true; line.className = 'msg'; line.textContent = '';
+    if (!(me && me.role === 'admin')) return;
+    var r = await sb.rpc('adm_mode_get');
+    if (r.error || !r.data) return;
+    var live = r.data.mode === 'live', on = admissionOn(), stuck = false;
+    var at = admTarget();
+    if (!live && at) { try { var pg = await rmasterPost(at, { action: 'ping' }); stuck = !!(pg && pg.switched === true); } catch (e) { stuck = false; } }
+    if (live && !on) { line.className = 'msg warn'; line.textContent = '入居調整は新しい保存先へ切り替えた後ですが、切り替えスイッチ（admission）が切です。画面が古い Google の中身を読まないよう、スイッチを入れ直すか「入居調整を写しの期間に戻す」を押してください。'; }
+    else if (live) { line.className = 'msg ok'; line.textContent = '入居調整の台帳の正本は新しい保存先（Supabase）です。Google へは保存のたびに写し返しています。添付書類は今までどおり Google（Drive）です。'; }
+    else if (stuck) { line.className = 'msg warn'; line.textContent = '前の「入居調整を写しの期間に戻す」が途中です（Google の保存を止めたままです）。もう一度押して、最後まで済ませてください。'; }
+    else line.textContent = '入居調整の台帳の正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（admission）を入れる PR の取り込みが要ります。');
+    bc.hidden = live || stuck || !on || !at;
+    bb.hidden = !(live || stuck) || !at;
+  }
+  async function runAdmOp(kind) {
+    var v = $('admf-mode');
+    function say(t, k) { v.className = 'msg' + (k ? ' ' + k : ''); v.textContent = t; }
+    if (!(me && me.role === 'admin' && me.status === SUAuth.STATUS.OK)) { say('管理者（二段階認証済み）のアカウントで開いてください。', 'warn'); return; }
+    var role = ''; try { role = localStorage.getItem('su_device_role') || ''; } catch (e) { role = ''; }
+    if (role === 'field') { say('この端末は「現場」です。事務所のパソコンで行ってください。', 'warn'); return; }
+    var at = admTarget();
+    if (!at) { say('この端末には入居調整の接続先（Google）がありません。この端末で入居調整を開いてから、押し直してください。', 'warn'); return; }
+    if (kind === 'cut') {
+      if (!admissionOn()) { say('切り替えスイッチ（admission）が入っていません。', 'warn'); return; }
+      if (!confirm('入居調整の台帳の正本を新しい保存先（Supabase）へ切り替えますか？\n\n1分ほどかかります。その間は台帳の保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n添付書類は今までどおり Google（Drive）に置きます。切り替えた後は、保存のたびに Google へ写し返します。いつでも「入居調整を写しの期間に戻す」で戻せます。')) return;
+    } else {
+      if (!confirm('入居調整を写しの期間に戻しますか？\n\n新しい保存先での保存を止め、切り替えていた間の保存を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。')) return;
+    }
+    if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
+    var bc = $('b-adm-cut'), bb = $('b-adm-back');
+    bc.disabled = true; bb.disabled = true;
+    var sb = SUAuth.client();
+    try {
+      var io = {
+        gas: function (body) { return rmasterPost(at, body); },
+        rpc: function (name, args) { return sb.rpc(name, args); },
+        token: async function () { var s2 = await sb.auth.getSession(); return s2 && s2.data && s2.data.session ? s2.data.session.access_token : null; },
+        progress: function (t) { say(t); }
+      };
+      var res = kind === 'cut' ? await SUAdmFull.cutover(io) : await SUAdmFull.back(io);
+      if (!res.ok) { say((kind === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + res.why, 'warn'); return; }
+      say(kind === 'cut' ? '切り替えました（生きている案件 ' + res.active + '件）。入居調整の画面は読み込み直すと新しい保存先で保存します。'
+                         : '写しの期間に戻しました（Google へ写し返した台帳 ' + res.docs + '件）。正本は Google です。', 'ok');
+    } catch (e) {
+      say('止まりました: ' + String(e && e.message || e), 'warn');
+    } finally {
+      bc.disabled = false; bb.disabled = false;
+      var keep = v.textContent, kc = v.className;
+      try { await loadAdmMode(sb); await loadAdmRuns(sb); } catch (e) { /* 読み直せなくても結果の文は残す */ }
+      v.className = kc; v.textContent = keep;
+    }
+  }
+
   /* 個別機能訓練計画書の正本の切り替え（統合 0038・2026-10-29）: 入居者マスタと同じ手順（su-tp-full.js の cutover・back）。管理者だけ・事務所PCだけ。
    * 切り替えボタンは切り替えスイッチ training が入で、この端末に計画書と入居者マスタの接続先がある時だけ出す。
    * 計画書の GAS の印が立ったまま（前の戻しが途中）の時は、知らせて「写しの期間に戻す」を出す */
@@ -1656,6 +1716,8 @@
   $('b-tp-cut').addEventListener('click', function () { msg(''); runTpOp('cut'); });
   $('b-tp-back').addEventListener('click', function () { msg(''); runTpOp('back'); });
   $('b-adm-full').addEventListener('click', function () { msg(''); runAdmFull(); });
+  $('b-adm-cut').addEventListener('click', function () { msg(''); runAdmOp('cut'); });
+  $('b-adm-back').addEventListener('click', function () { msg(''); runAdmOp('back'); });
   $('b-res-back').addEventListener('click', function () { msg(''); runResOp('back'); });
   $('b-check').addEventListener('click', function () { msg(''); runCheck(); });
   $('b-mirror-check').addEventListener('click', function () { msg(''); runMirrorCheck(); });

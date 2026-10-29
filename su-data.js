@@ -142,7 +142,7 @@
     if (o.gasAuth !== true && !explicit && cfg.gasAuth === true) o.gasAuth = true;
     return o;
   }
-  /* 名前付きの入口（訓練計画書）から送る時の印。宛先は訓練計画書の GAS と決まっている */
+  /* 名前付きの入口（訓練計画書・入居調整）から送る時の印。宛先はそれぞれの専用 GAS と決まっている */
   function authed(opts) {
     var o = {}, k;
     if (opts && typeof opts === 'object') for (k in opts) if (Object.prototype.hasOwnProperty.call(opts, k)) o[k] = opts[k];
@@ -255,6 +255,40 @@
       /* AI の中継 {action:'ai', body} */
       ai: function (body, opts) {
         return entryCall('training_ai', 'training', 'ai', [body, opts], function () { return SU_DATA.kvRaw({ action: 'ai', body: body }, authed(opts)); });
+      }
+    },
+    /* ── 入居調整の台帳（入居調整の専用GAS）の名前付きの入口（2026-10-29 代表者「入居調整の切り替えの土台に進む」）──
+       スイッチのキーは admission。gas の道では今までと同じ action を同じ本文で送る（本文のキーの並びも同じ）。
+       添付書類の操作（filesGet・uploadFile・removeFile・downloadFile）はここに入れない（Drive のまま＝案A・kvRaw の形のまま）。 */
+    admission: {
+      /* 台帳の読み取り {action:'get', key} */
+      get: function (key, opts) {
+        return entryCall('admission', 'admission', 'get', [key, opts], function () {
+          /* 送る本文は今までと同じ。入居調整の GAS が「切り替えた後・切り替えの最中」（switched）と返した時は、止まった Google の中身を今の中身として使わない */
+          return SU_DATA.kvGet(key, authed(opts)).then(function (r) {
+            if (r && r.switched === true) throw new Error('入居調整の保存先を切り替えている最中か、切り替えた後です。少し待ってから画面を読み込み直してください（続く時は管理者へ連絡してください）');
+            return r;
+          });
+        });
+      },
+      /* 保存 {action:'put', key, data, rev[, force:true][, accessToken]}。extra.force は人が承認した復旧の時だけ。
+         extra.accessToken はログインの証明（ある時だけ本文に添える） */
+      put: function (key, data, rev, extra, opts) {
+        return entryCall('admission', 'admission', 'put', [key, data, rev, extra, opts], function () {
+          var body = { action: 'put', key: key, data: data, rev: rev };
+          if (extra && extra.force === true) body.force = true;
+          if (extra && extra.accessToken) body.accessToken = extra.accessToken;
+          return SU_DATA.kvRaw(body, authed(opts));
+        });
+      },
+      /* ページを閉じる直前の最終送信。戻り値は送信を受け付けたかだけ。切り替えた後・分からない時は送らない（false） */
+      putBeacon: function (key, value, rev, opts) {
+        if (entryRoute('admission') === 'supabase' && !(drivers.supabase && typeof drivers.supabase.beaconGas === 'function' && drivers.supabase.beaconGas('admission'))) return false;
+        return SU_DATA.kvPutBeacon(key, value, rev, opts);
+      },
+      /* 接続の確かめ・守り一覧 {action:'ping'} */
+      ping: function (opts) {
+        return entryCall('admission', 'admission', 'ping', [opts], function () { return SU_DATA.kvRaw({ action: 'ping' }, authed(opts)); });
       }
     },
     _entryRoute: entryRoute,
