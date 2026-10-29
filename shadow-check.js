@@ -8,6 +8,8 @@
  * 訪問日・かかりつけ病院の写し（移行 0022・2026-10-24 代表者の決定4・段2b）: ボタンを押した時だけ、正本＝Google の入居者マスタの名簿
  *   （getRoster・この端末の rmaster_cfg の URL と合言葉。合言葉は Google へだけ送る）と、写し＝Supabase の master_residents_care を
  *   利用者No で突き合わせる。出すのは人数と、違いのある利用者No と項目名だけ（氏名・病院名・曜日の中身は出さない）。どちらにも書かない。
+ * 入居者マスタの全項目の写し（統合 0034・2026-10-29 代表者の決定5）: 管理者がボタンを押した時だけ、su-res-full.js で Google（rmaster_cfg）から
+ *   全員分を読み、Supabase へ写して読み直し、見比べる。Google へは読むだけ。出すのは人数・件数・利用者No・項目名だけ。
  */
 (function () {
   'use strict';
@@ -1090,6 +1092,8 @@
       $('wt-verdict').className = 'msg warn';
       $('wt-verdict').textContent = '体重の写しはまだ読めません（データベースの準備 0008 が未適用の可能性）。';
     }
+    try { await loadResFullRuns(sb); }
+    catch (e) { $('rf-verdict').className = 'msg warn'; $('rf-verdict').textContent = '全項目の写しの記録を読めませんでした。'; }
     try { await loadPatch(sb); }
     catch (e) {
       $('pt-verdict').className = 'msg warn';
@@ -1170,6 +1174,92 @@
       ul.appendChild(li);
     });
     if (items.length > PT_LIST_MAX) ul.appendChild(el('li', null, 'ほか ' + (items.length - PT_LIST_MAX) + '件'));
+  }
+
+  /* 入居者マスタの全項目の写し（統合 0034・2026-10-29 代表者の決定5）: 管理者がボタンを押した時だけ、su-res-full.js で
+   * Google から全員分を読んで Supabase へ写し、読み直して見比べる。出すのは人数・件数・利用者No・項目名だけ */
+  var RF_LIST_MAX = 50;
+  function rmasterPost(tgt, body) {
+    var ctl = new AbortController();
+    var tm = null;
+    /* 名簿の読み方（rmasterRoster）と同じく、ログインしている時だけ証明を添え、1分の時計は証明を取った後に始める */
+    var rb = Object.assign({}, body, { token: tgt.token });
+    var ga = (typeof SUGasAuth !== 'undefined') ? SUGasAuth : null;
+    return (ga ? ga.addTo(rb) : Promise.resolve(rb)).then(function (b) {
+      tm = setTimeout(function () { ctl.abort(); }, 60000);
+      return fetch(tgt.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                            body: JSON.stringify(b), cache: 'no-store', redirect: 'follow', signal: ctl.signal });
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { clearTimeout(tm); return j; },
+            function (e) { clearTimeout(tm); throw (e && e.name === 'AbortError') ? new Error('Google の応答がありません（時間切れ）') : new Error('Google に届きませんでした'); });
+  }
+  async function loadResFullRuns(sb) {
+    var ul = $('rf-runs');
+    ul.replaceChildren();
+    $('b-res-full').hidden = !(me && me.role === 'admin');
+    var r = await sb.from('res_sync_runs').select('*').order('at', { ascending: false }).limit(5);
+    if (r.error) { $('rf-verdict').className = 'msg'; $('rf-verdict').textContent = '全項目の写しの準備（データベース 0034）はまだです。'; $('b-res-full').hidden = true; return; }
+    (r.data || []).forEach(function (x) {
+      var li = el('li'), left = el('div');
+      left.appendChild(el('div', 'nm', fmtTime(x.at)));
+      left.appendChild(el('div', 'em', x.status === 'done'
+        ? '入居者 ' + x.residents + '人／追加 ' + x.inserted + '・更新 ' + x.updated + '・変化なし ' + x.unchanged + '・消えた印 ' + x.missing
+          + '／担当者会議 ' + x.meetings + '件・薬の判断 ' + x.med_decisions + '件'
+        : x.status === 'running' ? '途中で止まった写し（次に押すと取り消します）' : '受け付けず（' + String(x.refused || '') + '）'));
+      li.appendChild(left);
+      ul.appendChild(li);
+    });
+  }
+  async function runResFull() {
+    var kk = $('rf-kpis'), v = $('rf-verdict'), ul = $('rf-list'), btn = $('b-res-full');
+    function say(t, kind) { v.className = 'msg' + (kind ? ' ' + kind : ''); v.textContent = t; }
+    if (!(me && me.role === 'admin' && me.status === SUAuth.STATUS.OK)) { say('管理者（二段階認証済み）のアカウントで開いてください。', 'warn'); return; }
+    var role = ''; try { role = localStorage.getItem('su_device_role') || ''; } catch (e) { role = ''; }
+    if (role === 'field') { say('この端末は「現場」です。事務所のパソコンで行ってください。', 'warn'); return; }
+    var tgt = rmasterTarget();
+    if (!tgt) { say('この端末には入居者マスタの接続先（Google）がありません。この端末で入居者マスタを開いてから、押し直してください。', 'warn'); return; }
+    if (!confirm('入居者マスタの全員分を Supabase へ写しますか？\n\n数分かかります。終わるまでこの画面を閉じないでください。Google の入居者マスタは読むだけで、変えません。')) return;
+    kk.replaceChildren(); ul.replaceChildren();
+    btn.disabled = true;
+    var sb = SUAuth.client();
+    try {
+      var res = await SUResFull.run({
+        gas: function (body) { return rmasterPost(tgt, body); },
+        rpc: function (name, args) { return sb.rpc(name, args); },
+        lastRun: async function (id) { var r = await sb.from('res_sync_runs').select('unknown_keys').eq('id', id).limit(1); return r.error ? null : (r.data || [])[0]; },
+        progress: function (t) { say(t); }
+      });
+      if (!res.ok) { say('写せませんでした: ' + res.why, 'warn'); return; }
+      var c = res.cmp;
+      kk.appendChild(kpi('写した入居者', res.residents, '人'));
+      kk.appendChild(kpi('一致', c.same, '人'));
+      kk.appendChild(kpi('違いあり', c.diff.length, '人'));
+      kk.appendChild(kpi('写しに無い', c.notInCopy.length, '人'));
+      kk.appendChild(kpi('担当者会議', res.meetings, '件'));
+      kk.appendChild(kpi('薬の判断', res.medDecisions, '件'));
+      var bad = c.diff.length + c.notInCopy.length;
+      var tail = '（追加 ' + res.run.inserted + '・更新 ' + res.run.updated + '・変化なし ' + res.run.unchanged + '・消えた印 ' + res.run.missing + '）'
+        + (res.run.unknown.length ? '　区分の決まっていない項目: ' + res.run.unknown.join('・') + '（現場には出していません）' : '');
+      say(bad ? '写しましたが、読み直すと違いがあります。下の利用者No と項目名を開発の担当へ知らせてください。' + tail
+              : '写して読み直し、Google と全項目一致しました（' + c.same + '人）。' + tail, bad || res.run.unknown.length ? 'warn' : 'ok');
+      var items = [];
+      c.diff.forEach(function (x) { items.push([x.id, '違う項目: ' + x.keys.join('・')]); });
+      c.notInCopy.forEach(function (id) { items.push([id, '写しにありません']); });
+      items.slice(0, RF_LIST_MAX).forEach(function (it) {
+        var li = el('li'), left = el('div');
+        left.appendChild(el('div', 'nm', '利用者No ' + it[0]));
+        left.appendChild(el('div', 'em', it[1]));
+        li.appendChild(left);
+        ul.appendChild(li);
+      });
+      if (items.length > RF_LIST_MAX) ul.appendChild(el('li', null, 'ほか ' + (items.length - RF_LIST_MAX) + '件'));
+    } catch (e) {
+      say('写せませんでした: ' + String(e && e.message || e), 'warn');
+    } finally {
+      btn.disabled = false;
+      try { await loadResFullRuns(sb); } catch (e) { /* 記録の一覧が読めなくても結果の文は残す */ }
+    }
   }
 
   /* 体重の切り替え（統合 0032）: 印（weight_mode）を読んで出す。表がまだ無い（0032 の前）時は '' */
@@ -1291,6 +1381,7 @@
   $('b-shadow-shift').addEventListener('click', function () { setShiftMode('shadow'); });
   $('b-reload').addEventListener('click', function () { msg(''); load().catch(function (e) { msg(String(e && e.message || e)); }); });
   $('b-care-check').addEventListener('click', function () { msg(''); runCareCheck(); });
+  $('b-res-full').addEventListener('click', function () { msg(''); runResFull(); });
   $('b-check').addEventListener('click', function () { msg(''); runCheck(); });
   $('b-mirror-check').addEventListener('click', function () { msg(''); runMirrorCheck(); });
   $('b-mirror-fix').addEventListener('click', function () { msg(''); runMirrorFix(); });
