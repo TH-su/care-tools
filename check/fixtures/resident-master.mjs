@@ -14,10 +14,35 @@
    撮影の間は match に当たる要求を全部横取りするので、この住所へ実際に出て行くことはない */
 export const URL = 'https://script.google.com/macros/s/CHECK-FIXTURE-DUMMY/exec';
 export const match = 'https://script.google.com/macros/s/CHECK-FIXTURE-DUMMY/**';
+/* ログインの確かめ（su-app-gate.js・2026-10-29 代表者の決定）: 入居者マスタはログインして役割を確かめてから名簿を読む。
+   撮影の間だけ、架空の事務所のアカウントでログインしている端末にし、Supabase への通信を全部横取りして決まった応答を返す。
+   ★鍵・メールアドレスは架空（example.invalid）。本物の Supabase へは出ない（match に当たる要求は全部ここで答える）。
+   ★ログインの確かめと「アプリの使える人」の答えだけを返し、ほかの要求（名簿の写しなど）は「無い」と答える＝今までどおり Google（上の架空の GAS）から読む */
+const SB = 'https://jhbernqawjrzqwrmqrih.supabase.co';
+const b64u = (o) => Buffer.from(JSON.stringify(o)).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+const FAKE_JWT = b64u({ alg: 'none', typ: 'JWT' }) + '.' + b64u({ sub: '00000000-0000-4000-8000-0000000c4eck', email: 'check-office@example.invalid', role: 'authenticated', aal: 'aal1', exp: 4102444800 }) + '.check';
+const FAKE_SESSION = JSON.stringify({
+  access_token: FAKE_JWT, token_type: 'bearer', expires_in: 3600, expires_at: 4102444800, refresh_token: 'check-refresh',
+  user: { id: '00000000-0000-4000-8000-0000000c4eck', email: 'check-office@example.invalid', aud: 'authenticated', role: 'authenticated', app_metadata: { provider: 'google' } },
+});
 export const storage = {
   rmaster_cfg: JSON.stringify({ url: URL, token: 'check-dummy' }),
   su_device_role: 'office',
+  'sb-jhbernqawjrzqwrmqrih-auth-token': FAKE_SESSION,
 };
+export const routes = [{
+  match: SB + '/**',
+  handle(route) {
+    const u = route.request().url();
+    const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' };
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+    const json = (v) => route.fulfill({ status: 200, contentType: 'application/json', headers: cors, body: JSON.stringify(v) });
+    if (/\/rest\/v1\/rpc\/my_account/.test(u)) return json({ role: 'office', mfa: false });
+    if (/\/rest\/v1\/allowed_accounts/.test(u)) return json({ role: 'office', label: '' });
+    if (/\/rest\/v1\/rpc\/app_access_mine/.test(u)) return json({ ok: true, role: 'office', rules: null, mine: null, updatedAt: null });
+    return route.fulfill({ status: 404, contentType: 'application/json', headers: cors, body: JSON.stringify({ code: 'PGRST202', message: 'check fixture: not served' }) });
+  },
+}];
 
 export const sheets = [
   { key: 'cm', view: 'cm', print: 'cm', ready: '#cmSheet table.cmtbl tbody tr' },   // 現入居者家族CM表（A4横）

@@ -48,6 +48,13 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
 6. **共通部品は「読み込むだけで効く・読み込めなくても動く・例外を外に出さない」。**
    `su-errors.js`・`su-perf.js`・`su-cfg-hint.js`・`su-*-shadow.js` はアプリの動き・保存・通信に一切触れない。
    `su-errors.js` は各画面の `<script>` より前に置く。
+7. **事務所向けのアプリは、ログインの役割を確かめてから中身を読む。**
+   入居者マスタ（誕生日を含む画面全体）・職員マスタ・入居調整・担当者会議の記録・個別機能訓練計画書・接続設定は、端末の用途の止めの後、
+   端末の控えや通信より前に `SUAppGate.run`（`su-app-gate.js`）で確かめ、開けない時は何も読まずに覆いの画面だけを出す。
+   ログインしていない・使える人に無い・確かめられない時も開かない。`su-app-gate.js` は上の 6 の逆で、**読み込めなければ開かない**（各画面が `window.SUAppGate` の無い時に止める）。
+   管理者は常に開ける。誰が開けるかは管理者が「アプリの使える人」（`app-access.html`・管理者＋2段階認証だけ・共通 DB 0033）で役割ごと・人ごとに決め、
+   0033 が無い時は既定（管理者・事務所は開ける・現場は開けない）で動く。端末の用途の止めは先に効き、この設定で外せない。
+   事務所向けのアプリを足す時は `su-app-gate.js` の APPS に1件足し、同じ形で入口に入れる（代表者の決定 2026-10-29）。
 
 ## 3. 画面と共通部品
 
@@ -57,8 +64,8 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
 | 入居者系 | `resident-master.html` `facesheet.html` `genogram.html` `patch-calendar.html` `moushiokuri-viewer.html` `admission-flow.html` `training-plan.html` `weight-record.html` `care-meeting.html` |
 | 予定・支援 | `care-schedule.html`（週間計画） `work-schedule.html` `visit-overview.html` `support-overview.html` `overview-compare.html` `daycare-roster.html` |
 | 職員・勤務 | `shift-app.html` `shift-analyzer.html` `staff-master.html` |
-| 運営 | `supplies.html` `connection-settings.html` `accounts.html` `menu-settings.html` `login.html` `perf-report.html` `shadow-check.html` |
-| 共通部品 | `su-errors.js` `su-perf.js` `su-cfg-hint.js` `su-facility.js` + `facility-profile.json` `su-print.js` + `su-print.css` `su-report.js` + `su-annot.js` `su-data.js` + `su-data-gas.js` + `su-data-supabase.js` `su-kv.js` `su-kv-shadow.js` `su-master-shadow.js` `su-roster.js` `su-weight-shadow.js` `su-patch-sync.js` `su-auth.js` + `supabase-js-*.js` `su-itomari.js`（メニューの毬の絵） |
+| 運営 | `supplies.html` `connection-settings.html` `accounts.html` `menu-settings.html` `app-access.html` `login.html` `perf-report.html` `shadow-check.html` |
+| 共通部品 | `su-errors.js` `su-perf.js` `su-cfg-hint.js` `su-facility.js` + `facility-profile.json` `su-print.js` + `su-print.css` `su-report.js` + `su-annot.js` `su-data.js` + `su-data-gas.js` + `su-data-supabase.js` `su-kv.js` `su-kv-shadow.js` `su-master-shadow.js` `su-roster.js` `su-weight-shadow.js` `su-patch-sync.js` `su-auth.js` + `supabase-js-*.js` `su-itomari.js`（メニューの毬の絵） `su-app-gate.js` + `su-app-gate.css`（事務所向けのアプリを開く前のログインの役割の確かめ） |
 | 検証道具 | `check/`（撮影・画素比較・JS構文・実名ガード・配置図の絵・受け口 GAS・夜の定期タスクの指示書。配布物ではない）・`.github/workflows/pixel-check.yml`（PR ごとの画素の見比べ）・`.github/workflows/report-image.yml`（画面の指摘に配置図の絵を付ける） |
 | 辞書 | `meds-effect-dict.js`（薬効辞書） `meds-yakka-naiyo.js`（厚労省 薬価基準収載品目を加工した候補） |
 | 薬情の取り込み | `yakujo-calc.js`（入居者マスタの「📥 薬情の取り込み」の振り分け・組み立て・反映を止める規則の純関数。試験は `check/unit/yakujo_calc_test.js`） |

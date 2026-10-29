@@ -3,7 +3,7 @@
 <head>
   <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-uafUU6POsEvcPSUN7FHanCHZYKViJsffQ1JuavnE3wE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-XZ0GA6YfxePdKXLCKrlHAYUdhwwKwu3aCJmHcOGwIb8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="stfm-build" content="2026-10-11.1">
@@ -1467,6 +1467,7 @@ body.cmt-print{page:cmt}
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
+<script src="su-app-gate.js?v=2026-10-29"></script>
 <!-- ?v= は staff-master-calc.js の VERSION と必ず一緒に動かす。ここが古いままだと、
      端末が古い算出モジュールを掴んだまま新しい画面を開く（2026-09-22.3 で同期）。 -->
 <!-- 施設情報（facility-profile.json）の読み口。委員会の熊本市基準を所在自治体と法人設定から決めるため（2026-10-11・#10） -->
@@ -6898,8 +6899,20 @@ function hasUnsaved() {
   return !!(ST.detail && ST.screen === 'detail' && detailDirty());
 }
 
+/* ログインの役割の確かめ（2026-10-29 代表者の決定・su-app-gate.js）。端末の用途の止めの後・職員の一覧や控えを読む前に確かめる。
+   開けない時（現場のアカウント・ログインなし・確かめられない）は何も読まず、覆いの画面だけを出す。部品が読めない時も開かない */
 function init() {
   if (applyDeviceGuard()) return;
+  if (!window.SUAppGate) { appGateMissing_(); return; }
+  window.SUAppGate.run('staff-master', { dirty: function () { return hasUnsaved() || !!(ST.detail && ST.detail.saving); } }).then(function (ok) { if (ok) start_(); });
+}
+function appGateMissing_() {
+  document.body.textContent = '';
+  var p = document.createElement('p');
+  p.textContent = 'ログインを確かめる部品を読み込めませんでした。ページを読み込み直してください。';
+  document.body.appendChild(p);
+}
+function start_() {
   if (!window.StaffCalc || typeof window.StaffCalc.today !== 'function') {
     $('calcBlock').classList.add('on');
     return;

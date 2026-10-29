@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-sxsyGhKTpULmjRBghGZ1MgETS5ldkAhrBiBGrzEDUas='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-JxBTwqOzKL7RYzaCUJmrFwr8ygJ7YoUCpedHr7znM+Q='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -1918,6 +1918,7 @@ function rmNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
 <!-- 同期データの保存先の切り替え（統合 0005/0007）。見るだけの画面は切り替え後に Supabase から読む（未ログインは Google） -->
 <script src="su-kv.js?v=2026-10-28"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
+<script src="su-app-gate.js?v=2026-10-29"></script>
 <script src="su-facility.js?v=2026-10-26"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>
 <!-- 薬情の取り込みの判定・組み立て（純関数・2026-10-22）。読めない時は入口のボタンを出さない（yjCalcOk_） -->
@@ -13189,6 +13190,9 @@ function saveSyncCfg(){
   closeSync();
   // 現場タブレットに設定された場合は即ブロック。事務所PCなら解除して読み込み。
   if(applyDeviceGuard())return;
+  /* ★ログインの役割の確かめ（su-app-gate.js）をまだ通っていない時（現場端末の止めの画面から事務所PCへ戻した時）は、
+     ここで読まずに確かめに任せる（2026-10-29 反証レビューの指摘・確かめを通らずに名簿を読む経路を閉じる） */
+  if(!rmGateOk_){ rmGate_(); return; }
   loadData();
 }
 function testSync(){
@@ -14190,6 +14194,32 @@ function init(){
     try{ if(history.state&&history.state.rmScr)history.back(); }catch(e){}
     return;
   }
+  /* ログインの役割の確かめ（2026-10-29 代表者の決定・su-app-gate.js）。端末の用途の止めの後・名簿の控え（loadData）を読む前に確かめる。
+     誕生日（?view=bday）を含む画面全体が対象。開けない時（現場のアカウント・ログインなし・確かめられない）は何も読まず、
+     覆いの画面だけを出す。名簿の控えは消さない（事務所PCの控え）。部品が読めない時も開かない */
+  rmGate_();
+}
+/* 確かめが通ったか（通るまでは名簿を読まない）。保存していない入力の判定は、ページを閉じる時の確かめ（beforeunload）と同じものに
+   薬の変更候補の直し案を足したもの（反証レビューの指摘・読み込み直しで黙って捨てない） */
+var rmGateOk_=false;
+function rmGateDirty_(){
+  if(devDirty_().length) return true;
+  if(typeof yjSt!=='undefined'&&yjSt&&((yjSt.cur&&yjSt.cur.writing)||yjDirty_()||yjSt.docs.some(function(x){ return x.status==='unsure'; }))) return true;
+  if(typeof yjpBusy!=='undefined'&&yjpBusy) return true;
+  if(typeof mcCur!=='undefined'&&mcCur&&mcCur.edited) return true;
+  return false;
+}
+function rmGate_(){
+  if(!window.SUAppGate){
+    document.body.textContent='';
+    var gp=document.createElement('p'); gp.textContent='ログインを確かめる部品を読み込めませんでした。ページを読み込み直してください。';
+    document.body.appendChild(gp);
+    return;
+  }
+  window.SUAppGate.run('resident-master',{dirty:rmGateDirty_}).then(function(ok){ if(ok) rmStart_(); });
+}
+function rmStart_(){
+  rmGateOk_=true;
   loadData();
   /* ★前回開いていた方の詳細画面へ戻す（原則11）。復元順は「保存済みタブ・絞り込みの後」。
      次のどれかに当たれば開かない＝迷ったら一覧のままにする（開かない側へ倒す）:

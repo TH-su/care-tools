@@ -116,15 +116,17 @@ function load(opt) {
     classList: { add() {}, remove() {} }, contains() { return false; }, querySelector() { return null; }, querySelectorAll() { return []; },
     addEventListener() {}, getAttribute() { return null; } });
   const calls = [];
-  const cnt = { reload: 0, replace: [], ask: [], toast: [], created: [] };
+  const cnt = { reload: 0, replace: [], ask: [], toast: [], created: [], gate: [] };
   const ctx = {
     Promise, JSON, Object, Array, String, Number, Math, Date, RegExp, Error, Uint8Array, parseInt, encodeURIComponent, isNaN,
     crypto: nodeCrypto.webcrypto,
     setTimeout(fn, ms) { if (!(ms >= 5000)) setImmediate(fn); return 0; },
     clearTimeout() {},
     localStorage: ls, sessionStorage: ss,
-    window: Object.assign({ addEventListener() {} }, opt.window || {}),
-    document: { activeElement: null, getElementById: el, querySelector() { return null; }, querySelectorAll() { return []; }, scripts: [],
+    /* ログインの役割の確かめ（su-app-gate.js・2026-10-29）は偽物。既定は「開ける」。opt.gate: false＝部品なし、'block'＝開けない */
+    window: Object.assign({ addEventListener() {} },
+      opt.gate === false ? {} : { SUAppGate: { run(key) { cnt.gate.push(key); return Promise.resolve(opt.gate !== 'block'); } } }, opt.window || {}),
+    document: { activeElement: null, body: { textContent: '', kids: [], appendChild(x) { this.kids.push(x); } }, getElementById: el, querySelector() { return null; }, querySelectorAll() { return []; }, scripts: [],
       createElement(tag) { const x = { tag, setAttribute() {} }; cnt.created.push(x); return x; },
       head: { appendChild(x) { if (x && x.onerror) setImmediate(() => x.onerror()); } } },
     location: { search: opt.search || '', pathname: '/care-meeting.html', reload() { cnt.reload++; } },
@@ -209,8 +211,8 @@ async function opened(opt) {
   {
     const head = HTML.slice(0, HTML.indexOf('</head>'));
     const srcs = [...head.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]);
-    t('head の部品は su-errors → su-cfg-hint → su-perf → su-facility → su-print → care-meeting-calc の順（su-cfg-hint は改善プロンプト第6弾の2）', JSON.stringify(srcs) === JSON.stringify(
-      ['su-errors.js?v=2026-10-27', 'su-cfg-hint.js?v=2026-10-27', 'su-perf.js?v=2026-10-27', 'su-facility.js?v=2026-10-26', 'su-print.js?v=2026-09-12', 'care-meeting-calc.js?v=2026-10-25']), srcs);
+    t('head の部品は su-errors → su-cfg-hint → su-perf → su-app-gate → su-facility → su-print → care-meeting-calc の順（su-cfg-hint は改善プロンプト第6弾の2）', JSON.stringify(srcs) === JSON.stringify(
+      ['su-errors.js?v=2026-10-27', 'su-cfg-hint.js?v=2026-10-27', 'su-perf.js?v=2026-10-27', 'su-app-gate.js?v=2026-10-29', 'su-facility.js?v=2026-10-26', 'su-print.js?v=2026-09-12', 'care-meeting-calc.js?v=2026-10-25']), srcs);
     t('su-print.css を読み、su-errors.js より前にスクリプトが無い', /<link rel="stylesheet" href="su-print\.css\?v=2026-09-12">/.test(head) && head.indexOf('<script') === head.indexOf('<script src="su-errors.js'));
     t('CSP・拡大を禁止しない viewport・no-store・noindex・題', /data-su-csp/.test(head) && /<meta name="viewport" content="width=device-width,initial-scale=1">/.test(head) && !/user-scalable=no|maximum-scale=1[^.0-9]/.test(head) &&
       /Cache-Control" content="no-store"/.test(head) && /robots" content="noindex/.test(head) && /<title>担当者会議の記録<\/title>/.test(head));
@@ -218,6 +220,22 @@ async function opened(opt) {
     t('インラインのイベント属性・javascript: を使わない', !/\son[a-z]+=["']/.test(HTML) && !/javascript:/i.test(HTML));
     t('console を足していない', !/console\./.test(S));
     t('切り出した関数が揃う（' + FN_NAMES.length + '本）', FN_NAMES.length > 80 && ['boot', 'openPerson_', 'cmSave_', 'cmFinal_', 'classify_', 'printHtml_'].every((n) => FN_NAMES.indexOf(n) >= 0));
+  }
+
+  group('0b. ログインの役割の確かめ（su-app-gate.js・2026-10-29 代表者の決定）');
+  {
+    const A = load({ roster: ROSTER, handler: gas({ list: () => ({ ok: true, rows: [R1] }) }), gate: 'block', search: '?resident=901' });
+    A.ctx.boot(); await settle();
+    t('開けない時は何も読まない（通信 0回・入居者も開かない）', A.calls.length === 0 && A.ctx.cur === null && A.cnt.gate[0] === 'care-meeting', A.calls.map((c) => c.body.action));
+    const B = load({ roster: ROSTER, handler: gas({ list: () => ({ ok: true, rows: [R1] }) }), gate: false, search: '?resident=901' });
+    B.ctx.boot(); await settle();
+    t('部品が読めない時も開かない（通信 0回・画面は案内だけ）', B.calls.length === 0 && B.ctx.cur === null && B.ctx.document.body.kids.length === 1 && /読み込めませんでした/.test(B.ctx.document.body.kids[0].textContent));
+    const C = load({ role: 'field', roster: ROSTER, handler: gas(), search: '?resident=901' });
+    C.ctx.boot(); await settle();
+    t('現場端末は確かめより先に止まる（確かめを呼ばない）', C.cnt.gate.length === 0 && C.calls.length === 0);
+    const D = load({ roster: ROSTER, handler: gas({ list: () => ({ ok: true, rows: [R1] }) }), search: '?resident=901' });
+    D.ctx.boot(); await settle();
+    t('開ける時だけ読む（入居者を開く）', D.cnt.gate[0] === 'care-meeting' && D.ctx.cur && D.ctx.cur.id === '901');
   }
 
   group('1. 現場端末では取りに行かない');

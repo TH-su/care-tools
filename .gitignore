@@ -200,6 +200,11 @@ mailer/.DS_Store
 !/menu-settings.html
 !/menu-settings.js
 !/menu-settings.css
+!/app-access.html
+!/app-access.js
+!/app-access.css
+!/su-app-gate.js
+!/su-app-gate.css
 # メニューの毬（菊かがり・麻の葉）を描く部品（2026-10-26 代表者の決定）。数と色と座標だけで描き、端末に書かない・通信しない
 !/su-itomari.js
 # メニューの「入居者マスタ」の写しが止まっている時の札（2026-10-26 本人指示）。管理者の時だけ写しの記録の時刻を読む・氏名は読まない

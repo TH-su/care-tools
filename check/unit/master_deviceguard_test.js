@@ -89,7 +89,7 @@ function load(src, old){
   const cnt = { renderView: 0, renderRoster: 0, setSync: [], toast: [], shadow: [], srevSeen: 0,
     reload: 0, alert: [], closeSync: 0, loadData: 0, setViewActions: [], paintHospBtn: [],
     showScreen: [], saveOpenId: [], paintShBars: 0, paintAdmBar: 0, paintMealBar: 0, certEnsureFresh_: 0, patchDayUse: 0,
-    bkMarkStale_: 0, renderBulk: 0, navEnter: 0, pushState: 0, back: 0, closeBulk: 0 };
+    bkMarkStale_: 0, renderBulk: 0, navEnter: 0, pushState: 0, back: 0, closeBulk: 0, gate: 0 };
   const els = {};
   function fakeEl(id){
     if(!els[id]){
@@ -142,6 +142,8 @@ function load(src, old){
     srevSeen(){ cnt.srevSeen++; }, srevPickMeta(){ return null; },
     /* closeSync は数える偽物。実物と同じく同期設定（mSync）の on を外す（popstate で勝手に閉じられたかを見るため） */
     closeSync(){ cnt.closeSync++; fakeEl('mSync').classList.remove('on'); }, loadData(){ cnt.loadData++; },
+    /* ログインの役割の確かめ（2026-10-29）。既定は「確かめが通った後」（事務所PCで開いて使っている状態）。rmGate_ は数えるだけ */
+    rmGateOk_: true, rmGate_(){ cnt.gate++; },
     alert(m){ cnt.alert.push(String(m)); },
     location: { reload(){ cnt.reload++; } },
     apiGet(args, timeout){ return deferred('apiGet:' + (args && args.action), args, timeout); },
@@ -669,8 +671,9 @@ async function main(){
     L.store.set('su_device_role', 'field');
     L.box.applyDeviceGuard();
     L.cfgForm('https://example.invalid/exec', '', 'office');
+    L.box.rmGateOk_ = false;   /* 現場端末で開いた画面は、ログインの役割の確かめをまだ通っていない */
     L.box.saveSyncCfg();
-    eq('field→office: 用途 office・loadData 1回・reload 0回', [L.box.getDeviceRole(), L.cnt.loadData, L.cnt.reload], ['office', 1, 0]);
+    eq('field→office: 用途 office・名簿は読まずに確かめへ（loadData 0回・確かめ 1回）・reload 0回', [L.box.getDeviceRole(), L.cnt.loadData, L.cnt.gate, L.cnt.reload], ['office', 0, 1, 0]);
     t('field→office: ブロック表示が外れる', !L.els.deviceBlock.classList.contains('on'));
   }
 
