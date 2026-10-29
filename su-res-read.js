@@ -375,6 +375,7 @@
     } catch (e) { return gasFn(body); }
     return mode(io).then(function (m) {
       if (m !== 'live') return gasFn(body);
+      if (!caughtUp) { caughtUp = true; mirrorSoon(io); }   // 開いた時に1回、Google への写し返しの残りを追いつかせる（待たない・指摘5）
       return readSupabase(body, opts, io);
     });
   }
@@ -439,9 +440,50 @@
     } catch (e) { return gasFn(body); }
     return mode(io).then(function (m) {
       if (m !== 'live') return gasFn(body);
-      return postWrite(body, io).then(function (d) { return parseAs(d, opts && opts.parse); });
+      return postWrite(body, io).then(function (d) {
+        var out = parseAs(d, opts && opts.parse);
+        mirrorSoon(io);   // 保存できたら、Google へ写し返す（待たない・失敗しても保存の結果は変えない）
+        return out;
+      });
     });
   }
 
-  root.SUResRead = { call: call, write: write, refreshFlags: refreshFlags, _answer: answer, _toRow: toRow, _gas: GAS, _reset: function () { modeCache = null; modeAt = 0; ownFlags = null; } };
+  /* ── Google への写し返し（2026-10-29）──
+   * 切り替えた後に新しい保存先で保存できたら、入居者マスタの GAS（接続設定 rmaster_cfg の接続先）に resMirror を送る。
+   * GAS はログインした人の証明で新しい保存先から「前に写した版より後に変わった分」を読み、Google のシートへ書く（取りこぼしても次で続きから写る）。
+   * 送り方は各画面の GAS への保存と同じ（POST・text/plain・redirect:'follow'・res.json()）。合言葉は Google へだけ送る。
+   * 1本ずつ送り、送っている間に次の保存があれば、終わった後にもう1回だけ送る。失敗は記録だけ残す（画面には出さない） */
+  var mirroring = null, mirrorAgain = false, caughtUp = false;
+  function noteErr(where, e) {
+    try { if (root.SUErrors && typeof root.SUErrors.note === 'function') root.SUErrors.note('入居者マスタの写し返し: ' + where, e && e.message || e); } catch (x) { /* 記録できなくても止めない */ }
+  }
+  async function mirrorPost(io) {
+    var cfg = null;
+    try { cfg = io && io.cfg ? io.cfg() : JSON.parse(localStorage.getItem('rmaster_cfg') || 'null'); } catch (e) { cfg = null; }
+    var url = String(cfg && cfg.url || '').trim(), token = String(cfg && cfg.token || '').trim();
+    if (!url || !token) return null;   // 接続先の無い端末は送らない（ほかの端末・戻す時の写し返しで追いつく）
+    var A = await (io && io.auth ? io.auth() : loadAuth());
+    if (!A) return null;
+    var s = await A.client().auth.getSession();
+    var at = s && s.data && s.data.session && s.data.session.access_token;
+    if (!at) return null;
+    var f = io && io.fetch ? io.fetch : root.fetch.bind(root);
+    var r = await f(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                           body: JSON.stringify({ action: 'resMirror', token: token, accessToken: at }), redirect: 'follow' });
+    var j = await r.json();
+    if (!j || j.ok !== true) noteErr('Google が受け付けませんでした', j && j.error);
+    else if (j.more === true) mirrorAgain = true;   // 1回で写しきれなかった残りは続けて送る
+    return j;
+  }
+  function mirrorSoon(io) {
+    if (mirroring) { mirrorAgain = true; return mirroring; }
+    mirroring = mirrorPost(io).catch(function (e) { noteErr('送れませんでした', e); return null; }).then(function (j) {
+      mirroring = null;
+      if (mirrorAgain) { mirrorAgain = false; return mirrorSoon(io); }
+      return j;
+    });
+    return mirroring;
+  }
+
+  root.SUResRead = { call: call, write: write, mirror: mirrorSoon, refreshFlags: refreshFlags, _answer: answer, _toRow: toRow, _gas: GAS, _reset: function () { modeCache = null; modeAt = 0; ownFlags = null; mirroring = null; mirrorAgain = false; caughtUp = false; } };
 })(typeof window !== 'undefined' ? window : this);

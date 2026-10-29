@@ -263,6 +263,65 @@ const SHEET = [
       && /<script src="su-res-read\.js\?v=/.test(H));
   }
 
+  console.log('K Google への写し返し（resMirror）');
+  function authM(o) {
+    const a = authW(o);
+    const A0 = a.io.auth;
+    a.io.auth = async () => { const A = await A0(); const c = A.client; A.client = () => Object.assign(c(), { auth: { getSession: async () => ({ data: { session: o.noSession ? null : { access_token: 'h.p.s' } } }) } }); return A; };
+    a.sent = [];
+    a.io.cfg = () => (o.noCfg ? null : { url: 'https://script.example/exec', token: 'T' });
+    a.io.fetch = async (url, opt) => { a.sent.push([url, opt]); if (o.gate) await o.gate; return { json: async () => ({ ok: true, records: 1 }) }; };
+    return a;
+  }
+  const tick = () => new Promise(r => setTimeout(r, 0));
+  {
+    const { R: R2 } = load({ flags: { supabase: { master_live: true } } });
+    const a = authM({ mode: 'live', reply: { record: { id: 'r1' } } });
+    await R2.write({ action: 'saveResident', record: { id: 'r1' }, token: 'x' }, gasFn, { screen: 'resident-master', parse: 'throw' }, a.io);
+    for (let i = 0; i < 5; i++) await tick();
+    const s0 = a.sent[0] || [];
+    t('切り替えた後に保存できたら、Google へ写し返しを1回送る（各画面と同じ送り方・合言葉とログインの証明）', a.sent.length === 1 && s0[0] === 'https://script.example/exec'
+      && s0[1].method === 'POST' && s0[1].headers['Content-Type'] === 'text/plain;charset=utf-8' && s0[1].redirect === 'follow'
+      && s0[1].body === '{"action":"resMirror","token":"T","accessToken":"h.p.s"}', a.sent.map(x => x[1] && x[1].body));
+  }
+  for (const [label, flags, o] of [['スイッチが切', null, { mode: 'live' }], ['印が写しの期間', { supabase: { master_live: true } }, { mode: 'shadow' }],
+                                   ['断られた保存', { supabase: { master_live: true } }, { mode: 'live', refuse: { error: 'Error: conflict' } }],
+                                   ['接続先の無い端末', { supabase: { master_live: true } }, { mode: 'live', noCfg: true }],
+                                   ['ログインの証明が無い', { supabase: { master_live: true } }, { mode: 'live', noSession: true }]]) {
+    const { R: R2 } = load({ flags });
+    const a = authM(o);
+    try { await R2.write({ action: 'saveResident', record: { id: 'r1' }, token: 'x' }, gasFn, { screen: 'resident-master', parse: 'throw' }, a.io); } catch (e) { /* 断りは失敗のまま */ }
+    for (let i = 0; i < 5; i++) await tick();
+    t(label + ' → 写し返しを送らない', a.sent.length === 0);
+  }
+  {
+    const { R: R2 } = load({ flags: { supabase: { master_live: true } } });
+    let open; const gate = new Promise(r => { open = r; });
+    const a = authM({ mode: 'live', reply: { ok: true }, gate });
+    for (let i = 0; i < 4; i++) await R2.write({ action: 'setState', id: 'r1', token: 'x' }, gasFn, { screen: 'care-schedule', parse: 'json' }, a.io);
+    for (let i = 0; i < 5; i++) await tick();
+    const during = a.sent.length;
+    open();
+    for (let i = 0; i < 10; i++) await tick();
+    t('続けて保存しても、送っている間は待ち、終わった後にもう1回だけ送る', during === 1 && a.sent.length === 2, [during, a.sent.length]);
+  }
+  {
+    const { R: R2 } = load({ flags: { supabase: { master_live: true } } });
+    const a = authM({ mode: 'live' });
+    for (let i = 0; i < 2; i++) { try { await R2.call({ action: 'getRoster' }, gasFn, { screen: 'resident-master' }, a.io); } catch (e) { /* 名簿の口は模擬に無い */ } }
+    for (let i = 0; i < 5; i++) await tick();
+    t('切り替えた後に開いた時、1ページで1回だけ写し返しの残りを追いつかせる', a.sent.length === 1, a.sent.length);
+  }
+  {
+    const { R: R2 } = load({ flags: { supabase: { master_live: true } } });
+    let n = 0;
+    const a = authM({ mode: 'live', reply: { ok: true } });
+    a.io.fetch = async (url, opt) => { a.sent.push([url, opt]); n++; return { json: async () => ({ ok: true, more: n === 1 }) }; };
+    await R2.write({ action: 'setState', id: 'r1', token: 'x' }, gasFn, { screen: 'care-schedule', parse: 'json' }, a.io);
+    for (let i = 0; i < 10; i++) await tick();
+    t('写しきれなかった残り（more）があれば続けて送る', a.sent.length === 2, a.sent.length);
+  }
+
   console.log('H 端末に保存しない');
   t('localStorage へ書かない', writes.length === 0 && !/setItem/.test(SRC));
 

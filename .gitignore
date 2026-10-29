@@ -231,6 +231,7 @@ mailer/.DS_Store
 !/su-weight-shadow.js
 !/su-weight-live.js
 !/su-res-full.js
+!/su-tp-full.js
 !/su-res-read.js
 # 貼り薬カレンダーの設定を Supabase へ送る部品（段階2「送るだけ」・2026-10-17）。送るのは入居者IDと設定だけで、氏名は含まない
 !/su-patch-sync.js
