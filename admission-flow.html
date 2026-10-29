@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-biV9ZedqVp7iVDLWfCKu9oeMplLNJy6EAZUj+dHhwuY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-J7zrC/koianOLUhOu0QUj7jICZQYj1RYsYqHsuW/BjU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
@@ -488,6 +488,10 @@ details.dcd > .dbody > .cd > h3 { display: none; }   /* 見出しは summary に
   #printSheet.on { display: block !important; }
   @page { size: A4 portrait; margin: 7mm; }
 }
+/* 台帳の写し（自動）で違い・止まった時だけ出す帯（画面だけ・印刷しない・統合 0040） */
+.admf-band{margin:8px 12px;border-radius:var(--r);padding:8px 12px;background:#fef3c7;color:#92400e;font-size:13px;font-weight:700}
+.admf-band[hidden]{display:none !important}
+@media print{.admf-band{display:none !important}}
 </style>
 </head>
 <body>
@@ -497,6 +501,7 @@ details.dcd > .dbody > .cd > h3 { display: none; }   /* 見出しは summary に
   <button class="sync" id="syncChip" type="button" aria-label="同期状態の詳細を開く">未接続</button>
   <button class="reload" id="reloadBtn" type="button" aria-label="サーバーから再読込">⟳</button>
 </header>
+<div class="admf-band" id="admfBand" role="status" hidden></div>
 
 <main>
   <!-- ══ 一覧 ══ -->
@@ -706,6 +711,7 @@ details.dcd > .dbody > .cd > h3 { display: none; }   /* 見出しは summary に
 <script src="su-facility.js?v=2026-10-26"></script>
 <script src="su-data.js?v=2026-10-29.2"></script>
 <script src="su-data-gas.js?v=2026-10-29"></script>
+<script src="su-adm-full.js?v=2026-10-29"></script>
 <!-- 日付の和暦⇔西暦変換。職員マスタと同じものを使う（規則を2か所に書かない） -->
 <script src="staff-master-calc.js?v=2026-09-16"></script>
 <script>
@@ -1610,6 +1616,29 @@ function pull(showToast) {
     if (showToast) toast('読み込めませんでした: ' + (e && e.message || e));
     return false;
   });
+}
+
+/* 台帳の写し（統合 0040・2026-10-29）: 管理者（2段階認証）が事務所PCで開き、台帳を Google から読めた時に、
+   その日（日本時間）まだ写していなければ裏で写す（su-adm-full.js・1ページで1回・20秒後）。Google へは読む操作（get）だけ。
+   一致なら何も出さず、違い・止まった時だけ見出しの下に帯で知らせる（画面だけ・印刷しない・文字は textContent） */
+var admFullDone_ = false;
+function admFullBlocked_() {
+  try { return localStorage.getItem(DEVICE_KEY) === 'field'; } catch (e) { return true; }
+}
+function admFullAuto_() {
+  if (admFullDone_ || !window.SUAdmFull || !SU_DATA_READY || admFullBlocked_() || !syncTarget().endpoint) return;
+  admFullDone_ = true;
+  setTimeout(function () {
+    if (admFullBlocked_() || document.hidden) return;
+    SUAdmFull.auto({
+      gas: function (b) { return SU.data.kvGet(b.key); }
+    }).then(function (res) {
+      if (admFullBlocked_()) return;
+      var t = SUAdmFull.autoNote(res), el = document.getElementById('admfBand');
+      if (!el || !t) return;
+      el.textContent = t; el.hidden = false;
+    }).catch(function (e) { afNote_('台帳の写し（自動）', e); });
+  }, 20000);
 }
 
 /* 起動時は「サーバー版を無条件に採る」をしない（週間計画 startupPull の写し）。
@@ -5159,7 +5188,7 @@ function afStart_() {
     }, 300);
   }
   /* 添付の目録はサーバーにしか無い（端末には残さない）。台帳のあとに取り直す */
-  startupPull().then(function () { return refreshFiles(); }).then(function () { renderAll(); });
+  startupPull().then(function (ok) { if (ok) admFullAuto_(); return refreshFiles(); }).then(function () { renderAll(); });
   try { afResolveWho_(); } catch (e) { /* 直した人の確認の失敗は運用を止めない */ }
   window.addEventListener('storage', function (e) { if (e.key === null || AF_SESSION_RE.test(e.key || '')) { try { afResolveWho_(); } catch (e2) {} } });
   document.addEventListener('visibilitychange', function () { if (!document.hidden) { try { afResolveWho_(); } catch (e) {} } });

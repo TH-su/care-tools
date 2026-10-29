@@ -229,6 +229,36 @@ function sameShape(p) { return p && p.url === TP_URL && p.method === 'POST' && p
     t('AI の中継は、まだこの道に無い（まだ使えません・Google へ流さない）', /まだ使えません/.test(m) && x.posts.length === 0, m);
   }
 
+  {
+    const f = fakeAuth({ mode: 'live', reply: { ok: true, server: 'silverunix-training', ai: { key: false } } });
+    const x = box({ flags: { supabase: { training: true } }, auth: f.A });
+    x.w.fetch = ((orig) => (url, init) => { if (/^su-backend/.test(url)) return orig(url, init); x.posts.push({ url, body: init.body }); return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, ai: { key: true, limit: 300, usedToday: 2 } }) }); })(x.w.fetch);
+    const r = await x.w.tpPing();
+    t('切り替えた後の ping: 守りの一覧は tp-write、AI の状態は Google の ping から（AI の中継はまだ Google）', r && r.server === 'silverunix-training' && r.ai && r.ai.key === true && r.ai.usedToday === 2
+      && x.posts.length === 1 && x.posts[0].body === EXP.ping, [r, x.posts.map(p => p.body)]);
+  }
+  {
+    const x = box({});
+    x.w.fetch = ((orig) => (url, init) => { if (/^su-backend/.test(url)) return orig(url, init); x.posts.push({ url, body: init.body }); return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, rev: 4, data: { plans: [] }, switched: true }) }); })(x.w.fetch);
+    let m = 'OK'; try { await x.w.tpGet('training_plan:M1'); } catch (e) { m = e.message; }
+    t('gas の道で GAS が「切り替えた後・最中」（switched）と返したら、止まった中身を使わずに知らせる（送る本文は同じ）', /切り替えている最中か、切り替えた後/.test(m)
+      && x.posts.length === 1 && x.posts[0].body === '{"action":"get","key":"training_plan:M1","token":"tok-tp"}', [m, x.posts]);
+  }
+  {
+    const f = fakeAuth({ mode: 'shadow' });
+    const x = box({ flags: { supabase: { training: true } }, auth: f.A });
+    t('スイッチ入・印が分からない間は閉じる直前の送信をしない', x.w.SU.data.training.putBeacon('training_plan:M1', DOC, 3, x.w.tpTarget()) === false && x.beacons.length === 0);
+    await x.w.tpGet('training_plan:index');
+    t('印が「切り替える前」と分かった後は、今までどおり Google へ閉じる直前の送信をする（同じ本文）', x.w.SU.data.training.putBeacon('training_plan:M1', DOC, 3, x.w.tpTarget()) === true
+      && x.beacons.length === 1 && x.beacons[0].blob.text === EXP.beacon, x.beacons.length);
+  }
+  {
+    const f = fakeAuth({ mode: 'live' });
+    const x = box({ flags: { supabase: { training: true } }, auth: f.A });
+    await x.w.tpGet('training_plan:index');
+    t('印が「切り替えた後」なら閉じる直前の送信はしない', x.w.SU.data.training.putBeacon('training_plan:M1', DOC, 3, x.w.tpTarget()) === false && x.beacons.length === 0);
+  }
+
   console.log('\n— D. 入口を通らない呼び出しは常に gas —');
   {
     const x = box({ suBackend: 'supabase', flags: { supabase: { training: true, training_ai: true } } });

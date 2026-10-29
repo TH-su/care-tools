@@ -323,7 +323,7 @@ const settle = (ms) => new Promise((r) => setTimeout(r, ms || 10));
     const G = read('su-data-gas.js');
     const D = read('su-data.js');
     t('訓練計画書の get・ai（su-data.js の入口）は gas の道で印（authed）を付けて su-data-gas.js の送り口（kvGet・kvRaw→post）を通る',
-      /return SU_DATA\.kvGet\(key, authed\(opts\)\);/.test(D) && /return SU_DATA\.kvRaw\(\{ action: 'ai', body: body \}, authed\(opts\)\);/.test(D) &&
+      /return SU_DATA\.kvGet\(key, authed\(opts\)\)(;|\.then\()/.test(D) && /return SU_DATA\.kvRaw\(\{ action: 'ai', body: body \}, authed\(opts\)\);/.test(D) &&
       /kvGet: function \(key, t, opts\) \{ return post\(/.test(G) && /kvRaw: function \(payload, t, opts\) \{\s*return post\(payload, t, opts\);/.test(G));
     t('su-data-gas.js: 印（opts.gasAuth）がある時だけ部品を使う', /var ga = \(opts && opts\.gasAuth === true\) \? global\.SUGasAuth : null;/.test(region(G, 'post')));
     t('su-data-gas.js: ページを閉じる時の送信（sendBeacon）には足さない', !/SUGasAuth/.test(G.slice(G.indexOf('kvPutBeacon:'), G.indexOf('kvRaw:'))));

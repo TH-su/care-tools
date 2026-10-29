@@ -108,6 +108,15 @@
     </section>
 
     <section class="cd">
+      <h2>入居調整の台帳の写し</h2>
+      <p class="muted">管理者が事務所PCで入居調整を開くと、その日まだ写していなければ裏で自動で写します（1日1回・一致なら何も出さず、違い・止まった時だけ入居調整の見出しの下に知らせます）。今すぐ写したい時はボタンを押します（管理者だけ）。ボタンを押すと、この端末の入居調整の接続先（Google）から台帳を読み、Supabase へ写してから、写しを読み直して見比べます。版・案件の件数と違いの種類だけを出し、氏名・中身は出しません。読んだ中身はこの端末に残しません。添付書類（PDF）は写しません。正本は今までどおり Google です。</p>
+      <div class="kpis" id="admf-kpis"></div>
+      <p id="admf-verdict" class="msg"></p>
+      <div class="acts"><button type="button" class="btn" id="b-adm-full" hidden>入居調整の台帳を写す</button></div>
+      <ul class="acct" id="admf-runs"></ul>
+    </section>
+
+    <section class="cd">
       <h2>訪問日・かかりつけ病院の写し（通所 利用表の☆）</h2>
       <p class="muted">事務所・管理者が入居者マスタを開くたびに、名簿の訪問日とかかりつけ病院が写されます（現場のアカウントは読めない写しです）。ボタンを押した時だけ、この端末の入居者マスタの接続先（Google）から名簿を読んで見比べます。人数と、違いのある利用者No だけを出し、氏名・病院名・曜日は出しません。</p>
       <div class="kpis" id="care-kpis"></div>
@@ -233,8 +242,9 @@
 <script src="su-kv-shadow.js?v=2026-10-28"></script>
 <script src="su-patch-sync.js?v=2026-10-28"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
-<script src="su-res-full.js?v=2026-10-29.3"></script>
+<script src="su-res-full.js?v=2026-10-29.4"></script>
 <script src="su-tp-full.js?v=2026-10-29.2"></script>
-<script src="shadow-check.js?v=2026-10-29.3"></script>
+<script src="su-adm-full.js?v=2026-10-29"></script>
+<script src="shadow-check.js?v=2026-10-29.4"></script>
 </body>
 </html>

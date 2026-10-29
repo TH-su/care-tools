@@ -224,7 +224,13 @@
     training: {
       /* 計画書・索引の読み取り {action:'get', key} */
       get: function (key, opts) {
-        return entryCall('training', 'training', 'get', [key, opts], function () { return SU_DATA.kvGet(key, authed(opts)); });
+        return entryCall('training', 'training', 'get', [key, opts], function () {
+          /* 送る本文は今までと同じ。計画書の GAS が「切り替えた後・切り替えの最中」（switched）と返した時は、止まった Google の中身を今の中身として使わない */
+          return SU_DATA.kvGet(key, authed(opts)).then(function (r) {
+            if (r && r.switched === true) throw new Error('計画書の保存先を切り替えている最中か、切り替えた後です。少し待ってから画面を読み込み直してください（続く時は管理者へ連絡してください）');
+            return r;
+          });
+        });
       },
       /* 保存 {action:'put', key, data, rev[, allowDrop:true][, accessToken]}。extra.allowDrop は「完全に削除」の1回だけ。
          extra.accessToken はログインの証明（ある時だけ本文に添える） */
@@ -238,7 +244,8 @@
       },
       /* ページを閉じる直前の最終送信。戻り値は送信を受け付けたかだけ。supabase の道では送らない（false） */
       putBeacon: function (key, value, rev, opts) {
-        if (entryRoute('training') === 'supabase') return false;
+        /* スイッチが入でも、データベースの印が「切り替える前」と分かっている間は今までどおり Google へ送る（切り替えた後・分からない時は送らない） */
+        if (entryRoute('training') === 'supabase' && !(drivers.supabase && typeof drivers.supabase.beaconGas === 'function' && drivers.supabase.beaconGas())) return false;
         return SU_DATA.kvPutBeacon(key, value, rev, opts);
       },
       /* 接続の確かめ・守り一覧 {action:'ping'} */
