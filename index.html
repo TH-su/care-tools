@@ -27,6 +27,16 @@
        実質の防御は「現場端末に接続URL・合言葉を配らない」という運用側にある。
        同じ環境では各アプリのブロック画面も localStorage 前提のため同様に外れる＝ここが砦ではない。
        iOS の storage 消去（ITP 等）で su_device_role 自体が消えると、タイル復活とガード解除が同時に起きる。 -->
+<!-- 部品を同時に読み込む指示（2026-10-29 本人指示）。下の <script src> は1本ずつ順に読まれ、読み終わるまで画面が真っ白になるため、
+     先に全部の読み込みを始めさせる。読む順番と中身は変えない。部品の ?v= を上げたら、ここも同じ値にする（試験 menu_preload_test で確かめる） -->
+<link rel="preload" as="script" href="su-errors.js?v=2026-10-27">
+<link rel="preload" as="script" href="su-cfg-hint.js?v=2026-10-01.2">
+<link rel="preload" as="script" href="su-perf.js?v=2026-10-27">
+<link rel="preload" as="script" href="su-menu.js?v=2026-10-29">
+<link rel="preload" as="script" href="su-itomari.js?v=2026-10-26.2">
+<link rel="preload" as="script" href="su-sync-stale.js?v=2026-10-26">
+<link rel="preload" as="script" href="su-report.js?v=2026-10-28">
+<link rel="preload" as="script" href="su-facility.js?v=2026-10-26">
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-27"></script>
