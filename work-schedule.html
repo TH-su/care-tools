@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-LBW+2P89u2vtiPsWhC/VAUA6KuVeSG8kP58N9XOAg9U='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-r7aGR2MJ06HXb1iqSISntKa0aHlR8oZA3on7MByKW7Y='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -9307,26 +9307,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (!(t.end > t.start)) return null;   /* 破損枠（end<=start）は描画しない（最終防御） */
     var top = yFor(scale, t.start, isNight);
     var h = Math.max(yFor(scale, t.end, isNight) - top, 12);
-    /* 施設業務/自由枠の連続表示: 画面表示時のみ、内包する正時(00-59)いっぱいへ見た目を拡張し、
-     * 支援(care)を上に重ねて「1時間の連続した1業務」に見せる。データ(start/end)は不変。
-     * その正時に拡張可能な施設枠が1つだけ(ex.facSpanAlone)のときのみ。隣接の非支援枠(ex.snapLo/snapHi)
-     * と勤務時間(ex.wsMin/weMin)でクランプし、休憩や別の施設枠へはみ出さない。 */
-    if (ex.facSpanAlone && !ex.print && !isNight) {
-      var hf = Math.floor(t.start / 60) * 60;
-      var vTop = hf;
-      if (ex.wsMin !== undefined && ex.wsMin > vTop) vTop = ex.wsMin;
-      if (ex.snapLo !== undefined && ex.snapLo > vTop) vTop = ex.snapLo;
-      var vEnd = hf + 60;
-      if (ex.weMin !== undefined && ex.weMin < vEnd) vEnd = ex.weMin;
-      if (ex.snapHi !== undefined && ex.snapHi < vEnd) vEnd = ex.snapHi;
-      /* まとめ表示は「拡張専用」＝実データの範囲より縮めない(勤務開始クランプ等で 7:00 枠が 7:40 に見える描画退行を防ぐ) */
-      if (vTop > t.start) vTop = t.start;
-      if (vEnd < t.end) vEnd = t.end;
-      if (vEnd > vTop) {
-        top = yFor(scale, vTop, isNight);
-        h = Math.max(yFor(scale, vEnd, isNight) - top, 12);
-      }
-    }
+    /* 枠の高さは画面・印刷とも実際の時刻どおり（start〜end）。以前は画面だけ施設業務/自由枠を正時いっぱいへ
+     * 広げていたが（facSpanAlone）、17:00-17:40 に縮めた枠が画面で1時間に見え印刷と合わなかったため止めた
+     * （2026-10-29 本人指示「長さを自由に調整し、それが時間に合致している必要がある・すべての枠で」）。 */
     var cls = 'b-task ' + kindClass(t);
     if (t.src === 'facwork') cls += ' facwork';   /* 自動充填の施設業務/休憩=黒罫線 */
     if (t.kind === 'care' && M.isChanged(t)) cls += ' changed';   /* 2重罫線=支援枠のみ（空枠/施設業務は付けない） */
@@ -9683,41 +9666,6 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     canvas.appendChild(buildGridOverlay(scale));
     boardEl.appendChild(canvas);
 
-    /* 施設業務/自由枠の連続表示用の事前集計（画面表示時のみ）:
-     * facHourCount = 列×正時ごとの「単一正時に収まる施設/自由枠」数（=1 のとき拡張可）。
-     * occByCol = 列ごとの全枠(care含む)の範囲（拡張のクランプ境界に使う）。
-     *   ※care も含めることで、施設業務のまとめ表示が支援(care)の上へ拡張して重なるのを防ぐ
-     *   （データは元々 care を避けて配置済み＝見た目だけ支援境界で止める。要件: 重なりだけ直す）。 */
-    var facHourCount = {}, occByCol = {};
-    if (!opts.printMode) {
-      for (var fa = 0; fa < day.tasks.length; fa++) {
-        var ftk = day.tasks[fa];
-        if (ftk.staffId === null) continue;
-        var fstk = staffById[ftk.staffId];
-        if (!fstk || nightByCol[fstk.col]) continue;
-        if (!occByCol[fstk.col]) occByCol[fstk.col] = [];
-        occByCol[fstk.col].push({ id: ftk.id, start: ftk.start, end: ftk.end });
-        if (ftk.src === 'facwork' && (ftk.kind === 'facility' || ftk.kind === 'free') && !M.namedFree(ftk) &&
-            Math.floor(ftk.start / 60) === Math.floor((ftk.end - 1) / 60)) {
-          var hk = Math.floor(ftk.start / 60);
-          if (!facHourCount[fstk.col]) facHourCount[fstk.col] = {};
-          facHourCount[fstk.col][hk] = (facHourCount[fstk.col][hk] || 0) + 1;
-        }
-      }
-      /* 勤務時間外へ仮に外した支援の元の場所（札の oohHold）も境に入れる（2026-10-22 反証レビュー指摘: データでは空けてあるのに、同じ正時に残った
-       * 施設業務の切れ端が正時いっぱいへ広がって描かれ、画面だけ空けた所が施設業務に見えた。印刷は広げないので空いて出ていた） */
-      for (var fh = 0; fh < day.tasks.length; fh++) {
-        var hh0 = day.tasks[fh] && day.tasks[fh].oohHold;
-        if (!hh0 || !hh0.length) continue;
-        for (var fj = 0; fj < hh0.length; fj++) {
-          var hst = hh0[fj] && staffById[hh0[fj].staffId];
-          if (!hst || nightByCol[hst.col]) continue;
-          if (!occByCol[hst.col]) occByCol[hst.col] = [];
-          occByCol[hst.col].push({ id: '_hold_' + day.tasks[fh].id + '_' + fj, start: hh0[fj].start, end: hh0[fj].end });
-        }
-      }
-    }
-
     /* 重なり表示(2026-09-10): 同一レーンで時間が重なる枠を横並び(サブ列)に割り付ける。
      * 重なりが無い日は空写像＝従来と同じ描画。画面・印刷とも同じ割付を使う。 */
 
@@ -9753,28 +9701,6 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
                  moved: !!(task.kind === 'care' && moSoftSet[task.residentName]) };
       if (ex.hosp || ex.pre || ex.moved) ex.ooh = false;   /* 実施しない札（入院・入居前・退去）は赤くしない＝極薄・斜線の見え方を残す */
       var ovl = Object.prototype.hasOwnProperty.call(ovlMap, task.id) ? ovlMap[task.id] : null;
-      /* facwork(施設/自由枠)で、その正時に拡張対象が1枠だけなら背景を正時いっぱいへ拡張する
-       * （重なりクラスタの枠は横並び表示を優先し、まとめ拡張しない） */
-      /* 名前・内容を書いた自由枠（支援として使う札）は支援と同じに実際の時刻で描く（2026-10-22 反証レビュー指摘: 19:40〜20:00 の札が 19:00〜20:00 に見えた） */
-      if (!ovl && !opts.printMode && !nightByCol[st.col] && task.src === 'facwork' &&
-          (task.kind === 'facility' || task.kind === 'free') && !M.namedFree(task) &&
-          Math.floor(task.start / 60) === Math.floor((task.end - 1) / 60)) {
-        var hcc = facHourCount[st.col];
-        if (hcc && hcc[Math.floor(task.start / 60)] === 1) {
-          ex.facSpanAlone = true;
-          ex.wsMin = st.workStart; ex.weMin = st.workEnd;
-          var nb = occByCol[st.col] || [];
-          var lo = undefined, hi = undefined;   /* 隣接枠(支援care含む)でクランプ（休憩・別施設枠・支援へはみ出さない）。札ごとに空へ戻す（2026-10-22: var は前の札の値が残っていた） */
-          for (var nbi = 0; nbi < nb.length; nbi++) {
-            var o = nb[nbi];
-            if (o.id === task.id) continue;
-            if (o.end <= task.start) { if (lo === undefined || o.end > lo) lo = o.end; }
-            else if (o.start >= task.end) { if (hi === undefined || o.start < hi) hi = o.start; }
-          }
-          if (lo !== undefined) ex.snapLo = lo;
-          if (hi !== undefined) ex.snapHi = hi;
-        }
-      }
       var bEl = buildTask(task, scale, opts.selectedIds, nightByCol[st.col], ex);
       if (bEl && ovl) {
         /* inline 指定は印刷CSS(body.printing .b-task.p-task の left/right・!important無し)より優先＝
@@ -21395,7 +21321,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261028223707';
+  var WS_BUILD = '20261029120831';
   var WS_APP_VER = 2026102701;   /* 2026-10-27 まだ届いていないロックを「外した」に変えて送り、版の進んでいない古い未送信を退避して捨てる前の版の画面が、仕上げたロックの盤面を前の版で上書きしないよう上げた（代表者承認 A・B）
                                   * （2026101706: 2026-10-23 トレイへ入った理由の印（parkedByHand・absentMoved・routineTray）を知らない前の版の画面が、手で戻した札・休みで移した札を印なしで残し、
                                   * 新しい版がそれを列へ戻してしまわないよう上げた）
