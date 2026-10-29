@@ -82,11 +82,12 @@
     var f = readFlags();
     return (f && f[flag] === true) ? 'supabase' : 'gas';
   }
-  /* supabase の道へは「入口の名前・関数の名前・引数」をそのまま渡す（道の側で表と関数に読み替える） */
+  /* supabase の道へは「入口の名前・関数の名前・引数」をそのまま渡す（道の側で表と関数に読み替える）。
+     gas の道の関数も渡す＝道の側は、データベースの印が「切り替える前」の時だけそれを呼ぶ（スイッチが入の間の断りは Google へ流さない） */
   function entryCall(flag, group, method, args, gasFn) {
     if (entryRoute(flag) === 'supabase') {
       var s = drivers.supabase;
-      try { return Promise.resolve(s.entry(group, method, args)); }
+      try { return Promise.resolve(s.entry(group, method, args, gasFn)); }
       catch (e) { return Promise.reject(e); }
     }
     return gasFn();

@@ -146,6 +146,83 @@ function world(o) {
     t('公開の許可リストに載っている', /^!\/su-tp-full\.js$/m.test(read('GITIGNORE', '.gitignore')));
   }
 
+  console.log('K 切り替える・戻す（cutover・back）');
+  function cw(o) {
+    o = o || {};
+    const order = [], st = { switched: false, mode: 'shadow' };
+    const w = world({ rpc: {
+      tp_op_begin: a => { order.push('op:' + a.p_op); return o.busy ? { data: { ok: false, error: 'busy' }, error: null } : { data: { ok: true, token: 'TK' }, error: null }; },
+      tp_op_end: a => { order.push('end:' + a.p_token); return { data: { ok: true }, error: null }; },
+      tp_mode_get: () => ({ data: { ok: true, mode: st.mode }, error: null }),
+      tp_import_mark_frozen: () => { order.push('frozen'); return { data: { ok: !o.frozenFail }, error: null }; },
+      tp_set_mode: a => { order.push('mode:' + a.p_mode); if (o.modeErr && a.p_mode === 'live') return { data: { ok: false, error: o.modeErr }, error: null };
+        st.mode = a.p_mode; if (o.lostLive && a.p_mode === 'live') return { data: null, error: { message: 'Failed to fetch' } }; return { data: { ok: true, mode: a.p_mode }, error: null }; }
+    }, mangle: o.mangle });
+    const g0 = w.gas;
+    w.gas = async body => {
+      if (body.action === 'tpCutover') {
+        order.push('cut:' + body.on);
+        if (body.accessToken !== 'h.p.s' || body.opToken !== 'TK') return { ok: false, error: 'Error: refused: 切り替えの操作の札がありません' };
+        if (body.on) { st.switched = true; if (o.lostOn) throw new Error('Google に届きませんでした'); return { ok: true, switched: true }; }
+        if (o.mirrorMore && o.mirrorMore-- > 0) return { ok: false, error: 'Error: refused: 写し返しが残っています。もう一度押してください' };
+        st.switched = false; return { ok: true, switched: false, docs: 2 };
+      }
+      return g0(body);
+    };
+    w.token = async () => (o.noToken ? null : 'h.p.s');
+    return { w, order, st };
+  }
+  {
+    const { w, order, st } = cw();
+    const r = await R.cutover(w);
+    t('切り替える: 札→止める→止めた後の写し→切り替え→札を返す', r.ok === true && order.join(',') === 'op:cutover,cut:true,frozen,mode:live,end:TK' && st.mode === 'live' && st.switched, [r, order]);
+    t('切り替える: 止めた後の印は写しの始まりの直後', w.rpcs.map(x => x.name).indexOf('tp_import_mark_frozen') === w.rpcs.map(x => x.name).indexOf('tp_import_begin') + 1);
+  }
+  for (const [label, o, re] of [['写しが Google と違う', { mangle: r => Object.assign({}, r, { rev: 99 }) }, /違う計画書/], ['止めた後の印を付けられない', { frozenFail: true }, /止めた後/],
+                                ['切り替えが断られた（noop）', { modeErr: 'noop' }, /時間切れ/], ['止める指示の応答が届かない', { lostOn: true }, /届きません/]]) {
+    const { w, order, st } = cw(o);
+    const r = await R.cutover(w);
+    t('切り替える: ' + label + ' → 止めて Google の保存を戻し、札を返す', r.ok === false && re.test(r.why) && order.slice(-2).join(',') === 'cut:false,end:TK' && !st.switched && st.mode === 'shadow', [r, order]);
+  }
+  {
+    const { w, st } = cw({ lostLive: true });
+    const r = await R.cutover(w);
+    t('切り替える: 応答が届かなくても読み直して切り替わっていれば成功', r.ok === true && st.mode === 'live', r);
+  }
+  {
+    const { w, order } = cw({ busy: true });
+    const r = await R.cutover(w);
+    t('切り替える: 別の画面で動いている時は何もしない', r.ok === false && /別の画面/.test(r.why) && order.join(',') === 'op:cutover', [r, order]);
+  }
+  {
+    const { w, order, st } = cw({ mirrorMore: 2 });
+    st.mode = 'live'; st.switched = true;
+    const r = await R.back(w);
+    t('戻す: 札→写しの期間→写し返しが残る間は続けて→印を外す→札を返す', r.ok === true && r.docs === 2 && order.join(',') === 'op:back,mode:shadow,cut:false,cut:false,cut:false,end:TK' && !st.switched, [r, order]);
+  }
+  {
+    const { w, st } = cw({ noToken: true });
+    st.mode = 'live'; st.switched = true;
+    const r = await R.back(w);
+    t('戻す: 写し返しが済まない時は、戻したことと押し直しを伝える', r.ok === false && /写しの期間には戻しました/.test(r.why) && st.mode === 'shadow', r);
+  }
+  {
+    const calls = [];
+    const A = { STATUS: { OK: 'ok' }, check: async () => ({ status: 'ok', role: 'admin' }),
+      client: () => ({ from: () => ({ select: () => ({ order: () => ({ limit: async () => ({ data: [], error: null }) }) }) }), rpc: async (n) => { calls.push(n); return n === 'tp_op_busy' ? { data: true, error: null } : { data: null, error: { code: 'x' } }; } }) };
+    const r = await R.auto({ gas: async () => ({}), rosterIds: async () => [], auth: async () => A });
+    t('自動の写し: 切り替える・戻すが動いている間は写さない', r.skip === 'op' && calls.join(',') === 'tp_op_busy', [r, calls]);
+  }
+  {
+    const SH = read('SHADOW_HTML', 'shadow-check.html'), SJ = read('SHADOW_JS', 'shadow-check.js');
+    const fn = SJ.slice(SJ.indexOf('function trainingOn'), SJ.indexOf('/* 入居者マスタの正本の切り替え（統合 0036'));
+    t('写しの見比べ: 計画書の切り替える・戻すのボタンは最初は隠し、管理者だけ・スイッチ training が入の時だけ切り替えを出す',
+      /id="b-tp-cut" hidden>計画書を新しい保存先へ切り替える</.test(SH) && /id="b-tp-back" hidden>計画書を写しの期間に戻す</.test(SH)
+      && /if \(!\(me && me\.role === 'admin'\)\) return;/.test(fn) && /bc\.hidden = live \|\| stuck \|\| !on \|\| !tt \|\| !mt;/.test(fn) && /bb\.hidden = !\(live \|\| stuck\) \|\| !tt;/.test(fn));
+    t('写しの見比べ: 押した時も管理者・現場の端末・スイッチを確かめ、2回確かめてから行う・textContent', /me\.status === SUAuth\.STATUS\.OK/.test(fn) && /role === 'field'/.test(fn)
+      && /if \(!trainingOn\(\)\)/.test(fn) && (fn.match(/confirm\(/g) || []).length === 3 && !/innerHTML/.test(fn));
+  }
+
   finished = true;
   console.log(`\n合格 ${pass} / 不合格 ${fail}`);
   process.exitCode = fail ? 1 : 0;
