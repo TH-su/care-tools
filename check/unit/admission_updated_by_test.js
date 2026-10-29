@@ -156,8 +156,9 @@ console.log('\n— 6. 誰が（ログイン・ログアウト・確かめられ�
   }
   t('起動時・別タブのログイン/ログアウト・画面に戻った時に取り直す',
     /try \{ afResolveWho_\(\); \} catch \(e\)/.test(SRC) && /addEventListener\('storage', function \(e\) \{ if \(e\.key === null \|\| AF_SESSION_RE\.test\(e\.key \|\| ''\)\)/.test(SRC) && /visibilitychange', function \(\) \{ if \(!document\.hidden\) \{ try \{ afResolveWho_\(\);/.test(SRC), '');
-  t('★保存の要求にログインの証明を添える（kvRaw・呼んだ時の姿を送る・GAS が確かめる・2026-10-13）',
-  /var snap = JSON\.parse\(JSON\.stringify\(data\)\);\s*return afAccessToken_\(\)\.then\(function \(at\) \{\s*var p = \{ action: 'put', key: KV_KEY, data: snap, rev: rev \};\s*if \(opts && opts\.force\) p\.force = true;\s*if \(at\) p\.accessToken = at;\s*return SU\.data\.kvRaw\(p\);/.test(SRC), '');
+  // 2026-10-30: 台帳の入口（SU.data.admission.put）が同じ本文 {action:'put', key, data, rev[, force][, accessToken]} を作る形に置き換えた（check/unit/adm_entry_test.js が本文の一字一句を確かめる）
+  t('★保存の要求にログインの証明を添える（呼んだ時の姿を送る・GAS が確かめる・2026-10-13）',
+  /var snap = JSON\.parse\(JSON\.stringify\(data\)\);\s*return afAccessToken_\(\)\.then\(function \(at\) \{[\s\S]{0,200}?var ex = \{\};\s*if \(opts && opts\.force\) ex\.force = true;\s*if \(at\) ex\.accessToken = at;\s*return SU\.data\.admission\.put\(KV_KEY, snap, rev, ex\);/.test(SRC), '');
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
   process.exit(fail ? 1 : 0);
 })();

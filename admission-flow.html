@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-J7zrC/koianOLUhOu0QUj7jICZQYj1RYsYqHsuW/BjU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-R6nIR4q0q8UDvnsKMRc3R8b1w6e8hy91xYA+BRpVfrQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
@@ -709,9 +709,10 @@ details.dcd > .dbody > .cd > h3 { display: none; }   /* 見出しは summary に
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-app-gate.js?v=2026-10-29"></script>
 <script src="su-facility.js?v=2026-10-26"></script>
-<script src="su-data.js?v=2026-10-29.2"></script>
+<script src="su-data.js?v=2026-10-30"></script>
 <script src="su-data-gas.js?v=2026-10-29"></script>
-<script src="su-adm-full.js?v=2026-10-29"></script>
+<script src="su-data-supabase.js?v=2026-10-30"></script>
+<script src="su-adm-full.js?v=2026-10-30"></script>
 <!-- 日付の和暦⇔西暦変換。職員マスタと同じものを使う（規則を2か所に書かない） -->
 <script src="staff-master-calc.js?v=2026-09-16"></script>
 <script>
@@ -1586,7 +1587,7 @@ function pull(showToast) {
   var t = syncTarget();
   if (!t.endpoint) { setSync('未接続'); return Promise.resolve(false); }
   setSync('同期中…');
-  return SU.data.kvGet(KV_KEY).then(function (j) {
+  return SU.data.admission.get(KV_KEY).then(function (j) {
     if (!j || !j.ok) throw new Error((j && j.error) || '応答エラー');
     lastPullAt = Date.now();
     var rev = Number(j.rev) || 0;
@@ -1648,7 +1649,7 @@ function startupPull() {
   var t = syncTarget();
   if (!t.endpoint) { setSync('未接続'); return Promise.resolve(false); }
   setSync('同期中…');
-  return SU.data.kvGet(KV_KEY).then(function (j) {
+  return SU.data.admission.get(KV_KEY).then(function (j) {
     if (!j || !j.ok) throw new Error((j && j.error) || '応答エラー');
     lastPullAt = Date.now();
     var rev = Number(j.rev) || 0;
@@ -1734,7 +1735,7 @@ function push(force) {
     }
     if (j && j.conflict) {
       setSync('統合中…');
-      return SU.data.kvGet(KV_KEY).then(function (g) {
+      return SU.data.admission.get(KV_KEY).then(function (g) {
         if (!g || !g.ok) throw new Error((g && g.error) || '応答エラー');
         if (g.data && Array.isArray(g.data.candidates)) DB = mergeDb(DB, normalizeDb(g.data));
         kvRev = Number(g.rev) || 0;
@@ -1773,15 +1774,16 @@ function kvPutWithOpts(data, rev, opts) {
      （合言葉は su-data-gas の post が接続先の値で入れる）。★証明を待つ間に台帳が変わっても、呼んだ時の姿を送る（今までと同じ） */
   var snap = JSON.parse(JSON.stringify(data));
   return afAccessToken_().then(function (at) {
-    var p = { action: 'put', key: KV_KEY, data: snap, rev: rev };
-    if (opts && opts.force) p.force = true;
-    if (at) p.accessToken = at;
-    return SU.data.kvRaw(p);
+    /* 台帳の入口（SU.data.admission）が今までと同じ本文 {action:'put', key, data, rev[, force][, accessToken]} を作る（切り替えた後は新しい保存先へ） */
+    var ex = {};
+    if (opts && opts.force) ex.force = true;
+    if (at) ex.accessToken = at;
+    return SU.data.admission.put(KV_KEY, snap, rev, ex);
   });
 }
 function verifyPushed() {
   if (!SU_DATA_READY) return Promise.resolve(false);
-  return SU.data.kvGet(KV_KEY).then(function (g) {
+  return SU.data.admission.get(KV_KEY).then(function (g) {
     if (!g || !g.ok || !g.data || !Array.isArray(g.data.candidates)) return false;
     var same = JSON.stringify(asArr(normalizeDb(g.data).candidates)) === JSON.stringify(asArr(DB.candidates));
     if (same) { kvRev = Number(g.rev) || kvRev; dirty = false; retryWait = 0; saveCache(); }
@@ -1793,7 +1795,7 @@ function verifyPushed() {
    ★iOS Safari は beforeunload が発火しないことが多いので pagehide にも結線する。
    ★beacon は成否を読めないので、これを唯一の保存手段にしない（次回起動の startupPull が検証する）。 */
 function flushOnExit() {
-  if (dirty && SU_DATA_READY) { try { SU.data.kvPutBeacon(KV_KEY, DB, kvRev); } catch (e) { afNote_('離脱時の送信', e); } }
+  if (dirty && SU_DATA_READY) { try { SU.data.admission.putBeacon(KV_KEY, DB, kvRev); } catch (e) { afNote_('離脱時の送信', e); } }
 }
 window.addEventListener('pagehide', flushOnExit);
 window.addEventListener('beforeunload', function (ev) {
@@ -5049,7 +5051,7 @@ function pingServer() {
   if (!SU_DATA_READY) { toast('データ層を読み込めていません'); return; }
   if (!syncTarget().endpoint) { toast('同期先が未設定です'); return; }
   toast('確認中…');
-  SU.data.kvRaw({ action: 'ping' }).then(function (j) {
+  SU.data.admission.ping().then(function (j) {
     if (!j || !j.ok) throw new Error((j && j.error) || '応答エラー');
     serverCaps = j;
     renderSyncModal();
