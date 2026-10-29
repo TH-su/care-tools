@@ -1029,7 +1029,7 @@
   }
 
   /* 保管期限で消した記録の1行（操作記録 audit_log の ats_purge の行）を画面に出す形にする（2026-10-29 本人指示「消した件数を記録に残して」）。
-     fields は ['count:人数', 'files:書類の件数']（files は 0037 から。それより前の行は null＝記録なし）。人数が読めない行は null */
+     fields は ['count:人数', 'files:書類の件数']（files は 0039 から。それより前の行は null＝記録なし）。人数が読めない行は null */
   function purgeLogRow(r) {
     if (!r || !Array.isArray(r.fields)) return null;
     var count = null, files = null;

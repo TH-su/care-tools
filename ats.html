@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-god7oWR6AlrVuDu8vyEiV/znD5bgQKpwTWt4k6hhF5Q='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-HEf+zp4We5NCFtBPG38+Rbu+qXh8KSwfrXnnUiNV4xI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 書類（PDF）を左の枠に出すため、この画面だけ CSP の frame-src に blob: を足す（check/csp.mjs が読む印） -->
@@ -1295,7 +1295,7 @@ function delFile_(fid){
 }
 /* 保管期限で消す前に、その方々の書類を置き場から消す（2026-10-29 本人指示「期限で消す時は置き場の書類（PDF）も一緒に消して」）。
    台帳に載っていない PDF（置いた直後に台帳への登録が失敗した分）も残さないよう、台帳ではなく置き場の「事業者/応募者/」の一覧を取って全部消す。
-   台帳の行は ats_purge（0037）が、置き場から消えたのを確かめてから消して件数を数える。台帳がまだ無い（0035 の前）なら書類も無い */
+   台帳の行は ats_purge（0039）が、置き場から消えたのを確かめてから消して件数を数える。台帳がまだ無い（0035 の前）なら書類も無い */
 function purgeFilesFirst_(ids){
   /* 消す直前に応募者をデータベースから読み直し、ats_purge が消す見込みの方（職員の番号なし・確かめ中でない・期限を過ぎた）の書類だけを消す
      （別の端末で登録・段階の戻しがあった方の書類を先に消してしまわないように） */
@@ -2132,7 +2132,7 @@ function runPurge_(){
       if(my!==gen) return null;
       if(fr.ng.length){ setMsg('書類（PDF）を消せなかったため、応募者は消していません（'+fr.ng.join('／')+'）。'); return null; }
       return rpc_('ats_purge',{p_ids:ids}).then(null,function(e){
-        /* 0037 の前の ats_purge は台帳の行が残っていると外部キー（23503）で止まる。置き場からは消えたので台帳を消してから呼び直す */
+        /* 0039 の前の ats_purge は台帳の行が残っていると外部キー（23503）で止まる。置き場からは消えたので台帳を消してから呼び直す */
         if(!(e&&e.code==='23503')||!fr.ledger.length) throw e;
         return removeLedger_(fr.ledger).then(function(n){ if(my!==gen) return null; return rpc_('ats_purge',{p_ids:ids}).then(function(d){ return Object.assign({files:n},d||{}); }); });
       });
@@ -2150,7 +2150,7 @@ function runPurge_(){
     });
   });
 }
-/* 0037 の前の ats_purge のために、置き場から消した書類の台帳の行を消す（置き場に中身が無い時だけ消える）。消せた件数を返す */
+/* 0039 の前の ats_purge のために、置き場から消した書類の台帳の行を消す（置き場に中身が無い時だけ消える）。消せた件数を返す */
 function removeLedger_(list){
   var n=0, chain=Promise.resolve();
   list.forEach(function(f){ chain=chain.then(function(){ return rpc_('ats_file_del',{p_id:f.id}); }).then(function(d){ if(d&&d.ok===true) n+=Number(d.deleted)||0; }); });
