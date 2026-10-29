@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-zI4w6mEXt87YtdxX8+Wml/aqYU5++UTIN1iVCLpK7Ig='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-anumq9f1ZBqJqGvBU0b2BCuIjFtj+vIUj4YQPzMxytk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 書類（PDF）を左の枠に出すため、この画面だけ CSP の frame-src に blob: を足す（check/csp.mjs が読む印） -->
@@ -21,7 +21,7 @@
 <script src="su-facility.js?v=2026-10-26"></script>
 <script src="su-print.js?v=2026-09-12"></script>
 <script src="staff-master-calc.js?v=2026-10-11.2"></script>
-<script src="ats-calc.js?v=2026-10-29"></script>
+<script src="ats-calc.js?v=2026-10-29.2"></script>
 <style>
 /* 採用管理（2026-10-26 代表者承認の凍結仕様 v1）。
    色は担当者会議のページと同じ濃さ（コントラスト7:1目標）。ライト固定。段階は色でなく番号と名前で示す。
@@ -828,8 +828,9 @@ function askEnd_(a){
 function openDetail_(id){
   var go=function(){
     var a=rowById_(id); if(!a) return;
-    if(curId!==id){ clearDrafts_(); if(viewer) closeViewer_(); }
-    curId=id; saveOpen_(id); edDirty=false; ivEdit='';
+    /* 同じ方を開き直した時（ボード・カレンダーで押した・読み直した）は、打ちかけの値と直している面接をそのまま残す */
+    if(curId!==id){ clearDrafts_(); if(viewer) closeViewer_(); ivEdit=''; }
+    curId=id; saveOpen_(id); edDirty=hasDraft_();
     if(contactsFor!==id){ contacts=[]; contactsFor=''; }
     if(filesFor!==id){ files=[]; filesFor=id; filesState='idle'; }
     fileMsg=''; fileMsgKind='';
@@ -1018,7 +1019,9 @@ function saveBasic_(){
   var bi=AtsCalc.birthInfo(val_('f-birth'),today_());
   if(!isPending_(a)&&bi.state==='bad'){ dMsg_(bi.note+'。保存していません。'); return Promise.resolve('bad'); }
   dMsg_('保存しています…','busy');
+  var sid=a.id;
   return putRow_(row,a.rev).then(function(r){
+    if(curId!==sid){ if(r==='ok') paintAll_(); return r; }   /* 返事を待つ間に別の方を開いた: その方の打ちかけ・板には触らない */
     if(r==='ok'){ clearDrafts_('f-'); edDirty=hasDraft_(); paintAll_(); paintDetail_(); dMsg_('保存しました。','ok'); }
     else if(r==='conflict') dMsg_('他で直されました。読み直してください（「閉じる」を押してから、画面を読み込み直します）。','warn');
     else if(r==='pending'){ paintDetail_(); dMsg_(PENDING_MSG+'。','warn'); }
@@ -1381,7 +1384,7 @@ function readViewer_(){
     }
     paintViewer_();
     return applyResume_(rows,a);
-  },function(e){
+  })['catch'](function(e){
     me.busy=false; atsNote_('PDF の文字を読む', e);
     if(viewer===me){ me.msg='PDF の文字を読めませんでした。左を見ながら右の欄に入力してください。'; me.msgKind='ng'; paintViewer_(); }
     return false;
@@ -1633,7 +1636,7 @@ function regHtml_(a){
 function regStart_(){
   var a=rowById_(curId); if(!a||a.staff_id||a.staff_pending_at||a.legacy_hired===true) return Promise.resolve('blocked');
   var r=regOf_(a.id); if(r.busy) return Promise.resolve('busy');
-  if(hasDraft_('p-')){ dMsg_('先に「入職準備を保存」を押してください（保存した内容で登録します）。','warn'); return Promise.resolve('dirty'); }
+  if(hasDraft_('p-')||hasDraft_('f-')){ dMsg_('先に「基本情報を保存」「入職準備を保存」を押してください（保存した内容で登録します）。','warn'); return Promise.resolve('dirty'); }
   var b=AtsCalc.buildStaffCreate(a,enums);
   if(!b.ready) return Promise.resolve('notready');
   var id=a.id;
@@ -2120,7 +2123,10 @@ function openDlg_(o){
   var d=$('a-dlg');
   if(!d||typeof d.showModal!=='function'){
     if(o.bodyHtml) { toast('このブラウザでは開けません。新しいブラウザで開いてください'); return Promise.resolve(null); }
-    return Promise.resolve(window.confirm(o.title+'\n'+(o.lines||[]).join('\n')));
+    var q=o.title+'\n'+(o.lines||[]).join('\n');
+    if(window.confirm(q+(o.alt?'\n\n「OK」＝'+o.ok:''))) return Promise.resolve(true);
+    /* 窓を出せないブラウザでも「保存せずに進む」を選べるように、2つ目の確かめで聞く */
+    return Promise.resolve(o.alt&&window.confirm(o.alt+'？')?'alt':false);
   }
   if(dlgDone_){ var old=dlgDone_; dlgDone_=null; old(null); }
   var back=document.activeElement;

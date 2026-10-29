@@ -973,6 +973,17 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
     const ch = L.el('c-ch'); ch.value = 'メール'; L.ctx.onChange_({ target: ch });
     let asked = 0; L.ctx.openDlg_ = () => { asked++; return Promise.resolve(true); };
     await L.ctx.closeDetail_(false); await settle();
+    /* 保存の返事を待つ間に別の方を開いたら、その方の打ちかけを消さない */
+    {
+      let rel; const g = new Promise((r) => { rel = r; });
+      const L2 = await opened({ tables: { ats_applicants: [app(), app({ id: UID(2), name: '乙川 花子' })], ats_interviews: [], ats_settings: [], ats_contacts: [] },
+        rpc: { ats_put: (a) => g.then(() => ({ ok: true, row: Object.assign(app(), a.p_row, { rev: 9 }) })) } });
+      L2.el('f-name').value = '甲野 一郎';
+      const pr = L2.ctx.saveBasic_(); await settle();
+      L2.ctx.curId = UID(2); L2.ctx.drafts = { 'f-kana': { v: 'オツカワ' } };
+      rel(); await pr; await settle();
+      t('保存の返事を待つ間に別の方を開いても、その方の打ちかけは消さない', L2.ctx.drafts['f-kana'] && L2.ctx.drafts['f-kana'].v === 'オツカワ');
+    }
     t('連絡の手段・向きを選んだだけでは聞かずに閉じる', asked === 0 && L.ctx.curId === '');
     /* 面接を打ちかけで別の面接を直そうとしたら確かめる */
     await L.ctx.openDetail_(UID(1)); await settle();
@@ -980,6 +991,14 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
     let ivAsk = 0; L.ctx.openDlg_ = (o) => { ivAsk++; return Promise.resolve(false); };
     L.ctx.onClick_({ target: { closest: () => ({ hasAttribute: () => false, getAttribute: (k) => (k === 'data-act' ? 'iv-cancel' : '') }) } }); await settle();
     t('面接を打ちかけで「直すのをやめる」と、捨ててよいか確かめる（やめれば残る）', ivAsk === 1 && L.ctx.hasDraft_('i-'));
+    /* 直している面接の打ちかけを持ったまま同じ方を開き直しても、「新しい面接」の欄に移さない（二重にしない） */
+    L.ctx.ivs = [{ id: UID(9), applicant_id: UID(1), round: 1, held_at: NOW_ISO, interviewers: ['架空 面接官甲'] }];
+    L.ctx.ivEdit = UID(9);
+    await L.ctx.openDetail_(UID(1)); await settle();
+    t('同じ方を開き直しても、直している面接と打ちかけの値はそのまま', L.ctx.ivEdit === UID(9) && L.ctx.hasDraft_('i-') && /第1回の面接を直す/.test(L.els['a-pane'].innerHTML));
+    /* 保存していない基本情報があれば職員マスタへ登録しない */
+    const fk = L.el('f-kana'); fk.value = 'コウノ'; L.ctx.onInput_({ target: fk });
+    t('保存していない基本情報があれば、職員マスタへの登録に進まない', (await L.ctx.regStart_()) === 'dirty' && /基本情報を保存/.test(L.els['d-msg'].textContent));
     t('ページを離れる時も、保存していない値があれば止める', (() => { const e = { preventDefault() { e.p = true; } }; L.ctx.onBeforeUnload_(e); return e.p === true; })());
   }
   {
