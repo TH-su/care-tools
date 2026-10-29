@@ -920,7 +920,7 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
     await L.ctx.runPurge_(); await settle();
     const rd = L.reads().find((x) => x.table === 'ats_files' && x.ops.some((o) => o[0] === 'in'));
     const order = L.log.filter((x) => (x.kind === 'storage' && x.op === 'remove') || (x.kind === 'rpc' && /ats_file_del|ats_purge/.test(x.name))).map((x) => x.op || x.name);
-    t('保管期限: 選んだ方の書類を読み、置き場から消してから応募者を消す（台帳の行は ats_purge が消す・0039）', rd && JSON.stringify(rd.ops.find((o) => o[0] === 'in')[2]) === JSON.stringify([UID(3)]) && JSON.stringify(order) === JSON.stringify(['remove', 'ats_purge']), order);
+    t('保管期限: 選んだ方の書類を読み、置き場から消してから応募者を消す（台帳の行は ats_purge が消す・0039）', rd && JSON.stringify(rd.ops.find((o) => o[0] === 'in')[2]) === JSON.stringify([UID(3)]) && JSON.stringify(order.slice(0, 2)) === JSON.stringify(['remove', 'ats_purge']), order);
     const ls0 = L.stores().find((x) => x.op === 'list');
     t('保管期限: 置き場の「事業者/応募者」の一覧を取る', ls0 && ls0.args[0] === TEN + '/' + UID(3), ls0 && ls0.args);
     t('確かめの窓に「書類（PDF）も消える」と出す', L.asks.some((a) => (a.lines || []).some((l) => /書類（PDF）/.test(l))));
@@ -950,7 +950,22 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
     const keys6 = rm6 ? rm6.args[0].slice().sort() : [];
     t('書類が残らない: 台帳に無い PDF も置き場から消す（台帳の分と合わせて2件・同じ名前は1回・フォルダは消さない）',
       JSON.stringify(keys6) === JSON.stringify([TEN + '/' + UID(3) + '/' + UID(31) + '.pdf', TEN + '/' + UID(3) + '/' + UID(39) + '.pdf'].sort()), keys6);
-    t('書類が残らない: 消した結果に書類の件数を出す', /1件を消しました。書類（PDF）1件も消しました。/.test(L6.els['a-msg'].textContent), L6.els['a-msg'].textContent);
+    t('書類が残らない: 消した結果に、置き場から消した件数（台帳に無い分を含む2件）を出す', /1件を消しました。書類（PDF）2件も消しました。/.test(L6.els['a-msg'].textContent), L6.els['a-msg'].textContent);
+    const pg6 = L6.rpcs().find((x) => x.name === 'ats_purge');
+    t('書類が残らない: 置き場から消した件数（p_removed）をデータベースへ渡して記録に残す', pg6 && pg6.args.p_removed === 2 && JSON.stringify(pg6.args.p_ids) === JSON.stringify([UID(3)]), pg6 && pg6.args);
+    let n10 = 0;
+    const L10 = await opened({ tables: { ats_applicants: rows, ats_interviews: [], ats_settings: [], ats_contacts: [], ats_files: [] },
+      rpc: { ats_purge: (a) => (n10++ === 0 ? { __error: { code: 'PGRST202', message: 'Could not find the function' } } : { ok: true, deleted: 1, skipped_pending: 0, argsSeen: Object.keys(a).join() }) } });
+    L10.ctx.apps = rows; L10.ctx.expireSel = { [UID(3)]: true };
+    await L10.ctx.runPurge_(); await settle();
+    const pgs10 = L10.rpcs().filter((x) => x.name === 'ats_purge');
+    t('0039 の前（2つ引数の呼び方が無い）: 1つ引数で呼び直して消せる', pgs10.length === 2 && 'p_removed' in pgs10[0].args && !('p_removed' in pgs10[1].args) && /1件を消しました/.test(L10.els['a-msg'].textContent), pgs10.map((x) => x.args));
+    const L11 = await opened({ tables: { ats_applicants: rows, ats_interviews: [], ats_settings: [], ats_contacts: [], ats_files: [fileRow] },
+      rpc: { ats_purge: () => ({ ok: true, deleted: 0, skipped_pending: 1, files: 0, skipped_files: 0 }), ats_file_del: () => ({ ok: true, deleted: 1 }) } });
+    L11.ctx.apps = rows; L11.ctx.expireSel = { [UID(3)]: true };
+    await L11.ctx.runPurge_(); await settle();
+    const del11 = L11.rpcs().filter((x) => x.name === 'ats_file_del');
+    t('消さなかった方（別の端末で確かめ中になった等）の台帳の行は、置き場を消した後に片付ける（開けない書類を並べない）', del11.length === 1 && del11[0].args.p_id === UID(31), del11.map((x) => x.args));
     const L7 = await opened({ tables: { ats_applicants: rows, ats_interviews: [], ats_settings: [], ats_contacts: [], ats_files: [fileRow] },
       storage: { list: () => ({ data: null, error: { statusCode: '500', message: 'internal' } }) } });
     L7.ctx.apps = rows; L7.ctx.expireSel = { [UID(3)]: true };
@@ -969,7 +984,7 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
     await L9.ctx.runPurge_(); await settle();
     const order9 = L9.log.filter((x) => (x.kind === 'storage' && x.op === 'remove') || (x.kind === 'rpc' && /ats_file_del|ats_purge/.test(x.name))).map((x) => x.op || x.name);
     t('0039 の前の ats_purge（台帳が残ると外部キーで止まる）: 置き場から消した後に台帳を消して呼び直す',
-      JSON.stringify(order9) === JSON.stringify(['remove', 'ats_purge', 'ats_file_del', 'ats_purge']) && /1件を消しました。書類（PDF）1件も消しました。/.test(L9.els['a-msg'].textContent), { order9, m: L9.els['a-msg'].textContent });
+      JSON.stringify(order9.slice(0, 4)) === JSON.stringify(['remove', 'ats_purge', 'ats_file_del', 'ats_purge']) && /1件を消しました。書類（PDF）1件も消しました。/.test(L9.els['a-msg'].textContent), { order9, m: L9.els['a-msg'].textContent });
   }
   {
     /* メニューの札（2026-10-29 本人指示）: 端末に残すのは保管期限の日付だけ。消せない方（職員の番号あり・確かめ中）は入れない */
@@ -989,6 +1004,8 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
     L.ctx.tab = 'expire'; L.ctx.paintExpire_();
     const ex = L.els['p-expire'].innerHTML;
     t('消した記録: 日時（日本時間）・消した人・人数・書類の件数を出す。0039 より前の行は書類を「記録なし」', /これまでに消した記録/.test(ex) && ex.includes('2026-10-29 10:02') && ex.includes('kakuu@example.com') && /<td class="num">2<\/td><td class="num">3<\/td>/.test(ex) && /記録なし/.test(ex), ex.slice(ex.indexOf('これまで')));
+    L.ctx.purgeLog = 'loading'; L.ctx.paintExpire_();
+    t('消した記録: 読み込み中は「読み込んでいます」と出す（読めなかったと出さない）', /読み込んでいます/.test(L.els['p-expire'].innerHTML) && !/読めませんでした/.test(L.els['p-expire'].innerHTML));
     const L3 = await opened({ tableErr: { audit_log: { code: '42501', message: 'denied' } } });
     L3.ctx.paintExpire_();
     t('消した記録: 読めなくても画面は動き、「読めませんでした」と出す', /記録を読めませんでした/.test(L3.els['p-expire'].innerHTML));

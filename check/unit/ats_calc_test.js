@@ -465,6 +465,7 @@ t('文字の無い PDF（空）・関係の無い文は何も拾わない', C.pa
 t('氏名に数字・メール・郵便番号が入った値は拾わない', C.parseResume('氏名 x@example.com').name === '' && C.parseResume('氏名 〒860-0000').name === '');
 t('消した記録: 人数と書類の件数を読み、日時を日本時間にする', J(C.purgeLogRow({ at: '2026-10-29T15:30:00Z', actor_email: 'kakuu@example.com', fields: ['count:3', 'files:7'] }))
   === J({ at: '2026-10-30 00:30', by: 'kakuu@example.com', count: 3, files: 7 }));
+t('消した記録: 置き場から消した件数（removed・台帳に無い PDF を含む）があればそれを書類の件数にする', C.purgeLogRow({ at: '2026-10-29T00:00:00Z', fields: ['count:2', 'files:1', 'removed:2'] }).files === 2);
 t('消した記録: 0039 より前の行（人数だけ）は書類を null（記録なし）', C.purgeLogRow({ at: '2026-04-01T00:00:00Z', fields: ['count:1'] }).files === null);
 t('消した記録: 人数の無い・形の違う行は出さない', C.purgeLogRow({ at: 'x', fields: ['files:1'] }) === null && C.purgeLogRow({ fields: 'count:1' }) === null && C.purgeLogRow(null) === null
   && C.purgeLogRow({ at: 'x', fields: ['count:-1'] }) === null);

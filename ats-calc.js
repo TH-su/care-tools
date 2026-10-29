@@ -1029,15 +1029,18 @@
   }
 
   /* 保管期限で消した記録の1行（操作記録 audit_log の ats_purge の行）を画面に出す形にする（2026-10-29 本人指示「消した件数を記録に残して」）。
-     fields は ['count:人数', 'files:書類の件数']（files は 0039 から。それより前の行は null＝記録なし）。人数が読めない行は null */
+     fields は ['count:人数', 'files:台帳の書類の件数', 'removed:置き場から消した件数']（files・removed は 0039 から。それより前の行は null＝記録なし）。人数が読めない行は null */
   function purgeLogRow(r) {
     if (!r || !Array.isArray(r.fields)) return null;
-    var count = null, files = null;
+    var count = null, files = null, removed = null;
     r.fields.forEach(function (f) {
-      var m = /^(count|files):(\d{1,6})$/.exec(String(f));
+      var m = /^(count|files|removed):(\d{1,6})$/.exec(String(f));
       if (m && m[1] === 'count') count = Number(m[2]);
-      else if (m) files = Number(m[2]);
+      else if (m && m[1] === 'files') files = Number(m[2]);
+      else if (m) removed = Number(m[2]);
     });
+    /* 書類の件数は、置き場から消した件数（removed・台帳に無い PDF を含む）があればそれ、無ければ台帳の件数 */
+    if (removed !== null) files = Math.max(removed, files || 0);
     if (count === null) return null;
     var t = new Date(r.at), at = '';
     if (!isNaN(t.getTime())) {
