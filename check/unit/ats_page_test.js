@@ -118,7 +118,8 @@ function fakeDb(opt, log) {
         return {
           upload(key, file, o) { return call('upload', [key, file && file.name, o], { data: { path: key }, error: null }); },
           remove(keys) { return call('remove', [keys], { data: keys.map((k) => ({ name: k })), error: null }); },
-          createSignedUrl(key, sec) { return call('createSignedUrl', [key, sec], { data: { signedUrl: 'https://kakuu.example/s/' + key + '?token=x' }, error: null }); }
+          createSignedUrl(key, sec) { return call('createSignedUrl', [key, sec], { data: { signedUrl: 'https://kakuu.example/s/' + key + '?token=x' }, error: null }); },
+          download(key) { return call('download', [key], { data: new Blob(['%PDF-1.4 kakuu'], { type: 'application/pdf' }), error: null }); }
         };
       }
     }
@@ -134,14 +135,15 @@ function load(opt) {
   const els = {};
   const el = (id) => (els[id] = els[id] || { id, innerHTML: '', textContent: '', className: '', hidden: id === 'a-app' || id === 'a-gate' || id === 'a-pane', disabled: false, value: '', style: {},
     classList: { add() {}, remove() {} }, setAttribute() {}, getAttribute() { return null; }, querySelector() { return null; }, querySelectorAll() { return []; },
-    addEventListener() {}, removeEventListener() {}, focus() {} });
+    addEventListener() {}, removeEventListener() {}, focus() {}, tagName: 'INPUT', type: 'text', contains() { return true; } });
   const db = fakeDb(opt, log);
   const SUAuth = { STATUS: { SIGNED_OUT: 'signed_out', DENIED: 'denied', MFA_ENROLL: 'mfa_enroll', MFA_VERIFY: 'mfa_verify', OK: 'ok', ERROR: 'error' },
     check() { log.push({ kind: 'check' }); return Promise.resolve(opt.status || OK_ST); }, client() { return db; } };
   const win = { addEventListener() {}, SUAuth: opt.noAuth ? undefined : SUAuth, supabase: {}, crypto: nodeCrypto.webcrypto };
   const ctx = {
     Promise, JSON, Object, Array, String, Number, Math, Date, RegExp, Error, Uint8Array, parseInt, isFinite, encodeURIComponent,
-    crypto: nodeCrypto.webcrypto, TextDecoder,
+    crypto: nodeCrypto.webcrypto, TextDecoder, Blob,
+    URL: { createObjectURL: () => 'blob:kakuu-1', revokeObjectURL(u) { ctx.revoked = (ctx.revoked || []).concat(u); } },
     setTimeout(fn, ms) { if (!(ms >= 3000)) setImmediate(fn); return 0; }, clearTimeout() {},
     localStorage: ls, sessionStorage: ss, window: win,
     document: { activeElement: null, getElementById: el, querySelector() { return null; }, querySelectorAll() { return []; }, scripts: [], addEventListener() {},
@@ -934,6 +936,96 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
     L3.ctx.apps = rows; L3.ctx.expireSel = { [UID(3)]: true };
     await L3.ctx.runPurge_(); await settle();
     t('保管期限: 台帳がまだ無い（0035 の前）なら今までどおり消せる', L3.rpcs().some((x) => x.name === 'ats_purge') && L3.stores().length === 0);
+  }
+
+  group('14. 入力を消さない（描き直しても戻す・離れる前に保存を聞く）・書類を左に出して入力・PDF から読み取る（2026-10-29）');
+  {
+    const L = await opened({ rpc: { ats_put: (a) => ({ ok: true, row: Object.assign(app(), a.p_row, { rev: 4 }) }) } });
+    L.ctx.paintDetail_();
+    const job = L.el('p-job'); job.value = '生活相談員'; L.ctx.onInput_({ target: job });
+    const sum = L.el('c-sum'); sum.value = '架空の連絡'; L.ctx.onInput_({ target: sum });
+    job.value = ''; sum.value = '';               /* 読み込みで板が描き直された（打った値が消えた）とみなす */
+    L.ctx.paintDetail_();
+    t('板を描き直しても、打った値を戻す（入職準備・連絡の記録）', job.value === '生活相談員' && sum.value === '架空の連絡');
+    const nm = L.el('f-name'); nm.value = '甲野 一郎'; L.ctx.onInput_({ target: nm });
+    await L.ctx.saveBasic_(); await settle();
+    t('基本情報を保存しても、まだ保存していない入職準備の値は消さない', job.value === '生活相談員' && L.ctx.hasDraft_('p-') && !L.ctx.hasDraft_('f-'));
+    /* 閉じる: やめる → 残る */
+    L.ctx.openDlg_ = (o) => { L.asks.push(o); return Promise.resolve(false); };
+    await L.ctx.closeDetail_(false); await settle();
+    const ask = L.asks[L.asks.length - 1];
+    t('保存していない値がある時に閉じると「保存して進む／保存せずに進む」を聞く（やめれば閉じない）', ask && ask.ok === '保存して進む' && ask.alt === '保存せずに進む' && /入職準備・連絡の記録/.test(ask.lines[0]) && L.ctx.curId === UID(1), ask && ask.lines);
+    /* 保存して進む → 入職準備と連絡の記録を保存してから閉じる */
+    L.ctx.openDlg_ = (o) => { L.asks.push(o); return Promise.resolve(true); };
+    await L.ctx.closeDetail_(false); await settle();
+    const puts = L.rpcs().filter((x) => x.name === 'ats_put');
+    const ins = L.reads().filter((x) => x.table === 'ats_contacts' && x.ops.some((o) => o[0] === 'insert'));
+    t('「保存して進む」は入職準備と連絡の記録を保存してから閉じる', puts.some((x) => x.args.p_row.prep) && ins.length === 1 && L.ctx.curId === '' && !L.ctx.hasDraft_(), { puts: puts.length, ins: ins.length, cur: L.ctx.curId });
+    /* 保存せずに進む */
+    await L.ctx.openDetail_(UID(1)); await settle();
+    const nm2 = L.el('f-kana'); nm2.value = 'コウノ'; L.ctx.onInput_({ target: nm2 });
+    L.ctx.openDlg_ = (o) => Promise.resolve('alt');
+    const n0 = L.rpcs().length;
+    await L.ctx.closeDetail_(false); await settle();
+    t('「保存せずに進む」は保存せずに閉じる', L.ctx.curId === '' && L.rpcs().length === n0 && !L.ctx.hasDraft_());
+    /* 手段を選んだだけでは聞かない */
+    await L.ctx.openDetail_(UID(1)); await settle();
+    const ch = L.el('c-ch'); ch.value = 'メール'; L.ctx.onChange_({ target: ch });
+    let asked = 0; L.ctx.openDlg_ = () => { asked++; return Promise.resolve(true); };
+    await L.ctx.closeDetail_(false); await settle();
+    /* 保存の返事を待つ間に別の方を開いたら、その方の打ちかけを消さない */
+    {
+      let rel; const g = new Promise((r) => { rel = r; });
+      const L2 = await opened({ tables: { ats_applicants: [app(), app({ id: UID(2), name: '乙川 花子' })], ats_interviews: [], ats_settings: [], ats_contacts: [] },
+        rpc: { ats_put: (a) => g.then(() => ({ ok: true, row: Object.assign(app(), a.p_row, { rev: 9 }) })) } });
+      L2.el('f-name').value = '甲野 一郎';
+      const pr = L2.ctx.saveBasic_(); await settle();
+      L2.ctx.curId = UID(2); L2.ctx.drafts = { 'f-kana': { v: 'オツカワ' } };
+      rel(); await pr; await settle();
+      t('保存の返事を待つ間に別の方を開いても、その方の打ちかけは消さない', L2.ctx.drafts['f-kana'] && L2.ctx.drafts['f-kana'].v === 'オツカワ');
+    }
+    t('連絡の手段・向きを選んだだけでは聞かずに閉じる', asked === 0 && L.ctx.curId === '');
+    /* 面接を打ちかけで別の面接を直そうとしたら確かめる */
+    await L.ctx.openDetail_(UID(1)); await settle();
+    const ia = L.el('i-at'); ia.value = '2026-11-02T10:00'; L.ctx.onInput_({ target: ia });
+    let ivAsk = 0; L.ctx.openDlg_ = (o) => { ivAsk++; return Promise.resolve(false); };
+    L.ctx.onClick_({ target: { closest: () => ({ hasAttribute: () => false, getAttribute: (k) => (k === 'data-act' ? 'iv-cancel' : '') }) } }); await settle();
+    t('面接を打ちかけで「直すのをやめる」と、捨ててよいか確かめる（やめれば残る）', ivAsk === 1 && L.ctx.hasDraft_('i-'));
+    /* 直している面接の打ちかけを持ったまま同じ方を開き直しても、「新しい面接」の欄に移さない（二重にしない） */
+    L.ctx.ivs = [{ id: UID(9), applicant_id: UID(1), round: 1, held_at: NOW_ISO, interviewers: ['架空 面接官甲'] }];
+    L.ctx.ivEdit = UID(9);
+    await L.ctx.openDetail_(UID(1)); await settle();
+    t('同じ方を開き直しても、直している面接と打ちかけの値はそのまま', L.ctx.ivEdit === UID(9) && L.ctx.hasDraft_('i-') && /第1回の面接を直す/.test(L.els['a-pane'].innerHTML));
+    /* 保存していない基本情報があれば職員マスタへ登録しない */
+    const fk = L.el('f-kana'); fk.value = 'コウノ'; L.ctx.onInput_({ target: fk });
+    t('保存していない基本情報があれば、職員マスタへの登録に進まない', (await L.ctx.regStart_()) === 'dirty' && /基本情報を保存/.test(L.els['d-msg'].textContent));
+    t('ページを離れる時も、保存していない値があれば止める', (() => { const e = { preventDefault() { e.p = true; } }; L.ctx.onBeforeUnload_(e); return e.p === true; })());
+  }
+  {
+    const row = app({ tenant_id: '00000000-0000-4000-8000-000000000001', name: '甲野 一郎', kana: null, address: null, email: null, phones: [] });
+    const fileRow = { id: UID(41), applicant_id: UID(1), object_key: 'k1', file_name: '履歴書（架空）.pdf', size_bytes: 10, created_at: NOW_ISO };
+    const L = await opened({ row, tables: { ats_applicants: [row], ats_interviews: [], ats_settings: [], ats_contacts: [], ats_files: [fileRow] } });
+    await L.ctx.loadFiles_(UID(1)); await settle();
+    t('書類の一覧に「開いて入力」がある', /data-act="file-view"/.test(L.ctx.filesInner_(L.ctx.apps[0])));
+    await L.ctx.openViewer_(UID(41)); await settle();
+    const vw = L.els['a-viewer'].innerHTML;
+    t('開いて入力: 置き場から取ってきた PDF を左の枠に出す（メモリの blob・リンクは作らない）', L.stores().some((x) => x.op === 'download' && x.args[0] === 'k1') && !L.stores().some((x) => x.op === 'createSignedUrl')
+      && /<iframe[^>]*src="blob:kakuu-1"/.test(vw) && /この PDF から読み取る/.test(vw) && !L.els['a-viewer'].hidden);
+    L.ctx.pdfText_ = () => Promise.resolve('ふりがな こうの いちろう\n氏 名 甲野 一郎\n昭和55年 4月 3日生\n現住所 熊本県架空市1-2-3\n電話 000-0000-0001\nE-mail x@example.com');
+    let dlg = null;
+    L.ctx.openDlg_ = (o) => { dlg = o; for (let i = 0; i < 7; i++) L.el('rs-' + i).checked = true; return Promise.resolve(o.collect()); };
+    L.el('f-name').value = '甲野 一郎';
+    const n0 = L.rpcs().length;
+    await L.ctx.readViewer_(); await settle();
+    t('読み取り: 拾った項目と今の欄を見比べる窓を出す（同じ値の項目は選べない）', dlg && /読み取った値/.test(dlg.bodyHtml) && /id="rs-0"[^>]*disabled/.test(dlg.bodyHtml) && /同じ/.test(dlg.bodyHtml), dlg && dlg.bodyHtml);
+    t('読み取り: 選んだ項目を右の欄に入れる（和暦の生年月日は西暦で）', L.els['f-kana'].value === 'こうの いちろう' && L.els['f-birth'].value === '1980-04-03' && L.els['f-addr'].value === '熊本県架空市1-2-3' && L.els['f-phones'].value === '000-0000-0001' && L.els['f-email'].value === 'x@example.com');
+    t('読み取り: 入れただけで保存はしない（保存していない入力として扱う）', L.rpcs().length === n0 && L.ctx.hasDraft_('f-') && /まだ保存していません/.test(L.els['d-msg'].textContent));
+    L.ctx.pdfText_ = () => Promise.resolve('   ');
+    await L.ctx.readViewer_(); await settle();
+    t('文字の無い PDF（手書き・スキャン）は「左を見ながら入力」を出す', /文字が入っていません/.test(L.els['a-viewer'].innerHTML));
+    L.ctx.openDlg_ = () => Promise.resolve('alt');
+    await L.ctx.closeDetail_(false); await settle();
+    t('詳細を閉じたら左の書類も閉じ、メモリの blob の URL を捨てる', L.els['a-viewer'].hidden && (L.ctx.revoked || []).includes('blob:kakuu-1'));
   }
 
   say('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');

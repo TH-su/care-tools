@@ -454,5 +454,16 @@ t('PDF: 画像・中身が PDF でない・空・20MB 超は置かない', /PDF 
 t('台帳に残す名前: 改行などの制御文字を落とす・全角のかっこ・異体字は直さない・200字まで・空は「書類.pdf」', C.fileName(' 履歴書\n（架空）髙﨑.pdf ') === '履歴書（架空）髙﨑.pdf' && C.fileName('あ'.repeat(250)).length === 200 && C.fileName('') === '書類.pdf' && C.fileName(null) === '書類.pdf');
 t('大きさの表示', C.fileSizeText(900) === '900 B' && C.fileSizeText(2048) === '2 KB' && C.fileSizeText(1536000) === '1.5 MB' && C.fileSizeText(null) === '0 B');
 
+console.log('\n— 15. 履歴書の PDF の文字から項目を拾う（2026-10-29）—');
+const RJ = C.parseResume('履 歴 書\n2026年10月29日現在\nふりがな こうの いちろう\n氏 名 甲野 一郎 印\n昭和55年 4月 3日生 (満 46 歳) 男\nふりがな くまもとけん\n現住所 〒860-0000\n熊本県架空市1-2-3\n電話 000-0000-0001\nE-mail x@example.com\n年 月 免許・資格\n平成20年 3月 介護福祉士 取得\n志望の動機\nやる気');
+t('JIS の履歴書: 氏名（印を外す）・ふりがな・「生」の付いた和暦の生年月日・郵便番号だけの行は次の行と合わせた住所・電話・メール・資格',
+  RJ.name === '甲野 一郎' && RJ.kana === 'こうの いちろう' && RJ.birth_date === '1980-04-03' && RJ.address === '〒860-0000 熊本県架空市1-2-3' && J(RJ.phones) === J(['000-0000-0001']) && RJ.email === 'x@example.com' && RJ.quals_text === '平成20年 3月 介護福祉士 取得', RJ);
+const RW = C.parseResume('氏名：乙川 花子\nフリガナ：オツカワ ハナコ\n生年月日：1990年04月01日\n住所：熊本県架空市4-5-6\n電話番号：090-0000-0002\nメールアドレス：y@example.com\n保有資格\n介護職員初任者研修');
+t('求人サイトの書き方（見出し：値）も拾う', RW.name === '乙川 花子' && RW.kana === 'オツカワ ハナコ' && RW.birth_date === '1990-04-01' && RW.address === '熊本県架空市4-5-6' && J(RW.phones) === J(['090-0000-0002']) && RW.quals_text === '介護職員初任者研修', RW);
+t('郵便番号は電話にしない・電話は3件まで・重なりは1件', J(C.parseResume('〒060-0001\n電話 011-000-0001 011-000-0001 / 090-0000-0003 / 0800000004 / 03-0000-0005').phones) === J(['011-000-0001', '090-0000-0003', '0800000004']));
+t('文字の無い PDF（空）・関係の無い文は何も拾わない', C.parseResume('').found.length === 0 && C.parseResume('   \n').found.length === 0 && C.parseResume('本日は晴天なり').found.length === 0);
+t('氏名に数字・メール・郵便番号が入った値は拾わない', C.parseResume('氏名 x@example.com').name === '' && C.parseResume('氏名 〒860-0000').name === '');
+t('今日より先・読めない生年月日は拾わない', C.parseResume('生年月日 2099年1月1日').birth_date === '' && C.parseResume('生年月日 不明').birth_date === '');
+
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);

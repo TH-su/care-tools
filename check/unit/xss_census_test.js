@@ -218,6 +218,9 @@ const CENSUS = {
     [F, "p.innerHTML=''"],
     [E, "p.innerHTML=detailHtml_(a)"],
     [E, "if(c&&a) c.innerHTML=filesInner_(a)"],
+    [F, "v.innerHTML=''"],
+    [E, "tmp.innerHTML=h.slice(0,h.indexOf('<iframe'))"],
+    [E, "else v.innerHTML=h"],
     [E, "if(d&&evalCtx) d.innerHTML=evalHtml_()"],
     [F, "d.innerHTML=''"],
     [F, "d.innerHTML=''"],
@@ -231,7 +234,7 @@ const CENSUS = {
     [E, "if(p) p.innerHTML=printSheetHtml_(printIv)"],
     [F, "p.innerHTML='<h2>集計</h2><p class=\"muted\">読み込んでいます…</p>'"],
     [E, "p.innerHTML=h+'</div>'"],
-    [E, "d.innerHTML='<div class=\"dlg-in\"><h2 id=\"a-dlg-h\">'+esc(o.title)+'</h2>'+(o.lines||[]).map(function(l){ return '<p>'+esc(l)+'</p>'; }).join('')+(o.bodyHtml||'')+ '<div class=\"dlg-btns\"><button type=\"button\" class=\"btn\" data-dlg=\"no\">やめる</button><button type=\"button\" class=\"btn '+(o.danger?'ngf':'pri')+'\" data-dlg=\"ok\">'+esc(o.ok)+'</button></div></div>'"]
+    [E, "d.innerHTML='<div class=\"dlg-in\"><h2 id=\"a-dlg-h\">'+esc(o.title)+'</h2>'+(o.lines||[]).map(function(l){ return '<p>'+esc(l)+'</p>'; }).join('')+(o.bodyHtml||'')+ '<div class=\"dlg-btns\"><button type=\"button\" class=\"btn\" data-dlg=\"no\">やめる</button>'+(o.alt?'<button type=\"button\" class=\"btn ng\" data-dlg=\"alt\">'+esc(o.alt)+'</button>':'')+'<button type=\"button\" class=\"btn '+(o.danger?'ngf':'pri')+'\" data-dlg=\"ok\">'+esc(o.ok)+'</button></div></div>'"]
   ],
   "care-meeting-calc.js": [],
   "care-meeting.html": [

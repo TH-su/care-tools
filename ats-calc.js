@@ -815,6 +815,82 @@
     };
   }
 
+  /* ── 履歴書の PDF から読んだ文字 → 基本情報の項目（2026-10-29 本人指示「履歴書から各項目へ自動転記」）──
+     文字の入った PDF（求人サイトの履歴書・Word などから作った PDF）だけが対象。手書き・スキャンは文字が無いので何も拾わない。
+     見出し（氏名・ふりがな・生年月日・住所・電話・メール・免許・資格）の右か次の行を拾う。拾った値は画面で確かめてから欄に入れる。
+     返り: {name, kana, birth_date, address, phones[], email, quals_text, found[見出し]} */
+  var RS_STOP = /^(ふりがな|フリガナ|氏名|氏 名|名前|生年月日|性別|男|女|男・女|印|現住所|住所|連絡先|電話|電話番号|携帯|TEL|Tel|FAX|メール|メールアドレス|E-mail|Email|e-mail|学歴|職歴|学歴・職歴|免許|資格|免許・資格|志望|本人希望|通勤|扶養|配偶者|年齢|満)$/;
+  function parseResume(text) {
+    var lines = nfkc(text).replace(/\r/g, '').split('\n').map(function (l) { return l.replace(/[\s　]+/g, ' ').trim(); }).filter(Boolean);
+    var out = { name: '', kana: '', birth_date: '', address: '', phones: [], email: '', quals_text: '', found: [] };
+    /* 見出しの右（同じ行）か、空なら次の行 */
+    function after(re) {
+      for (var i = 0; i < lines.length; i++) {
+        var m = re.exec(lines[i]);
+        if (!m) continue;
+        var rest = lines[i].slice(m.index + m[0].length).replace(/^[\s:：]+/, '').trim();
+        if (rest) return { v: rest, i: i };
+        if (i + 1 < lines.length) return { v: lines[i + 1], i: i + 1 };
+      }
+      return null;
+    }
+    /* 見出しの語が来たら止める（同じ行に次の見出しが続く書き方） */
+    function cut(v) {
+      var toks = str(v).split(' '), keep = [];
+      for (var i = 0; i < toks.length; i++) { if (RS_STOP.test(toks[i])) break; keep.push(toks[i]); }
+      return keep.join(' ').trim();
+    }
+    var k = after(/(ふりがな|フリガナ)/);
+    if (k) { var km = /^[ぁ-ゖァ-ヺー・ ]+/.exec(cut(k.v)); if (km && km[0].trim().length >= 2) { out.kana = km[0].trim(); out.found.push('フリガナ'); } }
+    var n = after(/(^|\s)(氏 ?名|名前)(?![ぁ-ゖ])/);
+    if (n) {
+      var nv = cut(n.v).replace(/\s*(印|様|\(自署\))$/, '').trim();
+      if (nv.length >= 2 && nv.length <= 20 && /[一-龥々〆ぁ-ゖァ-ヺ]/.test(nv) && !/[0-9@〒]/.test(nv)) { out.name = nv; out.found.push('氏名'); }
+    }
+    var b = after(/生年月日/);
+    if (b) {
+      var bv = b.v;
+      if (!/\d/.test(bv) && b.i + 1 < lines.length) bv = lines[b.i + 1];
+      bv = bv.split(/生|[(（]|満/)[0].trim();
+      var bi = birthInfo(bv);
+      if (bi.state === 'ok' || bi.state === 'warn') { out.birth_date = bi.ymd; out.found.push('生年月日'); }
+    }
+    if (!out.birth_date) {
+      /* JIS の履歴書は「生年月日」の見出しが無く「昭和55年 4月 3日生」とだけ書く */
+      var bg = /((明治|大正|昭和|平成|令和|[MTSHR])? ?(\d{1,4}|元) ?年 ?\d{1,2} ?月 ?\d{1,2} ?日) ?生/.exec(lines.join('\n'));
+      var bb = bg ? birthInfo(bg[1]) : null;
+      if (bb && (bb.state === 'ok' || bb.state === 'warn')) { out.birth_date = bb.ymd; out.found.push('生年月日'); }
+    }
+    var ad = after(/(現住所|^住所|\s住所)/);
+    if (ad) {
+      var av = ad.v.split(/\s(電話|TEL|Tel|携帯|メール|E-mail)/)[0].trim();
+      if (/^〒?\s*\d{3}-?\d{4}$/.test(av) && ad.i + 1 < lines.length) av = av + ' ' + lines[ad.i + 1];
+      av = av.trim();
+      if (av.length >= 4 && av.length <= 200) { out.address = av; out.found.push('住所'); }
+    }
+    var all = lines.join('\n');
+    var em = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+/.exec(all);
+    if (em) { out.email = em[0]; out.found.push('メール'); }
+    var re = /0\d{1,4}[-‐−–ー]\d{1,4}[-‐−–ー]\d{3,4}|0[5789]0\d{8}|0\d{9}(?!\d)/g, pm, seen = {};
+    while ((pm = re.exec(all)) && out.phones.length < 3) {
+      var ph = pm[0].replace(/[‐−–ー]/g, '-');
+      if (!seen[ph]) { seen[ph] = 1; out.phones.push(ph); }
+    }
+    if (out.phones.length) out.found.push('電話');
+    for (var i = 0; i < lines.length; i++) {
+      if (!/^(年 ?月 ?)?(免許・資格|免許|資格|保有資格)$/.test(lines[i])) continue;
+      var qs = [];
+      for (var j = i + 1; j < lines.length && qs.length < 8; j++) {
+        if (/^(志望|本人希望|通勤|扶養|配偶者|特技|趣味|自己PR|学歴|職歴)/.test(lines[j])) break;
+        if (/^(年 ?月|以上)$/.test(lines[j])) continue;
+        qs.push(lines[j]);
+      }
+      if (qs.length) { out.quals_text = qs.join('・').slice(0, 1000); out.found.push('資格'); }
+      break;
+    }
+    return out;
+  }
+
   /* ── 応募者の書類（PDF・0035・2026-10-29 本人指示） ── */
   var FILE_MAX = 20971520;   // 1ファイル 20MB まで（データベースの置き場の上限と同じ）
   var FILE_PER_APPLICANT = 30;
@@ -1206,6 +1282,7 @@
     nextStage: nextStage, canMove: canMove,
     normName: normName, importKey: importKey, normDate: normDate, completeYear: completeYear, splitDateNote: splitDateNote,
     ageOn: ageOn, warekiOf: warekiOf, birthInfo: birthInfo, BIRTH_BAD_MSG: BIRTH_BAD_MSG,
+    parseResume: parseResume,
     FILE_MAX: FILE_MAX, FILE_PER_APPLICANT: FILE_PER_APPLICANT, pdfCheck: pdfCheck, fileName: fileName, fileSizeText: fileSizeText,
     parseContacts: parseContacts, deriveStage: deriveStage, parseCsv: parseCsv, detectHeader: detectHeader,
     normApplicant: normApplicant, planImport: planImport,

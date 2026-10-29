@@ -52,8 +52,12 @@ export function inlineScripts(html) {
   return out;
 }
 export function hashOf(body) { return "'sha256-" + crypto.createHash('sha256').update(body, 'utf8').digest('base64') + "'"; }
+/* 画面が自分で作った blob の URL（メモリの PDF など）を枠に出す画面だけ、frame-src に blob: を足す（2026-10-29・採用管理の書類を左に出す）。
+   印は <meta name="su-csp-frame" content="blob">。印の無い画面の CSP は変わらない */
+export const FRAME_BLOB_RE = /<meta name="su-csp-frame" content="blob">/;
 export function policy(html) {
   const hashes = [...new Set(inlineScripts(html).map(hashOf))];
+  const frameBlob = FRAME_BLOB_RE.test(html);
   return [
     "default-src 'self'",
     "script-src 'self'" + (hashes.length ? ' ' + hashes.join(' ') : ''),
@@ -61,7 +65,7 @@ export function policy(html) {
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
     "connect-src 'self' https://script.google.com https://script.googleusercontent.com " + SUPABASE + ' ' + SUPABASE.replace('https://', 'wss://'),
-    "frame-src 'self'",
+    "frame-src 'self'" + (frameBlob ? ' blob:' : ''),
     "object-src 'none'",
     "base-uri 'none'",
     "form-action 'self'",

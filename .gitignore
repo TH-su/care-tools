@@ -141,6 +141,8 @@
 !/chart-js-4.4.1.umd.js
 # ジェノグラムの PDF 出力の部品（2026-10-24）。jsPDF 2.5.1 を画面の中の直書きから移した（中身は1字も変えていない・開いた後の手すきか、PDF 出力を最初に押した時に読む）
 !/jspdf-2.5.1.umd.js
+# 採用管理の書類（PDF）の文字を読む部品（2026-10-29）。npm の pdfjs-dist 4.10.38 の原本（build の pdf.min.mjs・pdf.worker.min.mjs・cmaps・LICENSE）を1字も変えずに同梱。初めて「読み取る」を押した時だけ読む
+!/pdfjs-4.10.38/
 !/perf-report.html
 !/help.html
 !/perf-report.js
