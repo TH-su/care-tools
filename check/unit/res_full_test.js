@@ -349,6 +349,15 @@ function world(o) {
     const r = await R.auto({ gas: async () => ({}), auth: async () => A });
     t('自動の写し: 切り替える・戻すが動いている間は写さない', r.skip === 'op' && calls.join(',') === 'res_op_busy', [r, calls]);
   }
+  {
+    const fn = SHADOW.slice(SHADOW.indexOf('function masterLiveOn'), SHADOW.indexOf('/* 体重の切り替え（統合 0032）'));
+    t('写しの見比べ: 切り替える・戻すのボタンは最初は隠し、管理者だけに出す', /id="b-res-cut" hidden>入居者マスタを新しい保存先へ切り替える</.test(HTML)
+      && /id="b-res-back" hidden>写しの期間に戻す</.test(HTML) && /if \(!\(me && me\.role === 'admin'\)\) return;/.test(fn));
+    t('写しの見比べ: 切り替えボタンはスイッチ master_live が入の時だけ・戻しの途中は切り替えを出さず戻すを出す', /bc\.hidden = live \|\| stuck \|\| !on \|\| !tgt;/.test(fn) && /bb\.hidden = !\(live \|\| stuck\) \|\| !tgt;/.test(fn)
+      && /stuck = !!\(pg && pg\.switched === true\)/.test(fn));
+    t('写しの見比べ: 押した時も管理者・現場の端末・接続先・スイッチを確かめ、2回確かめてから行う', /me\.role === 'admin' && me\.status === SUAuth\.STATUS\.OK/.test(fn)
+      && /role === 'field'/.test(fn) && /if \(!masterLiveOn\(\)\)/.test(fn) && (fn.match(/confirm\(/g) || []).length === 3 && /textContent = /.test(fn) && !/innerHTML/.test(fn));
+  }
   t('切り替え・戻すは端末に保存しない', touched.length === 0);
 
   finished = true;
