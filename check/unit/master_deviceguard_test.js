@@ -188,6 +188,8 @@ function load(src, old){
     .concat(['hospWho_', 'hospDoneMsg_', 'hospOnList_', 'hospNote_', 'hospApplyPend_'].filter(n => hasFn(src, n)))
     .concat(['mcPurge_'].filter(n => hasFn(src, n)))
     .concat(['yjPurge_'].filter(n => hasFn(src, n)))
+    /* 入居日を帳票の控え（bkRows）から作る関数（2026-10-29 追加）。それより前の版には無いので、有る時だけ */
+    .concat(['admFromBk_', 'admAfterBk_'].filter(n => hasFn(src, n)))
     .concat(['yjpPurge_'].filter(n => hasFn(src, n)));
   /* storage・pageshow の受け口（トップレベルの1行）も実物から切り出して登録させる（旧版は有る時だけ） */
   const lines = ['storage', 'pageshow'].map(type => {
