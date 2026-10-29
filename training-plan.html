@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-QZzN1cLY9m8W4HvfaVHKBIF//Cly5d8ZBt8E0mCvxRU=' 'sha256-i4rIGRqf/nf9XXBqxCMxbARPqXzsvB9DvUhYkTl00Kw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-QZzN1cLY9m8W4HvfaVHKBIF//Cly5d8ZBt8E0mCvxRU=' 'sha256-u9fR6Td0+Bp1EUNEwYV89fLBSwo4N48sRfMdOQJiQ6g='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- 要配慮情報（疾患・訓練内容）を表示する画面。ブラウザキャッシュ・検索索引に残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -935,6 +935,7 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
+<script src="su-res-read.js?v=2026-10-29.2"></script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-app-gate.js?v=2026-10-29"></script>
@@ -2154,6 +2155,10 @@ function mGet(params, timeoutMs) {
       return d;
     });
 }
+/* 入居者マスタの正本を Supabase へ切り替えた後は、読み取りを切り替えの口（su-res-read.js）が Supabase から読む（正本の切り替えの手順4・2026-10-29）。
+   スイッチ master_live が切の間・部品が無い時は、今までの mGet をそのまま呼ぶ（本文・送り方は1バイトも変えない）。読み取り以外の本文はそのまま通す */
+var mGetGas_=mGet;
+mGet=function(params, timeoutMs){return window.SUResRead?window.SUResRead.call(params,function(){return mGetGas_(params, timeoutMs)},{screen:'training-plan'}):mGetGas_(params, timeoutMs)};
 function mGetRetry(params, timeoutMs, tries) {
   tries = tries || 2;
   return mGet(params, timeoutMs).catch(function (e) {

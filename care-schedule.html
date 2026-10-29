@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-y8rtgoJbX6ZlJzAer5/o8z73xDY67SyjXaRsEJXreVs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-Uck5nSXV9fyhGsndSWFlDeOmNYz2JjdanUZ/0dPTuGc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -1748,6 +1748,7 @@ function _handle(e, method) {
 <!-- 共通のエラー捕捉（2026-09-24 から週間計画も使う）。本体の <script> より前に置く＝起動時の例外も拾う -->
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
+<script src="su-res-read.js?v=2026-10-29.2"></script>
 <script>
 /* 黙ると困る失敗（保存・同期の補助）を、画面には出さずに記録へ残す（2026-10-08・監査10月版 #8）。
    行き先は su-errors.js の note＝コンソールと記録先（同期ログ・不具合報告の控えと自動報告）。トーストは出さない。
@@ -5400,12 +5401,16 @@ function csPushMasterState(masterId, hospitalized){
   var cfg = csGetMasterCfg();
   if (!cfg || masterId == null) return false;
   try{
-    fetch(cfg.url, {
+    /* 入居者マスタの正本を Supabase へ切り替えた後は、切り替えの口（su-res-read.js の write）が res-write へ送る（2026-10-29 代表者の決定 案1）。
+       スイッチ master_live が切の間・部品が無い時は、今までの送り方のまま（本文・送り方は1バイトも変えない） */
+    var msBody = { action: 'setState', token: cfg.token, id: masterId, hospitalized: !!hospitalized, src: 'care' };
+    var msSend = function(){ return fetch(cfg.url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // text/plain で CORS preflight を回避（他アプリと同一作法）
-      body: JSON.stringify({ action: 'setState', token: cfg.token, id: masterId, hospitalized: !!hospitalized, src: 'care' }),
+      body: JSON.stringify(msBody),
       redirect: 'follow'
-    }).then(function(r){ return r.json(); }).then(function(j){
+    }).then(function(r){ return r.json(); }); };
+    (window.SUResRead ? window.SUResRead.write(msBody, msSend, { screen: 'care-schedule', parse: 'json' }) : msSend()).then(function(j){
       if (!j || j.ok !== true) showToast('入院状態をマスタへ反映できませんでした（次のマスタ同期で戻ります）');
     }).catch(function(){ showToast('入院状態をマスタへ反映できませんでした（次のマスタ同期で戻ります）'); });
   }catch(e){ return false; }
