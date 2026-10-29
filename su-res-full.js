@@ -16,25 +16,32 @@
   'use strict';
   var ROW_MAX = 50;                 // データベースの1塊の上限（res_import_chunk の 50 名）
   var CHUNK_BYTES = 3 * 1024 * 1024; // 1塊の目安（データベースの上限 4MB より小さく）
-  var ROW_BYTES = 360 * 1024;       // 1名の上限（データベースは 400KB。データベース側の文字の数え方は空白が増えるので小さめに）
+  var ROW_BYTES = 300 * 1024;       // 1名の上限（データベースは 400KB。データベース側の数え方は小さな項目が多いと2割ほど増えるので小さめに）
   var ITEM_MAX = 200;               // 会議・判断の1塊の件数
   var GET_MAX = 200;                // 読み直しの1回の人数（データベースの上限 500 より小さく）
   var POOL = 3;                     // Google へ同時に読みに行く本数
+  var MED_LIST_MAX = 3000;          // Google の薬の変更候補の一覧が返す上限（med-cand.gs の MEDCAND_LIST_MAX）
 
   function bytes(s) {
     try { return new TextEncoder().encode(s).length; } catch (e) { return String(s).length * 3; }
   }
   function str(v) { return String(v == null ? '' : v).trim(); }
 
-  /* 名簿から利用者No を取り出す（空・重なりは除く・並びは名簿のまま） */
+  /* 名簿から利用者No を取り出す（並びは名簿のまま）。前後に空白がある・41字以上・空・重なりの方がいれば bad に入れて返す
+   * （黙って外すと、その方だけ写しから抜けて「消えた印」が付くため。写しは止める） */
   function rosterIds(roster) {
-    var seen = {}, out = [];
-    (Array.isArray(roster) ? roster : []).forEach(function (r) {
-      var id = r && typeof r === 'object' ? str(r.id) : '';
-      if (!id || id.length > 40 || seen[id]) return;
+    var seen = {}, out = [], bad = [];
+    (Array.isArray(roster) ? roster : []).forEach(function (r, i) {
+      var raw = r && typeof r === 'object' && r.id != null ? String(r.id) : '';
+      var id = raw.trim();
+      if (!id || id !== raw || id.length > 40 || seen[id]) { bad.push(id || '（' + (i + 2) + '行目）'); return; }
       seen[id] = true; out.push(id);
     });
-    return out;
+    return { ids: out, bad: bad };
+  }
+  /* 文字の中の NUL（データベースが受け付けない）を探し、項目名を返す */
+  function nulKeys(rec) {
+    return Object.keys(rec || {}).filter(function (k) { return JSON.stringify(rec[k] === undefined ? null : rec[k]).indexOf('\\u0000') >= 0; });
   }
 
   /* 塊に分ける（件数と大きさの両方で区切る）。1件で上限を超える物は big に入れて返す */
@@ -90,7 +97,8 @@
     if (c === 'shrink') return '写す人数が前回の半分より少なかったので、写しを止めました（読み込みの途中切れの可能性）。もう一度押してください。';
     if (c === 'norun') return '別の端末で写しが始まったため、この写しは止めました。';
     if (c === 'badrow') return '形の合わない記録がありました（利用者No の無い方・同じ方の重なりなど）。';
-    if (c === 'toolarge') return '1回に送る量が多すぎました。';
+    if (c === 'toolarge') return '記録が大きすぎる方がいました。';
+    if (c === '23505') return '別の写しが同時に始まりました。少し待ってから押し直してください。';
     return 'データベースが受け付けませんでした（' + c + '）。';
   }
 
@@ -120,6 +128,13 @@
   async function run(io) {
     var say = io.progress || function () {};
     function fail(why) { return { ok: false, why: why }; }
+    var runId = null;
+    async function abort() {   // 途中で止めた写しを「断られた」にする（途中まで書いた分はそのまま・消えた印は付けない）
+      if (runId == null) return;
+      try { await io.rpc('res_import_abort', { p_run: runId }); } catch (e) { /* 次に押すと始まりで取り消される */ }
+    }
+    var PART = '途中まで写した方がいます（消えた印は付けていません。次に押すと最初から写し直します）。';
+    async function stop(why) { var started = runId != null; await abort(); return fail(why + (started ? PART : '')); }
     async function rpc(name, args) {
       var r = await io.rpc(name, args || {});
       if (r && r.error) throw { db: r.error };
@@ -129,15 +144,20 @@
       say('Google から名簿を読んでいます…');
       var rj = await io.gas({ action: 'getRoster' });
       if (!rj || rj.error || !Array.isArray(rj.roster)) return fail('Google が名簿を返しませんでした（この端末の入居者マスタの接続先を確かめてください）。');
-      var ids = rosterIds(rj.roster);
-      if (!ids.length) return fail('名簿が空でした。写しを止めました。');
+      var ri = rosterIds(rj.roster), ids = ri.ids, rosterN = rj.roster.length;
+      if (ri.bad.length) return fail('名簿の利用者No に、前後の空白・41字以上・空・重なりの方がいます（' + ri.bad.slice(0, 10).join('・') + '）。入居者マスタで利用者No を直してから押し直してください。写しは始めていません。');
+      if (!ids.length) return fail('名簿が空でした。写しは始めていません。');
 
       var recs = {}, meetings = [], gone = [], n = 0;
       await pool(ids, POOL, async function (id) {
         var a = await io.gas({ action: 'getResident', id: id });
         if (!a || a.error) throw new Error('Google が記録を返しませんでした');
         var m = await io.gas({ action: 'meeting', op: 'list', id: id });
-        if (!m || m.ok !== true || !Array.isArray(m.rows)) throw new Error('Google が担当者会議の記録を返しませんでした');
+        // 利用者No が担当者会議の決まった形でない方は、会議を作れないので「会議なし」として扱う
+        if (m && m.ok === false && m.code === 'bad_input') m = { ok: true, rows: [] };
+        if (!m || m.ok !== true || !Array.isArray(m.rows)) throw new Error(m && m.error && !m.code
+          ? '入居者マスタの GAS が担当者会議の記録に対応していません（GAS が古い可能性）'
+          : 'Google が担当者会議の記録を返しませんでした');
         if (!a.record || typeof a.record !== 'object') { gone.push(id); }
         else {
           var rec = Object.assign({}, a.record);
@@ -148,10 +168,11 @@
         n++;
         say('Google から読んでいます… ' + n + ' / ' + ids.length + '人');
       });
-      ids = ids.filter(function (id) { return !!recs[id]; });
+      if (gone.length) return fail('名簿にいるのに記録を読めなかった方がいます（利用者No ' + gone.slice(0, 10).join('・') + '）。読んでいる間に入居者マスタが直された可能性があります。少し待って押し直してください。写しは始めていません。');
       say('Google から薬の変更候補の判断を読んでいます…');
       var mc = await io.gas({ action: 'medCand', op: 'list' });
-      if (!mc || mc.ok !== true || !Array.isArray(mc.rows)) return fail('Google が薬の変更候補の判断を返しませんでした。');
+      if (!mc || mc.ok !== true || !Array.isArray(mc.rows)) return fail('Google が薬の変更候補の判断を返しませんでした。写しは始めていません。');
+      if (mc.rows.length >= MED_LIST_MAX) return fail('薬の変更候補の判断が ' + MED_LIST_MAX + '件以上あり、Google が全部を返しません。写しは始めていません（開発の担当へ知らせてください）。');
       var seenMc = {}, meds = [];
       mc.rows.forEach(function (x) {
         var k = x && str(x.srcKey), rid = x && str(x.id);
@@ -162,44 +183,51 @@
       meetings = meetings.filter(function (x) { if (seenMt[x.meetingId] || x.meetingId.length > 60) return false; seenMt[x.meetingId] = true; return true; });
 
       var rows = ids.map(function (id) { return recs[id]; });
+      var nul = [];
+      rows.forEach(function (r) { var k = nulKeys(r); if (k.length) nul.push(r.id + '（' + k.join('・') + '）'); });
+      if (nul.length) return fail('読めない文字（NUL）が入っている方がいます（利用者No ' + nul.slice(0, 10).join('・') + '）。入居者マスタでその項目を直してから押し直してください。写しは始めていません。');
       var rc = chunk(rows, ROW_MAX, CHUNK_BYTES, ROW_BYTES);
-      if (rc.big.length) return fail('記録が大きすぎる方がいます（利用者No ' + rc.big.map(function (r) { return r.id; }).join('・') + '）。写しを止めました。');
+      if (rc.big.length) return fail('記録が大きすぎる方がいます（利用者No ' + rc.big.map(function (r) { return r.id; }).join('・') + '）。写しは始めていません。');
       var mt = chunk(meetings, ITEM_MAX, CHUNK_BYTES).chunks, md = chunk(meds, ITEM_MAX, CHUNK_BYTES).chunks;
 
       say('Supabase へ写しています…');
       var b = await rpc('res_import_begin');
       if (!b || !b.ok) return fail(dbWhy(b && b.error));
-      var runId = b.run, tot = { inserted: 0, updated: 0, unchanged: 0 };
+      runId = b.run;
+      var tot = { inserted: 0, updated: 0, unchanged: 0 };
       var parts = rc.chunks.map(function (c) { return [c, [], []]; })
         .concat(mt.map(function (c) { return [[], c, []]; }), md.map(function (c) { return [[], [], c]; }));
       for (var i = 0; i < parts.length; i++) {
         var r = await rpc('res_import_chunk', { p_run: runId, p_rows: parts[i][0], p_meetings: parts[i][1], p_med: parts[i][2] });
-        if (!r || !r.ok) return fail(dbWhy(r && r.error));
+        if (!r || !r.ok) return stop(dbWhy(r && r.error));
         tot.inserted += r.inserted || 0; tot.updated += r.updated || 0; tot.unchanged += r.unchanged || 0;
         say('Supabase へ写しています… ' + (i + 1) + ' / ' + parts.length);
       }
       var f = await rpc('res_import_finish', { p_run: runId, p_ids: ids,
         p_meeting_ids: meetings.map(function (x) { return x.meetingId; }), p_med_keys: meds.map(function (x) { return x.srcKey; }) });
-      if (!f || !f.ok) return fail(dbWhy(f && f.error));
+      if (!f || !f.ok) return stop(dbWhy(f && f.error));
+      runId = null;   // 写しは終わった（この先で止まっても取り消さない）
 
       say('写しを読み直して見比べています…');
       var copy = [];
       for (var j = 0; j < ids.length; j += GET_MAX) {
-        var g = await rpc('res_get', { p_ids: ids.slice(j, j + GET_MAX), p_screen: 'shadow-check' });
-        if (!g || !g.ok) return fail(dbWhy(g && g.error));
+        var g;
+        try { g = await rpc('res_get', { p_ids: ids.slice(j, j + GET_MAX), p_screen: 'shadow-check' }); }
+        catch (e) { g = { ok: false, error: e && e.db }; }
+        if (!g || !g.ok) return fail('写しは終わりましたが、読み直せませんでした: ' + dbWhy(g && g.error));
         copy = copy.concat(g.rows || []);
       }
       var runRow = null;
       try { runRow = await io.lastRun(runId); } catch (e) { runRow = null; }
-      return { ok: true, residents: ids.length, gone: gone, meetings: meetings.length, medDecisions: meds.length,
+      return { ok: true, residents: ids.length, rosterN: rosterN, meetings: meetings.length, medDecisions: meds.length,
                run: { inserted: tot.inserted, updated: tot.updated, unchanged: tot.unchanged, missing: f.missing || 0,
                       unknown: runRow && Array.isArray(runRow.unknown_keys) ? runRow.unknown_keys : [] },
                cmp: compare(recs, ids, copy) };
     } catch (e) {
-      if (e && e.db) return fail(dbWhy(e.db));
-      return fail(String(e && e.message || e) + '。写しは途中で止めました（Supabase の写しは前回のまま）。');
+      if (e && e.db) return stop(dbWhy(e.db));
+      return stop(String(e && e.message || e) + '。写しは止めました。');
     }
   }
 
-  root.SUResFull = { run: run, _rosterIds: rosterIds, _chunk: chunk, _diffKeys: diffKeys, _compare: compare, _dbWhy: dbWhy, _pool: pool };
+  root.SUResFull = { run: run, _rosterIds: rosterIds, _nulKeys: nulKeys, _chunk: chunk, _diffKeys: diffKeys, _compare: compare, _dbWhy: dbWhy, _pool: pool };
 })(typeof window !== 'undefined' ? window : this);

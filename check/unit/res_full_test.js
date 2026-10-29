@@ -72,7 +72,14 @@ function world(o) {
 (async () => {
   const { R, touched } = load();
   console.log('A 名簿の利用者No');
-  t('空・重なり・41字以上を除き、並びは名簿のまま', JSON.stringify(R._rosterIds([{ id: 3 }, { id: '' }, { id: ' 1 ' }, { id: 3 }, null, { id: 'x'.repeat(41) }, { id: 2 }])) === '["3","1","2"]');
+  {
+    const a = R._rosterIds([{ id: 3 }, { id: 1 }, { id: 2 }]), b = R._rosterIds([{ id: 3 }, { id: '' }, { id: ' 1' }, { id: 3 }, null, { id: 'x'.repeat(41) }, { id: 2 }]);
+    t('並びは名簿のまま・数字も文字にそろえる', JSON.stringify(a.ids) === '["3","1","2"]' && a.bad.length === 0);
+    t('空・前後の空白・重なり・41字以上は bad に入れる（黙って外さない）', b.bad.length === 5 && JSON.stringify(b.ids) === '["3","2"]', b);
+    const w = world({ roster: [{ id: 1000 }, { id: ' 1001' }] });
+    const r = await R.run(w);
+    t('名簿の利用者No に形の違う方がいれば写しを始めない', !r.ok && /前後の空白/.test(r.why) && w.rpcs.length === 0, r);
+  }
 
   console.log('B 塊');
   const c1 = R._chunk(Array.from({ length: 120 }, (_, i) => ({ id: String(i) })), 50, 1e9);
@@ -91,7 +98,7 @@ function world(o) {
   {
     const w = world({ n: 6, gasFailAt: 5 });
     const r = await R.run(w);
-    t('失敗を返し、データベースを1回も呼ばない', !r.ok && w.rpcs.length === 0 && /途中で止めました/.test(r.why), r);
+    t('失敗を返し、データベースを1回も呼ばない', !r.ok && w.rpcs.length === 0 && /写しは止めました/.test(r.why) && !/途中まで写した/.test(r.why), r);
     const w2 = world({ meetingErr: true });
     const r2 = await R.run(w2);
     t('担当者会議が読めない時も写さない', !r2.ok && w2.rpcs.length === 0, r2);
@@ -124,7 +131,7 @@ function world(o) {
     t('Google へ送る本文に合言葉は入れない（画面のつなぎが足す）', w.gasCalls.every(b => !('token' in b)));
   }
 
-  console.log('E 読む間に消えた方');
+  console.log('E 読む間に消えた方・会議の形・判断の上限・NUL');
   {
 
 
@@ -132,21 +139,48 @@ function world(o) {
     const g0 = w2.gas;
     w2.gas = async (b) => (b.action === 'getResident' && String(b.id) === '1001') ? { record: null } : g0(b);
     const r = await R.run(w2);
-    const fin = w2.rpcs.find(x => x.name === 'res_import_finish').args;
-    t('記録の無い方は写さず finish にも渡さない', r.ok && JSON.stringify(fin.p_ids) === '["1000","1002"]' && JSON.stringify(r.gone) === '["1001"]', r);
+    t('名簿にいるのに記録の無い方がいれば写しを始めない（黙って外さない）', !r.ok && /1001/.test(r.why) && w2.rpcs.length === 0, r);
+  }
+
+  {
+    const w = world({ n: 2 });
+    const g0 = w.gas;
+    w.gas = async (b) => (b.action === 'meeting' && String(b.id) === '1001') ? { ok: false, code: 'bad_input', error: '利用者Noがありません' } : g0(b);
+    const r = await R.run(w);
+    t('担当者会議が利用者No の形で断った方は「会議なし」として写す', r.ok && r.residents === 2, r);
+    const w2 = world({ n: 2 });
+    const g2 = w2.gas;
+    w2.gas = async (b) => b.action === 'meeting' ? { error: 'この入居者マスタは担当者会議の記録にまだ対応していません' } : g2(b);
+    const r2 = await R.run(w2);
+    t('担当者会議の口が無い古い GAS は、そう分かる文で止める', !r2.ok && /GAS が古い/.test(r2.why) && w2.rpcs.length === 0, r2);
+    const w3 = world({ med: Array.from({ length: 3000 }, (_, i) => ({ srcKey: 'S|1000|2026-10-01|' + i, id: '1000' })) });
+    const r3 = await R.run(w3);
+    t('薬の判断が上限の3000件に届いたら写しを始めない（古い判断に消えた印を付けない）', !r3.ok && /3000/.test(r3.why) && w3.rpcs.length === 0, r3);
+    const w4 = world({ recs: { 1001: { id: 1001, name: '見本', note: 'あ\u0000い' } } });
+    const r4 = await R.run(w4);
+    t('NUL の入った方がいれば利用者No と項目名を出して始めない', !r4.ok && /1001（note）/.test(r4.why) && w4.rpcs.length === 0, r4);
   }
 
   console.log('F データベースの断り');
-  for (const [label, rpcOver, want, stopAt] of [
-    ['begin が 42501', { res_import_begin: async () => ({ data: null, error: { code: '42501' } }) }, /管理者/, 'res_import_begin'],
-    ['0034 の前（関数が無い）', { res_import_begin: async () => ({ data: null, error: { code: 'PGRST202' } }) }, /0034/, 'res_import_begin'],
-    ['chunk が badrow', { res_import_chunk: async () => ({ data: { ok: false, error: 'badrow' }, error: null }) }, /形の合わない/, 'res_import_chunk'],
-    ['finish が incomplete', { res_import_finish: async () => ({ data: { ok: false, error: 'incomplete' }, error: null }) }, /写しきれません/, 'res_import_finish'],
-    ['finish が shrink', { res_import_finish: async () => ({ data: { ok: false, error: 'shrink' }, error: null }) }, /半分より少な/, 'res_import_finish'],
+  for (const [label, rpcOver, want, seq, part] of [
+    ['begin が 42501', { res_import_begin: async () => ({ data: null, error: { code: '42501' } }) }, /管理者/, 'res_import_begin', false],
+    ['0034 の前（関数が無い）', { res_import_begin: async () => ({ data: null, error: { code: 'PGRST202' } }) }, /0034/, 'res_import_begin', false],
+    ['同時に別の写し（23505）', { res_import_begin: async () => ({ data: null, error: { code: '23505' } }) }, /同時に始まり/, 'res_import_begin', false],
+    ['chunk が toolarge', { res_import_chunk: async () => ({ data: { ok: false, error: 'toolarge' }, error: null }) }, /大きすぎる/, 'res_import_begin,res_import_chunk,res_import_abort', true],
+    ['chunk が 42501（例外）', { res_import_chunk: async () => ({ data: null, error: { code: '42501' } }) }, /管理者/, 'res_import_begin,res_import_chunk,res_import_abort', true],
+    ['finish が incomplete', { res_import_finish: async () => ({ data: { ok: false, error: 'incomplete' }, error: null }) }, /写しきれません/, 'res_import_begin,res_import_chunk,res_import_finish,res_import_abort', true],
+    ['finish が shrink', { res_import_finish: async () => ({ data: { ok: false, error: 'shrink' }, error: null }) }, /半分より少な/, 'res_import_begin,res_import_chunk,res_import_finish,res_import_abort', true],
   ]) {
     const w = world({ rpc: rpcOver });
     const r = await R.run(w);
-    t(label + ' → 職員向けの文で止まり、その先を呼ばない', !r.ok && want.test(r.why) && w.rpcs[w.rpcs.length - 1].name === stopAt, [r, w.rpcs.map(x => x.name)]);
+    t(label + ' → 職員向けの文で止まり、その先を呼ばない（始めた後なら途中で止めた印を付け、途中まで写したと正直に言う）',
+      !r.ok && want.test(r.why) && w.rpcs.map(x => x.name).join(',') === seq && /途中まで写した/.test(r.why) === part
+      && !/前回のまま/.test(r.why), [r, w.rpcs.map(x => x.name)]);
+  }
+  {
+    const w = world({ rpc: { res_get: async () => ({ data: null, error: { code: '42501' } }) } });
+    const r = await R.run(w);
+    t('写し終えた後の読み直しの失敗では取り消さない（写しは終わったと言う）', !r.ok && /写しは終わりましたが/.test(r.why) && !w.rpcs.some(x => x.name === 'res_import_abort'), r);
   }
 
   console.log('G 見比べ');
