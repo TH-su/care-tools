@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ga2it6U3ae9Onp4Ew10wNtbbbNdZfy5I7zKvlomL9OY=' 'sha256-fGCTOZcRT1JU8N7SKaQI1SU07aOa8Pq+Ob0XmyLqmjQ=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ga2it6U3ae9Onp4Ew10wNtbbbNdZfy5I7zKvlomL9OY=' 'sha256-m8+v6wAE4RB+cNe0I4amJ3zGMEK/Yf9QHWHwsns77OQ=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
@@ -580,6 +580,7 @@ input,select{font-family:inherit; font-size: 0.9375rem}
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
+<script src="su-res-read.js?v=2026-10-29.2"></script>
 <script>
 /* 黙ると困る失敗（接続先の設定・取得の補助）を、画面には出さずに記録へ残す（2026-10-10・監査10月版 第2版 フェイスシート 第1手）。
    行き先は su-errors.js の note＝コンソールと記録先（不具合報告の控えと自動報告）。トーストは出さない。
@@ -806,6 +807,10 @@ function apiGet(params,timeoutMs){
     return fetchWithTimeout(CFG.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(b),redirect:'follow'},timeoutMs||25000);
   }).then(parseJson);
 }
+/* 入居者マスタの正本を Supabase へ切り替えた後は、読み取りを切り替えの口（su-res-read.js）が Supabase から読む（正本の切り替えの手順4・2026-10-29）。
+   スイッチ master_live が切の間・部品が無い時は、今までの apiGet をそのまま呼ぶ（本文・送り方は1バイトも変えない）。読み取り以外の本文はそのまま通す */
+var apiGetGas_=apiGet;
+apiGet=function(params,timeoutMs){return window.SUResRead?window.SUResRead.call(params,function(){return apiGetGas_(params,timeoutMs)},{screen:'facesheet'}):apiGetGas_(params,timeoutMs)};
 /* 読み取りだけ自動でやり直す（入居者マスタ resident-master.html の同名関数と逐語同一）。
    ★2026-08-24 実測: 30名を1人ずつ取ると、混み合う時間帯に1名ぶんが落ちることがある。
      帳票では1人の欠けがそのまま紙の穴になるため、読み取りは1回だけやり直す。 */
