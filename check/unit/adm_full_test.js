@@ -93,6 +93,12 @@ function world(o) {
     t('キーの並びの違いは同じとみなす', R._compare({ rev: 1, data: { a: 1, b: 2 }, updatedAt: '' }, { rev: 1, data: { b: 2, a: 1 }, updatedAt: '' }).length === 0);
     t('件数の数え方は GAS と同じ（墓標・物でない要素を数えない）', R._countActive({ candidates: [{}, { deleted: 1 }, null, 'x', { deleted: '' }] }) === 2 && R._countActive(null) === 0 && R._countActive({ candidates: {} }) === 0);
   }
+  {
+    const w = world({ gasResp: { ok: true, rev: 5, data: { candidates: [{ id: 'c1', memo: '見本\u0000の\ud800字' }] }, updatedAt: '' } });
+    const r = await R.run(w);
+    t('データベースに入らない文字は消す・置き換えてから写し、見比べも同じ形で行う（反証レビュー 指摘3）', r.ok === true && r.diff.length === 0
+      && w.rpcs[0].args.p_data.candidates[0].memo === '見本の\ufffd字', [r, w.rpcs[0] && w.rpcs[0].args.p_data]);
+  }
   console.log('D 自動');
   function authOf(role, runs, err) {
     return async () => ({ STATUS: { OK: 'ok' }, check: async () => ({ status: 'ok', role }),

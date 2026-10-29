@@ -31,6 +31,17 @@
     if (!Array.isArray(list)) return 0;
     return list.filter(function (c) { return c && typeof c === 'object' && !c.deleted; }).length;
   }
+  var BAD_RE = /\u0000|[\ud800-\udbff](?![\udc00-\udfff])|(?:^|[^\ud800-\udbff])[\udc00-\udfff]/;
+  function cleanStr(t) {
+    return t.replace(/\u0000/g, '').replace(/[\ud800-\udbff](?![\udc00-\udfff])/g, '\ufffd')
+      .replace(/(^|[^\ud800-\udbff])[\udc00-\udfff]/g, function (m, p) { return p + '\ufffd'; });
+  }
+  function clean(v) {
+    if (typeof v === 'string') return BAD_RE.test(v) ? cleanStr(v) : v;
+    if (Array.isArray(v)) return v.map(clean);
+    if (v && typeof v === 'object') { var o = {}; Object.keys(v).forEach(function (k) { o[clean(k)] = clean(v[k]); }); return o; }
+    return v;
+  }
   function compare(src, copy) {
     var why = [];
     if (!copy || copy.data == null) return ['写しにありません'];
@@ -67,7 +78,8 @@
       var j = await io.gas({ action: 'get', key: KEY });
       if (!j || j.ok !== true) return fail('Google が台帳を返しませんでした（この端末の入居調整の接続先を確かめてください）。');
       if (!j.data || typeof j.data !== 'object' || Array.isArray(j.data)) return fail('Google にまだ台帳がありません。写しは始めていません。');
-      var src = { rev: Number(j.rev) || 0, data: j.data, updatedAt: String(j.updatedAt || '') };
+      // データベースに入らない文字（NUL・対の無いサロゲート）は adm-write と同じく消す・置き換えてから写す（入居調整の反証レビュー 指摘3）
+      var src = { rev: Number(j.rev) || 0, data: clean(j.data), updatedAt: String(j.updatedAt || '') };
       if (bytes(JSON.stringify(src.data)) > MAX_BYTES) return fail('台帳が大きすぎます。写しは始めていません。');
       say('Supabase へ写しています…');
       var r = await io.rpc('adm_import', { p_rev: src.rev, p_data: src.data, p_updated: src.updatedAt });
@@ -195,5 +207,5 @@
     finally { if (tok) await opEnd(io, tok); }
   }
 
-  root.SUAdmFull = { run: run, auto: auto, autoNote: autoNote, cutover: cutover, back: back, _compare: compare, _countActive: countActive, _dbWhy: dbWhy, _jstDay: jstDay };
+  root.SUAdmFull = { _clean: clean, run: run, auto: auto, autoNote: autoNote, cutover: cutover, back: back, _compare: compare, _countActive: countActive, _dbWhy: dbWhy, _jstDay: jstDay };
 })(typeof window !== 'undefined' ? window : this);

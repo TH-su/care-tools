@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-R6nIR4q0q8UDvnsKMRc3R8b1w6e8hy91xYA+BRpVfrQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-+9azcFuRIs99LxV8t5ABdI61dnLN22uU2Y9JQOgvkyA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
@@ -712,7 +712,7 @@ details.dcd > .dbody > .cd > h3 { display: none; }   /* 見出しは summary に
 <script src="su-data.js?v=2026-10-30"></script>
 <script src="su-data-gas.js?v=2026-10-29"></script>
 <script src="su-data-supabase.js?v=2026-10-30"></script>
-<script src="su-adm-full.js?v=2026-10-30"></script>
+<script src="su-adm-full.js?v=2026-10-30.2"></script>
 <!-- 日付の和暦⇔西暦変換。職員マスタと同じものを使う（規則を2か所に書かない） -->
 <script src="staff-master-calc.js?v=2026-09-16"></script>
 <script>
@@ -1668,7 +1668,7 @@ function startupPull() {
       DB = remote; kvRev = rev; saveCache(); renderAll(); setSync('同期OK'); return true;
     }
     /* ① 中身が同じなら未送信は解消済み ② サーバーが古いなら送る ③ どちらも進んでいたら統合 */
-    var same = JSON.stringify(asArr(DB.candidates)) === JSON.stringify(asArr(remote.candidates));
+    var same = afCanon_(asArr(DB.candidates)) === afCanon_(asArr(remote.candidates));
     if (same) { kvRev = rev; dirty = false; saveCache(); renderAll(); setSync('同期OK'); return true; }
     if (rev <= kvRev) { kvRev = rev; saveCache(); renderAll(); setSync('未送信あり'); schedulePush(); return true; }
     DB = mergeDb(DB, remote); kvRev = rev; saveCache(); renderAll();
@@ -1781,11 +1781,18 @@ function kvPutWithOpts(data, rev, opts) {
     return SU.data.admission.put(KV_KEY, snap, rev, ex);
   });
 }
+/* 中身が同じかの見比べは、項目の並びを問わない形にする（切り替えた後の新しい保存先は項目の並びを変えて返す・入居調整の反証レビュー 指摘6）。
+   Google の間は並びが同じなので、今までと同じ結果になる */
+function afCanon_(v) {
+  if (Array.isArray(v)) return '[' + v.map(afCanon_).join(',') + ']';
+  if (v && typeof v === 'object') return '{' + Object.keys(v).sort().map(function (k) { return JSON.stringify(k) + ':' + afCanon_(v[k]); }).join(',') + '}';
+  return JSON.stringify(v === undefined ? null : v);
+}
 function verifyPushed() {
   if (!SU_DATA_READY) return Promise.resolve(false);
   return SU.data.admission.get(KV_KEY).then(function (g) {
     if (!g || !g.ok || !g.data || !Array.isArray(g.data.candidates)) return false;
-    var same = JSON.stringify(asArr(normalizeDb(g.data).candidates)) === JSON.stringify(asArr(DB.candidates));
+    var same = afCanon_(asArr(normalizeDb(g.data).candidates)) === afCanon_(asArr(DB.candidates));
     if (same) { kvRev = Number(g.rev) || kvRev; dirty = false; retryWait = 0; saveCache(); }
     return same;
   }).catch(function () { return false; });
@@ -1794,14 +1801,20 @@ function verifyPushed() {
 /* 閉じる直前の最終送信（ベストエフォート）。rev不一致はサーバ側が拒否するので二重送信は無害。
    ★iOS Safari は beforeunload が発火しないことが多いので pagehide にも結線する。
    ★beacon は成否を読めないので、これを唯一の保存手段にしない（次回起動の startupPull が検証する）。 */
+var afBeaconLost_ = false;   // 閉じる直前の送信を送れなかった（新しい保存先へ切り替えた後は送らない）
 function flushOnExit() {
-  if (dirty && SU_DATA_READY) { try { SU.data.admission.putBeacon(KV_KEY, DB, kvRev); } catch (e) { afNote_('離脱時の送信', e); } }
+  afBeaconLost_ = false;
+  if (dirty && SU_DATA_READY) {
+    try { afBeaconLost_ = SU.data.admission.putBeacon(KV_KEY, DB, kvRev) === false; } catch (e) { afBeaconLost_ = true; afNote_('離脱時の送信', e); }
+  }
 }
 window.addEventListener('pagehide', flushOnExit);
 window.addEventListener('beforeunload', function (ev) {
   flushOnExit();
   /* 編集中の入力を抱えたまま閉じようとしたら止める（保存していない内容は復元できない） */
   if (editing && editDirty) { ev.preventDefault(); ev.returnValue = ''; return ''; }
+  /* まだ送れていない変更があり、閉じる直前の送信もできなかった時（切り替えた後）は止める（入居調整の反証レビュー 指摘11） */
+  if (dirty && afBeaconLost_) { ev.preventDefault(); ev.returnValue = ''; return ''; }
 });
 /* 画面へ戻ってきた時、5分以上経っていたら取り直す。ただし編集中は保留（rev を進めないので次回拾える） */
 /* 確かめ（su-app-gate.js）が通るまでは、取り直し・別タブの控えの取り込みをしない（2026-10-29） */
