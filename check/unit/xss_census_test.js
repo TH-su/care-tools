@@ -522,6 +522,7 @@ const CENSUS = {
   "su-weight-shadow.js": [],
   "su-weight-live.js": [],
   "su-res-full.js": [],
+  "su-res-read.js": [],
   "supplies-calc.js": [],
   "supplies.html": [],
   "support-overview.html": [],

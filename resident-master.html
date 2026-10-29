@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-oGyffsFSK8xoa6xJ8wC4uWS6YAOc8BTmfotIlUpdL70='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-ncOY9YYl/m2J9fXoXwoQil3KQIvE0QfJ6nKZEriaBo0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -1914,6 +1914,7 @@ body.meal-on #sc-list{max-width:none}
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
+<script src="su-res-read.js?v=2026-10-29"></script>
 <script>
 /* 黙ると困る失敗（保存・同期の補助）を、画面には出さずに記録へ残す（2026-10-08・監査10月版 #8）。
    行き先は su-errors.js の note＝コンソールと記録先（同期ログ・不具合報告の控えと自動報告）。トーストは出さない。
@@ -2320,6 +2321,10 @@ function apiPost(body,timeoutMs){
   // text/plain で送信（GAS の CORS プリフライト回避）
   return fetchWithTimeout(CFG.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)},timeoutMs||35000).then(parseJson);
 }
+/* 入居者マスタの正本を Supabase へ切り替えた後は、読み取りを切り替えの口（su-res-read.js）が Supabase から読む（正本の切り替えの手順4・2026-10-29）。
+   スイッチ master_live が切の間・部品が無い時は、今までの apiGet をそのまま呼ぶ（本文・送り方は1バイトも変えない）。読み取り以外の本文はそのまま通す */
+var apiGetGas_=apiGet;
+apiGet=function(params,timeoutMs){return window.SUResRead?window.SUResRead.call(params,function(){return apiGetGas_(params,timeoutMs)},{screen:'resident-master'}):apiGetGas_(params,timeoutMs)};
 /* 読み取りだけ1回やり直す。★書き込みは絶対に再試行しない（同じ保存が2回通り、
    他端末の変更を巻き戻す・支援経過が二重になる等の実害が出る）。
    間隔を1.2秒空けるのは、GAS の同時実行が詰まっている瞬間を外すため。 */

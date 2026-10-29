@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-YcJYMKoWWFkRsGGOUx0TS0kNYwg8TajLbXROmrf9owU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gBl5dYYr3TmsqRrNhCeSlQAj1ycFoHr35HiujP9rwRg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
@@ -699,6 +699,7 @@ details.dcd > .dbody > .cd > h3 { display: none; }   /* 見出しは summary に
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
+<script src="su-res-read.js?v=2026-10-29"></script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-app-gate.js?v=2026-10-29"></script>
@@ -4589,6 +4590,10 @@ function masterGet(params, timeoutMs) {
     }, timeoutMs || 25000);
   }).then(parseJson);
 }
+/* 入居者マスタの正本を Supabase へ切り替えた後は、読み取りを切り替えの口（su-res-read.js）が Supabase から読む（正本の切り替えの手順4・2026-10-29）。
+   スイッチ master_live が切の間・部品が無い時は、今までの masterGet をそのまま呼ぶ（本文・送り方は1バイトも変えない）。読み取り以外の本文はそのまま通す */
+var masterGetGas_=masterGet;
+masterGet=function(params, timeoutMs){return window.SUResRead?window.SUResRead.call(params,function(){return masterGetGas_(params, timeoutMs)},{screen:'admission-flow'}):masterGetGas_(params, timeoutMs)};
 function fetchTimeout(url, opt, ms) {
   return new Promise(function (res, rej) {
     var ctl = ('AbortController' in window) ? new AbortController() : null;
