@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-anumq9f1ZBqJqGvBU0b2BCuIjFtj+vIUj4YQPzMxytk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-god7oWR6AlrVuDu8vyEiV/znD5bgQKpwTWt4k6hhF5Q='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 書類（PDF）を左の枠に出すため、この画面だけ CSP の frame-src に blob: を足す（check/csp.mjs が読む印） -->
@@ -21,7 +21,7 @@
 <script src="su-facility.js?v=2026-10-26"></script>
 <script src="su-print.js?v=2026-09-12"></script>
 <script src="staff-master-calc.js?v=2026-10-11.2"></script>
-<script src="ats-calc.js?v=2026-10-29.2"></script>
+<script src="ats-calc.js?v=2026-10-29.3"></script>
 <style>
 /* 採用管理（2026-10-26 代表者承認の凍結仕様 v1）。
    色は担当者会議のページと同じ濃さ（コントラスト7:1目標）。ライト固定。段階は色でなく番号と名前で示す。
@@ -374,6 +374,12 @@ var showEnded=false;
 var mStage='applied';
 var printIv='';
 var expireSel={};
+var purgeLog=null;      // 保管期限で消した記録（日時・消した人・人数・書類の件数。氏名は無い）。読めない時は null
+/* メニューの「採用管理」のタイルの札（2026-10-29 本人指示）。残すのは保管期限の日付だけ（氏名・番号は残さない）。
+   メニュー（index.html の dueText）が今日の日付で期限切れを数えるので、採用管理を開かない日が続いても期限を過ぎた日から札が出る */
+var MENU_DUE_KEY='ats_menu_due';
+/* help.html の「応募者の方へ 個人情報の取り扱い」に書いている保管の月数（check/unit/ats_page_test.js が文と一致を確かめる） */
+var HELP_RETAIN_MONTHS=6;
 var dlgDone_=null;
 
 function $(id){return document.getElementById(id)}
@@ -545,6 +551,8 @@ function loadAll_(){
     paintAll_();
     var open=readOpen_();
     if(open&&rowById_(open)) openDetail_(open);
+    saveMenuDue_();
+    loadPurgeLog_();
   })['catch'](function(e){
     if(my!==gen) return;
     setSync('');
@@ -1285,20 +1293,48 @@ function delFile_(fid){
     });
   });
 }
-/* 保管期限で消す前に、その方々の書類を消す（書類が残っていると ats_purge は外部キーで止まる）。台帳がまだ無い（0035 の前）なら書類も無い */
+/* 保管期限で消す前に、その方々の書類を置き場から消す（2026-10-29 本人指示「期限で消す時は置き場の書類（PDF）も一緒に消して」）。
+   台帳に載っていない PDF（置いた直後に台帳への登録が失敗した分）も残さないよう、台帳ではなく置き場の「事業者/応募者/」の一覧を取って全部消す。
+   台帳の行は ats_purge（0037）が、置き場から消えたのを確かめてから消して件数を数える。台帳がまだ無い（0035 の前）なら書類も無い */
 function purgeFilesFirst_(ids){
   /* 消す直前に応募者をデータベースから読み直し、ats_purge が消す見込みの方（職員の番号なし・確かめ中でない・期限を過ぎた）の書類だけを消す
      （別の端末で登録・段階の戻しがあった方の書類を先に消してしまわないように） */
-  return Promise.resolve().then(function(){ return db_().from('ats_applicants').select('id,staff_id,staff_pending_at,retain_until').in('id',ids); })
+  return Promise.resolve().then(function(){ return db_().from('ats_applicants').select('id,tenant_id,staff_id,staff_pending_at,retain_until').in('id',ids); })
     .then(function(r){
-      var ok=rows_(r).filter(function(x){ return x&&!x.staff_id&&!x.staff_pending_at&&AtsCalc.isDate(x.retain_until)&&x.retain_until<today_(); }).map(function(x){ return x.id; });
-      return ok.length?purgeFilesOf_(ok):{ok:0,ng:[]};
+      var ok=rows_(r).filter(function(x){ return x&&!x.staff_id&&!x.staff_pending_at&&AtsCalc.isDate(x.retain_until)&&x.retain_until<today_(); });
+      return ok.length?purgeFilesOf_(ok):{ok:0,ng:[],ledger:[]};
     });
 }
-function purgeFilesOf_(ids){
+function purgeFilesOf_(rows){
+  var ids=rows.map(function(x){ return x.id; });
   return Promise.resolve().then(function(){ return db_().from('ats_files').select('id,object_key,file_name,applicant_id').in('applicant_id',ids); })
-    .then(function(r){ return rows_(r); })['catch'](function(e){ if(noDb_(e)) return []; throw e; })
-    .then(removeFiles_);
+    .then(function(r){ return {ledger:rows_(r)}; })['catch'](function(e){ if(noDb_(e)) return null; throw e; })
+    .then(function(lg){
+      if(!lg) return {ok:0,ng:[],ledger:[]};
+      var st=db_().storage.from(FILE_BUCKET), keys={}, ng=[];
+      lg.ledger.forEach(function(f){ if(f&&f.object_key) keys[f.object_key]=1; });
+      var chain=Promise.resolve();
+      rows.forEach(function(x){
+        chain=chain.then(function(){
+          var tenant=String(x.tenant_id||'');
+          if(!ID_RE.test(tenant)||!ID_RE.test(String(x.id||''))){ ng.push('事業者の情報を読めません'); return; }
+          var dir=tenant+'/'+x.id;
+          return Promise.resolve().then(function(){ return st.list(dir,{limit:1000}); }).then(function(r){
+            if(r&&r.error) throw r.error;
+            ((r&&r.data)||[]).forEach(function(o){ if(o&&o.name&&o.id!==null) keys[dir+'/'+o.name]=1; });
+          });
+        });
+      });
+      return chain.then(function(){
+        if(ng.length) return {ok:0,ng:ng,ledger:lg.ledger};
+        var list=Object.keys(keys);
+        if(!list.length) return {ok:0,ng:[],ledger:lg.ledger};
+        return Promise.resolve().then(function(){ return st.remove(list); }).then(function(r){
+          if(r&&r.error) throw r.error;
+          return {ok:list.length,ng:[],ledger:lg.ledger};
+        });
+      });
+    });
 }
 
 /* ── 書類を左に出して右で入力（2026-10-29 本人指示）──
@@ -2050,6 +2086,30 @@ function runImport_(){
 }
 
 /* ═══════════ 保管期限 ═══════════ */
+/* メニューの札に使う保管期限の日付を端末に残す。読み込めた時だけ書く（読めない時は前の値のまま＝メニューに数えた日が出る）。
+   数えるのは消せる見込みの方（職員の番号なし・確かめ中でない）。取り込んだ過去の記録は保管期限が空なので入らない */
+function saveMenuDue_(){
+  try{
+    if(isField()) return;
+    var ex=apps.filter(function(a){ return a&&!a.staff_id&&!a.staff_pending_at&&AtsCalc.isDate(a.retain_until); })
+      .map(function(a){ return a.retain_until; }).sort().slice(0,2000);
+    localStorage.setItem(MENU_DUE_KEY,JSON.stringify({v:1,at:today_(),overdue:0,warn:0,none:0,expire:ex}));
+  }catch(e){ atsNote_('メニューの札', e); }
+}
+/* 保管期限で消した記録（操作記録 audit_log の ats_purge の行。読めるのは管理者だけ）。読めなくても画面は動く */
+function loadPurgeLog_(){
+  var my=gen;
+  return Promise.resolve().then(function(){ return db_().from('audit_log').select('at,actor_email,fields').eq('entity','ats_purge').order('at',{ascending:false}).limit(20); })
+    .then(function(r){ if(my!==gen) return; purgeLog=rows_(r).map(AtsCalc.purgeLogRow).filter(Boolean); paintExpire_(); })
+    ['catch'](function(e){ if(my!==gen) return; atsNote_('消した記録', e); purgeLog=null; paintExpire_(); });
+}
+function purgeLogHtml_(){
+  if(purgeLog===null) return '<h3>これまでに消した記録</h3><p class="muted">記録を読めませんでした。</p>';
+  if(!purgeLog.length) return '<h3>これまでに消した記録</h3><p class="muted">まだありません。</p>';
+  return '<h3>これまでに消した記録</h3><p class="hint">新しい順に20件まで。氏名は残していません。</p><div class="tbl-wrap"><table class="tbl"><thead><tr><th>日時</th><th>消した人</th><th class="num">人数</th><th class="num">書類（PDF）</th></tr></thead><tbody>'+
+    purgeLog.map(function(x){ return '<tr><td>'+esc(x.at)+'</td><td>'+esc(x.by)+'</td><td class="num">'+esc(x.count)+'</td><td class="num">'+(x.files===null?'<span class="muted">記録なし</span>':esc(x.files))+'</td></tr>'; }).join('')+
+    '</tbody></table></div>';
+}
 function paintExpire_(){
   var p=$('p-expire'); if(!p) return;
   var list=AtsCalc.purgeable(apps,today_()), n=list.filter(function(a){ return expireSel[a.id]&&!isPending_(a); }).length;
@@ -2058,7 +2118,7 @@ function paintExpire_(){
     (list.length?'<div class="tbl-wrap"><table class="tbl"><thead><tr><th>選ぶ</th><th>氏名</th><th>終わった日</th><th>終わり方</th><th>期限</th></tr></thead><tbody>'+list.map(function(a,i){
       return '<tr><td>'+(isPending_(a)?'<span class="muted">登録を確かめ中</span>':'<label class="chk"><input type="checkbox" data-exp="'+esc(a.id)+'" id="exp-'+i+'"'+(expireSel[a.id]?' checked':'')+'><span class="sr">'+esc(a.name)+'を選ぶ</span></label>')+'</td><td>'+esc(a.name)+'</td><td>'+esc(a.closed_on||'')+'</td><td>'+esc(AtsCalc.stageLabel(a.stage))+(a.outcome_reason?'（'+esc(a.outcome_reason)+'）':'')+'</td><td>'+esc(a.retain_until)+'</td></tr>'; }).join('')+
       '</tbody></table></div><div class="acts" style="margin-top:10px"><button type="button" class="btn ngf" data-act="purge"'+(n?'':' disabled')+'>選んだ'+esc(n)+'件を消す</button></div>'
-      :'<p class="muted">保管期限を過ぎた方はいません。</p>')+'</div>';
+      :'<p class="muted">保管期限を過ぎた方はいません。</p>')+purgeLogHtml_()+'</div>';
   p.innerHTML=html;
 }
 function runPurge_(){
@@ -2067,22 +2127,34 @@ function runPurge_(){
   return openDlg_({title:'選んだ'+ids.length+'件を消しますか？',lines:['連絡の記録・面接・評価・書類（PDF）も一緒に消え、元に戻せません。'],ok:'消す',danger:true}).then(function(ok){
     if(!ok) return false;
     var my=gen;
-    /* 書類を先に消す。1件でも消せなければ応募者は消さない（書類だけが残らないように） */
+    /* 書類を先に置き場から消す。1件でも消せなければ応募者は消さない（書類だけが残らないように） */
     return purgeFilesFirst_(ids).then(function(fr){
       if(my!==gen) return null;
       if(fr.ng.length){ setMsg('書類（PDF）を消せなかったため、応募者は消していません（'+fr.ng.join('／')+'）。'); return null; }
-      return rpc_('ats_purge',{p_ids:ids});
+      return rpc_('ats_purge',{p_ids:ids}).then(null,function(e){
+        /* 0037 の前の ats_purge は台帳の行が残っていると外部キー（23503）で止まる。置き場からは消えたので台帳を消してから呼び直す */
+        if(!(e&&e.code==='23503')||!fr.ledger.length) throw e;
+        return removeLedger_(fr.ledger).then(function(n){ if(my!==gen) return null; return rpc_('ats_purge',{p_ids:ids}).then(function(d){ return Object.assign({files:n},d||{}); }); });
+      });
     }).then(function(d){
       if(d===null) return false;
       if(my!==gen) return false;
       expireSel={};
-      var n=Number(d&&(d.deleted!=null?d.deleted:d.count))||0, sk=Number(d&&d.skipped_pending)||0;
-      return loadAll_().then(function(){ setMsg(n+'件を消しました。'+(sk>0?'確かめ中の'+sk+'件は消しませんでした。':''),'ok'); return true; });
+      var n=Number(d&&(d.deleted!=null?d.deleted:d.count))||0, sk=Number(d&&d.skipped_pending)||0, sf=Number(d&&d.skipped_files)||0, nf=Number(d&&d.files)||0;
+      var m=n+'件を消しました。'+(nf>0?'書類（PDF）'+nf+'件も消しました。':'')+(sk>0?'確かめ中の'+sk+'件は消しませんでした。':'')+
+        (sf>0?'書類（PDF）が置き場に残っていた'+sf+'件は消していません。もう一度試してください。':'');
+      return loadAll_().then(function(){ setMsg(m,sf>0?'warn':'ok'); return true; });
     },function(e){
       atsNote_('保管期限の削除', e);
       setMsg(e&&e.code==='23503'?'書類（PDF）が残っている方がいるため、1件も消していません。画面を読み込み直してから、もう一度試してください。':fileFriendly_(e)); return false;
     });
   });
+}
+/* 0037 の前の ats_purge のために、置き場から消した書類の台帳の行を消す（置き場に中身が無い時だけ消える）。消せた件数を返す */
+function removeLedger_(list){
+  var n=0, chain=Promise.resolve();
+  list.forEach(function(f){ chain=chain.then(function(){ return rpc_('ats_file_del',{p_id:f.id}); }).then(function(d){ if(d&&d.ok===true) n+=Number(d.deleted)||0; }); });
+  return chain.then(function(){ return n; });
 }
 
 /* ═══════════ 設定 ═══════════ */
@@ -2092,6 +2164,7 @@ function paintSettings_(){
     '<div class="fi" style="max-width:520px"><label for="set-items">評価項目（1行に1つ・12項目まで・1項目30字まで）</label><textarea id="set-items" rows="8">'+esc(settings.evalItems.join('\n'))+'</textarea></div>'+
     '<div class="fgrid" style="max-width:520px"><div class="fi"><label for="set-retain">保管する月数（選考が終わった日から）</label><input id="set-retain" type="number" min="1" max="60" value="'+esc(settings.retainMonths)+'"></div>'+
     '<div class="fi"><label for="set-lost">連絡途絶とみなす日数（取り込みで使う）</label><input id="set-lost" type="number" min="7" max="365" value="'+esc(settings.lostDays)+'"></div></div>'+
+    (settings.retainMonths!==HELP_RETAIN_MONTHS?'<p class="msg warn" style="max-width:520px">応募者向けの「個人情報の取り扱い」（使い方・困った時の画面）には、保管期間を「選考が終わった日から'+esc(HELP_RETAIN_MONTHS)+'か月」と書いています。今の設定（'+esc(settings.retainMonths)+'か月）と合いません。文も直す必要があります。</p>':'')+
     '<div class="fi" style="max-width:520px"><label for="set-iv">いつもの面接官（面接を足す時に初めから入る。臨時の時だけ面接の欄で打ち替える）</label><input id="set-iv" type="text" maxlength="80" value="'+esc(settings.defaultInterviewer)+'"></div>'+
     '<button type="button" class="btn pri" data-act="save-settings">設定を保存</button></div>';
   p.innerHTML=html;

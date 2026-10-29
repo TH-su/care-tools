@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-Pala0fth6mcHC74RJNn/++AQFCndRxs3uXxAEjyWYqI=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-hD+E/8jm0HWUVl6za/WBsCetaAsKZcb+R9onat8bm/g=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 検索エンジンにこのページと配下ツールを辿らせない。
@@ -302,7 +302,8 @@ main {
      "note": "応募・面接・入職までの記録",
      "officeOnly": true,
      "adminOnly": true,
-     "_why": "採用管理（2026-10-26 代表者承認）。officeOnly: 応募者の連絡先・評価を扱う事務所業務のため現場端末では出さない（アプリ側も現場端末では何も読まない＝二重）。使えるのは管理者＋2段階認証だけ。adminOnly: 管理者以外（ログインしていない端末も）には出さない（2026-10-29 本人承認・アプリ側も管理者＋2段階認証でなければ開かない＝二重）"
+     "due": "ats_menu_due",
+     "_why": "採用管理（2026-10-26 代表者承認）。due: 保管期限を過ぎた方の数の札（2026-10-29 本人指示・端末に残すのは期限の日付だけ）。officeOnly: 応募者の連絡先・評価を扱う事務所業務のため現場端末では出さない（アプリ側も現場端末では何も読まない＝二重）。使えるのは管理者＋2段階認証だけ。adminOnly: 管理者以外（ログインしていない端末も）には出さない（2026-10-29 本人承認・アプリ側も管理者＋2段階認証でなければ開かない＝二重）"
     }
    ]
   },
@@ -524,7 +525,9 @@ main {
   }
   /* DUE_TEXT_BEGIN 期限の件数の札の文字（2026-10-24 代表者の決定 案A・純関数・check/unit/menu_due_badge_test.js）。
      raw は端末の控えの文字列 {"v":1,"at":"YYYY-MM-DD","overdue":n,"warn":n,"none":n}。today は今日の YYYY-MM-DD。
-     形が違う・数えた日が今日より先・件数が整数でない時は出さない（''）。0件の項目は書かず、全部0件なら出さない＝今と同じ見た目 */
+     形が違う・数えた日が今日より先・件数が整数でない時は出さない（''）。0件の項目は書かず、全部0件なら出さない＝今と同じ見た目。
+     expire（2026-10-29 本人指示・採用管理）: 保管期限の日付 "YYYY-MM-DD" の並び（2000件まで）。今日より前の日付の数を「保管期限切れn」と書く
+     （日付で持つので、採用管理を開かない日が続いても期限を過ぎた日から出る）。形の違う日付が1つでもあれば出さない */
   function dueText(raw, today) {
     var d;
     try { d = JSON.parse(raw); } catch (e) { return ''; }
@@ -538,6 +541,16 @@ main {
       var n = d[keys[i][0]];
       if (typeof n !== 'number' || !isFinite(n) || n < 0 || n > 9999 || Math.floor(n) !== n) return '';
       if (n > 0) parts.push(keys[i][1] + n);
+    }
+    if (d.expire != null) {
+      if (!Array.isArray(d.expire) || d.expire.length > 2000) return '';
+      var ex = 0;
+      for (var j = 0; j < d.expire.length; j++) {
+        var em = typeof d.expire[j] === 'string' ? ymd.exec(d.expire[j]) : null;
+        if (!em || Number(em[2]) < 1 || Number(em[2]) > 12 || Number(em[3]) < 1 || Number(em[3]) > 31) return '';
+        if (d.expire[j] < String(today)) ex++;
+      }
+      if (ex > 0) parts.push('保管期限切れ' + ex);
     }
     if (!parts.length) return '';
     /* 年が違う時は年も書く（去年の同じ月日を今年の日と読み違えないため） */

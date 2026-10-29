@@ -463,6 +463,11 @@ t('求人サイトの書き方（見出し：値）も拾う', RW.name === '乙�
 t('郵便番号は電話にしない・電話は3件まで・重なりは1件', J(C.parseResume('〒060-0001\n電話 011-000-0001 011-000-0001 / 090-0000-0003 / 0800000004 / 03-0000-0005').phones) === J(['011-000-0001', '090-0000-0003', '0800000004']));
 t('文字の無い PDF（空）・関係の無い文は何も拾わない', C.parseResume('').found.length === 0 && C.parseResume('   \n').found.length === 0 && C.parseResume('本日は晴天なり').found.length === 0);
 t('氏名に数字・メール・郵便番号が入った値は拾わない', C.parseResume('氏名 x@example.com').name === '' && C.parseResume('氏名 〒860-0000').name === '');
+t('消した記録: 人数と書類の件数を読み、日時を日本時間にする', J(C.purgeLogRow({ at: '2026-10-29T15:30:00Z', actor_email: 'kakuu@example.com', fields: ['count:3', 'files:7'] }))
+  === J({ at: '2026-10-30 00:30', by: 'kakuu@example.com', count: 3, files: 7 }));
+t('消した記録: 0037 より前の行（人数だけ）は書類を null（記録なし）', C.purgeLogRow({ at: '2026-04-01T00:00:00Z', fields: ['count:1'] }).files === null);
+t('消した記録: 人数の無い・形の違う行は出さない', C.purgeLogRow({ at: 'x', fields: ['files:1'] }) === null && C.purgeLogRow({ fields: 'count:1' }) === null && C.purgeLogRow(null) === null
+  && C.purgeLogRow({ at: 'x', fields: ['count:-1'] }) === null);
 t('今日より先・読めない生年月日は拾わない', C.parseResume('生年月日 2099年1月1日').birth_date === '' && C.parseResume('生年月日 不明').birth_date === '');
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
