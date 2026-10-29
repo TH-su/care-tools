@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-LcPPI54mNvEUSSPXCLFUGI02reLKKhMiHi+PMTBj8Us='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-sxsyGhKTpULmjRBghGZ1MgETS5ldkAhrBiBGrzEDUas='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -2845,26 +2845,43 @@ function admOf(r){
   if(admMap){ var v=admMap[String(r.id)]; if(v) return v; }
   return _ymd(r.admissionDate);   /* 将来 GAS 側が名簿に載せた時は、そちらも使える */
 }
+/* 入居日は帳票の控え（bkRows・同じ getBulk）から作る（2026-10-29）。
+   以前はこのタブだけで getBulk をもう1回取っていた（起動で bkEnsure が同じものを取り済み）。
+   ★控えが取れていればその場で作る。取れていなければ bkEnsure に任せ、終わった所（bkEnsure の終端）で作る。 */
+function admFromBk_(){
+  if(!bkRows) return false;
+  var m={};
+  for(var i=0;i<bkRows.length;i++){
+    var x=bkRows[i]; if(!x||x.id==null) continue;
+    var v=_ymd(x.admissionDate); if(v) m[String(x.id)]=v;
+  }
+  admMap=m; admErr='';
+  return true;
+}
+/* bkEnsure の終端から呼ぶ。入居日を待っている時・作り済みの時だけ控えから作り直す */
+function admAfterBk_(){
+  if(!admLoading&&!admMap) return;
+  if(admLoading){
+    /* ★届いた控えが保存より前のもの（取得中に保存が通った）なら、取り直してから作る。
+       取り直しが始まらない時（取得中など）は下で今の控えから作る＝待ちを残さない */
+    if(bkStale_&&!bkErr&&!bkLoading){ bkEnsure(true); if(bkLoading) return; }
+    if(bkErr||!admFromBk_()){
+      /* ★空応答・通信の失敗を成功として扱わない（全員「未登録」の画面を正しい結果として見せない） */
+      admErr=/通信/.test(bkErr)?'入居日を取得できませんでした（通信）':'入居日を取得できませんでした';
+    }
+  } else admFromBk_();
+  admLoading=false; paintAdmBar();
+  if(curView==='adm') renderRoster();
+}
 function admEnsure(){
   if(getDeviceRole()==='field') return;   /* ★現場端末では取りに行かない（2026-10-01） */
   if(admMap||admLoading) return;
   if(!CFG.url){ admErr='同期設定のURLが未設定です'; paintAdmBar(); return; }
-  /* ★出した時の世代。応答を待つ間に現場用へ切り替わったら（devGen が進む）、届いた応答は捨てる（2026-10-01） */
-  var dg=devGen;
+  /* ★保存の後で控えが古い時（bkStale_）は使わずに取り直す（保存した入居日を出すため） */
+  if(!bkStale_&&admFromBk_()){ paintAdmBar(); if(curView==='adm') renderRoster(); return; }   // 控えから作れた（呼び出し元は先に描いているので描き直す）
   admLoading=true; admErr=''; paintAdmBar();
-  apiGet({action:'getBulk'},30000).then(function(d){
-    if(dg!==devGen) return;   // 切り替え後に届いた応答（控えに入れない）
-    var rows=(d&&d.rows)||[], m={};
-    /* ★空応答を成功として扱わない（全員「未登録」の画面を正しい結果として見せない） */
-    if(!rows.length){ admErr='入居日を取得できませんでした'; return; }
-    for(var i=0;i<rows.length;i++){
-      var x=rows[i]; if(!x||x.id==null) continue;
-      var v=_ymd(x.admissionDate); if(v) m[String(x.id)]=v;
-    }
-    admMap=m;
-  }).catch(function(){ if(dg!==devGen) return; admErr='入居日を取得できませんでした（通信）'; })
-    .then(function(){ if(dg!==devGen) return;   // 取得中の印は applyDeviceGuard が下ろし済み（新しい取得の印を消さない）
-      admLoading=false; paintAdmBar(); if(curView==='adm') renderRoster(); });
+  bkEnsure(bkStale_);   /* 取得中なら相乗り・終われば admAfterBk_ が作る */
+  if(!bkLoading) admAfterBk_();   // bkEnsure が取りに行けなかった時（URL なし等）に待ちを残さない
 }
 var ADM_ORDER_KEY='rmaster_adm_order';
 var ADM_ORDERS=['desc','asc'];
@@ -3454,6 +3471,7 @@ function bkEnsure(force){
     .then(function(){ if(dg!==devGen) return;   // 取得中の印は applyDeviceGuard が下ろし済み（新しい取得の印を消さない）
       bkLoading=false; paintShBars();
       if(curView==='cm'||curView==='lvl'||curView==='cert'||curView==='miss') renderRoster();
+      admAfterBk_();   /* 入居日順タブは同じ控えから作る（2026-10-29） */
       /* 取得中に保存が通った時は、いま届いた控えは保存前のもの。認定期限を表示中なら1回だけ取り直す
          （失敗しただけの時は seq が同じなので取り直さない＝失敗の繰り返しで往復が止まらなくならない） */
       if(seq!==bkStaleSeq_) certEnsureFresh_(); });
