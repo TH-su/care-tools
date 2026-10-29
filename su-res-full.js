@@ -104,6 +104,9 @@
     if (c === 'notabs') return 'ほかのタブ（担当者会議・薬の判断など）が写しの後にそろっていません。もう一度押してください。';
     if (c === 'live') return 'もう切り替わっています。';
     if (c === 'mirror') return 'Google への写し返しが済んでいません。先に「写しの期間に戻す」を最後まで済ませてください。';
+    if (c === 'busy') return '別の画面で「切り替える」か「写しの期間に戻す」が動いています。終わるのを待ってから押してください（30分たつと押せます）。';
+    if (c === 'noop') return '切り替えの操作が時間切れになりました。もう一度押してください。';
+    if (c === 'pending') return 'Google への写し返しが残っています。もう一度押してください。';
     return 'データベースが受け付けませんでした（' + c + '）。';
   }
 
@@ -269,6 +272,10 @@
       var now = io.now || Date.now(), rows = Array.isArray(q.data) ? q.data : [];
       if (rows.some(function (r) { return r.status === 'done' && jstDay(r.at) === jstDay(now); })) return { skip: 'today' };
       if (rows.length && now - new Date(rows[0].at).getTime() < AUTO_GAP_MS) return { skip: 'recent' };
+      // 切り替える・戻すの操作が動いている間は写さない（その写しが切り替えの写しを取り消すため・指摘15）
+      var busy = null;
+      try { busy = await sb.rpc('res_op_busy'); } catch (e) { busy = null; }   // 0036 の前（関数が無い）は今までどおり
+      if (busy && busy.data === true) return { skip: 'op' };
       return await run({
         gas: io.gas,
         rpc: function (name, args) { return sb.rpc(name, args); },
@@ -300,50 +307,68 @@
     if (!j || j.ok !== true) throw new Error(String(j && j.error || 'Google が受け付けませんでした').replace(/^Error: (refused: )?/, ''));
     return j;
   }
+  async function opBegin(io, op) {
+    var r = await io.rpc('res_op_begin', { p_op: op });
+    if (!r || r.error || !r.data || r.data.ok !== true) throw new Error(dbWhy(r && (r.error || r.data && r.data.error)));
+    return r.data.token;
+  }
+  async function opEnd(io, tok) { try { await io.rpc('res_op_end', { p_token: tok }); } catch (e) { /* 30分で失効する */ } }
   async function cutover(io) {
     var say = io.progress || function () {};
-    var frozen = false;
+    var frozen = false, tok = null;
     async function undo(why) {
-      if (frozen) { try { await gasAdmin(io, { action: 'resCutover', on: false }); } catch (e) { why += '（Google の保存を止めたままです。もう一度「切り替える」か「写しの期間に戻す」を押してください）'; } }
+      // 止める指示を送った後（応答が届かなかった時も）は、必ず外す指示を試す（止めたまま放置しない・指摘8）
+      if (frozen) { try { await gasAdmin(io, { action: 'resCutover', on: false, opToken: tok }); } catch (e) { why += '（Google の保存を止めたままの可能性があります。もう一度「切り替える」か「写しの期間に戻す」を押してください）'; } }
       return { ok: false, why: why };
     }
     try {
+      try { tok = await opBegin(io, 'cutover'); } catch (e) { return { ok: false, why: String(e && e.message || e) }; }
       say('Google への直接の保存を止めています…');
-      await gasAdmin(io, { action: 'resCutover', on: true });
       frozen = true;
+      await gasAdmin(io, { action: 'resCutover', on: true, opToken: tok });
       var r = await run(Object.assign({}, io, { frozen: true }));
-      if (!r.ok) return undo(r.why);
+      if (!r.ok) return await undo(r.why);
       var bad = r.cmp.diff.length + r.cmp.notInCopy.length;
-      if (bad) return undo('写しが Google と違う方が ' + bad + '人いたので、切り替えを止めました。');
+      if (bad) return await undo('写しが Google と違う方が ' + bad + '人いたので、切り替えを止めました。');
       say('ほかのタブを写しています…');
-      var ex = await gasAdmin(io, { action: 'exportTabs' });
+      var ex = await gasAdmin(io, { action: 'exportTabs', opToken: tok });
       for (var i = 0; i < TABS.length; i++) {
         var t = await io.rpc('res_tabs_import', { p_name: TABS[i], p_rows: Array.isArray(ex.tabs && ex.tabs[TABS[i]]) ? ex.tabs[TABS[i]] : [] });
-        if (!t || t.error || !t.data || t.data.ok !== true) return undo(dbWhy(t && (t.error || t.data && t.data.error)));
+        if (!t || t.error || !t.data || t.data.ok !== true) return await undo(dbWhy(t && (t.error || t.data && t.data.error)));
       }
       say('切り替えています…');
       var m = await io.rpc('res_set_mode', { p_mode: 'live' });
-      if (!m || m.error || !m.data || m.data.ok !== true) return undo(dbWhy(m && (m.error || m.data && m.data.error)));
+      if (!m || m.error || !m.data || m.data.ok !== true) {
+        // 応答が届かなかっただけで切り替わっていることがある。読み直して確かめる（指摘9）
+        var g = null;
+        try { g = await io.rpc('res_mode_get', {}); } catch (e) { g = null; }
+        if (!(g && g.data && g.data.mode === 'live')) return await undo(dbWhy(m && (m.error || m.data && m.data.error)));
+      }
       return { ok: true, residents: r.residents };
     } catch (e) {
-      return undo(String(e && e.message || e));
+      return await undo(String(e && e.message || e));
+    } finally {
+      if (tok) await opEnd(io, tok);
     }
   }
   async function back(io) {
     var say = io.progress || function () {};
+    var tok = null;
     try {
+      try { tok = await opBegin(io, 'back'); } catch (e) { return { ok: false, why: String(e && e.message || e) }; }
       say('写しの期間に戻しています…');
       var m = await io.rpc('res_set_mode', { p_mode: 'shadow' });
       if (!m || m.error || !m.data || m.data.ok !== true) return { ok: false, why: dbWhy(m && (m.error || m.data && m.data.error)) };
       say('Google へ写し返しています…');
       var last = null;
       for (var i = 0; i < 5; i++) {
-        try { last = await gasAdmin(io, { action: 'resCutover', on: false }); break; }
+        try { last = await gasAdmin(io, { action: 'resCutover', on: false, opToken: tok }); break; }
         catch (e) { last = e; if (!/残っています/.test(String(e && e.message))) break; }
       }
       if (!last || last instanceof Error) return { ok: false, why: '写しの期間には戻しました。Google への写し返しが終わっていません: ' + String(last && last.message || '') + '　もう一度「写しの期間に戻す」を押してください。' };
       return { ok: true, records: last.records || 0 };
     } catch (e) { return { ok: false, why: String(e && e.message || e) }; }
+    finally { if (tok) await opEnd(io, tok); }
   }
 
   root.SUResFull = { run: run, auto: auto, autoNote: autoNote, cutover: cutover, back: back, _jstDay: jstDay, _rosterIds: rosterIds, _nulKeys: nulKeys, _chunk: chunk, _diffKeys: diffKeys, _compare: compare, _dbWhy: dbWhy, _pool: pool };

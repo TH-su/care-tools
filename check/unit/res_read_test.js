@@ -305,6 +305,22 @@ const SHEET = [
     for (let i = 0; i < 10; i++) await tick();
     t('続けて保存しても、送っている間は待ち、終わった後にもう1回だけ送る', during === 1 && a.sent.length === 2, [during, a.sent.length]);
   }
+  {
+    const { R: R2 } = load({ flags: { supabase: { master_live: true } } });
+    const a = authM({ mode: 'live' });
+    for (let i = 0; i < 2; i++) { try { await R2.call({ action: 'getRoster' }, gasFn, { screen: 'resident-master' }, a.io); } catch (e) { /* 名簿の口は模擬に無い */ } }
+    for (let i = 0; i < 5; i++) await tick();
+    t('切り替えた後に開いた時、1ページで1回だけ写し返しの残りを追いつかせる', a.sent.length === 1, a.sent.length);
+  }
+  {
+    const { R: R2 } = load({ flags: { supabase: { master_live: true } } });
+    let n = 0;
+    const a = authM({ mode: 'live', reply: { ok: true } });
+    a.io.fetch = async (url, opt) => { a.sent.push([url, opt]); n++; return { json: async () => ({ ok: true, more: n === 1 }) }; };
+    await R2.write({ action: 'setState', id: 'r1', token: 'x' }, gasFn, { screen: 'care-schedule', parse: 'json' }, a.io);
+    for (let i = 0; i < 10; i++) await tick();
+    t('写しきれなかった残り（more）があれば続けて送る', a.sent.length === 2, a.sent.length);
+  }
 
   console.log('H 端末に保存しない');
   t('localStorage へ書かない', writes.length === 0 && !/setItem/.test(SRC));

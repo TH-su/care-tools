@@ -375,6 +375,7 @@
     } catch (e) { return gasFn(body); }
     return mode(io).then(function (m) {
       if (m !== 'live') return gasFn(body);
+      if (!caughtUp) { caughtUp = true; mirrorSoon(io); }   // 開いた時に1回、Google への写し返しの残りを追いつかせる（待たない・指摘5）
       return readSupabase(body, opts, io);
     });
   }
@@ -452,7 +453,7 @@
    * GAS はログインした人の証明で新しい保存先から「前に写した版より後に変わった分」を読み、Google のシートへ書く（取りこぼしても次で続きから写る）。
    * 送り方は各画面の GAS への保存と同じ（POST・text/plain・redirect:'follow'・res.json()）。合言葉は Google へだけ送る。
    * 1本ずつ送り、送っている間に次の保存があれば、終わった後にもう1回だけ送る。失敗は記録だけ残す（画面には出さない） */
-  var mirroring = null, mirrorAgain = false;
+  var mirroring = null, mirrorAgain = false, caughtUp = false;
   function noteErr(where, e) {
     try { if (root.SUErrors && typeof root.SUErrors.note === 'function') root.SUErrors.note('入居者マスタの写し返し: ' + where, e && e.message || e); } catch (x) { /* 記録できなくても止めない */ }
   }
@@ -471,6 +472,7 @@
                            body: JSON.stringify({ action: 'resMirror', token: token, accessToken: at }), redirect: 'follow' });
     var j = await r.json();
     if (!j || j.ok !== true) noteErr('Google が受け付けませんでした', j && j.error);
+    else if (j.more === true) mirrorAgain = true;   // 1回で写しきれなかった残りは続けて送る
     return j;
   }
   function mirrorSoon(io) {
@@ -483,5 +485,5 @@
     return mirroring;
   }
 
-  root.SUResRead = { call: call, write: write, mirror: mirrorSoon, refreshFlags: refreshFlags, _answer: answer, _toRow: toRow, _gas: GAS, _reset: function () { modeCache = null; modeAt = 0; ownFlags = null; mirroring = null; mirrorAgain = false; } };
+  root.SUResRead = { call: call, write: write, mirror: mirrorSoon, refreshFlags: refreshFlags, _answer: answer, _toRow: toRow, _gas: GAS, _reset: function () { modeCache = null; modeAt = 0; ownFlags = null; mirroring = null; mirrorAgain = false; caughtUp = false; } };
 })(typeof window !== 'undefined' ? window : this);
