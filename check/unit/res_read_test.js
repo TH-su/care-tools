@@ -6,7 +6,7 @@
      A 同じ形: 入居者マスタのシート（架空）から GAS の読み取り関数が返す応答と、写しの記録（全項目の写しと同じ作り方）から
        この部品が作る応答が、getRoster・getResident・getSection（事務所・現場の項目）・getBulk・getListFull・getMedsBulk で同じ
      B スイッチ master_live が切・読めない時は Google へ送る関数をそのまま呼ぶ（本文は同じもの・データベースを呼ばない）
-     C スイッチが入でも、データベースの印が写しの期間・0035 の前（関数が無い）なら Google
+     C スイッチが入でも、データベースの印が写しの期間・0036 の前（関数が無い）なら Google
      D スイッチが入で印が「切り替えた後」なら Supabase から読み、Google を呼ばない。断られた時も Google へ流さず失敗にする
      E スイッチが入の時、ログインしていない・印を読めない（通信の失敗）は Google へ流さずに失敗にする
      F 読み取り以外の本文（保存など）はこの部品を通っても Google へ送る関数をそのまま呼ぶ
@@ -69,7 +69,7 @@ const SHEET = [
   G.setRows([]);
   /* 写し: 全項目の写し（su-res-full.js）と同じく getResident の記録を、利用者No を文字にそろえて持つ */
   const recs = want.resident.map(x => Object.assign({}, x.record, { id: String(x.record.id) }));
-  /* 名簿の口（res_roster）が返す形: 基本の項目＋訪問日・かかりつけ病院・主治医（0035） */
+  /* 名簿の口（res_roster）が返す形: 基本の項目＋訪問日・かかりつけ病院・主治医（0036） */
   const ROSTER_KEYS = ['id', 'name', 'kana', 'room', 'gender', 'careLevel', 'active', 'updatedAt', 'targetApps', 'birthDate', 'height', 'dischargeDate', 'hospitalized', 'doctor', 'visitDay', 'hospital'];
   const rosterRecs = recs.map(r => { const o = {}; ROSTER_KEYS.forEach(k => { if (k in r) o[k] = r[k]; }); return o; });
 
@@ -121,7 +121,7 @@ const SHEET = [
   }
 
   console.log('C スイッチが入・印が写しの期間');
-  for (const [label, o] of [['印が写しの期間', { mode: 'shadow' }], ['0035 の前（関数が無い）', { modeErr: { code: 'PGRST202' } }]]) {
+  for (const [label, o] of [['印が写しの期間', { mode: 'shadow' }], ['0036 の前（関数が無い）', { modeErr: { code: 'PGRST202' } }]]) {
     const { R: R2 } = load({ flags: { supabase: { master_live: true } } });
     const a = auth(o);
     gasCalls.length = 0;
@@ -201,6 +201,66 @@ const SHEET = [
     box.window.SUResRead = { call: (b, g, o) => { calls.push(['via', o.screen]); return g(b); } };
     const r1 = vm.runInContext(fn + '({action:"getRoster"},45)', box);
     t(f + ': 部品が無い時も口を通る時も、元の関数を同じ引数で呼ぶ', r0 === 'gas' && r1 === 'gas' && JSON.stringify(calls) === JSON.stringify([[{ action: 'getResident', id: 'r1' }, 123], ['via', screen], [{ action: 'getRoster' }, 45]]), calls);
+  }
+
+  console.log('J 保存（write）');
+  function authW(o) {
+    const calls = [];
+    const A = { STATUS: { OK: 'ok' }, check: async () => (o.signedOut ? { status: 'signed_out' } : { status: 'ok', role: 'office' }),
+      client: () => ({
+        rpc: async (n) => { calls.push(['rpc', n]); return o.modeErr ? { error: o.modeErr } : { data: { mode: o.mode || 'shadow' } }; },
+        functions: { invoke: async (name, opt) => { calls.push(['invoke', name, JSON.parse(JSON.stringify(opt.body))]);
+          if (o.netErr) return { data: null, error: { message: 'x' } };
+          if (o.refuse) return { data: null, error: { context: { json: async () => o.refuse } } };
+          return { data: o.reply || { ok: true }, error: null }; } }
+      }) };
+    return { io: { auth: async () => A }, calls };
+  }
+  for (const [label, flags, o] of [['スイッチが切', null, { mode: 'live' }], ['印が写しの期間', { supabase: { master_live: true } }, { mode: 'shadow' }],
+                                   ['0036 の前', { supabase: { master_live: true } }, { modeErr: { code: 'PGRST202' } }]]) {
+    const { R: R2 } = load({ flags });
+    const a = authW(o);
+    gasCalls.length = 0;
+    const body = { action: 'saveResident', record: { id: 'r1' }, token: 'x' };
+    const r = await R2.write(body, gasFn, { screen: 'resident-master', parse: 'throw' }, a.io);
+    t(label + ' → Google へ同じ本文で送り、res-write を呼ばない', r.via === 'gas' && gasCalls[0] === body && !a.calls.some(c => c[0] === 'invoke'));
+  }
+  {
+    const { R: R2 } = load({ flags: { supabase: { master_live: true } } });
+    const a = authW({ mode: 'live', reply: { record: { id: 'r1' } } });
+    gasCalls.length = 0;
+    const r = await R2.write({ action: 'saveResident', record: { id: 'r1' }, token: 'x', accessToken: 'a.b.c' }, gasFn, { screen: 'resident-master', parse: 'throw' }, a.io);
+    const inv = a.calls.find(c => c[0] === 'invoke');
+    t('切り替えた後: res-write へ同じ本文（合言葉だけ外す）・Google を呼ばない・応答をそのまま返す', gasCalls.length === 0 && inv && inv[1] === 'res-write'
+      && JSON.stringify(inv[2]) === '{"action":"saveResident","record":{"id":"r1"},"accessToken":"a.b.c"}' && JSON.stringify(r) === '{"record":{"id":"r1"}}');
+  }
+  for (const [label, o, parse, check] of [
+    ['res-write の断り（GAS と同じ {error}）は throw の読み方で失敗', { mode: 'live', refuse: { error: 'Error: conflict', code: 'x' } }, 'throw', (r, e) => e && e.message === 'Error: conflict'],
+    ['raw の読み方: ok を持つ断りは返す', { mode: 'live', reply: { ok: false, error: '見本の断り' } }, 'raw', (r, e) => !e && r.ok === false],
+    ['raw の読み方: ok を持たない断りは失敗', { mode: 'live', reply: { error: '見本の断り' } }, 'raw', (r, e) => e && e.message === '見本の断り'],
+    ['json の読み方はそのまま', { mode: 'live', reply: { ok: false, code: 'conflict' } }, 'json', (r, e) => !e && r.code === 'conflict'],
+    ['届かない時は Google へ流さず失敗', { mode: 'live', netErr: true }, 'json', (r, e) => e && /届きませんでした/.test(e.message)],
+    ['ログインしていない時は Google へ流さず失敗', { signedOut: true }, 'json', (r, e) => e && /ログインしていません/.test(e.message)],
+  ]) {
+    const { R: R2 } = load({ flags: { supabase: { master_live: true } } });
+    const a = authW(o);
+    gasCalls.length = 0;
+    let r = null, e = null;
+    try { r = await R2.write({ action: 'setState', id: 'r1', token: 'x' }, gasFn, { screen: 'care-schedule', parse }, a.io); } catch (err) { e = err; }
+    t(label, check(r, e) && gasCalls.length === 0, [r, e && e.message]);
+  }
+  for (const [f, fn, screen, parse] of [['resident-master.html', 'apiPost', 'resident-master', 'throw'], ['resident-master.html', 'apiPostRaw', 'resident-master', 'raw'],
+                                        ['care-meeting.html', 'meetingPost_', 'care-meeting', 'json'], ['admission-flow.html', 'masterPost', 'admission-flow', 'throw']]) {
+    const H = fs.readFileSync(path.join(ROOT, f), 'utf8');
+    const line = (H.match(new RegExp('^' + fn.replace('$', '\\$') + '=function\\(.*$', 'm')) || [''])[0];
+    t(f + ': ' + fn + ' を保存の口に通す（' + screen + '・' + parse + '）', new RegExp('^var ' + fn + 'Gas_=' + fn + ';$', 'm').test(H)
+      && line.indexOf('SUResRead.write(') > 0 && line.indexOf("{screen:'" + screen + "',parse:'" + parse + "'}") > 0);
+  }
+  {
+    const H = fs.readFileSync(path.join(ROOT, 'care-schedule.html'), 'utf8');
+    t('週間計画: 入院の印は同じ本文（action・token・id・hospitalized・src の順）を保存の口に通す', /var msBody = \{ action: 'setState', token: cfg\.token, id: masterId, hospitalized: !!hospitalized, src: 'care' \};/.test(H)
+      && /body: JSON\.stringify\(msBody\)/.test(H) && /window\.SUResRead\.write\(msBody, msSend, \{ screen: 'care-schedule', parse: 'json' \}\)/.test(H)
+      && /<script src="su-res-read\.js\?v=/.test(H));
   }
 
   console.log('H 端末に保存しない');

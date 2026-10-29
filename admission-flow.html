@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gBl5dYYr3TmsqRrNhCeSlQAj1ycFoHr35HiujP9rwRg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-biV9ZedqVp7iVDLWfCKu9oeMplLNJy6EAZUj+dHhwuY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
@@ -699,7 +699,7 @@ details.dcd > .dbody > .cd > h3 { display: none; }   /* 見出しは summary に
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
-<script src="su-res-read.js?v=2026-10-29"></script>
+<script src="su-res-read.js?v=2026-10-29.2"></script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-app-gate.js?v=2026-10-29"></script>
@@ -4574,6 +4574,10 @@ function masterPost(body, timeoutMs) {
     body: JSON.stringify(body), redirect: 'follow'
   }, timeoutMs || 35000).then(parseJson);
 }
+/* 入居者マスタの正本を Supabase へ切り替えた後は、保存を切り替えの口（su-res-read.js の write）がサーバーの小さなプログラム（res-write）へ送る
+   （正本の切り替えの手順5・2026-10-29 代表者の決定 案1）。スイッチ master_live が切の間・部品が無い時は、今までの masterPost をそのまま呼ぶ（本文・送り方は1バイトも変えない） */
+var masterPostGas_=masterPost;
+masterPost=function(body, timeoutMs){return window.SUResRead?window.SUResRead.write(body,function(){return masterPostGas_(body, timeoutMs)},{screen:'admission-flow',parse:'throw'}):masterPostGas_(body, timeoutMs)};
 /* ★2026-09-23: 合言葉を URL に載せないため POST 本文へ（masterPost と同じ送り方）。
    GAS の doPost は読み取り action を受ける（gas/README.md）。値は GET の時と同じく文字列にして送る。 */
 function masterGet(params, timeoutMs) {

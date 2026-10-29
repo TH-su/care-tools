@@ -5,8 +5,8 @@
  *   SUResRead.call(本文, Google へ送る関数, { screen: '画面の名前' }) に通す。
  * ・スイッチ su-backend.json の supabase.master_live が切（今）・読めない時は、Google へ送る関数をそのまま呼ぶ
  *   ＝本文も送り方も1バイトも変わらない（CLAUDE.md §2-3）。
- * ・スイッチが入の時は、データベースの印（統合 0035 の res_mode）が「切り替えた後」の時だけ Supabase から読む。
- *   印が写しの期間の時・関数が無い（0035 の前）時は Google（切り替えは1回で、読み手と書き手は同じ印で動く）。
+ * ・スイッチが入の時は、データベースの印（統合 0036 の res_mode）が「切り替えた後」の時だけ Supabase から読む。
+ *   印が写しの期間の時・関数が無い（0036 の前）時は Google（切り替えは1回で、読み手と書き手は同じ印で動く）。
  * ・Supabase から読む時は、入居者マスタの GAS の読み取り関数の写し（下の GAS の箱・コメントを除き一字一句同じ）を、
  *   写しの記録から組み立てた仮の行に当てて、Google と同じ形の応答を作る（形の作り直しを二重に書かない）。
  * ・スイッチが入で印が「切り替えた後」なのに Supabase で断られた時は、Google へ流さない（CLAUDE.md §4）。
@@ -274,12 +274,15 @@
   /* 写しの記録（getResident と同じ形）から、入居者マスタのシートの1行（HEADERS の順）を組み立てる */
   function toRow(rec) {
     rec = rec || {};
-    var apps = Array.isArray(rec.targetApps) ? rec.targetApps.join(',') : String(rec.targetApps == null ? '' : rec.targetApps);
+    // 対象アプリの列（J）は配列の時だけ（GAS の saveResident と同じ。res-write の仮のシートとも同じ組み立て）
+    var apps = Array.isArray(rec.targetApps) ? rec.targetApps.join(',') : '';
     return [rec.id == null ? '' : rec.id, rec.name == null ? '' : rec.name, rec.kana == null ? '' : rec.kana,
             rec.room == null ? '' : rec.room, rec.gender == null ? '' : rec.gender, rec.careLevel == null ? '' : rec.careLevel,
             rec.active === false ? false : true, rec.updatedAt == null ? '' : rec.updatedAt, JSON.stringify(rec), apps];
   }
-  /* 仮の行に GAS の読み取り関数を当てて、Google と同じ応答（JSON にして戻した形）を作る */
+  /* 仮の行に GAS の読み取り関数を当てて、Google と同じ応答（JSON にして戻した形）を作る。
+   * 版数（stateRev・srev）は同梱しない（古い GAS の応答と同じ形）。画面は版数を Google の stateRev の見張りで見ていて、
+   * ここで別の数を返すと見張りの数と食い違って取り直しが続くため。画面は同梱が無い時は見張りの値を基準にする */
   function answer(action, body, recs) {
     GAS.setRows((recs || []).map(toRow));
     var o;
@@ -376,7 +379,7 @@
     });
   }
   /* データベースの印（res_mode）。スイッチが入の時だけ読む（体重の切り替え 0032 と同じ決まり）。
-   * ・印が写しの期間・関数がまだ無い（0035 の前）時は 'shadow'（Google から読む）
+   * ・印が写しの期間・関数がまだ無い（0036 の前）時は 'shadow'（Google から読む）
    * ・ログインしていない・使えないアカウント・通信の失敗は、Google へ流さずに失敗にする（スイッチが入の間は Google を正としない） */
   var modeCache = null, modeAt = 0;
   function mode(io) {
@@ -397,5 +400,48 @@
     });
   }
 
-  root.SUResRead = { call: call, refreshFlags: refreshFlags, _answer: answer, _toRow: toRow, _gas: GAS, _reset: function () { modeCache = null; modeAt = 0; ownFlags = null; } };
+  /* ── 保存（正本の切り替えの手順5・2026-10-29 代表者の決定 案1）──
+   * 画面の保存の関数を SUResRead.write(本文, Google へ送る関数, { screen, parse }) に通す。
+   * ・スイッチ master_live が切・印が写しの期間・0036 の前は、Google へ送る関数をそのまま呼ぶ（本文・送り方は1バイトも変えない）
+   * ・印が「切り替えた後」の時だけ、サーバーの小さなプログラム res-write（入居者マスタの GAS の保存の処理をそのまま動かす）へ同じ本文を送る。
+   *   合言葉（token）は送らない（res-write はログインから役割を決める）。応答は GAS と同じ形
+   * ・parse は画面の読み方に合わせる: 'throw'＝応答に error があれば失敗にする（parseJson と同じ）、
+   *   'raw'＝ok を持たない応答の error だけ失敗にする（入居者マスタの apiPostRaw と同じ）、'json'＝そのまま返す
+   * ・スイッチが入の間は、ログインしていない・届かない時に Google へ流さない（体重の切り替えと同じ決まり） */
+  var WRITE_MS = 90000;
+  function parseAs(d, how) {
+    if (!d || typeof d !== 'object') throw fail('応答が不正です', 'bad');
+    if (how === 'throw' && d.error) throw new Error(d.error);
+    if (how === 'raw' && d.ok === undefined && d.error) throw new Error(d.error);
+    return d;
+  }
+  async function postWrite(body, io) {
+    var A = await (io && io.auth ? io.auth() : loadAuth());
+    if (!A) throw fail('ログインの部品を読み込めませんでした。ページを読み込み直してください。', 'noauth');
+    var st = await A.check();
+    if (!st || st.status !== A.STATUS.OK) throw fail('この端末はログインしていません。ログインしてから保存してください。', 'signed_out');
+    var send = {};
+    Object.keys(body).forEach(function (k) { if (k !== 'token') send[k] = body[k]; });
+    var call = A.client().functions.invoke('res-write', { body: send });
+    var r = await Promise.race([call, new Promise(function (ok) { setTimeout(function () { ok({ timeout: true }); }, WRITE_MS); })]);
+    if (r && r.timeout) throw fail('新しい保存先の応答がありません（時間切れ）。保存されたか、画面を開き直して確かめてください。', 'timeout');
+    if (r && r.error) {
+      var d = null;
+      try { if (r.error.context && typeof r.error.context.json === 'function') d = await r.error.context.json(); } catch (e) { d = null; }
+      if (d && typeof d === 'object' && d.error) return d;   // res-write の断り（GAS と同じ {error} の形）
+      throw fail('新しい保存先に届きませんでした。保存されたか、画面を開き直して確かめてください。', 'network');
+    }
+    return r ? r.data : null;
+  }
+  function write(body, gasFn, opts, io) {
+    try {
+      if (!body || typeof body.action !== 'string' || !switchOn()) return gasFn(body);
+    } catch (e) { return gasFn(body); }
+    return mode(io).then(function (m) {
+      if (m !== 'live') return gasFn(body);
+      return postWrite(body, io).then(function (d) { return parseAs(d, opts && opts.parse); });
+    });
+  }
+
+  root.SUResRead = { call: call, write: write, refreshFlags: refreshFlags, _answer: answer, _toRow: toRow, _gas: GAS, _reset: function () { modeCache = null; modeAt = 0; ownFlags = null; } };
 })(typeof window !== 'undefined' ? window : this);

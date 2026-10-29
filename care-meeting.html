@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-RIfdGZ8seZrUOZbwrJrzhHWWVTZo66BBotf+IjyRwI0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-nUk4p44H1P53rno7DfjSWu6C5LtLzobZHb/IMhsGeq8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 会議の記録（要配慮の情報）を扱うためキャッシュ無効 -->
@@ -13,7 +13,7 @@
 <!-- 画面が黙って壊れないようにする共通部品（いちばん先に読む）→ 速さの記録 → 施設情報 → 印刷 → 振り分けと確かめの計算 -->
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
-<script src="su-res-read.js?v=2026-10-29"></script>
+<script src="su-res-read.js?v=2026-10-29.2"></script>
 <script src="su-cfg-hint.js?v=2026-10-27"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-app-gate.js?v=2026-10-29"></script>
@@ -422,6 +422,10 @@ function meetingPost_(body,timeoutMs){
   }).then(parseJsonRaw_);
 }
 function parseJsonRaw_(r){return r.text().then(function(t){var d;try{d=JSON.parse(t)}catch(e){throw new Error('応答が不正です')}if(!d||typeof d!=='object')throw new Error('応答が不正です');return d})}
+/* 入居者マスタの正本を Supabase へ切り替えた後は、保存を切り替えの口（su-res-read.js の write）がサーバーの小さなプログラム（res-write）へ送る
+   （正本の切り替えの手順5・2026-10-29 代表者の決定 案1）。スイッチ master_live が切の間・部品が無い時は、今までの meetingPost_ をそのまま呼ぶ（本文・送り方は1バイトも変えない） */
+var meetingPost_Gas_=meetingPost_;
+meetingPost_=function(body,timeoutMs){return window.SUResRead?window.SUResRead.write(body,function(){return meetingPost_Gas_(body,timeoutMs)},{screen:'care-meeting',parse:'json'}):meetingPost_Gas_(body,timeoutMs)};
 /* 読み取り（list・summary）だけ1回やり直す。★書き込み（save・setStatus・remove）はここを通さない（やり直さない） */
 function meetingRead_(body){
   return meetingPost_(body,30000).catch(function(){
