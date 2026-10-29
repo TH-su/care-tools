@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-r7aGR2MJ06HXb1iqSISntKa0aHlR8oZA3on7MByKW7Y='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-eJ9UDXJ2O7T/IRFWezxCauOYOtZ69j198JhT6AoaVA4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -11097,6 +11097,42 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
     return false;
   }
+  /* 空きの見張り（2026-10-29・代表者承認・事務所の端末で「送れていません」の帯が出続けた件）。
+   * care-tools の全ツールが同じ端末の保存領域を分け合うため、ほかのツールの控えで満杯になると、送信の記録（notePush_）も
+   * ログインの控えの更新も書けず、送れない理由が見えなくなる。64KB の試し書き（書いたら必ず消す＝新しい控えは増やさない）で空きを確かめ、
+   * 書けなければ今ある2段目の回収（reclaimSyncedDayWs_＝サーバーに届いた過去の日を1日ずつ）だけで空ける。
+   * 1段目（reclaimSpaceWs_）は使わない＝先回りで、別のタブが表示中の日の土台の控え（wsbase_）や週間計画の世代退避（_gens_ws・_backup_ws）を
+   * 消さない（2026-10-29 反証レビュー指摘）。1段目は実際の書き込みが失敗した時（notePush_ ほか）だけ。
+   * 新しい消し方は作らない＝未送信・取り直し待ち・表示中／今日／明日の日は回収側が守る。
+   * 最後まで書けなければ「容量いっぱい」の印を立て、記録（wsNote_）は空きが戻るまで1回だけ。書けたら印を消す。
+   * 同期OFF（サーバーに正本が無い）と印刷中は何もしない。戻り値 true＝空きあり／false＝空けられなかった／undefined＝何もしていない */
+  var HEADROOM_PROBE_KEY = 'ws_headroom_probe';
+  var HEADROOM_PROBE_LEN = 32768;   /* 文字数。Chrome は1文字2バイト（UTF-16）で数えるため 64KB。大きくすると、空きが足りている端末でも回収が走る */
+  var headroomRanAt_ = 0;           /* 最後に見張りを回した時刻（メモリだけ）。呼ぶ回数の間引きに使う */
+  var headroomNoted_ = false;       /* 空けられなかったことを記録済み（空きが戻ったら外す） */
+  function headroomProbeWs_() {
+    var s = new Array(HEADROOM_PROBE_LEN + 1).join('0');
+    try { localStorage.setItem(HEADROOM_PROBE_KEY, s); return true; }
+    catch (e) { return e || false; }
+    finally { try { localStorage.removeItem(HEADROOM_PROBE_KEY); } catch (eR) {} }
+  }
+  function ensureHeadroomWs_() {
+    if (!syncOn()) return;
+    if (typeof printing_ === 'function' && printing_()) return;
+    headroomRanAt_ = Date.now();
+    var r = headroomProbeWs_();
+    while (r !== true && reclaimSyncedDayWs_(null)) r = headroomProbeWs_();   /* 2段目: サーバーに届いた過去の日を1日ずつ空けては試す */
+    if (r === true) { storageFullAt_ = 0; headroomNoted_ = false; return true; }
+    storageFullAt_ = Date.now();
+    if (!headroomNoted_) { headroomNoted_ = true; wsNote_('空きの確保', r); }
+    return false;
+  }
+  /* 空きの見張りを間引いて呼ぶ。ms 以内に回していれば何もしない（送信の失敗＝1分・定期更新＝10分）。typeof＝切り出して試す試験でも落ちない */
+  function headroomTick_(ms) {
+    if (typeof ensureHeadroomWs_ !== 'function') return;
+    if (Date.now() - headroomRanAt_ < ms) return;
+    try { ensureHeadroomWs_(); } catch (e) { wsNote_('空きの確保', e); }
+  }
   /* wsday_ 書込（圧縮）。quota時は reclaim して1回だけ再試行。成功true/失敗false。 */
   /* 保存・同期の失敗を、画面には出さずに記録だけ残す（2026-10-12・監査10月版 第3版 2・週間計画の csNote_ と同じ形）。
    * 端末の控え（未送信の印・版の控え・3-way の土台・競合の退避・接続先の控えなど）は、書けない・読めないまま黙ると
@@ -11115,6 +11151,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (w === 'empty') return 'EmptyResultError';
     return w ? 'ServerError' : 'UnknownError';
   }
+  /* 「容量いっぱい」の印（2026-10-29・代表者承認）。端末の保存領域が書けなかった最後の時刻（メモリだけ・端末に保存しない）。0＝印なし。
+   * 送れていない帯の理由（unsentReasonKind_ の 'storage'）に使う。立てるのは空きの見張り（ensureHeadroomWs_）が空きを作れなかった時と、
+   * 送信の記録（notePush_）がメモリの控えに落ちた時だけ。消すのは空きの見張りが試し書きできた時だけ */
+  var storageFullAt_ = 0;
   function wsNote_(where, e) {
     try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('保存・同期の失敗', e, 'ws:' + where); } catch (_) {}
   }
@@ -15562,11 +15602,24 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   blocked … 職員名0人・ロック・取り直し待ちで送っていない
    *   conflict… 他端末の更新と統合中 */
   var PUSHLOG_KEY = 'ws_pushlog_v1';
+  /* 端末に書けなかった送信の記録の控え（2026-10-29・代表者承認）。date -> 記録（メモリだけ・端末に保存しない）。
+   * 保存領域が満杯だと記録が残らず、送れていない帯の理由がいつも「インターネット」になっていた。
+   * loadPushLog_ が端末の記録に重ねて返す（日付ごとに at の新しい方）。その日の記録を端末に書けたら控えから外す */
+  var pushLogMem_ = {};
   function loadPushLog_() {
+    var d;
     try {
-      var d = JSON.parse(localStorage.getItem(PUSHLOG_KEY) || '{}');
-      return (d && typeof d === 'object') ? d : {};
-    } catch (e) { wsNote_('送信の記録の読み込み', e); return {}; }
+      d = JSON.parse(localStorage.getItem(PUSHLOG_KEY) || '{}');
+      if (!d || typeof d !== 'object') d = {};
+    } catch (e) { wsNote_('送信の記録の読み込み', e); d = {}; }
+    /* typeof＝この関数だけを切り出して試す試験でも落ちない */
+    if (typeof pushLogMem_ === 'object' && pushLogMem_) {
+      for (var k in pushLogMem_) {
+        if (!Object.prototype.hasOwnProperty.call(pushLogMem_, k) || !pushLogMem_[k]) continue;
+        if (!d[k] || (d[k].at || 0) < (pushLogMem_[k].at || 0)) d[k] = pushLogMem_[k];
+      }
+    }
+    return d;
   }
   function notePush_(date, res, err, ms) {
     if (!date) return;
@@ -15577,7 +15630,25 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var keep = {}, live = localEditDays_(), i;
       for (i = 0; i < live.length; i++) if (d[live[i]]) keep[live[i]] = d[live[i]];
       keep[date] = d[date];
-      localStorage.setItem(PUSHLOG_KEY, JSON.stringify(keep));
+      var json = JSON.stringify(keep), ok = false, e1 = null;
+      try { localStorage.setItem(PUSHLOG_KEY, json); ok = true; } catch (eW) { e1 = eW; }
+      /* 書けない時（容量いっぱい・2026-10-29・代表者承認）: 1段目の回収 → 書き直し → 2段目（サーバーに届いた過去の日を1日ずつ空けて書き直す）。
+       * それでも書けなければメモリの控えに入れる（帯の理由はこちらで見える）。typeof＝切り出して試す試験でも落ちない */
+      if (!ok && typeof reclaimSpaceWs_ === 'function') {
+        try { reclaimSpaceWs_(null); } catch (eR) {}
+        try { localStorage.setItem(PUSHLOG_KEY, json); ok = true; } catch (eW2) { e1 = eW2; }
+      }
+      if (!ok && typeof lsWriteFreeingSynced_ === 'function') {
+        try { ok = !!lsWriteFreeingSynced_(PUSHLOG_KEY, json, null); } catch (eF) {}
+      }
+      if (typeof pushLogMem_ === 'object' && pushLogMem_) {
+        if (ok) delete pushLogMem_[date];
+        else pushLogMem_[date] = d[date];
+      }
+      if (!ok) {
+        if (typeof storageFullAt_ !== 'undefined') storageFullAt_ = Date.now();   /* 「容量いっぱい」の印（帯の理由 'storage'） */
+        wsNote_('送信の記録', e1);
+      }
     } catch (e) { wsNote_('送信の記録', e); }
   }
   /* 一覧に出す1行。「いつ・どうだったか」を日本語で返す（記録が無ければ空文字） */
@@ -16357,6 +16428,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     updateSyncBadge_();
     /* typeof＝この関数だけを切り出して試す試験（sync-badge.test.js W7）でも落ちない */
     if (typeof paintUnsentBar_ === 'function') { try { paintUnsentBar_(); } catch (eU) { wsNote_('未送信の帯', eU); } }
+    if (typeof headroomTick_ === 'function') headroomTick_(10 * 60 * 1000);   /* 端末の空きの見張り（10分に1回まで・2026-10-29・代表者承認） */
   }
   /* ═══ 送れていない変更の帯（#unsentBar・2026-10-27 代表者承認 D）═══════════════════
      未送信の印（ws_dirty_v1）が付いてから UNSENT_BAR_MS を超えても送れていない日があれば、画面の上に帯を出す。送れたら消える。
@@ -16392,11 +16464,28 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     { k: 'staff0', t: '職員名が0人のため、送らずに止めています。この日を開き直すと、シフトから職員が戻ります。' },
     { k: 'locked', t: 'ほかの端末でロックされた日のため、送らずに止めています。この日を開き直して確定版を確かめてください。' },
     { k: 'refetch', t: 'クラウドから取り直す設定のため、この端末からは送りません。' },
-    { k: 'net', t: 'インターネットのつながりを確かめてください。' }
+    { k: 'storage', t: '端末の保存領域がいっぱいのため、送信の準備を書き込めません。サーバーに届いている過去の日の控えを空けて送り直しています。消えない時は［不具合を報告］から知らせてください。', s: 1 },
+    { k: 'offline', t: 'インターネットのつながりを確かめてください。', s: 1 },
+    { k: 'merge', t: 'ほかの端末の変更とまとめ直しています。数分たっても消えない時は画面を読み込み直してください。', s: 1 },
+    { k: 'server', t: 'サーバーへの保存がうまくいっていません（ログインの確かめは通っています）。画面を読み込み直してください。直らない時は［不具合を報告］から知らせてください。', s: 1 },
+    { k: 'net', t: 'インターネットのつながりを確かめてください。', s: 1 }
   ];
-  function unsentReasonKind_(r, auth) {
+  /* 回線の案内だった日（'net'）を、端末の状態で言い分ける（2026-10-29・代表者承認・事務所の端末で回線は生きているのに「インターネット」の文が出続けた件）。
+   * env（省略可）… { storage: 容量いっぱいの印が直近10分以内, offline: navigator.onLine === false, diag: ログインの確かめの診断 'server'／'' }。
+   * 優先順は storage → offline → merge（記録が統合中）→ server（ログインの確かめは通るのに送信が失敗）→ net。
+   * 「ログインの確かめができない」は理由にしない＝SUAuth.check は通信できない時も 'error' を返し、navigator.onLine は回線の先が切れていても true のため、
+   * ログインの問題と回線の問題を見分けられない（2026-10-29 反証レビュー指摘）。その時は今までどおり回線の文。
+   * env が無い時は今までどおり（ログイン・権限の止めと保留の理由はこれまでと同じ判定） */
+  function unsentReasonKind_(r, auth, env) {
     if (auth === 'login' || auth === 'forbidden') return 'login';
-    if (!r || r.res !== 'blocked') return 'net';
+    if (!r || r.res !== 'blocked') {
+      var v = env || {};
+      if (v.storage) return 'storage';
+      if (v.offline) return 'offline';
+      if (r && r.res === 'conflict') return 'merge';
+      if (v.diag === 'server' && r && r.res === 'fail') return 'server';
+      return 'net';
+    }
     if (r.err === 'ログインが必要' || r.err === '保存の権限なし') return 'login';
     if (r.err === '古い版の書き込みを断られた') return 'old';
     if (r.err === '職員名が0人') return 'staff0';
@@ -16404,17 +16493,56 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (r.err === '取り直し待ち') return 'refetch';
     return 'net';
   }
-  function unsentBarPlan_(dates, logs, auth) {
-    var by = {}, i, k, parts = [];
+  /* ［今すぐ送信する］は、送れば直りうる理由（UNSENT_REASONS_ の s:1）の日が1日でもあれば出す */
+  function unsentBarPlan_(dates, logs, auth, env) {
+    var by = {}, i, k, parts = [], send = false;
     for (i = 0; i < dates.length; i++) {
-      k = unsentReasonKind_(logs ? logs[dates[i]] : null, auth);
+      k = unsentReasonKind_(logs ? logs[dates[i]] : null, auth, env);
       (by[k] = by[k] || []).push(dates[i]);
     }
     for (i = 0; i < UNSENT_REASONS_.length; i++) {
       k = UNSENT_REASONS_[i].k;
-      if (by[k]) parts.push(unsentBarText_(by[k], UNSENT_REASONS_[i].t));
+      if (by[k]) { parts.push(unsentBarText_(by[k], UNSENT_REASONS_[i].t)); if (UNSENT_REASONS_[i].s) send = true; }
     }
-    return { text: parts.join(' '), send: !!by.net };
+    return { text: parts.join(' '), send: send };
+  }
+  /* 送れていない理由の診断（2026-10-29・代表者承認）。回線の案内になりそうな日があり、回線が切れていない時だけ、
+   * ログインの確かめ（SUAuth.check の fresh＝控えを使わずデータベースに確かめる）を裏で1回走らせ、'ok'＝Supabase に届く時だけ 'server' 候補にする
+   * （記録が 'fail' の日だけ）。間引き: UNSENT_DIAG_EVERY_MS に1回まで・同時に1本・UNSENT_DIAG_LIMIT_MS で打ち切り。
+   * 結果はメモリだけ（端末に保存しない）で UNSENT_DIAG_TTL_MS で古いとみなす。
+   * throw・reject・status 'error'・打ち切りは「結果なし」（前の結果も消す）＝回線の文のまま。通信できない時も 'error' になるため、ログインの問題とは決めない。
+   * 打ち切った後に遅れて届いた結果は捨てる。ログアウト・許可なし・2段階認証待ちは何もしない（ログイン・権限の止め authBlock_ 系に任せる）。結果が出たら帯を描き直す */
+  var UNSENT_DIAG_EVERY_MS = 2 * 60 * 1000, UNSENT_DIAG_TTL_MS = 5 * 60 * 1000, UNSENT_DIAG_LIMIT_MS = 15 * 1000;
+  var unsentDiag_ = { at: 0, kind: '' };                /* 最後の診断の結果 */
+  var unsentDiagRun_ = { at: 0, busy: false, seq: 0 };  /* 最後に診断を始めた時刻・走っている間 true・何本目か（遅れて届いた結果を捨てる） */
+  function unsentDiagKind_(now) {
+    var d = unsentDiag_;
+    return (d && d.kind && now - d.at <= UNSENT_DIAG_TTL_MS) ? d.kind : '';
+  }
+  function unsentDiagKick_(now) {
+    if (unsentDiagRun_.busy || now - unsentDiagRun_.at < UNSENT_DIAG_EVERY_MS) return false;
+    var A = (typeof window !== 'undefined' && window) ? window.SUAuth : null;
+    if (!A || typeof A.check !== 'function') return false;
+    unsentDiagRun_.busy = true;
+    unsentDiagRun_.at = now;
+    var seq = unsentDiagRun_.seq = (unsentDiagRun_.seq || 0) + 1, timer = null;
+    /* kind: 'server'＝結果あり／''＝結果なし（前の結果も消す）／null＝何もしない。打ち切りの後・次の診断が始まった後に届いた結果は捨てる */
+    var done = function (kind) {
+      if (unsentDiagRun_.seq !== seq || !unsentDiagRun_.busy) return;
+      unsentDiagRun_.busy = false;
+      if (timer !== null) { try { clearTimeout(timer); } catch (eT) {} timer = null; }
+      if (kind === 'server') unsentDiag_ = { at: Date.now(), kind: kind };
+      else if (kind === '') unsentDiag_ = { at: 0, kind: '' };
+      if (typeof paintUnsentBar_ === 'function') { try { paintUnsentBar_(); } catch (eP) { wsNote_('未送信の帯', eP); } }
+    };
+    timer = setTimeout(function () { timer = null; done(''); }, UNSENT_DIAG_LIMIT_MS);
+    var p;
+    try { p = Promise.resolve(A.check({ fresh: true })); } catch (e) { done(''); return true; }
+    p.then(function (r) {
+      var st = r && r.status;
+      done(st === 'ok' ? 'server' : st === 'error' ? '' : null);
+    }, function () { done(''); });
+    return true;
   }
   function paintUnsentBar_() {
     var bar = $('unsentBar'), msg = $('unsentBarMsg'), btn = $('unsentBarSend');
@@ -16428,9 +16556,22 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       late = unsentLateDays_(days, unsentSeen_, now, UNSENT_BAR_MS, skip);
     }
     if (late.length) {
-      var plan = unsentBarPlan_(late, loadPushLog_(), authBlock_);
+      /* 言い分けに使う端末の状態（2026-10-29・代表者承認）。typeof＝この関数だけを切り出して試す試験でも落ちない */
+      var tNow = Date.now(), logs = loadPushLog_();
+      var env = {
+        storage: typeof storageFullAt_ === 'number' && storageFullAt_ > 0 && tNow - storageFullAt_ <= 10 * 60 * 1000,
+        offline: typeof navigator !== 'undefined' && !!navigator && navigator.onLine === false,
+        diag: typeof unsentDiagKind_ === 'function' ? unsentDiagKind_(tNow) : ''
+      };
+      var plan = unsentBarPlan_(late, logs, authBlock_, env);
       if (msg.textContent !== plan.text) msg.textContent = plan.text;
       if (btn && btn.hidden !== !plan.send) btn.hidden = !plan.send;
+      /* 診断は描き終えてから（結果が出たら描き直す）。回線の案内の日（診断の結果を除いて見た時に 'net'）がある時だけ */
+      if (!env.offline && typeof unsentDiagKick_ === 'function') {
+        var envNoDiag = { storage: env.storage, offline: false, diag: '' }, needDiag = false;
+        for (k = 0; k < late.length; k++) if (unsentReasonKind_(logs ? logs[late[k]] : null, authBlock_, envNoDiag) === 'net') { needDiag = true; break; }
+        if (needDiag) unsentDiagKick_(tNow);
+      }
     }
     if (bar.hidden !== !late.length) bar.hidden = !late.length;
   }
@@ -17319,6 +17460,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         showOfflineIfPersistent_();
         scheduleRetry_();
         notePush_(date, 'fail', failReason_(j && j.error), Date.now() - pushT0_);
+        if (typeof headroomTick_ === 'function') headroomTick_(60 * 1000);   /* 端末の空きを確かめる（1分に1回まで・2026-10-29・代表者承認） */
         if (!j) { try { verifyPutLanded_(date, sig); } catch (eV) { wsNote_('pushDay.verify', eV); } }   /* B: 時間切れでも届いていたか確認 */
         if (report) $('stResult').textContent = '送信エラー: ' + friendlyErr(j && j.error);
       }
@@ -17713,6 +17855,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         noteF_('blocked', j.error === 'login' ? 'ログインが必要' : '保存の権限なし');
       } else {
         noteF_('fail', typeof failReason_ === 'function' ? failReason_(j && j.error) : '');
+        if (typeof headroomTick_ === 'function') headroomTick_(60 * 1000);   /* 端末の空きを確かめる（1分に1回まで・2026-10-29・代表者承認） */
         scheduleRetry_();
         if (!j) { try { verifyPutLanded_(date, daySig(day)); } catch (eV) {} }   /* B: 時間切れでも届いていたか確認 */
       }
@@ -21321,7 +21464,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261029120831';
+  var WS_BUILD = '20261029193839';
   var WS_APP_VER = 2026102701;   /* 2026-10-27 まだ届いていないロックを「外した」に変えて送り、版の進んでいない古い未送信を退避して捨てる前の版の画面が、仕上げたロックの盤面を前の版で上書きしないよう上げた（代表者承認 A・B）
                                   * （2026101706: 2026-10-23 トレイへ入った理由の印（parkedByHand・absentMoved・routineTray）を知らない前の版の画面が、手で戻した札・休みで移した札を印なしで残し、
                                   * 新しい版がそれを列へ戻してしまわないよう上げた）
@@ -21431,6 +21574,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function boot() {
     startVersionWatch_();   /* ほかの visibilitychange より先に登録する＝戻った時の送信より前に止める */
     try { loadSettings(); } catch (e) {}
+    try { ensureHeadroomWs_(); } catch (eHr) {}   /* 端末の空きを確かめ、足りなければ今ある回収で空ける（同期OFFでは何もしない・2026-10-29・代表者承認） */
     try { pruneOld(); } catch (e) {}
     try { markOffline_(); } catch (eOf) {}   /* 同期OFFで起動した＝同期OFFの印を書く（容量の2段目を止める・印が既にあれば何もしない） */
     /* serviceDict(サービスコード辞書)を初回 renderAll 前に確実に適用する素振り。
