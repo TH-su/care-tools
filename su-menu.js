@@ -30,9 +30,13 @@
  *
  * 使い方:
  *   SUMenu.arrange(def, config, role) → 並べ替え・非表示を当てた定義（元の def は変えない）。純関数（check/unit/menu_arrange_test.js）
- *   SUMenu.layout(def, cleaned)        → 非表示を当てる前の区分とボタンの配置（メニューの設定の画面が使う）。空の区分も残す
+ *   SUMenu.view(def, config, role)     → arrange ＋役割の決まり（管理者専用・現場の事務所専用・役割が分かるまでの事務所専用）。
+ *                                       設定が無くても役割の決まりは効く。メニューの画面はこれで組み立てる（2026-10-29 本人承認）
+ *   SUMenu.autoHidden(tile, secOfficeOnly, role) → 役割の決まりで出ないボタンか（メニューの設定の画面が札を出すのに使う）
+ *   SUMenu.layout(def, cleaned)       → 非表示を当てる前の区分とボタンの配置（メニューの設定の画面が使う）。空の区分も残す
  *   SUMenu.readCache()                → 端末の控え {role, config} か null
- *   SUMenu.startSync(onChange)        → ページの読み込みが終わってから設定を読み、控えと違えば onChange(config, role) を呼ぶ
+ *   SUMenu.startSync(onChange, onDone) → ページの読み込みが終わってから設定を読み、控えと違えば onChange(config, role) を呼ぶ。
+ *                                       onDone(kind) は結果（'ok'・'out'・'error'）が出るたびに呼ぶ
  *   SUMenu.ball()                     → 今の毬の柄 'kiku' | 'asanoha'（端末の選択 → 施設の既定 → 菊かがり）
  *   SUMenu.getBall() / setBall(kind)  → 端末の選択（無い・壊れている時は null）／端末の選択を残す（成功で true）
  *   SUMenu.chooseBall(device, config) → 柄の決め方の純関数（config は clean() を通したもの）
@@ -192,6 +196,40 @@
     return out;
   }
 
+  /* ── 役割の決まり（2026-10-29 本人承認・メニューの設定では外せない）──
+     role: 'admin' | 'office' | 'field' ＝ログインの役割／null ＝ログインしていない／'pending' ＝ログインの記録はあるが役割がまだ分からない
+     ・管理者専用（adminOnly）は管理者にだけ出す
+     ・事務所専用（ボタンの officeOnly か、区分の officeOnly）は、現場のアカウントと役割が分からない間は出さない
+       （現場端末では今までどおり is-field の仕組みでも隠れる。分からない間に出してから消すと、一瞬でも中の名前を見せるため）
+     ・使い方・困った時（KEEP）は必ず出す */
+  function autoHidden(t, secOfficeOnly, role) {
+    if (!t || KEEP[t.href]) return false;
+    if (t.adminOnly && role !== 'admin') return true;
+    if ((t.officeOnly || secOfficeOnly) && (role === 'field' || role === 'pending')) return true;
+    return false;
+  }
+  function roleView(view, role) {
+    if (!view || typeof view !== 'object' || !Array.isArray(view.sections)) return view;
+    var cut = false;
+    var secs = view.sections.map(function (s) {
+      if (!s || !Array.isArray(s.tiles)) return s;
+      var keep = s.tiles.filter(function (t) { return !autoHidden(t, !!s.officeOnly, role); });
+      if (keep.length === s.tiles.length) return s;
+      cut = true;
+      var ns = copy(s); ns.tiles = keep;
+      return ns;
+    });
+    if (!cut) return view;
+    var out = copy(view); out.sections = secs;
+    return out;
+  }
+  /* 画面に出す形＝設定の並び・非表示（arrange）＋役割の決まり。設定が無くても役割の決まりは効く */
+  function view(def, config, role) {
+    var v = def;
+    try { v = config ? arrange(def, config, role) : def; } catch (e) { v = def; }
+    return roleView(v, role);
+  }
+
   /* 控えはログインの記録がある時だけ使う（ログアウトした端末で前の人の並びを出さない）。
      ログアウト・ログインのし直しでは login.js が控えを消す（SUMenu.clearCache）。 */
   function readCache() {
@@ -294,8 +332,13 @@
     } catch (e) { return false; }
   }
 
-  function startSync(onChange) {
+  /* onDone(kind) は結果が出た時に毎回呼ぶ（'ok'・'out'・'error'。役割が分からない間の画面を、結果に合わせて組み直すため） */
+  function startSync(onChange, onDone) {
     if (typeof Promise === 'undefined') return;
+    function done(kind) {
+      try { if (typeof onDone === 'function') onDone(kind); }
+      catch (e) { try { if (window.SUErrors) window.SUErrors.report('メニュー', e, 'su-menu.js'); } catch (e2) { /* 何もしない */ } }
+    }
     function run() {
       var before = readCache();
       var t = new Promise(function (ok) { setTimeout(function () { ok({ kind: 'error' }); }, 15000); });
@@ -313,6 +356,7 @@
         } catch (e) {
           try { if (window.SUErrors) window.SUErrors.report('メニュー', e, 'su-menu.js'); } catch (e2) { /* 何もしない */ }
         }
+        done(r && r.kind);
       });
     }
     if (document.readyState === 'complete') run();
@@ -321,7 +365,7 @@
     window.addEventListener('pageshow', function (e) { if (e.persisted) run(); });
   }
 
-  window.SUMenu = { arrange: arrange, layout: layout, clean: clean, readCache: readCache, clearCache: clearCache, startSync: startSync, ROLES: ROLES, KEEP: KEEP,
+  window.SUMenu = { arrange: arrange, view: view, roleView: roleView, autoHidden: autoHidden, layout: layout, clean: clean, readCache: readCache, clearCache: clearCache, startSync: startSync, ROLES: ROLES, KEEP: KEEP,
     ball: ball, getBall: getBall, setBall: setBall, chooseBall: chooseBall, BALLS: BALLS.slice(),
     // 写しが止まっている時の札（su-sync-stale.js・2026-10-26 本人指示）が、同じログインの部品を二重に読み込まないために使う
     hasLogin: hasLogin, loadAuth: loadAuth };

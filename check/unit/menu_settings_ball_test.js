@@ -213,6 +213,32 @@ function run(opt) {
   t('6f 毬の部品は menu-settings.js より前に読む', PAGE.indexOf('su-itomari.js') > 0 && PAGE.indexOf('su-itomari.js') < PAGE.indexOf('menu-settings.js?v='), '');
   t('6g 部品が読めない時の門（SUAuth・SUMenu）に毬の部品を足していない（見本なしで動く）', /if \(!window\.SUAuth \|\| !window\.SUMenu\) \{/.test(JS), '');
 
+  console.log('\n— 7. 役割の決まりで出ないボタンの欄（2026-10-29 本人承認）—');
+  {
+    const p = run({ config: null });
+    await p.settle();
+    let grp = null, help = null, staff = null;
+    p.ids.secs.walk(x => {
+      const a = x.getAttribute && x.getAttribute('aria-label');
+      if (a === '採用管理 を出す役割') grp = x;
+      if (a === '使い方・困った時 を出す役割') help = x;
+      if (a === '職員マスタ を出す役割') staff = x;
+    });
+    const cbs = g => g ? g.children.map(lb => lb.children.find(c => c.tagName === 'INPUT')) : [];
+    const [ad, of, fi] = cbs(grp);
+    t('7a 採用管理: 管理者の欄は押せる・出す', !!ad && !ad.disabled && ad.checked, [ad && ad.disabled, ad && ad.checked]);
+    t('7b 採用管理: 事務所・現場の欄は外れた形で押せない・自動で出ませんの印', !!of && of.disabled && !of.checked && fi.disabled && !fi.checked
+      && /自動で出ません/.test(of.getAttribute('aria-label') || '') && /自動で出ません/.test(of.parentNode.title || ''), [of && of.disabled, of && of.checked, of && of.attrs]);
+    const [sa, so, sf] = cbs(staff);
+    t('7c 職員マスタ（事務所専用）: 現場の欄だけ押せない', !!sa && !sa.disabled && !so.disabled && sf.disabled && !sf.checked, [sa && sa.disabled, so && so.disabled, sf && sf.disabled]);
+    const hc = cbs(help);
+    t('7d 使い方・困った時: 今どおり全部出す（押せない・入った形）', hc.length === 3 && hc.every(c => c.disabled && c.checked), hc.map(c => [c.disabled, c.checked]));
+    t('7e 開いただけでは変更なし（自動の欄を保存する非表示に数えない）', p.ids['b-save'].disabled, p.ids.state.textContent);
+    p.pick('asanoha');
+    p.ids['b-save'].click(); await p.settle();
+    const h = p.db.puts[0] && p.db.puts[0].hide;
+    t('7f 保存しても、自動の欄は非表示として書かない', !!h && Object.keys(h).every(r => h[r].indexOf('ats.html') < 0 && h[r].indexOf('staff-master.html') < 0), h);
+  }
   console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.log('  ✗ 試験が止まった: ' + (e && e.stack || e)); process.exit(1); });
