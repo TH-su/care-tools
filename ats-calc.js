@@ -139,6 +139,43 @@
     if (!s) return null;
     return c.normDate(s, { aheadYears: 2 }) || null;
   }
+  /* 満年齢。2/29 生まれは平年 2/28 に加齢する（職員マスタの StaffCalc.age と同じ規則）。読めない・生まれる前は null */
+  function ageOn(birth, asOf) {
+    var b = ymd(birth), a = ymd(asOf);
+    if (!b || !a || str(birth) > str(asOf)) return null;
+    var n = a.y - b.y, bd = b.d;
+    if (b.m === 2 && bd === 29 && !isLeap(a.y)) bd = 28;
+    if (a.m < b.m || (a.m === b.m && a.d < bd)) n -= 1;
+    return n;
+  }
+  /* 'YYYY-MM-DD' → '昭和55年4月3日'（職員マスタの StaffCalc.toWareki。古い版で無ければ ''） */
+  function warekiOf(s) {
+    var c = staffCalc();
+    if (!isDate(s) || !c || typeof c.toWareki !== 'function') return '';
+    return str(c.toWareki(s) || '');
+  }
+  /* 生年月日の欄の読み取り（2026-10-29 本人指示「和暦でも入れられ、入れたら年齢を自動表示（入力の正を取るため）」）。
+     返り: {state, ymd, note}。state は 'empty'（空）／'ok'／'warn'（読めたが打ち間違いの疑い＝15歳未満・90歳以上。保存は止めない）／
+     'bad'（読めない・今日より先。保存を止める）。ok・warn の note は「昭和55年4月3日・満46歳」 */
+  var ERA_OF = { '明治': '明治', '大正': '大正', '昭和': '昭和', '平成': '平成', '令和': '令和', M: '明治', T: '大正', S: '昭和', H: '平成', R: '令和' };
+  var BIRTH_BAD_MSG ='生年月日を読めません（例: 1990-04-01・平成2年4月1日・H2.4.1）';
+  function birthInfo(raw, today) {
+    if (trim(nfkc(raw)) === '') return { state: 'empty', ymd: '', note: '' };
+    var v = normDate(raw), t = isDate(today) ? today : todayJST();
+    if (!v) return { state: 'bad', ymd: '', note: BIRTH_BAD_MSG };
+    if (v > t) return { state: 'bad', ymd: v, note: '生年月日が今日より先の日付です' };
+    var age = ageOn(v, t), wk = warekiOf(v);
+    /* 和暦で打った時は、その元号の範囲の日か確かめる（「昭和99年」を令和6年として黙って通さない） */
+    var em = /^(明治|大正|昭和|平成|令和|[MTSHR])/i.exec(trim(nfkc(raw)));
+    if (em && wk) {
+      var era = ERA_OF[em[1].length === 1 ? em[1].toUpperCase() : em[1]];
+      if (era && wk.indexOf(era) !== 0) return { state: 'bad', ymd: '', note: '元号と年が合いません（' + era + 'の範囲を超えています）' };
+    }
+    var note = (wk ? wk + '・' : '') + '満' + age + '歳';
+    if (age < 15) return { state: 'warn', ymd: v, note: note + '（15歳未満です。生年月日を確かめてください）' };
+    if (age >= 90) return { state: 'warn', ymd: v, note: note + '（90歳以上です。生年月日を確かめてください）' };
+    return { state: 'ok', ymd: v, note: note };
+  }
   /* 年の無い日付（'1/31' '1月31日'）を基準日から補う。年のある日付はそのまま読む。読めなければ null。
      dir が 'past' でない時（就業開始日・返答期限など受付日より後の日付）: 月が基準日の月より前なら翌年。
      dir が 'past' の時（受付日を今日から補う）: 基準日より後の日付になるなら前の年（受付日は先の日付にならない） */
@@ -772,8 +809,36 @@
     return {
       evalItems: items.length ? items : DEFAULT_EVAL_ITEMS.slice(),
       retainMonths: rm >= 1 && rm <= 60 ? Math.floor(rm) : DEFAULT_SETTINGS.retainMonths,
-      lostDays: ld >= 7 && ld <= 365 ? Math.floor(ld) : DEFAULT_SETTINGS.lostDays
+      lostDays: ld >= 7 && ld <= 365 ? Math.floor(ld) : DEFAULT_SETTINGS.lostDays,
+      /* いつもの面接官（0035・2026-10-29）。面接を足す時に初めから入れておく。空なら入れない */
+      defaultInterviewer: trim(nfkc(s.default_interviewer != null ? s.default_interviewer : s.defaultInterviewer)).slice(0, 80)
     };
+  }
+
+  /* ── 応募者の書類（PDF・0035・2026-10-29 本人指示） ── */
+  var FILE_MAX = 20971520;   // 1ファイル 20MB まで（データベースの置き場の上限と同じ）
+  var FILE_PER_APPLICANT = 30;
+  /* 置く前の確かめ。f は {name, type, size, head}（head はファイルの先頭5文字。読めなければ null）。置けるなら ''、置けない理由を返す */
+  function pdfCheck(f) {
+    if (!f || typeof f !== 'object') return 'ファイルを読めません';
+    var size = Number(f.size);
+    if (!(size >= 1)) return '空のファイルです';
+    if (size > FILE_MAX) return '20MB を超えています';
+    if (!/\.pdf$/i.test(trim(f.name)) && str(f.type) !== 'application/pdf') return 'PDF ではありません';
+    if (f.head != null && str(f.head).slice(0, 5) !== '%PDF-') return 'PDF ではありません（中身が PDF の形ではありません）';
+    return '';
+  }
+  /* 台帳に残すファイル名（改行などの制御文字と前後の空白を落として200字まで。空なら「書類.pdf」）。
+     文字そのものは直さない（全角のかっこ・異体字をそのまま残す） */
+  function fileName(name) {
+    var s = trim(str(name).replace(/[\u0000-\u001f\u007f]/g, ''));
+    return (s || '書類.pdf').slice(0, 200);
+  }
+  function fileSizeText(n) {
+    var v = Number(n) || 0;
+    if (v < 1024) return v + ' B';
+    if (v < 1048576) return Math.round(v / 1024) + ' KB';
+    return (Math.round(v / 104857.6) / 10) + ' MB';
   }
 
   /* ── 面接予定 ── */
@@ -1140,6 +1205,8 @@
     stageOf: stageOf, endOf: endOf, isEnd: isEnd, isStage: isStage, stageLabel: stageLabel, stageRank: stageRank,
     nextStage: nextStage, canMove: canMove,
     normName: normName, importKey: importKey, normDate: normDate, completeYear: completeYear, splitDateNote: splitDateNote,
+    ageOn: ageOn, warekiOf: warekiOf, birthInfo: birthInfo, BIRTH_BAD_MSG: BIRTH_BAD_MSG,
+    FILE_MAX: FILE_MAX, FILE_PER_APPLICANT: FILE_PER_APPLICANT, pdfCheck: pdfCheck, fileName: fileName, fileSizeText: fileSizeText,
     parseContacts: parseContacts, deriveStage: deriveStage, parseCsv: parseCsv, detectHeader: detectHeader,
     normApplicant: normApplicant, planImport: planImport,
     SOURCE_NAMES: SOURCE_NAMES, canonSource: canonSource, canonSources: canonSources, legacyStaffMatch: legacyStaffMatch, rowHash: rowHash, classifyResult: classifyResult, TEXT_MAX: TEXT_MAX,
