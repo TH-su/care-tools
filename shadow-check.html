@@ -31,6 +31,9 @@
   ★訪問日・かかりつけ病院の写し（移行 0022・2026-10-24 代表者の決定4・段2b）: ボタンを押した時だけ、この端末の入居者マスタの接続先
     （rmaster_cfg・読むだけ）で Google の名簿を読み、Supabase の master_residents_care と利用者No で見比べる。合言葉は Google へだけ送る。
     出すのは人数と、違いのある利用者No と項目名だけ。氏名・病院名・曜日の中身は出さない。
+  ★入居者マスタの全項目の写し（統合 0034・2026-10-29 代表者の決定5）: 管理者が「入居者マスタを全部写す」を押した時だけ、この端末の
+    入居者マスタの接続先（rmaster_cfg・読むだけ）で Google から全員分を読み、Supabase の区分ごとの表へ写して読み直し、見比べる（su-res-full.js）。
+    出すのは人数・件数・利用者No・項目名だけ。読んだ中身はメモリにだけ持つ。
   ★勤務表の戻し用（2026-10-16・管理者だけ）: 「勤務表を Google へ写し返す」（写しの期間の時だけ・Supabase を正として中身が違う
     勤務表を Google へ force で書く）と、Supabase 側の厳格モードの表示・入切（今の状態は操作記録 audit_log から出す）。
 
@@ -76,6 +79,16 @@
       <ul class="acct" id="cmp-list"></ul>
       <div class="acts"><a class="btn" href="resident-master.html">入居者マスタを開く（写しが最新になる）</a>
         <button type="button" class="btn" id="b-reload">見比べ直す</button></div>
+    </section>
+
+    <section class="cd">
+      <h2>入居者マスタの全項目の写し</h2>
+      <p class="muted">管理者だけの操作です。ボタンを押すと、この端末の入居者マスタの接続先（Google）から全員分の全項目・担当者会議の記録・薬の変更候補の判断を1人ずつ読み、Supabase へ写してから、写しを読み直して1項目ずつ見比べます（数分かかります。見比べの期間は1日1回が目安）。人数・件数と、違いのある利用者No と項目名だけを出し、氏名・中身は出しません。読んだ中身はこの端末に残しません。正本は今までどおり Google です。</p>
+      <div class="kpis" id="rf-kpis"></div>
+      <p id="rf-verdict" class="msg"></p>
+      <ul class="acct" id="rf-list"></ul>
+      <div class="acts"><button type="button" class="btn" id="b-res-full" hidden>入居者マスタを全部写す</button></div>
+      <ul class="acct" id="rf-runs"></ul>
     </section>
 
     <section class="cd">
@@ -204,6 +217,7 @@
 <script src="su-kv-shadow.js?v=2026-10-28"></script>
 <script src="su-patch-sync.js?v=2026-10-28"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
+<script src="su-res-full.js?v=2026-10-29"></script>
 <script src="shadow-check.js?v=2026-10-29"></script>
 </body>
 </html>

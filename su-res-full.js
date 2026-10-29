@@ -1,0 +1,205 @@
+/*
+ * su-res-full.js — 入居者マスタの全項目の写し（統合 0034・2026-10-29 代表者の決定5）
+ * ════════════════════════════════════════════════════════════════
+ * 写しの見比べ画面（shadow-check.html）の「入居者マスタを全部写す」だけが使う。ほかの画面は読み込まない。
+ *   1. Google（入居者マスタの GAS）から名簿を読み、1人ずつ全項目（getResident）と担当者会議の記録（meeting の list）を読む
+ *      （同時に3本まで）。薬の変更候補の判断（medCand の list）も読む
+ *   2. Supabase へ数十人ずつ写す（res_import_begin → res_import_chunk → res_import_finish）。
+ *      全員分を読めなかった時は写しを終えない（データベースも、渡した方が全員写っていなければ断る）
+ *   3. 写した後に Supabase から読み直し（res_get・画面の名前 shadow-check）、Google から読んだ中身と1項目ずつ比べる
+ * ★使えるのは管理者（Google＋2段階認証）だけ。最終の判定はデータベース（0034 の関数）。
+ * ★Google へ送る形は各画面の入居者マスタの読み方と同じ（POST・text/plain・合言葉は本文）。合言葉は Google へだけ送る。
+ * ★読んだ中身はメモリにだけ持ち、端末に保存しない。画面に出すのは人数・件数・利用者No・項目名だけ（値・氏名は出さない）。
+ * ★正本は今までどおり Google。この部品は Google へは読むだけで、書かない。
+ */
+(function (root) {
+  'use strict';
+  var ROW_MAX = 50;                 // データベースの1塊の上限（res_import_chunk の 50 名）
+  var CHUNK_BYTES = 3 * 1024 * 1024; // 1塊の目安（データベースの上限 4MB より小さく）
+  var ROW_BYTES = 360 * 1024;       // 1名の上限（データベースは 400KB。データベース側の文字の数え方は空白が増えるので小さめに）
+  var ITEM_MAX = 200;               // 会議・判断の1塊の件数
+  var GET_MAX = 200;                // 読み直しの1回の人数（データベースの上限 500 より小さく）
+  var POOL = 3;                     // Google へ同時に読みに行く本数
+
+  function bytes(s) {
+    try { return new TextEncoder().encode(s).length; } catch (e) { return String(s).length * 3; }
+  }
+  function str(v) { return String(v == null ? '' : v).trim(); }
+
+  /* 名簿から利用者No を取り出す（空・重なりは除く・並びは名簿のまま） */
+  function rosterIds(roster) {
+    var seen = {}, out = [];
+    (Array.isArray(roster) ? roster : []).forEach(function (r) {
+      var id = r && typeof r === 'object' ? str(r.id) : '';
+      if (!id || id.length > 40 || seen[id]) return;
+      seen[id] = true; out.push(id);
+    });
+    return out;
+  }
+
+  /* 塊に分ける（件数と大きさの両方で区切る）。1件で上限を超える物は big に入れて返す */
+  function chunk(items, maxN, maxBytes, oneMax) {
+    var out = [], cur = [], size = 2, big = [];
+    items.forEach(function (it) {
+      var n = bytes(JSON.stringify(it)) + 1;
+      if (oneMax && n > oneMax) { big.push(it); return; }
+      if (cur.length && (cur.length >= maxN || size + n > maxBytes)) { out.push(cur); cur = []; size = 2; }
+      cur.push(it); size += n;
+    });
+    if (cur.length) out.push(cur);
+    return { chunks: out, big: big };
+  }
+
+  /* 形をそろえて比べる（キーの並びの違いは同じとみなす） */
+  function canon(v) {
+    if (Array.isArray(v)) return '[' + v.map(canon).join(',') + ']';
+    if (v && typeof v === 'object') return '{' + Object.keys(v).sort().map(function (k) { return JSON.stringify(k) + ':' + canon(v[k]); }).join(',') + '}';
+    return JSON.stringify(v === undefined ? null : v);
+  }
+  /* Google の記録と写しの記録を1項目ずつ比べ、違う項目の名前だけを返す（値は返さない） */
+  function diffKeys(a, b) {
+    a = a || {}; b = b || {};
+    var keys = {}, out = [];
+    Object.keys(a).forEach(function (k) { keys[k] = 1; });
+    Object.keys(b).forEach(function (k) { keys[k] = 1; });
+    Object.keys(keys).sort().forEach(function (k) {
+      var ha = Object.prototype.hasOwnProperty.call(a, k), hb = Object.prototype.hasOwnProperty.call(b, k);
+      if (ha !== hb || canon(a[k]) !== canon(b[k])) out.push(k);
+    });
+    return out;
+  }
+  /* 全員分を比べる: { same, diff:[{id, keys}], notInCopy:[id] } */
+  function compare(gasById, ids, copyRows) {
+    var byId = {};
+    (Array.isArray(copyRows) ? copyRows : []).forEach(function (r) { if (r && r.id != null) byId[String(r.id)] = r; });
+    var same = 0, diff = [], notInCopy = [];
+    ids.forEach(function (id) {
+      if (!byId[id]) { notInCopy.push(id); return; }
+      var k = diffKeys(gasById[id], byId[id]);
+      if (k.length) diff.push({ id: id, keys: k }); else same++;
+    });
+    return { same: same, diff: diff, notInCopy: notInCopy };
+  }
+
+  /* データベースの断りを職員に分かる言葉にする */
+  function dbWhy(e) {
+    var c = String(e && (e.code || e.error || e.message) || e || '');
+    if (c === '42501' || /not allowed/.test(c)) return '管理者（二段階認証済み）のアカウントで開いてください。';
+    if (/PGRST202|42883|PGRST205|42P01/.test(c)) return 'データベースの準備（0034）がまだです。';
+    if (c === 'incomplete') return '全員分を写しきれませんでした（読み込みの途中で名簿が変わった可能性）。もう一度押してください。';
+    if (c === 'shrink') return '写す人数が前回の半分より少なかったので、写しを止めました（読み込みの途中切れの可能性）。もう一度押してください。';
+    if (c === 'norun') return '別の端末で写しが始まったため、この写しは止めました。';
+    if (c === 'badrow') return '形の合わない記録がありました（利用者No の無い方・同じ方の重なりなど）。';
+    if (c === 'toolarge') return '1回に送る量が多すぎました。';
+    return 'データベースが受け付けませんでした（' + c + '）。';
+  }
+
+  /* 同時に n 本まで動かす。1本でも失敗したら残りを始めずに失敗を返す */
+  function pool(items, n, fn) {
+    return new Promise(function (resolve, reject) {
+      var i = 0, running = 0, done = 0, failed = false, out = new Array(items.length);
+      if (!items.length) { resolve(out); return; }
+      function next() {
+        while (!failed && running < n && i < items.length) {
+          (function (k) {
+            running++;
+            Promise.resolve().then(function () { return fn(items[k], k); }).then(function (v) {
+              out[k] = v; running--; done++;
+              if (done === items.length) resolve(out); else next();
+            }, function (e) { if (!failed) { failed = true; reject(e); } });
+          })(i++);
+        }
+      }
+      next();
+    });
+  }
+
+  /* 全部写す。io = { gas(body) → Promise<応答の JSON>, rpc(name, args) → Promise<{data, error}>, progress(text) }
+   * 返す: { ok:true, residents, meetings, medDecisions, run:{inserted, updated, unchanged, missing, unknown}, cmp, big:[id] }
+   *       断った時は { ok:false, why（職員向けの文）} */
+  async function run(io) {
+    var say = io.progress || function () {};
+    function fail(why) { return { ok: false, why: why }; }
+    async function rpc(name, args) {
+      var r = await io.rpc(name, args || {});
+      if (r && r.error) throw { db: r.error };
+      return r ? r.data : null;
+    }
+    try {
+      say('Google から名簿を読んでいます…');
+      var rj = await io.gas({ action: 'getRoster' });
+      if (!rj || rj.error || !Array.isArray(rj.roster)) return fail('Google が名簿を返しませんでした（この端末の入居者マスタの接続先を確かめてください）。');
+      var ids = rosterIds(rj.roster);
+      if (!ids.length) return fail('名簿が空でした。写しを止めました。');
+
+      var recs = {}, meetings = [], gone = [], n = 0;
+      await pool(ids, POOL, async function (id) {
+        var a = await io.gas({ action: 'getResident', id: id });
+        if (!a || a.error) throw new Error('Google が記録を返しませんでした');
+        var m = await io.gas({ action: 'meeting', op: 'list', id: id });
+        if (!m || m.ok !== true || !Array.isArray(m.rows)) throw new Error('Google が担当者会議の記録を返しませんでした');
+        if (!a.record || typeof a.record !== 'object') { gone.push(id); }
+        else {
+          var rec = Object.assign({}, a.record);
+          rec.id = id;   // 利用者No は文字にそろえる（シートの数字の列でも同じ方を指す）
+          recs[id] = rec;
+          m.rows.forEach(function (x) { if (x && str(x.meetingId)) meetings.push(Object.assign({}, x, { meetingId: str(x.meetingId), residentId: id })); });
+        }
+        n++;
+        say('Google から読んでいます… ' + n + ' / ' + ids.length + '人');
+      });
+      ids = ids.filter(function (id) { return !!recs[id]; });
+      say('Google から薬の変更候補の判断を読んでいます…');
+      var mc = await io.gas({ action: 'medCand', op: 'list' });
+      if (!mc || mc.ok !== true || !Array.isArray(mc.rows)) return fail('Google が薬の変更候補の判断を返しませんでした。');
+      var seenMc = {}, meds = [];
+      mc.rows.forEach(function (x) {
+        var k = x && str(x.srcKey), rid = x && str(x.id);
+        if (!k || !rid || k.length > 120 || rid.length > 40 || seenMc[k]) return;
+        seenMc[k] = true; meds.push(Object.assign({}, x, { srcKey: k, id: rid }));
+      });
+      var seenMt = {};
+      meetings = meetings.filter(function (x) { if (seenMt[x.meetingId] || x.meetingId.length > 60) return false; seenMt[x.meetingId] = true; return true; });
+
+      var rows = ids.map(function (id) { return recs[id]; });
+      var rc = chunk(rows, ROW_MAX, CHUNK_BYTES, ROW_BYTES);
+      if (rc.big.length) return fail('記録が大きすぎる方がいます（利用者No ' + rc.big.map(function (r) { return r.id; }).join('・') + '）。写しを止めました。');
+      var mt = chunk(meetings, ITEM_MAX, CHUNK_BYTES).chunks, md = chunk(meds, ITEM_MAX, CHUNK_BYTES).chunks;
+
+      say('Supabase へ写しています…');
+      var b = await rpc('res_import_begin');
+      if (!b || !b.ok) return fail(dbWhy(b && b.error));
+      var runId = b.run, tot = { inserted: 0, updated: 0, unchanged: 0 };
+      var parts = rc.chunks.map(function (c) { return [c, [], []]; })
+        .concat(mt.map(function (c) { return [[], c, []]; }), md.map(function (c) { return [[], [], c]; }));
+      for (var i = 0; i < parts.length; i++) {
+        var r = await rpc('res_import_chunk', { p_run: runId, p_rows: parts[i][0], p_meetings: parts[i][1], p_med: parts[i][2] });
+        if (!r || !r.ok) return fail(dbWhy(r && r.error));
+        tot.inserted += r.inserted || 0; tot.updated += r.updated || 0; tot.unchanged += r.unchanged || 0;
+        say('Supabase へ写しています… ' + (i + 1) + ' / ' + parts.length);
+      }
+      var f = await rpc('res_import_finish', { p_run: runId, p_ids: ids,
+        p_meeting_ids: meetings.map(function (x) { return x.meetingId; }), p_med_keys: meds.map(function (x) { return x.srcKey; }) });
+      if (!f || !f.ok) return fail(dbWhy(f && f.error));
+
+      say('写しを読み直して見比べています…');
+      var copy = [];
+      for (var j = 0; j < ids.length; j += GET_MAX) {
+        var g = await rpc('res_get', { p_ids: ids.slice(j, j + GET_MAX), p_screen: 'shadow-check' });
+        if (!g || !g.ok) return fail(dbWhy(g && g.error));
+        copy = copy.concat(g.rows || []);
+      }
+      var runRow = null;
+      try { runRow = await io.lastRun(runId); } catch (e) { runRow = null; }
+      return { ok: true, residents: ids.length, gone: gone, meetings: meetings.length, medDecisions: meds.length,
+               run: { inserted: tot.inserted, updated: tot.updated, unchanged: tot.unchanged, missing: f.missing || 0,
+                      unknown: runRow && Array.isArray(runRow.unknown_keys) ? runRow.unknown_keys : [] },
+               cmp: compare(recs, ids, copy) };
+    } catch (e) {
+      if (e && e.db) return fail(dbWhy(e.db));
+      return fail(String(e && e.message || e) + '。写しは途中で止めました（Supabase の写しは前回のまま）。');
+    }
+  }
+
+  root.SUResFull = { run: run, _rosterIds: rosterIds, _chunk: chunk, _diffKeys: diffKeys, _compare: compare, _dbWhy: dbWhy, _pool: pool };
+})(typeof window !== 'undefined' ? window : this);
