@@ -2,9 +2,11 @@
    1. token(): 鍵が無い・現場の端末は '' でログインの部品も読み込まない／証明を返す／3秒で返らない・失敗は ''／証明を端末に書かない
    2. addTo(): 証明あり＝浅い写しの最後に accessToken（ほかの項目と順番は同じ・元の本文は書き換えない）／証明なし・object でない・もう証明がある＝同じもの
    3. 送り口の動き: su-data-gas.js の post と入居者マスタの apiGet が、部品があれば証明を添え、無ければ今までと同じ本文を同じ送り方で送る
-   4. 画面の静的な確かめ: 事務所用の合言葉の GAS への POST が SUGasAuth.addTo を通り、stateRev には足していない。部品は su-errors.js の後で読む
+   4. 画面の静的な確かめ: 事務所用の合言葉の GAS への POST が SUGasAuth.addTo を通り、stateRev には足していない。部品は su-errors.js の後で読む。
+      打ち切りの時計は証明を取った後に始める。書き出しは入居調整・訓練計画書・入居者マスタの宛先だけ
+   5. 断られた時の文（code 'readrole'）: 担当者会議の記録と訓練計画書の AI は GAS の文をそのまま出し、一括作成は止める（2026-10-29 反証レビュー）
    実行: node check/unit/gas_auth_test.js
-   GAS_AUTH_JS: 条件を抜いた版で試験が落ちるかを見る時だけ使う。
+   GAS_AUTH_JS・MUT_FILE＋MUT_PATH: 条件を抜いた版で試験が落ちるかを見る時だけ使う。
    ★出力に console を使わない（個人情報を出力に流さない作法をそろえる）。 */
 'use strict';
 const fs = require('fs');
@@ -13,7 +15,8 @@ const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..', '..');
 const SRC = fs.readFileSync(process.env.GAS_AUTH_JS || path.join(ROOT, 'su-gas-auth.js'), 'utf8');
-const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
+/* MUT_FILE・MUT_PATH: 変異の検査の時だけ、そのファイルを差し替えて読む */
+const read = (f) => fs.readFileSync(process.env.MUT_FILE === f && process.env.MUT_PATH ? process.env.MUT_PATH : path.join(ROOT, f), 'utf8');
 let ok = 0, ng = 0;
 let finished = false;
 /* 約束が解決しないまま node が抜けた時（待ちが効かない版など）も失敗にする */
@@ -122,7 +125,21 @@ const settle = (ms) => new Promise((r) => setTimeout(r, ms || 10));
     const x = load({ storage: Object.assign({}, SESS), auth: () => new Promise(() => {}) });
     const t0 = Date.now();
     const v = await x.A.token();
-    t('3秒（試験では 30ms）で返らなければ空', v === '' && Date.now() - t0 < 1000, v);
+    t('10秒（試験では 100ms）で返らなければ空', v === '' && Date.now() - t0 < 1000, v);
+  }
+  {
+    /* 初めの1回は部品の読み込みと期限切れの更新で3秒を超えることがある（反証レビュー 2026-10-29）。5秒（試験では 50ms）で返れば証明を使う */
+    const x = load({ storage: Object.assign({}, SESS), auth: () => new Promise((r) => setTimeout(() => r({ data: { session: { access_token: TOKEN } } }), 50)) });
+    t('5秒かかって返った証明も使う（3秒では打ち切らない）', (await x.A.token()) === TOKEN);
+  }
+  {
+    const x = load({ storage: {}, auth: () => new Promise(() => {}) });
+    const t0 = Date.now();
+    const v = await x.A.token();
+    t('ログインの印が無い端末は待たずにすぐ空', v === '' && Date.now() - t0 < 50, Date.now() - t0);
+    const y = load({ storage: Object.assign({ su_device_role: 'field' }, SESS), auth: () => new Promise(() => {}) });
+    const t1 = Date.now();
+    t('現場の端末は待たずにすぐ空', (await y.A.token()) === '' && Date.now() - t1 < 50, Date.now() - t1);
   }
   {
     const x = load({ storage: Object.assign({}, SESS), auth: () => { throw new Error('kakuu'); } });
@@ -177,25 +194,62 @@ const settle = (ms) => new Promise((r) => setTimeout(r, ms || 10));
   }
 
   group('3. 送り口の動き');
-  /* su-data-gas.js の post（入居調整・訓練計画書・デイ利用表の入居者マスタ）。部品の有無で本文だけが変わる */
-  async function gasPost(withPart) {
+  /* su-data.js ＋ su-data-gas.js を一緒に読み、宛先ごとに証明を添えるかを見る（2026-10-29 反証レビュー: 統合 KV には添えない）。
+     init は画面の書き方のまま（入居調整は gasAuth:true・デイ利用表と訓練計画書は付けない） */
+  const EP = 'https://script.google.com/macros/s/KAKUU/exec';
+  async function dataLayer(withPart, init) {
     const sent = [];
-    const win = { SU: { data: { register(n, g) { win.G = g; } } } };
-    if (withPart) win.SUGasAuth = { addTo: (b) => Promise.resolve(Object.assign({}, b, { accessToken: TOKEN })) };
-    const ctx = { window: win, Promise, JSON, Object, Error, performance: { mark() {} },
-      fetch(u, o) { sent.push({ u, o }); return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) }); } };
+    const win = {};
+    win.window = win;
+    if (withPart) win.SUGasAuth = { addTo: (b) => Promise.resolve(b && b.accessToken ? b : Object.assign({}, b, { accessToken: TOKEN })) };
+    const ctx = { window: win, Promise, JSON, Object, Error, Date, performance: { mark() {} },
+      localStorage: { getItem() { return null; }, setItem() {} },
+      fetch(u, o) { sent.push({ u, o, b: JSON.parse(o.body) }); return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) }); } };
+    win.localStorage = ctx.localStorage;
     vm.createContext(ctx);
+    vm.runInContext(read('su-data.js'), ctx);
     vm.runInContext(read('su-data-gas.js'), ctx);
-    await win.G.kvRaw({ action: 'getBulk' }, { endpoint: 'https://script.google.com/macros/s/KAKUU/exec', token: 'goukotoba-kakuu' });
-    return sent[0];
+    win.SU.data.init(Object.assign({ resolveTarget: () => ({ endpoint: EP, token: 'goukotoba-kakuu' }) }, init || {}));
+    return { D: win.SU.data, sent, last: () => sent[sent.length - 1] };
+  }
+  const has = (x) => 'accessToken' in x.last().b;
+  {
+    const A = await dataLayer(true, { appId: 'admission-flow', gasAuth: true });
+    await A.D.kvGet('kakuu_key'); t('入居調整（init で gasAuth）: 台帳の読み取りに証明を添える', has(A) && A.last().b.accessToken === TOKEN, A.last().b);
+    await A.D.kvRaw({ action: 'ping' }); t('入居調整: 接続先を明示しない kvRaw にも添える', has(A));
+    await A.D.kvGet('kakuu_key', { endpoint: EP, token: 'goukotoba-kakuu' }); t('入居調整: 接続先を明示した呼び出し（別の GAS）には添えない', !has(A), A.last().b);
+    A.D.kvPutBeacon('kakuu_key', {}, 1); t('入居調整: ページを閉じる時の送信（sendBeacon）には添えない（fetch を呼ばない）', A.sent.length === 3);
   }
   {
-    const a = await gasPost(false), b = await gasPost(true);
-    t('su-data-gas.js: 部品が無い時は今までと同じ本文', a.o.body === JSON.stringify({ action: 'getBulk', token: 'goukotoba-kakuu' }), a.o.body);
-    t('su-data-gas.js: 部品がある時は accessToken を最後に足す', b.o.body === JSON.stringify({ action: 'getBulk', token: 'goukotoba-kakuu', accessToken: TOKEN }), b.o.body);
-    const shape = (s) => JSON.stringify({ u: s.u, method: s.o.method, headers: s.o.headers, redirect: s.o.redirect, keys: Object.keys(s.o) });
-    t('su-data-gas.js: 送り方（URL・POST・text/plain・redirect・項目）は同じ', shape(a) === shape(b) &&
-      a.o.method === 'POST' && a.o.headers['Content-Type'] === 'text/plain;charset=utf-8' && a.o.redirect === 'follow', [shape(a), shape(b)]);
+    const W = await dataLayer(true, { appId: 'daycare-roster' });
+    await W.D.kvGet('care_schedule_v2'); t('デイ利用表（印なし）: 統合 KV の読み取りには添えない', !has(W), W.last().b);
+    await W.D.kvPut('care_schedule_v2', {}, 1); t('デイ利用表: 統合 KV の保存には添えない', !has(W));
+    await W.D.kvRaw({ action: 'head', keys: ['k'] }); t('デイ利用表: 統合 KV の kvRaw には添えない', !has(W));
+    await W.D.getRoster({ endpoint: EP, token: 'goukotoba-kakuu' }); t('デイ利用表: 入居者マスタの getRoster には添える', has(W) && W.last().b.action === 'getRoster');
+    await W.D.kvRaw({ action: 'stateRev' }, { endpoint: EP }); t('デイ利用表: stateRev（合言葉なし）には添えない', !has(W));
+  }
+  {
+    const T = await dataLayer(true, { appId: 'training-plan' });
+    const tgt = { endpoint: EP, token: 'goukotoba-kakuu' };
+    await T.D.training.get('training_plan:index', tgt); t('訓練計画書: 入口 training.get に添える', has(T) && T.last().b.action === 'get');
+    await T.D.training.ai({ m: 1 }, tgt); t('訓練計画書: 入口 training.ai に添える', has(T) && T.last().b.action === 'ai');
+    await T.D.training.ping(tgt); t('訓練計画書: 入口 training.ping に添える', has(T));
+    await T.D.training.put('training_plan:901', {}, 1, { accessToken: 'gamen-ga-soeta' }, tgt);
+    t('訓練計画書: 保存で画面が添えた証明はそのまま', T.last().b.accessToken === 'gamen-ga-soeta');
+    await T.D.kvRaw({ action: 'getBulk' }, { endpoint: EP, token: 'goukotoba-kakuu', gasAuth: true });
+    t('訓練計画書: 入居者マスタの読み取り（mGet の印 gasAuth:true）に添える', has(T) && !('gasAuth' in T.last().b), T.last().b);
+    await T.D.kvGet('care_schedule_v2', { endpoint: EP, token: 'goukotoba-kakuu' }); t('訓練計画書: 統合 KV（週間計画）の読み取りには添えない', !has(T), T.last().b);
+  }
+  {
+    const N = await dataLayer(false, { appId: 'admission-flow', gasAuth: true });
+    await N.D.kvGet('kakuu_key');
+    const sh = (x) => JSON.stringify({ u: x.u, method: x.o.method, headers: x.o.headers, redirect: x.o.redirect, keys: Object.keys(x.o) });
+    t('su-data-gas.js: 部品が無い時は今までと同じ本文', N.last().o.body === JSON.stringify({ action: 'get', key: 'kakuu_key', token: 'goukotoba-kakuu' }), N.last().o.body);
+    const P = await dataLayer(true, { appId: 'admission-flow', gasAuth: true });
+    await P.D.kvGet('kakuu_key');
+    t('su-data-gas.js: 部品がある時は accessToken を最後に足す', P.last().o.body === JSON.stringify({ action: 'get', key: 'kakuu_key', token: 'goukotoba-kakuu', accessToken: TOKEN }), P.last().o.body);
+    t('su-data-gas.js: 送り方（URL・POST・text/plain・redirect・項目）は同じ', sh(N.last()) === sh(P.last()) &&
+      N.last().o.method === 'POST' && N.last().o.headers['Content-Type'] === 'text/plain;charset=utf-8' && N.last().o.redirect === 'follow');
   }
   /* 入居者マスタの apiGet（getRoster 等の読み取り全部が通る） */
   function cutFn(src, name) {
@@ -265,13 +319,37 @@ const settle = (ms) => new Promise((r) => setTimeout(r, ms || 10));
     t('入居者マスタ apiPost（書き込み）には足さない', !/SUGasAuth/.test(region(RM, 'apiPost')));
     t('入居調整 masterPost（書き込み）には足さない', !/SUGasAuth/.test(region(read('admission-flow.html'), 'masterPost')));
     const SM = region(read('staff-master.html'), 'apiPost');
-    t('職員マスタ: 読む action だけ addTo・書く action は今までの証明の添え方', /REQ_WRITE_ACTIONS\.indexOf\(action\) < 0 && window\.SUGasAuth/.test(SM) && /stfmAccessToken_\(\)\.then/.test(SM));
+    t('職員マスタ: 読む action だけ addTo・書く action は今までの証明の添え方', /var viaAuth = REQ_WRITE_ACTIONS\.indexOf\(action\) < 0 && !!window\.SUGasAuth;/.test(SM) && /stfmAccessToken_\(\)\.then/.test(SM));
     const G = read('su-data-gas.js');
     const D = read('su-data.js');
-    t('訓練計画書の get・ai（su-data.js の入口）は gas の道で su-data-gas.js の送り口（kvGet・kvRaw→post）を通る',
-      /return SU_DATA\.kvGet\(key, opts\);/.test(D) && /return SU_DATA\.kvRaw\(\{ action: 'ai', body: body \}, opts\);/.test(D) &&
-      /kvGet: function \(key, t, opts\) \{ return post\(/.test(G) && /kvRaw: function \(payload, t, opts\) \{\s*return post\(payload, t\);/.test(G));
+    t('訓練計画書の get・ai（su-data.js の入口）は gas の道で印（authed）を付けて su-data-gas.js の送り口（kvGet・kvRaw→post）を通る',
+      /return SU_DATA\.kvGet\(key, authed\(opts\)\);/.test(D) && /return SU_DATA\.kvRaw\(\{ action: 'ai', body: body \}, authed\(opts\)\);/.test(D) &&
+      /kvGet: function \(key, t, opts\) \{ return post\(/.test(G) && /kvRaw: function \(payload, t, opts\) \{\s*return post\(payload, t, opts\);/.test(G));
+    t('su-data-gas.js: 印（opts.gasAuth）がある時だけ部品を使う', /var ga = \(opts && opts\.gasAuth === true\) \? global\.SUGasAuth : null;/.test(region(G, 'post')));
     t('su-data-gas.js: ページを閉じる時の送信（sendBeacon）には足さない', !/SUGasAuth/.test(G.slice(G.indexOf('kvPutBeacon:'), G.indexOf('kvRaw:'))));
+  }
+  {
+    /* 打ち切りの時計は証明を取った後に始める（反証レビュー 2026-10-29・今までの待ち時間を減らさない） */
+    const TIMERS = [
+      ['accounts-export.js', 'post', /timer = ac \? setTimeout\(/],
+      ['staff-master.html', 'apiPost', /\.then\(function \(p\) \{ arm\(\);/],
+      ['ats.html', 'stfPost_', /timer=ctl\?setTimeout\(/],
+      ['shadow-check.js', 'rmasterRoster', /tm = setTimeout\(/],
+      ['resident-master.html', 'mdAiProxy_', /to=setTimeout\(/]
+    ];
+    for (const [f, fn, re] of TIMERS) {
+      const r = region(read(f), fn), a = r.search(/addTo\(/), m = r.search(re);
+      t(f + ' ' + fn + ': 打ち切りの時計は証明を取った後（addTo の後）に始める', a >= 0 && m > a, { a, m });
+    }
+    const SMr = region(read('staff-master.html'), 'apiPost');
+    t('職員マスタ: 書く送信・部品の無い時は今までどおり時計を先に始める', /if \(!viaAuth\) arm\(\);/.test(SMr));
+  }
+  {
+    /* 書き出しは、読み取りで証明を確かめる GAS（入居調整・訓練計画書・入居者マスタ）にだけ添える */
+    const AE = read('accounts-export.js');
+    const marked = [...AE.matchAll(/case '([a-z]+)':[^\n]*readAuth: true/g)].map((m) => m[1]).sort();
+    t('使える人の管理の書き出し: 証明を添える宛先は adm・master・tp の3つだけ（設定の鍵で決める）', JSON.stringify(marked) === JSON.stringify(['adm', 'master', 'tp']), marked);
+    t('使える人の管理の書き出し: post は t.readAuth の時だけ部品を使う', /var ga = \(t && t\.readAuth === true && window\.SUGasAuth\) \? window\.SUGasAuth : null;/.test(region(AE, 'post')));
   }
   {
     /* 合言葉の無い stateRev の要求の近く（前後 400 字）に addTo が無いこと */
@@ -315,6 +393,36 @@ const settle = (ms) => new Promise((r) => setTimeout(r, ms || 10));
     t('su-gas-auth.js の ?v= は全画面で1種類', vers.size === 1, [...vers]);
     t('公開の一覧（.gitignore）に入っている', /^!\/su-gas-auth\.js$/m.test(read('.gitignore')));
   }
+  group('5. 断られた時の文（code readrole）');
+  {
+    const CM = read('care-meeting.html');
+    const varSrc = (src, name) => { const h = src.indexOf('var ' + name + '='); let d = 0, i = h + ('var ' + name + '=').length;
+      for (; i < src.length; i++) { const c = src[i]; if (c === '[' || c === '{') d++; else if (c === ']' || c === '}') { d--; if (d === 0) return src.slice(h, i + 1) + ';'; } } return ''; };
+    const c = { String, JSON };
+    vm.createContext(c);
+    vm.runInContext(varSrc(CM, 'KNOWN_CODES') + varSrc(CM, 'CODE_MSG') + cutFn(CM, 'classify_') + cutFn(CM, 'codeMsg_'), c);
+    const d = { ok: false, code: 'readrole', error: '架空の断りの文（事務所のアカウントでログインしてください）' };
+    t('担当者会議の記録: code readrole を見分ける', c.classify_(d) === 'readrole', c.classify_(d));
+    t('担当者会議の記録: GAS の文をそのまま出す', c.codeMsg_('readrole', d) === d.error, c.codeMsg_('readrole', d));
+    t('担当者会議の記録: GAS が文を返さない時は決まった文', c.codeMsg_('readrole', { ok: false, code: 'readrole' }).length > 0);
+    t('担当者会議の記録: ほかの断りの文は今までどおり', c.codeMsg_('busy', { code: 'busy', error: 'x' }) === '混み合っています。少し待ってから、もう一度押してください' &&
+      c.codeMsg_('error', { error: 'kakuu' }) === 'サーバーが受け付けませんでした：kakuu');
+  }
+  {
+    const TPs = read('training-plan.html');
+    const c = { String, RegExp };
+    vm.createContext(c);
+    vm.runInContext('function s_(v) { return String(v == null ? \'\' : v); }\n' + cutFn(TPs, 'aiErrText') + cutFn(TPs, 'aiErrFatal'), c);
+    const e = new Error('AI_READROLE'); e.detail = '架空の断りの文（事務所のアカウントでログインしてください）';
+    t('訓練計画書の AI: readrole は GAS の文をそのまま出す', c.aiErrText(e) === e.detail, c.aiErrText(e));
+    t('訓練計画書の AI: readrole は一括作成を止める失敗', c.aiErrFatal(e) === true);
+    t('訓練計画書の AI: 応答の code readrole を AI_READROLE にして GAS の文を持たせる',
+      /if \(s_\(r\.code\) === 'readrole'\) \{ var rre = new Error\('AI_READROLE'\); rre\.detail = s_\(r\.error\); throw rre; \}/.test(cutFn(TPs, 'aiFetch')));
+    t('訓練計画書の一括作成: readrole で止めた理由は GAS の文だけを出す（設定の問題とは言わない）', /\/AI_DECLINED\|AI_NO_SUBJECT\|AI_READROLE\/\.test/.test(TPs));
+    const o = new Error('AI_LIMIT');
+    t('訓練計画書の AI: ほかの失敗の文は今までどおり', /^今日のAIの利用回数の上限/.test(c.aiErrText(o)));
+  }
+
   {
     t('部品は console を使わない・端末に書かない・fetch しない', !/console\.|localStorage\.setItem|sessionStorage|\bfetch\(/.test(SRC));
     t('部品は鍵（service_role・sb_secret_）を持たない', !/service_role|sb_secret_/.test(SRC));

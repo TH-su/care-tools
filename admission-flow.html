@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-KFAYxFArFoG272ZHIvU/5YdJRrGrXd+uz0WXrhfnK78='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-YcJYMKoWWFkRsGGOUx0TS0kNYwg8TajLbXROmrf9owU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
@@ -703,7 +703,7 @@ details.dcd > .dbody > .cd > h3 { display: none; }   /* 見出しは summary に
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-app-gate.js?v=2026-10-29"></script>
 <script src="su-facility.js?v=2026-10-26"></script>
-<script src="su-data.js?v=2026-10-27"></script>
+<script src="su-data.js?v=2026-10-29"></script>
 <script src="su-data-gas.js?v=2026-10-29"></script>
 <!-- 日付の和暦⇔西暦変換。職員マスタと同じものを使う（規則を2か所に書かない） -->
 <script src="staff-master-calc.js?v=2026-09-16"></script>
@@ -1353,7 +1353,8 @@ function syncTarget() {
 }
 var SU_DATA_READY = !!(window.SU && window.SU.data);
 if (SU_DATA_READY) {
-  SU.data.init({ appId: 'admission-flow', resolveTarget: function () { return syncTarget(); } });
+  /* gasAuth: 入居調整の GAS は読み取りでログインの証明を確かめる＝ログインしている時だけ証明を添える（2026-10-29） */
+  SU.data.init({ appId: 'admission-flow', resolveTarget: function () { return syncTarget(); }, gasAuth: true });
 }
 
 function setSync(txt, cls) {

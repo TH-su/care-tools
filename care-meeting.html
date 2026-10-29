@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-LPizT+uCK10BhL7RbFOlQ81MpfUQ1ikRfijfcmmnw5c='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4OtlsthRlz30q8uGVFlpzm2e8owwdNNoSuv3chA78gk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 会議の記録（要配慮の情報）を扱うためキャッシュ無効 -->
@@ -321,7 +321,7 @@ var EDIT_KEYS=['kind','heldDate','createdDate','place','timeText','count','autho
 /* 1行の入力欄。改行は空白1つにしてから欄に入れ・保存する（画面の1行の欄は改行を落とすため、画面・保存・紙を食い違わせない） */
 var LINE_KEYS=['sourceName','author','place','timeText','count','nextText'];
 /* GAS（meeting.gs）が返す断りの code。ここに無い code・code の無い応答は「サーバーが受け付けなかった」として扱う */
-var KNOWN_CODES=['bad_input','not_found','name_mismatch','other_resident','deleted','conflict','need_note','not_final_ready','invalid_status','head_mismatch','busy','moved','unknown','server'];
+var KNOWN_CODES=['bad_input','not_found','name_mismatch','other_resident','deleted','conflict','need_note','not_final_ready','invalid_status','head_mismatch','busy','moved','unknown','server','readrole'];
 var CODE_MSG={
   bad_input:'送った内容をサーバーが受け付けませんでした',
   not_found:'記録が見つかりません（ほかの端末で取り消された可能性があります）。一覧を取り直します',
@@ -337,6 +337,7 @@ var CODE_MSG={
   moved:'記録の並びが変わりました。一覧を取り直します',
   unknown:'保存を確定できたか確かめられませんでした',
   server:'サーバーで問題が起きました。少し待ってから、もう一度押してください（何度も出る時は管理者に知らせてください）',
+  readrole:'このアカウントでは読めません。事務所・管理者のアカウントでログインし直してください',   // GAS が文を返さなかった時だけ使う
   error:'サーバーが受け付けませんでした'
 };
 var LV_TEXT={high:'⚠ 急ぎ',mid:'● 時期',info:'ℹ お知らせ'};
@@ -430,6 +431,8 @@ function classify_(d){
 }
 /* 断りの知らせの文。サーバーの文（error）は「表示するだけ」で、読み分けには使わない */
 function codeMsg_(k,d){
+  /* ログインの役割で読み取りを止めた時（code 'readrole'・GAS の READ_ROLE_CHECK・代表者の決定 2026-10-29）は GAS の文をそのまま出す */
+  if(k==='readrole') return (d&&typeof d.error==='string'&&d.error)?d.error:CODE_MSG.readrole;
   var m=CODE_MSG[k]||CODE_MSG.error;
   if((k==='bad_input'||k==='not_final_ready'||k==='error')&&d&&d.error) m+='：'+String(d.error).slice(0,200);
   return m;

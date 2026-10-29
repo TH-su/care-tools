@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-p5txFWTlqC2eJyxjQDuFis4Lf2MCYjr3AJSu3OvXkW4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-W3ZAmamQ8lLk7f6pi9R8w58NfKvbXQ81V+Ox4jw4O68='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
@@ -402,9 +402,11 @@ function stfPost_(payload,timeoutMs){
   payload.token=cfg.token;
   var ctl=(typeof AbortController==='function')?new AbortController():null;
   var ms=Number(timeoutMs)>0?Number(timeoutMs):STF_TIMEOUT_MS;
-  var timer=ctl?setTimeout(function(){ ctl.abort(); },ms):0;
-  /* ログインしている時だけ証明を添える（su-gas-auth.js・代表者の決定 2026-10-29）。書く送信で添えた証明はそのまま */
+  var timer=0;
+  /* ログインしている時だけ証明を添える（su-gas-auth.js・代表者の決定 2026-10-29）。書く送信で添えた証明はそのまま。
+     打ち切りの時計は証明を取った後に始める（待ち時間を減らさない） */
   return (window.SUGasAuth?window.SUGasAuth.addTo(payload):Promise.resolve(payload)).then(function(b){
+    timer=ctl?setTimeout(function(){ ctl.abort(); },ms):0;
     var opt={method:'POST',body:JSON.stringify(b),redirect:'follow'};
     if(ctl) opt.signal=ctl.signal;
     return fetch(cfg.url,opt);

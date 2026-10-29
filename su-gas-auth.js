@@ -8,7 +8,10 @@
  *     送り方（POST・Content-Type・redirect・応答の読み方・ほかの項目と順番）は1バイトも変えない（CLAUDE.md §2-3）。
  *   ・ログインしていない端末（sb-…-auth-token の鍵が無い）・端末の用途が現場の端末では何も足さず、ログインの部品も読み込まない。
  *   ・本文がもう accessToken を持っている時（保存などで画面が自分で添えた時）は、その本文をそのまま返す（上書きしない）。
- *   ・3秒で証明が取れない・失敗した時は何も足さずに送る（読み取りを止めない。断るかどうかは GAS が決める）。
+ *   ・10秒で証明が取れない・失敗した時は何も足さずに送る（読み取りを止めない。断るかどうかは GAS が決める）。
+ *     10秒にするのは、ログインの印がある端末の初めの1回は supabase-js の読み込みと getSession（期限切れの更新の通信）が要り、
+ *     3秒では足りないため（反証レビューの指摘 2026-10-29）。印が無い端末・現場の端末は待たずにすぐ空を返す。
+ *   ・呼び出し口は、証明を取ってから打ち切りの時計を始める（今までの待ち時間を減らさない）。
  *   ・証明は端末に保存しない（この部品は変数にも残さない。毎回ログインの部品に聞く）。
  * ★読み込むだけで効く・読み込めなくても動く・例外を外に出さない（CLAUDE.md §2-6）。
  *   画面は (window.SUGasAuth ? SUGasAuth.addTo(b) : Promise.resolve(b)) の形で呼び、部品が無い時は今までどおり送る。
@@ -21,7 +24,7 @@
   var SESSION_RE = /^sb-[a-z0-9]+-auth-token$/;
   var V_AUTH = 'su-auth.js?v=2026-10-28';
   var V_SB = 'supabase-js-2.112.4.js';
-  var WAIT_MS = 3000;
+  var WAIT_MS = 10000;
 
   function hasSession() {
     try { for (var i = 0; i < localStorage.length; i++) if (SESSION_RE.test(localStorage.key(i) || '')) return true; } catch (e) { /* 読めない端末はログインなし */ }
@@ -51,7 +54,7 @@
     });
   }
 
-  /* ログインの証明（access_token）。ログインしていない・現場の端末・3秒で返らない・失敗は '' */
+  /* ログインの証明（access_token）。ログインしていない・現場の端末・10秒で返らない・失敗は '' */
   function token() {
     try {
       if (!hasSession() || isField()) return Promise.resolve('');
