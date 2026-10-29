@@ -2,9 +2,11 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-x+oJNHfP+38I90MHgRtxd26zktQWHMEik8w8sdtaMiM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-zI4w6mEXt87YtdxX8+Wml/aqYU5++UTIN1iVCLpK7Ig='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- 書類（PDF）を左の枠に出すため、この画面だけ CSP の frame-src に blob: を足す（check/csp.mjs が読む印） -->
+<meta name="su-csp-frame" content="blob">
 <meta name="color-scheme" content="light">
 <!-- 応募者の情報を扱うためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -183,6 +185,15 @@ h3{font-size:1.0625rem; margin:14px 0 6px}
 .files li{display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px}
 .files .fn{flex:1 1 200px; min-width:0; overflow-wrap:anywhere}
 .files .fbtns{display:flex; gap:6px; margin-left:auto}
+/* 書類を左に出して右で入力する（2026-10-29）。左が書類、右が詳細の板。幅の狭い画面は上下 */
+.viewer{position:fixed; top:0; left:0; bottom:0; width:50vw; z-index:89; background:#525659; display:flex; flex-direction:column}
+.viewer[hidden]{display:none}
+.viewer-h{display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; padding:8px 10px; background:#fff; border-bottom:1px solid var(--g3)}
+.viewer-h .vt{flex:1 1 160px; min-width:0; font-weight:700; overflow-wrap:anywhere}
+.viewer iframe{flex:1; width:100%; border:0; background:#fff}
+.viewer .vmsg{margin:12px; background:#fff}
+body.split .pane{width:50vw}
+@media (max-width:899px){ .viewer{width:100vw; bottom:auto; height:45vh} body.split .pane{width:100vw; top:45vh} }
 .rt{border-collapse:collapse; width:100%}
 .rt th,.rt td{border:1px solid var(--g3); padding:6px 8px; text-align:left}
 
@@ -269,6 +280,7 @@ h3{font-size:1.0625rem; margin:14px 0 6px}
 
 <!-- 応募者の詳細（右から出る板・iPhone では全画面） -->
 <aside class="pane" id="a-pane" aria-labelledby="a-pane-h" hidden></aside>
+<aside class="viewer" id="a-viewer" aria-label="書類を見ながら入力" hidden></aside>
 <div class="undo" id="a-undo" role="status" aria-live="polite" hidden></div>
 <!-- 印刷する紙面（印刷の準備の時だけ中身を作り、終わったら空にする＝氏名を DOM に残さない） -->
 <div id="a-print"></div>
@@ -295,6 +307,10 @@ h3{font-size:1.0625rem; margin:14px 0 6px}
    - 面接官は設定の「いつもの面接官」を初めから入れておき、臨時でほかの方が対応した時だけ手で打ち替える（職員の一覧は読まない・2026-10-29 本人指示）
    - 書類（履歴書などの PDF・0035）は Supabase の非公開の置き場 ats-files に「事業者/応募者/書類の id.pdf」の名前で置き、台帳 ats_files に1行。
      開く時は期限2分のリンクを作って新しいタブで開く。端末には残さない。保管期限で消す時は、書類を先に消してから応募者を消す
+   - 「開いて入力」は書類を左に出し、右の詳細で入力する（中身はメモリの blob だけ・閉じたら捨てる）。「この PDF から読み取る」は
+     同梱の pdf.js（pdfjs-4.10.38・初めて押した時に読む）で文字を読み、拾った値を確かめてから欄に入れる。外へは送らない
+   - 詳細で打った値は drafts（メモリだけ）に控え、読み込みで板を描き直しても戻す。保存した節の分だけ消す。保存していない値がある時に
+     閉じる・別の方を開く・面接を直し替える時は「保存して進む／保存せずに進む／やめる」を聞く（2026-10-29 本人指示「常に保存が前提」）
    ═══════════════════════════════════════════════════════════════ */
 var DEVICE_KEY='su_device_role';
 var VIEW_KEY='ats_view';               // タブの名前だけ（localStorage・原則11）
@@ -345,6 +361,10 @@ var stageLog=null;      // 集計のための段階の履歴（応募者の id �
 var chartObj=null;
 var chartLoading=null;
 var edDirty=false;      // 詳細の入力を保存していない
+var drafts={};          // 詳細で打った値（欄の id → {v} か {c}）。描き直しても戻す。メモリだけ
+var viewer=null;        // 左に出している書類 {fid, name, url, blob, state, msg, busy}
+var pdfLibP=null;       // pdf.js を読む約束（初めて読み取る時だけ）
+var PDFJS_DIR='pdfjs-4.10.38/';
 var ivEdit='';          // 直している面接の id（'' は新しい面接）
 var evalCtx=null;       // 評価の窓の中身
 var filter={job:'',src:''};
@@ -808,6 +828,7 @@ function askEnd_(a){
 function openDetail_(id){
   var go=function(){
     var a=rowById_(id); if(!a) return;
+    if(curId!==id){ clearDrafts_(); if(viewer) closeViewer_(); }
     curId=id; saveOpen_(id); edDirty=false; ivEdit='';
     if(contactsFor!==id){ contacts=[]; contactsFor=''; }
     if(filesFor!==id){ files=[]; filesFor=id; filesState='idle'; }
@@ -820,17 +841,59 @@ function openDetail_(id){
     if(a.staff_pending_at&&!a.staff_id&&!regOf_(id).holdAuto) regCheck_(id,true);
     try{ var h=$('a-pane-h'); if(h) h.focus(); }catch(e){ atsNote_('詳細の手元', e); }
   };
-  if(edDirty&&curId&&curId!==id) return askConfirm_('保存していない入力があります',['開いている方の入力を捨てて、別の方を開きますか？'],'捨てて開く',true).then(function(ok){ if(ok){ edDirty=false; go(); } });
+  if(curId&&curId!==id) return leaveGuard_(go,'別の方を開く').then(function(){});
   go(); return Promise.resolve();
 }
 function closeDetail_(force){
-  var go=function(){ curId=''; saveOpen_(''); edDirty=false; contacts=[]; contactsFor=''; files=[]; filesFor=''; filesState='idle'; fileMsg=''; var p=$('a-pane'); p.hidden=true; p.innerHTML=''; };
-  if(edDirty&&!force) return askConfirm_('保存していない入力があります',['入力を捨てて閉じますか？'],'捨てて閉じる',true).then(function(ok){ if(ok) go(); return ok; });
+  var go=function(){ curId=''; saveOpen_(''); edDirty=false; clearDrafts_(); closeViewer_(); contacts=[]; contactsFor=''; files=[]; filesFor=''; filesState='idle'; fileMsg=''; var p=$('a-pane'); p.hidden=true; p.innerHTML=''; };
+  if(!force) return leaveGuard_(go,'閉じる');
   go(); return Promise.resolve(true);
 }
 /* 職員マスタへの登録を確かめている間か（この間は送った中身＝氏名・生年月日・入職日などを直させない。データベースも止める） */
 function isPending_(a){ return !!(a&&a.staff_pending_at&&!a.staff_id); }
 function val_(id){ var e=$(id); return e?String(e.value==null?'':e.value).trim():''; }
+/* ── 打った値を守る（2026-10-29 本人指示「入力した欄が消えないように・常に保存が前提」）──
+   詳細の板は読み込みのたびに描き直すので、打った値を控え、描き直した後に戻す。節（基本情報 f-・入職準備 p-・連絡 c-・面接 i-）ごとに、保存できたら消す */
+var DRAFT_SKIP={'d-file':1,'d-stage':1};
+var DRAFT_SECS=[['f-','基本情報'],['p-','入職準備'],['c-','連絡の記録'],['i-','面接']];
+function draftKey_(t){
+  if(!t||!t.id||DRAFT_SKIP[t.id]) return '';
+  var p=$('a-pane'); if(!p||typeof p.contains!=='function'||!p.contains(t)) return '';
+  var tg=String(t.tagName||'').toLowerCase();
+  return ((tg==='input'&&t.type!=='file')||tg==='textarea'||tg==='select')?t.id:'';
+}
+function noteDraft_(t){ var k=draftKey_(t); if(k) drafts[k]=t.type==='checkbox'?{c:!!t.checked}:{v:String(t.value==null?'':t.value)}; }
+var DRAFT_QUIET={'c-ch':1,'c-dir':1};   // 手段・向きを選んだだけでは「保存していない」に数えない（描き直しでは戻す）
+function hasDraft_(prefix){ return Object.keys(drafts).some(function(k){ return !DRAFT_QUIET[k]&&(!prefix||k.indexOf(prefix)===0); }); }
+function clearDrafts_(prefix){ Object.keys(drafts).forEach(function(k){ if(!prefix||k.indexOf(prefix)===0) delete drafts[k]; }); }
+function restoreDrafts_(){
+  Object.keys(drafts).forEach(function(k){
+    var e=$(k), d=drafts[k]; if(!e||e.disabled) return;
+    if('c' in d) e.checked=d.c; else e.value=d.v;
+    if(e.hasAttribute&&e.hasAttribute('data-birth')) birthNote_(e);
+  });
+}
+function draftSecs_(){ return DRAFT_SECS.filter(function(x){ return hasDraft_(x[0]); }).map(function(x){ return x[1]; }); }
+/* 保存していない値をまとめて保存する（基本情報 → 入職準備 → 連絡の記録 → 面接の順）。1つでも保存できなければ false（板に理由が出る） */
+function saveDrafts_(){
+  var steps=[];
+  if(hasDraft_('f-')) steps.push(function(){ return saveBasic_().then(function(r){ return r==='ok'; }); });
+  if(hasDraft_('p-')) steps.push(function(){ return savePrep_().then(function(r){ return r==='ok'; }); });
+  if(hasDraft_('c-')) steps.push(function(){ if(!val_('c-sum')){ clearDrafts_('c-'); return true; } return addContact_().then(function(r){ return r===true; }); });
+  if(hasDraft_('i-')) steps.push(function(){ return saveInterview_().then(function(r){ return r===true; }); });
+  return steps.reduce(function(p,f){ return p.then(function(ok){ return ok?Promise.resolve().then(f):false; }); },Promise.resolve(true));
+}
+/* 離れる前の確かめ。保存していない値があれば「保存して進む／保存せずに進む／やめる」 */
+function leaveGuard_(go,what){
+  if(!hasDraft_()&&!edDirty){ go(); return Promise.resolve(true); }
+  var secs=draftSecs_();
+  return openDlg_({title:'保存していない入力があります',lines:[(secs.length?secs.join('・'):'詳細')+'に、まだ保存していない入力があります。',(what||'先へ進む')+'前に保存しますか？'],
+    ok:'保存して進む',alt:'保存せずに進む'}).then(function(v){
+    if(v==='alt'){ clearDrafts_(); edDirty=false; go(); return true; }
+    if(v!==true) return false;
+    return saveDrafts_().then(function(ok){ if(!ok) return false; clearDrafts_(); edDirty=false; go(); return true; });
+  });
+}
 /* extra は属性の文字（maxlength・disabled など。固定の文字だけを渡す） */
 function fi_(id,label,value,type,extra){
   return '<div class="fi"><label for="'+id+'">'+esc(label)+'</label><input id="'+id+'" type="'+(type||'text')+'" value="'+esc(value==null?'':value)+'"'+(extra||'')+' data-dirty="1"></div>';
@@ -919,6 +982,7 @@ function paintDetail_(){
   var a=rowById_(curId), p=$('a-pane');
   if(!a||!p){ if(p){ p.hidden=true; p.innerHTML=''; } return; }
   p.innerHTML=detailHtml_(a);
+  restoreDrafts_();
 }
 function dMsg_(t,kind){ var e=$('d-msg'); if(!e) return; e.className='msg'+(t?' '+(kind||'ng'):''); e.textContent=t||''; }
 function readBasic_(a){
@@ -955,7 +1019,7 @@ function saveBasic_(){
   if(!isPending_(a)&&bi.state==='bad'){ dMsg_(bi.note+'。保存していません。'); return Promise.resolve('bad'); }
   dMsg_('保存しています…','busy');
   return putRow_(row,a.rev).then(function(r){
-    if(r==='ok'){ edDirty=false; paintAll_(); paintDetail_(); dMsg_('保存しました。','ok'); }
+    if(r==='ok'){ clearDrafts_('f-'); edDirty=hasDraft_(); paintAll_(); paintDetail_(); dMsg_('保存しました。','ok'); }
     else if(r==='conflict') dMsg_('他で直されました。読み直してください（「閉じる」を押してから、画面を読み込み直します）。','warn');
     else if(r==='pending'){ paintDetail_(); dMsg_(PENDING_MSG+'。','warn'); }
     else if(r==='ng') dMsg_('保存できませんでした。');
@@ -1056,7 +1120,7 @@ function addContact_(){
     if(my!==gen) return false;
     var cur=rowById_(id);
     var first=(dir==='out'&&cur&&!cur.first_contact_at)?putRow_({id:id,first_contact_at:at},cur.rev):Promise.resolve('ok');
-    return first.then(function(){ paintAll_(); return loadContacts_(id); }).then(function(){ dMsg_('連絡を記録しました。','ok'); return true; });
+    return first.then(function(){ if(curId===id) clearDrafts_('c-'); paintAll_(); return loadContacts_(id); }).then(function(){ dMsg_('連絡を記録しました。','ok'); return true; });
   })['catch'](function(e){ atsNote_('連絡の記録', e); dMsg_(friendly_(e)); return false; });
 }
 
@@ -1084,7 +1148,7 @@ function filesInner_(a){
     '<p class="msg'+(fileMsgKind?' '+fileMsgKind:'')+'" id="d-fmsg" role="status">'+esc(fileMsg)+'</p>'+
     (files.length?'<ul class="list files">'+files.map(function(f){
       return '<li><span class="fn">'+esc(f.file_name)+'</span><span class="muted">'+esc(AtsCalc.fileSizeText(f.size_bytes))+'・'+esc(fmtDT_(f.created_at))+'</span>'+
-        '<span class="fbtns"><button type="button" class="btn sm pri" data-act="file-open" data-fid="'+esc(f.id)+'">開く</button>'+
+        '<span class="fbtns"><button type="button" class="btn sm pri" data-act="file-view" data-fid="'+esc(f.id)+'">開いて入力</button><button type="button" class="btn sm" data-act="file-open" data-fid="'+esc(f.id)+'">別のタブ</button>'+
         '<button type="button" class="btn sm ng" data-act="file-del" data-fid="'+esc(f.id)+'"'+(upBusy?' disabled':'')+'>消す</button></span></li>';
     }).join('')+'</ul>':'<p class="muted">まだありません。</p>');
 }
@@ -1234,6 +1298,118 @@ function purgeFilesOf_(ids){
     .then(removeFiles_);
 }
 
+/* ── 書類を左に出して右で入力（2026-10-29 本人指示）──
+   置き場から PDF を取ってきて（storage.download）メモリの blob にし、左の枠に出す。閉じたら blob の URL を捨てる。
+   「この PDF から読み取る」: 同梱の pdf.js で文字を読み、AtsCalc.parseResume で項目を拾い、確かめの窓で選んだ項目だけ右の欄へ入れる。
+   入れた値は保存していない入力として扱う（drafts）。手書き・スキャンは文字が無いので「読み取れません」と出す */
+function setSplit_(on){ try{ var b=document.body; if(b&&b.classList){ if(on) b.classList.add('split'); else b.classList.remove('split'); } }catch(e){ atsNote_('横並び', e); } }
+function paintViewer_(){
+  var v=$('a-viewer'); if(!v) return;
+  if(!viewer){ v.hidden=true; v.innerHTML=''; setSplit_(false); return; }
+  var h='<div class="viewer-h"><span class="vt">'+esc(viewer.name)+'</span>'+
+    '<button type="button" class="btn sm pri" data-act="vw-read"'+(viewer.state==='ok'&&!viewer.busy?'':' disabled')+'>'+(viewer.busy?'読み取っています…':'この PDF から読み取る')+'</button>'+
+    '<button type="button" class="btn sm" data-act="vw-close" aria-label="書類を閉じる">閉じる</button></div>'+
+    (viewer.msg?'<p class="msg vmsg '+esc(viewer.msgKind||'warn')+'" role="status">'+esc(viewer.msg)+'</p>':'');
+  if(viewer.state==='ok') h+='<iframe title="'+esc(viewer.name)+'" src="'+esc(viewer.url)+'"></iframe>';
+  else if(viewer.state==='loading') h+='<p class="msg vmsg">読み込んでいます…</p>';
+  /* 読み取り中・知らせを変えるたびに iframe を作り直さない（PDF の表示位置を保つ） */
+  var fr=v.querySelector?v.querySelector('iframe'):null;
+  if(fr&&viewer.state==='ok'&&fr.getAttribute('src')===viewer.url){
+    var hd=v.querySelector('.viewer-h'), old=v.querySelector('.vmsg');
+    if(old&&old.parentNode) old.parentNode.removeChild(old);
+    if(hd){ var tmp=document.createElement('div'); tmp.innerHTML=h.slice(0,h.indexOf('<iframe')); while(tmp.firstChild) v.insertBefore(tmp.firstChild,hd); v.removeChild(hd); }
+  }else v.innerHTML=h;
+  v.hidden=false; setSplit_(true);
+}
+function closeViewer_(){
+  if(viewer&&viewer.url){ try{ URL.revokeObjectURL(viewer.url); }catch(e){ atsNote_('書類の後片付け', e); } }
+  viewer=null; paintViewer_();
+}
+function openViewer_(fid){
+  var f=fileById_(fid); if(!f) return Promise.resolve(false);
+  if(viewer) closeViewer_();
+  var me={fid:fid,name:AtsCalc.fileName(f.file_name),url:'',blob:null,state:'loading',msg:'',busy:false}, my=gen;
+  viewer=me; paintViewer_();
+  return Promise.resolve().then(function(){ return db_().storage.from(FILE_BUCKET).download(f.object_key); }).then(function(r){
+    if(r&&r.error) throw r.error;
+    var blob=r&&r.data;
+    if(!blob||!(blob.size>0)) throw new Error('empty');
+    if(viewer!==me||my!==gen) return false;
+    me.blob=blob; me.url=URL.createObjectURL(blob.type==='application/pdf'?blob:new Blob([blob],{type:'application/pdf'})); me.state='ok';
+    paintViewer_(); return true;
+  })['catch'](function(e){
+    if(viewer!==me) return false;
+    atsNote_('書類を左に出す', e); me.state='error'; me.msg=fileFriendly_(e); me.msgKind='ng'; paintViewer_(); return false;
+  });
+}
+function pdfLib_(){
+  if(!pdfLibP){
+    var base=new URL(PDFJS_DIR,location.href).href;
+    pdfLibP=import(base+'pdf.min.mjs').then(function(m){ m.GlobalWorkerOptions.workerSrc=base+'pdf.worker.min.mjs'; return m; });
+    pdfLibP['catch'](function(){ pdfLibP=null; });
+  }
+  return pdfLibP;
+}
+/* PDF の文字（4ページまで）。文字の無い PDF は '' */
+function pdfText_(blob){
+  var base=new URL(PDFJS_DIR,location.href).href;
+  return Promise.all([pdfLib_(),blob.arrayBuffer()]).then(function(x){
+    return x[0].getDocument({data:new Uint8Array(x[1]),cMapUrl:base+'cmaps/',cMapPacked:true,isEvalSupported:false,disableFontFace:true,enableXfa:false}).promise;
+  }).then(function(doc){
+    var n=Math.min(doc.numPages,4), out=[], chain=Promise.resolve();
+    for(var i=1;i<=n;i++)(function(i){
+      chain=chain.then(function(){ return doc.getPage(i); }).then(function(pg){ return pg.getTextContent(); }).then(function(tc){
+        out.push((tc.items||[]).map(function(it){ return String(it.str||'')+(it.hasEOL?'\n':''); }).join(''));
+      });
+    })(i);
+    return chain.then(function(){ try{ doc.destroy(); }catch(e){ atsNote_('PDF を閉じる', e); } return out.join('\n'); });
+  });
+}
+var RS_FIELDS=[['name','氏名','f-name'],['kana','フリガナ','f-kana'],['birth_date','生年月日','f-birth'],['address','住所','f-addr'],['phones','電話','f-phones'],['email','メール','f-email'],['quals_text','資格','f-quals']];
+function readViewer_(){
+  var me=viewer, a=rowById_(curId), id=curId;
+  if(!me||me.state!=='ok'||me.busy||!a) return Promise.resolve(false);
+  me.busy=true; me.msg=''; paintViewer_();
+  return pdfText_(me.blob).then(function(text){
+    me.busy=false;
+    if(viewer!==me||curId!==id) return false;
+    var r=AtsCalc.parseResume(text);
+    var rows=RS_FIELDS.map(function(f){ var v=f[0]==='phones'?r.phones.join('\n'):String(r[f[0]]||''); return {key:f[0],label:f[1],el:f[2],val:v}; }).filter(function(x){ return x.val; });
+    if(!rows.length){
+      me.msg=String(text||'').trim()?'項目を見つけられませんでした。左を見ながら右の欄に入力してください。':'この PDF には文字が入っていません（手書き・スキャンの履歴書）。左を見ながら右の欄に入力してください。';
+      me.msgKind='warn'; paintViewer_(); return false;
+    }
+    paintViewer_();
+    return applyResume_(rows,a);
+  },function(e){
+    me.busy=false; atsNote_('PDF の文字を読む', e);
+    if(viewer===me){ me.msg='PDF の文字を読めませんでした。左を見ながら右の欄に入力してください。'; me.msgKind='ng'; paintViewer_(); }
+    return false;
+  });
+}
+/* 拾った値と今の欄を見比べて、選んだ項目だけ右の欄に入れる（空の欄は初めから選んでおく）。保存はしない＝保存していない入力になる */
+function applyResume_(rows,a){
+  var locked=isPending_(a);
+  var body='<div class="tbl-wrap"><table class="tbl"><thead><tr><th>入れる</th><th>項目</th><th>読み取った値</th><th>今の欄</th></tr></thead><tbody>'+rows.map(function(x,i){
+      var cur=val_(x.el), same=cur===x.val;
+      return '<tr><td><label class="chk"><input type="checkbox" id="rs-'+i+'" data-rs="'+i+'"'+(!cur&&!locked?' checked':'')+(locked||same?' disabled':'')+'><span class="sr">'+esc(x.label)+'を入れる</span></label></td>'+
+        '<td>'+esc(x.label)+'</td><td>'+esc(x.val)+'</td><td>'+(same?'同じ':esc(cur||'（空）'))+'</td></tr>';
+    }).join('')+'</tbody></table></div>';
+  return openDlg_({title:'読み取った項目を入れる',lines:[locked?PENDING_MSG+'。入れられません。':'入れる項目を選んでください。入れた後、「基本情報を保存」で保存します。'],bodyHtml:body,ok:'選んだ項目を入れる',
+    collect:function(){ var pick=[]; rows.forEach(function(x,i){ var c=$('rs-'+i); if(c&&c.checked&&!c.disabled) pick.push(x); }); return pick; }})
+  .then(function(pick){
+    if(!pick||!pick.length) return false;
+    pick.forEach(function(x){
+      var e=$(x.el); if(!e||e.disabled) return;
+      e.value=x.val; drafts[x.el]={v:x.val};
+      if(e.hasAttribute&&e.hasAttribute('data-birth')) birthNote_(e);
+    });
+    edDirty=true;
+    dMsg_(pick.length+'項目を入れました（まだ保存していません）。確かめてから「基本情報を保存」を押してください。','warn');
+    return true;
+  });
+}
+
 /* ── 面接 ── */
 function loadEvalStat_(id){
   var my=gen;
@@ -1260,7 +1436,7 @@ function saveInterview_(){
     var got=rows_(r);
     if(my!==gen) return false;
     got.forEach(function(v){ var i; for(i=0;i<ivs.length;i++) if(ivs[i].id===v.id){ ivs[i]=v; return; } ivs.push(v); });
-    ivEdit=''; paintAll_(); paintDetail_(); loadEvalStat_(id); dMsg_('面接を保存しました。','ok'); return true;
+    ivEdit=''; if(curId===id) clearDrafts_('i-'); paintAll_(); paintDetail_(); loadEvalStat_(id); dMsg_('面接を保存しました。','ok'); return true;
   })['catch'](function(e){ atsNote_('面接の保存', e); dMsg_(friendly_(e)); return false; });
 }
 
@@ -1420,7 +1596,7 @@ function savePrep_(){
   if(pbi.state==='bad'){ dMsg_(pbi.note+'。保存していません。'); return Promise.resolve('bad'); }
   dMsg_('保存しています…','busy');
   return putRow_({id:a.id,prep:p,start_on:p.hireDate||a.start_on||null},a.rev).then(function(r){
-    if(r==='ok'){ edDirty=false; paintAll_(); paintDetail_(); dMsg_('入職準備を保存しました。','ok'); }
+    if(r==='ok'){ clearDrafts_('p-'); edDirty=hasDraft_(); paintAll_(); paintDetail_(); dMsg_('入職準備を保存しました。','ok'); }
     else if(r==='pending'){ paintDetail_(); dMsg_(PENDING_MSG+'。','warn'); }
     else if(r==='conflict') dMsg_('他で直されました。読み直してください（「閉じる」を押してから、画面を読み込み直します）。','warn');
     else if(r==='ng') dMsg_('保存できませんでした。');
@@ -1457,7 +1633,7 @@ function regHtml_(a){
 function regStart_(){
   var a=rowById_(curId); if(!a||a.staff_id||a.staff_pending_at||a.legacy_hired===true) return Promise.resolve('blocked');
   var r=regOf_(a.id); if(r.busy) return Promise.resolve('busy');
-  if(edDirty){ dMsg_('先に「入職準備を保存」を押してください（保存した内容で登録します）。','warn'); return Promise.resolve('dirty'); }
+  if(hasDraft_('p-')){ dMsg_('先に「入職準備を保存」を押してください（保存した内容で登録します）。','warn'); return Promise.resolve('dirty'); }
   var b=AtsCalc.buildStaffCreate(a,enums);
   if(!b.ready) return Promise.resolve('notready');
   var id=a.id;
@@ -1949,7 +2125,7 @@ function openDlg_(o){
   if(dlgDone_){ var old=dlgDone_; dlgDone_=null; old(null); }
   var back=document.activeElement;
   d.innerHTML='<div class="dlg-in"><h2 id="a-dlg-h">'+esc(o.title)+'</h2>'+(o.lines||[]).map(function(l){ return '<p>'+esc(l)+'</p>'; }).join('')+(o.bodyHtml||'')+
-    '<div class="dlg-btns"><button type="button" class="btn" data-dlg="no">やめる</button><button type="button" class="btn '+(o.danger?'ngf':'pri')+'" data-dlg="ok">'+esc(o.ok)+'</button></div></div>';
+    '<div class="dlg-btns"><button type="button" class="btn" data-dlg="no">やめる</button>'+(o.alt?'<button type="button" class="btn ng" data-dlg="alt">'+esc(o.alt)+'</button>':'')+'<button type="button" class="btn '+(o.danger?'ngf':'pri')+'" data-dlg="ok">'+esc(o.ok)+'</button></div></div>';
   return new Promise(function(resolve){
     var done=function(v){
       if(dlgDone_!==done) return;
@@ -1962,6 +2138,7 @@ function openDlg_(o){
     var onClick=function(ev){
       var b=ev.target&&ev.target.closest?ev.target.closest('[data-dlg]'):null; if(!b) return;
       if(b.getAttribute('data-dlg')==='no'){ done(o.collect?null:false); return; }
+      if(b.getAttribute('data-dlg')==='alt'){ done('alt'); return; }
       if(o.collect){ var v=o.collect(); if(v!=null) done(v); return; }
       done(true);
     };
@@ -1997,8 +2174,12 @@ function onClick_(e){
   else if(act==='save-basic') saveBasic_();
   else if(act==='add-contact') addContact_();
   else if(act==='iv-save') saveInterview_();
-  else if(act==='iv-edit'){ ivEdit=t.getAttribute('data-iv')||''; paintDetail_(); }
-  else if(act==='iv-cancel'){ ivEdit=''; paintDetail_(); }
+  else if(act==='iv-edit'||act==='iv-cancel'){
+    var nextIv=act==='iv-edit'?(t.getAttribute('data-iv')||''):'';
+    var swIv=function(){ ivEdit=nextIv; clearDrafts_('i-'); paintDetail_(); };
+    if(hasDraft_('i-')) askConfirm_('面接の入力を保存していません',['打った面接の入力を捨てて、'+(act==='iv-edit'?'別の面接を直しますか？':'直すのをやめますか？')],'捨てる',true).then(function(ok){ if(ok) swIv(); });
+    else swIv();
+  }
   else if(act==='eval') openEval_(t.getAttribute('data-iv')||'');
   else if(act==='save-prep') savePrep_();
   else if(act==='reg-start') regStart_();
@@ -2012,6 +2193,9 @@ function onClick_(e){
   else if(act==='purge') runPurge_();
   else if(act==='file-pick'){ var fp=$('d-file'); if(fp&&!upBusy) fp.click(); }
   else if(act==='file-open') openFile_(t.getAttribute('data-fid')||'');
+  else if(act==='file-view') openViewer_(t.getAttribute('data-fid')||'');
+  else if(act==='vw-close') closeViewer_();
+  else if(act==='vw-read') readViewer_();
   else if(act==='file-del') delFile_(t.getAttribute('data-fid')||'');
   else if(act==='file-reload'&&curId) loadFiles_(curId);
   else if(act==='save-settings') saveSettings_();
@@ -2026,6 +2210,7 @@ function onChange_(e){
   if(t.id==='dash-per'){ dashPeriod=DASH_PERIODS.some(function(x){ return x[0]===t.value; })?t.value:'month'; paintDash_(); return; }
   if(t.id==='d-file'){ uploadFiles_(t.files); try{ t.value=''; }catch(err){ atsNote_('書類の選択', err); } return; }
   if(t.hasAttribute&&t.hasAttribute('data-birth')) birthNorm_(t);
+  noteDraft_(t);
   if(t.id==='imp-file'){ onImportFile_(t.files&&t.files[0]); try{ t.value=''; }catch(err){ atsNote_('ファイルの選択', err); } return; }
   if(t.hasAttribute&&t.hasAttribute('data-exp')){ expireSel[t.getAttribute('data-exp')]=!!t.checked; paintExpire_(); return; }
   if(t.closest&&t.closest('#a-evdlg')&&evalCtx){ evalCtx.dirty=true; return; }
@@ -2034,6 +2219,7 @@ function onChange_(e){
 function onInput_(e){
   var t=e.target; if(!t) return;
   if(t.hasAttribute&&t.hasAttribute('data-birth')) birthNote_(t);
+  noteDraft_(t);
   if(t.closest&&t.closest('#a-evdlg')&&evalCtx){ evalCtx.dirty=true; return; }
   if(t.hasAttribute&&t.hasAttribute('data-dirty')) edDirty=true;
 }
@@ -2046,7 +2232,7 @@ function onKey_(e){
   }
 }
 function onEvCancel_(e){ e.preventDefault(); closeEval_(false); }
-function onBeforeUnload_(e){ if(edDirty||(evalCtx&&evalCtx.dirty)){ e.preventDefault(); e.returnValue=''; } }
+function onBeforeUnload_(e){ if(edDirty||hasDraft_()||(evalCtx&&evalCtx.dirty)){ e.preventDefault(); e.returnValue=''; } }
 function wire_(){
   document.addEventListener('click',onClick_);
   document.addEventListener('change',onChange_);
