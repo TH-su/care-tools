@@ -14,6 +14,8 @@
      G 見比べは項目名だけを返す（値・氏名を返さない）。キーの並びの違いは同じとみなす
      H 端末に保存しない（localStorage・sessionStorage を使わない）。Google へは読む操作だけを送る
      I 画面: ボタンは管理者だけ・現場の端末では断る・Google へは入居者マスタの読み方と同じ形（POST・text/plain・合言葉は本文）
+     J 自動: 管理者が入居者マスタを開いた時、その日（日本時間）まだ写していなければ写す。前の試みから1時間は試さない。
+       管理者でない・0034 が無い時は何もしない。全項目一致なら知らせず、違い・止まった時だけ帯（画面だけ・印刷しない）
    ★架空データのみ（氏名は使わない）。 */
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
@@ -215,6 +217,52 @@ function world(o) {
     && /redirect: 'follow'/.test(post) && /token: tgt\.token/.test(post) && /SUGasAuth/.test(post) && !/\?token|&token/.test(post));
   t('接続先は入居者マスタの接続先（rmaster_cfg）', /var tgt = rmasterTarget\(\)/.test(fn));
   t('結果は textContent で出す（innerHTML を使わない）', !/innerHTML/.test(fn) && !/innerHTML/.test(SRC));
+
+  console.log('J 自動で写す（代表者の決定 2026-10-29「自動で写す」）');
+  {
+    const NOW = Date.parse('2026-10-29T03:00:00Z');   // 日本時間 12:00
+    const mkAuth = (role, runs, err) => {
+      const calls = [];
+      const A = { STATUS: { OK: 'ok' }, check: async () => ({ status: 'ok', role }),
+        client: () => ({ rpc: (n, a) => { calls.push(n); return w0.rpc(n, a); },
+          from: () => ({ select: () => ({ order: () => ({ limit: async () => (err ? { error: { code: '42P01' } } : { data: runs }) }),
+                                          eq: () => ({ limit: async () => ({ data: [{ unknown_keys: [] }] }) }) }) }) }) };
+      return { A, calls };
+    };
+    let w0 = world({ n: 2 });
+    for (const [label, role, runs, err, want] of [
+      ['管理者でない（事務所）時は何もしない', 'office', [], false, 'role'],
+      ['0034 の無いデータベースでは何もしない', 'admin', [], true, 'nodb'],
+      ['今日（日本時間）もう写していれば何もしない', 'admin', [{ at: '2026-10-28T16:30:00Z', status: 'done' }], false, 'today'],
+      ['前の試みから1時間たっていなければ試さない（止まった写しの繰り返しを防ぐ）', 'admin', [{ at: '2026-10-29T02:30:00Z', status: 'refused' }, { at: '2026-10-27T00:00:00Z', status: 'done' }], false, 'recent'],
+    ]) {
+      w0 = world({ n: 2 });
+      const m = mkAuth(role, runs, err);
+      const r = await R.auto({ gas: w0.gas, auth: async () => m.A, now: NOW });
+      t(label, r.skip === want && m.calls.length === 0 && w0.gasCalls.length === 0, r);
+    }
+    w0 = world({ n: 2 });
+    const m = mkAuth('admin', [{ at: '2026-10-28T14:59:00Z', status: 'done' }], false);   // 日本時間で前の日の 23:59
+    const r = await R.auto({ gas: w0.gas, auth: async () => m.A, now: NOW });
+    t('前の日に写した後なら写す（日本時間の日付で数える）', r.ok === true && r.cmp.same === 2 && m.calls.includes('res_import_finish'), r);
+    t('全項目一致なら知らせない', R.autoNote(r) === '' && R.autoNote({ skip: 'today' }) === '');
+    t('違いがある時・止まった時・区分の無い項目がある時は知らせる', /2人/.test(R.autoNote({ ok: true, cmp: { diff: [1], notInCopy: [1] }, run: { unknown: [] } }))
+      && /取れませんでした/.test(R.autoNote({ ok: false, why: 'x' })) && /zzNew/.test(R.autoNote({ ok: true, cmp: { diff: [], notInCopy: [] }, run: { unknown: ['zzNew'] } })));
+    const bad = await R.auto({ gas: w0.gas, auth: async () => { throw new Error('x'); } });
+    t('例外は外へ出さない', bad.skip === 'error');
+    t('日本時間の日付', R._jstDay('2026-10-28T15:00:00Z') === '2026-10-29' && R._jstDay('2026-10-28T14:59:59Z') === '2026-10-28');
+  }
+  {
+    const RM = read('RESIDENT_MASTER_HTML', 'resident-master.html');
+    const fn = RM.slice(RM.indexOf('function rmResFullAuto_'), RM.indexOf('function parseJson('));
+    t('入居者マスタ: 部品を読み込む', /<script src="su-res-full\.js\?v=/.test(RM));
+    t('入居者マスタ: 一覧をサーバーから読めた時に呼ぶ（写しの部品の直後）', /SUMasterShadow\.push\([^\n]*\n\s*if\(typeof rmResFullAuto_==='function'\)rmResFullAuto_\(\);/.test(RM));
+    t('入居者マスタ: 1ページで1回・現場端末・接続先が無い時は何もしない', /rmResFullDone_\|\|!window\.SUResFull\|\|getDeviceRole\(\)==='field'\|\|!CFG\.url/.test(fn));
+    t('入居者マスタ: 用途が変わった後（devGen）・画面が隠れている時は始めない', /dg!==devGen\|\|getDeviceRole\(\)==='field'\|\|document\.hidden/.test(fn));
+    t('入居者マスタ: Google へは POST・text/plain・合言葉は本文・証明を添える', /method:'POST'/.test(fn) && /'Content-Type':'text\/plain;charset=utf-8'/.test(fn) && /token:CFG\.token/.test(fn) && /SUGasAuth/.test(fn));
+    t('入居者マスタ: 帯は最初は隠し・印刷しない・文字は textContent', /id="rfBand" role="status" hidden/.test(RM) && /@media print\{\.rfband\{display:none !important\}\}/.test(RM)
+      && /\.rfband\[hidden\]\{display:none !important\}/.test(RM) && /el\.textContent=t/.test(fn) && !/innerHTML/.test(fn));
+  }
 
   finished = true;
   console.log(`\n合格 ${pass} / 不合格 ${fail}`);
