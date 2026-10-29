@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-3w5ZLQhwiozBlamNT4MXsUf7o5IPJgr7Fr752jGkNx8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-YxhPcEQLKm8ON0p7Hh+qCtRTmNezQL7Qqg9jLk/EcgQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
@@ -722,8 +722,10 @@ function clearDrop_(){ Array.prototype.forEach.call(document.querySelectorAll('.
 /* 書類（ファイル）のドラッグか（選考のカードのドラッグとは別） */
 function isFileDrag_(e){ var dt=e&&e.dataTransfer; return !!(dt&&dt.types&&Array.prototype.indexOf.call(dt.types,'Files')>=0); }
 function dropZoneOf_(e){ return e.target&&e.target.closest?e.target.closest('[data-drop]'):null; }
+/* ファイルを選ぶ欄（取り込みの CSV など）の上では、ブラウザの動きのまま（その欄へ落とせる） */
+function onFileInput_(e){ return !!(e.target&&e.target.closest&&e.target.closest('input[type=file]')); }
 function onDragOver_(e){
-  if(!dragId&&isFileDrag_(e)){
+  if(!dragId&&isFileDrag_(e)&&!onFileInput_(e)){
     /* 置き場の外で離しても、ブラウザが PDF を開いてこの画面を離れないよう、いつも止める */
     e.preventDefault();
     var z=dropZoneOf_(e);
@@ -736,7 +738,7 @@ function onDragOver_(e){
   if(col&&col.classList.contains('drop-ok')) e.preventDefault();
 }
 function onDrop_(e){
-  if(!dragId&&isFileDrag_(e)){
+  if(!dragId&&isFileDrag_(e)&&!onFileInput_(e)){
     e.preventDefault(); setDropOn_(false);
     if(dropZoneOf_(e)&&!upBusy) uploadFiles_(e.dataTransfer.files);
     return;

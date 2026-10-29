@@ -886,6 +886,9 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
     const card = { prevented: false, preventDefault() { card.prevented = true; }, dataTransfer: { types: ['text/plain'] }, target: { closest: () => null } };
     L.ctx.onDragOver_(card);
     t('選考のカードを持っていない時の文字のドラッグには手を出さない', !card.prevented);
+    const onInput = { prevented: false, preventDefault() { onInput.prevented = true; }, dataTransfer: { types: ['Files'], files: [] }, target: { closest: (sel) => (sel === 'input[type=file]' ? {} : null) } };
+    L.ctx.onDragOver_(onInput); L.ctx.onDrop_(onInput);
+    t('ファイルを選ぶ欄（取り込みの CSV）の上ではブラウザの動きのまま（その欄へ落とせる）', !onInput.prevented && upCalled === 1);
   }
   {
     /* 保管期限: 書類を先に消してから応募者を消す。書類を消せなければ応募者を消さない */
