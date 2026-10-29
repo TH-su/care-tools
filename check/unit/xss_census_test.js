@@ -527,6 +527,7 @@ const CENSUS = {
   "su-weight-live.js": [],
   "su-res-full.js": [],
   "su-tp-full.js": [],
+  "su-adm-full.js": [],
   "su-res-read.js": [],
   "supplies-calc.js": [],
   "supplies.html": [],

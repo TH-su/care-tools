@@ -1097,6 +1097,7 @@
     try { await loadResMode(sb); } catch (e) { /* 0036 の前・読めない時はボタンを出さない */ }
     try { await loadTpRuns(sb); } catch (e) { $('tpf-verdict').className = 'msg warn'; $('tpf-verdict').textContent = '計画書の写しの記録を読めませんでした。'; }
     try { await loadTpMode(sb); } catch (e) { /* 0038 の前・読めない時はボタンを出さない */ }
+    try { await loadAdmRuns(sb); } catch (e) { $('admf-verdict').className = 'msg warn'; $('admf-verdict').textContent = '入居調整の写しの記録を読めませんでした。'; }
     try { await loadPatch(sb); }
     catch (e) {
       $('pt-verdict').className = 'msg warn';
@@ -1341,6 +1342,64 @@
     } finally {
       btn.disabled = false;
       try { await loadTpRuns(sb); } catch (e) { /* 記録の一覧が読めなくても結果の文は残す */ }
+    }
+  }
+
+  /* 入居調整の台帳の写し（統合 0040・2026-10-29）: 管理者がボタンを押した時だけ、su-adm-full.js で Google（adm_cfg）から
+   * 台帳を読んで Supabase へ写し、読み直して見比べる。出すのは件数と違いの種類だけ（添付書類は写さない） */
+  function admTarget() {
+    try {
+      var o = JSON.parse(localStorage.getItem('adm_cfg') || 'null');
+      var u = String(o && o.url || '').trim(), t = String(o && o.token || '').trim();
+      return RMASTER_RE.test(u) && t ? { url: u, token: t } : null;
+    } catch (e) { return null; }
+  }
+  var ADM_RESULT = { inserted: '初めて写した', updated: '直した', unchanged: '変化なし' };
+  async function loadAdmRuns(sb) {
+    var ul = $('admf-runs');
+    ul.replaceChildren();
+    $('b-adm-full').hidden = !(me && me.role === 'admin');
+    var r = await sb.from('adm_sync_runs').select('*').order('at', { ascending: false }).limit(5);
+    if (r.error) { $('admf-verdict').className = 'msg'; $('admf-verdict').textContent = '入居調整の写しの準備（データベース 0040）はまだです。'; $('b-adm-full').hidden = true; return; }
+    (r.data || []).forEach(function (x) {
+      var li = el('li'), left = el('div');
+      left.appendChild(el('div', 'nm', fmtTime(x.at)));
+      left.appendChild(el('div', 'em', x.status === 'done'
+        ? '版 ' + x.rev + '／生きている案件 ' + x.active + '件／' + (ADM_RESULT[x.result] || '')
+        : '受け付けず（' + String(x.refused || '') + '）'));
+      li.appendChild(left);
+      ul.appendChild(li);
+    });
+  }
+  async function runAdmFull() {
+    var kk = $('admf-kpis'), v = $('admf-verdict'), btn = $('b-adm-full');
+    function say(t, kind) { v.className = 'msg' + (kind ? ' ' + kind : ''); v.textContent = t; }
+    if (!(me && me.role === 'admin' && me.status === SUAuth.STATUS.OK)) { say('管理者（二段階認証済み）のアカウントで開いてください。', 'warn'); return; }
+    var role = ''; try { role = localStorage.getItem('su_device_role') || ''; } catch (e) { role = ''; }
+    if (role === 'field') { say('この端末は「現場」です。事務所のパソコンで行ってください。', 'warn'); return; }
+    var at = admTarget();
+    if (!at) { say('この端末には入居調整の接続先（Google）がありません。この端末で入居調整を開いてから、押し直してください。', 'warn'); return; }
+    if (!confirm('入居調整の台帳を Supabase へ写しますか？\n\nGoogle の台帳は読むだけで、変えません。添付書類は写しません。')) return;
+    kk.replaceChildren();
+    btn.disabled = true;
+    var sb = SUAuth.client();
+    try {
+      var res = await SUAdmFull.run({
+        gas: function (body) { return rmasterPost(at, body); },
+        rpc: function (name, args) { return sb.rpc(name, args); },
+        progress: function (t) { say(t); }
+      });
+      if (!res.ok) { say('写せませんでした: ' + res.why, 'warn'); return; }
+      kk.appendChild(kpi('台帳の版', res.rev, ''));
+      kk.appendChild(kpi('生きている案件', res.active, '件'));
+      var tail = '（' + (ADM_RESULT[res.result] || '') + '）';
+      say(res.diff.length ? '写しましたが、読み直すと違いがあります（' + res.diff.join('・') + '）。開発の担当へ知らせてください。' + tail
+                          : '写して読み直し、Google と一致しました。' + tail, res.diff.length ? 'warn' : 'ok');
+    } catch (e) {
+      say('写せませんでした: ' + String(e && e.message || e), 'warn');
+    } finally {
+      btn.disabled = false;
+      try { await loadAdmRuns(sb); } catch (e) { /* 記録の一覧が読めなくても結果の文は残す */ }
     }
   }
 
@@ -1596,6 +1655,7 @@
   $('b-tp-full').addEventListener('click', function () { msg(''); runTpFull(); });
   $('b-tp-cut').addEventListener('click', function () { msg(''); runTpOp('cut'); });
   $('b-tp-back').addEventListener('click', function () { msg(''); runTpOp('back'); });
+  $('b-adm-full').addEventListener('click', function () { msg(''); runAdmFull(); });
   $('b-res-back').addEventListener('click', function () { msg(''); runResOp('back'); });
   $('b-check').addEventListener('click', function () { msg(''); runCheck(); });
   $('b-mirror-check').addEventListener('click', function () { msg(''); runMirrorCheck(); });
