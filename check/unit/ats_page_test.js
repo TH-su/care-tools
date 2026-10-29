@@ -89,7 +89,7 @@ function fakeDb(opt, log) {
   const tables = opt.tables || {};
   function builder(table) {
     const b = { table, ops: [] };
-    const chain = ['select', 'eq', 'order', 'insert', 'update', 'gte', 'lte', 'in'];
+    const chain = ['select', 'eq', 'order', 'insert', 'update', 'gte', 'lte', 'in', 'limit'];
     chain.forEach((k) => { b[k] = function () { b.ops.push([k].concat([].slice.call(arguments))); return b; }; });
     b.then = function (ok, ng) {
       log.push({ kind: 'table', table, ops: b.ops });
@@ -118,6 +118,7 @@ function fakeDb(opt, log) {
         return {
           upload(key, file, o) { return call('upload', [key, file && file.name, o], { data: { path: key }, error: null }); },
           remove(keys) { return call('remove', [keys], { data: keys.map((k) => ({ name: k })), error: null }); },
+          list(dir, o) { return call('list', [dir, o], { data: [], error: null }); },
           createSignedUrl(key, sec) { return call('createSignedUrl', [key, sec], { data: { signedUrl: 'https://kakuu.example/s/' + key + '?token=x' }, error: null }); },
           download(key) { return call('download', [key], { data: new Blob(['%PDF-1.4 kakuu'], { type: 'application/pdf' }), error: null }); }
         };
@@ -211,7 +212,7 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
     const L = load({ tables: { ats_applicants: [app()] } });
     const r = await L.ctx.boot_(); await settle();
     t('管理者＋2段階認証: 読み込んでアプリの欄を出す', r === 'app' && !L.els['a-app'].hidden && L.els['a-gate'].hidden && L.ctx.apps.length === 1, r);
-    t('読むのは応募者・面接・設定だけ（職員の一覧は読まない・表から読むだけ・RPC は呼ばない）', L.reads().map((x) => x.table).sort().join() === 'ats_applicants,ats_interviews,ats_settings' && L.rpcs().length === 0, L.reads().map((x) => x.table));
+    t('読むのは応募者・面接・設定と、保管期限で消した記録（操作記録・人数と件数だけ）だけ（職員の一覧は読まない・表から読むだけ・RPC は呼ばない）', L.reads().map((x) => x.table).sort().join() === 'ats_applicants,ats_interviews,ats_settings,audit_log' && L.rpcs().length === 0, L.reads().map((x) => x.table));
     t('起動では職員マスタへ送らない', L.fetches.length === 0);
   }
 
@@ -253,7 +254,7 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
     L.ctx.openDetail_(UID(1)); await settle();
     L.ctx.saveOpen_('甲野 一郎');
     const keys = [...new Set(L.writes.filter((w) => w[1] === 'set').map((w) => w[0] + ':' + w[2]))].sort();
-    t('端末に書くのは ats_view・ats_open・ats_filter だけ', keys.join() === ['local:ats_view', 'session:ats_filter', 'session:ats_open'].join(), keys);
+    t('端末に書くのは ats_view・ats_open・ats_filter と、メニューの札の ats_menu_due（期限の日付だけ）だけ', keys.join() === ['local:ats_menu_due', 'local:ats_view', 'session:ats_filter', 'session:ats_open'].join(), keys);
     t('開いている応募者の控えは id の形の時だけ（氏名は書かない）', !L.writes.some((w) => /甲野/.test(w[3] || '')), L.writes.filter((w) => w[2] === 'ats_open'));
     t('応募者の情報（氏名・希望・電話・メール）を端末に書かない', !L.writes.some((w) => /甲野|夜勤なし|000-0000-0|example/.test(w[3] || '')), L.writes);
   }
@@ -919,7 +920,9 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
     await L.ctx.runPurge_(); await settle();
     const rd = L.reads().find((x) => x.table === 'ats_files' && x.ops.some((o) => o[0] === 'in'));
     const order = L.log.filter((x) => (x.kind === 'storage' && x.op === 'remove') || (x.kind === 'rpc' && /ats_file_del|ats_purge/.test(x.name))).map((x) => x.op || x.name);
-    t('保管期限: 選んだ方の書類を読み、置き場→台帳→応募者の順に消す', rd && JSON.stringify(rd.ops.find((o) => o[0] === 'in')[2]) === JSON.stringify([UID(3)]) && JSON.stringify(order) === JSON.stringify(['remove', 'ats_file_del', 'ats_purge']), order);
+    t('保管期限: 選んだ方の書類を読み、置き場から消してから応募者を消す（台帳の行は ats_purge が消す・0039）', rd && JSON.stringify(rd.ops.find((o) => o[0] === 'in')[2]) === JSON.stringify([UID(3)]) && JSON.stringify(order.slice(0, 2)) === JSON.stringify(['remove', 'ats_purge']), order);
+    const ls0 = L.stores().find((x) => x.op === 'list');
+    t('保管期限: 置き場の「事業者/応募者」の一覧を取る', ls0 && ls0.args[0] === TEN + '/' + UID(3), ls0 && ls0.args);
     t('確かめの窓に「書類（PDF）も消える」と出す', L.asks.some((a) => (a.lines || []).some((l) => /書類（PDF）/.test(l))));
     const L2 = await opened({ tables: { ats_applicants: rows, ats_interviews: [], ats_settings: [], ats_contacts: [], ats_files: [fileRow] },
       storage: { remove: () => ({ data: null, error: { statusCode: '500', message: 'internal' } }) } });
@@ -936,6 +939,90 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
     L3.ctx.apps = rows; L3.ctx.expireSel = { [UID(3)]: true };
     await L3.ctx.runPurge_(); await settle();
     t('保管期限: 台帳がまだ無い（0035 の前）なら今までどおり消せる', L3.rpcs().some((x) => x.name === 'ats_purge') && L3.stores().length === 0);
+    /* 書類が残らないこと（2026-10-29 本人指示）: 台帳に載っていない PDF（置いた直後に台帳への登録が失敗した分）も置き場から消す */
+    const orphan = { name: UID(39) + '.pdf', id: 'obj-39' };
+    const L6 = await opened({ tables: { ats_applicants: rows, ats_interviews: [], ats_settings: [], ats_contacts: [], ats_files: [fileRow] },
+      storage: { list: () => ({ data: [{ name: UID(31) + '.pdf', id: 'obj-31' }, orphan, { name: 'sub', id: null }], error: null }) },
+      rpc: { ats_purge: () => ({ ok: true, deleted: 1, skipped_pending: 0, files: 1, skipped_files: 0 }) } });
+    L6.ctx.apps = rows; L6.ctx.expireSel = { [UID(3)]: true };
+    await L6.ctx.runPurge_(); await settle();
+    const rm6 = L6.stores().find((x) => x.op === 'remove');
+    const keys6 = rm6 ? rm6.args[0].slice().sort() : [];
+    t('書類が残らない: 台帳に無い PDF も置き場から消す（台帳の分と合わせて2件・同じ名前は1回・フォルダは消さない）',
+      JSON.stringify(keys6) === JSON.stringify([TEN + '/' + UID(3) + '/' + UID(31) + '.pdf', TEN + '/' + UID(3) + '/' + UID(39) + '.pdf'].sort()), keys6);
+    t('書類が残らない: 消した結果に、置き場から消した件数（台帳に無い分を含む2件）を出す', /1件を消しました。書類（PDF）2件も消しました。/.test(L6.els['a-msg'].textContent), L6.els['a-msg'].textContent);
+    const pg6 = L6.rpcs().find((x) => x.name === 'ats_purge');
+    t('書類が残らない: 置き場から消した件数（p_removed）をデータベースへ渡して記録に残す', pg6 && pg6.args.p_removed === 2 && JSON.stringify(pg6.args.p_ids) === JSON.stringify([UID(3)]), pg6 && pg6.args);
+    let n10 = 0;
+    const L10 = await opened({ tables: { ats_applicants: rows, ats_interviews: [], ats_settings: [], ats_contacts: [], ats_files: [] },
+      rpc: { ats_purge: (a) => (n10++ === 0 ? { __error: { code: 'PGRST202', message: 'Could not find the function' } } : { ok: true, deleted: 1, skipped_pending: 0, argsSeen: Object.keys(a).join() }) } });
+    L10.ctx.apps = rows; L10.ctx.expireSel = { [UID(3)]: true };
+    await L10.ctx.runPurge_(); await settle();
+    const pgs10 = L10.rpcs().filter((x) => x.name === 'ats_purge');
+    t('0039 の前（2つ引数の呼び方が無い）: 1つ引数で呼び直して消せる', pgs10.length === 2 && 'p_removed' in pgs10[0].args && !('p_removed' in pgs10[1].args) && /1件を消しました/.test(L10.els['a-msg'].textContent), pgs10.map((x) => x.args));
+    const L11 = await opened({ tables: { ats_applicants: rows, ats_interviews: [], ats_settings: [], ats_contacts: [], ats_files: [fileRow] },
+      rpc: { ats_purge: () => ({ ok: true, deleted: 0, skipped_pending: 1, files: 0, skipped_files: 0 }), ats_file_del: () => ({ ok: true, deleted: 1 }) } });
+    L11.ctx.apps = rows; L11.ctx.expireSel = { [UID(3)]: true };
+    await L11.ctx.runPurge_(); await settle();
+    const del11 = L11.rpcs().filter((x) => x.name === 'ats_file_del');
+    t('消さなかった方（別の端末で確かめ中になった等）の台帳の行は、置き場を消した後に片付ける（開けない書類を並べない）', del11.length === 1 && del11[0].args.p_id === UID(31), del11.map((x) => x.args));
+    const L7 = await opened({ tables: { ats_applicants: rows, ats_interviews: [], ats_settings: [], ats_contacts: [], ats_files: [fileRow] },
+      storage: { list: () => ({ data: null, error: { statusCode: '500', message: 'internal' } }) } });
+    L7.ctx.apps = rows; L7.ctx.expireSel = { [UID(3)]: true };
+    await L7.ctx.runPurge_(); await settle();
+    t('書類が残らない: 置き場の一覧を読めなければ、書類も応募者も消さない', !L7.stores().some((x) => x.op === 'remove') && !L7.rpcs().some((x) => x.name === 'ats_purge') && L7.els['a-msg'].textContent.length > 0, L7.els['a-msg'].textContent);
+    const L8 = await opened({ tables: { ats_applicants: rows, ats_interviews: [], ats_settings: [], ats_contacts: [], ats_files: [fileRow] },
+      rpc: { ats_purge: () => ({ ok: true, deleted: 0, skipped_pending: 0, files: 0, skipped_files: 1 }) } });
+    L8.ctx.apps = rows; L8.ctx.expireSel = { [UID(3)]: true };
+    await L8.ctx.runPurge_(); await settle();
+    t('書類が残らない: 置き場に PDF が残っていてデータベースが断った（skipped_files）→ 消していないと出す', /置き場に残っていた1件は消していません/.test(L8.els['a-msg'].textContent), L8.els['a-msg'].textContent);
+    let n9 = 0;
+    const L9 = await opened({ tables: { ats_applicants: rows, ats_interviews: [], ats_settings: [], ats_contacts: [], ats_files: [fileRow] },
+      rpc: { ats_purge: () => (n9++ === 0 ? { __error: { code: '23503', message: 'violates foreign key constraint' } } : { ok: true, deleted: 1, skipped_pending: 0 }),
+        ats_file_del: () => ({ ok: true, deleted: 1 }) } });
+    L9.ctx.apps = rows; L9.ctx.expireSel = { [UID(3)]: true };
+    await L9.ctx.runPurge_(); await settle();
+    const order9 = L9.log.filter((x) => (x.kind === 'storage' && x.op === 'remove') || (x.kind === 'rpc' && /ats_file_del|ats_purge/.test(x.name))).map((x) => x.op || x.name);
+    t('0039 の前の ats_purge（台帳が残ると外部キーで止まる）: 置き場から消した後に台帳を消して呼び直す',
+      JSON.stringify(order9.slice(0, 4)) === JSON.stringify(['remove', 'ats_purge', 'ats_file_del', 'ats_purge']) && /1件を消しました。書類（PDF）1件も消しました。/.test(L9.els['a-msg'].textContent), { order9, m: L9.els['a-msg'].textContent });
+  }
+  {
+    /* メニューの札（2026-10-29 本人指示）: 端末に残すのは保管期限の日付だけ。消せない方（職員の番号あり・確かめ中）は入れない */
+    const rows = [app({ id: UID(3), stage: 'lost', retain_until: '2000-01-01' }), app({ id: UID(4), stage: 'rejected', retain_until: '2999-01-01' }),
+      app({ id: UID(5), stage: 'lost', retain_until: '2000-01-02', staff_pending_at: NOW_ISO }), app({ id: UID(6), stage: 'hired', staff_id: 'S1', retain_until: '2000-01-03' }), app({ id: UID(7) })];
+    const L = await opened({ tables: { ats_applicants: rows, ats_interviews: [], ats_settings: [], ats_contacts: [],
+      audit_log: [{ at: '2026-10-29T01:02:00Z', actor_email: 'kakuu@example.com', fields: ['count:2', 'files:3'] }, { at: '2026-04-01T00:00:00Z', actor_email: 'kakuu@example.com', fields: ['count:1'] }] } });
+    const raw = L.ls.getItem('ats_menu_due'), d = JSON.parse(raw || 'null');
+    t('メニューの札: 保管期限の日付だけを残す（消せる見込みの方だけ・古い順）', d && d.v === 1 && d.at === CALC.todayJST() && JSON.stringify(d.expire) === JSON.stringify(['2000-01-01', '2999-01-01']), d);
+    t('メニューの札: 氏名・電話・番号を残さない', raw && !/甲野|コウノ|000-0000|x@example|0000-4000/.test(raw), raw);
+    const L2 = load({ role: 'field', tables: { ats_applicants: rows } });
+    await L2.ctx.boot_(); await settle();
+    t('メニューの札: 現場端末では書かない', L2.ls.getItem('ats_menu_due') === null);
+    /* 消した記録の一覧 */
+    const rd = L.reads().find((x) => x.table === 'audit_log');
+    t('消した記録: 操作記録の ats_purge の行を新しい順に20件まで読む', rd && rd.ops.some((o) => o[0] === 'eq' && o[1] === 'entity' && o[2] === 'ats_purge') && rd.ops.some((o) => o[0] === 'limit' && o[1] === 20), rd && rd.ops);
+    L.ctx.tab = 'expire'; L.ctx.paintExpire_();
+    const ex = L.els['p-expire'].innerHTML;
+    t('消した記録: 日時（日本時間）・消した人・人数・書類の件数を出す。0039 より前の行は書類を「記録なし」', /これまでに消した記録/.test(ex) && ex.includes('2026-10-29 10:02') && ex.includes('kakuu@example.com') && /<td class="num">2<\/td><td class="num">3<\/td>/.test(ex) && /記録なし/.test(ex), ex.slice(ex.indexOf('これまで')));
+    L.ctx.purgeLog = 'loading'; L.ctx.paintExpire_();
+    t('消した記録: 読み込み中は「読み込んでいます」と出す（読めなかったと出さない）', /読み込んでいます/.test(L.els['p-expire'].innerHTML) && !/読めませんでした/.test(L.els['p-expire'].innerHTML));
+    const L3 = await opened({ tableErr: { audit_log: { code: '42501', message: 'denied' } } });
+    L3.ctx.paintExpire_();
+    t('消した記録: 読めなくても画面は動き、「読めませんでした」と出す', /記録を読めませんでした/.test(L3.els['p-expire'].innerHTML));
+  }
+  {
+    /* help.html の応募者向けの文と保管の月数をそろえる */
+    const HELP = fs.readFileSync(path.join(ROOT, 'help.html'), 'utf8');
+    const hm = /var HELP_RETAIN_MONTHS=(\d+);/.exec(S);
+    t('help.html の保管期間・ats.html の HELP_RETAIN_MONTHS・既定の月数が同じ（6か月）',
+      hm && Number(hm[1]) === CALC.normSettings(null).retainMonths && HELP.includes('選考が終わった日から' + hm[1] + 'か月で'), hm && hm[1]);
+    t('help.html の応募者向けの文に、利用目的・保管期間・問い合わせ先（施設情報の support から差し込む欄）がある',
+      /id="privacy"/.test(HELP) && /利用する目的/.test(HELP) && /保管する期間/.test(HELP) && (HELP.match(/data-sup="contact"/g) || []).length === 2 && (HELP.match(/data-sup="hours"/g) || []).length === 2);
+    const L = await opened({});
+    L.ctx.settings = CALC.normSettings({ retain_months: 12 }); L.ctx.paintSettings_();
+    const sh = L.els['p-settings'].innerHTML;
+    L.ctx.settings = CALC.normSettings({ retain_months: 6 }); L.ctx.paintSettings_();
+    t('設定: 保管の月数が help.html の文（6か月）と違う時だけ知らせる', /今の設定（12か月）と合いません/.test(sh) && !/合いません/.test(L.els['p-settings'].innerHTML));
   }
 
   group('14. 入力を消さない（描き直しても戻す・離れる前に保存を聞く）・書類を左に出して入力・PDF から読み取る（2026-10-29）');
