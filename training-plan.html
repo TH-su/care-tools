@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-QZzN1cLY9m8W4HvfaVHKBIF//Cly5d8ZBt8E0mCvxRU=' 'sha256-M5MHL18QD0OMRTb2OMGzTMp+tZ06TqBfqkAJVaOTp48='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-QZzN1cLY9m8W4HvfaVHKBIF//Cly5d8ZBt8E0mCvxRU=' 'sha256-0hDmJpbeW/xGHFJzz1m84txz9hjlbb+5lRLgWIc24zs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- 要配慮情報（疾患・訓練内容）を表示する画面。ブラウザキャッシュ・検索索引に残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -942,13 +942,13 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
 <script src="su-res-read.js?v=2026-10-29.3"></script>
-<script src="su-tp-full.js?v=2026-10-30"></script>
+<script src="su-tp-full.js?v=2026-10-30.1"></script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-app-gate.js?v=2026-10-29"></script>
 <script src="su-data.js?v=2026-10-30"></script>
 <script src="su-data-gas.js?v=2026-10-29"></script>
-<script src="su-data-supabase.js?v=2026-10-30"></script>
+<script src="su-data-supabase.js?v=2026-10-30.1"></script>
 <!-- 週間計画の保存先の切り替え（統合 0005/0007）。デイ利用者の判定は、切り替え後は Supabase から読む（未ログインは Google） -->
 <script src="su-kv.js?v=2026-10-28"></script>
 <script src="su-facility.js?v=2026-10-26"></script>
@@ -6064,7 +6064,9 @@ function aiFetch(body) {
       if (s_(r.code) === 'readrole') { var rre = new Error('AI_READROLE'); rre.detail = s_(r.error); throw rre; }
       var ge = s_(r.error);
       var map = { ai_no_key: 'AI_NO_KEY', ai_limit: 'AI_LIMIT', ai_bad_request: 'AI_BAD_REQUEST',
-                  ai_fetch: 'AI_FETCH', ai_busy: 'AI_BUSY', unauthorized: 'AI_PROXY_AUTH', 'unknown action': 'AI_PROXY_OLD' };
+                  ai_fetch: 'AI_FETCH', ai_busy: 'AI_BUSY', unauthorized: 'AI_PROXY_AUTH', 'unknown action': 'AI_PROXY_OLD',
+                  /* 新しい中継の受け口（su-ai・スイッチ training_ai）だけが返す断り（2026-10-30） */
+                  login: 'AI_LOGIN', ai_forbidden: 'AI_FORBIDDEN', ai_name_found: 'AI_NAME_FOUND', ai_server: 'AI_PROXY', ai_bad_json: 'AI_BAD_JSON' };
       /* キーが無い・古い版なら、次からは依頼として記録する側へ回す（ボタンの表示も切り替える） */
       if (ge === 'ai_no_key' || ge === 'unknown action') {
         AI_SRV = { key: false };
@@ -6239,6 +6241,9 @@ function aiErrText(e) {
   var d = s_(e && e.detail);
   var why = d ? ('　AIの返答: ' + d) : '';
   if (m === 'AI_READROLE') return d || 'このアカウントではAIを使えません。事務所・管理者のアカウントでログインし直してください';
+  if (m === 'AI_LOGIN') return 'この端末はログインしていないため、AIを使えません。ログインしてから、もう一度お試しください';
+  if (m === 'AI_FORBIDDEN') return 'このアカウントではAIを使えません。事務所・管理者のアカウントでログインし直してください';
+  if (m === 'AI_NAME_FOUND') return '送る文に入居者のお名前が残っていたため、AIへ送りませんでした（何も送っていません）。「本人の様子」などからお名前を消して、もう一度お試しください';
   if (m === 'AI_NO_KEY') return 'いまはAIを使えません。管理者に伝えてください（管理者向け：サーバーのスクリプトプロパティ ANTHROPIC_API_KEY が空です）';
   if (m === 'AI_NO_PROXY') return '計画書の接続先が未設定のため、AIを使えません（設定画面の「接続」を確かめてください）';
   if (m === 'AI_LIMIT') return '今日のAIの利用回数の上限に達しました。明日もう一度お試しください（管理者向け：上限はサーバーの AI_DAILY_LIMIT で変えられます）';
@@ -6780,7 +6785,7 @@ var BATCH_STOP_REASON = '';
 var BATCH_FAIL_MAX = 5;          /* 人をまたいで連続5期失敗したら全体を止める */
 var BATCH_FAIL_MAX_ONE = 3;      /* 同じ方で連続3期失敗したら全体を止める */
 /* 再試行しても直らないエラー（鍵・設定の問題）。この時は残りの期を試さずにその場で止める */
-function aiErrFatal(e) { return /AI_READROLE|AI_NO_KEY|AI_NO_PROXY|AI_LIMIT|AI_PROXY_OLD|AI_PROXY_AUTH|AI_BAD_REQUEST|AI_DECLINED|AI_NO_SUBJECT|AI_HTTP_(400|401|403|404)/.test(s_(e && e.message)); }
+function aiErrFatal(e) { return /AI_READROLE|AI_LOGIN|AI_FORBIDDEN|AI_NO_KEY|AI_NO_PROXY|AI_LIMIT|AI_PROXY_OLD|AI_PROXY_AUTH|AI_BAD_REQUEST|AI_DECLINED|AI_NO_SUBJECT|AI_HTTP_(400|401|403|404)/.test(s_(e && e.message)); }
 /* 一括の要約はメモリだけに持ち、描き直しのたびに出し直す（一覧の再描画で消えないようにする）。
    ★氏名を含むため localStorage には置かない */
 var BATCH_LAST_SUMMARY = null;
