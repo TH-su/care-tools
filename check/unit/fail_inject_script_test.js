@@ -128,6 +128,86 @@ async function main() {
     assert.strictEqual(kv.history.length, 4);
   });
 
+  process.stdout.write('3b 台本を後から入れる・キーで絞る・画面が先に諦めた印\n');
+  await t('key のある行は、キーが合う要求だけを数えて times 回だけ起こす（ほかのキーは素通し）', () => {
+    const e = G.createEngine([{ entry: 'put', key: '^wsday_', nth: 1, kind: 'deny', times: 1 }]);
+    const got = ['care_schedule_v2', 'wsday_2026-01-14', 'care_schedule_v2', 'wsday_2026-01-14'].map((k) => (e.decide('put', k).step ? k : null));
+    assert.deepStrictEqual(got, [null, 'wsday_2026-01-14', null, null]);
+    const r = e.report()[0];
+    assert.strictEqual(r.fired, r.times);
+    assert.strictEqual(r.key, '^wsday_');
+    assert.throws(() => G.createEngine([{ entry: 'put', key: '(', kind: 'deny' }]));
+  });
+  const kv2 = G.createKvBackend({ care_schedule_v2: { a: 1 }, wsday_2026_test: { meta: {}, notes: [] } });
+  const srv2 = await S.startFailInjectServer({ root: ROOT, script: [], backends: { kv: kv2 } });
+  const post = (key, rev, fiId) => fetch(srv2.url + '/__fake-gas/kv', { method: 'POST', headers: Object.assign({ 'Content-Type': 'text/plain;charset=utf-8' }, fiId ? { 'x-fi-id': fiId } : {}),
+    body: JSON.stringify({ action: 'put', key, rev, data: { n: Math.random() }, token: 'check-dummy' }), redirect: 'follow' }).then((r) => r.json());
+  let rep2 = null, set2 = null, wsm = null, rep2b = null;
+  try {
+    await post('care_schedule_v2', 1); await post('wsday_2026_test', 1);   // 画面の読み込みの時の自動の保存に当たる2回（台本の前）
+    set2 = await (await fetch(srv2.url + '/__fail-inject/script', { method: 'POST', body: JSON.stringify([{ entry: 'put', nth: 1, kind: 'deny', times: 1 }]) })).json();
+    await post('wsday_2026_test', 2); await post('wsday_2026_test', 2);
+    rep2 = await (await fetch(srv2.url + '/__fail-inject/report')).json();
+    await fetch(srv2.url + '/__fail-inject/script', { method: 'POST', body: JSON.stringify([{ entry: 'put', nth: 1, kind: 'timeout', times: 1, ms: 30 }]) });
+    await post('wsday_2026_test', 3, 'ctx-1');
+    srv2.markClientGone('ctx-1');
+    rep2b = srv2.engine().report();
+    const r = await fetch(srv2.url + '/ws-master.json');
+    wsm = { status: r.status, body: await r.text() };
+  } finally { await srv2.close(); }
+  await t('POST /__fail-inject/script で差し替えると回数を0から数え直し、差し替えの後の1回目にだけ起こす（times と fired が一致）', () => {
+    assert.strictEqual(set2.ok, true);
+    assert.strictEqual(rep2.script[0].times, 1);
+    assert.strictEqual(rep2.script[0].fired, rep2.script[0].times);
+    const puts = srv2.log.filter((e) => e.entry === 'put');
+    assert.deepStrictEqual(puts.slice(0, 4).map((e) => e.injected), [null, null, 'deny', null]);
+    assert.strictEqual(rep2b[0].fired, rep2b[0].times);
+  });
+  await t('壊れた台本の差し替えは 400 で断り、黙って素通しにしない', async () => {
+    const s3 = await S.startFailInjectServer({ root: ROOT, script: [], backends: {} });
+    try { const r = await fetch(s3.url + '/__fail-inject/script', { method: 'POST', body: '[{"entry":"put","kind":"slow"}]' }); assert.strictEqual(r.status, 400); }
+    finally { await s3.close(); }
+  });
+  await t('画面が先に諦めた時間切れは、サーバーの記録（http 200）を残したまま、画面から見た成否（httpSeen）を client-gone にする', () => {
+    const e = srv2.log.find((x) => x.fiId === 'ctx-1');
+    assert.strictEqual(e.injected, 'timeout');
+    assert.strictEqual(e.http, 200);
+    assert.strictEqual(e.httpSeen, 'client-gone');
+    assert.strictEqual(srv2.log.filter((x) => x.fiId == null).every((x) => x.httpSeen === 200), true);
+  });
+  await t('返事を待っている間に同じ文脈が同じキーで送り直したら、前の要求を画面が諦めた（client-gone）と記録する', async () => {
+    const kv3 = G.createKvBackend({ wsday_2026_test: { meta: {}, notes: [] } });
+    const s3 = await S.startFailInjectServer({ root: ROOT, script: [{ entry: 'put', nth: 1, kind: 'timeout', times: 1, ms: 300 }], backends: { kv: kv3 } });
+    const send = (id) => fetch(s3.url + '/__fake-gas/kv', { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8', 'x-fi-id': id },
+      body: JSON.stringify({ action: 'put', key: 'wsday_2026_test', rev: 1, data: { n: 1 }, token: 'check-dummy' }) }).then((r) => r.json());
+    try {
+      const first = send('ws-a-1');
+      await new Promise((r) => setTimeout(r, 50));
+      await send('ws-a-2');
+      await first;
+      const rep = s3.engine().report()[0];
+      assert.strictEqual(rep.fired, rep.times);
+      assert.deepStrictEqual(s3.log.map((x) => [x.fiId, x.http, x.httpSeen]), [['ws-a-1', 200, 'client-gone'], ['ws-a-2', 200, 200]]);
+    } finally { await s3.close(); }
+  });
+  await t('入居者マスタの GET ?action=stateRev は本物の doGet と同じ形（ok・rev・srev）で答え、ほかの GET は断る。統合KV の GET は 404（Code.gs に doGet が無い）', async () => {
+    const mb = G.createMasterBackend(null, [{ id: 'R1', name: '架空 一郎', updatedAt: '2026-01-01T00:00:00.000Z' }]);
+    const s4 = await S.startFailInjectServer({ root: ROOT, script: [], backends: { master: mb, kv: G.createKvBackend({}) } });
+    try {
+      const a = await (await fetch(s4.url + '/__fake-gas/master?action=stateRev', { redirect: 'follow' })).json();
+      assert.deepStrictEqual(Object.keys(a).sort(), ['ok', 'rev', 'srev']); assert.strictEqual(a.ok, true);
+      const b = await (await fetch(s4.url + '/__fake-gas/master?action=getRoster')).json();
+      assert.ok(typeof b.error === 'string' && b.error.includes('POST でだけ'));
+      assert.strictEqual((await fetch(s4.url + '/__fake-gas/kv?action=get')).status, 404);
+      assert.strictEqual(s4.log[0].method, 'GET'); assert.strictEqual(s4.log[0].entry, 'stateRev'); assert.strictEqual(s4.log[0].httpSeen, 200);
+    } finally { await s4.close(); }
+  });
+  await t('ws-master.json が無い時は {}（画面は 404 と同じ分岐に落ちる）', () => {
+    if (fs.existsSync(path.join(ROOT, 'ws-master.json'))) return;   // 配信の控えがある手元では、ある物をそのまま配る
+    assert.strictEqual(wsm.status, 200);
+    assert.strictEqual(wsm.body, '{}');
+  });
+
   process.stdout.write('4 試験用 Supabase の中継の守り\n');
   await t('中継先は手元だけ（本番の形の住所は止める）', () => {
     assert.throws(() => S.assertLocalTarget('https://example.supabase.co'));

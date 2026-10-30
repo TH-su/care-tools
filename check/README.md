@@ -122,9 +122,12 @@ SU_FI_SB_KEY=<試験用の公開鍵> node check/fail-inject/observe.mjs --ls-key
   --sb http://127.0.0.1:55421 --sb-accounts <試験用アカウントのファイル>                         # 試験用 Supabase の道と RLS の断りも
 ```
 
-- 台本は `{entry, nth, kind, times, ms}` の配列。entry は GAS の action（`put`・`saveResident` など）か `sb:rpc/kv_put` のような Supabase の入口。台本に無い要求は素通し
+- 台本は `{entry, nth, kind, times, ms}` の配列。entry は GAS の action（`put`・`saveResident` など）か `sb:rpc/kv_put` のような Supabase の入口。台本に無い要求は素通し。任意の `key`（正規表現・例 `"^wsday_"`）を書くと、キーが合う要求だけを数える
 - 中継先は手元（127.0.0.1・localhost）だけ。su-auth.js と su-backend.json の差し替えは配る時のメモリの中だけ（ファイルは変えない）
 - RLS の断りは、既存のポリシーで断られる組み合わせ（現場アカウント×kv_put）で起こす。ポリシーの SQL は流さない
 - 接続先の localStorage の鍵は画面ごとに `--ls-keys` で渡す（推測しない）。結果は `check/out/fail-inject/<日時>.json`
 - 単独で配信サーバーだけ立てる時は `node check/fail-inject/serve.mjs --script 台本.json`（URL を1行出して待つ・止めると記録を書く）
+  - nth は起動してからの通し番号なので、画面の読み込みの時の自動の保存（ワークスケジュールは開くだけで put が2〜4回走る）も数える。
+    保存の操作に当てる時は、画面を開いて「✓ 同期済み」になってから `curl -X POST --data '[{"entry":"put","nth":1,"kind":"deny"}]' <URL>/__fail-inject/script` で台本を入れ直す（回数が0に戻る）→ 保存の操作 → `curl <URL>/__fail-inject/report` で fired と times を見る
+  - 公開リポジトリに無い ws-master.json は `{}` で返す（画面は「無い」時と同じ分岐に落ちる。読み込みのたびの 404 のエラーを出さない）
 - 本物の .gs と写した行の照合は、`SU_GAS_SRC`（統合KV の Code.gs）・`SU_GAS_SRC_MASTER`（入居者マスタの master.gs）を渡した時だけ試験が行う

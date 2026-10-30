@@ -39,6 +39,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /* 画面が受け付ける形の架空の接続先（ここへの通信は全部 serve.mjs の /__fake-gas/ へ回す＝外へ出ない） */
 const GAS_URL = { kv: 'https://script.google.com/macros/s/FAIL-INJECT-KV/exec', master: 'https://script.google.com/macros/s/FAIL-INJECT-MASTER/exec' };
 const OBS_POINTS = ['failureShown', 'falseSaved', 'deliveredLater', 'rollback'];
+const SCENARIOS = ['ws-gas', 'ws-sb', 'sb-rls', 'rm-gas'];
+let fiSeq = 0;
 const FAIL_RE = /⚠|失敗|できません|競合|確認できず|止めました|オフライン|保存されていません|未送信/;
 const OK_RE = /✓同期|送信完了|保存しました|保存OK|届いていました/;
 
@@ -57,7 +59,7 @@ async function tempProfileMaker() {
 const lsKeysFile = args['ls-keys'];
 if (!lsKeysFile || lsKeysFile === 'true') { say('使い方: --ls-keys <画面ごとの接続先の localStorage の鍵の JSON> が要ります（例: check/fail-inject/ls-keys.sample.json）'); process.exit(2); }
 const LS_KEYS = JSON.parse(fs.readFileSync(lsKeysFile, 'utf8'));
-const only = args.only && args.only !== 'true' ? String(args.only).split(',') : ['ws-gas', 'ws-sb', 'sb-rls', 'rm-gas'];
+const only = args.only && args.only !== 'true' ? String(args.only).split(',') : SCENARIOS.slice();
 const sbTarget = args.sb && args.sb !== 'true' ? args.sb : null;
 const sbKey = process.env.SU_FI_SB_KEY || '';
 
@@ -72,8 +74,11 @@ function storageFor(page, extra) {
 const pw = loadPlaywright();
 const makeTempProfile = await tempProfileMaker();
 const opened = [];   // {ctx, prof}
+const consoleLog = [];   // 文脈ごとのコンソールのエラーの数（閉じる時に控える）
 async function closeAll() {
-  for (const o of opened.splice(0)) { try { await o.ctx.close(); } catch (e) { /* 閉じている */ } try { o.prof.cleanup(); } catch (e) { /* 消せない */ } }
+  for (const o of opened.splice(0)) {
+    if (o.page) consoleLog.push({ context: o.label, consoleErrors: o.page.__console.length, pageErrors: o.page.__errors, first: o.page.__console.slice(0, 10), all: o.page.__console.slice() });
+    try { await o.ctx.close(); } catch (e) { /* 閉じている */ } try { o.prof.cleanup(); } catch (e) { /* 消せない */ } }
 }
 let stopping = false;
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, async () => { if (stopping) return; stopping = true; await closeAll(); process.exit(130); });
@@ -86,10 +91,17 @@ async function openContext(label, server, storage, extraRoutes) {
     viewport: { width: 1280, height: 900 }, locale: 'ja-JP', timezoneId: 'Asia/Tokyo', serviceWorkers: 'block',
   });
   opened.push({ ctx, prof });
+  /* 画面の要求ごとに通し番号（x-fi-id）を中継の側だけで付け、画面が先に諦めた（requestfailed）要求に serve.mjs で印を付ける。
+     画面が送る要求の形（text/plain の POST・本文）は変えない。印は「画面から見た HTTP の成否」の列（httpSeen）にだけ効く */
+  const fiIds = new WeakMap();
+  ctx.on('requestfailed', (rq) => { const id = fiIds.get(rq); if (id) server.markClientGone(id); });
   for (const [name, url] of Object.entries(GAS_URL)) {
     await ctx.route(url.replace('/exec', '/**'), async (route) => {
+      const id = label + '-' + (++fiSeq);
+      fiIds.set(route.request(), id);
       try {
-        const resp = await route.fetch({ url: server.url + '/__fake-gas/' + name, timeout: 0, maxRedirects: 0 });
+        const qs = new URL(route.request().url()).search;   // GET の ?action=stateRev はそのまま渡す（POST には付かない）
+        const resp = await route.fetch({ url: server.url + '/__fake-gas/' + name + qs, timeout: 0, maxRedirects: 0, headers: Object.assign({}, route.request().headers(), { 'x-fi-id': id }) });
         await route.fulfill({ response: resp });
       } catch (e) { try { await route.abort('connectionreset'); } catch (e2) { /* 画面が先に諦めた */ } }
     });
@@ -114,6 +126,15 @@ async function openContext(label, server, storage, extraRoutes) {
   page.on('dialog', async (d) => { page.__dialogs.push({ t: Date.now(), text: d.message().slice(0, 160) }); try { await d.accept(); } catch (e) { /* 閉じた */ } });
   page.__errors = 0;
   page.on('pageerror', () => { page.__errors++; });
+  /* コンソールのエラー（読み込みの失敗も含む）も数える。文は先頭だけ控える（架空データだけの画面） */
+  page.__console = [];
+  page.on('console', (m) => {
+    if (m.type() !== 'error') return;
+    let where = '';
+    try { const u = new URL((m.location() || {}).url || ''); where = ' @' + (u.origin === new URL(server.url).origin ? '' : u.host) + u.pathname; } catch (e) { where = ''; }
+    page.__console.push(String(m.text()).slice(0, 120) + where + ' +' + Math.round((Date.now() - server.t0) / 1000) + 's');
+  });
+  opened[opened.length - 1].page = page; opened[opened.length - 1].label = label;
   return { ctx, page, label };
 }
 
@@ -139,8 +160,11 @@ function countScenario(server, fromIdx, tClick, evA, writeEntry, toIdx) {
   const rows = server.log.slice(fromIdx, toIdx === undefined ? server.log.length : toIdx);
   const writes = rows.filter((e) => writeEntry(e));
   const injected = rows.filter((e) => e.injected);
-  const httpFail = writes.filter((e) => e.http !== 200 && !(typeof e.http === 'number' && e.http >= 200 && e.http < 300)).length;
-  const appFail = writes.filter((e) => typeof e.http === 'number' && e.http >= 200 && e.http < 300 && e.bodyOk === false).length;
+  /* HTTP の成否は画面から見た値（httpSeen）で数える。画面が先に諦めた時間切れ（'client-gone'）は、サーバーが後で 200 を返しても失敗 */
+  const seen = (e) => (e.httpSeen != null ? e.httpSeen : e.http);
+  const http2xx = (e) => typeof seen(e) === 'number' && seen(e) >= 200 && seen(e) < 300;
+  const httpFail = writes.filter((e) => !http2xx(e)).length;
+  const appFail = writes.filter((e) => http2xx(e) && e.bodyOk === false).length;
   const landed = writes.filter((e) => e.landed);
   /* (i) 失敗の後に失敗の表示が出た、または失敗から3秒たっても失敗の表示（未送信あり等）が残っている */
   const firstInj = injected.length ? Math.min(...injected.map((e) => e.t)) : tClick;
@@ -182,12 +206,15 @@ async function runWsGas(server) {
     { kind: 'deny', times: 2, wait: 60000 },
     { kind: 'conflict', times: 1, wait: 60000 },
     { kind: 'nores', times: 2, wait: 120000 },
-    { kind: 'timeout', times: 1, wait: 150000 },
+    /* 時間切れは画面の1試行（put 45秒）＋再試行の待ち（1.5秒）より長く待たせる＝画面が送り直した時に前の要求がまだ返っていない
+       （ワークスケジュールは通信を止めずに時計で打ち切るので、送り直しで「画面が諦めた」を観る。work-schedule.html の ATTEMPT_TIMEOUT_WRITE_MS・retryDelayMs） */
+    { kind: 'timeout', times: 1, ms: 50000, wait: 150000 },
   ];
   for (const p of plan) {
     say(`  ワークスケジュール（GAS）: ${p.kind} を ${p.times} 回`);
     const putKeyBefore = [...be.kv.keys()].filter((k) => /^wsday_/.test(k));
-    server.setScript([{ entry: 'put', nth: 1, kind: p.kind, times: p.times }]);
+    /* その日の盤面（wsday_）の保存だけに当てる（読み込み直しなどで走る週間計画の put を数えない） */
+    server.setScript([{ entry: 'put', key: '^wsday_', nth: 1, kind: p.kind, times: p.times, ms: p.ms }]);
     const fromIdx = server.log.length;
     const tClick = Date.now();
     await A.page.click('#btnAddNote');
@@ -219,7 +246,7 @@ async function runWsGas(server) {
     const lostIds = [...idsBefore].filter((id) => !idsAfter.has(id)).length;
     c.rollback = (bNotes >= 0 && bNotes < sNotes) || lostIds > 0 ? 1 : 0;
     const rep = server.engine().report()[0];
-    result.scenarios.push(Object.assign({ app: 'ワークスケジュール', path: 'GAS（統合KV）', kind: 'gas:' + p.kind, scriptTimes: rep.times, fired: rep.fired,
+    result.scenarios.push(Object.assign({ atSec: Math.round((tClick - server.t0) / 1000), app: 'ワークスケジュール', path: 'GAS（統合KV）', kind: 'gas:' + p.kind, scriptTimes: rep.times, fired: rep.fired,
       notes: { a: aNotes, b: bNotes, server: sNotes, lostIds }, pageErrors: A.page.__errors + B.page.__errors }, c));
   }
   await closeAll();
@@ -300,7 +327,7 @@ async function runWsSb(server, sessions) {
     if (!baseValid) { for (const k of OBS_POINTS) c[k] = null; }
     const rep = server.engine().report()[0];
     const names = [...new Set(server.log.slice(fromIdx).filter((e) => /rpc\/kv_put/.test(e.entry) && e.name).map((e) => e.name))];
-    result.scenarios.push(Object.assign({ app: 'ワークスケジュール', path: 'Supabase（試験用）', kind: 'sb:' + p.kind, scriptTimes: rep.times, fired: rep.fired,
+    result.scenarios.push(Object.assign({ atSec: Math.round((tClick - server.t0) / 1000), app: 'ワークスケジュール', path: 'Supabase（試験用）', kind: 'sb:' + p.kind, scriptTimes: rep.times, fired: rep.fired,
       notes: { a: aNotes, b: bNotes }, rollbackCandidate, appNames: names, valid: baseValid, pageErrors: A.page.__errors + B.page.__errors }, c));
   }
   await closeAll();
@@ -383,7 +410,7 @@ async function runRmGas(server) {
     const aLanded = server.log.slice(fromIdx, fromB).some((e) => e.entry === 'saveResident' && e.landed);
     c.rollback = aLanded && bRows.some((e) => e.landed) ? 1 : 0;
     const rep = server.engine().report();
-    result.scenarios.push(Object.assign({ app: '入居者マスタ', path: 'GAS（入居者マスタ）', kind: 'gas:' + p.kind, scriptTimes: p.times,
+    result.scenarios.push(Object.assign({ atSec: Math.round((tClick - server.t0) / 1000), app: '入居者マスタ', path: 'GAS（入居者マスタ）', kind: 'gas:' + p.kind, scriptTimes: p.times,
       fired: server.log.slice(fromIdx).filter((e) => e.injected === p.kind).length, bSave: bRows.map((e) => e.name || (e.landed ? 'saved' : null)), pageErrors: A.page.__errors + B.page.__errors }, c));
     void rep;
     await A.page.evaluate(() => { try { closeEdit && closeEdit(); } catch (e) { /* 無い */ } }).catch(() => {});
@@ -420,21 +447,27 @@ const observed = OBS_POINTS.filter((k) => validScenarios.some((s) => typeof s[k]
 result.totals = { failureKinds: result.kindsFired.length, observationPoints: observed.length, observedPoints: observed, failureShown: sum('failureShown'), falseSaved: sum('falseSaved'),
   deliveredLater: sum('deliveredLater'), rollback: sum('rollback'), httpFail: sum('httpFail'), appFail: sum('appFail'), manualRetryLanded: sum('manualRetryLanded'),
   invalidScenarios: result.scenarios.length - validScenarios.length,
+  consoleErrors: consoleLog.reduce((a, c) => a + c.consoleErrors, 0), pageErrors: consoleLog.reduce((a, c) => a + c.pageErrors, 0),
+  /* 道具が起こした接続切れ（応答なし・届かない）でブラウザが出す読み込みの失敗を除いた数（材料が答えない読み取りの 404 など） */
+  consoleErrorsNotInjected: consoleLog.reduce((a, c) => a + c.all.filter((x) => !/ERR_CONNECTION_RESET|ERR_EMPTY_RESPONSE/.test(x)).length, 0),
   scriptMatched: validScenarios.every((s) => s.fired === s.scriptTimes) };
 /* 測れなかった場面（無効＝下地の保存が届かない・観測点が全部 null）を黙って落とさず、名前と理由を残す（measure の how にも書く） */
 const unmeasured = result.scenarios.filter((s) => s.valid === false || OBS_POINTS.every((k) => s[k] === null))
   .map((s) => `${s.kind}（${s.valid === false ? '下地の保存が断られ無効' + (s.appNames && s.appNames.length ? '・応答 ' + s.appNames.join('/') : '') : '画面を通さず観測点なし'}・起こした ${s.fired}/${s.scriptTimes} 回）`);
 result.totals.unmeasured = unmeasured;
+result.contexts = consoleLog;
 result.finishedAt = new Date().toISOString();
 const stamp = result.startedAt.replace(/[:.]/g, '-');
 const outFile = path.join(outDir, stamp + '.json');
 writeJson(outFile, result);
 say(`記録: ${path.relative(REPO, outFile)}`);
-say(`起きた失敗の種類 ${result.totals.failureKinds}／観測点 ${result.totals.observationPoints}／失敗の表示 ${result.totals.failureShown}／偽の保存しました ${result.totals.falseSaved}／後から届いた ${result.totals.deliveredLater}／巻き戻り ${result.totals.rollback}／HTTP の失敗 ${result.totals.httpFail}／ok:false ${result.totals.appFail}／道具の再保存が届いた ${result.totals.manualRetryLanded}／無効の場面 ${result.totals.invalidScenarios}／台本の回数と一致 ${result.totals.scriptMatched ? 'はい' : 'いいえ'}`);
+say(`起きた失敗の種類 ${result.totals.failureKinds}／観測点 ${result.totals.observationPoints}／失敗の表示 ${result.totals.failureShown}／偽の保存しました ${result.totals.falseSaved}／後から届いた ${result.totals.deliveredLater}／巻き戻り ${result.totals.rollback}／HTTP の失敗 ${result.totals.httpFail}／ok:false ${result.totals.appFail}／道具の再保存が届いた ${result.totals.manualRetryLanded}／無効の場面 ${result.totals.invalidScenarios}／コンソールのエラー ${result.totals.consoleErrors}（起こした接続切れを除くと ${result.totals.consoleErrorsNotInjected}）／台本の回数と一致 ${result.totals.scriptMatched ? 'はい' : 'いいえ'}`);
 if (unmeasured.length) say(`未測定（数に入れていない場面）: ${unmeasured.join('、')}`);
 
 /* measure.json（item 1）へ書き足す。run は 1 か 2（同じ条件で2回測る） */
 const skipped = result.notes.filter((n) => n.includes('省きました'));
+/* --only で場面を絞った時は、一部の場面だけの合計で measure を上書きしないよう書かない */
+if (!(SCENARIOS.every((k) => only.includes(k)) && only.every((k) => SCENARIOS.includes(k)))) skipped.push('--only で場面を絞りました（' + only.join(',') + '）');
 if (args.measure && args.measure !== 'true' && (exitCode !== 0 || skipped.length)) {
   say(`measure: 途中で止まった・省いた場面があるので書きません（${exitCode !== 0 ? '途中で止まりました' : skipped.length + ' 件を省きました'}）`);
 } else if (args.measure && args.measure !== 'true') {
@@ -446,8 +479,12 @@ if (args.measure && args.measure !== 'true' && (exitCode !== 0 || skipped.length
     if (!Array.isArray(m)) { say(`measure: ${mf} が読めない（JSON の配列でない）ので書きません`); process.exit(1); }
   }
   const idx = Math.max(0, Math.min(1, Number(args.run || 1) - 1));
-  const how0 = args.how && args.how !== 'true' ? String(args.how) : 'node check/fail-inject/observe.mjs ' + process.argv.slice(2).join(' ');
+  const how0 = args.how && args.how !== 'true' ? String(args.how) : 'node check/fail-inject/observe.mjs ' + process.argv.slice(2).join(' ').replace(/--run \S+/, '--run 1|2');
   const how = unmeasured.length ? `${how0}／未測定（数に入れていない場面 ${unmeasured.length} 件）: ${unmeasured.join('、')}` : how0;
+  /* もう一方の回が書いてあるのに条件（how の実行の部分）が違う時は、条件の違う2回を1行に混ぜないよう書かずに止める */
+  const other = 1 - idx;
+  const clash = m.find((r) => r.item === 1 && Array.isArray(r.after) && typeof r.after[other] === 'number' && typeof r.how === 'string' && r.how.split('／未測定')[0] !== how0);
+  if (clash) { say(`measure: もう一方の回（${other + 1} 回目）と実行の条件が違うので書きません（同じ条件で測り直すか、行を消してから測ってください）`); process.exit(1); }
   const upsert = (metric, unit, before, val) => {
     let row = m.find((r) => r.item === 1 && r.metric === metric);
     if (!row) { row = { item: 1, app: '共通の道具（check/fail-inject・失敗を起こして数える）', metric, unit, before, after: [null, null], how: '' }; m.push(row); }

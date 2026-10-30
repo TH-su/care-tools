@@ -9,6 +9,8 @@
  *   kind  … 'timeout' | 'deny' | 'conflict' | 'nores'（偽 GAS）／ 'unreachable' | 'slow' | 'deny'（Supabase の中継）
  *   times … 何回続けて起こすか（既定 1）
  *   ms    … 'timeout'・'slow' の遅らせる時間（既定 timeout 46000＝画面の put の1試行45秒より長い・slow 3000）
+ *   key   … （任意）キーの正規表現。書いた時は、その入口のうちキーが合う要求だけを数える（例 '^wsday_'。
+ *           画面の読み込みの時の care_schedule_v2 の put を数えずに、その日の盤面の保存だけに当てる）
  * 台本に無い要求・回数の外の要求は「素通し」（step が null）。起きた回数は台本の行ごとに数え、指定の回数と突き合わせられる。
  *
  * 起こし方（失敗の種類ごと）:
@@ -51,6 +53,10 @@ export const SHAPES = {
     deny: { body: () => ({ error: 'この合言葉では保存できません（参照専用の合言葉です）' }), src: [{ file: 'master.gs', line: 465, text: "}else if(role!=='full') return _err('この合言葉では保存できません（参照専用の合言葉です）');" }, { file: 'master.gs', line: 174, text: 'function _err(m){ return _json({error:m}); }' }] },
     /* master.gs:861 saveResident の版の照合 → master.gs:488 doPost の catch が String(err)（"Error: conflict"）で返す */
     conflict: { body: () => ({ error: 'Error: conflict' }), src: [{ file: 'master.gs', line: 861, text: "throw safeError_('conflict');" }, { file: 'master.gs', line: 488, text: "}catch(err){ return _err(errText_(err, 'doPost error')); }" }] },
+    /* master.gs:345 doGet の版数だけの照会（合言葉なし・GET の ?action=stateRev。購読側が数十秒おきに叩く） */
+    stateRev: { body: (rev) => ({ ok: true, rev: rev, srev: rev }), src: [{ file: 'master.gs', line: 345, text: "if(a0==='stateRev') return _json({ok:true, rev:_stateRev(), srev:_metaSrev()});" }] },
+    /* master.gs:354 doGet の stateRev 以外（合言葉の要る読み取りは GET では受けない） */
+    getRefused: { body: () => ({ error: 'この読み取りは POST でだけ受け付けます。もう一度お試しください（何度も出る時は画面を再読み込みしてください）' }), src: [{ file: 'master.gs', line: 354, text: "return _err('この読み取りは POST でだけ受け付けます。もう一度お試しください（何度も出る時は画面を再読み込みしてください）');" }] },
     /* master.gs:460 合言葉の無い・違う書き込み */
     authError: { body: () => ({ error: '認証エラー' }), src: [{ file: 'master.gs', line: 460, text: "if(!role) return _err('認証エラー');" }] },
   },
@@ -73,28 +79,39 @@ export function normalizeScript(script) {
     if (!Number.isInteger(nth) || nth < 1) throw new Error(`台本の${i + 1}行目: nth は1以上の整数`);
     if (!Number.isInteger(times) || times < 1) throw new Error(`台本の${i + 1}行目: times は1以上の整数`);
     const ms = s.ms == null ? (DEFAULT_MS[s.kind] || 0) : Number(s.ms);
-    return { entry: s.entry, nth, kind: s.kind, times, ms };
+    let key = null;
+    if (s.key != null) {
+      if (typeof s.key !== 'string' || !s.key) throw new Error(`台本の${i + 1}行目: key は空でない文字列（正規表現）`);
+      try { key = new RegExp(s.key); } catch (e) { throw new Error(`台本の${i + 1}行目: key「${s.key}」は正規表現として読めません`); }
+    }
+    return key ? { entry: s.entry, nth, kind: s.kind, times, ms, key } : { entry: s.entry, nth, kind: s.kind, times, ms };
   });
 }
 
-/* 台本のエンジン。decide(entry) を要求ごとに1回呼ぶ。起こす時は step（kind・ms）、素通しは step が null */
+/* 台本のエンジン。decide(entry, key) を要求ごとに1回呼ぶ。起こす時は step（kind・ms）、素通しは step が null。
+   何回目かは台本の行ごとに数える（key の無い行は入口の通し番号と同じ・key のある行はキーが合う要求だけの番号） */
 export function createEngine(script) {
   const steps = normalizeScript(script || []);
   const seen = new Map();       // entry → 何回目まで来たか
+  const cnt = steps.map(() => 0);
   const fired = steps.map(() => 0);
   return {
     steps,
-    decide(entry) {
+    decide(entry, key) {
       const n = (seen.get(entry) || 0) + 1;
       seen.set(entry, n);
+      let hit = -1;
       for (let i = 0; i < steps.length; i++) {
         const s = steps[i];
-        if (s.entry === entry && n >= s.nth && n < s.nth + s.times) { fired[i]++; return { n, step: s, index: i }; }
+        if (s.entry !== entry || (s.key && !s.key.test(key == null ? '' : String(key)))) continue;
+        cnt[i]++;
+        if (hit < 0 && cnt[i] >= s.nth && cnt[i] < s.nth + s.times) hit = i;
       }
+      if (hit >= 0) { fired[hit]++; return { n, step: steps[hit], index: hit }; }
       return { n, step: null, index: -1 };
     },
     /* 台本の行ごとに「指定の回数」と「起きた回数」 */
-    report() { return steps.map((s, i) => ({ entry: s.entry, kind: s.kind, nth: s.nth, times: s.times, fired: fired[i] })); },
+    report() { return steps.map((s, i) => Object.assign({ entry: s.entry, kind: s.kind, nth: s.nth, times: s.times, fired: fired[i] }, s.key ? { key: s.key.source } : {})); },
     calls(entry) { return seen.get(entry) || 0; },
   };
 }
@@ -195,5 +212,7 @@ export function createMasterBackend(readRespond, residents) {
     if (a === 'get' || a === 'getResident') { const r = rows.get(String(body.id)); return { ok: true, record: r || null }; }
     return readRespond ? readRespond(body) : { ok: true };
   }
-  return { rows, history, respond, rev: () => 0 };
+  /* GET（doGet）は版数の照会だけ答え、ほかは本物と同じく断る。版数は保存できた回数で進める（本物は保存のたびに _bumpStateRev） */
+  function respondGet(action) { return action === 'stateRev' ? SHAPES.master.stateRev.body(history.length) : SHAPES.master.getRefused.body(); }
+  return { rows, history, respond, respondGet, rev: () => 0 };
 }
