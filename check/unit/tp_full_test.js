@@ -41,6 +41,8 @@ function world(o) {
   const gas = async body => {
     gasCalls.push(JSON.parse(JSON.stringify(body)));
     if (o.gasFail === body.key) throw new Error('Google に届きませんでした');
+    if (o.flaky && o.flaky.key === body.key && o.flaky.left > 0) { o.flaky.left--; throw new Error(o.flaky.msg || 'Google に届きませんでした'); }
+    if (o.refuse === body.key) return { ok: false, error: 'unauthorized' };
     return docs[body.key] || { ok: true, rev: 0, data: null };
   };
   const rpc = async (name, args) => {
@@ -52,7 +54,9 @@ function world(o) {
     if (name === 'tp_get') return { data: { ok: true, rows: args.p_keys.filter(k => db[k]).map(k => o.mangle ? o.mangle(db[k]) : db[k]) }, error: null };
     return { data: null, error: { code: 'PGRST202' } };
   };
-  return { gas, rpc, gasCalls, rpcs, db, rosterIds: async () => o.roster || ['t1', 't2', ' t4', '山田', 't1'], progress: () => {} };
+  let rosterLeft = o.rosterFail || 0;
+  return { gas, rpc, gasCalls, rpcs, db, retryWait: [0, 0], progress: () => {},
+    rosterIds: async () => { if (rosterLeft > 0) { rosterLeft--; throw new Error('Google の応答がありません（時間切れ）'); } return o.roster || ['t1', 't2', ' t4', '山田', 't1']; } };
 }
 
 (async () => {
@@ -76,7 +80,22 @@ function world(o) {
   {
     const w = world({ gasFail: 'training_plan:t3' });
     const r = await R.run(w);
-    t('1件でも Google から読めなければ、データベースを呼ばない', r.ok === false && w.rpcs.length === 0, r);
+    t('1件でも Google から読めなければ（3回続けて届かない）、データベースを呼ばない', r.ok === false && w.rpcs.length === 0
+      && w.gasCalls.filter(b => b.key === 'training_plan:t3').length === 3, r);
+  }
+  {
+    const w = world({ flaky: { key: 'training_plan:t1', left: 1 } });
+    const r = await R.run(w);
+    t('1回だけ届かなかった計画書は読み直して最後まで写す（2026-10-30）', r.ok === true && r.docs === 3 && w.gasCalls.filter(b => b.key === 'training_plan:t1').length === 2, r);
+    const w2 = world({ flaky: { key: 'training_plan:index', left: 2, msg: 'Google の応答がありません（時間切れ）' } });
+    const r2 = await R.run(w2);
+    t('時間切れも2回までは読み直す（索引）', r2.ok === true && w2.gasCalls.filter(b => b.key === 'training_plan:index').length === 3, r2);
+    const w3 = world({ rosterFail: 2 });
+    const r3 = await R.run(w3);
+    t('名簿の読み取りも2回までは読み直す', r3.ok === true, r3);
+    const w4 = world({ refuse: 'training_plan:t1' });
+    const r4 = await R.run(w4);
+    t('Google が答えた断りは読み直さない', r4.ok === false && w4.gasCalls.filter(b => b.key === 'training_plan:t1').length === 1 && w4.rpcs.length === 0, r4);
   }
   {
     const w = world({ rpc: { tp_import_finish: () => ({ data: { ok: false, error: 'shrink' }, error: null }), tp_import_abort: () => ({ data: { ok: true }, error: null }) } });

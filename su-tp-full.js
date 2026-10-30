@@ -15,6 +15,7 @@
   var IDX_KEY = 'training_plan:index';
   var ROW_MAX = 50, CHUNK_BYTES = 3 * 1024 * 1024, ROW_BYTES = 590 * 1024, GET_MAX = 300, POOL = 3;
   var AUTO_GAP_MS = 60 * 60 * 1000;
+  var RETRY_WAIT = [1000, 3000];    // Google へ読みに行って届かなかった・時間切れの時に待ってから読み直す間（ミリ秒・2回まで）
 
   function bytes(s) { try { return new TextEncoder().encode(s).length; } catch (e) { return String(s).length * 3; } }
   function canon(v) {
@@ -97,6 +98,24 @@
     });
   }
 
+  /* Google へ読む操作（索引・名簿・計画書の get）だけ、届かなかった・時間切れの時に少し待って2回まで読み直す
+   * （1回の通信の途切れで写し・切り替えの全体を止めない・入居者マスタの su-res-full.js と同じ・2026-10-30 入居者マスタの切り替えで判明）。
+   * Google が答えた断りは読み直さない。止める・外す（gasAdmin）はここを通さない */
+  function isTransient(e) {
+    var m = String(e && e.message || '');
+    return m === 'Google に届きませんでした' || m === 'Google の応答がありません（時間切れ）';
+  }
+  async function gasRead(io, fn) {
+    var waits = Array.isArray(io.retryWait) ? io.retryWait : RETRY_WAIT;
+    for (var k = 0; ; k++) {
+      try { return await fn(); }
+      catch (e) {
+        if (!isTransient(e) || k >= waits.length) throw e;
+        await new Promise(function (ok) { setTimeout(ok, waits[k]); });
+      }
+    }
+  }
+
   /* io = { gas(body) → Promise<GAS の応答>, rosterIds() → Promise<[利用者No]>, rpc(name, args) → Promise<{data, error}>, progress?(text) } */
   async function run(io) {
     var say = io.progress || function () {};
@@ -113,14 +132,14 @@
     }
     try {
       say('Google から索引を読んでいます…');
-      var ij = await io.gas({ action: 'get', key: IDX_KEY });
+      var ij = await gasRead(io, function () { return io.gas({ action: 'get', key: IDX_KEY }); });
       if (!ij || ij.ok !== true) return fail('Google が索引を返しませんでした（この端末の計画書の接続先を確かめてください）。');
       var ids = [];
-      try { ids = await io.rosterIds(); } catch (e) { return fail('入居者マスタの名簿を読めませんでした。写しは始めていません。'); }
+      try { ids = await gasRead(io, function () { return io.rosterIds(); }); } catch (e) { return fail('入居者マスタの名簿を読めませんでした。写しは始めていません。'); }
       var kk = keysOf(ij.data, ids);
       var items = [], n = 0;
       await pool(kk.keys, POOL, async function (key) {
-        var j = key === IDX_KEY ? ij : await io.gas({ action: 'get', key: key });
+        var j = key === IDX_KEY ? ij : await gasRead(io, function () { return io.gas({ action: 'get', key: key }); });
         if (!j || j.ok !== true) throw new Error('Google が計画書を返しませんでした');
         if (j.data && typeof j.data === 'object') items.push({ key: key, rev: Number(j.rev) || 0, data: j.data, updatedAt: String(j.updatedAt || '') });
         n++;
