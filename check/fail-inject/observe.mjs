@@ -421,12 +421,17 @@ result.totals = { failureKinds: result.kindsFired.length, observationPoints: obs
   deliveredLater: sum('deliveredLater'), rollback: sum('rollback'), httpFail: sum('httpFail'), appFail: sum('appFail'), manualRetryLanded: sum('manualRetryLanded'),
   invalidScenarios: result.scenarios.length - validScenarios.length,
   scriptMatched: validScenarios.every((s) => s.fired === s.scriptTimes) };
+/* 測れなかった場面（無効＝下地の保存が届かない・観測点が全部 null）を黙って落とさず、名前と理由を残す（measure の how にも書く） */
+const unmeasured = result.scenarios.filter((s) => s.valid === false || OBS_POINTS.every((k) => s[k] === null))
+  .map((s) => `${s.kind}（${s.valid === false ? '下地の保存が断られ無効' + (s.appNames && s.appNames.length ? '・応答 ' + s.appNames.join('/') : '') : '画面を通さず観測点なし'}・起こした ${s.fired}/${s.scriptTimes} 回）`);
+result.totals.unmeasured = unmeasured;
 result.finishedAt = new Date().toISOString();
 const stamp = result.startedAt.replace(/[:.]/g, '-');
 const outFile = path.join(outDir, stamp + '.json');
 writeJson(outFile, result);
 say(`記録: ${path.relative(REPO, outFile)}`);
 say(`起きた失敗の種類 ${result.totals.failureKinds}／観測点 ${result.totals.observationPoints}／失敗の表示 ${result.totals.failureShown}／偽の保存しました ${result.totals.falseSaved}／後から届いた ${result.totals.deliveredLater}／巻き戻り ${result.totals.rollback}／HTTP の失敗 ${result.totals.httpFail}／ok:false ${result.totals.appFail}／道具の再保存が届いた ${result.totals.manualRetryLanded}／無効の場面 ${result.totals.invalidScenarios}／台本の回数と一致 ${result.totals.scriptMatched ? 'はい' : 'いいえ'}`);
+if (unmeasured.length) say(`未測定（数に入れていない場面）: ${unmeasured.join('、')}`);
 
 /* measure.json（item 1）へ書き足す。run は 1 か 2（同じ条件で2回測る） */
 const skipped = result.notes.filter((n) => n.includes('省きました'));
@@ -441,7 +446,8 @@ if (args.measure && args.measure !== 'true' && (exitCode !== 0 || skipped.length
     if (!Array.isArray(m)) { say(`measure: ${mf} が読めない（JSON の配列でない）ので書きません`); process.exit(1); }
   }
   const idx = Math.max(0, Math.min(1, Number(args.run || 1) - 1));
-  const how = args.how && args.how !== 'true' ? String(args.how) : 'node check/fail-inject/observe.mjs ' + process.argv.slice(2).join(' ');
+  const how0 = args.how && args.how !== 'true' ? String(args.how) : 'node check/fail-inject/observe.mjs ' + process.argv.slice(2).join(' ');
+  const how = unmeasured.length ? `${how0}／未測定（数に入れていない場面 ${unmeasured.length} 件）: ${unmeasured.join('、')}` : how0;
   const upsert = (metric, unit, before, val) => {
     let row = m.find((r) => r.item === 1 && r.metric === metric);
     if (!row) { row = { item: 1, app: '共通の道具（check/fail-inject・失敗を起こして数える）', metric, unit, before, after: [null, null], how: '' }; m.push(row); }
