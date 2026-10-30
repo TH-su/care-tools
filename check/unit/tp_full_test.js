@@ -253,7 +253,7 @@ function world(o) {
       /id="b-tp-cut" hidden>計画書を新しい保存先へ切り替える</.test(SH) && /id="b-tp-back" hidden>計画書を写しの期間に戻す</.test(SH)
       && /if \(!\(me && me\.role === 'admin'\)\) return;/.test(fn) && /bc\.hidden = live \|\| stuck \|\| !on \|\| !tt \|\| !mt;/.test(fn) && /bb\.hidden = !\(live \|\| stuck\) \|\| !tt;/.test(fn));
     t('写しの見比べ: 押した時も管理者・現場の端末・スイッチを確かめ、2回確かめてから行う・textContent', /me\.status === SUAuth\.STATUS\.OK/.test(fn) && /role === 'field'/.test(fn)
-      && /if \(!trainingOn\(\)\)/.test(fn) && (fn.match(/confirm\(/g) || []).length === 3 && !/innerHTML/.test(fn));
+      && /if \(!trainingOn\(\)\)/.test(fn) && (fn.match(/confirm\(/g) || []).length === 4 && !/innerHTML/.test(fn));   // 4つ目は「AI の中継を確かめる」（2026-10-30）
   }
 
   {

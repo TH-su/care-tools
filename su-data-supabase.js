@@ -121,7 +121,20 @@
   }
 
   /* AI の中継（su-ai）。断り（{ok:false, error}）は GAS と同じ形のまま返す。届かない・時間切れは失敗（画面は「通信の失敗」と出す） */
+  /* 失敗の時は、どの段で止まったかの短い印（code）を付けて記録に残す（画面の文の末尾にも出す・2026-10-30 代表者「入れてよい」。文の中身・氏名は持たない） */
+  function aiFail(code, e) {
+    var x = fail('AI の中継に届きませんでした。', code);
+    note('training', 'AI の中継（' + code + '）', e || x);
+    return x;
+  }
   function aiEntry(body) {
+    return aiEntry0(body).catch(function (e) {
+      if (e && /^ai_/.test(String(e.code || ''))) throw e;
+      if (e instanceof Error) { e.code = 'ai_' + String(e.code || 'error'); note('training', 'AI の中継（' + e.code + '）', e); throw e; }
+      throw aiFail('ai_error', e);
+    });
+  }
+  function aiEntry0(body) {
     return loadAuth().then(function (A) {
       if (!A) throw fail('ログインの部品を読み込めませんでした。ページを読み込み直してください。', 'noauth');
       return Promise.resolve(A.check()).then(function (s0) {
@@ -133,10 +146,10 @@
           clearTimeout(tm);
           if (r && r.timeout) throw fail('AI の中継の応答がありません（時間切れ）。', 'timeout');
           if (r && r.error) {
-            var ctx = r.error.context;
+            var ctx = r.error.context, nm = String(r.error.name || '');
             return Promise.resolve(ctx && typeof ctx.json === 'function' ? ctx.json().catch(function () { return null; }) : null).then(function (d) {
               if (d && typeof d === 'object' && d.ok === false && typeof d.error === 'string') return d;
-              throw fail('AI の中継に届きませんでした。', 'network');
+              throw aiFail(ctx && typeof ctx.status === 'number' ? 'ai_' + ctx.status : nm === 'FunctionsRelayError' ? 'ai_relay' : 'ai_fetch', r.error);
             });
           }
           return r ? r.data : null;
