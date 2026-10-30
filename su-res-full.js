@@ -21,6 +21,7 @@
   var GET_MAX = 200;                // 読み直しの1回の人数（データベースの上限 500 より小さく）
   var POOL = 3;                     // Google へ同時に読みに行く本数
   var MED_LIST_MAX = 3000;          // Google の薬の変更候補の一覧が返す上限（med-cand.gs の MEDCAND_LIST_MAX）
+  var RETRY_WAIT = [1000, 3000];    // Google へ読みに行って届かなかった・時間切れの時に待ってから読み直す間（ミリ秒・2回まで）
 
   function bytes(s) {
     try { return new TextEncoder().encode(s).length; } catch (e) { return String(s).length * 3; }
@@ -111,6 +112,23 @@
   }
 
   /* 同時に n 本まで動かす。1本でも失敗したら残りを始めずに失敗を返す */
+  /* Google へ読む操作だけを送る（名簿・記録・担当者会議の一覧・薬の変更候補の一覧）。届かなかった・時間切れの時だけ、
+   * 少し待って2回まで読み直す（約300回読むうちの1回の通信の途切れで全体を止めない・2026-10-30 切り替えが途中で止まって判明）。
+   * Google が答えた断り（JSON の error 等）は読み直さない。止める・外す・タブを写す（gasAdmin）はここを通さない */
+  function isTransient(e) {
+    var m = String(e && e.message || '');
+    return m === 'Google に届きませんでした' || m === 'Google の応答がありません（時間切れ）';
+  }
+  async function gasRead(io, body) {
+    var waits = Array.isArray(io.retryWait) ? io.retryWait : RETRY_WAIT;
+    for (var k = 0; ; k++) {
+      try { return await io.gas(body); }
+      catch (e) {
+        if (!isTransient(e) || k >= waits.length) throw e;
+        await new Promise(function (ok) { setTimeout(ok, waits[k]); });
+      }
+    }
+  }
   function pool(items, n, fn) {
     return new Promise(function (resolve, reject) {
       var i = 0, running = 0, done = 0, failed = false, out = new Array(items.length);
@@ -150,7 +168,7 @@
     }
     try {
       say('Google から名簿を読んでいます…');
-      var rj = await io.gas({ action: 'getRoster' });
+      var rj = await gasRead(io, { action: 'getRoster' });
       if (!rj || rj.error || !Array.isArray(rj.roster)) return fail('Google が名簿を返しませんでした（この端末の入居者マスタの接続先を確かめてください）。');
       var ri = rosterIds(rj.roster), ids = ri.ids, rosterN = rj.roster.length;
       if (ri.bad.length) return fail('名簿の利用者No に、前後の空白・41字以上・空・重なりの方がいます（' + ri.bad.slice(0, 10).join('・') + '）。入居者マスタで利用者No を直してから押し直してください。写しは始めていません。');
@@ -158,9 +176,9 @@
 
       var recs = {}, meetings = [], gone = [], n = 0;
       await pool(ids, POOL, async function (id) {
-        var a = await io.gas({ action: 'getResident', id: id });
+        var a = await gasRead(io, { action: 'getResident', id: id });
         if (!a || a.error) throw new Error('Google が記録を返しませんでした');
-        var m = await io.gas({ action: 'meeting', op: 'list', id: id });
+        var m = await gasRead(io, { action: 'meeting', op: 'list', id: id });
         // 利用者No が担当者会議の決まった形でない方は、会議を作れないので「会議なし」として扱う
         if (m && m.ok === false && m.code === 'bad_input') m = { ok: true, rows: [] };
         if (!m || m.ok !== true || !Array.isArray(m.rows)) throw new Error(m && m.error && !m.code
@@ -178,7 +196,7 @@
       });
       if (gone.length) return fail('名簿にいるのに記録を読めなかった方がいます（利用者No ' + gone.slice(0, 10).join('・') + '）。読んでいる間に入居者マスタが直された可能性があります。少し待って押し直してください。写しは始めていません。');
       say('Google から薬の変更候補の判断を読んでいます…');
-      var mc = await io.gas({ action: 'medCand', op: 'list' });
+      var mc = await gasRead(io, { action: 'medCand', op: 'list' });
       if (!mc || mc.ok !== true || !Array.isArray(mc.rows)) return fail('Google が薬の変更候補の判断を返しませんでした。写しは始めていません。');
       if (mc.rows.length >= MED_LIST_MAX) return fail('薬の変更候補の判断が ' + MED_LIST_MAX + '件以上あり、Google が全部を返しません。写しは始めていません（開発の担当へ知らせてください）。');
       var seenMc = {}, meds = [];

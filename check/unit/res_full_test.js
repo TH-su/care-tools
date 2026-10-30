@@ -8,6 +8,7 @@
      A 名簿の利用者No は空・重なり・長すぎる物を除き、並びは名簿のまま
      B 塊は 50 名・大きさの目安で区切り、1名で大きすぎる方がいれば写さない（データベースへは何も送らない）
      C 全員分を Google から読めてから写し始める。途中で Google が失敗したら、データベースを呼ばない
+       （届かなかった・時間切れの時だけ同じ読み取りを2回まで読み直す。Google が答えた断りは読み直さない・2026-10-30）
      D 写しは begin → chunk（50名ずつ・会議と判断は別の塊）→ finish（読めた全員・会議・判断の印）→ res_get（画面の名前 shadow-check）の順
      E 名簿にいるのに記録の無い方（読む間に消えた方）は写さず、finish にも渡さない。会議・判断の重なりは1件にする
      F データベースの断り（42501・incomplete・shrink・0034 の前）は職員向けの文にし、その先へ進まない
@@ -52,7 +53,7 @@ function world(o) {
   const gas = async (body) => {
     gasCalls.push(JSON.parse(JSON.stringify(body)));
     gasN++;
-    if (o.gasFailAt && gasN === o.gasFailAt) throw new Error('Google に届きませんでした');
+    if (o.gasFailAt && gasN >= o.gasFailAt && gasN < o.gasFailAt + (o.gasFailTimes || 1)) throw new Error(o.gasFailMsg || 'Google に届きませんでした');
     if (body.action === 'getRoster') return { roster };
     if (body.action === 'getResident') return { record: Object.prototype.hasOwnProperty.call(recs, String(body.id)) ? recs[String(body.id)] : null };
     if (body.action === 'meeting') return o.meetingErr ? { ok: false, code: 'head_mismatch', rows: [] } : { ok: true, rows: (o.meetings || {})[body.id] || [] };
@@ -68,7 +69,7 @@ function world(o) {
     if (name === 'res_get') return { data: { ok: true, rows: args.p_ids.filter(id => db[id]).map(id => o.mangle ? o.mangle(db[id]) : db[id]) }, error: null };
     return { data: null, error: { code: 'PGRST202' } };
   };
-  return { gas, rpc, gasCalls, rpcs, db, lastRun: async () => ({ unknown_keys: ['zzNew'] }), progress: () => {} };
+  return { gas, rpc, gasCalls, rpcs, db, retryWait: [0, 0], lastRun: async () => ({ unknown_keys: ['zzNew'] }), progress: () => {} };
 }
 
 (async () => {
@@ -98,9 +99,21 @@ function world(o) {
 
   console.log('C Google が途中で失敗');
   {
-    const w = world({ n: 6, gasFailAt: 5 });
+    const w = world({ n: 6, gasFailAt: 5, gasFailTimes: 99 });
     const r = await R.run(w);
     t('失敗を返し、データベースを1回も呼ばない', !r.ok && w.rpcs.length === 0 && /写しは止めました/.test(r.why) && !/途中まで写した/.test(r.why), r);
+    const w3 = world({ n: 6, gasFailAt: 5 });
+    const r3 = await R.run(w3);
+    t('1回だけ届かなかった時は読み直して最後まで写す', r3.ok === true && r3.residents === 6 && w3.gasCalls.length === 1 + 6 * 2 + 1 + 1 && w3.gasCalls.filter(c => JSON.stringify(c) === JSON.stringify(w3.gasCalls[4])).length === 2, r3);
+    const w4 = world({ n: 6, gasFailAt: 1, gasFailTimes: 2, gasFailMsg: 'Google の応答がありません（時間切れ）' });
+    const r4 = await R.run(w4);
+    t('時間切れも2回までは読み直す（名簿）', r4.ok === true && w4.gasCalls.slice(0, 3).every(c => c.action === 'getRoster'), r4);
+    const w5 = world({ n: 6, gasFailAt: 1, gasFailTimes: 3 });
+    const r5 = await R.run(w5);
+    t('3回続けて届かない時は止め、4回目は送らない', !r5.ok && w5.gasCalls.length === 3 && w5.rpcs.length === 0, w5.gasCalls.length);
+    const w6 = world({ n: 6, gasFailAt: 2, gasFailMsg: 'ほかの失敗' });
+    const r6 = await R.run(w6);
+    t('届かない・時間切れ以外の失敗は読み直さない', !r6.ok && w6.gasCalls.filter(c => c.action === 'getResident' && c.id === w6.gasCalls[1].id).length === 1, r6);
     const w2 = world({ meetingErr: true });
     const r2 = await R.run(w2);
     t('担当者会議が読めない時も写さない', !r2.ok && w2.rpcs.length === 0, r2);
