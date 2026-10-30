@@ -1,0 +1,7 @@
+# check/ の中の道具のうち、フォルダごと公開するもの（明示 opt-in・2026-10-31 新設）。
+# 根の .gitignore は check/ の中を既定で除外しているので、この下の行で許す（深い階層の .gitignore が優先される）。
+!/.gitignore
+!/fail-inject
+/fail-inject/*
+!/fail-inject/*.mjs
+!/fail-inject/*.sample.json

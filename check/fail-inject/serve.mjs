@@ -1,0 +1,187 @@
+/* check/fail-inject/serve.mjs — 失敗を起こす配信サーバー（2026-10-31 新設）
+ *
+ *   node check/fail-inject/serve.mjs --script 台本.json [--sb http://127.0.0.1:55421] [--flags 旗.json] [--dir .]
+ *     （試験用 Supabase の公開鍵は環境変数 SU_FI_SB_KEY で渡す。表示しない）
+ *
+ * 画面と同じオリジン（127.0.0.1・空いているポート）で次を配る。画面のコード・ディスク上のファイルは1バイトも変えない。
+ *   ・配布物そのもの（check/lib.mjs の startServer と同じ「あれば返す・無ければ 404」）
+ *   ・POST /__fake-gas/<名前> … 偽の GAS（名前は kv＝統合KV・master＝入居者マスタ）。台本の回だけ失敗を起こし、ほかは見本が答える
+ *   ・/__sb/… … 試験用 Supabase（127.0.0.1 か localhost だけ。本番には一切つながない）への中継。台本の回だけ届かない・遅いを起こす
+ *   ・su-backend.json … 旗（--flags）を渡した時だけ、メモリの中の旗で返す
+ *   ・su-auth.js … --sb を渡した時だけ、メモリの中で接続先（URL_）を同じオリジンの /__sb に、公開鍵（KEY）を試験用の鍵に差し替えて返す
+ * 要求ごとに「HTTP の成否」と「本文のアプリの成否（ok・応答の名前）」を別々に記録する（log）。
+ *
+ * ★通信の形は変えない: 偽 GAS は画面が送った本文（text/plain の POST）をそのまま読み、JSON で答える。
+ * ★GAS が無い・.gs が無い環境でも動く（応答の形は gas-script.mjs に写したものだけを使う）。
+ * ★コンソールへの書き出しは使わない（記録はファイルと process.stdout）。
+ */
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { parseArgs, ensureDir, writeJson } from '../lib.mjs';
+import { createEngine, gasFailure, sbFailure, bodyVerdict, createKvBackend, createMasterBackend } from './gas-script.mjs';
+
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.ico': 'image/x-icon' };
+
+/* 本番の Supabase へ出ないための守り: 中継先は手元（127.0.0.1・localhost）だけ */
+export function assertLocalTarget(target) {
+  const u = new URL(target);
+  if (!/^(127\.0\.0\.1|localhost)$/.test(u.hostname) || u.protocol !== 'http:') throw new Error('中継先は手元の試験用 Supabase（http://127.0.0.1:…）だけにしてください');
+  return u.origin;
+}
+
+/* su-auth.js をメモリの中で差し替える。行が見つからない時は配らない（黙って本番の接続先で配らない） */
+export function rewriteAuth(src, key) {
+  const reUrl = /var URL_ = '[^']*';/;
+  const reKey = /var KEY = '[^']*';/;
+  if (!reUrl.test(src) || !reKey.test(src)) throw new Error('su-auth.js の接続先の行が見つかりません（差し替えられないので配りません）');
+  return src.replace(reUrl, "var URL_ = location.origin + '/__sb';").replace(reKey, 'var KEY = ' + JSON.stringify(String(key || '')) + ';');
+}
+
+function readBody(req) {
+  return new Promise((ok) => { const ch = []; req.on('data', (c) => ch.push(c)); req.on('end', () => ok(Buffer.concat(ch))); req.on('error', () => ok(Buffer.alloc(0))); });
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/* opts: { root, script, flags, sb:{target,key}, backends:{kv,master} } */
+export function startFailInjectServer(opts) {
+  const root = path.resolve(opts.root || '.');
+  const sbOrigin = opts.sb && opts.sb.target ? assertLocalTarget(opts.sb.target) : null;
+  let engine = createEngine(opts.script || []);
+  let backends = Object.assign({}, opts.backends || {});
+  let flags = opts.flags || null;
+  let authRewrite = true;   // su-auth.js を試験用 Supabase へ向けるか（入居者マスタの場面では材料の架空のログインを使うので止める）
+  const log = [];
+  const t0 = Date.now();
+
+  function record(e) { e.t = Date.now(); log.push(e); return e; }
+
+  async function fakeGas(req, res, name) {
+    const raw = (await readBody(req)).toString('utf8');
+    let body = null;
+    try { body = JSON.parse(raw); } catch (e) { body = null; }
+    const action = body && typeof body.action === 'string' ? body.action : '';
+    const be = backends[name];
+    const d = engine.decide(action);
+    const e = record({ via: 'gas', app: name, entry: action, n: d.n, key: body && body.key != null ? String(body.key) : (body && body.record && body.record.id != null ? String(body.record.id) : null),
+      injected: d.step ? d.step.kind : null, http: null, bodyOk: null, name: null, landed: false, landedAt: null });
+    const pass = () => {
+      if (!be) return { status: 404, body: { error: 'no backend' } };
+      const out = be.respond(body || {});
+      const v = bodyVerdict(out);
+      if (v.ok === true && (action === 'put' || action === 'push' || action === 'saveResident')) { e.landed = true; e.landedAt = Date.now(); }
+      return { status: 200, body: out };
+    };
+    const send = (st, obj) => {
+      e.http = st; const v = bodyVerdict(obj); e.bodyOk = v.ok; e.name = v.name;
+      if (res.destroyed || res.writableEnded) { e.http = 'client-gone'; return; }
+      res.writeHead(st, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify(obj));
+    };
+    if (!d.step) { const p = pass(); send(p.status, p.body); return; }
+    const f = gasFailure(name, d.step.kind, action, be && be.rev ? be.rev(body && body.key) : 0, d.step);
+    if (f.act === 'destroy') { e.http = 0; e.name = 'destroyed'; req.socket.destroy(); return; }
+    if (f.act === 'hold') { await sleep(f.ms); const p = pass(); send(p.status, p.body); return; }
+    send(f.status, f.body);
+  }
+
+  async function relaySb(req, res, p) {
+    if (!sbOrigin) { res.writeHead(404); res.end('no sb'); return; }
+    const sub = p.slice('/__sb/'.length);
+    const entry = 'sb:' + sub.replace(/^rest\/v1\//, '');
+    const raw = await readBody(req);
+    const isPre = req.method === 'OPTIONS';
+    const d = isPre ? { n: 0, step: null } : engine.decide(entry);
+    const e = record({ via: 'sb', app: 'sb', entry, n: d.n, method: req.method, injected: d.step ? d.step.kind : null, http: null, bodyOk: null, name: null, landed: false });
+    if (d.step) {
+      const f = sbFailure(d.step.kind, d.step);
+      if (f.act === 'destroy') { e.http = 0; e.name = 'destroyed'; req.socket.destroy(); return; }
+      if (f.act === 'json') {
+        e.http = f.status; const v = bodyVerdict(f.body); e.bodyOk = v.ok; e.name = v.name;
+        res.writeHead(f.status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(f.body)); return;
+      }
+      if (f.act === 'hold') await sleep(f.ms);
+    }
+    const qs = (req.url || '').includes('?') ? (req.url || '').slice((req.url || '').indexOf('?')) : '';
+    const headers = Object.assign({}, req.headers); delete headers.host; delete headers['content-length']; delete headers['accept-encoding'];
+    const up = http.request(sbOrigin + '/' + sub + qs, { method: req.method, headers: Object.assign(headers, raw.length ? { 'content-length': raw.length } : {}) }, (ur) => {
+      const ch = []; ur.on('data', (c) => ch.push(c));
+      ur.on('end', () => {
+        const buf = Buffer.concat(ch);
+        e.http = ur.statusCode;
+        let j = null; try { j = buf.length < 4e6 ? JSON.parse(buf.toString('utf8')) : null; } catch (er) { j = null; }
+        const v = bodyVerdict(Array.isArray(j) ? {} : j); e.bodyOk = v.ok; e.name = v.name;
+        if (ur.statusCode >= 200 && ur.statusCode < 300 && v.ok === true && /kv_put/.test(entry)) { e.landed = true; e.landedAt = Date.now(); }
+        if (res.destroyed) { e.http = 'client-gone'; return; }
+        const h = Object.assign({}, ur.headers); delete h['content-length']; delete h['transfer-encoding']; delete h['content-encoding'];
+        res.writeHead(ur.statusCode, h); res.end(buf);
+      });
+    });
+    up.on('error', () => { e.http = 0; e.name = 'upstream-error'; try { res.writeHead(502); res.end(); } catch (er) { /* 閉じている */ } });
+    up.end(raw);
+  }
+
+  function serveStatic(req, res, p) {
+    if (p.endsWith('/')) p += 'index.html';
+    if (p === '/su-backend.json' && flags) {
+      res.writeHead(200, { 'Content-Type': MIME['.json'], 'Cache-Control': 'no-store' }); res.end(JSON.stringify(flags)); return;
+    }
+    let file = path.normalize(path.join(root, p));
+    if (p === '/facility-profile.json' && !fs.existsSync(file)) file = path.join(root, 'facility-profile.sample.json');
+    if (!(file === root || file.startsWith(root + path.sep)) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); res.end('not found'); return; }
+    if (p === '/su-auth.js' && sbOrigin && authRewrite) {
+      const src = rewriteAuth(fs.readFileSync(file, 'utf8'), opts.sb.key);
+      res.writeHead(200, { 'Content-Type': MIME['.js'], 'Cache-Control': 'no-store' }); res.end(src); return;
+    }
+    res.writeHead(200, { 'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-store' });
+    fs.createReadStream(file).pipe(res);
+  }
+
+  const server = http.createServer((req, res) => {
+    let p = '/';
+    try { p = decodeURIComponent((req.url || '/').split('?')[0]); } catch (e) { p = '/'; }
+    const m = p.match(/^\/__fake-gas\/([a-z]+)$/);
+    const run = m && req.method === 'POST' ? fakeGas(req, res, m[1]) : (p.startsWith('/__sb/') ? relaySb(req, res, p) : Promise.resolve(serveStatic(req, res, p)));
+    run.catch(() => { try { res.writeHead(500); res.end('error'); } catch (e) { /* 閉じている */ } });
+  });
+  return new Promise((ok) => {
+    server.listen(0, '127.0.0.1', () => {
+      const url = 'http://127.0.0.1:' + server.address().port;
+      ok({
+        url, log, t0,
+        setScript(s) { engine = createEngine(s || []); },
+        engine() { return engine; },
+        setBackend(name, be) { backends[name] = be; },
+        backend(name) { return backends[name]; },
+        setFlags(f) { flags = f; },
+        setAuthRewrite(v) { authRewrite = !!v; },
+        close: () => new Promise((r) => { server.closeAllConnections && server.closeAllConnections(); server.close(() => r()); }),
+      });
+    });
+  });
+}
+
+/* 道具として単独で起動する時（台本を読み、URL を1行出して待つ。止めると記録を check/out/fail-inject/ に書く） */
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const repo = path.resolve(args.dir || path.join(here, '..', '..'));
+  const script = args.script ? JSON.parse(fs.readFileSync(args.script, 'utf8')) : [];
+  const flags = args.flags ? JSON.parse(fs.readFileSync(args.flags, 'utf8')) : null;
+  const ws = await import(pathToFileURL(path.join(repo, 'check', 'fixtures', 'work-schedule.mjs')).href);
+  const rm = await import(pathToFileURL(path.join(repo, 'check', 'fixtures', 'resident-master.mjs')).href);
+  const kv = createKvBackend(ws.seed());
+  const master = createMasterBackend(rm.respond, (rm.respond({ action: 'getBulk' }).rows || []));
+  const sb = args.sb && args.sb !== 'true' ? { target: args.sb, key: process.env.SU_FI_SB_KEY || '' } : null;
+  const s = await startFailInjectServer({ root: repo, script, flags, sb, backends: { kv, master } });
+  process.stdout.write(s.url + '\n');
+  const done = async () => {
+    const out = ensureDir(path.join(repo, 'check', 'out', 'fail-inject'));
+    writeJson(path.join(out, 'serve-log-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json'), { script: s.engine().report(), log: s.log });
+    await s.close(); process.exit(0);
+  };
+  process.once('SIGINT', done); process.once('SIGTERM', done);
+}
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) main();

@@ -1,0 +1,13 @@
+{
+  "work-schedule.html": {
+    "su_sync_common": { "endpoint": "{{GAS_KV}}", "token": "check-dummy", "updatedAt": 1 },
+    "ws_settings": { "endpoint": "{{GAS_KV}}", "token": "check-dummy", "shiftAuto": true },
+    "su_device_role": "office",
+    "su_backend_flags": { "supabase": { "care_schedule_v2": false, "ws_weekly_master_v1": false, "wsday": false, "shift": false, "patch_push": false, "master_roster_read": false } },
+    "su_facility_profile_v1": { "setupDone": true, "facilityName": "" }
+  },
+  "resident-master.html": {
+    "rmaster_cfg": { "url": "{{GAS_MASTER}}", "token": "check-dummy" },
+    "su_device_role": "office"
+  }
+}
