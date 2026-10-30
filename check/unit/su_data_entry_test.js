@@ -3,7 +3,7 @@
      A 訓練計画書の専用GASへ送る本文が、入口へ置き換える前と一字一句同じ（get・put・put＋証明・完全に削除・ping・ai・閉じる直前の送信）
        期待する文字列は置き換え前のコード（kvGet・kvRaw・kvPutBeacon を直接呼んでいた形）から書き写したもの
      B スイッチが切・無い・読めない・Supabase の道が読み込まれていない時は gas の道
-     C スイッチが入なら Supabase の道へ。ログインできない時は断り、Google へは流さない（AI の中継は「まだ使えません」）
+     C スイッチが入なら Supabase の道へ。ログインできない時は断り、Google へは流さない（AI の中継はスイッチ training_ai で su-ai へ・2026-10-30）
      F 計画書の道（2026-10-29）: 印が切り替える前・0038 の前なら gas の道を同じ本文で。切り替えた後は tp-write へ（合言葉なし）、保存できたら写し返し
      D 入口を通らない呼び出し（kvGet・kvRaw・入居者の4つ・context）は、端末の su_backend が 'supabase' でもスイッチが入でも gas の道
        （入居者マスタの GAS 宛ての mGet は巻き込まれない）
@@ -154,7 +154,7 @@ function sameShape(p) { return p && p.url === TP_URL && p.method === 'POST' && p
   {
     const x = box({ flags: { supabase: { training: false, training_ai: true } } });
     let m = 'OK'; try { await x.w.SU.data.training.ai(AIB, x.w.tpTarget()); } catch (e) { m = e.message; }
-    t('training_ai が入なら AI の中継だけ断る・Google へ流さない', /まだ使えません/.test(m) && x.posts.length === 0, [m, x.posts.length]);
+    t('training_ai が入でログインの部品が無ければ AI の中継だけ断る・Google へ流さない', /ログイン/.test(m) && x.posts.length === 0, [m, x.posts.length]);
     await x.w.tpPing();
     t('その時も ping（training は切）は gas', x.posts.length === 1 && x.posts[0].body === EXP.ping);
   }
@@ -222,11 +222,44 @@ function sameShape(p) { return p && p.url === TP_URL && p.method === 'POST' && p
     let m = 'OK'; try { await x.w.SU.data.training.put('training_plan:M1', DOC, 3, {}, x.w.tpTarget()); } catch (e) { m = e.message; }
     t('届かない時は失敗・Google へ流さない', /届きませんでした/.test(m) && x.posts.length === 0, [m, x.posts.length]);
   }
+  console.log('\n— G. AI の中継（スイッチ training_ai が入・su-ai・2026-10-30）—');
+  for (const mode of ['live', 'shadow']) {
+    const f = fakeAuth({ mode, reply: { ok: true, status: 200, data: { content: [] } } });
+    const x = box({ flags: { supabase: { training: true, training_ai: true } }, auth: f.A });
+    const r = await x.w.SU.data.training.ai(AIB, x.w.tpTarget());
+    const inv = f.calls.filter(c => c[0] === 'invoke');
+    t('印が ' + mode + ' でも su-ai へ用途つきで本文をそのまま送る（合言葉・GAS の action を付けない）・応答はそのまま返す', inv.length === 1 && inv[0][1] === 'su-ai'
+      && JSON.stringify(inv[0][2]) === JSON.stringify({ purpose: 'training_plan', body: AIB }) && r && r.ok === true && r.status === 200
+      && x.posts.length === 0 && !f.calls.some(c => c[0] === 'rpc'), [inv, r, x.posts.length]);
+  }
   {
-    const f = fakeAuth({ mode: 'live' });
+    const f = fakeAuth({ signedOut: true });
+    const x = box({ flags: { supabase: { training_ai: true } }, auth: f.A });
+    const r = await x.w.SU.data.training.ai(AIB, x.w.tpTarget());
+    t('ログインしていない → {ok:false, error:login}・送らない・Google へ流さない', r && r.ok === false && r.error === 'login' && f.calls.length === 0 && x.posts.length === 0, [r, f.calls]);
+  }
+  {
+    const f = fakeAuth({ refuse: { ok: false, error: 'ai_name_found' } });
+    const x = box({ flags: { supabase: { training_ai: true } }, auth: f.A });
+    const r = await x.w.SU.data.training.ai(AIB, x.w.tpTarget());
+    t('su-ai の断りは GAS と同じ形のまま返す', r && r.ok === false && r.error === 'ai_name_found' && x.posts.length === 0, r);
+  }
+  {
+    const f = fakeAuth({ netErr: true });
     const x = box({ flags: { supabase: { training_ai: true } }, auth: f.A });
     let m = 'OK'; try { await x.w.SU.data.training.ai(AIB, x.w.tpTarget()); } catch (e) { m = e.message; }
-    t('AI の中継は、まだこの道に無い（まだ使えません・Google へ流さない）', /まだ使えません/.test(m) && x.posts.length === 0, m);
+    t('届かない時は失敗・Google へ流さない', /届きませんでした/.test(m) && x.posts.length === 0, [m, x.posts.length]);
+  }
+  {
+    const f = fakeAuth({ mode: 'live', reply: { ok: true, server: 'silverunix-training' } });
+    const x = box({ flags: { supabase: { training: true, training_ai: true } }, auth: f.A });
+    const r = await x.w.tpPing();
+    t('切り替えた後の ping: AI の中継が su-ai の時は「使える」とだけ返し、Google の ping は送らない', r && r.ai && r.ai.key === true && x.posts.length === 0, [r, x.posts.length]);
+  }
+  {
+    const H = read('training-plan.html');
+    t('画面: su-ai だけが返す断り（login・ai_forbidden・ai_name_found）を職員向けの文にする', /login: 'AI_LOGIN', ai_forbidden: 'AI_FORBIDDEN', ai_name_found: 'AI_NAME_FOUND'/.test(H)
+      && /m === 'AI_LOGIN'/.test(H) && /m === 'AI_FORBIDDEN'/.test(H) && /m === 'AI_NAME_FOUND'/.test(H) && /AI_READROLE\|AI_LOGIN\|AI_FORBIDDEN\|/.test(H));
   }
 
   {

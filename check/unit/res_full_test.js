@@ -69,7 +69,7 @@ function world(o) {
     if (name === 'res_get') return { data: { ok: true, rows: args.p_ids.filter(id => db[id]).map(id => o.mangle ? o.mangle(db[id]) : db[id]) }, error: null };
     return { data: null, error: { code: 'PGRST202' } };
   };
-  return { gas, rpc, gasCalls, rpcs, db, retryWait: [0, 0], lastRun: async () => ({ unknown_keys: ['zzNew'] }), progress: () => {} };
+  return { gas, rpc, gasCalls, rpcs, db, retryWait: [0, 0], undoWait: [0, 0, 0], lastRun: async () => ({ unknown_keys: ['zzNew'] }), progress: () => {} };
 }
 
 (async () => {
@@ -284,7 +284,7 @@ function world(o) {
     const st = { switched: false, mode: 'shadow', tabs: {} };
     const w = world({ rpc: {
       res_op_begin: a => { order.push('op:' + a.p_op); return o.busy ? { data: { ok: false, error: 'busy' }, error: null } : { data: { ok: true, token: 'TK' }, error: null }; },
-      res_op_end: a => { order.push('end:' + a.p_token); return { data: { ok: true }, error: null }; },
+      res_op_end: a => { if (o.endLost && o.endLost-- > 0) { order.push('endlost'); return { data: null, error: { message: 'Failed to fetch' } }; } order.push('end:' + a.p_token); return { data: { ok: true }, error: null }; },
       res_mode_get: () => ({ data: { ok: true, mode: st.mode }, error: null }),
       res_import_mark_frozen: a => { order.push('frozen'); return { data: { ok: !o.frozenFail }, error: null }; },
       res_tabs_import: a => { order.push('tab:' + a.p_name); if (o.tabFail === a.p_name) return { data: { ok: false, error: 'live' }, error: null }; st.tabs[a.p_name] = a.p_rows; return { data: { ok: true }, error: null }; },
@@ -297,6 +297,7 @@ function world(o) {
         order.push('cut:' + body.on);
         if (body.accessToken !== 'h.p.s' || body.opToken !== 'TK') return { error: 'Error: refused: 切り替えの操作の札がありません' };
         if (body.on) { st.switched = true; if (o.lostOn) throw new Error('Google に届きませんでした'); return { ok: true, switched: true }; }
+        if (o.offLost && o.offLost-- > 0) throw new Error('Google に届きませんでした');
         if (o.mirrorMore && o.mirrorMore-- > 0) return { error: 'Error: refused: 写し返しが残っています。もう一度押してください' };
         st.switched = false; return { ok: true, switched: false, records: 2 };
       }
@@ -304,6 +305,7 @@ function world(o) {
       return g0(body);
     };
     w.token = async () => (o.noToken ? null : 'h.p.s');
+    w.undoWait = [0, 0, 0];
     return { w, order, st };
   }
   {
@@ -326,6 +328,18 @@ function world(o) {
     const { w, order, st } = cw({ lostLive: true });
     const r = await R.cutover(w);
     t('切り替える: 切り替えの応答が届かなくても、読み直して切り替わっていれば成功（戻さない）', r.ok === true && st.mode === 'live' && st.switched === true && order[order.length - 1] === 'end:TK', [r, order]);
+  }
+  {
+    const { w, order, st } = cw({ frozenFail: true, offLost: 2, endLost: 1 });
+    const r = await R.cutover(w);
+    t('切り替える: 止めて戻す指示・札を返すのが届かなかった時は、待って送り直す（2026-10-30 計画書の切り替えで判明）', r.ok === false && !/止めたまま/.test(r.why)
+      && order.slice(-5).join(',') === 'cut:false,cut:false,cut:false,endlost,end:TK' && st.switched === false, [r, order]);
+  }
+  {
+    const { w, order, st } = cw({ frozenFail: true, offLost: 9 });
+    const r = await R.cutover(w);
+    t('切り替える: 4回送っても届かない時は「止めたままの可能性」と出し、札は返す', r.ok === false && /止めたまま/.test(r.why)
+      && order.filter(x => x === 'cut:false').length === 4 && order[order.length - 1] === 'end:TK' && st.switched === true, [r, order]);
   }
   {
     const { w, order } = cw({ busy: true });

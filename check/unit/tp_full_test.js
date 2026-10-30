@@ -55,7 +55,7 @@ function world(o) {
     return { data: null, error: { code: 'PGRST202' } };
   };
   let rosterLeft = o.rosterFail || 0;
-  return { gas, rpc, gasCalls, rpcs, db, retryWait: [0, 0], progress: () => {},
+  return { gas, rpc, gasCalls, rpcs, db, retryWait: [0, 0], undoWait: [0, 0, 0], progress: () => {},
     rosterIds: async () => { if (rosterLeft > 0) { rosterLeft--; throw new Error('Google の応答がありません（時間切れ）'); } return o.roster || ['t1', 't2', ' t4', '山田', 't1']; } };
 }
 
@@ -171,7 +171,7 @@ function world(o) {
     const order = [], st = { switched: false, mode: 'shadow' };
     const w = world({ rpc: {
       tp_op_begin: a => { order.push('op:' + a.p_op); return o.busy ? { data: { ok: false, error: 'busy' }, error: null } : { data: { ok: true, token: 'TK' }, error: null }; },
-      tp_op_end: a => { order.push('end:' + a.p_token); return { data: { ok: true }, error: null }; },
+      tp_op_end: a => { if (o.endLost && o.endLost-- > 0) { order.push('endlost'); return { data: null, error: { message: 'Failed to fetch' } }; } order.push('end:' + a.p_token); return { data: { ok: true }, error: null }; },
       tp_mode_get: () => ({ data: { ok: true, mode: st.mode }, error: null }),
       tp_import_mark_frozen: () => { order.push('frozen'); return { data: { ok: !o.frozenFail }, error: null }; },
       tp_set_mode: a => { order.push('mode:' + a.p_mode); if (o.modeErr && a.p_mode === 'live') return { data: { ok: false, error: o.modeErr }, error: null };
@@ -183,12 +183,14 @@ function world(o) {
         order.push('cut:' + body.on);
         if (body.accessToken !== 'h.p.s' || body.opToken !== 'TK') return { ok: false, error: 'Error: refused: 切り替えの操作の札がありません' };
         if (body.on) { st.switched = true; if (o.lostOn) throw new Error('Google に届きませんでした'); return { ok: true, switched: true }; }
+        if (o.offLost && o.offLost-- > 0) throw new Error('Google に届きませんでした');
         if (o.mirrorMore && o.mirrorMore-- > 0) return { ok: false, error: 'Error: refused: 写し返しが残っています。もう一度押してください' };
         st.switched = false; return { ok: true, switched: false, docs: 2 };
       }
       return g0(body);
     };
     w.token = async () => (o.noToken ? null : 'h.p.s');
+    w.undoWait = [0, 0, 0];
     return { w, order, st };
   }
   {
@@ -207,6 +209,18 @@ function world(o) {
     const { w, st } = cw({ lostLive: true });
     const r = await R.cutover(w);
     t('切り替える: 応答が届かなくても読み直して切り替わっていれば成功', r.ok === true && st.mode === 'live', r);
+  }
+  {
+    const { w, order, st } = cw({ frozenFail: true, offLost: 2, endLost: 1 });
+    const r = await R.cutover(w);
+    t('切り替える: 止めて戻す指示・札を返すのが届かなかった時は、待って送り直す（2026-10-30 計画書の切り替えで判明）', r.ok === false && !/止めたまま/.test(r.why)
+      && order.slice(-5).join(',') === 'cut:false,cut:false,cut:false,endlost,end:TK' && st.switched === false, [r, order]);
+  }
+  {
+    const { w, order, st } = cw({ frozenFail: true, offLost: 9 });
+    const r = await R.cutover(w);
+    t('切り替える: 4回送っても届かない時は「止めたままの可能性」と出し、札は返す', r.ok === false && /止めたまま/.test(r.why)
+      && order.filter(x => x === 'cut:false').length === 4 && order[order.length - 1] === 'end:TK' && st.switched === true, [r, order]);
   }
   {
     const { w, order } = cw({ busy: true });

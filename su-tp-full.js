@@ -245,12 +245,32 @@
     if (!r || r.error || !r.data || r.data.ok !== true) throw new Error(dbWhy(r && (r.error || r.data && r.data.error)));
     return r.data.token;
   }
-  async function opEnd(io, tok) { try { await io.rpc('tp_op_end', { p_token: tok }); } catch (e) { /* 30分で失効する */ } }
+  /* 後片付け（止める印を外す・操作の札を返す）は、届かなかった時に少し待って3回まで送り直す
+   * （1回きりだと通信の途切れで Google の保存が止まったまま・札が30分残り、戻すも切り替えるも押せなくなる・2026-10-30 計画書の切り替えで判明） */
+  var UNDO_WAIT = [2000, 5000, 10000];
+  async function again(io, fn) {
+    var waits = Array.isArray(io.undoWait) ? io.undoWait : UNDO_WAIT;
+    for (var k = 0; ; k++) {
+      try { return await fn(); }
+      catch (e) {
+        if (k >= waits.length) throw e;
+        await new Promise(function (ok) { setTimeout(ok, waits[k]); });
+      }
+    }
+  }
+  async function opEnd(io, tok) {
+    try {
+      await again(io, async function () {
+        var r = await io.rpc('tp_op_end', { p_token: tok });
+        if (r && r.error) throw new Error('op_end');
+      });
+    } catch (e) { /* 30分で失効する */ }
+  }
   async function cutover(io) {
     var say = io.progress || function () {};
     var frozen = false, tok = null;
     async function undo(why) {
-      if (frozen) { try { await gasAdmin(io, { action: 'tpCutover', on: false, opToken: tok }); } catch (e) { why += '（Google の保存を止めたままの可能性があります。もう一度「切り替える」か「写しの期間に戻す」を押してください）'; } }
+      if (frozen) { try { await again(io, function () { return gasAdmin(io, { action: 'tpCutover', on: false, opToken: tok }); }); } catch (e) { why += '（Google の保存を止めたままの可能性があります。もう一度「切り替える」か「写しの期間に戻す」を押してください）'; } }
       return { ok: false, why: why };
     }
     try {

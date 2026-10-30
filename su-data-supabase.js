@@ -10,7 +10,9 @@
  *   ・「切り替えた後」（live）なら、サーバーの小さなプログラム tp-write（計画書の GAS をそのまま動かす）へ同じ本文を送る。応答は GAS と同じ形
  *     保存できたら、計画書の GAS へ写し返し（tpMirror）を送る（待たない・送っている間の次の保存は終わった後に1回だけ）
  *   ・ログインしていない・印を読めない・届かない時は失敗にし、Google へ流さない（スイッチが入なのに Google へ流すと保存先が2つに割れる・CLAUDE.md §4）
- *   AI の中継（training_ai）はまだこの道に無い（「まだ使えません」で断る）。
+ *   AI の中継（入口 training の ai・スイッチ training_ai・2026-10-30 代表者「両方」）は、データベースの印に関わらず、
+ *   AI の中継の受け口 su-ai（統合 0028）へ {purpose:'training_plan', body} を送る。応答は GAS の ai と同じ形（{ok, status, data|detail} か {ok:false, error}）。
+ *   ログインしていない時は {ok:false, error:'login'} を返し、Google へ流さない。ping の AI の状態はこの道では「使える」とだけ返す（鍵の有無は送った時に分かる）。
  *
  * ── 入居調整の台帳（入口 admission の get・put・ping・2026-10-29 代表者「入居調整の切り替えの土台に進む」）──
  *   計画書と同じ流れ。印は adm_mode（統合 0042）、受け口は adm-write、写し返しは入居調整の GAS の admMirror。
@@ -24,6 +26,7 @@
 
   var NOT_YET = '新しい保存先（Supabase）はまだ使えません。管理者へ連絡してください。';
   var CALL_MS = 40000;
+  var AI_MS = 150000;   /* su-ai は Anthropic を最長 140 秒待つ。画面の側にも別の時間切れがある */
 
   function fail(text, code) { var e = new Error(text); e.code = code || 'supabase'; return e; }
   /* 入口のまとまりごとの決まり（印を読む関数・受け口・Google への写し返しの action・名前） */
@@ -117,9 +120,38 @@
     return body;
   }
 
+  /* AI の中継（su-ai）。断り（{ok:false, error}）は GAS と同じ形のまま返す。届かない・時間切れは失敗（画面は「通信の失敗」と出す） */
+  function aiEntry(body) {
+    return loadAuth().then(function (A) {
+      if (!A) throw fail('ログインの部品を読み込めませんでした。ページを読み込み直してください。', 'noauth');
+      return Promise.resolve(A.check()).then(function (s0) {
+        if (!s0 || s0.status !== A.STATUS.OK) return { ok: false, error: 'login' };
+        var call = Promise.resolve(A.client().functions.invoke('su-ai', { body: { purpose: 'training_plan', body: body } }));
+        var tm = null;
+        var timer = new Promise(function (ok) { tm = setTimeout(function () { ok({ timeout: true }); }, AI_MS); });
+        return Promise.race([call, timer]).then(function (r) {
+          clearTimeout(tm);
+          if (r && r.timeout) throw fail('AI の中継の応答がありません（時間切れ）。', 'timeout');
+          if (r && r.error) {
+            var ctx = r.error.context;
+            return Promise.resolve(ctx && typeof ctx.json === 'function' ? ctx.json().catch(function () { return null; }) : null).then(function (d) {
+              if (d && typeof d === 'object' && d.ok === false && typeof d.error === 'string') return d;
+              throw fail('AI の中継に届きませんでした。', 'network');
+            });
+          }
+          return r ? r.data : null;
+        });
+      });
+    });
+  }
+  function aiViaSupabase() {
+    try { return global.SU.data._entryRoute('training_ai') === 'supabase'; } catch (e) { return false; }
+  }
+
   var SUPA = {
     /* 名前付きの入口から呼ばれる。group＝入口のまとまり（training 等）・method＝関数の名前・args＝画面が渡した引数・gasFn＝gas の道 */
     entry: function (group, method, args, gasFn) {
+      if (group === 'training' && method === 'ai') return aiEntry(args[0]);
       if (!Object.prototype.hasOwnProperty.call(GROUPS, group) || ['get', 'put', 'ping'].indexOf(method) < 0) return Promise.reject(fail(NOT_YET, 'supabase_not_ready'));
       var S = st(group);
       return loadAuth().then(function (A) {
@@ -132,7 +164,9 @@
             if (method === 'get' && !S.caughtUp) { S.caughtUp = true; mirrorSoon(group, A, opts); }   // 開いた時に1回、写し返しの残りを追いつかせる
             return invoke(group, A, bodyOf(group, method, args)).then(function (res) {
               if (method === 'put' && res && res.ok === true) mirrorSoon(group, A, opts);
-              // AI の中継はまだ Google（計画書の GAS）にあるので、ping の AI の状態（キーの有無・回数）は Google の ping から取る（計画書の反証レビュー 指摘2）
+              // AI の中継が新しい受け口（su-ai）の時は「使える」とだけ返す（鍵が無ければ送った時に ai_no_key で分かる）
+              if (group === 'training' && method === 'ping' && res && res.ok === true && aiViaSupabase()) { res.ai = { key: true }; return res; }
+              // AI の中継が Google（計画書の GAS）の間は、ping の AI の状態（キーの有無・回数）は Google の ping から取る（計画書の反証レビュー 指摘2）
               if (group === 'training' && method === 'ping' && res && res.ok === true && typeof gasFn === 'function') {
                 return Promise.resolve(gasFn()).then(function (g) {
                   if (g && g.ok === true && g.ai) res.ai = g.ai; else delete res.ai;
