@@ -477,8 +477,10 @@ if (unmeasured.length) say(`未測定（数に入れていない場面）: ${unm
 const skipped = result.notes.filter((n) => n.includes('省きました'));
 /* --only で場面を絞った時は、一部の場面だけの合計で measure を上書きしないよう書かない */
 if (!(SCENARIOS.every((k) => only.includes(k)) && only.every((k) => SCENARIOS.includes(k)))) skipped.push('--only で場面を絞りました（' + only.join(',') + '）');
+/* 台本の回数と起きた回数が合わない回（保存の操作の空振りで起きていない等）は、良く見える値を measure へ入れないよう書かず、失敗で終える */
+if (!result.totals.scriptMatched) { exitCode = 1; say('台本の回数と起きた回数が一致しないので、失敗として終えます'); }
 if (args.measure && args.measure !== 'true' && (exitCode !== 0 || skipped.length)) {
-  say(`measure: 途中で止まった・省いた場面があるので書きません（${exitCode !== 0 ? '途中で止まりました' : skipped.length + ' 件を省きました'}）`);
+  say(`measure: 途中で止まった・省いた場面がある・台本と不一致なので書きません（${!result.totals.scriptMatched ? '台本の回数と不一致' : exitCode !== 0 ? '途中で止まりました' : skipped.length + ' 件を省きました'}）`);
 } else if (args.measure && args.measure !== 'true') {
   const mf = args.measure;
   /* ファイルがあるのに読めない（壊れている・書きかけ）時は、ほかの件の行を消さないよう書かずに止める */
