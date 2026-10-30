@@ -26,7 +26,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { loadPlaywright, parseArgs, ensureDir, writeJson, readJson } from '../lib.mjs';
+import { loadPlaywright, parseArgs, ensureDir, writeJson } from '../lib.mjs';
 import { startFailInjectServer } from './serve.mjs';
 import { createKvBackend, createMasterBackend, FAILURE_KINDS } from './gas-script.mjs';
 
@@ -135,8 +135,8 @@ const isFail = (e) => FAIL_RE.test(e.text) || (e.sel === '#toast' && /\bng\b/.te
 const isOk = (e) => !isFail(e) && OK_RE.test(e.text);
 
 /* 1つの場面の数え方。writes＝その場面で数える書き込みの記録（log の行）、tClick＝保存の操作をした時刻 */
-function countScenario(server, fromIdx, tClick, evA, writeEntry) {
-  const rows = server.log.slice(fromIdx);
+function countScenario(server, fromIdx, tClick, evA, writeEntry, toIdx) {
+  const rows = server.log.slice(fromIdx, toIdx === undefined ? server.log.length : toIdx);
   const writes = rows.filter((e) => writeEntry(e));
   const injected = rows.filter((e) => e.injected);
   const httpFail = writes.filter((e) => e.http !== 200 && !(typeof e.http === 'number' && e.http >= 200 && e.http < 300)).length;
@@ -260,6 +260,18 @@ async function runWsSb(server, sessions) {
     await X.page.waitForSelector('#btnAddNote', { state: 'visible', timeout: 60000 }).catch(() => {});
     await waitQuiet(server, 4000, 90000);
   }
+  /* 下地の確かめ: 失敗を起こさない保存が1回届くこと（landed）。届かない時（例: 試験用 Supabase の wsday の種類が写しの期間で
+     kv_put が ok:false 'shadow' を返す）は、比べる基準が無いので、この道の場面は「無効」にして観測点を null・合計から外す */
+  const baseIdx = server.log.length;
+  await A.page.click('#btnAddNote').catch(() => {});
+  await A.page.keyboard.type('見本の印 下地').catch(() => {});
+  await A.page.mouse.click(5, 5).catch(() => {});
+  await sleep(3000);
+  await waitQuiet(server, 4000, 60000);
+  const baseRows = server.log.slice(baseIdx).filter((e) => e.via === 'sb' && /rpc\/kv_put/.test(e.entry));
+  const baseValid = baseRows.some((e) => e.landed);
+  const baseNames = [...new Set(baseRows.filter((e) => e.name).map((e) => e.name))];
+  if (!baseValid) result.notes.push(`Supabase の道: 失敗を起こさない保存が届かない（kv_put ${baseRows.length} 回・landed 0・応答の名前 ${JSON.stringify(baseNames)}）ため、この道の場面は無効（下地が断られている）。観測点は null にし、起きた種類・合計・台本の一致から外しました`);
   const plan = [{ kind: 'unreachable', times: 2, wait: 90000 }, { kind: 'slow', times: 1, ms: 3000, wait: 60000 }];
   for (const p of plan) {
     say(`  ワークスケジュール（Supabase）: ${p.kind} を ${p.times} 回`);
@@ -281,12 +293,15 @@ async function runWsSb(server, sessions) {
     await B.page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
     await waitQuiet(server, 5000, 60000);
     const aNotes = await wsNotes(A.page), bNotes = await wsNotes(B.page);
-    /* サーバー（試験用 Supabase）の中身は読まない（共用のため）。届いた書き込みが無い時、B の表示が A より多ければ巻き戻りではない＝数えない */
-    c.rollback = 0;
+    /* サーバー（試験用 Supabase）の中身は読まない（共用のため）。A と B の表示の差を巻き戻りの候補として残し、
+       この場面で書き込みが届いた（landed）のに B の表示が A より少ない時だけ巻き戻りと数える */
+    const rollbackCandidate = aNotes >= 0 && bNotes >= 0 ? aNotes - bNotes : null;
+    c.rollback = rollbackCandidate === null ? null : (c.landed > 0 && rollbackCandidate > 0 ? 1 : 0);
+    if (!baseValid) { for (const k of OBS_POINTS) c[k] = null; }
     const rep = server.engine().report()[0];
     const names = [...new Set(server.log.slice(fromIdx).filter((e) => /rpc\/kv_put/.test(e.entry) && e.name).map((e) => e.name))];
     result.scenarios.push(Object.assign({ app: 'ワークスケジュール', path: 'Supabase（試験用）', kind: 'sb:' + p.kind, scriptTimes: rep.times, fired: rep.fired,
-      notes: { a: aNotes, b: bNotes }, appNames: names, pageErrors: A.page.__errors + B.page.__errors }, c));
+      notes: { a: aNotes, b: bNotes }, rollbackCandidate, appNames: names, valid: baseValid, pageErrors: A.page.__errors + B.page.__errors }, c));
   }
   await closeAll();
 }
@@ -349,11 +364,16 @@ async function runRmGas(server) {
     await waitQuiet(server, 3000, 60000);
     /* 失敗した時は、職員と同じく開き直さずにもう一度保存する（送信待ちを持たない画面で、後から届くかを見る） */
     server.setScript([]);
+    const retryIdx = server.log.length;   // ここから先は道具が押した保存（画面の仕組みで届いた分と分ける）
     await A.page.click('#saveBtn').catch(() => {});
     await sleep(2000);
     await waitQuiet(server, 3000, 60000);
     const evA = await events(A.page, tClick);
-    const c = countScenario(server, fromIdx, tClick, evA, (e) => e.via === 'gas' && e.app === 'master' && e.entry === 'saveResident');
+    const isRmWrite = (e) => e.via === 'gas' && e.app === 'master' && e.entry === 'saveResident';
+    const c = countScenario(server, fromIdx, tClick, evA, isRmWrite);
+    /* (iii) は画面が自分で送り直して届いた分だけ（道具の再保存より前の記録で数える）。道具の再保存が届いた分は別の列 */
+    c.deliveredLater = countScenario(server, fromIdx, tClick, evA, isRmWrite, retryIdx).deliveredLater;
+    c.manualRetryLanded = server.log.slice(retryIdx).filter((e) => isRmWrite(e) && e.landed).length;
     /* (iv) B は古い版のまま保存する。通ってしまえば A の保存を巻き戻した */
     const fromB = server.log.length;
     await B.page.click('#saveBtn').catch(() => {});
@@ -389,24 +409,37 @@ try {
 }
 
 /* まとめ（観測点ごとの合計・起きた失敗の種類） */
+/* 無効の場面（valid:false＝下地の保存が届かない）は、起きた種類・合計・台本の一致から外す。null（測れず）は 0 として足さない */
+const validScenarios = result.scenarios.filter((s) => s.valid !== false);
 const fired = new Set();
-for (const s of result.scenarios) for (const k of s.injectedKinds || []) fired.add(k);
+for (const s of validScenarios) for (const k of s.injectedKinds || []) fired.add(k);
 result.kindsFired = FAILURE_KINDS.filter((k) => fired.has(k));
-const sum = (k) => result.scenarios.reduce((a, s) => a + (typeof s[k] === 'number' ? s[k] : 0), 0);
-result.totals = { failureKinds: result.kindsFired.length, observationPoints: OBS_POINTS.length, failureShown: sum('failureShown'), falseSaved: sum('falseSaved'),
-  deliveredLater: sum('deliveredLater'), rollback: sum('rollback'), httpFail: sum('httpFail'), appFail: sum('appFail'),
-  scriptMatched: result.scenarios.every((s) => s.fired === s.scriptTimes) };
+const sum = (k) => validScenarios.reduce((a, s) => a + (typeof s[k] === 'number' ? s[k] : 0), 0);
+/* 観測点の数は、実際に数の入った（null でない）観測点の数 */
+const observed = OBS_POINTS.filter((k) => validScenarios.some((s) => typeof s[k] === 'number'));
+result.totals = { failureKinds: result.kindsFired.length, observationPoints: observed.length, observedPoints: observed, failureShown: sum('failureShown'), falseSaved: sum('falseSaved'),
+  deliveredLater: sum('deliveredLater'), rollback: sum('rollback'), httpFail: sum('httpFail'), appFail: sum('appFail'), manualRetryLanded: sum('manualRetryLanded'),
+  invalidScenarios: result.scenarios.length - validScenarios.length,
+  scriptMatched: validScenarios.every((s) => s.fired === s.scriptTimes) };
 result.finishedAt = new Date().toISOString();
 const stamp = result.startedAt.replace(/[:.]/g, '-');
 const outFile = path.join(outDir, stamp + '.json');
 writeJson(outFile, result);
 say(`記録: ${path.relative(REPO, outFile)}`);
-say(`起きた失敗の種類 ${result.totals.failureKinds}／観測点 ${result.totals.observationPoints}／失敗の表示 ${result.totals.failureShown}／偽の保存しました ${result.totals.falseSaved}／後から届いた ${result.totals.deliveredLater}／巻き戻り ${result.totals.rollback}／HTTP の失敗 ${result.totals.httpFail}／ok:false ${result.totals.appFail}／台本の回数と一致 ${result.totals.scriptMatched ? 'はい' : 'いいえ'}`);
+say(`起きた失敗の種類 ${result.totals.failureKinds}／観測点 ${result.totals.observationPoints}／失敗の表示 ${result.totals.failureShown}／偽の保存しました ${result.totals.falseSaved}／後から届いた ${result.totals.deliveredLater}／巻き戻り ${result.totals.rollback}／HTTP の失敗 ${result.totals.httpFail}／ok:false ${result.totals.appFail}／道具の再保存が届いた ${result.totals.manualRetryLanded}／無効の場面 ${result.totals.invalidScenarios}／台本の回数と一致 ${result.totals.scriptMatched ? 'はい' : 'いいえ'}`);
 
 /* measure.json（item 1）へ書き足す。run は 1 か 2（同じ条件で2回測る） */
-if (args.measure && args.measure !== 'true') {
+const skipped = result.notes.filter((n) => n.includes('省きました'));
+if (args.measure && args.measure !== 'true' && (exitCode !== 0 || skipped.length)) {
+  say(`measure: 途中で止まった・省いた場面があるので書きません（${exitCode !== 0 ? '途中で止まりました' : skipped.length + ' 件を省きました'}）`);
+} else if (args.measure && args.measure !== 'true') {
   const mf = args.measure;
-  const m = readJson(mf, []) || [];
+  /* ファイルがあるのに読めない（壊れている・書きかけ）時は、ほかの件の行を消さないよう書かずに止める */
+  let m = [];
+  if (fs.existsSync(mf)) {
+    try { m = JSON.parse(fs.readFileSync(mf, 'utf8')); } catch (e) { m = null; }
+    if (!Array.isArray(m)) { say(`measure: ${mf} が読めない（JSON の配列でない）ので書きません`); process.exit(1); }
+  }
   const idx = Math.max(0, Math.min(1, Number(args.run || 1) - 1));
   const how = args.how && args.how !== 'true' ? String(args.how) : 'node check/fail-inject/observe.mjs ' + process.argv.slice(2).join(' ');
   const upsert = (metric, unit, before, val) => {
@@ -418,7 +451,17 @@ if (args.measure && args.measure !== 'true') {
   upsert('起こせる失敗の種類数', '種類', [0, 0], result.totals.failureKinds);
   upsert('観測点の数', '点', [0, 0], result.totals.observationPoints);
   upsert('偽って保存しましたと出た回数', '回', ['未測定', '未測定'], result.totals.falseSaved);
-  fs.writeFileSync(mf, JSON.stringify(m, null, 2) + '\n');
+  upsert('保存の失敗が画面に出た回数', '回', ['未測定', '未測定'], result.totals.failureShown);
+  upsert('送信待ちが残って後で届いた回数', '回', ['未測定', '未測定'], result.totals.deliveredLater);
+  upsert('別の文脈に巻き戻りが出た回数', '回', ['未測定', '未測定'], result.totals.rollback);
+  upsert('HTTP の失敗の回数', '回', ['未測定', '未測定'], result.totals.httpFail);
+  upsert('アプリの ok:false の回数', '回', ['未測定', '未測定'], result.totals.appFail);
+  upsert('道具がもう一度押した保存が届いた回数', '回', ['未測定', '未測定'], result.totals.manualRetryLanded);
+  /* 書く前に控え（.bak）を取り、一時ファイルに書いてから置き換える */
+  if (fs.existsSync(mf)) fs.copyFileSync(mf, mf + '.bak');
+  const tmp = mf + '.tmp-' + process.pid;
+  fs.writeFileSync(tmp, JSON.stringify(m, null, 2) + '\n');
+  fs.renameSync(tmp, mf);
   say(`measure: ${mf} の item 1 を書きました（${idx + 1} 回目）`);
 }
 process.exit(exitCode);
