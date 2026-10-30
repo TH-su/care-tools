@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-QZzN1cLY9m8W4HvfaVHKBIF//Cly5d8ZBt8E0mCvxRU=' 'sha256-0hDmJpbeW/xGHFJzz1m84txz9hjlbb+5lRLgWIc24zs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-QZzN1cLY9m8W4HvfaVHKBIF//Cly5d8ZBt8E0mCvxRU=' 'sha256-AtHaNYGeFVontaJH4GBxn/SyjAQssSmAciJ3OQ9+nx8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- 要配慮情報（疾患・訓練内容）を表示する画面。ブラウザキャッシュ・検索索引に残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -948,7 +948,7 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
 <script src="su-app-gate.js?v=2026-10-29"></script>
 <script src="su-data.js?v=2026-10-30"></script>
 <script src="su-data-gas.js?v=2026-10-29"></script>
-<script src="su-data-supabase.js?v=2026-10-30.1"></script>
+<script src="su-data-supabase.js?v=2026-10-30.2"></script>
 <!-- 週間計画の保存先の切り替え（統合 0005/0007）。デイ利用者の判定は、切り替え後は Supabase から読む（未ログインは Google） -->
 <script src="su-kv.js?v=2026-10-28"></script>
 <script src="su-facility.js?v=2026-10-26"></script>
@@ -6089,7 +6089,7 @@ function aiFetch(body) {
     }
     if (!r.data || typeof r.data !== 'object') throw new Error('AI_BAD_JSON');
     return r.data;
-  }, function () { throw new Error('AI_NETWORK'); });
+  }, function (e0) { var ne = new Error('AI_NETWORK'); ne.code = s_(e0 && e0.code); throw ne; });
   return withTimeout(pr, AI_TIMEOUT_MS).catch(function (e) {
     if (s_(e && e.message) === 'タイムアウト') throw new Error('AI_TIMEOUT');
     throw e;
@@ -6262,7 +6262,8 @@ function aiErrText(e) {
   if (m.indexOf('AI_HTTP_') === 0) return 'AIから正しい応答がありませんでした（HTTP ' + m.slice(8) + '）。' + why;
   if (m === 'AI_REFUSAL') return 'AIが文案の作成を控えました。「本人の様子」に書いた内容を見直して、もう一度お試しください';
   if (m === 'AI_BAD_JSON' || m === 'AI_NO_TEXT') return 'AIの返事を読み取れませんでした。もう一度お試しください';
-  if (m === 'AI_NETWORK') return 'AIに接続できませんでした。通信を確かめてから、もう一度お試しください';
+  /* 新しい受け口（su-ai）の時だけ、どの段で止まったかの印を末尾に足す（例: 受け口の状態 ai_fetch・2026-10-30 代表者「入れてよい」） */
+  if (m === 'AI_NETWORK') return 'AIに接続できませんでした。通信を確かめてから、もう一度お試しください' + (/^ai_[a-z0-9]{1,20}$/.test(s_(e && e.code)) ? '（受け口の状態 ' + s_(e.code) + '）' : '');
   if (m === 'AI_TIMEOUT' || m === 'タイムアウト') return 'AIの返事が届きませんでした（時間切れ）。もう一度お試しください';
   return 'AIの呼び出しに失敗しました。もう一度お試しください';
 }

@@ -1482,6 +1482,42 @@
     else line.textContent = '計画書の正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（training）を入れる PR の取り込みが要ります。');
     bc.hidden = live || stuck || !on || !tt || !mt;
     bb.hidden = !(live || stuck) || !tt;
+    $('b-tp-ai').hidden = false;
+  }
+  /* AI の中継の受け口（su-ai・統合 0028）へ、「はい」とだけ答えさせる決まった短い依頼を1回送り、届いたか・答えの状態だけを出す
+   * （2026-10-30 代表者「確かめボタン」。切り替えスイッチ training_ai が切のままでも確かめられる）。管理者だけ。
+   * 入居者の情報は送らない。1回の利用として数える。出すのは状態の番号・断りの種類・かかった秒数だけ */
+  function aiProbeText(r, sec) {
+    if (r && r.error) {
+      var ctx = r.error.context, nm = String(r.error.name || '');
+      if (ctx && typeof ctx.status === 'number') return Promise.resolve(typeof ctx.json === 'function' ? ctx.json().catch(function () { return null; }) : null).then(function (d) {
+        return { k: 'warn', t: '受け口は答えましたが、断られました（状態 ' + ctx.status + (d && typeof d.error === 'string' ? '・' + d.error.slice(0, 40) : d && typeof d.message === 'string' ? '・' + d.message.slice(0, 60) : '') + '・' + sec + '秒）。' };
+      });
+      var why = String(r.error.message || '').slice(0, 80);
+      if (nm === 'FunctionsRelayError') return Promise.resolve({ k: 'warn', t: '受け口の手前の中継で止まりました（' + why + '・' + sec + '秒）。' });
+      return Promise.resolve({ k: 'warn', t: '受け口に届きませんでした（' + (nm || 'error') + '：' + why + '・' + sec + '秒）。' });
+    }
+    var d = r ? r.data : null;
+    if (d && d.ok === true && Number(d.status) >= 200 && Number(d.status) < 300) return Promise.resolve({ k: 'ok', t: '届きました。AI が答えました（' + sec + '秒）。新しい受け口は使えます。' });
+    if (d && d.ok === true) return Promise.resolve({ k: 'warn', t: '受け口には届きましたが、AI が断りました（状態 ' + d.status + '・' + sec + '秒）。' });
+    if (d && d.ok === false) return Promise.resolve({ k: 'warn', t: '受け口には届きましたが、断られました（' + String(d.error || '').slice(0, 40) + '・' + sec + '秒）。' });
+    return Promise.resolve({ k: 'warn', t: '受け口から読めない答えが返りました（' + sec + '秒）。' });
+  }
+  async function runTpAi() {
+    var v = $('tpf-ai');
+    function say(t, k) { v.className = 'msg' + (k ? ' ' + k : ''); v.textContent = t; }
+    if (!(me && me.role === 'admin' && me.status === SUAuth.STATUS.OK)) { say('管理者（二段階認証済み）のアカウントで開いてください。', 'warn'); return; }
+    if (!confirm('AI の中継（新しい受け口）へ、「はい」とだけ答えさせる短い依頼を1回送りますか？\n\n入居者の情報は送りません。1回の利用として数えます。')) return;
+    var b = $('b-tp-ai'), t0 = Date.now();
+    b.disabled = true; say('送っています…');
+    try {
+      var r = await SUAuth.client().functions.invoke('su-ai', { body: { purpose: 'training_plan',
+        body: { model: 'claude-sonnet-5', max_tokens: 16, messages: [{ role: 'user', content: '「はい」とだけ答えてください' }] } } });
+      var o = await aiProbeText(r, Math.round((Date.now() - t0) / 1000));
+      say(o.t, o.k);
+    } catch (e) {
+      say('送れませんでした（' + String(e && e.message || e).slice(0, 80) + '・' + Math.round((Date.now() - t0) / 1000) + '秒）。', 'warn');
+    } finally { b.disabled = false; }
   }
   async function runTpOp(kind) {
     var v = $('tpf-mode');
@@ -1715,6 +1751,7 @@
   $('b-tp-full').addEventListener('click', function () { msg(''); runTpFull(); });
   $('b-tp-cut').addEventListener('click', function () { msg(''); runTpOp('cut'); });
   $('b-tp-back').addEventListener('click', function () { msg(''); runTpOp('back'); });
+  $('b-tp-ai').addEventListener('click', function () { msg(''); runTpAi(); });
   $('b-adm-full').addEventListener('click', function () { msg(''); runAdmFull(); });
   $('b-adm-cut').addEventListener('click', function () { msg(''); runAdmOp('cut'); });
   $('b-adm-back').addEventListener('click', function () { msg(''); runAdmOp('back'); });

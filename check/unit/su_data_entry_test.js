@@ -250,6 +250,20 @@ function sameShape(p) { return p && p.url === TP_URL && p.method === 'POST' && p
     let m = 'OK'; try { await x.w.SU.data.training.ai(AIB, x.w.tpTarget()); } catch (e) { m = e.message; }
     t('届かない時は失敗・Google へ流さない', /届きませんでした/.test(m) && x.posts.length === 0, [m, x.posts.length]);
   }
+  for (const [label, err, code] of [['通信の段階で止まった', { name: 'FunctionsFetchError', message: 'Failed to fetch' }, 'ai_fetch'],
+                                    ['入口が 401 で断った（答えが読めない形）', { name: 'FunctionsHttpError', message: 'x', context: { status: 401, json: async () => ({ code: 401, message: 'Invalid JWT' }) } }, 'ai_401'],
+                                    ['手前の中継で止まった', { name: 'FunctionsRelayError', message: 'x' }, 'ai_relay']]) {
+    const f = fakeAuth({});
+    f.A.client = () => ({ functions: { invoke: async () => ({ data: null, error: err }) } });
+    const x = box({ flags: { supabase: { training_ai: true } }, auth: f.A });
+    let c = ''; try { await x.w.SU.data.training.ai(AIB, x.w.tpTarget()); } catch (e) { c = e.code; }
+    t('AI の中継が ' + label + ' → 止まった段の印 ' + code + ' を付けて失敗', c === code, c);
+  }
+  {
+    const x = box({ flags: { supabase: { training_ai: true } } });
+    let c = ''; try { await x.w.SU.data.training.ai(AIB, x.w.tpTarget()); } catch (e) { c = e.code; }
+    t('ログインの部品が無い時も印（ai_noauth）を付ける', c === 'ai_noauth', c);
+  }
   {
     const f = fakeAuth({ mode: 'live', reply: { ok: true, server: 'silverunix-training' } });
     const x = box({ flags: { supabase: { training: true, training_ai: true } }, auth: f.A });
@@ -260,6 +274,15 @@ function sameShape(p) { return p && p.url === TP_URL && p.method === 'POST' && p
     const H = read('training-plan.html');
     t('画面: su-ai だけが返す断り（login・ai_forbidden・ai_name_found）を職員向けの文にする', /login: 'AI_LOGIN', ai_forbidden: 'AI_FORBIDDEN', ai_name_found: 'AI_NAME_FOUND'/.test(H)
       && /m === 'AI_LOGIN'/.test(H) && /m === 'AI_FORBIDDEN'/.test(H) && /m === 'AI_NAME_FOUND'/.test(H) && /AI_READROLE\|AI_LOGIN\|AI_FORBIDDEN\|/.test(H));
+  }
+  {
+    const H = read('training-plan.html');
+    t('画面: 接続できなかった時は、受け口が付けた印（ai_…）だけを文の末尾に出す', /var ne = new Error\('AI_NETWORK'\); ne\.code = s_\(e0 && e0\.code\)/.test(H)
+      && /\(\/\^ai_\[a-z0-9\]\{1,20\}\$\/\.test\(s_\(e && e\.code\)\) \? '（受け口の状態 '/.test(H));
+    const S = read('shadow-check.html'), J = read('shadow-check.js');
+    t('写しの見比べ: 「AI の中継を確かめる」は最初は隠し・管理者だけ・確かめてから決まった短い依頼を su-ai へ1回', /id="b-tp-ai" hidden>AI の中継を確かめる</.test(S)
+      && /async function runTpAi\(\)[\s\S]{0,400}me\.role === 'admin'[\s\S]{0,300}confirm\(/.test(J) && /functions\.invoke\('su-ai', \{ body: \{ purpose: 'training_plan',\s*body: \{ model: 'claude-sonnet-5', max_tokens: 16, messages: \[\{ role: 'user', content: '「はい」とだけ答えてください' \}\] \} \} \}\)/.test(J)
+      && /\$\('b-tp-ai'\)\.addEventListener\('click'/.test(J));
   }
 
   {
