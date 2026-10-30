@@ -362,9 +362,18 @@ async function runRmGas(server) {
   server.setFlags(Object.assign({}, cs.FLAGS_OFF, { supabase: Object.assign({}, cs.FLAGS_OFF.supabase, { master_live: false }) }));
   server.setScript([]);
   const st = storageFor('resident-master.html', { 'sb-jhbernqawjrzqwrmqrih-auth-token': rm.storage['sb-jhbernqawjrzqwrmqrih-auth-token'] });
-  /* ログインの確かめは材料（fixtures/resident-master.mjs）の架空の応答で答える（本物の Supabase へは出ない） */
-  const A = await openContext('rm-a', server, st, rm.routes);
-  const B = await openContext('rm-b', server, st, rm.routes);
+  /* ログインの確かめは材料（fixtures/resident-master.mjs）の架空の応答で答える（本物の Supabase へは出ない）。
+     基本項目の写し（master_residents・master_residents_care）と写しの記録（master_sync_runs）の読み書きは材料では 404 になり、起こしていないエラーとして数に混ざるので、
+     この場面だけ空の応答（読む＝200・[]／書く＝201・空）で答える（後から足した route が先に効く。材料は変えない） */
+  const rmShadow = { match: /\/rest\/v1\/master_(residents(_care)?|sync_runs)(\?|$)/, handle(route) {
+    const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' };
+    const m = route.request().method();
+    if (m === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+    if (m === 'GET' || m === 'HEAD') return route.fulfill({ status: 200, contentType: 'application/json', headers: cors, body: '[]' });
+    return route.fulfill({ status: 201, headers: cors, body: '' });
+  } };
+  const A = await openContext('rm-a', server, st, rm.routes.concat([rmShadow]));
+  const B = await openContext('rm-b', server, st, rm.routes.concat([rmShadow]));
   for (const X of [A, B]) {
     await X.page.goto(server.url + '/resident-master.html', { waitUntil: 'domcontentloaded' });
     await X.page.waitForFunction(() => typeof roster !== 'undefined' && roster.length > 0, null, { timeout: 60000 });
@@ -481,10 +490,11 @@ if (args.measure && args.measure !== 'true' && (exitCode !== 0 || skipped.length
   const idx = Math.max(0, Math.min(1, Number(args.run || 1) - 1));
   const how0 = args.how && args.how !== 'true' ? String(args.how) : 'node check/fail-inject/observe.mjs ' + process.argv.slice(2).join(' ').replace(/--run \S+/, '--run 1|2');
   const how = unmeasured.length ? `${how0}／未測定（数に入れていない場面 ${unmeasured.length} 件）: ${unmeasured.join('、')}` : how0;
-  /* もう一方の回が書いてあるのに条件（how の実行の部分）が違う時は、条件の違う2回を1行に混ぜないよう書かずに止める */
+  /* もう一方の回が書いてあるのに条件（how の実行の部分・未測定の場面）が違う時は、条件の違う2回を1行に混ぜないよう書かずに止める
+     （how は丸ごと上書きするので、未測定の注記が違うまま書くと、もう一方の回を数えた条件が記録から消える） */
   const other = 1 - idx;
-  const clash = m.find((r) => r.item === 1 && Array.isArray(r.after) && typeof r.after[other] === 'number' && typeof r.how === 'string' && r.how.split('／未測定')[0] !== how0);
-  if (clash) { say(`measure: もう一方の回（${other + 1} 回目）と実行の条件が違うので書きません（同じ条件で測り直すか、行を消してから測ってください）`); process.exit(1); }
+  const clash = m.find((r) => r.item === 1 && Array.isArray(r.after) && typeof r.after[other] === 'number' && typeof r.how === 'string' && r.how !== how);
+  if (clash) { say(`measure: もう一方の回（${other + 1} 回目）と実行の条件か未測定の場面が違うので書きません（同じ条件で測り直すか、行を消してから測ってください）`); process.exit(1); }
   const upsert = (metric, unit, before, val) => {
     let row = m.find((r) => r.item === 1 && r.metric === metric);
     if (!row) { row = { item: 1, app: '共通の道具（check/fail-inject・失敗を起こして数える）', metric, unit, before, after: [null, null], how: '' }; m.push(row); }
