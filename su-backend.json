@@ -11,6 +11,6 @@
     "admission": true,
     "master_live": true,
     "training": true,
-    "training_ai": true
+    "training_ai": false
   }
 }
