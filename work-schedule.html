@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-eJ9UDXJ2O7T/IRFWezxCauOYOtZ69j198JhT6AoaVA4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-yJ7Hz9xxfvP0tOzoaPIcsM3gzrXtYUdk99JmZRoZBLI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -759,6 +759,7 @@ body.su-print-staff24 #rp-print, body.su-print-staff24range #rp-print { display:
 </style>
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
+<script src="su-gas-auth.js?v=2026-10-29"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
 <script src="su-kv.js?v=2026-10-28"></script>
 <script src="su-roster.js?v=2026-10-28"></script>
@@ -12481,7 +12482,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   状態が本番で発生していた（実測: 入院者の枠6件が通常表示）。
    *   そこで定義を app.js 側（利用者と同じスコープ）へ移し、exports.js へは引数で渡す。 */
   var WS_RM_CFG_KEY = 'rmaster_cfg';
-  var wsHospMap = null, wsHospRev = null, wsHospBusy = false;
+  var wsHospMap = null, wsHospRev = null, wsHospBusy = false, wsHospRefusedNoted = false;
   function wsMasterCfg_() {
     try {
       var s = localStorage.getItem(WS_RM_CFG_KEY); if (!s) return null;
@@ -12509,17 +12510,31 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* 2026-10-28（入居者マスタの Supabase 移行 B①・代表者の決定）: 名簿の読み取りは入口（su-roster.js・SURoster）を通す。
        スイッチ master_roster_read が入・事務所/管理者のログイン・写しが Google と同じ版数の時だけ写しから読み、
        それ以外は raw（今までどおりの Google への要求・形は変えていない）。 */
+    /* 2026-10-30（読み取りのログインの確かめ READ_ROLE_CHECK・代表者の決定 2026-10-29）: ログインしている事務所PCだけ、
+       本文の最後に証明 accessToken を1項目添える（su-gas-auth.js）。部品が無い・ログインしていない・現場の端末は今までと同じ本文。
+       送り方（POST・Content-Type・cache・redirect・応答の読み方・ほかの項目と順番）は変えない */
     var raw = function () {
-      return fetch(c.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                            body: JSON.stringify({ action: 'getRoster', token: c.token }), cache: 'no-store', redirect: 'follow' })
-        .then(function (r) { return r.json(); });
+      var b = { action: 'getRoster', token: c.token };
+      var bp;
+      try { bp = window.SUGasAuth ? window.SUGasAuth.addTo(b) : Promise.resolve(b); } catch (eA) { bp = Promise.resolve(b); }
+      return bp.then(function (b2) { return b2 || b; }, function () { return b; }).then(function (b2) {
+        return fetch(c.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                              body: JSON.stringify(b2), cache: 'no-store', redirect: 'follow' });
+      }).then(function (r) { return r.json(); });
     };
     var rp;
     try { rp = window.SURoster ? window.SURoster.getRoster(raw, { where: 'ws', masterUrl: c.url, withRev: true }) : raw(); }
     catch (eR) { rp = raw(); }
     return rp
       .then(function (j) {
-        if (!j || !Array.isArray(j.roster)) return false;
+        if (!j || !Array.isArray(j.roster)) {
+          /* 2026-10-30（反証レビューの指摘）: 読めなかった時は版数の控えを捨て、次の見張り（wsWatchMasterState_）で読み直させる。
+             ログインの確かめで断られた時（code 'readrole'＝ログインしていない・現場の端末・証明が間に合わない）は、
+             黙らずに1回だけ記録に残す（文の中身は送らない）。今までの印（wsHospMap）はそのまま残す */
+          wsHospRev = null;
+          if (j && j.code === 'readrole' && !wsHospRefusedNoted) { wsHospRefusedNoted = true; wsNote_('master-roster-readrole', new Error('readrole')); }
+          return false;
+        }
         var m = {};
         j.roster.forEach(function (x) {
           var mid = x && (x.masterId != null ? x.masterId : x.id);
@@ -12531,7 +12546,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (typeof j.stateRev === 'number' || typeof j.srev === 'number') wsHospRev = { rev: j.stateRev, srev: j.srev };
         return true;
       })
-      .catch(function () { return false; })
+      .catch(function () { wsHospRev = null; return false; })   /* 通信の失敗も、次の見張りで読み直させる（2026-10-30） */
       .then(function (ok) { wsHospBusy = false; return ok; });
   }
   /* 版数だけを見張る（合言葉不要・数値2つのみ・個人情報ゼロ） */
@@ -21464,7 +21479,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261029193839';
+  var WS_BUILD = '20261030122223';
   var WS_APP_VER = 2026102701;   /* 2026-10-27 まだ届いていないロックを「外した」に変えて送り、版の進んでいない古い未送信を退避して捨てる前の版の画面が、仕上げたロックの盤面を前の版で上書きしないよう上げた（代表者承認 A・B）
                                   * （2026101706: 2026-10-23 トレイへ入った理由の印（parkedByHand・absentMoved・routineTray）を知らない前の版の画面が、手で戻した札・休みで移した札を印なしで残し、
                                   * 新しい版がそれを列へ戻してしまわないよう上げた）
