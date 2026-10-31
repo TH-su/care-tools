@@ -8,6 +8,8 @@
        素通しの回だけ見本に書けたこと・HTTP の成否と本文の ok を別々に記録することを確かめる
      4 試験用 Supabase の中継は手元（127.0.0.1・localhost）だけ。su-auth.js の差し替えはメモリの中だけで、行が無ければ配らない
      5 observe.mjs は、--run が 1・2 以外・--measure に値が無い時に、ブラウザを開く前・measure を書く前に止まる。画面に無い関数を呼ばない
+     7 observe.mjs の外へ出る要求の判定は、手元・偽 GAS だけを通し、本番の Supabase・Google などの住所は止める。
+       止める処理は ~/.claude の部品の「すぐ終える」を外して、閉じてから消す形にしている
    ★GAS・.gs・試験用 Supabase・ブラウザが無くても走る（ネットへ出ない）。データは架空。 */
 'use strict';
 const assert = require('assert');
@@ -262,6 +264,31 @@ async function main() {
     assert.ok(out.includes('var KEY = "test-key";'));
     assert.strictEqual(fs.readFileSync(path.join(ROOT, 'su-auth.js'), 'utf8'), src);
     assert.throws(() => S.rewriteAuth('var x = 1;', 'k'));
+  });
+
+  process.stdout.write('7 observe.mjs の外へ出る要求の判定（印 EGRESS-BEGIN〜END の間を切り出して確かめる）\n');
+  const obsSrc = fs.readFileSync(path.join(DIR, 'observe.mjs'), 'utf8');
+  const eg = /\/\* EGRESS-BEGIN \*\/([\s\S]*?)\/\* EGRESS-END \*\//.exec(obsSrc);
+  const isAllowedEgress = eg ? new Function(eg[1] + '\nreturn isAllowedEgress;')() : null;
+  const FAKE = ['https://script.google.com/macros/s/FAIL-INJECT-KV/exec', 'https://script.google.com/macros/s/FAIL-INJECT-MASTER/exec'];
+  await t('判定の関数が印の間にある', () => { assert.strictEqual(typeof isAllowedEgress, 'function'); });
+  await t('手元（127.0.0.1・localhost）と偽 GAS の住所は通す', () => {
+    for (const u of ['http://127.0.0.1:55421/rest/v1/rpc/kv_put', 'http://127.0.0.1:61234/work-schedule.html', 'http://localhost:8080/su-auth.js',
+      'ws://127.0.0.1:55421/realtime/v1', 'https://script.google.com/macros/s/FAIL-INJECT-KV/exec', 'https://script.google.com/macros/s/FAIL-INJECT-MASTER/exec?action=stateRev',
+      'about:blank', 'data:image/png;base64,AAAA']) assert.strictEqual(isAllowedEgress(u, FAKE), true, u);
+  });
+  await t('本番の Supabase・Google・ほかの外の住所・手元に似せた住所は止める', () => {
+    for (const u of ['https://jhbernqawjrzqwrmqrih.supabase.co/rest/v1/rpc/kv_put', 'https://example.supabase.co/auth/v1/token', 'wss://example.supabase.co/realtime/v1',
+      'https://script.google.com/macros/s/AKfyc-REAL-DEPLOY/exec', 'https://script.googleusercontent.com/macros/echo', 'https://fonts.googleapis.com/css2',
+      'https://www.google.com/', 'http://127.0.0.1.example.invalid/x', 'http://localhost.example.invalid/x', 'http://10.0.0.1:55421/',
+      'https://script.google.com/macros/s/FAIL-INJECT-KVX/exec', 'ftp://127.0.0.1/x', 'not a url']) assert.strictEqual(isAllowedEgress(u, FAKE), false, u);
+  });
+  await t('止める処理は部品の「すぐ終える」を外し、閉じてから終える（Playwright の止める処理も入れない）', () => {
+    const src = obsSrc.replace(/\/\*[\s\S]*?\*\//g, '');
+    assert.ok(/removeAllListeners\(sig\)/.test(src));
+    for (const s of ['SIGINT', 'SIGTERM', 'SIGHUP']) assert.ok(src.includes("'" + s + "'"), s);
+    assert.ok(/handleSIGINT:\s*false/.test(src) && /handleSIGTERM:\s*false/.test(src) && /handleSIGHUP:\s*false/.test(src));
+    assert.ok(/await closeAll\(\);\s*\}\s*catch[^\n]*\n\s*process\.exit\(code\)/.test(src));
   });
 
   process.stdout.write(`\n成功 ${pass}／失敗 ${fail}\n`);

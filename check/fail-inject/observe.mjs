@@ -44,6 +44,21 @@ let fiSeq = 0;
 const FAIL_RE = /⚠|失敗|できません|競合|確認できず|止めました|オフライン|保存されていません|未送信/;
 const OK_RE = /✓同期|送信完了|保存しました|保存OK|届いていました/;
 
+/* 外へ出てよい要求の判定（純関数・試験は check/unit/fail_inject_script_test.js が印の間を切り出して確かめる）。
+   通すのは手元（127.0.0.1・localhost）と偽の GAS の住所（fakeGas の前方一致）と、ネットへ出ない形（about:・blob:・data:）だけ。
+   名前は完全一致で見る（127.0.0.1.example のような住所を通さない）。本番の Supabase・Google などはここで止める */
+/* EGRESS-BEGIN */
+function isAllowedEgress(url, fakeGas) {
+  let u;
+  try { u = new URL(String(url)); } catch (e) { return false; }
+  if (u.protocol === 'about:' || u.protocol === 'blob:' || u.protocol === 'data:') return true;
+  if (!/^(https?|wss?):$/.test(u.protocol)) return false;
+  if (u.hostname === '127.0.0.1' || u.hostname === 'localhost') return true;
+  const s = u.href;
+  return (fakeGas || []).some((g) => { const base = String(g).replace(/\/exec$/, '/'); return s === g || s.startsWith(base); });
+}
+/* EGRESS-END */
+
 /* 使い捨てのプロファイル。~/.claude の部品があればそれを使い、無い環境（CI など）では同じ決まりの控えで作って消す */
 async function tempProfileMaker() {
   const lib = path.join(os.homedir(), '.claude', 'scripts', 'lib', 'chrome-temp.mjs');
@@ -75,7 +90,16 @@ function storageFor(page, extra) {
 }
 
 const pw = loadPlaywright();
-const makeTempProfile = await tempProfileMaker();
+const baseTempProfile = await tempProfileMaker();
+/* ~/.claude の部品は作るたびに SIGINT・SIGTERM・SIGHUP で「すぐ終える（＝終了時にフォルダを消す）」を足す。
+   そのままだと Chrome が動いている間にフォルダを消すので、作るたびにそれを外し、こちらの止める処理（閉じてから消して終える）だけにする。
+   終了時に消す処理（exit）はそのまま残す（閉じた後に走る） */
+const STOP_SIGNALS = [['SIGINT', 130], ['SIGTERM', 143], ['SIGHUP', 129]];
+function makeTempProfile(prefix) {
+  const p = baseTempProfile(prefix);
+  installStop();
+  return p;
+}
 const opened = [];   // {ctx, prof}
 const consoleLog = [];   // 文脈ごとのコンソールのエラーの数（閉じる時に控える）
 async function closeAll() {
@@ -84,7 +108,22 @@ async function closeAll() {
     try { await o.ctx.close(); } catch (e) { /* 閉じている */ } try { o.prof.cleanup(); } catch (e) { /* 消せない */ } }
 }
 let stopping = false;
-for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, async () => { if (stopping) return; stopping = true; await closeAll(); process.exit(130); });
+function installStop() {
+  for (const [sig, code] of STOP_SIGNALS) {
+    process.removeAllListeners(sig);
+    process.on(sig, async () => {
+      if (stopping) return;
+      stopping = true;
+      /* 閉じるのが止まっても終えられるよう、10秒で打ち切る（その時は終了時の処理が消す） */
+      setTimeout(() => process.exit(code), 10000).unref();
+      try { await closeAll(); } catch (e) { /* 閉じられない */ }
+      process.exit(code);
+    });
+  }
+}
+installStop();
+/* 手元・偽 GAS 以外へ出ようとして止めた要求（住所の名前と道だけ控える・?以降は控えない） */
+const egressBlocked = [];
 
 /* 文脈を1つ作る（使い捨てのプロファイル・ポート固定なし）。fakeGas: {Google の形の住所 → 偽 GAS の名前} */
 async function openContext(label, server, storage, extraRoutes) {
@@ -92,8 +131,20 @@ async function openContext(label, server, storage, extraRoutes) {
   const ctx = await pw.chromium.launchPersistentContext(prof.dir, {
     headless: true, args: prof.args.filter((a) => !a.startsWith('--user-data-dir')),
     viewport: { width: 1280, height: 900 }, locale: 'ja-JP', timezoneId: 'Asia/Tokyo', serviceWorkers: 'block',
+    /* Playwright 自身の止める処理（ブラウザを止めてすぐ終える）も入れない。止める処理は installStop の1か所だけ */
+    handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false,
   });
   opened.push({ ctx, prof });
+  /* 外へ出る要求を止める経路。後から足した route が先に効くので、いちばん最初に足す＝ほかの経路（偽 GAS・材料の横取り）が
+     受けなかった要求だけがここへ来る。手元・偽 GAS は素通し（fallback）、それ以外は止めて数える */
+  await ctx.route('**/*', (route) => {
+    const url = route.request().url();
+    if (isAllowedEgress(url, Object.values(GAS_URL))) return route.fallback();
+    let where = '';
+    try { const u = new URL(url); where = u.host + u.pathname; } catch (e) { where = String(url).slice(0, 80); }
+    egressBlocked.push({ context: label, where: where.slice(0, 160) });
+    return route.abort('blockedbyclient');
+  });
   /* 画面の要求ごとに通し番号（x-fi-id）を中継の側だけで付け、画面が先に諦めた（requestfailed）要求に serve.mjs で印を付ける。
      画面が送る要求の形（text/plain の POST・本文）は変えない。印は「画面から見た HTTP の成否」の列（httpSeen）にだけ効く */
   const fiIds = new WeakMap();
@@ -450,6 +501,7 @@ try {
 /* まとめ（観測点ごとの合計・起きた失敗の種類） */
 /* 無効の場面（valid:false＝下地の保存が届かない）は、起きた種類・合計・台本の一致から外す。null（測れず）は 0 として足さない */
 const validScenarios = result.scenarios.filter((s) => s.valid !== false);
+result.egressBlocked = { count: egressBlocked.length, where: [...new Set(egressBlocked.map((b) => b.context + ' ' + b.where))].slice(0, 20) };
 const fired = new Set();
 for (const s of validScenarios) for (const k of s.injectedKinds || []) fired.add(k);
 result.kindsFired = FAILURE_KINDS.filter((k) => fired.has(k));
@@ -473,7 +525,7 @@ const stamp = result.startedAt.replace(/[:.]/g, '-');
 const outFile = path.join(outDir, stamp + '.json');
 writeJson(outFile, result);
 say(`記録: ${path.relative(REPO, outFile)}`);
-say(`起きた失敗の種類 ${result.totals.failureKinds}／観測点 ${result.totals.observationPoints}／失敗の表示 ${result.totals.failureShown}／偽の保存しました ${result.totals.falseSaved}／後から届いた ${result.totals.deliveredLater}／巻き戻り ${result.totals.rollback}／HTTP の失敗 ${result.totals.httpFail}／ok:false ${result.totals.appFail}／道具の再保存が届いた ${result.totals.manualRetryLanded}／無効の場面 ${result.totals.invalidScenarios}／コンソールのエラー ${result.totals.consoleErrors}（起こした接続切れを除くと ${result.totals.consoleErrorsNotInjected}）／台本の回数と一致 ${result.totals.scriptMatched ? 'はい' : 'いいえ'}`);
+say(`起きた失敗の種類 ${result.totals.failureKinds}／観測点 ${result.totals.observationPoints}／失敗の表示 ${result.totals.failureShown}／偽の保存しました ${result.totals.falseSaved}／後から届いた ${result.totals.deliveredLater}／巻き戻り ${result.totals.rollback}／HTTP の失敗 ${result.totals.httpFail}／ok:false ${result.totals.appFail}／道具の再保存が届いた ${result.totals.manualRetryLanded}／無効の場面 ${result.totals.invalidScenarios}／コンソールのエラー ${result.totals.consoleErrors}（起こした接続切れを除くと ${result.totals.consoleErrorsNotInjected}）／台本の回数と一致 ${result.totals.scriptMatched ? 'はい' : 'いいえ'}／外へ出ようとして止めた要求 ${egressBlocked.length}`);
 if (unmeasured.length) say(`未測定（数に入れていない場面）: ${unmeasured.join('、')}`);
 
 /* measure.json（item 1）へ書き足す。run は 1 か 2（同じ条件で2回測る） */
@@ -482,8 +534,10 @@ const skipped = result.notes.filter((n) => n.includes('省きました'));
 if (!(SCENARIOS.every((k) => only.includes(k)) && only.every((k) => SCENARIOS.includes(k)))) skipped.push('--only で場面を絞りました（' + only.join(',') + '）');
 /* 台本の回数と起きた回数が合わない回（保存の操作の空振りで起きていない等）は、良く見える値を measure へ入れないよう書かず、失敗で終える */
 if (!result.totals.scriptMatched) { exitCode = 1; say('台本の回数と起きた回数が一致しないので、失敗として終えます'); }
+/* 手元・偽 GAS 以外（本番など）へ出ようとした回は、測定値にしない */
+if (egressBlocked.length) { exitCode = 1; say(`手元・偽 GAS 以外へ出ようとした要求を ${egressBlocked.length} 件止めたので、失敗として終えます（${result.egressBlocked.where.join('、')}）`); }
 if (args.measure && args.measure !== 'true' && (exitCode !== 0 || skipped.length)) {
-  say(`measure: 途中で止まった・省いた場面がある・台本と不一致なので書きません（${!result.totals.scriptMatched ? '台本の回数と不一致' : exitCode !== 0 ? '途中で止まりました' : skipped.length + ' 件を省きました'}）`);
+  say(`measure: 途中で止まった・省いた場面がある・台本と不一致・外へ出ようとしたので書きません（${egressBlocked.length ? '外へ出ようとした要求 ' + egressBlocked.length + ' 件' : !result.totals.scriptMatched ? '台本の回数と不一致' : exitCode !== 0 ? '途中で止まりました' : skipped.length + ' 件を省きました'}）`);
 } else if (args.measure && args.measure !== 'true') {
   const mf = args.measure;
   /* ファイルがあるのに読めない（壊れている・書きかけ）時は、ほかの件の行を消さないよう書かずに止める */
