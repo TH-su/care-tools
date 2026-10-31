@@ -67,6 +67,8 @@ node check/run.mjs --hide-report                # 「不具合を報告」ボタ
 | `import_e2e.mjs` | 全データの書き出しの戻す試験 | 手元に使い捨ての PostgreSQL を立てて care-backend の移行を流し（`--backend <care-backend のパス>`）、架空の事業者 A を書き出し→暗号化→復号→別の DB の事業者 B へ戻して、表ごとの件数を目録と比べる。DB は終わったら消す（外へは通信しない） |
 | `menu_sync_stale_e2e.mjs` | メニューの写しが止まっている時の札の通し試験 | メニューを開き、ログインとデータベースを偽物にして、管理者＋古い成功で入居者マスタのタイルに札が出る・新しい成功／事務所や現場のアカウントでは出ない・現場端末ではログインの部品と写しの記録を読みに行かないことを確かめる（外へは通信しない） |
 | `export-decrypt.mjs` | — | 暗号化した全データの書き出しを元の ZIP に戻す（`node check/export-decrypt.mjs <file.suenc> [-o 出力.zip]`。パスフレーズは端末で聞く・表示しない） |
+| `fail-inject/observe.mjs` | 失敗を起こして数える | 偽の GAS（統合KV・入居者マスタ）と手元の試験用 Supabase への中継で、台本の回だけ時間切れ・断り・競合・応答なし・届かない・遅いを起こし、使い捨ての Chrome の2つの文脈で「失敗の表示・偽の保存しました・後から届いた・巻き戻り」を数える。HTTP の成否と ok:false は別に数える（下の「失敗を起こして数える」） |
+| `fail-inject/serve.mjs`・`fail-inject/gas-script.mjs` | — | 上の配信サーバー（同じオリジンの /__fake-gas/・/__sb/）と台本のエンジン（純関数・応答の形は本物の .gs から写した行を注釈に残す）。試験は check/unit/fail_inject_*_test.js |
 
 ### 実名ガードの一覧
 
@@ -109,3 +111,23 @@ main へ向けた PR を出すと、GitHub Actions が自動で `run.mjs` と同
 
 指している間は画面全体に透明の板が敷かれるので、画面のボタンを押しても保存や通信は起きません。配置図は四角の位置・大きさ・色と文字の帯の長さだけで、
 文字・入力の値・画像の中身は入りません。絵はブランチ `report-images` に置かれます（取り込まないブランチです）。
+
+## 失敗を起こして数える（check/fail-inject/・2026-10-31〜）
+
+画面のコードは変えず、通信の相手の側で失敗を起こして、画面が職員にどう見せたかを数えます。データは架空の見本だけです。
+
+```bash
+node check/fail-inject/observe.mjs --ls-keys check/fail-inject/ls-keys.sample.json            # GAS の道だけ（ワークスケジュール・入居者マスタ）
+SU_FI_SB_KEY=<試験用の公開鍵> node check/fail-inject/observe.mjs --ls-keys check/fail-inject/ls-keys.sample.json \
+  --sb http://127.0.0.1:55421 --sb-accounts <試験用アカウントのファイル>                         # 試験用 Supabase の道と RLS の断りも
+```
+
+- 台本は `{entry, nth, kind, times, ms}` の配列。entry は GAS の action（`put`・`saveResident` など）か `sb:rpc/kv_put` のような Supabase の入口。台本に無い要求は素通し。任意の `key`（正規表現・例 `"^wsday_"`）を書くと、キーが合う要求だけを数える
+- 中継先は手元（127.0.0.1・localhost）だけ。su-auth.js と su-backend.json の差し替えは配る時のメモリの中だけ（ファイルは変えない）
+- RLS の断りは、既存のポリシーで断られる組み合わせ（現場アカウント×kv_put）で起こす。ポリシーの SQL は流さない
+- 接続先の localStorage の鍵は画面ごとに `--ls-keys` で渡す（推測しない）。結果は `check/out/fail-inject/<日時>.json`
+- 単独で配信サーバーだけ立てる時は `node check/fail-inject/serve.mjs --script 台本.json`（URL を1行出して待つ・止めると記録を書く）
+  - nth は起動してからの通し番号なので、画面の読み込みの時の自動の保存（ワークスケジュールは開くだけで put が2〜4回走る）も数える。
+    保存の操作に当てる時は、画面を開いて「✓ 同期済み」になってから `curl -X POST --data '[{"entry":"put","nth":1,"kind":"deny"}]' <URL>/__fail-inject/script` で台本を入れ直す（回数が0に戻る）→ 保存の操作 → `curl <URL>/__fail-inject/report` で fired と times を見る
+  - 公開リポジトリに無い ws-master.json は `{}` で返す（画面は「無い」時と同じ分岐に落ちる。読み込みのたびの 404 のエラーを出さない）
+- 本物の .gs と写した行の照合は、`SU_GAS_SRC`（統合KV の Code.gs）・`SU_GAS_SRC_MASTER`（入居者マスタの master.gs）を渡した時だけ試験が行う
