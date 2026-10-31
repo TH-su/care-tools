@@ -12,6 +12,7 @@
  *   ・ws-master.json … 公開リポジトリに無い（実名を含むため配信の時だけ置く）。無い時は {} を返す。
  *     ワークスケジュールは「ファイルが無い（404）」と「中身に weekdays が無い」を同じ分岐（work-schedule.html:13370-13373 の
  *     r.ok ? r.json() : null → !p || !p.weekdays → syncCareFromMaster）に落とすので、画面の動きは同じで、読み込みのたびに出る 404 のエラーだけが消える
+ *   ・favicon.ico … 配布物に無い時は 204（中身なし）を返す（ブラウザが自分で取りに来る 404 をコンソールのエラーに数えない）
  *   ・POST /__fail-inject/script … 本文の台本に差し替え、回数を 0 から数え直す（画面を開いて同期が静かになってから入れると、
  *     読み込みの時の自動の保存を数えずに、保存の操作の要求から数えられる）。GET /__fail-inject/report … 台本の一致と記録の末尾
  * 要求ごとに「HTTP の成否」と「本文のアプリの成否（ok・応答の名前）」を別々に記録する（log）。
@@ -191,6 +192,8 @@ export function startFailInjectServer(opts) {
     }
     let file = path.normalize(path.join(root, p));
     if (p === '/facility-profile.json' && !fs.existsSync(file)) file = path.join(root, 'facility-profile.sample.json');
+    /* ブラウザが自分で取りに来る /favicon.ico は配布物に無い。404 だとコンソールのエラーに数えられるので、中身なし（204）で答える */
+    if (p === '/favicon.ico' && !fs.existsSync(file)) { res.writeHead(204, { 'Cache-Control': 'no-store' }); res.end(); return; }
     if (p === '/ws-master.json' && !fs.existsSync(file)) { res.writeHead(200, { 'Content-Type': MIME['.json'], 'Cache-Control': 'no-store' }); res.end('{}'); return; }
     if (!(file === root || file.startsWith(root + path.sep)) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); res.end('not found'); return; }
     if (p === '/su-auth.js' && sbOrigin && authRewrite) {

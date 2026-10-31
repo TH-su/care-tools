@@ -58,6 +58,9 @@ async function tempProfileMaker() {
 
 const lsKeysFile = args['ls-keys'];
 if (!lsKeysFile || lsKeysFile === 'true') { say('使い方: --ls-keys <画面ごとの接続先の localStorage の鍵の JSON> が要ります（例: check/fail-inject/ls-keys.sample.json）'); process.exit(2); }
+/* 何回目か（--run）は 1 か 2 だけ。ほかの値で measure の別の回を上書きしないよう、何も書かずに止める */
+if (args.run !== undefined && args.run !== '1' && args.run !== '2') { say(`--run は 1 か 2 にしてください（渡された値: ${String(args.run).slice(0, 20)}）。何も書かずに止めます`); process.exit(1); }
+if (args.measure === 'true') { say('--measure に measure.json の場所が要ります'); process.exit(2); }
 const LS_KEYS = JSON.parse(fs.readFileSync(lsKeysFile, 'utf8'));
 const only = args.only && args.only !== 'true' ? String(args.only).split(',') : SCENARIOS.slice();
 const sbTarget = args.sb && args.sb !== 'true' ? args.sb : null;
@@ -422,7 +425,7 @@ async function runRmGas(server) {
     result.scenarios.push(Object.assign({ atSec: Math.round((tClick - server.t0) / 1000), app: '入居者マスタ', path: 'GAS（入居者マスタ）', kind: 'gas:' + p.kind, scriptTimes: p.times,
       fired: server.log.slice(fromIdx).filter((e) => e.injected === p.kind).length, bSave: bRows.map((e) => e.name || (e.landed ? 'saved' : null)), pageErrors: A.page.__errors + B.page.__errors }, c));
     void rep;
-    await A.page.evaluate(() => { try { closeEdit && closeEdit(); } catch (e) { /* 無い */ } }).catch(() => {});
+    /* 編集画面は閉じない（次の場面の openEdit が開き直す。入居者マスタに closeEdit は無い） */
   }
   await closeAll();
 }

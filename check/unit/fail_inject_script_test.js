@@ -7,6 +7,7 @@
      3 配信サーバー（serve.mjs）に本当に POST を送り、台本の回数どおりに断り・接続切れ・時間切れが起き、
        素通しの回だけ見本に書けたこと・HTTP の成否と本文の ok を別々に記録することを確かめる
      4 試験用 Supabase の中継は手元（127.0.0.1・localhost）だけ。su-auth.js の差し替えはメモリの中だけで、行が無ければ配らない
+     5 observe.mjs は、--run が 1・2 以外・--measure に値が無い時に、ブラウザを開く前・measure を書く前に止まる。画面に無い関数を呼ばない
    ★GAS・.gs・試験用 Supabase・ブラウザが無くても走る（ネットへ出ない）。データは架空。 */
 'use strict';
 const assert = require('assert');
@@ -208,7 +209,46 @@ async function main() {
     assert.strictEqual(wsm.body, '{}');
   });
 
-  process.stdout.write('4 試験用 Supabase の中継の守り\n');
+  await t('favicon.ico が配布物に無い時は 204（ブラウザが自分で取りに来る 404 をコンソールのエラーに数えない）', async () => {
+    if (fs.existsSync(path.join(ROOT, 'favicon.ico'))) return;   // 配布物にある時は、ある物をそのまま配る
+    const s5 = await S.startFailInjectServer({ root: ROOT, script: [], backends: {} });
+    try { const r = await fetch(s5.url + '/favicon.ico'); assert.strictEqual(r.status, 204); assert.strictEqual(await r.text(), ''); }
+    finally { await s5.close(); }
+  });
+
+  process.stdout.write('5 observe.mjs の引数の守り（ブラウザを開く前に止まる）\n');
+  const { spawnSync } = require('child_process');
+  const os = require('os');
+  const obs = (extra) => spawnSync(process.execPath, [path.join(DIR, 'observe.mjs'), '--ls-keys', path.join(DIR, 'ls-keys.sample.json'), '--only', 'ws-gas'].concat(extra), { cwd: ROOT, encoding: 'utf8', timeout: 30000 });
+  await t('--run が 1・2 以外なら、measure を書かずに理由を出して exit 1', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fi-run-'));
+    const mf = path.join(tmp, 'measure.json');
+    fs.writeFileSync(mf, '[]\n');
+    try {
+      for (const v of ['3', '0', 'x']) {
+        const r = obs(['--run', v, '--measure', mf]);
+        assert.strictEqual(r.status, 1, v);
+        assert.ok(r.stdout.includes('--run は 1 か 2'), v);
+      }
+      const r2 = obs(['--measure', mf, '--run']);   // 値なし（'true'）
+      assert.strictEqual(r2.status, 1);
+      assert.strictEqual(fs.readFileSync(mf, 'utf8'), '[]\n');
+      assert.ok(!fs.existsSync(mf + '.bak'));
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  });
+  await t('--measure に値が無ければ「--measure に measure.json の場所が要ります」で exit 2', () => {
+    const r = obs(['--run', '1', '--measure']);
+    assert.strictEqual(r.status, 2);
+    assert.ok(r.stdout.includes('--measure に measure.json の場所が要ります'));
+  });
+  await t('入居者マスタの場面の後片付けで、画面に無い関数（closeEdit）を呼ばない', () => {
+    const src = fs.readFileSync(path.join(DIR, 'observe.mjs'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const html = fs.readFileSync(path.join(ROOT, 'resident-master.html'), 'utf8');
+    assert.ok(!/function\s+closeEdit\b/.test(html), '画面に closeEdit がある時はこの試験を直す');
+    assert.ok(!/closeEdit\s*\(/.test(src));
+  });
+
+  process.stdout.write('6 試験用 Supabase の中継の守り\n');
   await t('中継先は手元だけ（本番の形の住所は止める）', () => {
     assert.throws(() => S.assertLocalTarget('https://example.supabase.co'));
     assert.throws(() => S.assertLocalTarget('http://10.0.0.1:55421'));
