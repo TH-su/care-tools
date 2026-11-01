@@ -209,7 +209,7 @@ async function msgOf(sb, body) {
       window: {},   // 証明を添える部品（su-gas-auth.js）が無い画面＝今までどおりの本文（2026-10-29）
       Promise, JSON, Object, String, Number, Error, setTimeout, clearTimeout };
     vm.createContext(rb);
-    vm.runInContext(cutR('mdAiCfg') + '\n' + cutR('mdAiAsk') + '\n' + cutR('mdAiProxy_') + '\n' + cutR('mdAiParse'), rb);
+    vm.runInContext(cutR('mdAiCfg') + '\n' + cutR('mdAiViaSupa_') + '\n' + cutR('mdAiAsk') + '\n' + cutR('mdAiProxy_') + '\n' + cutR('mdAiParse'), rb);
     const o = await rb.mdAiAsk(['アムロジピン']);
     t('中継の応答から薬効を読める', o['アムロジピン'] === '高血圧', o);
     t('★送り先は訓練計画の専用GAS（tp_cfg）', sent[0].url === 'https://script.google.com/macros/s/TEST/exec');
@@ -223,7 +223,7 @@ async function msgOf(sb, body) {
     delete store.tp_cfg;
     em = ''; try { await rb.mdAiAsk(['x']); } catch (e) { em = e.message; }
     t('★接続先の無い端末は AI_NO_PROXY（送らない）', em === 'AI_NO_PROXY' && sent.length === 2, em);
-    t('★設定や版の問題・時間切れは割って尋ね直さずに止める（二重に払わない）', /AI_NO_KEY\|AI_NO_PROXY\|AI_LIMIT\|AI_PROXY_OLD\|AI_PROXY_AUTH\|AI_BAD_REQUEST\|AI_TIMEOUT(\|AI_FETCH)?(\|STALE)?\)\$\/\.test/.test(rsrc));
+    t('★設定や版の問題・時間切れは割って尋ね直さずに止める（二重に払わない）', /AI_NO_KEY\|AI_NO_PROXY\|AI_LIMIT\|AI_PROXY_OLD\|AI_PROXY_AUTH\|AI_BAD_REQUEST\|AI_TIMEOUT(\|AI_FETCH)?(\|AI_LOGIN\|AI_FORBIDDEN)?(\|STALE)?\)\$\/\.test/.test(rsrc));
     /* 薬の変更候補の AI 下書き（mcAiAsk_）は止めた（代表者の決定 2026-10-27・外部 AI へ処方を送らない）。
        中継を呼ぶのは薬効の下書き（mdAiAsk）だけ。変更候補の流れの試験は master_mc_no_ai_test.js */
     t('★薬の変更候補の AI 下書き（mcAiAsk_・mcAiRun_・mcMask_）が入居者マスタに無い', !/function mc(AiAsk_|AiRun_|Mask_)\(/.test(rsrc), '');
@@ -237,7 +237,7 @@ async function msgOf(sb, body) {
     t('中継の失敗のコードも言葉にする（AI_FETCH・AI_BUSY・AI_PROXY・AI_BAD_JSON・AI_NETWORK・AI_HTTP_n）',
       ['AI_FETCH', 'AI_BUSY', 'AI_PROXY', 'AI_BAD_JSON', 'AI_NETWORK', 'AI_HTTP_500'].every(c => !/AI_[A-Z]/.test(wb.mdAiWhy_(c))), ['AI_FETCH', 'AI_HTTP_500'].map(wb.mdAiWhy_));
     t('ブラウザの英語の例外文はそのまま出さない', !/Failed/.test(wb.mdAiWhy_('Failed to fetch')), wb.mdAiWhy_('Failed to fetch'));
-    t('★時間切れの可能性がある AI_FETCH も割って尋ね直さない（二重に払わない）', /\|AI_TIMEOUT\|AI_FETCH\|STALE\)\$\/\.test\(em\)\) throw e;/.test(rsrc), '');
+    t('★時間切れの可能性がある AI_FETCH も割って尋ね直さない（二重に払わない）', /\|AI_TIMEOUT\|AI_FETCH(\|AI_LOGIN\|AI_FORBIDDEN)?\|STALE\)\$\/\.test\(em\)\) throw e;/.test(rsrc), '');
     const fill = cutR('mdAiFill');
     const tIdx = fill.indexOf("toast('AIに尋ねられませんでした：'");
     const lastCatch = tIdx > 0 ? fill.slice(fill.lastIndexOf('}).catch(function(e){', tIdx), tIdx + 200) : '';

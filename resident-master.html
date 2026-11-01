@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-YP4QIHaS3PV0SJOz+SB9ONVcS13Y4URcs+k8+RFtSZ0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-5t4xCZZ5NBMYZauqpP6ElpZmXkO+Fw4Vk6972wlYzuU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -7688,7 +7688,42 @@ function mdAiAsk(names){
 }
 /* 個別機能訓練計画書の専用GASへ AI を頼む（効能の下書きだけが使う出口・2026-10-10 で切り出し。薬の変更候補の下書きは 2026-10-27 に止めた）。
    返すのは Anthropic の応答（content を持つ JSON）。★時間切れは再送しない（GAS は画面が諦めても呼び終える） */
+/* 薬効の下書きを AI の中継の新しい受け口（su-ai・統合 0028・用途 med_effect）から送るか。
+   スイッチ su-backend.json の master_ai が入の時だけ（2026-11-01 代表者「今作り、切で置く」）。切の間は今までどおり計画書の GAS を通る */
+function mdAiViaSupa_(){
+  try{
+    var f=(window.SUKv&&typeof SUKv._flags==='function')?SUKv._flags():JSON.parse(localStorage.getItem('su_backend_flags')||'null');
+    return !!(f&&f.supabase&&typeof f.supabase==='object'&&f.supabase.master_ai===true);
+  }catch(e){ return false; }
+}
+/* su-ai へ送る。応答は計画書の GAS と同じ形（{ok, status, data|detail} か {ok:false, error}）。
+   受け口に届く前に通信が切れた時だけ、2秒待って1回だけ送り直す（計画書の AI の下書きと同じ・届いていれば回数を二重に使うので、それ以外は送り直さない） */
+function mdAiSupa_(body){
+  return msAuthLoad_().then(function(){
+    if(!window.SUAuth) throw new Error('AI_NO_PROXY');
+    return SUAuth.check();
+  }).then(function(st){
+    if(!st||st.status!==SUAuth.STATUS.OK) throw new Error('AI_LOGIN');
+    function once(){
+      return Promise.resolve(SUAuth.client().functions.invoke('su-ai',{body:{purpose:'med_effect', body:body}})).then(function(r){
+        if(r&&r.error){
+          var ctx=r.error.context, nm=String(r.error.name||'');
+          return Promise.resolve(ctx&&typeof ctx.json==='function'?ctx.json().catch(function(){ return null; }):null).then(function(d){
+            if(d&&typeof d==='object'&&d.ok===false&&typeof d.error==='string') return d;
+            var e=new Error('AI_NETWORK'); e.retry=!(ctx&&typeof ctx.status==='number')&&nm!=='FunctionsRelayError'; throw e;
+          });
+        }
+        return r?r.data:null;
+      });
+    }
+    return once().catch(function(e){
+      if(!e||e.retry!==true) throw e;
+      return new Promise(function(ok){ setTimeout(ok,2000); }).then(once);
+    });
+  });
+}
 function mdAiProxy_(body){
+  if(mdAiViaSupa_()) return mdAiSupaRun_(body);
   var cfg=mdAiCfg();
   if(!cfg) return Promise.reject(new Error('AI_NO_PROXY'));
   /* text/plain で送る（CORS の事前確認を起こさない・su-data-gas.js と同じ作法）。合言葉は本文にだけ載せる */
@@ -7720,6 +7755,24 @@ function mdAiProxy_(body){
   });
   return pr.then(function(j){ clearTimeout(to); return j; },
                  function(e){ clearTimeout(to); throw e; });
+}
+/* su-ai の応答を、計画書の GAS の時と同じ断り（AI_…）に読み替える。時間切れは同じ長さ（MD_AI_TIMEOUT） */
+function mdAiSupaRun_(body){
+  var to=null;
+  var tm=new Promise(function(res,rej){ to=setTimeout(function(){ rej(new Error('AI_TIMEOUT')); }, MD_AI_TIMEOUT); });
+  return Promise.race([mdAiSupa_(body), tm]).then(function(j){
+    clearTimeout(to);
+    if(!j||typeof j!=='object') throw new Error('AI_BAD_JSON');
+    if(j.ok!==true){
+      var map={ai_no_key:'AI_NO_KEY', ai_limit:'AI_LIMIT', ai_bad_request:'AI_BAD_REQUEST', ai_fetch:'AI_FETCH',
+               ai_bad_json:'AI_BAD_JSON', ai_server:'AI_PROXY', ai_forbidden:'AI_FORBIDDEN', ai_name_found:'AI_NAME_FOUND', login:'AI_LOGIN'};
+      throw new Error(map[String(j.error||'')]||'AI_PROXY');
+    }
+    var st=Number(j.status)||0;
+    if(st<200||st>=300){ var err=new Error('AI_HTTP_'+st); err.detail=String(j.detail||'').slice(0,200); throw err; }
+    if(!j.data||typeof j.data!=='object') throw new Error('AI_BAD_JSON');
+    return j.data;
+  }, function(e){ clearTimeout(to); throw e; });
 }
 function mdAiParse(j, names){
   var txt='';
@@ -7773,7 +7826,7 @@ function mdAiFill(){
     return x.effect==='' && !mdDels[x.name] && !mdIsHidden(x.name,(mdMap&&mdMap[x.name])||null);
   }).map(function(x){ return x.newName||x.name; });
   if(!todo.length){ toast('未登録の薬はありません'); return; }
-  if(!mdAiCfg()){
+  if(!mdAiViaSupa_()&&!mdAiCfg()){
     toast('この端末には個別機能訓練計画書の接続先が無いため、AIを使えません（訓練計画アプリの設定画面で接続先を入れた端末で使えます）',false);
     return;
   }
@@ -7800,7 +7853,7 @@ function mdAiFill(){
       /* ★時間切れ（AI_TIMEOUT）も割り直さない。中継の GAS は画面が諦めた後も Anthropic を呼び終えるため、
          割ってやり直すと同じ薬剤を2〜3回分払うことになる */
       /* ★世代が変わった時（STALE）は半分に割って尋ね直さない */
-      if(/^(AI_NO_KEY|AI_NO_PROXY|AI_LIMIT|AI_PROXY_OLD|AI_PROXY_AUTH|AI_BAD_REQUEST|AI_TIMEOUT|AI_FETCH|STALE)$/.test(em)) throw e;   /* AI_FETCH＝GAS が回数を数えた後の通信失敗（時間切れの可能性） */
+      if(/^(AI_NO_KEY|AI_NO_PROXY|AI_LIMIT|AI_PROXY_OLD|AI_PROXY_AUTH|AI_BAD_REQUEST|AI_TIMEOUT|AI_FETCH|AI_LOGIN|AI_FORBIDDEN|STALE)$/.test(em)) throw e;   /* AI_FETCH＝GAS が回数を数えた後の通信失敗（時間切れの可能性） */
       /* ★1回の失敗で全部を捨てない。応答が長すぎて壊れた時は【半分に割って】もう一度だけ試す。
          それでも駄目なら、その塊だけ諦めて先へ進む（失敗した数は人に伝える）。 */
       var half=Math.ceil(chunks[k].length/2);
@@ -7864,7 +7917,11 @@ function mdAiWhy_(code){
              AI_BUSY:'サーバーが混み合っています。少し待ってから、もう一度お試しください',
              AI_PROXY:'計画書の専用GASから正しい応答がありませんでした。もう一度お試しください',
              AI_BAD_JSON:'AIの返事を読み取れませんでした。もう一度お試しください',
-             AI_NETWORK:'AIに接続できませんでした。通信を確かめてから、もう一度お試しください'}[code];
+             AI_NETWORK:'AIに接続できませんでした。通信を確かめてから、もう一度お試しください',
+             /* 新しい受け口（su-ai・スイッチ master_ai）だけが返す断り（2026-11-01） */
+             AI_LOGIN:'この端末はログインしていないため、AIを使えません。ログインしてから、もう一度お試しください',
+             AI_FORBIDDEN:'このアカウントではAIを使えません。事務所・管理者のアカウントでログインし直してください',
+             AI_NAME_FOUND:'送る文に入居者のお名前が入っていたため、AIへ送りませんでした（何も送っていません）'}[code];
     if(why) return why;
     if(/^AI_HTTP_\d+$/.test(code)) return 'AIから正しい応答がありませんでした（HTTP '+code.slice(8)+'）。少し待ってから、もう一度お試しください';
     if(/^AI_[A-Z0-9_]+$/.test(code)) return 'AIに尋ねられませんでした（'+code+'）';
