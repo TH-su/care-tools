@@ -250,6 +250,24 @@ function sameShape(p) { return p && p.url === TP_URL && p.method === 'POST' && p
     let m = 'OK'; try { await x.w.SU.data.training.ai(AIB, x.w.tpTarget()); } catch (e) { m = e.message; }
     t('届かない時は失敗・Google へ流さない', /届きませんでした/.test(m) && x.posts.length === 0, [m, x.posts.length]);
   }
+  {
+    let n = 0;
+    const f = fakeAuth({});
+    f.A.client = () => ({ functions: { invoke: async () => (++n === 1 ? { data: null, error: { name: 'FunctionsFetchError', message: 'Failed to fetch' } } : { data: { ok: true, status: 200, data: {} }, error: null }) } });
+    const x = box({ flags: { supabase: { training_ai: true } }, auth: f.A });
+    const r = await x.w.SU.data.training.ai(AIB, x.w.tpTarget());
+    t('受け口に届く前に切れた時は、少し待って1回だけ送り直す（2回目で答えれば成功）', n === 2 && r && r.ok === true && x.posts.length === 0, [n, r]);
+  }
+  for (const [label, err, retried] of [['2回とも届かない', { name: 'FunctionsFetchError', message: 'Failed to fetch' }, 2],
+                                       ['受け口が 500 で答えた', { name: 'FunctionsHttpError', message: 'x', context: { status: 500, json: async () => null } }, 1],
+                                       ['手前の中継で止まった', { name: 'FunctionsRelayError', message: 'x' }, 1]]) {
+    let n = 0;
+    const f = fakeAuth({});
+    f.A.client = () => ({ functions: { invoke: async () => { n++; return { data: null, error: err }; } } });
+    const x = box({ flags: { supabase: { training_ai: true } }, auth: f.A });
+    try { await x.w.SU.data.training.ai(AIB, x.w.tpTarget()); } catch (e) { /* 失敗 */ }
+    t('AI の中継が ' + label + ' → 送るのは ' + retried + '回まで', n === retried, n);
+  }
   for (const [label, err, code] of [['通信の段階で止まった', { name: 'FunctionsFetchError', message: 'Failed to fetch' }, 'ai_fetch'],
                                     ['入口が 401 で断った（答えが読めない形）', { name: 'FunctionsHttpError', message: 'x', context: { status: 401, json: async () => ({ code: 401, message: 'Invalid JWT' }) } }, 'ai_401'],
                                     ['手前の中継で止まった', { name: 'FunctionsRelayError', message: 'x' }, 'ai_relay']]) {
