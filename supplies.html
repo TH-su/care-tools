@@ -3,7 +3,7 @@
 <head>
 <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4JDGCDTl4lNH/IYW+spyzgE0jPPMsewS7RYePX8LTvQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-b0LbtuCRmFCCZxwuh8hZ6xb6fJbVEm96D8zCfpBP3PU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="spl-build" content="2026-09-23.1">
@@ -1419,7 +1419,10 @@ var ST = {
   billNotesOk: true,       /* false＝サーバーがメモを読めていない（notes タブが無い等）*/
   /* 送れなかった記録の控え（メモリのみ）。{fp:中身の指紋, id:送った番号}。
      応答が来ないだけでサーバーには届いていることがあるので、同じ中身で押し直したら同じ番号で送る */
-  retryMove: null
+  retryMove: null,
+  /* 在庫の値が入れ替わるたびに1つ進める（読み直しの応答が後から届いた時に、新しい在庫を古い値で上書きしないため）。
+     stockAt は品目ごとに最後に入れ替えた時の数、stockAll は一覧の読み込みで全部を入れ替えた時の数 */
+  stockGen: 0, stockAt: {}, stockAll: 0
 };
 /* ★2026-09-23 現場端末（su_device_role==='field'）では、管理者の合言葉が入っていても職員として扱う。
    価格改定・締め・取消・棚卸・調整・請求明細・集計は事務所の端末でだけ行う（入出庫の記録は現場でも行う）。
@@ -1904,6 +1907,9 @@ function loadList(quiet) {
     ST.defaults = (d.defaults && typeof d.defaults === 'object') ? d.defaults : {};
     ST.closed = Array.isArray(d.closedMonths) ? d.closedMonths.map(txt) : [];
     ST.stock = (d.stock && typeof d.stock === 'object') ? d.stock : {};
+    ST.stockGen++;
+    ST.stockAt = {};
+    ST.stockAll = ST.stockGen;
     ST.settingsAt = txt(d.settingsAt);
     ST.loaded = true;
     ST.retryMove = null;         /* サーバーの値を読み直した＝この後の同じ中身は2件目として入れる */
@@ -3064,6 +3070,7 @@ function flushPending() {
     if (ok) toast('未送信だった出庫 ' + ok + '件を送りました');
     renderList();
     renderStock();
+    refreshStockAfterDup(res);
   }).catch(function (e) {
     /* ★送り直せなかったことも必ず見せる（黙って握り潰さない・設計 §3-5）。
        控えは消さない＝次にこの画面を開いた時にもう一度送る */
@@ -3073,7 +3080,41 @@ function flushPending() {
 }
 function mergeStock(stock) {
   var k;
-  for (k in stock) { if (Object.prototype.hasOwnProperty.call(stock, k)) ST.stock[k] = stock[k]; }
+  ST.stockGen++;
+  for (k in stock) {
+    if (Object.prototype.hasOwnProperty.call(stock, k)) { ST.stock[k] = stock[k]; ST.stockAt[k] = ST.stockGen; }
+  }
+}
+/* 「すでに登録済み」の記録は、サーバーの応答に在庫が入らない（応答の在庫は、今回書いた品目の分だけ）。
+   その時だけ品目の一覧の読み取りから在庫の数だけを取り直し、画面の在庫を正しい数にする（2026-11-02）。
+   一覧を丸ごと読み直す（loadList）と知らせと入力欄が消えるので、在庫のほかは触らない。
+   取り直せなかった時は今の表示のまま（⟳ 読み直しで正しくなる）で、記録だけ残す */
+function refreshStockAfterDup(res) {
+  var dup = (Array.isArray(res) ? res : []).some(function (r) { return r && r.status === 'existing'; });
+  if (!dup || !cfgReady()) return Promise.resolve(false);
+  var gen = ST.stockGen;
+  return apiPost('list', {}).then(function (d) {
+    if (ST.stockAll > gen) return false;              /* 待つ間に一覧を読み直した＝そちらが新しい */
+    if (!d || !d.stock || typeof d.stock !== 'object') return false;
+    /* 待つ間に別の送信の応答で入れ替わった品目は、そちらが新しいので残す（品目ごとに比べる） */
+    var fresh = {}, n = 0, k;
+    for (k in d.stock) {
+      if (Object.prototype.hasOwnProperty.call(d.stock, k) && !((ST.stockAt[k] || 0) > gen)) { fresh[k] = d.stock[k]; n++; }
+    }
+    if (!n) return false;
+    mergeStock(fresh);
+    /* 一覧の画面で改定行を開いている間は一覧を描き直さない（描き直すと入力中の欄から外れる）。一覧の在庫は次に描く時に出る */
+    if (!(ST.edit && ST.screen === 'list')) renderList();
+    renderStock();
+    renderPreview();                                   /* 入出庫の見込みの「今の在庫」 */
+    /* 詳細画面は、月額の設定の欄に打っている間は描き直さない（欄を作り直すと入力中の文字が消える） */
+    var ae = document.activeElement;
+    if (ST.screen === 'detail' && !(ae && $('dtProfCd') && $('dtProfCd').contains(ae))) renderDetail();
+    return true;
+  }, function (e) {
+    try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('在庫の読み直しの失敗', e, 'supplies:refreshStockAfterDup'); } catch (_) {}
+    return false;
+  });
 }
 function sendMoves(moves, isOut) {
   if (ST.busy) return;
@@ -3096,6 +3137,7 @@ function sendMoves(moves, isOut) {
     $('mvNote').value = '';
     $('mvCost').value = '';
     renderPreview();
+    refreshStockAfterDup(res);
     askRepriceAfterIn(moves, res);
   }).catch(function (e) {
     /* 届いたか分からないので、中身と番号を控える（押し直しで二重に登録しないため） */
@@ -3407,6 +3449,7 @@ function copyLastMonth() {
       reportMoveResults(acc);
       renderList();
       renderStock();
+      refreshStockAfterDup(acc);
     });
   }).catch(function (e) {
     setState('mvState', 'err', '複写できませんでした（' + errText(e) + '）', errHint(e));
