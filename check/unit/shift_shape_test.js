@@ -286,8 +286,9 @@ const same = (a, b) => JSON.stringify(shape(a)) === JSON.stringify(shape(b));
       /<span id="syncBadge"[^\n]*<\/span>\n[^\n]*\n\s*<span id="lastUpdate" class="noprint" hidden><\/span>/.test(HTML) && !/id="lastUpdate"[^>]*data-k/.test(HTML));
     t('I 印刷ではツールバーと noprint を消す（@media print）', /@media print \{[\s\S]{0,200}#toolbar,[^}]*\.noprint[^}]*display: none !important/.test(HTML));
     t('I 表示は textContent で入れる（innerHTML を使わない）', /showLastUpdate_: function \(el, text\) \{\n\s*el\.textContent = text \|\| '';\n\s*el\.hidden = !text;/.test(HTML));
-    t('I 読み込んだ時（loadMonth の終わり）と、同期中→同期済みの時に読み直す',
-      /this\.maybePullDraftBody_\(\);\n\s*this\.refreshLastUpdate_\(\);/.test(HTML) && /if \(status === 'synced' && prevStatus === 'syncing'\) self\.refreshLastUpdate_\(\);/.test(HTML));
+    t('I 読み込んだ時（loadMonth の終わり）と、同期中（または保存の応答待ちの知らせの後）→同期済みの時に読み直す',
+      /this\.maybePullDraftBody_\(\);\n\s*this\.refreshLastUpdate_\(\);/.test(HTML) && /return status === 'synced' && \(prevStatus === 'syncing' \|\| !!pushWaited\);/.test(HTML)
+      && /if \(self\.lastUpdateDue_\(status, prevStatus, pushWaited\)\) self\.refreshLastUpdate_\(\);/.test(HTML));
   }
 
   console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');

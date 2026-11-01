@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-MQdFHMdNDCVnROBa8Sifg1JFE79QCuhSyjonQT9F918='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-TcQVx9Hqu1kKKhQ8DCC777+hMUJT70OrIZ0J0lPFqBk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -435,8 +435,8 @@ html.su-field #frdCSV { display: none !important; }
 </style>
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
-<script src="su-kv.js?v=2026-10-27.2"></script>
-<script src="su-kv-shadow.js?v=2026-10-24"></script>
+<script src="su-kv.js?v=2026-10-28"></script>
+<script src="su-kv-shadow.js?v=2026-10-28"></script>
 </head>
 <body>
 <div id="toolbar">
@@ -3002,7 +3002,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return Math.min(30000 * Math.pow(2, Math.min(k - 1, 4)), 120000);
   }
 
+  /* ── 保存の応答待ちの知らせ（代表者の決定 2026-11-01）──────────────────────────
+   * 背景（実測）: 保存（push）にサーバーが応答しないと、同期の札が「⟳ 同期中…」のまま60秒以上たっても何も出なかった。
+   * 方針: 保存は今までどおり打ち切らない・送り直さない（上の 2026-09-28 の方針）。送ってからこの時間たっても応答が
+   *   無い時だけ、札を「未送信あり」にして待っていることを知らせる。応答が来たら知らせの時計は止める。 */
+  var WRITE_NOTICE_MS = 45000;
+
   var api = {
+    WRITE_NOTICE_MS: WRITE_NOTICE_MS,
     READ_TIMEOUT_MS: READ_TIMEOUT_MS,
     READ_MAX_ATTEMPTS: READ_MAX_ATTEMPTS,
     isReadAction: isReadAction,
@@ -3685,6 +3692,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   var WRONG_ENDPOINT_MSG = 'この端末の同期先（GASのURL）が、シフトの同期先ではありません（別のアプリのGASか古い版を指しています）。' +
     '正常に同期できている端末の［マスタ→設定→クラウド同期］のURLをコピーして、この端末に貼り直してください。';
   function endpointFailMsg_(msg) { return isWrongEndpointErr_(msg) ? WRONG_ENDPOINT_MSG : DEAD_ENDPOINT_MSG; }
+  /* 保存（push）の応答を WRITE_NOTICE_MS 待っても返らない時に、同期の札の詳細へ出す文（代表者の決定 2026-11-01・文言は指定どおり） */
+  var WRITE_WAIT_MSG = 'サーバーの応答を待っています。届いていることもあるので、同じ所を直し直さず、しばらく待ってからこの札を押して確かめてください';
 
   /* GAS 同期URLの形式（master.js の手入力検証・ワースケ・週間計画と同一規則）。
    * 自動切替(healStaleTarget)で採用する時にも当てる＝壊れた値が su_sync_common 経由で
@@ -4503,7 +4512,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         this.status = 'readonly';
         this.statusDetail = '閲覧専用トークン：この端末の編集は共有されません';
       } else if (this.queue.size() > 0) {
-        this.status = 'dirty'; this.statusDetail = this.rejectDetail_();
+        this.status = 'dirty'; this.statusDetail = this.pushWaitDetail_();
       } else if (this.dataFresh === false) {
         /* 取得に失敗している間は「✓ 同期済み」と言わない（画面は端末内の内容にすぎない）。
          * 新しい状態は作らず既存の offline へ倒す＝バッジ辞書もCSSも無改変。
@@ -4576,6 +4585,36 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
          Supabase が受け持つ（応答は Google と同じ形）。スイッチが切・su-kv.js が無い時は今までどおり Google（rawGas）。
          ※公開リポ（care-tools ba50e84）へ直接入った変更を正本へ移植（2026-09-28） */
       var sent = (window.SUKv && SUKv.handlesShift && SUKv.handlesShift(payload)) ? SUKv.callShift(payload, rawGas) : rawGas(payload);
+      /* 保存（push）の応答待ちの知らせ（代表者の決定 2026-11-01・netpolicy の WRITE_NOTICE_MS）。
+       * 打ち切らない・送り直さない（要求そのものには触れない）。応答が無いまま時間がたった時だけ、送信中の札を
+       * 「未送信あり」（dirty＝キューにまだ残っている）にして待っていることを知らせる。応答が来たら（成功・断り・失敗の
+       * どれでも）時計を止め、後の扱いは今までどおり（applyPushResult・鎖の末尾の updateStatus）に任せる。
+       * 送信中（syncing かつ _pushInFlight）の札だけを置き換える＝保存失敗・閲覧専用・競合などの札は上書きしない。 */
+      if (!isRead && np && np.WRITE_NOTICE_MS > 0 && payload && payload.action === 'push') {
+        /* 世代: この push の時計だけが、この push の知らせの印を立てる・下ろす */
+        var noticeGen = (self._pushWaitSeq = (self._pushWaitSeq || 0) + 1);
+        var noticeDone = false;
+        var noticeT = setTimeout(function () {
+          /* この push がまだ送信中の時だけ（応答が来た・送信の鎖が終わった後は何もしない） */
+          if (noticeDone || !self._pushInFlight) return;
+          self._pushWaitNotice = noticeGen;
+          /* 札を書き換えるのは、保存の送信中の札か、送信中にセルを直して出た「未送信あり」の時だけ。
+           * 読み込み中（サーバから取得中…）・保存失敗・閲覧専用・競合などの札は書き換えず、印だけ立てる
+           * （読み込みが終わった時の updateStatus() で、印により文が出る）。 */
+          if ((self.status === 'syncing' && self.statusDetail === '送信中…') || self.status === 'dirty') {
+            self.updateStatus('dirty', self.pushWaitDetail_());
+          }
+        }, np.WRITE_NOTICE_MS);
+        var stopNotice = function () {
+          noticeDone = true;
+          clearTimeout(noticeT);
+          if (self._pushWaitNotice !== noticeGen) return;
+          self._pushWaitNotice = 0;
+          /* 応答が来たら文を消す（札は作り直すだけ。後の扱いは今までどおり） */
+          if (self.status === 'dirty' && String(self.statusDetail).indexOf(WRITE_WAIT_MSG) >= 0) self.updateStatus();
+        };
+        sent = sent.then(function (v) { stopNotice(); return v; }, function (e) { stopNotice(); throw e; });
+      }
       return sent.then(function (json) {
         /* 統合 0007（2026-09-26）: Google が返した勤務表の版をそのまま Supabase へ写す（写しの期間だけ・事務所／管理者の
            ログイン時だけ）。写すのは data だけ（合言葉・編集券は送らない）。アプリの動きは変えない（失敗しても何もしない） */
@@ -5278,6 +5317,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
             this._guardBlocked && this._guardBlocked[k]) ks.push(k);
       }
       return ks;
+    },
+    /* 「未送信あり」の札の詳細。保存の応答待ちの知らせ（_pushWaitNotice）が立っている間は、送信中にセルを直して
+     * 札を作り直しても知らせの文を残す（代表者の決定 2026-11-01）。立っていなければ従来どおり rejectDetail_ のまま。 */
+    pushWaitDetail_: function () {
+      var rd = this.rejectDetail_();
+      if (!this._pushWaitNotice) return rd;
+      return rd ? (WRITE_WAIT_MSG + '／' + rd) : WRITE_WAIT_MSG;
     },
     /* 受け付けられずに止めている時の説明。無ければ空文字＝従来の表示のまま。 */
     rejectDetail_: function () {
@@ -9531,6 +9577,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (gen === self._luGen) self.showLastUpdate_(el, '');
       });
     },
+    /* 「最終更新」を読み直す時か（純関数）: 同期済みになった時に、前が同期中か、保存の応答待ちの知らせの後だった時 */
+    lastUpdateDue_: function (status, prevStatus, pushWaited) {
+      return status === 'synced' && (prevStatus === 'syncing' || !!pushWaited);
+    },
     showLastUpdate_: function (el, text) {
       el.textContent = text || '';
       el.hidden = !text;
@@ -12381,9 +12431,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var badge = document.getElementById('syncBadge');
       this._storeErrorShown = false;
       var prevStatus = null;
+      var pushWaited = false;   /* 保存の応答待ちの知らせ（「未送信あり」）を出した後か（2026-11-01） */
       Store.onChange(function (status, detail) {
-        /* 取得・保存が終わった時（同期中→同期済み）に「最終更新」を読み直す（2026-10-27） */
-        if (status === 'synced' && prevStatus === 'syncing') self.refreshLastUpdate_();
+        /* 取得・保存が終わった時（同期中→同期済み）に「最終更新」を読み直す（2026-10-27）。
+         * 保存の応答待ちの知らせの後に応答が届いて同期済みになった時も読み直す（2026-11-01） */
+        if (status === 'dirty' && Store._pushWaitNotice) pushWaited = true;
+        if (self.lastUpdateDue_(status, prevStatus, pushWaited)) self.refreshLastUpdate_();
+        if (status !== 'dirty' && status !== 'syncing') pushWaited = false;
         prevStatus = status;
         badge.className = status;
         var t = { nosync: '同期未設定', synced: '✓ 同期済み', dirty: '● 未送信あり', syncing: '⟳ 同期中…',
@@ -12471,6 +12525,6 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 })();
 </script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
-<script src="su-report.js?v=2026-10-24" data-tool="シフト作成・管理"></script>
+<script src="su-report.js?v=2026-10-28" data-tool="シフト作成・管理"></script>
 </body>
 </html>
