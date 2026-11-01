@@ -3,7 +3,7 @@
 <head>
 <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-D47YyVfQfVopgl7KhZwbi+XFizJngLsbpOFJ3WoiNNs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4JDGCDTl4lNH/IYW+spyzgE0jPPMsewS7RYePX8LTvQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="spl-build" content="2026-09-23.1">
@@ -1416,7 +1416,10 @@ var ST = {
   billPage: 'flat',        /* flat=1枚続き / byResident=入居者ごとに改ページ */
   billStale: false,        /* true＝読み込み後に台帳が動いた（古い紙を刷らせない）*/
   billNotesCap: null,
-  billNotesOk: true        /* false＝サーバーがメモを読めていない（notes タブが無い等）*/
+  billNotesOk: true,       /* false＝サーバーがメモを読めていない（notes タブが無い等）*/
+  /* 送れなかった記録の控え（メモリのみ）。{fp:中身の指紋, id:送った番号}。
+     応答が来ないだけでサーバーには届いていることがあるので、同じ中身で押し直したら同じ番号で送る */
+  retryMove: null
 };
 /* ★2026-09-23 現場端末（su_device_role==='field'）では、管理者の合言葉が入っていても職員として扱う。
    価格改定・締め・取消・棚卸・調整・請求明細・集計は事務所の端末でだけ行う（入出庫の記録は現場でも行う）。
@@ -1903,6 +1906,7 @@ function loadList(quiet) {
     ST.stock = (d.stock && typeof d.stock === 'object') ? d.stock : {};
     ST.settingsAt = txt(d.settingsAt);
     ST.loaded = true;
+    ST.retryMove = null;         /* サーバーの値を読み直した＝この後の同じ中身は2件目として入れる */
     applyRole();
     fillCatSelect();
     fillItemSelects();
@@ -2924,6 +2928,11 @@ function newMoveId() {
   }
   return 'mv_' + s;
 }
+/* 記録の中身の指紋（番号 id を除く全項目を名前の順に並べた文字列）。送り直しの見分けに使う */
+function moveFingerprint(mv) {
+  return JSON.stringify(Object.keys(mv).filter(function (k) { return k !== 'id'; }).sort()
+    .map(function (k) { return [k, mv[k] === undefined ? null : mv[k]]; }));
+}
 function showMoveErr(msg) {
   var p = $('mvErr');
   p.textContent = txt(msg);
@@ -2995,6 +3004,12 @@ function submitMove() {
   } else if (neg) {
     if (!window.confirm(neg + '登録してよろしいですか？')) return;
   }
+  /* 前に送れなかった記録と同じ中身なら、同じ番号で送る（サーバーは同じ番号を二重に登録しない）。
+     中身が違えば控えは捨てる */
+  if (ST.retryMove) {
+    if (ST.retryMove.fp === moveFingerprint(mv)) mv.id = ST.retryMove.id;
+    else ST.retryMove = null;
+  }
   sendMoves([mv], type === 'out');
 }
 /* 出庫だけは、応答を見るまで sessionStorage に控える（承認事項 F） */
@@ -3013,7 +3028,9 @@ function writePending(a) {
 }
 function addPending(moves) {
   var a = readPending();
-  moves.forEach(function (m) { a.push(m); });
+  /* 同じ番号の送り直しは1件として控える（件数を多く見せない） */
+  var ids = a.map(function (m) { return txt(m.id); });
+  moves.forEach(function (m) { if (ids.indexOf(txt(m.id)) < 0) { a.push(m); ids.push(txt(m.id)); } });
   writePending(a);
 }
 function dropPending(ids) {
@@ -3029,6 +3046,7 @@ function flushPending() {
   var a = readPending();
   if (!a.length || !cfgReady()) return Promise.resolve();
   return apiPost('addMoves', { moves: a }).then(function (d) {
+    ST.retryMove = null;         /* 送り直しの応答でサーバーの値を読んだ＝送れなかった記録の控えは捨てる */
     var res = Array.isArray(d.results) ? d.results : [];
     dropPending(res.map(function (r) { return txt(r.id); }));
     if (d.stock) mergeStock(d.stock);
@@ -3064,6 +3082,7 @@ function sendMoves(moves, isOut) {
   if (isOut) addPending(moves);
   setState('mvState', '', '送信中…', 'サーバーに記録しています。');
   apiPost('addMoves', { moves: moves }).then(function (d) {
+    ST.retryMove = null;         /* 応答が来た＝控えはもう要らない */
     var res = Array.isArray(d.results) ? d.results : [];
     dropPending(res.map(function (r) { return txt(r.id); }));
     if (d.stock) mergeStock(d.stock);
@@ -3079,6 +3098,8 @@ function sendMoves(moves, isOut) {
     renderPreview();
     askRepriceAfterIn(moves, res);
   }).catch(function (e) {
+    /* 届いたか分からないので、中身と番号を控える（押し直しで二重に登録しないため） */
+    if (moves.length === 1) ST.retryMove = { fp: moveFingerprint(moves[0]), id: txt(moves[0].id) };
     setState('mvState', 'err', '記録できませんでした（' + errText(e) + '）', errHint(e));
   }).then(function () {
     ST.busy = false;
@@ -4374,6 +4395,7 @@ function loadDetailMoves() {
   var from = SPL().monthRange(SPL().prevMonth(SPL().prevMonth(ym))).from;
   setState('dtMovesState', '', '読み込み中…', '直近3か月の入出庫を取得しています。');
   apiPost('listMoves', { from: from, to: to, itemId: it.id }).then(function (d) {
+    ST.retryMove = null;         /* 入出庫を読み直した＝送れなかった記録の控えは捨てる */
     var moves = (Array.isArray(d.moves) ? d.moves : []).filter(function (m) { return txt(m.itemId) === it.id; });
     renderDetailMoves(it, moves);
   }).catch(function (e) {
