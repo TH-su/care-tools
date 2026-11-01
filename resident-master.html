@@ -14370,6 +14370,8 @@ document.addEventListener('DOMContentLoaded',function(){ try{ rmResolveWho_(); }
 window.addEventListener('storage',function(e){ if(e.key===null || /^sb-[a-z0-9]+-auth-token$/.test(e.key||'')){ try{ rmResolveWho_(); }catch(e2){} } });
 document.addEventListener('visibilitychange',function(){ if(!document.hidden){ try{ rmResolveWho_(); }catch(e){} } });
 </script>
+<!-- 見出しの下の初回の案内の帯（2026-11-02 本人の決定）。×で閉じた端末では出さない。画面の動き・保存・印刷には触れない -->
+<script src="su-intro.js?v=2026-11-02"></script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
 <script src="su-report.js?v=2026-10-28" data-tool="入居者マスタ"></script>
 </body>

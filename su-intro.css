@@ -1,0 +1,10 @@
+/* su-intro.css — 初回の案内の帯（su-intro.js が読む・2026-11-02 本人の決定）。画面だけに出し、印刷しない。
+   色: 地 #e8f1fb に文字 #0f2742（コントラスト 7:1 以上）。iPhone 幅でも折り返して横にはみ出さない */
+.sui-band{flex:0 0 auto;display:flex;align-items:flex-start;gap:8px;box-sizing:border-box;width:100%;max-width:100%;margin:0;padding:6px 6px 6px 12px;background:#e8f1fb;color:#0f2742;border-left:4px solid #0b57d0;border-bottom:1px solid #9dbbe0;font-family:inherit;font-size:0.875rem;line-height:1.55;text-align:left}
+.sui-tx{flex:1 1 auto;min-width:0;padding:3px 0}
+.sui-ln{margin:0;padding:0;font-size:inherit;font-weight:400;color:inherit;overflow-wrap:anywhere;word-break:normal}
+.sui-x{flex:0 0 auto;box-sizing:border-box;min-width:44px;min-height:44px;width:44px;height:44px;margin:0;padding:0;display:inline-flex;align-items:center;justify-content:center;background:#ffffff;color:#0f2742;border:1px solid #4a6a94;border-radius:8px;font-family:inherit;font-size:1.25rem;line-height:1;cursor:pointer}
+.sui-x:hover{background:#d4e4f7}
+.sui-x:focus-visible{outline:3px solid #0b57d0;outline-offset:2px}
+.sui-band[hidden]{display:none!important}
+@media print{.sui-band{display:none!important}}

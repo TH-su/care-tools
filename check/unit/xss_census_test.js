@@ -506,6 +506,7 @@ const CENSUS = {
   "su-export-crypt.js": [],
   "su-export.js": [],
   "su-facility.js": [],
+  "su-intro.js": [],
   "su-itomari.js": [],
   "su-kv-shadow.js": [],
   "su-kv.js": [],

@@ -67,7 +67,7 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
 | 予定・支援 | `care-schedule.html`（週間計画） `work-schedule.html` `visit-overview.html` `support-overview.html` `overview-compare.html` `daycare-roster.html` |
 | 職員・勤務 | `shift-app.html` `shift-analyzer.html` `staff-master.html` |
 | 運営 | `supplies.html` `connection-settings.html` `accounts.html` `menu-settings.html` `app-access.html` `login.html` `perf-report.html` `shadow-check.html` |
-| 共通部品 | `su-errors.js` `su-perf.js` `su-cfg-hint.js` `su-facility.js` + `facility-profile.json` `su-print.js` + `su-print.css` `su-report.js` + `su-annot.js` `su-data.js` + `su-data-gas.js` + `su-data-supabase.js` `su-kv.js` `su-kv-shadow.js` `su-master-shadow.js` `su-roster.js` `su-weight-shadow.js` `su-patch-sync.js` `su-auth.js` + `supabase-js-*.js` `su-itomari.js`（メニューの毬の絵） `su-app-gate.js` + `su-app-gate.css`（事務所向けのアプリを開く前のログインの役割の確かめ） `su-gas-auth.js`（事務所用の合言葉で GAS へ読みに行く要求に、ログイン中だけ証明を添える） |
+| 共通部品 | `su-errors.js` `su-perf.js` `su-cfg-hint.js` `su-facility.js` + `facility-profile.json` `su-print.js` + `su-print.css` `su-report.js` + `su-annot.js` `su-data.js` + `su-data-gas.js` + `su-data-supabase.js` `su-kv.js` `su-kv-shadow.js` `su-master-shadow.js` `su-roster.js` `su-weight-shadow.js` `su-patch-sync.js` `su-auth.js` + `supabase-js-*.js` `su-itomari.js`（メニューの毬の絵） `su-app-gate.js` + `su-app-gate.css`（事務所向けのアプリを開く前のログインの役割の確かめ） `su-gas-auth.js`（事務所用の合言葉で GAS へ読みに行く要求に、ログイン中だけ証明を添える） `su-intro.js` + `su-intro.css`（初回の案内の帯） |
 | 検証道具 | `check/`（撮影・画素比較・JS構文・実名ガード・配置図の絵・受け口 GAS・夜の定期タスクの指示書。配布物ではない）・`.github/workflows/pixel-check.yml`（PR ごとの画素の見比べ）・`.github/workflows/report-image.yml`（画面の指摘に配置図の絵を付ける） |
 | 辞書 | `meds-effect-dict.js`（薬効辞書） `meds-yakka-naiyo.js`（厚労省 薬価基準収載品目を加工した候補） |
 | 薬情の取り込み | `yakujo-calc.js`（入居者マスタの「📥 薬情の取り込み」の振り分け・組み立て・反映を止める規則の純関数。試験は `check/unit/yakujo_calc_test.js`） |
@@ -87,6 +87,7 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
   報告は非公開リポジトリ（TH-su/care-tools-reports）の Issue になる（2026-10-14〜）。伏せ字は完全ではないので、報告画面には「氏名・居室番号・病名は書かない」と出ている。
   管理者（Google＋2段階認証でログイン中）には、報告の枠に「画面の場所を指して報告」（画面の指摘・`su-annot.js`）が出る。画面の部品を指して一言ずつ書き、
   文字を塗りつぶした配置図と一緒に送る。**配置図には文字・入力の値・画像の中身を入れない**（四角の位置・大きさ・色と、文字がある所の帯だけ）。この決まりを崩す変更はしない。
+- 初回の案内の帯（`su-intro.js`）は、デイ利用表・フェイスシート・全支援俯瞰・訪問俯瞰・左右比較・入居調整・貼り薬カレンダー・入居者マスタの見出しのすぐ下に出す。「×」で閉じたらその端末では出さない（端末に残すのは閉じた印だけ）・画面だけで印刷しない・枠（iframe）の中では出さない・現場端末でも出す。文言は su-intro.js に画面ごとに持ち、一字一句変えない（本人の決定 2026-11-02）。
 - 同じ処理が2ファイルにある「逐語同一の共有モジュール」（例: 週間計画からデイ利用日を取る処理が
   入居者マスタとフェイスシートに同じ文面で入っている）は、**片方を直したら両方を一字一句同じに戻す**。
 - 申送ビューアは見た目をケアログ（care-log）に寄せ、排泄タブでは排便記録アプリの記録を読むだけで表示する（接続先・合言葉は読むだけ・記録は端末に保存しない・排便の判定は排便記録アプリの写しで、写し元との一致を check/unit の試験で確かめる）（本人指示 2026-10-17）。
