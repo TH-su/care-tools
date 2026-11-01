@@ -26,7 +26,8 @@
 
   var NOT_YET = '新しい保存先（Supabase）はまだ使えません。管理者へ連絡してください。';
   var CALL_MS = 40000;
-  var AI_MS = 150000;   /* su-ai は Anthropic を最長 140 秒待つ。画面の側にも別の時間切れがある */
+  var AI_MS = 150000;
+  var AI_RETRY_MS = 2000;   /* 受け口に届く前に切れた時、送り直すまで待つ間（ミリ秒） */   /* su-ai は Anthropic を最長 140 秒待つ。画面の側にも別の時間切れがある */
 
   function fail(text, code) { var e = new Error(text); e.code = code || 'supabase'; return e; }
   /* 入口のまとまりごとの決まり（印を読む関数・受け口・Google への写し返しの action・名前） */
@@ -139,20 +140,28 @@
       if (!A) throw fail('ログインの部品を読み込めませんでした。ページを読み込み直してください。', 'noauth');
       return Promise.resolve(A.check()).then(function (s0) {
         if (!s0 || s0.status !== A.STATUS.OK) return { ok: false, error: 'login' };
-        var call = Promise.resolve(A.client().functions.invoke('su-ai', { body: { purpose: 'training_plan', body: body } }));
-        var tm = null;
-        var timer = new Promise(function (ok) { tm = setTimeout(function () { ok({ timeout: true }); }, AI_MS); });
-        return Promise.race([call, timer]).then(function (r) {
-          clearTimeout(tm);
-          if (r && r.timeout) throw fail('AI の中継の応答がありません（時間切れ）。', 'timeout');
-          if (r && r.error) {
-            var ctx = r.error.context, nm = String(r.error.name || '');
-            return Promise.resolve(ctx && typeof ctx.json === 'function' ? ctx.json().catch(function () { return null; }) : null).then(function (d) {
-              if (d && typeof d === 'object' && d.ok === false && typeof d.error === 'string') return d;
-              throw aiFail(ctx && typeof ctx.status === 'number' ? 'ai_' + ctx.status : nm === 'FunctionsRelayError' ? 'ai_relay' : 'ai_fetch', r.error);
-            });
-          }
-          return r ? r.data : null;
+        /* 受け口に届く前に通信が切れた時（ai_fetch）だけ、少し待って1回だけ送り直す（携帯の回線などで一瞬切れても止めない・2026-11-01 代表者「3の直しを入れて」）。
+           受け口が答えた断り・時間切れ・手前の中継の止まりは送り直さない（届いていれば回数を二重に使うため） */
+        function once() {
+          var call = Promise.resolve(A.client().functions.invoke('su-ai', { body: { purpose: 'training_plan', body: body } }));
+          var tm = null;
+          var timer = new Promise(function (ok) { tm = setTimeout(function () { ok({ timeout: true }); }, AI_MS); });
+          return Promise.race([call, timer]).then(function (r) {
+            clearTimeout(tm);
+            if (r && r.timeout) throw fail('AI の中継の応答がありません（時間切れ）。', 'timeout');
+            if (r && r.error) {
+              var ctx = r.error.context, nm = String(r.error.name || '');
+              return Promise.resolve(ctx && typeof ctx.json === 'function' ? ctx.json().catch(function () { return null; }) : null).then(function (d) {
+                if (d && typeof d === 'object' && d.ok === false && typeof d.error === 'string') return d;
+                throw aiFail(ctx && typeof ctx.status === 'number' ? 'ai_' + ctx.status : nm === 'FunctionsRelayError' ? 'ai_relay' : 'ai_fetch', r.error);
+              });
+            }
+            return r ? r.data : null;
+          });
+        }
+        return once().catch(function (e) {
+          if (!e || e.code !== 'ai_fetch') throw e;
+          return new Promise(function (ok) { setTimeout(ok, AI_RETRY_MS); }).then(once);
         });
       });
     });
