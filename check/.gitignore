@@ -5,3 +5,6 @@
 /fail-inject/*
 !/fail-inject/*.mjs
 !/fail-inject/*.sample.json
+!/fail-inject/fixtures
+/fail-inject/fixtures/*
+!/fail-inject/fixtures/*.mjs

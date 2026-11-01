@@ -5,7 +5,8 @@
  *
  * 画面と同じオリジン（127.0.0.1・空いているポート）で次を配る。画面のコード・ディスク上のファイルは1バイトも変えない。
  *   ・配布物そのもの（check/lib.mjs の startServer と同じ「あれば返す・無ければ 404」）
- *   ・POST /__fake-gas/<名前> … 偽の GAS（名前は kv＝統合KV・master＝入居者マスタ）。台本の回だけ失敗を起こし、ほかは見本が答える
+ *   ・POST /__fake-gas/<名前> … 偽の GAS（名前は kv＝統合KV・master＝入居者マスタ・wt＝体重管理・spl＝消耗品管理）。台本の回だけ失敗を起こし、ほかは見本が答える
+ *     「届いた（landed）」は見本の writeActions（書く action の一覧）にある action が ok で返った時。key は見本の keyOf で取り出す
  *   ・/__sb/… … 試験用 Supabase（127.0.0.1 か localhost だけ。本番には一切つながない）への中継。台本の回だけ届かない・遅いを起こす
  *   ・su-backend.json … 旗（--flags）を渡した時だけ、メモリの中の旗で返す
  *   ・su-auth.js … --sb を渡した時だけ、メモリの中で接続先（URL_）を同じオリジンの /__sb に、公開鍵（KEY）を試験用の鍵に差し替えて返す
@@ -51,6 +52,18 @@ function readBody(req) {
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/* 「届いた」と数える書く action。見本が writeActions を持てばそれ、持たなければ今までの固定の一覧（put・push・saveResident） */
+const WRITE_ACTIONS_DEFAULT = ['put', 'push', 'saveResident'];
+export function isWriteAction(be, action) {
+  const list = be && Array.isArray(be.writeActions) ? be.writeActions : WRITE_ACTIONS_DEFAULT;
+  return list.includes(String(action == null ? '' : action));
+}
+/* 台本の key に当てる値。見本が keyOf を持てばそれ、持たなければ今までどおり body.key か body.record.id */
+export function keyOfBody(be, body) {
+  if (be && typeof be.keyOf === 'function') { try { return be.keyOf(body || {}); } catch (e) { return null; } }
+  return body && body.key != null ? String(body.key) : (body && body.record && body.record.id != null ? String(body.record.id) : null);
+}
+
 /* opts: { root, script, flags, sb:{target,key}, backends:{kv,master} } */
 export function startFailInjectServer(opts) {
   const root = path.resolve(opts.root || '.');
@@ -72,7 +85,7 @@ export function startFailInjectServer(opts) {
     try { body = JSON.parse(raw); } catch (e) { body = null; }
     const action = body && typeof body.action === 'string' ? body.action : '';
     const be = backends[name];
-    const key = body && body.key != null ? String(body.key) : (body && body.record && body.record.id != null ? String(body.record.id) : null);
+    const key = keyOfBody(be, body);
     const d = engine.decide(action, key);
     const fiId = fiIdOf(req);
     /* 同じ文脈が、同じ入口・同じキーの返事を待っている間に送り直してきたら、画面はその前の要求を諦めた（自前の時計で時間切れにした）。
@@ -87,7 +100,7 @@ export function startFailInjectServer(opts) {
       if (!be) return { status: 404, body: { error: 'no backend' } };
       const out = be.respond(body || {});
       const v = bodyVerdict(out);
-      if (v.ok === true && (action === 'put' || action === 'push' || action === 'saveResident')) { e.landed = true; e.landedAt = Date.now(); }
+      if (v.ok === true && isWriteAction(be, action)) { e.landed = true; e.landedAt = Date.now(); }
       return { status: 200, body: out };
     };
     const send = (st, obj) => {
