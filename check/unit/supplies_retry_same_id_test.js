@@ -9,9 +9,6 @@
        控えを捨てて新しい番号で送ること（届いたのを確かめてから本当にもう1件入れる時に「登録済み」で捨てさせない）
      ⑤出庫でも同じ番号で送り直し、送信待ちの控え（spl_pending）には同じ番号を1件だけ持つこと
        （「未送信の出庫 2件」と実際より多く出さない）
-     ⑥応答が「すでに登録済み」（existing）でその品目の在庫が応答に無い時は、一覧と在庫を読み直すこと
-       （サーバーは入った品目の在庫だけを返すので、読み直さないと画面の在庫がサーバーと食い違う）。
-       入った（applied）品目の在庫が返った時は読み直さない
    画面の実関数（submitMove・sendMoves・newMoveId・moveFingerprint・送信待ちの控えの関数・
    flushPending・loadList・loadDetailMoves）を名前で切り出し、
    入力欄と通信は架空のものに差し替えて呼ぶ。送る本文の形（{moves:[...]}）も確かめる。
@@ -62,8 +59,7 @@ function group(name){ process.stdout.write('\n■ ' + name + '\n'); }
 const PARTS = [grabFn('txt'), grabFn('newMoveId'), grabFn('submitMove'), grabFn('sendMoves'),
   grabFn('readPending'), grabFn('writePending'), grabFn('addPending'), grabFn('dropPending'),
   grabFn('flushPending'), grabFn('loadList'), grabFn('loadDetailMoves'),
-  ...(src.indexOf('\nfunction moveFingerprint(') >= 0 ? [grabFn('moveFingerprint')] : []),
-  ...(src.indexOf('\nfunction existingNeedsReload(') >= 0 ? [grabFn('existingNeedsReload')] : [])];
+  ...(src.indexOf('\nfunction moveFingerprint(') >= 0 ? [grabFn('moveFingerprint')] : [])];
 
 /* 架空の入力欄（値と disabled・focus だけ持つ） */
 function makeEl(v){ return { value: v, disabled: false, hidden: false, textContent: '', focus(){} }; }
@@ -78,7 +74,6 @@ function makeSandbox(){
   };
   const sent = [];
   let nextFail = false;
-  let nextReply = null;            /* 次の addMoves の応答を差し替える（results を受け取って応答を返す関数） */
   const store = {};                /* 架空の sessionStorage */
   const noop = () => {};
   const sb = {
@@ -115,7 +110,6 @@ function makeSandbox(){
       if(action === 'listMoves') return Promise.resolve({ ok: true, moves: [] });
       sent.push({ action: action, body: JSON.parse(JSON.stringify(body)) });
       if(nextFail){ nextFail = false; return Promise.reject(new Error('timeout')); }
-      if(nextReply){ const f = nextReply; nextReply = null; return Promise.resolve(f(body.moves)); }
       return Promise.resolve({ ok: true, results: body.moves.map((m) => ({ id: m.id, status: 'applied' })) });
     }
   };
@@ -123,16 +117,11 @@ function makeSandbox(){
   vm.createContext(sb);
   vm.runInContext(PARTS.join('\n'), sb);
   const settle = () => new Promise((r) => setImmediate(r));
-  /* 読み直し（loadList）を呼んだ回数を数える。本物は h.loadList から呼ぶ */
-  const realLoadList = sb.loadList;
-  const reloads = [];
-  sb.loadList = function (quiet) { reloads.push(quiet); return realLoadList(quiet); };
   return {
-    sb, els, sent, reloads,
+    sb, els, sent,
     failNext(){ nextFail = true; },
-    replyNext(f){ nextReply = f; },
     pending(){ return JSON.parse(store.spl_pending || '[]'); },
-    async loadList(){ await realLoadList(true); await settle(); },
+    async loadList(){ await sb.loadList(true); await settle(); },
     async loadDetail(){ sb.loadDetailMoves(); await settle(); },
     async flush(){ await sb.flushPending(); await settle(); },
     /* 押して、応答（成功・失敗）の後始末まで待つ */
@@ -250,44 +239,7 @@ const noId = (s) => Object.assign({}, s.body.moves[0], { id: '' });
     eq('3回目が通ったら送信待ちは空', h.pending().length, 0);
   }
 
-  /* ═══ 6. 「すでに登録済み」の時は在庫を読み直す ═══ */
-  group('「すでに登録済み」で在庫が返らない時は、一覧と在庫を読み直す');
-  {
-    const h = makeSandbox();
-    h.failNext(); await h.press();
-    h.replyNext((ms) => ({ ok: true, results: ms.map((m) => ({ id: m.id, status: 'existing' })), stock: {} }));
-    await h.press();
-    eq('押し直しが existing で在庫に品目が無い → 読み直しを1回呼ぶ', h.reloads.length, 1);
-  }
-  {
-    const h = makeSandbox();
-    h.replyNext((ms) => ({ ok: true, results: ms.map((m) => ({ id: m.id, status: 'existing_voided' })) }));
-    await h.press();
-    eq('existing_voided で応答に在庫が無い → 読み直しを1回呼ぶ', h.reloads.length, 1);
-  }
-  {
-    const h = makeSandbox();
-    h.replyNext((ms) => ({ ok: true, results: ms.map((m) => ({ id: m.id, status: 'applied' })), stock: { [ITEM.id]: { qty: 60 } } }));
-    await h.press();
-    eq('applied で在庫が返った → 読み直さない', h.reloads.length, 0);
-  }
-  {
-    const h = makeSandbox();
-    h.replyNext((ms) => ({ ok: true, results: ms.map((m) => ({ id: m.id, status: 'existing' })), stock: { [ITEM.id]: { qty: 60 } } }));
-    await h.press();
-    eq('existing でも品目の在庫が返った → 読み直さない', h.reloads.length, 0);
-  }
-  {
-    const h = makeSandbox();
-    h.sb.__type = 'out';
-    h.els.mvResident.value = 'shared';
-    h.failNext(); await h.press();
-    h.replyNext((ms) => ({ ok: true, results: ms.map((m) => ({ id: m.id, status: 'existing' })), stock: {} }));
-    await h.flush();
-    eq('送信待ちの送り直しが existing で在庫が無い → 読み直しを1回呼ぶ', h.reloads.length, 1);
-  }
-
-  /* ═══ 7. 控えは端末に書かない ═══ */
+  /* ═══ 6. 控えは端末に書かない ═══ */
   group('控えは画面のメモリだけ（端末の保存領域に書かない）');
   {
     const body = grabFn('submitMove') + grabFn('sendMoves');

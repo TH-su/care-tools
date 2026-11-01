@@ -3,7 +3,7 @@
 <head>
 <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-2KYqyhy0z7wBHSpJspm/kXPW/6YJMTuN4BzUIYk88NA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4JDGCDTl4lNH/IYW+spyzgE0jPPMsewS7RYePX8LTvQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="spl-build" content="2026-09-23.1">
@@ -3050,7 +3050,6 @@ function flushPending() {
     var res = Array.isArray(d.results) ? d.results : [];
     dropPending(res.map(function (r) { return txt(r.id); }));
     if (d.stock) mergeStock(d.stock);
-    if (existingNeedsReload(a, res, d.stock)) loadList(true);
     /* ★送り直しでも結果を必ず見せる（黙って控えから消さない）。
        通った件数と、通らなかった理由を分けて出す */
     var ok = 0, bad = [];
@@ -3072,17 +3071,6 @@ function flushPending() {
       errHint(e) + ' 控えは残してあります。設定画面の「接続テスト」で原因を確かめてから、この画面を開き直してください。');
   });
 }
-/* 「すでに登録済み」だった記録の品目が応答の在庫に無いか（サーバーは入った品目の在庫だけを返す）。
-   無ければ画面の在庫が古いままなので、呼び出し側で一覧と在庫を読み直す */
-function existingNeedsReload(moves, res, stock) {
-  var byId = {};
-  moves.forEach(function (m) { byId[txt(m.id)] = txt(m.itemId); });
-  return res.some(function (r) {
-    if (r.status !== 'existing' && r.status !== 'existing_voided') return false;
-    var itemId = byId[txt(r.id)];
-    return !itemId || !stock || !Object.prototype.hasOwnProperty.call(stock, itemId);
-  });
-}
 function mergeStock(stock) {
   var k;
   for (k in stock) { if (Object.prototype.hasOwnProperty.call(stock, k)) ST.stock[k] = stock[k]; }
@@ -3098,7 +3086,6 @@ function sendMoves(moves, isOut) {
     var res = Array.isArray(d.results) ? d.results : [];
     dropPending(res.map(function (r) { return txt(r.id); }));
     if (d.stock) mergeStock(d.stock);
-    if (existingNeedsReload(moves, res, d.stock)) loadList(true);
     reportMoveResults(res);
     renderList();
     renderStock();
