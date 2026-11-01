@@ -587,7 +587,7 @@ async function waitInjectedThenLanded(server, fromIdx, isWrite, maxMs) {
    送れなかった分は端末の送信待ち（wtmgr_pq_v1）に入り、送信の列が空いた時にすぐ1回送り直す。
    起こすのは saveRecord に1回ずつ（断り・応答なし・時間切れ）。1回なら送り直しで届くので「後から届いた」を観る */
 async function runWtGas(server) {
-  const wf = await import(pathToFileURL(path.join(REPO, 'check', 'fixtures', 'weight-record.mjs')).href);
+  const wf = await import(pathToFileURL(path.join(HERE, 'fixtures', 'weight-record.mjs')).href);
   const be = createWeightBackend(wf.seed());
   server.setBackend('wt', be);
   server.setFlags(wf.FLAGS);
@@ -655,7 +655,7 @@ async function runWtGas(server) {
    送信待ちと自動の送り直しは無い（出庫だけ控える）ので、失敗した時は職員と同じく画面を開き直さずにもう一度押す（入居者マスタと同じ）。
    もう一度押すと新しい番号（mv_）で送る＝時間切れの後でサーバーに先の1件が届いていると、2件になる（duplicateLanded に残す） */
 async function runSplGas(server) {
-  const sf = await import(pathToFileURL(path.join(REPO, 'check', 'fixtures', 'supplies.mjs')).href);
+  const sf = await import(pathToFileURL(path.join(HERE, 'fixtures', 'supplies.mjs')).href);
   const be = createSuppliesBackend(sf.seed());
   server.setBackend('spl', be);
   server.setFlags(null);   // 消耗品管理は su-backend.json・su-kv.js を読まない（切り替えスイッチの道が無い）

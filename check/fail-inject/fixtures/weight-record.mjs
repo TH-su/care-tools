@@ -1,4 +1,4 @@
-/* check/fixtures/weight-record.mjs — 体重管理を、架空データで開くための材料（2026-11-01 新設）
+/* check/fail-inject/fixtures/weight-record.mjs — 体重管理を、架空データで開くための材料（2026-11-01 新設。check/fixtures/ は撮影の道具が「画面名.mjs＝帳票の材料」と読むので、失敗を起こす道具だけが使う見本はここに置く）
  *
  * 失敗を起こして数える道具（check/fail-inject/observe.mjs の wt-gas）が読む。
  *   seed()  … 見本の体重管理 GAS（check/fail-inject/gas-script.mjs の createWeightBackend）に置く中身
@@ -8,7 +8,7 @@
  * ★架空データだけ（CLAUDE.md §2-1）。氏名は記号的な見本（架空A・架空B・架空C）。居室も架空。
  * ★GAS との通信の形には触れない。画面が送る要求をそのまま受け、決まった応答を返すだけ。
  */
-import { FLAGS_OFF } from './care-schedule.mjs';
+import { FLAGS_OFF } from '../../fixtures/care-schedule.mjs';
 
 export const FLAGS = { supabase: Object.assign({}, FLAGS_OFF.supabase, { weight: false }) };
 

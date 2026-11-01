@@ -1,4 +1,4 @@
-/* check/fixtures/supplies.mjs — 消耗品管理を、架空データで開くための材料（2026-11-01 新設）
+/* check/fail-inject/fixtures/supplies.mjs — 消耗品管理を、架空データで開くための材料（2026-11-01 新設。check/fixtures/ は撮影の道具が「画面名.mjs＝帳票の材料」と読むので、失敗を起こす道具だけが使う見本はここに置く）
  *
  * 失敗を起こして数える道具（check/fail-inject/observe.mjs の spl-gas）が読む。
  *   seed()  … 見本の消耗品管理 GAS（check/fail-inject/gas-script.mjs の createSuppliesBackend）に置く中身
