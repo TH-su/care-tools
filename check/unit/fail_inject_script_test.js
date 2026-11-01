@@ -10,6 +10,11 @@
      5 observe.mjs は、--run が 1・2 以外・--measure に値が無い時に、ブラウザを開く前・measure を書く前に止まる。画面に無い関数を呼ばない
      7 observe.mjs の外へ出る要求の判定は、手元・偽 GAS だけを通し、本番の Supabase・Google などの住所は止める。
        止める処理は ~/.claude の部品の「すぐ終える」を外して、閉じてから消す形にしている
+     8 「届いた（landed）」は見本ごとの書く action の一覧（writeActions）で数え、key は見本の keyOf で取る
+       （体重管理の saveRecord・消耗品管理の addMoves。統合KV の編集リースは書く action に数えない）。
+       bodyVerdict は results[] の rejected・conflicts[] の中身を ok:false と数え、今までの形の判定は変えない
+     9 --item の measure の行（アプリごと・before の --run の位置・after は [null,null]）を作る・書き足す純粋な部分と、
+       --item・--only の引数の守り（ブラウザを開く前に止まる）
    ★GAS・.gs・試験用 Supabase・ブラウザが無くても走る（ネットへ出ない）。データは架空。 */
 'use strict';
 const assert = require('assert');
@@ -289,6 +294,139 @@ async function main() {
     for (const s of ['SIGINT', 'SIGTERM', 'SIGHUP']) assert.ok(src.includes("'" + s + "'"), s);
     assert.ok(/handleSIGINT:\s*false/.test(src) && /handleSIGTERM:\s*false/.test(src) && /handleSIGHUP:\s*false/.test(src));
     assert.ok(/await closeAll\(\);\s*\}\s*catch[^\n]*\n\s*process\.exit\(code\)/.test(src));
+  });
+
+  process.stdout.write('8 「届いた」は見本ごとの書く action の一覧で数える・key は見本の keyOf で取る（2026-11-01 追加）\n');
+  await t('isWriteAction: 見本が writeActions を持てばそれ、持たなければ今までの put・push・saveResident', () => {
+    assert.strictEqual(S.isWriteAction({ writeActions: ['saveRecord'] }, 'saveRecord'), true);
+    assert.strictEqual(S.isWriteAction({ writeActions: ['saveRecord'] }, 'put'), false);
+    for (const a of ['put', 'push', 'saveResident']) assert.strictEqual(S.isWriteAction({}, a), true, a);
+    assert.strictEqual(S.isWriteAction({}, 'get'), false);
+    assert.deepStrictEqual(G.createKvBackend({}).writeActions, ['put', 'push']);
+    assert.deepStrictEqual(G.createMasterBackend(null, []).writeActions, ['saveResident']);
+  });
+  await t('keyOfBody: 見本が keyOf を持てばそれ（消耗品は moves[0].id）、持たなければ body.key か body.record.id', () => {
+    assert.strictEqual(S.keyOfBody({}, { key: 'k1' }), 'k1');
+    assert.strictEqual(S.keyOfBody({}, { record: { id: 7 } }), '7');
+    assert.strictEqual(S.keyOfBody(G.createSuppliesBackend({}), { action: 'addMoves', moves: [{ id: 'mv_a' }] }), 'mv_a');
+    assert.strictEqual(S.keyOfBody(G.createWeightBackend({}), { action: 'delRecord', id: 'x9' }), 'x9');
+  });
+  {
+    const wt = G.createWeightBackend({ residents: [{ id: 'r1', name: '架空A', room: '1' }], records: [], thresholds: null });
+    const spl = G.createSuppliesBackend({ role: 'staff', items: [{ id: 'it_a', name: '見本品A', status: 'active', units: [{ name: '箱' }, { name: '枚', per: 10 }], billIdx: 0, billType: 'unit' }] });
+    const kvL = G.createKvBackend({ 'sched:2026-01:plan': { cells: {} } });
+    const s6 = await S.startFailInjectServer({ root: ROOT, script: [{ entry: 'saveRecord', nth: 2, kind: 'deny', times: 1 }], backends: { wt, spl, kv: kvL } });
+    const post = (name, body) => fetch(s6.url + '/__fake-gas/' + name, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) }).then((r) => r.json());
+    const got = {};
+    try {
+      got.ga = await post('wt', { action: 'getAll', token: 'check-dummy' });
+      got.s1 = await post('wt', { action: 'saveRecord', token: 'check-dummy', record: { id: 'rec1', residentId: 'r1', weight: 50 } });
+      got.s2 = await post('wt', { action: 'saveRecord', token: 'check-dummy', record: { id: 'rec2', residentId: 'r1', weight: 51 } });
+      got.m1 = await post('spl', { action: 'addMoves', token: 'check-dummy', moves: [{ id: 'mv_one', date: '2026-01-14', itemId: 'it_a', type: 'in', qtyEntered: 1, unitIdx: 0 }] });
+      got.m2 = await post('spl', { action: 'addMoves', token: 'check-dummy', moves: [{ id: 'bad', itemId: 'it_a', type: 'in', qtyEntered: 1, unitIdx: 0 }] });
+      got.la = await post('kv', { action: 'lockAcquire', token: 'check-dummy', deviceId: 'devA', name: '見本端末' });
+      got.pu = await post('kv', { action: 'push', token: 'check-dummy', key: 'sched:2026-01:plan', baseRev: 1, data: { cells: { s: { 1: '早' } } }, editToken: got.la.lease && got.la.lease.token });
+      got.probe = await (await fetch(s6.url + '/__fake-gas/wt')).json();
+      got.ping = await (await fetch(s6.url + '/__fake-gas/spl?action=ping')).json();
+    } finally { await s6.close(); }
+    const row = (entry, key) => s6.log.find((e) => e.entry === entry && (key === undefined || e.key === key));
+    await t('体重管理: saveRecord が書けたら landed（key は record.id）・getAll は landed にならない・断られた回は landed にならない', () => {
+      assert.strictEqual(row('getAll').landed, false);
+      assert.strictEqual(row('saveRecord', 'rec1').landed, true);
+      const r2 = row('saveRecord', 'rec2');
+      assert.strictEqual(r2.injected, 'deny'); assert.strictEqual(r2.landed, false); assert.strictEqual(r2.bodyOk, false);
+      assert.deepStrictEqual(got.s2, { ok: false, error: 'Error: unauthorized' });
+      assert.strictEqual(wt.records.has('rec1'), true); assert.strictEqual(wt.records.has('rec2'), false);
+    });
+    await t('消耗品管理: addMoves の applied は landed（key は moves[0].id）・rejected だけの答えは ok:false（landed にならない）', () => {
+      assert.strictEqual(row('addMoves', 'mv_one').landed, true);
+      const r = row('addMoves', 'bad');
+      assert.strictEqual(got.m2.ok, true); assert.strictEqual(r.bodyOk, false); assert.strictEqual(r.name, 'rejected'); assert.strictEqual(r.landed, false);
+    });
+    await t('統合KV: lockAcquire は書く action に数えない・券つきの push は landed', () => {
+      assert.strictEqual(got.la.ok, true);
+      assert.strictEqual(row('lockAcquire').landed, false);
+      assert.deepStrictEqual(got.pu, { ok: true, rev: 2 });
+      assert.strictEqual(row('push').landed, true);
+    });
+    await t('GET: 体重管理の疎通確認（action なし）は版と対応機能・消耗品管理の ping は build と caps', () => {
+      assert.strictEqual(got.probe.ver, 2); assert.ok(Array.isArray(got.probe.caps) && got.probe.caps.includes('postGetAll'));
+      assert.strictEqual(got.ping.app, 'supplies'); assert.ok(Array.isArray(got.ping.caps));
+    });
+  }
+  await t('bodyVerdict: results[] に rejected がある・conflicts[] が空でない時は ok:false。今までの形の判定は変えない', () => {
+    assert.deepStrictEqual(G.bodyVerdict({ ok: true, results: [{ id: 'a', status: 'applied' }, { id: 'b', status: 'rejected', reason: 'bad_qty' }] }), { ok: false, name: 'rejected' });
+    assert.deepStrictEqual(G.bodyVerdict({ ok: true, results: [{ id: 'a', status: 'applied' }, { id: 'b', status: 'existing' }] }), { ok: true, name: null });
+    assert.deepStrictEqual(G.bodyVerdict({ ok: true, conflicts: [{ key: 'x' }] }), { ok: false, name: 'conflict' });
+    assert.deepStrictEqual(G.bodyVerdict({ ok: true, conflicts: [] }), { ok: true, name: null });
+    assert.deepStrictEqual(G.bodyVerdict({ ok: true, rev: 1, unchanged: true }), { ok: true, name: 'unchanged' });
+    assert.deepStrictEqual(G.bodyVerdict({ record: { id: 1 } }), { ok: true, name: null });
+    assert.deepStrictEqual(G.bodyVerdict({ conflict: true, serverRev: 3 }), { ok: false, name: 'conflict' });
+  });
+
+  process.stdout.write('9 --item の measure の書き込み（印 MEASURE-ITEM-BEGIN〜END の間を切り出して確かめる・2026-11-01 追加）\n');
+  const mi = /\/\* MEASURE-ITEM-BEGIN \*\/([\s\S]*?)\/\* MEASURE-ITEM-END \*\//.exec(obsSrc);
+  const MI = mi ? new Function(mi[1] + '\nreturn { itemRowsFor, upsertItemRows };')() : null;
+  await t('関数が印の間にある', () => { assert.ok(MI && typeof MI.itemRowsFor === 'function' && typeof MI.upsertItemRows === 'function'); });
+  const SC = [
+    { app: '体重管理', failureShown: 1, falseSaved: 0, deliveredLater: 1, rollback: 0, httpFail: 0, appFail: 1 },
+    { app: '体重管理', failureShown: 1, falseSaved: 0, deliveredLater: 0, rollback: 0, httpFail: 1, appFail: 0 },
+    { app: 'シフト作成', failureShown: 0, falseSaved: 0, deliveredLater: 0, rollback: 0, httpFail: 0, appFail: 0, waitedWithoutNotice: 60 },
+    { app: 'シフト作成', failureShown: 1, falseSaved: 0, deliveredLater: 1, rollback: 0, httpFail: 1, appFail: 0, waitedWithoutNotice: 12 },
+    { app: '消耗品管理', failureShown: 1, falseSaved: 0, deliveredLater: 0, rollback: 0, httpFail: 1, appFail: 0, duplicateLanded: 1 },
+    { app: '消耗品管理', failureShown: 1, falseSaved: 0, deliveredLater: 0, rollback: 0, httpFail: 0, appFail: 1, duplicateLanded: 0 },
+    { app: '試験用 Supabase', failureShown: null, falseSaved: null, deliveredLater: null, rollback: null, httpFail: 1, appFail: 0 },
+    { app: '無効の場面', valid: false, failureShown: 5, httpFail: 5 },
+  ];
+  await t('itemRowsFor: アプリごとに足す・null は足さない・waitedWithoutNotice は最大・無効の場面は外す', () => {
+    const rows = MI.itemRowsFor(SC);
+    const get = (app, metric) => (rows.find((r) => r.app === app && r.metric === metric) || {}).value;
+    assert.strictEqual(get('体重管理', '保存の失敗が画面に出た回数'), 2);
+    assert.strictEqual(get('体重管理', 'HTTP の失敗の回数'), 1);
+    assert.strictEqual(get('体重管理', '時間切れの間、失敗の表示なしに待った秒数（最大・道具が待たせた時間で頭打ち＝下限）'), undefined);
+    assert.strictEqual(get('シフト作成', '時間切れの間、失敗の表示なしに待った秒数（最大・道具が待たせた時間で頭打ち＝下限）'), 60);
+    assert.strictEqual(get('試験用 Supabase', '保存の失敗が画面に出た回数'), undefined);
+    assert.strictEqual(get('試験用 Supabase', 'HTTP の失敗の回数'), 1);
+    /* 押し直しの二重の登録は件数を足して行にする（見落とすと二重の登録が measure から消える） */
+    assert.strictEqual(get('消耗品管理', '押し直しで同じ記録が二重に届いた件数'), 1);
+    assert.strictEqual(get('体重管理', '押し直しで同じ記録が二重に届いた件数'), undefined);
+    assert.ok(!rows.some((r) => r.app === '無効の場面'));
+    for (const r of rows) assert.ok(typeof r.unit === 'string' && r.unit);
+  });
+  await t('upsertItemRows: before の --run の位置に書き、after は [null,null]。item 1 の行・ほかの item の行には触らない', () => {
+    const item1 = { item: 1, app: '共通の道具（check/fail-inject・失敗を起こして数える）', metric: '保存の失敗が画面に出た回数', unit: '回', before: ['未測定', '未測定'], after: [7, 7], how: 'x' };
+    const m = [JSON.parse(JSON.stringify(item1))];
+    const rows = MI.itemRowsFor(SC);
+    const r1 = MI.upsertItemRows(m, 3, 0, 'how-A', rows);
+    assert.strictEqual(r1.ok, true);
+    assert.deepStrictEqual(m[0], item1);
+    const w = m.find((r) => r.item === 3 && r.app === '体重管理' && r.metric === '保存の失敗が画面に出た回数');
+    assert.deepStrictEqual(w.before, [2, null]); assert.deepStrictEqual(w.after, [null, null]); assert.strictEqual(w.how, 'how-A'); assert.strictEqual(w.unit, '回');
+    const r2 = MI.upsertItemRows(m, 3, 1, 'how-A', rows);
+    assert.strictEqual(r2.ok, true);
+    assert.deepStrictEqual(w.before, [2, 2]);
+    assert.strictEqual(m.filter((r) => r.item === 3).length, rows.length);
+  });
+  await t('upsertItemRows: もう一方の回が条件（how）の違うまま書いてあれば、何も書かずに clash を返す', () => {
+    const m = [];
+    const rows = MI.itemRowsFor(SC);
+    MI.upsertItemRows(m, 3, 0, 'how-A', rows);
+    const snap = JSON.stringify(m);
+    const r = MI.upsertItemRows(m, 3, 1, 'how-B', rows);
+    assert.strictEqual(r.ok, false); assert.ok(r.clash);
+    assert.strictEqual(JSON.stringify(m), snap);
+  });
+  await t('observe.mjs: --item に値が無ければ exit 2・知らない --only の場面は exit 2（ブラウザを開く前）', () => {
+    const r1 = spawnSync(process.execPath, [path.join(DIR, 'observe.mjs'), '--ls-keys', path.join(DIR, 'ls-keys.sample.json'), '--only', 'wt-gas', '--item'], { cwd: ROOT, encoding: 'utf8', timeout: 30000 });
+    assert.strictEqual(r1.status, 2); assert.ok(r1.stdout.includes('--item に番号が要ります'));
+    const r2 = spawnSync(process.execPath, [path.join(DIR, 'observe.mjs'), '--ls-keys', path.join(DIR, 'ls-keys.sample.json'), '--only', 'xx-gas'], { cwd: ROOT, encoding: 'utf8', timeout: 30000 });
+    assert.strictEqual(r2.status, 2); assert.ok(r2.stdout.includes('--only に知らない場面があります'));
+  });
+  await t('--only を付けない時は item 1 の4場面だけ（新しい3場面は名前を挙げた時だけ）', () => {
+    const src = obsSrc.replace(/\/\*[\s\S]*?\*\//g, '');
+    assert.ok(/const ITEM1_SCENARIOS = \['ws-gas', 'ws-sb', 'sb-rls', 'rm-gas'\];/.test(src));
+    assert.ok(/: ITEM1_SCENARIOS\.slice\(\);/.test(src));
+    for (const k of ['wt-gas', 'spl-gas', 'sh-gas']) assert.ok(src.includes("'" + k + "'"), k);
   });
 
   process.stdout.write(`\n成功 ${pass}／失敗 ${fail}\n`);
