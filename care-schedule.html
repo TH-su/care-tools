@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-Uck5nSXV9fyhGsndSWFlDeOmNYz2JjdanUZ/0dPTuGc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-TA5xa0NF7+8KTHm286KvTGWR6CyX2DQ4AaqeC8pFuHY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -2957,7 +2957,7 @@ function csApplyDeviceSelection_(notify) {
     sel = null;
   }
   /* ★「未決定」を確定させるのは名簿が手元にある時だけ。新規端末は起動時点で名簿が空
-     （クラウド取得は約300ms後）なので、ここで未選択と確定させると、その後に届く
+     （クラウド取得は起動の処理を終えたすぐ後）なので、ここで未選択と確定させると、その後に届く
      クラウドの選択を引き継げなくなる（＝毎回まっさらな画面で開いてしまう）。 */
   if (undecided && list.length) csWriteSelection_(sel);
   DB.currentResidentId = sel;
@@ -9352,7 +9352,7 @@ applyScheduleDeviceGuard();
 try { csApplyDeviceSelection_(true); } catch (e) {}
 /* 試算モードの復元。実データの確定（loadDB・マスタ取込・バックアップ復元・選択の復帰）が
    すべて終わった後にここで差し替える。この時点で SIM_ON が立つので、直後の startupPull
-   （300ms後）・30秒ポーリング・stateRev 照会は、それぞれのガードで止まる。 */
+   （起動の処理を終えたすぐ後）・30秒ポーリング・stateRev 照会は、それぞれのガードで止まる。 */
 try { SIM.syncButtons(); SIM.restore(); } catch (e) {}
 populateResidentSelect();
 renderAll();
@@ -9370,7 +9370,7 @@ requestAnimationFrame(() => {
 if (SYNC.hasTarget() && suGetDeviceRole() !== 'field') {
   setTimeout(() => {
     // 起動pullで最新リモートを採用した「後」に備考クリアを実施し即push。
-    // loadDB時にクリアするとこの300ms pullが備考付きリモートで上書きし、B3が同期端末で巻き戻るため。
+    // loadDB時にクリアするとこの起動pullが備考付きリモートで上書きし、B3が同期端末で巻き戻るため。
     const afterPull = () => {
       try {
         if (migrateClearNotes_()) {
@@ -9384,7 +9384,8 @@ if (SYNC.hasTarget() && suGetDeviceRole() !== 'field') {
       try { SYNC.startPolling(); } catch (e3) {}
     };
     SYNC.startupPull().then(afterPull, afterPull);   // 成否に関わらず採用後にクリア（未送信編集があれば無条件採用しない＝BE-01根治）
-  }, 300);
+  }, 0);   /* 起動の処理（下の見張りの登録まで）を終えたすぐ後に取りに行く。決まった時間は待たない
+             （2026-11-01: 300ms 待っていた分だけ、新しい端末で名簿が出るのが遅れていた。取得の通信そのものは起動の処理と重ならない） */
 } else {
   if (SYNC.hasTarget()) SYNC.updateStatusUI('同期');
   try { migrateClearNotes_(); } catch (e) {}   // field/オフライン端末: pullしない→ローカルでクリア（後続の同期で伝播）
@@ -9400,7 +9401,7 @@ document.addEventListener('visibilitychange', () => {
 // rmaster_cfg（url）のある端末だけ実質動作。無い端末・未対応GASは現状動作のまま（無音フォールバック）。
 // 起動直後に1回だけ基準revを確定（名簿は取らない）＝直後の変化を次tickで拾えるようにする。
 setInterval(csStateRevTick_, CS_STATEREV_TICK_MS);
-setTimeout(csStateRevTick_, 1500);   // 起動時の基準確定（startupPull の300msと重ねない）
+setTimeout(csStateRevTick_, 1500);   // 起動時の基準確定（起動直後の startupPull と重ねない）
 document.addEventListener('visibilitychange', () => {
   if (SIM_ON) return;                        /* 試算中は名簿の取り直しをしない */
   if (!document.hidden) csStateRevTick_();   // visible 復帰で即時1回（10秒スロットル・hidden中スキップは tick 内）
