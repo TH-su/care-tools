@@ -9,5 +9,23 @@
   "resident-master.html": {
     "rmaster_cfg": { "url": "{{GAS_MASTER}}", "token": "check-dummy" },
     "su_device_role": "office"
+  },
+  "weight-record.html": {
+    "wtmgr_api_url": "{{GAS_WT}}",
+    "wtmgr_api_token": "check-dummy",
+    "su_device_role": "office",
+    "su_backend_flags": { "supabase": { "care_schedule_v2": false, "ws_weekly_master_v1": false, "wsday": false, "shift": false, "patch_push": false, "master_roster_read": false, "weight": false } },
+    "su_facility_profile_v1": { "setupDone": true, "facilityName": "" }
+  },
+  "supplies.html": {
+    "spl_cfg": { "url": "{{GAS_SPL}}", "token": "check-dummy", "by": "" },
+    "su_device_role": "office",
+    "su_facility_profile_v1": { "setupDone": true, "facilityName": "" }
+  },
+  "shift-app.html": {
+    "su_sync_common": { "endpoint": "{{GAS_KV}}", "token": "check-dummy", "updatedAt": 1 },
+    "su_device_role": "office",
+    "su_backend_flags": { "supabase": { "care_schedule_v2": false, "ws_weekly_master_v1": false, "wsday": false, "shift": false, "patch_push": false, "master_roster_read": false } },
+    "su_facility_profile_v1": { "setupDone": true, "facilityName": "" }
   }
 }
