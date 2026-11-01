@@ -102,7 +102,8 @@ function makeSandbox(){
     parseIntStrict: (v) => (/^\d+$/.test(String(v)) ? Number(v) : null), parseDec1: () => null,
     minIdxOf: () => 0, unitsOf: () => [], adjSign: () => 1, residentIdForMove: () => '',
     willGoNegative: () => false, showMoveErr(){}, setState(){},
-    mergeStock(){}, reportMoveResults(){}, renderList(){}, renderStock(){}, syncResidentNo(){},
+    mergeStock(){}, refreshStockAfterDup(){ return Promise.resolve(false); },   /* 登録済みの時の在庫の取り直しは supplies_dup_stock_refresh_test.js で確かめる */
+    reportMoveResults(){}, renderList(){}, renderStock(){}, syncResidentNo(){},
     renderPreview(){}, askRepriceAfterIn(){},
     errText: () => '応答がないため中断しました', errHint: () => '',
     apiPost: (action, body) => {
