@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ga2it6U3ae9Onp4Ew10wNtbbbNdZfy5I7zKvlomL9OY=' 'sha256-5SCacIL8ym/czSjsLAbbmgMv79v3e6koa67LHgHTTl4=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ga2it6U3ae9Onp4Ew10wNtbbbNdZfy5I7zKvlomL9OY=' 'sha256-Co3kTW6VHZ9c5LJLyxPSRzTmWrzj1KEn/ZztRRPK9Ko=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
@@ -364,6 +364,15 @@ button.rcard{display:flex; flex-direction:column; align-items:stretch; justify-c
 .geno-box{min-height:320px; display:flex; align-items:center; justify-content:center; cursor:pointer;
   background:var(--g0); border:1px dashed var(--g3); border-radius:8px; overflow:hidden}
 .geno-box img,.geno-img{max-width:100%; max-height:100%; object-fit:contain}
+/* 枠は本物のボタン（キーボード・読み上げで押せる）。見た目と紙は前の div のままにするため、ボタンの既定の
+   文字・余白・幅・中寄せを打ち消す（2026-11-03） */
+button.geno-box{width:100%; margin:0; padding:0; font:inherit; color:inherit; line-height:inherit;
+  letter-spacing:inherit; word-spacing:inherit; text-align:inherit; text-transform:none; text-indent:0;
+  text-shadow:none; -webkit-appearance:none; appearance:none}
+.geno-hint,.geno-hint-ic{display:block}
+/* 共通の見た目（su-theme.css）は幅899px以下でボタンを最低44pxにする（:root[data-su-theme] button）。
+   枠の高さ320pxがそれに負けないよう、id を付けて強くする */
+#viewBox button.geno-box{min-height:320px}
 
 .detail-actions{display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; align-items:center}
 .btn{padding:10px 16px; border:none; border-radius:10px; font-size: 0.875rem; font-weight:700; min-height:44px}
@@ -3147,7 +3156,7 @@ function renderOfficeView(r){
     '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">精神疾患の既往／通院</span><div class="fulltext">'+esc(r.psychHistory||'　')+'</div></div>'
   );
   var genoImg=getGenogram(r.id,r.name);
-  var genoInner=genoImg?('<img class="geno-img" src="'+esc(genoImg)+'" alt="家族構成図">'):'<div class="geno-hint" style="text-align:center;color:var(--g6);font-size: 0.8125rem;padding:10px"><div style="font-size: 2.5rem">🧬</div>ジェノグラムアプリで作成</div>';
+  var genoInner=genoImg?('<img class="geno-img" src="'+esc(genoImg)+'" alt="家族構成図">'):'<span class="geno-hint" style="text-align:center;color:var(--g6);font-size: 0.8125rem;padding:10px"><span class="geno-hint-ic" style="font-size: 2.5rem">🧬</span>ジェノグラムアプリで作成</span>';
   /* 家族情報。★住所を追加し、4項目1行の並びをマスタに揃えた（2026-08-15）。
      ★家族構成図はこの欄の中に置いたまま（マスタは事業所の右横だが、こちらは家族情報の中で完結させる）。
      ★このセクションは「家族・事業所」タブと「全体」タブの2箇所に描かれる。したがって
@@ -3164,7 +3173,7 @@ function renderOfficeView(r){
        見出し（.sec-lbl）を持たない＝見出し文字列からは特定できない。付けないと
        「家族構成図」を印刷しないにしても【マスタの紙からは消え、こちらの紙には出る】。
        家族構成図は疎遠・離別などの関係性が読み取れるので、伏せ漏れの実害が大きい（2026-08-17） */
-    '<div class="cell" data-nop-of="geno" style="border-right:none;border-bottom:none"><span class="lab">家族構成図</span><div class="geno-box" role="button" tabindex="0" aria-label="家族構成図を作成・編集する" data-geno="'+esc(r.id)+'" data-name="'+esc(r.name||'')+'">'+genoInner+'</div></div>'
+    '<div class="cell" data-nop-of="geno" style="border-right:none;border-bottom:none"><span class="lab">家族構成図</span><button type="button" class="geno-box" aria-label="家族構成図を作成・編集する" data-geno="'+esc(r.id)+'" data-name="'+esc(r.name||'')+'">'+genoInner+'</button></div>'
   );
   S.biz=sec('事業所',
     '<div class="row-cells">'+cell('居宅介護支援事業所',r.careOffice)+cell('介護支援専門員',r.careManager)+cell('電話番号',r.careOfficeTel)+cell('FAX番号',r.careOfficeFax)+'</div>'+
@@ -3250,10 +3259,8 @@ function renderOfficeView(r){
       var id=gb.getAttribute('data-geno'), nm=gb.getAttribute('data-name');
       if(id!=null&&id!=='')location.href=GENOGRAM_APP+'?resident='+encodeURIComponent(id)+(nm?'&name='+encodeURIComponent(nm):'');
     };
+    /* 枠は <button>。Enter・スペースはボタンの既定で click になる（前の div 用のキー操作は要らない） */
     gb.addEventListener('click',go);
-    gb.addEventListener('keydown',function(e){
-      if(e.key==='Enter'||e.key===' '||e.key==='Spacebar'){e.preventDefault();go()}
-    });
   });
 }
 
