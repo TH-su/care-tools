@@ -212,7 +212,7 @@ async function opened(opt) {
     const head = HTML.slice(0, HTML.indexOf('</head>'));
     const srcs = [...head.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]);
     t('head の部品は su-errors → su-gas-auth → su-res-read → su-cfg-hint → su-perf → su-app-gate → su-facility → su-print → care-meeting-calc の順（su-cfg-hint は改善プロンプト第6弾の2・su-gas-auth と su-res-read は 2026-10-29）', JSON.stringify(srcs) === JSON.stringify(
-      ['su-errors.js?v=2026-10-27', 'su-gas-auth.js?v=2026-10-29', 'su-res-read.js?v=2026-10-29.3', 'su-cfg-hint.js?v=2026-10-27', 'su-perf.js?v=2026-10-27', 'su-app-gate.js?v=2026-10-29', 'su-facility.js?v=2026-10-26', 'su-print.js?v=2026-09-12', 'care-meeting-calc.js?v=2026-10-25']), srcs);
+      ['su-errors.js?v=2026-10-27', 'su-gas-auth.js?v=2026-10-29', 'su-res-read.js?v=2026-10-29.3', 'su-cfg-hint.js?v=2026-10-27', 'su-perf.js?v=2026-10-27', 'su-app-gate.js?v=2026-10-29', 'su-facility.js?v=2026-11-02', 'su-print.js?v=2026-09-12', 'care-meeting-calc.js?v=2026-10-25']), srcs);
     t('su-print.css を読み、su-errors.js より前にスクリプトが無い', /<link rel="stylesheet" href="su-print\.css\?v=2026-09-12">/.test(head) && head.indexOf('<script') === head.indexOf('<script src="su-errors.js'));
     t('CSP・拡大を禁止しない viewport・no-store・noindex・題', /data-su-csp/.test(head) && /<meta name="viewport" content="width=device-width,initial-scale=1">/.test(head) && !/user-scalable=no|maximum-scale=1[^.0-9]/.test(head) &&
       /Cache-Control" content="no-store"/.test(head) && /robots" content="noindex/.test(head) && /<title>担当者会議の記録<\/title>/.test(head));
