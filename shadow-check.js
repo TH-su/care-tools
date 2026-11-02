@@ -1100,6 +1100,7 @@
     try { await loadAdmRuns(sb); } catch (e) { $('admf-verdict').className = 'msg warn'; $('admf-verdict').textContent = '入居調整の写しの記録を読めませんでした。'; }
     try { await loadAdmMode(sb); } catch (e) { /* 0042 の前・読めない時はボタンを出さない */ }
     try { await loadStf(sb); } catch (e) { $('stf-verdict').className = 'msg warn'; $('stf-verdict').textContent = '職員マスタの写しの記録を読めませんでした。'; }
+    try { await loadStfMode(sb); } catch (e) { /* 0045 の前・読めない時はボタンを出さない */ }
     try { await loadPatch(sb); }
     catch (e) {
       $('pt-verdict').className = 'msg warn';
@@ -1449,6 +1450,68 @@
       li.appendChild(left);
       ul.appendChild(li);
     });
+  }
+
+  /* 職員マスタの正本の切り替え（統合 0045・2026-11-02）: 入居調整と同じ手順（su-stf-full.js の cutover・back）。管理者だけ・事務所PCだけ。
+   * 切り替えボタンは切り替えスイッチ staff が入で、この端末に職員マスタの接続先がある時だけ出す。添付ファイル（Google ドライブ）はどちらでも触らない */
+  function staffOn() { var sw = window.SUKv ? SUKv._flags() : null; return !!(sw && sw.supabase && sw.supabase.staff === true); }
+  function stfTarget() {
+    try {
+      var o = JSON.parse(localStorage.getItem('stfm_cfg') || 'null');
+      var u = String(o && o.url || '').trim(), t = String(o && o.token || '').trim();
+      return RMASTER_RE.test(u) && t ? { url: u, token: t } : null;
+    } catch (e) { return null; }
+  }
+  async function loadStfMode(sb) {
+    var line = $('stf-mode'), bc = $('b-stf-cut'), bb = $('b-stf-back');
+    bc.hidden = true; bb.hidden = true; line.className = 'msg'; line.textContent = '';
+    if (!(me && me.role === 'admin')) return;
+    var r = await sb.rpc('stf_mode_get');
+    if (r.error || !r.data) return;
+    var live = r.data.mode === 'live', on = staffOn(), st = stfTarget();
+    if (live && !on) { line.className = 'msg warn'; line.textContent = '職員マスタは新しい保存先へ切り替えた後ですが、切り替えスイッチ（staff）が切です。画面が古い Google の中身を読まないよう、スイッチを入れ直すか「職員マスタを写しの期間に戻す」を押してください。'; }
+    else if (live) { line.className = 'msg ok'; line.textContent = '職員マスタの正本は新しい保存先（Supabase）です。Google へは保存のたびと1時間ごとに写し返しています。添付ファイルは今までどおり Google ドライブです。'; }
+    else line.textContent = '職員マスタの正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（staff）を入れる PR の取り込みが要ります。');
+    bc.hidden = live || !on || !st;
+    bb.hidden = !live || !st;
+  }
+  async function runStfOp(kind) {
+    var v = $('stf-mode');
+    function say(t, k) { v.className = 'msg' + (k ? ' ' + k : ''); v.textContent = t; }
+    if (!(me && me.role === 'admin' && me.status === SUAuth.STATUS.OK)) { say('管理者（二段階認証済み）のアカウントで開いてください。', 'warn'); return; }
+    var role = ''; try { role = localStorage.getItem('su_device_role') || ''; } catch (e) { role = ''; }
+    if (role === 'field') { say('この端末は「現場」です。事務所のパソコンで行ってください。', 'warn'); return; }
+    var st = stfTarget();
+    if (!st) { say('この端末には職員マスタの接続先（Google）がありません。この端末で職員マスタを開いてから、押し直してください。', 'warn'); return; }
+    if (kind === 'cut') {
+      if (!staffOn()) { say('切り替えスイッチ（staff）が入っていません。', 'warn'); return; }
+      if (!confirm('職員マスタの正本を新しい保存先（Supabase）へ切り替えますか？\n\n1分ほどかかります。その間は職員マスタ・採用管理からの保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n添付ファイルは今までどおり Google ドライブに置きます。切り替えた後は、保存のたびと1時間ごとに Google へ写し返します。いつでも「職員マスタを写しの期間に戻す」で戻せます。')) return;
+    } else {
+      if (!confirm('職員マスタを写しの期間に戻しますか？\n\n切り替えていた間の保存を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。')) return;
+    }
+    if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
+    var bc = $('b-stf-cut'), bb = $('b-stf-back');
+    bc.disabled = true; bb.disabled = true;
+    var sb = SUAuth.client();
+    try {
+      var io = {
+        gas: function (body) { return rmasterPost(st, body); },
+        rpc: function (name, args) { return sb.rpc(name, args); },
+        token: async function () { var s2 = await sb.auth.getSession(); return s2 && s2.data && s2.data.session ? s2.data.session.access_token : null; },
+        progress: function (t) { say(t); }
+      };
+      var res = kind === 'cut' ? await SUStfFull.cutover(io) : await SUStfFull.back(io);
+      if (!res.ok) { say((kind === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + res.why, 'warn'); return; }
+      say(kind === 'cut' ? '切り替えました（写した職員 ' + res.rows + '人）。職員マスタ・採用管理の画面は、読み込み直すと新しい保存先で保存します。'
+                         : '写しの期間に戻しました。正本は Google です。', 'ok');
+    } catch (e) {
+      say('止まりました: ' + String(e && e.message || e), 'warn');
+    } finally {
+      bc.disabled = false; bb.disabled = false;
+      var keep = v.textContent, kc = v.className;
+      try { await loadStfMode(sb); await loadStf(sb); } catch (e) { /* 読み直せなくても結果の文は残す */ }
+      v.className = kc; v.textContent = keep;
+    }
   }
 
   /* 入居調整の台帳の正本の切り替え（統合 0042・2026-10-29）: 計画書と同じ手順（su-adm-full.js の cutover・back）。管理者だけ・事務所PCだけ。
@@ -1802,6 +1865,8 @@
   $('b-adm-full').addEventListener('click', function () { msg(''); runAdmFull(); });
   $('b-adm-cut').addEventListener('click', function () { msg(''); runAdmOp('cut'); });
   $('b-adm-back').addEventListener('click', function () { msg(''); runAdmOp('back'); });
+  $('b-stf-cut').addEventListener('click', function () { msg(''); runStfOp('cut'); });
+  $('b-stf-back').addEventListener('click', function () { msg(''); runStfOp('back'); });
   $('b-res-back').addEventListener('click', function () { msg(''); runResOp('back'); });
   $('b-check').addEventListener('click', function () { msg(''); runCheck(); });
   $('b-mirror-check').addEventListener('click', function () { msg(''); runMirrorCheck(); });
