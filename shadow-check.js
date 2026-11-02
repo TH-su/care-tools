@@ -1101,6 +1101,7 @@
     try { await loadAdmMode(sb); } catch (e) { /* 0042 の前・読めない時はボタンを出さない */ }
     try { await loadStf(sb); } catch (e) { $('stf-verdict').className = 'msg warn'; $('stf-verdict').textContent = '職員マスタの写しの記録を読めませんでした。'; }
     try { await loadSup(sb); } catch (e) { $('sup-verdict').className = 'msg warn'; $('sup-verdict').textContent = '備品の写しの記録を読めませんでした。'; }
+    try { await probePrep(sb); } catch (e) { /* 確かめられなくても、ほかの欄はそのまま */ }
     try { await loadStfMode(sb); } catch (e) { /* 0045 の前・読めない時はボタンを出さない */ }
     try { await loadSupMode(sb); } catch (e) { /* 0047 の前・読めない時はボタンを出さない */ }
     try { await loadPatch(sb); }
@@ -1208,7 +1209,7 @@
     ul.replaceChildren();
     $('b-res-full').hidden = !(me && me.role === 'admin');
     var r = await sb.from('res_sync_runs').select('*').order('at', { ascending: false }).limit(5);
-    if (r.error) { $('rf-verdict').className = 'msg'; $('rf-verdict').textContent = '全項目の写しの準備（データベース 0034）はまだです。'; $('b-res-full').hidden = true; return; }
+    if (r.error) { $('rf-verdict').className = 'msg'; $('rf-verdict').textContent = dbErrText(r.error, 'res_sync_runs', '全項目の写しの準備（データベース 0034）はまだです。'); $('b-res-full').hidden = true; return; }
     (r.data || []).forEach(function (x) {
       var li = el('li'), left = el('div');
       left.appendChild(el('div', 'nm', fmtTime(x.at)));
@@ -1285,7 +1286,7 @@
     ul.replaceChildren();
     $('b-tp-full').hidden = !(me && me.role === 'admin');
     var r = await sb.from('tp_sync_runs').select('*').order('at', { ascending: false }).limit(5);
-    if (r.error) { $('tpf-verdict').className = 'msg'; $('tpf-verdict').textContent = '計画書の写しの準備（データベース 0037）はまだです。'; $('b-tp-full').hidden = true; return; }
+    if (r.error) { $('tpf-verdict').className = 'msg'; $('tpf-verdict').textContent = dbErrText(r.error, 'tp_sync_runs', '計画書の写しの準備（データベース 0037）はまだです。'); $('b-tp-full').hidden = true; return; }
     (r.data || []).forEach(function (x) {
       var li = el('li'), left = el('div');
       left.appendChild(el('div', 'nm', fmtTime(x.at)));
@@ -1365,7 +1366,7 @@
     ul.replaceChildren();
     $('b-adm-full').hidden = !(me && me.role === 'admin');
     var r = await sb.from('adm_sync_runs').select('*').order('at', { ascending: false }).limit(5);
-    if (r.error) { $('admf-verdict').className = 'msg'; $('admf-verdict').textContent = '入居調整の写しの準備（データベース 0040）はまだです。'; $('b-adm-full').hidden = true; return; }
+    if (r.error) { $('admf-verdict').className = 'msg'; $('admf-verdict').textContent = dbErrText(r.error, 'adm_sync_runs', '入居調整の写しの準備（データベース 0040）はまだです。'); $('b-adm-full').hidden = true; return; }
     (r.data || []).forEach(function (x) {
       var li = el('li'), left = el('div');
       left.appendChild(el('div', 'nm', fmtTime(x.at)));
@@ -1414,6 +1415,51 @@
   /* 備品の写し（統合 0046・2026-11-02 代表者「全て進めて」案2）: 写しは消耗品管理の GAS が1時間ごとに自動で取る。
    * 消耗品管理には全体の版の番号が無いので、最後の写しの結果と時刻（75分以内なら届いている）で確かめる。
    * 出すのは品目の数・出庫の行数・時刻・断った種類だけ（品名・入居者・金額は出さない）。Google へは何も送らない */
+  /* データベースの断りを種類で分ける（2026-11-03・備品の 0046 が入っていなかった時に「準備がまだ」とだけ出て、
+   *   ログインの断り・一時の失敗と見分けられなかったため）。
+   *   無い（関数・表が無い）→ 各欄の「準備はまだです」＋最上部に足りない統合の番号／権限で断られた → ログインの文／それ以外 → 読めなかった文（記録に残す） */
+  var DB_PREP = {
+    weight_mode: '0032', res_sync_runs: '0034', res_mode_get: '0036', tp_sync_runs: '0037', tp_mode_get: '0038',
+    adm_sync_runs: '0040', adm_mode_get: '0042', stf_shadow_status: '0044', stf_mode_get: '0045',
+    sup_shadow_status: '0046', sup_mode_get: '0047', mirror_bot_me: '0047'
+  };
+  var prepMissing = {};
+  function dbErrKind(err) {
+    var c = String(err && err.code || '');
+    if (/^(PGRST202|PGRST205|42883|42P01)$/.test(c)) return 'missing';
+    if (c === '42501') return 'denied';
+    return 'other';
+  }
+  function notePrep(name) {
+    var n = DB_PREP[name]; if (!n) return;
+    prepMissing[n] = 1; renderPrep();
+  }
+  function renderPrep() {
+    var b = $('db-prep'); if (!b) return;
+    var ks = Object.keys(prepMissing).sort();
+    if (!ks.length || !(me && me.role === 'admin')) { b.hidden = true; b.textContent = ''; return; }
+    b.textContent = 'データベースの準備が足りません：統合 ' + ks.join('・') + '（Supabase の SQL Editor で、番号の小さい順に流してください）';
+    b.hidden = false;
+  }
+  /* 印刷には出さない（画面だけ）。印刷の間だけ隠し、終わったら戻す */
+  try {
+    window.addEventListener('beforeprint', function () { var b = $('db-prep'); if (b) b.hidden = true; });
+    window.addEventListener('afterprint', function () { renderPrep(); });
+  } catch (x) { /* 印刷の知らせが無い環境でも止めない */ }
+  /* 職員マスタ・備品の受け口が使う口（mirror_bot_me・統合 0047）。画面からは呼ばないので、無い時だけ準備の帯に足す（管理者だけ・読むだけ） */
+  async function probePrep(sb) {
+    if (!(me && me.role === 'admin')) return;
+    var r = await sb.rpc('mirror_bot_me');
+    if (r && r.error && dbErrKind(r.error) === 'missing') notePrep('mirror_bot_me');
+  }
+  /* 欄に出す文。missingText は「準備はまだです」の文（その欄の今の文のまま） */
+  function dbErrText(err, name, missingText) {
+    var k = dbErrKind(err);
+    if (k === 'missing') { notePrep(name); return missingText; }
+    if (k === 'denied') return '管理者か事務所のアカウントでログインしてください（2段階認証まで）。';
+    try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('写しの見比べ: ' + name, String(err && err.code || 'error')); } catch (x) { /* 記録できなくても止めない */ }
+    return '写しの様子を読めませんでした（少し待って読み込み直してください）。';
+  }
   var SUP_FRESH_MS = 75 * 60 * 1000;
   var SUP_REFUSED = { stale: '前に読んだ写し', shrink: '急に減った', badrow: '形の違い', toolarge: '大きすぎる' };
   async function loadSup(sb, nowMs) {
@@ -1421,7 +1467,7 @@
     function say(t, kind) { v.className = 'msg' + (kind ? ' ' + kind : ''); v.textContent = t; }
     kk.replaceChildren(); ul.replaceChildren();
     var st = await sb.rpc('sup_shadow_status');
-    if (st.error) { say('備品の写しの準備（データベース 0046）はまだです。'); return; }
+    if (st.error) { say(dbErrText(st.error, 'sup_shadow_status', '備品の写しの準備（データベース 0046）はまだです。')); return; }
     var d = st.data || {};
     if (d.ver == null) { say('まだ写していません。消耗品管理の GAS の自動（autoMirror）が動くと、1時間以内に写ります。'); return; }
     kk.appendChild(kpi('写しの品目', d.items, '件'));
@@ -1477,6 +1523,7 @@
     bc.hidden = true; bb.hidden = true; line.className = 'msg'; line.textContent = '';
     if (!(me && me.role === 'admin')) return;
     var r = await sb.rpc('sup_mode_get');
+    if (r.error && dbErrKind(r.error) === 'missing') notePrep('sup_mode_get');
     if (r.error || !r.data) return;
     var live = r.data.mode === 'live', on = suppliesOn(), st = supTarget();
     if (live && !on) { line.className = 'msg warn'; line.textContent = '備品は新しい保存先へ切り替えた後ですが、切り替えスイッチ（supplies）が切です。画面が古い Google の中身を読まないよう、スイッチを入れ直すか「備品を写しの期間に戻す」を押してください。'; }
@@ -1543,7 +1590,7 @@
     function say(t, kind) { v.className = 'msg' + (kind ? ' ' + kind : ''); v.textContent = t; }
     kk.replaceChildren(); ul.replaceChildren();
     var st = await sb.rpc('stf_shadow_status');
-    if (st.error) { say('職員マスタの写しの準備（データベース 0044）はまだです。'); return; }
+    if (st.error) { say(dbErrText(st.error, 'stf_shadow_status', '職員マスタの写しの準備（データベース 0044）はまだです。')); return; }
     var d = st.data || {};
     if (d.ver == null) { say('まだ写していません。職員マスタの GAS の自動（autoMirror）が動くと、1時間以内に写ります。'); return; }
     kk.appendChild(kpi('写しの職員', d.staff, '人'));
@@ -1584,6 +1631,7 @@
     bc.hidden = true; bb.hidden = true; line.className = 'msg'; line.textContent = '';
     if (!(me && me.role === 'admin')) return;
     var r = await sb.rpc('stf_mode_get');
+    if (r.error && dbErrKind(r.error) === 'missing') notePrep('stf_mode_get');
     if (r.error || !r.data) return;
     var live = r.data.mode === 'live', on = staffOn(), st = stfTarget();
     if (live && !on) { line.className = 'msg warn'; line.textContent = '職員マスタは新しい保存先へ切り替えた後ですが、切り替えスイッチ（staff）が切です。画面が古い Google の中身を読まないよう、スイッチを入れ直すか「職員マスタを写しの期間に戻す」を押してください。'; }
@@ -1641,6 +1689,7 @@
     bc.hidden = true; bb.hidden = true; line.className = 'msg'; line.textContent = '';
     if (!(me && me.role === 'admin')) return;
     var r = await sb.rpc('adm_mode_get');
+    if (r.error && dbErrKind(r.error) === 'missing') notePrep('adm_mode_get');
     if (r.error || !r.data) return;
     var live = r.data.mode === 'live', on = admissionOn(), stuck = false;
     var at = admTarget();
@@ -1700,6 +1749,7 @@
     bc.hidden = true; bb.hidden = true; line.className = 'msg'; line.textContent = '';
     if (!(me && me.role === 'admin')) return;
     var r = await sb.rpc('tp_mode_get');
+    if (r.error && dbErrKind(r.error) === 'missing') notePrep('tp_mode_get');
     if (r.error || !r.data) return;
     var live = r.data.mode === 'live', on = trainingOn(), stuck = false;
     var tt = tpTarget(), mt = rmasterTarget();
@@ -1802,6 +1852,7 @@
     bc.hidden = true; bb.hidden = true; line.className = 'msg'; line.textContent = '';
     if (!(me && me.role === 'admin')) return;
     var r = await sb.rpc('res_mode_get');
+    if (r.error && dbErrKind(r.error) === 'missing') notePrep('res_mode_get');
     if (r.error || !r.data) return;
     var live = r.data.mode === 'live', on = masterLiveOn(), stuck = false;
     var tgt = rmasterTarget();
@@ -1864,7 +1915,7 @@
     var m = $('wt-mode');
     weightMode = '';
     var r = await sb.from('weight_mode').select('mode,updated_at').limit(1);
-    if (r.error) { m.className = 'msg'; m.textContent = '体重の切り替えの準備（データベース 0032）はまだです。今は写しの期間です。'; return; }
+    if (r.error) { m.className = 'msg'; m.textContent = dbErrText(r.error, 'weight_mode', '体重の切り替えの準備（データベース 0032）はまだです。今は写しの期間です。'); return; }
     var row = (r.data || [])[0];
     weightMode = row && row.mode === 'live' ? 'live' : 'shadow';
     var mc = weightMirrorCount();
