@@ -307,7 +307,7 @@ function res(id, kana, room, evs, extra) {
     t('☆を出さない指定では出ない', J(starDays(false, false)) === '[]', starDays(false, false));
     t('通所の区画には☆を出さない', J(starDays(true, true)) === '[]', starDays(true, true));
     t('一覧表は昼食の区画だけで☆を出す（通所の区画は false・昼食の区画は true）',
-      /sectionRows\(tbody, f2, '２階入居者', true, true, false, 2\);/.test(SRC) && /sectionRows\(tbody, f2, '２階入居者', false, false, true, 2\);/.test(SRC), '');
+      /sectionRows\(tbody, f2, dcrFloorSecLabel_\(2\), true, true, false, 2\);/.test(SRC) && /sectionRows\(tbody, f2, dcrFloorSecLabel_\(2\), false, false, true, 2\);/.test(SRC), '');
   }
 
   console.log('\n— 8. 合計 —');
