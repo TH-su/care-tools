@@ -68,6 +68,7 @@ function run({ hasTarget, role }) {
     suGetDeviceRole: () => role,
     migrateClearNotes_: () => { calls.push('migrateClearNotes_'); return false; },
     csApplyMasterIdParam: () => calls.push('csApplyMasterIdParam'),
+    csFinishMasterIdPending_: (pulled) => calls.push('csFinishMasterIdPending_:' + pulled),
     csNote_: () => {},
     setTimeout: (fn, ms) => { timers.push({ fn, ms: ms === undefined ? 0 : ms }); return timers.length; },
     clearTimeout: () => {},
@@ -94,12 +95,20 @@ const t = (name, fn) => fn().then(() => { pass++; process.stdout.write('ok ' + n
     assert.deepStrictEqual(r.calls, ['startupPull']);
   });
 
-  await t('取り終えた後: 備考のクリア → 本人指定の選び直し → 定期の見回り', async () => {
+  await t('取り終えた後: 備考のクリア → 本人指定の選び直し → 取得待ちの指定を決める → 定期の見回り', async () => {
     const r = run({ hasTarget: true, role: 'office' });
     r.timers[0].fn();
     r.resolvePull(true);
     await new Promise((res) => setImmediate(res));
-    assert.deepStrictEqual(r.calls, ['startupPull', 'migrateClearNotes_', 'csApplyMasterIdParam', 'startPolling']);
+    assert.deepStrictEqual(r.calls, ['startupPull', 'migrateClearNotes_', 'csApplyMasterIdParam', 'csFinishMasterIdPending_:true', 'startPolling']);
+  });
+
+  await t('取得に失敗した時も、取得待ちの指定は「読めなかった」として決める', async () => {
+    const r = run({ hasTarget: true, role: 'office' });
+    r.timers[0].fn();
+    r.resolvePull(false);
+    await new Promise((res) => setImmediate(res));
+    assert.deepStrictEqual(r.calls, ['startupPull', 'migrateClearNotes_', 'csApplyMasterIdParam', 'csFinishMasterIdPending_:false', 'startPolling']);
   });
 
   await t('現場の端末: 取りに行かない', async () => {

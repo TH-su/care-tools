@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-wufxXSbu9bcDOgu5IYaQzEGigVk3vuiE160Jv/zM5hs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-6UWzX9s/JU7MnNjsdvT31d8e+yaFD8kJJ1sJ/s4ZNWs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -2945,7 +2945,9 @@ function csWriteSelection_(id) {
 }
 var csSelMissingNotified_ = null;      // 「削除されました」通知の重複防止（利用者idごとに1回）
 /* 利用者を選ぶ唯一の入口。★saveDB() は呼ばない＝この選択をクラウドへ伝播させない。 */
+var csSelSeq_ = 0;   // 選択を決めた回数（職員の操作・本人指定の選び直し）。取り込み（adopt）の戻しでは増えない
 function csSetSelection_(id) {
+  csSelSeq_++;
   DB.currentResidentId = id || null;
   csWriteSelection_(id);
   csSelMissingNotified_ = null;
@@ -5649,6 +5651,7 @@ function populateResidentSelect() {
 }
 function onResidentChange() {
   csMasterRid = null;   // 職員が自分で選び直した＝同期後の再適用で上書きしない
+  csMasterPendingMid = null;   // 取得待ちの指定も捨てる（後から選び直さない）
   /* ★saveDB() は呼ばない。表示中の利用者は端末（タブ）ローカルのUI状態であり、
      クラウドへ保存すると他端末の画面まで同じ人へ切り替わるため（本アプリの同期は
      予定・利用者データのみを運ぶ）。端末への保存は csSetSelection_ が行う。 */
@@ -5674,20 +5677,55 @@ function csReadMasterIdParam() {
    この端末の選択へ戻す）。マスタから来た指定はそれより優先するため、メモリに保持して選び直す。
    ★職員が自分でセレクトを変えたら破棄する（後から上書きしない）＝ onResidentChange で解除。 */
 var csMasterRid = null;
+/* 起動の取得（startupPull）がまだ終わっていない間に、手元の名簿で見つからなかった指定（masterId）。
+   ★控えの無い端末では起動時の名簿が空＝ここで「登録されていません」と決めると、取得で名簿が届いても
+     選び直す手がかりが残らなかった。取得の後（adopt と afterPull）に一度だけ選び直し、
+     サーバーの名簿を読んだ後でも居ない時だけ知らせる。職員が自分でセレクトを変えたら破棄する。 */
+var csMasterPendingMid = null;
+var csMasterPendingSeq = 0;   // 控えた時の選択の回数。増えていれば待つ間に誰かが選んだ＝後から上書きしない
+function csFindByMasterId_(mid) {
+  var list = (DB && DB.residents) || [];
+  for (var i = 0; i < list.length; i++) {
+    if (list[i].masterId != null && String(list[i].masterId) === String(mid)) return list[i];
+  }
+  return null;
+}
+/* この後に起動の取得が走るか（下の起動処理の条件と同じ・試算中は取得しない） */
+function csStartupPullComing_() {
+  try { return !SIM_ON && SYNC.hasTarget() && suGetDeviceRole() !== 'field'; } catch (e) { return false; }
+}
 function csApplyMasterIdParam(isRetry) {
   var mid = isRetry ? null : csReadMasterIdParam();
   if (!isRetry && !mid) return;
   if (!isRetry) csClearMasterIdParam();   // URLから即座に落とす（リロード・設定保存で開き直さない）
   var list = (DB && DB.residents) || [], hit = null;
   if (isRetry) {
-    if (csMasterRid == null) return;
-    for (var k = 0; k < list.length; k++) { if (list[k].id === csMasterRid) { hit = list[k]; break; } }
-    if (!hit) { csMasterRid = null; return; }
-  } else {
-    for (var i = 0; i < list.length; i++) {
-      if (list[i].masterId != null && String(list[i].masterId) === String(mid)) { hit = list[i]; break; }
+    if (csMasterRid == null && csMasterPendingMid != null) {
+      /* 取得で名簿が届いた＝控えていた指定で選び直す。まだ居なければ黙って待つ（知らせは取得の後に1回だけ） */
+      /* 待つ間に職員が選び直した（セレクト・追加・取り消し・試算など、どの経路も csSetSelection_ を通る）なら黙って捨てる */
+      if (csSelSeq_ !== csMasterPendingSeq) { csMasterPendingMid = null; return; }
+      hit = csFindByMasterId_(csMasterPendingMid);
+      if (!hit) return;
+      /* 予定などの編集画面を開いている間は、表示中の方を裏で入れ替えない（別の方へ保存されないように） */
+      var busy = false; try { busy = _csBusyEditing(); } catch (e) { busy = true; }
+      if (busy) { csMasterPendingMid = null; showToast('⚠️ 指定された利用者を開けませんでした'); return; }
+      csMasterPendingMid = null;
+      csMasterRid = hit.id;
+    } else {
+      if (csMasterRid == null) return;
+      for (var k = 0; k < list.length; k++) { if (list[k].id === csMasterRid) { hit = list[k]; break; } }
+      if (!hit) { csMasterRid = null; return; }
     }
-    if (!hit) { showToast('⚠️ 指定された利用者は週間計画に登録されていません'); return; }
+  } else {
+    hit = csFindByMasterId_(mid);
+    if (!hit) {
+      if (csStartupPullComing_()) {   // 取得の後に決める
+        csMasterPendingMid = mid;
+        csMasterPendingSeq = csSelSeq_;
+        return;
+      }
+      showToast('⚠️ 指定された利用者は週間計画に登録されていません'); return;
+    }
     csMasterRid = hit.id;
   }
   if (DB.currentResidentId === hit.id) {
@@ -5696,8 +5734,20 @@ function csApplyMasterIdParam(isRetry) {
   }
   csSetSelection_(hit.id);   // 端末ローカルにも記録＝以後の同期取り込みで戻されない
   populateResidentSelect();
-  renderAll();
+  if (isRetry) csRenderOrDefer_();   // 取り込みの後は、裏のタブなら見えた時に描く
+  else renderAll();
   showToast('入居者マスタから「' + (hit.name || '') + '」を開きました');
+}
+/* 起動の取得が終わった後に1回だけ呼ぶ。取得で名簿を読めた（pulled===true）のに居ない時だけ「登録されていません」。
+   読めなかった時は名簿が古い・空のままなので、居ないとは言わずに開けなかったことだけを知らせる。 */
+function csFinishMasterIdPending_(pulled) {
+  if (csMasterPendingMid == null) return;
+  try { csApplyMasterIdParam(true); } catch (e) {}
+  if (csMasterPendingMid == null) return;   // 選び直せた
+  csMasterPendingMid = null;
+  /* 試算中はサーバーの名簿を採用していない＝居ないとは言えない */
+  showToast(pulled === true && !SIM_ON ? '⚠️ 指定された利用者は週間計画に登録されていません'
+                            : '⚠️ 指定された利用者を開けませんでした');
 }
 function csClearMasterIdParam() {
   try { if (location.search) history.replaceState(null, '', location.pathname); } catch (e) {}
@@ -9435,7 +9485,7 @@ if (SYNC.hasTarget() && suGetDeviceRole() !== 'field') {
   setTimeout(() => {
     // 起動pullで最新リモートを採用した「後」に備考クリアを実施し即push。
     // loadDB時にクリアするとこの起動pullが備考付きリモートで上書きし、B3が同期端末で巻き戻るため。
-    const afterPull = () => {
+    const afterPull = (pulled) => {
       try {
         if (migrateClearNotes_()) {
           if (SYNC._pushTimer) { clearTimeout(SYNC._pushTimer); SYNC._pushTimer = null; }
@@ -9445,6 +9495,8 @@ if (SYNC.hasTarget() && suGetDeviceRole() !== 'field') {
       /* 起動pullはDB全体を差し替えるため currentResidentId も戻りうる。
          マスタから本人指定で来ている場合は、pull後に選び直して指定を勝たせる。 */
       try { csApplyMasterIdParam(true); } catch (e4) {}
+      /* 起動時に手元の名簿で見つからなかった指定は、ここで決める（取得で読めて居なければ知らせる） */
+      try { csFinishMasterIdPending_(pulled); } catch (e5) {}
       try { SYNC.startPolling(); } catch (e3) {}
     };
     SYNC.startupPull().then(afterPull, afterPull);   // 成否に関わらず採用後にクリア（未送信編集があれば無条件採用しない＝BE-01根治）
