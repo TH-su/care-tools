@@ -143,7 +143,7 @@ console.log('\n— 5. 家族構成図の合言葉の文言（#16）—');
 {
   const GN = fs.readFileSync(path.join(ROOT, 'genogram.html'), 'utf8');
   const m = /const AUTH_ERR_MSG = '([^']*)';/.exec(GN);
-  t('断られた時の文言に、端末の合言葉と GAS 側の GENOGRAM_TOKEN の両方が出る', !!m && /クラウド設定の「合言葉」/.test(m[1]) && /GENOGRAM_TOKEN/.test(m[1]), m && m[1]);
+  t('断られた時の文言に、端末の合言葉（⚙ 設定）と受け口の側の GENOGRAM_TOKEN の両方が出る', !!m && /⚙ 設定の「合言葉」/.test(m[1]) && /GENOGRAM_TOKEN/.test(m[1]), m && m[1]);
   t("通らない 'grace' の分岐が無い", GN.indexOf("p.auth === 'grace'") < 0, '');
 }
 
