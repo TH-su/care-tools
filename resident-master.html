@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-7e3zEge7+hsc1QNl7h+f5bRNNm12VvTFUOnmFee/0ys='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-h1YKOmRemUezfRpxXEpeLib2Lj8J7RQES4qyVSDZ3JQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -7766,11 +7766,21 @@ function mdAiAsk(names){
 /* 個別機能訓練計画書の専用GASへ AI を頼む（効能の下書きだけが使う出口・2026-10-10 で切り出し。薬の変更候補の下書きは 2026-10-27 に止めた）。
    返すのは Anthropic の応答（content を持つ JSON）。★時間切れは再送しない（GAS は画面が諦めても呼び終える） */
 /* 薬効の下書きを AI の中継の新しい受け口（su-ai・統合 0028・用途 med_effect）から送るか。
-   スイッチ su-backend.json の master_ai が入の時だけ（2026-11-01 代表者「今作り、切で置く」）。切の間は今までどおり計画書の GAS を通る */
+   スイッチ su-backend.json の master_ai が入の時だけ（2026-11-01 代表者「今作り、切で置く」）。切の間は今までどおり計画書の GAS を通る。
+   終わりの時刻 master_ai_until があれば、過ぎた・読めない時は切（2026-11-02 本人指示）。この画面は su-data.js を読み込まないので、
+   判定は su-data.js の flagOn の写し（mdFlagOn_）。食い違わないことは check/unit/master_ai_supa_test.js の F で比べる */
+function mdFlagOn_(f, flag, now){
+  if(!f||typeof f!=='object'||f[flag]!==true) return false;
+  if(!Object.prototype.hasOwnProperty.call(f, flag+'_until')) return true;
+  var u=f[flag+'_until'];
+  if(typeof u!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/.test(u)) return false;
+  var end=Date.parse(u);
+  return typeof now==='number'&&isFinite(end)&&now<end;
+}
 function mdAiViaSupa_(){
   try{
     var f=(window.SUKv&&typeof SUKv._flags==='function')?SUKv._flags():JSON.parse(localStorage.getItem('su_backend_flags')||'null');
-    return !!(f&&f.supabase&&typeof f.supabase==='object'&&f.supabase.master_ai===true);
+    return !!(f&&mdFlagOn_(f.supabase,'master_ai',Date.now()));
   }catch(e){ return false; }
 }
 /* su-ai へ送る。応答は計画書の GAS と同じ形（{ok, status, data|detail} か {ok:false, error}）。
