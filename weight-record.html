@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-g9E6IhgnMSnKWRA3sXepgxfn7Ggz1updNGZ3x6IFdTI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-t0sHVPfNP2/IIQEJJzLmIpejLJsn+yhrdUvfukvyqYU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -108,6 +108,8 @@ body{font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic UI','Mei
 /* 現場端末で接続先が無い時の帯（記録がこの端末にしか残らないことを隠さない） */
 .wr-noapi{background:#fff3e0;color:#8a2c00;border-bottom:1px solid #ffb74d;padding:8px 16px;font-size:0.9375rem;font-weight:700;line-height:1.5}
 .wr-noapi[hidden]{display:none}
+/* 接続設定の画面へのリンクは現場端末では出さない（接続設定は現場では開けない） */
+.wr-field #apiCsLink,#apiCsLink[hidden]{display:none !important}
 /* ログインしていない端末の帯（2026-10-28 本人指示・統合 0032 の切り替えの前に、ログインしていない端末を見つけるため）。画面だけ */
 .wr-nologin{background:#fff8c5;color:#4d3d00;border-bottom:1px solid #e0c200;padding:8px 16px;font-size:0.9375rem;font-weight:700;line-height:1.5}
 .wr-nologin[hidden]{display:none}
@@ -1273,7 +1275,7 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
   <!-- 重複の点検（2026-09-28）：同じ人の行が2つ以上ある組・氏名の無い行を出し、人が選んでまとめる -->
   <div class="cd" id="dupCard">
     <div class="cd-t"><span>重複の点検</span><span id="dupCount" class="dup-count"></span></div>
-    <p class="dup-lead">同じ人が2行以上ある組と、氏名の無い行を出します。残す行を選んで「この組をまとめる」を押すと、記録を残す行へ移してから、ほかの行を消します（記録は消えません）。まとめる前に、今のデータを JSON で保存します。</p>
+    <p class="dup-lead">同じ人が2行以上ある組と、氏名の無い行を出します。残す行を選んで「この組をまとめる」を押すと、記録を残す行へ移してから、ほかの行を消します（記録は消えません）。まとめる前に、今のデータを控えのファイルに保存します。</p>
     <div id="dupList" aria-live="polite"></div>
   </div>
 
@@ -1303,8 +1305,8 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
   <div class="cd">
     <div class="cd-t"><span>データの入出力</span></div>
     <div class="ex-r">
-      <button class="bn bs" id="cfgExport">JSONエクスポート</button>
-      <button class="bn bs" id="cfgImport">JSONインポート</button>
+      <button class="bn bs" id="cfgExport">控えのファイルに書き出す</button>
+      <button class="bn bs" id="cfgImport">控えのファイルから読み込む</button>
       <button class="bn bs" id="cfgCsv">CSVエクスポート</button>
       <button class="bn bs" id="cfgSample">サンプル投入</button>
       <button class="bn br" id="cfgClear">全データ削除</button>
@@ -1327,11 +1329,11 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
   <div class="cd">
     <div class="cd-t"><span>🌐 複数端末で共有（Google Sheets 連携）</span></div>
     <div style="font-size:0.9375rem;color:var(--g7);line-height:1.6;margin-bottom:12px">
-      Google Apps Script (GAS) で公開した Web App URL を登録すると、入居者・体重記録・検知ルールが<br>
+      Google の受け口の URL を登録すると、入居者・体重記録・検知ルールが<br>
       クラウド（Google Sheets）経由で他の端末と自動同期されます。
     </div>
     <div class="fg">
-      <label class="fl">GAS Web App URL <span id="apiPersistBadge" class="api-persist-badge" style="display:none">保存済み</span></label>
+      <label class="fl">Google の受け口の URL <span id="apiPersistBadge" class="api-persist-badge" style="display:none">保存済み</span></label>
       <input type="text" id="cfgApi" placeholder="https://script.google.com/macros/s/〇〇〇/exec">
       <div id="apiPersistDetail" class="api-persist-detail" style="display:none"></div>
     </div>
@@ -1347,8 +1349,9 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
       <button class="bn br bsm" id="btnApiClear">🔌 連携解除</button>
     </div>
     <div id="apiStatus" style="margin-top:10px;font-size:0.9375rem;color:var(--g6);line-height:1.55">
-      GASをデプロイして取得したURLを入力して「URLを保存・接続」を押してください。
+      この端末には、体重を複数の端末で共有するための接続先がありません。管理者から受け取った Google の受け口の URL（https://script.google.com/ で始まるもの）を上の欄に入れて「💾 URLを保存・接続」を押すか、下の「接続設定」の画面の「体重管理」の欄に入れてください（接続設定で入れた時は、この画面を読み込み直してください）。
     </div>
+    <div id="apiCsLink" style="margin-top:6px;font-size:0.9375rem;line-height:1.55"><a href="connection-settings.html">接続設定の画面を開く</a>（「体重管理」の欄に URL と合言葉を入れられます）</div>
     <!-- 診断結果パネル：🩺 ボタンや接続失敗時に表示される -->
     <pre id="apiDiagOut" class="api-diag" style="display:none"></pre>
     <details class="api-help">
@@ -1361,8 +1364,8 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
         <li><b>初回承認が完了しているか</b><br>
             Apps Script で一度「実行」を押し、「アクセスを承認」→ アカウント選択 →
             「詳細」→「（プロジェクト名）に移動」→「許可」までやり切ったか確認</li>
-        <li><b>doGet が ContentService 経由で JSON を返しているか</b><br>
-            <code>ContentService.createTextOutput(JSON.stringify(...)).setMimeType(ContentService.MimeType.JSON)</code></li>
+        <li><b>体重管理用の Google の受け口の URL か</b><br>
+            別のアプリの受け口の URL だと、答えの形が違って読み取れません。体重管理用に作った受け口の URL を貼ってください</li>
         <li>うまくいかない時は「🩺 接続診断」を押して具体的な原因を表示</li>
       </ol>
     </details>
@@ -1688,7 +1691,7 @@ function save(){
   catch(e){
     console.error('save: serialize failed:', e);
     _lastSaveOk = false;
-    if(typeof toast === 'function') toast('⚠️ データ保存失敗（シリアライズ）','err');
+    if(typeof toast === 'function') toast('⚠️ データを保存できませんでした（保存する形に直せませんでした）','err');
     return false;
   }
   // 念のため、生成した JSON 自体が再パース可能か検証
@@ -1696,7 +1699,7 @@ function save(){
   catch(e){
     console.error('save: JSON re-parse failed:', e);
     _lastSaveOk = false;
-    if(typeof toast === 'function') toast('⚠️ データ保存失敗（JSON 不正）','err');
+    if(typeof toast === 'function') toast('⚠️ データを保存できませんでした（保存する形を確かめられませんでした）','err');
     return false;
   }
   // ローテーション：書込み前に「現在の良好なスナップショット」を二世代まで残す
@@ -1717,7 +1720,7 @@ function save(){
     if(verify !== json){
       console.error('save: verification mismatch (truncation or quota?)');
       _lastSaveOk = false;
-      if(typeof toast === 'function') toast('⚠️ データ保存後の検証失敗（ストレージ不足の可能性）','err');
+      if(typeof toast === 'function') toast('⚠️ 保存した内容を確かめられませんでした（端末の保存容量が足りない可能性があります）','err');
       return false;
     }
   }catch(e){
@@ -1726,8 +1729,9 @@ function save(){
     _lastSaveOk = false;
     if(typeof toast === 'function'){
       const msg = (e && e.name === 'QuotaExceededError')
-        ? '⚠️ ストレージ容量不足。古いデータの整理をお勧めします'
-        : '⚠️ データ保存に失敗しました（' + (e.message || e.name || 'unknown') + '）';
+        ? '⚠️ 端末の保存容量が足りません。古いデータの整理をお勧めします'
+        : '⚠️ この端末にデータを保存できませんでした。画面を読み込み直して、もう一度お試しください';
+      wrNote_('端末への保存', e);   /* 元の例外は記録に残す（画面には職員向けの文だけを出す） */
       toast(msg, 'err');
     }
     return false;
@@ -1767,7 +1771,7 @@ setTimeout(()=>{
     if(loadError){
       sessionStorage.removeItem('wtmgr_load_error');
       if(typeof toast === 'function')
-        toast('⚠️ 保存データが読めず空の状態で起動しました。GAS連携があれば「手動同期」をお試しください', 'err');
+        toast('⚠️ 保存データが読めず空の状態で起動しました。複数の端末で共有している時は「手動同期」をお試しください', 'err');
     }
   }catch(e){}
 }, 800);
@@ -2203,7 +2207,7 @@ function apiFriendlyError_(raw){
   if(!apiCaps.seen){
     return 'サーバーの状態を確認できないまま送信し、合言葉が通りませんでした。通信を確かめて画面を再読み込みしてください';
   }
-  return '合言葉が一致しません。体重記録APIのスクリプトプロパティ WEIGHT_TOKEN と、設定画面の合言葉が同じか確認してください（前後の空白・全角に注意）';
+  return '合言葉が一致しません。この端末の合言葉（「設定」→「🌐 複数端末で共有」）が、管理者が Google の受け口に決めた合言葉と同じか確認してください（前後の空白・全角に注意）';
 }
 async function apiGet(){
   if(!apiUrl) return null;
@@ -2302,7 +2306,7 @@ async function apiDiagnose(url){
   }
   if(!u.startsWith('https://script.google.com/')){
     lines.push('❌ URL の先頭が https://script.google.com/ ではありません');
-    lines.push('  → GAS Web App の本番URL（…/exec で終わる）を貼り付けてください');
+    lines.push('  → Google の受け口の本番URL（…/exec で終わる）を貼り付けてください');
     return { ok:false, lines };
   }
   if(/\/dev(\?|$)/.test(u)){
@@ -2347,10 +2351,10 @@ async function apiDiagnose(url){
   if(errMsg){
     lines.push(`❌ 通信エラー: ${errMsg}`);
     if(/タイムアウト/.test(errMsg)){
-      lines.push('  → GAS の起動に時間がかかっている可能性。数秒後に再試行してください');
+      lines.push('  → Google の受け口の起動に時間がかかっている可能性。数秒後に再試行してください');
       lines.push('  → 続けて失敗する時は、次の順で切り分けてください：');
       lines.push('     ① 上のURLをブラウザのアドレス欄に貼って開く');
-      lines.push('        （{"ok":true,…} が出れば連携先は生きています。何も出なければGAS側の問題）');
+      lines.push('        （{"ok":true,…} が出れば連携先は生きています。何も出なければ Google の受け口の側の問題）');
       if(diagTok) lines.push('     ② 合言葉の欄を空にして、もう一度この診断を押す（送り方が変わります）');
       lines.push('     ③ Apps Script の「デプロイを管理」で、最新バージョンがデプロイされているか確認');
     }
@@ -2389,12 +2393,12 @@ async function apiDiagnose(url){
   let json;
   try{ json = JSON.parse(_stripBom(text)); }
   catch(e){
-    lines.push('❌ 応答が JSON として解釈できません');
-    lines.push('  → GAS の doGet が ContentService.createTextOutput(...JSON...) を返しているか確認');
+    lines.push('❌ 答えを読み取れませんでした（体重管理の答えの形ではありません）');
+    lines.push('  → 体重管理用の Google の受け口の URL か確かめてください');
     return { ok:false, lines };
   }
   if(json && json.error){
-    lines.push(`❌ GAS 側エラー: ${json.error}`);
+    lines.push(`❌ Google の受け口のエラー: ${json.error}`);
     return { ok:false, lines };
   }
   if(!json || (!Array.isArray(json.residents) && !Array.isArray(json.records))){
@@ -2452,6 +2456,11 @@ function syncFromAPI(showLoader){
   p.then(done, done);
   return p;
 }
+/* 職員にそのまま見せてよい断りか：日本語を含み、「Google」以外のラテン文字（英語の例外文・コード）を含まない */
+function wrStaffText_(s){
+  const t = String(s == null ? '' : s);
+  return /[\u3040-\u30ff\u4e00-\u9fff]/.test(t) && !/[A-Za-z]/.test(t.replace(/Google/g, ''));
+}
 async function _syncFromAPIImpl(showLoader){
   if(!apiUrl) return false;
   wrSyncLock_(true);   /* 止めたら必ず finally で戻す（表示の失敗で止めたまま残さない） */
@@ -2460,7 +2469,12 @@ async function _syncFromAPIImpl(showLoader){
     apiSetStatus('sy');
     const json = await apiGet();
     if(!json) throw new Error('レスポンスが空です');
-    if(json.error) throw new Error(apiFriendlyError_(json.error));
+    if(json.error){
+      const fe = new Error(apiFriendlyError_(json.error));
+      /* 合言葉の案内に言い換えた時と、職員向けの日本語の断り（共通のデータベースの部品が返す文など）の時は、その文を職員にも出す */
+      fe.wrStaff = (fe.message !== String(json.error)) || wrStaffText_(fe.message);
+      throw fe;
+    }
     const apiRes = Array.isArray(json.residents) ? json.residents : [];
     const apiRec = Array.isArray(json.records)   ? json.records   : [];
     const apiThr = json.thresholds && typeof json.thresholds === 'object' ? json.thresholds : null;
@@ -2562,7 +2576,8 @@ async function _syncFromAPIImpl(showLoader){
     return true;
   }catch(e){
     apiSetStatus('er', '接続エラー: '+ e.message);
-    toast('⚠️ 同期失敗: '+ e.message, 'err');
+    /* 職員向けの文だけを出す。元の文は設定の接続状態欄（上）に残す（圏外の端末で開くたびに不具合報告の種を増やさないため、記録には流さない） */
+    toast((e && e.wrStaff) ? '⚠️ 同期できませんでした：' + e.message : '⚠️ 同期できませんでした。この端末の記録は残っています。しばらくしてから、もう一度お試しください', 'err');
     /* サーバーと合わせられない時も、新しく入居した人は記録できるようにする（2026-09-28）。
        番号はマスタの番号から決まるので、あとで同期してもサーバーで二重にならない */
     /* ただし一度も同期に成功していない端末（控えが無い）では作らない。サーバーに居る人を別の番号で作ってしまうため */
@@ -3790,6 +3805,8 @@ function applyWeightDeviceGuard(){
   if(field && document.querySelector('.scr[data-sc="cfg"].on')) goto('list');
   var nb = document.getElementById('wrNoApi');
   if(nb) nb.hidden = !(field && !apiUrl);   /* 現場端末は接続先を直せないので、無い時は帯で知らせ続ける */
+  var csl = document.getElementById('apiCsLink');
+  if(csl) csl.hidden = field;   /* 接続設定は現場では開けないので、リンクを出さない */
   return field;
 }
 /* 開いたまま別のタブ（入居者マスタ等）で端末の用途が変わった時も、すぐ切り替える */
@@ -7396,7 +7413,7 @@ function wrMergeResidents(keepId, dropIds, opts){
     const msg = `「${keep.name || '（氏名なし）'}」（居室 ${keep.room || '—'}）の行に、${dropTxt} をまとめます。\n\n`
       + `・記録 ${moving.length} 件を残す行へ移します（記録は消えません）\n`
       + `・まとめた ${drops.length} 行は消します。元には戻せません\n`
-      + `・始める前に、今のデータを JSON で保存します\n\nよろしいですか？`;
+      + `・始める前に、今のデータを控えのファイルに保存します\n\nよろしいですか？`;
     if(!confirm(msg)) return false;
     try{ wrDownloadDbJson('weight-record-before-merge'); }catch(e){}
   }
@@ -7510,7 +7527,7 @@ async function wrClearOrphans(oldRid){
   if(!recs.length){ try{ renderCfg(); }catch(e){} return false; }
   if(wrPendingCount() > 0){ toast('まだ送っていない記録があります。同期が終わってから、もう一度押してください', 'err'); return false; }
   const list = recs.map(x => `${ymFmt(x.yearMonth)} ${wrWeightOk(x) ? x.weight.toFixed(1) + 'kg' : '—'}`).join('、');
-  if(!confirm(`持ち主のいない記録 ${recs.length} 件（${list}）を消します。\n消した記録は元に戻せません（消す前に、今のデータを JSON で保存します）。\nよろしいですか？`)) return false;
+  if(!confirm(`持ち主のいない記録 ${recs.length} 件（${list}）を消します。\n消した記録は元に戻せません（消す前に、今のデータを控えのファイルに保存します）。\nよろしいですか？`)) return false;
   try{ wrDownloadDbJson('weight-record-before-clear'); }catch(e){}
   const ids = new Set(recs.map(x => String(x.id)));
   DB.records = DB.records.filter(x => !(x && ids.has(String(x.id))));
@@ -8340,7 +8357,7 @@ $('#cfgFile').addEventListener('change', async e=>{
     let finalUrl = currentUrl;
     if(fileUrl && fileUrl !== currentUrl){
       finalUrl = confirm(
-        `インポートファイルにも GAS 連携URLが含まれています。\n\n` +
+        `読み込むファイルにも、共有の接続先（Google の受け口の URL）が入っています。\n\n` +
         `現在: ${currentUrl ? '…'+currentUrl.slice(-40) : '（未設定）'}\n` +
         `ファイル: …${fileUrl.slice(-40)}\n\n` +
         `OK = ファイル側のURLに切り替える / キャンセル = 現在のURLを維持`
@@ -8407,7 +8424,7 @@ $('#cfgClear').addEventListener('click', ()=>{
   renderCfg(); updateAlertBadge();
   populateResidentSelect($('#inResident'));
   populateResidentSelect($('#ivResident'));
-  toast('全データを削除しました' + (keepUrl ? '（GAS連携URLは保持）' : ''));
+  toast('全データを削除しました' + (keepUrl ? '（共有の接続先の URL は残しました）' : ''));
 });
 
 /* sample data */
@@ -8586,7 +8603,7 @@ function wrHasLocalCopy_(){
     const url = $('#cfgApi').value.trim();
     if(!url){ toast('URLを入力してください','err'); return; }
     if(!url.startsWith('https://script.google.com/')){
-      toast('GAS Web App のURL (https://script.google.com/〜) を確認してください','err'); return;
+      toast('Google の受け口の URL（https://script.google.com/ で始まるもの）を入れてください','err'); return;
     }
     // 三層（LS + DB + UI）に保存し、setItem の成功を読み戻して検証
     const sv = saveApiUrl(url);
@@ -8686,7 +8703,7 @@ function wrHasLocalCopy_(){
     if($('#cfgApiToken')) $('#cfgApiToken').value = '';
     if($('#cfgApi')) $('#cfgApi').value = '';
     apiSetStatus('of');
-    $('#apiStatus').textContent = 'GASをデプロイして取得したURLを入力して「URLを保存・接続」を押してください。';
+    $('#apiStatus').textContent = 'この端末には、体重を複数の端末で共有するための接続先がありません。管理者から受け取った Google の受け口の URL（https://script.google.com/ で始まるもの）を上の欄に入れて「💾 URLを保存・接続」を押すか、下の「接続設定」の画面の「体重管理」の欄に入れてください（接続設定で入れた時は、この画面を読み込み直してください）。';
     hideDiagPanel();
     refreshUrlPersistBadge();
     toast('連携を解除しました');
