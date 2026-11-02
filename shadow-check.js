@@ -1102,6 +1102,7 @@
     try { await loadStf(sb); } catch (e) { $('stf-verdict').className = 'msg warn'; $('stf-verdict').textContent = '職員マスタの写しの記録を読めませんでした。'; }
     try { await loadSup(sb); } catch (e) { $('sup-verdict').className = 'msg warn'; $('sup-verdict').textContent = '備品の写しの記録を読めませんでした。'; }
     try { await loadStfMode(sb); } catch (e) { /* 0045 の前・読めない時はボタンを出さない */ }
+    try { await loadSupMode(sb); } catch (e) { /* 0047 の前・読めない時はボタンを出さない */ }
     try { await loadPatch(sb); }
     catch (e) {
       $('pt-verdict').className = 'msg warn';
@@ -1425,10 +1426,14 @@
     if (d.ver == null) { say('まだ写していません。消耗品管理の GAS の自動（autoMirror）が動くと、1時間以内に写ります。'); return; }
     kk.appendChild(kpi('写しの品目', d.items, '件'));
     kk.appendChild(kpi('写しの出庫', d.moves, '行'));
+    supSize(d);
     var tail = '（最後に写した時刻 ' + fmtTime(d.lastAt || d.updatedAt) + '）';
     var last = Date.parse(d.lastAt || d.updatedAt || '');
     var now = typeof nowMs === 'number' ? nowMs : Date.now();
-    if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + (SUP_REFUSED[d.lastRefused] || String(d.lastRefused || '')) + '）。開発の担当へ知らせてください。' + tail, 'warn');
+    var live = false;
+    try { var md = await sb.rpc('sup_mode_get'); live = !!(md && !md.error && md.data && md.data.mode === 'live'); } catch (e) { live = false; }
+    if (live) say('切り替え済みです（備品の正本は Supabase）。写しは止めてあります（下の記録は切り替える前のものです）。Google へは1時間ごとに写し返しています。', 'ok');
+    else if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + (SUP_REFUSED[d.lastRefused] || String(d.lastRefused || '')) + '）。開発の担当へ知らせてください。' + tail, 'warn');
     else if (!isNaN(last) && now - last <= SUP_FRESH_MS) say('写しが1時間ごとに届いています。' + tail, 'ok');
     else say('しばらく写っていません。消耗品管理の GAS の自動（autoMirror）が止まっていないか確かめてください。' + tail, 'warn');
     var r = await sb.from('sup_sync_runs').select('at,status,refused,result,items,moves').order('id', { ascending: false }).limit(5);
@@ -1441,6 +1446,82 @@
       li.appendChild(left);
       ul.appendChild(li);
     });
+  }
+
+  /* 備品の大きさ（統合 0047・反証レビュー指摘3）: 新しい保存先は6つのタブの合計を 8MB までしか受けない。出庫は増え続けるので、
+   * 上限の7割を超えたら早めに知らせる（そのまま増えると、切り替えた後の保存が「入りきらない」と断られる）。出すのは割合と大きさだけ */
+  var SUP_SIZE_WARN = 0.7;
+  function supSize(d) {
+    var e = $('sup-size');
+    e.className = 'msg'; e.textContent = '';
+    var total = Number(d && d.bytesTotal), limit = Number(d && d.bytesLimit);
+    if (!(total >= 0) || !(limit > 0)) return;   // 0047 の前は大きさを返さない
+    var r = total / limit, pct = Math.round(r * 100), mb = function (n) { return (n / 1048576).toFixed(1) + 'MB'; };
+    var t = '記録の大きさ: ' + mb(total) + '／上限 ' + mb(limit) + '（' + pct + '%）';
+    if (r >= SUP_SIZE_WARN) { e.className = 'msg warn'; e.textContent = t + '。上限に近づいています。上限を超えると新しい保存先へ保存できなくなるので、開発の担当へ知らせてください。'; }
+    else e.textContent = t + '。';
+  }
+
+  /* 備品の正本の切り替え（統合 0047・2026-11-02）: 職員マスタと同じ手順（su-sup-full.js の cutover・back）。管理者だけ・事務所PCだけ。
+   * 切り替えボタンは切り替えスイッチ supplies が入で、この端末に消耗品管理の接続先がある時だけ出す */
+  function suppliesOn() { var sw = window.SUKv ? SUKv._flags() : null; return !!(sw && sw.supabase && sw.supabase.supplies === true); }
+  function supTarget() {
+    try {
+      var o = JSON.parse(localStorage.getItem('spl_cfg') || 'null');
+      var u = String(o && o.url || '').trim(), t = String(o && o.token || '').trim();
+      return RMASTER_RE.test(u) && t ? { url: u, token: t } : null;
+    } catch (e) { return null; }
+  }
+  async function loadSupMode(sb) {
+    var line = $('sup-mode'), bc = $('b-sup-cut'), bb = $('b-sup-back');
+    bc.hidden = true; bb.hidden = true; line.className = 'msg'; line.textContent = '';
+    if (!(me && me.role === 'admin')) return;
+    var r = await sb.rpc('sup_mode_get');
+    if (r.error || !r.data) return;
+    var live = r.data.mode === 'live', on = suppliesOn(), st = supTarget();
+    if (live && !on) { line.className = 'msg warn'; line.textContent = '備品は新しい保存先へ切り替えた後ですが、切り替えスイッチ（supplies）が切です。画面が古い Google の中身を読まないよう、スイッチを入れ直すか「備品を写しの期間に戻す」を押してください。'; }
+    else if (live) { line.className = 'msg ok'; line.textContent = '備品の正本は新しい保存先（Supabase）です。Google へは1時間ごとに写し返しています。'; }
+    else line.textContent = '備品の正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（supplies）を入れる PR の取り込みが要ります。');
+    bc.hidden = live || !on || !st;
+    bb.hidden = !live || !st;
+  }
+  async function runSupOp(kind) {
+    var v = $('sup-mode');
+    function say(t, k) { v.className = 'msg' + (k ? ' ' + k : ''); v.textContent = t; }
+    if (!(me && me.role === 'admin' && me.status === SUAuth.STATUS.OK)) { say('管理者（二段階認証済み）のアカウントで開いてください。', 'warn'); return; }
+    var role = ''; try { role = localStorage.getItem('su_device_role') || ''; } catch (e) { role = ''; }
+    if (role === 'field') { say('この端末は「現場」です。事務所のパソコンで行ってください。', 'warn'); return; }
+    var st = supTarget();
+    if (!st) { say('この端末には消耗品管理の接続先（Google）がありません。この端末で消耗品管理を開いてから、押し直してください。', 'warn'); return; }
+    if (kind === 'cut') {
+      if (!suppliesOn()) { say('切り替えスイッチ（supplies）が入っていません。', 'warn'); return; }
+      if (!confirm('備品（消耗品管理）の正本を新しい保存先（Supabase）へ切り替えますか？\n\n1分ほどかかります。その間は入出庫・品目・価格などの保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、ログインしている端末だけが消耗品管理を使えます。Google へは1時間ごとに写し返します。いつでも「備品を写しの期間に戻す」で戻せます。')) return;
+    } else {
+      if (!confirm('備品を写しの期間に戻しますか？\n\n切り替えていた間の保存を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。')) return;
+    }
+    if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
+    var bc = $('b-sup-cut'), bb = $('b-sup-back');
+    bc.disabled = true; bb.disabled = true;
+    var sb = SUAuth.client();
+    try {
+      var io = {
+        gas: function (body) { return rmasterPost(st, body); },
+        rpc: function (name, args) { return sb.rpc(name, args); },
+        token: async function () { var s2 = await sb.auth.getSession(); return s2 && s2.data && s2.data.session ? s2.data.session.access_token : null; },
+        progress: function (t) { say(t); }
+      };
+      var res = kind === 'cut' ? await SUSupFull.cutover(io) : await SUSupFull.back(io);
+      if (!res.ok) { say((kind === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + res.why, 'warn'); return; }
+      say(kind === 'cut' ? '切り替えました（写した品目 ' + res.rows + '件）。消耗品管理の画面は、読み込み直すと新しい保存先で保存します。'
+                         : '写しの期間に戻しました。正本は Google です。', 'ok');
+    } catch (e) {
+      say('止まりました: ' + String(e && e.message || e), 'warn');
+    } finally {
+      bc.disabled = false; bb.disabled = false;
+      var keep = v.textContent, kc = v.className;
+      try { await loadSupMode(sb); await loadSup(sb); } catch (e) { /* 読み直せなくても結果の文は残す */ }
+      v.className = kc; v.textContent = keep;
+    }
   }
 
   var STF_REFUSED = { stale: '古い版', shrink: '急に減った', badrow: '形の違い', toolarge: '大きすぎる' };
@@ -1901,6 +1982,8 @@
   $('b-adm-back').addEventListener('click', function () { msg(''); runAdmOp('back'); });
   $('b-stf-cut').addEventListener('click', function () { msg(''); runStfOp('cut'); });
   $('b-stf-back').addEventListener('click', function () { msg(''); runStfOp('back'); });
+  $('b-sup-cut').addEventListener('click', function () { msg(''); runSupOp('cut'); });
+  $('b-sup-back').addEventListener('click', function () { msg(''); runSupOp('back'); });
   $('b-res-back').addEventListener('click', function () { msg(''); runResOp('back'); });
   $('b-check').addEventListener('click', function () { msg(''); runCheck(); });
   $('b-mirror-check').addEventListener('click', function () { msg(''); runMirrorCheck(); });

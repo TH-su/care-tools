@@ -3,7 +3,7 @@
 <head>
 <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-XDMSz5MHWFyHqPZkLOSCgk81Q9z4R/8oOCf9OvtpFsk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-kkPsYjxWP1KXJ9dKm+Sk1GlA6jAOApEOOQC4IQkHyls='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="spl-build" content="2026-09-23.1">
@@ -1194,6 +1194,7 @@ body.staff .adm{display:none !important}
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-facility.js?v=2026-11-02.2"></script>   <!-- 明細・料金表の発行者（施設名・住所・電話）・監査10月版 #14 -->
 <script src="supplies-calc.js?v=2026-09-23.1"></script>
+<script src="su-sup.js?v=2026-11-02"></script>   <!-- 新しい保存先への切り替え（統合 0047） -->
 <script>
 'use strict';
 
@@ -1578,6 +1579,8 @@ function apiPost(action, body, timeoutMs) {
   function send() {
     var opt = { method: 'POST', body: JSON.stringify(payload), redirect: 'follow' };
     if (ctl) opt.signal = ctl.signal;
+    /* 新しい保存先への切り替え（統合 0047・su-sup.js）。スイッチが切・部品が無い時は今までどおり Google へ（送り方は変えない） */
+    if (typeof window !== 'undefined' && window.SUSup) return window.SUSup.send(payload, function () { return fetch(cfg.url, opt); }, { screen: 'supplies', timeoutMs: ms });
     return fetch(cfg.url, opt);
   }
   /* 書く action にだけログインの証明を添える（2026-10-15）。ログインの控えが無い端末は今までどおりすぐ送る */
@@ -1620,6 +1623,7 @@ function apiPost(action, body, timeoutMs) {
   });
 }
 /* サーバーの error コードを日本語にする（コードだけを出さない） */
+/* 下の sup_switched から後ろは、新しい保存先（統合 0047・su-sup.js と受け口 sup-write）の断り。ふだんはサーバーが直し方の文（hint）を添える */
 var ERR_TEXT = {
   unauthorized: '合言葉が違います',
   forbidden: 'この操作は管理者だけが行えます',
@@ -1636,7 +1640,19 @@ var ERR_TEXT = {
   in_use: '使っている種別は削除できません',
   unknown_action: 'この操作にサーバーが対応していません',
   busy: 'ほかの人が同時に書き込んでいます',
-  flush_fail: '保存できたか確かめられませんでした'
+  flush_fail: '保存できたか確かめられませんでした',
+  sup_switched: '保存先を切り替えている最中か、切り替えた後です',
+  toolarge: '新しい保存先に入りきりませんでした',
+  login: 'ログインが必要です',
+  role: 'このアカウントでは使えません',
+  noauth: 'ログインの部品を読み込めませんでした',
+  mode: '新しい保存先の状態を確かめられませんでした',
+  db: '新しい保存先とうまくやりとりできませんでした',
+  gas: 'サーバーで処理できませんでした',
+  badrow: '保存できませんでした',
+  size: '送る内容が大きすぎます',
+  format: '送った内容の形が違います',
+  action: 'この操作は新しい保存先では使えません'
 };
 var ERR_HINT = {
   unauthorized: '設定画面で合言葉を入れ直してください。',
@@ -1654,7 +1670,19 @@ var ERR_HINT = {
   in_use: '非表示にすると、新しく選べなくなります。',
   unknown_action: 'サーバーが古い版のままです。' + ADMIN_GAS_ASK,
   busy: '少し待ってから、もう一度お試しください。',
-  flush_fail: '一覧を取り直して、入っているか確かめてから操作してください（新しい品目は、もう一度登録する前に一覧で確かめる）。'
+  flush_fail: '一覧を取り直して、入っているか確かめてから操作してください（新しい品目は、もう一度登録する前に一覧で確かめる）。',
+  sup_switched: '画面を読み込み直してから、もう一度お試しください（続く時は管理者へ連絡してください）。',
+  toolarge: 'この保存は入っていません。管理者へ連絡してください。',
+  login: 'ログインしてから、もう一度お試しください。',
+  role: '管理者へ連絡してください。',
+  noauth: 'ページを読み込み直してください。',
+  mode: '少し待ってから、もう一度お試しください。',
+  db: '一覧を取り直して、入っているか確かめてから操作してください。',
+  gas: '時間をおいて、もう一度お試しください。',
+  badrow: '一覧を取り直して、入っているか確かめてから操作してください。続く時は管理者へ連絡してください。',
+  size: '一度に送る件数を減らして、もう一度お試しください。',
+  format: 'ページを読み込み直して、もう一度お試しください。',
+  action: 'ページを読み込み直して、もう一度お試しください。続く時は管理者へ連絡してください。'
 };
 function serverErrText(d) {
   var c = txt(d && d.error);
