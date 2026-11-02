@@ -1105,7 +1105,7 @@
     try { await loadStfMode(sb); } catch (e) { /* 0045 の前・読めない時はボタンを出さない */ }
     try { await loadSupMode(sb); } catch (e) { /* 0047 の前・読めない時はボタンを出さない */ }
     try { await loadSa(sb); } catch (e) { $('sa-verdict').className = 'msg warn'; $('sa-verdict').textContent = 'シフト分析の写しの記録を読めませんでした。'; }
-    try { await loadSaMode(sb); } catch (e) { /* 0051 の前・読めない時はボタンを出さない */ }
+    try { await loadSaMode(sb); } catch (e) { saNote('印の欄', e); }   // 読めない時はボタンを出さない
     try { await loadPatch(sb); }
     catch (e) {
       $('pt-verdict').className = 'msg warn';
@@ -1580,6 +1580,9 @@
    * 写しはアナライザ同期の GAS が1時間ごとに自動で取る。最後の写しの結果と時刻（75分以内なら届いている）で確かめる。
    * 出すのはキーごとの版（rev）・月の数・人数・大きさ・時刻・断った種類だけ（氏名・資格の中身は出さない）。Google へは何も送らない */
   var SA_FRESH_MS = 75 * 60 * 1000;
+  function saNote(where, e) {
+    try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('写しの見比べ: シフト分析の' + where, String(e && (e.code || e.message) || e)); } catch (x) { /* 記録できなくても止めない */ }
+  }
   var SA_REFUSED = {
     stale: '前に読んだ写し', shrink: '急に減った', badrow: '形の違い', toolarge: '大きすぎる', rewind: '版が巻き戻った', future: '時刻が先',
     toomany: 'キーが多すぎる', cutover: '切り替えの途中',
@@ -1603,9 +1606,13 @@
     var tail = '（最後に写した時刻 ' + fmtTime(d.lastAt || d.updatedAt) + '）';
     var last = Date.parse(d.lastAt || d.updatedAt || '');
     var now = typeof nowMs === 'number' ? nowMs : Date.now();
-    var live = false;
-    try { var md = await sb.rpc('sa_mode_get'); live = !!(md && !md.error && md.data && md.data.mode === 'live'); } catch (e) { live = false; }
-    if (live) say('切り替え済みです（シフト分析の正本は Supabase）。写しは止めてあります。Google へは1時間ごとに写し返しています。', 'ok');
+    var live = false, mdd = null;
+    try { var md = await sb.rpc('sa_mode_get'); mdd = md && !md.error ? md.data : null; live = !!(mdd && mdd.mode === 'live'); } catch (e) { saNote('印', e); live = false; }
+    /* 切り替えた後は、Google への写し返しが遅れていないかを見る（写し返し終えた版が今の版より古く、最後に写し返してから75分を超えた・指摘6） */
+    var mAt = mdd ? Date.parse(mdd.mirroredAt || '') : NaN;
+    var lag = live && Number(mdd.version) > Number(mdd.mirroredVer) && !isNaN(mAt) && now - mAt > SA_FRESH_MS;
+    if (lag) say('切り替え済みです（シフト分析の正本は Supabase）。ただし Google への写し返しが75分を超えて遅れています（最後に写し返した時刻 ' + fmtTime(mdd.mirroredAt) + '）。アナライザ同期の GAS の自動（autoMirror）が止まっていないか確かめてください。', 'warn');
+    else if (live) say('切り替え済みです（シフト分析の正本は Supabase）。写しは止めてあります。Google へは1時間ごとに写し返しています。', 'ok');
     else if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + (SA_REFUSED[d.lastRefused] || String(d.lastRefused || '')) + '）。' + (d.lastRefused === 'trashed' ? '' : '開発の担当へ知らせてください。') + tail, 'warn');
     else if (!isNaN(last) && now - last <= SA_FRESH_MS) say('写しが1時間ごとに届いています。' + tail, 'ok');
     else say('しばらく写っていません。アナライザ同期の GAS の自動（autoMirror）が止まっていないか確かめてください。' + tail, 'warn');
@@ -1678,7 +1685,7 @@
     } finally {
       bc.disabled = false; bb.disabled = false;
       var keep = v.textContent, kc = v.className;
-      try { await loadSaMode(sb); await loadSa(sb); } catch (e) { /* 読み直せなくても結果の文は残す */ }
+      try { await loadSaMode(sb); await loadSa(sb); } catch (e) { saNote('読み直し', e); }   // 読み直せなくても結果の文は残す
       v.className = kc; v.textContent = keep;
     }
   }

@@ -8,7 +8,10 @@
        見えない文字（sa_badchar）はデータベースの文をそのまま返す
      E データベースに届かない・時間切れは例外（職員向けの文）。Google へ流さない
      F データベースが「写しの期間」（sa_not_live）と答えたら、印を捨てて Google へ送る。Google が「切り替えた後」（sa_switched）と断ったら印を捨てる
-     G ログインしていない端末・現場のアカウント（印を読めない）は Google へ送り、切り替えた後の断りを「ログイン」「使えない」に置き換える
+     G ログインしていない端末・現場のアカウント（印を読めない）は印だけの口（sa_mode_public）を読み、切り替えた後なら Google へ送らずに断る。
+       印が分からない時は保存を送らない（読み取りは Google）。Google の sa_switched（読み取りも）は中身を渡さずに同じ断りへ（反証レビュー 指摘1・2・5）
+     K 現場の端末（su_device_role field）はスイッチが入の間クラウド同期を使わない（probe 偽・blocked 真・指摘3）
+     M データベースが番号つきで断った時は「受け付けませんでした」、番号の無い失敗は通信の失敗（指摘7）。渡したキーが全部形違いなら空の答え（指摘8）
      H 読み取りの前は印を読み直す・保存は1分覚える／ログインの部品は1回だけ読む／端末に書くのはスイッチの控えだけ
      L 切り替えた後は URL・合言葉の無い端末でも同期してよい（liveHint・probe）
      S 画面（shift-analyzer.html）: cloudApi を SUSa に通し、Google へ送る関数は今までの fetch のまま
@@ -24,6 +27,7 @@ function t(n, c, e) { if (c) { pass++; console.log('  ✓ ' + n); } else { fail+
 function box(o) {
   o = o || {};
   const store = { su_backend_flags: JSON.stringify({ supabase: o.flags || {} }) };
+  if (o.field) store.su_device_role = 'field';
   const writes = [], rpcs = [];
   const A = {
     STATUS: { SIGNED_OUT: 'signed_out', DENIED: 'denied', MFA_ENROLL: 'mfa_enroll', MFA_VERIFY: 'mfa_verify', OK: 'ok', ERROR: 'error' },
@@ -31,6 +35,11 @@ function box(o) {
     client: () => ({
       rpc: (n, a) => {
         rpcs.push({ n, a: JSON.parse(JSON.stringify(a || {})) });
+        if (n === 'sa_mode_public') {
+          if (o.pubReject) return Promise.reject(new Error('offline'));
+          if (o.pubErr) return Promise.resolve({ error: o.pubErr });
+          return Promise.resolve({ data: { ok: true, mode: o.pub || 'shadow' } });
+        }
         if (n === 'sa_mode_get') {
           if (o.modeErr) return Promise.resolve({ error: o.modeErr });
           return Promise.resolve({ data: { ok: true, mode: (o.modeRef ? o.modeRef.m : o.mode) || 'shadow', version: 3 } });
@@ -149,9 +158,9 @@ const PUSH = () => ({ action: 'push', key: 'months', data: { months: [{ label: '
     const b = box({ flags: { analyzer: true }, mode: 'live', rpcReject: true });
     const x = await b.call(PUSH());
     t('E 届かない → 例外（職員向けの文）・Google へ流さない', x.e && /届きません/.test(x.e.message) && b.gas() === 0, x);
-    const b2 = box({ flags: { analyzer: true }, mode: 'live', rpcErr: { code: 'PGRST301', message: 'x' } });
+    const b2 = box({ flags: { analyzer: true }, mode: 'live', rpcErr: { code: '', message: 'TypeError: Failed to fetch' } });
     const y = await b2.call(PUSH());
-    t('E データベースのほかの失敗 → 例外・Google へ流さない', y.e && b2.gas() === 0);
+    t('E 番号の無い失敗（届かない）→ 例外・Google へ流さない', y.e && /届きません/.test(y.e.message) && b2.gas() === 0, y);
     t('E 時間切れの文は「取得してから確かめて」', /timeout: '[^']*取得してから確かめて/.test(SRC));
   }
   console.log('F 写しの期間へ戻っていた・Google が切り替えた後と断った');
@@ -172,18 +181,59 @@ const PUSH = () => ({ action: 'push', key: 'months', data: { months: [{ label: '
   {
     const b = box({ flags: { analyzer: true }, status: 'signed_out' });
     const x = await b.call({ action: 'pull', keys: ['months'] });
-    t('G ログインしていない端末（写しの期間）→ Google のまま使える', x.d.via === 'gas' && b.gas() === 1 && b.rpcs.length === 0);
-    const b2 = box({ flags: { analyzer: true }, status: 'signed_out', gasReply: { error: '切り替えた後です', code: 'sa_switched' } });
+    t('G ログインしていない端末（写しの期間）→ 印だけの口を読んで Google のまま使える', x.d.via === 'gas' && b.gas() === 1 && b.names().join() === 'sa_mode_public', b.names());
+    const b2 = box({ flags: { analyzer: true }, status: 'signed_out', pub: 'live' });
     const y = await b2.call(PUSH());
-    t('G 切り替えた後に Google が断った → 「ログインしてください」', /ログインしていません/.test(y.d.error));
-    const y2 = await b2.call(PUSH());
-    t('G 一度分かったら、次は Google へ送らずに断る', /ログインしていません/.test(y2.d.error) && b2.gas() === 1);
-    const b3 = box({ flags: { analyzer: true }, modeErr: { code: '42501' }, gasReply: { error: '切り替えた後です', code: 'sa_switched' } });
+    const y2 = await b2.call({ action: 'pull', keys: ['months'] });
+    t('G 切り替えた後（印だけの口が live）→ 保存も読み取りも Google へ送らずに「ログインしてください」（古いデプロイにも送らない・指摘2・5）', /ログインしていません/.test(y.d.error) && /ログインしていません/.test(y2.d.error) && b2.gas() === 0, [y, y2]);
+    const b3 = box({ flags: { analyzer: true }, modeErr: { code: '42501' }, pub: 'live' });
     const z = await b3.call(PUSH());
-    t('G 現場のアカウント（印を読めない）→ Google が断れば「このアカウントでは使えません」', /使えません/.test(z.d.error) && b3.gas() === 1);
+    t('G 現場のアカウント・切り替えた後 → 「このアカウントでは使えません」・Google へ送らない', /使えません/.test(z.d.error) && b3.gas() === 0, z);
     const b4 = box({ flags: { analyzer: true }, status: 'denied' });
     const z2 = await b4.call(PUSH());
     t('G 使える人に無いアカウント（写しの期間）→ Google のまま', z2.d.via === 'gas');
+    for (const [label, o] of [['届かない', { pubReject: true }], ['読めない', { pubErr: { code: '500' } }]]) {
+      const b5 = box(Object.assign({ flags: { analyzer: true }, status: 'signed_out' }, o));
+      const w1 = await b5.call(PUSH());
+      const w2 = await b5.call({ action: 'head', keys: ['months'] });
+      t('G 印が分からない（' + label + '）→ 保存は送らずに断る・読み取りは Google が決める（指摘2）', /確かめられません/.test(w1.d.error) && w2.d.via === 'gas' && b5.gas() === 1, [w1, w2]);
+    }
+    const b6 = box({ flags: { analyzer: true }, status: 'signed_out', pubErr: { code: 'PGRST202' } });
+    const w3 = await b6.call(PUSH());
+    t('G 印だけの口が無い（0051 の前）→ Google のまま', w3.d.via === 'gas');
+    const b7 = box({ flags: { analyzer: true }, status: 'signed_out', gasReply: { error: '切り替えた後です', code: 'sa_switched' } });
+    const w4 = await b7.call({ action: 'pull', keys: ['months'] });
+    t('G Google が読み取りを sa_switched で断った → 「ログインしてください」・中身は渡さない（指摘1）', /ログインしていません/.test(w4.d.error) && !w4.d.entries && !w4.d.code, w4);
+    const b8 = box({ flags: { analyzer: true }, modeErr: { code: '42501' }, gasReply: { error: '切り替えた後です', code: 'sa_switched' } });
+    const w5 = await b8.call({ action: 'head', keys: ['months'] });
+    t('G 現場のアカウントで Google が sa_switched → 「使えません」', /使えません/.test(w5.d.error) && !w5.d.revs, w5);
+  }
+  console.log('K 現場の端末');
+  {
+    const b = box({ flags: { analyzer: true }, mode: 'live', field: true });
+    const x = await b.call(PUSH());
+    const y = await b.call({ action: 'pull', keys: ['months'] });
+    t('K スイッチが入・現場の端末 → 保存も読み取りも断る（Google にもデータベースにも送らない）', /現場/.test(x.d.error) && /現場/.test(y.d.error) && b.gas() === 0 && b.rpcs.length === 0, b.rpcs);
+    t('K probe は偽・blocked は真・liveHint は偽', (await b.w.SUSa.probe()) === false && b.w.SUSa.blocked() === true && b.w.SUSa.liveHint() === false && b.rpcs.length === 0);
+    const b2 = box({ flags: {}, field: true });
+    const z = await b2.call(PUSH());
+    t('K スイッチが切なら現場の端末も今までどおり（Google の関数のまま・blocked は偽）', z.d.via === 'gas' && b2.w.SUSa.blocked() === false);
+  }
+  console.log('M データベースの断り・キー');
+  {
+    const b = box({ flags: { analyzer: true }, mode: 'live', rpcErr: { code: 'PGRST301', message: 'x' } });
+    const x = await b.call(PUSH());
+    t('M 番号つきの断り（42501・関数が無い以外）→ 「受け付けませんでした」・Google へ流さない', x.d && /受け付けませんでした/.test(x.d.error) && b.gas() === 0, x);
+    const b2 = box({ flags: { analyzer: true }, mode: 'live' });
+    const p = await b2.call({ action: 'pull', keys: ['a/b', '../x'] });
+    const h = await b2.call({ action: 'head', keys: ['a/b'] });
+    t('M 渡したキーが全部形違い → 空の答え（全部を返す p_keys=[] を送らない）', JSON.stringify(p.d) === '{"ok":true,"entries":{},"role":"rw"}' && JSON.stringify(h.d) === '{"ok":true,"revs":{},"role":"rw"}'
+      && !b2.names().includes('sa_pull') && !b2.names().includes('sa_head'), [p, h, b2.names()]);
+    const b3 = box({ flags: { analyzer: true }, mode: 'live' });
+    await b3.call({ action: 'pull', keys: [] });
+    await b3.call({ action: 'pull' });
+    const pulls = b3.rpcs.filter(q => q.n === 'sa_pull');
+    t('M キーを渡さない・空の配列は今までどおり（全部）', pulls.length === 2 && pulls[1].a.p_keys === null, pulls);
   }
   console.log('H 印の覚え方・読み込み・書き込み');
   {
@@ -219,6 +269,7 @@ const PUSH = () => ({ action: 'push', key: 'months', data: { months: [{ label: '
     t('S cloudApi は SUSa に通し、無ければ Google へ送る関数を直接呼ぶ', !!m && /window\.SUSa \? window\.SUSa\.call\(payload, viaGas\) : viaGas\(\)/.test(m[1]), m && m[1]);
     t('S Google への送り方は今までどおり（POST・text/plain・redirect follow・本文は JSON の文字・合言葉は Google へだけ）', !!m && /method: 'POST',\n\s+headers: \{ 'Content-Type': 'text\/plain;charset=UTF-8' \}, \/\* CORSプリフライト回避 \*\/\n\s+body: JSON\.stringify\(payload\),\n\s+redirect: 'follow'/.test(m[1]) && /function viaGas\(\) \{[\s\S]*payload\.token = c\.token;[\s\S]*fetch\(c\.url/.test(m[1]));
     t('S 答えの error は今までどおり例外にする', !!m && /if \(j && j\.error\) throw new Error\(cloudErrMsg\(j\.error\)\)/.test(m[1]));
+    t('S 現場の端末はスイッチが入の間「設定済み」にしない（自動同期しない）', /function cloudConfigured\(\) \{[\s\S]*?if \(window\.SUSa && window\.SUSa\.blocked\(\)\) return false;[\s\S]*?liveHint/.test(PAGE));
     t('S 切り替えた後は URL・合言葉が無くても「設定済み」', /function cloudConfigured\(\) \{[\s\S]*?window\.SUSa\.liveHint\(\)[\s\S]*?\n  \}/.test(PAGE));
     t('S 起動時に probe して、live なら自動同期を始める', /window\.SUSa\.probe\(\)\.then\(function \(live\) \{ if \(live && autoEnabled\(\)\)/.test(PAGE));
     t('S 不具合を報告のボタンは今までどおり', /<script src="su-report\.js\?v=[^"]+" data-tool="過去シフト・アナライザ"><\/script>/.test(PAGE));

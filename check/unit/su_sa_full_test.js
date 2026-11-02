@@ -30,7 +30,7 @@ function io(o) {
       log.push('gas:' + b.action + (b.on === true ? ':on' : b.on === false ? ':off' : '') + (b.opToken ? ':' + b.opToken : ''));
       if (b.action === 'ping') {
         if (o.pingFail) throw new Error('offline');
-        return o.ping || { ok: true, server: 'shiftanalyzer-gas', role: 'rw', codeVersion: '2026-11-03.1' };
+        return o.ping || { ok: true, server: 'shiftanalyzer-gas', role: 'rw', codeVersion: '2026-11-03.2', cutover: true };
       }
       if (b.accessToken !== 'h.p.s') return { ok: false, error: 'no token' };
       if (b.action === 'saCutover' && b.on && o.gasOnFail) return { ok: false, error: 'refused', hint: 'ほかの保存が終わるのを待っています。少し待ってからもう一度お試しください' };
@@ -72,6 +72,13 @@ function io(o) {
     const d = io({ pingFail: true });
     const r4 = await F.cutover(d);
     t('V GAS に届かない → 止める', !r4.ok && /届きませんでした/.test(r4.why) && d.log.join() === 'gas:ping');
+    const e1 = io({ ping: { ok: true, role: 'rw', codeVersion: '2026-11-03.1', cutover: true } });
+    const r6 = await F.cutover(e1);
+    t('V 2026-11-03.1（切り替えた後に読み取りを断らない版）→ 古い版として止める（指摘1・9）', !r6.ok && /古い版/.test(r6.why) && e1.log.join() === 'gas:ping');
+    const e2 = io({ ping: { ok: true, role: 'rw', codeVersion: '2026-11-03.2' } });
+    const r7 = await F.cutover(e2);
+    t('V 版が新しくても切り替えの部品（cutover:true）が無ければ止める（指摘9）', !r7.ok && /古い版/.test(r7.why) && e2.log.join() === 'gas:ping');
+    t('V 求める版は 2026-11-03.2', F.NEED_VERSION === '2026-11-03.2');
     const e = io({ ping: { ok: true, role: 'rw' } });
     const r5 = await F.cutover(e);
     t('V 版が分からない → 古いとみなして止める', !r5.ok && /古い版/.test(r5.why));
@@ -135,6 +142,7 @@ function io(o) {
   {
     t('F データベースの断りの文（busy・unmirrored・nodoc）', /別の画面/.test(F._dbWhy('busy')) && /写し返しが済んでいません/.test(F._dbWhy('unmirrored')) && /写しがありません/.test(F._dbWhy('nodoc')));
     t('F 端末に何も書かない', !/localStorage|sessionStorage/.test(SRC));
+    t('F 空の catch で捨てない（札を返す・印は記録へ・指摘10）', /catch \(e\) \{ note\('札を返す', e\); \}/.test(SRC) && /catch \(e\) \{ note\('印', e\); return ''; \}/.test(SRC));
   }
   console.log(`\n合格 ${pass} / 不合格 ${fail}`);
   process.exitCode = fail ? 1 : 0;

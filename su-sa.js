@@ -11,8 +11,11 @@
  *   印が写しの期間・0051 の前（関数が無い）時は Google。
  * ・スイッチが入の間は、断られた・届かない・印を確かめられない時に Google へ流さない（CLAUDE.md §4）。断りは GAS と同じ形（{error:文}）で返す
  *   （画面は error の文をそのまま出す）。データベースが「写しの期間」（sa_not_live）と答えた時だけ Google へ送る（データベースは何も書いていない）。
- * ・ログインしていない端末・現場のアカウント・使える人に無いアカウントは、印を読めない（データベースが答えない）ので Google へ送る。
- *   切り替えた後は Google が保存を sa_switched で断るので、それを「ログインしてください」「このアカウントでは使えません」に置き換える。
+ * ・ログインしていない端末・現場のアカウント・使える人に無いアカウントは、印だけの口（sa_mode_public・{ok, mode} だけ）を読み、
+ *   切り替えた後なら Google へ送らずに断る（「ログインしてください」「このアカウントでは使えません」）。止める印を知らない古い GAS のデプロイが
+ *   残っていても、保存を送らない（反証レビュー 2026-11-03 指摘2）。印が分からない時は、保存は断り（送らない）、読み取りは Google へ送る
+ *   （切り替えた後の Google は読み取りも sa_switched で断る＝資格の一覧を出さない・指摘1。その断りも同じ文に置き換え、中身は渡さない）。
+ * ・現場の端末（su_device_role が field）は、スイッチが入の間はクラウド同期を使わない（CLAUDE.md §2-5・probe も偽・自動同期もしない・指摘3）。
  * ・2段階認証がまだの管理者はログインしているとみなし、断られた時だけ「2段階認証を済ませて」と出す。
  * ・読み取り（ping・pull・head）の前は印をいつも読み直す（切り替えた直後に古い印で Google から読まない）。保存は1分覚える。
  * ・切り替えた後は、端末に URL・合言葉が無くても同期できる（liveHint・probe）。切り替えた時にデータベースが rev を 1000 進めるので、
@@ -31,6 +34,8 @@
   var CALL_MS = 45000;
   var MODE_MS = 60000;
   var KEY_RE = /^[A-Za-z0-9._-]{1,64}$/;
+  var WRITES = { push: 1 };
+  function fieldDevice() { try { return root.localStorage.getItem('su_device_role') === 'field'; } catch (e) { note('端末の用途', e); return false; } }
 
   function note(where, e) {
     try { if (root.SUErrors && typeof root.SUErrors.note === 'function') root.SUErrors.note('保存・同期の失敗', e, 'sa:' + where); } catch (x) { /* 記録できなくても止めない */ }
@@ -39,7 +44,7 @@
   /* ── スイッチ（su-sup.js と同じ読み方。su-kv.js があればその値、無ければ最後に読めた値・1分ごとに読み直す）── */
   var ownFlags = null, flagsAt = 0, flagsP = null;
   function flags() {
-    try { if (root.SUKv && typeof root.SUKv._flags === 'function') return root.SUKv._flags(); } catch (e) { /* 何もしない */ }
+    try { if (root.SUKv && typeof root.SUKv._flags === 'function') return root.SUKv._flags(); } catch (e) { note('スイッチ', e); }
     if (ownFlags) return ownFlags;
     try { return JSON.parse(root.localStorage.getItem(FLAGS_LS) || 'null'); } catch (e) { return null; }
   }
@@ -55,7 +60,7 @@
         .then(function (j) {
           if (j && j.supabase && typeof j.supabase === 'object') {
             ownFlags = { supabase: j.supabase };
-            try { root.localStorage.setItem(FLAGS_LS, JSON.stringify(ownFlags)); } catch (e) { /* 何もしない */ }   // su-kv.js と同じく、最後に読めた値を残す
+            try { root.localStorage.setItem(FLAGS_LS, JSON.stringify(ownFlags)); } catch (e) { note('スイッチの控え', e); }   // su-kv.js と同じく、最後に読めた値を残す
           }
         }, function () {}),
       new Promise(function (ok) { setTimeout(ok, 3000); })
@@ -91,6 +96,8 @@
     timeout: '新しい保存先の応答が時間切れになりました。もう一度お試しください（保存は、取得してから確かめてください）',
     toolarge: '記録が多くなり、新しい保存先に入りきらなくなりました。この保存は入っていません。管理者へ連絡してください',
     badreq: '新しい保存先が受け付けない形でした。この保存は入っていません。画面を読み込み直してください',
+    db: '新しい保存先が受け付けませんでした。この保存は入っていません。少し待ってから、もう一度お試しください（続く時は管理者へ連絡してください）',
+    field: 'この端末は「現場」のため、アナライザのクラウド保存は使えません。事務所のパソコンで使ってください',
     empty: '新しい保存先の応答が空でした。取得して、入っているか確かめてください'
   };
   function refusal(code) { return { error: MSG[code] }; }
@@ -110,9 +117,25 @@
     });
   }
 
+  /* 印だけの口（sa_mode_public・誰でも・{ok, mode} だけ）。ログインしていない端末・現場のアカウントでも読める。
+     'live'・'shadow'・'missing'（0051 の前）・'unknown'（届かない・読めない）を返す（例外は外へ出さない） */
+  function publicMode(A) {
+    return Promise.resolve().then(function () { return A.client().rpc('sa_mode_public'); }).then(function (r) {
+      var c = String(r && r.error && (r.error.code || '') || '');
+      if (r && r.error && /PGRST202|42883/.test(c)) return 'missing';
+      if (!r || r.error || !r.data) { note('印だけの口', c || 'empty'); return 'unknown'; }
+      return r.data.mode === 'live' ? 'live' : 'shadow';
+    }, function (e) { note('印だけの口', e); return 'unknown'; });
+  }
+
   /* 画面の本文（GAS へ送る形）を、データベースの関数と引数に置き換える。知らない操作は null（GAS と同じ unknown action を返す） */
   function rpcOf(body) {
     var keys = Array.isArray(body.keys) ? body.keys.filter(function (k) { return typeof k === 'string' && KEY_RE.test(k); }) : null;
+    // キーを渡したのに全部が形の違うキーだった時は、空の答え（全部を返す p_keys=[] を送らない・指摘8）
+    if (keys && !keys.length && body.keys.length) {
+      if (body.action === 'pull') return { empty: { ok: true, entries: {}, role: 'rw' } };
+      if (body.action === 'head') return { empty: { ok: true, revs: {}, role: 'rw' } };
+    }
     if (body.action === 'ping') return { fn: 'sa_ping', args: {} };
     if (body.action === 'pull') return { fn: 'sa_pull', args: { p_keys: keys } };
     if (body.action === 'head') return { fn: 'sa_head', args: { p_keys: keys } };
@@ -127,6 +150,7 @@
   function callDb(A, body, ms, mfa) {
     var q = rpcOf(body);
     if (!q) return Promise.resolve({ error: 'unknown action' });
+    if (q.empty) return Promise.resolve(q.empty);
     var tm = null;
     var call = Promise.resolve(A.client().rpc(q.fn, q.args));
     var timer = new Promise(function (ok) { tm = setTimeout(function () { ok({ timeout: true }); }, ms); });
@@ -138,7 +162,8 @@
         if (c === '42501') return refusal(mfa ? 'mfa' : 'role');
         if (/PGRST202|42883/.test(c)) { modeCache = null; return refusal('mode'); }
         note(q.fn, c || 'error');
-        throw new Error(MSG.net);
+        if (c) return refusal('db');   // データベースが番号つきで断った（届いてはいる）＝「受け付けませんでした」（指摘7）
+        throw new Error(MSG.net);      // 番号の無い失敗（届かない）
       }
       var d = r ? r.data : null;
       if (!d || typeof d !== 'object') return refusal('empty');
@@ -148,18 +173,19 @@
     }, function (e) { clearTimeout(tm); note(q.fn, e); throw new Error(MSG.net); });
   }
 
-  /* 送る前の確かめ（ログイン・印）。返すのは道: gas（Google）・gasAs（Google・切り替えた後の断りを置き換える）・refuse（断り）・live（データベース） */
+  /* 送る前の確かめ（ログイン・印）。返すのは道: gas（Google）・outside（ログインしていない・現場のアカウントなど＝印だけの口で決める）・
+     refuse（断り）・live（データベース） */
   function plan(body) {
     return loadAuth().then(function (A) {
       if (!A) return { kind: 'refuse', code: 'noauth' };
       return Promise.resolve().then(function () { return A.check(); }).then(function (st) {
         var S = A.STATUS || {}, s0 = st && st.status;
-        if (s0 === S.SIGNED_OUT) return modeCache === 'live' && Date.now() - modeAt < MODE_MS ? { kind: 'refuse', code: 'login' } : { kind: 'gasAs', code: 'login' };
-        if (s0 === S.DENIED) return { kind: 'gasAs', code: 'role' };
+        if (s0 === S.SIGNED_OUT) return { kind: 'outside', A: A, code: 'login' };
+        if (s0 === S.DENIED) return { kind: 'outside', A: A, code: 'role' };
         var mfa = s0 === S.MFA_VERIFY || s0 === S.MFA_ENROLL;
         if (s0 !== S.OK && !mfa) return { kind: 'refuse', code: 'mode' };   // 通信などで確かめられない＝もう一度
         return mode(A, !!READS[body.action]).then(function (m) {
-          if (m === 'denied') return mfa ? { kind: 'refuse', code: 'mfa' } : { kind: 'gasAs', code: 'role' };   // 現場のアカウント＝Google が決める
+          if (m === 'denied') return mfa ? { kind: 'refuse', code: 'mfa' } : { kind: 'outside', A: A, code: 'role' };   // 現場のアカウント
           if (m !== 'live') return { kind: 'gas' };
           return { kind: 'live', A: A, mfa: mfa };
         }, function (e) { note('印', e); return { kind: 'refuse', code: 'mode' }; });
@@ -177,15 +203,20 @@
     var t0 = Date.now();
     return refreshFlags().then(function () {
       if (!switchOn()) return gasCall();
+      if (fieldDevice()) return refusal('field');   // 現場の端末は使わない（Google へも送らない・指摘3）
       var tm = null;
       var late = new Promise(function (ok, ng) { tm = setTimeout(function () { ng(new Error(MSG.mode)); }, CALL_MS); });
       return Promise.race([plan(body), late]).then(function (p) {
         clearTimeout(tm);
         if (p.kind === 'refuse') return refusal(p.code);
-        if (p.kind === 'gasAs') {
-          return Promise.resolve(gasCall()).then(function (j) {
-            if (isSwitched(j)) { if (p.code === 'login') { modeCache = 'live'; modeAt = Date.now(); } return refusal(p.code); }
-            return j;
+        if (p.kind === 'outside') {
+          return publicMode(p.A).then(function (pm) {
+            if (pm === 'live') return refusal(p.code);                          // 切り替えた後＝Google へ送らない（古いデプロイにも保存させない）
+            if (pm === 'unknown' && WRITES[body.action]) return refusal('mode');   // 分からない時は保存を送らない（読み取りは Google が決める）
+            return Promise.resolve(gasCall()).then(function (j) {
+              if (isSwitched(j)) return refusal(p.code);                        // 切り替えた後の Google の断り（読み取りも）＝中身は渡さない
+              return j;
+            });
           });
         }
         if (p.kind === 'gas') {
@@ -201,11 +232,13 @@
   }
 
   /* 切り替えた後は、端末に URL・合言葉が無くても同期してよいか（最後に確かめた印が live で、スイッチが入）。画面の「設定済みか」の判定に足す */
-  function liveHint() { return switchOn() && modeCache === 'live'; }
+  function liveHint() { return switchOn() && !fieldDevice() && modeCache === 'live'; }
+  /* 現場の端末でスイッチが入＝クラウド同期を使わない（画面は自動同期を始めない） */
+  function blocked() { return switchOn() && fieldDevice(); }
   /* 起動の時に1回: スイッチが入で、ログインしていて印が live なら true（URL・合言葉の無い端末でも自動同期を始めるため）。例外は外へ出さない */
   function probe() {
     return refreshFlags().then(function () {
-      if (!switchOn()) return false;
+      if (!switchOn() || fieldDevice()) return false;
       return loadAuth().then(function (A) {
         if (!A) return false;
         return Promise.resolve(A.check()).then(function (st) {
@@ -217,7 +250,7 @@
     }).then(function (v) { return !!v; }, function (e) { note('起動の確かめ', e); return false; });
   }
 
-  root.SUSa = { call: call, liveHint: liveHint, probe: probe, refreshFlags: refreshFlags,
+  root.SUSa = { call: call, liveHint: liveHint, blocked: blocked, probe: probe, refreshFlags: refreshFlags,
     _forgetMode: function () { modeCache = null; modeAt = 0; },
     _reset: function () { modeCache = null; modeAt = 0; ownFlags = null; flagsAt = 0; flagsP = null; authP = null; } };
 })(typeof window !== 'undefined' ? window : this);

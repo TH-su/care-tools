@@ -4,7 +4,8 @@
      B 最後の写しを断っていたら、断った種類を職員向けの言葉で出す（ごみ箱に months.json がある＝trashed は直し方まで）
      C Google へは何も送らない（様子を出すだけ）・出すのは版・月の数・人数・大きさ・時刻・種類だけ（氏名・資格の中身は出さない）
      D 記録の大きさ: 上限に対する割合を出し、7割以上で警告する
-     E 切り替えた後は「切り替え済み」と出し、写しが古いことを警告しない
+     E 切り替えた後は「切り替え済み」と出し、写しが古いことを警告しない。写し返しが75分を超えて遅れていたら警告する（反証レビュー 指摘6）
+     N 空の catch で捨てない（記録へ・指摘10）
      G 切り替えボタンはスイッチ analyzer が入で接続先（URL と記憶した合言葉）がある管理者だけ。戻すボタンは接続先がある管理者にはいつも出す
      H 画面: 欄・ボタン・部品（su-sa-full.js は画面の動きより先）・準備の帯の番号（0050・0051）
    ★画面の本物の関数を切り出して、データベースの応答だけ偽物にして動かす。
@@ -48,11 +49,11 @@ function box(o) {
   env.window = { SUErrors: { note: (k, m) => env.notes.push([k, m]) } };
   vm.createContext(env);
   vm.runInContext([PREP_SRC, 'var SA_FRESH_MS = ' + /var SA_FRESH_MS = ([^;]*);/.exec(SRC)[1] + ';',
-    'var SA_REFUSED = ' + /var SA_REFUSED = (\{[^;]*\});/.exec(SRC)[1] + ';', fn('saSize'), fn('loadSa')].join('\n'), env);
+    'var SA_REFUSED = ' + /var SA_REFUSED = (\{[^;]*\});/.exec(SRC)[1] + ';', fn('saNote'), fn('saSize'), fn('loadSa')].join('\n'), env);
   const sb = {
     rpc: (n) => {
       rpcs.push(n);
-      if (n === 'sa_mode_get') return Promise.resolve({ data: { ok: true, mode: o.mode || 'shadow', version: 1 } });
+      if (n === 'sa_mode_get') return Promise.resolve({ data: Object.assign({ ok: true, mode: o.mode || 'shadow', version: 1, mirroredVer: 1, mirroredAt: null }, o.md || {}) });
       return Promise.resolve(o.statusErr ? { error: { code: o.errCode || 'PGRST202' } } : { data: o.status });
     },
     from: (tbl) => { rpcs.push('from:' + tbl); return {}; }
@@ -101,6 +102,12 @@ const ST = (x) => Object.assign({ ok: true, ver: 1, keys: { months: { rev: 42, m
   {
     const b = box({ status: ST({ lastAt: ago(600) }), mode: 'live' }); await b.run();
     t('E 切り替えた後は「切り替え済み」・古い警告を出さない', /切り替え済み/.test(V(b).textContent) && V(b).className === 'msg ok');
+    const b2 = box({ status: ST(), mode: 'live', md: { version: 1012, mirroredVer: 1010, mirroredAt: ago(120) } }); await b2.run();
+    t('E 写し返しが75分を超えて遅れている → 警告', /写し返しが75分を超えて遅れています/.test(V(b2).textContent) && /warn/.test(V(b2).className), V(b2).textContent);
+    const b3 = box({ status: ST(), mode: 'live', md: { version: 1012, mirroredVer: 1010, mirroredAt: ago(30) } }); await b3.run();
+    t('E 遅れが75分以内 → 警告しない', V(b3).className === 'msg ok');
+    const b4 = box({ status: ST(), mode: 'live', md: { version: 1012, mirroredVer: 1012, mirroredAt: ago(600) } }); await b4.run();
+    t('E 写し返しが追いついていれば、時刻が古くても警告しない', V(b4).className === 'msg ok');
   }
   console.log('— G ボタン —');
   for (const [label, o, cut, back] of [
@@ -142,6 +149,7 @@ const ST = (x) => Object.assign({ ok: true, ver: 1, keys: { months: { rev: 42, m
   t('H 準備の帯の番号に 0050・0051', /sa_shadow_status: '0050'/.test(SRC) && /sa_mode_get: '0051'/.test(SRC));
   t('H ボタンは画面の動きにつないである', /\$\('b-sa-cut'\)\.addEventListener\('click', function \(\) \{ msg\(''\); runSaOp\('cut'\); \}\);/.test(SRC) && /\$\('b-sa-back'\)\.addEventListener\('click', function \(\) \{ msg\(''\); runSaOp\('back'\); \}\);/.test(SRC));
   t('H 操作は管理者（2段階認証済み）・事務所PCだけ・スイッチが入の時だけ切り替える', /function runSaOp\(kind\) \{[\s\S]*me\.status === SUAuth\.STATUS\.OK[\s\S]*role === 'field'[\s\S]*analyzerOn\(\)/.test(fn('runSaOp')));
+  t('N 切り替えの印の欄・読み直しの失敗を空の catch で捨てない（記録へ）', /try \{ await loadSaMode\(sb\); \} catch \(e\) \{ saNote\('印の欄', e\); \}/.test(SRC) && /try \{ await loadSaMode\(sb\); await loadSa\(sb\); \} catch \(e\) \{ saNote\('読み直し', e\); \}/.test(SRC));
   t('H 欄の文は textContent だけ', !/innerHTML/.test(fn('loadSa') + fn('loadSaMode') + fn('runSaOp') + fn('saSize')));
   console.log(`\n合格 ${pass} / 不合格 ${fail}`);
   process.exitCode = fail ? 1 : 0;

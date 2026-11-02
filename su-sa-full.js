@@ -2,7 +2,7 @@
  *   備品の su-sup-full.js と同じ手順）
  *
  * 写しはアナライザ同期の GAS が1時間ごとに自動で取る（統合 0050・この部品は写さない）。この部品は写しの見比べ画面の管理者のボタンから呼ぶ。
- *   切り替える: アナライザ同期の GAS が新しい版（codeVersion 2026-11-03.1 以上）かを確かめる（古い版は止める印を知らない＝止めた後も Google に書けてしまう）
+ *   切り替える: アナライザ同期の GAS が新しい版（codeVersion 2026-11-03.2 以上・cutover:true）かを確かめる（古い版は止める印を知らない＝止めた後も Google に書けてしまう）
  *             → 札（sa_op_begin cutover）→ GAS の保存を止めて、止めた後の写しを GAS が取る（saCutover on）
  *             → 新しい保存先へ切り替える（sa_set_mode live・もう切り替わっている時は unchanged）→ 札を返す。
  *             途中で止まったら、戻す札を取り直して GAS の保存を戻す
@@ -13,7 +13,10 @@
  */
 (function (root) {
   'use strict';
-  var NEED_VERSION = '2026-11-03.1';
+  var NEED_VERSION = '2026-11-03.2';   // 切り替えた後に pull・head も断る版（反証レビュー 2026-11-03 指摘1）
+  function note(where, e) {
+    try { if (root.SUErrors && typeof root.SUErrors.note === 'function') root.SUErrors.note('切り替えの失敗', e, 'sa-full:' + where); } catch (x) { /* 記録できなくても止めない */ }
+  }
   var OLD_GAS = 'アナライザ同期の GAS が古い版です。新しい版を公開してから押してください';
   /* 版の表記（YYYY-MM-DD.n）を数の並びで比べる。読めない版は古いとみなす */
   function verAtLeast(v, need) {
@@ -53,7 +56,7 @@
     try { j = await io.gas({ action: 'ping' }); } catch (e) { return 'アナライザ同期の GAS に届きませんでした。通信を確かめて、もう一度押してください。'; }
     if (!j || j.ok !== true) return j && j.error === 'unauthorized' ? 'この端末のアナライザの合言葉が違います。アナライザで合言葉を確かめてから押してください。' : gasWhy(j);
     if (j.role !== 'rw') return 'この端末のアナライザの合言葉は「見るだけ」です。編集できる合言葉の端末で押してください。';
-    if (!verAtLeast(j.codeVersion, NEED_VERSION)) return OLD_GAS;
+    if (!verAtLeast(j.codeVersion, NEED_VERSION) || j.cutover !== true) return OLD_GAS;   // 版と、切り替えの部品（cutover.gs）が入っていること（指摘9）
     return '';
   }
   async function opBegin(io, op) {
@@ -79,10 +82,10 @@
         var r = await io.rpc('sa_op_end', { p_token: tok });
         if (r && r.error) throw new Error('op_end');
       });
-    } catch (e) { /* 30分で失効する */ }
+    } catch (e) { note('札を返す', e); }   // 返せなくても30分で失効する
   }
   async function modeOf(io) {
-    try { var g = await io.rpc('sa_mode_get', {}); return g && g.data ? g.data.mode : ''; } catch (e) { return ''; }
+    try { var g = await io.rpc('sa_mode_get', {}); return g && g.data ? g.data.mode : ''; } catch (e) { note('印', e); return ''; }
   }
 
   async function cutover(io) {
