@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-l2J5m4sOpBLkGXOK5ii0or+04joWlbhco/29A5ZhuVI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-wufxXSbu9bcDOgu5IYaQzEGigVk3vuiE160Jv/zM5hs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -895,6 +895,11 @@ select.inp { cursor: pointer; }
   #wk-sheet, #wk-sheet * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 
+/* 利用者一覧の「使用単位%の色」の凡例は画面だけ。既存の印刷の指定には触らず、ここで消すだけにする（紙面は今のまま） */
+@media print {
+  #rl-pct-legend { display: none !important; }
+}
+
 /* 動きを減らす設定への対応（2026-08-10 追加・通常表示に影響なし） */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -949,7 +954,7 @@ select.inp { cursor: pointer; }
     <button class="hdr-btn" data-on-click="openResidentModal">👤 利用者</button>
     <button class="hdr-btn" data-on-click="openBulkImport" title="予定を貼り付けで一括登録">📋 一括取込</button>
     <button class="hdr-btn" data-on-click="printWeek" aria-label="週ボードを印刷" title="週ボードを印刷">🖨</button>
-    <button class="hdr-btn" data-on-click="exportJSON" aria-label="JSONを書き出す" title="JSONを書き出す">⬇</button>
+    <button class="hdr-btn" data-on-click="exportJSON" aria-label="予定を控えのファイルに書き出す" title="予定を控えのファイルに書き出す">⬇</button>
     <button class="hdr-btn savebtn" id="btnSave" data-label="💾 保存" data-on-click="manualSave" title="今すぐ保存＋クラウド同期 (Ctrl/Cmd+S)">💾 保存</button>
   </div>
 </header>
@@ -1462,8 +1467,8 @@ select.inp { cursor: pointer; }
 
         <div class="btn-row" style="margin-top:14px">
           <button class="btn btn-pri" data-on-click="rmReviewAndApply">影響を確認して適用</button>
-          <button class="btn btn-sec" data-on-click="rmExportJSON">JSONを書き出す</button>
-          <button class="btn btn-sec" data-on-click="csPickRmImport_">JSONを読み込む</button>
+          <button class="btn btn-sec" data-on-click="rmExportJSON">報酬マスタを控えのファイルに書き出す</button>
+          <button class="btn btn-sec" data-on-click="csPickRmImport_">控えのファイルから報酬マスタを読み込む</button>
           <button class="btn btn-undo" id="rm-undo-btn" data-on-click="rmUndo" style="display:none">直前の内容へ戻す</button>
           <input type="file" id="rm-import-file" accept="application/json,.json" style="display:none" data-on-change="rmImportJSON" data-this="1">
         </div>
@@ -1560,6 +1565,8 @@ select.inp { cursor: pointer; }
     <div id="rl-total"></div>
     <!-- 説明文の単価は報酬マスタ feePerUnit から入れる（renderResidentListTable） -->
     <p style="font-size:12px;color:var(--g6);margin-bottom:10px" id="rl-desc"></p>
+    <!-- 使用単位%の文字の色の凡例（色の分け方は renderResidentListTable の over/warn/ok と同じ）。画面だけ・印刷しない -->
+    <p id="rl-pct-legend" style="font-size:12px;color:var(--g7);margin:-4px 0 10px">使用単位%の文字の色：<span style="color:#c62828" aria-hidden="true">■</span>赤＝100%以上（限度額に達しています）　<span style="color:#f57c00" aria-hidden="true">■</span>橙＝80%以上100%未満　<span style="color:#2e7d32" aria-hidden="true">■</span>緑＝80%未満</p>
     <!-- 参考値の注記。画面でも A3 印刷でも出す -->
     <div class="rm-warn" id="rl-rate-note"></div>
     <div id="rl-scroll" style="overflow-x:auto">
@@ -1640,10 +1647,12 @@ select.inp { cursor: pointer; }
       Google スプレッドシートにデータを保存し、複数端末で共有できます。
       初回はセットアップが必要です（下の「セットアップ手順」を参照）。
     </p>
+    <!-- 同期先が入っていない端末だけに出す案内（csRenderNoConnHint_ が組み立てる・画面だけ） -->
+    <div class="hint-box warn" id="sync-noconn" style="display:none;margin-bottom:12px"></div>
 
     <div class="form-row">
       <label for="sync-endpoint" style="display:flex;justify-content:space-between;align-items:baseline">
-        <span>Apps Script Web App URL</span>
+        <span>同期先の URL（Google の受け口）</span>
         <span id="sync-save-indicator" style="font-size:11px;color:var(--g6);font-weight:600">（未入力）</span>
       </label>
       <input class="inp" type="url" id="sync-endpoint"
@@ -1657,9 +1666,9 @@ select.inp { cursor: pointer; }
     </div>
 
     <div class="form-row">
-      <label for="sync-token">同期トークン</label>
+      <label for="sync-token">同期の合言葉</label>
       <input class="inp" type="password" id="sync-token"
-             placeholder="ワークスケジュールと同じトークン"
+             placeholder="ワークスケジュールと同じ合言葉"
              autocomplete="off" spellcheck="false"
              data-on-input="onSyncInputChange">
     </div>
@@ -1696,7 +1705,7 @@ select.inp { cursor: pointer; }
           <li>歯車⚙ →「ウェブアプリ」を選択</li>
           <li>「次のユーザーとして実行: 自分」「アクセスできるユーザー: 全員」を選択 →「デプロイ」</li>
           <li>初回はアクセス権限を求められます。「許可」して進む（警告画面が出たら「詳細」→「安全でないページに移動」）</li>
-          <li>表示された <strong>ウェブアプリ URL</strong> をコピー → 上の「Apps Script Web App URL」欄に貼り付け</li>
+          <li>表示された <strong>ウェブアプリ URL</strong> をコピー → 上の「同期先の URL（Google の受け口）」欄に貼り付け</li>
           <li>「設定を保存」→「接続テスト」で OK と出れば完了</li>
           <li>「⬆️ クラウドへ保存」で初回アップロード</li>
         </ol>
@@ -3772,7 +3781,7 @@ async function loadCloudHistory_() {
   box.style.display = '';
   if (SIM_ON) { box.innerHTML = '<div class="evlist-empty">試算中は使えません</div>'; return; }
   if (!SYNC.hasTarget()) {
-    box.innerHTML = '<div class="evlist-empty">同期先が未設定です（設定 → クラウド同期）</div>';
+    box.innerHTML = '<div class="evlist-empty">同期先が入っていないため、クラウドの履歴は読めません。接続設定の「週間計画・ワースケ・シフト」に接続先のURLと合言葉を入れてください</div>';
     return;
   }
   box.innerHTML = '<div class="evlist-empty">読み込み中…</div>';
@@ -3780,8 +3789,8 @@ async function loadCloudHistory_() {
   try { j = await SYNC.gas({ action: 'history', key: 'care_schedule_v2' }); } catch (e) { j = null; }
   if (!j || !j.ok) {
     const why = (j && j.error === 'unknown action')
-      ? '（サーバー側の更新がまだのようです。接続テストで「防御：…planhistory」が出るか確認してください）'
-      : (j && j.error ? '（' + escHtml(String(j.error)) + '）' : '');
+      ? '（同期先の Google の受け口がまだ古い版のようです。管理者に受け口の更新を頼んでください）'
+      : (j && j.error ? '（' + escHtml(SYNC.friendlyErr(String(j.error))) + '）' : '');
     box.innerHTML = '<div class="evlist-empty">クラウドの履歴を読めませんでした' + why + '</div>';
     return;
   }
@@ -3811,14 +3820,14 @@ async function loadCloudHistory_() {
 }
 async function restoreFromCloud_(day, rev) {
   if (SIM_ON) { showToast('試算中は復元できません'); return; }
-  if (!SYNC.hasTarget()) { showToast('同期先が未設定です'); return; }
+  if (!SYNC.hasTarget()) { showToast(CS_NO_TARGET_MSG); return; }
   const req = { action: 'history', key: 'care_schedule_v2' };
   if (day) req.day = day; else req.rev = Number(rev) || 0;
   showToast('クラウドの履歴を取得しています…');
   let j = null;
   try { j = await SYNC.gas(req); } catch (e) { j = null; }
   if (!j || !j.ok || !j.data || !Array.isArray(j.data.residents)) {
-    showToast('その版を読めませんでした' + (j && j.error ? '（' + j.error + '）' : ''));
+    showToast('その版を読めませんでした' + (j && j.error ? '（' + SYNC.friendlyErr(String(j.error)) + '）' : ''));
     return;
   }
   const res = j.data.residents;
@@ -4023,7 +4032,8 @@ function saveDB() {
     }
   } catch(e) {
     console.error('saveDB: 保存エラー:', e);
-    showToast('保存エラーが発生しました: ' + (e && e.message ? e.message : ''));
+    csNote_('端末への保存', e);   // 元の文は記録にだけ残す（画面には職員向けの文を出す）
+    showToast('この端末に保存できませんでした。もう一度「💾 保存」を押してください。続く時は管理者に知らせてください');
     return false;
   }
   csBackupResidents();   // 正データを端末ローカルへ退避（同期事故時の復元元）
@@ -4158,15 +4168,15 @@ const SYNC = {
   },
   // GASエラー文字列を利用者向けに翻訳（原因の切り分けを助ける）
   friendlyErr(e) {
-    if (e === 'unauthorized') return 'トークンが一致しません（同期トークンを確認）';
+    if (e === 'unauthorized') return '合言葉が一致しません（同期の合言葉を確かめてください）';
     /* 接続先が存在しない（アーカイブ/削除されたデプロイのURLを保存している端末）。
        原因も直し方も出す＝「HTTP 404」だけでは現場が動けない。 */
-    if (e === 'deadendpoint') return 'この端末の同期先（GASのURL）が見つかりません。'
+    if (e === 'deadendpoint') return 'この端末の同期先（Google の受け口の URL）が見つかりません。'
       + '正常に同期できている端末の［設定 → クラウド同期］のURLをコピーして、この端末に貼り直してください';
-    if (e === 'unknown action') return '接続先URLが古い可能性（最新の /exec を確認）';
+    if (e === 'unknown action') return '同期先の URL が古い版の可能性があります（新しい URL を管理者に確かめてください）';
     /* 入居者マスタ・薬・申送のGASが未知の action に返す文言（2026-09-24）。応答は返っているが相手が違う
        ＝待っても直らない。自動切替（healStaleTarget）の当てが無かった時にここへ来る。 */
-    if (e === '不明なaction') return 'この端末の同期先（GASのURL）が、週間計画の同期先ではありません（別のアプリのGASを指しています）。'
+    if (e === '不明なaction') return 'この端末の同期先（Google の受け口の URL）が、週間計画の同期先ではありません（別のアプリの受け口を指しています）。'
       + '正常に同期できている端末の［設定 → クラウド同期］のURLをコピーして、この端末に貼り直してください';
     /* NetPolicy が3回の再試行後に投げる文言（Google側の一過性404/停止）。
        接続先の付け替えを促さない＝現場に無駄な設定変更をさせない。
@@ -4178,7 +4188,16 @@ const SYNC = {
       + '（意図した一括変更なら「⚠ 強制保存」で通せます）';
     if (e === 'visitwipe') return '訪問の予定が全件消えるため、クラウド側が保存を拒否しました。'
       + '「⬇️ クラウドから取得」で最新を取り直してください';
-    return e || '応答エラー';
+    /* ここから下は表に無い失敗。英語の符号・「HTTP 500」などは職員に読めないので、次にすることだけを出す
+       （gas() が投げる「通信失敗」や日本語の断りはそのまま出す） */
+    const s_ = String(e == null ? '' : e);
+    if (s_ === 'no such generation') return 'その版はもうクラウドにありません。一覧を開き直して、別の版を選んでください';
+    /* 保存先を切り替えた後に su-kv.js が返す断りの符号（ログインしていない・書けないアカウント） */
+    if (s_ === 'login') return 'ログインしていないため同期できません（入力はこの端末に残っています）。ログインしてからもう一度お試しください';
+    if (s_ === 'forbidden') return 'このアカウントでは同期できません（入力はこの端末に残っています）。事務所のアカウントでログインしてください';
+    if (/^HTTP \d+$/.test(s_)) return '同期先がうまく応答しませんでした。しばらくしてからもう一度お試しください';
+    if (!/[ぁ-んァ-ヶ一-龠]/.test(s_)) return '同期できませんでした。しばらくしてからもう一度お試しください。続く時は管理者に知らせてください';
+    return s_;
   },
 
   // ── 統合GAS連携（ワースケ・シフトと同一エンドポイント／rev楽観ロック）──
@@ -4504,7 +4523,7 @@ const SYNC = {
       ]);
       if (j && !j.error && j.ok === true && j.server === 'silverunix-sync') {   // 統合同期GAS＋認証OK のときのみ切替（トークンも ws_settings のものをコピー）
         localStorage.setItem('su_sync_common', JSON.stringify({ endpoint: wsEp, token: String(ws.token || '').trim(), updatedAt: Date.now() }));
-        this.log('🔧 接続先が古かったため、稼働中のURL(ws_settings)へ自動切替しました');
+        this.log('🔧 接続先が古かったため、ワークスケジュールで使っている同期先へ自動で切り替えました');
         return true;
       }
     } catch(e) { return false; }   // 通信失敗では上書きしない
@@ -4514,7 +4533,7 @@ const SYNC = {
 
   async pull() {
     if (SIM_ON) { this.log('🧪 試算モード中は同期しません'); return false; }
-    if (!this.hasTarget()) { this.log('❌ 同期先が未設定です（ワースケ設定または下のURL欄に入力）'); return false; }
+    if (!this.hasTarget()) { this.log('❌ ' + CS_NO_TARGET_MSG); return false; }
     if (this._busy) { this.log('⚠️ 同期中…完了をお待ちください'); return false; }
     this._busy = true;
     this.updateStatusUI('取得中…');
@@ -4531,7 +4550,7 @@ const SYNC = {
       this._busy = false;
       return true;
     } catch(e) {
-      this.log('❌ 取得失敗: ' + e.message);
+      this.log('❌ 取得失敗: ' + this.friendlyErr(e && e.message));
       /* 1回の失敗では赤表示にしない（一過性の404/停止はクラスタ状に来る）。
          失敗2回以上＋直近成功から30秒超で初めて「エラー」へ倒す＝ NetPolicy と同じヒステリシス。
          ただし接続先の無効が確認pingで裏取りできた時は一時不良ではない＝ヒステリシスを通さず即「エラー」
@@ -4552,7 +4571,7 @@ const SYNC = {
     if (SIM_ON) return false;   /* 試算を復元して起動したときに、サーバー版で上書きしない */
     if (!this.hasPersistedDirty()) return this.pull();
     this._dirty = true;   // 前セッションの未送信状態を引き継ぐ（storage/poll の上書き保護も有効化）
-    if (!this.hasTarget()) { this.log('❌ 同期先が未設定です（ワースケ設定または下のURL欄に入力）'); return false; }
+    if (!this.hasTarget()) { this.log('❌ ' + CS_NO_TARGET_MSG); return false; }
     if (this._busy) return false;
     this._busy = true;
     this.updateStatusUI('確認中…');
@@ -4605,7 +4624,7 @@ const SYNC = {
       return false;
     } catch(e) {
       this._busy = false;
-      this.log('❌ 起動時同期の確認に失敗: ' + e.message + '（未送信の編集は端末に保持しています）');
+      this.log('❌ 起動時同期の確認に失敗: ' + this.friendlyErr(e && e.message) + '（未送信の編集は端末に保持しています）');
       /* 接続先が無効と確定した時だけヒステリシスを通さず即「エラー」（下の pull/push と同じ扱い） */
       if (this.isConfirmedEndpointFailMsg(e.message)) this.updateStatusUI('エラー');
       else this.updateStatusUIFail('未同期…');   // ヒステリシス（未達なら現在の表示を保つ）
@@ -4615,7 +4634,7 @@ const SYNC = {
 
   async push(force) {
     if (SIM_ON) { this.log('🧪 試算モード中は送信しません'); return false; }
-    if (!this.hasTarget()) { this.log('❌ 同期先が未設定です'); return false; }
+    if (!this.hasTarget()) { this.log('❌ ' + CS_NO_TARGET_MSG); return false; }
     if (this._busy) { return false; }
     this._busy = true;
     this.updateStatusUI('保存中…');
@@ -4674,7 +4693,7 @@ const SYNC = {
         this._busy = false;
         this.markDirty();
         this.updateStatusUI('未同期…');
-        this.log('❌ 接続先GASが旧形式のため同期できません。同期モーダルの最新GASコードで再デプロイするか、接続設定を確認してください');
+        this.log('❌ 同期先の Google の受け口が古い形のため同期できません。管理者に受け口の更新を頼むか、接続設定の「週間計画・ワースケ・シフト」を確かめてください');
         return false;
       }
       if (j.conflict) {
@@ -4738,7 +4757,7 @@ const SYNC = {
       }
       throw new Error(this.friendlyErr(j.error));
     } catch(e) {
-      this.log('❌ 保存失敗: ' + e.message);
+      this.log('❌ 保存失敗: ' + this.friendlyErr(e && e.message));
       /* 接続先が無効と確定した時だけヒステリシスを通さず即「エラー」（pull と同じ扱い） */
       if (this.isConfirmedEndpointFailMsg(e.message)) this.updateStatusUI('エラー');
       else this.updateStatusUIFail('エラー');   // ヒステリシス（未送信フラグは従来どおり保持される）
@@ -4833,7 +4852,7 @@ const SYNC = {
   },
 
   async testConnection() {
-    if (!this.hasTarget()) { this.log('❌ 同期先が未設定です'); return; }
+    if (!this.hasTarget()) { this.log('❌ ' + CS_NO_TARGET_MSG); return; }
     this.log('🔌 接続テスト中…');
     try {
       const j = await this.gas({ action: 'ping' });
@@ -4842,10 +4861,10 @@ const SYNC = {
          { ok:true, role } を返すため、以前はここで「接続OK」と出て、誤った接続先を正しいと案内していた。 */
       if (csSyncTargetVerdict(j) !== 'ok') {
         this.log('❌ 応答はありますが、' + csSyncTargetMessage('wrong')
-          + '。正常に同期できている端末の［設定 → クラウド同期］のURLと同期トークンを貼り直してください');
+          + '。正常に同期できている端末の［設定 → クラウド同期］の URL と同期の合言葉を貼り直してください');
         return;
       }
-      this.log('✅ 接続OK：統合GASが正常に応答しました' + (j.server ? '（' + j.server + '）' : ''));
+      this.log('✅ 接続OK：同期先（Google の受け口）が正常に応答しました');
       /* サーバー側の版と防御機能を表示する（2026-08-05）。Apps Script は「保存」だけでは /exec に
          反映されず、デプロイを管理→新バージョン まで進めて初めて切り替わる。その取り違えを
          データを壊さずに見分けられるようにする（multi-device-sync 原則7 能力宣言）。 */
@@ -4863,7 +4882,7 @@ const SYNC = {
           + '（デプロイ → デプロイを管理 → 鉛筆 → バージョン「新バージョン」→ デプロイ）');
       }
     } catch(e) {
-      this.log('❌ 接続失敗: ' + e.message + '\nヒント: デプロイ時に「アクセスできるユーザー: 全員」を選択しているか確認してください');
+      this.log('❌ 接続失敗: ' + this.friendlyErr(e && e.message) + '\nヒント: デプロイ時に「アクセスできるユーザー: 全員」を選択しているか確認してください');
     }
   }
 };
@@ -4984,8 +5003,8 @@ function csSyncTargetVerdict(j) {
 }
 function csSyncTargetMessage(v) {
   if (v === 'ok') return '週間計画の同期先を確認しました';
-  if (v === 'wrong') return 'このURLは週間計画・ワークスケジュール・シフトの同期先ではありません（別のアプリのGASです）';
-  if (v === 'auth') return '同期トークンが一致しないか、別のアプリのGASです';
+  if (v === 'wrong') return 'このURLは週間計画・ワークスケジュール・シフトの同期先ではありません（別のアプリの Google の受け口です）';
+  if (v === 'auth') return '同期の合言葉が一致しないか、別のアプリの Google の受け口です';
   return '同期先に接続できず、確かめられませんでした。通信できる状態でもう一度保存してください';
 }
 /* URL と合言葉の組を ping して判定を返す（SYNC.gas を通さない＝再試行・死活判定に影響させない） */
@@ -5016,7 +5035,30 @@ function syncInputsEdited() {
   const t = SYNC.target();
   return url !== t.endpoint || tok !== t.token;
 }
+/* 同期先が入っていない時の案内（何が足りないか・次にすること）。
+   事務所PCには接続設定へのリンクを付け、現場の端末には付けない（接続設定は現場では開けない）。
+   外からの値は入れない（固定の文と textContent だけ）。 */
+var CS_NO_TARGET_MSG = '同期先が入っていません。接続設定の「週間計画・ワースケ・シフト」に接続先のURLと合言葉を入れてください（「☁️ 同期」の画面の欄にも入れられます）';
+function csRenderNoConnHint_() {
+  const box = $('#sync-noconn');
+  if (!box) return;
+  if (SYNC.hasTarget()) { box.style.display = 'none'; box.textContent = ''; return; }
+  box.textContent = '';
+  box.appendChild(document.createTextNode('この端末にはまだ同期先が入っていないため、予定はこの端末の中にだけ保存されています（ほかの端末やワークスケジュールには届きません）。'));
+  box.appendChild(document.createElement('br'));
+  if (suGetDeviceRole() === 'field') {
+    box.appendChild(document.createTextNode('事務所に知らせてください。'));
+  } else {
+    const a = document.createElement('a');
+    a.href = 'connection-settings.html';
+    a.textContent = '接続設定';
+    box.appendChild(a);
+    box.appendChild(document.createTextNode('の「週間計画・ワースケ・シフト」に接続先のURLと合言葉を入れてください（下の欄に入れて［設定を保存］を押しても同じです）。'));
+  }
+  box.style.display = '';
+}
 function refreshSyncIndicator(text, color) {
+  csRenderNoConnHint_();
   const ind = $('#sync-save-indicator');
   if (!ind) return;
   if (text) { ind.textContent = text; ind.style.color = color || 'var(--g6)'; return; }
@@ -7466,9 +7508,9 @@ function rmImportJSON(input) {
   reader.onload = () => {
     let raw;
     try { raw = JSON.parse(String(reader.result)); }
-    catch (e) { alert('読み込めませんでした。JSONとして壊れています。\n書き出したファイルをそのまま選んでください。'); return; }
+    catch (e) { alert('読み込めませんでした。ファイルが壊れているか、報酬マスタの控えのファイルではありません。\n書き出したファイルをそのまま選んでください。'); return; }
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-      alert('報酬マスタの形式ではありません。\n「JSONを書き出す」で作ったファイルを選んでください。'); return;
+      alert('報酬マスタの形式ではありません。\n「報酬マスタを控えのファイルに書き出す」で作ったファイルを選んでください。'); return;
     }
     const norm = normalizeRateMaster_(raw);
     // 表がひとつも入っていない＝別物のJSON。適用せず理由を出す（黙って既定で埋めない）
@@ -7478,7 +7520,7 @@ function rmImportJSON(input) {
       alert('報酬マスタの表（訪問基本単位・コード表・総合事業・通所・限度額）が1つも入っていません。\n適用しませんでした。');
       return;
     }
-    rmOpenPreview_(norm.master, '読み込んだJSON', norm.filled);
+    rmOpenPreview_(norm.master, '読み込んだ控えのファイル', norm.filled);
   };
   reader.onerror = () => alert('ファイルを読み込めませんでした。もう一度お試しください。');
   reader.readAsText(file, 'utf-8');
@@ -7568,7 +7610,7 @@ function exportJSON() {
   a.download = `care_plan_${((res && res.name) || 'all').replace(/\s/g,'_')}.json`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  showToast('エクスポートしました');
+  showToast('控えのファイルに書き出しました');
 }
 function printWeek() { clearRlPrintState_(); window.print(); }
 
@@ -8976,7 +9018,7 @@ async function csVerifyBulkUndo_(entry) {
           + '\n画面の内容を確認し、必要なら個別に削除してください。');
     }
   } catch (e) {
-    try { SYNC.log('❌ 取り消し後の確認に失敗: ' + e.message); } catch (e2) {}
+    try { csNote_('取り消し後の確認', e); SYNC.log('❌ 取り消し後の確認に失敗しました。画面の内容を確かめてください'); } catch (e2) {}
   }
 }
 
