@@ -229,7 +229,7 @@ function closeBtn(band) { return band.children[1]; }
   for (const id of Object.keys(EXPECT)) {
     const html = read(id + '.html');
     const tags = html.match(/<script src="su-intro\.js\?v=[^"]+"><\/script>/g) || [];
-    t(id + '.html: su-intro.js?v=2026-11-02.2 を1回だけ読む', tags.length === 1 && tags[0] === '<script src="su-intro.js?v=2026-11-02.2"></script>', tags);
+    t(id + '.html: su-intro.js?v=2026-11-02.3 を1回だけ読む', tags.length === 1 && tags[0] === '<script src="su-intro.js?v=2026-11-02.3"></script>', tags);
     t(id + '.html: 見出しの入れ物（.hdr）が1つあるか、置き場の印 data-su-intro-after が1つある', (html.match(/<(?:header|div) class="hdr(?: noprint)?">/g) || []).length === 1 || (html.match(/ data-su-intro-after[ >]/g) || []).length === 1);
     t(id + '.html: 置き場の印は多くても1つ', (html.match(/ data-su-intro-after[ >]/g) || []).length <= 1);
   }
