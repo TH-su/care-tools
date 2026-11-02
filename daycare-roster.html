@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-dB/nXdAMd/3UFbtT+oI6v2CD3wF/dVr78+z/flL+Y8I='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-wpeWW6EUGlcetD1aM4UkBYRxuZ7QkxzAyKoCHNqQLWU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -699,7 +699,7 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
 <!-- 入居者マスタの名簿の読み取り（getRoster）の入口。スイッチ（master_roster_read と master_care_read）が入っている時だけ、訪問日・かかりつけ病院も含めて写しから読む（切の間は今までどおり Google・段2b・2026-10-24） -->
 <script src="su-roster.js?v=2026-10-28"></script>
 <script src="su-res-read.js?v=2026-11-02"></script>
-<script src="su-facility.js?v=2026-11-02.2"></script>
+<script src="su-facility.js?v=2026-11-02.3"></script>
 <script src="su-data.js?v=2026-11-02"></script>
 <script src="su-data-gas.js?v=2026-10-29"></script>
 <script src="su-print.js?v=2026-09-12"></script>
@@ -1217,7 +1217,43 @@ function dcrRefreshStarsIfStale_(tries) {
   return dcrFetchMasterHosp(true).then(ok => { if (ok && typeof DB !== 'undefined' && DB) renderAll(DB); return ok; });
 }
 /* {{階順}}＝居室の階の並び（「２階→１階」。名前は施設情報の floors から・dcrFloorLabel_・2026-11-02 便8）。使う所でだけ呼ぶ（関数で置き換える） */
-function dcrFill(t) { const n = dcrOfficeName(); return String(t).replace(/\{\{通所名\}\}/g, n || 'デイ').replace(/\{\{訪問診療\}\}/g, dcrClinicLabel_()).replace(/\{\{階順\}\}/g, () => dcrFloorLabel_(2) + '→' + dcrFloorLabel_(1)); }
+/* {{昼食場所:既定}}・{{デイの場所:既定}}＝昼食場所・デイの場所の呼び名（施設情報の daycareNotes から・dcrNotesWord_・2026-11-02 便10）。
+   ★最後に置き換える＝差し込んだ呼び名の中の {{…}} をもう一度置き換えない。塊が無い・崩れている時は「:」の後ろの既定（今の文字）をそのまま出す */
+function dcrFill(t) { const n = dcrOfficeName(); return String(t).replace(/\{\{通所名\}\}/g, n || 'デイ').replace(/\{\{訪問診療\}\}/g, dcrClinicLabel_()).replace(/\{\{階順\}\}/g, () => dcrFloorLabel_(2) + '→' + dcrFloorLabel_(1)).replace(/\{\{(昼食場所|デイの場所):([^{}]*)\}\}/g, (a, k, d) => dcrNotesWord_(k, d)); }
+/* ── 昼食場所・デイの場所の呼び名（2026-11-02 品質改善 第3期 便10・代表者の決定 2026-11-02「全て進めて」）──
+   この画面の「２階」には2つの意味がある。居室の階（階の見出し・施設情報の floors・便8）と、
+   『その日デイに行かない方が昼食を摂る場所』（デイ休み（２階で昼食）・２階合計・週間名簿の右列の見出し・訪問診療の案内の２階ホール・備考の「それ以外は2階へ」・凡例）。
+   後の方と、備考の「{{通所名}}利用者分は1階へ」の1階（デイの場所）を、施設情報（facility-profile.json の daycareNotes・su-facility.js）の呼び名で差し替える。
+   ★差し替えるのは呼び名の語だけ。文の組み立て（本人指示の文）はそのまま残す（呼び名の後ろに「で昼食」「合計」「ホール」「食堂」「へ」が続く）。
+   ★使うのは daycareNotes が { lunchPlace, dayPlace } の2つだけを持ち、どちらも1〜4字の文字列（前後の空白・改行などの制御文字・{ } なし）の時だけ。
+     知らないキー・1つ欠け・型や長さの違いが1つでもあれば、塊ごと捨てて両方とも既定（今の文字）にする（職員マスタの委員会の既定と同じ決まり）。
+   ★上限 4字は、架空30名で A3 の一覧表と週間名簿（A4縦×6）が1枚ずつのままであることを撮って決めた。文字は el（textContent）で入れる＝innerHTML に入れない。 */
+const DCR_NOTES_KEYS = ['lunchPlace', 'dayPlace'];
+const DCR_NOTES_WORD_MAX = 4;
+function dcrDaycareNotes_() {
+  let v = null;
+  try { v = (window.SUFacility && typeof SUFacility.section === 'function') ? SUFacility.section('daycareNotes') : null; } catch (e) { v = null; /* 捨ててよい: 読めない時は既定の呼び名 */ }
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const ks = Object.keys(v);
+  if (ks.length !== DCR_NOTES_KEYS.length) return null;
+  const out = {};
+  for (let i = 0; i < DCR_NOTES_KEYS.length; i++) {
+    const k = DCR_NOTES_KEYS[i];
+    if (!Object.prototype.hasOwnProperty.call(v, k)) return null;
+    const w = v[k];
+    if (typeof w !== 'string') return null;
+    const len = [...w].length;
+    if (len < 1 || len > DCR_NOTES_WORD_MAX || w.trim() !== w || /[\u0000-\u001f\u007f{}]/.test(w)) return null;
+    out[k] = w;
+  }
+  return out;
+}
+/* dcrFill の置き換えの中身。k＝印の名前・d＝「:」の後ろの既定（今の文字） */
+function dcrNotesWord_(k, d) {
+  const m = dcrDaycareNotes_();
+  if (!m) return d;
+  return k === '昼食場所' ? m.lunchPlace : m.dayPlace;
+}
 /* ── 印刷の前に施設情報を待つ（2026-10-14 代表者の依頼）──
    帳票に刷る施設名・電話・事業所名・階の分け方は施設情報（facility-profile.json・su-facility.js）から引く。
    読む前に刷ると、施設名が空欄・階が既定（１階・２階）のままの紙が黙って出る。
@@ -1684,7 +1720,8 @@ function dcrFloorLabel_(f) { const m = dcrFloorNames_(); return Object.prototype
 function dcrFloorSecLabel_(f) { return (f === 1 || f === 2) ? dcrFloorLabel_(f) + '入居者' : FLOOR_LABEL[0]; }
 /* 描いた時に使った階の名前（null＝まだ描いていない）。施設情報が後から届いて名前が変わった時だけ描き直す（dcrRefreshFloorsIfStale_） */
 var dcrFloorSigUsed = null;
-function dcrFloorSig_() { return JSON.stringify(dcrFloorNames_()); }
+/* 昼食場所・デイの場所の呼び名（dcrDaycareNotes_・便10）も同じ控えに入れる＝どちらが後から届いて変わっても1回だけ描き直す */
+function dcrFloorSig_() { return JSON.stringify([dcrFloorNames_(), dcrDaycareNotes_()]); }
 function dcrRefreshFloorsIfStale_() {
   if (dcrFloorSigUsed == null || dcrFloorSig_() === dcrFloorSigUsed) return false;
   if (typeof DB === 'undefined' || !DB) return false;
@@ -1970,10 +2007,12 @@ function deiCells(tr, p, d, showBath) {
 // 元表の備考。「☆往診対象者は13:05までの…」は削除（13:05はシート内に実体が無い口頭ルールのため）。
 // 「往診」は誤りのため「訪問診療」に統一。
 // 見出しの印は★（2026-09-30 運用指示）。表の☆＝訪問診療の医療機関の訪問診療と紛らわしいため。
+/* 訪問診療の案内（HTML の #visitNoteDaylist の ☆ の後ろの文と一字一句同じ。既定の呼び名で組むと HTML の文に戻る・試験 daycare_notes_facility） */
+const DCR_VISIT_NOTE = '印の方は２週間に一度の訪問診療がありますので、{{昼食場所:２階}}ホールに居ていただいてください。';
 const DAYLIST_NOTES = [
   '★昼食後の薬',
-  '・{{通所名}}利用者分は1階へ',
-  'それ以外は2階へ',
+  '・{{通所名}}利用者分は{{デイの場所:1階}}へ',
+  'それ以外は{{昼食場所:2階}}へ',
   '分けてセットしておきます',
   '★祝日',
   '営業します',
@@ -2092,7 +2131,7 @@ function renderDaylist(ppl) {
   const gapTd = el('td', null, ''); gapTd.colSpan = 2 + NDAY * 3; gap.appendChild(gapTd);
   tbody.appendChild(gap);
   const ttl = el('tr', 'cut-title');
-  const ttlTh = el('th', null, 'デイ休み（２階で昼食）'); ttlTh.colSpan = 2 + NDAY * 3; ttl.appendChild(ttlTh);
+  const ttlTh = el('th', null, dcrFill('デイ休み（{{昼食場所:２階}}で昼食）')); ttlTh.colSpan = 2 + NDAY * 3; ttl.appendChild(ttlTh);   // 昼食場所の呼び名は施設情報から（便10）
   tbody.appendChild(ttl);
   // 中盤（昼食区画の直前）に曜日見出しを再掲＝長い表でも下段でどの曜日の列か追える（2026-08-03 運用指示）
   dayHeaderRows(true).forEach(r => tbody.appendChild(r));
@@ -2101,7 +2140,7 @@ function renderDaylist(ppl) {
   sectionRows(tbody, f1, dcrFloorSecLabel_(1), false, false, true, 1);
   if (f0.length) sectionRows(tbody, f0, '階未設定', false, false, true, 0);
   const lunch = []; for (let d = 0; d < NDAY; d++) lunch.push(countOff(ppl, d));
-  sumRow(tbody, '２階合計', lunch);
+  sumRow(tbody, dcrFill('{{昼食場所:２階}}合計'), lunch);   // 昼食場所の合計（居室の階ではない・便10）
   sumRow(tbody, '昼食合計', sese.map((v, i) => v + lunch[i]));
   table.appendChild(tbody);
 
@@ -2110,6 +2149,9 @@ function renderDaylist(ppl) {
   // 訪問診療の案内（備考の上）。幅は表と同じにして中央で揃える。
   const vn = $('visitNoteDaylist');
   if (vn) vn.style.width = TBL_W.daylist + 'px';
+  /* ２階ホールの「２階」は昼食場所の呼び名（便10）。文は HTML に書いたまま。呼び名が既定と違う時だけ、☆の後ろの文字を入れ替える（既定の時は触らない） */
+  const vt = vn && vn.lastChild;
+  if (vt && vt.nodeType === 3) { const want = dcrFill(DCR_VISIT_NOTE); if (vt.nodeValue !== want) vt.nodeValue = want; }
 
   // 備考（表の下・横並びでコンパクトに＝横幅を表に使い切る）。幅は表と同じにして中央で揃える。
   const note = $('noteDaylist');
@@ -2196,7 +2238,7 @@ function renderAllweek(ppl) {
    ★2026-08-20 運用指示: 備考と凡例メッセージは【画面には残す】（.noprint＝紙には出さない）。
      現場が画面で手順を確認できるようにするため。紙面と表の幅は 2026-08-17 の状態のまま。
    ============================================================================ */
-const MED_NOTES = ['☆昼食後の薬', '・{{通所名}}利用者分は1階へ', 'それ以外は2階へ', '分けてセットしておきます', '☆祝日', '営業します'];
+const MED_NOTES = ['☆昼食後の薬', '・{{通所名}}利用者分は{{デイの場所:1階}}へ', 'それ以外は{{昼食場所:2階}}へ', '分けてセットしておきます', '☆祝日', '営業します'];
 
 function renderMed(ppl) {
   const table = $('tblMed');
@@ -2318,13 +2360,14 @@ function wkNameSpaced(p) {
   return (c > 0 && c < s.length) ? (s.slice(0, c) + '　' + s.slice(c)) : s;
 }
 
-function weeklyTable(ppl, d) {
+/* lunchLabel＝右列の見出し（昼食場所の呼び名・便10）。渡さない時は今の「２階」 */
+function weeklyTable(ppl, d, lunchLabel) {
   const t = el('table', 'wk');
   const tb = el('tbody');
   const hr = el('tr');
   hr.appendChild(el('td', 'wk-day', DAYS_JA[d] + '曜日'));
   hr.appendChild(el('td', 'wk-pad', ''));
-  hr.appendChild(el('td', 'wk-h', '２階'));
+  hr.appendChild(el('td', 'wk-h', lunchLabel == null ? '２階' : lunchLabel));
   hr.appendChild(el('td', 'wk-pad-r', ''));
   tb.appendChild(hr);
   /* 2026-09-01 運用指示: デイ列は載せない。この表は「その日デイに行かない方＝2階食堂で昼食」だけの名簿。
@@ -2382,7 +2425,7 @@ function renderWeekly(ppl) {
   host.textContent = '';
   for (let d = 0; d < NDAY; d++) {
     const pg = el('div', 'wk-page');
-    pg.appendChild(weeklyTable(ppl, d));
+    pg.appendChild(weeklyTable(ppl, d, dcrFill('{{昼食場所:２階}}')));
     host.appendChild(pg);
   }
 }
@@ -2626,7 +2669,7 @@ function buildWeeklyBatch_() {
   for (let d = 0; d < NDAY; d++) {
     const pg = el('div', 'pg');
     pg.appendChild(el('div', 'pg-date', printDateText_()));   // 一括6枚は凡例が出ないので各ページ先頭へ
-    pg.appendChild(weeklyTable(ppl, d));
+    pg.appendChild(weeklyTable(ppl, d, dcrFill('{{昼食場所:２階}}')));
     host.appendChild(pg);         // ★ちょうど6要素（末尾の空白ページ防止）
   }
   document.body.classList.add('pr-batch');
@@ -2726,13 +2769,13 @@ let ROSTER_SUB = '';   // 利用表タブの指標（改修前からの表示）
 let MODEL_SUB  = '';   // 新4タブの指標
 const LEGENDS = {
   'sc-roster':  [['sw', '黄＝入浴あり'], ['hosp', '（入院）＝入院中（合計には計上しない）'], ['t', '利用時間帯ごとに居室階（{{階順}}）で分け、氏名は五十音順／下段に日別の入浴合計・利用合計']],
-  'sc-daylist': [['sw', '黄＝入浴あり'], ['star', '☆＝その曜日に{{訪問診療}}の訪問診療がある方'], ['t', '上段＝デイ利用者／下段＝デイ休み（２階で昼食）']],
+  'sc-daylist': [['sw', '黄＝入浴あり'], ['star', '☆＝その曜日に{{訪問診療}}の訪問診療がある方'], ['t', '上段＝デイ利用者／下段＝デイ休み（{{昼食場所:２階}}で昼食）']],
   'sc-allweek': [['sw', '黄＝入浴あり'], ['t', '氏名は各曜日に反復／利用日は開始・終了の時刻で表します']],
   /* 薬用の凡例メッセージは 'tn'＝【画面のみ】（2026-08-20 運用指示）。
      2026-08-17 に紙面の上部を空けるため消したが、画面には残す方針に決まった。
      紙には出ないので、印刷の表の大きさは 2026-08-17 の状態のまま変わらない。 */
   'sc-med':     [['tn', '右のチェック＝昼食薬あり。全端末に保存・同期され、枠が薄オレンジ（色は印刷にも出ます／チェック欄自体は印刷されません）']],
-  'sc-weekly':  [['t', '２階＝その日デイに行かない方（2階食堂で昼食）／☆＝同姓の方がいます（右上「同姓の目印」で設定）。印刷は6曜日を一括で6枚出します']]
+  'sc-weekly':  [['t', '{{昼食場所:２階}}＝その日デイに行かない方（{{昼食場所:2階}}食堂で昼食）／☆＝同姓の方がいます（右上「同姓の目印」で設定）。印刷は6曜日を一括で6枚出します']]
 };
 function activeTab() {
   const b = document.querySelector('.tnav button[aria-selected="true"]');
@@ -3146,7 +3189,7 @@ function init() {
 init();
 </script>
 <!-- 見出しの下の初回の案内の帯（2026-11-02 本人の決定）。×で閉じた端末では出さない。画面の動き・保存・印刷には触れない -->
-<script src="su-intro.js?v=2026-11-02"></script>
+<script src="su-intro.js?v=2026-11-02.2"></script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
 <script src="su-report.js?v=2026-10-28" data-tool="通所 利用表"></script>
 </body>

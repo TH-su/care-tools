@@ -224,7 +224,7 @@ async function run() {
   {
     const i = src.indexOf('</header>');
     const after = src.slice(i, i + 400);
-    const m = after.match(/<p class="purpose noprint">(この画面でできること：[^<]+)<\/p>/);
+    const m = after.match(/<p class="purpose noprint"(?: data-su-intro-after)?>(この画面でできること：[^<]+)<\/p>/);
     t('6-1 見出しのすぐ下に「この画面でできること」の1行がある', !!m, after);
     t('6-2 印刷では消す（.noprint が @media print で隠れる）', /@media print\{[\s\S]*?\.noprint\{display:none !important\}/.test(src));
     t('6-3 1行に技術用語が無い', !!m && !TECH.test(m[1]), m && m[1]);

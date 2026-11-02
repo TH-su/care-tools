@@ -31,6 +31,9 @@ const EXPECT = {
   'overview-compare': ['はじめに：片方を動かすと、もう片方も同じ時刻・曜日にそろいます（「連動」を外すと別々に動きます）。', HELP],
   'admission-flow': ['この画面でできること：入居のご相談から入居まで、案件ごとの進み具合と、今日やることを管理します。', 'はじめに：下の「今日」でやることを確かめ、新しいご相談は右下の「＋」で足します。くわしくは下の「使い方」へ。', HELP],
   'patch-calendar': ['この画面でできること：貼り薬の貼る場所の順番を、月のカレンダーにして印刷します。', 'はじめに：「入居者」と「開始日」を選び、年月を確かめてから「印刷」を押します。', HELP],
+  'weight-record': ['この画面でできること：入居者の毎月の体重を記録し、増減のアラートと食事形態を確かめます。', 'はじめに：上の「入力」で入居者と体重を入れて「記録を保存」を押します。紙に書いて測る時は「一覧」の「🖨️ 用紙作成」で用紙を印刷します。', HELP],
+  'training-plan': ['この画面でできること：デイ利用者の個別機能訓練計画書を作って直し、3か月ごとの期限を一覧で確かめて印刷します。', 'はじめに：一覧で期限を確かめ、利用者の「開く」で計画書を開きます。紙にする時は下の「印刷」へ。', HELP],
+  'supplies': ['はじめに：下の「在庫」の「入出庫を記録する」で品目・入庫か出庫・数量を入れ、「記録する」を押します。', HELP],
   'resident-master': ['この画面でできること：入居者の情報の確かめと直し、帳票（食形態・ケアマネ一覧・居室一覧など）の印刷をします。', 'はじめに：検索欄に氏名・ふりがな・居室を入れて選ぶか、上のタブで帳票を選びます。', HELP],
 };
 
@@ -54,7 +57,10 @@ function load(opt) {
   const body = mkEl('body');
   const hdr = mkEl('header'); hdr.className = 'hdr';
   const after = mkEl('main');
-  if (opt.noHdr) body.children = [after]; else body.children = [hdr, after];
+  const anchor = mkEl('div'); anchor.attrs['data-su-intro-after'] = '';
+  if (opt.anchor && opt.withHdr) body.children = [hdr, anchor, after];
+  else if (opt.anchor) body.children = [mkEl('div'), anchor, after];
+  else if (opt.noHdr) body.children = [after]; else body.children = [hdr, after];
   body.children.forEach((c) => { c.parentNode = body; });
   const head = mkEl('head');
   head.appendChild = function (c) { this.children.push(c); c.parentNode = this; if (!opt.cssNever) setImmediate(() => { if (c.onload) c.onload(); }); return c; };
@@ -73,7 +79,7 @@ function load(opt) {
   const doc = {
     body, head, readyState: opt.loading ? 'loading' : 'complete',
     createElement: mkEl,
-    querySelector(sel) { if (sel !== 'body > .hdr') throw new Error('予定外のセレクタ: ' + sel); return body.children.find((c) => c.className === 'hdr') || null; },
+    querySelector(sel) { if (sel === '[data-su-intro-after]') return body.children.find((c) => 'data-su-intro-after' in c.attrs) || null; if (sel !== 'body > .hdr') throw new Error('予定外のセレクタ: ' + sel); return body.children.find((c) => c.className === 'hdr') || null; },
     addEventListener(k, fn) { if (k === 'DOMContentLoaded') docReady = fn; },
   };
   const ctx = {
@@ -84,7 +90,7 @@ function load(opt) {
   let thrown = null;
   try { vm.runInNewContext(SRC, ctx, { filename: 'su-intro.js' }); } catch (e) { thrown = e; }
   return {
-    thrown, body, hdr, head, store, winListeners, timers,
+    thrown, body, hdr, anchor, head, store, winListeners, timers,
     ready() { if (docReady) { doc.readyState = 'interactive'; docReady(); } },
     band() { return body.children.find((c) => c.className === 'sui-band') || null; },
   };
@@ -94,7 +100,17 @@ function texts(band) { return band.children[0].children.map((p) => p.textContent
 function closeBtn(band) { return band.children[1]; }
 
 (async () => {
-  say('— A 8画面の文言が一字一句同じ —');
+  say('— A0 見出しの入れ物が body 直下に無い画面は、印 data-su-intro-after の後ろに置く（便9） —');
+  { const r = load({ path: '/care-tools/resident-master.html', anchor: true }); await tick();
+    const b = r.band(); t('印の要素の直後に帯を置く', !!b && r.body.children.indexOf(b) === r.body.children.indexOf(r.anchor) + 1, r.body.children.map((c) => c.className || c.tag)); }
+  { const html = read('weight-record.html'); t('体重管理は body 直下の .hdr が無く、見出しの箱（topbar）に印がある', /<div class="topbar" data-su-intro-after>/.test(html)); }
+  { const html = read('training-plan.html'); t('個別機能訓練計画書は現場端末の止めの画面で帯を出さない', /body\.blocked \.sui-band\{display:none\}/.test(html)); }
+  { const r = load({ path: '/care-tools/resident-master.html', anchor: true, withHdr: true }); await tick();
+    const b = r.band(); t('見出しの入れ物と印の両方がある時は印の後ろに置く（消耗品管理の「この画面でできること」の下）', !!b && r.body.children.indexOf(b) === r.body.children.indexOf(r.anchor) + 1); }
+  { const html = read('supplies.html'); t('消耗品管理は「この画面でできること」の行に印がある', /<p class="purpose noprint" data-su-intro-after>/.test(html)); }
+  { const r = load({ path: '/care-tools/resident-master.html', noHdr: true }); await tick();
+    t('見出しも印も無い画面には置かない', !r.band() && !r.thrown); }
+  say('— A 11画面の文言が一字一句同じ —');
   for (const id of Object.keys(EXPECT)) {
     const r = load({ path: '/care-tools/' + id + '.html' });
     await tick();
@@ -209,15 +225,16 @@ function closeBtn(band) { return band.children[1]; }
   t('帯の文字のコントラスト 7:1 以上', band[1] && ratio(band[1], band[2]) >= 7, band[1] && ratio(band[1], band[2]).toFixed(2));
   t('×の文字のコントラスト 7:1 以上（ふだん・押す前）', xb[1] && ratio(xb[1], xb[2]) >= 7 && xh[1] && ratio(xh[1], xb[2]) >= 7);
 
-  say('— F 8画面が読み込んでいる —');
+  say('— F 11画面が読み込んでいる —');
   for (const id of Object.keys(EXPECT)) {
     const html = read(id + '.html');
     const tags = html.match(/<script src="su-intro\.js\?v=[^"]+"><\/script>/g) || [];
-    t(id + '.html: su-intro.js?v=2026-11-02 を1回だけ読む', tags.length === 1 && tags[0] === '<script src="su-intro.js?v=2026-11-02"></script>', tags);
-    t(id + '.html: 見出しの入れ物（body 直下の .hdr）が1つある', (html.match(/<(?:header|div) class="hdr(?: noprint)?">/g) || []).length === 1);
+    t(id + '.html: su-intro.js?v=2026-11-02.2 を1回だけ読む', tags.length === 1 && tags[0] === '<script src="su-intro.js?v=2026-11-02.2"></script>', tags);
+    t(id + '.html: 見出しの入れ物（.hdr）が1つあるか、置き場の印 data-su-intro-after が1つある', (html.match(/<(?:header|div) class="hdr(?: noprint)?">/g) || []).length === 1 || (html.match(/ data-su-intro-after[ >]/g) || []).length === 1);
+    t(id + '.html: 置き場の印は多くても1つ', (html.match(/ data-su-intro-after[ >]/g) || []).length <= 1);
   }
   const all = fs.readdirSync(ROOT).filter((f) => f.endsWith('.html') && /su-intro\.js/.test(read(f)));
-  t('su-intro.js を読む画面は8画面だけ', all.length === 8 && all.every((f) => EXPECT[f.replace(/\.html$/, '')]), all);
+  t('su-intro.js を読む画面は11画面だけ', all.length === 11 && all.every((f) => EXPECT[f.replace(/\.html$/, '')]), all);
 
   say('\n' + (ng ? '✗' : '✓') + ' su_intro: 成功 ' + ok + '／失敗 ' + ng);
   process.exit(ng ? 1 : 0);

@@ -327,7 +327,7 @@ function section(title, fn) {
       vm.createContext(box);
       vm.runInContext([
         grabConst(SO, 'DAYS_JA'), grabConst(SO, 'HOUR_PX'), 'var SLOT = 15;', grabConst(SO, 'GAP_RATIO'), grabConst(SO, 'GAP_MIN'),
-        grabConst(SO, 'SVC_CLS'), grabConst(SO, 'SOGO_LABEL'), grabConst(SO, '\\$'), 'var MASKS = { cuts: {} };',
+        grabConst(SO, 'SVC_CLS'), grabConst(SO, 'SOGO_LABEL'), 'let SOGO_LABEL_NOW = SOGO_LABEL;', grabFn(SO, 'sogoLabelFrom_'), grabFn(SO, 'sogoLabelApply_'), grabConst(SO, '\\$'), 'var MASKS = { cuts: {} };',
         grabFn(SO, 'codeClass'), grabFn(SO, 'codeLabel'), grabFn(SO, 'minToLabel'),
         grabFn(SO, 'ovIsField_'), grabFn(SO, 'ovBareName_'), grabFn(SO, 'ovSplitName_'), grabFn(SO, 'ovNameLabeler_'),
         grabFn(SO, 'computeDomain'), grabFn(SO, 'computeGaps'), grabFn(SO, 'assignLayout'), grabFn(SO, 'render')
@@ -352,7 +352,7 @@ function section(title, fn) {
       const box = { document, console: quiet(), setTimeout() { return 0; }, clearTimeout() {}, localStorage: fakeLS({ su_device_role: role }) };
       vm.createContext(box);
       vm.runInContext([
-        grabConst(VO, 'DAYS_JA'), grabConst(VO, 'HOUR_PX'), grabConst(VO, 'SVC_CLS'), grabConst(VO, 'SOGO_LABEL'), grabConst(VO, '\\$'), "var VIEW = 'fac';",
+        grabConst(VO, 'DAYS_JA'), grabConst(VO, 'HOUR_PX'), grabConst(VO, 'SVC_CLS'), grabConst(VO, 'SOGO_LABEL'), 'let SOGO_LABEL_NOW = SOGO_LABEL;', grabFn(VO, 'sogoLabelFrom_'), grabFn(VO, 'sogoLabelApply_'), grabConst(VO, '\\$'), "var VIEW = 'fac';",
         'function voApplyHosp() {}',
         grabFn(VO, 'codeClass'), grabFn(VO, 'codeLabel'), grabFn(VO, 'toMin'), grabFn(VO, 'minToLabel'),
         grabFn(VO, 'ovIsField_'), grabFn(VO, 'ovBareName_'), grabFn(VO, 'ovSplitName_'), grabFn(VO, 'ovNameLabeler_'), grabFn(VO, 'ovCutsFrom_'),
