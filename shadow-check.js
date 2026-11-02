@@ -1099,6 +1099,7 @@
     try { await loadTpMode(sb); } catch (e) { /* 0038 の前・読めない時はボタンを出さない */ }
     try { await loadAdmRuns(sb); } catch (e) { $('admf-verdict').className = 'msg warn'; $('admf-verdict').textContent = '入居調整の写しの記録を読めませんでした。'; }
     try { await loadAdmMode(sb); } catch (e) { /* 0042 の前・読めない時はボタンを出さない */ }
+    try { await loadStf(sb); } catch (e) { $('stf-verdict').className = 'msg warn'; $('stf-verdict').textContent = '職員マスタの写しの記録を読めませんでした。'; }
     try { await loadPatch(sb); }
     catch (e) {
       $('pt-verdict').className = 'msg warn';
@@ -1402,6 +1403,52 @@
       btn.disabled = false;
       try { await loadAdmRuns(sb); } catch (e) { /* 記録の一覧が読めなくても結果の文は残す */ }
     }
+  }
+
+  /* 職員マスタの写し（統合 0044・2026-11-02 代表者「全て進めて」）: 写しは職員マスタの GAS が1時間ごとに自動で取る。
+   * ここでは写しの人数・版（stf_shadow_status）と、この端末の職員マスタの接続先（stfm_cfg）の今の版（ping・合言葉なし）を見比べる。
+   * 出すのは人数・版・時刻・断った種類だけ（氏名・中身は出さない） */
+  var STF_REFUSED = { stale: '古い版', shrink: '急に減った', badrow: '形の違い', toolarge: '大きすぎる' };
+  function stfUrl() {
+    try { var o = JSON.parse(localStorage.getItem('stfm_cfg') || 'null'); var u = String(o && o.url || '').trim(); return RMASTER_RE.test(u) ? u : ''; } catch (e) { return ''; }
+  }
+  function stfPing(url) {
+    var ctl = new AbortController(), tm = setTimeout(function () { ctl.abort(); }, 20000);
+    return fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({ action: 'ping' }), cache: 'no-store', redirect: 'follow', signal: ctl.signal })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { clearTimeout(tm); return (j && j.ok === true && typeof j.ver === 'number') ? j.ver : null; },
+            function () { clearTimeout(tm); return null; });
+  }
+  async function loadStf(sb) {
+    var kk = $('stf-kpis'), v = $('stf-verdict'), ul = $('stf-runs');
+    function say(t, kind) { v.className = 'msg' + (kind ? ' ' + kind : ''); v.textContent = t; }
+    kk.replaceChildren(); ul.replaceChildren();
+    var st = await sb.rpc('stf_shadow_status');
+    if (st.error) { say('職員マスタの写しの準備（データベース 0044）はまだです。'); return; }
+    var d = st.data || {};
+    if (d.ver == null) { say('まだ写していません。職員マスタの GAS の自動（autoMirror）が動くと、1時間以内に写ります。'); return; }
+    kk.appendChild(kpi('写しの職員', d.staff, '人'));
+    kk.appendChild(kpi('写しの版', d.ver, ''));
+    var url = stfUrl(), gv = url ? await stfPing(url) : null;
+    if (gv != null) kk.appendChild(kpi('Google の版', gv, ''));
+    var tail = '（最後に写した時刻 ' + fmtTime(d.updatedAt) + '）';
+    if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + (STF_REFUSED[d.lastRefused] || String(d.lastRefused || '')) + '）。開発の担当へ知らせてください。' + tail, 'warn');
+    else if (!url) say('写しはあります。この端末には職員マスタの接続先が無いので、Google の版とは見比べていません。' + tail);
+    else if (gv == null) say('写しはあります。Google の版を読めませんでした（少し待ってから開き直してください）。' + tail, 'warn');
+    else if (gv === d.ver) say('写しの版が Google と一致しています。' + tail, 'ok');
+    else if (gv > d.ver) say('Google の方が新しい版です。次の自動の写し（1時間ごと）でそろいます。' + tail);
+    else say('写しの版が Google より新しくなっています。開発の担当へ知らせてください。' + tail, 'warn');
+    var r = await sb.from('stf_sync_runs').select('at,status,refused,result,ver,staff').order('id', { ascending: false }).limit(5);
+    (r.data || []).forEach(function (x) {
+      var li = el('li'), left = el('div');
+      left.appendChild(el('div', 'nm', fmtTime(x.at)));
+      left.appendChild(el('div', 'em', x.status === 'done'
+        ? '版 ' + x.ver + '／職員 ' + x.staff + '人／' + (ADM_RESULT[x.result] || '')
+        : '受け付けず（' + (STF_REFUSED[x.refused] || String(x.refused || '')) + '）'));
+      li.appendChild(left);
+      ul.appendChild(li);
+    });
   }
 
   /* 入居調整の台帳の正本の切り替え（統合 0042・2026-10-29）: 計画書と同じ手順（su-adm-full.js の cutover・back）。管理者だけ・事務所PCだけ。
