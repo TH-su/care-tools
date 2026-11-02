@@ -70,7 +70,7 @@ vm.runInContext([
   'function escHtml(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\\"/g,"&quot;");}',
   grabFn('timeToMins'), grabFn('catDisplayLabel_'),
   grabDecl('WK_ROW'), grabDecl('WK_AXIS'), grabDecl('WK_MIN_H'), grabDecl('WK_MIN_H_VISIT'), grabDecl('WK_BODY_H'),
-  grabDecl('WK_SHEET_COLORS'), grabDecl('WK_SHEET_ICONS'), grabDecl('WK_ZONES'),
+  grabDecl('WK_SHEET_COLORS'), grabFn('wkSheetColors_'), grabDecl('WK_SHEET_ICONS'), grabDecl('WK_ZONES'),
   grabFn('wkY_'), grabFn('wkIsBandSlot_'), grabFn('wkBandLabel_'), grabFn('wkKindOf_'), grabFn('wkTimeText_'), grabFn('wkMainText_'),
   grabFn('wkIconsFor_'), grabFn('wkLayoutDay_'), grabFn('buildWeeklySheetHtml_'),
 ].join('\n'), box);

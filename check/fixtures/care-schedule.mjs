@@ -5,7 +5,7 @@
  *   match   … 横取りする通信の住所（ネットへは出ない）
  *   respond(body) … 横取りした要求（統合同期 GAS への POST 本文 {action, key, ...}）に返す応答
  *   routes  … match 以外に横取りするもの（su-backend.json を「全部切」で返す＝Google の道だけで動かす）
- *   sheets  … 撮る帳票（今は無し＝snap.mjs は帳票を撮らない）
+ *   sheets  … 撮る帳票。A3週間予定表（2026-11-02）は印刷部品（SUPrint）を使わないので、prepare（ページの中で紙を組む関数）で撮る
  *
  * 規模: 利用者 38名・1人あたり 1週間に 10〜25コマ（訪問が主・一部デイ）。
  * ★架空データだけ（CLAUDE.md §2-1）。氏名は記号的な漢字の見本（架空・見本・試験…＋甲・乙・丙…）。
@@ -21,9 +21,33 @@ export const storage = {
   su_backend_flags: JSON.stringify(FLAGS_OFF),
 };
 export const routes = [
-  { match: '**/su-backend.json*', body: FLAGS_OFF },
+  /* body は tap-latency.mjs が読む。handle は snap.mjs（帳票の撮影）が使う */
+  { match: '**/su-backend.json*', body: FLAGS_OFF,
+    handle: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(FLAGS_OFF) }) },
 ];
-export const sheets = [];
+
+/* A3週間予定表の見本の利用者（帳票を撮る時だけページの中の名簿に足す＝画面の撮影と GAS の見本の応答は変わらない）。
+   色の4種類（通所・買物・訪問・起床の帯）を1コマずつ置く */
+export const SHEET_RESIDENT = { id: 'crS01', name: '見本 甲', kana: '', careLevel: '要介護2', copayRate: 1, welfareEquipUnits: 0, external: false, events: [
+  { id: 'sA1', dayOfWeek: 0, serviceType: 'daycare', category: '', startTime: '09:30', endTime: '16:00', detail: '入浴・機能訓練', notes: '', units: 0, bathing: true },
+  { id: 'sA2', dayOfWeek: 2, serviceType: 'visit', category: '生活２', startTime: '13:00', endTime: '13:46', detail: '買物', notes: '', units: 0, bathing: false },
+  { id: 'sA3', dayOfWeek: 3, serviceType: 'visit', category: '生活３', startTime: '10:00', endTime: '11:01', detail: '居室清掃・洗濯', notes: '', units: 0, bathing: false },
+  { id: 'sA4', dayOfWeek: 4, serviceType: 'visit', category: '身体０１', startTime: '07:00', endTime: '07:20', detail: '', notes: '', units: 0, bathing: false },
+] };
+export const sheets = [
+  { key: 'a3week', arg: SHEET_RESIDENT, ready: '#wk-sheet .wk-ev',
+    /* ページの中で動く（snap.mjs が evaluate する）。名簿を読み終えるのを待ち、見本の方を足して選び、
+       「🖨 A3週間予定表」と同じ printWeeklySheet で紙を組む（印刷のダイアログは開かない）。保存はしない */
+    prepare: async (s) => {
+      for (let i = 0; i < 100 && !(typeof DB === 'object' && DB && Array.isArray(DB.residents) && DB.residents.length); i++) await new Promise((r) => setTimeout(r, 100));
+      if (typeof printWeeklySheet !== 'function' || typeof DB !== 'object' || !DB || !Array.isArray(DB.residents)) return false;
+      if (!DB.residents.some((r) => r && r.id === s.id)) DB.residents.push(s);
+      DB.currentResidentId = s.id;
+      window.print = function () {};
+      printWeeklySheet();
+      return document.body.classList.contains('wk-print') && document.querySelectorAll('#wk-sheet .wk-ev').length === s.events.length;
+    } },
+];
 
 /* ── 架空の利用者 38名 ── */
 const SEI = ['架空', '見本', '試験', '仮名', '模擬', '例題', '仮置', '検証'];

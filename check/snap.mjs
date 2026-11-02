@@ -156,6 +156,15 @@ async function shootSheet(file, name, fx, sh) {
     const o = await open(context, null, file);
     const p = o.p;
     try {
+      if (sh.prepare) {
+        /* 材料が紙の組み方を決める帳票（印刷部品 SUPrint・setView を使わない画面・2026-11-02）。
+           prepare はページの中で動く関数で、sh.arg を受けて紙を組み、組めたら真を返す。ready は組んだ後の紙の目印
+           （印刷の時だけ見える紙もあるので、見えるかではなく置かれたかで待つ） */
+        const ok = await p.evaluate(sh.prepare, sh.arg === undefined ? null : sh.arg);
+        if (!ok) throw new Error('印刷の準備ができない（' + sh.key + '）');
+        await p.waitForSelector(sh.ready, { state: 'attached', timeout: 15000 });
+        await p.waitForTimeout(500);
+      } else {
       await p.evaluate((v) => window.setView(v), sh.view);
       await p.waitForSelector(sh.ready, { timeout: 15000 });
       await p.waitForTimeout(500);
@@ -163,6 +172,7 @@ async function shootSheet(file, name, fx, sh) {
          後始末の保険タイマーは入居者マスタでは60秒なので、撮り終わるまで準備は外れない */
       const ready = await p.evaluate((k) => { window.print = function () {}; window.SUPrint.print(k); return document.body.classList.contains('su-printing'); }, sh.print);
       if (!ready) throw new Error('印刷の準備ができない（' + sh.print + '）');
+      }
       await p.emulateMedia({ media: 'print' });
       await p.waitForTimeout(300);
       shots.push(await p.screenshot({ fullPage: true, animations: 'disabled', caret: 'hide' }));

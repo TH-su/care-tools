@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-TA5xa0NF7+8KTHm286KvTGWR6CyX2DQ4AaqeC8pFuHY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-l2J5m4sOpBLkGXOK5ii0or+04joWlbhco/29A5ZhuVI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -8356,6 +8356,27 @@ const WK_SHEET_COLORS = {
                                                       RGB(0,255,255)＝本人指定の色（2026-09-02）。
                                                       元様式の #A5B6CB は暗いとの判断で明るい水色へ */
 };
+/* 今の色（2026-11-02）。施設情報（facility-profile.json の scheduleColors）に {種類: {time, body}} があれば、その種類だけ差し替える。
+   受け付けるのは #RRGGBB の6桁だけで、time と body の両方が正しい種類だけを使う（崩れた種類・知らない種類は捨てて上の既定）。
+   紙を組むたびに呼ぶ＝施設情報が後から届いても次の印刷から効く。上の既定（WK_SHEET_COLORS）は書き換えない。 */
+function wkSheetColors_() {
+  const out = {};
+  for (const k of Object.keys(WK_SHEET_COLORS)) out[k] = { time: WK_SHEET_COLORS[k].time, body: WK_SHEET_COLORS[k].body };
+  let sec = null;
+  try {
+    sec = (typeof window !== 'undefined' && window.SUFacility && typeof SUFacility.section === 'function') ? SUFacility.section('scheduleColors') : null;
+  } catch (e) { sec = null; /* 捨ててよい: 読めない時は既定の色で組む */ }
+  if (!sec || typeof sec !== 'object' || Array.isArray(sec)) return out;
+  const HEX = /^#[0-9A-Fa-f]{6}$/;
+  for (const k of Object.keys(out)) {
+    if (!Object.prototype.hasOwnProperty.call(sec, k)) continue;
+    const v = sec[k];
+    if (!v || typeof v !== 'object' || Array.isArray(v)) continue;
+    if (typeof v.time !== 'string' || typeof v.body !== 'string' || !HEX.test(v.time) || !HEX.test(v.body)) continue;
+    out[k] = { time: v.time, body: v.body };
+  }
+  return out;
+}
 /* 支援内容の語で引くイラスト。元Excelの画像を受け取ったら data URI をここへ入れる。
    空のままなら何も描かない（場所だけ空ける）＝画像が届いた時点でここだけ差し替えれば完成する。 */
 const WK_SHEET_ICONS = {
@@ -8565,12 +8586,13 @@ function buildWeeklySheetHtml_(res) {
 
   /* 曜日の列 */
   let daysHtml = '';
+  const sheetCol = wkSheetColors_();   /* 色は施設情報があればそちら（無ければ WK_SHEET_COLORS のまま） */
   for (let dow = 0; dow < 7; dow++) {
     const placed = wkLayoutDay_(evs.filter(e => e.dayOfWeek === dow));
     let cells = lineHtml;
     for (const p of placed) {
       const kind = wkKindOf_(p.ev);
-      const col  = WK_SHEET_COLORS[kind] || WK_SHEET_COLORS.visit;
+      const col  = sheetCol[kind] || sheetCol.visit;
       const w    = 100 / p.lanes, left = w * p.lane;
       const icons = wkIconsFor_(p.ev);
       /* 入浴あり（加算の根拠）の印。元様式の温泉マークの画像が登録されていればそれを、
