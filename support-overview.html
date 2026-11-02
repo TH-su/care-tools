@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-HXvaHnAzEkZ+ruUmP6VP1dPmkSSVRU2ICbnb7/+aV8M=' 'sha256-kwAifQBfvhff32cF5SUk9JG2jvWgV6uclGEK+W7/Hfs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-OvljrD7NtxO6khBm/UVDSfQl6Om8NNYN+lllolfmCf0=' 'sha256-kwAifQBfvhff32cF5SUk9JG2jvWgV6uclGEK+W7/Hfs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -190,6 +190,10 @@ body {
   font-size: 0.875rem; text-align: center; padding: 24px;
 }
 .board-empty.on { display: flex; }
+/* 接続先が無い・読めない時の接続設定へのリンク（品質改善 第3期 便5）。事務所PCだけに出す。印刷には出さない */
+#emptyCsLink { display: inline-block; padding: 10px 4px; font-size: 0.9375rem; }
+#emptyCsLink[hidden] { display: none !important; }
+@media print { #emptyCsLink { display: none !important; } }
 #toast {
   position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
   background: var(--g9); color: #fff; border-radius: 8px; padding: 10px 18px;
@@ -300,7 +304,7 @@ body {
   <button class="hdr-btn" id="btnRefresh" aria-label="クラウドから最新の実配置を集計">更新</button>
   <button class="hdr-btn" id="btnPrint" aria-label="A3縦で印刷">印刷</button>
 </header>
-<div id="copyBand" class="copy-band" role="status" aria-live="polite" hidden>⚠️ Supabase（本番）から読めず、Google の写しから表示しています。写しは古いことがあります。ログインし直すか、時間をおいて読み込み直してください。</div>
+<div id="copyBand" class="copy-band" role="status" aria-live="polite" hidden>⚠️ 共通のデータベースから読めず、Google の写しから表示しています。写しは古いことがあります。ログインし直すか、時間をおいて読み込み直してください。</div>
 
 <div class="legend" aria-hidden="false">
   <span class="lg"><span class="lg-sw k-phys"></span>身体</span>
@@ -324,6 +328,7 @@ body {
   </div>
   <div class="board-empty" id="boardEmpty">
     <div id="emptyMsg">集計するには「更新」を押してください。</div>
+    <a id="emptyCsLink" href="connection-settings.html" hidden>接続設定の画面を開く</a>
     <button class="hdr-btn solid" id="btnRefresh2">クラウドから集計</button>
   </div>
 </main>
@@ -1041,6 +1046,19 @@ function setButtons(enabled) {
   $('nWeeks').disabled = !enabled;
 }
 
+/* 接続先が無い・読めない時の案内（品質改善 第3期 便5）。何が足りないかと、接続設定のどの欄に何を入れるかを書く。
+   ★現場端末では接続設定を開けないので、リンクを出さず事務所へ知らせる文にする */
+function soNoTargetMsg_() {
+  if (ovIsField_()) return 'この端末には週間計画・ワースケ・シフトの接続先が入っていません。事務所に知らせてください。';
+  return '週間計画・ワースケ・シフトの接続先が入っていません。接続設定の「週間計画・ワースケ・シフト」の欄に、接続先のURLと合言葉を入れてください。';
+}
+function soFetchFailMsg_() {
+  if (ovIsField_()) return 'データを取得できませんでした。通信環境をご確認ください。続く時は事務所に知らせてください。';
+  return 'データを取得できませんでした。通信環境と、接続設定の「週間計画・ワースケ・シフト」の接続先のURL・合言葉をご確認ください。';
+}
+/* 接続設定へのリンクは事務所PCだけに出す（接続設定は現場では開けない） */
+function showCsLink_(on) { const a = $('emptyCsLink'); if (a) a.hidden = !on || ovIsField_(); }
+
 let busy = false;
 let refreshPending = false;     // 取得中に来た再取得要求（週数変更等）。無言破棄するとセレクタと盤面の週数が食い違う
 let lastFetchFailed = false;    // 直近の取得が失敗したか。旧データを再表示する場面でラベルを偽らないために持つ
@@ -1049,12 +1067,13 @@ async function refresh() {
   busy = true;
   refreshPending = false;
   copyUsed_ = false;                               // 写しから表示中の帯は、この表示で読んだ分だけで決める
+  showCsLink_(false);                              // 接続設定へのリンクは、この表示で接続先が無い・読めない時だけ出す
   setButtons(false);
   const t = syncTarget();
   if (!t.endpoint) {
     $('boardEmpty').classList.add('on');
     $('bHeads').textContent = ''; $('bCanvas').textContent = '';
-    $('emptyMsg').textContent = '同期先が未設定です（ワースケ等の設定で接続先URL／トークンを登録してください）。';
+    $('emptyMsg').textContent = soNoTargetMsg_(); showCsLink_(true);
     setSyncState('未設定');
     applyCopyBand_(false);                         // 盤面を空にした＝写しの盤面は出ていない
     busy = false; setButtons(true);
@@ -1073,7 +1092,7 @@ async function refresh() {
       applyCopyBand_(false);                               // 盤面を空にした＝写しの盤面は出ていない（予定の型だけ写しから読めても帯は出さない）
       $('boardEmpty').classList.add('on');
       $('bHeads').textContent = ''; $('bCanvas').textContent = '';
-      $('emptyMsg').textContent = 'データを取得できませんでした。通信環境・接続先URL／トークンをご確認ください。';
+      $('emptyMsg').textContent = soFetchFailMsg_(); showCsLink_(true);
       setSyncState('取得失敗');
       toast('取得に失敗しました。通信環境・接続先をご確認ください', true);
       return;
@@ -1124,7 +1143,7 @@ function init() {
   const t = syncTarget();
   if (!t.endpoint) {
     $('boardEmpty').classList.add('on');
-    $('emptyMsg').textContent = '同期先が未設定です（ワースケ等の設定で接続先URL／トークンを登録してください）。';
+    $('emptyMsg').textContent = soNoTargetMsg_(); showCsLink_(true);
     setSyncState('未設定');
   }
 

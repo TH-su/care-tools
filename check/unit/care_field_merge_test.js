@@ -837,6 +837,7 @@ group('loadCloudHistory_ / restoreFromCloud_');
 {
   const cbox = el('restore-cloud');
   box.SYNC.hasTarget = () => true;
+  box.SYNC.friendlyErr = e => String(e);
   box.SYNC.gas = async () => ({ ok: true, generations: [
     { rev: 12, savedAt: '2026-08-30T02:00:00.000Z', bytes: 20480 },
     { day: '2026-08-30', savedAt: '2026-08-30T00:10:00.000Z', bytes: 20000 },
@@ -850,7 +851,7 @@ group('loadCloudHistory_ / restoreFromCloud_');
       /* サーバーが history を知らない旧版なら、理由を出す（黙って空にしない） */
       box.SYNC.gas = async () => ({ ok: false, error: 'unknown action' });
       await box.loadCloudHistory_();
-      eq('旧GASなら理由を出す', /planhistory/.test(cbox.innerHTML), true);
+      eq('旧GASなら理由を出す', /受け口がまだ古い版/.test(cbox.innerHTML), true);
 
       /* 実際に戻す＝足す（今ある予定は消えない） */
       box.DB = withEvents([ev('now1')]);
