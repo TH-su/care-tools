@@ -61,4 +61,6 @@ export const sheets = [
   { key: 'roster', arg: 'sc-roster', ready: '#roster tbody th.col-flr', prepare },      // 利用表（階の欄）
   { key: 'daylist', arg: 'sc-daylist', ready: '#tblDaylist th.c-sec', prepare },        // デイ利用者一覧表（区画の見出し・A3縦）
   { key: 'allweek', arg: 'sc-allweek', ready: '#tblAllweek th.sec-h', prepare },        // 全員リスト（区画の見出し）
+  { key: 'med', arg: 'sc-med', ready: '#tblMed th.c-sec', prepare },                    // 薬用（備考は画面だけ・便10）
+  { key: 'weekly', arg: 'sc-weekly', ready: '#printBatch table.wk', prepare },          // 週間名簿（6枚・右列の見出しは昼食場所・便10）
 ];
