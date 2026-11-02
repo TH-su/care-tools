@@ -46,13 +46,22 @@ export function parseArgs(argv) {
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.ico': 'image/x-icon' };
 
-/* 配布物をそのまま配る静的サーバー。GitHub Pages と同じく「ファイルがあれば返す・無ければ 404」だけ */
-export function startServer(dir, port = 0) {
+/* 配布物をそのまま配る静的サーバー。GitHub Pages と同じく「ファイルがあれば返す・無ければ 404」だけ
+   opts.facilityProfile（2026-11-02・施設の差し替えの試験 facility-swap.mjs）: 施設情報（オブジェクトか JSON の文字）を渡すと、
+   /facility-profile.json の要求にはそれをメモリから返す（ファイルは書かない）。渡さない時は今までどおり */
+export function startServer(dir, port = 0, opts = {}) {
   const root = path.resolve(dir);
+  const fpBody = opts && opts.facilityProfile != null
+    ? (typeof opts.facilityProfile === 'string' ? opts.facilityProfile : JSON.stringify(opts.facilityProfile)) : null;
   const server = http.createServer((req, res) => {
     try {
       let p = decodeURIComponent((req.url || '/').split('?')[0]);
       if (p.endsWith('/')) p += 'index.html';
+      if (fpBody != null && p === '/facility-profile.json') {
+        res.writeHead(200, { 'Content-Type': MIME['.json'], 'Cache-Control': 'no-store' });
+        res.end(fpBody);
+        return;
+      }
       let file = path.normalize(path.join(root, p));
       /* 本番の施設情報（facility-profile.json）は公開リポジトリに無い（2026-10-14〜・配信の時だけ置く）。
          撮影・手元の確かめの道具に限り、無ければ架空の見本を返す＝CI でも毎回同じ見本で撮れる。本番の画面は見本を読まない */

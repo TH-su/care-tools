@@ -3,7 +3,7 @@
 <head>
   <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-MsCYL9a50qt+2/1PaJuf6km/yRZSh4z3rld3ojqDLg0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-pKmtkBPtHZzFibaw5Yol065CVJNTUmfU4rHUtpRBVD4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="stfm-build" content="2026-10-11.1">
@@ -1472,8 +1472,8 @@ body.cmt-print{page:cmt}
 <!-- ?v= は staff-master-calc.js の VERSION と必ず一緒に動かす。ここが古いままだと、
      端末が古い算出モジュールを掴んだまま新しい画面を開く（2026-09-22.3 で同期）。 -->
 <!-- 施設情報（facility-profile.json）の読み口。委員会の熊本市基準を所在自治体と法人設定から決めるため（2026-10-11・#10） -->
-<script src="su-facility.js?v=2026-10-26"></script>
-<script src="staff-master-calc.js?v=2026-10-11.2"></script>
+<script src="su-facility.js?v=2026-11-02"></script>
+<script src="staff-master-calc.js?v=2026-11-02"></script>
 <!-- 職員の氏名の写し（不具合報告の伏せ字の名簿・2026-10-14）。事務所・管理者でログインしている時だけ書く。失敗しても画面は変わらない -->
 <script src="su-staff-names.js?v=2026-10-28"></script>
 <script>
@@ -5588,10 +5588,14 @@ function applyLocality() {
 }
 function applyLocalityNow() {
   var cs = typeof window.SUFacility.corpSettings === 'function' ? window.SUFacility.corpSettings() : {};
+  /* 法人設定の委員会の既定（2026-11-02・判断5）。書いていない・読み口の無い古い施設情報部品では null＝今の既定のまま。
+     形は計算部品（setLocality）が確かめ、崩れていれば丸ごと捨てる */
+  var cd = null;
+  try { cd = typeof window.SUFacility.section === 'function' ? window.SUFacility.section('committeeDefaults') : null; } catch (e) { cd = null; /* 捨ててよい: 読めなければ今の既定で動く */ }
   var changed = false;
   try {
     changed = SC().setLocality({ municipality: window.SUFacility.municipality(),
-      homeGuidelineName: cs.homeGuidelineName, homeGuidelineUrl: cs.homeGuidelineUrl });
+      homeGuidelineName: cs.homeGuidelineName, homeGuidelineUrl: cs.homeGuidelineUrl, committeeDefaults: cd });
   } catch (e) { changed = false; }
   if (!changed) return;
   buildCmtPicker();

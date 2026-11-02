@@ -24,6 +24,7 @@
  *   SUFacility.clinicOf(text)     … かかりつけ欄の文字が当たる医療機関の name（name か aliases のどれかを含む）。当たらなければ空
  *   SUFacility.corpSettings()     … 法人設定 {homeGuidelineName, homeGuidelineUrl}（未設定なら空文字。URL は https:// だけ）（2026-10-11・#10）
  *   SUFacility.support()          … 困った時の問い合わせ先 {contactName, contactTel, hours, emergency, replyTarget}（文字列だけ・未設定なら空文字）（2026-10-26 本人指示）
+ *   SUFacility.section(name)      … 画面ごとの設定の塊の写し（name は SECTIONS の名前だけ）。書いていなければ null。中身の形は読む画面が確かめる（2026-11-02）
  *
  * 端末の控え:
  *   読めた設定を localStorage（su_facility_json_v1）に控え、次の起動ではまず控えを使う（通信できなくても表示が崩れない）。
@@ -39,6 +40,13 @@
   var KINDS = ['施設', '訪問', '通所'];
   var GENERIC = { '施設': '施設', '訪問': '訪問介護', '通所': '通所介護' };
   var FIELDS = ['name', 'formalName', 'type', 'officeNo', 'address', 'tel'];
+  /* 画面ごとの設定の塊（2026-11-02）。名前 → facility-profile.json の中の場所。ここでは「JSON の塊であること」と大きさだけを見て丸ごと持ち、
+     中身の形（色の書き方・委員会の項目）は読む画面が確かめて、崩れていれば画面の既定に戻す */
+  var SECTIONS = {
+    scheduleColors: function (p) { return p.scheduleColors; },                                         /* 週間計画の A3 週間予定表の色 */
+    committeeDefaults: function (p) { return p.corpSettings && p.corpSettings.committeeDefaults; }      /* 職員マスタの委員会の出荷時の既定（法人設定） */
+  };
+  var SECTION_MAX = 50000;   /* 職員マスタの委員会を上限いっぱいに書いても収まる大きさ（9件×各欄の上限で約3万字） */
 
   var data = null, settled = false, waiters = [];
 
@@ -49,7 +57,17 @@
     if (!p || typeof p !== 'object' || !Array.isArray(p.offices)) return null;
     var out = { version: 1, corpName: str(p.corpName), facilityName: str(p.facilityName), municipality: str(p.municipality), offices: [], floors: [], roomPlan: null,
                 corpSettings: { homeGuidelineName: '', homeGuidelineUrl: '' }, apps: null, visitingClinics: [],
-                support: { contactName: '', contactTel: '', hours: '', emergency: '', replyTarget: '' } };
+                support: { contactName: '', contactTel: '', hours: '', emergency: '', replyTarget: '' }, sections: {} };
+    for (var sn in SECTIONS) {
+      if (!Object.prototype.hasOwnProperty.call(SECTIONS, sn)) continue;
+      var sv = null;
+      /* 端末の控え（norm 済みの形）から読む時は sections の中にある */
+      try { sv = (p.sections && typeof p.sections === 'object' && Object.prototype.hasOwnProperty.call(p.sections, sn)) ? p.sections[sn] : SECTIONS[sn](p); } catch (e) { sv = null; }
+      if (!sv || typeof sv !== 'object') continue;
+      var sj = '';
+      try { sj = JSON.stringify(sv); } catch (e) { sj = ''; }
+      if (sj && sj.length <= SECTION_MAX) out.sections[sn] = JSON.parse(sj);
+    }
     /* 訪問診療の医療機関（2026-10-14）。name は1〜40字、aliases は1〜40字の文字列だけ（空の名前・空の別名は捨てる＝空文字は何にでも当たるため） */
     if (Array.isArray(p.visitingClinics)) {
       for (var vc = 0; vc < p.visitingClinics.length && out.visitingClinics.length < 20; vc++) {
@@ -201,6 +219,12 @@
     corpSettings: function () {
       var c = data && data.corpSettings;
       return { homeGuidelineName: (c && c.homeGuidelineName) || '', homeGuidelineUrl: (c && c.homeGuidelineUrl) || '' };
+    },
+    section: function (name) {
+      var n = String(name == null ? '' : name);
+      if (!Object.prototype.hasOwnProperty.call(SECTIONS, n)) return null;
+      var v = data && data.sections && Object.prototype.hasOwnProperty.call(data.sections, n) ? data.sections[n] : null;
+      return v ? JSON.parse(JSON.stringify(v)) : null;
     },
     support: function () {
       var c = (data && data.support) || {};

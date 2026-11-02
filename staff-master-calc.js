@@ -24,7 +24,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-10-11.2';
+  var VERSION = '2026-11-02';
 
   /* ── 日付の下ごしらえ（すべて整数演算） ───────────────────────── */
 
@@ -1025,16 +1025,88 @@
     };
   }
 
+  /* ── 法人設定の委員会の既定（2026-11-02・代表者の決定 判断5）─────────
+     facility-profile.json の corpSettings.committeeDefaults に、COMMITTEE_DEFAULTS と同じ形の配列が書いてあれば、
+     画面と紙に出す既定（LOCAL_DEFAULTS の元）をそれで差し替える。所在自治体の置き換えはその上に当てる。
+       ・書いていない時は今と1字も変わらない（元は COMMITTEE_DEFAULTS そのもの）
+       ・1件でも形が崩れていれば丸ごと捨てて COMMITTEE_DEFAULTS を使う（一部だけ混ぜると委員会の組が壊れるため）
+     ★code の組は COMMITTEE_DEFAULTS と同じ9件に限る（足す・減らすは崩れ）。サーバー（staff-api.gs）は同じ9件の既定を
+       持っていて、既定にある委員会の根拠・種別などを保存値によらず自分の既定から引き直す。ここで知らない code を
+       足すと、画面の保存（setCommittees）で人が足した委員会としてサーバーに書かれてしまうため。
+       差し替わるのは「既定が正」の項目（種別・対象事業所・根拠・減算・何のため・研修・訓練・いつから・確認事項）と、
+       サーバーのマスタを受け取る前の表示と「既定に戻す」の値。名前・頻度・注記・URL はサーバーの値を出す（今と同じ）。
+     ★上限と形はサーバーの検証（validateCommittees_）と同じにする。通るのに保存で断られる既定を作らないため。 */
+  var CMT_ITEM_KEYS = ['code', 'label', 'sites', 'freq', 'basis', 'penalty', 'note', 'inactive', 'hasPenalty',
+                       'kind', 'alias', 'purpose', 'training', 'drill', 'todo', 'url', 'todoNote',
+                       'startedAt', 'siteStartedAt'];                        /* staff-api.gs の COMMITTEE_ITEM_KEYS と同じ */
+  var CMT_TEXT_KEYS = ['freq', 'basis', 'penalty', 'note', 'alias', 'purpose', 'training', 'drill', 'todoNote', 'startedAt'];
+  var CMT_LABEL_MAX = 60, CMT_TEXT_MAX = 200;                            /* staff-api.gs の COMMITTEE_LABEL_MAX・COMMITTEE_TEXT_MAX と同じ */
+  var BASE_DEFAULTS = COMMITTEE_DEFAULTS;                                 /* 所在自治体を当てる前の既定（法人設定があればその値） */
+  var BASE_KEY = '';                                                      /* 受け入れた法人設定の既定の写し（JSON）。無ければ空 */
+
+  /* 法人設定の既定を確かめる。形が合えば写し（配列）、崩れていれば null */
+  function normCommitteeDefaults(v) {
+    if (Object.prototype.toString.call(v) !== '[object Array]' || v.length !== COMMITTEE_DEFAULTS.length) return null;   /* 空・足りない・多いは崩れ */
+    var out = [], codes = {}, labels = {}, i, j, k;
+    for (i = 0; i < v.length; i++) {
+      var d = v[i];
+      if (!d || typeof d !== 'object') return null;
+      for (k in d) {
+        if (!Object.prototype.hasOwnProperty.call(d, k)) continue;
+        if (k.charAt(0) === '_') continue;                                /* 説明の欄（_note など）は読み飛ばす */
+        if (CMT_ITEM_KEYS.indexOf(k) < 0) return null;
+      }
+      /* code の形（英数字と _）は下の「COMMITTEE_DEFAULTS と同じ組」で決まる */
+      if (typeof d.code !== 'string' || Object.prototype.hasOwnProperty.call(codes, d.code)) return null;
+      if (typeof d.label !== 'string') return null;
+      var label = d.label.replace(/[\r\n\t]/g, ' ').trim();
+      if (!label || label.length > CMT_LABEL_MAX || Object.prototype.hasOwnProperty.call(labels, label)) return null;
+      if (normKind(d.kind) !== d.kind) return null;
+      if (Object.prototype.toString.call(d.sites) !== '[object Array]') return null;
+      for (j = 0; j < d.sites.length; j++) {
+        if (SITE_CODES.indexOf(d.sites[j]) < 0 || d.sites.indexOf(d.sites[j]) !== j) return null;
+      }
+      for (j = 0; j < CMT_TEXT_KEYS.length; j++) {
+        var tv = d[CMT_TEXT_KEYS[j]];
+        if (tv === undefined) continue;
+        if (typeof tv !== 'string' || tv.replace(/[\r\n\t]/g, ' ').trim().length > CMT_TEXT_MAX) return null;
+      }
+      if (d.url !== undefined && (typeof d.url !== 'string' || normUrl(d.url) !== trim(d.url))) return null;
+      if (d.siteStartedAt !== undefined && (typeof d.siteStartedAt !== 'string' || trim(d.siteStartedAt).length > SITE_STARTED_MAX)) return null;
+      if ((d.hasPenalty !== undefined && typeof d.hasPenalty !== 'boolean') ||
+          (d.todo !== undefined && typeof d.todo !== 'boolean') ||
+          (d.inactive !== undefined && typeof d.inactive !== 'boolean')) return null;
+      codes[d.code] = 1;
+      labels[label] = 1;
+      var o = {};
+      for (j = 0; j < CMT_ITEM_KEYS.length; j++) {
+        k = CMT_ITEM_KEYS[j];
+        if (Object.prototype.hasOwnProperty.call(d, k)) o[k] = (k === 'sites') ? d.sites.slice() : d[k];
+      }
+      out.push(o);
+    }
+    /* code の組は COMMITTEE_DEFAULTS と同じ（上の★） */
+    for (i = 0; i < COMMITTEE_DEFAULTS.length; i++) {
+      if (!Object.prototype.hasOwnProperty.call(codes, COMMITTEE_DEFAULTS[i].code)) return null;
+    }
+    return out;
+  }
+
   /* 所在自治体を反映する。変わらなければ false（画面は描き直さなくてよい）。
-     変われば既定を引き直し、受け取り済みのサーバーのマスタにも同じ規則（setCommittees）を当て直す */
+     変われば既定を引き直し、受け取り済みのサーバーのマスタにも同じ規則（setCommittees）を当て直す。
+     opt.committeeDefaults（法人設定の委員会の既定・省略可）も同じ時に当てる（上の「法人設定の委員会の既定」） */
   var LAST_SERVER_LIST = null;
   function setLocality(opt) {
     var loc = localityFrom(opt);
+    var base = normCommitteeDefaults(opt && opt.committeeDefaults);
+    var baseKey = base ? JSON.stringify(base) : '';
     var same = (loc === LOCALITY) || (loc !== LOC_KUMAMOTO && LOCALITY !== LOC_KUMAMOTO &&
       loc.municipality === LOCALITY.municipality && loc.name === LOCALITY.name && loc.short === LOCALITY.short && loc.url === LOCALITY.url);
-    if (same) return false;
+    if (same && baseKey === BASE_KEY) return false;
     LOCALITY = loc;
-    LOCAL_DEFAULTS = COMMITTEE_DEFAULTS.map(function (d) { return localizeDefault(d, loc); });
+    BASE_DEFAULTS = base || COMMITTEE_DEFAULTS;
+    BASE_KEY = baseKey;
+    LOCAL_DEFAULTS = BASE_DEFAULTS.map(function (d) { return localizeDefault(d, loc); });
     if (!(LAST_SERVER_LIST && setCommittees(LAST_SERVER_LIST))) COMMITTEES = LOCAL_DEFAULTS.map(function (d) { return fromDefault(d); });
     return true;
   }
