@@ -28,7 +28,8 @@ export const sheets = [];
 const DOW_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const toMin = (s) => { const [h, m] = s.split(':').map(Number); return h * 60 + m; };
 
-/* 週の型: 週間計画の訪問（dayOfWeek 0=日..6=土）を、型の曜日（0=月..6=日）へ移して列に詰める */
+/* 週の型: 週間計画の訪問を、曜日ごとに列に詰める。週間計画の dayOfWeek は 0=月..6=日（週間計画の DAYS_JA と同じ）で、
+   ワークスケジュールも同じ番号で型の曜日（DOW_KEYS）を引くので、そのまま使う（check/fixtures/flow.mjs の wsMaster と同じ） */
 function buildMaster() {
   const weekdays = {}; for (const k of DOW_KEYS) weekdays[k] = [];
   const lanes = {}; for (const k of DOW_KEYS) lanes[k] = [];
@@ -36,7 +37,7 @@ function buildMaster() {
   for (const r of residents) for (const e of r.events) if (e.serviceType === 'visit') all.push({ r, e });
   all.sort((a, b) => toMin(a.e.startTime) - toMin(b.e.startTime));
   for (const { r, e } of all) {
-    const key = DOW_KEYS[(e.dayOfWeek + 6) % 7];
+    const key = DOW_KEYS[e.dayOfWeek];
     const st = toMin(e.startTime), en = toMin(e.endTime);
     const ln = lanes[key];
     let slot = ln.findIndex((endAt) => endAt <= st);
