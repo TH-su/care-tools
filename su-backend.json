@@ -11,7 +11,8 @@
     "admission": true,
     "master_live": true,
     "training": true,
-    "training_ai": false,
+    "training_ai": true,
+    "training_ai_until": "2026-11-03T07:00:00+09:00",
     "master_ai": true,
     "weight": true,
     "staff": true
