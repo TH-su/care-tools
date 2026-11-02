@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-j0s5MiyIzc5uzsiczUHWn8m0EGdrJoUxE75muDFd+og='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-DfxAsBUBjqePfLXV2tRZhLq3LEGQXAQFeGRtHyN3YQw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -52,6 +52,8 @@ try{ const t = (JSON.parse(localStorage.getItem('wtmgr_ui_v1') || '{}') || {}).t
 })();
 </script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
+<!-- 施設情報（facility-profile.json）。食事形態の表示名を施設ごとに差し替える時だけ使う（書いていなければ画面の既定のまま・2026-11-02 便8） -->
+<script src="su-facility.js?v=2026-11-02.2"></script>
 <!-- 体重の写し（統合 0008・写しの期間）。supabase-js と su-auth.js は写す時にだけ読み込む -->
 <script src="su-weight-shadow.js?v=2026-10-28.2"></script>
 <script src="su-weight-live.js?v=2026-10-28.2"></script>
@@ -1557,6 +1559,68 @@ const mainMap = Object.fromEntries(MAIN_FORMS.map(x=>[x.v,x]));
 const sideMap = Object.fromEntries(SIDE_FORMS.map(x=>[x.v,x]));
 const mainLabel = v => mainMap[v]?.n || LEGACY_MAIN[v] || '—';
 const sideLabel = v => sideMap[v]?.n || LEGACY_SIDE[v] || '—';
+/* 食事形態の表示名を施設情報（facility-profile.json の mealForms）から差し替える（2026-11-02 便8）。
+   差し替えるのは MAIN_FORMS・SIDE_FORMS の n（表示名）だけ。v（保存の印）・量（min/max/step/def）・旧い値の表示（LEGACY_*）は変えない。
+   main・side はそれぞれ省略してよい（省略した方は既定）。書いた方は {印: 名前} で、知らない印・空・8字を超える名前・文字でない値が
+   1つでもあれば、その方は全部既定。差し替えた後の名前（既定の名前との組み合わせも含む）が同じ組の中で重なる時も、その方は全部既定
+   （同じ字のボタンが2つ並ぶと、違う形態を選んで保存できてしまうため）。8字は一覧の食事の段（折り返さない1行）が
+   iPhone の幅 375・390 の表示100%で行の中に収まる長さ（主食・副食とも8字で、行の右端まで約40〜50px残る）。名前は画面に出す所で escapeHtml か textContent を通す。 */
+const MEAL_FORM_DEF_N = {
+  main: Object.fromEntries(MAIN_FORMS.map(x=>[x.v, x.n])),
+  side: Object.fromEntries(SIDE_FORMS.map(x=>[x.v, x.n])),
+};
+function wrMealFormNames_(sec){
+  const out = { main: Object.assign({}, MEAL_FORM_DEF_N.main), side: Object.assign({}, MEAL_FORM_DEF_N.side) };
+  const isObj = o => !!o && typeof o === 'object' && !Array.isArray(o);
+  if(!isObj(sec)) return out;
+  for(const g of ['main','side']){
+    if(!Object.prototype.hasOwnProperty.call(sec, g)) continue;   /* 省略した方は既定 */
+    const m = sec[g];
+    if(!isObj(m)) continue;                                        /* 塊でない（null・配列・文字など）は既定 */
+    const def = MEAL_FORM_DEF_N[g], got = {};
+    let ok = true;
+    for(const k of Object.keys(m)){
+      const v = m[k];
+      if(!Object.prototype.hasOwnProperty.call(def, k) || typeof v !== 'string' || !v.trim() || v.trim().length > 8){ ok = false; break; }
+      got[k] = v.trim();
+    }
+    if(!ok) continue;
+    const merged = Object.assign({}, def, got);
+    const vals = Object.values(merged);
+    if(new Set(vals).size !== vals.length) continue;              /* 名前が重なる組は既定 */
+    out[g] = merged;
+  }
+  return out;
+}
+/* 今の施設情報で MAIN_FORMS・SIDE_FORMS の n を当て直す（毎回既定から組むので、施設情報から消えれば既定へ戻る）。変わった時だけ true */
+function wrApplyMealForms_(){
+  let sec = null;
+  try{
+    sec = (window.SUFacility && typeof SUFacility.section === 'function') ? SUFacility.section('mealForms') : null;
+  }catch(e){ sec = null; /* 捨ててよい: 読めない時は既定の名前で出す */ }
+  const nm = wrMealFormNames_(sec);
+  let changed = false;
+  MAIN_FORMS.forEach(x=>{ if(x.n !== nm.main[x.v]){ x.n = nm.main[x.v]; changed = true; } });
+  SIDE_FORMS.forEach(x=>{ if(x.n !== nm.side[x.v]){ x.n = nm.side[x.v]; changed = true; } });
+  return changed;
+}
+try{ wrApplyMealForms_(); }catch(e){ /* 捨ててよい: 当てられない時は既定の名前のまま動かす（起動を止めない） */ }   /* 端末の控えで読めていれば、選択肢を組む前に当てる */
+/* 施設情報が後から届いた時（控えが無い・控えと違う）。名前が変わった時だけ、選択肢の文字と今の画面を描き直す */
+if(window.SUFacility && typeof SUFacility.onReady === 'function') SUFacility.onReady(()=>{
+  if(!wrApplyMealForms_()) return;
+  try{
+    [['#mfMain', mainMap], ['#mfSide', sideMap], ['#mdMfMain', mainMap], ['#mdMfSide', sideMap]].forEach(([sel, map])=>{
+      const c = document.querySelector(sel);
+      if(!c) return;
+      c.querySelectorAll('button[data-v]').forEach(b=>{ const d = map[b.dataset.v]; if(d) b.textContent = d.n; });
+    });
+    const sc = document.querySelector('.scr.on')?.dataset.sc;
+    if(sc==='list')       renderList();
+    else if(sc==='indiv') renderIndiv();
+    else if(sc==='alert') renderAlerts();
+    renderInputMealDisplay();
+  }catch(e){ try{ if(window.SUErrors && typeof SUErrors.note === 'function') SUErrors.note('食事形態の名前の描き直し', e, 'weight:mealForms'); }catch(_){ /* 捨ててよい: 記録できない時も画面は動かす */ } }
+});
 
 const TOGGLES = [
   {k:'soupThick',  n:'汁とろみ',   short:'汁とろ'},
@@ -4433,7 +4497,7 @@ function renderList(){
     const togHtml = TOGGLES.filter(t=>mfSrc[t.k]).map(t=>`<span class="tg-chip">${t.short}</span>`).join('');
     const hasMf = !!(mfSrc.stapleForm || mfSrc.sideForm);
     const mfHtml = hasMf
-      ? `<span class="mf"><b>${mainLabel(mfSrc.stapleForm)}</b>${(mfSrc.stapleAmount!=null && isFinite(Number(mfSrc.stapleAmount)))?` ${Number(mfSrc.stapleAmount)}g`:''}/${sideLabel(mfSrc.sideForm)}</span>${togHtml?` ${togHtml}`:''}`
+      ? `<span class="mf"><b>${escapeHtml(mainLabel(mfSrc.stapleForm))}</b>${(mfSrc.stapleAmount!=null && isFinite(Number(mfSrc.stapleAmount)))?` ${Number(mfSrc.stapleAmount)}g`:''}/${escapeHtml(sideLabel(mfSrc.sideForm))}</span>${togHtml?` ${togHtml}`:''}`
       : '';
 
     /* 低栄養リスクが中・高の時は「良好」と並べない（矛盾して見えるため）。注意・警告の札はそのまま残す */
@@ -5181,7 +5245,7 @@ function buildFormButtons(containerSel, defs, group){
     b.className = 'mf-b';
     b.dataset.v = d.v;
     b.dataset.g = group;
-    b.innerHTML = `${d.n}${d.s?`<small>${d.s}</small>`:''}`;
+    b.innerHTML = `${escapeHtml(d.n)}${d.s?`<small>${d.s}</small>`:''}`;
     b.addEventListener('click', ()=>{
       if(group==='m'){
         const wasSame = (inStaple===d.v);
@@ -6766,8 +6830,8 @@ function drawHist(rid){
       <td><b>${wrWeightOk(r) ? r.weight.toFixed(1) : '—'}</b>${chairBadge?`<br>${chairBadge}`:''}${r.recheck === 'confirmed' ? '<br><span class="rc-badge" title="前回から大きく変わったため、測り直して同じ値だったことを確かめた記録">測り直し済み</span>' : ''}</td>
       <td>${bmiHtml}</td>
       <td>${diffHtml}</td>
-      <td>${mainLabel(r.stapleForm)}${r.stapleAmount!=null?`<span class="sa-chip">${escapeHtml(r.stapleAmount)}g</span>`:''}</td>
-      <td>${sideLabel(r.sideForm)}</td>
+      <td>${escapeHtml(mainLabel(r.stapleForm))}${r.stapleAmount!=null?`<span class="sa-chip">${escapeHtml(r.stapleAmount)}g</span>`:''}</td>
+      <td>${escapeHtml(sideLabel(r.sideForm))}</td>
       <td>${TOGGLES.filter(t=>r[t.k]).map(t=>`<span class="tg-chip">${t.short}</span>`).join('') || '<span style="color:var(--g5)">—</span>'}</td>
       <td style="text-align:start;max-width:180px;word-break:break-word;white-space:normal">${r.note?escapeHtml(r.note):'<span style="color:var(--g5)">—</span>'}</td>
       <td class="hist-act">
@@ -6958,7 +7022,7 @@ function renderAlerts(){
           <div class="al-ms">
             ${a.reasons.map(x=>`<div>${x}</div>`).join('')}
             ${ack ? `<div class="al-ack-info">✓ ${escapeHtml(wrAckText(ack))}</div>` : ''}
-            <div style="margin-top:4px;color:var(--g6)">対象月：<b>${ymFmt(ym)}</b>　体重：<b>${a.cur.weight.toFixed(1)}kg</b>${(()=>{const b=bmiOf(a.cur.weight,resident.heightCm);return b!=null?`　BMI：<b>${b.toFixed(1)}</b>`:'';})()}　食事：<b>${mainLabel(a.cur.stapleForm)}${a.cur.stapleAmount!=null?` ${escapeHtml(a.cur.stapleAmount)}g`:''}/${sideLabel(a.cur.sideForm)}</b>${(()=>{const t=TOGGLES.filter(x=>a.cur[x.k]).map(x=>x.n);return t.length?`　<b>${t.join('・')}</b>`:'';})()}</div>
+            <div style="margin-top:4px;color:var(--g6)">対象月：<b>${ymFmt(ym)}</b>　体重：<b>${a.cur.weight.toFixed(1)}kg</b>${(()=>{const b=bmiOf(a.cur.weight,resident.heightCm);return b!=null?`　BMI：<b>${b.toFixed(1)}</b>`:'';})()}　食事：<b>${escapeHtml(mainLabel(a.cur.stapleForm))}${a.cur.stapleAmount!=null?` ${escapeHtml(a.cur.stapleAmount)}g`:''}/${escapeHtml(sideLabel(a.cur.sideForm))}</b>${(()=>{const t=TOGGLES.filter(x=>a.cur[x.k]).map(x=>x.n);return t.length?`　<b>${t.join('・')}</b>`:'';})()}</div>
           </div>
         </div>
       `;
@@ -7099,7 +7163,7 @@ function buildMdFormButtons(containerSel, defs, group){
     b.className = 'mf-b';
     b.dataset.v = d.v;
     b.dataset.g = group;
-    b.innerHTML = `${d.n}${d.s?`<small>${d.s}</small>`:''}`;
+    b.innerHTML = `${escapeHtml(d.n)}${d.s?`<small>${d.s}</small>`:''}`;
     b.addEventListener('click', ()=>{
       if(group==='m'){
         const wasSame = (mdStaple===d.v);
