@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-E8nzEYPDEBpuisnpj7txXe3oDC0k5bg2atUVNoe/pno=' 'sha256-kwAifQBfvhff32cF5SUk9JG2jvWgV6uclGEK+W7/Hfs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-2d67pXuNEKHzfDvH6pt3BkZSXTsIq22mrIeTdZdgA00=' 'sha256-kwAifQBfvhff32cF5SUk9JG2jvWgV6uclGEK+W7/Hfs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -377,7 +377,35 @@ const SVC_CLS = {
   '生活２': 'life', '生活３': 'life',
 };
 // 総合事業コード → 盤面ラベル（略称）
+/* SOGO-LABEL-BEGIN（訪問俯瞰・全支援俯瞰で一字一句同じ。片方を直したら両方を同じに戻す・試験 check/unit/sogo_label_test.js）
+   総合事業コード → 盤面ラベル（略称）。既定はこの表。自治体ごとに違う略称は、週間計画の報酬マスタ（共有データ care_schedule_v2 の
+   rateMaster.sogoVisit[コード].label）に正しくある時だけ差し替える（代表者の決定 2026-11-02）。読むだけで書かない・通信は足さない。
+   ★知っている4コードだけを見る（マスタにだけあるコードは足さない＝色の分類も変えない）。マスタにそのコードが無い時はそのコードだけ既定。
+   ★略称は文字列・1〜8字・前後に空白なし・制御文字なし。1つでも崩れていれば（sogoVisit が無い・配列・行が物でない含む）表ごと既定に戻す。
+   ★画面へは textContent・title だけで出す。 */
 const SOGO_LABEL = { 'A21121': '【A11】', 'A21221': '【A12】', 'A2111': '【A21】', 'A21211': '【A22】' };
+let SOGO_LABEL_NOW = SOGO_LABEL;
+function sogoLabelFrom_(rm) {
+  try {
+    if (!rm || typeof rm !== 'object' || Array.isArray(rm)) return SOGO_LABEL;
+    const sv = rm.sogoVisit;
+    if (!sv || typeof sv !== 'object' || Array.isArray(sv)) return SOGO_LABEL;
+    const out = {};
+    for (const code of Object.keys(SOGO_LABEL)) {
+      if (!Object.prototype.hasOwnProperty.call(sv, code)) { out[code] = SOGO_LABEL[code]; continue; }
+      const s = sv[code];
+      if (!s || typeof s !== 'object' || Array.isArray(s)) return SOGO_LABEL;
+      const l = s.label;
+      if (typeof l !== 'string') return SOGO_LABEL;
+      const n = Array.from(l).length;
+      if (n < 1 || n > 8 || l !== l.trim() || /[\u0000-\u001f\u007f-\u009f]/.test(l)) return SOGO_LABEL;
+      out[code] = l;
+    }
+    return out;
+  } catch (e) { return SOGO_LABEL; /* 捨ててよい: 読めない報酬マスタは既定の略称で描く */ }
+}
+function sogoLabelApply_(rm) { SOGO_LABEL_NOW = sogoLabelFrom_(rm); }
+/* SOGO-LABEL-END */
 
 function codeClass(code) {
   if (SVC_CLS[code]) return SVC_CLS[code];
@@ -385,7 +413,7 @@ function codeClass(code) {
   return 'oth';
 }
 function codeLabel(code) {
-  if (SOGO_LABEL[code]) return SOGO_LABEL[code];
+  if (SOGO_LABEL_NOW[code]) return SOGO_LABEL_NOW[code];
   return code || '—';
 }
 // care タスクの支援コードを取り出す（7コードは svcCode・総合事業は label に入る）
@@ -685,8 +713,9 @@ function maskFrom(residents) {
 function loadMasksLocal() {
   try {
     const p = JSON.parse(localStorage.getItem(CARE_KEY) || 'null');
-    if (p && Array.isArray(p.residents)) return maskFrom(p.residents);
+    if (p && Array.isArray(p.residents)) { sogoLabelApply_(p.rateMaster); return maskFrom(p.residents); }
   } catch (e) {}
+  sogoLabelApply_(null);                                    // 共有データが無い＝総合事業の略称は既定（前回の値を残さない）
   return { hosp: {}, moved: {}, ext: {}, cuts: {} };
 }
 // マスクは GAS 最新を優先（退去/入院状態）→ 失敗時ローカル→ どちらも無ければ空（＝除外なし・安全側）。
@@ -695,7 +724,7 @@ function loadMasksLocal() {
 async function loadMasks() {
   try {
     const j = await gasCall({ action: 'get', key: CARE_KEY, token: TARGET.token });
-    if (j && j.data && Array.isArray(j.data.residents)) return maskFrom(j.data.residents);
+    if (j && j.data && Array.isArray(j.data.residents)) { sogoLabelApply_(j.data.rateMaster); return maskFrom(j.data.residents); }   // 同じ応答の報酬マスタから総合事業の略称を決める（読むだけ）
   } catch (e) {}
   return loadMasksLocal();
 }
