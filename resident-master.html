@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-5t4xCZZ5NBMYZauqpP6ElpZmXkO+Fw4Vk6972wlYzuU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-Ga6iPbzaNup786tuEBJShC+PxHo73gxzliurdl0AW0c='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -1746,18 +1746,18 @@ body.meal-on #sc-list{max-width:none}
       </select>
     </div>
     <div class="fld" style="margin-bottom:10px">
-      <label>GAS Web App URL</label>
+      <label>接続先のURL</label>
       <input id="cfgUrl" placeholder="https://script.google.com/macros/s/..../exec">
     </div>
     <div class="fld" style="margin-bottom:10px">
-      <label>アクセストークン</label>
-      <input id="cfgToken" placeholder="GASのスクリプトプロパティと一致させる">
+      <label>合言葉</label>
+      <input id="cfgToken" placeholder="管理者から伝えられた合言葉">
     </div>
     <div class="fld" style="margin-bottom:10px">
       <label>訪問診療アプリURL（任意）</label>
       <input id="cfgVmaUrl" placeholder="http://（別サイトのため端末ごとに異なります）">
     </div>
-    <p class="muted">URL・トークンはこの端末にのみ保存され、入居者の機微情報は端末に残しません。<br>
+    <p class="muted">URL・合言葉はこの端末にのみ保存され、入居者の機微情報は端末に残しません。<br>
       訪問診療アプリは別サイトのため、URLを登録した端末でだけ「🔗アプリ」に表示されます。</p>
     <!-- 効能辞書の点検（2026-08-11 追加・画面のみ／読み取り専用／氏名は出さない） -->
     <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--g2)">
@@ -2380,6 +2380,32 @@ function rmResFullAuto_(){
   },20000);
 }
 function parseJson(r){return r.text().then(function(t){var d;try{d=JSON.parse(t)}catch(e){throw new Error('応答が不正です')}if(d&&d.error)throw new Error(d.error);return d})}
+/* 職員に見せる断りの文（2026-11-02 品質改善 便4）: 技術の言葉（GAS・トークン・英語の例外文）を画面に出さない。
+   ・接続先が無い時の文 … 「何が足りないか」と「次にすること」を出す（入居調整の案内と同じ形）。一部の試験が関数だけを切り出して
+     動かすため、定数にせず各所に同じ文を書く（文は一字一句同じにする）
+   ・RM_SRV_OLD    … Google の受け口（入居者マスタの GAS）が古い時。職員がすること（管理者に連絡）と管理者がすることを分ける
+   ・rmErrWords_   … 例外の文を職員向けの短い言葉にする。元の文は動作記録（rmNote_）へ残す。
+     ラテン文字（Google・URL を除く）を含む文は英語の例外文・内部の印とみなして出さない。日本語だけの文（サーバーの断り）はそのまま。
+     ★通信の失敗（Failed to fetch・Load failed・時間切れ・中断など）は記録に流さない（圏外・現場の端末で自動の不具合報告を増やさない） */
+var RM_SRV_OLD='管理者に連絡してください（入居者マスタの Google の受け口の更新が必要です）';
+function rmErrWords_(e, where){
+  var m=String((e&&e.message)||e||'');
+  if(!/Failed to fetch|Load failed|NetworkError|network|timeout|timed out|abort|タイムアウト|時間切れ|届きませんでした|オフライン|^NO_URL$/i.test(m)) rmNote_(where||'断りの文', e);
+  if(m==='NO_URL') return '接続先が入っていません';
+  if(/不明なaction/.test(m)) return 'Google の受け口が古い版です';
+  if(/認証エラー/.test(m)) return '合言葉が通りませんでした';
+  if(!m||/[A-Za-z]/.test(m.replace(/Google|URL/g,''))) return '通信がうまくいきませんでした';
+  return m;
+}
+/* 接続先が無い時の案内（接続設定へのリンクつき）。外からの値は入れない（固定の文と textContent だけ） */
+function rmNoUrlGuide_(){
+  var d=document.createElement('div'); d.className='rm-nourl'; d.style.marginTop='10px';
+  d.appendChild(document.createTextNode('入居者マスタの接続先が入っていません。'));
+  var a=document.createElement('a'); a.href='connection-settings.html'; a.textContent='接続設定';
+  d.appendChild(a);
+  d.appendChild(document.createTextNode('の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）。'));
+  return d;
+}
 
 /* ═══════════ roster（軽量一覧） ═══════════ */
 var roster=[]; // [{id,name,kana,room,gender,careLevel,active,updatedAt,birthDate,height,hospitalized,dischargeDate}]（後4つは normRosterRow 参照）
@@ -2423,7 +2449,7 @@ function refreshRoster(){
   }).catch(function(e){
     if(dg!==devGen||getDeviceRole()==='field')return false;   // 同上（切り替え後の失敗は知らせない）
     setSync('オフライン','err');renderRoster();
-    if(e.message!=='NO_URL')toast('⚠️ 一覧の取得に失敗: '+e.message);
+    if(e.message!=='NO_URL')toast('⚠️ 一覧の取得に失敗しました（'+(typeof rmErrWords_==='function'?rmErrWords_(e,'一覧の取得'):'通信がうまくいきませんでした')+'）。少し待ってから、もう一度お試しください');
     return false;
   });
 }
@@ -2932,7 +2958,7 @@ function admAfterBk_(){
 function admEnsure(){
   if(getDeviceRole()==='field') return;   /* ★現場端末では取りに行かない（2026-10-01） */
   if(admMap||admLoading) return;
-  if(!CFG.url){ admErr='同期設定のURLが未設定です'; paintAdmBar(); return; }
+  if(!CFG.url){ admErr='入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）'; paintAdmBar(); return; }
   /* ★保存の後で控えが古い時（bkStale_）は使わずに取り直す（保存した入居日を出すため） */
   if(!bkStale_&&admFromBk_()){ paintAdmBar(); if(curView==='adm') renderRoster(); return; }   // 控えから作れた（呼び出し元は先に描いているので描き直す）
   admLoading=true; admErr=''; paintAdmBar();
@@ -3331,7 +3357,10 @@ function renderRoster(){
     paintShBars();
     return;
   }
-  if(!list.length){box.innerHTML='<div class="empty">'+(roster.length?'該当する入居者がいません':'入居者がいません。「同期設定」でURLを設定するか「新規」で登録してください')+'</div>';return}
+  if(!list.length){box.innerHTML='<div class="empty">'+(roster.length?'該当する入居者がいません':'入居者がいません。「同期設定」でURLを設定するか「新規」で登録してください')+'</div>';
+    /* 接続先が無い時は、何が足りないかと接続設定へのリンクを添える（2026-11-02 便4・現場端末は接続設定を使わないので出さない） */
+    if(!roster.length&&!CFG.url&&getDeviceRole()!=='field'){ if(box.firstChild) box.firstChild.appendChild(rmNoUrlGuide_()); }
+    return}
   var html;
   if(curView==='fl2'||curView==='fl4'){
     /* ★階が判定できない人（居室未登録等）を必ず「階未設定」として出す。
@@ -3511,7 +3540,7 @@ function bkEnsure(force){
   if(getDeviceRole()==='field') return;   /* ★現場端末では取りに行かない（2026-10-01） */
   if(bkLoading) return;
   if(bkRows&&!force) return;
-  if(!CFG.url){ bkErr='同期設定のURLが未設定です'; paintShBars(); return; }
+  if(!CFG.url){ bkErr='入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）'; paintShBars(); return; }
   var seq=bkStaleSeq_;
   /* ★出した時の世代。応答を待つ間に現場用へ切り替わったら（devGen が進む）、届いた応答は捨てる（2026-10-01） */
   var dg=devGen;
@@ -4626,7 +4655,7 @@ function fullEnsure(force){
   if(getDeviceRole()==='field') return;
   if(fullLoading) return;
   if(fullMap&&!force) return;
-  if(!CFG.url){ fullErr='同期設定のURLが未設定です'; paintShBars(); return; }
+  if(!CFG.url){ fullErr='入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）'; paintShBars(); return; }
   var ids=shBase().map(function(r){ return r.id; });
   if(!ids.length){ fullErr='在籍者が居ません'; paintShBars(); return; }
   var gen=++fullGen;
@@ -5622,7 +5651,7 @@ function mdLoad_(force, retry){
   /* ★現場端末では取りに行かない。薬剤情報は現場に出さない（SAFE_FIELDS に medsRegular が無い） */
   if(getDeviceRole()==='field') return Promise.reject(new Error('FIELD'));
   if(!medsFxOk_()){ mdErr=MEDS_FX_NG; paintShBars(); return Promise.reject(new Error(MEDS_FX_NG)); }
-  if(!CFG.url){ mdErr='同期設定のURLが未設定です'; paintShBars(); return Promise.reject(new Error('NO_URL')); }
+  if(!CFG.url){ mdErr='入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）'; paintShBars(); return Promise.reject(new Error('NO_URL')); }
   mdLoading=true; mdErr=''; paintShBars();
   mdPromiseRetry=!!retry;
   var gen=mdGen;
@@ -5639,8 +5668,8 @@ function mdLoad_(force, retry){
     if(gen!==mdGen) return;
     var m=String((e&&e.message)||e||'');
     mdErr = /不明なaction/.test(m)
-      ? '薬効辞書はまだ使えません（入居者マスタGASの貼り替えが必要です）'
-      : ('薬効辞書を取得できませんでした'+(m?('：'+m):''));
+      ? ('薬効辞書はまだ使えません。'+RM_SRV_OLD)
+      : ('薬効辞書を取得できませんでした'+(m?('：'+rmErrWords_(e,'薬効辞書の取得')):''));
   })
     .then(function(){
       /* 世代が変わっていたら状態には一切触れない（mdLoading/mdPromise は applyDeviceGuard が戻し済み） */
@@ -6068,7 +6097,7 @@ function mdSave(){
     if(ren[ri].effect!=='') renItems.push({name:ren[ri].to, effect:ren[ri].effect, ok:ren[ri].ok});
   items=items.concat(dels).concat(hides).concat(renItems);
   if(!items.length){ toast('変更がありません（変えた行・消す行・隠す行だけを保存します）'); return; }
-  if(!CFG.url){ toast('同期設定のURLが未設定です',false); return; }
+  if(!CFG.url){ toast('入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）',false); return; }
   if($('mdSave')) $('mdSave').disabled=true;
   mdBusy='保存しています…'; paintShBars();
   mdRenameGuard_(ren).then(function(gd){
@@ -6100,8 +6129,8 @@ function mdSave(){
        次に開いた時に戻ってくる（無言の取りこぼし・multi-device-sync 原則7）。
        送ったのに件数が返らない時は【失敗として扱い、印を残す】（2026-09-08 レビュー H-2）。 */
     if(hides.length && !((d&&d.hidden)||(d&&d.shown)))
-      throw new Error('薬効辞書のGAS（入居者マスタの Apps Script プロジェクト・ファイル med-dict）が'+
-                      '古い版のため、一覧から外す指示が反映されませんでした');
+      throw new Error('一覧から外す指示が反映されませんでした。'+
+                      '管理者に連絡してください（薬効辞書の Google の受け口の更新が必要です）');
     /* 保存できたので編集メモリ・削除の印・手入力の控えは捨てる */
     mdClearPending_();
     toast('保存しました（追加'+((d&&d.added)||0)+'・更新'+((d&&d.updated)||0)+
@@ -6147,13 +6176,13 @@ function mdSave(){
         renderRoster();
       }else{
         if($('mdSave')) $('mdSave').disabled=false;
-        toast('保存できませんでした：'+String((e&&e.message)||e)+
+        toast('保存できませんでした：'+rmErrWords_(e,'薬効辞書の保存')+
               '（'+want+'件中 '+n+'件は入っていました）',false);
       }
     }).catch(function(){
       if(gen!==mdGen) return;
       if($('mdSave')) $('mdSave').disabled=false;
-      toast('保存できたか確認できませんでした：'+String((e&&e.message)||e),false);
+      toast('保存できたか確認できませんでした：'+rmErrWords_(e,'薬効辞書の保存'),false);
     }).then(function(){ if(gen!==mdGen) return; paintShBars(); });
   });
   });   /* mdRenameGuard_ の then を閉じる */
@@ -6438,7 +6467,7 @@ function mcPaint_(){
   if(bar){
     var n=mcSt?mcSt.cands.length:0, note='';
     if(mcSt&&!mcSt.loading){
-      if(mcSt.server==='old') note='入居者マスタGASの貼り替えがまだのため、使えません';
+      if(mcSt.server==='old') note='まだ使えません。'+RM_SRV_OLD;
       else if(mcSt.server==='ng') note='判断の記録を読めませんでした（通信）。少し待って開き直してください';
       else if(mcSt.msk==='none') note='申送ビューアの接続が未設定のため、候補を作れません';
       else if(mcSt.msk==='ng') note='申送を読めませんでした（通信）';
@@ -6594,7 +6623,7 @@ function mcBulkRun_(){
       var m=String(e&&e.message||e);
       /* ★確実に書いていない失敗と、届いたか分からない失敗を分けて知らせる（1件ずつの「反映しない」と同じ） */
       b.busy=false; b.msg='途中で止めました（'+ok+'件は残しました）。'+
-        (mcNoWrite_(m)?'最後の1件は何も書いていません（'+m+'）':'最後の1件は残せたか確かめられませんでした（'+m+'）。一覧を取り直して確かめてください');
+        (mcNoWrite_(m)?'最後の1件は何も書いていません（'+rmErrWords_(m,'変更候補のまとめ')+'）':'最後の1件は残せたか確かめられませんでした（'+rmErrWords_(m,'変更候補のまとめ')+'）。一覧を取り直して確かめてください');
       mcLoad_(); mcPaintModal_();
     });
   }
@@ -6634,7 +6663,7 @@ function mcFetchRec_(cur,msgAfter){
     cur.after=cur.before; cur.ai=null; cur.edited=false; cur.ack=false; cur.loaded=true; cur.msg=msgAfter||'';
   }).catch(function(e){
     if(gen!==mcWorkGen||dg!==devGen||mcCur!==cur) return;
-    cur.msg='読み込めませんでした: '+String(e&&e.message||e);
+    cur.msg='読み込めませんでした: '+rmErrWords_(e,'定期薬の読み込み');
   }).then(function(){ if(mcCur===cur){ cur.busy=false; mcPaintModal_(); } });
 }
 /* 差分（追加・中止・変更）。サーバーの変更履歴（_mhDiff）と同じ数え方 */
@@ -6847,9 +6876,9 @@ function mcApply_(){
     if(dg!==devGen) return;
     var m=String(e&&e.message||e);
     /* ★書き込みは再試行しない（同じ反映が2回通らないように）。届いたか分からない時は読み直しを促す */
-    if(mcNoWrite_(m)){ cur.msg=(/不明なaction/.test(m)?'入居者マスタGASの貼り替えがまだです':'反映できませんでした（'+m+'）')+'（何も書いていません）'; return; }
+    if(mcNoWrite_(m)){ cur.msg=(/不明なaction/.test(m)?('まだ反映できません。'+RM_SRV_OLD):'反映できませんでした（'+rmErrWords_(m,'定期薬の反映')+'）')+'（何も書いていません）'; return; }
     cur.loaded=false;
-    mcRecheck_(cur,'反映できたか確かめられませんでした（'+m+'）。閉じて、この方の定期薬と変更履歴を確かめてください（もう一度押さないでください）',true);
+    mcRecheck_(cur,'反映できたか確かめられませんでした（'+rmErrWords_(m,'定期薬の反映')+'）。閉じて、この方の定期薬と変更履歴を確かめてください（もう一度押さないでください）',true);
   }).then(function(){ cur.busy=false; cur.writing=false; if(mcCur===cur) mcPaintModal_(); });
 }
 function mcSkip_(){
@@ -6873,7 +6902,7 @@ function mcSkip_(){
   }).catch(function(e){
     if(dg!==devGen) return;
     var m=String(e&&e.message||e);
-    cur.msg=mcNoWrite_(m)?((/不明なaction/.test(m)?'入居者マスタGASの貼り替えがまだです':'残せませんでした（'+m+'）')+'（何も書いていません）'):'残せたか確かめられませんでした（'+m+'）';
+    cur.msg=mcNoWrite_(m)?((/不明なaction/.test(m)?('まだ残せません。'+RM_SRV_OLD):'残せませんでした（'+rmErrWords_(m,'変更候補の判断')+'）')+'（何も書いていません）'):'残せたか確かめられませんでした（'+rmErrWords_(m,'変更候補の判断')+'）';
   }).then(function(){ cur.busy=false; cur.writing=false; if(mcCur===cur) mcPaintModal_(); });
 }
 function mcWire_(){
@@ -7141,7 +7170,7 @@ function yjStartDoc_(i, msgAfter){
     cur.loaded=true; cur.msg=msgAfter||'';
   }).catch(function(e){
     if(gen!==yjGen||dg!==devGen||!yjSt||yjSt.cur!==cur) return;
-    cur.msg='読み込めませんでした: '+String(e&&e.message||e);
+    cur.msg='読み込めませんでした: '+rmErrWords_(e,'定期薬の読み込み');
   }).then(function(){ if(yjSt&&yjSt.cur===cur){ cur.busy=false; yjPaint_(); } });
 }
 /* 与薬チェックの時間帯の読み取りで「確認なしで読める」形か（読めない時は印） */
@@ -7295,7 +7324,7 @@ function yjApply_(){
     if(dg!==devGen) return;
     var m=String(e&&e.message||e);
     /* ★書き込みは再試行しない。届いたか分からない時は確かめ中にする */
-    if(mcNoWrite_(m)){ c.msg=(/不明なaction/.test(m)?'入居者マスタGASの貼り替えがまだです':'反映できませんでした（'+m+'）')+'（何も書いていません）'; return; }
+    if(mcNoWrite_(m)){ c.msg=(/不明なaction/.test(m)?('まだ反映できません。'+RM_SRV_OLD):'反映できませんでした（'+rmErrWords_(m,'定期薬の反映')+'）')+'（何も書いていません）'; return; }
     x.status='unsure'; if(yjSt&&yjSt.cur===c){ yjSt.cur=null; yjSt.phase='queue'; }
   });
   }).then(function(){ c.busy=false; c.writing=false; if(yjSt) yjPaint_(); });
@@ -7313,8 +7342,8 @@ function yjPaint_(){
   }
   var pg=box.querySelector('.yj-pages'), keepPg=pg?pg.scrollTop:0, keepBody=box.scrollTop;
   var h='';
-  if(S.server==='old') h+='<p class="yj-stop">入居者マスタGASの貼り替えがまだのため、反映はできません（読み込み・振り分け・確認表は見られます）。</p>';
-  else if(S.server==='ng') h+='<p class="yj-warn">⚠ 入居者マスタGASに届きません。少し待って開き直してください。</p>';
+  if(S.server==='old') h+='<p class="yj-stop">まだ反映はできません（読み込み・振り分け・確認表は見られます）。'+RM_SRV_OLD+'。</p>';
+  else if(S.server==='ng') h+='<p class="yj-warn">⚠ 入居者マスタの Google の受け口に届きません。少し待って開き直してください。</p>';
   if(S.phase==='open'){
     h+='<p class="yj-lead">事務所の Mac の「薬情よみとり」で作った結果のファイル（薬情よみとり_日付.json）を選んでください。'+
       'ファイルはこの画面の中だけで読み、端末にもサーバーにも保存しません（閉じると消えます）。</p>'+
@@ -7906,7 +7935,7 @@ function mdAiFill(){
 }
 /* 中継の断り・時間切れを、画面の言葉に（効能の下書きと薬の変更候補の下書きで共通） */
 function mdAiWhy_(code){
-    var why={AI_NO_KEY:'サーバー（個別機能訓練計画書の専用GAS）にAIのキーが入っていません。管理者に連絡してください',
+    var why={AI_NO_KEY:'サーバー（個別機能訓練計画書の Google の受け口）にAIのキーが入っていません。管理者に連絡してください',
              AI_LIMIT:'今日のAIの利用回数の上限に達しました。明日もう一度お試しください',
              AI_PROXY_OLD:'サーバーが古い版で、AIの中継が入っていません。管理者に連絡してください',
              AI_PROXY_AUTH:'訓練計画の接続設定の合言葉が通りませんでした',
@@ -7915,7 +7944,7 @@ function mdAiWhy_(code){
              AI_TIMEOUT:'AIの返事が時間内に届きませんでした。少し待ってから、もう一度お試しください',
              AI_FETCH:'サーバーからAIへの通信に失敗しました（時間切れの可能性）。少し待ってから、もう一度お試しください',
              AI_BUSY:'サーバーが混み合っています。少し待ってから、もう一度お試しください',
-             AI_PROXY:'計画書の専用GASから正しい応答がありませんでした。もう一度お試しください',
+             AI_PROXY:'個別機能訓練計画書の Google の受け口から正しい応答がありませんでした。もう一度お試しください',
              AI_BAD_JSON:'AIの返事を読み取れませんでした。もう一度お試しください',
              AI_NETWORK:'AIに接続できませんでした。通信を確かめてから、もう一度お試しください',
              /* 新しい受け口（su-ai・スイッチ master_ai）だけが返す断り（2026-11-01） */
@@ -7923,7 +7952,7 @@ function mdAiWhy_(code){
              AI_FORBIDDEN:'このアカウントではAIを使えません。事務所・管理者のアカウントでログインし直してください',
              AI_NAME_FOUND:'送る文に入居者のお名前が入っていたため、AIへ送りませんでした（何も送っていません）'}[code];
     if(why) return why;
-    if(/^AI_HTTP_\d+$/.test(code)) return 'AIから正しい応答がありませんでした（HTTP '+code.slice(8)+'）。少し待ってから、もう一度お試しください';
+    if(/^AI_HTTP_\d+$/.test(code)) return 'AIから正しい応答がありませんでした（応答の番号 '+code.slice(8)+'）。少し待ってから、もう一度お試しください';
     if(/^AI_[A-Z0-9_]+$/.test(code)) return 'AIに尋ねられませんでした（'+code+'）';
     return 'AIに接続できませんでした。通信を確かめてから、もう一度お試しください';   /* fetch の英語の例外文などはそのまま出さない */
 }
@@ -8026,7 +8055,7 @@ function mealLoad(force){
   if(getDeviceRole()==='field') return;
   if(mealLoading||mealSaving) return;
   if(mealRows&&!force) return;
-  if(!CFG.url){ mealRows=null; mealSetMsg_('同期設定のURLが未設定です'); paintMealBar(); renderRoster(); return }
+  if(!CFG.url){ mealRows=null; mealSetMsg_('入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）'); paintMealBar(); renderRoster(); return }
   var seq=++mealSeq;
   var dg=devGen;   // 出した時の世代。現場用へ切り替わった後に届いた応答は捨てる（mealSeq は保存の確認と共用なので進めない）（2026-10-01）
   mealLoading=true; mealSetMsg_('取得中…'); paintMealBar(); renderRoster();
@@ -8051,7 +8080,7 @@ function mealLoad(force){
        フェイスシートには1人ずつ取得の逃げ道があるが、こちらは【編集】が目的で、
        保存の口（saveMealList）も同じ貼り替えで入るため、逃げ道を作らず貼り替えを促す。 */
     mealSetMsg_(/不明なaction/.test(String((e&&e.message)||''))
-      ? '入居者マスタGASの更新がまだです（getMealList が無い版）。手順書「DEPLOY-食形態一覧.md」のとおり貼り替えと再デプロイをしてください'
+      ? '食形態一覧を読めません。'+RM_SRV_OLD+'（管理者向け：手順書「DEPLOY-食形態一覧.md」のとおり貼り替えて公開し直してください）'
       : '取得に失敗しました: '+((e&&e.message)||e));
     paintMealBar(); renderRoster();
   });
@@ -8264,8 +8293,8 @@ function mealSaveGo(){
     var m=String((e&&e.message)||e);
     if(/不明なaction/.test(m)){
       setSync('保存失敗','err'); mealSetMsg_('');
-      alert('入居者マスタGASの更新がまだのため保存できませんでした（saveMealList が無い版）。\n'+
-        '1文字も書き込んでいません。手順書「DEPLOY-食形態一覧.md」のとおり貼り替えと再デプロイをしてください。');
+      alert('保存できませんでした。1文字も書き込んでいません。\n'+
+        RM_SRV_OLD+'。\n（管理者向け：手順書「DEPLOY-食形態一覧.md」のとおり貼り替えて公開し直してください）');
       mealSaving=false; paintMealBar(); return;
     }
     /* ★§13: 失敗表示でも書けていることがある。getMealList で実物を突き合わせる（H2と同じ方針） */
@@ -8529,7 +8558,7 @@ function openResident(id){
   $('viewBox').innerHTML='<div class="loading">読み込み中…</div>';
   if($('viewToc'))$('viewToc').hidden=true;   /* 前の方の目次を残さない（2026-10-16 第2弾） */
   paintHospBtn(null);   // 取得できるまでは入院トグルを出さない（前の人の状態で押させない）
-  if(!CFG.url){$('viewBox').innerHTML='<div class="empty">同期設定のURLが未設定です</div>';return}
+  if(!CFG.url){$('viewBox').innerHTML='<div class="empty">同期設定のURLが未設定です</div>';if(typeof rmNoUrlGuide_==='function'&&getDeviceRole()!=='field'&&$('viewBox').firstChild)$('viewBox').firstChild.appendChild(rmNoUrlGuide_());return}
   /* ★現場端末では取りに行かない（保険・2026-10-01）。ブロック表示の下で取りに行かない。この画面は現場端末では使えない */
   if(getDeviceRole()==='field') return;
   /* 薬効辞書（med_dict）も同時に取りに行く（2026-09-24 本人決定・案A）。
@@ -10260,7 +10289,7 @@ function hospApplyPend_(rec){
 }
 function toggleHosp(){
   if(!curResident||curResident.id==null)return;
-  if(!CFG.url){toast('⚠️ 同期設定のURLが未設定です');return}
+  if(!CFG.url){toast('⚠️ 入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）');return}
   var next=!curResident.hospitalized, b=$('hospBtn');
   /* ★取り直しで照合する時のために「誰の・どちらへの変更か」を控える。
      応答を待つ間に別の方を開かれても、控えた id で判定すれば取り違えない。 */
@@ -12010,7 +12039,7 @@ function collectForm(){
 function saveResident(){
   var rec=collectForm();
   if(!rec.name){toast('⚠️ 氏名は必須です');return}
-  if(!CFG.url){toast('⚠️ 同期設定のURLが未設定です');return}
+  if(!CFG.url){toast('⚠️ 入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）');return}
   rec.updatedAt=new Date().toISOString();
   if(typeof rmWho_==='function'){ rec.updatedBy=rmWho_(); rec.updatedByAt=rec.updatedAt; }   /* 最後に直した人（GAS は dataJson に丸ごと残す） */
   /* ★baseUpdatedAt は record の外に添える（旧GASは未知の項目を無視＝後方互換。
@@ -13324,7 +13353,7 @@ function testSync(){
       if(v==='wrong') alert('⚠️ '+MASTER_WRONG_MSG+'。');
       else toast(v==='ok'?'✅ 接続OK（入居者マスタのGASと確認）':'✅ 接続OK');
     });
-  }).catch(function(e){toast('⚠️ 接続失敗: '+e.message)}).then(function(){CFG.url=saved.url;CFG.token=saved.token});
+  }).catch(function(e){toast('⚠️ つながりませんでした（'+rmErrWords_(e,'接続テスト')+'）。URLと合言葉を確かめてください')}).then(function(){CFG.url=saved.url;CFG.token=saved.token});
 }
 
 /* ═══════════ 一括編集 ═══════════ 2026-08-08 追加
@@ -13493,7 +13522,7 @@ function bulkFamBuild(r, dirty){
 }
 
 function openBulk(){
-  if(!CFG.url){ toast('⚠️ 同期設定のURLが未設定です'); return; }
+  if(!CFG.url){ toast('⚠️ 入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）'); return; }
   $('mBulk').classList.add('on');
   navEnter();   // 戻る（スワイプ）1回で、ページを出ずにこのモーダルを閉じられるようにする
   if(bulkRows){ renderBulk(); return; }
@@ -13978,12 +14007,12 @@ function saveBulkGo_(changes,nmv){
          関係の無いGASの貼り替えへ現場を誘導する（2026-09-02 レビュー指摘 M-4）。 */
       /* 家族・薬剤も 2026-09-07 に足した項目。古いGASのままだと同じ形で弾かれる */
       var hint2=/「(家族情報|薬剤情報（定期）|頓服・外用等|薬備考|注意を要する薬剤|剤形配慮|服薬拒否)」は一括編集できません/.test(det)
-        ? '\n\n※ 家族情報と薬剤情報の一括編集は、入居者マスタのGAS（Apps Script「入居者マスタAPI」）の'
-          +'貼り替えが済むまで使えません。データは1文字も変わっていません。'
+        ? '\n\n※ 家族情報と薬剤情報の一括編集は、まだ使えません。データは1文字も変わっていません。'
+          +'\n'+RM_SRV_OLD+'。'
         : '';
       var hint=((nmv.spaceOnly.length||nmv.keyChanged.length)&&/「name」は一括編集できません/.test(det))
-        ? '\n\n※ 氏名の一括編集は、入居者マスタのGAS（Apps Script「入居者マスタAPI」）の貼り替えが'
-          +'済んでいないと使えません。貼り替えるまで、氏名以外の項目は従来どおり保存できます。'
+        ? '\n\n※ 氏名の一括編集は、まだ使えません。氏名以外の項目は従来どおり保存できます。'
+          +'\n'+RM_SRV_OLD+'。'
         : '';
       /* ★サーバーがロックを外す前の確定（flush）を確かめられなかった時（2026-09-23）は、
          書き込めている方がいることがある。「1文字も書き込んでいません」と断定しない。
