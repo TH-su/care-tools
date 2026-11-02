@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-wpeWW6EUGlcetD1aM4UkBYRxuZ7QkxzAyKoCHNqQLWU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ecqJJCzvkwrXi1pOCYFnSdc+rC33x9fu+PzNO8JI1oA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -1217,9 +1217,11 @@ function dcrRefreshStarsIfStale_(tries) {
   return dcrFetchMasterHosp(true).then(ok => { if (ok && typeof DB !== 'undefined' && DB) renderAll(DB); return ok; });
 }
 /* {{階順}}＝居室の階の並び（「２階→１階」。名前は施設情報の floors から・dcrFloorLabel_・2026-11-02 便8）。使う所でだけ呼ぶ（関数で置き換える） */
+/* {{居室の1階:既定}}＝居室の１階の名前（施設情報の floors・dcrFloorNames_ の規則＝1〜4字・両方そろう時だけ・便8・代表者の決定 2026-11-02）。
+   名前が既定（FLOOR_LABEL の「１階」）のままの時は「:」の後ろの既定（今の文字・半角の「1階」）を出す＝見本・既定の施設では一字一句今のまま。昼食場所の呼び名（daycareNotes）では替えない。 */
 /* {{昼食場所:既定}}・{{デイの場所:既定}}＝昼食場所・デイの場所の呼び名（施設情報の daycareNotes から・dcrNotesWord_・2026-11-02 便10）。
    ★最後に置き換える＝差し込んだ呼び名の中の {{…}} をもう一度置き換えない。塊が無い・崩れている時は「:」の後ろの既定（今の文字）をそのまま出す */
-function dcrFill(t) { const n = dcrOfficeName(); return String(t).replace(/\{\{通所名\}\}/g, n || 'デイ').replace(/\{\{訪問診療\}\}/g, dcrClinicLabel_()).replace(/\{\{階順\}\}/g, () => dcrFloorLabel_(2) + '→' + dcrFloorLabel_(1)).replace(/\{\{(昼食場所|デイの場所):([^{}]*)\}\}/g, (a, k, d) => dcrNotesWord_(k, d)); }
+function dcrFill(t) { const n = dcrOfficeName(); return String(t).replace(/\{\{通所名\}\}/g, n || 'デイ').replace(/\{\{訪問診療\}\}/g, dcrClinicLabel_()).replace(/\{\{階順\}\}/g, () => dcrFloorLabel_(2) + '→' + dcrFloorLabel_(1)).replace(/\{\{(昼食場所|デイの場所):([^{}]*)\}\}/g, (a, k, d) => dcrNotesWord_(k, d)).replace(/\{\{居室の1階:([^{}]*)\}\}/g, (a, d) => { const f1 = dcrFloorNames_()[1]; return f1 === FLOOR_LABEL[1] ? d : f1; }); }
 /* ── 昼食場所・デイの場所の呼び名（2026-11-02 品質改善 第3期 便10・代表者の決定 2026-11-02「全て進めて」）──
    この画面の「２階」には2つの意味がある。居室の階（階の見出し・施設情報の floors・便8）と、
    『その日デイに行かない方が昼食を摂る場所』（デイ休み（２階で昼食）・２階合計・週間名簿の右列の見出し・訪問診療の案内の２階ホール・備考の「それ以外は2階へ」・凡例）。
@@ -2018,7 +2020,7 @@ const DAYLIST_NOTES = [
   '営業します',
   '★黄色で色付けしている方は入浴ありの方です',
   '裏側に訪問診療一覧表をつけています',
-  '施設職員は1階の方の誘導もお願いします'
+  '施設職員は{{居室の1階:1階}}の方の誘導もお願いします'   // 「1階」は居室の階（1階の入居者）＝施設情報の floors の名前（代表者の決定 2026-11-02）
 ];
 
 function sectionRows(tbody, ppl, label, isDei, showBath, showStar, floorKey) {
@@ -3189,7 +3191,7 @@ function init() {
 init();
 </script>
 <!-- 見出しの下の初回の案内の帯（2026-11-02 本人の決定）。×で閉じた端末では出さない。画面の動き・保存・印刷には触れない -->
-<script src="su-intro.js?v=2026-11-02.2"></script>
+<script src="su-intro.js?v=2026-11-02.3"></script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
 <script src="su-report.js?v=2026-10-28" data-tool="通所 利用表"></script>
 </body>
