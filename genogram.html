@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4tatwB5n4oQfG1K2BhClN4+9jBVdFhmNYce1TbRTqzo=' 'sha256-gbaE+u9IWYeHR1KtOOySJa5eAEujbn3R1jm+3YbXsNs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4tatwB5n4oQfG1K2BhClN4+9jBVdFhmNYce1TbRTqzo=' 'sha256-L161F5mNYBVQ6h5kXmzqzw26TeaLP6MNFwQTC3WrtnY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 入居者情報を表示する画面のため、ブラウザ・中継キャッシュに残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -311,10 +311,11 @@ textarea.fi{resize:vertical;min-height:60px}
       <div class="setup-first" id="cfgFirstGuide">
         <strong>この端末で使い始める（職員の方）</strong>
         <ol class="setup-list">
-          <li>管理者から「GAS の URL」と「合言葉」を受け取ります（接続設定の画面でまとめて設定した端末には、もう入っています）。</li>
+          <li>管理者から「Google の受け口の URL」と「合言葉」を受け取ります（接続設定の画面でまとめて設定した端末には、もう入っています）。</li>
           <li>下の「設定入力」に2つとも貼り付けます。</li>
-          <li>「接続テスト」で成功と出たら「保存して閉じる」を押します。合言葉の誤りと出た時は、管理者に GAS 側の合言葉（<code>GENOGRAM_TOKEN</code>）も確かめてもらいます。</li>
+          <li>「接続テスト」で成功と出たら「保存して閉じる」を押します。合言葉の誤りと出た時は、管理者に Google の受け口の側の合言葉（<code>GENOGRAM_TOKEN</code>）も確かめてもらいます。</li>
         </ol>
+        <p class="setup-sub" id="cfgNoConnGuide">URL と合言葉が入っていない間は、図はこの端末にだけ保存され、ほかの端末からは見えません。<a href="connection-settings.html">接続設定</a>の画面の「ジェノグラム（家族構成図）」の欄に入れても、ここに入ったことになります。</p>
         <p class="setup-sub">下の ① は、施設で最初に1回だけ管理者が行う準備です。職員の方は読み飛ばしてかまいません。</p>
       </div>
 
@@ -323,7 +324,7 @@ textarea.fi{resize:vertical;min-height:60px}
         <ol class="setup-list">
           <li>Googleアカウントにログイン → <a href="https://sheets.new" target="_blank" rel="noopener">https://sheets.new</a> で新規スプレッドシートを作成。シート名を「<code>genograms</code>」に変更。</li>
           <li>メニュー「拡張機能」→「Apps Script」を開く。</li>
-          <li>表示されたエディタの内容を全て削除し、下の「📋 GASコードをコピー」ボタンの内容を貼り付け。</li>
+          <li>表示されたエディタの内容を全て削除し、下の「📋 受け口のコードをコピー」ボタンの内容を貼り付け。</li>
           <li>左上のプロジェクト名（無題のプロジェクト）を「genogram-sync」等に変更し保存（💾）。</li>
           <li>右上「デプロイ」→「新しいデプロイ」→歯車「種類の選択」で「ウェブアプリ」を選択。</li>
           <li>説明：任意、次のユーザーとして実行：「<strong>自分</strong>」、アクセスできるユーザー：「<strong>全員</strong>」を選択 →「デプロイ」。</li>
@@ -331,15 +332,15 @@ textarea.fi{resize:vertical;min-height:60px}
           <li>表示された「ウェブアプリ」のURL（<code>https://script.google.com/macros/s/.../exec</code>）をコピーし、下のフォームに貼り付け。</li>
           <li>合言葉：エディタ左の歯車「プロジェクトの設定」→「スクリプト プロパティ」に <code>GENOGRAM_TOKEN</code> を追加して合言葉を保存し、同じ合言葉を下のフォームの「合言葉」欄に入力。<strong>先に全端末へ合言葉を入れてから</strong>プロパティを保存してください（保存した瞬間から、合言葉の無い端末は同期できなくなります）。</li>
         </ol>
-        <button class="hbtn primary setup-copy" id="btnCopyGas">📋 GASコードをコピー</button>
+        <button class="hbtn primary setup-copy" id="btnCopyGas">📋 受け口のコードをコピー</button>
         <textarea class="setup-code" id="gasCodeBox" readonly rows="6">（コピーボタンを押すとここに表示されます）</textarea>
       </details>
 
       <div class="setup-form">
         <h3>設定入力</h3>
         <div class="fg">
-          <label class="fl">① GAS Web App URL <span class="req">*</span></label>
-          <input type="url" class="fi" id="cfgGasUrl" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
+          <label class="fl">① Google の受け口の URL <span class="req">*</span></label>
+          <input type="url" class="fi" id="cfgGasUrl" placeholder="管理者から受け取った URL（https://script.google.com/ で始まる）" autocomplete="off">
         </div>
         <div class="fg">
           <label class="fl" for="cfgGasToken">① 合言葉</label>
@@ -355,11 +356,11 @@ textarea.fi{resize:vertical;min-height:60px}
 
       <div class="setup-note">
         <strong>💡 信頼性について</strong><br>
-        ・保存ボタン押下時、まず端末内（localStorage）に即時保存され、その後スプシへ非同期送信されます。<br>
-        ・通信が失敗した場合は自動的にリトライキューに入り、次回保存時 / 「↻ 同期」ボタン押下時に再送されます。<br>
-        ・端末がオフラインでもアプリは動作し、回線復帰後に自動同期します。<br>
-        ・別端末で先に保存されていた場合、保存時にバージョンを比較し上書き確認します。<br>
-        ・合言葉は端末のlocalStorageに保存されるため、共用PCでの利用後は「設定をクリア」を実施してください。
+        ・「保存」を押すと、まずこの端末の中にすぐ保存し、そのあと Google のスプレッドシートへ送ります。<br>
+        ・送れなかった時は「保留」として残し、次に保存した時か「↻ 同期」を押した時に送り直します。<br>
+        ・回線が切れていても使えます。回線が戻ると自動で送ります。<br>
+        ・別の端末で先に保存されていた時は、保存の時に版を比べて、上書きしてよいかを確かめます。<br>
+        ・合言葉はこの端末の中に保存されます。共用のパソコンで使った後は「設定をクリア」を押してください。
       </div>
     </div>
   </div>
@@ -2636,7 +2637,30 @@ const CloudSync = (function() {
      （GAS 側も GET の ?token= は受け取らない）。GAS の GENOGRAM_TOKEN と突き合わせる */
   /* GAS 側の GENOGRAM_TOKEN が未設定でも同じ unauthorized が返る（2026-10-08 から未設定は全部断る）。
      新しく GAS を貼った管理者が端末ばかり疑わないよう、GAS 側の設定も文言に入れる（2026-10-10・第2版 16） */
-  const AUTH_ERR_MSG = '合言葉が違うか、入っていません（☁ クラウド設定の「合言葉」を確かめてください。GAS を新しく貼った時は、GAS のスクリプト プロパティに GENOGRAM_TOKEN が設定されているかも確かめてください）';
+  /* 職員に見せる通信の失敗の文（2026-11-02・品質改善 C6）。受け口の返事の英語・通信の失敗の英語は画面に出さず、
+     元の文は su-errors.js の記録（note）に残す。合言葉・食い違い・打ち切りの文はこちらで書いた日本語のまま出す */
+  const GENO_NO_CFG_MSG = 'クラウドの接続先が入っていません（⚙ 設定か接続設定の画面で、管理者から受け取った URL と合言葉を入れてください）';
+  const GENO_NET_MSG = 'クラウドと通信できませんでした。回線を確かめて、しばらくしてからもう一度お試しください';
+  const GENO_SRV_MSG = 'クラウドの受け口が受け付けませんでした。しばらくしてからもう一度お試しください';
+  function genoNote_(where, e) {
+    try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('保存・同期の失敗', e, 'genogram:' + where); }
+    catch (_) { /* 記録できなくても同期は止めない */ }
+  }
+  /* 通信・応答の読み取りの失敗を職員向けの文の失敗に替える。記録（note）に残すのは、受け口が答えたのに読めない・
+     エラーの番号を返した時だけ（どの要求かは本文の action だけを書く）。届かない・途中で切れた・時間切れは回線の失敗なので
+     記録しない（圏外の端末で自動の不具合報告の種を増やさない・体重管理と同じ方針・2026-11-02 反証レビュー） */
+  function genoIsLineErr_(e) {
+    return !!(e && (e.name === 'TypeError' || e.name === 'AbortError'));
+  }
+  function genoNetErr_(init, e, record) {
+    if (record && !genoIsLineErr_(e)) {
+      let act = 'get';
+      try { act = (JSON.parse((init && init.body) || '{}').action) || 'get'; } catch (_) { act = 'get'; }
+      genoNote_('gas:' + act, e);
+    }
+    return new Error(GENO_NET_MSG);
+  }
+  const AUTH_ERR_MSG = '合言葉が違うか、入っていません（⚙ 設定の「合言葉」を確かめてください。直らない時は、管理者に Google の受け口の側の合言葉（GENOGRAM_TOKEN）も確かめてもらってください）';
   /* ログインの証明（Supabase の access_token）を取り出す（2026-10-15・入居者マスタの rmAccessToken_ と同じ考え方）。
      同期GAS（genogram-sync.gs の verifyEditor_）が確かめ、図ごとの「最後に直した人」を決める（画面の名前は使わない）。
      ログインの控えが端末に無ければ問い合わせずに ''。取り出せない・3秒で返らない時も ''（GAS は「未確認」と記録し、保存は止めない）。
@@ -2678,7 +2702,7 @@ const CloudSync = (function() {
   }
   async function gasCall(action, params, opts) {
     const cfg = getCfg();
-    if (!cfg.gasUrl) throw new Error('GAS URLが未設定です');
+    if (!cfg.gasUrl) throw new Error(GENO_NO_CFG_MSG);
     const useGet = opts && opts.method === 'GET';
     /* 書く要求にだけログインの証明を添える（2026-10-15）。ログインの控えが無い端末は待たずに今までどおり送る */
     const at = (!useGet && GENO_WRITE_ACTIONS.indexOf(action) >= 0 && genoHasLogin_()) ? await genoAccessToken_() : '';
@@ -2710,7 +2734,8 @@ const CloudSync = (function() {
         err.current = json.current;
         throw err;
       }
-      throw new Error(json.error || 'GASエラー');
+      genoNote_('gas:' + action, json.error || 'error');
+      throw new Error(GENO_SRV_MSG);
     }
     return json;
   }
@@ -2740,14 +2765,14 @@ const CloudSync = (function() {
           e.timeout = true;
           throw e;
         }
-        if (reading) throw err;
+        if (reading) throw genoNetErr_(init, err, true);
         lastErr = err;
         if (i < max - 1) await sleep(400 * Math.pow(2, i));
       } finally {
         if (timer) clearTimeout(timer);
       }
     }
-    throw lastErr || new Error('fetch failed');
+    throw genoNetErr_(init, lastErr || new Error('fetch failed'), false);
   }
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
@@ -3603,7 +3628,8 @@ async function saveDoc() {
       }
     }
     if (!retried) {
-      alert('端末への保存に失敗しました: ' + e.message);
+      try { window.SUErrors.note('保存・同期の失敗', e, 'genogram:saveLocal'); } catch (_) { /* 記録できなくても知らせは出す */ }
+      alert('端末への保存に失敗しました。端末に保存できる量がいっぱいの可能性があります。使わなくなった図を削除してから、もう一度保存してください。');
       return;
     }
   }
@@ -4311,7 +4337,7 @@ function bindCloudUI() {
     box.select();
     try {
       navigator.clipboard.writeText(GAS_SCRIPT_CODE).then(
-        () => showCfgResult('ok', 'GASコードをクリップボードにコピーしました。Apps Scriptエディタに貼り付けてください。'),
+        () => showCfgResult('ok', '受け口のコードをコピーしました。Apps Script のエディタに貼り付けてください。'),
         () => showCfgResult('info', '下のボックスからコードを選択してコピーしてください。')
       );
     } catch (e) {
@@ -4345,9 +4371,9 @@ function showCfgResult(kind, msg) {
 
 async function testCloudConfig() {
   const cfg = readCfgFromForm();
-  if (!cfg.gasUrl) { showCfgResult('err', 'GAS Web App URLを入力してください。'); return; }
+  if (!cfg.gasUrl) { showCfgResult('err', 'Google の受け口の URL を入れてください（管理者から受け取ります。接続設定の画面の「ジェノグラム（家族構成図）」の欄に入れても同じです）。'); return; }
   if (!/^https:\/\/script\.google\.com\//.test(cfg.gasUrl)) {
-    showCfgResult('err', 'URL は https://script.google.com/ で始まる Apps Script の URL を貼ってください。');
+    showCfgResult('err', 'URL は https://script.google.com/ で始まるものを貼ってください（管理者から受け取った Google の受け口の URL です）。');
     return;
   }
   CloudSync.setCfg(cfg);
@@ -4357,11 +4383,11 @@ async function testCloudConfig() {
     const p = await CloudSync.ping();
     /* auth: 'ok'＝合言葉が効いている／無し＝合言葉に未対応の旧版。
        以前あった 'grace'（GAS 側で合言葉が未設定＝素通し）は 2026-10-08 に GAS から無くなり、未設定は unauthorized で断る */
-    if (p.auth === 'ok') results.push('✓ GAS接続OK・合言葉OK' + (p.role === 'view' ? '（閲覧専用の合言葉です。保存・削除はできません）' : '') + ' (' + p.time + ')');
-    else results.push('✓ GAS接続OK (' + p.time + ')\n⚠ この GAS は合言葉に未対応の版です');
+    if (p.auth === 'ok') results.push('✓ つながりました・合言葉OK' + (p.role === 'view' ? '（閲覧専用の合言葉です。保存・削除はできません）' : '') + ' (' + p.time + ')');
+    else results.push('✓ つながりました (' + p.time + ')\n⚠ この Google の受け口は合言葉に未対応の古い版です（管理者が新しいコードに貼り替えます）');
   } catch (e) {
     if (e.auth) { showCfgResult('err', '✗ ' + e.message); return; }
-    showCfgResult('err', '✗ GAS接続失敗: ' + e.message + '\n→ デプロイ設定の「アクセスできるユーザー：全員」を確認してください。');
+    showCfgResult('err', '✗ つながりませんでした（' + e.message + '）。URL が正しいか確かめてください。\n→ 管理者の方へ：Apps Script のデプロイの「アクセスできるユーザー」が「全員」になっているかも確かめてください。');
     return;
   }
   showCfgResult('ok', results.join('\n'));
@@ -4413,7 +4439,7 @@ function applyCloudConfigUI() {
 
 async function forceSync() {
   if (!CloudSync.isConfigured()) {
-    alert('先に「⚙ 設定」からクラウド設定を行ってください。');
+    alert('クラウドの接続先がまだ入っていません。\n「⚙ 設定」か接続設定の画面の「ジェノグラム（家族構成図）」の欄に、管理者から受け取った URL と合言葉を入れてください。');
     return;
   }
   const btn = $('btnSyncNow');
@@ -4434,7 +4460,7 @@ async function forceSync() {
     }
     await refreshDocList();
   } catch (e) {
-    setSyncStatus('err', '同期失敗: ' + e.message);
+    setSyncStatus('err', '同期できませんでした: ' + e.message);
   } finally {
     btn.disabled = false;
   }
