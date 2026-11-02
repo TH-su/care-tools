@@ -1104,6 +1104,8 @@
     try { await probePrep(sb); } catch (e) { /* 確かめられなくても、ほかの欄はそのまま */ }
     try { await loadStfMode(sb); } catch (e) { /* 0045 の前・読めない時はボタンを出さない */ }
     try { await loadSupMode(sb); } catch (e) { /* 0047 の前・読めない時はボタンを出さない */ }
+    try { await loadSa(sb); } catch (e) { $('sa-verdict').className = 'msg warn'; $('sa-verdict').textContent = 'シフト分析の写しの記録を読めませんでした。'; }
+    try { await loadSaMode(sb); } catch (e) { /* 0051 の前・読めない時はボタンを出さない */ }
     try { await loadPatch(sb); }
     catch (e) {
       $('pt-verdict').className = 'msg warn';
@@ -1421,7 +1423,8 @@
   var DB_PREP = {
     weight_mode: '0032', res_sync_runs: '0034', res_mode_get: '0036', tp_sync_runs: '0037', tp_mode_get: '0038',
     adm_sync_runs: '0040', adm_mode_get: '0042', stf_shadow_status: '0044', stf_mode_get: '0045',
-    sup_shadow_status: '0046', sup_mode_get: '0047', mirror_bot_me: '0047'
+    sup_shadow_status: '0046', sup_mode_get: '0047', mirror_bot_me: '0047',
+    sa_shadow_status: '0050', sa_mode_get: '0051'
   };
   var prepMissing = {};
   function dbErrKind(err) {
@@ -1569,6 +1572,113 @@
       bc.disabled = false; bb.disabled = false;
       var keep = v.textContent, kc = v.className;
       try { await loadSupMode(sb); await loadSup(sb); } catch (e) { /* 読み直せなくても結果の文は残す */ }
+      v.className = kc; v.textContent = keep;
+    }
+  }
+
+  /* シフト分析（過去シフト・アナライザのクラウド同期）の写し（統合 0050・0051・2026-11-03 代表者の決定: アナライザを先に・管理者と事務所が編集）:
+   * 写しはアナライザ同期の GAS が1時間ごとに自動で取る。最後の写しの結果と時刻（75分以内なら届いている）で確かめる。
+   * 出すのはキーごとの版（rev）・月の数・人数・大きさ・時刻・断った種類だけ（氏名・資格の中身は出さない）。Google へは何も送らない */
+  var SA_FRESH_MS = 75 * 60 * 1000;
+  var SA_REFUSED = {
+    stale: '前に読んだ写し', shrink: '急に減った', badrow: '形の違い', toolarge: '大きすぎる', rewind: '版が巻き戻った', future: '時刻が先',
+    toomany: 'キーが多すぎる', cutover: '切り替えの途中',
+    trashed: '保存先フォルダのごみ箱に months.json があります。ごみ箱から取り出すか完全に消すまで、写せず・切り替えられません'
+  };
+  async function loadSa(sb, nowMs) {
+    var kk = $('sa-kpis'), v = $('sa-verdict');
+    function say(t, kind) { v.className = 'msg' + (kind ? ' ' + kind : ''); v.textContent = t; }
+    kk.replaceChildren(); $('sa-size').textContent = '';
+    var st = await sb.rpc('sa_shadow_status');
+    if (st.error) { say(dbErrText(st.error, 'sa_shadow_status', 'シフト分析の写しの準備（データベース 0050）はまだです。')); return; }
+    var d = st.data || {};
+    var m = d.keys && d.keys.months;
+    if (d.ver == null && !d.lastAt) { say('まだ写していません。アナライザ同期の GAS の自動（autoMirror）が動くと、1時間以内に写ります。'); return; }
+    if (m) {
+      kk.appendChild(kpi('写しの版（rev）', m.rev, ''));
+      kk.appendChild(kpi('写しの月', m.months, '月'));
+      kk.appendChild(kpi('資格の人数', m.quals, '人'));
+    }
+    saSize(d);
+    var tail = '（最後に写した時刻 ' + fmtTime(d.lastAt || d.updatedAt) + '）';
+    var last = Date.parse(d.lastAt || d.updatedAt || '');
+    var now = typeof nowMs === 'number' ? nowMs : Date.now();
+    var live = false;
+    try { var md = await sb.rpc('sa_mode_get'); live = !!(md && !md.error && md.data && md.data.mode === 'live'); } catch (e) { live = false; }
+    if (live) say('切り替え済みです（シフト分析の正本は Supabase）。写しは止めてあります。Google へは1時間ごとに写し返しています。', 'ok');
+    else if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + (SA_REFUSED[d.lastRefused] || String(d.lastRefused || '')) + '）。' + (d.lastRefused === 'trashed' ? '' : '開発の担当へ知らせてください。') + tail, 'warn');
+    else if (!isNaN(last) && now - last <= SA_FRESH_MS) say('写しが1時間ごとに届いています。' + tail, 'ok');
+    else say('しばらく写っていません。アナライザ同期の GAS の自動（autoMirror）が止まっていないか確かめてください。' + tail, 'warn');
+  }
+  /* 大きさ: 新しい保存先は全部のキーの合計を 8MB までしか受けない。上限の7割を超えたら早めに知らせる */
+  function saSize(d) {
+    var e = $('sa-size');
+    e.className = 'msg'; e.textContent = '';
+    var total = Number(d && d.bytesTotal), limit = Number(d && d.bytesLimit);
+    if (!(total >= 0) || !(limit > 0)) return;
+    var r = total / limit, pct = Math.round(r * 100), mb = function (n) { return (n / 1048576).toFixed(1) + 'MB'; };
+    var t = '記録の大きさ: ' + mb(total) + '／上限 ' + mb(limit) + '（' + pct + '%）';
+    if (r >= 0.7) { e.className = 'msg warn'; e.textContent = t + '。上限に近づいています。上限を超えると新しい保存先へ保存できなくなるので、開発の担当へ知らせてください。'; }
+    else e.textContent = t + '。';
+  }
+  /* 切り替えボタンは、切り替えスイッチ analyzer が入で、この端末にアナライザの接続先（URL と記憶した合言葉）がある時だけ出す */
+  function analyzerOn() { var sw = window.SUKv ? SUKv._flags() : null; return !!(sw && sw.supabase && sw.supabase.analyzer === true); }
+  function saTarget() {
+    try {
+      var o = JSON.parse(localStorage.getItem('shiftanalyzer:v1:cloud') || 'null');
+      var u = String(o && o.url || '').trim(), t = String(o && o.token || '').trim();
+      return RMASTER_RE.test(u) && t ? { url: u, token: t } : null;
+    } catch (e) { return null; }
+  }
+  async function loadSaMode(sb) {
+    var line = $('sa-mode'), bc = $('b-sa-cut'), bb = $('b-sa-back');
+    bc.hidden = true; bb.hidden = true; line.className = 'msg'; line.textContent = '';
+    if (!(me && me.role === 'admin')) return;
+    var r = await sb.rpc('sa_mode_get');
+    if (r.error && dbErrKind(r.error) === 'missing') notePrep('sa_mode_get');
+    if (r.error || !r.data) return;
+    var live = r.data.mode === 'live', on = analyzerOn(), st = saTarget();
+    if (live && !on) { line.className = 'msg warn'; line.textContent = 'シフト分析は新しい保存先へ切り替えた後ですが、切り替えスイッチ（analyzer）が切です。アナライザが古い Google の中身を読まないよう、スイッチを入れ直すか「シフト分析を写しの期間に戻す」を押してください。'; }
+    else if (live) { line.className = 'msg ok'; line.textContent = 'シフト分析の正本は新しい保存先（Supabase）です。Google へは1時間ごとに写し返しています。'; }
+    else line.textContent = 'シフト分析の正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（analyzer）を入れる PR の取り込みが要ります。') + (st ? '' : '切り替える・戻すには、この端末のアナライザで URL と合言葉を入れ「この端末にトークンを記憶する」に✔︎を入れてください。') + (st ? '（前の「切り替える」「写しの期間に戻す」が途中で止まり、Google の保存が止まったままの時は「シフト分析を写しの期間に戻す」を押すと最後まで済ませます。途中でなければ押しても何も変わりません）' : '');
+    bc.hidden = live || !on || !st;
+    bb.hidden = !st;   // 戻すは接続先がある管理者にはいつも出す（途中で止まった時に押せるように・備品と同じ）
+  }
+  async function runSaOp(kind) {
+    var v = $('sa-mode');
+    function say(t, k) { v.className = 'msg' + (k ? ' ' + k : ''); v.textContent = t; }
+    if (!(me && me.role === 'admin' && me.status === SUAuth.STATUS.OK)) { say('管理者（二段階認証済み）のアカウントで開いてください。', 'warn'); return; }
+    var role = ''; try { role = localStorage.getItem('su_device_role') || ''; } catch (e) { role = ''; }
+    if (role === 'field') { say('この端末は「現場」です。事務所のパソコンで行ってください。', 'warn'); return; }
+    var st = saTarget();
+    if (!st) { say('この端末にはアナライザの接続先（URL と記憶した合言葉）がありません。この端末のアナライザで入れてから、押し直してください。', 'warn'); return; }
+    if (kind === 'cut') {
+      if (!analyzerOn()) { say('切り替えスイッチ（analyzer）が入っていません。', 'warn'); return; }
+      if (!confirm('シフト分析（過去シフト・アナライザのクラウド同期）の正本を新しい保存先（Supabase）へ切り替えますか？\n\n1分ほどかかります。その間はクラウドへの保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、事務所か管理者のアカウントでログインしている端末だけがクラウド同期を使えます。切り替えた後の最初の同期で、どの端末も全部を読み直して統合します。Google へは1時間ごとに写し返します。いつでも「シフト分析を写しの期間に戻す」で戻せます。')) return;
+    } else {
+      if (!confirm('シフト分析を写しの期間に戻しますか？\n\n切り替えていた間の保存を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。')) return;
+    }
+    if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
+    var bc = $('b-sa-cut'), bb = $('b-sa-back');
+    bc.disabled = true; bb.disabled = true;
+    var sb = SUAuth.client();
+    try {
+      var io = {
+        gas: function (body) { return rmasterPost(st, body); },
+        rpc: function (name, args) { return sb.rpc(name, args); },
+        token: async function () { var s2 = await sb.auth.getSession(); return s2 && s2.data && s2.data.session ? s2.data.session.access_token : null; },
+        progress: function (t) { say(t); }
+      };
+      var res = kind === 'cut' ? await SUSaFull.cutover(io) : await SUSaFull.back(io);
+      if (!res.ok) { say((kind === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + res.why, 'warn'); return; }
+      say(kind === 'cut' ? (res.unchanged ? 'もう切り替わっていました（何も変えていません）。' : '切り替えました（写した月 ' + res.months + '）。') + 'アナライザの画面は、読み込み直すと新しい保存先で同期します。'
+                         : '写しの期間に戻しました。正本は Google です。', 'ok');
+    } catch (e) {
+      say('止まりました: ' + String(e && e.message || e), 'warn');
+    } finally {
+      bc.disabled = false; bb.disabled = false;
+      var keep = v.textContent, kc = v.className;
+      try { await loadSaMode(sb); await loadSa(sb); } catch (e) { /* 読み直せなくても結果の文は残す */ }
       v.className = kc; v.textContent = keep;
     }
   }
@@ -2038,6 +2148,8 @@
   $('b-stf-back').addEventListener('click', function () { msg(''); runStfOp('back'); });
   $('b-sup-cut').addEventListener('click', function () { msg(''); runSupOp('cut'); });
   $('b-sup-back').addEventListener('click', function () { msg(''); runSupOp('back'); });
+  $('b-sa-cut').addEventListener('click', function () { msg(''); runSaOp('cut'); });
+  $('b-sa-back').addEventListener('click', function () { msg(''); runSaOp('back'); });
   $('b-res-back').addEventListener('click', function () { msg(''); runResOp('back'); });
   $('b-check').addEventListener('click', function () { msg(''); runCheck(); });
   $('b-mirror-check').addEventListener('click', function () { msg(''); runMirrorCheck(); });

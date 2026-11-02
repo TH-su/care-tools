@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="topbar">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-oMvTgLC8rPmx7cXKlvzsD9C0WOxMuqZ+Yav6S+GuZ5g='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-7DQXsfONaepBxLIhZ6Fav5uT8dJfcQ69AOxpfbsuUr8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -106,6 +106,7 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
 <script src="su-cfg-hint.js?v=2026-10-01.2"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-facility.js?v=2026-10-14"></script>
+<script src="su-sa.js?v=2026-11-03"></script>
 <link rel="stylesheet" href="su-theme.css?v=2026-11-02.2">
 </head>
 <body>
@@ -2520,18 +2521,23 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     el.textContent = msg;   /* textContent＝トークンや個人情報をHTMLに展開しない */
   }
   function cloudApi(payload) {
-    var c = cloudCfg();
-    if (!c.url || !c.token) return Promise.reject(new Error('URLとトークンを入力してください'));
-    if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(c.url)) {
-      return Promise.reject(new Error('URLは https://script.google.com/macros/s/.../exec の形式です'));
+    /* Google へ送る関数（今までの中身のまま）。切り替えた後（統合 0051）は su-sa.js がデータベースの関数へ回し、この関数を呼ばない
+       （その時は URL・トークンが無くても送れる）。スイッチが切・写しの期間は、su-sa.js がこの関数をそのまま呼ぶ（2026-11-03） */
+    function viaGas() {
+      var c = cloudCfg();
+      if (!c.url || !c.token) return Promise.reject(new Error('URLとトークンを入力してください'));
+      if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(c.url)) {
+        return Promise.reject(new Error('URLは https://script.google.com/macros/s/.../exec の形式です'));
+      }
+      payload.token = c.token;
+      return fetch(c.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, /* CORSプリフライト回避 */
+        body: JSON.stringify(payload),
+        redirect: 'follow'
+      }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
     }
-    payload.token = c.token;
-    return fetch(c.url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, /* CORSプリフライト回避 */
-      body: JSON.stringify(payload),
-      redirect: 'follow'
-    }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    return Promise.resolve(window.SUSa ? window.SUSa.call(payload, viaGas) : viaGas())
       .then(function (j) { if (j && j.error) throw new Error(cloudErrMsg(j.error)); return j; });
   }
   function cloudErrMsg(code) {
@@ -2603,6 +2609,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
   function cloudConfigured() {
     var url = ($('cloudUrl').value || '').trim(), token = ($('cloudToken').value || '').trim();
+    if (window.SUSa && window.SUSa.liveHint()) return true;   /* 切り替えた後（統合 0051）は URL・トークンが無くても同期できる */
     return !!url && !!token && /^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(url);
   }
   function autoEnabled() { var el = $('cloudAuto'); return !!(el && el.checked); }
@@ -2813,6 +2820,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     $('cloudUrl').addEventListener('change', function () { cloudCfg(); if (autoEnabled() && cloudConfigured()) { startAutoSync(); scheduleAutoSync(800); } });
     $('cloudToken').addEventListener('change', function () { cloudCfg(); if (autoEnabled() && cloudConfigured()) { startAutoSync(); scheduleAutoSync(800); } });
     if (cloudConfigured() && autoEnabled()) startAutoSync();
+    /* 切り替えた後（統合 0051）は、URL・トークンの無い端末でもログインしていれば自動同期を始める（2026-11-03） */
+    if (window.SUSa) window.SUSa.probe().then(function (live) { if (live && autoEnabled()) { startAutoSync(); scheduleAutoSync(500); } }, function () {});
     $('masterSeedBtn').addEventListener('click', seedFromSheet);
     $('rosterImportBtn').addEventListener('click', importRoster);
     $('masterAddBtn').addEventListener('click', addMasterName);
