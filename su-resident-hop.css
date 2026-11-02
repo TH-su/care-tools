@@ -1,0 +1,16 @@
+/* su-resident-hop.css — 「この方の画面：」の行き来のボタン（su-resident-hop.js・代表者の決定 2026-11-02 案A）
+   本人確認の帯の中で次の行に折り返して並べる。押す所は 44px 以上。画面だけ（印刷しない） */
+.srh { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex-basis: 100%; min-width: 0; }
+.srh-lbl { font-weight: 700; white-space: nowrap; }
+.srh-a {
+  display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 12px;
+  border: 1px solid currentColor; border-radius: 8px; background: #fff;
+  color: inherit; text-decoration: none; font-weight: 700; white-space: nowrap;
+}
+.srh-a:hover { background: rgba(255, 255, 255, .7); text-decoration: underline; }
+.srh-a:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
+/* iPad 縦と iPhone：帯は見出しの下に貼り付くので、ボタンは1行にまとめて横に送る（帯が画面の上を大きく占めないように） */
+@media screen and (max-width: 899px) {
+  .srh { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 2px; }
+}
+@media print { .srh { display: none !important; } }
