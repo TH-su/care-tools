@@ -100,5 +100,20 @@ for (const f of pages) {
   if (/<html\b[^>]*data-ds="ops"[^>]*data-su-theme/.test(h)) t('7d ' + f + ': ops の画面は見出しを keep-hdr にする', /data-su-theme="[^"]*\bkeep-hdr\b/.test(h), '');
 }
 
+console.log('8 見出しが .topbar の画面（data-su-theme="topbar"）');
+const tb = (/:root\[data-su-theme\]\[data-su-theme~="topbar"\] \{([^}]*)\}/.exec(css) || [])[1] || '';
+const tv = (n) => ((new RegExp('--' + n + ':\\s*(#[0-9A-Fa-f]{6})')).exec(tb) || [])[1];
+t('8a 色の名前の置き換えは topbar の印の画面だけ', !!tb && !/:root\[data-su-theme\]\s*\{[^}]*--mut:/.test(css), '');
+for (const [fg, bg] of [['mut', '#FFFFFF'], ['mut', '#FAFBFC'], ['mut', tv('bg')], ['ink', '#FFFFFF'], ['err', '#FFFFFF']]) {
+  const r = tv(fg) && bg ? ratio(tv(fg), bg) : 0;
+  t('8b ' + fg + ' の字は ' + bg + ' の地で 7:1 以上（' + r.toFixed(2) + '）', r >= 7, { fg: tv(fg), bg });
+}
+t('8c 主なボタン（--accent の地）の白い字は 7:1 以上', !!tv('accent') && ratio('#FFFFFF', tv('accent')) >= 7, tv('accent'));
+for (const k of ['badge', 'tag']) {
+  const m = new RegExp(':root\\[data-su-theme\\]\\[data-su-theme~="topbar"\\] \\.' + k + ' \\{ background: (#[0-9A-Fa-f]{6}); \\}').exec(css);
+  t('8d 札 .' + k + ' の白い字は 7:1 以上', !!m && ratio('#FFFFFF', m[1]) >= 7, m && m[1]);
+}
+t('8e 体重管理（.topbar を持つ別の画面）には topbar の印を付けない', !/data-su-theme="[^"]*\btopbar\b/.test(fs.readFileSync(path.join(ROOT, 'weight-record.html'), 'utf8')), '');
+
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);

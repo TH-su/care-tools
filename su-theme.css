@@ -120,6 +120,18 @@
   :root[data-su-theme] .sug-btn { border-color: var(--su-line); color: var(--su-ink); }
   :root[data-su-theme] .sug-btn.pri { background: var(--su-ink); border-color: var(--su-ink); color: #fff; }
   :root[data-su-theme] .sug-btn:focus-visible { outline-color: var(--su-ink); }
+
+  /* 見出しが .topbar で、色の名前が --bg・--ink・--mut・--accent の画面（過去シフト・アナライザ）：
+     data-su-theme="topbar" を付けた画面だけ。見出しを生成りの地に藍の字にし、薄い灰の字（白地で 3:1）を 7:1 以上に濃くする。
+     体重管理の .topbar（白い帯）は対象にしない。大きさ・並び・文言は変えない */
+  :root[data-su-theme][data-su-theme~="topbar"] {
+    --bg: #FBF8F2; --ink: #1F2A44; --mut: #4A5468; --accent: #1F2A44; --line: #E4DED2; --err: #8f0c0c;
+  }
+  :root[data-su-theme][data-su-theme~="topbar"] .topbar { background: var(--su-paper); color: var(--su-ink); box-shadow: inset 0 -2px 0 var(--su-line); }
+  :root[data-su-theme][data-su-theme~="topbar"] .topbar .sub { color: var(--su-ink2); }
+  :root[data-su-theme][data-su-theme~="topbar"] .badge { background: #185a1c; }   /* 白い字が 7:1 以上になる濃さ */
+  :root[data-su-theme][data-su-theme~="topbar"] .tag { background: #4A5468; }
+  :root[data-su-theme][data-su-theme~="topbar"] .cloudstat.ok { color: #185a1c; }
 }
 
 /* iPad 縦と iPhone：押す所を 44px 以上・入力の文字を 16px（iPhone で入力の時に勝手に拡大されないため） */
@@ -134,4 +146,7 @@
   :root[data-su-theme] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]),
   :root[data-su-theme] select,
   :root[data-su-theme] textarea { font-size: 16px; }
+  /* 過去シフト・アナライザ：文字を 16px にすると「GAS URL」の欄が iPhone の幅からはみ出すので、項目名の横の残りの幅に収める */
+  :root[data-su-theme][data-su-theme~="topbar"] .opt { max-width: 100%; }
+  :root[data-su-theme][data-su-theme~="topbar"] .opt input { min-width: 0; flex: 1 1 auto; }
 }
