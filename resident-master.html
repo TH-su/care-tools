@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-Ga6iPbzaNup786tuEBJShC+PxHo73gxzliurdl0AW0c='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-7e3zEge7+hsc1QNl7h+f5bRNNm12VvTFUOnmFee/0ys='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -1926,7 +1926,7 @@ function rmNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
 <script src="su-kv.js?v=2026-10-28"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-app-gate.js?v=2026-10-29"></script>
-<script src="su-facility.js?v=2026-11-02"></script>
+<script src="su-facility.js?v=2026-11-02.2"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>
 <!-- 薬情の取り込みの判定・組み立て（純関数・2026-10-22）。読めない時は入口のボタンを出さない（yjCalcOk_） -->
 <script src="yakujo-calc.js?v=2026-10-26"></script>
@@ -2233,11 +2233,57 @@ var RHYTHM_KEYS=[['wake','起床'],['breakfast','朝食'],['lunch','昼食'],['s
 /* 食事の時刻は施設共通（2026-08-12 指示）。起床・就寝はその方ごとなので既定を置かない。
    ★これは「その方の記録が無いときに施設の標準を出す」重ね合わせ。保存済みの値があれば必ずそちらが勝つ。 */
 var RHYTHM_DEFAULTS={breakfast:'08:00', lunch:'12:00', snack:'15:00', dinner:'17:30'};
+/* MEAL-TIMES-BEGIN ══ 食事の時刻の施設の既定（2026-11-02・品質改善 第3期 便8）══
+   入居者マスタとフェイスシートで一字一句同じ（試験 meal_times_facility が確かめる）。
+   ・既定は上の RHYTHM_DEFAULTS（今の値のまま）。施設情報（facility-profile.json の mealTimes）に
+     breakfast・lunch・snack・dinner の4つが全部「00:00〜23:59 の HH:MM」で書いてあり、ほかの項目が無い時だけ差し替える
+   ・1つでも崩れていれば（欠け・知らない項目・文字でない・形の違い）丸ごと捨てて既定を使う
+   ・描くたびに読む（施設情報が後から届いた時に、届く前の既定を握ったままにしない）
+   ・入居者ごとに保存した時刻が勝つ重ね合わせは呼ぶ側のまま（変えていない） */
+var MEAL_TIME_KEYS=['breakfast','lunch','snack','dinner'];
+function mealTimeDefaults_(){
+  var d={}, s=null, out={}, n=0, ok=true, k;
+  MEAL_TIME_KEYS.forEach(function(x){ d[x]=RHYTHM_DEFAULTS[x]; });
+  try{ s=(window.SUFacility&&typeof SUFacility.section==='function')?SUFacility.section('mealTimes'):null; }catch(e){ s=null; /* 捨ててよい: 読めなければ今の既定で描く */ }
+  if(!s||typeof s!=='object'||Array.isArray(s)) return d;
+  for(k in s){
+    if(!Object.prototype.hasOwnProperty.call(s,k)) continue;
+    n++;
+    if(MEAL_TIME_KEYS.indexOf(k)<0){ ok=false; break; }
+    var v=s[k];
+    if(typeof v!=='string'||!/^\d{2}:\d{2}$/.test(v)||Number(v.slice(0,2))>23||Number(v.slice(3))>59){ ok=false; break; }
+    out[k]=v;
+  }
+  if(!ok||n!==MEAL_TIME_KEYS.length) return d;
+  return out;
+}
+/* MEAL-TIMES-END */
+/* 施設情報が後から届いた時に、開いている方の詳細画面を1回だけ描き直す（2026-11-02・便8）。
+   ★端末に施設情報の控えが無く応答が遅いと、詳細画面の生活リズムは届く前の既定（画面の既定）で描き終わり、
+     「🖨️ 全項目を印刷」はその画面をそのまま刷る。1枚にまとめた印刷・その方らしさの紙は刷る直前に組むので、ここでは触らない。
+   ★描いた時と既定が違う時だけ描き直す（施設情報に mealTimes が無ければ印は同じ＝何もしない＝画面・紙は変わらない）。
+   ★詳細画面を開いている時だけ（編集画面は入力中の値を消さないため描き直さない）。現場端末では何もしない。
+   ★印刷の準備中（body.su-printing）は描き直さず、終わるのを待ってから1回だけ（居室一覧の rmRoomOnFacility_ と同じ65秒まで） */
+var rmMealSig_=null;
+function rmMealOnFacility_(tries){
+  if(getDeviceRole()==='field'||!curResident||rmMealSig_===null) return;
+  var sc=$('sc-view'); if(!sc||!sc.classList.contains('on')) return;
+  if(document.body&&document.body.classList.contains('su-printing')){
+    if((tries||0)<130) setTimeout(function(){ rmMealOnFacility_((tries||0)+1); },500);
+    return;
+  }
+  var sig=null; try{ sig=JSON.stringify(mealTimeDefaults_()); }catch(e){ sig=null; }
+  if(sig===null||sig===rmMealSig_) return;
+  try{ renderView(curResident); }catch(e){ try{ if(window.SUErrors&&typeof window.SUErrors.note==='function') window.SUErrors.note('描き直しの失敗', String((e&&e.name)||'Error').slice(0,40), 'master:meal.rerender'); }catch(_){ /* 捨ててよい: 記録できなくても続きの動きは変えない */ } }
+}
+document.addEventListener('DOMContentLoaded',function(){
+  try{ if(window.SUFacility&&typeof SUFacility.onReady==='function') SUFacility.onReady(function(){ setTimeout(rmMealOnFacility_,0); }); }catch(e){ /* 捨ててよい: 読み口が無ければ既定のまま描く（描き直す相手が無い） */ }
+});
 function rhythmOf(r){
-  var src=(r&&r.rhythm&&typeof r.rhythm==='object')?r.rhythm:{}, out={};
+  var src=(r&&r.rhythm&&typeof r.rhythm==='object')?r.rhythm:{}, out={}, md=mealTimeDefaults_();
   RHYTHM_KEYS.forEach(function(p){
     var v=String(src[p[0]]==null?'':src[p[0]]).trim();
-    out[p[0]] = v || RHYTHM_DEFAULTS[p[0]] || '';
+    out[p[0]] = v || md[p[0]] || '';
   });
   return out;
 }
@@ -9813,6 +9859,7 @@ function renderView(r){
   var emg=fam.map(function(f,i){ return f&&f.emergency?(famNo(i,fam.length)+famWho(f)):''; })
     .filter(Boolean).join('\n');
   var rhythm=rhythmOf(r);   /* 食事の時刻は施設共通の既定を重ねる（保存済みがあればそちらが勝つ） */
+  rmMealSig_=JSON.stringify(mealTimeDefaults_());   /* 描いた時の既定の印（施設情報が後から届いた時に描き直すかを決める・rmMealOnFacility_） */
   var rh=RHYTHM_KEYS.map(function(p){return rhythm[p[0]]?('<span>'+esc(p[1])+' <b>'+esc(rhythm[p[0]])+'</b></span>'):''}).filter(Boolean).join('');
   /* デイ利用日は【週間計画】から出す（2026-08-19 指示・A4様式と同じ正本に揃えた）。
      マスタの r.dayUse は移行時の手書き値で実測で食い違うため使わない（編集画面には残っている） */
