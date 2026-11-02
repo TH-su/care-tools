@@ -90,5 +90,15 @@ t('5b 版はどの画面も1種類', vers.size <= 1, [...vers]);
 console.log('6 担当者会議のページ');
 t('6 担当者会議のページには当てない', !using.includes('care-meeting.html'), using);
 
+console.log('7 別の型（data-ds="ops"）の画面');
+const opsBlk = top.out.find((b) => /^@media screen and \(not \(prefers-color-scheme: dark\)\)$/.test(b.head));
+t('7a ops の置き換えは明るい表示の時だけの塊にある', !!opsBlk && /\[data-ds="ops"\]:not\(\[data-mode="dark"\]\)/.test(opsBlk.body), top.out.map((b) => b.head));
+t('7b 共通の色の名前の置き換えは ops の画面を外す', /:root\[data-su-theme\]:not\(\[data-ds="ops"\]\) \{[^}]*--pri:/.test(css), '');
+t('7c ops の見出しの字は地に対して 7:1 以上', !!opsBlk && ratio((/--c-hero-ink: (#[0-9A-Fa-f]{6})/.exec(opsBlk.body) || [])[1] || '#FFFFFF', (/--c-hero: (#[0-9A-Fa-f]{6})/.exec(opsBlk.body) || [])[1] || '#FFFFFF') >= 7, '');
+for (const f of pages) {
+  const h = fs.readFileSync(path.join(ROOT, f), 'utf8');
+  if (/<html\b[^>]*data-ds="ops"[^>]*data-su-theme/.test(h)) t('7d ' + f + ': ops の画面は見出しを keep-hdr にする', /data-su-theme="[^"]*\bkeep-hdr\b/.test(h), '');
+}
+
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);

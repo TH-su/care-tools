@@ -18,8 +18,9 @@
     --su-line: #E4DED2;     /* 罫線 */
     --su-ink-l: #EEF0F5;    /* 淡い藍：選んでいる所の地 */
     --su-font: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Noto Sans JP", Meiryo, sans-serif;
-
-    /* 各画面の共通の色の名前を、画面の時だけ置き換える */
+  }
+  /* 各画面の共通の色の名前を、画面の時だけ置き換える（別の型 data-ds="ops" の画面は下の塊で置き換える） */
+  :root[data-su-theme]:not([data-ds="ops"]) {
     --pri: #1F2A44; --pri-l: #EEF0F5; --pri-d: #141C2E;
     --pri2: #1F2A44;   /* 週間計画は --pri2 を標準の青に使う */
     --ok: #185a1c; --ok-l: #e8f5e9;
@@ -30,55 +31,74 @@
     --focus: #1F2A44;
   }
   /* 書体を1通りにそろえる。ただし文字の高さで作図の枠の大きさが決まる画面（家族構成図の PDF/JPG の書き出し）は
-     data-su-theme="keep-font" で今の書体のままにする（書き出しの大きさを変えない） */
-  :root[data-su-theme]:not([data-su-theme="keep-font"]) body { font-family: var(--su-font); }
+     data-su-theme="keep-font" で今の書体のままにする（書き出しの大きさを変えない）。
+     見出しの色で画面を見分ける画面（訪問＝青・全支援＝橙の俯瞰と左右比較）は data-su-theme="keep-hdr" で見出しの帯・帯の中の部品の色を今のままにする */
+  :root[data-su-theme]:not([data-su-theme~="keep-font"]) body { font-family: var(--su-font); }
+}
+
+/* 別の型（data-ds="ops"：計画書・職員マスタ・消耗品）を持つ画面：明るい表示の時だけ、その型の色の名前を藍と生成りに置き換える。
+   暗い表示（ダークモード）は今のまま。見出しは data-su-theme="keep-hdr" にして、型の見出しの色（--c-hero）で藍と生成りにする */
+@media screen and (not (prefers-color-scheme: dark)) {
+  :root[data-su-theme][data-ds="ops"]:not([data-mode="dark"]) {
+    --c-bg: #FBF8F2; --c-surface2: #F4F0E8;
+    --c-ink: #1F2A44; --c-ink2: #3D4557; --c-ink3: #4A5468;
+    --c-border: #E4DED2;
+    --c-primary: #1F2A44; --c-primary-hover: #141C2E; --c-primary-ink: #FFFFFF;
+    --c-link: #1F2A44;
+    --c-hero: #FBF8F2; --c-hero-ink: #1F2A44; --c-hero-hover: #EEF0F5;
+    --c-info: #1F2A44; --c-info-bg: #EEF0F5;
+  }
+  :root[data-su-theme][data-ds="ops"]:not([data-mode="dark"]) .hdr { box-shadow: inset 0 -2px 0 #E4DED2; }
+}
+
+@media screen {
 
   /* 見出しの帯（.hdr）：生成りの地に藍の字。帯の中のボタン・札も同じ色味にそろえる */
-  :root[data-su-theme] .hdr {
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr {
     background: var(--su-paper); color: var(--su-ink);
     /* 下の線は影で描く（線で描くと見出しが高くなり、見出しの高さを測って並べる画面の紙がずれる） */
     box-shadow: inset 0 -2px 0 var(--su-line);
   }
-  :root[data-su-theme] .hdr-btn {
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn {
     background: #fff; border: 1px solid var(--su-ink); color: var(--su-ink);
   }
-  :root[data-su-theme] .hdr-btn:hover { background: var(--su-ink-l); }
-  :root[data-su-theme] .hdr-btn:focus-visible { outline: 3px solid var(--su-ink); outline-offset: 2px; }
-  :root[data-su-theme] .hdr-btn[disabled]:hover { background: #fff; }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn:hover { background: var(--su-ink-l); }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn:focus-visible { outline: 3px solid var(--su-ink); outline-offset: 2px; }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn[disabled]:hover { background: #fff; }
   /* 週間計画の見出しの「利用者を選択」：白い字を藍にして、白地の枠にする */
-  :root[data-su-theme] .hdr .resident-select { background: #fff; border-color: var(--su-line); color: var(--su-ink); }
-  :root[data-su-theme] .hdr-btns::-webkit-scrollbar-thumb { background: rgba(31, 42, 68, .35); }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .resident-select { background: #fff; border-color: var(--su-line); color: var(--su-ink); }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btns::-webkit-scrollbar-thumb { background: rgba(31, 42, 68, .35); }
   /* 意味のある色のボタン（保存・反映＝緑、試算＝橙、押している・空の時の主ボタン＝藍）は色を残し、白い字が 7:1 以上の濃さにする */
-  :root[data-su-theme] .hdr-btn.savebtn,
-  :root[data-su-theme] .hdr-btn.applybtn { background: #185a1c; border-color: #185a1c; color: #fff; }
-  :root[data-su-theme] .hdr-btn.savebtn:hover,
-  :root[data-su-theme] .hdr-btn.applybtn:hover { background: #0f3f12; }
-  :root[data-su-theme] .hdr-btn.savebtn.saving { background: #4A5468; border-color: #4A5468; color: #fff; }
-  :root[data-su-theme] .hdr-btn.simbtn { background: #8a3000; border-color: #8a3000; color: #fff; }
-  :root[data-su-theme] .hdr-btn.simbtn:hover { background: #6a2500; }
-  :root[data-su-theme] .hdr-btn.solid,
-  :root[data-su-theme] .hdr-btn.active { background: var(--su-ink); border-color: var(--su-ink); color: #fff; }
-  :root[data-su-theme] .hdr .role,
-  :root[data-su-theme] .hdr .sync { background: var(--su-ink-l); color: var(--su-ink); }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn.savebtn,
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn.applybtn { background: #185a1c; border-color: #185a1c; color: #fff; }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn.savebtn:hover,
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn.applybtn:hover { background: #0f3f12; }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn.savebtn.saving { background: #4A5468; border-color: #4A5468; color: #fff; }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn.simbtn { background: #8a3000; border-color: #8a3000; color: #fff; }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn.simbtn:hover { background: #6a2500; }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn.solid,
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn.active { background: var(--su-ink); border-color: var(--su-ink); color: #fff; }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .role,
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .sync { background: var(--su-ink-l); color: var(--su-ink); }
   /* 状態を色で知らせる札は、地の色を濃くして白い字を残す */
-  :root[data-su-theme] .hdr .role.field { background: #8a3000; color: #fff; }
-  :root[data-su-theme] .hdr .sync.ok { background: #185a1c; color: #fff; }
-  :root[data-su-theme] .hdr .sync.err { background: #8f0c0c; color: #fff; }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .role.field { background: #8a3000; color: #fff; }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .sync.ok { background: #185a1c; color: #fff; }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .sync.err { background: #8f0c0c; color: #fff; }
 
   /* 見出しの帯の中の操作（家族構成図・体重管理の .hbtn と入力）。白い字の重ね塗りを、生成りの地で読める形にする */
-  :root[data-su-theme] .hdr .hbtn { background: #fff; color: var(--su-ink); box-shadow: inset 0 0 0 1px var(--su-ink); }  /* 枠は影で描く（大きさを変えない） */
-  :root[data-su-theme] .hdr .hbtn:hover { background: var(--su-ink-l); }
-  :root[data-su-theme] .hdr .hbtn.primary { background: var(--su-ink); color: #fff; }
-  :root[data-su-theme] .hdr .hbtn.primary:hover { background: #141C2E; }
-  :root[data-su-theme] .hdr .hbtn.danger { background: #fff; color: #8f0c0c; box-shadow: inset 0 0 0 1px #8f0c0c; }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .hbtn { background: #fff; color: var(--su-ink); box-shadow: inset 0 0 0 1px var(--su-ink); }  /* 枠は影で描く（大きさを変えない） */
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .hbtn:hover { background: var(--su-ink-l); }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .hbtn.primary { background: var(--su-ink); color: #fff; }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .hbtn.primary:hover { background: #141C2E; }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .hbtn.danger { background: #fff; color: #8f0c0c; box-shadow: inset 0 0 0 1px #8f0c0c; }
   /* 入居調整の見出しの札の枠・読み直し、貼り薬カレンダーの「← メニュー」（白い字を藍にする） */
-  :root[data-su-theme] .hdr .sync { border-color: var(--su-line); }
-  :root[data-su-theme] .hdr .reload,
-  :root[data-su-theme] .hdr .back { color: var(--su-ink); }
-  :root[data-su-theme] .hdr .reload:active { background: var(--su-ink-l); }
-  :root[data-su-theme] .hdr .back:focus-visible { outline-color: var(--su-ink); }
-  :root[data-su-theme] .hdr-r input,
-  :root[data-su-theme] .hdr-r select { box-shadow: inset 0 0 0 1px var(--su-line); }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .sync { border-color: var(--su-line); }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .reload,
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .back { color: var(--su-ink); }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .reload:active { background: var(--su-ink-l); }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .back:focus-visible { outline-color: var(--su-ink); }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-r input,
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-r select { box-shadow: inset 0 0 0 1px var(--su-line); }
   /* 窓の見出し（家族構成図の .modal-head）：青のぼかしを藍の一色にする（白い字のまま） */
   :root[data-su-theme] .modal-head { background: var(--su-ink); }
 
