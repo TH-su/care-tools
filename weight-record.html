@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-vcxcg2ki2ftTBEj5oNL3lgOBePIK/0/FK8HuHD7/k2A='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-DfxAsBUBjqePfLXV2tRZhLq3LEGQXAQFeGRtHyN3YQw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -59,6 +59,7 @@ try{ const t = (JSON.parse(localStorage.getItem('wtmgr_ui_v1') || '{}') || {}).t
 <script src="su-weight-live.js?v=2026-10-28.2"></script>
 <script src="su-res-read.js?v=2026-11-02"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
+<script src="su-resident-hop.js?v=2026-11-02"></script>
 <style>
 :root{
   --pri:#0b57d0;--pri-l:#ecf3fe;--pri-d:#0842a0;
@@ -874,6 +875,9 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
 }
 @media print{.tnav{display:none !important}}
 </style>
+<!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
+<link rel="stylesheet" href="su-theme.css?v=2026-11-02">
+<link rel="stylesheet" href="su-resident-hop.css?v=2026-11-02">
 </head>
 <body>
 
@@ -8848,13 +8852,16 @@ function wrClearMasterIdParam(){
    後ろにあるため、let/const だと一時的デッドゾーンで ReferenceError になる。 */
 var wrMasterPending=null;
 function wrDropMasterPending(){ wrMasterPending=null; }
-function wrSetFromMasterBar(state,name){
+function wrSetFromMasterBar(state,name,mid){
   const bar=$('#fromMaster'); if(!bar) return;
   if(state==='off'){ bar.style.display='none'; bar.innerHTML=''; applyStickyTopOffset(); return; }
-  const msg = state==='ok'       ? `入居者マスタから開いています：<b>${escapeHtml(name||'')}</b>`
+  /* 入居者マスタからも、ほかの画面の「この方の画面：」からも来るので、来た元の名前は書かない（代表者の決定 2026-11-02 案A） */
+  const msg = state==='ok'       ? `<b>${escapeHtml(name||'')}</b>さんを開いています`
             : state==='nontarget'? `<b>${escapeHtml(name||'')}</b>さんは体重管理の対象外です（一覧を表示しています）`
-            :                      `入居者マスタから開こうとしましたが、<b>この方は体重管理に登録されていません</b>（一覧を表示しています）`;
-  bar.innerHTML=`<span>${msg}</span><button type="button" id="fromMasterClose">${state==='ok'?'解除':'閉じる'}</button>`;
+            :                      `この方を開こうとしましたが、<b>この方は体重管理に登録されていません</b>（一覧を表示しています）`;
+  /* 同じ方の別の画面へ移るボタン（su-resident-hop.js・同じタブで移る）。その方を開けた時だけ並べる */
+  const hop=(state==='ok'&&typeof SUResHop==='object'&&SUResHop)?SUResHop.html('weight-record.html',mid,name):'';
+  bar.innerHTML=`<span>${msg}</span><button type="button" id="fromMasterClose">${state==='ok'?'解除':'閉じる'}</button>${hop}`;
   bar.style.display='flex';
   $('#fromMasterClose').addEventListener('click',()=>{ wrDropMasterPending(); wrSetFromMasterBar('off'); });
   applyStickyTopOffset();
@@ -8882,7 +8889,7 @@ function wrApplyMasterIdParam(isRetry){
     saveUI({inRes:r.id});
     if(typeof syncInputFromExisting==='function')syncInputFromExisting();
   }catch(e){}
-  wrSetFromMasterBar('ok', r.name);
+  wrSetFromMasterBar('ok', r.name, mid);
 }
 
 /* sticky thead が topbar の真下にぴったり貼り付くよう、CSS変数 --topbar-h を

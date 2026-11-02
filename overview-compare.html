@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="ja" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-vod1u6TW5AQX+arLYCC7F0/D9vA19KUF0DEze3pvHks='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
@@ -71,6 +71,13 @@ body {
 }
 .pane.left  .pane-tag { background: var(--pri-d); }
 .pane.right .pane-tag { background: var(--orange); }
+/* 札を中の画面の見出しの上に重ねると、見出しの文字（「訪問 週間俯瞰」など）にかぶっていた。
+   画面では重ねずに、それぞれの画面のすぐ上の細い帯に置く（印刷は変えない＝@media screen の中だけ・2026-11-02 推奨どおり） */
+@media screen {
+  .pane { display: flex; flex-direction: column; }
+  .pane-tag { position: static; align-self: flex-start; flex-shrink: 0; margin: 4px 8px; box-shadow: none; }
+  .pane iframe { flex: 1 1 auto; height: auto; min-height: 0; }
+}
 
 /* 狭い画面（タブレット縦・スマホ）は上下2段に */
 @media (max-width: 860px) {
@@ -79,6 +86,8 @@ body {
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
+<!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
+<link rel="stylesheet" href="su-theme.css?v=2026-11-02">
 </head>
 <body>
 

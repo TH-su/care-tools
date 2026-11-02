@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ga2it6U3ae9Onp4Ew10wNtbbbNdZfy5I7zKvlomL9OY=' 'sha256-xpfDyNijZW5AqbtTjNJa5pV43B+pQaTAoRgJBcvOrNw=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ga2it6U3ae9Onp4Ew10wNtbbbNdZfy5I7zKvlomL9OY=' 'sha256-5SCacIL8ym/czSjsLAbbmgMv79v3e6koa67LHgHTTl4=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
@@ -467,6 +467,9 @@ button.rcard{display:flex; flex-direction:column; align-items:stretch; justify-c
   .mtbl .mbad{color:#000}                        /* 赤はモノクロ印刷で潰れるので黒に落とす（文字は残す） */
 }
 </style>
+<!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
+<link rel="stylesheet" href="su-theme.css?v=2026-11-02">
+<link rel="stylesheet" href="su-resident-hop.css?v=2026-11-02">
 </head>
 <body>
 
@@ -607,6 +610,7 @@ function fsNoteAs_(kind, where, e){ try{ if(window.SUErrors && typeof window.SUE
 <script src="su-kv.js?v=2026-10-28"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-facility.js?v=2026-11-02.2"></script>
+<script src="su-resident-hop.js?v=2026-11-02"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>
 <script>
 /* ═══════════════════════════════════════════════════════════════
@@ -1787,7 +1791,7 @@ function openResident(id){
     if(!rec||(rec.id==null&&!rec.name))throw new Error('該当データなし');
     curRec=rec; setSync('取得OK','ok'); renderFaceSheet(rec);
     /* 本人確認バーは正本の氏名で更新する（前の方の氏名を残さない） */
-    if(fromMasterActive)setFromMasterBar('ok',rec.name);
+    if(fromMasterActive)setFromMasterBar('ok',rec.name,id);
   }).catch(function(e){
     if(seq!==openSeq)return;                    // 旧要求の失敗で、いま開いている方の画面を潰さない
     /* ★「該当データなし」の時だけ印を忘れる。通信失敗では忘れない
@@ -3495,14 +3499,17 @@ function readMasterIdParam(){
    未検証の氏名を「本人確認」として見せると、取り違えの根拠にされてしまうため。 */
 var fromMasterActive=false;
 var openingFromMaster=false;   /* boot() がマスタ由来で開いている最中だけ true */
-function setFromMasterBar(state,name){
+function setFromMasterBar(state,name,id){
   var bar=$('fromMaster'); if(!bar)return;
   if(state==='off'){ bar.style.display='none'; bar.innerHTML=''; fromMasterActive=false; return; }
   fromMasterActive=true;
-  var msg = state==='ok'   ? '入居者マスタから開いています：<b>'+esc(name||'')+'</b>'
-          : state==='fail' ? '入居者マスタから開こうとしましたが、<b>取得できませんでした</b>'
-          :                  '入居者マスタから開いています：読み込み中…';
-  bar.innerHTML='<span>'+msg+'</span><button type="button" id="fromMasterClose">一覧に戻る</button>';
+  /* 入居者マスタからも、ほかの画面の「この方の画面：」からも来るので、来た元の名前は書かない（代表者の決定 2026-11-02 案A） */
+  var msg = state==='ok'   ? '<b>'+esc(name||'')+'</b>さんを開いています'
+          : state==='fail' ? 'この方を開こうとしましたが、<b>取得できませんでした</b>'
+          :                  'この方を読み込み中…';
+  /* 同じ方の別の画面へ移るボタン（su-resident-hop.js・同じタブで移る）。正本の氏名が届いた時だけ並べる */
+  var hop=(state==='ok'&&typeof SUResHop==='object'&&SUResHop)?SUResHop.html('facesheet.html',id,name):'';
+  bar.innerHTML='<span>'+msg+'</span><button type="button" id="fromMasterClose">一覧に戻る</button>'+hop;
   bar.style.display='flex';
   $('fromMasterClose').addEventListener('click',function(){
     clearMasterIdParam(); setFromMasterBar('off'); curRec=null; showScreen('list');

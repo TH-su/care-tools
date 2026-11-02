@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-6UWzX9s/JU7MnNjsdvT31d8e+yaFD8kJJ1sJ/s4ZNWs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-8rO2UhdTRTEZW+gynjVMYKlY4CPV21njCe+LZcaCHtA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -909,7 +909,13 @@ select.inp { cursor: pointer; }
     scroll-behavior: auto !important;
   }
 }
+/* 介護度は入居者マスタで直す、の案内（介護情報の窓・画面だけ・代表者の決定 2026-11-02） */
+.ci-level-note { margin: -4px 0 8px; font-size: 0.8125rem; color: var(--warn-tx, #6a3e00); }
+.ci-level-note[hidden] { display: none !important; }
 </style>
+<!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
+<link rel="stylesheet" href="su-theme.css?v=2026-11-02">
+<link rel="stylesheet" href="su-resident-hop.css?v=2026-11-02">
 </head>
 <body>
 
@@ -1016,6 +1022,8 @@ select.inp { cursor: pointer; }
     <button class="sum-edit-btn" data-on-click="openOfficeInfoModal">🏢 事業所情報</button>
     <button class="sum-edit-btn" data-on-click="openCareInfoModal">⚙ 介護情報</button>
     <button class="sum-edit-btn" data-on-click="openResidentListModal" title="全利用者の介護度・負担・利用状況を一覧表示">👥 利用者一覧</button>
+    <!-- 同じ方のほかの画面へ移る（su-resident-hop.js・同じタブ・代表者の決定 2026-11-02 案A）。入居者マスタとつながっている方の時だけ出す -->
+    <button class="sum-edit-btn" id="cs-hop-btn" data-on-click="csToggleHop" aria-expanded="false" aria-controls="cs-hop-pop" hidden title="同じ方のほかの画面へ移る（同じタブで開きます）">🔗 この方の画面 ▾</button>
   </div>
   <!-- 3段目: 参考値の注記。単位・金額を出す画面には必ず添える（文言は RATE_DISCLAIMER が正） -->
   <div class="sum-row sum-note-row"><span class="sum-limit-warn" id="sum-limit-warn" style="display:none"></span><span class="sum-limit-warn" id="cs-oldpeer-warn" role="status" title="押すと消えます" data-on-click="csHideSelf_" data-this="1" style="display:none;cursor:pointer"></span><span class="rate-note" id="sum-rate-note"></span></div>
@@ -1300,6 +1308,8 @@ select.inp { cursor: pointer; }
         <option value="要介護5">要介護5</option>
       </select>
     </div>
+    <!-- 入居者マスタとつながっている方は、介護度を入居者マスタで直す（代表者の決定 2026-11-02「マスタを正にする」） -->
+    <p class="ci-level-note" id="ci-level-note" hidden>介護度は入居者マスタで直してください（入居者マスタの値を使います）</p>
 
     <div class="form-row">
       <label id="ci-limit-label" style="display:none"></label>
@@ -1767,6 +1777,7 @@ function csNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
 <script src="su-facility.js?v=2026-11-02.2"></script>   <!-- 施設情報（報酬マスタの「自治体」の既定・監査10月版 #10） -->
 <script src="su-cfg-hint.js?v=2026-10-01.2"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
+<script src="su-resident-hop.js?v=2026-11-02"></script>
 <!-- 同期データの写し（統合 0005・写しの期間）。supabase-js と su-auth.js は写す時にだけ読み込む -->
 <script src="su-kv-shadow.js?v=2026-10-28"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
@@ -5401,7 +5412,10 @@ function mergeCommonSchedule(extData){
     if (!tgt){ var nm = suNormName(c.name); if (nm) tgt = byName[nm]; }
     if (tgt){
       if (tgt.masterId == null){ tgt.masterId = c.masterId; changed++; }
-      if (c.careLevel && !tgt.careLevel){ tgt.careLevel = c.careLevel; changed++; }   /* 空欄補完のみ＝アプリ側の介護度編集をマスタ由来su_residents_commonで巻き戻さない(保存バグ副因) */
+      /* 介護度は入居者マスタを正にする（居室と同じ扱い・代表者の決定 2026-11-02「マスタを正にする」）。
+         入居者マスタとつながっている方は週間計画の中で介護度を直せない（介護情報の窓・一括編集で止めている）ので、
+         週間計画で直した値を巻き戻すことは無い。マスタが空の時は今の値を残す */
+      if (c.careLevel && tgt.careLevel !== c.careLevel){ tgt.careLevel = c.careLevel; changed++; }
       if (c.room && tgt.room !== c.room){ tgt.room = c.room; changed++; }
       if (c.kana && !tgt.kana){ tgt.kana = c.kana; changed++; }   /* ふりがなは空欄補完のみ＝アプリ側の一括編集を巻き戻さない(careLevel同型・空欄のみ補完/master常勝のroomとは別) */
       if (tS !== undefined && tgt.targetSchedule === undefined){ tgt.targetSchedule = tS; changed++; }   /* 空(未設定)のみ補完＝一括編集の週間計画対象をマスタ由来su_residents_commonで巻き戻さない */
@@ -6127,7 +6141,40 @@ document.addEventListener('visibilitychange', function () {
 });
 
 // ── Calendar render ──
+/* 「この方の画面 ▾」（代表者の決定 2026-11-02 案A・集計の段に置く・盤面の位置は変えない・印刷しない）。
+   入居者マスタとつながっている方（masterId のある方）を選んでいる時だけボタンを出す。押すと同じ方の画面の一覧を開く。
+   選ぶ方が変わったら一覧を閉じる（別の方の行き先を残さない） */
+let csHopFor = null;
+function csHopRes_() { const r = currentResident(); return (r && r.masterId != null && r.masterId !== '') ? r : null; }
+function csHopHtml_(r) { return (r && typeof SUResHop === 'object' && SUResHop) ? SUResHop.html('care-schedule.html', String(r.masterId), r.name || '') : ''; }
+function csCloseHop() {
+  const p = $('#cs-hop-pop'); if (p) { p.hidden = true; p.textContent = ''; }
+  const b = $('#cs-hop-btn'); if (b) b.setAttribute('aria-expanded', 'false');
+  csHopFor = null;
+}
+function csHopSync() {
+  const b = $('#cs-hop-btn'); if (!b) return;
+  const r = csHopRes_();
+  b.hidden = !csHopHtml_(r);
+  if (csHopFor !== null && (!r || r.id !== csHopFor)) csCloseHop();
+}
+function csToggleHop() {
+  const p = $('#cs-hop-pop'), b = $('#cs-hop-btn'); if (!p || !b) return;
+  if (!p.hidden) { csCloseHop(); return; }
+  const r = csHopRes_(), h = csHopHtml_(r); if (!h) return;
+  p.innerHTML = h;   /* 部品が全部の値を esc して返す（試験 resident_hop_test） */
+  const rc = b.getBoundingClientRect();
+  p.style.top = Math.round(rc.bottom + 4) + 'px';
+  p.style.right = Math.max(8, Math.round(window.innerWidth - rc.right)) + 'px';
+  p.hidden = false; b.setAttribute('aria-expanded', 'true'); csHopFor = r.id;
+}
+document.addEventListener('click', e => {
+  const p = $('#cs-hop-pop'), b = $('#cs-hop-btn');
+  if (p && !p.hidden && !p.contains(e.target) && !(b && b.contains(e.target))) csCloseHop();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') csCloseHop(); });
 function renderAll() {
+  csHopSync();
   const res = currentResident();
   const noRes = $('#no-resident'), calWrap = $('#cal-wrap'), fab = $('#fab');
   if (!DB.residents.length) {
@@ -7068,11 +7115,16 @@ function deleteCurrentEvent() {
 }
 
 // ── Care info modal (利用者個別) ──
+/* 入居者マスタとつながっている方か（介護度はマスタを正にする・代表者の決定 2026-11-02） */
+function csIsMasterLinked_(r) { return !!(r && r.masterId != null && r.masterId !== ''); }
 function openCareInfoModal() {
   const res = currentResident();
   if (!res) { showToast('利用者を選択してください'); return; }
   $('#care-info-name').textContent = '対象: ' + res.name;
   $('#ci-level').value      = res.careLevel      || '';
+  /* 入居者マスタとつながっている方は介護度を直せない（マスタを正にする・次の同期でマスタの値に戻るため） */
+  $('#ci-level').disabled = csIsMasterLinked_(res);
+  $('#ci-level-note').hidden = !csIsMasterLinked_(res);
   $('#ci-copay').value      = res.copayRate       || 1;
   // 旧フィールド welfareEquipCost(円) → 新 welfareEquipUnits(単位) へ移行
   $('#ci-welfare').value    = (res.welfareEquipUnits != null) ? res.welfareEquipUnits : '';
@@ -7107,7 +7159,7 @@ async function saveCareInfo() {
   if (!res) return;
   const rid = res.id;
   const patch = {
-    careLevel: $('#ci-level').value,
+    careLevel: csIsMasterLinked_(res) ? (res.careLevel || '') : $('#ci-level').value,   /* マスタとつながっている方は変えない */
     copayRate: Number($('#ci-copay').value) || 1,
     welfareEquipUnits: Math.max(0, Number($('#ci-welfare').value) || 0)
   };
@@ -7117,7 +7169,7 @@ async function saveCareInfo() {
     const r = DB.residents.find(x => String(x.id) === String(rid));
     if (!r) return false;
     let changed = false;
-    if (r.careLevel !== patch.careLevel) { r.careLevel = patch.careLevel; changed = true; }
+    if (!csIsMasterLinked_(r) && r.careLevel !== patch.careLevel) { r.careLevel = patch.careLevel; changed = true; }
     if (Number(r.copayRate) !== patch.copayRate) { r.copayRate = patch.copayRate; changed = true; }
     if (Math.max(0, Number(r.welfareEquipUnits) || 0) !== patch.welfareEquipUnits) { r.welfareEquipUnits = patch.welfareEquipUnits; changed = true; }
     if (r.welfareEquipCost !== undefined) { delete r.welfareEquipCost; changed = true; }  // 旧フィールド除去
@@ -8311,7 +8363,9 @@ function renderResidentBulkRows_() {
     h += `<tr data-rid="${escHtml(String(res.id))}">`
       + `<td class="rl-name">${escHtml(res.name || '（無名）')}</td>`
       + `<td><input class="inp rb-kana" type="text" value="${escHtml(res.kana || '')}" placeholder="ふりがな" style="min-width:96px;text-align:start"></td>`
-      + `<td><select class="inp rb-level" data-on-change="rbPreview_" data-this="1">${levelOpt(res.careLevel)}</select></td>`
+      + (csIsMasterLinked_(res)
+          ? `<td><select class="inp rb-level" data-on-change="rbPreview_" data-this="1" disabled title="介護度は入居者マスタで直してください" aria-label="介護度（入居者マスタで直してください）">${levelOpt(res.careLevel)}</select></td>`
+          : `<td><select class="inp rb-level" data-on-change="rbPreview_" data-this="1">${levelOpt(res.careLevel)}</select></td>`)
       + `<td><select class="inp rb-copay">${copayOpt(res.copayRate)}</select></td>`
       + `<td><input class="inp rb-welfare" type="number" min="0" step="1" value="${welfare}" data-on-change="rbPreview_" data-this="1"></td>`
       + `<td><input type="checkbox" class="rb-target"${res.targetSchedule === false ? '' : ' checked'}></td>`
@@ -8343,7 +8397,7 @@ async function saveResidentBulk_() {
     const rid = tr.getAttribute('data-rid');
     const res = DB.residents.find(r => String(r.id) === String(rid));
     if (!res) continue;                                   // 存在しないidはスキップ（空上書き防止）
-    const level = tr.querySelector('.rb-level').value;
+    const level = csIsMasterLinked_(res) ? (res.careLevel || '') : tr.querySelector('.rb-level').value;   /* マスタとつながっている方は変えない */
     const copay = Number(tr.querySelector('.rb-copay').value);
     const welfareRaw = tr.querySelector('.rb-welfare').value;
     const target = tr.querySelector('.rb-target').checked;
@@ -8363,7 +8417,7 @@ async function saveResidentBulk_() {
     patches.forEach(p => {
       const r = DB.residents.find(x => String(x.id) === String(p.id));
       if (!r) return;                                     // 削除済みidはスキップ（空上書き防止）
-      if (r.careLevel !== p.careLevel) { r.careLevel = p.careLevel; changed = true; }
+      if (!csIsMasterLinked_(r) && r.careLevel !== p.careLevel) { r.careLevel = p.careLevel; changed = true; }
       if (Number(r.copayRate) !== p.copayRate) { r.copayRate = p.copayRate; changed = true; }
       if (Math.max(0, Number(r.welfareEquipUnits) || 0) !== p.welfareEquipUnits) { r.welfareEquipUnits = p.welfareEquipUnits; changed = true; }
       if ((r.targetSchedule !== false) !== p.targetSchedule) { r.targetSchedule = p.targetSchedule; changed = true; }
@@ -9682,6 +9736,7 @@ const CS_ACTIONS = {
   'openOfficeInfoModal': (a) => openOfficeInfoModal(...a),
   'openResidentBulkModal': (a) => openResidentBulkModal(...a),
   'openResidentListModal': (a) => openResidentListModal(...a),
+  'csToggleHop': (a) => csToggleHop(...a),
   'openResidentModal': (a) => openResidentModal(...a),
   'openRestoreModal': (a) => openRestoreModal(...a),
   'openSyncModal': (a) => openSyncModal(...a),
@@ -9737,6 +9792,8 @@ function csRunAction_(el, type, e) {
 });
 </script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
+<!-- 「この方の画面 ▾」の一覧（画面だけ・印刷しない） -->
+<div class="srh-pop" id="cs-hop-pop" role="group" aria-label="この方の画面" hidden></div>
 <script src="su-report.js?v=2026-10-28" data-tool="週間計画"></script>
 </body>
 </html>
