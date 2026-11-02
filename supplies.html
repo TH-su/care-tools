@@ -3,7 +3,7 @@
 <head>
 <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-b0LbtuCRmFCCZxwuh8hZ6xb6fJbVEm96D8zCfpBP3PU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-XDMSz5MHWFyHqPZkLOSCgk81Q9z4R/8oOCf9OvtpFsk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="spl-build" content="2026-09-23.1">
@@ -390,6 +390,7 @@ button,input,select,textarea{font-family:inherit;color:var(--c-ink)}
 
 /* 画面切替・カード */
 main{padding:var(--sp-2) var(--sp-4) var(--sp-6)}
+.purpose{padding:var(--sp-2) var(--sp-4) 0;color:var(--c-ink2);font-size:var(--fs-sm)}
 .scr{display:none}
 .scr.on{display:block}
 .cd{background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--r-lg);
@@ -678,8 +679,8 @@ body.staff .adm{display:none !important}
 
 <div id="calcBlock">
   <p class="big" aria-hidden="true">⚠</p>
-  <p><b>計算モジュールを読み込めませんでした</b></p>
-  <p class="sub">supplies-calc.js が同じフォルダにあるか確かめてください。<br>ファイルを置いたあと、この画面を再読み込みしてください。</p>
+  <p><b>画面の部品を読み込めませんでした</b></p>
+  <p class="sub">通信の状態を確かめて、この画面を再読み込みしてください。<br>続く時は管理者へ知らせてください。</p>
 </div>
 
 <header class="hdr">
@@ -688,6 +689,8 @@ body.staff .adm{display:none !important}
   <span class="grow"></span>
   <button type="button" class="icon-btn" id="reloadBtn" aria-label="サーバーから読み直す">⟳</button>
 </header>
+<!-- この画面でできることの1行（画面だけ・印刷しない＝.noprint） -->
+<p class="purpose noprint">この画面でできること：消耗品の品目と価格・在庫を管理し、入居者への出庫を記録します。</p>
 
 <main>
 
@@ -1496,8 +1499,25 @@ function mkErr(msg, hint) {
   e.hint = hint || '';
   return e;
 }
-function errText(e) { return txt((e && e.userMsg) || (e && e.message) || e); }
+/* 職員向けの文（mkErr の userMsg）が無い例外＝画面の中の思わぬエラー（TypeError 等）。英語の例外文は画面に出さず、
+   不具合報告の記録（SUErrors.note）に残す（通信の失敗は apiPost・apiPing が職員向けの文に包むので、ここへは来ない） */
+var MOVE_MAYBE_DONE = '保存や記録はもう入っていることがあります。押し直す前に、一覧で入っているか確かめてください。続く時は管理者へ知らせてください。';
+function errText(e) {
+  if (e && e.userMsg) return txt(e.userMsg);
+  if (e && typeof e === 'object' && e.message) {
+    if (!e.splNoted) {
+      try {
+        e.splNoted = true;
+        if (typeof window !== 'undefined' && window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('画面の中のエラー', e, 'supplies:errText');
+      } catch (_) { /* 捨ててよい: 記録できなくても画面の案内は出す */ }
+    }
+    return '画面の中で思わぬエラーが起きました';
+  }
+  return txt(e);
+}
 function errHint(e) {
+  /* 書く操作では、サーバーが受け付けた後の描き直しで起きることがある＝押し直し・読み込み直しを勧めない（二重登録を防ぐ） */
+  if (e && typeof e === 'object' && !e.userMsg && !e.hint && e.message) return MOVE_MAYBE_DONE;
   return txt(e && e.hint) || '時間をおいてもう一度お試しください。続くときは設定画面で接続先URLと合言葉を確かめてください。';
 }
 /* 書く action（消耗品管理GAS の WRITE_ACTIONS と同じ11個）。ログインの証明はこれらの要求にだけ添える（2026-10-15） */
@@ -1563,7 +1583,7 @@ function apiPost(action, body, timeoutMs) {
     ? splAccessToken_().then(function (at) { if (at) payload.accessToken = at; return send(); })
     : send();
   return sent.then(function (res) {
-    if (!res.ok) throw mkErr('サーバーが応答しませんでした（HTTP ' + res.status + '）', '通信環境を確かめ、時間をおいてもう一度お試しください。');
+    if (!res.ok) throw mkErr('サーバーがうまく応答しませんでした', (res.status >= 400 && res.status < 500) ? CFG_URL_CHECK : '通信環境を確かめ、時間をおいてもう一度お試しください。');
     return res.text();
   }).then(function (t) {
     var d = null;
@@ -1650,13 +1670,13 @@ function apiPing() {
   }
   return fetch(cfg.url + (cfg.url.indexOf('?') >= 0 ? '&' : '?') + 'action=ping', { method: 'GET', redirect: 'follow' })
     .then(function (res) {
-      if (!res.ok) throw mkErr('サーバーが応答しませんでした（HTTP ' + res.status + '）', CFG_URL_CHECK);
+      if (!res.ok) throw mkErr('サーバーがうまく応答しませんでした', CFG_URL_CHECK);
       return res.text();
     })
     .then(function (t) {
       var d = null;
       try { d = JSON.parse(t); } catch (e) { throw mkErr('応答を読み取れませんでした', CFG_URL_CHECK + ADMIN_ACCESS_ASK); }
-      if (!d || d.ok !== true) throw mkErr(txt(d && d.error) || '接続できませんでした', '設定の接続先URLと合言葉が、管理者から受け取ったものと同じか確かめてください。');
+      if (!d || d.ok !== true) throw mkErr((Object.prototype.hasOwnProperty.call(ERR_TEXT, txt(d && d.error)) && ERR_TEXT[txt(d && d.error)]) || '接続できませんでした', '設定の接続先URLと合言葉が、管理者から受け取ったものと同じか確かめてください。');
       return d;
     })
     .catch(function (e) {
@@ -1879,7 +1899,7 @@ function loadList(quiet) {
     setState('listState', 'warn', '接続先がまだ設定されていません',
       '下の「設定」で、管理者から受け取った接続先URLと合言葉を入れて保存してください。',
       '設定を開く', function () { showScreen('settings'); });
-    setState('stockState', 'warn', '接続先がまだ設定されていません', '下の「設定」で接続先を入れてください。',
+    setState('stockState', 'warn', '接続先がまだ設定されていません', '下の「設定」で、管理者から受け取った接続先URLと合言葉を入れて保存してください。',
       '設定を開く', function () { showScreen('settings'); });
     setState('lowState', '', '', '');
     return Promise.resolve();
@@ -3074,7 +3094,14 @@ function flushPending() {
   }).catch(function (e) {
     /* ★送り直せなかったことも必ず見せる（黙って握り潰さない・設計 §3-5）。
        控えは消さない＝次にこの画面を開いた時にもう一度送る */
-    setState('mvState', 'err', '未送信の出庫 ' + a.length + '件を送り直せませんでした（' + errText(e) + '）',
+    var em = errText(e);
+    /* 職員向けの文の無い例外＝サーバーが受け付けた後の描き直しで起きた（apiPost は自分の失敗を必ず職員向けの文に包む） */
+    if (!(e && e.userMsg)) {
+      setState('mvState', 'err', '未送信だった出庫は送れている可能性があります（' + em + '）',
+        '下の「最近の入出庫」の「読み込む」で、入っているか確かめてから操作してください。続く時は管理者へ知らせてください。');
+      return;
+    }
+    setState('mvState', 'err', '未送信の出庫 ' + a.length + '件を送り直せませんでした（' + em + '）',
       errHint(e) + ' 控えは残してあります。設定画面の「接続テスト」で原因を確かめてから、この画面を開き直してください。');
   });
 }
@@ -3142,7 +3169,15 @@ function sendMoves(moves, isOut) {
   }).catch(function (e) {
     /* 届いたか分からないので、中身と番号を控える（押し直しで二重に登録しないため） */
     if (moves.length === 1) ST.retryMove = { fp: moveFingerprint(moves[0]), id: txt(moves[0].id) };
-    setState('mvState', 'err', '記録できませんでした（' + errText(e) + '）', errHint(e));
+    var em = errText(e);
+    /* 職員向けの文の無い例外＝サーバーが受け付けた後の描き直しで起きた＝記録は入っている。読み込み直しを勧めない
+       （読み込み直すと送り直しの控え ST.retryMove が消え、入れ直すと2件目になる） */
+    if (!(e && e.userMsg)) {
+      setState('mvState', 'err', '記録は入っている可能性があります（' + em + '）',
+        '下の「最近の入出庫」の「読み込む」で、入っているか確かめてから操作してください。この画面は読み込み直さないでください。');
+      return;
+    }
+    setState('mvState', 'err', '記録できませんでした（' + em + '）', errHint(e));
   }).then(function () {
     ST.busy = false;
     $('mvSubmit').disabled = false;
@@ -3505,7 +3540,7 @@ function billCalcReady() {
   var c = SPL();
   if (c && typeof c.billRows === 'function' && typeof c.billTotal === 'function') return true;
   setState('billState', 'err', '明細を組み立てられませんでした',
-    '計算モジュール（supplies-calc.js）にこの画面が使う関数がありません。画面を再読み込みしても直らない時は、supplies-calc.js を新しい版に置き換えてください。');
+    '画面の部品が古い版のままです。この画面を再読み込みしてください（続く時は管理者へ知らせてください）。');
   return false;
 }
 function syncBillClosedNote() {

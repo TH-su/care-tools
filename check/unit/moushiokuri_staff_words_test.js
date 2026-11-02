@@ -104,5 +104,110 @@ console.log('\n【5】排便記録の接続が無い時の案内（前からあ�
 const exc = grabFn(S, 'excCfgNotice');
 t('excCfgNotice に接続設定へのリンクがある', exc.indexOf("a.href = 'connection-settings.html'") >= 0 && exc.indexOf("'接続設定を開く'") >= 0);
 
+/* ══ 便7（2026-11-02）: 残っていた技術の言葉・英語の失敗の文の分け方・「?」の説明 ══ */
+const TECH7 = /GAS|サーバー|スプレッドシート|想定外|タイムアウト|JSON|HTTP|API|token|Failed|TypeError|undefined|null/;
+console.log('\n【6】便7 古い形が残っていない');
+[
+  "'排便記録のサーバーが読み取りを受け付けませんでした。",
+  "'排便記録のサーバーから想定外の応答が返りました。'",
+  "'排便記録のサーバーから' + (EXC_TIMEOUT_MS / 1000)",
+  "return '通信がタイムアウトしました';",
+  '申し送りスプレッドシートの記録を',
+  "brk = '（サーバー '",
+  "'⚠️ 直近の自動取込で失敗がありました: ' + VM.fails",
+  "info += '／失敗: ' + String(r.fails)"
+].forEach(w => t('「' + w + '」が無い', S.indexOf(w) < 0, w));
+
+console.log('\n【7】便7 言い換えた後の文がある');
+const NEW7 = [
+  ['この画面について', '申し送りシートの記録を、入居者ごとにまとめて表示します。'],
+  ['読み込み時間の内訳', "brk = '（受け口 '"],
+  ['バイタルの取込の失敗', "'⚠️ 直近の自動取込で失敗がありました。続くようなら管理者へ連絡してください（詳しい内容は「設定」タブの「接続テスト」で出ます）。'"],
+  ['接続テストの失敗の中身は管理者向けと書く', "info += '／取込の失敗（管理者向けの詳しい内容）: ' + String(r.fails)"],
+  ['「?」の説明', '「?」＝申し送りシートに書いてあるのに、数字として読めなかった所です（原本を確かめてください）。']
+];
+NEW7.forEach(([name, w]) => t(name + ': 文がある', S.indexOf(w) >= 0, w));
+t('バイタルの帯に失敗の符号（VM.fails）をそのまま出さない', !/textContent\s*=[^;]*VM\.fails/.test(S));
+
+/* apiErrMsg・excErrMsg を、記録（SUErrors.note）を差し替えた箱で動かす */
+function runner(fnName, extra) {
+  const notes = [];
+  const box = { SUErrors: { note: (k, e, w) => notes.push([k, w]) }, EXC_TIMEOUT_MS: 30000 };
+  vm.createContext(box);
+  vm.runInContext(grabFn(S, fnName), box);
+  return (e) => { notes.length = 0; const msg = box[fnName](e); return { msg, noted: notes.length }; };
+}
+function errOf(name, message) { const e = new Error(message); e.name = name; return e; }
+console.log('\n【8】apiErrMsg の英語の失敗の分け方');
+{
+  const run = runner('apiErrMsg');
+  const net = ['Failed to fetch', 'Load failed', 'NetworkError when attempting to fetch resource.', 'network error', 'Error in body stream', 'The network connection was lost.'];
+  net.forEach(m => {
+    const r = run(errOf('TypeError', m));
+    t('通信の失敗「' + m + '」→ 通信の文・記録しない', r.msg === '読み込みに失敗しました。通信環境を確認してください' && r.noted === 0, r);
+  });
+  let r = run(errOf('AbortError', 'The user aborted a request.'));
+  t('時間切れ → 時間内に返事が無い文・記録しない', r.msg === '時間内に返事がありませんでした。通信状況を確かめてください' && r.noted === 0, r);
+  r = run(errOf('SyntaxError', 'Unexpected token < in JSON at position 0'));
+  t('返事の形が崩れている → 受け口の設定の文・記録しない', /思っていた形と違う返事/.test(r.msg) && r.noted === 0, r);
+  r = run(errOf('TypeError', "Cannot read properties of undefined (reading 'x')"));
+  t('画面の中のエラー → 読み込み直しの文・記録に残す', r.msg === '画面の中で思わぬエラーが起きました。画面を読み込み直してください' && r.noted === 1, r);
+  r = run(errOf('Error', 'Something odd'));
+  t('ほかの英語の文 → 一般の文・記録に残す', r.msg === '読み込めませんでした。しばらくしてからもう一度お試しください' && r.noted === 1, r);
+  r = run(new Error('API:認証エラー'));
+  t('日本語の断り（合言葉違い）は記録しない', r.noted === 0, r);
+  ['Failed to fetch', 'x', 'Unexpected token'].forEach(m => {
+    const g = run(errOf(m === 'x' ? 'RangeError' : (m === 'Unexpected token' ? 'SyntaxError' : 'TypeError'), m)).msg;
+    t('出す文に技術の言葉・英語が無い（' + m + '）', !TECH7.test(g), g);
+  });
+}
+console.log('\n【9】excErrMsg の英語の失敗の分け方');
+{
+  const run = runner('excErrMsg');
+  let r;
+  ['Failed to fetch', 'network error', 'Error in body stream'].forEach(m => {
+    r = run(errOf('TypeError', m));
+    t('通信の失敗「' + m + '」→ 通信の文・記録しない', r.msg === '排便記録を読み込めませんでした。通信状況を確認して「読み込み」を押してください。' && r.noted === 0, r);
+  });
+  r = run(new Error('EXC_HTTP'));
+  t('EXC_HTTP → 接続設定を確かめる文・記録しない', /返事を読めませんでした/.test(r.msg) && /接続設定/.test(r.msg) && r.noted === 0, r);
+  r = run(new Error('EXC_FORMAT'));
+  t('EXC_FORMAT → 思っていた形と違う返事・記録しない', /思っていた形と違う返事/.test(r.msg) && r.noted === 0, r);
+  r = run(new Error('EXC_REFUSED'));
+  t('EXC_REFUSED → 受け付けなかった文・記録しない', /受け付けませんでした/.test(r.msg) && r.noted === 0, r);
+  r = run(new Error('EXC_AUTH'));
+  t('EXC_AUTH → 合言葉の文（前のまま）・記録しない', r.msg === '排便記録の合言葉が違います。排便記録のアプリの接続設定をご確認ください。' && r.noted === 0, r);
+  r = run(errOf('AbortError', 'The user aborted a request.'));
+  t('時間切れ → 30秒以内に返事が無い文・記録しない', r.msg.indexOf('30秒以内に返事がありませんでした') >= 0 && r.noted === 0, r);
+  r = run(errOf('TypeError', "Cannot read properties of null (reading 'x')"));
+  t('画面の中のエラー → 読み込み直しの文・記録に残す', /画面の中で思わぬエラー/.test(r.msg) && r.noted === 1, r);
+  r = run(errOf('Error', 'odd'));
+  t('ほかの英語の文 → 一般の文・記録に残す', r.msg === '排便記録を読み込めませんでした。時間をおいて「読み込み」を押してください。' && r.noted === 1, r);
+  ['EXC_HTTP', 'EXC_FORMAT', 'EXC_REFUSED'].forEach(m => { const g = run(new Error(m)).msg; t(m + ' の文に技術の言葉が無い', !TECH7.test(g), g); });
+  t('記録の失敗は印付きで捨てる（空の catch にしない）', (S.match(/catch\(_\)\{ \/\* 捨ててよい: 記録できなくても断りの文は出す \*\/ \}/g) || []).length === 2);
+}
+console.log('\n【10】「?」の説明は「?」が出る時だけ・画面だけ');
+{
+  const at = S.indexOf('function vmUnreadNote(');
+  let src = '';
+  if (at >= 0) { let d = 0, seen = false; for (let i = at; i < S.length; i++) { const c = S[i]; if (c === '{') { d++; seen = true; } else if (c === '}') { d--; if (seen && d === 0) { src = S.slice(at, i + 1); break; } } } }
+  t('vmUnreadNote がある', !!src);
+  const mk = () => { const kids = []; return { kids, appendChild: (x) => kids.push(x) }; };
+  const box = { dates: ['2026-01-01', '2026-01-02'], document: { createElement: () => ({ className: '', textContent: '' }) } };
+  vm.createContext(box);
+  if (src) vm.runInContext(src, box);
+  const defs = [{ key: 'temp' }, { key: 'pulse' }];
+  const s1 = mk(); if (src) box.vmUnreadNote(defs, { '2026-01-02': { temp: null, flags: ['temp'] } }, s1);
+  t('値が無く印がある → 説明を1つ足す・印刷に出さない', s1.kids.length === 1 && /\bnoprint\b/.test(s1.kids[0].className), s1.kids);
+  const s2 = mk(); if (src) box.vmUnreadNote(defs, { '2026-01-02': { temp: 36.5, flags: ['temp'] } }, s2);
+  t('値が読めている時は出さない（表にも「?」が出ない）', s2.kids.length === 0);
+  const s3 = mk(); if (src) box.vmUnreadNote(defs, { '2026-01-02': { temp: null } }, s3);
+  t('印が無い時は出さない（表は「−」）', s3.kids.length === 0);
+  const s4 = mk(); if (src) box.vmUnreadNote(defs, { '2026-01-02': { spo2: null, flags: ['spo2'] } }, s4);
+  t('その表に無い項目の印では出さない', s4.kids.length === 0);
+  t('バイタル・食事の両方の表の下で呼ぶ', S.indexOf('vmUnreadNote(VM_SERIES, vBy, sec1);') >= 0 && S.indexOf('vmUnreadNote(VM_MEALS, mBy, sec2);') >= 0);
+  t('表の「?」の条件は前のまま（説明と同じ条件）', S.indexOf("if(row && row.flags && row.flags.indexOf(sd.key) >= 0){ td.textContent = '?'; td.className = 'bad'; }") >= 0);
+}
+
 console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' 件合格・' + fail + ' 件不合格');
 process.exit(fail ? 1 : 0);

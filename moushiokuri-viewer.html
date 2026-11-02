@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-+t5LFuR9z3UqE0LRrnp1h+9bldRtT2MelYXbbWbkOuk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G7EakbD/kwXKwTs4KSWc4P3P4PtJJJfQmIg298Y354U='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -737,7 +737,7 @@ mark { background:var(--mark-bg); color:inherit; padding:0 1px; border-radius:2p
     <div class="cd">
       <h2 style="font-size: 0.9375rem;margin-bottom:8px;">この画面について</h2>
       <p class="hint">
-        申し送りスプレッドシートの記録を、入居者ごとにまとめて表示します。<br>
+        申し送りシートの記録を、入居者ごとにまとめて表示します。<br>
         「申し送り原文」は当日分まで自動で取り込まれます。<br>
         表示した内容は端末に保存されません（画面を閉じると消えます）。
       </p>
@@ -1085,8 +1085,17 @@ function apiErrMsg(e){
   if(m === 'GAS_BAD_RESPONSE') return '申し送りの Google の受け口から、思っていた形と違う返事が届きました。「設定」タブの URL が正しいか確かめてください';
   if(m.indexOf('API:認証エラー') === 0) return '合言葉が違います。「設定」タブで確認してください';
   if(m.indexOf('API:') === 0) return '申し送りの Google の受け口で問題が起きました。しばらくしてからもう一度お試しください';
-  if(m.indexOf('abort') >= 0 || m.indexOf('Abort') >= 0) return '通信がタイムアウトしました';
-  return '読み込みに失敗しました。通信環境を確認してください';
+  if(m.indexOf('abort') >= 0 || m.indexOf('Abort') >= 0) return '時間内に返事がありませんでした。通信状況を確かめてください';
+  /* ★英語の失敗の文はそのまま出さない（2026-11-02 便7）。次の順で分ける。
+       通信の失敗（つながらない）→ 通信の文・記録しない（圏外の端末で報告の種を増やさない）。fetch の失敗も TypeError で来るので、名前より先に見る
+       返事の形が崩れている（JSON.parse の SyntaxError）→ 受け口の設定の文・記録しない
+       画面の中のエラー（TypeError 等）→ 読み込み直しの文・記録に残す／ほかの英語の文 → 記録に残す */
+  var nm = String(e && e.name || '');
+  if(/Failed to fetch|Load failed|network|Error in body stream|offline/i.test(m)) return '読み込みに失敗しました。通信環境を確認してください';
+  if(nm === 'SyntaxError') return '申し送りの Google の受け口から、思っていた形と違う返事が届きました。「設定」タブの URL が正しいか確かめてください';
+  try{ if(typeof SUErrors !== 'undefined' && SUErrors && typeof SUErrors.note === 'function') SUErrors.note('申送ビューアの読み込み', e, 'moushiokuri:apiErrMsg'); }catch(_){ /* 捨ててよい: 記録できなくても断りの文は出す */ }
+  if(/^(TypeError|ReferenceError|RangeError)$/.test(nm)) return '画面の中で思わぬエラーが起きました。画面を読み込み直してください';
+  return '読み込めませんでした。しばらくしてからもう一度お試しください';
 }
 
 /* ── 入居者マスタの名簿（読取専用・masterId 解決用）───────────── */
@@ -1393,7 +1402,7 @@ function load(opts){
     var sec = ((done - t0) / 1000).toFixed(1);
     var brk = '';
     if(nt && nt.head && nt.body){
-      brk = '（サーバー ' + ((nt.head - nt.t0) / 1000).toFixed(1)
+      brk = '（受け口 ' + ((nt.head - nt.t0) / 1000).toFixed(1)
           + ' ／受信 ' + ((nt.body - nt.head) / 1000).toFixed(1)
           + ' ／表示 ' + ((done - nt.body) / 1000).toFixed(1)
           + ' ／' + Math.round(nt.bytes / 1024) + 'KB）';
@@ -2089,10 +2098,11 @@ function vmRenderBanner(){
     missMsg('バイタル', missV);
     missMsg('食事量', missM);
   }
-  /* 取込側で起きた失敗をそのまま見せる（設定タブを開かないと分からない状態にしない） */
+  /* 取込側で起きた失敗があることを見せる（設定タブを開かないと分からない状態にしない）。
+     ★失敗の中身は英語の符号なので、ここでは出さず「設定」タブの接続テストにだけ出す（2026-11-02 便7） */
   if(VM.fails){
     var f = document.createElement('div'); f.className = 'err';
-    f.textContent = '⚠️ 直近の自動取込で失敗がありました: ' + VM.fails;
+    f.textContent = '⚠️ 直近の自動取込で失敗がありました。続くようなら管理者へ連絡してください（詳しい内容は「設定」タブの「接続テスト」で出ます）。';
     b.appendChild(f);
   }
 
@@ -2612,6 +2622,21 @@ function vmRenderBody(){
   var dates = vmAllDates();
   var vBy = mergeBy(vs, ['temp','sysBP','diaBP','pulse','spo2']);
   var mBy = mergeBy(ms, ['bMain','bSide','lMain','lSide','dMain','dSide']);
+  /* 表の「?」（vmTable が出す・原本に書いてあるのに数字として読めなかった所）の説明を、出た時だけ表の下に添える。
+     ★判定は vmTable の「?」と同じ条件（値が無く flags に項目がある）。画面だけ（noprint）＝印刷は変えない（2026-11-02 便7） */
+  function vmUnreadNote(defs, byDate, sec){
+    var hit = dates.some(function(d){
+      var row = byDate[d];
+      return !!(row && row.flags) && defs.some(function(sd){
+        var v = row[sd.key];
+        return (v === null || v === undefined) && row.flags.indexOf(sd.key) >= 0;
+      });
+    });
+    if(!hit) return;
+    var q = document.createElement('p'); q.className = 'hint noprint';
+    q.textContent = '「?」＝申し送りシートに書いてあるのに、数字として読めなかった所です（原本を確かめてください）。';
+    sec.appendChild(q);
+  }
 
   /* ── バイタル ── */
   var sec1 = document.createElement('div'); sec1.className = 'vmsec';
@@ -2664,6 +2689,7 @@ function vmRenderBody(){
       });
     }
     sec1.appendChild(vmTable(dates, VM_SERIES, vBy, { marks:{ temp:tMarks } }));
+    vmUnreadNote(VM_SERIES, vBy, sec1);
   }else{
     var n1 = document.createElement('p'); n1.className = 'muted';
     n1.textContent = 'この期間のバイタル記録はありません。';
@@ -2702,6 +2728,7 @@ function vmRenderBody(){
     u4.textContent = '地の色が濃いほど食べた量が少ない・斜線＝半分以下（5以下）。▼摂取低下＝1日に'
       + VM_MEAL_HALF.minMeals + '食以上が主食＋副食' + VM_MEAL_HALF.max + '以下（続いた日は「N日目」・読み込んだ期間の中で数える）';
     sec2.appendChild(u4);
+    vmUnreadNote(VM_MEALS, mBy, sec2);
   }else{
     var n2 = document.createElement('p'); n2.className = 'muted';
     n2.textContent = 'この期間の食事摂取量の記録はありません。';
@@ -4249,10 +4276,16 @@ function excPost(cfg, body){
 function excErrMsg(e){
   var m = String(e && e.message || e);
   if(m === 'EXC_AUTH') return '排便記録の合言葉が違います。排便記録のアプリの接続設定をご確認ください。';
-  if(m === 'EXC_REFUSED') return '排便記録のサーバーが読み取りを受け付けませんでした。時間をおいて「読み込み」を押してください。';
-  if(m === 'EXC_FORMAT') return '排便記録のサーバーから想定外の応答が返りました。';
-  if(m.indexOf('abort') >= 0 || m.indexOf('Abort') >= 0) return '排便記録のサーバーから' + (EXC_TIMEOUT_MS / 1000) + '秒以内に応答がありませんでした。通信状況を確認して「読み込み」を押してください。';
-  return '排便記録を読み込めませんでした。通信状況を確認して「読み込み」を押してください。';
+  if(m === 'EXC_REFUSED') return '排便記録の Google の受け口が読み取りを受け付けませんでした。時間をおいて「読み込み」を押してください。';
+  if(m === 'EXC_FORMAT') return '排便記録の Google の受け口から、思っていた形と違う返事が届きました。排便記録のアプリの接続設定をご確認ください。';
+  if(m === 'EXC_HTTP') return '排便記録の Google の受け口から返事を読めませんでした。時間をおいて「読み込み」を押し、続く時は排便記録のアプリの接続設定をご確認ください。';
+  if(m.indexOf('abort') >= 0 || m.indexOf('Abort') >= 0) return '排便記録の Google の受け口から' + (EXC_TIMEOUT_MS / 1000) + '秒以内に返事がありませんでした。通信状況を確認して「読み込み」を押してください。';
+  /* 英語の失敗の文の分け方は apiErrMsg と同じ（通信の失敗は記録しない・画面の中のエラーは記録に残す・2026-11-02 便7） */
+  var nm = String(e && e.name || '');
+  if(/Failed to fetch|Load failed|network|Error in body stream|offline/i.test(m)) return '排便記録を読み込めませんでした。通信状況を確認して「読み込み」を押してください。';
+  try{ if(typeof SUErrors !== 'undefined' && SUErrors && typeof SUErrors.note === 'function') SUErrors.note('申送ビューアの排便記録', e, 'moushiokuri:excErrMsg'); }catch(_){ /* 捨ててよい: 記録できなくても断りの文は出す */ }
+  if(/^(TypeError|ReferenceError|RangeError)$/.test(nm)) return '画面の中で思わぬエラーが起きたため、排便記録を出せませんでした。画面を読み込み直してください。';
+  return '排便記録を読み込めませんでした。時間をおいて「読み込み」を押してください。';
 }
 /* 接続設定が無い・形式が違う端末の案内（通信しない） */
 function excCfgNotice(cfg){
@@ -4958,7 +4991,7 @@ function applyMasterIdParam(){
         info += '／直近の取込 ' + (isNaN(raw) ? '?' : raw) + '日分';
         if(raw === 0) info += '　⚠️ 0日分です。申し送りファイルを読めていない可能性があります';
       }
-      if(r && r.fails) info += '／失敗: ' + String(r.fails);
+      if(r && r.fails) info += '／取込の失敗（管理者向けの詳しい内容）: ' + String(r.fails);
       $('cfgInfo').textContent = info;
       toast(raw === 0 ? '接続はできましたが取込0件です' : '接続できました', raw === 0);
     })['catch'](function(e){
