@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-/N8UTqFdxvqogkPVUfmjk/LCtLI/2gC6+cIsvI343iM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-+t5LFuR9z3UqE0LRrnp1h+9bldRtT2MelYXbbWbkOuk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -713,14 +713,14 @@ mark { background:var(--mark-bg); color:inherit; padding:0 1px; border-radius:2p
       <h2 style="font-size: 0.9375rem;margin-bottom:8px;">はじめて使う時（3ステップ）</h2>
       <ol class="guide">
         <li><b>事務所の端末か確かめる</b><br>この画面は入居者の医療情報を表示します。現場の端末には設定しません。</li>
-        <li><b>接続先を入れる</b><br><a href="connection-settings.html">接続設定</a>の「控えから戻す」で、ほかのアプリの分もまとめて戻せます。控えが無い時は、下の欄に GAS の URL と合言葉を入れて「保存」を押します。</li>
+        <li><b>接続先を入れる</b><br><a href="connection-settings.html">接続設定</a>の「控えから戻す」で、ほかのアプリの分もまとめて戻せます。控えが無い時は、下の欄に Google の受け口の URL と合言葉を入れて「保存」を押します。</li>
         <li><b>つながったか確かめる</b><br>「接続テスト」で「接続できました」と出たら、下の「入居者別」で「読み込み」を押します。</li>
       </ol>
     </div>
     <div class="cd">
       <h2 style="font-size: 0.9375rem;margin-bottom:10px;">接続設定</h2>
       <div class="field">
-        <label for="cfgUrl">GAS ウェブアプリ URL</label>
+        <label for="cfgUrl">接続先の URL（Google の受け口）</label>
         <input type="text" id="cfgUrl" placeholder="https://script.google.com/macros/s/..../exec" autocomplete="off">
       </div>
       <div class="field">
@@ -1080,11 +1080,11 @@ function apiGetOnce(action, params){
 }
 function apiErrMsg(e){
   var m = String(e && e.message || e);
-  if(m === 'NO_CFG') return '接続先が未設定です。「設定」タブで登録してください';
-  if(m === 'GAS_LOGIN') return 'GAS のアクセス権が「全員」になっていない可能性があります';
-  if(m === 'GAS_BAD_RESPONSE') return 'GAS から想定外の応答が返りました。デプロイURLを確認してください';
+  if(m === 'NO_CFG') return '接続先と合言葉が入っていません。「設定」タブの「はじめて使う時」の手順で入れてください';
+  if(m === 'GAS_LOGIN') return '申し送りの Google の受け口から、ログインを求める画面が返りました。受け口の公開の設定が「全員」になっているか、管理者に確かめてもらってください';
+  if(m === 'GAS_BAD_RESPONSE') return '申し送りの Google の受け口から、思っていた形と違う返事が届きました。「設定」タブの URL が正しいか確かめてください';
   if(m.indexOf('API:認証エラー') === 0) return '合言葉が違います。「設定」タブで確認してください';
-  if(m.indexOf('API:') === 0) return 'サーバー側でエラーが発生しました';
+  if(m.indexOf('API:') === 0) return '申し送りの Google の受け口で問題が起きました。しばらくしてからもう一度お試しください';
   if(m.indexOf('abort') >= 0 || m.indexOf('Abort') >= 0) return '通信がタイムアウトしました';
   return '読み込みに失敗しました。通信環境を確認してください';
 }
@@ -1468,7 +1468,7 @@ function renderBanner(boxId){
   if(!all.length) return;
 
   if(!DATA.ingested){
-    bannerLine('note', 'サーバーが取込状況を返しません。GAS を新しい版で再デプロイしてください'
+    bannerLine('note', '申し送りの Google の受け口が古い版のため、取り込みの状況が分かりません。管理者に受け口の更新を頼んでください'
       + '（それまで「取り込まれていない日」の警告は出せません）。', box);
     return;
   }
@@ -4938,7 +4938,7 @@ function applyMasterIdParam(){
   $('cfgSave').addEventListener('click', function(){
     var u = $('cfgUrl').value.trim(), t = $('cfgToken').value.trim();
     if(u && !/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec/.test(u)){
-      toast('URL の形式が違います（/exec で終わる必要があります）', true); return;
+      toast('URL の形が違います。管理者から受け取った Google の受け口の URL を、最後まで貼ってください', true); return;
     }
     saveCfg(u, t);
     mskGuide_();
