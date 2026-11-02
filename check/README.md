@@ -46,7 +46,8 @@ node check/run.mjs --hide-report                # 「不具合を報告」ボタ
 - 直した後で帳票が撮れなくなったら失敗にする（撮れないまま「一致」と言わない）
 - 通信は撮影の間だけ横取りして材料の決まった応答を返す（ネットへは出ない）。画面のコードは変えない
 - 材料は道具の側から読むので、直す前（main）も同じ架空データで撮る
-- 今ある材料: `resident-master.mjs`（入居者マスタのケアマネ一覧・介護度別・架空の16名）
+- 今ある材料: `resident-master.mjs`（入居者マスタのケアマネ一覧・介護度別・架空の16名）・`care-schedule.mjs`（週間計画の A3 週間予定表・架空の1名）
+- SUPrint を使わない画面の帳票は、材料の `sheets` に `prepare`（ページの中で紙を組む関数・真を返せば撮る）と `arg` を書く。`prepare` の無い材料の撮り方は変わらない（2026-11-02）
 
 材料を足す時は、`.gitignore` の許可（`!/check/fixtures/*.mjs`）に入る名前で置き、氏名・居宅名・電話は実在しない見本の語にします（CLAUDE.md §2-1）。
 
@@ -111,6 +112,24 @@ main へ向けた PR を出すと、GitHub Actions が自動で `run.mjs` と同
 
 指している間は画面全体に透明の板が敷かれるので、画面のボタンを押しても保存や通信は起きません。配置図は四角の位置・大きさ・色と文字の帯の長さだけで、
 文字・入力の値・画像の中身は入りません。絵はブランチ `report-images` に置かれます（取り込まないブランチです）。
+
+## 施設の差し替えの確かめ（check/facility-swap.mjs・2026-11-02〜）
+
+facility-profile.json を差し替えるだけで全アプリ（20画面）が動くかを、開いて確かめます。手順は根の `施設の導入手順.md`。
+
+```bash
+node check/facility-swap.mjs                                          # 2つ目の架空の施設（fixtures/facility-profile.alt.mjs）で配って20画面を開く
+node check/facility-swap.mjs --profile facility-profile.sample.json   # 見本で配る＝(a) が落ちることで守りが働くのを確かめる
+node check/facility-swap.mjs --pages index.html,daycare-roster.html   # 画面を絞る
+```
+
+- 配る施設情報は手元の配信のメモリだけで差し替える（`lib.mjs` の `startServer(dir, port, { facilityProfile })`。ファイルは書かない）。外への通信は全部止め、使い捨てのプロファイルのヘッドレス Chrome で開く
+- 1画面1行で (a)(b)(c) を出す。(a) 見本の法人名・施設名・事業所名・正式名・問い合わせ先・医療機関の名前が、見出し・本文（隠れた所も含む）・入力欄の値に0件
+  (b) 画面のスクリプトの例外（pageerror）0件。snap.mjs と同じく pageerror を数え、加えて CSP で止められたスクリプトも数える。404（ws-master.json など）・止めた外への要求は pageerror ではないので数えず、「除いたもの」として行に書く
+  (c) 施設情報を読む画面（su-facility.js を読み込む）は読んだ施設名が配った施設のもの、名前を出す画面（メニュー・デイ利用表）は配った施設の名前が見える文字に出ている（消耗品管理・入居調整は、隠れた部品の文字に配った施設の名前が入っている）。どちらでもない画面は「対象外」と理由を出す（画面の表は `facility-swap.mjs` の PAGES）
+- 終了コード: 全部合格 0／1つでも不合格 1／Chrome を起動できない・画面を開けない等で確かめられない 2。詳しい結果は `check/out/facility-swap.json`
+- 20画面を開くので約2分かかる。`check/unit/run-all.mjs` には入れていない（軽い確かめは `check/unit/facility_swap_test.js`：手順書と道具が公開の許可にある・2つ目の施設情報が見本と名前を共有しない・表に20画面がある）
+- 画面のスクリプトを直して CSP の指紋を作り直していないと、(b) が「CSP で止まった」で落ちる（`node check/csp.mjs --write` の後に回す）
 
 ## 失敗を起こして数える（check/fail-inject/・2026-10-31〜）
 

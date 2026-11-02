@@ -77,6 +77,11 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
 - 施設名・事業所名・電話などは `facility-profile.json` にだけ置き、画面は `SUFacility` から読む。
   画面のコードに施設名を直接書かない（外販時はこのファイルだけ差し替える）。
 - 公開リポジトリには施設名・事業所名・会社名を置かない（見張りの試験 facility_names_zero がある）。
+- 他の施設で使い始める手順は `施設の導入手順.md` が正本。facility-profile.json の差し替えだけで20画面が動くことは `node check/facility-swap.mjs` で確かめる（CSP の指紋を作り直した後に回す・run-all には入れない）（2026-11-02）。
+- 施設ごとの値の塊は `SUFacility.section(名前)` で読む（今は scheduleColors と corpSettings.committeeDefaults）。中身の形は読む画面が確かめ、書いていない・崩れている時は画面の既定のまま動く（2026-11-02）。
+  - 週間計画の A3 週間予定表の色は、scheduleColors に種類ごとの #RRGGBB（time と body の両方）がある時だけ差し替え、無い・崩れている種類は画面の既定（本人指定の色）を使う。
+  - 職員マスタの委員会の出荷時の既定は、corpSettings.committeeDefaults で差し替えられる。code の組は画面の既定と同じ9件に限り、1件でも崩れていれば丸ごと捨てて画面の既定を使う（代表者の決定 2026-11-02 判断5）。
+  - メニューのボタンは、apps を書いた時だけ、接続設定と同じ切り方（su-menu.js の APP_OF）で使わないアプリの分を出さない。役割の決まりの後に当て、メニューの設定では外せない。使い方・困った時は表に載せない。
 - 施設情報の support（問い合わせ先・受付時間・緊急時の連絡先・不具合報告の返事の目安）は help とメニューの『困った時』に出す。facility-profile.json は公開サイトで読めるので、電話は公表済みの事業所の番号だけ（本人指示 2026-10-26）。
 - 印刷は `SUPrint`（`su-print.js`）に寄せる。文字サイズ（CSS 変数）で収め、`zoom` / `transform:scale` は使わない。
   画面だけの表示は `@media print` で消す。印刷に出さない部品には `data-k` を付けない。

@@ -5,11 +5,19 @@
   "facilityName": "見本ホーム",
   "municipality": "見本市",
   "_noteMunicipality": "施設のある市区町村。週間計画の報酬マスタの「自治体」の既定（未保存の端末・新しく入れた時）に使う",
-  "_noteApps": "使うアプリを絞る時だけ apps に id の配列を書く（接続設定の欄と初回の案内がその分だけになる）。id: ws（週間計画・ワースケ・シフト）・master（入居者マスタ・フェイスシート）・adm（入居調整）・tp（個別機能訓練計画書）・haiben（排泄ケア記録）・weight（体重管理）・msk（申送ビューア）",
+  "scheduleColors": {
+    "daycare": { "time": "#FFFF00", "body": "#FFFF00" },
+    "shop":    { "time": "#92D050", "body": "#92D050" },
+    "rise":    { "time": "#55FF00", "body": "#55FF00" },
+    "visit":   { "time": "#00FFFF", "body": "#00FFFF" }
+  },
+  "_noteScheduleColors": "scheduleColors: 週間計画の A3 週間予定表のコマの色。種類は daycare（通所）・shop（買物代行）・rise（起床時・就寝時支援の帯）・visit（訪問）で、time（時刻の行）と body（内容の行）を #RRGGBB の6桁で書く。書いた種類だけ差し替え、time と body のどちらかが崩れている種類・知らない種類は画面の既定の色を使う。書いていなければ画面の既定の色（見本の値と同じ）",
+  "_noteApps": "使うアプリを絞る時だけ apps に id の配列を書く（接続設定の欄と初回の案内がその分だけになる）。id: ws（週間計画・ワースケ・シフト。メニューではデイ利用表・訪問の俯瞰も ws に入る）・master（入居者マスタ・フェイスシート）・adm（入居調整）・tp（個別機能訓練計画書）・haiben（排泄ケア記録）・weight（体重管理）・msk（申送ビューア）・geno（家族構成図）・analyzer（シフト分析）。メニューのボタンも同じ id で絞る（どの id にも当たらないボタンと使い方・困った時は出す）",
   "corpSettings": {
     "_note": "法人設定。有料老人ホームの設置運営指導指針の名称と案内ページ（https:// で始まる URL）。職員マスタの委員会の根拠に出る。空なら municipality から決める",
     "homeGuidelineName": "",
-    "homeGuidelineUrl": ""
+    "homeGuidelineUrl": "",
+    "_noteCommitteeDefaults": "committeeDefaults: 職員マスタの委員会の出荷時の既定を差し替える時だけ書く配列。画面の既定と同じ9件（code は abuse・restraint・infection・safety・kondan・dementia・bcp・disaster・hygiene を1つずつ）を、同じ項目（code・label・kind・sites・freq・basis・url・startedAt・penalty・hasPenalty・purpose・training・drill・note・todo・todoNote など）で書く。kind は committee・plan・officer、sites は facility・visit・day・cm。名前は60字・文は200字・URL は300字まで。1件でも崩れていれば全部捨てて画面の既定を使う。書いていなければ画面の既定の値"
   },
   "support": {
     "_note": "困った時の問い合わせ先。使い方・困った時（help.html）の4項目と、メニューの「困った時」の1行（問い合わせ先と受付時間）に出す。空の項目は「施設の管理者にお問い合わせください」と出る。この値は公開サイトの facility-profile.json として誰でも読める。電話は公表済みの事業所の番号だけを入れる（個人の携帯・夜間の当番の番号は入れない）",

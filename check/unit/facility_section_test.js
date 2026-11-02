@@ -54,8 +54,8 @@ const flush = () => new Promise(r => setTimeout(r, 0));
     t('組み込みの名前（toString 等）も null', F.section('toString') === null && F.section('hasOwnProperty') === null); }
   { const { F } = load(prof(p => { p.scheduleColors = '#FFFF00'; })); t('文字は塊でないので null', F.section('scheduleColors') === null); }
   { const { F } = load(prof(p => { p.scheduleColors = 5; })); t('数は塊でないので null', F.section('scheduleColors') === null); }
-  { const big = {}; for (let i = 0; i < 2000; i++) big['k' + i] = '#ABCDEF'; const { F } = load(prof(p => { p.scheduleColors = big; }));
-    t('大きすぎる塊（2万字超）は null', F.section('scheduleColors') === null); }
+  { const big = {}; for (let i = 0; i < 4000; i++) big['k' + i] = '#ABCDEF'; const { F } = load(prof(p => { p.scheduleColors = big; }));
+    t('大きすぎる塊（5万字超）は null', F.section('scheduleColors') === null); }
 
   console.log('D 端末の控えから起動');
   { const raw = prof(p => { p.scheduleColors = COL; p.corpSettings = Object.assign({}, p.corpSettings, { committeeDefaults: CMT }); });

@@ -46,7 +46,7 @@
     scheduleColors: function (p) { return p.scheduleColors; },                                         /* 週間計画の A3 週間予定表の色 */
     committeeDefaults: function (p) { return p.corpSettings && p.corpSettings.committeeDefaults; }      /* 職員マスタの委員会の出荷時の既定（法人設定） */
   };
-  var SECTION_MAX = 20000;
+  var SECTION_MAX = 50000;   /* 職員マスタの委員会を上限いっぱいに書いても収まる大きさ（9件×各欄の上限で約3万字） */
 
   var data = null, settled = false, waiters = [];
 
