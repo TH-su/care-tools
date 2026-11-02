@@ -149,6 +149,17 @@
     </section>
 
     <section class="cd">
+      <h2>シフト分析の写し</h2>
+      <p class="muted">過去シフト・アナライザのクラウド同期の Google（GAS）が1時間ごとに自動で、月ごとの集計と資格の一覧を Supabase へ写します（統合 0050・2026-11-03）。版（rev）・月の数・人数・大きさと、最後に写した時刻と結果だけを出し、氏名・資格の中身は出しません。正本は今までどおり Google です。</p>
+      <div class="kpis" id="sa-kpis"></div>
+      <p id="sa-verdict" class="msg"></p>
+      <p id="sa-size" class="msg"></p>
+      <p id="sa-mode" class="msg"></p>
+      <div class="acts"><button type="button" class="btn" id="b-sa-cut" hidden>シフト分析を新しい保存先へ切り替える</button>
+        <button type="button" class="btn" id="b-sa-back" hidden>シフト分析を写しの期間に戻す</button></div>
+    </section>
+
+    <section class="cd">
       <h2>訪問日・かかりつけ病院の写し（通所 利用表の☆）</h2>
       <p class="muted">事務所・管理者が入居者マスタを開くたびに、名簿の訪問日とかかりつけ病院が写されます（現場のアカウントは読めない写しです）。ボタンを押した時だけ、この端末の入居者マスタの接続先（Google）から名簿を読んで見比べます。人数と、違いのある利用者No だけを出し、氏名・病院名・曜日は出しません。</p>
       <div class="kpis" id="care-kpis"></div>
@@ -279,6 +290,7 @@
 <script src="su-adm-full.js?v=2026-10-30.3"></script>
 <script src="su-stf-full.js?v=2026-11-02.2"></script>
 <script src="su-sup-full.js?v=2026-11-02.2"></script>
-<script src="shadow-check.js?v=2026-11-03"></script>
+<script src="su-sa-full.js?v=2026-11-03.2"></script>
+<script src="shadow-check.js?v=2026-11-03.3"></script>
 </body>
 </html>

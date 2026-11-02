@@ -536,6 +536,8 @@ const CENSUS = {
   "su-stf-full.js": [],
   "su-sup.js": [],
   "su-sup-full.js": [],
+  "su-sa.js": [],
+  "su-sa-full.js": [],
   "supplies-calc.js": [],
   "supplies.html": [],
   "support-overview.html": [],
