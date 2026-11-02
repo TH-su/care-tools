@@ -1481,9 +1481,11 @@
     var live = r.data.mode === 'live', on = suppliesOn(), st = supTarget();
     if (live && !on) { line.className = 'msg warn'; line.textContent = '備品は新しい保存先へ切り替えた後ですが、切り替えスイッチ（supplies）が切です。画面が古い Google の中身を読まないよう、スイッチを入れ直すか「備品を写しの期間に戻す」を押してください。'; }
     else if (live) { line.className = 'msg ok'; line.textContent = '備品の正本は新しい保存先（Supabase）です。Google へは1時間ごとに写し返しています。'; }
-    else line.textContent = '備品の正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（supplies）を入れる PR の取り込みが要ります。');
+    else line.textContent = '備品の正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（supplies）を入れる PR の取り込みが要ります。') + (st ? '（前の「切り替える」「写しの期間に戻す」が途中で止まり、Google の保存が止まったままの時は「備品を写しの期間に戻す」を押すと最後まで済ませます。途中でなければ押しても何も変わりません）' : '');
     bc.hidden = live || !on || !st;
-    bb.hidden = !live || !st;
+    /* 戻すボタンは、接続先がある管理者にはいつも出す。消耗品管理の GAS は止めたままかを答えないため、データベースが写しの期間でも
+       Google の保存が止まったまま（戻すが途中で止まった）の時に押せるように（戻すは写しの期間なら写し返しをせず、印を外すだけ・反証レビュー指摘3） */
+    bb.hidden = !st;
   }
   async function runSupOp(kind) {
     var v = $('sup-mode');
@@ -1586,9 +1588,10 @@
     var live = r.data.mode === 'live', on = staffOn(), st = stfTarget();
     if (live && !on) { line.className = 'msg warn'; line.textContent = '職員マスタは新しい保存先へ切り替えた後ですが、切り替えスイッチ（staff）が切です。画面が古い Google の中身を読まないよう、スイッチを入れ直すか「職員マスタを写しの期間に戻す」を押してください。'; }
     else if (live) { line.className = 'msg ok'; line.textContent = '職員マスタの正本は新しい保存先（Supabase）です。Google へは保存のたびと1時間ごとに写し返しています。添付ファイルは今までどおり Google ドライブです。'; }
-    else line.textContent = '職員マスタの正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（staff）を入れる PR の取り込みが要ります。');
+    else line.textContent = '職員マスタの正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（staff）を入れる PR の取り込みが要ります。') + (st ? '（前の「切り替える」「写しの期間に戻す」が途中で止まり、Google の保存が止まったままの時は「職員マスタを写しの期間に戻す」を押すと最後まで済ませます。途中でなければ押しても何も変わりません）' : '');
     bc.hidden = live || !on || !st;
-    bb.hidden = !live || !st;
+    /* 戻すボタンは、接続先がある管理者にはいつも出す（職員マスタの GAS も止めたままかを答えない。備品と同じ・反証レビュー指摘3） */
+    bb.hidden = !st;
   }
   async function runStfOp(kind) {
     var v = $('stf-mode');

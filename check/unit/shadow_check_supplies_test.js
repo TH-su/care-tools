@@ -6,6 +6,8 @@
      D 出すのは数・時刻・種類だけ（呼ぶのは様子の口・切り替えの印・記録の一覧だけ）
      E 記録の大きさ（統合 0047）: 上限に対する割合を出し、7割以上で警告する。0047 の前（大きさが無い）は出さない
      F 切り替えた後（sup_mode_get が live）は「切り替え済み」と出し、写しが古いことを警告しない
+     G 戻すボタンは、接続先がある管理者にはデータベースが写しの期間でも出す（Google の保存が止まったまま＝戻すが途中で止まった時に押せるように・
+       反証レビュー指摘3）。職員マスタも同じ
    ★画面の本物の関数（loadSup）を切り出して、データベースの応答だけ偽物にして動かす。
    実行: node check/unit/shadow_check_supplies_test.js
    架空データのみ。 */
@@ -124,6 +126,31 @@ const ago = (min) => new Date(NOW - min * 60000).toISOString();
     const b2 = box({ modeErr: true, status: { ok: true, ver: 1, items: 1, moves: 1, lastAt: ago(5), lastStatus: 'done' } });
     await b2.run();
     t('F 0047 の前（印の口が無い）→ 今までどおり', /届いています/.test(V(b2).textContent));
+  }
+  console.log('\n— G 戻すボタン —');
+  for (const [label, o, cut, back] of [
+    ['写しの期間・スイッチ入・接続先あり', { mode: 'shadow', on: true, cfg: true }, false, false],
+    ['切り替えた後・接続先あり', { mode: 'live', on: true, cfg: true }, true, false],
+    ['写しの期間・接続先なし', { mode: 'shadow', on: true, cfg: false }, true, true],
+    ['管理者でない', { mode: 'shadow', on: true, cfg: true, role: 'office' }, true, true]]) {
+    const nodes = {};
+    ['sup-mode', 'b-sup-cut', 'b-sup-back'].forEach(id => (nodes[id] = { id, className: '', textContent: '', hidden: false }));
+    const env = {
+      $: (id) => nodes[id], me: { role: o.role || 'admin' },
+      SUKv: { _flags: () => ({ supabase: { supplies: o.on } }) },
+      localStorage: { getItem: (k) => (k === 'spl_cfg' && o.cfg ? JSON.stringify({ url: 'https://script.google.com/macros/s/EXAMPLE/exec', token: 'x' }) : null) },
+      RMASTER_RE: /^https:\/\/script\.google\.com\/[^?#\s]*\/exec$/, JSON, String, Promise
+    };
+    env.window = env;
+    vm.createContext(env);
+    vm.runInContext([fn('suppliesOn'), fn('supTarget'), fn('loadSupMode')].join('\n'), env);
+    await env.loadSupMode({ rpc: async () => ({ data: { ok: true, mode: o.mode } }) });
+    t('G ' + label + ' → 切り替えボタン' + (cut ? '隠す' : '出す') + '・戻すボタン' + (back ? '隠す' : '出す'), nodes['b-sup-cut'].hidden === cut && nodes['b-sup-back'].hidden === back, [nodes['b-sup-cut'].hidden, nodes['b-sup-back'].hidden]);
+    if (label === '写しの期間・スイッチ入・接続先あり') t('G 写しの期間は、戻すボタンが途中で止まった時のためのものだと書く', /途中で止まり/.test(nodes['sup-mode'].textContent) && /何も変わりません/.test(nodes['sup-mode'].textContent));
+  }
+  {
+    const body = fn('loadStfMode');
+    t('G 職員マスタの戻すボタンも、接続先がある管理者にはいつも出す', /\n    bb\.hidden = !st;/.test(body) && !/bb\.hidden = !live/.test(body) && /途中で止まり/.test(body));
   }
   console.log(`\n合格 ${pass} / 不合格 ${fail}`);
   process.exitCode = fail ? 1 : 0;

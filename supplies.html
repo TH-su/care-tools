@@ -3,7 +3,7 @@
 <head>
 <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-kkPsYjxWP1KXJ9dKm+Sk1GlA6jAOApEOOQC4IQkHyls='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-aRO6hoew48umW5PI3Kzr/T83U/FRpQgoi2qq+6/5/kY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="spl-build" content="2026-09-23.1">
@@ -1194,7 +1194,7 @@ body.staff .adm{display:none !important}
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-facility.js?v=2026-11-02.3"></script>   <!-- 明細・料金表の発行者（施設名・住所・電話）・監査10月版 #14 -->
 <script src="supplies-calc.js?v=2026-09-23.1"></script>
-<script src="su-sup.js?v=2026-11-02"></script>   <!-- 新しい保存先への切り替え（統合 0047） -->
+<script src="su-sup.js?v=2026-11-02.2"></script>   <!-- 新しい保存先への切り替え（統合 0047） -->
 <script>
 'use strict';
 
@@ -1596,7 +1596,7 @@ function apiPost(action, body, timeoutMs) {
     if (!d || typeof d !== 'object') throw mkErr('サーバーの応答が空でした', '時間をおいてもう一度お試しください。');
     if (d.ok !== true) {
       /* flush_fail は台帳が書けていることがあるので、明細を開いた時に読み直させる（2026-09-23） */
-      if (d.error === 'flush_fail' && MOVE_WRITERS.indexOf(action) >= 0) markBillStale();
+      if ((d.error === 'flush_fail' || d.error === 'db') && MOVE_WRITERS.indexOf(action) >= 0) markBillStale();   /* db＝新しい保存先で確定できたか分からない（統合 0047） */
       var ne = mkErr(serverErrText(d), serverErrHint(d));
       ne.code = txt(d.error);
       ne.raw = d;
@@ -1652,7 +1652,8 @@ var ERR_TEXT = {
   badrow: '保存できませんでした',
   size: '送る内容が大きすぎます',
   format: '送った内容の形が違います',
-  action: 'この操作は新しい保存先では使えません'
+  action: 'この操作は新しい保存先では使えません',
+  mfa: '2段階認証が済んでいません'
 };
 var ERR_HINT = {
   unauthorized: '設定画面で合言葉を入れ直してください。',
@@ -1682,7 +1683,8 @@ var ERR_HINT = {
   badrow: '一覧を取り直して、入っているか確かめてから操作してください。続く時は管理者へ連絡してください。',
   size: '一度に送る件数を減らして、もう一度お試しください。',
   format: 'ページを読み込み直して、もう一度お試しください。',
-  action: 'ページを読み込み直して、もう一度お試しください。続く時は管理者へ連絡してください。'
+  action: 'ページを読み込み直して、もう一度お試しください。続く時は管理者へ連絡してください。',
+  mfa: '2段階認証を済ませてください。'
 };
 function serverErrText(d) {
   var c = txt(d && d.error);

@@ -6,6 +6,7 @@
      C 札が取れない（別の操作中）時は GAS に触らない
      D 戻す: 札 → Google へ写し返す（supMirror）→ 写しの期間に戻す（写し返しが残れば写し返してやり直す）→ GAS の印を外す → 札を返す
      E 戻す途中の失敗は、何が残っているかを知らせる。札はいつも返す
+     G 戻す時に今の状態（印）を読めなければ、成功と言わずに止める（反証レビュー 2026-11-02 指摘10）
      F GAS の断りは hint の文を出す（種類の名前 refused を出さない）
    実行: node check/unit/su_sup_full_test.js */
 'use strict';
@@ -37,7 +38,7 @@ function io(o) {
       log.push('rpc:' + n + (a && a.p_op ? ':' + a.p_op : '') + (a && a.p_mode ? ':' + a.p_mode : '') + (a && a.p_token ? ':' + a.p_token : ''));
       if (n === 'sup_op_begin') { if (o.busy) return { data: { ok: false, error: 'busy' } }; return { data: { ok: true, token: 'T' + (++tokN) } }; }
       if (n === 'sup_op_end') return { data: { ok: true } };
-      if (n === 'sup_mode_get') return { data: { ok: true, mode } };
+      if (n === 'sup_mode_get') return o.modeErr ? { error: { code: '500' } } : { data: { ok: true, mode } };
       if (n === 'sup_set_mode') {
         setTries++;
         if (a.p_mode === 'live' && o.setFail) return { data: { ok: false, error: 'notfrozen' } };
@@ -100,6 +101,12 @@ function io(o) {
     const x = io({ mode: 'shadow' });
     const r = await F.back(x);
     t('D もう写しの期間（GAS の印だけ残っていた）→ 写し返さずに印を外す', r.ok === true && !x.log.includes('gas:supMirror') && x.log.includes('gas:supCutover:off:T1'), x.log);
+  }
+  console.log('G 状態を確かめられない（反証レビュー指摘10）');
+  {
+    const x = io({ modeErr: true });
+    const r = await F.back(x);
+    t('G 戻す時に印を読めない → 成功と言わずに止める・GAS に触らない・札は返す', r.ok === false && /状態を確かめられませんでした/.test(r.why) && !x.log.some(l => /^gas:/.test(l)) && x.log.includes('rpc:sup_op_end:T1'), [r, x.log]);
   }
   console.log('E 戻す途中の失敗');
   {

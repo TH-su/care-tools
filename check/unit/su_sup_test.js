@@ -9,7 +9,10 @@
      E 受け口に届かない・時間切れは送信の失敗（AbortError）にする（画面が「書けたか分からない」として扱う）
      F 受け口が「写しの期間」と答えたら、印を捨てて Google へ送る。Google が「切り替えた後」と断ったら印を捨てる
      G 画面からは写し返しを頼まない（1時間ごとの自動に任せる）
-     H 端末に書かない・二重に動かさない
+     H 端末に書くのはスイッチの控え（su_backend_flags・su-kv.js と同じ）だけ・二重に動かさない
+     R 反証レビュー 1回（指摘10件）: ログインしていない端末は印が分からないので Google（切り替えた後は Google の断りを「ログインして」に置き換える）／
+       ログインの状態ごとの扱い（denied・error・2段階認証がまだ・確かめが失敗）／送る前の時間切れは通信の失敗（AbortError にしない）／
+       読み取りの前は印を読み直す／ログインの部品は1回だけ読み込む／入口の 401 はログイン／forbidden は合言葉の話を出さない
      S 画面（supplies.html）: 送信を SUSup に通し、Google へ送る関数は今までの fetch(cfg.url, opt) のまま。断りの種類を職員向けの言葉にする
    実行: node check/unit/su_sup_test.js */
 'use strict';
@@ -27,8 +30,8 @@ function box(o) {
   if (o.field) store.su_device_role = 'field';
   const writes = [], invokes = [], rpcs = [], fetches = [];
   const A = {
-    STATUS: { OK: 'ok' },
-    check: async () => (o.signedOut ? { status: 'signed_out' } : o.forbidden ? { status: 'forbidden' } : { status: 'ok', role: o.role || 'office' }),
+    STATUS: { SIGNED_OUT: 'signed_out', DENIED: 'denied', MFA_ENROLL: 'mfa_enroll', MFA_VERIFY: 'mfa_verify', OK: 'ok', ERROR: 'error' },
+    check: () => (o.checkHang ? new Promise(() => {}) : o.checkReject ? Promise.reject(new Error('x')) : Promise.resolve(o.signedOut ? { status: 'signed_out' } : o.status ? { status: o.status } : { status: 'ok', role: o.role || 'office' })),
     client: () => ({
       rpc: async (n) => { rpcs.push(n); if (o.modeErr) return { error: o.modeErr }; return { data: { ok: true, mode: (o.modeRef ? o.modeRef.m : o.mode) || 'shadow', version: 3 } }; },
       functions: { invoke: (fn, opt) => { invokes.push({ fn, body: JSON.parse(JSON.stringify(opt.body)) }); return typeof o.reply === 'function' ? o.reply(invokes.length) : Promise.resolve(o.reply || { data: { ok: true, rows: [] }, error: null }); } },
@@ -36,14 +39,19 @@ function box(o) {
     })
   };
   const w = {
-    localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k) => writes.push(k), removeItem: (k) => writes.push(k) },
+    localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { writes.push(k); if (o.lsKeep) store[k] = v; }, removeItem: (k) => writes.push(k) },
     fetch: (url, init) => {
       fetches.push({ url, init });
       if (/su-backend\.json/.test(url)) return Promise.resolve({ ok: true, json: async () => ({ supabase: o.flags || {} }) });
       return Promise.resolve({ ok: true, json: async () => ({ ok: true }) });
     },
-    SUAuth: A, setTimeout, clearTimeout, Promise, JSON, Object, Error, String, Number, Date
+    setTimeout, clearTimeout, Promise, JSON, Object, Error, String, Number, Date, Math
   };
+  if (o.noAuthYet) {
+    w.supabase = {};
+    w.document = { head: { appendChild: (sc) => { (o.scripts = o.scripts || []).push(sc.src); setTimeout(() => { w.SUAuth = A; sc.onload(); }, 5); } }, createElement: () => ({}) };
+  } else w.SUAuth = A;
+  if (o.flagsFail) w.fetch = (url, init) => { fetches.push({ url, init }); return Promise.reject(new Error('offline')); };
   w.window = w;
   vm.createContext(w);
   vm.runInContext(SRC, w);
@@ -83,22 +91,79 @@ const BODY = () => ({ action: 'addMoves', token: 'tok-supplies', by: '見本', a
     t('C 合言葉と証明は送らない・ほかの本文はそのまま', !('token' in b.invokes[0].body) && !('accessToken' in b.invokes[0].body) && b.invokes[0].body.moves[0].id === 'mv_0001' && b.invokes[0].body.action === 'addMoves');
     t('C 答えは fetch と同じ形（ok・status・text）', x.r.ok === true && x.r.status === 200 && x.d.ok === true);
     const x2 = await b.send({ action: 'list', token: 't' });
-    t('C 読み取りも新しい保存先から・印は1分覚える', b.invokes.length === 2 && b.invokes[1].body.action === 'list' && b.rpcs.filter(n => n === 'sup_mode_get').length === 1 && x2.d.ok === true);
+    await b.send(BODY());
+    t('C 読み取りも新しい保存先から（読み取りは印を読み直す）・書き込みは印を1分覚える', b.invokes.length === 3 && b.invokes[1].body.action === 'list' && b.rpcs.filter(n => n === 'sup_mode_get').length === 2 && x2.d.ok === true, b.rpcs);
     const f = box({ flags: { supplies: true }, mode: 'live', field: true, role: 'field' });
     const y = await f.send(BODY());
     t('C 現場の端末も新しい保存先へ送る（入出庫の記録）', y.d.ok === true && f.invokes.length === 1 && f.gas() === 0);
   }
   console.log('D Google へ流さない断り');
-  for (const [label, o, code, re] of [['ログインしていない', { signedOut: true }, 'login', /ログインしていません/], ['使えないアカウント', { forbidden: true }, 'role', /使えません/],
+  for (const [label, o, code, re] of [['使えないアカウント（denied）', { status: 'denied' }, 'role', /使えません/], ['ログインを確かめられない（error）', { status: 'error' }, 'mode', /確かめられませんでした/],
+    ['ログインの確かめが失敗（例外）', { checkReject: true }, 'mode', /確かめられませんでした/],
     ['印を確かめられない', { modeErr: { code: '500', message: 'x' } }, 'mode', /確かめられませんでした/], ['印の口で断られた', { modeErr: { code: '42501' } }, 'role', /使えません/]]) {
     const b = box(Object.assign({ flags: { supplies: true }, mode: 'live' }, o));
     const x = await b.send(BODY());
     t('D ' + label + ' → {ok:false, error:' + code + ', hint}・Google も受け口も呼ばない', x.d && x.d.ok === false && x.d.error === code && re.test(x.d.hint) && b.gas() === 0 && b.invokes.length === 0, x);
   }
+  console.log('R1 ログインしていない端末');
   {
-    const b = box({ flags: { supplies: true }, mode: 'live', field: true, signedOut: true });
+    const b = box({ flags: { supplies: true }, mode: 'shadow', field: true, signedOut: true });
     const x = await b.send(BODY());
-    t('D 現場の端末でもログインしていなければ断る（Google へ流さない）', x.d.ok === false && x.d.error === 'login' && b.gas() === 0);
+    t('R1 スイッチが入っただけ（写しの期間）→ 今までどおり Google へ送る（「切り替わっています」と言わない）', x.d.via === 'gas' && b.gas() === 1 && b.invokes.length === 0 && b.rpcs.length === 0, x);
+    const b2 = box({ flags: { supplies: true }, signedOut: true, gasText: '{"ok":false,"error":"sup_switched","hint":"切り替えた後です"}' });
+    const y = await b2.send(BODY());
+    t('R1 切り替えた後（Google が sup_switched で断った）→ 「ログインしていません」に置き換える', y.d.ok === false && y.d.error === 'login' && /ログインしていません/.test(y.d.hint) && b2.invokes.length === 0, y);
+    const z = await b2.send(BODY());
+    t('R1 切り替えた後と分かった後は、Google へ送らずに「ログインして」と断る', z.d.error === 'login' && b2.gas() === 1, [z, b2.gas()]);
+  }
+  console.log('R2 2段階認証がまだ');
+  for (const st of ['mfa_verify', 'mfa_enroll']) {
+    const b = box({ flags: { supplies: true }, mode: 'live', status: st });
+    const x = await b.send(BODY());
+    t('R2 ' + st + ' → ログインしているとみなし、受け口に任せる', x.d.ok === true && b.invokes.length === 1);
+    const b2 = box({ flags: { supplies: true }, mode: 'live', status: st, reply: { data: null, error: { name: 'FunctionsHttpError', context: { status: 403, json: async () => ({ ok: false, error: 'role', hint: 'このアカウントでは消耗品管理を使えません', code: 'role' }) } } } });
+    const y = await b2.send(BODY());
+    t('R2 ' + st + ' で受け口に断られた → 「2段階認証を済ませてください」', y.d.ok === false && y.d.error === 'mfa' && /2段階認証を済ませてください/.test(y.d.hint), y);
+    const b3 = box({ flags: { supplies: true }, status: st, modeErr: { code: '42501' } });
+    const z = await b3.send(BODY());
+    t('R2 ' + st + ' で印の口に断られた → 「2段階認証を済ませてください」', z.d.error === 'mfa' && b3.gas() === 0);
+  }
+  console.log('R4 送る前の時間切れ');
+  {
+    const b = box({ flags: { supplies: true }, mode: 'live', checkHang: true });
+    const x = await b.send(BODY(), { timeoutMs: 30 });
+    t('R4 送る前に時間が切れた → 通信の失敗（AbortError ではない＝「入っていることがある」と言わない）・何も送らない', x.e && x.e.name !== 'AbortError' && b.gas() === 0 && b.invokes.length === 0, x);
+  }
+  console.log('R6 読み取りの前は印を読み直す・スイッチの控え');
+  {
+    const ref = { m: 'shadow' };
+    const b = box({ flags: { supplies: true }, modeRef: ref });
+    await b.send({ action: 'list', token: 't' });
+    ref.m = 'live';
+    const x = await b.send({ action: 'list', token: 't' });
+    t('R6 1分以内でも、読み取りは印を読み直す（切り替えた直後に Google から読まない）', x.d.ok === true && b.invokes.length === 1 && b.rpcs.filter(n => n === 'sup_mode_get').length === 2);
+    const b2 = box({ flags: { supplies: true }, mode: 'live' });
+    await b2.send(BODY());
+    t('R6 su-backend.json を読めたら、su-kv.js と同じ控え（su_backend_flags）に残す', JSON.stringify(b2.writes) === '["su_backend_flags"]', b2.writes);
+    const b3 = box({ flags: { supplies: true }, mode: 'live', flagsFail: true });
+    const y = await b3.send(BODY());
+    t('R6 su-backend.json を読めない時は、最後に読めた控えのスイッチを使う', y.d.ok === true && b3.invokes.length === 1 && b3.writes.length === 0);
+  }
+  console.log('R8 ログインの部品は1回だけ読み込む');
+  {
+    const o = { flags: { supplies: true }, mode: 'live', noAuthYet: true };
+    const b = box(o);
+    const [x, y] = await Promise.all([b.send(BODY()), b.send({ action: 'list', token: 't' })]);
+    t('R8 同時に2回送っても、su-auth.js は1本だけ足す', (o.scripts || []).length === 1 && /su-auth\.js/.test(o.scripts[0]) && x.d.ok === true && y.d.ok === true, o.scripts);
+  }
+  console.log('R9 入口の 401・R7 forbidden');
+  {
+    const b = box({ flags: { supplies: true }, mode: 'live', reply: { data: null, error: { name: 'FunctionsHttpError', context: { status: 401, json: async () => ({ code: 401, message: 'Invalid JWT' }) } } } });
+    const x = await b.send(BODY());
+    t('R9 受け口の入口がログインの証明を断った（401）→ ログインの断り（通信の失敗にしない）', x.d && x.d.ok === false && x.d.error === 'login' && b.gas() === 0, x);
+    const b2 = box({ flags: { supplies: true }, mode: 'live', role: 'field', reply: { data: { ok: false, error: 'forbidden', hint: 'この操作には管理者の合言葉が必要です' }, error: null } });
+    const y = await b2.send({ action: 'saveItem', token: 't', item: {} });
+    t('R7 切り替えた後の forbidden は、合言葉の話を出さずにログインの役割の話にする', y.d.error === 'forbidden' && !/合言葉/.test(y.d.hint) && /事務所か管理者のアカウント/.test(y.d.hint), y);
   }
   for (const [code, hint] of [['toolarge', '記録が多くなり、新しい保存先に入りきらなくなりました。この保存は入っていません。管理者へ連絡してください'], ['role', 'このアカウントでは消耗品管理を使えません'], ['action', 'この操作は新しい保存先では受け付けていません']]) {
     const b = box({ flags: { supplies: true }, mode: 'live', reply: { data: null, error: { name: 'FunctionsHttpError', context: { json: async () => ({ ok: false, error: code, hint, code }) } } } });
@@ -143,7 +208,7 @@ const BODY = () => ({ action: 'addMoves', token: 'tok-supplies', by: '見本', a
   {
     const b = box({ flags: { supplies: true }, mode: 'live' });
     await b.send(BODY());
-    t('H localStorage へ書かない', b.writes.length === 0 && !/setItem|sessionStorage/.test(SRC));
+    t('H 端末に書くのはスイッチの控えだけ（sessionStorage も使わない）', b.writes.every(k => k === 'su_backend_flags') && (SRC.match(/setItem\(/g) || []).length === 1 && /setItem\(FLAGS_LS,/.test(SRC) && !/sessionStorage/.test(SRC));
     t('H 読み込み済みなら二重に動かさない', /if \(root\.SUSup\) return;/.test(SRC));
   }
   console.log('S 画面（supplies.html）');
@@ -154,6 +219,8 @@ const BODY = () => ({ action: 'addMoves', token: 'tok-supplies', by: '見本', a
     t('S Google への本文・送り方は変えない（POST・redirect follow・本文は JSON の文字）', /var opt = \{ method: 'POST', body: JSON\.stringify\(payload\), redirect: 'follow' \};/.test(PAGE));
     const errText = /var ERR_TEXT = \{([\s\S]*?)\n\};/.exec(PAGE)[1];
     t('S 断りの種類を職員向けの言葉にする（入りきらない・ログイン・切り替えた後 など）', ['toolarge', 'login', 'role', 'noauth', 'mode', 'db', 'sup_switched', 'badrow'].every(k => new RegExp('\\b' + k + ': \'').test(errText)));
+    t('S 新しい保存先で確定できたか分からない（db）時も、明細に「古い」印を付ける', /\(d\.error === 'flush_fail' \|\| d\.error === 'db'\) && MOVE_WRITERS\.indexOf\(action\) >= 0\) markBillStale\(\)/.test(PAGE));
+    t('S 2段階認証の断りの言葉がある', /\bmfa: '2段階認証が済んでいません'/.test(PAGE));
     t('S 不具合を報告のボタンは今までどおり', /<script src="su-report\.js\?v=[^"]+" data-tool="消耗品管理"><\/script>\s*<\/body>/.test(PAGE));
   }
   console.log(`\n合格 ${pass} / 不合格 ${fail}`);
