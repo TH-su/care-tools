@@ -73,6 +73,8 @@
   <section id="v-main" hidden>
     <!-- 押したボタンの並びのすぐ下へ動かして、結果の文の写しを出す（shadow-check.js の msg・読み上げは最上部の #msg だけ） -->
     <p id="msg-near" class="msg" aria-hidden="true"></p>
+    <!-- データベースの準備（統合の SQL）が足りない時だけ、管理者に足りない番号を出す（画面だけ・印刷しない・shadow-check.js の renderPrep） -->
+    <p id="db-prep" class="msg warn" hidden></p>
     <section class="cd">
       <h2>入居者マスタの写し</h2>
       <p class="muted" id="cmp-src"></p>
@@ -277,6 +279,6 @@
 <script src="su-adm-full.js?v=2026-10-30.3"></script>
 <script src="su-stf-full.js?v=2026-11-02.2"></script>
 <script src="su-sup-full.js?v=2026-11-02.2"></script>
-<script src="shadow-check.js?v=2026-11-02.5"></script>
+<script src="shadow-check.js?v=2026-11-03"></script>
 </body>
 </html>

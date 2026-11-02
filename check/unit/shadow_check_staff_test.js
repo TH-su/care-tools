@@ -28,10 +28,11 @@ function fn(name) {
 }
 const GAS = 'https://script.google.com/macros/s/EXAMPLE_STAFF/exec';
 
+const PREP_SRC = ['var DB_PREP = ' + /var DB_PREP = (\{[\s\S]*?\});/.exec(SRC)[1] + ';', 'var prepMissing = {};', fn('dbErrKind'), fn('notePrep'), fn('renderPrep'), fn('dbErrText')].join('\n');
 function box(o) {
   const nodes = {};
   const mk = (id) => (nodes[id] = { id, className: '', textContent: '', kids: [], replaceChildren() { this.kids = []; }, appendChild(c) { this.kids.push(c); return c; } });
-  ['stf-kpis', 'stf-verdict', 'stf-runs'].forEach(mk);
+  ['stf-kpis', 'stf-verdict', 'stf-runs', 'db-prep'].forEach(mk);
   const sent = [], rpcs = [];
   const store = { stfm_cfg: o.cfg === undefined ? JSON.stringify({ url: GAS, token: 'tok-staff' }) : o.cfg };
   const env = {
@@ -45,10 +46,11 @@ function box(o) {
     AbortController: class { constructor() { this.signal = {}; } abort() {} },
     setTimeout: () => 0, clearTimeout: () => {},
     fetch: (url, init) => { sent.push({ url, init, body: JSON.parse(init.body) }); return o.gasDown ? Promise.reject(new Error('x')) : Promise.resolve({ json: () => Promise.resolve({ ok: true, ver: o.gver }) }); },
-    JSON, String, Object, Promise, Error
+    me: { role: 'admin' }, window: {},
+    JSON, String, Object, Promise, Error, RegExp
   };
   vm.createContext(env);
-  vm.runInContext(['var STF_REFUSED = ' + /var STF_REFUSED = (\{[^;]*\});/.exec(SRC)[1] + ';', fn('stfUrl'), fn('stfPing'), fn('loadStf')].join('\n'), env);
+  vm.runInContext([PREP_SRC, 'var STF_REFUSED = ' + /var STF_REFUSED = (\{[^;]*\});/.exec(SRC)[1] + ';', fn('stfUrl'), fn('stfPing'), fn('loadStf')].join('\n'), env);
   const sb = {
     rpc: (n) => { rpcs.push(n); return Promise.resolve(o.statusErr ? { error: { code: 'PGRST202' } } : { data: o.status }); },
     from: (tbl) => { rpcs.push('from:' + tbl); return { select: () => ({ order: () => ({ limit: () => Promise.resolve({ data: o.runs || [] }) }) }) }; }
