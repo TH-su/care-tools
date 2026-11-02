@@ -44,7 +44,9 @@
      中身の形（色の書き方・委員会の項目）は読む画面が確かめて、崩れていれば画面の既定に戻す */
   var SECTIONS = {
     scheduleColors: function (p) { return p.scheduleColors; },                                         /* 週間計画の A3 週間予定表の色 */
-    committeeDefaults: function (p) { return p.corpSettings && p.corpSettings.committeeDefaults; }      /* 職員マスタの委員会の出荷時の既定（法人設定） */
+    committeeDefaults: function (p) { return p.corpSettings && p.corpSettings.committeeDefaults; },     /* 職員マスタの委員会の出荷時の既定（法人設定） */
+    mealTimes: function (p) { return p.mealTimes; },                                                   /* 入居者マスタ・フェイスシートの食事の時刻の施設の既定 */
+    mealForms: function (p) { return p.mealForms; }                                                    /* 体重管理の食事形態の表示名 */
   };
   var SECTION_MAX = 50000;   /* 職員マスタの委員会を上限いっぱいに書いても収まる大きさ（9件×各欄の上限で約3万字） */
 

@@ -39,7 +39,7 @@ export const SAMPLE_PROFILE_FILE = path.join(ROOT, 'facility-profile.sample.json
 export const PAGES = [
   { file: 'index.html', title: 'メニュー', reads: true, shows: true, why: '事業所の呼び名（officeName）を区分・ボタンの名前に、問い合わせ先（support）を「困った時」に出す' },
   { file: 'care-schedule.html', title: '週間計画', reads: true, shows: false, why: '読むのは市区町村（municipality）だけで、施設名・事業所名は出さない' },
-  { file: 'weight-record.html', title: '体重管理', reads: false, shows: false, why: '施設情報を読まない' },
+  { file: 'weight-record.html', title: '体重管理', reads: true, shows: false, why: '食事形態の表示名だけを読む（施設の名前は出さない）' },
   { file: 'training-plan.html', title: '個別機能訓練計画書', reads: true, shows: false, why: '事業所（office）は計画書の中で使う。ログインしていない時は覆いの画面だけ（SUAppGate）' },
   { file: 'supplies.html', title: '消耗品管理', reads: true, shows: false, hidden: true, why: '事業所（office・get）の名前は隠れた部品（帳票など）に入り、接続先の無い状態では見えない' },
   { file: 'shift-app.html', title: 'シフト作成', reads: false, shows: false, why: '別の正本から配る画面。施設情報は画面の中の設定（su_facility_profile_v1）で持ち、facility-profile.json を読まない' },
