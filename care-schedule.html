@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-oinaNkoXftsmkz8GCAB+y1qBCLz5Ea/a92sM64GfO98='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-thAtaKXJFNh43QzmiVEFuszEVPpebIHGYgCseGsMqHo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -5655,6 +5655,7 @@ function populateResidentSelect() {
 }
 function onResidentChange() {
   csMasterRid = null;   // 職員が自分で選び直した＝同期後の再適用で上書きしない
+  csMasterPendingMid = null;   // 名簿の読み込み待ちの指定も捨てる（後から選び直さない）
   /* ★saveDB() は呼ばない。表示中の利用者は端末（タブ）ローカルのUI状態であり、
      クラウドへ保存すると他端末の画面まで同じ人へ切り替わるため（本アプリの同期は
      予定・利用者データのみを運ぶ）。端末への保存は csSetSelection_ が行う。 */
@@ -5680,12 +5681,27 @@ function csReadMasterIdParam() {
    この端末の選択へ戻す）。マスタから来た指定はそれより優先するため、メモリに保持して選び直す。
    ★職員が自分でセレクトを変えたら破棄する（後から上書きしない）＝ onResidentChange で解除。 */
 var csMasterRid = null;
-function csApplyMasterIdParam(isRetry) {
+/* 起動の時点で名簿にまだ居ない指定（この端末で初めて週間計画を開いた時は、名簿をサーバーから読み終える前に探すことになる）。
+   起動の取り込みが終わった後（afterPull）にもう一度だけ探し、それでも居なければ「登録されていません」と知らせて捨てる。
+   以前は起動の時点で1回だけ探して URL の指定も消していたため、初めての端末では誰も選ばれず誤った案内が出ていた
+   （業務の流れの通し試験で見つかった・2026-11-02） */
+var csMasterPendingMid = null;
+function csApplyMasterIdParam(isRetry, afterStartupPull) {
   var mid = isRetry ? null : csReadMasterIdParam();
   if (!isRetry && !mid) return;
   if (!isRetry) csClearMasterIdParam();   // URLから即座に落とす（リロード・設定保存で開き直さない）
   var list = (DB && DB.residents) || [], hit = null;
-  if (isRetry) {
+  if (isRetry && csMasterRid == null && csMasterPendingMid != null) {
+    for (var j = 0; j < list.length; j++) {
+      if (list[j].masterId != null && String(list[j].masterId) === String(csMasterPendingMid)) { hit = list[j]; break; }
+    }
+    if (!hit) {
+      if (afterStartupPull) { csMasterPendingMid = null; showToast('⚠️ 指定された利用者は週間計画に登録されていません'); }
+      return;
+    }
+    csMasterPendingMid = null; csMasterRid = hit.id;
+    isRetry = false;   /* 選べた時の知らせは、初めに見つかった時と同じにする */
+  } else if (isRetry) {
     if (csMasterRid == null) return;
     for (var k = 0; k < list.length; k++) { if (list[k].id === csMasterRid) { hit = list[k]; break; } }
     if (!hit) { csMasterRid = null; return; }
@@ -5693,7 +5709,11 @@ function csApplyMasterIdParam(isRetry) {
     for (var i = 0; i < list.length; i++) {
       if (list[i].masterId != null && String(list[i].masterId) === String(mid)) { hit = list[i]; break; }
     }
-    if (!hit) { showToast('⚠️ 指定された利用者は週間計画に登録されていません'); return; }
+    if (!hit) {
+      /* 起動の取り込みがこの後にある端末では、取り込みが終わるまで待ってから決める */
+      if (suGetDeviceRole() !== 'field' && SYNC.hasTarget()) { csMasterPendingMid = String(mid); return; }
+      showToast('⚠️ 指定された利用者は週間計画に登録されていません'); return;
+    }
     csMasterRid = hit.id;
   }
   if (DB.currentResidentId === hit.id) {
@@ -9483,7 +9503,7 @@ if (SYNC.hasTarget() && suGetDeviceRole() !== 'field') {
       } catch (e2) {}
       /* 起動pullはDB全体を差し替えるため currentResidentId も戻りうる。
          マスタから本人指定で来ている場合は、pull後に選び直して指定を勝たせる。 */
-      try { csApplyMasterIdParam(true); } catch (e4) {}
+      try { csApplyMasterIdParam(true, true); } catch (e4) {}
       try { SYNC.startPolling(); } catch (e3) {}
     };
     SYNC.startupPull().then(afterPull, afterPull);   // 成否に関わらず採用後にクリア（未送信編集があれば無条件採用しない＝BE-01根治）
