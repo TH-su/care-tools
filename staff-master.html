@@ -3,7 +3,7 @@
 <head>
   <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-U3jF/A78AUY+G0lDmzSpVoM8iy8yrb2F2Ce/7utvP6w='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-hBZbSvGmDNzUzXD603/Lx56MopewGGJxic2LSjg5JrE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="stfm-build" content="2026-10-11.1">
@@ -1469,6 +1469,7 @@ body.cmt-print{page:cmt}
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
+<script src="su-stf.js?v=2026-11-02"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-app-gate.js?v=2026-10-29"></script>
 <!-- ?v= は staff-master-calc.js の VERSION と必ず一緒に動かす。ここが古いままだと、
@@ -1864,6 +1865,8 @@ function apiPost(action, body, timeoutMs) {
   function send(p) {
     var opt = { method: 'POST', body: JSON.stringify(p), redirect: 'follow' };
     if (ctl) opt.signal = ctl.signal;
+    /* 新しい保存先への切り替え（統合 0045・su-stf.js）。スイッチが切・部品が無い時は今までどおり Google へ（送り方は変えない） */
+    if (window.SUStf) return window.SUStf.send(p, function () { return fetch(cfg.url, opt); }, { screen: 'staff-master', url: cfg.url, timeoutMs: ms });
     return fetch(cfg.url, opt);
   }
   /* 書く action にだけログインの証明を添える（2026-10-15）。ログインの控えが無い端末は今までどおりすぐ送る。

@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-d+Iy0FihHb2yxHays8pljZRY13VS5shKjAePC2PFTWI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-/GXav+uLr3fIyHeCpnOlALGKjANki3AN9Wc+zUpOnhM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 書類（PDF）を左の枠に出すため、この画面だけ CSP の frame-src に blob: を足す（check/csp.mjs が読む印） -->
@@ -17,6 +17,7 @@
 <!-- 画面が黙って壊れないようにする共通部品（いちばん先に読む）→ 速さの記録 → 施設情報 → 印刷 → 職員マスタの日付の規則 → 採用管理の計算 -->
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
+<script src="su-stf.js?v=2026-11-02"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-facility.js?v=2026-11-02.2"></script>
 <script src="su-print.js?v=2026-09-12"></script>
@@ -458,6 +459,8 @@ function stfPost_(payload,timeoutMs){
     timer=ctl?setTimeout(function(){ ctl.abort(); },ms):0;
     var opt={method:'POST',body:JSON.stringify(b),redirect:'follow'};
     if(ctl) opt.signal=ctl.signal;
+    /* 新しい保存先への切り替え（統合 0045・su-stf.js）。スイッチが切・部品が無い時は今までどおり職員マスタの Google へ（送り方は変えない） */
+    if(window.SUStf) return window.SUStf.send(b,function(){ return fetch(cfg.url,opt); },{screen:'ats',url:cfg.url,timeoutMs:ms});
     return fetch(cfg.url,opt);
   }).then(function(res){
     if(!res.ok) throw {noAnswer:true,why:'HTTP '+res.status};
