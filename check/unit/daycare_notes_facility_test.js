@@ -327,7 +327,33 @@ console.log('— 6. 置き場の確かめ（呼び名の語を直接書いた所
   t('備考の「1階へ」「2階へ」を直接書いていない', !/'[^']*[12]階へ'/.test(code));
   t('凡例の「（２階で昼食）」「2階食堂」を直接書いていない', !/（２階で昼食）/.test(code) && !/2階食堂/.test(code));
   t('週間名簿の2か所の呼び出しは昼食場所の呼び名を渡す', (SRC.match(/weeklyTable\(ppl, d, dcrFill\('\{\{昼食場所:２階\}\}'\)\)/g) || []).length === 2);
-  t('差し込みの印は dcrFill の最後で置き換える（差し込んだ語をもう一度置き換えない）', /\.replace\(\/\\\{\\\{\(昼食場所\|デイの場所\):\(\[\^\{\}\]\*\)\\\}\\\}\/g, \(a, k, d\) => dcrNotesWord_\(k, d\)\); \}/.test(grabFn('dcrFill')));
+  t('差し込みの印は dcrFill で置き換える（差し込んだ語をもう一度置き換えない＝{{通所名}} などの後）', /\.replace\(\/\\\{\\\{\(昼食場所\|デイの場所\):\(\[\^\{\}\]\*\)\\\}\\\}\/g, \(a, k, d\) => dcrNotesWord_\(k, d\)\)\.replace\(\/\\\{\\\{居室の1階:/.test(grabFn('dcrFill')));
+}
+
+
+console.log('— 7. 備考「施設職員は1階の方の誘導」の1階は居室の階（floors の1階の名前・代表者の決定 2026-11-02） —');
+{
+  const LAST = '施設職員は1階の方の誘導もお願いします';
+  const lastOf = box => { box.renderDaylist(model()); const c = box.els.noteDaylist.children; return c[c.length - 1].textContent; };
+  t('部品が無い時は今の文字（半角の 1階）', lastOf(makeBox(null)) === LAST, lastOf(makeBox(null)));
+  t('見本の施設情報（１階・２階）でも今の文字（全角に変えない）', lastOf(makeBox(facility(withNotes(undefined)))) === LAST);
+  const fl = () => [{ no: 1, label: '一の階' }, { no: 2, label: '二の階' }];
+  const boxF = makeBox(fakeFac(() => null, fl));
+  const wF = words(boxF);
+  t('架空の floors（一の階・二の階）で「一の階の方の誘導」になる', wF.notes[wF.notes.length - 1] === '施設職員は一の階の方の誘導もお願いします', wF.notes);
+  t('ほかの備考は替わらない（「利用者分は1階へ」「それ以外は2階へ」は昼食場所の呼び名の方）', J(wF.notes.slice(0, -1)) === J(NOW.notes.slice(0, -1)), wF.notes);
+  t('薬用の備考には誘導の行が無い＝替わらない', J(wF.med) === J(NOW.med), wF.med);
+  const wN = words(makeBox(fakeFac(() => ({ lunchPlace: '東館', dayPlace: '本館' }))));
+  t('daycareNotes を書いても誘導の行の 1階 は変わらない', wN.notes[wN.notes.length - 1] === LAST, wN.notes);
+  const wB = words(makeBox(fakeFac(() => ({ lunchPlace: '東館', dayPlace: '本館' }), fl)));
+  t('floors と daycareNotes の両方を書いた時は、誘導は floors・ほかの2行は daycareNotes',
+    wB.notes[wB.notes.length - 1] === '施設職員は一の階の方の誘導もお願いします' && wB.notes.indexOf('それ以外は東館へ') >= 0 && wB.notes.indexOf('・見本利用者分は本館へ') >= 0, wB.notes);
+  t('崩れた floors（２階が無い）は今の文字', lastOf(makeBox(fakeFac(() => null, () => [{ no: 1, label: '一の階' }]))) === LAST);
+  t('崩れた floors（5字）は今の文字', lastOf(makeBox(fakeFac(() => null, () => [{ no: 1, label: '東棟の一階' }, { no: 2, label: '二の階' }]))) === LAST);
+  t('１階の名前が既定の「１階」のままなら（２階だけ替えても）今の文字', lastOf(makeBox(fakeFac(() => null, () => [{ no: 1, label: '１階' }, { no: 2, label: '屋上階' }]))) === LAST);
+  t('記号の名前も文字のまま（置き換えの $ 記号として読まない）', lastOf(makeBox(fakeFac(() => null, () => [{ no: 1, label: '$&' }, { no: 2, label: '二の階' }]))) === '施設職員は$&の方の誘導もお願いします');
+  const code = SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  t('誘導の行の「1階」を直接書いていない', !/'施設職員は1階の方/.test(code));
 }
 
 done();
