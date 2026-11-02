@@ -330,6 +330,8 @@ textarea#fpCur{background:var(--c-surface);resize:none;width:100%}
 #deviceBlock{display:none;padding:var(--sp-6) var(--sp-4);text-align:center}
 #deviceBlock.on{display:block}
 body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
+/* 現場端末の止めの画面では、初回の案内の帯も出さない（帯は .hdr の後ろに入り、止めの箱の上に出てしまうため・2026-11-02 便9） */
+body.blocked .sui-band{display:none}
 
 /* ── 印刷（.sheet 以外は出さない）── */
 @media print{
@@ -8882,6 +8884,8 @@ if (document.readyState === 'loading') document.addEventListener('DOMContentLoad
 else boot();
 })();
 </script>
+<!-- 見出しの下の初回の案内の帯（2026-11-02 本人の決定）。×で閉じた端末では出さない。画面の動き・保存・印刷には触れない -->
+<script src="su-intro.js?v=2026-11-02.2"></script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
 <script src="su-report.js?v=2026-10-28" data-tool="個別機能訓練計画書"></script>
 </body>
