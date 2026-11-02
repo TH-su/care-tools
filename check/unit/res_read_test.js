@@ -12,6 +12,8 @@
      F 読み取り以外の本文（保存など）はこの部品を通っても Google へ送る関数をそのまま呼ぶ
      G 名簿は res_roster（開いた記録を残さない）、1人・一覧は res_get（画面の名前を付ける・200名ずつ）
      H 端末に保存しない（localStorage へは書かない）
+     I 名簿だけを読む画面の入口（officeOnly・2026-11-02）: 事務所PCの事務所・管理者のログインで印が「切り替えた後」の時だけ Supabase。
+       ログインしていない・確かめられない・現場のアカウント・現場の端末・写しの期間は Google（データベースの印も読まない）
    ★架空データのみ（氏名は使わない）。 */
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
@@ -25,7 +27,7 @@ process.on('exit', () => { if (!finished) { console.log('  ✗ 途中で止ま�
 function load(o) {
   o = o || {};
   const writes = [];
-  const store = { su_backend_flags: o.flags === undefined ? null : JSON.stringify(o.flags) };
+  const store = Object.assign({ su_backend_flags: o.flags === undefined ? null : JSON.stringify(o.flags) }, o.store || {});
   const ctx = {
     window: {}, JSON, Object, Array, String, Number, Math, Error, Promise, Date, RegExp, isNaN, isFinite, parseInt, setTimeout,
     localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { writes.push(k); store[k] = v; }, removeItem: k => { writes.push(k); } },
@@ -320,6 +322,40 @@ const SHEET = [
     await R2.write({ action: 'setState', id: 'r1', token: 'x' }, gasFn, { screen: 'care-schedule', parse: 'json' }, a.io);
     for (let i = 0; i < 10; i++) await tick();
     t('写しきれなかった残り（more）があれば続けて送る', a.sent.length === 2, a.sent.length);
+  }
+
+  console.log('I 名簿だけを読む画面の入口（officeOnly）');
+  {
+    const ON = { supabase: { master_live: true } };
+    const run = async (o, store) => {
+      const { R: R3 } = load({ flags: ON, store });
+      const a = o === null ? { io: { auth: async () => null }, calls: [] } : auth(o);
+      const before = gasCalls.length;
+      let r, err = null;
+      try { r = await R3.call({ action: 'getRoster' }, gasFn, { screen: 'daycare-roster', officeOnly: true }, a.io); } catch (e) { err = e; }
+      return { r, err, gas: gasCalls.length - before, rpc: a.calls.map(c => c[0]) };
+    };
+    let x = await run({ mode: 'live', role: 'office' });
+    t('事務所のログイン・切り替えた後 → Supabase の名簿（訪問日・かかりつけ病院つき）・Google を呼ばない',
+      x.gas === 0 && x.r && JSON.stringify(x.r) === JSON.stringify(want.roster) && x.rpc.join() === 'res_mode_get,res_roster', x);
+    x = await run({ mode: 'live', role: 'admin' });
+    t('管理者のログインも同じ', x.gas === 0 && x.r && Array.isArray(x.r.roster), x);
+    x = await run({ mode: 'shadow', role: 'office' });
+    t('写しの期間 → Google', x.gas === 1 && x.r.via === 'gas', x);
+    x = await run({ mode: 'live', signedOut: true });
+    t('ログインしていない → Google（データベースを呼ばない）', x.gas === 1 && x.r.via === 'gas' && x.rpc.length === 0, x);
+    x = await run(null);
+    t('ログインの部品が読めない → Google', x.gas === 1 && x.r.via === 'gas', x);
+    x = await run({ mode: 'live', role: 'field' });
+    t('現場のアカウント → Google（データベースを呼ばない）', x.gas === 1 && x.rpc.length === 0, x);
+    x = await run({ mode: 'live', role: 'office' }, { su_device_role: 'field' });
+    t('現場の端末 → Google（データベースを呼ばない）', x.gas === 1 && x.rpc.length === 0, x);
+    x = await run({ mode: 'live', role: 'office', rosterErr: { code: '42501' } });
+    t('事務所のログインで切り替えた後に断られた → 失敗（Google へ流さない）', x.gas === 0 && x.err && /権限/.test(x.err.message), x);
+    const { R: R4 } = load({ flags: { supabase: { master_live: false } } });
+    const b0 = gasCalls.length;
+    await R4.call({ action: 'getRoster' }, gasFn, { officeOnly: true }, auth({ mode: 'live' }).io);
+    t('スイッチが切 → Google', gasCalls.length - b0 === 1);
   }
 
   console.log('H 端末に保存しない');

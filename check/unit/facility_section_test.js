@@ -4,6 +4,7 @@
      B scheduleColors は最上位、committeeDefaults は corpSettings の中から読む。返すのは写し（書き換えても元は変わらない）
      C 名前の一覧に無い名前・塊でない値（文字・数）・大きすぎる塊は null
      D 端末の控え（読めた設定を norm した形）から起動しても、塊を失わない
+     E mealTimes・mealForms（便8）も最上位から読み、書いていなければ null・控えから起動しても残る
    架空データだけを使う。実行: node check/unit/facility_section_test.js */
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
@@ -13,7 +14,7 @@ let pass = 0, fail = 0;
 function t(n, c, e) { if (c) { pass++; console.log('  ✓ ' + n); } else { fail++; console.log('  ✗ ' + n + (e !== undefined ? '  → ' + JSON.stringify(e) : '')); } }
 
 const SAMPLE_SRC = read('facility-profile.sample.json');
-function prof(edit) { const p = JSON.parse(SAMPLE_SRC); delete p.scheduleColors; if (p.corpSettings) delete p.corpSettings.committeeDefaults; edit(p); return p; }
+function prof(edit) { const p = JSON.parse(SAMPLE_SRC); delete p.scheduleColors; delete p.mealTimes; delete p.mealForms; if (p.corpSettings) delete p.corpSettings.committeeDefaults; edit(p); return p; }
 
 /* 実物の su-facility.js を読む。cached は端末の控えの中身、remote は facility-profile.json の中身 */
 function load(cached, remote) {
@@ -65,6 +66,20 @@ const flush = () => new Promise(r => setTimeout(r, 0));
     const a = second.F.section('scheduleColors'), c = second.F.section('committeeDefaults');
     t('控えから起動しても scheduleColors が残る', a && a.visit && a.visit.body === '#445566', a);
     t('控えから起動しても committeeDefaults が残る', Array.isArray(c) && c.length === 1, c); }
+
+  console.log('E 食事の時刻・食事形態の名前（便8）');
+  { const { F } = load(prof(() => {})); t('mealTimes・mealForms は書いていなければ null', F.section('mealTimes') === null && F.section('mealForms') === null); }
+  { const MT = { breakfast: '07:30', lunch: '11:45', snack: '15:00', dinner: '18:00' }, MF = { main: { normal: '見本の主食' } };
+    const raw = prof(p => { p.mealTimes = MT; p.mealForms = MF; });
+    const { F } = load(raw);
+    const a = F.section('mealTimes'), b = F.section('mealForms');
+    t('mealTimes を最上位から読む', a && a.breakfast === '07:30' && a.dinner === '18:00', a);
+    t('mealForms を最上位から読む', b && b.main && b.main.normal === '見本の主食', b);
+    const first = load(undefined, raw); await flush(); await flush();
+    const second = load(JSON.parse(first.store.su_facility_json_v1));
+    t('控えから起動しても mealTimes・mealForms が残る', (second.F.section('mealTimes') || {}).lunch === '11:45' && ((second.F.section('mealForms') || {}).main || {}).normal === '見本の主食'); }
+  { const { F } = load(prof(p => { p.mealTimes = '08:00'; })); t('文字の mealTimes は null', F.section('mealTimes') === null); }
+  { const s = JSON.parse(SAMPLE_SRC); t('見本に mealTimes・mealForms の書き方がある', s.mealTimes && s.mealTimes.breakfast === '08:00' && s.mealForms && s.mealForms.main && s.mealForms.side); }
 
   console.log('\n' + pass + ' 件合格 / ' + fail + ' 件不合格');
   process.exit(fail ? 1 : 0);
