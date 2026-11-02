@@ -257,6 +257,7 @@ const CENSUS = {
     [F, "if(p) p.innerHTML=''"]
   ],
   "care-schedule.html": [
+    [E, "p.innerHTML = h"],   /* 「この方の画面 ▾」の一覧。部品（su-resident-hop.js）が全部の値を esc して返す（試験 resident_hop_test） */
     [F, "cb.innerHTML = ''"],
     [F, "box.innerHTML = '<div class=\"evlist-empty\">まだ控えがありません（保存すると残ります）</div>'"],
     [N, "box.innerHTML = html"],
@@ -320,7 +321,7 @@ const CENSUS = {
     [N, "$('ftabs').innerHTML=TABS.map(function(t){return'<button class=\"ftab'+(t[0]===actTab?' on':'')+'\" role=\"tab\" aria-selected=\"'+(t[0]===actTab?'true':'false')+'\" aria-controls=\"panel-'+t[0]+'\" data-tab=\"'+t[0]+'\">'+esc(t[1])+'</button>'}).join('')"],
     [E, "$('viewBox').innerHTML=TABS.map(function(t){return'<div class=\"fpanel'+(t[0]===actTab?' on':'')+'\" role=\"tabpanel\" id=\"panel-'+t[0]+'\" aria-label=\"'+esc(t[1])+'\" data-panel=\"'+t[0]+'\">'+(P[t[0]]||'')+'</div>'}).join('')"],
     [F, "bar.innerHTML=''"],
-    [E, "bar.innerHTML='<span>'+msg+'</span><button type=\"button\" id=\"fromMasterClose\">一覧に戻る</button>'"]
+    [E, "bar.innerHTML='<span>'+msg+'</span><button type=\"button\" id=\"fromMasterClose\">一覧に戻る</button>'+hop"]
   ],
   "genogram.html": [
     [F, "sel.innerHTML = '<option value=\"\">— 保存済みから読込 —</option>'"]
@@ -507,6 +508,7 @@ const CENSUS = {
   "su-export.js": [],
   "su-facility.js": [],
   "su-intro.js": [],
+  "su-resident-hop.js": [],   /* 帯の HTML を作って返すだけ（代入しない）。中の値は全部 esc を通る（試験 resident_hop_test） */
   "su-itomari.js": [],
   "su-kv-shadow.js": [],
   "su-kv.js": [],
@@ -566,7 +568,7 @@ const CENSUS = {
     [N, "$('#bulkSummary').innerHTML = `入力済み: <b>${filled}</b> 名${existing?` （うち<b>${existing}</b>名は既存記録を上書き）`:''}`"],
     [N, "wrap.innerHTML = html"],
     [F, "c.innerHTML = ''"],
-    [N, "b.innerHTML = `${d.n}${d.s?`<small>${d.s}</small>`:''}`"],
+    [E, "b.innerHTML = `${escapeHtml(d.n)}${d.s?`<small>${d.s}</small>`:''}`"],
     [F, "c.innerHTML = ''"],
     [N, "b.innerHTML = `${t.n}<small>${t.short}</small>`"],
     [F, "if(inMode==='chair') $('#inWeightHint').innerHTML = ''"],
@@ -581,15 +583,15 @@ const CENSUS = {
     [E, "el.innerHTML = cell('最新体重', `${last.weight.toFixed(1)} <small style=\"font-size:0.9375rem;color:var(--g6)\">kg</small>`, ymFmt(last.yearMonth)) + bmiCell + cell('前月比', a?.diff1!=null ? `${a.diff1>0?'+':''}${a.diff1.toFixed(1)}` : '—', a?.diff1!=null ? `${a.pct1>0?'+':''}${a.pct1.toFixed(1)}%` : (recs.length > 1 ? '前月の記録なし' : ''), d1Cls) + cell('6ヶ月比', a?.diff6!=null ? `${a.diff6>0?'+':''}${a.diff6.toFixed(1)}` : '—', a?.diff6!=null ? `${a.pct6>0?'+':''}${a.pct6.toFixed(1)}%${escapeHtml(wrCmpNote(a.prev6, 6, last.yearMonth))}` : '', d6Cls) + (()=>{ const rk = wrNutritionRisk(rid, last.yearMonth); if(!rk || !rk.level) return cell('低栄養リスク', '—', '比べる記録・身長が無い', '', 'color:var(--g5)'); const cls = rk.level === 'high' ? 'rk-v-high' : rk.level === 'mid' ? 'rk-v-mid' : ''; const sub = rk.reasons.length ? escapeHtml(rk.reasons.join('・')) : (rk.compared ? '3%以上の減少なし' : 'BMIのみ（比べる記録なし）'); return `<div class=\"st-i\" title=\"体重とBMIだけで判定（血清アルブミン・食事摂取量は含みません）\"><div class=\"st-l\">低栄養リスク</div><div class=\"st-v ${cls}\">${rk.label}</div><div class=\"st-s\">${sub}</div></div>`; })() + cell('記録期間中', `${min.toFixed(1)}〜${max.toFixed(1)}`, `開始${first.weight.toFixed(1)}→現${last.weight.toFixed(1)} (${diffTotal>0?'+':''}${diffTotal.toFixed(1)}kg)`)"],
     [F, "body.innerHTML = ''"],
     [F, "body.innerHTML = `<tr><td colspan=\"9\" class=\"empty\">記録がありません</td></tr>`"],
-    [E, "tr.innerHTML = ` <td style=\"text-align:start;padding-left:10px\">${dateLabel}</td> <td><b>${wrWeightOk(r) ? r.weight.toFixed(1) : '—'}</b>${chairBadge?`<br>${chairBadge}`:''}${r.recheck === 'confirmed' ? '<br><span class=\"rc-badge\" title=\"前回から大きく変わったため、測り直して同じ値だったことを確かめた記録\">測り直し済み</span>' : ''}</td> <td>${bmiHtml}</td> <td>${diffHtml}</td> <td>${mainLabel(r.stapleForm)}${r.stapleAmount!=null?`<span class=\"sa-chip\">${escapeHtml(r.stapleAmount)}g</span>`:''}</td> <td>${sideLabel(r.sideForm)}</td> <td>${TOGGLES.filter(t=>r[t.k]).map(t=>`<span class=\"tg-chip\">${t.short}</span>`).join('') || '<span style=\"color:var(--g5)\">—</span>'}</td> <td style=\"text-align:start;max-width:180px;word-break:break-word;white-space:normal\">${r.note?escapeHtml(r.note):'<span style=\"color:var(--g5)\">—</span>'}</td> <td class=\"hist-act\"> <button class=\"bn bo bsm\" data-edit-id=\"${escapeHtml(r.id)}\">編集</button> </td> `"],
+    [E, "tr.innerHTML = ` <td style=\"text-align:start;padding-left:10px\">${dateLabel}</td> <td><b>${wrWeightOk(r) ? r.weight.toFixed(1) : '—'}</b>${chairBadge?`<br>${chairBadge}`:''}${r.recheck === 'confirmed' ? '<br><span class=\"rc-badge\" title=\"前回から大きく変わったため、測り直して同じ値だったことを確かめた記録\">測り直し済み</span>' : ''}</td> <td>${bmiHtml}</td> <td>${diffHtml}</td> <td>${escapeHtml(mainLabel(r.stapleForm))}${r.stapleAmount!=null?`<span class=\"sa-chip\">${escapeHtml(r.stapleAmount)}g</span>`:''}</td> <td>${escapeHtml(sideLabel(r.sideForm))}</td> <td>${TOGGLES.filter(t=>r[t.k]).map(t=>`<span class=\"tg-chip\">${t.short}</span>`).join('') || '<span style=\"color:var(--g5)\">—</span>'}</td> <td style=\"text-align:start;max-width:180px;word-break:break-word;white-space:normal\">${r.note?escapeHtml(r.note):'<span style=\"color:var(--g5)\">—</span>'}</td> <td class=\"hist-act\"> <button class=\"bn bo bsm\" data-edit-id=\"${escapeHtml(r.id)}\">編集</button> </td> `"],
     [F, "list.innerHTML = ''"],
     [F, "list.innerHTML = `<div class=\"empty\"> <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M20 6 9 17l-5-5\"/></svg> <div>対象のアラートはありません</div> </div>`"],
-    [E, "div.innerHTML = ` <div class=\"al-ic\">${dir==='dn'?'↓':'↑'}</div> <div class=\"al-body\"> <div class=\"al-nm\">${escapeHtml(resident.name)}<span class=\"rm\">${resident.room?'室 '+escapeHtml(resident.room):''}</span><span class=\"eb ${a.level==='ng'?'eb-ng':'eb-w'}\">${a.level==='ng'?'警告':'注意'}</span></div> <div class=\"al-ms\"> ${a.reasons.map(x=>`<div>${x}</div>`).join('')} ${ack ? `<div class=\"al-ack-info\">✓ ${escapeHtml(wrAckText(ack))}</div>` : ''} <div style=\"margin-top:4px;color:var(--g6)\">対象月：<b>${ymFmt(ym)}</b> 体重：<b>${a.cur.weight.toFixed(1)}kg</b>${(()=>{const b=bmiOf(a.cur.weight,resident.heightCm);return b!=null?` BMI：<b>${b.toFixed(1)}</b>`:'';})()} 食事：<b>${mainLabel(a.cur.stapleForm)}${a.cur.stapleAmount!=null?` ${escapeHtml(a.cur.stapleAmount)}g`:''}/${sideLabel(a.cur.sideForm)}</b>${(()=>{const t=TOGGLES.filter(x=>a.cur[x.k]).map(x=>x.n);return t.length?` <b>${t.join('・')}</b>`:'';})()}</div> </div> </div> `"],
+    [E, "div.innerHTML = ` <div class=\"al-ic\">${dir==='dn'?'↓':'↑'}</div> <div class=\"al-body\"> <div class=\"al-nm\">${escapeHtml(resident.name)}<span class=\"rm\">${resident.room?'室 '+escapeHtml(resident.room):''}</span><span class=\"eb ${a.level==='ng'?'eb-ng':'eb-w'}\">${a.level==='ng'?'警告':'注意'}</span></div> <div class=\"al-ms\"> ${a.reasons.map(x=>`<div>${x}</div>`).join('')} ${ack ? `<div class=\"al-ack-info\">✓ ${escapeHtml(wrAckText(ack))}</div>` : ''} <div style=\"margin-top:4px;color:var(--g6)\">対象月：<b>${ymFmt(ym)}</b> 体重：<b>${a.cur.weight.toFixed(1)}kg</b>${(()=>{const b=bmiOf(a.cur.weight,resident.heightCm);return b!=null?` BMI：<b>${b.toFixed(1)}</b>`:'';})()} 食事：<b>${escapeHtml(mainLabel(a.cur.stapleForm))}${a.cur.stapleAmount!=null?` ${escapeHtml(a.cur.stapleAmount)}g`:''}/${escapeHtml(sideLabel(a.cur.sideForm))}</b>${(()=>{const t=TOGGLES.filter(x=>a.cur[x.k]).map(x=>x.n);return t.length?` <b>${t.join('・')}</b>`:'';})()}</div> </div> </div> `"],
     [F, "act.innerHTML = ack ? `<button type=\"button\" class=\"bn bs bsm\" data-al-undo>確認を取り消す</button>` : `<button type=\"button\" class=\"bn bo bsm\" data-al-ack>確認した（対応を残す）</button>`"],
     [E, "f.innerHTML = `<label class=\"sr-only\" for=\"alAct_${escapeHtml(resident.id)}_${dir}\">対応</label>` + `<select id=\"alAct_${escapeHtml(resident.id)}_${dir}\">${WR_ACK_ACTIONS.map(x=>`<option>${escapeHtml(x)}</option>`).join('')}</select>` + `<input type=\"text\" maxlength=\"200\" placeholder=\"ひとこと（任意）\" aria-label=\"ひとこと（任意）\">` + `<button type=\"button\" class=\"bn bp bsm\" data-al-save>保存</button><button type=\"button\" class=\"bn bs bsm\" data-al-cancel>やめる</button>`"],
     [N, "doneBox.innerHTML = `<summary>確認済み（${doneItems.length}件）</summary>`"],
     [F, "c.innerHTML = ''"],
-    [N, "b.innerHTML = `${d.n}${d.s?`<small>${d.s}</small>`:''}`"],
+    [E, "b.innerHTML = `${escapeHtml(d.n)}${d.s?`<small>${d.s}</small>`:''}`"],
     [F, "c.innerHTML = ''"],
     [N, "b.innerHTML = `${t.n}<small>${t.short}</small>`"],
     [F, "tbl.innerHTML = ` <dt>主食</dt><dd class=\"empty\">—</dd> <dt>副食</dt><dd class=\"empty\">—</dd> <dt>オプション</dt><dd class=\"empty\">—</dd>`"],
@@ -604,7 +606,7 @@ const CENSUS = {
     [F, "box.innerHTML = '<div class=\"wc-log-empty\">履歴はありません。車椅子重量を入れると、今日の日付で1行足されます。</div>'"],
     [E, "box.innerHTML = order.map(i=>{ const e = mdChairLog[i]; const latest = (i === latestIdx); return ` <div class=\"wc-log-item${latest ? ' latest' : ''}\"> ${latest ? '<span class=\"wc-log-tag\">最新</span>' : ''} <div class=\"wc-log-row\"> <input type=\"date\" data-wcl-on=\"${i}\" value=\"${escapeHtml(e.on || '')}\" aria-label=\"${latest ? '最新の' : ''}変更日\"> <input type=\"number\" data-wcl-kg=\"${i}\" step=\"0.1\" min=\"1\" max=\"50\" inputmode=\"decimal\" value=\"${e.kg > 0 ? Number(e.kg).toFixed(1) : ''}\" aria-label=\"車椅子の重さ（kg）\"> <span class=\"wc-log-u\">kg</span> <button type=\"button\" class=\"wc-log-del\" data-wcl-del=\"${i}\" aria-label=\"この行を消す\">削除</button> </div> </div>`; }).join('')"],
     [F, "bar.innerHTML=''"],
-    [E, "bar.innerHTML=`<span>${msg}</span><button type=\"button\" id=\"fromMasterClose\">${state==='ok'?'解除':'閉じる'}</button>`"]
+    [E, "bar.innerHTML=`<span>${msg}</span><button type=\"button\" id=\"fromMasterClose\">${state==='ok'?'解除':'閉じる'}</button>${hop}`"]
   ],
   "work-schedule.html": [
     [F, "if (html !== undefined) e.innerHTML = html"],   /* 盤面の部品 el(tag, cls, html) の第3引数。今は3引数で呼ぶ所が無い（xss_work_schedule_test の W10 が確かめる） */

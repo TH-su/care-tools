@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ga2it6U3ae9Onp4Ew10wNtbbbNdZfy5I7zKvlomL9OY=' 'sha256-+45JHdnrd2dtGOERtU7vNtTZbSRo0qWfB5ifx8RdVIs=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ga2it6U3ae9Onp4Ew10wNtbbbNdZfy5I7zKvlomL9OY=' 'sha256-5SCacIL8ym/czSjsLAbbmgMv79v3e6koa67LHgHTTl4=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
@@ -467,6 +467,9 @@ button.rcard{display:flex; flex-direction:column; align-items:stretch; justify-c
   .mtbl .mbad{color:#000}                        /* 赤はモノクロ印刷で潰れるので黒に落とす（文字は残す） */
 }
 </style>
+<!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
+<link rel="stylesheet" href="su-theme.css?v=2026-11-02">
+<link rel="stylesheet" href="su-resident-hop.css?v=2026-11-02">
 </head>
 <body>
 
@@ -606,7 +609,8 @@ function fsNoteAs_(kind, where, e){ try{ if(window.SUErrors && typeof window.SUE
 <!-- 同期データの保存先の切り替え（統合 0005/0007）。見るだけの画面は切り替え後に Supabase から読む（未ログインは Google） -->
 <script src="su-kv.js?v=2026-10-28"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
-<script src="su-facility.js?v=2026-11-02"></script>
+<script src="su-facility.js?v=2026-11-02.2"></script>
+<script src="su-resident-hop.js?v=2026-11-02"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>
 <script>
 /* ═══════════════════════════════════════════════════════════════
@@ -795,6 +799,47 @@ function birthCell(lab,iso){
 }
 /* 食事の時刻は施設共通（入居者マスタと同じ既定）。保存済みの値があればそちらが勝つ */
 var RHYTHM_DEFAULTS={breakfast:'08:00', lunch:'12:00', snack:'15:00', dinner:'17:30'};
+/* MEAL-TIMES-BEGIN ══ 食事の時刻の施設の既定（2026-11-02・品質改善 第3期 便8）══
+   入居者マスタとフェイスシートで一字一句同じ（試験 meal_times_facility が確かめる）。
+   ・既定は上の RHYTHM_DEFAULTS（今の値のまま）。施設情報（facility-profile.json の mealTimes）に
+     breakfast・lunch・snack・dinner の4つが全部「00:00〜23:59 の HH:MM」で書いてあり、ほかの項目が無い時だけ差し替える
+   ・1つでも崩れていれば（欠け・知らない項目・文字でない・形の違い）丸ごと捨てて既定を使う
+   ・描くたびに読む（施設情報が後から届いた時に、届く前の既定を握ったままにしない）
+   ・入居者ごとに保存した時刻が勝つ重ね合わせは呼ぶ側のまま（変えていない） */
+var MEAL_TIME_KEYS=['breakfast','lunch','snack','dinner'];
+function mealTimeDefaults_(){
+  var d={}, s=null, out={}, n=0, ok=true, k;
+  MEAL_TIME_KEYS.forEach(function(x){ d[x]=RHYTHM_DEFAULTS[x]; });
+  try{ s=(window.SUFacility&&typeof SUFacility.section==='function')?SUFacility.section('mealTimes'):null; }catch(e){ s=null; /* 捨ててよい: 読めなければ今の既定で描く */ }
+  if(!s||typeof s!=='object'||Array.isArray(s)) return d;
+  for(k in s){
+    if(!Object.prototype.hasOwnProperty.call(s,k)) continue;
+    n++;
+    if(MEAL_TIME_KEYS.indexOf(k)<0){ ok=false; break; }
+    var v=s[k];
+    if(typeof v!=='string'||!/^\d{2}:\d{2}$/.test(v)||Number(v.slice(0,2))>23||Number(v.slice(3))>59){ ok=false; break; }
+    out[k]=v;
+  }
+  if(!ok||n!==MEAL_TIME_KEYS.length) return d;
+  return out;
+}
+/* MEAL-TIMES-END */
+/* 施設情報が後から届いた時に、開いている方の事務所の表示を1回だけ描き直す（2026-11-02・便8）。
+   ★端末に施設情報の控えが無く応答が遅いと、生活リズムは届く前の既定（画面の既定）で描き終わり、
+     印刷の関門（fsFacGate_）は届くのを待つだけで描き直さないため、紙に届く前の既定が出る。
+   ★描いた時と既定が違う時だけ描き直す（施設情報に mealTimes が無ければ印は同じ＝何もしない＝画面・紙は変わらない）。
+   ★onReady の中でその場で描く（印刷の関門の続きはその後に回るので、刷る前に描き直しが済む）。現場端末・一覧の画面では何もしない */
+var fsMealSig_=null;
+function fsMealOnFacility_(){
+  if(isField()||!curRec||fsMealSig_===null) return;
+  var sc=$('sc-view'); if(!sc||!sc.classList.contains('on')) return;
+  var sig=null; try{ sig=JSON.stringify(mealTimeDefaults_()); }catch(e){ sig=null; }
+  if(sig===null||sig===fsMealSig_) return;
+  try{ renderFaceSheet(curRec); }catch(e){ fsNoteAs_('描き直しの失敗', 'meal.rerender', String((e&&e.name)||'Error').slice(0,40)); }
+}
+document.addEventListener('DOMContentLoaded',function(){
+  try{ if(window.SUFacility&&typeof SUFacility.onReady==='function') SUFacility.onReady(fsMealOnFacility_); }catch(e){ /* 捨ててよい: 読み口が無ければ既定のまま描く（描き直す相手が無い） */ }
+});
 function calcAge(birthISO){if(!birthISO)return'';var b=new Date(birthISO);if(isNaN(b))return'';var n=new Date();var a=n.getFullYear()-b.getFullYear();var m=n.getMonth()-b.getMonth();if(m<0||(m===0&&n.getDate()<b.getDate()))a--;return a>=0&&a<140?a:''}
 function calcBMI(h,w){h=parseFloat(h);w=parseFloat(w);if(!h||!w)return'';var b=w/Math.pow(h/100,2);return isFinite(b)?b.toFixed(1):''}
 /* 入居期間（日数）。退去日があればそこまで、無ければ今日まで。不正な日付は空を返す
@@ -1746,7 +1791,7 @@ function openResident(id){
     if(!rec||(rec.id==null&&!rec.name))throw new Error('該当データなし');
     curRec=rec; setSync('取得OK','ok'); renderFaceSheet(rec);
     /* 本人確認バーは正本の氏名で更新する（前の方の氏名を残さない） */
-    if(fromMasterActive)setFromMasterBar('ok',rec.name);
+    if(fromMasterActive)setFromMasterBar('ok',rec.name,id);
   }).catch(function(e){
     if(seq!==openSeq)return;                    // 旧要求の失敗で、いま開いている方の画面を潰さない
     /* ★「該当データなし」の時だけ印を忘れる。通信失敗では忘れない
@@ -2963,8 +3008,9 @@ function renderOfficeView(r){
   var bf=bfView(r);   // 入居者基本情報（外部様式）の表示用データ（2026-08-12 追加）
   var rhythm=(function(src){   /* 食事の時刻は施設共通の既定を重ねる（保存済みが優先） */
     src=(src&&typeof src==='object')?src:{};
-    var o={};
-    Object.keys(RHYTHM_DEFAULTS).forEach(function(k){ o[k]=RHYTHM_DEFAULTS[k]; });
+    var o={}, md=mealTimeDefaults_();
+    fsMealSig_=JSON.stringify(md);   /* 描いた時の既定の印（施設情報が後から届いた時に描き直すかを決める・fsMealOnFacility_） */
+    Object.keys(md).forEach(function(k){ o[k]=md[k]; });
     Object.keys(src).forEach(function(k){ var v=String(src[k]==null?'':src[k]).trim(); if(v) o[k]=v; });
     return o;
   })(r.rhythm);
@@ -3453,14 +3499,17 @@ function readMasterIdParam(){
    未検証の氏名を「本人確認」として見せると、取り違えの根拠にされてしまうため。 */
 var fromMasterActive=false;
 var openingFromMaster=false;   /* boot() がマスタ由来で開いている最中だけ true */
-function setFromMasterBar(state,name){
+function setFromMasterBar(state,name,id){
   var bar=$('fromMaster'); if(!bar)return;
   if(state==='off'){ bar.style.display='none'; bar.innerHTML=''; fromMasterActive=false; return; }
   fromMasterActive=true;
-  var msg = state==='ok'   ? '入居者マスタから開いています：<b>'+esc(name||'')+'</b>'
-          : state==='fail' ? '入居者マスタから開こうとしましたが、<b>取得できませんでした</b>'
-          :                  '入居者マスタから開いています：読み込み中…';
-  bar.innerHTML='<span>'+msg+'</span><button type="button" id="fromMasterClose">一覧に戻る</button>';
+  /* 入居者マスタからも、ほかの画面の「この方の画面：」からも来るので、来た元の名前は書かない（代表者の決定 2026-11-02 案A） */
+  var msg = state==='ok'   ? '<b>'+esc(name||'')+'</b>さんを開いています'
+          : state==='fail' ? 'この方を開こうとしましたが、<b>取得できませんでした</b>'
+          :                  'この方を読み込み中…';
+  /* 同じ方の別の画面へ移るボタン（su-resident-hop.js・同じタブで移る）。正本の氏名が届いた時だけ並べる */
+  var hop=(state==='ok'&&typeof SUResHop==='object'&&SUResHop)?SUResHop.html('facesheet.html',id,name):'';
+  bar.innerHTML='<span>'+msg+'</span><button type="button" id="fromMasterClose">一覧に戻る</button>'+hop;
   bar.style.display='flex';
   $('fromMasterClose').addEventListener('click',function(){
     clearMasterIdParam(); setFromMasterBar('off'); curRec=null; showScreen('list');

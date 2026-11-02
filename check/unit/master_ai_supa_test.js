@@ -5,6 +5,7 @@
      C ログインしていない時は送らない（AI_LOGIN）
      D 受け口に届く前に切れた時だけ2秒待って1回だけ送り直す。受け口が答えた失敗（500）は送り直さない
      E su-ai だけが返す断り（お名前が残っていた・使えないアカウント）を画面の言葉にする
+     F 終わりの時刻 master_ai_until（2026-11-02）: 前だけ su-ai。過ぎた・読めない時は GAS。判定は su-data.js の flagOn と食い違わない
    ★画面の本物の関数（mdAiViaSupa_・mdAiSupa_・mdAiSupaRun_・mdAiProxy_・mdAiWhy_）を切り出して動かす。偽物にするのは fetch・ログインの部品・端末の控えだけ。
    実行: node check/unit/master_ai_supa_test.js
    架空データのみ。 */
@@ -54,7 +55,7 @@ function box(o) {
   };
   w.window = w;
   vm.createContext(w);
-  vm.runInContext(['mdAiCfg', 'mdAiViaSupa_', 'mdAiSupa_', 'mdAiProxy_', 'mdAiSupaRun_', 'mdAiWhy_'].map(f => cutF(HTML, f)).join('\n'), w);
+  vm.runInContext(['mdAiCfg', 'mdFlagOn_', 'mdAiViaSupa_', 'mdAiSupa_', 'mdAiProxy_', 'mdAiSupaRun_', 'mdAiWhy_'].map(f => cutF(HTML, f)).join('\n'), w);
   return { w, posts, invokes };
 }
 async function run(x) { try { return { r: await x.w.mdAiProxy_(BODY) }; } catch (e) { return { e: e.message }; } }
@@ -108,6 +109,34 @@ async function run(x) { try { return { r: await x.w.mdAiProxy_(BODY) }; } catch 
     t(err + ' → ' + code + '・職員向けの文がある', r.e === code && !/^AIに尋ねられませんでした（/.test(x.w.mdAiWhy_(code)), [r, x.w.mdAiWhy_(code)]);
   }
   t('ログインなし・使えないアカウントは、まとめて尋ねる時もそこで止める', /AI_FETCH\|AI_LOGIN\|AI_FORBIDDEN\|STALE\)\$\/\.test\(em\)\) throw e;/.test(HTML));
+
+  console.log('F 終わりの時刻 master_ai_until');
+  {
+    const future = new Date(Date.now() + 3600000).toISOString(), past = new Date(Date.now() - 60000).toISOString();
+    const xf = box({ flags: { supabase: { master_ai: true, master_ai_until: future } } });
+    const rf = await run(xf);
+    t('終わりの時刻の前は su-ai へ送る', rf.r && xf.invokes.length === 1 && xf.posts.length === 0, [rf, xf.invokes.length]);
+    for (const [name, u] of [['過ぎた', past], ['日付だけ', '2026-11-02'], ['時差の無い形', '2099-01-01T07:00:00'], ['文字でない', 4102444800000], ['空', '']]) {
+      const x = box({ flags: { supabase: { master_ai: true, master_ai_until: u } } });
+      const r = await run(x);
+      t(name + ' → 計画書の GAS へ送り、su-ai は呼ばない', r.r && x.posts.length === 1 && JSON.parse(x.posts[0].body).action === 'ai' && x.invokes.length === 0, [name, r, x.invokes.length]);
+    }
+    /* su-data.js の flagOn（SU.data._flagOn）と同じ答えになるか */
+    const ctx = { localStorage: { getItem: () => null, setItem() {} }, performance: { mark() {} } };
+    ctx.window = ctx; vm.createContext(ctx);
+    vm.runInContext(fs.readFileSync(path.join(ROOT, 'su-data.js'), 'utf8'), ctx);
+    const ref = ctx.SU.data._flagOn, mine = box({}).w.mdFlagOn_;
+    const END = '2026-11-02T07:00:00+09:00', E = Date.parse(END);
+    const cases = [];
+    for (const v of [true, false, 'true', undefined]) for (const u of [undefined, END, '2026-11-01T22:00:00Z', '2026-11-02T07:00+09:00', '2026-11-02', '2026-11-02T07:00:00', '', null, E, '2026-13-45T07:00:00+09:00', ' ' + END])
+      for (const now of [E - 60000, E, E + 60000, undefined]) {
+        const f = {}; if (v !== undefined) f.master_ai = v; if (u !== undefined) f.master_ai_until = u;
+        cases.push([f, now]);
+      }
+    cases.push([null, E]);
+    const diff = cases.filter(([f, now]) => ref(f, 'master_ai', now) !== mine(f, 'master_ai', now));
+    t('su-data.js の flagOn と ' + cases.length + ' 通りすべて同じ答え', diff.length === 0, diff.slice(0, 3));
+  }
 
   console.log(`\n合格 ${pass} / 不合格 ${fail}`);
   process.exitCode = fail ? 1 : 0;

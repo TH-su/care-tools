@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-ds="ops">
+<html lang="ja" data-ds="ops" data-su-theme="keep-hdr">
 <head>
 <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
@@ -673,6 +673,8 @@ body.staff .adm{display:none !important}
   .subbar{margin:0 calc(-1 * var(--sp-2)) var(--sp-3)}
 }
 </style>
+<!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
+<link rel="stylesheet" href="su-theme.css?v=2026-11-02">
 </head>
 <!-- data-print は印刷の行き先（料金表＝sheet／請求明細＝bill）。showScreen が毎回入れ替える -->
 <body data-print="sheet">
@@ -1190,7 +1192,7 @@ body.staff .adm{display:none !important}
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
-<script src="su-facility.js?v=2026-11-02"></script>   <!-- 明細・料金表の発行者（施設名・住所・電話）・監査10月版 #14 -->
+<script src="su-facility.js?v=2026-11-02.2"></script>   <!-- 明細・料金表の発行者（施設名・住所・電話）・監査10月版 #14 -->
 <script src="supplies-calc.js?v=2026-09-23.1"></script>
 <script>
 'use strict';
