@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-+9azcFuRIs99LxV8t5ABdI61dnLN22uU2Y9JQOgvkyA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-EmdEv1pHpmrshANrYjTzmwDH7QTsbK2/BD9qMU8NAqU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
@@ -1295,6 +1295,24 @@ function normalizeDb(db) {
 function afNote_(where, e) {
   try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('保存・同期の失敗', e, 'admission:' + where); } catch (_) {}
 }
+/* 断りの文を職員向けの言葉にする。かな・漢字を含む断り（サーバーや共通部品の断り）はそのまま出す
+   （括弧の中のファイル名だけを外す。英字の単位・PDF・数字は職員にも分かるので残す）。
+   英語だけの例外文・符号は出さずに職員向けの文に替え、元の文を記録に残す（合言葉違い・受け口の設定漏れだけは言葉にする）。
+   ★通信の失敗（圏外・時間切れ・中断・Google の一時的な HTTP 5xx・429）と合言葉違い（設定の誤り）は記録に流さない
+     （圏外の端末や設定の誤りで不具合報告の種を増やさない） */
+function afErrWords_(e, where) {
+  var m = asStr((e && e.message) || e);
+  if (m === 'unauthorized') return '合言葉が通りませんでした。接続設定の「入居調整」の合言葉を確かめてください';
+  if (/ADMISSION_TOKEN/.test(m)) { afNote_(where || '断りの文', e); return '入居調整の Google の受け口の設定が済んでいません。管理者に連絡してください'; }
+  if (/[\u3040-\u30ff\u4e00-\u9fff]/.test(m)) {
+    var s = m.replace(/[（(][^（）()]*\.(?:m?js|gs|json|html)[）)]/g, '').trim();
+    if (s) return s;
+  }
+  var net = /Failed to fetch|Load failed|NetworkError|network|timeout|timed out|abort|タイムアウト|時間切れ|届きませんでした|オフライン/i.test(m) ||
+    /^HTTP (5\d\d|429)\b/.test(m);
+  if (!net) afNote_(where || '断りの文', e);
+  return '通信がうまくいきませんでした';
+}
 function cachePayload() { return JSON.stringify({ db: DB, rev: kvRev, dirty: dirty, at: nowIso() }); }
 function saveCache() {
   var body;
@@ -1585,7 +1603,7 @@ function serverLooksLost(remote) {
 }
 
 function pull(showToast) {
-  if (!SU_DATA_READY) { setSync('データ層エラー', 'err'); return Promise.resolve(false); }
+  if (!SU_DATA_READY) { setSync('部品の読み込みエラー', 'err'); return Promise.resolve(false); }
   var t = syncTarget();
   if (!t.endpoint) { setSync('未接続'); return Promise.resolve(false); }
   setSync('同期中…');
@@ -1616,7 +1634,7 @@ function pull(showToast) {
     return true;
   }).catch(function (e) {
     setSync('オフライン', 'err');
-    if (showToast) toast('読み込めませんでした: ' + (e && e.message || e));
+    if (showToast) toast('読み込めませんでした: ' + afErrWords_(e, '読み込み'));
     return false;
   });
 }
@@ -1647,7 +1665,7 @@ function admFullAuto_() {
 /* 起動時は「サーバー版を無条件に採る」をしない（週間計画 startupPull の写し）。
    未送信を抱えたまま起動して丸ごと入れ替えると、その端末の入力が黙って消える。 */
 function startupPull() {
-  if (!SU_DATA_READY) { setSync('データ層エラー', 'err'); return Promise.resolve(false); }
+  if (!SU_DATA_READY) { setSync('部品の読み込みエラー', 'err'); return Promise.resolve(false); }
   var t = syncTarget();
   if (!t.endpoint) { setSync('未接続'); return Promise.resolve(false); }
   setSync('同期中…');
@@ -1730,7 +1748,7 @@ function push(force) {
     if (j && (j.error === 'toolarge' || j.error === 'nodata')) {
       setSync('保存できません', 'err');
       alert(j.error === 'toolarge'
-        ? '台帳が大きくなりすぎて保存できません。\n\n右上のバッジ →「⬇️ 書き出し（JSON）」でファイルに残したうえで、'
+        ? '台帳が大きくなりすぎて保存できません。\n\n右上のバッジ →「⬇️ 控えのファイルに書き出す」でファイルに残したうえで、'
           + '入居済み・見送りの古い案件を削除してください（削除しても「削除済みも表示」から戻せます）。'
         : '送るデータが空のため、サーバーが保存を拒否しました。\n\n画面を再読み込みしてから、もう一度お試しください。');
       return;
@@ -3046,7 +3064,7 @@ function fmtBytes(v) {
 function candFiles(id) { return asArr(FILES[asStr(id)]); }
 
 function apiFiles(payload) {
-  if (!SU_DATA_READY) return Promise.reject(new Error('データ層を読み込めていません'));
+  if (!SU_DATA_READY) return Promise.reject(new Error('共通の部品を読み込めませんでした'));
   if (!syncTarget().endpoint) return Promise.reject(new Error('接続先が未設定です'));
   return SU.data.kvRaw(payload);
 }
@@ -3066,11 +3084,11 @@ function refreshFiles() {
     }
     /* 「unknown action」＝サーバーがまだ古い版。ここで分かれば、押して初めて失敗する状態にならない */
     filesState = (r && asStr(r.error) === 'unknown action')
-      ? { ready: false, why: 'サーバー（入居調整データAPI）が添付書類に未対応です。GAS を新しい版に更新してください。' }
-      : { ready: false, why: '書類の一覧を取れませんでした（' + (asStr(r && r.error) || '応答エラー') + '）。右上の ⟳ で取り直してください。' };
+      ? { ready: false, why: '入居調整の Google の受け口が古い版のため、書類を使えません。管理者に連絡してください（Google の受け口の更新が必要です）。' }
+      : { ready: false, why: '書類の一覧を取れませんでした（' + ((r && r.error) ? afErrWords_(r.error, '書類の一覧') : '応答がありませんでした') + '）。右上の ⟳ で取り直してください。' };
     return false;
   }).catch(function (e) {
-    filesState = { ready: false, why: '書類の一覧を取れませんでした（' + asStr(e && e.message) + '）。右上の ⟳ で取り直してください。' };
+    filesState = { ready: false, why: '書類の一覧を取れませんでした（' + afErrWords_(e, '書類の一覧') + '）。右上の ⟳ で取り直してください。' };
     return false;
   });
 }
@@ -3282,7 +3300,7 @@ function doUploadFile() {
   }).then(function (r) {
     done();
     if (!r || !r.ok) {
-      err(asStr(r && r.error) +
+      err(((r && r.error) ? afErrWords_(r.error, '書類の保存（断り）') : '') +
         (r && r.detail && r.detail.length ? '（' + r.detail.join('／') + '）' : ''));
       return;
     }
@@ -3296,7 +3314,7 @@ function doUploadFile() {
     /* ★通信が切れた場合、サーバー側では保存が済んでいることがある（往復に17〜27秒かかるため）。
        ここで目録を取り直して画面に反映しないと、人は「失敗した」と読んでもう一度上げ、
        同じ書類が2件保存される。取り直した結果を見て、入っていれば入っていると言う。 */
-    err('保存できませんでした（' + asStr(e && e.message) + '）。一覧を取り直しています…');
+    err('保存できませんでした（' + afErrWords_(e, '書類の保存') + '）。一覧を取り直しています…');
     refreshFiles().then(function () {
       var now = candFiles(c.id).filter(function (x) {
         return !beforeFids[asStr(x && x.fid)] && asStr(x && x.name) === asStr(f.name);
@@ -3307,7 +3325,7 @@ function doUploadFile() {
         closeModal('mk-file');
         toast('通信は切れましたが、書類は保存されていました（二重に上げないでください）');
       } else {
-        err('保存できませんでした（' + asStr(e && e.message) + '）。一覧にも入っていません。もう一度お試しください');
+        err('保存できませんでした（' + afErrWords_(e, '書類の保存（取り直し後）') + '）。一覧にも入っていません。もう一度お試しください');
       }
     });
   });
@@ -3348,12 +3366,12 @@ function downloadFileEntry(c, fid) {
   toast('取り出しています…（5〜20秒かかります）');
   apiFiles({ action: 'downloadFile', cid: c.id, fid: fid }).then(function (r) {
     filesBusy = false;
-    if (!r || !r.ok) { toast(asStr(r && r.error) || '取り出せませんでした'); return; }
+    if (!r || !r.ok) { toast((r && r.error) ? afErrWords_(r.error, '書類の取り出し（断り）') : '取り出せませんでした'); return; }
     saveBlobAs(b64ToBlob(r.dataB64, asStr(r.mime)), asStr(r.name) || asStr(f.name));
     toast('ダウンロードしました');
   }).catch(function (e) {
     filesBusy = false;
-    toast('取り出せませんでした（' + asStr(e && e.message) + '）');
+    toast('取り出せませんでした（' + afErrWords_(e, '書類の取り出し') + '）');
   });
 }
 
@@ -3366,14 +3384,14 @@ function removeFileEntry(c, fid) {
   filesBusy = true;
   apiFiles({ action: 'removeFile', cid: c.id, fid: fid }).then(function (r) {
     filesBusy = false;
-    if (!r || !r.ok) { toast(asStr(r && r.error) || '削除できませんでした'); return; }
+    if (!r || !r.ok) { toast((r && r.error) ? afErrWords_(r.error, '書類を外す（断り）') : '削除できませんでした'); return; }
     FILES[c.id] = candFiles(c.id).filter(function (x) { return asStr(x && x.fid) !== asStr(fid); });
     filesRev = Number(r.filesRev) || filesRev;
     renderView(c); renderList();
     toast('一覧から外しました' + (r.warnings && r.warnings.length ? '（' + r.warnings.join('／') + '）' : ''));
   }).catch(function (e) {
     filesBusy = false;
-    toast('削除できませんでした（' + asStr(e && e.message) + '）');
+    toast('削除できませんでした（' + afErrWords_(e, '書類を外す') + '）');
   });
 }
 
@@ -4844,7 +4862,7 @@ function verifyMaster(c) {
     }
     touch(c); renderView(c);
   }).catch(function (e) {
-    toast('確認できませんでした: ' + (e && e.message || e));
+    toast('確認できませんでした: ' + afErrWords_(e, '登録確認'));
   });
 }
 
@@ -5042,7 +5060,7 @@ function renderSyncModal() {
     '</dl>' +
     (caps && !serverOk ? '<p class="note err">🛑 <b>接続先が入居調整の専用サーバーではありません</b>（応答した名札: ' +
       esc(asStr(caps.server) || '不明') + '）。<a href="connection-settings.html">接続設定</a>の「入居調整」に、'
-      + '入居調整データAPI の /exec URL が入っているか確認してください。このまま保存すると、相談者の情報が別の置き場へ書き込まれます。</p>' : '') +
+      + '入居調整用に作った Google の受け口の URL が入っているか確認してください。このまま保存すると、相談者の情報が別の置き場へ書き込まれます。</p>' : '') +
     (caps && serverOk && !guardOk ? '<p class="note err">⚠️ サーバー側の消失ガード（admwipe）が有効になっていません。Apps Script でコードを保存しただけになっていないか確認してください（デプロイ → デプロイを管理 → 鉛筆 → バージョン「新バージョン」→ デプロイ）。</p>' : '') +
     '<p class="note">接続先の設定は <a href="connection-settings.html">接続設定</a> で行います（このアプリはそこで入れた値を読むだけです）。</p>' +
     '<h2 style="font-size:0.9375rem;margin:12px 0 6px">端末のバックアップ</h2>' +
@@ -5052,8 +5070,8 @@ function renderSyncModal() {
     '<dt>2世代前</dt><dd>' + (b2 ? b2.n + '件（' + esc(fmtDt(b2.at)) + '）<button class="btn sm" id="syR2" type="button" style="margin-left:6px">復元</button>' : 'なし') + '</dd>' +
     '</dl>' +
     '<div class="btn-row" style="justify-content:flex-start">' +
-    '<button class="btn sm" id="syExport" type="button">⬇️ 書き出し（JSON）</button>' +
-    '<button class="btn sm" id="syImport" type="button">⬆️ 取り込み（JSON）</button></div>' +
+    '<button class="btn sm" id="syExport" type="button">⬇️ 控えのファイルに書き出す</button>' +
+    '<button class="btn sm" id="syImport" type="button">⬆️ 控えのファイルから取り込む</button></div>' +
     '<p class="note">書き出したファイルには合言葉は含まれません。取り込みは<b>置き換えではなく統合</b>です（今ある案件は消えません）。</p>';
   if ($('syPing')) $('syPing').addEventListener('click', pingServer);
   if ($('syR1')) $('syR1').addEventListener('click', function () { restoreFromBackup(CACHE_BAK); closeModal('mk-sync'); });
@@ -5063,7 +5081,7 @@ function renderSyncModal() {
   openModal('mk-sync');
 }
 function pingServer() {
-  if (!SU_DATA_READY) { toast('データ層を読み込めていません'); return; }
+  if (!SU_DATA_READY) { toast('共通の部品を読み込めませんでした。画面を読み込み直してください'); return; }
   if (!syncTarget().endpoint) { toast('同期先が未設定です'); return; }
   toast('確認中…');
   SU.data.admission.ping().then(function (j) {
@@ -5072,7 +5090,7 @@ function pingServer() {
     renderSyncModal();
     toast('サーバー版 ' + asStr(j.codeVersion));
   }).catch(function (e) {
-    toast('確認できませんでした: ' + (e && e.message || e));
+    toast('確認できませんでした: ' + afErrWords_(e, 'サーバー版の確認'));
   });
 }
 function exportJson() {
@@ -5094,7 +5112,7 @@ $('importFile').addEventListener('change', function () {
   var rd = new FileReader();
   rd.onload = function () {
     var o;
-    try { o = JSON.parse(String(rd.result)); } catch (e) { toast('読み込めませんでした（JSONではありません）'); return; }
+    try { o = JSON.parse(String(rd.result)); } catch (e) { toast('読み込めませんでした（控えのファイルの形ではありません）'); return; }
     var incoming = normalizeDb(asObj(o).db || o);
     if (!incoming.candidates.length) { toast('案件が入っていないファイルです'); return; }
     if (!confirm('ファイルの ' + incoming.candidates.length + '件 を取り込みます。\n\n' +
@@ -5187,7 +5205,7 @@ $('reloadBtn').addEventListener('click', function () {
 function afStart_() {
   afGateOk_ = true;
   if (!SU_DATA_READY) {
-    toast('データ層を読み込めていません（su-data.js）。同期はできませんが、この端末内では使えます');
+    toast('共通の部品を読み込めませんでした。同期はできませんが、この端末内では使えます');
   }
   loadCache();
   loadListPref();
