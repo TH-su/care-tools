@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-hD+E/8jm0HWUVl6za/WBsCetaAsKZcb+R9onat8bm/g=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-u9Mz+PobfhgDbQ9J12BNKFwJbVdJJPILYNfH5TOj27I=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 検索エンジンにこのページと配下ツールを辿らせない。
@@ -32,7 +32,7 @@
 <link rel="preload" as="script" href="su-errors.js?v=2026-10-27">
 <link rel="preload" as="script" href="su-cfg-hint.js?v=2026-10-01.2">
 <link rel="preload" as="script" href="su-perf.js?v=2026-10-27">
-<link rel="preload" as="script" href="su-menu.js?v=2026-10-29">
+<link rel="preload" as="script" href="su-menu.js?v=2026-11-02">
 <link rel="preload" as="script" href="su-itomari.js?v=2026-10-26.2">
 <link rel="preload" as="script" href="su-sync-stale.js?v=2026-10-26">
 <link rel="preload" as="script" href="su-report.js?v=2026-10-28">
@@ -42,7 +42,7 @@
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-cfg-hint.js?v=2026-10-01.2"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
-<script src="su-menu.js?v=2026-10-29"></script>
+<script src="su-menu.js?v=2026-11-02"></script>
 <!-- メニューの毬（菊かがり・麻の葉）を描く部品（2026-10-26 代表者の決定）。読めなくてもメニューは動く（毬のボタンを出さないだけ） -->
 <script src="su-itomari.js?v=2026-10-26.2"></script>
 <!-- 写しが止まっている時の札（2026-10-26 本人指示）。現場端末では何も読まない・読めなくてもメニューは動く -->
@@ -651,8 +651,11 @@ main {
      現場端末で事務所専用を出さない仕組み（is-field・data-office-only）はこの後も同じに効く＝設定で現場端末に出すことはできない */
   /* 役割の決まり（2026-10-29 本人承認・su-menu.js の SUMenu.view）: 管理者専用は管理者にだけ、事務所専用は現場のアカウントと
      役割が分かるまで（'pending'）出さない。設定が保存されていない施設でも効く。su-menu.js が無い時は既定のまま */
+  /* 施設で使うアプリ（2026-11-02・SUFacility.apps() の id の配列）。施設情報はこの後ろで読むので、最初は null（絞らない）で組み立て、
+     読めた時に値が変わっていれば1回だけ組み立て直す（下の appsCheck）。書いていない施設（null）では組み立て直さない＝今と同じ */
+  var apps = null;
   function arranged(cfg, role) {
-    try { return window.SUMenu ? SUMenu.view(def, cfg, role) : def; } catch (e) { fail(e); return def; }
+    try { return window.SUMenu ? SUMenu.view(def, cfg, role, apps) : def; } catch (e) { fail(e); return def; }
   }
   /* 今の役割の帯。'unsure' はログインの記録はあるが確かめられなかった時（既定のメニューに倒している） */
   var BAND = { admin: '管理者としてログイン中', office: '事務所としてログイン中', field: '現場としてログイン中',
@@ -671,11 +674,13 @@ main {
   try { cache = window.SUMenu ? SUMenu.readCache() : null; } catch (e) { cache = null; }
   try { loggedIn = !!(window.SUMenu && SUMenu.hasLogin()); } catch (e) { loggedIn = false; }
   role = cache ? cache.role : (loggedIn ? 'pending' : null);
-  build(arranged(cache && cache.config, role));
+  var curCfg = cache && cache.config;   // 今の組み立てに使った設定（施設のアプリが届いた時の組み直しに使う）
+  build(arranged(curCfg, role));
   drawBall();
   if (window.SUMenu) drawRole(role || 'none');
   try { if (window.SUPerf) SUPerf.ready(); } catch (e) {}
   function rebuild(cfg, r) {
+    curCfg = cfg;
     broken = 0; firstErr = null;
     while (main.firstChild) main.removeChild(main.firstChild);
     build(arranged(cfg, r));
@@ -710,9 +715,19 @@ main {
   }
   /* 施設情報（su-facility.js）はこの後ろで読む。読み込んだ直後（端末の控えがあればその値）と、読み終わった（読めないと分かった）時に問い合わせ先の1行を埋める。
      事業所の呼び名は下の script が埋めるが、ここでも同じ値で埋める（同じ文字を入れ直すだけ） */
+  /* 施設で使うアプリが今の組み立てと違えば組み直す。読めない・例外の時は null（絞らない）として比べる */
+  function appsCheck() {
+    var a = null;
+    try { a = (window.SUFacility && SUFacility.apps) ? SUFacility.apps() : null; } catch (e) { a = null; }
+    if (!Array.isArray(a)) a = null;
+    if (JSON.stringify(a) === JSON.stringify(apps)) return;
+    apps = a;
+    rebuild(curCfg, role);
+  }
   try {
     document.addEventListener('DOMContentLoaded', function () {
       try { if (window.SUFacility) { fill(); SUFacility.onReady(function () { fill(); }); } } catch (e) {}
+      try { if (window.SUFacility) { appsCheck(); SUFacility.onReady(appsCheck); } } catch (e) { /* 捨ててよい: 施設のアプリを読めない時は絞らずに全部出す */ }
     });
   } catch (e) { /* 登録できなくても決まりの文言のまま出る */ }
   /* 札だけを付け直す（組み立て直さない）。「戻る」で前の表示のまま戻った時（bfcache）と、

@@ -32,6 +32,9 @@
  *   SUMenu.arrange(def, config, role) → 並べ替え・非表示を当てた定義（元の def は変えない）。純関数（check/unit/menu_arrange_test.js）
  *   SUMenu.view(def, config, role)     → arrange ＋役割の決まり（管理者専用・現場の事務所専用・役割が分かるまでの事務所専用）。
  *                                       設定が無くても役割の決まりは効く。メニューの画面はこれで組み立てる（2026-10-29 本人承認）
+ *   SUMenu.view(def, config, role, apps) → 上に加えて、施設で使うアプリ（SUFacility.apps() の id の配列）に当たらないボタンを出さない（2026-11-02）。
+ *                                       apps が配列でない（書いていない＝null・読めない）時は今までと同じ（同じものを返す）
+ *   SUMenu.appOf(href)                → ボタンが当たるアプリの id（APP_OF の表）。どの id にも当たらないボタンは null＝絞らない
  *   SUMenu.autoHidden(tile, secOfficeOnly, role) → 役割の決まりで出ないボタンか（メニューの設定の画面が札を出すのに使う）
  *   SUMenu.layout(def, cleaned)       → 非表示を当てる前の区分とボタンの配置（メニューの設定の画面が使う）。空の区分も残す
  *   SUMenu.readCache()                → 端末の控え {role, config} か null
@@ -223,11 +226,54 @@
     var out = copy(view); out.sections = secs;
     return out;
   }
-  /* 画面に出す形＝設定の並び・非表示（arrange）＋役割の決まり。設定が無くても役割の決まりは効く */
-  function view(def, config, role) {
+  /* ── 施設で使うアプリ（2026-11-02・facility-profile.json の apps）──
+     ボタンのリンク先 → アプリの id。切り方は接続設定（connection-settings.html の SYSTEMS と csAppUsed_）と同じ:
+       ws＝週間計画・ワースケ・シフト（と同じ接続先を使うデイ利用表・訪問の俯瞰）／master＝入居者マスタ・フェイスシート／adm＝入居調整／
+       tp＝個別機能訓練計画書／haiben＝排泄ケア記録／weight＝体重管理／msk＝申送ビューア／geno＝ジェノグラム／analyzer＝過去シフト分析
+     表に無いボタン（職員マスタ・採用管理・消耗品・ケアログ・厨房・貼り薬・担当者会議・接続設定・使い方など）は絞らない＝出す。
+     ★apps を書いていない（null）施設では何も変えない。役割の決まり（roleView）の後に当てる＝メニューの設定では外せない。使い方・困った時（KEEP）は隠さない */
+  var APP_OF = {
+    'shift-app.html': 'ws', 'work-schedule.html': 'ws', 'care-schedule.html': 'ws', 'visit-overview.html': 'ws', 'daycare-roster.html': 'ws',
+    'resident-master.html': 'master', 'resident-master.html?view=bday': 'master', 'facesheet.html': 'master',
+    'admission-flow.html': 'adm',
+    'training-plan.html': 'tp',
+    'https://th-su.github.io/haiben-record/haiben-record.html': 'haiben',
+    'weight-record.html': 'weight',
+    'moushiokuri-viewer.html': 'msk',
+    'genogram.html': 'geno',
+    'shift-analyzer.html': 'analyzer'
+  };
+  function appOf(href) {
+    return typeof href === 'string' && Object.prototype.hasOwnProperty.call(APP_OF, href) ? APP_OF[href] : null;
+  }
+  /* apps は id の文字列の配列だけを受け付ける。それ以外（null・壊れた値）は「絞らない」 */
+  function appsView(view, apps) {
+    if (!Array.isArray(apps) || !apps.every(function (x) { return typeof x === 'string'; })) return view;
+    if (!view || typeof view !== 'object' || !Array.isArray(view.sections)) return view;
+    var cut = false;
+    var secs = view.sections.map(function (s) {
+      if (!s || !Array.isArray(s.tiles)) return s;
+      var keep = s.tiles.filter(function (t) {
+        if (!t || KEEP[t.href]) return true;
+        var id = appOf(t.href);
+        return id == null || apps.indexOf(id) >= 0;
+      });
+      if (keep.length === s.tiles.length) return s;
+      cut = true;
+      var ns = copy(s); ns.tiles = keep;
+      return ns;
+    });
+    if (!cut) return view;
+    var out = copy(view); out.sections = secs;
+    return out;
+  }
+
+  /* 画面に出す形＝設定の並び・非表示（arrange）＋役割の決まり＋施設で使うアプリ。設定が無くても役割の決まりと施設のアプリは効く */
+  function view(def, config, role, apps) {
     var v = def;
     try { v = config ? arrange(def, config, role) : def; } catch (e) { v = def; }
-    return roleView(v, role);
+    v = roleView(v, role);
+    try { return appsView(v, apps); } catch (e) { return v; }
   }
 
   /* 控えはログインの記録がある時だけ使う（ログアウトした端末で前の人の並びを出さない）。
@@ -365,7 +411,7 @@
     window.addEventListener('pageshow', function (e) { if (e.persisted) run(); });
   }
 
-  window.SUMenu = { arrange: arrange, view: view, roleView: roleView, autoHidden: autoHidden, layout: layout, clean: clean, readCache: readCache, clearCache: clearCache, startSync: startSync, ROLES: ROLES, KEEP: KEEP,
+  window.SUMenu = { arrange: arrange, view: view, roleView: roleView, autoHidden: autoHidden, appsView: appsView, appOf: appOf, layout: layout, clean: clean, readCache: readCache, clearCache: clearCache, startSync: startSync, ROLES: ROLES, KEEP: KEEP,
     ball: ball, getBall: getBall, setBall: setBall, chooseBall: chooseBall, BALLS: BALLS.slice(),
     // 写しが止まっている時の札（su-sync-stale.js・2026-10-26 本人指示）が、同じログインの部品を二重に読み込まないために使う
     hasLogin: hasLogin, loadAuth: loadAuth };
