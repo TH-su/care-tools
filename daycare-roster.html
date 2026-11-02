@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-n4D3Qm0rRHowJkxHkvYCvQhQpn491BssKdaH1uVBXMk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-AvVo+oz8euD24Q0whRC62sqxBdxe3JGKIHfnWGmPjas='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -82,6 +82,7 @@ body {
 }
 .lg { display: inline-flex; align-items: center; gap: 4px; }
 .lg-sw { width: 13px; height: 13px; border-radius: 3px; border: 1px solid var(--bath-b); background: var(--bath-bg); flex-shrink: 0; }
+.lg-sw.lg-nofloor { background: #fff3e0; }   /* 階未設定の地の色の見本（.nofloor と同色・縁はほかの見本と同じ --bath-b・画面だけの凡例） */
 .warn-badge { color: var(--ng); font-weight: 700; }
 .hide-print-note { display: none; }   /* 非表示適用中に印刷帳票だけへ出す注記（画面では非表示・@media print で表示）＝人が無言で欠落する事故を防ぐ */
 
@@ -405,6 +406,14 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
   font-size: 0.875rem; text-align: center; padding: 24px; background: var(--g1);
 }
 .board-empty.on { display: flex; }
+/* 週間計画の接続先が無い時の案内（画面だけ・noprint・2026-11-02 品質改善 第3期 便7） */
+.cfg-guide {
+  max-width: 34rem; display: flex; flex-direction: column; gap: 6px; text-align: left;
+  background: #fff8e1; color: #5d4037; border: 1px solid #ffe0a3; border-radius: 8px;
+  padding: 10px 14px; font-size: 0.8125rem; line-height: 1.6;
+}
+.cfg-guide a { color: var(--pri-d); font-weight: 700; min-height: 44px; display: inline-flex; align-items: center; }
+.cfg-guide[hidden] { display: none; }
 #toast {
   position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
   background: var(--g9); color: #fff; border-radius: 8px; padding: 10px 18px;
@@ -629,6 +638,7 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
 
   <div class="board-empty" id="boardEmpty">
     <div id="emptyMsg">週間計画のデータが見つかりません。</div>
+    <div class="cfg-guide noprint" id="emptyCfg" role="status" hidden></div>
     <button class="hdr-btn solid" id="btnRefresh2">クラウドから取得</button>
   </div>
 </main>
@@ -765,7 +775,7 @@ if (SU_DATA_READY) {
 } else {
   document.addEventListener('DOMContentLoaded', function () {
     try {
-      toast('データ層を読み込めていません（su-data.js）。同期できません。ページを再読み込みしてください');
+      toast('共通の部品を読み込めていません。同期できません。ページを再読み込みしてください');
     } catch (e) {}
   });
 }
@@ -808,7 +818,7 @@ async function gasCall(payload) {
    データと版は必ず同時に更新する必要があるため、版は呼び出し側へ返して DB 差し替えと同時に代入する。 */
 async function fetchRemote() {
   const t = syncTarget();
-  if (!t.endpoint) { toast('同期先が未設定です（週間計画アプリで設定してください）', true); return null; }
+  if (!t.endpoint) { toast(dcrNoCfgToast_(), true); return null; }
   const j = await gasCall({ action: 'get', key: LS_KEY });
   if (!j.ok) throw new Error(j.error || '応答エラー');
   return (j.data && Array.isArray(j.data.residents)) ? { data: j.data, rev: Number(j.rev) || 0 } : null;
@@ -889,6 +899,30 @@ function dcrConfirmLeave_(e) {
 const DCR_DEVICE_KEY = 'su_device_role';
 const DCR_FIELD_MSG = 'この端末（現場用）では変えられません。事務所PCで変えてください';
 function dcrIsField_() { try { return localStorage.getItem(DCR_DEVICE_KEY) === 'field'; } catch (e) { return false; } }
+
+/* 週間計画の接続先が無い端末で出す案内（2026-11-02 品質改善 第3期 便7）。何が足りないか・次にすること・接続設定へのリンク。
+   ★現場の端末では接続設定を開けない（接続設定の画面が止める）ので、リンクを出さず、管理者が端末の用途を切り替えてから入れる旨を書く。
+   ★接続設定はログインの役割の確かめ（su-app-gate.js）を通るので、ログインが先に要ることを書く。
+   ★案内は画面だけ（noprint）。DOM で組み立てる（innerHTML は使わない・外からの値を含まない）
+   ★同時に出る画面下の帯（su-cfg-hint.js）と次にすることをそろえる: 事務所は「控えから戻す」が先・無ければ手で入れる、現場は「事務所に連絡」。
+     現場の端末は、入れた後に現場用へ戻す（CLAUDE.md §2-5）ことまで書く */
+function dcrNoCfgToast_() {
+  if (dcrIsField_()) return 'この端末には週間計画の接続先が入っていません。事務所に連絡してください';
+  return '週間計画の接続先が入っていません。「設定の控え」があれば接続設定の「控えから戻す」で戻し、無ければ接続設定の「週間計画・ワースケ・シフト」に、接続先のURLと合言葉を入れてください';
+}
+function dcrNoCfgGuide_(host) {
+  if (!host) return;
+  host.textContent = '';
+  host.appendChild(el('div', null, 'この端末には、週間計画の接続先（Google の受け口の URL と合言葉）がまだ入っていません。'));
+  if (dcrIsField_()) {
+    host.appendChild(el('div', null, 'この端末（現場用）では入れられません。事務所に連絡してください（管理者が入居者マスタの「管理者の方（端末設定を変更）」でこの端末を事務所用に切り替えて接続設定で入れ、入れた後に現場用に戻します）。'));
+    return;
+  }
+  host.appendChild(el('div', null, '「設定の控え」があれば、接続設定の「控えから戻す」で全部のアプリの設定を一括で戻せます。控えが無い時は、接続設定の画面の「週間計画・ワースケ・シフト」の欄に「接続先のURL」と「合言葉」を入れて保存します。どちらの後も、この画面の「クラウドから取得」を押してください。接続設定を開くには、事務所か管理者のアカウントでのログインが先に要ります。'));
+  const a = el('a', null, '接続設定の画面を開く');
+  a.setAttribute('href', 'connection-settings.html#restore');
+  host.appendChild(a);
+}
 
 /* ── フラグの変更記録 dcrFlagLog（2026-10-07）──
    昼食薬・非表示・同姓の目印を変えるたびに、その方の利用者項目 dcrFlagLog（新しい順・最大 DCR_LOG_MAX 件）へ
@@ -1004,7 +1038,7 @@ function pendingKey_(item, field) {
 function queueFlags(items, field, value, label) {
   if (dcrIsField_()) { toast(DCR_FIELD_MSG, true); renderAll(DB); return; }   // 見た目だけ変わったチェックを戻す
   const t = syncTarget();
-  if (!t.endpoint) { toast('同期先が未設定です（週間計画アプリで設定してください）', true); renderAll(DB); return; }
+  if (!t.endpoint) { toast(dcrNoCfgToast_(), true); renderAll(DB); return; }
   if (!DB || !Array.isArray(DB.residents)) { toast('データがありません', true); return; }
   if (!items || !items.length) return;
   let applied = 0;
@@ -1036,6 +1070,27 @@ function dcrSaveErrText_(raw) {
   if (m === 'forbidden') return 'このアカウントでは保存できません。事務所の端末・事務所のアカウントで操作してください';
   if (m === 'shadow') return '保存先の切り替えがまだ終わっていません。少し待ってから、もう一度押してください';
   return '';
+}
+/* 上で言葉にしていない断りの文を、括弧の中に出す職員向けの文にする（2026-11-02 品質改善 第3期 便7）。
+   かな・漢字を含む断り（この画面や共通部品の日本語の断り）はそのまま出す（括弧の中のファイル名だけ外す）。
+   英語だけの例外文・符号は出さずに短い文に替え、元の文は不具合の記録（SUErrors.note）に残す（何が起きたかを消さない）。
+   ★通信の失敗（圏外・時間切れ・中断・HTTP 5xx・429）と設定の誤り（HTTP 4xx・応答が読めない・合言葉の誤り）は記録に流さない
+     （圏外の現場端末や設定の誤りで不具合報告の種を増やさない）。画面側のエラー（TypeError 等）は「画面の中で」の文にし、記録には残す */
+function dcrSaveErrWords_(e) {
+  var m = String((e && e.message) || (typeof e === 'string' ? e : '') || '');
+  if (/badtoken/.test(m)) return '合言葉が合っていません。接続設定の「週間計画・ワースケ・シフト」を確かめてください';
+  if (/[぀-ヿ一-鿿]/.test(m)) {
+    var j = m.replace(/[（(][^（）()]*\.(?:m?js|gs|json|html)[）)]/g, '').trim();
+    if (j) return j;
+  }
+  if (!m) return '原因が分かりませんでした';
+  if (/Failed to fetch|Load failed|NetworkError|network|timeout|timed out|abort|オフライン/i.test(m) || /^HTTP (5\d\d|429)\b/.test(m)) return '通信がうまくいきませんでした';
+  var nm = (e && typeof e === 'object' && e.name) ? String(e.name) : '';
+  if ((nm === 'SyntaxError' || nm === 'Error' || !nm) && /Unexpected token|JSON/i.test(m)) return '接続先の設定を確かめてください（管理者に伝えてください）';
+  if (/^HTTP 4\d\d\b/.test(m)) return '接続先の設定を確かめてください（管理者に伝えてください）';
+  try { if (window.SUErrors && typeof SUErrors.note === 'function') SUErrors.note('デイ利用表の保存の断り', m, 'daycare-roster'); } catch (x) { /* 捨ててよい: 記録できなくても保存の後始末は止めない */ }
+  if (/^(TypeError|ReferenceError|RangeError|SyntaxError|URIError|EvalError)$/.test(nm)) return '画面の中で思わぬエラーが起きました（画面を読み込み直してください）';
+  return 'サーバーから思わぬ返事がありました';
 }
 async function runSaver() {
   if (saverRunning) return;
@@ -1104,7 +1159,7 @@ async function runSaver() {
     setSyncState('保存失敗');
     var why = dcrSaveErrText_(e && e.message);
     toast((lastLabel || '設定') + (why ? ('を保存できませんでした。' + why + '。変更を取り消しました')
-                                     : ('を保存できませんでした（' + (e && e.message ? e.message : '') + '）。変更を取り消しました')), true);
+                                     : ('を保存できませんでした（' + dcrSaveErrWords_(e) + '）。変更を取り消しました')), true);
     if (pendingFlags.size) scheduleSaverRetry_();   // 回復GET中に積まれた新規があれば再送
   } finally {
     saverRunning = false;
@@ -2546,7 +2601,7 @@ function printShrinkToast_(base) {
 }
 function definePrintViews_() {
   if (!window.SUPrint) {
-    toast('印刷モジュール（su-print.js）を読み込めていません。ページを再読み込みしてください', true);
+    toast('印刷の部品を読み込めていません。ページを再読み込みしてください', true);
     return;
   }
   // 帳票3タブ（table.sheet）: --sh-fs と --sh-tm を連動させて高さフィット
@@ -2662,6 +2717,13 @@ function renderLegend(sc) {
   // 階未設定は黙って落とさず警告として可視化（マスタ未登録＝ビューから脱落する事故の防止）
   const nf = (MODEL || []).filter(p => p.floor === 0).length;
   if (nf && sc !== 'sc-roster') box.appendChild(el('span', 'warn-badge', '⚠ 階未設定 ' + nf + '名（マスタ未登録）'));
+  /* 階未設定の方の氏名のマスの地の色（.nofloor・枠線は無い）の意味（画面だけ・2026-11-02 品質改善 第3期 便7）。色が付くのはデイ利用者一覧表・全員リスト・薬用の3タブ
+     （週間名簿は色を付けず、利用表は階の欄に「階未設定」と字で出る）。入浴の日（td.nm.bath の黄）と薬用の昼食薬の色（.med-hl）が勝つので、その旨を添える */
+  if (nf && (sc === 'sc-daylist' || sc === 'sc-allweek' || sc === 'sc-med')) {
+    const s = el('span', 'lg noprint'); s.appendChild(el('span', 'lg-sw lg-nofloor'));
+    s.appendChild(document.createTextNode('ごく淡い橙の地＝階が分からない方（入居者マスタで居室を確かめてください）。入浴の日・昼食薬の色が付いた日は、その色が優先されます'));
+    box.appendChild(s);
+  }
   // 同一曜日の重複予定は本モデルで1枠に潰れる＝利用表タブと件数が食い違うため明示する
   if (dupCount && sc !== 'sc-roster') box.appendChild(el('span', 'warn-badge', '⚠ 同一曜日の重複予定 ' + dupCount + '件（1枠のみ表示）'));
   // 非表示設定が有効な時は全タブで明示（黙って人を落とさない）。
@@ -2761,6 +2823,12 @@ function renderAll(db) {
       $('emptyMsg').textContent = '表示できる利用者がいません（' + why.join('／') + '）。' + how.join('。') + '。';
     } else {
       $('emptyMsg').textContent = db ? '通所（デイサービス）の予定がありません。' : '週間計画のデータが見つかりません。';
+    }
+    // 週間計画の接続先が無い端末では、何が足りないか・次にすることを出す（画面だけ）。ある端末では出さない
+    const cfgBox = $('emptyCfg');
+    if (cfgBox) {
+      if (!syncTarget().endpoint) { dcrNoCfgGuide_(cfgBox); cfgBox.hidden = false; }
+      else { cfgBox.textContent = ''; cfgBox.hidden = true; }
     }
     // タブ(.tnav)は空状態でも押せるため、退避値を消さないと goto() が前回の件数を復活させてしまう。
     ROSTER_SUB = ''; MODEL_SUB = '';
@@ -2922,7 +2990,7 @@ function init() {
   $('btnRefresh').addEventListener('click', () => refresh(false));
   $('btnRefresh2').addEventListener('click', () => refresh(false));
   $('btnPrint').addEventListener('click', () => {
-    if (!window.SUPrint) { toast('印刷モジュール（su-print.js）を読み込めていません。ページを再読み込みしてください', true); return; }
+    if (!window.SUPrint) { toast('印刷の部品を読み込めていません。ページを再読み込みしてください', true); return; }
     /* ★表題の事業所名・階の分け方は施設情報から引く。読めていなければ最大3秒待ち、読めなければ刷らない（2026-10-14） */
     /* ★待つ数秒の間の二重押しを無視する（2回押すと印刷の画面が2回開いていた）。待った後は本文（階の分け方・凡例の医療機関名）も
        施設情報で描き直してから刷る（以前は表題だけ替えていた）。2026-10-14 監査10月版 第4版 7 */

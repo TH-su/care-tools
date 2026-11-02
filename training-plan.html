@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-QZzN1cLY9m8W4HvfaVHKBIF//Cly5d8ZBt8E0mCvxRU=' 'sha256-rBsGFBsmNtVnHTpeJYRtKNTF0R7pvAQ9D2YS+EYSlFQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-l4LjIlOsp+bW6NFw4Q6hqKCsEW1dNgxD2SdWKwMfebM=' 'sha256-8bu/MKgGKKrD5Q9WcF16k7OU6sYjd4HM1sz6MDY25vM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- 要配慮情報（疾患・訓練内容）を表示する画面。ブラウザキャッシュ・検索索引に残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -675,7 +675,8 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
 <!-- ══════════ 設定 ══════════ -->
 <section id="scr-settings" class="scr" aria-label="設定">
   <div class="cd">
-    <h2>接続（個別機能訓練計画書の専用GAS）</h2>
+    <h2>接続（個別機能訓練計画書の専用の Google の受け口）</h2>
+    <div id="cfgMissing"></div>
     <p class="muted">この画面の接続先は計画書だけのものです。週間計画・入居者マスタの接続先とは別に入れてください。</p>
     <div class="grid2" style="margin-top:var(--sp-3)">
       <div><label for="cfgUrl">ウェブアプリのURL（/exec で終わるもの）</label>
@@ -692,7 +693,7 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
 
   <div class="cd">
     <h2>職員（計画作成者・説明者の選択肢）</h2>
-    <p class="muted">全端末で共通です（計画書の専用GASに保存します）。</p>
+    <p class="muted">全端末で共通です（計画書の専用の Google の受け口に保存します）。</p>
     <div id="staffBox" style="margin-top:var(--sp-3)"></div>
     <div class="stack" style="margin-top:var(--sp-3)">
       <div><label for="stName">氏名</label><input type="text" id="stName" autocomplete="off"></div>
@@ -731,8 +732,8 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
 
   <div class="cd">
     <h2>AI生成（文案の下書き）</h2>
-    <p class="muted">AIのキー（APIキー）は<strong>サーバー（計画書の専用GAS）</strong>にだけ置き、端末には置きません。
-      AIへの依頼は、計画書の専用GASが代わりに送ります（1日の回数に上限があります）。1件あたりの費用の目安は20円ほどです。</p>
+    <p class="muted">AIのキーは<strong>サーバー（計画書の専用の Google の受け口）</strong>にだけ置き、端末には置きません。
+      AIへの依頼は、計画書の専用の Google の受け口が代わりに送ります（1日の回数に上限があります）。1件あたりの費用の目安は20円ほどです。</p>
     <p class="muted">次期を作ると、前の期の報告書欄（達成度・Ⅲ）と次の期の計画書欄を1回で作ります。</p>
     <p class="muted">欄ごとの「AIで調整」は、その欄だけを少し整えます（前の期には触れません）。</p>
     <div class="grid2" style="margin-top:var(--sp-3)">
@@ -1466,7 +1467,7 @@ function validateImport(raw, roster) {
        doc は作って返す（作らないと画面の「選び直す」が働かない）。 */
   var errors = [], warnings = [], structural = [];
   var list = asArr_(roster);
-  if (!isObj_(raw)) return { ok: false, errors: ['JSONの形が違います（オブジェクトではありません）'], warnings: warnings, doc: null, needsPick: false };
+  if (!isObj_(raw)) return { ok: false, errors: ['控えのファイルの形ではありません（計画書の控えのファイルを選んでください）'], warnings: warnings, doc: null, needsPick: false };
   function err(msg) { errors.push(msg); structural.push(msg); }
   if (Number(raw.v) !== 1) err('v が 1 ではありません（この版のアプリでは読めません）');
   var sub = isObj_(raw.subject) ? raw.subject : {};
@@ -1504,7 +1505,7 @@ function validateImport(raw, roster) {
   }
   if (hit) {
     if (normalizeName(hit.name) !== nameNorm) {
-      errors.push('名簿の氏名と subject.nameNorm が一致しません（取り違えを防ぐため取り込みません）');
+      errors.push('名簿の氏名とファイルの氏名が一致しません（取り違えを防ぐため取り込みません）');
       needsPick = true;
     }
   } else if (list.length) {
@@ -1993,14 +1994,57 @@ function toast(msg) {
 function errText(e) {
   var m = s_(e && e.message ? e.message : e);
   if (m === 'NO_MASTER') return '入居者マスタの接続先が未設定です';
-  if (m === 'NO_DATA_LAYER') return 'データ層（su-data.js）を読み込めていません';
+  if (m === 'NO_DATA_LAYER') return '共通の部品を読み込めていません（画面を読み込み直してください）';
   if (m === '同期先が未設定です') return '計画書の接続先が未設定です（設定画面で入れてください）';
   if (/unauthorized|認証/.test(m)) return '合言葉が違います（設定画面で確かめてください）';
   if (m === 'badkey') return 'この利用者番号ではサーバーが受け付けません';
   if (m === 'toolarge') return 'データが大きすぎて保存できません';
   if (m === 'nodata') return '送る中身が空のためサーバーが保存を拒否しました';
   if (m === 'countdrop') return '件数が減るためサーバーが保存を受け付けませんでした（計画を消してしまう保存は受け付けません）';
-  return m || '不明なエラー';
+  return tpErrWords_(e, m);
+}
+/* 上で言葉にしていない断りの文を職員向けにする（2026-11-02 品質改善 第3期 便6）。
+   かな・漢字を含む断り（サーバーや共通部品の日本語の断り）はそのまま出す（括弧の中のファイル名だけ外す）。
+   英語だけの例外文・符号は出さずに職員向けの短い文に替え、元の文は不具合の記録（SUErrors.note）に残す。
+   ★通信の失敗（圏外・時間切れ・中断・HTTP 5xx・429）と設定の誤り（HTTP 4xx・応答が読めない）は記録に流さない（圏外の端末や設定の誤りで不具合報告の種を増やさない）。
+     画面側のエラー（TypeError 等・Error の name で見分ける）は「画面の中で」の文にし、記録には残す */
+function tpErrWords_(e, m) {
+  if (/badtoken/.test(m)) return '合言葉が合っていません（設定の接続先を確かめてください）';
+  if (/[\u3040-\u30ff\u4e00-\u9fff]/.test(m)) {
+    var j = m.replace(/[（(][^（）()]*\.(?:m?js|gs|json|html)[）)]/g, '').trim();
+    if (j) return j;
+  }
+  if (!m) return '原因が分かりませんでした';
+  var net = /Failed to fetch|Load failed|NetworkError|network|timeout|timed out|abort|タイムアウト|時間切れ|オフライン/i.test(m) ||
+    /^HTTP (5\d\d|429)\b/.test(m);
+  if (net) return '通信がうまくいきませんでした';
+  /* 設定の誤り（受け口がログインの画面などを返して読めない・HTTP 4xx）は記録に流さない（自動の報告にしない）。
+     ★JSON の読み取りエラーも SyntaxError なので、画面側のエラーより先に見分ける */
+  var nm = s_(e && typeof e === 'object' && e.name);
+  if ((nm === 'SyntaxError' || nm === 'Error' || !nm) && /Unexpected token|JSON/i.test(m)) return '接続先の設定を確かめてください（管理者に伝えてください）';
+  if (/^HTTP 4\d\d\b/.test(m)) return '接続先の設定を確かめてください（管理者に伝えてください）';
+  try { if (window.SUErrors && typeof SUErrors.note === 'function') SUErrors.note('計画書の断りの文', m, 'training-plan'); } catch (x) { /* 記録できなくても止めない */ }
+  /* 画面側の不具合（様式の組み立ての中の TypeError 等）をサーバーのせいに見せない */
+  if (/^(TypeError|ReferenceError|RangeError|SyntaxError|URIError|EvalError)$/.test(nm)) return '画面の中で思わぬエラーが起きました（画面を読み込み直してください）';
+  return 'サーバーから思わぬ返事がありました';
+}
+/* 計画書の接続先が無い時の案内（何が足りないか・次にすること・接続設定へのリンク）。DOM で組み立てる（innerHTML は使わない）。
+   この画面は現場端末では開かないが、念のため現場端末では接続設定へのリンクを出さず「事務所に知らせてください」にする */
+function noCfgGuide(host, where) {
+  var b = el('div', 'banner warn');
+  b.setAttribute('role', 'status');
+  b.appendChild(el('span', '', '計画書の接続先（専用の Google の受け口の URL と合言葉）が、この端末にまだ入っていません。'));
+  if (isFieldDevice()) {
+    b.appendChild(el('span', '', 'この端末では入れられません。事務所に知らせてください。'));
+  } else {
+    b.appendChild(el('span', '', (where === 'list' ? '画面下の「設定」→「接続」' : 'この下の欄') +
+      'か、接続設定の画面の「個別機能訓練計画書」の欄に URL と合言葉を入れて、保存してください（管理者の作業です）。'));
+    var a = el('a', '', '接続設定の画面を開く');
+    a.setAttribute('href', 'connection-settings.html');
+    b.appendChild(el('br'));
+    b.appendChild(a);
+  }
+  host.appendChild(b);
 }
 function banner(host, kind, text) {
   var b = el('div', 'banner ' + kind, text);
@@ -2725,9 +2769,9 @@ function stateBadge(row) {
 function renderBanners() {
   var host = $('listBanners');
   clear(host);
-  if (!SU_READY) banner(host, 'err', 'データ層（su-data.js）を読み込めていません。ページを再読み込みしてください。直らない場合は管理者へ連絡してください。');
-  if (!FORM_READY) banner(host, 'err', '印刷様式（training-plan-form.js）を読み込めていません。印刷とプレビューはできません。');
-  if (!CFG.url) banner(host, 'warn', '計画書の接続先が未設定です。下の「設定」で接続先を入れてください（管理者の作業です）。');
+  if (!SU_READY) banner(host, 'err', '共通の部品を読み込めていません。ページを再読み込みしてください。直らない場合は管理者へ連絡してください。');
+  if (!FORM_READY) banner(host, 'err', '印刷様式の部品を読み込めていません。印刷とプレビューはできません。');
+  if (!CFG.url) noCfgGuide(host, 'list');
   if (MASTER_MSG) banner(host, 'warn', MASTER_MSG);
   if (ROSTER_SRC === 'common') banner(host, 'info', '入居者マスタへ繋がらないため、端末に配られている共有名簿で表示しています（古い可能性があります）。');
   if (DAY_MSG) banner(host, 'info', DAY_MSG);
@@ -5185,7 +5229,7 @@ function renderCompare() {
     return;
   }
   if (!FORM_READY) {
-    banner(warn, 'err', '印刷様式（training-plan-form.js）を読み込めていないため、様式比較は出せません。「欄一覧」に切り替えて入力してください。');
+    banner(warn, 'err', '印刷様式の部品を読み込めていないため、様式比較は出せません。「欄一覧」に切り替えて入力してください。');
     return;
   }
   var lp = leftPlan();
@@ -6276,7 +6320,7 @@ function aiErrText(e) {
   if (m === 'AI_HTTP_401' || m === 'AI_HTTP_403') return 'いまはAIを使えません。管理者に伝えてください（管理者向け：サーバーのAIのキーが受け付けられませんでした・' + m.slice(8) + '）' + why;
   if (m === 'AI_HTTP_429') return 'AIの利用が混み合っています（429）。少し待ってから「もう一度試す」を押してください';
   if (m === 'AI_HTTP_529' || m === 'AI_HTTP_503') return 'AI側が一時的に混み合っています（' + m.slice(8) + '）。少し待ってからもう一度お試しください';
-  if (m.indexOf('AI_HTTP_') === 0) return 'AIから正しい応答がありませんでした（HTTP ' + m.slice(8) + '）。' + why;
+  if (m.indexOf('AI_HTTP_') === 0) return 'AIから正しい応答がありませんでした（状態 ' + m.slice(8) + '）。' + why;
   if (m === 'AI_REFUSAL') return 'AIが文案の作成を控えました。「本人の様子」に書いた内容を見直して、もう一度お試しください';
   if (m === 'AI_BAD_JSON' || m === 'AI_NO_TEXT') return 'AIの返事を読み取れませんでした。もう一度お試しください';
   /* 新しい受け口（su-ai）の時だけ、どの段で止まったかの印を末尾に足す（例: 受け口の状態 ai_fetch・2026-10-30 代表者「入れてよい」） */
@@ -7328,7 +7372,7 @@ function runFixAll(write) {
     if (!confirm('作成日が ' + from + ' 以降の期について、説明者・主な実施者・プログラム作成者・計画作成者を「' + name + '」に揃えます。\n\n' +
         '対象 ' + FIX_LAST.people + '人・' + FIX_LAST.plans + '期・' + FIX_LAST.fields + '欄' +
         (FIX_LAST.locked ? ('\nうち印刷済・家族署名受領済の期 ' + FIX_LAST.locked + '期（すでに紙で配ったものと食い違う可能性があります）') : '') +
-        '\n\n紙に氏名が出る4つの欄すべてが対象です。この操作は元に戻せません（GAS側に直前10世代の控えは残ります）。\n\nよろしいですか？')) return;
+        '\n\n紙に氏名が出る4つの欄すべてが対象です。この操作は元に戻せません（Google の受け口に直前10世代の控えは残ります）。\n\nよろしいですか？')) return;
   }
   var rows = indexRowsWithScope('all');
   if (!rows.length) { toast('対象になる方がいません'); return; }
@@ -7533,7 +7577,7 @@ function renderAiSettings() {
     ? '計画書の接続先が未設定のため、AIを使えません'
     : (AI_SRV && AI_SRV.key === false)
       ? 'サーバーにAIのキーが無いか、中継の無い古い版です（「AIの接続を確かめる」で詳しく分かります）'
-      : 'AIのキーはサーバー（計画書の専用GAS）に置く方式です。入っているかは「AIの接続を確かめる」で確かめられます';
+      : 'AIのキーはサーバー（計画書の専用の Google の受け口）に置く方式です。入っているかは「AIの接続を確かめる」で確かめられます';
 }
 function saveAiSettings() {
   var m = $('aiModel').value;
@@ -7552,15 +7596,15 @@ function checkAiProxy() {
   $('aiState').textContent = '確かめています…';
   tpPing().then(function (r) {
     var a = r && r.ai;
-    if (!r || r.ok !== true) { $('aiState').textContent = '接続できませんでした（' + s_(r && r.error) + '）'; return; }
+    if (!r || r.ok !== true) { $('aiState').textContent = '接続できませんでした（' + errText(s_(r && r.error)) + '）'; return; }
     noteAiSrv(r);
     try { renderAiSettings(); renderSample(); syncBatchAiVisibility(); } catch (e0) { /* 表示の更新だけ */ }
     if (!a || typeof a !== 'object') { $('aiState').textContent = 'サーバーが古い版で、AIの中継が入っていません（管理者に更新を依頼してください）'; return; }
     $('aiState').textContent = a.key
       ? ('サーバーにキーがあります。今日の利用 ' + (Number(a.usedToday) || 0) + ' 回／上限 ' + (Number(a.limit) || 0) + ' 回')
-      : 'サーバーにキーがありません（管理者がスクリプトプロパティ ANTHROPIC_API_KEY に入れてください）';
+      : 'サーバーにAIのキーがありません。管理者に伝えてください（管理者向け：スクリプトプロパティ ANTHROPIC_API_KEY に入れる）';
   }, function (e) {
-    $('aiState').textContent = '接続できませんでした（' + s_(e && e.message) + '）';
+    $('aiState').textContent = '接続できませんでした（' + errText(e) + '）';
   });
 }
 
@@ -7587,7 +7631,7 @@ function buildPreview() {
   renderPvKind();
   var p = curPlan();
   if (!p) { banner(warn, 'warn', '計画がありません。編集画面で計画を作ってから印刷してください。'); return; }
-  if (!FORM_READY) { banner(warn, 'err', '印刷様式（training-plan-form.js）を読み込めていません。ページを再読み込みしてください。'); return; }
+  if (!FORM_READY) { banner(warn, 'err', '印刷様式の部品を読み込めていません。ページを再読み込みしてください。'); return; }
   var np = nextPlan();
   renderPvDateNote(p, np);
   try {
@@ -7723,7 +7767,7 @@ function onImportFile(file) {
   fr.onload = function () {
     var obj = null;
     try { obj = JSON.parse(String(fr.result)); }
-    catch (e) { toast('JSONとして読めませんでした（形を確かめてください）'); return; }
+    catch (e) { toast('控えのファイルとして読めませんでした（計画書の控えのファイルか確かめてください）'); return; }
     var res = TP.validateImport(obj, ROSTER);
     openImportModal(res);
   };
@@ -7884,7 +7928,7 @@ function readJsonFile(file) {
     fr.onload = function () {
       var obj;
       try { obj = JSON.parse(String(fr.result)); }
-      catch (e) { resolve({ ok: false, reason: 'JSONとして読めませんでした' }); return; }
+      catch (e) { resolve({ ok: false, reason: '控えのファイルとして読めませんでした' }); return; }
       resolve({ ok: true, raw: obj });
     };
     fr.readAsText(file);
@@ -7938,7 +7982,7 @@ function bkBuildRow(file, parsed) {
   if (!parsed.ok) { row.reasonText = '読めません（除外）：' + parsed.reason; return row; }
   var raw = parsed.raw;
   if (!raw || typeof raw !== 'object' || Object.prototype.toString.call(raw) === '[object Array]') {
-    row.reasonText = '読めません（除外）：JSONの形が違います'; return row;
+    row.reasonText = '読めません（除外）：控えのファイルの形ではありません'; return row;
   }
   var sub = (raw.subject && typeof raw.subject === 'object' &&
     Object.prototype.toString.call(raw.subject) !== '[object Array]') ? raw.subject : {};
@@ -8172,6 +8216,8 @@ function bkRunAll() {
 
 /* ═══════════ 設定 ═══════════ */
 function renderSettings() {
+  clear($('cfgMissing'));
+  if (!CFG.url) noCfgGuide($('cfgMissing'), 'settings');
   $('cfgUrl').value = CFG.url;
   $('cfgToken').value = CFG.token;
   var st = settings();
@@ -8239,7 +8285,7 @@ function testCfg() {
     if (!j || !j.ok) throw new Error(s_((j && j.error) || '応答エラー'));
     var name = s_(j.server);
     if (name && name.indexOf('training') < 0) {
-      $('cfgState').textContent = '⚠ 別のGAS（' + name + '）に繋がっています。計画書【専用】のURLを入れてください';
+      $('cfgState').textContent = '⚠ 別の Google の受け口（' + name + '）に繋がっています。計画書【専用】のURLを入れてください';
       return;
     }
     if (Object.prototype.toString.call(j.guards) === '[object Array]') SRV_GUARDS = j.guards.map(s_);
@@ -8303,7 +8349,7 @@ function staffErrText(e) {
   if (/sizelimit/.test(m)) return '一覧の大きさが上限を超えています（設定の「一覧を作り直す」を試してください）';
   if (/badtoken/.test(m)) return '合言葉が合っていません（設定の接続先を確かめてください）';
   if (/未設定/.test(m)) return '接続先が未設定です（設定の接続先を入れてください）';
-  return m || '原因不明';
+  return tpErrWords_(e, m);
 }
 function removeStaff(id, name, job) {
   if (STAFF_BUSY) return;
@@ -8817,7 +8863,7 @@ function startApp_() {
   syncBatchAiVisibility();   /* D47〜D50: 一括AI作成のボタンは aiReady() の端末だけに出す */
   restoreUiState();
   renderList();
-  if (!SU_READY) { setSync('データ層エラー', 'err'); return; }
+  if (!SU_READY) { setSync('部品の読み込みエラー', 'err'); return; }
   if (!CFG.url) { setSync('未接続', 'err'); showScreen('scr-settings'); return; }
   var want = lsGet(LS.scr, SCREENS, 'scr-list');
   var mid = urlMasterId();
