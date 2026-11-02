@@ -1,7 +1,7 @@
 /* su-intro.js — 画面の見出しのすぐ下に出す「初回の案内の帯」（2026-11-02 本人の決定「この文言で作る」）
  *
  * 何をするか:
- *   ・画面ごとに「この画面でできること／はじめに／困った時」を、見出しの入れ物（body 直下の .hdr）の直後に帯で出す。
+ *   ・画面ごとに「この画面でできること／はじめに／困った時」を、見出しの入れ物（body 直下の .hdr。無い画面は印 data-su-intro-after の要素）の直後に帯で出す。
  *   ・「×」（案内を閉じる）で閉じたら、その端末では出さない。端末に残すのは localStorage の
  *     su_intro_closed_<画面id> = '1' だけ（UI の状態だけ。氏名・記録などは入れない）。
  *     localStorage が使えない端末では、例外を外に出さずに毎回出す（×で今の表示だけ閉じる）。
@@ -21,7 +21,7 @@
  *   届かない・遅い時も CSS_WAIT_MS で置く。
  *
  * 使い方: 各画面の </body> の直前（su-report.js の前）で
- *   <script src="su-intro.js?v=2026-11-02"></script>
+ *   <script src="su-intro.js?v=2026-11-02.2"></script>
  */
 (function () {
   'use strict';
@@ -126,7 +126,8 @@
       if (placed) return;
       placed = true;
       try {
-        var hdr = document.querySelector('body > .hdr');
+        /* 見出しの入れ物が body 直下に無い画面は、画面が印 data-su-intro-after を付けた要素の後ろに置く（2026-11-02 便9） */
+        var hdr = document.querySelector('body > .hdr') || document.querySelector('[data-su-intro-after]');
         if (!hdr || !hdr.parentNode) return;
         var band = build();
         hdr.parentNode.insertBefore(band, hdr.nextSibling);

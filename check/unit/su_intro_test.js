@@ -54,7 +54,9 @@ function load(opt) {
   const body = mkEl('body');
   const hdr = mkEl('header'); hdr.className = 'hdr';
   const after = mkEl('main');
-  if (opt.noHdr) body.children = [after]; else body.children = [hdr, after];
+  const anchor = mkEl('div'); anchor.attrs['data-su-intro-after'] = '';
+  if (opt.anchor) body.children = [mkEl('div'), anchor, after];
+  else if (opt.noHdr) body.children = [after]; else body.children = [hdr, after];
   body.children.forEach((c) => { c.parentNode = body; });
   const head = mkEl('head');
   head.appendChild = function (c) { this.children.push(c); c.parentNode = this; if (!opt.cssNever) setImmediate(() => { if (c.onload) c.onload(); }); return c; };
@@ -73,7 +75,7 @@ function load(opt) {
   const doc = {
     body, head, readyState: opt.loading ? 'loading' : 'complete',
     createElement: mkEl,
-    querySelector(sel) { if (sel !== 'body > .hdr') throw new Error('予定外のセレクタ: ' + sel); return body.children.find((c) => c.className === 'hdr') || null; },
+    querySelector(sel) { if (sel === '[data-su-intro-after]') return body.children.find((c) => 'data-su-intro-after' in c.attrs) || null; if (sel !== 'body > .hdr') throw new Error('予定外のセレクタ: ' + sel); return body.children.find((c) => c.className === 'hdr') || null; },
     addEventListener(k, fn) { if (k === 'DOMContentLoaded') docReady = fn; },
   };
   const ctx = {
@@ -84,7 +86,7 @@ function load(opt) {
   let thrown = null;
   try { vm.runInNewContext(SRC, ctx, { filename: 'su-intro.js' }); } catch (e) { thrown = e; }
   return {
-    thrown, body, hdr, head, store, winListeners, timers,
+    thrown, body, hdr, anchor, head, store, winListeners, timers,
     ready() { if (docReady) { doc.readyState = 'interactive'; docReady(); } },
     band() { return body.children.find((c) => c.className === 'sui-band') || null; },
   };
@@ -94,6 +96,11 @@ function texts(band) { return band.children[0].children.map((p) => p.textContent
 function closeBtn(band) { return band.children[1]; }
 
 (async () => {
+  say('— A0 見出しの入れ物が body 直下に無い画面は、印 data-su-intro-after の後ろに置く（便9） —');
+  { const r = load({ path: '/care-tools/resident-master.html', anchor: true }); await tick();
+    const b = r.band(); t('印の要素の直後に帯を置く', !!b && r.body.children.indexOf(b) === r.body.children.indexOf(r.anchor) + 1, r.body.children.map((c) => c.className || c.tag)); }
+  { const r = load({ path: '/care-tools/resident-master.html', noHdr: true }); await tick();
+    t('見出しも印も無い画面には置かない', !r.band() && !r.thrown); }
   say('— A 8画面の文言が一字一句同じ —');
   for (const id of Object.keys(EXPECT)) {
     const r = load({ path: '/care-tools/' + id + '.html' });
@@ -213,7 +220,7 @@ function closeBtn(band) { return band.children[1]; }
   for (const id of Object.keys(EXPECT)) {
     const html = read(id + '.html');
     const tags = html.match(/<script src="su-intro\.js\?v=[^"]+"><\/script>/g) || [];
-    t(id + '.html: su-intro.js?v=2026-11-02 を1回だけ読む', tags.length === 1 && tags[0] === '<script src="su-intro.js?v=2026-11-02"></script>', tags);
+    t(id + '.html: su-intro.js?v=2026-11-02.2 を1回だけ読む', tags.length === 1 && tags[0] === '<script src="su-intro.js?v=2026-11-02.2"></script>', tags);
     t(id + '.html: 見出しの入れ物（body 直下の .hdr）が1つある', (html.match(/<(?:header|div) class="hdr(?: noprint)?">/g) || []).length === 1);
   }
   const all = fs.readdirSync(ROOT).filter((f) => f.endsWith('.html') && /su-intro\.js/.test(read(f)));

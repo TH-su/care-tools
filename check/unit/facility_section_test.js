@@ -14,7 +14,7 @@ let pass = 0, fail = 0;
 function t(n, c, e) { if (c) { pass++; console.log('  ✓ ' + n); } else { fail++; console.log('  ✗ ' + n + (e !== undefined ? '  → ' + JSON.stringify(e) : '')); } }
 
 const SAMPLE_SRC = read('facility-profile.sample.json');
-function prof(edit) { const p = JSON.parse(SAMPLE_SRC); delete p.scheduleColors; delete p.mealTimes; delete p.mealForms; if (p.corpSettings) delete p.corpSettings.committeeDefaults; edit(p); return p; }
+function prof(edit) { const p = JSON.parse(SAMPLE_SRC); delete p.scheduleColors; delete p.mealTimes; delete p.mealForms; delete p.daycareNotes; if (p.corpSettings) delete p.corpSettings.committeeDefaults; edit(p); return p; }
 
 /* 実物の su-facility.js を読む。cached は端末の控えの中身、remote は facility-profile.json の中身 */
 function load(cached, remote) {
@@ -78,6 +78,8 @@ const flush = () => new Promise(r => setTimeout(r, 0));
     const first = load(undefined, raw); await flush(); await flush();
     const second = load(JSON.parse(first.store.su_facility_json_v1));
     t('控えから起動しても mealTimes・mealForms が残る', (second.F.section('mealTimes') || {}).lunch === '11:45' && ((second.F.section('mealForms') || {}).main || {}).normal === '見本の主食'); }
+  { const { F } = load(prof(p => { p.daycareNotes = { x: '見本の文' }; })); t('daycareNotes（便10）を最上位から読む', (F.section('daycareNotes') || {}).x === '見本の文'); }
+  { const { F } = load(prof(() => {})); t('daycareNotes は書いていなければ null', F.section('daycareNotes') === null); }
   { const { F } = load(prof(p => { p.mealTimes = '08:00'; })); t('文字の mealTimes は null', F.section('mealTimes') === null); }
   { const s = JSON.parse(SAMPLE_SRC); t('見本に mealTimes・mealForms の書き方がある', s.mealTimes && s.mealTimes.breakfast === '08:00' && s.mealForms && s.mealForms.main && s.mealForms.side); }
 
