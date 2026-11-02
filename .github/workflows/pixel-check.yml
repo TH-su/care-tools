@@ -23,7 +23,7 @@ concurrency:
 jobs:
   pixel:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60   # 多くの画面の見た目を一度に変える PR（共通の型など）は、撮り直しの確かめで30分を超えるため（2026-11-02）
     steps:
       - name: リポジトリを取り出す
         uses: actions/checkout@v4
