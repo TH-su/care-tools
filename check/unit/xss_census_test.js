@@ -257,6 +257,7 @@ const CENSUS = {
     [F, "if(p) p.innerHTML=''"]
   ],
   "care-schedule.html": [
+    [E, "p.innerHTML = h"],   /* 「この方の画面 ▾」の一覧。部品（su-resident-hop.js）が全部の値を esc して返す（試験 resident_hop_test） */
     [F, "cb.innerHTML = ''"],
     [F, "box.innerHTML = '<div class=\"evlist-empty\">まだ控えがありません（保存すると残ります）</div>'"],
     [N, "box.innerHTML = html"],
@@ -320,7 +321,7 @@ const CENSUS = {
     [N, "$('ftabs').innerHTML=TABS.map(function(t){return'<button class=\"ftab'+(t[0]===actTab?' on':'')+'\" role=\"tab\" aria-selected=\"'+(t[0]===actTab?'true':'false')+'\" aria-controls=\"panel-'+t[0]+'\" data-tab=\"'+t[0]+'\">'+esc(t[1])+'</button>'}).join('')"],
     [E, "$('viewBox').innerHTML=TABS.map(function(t){return'<div class=\"fpanel'+(t[0]===actTab?' on':'')+'\" role=\"tabpanel\" id=\"panel-'+t[0]+'\" aria-label=\"'+esc(t[1])+'\" data-panel=\"'+t[0]+'\">'+(P[t[0]]||'')+'</div>'}).join('')"],
     [F, "bar.innerHTML=''"],
-    [E, "bar.innerHTML='<span>'+msg+'</span><button type=\"button\" id=\"fromMasterClose\">一覧に戻る</button>'"]
+    [E, "bar.innerHTML='<span>'+msg+'</span><button type=\"button\" id=\"fromMasterClose\">一覧に戻る</button>'+hop"]
   ],
   "genogram.html": [
     [F, "sel.innerHTML = '<option value=\"\">— 保存済みから読込 —</option>'"]
@@ -507,6 +508,7 @@ const CENSUS = {
   "su-export.js": [],
   "su-facility.js": [],
   "su-intro.js": [],
+  "su-resident-hop.js": [],   /* 帯の HTML を作って返すだけ（代入しない）。中の値は全部 esc を通る（試験 resident_hop_test） */
   "su-itomari.js": [],
   "su-kv-shadow.js": [],
   "su-kv.js": [],
@@ -602,7 +604,7 @@ const CENSUS = {
     [F, "box.innerHTML = '<div class=\"wc-log-empty\">履歴はありません。車椅子重量を入れると、今日の日付で1行足されます。</div>'"],
     [E, "box.innerHTML = order.map(i=>{ const e = mdChairLog[i]; const latest = (i === latestIdx); return ` <div class=\"wc-log-item${latest ? ' latest' : ''}\"> ${latest ? '<span class=\"wc-log-tag\">最新</span>' : ''} <div class=\"wc-log-row\"> <input type=\"date\" data-wcl-on=\"${i}\" value=\"${escapeHtml(e.on || '')}\" aria-label=\"${latest ? '最新の' : ''}変更日\"> <input type=\"number\" data-wcl-kg=\"${i}\" step=\"0.1\" min=\"1\" max=\"50\" inputmode=\"decimal\" value=\"${e.kg > 0 ? Number(e.kg).toFixed(1) : ''}\" aria-label=\"車椅子の重さ（kg）\"> <span class=\"wc-log-u\">kg</span> <button type=\"button\" class=\"wc-log-del\" data-wcl-del=\"${i}\" aria-label=\"この行を消す\">削除</button> </div> </div>`; }).join('')"],
     [F, "bar.innerHTML=''"],
-    [E, "bar.innerHTML=`<span>${msg}</span><button type=\"button\" id=\"fromMasterClose\">${state==='ok'?'解除':'閉じる'}</button>`"]
+    [E, "bar.innerHTML=`<span>${msg}</span><button type=\"button\" id=\"fromMasterClose\">${state==='ok'?'解除':'閉じる'}</button>${hop}`"]
   ],
   "work-schedule.html": [
     [F, "if (html !== undefined) e.innerHTML = html"],   /* 盤面の部品 el(tag, cls, html) の第3引数。今は3引数で呼ぶ所が無い（xss_work_schedule_test の W10 が確かめる） */

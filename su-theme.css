@@ -1,0 +1,136 @@
+/* su-theme.css — 全画面にそろえる見た目の型「つむぐケアの型」（代表者の決定 2026-11-02 案E・推奨どおり）
+ *
+ * ・色味はメニューと同じ（生成りの見出しに藍の字）。文字の色は地との差 7:1 以上。文字の大きさは変えない。
+ * ・事務所PC・MacBook・iPad・iPhone のすべての幅に当てる。iPad 縦（701〜899px）と iPhone（700px以下）では
+ *   押す所を 44px 以上・入力の文字を 16px にする。
+ * ・当てるのは画面だけ。全部 @media screen の中に置き、印刷の紙は変えない（紙は各画面の元の色のまま）。
+ * ・読み込むだけでは効かない。画面の <html> に data-su-theme を付けた画面だけに効く（1画面ずつ当てるため）。
+ * ・各画面がもともと持つ共通の色の名前（--pri・--ok・--ng・--warn-bg・--warn-tx・--g0〜--g9・--focus）を、
+ *   画面の時だけ型の値に置き換える。画面の HTML・JS・保存・通信には触れない。
+ * ・担当者会議のページは自分の濃い色を持つ決まり（2026-10-23）なので、この型は当てない。
+ */
+@media screen {
+  :root[data-su-theme] {
+    /* 型の色（メニューの「つむぐケア」と同じ値） */
+    --su-ink: #1F2A44;      /* 藍：見出しの字・主なボタン（白地 14.3:1・生成り 13.5:1） */
+    --su-ink2: #3D4557;     /* 補助の字（生成り 9.1:1・淡い藍 8.4:1） */
+    --su-paper: #FBF8F2;    /* 生成り：見出しと画面の地 */
+    --su-line: #E4DED2;     /* 罫線 */
+    --su-ink-l: #EEF0F5;    /* 淡い藍：選んでいる所の地 */
+    --su-font: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Noto Sans JP", Meiryo, sans-serif;
+  }
+  /* 各画面の共通の色の名前を、画面の時だけ置き換える（別の型 data-ds="ops" の画面は下の塊で置き換える） */
+  :root[data-su-theme]:not([data-ds="ops"]) {
+    --pri: #1F2A44; --pri-l: #EEF0F5; --pri-d: #141C2E;
+    --pri2: #1F2A44;   /* 週間計画は --pri2 を標準の青に使う */
+    --ok: #185a1c; --ok-l: #e8f5e9;
+    --ng: #8f0c0c; --ng-l: #fdecea;
+    --warn-bg: #fdf3e3; --warn-tx: #6a3e00;
+    --g0: #FBF8F2; --g1: #F4F0E8; --g2: #ECE7DD; --g3: #E4DED2;
+    --g5: #4A5468; --g6: #3D4557; --g7: #2F3648; --g9: #1F2A44;  /* 薄い順の段差を残す */
+    --focus: #1F2A44;
+  }
+  /* 書体を1通りにそろえる。ただし文字の高さで作図の枠の大きさが決まる画面（家族構成図の PDF/JPG の書き出し）は
+     data-su-theme="keep-font" で今の書体のままにする（書き出しの大きさを変えない）。
+     見出しの色で画面を見分ける画面（訪問＝青・全支援＝橙の俯瞰と左右比較）は data-su-theme="keep-hdr" で見出しの帯・帯の中の部品の色を今のままにする */
+  :root[data-su-theme]:not([data-su-theme~="keep-font"]) body { font-family: var(--su-font); }
+}
+
+/* 別の型（data-ds="ops"：計画書・職員マスタ・消耗品）を持つ画面：明るい表示の時だけ、その型の色の名前を藍と生成りに置き換える。
+   暗い表示（ダークモード）は今のまま。見出しは data-su-theme="keep-hdr" にして、型の見出しの色（--c-hero）で藍と生成りにする */
+@media screen and (not (prefers-color-scheme: dark)) {
+  :root[data-su-theme][data-ds="ops"]:not([data-mode="dark"]) {
+    --c-bg: #FBF8F2; --c-surface2: #F4F0E8;
+    --c-ink: #1F2A44; --c-ink2: #3D4557; --c-ink3: #4A5468;
+    --c-border: #E4DED2;
+    --c-primary: #1F2A44; --c-primary-hover: #141C2E; --c-primary-ink: #FFFFFF;
+    --c-link: #1F2A44;
+    --c-hero: #FBF8F2; --c-hero-ink: #1F2A44; --c-hero-hover: #EEF0F5;
+    --c-info: #1F2A44; --c-info-bg: #EEF0F5;
+  }
+  :root[data-su-theme][data-ds="ops"]:not([data-mode="dark"]) .hdr { box-shadow: inset 0 -2px 0 #E4DED2; }
+}
+
+@media screen {
+
+  /* 見出しの帯（.hdr）：生成りの地に藍の字。帯の中のボタン・札も同じ色味にそろえる */
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr {
+    background: var(--su-paper); color: var(--su-ink);
+    /* 下の線は影で描く（線で描くと見出しが高くなり、見出しの高さを測って並べる画面の紙がずれる） */
+    box-shadow: inset 0 -2px 0 var(--su-line);
+  }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn {
+    background: #fff; border: 1px solid var(--su-ink); color: var(--su-ink);
+  }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn:hover { background: var(--su-ink-l); }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn:focus-visible { outline: 3px solid var(--su-ink); outline-offset: 2px; }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn[disabled]:hover { background: #fff; }
+  /* 週間計画の見出しの「利用者を選択」：白い字を藍にして、白地の枠にする */
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .resident-select { background: #fff; border-color: var(--su-line); color: var(--su-ink); }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btns::-webkit-scrollbar-thumb { background: rgba(31, 42, 68, .35); }
+  /* 意味のある色のボタン（保存・反映＝緑、試算＝橙、押している・空の時の主ボタン＝藍）は色を残し、白い字が 7:1 以上の濃さにする */
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn.savebtn,
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn.applybtn { background: #185a1c; border-color: #185a1c; color: #fff; }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn.savebtn:hover,
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn.applybtn:hover { background: #0f3f12; }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn.savebtn.saving { background: #4A5468; border-color: #4A5468; color: #fff; }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn.simbtn { background: #8a3000; border-color: #8a3000; color: #fff; }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn.simbtn:hover { background: #6a2500; }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn.solid,
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn.active { background: var(--su-ink); border-color: var(--su-ink); color: #fff; }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .role,
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .sync { background: var(--su-ink-l); color: var(--su-ink); }
+  /* 状態を色で知らせる札は、地の色を濃くして白い字を残す */
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .role.field { background: #8a3000; color: #fff; }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .sync.ok { background: #185a1c; color: #fff; }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .sync.err { background: #8f0c0c; color: #fff; }
+
+  /* 見出しの帯の中の操作（家族構成図・体重管理の .hbtn と入力）。白い字の重ね塗りを、生成りの地で読める形にする */
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .hbtn { background: #fff; color: var(--su-ink); box-shadow: inset 0 0 0 1px var(--su-ink); }  /* 枠は影で描く（大きさを変えない） */
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .hbtn:hover { background: var(--su-ink-l); }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .hbtn.primary { background: var(--su-ink); color: #fff; }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .hbtn.primary:hover { background: #141C2E; }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .hbtn.danger { background: #fff; color: #8f0c0c; box-shadow: inset 0 0 0 1px #8f0c0c; }
+  /* 入居調整の見出しの札の枠・読み直し、貼り薬カレンダーの「← メニュー」（白い字を藍にする） */
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .sync { border-color: var(--su-line); }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .reload,
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .back { color: var(--su-ink); }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .reload:active { background: var(--su-ink-l); }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .back:focus-visible { outline-color: var(--su-ink); }
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-r input,
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-r select { box-shadow: inset 0 0 0 1px var(--su-line); }
+  /* 窓の見出し（家族構成図の .modal-head）：青のぼかしを藍の一色にする（白い字のまま） */
+  :root[data-su-theme] .modal-head { background: var(--su-ink); }
+
+  /* 初回の案内の帯（su-intro.css）：青を淡い藍にそろえる。文言・位置・閉じ方は変えない */
+  :root[data-su-theme] .sui-band {
+    background: var(--su-ink-l); color: var(--su-ink);
+    border-left-color: var(--su-ink); border-bottom-color: #C9CFDB;
+  }
+  :root[data-su-theme] .sui-x { color: var(--su-ink); border-color: var(--su-ink2); }
+  :root[data-su-theme] .sui-x:hover { background: #E1E5EE; }
+  :root[data-su-theme] .sui-x:focus-visible { outline-color: var(--su-ink); }
+
+  /* ログインの確かめの覆い（su-app-gate.css）：地と主なボタンを型の色にそろえる。文言・動きは変えない */
+  :root[data-su-theme] .sug { background: var(--su-paper); color: var(--su-ink); font-family: var(--su-font); }
+  :root[data-su-theme] .sug-cd { border-color: var(--su-line); }
+  :root[data-su-theme] .sug-app { color: var(--su-ink2); }
+  :root[data-su-theme] .sug-h { color: var(--su-ink); }
+  :root[data-su-theme] .sug-btn { border-color: var(--su-line); color: var(--su-ink); }
+  :root[data-su-theme] .sug-btn.pri { background: var(--su-ink); border-color: var(--su-ink); color: #fff; }
+  :root[data-su-theme] .sug-btn:focus-visible { outline-color: var(--su-ink); }
+}
+
+/* iPad 縦と iPhone：押す所を 44px 以上・入力の文字を 16px（iPhone で入力の時に勝手に拡大されないため） */
+@media screen and (max-width: 899px) {
+  :root[data-su-theme] button,
+  :root[data-su-theme] select,
+  :root[data-su-theme] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]) {
+    min-height: 44px;
+  }
+  /* 不具合報告の「画面の指摘」の番号の札は、決まった大きさのまま（伸ばすと番号がずれる） */
+  :root[data-su-theme] .sua-badge { min-height: 0; }
+  :root[data-su-theme] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]),
+  :root[data-su-theme] select,
+  :root[data-su-theme] textarea { font-size: 16px; }
+}
