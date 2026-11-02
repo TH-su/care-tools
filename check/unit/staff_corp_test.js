@@ -98,7 +98,7 @@ console.log('\n— ④ 画面の法人設定 —');
   sb.cfg = { url: 'https://script.google.com/macros/s/AKfyTEST/exec', token: 'x', by: '' };
   t('接続を確かめる前: 接続テストを案内', /接続テスト/.test(sb.corpWhy()));
   sb.ST.caps = ['enums'];
-  t('古い GAS: 更新を案内し、既定のまま動いていると伝える', /GAS を更新/.test(sb.corpWhy()) && /既定のまま/.test(sb.corpWhy()));
+  t('古い GAS: 更新を案内し、既定のまま動いていると伝える', /Google の受け口を新しい版に替える/.test(sb.corpWhy()) && /既定のまま/.test(sb.corpWhy()));
   sb.ST.caps = ['enums', 'corp'];
   t('読み込めていない: 読み込み直しを案内', /読み込み直す/.test(sb.corpWhy()));
   sb.CORP.loaded = true;

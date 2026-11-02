@@ -3,7 +3,7 @@
 <head>
   <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-pKmtkBPtHZzFibaw5Yol065CVJNTUmfU4rHUtpRBVD4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-U3jF/A78AUY+G0lDmzSpVoM8iy8yrb2F2Ce/7utvP6w='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="stfm-build" content="2026-10-11.1">
@@ -881,8 +881,8 @@ body.cmt-print{page:cmt}
 
 <div id="calcBlock">
   <p class="big" aria-hidden="true">⚠</p>
-  <p><b>計算モジュールを読み込めませんでした</b></p>
-  <p class="sub">staff-master-calc.js が同じフォルダにあるか確かめてください。<br>ファイルを置いたあと、この画面を再読み込みしてください。</p>
+  <p><b>画面の部品を読み込めませんでした</b></p>
+  <p class="sub">通信の状態を確かめて、この画面を再読み込みしてください。<br>続く時は管理者へ知らせてください。</p>
 </div>
 
 <header class="hdr">
@@ -1268,7 +1268,7 @@ body.cmt-print{page:cmt}
   <div class="cd">
     <h3 class="sub">接続先</h3>
     <div class="form">
-      <div class="fld s12"><label for="cfgUrl">接続先URL（職員マスタGASの /exec）</label><input type="url" id="cfgUrl" autocomplete="off" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec"></div>
+      <div class="fld s12"><label for="cfgUrl">接続先URL（職員マスタの Google の受け口の URL）</label><input type="url" id="cfgUrl" autocomplete="off" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec"></div>
       <div class="fld s6"><label for="cfgToken">合言葉</label><input type="password" id="cfgToken" autocomplete="off"></div>
       <div class="fld s6"><label for="cfgBy">この端末の名前（更新元として記録します）</label><input type="text" id="cfgBy" autocomplete="off" placeholder="事務所PC など。氏名は入れない"></div>
     </div>
@@ -1739,7 +1739,21 @@ function mkErr(msg, hint) {
   e.hint = hint || '';
   return e;
 }
-function errText(e) { return txt((e && e.userMsg) || (e && e.message) || e); }
+/* 職員に出す原因の文。画面が組んだ文（userMsg）だけを出し、それ以外の例外（英語の文など）は職員向けの一文に替えて、
+   元の例外は不具合報告の記録（SUErrors.note）に1回だけ残す。通信の失敗は apiPost / apiPing が userMsg 付きにするので記録に流れない */
+var ERR_SCREEN_MSG = '画面の処理がうまくいきませんでした';
+function stfmNote_(e) {
+  try {
+    if (e && typeof e === 'object') { if (e.stfmNoted) return; e.stfmNoted = true; }
+    if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('画面の処理の失敗', e, 'staff-master');
+  } catch (_) { /* 記録できなくても画面の案内は出す */ }
+}
+function errText(e) {
+  if (e && e.userMsg) return txt(e.userMsg);
+  if (!e) return '';
+  stfmNote_(e);
+  return ERR_SCREEN_MSG;
+}
 function errHint(e) { return txt(e && e.hint) || '時間をおいてもう一度お試しください。続くときは設定画面で接続先URLと合言葉を確かめてください。'; }
 /* 検証NGの明細（サーバーの detail）。何が引っかかったかを先頭5件（n 指定で先頭n件）だけ本文に足す */
 function errDetail(e, n) {
@@ -1860,11 +1874,11 @@ function apiPost(action, body, timeoutMs) {
     : viaAuth ? window.SUGasAuth.addTo(payload).then(function (p) { arm(); return send(p); })
     : send(payload);
   return sent.then(function (res) {
-    if (!res.ok) throw markNoAnswer(mkErr('サーバーが応答しませんでした（HTTP ' + res.status + '）', '通信環境を確かめ、時間をおいてもう一度お試しください。'));
+    if (!res.ok) throw markNoAnswer(mkErr('サーバーが応答しませんでした（応答の番号 ' + res.status + '）', '通信環境を確かめ、時間をおいてもう一度お試しください。'));
     return res.text();
   }).then(function (t) {
     var d = null;
-    try { d = JSON.parse(t); } catch (e) { throw markNoAnswer(mkErr('サーバーの応答を読み取れませんでした', '設定の接続先URLが職員マスタGASの /exec になっているか確かめてください。')); }
+    try { d = JSON.parse(t); } catch (e) { throw markNoAnswer(mkErr('サーバーの応答を読み取れませんでした', '設定の接続先URLが、職員マスタの Google の受け口の URL（終わりが /exec）になっているか確かめてください。')); }
     if (!d || typeof d !== 'object') throw markNoAnswer(mkErr('サーバーの応答が空でした', '時間をおいてもう一度お試しください。'));
     if (d.ok !== true) {
       var ne = mkErr(txt(d.error) || 'サーバーが処理を断りました', '入力内容を見直すか、設定の合言葉を確かめてください。');
@@ -1917,13 +1931,13 @@ function apiPing() {
   }
   return fetch(cfg.url + (cfg.url.indexOf('?') >= 0 ? '&' : '?') + 'action=ping', { method: 'GET', redirect: 'follow' })
     .then(function (res) {
-      if (!res.ok) throw mkErr('サーバーが応答しませんでした（HTTP ' + res.status + '）', 'URLの末尾が /exec になっているか確かめてください。');
+      if (!res.ok) throw mkErr('サーバーが応答しませんでした（応答の番号 ' + res.status + '）', '接続先URLが、管理者から受け取った職員マスタの Google の受け口の URL（終わりが /exec）か確かめてください。');
       return res.text();
     })
     .then(function (t) {
       var d = null;
-      try { d = JSON.parse(t); } catch (e) { throw mkErr('応答を読み取れませんでした', 'URLが職員マスタGASの /exec か、公開設定が「全員」になっているか確かめてください。'); }
-      if (!d || d.ok !== true) throw mkErr(txt(d && d.error) || '接続できませんでした', 'GAS側の公開設定と接続先URLを確かめてください。');
+      try { d = JSON.parse(t); } catch (e) { throw mkErr('応答を読み取れませんでした', '接続先URLが職員マスタの Google の受け口の URL（終わりが /exec）か確かめてください。続く時は管理者に、受け口の公開設定が「全員」になっているか確かめてもらってください。'); }
+      if (!d || d.ok !== true) throw mkErr(txt(d && d.error) || '接続できませんでした', '接続先URLを確かめてください。続く時は管理者に、Google の受け口の公開設定を確かめてもらってください。');
       return d;
     })
     .catch(function (e) {
@@ -2289,7 +2303,7 @@ function loadList(quiet) {
     if (rows === null) {
       /* rows が配列でない＝空扱い。ただし既存の表示は消さない（原則4） */
       setState('listState', 'err', '職員データが受け取れませんでした',
-        'サーバーの応答に一覧が含まれていません。画面には前回の内容を残しています。GAS の版を確かめ、もう一度読み込んでください。',
+        'サーバーの応答に一覧が含まれていません。画面には前回の内容を残しています。もう一度読み込んでください。続く時は、職員マスタの Google の受け口の版を確かめるよう管理者へ知らせてください。',
         'もう一度読み込む', function () { loadList(); });
       return;
     }
@@ -2972,7 +2986,7 @@ function syncSiteRatios() {
   if (!w) return;
   var msg = '';
   if (ST.caps === null) msg = '接続を確かめられていないため、兼務比率はまだ入力できません。設定画面の「接続テスト」で確かめてください';
-  else if (!canRatio) msg = '職員マスタの GAS を更新し、setup を実行すると兼務比率を保存できます';
+  else if (!canRatio) msg = '職員マスタの Google の受け口が古い版のため、兼務比率はまだ保存できません。管理者へ知らせてください';
   else if (bad) msg = '兼務比率は 0〜100 の整数で入れてください（小数や範囲外は保存されません）';
   else if (n && total !== 100) msg = '兼務比率の合計が100%になっていません（現在 ' + total + '%）。このままでも保存できます';
   w.textContent = msg;
@@ -3557,7 +3571,7 @@ function updateFilesBtn() {
   else if (ST.detail.pending) why = '登録を確かめるまで使えません（「一覧を読み込み直して確かめる」を押してください）';
   else if (!URL_OK_RE.test(cfg.url) || !cfg.token) why = '右上の歯車（設定）で接続先を設定してください';
   else if (ST.caps === null) why = '接続を確かめられていません。設定画面の「接続テスト」で確かめてください';
-  else if (!capsHas('files')) why = '職員マスタの GAS を更新してください';
+  else if (!capsHas('files')) why = '職員マスタの Google の受け口が古い版のため、まだ使えません。管理者へ知らせてください';
   b.disabled = !!why;
   if (why) b.setAttribute('title', why); else b.removeAttribute('title');
   /* title は指してみないと読めない。押せない理由は固定バーにも1行出す */
@@ -3958,7 +3972,7 @@ function removeFileEntry(fid, f) {
   var id = ST.detail ? txt(ST.detail.id) : '';
   if (!id || !txt(fid)) return;
   var nm = txt(f && f.title) || txt(f && f.name) || 'この書類';
-  if (!window.confirm(nm + ' を書類の一覧から外します。\nDrive の「削除済み」フォルダへ移動します。元に戻す時は Drive で戻せます。\nよろしいですか？')) return;
+  if (!window.confirm(nm + ' を書類の一覧から外します。\nGoogle ドライブの「削除済み」フォルダへ移動します。元に戻す時は Google ドライブで戻せます。\nよろしいですか？')) return;
   var cfg = loadCfg();
   setFilesBusy(true);
   setState('fdState', '', '削除中…', 'サーバーに送っています。');
@@ -3973,9 +3987,9 @@ function removeFileEntry(fid, f) {
     updateFilesBtn();
     var ws = (d && Array.isArray(d.warnings)) ? d.warnings.map(txt).filter(function (w) { return !!w; }) : [];
     if (ws.length) {
-      setState('fdState', 'warn', '一覧からは外しました', ws.join(' / ') + ' Drive 側は手で移してください');
+      setState('fdState', 'warn', '一覧からは外しました', ws.join(' / ') + ' Google ドライブ側は手で移してください');
     } else {
-      setState('fdState', 'ok', '削除しました', nm + ' を一覧から外しました。Drive の「削除済み」フォルダに残っています。');
+      setState('fdState', 'ok', '削除しました', nm + ' を一覧から外しました。Google ドライブの「削除済み」フォルダに残っています。');
     }
     toast('書類を削除しました');
   }).catch(function (e) {
@@ -4598,7 +4612,7 @@ function fillSettings() {
 function onSaveCfg() {
   var url = txt($('cfgUrl').value).trim();
   if (url && !URL_OK_RE.test(url)) {
-    setState('cfgState', 'err', '接続先URLの形が違います', 'https:// で始まる GAS の /exec のURLを貼り付けてください。');
+    setState('cfgState', 'err', '接続先URLの形が違います', 'https:// で始まる、職員マスタの Google の受け口の URL（終わりが /exec）を貼り付けてください。');
     $('cfgUrl').focus();
     return;
   }
@@ -4713,8 +4727,8 @@ function corpWhy() {
   var cfg = loadCfg();
   if (!URL_OK_RE.test(cfg.url) || !cfg.token) return '接続先URLと合言葉を入れて保存してください';
   if (ST.caps === null) return '接続を確かめられていません。「接続テスト」で確かめてください';
-  if (!capsHas('corp')) return '職員マスタの GAS を更新すると、ここで変えられます（いまは既定のまま動いています）';
-  if (!(SC() && typeof SC().setCorp === 'function')) return 'staff-master-calc.js を新しい版に差し替えてから、この画面を再読み込みしてください';
+  if (!capsHas('corp')) return '職員マスタの Google の受け口を新しい版に替えると、ここで変えられます。管理者へ知らせてください（いまは既定のまま動いています）';
+  if (!(SC() && typeof SC().setCorp === 'function')) return '画面の部品が古い版のままです。この画面を再読み込みしてください（続く時は管理者へ知らせてください）';
   if (!CORP.loaded) return 'いまの法人設定を読み込めていません。「読み込み直す」を押してください';
   return '';
 }
@@ -4772,7 +4786,7 @@ function onCorpReload() {
   setState('corpState', '', '読み込み中…', 'いまの法人設定を取り直しています。');
   loadCorp().then(function (ok) {
     if (ok) setState('corpState', '', '', '');
-    else setState('corpState', 'err', '読み込めませんでした', '接続先と合言葉、職員マスタの GAS の版を確かめてください。いまは既定のまま動いています。');
+    else setState('corpState', 'err', '読み込めませんでした', '接続先と合言葉を確かめてください。続く時は、職員マスタの Google の受け口の版を確かめるよう管理者へ知らせてください。いまは既定のまま動いています。');
   });
 }
 function setCorpBusy(on) { CORP.busy = !!on; updateCorpUi(); }
@@ -4999,7 +5013,7 @@ function updateEnumBtn() {
   var cfg = loadCfg(), why = '';
   if (!URL_OK_RE.test(cfg.url) || !cfg.token) why = '接続先URLと合言葉を入れて保存してください';
   else if (ST.caps === null) why = '接続を確かめられていません。「接続テスト」で確かめてください';
-  else if (!capsHas('enums')) why = '職員マスタの GAS を更新してください';
+  else if (!capsHas('enums')) why = '職員マスタの Google の受け口が古い版のため、まだ使えません。管理者へ知らせてください';
   b.disabled = !!why;
   if (why) b.setAttribute('title', why); else b.removeAttribute('title');
   var wy = $('enumWhy');
@@ -5298,7 +5312,7 @@ var CMT_EXT_NAME_MAX = 40;
 var CMT_EXT_NOTE_MAX = 40;
 var CMT_EXT_MAX = 10;
 var CMT_MAX_PER_STAFF = 20;
-var CMT_NO_CAPS_MSG = '職員マスタの GAS を更新し、setup を実行すると保存できます';
+var CMT_NO_CAPS_MSG = '職員マスタの Google の受け口が古い版のため、委員会はまだ保存できません。管理者へ知らせてください';
 /* 「対象外」の言い回しだけは画面側で持つ（委員会の説明文はサーバーのマスタが正本） */
 var CMT_OFF_MSG = '現在は対象外（認知症加算を算定する場合に必要）';
 /* 後勝ちを断られた時のサーバーの文面（gas/staff-api.gs と1字一句そろえる）。
@@ -5886,8 +5900,8 @@ function renderCmt() {
     $('cmtPrintBtn').disabled = true;
     clearNode($('cmtPrintAll'));
     if (!cmtReady()) {
-      setState('cmtState', 'warn', '計算モジュールが委員会に対応していません',
-        'staff-master-calc.js を新しい版に差し替えてから、この画面を再読み込みしてください。');
+      setState('cmtState', 'warn', '画面の部品が委員会に対応していません',
+        '画面の部品が古い版のままです。この画面を再読み込みしてください（続く時は管理者へ知らせてください）。');
     } else if (ST.loading) {
       setState('cmtState', '', '職員データを読み込んでいます', '人数と構成図は職員データから作ります。少しお待ちください。');
     } else {
