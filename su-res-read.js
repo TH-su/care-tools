@@ -373,11 +373,33 @@
     try {
       if (!body || ACTIONS.indexOf(body.action) < 0 || !switchOn()) return gasFn(body);
     } catch (e) { return gasFn(body); }
+    if (opts && opts.officeOnly) return officeOnly(body, gasFn, opts, io);
     return mode(io).then(function (m) {
       if (m !== 'live') return gasFn(body);
       if (!caughtUp) { caughtUp = true; mirrorSoon(io); }   // 開いた時に1回、Google への写し返しの残りを追いつかせる（待たない・指摘5）
       return readSupabase(body, opts, io);
     });
+  }
+  /* 名簿だけを読む画面（デイ利用表・全支援俯瞰・訪問俯瞰・ワークスケジュール・体重管理）の入口（2026-11-02 代表者「Google のまま読む」）。
+   * ・事務所PC（端末の用途が現場でない）で、事務所・管理者としてログインしている時だけ、上の call と同じ決まりで読む
+   *   （印が「切り替えた後」なら新しい保存先・写しの期間なら Google。ログインした後の断り・届かないは Google へ流さない）
+   * ・ログインしていない・確かめられない・現場のアカウント・現場の端末は、今までどおり Google へ送る関数をそのまま呼ぶ
+   *   （本文も送り方も変えない。Google は1時間ごとの写し返しで追いつく） */
+  function officeOnly(body, gasFn, opts, io) {
+    var role = '';
+    try { role = String(localStorage.getItem('su_device_role') || ''); } catch (e) { role = ''; }
+    if (role === 'field') return gasFn(body);
+    return Promise.resolve().then(function () { return io && io.auth ? io.auth() : loadAuth(); })
+      .then(function (A) { return A ? A.check().then(function (st) { return { A: A, st: st }; }) : null; })
+      .catch(function () { return null; })
+      .then(function (x) {
+        var ok = !!(x && x.st && x.st.status === x.A.STATUS.OK && (x.st.role === 'office' || x.st.role === 'admin'));
+        if (!ok) return gasFn(body);
+        return mode(io).then(function (m) {
+          if (m !== 'live') return gasFn(body);
+          return readSupabase(body, opts, io);
+        });
+      });
   }
   /* データベースの印（res_mode）。スイッチが入の時だけ読む（体重の切り替え 0032 と同じ決まり）。
    * ・印が写しの期間・関数がまだ無い（0036 の前）時は 'shadow'（Google から読む）
