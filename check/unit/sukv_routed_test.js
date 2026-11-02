@@ -435,7 +435,7 @@ function makeKv(o) {
         'var dcrLogSeq_ = 0, dcrWhoAcct_ = "";',
         ...['suNormName_', 'findServerResident_', 'pendingKey_', 'dcrIsField_', 'dcrWho_', 'dcrStamp_', 'dcrMakeLog_',
             'dcrAddLog_', 'dcrRemoveLogs_', 'applyPendingFlag_', 'getRemoteWithRev', 'queueFlags', 'runSaver', 'writeResidentFlag', 'writeLunchMed']
-            .concat(DCR.indexOf('\nfunction dcrSaveErrText_(') >= 0 ? ['dcrSaveErrText_'] : []).map(dFn)   /* 断りの言い換え（2026-10-12〜） */
+            .concat(DCR.indexOf('\nfunction dcrSaveErrText_(') >= 0 ? ['dcrSaveErrText_'] : []).concat(DCR.indexOf('\nfunction dcrSaveErrWords_(') >= 0 ? ['dcrSaveErrWords_'] : []).map(dFn)   /* 断りの言い換え（2026-10-12〜） */
       ].join('\n'), box, { filename: 'daycare-roster(切り出し)' });
       box.DB = clone(k.db.data); box.careRev = 5;
       box.writeLunchMed([{ rid: 'r1', masterId: 101, name: '架空 一郎' }], true);
