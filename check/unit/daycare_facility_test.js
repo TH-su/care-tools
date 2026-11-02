@@ -120,6 +120,7 @@ function makeBox(fac) {
     grabDecl('FLOOR_ORDER'), grabDecl('FLOOR_LABEL'), grabDecl('DCR_FLOOR_NAME_MAX'), grabDecl('WK_FLR_LABEL'),
     grabDecl('dcrFloorSigUsed'),
     grabFn('dcrFloorNames_'), grabFn('dcrFloorLabel_'), grabFn('dcrFloorSecLabel_'), grabFn('dcrFloorSig_'), grabFn('dcrRefreshFloorsIfStale_'),
+    grabDecl('DCR_NOTES_KEYS'), grabDecl('DCR_NOTES_WORD_MAX'), grabFn('dcrDaycareNotes_'), grabFn('dcrNotesWord_'),   // 昼食場所の呼び名（便10・施設情報に daycareNotes が無ければ既定）
     grabDecl('byKana'), grabDecl('onDay'), grabDecl('offDay'), grabDecl('countOn'), grabDecl('countOff'), 'var TBL_W = { daylist: 1000, allweek: 1000, day: 1000 };', grabDecl('DAYLIST_NOTES'),
     grabFn('toMin'), grabFn('minToLabel'), grabFn('el'), grabFn('roomToFloor'), grabFn('collectDaycare'),
     grabFn('setupSheet').replace(/\n\s*table\.appendChild\(colgroupFor\(kind\)\);/, ''),   // 列幅の宣言（colgroup）はこの試験の外
@@ -265,7 +266,7 @@ console.log('— 5. 替えないもの —');
 {
   const box = makeBox(facility(withFloors([{ no: 1, label: '一の階' }, { no: 2, label: '二の階' }])));
   t('週間名簿の短い見出しは 2F／1F／未 のまま', J(box.WK_FLR_LABEL) === J({ 2: '2F', 1: '1F', 0: '未' }), box.WK_FLR_LABEL);
-  t('週間名簿の右列の見出し「２階」（2階食堂で昼食）はそのまま', /hr\.appendChild\(el\('td', 'wk-h', '２階'\)\);/.test(SRC));
+  t('週間名簿の右列の見出し「２階」（2階食堂で昼食）は階の名前で替えない（既定は２階・昼食場所の呼び名は daycareNotes だけで替わる・便10）', /hr\.appendChild\(el\('td', 'wk-h', lunchLabel == null \? '２階' : lunchLabel\)\);/.test(SRC) && (SRC.match(/weeklyTable\(ppl, d, dcrFill\('\{\{昼食場所:２階\}\}'\)\)/g) || []).length === 2);
   t('薬用・昼食薬チェックも同じ見出しの関数を通す', /sectionRows\(tbody, f2, dcrFloorSecLabel_\(2\), true, false, false, 2\);/.test(SRC) && /addGroup\(f2, dcrFloorSecLabel_\(2\)\);/.test(SRC) && /addGroup\(f1, dcrFloorSecLabel_\(1\)\);/.test(SRC));
   t('居室の階の見出しの文字（２階入居者・１階入居者）を直接書いた所が残っていない', !/'[２１]階入居者'/.test(SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')));
 }
