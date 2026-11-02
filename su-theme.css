@@ -23,6 +23,7 @@
   :root[data-su-theme]:not([data-ds="ops"]) {
     --pri: #1F2A44; --pri-l: #EEF0F5; --pri-d: #141C2E;
     --pri2: #1F2A44;   /* 週間計画は --pri2 を標準の青に使う */
+    --own: #1F2A44;    /* アプリの使える人の「この人だけ」の札（app-access.css）の青を藍にそろえる */
     --ok: #185a1c; --ok-l: #e8f5e9;
     --ng: #8f0c0c; --ng-l: #fdecea;
     --warn-bg: #fdf3e3; --warn-tx: #6a3e00;
