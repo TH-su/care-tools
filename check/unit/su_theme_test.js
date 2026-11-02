@@ -57,11 +57,18 @@ for (const [fg, bg] of pairs) {
   t('3 ' + fg + ' の字は ' + bg + ' の地で 7:1 以上（' + r.toFixed(2) + '）', r >= 7, { fg: v(fg), bg });
 }
 t('3 主なボタン（藍の地）の白い字は 7:1 以上', ratio('#FFFFFF', v('pri')) >= 7, v('pri'));
+for (const k of ['role\\.field', 'sync\\.ok', 'sync\\.err']) {
+  const m = new RegExp('\\.hdr \\.' + k + ' \\{ background: (#[0-9A-Fa-f]{6}); color: #fff; \\}').exec(css);
+  const r = m ? ratio('#FFFFFF', m[1]) : 0;
+  t('3 見出しの札 ' + k.replace('\\', '') + ' の白い字は 7:1 以上（' + r.toFixed(2) + '）', r >= 7, m && m[1]);
+}
+t('3 補助の字の濃さに段差が残る（g5 より g7 が濃い）', lum(v('g7')) < lum(v('g5')), [v('g5'), v('g7')]);
 
 console.log('4 iPad 縦と iPhone の押しやすさ');
 const narrow = top.out.find((b) => /^@media screen and \(max-width: 899px\)$/.test(b.head));
 t('4a 899px 以下の塊がある', !!narrow, top.out.map((b) => b.head));
 t('4b 押す所は 44px 以上', !!narrow && /min-height:\s*44px/.test(narrow.body), '');
+t('4e 画面の指摘の番号の札は伸ばさない', !!narrow && /\.sua-badge \{ min-height: 0; \}/.test(narrow.body), '');
 t('4c 入力の文字は 16px', !!narrow && /font-size:\s*16px/.test(narrow.body), '');
 const wideish = top.out.filter((b) => b !== narrow).map((b) => b.body).join('\n');
 t('4d 900px 以上（PC・MacBook）では押す所の高さを変えない', !/min-height/.test(wideish), '');

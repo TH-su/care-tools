@@ -25,7 +25,7 @@
     --ng: #8f0c0c; --ng-l: #fdecea;
     --warn-bg: #fdf3e3; --warn-tx: #6a3e00;
     --g0: #FBF8F2; --g1: #F4F0E8; --g2: #ECE7DD; --g3: #E4DED2;
-    --g5: #4A5468; --g6: #3D4557; --g7: #3D4557; --g9: #1F2A44;
+    --g5: #4A5468; --g6: #3D4557; --g7: #2F3648; --g9: #1F2A44;  /* 薄い順の段差を残す */
     --focus: #1F2A44;
   }
   :root[data-su-theme] body { font-family: var(--su-font); }
@@ -43,7 +43,7 @@
   :root[data-su-theme] .hdr .role,
   :root[data-su-theme] .hdr .sync { background: var(--su-ink-l); color: var(--su-ink); }
   /* 状態を色で知らせる札は、地の色を濃くして白い字を残す */
-  :root[data-su-theme] .hdr .role.field { background: #b33f00; color: #fff; }
+  :root[data-su-theme] .hdr .role.field { background: #8a3000; color: #fff; }
   :root[data-su-theme] .hdr .sync.ok { background: #185a1c; color: #fff; }
   :root[data-su-theme] .hdr .sync.err { background: #8f0c0c; color: #fff; }
 
@@ -64,6 +64,8 @@
   :root[data-su-theme] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]) {
     min-height: 44px;
   }
+  /* 不具合報告の「画面の指摘」の番号の札は、決まった大きさのまま（伸ばすと番号がずれる） */
+  :root[data-su-theme] .sua-badge { min-height: 0; }
   :root[data-su-theme] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]),
   :root[data-su-theme] select,
   :root[data-su-theme] textarea { font-size: 16px; }
