@@ -103,7 +103,9 @@
     if (!(await io.token())) return { ok: false, why: 'ログインしてからもう一度押してください' };
     try {
       try { tok = await opBegin(io, 'back'); } catch (e) { return { ok: false, why: String(e && e.message || e) }; }
-      if ((await modeOf(io)) === 'live') {
+      var md = await modeOf(io);
+      if (!md) return { ok: false, why: '新しい保存先の状態を確かめられませんでした。少し待ってから、もう一度押してください。' };   // 分からないまま印を外さない（反証レビュー指摘10）
+      if (md === 'live') {
         var done = false, why = '';
         for (var i = 0; i < 5 && !done; i++) {
           say('Google へ写し返しています…');

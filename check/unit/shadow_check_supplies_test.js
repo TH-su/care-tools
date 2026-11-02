@@ -3,7 +3,11 @@
      A 最後の写しが届いて75分以内なら「届いています」・それより古ければ警告・まだ写していない・0046 の前 を分ける
      B 最後の写しを断っていたら、断った種類を職員向けの言葉で出す
      C Google へは何も送らない（合言葉・接続先を使わない）
-     D 出すのは数・時刻・種類だけ（呼ぶのは様子の口と記録の一覧だけ）
+     D 出すのは数・時刻・種類だけ（呼ぶのは様子の口・切り替えの印・記録の一覧だけ）
+     E 記録の大きさ（統合 0047）: 上限に対する割合を出し、7割以上で警告する。0047 の前（大きさが無い）は出さない
+     F 切り替えた後（sup_mode_get が live）は「切り替え済み」と出し、写しが古いことを警告しない
+     G 戻すボタンは、接続先がある管理者にはデータベースが写しの期間でも出す（Google の保存が止まったまま＝戻すが途中で止まった時に押せるように・
+       反証レビュー指摘3）。職員マスタも同じ
    ★画面の本物の関数（loadSup）を切り出して、データベースの応答だけ偽物にして動かす。
    実行: node check/unit/shadow_check_supplies_test.js
    架空データのみ。 */
@@ -30,7 +34,7 @@ const NOW = Date.parse('2026-11-02T12:00:00Z');
 function box(o) {
   const nodes = {};
   const mk = (id) => (nodes[id] = { id, className: '', textContent: '', kids: [], replaceChildren() { this.kids = []; }, appendChild(c) { this.kids.push(c); return c; } });
-  ['sup-kpis', 'sup-verdict', 'sup-runs'].forEach(mk);
+  ['sup-kpis', 'sup-verdict', 'sup-size', 'sup-runs'].forEach(mk);
   const sent = [], rpcs = [];
   const env = {
     $: (id) => nodes[id],
@@ -40,13 +44,18 @@ function box(o) {
     ADM_RESULT: { inserted: '初めて写した', updated: '直した', unchanged: '変化なし' },
     fetch: (url) => { sent.push(url); return Promise.reject(new Error('no')); },
     localStorage: { getItem: () => { sent.push('ls'); return null; } },
-    JSON, String, Object, Promise, Error, Date, isNaN
+    JSON, String, Object, Promise, Error, Date, isNaN, Number, Math
   };
   vm.createContext(env);
   vm.runInContext(['var SUP_FRESH_MS = ' + /var SUP_FRESH_MS = ([^;]*);/.exec(SRC)[1] + ';',
-    'var SUP_REFUSED = ' + /var SUP_REFUSED = (\{[^;]*\});/.exec(SRC)[1] + ';', fn('loadSup')].join('\n'), env);
+    'var SUP_REFUSED = ' + /var SUP_REFUSED = (\{[^;]*\});/.exec(SRC)[1] + ';',
+    'var SUP_SIZE_WARN = ' + /var SUP_SIZE_WARN = ([^;]*);/.exec(SRC)[1] + ';', fn('supSize'), fn('loadSup')].join('\n'), env);
   const sb = {
-    rpc: (n) => { rpcs.push(n); return Promise.resolve(o.statusErr ? { error: { code: 'PGRST202' } } : { data: o.status }); },
+    rpc: (n) => {
+      rpcs.push(n);
+      if (n === 'sup_mode_get') return Promise.resolve(o.modeErr ? { error: { code: 'PGRST202' } } : { data: { ok: true, mode: o.mode || 'shadow', version: 1 } });
+      return Promise.resolve(o.statusErr ? { error: { code: 'PGRST202' } } : { data: o.status });
+    },
     from: (tbl) => { rpcs.push('from:' + tbl); return { select: () => ({ order: () => ({ limit: () => Promise.resolve({ data: o.runs || [] }) }) }) }; }
   };
   return { nodes, sent, rpcs, run: () => env.loadSup(sb, NOW) };
@@ -90,8 +99,58 @@ const ago = (min) => new Date(NOW - min * 60000).toISOString();
     const b = box({ status: { ok: true, ver: 1, items: 1, moves: 1, lastAt: ago(5), lastStatus: 'done' } });
     await b.run();
     t('C Google へ何も送らない・端末の接続先も読まない', b.sent.length === 0, b.sent);
-    t('D 呼ぶのは様子の口と記録の一覧だけ', JSON.stringify(b.rpcs) === '["sup_shadow_status","from:sup_sync_runs"]', b.rpcs);
+    t('D 呼ぶのは様子の口と記録の一覧だけ', JSON.stringify(b.rpcs) === '["sup_shadow_status","sup_mode_get","from:sup_sync_runs"]', b.rpcs);
     t('D 画面に欄がある', /id="sup-kpis"/.test(HTML) && /id="sup-verdict"/.test(HTML) && /id="sup-runs"/.test(HTML));
+  }
+  console.log('\n— E 記録の大きさ —');
+  {
+    const MB = 1048576;
+    const b = box({ status: { ok: true, ver: 1, items: 1, moves: 1, lastAt: ago(5), lastStatus: 'done', bytesTotal: 2 * MB, bytesLimit: 8 * MB } });
+    await b.run();
+    const z = b.nodes['sup-size'];
+    t('E 25% → 割合を出す・警告しない', /2\.0MB／上限 8\.0MB（25%）/.test(z.textContent) && !/warn/.test(z.className), z);
+    const b2 = box({ status: { ok: true, ver: 1, items: 1, moves: 1, lastAt: ago(5), lastStatus: 'done', bytesTotal: 6 * MB, bytesLimit: 8 * MB } });
+    await b2.run();
+    const z2 = b2.nodes['sup-size'];
+    t('E 75% → 警告（上限に近づいています）', /75%/.test(z2.textContent) && /上限に近づいています/.test(z2.textContent) && /warn/.test(z2.className), z2);
+    const b3 = box({ status: { ok: true, ver: 1, items: 1, moves: 1, lastAt: ago(5), lastStatus: 'done' } });
+    await b3.run();
+    t('E 0047 の前（大きさが無い）→ 何も出さない', b3.nodes['sup-size'].textContent === '');
+    t('E 画面に欄がある', /id="sup-size"/.test(HTML));
+  }
+  console.log('\n— F 切り替えた後 —');
+  {
+    const b = box({ mode: 'live', status: { ok: true, ver: 1, items: 1, moves: 1, lastAt: ago(600), lastStatus: 'done' } });
+    await b.run();
+    t('F live → 切り替え済み（ok）・写しが古い警告は出さない', /切り替え済み/.test(V(b).textContent) && /ok/.test(V(b).className) && !/しばらく/.test(V(b).textContent), V(b));
+    const b2 = box({ modeErr: true, status: { ok: true, ver: 1, items: 1, moves: 1, lastAt: ago(5), lastStatus: 'done' } });
+    await b2.run();
+    t('F 0047 の前（印の口が無い）→ 今までどおり', /届いています/.test(V(b2).textContent));
+  }
+  console.log('\n— G 戻すボタン —');
+  for (const [label, o, cut, back] of [
+    ['写しの期間・スイッチ入・接続先あり', { mode: 'shadow', on: true, cfg: true }, false, false],
+    ['切り替えた後・接続先あり', { mode: 'live', on: true, cfg: true }, true, false],
+    ['写しの期間・接続先なし', { mode: 'shadow', on: true, cfg: false }, true, true],
+    ['管理者でない', { mode: 'shadow', on: true, cfg: true, role: 'office' }, true, true]]) {
+    const nodes = {};
+    ['sup-mode', 'b-sup-cut', 'b-sup-back'].forEach(id => (nodes[id] = { id, className: '', textContent: '', hidden: false }));
+    const env = {
+      $: (id) => nodes[id], me: { role: o.role || 'admin' },
+      SUKv: { _flags: () => ({ supabase: { supplies: o.on } }) },
+      localStorage: { getItem: (k) => (k === 'spl_cfg' && o.cfg ? JSON.stringify({ url: 'https://script.google.com/macros/s/EXAMPLE/exec', token: 'x' }) : null) },
+      RMASTER_RE: /^https:\/\/script\.google\.com\/[^?#\s]*\/exec$/, JSON, String, Promise
+    };
+    env.window = env;
+    vm.createContext(env);
+    vm.runInContext([fn('suppliesOn'), fn('supTarget'), fn('loadSupMode')].join('\n'), env);
+    await env.loadSupMode({ rpc: async () => ({ data: { ok: true, mode: o.mode } }) });
+    t('G ' + label + ' → 切り替えボタン' + (cut ? '隠す' : '出す') + '・戻すボタン' + (back ? '隠す' : '出す'), nodes['b-sup-cut'].hidden === cut && nodes['b-sup-back'].hidden === back, [nodes['b-sup-cut'].hidden, nodes['b-sup-back'].hidden]);
+    if (label === '写しの期間・スイッチ入・接続先あり') t('G 写しの期間は、戻すボタンが途中で止まった時のためのものだと書く', /途中で止まり/.test(nodes['sup-mode'].textContent) && /何も変わりません/.test(nodes['sup-mode'].textContent));
+  }
+  {
+    const body = fn('loadStfMode');
+    t('G 職員マスタの戻すボタンも、接続先がある管理者にはいつも出す', /\n    bb\.hidden = !st;/.test(body) && !/bb\.hidden = !live/.test(body) && /途中で止まり/.test(body));
   }
   console.log(`\n合格 ${pass} / 不合格 ${fail}`);
   process.exitCode = fail ? 1 : 0;
