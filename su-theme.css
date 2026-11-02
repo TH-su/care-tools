@@ -55,6 +55,15 @@
   :root[data-su-theme] .sui-x { color: var(--su-ink); border-color: var(--su-ink2); }
   :root[data-su-theme] .sui-x:hover { background: #E1E5EE; }
   :root[data-su-theme] .sui-x:focus-visible { outline-color: var(--su-ink); }
+
+  /* ログインの確かめの覆い（su-app-gate.css）：地と主なボタンを型の色にそろえる。文言・動きは変えない */
+  :root[data-su-theme] .sug { background: var(--su-paper); color: var(--su-ink); font-family: var(--su-font); }
+  :root[data-su-theme] .sug-cd { border-color: var(--su-line); }
+  :root[data-su-theme] .sug-app { color: var(--su-ink2); }
+  :root[data-su-theme] .sug-h { color: var(--su-ink); }
+  :root[data-su-theme] .sug-btn { border-color: var(--su-line); color: var(--su-ink); }
+  :root[data-su-theme] .sug-btn.pri { background: var(--su-ink); border-color: var(--su-ink); color: #fff; }
+  :root[data-su-theme] .sug-btn:focus-visible { outline-color: var(--su-ink); }
 }
 
 /* iPad 縦と iPhone：押す所を 44px 以上・入力の文字を 16px（iPhone で入力の時に勝手に拡大されないため） */
