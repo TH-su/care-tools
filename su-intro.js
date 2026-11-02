@@ -1,7 +1,7 @@
 /* su-intro.js — 画面の見出しのすぐ下に出す「初回の案内の帯」（2026-11-02 本人の決定「この文言で作る」）
  *
  * 何をするか:
- *   ・画面ごとに「この画面でできること／はじめに／困った時」を、見出しの入れ物（body 直下の .hdr）の直後に帯で出す。
+ *   ・画面ごとに「この画面でできること／はじめに／困った時」を、印 data-su-intro-after の要素（無ければ body 直下の見出しの入れ物 .hdr）の直後に帯で出す。
  *   ・「×」（案内を閉じる）で閉じたら、その端末では出さない。端末に残すのは localStorage の
  *     su_intro_closed_<画面id> = '1' だけ（UI の状態だけ。氏名・記録などは入れない）。
  *     localStorage が使えない端末では、例外を外に出さずに毎回出す（×で今の表示だけ閉じる）。
@@ -21,7 +21,7 @@
  *   届かない・遅い時も CSS_WAIT_MS で置く。
  *
  * 使い方: 各画面の </body> の直前（su-report.js の前）で
- *   <script src="su-intro.js?v=2026-11-02"></script>
+ *   <script src="su-intro.js?v=2026-11-02.2"></script>
  */
 (function () {
   'use strict';
@@ -67,6 +67,21 @@
       'patch-calendar': [
         'この画面でできること：貼り薬の貼る場所の順番を、月のカレンダーにして印刷します。',
         'はじめに：「入居者」と「開始日」を選び、年月を確かめてから「印刷」を押します。',
+        HELP
+      ],
+      /* 便9（2026-11-02・文言は仮置き） */
+      'weight-record': [
+        'この画面でできること：入居者の毎月の体重を記録し、増減のアラートと食事形態を確かめます。',
+        'はじめに：上の「入力」で入居者と体重を入れて「記録を保存」を押します。紙に書いて測る時は「一覧」の「🖨️ 用紙作成」で用紙を印刷します。',
+        HELP
+      ],
+      'training-plan': [
+        'この画面でできること：デイ利用者の個別機能訓練計画書を作って直し、3か月ごとの期限を一覧で確かめて印刷します。',
+        'はじめに：一覧で期限を確かめ、利用者の「開く」で計画書を開きます。紙にする時は下の「印刷」へ。',
+        HELP
+      ],
+      'supplies': [
+        'はじめに：下の「在庫」の「入出庫を記録する」で品目・入庫か出庫・数量を入れ、「記録する」を押します。',
         HELP
       ],
       'resident-master': [
@@ -126,7 +141,9 @@
       if (placed) return;
       placed = true;
       try {
-        var hdr = document.querySelector('body > .hdr');
+        /* 画面が印 data-su-intro-after を付けた要素があればその後ろ、無ければ body 直下の見出しの入れ物の後ろに置く（2026-11-02 便9）。
+           印は見出しの入れ物が body 直下に無い画面（体重管理）と、見出しの下に「この画面でできること」の行がある画面（消耗品管理）が付ける */
+        var hdr = document.querySelector('[data-su-intro-after]') || document.querySelector('body > .hdr');
         if (!hdr || !hdr.parentNode) return;
         var band = build();
         hdr.parentNode.insertBefore(band, hdr.nextSibling);
