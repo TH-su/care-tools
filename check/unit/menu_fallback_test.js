@@ -136,7 +136,7 @@ console.log('\n— 4. 接続設定の初回案内（#12）—');
   const CS = fs.readFileSync(path.join(ROOT, 'connection-settings.html'), 'utf8');
   t('印刷では案内（#wiz）と開くボタン（.wiz-open）を出さない', /@media print \{ #wiz, \.wiz-open \{ display: none !important; \} \}/.test(CS), '');
   t('「✓ が並べば準備はできています」と言い切らない', CS.indexOf('並べば準備') < 0, '');
-  t('✓＝URL につながった、合言葉と正しいアプリかは各アプリで確かめる、と書く', /✓ は「URL につながった」という印です。合言葉が正しいか・そのアプリの GAS かは、各アプリ/.test(CS), '');
+  t('✓＝URL につながった、合言葉と正しいアプリかは各アプリで確かめる、と書く', /✓ は「URL につながった」という印です。合言葉が正しいか・そのアプリの接続先かは、各アプリ/.test(CS), '');
 }
 
 console.log('\n— 5. 家族構成図の合言葉の文言（#16）—');
