@@ -1487,7 +1487,7 @@
     });
   }
 
-  /* ログインしていない端末の数（統合 0047・2026-11-02 代表者の依頼）: device_seen_summary（管理者・aal2 だけ）。
+  /* ログインしていない端末の数（統合 0048・2026-11-02 代表者の依頼）: device_seen_summary（管理者・aal2 だけ）。
    * 用途（事務所／現場）とログインの有無ごとに、今日・7日・30日以内に開いた端末の数だけを出す。端末の印は返らない・出さない */
   var DS_ROLE = { office: '事務所の端末', field: '現場の端末' };
   async function loadDeviceSeen(sb) {
@@ -1497,7 +1497,7 @@
     var r = await sb.rpc('device_seen_summary');
     if (r.error) {
       if (r.error.code === '42501') say('数を見られるのは管理者（2段階認証まで済んだ状態）だけです。');
-      else say('ログインしていない端末の数の準備（データベース 0047）はまだです。');
+      else say('ログインしていない端末の数の準備（データベース 0048）はまだです。');
       return;
     }
     var d = r.data || {}, rows = Array.isArray(d.rows) ? d.rows : [];

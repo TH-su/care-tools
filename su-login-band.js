@@ -15,7 +15,7 @@
  *
  * 記録（分かった時だけ・確かめられない時は何も残さない）:
  *   ・速さの記録（su-perf.js）に「ログインの有無」を渡す（SUPerf.login）。端末の用途と開いた日は su-perf.js が自分で持つ
- *   ・切り替えスイッチ su-backend.json の supabase.device_seen が入の時だけ、受け口 device-seen（care-backend 0047）へ
+ *   ・切り替えスイッチ su-backend.json の supabase.device_seen が入の時だけ、受け口 device-seen（care-backend 0048）へ
  *     「端末の印・端末の用途・ログインの有無」の3つだけを送る。最後に開いた日はデータベースが日本時間の日付で決める。
  *     送るのは1日1回と、用途かログインの有無が変わった時だけ（su_seen_sent に「日付|用途|有無」を控える）
  *   ・端末の印は、この端末で1回だけ作る32文字の乱数（su_device_key）。人・名前・メール・機種と結びつかない
