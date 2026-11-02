@@ -16,7 +16,8 @@
 <script src="su-gas-auth.js?v=2026-10-29"></script>
 <script src="su-res-read.js?v=2026-11-02"></script>
 <script src="su-cfg-hint.js?v=2026-10-27"></script>
-<script src="su-perf.js?v=2026-10-27"></script>
+<script src="su-perf.js?v=2026-11-02"></script>
+<script src="su-login-band.js?v=2026-11-02"></script>
 <script src="su-app-gate.js?v=2026-10-29"></script>
 <script src="su-facility.js?v=2026-11-02.2"></script>
 <script src="su-print.js?v=2026-09-12"></script>
@@ -268,6 +269,8 @@ h3{font-size:1.0625rem; margin:14px 0 6px}
   <h1>担当者会議の記録</h1>
   <span class="sync" id="cmSync" role="status" aria-live="polite"></span>
 </header>
+<!-- ログインしていない端末の帯（2026-11-02 代表者の依頼・su-login-band.js が中身を入れる。印刷しない） -->
+<div id="suLoginBand" role="status" hidden></div>
 
 <main id="cm-main">
   <!-- 現場端末・接続設定なし・利用者No の形が違う時の案内 -->

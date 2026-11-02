@@ -481,6 +481,8 @@ button.rcard{display:flex; flex-direction:column; align-items:stretch; justify-c
   <span class="role" id="roleBadge">事務所</span>
   <span class="sync" id="syncStatus" role="status" aria-live="polite">未接続</span>
 </div>
+<!-- ログインしていない端末の帯（2026-11-02 代表者の依頼・su-login-band.js が中身を入れる。印刷しない） -->
+<div id="suLoginBand" role="status" hidden></div>
 
 <!-- 入居者マスタから特定の方を開いた時の本人確認バー（取り違え防止）。
      既定は非表示。?masterId= で来た時だけ boot() が表示する。印刷には出さない。 -->
@@ -608,7 +610,8 @@ function fsNoteAs_(kind, where, e){ try{ if(window.SUErrors && typeof window.SUE
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <!-- 同期データの保存先の切り替え（統合 0005/0007）。見るだけの画面は切り替え後に Supabase から読む（未ログインは Google） -->
 <script src="su-kv.js?v=2026-10-28"></script>
-<script src="su-perf.js?v=2026-10-27"></script>
+<script src="su-perf.js?v=2026-11-02"></script>
+<script src="su-login-band.js?v=2026-11-02"></script>
 <script src="su-facility.js?v=2026-11-02.2"></script>
 <script src="su-resident-hop.js?v=2026-11-02"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>

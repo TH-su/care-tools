@@ -512,6 +512,7 @@ const CENSUS = {
   "su-itomari.js": [],
   "su-kv-shadow.js": [],
   "su-kv.js": [],
+  "su-login-band.js": [],   /* 帯の文言・ボタンは textContent と setAttribute だけ（2026-11-02） */
   "su-master-shadow.js": [],
   "su-menu.js": [],
   "su-patch-sync.js": [],

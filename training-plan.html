@@ -357,6 +357,8 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
   <label class="sr-only" for="staffSel">操作している職員</label>
   <select id="staffSel" aria-label="操作している職員"><option value="">職員未選択</option></select>
 </header>
+<!-- ログインしていない端末の帯（2026-11-02 代表者の依頼・su-login-band.js が中身を入れる。印刷しない） -->
+<div id="suLoginBand" role="status" hidden></div>
 <div class="tpf-band" id="tpfBand" role="status" hidden></div>
 
 <main>
@@ -950,7 +952,8 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
 <script src="su-res-read.js?v=2026-11-02"></script>
 <script src="su-tp-full.js?v=2026-10-30.1"></script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
-<script src="su-perf.js?v=2026-10-27"></script>
+<script src="su-perf.js?v=2026-11-02"></script>
+<script src="su-login-band.js?v=2026-11-02"></script>
 <script src="su-resident-hop.js?v=2026-11-02"></script>
 <script src="su-app-gate.js?v=2026-10-29"></script>
 <script src="su-data.js?v=2026-11-02"></script>
