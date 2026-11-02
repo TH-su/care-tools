@@ -13,6 +13,7 @@
     "training": true,
     "training_ai": false,
     "master_ai": true,
+    "master_ai_until": "2026-11-03T07:00:00+09:00",
     "weight": true
   }
 }
