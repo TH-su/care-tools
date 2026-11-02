@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-0R93DFcnAjtFLO6+qrNt8Q26IHMFxUmxXVTrxaI+rdc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Qcrdu32MsVElhPnqUtXWKNpmOOTCXn0SUk3mLoaArsM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <!-- 他ツールと同じ指定を揃えている。氏名はこのHTMLには含まれず入力欄にしか存在しないため、
      この meta が効かないブラウザでもキャッシュ経由で氏名が残ることはない -->
@@ -230,6 +230,8 @@ body {
         <select id="pv"></select>
       </div>
     </div>
+    <!-- 名簿がこの端末に無い時だけ出す（次にすることの案内。事務所PCはログインと接続設定へのリンク・現場の端末は手入力で使えることだけ。紙には出さない） -->
+    <p class="hint" id="rshint" role="status" hidden></p>
     <p class="hint" id="sthint"></p>
     <div class="adopt" id="adopt" hidden>
       <p id="adopttx"></p>
@@ -267,6 +269,8 @@ body {
       <button class="btn pri" id="print" type="button">🖨 印刷</button>
     </div>
     <p class="hint">新しく開いたときは当月、再読み込みしたときは直前に見ていた月が出ます。<b>印刷する前に、上の年月を必ず確認してください。</b></p>
+    <!-- 画面だけの目印（.cell.today）の説明。紙には出さない（.ctl ごと noprint） -->
+    <p class="hint">画面では、今日の日付のますを<b>青い枠</b>で囲んでいます（紙には出ません）。</p>
   </div>
 </div>
 
@@ -732,6 +736,27 @@ function fillRoster() {
   });
   el.rs.disabled = !roster.length;
   el.rs.value = state.rid;
+  rosterHint();
+}
+/* 名簿がこの端末に無い時の案内（画面だけ）。名簿は事務所PCで入居者マスタを開いた時にこの端末へ入る。
+   現場の端末には名簿が入らない（書くのは事務所PCの入居者マスタだけ）ので、現場の端末には頼みもリンクも出さず、手入力で使えることだけを出す。
+   文はすべて固定の文字（外からの値は入れない）。リンクは createElement で作る */
+function rosterHint() {
+  var h = document.getElementById('rshint');
+  if (!h) return;
+  h.textContent = '';
+  if (roster.length) { h.hidden = true; return; }
+  if (pcIsField()) {
+    h.appendChild(document.createTextNode('この端末では名簿を使いません。入居者名を手で入れて使えます。'));
+  } else {
+    var a = document.createElement('a');
+    a.href = 'connection-settings.html';
+    a.textContent = '接続設定';
+    h.appendChild(document.createTextNode('この端末には入居者の名簿がありません。事務所のアカウントでログインして、この端末で入居者マスタを開くと、名簿がこの端末に入ります。入居者マスタが開けない時は、'));
+    h.appendChild(a);
+    h.appendChild(document.createTextNode('の「入居者マスタ・フェイスシート」の欄に URL と合言葉を入れてください。名簿が無くても、入居者名を手で入れて使えます。'));
+  }
+  h.hidden = false;
 }
 /* 入居者を切り替える。rid='' は手入力（従来の設定）へ戻す */
 function selectResident(rid) {
