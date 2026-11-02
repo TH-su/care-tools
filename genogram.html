@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-font">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4tatwB5n4oQfG1K2BhClN4+9jBVdFhmNYce1TbRTqzo=' 'sha256-tELDASCrXQ2MCdcVeR7YGq5C4GUt/KPU3qxq87VB3Eo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4tatwB5n4oQfG1K2BhClN4+9jBVdFhmNYce1TbRTqzo=' 'sha256-GsoJ/C/QZQMIHP1AlRB7OvSCbAam8UOPKHRcM11GDWs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 入居者情報を表示する画面のため、ブラウザ・中継キャッシュに残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -1227,7 +1227,8 @@ function suHopSync() {
     const b = document.createElement('b'); b.textContent = nm;
     who.appendChild(b); who.appendChild(document.createTextNode('さんを開いています'));
     bar.textContent = ''; bar.appendChild(who);
-    bar.insertAdjacentHTML('beforeend', SUResHop.html('genogram.html', id, nm));   /* 部品が全部の値を esc して返す */
+    const hop = SUResHop.node('genogram.html', id, nm);   /* 文字列を使わず部品で組み立てる（この画面は HTML の文字列を差し込まない決まり） */
+    if (hop) bar.appendChild(hop);
     bar.hidden = false;
   }
   window.dispatchEvent(new Event('resize'));   /* 作図の枠の高さを合わせ直す（resize の処理が fitStageSize と render をする） */

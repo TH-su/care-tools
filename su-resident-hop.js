@@ -4,7 +4,7 @@
  * ・同じタブで移る（target を付けない）。保存していない編集の確かめは、各画面の「離れる前の確かめ」に任せる
  * ・行き先へ渡すのは入居者マスタの番号（利用者No）だけ。氏名は URL に載せない
  *   （家族構成図だけは既存の受け口が氏名を保存の鍵に使うため、入居者マスタと同じく ?resident=&name= で渡す）
- * ・現場の端末（su_device_role==='field'）では、事務所向けの画面（入居者マスタ・週間計画・計画書・担当者会議）への行き先を出さない
+ * ・現場の端末（su_device_role==='field'）では、事務所向けの画面（入居者マスタ・週間計画・申送ビューア・計画書・担当者会議）への行き先を出さない
  * ・今の画面は出さない。番号の形が正しくない時は何も出さない
  * ・画面だけ（.srh は @media print で消す）。外からの値は全部エスケープする。例外を外に出さない
  * 使い方: SUResHop.html('facesheet.html', 番号, 氏名) が帯に足す HTML を返す（出せない時は ''）。
@@ -20,7 +20,7 @@
     { href: 'genogram.html', ic: '🌳', nm: '家族構成図', q: 'resident', withName: true },
     { href: 'care-schedule.html', ic: '📅', nm: '週間計画', q: 'masterId', office: true },
     { href: 'weight-record.html', ic: '⚖️', nm: '体重管理', q: 'masterId' },
-    { href: 'moushiokuri-viewer.html', ic: '📝', nm: '申送ビューア', q: 'masterId' },
+    { href: 'moushiokuri-viewer.html', ic: '📝', nm: '申送ビューア', q: 'masterId', office: true },   // 現場の端末では起動時に止まる画面
     { href: '../haiben-record/haiben-record.html', ic: '🚽', nm: '排便ケア記録', q: 'masterId' },
     { href: 'training-plan.html', ic: '🏃', nm: '計画書', q: 'masterId', office: true },
     { href: 'care-meeting.html', ic: '🤝', nm: '担当者会議', q: 'resident', office: true }
@@ -69,5 +69,26 @@
       return '';
     }
   }
-  window.SUResHop = { html: html, targets: targets, TARGETS: TARGETS };
+  /* 同じ帯を、HTML の文字列を使わずに部品で組み立てて返す（文字列を差し込まない決まりの画面向け）。出せない時は null */
+  function node(current, id, name) {
+    try {
+      var list = targets(current, id, name, isField());
+      if (!list.length) return null;
+      var wrap = document.createElement('span');
+      wrap.className = 'srh'; wrap.setAttribute('role', 'group'); wrap.setAttribute('aria-label', 'この方の画面');
+      var lbl = document.createElement('span'); lbl.className = 'srh-lbl'; lbl.textContent = 'この方の画面：';
+      wrap.appendChild(lbl);
+      list.forEach(function (t) {
+        var a = document.createElement('a'); a.className = 'srh-a'; a.href = t.href;
+        var ic = document.createElement('span'); ic.setAttribute('aria-hidden', 'true'); ic.textContent = t.ic;
+        a.appendChild(ic); a.appendChild(document.createTextNode(' ' + t.nm));
+        wrap.appendChild(a);
+      });
+      return wrap;
+    } catch (e) {
+      try { if (window.SUErrors && typeof SUErrors.note === 'function') SUErrors.note('行き来の帯', e && e.message, 'su-resident-hop.js'); } catch (e2) { /* 記録もできない時は黙る（画面の動きを止めない） */ }
+      return null;
+    }
+  }
+  window.SUResHop = { html: html, node: node, targets: targets, TARGETS: TARGETS };
 })();

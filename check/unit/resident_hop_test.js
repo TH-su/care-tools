@@ -50,11 +50,11 @@ t('2d 氏名が無い時は家族構成図を出さない', !office.targets('fac
 
 console.log('3 現場の端末');
 const f = field.targets('facesheet.html', '12', '見本 一郎', true).map((x) => x.href.split('?')[0]);
-for (const off of ['resident-master.html', 'care-schedule.html', 'training-plan.html', 'care-meeting.html']) t('3a 現場では ' + off + ' を出さない', f.indexOf(off) < 0, f);
+for (const off of ['resident-master.html', 'care-schedule.html', 'moushiokuri-viewer.html', 'training-plan.html', 'care-meeting.html']) t('3a 現場では ' + off + ' を出さない', f.indexOf(off) < 0, f);
 t('3b 現場では家族構成図（氏名を URL に載せる）を出さない', f.indexOf('genogram.html') < 0, f);
-t('3c 現場でも出す画面（体重管理・申送ビューア・排便ケア記録）は出る', ['weight-record.html', 'moushiokuri-viewer.html', '../haiben-record/haiben-record.html'].every((x) => f.indexOf(x) >= 0), f);
+t('3c 現場でも出す画面（体重管理・排便ケア記録）は出る', ['weight-record.html', '../haiben-record/haiben-record.html'].every((x) => f.indexOf(x) >= 0), f);
 const fh = field.html('facesheet.html', '12', '見本 一郎');
-t('3d html() は端末の用途を読んで現場の決まりを当てる', fh && !/resident-master|care-schedule|training-plan|care-meeting|genogram/.test(fh), fh);
+t('3d html() は端末の用途を読んで現場の決まりを当てる', fh && !/resident-master|care-schedule|moushiokuri|training-plan|care-meeting|genogram/.test(fh), fh);
 
 console.log('4 正しくない番号・危ない値');
 for (const bad of ['', null, undefined, '1 2', '<b>', 'x'.repeat(40), '../1']) t('4a 番号 ' + JSON.stringify(bad) + ' では何も出さない', office.html('facesheet.html', bad, '見本') === '', bad);
@@ -62,11 +62,12 @@ const evil = office.html('facesheet.html', '12', '"><img src=x onerror=alert(1)>
 t('4b 氏名に危ない文字があっても属性の外に出ない', !/<img/i.test(evil) && !/"><img/.test(evil), evil);
 
 console.log('5 帯に入れた画面');
-for (const pg of ['facesheet.html', 'weight-record.html', 'genogram.html']) {
+for (const pg of ['facesheet.html', 'weight-record.html', 'genogram.html', 'care-schedule.html']) {
   const s = fs.readFileSync(path.join(ROOT, pg), 'utf8');
   t('5a ' + pg + ': 部品と CSS を読み込む', /<script src="su-resident-hop\.js\?v=[0-9.-]+"><\/script>/.test(s) && /<link rel="stylesheet" href="su-resident-hop\.css\?v=[0-9.-]+">/.test(s), '');
-  t('5b ' + pg + ': 自分の画面の名前で呼ぶ', s.indexOf("SUResHop.html('" + pg + "'") >= 0, '');
-  t('5c ' + pg + ': 帯は「〇〇さんを開いています」', /さんを開いています/.test(s), '');
+  t('5b ' + pg + ': 自分の画面の名前で呼ぶ', s.indexOf("SUResHop.html('" + pg + "'") >= 0 || s.indexOf("SUResHop.node('" + pg + "'") >= 0, '');
+  if (pg !== 'care-schedule.html') t('5c ' + pg + ': 帯は「〇〇さんを開いています」', /さんを開いています/.test(s), '');
+  else t('5c 週間計画: 集計の段に「この方の画面 ▾」のボタンを置く（盤面の位置を変えない）', /id="cs-hop-btn"[^>]*hidden[^>]*>🔗 この方の画面 ▾<\/button>/.test(s), '');
 }
 
 console.log('6 印刷');

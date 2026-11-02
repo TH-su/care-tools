@@ -257,6 +257,7 @@ const CENSUS = {
     [F, "if(p) p.innerHTML=''"]
   ],
   "care-schedule.html": [
+    [E, "p.innerHTML = h"],   /* 「この方の画面 ▾」の一覧。部品（su-resident-hop.js）が全部の値を esc して返す（試験 resident_hop_test） */
     [F, "cb.innerHTML = ''"],
     [F, "box.innerHTML = '<div class=\"evlist-empty\">まだ控えがありません（保存すると残ります）</div>'"],
     [N, "box.innerHTML = html"],
@@ -323,8 +324,7 @@ const CENSUS = {
     [E, "bar.innerHTML='<span>'+msg+'</span><button type=\"button\" id=\"fromMasterClose\">一覧に戻る</button>'+hop"]
   ],
   "genogram.html": [
-    [F, "sel.innerHTML = '<option value=\"\">— 保存済みから読込 —</option>'"],
-    [E, "bar.insertAdjacentHTML('beforeend', SUResHop.html('genogram.html', id, nm))"]   /* 部品が全部の値を esc して返す（試験 resident_hop_test） */
+    [F, "sel.innerHTML = '<option value=\"\">— 保存済みから読込 —</option>'"]
   ],
   "help.html": [],
   "index.html": [],
