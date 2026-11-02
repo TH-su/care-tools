@@ -1,0 +1,54 @@
+# 業務の流れを通す試験（自動）— PR ごとと毎晩、check/flow_e2e.mjs を回す（2026-11-02 新設）
+#
+# ・本物の Chromium で画面を順に開き、ボタン操作で業務の流れを通す（入居者マスタ→各画面・行き来の帯・週間計画→ワークスケジュール・俯瞰・現場の端末の守り）
+# ・通信は全部横取りして偽物が答える（GAS・Supabase・su-backend.json）。外へは出ない。データはすべて架空（check/fixtures/flow.mjs）
+# ・毎晩の回は、画面を変えていない日でも、日付・曜日で変わる動き（今日の盤面・曜日の列）を確かめるため
+# ・失敗の知らせは、実行の記録の赤い×と GitHub からの失敗のメールだけ（Issue は作らない）
+name: 業務の流れの試験
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    # 毎晩 日本時間 2:47（UTC 17:47）。0分・30分は混み合うので避ける
+    - cron: '47 17 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flow-check-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  flow:
+    name: 業務の流れを通す試験
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: リポジトリを取り出す
+        uses: actions/checkout@v4
+
+      - name: Node を用意する
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: ブラウザの道具を入れる
+        working-directory: check
+        run: |
+          npm install --no-save --no-package-lock --no-audit --no-fund playwright@1.56.1
+          npx playwright install --with-deps chromium
+
+      - name: 業務の流れを通す（check/flow_e2e.mjs）
+        run: node check/flow_e2e.mjs --shots check/out/flow
+
+      - name: 画面の写し（架空データ）を成果物として残す
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flow-shots
+          path: check/out/flow/
+          retention-days: 14
+          if-no-files-found: ignore
