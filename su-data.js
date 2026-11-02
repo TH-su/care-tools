@@ -53,7 +53,10 @@
      true の時だけ supabase の道。false・無い・一度も読めていない・supabase の道が読み込まれていない時は gas の道。
      スイッチの値は su-kv.js・su-patch-sync.js と同じ控え（localStorage su_backend_flags）を同期で読む＝呼び出しを待たせない。
      読み直しは supabase の道が読み込まれているページで入口が呼ばれた時だけ・1分に1回（読み込んだだけでは通信しない）。
-     ★スイッチが入なのに supabase の道で断られた時は Google へ流さない（CLAUDE.md §4）。 */
+     ★スイッチが入なのに supabase の道で断られた時は Google へ流さない（CLAUDE.md §4）。
+     ★終わりの時刻（2026-11-02）: 調べるために夜だけ入れるスイッチは、同じ supabase の中に <キー>_until
+       （例 "training_ai_until": "2026-11-02T07:00:00+09:00"）を持たせる。その時刻を過ぎたら切として扱う。
+       時刻が読めない（日付だけ・時差の無い形・文字でない）・過去の時も切。_until の無いキーは今までどおり true だけを見る。 */
   var FLAGS_URL = 'su-backend.json', FLAGS_LS = 'su_backend_flags';
   var flagsTriedAt = 0, flagsBusy = false;
   function readFlags() {
@@ -76,11 +79,20 @@
         .then(function () { flagsBusy = false; });
     } catch (e) { flagsBusy = false; }
   }
+  /* 純関数: スイッチの値 f（supabase の中身）・キー・今の時刻（ミリ秒）から、入かどうかを返す */
+  var UNTIL_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
+  function flagOn(f, flag, now) {
+    if (!f || typeof f !== 'object' || f[flag] !== true) return false;
+    if (!Object.prototype.hasOwnProperty.call(f, flag + '_until')) return true;
+    var u = f[flag + '_until'];
+    if (typeof u !== 'string' || !UNTIL_RE.test(u)) return false;
+    var end = Date.parse(u);
+    return typeof now === 'number' && isFinite(end) && now < end;
+  }
   function entryRoute(flag) {
     if (!drivers.supabase) return 'gas';
     refreshFlags();
-    var f = readFlags();
-    return (f && f[flag] === true) ? 'supabase' : 'gas';
+    return flagOn(readFlags(), flag, Date.now()) ? 'supabase' : 'gas';
   }
   /* supabase の道へは「入口の名前・関数の名前・引数」をそのまま渡す（道の側で表と関数に読み替える）。
      gas の道の関数も渡す＝道の側は、データベースの印が「切り替える前」の時だけそれを呼ぶ（スイッチが入の間の断りは Google へ流さない） */
@@ -292,6 +304,7 @@
       }
     },
     _entryRoute: entryRoute,
+    _flagOn: flagOn,
 
     /* Phase 1 で実装。未実装であることを黙って隠さない。 */
     getAttachmentUrl: function () {

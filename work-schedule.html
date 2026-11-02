@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-yJ7Hz9xxfvP0tOzoaPIcsM3gzrXtYUdk99JmZRoZBLI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Vr4qPOQq88tpR1CeypFWTG2WXhcwWqrP5HPzlOkakEo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -763,6 +763,7 @@ body.su-print-staff24 #rp-print, body.su-print-staff24range #rp-print { display:
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
 <script src="su-kv.js?v=2026-10-28"></script>
 <script src="su-roster.js?v=2026-10-28"></script>
+<script src="su-res-read.js?v=2026-11-02"></script>
 <script src="su-kv-shadow.js?v=2026-10-28"></script>
 <link rel="stylesheet" href="su-print.css?v=2026-09-12">
 <script src="su-print.js?v=2026-09-12"></script>
@@ -12522,9 +12523,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
                               body: JSON.stringify(b2), cache: 'no-store', redirect: 'follow' });
       }).then(function (r) { return r.json(); });
     };
+    var old = function () { try { return window.SURoster ? window.SURoster.getRoster(raw, { where: 'ws', masterUrl: c.url, withRev: true }) : raw(); } catch (eR) { return raw(); } };
+    /* 2026-11-02（代表者「Google のまま読む」）: 入居者マスタを新しい保存先へ切り替えた後は、事務所PCで事務所・管理者としてログインしている時だけ、名簿を新しい保存先から読む（su-res-read.js の officeOnly）。
+       ログインしていない・現場の端末・現場のアカウントは、下の今までの読み方（写し→Google）のまま。部品が無い時も今までどおり */
     var rp;
-    try { rp = window.SURoster ? window.SURoster.getRoster(raw, { where: 'ws', masterUrl: c.url, withRev: true }) : raw(); }
-    catch (eR) { rp = raw(); }
+    try { rp = window.SUResRead ? Promise.resolve(window.SUResRead.call({ action: 'getRoster' }, old, { screen: 'work-schedule', officeOnly: true })) : old(); }
+    catch (eR) { rp = old(); }
     return rp
       .then(function (j) {
         if (!j || !Array.isArray(j.roster)) {

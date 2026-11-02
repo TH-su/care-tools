@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-QMRcvOqgNHlur8NxJBCqQi5fv71crytNeijIFS6Ax6E='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-vcxcg2ki2ftTBEj5oNL3lgOBePIK/0/FK8HuHD7/k2A='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -57,6 +57,7 @@ try{ const t = (JSON.parse(localStorage.getItem('wtmgr_ui_v1') || '{}') || {}).t
 <!-- 体重の写し（統合 0008・写しの期間）。supabase-js と su-auth.js は写す時にだけ読み込む -->
 <script src="su-weight-shadow.js?v=2026-10-28.2"></script>
 <script src="su-weight-live.js?v=2026-10-28.2"></script>
+<script src="su-res-read.js?v=2026-11-02"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <style>
 :root{
@@ -3658,16 +3659,21 @@ function wrMasterCfg(){
 async function wrFetchMasterRoster(cfg){
   try{
     /* ログインしている時だけ証明を添える（su-gas-auth.js・GAS が READ_ROLE_CHECK の時に役割を確かめる・代表者の決定 2026-10-29） */
-    var rb = { action:'getRoster', token: cfg.token };
-    if(window.SUGasAuth) rb = await window.SUGasAuth.addTo(rb);
-    var r = await fetchTO(cfg.url, {
-      method:'POST',
-      headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify(rb),
-      cache:'no-store'
-    }, 12000);
-    if(!r.ok) return false;
-    var j = await r.json();
+    var gas = async function(){
+      var rb = { action:'getRoster', token: cfg.token };
+      if(window.SUGasAuth) rb = await window.SUGasAuth.addTo(rb);
+      var r = await fetchTO(cfg.url, {
+        method:'POST',
+        headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body: JSON.stringify(rb),
+        cache:'no-store'
+      }, 12000);
+      if(!r.ok) return null;
+      return await r.json();
+    };
+    /* 2026-11-02（代表者「Google のまま読む」）: 入居者マスタを新しい保存先へ切り替えた後は、事務所PCで事務所・管理者としてログインしている時だけ、
+       名簿を新しい保存先から読む（su-res-read.js の officeOnly）。ログインしていない・現場の端末・現場のアカウントは上の今までの読み方のまま */
+    var j = window.SUResRead ? await window.SUResRead.call({ action:'getRoster' }, gas, { screen:'weight-record', officeOnly:true }) : await gas();
     if(!j || j.error || !Array.isArray(j.roster)) return false;
     var rows = [];
     j.roster.forEach(function(c){

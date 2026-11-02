@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-2Dfc5H6SSLUv+YEuceVLPfNKvtLskuldKwoEhreBU+w='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-dB/nXdAMd/3UFbtT+oI6v2CD3wF/dVr78+z/flL+Y8I='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -696,6 +696,7 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
 <script src="su-kv.js?v=2026-10-28"></script>
 <!-- 入居者マスタの名簿の読み取り（getRoster）の入口。スイッチ（master_roster_read と master_care_read）が入っている時だけ、訪問日・かかりつけ病院も含めて写しから読む（切の間は今までどおり Google・段2b・2026-10-24） -->
 <script src="su-roster.js?v=2026-10-28"></script>
+<script src="su-res-read.js?v=2026-11-02"></script>
 <script src="su-facility.js?v=2026-11-02.2"></script>
 <script src="su-data.js?v=2026-10-30"></script>
 <script src="su-data-gas.js?v=2026-10-29"></script>
@@ -1401,9 +1402,12 @@ function dcrFetchMasterHosp(force){
      写しから読んだ時も見張りの基準（stateRev・srev）が応答に添えられる（withRev）。部品が読み込めない時も raw を呼ぶ。
      現場の端末では入口が raw をそのまま呼ぶ（今までどおり）。☆・入院・居室・姓名の切れ目の作り方は下のまま変えない。 */
   var raw = function(){ return SU.data.getRoster({ endpoint: cfg.url, token: cfg.token }); };
+  var old = function(){ try { return window.SURoster ? window.SURoster.getRoster(raw, { where: 'daycare', masterUrl: cfg.url, care: true, withRev: true }) : raw(); } catch (e) { return raw(); } };
+  /* 2026-11-02（代表者「Google のまま読む」）: 入居者マスタを新しい保存先へ切り替えた後は、事務所PCで事務所・管理者としてログインしている時だけ、名簿を新しい保存先から読む（su-res-read.js の officeOnly）。
+     ログインしていない・現場の端末・現場のアカウントは、下の今までの読み方（写し→Google）のまま。部品が無い時も今までどおり */
   var rosterP;
-  try { rosterP = window.SURoster ? window.SURoster.getRoster(raw, { where: 'daycare', masterUrl: cfg.url, care: true, withRev: true }) : raw(); }
-  catch (e) { rosterP = raw(); }
+  try { rosterP = window.SUResRead ? Promise.resolve(window.SUResRead.call({ action: 'getRoster' }, old, { screen: 'daycare-roster', officeOnly: true })) : old(); }
+  catch (e) { rosterP = old(); }
   /* ☆の医療機関は施設情報から引くので、名簿と一緒に施設情報も待つ（最大3秒・読めなければ☆を付けない＝2026-10-14） */
   return Promise.all([rosterP, suFacReady_()])
     .then(function(rs){
