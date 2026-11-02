@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-nUk4p44H1P53rno7DfjSWu6C5LtLzobZHb/IMhsGeq8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-GhJjz41cXYI59aIGhzftMtX9APiiS7Q4JIxWnkkmzwM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 会議の記録（要配慮の情報）を扱うためキャッシュ無効 -->
@@ -10,6 +10,7 @@
 <meta name="robots" content="noindex,nofollow">
 <title>担当者会議の記録</title>
 <link rel="stylesheet" href="su-print.css?v=2026-09-12">
+<link rel="stylesheet" href="su-resident-hop.css?v=2026-11-02">
 <!-- 画面が黙って壊れないようにする共通部品（いちばん先に読む）→ 速さの記録 → 施設情報 → 印刷 → 振り分けと確かめの計算 -->
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
@@ -20,6 +21,7 @@
 <script src="su-facility.js?v=2026-11-02"></script>
 <script src="su-print.js?v=2026-09-12"></script>
 <script src="care-meeting-calc.js?v=2026-10-25"></script>
+<script src="su-resident-hop.js?v=2026-11-02"></script>
 <style>
 /* サービス担当者会議の記録（2026-10-23 代表者の決定・段階2）。
    配色はフェイスシートと同じ「無彩色を基調に、意味のある色だけ」（アクセント・危険・注意の3つ）。
@@ -626,7 +628,9 @@ function whoHtml_(c){
     return '<p class="hint" role="status">読み込み中…</p>';
   }
   return '<div class="who-main"><span class="who-lb">開いている方</span><span class="who-n">'+esc(c.name)+'</span>'+
-    (c.room?'<span class="who-r">'+esc(roomText_(c.room))+'</span>':'')+(c.careLevel?'<span class="who-lv">'+esc(c.careLevel)+'</span>':'')+'</div>'+other;
+    (c.room?'<span class="who-r">'+esc(roomText_(c.room))+'</span>':'')+(c.careLevel?'<span class="who-lv">'+esc(c.careLevel)+'</span>':'')+'</div>'+other+
+    /* 「この方の画面：」同じ方の別の画面へ同じタブで移る（su-resident-hop.js・代表者の決定 2026-11-02 案A）。部品が全部の値を esc して返す */
+    ((typeof SUResHop==='object'&&SUResHop)?SUResHop.html('care-meeting.html',c.id,c.name):'');
 }
 function listHtml_(rows,selId,state,err){
   if(state==='loading') return '<p class="hint" role="status">読み込み中…</p>';

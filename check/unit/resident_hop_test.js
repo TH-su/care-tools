@@ -62,11 +62,14 @@ const evil = office.html('facesheet.html', '12', '"><img src=x onerror=alert(1)>
 t('4b 氏名に危ない文字があっても属性の外に出ない', !/<img/i.test(evil) && !/"><img/.test(evil), evil);
 
 console.log('5 帯に入れた画面');
-for (const pg of ['facesheet.html', 'weight-record.html', 'genogram.html', 'care-schedule.html']) {
+for (const pg of ['facesheet.html', 'weight-record.html', 'genogram.html', 'care-schedule.html', 'training-plan.html', 'care-meeting.html', 'moushiokuri-viewer.html']) {
   const s = fs.readFileSync(path.join(ROOT, pg), 'utf8');
   t('5a ' + pg + ': 部品と CSS を読み込む', /<script src="su-resident-hop\.js\?v=[0-9.-]+"><\/script>/.test(s) && /<link rel="stylesheet" href="su-resident-hop\.css\?v=[0-9.-]+">/.test(s), '');
   t('5b ' + pg + ': 自分の画面の名前で呼ぶ', s.indexOf("SUResHop.html('" + pg + "'") >= 0 || s.indexOf("SUResHop.node('" + pg + "'") >= 0, '');
-  if (pg !== 'care-schedule.html') t('5c ' + pg + ': 帯は「〇〇さんを開いています」', /さんを開いています/.test(s), '');
+  if (['facesheet.html', 'weight-record.html', 'genogram.html'].indexOf(pg) >= 0) t('5c ' + pg + ': 帯は「〇〇さんを開いています」', /さんを開いています/.test(s), '');
+  else if (pg === 'training-plan.html') t('5c 計画書: 画面を切り替えるたびに「この方の画面：」を出し直す（計画書の画面の時だけ）', /function showScreen\(id, opts\) \{[\s\S]{0,400}tpHopSync\(id\);/.test(s) && /if \(id !== 'scr-edit' \|\| !curMasterId/.test(s), '');
+  else if (pg === 'care-meeting.html') t('5c 担当者会議: 「開いている方」の欄に並べる', /function whoHtml_\(c\)\{[\s\S]{0,900}SUResHop\.html\('care-meeting\.html',c\.id,c\.name\)/.test(s), '');
+  else if (pg === 'moushiokuri-viewer.html') t('5c 申送ビューア: 本人確認バー（申し送り・バイタル）の両方に並べる', (s.match(/if\(typeof appendResHop === 'function'\) appendResHop\(who, (m|rosterByNorm\(VMSEL\))\);/g) || []).length === 2, '');
   else t('5c 週間計画: 集計の段に「この方の画面 ▾」のボタンを置く（盤面の位置を変えない）', /id="cs-hop-btn"[^>]*hidden[^>]*>🔗 この方の画面 ▾<\/button>/.test(s), '');
 }
 

@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-QZzN1cLY9m8W4HvfaVHKBIF//Cly5d8ZBt8E0mCvxRU=' 'sha256-AtHaNYGeFVontaJH4GBxn/SyjAQssSmAciJ3OQ9+nx8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-QZzN1cLY9m8W4HvfaVHKBIF//Cly5d8ZBt8E0mCvxRU=' 'sha256-rBsGFBsmNtVnHTpeJYRtKNTF0R7pvAQ9D2YS+EYSlFQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- 要配慮情報（疾患・訓練内容）を表示する画面。ブラウザキャッシュ・検索索引に残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -346,6 +346,7 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-02">
+<link rel="stylesheet" href="su-resident-hop.css?v=2026-11-02">
 </head>
 <body>
 
@@ -404,6 +405,8 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
   <div class="cd">
     <h2 id="edName">（利用者未選択）</h2>
     <p class="muted" id="edSub"></p>
+    <!-- 「この方の画面：」同じ方の別の画面へ同じタブで移る（su-resident-hop.js・代表者の決定 2026-11-02 案A・画面だけ） -->
+    <div id="tpHop"></div>
     <div class="stack" style="margin-top:var(--sp-2)">
       <div>
         <label for="planSel">計画（期）</label>
@@ -947,6 +950,7 @@ body.blocked .hdr,body.blocked .bnav,body.blocked main{display:none}
 <script src="su-tp-full.js?v=2026-10-30.1"></script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
+<script src="su-resident-hop.js?v=2026-11-02"></script>
 <script src="su-app-gate.js?v=2026-10-29"></script>
 <script src="su-data.js?v=2026-10-30"></script>
 <script src="su-data-gas.js?v=2026-10-29"></script>
@@ -2819,10 +2823,21 @@ function renderList() {
 }
 
 /* ═══════════ 画面の切り替え（再読み込みで現在地を失わない） ═══════════ */
+/* 「この方の画面：」（su-resident-hop.js）。計画書の画面で開いている方の分だけ出し、ほかの画面・別の方では消す。
+   文字列を使わず部品で組み立てる（この画面は HTML の文字列を入れない決まり） */
+function tpHopSync(id) {
+  var box = $('tpHop'); if (!box) return;
+  while (box.firstChild) box.removeChild(box.firstChild);
+  if (id !== 'scr-edit' || !curMasterId || typeof SUResHop !== 'object' || !SUResHop) return;
+  var row = rosterOf(curMasterId);
+  var n = SUResHop.node('training-plan.html', curMasterId, row ? row.name : '');
+  if (n) box.appendChild(n);
+}
 function showScreen(id, opts) {
   if (SCREENS.indexOf(id) < 0) id = 'scr-list';
   if (id === 'scr-edit' && !curMasterId) id = 'scr-list';
   if (id === 'scr-print' && !curMasterId) id = 'scr-list';
+  tpHopSync(id);
   for (var i = 0; i < SCREENS.length; i++) $(SCREENS[i]).classList.toggle('on', SCREENS[i] === id);
   var btns = document.querySelectorAll('.bnav button');
   for (var k = 0; k < btns.length; k++) btns[k].classList.toggle('on', btns[k].getAttribute('data-scr') === id);

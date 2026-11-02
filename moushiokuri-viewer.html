@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-/N8UTqFdxvqogkPVUfmjk/LCtLI/2gC6+cIsvI343iM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-xp4rY8Mse5mmba4mRSViEEvz6vvT2zRnXgCdsjHTeu4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -843,10 +843,12 @@ mark { background:var(--mark-bg); color:inherit; padding:0 1px; border-radius:2p
 <!-- 印刷の共通部品（2026-10-12・監査10月版 v2 申送ビューア 第1手）。入居者別は A4 縦・バイタル・食事は A4 横。
      読めない時は従来どおりの印刷（下の @media print の @page）に倒れる -->
 <link rel="stylesheet" href="su-print.css?v=2026-09-12">
+<link rel="stylesheet" href="su-resident-hop.css?v=2026-11-02">
 <script src="su-print.js?v=2026-09-12"></script>
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
+<script src="su-resident-hop.js?v=2026-11-02"></script>
 <script>
 'use strict';
 /* ══════════════════════════════════════════════════════════════════
@@ -1100,6 +1102,13 @@ function loadRoster(){
                room:String(r.room || ''), norm:normName(r.name) };
     });
   }catch(e){ ROSTER = []; }
+}
+/* 本人確認バーの中に「この方の画面：」（同じ方の別の画面へ同じタブで移る・su-resident-hop.js・代表者の決定 2026-11-02 案A）。
+   入居者マスタの名簿で番号の分かる方だけ。文字列を使わず部品で組み立てる（この画面は HTML の文字列を入れない決まり） */
+function appendResHop(who, m){
+  if(!who || !m || !m.masterId || typeof SUResHop !== 'object' || !SUResHop) return;
+  var n = SUResHop.node('moushiokuri-viewer.html', m.masterId, m.name || '');
+  if(n) who.appendChild(n);
 }
 function rosterByNorm(n){
   for(var i=0;i<ROSTER.length;i++){ if(ROSTER[i].norm && ROSTER[i].norm === n) return ROSTER[i]; }
@@ -1616,6 +1625,7 @@ function renderTimeline(){
   cnt.className = 'rm';
   cnt.textContent = DATA.from + '〜' + DATA.to + '／' + rows.length + '件';
   who.appendChild(cnt);
+  if(typeof appendResHop === 'function') appendResHop(who, m);
   $('who').appendChild(who);
   $('ractions').hidden = false;
 
@@ -2606,6 +2616,7 @@ function vmRenderBody(){
   var cnt = document.createElement('span'); cnt.className = 'rm';
   cnt.textContent = VM.from + '〜' + VM.to;
   who.appendChild(cnt);
+  if(typeof appendResHop === 'function') appendResHop(who, rosterByNorm(VMSEL));
   $('vmWho').appendChild(who);
   $('vmActions').hidden = false;
 
