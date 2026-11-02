@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-thAtaKXJFNh43QzmiVEFuszEVPpebIHGYgCseGsMqHo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-BejWE17gn/+TYdx8fIGuEzG4Ccl6Xy475r4+vuvECaY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -909,6 +909,9 @@ select.inp { cursor: pointer; }
     scroll-behavior: auto !important;
   }
 }
+/* 介護度は入居者マスタで直す、の案内（介護情報の窓・画面だけ・代表者の決定 2026-11-02） */
+.ci-level-note { margin: -4px 0 8px; font-size: 0.8125rem; color: var(--warn-tx, #6a3e00); }
+.ci-level-note[hidden] { display: none !important; }
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-02">
@@ -1305,6 +1308,8 @@ select.inp { cursor: pointer; }
         <option value="要介護5">要介護5</option>
       </select>
     </div>
+    <!-- 入居者マスタとつながっている方は、介護度を入居者マスタで直す（代表者の決定 2026-11-02「マスタを正にする」） -->
+    <p class="ci-level-note" id="ci-level-note" hidden>介護度は入居者マスタで直してください（入居者マスタの値を使います）</p>
 
     <div class="form-row">
       <label id="ci-limit-label" style="display:none"></label>
@@ -5405,7 +5410,10 @@ function mergeCommonSchedule(extData){
     if (!tgt){ var nm = suNormName(c.name); if (nm) tgt = byName[nm]; }
     if (tgt){
       if (tgt.masterId == null){ tgt.masterId = c.masterId; changed++; }
-      if (c.careLevel && !tgt.careLevel){ tgt.careLevel = c.careLevel; changed++; }   /* 空欄補完のみ＝アプリ側の介護度編集をマスタ由来su_residents_commonで巻き戻さない(保存バグ副因) */
+      /* 介護度は入居者マスタを正にする（居室と同じ扱い・代表者の決定 2026-11-02「マスタを正にする」）。
+         入居者マスタとつながっている方は週間計画の中で介護度を直せない（介護情報の窓・一括編集で止めている）ので、
+         週間計画で直した値を巻き戻すことは無い。マスタが空の時は今の値を残す */
+      if (c.careLevel && tgt.careLevel !== c.careLevel){ tgt.careLevel = c.careLevel; changed++; }
       if (c.room && tgt.room !== c.room){ tgt.room = c.room; changed++; }
       if (c.kana && !tgt.kana){ tgt.kana = c.kana; changed++; }   /* ふりがなは空欄補完のみ＝アプリ側の一括編集を巻き戻さない(careLevel同型・空欄のみ補完/master常勝のroomとは別) */
       if (tS !== undefined && tgt.targetSchedule === undefined){ tgt.targetSchedule = tS; changed++; }   /* 空(未設定)のみ補完＝一括編集の週間計画対象をマスタ由来su_residents_commonで巻き戻さない */
@@ -7077,11 +7085,16 @@ function deleteCurrentEvent() {
 }
 
 // ── Care info modal (利用者個別) ──
+/* 入居者マスタとつながっている方か（介護度はマスタを正にする・代表者の決定 2026-11-02） */
+function csIsMasterLinked_(r) { return !!(r && r.masterId != null && r.masterId !== ''); }
 function openCareInfoModal() {
   const res = currentResident();
   if (!res) { showToast('利用者を選択してください'); return; }
   $('#care-info-name').textContent = '対象: ' + res.name;
   $('#ci-level').value      = res.careLevel      || '';
+  /* 入居者マスタとつながっている方は介護度を直せない（マスタを正にする・次の同期でマスタの値に戻るため） */
+  $('#ci-level').disabled = csIsMasterLinked_(res);
+  $('#ci-level-note').hidden = !csIsMasterLinked_(res);
   $('#ci-copay').value      = res.copayRate       || 1;
   // 旧フィールド welfareEquipCost(円) → 新 welfareEquipUnits(単位) へ移行
   $('#ci-welfare').value    = (res.welfareEquipUnits != null) ? res.welfareEquipUnits : '';
@@ -7116,7 +7129,7 @@ async function saveCareInfo() {
   if (!res) return;
   const rid = res.id;
   const patch = {
-    careLevel: $('#ci-level').value,
+    careLevel: csIsMasterLinked_(res) ? (res.careLevel || '') : $('#ci-level').value,   /* マスタとつながっている方は変えない */
     copayRate: Number($('#ci-copay').value) || 1,
     welfareEquipUnits: Math.max(0, Number($('#ci-welfare').value) || 0)
   };
@@ -7126,7 +7139,7 @@ async function saveCareInfo() {
     const r = DB.residents.find(x => String(x.id) === String(rid));
     if (!r) return false;
     let changed = false;
-    if (r.careLevel !== patch.careLevel) { r.careLevel = patch.careLevel; changed = true; }
+    if (!csIsMasterLinked_(r) && r.careLevel !== patch.careLevel) { r.careLevel = patch.careLevel; changed = true; }
     if (Number(r.copayRate) !== patch.copayRate) { r.copayRate = patch.copayRate; changed = true; }
     if (Math.max(0, Number(r.welfareEquipUnits) || 0) !== patch.welfareEquipUnits) { r.welfareEquipUnits = patch.welfareEquipUnits; changed = true; }
     if (r.welfareEquipCost !== undefined) { delete r.welfareEquipCost; changed = true; }  // 旧フィールド除去
@@ -8320,7 +8333,9 @@ function renderResidentBulkRows_() {
     h += `<tr data-rid="${escHtml(String(res.id))}">`
       + `<td class="rl-name">${escHtml(res.name || '（無名）')}</td>`
       + `<td><input class="inp rb-kana" type="text" value="${escHtml(res.kana || '')}" placeholder="ふりがな" style="min-width:96px;text-align:start"></td>`
-      + `<td><select class="inp rb-level" data-on-change="rbPreview_" data-this="1">${levelOpt(res.careLevel)}</select></td>`
+      + (csIsMasterLinked_(res)
+          ? `<td><select class="inp rb-level" data-on-change="rbPreview_" data-this="1" disabled title="介護度は入居者マスタで直してください" aria-label="介護度（入居者マスタで直してください）">${levelOpt(res.careLevel)}</select></td>`
+          : `<td><select class="inp rb-level" data-on-change="rbPreview_" data-this="1">${levelOpt(res.careLevel)}</select></td>`)
       + `<td><select class="inp rb-copay">${copayOpt(res.copayRate)}</select></td>`
       + `<td><input class="inp rb-welfare" type="number" min="0" step="1" value="${welfare}" data-on-change="rbPreview_" data-this="1"></td>`
       + `<td><input type="checkbox" class="rb-target"${res.targetSchedule === false ? '' : ' checked'}></td>`
@@ -8352,7 +8367,7 @@ async function saveResidentBulk_() {
     const rid = tr.getAttribute('data-rid');
     const res = DB.residents.find(r => String(r.id) === String(rid));
     if (!res) continue;                                   // 存在しないidはスキップ（空上書き防止）
-    const level = tr.querySelector('.rb-level').value;
+    const level = csIsMasterLinked_(res) ? (res.careLevel || '') : tr.querySelector('.rb-level').value;   /* マスタとつながっている方は変えない */
     const copay = Number(tr.querySelector('.rb-copay').value);
     const welfareRaw = tr.querySelector('.rb-welfare').value;
     const target = tr.querySelector('.rb-target').checked;
@@ -8372,7 +8387,7 @@ async function saveResidentBulk_() {
     patches.forEach(p => {
       const r = DB.residents.find(x => String(x.id) === String(p.id));
       if (!r) return;                                     // 削除済みidはスキップ（空上書き防止）
-      if (r.careLevel !== p.careLevel) { r.careLevel = p.careLevel; changed = true; }
+      if (!csIsMasterLinked_(r) && r.careLevel !== p.careLevel) { r.careLevel = p.careLevel; changed = true; }
       if (Number(r.copayRate) !== p.copayRate) { r.copayRate = p.copayRate; changed = true; }
       if (Math.max(0, Number(r.welfareEquipUnits) || 0) !== p.welfareEquipUnits) { r.welfareEquipUnits = p.welfareEquipUnits; changed = true; }
       if ((r.targetSchedule !== false) !== p.targetSchedule) { r.targetSchedule = p.targetSchedule; changed = true; }

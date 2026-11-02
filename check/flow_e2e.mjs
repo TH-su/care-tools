@@ -173,8 +173,10 @@ const othersIn = (text) => NAMES.filter((n) => n !== ME.name && String(text || '
 async function flow1() {
   console.log('\n— (1) 入居者マスタで直した値が、フェイスシート・週間計画・デイ利用表に載る —');
   const db = F.careDb();
-  /* 週間計画の側では、この方の介護度を空にしておく（週間計画はマスタの介護度を「空の時だけ」取り込む作り） */
-  db.residents.find((r) => String(r.masterId) === ME.id).careLevel = '';
+  /* 週間計画の側には、この方の古い介護度（マスタで直す前の値）が入ったままにしておく。
+     週間計画は介護度を入居者マスタに合わせる（マスタを正にする・代表者の決定 2026-11-02）ので、直した値に変わるはず */
+  const csMe = db.residents.find((r) => String(r.masterId) === ME.id);
+  if (!csMe.careLevel || csMe.careLevel === '要介護3') csMe.careLevel = '要介護1';
   const env = await makeEnv({ kvSeed: { care_schedule_v2: db } });
   try {
     /* 直す前のデイ利用表: この方は1階（居室 101） */
@@ -237,7 +239,7 @@ async function flow1() {
     await shot(page, 'flow1-facesheet');
     await page.close();
 
-    /* 週間計画: マスタの名簿から介護度を取り込む（空の時だけ取り込む作り＝ここでは空にしてある）。
+    /* 週間計画: マスタの名簿から介護度を取り込む（入っている介護度もマスタの値にそろえる）。
        ?masterId= で開くと「初めての端末」の不具合（(2b) を参照）に当たるので、ここでは一覧から選ぶ */
     page = await open(env, 'care-schedule.html');
     await page.waitForFunction(() => document.querySelectorAll('#resident-select option').length > 3, null, { timeout: 15000 });
@@ -249,7 +251,11 @@ async function flow1() {
       return o && o.value ? { name: o.textContent.trim(), level: lv ? lv.textContent.trim() : '' } : null;
     }));
     t('週間計画: 一覧から ' + ME.name + ' を選べる（入居者マスタの番号でつながっている）', sel && sel.name === ME.name, sel);
-    t('週間計画: 介護度が入居者マスタの 要介護3 になる', sel && sel.level === '要介護3', sel);
+    t('週間計画: 入っていた介護度（要介護1）が入居者マスタの 要介護3 にそろう', sel && sel.level === '要介護3', sel);
+    /* 介護情報の窓: マスタとつながっている方は介護度を直せず、「入居者マスタで直してください」と出る */
+    const ci = await page.evaluate(() => { openCareInfoModal(); const s = document.getElementById('ci-level'); const n = document.getElementById('ci-level-note');
+      const r = { disabled: !!(s && s.disabled), value: s ? s.value : '', note: !!(n && !n.hidden && n.offsetParent) }; closeCareInfoModal(); return r; });
+    t('週間計画: 介護情報の窓では介護度を直せず、入居者マスタで直すよう案内が出る', ci.disabled && ci.value === '要介護3' && ci.note, ci);
     await shot(page, 'flow1-care-schedule');
     await page.close();
 
