@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-font">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4tatwB5n4oQfG1K2BhClN4+9jBVdFhmNYce1TbRTqzo=' 'sha256-L161F5mNYBVQ6h5kXmzqzw26TeaLP6MNFwQTC3WrtnY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4tatwB5n4oQfG1K2BhClN4+9jBVdFhmNYce1TbRTqzo=' 'sha256-tELDASCrXQ2MCdcVeR7YGq5C4GUt/KPU3qxq87VB3Eo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 入居者情報を表示する画面のため、ブラウザ・中継キャッシュに残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -15,6 +15,7 @@
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
+<script src="su-resident-hop.js?v=2026-11-02"></script>
 <script>
 !function(t,e){"object"==typeof exports&&"undefined"!=typeof module?module.exports=e():"function"==typeof define&&define.amd?define(e):(t="undefined"!=typeof globalThis?globalThis:t||self).Konva=e()}(this,(function(){"use strict";
 /*
@@ -265,6 +266,7 @@ textarea.fi{resize:vertical;min-height:60px}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-02">
+<link rel="stylesheet" href="su-resident-hop.css?v=2026-11-02">
 </head>
 <body>
 
@@ -293,6 +295,8 @@ textarea.fi{resize:vertical;min-height:60px}
     <button class="sync-btn" id="btnSyncNow" title="今すぐ同期">↻ 同期</button>
     <span class="sync-pending" id="syncPending" hidden></span>
   </div>
+  <!-- 入居者マスタやほかの画面の「この方の画面：」から、ある方で開いた時だけ出す本人確認の帯（代表者の決定 2026-11-02 案A・画面だけ） -->
+  <div class="srh-bar" id="suHopBar" role="status" aria-live="polite" hidden></div>
 </div>
 
 <!-- Cloud Settings Modal -->
@@ -1207,7 +1211,29 @@ function applyZOrder() {
 }
 
 // ========== Render ==========
+/* 本人確認の帯（「〇〇さんを開いています」＋「この方の画面：」）。?resident=&name= で開いた方の図を開いている間だけ出す。
+   別の方の図に切り替えたら消す（帯が取り違えの元にならないように）。出し消しで作図の枠の高さが変わるので、その時だけ枠を合わせ直す */
+let suHopKey = '';
+function suHopSync() {
+  const bar = $('suHopBar'); if (!bar) return;
+  const id = window._suMasterId, nm = window._suMasterName;
+  const on = !!(id && nm && state.clientName === nm && typeof SUResHop === 'object' && SUResHop);
+  const key = on ? id + '\n' + nm : '';
+  if (key === suHopKey) return;
+  suHopKey = key;
+  if (!on) { bar.hidden = true; bar.textContent = ''; }
+  else {
+    const who = document.createElement('span');
+    const b = document.createElement('b'); b.textContent = nm;
+    who.appendChild(b); who.appendChild(document.createTextNode('さんを開いています'));
+    bar.textContent = ''; bar.appendChild(who);
+    bar.insertAdjacentHTML('beforeend', SUResHop.html('genogram.html', id, nm));   /* 部品が全部の値を esc して返す */
+    bar.hidden = false;
+  }
+  window.dispatchEvent(new Event('resize'));   /* 作図の枠の高さを合わせ直す（resize の処理が fitStageSize と render をする） */
+}
 function render() {
+  suHopSync();
   layerMain.destroyChildren();
   computeZMap();
 

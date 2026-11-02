@@ -62,7 +62,7 @@ const evil = office.html('facesheet.html', '12', '"><img src=x onerror=alert(1)>
 t('4b 氏名に危ない文字があっても属性の外に出ない', !/<img/i.test(evil) && !/"><img/.test(evil), evil);
 
 console.log('5 帯に入れた画面');
-for (const pg of ['facesheet.html', 'weight-record.html']) {
+for (const pg of ['facesheet.html', 'weight-record.html', 'genogram.html']) {
   const s = fs.readFileSync(path.join(ROOT, pg), 'utf8');
   t('5a ' + pg + ': 部品と CSS を読み込む', /<script src="su-resident-hop\.js\?v=[0-9.-]+"><\/script>/.test(s) && /<link rel="stylesheet" href="su-resident-hop\.css\?v=[0-9.-]+">/.test(s), '');
   t('5b ' + pg + ': 自分の画面の名前で呼ぶ', s.indexOf("SUResHop.html('" + pg + "'") >= 0, '');

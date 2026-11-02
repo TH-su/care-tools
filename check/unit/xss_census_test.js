@@ -323,7 +323,8 @@ const CENSUS = {
     [E, "bar.innerHTML='<span>'+msg+'</span><button type=\"button\" id=\"fromMasterClose\">一覧に戻る</button>'+hop"]
   ],
   "genogram.html": [
-    [F, "sel.innerHTML = '<option value=\"\">— 保存済みから読込 —</option>'"]
+    [F, "sel.innerHTML = '<option value=\"\">— 保存済みから読込 —</option>'"],
+    [E, "bar.insertAdjacentHTML('beforeend', SUResHop.html('genogram.html', id, nm))"]   /* 部品が全部の値を esc して返す（試験 resident_hop_test） */
   ],
   "help.html": [],
   "index.html": [],

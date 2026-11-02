@@ -14,3 +14,11 @@
   .srh { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 2px; }
 }
 @media print { .srh { display: none !important; } }
+
+/* 本人確認の帯を持っていなかった画面に足す帯（家族構成図など）。見出しのすぐ下・注意の色（入居者マスタから開いた時の帯と同じ） */
+.srh-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 6px 14px;
+  background: var(--warn-bg, #fdf3e3); color: var(--warn-tx, #6a3e00); border-top: 1px solid currentColor; font-size: 0.875rem;
+}
+.srh-bar[hidden] { display: none !important; }
+@media print { .srh-bar { display: none !important; } }
