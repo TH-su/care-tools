@@ -71,6 +71,13 @@ body {
 }
 .pane.left  .pane-tag { background: var(--pri-d); }
 .pane.right .pane-tag { background: var(--orange); }
+/* 札を中の画面の見出しの上に重ねると、見出しの文字（「訪問 週間俯瞰」など）にかぶっていた。
+   画面では重ねずに、それぞれの画面のすぐ上の細い帯に置く（印刷は変えない＝@media screen の中だけ・2026-11-02 推奨どおり） */
+@media screen {
+  .pane { display: flex; flex-direction: column; }
+  .pane-tag { position: static; align-self: flex-start; flex-shrink: 0; margin: 4px 8px; box-shadow: none; }
+  .pane iframe { flex: 1 1 auto; height: auto; min-height: 0; }
+}
 
 /* 狭い画面（タブレット縦・スマホ）は上下2段に */
 @media (max-width: 860px) {
