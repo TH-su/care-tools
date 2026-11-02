@@ -1100,6 +1100,7 @@
     try { await loadAdmRuns(sb); } catch (e) { $('admf-verdict').className = 'msg warn'; $('admf-verdict').textContent = '入居調整の写しの記録を読めませんでした。'; }
     try { await loadAdmMode(sb); } catch (e) { /* 0042 の前・読めない時はボタンを出さない */ }
     try { await loadStf(sb); } catch (e) { $('stf-verdict').className = 'msg warn'; $('stf-verdict').textContent = '職員マスタの写しの記録を読めませんでした。'; }
+    try { await loadSup(sb); } catch (e) { $('sup-verdict').className = 'msg warn'; $('sup-verdict').textContent = '備品の写しの記録を読めませんでした。'; }
     try { await loadStfMode(sb); } catch (e) { /* 0045 の前・読めない時はボタンを出さない */ }
     try { await loadPatch(sb); }
     catch (e) {
@@ -1409,6 +1410,39 @@
   /* 職員マスタの写し（統合 0044・2026-11-02 代表者「全て進めて」）: 写しは職員マスタの GAS が1時間ごとに自動で取る。
    * ここでは写しの人数・版（stf_shadow_status）と、この端末の職員マスタの接続先（stfm_cfg）の今の版（ping・合言葉なし）を見比べる。
    * 出すのは人数・版・時刻・断った種類だけ（氏名・中身は出さない） */
+  /* 備品の写し（統合 0046・2026-11-02 代表者「全て進めて」案2）: 写しは消耗品管理の GAS が1時間ごとに自動で取る。
+   * 消耗品管理には全体の版の番号が無いので、最後の写しの結果と時刻（75分以内なら届いている）で確かめる。
+   * 出すのは品目の数・出庫の行数・時刻・断った種類だけ（品名・入居者・金額は出さない）。Google へは何も送らない */
+  var SUP_FRESH_MS = 75 * 60 * 1000;
+  var SUP_REFUSED = { stale: '前に読んだ写し', shrink: '急に減った', badrow: '形の違い', toolarge: '大きすぎる' };
+  async function loadSup(sb, nowMs) {
+    var kk = $('sup-kpis'), v = $('sup-verdict'), ul = $('sup-runs');
+    function say(t, kind) { v.className = 'msg' + (kind ? ' ' + kind : ''); v.textContent = t; }
+    kk.replaceChildren(); ul.replaceChildren();
+    var st = await sb.rpc('sup_shadow_status');
+    if (st.error) { say('備品の写しの準備（データベース 0046）はまだです。'); return; }
+    var d = st.data || {};
+    if (d.ver == null) { say('まだ写していません。消耗品管理の GAS の自動（autoMirror）が動くと、1時間以内に写ります。'); return; }
+    kk.appendChild(kpi('写しの品目', d.items, '件'));
+    kk.appendChild(kpi('写しの出庫', d.moves, '行'));
+    var tail = '（最後に写した時刻 ' + fmtTime(d.lastAt || d.updatedAt) + '）';
+    var last = Date.parse(d.lastAt || d.updatedAt || '');
+    var now = typeof nowMs === 'number' ? nowMs : Date.now();
+    if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + (SUP_REFUSED[d.lastRefused] || String(d.lastRefused || '')) + '）。開発の担当へ知らせてください。' + tail, 'warn');
+    else if (!isNaN(last) && now - last <= SUP_FRESH_MS) say('写しが1時間ごとに届いています。' + tail, 'ok');
+    else say('しばらく写っていません。消耗品管理の GAS の自動（autoMirror）が止まっていないか確かめてください。' + tail, 'warn');
+    var r = await sb.from('sup_sync_runs').select('at,status,refused,result,items,moves').order('id', { ascending: false }).limit(5);
+    (r.data || []).forEach(function (x) {
+      var li = el('li'), left = el('div');
+      left.appendChild(el('div', 'nm', fmtTime(x.at)));
+      left.appendChild(el('div', 'em', x.status === 'done'
+        ? '品目 ' + x.items + '件／出庫 ' + x.moves + '行／' + (ADM_RESULT[x.result] || '')
+        : '受け付けず（' + (SUP_REFUSED[x.refused] || String(x.refused || '')) + '）'));
+      li.appendChild(left);
+      ul.appendChild(li);
+    });
+  }
+
   var STF_REFUSED = { stale: '古い版', shrink: '急に減った', badrow: '形の違い', toolarge: '大きすぎる' };
   function stfUrl() {
     try { var o = JSON.parse(localStorage.getItem('stfm_cfg') || 'null'); var u = String(o && o.url || '').trim(); return RMASTER_RE.test(u) ? u : ''; } catch (e) { return ''; }
