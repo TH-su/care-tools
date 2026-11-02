@@ -135,7 +135,7 @@
       var k = deviceKey();
       if (!k) return;
       return fetch(ENDPOINT, {
-        method: 'POST', keepalive: true, credentials: 'omit',
+        method: 'POST', credentials: 'omit',   // keepalive は付けない（事前の確かめと併せると古い端末で断られることがある・開いた時に送るので要らない）
         headers: { 'Content-Type': 'application/json', apikey: PUBLISHABLE },
         body: JSON.stringify({ k: k, role: r, login: !!login })
       }).then(function (res) {
