@@ -373,6 +373,14 @@ button.geno-box{width:100%; margin:0; padding:0; font:inherit; color:inherit; li
 /* 共通の見た目（su-theme.css）は幅899px以下でボタンを最低44pxにする（:root[data-su-theme] button）。
    枠の高さ320pxがそれに負けないよう、id を付けて強くする */
 #viewBox button.geno-box{min-height:320px}
+/* PC・MacBook（幅900px以上）では、家族構成図の絵を今の面積の約6分の1（縦・横とも約41%）にする（本人指示 2026-11-03）。
+   枠（押すと家族構成図を開く所）の大きさは変えず、絵だけを小さくする。iPhone・iPad 縦（899px以下）は今のまま */
+@media screen and (min-width:900px){
+  #viewBox .geno-img{max-width:41%}
+  #viewBox button.geno-box .geno-img{max-height:360px}
+  /* 絵がある時は、枠も絵に合わせて低くする（余白の枠を残さない）。絵が無い時の枠は今の高さのまま */
+  #viewBox button.geno-box:has(.geno-img){min-height:0; padding:8px 0}
+}
 
 .detail-actions{display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; align-items:center}
 .btn{padding:10px 16px; border:none; border-radius:10px; font-size: 0.875rem; font-weight:700; min-height:44px}
@@ -419,6 +427,10 @@ button.geno-box{width:100%; margin:0; padding:0; font:inherit; color:inherit; li
   .geno-hint{display:none !important}
   /* 家族構成図は紙にも出す。<img> なので「背景のグラフィックを印刷」の設定に左右されない */
   .geno-img{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+  /* 紙でも家族構成図の絵を今の面積の約6分の1（横幅の約41%・高さは 85mm まで）にする（本人指示 2026-11-03） */
+  .geno-img{max-width:41% !important; max-height:85mm !important}
+  /* 絵がある時は、枠も絵に合わせて低くする。絵が無い時の枠（手で書き足す所）は今の高さのまま */
+  #viewBox button.geno-box:has(.geno-img){min-height:0 !important}
   .hlband{-webkit-print-color-adjust:exact; print-color-adjust:exact}
   .hlchip{-webkit-print-color-adjust:exact; print-color-adjust:exact}
   @page{size:A4; margin:10mm}
