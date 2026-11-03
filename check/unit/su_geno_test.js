@@ -131,7 +131,10 @@ const DOC = { clientName: '架空 一郎', nodes: [], lines: [], updatedAt: '202
     t('D 現場のアカウントの一覧 → データベースから', r4.d.items && c.names().includes('geno_list'));
     const d = box({ flags: ON, mode: 'live', rpcErr: { code: '42501' } });
     const r5 = await d.call('save', { doc: DOC });
-    t('D データベースが権限で断った保存 → 「見るだけ」', r5.d.code === 'su_view');
+    t('D 事務所のアカウントがデータベースに権限で断られた保存 → 「このアカウントでは使えません」（見るだけではない・指摘8）', r5.d.code === 'su_role' && /使えません/.test(r5.d.error));
+    const d2 = box({ flags: ON, mode: 'live', role: 'field', rpcErr: { code: '42501' } });
+    const r5b = await d2.call('list', {});
+    t('D 現場のアカウントが権限で断られた → 「見るだけ」', r5b.d.code === 'su_view');
     const e = box({ flags: ON, mode: 'live', status: 'mfa_verify', rpcErr: { code: '42501' } });
     const r6 = await e.call('save', { doc: DOC });
     t('D 2段階認証がまだ → 「2段階認証を済ませて」', r6.d.code === 'su_mfa' && /2段階認証/.test(r6.d.error));
@@ -150,7 +153,7 @@ const DOC = { clientName: '架空 一郎', nodes: [], lines: [], updatedAt: '202
     t('E 番号の無い失敗 → 通信の失敗（例外）', r3.e && /届きませんでした/.test(r3.e.message));
     const e = box({ flags: ON, mode: 'live', reply: null });
     const r4 = await e.call('get', { name: 'a' });
-    t('E 空の応答 → 断り（中身を作らない）', r4.d.code === 'su_empty' && r4.d.ok === false);
+    t('E 空の応答 → 断り（中身を作らない）・確かめられないので keep（保留に残す・指摘6）', r4.d.code === 'su_empty' && r4.d.ok === false && r4.d.keep === true && /読み込み直して/.test(r4.d.error));
   }
 
   console.log('F 写しの期間へ戻った');
@@ -191,20 +194,61 @@ const DOC = { clientName: '架空 一郎', nodes: [], lines: [], updatedAt: '202
     t('H 読み取りの前は印を読み直す', b.names().filter(n => n === 'geno_mode_get').length === 2);
     t('H 端末に書くのはスイッチの控えだけ', b.writes.every(k => k === 'su_backend_flags'), b.writes);
     t('H liveHint・isLive は切り替えた後だけ真', b.w.SUGeno.liveHint() === true && b.w.SUGeno.isLive() === true && box({ flags: ON }).w.SUGeno.liveHint() === false);
+    const fd = box({ flags: ON, mode: 'live', field: true });
+    await fd.call('list', {});
+    t('H 現場の端末は liveHint・probe とも偽（URL の無い現場の端末が新しく全件を読みに行かない・指摘9）', fd.w.SUGeno.liveHint() === false && (await fd.w.SUGeno.probe()) === false);
+    const cb = box({ flags: ON });
+    t('H コピーを止める: スイッチ入で印が分からない間は止める', cb.w.SUGeno.copyBlocked() === true);
+    const cs = box({ flags: ON, mode: 'shadow' });
+    await cs.call('list', {});
+    t('H コピーを止める: 写しの期間と確かめた後は止めない・スイッチ切は止めない', cs.w.SUGeno.copyBlocked() === false && box({}).w.SUGeno.copyBlocked() === false);
+    const lv = box({ flags: ON, mode: 'live' });
+    await lv.call('list', {});
+    t('H コピーを止める: 切り替えた後は止める（指摘10）', lv.w.SUGeno.copyBlocked() === true);
+  }
+
+  console.log('R 古い印で Google へ送った（切り替えた直後）');
+  {
+    let m = 'shadow';
+    const b = box({ flags: ON, gasReply: { ok: false, error: '切り替え済み', code: 'geno_switched' } });
+    // 1回目の印は shadow、Google が geno_switched → 印を読み直す（2回目は live）→ データベースへ
+    const orig = b.w.SUAuth.client;
+    b.w.SUAuth.client = () => { const c = orig(); const rpc = c.rpc; return { rpc: (n, a) => (n === 'geno_mode_get' ? (b.rpcs.push({ n, a: {} }), Promise.resolve({ data: { ok: true, mode: (m = m === 'shadow' ? 'live' : m, m === 'live' && b.rpcs.filter(x => x.n === 'geno_mode_get').length === 1 ? 'shadow' : 'live') } })) : rpc(n, a)) }; };
+    const r = await b.call('save', { doc: DOC });
+    t('R Google の geno_switched → 印を読み直して1回だけ決め直し、データベースへ送る（指摘4）', r.d && r.d.ok === true && r.d.saved && b.gas() === 1 && b.names().includes('geno_save'), b.names());
+    const c = box({ flags: ON, mode: 'shadow', gasReply: { ok: false, error: '切り替え済み', code: 'geno_switched' } });
+    const r2 = await c.call('save', { doc: DOC });
+    t('R 決め直しても Google が断るなら、2回目でやめて断りを返す（回り続けない）', r2.d.code === 'geno_switched' && c.gas() === 2);
   }
 
   console.log('S 画面');
   {
-    t('S su-geno.js を読み込む', /<script src="su-geno\.js\?v=2026-11-03"><\/script>/.test(PAGE));
-    t('S gasCall は SUGeno に通し、Google へ送る関数（gasCallGoogle）は今までの fetchWithRetry のまま', /window\.SUGeno\.call\(action, params \|\| \{\}, \(\) => gasCallGoogle\(action, params, opts\), \{ residentId: ridFor\(action, params\) \}\)/.test(PAGE)
+    t('S su-geno.js を読み込む', /<script src="su-geno\.js\?v=2026-11-03\.2"><\/script>/.test(PAGE));
+    t('S gasCall は SUGeno に通し、Google へ送る関数（gasCallGoogle）は今までの fetchWithRetry のまま', /const rid = \(opts && 'rid' in opts\) \? \(opts\.rid \|\| null\) : ridFor\(action, params\);[\s\S]{0,120}window\.SUGeno\.call\(action, params \|\| \{\}, \(\) => gasCallGoogle\(action, params, opts\), \{ residentId: rid \}\)/.test(PAGE)
       && /async function gasCallGoogle\(action, params, opts\) \{[\s\S]*?headers: \{ 'Content-Type': 'text\/plain;charset=utf-8' \}, redirect: 'follow' \};[\s\S]*?return await fetchWithRetry\(url, init, undefined, async \(res\) => \{\s*if \(!res\.ok\) throw new Error\('GAS HTTP ' \+ res\.status\);\s*return await res\.json\(\);/.test(PAGE));
-    t('S 利用者No は ?resident= の方の図（suGenoMasterIdFor）と保留に積んだ時の値だけ', /function ridFor\(action, params\) \{[\s\S]*?flushRid && flushRid\.name === name[\s\S]*?suGenoMasterIdFor\(name, mid, window\._suMasterName\) \? String\(mid\) : null;/.test(PAGE)
+    t('S 利用者No は ?resident= の方の図（suGenoMasterIdFor）と保留に積んだ時の値だけ', /function ridFor\(action, params\) \{[\s\S]*?suGenoMasterIdFor\(name, mid, window\._suMasterName\) \? String\(mid\) : null;/.test(PAGE)
       && /out\.rid = ridFor\(/.test(PAGE));
-    t('S code 付きの断り（geno_・su_）は err.refused（keep は保留に残す）', /\/\^\(geno_\|su_\)\/\.test\(json\.code\)[\s\S]{0,200}err\.refused = !json\.keep;/.test(PAGE));
+    t('S 保留の再送は積んだ時の利用者No を送信ごとに明示して渡す（共有の変数を使わない・指摘7）', !/flushRid/.test(PAGE)
+      && /const ro = \('rid' in item\) \? \{ rid: item\.rid \|\| null \} : undefined;[\s\S]{0,400}const get = \(n\) => getQ\(n, ro\);/.test(PAGE)
+      && /await saveAndMarkBaseline\(doc, item\.base, item\.dirtySeq, ro\)/.test(PAGE) && /await del\(item\.name, \('base' in item\) \? item\.base : undefined, ro\)/.test(PAGE) && /await get\(item\.name, ro\)/.test(PAGE));
+    t('S 保留から外す（err.refused）のは中身・取り違えの守りの断りだけ（ログイン・役割・混み合い等は残す・指摘4）', /const GENO_FINAL_CODES = \['geno_toolarge', 'geno_toomany', 'geno_badchar', 'geno_badname', 'geno_other_resident', 'geno_ambiguous', 'geno_name_taken_by_link', 'su_view'\];/.test(PAGE)
+      && /err\.refused = GENO_FINAL_CODES\.indexOf\(json\.code\) >= 0;/.test(PAGE));
     t('S 保留の再送で断られた項目は外す・直接の保存は積まない・削除は端末の図を残す', /if \(e && e\.refused\) \{[\s\S]{0,300}done\.push\(\{ item, landed: null \}\)/.test(PAGE)
       && /\} else if \(err && err\.refused\) \{[\s\S]{0,600}クラウドへは保存されていません/.test(PAGE) && /if \(err && err\.refused\) \{[\s\S]{0,300}削除できませんでした（端末の図も残しています）/.test(PAGE));
-    t('S この方に結び付いた図は、氏名が URL と違っても masterId のキーを書く', /var bd = window\._suGenoBound;\s*if \(bd && bd\.id === mid && bd\.name === String\(docName == null \? '' : docName\)\) return mid;/.test(PAGE));
-    t('S 切り替えた後は受け口のコードをコピーしない', /if \(window\.SUGeno && window\.SUGeno\.isLive\(\)\) \{[\s\S]{0,200}この画面からはコピーしません/.test(PAGE));
+    t('S この方に結び付いた図は、氏名が URL と違っても masterId のキーを書く', /var bd = window\._suGenoBound;\s*if \(bd && bd\.id === mid && bd\.name === dn\) return mid;/.test(PAGE));
+    t('S 別の方・同姓同名の方の図の名前は、この方のキーを書かない（指摘2）', /if \(window\._suGenoBlocked && Object\.prototype\.hasOwnProperty\.call\(window\._suGenoBlocked, dn\)\) return '';/.test(PAGE));
+    t('S 名前を直した方の図: 帯（本人確認）と古いサムネイルの片付けも結び付いた図を正しいとみなす（指摘3）', /bd && bd\.id === String\(id\) && bd\.name === state\.clientName/.test(PAGE) && /if \(bd && bd\.id === k && String\(bd\.name\)\.replace\(\/\\s\+\/g, ''\) === got\) return;/.test(PAGE));
+    t('S 切り替えた後・分からない間は受け口のコードをコピーしない（ボタンも隠す・指摘10）', /if \(window\.SUGeno && window\.SUGeno\.copyBlocked\(\)\) \{[\s\S]{0,200}この画面からはコピーしません/.test(PAGE) && /\$\('btnCopyGas'\)\.hidden = !!\(window\.SUGeno && window\.SUGeno\.copyBlocked\(\)\)/.test(PAGE));
+    t('S 名前の違う図を「届いていた」と見ない（中身の比べに氏名を入れる・指摘5）', /const pick = \(d\) => JSON\.stringify\(\{ clientName: d\.clientName, canvasSize/.test(PAGE));
+    t('S 起動の後に切り替えた後と分かったら、描き変えていなければこの方の図を読み直す（指摘1）', /if \(suName\) \{\s*Promise\.resolve\(bootLoad\)[\s\S]{0,200}if \(state\.clientName === suName && !hasUnsavedChanges\(\)\) \{[\s\S]{0,200}return loadDoc\(suName, \{ silentIfMissing: true \}\);/.test(PAGE));
+    const ld = (PAGE.match(/async function loadDoc\(name, opts\) \{[\s\S]*?\n\}\n/) || [''])[0];
+    t('S 読込: 別の方・同姓同名の方の図は端末の図も使わず・基準も変えず・消えない帯と知らせで止める（指摘2）', /const blockedWhy = CloudSync\.blockedWhy\(name\);\s*if \(blockedWhy\) \{\s*setSyncStatus\('err', blockedWhy\);\s*alert\(blockedWhy\);[\s\S]{0,200}markClean\(\);\s*return;\s*\}/.test(ld)
+      && ld.indexOf('CloudSync.blockedWhy(name)') < ld.indexOf('cloudSeenAt = remote.updatedAt'));
+    t('S 読込: 名前を直した方の図は、その図の名前で読み直す（端末の控え・基準・最後に開いた図をそろえる・1回だけ・指摘3）', /if \(remote && remote\.clientName != null && String\(remote\.clientName\) !== String\(name\) && !\(opts && opts\._redirected\)\) \{\s*return await loadDoc\(String\(remote\.clientName\), Object\.assign\(\{\}, opts \|\| \{\}, \{ _redirected: true \}\)\);/.test(ld)
+      && /CloudSync\.get\(name, \{ allowOther: true \}\)/.test(ld));
+    t('S 保存の前の確かめ: 名前の違う図は別の図（null）として扱う（同じ図との食い違いにしない・指摘3）', /if \(d && d\.clientName != null && String\(d\.clientName\) !== String\(name\) && !\(opts && opts\.allowOther\)\) return null;/.test(PAGE));
+    t('S 別の方・同姓同名の方の図の印は、この画面の間だけ持ち（端末に書かない）・その名前では保存しない（指摘2）', /window\._suGenoBlocked\[String\(name\)\] = why;\s*return null;/.test(PAGE) && !/localStorage\.setItem\([^)]*_suGenoBlocked/.test(PAGE)
+      && /const blockedWhy = CloudSync\.blockedWhy\(name\);\s*if \(blockedWhy\) \{ alert\(/.test(PAGE));
     const m = PAGE.match(/const GAS_SCRIPT_CODE = (`[\s\S]*?\n`);/);
     const v = m ? vm.runInNewContext(m[1]) : '';
     const h = crypto.createHash('sha256').update(v).digest('hex');

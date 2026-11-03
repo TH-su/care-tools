@@ -49,7 +49,7 @@
   function flags() {
     try { if (root.SUKv && typeof root.SUKv._flags === 'function') return root.SUKv._flags(); } catch (e) { note('スイッチ', e); }
     if (ownFlags) return ownFlags;
-    try { return JSON.parse(root.localStorage.getItem(FLAGS_LS) || 'null'); } catch (e) { return null; }
+    try { return JSON.parse(root.localStorage.getItem(FLAGS_LS) || 'null'); } catch (e) { note('スイッチの控え', e); return null; }
   }
   function switchOn() { var f = flags(); return !!(f && f.supabase && typeof f.supabase === 'object' && f.supabase[FLAG] === true); }
   function refreshFlags() {
@@ -99,10 +99,10 @@
     net: '新しい保存先に届きませんでした。通信を確かめて、もう一度お試しください',
     timeout: '新しい保存先の応答が時間切れになりました。もう一度お試しください（保存は、読み込み直して確かめてください）',
     db: '新しい保存先が受け付けませんでした。この保存は入っていません。少し待ってから、もう一度お試しください（続く時は管理者へ連絡してください）',
-    empty: '新しい保存先の応答が空でした。読み込み直して、入っているか確かめてください'
+    empty: '新しい保存先の応答が空でした。保存は入っていないことがあります。読み込み直して、入っているか確かめてください'
   };
   // keep … 書いたか分からない・確かめられないだけ（画面は保留に残す）。それ以外は「書いていない」断り（保留から外す）
-  var KEEP = { mode: 1, noauth: 1 };
+  var KEEP = { mode: 1, noauth: 1, empty: 1 };
   function refusal(code) { return { ok: false, error: MSG[code], code: 'su_' + code, keep: !!KEEP[code] }; }
 
   /* データベースの印（geno_mode_get・ログインした使える人なら誰でも）。1分は覚える。関数が無い（0054 の前）時は 'shadow'。
@@ -168,7 +168,7 @@
       if (r && r.timeout) throw new Error(MSG.timeout);
       if (r && r.error) {
         var c = String(r.error.code || '');
-        if (c === '42501') return refusal(mfa ? 'mfa' : (WRITES[action] || view ? 'view' : 'role'));
+        if (c === '42501') return refusal(mfa ? 'mfa' : (view ? 'view' : 'role'));   // 見るだけは現場のアカウントだけ（ほかは使えないアカウント・指摘8）
         if (/PGRST202|42883/.test(c)) { modeCache = null; return refusal('mode'); }
         note(q.fn, c || 'error');
         if (c) return refusal('db');   // データベースが番号つきで断った（届いてはいる）
@@ -204,7 +204,7 @@
   function isSwitched(j) { return !!(j && typeof j === 'object' && j.code === 'geno_switched'); }
 
   /* 画面の入口。gasCall() は今までどおり Google へ送り、GAS の答え（JSON のもの）を返す関数（この部品は中身に触らない） */
-  function call(action, params, gasCall, ctx) {
+  function call(action, params, gasCall, ctx, replanned) {
     if (typeof action !== 'string') return gasCall();
     var t0 = Date.now();
     return refreshFlags().then(function () {
@@ -226,7 +226,11 @@
           });
         }
         if (p.kind === 'gas') {
-          return Promise.resolve(gasCall()).then(function (j) { if (isSwitched(j)) modeCache = null; return j; });
+          return Promise.resolve(gasCall()).then(function (j) {
+            if (!isSwitched(j)) return j;
+            modeCache = null; modeAt = 0;   // 古い印で Google へ送った（切り替えた直後）＝印を読み直して1回だけ決め直す（指摘4）
+            return replanned ? j : call(action, params, gasCall, ctx, true);
+          });
         }
         if (WRITES[action] && p.view) return refusal('view');               // 現場のアカウントは見るだけ（データベースも断る）
         var left = Math.max(1000, CALL_MS - (Date.now() - t0));
@@ -239,11 +243,11 @@
   }
 
   /* 切り替えた後は、端末に URL・合言葉が無くても同期してよいか（最後に確かめた印が live で、スイッチが入）。画面の「設定済みか」の判定に足す */
-  function liveHint() { return switchOn() && modeCache === 'live'; }
+  function liveHint() { return switchOn() && !fieldDevice() && modeCache === 'live'; }   // 現場の端末は今の接続設定のまま（新しく全件を読みに行かない・指摘9）
   /* 起動の時に1回: スイッチが入で、ログインしていて印が live なら true。例外は外へ出さない */
   function probe() {
     return refreshFlags().then(function () {
-      if (!switchOn()) return false;
+      if (!switchOn() || fieldDevice()) return false;
       return loadAuth().then(function (A) {
         if (!A) return false;
         return Promise.resolve(A.check()).then(function (st) {
@@ -254,10 +258,12 @@
       });
     }).then(function (v) { return !!v; }, function (e) { note('起動の確かめ', e); return false; });
   }
-  /* 切り替えた後か（スイッチが入で、最後に確かめた印が live）。画面の「GAS のコードをコピー」を出さない判定に使う */
+  /* 切り替えた後か（スイッチが入で、最後に確かめた印が live） */
   function isLive() { return switchOn() && modeCache === 'live'; }
+  /* 「GAS のコードをコピー」を止めるか: スイッチが入で、写しの期間と確かめられていない間（分からない・切り替えた後）は止める（指摘10） */
+  function copyBlocked() { return switchOn() && modeCache !== 'shadow'; }
 
-  root.SUGeno = { call: call, liveHint: liveHint, probe: probe, isLive: isLive, refreshFlags: refreshFlags,
+  root.SUGeno = { call: function (a, p, g, c) { return call(a, p, g, c, false); }, liveHint: liveHint, probe: probe, isLive: isLive, copyBlocked: copyBlocked, refreshFlags: refreshFlags,
     _forgetMode: function () { modeCache = null; modeAt = 0; },
     _reset: function () { modeCache = null; modeAt = 0; ownFlags = null; flagsAt = 0; flagsP = null; authP = null; } };
 })(typeof window !== 'undefined' ? window : this);

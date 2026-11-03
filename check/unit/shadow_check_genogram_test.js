@@ -145,6 +145,7 @@ const ST = (x) => Object.assign({ ok: true, ver: 1, docs: 30, linked: 26, unlink
   t('H 欄とボタン（初めは隠す）', /<h2>家族構成図の写し<\/h2>/.test(HTML) && /id="geno-kpis"/.test(HTML) && /id="geno-verdict"/.test(HTML) && /id="geno-size"/.test(HTML)
     && /<button type="button" class="btn" id="b-geno-cut" hidden>家族構成図を新しい保存先へ切り替える<\/button>/.test(HTML) && /<button type="button" class="btn" id="b-geno-back" hidden>家族構成図を写しの期間に戻す<\/button>/.test(HTML));
   t('H su-geno-full.js は画面の動きより先に読む（版の印つき）', /<script src="su-geno-full\.js\?v=\d{4}-\d{2}-\d{2}(\.\d+)?"><\/script>/.test(HTML) && HTML.indexOf('su-geno-full.js?v=') < HTML.indexOf('shadow-check.js?v='));
+  t('H 欄の説明は切り替えた後も嘘にならない（「正本は今までどおり Google」と言い切らない・指摘12）', /<h2>家族構成図の写し<\/h2>[\s\S]{0,600}切り替える前の正本は Google です（今の正本は下の欄に出ます）。/.test(HTML) && !/<h2>家族構成図の写し<\/h2>\s*<p class="muted">[^<]*正本は今までどおり Google です/.test(HTML));
   t('H 準備の帯の番号に 0053・0054', /geno_shadow_status: '0053'/.test(SRC) && /geno_mode_get: '0054'/.test(SRC));
   t('H ボタンは画面の動きにつないである', /\$\('b-geno-cut'\)\.addEventListener\('click', function \(\) \{ msg\(''\); runGenoOp\('cut'\); \}\);/.test(SRC) && /\$\('b-geno-back'\)\.addEventListener\('click', function \(\) \{ msg\(''\); runGenoOp\('back'\); \}\);/.test(SRC));
   t('H 操作は管理者（2段階認証済み）・事務所PCだけ・スイッチが入の時だけ切り替える', /function runGenoOp\(kind\) \{[\s\S]*me\.status === SUAuth\.STATUS\.OK[\s\S]*role === 'field'[\s\S]*genoOn\(\)/.test(fn('runGenoOp')));
