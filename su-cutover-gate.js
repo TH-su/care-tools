@@ -2,12 +2,14 @@
  *
  * 写しの見比べ（shadow-check）の5つの「切り替える／本番にする」ボタン（入居者マスタ・入居調整・訓練計画書・体重・職員マスタ）の前に出す4項目を判定する。
  * 4項目が全部そろった時だけボタンを押せる。そろわない項目には理由を出す。最後に決めるのは今までどおりデータベース（各 *_set_mode）。
- *   1 写しと正本の差が0件の日が3日以上続いている（統合 0053 の shadow_diff_days。見比べた日だけを数える。
+ *   1 写しと正本の差が0件の日が3日以上続いている（統合 0055 の shadow_diff_days。見比べた日だけを数える。
  *     今日まだ見比べていなければ昨日までで数え、今日の見比べで差があれば0日）
- *   2 ログインしていない端末が0台（統合 0048 の device_seen_summary。この7日に開いた端末。数が分からない時は満たさない扱い＝代表者の決定 2026-11-03）
+ *   2 ログインしていない端末が0台（統合 0048 の device_seen_summary。この7日に開いた端末。数が分からない時は満たさない扱い＝代表者の決定 2026-11-03。
+ *     この7日に1台も届いていない時も「分からない」（送るのが止まっても古い行は90日残り、7日の数が全部0になるため・反証レビュー指摘2）
  *   3 毎晩の業務の流れの通し試験（.github/workflows/flow-check.yml）の最後の回が合格で、26時間以内（公開リポジトリなので GitHub から読むだけ）
- *   4 今日（日本時間）すでに別の正本を切り替えていない（1日1つまで。操作の記録 audit_log の「本番にした」記録と、週間計画などの kv_families の印。
- *     写しの期間に戻した記録は数えない。同じ正本の切り替え直しは数えない）
+ *   4 今日（日本時間）すでに別の正本を切り替えていない（1日1つまで。操作の記録 audit_log の「本番にした」記録で数える＝entity が *_mode で値に live、
+ *     または kv_families で項目に mode:live（週間計画・ワークスケジュール・勤務表）。後から足した正本（家族構成図など）も *_mode なら数える。
+ *     写しの期間に戻した記録は数えない。同じ正本の切り替え直しは数えない。今日本番にしてから戻した日も数える）
  * ★純関数だけ（時計・画面・通信を使わない）。読んで渡すのは shadow-check.js の loadGate。試験: node check/unit/cutover_gate_test.js
  * ★出すのは日数・台数・試験の結果・正本の名前だけ（氏名・中身を扱わない）
  */
@@ -17,12 +19,13 @@
   var NEED_DAYS = 3;
   var FLOW_MAX_MS = 26 * 3600 * 1000;
   var KINDS = { res: '入居者マスタ', tp: '個別機能訓練計画書', adm: '入居調整', stf: '職員マスタ', weight: '体重' };
-  /* 操作の記録（audit_log）の entity → 正本の名前。値の配列（entity_ids）に 'live' がある行が「本番にした」記録 */
+  /* 操作の記録（audit_log）の entity → [種類, 正本の名前]。値の配列（entity_ids）に 'live' がある行が「本番にした」記録。
+   * ここに無い *_mode も「本番にした」記録として数える（名前は entity のまま。正本を足した時に数え漏れないように・反証レビュー指摘3） */
   var CUT_ENTITY = {
     res_mode: ['res', '入居者マスタ'], tp_mode: ['tp', '個別機能訓練計画書'], adm_mode: ['adm', '入居調整'], stf_mode: ['stf', '職員マスタ'],
-    weight_mode: ['weight', '体重'], sup_mode: ['sup', '備品'], sa_mode: ['sa', 'シフト分析']
+    weight_mode: ['weight', '体重'], sup_mode: ['sup', '備品'], sa_mode: ['sa', 'シフト分析'], geno_mode: ['geno', '家族構成図']
   };
-  /* 週間計画・ワークスケジュール・勤務表は kv_families の印（操作の記録に残らない） */
+  /* 週間計画・ワークスケジュール・勤務表は entity が kv_families・entity_ids が種類・fields に 'mode:live'（統合 0007・0009） */
   var KV_FAMILY = { care: '週間計画', ws_master: 'ワークスケジュール', wsday: 'ワークスケジュール', shift: '勤務表' };
 
   function pad(n) { return (n < 10 ? '0' : '') + n; }
@@ -60,10 +63,13 @@
     return { days: n, todayWorst: todayWorst };
   }
 
-  /* 2 ログインしていない端末（この7日）。sum = device_seen_summary の data。返す: 台数 か null（分からない） */
+  /* 2 ログインしていない端末（この7日）。sum = device_seen_summary の data。返す: 台数 か null（分からない）。
+   * この7日に1台も届いていなければ（ログイン中の端末も0台）、送るのが止まっている＝分からない */
   function unlogged(sum) {
     var rows = sum && Array.isArray(sum.rows) ? sum.rows : null;
     if (!rows || !rows.length) return null;
+    var seen = rows.reduce(function (n, x) { return n + (Number(x && x.d7) || 0); }, 0);
+    if (!(seen > 0)) return null;
     return rows.reduce(function (n, x) { return n + (x && x.login === false ? (Number(x.d7) || 0) : 0); }, 0);
   }
 
@@ -76,18 +82,21 @@
     return c[0] || null;
   }
 
-  /* 4 今日すでに切り替えた別の正本の名前（重なりなし）。audit = audit_log の行・kv = kv_families の行 */
-  function cutsToday(audit, kv, today, kind) {
+  /* 4 今日すでに切り替えた別の正本の名前（重なりなし）。audit = audit_log の行（at・entity・entity_ids・fields） */
+  function cutsToday(audit, today, kind) {
     var out = [];
     function add(name) { if (out.indexOf(name) < 0) out.push(name); }
     (Array.isArray(audit) ? audit : []).forEach(function (r) {
-      var e = r && CUT_ENTITY[r.entity];
-      if (!e || e[0] === kind || jstDay(r.at) !== today) return;
-      if (Array.isArray(r.entity_ids) && r.entity_ids.indexOf('live') >= 0) add(e[1]);
-    });
-    (Array.isArray(kv) ? kv : []).forEach(function (r) {
-      var nm = r && KV_FAMILY[r.family];
-      if (nm && r.mode === 'live' && jstDay(r.updated_at) === today) add(nm);
+      if (!r || jstDay(r.at) !== today) return;
+      var ids = Array.isArray(r.entity_ids) ? r.entity_ids : [], ent = String(r.entity || '');
+      if (ent === 'kv_families') {
+        if (Array.isArray(r.fields) && r.fields.indexOf('mode:live') >= 0) ids.forEach(function (f) { add(KV_FAMILY[f] || String(f)); });
+        return;
+      }
+      if (!/^[a-z_]+_mode$/.test(ent) || ids.indexOf('live') < 0) return;
+      var e = CUT_ENTITY[ent];
+      if (e && e[0] === kind) return;
+      add(e ? e[1] : ent);
     });
     return out;
   }
@@ -97,7 +106,7 @@
    *   diff: { rows } | { error: 'missing'|'denied'|'other' },
    *   dev:  { data } | { error },
    *   flow: { runs } | { error },
-   *   cut:  { audit, kv } | { error } }
+   *   cut:  { audit } | { error } }
    * 返す: { ok, items: [{ key, label, ok, value, why }] }（why は満たさない時だけ） */
   function judge(o) {
     o = o || {};
@@ -107,7 +116,7 @@
     var it1 = { key: 'diff', label: '写しと正本の差が0件の連続日数（3日以上）', ok: false, value: '—', why: '' };
     var d = o.diff || {};
     if (!KINDS[kind]) it1.why = '正本の種類が分かりません。';
-    else if (d.error === 'missing') it1.why = '差の記録の準備（データベース 0053）がまだです。';
+    else if (d.error === 'missing') it1.why = '差の記録の準備（データベース 0055）がまだです。';
     else if (d.error === 'denied') it1.why = '差の記録を見られるのは管理者（2段階認証まで済んだ状態）だけです。';
     else if (d.error || !Array.isArray(d.rows)) it1.why = '差の記録を読めませんでした（少し待って読み込み直してください）。';
     else {
@@ -126,7 +135,7 @@
     else if (v.error) it2.why = '端末の数を読めませんでした（少し待って読み込み直してください）。';
     else {
       var n = unlogged(v.data);
-      if (n == null) it2.why = '端末の数がまだ届いていません（端末の数を送るスイッチ device_seen が入ると、端末が画面を開いた日に届きます）。分からない時は0台とみなしません。';
+      if (n == null) it2.why = 'この7日に端末の数が届いていません（端末の数を送るスイッチ device_seen が入ると、端末が画面を開いた日に届きます）。分からない時は0台とみなしません。';
       else {
         it2.value = n + '台';
         if (n > 0) it2.why = 'この7日に、ログインしていない端末が ' + n + '台 入居者マスタを読む画面を開いています。その端末でログインしてください。';
@@ -154,9 +163,9 @@
     var it4 = { key: 'oneday', label: '今日すでに別の正本を切り替えていない（1日1つまで）', ok: false, value: '—', why: '' };
     var c = o.cut || {};
     if (c.error === 'denied') it4.why = '今日の切り替えの記録を見られるのは管理者（2段階認証まで済んだ状態）だけです。';
-    else if (c.error || !Array.isArray(c.audit) || !Array.isArray(c.kv)) it4.why = '今日の切り替えの記録を読めませんでした（少し待って読み込み直してください）。';
+    else if (c.error || !Array.isArray(c.audit)) it4.why = '今日の切り替えの記録を読めませんでした（少し待って読み込み直してください）。';
     else {
-      var done = cutsToday(c.audit, c.kv, today, kind);
+      var done = cutsToday(c.audit, today, kind);
       it4.value = done.length ? done.join('・') + 'を切り替え済み' : 'なし';
       if (done.length) it4.why = '今日すでに' + done.join('・') + 'を切り替えました。正本の切り替えは1日1つです。明日以降に押してください。';
       else it4.ok = true;
@@ -167,7 +176,7 @@
   }
 
   var api = {
-    NEED_DAYS: NEED_DAYS, FLOW_MAX_MS: FLOW_MAX_MS, KINDS: KINDS, CUT_ENTITIES: Object.keys(CUT_ENTITY),
+    NEED_DAYS: NEED_DAYS, FLOW_MAX_MS: FLOW_MAX_MS, KINDS: KINDS,
     judge: judge, streak: streak, unlogged: unlogged, lastNightly: lastNightly, cutsToday: cutsToday,
     jstDay: jstDay, jstDayStartIso: jstDayStartIso
   };

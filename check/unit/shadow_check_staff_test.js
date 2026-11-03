@@ -113,7 +113,7 @@ const V = (b) => b.nodes['stf-verdict'];
     await b.run();
     t('C 接続先の形が違えば送らない（見比べずに案内）', b.sent.length === 0 && /接続先が無いので/.test(V(b).textContent));
   }
-  console.log('\n— E 差の日ごとの記録（統合 0053）—');
+  console.log('\n— E 差の日ごとの記録（統合 0055）—');
   {
     const n = async (o) => { const b = box(o); await b.run(); return JSON.stringify(b.notes); };
     t('E 写しが Google より新しい＝差1件', (await n({ status: { ok: true, ver: 13, staff: 30, lastStatus: 'done' }, gver: 12 })) === '[{"p_kind":"stf","p_diffs":1}]');

@@ -1117,7 +1117,7 @@
       $('kv-verdict').className = 'msg warn';
       $('kv-verdict').textContent = '週間計画の写しはまだ読めません（データベースの準備 0005 が未適用の可能性）。';
     }
-    try { await loadGate(sb); } catch (e) { gateIn = null; gateApply(); }   // 読めない時は表を出さず、ボタンは押せないままにする
+    await gateRefresh(sb);   // 読めない時はボタンを押せないままにする
   }
 
   /* 貼り薬の写し（段階2「送るだけ」・2026-10-17）: サーバーの行数と、この端末の控え（apc2_res）との差。
@@ -1271,7 +1271,8 @@
       say('写せませんでした: ' + String(e && e.message || e), 'warn');
     } finally {
       btn.disabled = false;
-      try { await loadResFullRuns(sb); await loadGate(sb); } catch (e) { /* 記録の一覧が読めなくても結果の文は残す */ }
+      try { await loadResFullRuns(sb); } catch (e) { /* 記録の一覧が読めなくても結果の文は残す */ }
+      await gateRefresh(sb);
     }
   }
 
@@ -1350,7 +1351,8 @@
       say('写せませんでした: ' + String(e && e.message || e), 'warn');
     } finally {
       btn.disabled = false;
-      try { await loadTpRuns(sb); await loadGate(sb); } catch (e) { /* 記録の一覧が読めなくても結果の文は残す */ }
+      try { await loadTpRuns(sb); } catch (e) { /* 記録の一覧が読めなくても結果の文は残す */ }
+      await gateRefresh(sb);
     }
   }
 
@@ -1408,7 +1410,8 @@
       say('写せませんでした: ' + String(e && e.message || e), 'warn');
     } finally {
       btn.disabled = false;
-      try { await loadAdmRuns(sb); await loadGate(sb); } catch (e) { /* 記録の一覧が読めなくても結果の文は残す */ }
+      try { await loadAdmRuns(sb); } catch (e) { /* 記録の一覧が読めなくても結果の文は残す */ }
+      await gateRefresh(sb);
     }
   }
 
@@ -1425,7 +1428,7 @@
     weight_mode: '0032', res_sync_runs: '0034', res_mode_get: '0036', tp_sync_runs: '0037', tp_mode_get: '0038',
     adm_sync_runs: '0040', adm_mode_get: '0042', stf_shadow_status: '0044', stf_mode_get: '0045',
     sup_shadow_status: '0046', sup_mode_get: '0047', mirror_bot_me: '0047',
-    sa_shadow_status: '0050', sa_mode_get: '0051', device_seen_summary: '0048', shadow_diff_days: '0053', shadow_diff_note: '0053'
+    sa_shadow_status: '0050', sa_mode_get: '0051', device_seen_summary: '0048', shadow_diff_days: '0055', shadow_diff_note: '0055'
   };
   var prepMissing = {};
   function dbErrKind(err) {
@@ -1716,7 +1719,7 @@
     var url = stfUrl(), gv = url ? await stfPing(url) : null;
     if (gv != null) kk.appendChild(kpi('Google の版', gv, ''));
     var tail = '（最後に写した時刻 ' + fmtTime(d.updatedAt) + '）';
-    /* 差の日ごとの記録（統合 0053）: 断った・写しが Google より新しい＝差1件、版が一致＝0件。Google が新しい（次の写しでそろう）・読めない時は残さない */
+    /* 差の日ごとの記録（統合 0055）: 断った・写しが Google より新しい＝差1件、版が一致＝0件。Google が新しい（次の写しでそろう）・読めない時は残さない */
     if (d.lastStatus === 'refused') await noteDiff(sb, 'stf', 1);
     else if (url && gv != null && gv === d.ver) await noteDiff(sb, 'stf', 0);
     else if (url && gv != null && gv < d.ver) await noteDiff(sb, 'stf', 1);
@@ -1798,7 +1801,8 @@
     } finally {
       bc.disabled = false; bb.disabled = false;
       var keep = v.textContent, kc = v.className;
-      try { await loadStfMode(sb); await loadStf(sb); await loadGate(sb); } catch (e) { /* 読み直せなくても結果の文は残す */ }
+      try { await loadStfMode(sb); await loadStf(sb); } catch (e) { /* 読み直せなくても結果の文は残す */ }
+      await gateRefresh(sb);   // 読み直しが途中で止まっても、ボタンは表の判定どおりに戻す（反証レビュー指摘4）
       v.className = kc; v.textContent = keep;
     }
   }
@@ -1859,7 +1863,8 @@
     } finally {
       bc.disabled = false; bb.disabled = false;
       var keep = v.textContent, kc = v.className;
-      try { await loadAdmMode(sb); await loadAdmRuns(sb); await loadGate(sb); } catch (e) { /* 読み直せなくても結果の文は残す */ }
+      try { await loadAdmMode(sb); await loadAdmRuns(sb); } catch (e) { /* 読み直せなくても結果の文は残す */ }
+      await gateRefresh(sb);   // 読み直しが途中で止まっても、ボタンは表の判定どおりに戻す（反証レビュー指摘4）
       v.className = kc; v.textContent = keep;
     }
   }
@@ -1961,7 +1966,8 @@
     } finally {
       bc.disabled = false; bb.disabled = false;
       var keep = v.textContent, kc = v.className;
-      try { await loadTpMode(sb); await loadTpRuns(sb); await loadGate(sb); } catch (e) { /* 読み直せなくても結果の文は残す */ }
+      try { await loadTpMode(sb); await loadTpRuns(sb); } catch (e) { /* 読み直せなくても結果の文は残す */ }
+      await gateRefresh(sb);   // 読み直しが途中で止まっても、ボタンは表の判定どおりに戻す（反証レビュー指摘4）
       v.className = kc; v.textContent = keep;
     }
   }
@@ -2027,7 +2033,8 @@
     } finally {
       bc.disabled = false; bb.disabled = false;
       var keep = v.textContent, kc = v.className;
-      try { await loadResMode(sb); await loadResFullRuns(sb); await loadGate(sb); } catch (e) { /* 読み直せなくても結果の文は残す */ }
+      try { await loadResMode(sb); await loadResFullRuns(sb); } catch (e) { /* 読み直せなくても結果の文は残す */ }
+      await gateRefresh(sb);   // 読み直しが途中で止まっても、ボタンは表の判定どおりに戻す（反証レビュー指摘4）
       v.className = kc; v.textContent = keep;
     }
   }
@@ -2079,7 +2086,7 @@
     msg(mode === 'live' ? '体重の保存先を Supabase（本番）にしました。各端末は次の通信から Supabase へ送ります。'
                         : '体重を写しの期間に戻しました。各端末は次の通信から Google へ送ります。', 'ok');
     await loadWeight(SUAuth.client());
-    try { await loadGate(SUAuth.client()); } catch (e) { /* 表を読み直せなくても結果の文は残す */ }
+    await gateRefresh(SUAuth.client());
   }
 
   /* 体重の写し（統合 0008）: 写しの件数と、写しを取った記録（件数だけ） */
@@ -2109,7 +2116,7 @@
       v.className = 'msg ok';
       v.textContent = '切り替え済みです（体重の正本は Supabase）。写しは止めてあります（下の記録は切り替える前のものです）。';
     } else {
-    /* 差の日ごとの記録（統合 0053）: 今日（日本時間）写した時だけ。受け付けた写しは体重管理が読んだ全件と同じ＝0件、断った写し＝差1件 */
+    /* 差の日ごとの記録（統合 0055）: 今日（日本時間）写した時だけ。受け付けた写しは体重管理が読んだ全件と同じ＝0件、断った写し＝差1件 */
     if (SUCutGate.jstDay(last.at) === SUCutGate.jstDay(Date.now())) await noteDiff(sb, 'weight', last.refused ? 1 : 0);
     v.className = 'msg ' + (last.refused ? 'warn' : 'ok');
     v.textContent = last.refused
@@ -2131,13 +2138,13 @@
    * 管理者だけ。5つの「切り替える／本番にする」ボタン（入居者マスタ・計画書・入居調整・職員マスタ・体重）の前に4項目の表を出し、
    * 全部そろった時だけ押せる。押した時も読み直して確かめる（表を出した後に別の画面で切り替えた時のため）。最後に決めるのは今までどおりデータベース。
    * 戻すボタンと、備品・シフト分析・週間計画・勤務表のボタンには付けない（依頼の外）。
-   * 読むもの: 差の日ごとの記録（shadow_diff_days・0053）・端末の数（device_seen_summary・0048）・毎晩の通し試験の結果（GitHub・公開リポジトリなので読むだけ）・
-   *   今日の操作の記録（audit_log の *_mode と kv_families の印）。どれかを読めない時は、その項目を満たさない扱いにする（押せない側に倒す） */
+   * 読むもの: 差の日ごとの記録（shadow_diff_days・0055）・端末の数（device_seen_summary・0048）・毎晩の通し試験の結果（GitHub・公開リポジトリなので読むだけ）・
+   *   今日の操作の記録（audit_log の *_mode と kv_families の「本番にした」記録）。どれかを読めない時は、その項目を満たさない扱いにする（押せない側に倒す） */
   var GATE = { res: 'b-res-cut', tp: 'b-tp-cut', adm: 'b-adm-cut', stf: 'b-stf-cut', weight: 'b-live-weight' };
   var GATE_NG = '切り替える前の確かめがそろっていません。ボタンの上の表の「満たさない」の理由を見てください。';
   var FLOW_RUNS = 'https://api.github.com/repos/TH-su/care-tools/actions/workflows/flow-check.yml/runs?branch=main&per_page=20';
   var gateIn = null;
-  /* 差の件数を日ごとに残す（事務所・管理者・統合 0053）。0053 の前・断られた時も見比べの表示は止めない */
+  /* 差の件数を日ごとに残す（事務所・管理者・統合 0055）。0055 の前・断られた時も見比べの表示は止めない */
   async function noteDiff(sb, kind, n) {
     try {
       var r = await sb.rpc('shadow_diff_note', { p_kind: kind, p_diffs: n });
@@ -2163,15 +2170,16 @@
         gateSafe(sb.rpc('shadow_diff_days', { p_days: 14 })),
         gateSafe(sb.rpc('device_seen_summary')),
         readFlowRuns(),
-        gateSafe(sb.from('audit_log').select('at,entity,entity_ids').in('entity', SUCutGate.CUT_ENTITIES).gte('at', SUCutGate.jstDayStartIso(today)).limit(200)),
-        gateSafe(sb.from('kv_families').select('family,mode,updated_at'))
+        /* 端末の時計が少しずれても取りこぼさないよう、前の日の0時から読み、今日かどうかはデータベースの日付で決める（反証レビュー指摘10） */
+        gateSafe(sb.from('audit_log').select('at,entity,entity_ids,fields').eq('action', 'update').or('entity.like.*_mode,entity.eq.kv_families')
+          .gte('at', SUCutGate.jstDayStartIso(SUCutGate.jstDay(now - 86400000))).limit(1000))
       ]);
       gateIn = {
         now: now, today: (!q[0].error && q[0].data && q[0].data.today) || today,
         diff: q[0].error ? gateErr(q[0].error, 'shadow_diff_days') : { rows: (q[0].data || {}).rows },
         dev: q[1].error ? gateErr(q[1].error, 'device_seen_summary') : { data: q[1].data },
         flow: q[2],
-        cut: (q[3].error || q[4].error) ? { error: dbErrKind(q[3].error || q[4].error) } : { audit: q[3].data || [], kv: q[4].data || [] }
+        cut: q[3].error ? { error: dbErrKind(q[3].error) } : { audit: q[3].data || [] }
       };
     }
     gateApply();
@@ -2212,9 +2220,16 @@
     tb.appendChild(thead); tb.appendChild(body);
     box.appendChild(tb);
   }
-  /* 押した時: 読み直してから判定する。そろっていなければ false（表も新しくなる） */
+  /* 読み直して表とボタンを新しくする。例外は外へ出さない（読めない時は押せない側） */
+  async function gateRefresh(sb) {
+    try { await loadGate(sb); } catch (e) { gateIn = null; gateApply(); }
+  }
+  /* 押した時: 読み直してから判定する。そろっていなければ false（表も新しくなる）。
+   * 読み直す間（GitHub を最大15秒待つ）はボタンを押せなくして、二度押しで確認の窓が2回出ないようにする（反証レビュー指摘5） */
   async function gatePass(k) {
-    try { await loadGate(SUAuth.client()); } catch (e) { gateIn = null; gateApply(); }
+    var b = $(GATE[k]);
+    if (b) b.disabled = true;
+    await gateRefresh(SUAuth.client());
     return !!gateIn && SUCutGate.judge(Object.assign({ kind: k }, gateIn)).ok;
   }
 

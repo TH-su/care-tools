@@ -2,11 +2,11 @@
    実行: node check/unit/cutover_gate_test.js
    守りたいこと:
      A 差が0件の連続日数: ちょうど3日で満たす・2日では満たさない・途中に差のある日／見比べなかった日があれば数え直し・
-       今日まだ見比べていなければ昨日までで数える・今日の見比べで差があれば0日。準備（0053）がまだ・読めない時は満たさない
-     B ログインしていない端末: この7日に0台で満たす・1台でも満たさない・数が分からない（行が無い・0048 がまだ・断られた）時は満たさない
+       今日まだ見比べていなければ昨日までで数える・今日の見比べで差があれば0日。準備（0055）がまだ・読めない時は満たさない
+     B ログインしていない端末: この7日に0台で満たす・1台でも満たさない・数が分からない（行が無い・この7日に1台も届いていない・0048 がまだ・断られた）時は満たさない
      C 毎晩の通し試験: 毎晩の回（と手で回した回）の最新が合格かつ26時間以内で満たす。PR の回は数えない。不合格・古い・読めない時は満たさない
      D 1日1つ: 今日（日本時間）別の正本を「本番にした」記録があれば満たさない。戻した記録・同じ正本・昨日の記録は数えない。
-       週間計画などの印（kv_families）も数える。日本時間の0時の境目（UTC 15:00）で日付が変わる
+       週間計画などの記録（kv_families・mode:live）も、一覧に無い *_mode（家族構成図など）も数える。日本時間の0時の境目（UTC 15:00）で日付が変わる
      E 4つ全部そろった時だけ ok。理由は満たさない項目にだけ付く
      F 画面のつなぎ（shadow-check.js の本物の関数）: 表はボタンが出ている時だけ出し、そろわない時はボタンを押せなくする。
        読めない時（gateIn が無い）は押せない側に倒す。押した時は読み直して確かめる。5つのボタンだけに付き、戻すボタン・備品・シフト分析には付けない
@@ -27,7 +27,7 @@ const day = (n) => new Date(Date.parse(TODAY + 'T00:00:00Z') - n * 86400000).toI
 const rows = (kind, list) => list.map(([n, worst, checks]) => ({ kind, day: day(n), checks: checks == null ? 1 : checks, worst }));
 const FLOW_OK = [{ event: 'schedule', status: 'completed', conclusion: 'success', created_at: '2026-11-02T17:47:00Z' }];
 const DEV0 = { rows: [{ role: 'office', login: true, d1: 2, d7: 3, d30: 3 }, { role: 'field', login: false, d1: 0, d7: 0, d30: 2 }] };
-const CUT0 = { audit: [], kv: [] };
+const CUT0 = { audit: [] };
 const base = (o) => Object.assign({ kind: 'tp', now: NOW, today: TODAY, diff: { rows: rows('tp', [[0, 0], [1, 0], [2, 0]]) }, dev: { data: DEV0 }, flow: { runs: FLOW_OK }, cut: CUT0 }, o || {});
 const item = (v, k) => v.items.filter((x) => x.key === k)[0];
 
@@ -46,7 +46,7 @@ console.log('A 差が0件の連続日数');
   const v2 = G.judge(base({ diff: { rows: rows('tp', [[0, 0], [1, 0]]) } }));
   t('2日では満たさず、あと何日かを出す', !item(v2, 'diff').ok && item(v2, 'diff').value === '2日' && /あと 1日/.test(item(v2, 'diff').why), item(v2, 'diff'));
   t('今日の差の件数を理由に出す', /差が 5件/.test(item(G.judge(base({ diff: { rows: rows('tp', [[0, 5]]) } })), 'diff').why));
-  t('0053 がまだなら満たさない（準備の番号を出す）', !item(G.judge(base({ diff: { error: 'missing' } })), 'diff').ok && /0053/.test(item(G.judge(base({ diff: { error: 'missing' } })), 'diff').why));
+  t('0055 がまだなら満たさない（準備の番号を出す）', !item(G.judge(base({ diff: { error: 'missing' } })), 'diff').ok && /0055/.test(item(G.judge(base({ diff: { error: 'missing' } })), 'diff').why));
   t('読めない時は満たさない', !item(G.judge(base({ diff: { error: 'other' } })), 'diff').ok && !item(G.judge(base({ diff: {} })), 'diff').ok);
   t('知らない種類は満たさない', !item(G.judge(base({ kind: 'sup' })), 'diff').ok);
 }
@@ -57,7 +57,9 @@ console.log('B ログインしていない端末');
   const one = { rows: [{ role: 'field', login: false, d1: 0, d7: 1, d30: 1 }, { role: 'office', login: false, d1: 0, d7: 0, d30: 4 }] };
   const v = G.judge(base({ dev: { data: one } }));
   t('1台でも満たさず、台数を出す', !item(v, 'device').ok && item(v, 'device').value === '1台' && /1台/.test(item(v, 'device').why), item(v, 'device'));
-  t('30日前だけの端末は数えない（7日で数える）', G.unlogged({ rows: [{ login: false, d7: 0, d30: 5 }] }) === 0);
+  t('30日前だけの端末は数えない（7日で数える）', G.unlogged({ rows: [{ login: true, d7: 2 }, { login: false, d7: 0, d30: 5 }] }) === 0);
+  const stale = G.judge(base({ dev: { data: { rows: [{ role: 'office', login: true, d1: 0, d7: 0, d30: 3 }, { role: 'field', login: false, d1: 0, d7: 0, d30: 4 }] } } }));
+  t('この7日に1台も届いていない（送るのが止まった）時は0台とみなさず満たさない', !item(stale, 'device').ok && item(stale, 'device').value === '—' && G.unlogged({ rows: [{ login: false, d7: 0, d30: 5 }] }) === null, item(stale, 'device'));
   t('ログイン中の端末は数えない', G.unlogged({ rows: [{ login: true, d7: 9 }] }) === 0);
   const none = G.judge(base({ dev: { data: { ok: true, rows: [] } } }));
   t('行が無い（数が届いていない）時は0台とみなさず満たさない', !item(none, 'device').ok && item(none, 'device').value === '—' && /device_seen/.test(item(none, 'device').why), item(none, 'device'));
@@ -87,19 +89,25 @@ console.log('D 1日1つ');
 {
   const live = (entity, at) => ({ at, entity, entity_ids: ['live'] });
   t('今日の記録が無ければ満たす', item(G.judge(base()), 'oneday').ok && item(G.judge(base()), 'oneday').value === 'なし');
-  const v = G.judge(base({ cut: { audit: [live('adm_mode', '2026-11-03T01:00:00Z')], kv: [] } }));
+  const v = G.judge(base({ cut: { audit: [live('adm_mode', '2026-11-03T01:00:00Z')] } }));
   t('今日、別の正本（入居調整）を本番にしていれば満たさない', !item(v, 'oneday').ok && /入居調整/.test(item(v, 'oneday').why) && /1日1つ/.test(item(v, 'oneday').why), item(v, 'oneday'));
-  t('同じ正本の切り替え直しは数えない', item(G.judge(base({ cut: { audit: [live('tp_mode', '2026-11-03T01:00:00Z')], kv: [] } })), 'oneday').ok);
-  t('写しの期間に戻した記録は数えない', item(G.judge(base({ cut: { audit: [{ at: '2026-11-03T01:00:00Z', entity: 'res_mode', entity_ids: ['shadow'] }], kv: [] } })), 'oneday').ok);
-  t('写し返しの記録（mirrored）は数えない', item(G.judge(base({ cut: { audit: [{ at: '2026-11-03T01:00:00Z', entity: 'res_mode', entity_ids: ['mirrored'] }], kv: [] } })), 'oneday').ok);
-  t('昨日（日本時間）の記録は数えない', item(G.judge(base({ cut: { audit: [live('stf_mode', '2026-11-02T14:59:00Z')], kv: [] } })), 'oneday').ok);
-  t('日本時間の0時（UTC 15:00）を過ぎた記録は今日', !item(G.judge(base({ cut: { audit: [live('stf_mode', '2026-11-02T15:00:00Z')], kv: [] } })), 'oneday').ok);
-  t('備品・シフト分析を本番にした日も満たさない', !item(G.judge(base({ cut: { audit: [live('sup_mode', '2026-11-03T02:00:00Z')], kv: [] } })), 'oneday').ok
-    && !item(G.judge(base({ cut: { audit: [live('sa_mode', '2026-11-03T02:00:00Z')], kv: [] } })), 'oneday').ok);
-  t('勤務表の印（kv_families）を今日本番にしていれば満たさない', !item(G.judge(base({ cut: { audit: [], kv: [{ family: 'shift', mode: 'live', updated_at: '2026-11-03T03:00:00Z' }] } })), 'oneday').ok);
-  t('前から本番の印（昨日より前）は数えない', item(G.judge(base({ cut: { audit: [], kv: [{ family: 'care', mode: 'live', updated_at: '2026-10-01T03:00:00Z' }] } })), 'oneday').ok);
-  t('同じ日の記録が2つでも名前は1回', G.cutsToday([live('adm_mode', '2026-11-03T01:00:00Z'), live('adm_mode', '2026-11-03T02:00:00Z')], [], TODAY, 'tp').length === 1);
-  t('読めない時は満たさない', !item(G.judge(base({ cut: { error: 'other' } })), 'oneday').ok && !item(G.judge(base({ cut: { audit: [] } })), 'oneday').ok);
+  t('同じ正本の切り替え直しは数えない', item(G.judge(base({ cut: { audit: [live('tp_mode', '2026-11-03T01:00:00Z')] } })), 'oneday').ok);
+  t('写しの期間に戻した記録は数えない', item(G.judge(base({ cut: { audit: [{ at: '2026-11-03T01:00:00Z', entity: 'res_mode', entity_ids: ['shadow'] }] } })), 'oneday').ok);
+  t('写し返しの記録（mirrored）は数えない', item(G.judge(base({ cut: { audit: [{ at: '2026-11-03T01:00:00Z', entity: 'res_mode', entity_ids: ['mirrored'] }] } })), 'oneday').ok);
+  t('昨日（日本時間）の記録は数えない', item(G.judge(base({ cut: { audit: [live('stf_mode', '2026-11-02T14:59:00Z')] } })), 'oneday').ok);
+  t('日本時間の0時（UTC 15:00）を過ぎた記録は今日', !item(G.judge(base({ cut: { audit: [live('stf_mode', '2026-11-02T15:00:00Z')] } })), 'oneday').ok);
+  t('備品・シフト分析を本番にした日も満たさない', !item(G.judge(base({ cut: { audit: [live('sup_mode', '2026-11-03T02:00:00Z')] } })), 'oneday').ok
+    && !item(G.judge(base({ cut: { audit: [live('sa_mode', '2026-11-03T02:00:00Z')] } })), 'oneday').ok);
+  const kvRow = (fam, mode, at) => ({ at, entity: 'kv_families', entity_ids: [fam], fields: ['mode:' + mode] });
+  const vk = G.judge(base({ cut: { audit: [kvRow('shift', 'live', '2026-11-03T03:00:00Z')] } }));
+  t('勤務表を今日本番にした記録（kv_families・mode:live）があれば満たさない', !item(vk, 'oneday').ok && /勤務表/.test(item(vk, 'oneday').why), item(vk, 'oneday'));
+  t('週間計画を写しの期間に戻した記録（mode:shadow）は数えない', item(G.judge(base({ cut: { audit: [kvRow('care', 'shadow', '2026-11-03T03:00:00Z')] } })), 'oneday').ok);
+  t('一覧に無い *_mode（家族構成図）も数える', !item(G.judge(base({ cut: { audit: [live('geno_mode', '2026-11-03T02:00:00Z'), live('zzz_mode', '2026-11-03T02:00:00Z')] } })), 'oneday').ok
+    && G.cutsToday([live('geno_mode', '2026-11-03T02:00:00Z'), live('zzz_mode', '2026-11-03T02:00:00Z')], TODAY, 'tp').join() === '家族構成図,zzz_mode');
+  t('*_mode でない記録（res_core など）は数えない', item(G.judge(base({ cut: { audit: [live('res_core', '2026-11-03T02:00:00Z')] } })), 'oneday').ok);
+  t('今日本番にしてから戻した日も数える', !item(G.judge(base({ cut: { audit: [live('adm_mode', '2026-11-03T01:00:00Z'), { at: '2026-11-03T02:00:00Z', entity: 'adm_mode', entity_ids: ['shadow'] }] } })), 'oneday').ok);
+  t('同じ日の記録が2つでも名前は1回', G.cutsToday([live('adm_mode', '2026-11-03T01:00:00Z'), live('adm_mode', '2026-11-03T02:00:00Z')], TODAY, 'tp').length === 1);
+  t('読めない時は満たさない', !item(G.judge(base({ cut: { error: 'other' } })), 'oneday').ok && !item(G.judge(base({ cut: {} })), 'oneday').ok);
   t('日本時間の日付: 23:30 UTC は翌日', G.jstDay('2026-11-02T23:30:00Z') === '2026-11-03' && G.jstDay('2026-11-02T14:59:59Z') === '2026-11-02' && G.jstDay('x') === '');
   t('今日の0時（日本時間）は前日 15:00 UTC', G.jstDayStartIso('2026-11-03') === '2026-11-02T15:00:00.000Z' && G.jstDayStartIso('bad') === '');
   t('today が無ければ now から日本時間で決める', G.judge(Object.assign(base(), { today: undefined, now: Date.parse('2026-11-02T15:30:00Z') })).items.length === 4
@@ -141,7 +149,7 @@ function glue(o) {
   const calls = [];
   const sb = {
     rpc: async (name, args) => { calls.push(name); return o.rpc && o.rpc[name] ? o.rpc[name](args) : { data: null, error: { code: 'PGRST202' } }; },
-    from: (tbl) => { const q = { select() { return q; }, in() { return q; }, gte() { return q; }, limit() { return q; }, then(ok, ng) { calls.push(tbl); return Promise.resolve(o.from && o.from[tbl] ? o.from[tbl] : { data: [], error: null }).then(ok, ng); } }; return q; }
+    from: (tbl) => { const q = { select() { return q; }, eq() { return q; }, or(f) { calls.push('or:' + f); return q; }, gte() { return q; }, limit() { return q; }, then(ok, ng) { calls.push(tbl); return Promise.resolve(o.from && o.from[tbl] ? o.from[tbl] : { data: [], error: null }).then(ok, ng); } }; return q; }
   };
   const ctx = {
     $: (id) => nodes[id],
@@ -155,7 +163,7 @@ function glue(o) {
     'var DB_PREP = ' + /var DB_PREP = (\{[\s\S]*?\});/.exec(SRC)[1] + ';', 'var prepMissing = {};',
     fn('dbErrKind'), fn('notePrep'), fn('renderPrep'),
     /var GATE = \{[^\n]*\};/.exec(SRC)[0], /var GATE_NG = [^\n]*;/.exec(SRC)[0], /var FLOW_RUNS = [^\n]*;/.exec(SRC)[0], 'var gateIn = null;',
-    fn('readFlowRuns'), fn('gateSafe'), fn('gateErr'), fn('loadGate'), fn('gateShown'), fn('gateApply'), fn('renderGate'), fn('gatePass'),
+    fn('readFlowRuns'), fn('gateSafe'), fn('gateErr'), fn('loadGate'), fn('gateShown'), fn('gateApply'), fn('renderGate'), fn('gateRefresh'), fn('gatePass'),
     'this.loadGate = loadGate; this.gatePass = gatePass; this.gateApply = gateApply; this.getIn = function () { return gateIn; }; this.prep = function () { return prepMissing; };'
   ].join('\n');
   vm.runInContext(code, ctx);
@@ -176,7 +184,8 @@ const texts = (n) => [n.textContent].concat((n.kids || []).flatMap(texts));
     t('4つそろえば5つの表を出し、ボタンを押せる', five.every((k) => !g.nodes['gate-' + k].hidden) && ['b-res-cut', 'b-tp-cut', 'b-adm-cut', 'b-stf-cut', 'b-live-weight'].every((id) => !g.nodes[id].disabled));
     const all = texts(g.nodes['gate-tp']).join('|');
     t('表に4項目・今の値・判定が出る', /1\. 写しと正本の差/.test(all) && /4\. 今日すでに/.test(all) && /3日/.test(all) && /0台/.test(all) && /満たす/.test(all), all.slice(0, 200));
-    t('読むのは差の記録・端末の数・操作の記録・印・GitHub だけ', ['shadow_diff_days', 'device_seen_summary', 'audit_log', 'kv_families'].every((x) => g.calls.indexOf(x) >= 0), g.calls);
+    t('読むのは差の記録・端末の数・操作の記録・GitHub だけ', ['shadow_diff_days', 'device_seen_summary', 'audit_log'].every((x) => g.calls.indexOf(x) >= 0) && g.calls.indexOf('kv_families') < 0, g.calls);
+    t('操作の記録は *_mode と kv_families だけを読む', g.calls.indexOf('or:entity.like.*_mode,entity.eq.kv_families') >= 0, g.calls);
     t('通し試験の結果は公開の GitHub の決まった住所から読む（ログインの情報を付けない）', /^https:\/\/api\.github\.com\/repos\/TH-su\/care-tools\/actions\/workflows\/flow-check\.yml\/runs\?branch=main/.test(/var FLOW_RUNS = '([^']+)'/.exec(SRC)[1]) && /credentials: 'omit'/.test(fn('readFlowRuns')));
   }
   {
@@ -233,6 +242,8 @@ const texts = (n) => [n.textContent].concat((n.kids || []).flatMap(texts));
     t('職員マスタ（runStfOp）', at('runStfOp', "gatePass('stf')"));
     t('体重（setWeightMode・本番にする時だけ）', at('setWeightMode', "mode === 'live' && !(await gatePass('weight'))"));
     t('備品・シフト分析には付けない（依頼の外）', fn('runSupOp').indexOf('gatePass') < 0 && fn('runSaOp').indexOf('gatePass') < 0);
+    t('操作の後は、読み直しが途中で止まっても表とボタンを新しくする（後始末で gateRefresh を別に呼ぶ）', ['runResOp', 'runTpOp', 'runAdmOp', 'runStfOp'].every((n) => /\} catch \(e\) \{[^\n]*\}\n\s*await gateRefresh\(sb\);/.test(fn(n))));
+    t('押した時はまずボタンを押せなくしてから読み直す（二度押し防止）', /b\.disabled = true;\s*await gateRefresh/.test(fn('gatePass')));
     t('戻す時は確かめない（切り替える時だけ）', ['runResOp', 'runTpOp', 'runAdmOp', 'runStfOp'].every((n) => { const b = fn(n); return b.indexOf('gatePass') > b.indexOf("if (kind === 'cut') {"); }));
     t('表の置き場所が5つのボタンの前にある', ['res', 'tp', 'adm', 'stf'].every((k) => HTML.indexOf('id="gate-' + k + '"') > 0 && HTML.indexOf('id="gate-' + k + '"') < HTML.indexOf('id="b-' + k + '-cut"'))
       && HTML.indexOf('id="gate-weight"') > 0 && HTML.indexOf('id="gate-weight"') < HTML.indexOf('id="b-live-weight"'));
@@ -240,7 +251,7 @@ const texts = (n) => [n.textContent].concat((n.kids || []).flatMap(texts));
     t('CSP の通信先に GitHub の API を足した', /connect-src [^;]*https:\/\/api\.github\.com/.test(HTML));
   }
 
-  console.log('G 差の記録（写しの部品）');
+  console.log('G 差の記録（写しの部品・統合 0055）');
   for (const [file, globalName, kind] of [['su-adm-full.js', 'SUAdmFull', 'adm'], ['su-tp-full.js', 'SUTpFull', 'tp'], ['su-res-full.js', 'SUResFull', 'res']]) {
     const S = fs.readFileSync(path.join(ROOT, file), 'utf8');
     const i = S.indexOf('async function noteDiff(io, n)');

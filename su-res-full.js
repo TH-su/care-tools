@@ -151,8 +151,8 @@
   /* 全部写す。io = { gas(body) → Promise<応答の JSON>, rpc(name, args) → Promise<{data, error}>, progress(text) }
    * 返す: { ok:true, residents, meetings, medDecisions, run:{inserted, updated, unchanged, missing, unknown}, cmp, big:[id] }
    *       断った時は { ok:false, why（職員向けの文）} */
-  /* 写しと正本の差の件数を日ごとに残す（統合 0053・2026-11-03）。写しの見比べの「切り替える前の確かめ」が数える。
-   * 手で押した写しも1日1回の自動の写しも残す。0053 の前・断られた時も写しの結果はそのまま返す */
+  /* 写しと正本の差の件数を日ごとに残す（統合 0055・2026-11-03）。写しの見比べの「切り替える前の確かめ」が数える。
+   * 手で押した写しも1日1回の自動の写しも残す。0055 の前・断られた時も写しの結果はそのまま返す */
   async function noteDiff(io, n) {
     try { await io.rpc('shadow_diff_note', { p_kind: 'res', p_diffs: n }); } catch (e) { /* 残せなくても写しの結果は返す */ }
   }
