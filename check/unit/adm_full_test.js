@@ -218,6 +218,22 @@ function world(o) {
     t('戻す: 写し返しが済まない時は、戻したことと押し直しを伝える', r.ok === false && /写しの期間には戻しました/.test(r.why) && st.mode === 'shadow', r);
   }
   {
+    const { w, order, st } = cw();
+    const r = await R.back(w);
+    t('戻す: 新しい保存先がもう写しの期間で Google の印も無い時は、写し返して印が無いまま終わる（何も壊さない）', r.ok === true && order.join(',') === 'op:back,mode:shadow,cut:false,end:TK' && st.mode === 'shadow' && !st.switched, [r, order]);
+  }
+  {
+    const { w, order, st } = cw({ offLost: 9 });
+    st.switched = true;
+    const r = await R.back(w);
+    t('戻す: Google に届かない時は「戻した」と言い切らず、押し直しを伝えて札を返す', r.ok === false && /もう一度/.test(r.why) && st.switched === true && order[order.length - 1] === 'end:TK', [r, order]);
+  }
+  {
+    const SJ = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'shadow-check.js'), 'utf8');
+    const fn = SJ.slice(SJ.indexOf('async function loadAdmMode'), SJ.indexOf('async function runAdmOp'));
+    t('写しの見比べ: 入居調整の戻すボタンは接続先がある管理者にはいつも出す（Google に確かめられない途中の時も押せる・2026-11-03）', /\n    bb\.hidden = !at;/.test(fn) && !/bb\.hidden = !\(live/.test(fn) && /途中でなければ押しても何も変わりません/.test(fn) && /if \(!\(me && me\.role === 'admin'\)\) return;/.test(fn));
+  }
+  {
     const calls = [];
     const A = { STATUS: { OK: 'ok' }, check: async () => ({ status: 'ok', role: 'admin' }),
       client: () => ({ from: () => ({ select: () => ({ order: () => ({ limit: async () => ({ data: [], error: null }) }) }) }), rpc: async (n) => { calls.push(n); return n === 'adm_op_busy' ? { data: true, error: null } : { data: null, error: { code: 'x' } }; } }) };

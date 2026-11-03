@@ -249,9 +249,9 @@ function world(o) {
   {
     const SH = read('SHADOW_HTML', 'shadow-check.html'), SJ = read('SHADOW_JS', 'shadow-check.js');
     const fn = SJ.slice(SJ.indexOf('function trainingOn'), SJ.indexOf('/* 入居者マスタの正本の切り替え（統合 0036'));
-    t('写しの見比べ: 計画書の切り替える・戻すのボタンは最初は隠し、管理者だけ・スイッチ training が入の時だけ切り替えを出す',
+    t('写しの見比べ: 計画書の切り替える・戻すのボタンは最初は隠し、管理者だけ・スイッチ training が入の時だけ切り替えを出す・戻すは接続先がある管理者にはいつも出す',
       /id="b-tp-cut" hidden>計画書を新しい保存先へ切り替える</.test(SH) && /id="b-tp-back" hidden>計画書を写しの期間に戻す</.test(SH)
-      && /if \(!\(me && me\.role === 'admin'\)\) return;/.test(fn) && /bc\.hidden = live \|\| stuck \|\| !on \|\| !tt \|\| !mt;/.test(fn) && /bb\.hidden = !\(live \|\| stuck\) \|\| !tt;/.test(fn));
+      && /if \(!\(me && me\.role === 'admin'\)\) return;/.test(fn) && /bc\.hidden = live \|\| stuck \|\| !on \|\| !tt \|\| !mt;/.test(fn) && /\n    bb\.hidden = !tt;/.test(fn) && !/bb\.hidden = !\(live/.test(fn) && /途中でなければ押しても何も変わりません/.test(fn));
     t('写しの見比べ: 押した時も管理者・現場の端末・スイッチを確かめ、2回確かめてから行う・textContent', /me\.status === SUAuth\.STATUS\.OK/.test(fn) && /role === 'field'/.test(fn)
       && /if \(!trainingOn\(\)\)/.test(fn) && (fn.match(/confirm\(/g) || []).length === 4 && !/innerHTML/.test(fn));   // 4つ目は「AI の中継を確かめる」（2026-10-30）
   }

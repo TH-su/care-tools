@@ -93,7 +93,9 @@ console.log('— 3. 同期の設定画面の欄の名前 —');
   const ph = (SRC.match(/id="sync-token"[\s\S]{0,80}?placeholder="([^"]*)"/) || [])[1] || '';
   t('合言葉の欄の見本にトークンと書かない', ph === 'ワークスケジュールと同じ合言葉', ph);
   t('URL の欄は「同期先の URL（Google の受け口）」', /<span>同期先の URL（Google の受け口）<\/span>/.test(SRC) && !/<span>Apps Script Web App URL<\/span>/.test(SRC), '');
-  t('手順の8番目も新しい欄の名前を指す', /上の「同期先の URL（Google の受け口）」欄に貼り付け/.test(SRC) && !/上の「Apps Script Web App URL」欄/.test(SRC), '');
+  // 2026-11-03: セットアップ手順と古い受け口のコード（守りの無い写し）は画面から外した（片付け計画 K1）。手順の文が戻ってこないこと・古い欄名も出ないことを確かめる
+  t('セットアップ手順と古い受け口のコードを画面に出さない（受け口は開発の担当が配る）', !/セットアップ手順（初心者向け）/.test(SRC) && !/id="gas-code"/.test(SRC) && !/copyGasCode/.test(SRC)
+    && /受け口のコードは開発の担当が配ります（画面からは配りません）/.test(SRC) && !/上の「Apps Script Web App URL」欄/.test(SRC), '');
 }
 
 console.log('— 4. 断りの翻訳（friendlyErr）—');

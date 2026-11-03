@@ -1956,9 +1956,10 @@
     if (live && !on) { line.className = 'msg warn'; line.textContent = '入居調整は新しい保存先へ切り替えた後ですが、切り替えスイッチ（admission）が切です。画面が古い Google の中身を読まないよう、スイッチを入れ直すか「入居調整を写しの期間に戻す」を押してください。'; }
     else if (live) { line.className = 'msg ok'; line.textContent = '入居調整の台帳の正本は新しい保存先（Supabase）です。Google へは保存のたびに写し返しています。添付書類は今までどおり Google（Drive）です。'; }
     else if (stuck) { line.className = 'msg warn'; line.textContent = '前の「入居調整を写しの期間に戻す」が途中です（Google の保存を止めたままです）。もう一度押して、最後まで済ませてください。'; }
-    else line.textContent = '入居調整の台帳の正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（admission）を入れる PR の取り込みが要ります。');
+    else line.textContent = '入居調整の台帳の正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（admission）を入れる PR の取り込みが要ります。') + (at ? '（前の「切り替える」「入居調整を写しの期間に戻す」が途中で止まり、Google の保存が止まったままの時は「入居調整を写しの期間に戻す」を押すと最後まで済ませます。途中でなければ押しても何も変わりません）' : '');
     bc.hidden = live || stuck || !on || !at;
-    bb.hidden = !(live || stuck) || !at;
+    /* 戻すボタンは、接続先がある管理者にはいつも出す（Google に確かめられず途中の印が見えない時も押せるように・職員マスタと同じ・2026-11-03 戻し方の手順書の点検） */
+    bb.hidden = !at;
   }
   async function runAdmOp(kind) {
     var v = $('admf-mode');
@@ -2018,9 +2019,10 @@
     if (live && !on) { line.className = 'msg warn'; line.textContent = '計画書は新しい保存先へ切り替えた後ですが、切り替えスイッチ（training）が切です。画面が古い Google の中身を読まないよう、スイッチを入れ直すか「計画書を写しの期間に戻す」を押してください。'; }
     else if (live) { line.className = 'msg ok'; line.textContent = '計画書の正本は新しい保存先（Supabase）です。Google へは保存のたびに写し返しています。'; }
     else if (stuck) { line.className = 'msg warn'; line.textContent = '前の「計画書を写しの期間に戻す」が途中です（Google の保存を止めたままです）。もう一度押して、最後まで済ませてください。'; }
-    else line.textContent = '計画書の正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（training）を入れる PR の取り込みが要ります。');
+    else line.textContent = '計画書の正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（training）を入れる PR の取り込みが要ります。') + (tt ? '（前の「切り替える」「計画書を写しの期間に戻す」が途中で止まり、Google の保存が止まったままの時は「計画書を写しの期間に戻す」を押すと最後まで済ませます。途中でなければ押しても何も変わりません）' : '');
     bc.hidden = live || stuck || !on || !tt || !mt;
-    bb.hidden = !(live || stuck) || !tt;
+    /* 戻すボタンは、接続先がある管理者にはいつも出す（職員マスタと同じ・2026-11-03） */
+    bb.hidden = !tt;
     $('b-tp-ai').hidden = false;
   }
   /* AI の中継の受け口（su-ai・統合 0028）へ、「はい」とだけ答えさせる決まった短い依頼を1回送り、届いたか・答えの状態だけを出す
@@ -2123,9 +2125,10 @@
     if (live && !on) { line.className = 'msg warn'; line.textContent = '入居者マスタは新しい保存先へ切り替えた後ですが、切り替えスイッチ（master_live）が切です。画面が古い Google の中身を読まないよう、スイッチを入れ直すか「写しの期間に戻す」を押してください。'; }
     else if (live) { line.className = 'msg ok'; line.textContent = '入居者マスタの正本は新しい保存先（Supabase）です。Google へは保存のたびに写し返しています。'; }
     else if (stuck) { line.className = 'msg warn'; line.textContent = '前の「写しの期間に戻す」が途中です（Google の保存を止めたままです）。「写しの期間に戻す」をもう一度押して、最後まで済ませてください。'; }
-    else line.textContent = '入居者マスタの正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（master_live）を入れる PR の取り込みが要ります。');
+    else line.textContent = '入居者マスタの正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（master_live）を入れる PR の取り込みが要ります。') + (tgt ? '（前の「切り替える」「写しの期間に戻す」が途中で止まり、Google の保存が止まったままの時は「写しの期間に戻す」を押すと最後まで済ませます。途中でなければ押しても何も変わりません）' : '');
     bc.hidden = live || stuck || !on || !tgt;
-    bb.hidden = !(live || stuck) || !tgt;
+    /* 戻すボタンは、接続先がある管理者にはいつも出す（職員マスタと同じ・2026-11-03） */
+    bb.hidden = !tgt;
   }
   function resOpIo(sb, tgt, say) {
     return {
