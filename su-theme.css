@@ -49,6 +49,7 @@
     --c-link: #1F2A44;
     --c-hero: #FBF8F2; --c-hero-ink: #1F2A44; --c-hero-hover: #EEF0F5;
     --c-info: #1F2A44; --c-info-bg: #EEF0F5;
+    --c-danger: #951a22; --c-warn: #724600;   /* 危険・注意の字（淡い赤・淡い黄の地で 7:1 以上）。計画書などの帯と札 */
   }
   :root[data-su-theme][data-ds="ops"]:not([data-mode="dark"]) .hdr { box-shadow: inset 0 -2px 0 #E4DED2; }
   /* 「不具合を報告」のボタン（su-report.css）は --pri の色を使うが、ops の画面は --pri を持たないため青のまま白い字が 6.4:1 だった。藍にして 7:1 以上にする */
