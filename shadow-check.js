@@ -1756,7 +1756,7 @@
       var last = Date.parse(x.lastAt || '');
       lines.push(nm + ': 目録 ' + (Number(x.catalog) || 0) + '件・写した書類 ' + (Number(x.have) || 0) + '件・残り ' + (Number(x.left) || 0) + '件・読めなかった書類 ' + (Number(x.failed) || 0) + '件（最後に写した時刻 ' + fmtTime(x.lastAt) + '）。');
       if (x.lastStatus === 'refused') warn.push(nm + 'の最後の写しは受け付けませんでした（' + (DOC_REFUSED[x.lastRefused] || String(x.lastRefused || '')) + '）。開発の担当へ知らせてください。');
-      else if (isNaN(last) || now - last > SA_FRESH_MS) warn.push(nm + 'の写しがしばらく届いていません。' + nm + 'の GAS の自動（autoMirror）が止まっていないか確かめてください。');
+      else if (isNaN(last) || now - last > SA_FRESH_MS) warn.push(nm + 'の写しがしばらく届いていません。' + nm + 'の GAS の自動（autoMirror）が止まっていないか、' + nm + 'の写し返しそのものが止まっていないか（上の' + nm + 'の欄）を確かめてください。');
       else if (Number(x.failed) > 0) warn.push(nm + 'に、ドライブで読めない書類が ' + Number(x.failed) + '件あります（ドライブで消された・形が違うなど。切り替える前に開発の担当へ知らせてください）。');
     });
     dt.textContent = lines.join(' ');
