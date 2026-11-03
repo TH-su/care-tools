@@ -914,7 +914,7 @@ select.inp { cursor: pointer; }
 .ci-level-note[hidden] { display: none !important; }
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
-<link rel="stylesheet" href="su-theme.css?v=2026-11-02.2">
+<link rel="stylesheet" href="su-theme.css?v=2026-11-03">
 <link rel="stylesheet" href="su-resident-hop.css?v=2026-11-02">
 </head>
 <body>
@@ -938,7 +938,7 @@ select.inp { cursor: pointer; }
        行送りにも影響しない＝既存の印刷レイアウトを動かさない。画面では非表示（下の注記が出ている）。 -->
   <span class="print-rate-note" id="print-rate-note"></span>
   <div class="resident-selector">
-    <select class="resident-select" id="resident-select" data-on-change="onResidentChange">
+    <select class="resident-select" id="resident-select" aria-label="利用者を選択" data-on-change="onResidentChange">
       <option value="">-- 利用者を選択 --</option>
     </select>
   </div>
@@ -968,7 +968,7 @@ select.inp { cursor: pointer; }
 <!-- Summary bar (2段構成) -->
 <div class="summary-bar" id="summary-bar">
   <!-- 1段目: 単位数の内訳 -->
-  <div class="sum-row">
+  <div class="sum-row" tabindex="0" role="group" aria-label="集計（横に送れます）">
     <div class="sum-group">
       <span class="sum-label">介護度</span>
       <span class="sum-val" id="sum-level">—</span>
@@ -1002,7 +1002,7 @@ select.inp { cursor: pointer; }
     <span class="cs-edited-note" id="cs-edited-note"></span>
   </div>
   <!-- 2段目: 集計・操作 -->
-  <div class="sum-row">
+  <div class="sum-row" tabindex="0" role="group" aria-label="集計（横に送れます）">
     <div class="sum-group">
       <span class="sum-label">自己負担(概算)</span>
       <span class="sum-val" id="sum-copay">¥—</span>
