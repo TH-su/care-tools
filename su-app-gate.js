@@ -27,7 +27,8 @@
     { key: 'admission-flow', href: 'admission-flow.html', ic: '🚪', nm: '入居調整', def: { office: true, field: false } },
     { key: 'care-meeting', href: 'care-meeting.html', ic: '🤝', nm: '担当者会議の記録', def: { office: true, field: false } },
     { key: 'training-plan', href: 'training-plan.html', ic: '🏃', nm: '個別機能訓練計画書', def: { office: true, field: false } },
-    { key: 'connection-settings', href: 'connection-settings.html', ic: '🔌', nm: '接続設定', def: { office: true, field: false } }
+    { key: 'connection-settings', href: 'connection-settings.html', ic: '🔌', nm: '接続設定', def: { office: true, field: false } },
+    { key: 'equip-log', href: 'equip-log.html', ic: '🔧', nm: '設備・修繕の記録', def: { office: true, field: false } }
   ];
   /* 管理者＋2段階認証に固定のもの（設定では変えない・図に鍵の印で出すだけ） */
   var FIXED = [

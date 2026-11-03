@@ -73,6 +73,7 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
 | 薬情の取り込み | `yakujo-calc.js`（入居者マスタの「📥 薬情の取り込み」の振り分け・組み立て・反映を止める規則の純関数。試験は `check/unit/yakujo_calc_test.js`） |
 | 担当者会議の記録 | `care-meeting.html`（担当者会議のページ・事務所PCだけ。試験は `check/unit/care_meeting_page_test.js`）・`care-meeting-calc.js`（議事録の振り分け・確定の確かめ・期限の知らせの純関数。試験は `check/unit/care_meeting_calc_test.js`） |
 | 採用管理 | `ats.html`（応募から入職までの記録・事務所PCで管理者＋2段階認証だけ。試験は `check/unit/ats_page_test.js`）・`ats-calc.js`（取り込み・段階の判定・職員マスタへ送る項目・登録できたかの判定・集計の純関数。試験は `check/unit/ats_calc_test.js`） |
+| 設備・修繕の記録 | `equip-log.html`（設備・備品と、その購入・修理・清掃・点検・交換・廃棄の記録・事務所PCで事務所・管理者だけ・記録は共通 DB（設備・修繕の移行・番号は PR の時に確定）にだけ置く。試験は `check/unit/equip_page_test.js`）・`equip-calc.js`（場所の鍵・次回予定日・期限・年度と費用の集計・CSV・増やした項目の値の確かめの純関数。試験は `check/unit/equip_calc_test.js`） |
 
 - 施設名・事業所名・電話などは `facility-profile.json` にだけ置き、画面は `SUFacility` から読む。
   画面のコードに施設名を直接書かない（外販時はこのファイルだけ差し替える）。
