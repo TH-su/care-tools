@@ -496,6 +496,7 @@ group('12. 書く側: 画面の流れ');
   const del = tryGrab(SRC.geno, 'deleteCurrentDoc', 'async ');
   t('保存の時に送った結果を受け取り、送るかは同期の結果で決める（writeSuGenogram に gate と cloud を渡す）', /writeSuGenogram\(name, \{ gate: thumbGate, cloud: /.test(save));
   t('食い違いで中止した分岐で送らないと決める（thumbGo(false)）', /if \(err && err\.conflict\) \{\s*\/\/[^\n]*\n\s*thumbGo\(false\);/.test(save));
+  t('新しい保存先が断った分岐（err.refused・統合 0054）でも送らないと決める', /\} else if \(err && err\.refused\) \{\s*\/\*[\s\S]*?\*\/\s*thumbGo\(false\);/.test(save));
   t('中止されなかった時は最後に送ると決める（thumbGo(true) → thumbDone）', /thumbGo\(true\);[^\n]*\n\s*thumbDone\(\);/.test(save));
   t('ログインなしの時の知らせの文がある', /'ログインしていないため、この図はほかの端末のフェイスシート・入居者マスタには出ません'/.test(save));
   t('知らせは保存の知らせ（同期の結果まで）の後に出す', /thumbSaved\.then\(/.test(save) && /thumbDone\(\);[^\n]*\n\}$/.test(save));

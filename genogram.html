@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-font">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4tatwB5n4oQfG1K2BhClN4+9jBVdFhmNYce1TbRTqzo=' 'sha256-Kn/+4FMNTwmaaKNI1M1kf5qLXtEjn30hl30FbXwPN7U='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4tatwB5n4oQfG1K2BhClN4+9jBVdFhmNYce1TbRTqzo=' 'sha256-pCzGvdvBIGcEpLYw6n5A/RXzHn4y05jKkWxNMb5U2Bo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 入居者情報を表示する画面のため、ブラウザ・中継キャッシュに残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -16,6 +16,7 @@
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-resident-hop.js?v=2026-11-02"></script>
+<script src="su-geno.js?v=2026-11-03.2"></script>
 <script>
 !function(t,e){"object"==typeof exports&&"undefined"!=typeof module?module.exports=e():"function"==typeof define&&define.amd?define(e):(t="undefined"!=typeof globalThis?globalThis:t||self).Konva=e()}(this,(function(){"use strict";
 /*
@@ -616,7 +617,8 @@ const LINE_INK = '#202124';                    // 線の既定色
 const SEL_INK = '#26a69a';                     // 選択中の色
 
 // GAS script that users need to paste into Apps Script
-// ★正本は gas/genogram-sync.gs（git 追跡外）。ここは一字一句同じ写し（gas/tests/genogram_sync_gas_test.js が照合する）
+// ★正本は care-backend の gas/bound/genogram-sync/genogram-sync.gs（非公開）。ここは一字一句同じ写し（check/unit/su_geno_test.js が指紋で照合する・2026-11-03 統合 0054 の版）。
+// ★切り替えの部品（cutover.gs・automirror.gs）は写しに入れない。新しい保存先へ切り替えた後は、この写しを貼らない（コピーのボタンも止める）
 // ★2026-10-15: 正本に \ が入った（直した人の確かめ verifyEditor_ の正規表現）。テンプレート文字列の中では \ が1つ落ちるため、
 //   ここでは \ を二重にして写す＝評価した後の文字列（コピーボタンで貼られる中身）が正本と一字一句同じ
 const GAS_SCRIPT_CODE = `// ======== Genogram Sync GAS — paste into Apps Script editor ========
@@ -645,11 +647,16 @@ const GAS_SCRIPT_CODE = `// ======== Genogram Sync GAS — paste into Apps Scrip
 //   7. この版（2026-10-15）から外部への接続（直した人の確かめ）を使う。配信前に authorizeGenogramSync と checkSupabaseConnection をエディタで実行して承認する（しないと全端末の同期が止まる）。
 //   8. この版（2026-10-17）から、削除した図の中身をタブ deleted（無ければ作る）に残してから行を消す。新しい権限は要らない。
 //   9. この版（2026-10-22）から、削除の時にタブ deleted の行のうち削除から90日より古いものを、古い順に1回20行まで消す。新しい権限は要らない。
+//  10. この版（2026-11-03）から、新しい保存先（Supabase）への切り替えの部品 cutover.gs・automirror.gs を同じプロジェクトに置ける（統合 0053・0054）。
+//      置いた時だけ、切り替えた後の一覧・読込・保存・削除を断る。置かなければ今までどおり。新しい権限は要らない（外部への接続は 7. で承認済み）。
+//      ping に版表記（codeVersion）と切り替えの部品の有無（cutover）を足した（ほかの応答の形は変えていない）。
 
 const SHEET_NAME = 'genograms';
 const TOKEN_PROP = 'GENOGRAM_TOKEN';
 const TOKEN_PROP_VIEW = 'GENOGRAM_TOKEN_VIEW';
 const READ_ACTIONS = ['ping', 'list', 'get'];
+/* 版表記（2026-11-03）。ping に載せ、新しいコードが【デプロイまで】届いたかを確かめる。仕様を足したら上げること */
+const GENO_CODE_VERSION = '2026-11-03.1';
 
 function doGet(e) {
   // GET では合言葉を受け取らない（URL に載せないため）。合言葉を設定した後は断る
@@ -701,7 +708,11 @@ function route(action, p, token) {
     if (!r || (r === 'view' && READ_ACTIONS.indexOf(action) < 0)) {
       return jsonOut({ ok: false, error: 'unauthorized', code: 403 });
     }
-    if (action === 'ping')   return jsonOut({ ok: true, time: new Date().toISOString(), auth: 'ok', role: r });
+    /* 新しい保存先への切り替え（統合 0054・cutover.gs）。切り替えた後の一覧・読込・保存・削除を断る。受けない時は null＝今までどおり（2026-11-03） */
+    if (typeof genoGate_ === 'function') { const g = genoGate_(action, p, r); if (g) return jsonOut(g); }
+    if (action === 'ping')   return jsonOut({ ok: true, time: new Date().toISOString(), auth: 'ok', role: r,
+                                              /* 版表記と切り替えの部品（cutover.gs）の有無（写しの見比べ画面が切り替える前に確かめる・2026-11-03） */
+                                              codeVersion: GENO_CODE_VERSION, cutover: typeof genoGate_ === 'function' });
     if (action === 'list')   return jsonOut({ ok: true, items: listAll() });
     if (action === 'get')    return jsonOut({ ok: true, doc: getOne(p.name) });
     if (action === 'save' || action === 'delete') {
@@ -763,6 +774,7 @@ function writeLocked(action, p, who) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) return { ok: false, error: 'busy' };
   try {
+    if (typeof genoLockedRefuse_ === 'function') { const sw = genoLockedRefuse_(); if (sw) return sw; }   /* ロックの後に切り替えの印を見直す（統合 0054・cutover.gs。立っていれば書かずに断る） */
     const base = baseOf(p);
     let out;
     if (action === 'save') {
@@ -1217,7 +1229,8 @@ let suHopKey = '';
 function suHopSync() {
   const bar = $('suHopBar'); if (!bar) return;
   const id = window._suMasterId, nm = window._suMasterName;
-  const on = !!(id && nm && state.clientName === nm && typeof SUResHop === 'object' && SUResHop);
+  const bd = window._suGenoBound;   /* 新しい保存先が「この方に結び付いた図」と答えた図（入居者マスタで名前を直した方・統合 0054）も、この方の図として帯を出す */
+  const on = !!(id && nm && (state.clientName === nm || (bd && bd.id === String(id) && bd.name === state.clientName)) && typeof SUResHop === 'object' && SUResHop);
   const key = on ? id + '\n' + nm : '';
   if (key === suHopKey) return;
   suHopKey = key;
@@ -2642,6 +2655,7 @@ const CloudSync = (function() {
   }
   function isConfigured() {
     const c = getCfg();
+    if (window.SUGeno && window.SUGeno.liveHint()) return true;   /* 切り替えた後（統合 0054）は URL・合言葉が無くても同期できる */
     return !!(c.gasUrl && GAS_URL_RE.test(c.gasUrl));
   }
   /* ★2026-09-23: GitHub への予備保存は廃止した（一度も成功しておらず、利用者名がコミットに残り、
@@ -2729,7 +2743,27 @@ const CloudSync = (function() {
       .then(function (r) { return (r && r.data && r.data.session && r.data.session.access_token) || ''; })['catch'](function () { return ''; });
     return Promise.race([get, new Promise(function (ok) { setTimeout(function () { ok(''); }, 3000); })]);
   }
+  /* この図に添える利用者No（入居者マスタから ?resident= で開いた方の図の時だけ）。保留の再送は積んだ時の値を opts.rid で渡す */
+  function ridFor(action, params) {
+    const p = params || {};
+    const name = String((p.doc && p.doc.clientName) || p.name || '');
+    if (!name) return null;
+    const mid = window._suMasterId;
+    if (!mid) return null;
+    return suGenoMasterIdFor(name, mid, window._suMasterName) ? String(mid) : null;
+  }
   async function gasCall(action, params, opts) {
+    const useGet = opts && opts.method === 'GET';
+    /* 新しい保存先（統合 0054）へ切り替えた後は、su-geno.js がデータベースへ送る（スイッチが切・写しの期間は下の Google への送信をそのまま呼ぶ）。
+       利用者No は、入居者マスタから ?resident= で開いた方の図の時だけ添える（ほかの方・同姓同名の方の図に書かないための守り） */
+    if (window.SUGeno && !useGet) {
+      const rid = (opts && 'rid' in opts) ? (opts.rid || null) : ridFor(action, params);   // 保留の再送は積んだ時の値を渡す
+      const json = await window.SUGeno.call(action, params || {}, () => gasCallGoogle(action, params, opts), { residentId: rid });
+      return checkJson(action, json);
+    }
+    return checkJson(action, await gasCallGoogle(action, params, opts));
+  }
+  async function gasCallGoogle(action, params, opts) {
     const cfg = getCfg();
     if (!cfg.gasUrl) throw new Error(GENO_NO_CFG_MSG);
     const useGet = opts && opts.method === 'GET';
@@ -2743,10 +2777,14 @@ const CloudSync = (function() {
       : { method: 'POST', body: JSON.stringify({ action, ...(params || {}), ...(cfg.gasToken && GAS_URL_RE.test(cfg.gasUrl) ? { token: cfg.gasToken } : {}), ...(at ? { accessToken: at } : {}) }),
           headers: { 'Content-Type': 'text/plain;charset=utf-8' }, redirect: 'follow' };
     // 応答の読み取りまで打ち切りの時間内に済ませる（本文が届かないまま止まるのも防ぐ）
-    const json = await fetchWithRetry(url, init, undefined, async (res) => {
+    return await fetchWithRetry(url, init, undefined, async (res) => {
       if (!res.ok) throw new Error('GAS HTTP ' + res.status);
       return await res.json();
     });
+  }
+  const GENO_FINAL_CODES = ['geno_toolarge', 'geno_toomany', 'geno_badchar', 'geno_badname', 'geno_other_resident', 'geno_ambiguous', 'geno_name_taken_by_link', 'su_view'];
+  function checkJson(action, json) {
+    if (!json || typeof json !== 'object') { genoNote_('gas:' + action, 'empty'); throw new Error(GENO_SRV_MSG); }
     if (!json.ok) {
       // 断られた時は理由が分かる文言にする。例外として投げるので、保存・削除は従来どおり保留に残る
       if (json.error === 'unauthorized') {
@@ -2761,6 +2799,16 @@ const CloudSync = (function() {
         const err = new Error('別の端末で新しい版が保存されていたため、書き込みませんでした');
         err.conflict = true;
         err.current = json.current;
+        throw err;
+      }
+      /* 新しい保存先・切り替えた後の Google の断り（code が文字の時・統合 0054）。文は職員向け。
+         keep の断り（確かめられない）は今までの失敗と同じく保留に残す。それ以外は「書いていない」＝保留から外して文を出す（err.refused） */
+      if (typeof json.code === 'string' && /^(geno_|su_)/.test(json.code)) {
+        const err = new Error(String(json.error || GENO_SRV_MSG));
+        err.code = json.code;
+        /* 中身・取り違えの守りの断り（送り直しても同じ）だけ「書いていない」として保留から外す。
+           ログイン・役割・2段階認証・混み合い・切り替えの途中などは、直れば送れるので今までどおり保留に残す（反証レビュー 指摘4） */
+        err.refused = GENO_FINAL_CODES.indexOf(json.code) >= 0;
         throw err;
       }
       genoNote_('gas:' + action, json.error || 'error');
@@ -2815,20 +2863,40 @@ const CloudSync = (function() {
     const r = await gasCall('list', {});
     return r.items || [];
   }
-  async function get(name) {
-    const r = await gasCall('get', { name });
-    return r.doc;
+  /* opts.rid … 保留の再送で積んだ時の利用者No／opts.allowOther … 返った図の氏名が頼んだ名前と違っても返す（読込で、名前を直した方の図へ移るため）。
+     既定は、氏名の違う図は「別の図」として null を返す（保存の前の確かめで、同じ図との食い違いと取り違えない・指摘3） */
+  async function get(name, opts) {
+    const r = await gasCall('get', { name }, (opts && 'rid' in opts) ? { rid: opts.rid } : undefined);
+    /* 新しい保存先は、利用者No で開いた時の取り違えの守りの印を返す（統合 0054）。Google は返さない（無ければ今までどおり） */
+    try {
+      const mid = window._suMasterId;
+      if (mid && r && r.residentId != null && String(r.residentId) === String(mid) && r.doc && r.doc.clientName) {
+        window._suGenoBound = { id: String(mid), name: String(r.doc.clientName) };   // この方に結び付いた図（氏名が URL と違っても、この方の欄に出す）
+      }
+      if (r && (r.otherResident || r.ambiguous)) {
+        /* 別の方の図・同姓同名の方の図: この画面の間はこの名前を開かない・保存しない・この方の欄に出さない（指摘2） */
+        const why = r.ambiguous
+          ? '「' + name + '」さんと同じ氏名の方が入居者マスタに複数いるため、この方の図として開けません（どちらの方の図か決められないため）。家族構成図の画面を直接開き、名前に区別を付けて保存してください'
+          : '「' + name + '」という名前の図は、入居者マスタの別の方に結び付いています。この方の図としては開けません';
+        window._suGenoBlocked = window._suGenoBlocked || Object.create(null);
+        window._suGenoBlocked[String(name)] = why;
+        return null;
+      }
+    } catch (e) { genoNote_('結び付けの印', e); }
+    const d = r.doc;
+    if (d && d.clientName != null && String(d.clientName) !== String(name) && !(opts && opts.allowOther)) return null;
+    return d;
   }
   /* base（この端末の編集が出発したサーバー版の updatedAt）がある時だけ本文に付ける。
      無い時は従来と同じ本文（旧 GAS・旧画面との互換）。GAS はロックの中で現在の版と突き合わせ、違えば書かない */
-  async function save(doc, base) {
-    const r = await gasCall('save', base == null ? { doc } : { doc, base });
+  async function save(doc, base, ro) {
+    const r = await gasCall('save', base == null ? { doc } : { doc, base }, ro);
     return r.saved;
   }
-  async function del(name, base) {
+  async function del(name, base, ro) {
     let deleted;
     try {
-      deleted = (await gasCall('delete', base == null ? { name } : { name, base })).deleted;
+      deleted = (await gasCall('delete', base == null ? { name } : { name, base }, ro)).deleted;
     } catch (e) {
       /* 食い違いでも、サーバーの現在の版が ''（行がもう無い＝別の端末で削除済み）なら削除の目的は達成している。
          成功として扱う（扱わないと、削除の保留が「食い違い」のまま外れなくなる）。'' 以外の食い違いはそのまま投げる */
@@ -2929,8 +2997,9 @@ const CloudSync = (function() {
     err.conflict = true;
     return err;
   }
-  async function fetchRemoteQuiet(name) {
-    try { return await get(name); }
+  const getQ = (n, ro) => get(n, ro);   // 保留の再送の読込（積んだ時の利用者No を添える）
+  async function fetchRemoteQuiet(name, ro) {
+    try { return await get(name, ro); }
     catch (e) {
       /* 合言葉で断られた時は「競合なし」と読み替えない（2026-09-23）。合言葉の不一致は直すまで
          何日も続き、その間は一覧からクラウドの図が黙って消える。同じ名前で描いた図を「競合なし」で
@@ -2939,8 +3008,8 @@ const CloudSync = (function() {
       return null;   // 取得できない時は競合なしとして従来どおり保存を試みる
     }
   }
-  async function saveAndMarkBaseline(doc, base, dirtySeq) {
-    const saved = await save(doc, base);
+  async function saveAndMarkBaseline(doc, base, dirtySeq, ro) {
+    const saved = await save(doc, base, ro);
     // GAS 側が updatedAt をサーバー時刻で採番するため、応答の値を基準にする
     setBaseline(doc.clientName, (saved && saved.updatedAt) || doc.updatedAt, true);   // 保存が通った＝クラウドと交信できた
     clearDirty(doc.clientName, { seq: dirtySeq, at: doc.updatedAt });   // 送った中身が最後の端末保存の時だけ「反映済み」
@@ -3017,7 +3086,7 @@ const CloudSync = (function() {
   /* クラウドの版の中身が、送ろうとしている図と同じか（updatedAt 以外の図の中身で比べる）。
      打ち切った保存が実はサーバーに書けていた時、版が進んでいても「届いていた」と分かる */
   function sameContent(remote, doc) {
-    const pick = (d) => JSON.stringify({ canvasSize: d.canvasSize, nodes: d.nodes, lines: d.lines, frames: d.frames, texts: d.texts });
+    const pick = (d) => JSON.stringify({ clientName: d.clientName, canvasSize: d.canvasSize, nodes: d.nodes, lines: d.lines, frames: d.frames, texts: d.texts });   // 名前の違う図を「届いていた」と見ない（指摘5）
     return !!(remote && doc) && pick(remote) === pick(doc);
   }
   // 届いていた保存を、保存が通った時と同じに扱う（基準をその版へ・dirty は番号で照合・確かめる印を下ろす）
@@ -3030,6 +3099,8 @@ const CloudSync = (function() {
   }
   async function saveQueued(item) {
     const doc = item.doc, name = doc.clientName;
+    const ro = ('rid' in item) ? { rid: item.rid || null } : undefined;   // 積んだ時の利用者No（指摘7）
+    const get = (n) => getQ(n, ro);
     if ('base' in item && typeof item.base === 'string') {
       /* 送る前の取得の失敗は通常の失敗（保留に残るが食い違いの印は付けない）。合言葉の拒否もそのまま投げる */
       const remote = await get(name);
@@ -3040,7 +3111,7 @@ const CloudSync = (function() {
       if (remote && (item.needsConfirm || (b && b.confirm))) throw conflictErr('クラウドに同じ名前の図があり、確認が必要なため再送を保留しました');
       const cur = remote ? String(remote.updatedAt) : '';
       if (cur !== item.base) throw conflictErr('別の端末で新しい版が保存されていたため、再送を保留しました');
-      return await saveAndMarkBaseline(doc, item.base, item.dirtySeq);
+      return await saveAndMarkBaseline(doc, item.base, item.dirtySeq, ro);
     }
     if ('base' in item && item.base === null) {
       /* 未確認文書では取得失敗を「競合なし」と読み替えられない（黙って上書きになる）ため、
@@ -3048,7 +3119,7 @@ const CloudSync = (function() {
       const remote = await get(name);
       if (remote && sameContent(remote, doc)) return markLanded(item, remote);   // 前の送信が届いていた
       if (remote) throw conflictErr('クラウドの既存版を確認できていないため再送を保留しました');
-      return await saveAndMarkBaseline(doc, '', item.dirtySeq);
+      return await saveAndMarkBaseline(doc, '', item.dirtySeq, ro);
     }
     // ---- 旧形式（base 欄なし）: 以前の規則のまま ----
     // 基準が無い時はキュー文書自身の時刻を基準にする＝「積んだ後にリモートが動いたか」の判定になり、基準0による恒久保留を防ぐ
@@ -3058,10 +3129,10 @@ const CloudSync = (function() {
     const b = getBase(name);
     const unverified = !!item.needsConfirm && !(b && b.seen);
     const ts = (b && parseTs(b.at)) || (unverified ? 0 : parseTs(doc.updatedAt));
-    const remote = unverified ? await get(name) : await fetchRemoteQuiet(name);
+    const remote = unverified ? await get(name) : await fetchRemoteQuiet(name, ro);
     if (unverified && remote) throw conflictErr('クラウドの既存版を確認できていないため再送を保留しました');
     if (remote && parseTs(remote.updatedAt) > ts) throw conflictErr('別端末の新しい版があるため再送を保留しました');
-    return await saveAndMarkBaseline(doc, undefined, item.dirtySeq);
+    return await saveAndMarkBaseline(doc, undefined, item.dirtySeq, ro);
   }
 
   // ---- Retry queue ----
@@ -3091,6 +3162,7 @@ const CloudSync = (function() {
     /* 未確認の印は後続の保存で消さない（false で置換すると既存版の無確認上書きに戻る） */
     const needsConfirm = !!(item.needsConfirm || same.some(x => x && x.needsConfirm));
     const out = { ...item, needsConfirm, queuedAt: nextQueuedAt() };
+    if (!('rid' in out)) out.rid = ridFor(item.kind, item.kind === 'save' ? { doc: item.doc } : { name }) || null;   // 積んだ時の利用者No（再送でも同じ方の図として送る）
     delete out.conflict;   // 積み直した＝新しい中身。食い違いの印は外す
     if (!('base' in item) || item.base === undefined) {
       /* 同じ名前の保留（base 付き）を置き換える時は、その base を引き継ぐ。新しい中身は古い保留の続きで、
@@ -3154,6 +3226,7 @@ const CloudSync = (function() {
       let processed = 0, failed = 0;
       const done = [], conflicted = [];
       for (const item of arr) {
+        const ro = ('rid' in item) ? { rid: item.rid || null } : undefined;   // 積んだ時の利用者No（指摘7）
         try {
           let landed = null;   // 処理後のサーバー版（削除は ''）
           if (item.kind === 'save') {
@@ -3163,7 +3236,7 @@ const CloudSync = (function() {
             if ('base' in item && item.base === null) {
               /* 基準を観測できていない削除（新しい形式）: 無条件には消さない。クラウドに版があれば送らず保留、
                  無ければ消す物が無い＝成功扱い。旧形式（base 欄なし）は以前どおり無条件に送る */
-              if (await get(item.name)) throw conflictErr('クラウドの版を確認できていないため、削除の再送を保留しました');
+              if (await get(item.name, ro)) throw conflictErr('クラウドの版を確認できていないため、削除の再送を保留しました');
               setBaseline(item.name, '', true);
               clearDirty(item.name);
               clearConfirm(item.name);
@@ -3171,16 +3244,23 @@ const CloudSync = (function() {
               if ('base' in item && typeof item.base === 'string') {
                 /* 旧 GAS は base を見ずに消すため、送る前に確かめる。別の端末の新しい版があれば消さずに保留。
                    base と同じ版・クラウドに版なしは、以前どおり送る（サーバーが突き合わせる／版なしは成功扱い） */
-                const remote = await get(item.name);
+                const remote = await get(item.name, ro);
                 if (remote && String(remote.updatedAt) !== item.base) throw conflictErr('別の端末で新しい版が保存されていたため、削除の再送を保留しました');
               }
-              await del(item.name, ('base' in item) ? item.base : undefined);
+              await del(item.name, ('base' in item) ? item.base : undefined, ro);
             }
             landed = '';
           }
           processed++;
           done.push({ item, landed });
         } catch (e) {
+          if (e && e.refused) {
+            /* 新しい保存先がこの中身を受け付けなかった（書いていない・送り直しても同じ）。保留から外し、文を出す（統合 0054） */
+            done.push({ item, landed: null });
+            try { setSyncStatus('err', '「' + pendingName(item) + '」はクラウドに入っていません: ' + e.message); } catch (e2) { genoNote_('保留の断りの表示', e2); }
+            failed++;
+            continue;
+          }
           failed++;
           if (e && e.conflict) conflicted.push(item);
         }
@@ -3230,6 +3310,7 @@ const CloudSync = (function() {
     delCurrent: (name) => serial(() => { const b = getBase(name); return del(name, (b && b.seen) ? b.at : undefined); }),
     saveCheckConflict: (doc, needsConfirm, dirtySeq) => serial(() => saveCheckConflict(doc, needsConfirm, dirtySeq)),
     getBase, markDirty, clearDirty, markConfirm, clearConfirm, hasUnsynced, remoteDiffers, clearPendingFor,
+    blockedWhy: (name) => (window._suGenoBlocked && Object.prototype.hasOwnProperty.call(window._suGenoBlocked, String(name))) ? window._suGenoBlocked[String(name)] : '',
     queuePending, getPending, flushPending, updatePendingBadge
   };
 })();
@@ -3277,6 +3358,12 @@ function suGenoNameKey(name) {
 function suGenoMasterIdFor(docName, masterId, masterName) {
   var mid = (masterId == null) ? '' : String(masterId);
   if (!mid) return '';
+  /* 新しい保存先（統合 0054）が「この方に結び付いた図」と答えた図は、氏名が URL と違っても（入居者マスタで名前を直した方）この方の欄に出す */
+  var dn = String(docName == null ? '' : docName);
+  /* 新しい保存先が「別の方に結び付いた図・同姓同名の方の図」と答えた名前は、この方のキーを書かない（この画面の間・統合 0054） */
+  if (window._suGenoBlocked && Object.prototype.hasOwnProperty.call(window._suGenoBlocked, dn)) return '';
+  var bd = window._suGenoBound;
+  if (bd && bd.id === mid && bd.name === dn) return mid;
   var mn = String(masterName == null ? '' : masterName).replace(/\s+/g, '');
   var dn = String(docName == null ? '' : docName).replace(/\s+/g, '');
   return (mn && dn && mn === dn) ? mid : '';
@@ -3592,6 +3679,8 @@ function pruneWrongMasterGenograms() {
     if (!rec || typeof rec !== 'object' || typeof rec.image !== 'string' || !rec.image) return;
     var got = String(rec.name == null ? '' : rec.name).replace(/\s+/g, '');
     if (!got || got === want) return;                     // 判定できない／正しい → 触らない
+    var bd = window._suGenoBound;                         // 新しい保存先がこの方に結び付けた図（名前を直した方・統合 0054）は正しい
+    if (bd && bd.id === k && String(bd.name).replace(/\s+/g, '') === got) return;
     /* ★先に「その図の本人の氏名キー」へ写してから消す。写し先に既に図がある時は、
        更新時刻が新しい方を残す（写し先の方が新しければ上書きしない）。
        通常この2つは同じ保存で同時に書かれるので同時刻になる。 */
@@ -3804,6 +3893,8 @@ async function saveDoc() {
     $('clientName').focus();
     return;
   }
+  const blockedWhy = CloudSync.blockedWhy(name);
+  if (blockedWhy) { alert(blockedWhy + '\n\nこの名前では保存しません（端末にも保存していません）。'); setSyncStatus('err', blockedWhy); return; }   // 別の方・同姓同名の方の図（指摘2）
   const renamed = loadedFrom !== name;
   if (renamed && localStorage.getItem(LS_DOC_PREFIX + name) != null) {
     if (!confirm('この端末に同じ名前「' + name + '」の図があります。いま表示している図で置き換えますか？（キャンセルで保存を中止します）')) return;
@@ -3916,6 +4007,13 @@ async function saveDoc() {
         } else {
           alert('クラウドへの保存を中止しました。\nこの内容はこの端末にのみ保存されています。\n\nページを再読み込みすると、クラウドの版を開くか、この端末の図のままにするかを選べます。\nもう一度保存すると、上書きしてよいかをもう一度確認します。');
         }
+      } else if (err && err.refused) {
+        /* 新しい保存先がこの保存を受け付けなかった（統合 0054・見るだけのアカウント・ほかの方の図・同姓同名・大きすぎる等）。
+           書いていないので「保存しました」とは出さない。保留にも積まない（送り直しても同じ断りになる） */
+        thumbGo(false);   // 断られた版の絵も、ほかの端末へ送らない（ほかの方・同姓同名の方の図のことがある・統合 0056）
+        setSyncStatus('err', 'この端末にだけ保存（クラウド未反映）: ' + err.message);
+        flashStatus(`「${name}」はクラウドに入っていません（この端末にだけ保存しました）`);
+        alert('クラウドへは保存されていません。\n' + err.message + '\n\nこの内容はこの端末にのみ保存されています。');
       } else if ((err && err.auth) || authUnverified.has(name)) {
         /* 合言葉で断られた（2026-09-23）: 保留には積まない。合言葉の不一致は直すまで続き、その間は
            一覧からクラウドの図が見えない。積むと、合言葉を直した後の自動の再送で、同じ名前の
@@ -4009,7 +4107,26 @@ async function loadDoc(name, opts) {
   if (CloudSync.isConfigured()) {
     setSyncStatus('syncing', `クラウドから「${name}」を読込中…`);
     try {
-      const remote = await CloudSync.get(name);
+      const remote = await CloudSync.get(name, { allowOther: true });
+      /* 別の方・同姓同名の方の図（新しい保存先の守り・統合 0054）: 端末の図も使わない（別の方の家族のことがある）。基準も変えない。
+         消えない帯で知らせ、この画面の間はこの名前で保存しない（指摘2） */
+      const blockedWhy = CloudSync.blockedWhy(name);
+      if (blockedWhy) {
+        setSyncStatus('err', blockedWhy);
+        alert(blockedWhy);
+        loadedFrom = '';
+        state.clientName = '';
+        state.doc = makeEmptyDoc();
+        $('clientName').value = '';
+        render();
+        markClean();
+        return;
+      }
+      /* 入居者マスタで名前を直した方: 新しい保存先は、この方に結び付いた図（前の名前）を返す。その図の名前で読み直す
+         （端末の控え・基準・最後に開いた図の印を図の名前にそろえる・指摘3） */
+      if (remote && remote.clientName != null && String(remote.clientName) !== String(name) && !(opts && opts._redirected)) {
+        return await loadDoc(String(remote.clientName), Object.assign({}, opts || {}, { _redirected: true }));
+      }
       if (remote) {
         cloudSeenAt = remote.updatedAt;
         const unsynced = CloudSync.hasUnsynced(name) || authUnverified.has(name);
@@ -4181,6 +4298,12 @@ async function deleteCurrentDoc() {
       removeLocal();
       setSyncStatus('ok', '削除を同期しました');
     } catch (err) {
+      if (err && err.refused) {
+        /* 新しい保存先がこの削除を受け付けなかった（統合 0054）。クラウドの図は残っている。端末の図も残し、積まない */
+        setSyncStatus('err', 'クラウドからは削除できていません: ' + err.message);
+        flashStatus(`「${name}」は削除できませんでした（端末の図も残しています）`);
+        return;
+      }
       if (err && err.auth) {
         /* 合言葉で断られた削除は積まない（2026-09-23）。断られている間は一覧からクラウドの図が見えず、
            同じ名前の他端末の図を、合言葉を直した後の自動の再送で消し得るため。クラウド側は残る */
@@ -4575,6 +4698,11 @@ function bindCloudUI() {
     if (e.target === e.currentTarget) closeCloudModal();
   });
   $('btnCopyGas').addEventListener('click', () => {
+    /* 新しい保存先へ切り替えた後は、受け口のコードを配らない（画面の写しには切り替えの部品が無く、貼ると Google への保存を断らない版に戻るため・統合 0054） */
+    if (window.SUGeno && window.SUGeno.copyBlocked()) {
+      showCfgResult('info', '家族構成図は新しい保存先に切り替わっています。受け口のコードは、開発の担当が管理している正本から貼ってください（この画面からはコピーしません）。');
+      return;
+    }
     const box = $('gasCodeBox');
     box.value = GAS_SCRIPT_CODE;
     box.select();
@@ -4594,6 +4722,8 @@ function bindCloudUI() {
 }
 
 function openCloudModal() {
+  /* 新しい保存先へ切り替えた後・切り替えたか分からない間は、受け口のコードを配らない（ボタンを隠す・統合 0054・指摘10） */
+  try { $('btnCopyGas').hidden = !!(window.SUGeno && window.SUGeno.copyBlocked()); } catch (e) { try { window.SUErrors && window.SUErrors.note('保存・同期の失敗', e, 'genogram:コピーのボタン'); } catch (_) { /* 記録できなくても止めない */ } }
   const cfg = CloudSync.getCfg();
   $('cfgGasUrl').value = cfg.gasUrl || '';
   $('cfgGasToken').value = cfg.gasToken || '';
@@ -4803,6 +4933,25 @@ function init() {
   window.addEventListener('offline', () => {
     setSyncStatus('offline', 'オフライン — 端末のみで動作中');
   });
+  /* 新しい保存先へ切り替えた後（統合 0054）は、URL・合言葉の無い端末でもログインしていればクラウドの図を一覧に出す。
+     起動の時に1回だけ確かめ、切り替えた後と分かったら一覧を読み直す（起動の自動読込は端末の図・今までの設定のまま） */
+  if (window.SUGeno) {
+    const wasConfigured = CloudSync.isConfigured();
+    const noteBoot = (e) => { try { window.SUErrors && window.SUErrors.note('保存・同期の失敗', e, 'genogram:起動の読込'); } catch (_) { /* 記録できなくても止めない */ } };
+    window.SUGeno.probe().then((live) => {
+      if (!live || wasConfigured) return;
+      Promise.resolve().then(refreshDocList).catch(noteBoot);
+      /* URL の無い端末で ?resident= から開いた時、起動の読込はクラウドを見ずに端末の図か空の図で始まっている（切り替えた後と分かったのが後のため）。
+         まだ何も描き変えていなければ、この方の図をクラウドから読み直す（反証レビュー 指摘1） */
+      if (suName) {
+        Promise.resolve(bootLoad).catch(() => null).then(() => {
+          if (state.clientName === suName && !hasUnsavedChanges()) {   // 描き始めていない時だけ（端末の図との突き合わせは loadDoc が今までどおり行う）
+            return loadDoc(suName, { silentIfMissing: true });
+          }
+        }).catch(noteBoot);
+      }
+    });
+  }
 }
 
 init();

@@ -49,7 +49,7 @@ function box(o) {
   env.window = { SUErrors: { note: (k, m) => env.notes.push([k, m]) } };
   vm.createContext(env);
   vm.runInContext([PREP_SRC, 'var SA_FRESH_MS = ' + /var SA_FRESH_MS = ([^;]*);/.exec(SRC)[1] + ';',
-    'var SA_REFUSED = ' + /var SA_REFUSED = (\{[^;]*\});/.exec(SRC)[1] + ';', fn('saNote'), fn('saSize'), fn('loadSa')].join('\n'), env);
+    'var SA_REFUSED = ' + /var SA_REFUSED = (\{[^;]*\});/.exec(SRC)[1] + ';', fn('saNote'), fn('saSize'), fn('saSizeInto'), fn('loadSa')].join('\n'), env);
   const sb = {
     rpc: (n) => {
       rpcs.push(n);
@@ -150,7 +150,7 @@ const ST = (x) => Object.assign({ ok: true, ver: 1, keys: { months: { rev: 42, m
   t('H ボタンは画面の動きにつないである', /\$\('b-sa-cut'\)\.addEventListener\('click', function \(\) \{ msg\(''\); runSaOp\('cut'\); \}\);/.test(SRC) && /\$\('b-sa-back'\)\.addEventListener\('click', function \(\) \{ msg\(''\); runSaOp\('back'\); \}\);/.test(SRC));
   t('H 操作は管理者（2段階認証済み）・事務所PCだけ・スイッチが入の時だけ切り替える', /function runSaOp\(kind\) \{[\s\S]*me\.status === SUAuth\.STATUS\.OK[\s\S]*role === 'field'[\s\S]*analyzerOn\(\)/.test(fn('runSaOp')));
   t('N 切り替えの印の欄・読み直しの失敗を空の catch で捨てない（記録へ）', /try \{ await loadSaMode\(sb\); \} catch \(e\) \{ saNote\('印の欄', e\); \}/.test(SRC) && /try \{ await loadSaMode\(sb\); await loadSa\(sb\); \} catch \(e\) \{ saNote\('読み直し', e\); \}/.test(SRC));
-  t('H 欄の文は textContent だけ', !/innerHTML/.test(fn('loadSa') + fn('loadSaMode') + fn('runSaOp') + fn('saSize')));
+  t('H 欄の文は textContent だけ', !/innerHTML/.test(fn('loadSa') + fn('loadSaMode') + fn('runSaOp') + fn('saSize') + fn('saSizeInto')));
   console.log(`\n合格 ${pass} / 不合格 ${fail}`);
   process.exitCode = fail ? 1 : 0;
 })();
