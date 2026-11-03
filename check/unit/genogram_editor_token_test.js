@@ -58,7 +58,7 @@ function box(opt) {
     "const AUTH_ERR_MSG = 'x';",
     'async function fetchWithRetry(url, init, attempts, read) { const res = await fetch(url, init); return read ? await read(res) : res; }',
     cutLine('const GAS_URL_RE = '), cutLine('const GENO_WRITE_ACTIONS = '), cutLine('const GENO_SESSION_RE = '),
-    cutF('genoHasLogin_'), cutF('genoAuthLoad_'), cutF('genoAccessToken_'), cutF('gasCall', 'async ')
+    cutF('genoHasLogin_'), cutF('genoAuthLoad_'), cutF('genoAccessToken_'), 'this.window = this.window || this; let flushRid = null; function suGenoMasterIdFor() { return ""; }', cutF('ridFor'), cutF('gasCall', 'async '), cutF('gasCallGoogle', 'async '), cutF('checkJson')
   ].join('\n'), b);
   return { b, sets, fetches, timers, loads, gs: () => gs };
 }

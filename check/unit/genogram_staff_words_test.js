@@ -89,7 +89,7 @@ function box(fetchImpl, json, withAbort) {
     cut('genoNote_'), cut('genoIsLineErr_'), cut('genoNetErr_'), line('const AUTH_ERR_MSG = '),
     line('const GENO_WRITE_ACTIONS = '), line('const GENO_SESSION_RE = '), cut('genoHasLogin_'),
     'function genoAccessToken_() { return Promise.resolve(""); }',
-    line('const FETCH_TIMEOUT_MS = '), cut('fetchWithRetry', 'async '), cut('sleep'), cut('gasCall', 'async '),
+    line('const FETCH_TIMEOUT_MS = '), cut('fetchWithRetry', 'async '), cut('sleep'), 'this.window = this.window || this; let flushRid = null; function suGenoMasterIdFor() { return ""; }', cut('ridFor'), cut('gasCall', 'async '), cut('gasCallGoogle', 'async '), cut('checkJson'),
     'this.gasCall = gasCall; this.NET = GENO_NET_MSG; this.SRV = GENO_SRV_MSG;'
   ].join('\n'), b);
   return { b, notes };
