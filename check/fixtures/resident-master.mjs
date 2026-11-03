@@ -47,6 +47,13 @@ export const routes = [{
 export const sheets = [
   { key: 'cm', view: 'cm', print: 'cm', ready: '#cmSheet table.cmtbl tbody tr' },   // 現入居者家族CM表（A4横）
   { key: 'lvl', view: 'lvl', print: 'lvl', ready: '#lvlSheet table.lvltbl' },       // 介護度別表（A4縦）
+  /* 2026-11-03 案A で足した帳票（架空の16名に、家族・病名・既往歴・定期薬・認定期間・食形態の架空の値を持たせて撮る） */
+  { key: 'room', view: 'room', print: 'room', ready: '.rp-sheet' },                          // 入居者居室一覧（A4横・1階と2階の2枚）
+  { key: 'fam', view: 'fam', print: 'fam', ready: '#famSheet table tbody tr' },              // 家族情報一覧（A3縦）
+  { key: 'hist', view: 'hist', print: 'hist', ready: '#histSheet table tbody tr' },          // 病歴・内服薬一覧（A3縦）
+  { key: 'md', view: 'md', print: 'md', ready: '#mdSheet table tbody tr' },                // 薬効辞書の一覧（A4縦）。辞書が先に届いても表が描き直されること（2026-11-03 に直した不具合）もここで見る
+  { key: 'cert', view: 'cert', print: 'cert', ready: '#certSheet table tbody tr' },          // 認定期限の一覧（A4縦）
+  { key: 'mf', view: 'mf', print: 'mf', ready: '#mfSheet .mf-page' },                  // 食形態一覧（配布用・A4縦）
 ];
 
 const SEI = [['架空', 'カクウ'], ['見本', 'ミホン'], ['試験', 'シケン'], ['仮名', 'カメイ']];
@@ -79,8 +86,29 @@ const residents = Array.from({ length: 16 }, (_, i) => {
     dischargeDate: '',
     admissionDate: `20${20 + (i % 6)}-${pad(1 + ((i * 5) % 12))}-${pad(1 + ((i * 3) % 28))}`,
     careOffice: off[0], careManager: off[1], careOfficeTel: off[2], careOfficeFax: off[3],
+    /* 認定期間・負担割合（認定期限の一覧・家族情報一覧の負担割合）。終わりの日は撮影の固定時刻（2026-01-14）の前後に散らす */
+    careCertStart: `2025-${pad(1 + (i % 12))}-01`, careCertEnd: `2026-${pad(1 + (i % 12))}-${pad(28 - (i % 3))}`,
+    copayRate: ['1割', '2割', '3割', '1割'][i % 4],
+    /* 家族（家族情報一覧）。架空の氏名・架空の電話（000-）・架空の住所。緊急連絡先の印は1人目だけ */
+    family: (i % 5 === 4) ? [] : [
+      { name: `${sei} 長${i % 2 ? '女' : '男'}`, relation: i % 2 ? '長女' : '長男', phone: `000-1000-${pad(i + 1)}01`, address: `架空県見本市${i + 1}-1`, kp: true, emergency: true },
+      ...(i % 3 === 0 ? [{ name: `${sei} 次${i % 2 ? '男' : '女'}`, relation: i % 2 ? '次男' : '次女', phone: '', address: `架空県試験町${i + 1}-2`, kp: false, emergency: false }] : []),
+    ],
+    /* 病名・既往歴・定期薬（病歴・内服薬一覧と薬効辞書）。病名・薬はすべて架空の語（実在の薬の名前は使わない） */
+    diseases: [{ name: `架空の病名${'ABCD'[i % 4]}`, onset: `20${10 + (i % 10)}年`, hospital: 'みほん内科医院' }],
+    pastHistory: i % 2 ? '架空の既往歴（試験）' : '',
+    medsRegular: [`架空錠${'ABC'[i % 3]} 5mg 1錠 朝食後`, ...(i % 2 ? [`見本カプセル${'XY'[i % 2]} 1カプセル 夕食後`] : [])].join('\n'),
+    /* 食形態（食形態一覧）。主食・副食・備考・アレルギーは架空の値 */
+    mealStaple: ['常食', '軟飯', '全粥', 'ミキサー'][i % 4], mealSide: ['常食', '一口大', 'きざみ', 'ミキサー'][i % 4],
+    mealNote: i % 3 ? '' : '架空の備考（とろみ付け）', allergy: i % 5 === 0 ? '架空のアレルゲン' : 'なし', sideEffects: '',
   };
 });
+/* 薬効辞書（getMedDict）の架空の行。1つは薬剤師の確かめ済み（ok）、ほかは未確認（＊が付く） */
+const MED_DICT = [
+  { name: '架空錠A', effect: '架空の効能（降圧の見本）', ok: true },
+  { name: '架空錠B', effect: '架空の効能（整腸の見本）', ok: false },
+  { name: '見本カプセルY', effect: '架空の効能（睡眠の見本）', ok: false },
+];
 
 const ROSTER_KEYS = ['id', 'name', 'kana', 'room', 'gender', 'careLevel', 'active', 'updatedAt', 'birthDate', 'height', 'dischargeDate'];
 const pick = (o, keys) => Object.fromEntries(keys.map((k) => [k, o[k]]));
@@ -90,6 +118,11 @@ export function respond(body) {
   const a = body && body.action;
   if (a === 'getRoster') return { ok: true, roster: residents.map((r) => pick(r, ROSTER_KEYS)), stateRev: 1 };
   if (a === 'getBulk') return { ok: true, rows: residents.map((r) => ({ ...r })) };
+  /* 家族情報一覧・病歴薬一覧のまとめ読み（在籍者の5項目） */
+  if (a === 'getListFull') return { ok: true, rows: residents.map((r) => ({ id: r.id, family: r.family, diseases: r.diseases, currentDiseases: '', pastHistory: r.pastHistory, medsRegular: r.medsRegular })) };
+  if (a === 'getResident') { const r = residents.find((x) => String(x.id) === String(body.id)); return r ? { ok: true, record: JSON.parse(JSON.stringify(r)) } : { ok: false, error: 'not found' }; }
+  if (a === 'getMedDict') return { ok: true, rows: MED_DICT.map((x) => ({ ...x })) };
+  if (a === 'getMealList') return { ok: true, rows: residents.map((r) => ({ id: r.id, name: r.name, kana: r.kana, room: r.room, careLevel: r.careLevel, copayRate: r.copayRate, birthDate: r.birthDate, mealStaple: r.mealStaple, mealSide: r.mealSide, mealNote: r.mealNote, allergy: r.allergy, sideEffects: r.sideEffects })) };
   if (a === 'stateRev') return { ok: true, rev: 1 };
   return { ok: true };
 }

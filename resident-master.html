@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-MKoU6MqQstaLXNgA4JVS0ROFJ4jE+W1wPMNtpDb/e8A='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-T4OlEgmtHS8fa+y7MCsSdK5IApXUzkiQIrrIHlGgbSU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -4841,7 +4841,12 @@ function fullEnsure(force){
     .then(function(){
       if(gen!==fullGen) return;
       fullLoading=false; paintShBars();
-      if(curView==='fam'||curView==='hist'){ renderRoster(); if(curView==='hist') fitHistSheet(); }
+      /* 薬効辞書の一覧（md）も描き直す（2026-11-03）。辞書の方が先に届くと、辞書の側の描き直しは済んだ後なので、
+         ここで描き直さないと表が「取得しています… 0 / N名」のまま止まっていた。
+         書きかけ（mdEdits 等）は入力の度にメモリへ控えてあるので描き直しで消えない。表の中で入力している最中だけは
+         入力の場所を動かさないよう描き直さない（その時は上の paintShBars で帯の数だけ直す） */
+      var mdTyping=curView==='md'&&document.activeElement&&document.activeElement.closest&&document.activeElement.closest('#rosterBox');
+      if(curView==='fam'||curView==='hist'||(curView==='md'&&!mdTyping)){ renderRoster(); if(curView==='hist') fitHistSheet(); }
     });
 }
 function fullOf(r){ return (fullMap&&fullMap[String(r.id)])||null; }
