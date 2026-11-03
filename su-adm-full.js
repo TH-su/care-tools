@@ -70,6 +70,11 @@
   }
 
   /* io = { gas(body) → Promise<GAS の応答>, rpc(name, args) → Promise<{data, error}>, screen?, progress?(text) } */
+  /* 写しと正本の差の件数を日ごとに残す（統合 0053・2026-11-03）。写しの見比べの「切り替える前の確かめ」が数える。
+   * 手で押した写しも1日1回の自動の写しも残す。0053 の前・断られた時も写しの結果はそのまま返す */
+  async function noteDiff(io, n) {
+    try { await io.rpc('shadow_diff_note', { p_kind: 'adm', p_diffs: n }); } catch (e) { /* 残せなくても写しの結果は返す */ }
+  }
   async function run(io) {
     var say = io.progress || function () {};
     function fail(why) { return { ok: false, why: why }; }
@@ -92,7 +97,9 @@
       say('写しを読み直して見比べています…');
       var g = await io.rpc('adm_get', { p_screen: io.screen || 'shadow-check' });
       if (!g || g.error || !g.data || g.data.ok !== true) return fail('写しは終わりましたが、読み直せませんでした: ' + dbWhy(g && (g.error || g.data && g.data.error)));
-      return { ok: true, result: r.data.result, rev: src.rev, active: countActive(src.data), diff: compare(src, g.data) };
+      var diff = compare(src, g.data);
+      await noteDiff(io, diff.length);
+      return { ok: true, result: r.data.result, rev: src.rev, active: countActive(src.data), diff: diff };
     } catch (e) {
       return fail(String(e && e.message || e) + '。写しは止めました。');
     }

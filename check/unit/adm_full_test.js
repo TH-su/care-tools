@@ -71,7 +71,7 @@ function world(o) {
   {
     const w = world();
     await R.run(w);
-    t('adm_import（版・中身・時刻のまま）→ adm_get（画面の名前）', w.rpcs.map(x => x.name).join(',') === 'adm_import,adm_get'
+    t('adm_import（版・中身・時刻のまま）→ adm_get（画面の名前）', w.rpcs.map(x => x.name).join(',') === 'adm_import,adm_get,shadow_diff_note'
       && w.rpcs[0].args.p_rev === 5 && w.rpcs[0].args.p_updated === '2026-10-01T09:00:00.000Z' && w.rpcs[0].args.p_data.candidates.length === 3 && w.rpcs[1].args.p_screen === 'shadow-check', w.rpcs);
     for (const [code, re] of [['stale', /新しい版/], ['shrink', /半分/], ['nodata', /形/]]) {
       const w2 = world({ rpc: { adm_import: () => ({ data: { ok: false, error: code }, error: null }) } });

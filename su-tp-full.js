@@ -117,6 +117,11 @@
   }
 
   /* io = { gas(body) → Promise<GAS の応答>, rosterIds() → Promise<[利用者No]>, rpc(name, args) → Promise<{data, error}>, progress?(text) } */
+  /* 写しと正本の差の件数を日ごとに残す（統合 0053・2026-11-03）。写しの見比べの「切り替える前の確かめ」が数える。
+   * 手で押した写しも1日1回の自動の写しも残す。0053 の前・断られた時も写しの結果はそのまま返す */
+  async function noteDiff(io, n) {
+    try { await io.rpc('shadow_diff_note', { p_kind: 'tp', p_diffs: n }); } catch (e) { /* 残せなくても写しの結果は返す */ }
+  }
   async function run(io) {
     var say = io.progress || function () {};
     var runId = null;
@@ -175,8 +180,10 @@
         if (!g || !g.ok) return fail('写しは終わりましたが、読み直せませんでした: ' + dbWhy(g && g.error));
         copy = copy.concat(g.rows || []);
       }
+      var cmp = compare(items, copy);
+      await noteDiff(io, cmp.diff.length + cmp.notInCopy.length);
       return { ok: true, docs: items.length, keys: kk.keys.length, badIds: kk.bad,
-               run: { inserted: tot.inserted, updated: tot.updated, unchanged: tot.unchanged, missing: f.missing || 0 }, cmp: compare(items, copy) };
+               run: { inserted: tot.inserted, updated: tot.updated, unchanged: tot.unchanged, missing: f.missing || 0 }, cmp: cmp };
     } catch (e) {
       if (e && e.db) return stop(dbWhy(e.db));
       return stop(String(e && e.message || e) + '。写しは止めました。');

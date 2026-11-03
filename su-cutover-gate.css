@@ -1,0 +1,14 @@
+/* su-cutover-gate.css — 写しの見比べの「切り替える前の確かめ」の表（2026-11-03・判定は su-cutover-gate.js）。画面だけ・印刷は変えない */
+.gate { margin: 0 0 12px; }
+.gate-t { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 0.9375rem; }
+.gate-t caption { text-align: left; font-weight: 700; padding: 0 0 6px; }
+.gate-t caption.ok { color: var(--ok); }
+.gate-t caption.ng { color: var(--ng); }
+.gate-t th, .gate-t td { text-align: left; vertical-align: top; padding: 8px 6px; border-top: 1px solid var(--line, #e3e3e3); overflow-wrap: anywhere; }
+.gate-t th { font-weight: 700; }
+.gate-t th:nth-child(1) { width: 44%; }
+.gate-t th:nth-child(2) { width: 22%; }
+.gate-t tr.ok td:last-child { color: var(--ok); font-weight: 700; }
+.gate-t tr.ng td:last-child { color: var(--ng); font-weight: 700; }
+.gate-t td .em { font-weight: 400; color: var(--ink, inherit); margin-top: 4px; }
+@media print { .gate { display: none; } }
