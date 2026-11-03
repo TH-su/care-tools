@@ -24,6 +24,28 @@ t('場所の名前: 居室・名前の箱・その他の場所・見つからな
   && C.placeLabel('place:p-1', [{ id: 'p-1', name: '駐車場' }]) === '駐車場' && C.placeLabel('place:zz', []) === '（見つからない場所）');
 t('事業所の種類: 居室と名前の箱は施設・その他の場所は場所の kind', C.placeKind('room:101') === 'facility' && C.placeKind('area:厨房') === 'facility' && C.placeKind('place:p-2', [{ id: 'p-2', kind: 'visit' }]) === 'visit');
 
+group('1b. 名前の箱の鍵は階つき（2026-11-03・別の階の同じ名前の箱を分ける）');
+{
+  const box = { r: 3, c: 1, t: 'トイレ' };
+  t('(a) 同じ t の箱でも階が違えば鍵が違う（area:f1:トイレ ≠ area:f2:トイレ）', C.placeKeyOf(box, 'f1') === 'area:f1:トイレ' && C.placeKeyOf(box, 'f2') === 'area:f2:トイレ' && C.placeKeyOf(box, 'f1') !== C.placeKeyOf(box, 'f2'));
+  t('(a) 名前の前後の空白は落とす・居室は階を付けない（部屋番号は施設で一意）', C.placeKeyOf({ t: ' 浴室1 ' }, 'f1') === 'area:f1:浴室1' && C.placeKeyOf({ room: '201' }, 'f2') === 'room:201' && C.placeKeyOf({ id: 'p-1' }, 'f1') === 'place:p-1');
+  t('(b) 階キーが無い時は area:名前', C.placeKeyOf(box) === 'area:トイレ' && C.placeKeyOf(box, undefined) === 'area:トイレ' && C.placeKeyOf(box, null) === 'area:トイレ' && C.placeKeyOf(box, '') === 'area:トイレ');
+  t('(b) 階キーの形が違う時は area:名前（記号・コロン・21文字・数値・オブジェクト）', ['f:1', 'f 1', '1階', 'a'.repeat(21), '<x>'].every((k) => C.placeKeyOf(box, k) === 'area:トイレ') && C.placeKeyOf(box, 1) === 'area:トイレ' && C.placeKeyOf(box, {}) === 'area:トイレ');
+  t('(b) 階キーは英数字・_・- の 1〜20 文字なら使う', C.placeKeyOf(box, 'B1_x-2') === 'area:B1_x-2:トイレ' && C.placeKeyOf(box, 'a'.repeat(20)) === 'area:' + 'a'.repeat(20) + ':トイレ');
+  const plan = { f1: { title: '本館 1階', cells: [] }, f2: { title: '２階', cells: [] }, b1: { title: '別館', cells: [] } };
+  t('(c) 新しい形: area:f1:浴室1 → 「浴室1（1階）」（階の名前は floorLabel）', C.placeLabel('area:f1:浴室1', [], plan) === '浴室1（1階）' && C.placeLabel('area:f2:トイレ', [], plan) === 'トイレ（2階）' && C.placeLabel('area:b1:倉庫', [], plan) === '倉庫（別館）');
+  t('(c) 古い形: area:浴室 → 「浴室」（plan があっても無くても）', C.placeLabel('area:浴室', [], plan) === '浴室' && C.placeLabel('area:浴室') === '浴室');
+  t('(c) plan が無い・その階が無い時: 「浴室1（f1）」', C.placeLabel('area:f1:浴室1') === '浴室1（f1）' && C.placeLabel('area:f1:浴室1', [], null) === '浴室1（f1）' && C.placeLabel('area:f9:浴室1', [], plan) === '浴室1（f9）');
+  t('(c) 名前にコロンがあっても最初の区切りだけを階として読む', C.placeLabel('area:f1:A:B', [], plan) === 'A:B（1階）' && C.placeLabel('area:浴室：東') === '浴室：東');
+  t('(c) 居室・その他の場所は今まで通り', C.placeLabel('room:101', [], plan) === '101' && C.placeLabel('place:p-1', [{ id: 'p-1', name: '駐車場' }], plan) === '駐車場');
+  t('(c) 階つきの名前の箱も施設の場所', C.placeKind('area:f1:浴室1') === 'facility');
+  const r = C.restoreUiState({ filter: JSON.stringify({ place: 'area:f1:浴室1' }) }, { floors: ['f1'] });
+  t('絞り込みの場所: 階つきの鍵も復元で通す・古い鍵も通す', r.filter.place === 'area:f1:浴室1' && C.restoreUiState({ filter: JSON.stringify({ place: 'area:浴室' }) }, {}).filter.place === 'area:浴室');
+  t('絞り込みの場所: 知らない形は既定（空）へ', C.restoreUiState({ filter: JSON.stringify({ place: 'zone:f1:x' }) }, {}).filter.place === '' && C.restoreUiState({ filter: JSON.stringify({ place: 'area:f1:\u0001' }) }, {}).filter.place === '');
+  const csv = C.buildCsv([{ id: 'e1', place_key: 'area:f2:トイレ', etype: 'repair', handled_on: '2026-05-01', amount: 0 }], { plan });
+  t('CSV の場所の列も「トイレ（2階）」', csv.split('\r\n')[1].split(',')[6] === 'トイレ（2階）', csv);
+}
+
 group('2. 次回予定日');
 t('次回予定日: 2026-04-15 + 6か月 = 2026-10-15', C.nextDueDate('2026-04-15', 6) === '2026-10-15');
 t('次回予定日: 年をまたぐ（2026-11-30 + 3か月 = 2027-02-28・月末に丸める）', C.nextDueDate('2026-11-30', 3) === '2027-02-28', C.nextDueDate('2026-11-30', 3));
@@ -205,6 +227,13 @@ group('16. 図面の印・階の名前（U3）');
   t('102: 廃棄だけは数えず印も付けない（鍵ごと無い）', !('room:102' in m), m['room:102']);
   t('103: 期限が先なら期限切れの印なし', m['room:103'] && m['room:103'].count === 1 && m['room:103'].overdue === false && m['room:103'].repairing === false);
   t('設備に付かない記録の期限切れも場所に印を付ける（厨房・設備0）', m['area:厨房'] && m['area:厨房'].count === 0 && m['area:厨房'].overdue === true);
+  {
+    const as2 = [{ id: 'b1', place_key: 'area:f1:トイレ', status: 'repairing' }];
+    const ev2 = [{ id: 'e10', asset_id: null, place_key: 'area:f1:トイレ', next_due: '2026-10-30', handled_on: '2026-04-01' }];
+    const m2 = C.placeMarks(as2, ev2, '2026-11-03');
+    t('(d) 1階のトイレの設備・記録は 1階のトイレだけに数える', JSON.stringify(m2['area:f1:トイレ']) === JSON.stringify({ count: 1, overdue: true, repairing: true }), m2);
+    t('(d) 2階のトイレ・階なしのトイレには印を付けない', m2['area:f2:トイレ'] === undefined && m2['area:トイレ'] === undefined && JSON.stringify(Object.keys(m2)) === JSON.stringify(['area:f1:トイレ']), Object.keys(m2));
+  }
   t('階の名前: title から「N階」を抜く・全角の数字もそろえる', C.floorLabel('1階', 'f1') === '1階' && C.floorLabel('本館 2階（居室）', 'f2') === '2階' && C.floorLabel('３階', 'f3') === '3階');
   t('階の名前: 抜けなければ title のまま・title が無ければ鍵', C.floorLabel('別館', 'b1') === '別館' && C.floorLabel('', 'f9') === 'f9' && C.floorLabel(null, 'f9') === 'f9');
 }

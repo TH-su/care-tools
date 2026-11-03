@@ -209,8 +209,8 @@ const allPanels = (L) => { const out = []; for (const tb of CALC.TABS) { L.ctx.t
     t('起動: eq_list を1回（全部の事業所 p_kind=null）だけ呼ぶ・表は直接読まない', L.rpcs().length === 1 && L.rpcs()[0].name === 'eq_list' && L.rpcs()[0].args.p_kind === null && !L.log.some((x) => x.kind === 'table'), L.rpcs());
     t('起動: アプリの欄を出し、準備中の帯は出さない', !L.els['e-app'].hidden && L.els['e-gate'].hidden && L.els['e-band'].hidden && L.ctx.dbState === 'ok');
     const map = L.els['p-map'].innerHTML;
-    t('図面: 部屋番号と名前の箱を 44px 以上のボタンで描く（1階の 101・102・厨房）', /data-key="room:101"/.test(map) && /data-key="room:102"/.test(map) && /data-key="area:厨房"/.test(map) && !/room:201/.test(map));
-    t('図面: 箱の置き場所は施設情報の r・c をそのまま使う（1から数える・resident-master と同じ）', /grid-row:1 \/ span 1;grid-column:1 \/ span 1" data-act="place" data-key="room:101"/.test(map) && /grid-row:1 \/ span 1;grid-column:2 \/ span 1" data-act="place" data-key="room:102"/.test(map) && /grid-row:2 \/ span 1;grid-column:1 \/ span 2" data-act="place" data-key="area:厨房"/.test(map), map.slice(0, 600));
+    t('図面: 部屋番号と名前の箱を 44px 以上のボタンで描く（1階の 101・102・厨房）', /data-key="room:101"/.test(map) && /data-key="room:102"/.test(map) && /data-key="area:f1:厨房"/.test(map) && !/room:201/.test(map));
+    t('図面: 箱の置き場所は施設情報の r・c をそのまま使う（1から数える・resident-master と同じ）', /grid-row:1 \/ span 1;grid-column:1 \/ span 1" data-act="place" data-key="room:101"/.test(map) && /grid-row:1 \/ span 1;grid-column:2 \/ span 1" data-act="place" data-key="room:102"/.test(map) && /grid-row:2 \/ span 1;grid-column:1 \/ span 2" data-act="place" data-key="area:f1:厨房"/.test(map), map.slice(0, 600));
     t('図面: その他の場所（eq_places）を名前で出す', /data-key="place:p1"/.test(map) && /訪問の車/.test(map));
     L.ctx.act_('place', { getAttribute: (k) => (k === 'data-key' ? 'room:101' : null) });
     const side = L.els['p-map'].innerHTML;
@@ -526,7 +526,7 @@ const allPanels = (L) => { const out = []; for (const tb of CALC.TABS) { L.ctx.t
     const box = (k) => (new RegExp('<button type="button" class="pl[^"]*" style="[^"]*" data-act="place" data-key="' + k + '"[^>]*>[\\s\\S]*?</button>').exec(map) || [''])[0];
     t('修理中の設備がある部屋に「修理中」の印（文字つき・黄系）', /<span class="mk rep">修理中<\/span>/.test(box('room:101')) && !/mk over/.test(box('room:101')), box('room:101'));
     t('期限切れの予定がある部屋に「！期限切れ」の印（文字つき・赤系の枠）', /<span class="mk over">！期限切れ<\/span>/.test(box('room:102')) && /class="pl has-over"/.test(box('room:102')) && /設備 1/.test(box('room:102')), box('room:102'));
-    t('印の無い箱には印を出さない（厨房）', !/class="mk/.test(box('area:厨房')) && box('area:厨房') !== '');
+    t('印の無い箱には印を出さない（厨房）', !/class="mk/.test(box('area:f1:厨房')) && box('area:f1:厨房') !== '');
     t('図面の下に凡例（印の意味を文字で）', /<ul class="legend" aria-label="図面の印の意味">/.test(map) && /！期限切れ<\/span> 点検・清掃などの予定日を過ぎている/.test(map) && /修理中<\/span> 状態が「修理中」の設備がある/.test(map) && map.indexOf('class="legend"') > map.indexOf('class="plan"'));
     t('階の切替の名前: title から「N階」を抜く（本館１階（居室）→ 1階）・抜けなければ title のまま（別館）', /data-floor="f1" aria-pressed="true">1階<\/button>/.test(map) && /data-floor="f2" aria-pressed="false">別館<\/button>/.test(map), (map.match(/data-floor="[^<]*<\/button>/g) || []));
     t('押している切替に押した見た目（CSS の .btn[aria-pressed="true"] と ✓）', /\.btn\[aria-pressed="true"\]\{background:var\(--pri\); border-color:var\(--pri\); color:#fff\}/.test(HTML) && /\.btn\[aria-pressed="true"\]::before\{content:"✓ "\}/.test(HTML));
@@ -705,6 +705,40 @@ const allPanels = (L) => { const out = []; for (const tb of CALC.TABS) { L.ctx.t
     t('localStorage に書く鍵は全部 eql_ 始まりの文字列', sets.length === 3 && sets.every((k) => /^'eql_(tab|floor|filter)'$/.test(k)), sets);
     t('施設名・事業所名を書かず、施設情報（SUFacility.officeName）から読む', /SUFacility\.officeName/.test(S));
     t('名簿を読まない（入居者の氏名の読み口を使わない）', !/getRoster|roster|resident/i.test(S));
+  }
+
+  group('14. 別の階の同じ名前の箱は別の場所（名前の箱の鍵は area:<階キー>:<名前>・2026-11-03）');
+  {
+    const plan = JSON.parse(JSON.stringify(PLAN));
+    plan.f1.cells.push({ r: 3, c: 1, rs: 1, cs: 1, t: 'トイレ' });
+    plan.f2.cells.push({ r: 2, c: 1, rs: 1, cs: 1, t: 'トイレ' });
+    const store = {};
+    const L = await opened({ rpc: { eq_list: okList(), eq_save_event: saver(store) }, plan });
+    const side = () => (/<aside class="side cd" aria-live="polite">([\s\S]*)<\/aside>/.exec(L.els['p-map'].innerHTML) || ['', ''])[1];
+    const h2 = () => (/<h2>([^<]*)<\/h2>/.exec(side()) || ['', null])[1];
+    const box = (k) => (new RegExp('<button type="button" class="pl[^"]*" style="[^"]*" data-act="place" data-key="' + k + '"[^>]*>[\\s\\S]*?</button>').exec(L.els['p-map'].innerHTML) || [''])[0];
+    t('1階の図面: トイレの箱の鍵は area:f1:トイレ・箱の中の文字は「トイレ」だけ（階を付けない）', /<span>トイレ<\/span>/.test(box('area:f1:トイレ')) && box('area:トイレ') === '' && box('area:f2:トイレ') === '', box('area:f1:トイレ'));
+    L.ctx.act_('place', { getAttribute: (k) => (k === 'data-key' ? 'area:f1:トイレ' : null) });
+    t('1階のトイレを押す: 見出しは「トイレ（1階）」・記録はまだ無い', h2() === 'トイレ（1階）' && /この場所の記録はまだありません。/.test(side()), h2());
+    t('主ボタンにも「トイレ（1階）」を添える', L.els['e-add-ev'].textContent === '＋ 記録を足す（トイレ（1階））', L.els['e-add-ev'].textContent);
+    L.ctx.act_('event-new', { getAttribute: () => null });
+    const dlg = L.els['e-dlg'].innerHTML;
+    t('記録の窓: 場所の選択肢は階ごとに別（1階のトイレを選んだ状態・2階のトイレは別の選択肢）', L.ctx.form && L.ctx.form.row.place_key === 'area:f1:トイレ'
+      && /<option value="area:f1:トイレ" selected>トイレ（1階）<\/option>/.test(dlg) && /<option value="area:f2:トイレ">トイレ（2階）<\/option>/.test(dlg) && !/value="area:トイレ"/.test(dlg));
+    L.el('v-place').value = L.ctx.form.row.place_key; L.el('v-etype').value = 'cleaning'; L.el('v-amount').value = '500'; L.el('v-content').value = '架空の1階トイレ清掃';
+    const ok = await L.ctx.saveForm_(); await settle();
+    const se = L.rpcs('eq_save_event');
+    t('保存: p_row.place_key は area:f1:トイレ', ok === true && se.length === 1 && se[0].args.p_row.place_key === 'area:f1:トイレ', se.map((x) => x.args.p_row.place_key));
+    L.ctx.tab = 'map'; L.ctx.paintAll_();
+    t('1階のトイレの見出し・一覧にその記録が出る', h2() === 'トイレ（1階）' && /架空の1階トイレ清掃/.test(side()), side());
+    L.ctx.act_('floor', { getAttribute: (k) => (k === 'data-floor' ? 'f2' : null) });
+    t('2階に切り替える: 2階のトイレの箱の鍵は area:f2:トイレ', box('area:f2:トイレ') !== '' && box('area:f1:トイレ') === '');
+    L.ctx.act_('place', { getAttribute: (k) => (k === 'data-key' ? 'area:f2:トイレ' : null) });
+    t('2階のトイレを押す: 見出しは「トイレ（2階）」・1階の記録は出ない', h2() === 'トイレ（2階）' && /この場所の記録はまだありません。/.test(side()) && !/架空の1階トイレ清掃/.test(side()), side());
+    L.ctx.tab = 'events'; L.ctx.paintAll_();
+    const ev = L.els['p-events'].innerHTML;
+    t('対応の記録の一覧: 場所の列は「トイレ（1階）」・絞り込みの場所に 1階・2階のトイレが別々に並ぶ', /<td data-label="場所"><div class="v">トイレ（1階）<\/div><\/td>/.test(ev)
+      && /<option value="area:f1:トイレ">トイレ（1階）<\/option>/.test(ev) && /<option value="area:f2:トイレ">トイレ（2階）<\/option>/.test(ev), (ev.match(/area:f[12]:トイレ[^<]*/g) || []));
   }
 
   say('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
