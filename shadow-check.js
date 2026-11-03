@@ -1943,6 +1943,7 @@
    * 切り替えボタンは、切り替えスイッチ admission が入の時だけ出す。添付書類（Drive）はどちらでも触らない（案A）。
    * Google の印が立ったまま（前の戻しが途中）の時は、知らせて「写しの期間に戻す」を出す */
   function admissionOn() { var sw = window.SUKv ? SUKv._flags() : null; return !!(sw && sw.supabase && sw.supabase.admission === true); }
+  var admState = null;   // 直前に読んだ状態（戻すの確かめの文を選ぶ・反証レビュー指摘3）
   async function loadAdmMode(sb) {
     var line = $('admf-mode'), bc = $('b-adm-cut'), bb = $('b-adm-back');
     bc.hidden = true; bb.hidden = true; line.className = 'msg'; line.textContent = '';
@@ -1952,14 +1953,17 @@
     if (r.error || !r.data) return;
     var live = r.data.mode === 'live', on = admissionOn(), stuck = false;
     var at = admTarget();
-    if (!live && at) { try { var pg = await rmasterPost(at, { action: 'ping' }); stuck = !!(pg && pg.switched === true); } catch (e) { stuck = false; } }
+    /* 戻すボタンは、接続先がある管理者にはいつも出す（職員マスタと同じ・2026-11-03）。Google が答えるのを待たずに先に出す（反証レビュー指摘6） */
+    bb.hidden = !at;
+    var unknown = false;
+    if (!live && at) { try { var pg = await rmasterPost(at, { action: 'ping' }); stuck = !!(pg && pg.switched === true); } catch (e) { stuck = false; unknown = true; } }
+    admState = { live: live, stuck: stuck, unknown: unknown };
     if (live && !on) { line.className = 'msg warn'; line.textContent = '入居調整は新しい保存先へ切り替えた後ですが、切り替えスイッチ（admission）が切です。画面が古い Google の中身を読まないよう、スイッチを入れ直すか「入居調整を写しの期間に戻す」を押してください。'; }
     else if (live) { line.className = 'msg ok'; line.textContent = '入居調整の台帳の正本は新しい保存先（Supabase）です。Google へは保存のたびに写し返しています。添付書類は今までどおり Google（Drive）です。'; }
     else if (stuck) { line.className = 'msg warn'; line.textContent = '前の「入居調整を写しの期間に戻す」が途中です（Google の保存を止めたままです）。もう一度押して、最後まで済ませてください。'; }
-    else line.textContent = '入居調整の台帳の正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（admission）を入れる PR の取り込みが要ります。') + (at ? '（前の「切り替える」「入居調整を写しの期間に戻す」が途中で止まり、Google の保存が止まったままの時は「入居調整を写しの期間に戻す」を押すと最後まで済ませます。途中でなければ押しても何も変わりません）' : '');
+    else line.textContent = '入居調整の台帳の正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（admission）を入れる PR の取り込みが要ります。') + (at ? '（前の「切り替える」「入居調整を写しの期間に戻す」が途中で止まり、Google の保存が止まったままの時は「入居調整を写しの期間に戻す」を押すと最後まで済ませます。途中でなければ押しても何も変わりません）' : '')
+      + (unknown ? '　Google に確かめられませんでした。止まったままなら『入居調整を写しの期間に戻す』を押してください。' : '');
     bc.hidden = live || stuck || !on || !at;
-    /* 戻すボタンは、接続先がある管理者にはいつも出す（Google に確かめられず途中の印が見えない時も押せるように・職員マスタと同じ・2026-11-03 戻し方の手順書の点検） */
-    bb.hidden = !at;
   }
   async function runAdmOp(kind) {
     var v = $('admf-mode');
@@ -1974,7 +1978,10 @@
       if (!admissionOn()) { say('切り替えスイッチ（admission）が入っていません。', 'warn'); return; }
       if (!confirm('入居調整の台帳の正本を新しい保存先（Supabase）へ切り替えますか？\n\n1分ほどかかります。その間は台帳の保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n添付書類は今までどおり Google（Drive）に置きます。切り替えた後は、保存のたびに Google へ写し返します。いつでも「入居調整を写しの期間に戻す」で戻せます。')) return;
     } else {
-      if (!confirm('入居調整を写しの期間に戻しますか？\n\n新しい保存先での保存を止め、切り替えていた間の保存を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。')) return;
+      /* 切り替えた後でも途中でもない時は、それに合う文で確かめる（反証レビュー指摘3） */
+      var idle = !!(admState && !admState.live && !admState.stuck);
+      if (!confirm(idle ? '入居調整の「写しの期間に戻す」を押しますか？\n\n止まったままの切り替えを終わらせます。止まっていなければ何も変わりません。'
+                        : '入居調整を写しの期間に戻しますか？\n\n新しい保存先での保存を止め、切り替えていた間の保存を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。')) return;
     }
     if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
     var bc = $('b-adm-cut'), bb = $('b-adm-back');
@@ -1990,7 +1997,7 @@
       var res = kind === 'cut' ? await SUAdmFull.cutover(io) : await SUAdmFull.back(io);
       if (!res.ok) { say((kind === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + res.why, 'warn'); return; }
       say(kind === 'cut' ? '切り替えました（生きている案件 ' + res.active + '件）。入居調整の画面は読み込み直すと新しい保存先で保存します。'
-                         : '写しの期間に戻しました（Google へ写し返した台帳 ' + res.docs + '件）。正本は Google です。', 'ok');
+                         : (res.nothing ? '切り替えていないので、戻すものはありません。' : '写しの期間に戻しました（Google へ写し返した台帳 ' + res.docs + '件）。正本は Google です。'), 'ok');
     } catch (e) {
       say('止まりました: ' + String(e && e.message || e), 'warn');
     } finally {
@@ -2006,6 +2013,7 @@
    * 切り替えボタンは切り替えスイッチ training が入で、この端末に計画書と入居者マスタの接続先がある時だけ出す。
    * 計画書の GAS の印が立ったまま（前の戻しが途中）の時は、知らせて「写しの期間に戻す」を出す */
   function trainingOn() { var sw = window.SUKv ? SUKv._flags() : null; return !!(sw && sw.supabase && sw.supabase.training === true); }
+  var tpState = null;   // 直前に読んだ状態（戻すの確かめの文を選ぶ・反証レビュー指摘3）
   async function loadTpMode(sb) {
     var line = $('tpf-mode'), bc = $('b-tp-cut'), bb = $('b-tp-back');
     bc.hidden = true; bb.hidden = true; line.className = 'msg'; line.textContent = '';
@@ -2015,14 +2023,17 @@
     if (r.error || !r.data) return;
     var live = r.data.mode === 'live', on = trainingOn(), stuck = false;
     var tt = tpTarget(), mt = rmasterTarget();
-    if (!live && tt) { try { var pg = await rmasterPost(tt, { action: 'ping' }); stuck = !!(pg && pg.switched === true); } catch (e) { stuck = false; } }
+    /* 戻すボタンは、接続先がある管理者にはいつも出す（職員マスタと同じ・2026-11-03）。Google が答えるのを待たずに先に出す（反証レビュー指摘6） */
+    bb.hidden = !tt;
+    var unknown = false;
+    if (!live && tt) { try { var pg = await rmasterPost(tt, { action: 'ping' }); stuck = !!(pg && pg.switched === true); } catch (e) { stuck = false; unknown = true; } }
+    tpState = { live: live, stuck: stuck, unknown: unknown };
     if (live && !on) { line.className = 'msg warn'; line.textContent = '計画書は新しい保存先へ切り替えた後ですが、切り替えスイッチ（training）が切です。画面が古い Google の中身を読まないよう、スイッチを入れ直すか「計画書を写しの期間に戻す」を押してください。'; }
     else if (live) { line.className = 'msg ok'; line.textContent = '計画書の正本は新しい保存先（Supabase）です。Google へは保存のたびに写し返しています。'; }
     else if (stuck) { line.className = 'msg warn'; line.textContent = '前の「計画書を写しの期間に戻す」が途中です（Google の保存を止めたままです）。もう一度押して、最後まで済ませてください。'; }
-    else line.textContent = '計画書の正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（training）を入れる PR の取り込みが要ります。') + (tt ? '（前の「切り替える」「計画書を写しの期間に戻す」が途中で止まり、Google の保存が止まったままの時は「計画書を写しの期間に戻す」を押すと最後まで済ませます。途中でなければ押しても何も変わりません）' : '');
+    else line.textContent = '計画書の正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（training）を入れる PR の取り込みが要ります。') + (tt ? '（前の「切り替える」「計画書を写しの期間に戻す」が途中で止まり、Google の保存が止まったままの時は「計画書を写しの期間に戻す」を押すと最後まで済ませます。途中でなければ押しても何も変わりません）' : '')
+      + (unknown ? '　Google に確かめられませんでした。止まったままなら『計画書を写しの期間に戻す』を押してください。' : '');
     bc.hidden = live || stuck || !on || !tt || !mt;
-    /* 戻すボタンは、接続先がある管理者にはいつも出す（職員マスタと同じ・2026-11-03） */
-    bb.hidden = !tt;
     $('b-tp-ai').hidden = false;
   }
   /* AI の中継の受け口（su-ai・統合 0028）へ、「はい」とだけ答えさせる決まった短い依頼を1回送り、届いたか・答えの状態だけを出す
@@ -2073,7 +2084,10 @@
       if (!trainingOn()) { say('切り替えスイッチ（training）が入っていません。', 'warn'); return; }
       if (!confirm('個別機能訓練計画書の正本を新しい保存先（Supabase）へ切り替えますか？\n\n数分かかります。その間は計画書の保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、保存のたびに Google へ写し返します。いつでも「計画書を写しの期間に戻す」で戻せます。')) return;
     } else {
-      if (!confirm('個別機能訓練計画書を写しの期間に戻しますか？\n\n新しい保存先での保存を止め、切り替えていた間の保存を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。')) return;
+      /* 切り替えた後でも途中でもない時は、それに合う文で確かめる（反証レビュー指摘3） */
+      var idle = !!(tpState && !tpState.live && !tpState.stuck);
+      if (!confirm(idle ? '個別機能訓練計画書の「写しの期間に戻す」を押しますか？\n\n止まったままの切り替えを終わらせます。止まっていなければ何も変わりません。'
+                        : '個別機能訓練計画書を写しの期間に戻しますか？\n\n新しい保存先での保存を止め、切り替えていた間の保存を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。')) return;
     }
     if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
     var bc = $('b-tp-cut'), bb = $('b-tp-back');
@@ -2094,7 +2108,7 @@
       var res = kind === 'cut' ? await SUTpFull.cutover(io) : await SUTpFull.back(io);
       if (!res.ok) { say((kind === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + res.why, 'warn'); return; }
       say(kind === 'cut' ? '切り替えました（計画書 ' + res.docs + '件）。計画書の画面は読み込み直すと新しい保存先で保存します。'
-                         : '写しの期間に戻しました（Google へ写し返した計画書 ' + res.docs + '件）。正本は Google です。', 'ok');
+                         : (res.nothing ? '切り替えていないので、戻すものはありません。' : '写しの期間に戻しました（Google へ写し返した計画書 ' + res.docs + '件）。正本は Google です。'), 'ok');
     } catch (e) {
       say('止まりました: ' + String(e && e.message || e), 'warn');
     } finally {
@@ -2112,6 +2126,7 @@
    * 切り替えボタンは、切り替えスイッチ master_live が入の時だけ出す（切のまま切り替えると、画面が Google へ送って断られ、保存できなくなる）。
    * Google の印が立ったまま（前の戻しが途中）の時は、知らせて「写しの期間に戻す」を出す */
   function masterLiveOn() { var sw = window.SUKv ? SUKv._flags() : null; return !!(sw && sw.supabase && sw.supabase.master_live === true); }
+  var resState = null;   // 直前に読んだ状態（戻すの確かめの文を選ぶ・反証レビュー指摘3）
   async function loadResMode(sb) {
     var line = $('rf-mode'), bc = $('b-res-cut'), bb = $('b-res-back');
     bc.hidden = true; bb.hidden = true; line.className = 'msg'; line.textContent = '';
@@ -2121,14 +2136,17 @@
     if (r.error || !r.data) return;
     var live = r.data.mode === 'live', on = masterLiveOn(), stuck = false;
     var tgt = rmasterTarget();
-    if (!live && tgt) { try { var pg = await rmasterPost(tgt, { action: 'ping' }); stuck = !!(pg && pg.switched === true); } catch (e) { stuck = false; } }
+    /* 戻すボタンは、接続先がある管理者にはいつも出す（職員マスタと同じ・2026-11-03）。Google が答えるのを待たずに先に出す（反証レビュー指摘6） */
+    bb.hidden = !tgt;
+    var unknown = false;
+    if (!live && tgt) { try { var pg = await rmasterPost(tgt, { action: 'ping' }); stuck = !!(pg && pg.switched === true); } catch (e) { stuck = false; unknown = true; } }
+    resState = { live: live, stuck: stuck, unknown: unknown };
     if (live && !on) { line.className = 'msg warn'; line.textContent = '入居者マスタは新しい保存先へ切り替えた後ですが、切り替えスイッチ（master_live）が切です。画面が古い Google の中身を読まないよう、スイッチを入れ直すか「写しの期間に戻す」を押してください。'; }
     else if (live) { line.className = 'msg ok'; line.textContent = '入居者マスタの正本は新しい保存先（Supabase）です。Google へは保存のたびに写し返しています。'; }
     else if (stuck) { line.className = 'msg warn'; line.textContent = '前の「写しの期間に戻す」が途中です（Google の保存を止めたままです）。「写しの期間に戻す」をもう一度押して、最後まで済ませてください。'; }
-    else line.textContent = '入居者マスタの正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（master_live）を入れる PR の取り込みが要ります。') + (tgt ? '（前の「切り替える」「写しの期間に戻す」が途中で止まり、Google の保存が止まったままの時は「写しの期間に戻す」を押すと最後まで済ませます。途中でなければ押しても何も変わりません）' : '');
+    else line.textContent = '入居者マスタの正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（master_live）を入れる PR の取り込みが要ります。') + (tgt ? '（前の「切り替える」「写しの期間に戻す」が途中で止まり、Google の保存が止まったままの時は「写しの期間に戻す」を押すと最後まで済ませます。途中でなければ押しても何も変わりません）' : '')
+      + (unknown ? '　Google に確かめられませんでした。止まったままなら『写しの期間に戻す』を押してください。' : '');
     bc.hidden = live || stuck || !on || !tgt;
-    /* 戻すボタンは、接続先がある管理者にはいつも出す（職員マスタと同じ・2026-11-03） */
-    bb.hidden = !tgt;
   }
   function resOpIo(sb, tgt, say) {
     return {
@@ -2152,7 +2170,10 @@
       if (!masterLiveOn()) { say('切り替えスイッチ（master_live）が入っていません。', 'warn'); return; }
       if (!confirm('入居者マスタの正本を新しい保存先（Supabase）へ切り替えますか？\n\n数分かかります。その間は入居者マスタ・担当者会議・入居調整などの保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、保存のたびに Google へ写し返します。いつでも「写しの期間に戻す」で戻せます。')) return;
     } else {
-      if (!confirm('入居者マスタを写しの期間に戻しますか？\n\n新しい保存先での保存を止め、切り替えていた間の保存を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。')) return;
+      /* 切り替えた後でも途中でもない時は、それに合う文で確かめる（反証レビュー指摘3） */
+      var idle = !!(resState && !resState.live && !resState.stuck);
+      if (!confirm(idle ? '入居者マスタの「写しの期間に戻す」を押しますか？\n\n止まったままの切り替えを終わらせます。止まっていなければ何も変わりません。'
+                        : '入居者マスタを写しの期間に戻しますか？\n\n新しい保存先での保存を止め、切り替えていた間の保存を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。')) return;
     }
     if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
     var bc = $('b-res-cut'), bb = $('b-res-back');
@@ -2162,7 +2183,7 @@
       var res = kind === 'cut' ? await SUResFull.cutover(resOpIo(sb, tgt, say)) : await SUResFull.back(resOpIo(sb, tgt, say));
       if (!res.ok) { say((kind === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + res.why, 'warn'); return; }
       say(kind === 'cut' ? '切り替えました（入居者 ' + res.residents + '人）。各画面は読み込み直すと新しい保存先で保存します。'
-                         : '写しの期間に戻しました（Google へ写し返した方 ' + res.records + '人）。正本は Google です。', 'ok');
+                         : (res.nothing ? '切り替えていないので、戻すものはありません。' : '写しの期間に戻しました（Google へ写し返した方 ' + res.records + '人）。正本は Google です。'), 'ok');
     } catch (e) {
       say('止まりました: ' + String(e && e.message || e), 'warn');
     } finally {

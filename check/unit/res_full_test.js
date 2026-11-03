@@ -293,6 +293,7 @@ function world(o) {
     }, mangle: o.mangle });
     const g0 = w.gas;
     w.gas = async body => {
+      if (body.action === 'ping') { order.push('ping'); if (o.pingFail) throw new Error('Google に届きませんでした'); return st.switched ? { ok: true, switched: true } : { ok: true }; }
       if (body.action === 'resCutover') {
         order.push('cut:' + body.on);
         if (body.accessToken !== 'h.p.s' || body.opToken !== 'TK') return { error: 'Error: refused: 切り替えの操作の札がありません' };
@@ -367,8 +368,13 @@ function world(o) {
   {
     const { w, order, st } = cw();
     const r = await R.back(w);
-    t('戻す: 新しい保存先がもう写しの期間で Google の印も無い時は、写し返して印が無いまま終わる（何も壊さない）', r.ok === true && order.join(',') === 'op:back,mode:shadow,cut:false,end:TK'
-      && st.mode === 'shadow' && st.switched === false, [r, order]);
+    t('戻す: 写しの期間で Google に止めた印が無い時は、札も取らず Google の止める指示も送らずに「戻すもの無し」で終わる（反証レビュー指摘2）', r.ok === true && r.nothing === true && order.join(',') === 'ping'
+      && st.mode === 'shadow' && st.switched === false && !w.rpcs.some(x => /_op_begin|_set_mode/.test(x.name)), [r, order]);
+  }
+  {
+    const { w, order, st } = cw({ pingFail: true });
+    const r = await R.back(w);
+    t('戻す: 写しの期間で Google に確かめられない時は、今までどおり戻しの手順を最後まで行う（止まったままかもしれないため）', r.ok === true && !r.nothing && order.join(',') === 'ping,op:back,mode:shadow,cut:false,end:TK', [r, order]);
   }
   {
     const { w, order, st } = cw({ offLost: 9 });
@@ -377,9 +383,10 @@ function world(o) {
     t('戻す: Google に届かない時は「戻した」と言い切らず、押し直しを伝えて札を返す', r.ok === false && /もう一度/.test(r.why) && st.switched === true && order[order.length - 1] === 'end:TK', [r, order]);
   }
   {
-    const { w, order } = cw({ busy: true });
+    const { w, order, st } = cw({ busy: true });
+    st.switched = true;
     const r = await R.back(w);
-    t('戻す: 別の画面で操作が動いている時は何もしない', r.ok === false && /別の画面/.test(r.why) && order.join(',') === 'op:back', [r, order]);
+    t('戻す: 別の画面で操作が動いている時は何もしない', r.ok === false && /別の画面/.test(r.why) && order.join(',') === 'ping,op:back', [r, order]);
   }
   {
     const calls = [];
