@@ -251,6 +251,27 @@ const texts = (n) => [n.textContent].concat((n.kids || []).flatMap(texts));
     t('CSP の通信先に GitHub の API を足した', /connect-src [^;]*https:\/\/api\.github\.com/.test(HTML));
   }
 
+  console.log('H 小さな穴の直し（統合 0058・2026-11-03）');
+  {
+    const ctx = { SUCutGate: G, me: null, calls: [] };
+    vm.createContext(ctx);
+    vm.runInContext(['function dbErrKind() { return "other"; }', 'function notePrep() {}', fn('noteDiff'), fn('weightRefusedToday'),
+      'this.noteDiff = noteDiff; this.weightRefusedToday = weightRefusedToday;'].join('\n'), ctx);
+    const sb = { rpc: async (n, a) => { ctx.calls.push([n, a]); return { data: { ok: true }, error: null }; } };
+    ctx.me = { role: 'office' }; await ctx.noteDiff(sb, 'stf', 0);
+    t('事務所のアカウントでは差を残さない（データベースも管理者だけ）', ctx.calls.length === 0);
+    ctx.me = null; await ctx.noteDiff(sb, 'stf', 0);
+    t('ログインの状態が分からない時も残さない', ctx.calls.length === 0);
+    ctx.me = { role: 'admin' }; await ctx.noteDiff(sb, 'stf', 0);
+    t('管理者なら種類と件数だけを残す', ctx.calls.length === 1 && JSON.stringify(ctx.calls[0]) === '["shadow_diff_note",{"p_kind":"stf","p_diffs":0}]', ctx.calls);
+    const W = ctx.weightRefusedToday;
+    const runs = [{ at: '2026-11-03T05:00:00Z', refused: null }, { at: '2026-11-03T02:00:00Z', refused: 'shrink' }, { at: '2026-11-02T14:00:00Z', refused: 'stale' }];
+    t('体重: 最後の写しを受け付けても、今日の先の写しで断っていれば差に数える', W(runs, TODAY) === 1);
+    t('体重: 昨日（日本時間）の断りは数えない', W([{ at: '2026-11-02T14:59:00Z', refused: 'stale' }], TODAY) === 0);
+    t('体重: 全部受け付けていれば0件', W([{ at: '2026-11-03T05:00:00Z', refused: null }], TODAY) === 0 && W(null, TODAY) === 0);
+    t('体重: 今日の写しを全部読んでから残す（最後の1回だけで決めない）', /weight_sync_runs'\)\.select\('at,refused'\)\.gte\('at'/.test(SRC) && /noteDiff\(sb, 'weight', weightRefusedToday\(/.test(SRC));
+  }
+
   console.log('G 差の記録（写しの部品・統合 0055）');
   for (const [file, globalName, kind] of [['su-adm-full.js', 'SUAdmFull', 'adm'], ['su-tp-full.js', 'SUTpFull', 'tp'], ['su-res-full.js', 'SUResFull', 'res']]) {
     const S = fs.readFileSync(path.join(ROOT, file), 'utf8');
