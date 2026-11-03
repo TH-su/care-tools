@@ -347,6 +347,17 @@ group('9b. 書く側: 保存が中止された版の絵は送らない（gate）
   let r = await writeCase({ session: true, mid: 'R-1', mName: '架空 一郎', name: '架空 一郎', gate: Promise.resolve(false), reply: { data: { ok: true } } });
   eq('中止（gate=false）→ 送らない・結果は aborted', [r.rpc.length, r.got], [0, ['aborted']]);
   eq('  └ 端末の su_genograms には今までどおり書く', !!JSON.parse(r.ls.getItem('su_genograms'))['R-1'], true);
+  eq('  └ 中止した版を「送らない版」として masterId と日時だけ控える', JSON.parse(r.ls.getItem('genogram:thumbSent')), { 'R-1': '2026-11-03T10:00:00+09:00' });
+  {
+    /* 読み込み直した後の起動時のまとめ送りでも送らない。保存し直した（新しい日時の）版は送る */
+    const G = genoBox(r.ls, { CloudSync: { hasLogin: () => true, note: () => {}, thumbRpc: (fn, a) => { swept.push(a.p_at); return Promise.resolve({ kind: 'ok' }); } } });
+    const swept = [];
+    r.ls.setItem('su_residents_common', JSON.stringify({ residents: [{ masterId: 'R-1', name: '架空 一郎' }] }));
+    G.sweepSuGenoThumbs(); await settle();
+    eq('  └ 読み込み直した後のまとめ送りでも中止した版は送らない', swept, []);
+    const m = JSON.parse(r.ls.getItem('su_genograms')); m['R-1'].updatedAt = '2026-11-03T11:00:00+09:00'; r.ls.setItem('su_genograms', JSON.stringify(m));
+    eq('  └ 保存し直した新しい版はまとめ送りの対象になる', [...G.suGenoThumbTodo(m, [{ masterId: 'R-1', name: '架空 一郎' }], JSON.parse(r.ls.getItem('genogram:thumbSent')))], ['R-1']);
+  }
   r = await writeCase({ session: true, mid: 'R-1', mName: '架空 一郎', name: '架空 一郎', gate: Promise.resolve(true), reply: { data: { ok: true } } });
   eq('中止されなかった（gate=true）→ 送る', [r.rpc.length, r.got], [1, ['ok']]);
   let open = null;
@@ -462,16 +473,21 @@ group('11. 書く側: 図を消した時（suGenoDelThumbs）');
   r = await run(true, { genos: onlyName, roster: roster1 });
   eq('masterId のキーが無い → 名簿で1名にだけ一致したらその masterId を消す', [r.rpc, r.flashes], [[['geno_del', 'R-1']], []]);
   r = await run(true, { genos: onlyName, roster: roster1.concat([{ masterId: 'R-3', name: '架空一郎' }]) });
-  eq('同姓同名（2名一致）→ 消さずに知らせる', [r.rpc, r.flashes.length, r.timers], [[], 1, [2400]]);
+  eq('同姓同名（2名一致）→ 消さずに知らせる（決められなかった時だけ）', [r.rpc, r.flashes.length, r.timers], [[], 1, [2400]]);
   t('  └ 知らせの文（入居者マスタから開いて消す）', /^ほかの端末の絵は消せませんでした（入居者マスタから/.test(r.flashes[0] || ''), r.flashes);
   r = await run(true, { genos: onlyName, roster: [{ masterId: 'R-2', name: '架空 二郎' }] });
-  eq('名簿に無い → 消さずに知らせる', [r.rpc, r.flashes.length], [[], 1]);
+  eq('名簿に無い → 消さず、知らせも出さない', [r.rpc, r.flashes.length], [[], 0]);
   r = await run(true, { genos: onlyName });
-  eq('名簿が無い → 消さずに知らせる', [r.rpc, r.flashes.length], [[], 1]);
+  eq('名簿が無い → 消さず、知らせも出さない', [r.rpc, r.flashes.length], [[], 0]);
+  r = await run(true, { genos: '{}', name: '架空 一郎（この端末の控え 2026-11-03 10:00）', roster: roster1 });
+  eq('別名の控え（名簿に一致しない）→ 消さず、知らせも出さない', [r.rpc, r.flashes.length], [[], 0]);
   r = await run(false, { genos: onlyName });
   eq('管理者でない → 知らせも出さない', [r.rpc, r.flashes], [[], []]);
-  eq('suGenoDelTargets: 同じ masterId が名簿に2行あっても1名と数える', [...G.suGenoDelTargets({}, [{ masterId: 'R-1', name: '架空 一郎' }, { masterId: 'R-1', name: '架空 一郎' }], '架空 一郎')], ['R-1']);
-  eq('suGenoDelTargets: 端末に masterId のキーがあれば名簿は見ない', [...G.suGenoDelTargets(JSON.parse(genos), [{ masterId: 'R-9', name: '架空 一郎' }], '架空 一郎')], ['R-1']);
+  const tg = (m, ro, n) => { const x = G.suGenoDelTargets(m, ro, n); return [[...x.mids], x.ambiguous]; };
+  eq('suGenoDelTargets: 同じ masterId が名簿に2行あっても1名と数える', tg({}, [{ masterId: 'R-1', name: '架空 一郎' }, { masterId: 'R-1', name: '架空 一郎' }], '架空 一郎'), [['R-1'], false]);
+  eq('suGenoDelTargets: 端末に masterId のキーがあれば名簿は見ない', tg(JSON.parse(genos), [{ masterId: 'R-9', name: '架空 一郎' }], '架空 一郎'), [['R-1'], false]);
+  eq('suGenoDelTargets: 2名一致 → 決められない（ambiguous）', tg({}, [{ masterId: 'R-1', name: '架空 一郎' }, { masterId: 'R-3', name: '架空一郎' }], '架空 一郎'), [[], true]);
+  eq('suGenoDelTargets: 1名も一致しない → ambiguous でない', tg({}, [{ masterId: 'R-2', name: '架空 二郎' }], '架空 一郎'), [[], false]);
 }
 
 group('12. 書く側: 画面の流れ');

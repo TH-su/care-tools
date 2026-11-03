@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-font">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4tatwB5n4oQfG1K2BhClN4+9jBVdFhmNYce1TbRTqzo=' 'sha256-6gWLMAJWtxEZ1SvBBgf/ZuWZBf6K9+oT3kdFI/cFAYQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4tatwB5n4oQfG1K2BhClN4+9jBVdFhmNYce1TbRTqzo=' 'sha256-v3VUN0n/czqieUqC8GZRJIKwmclXYgNKRBwPaDal5IQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 入居者情報を表示する画面のため、ブラウザ・中継キャッシュに残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -3313,7 +3313,11 @@ function writeSuGenogram(name, opts) {
       fin();
       if (!sendRec) { cloud('skip'); return; }
       Promise.resolve(opts.gate === undefined ? true : opts.gate).then(function (go) {
-        return go === true ? suGenoPutThumb(String(mid), sendRec) : 'aborted';
+        if (go === true) return suGenoPutThumb(String(mid), sendRec);
+        /* 中止した版は「送らない版」として masterId と日時だけ控える（控えないと、読み込み直した後の起動時のまとめ送りが拾って送る）。
+           同じ方を保存し直せば日時が新しくなるので、その版は送る */
+        suGenoMarkSent(String(mid), sendRec.updatedAt);
+        return 'aborted';
       }).then(cloud, function () { cloud('fail'); });
     });
   } catch (e) { fin(); cloud('skip'); }
@@ -3437,33 +3441,36 @@ function suGenoMidsOfName(m, name) {
     return !!rec && typeof rec === 'object' && String(rec.name == null ? '' : rec.name).replace(/\s+/g, '') === want;
   });
 }
-/* 図を消した時に geno_del を送る masterId（純関数）。端末の控えにその文書名の masterId のキーがあればそれ。無い時（一覧から直接開いて
-   作った図だけの端末）は、共有名簿 su_residents_common で文書名（空白を除いて一致）が1名にだけ一致する時だけ、その方の masterId */
+/* 図を消した時に geno_del を送る masterId（純関数）。{mids, ambiguous} を返す。端末の控えにその文書名の masterId のキーがあればそれ。
+   無い時（一覧から直接開いて作った図だけの端末）は、共有名簿 su_residents_common で文書名（空白を除いて一致）が1名にだけ一致する時だけ、
+   その方の masterId。2名以上が一致して決められない時だけ ambiguous（知らせを出す）。1名も一致しない（別名の控え・名簿に無い方・名簿が無い）時は黙る */
 function suGenoDelTargets(m, roster, name) {
   var mids = suGenoMidsOfName(m, name);
-  if (mids.length) return mids;
+  if (mids.length) return { mids: mids, ambiguous: false };
   var want = String(name == null ? '' : name).replace(/\s+/g, '');
-  if (!want || !Array.isArray(roster)) return [];
+  if (!want || !Array.isArray(roster)) return { mids: [], ambiguous: false };
   var hit = [];
   roster.forEach(function (r) {
     if (!r || r.masterId == null || r.masterId === '') return;
     if (String(r.name == null ? '' : r.name).replace(/\s+/g, '') !== want) return;
     if (hit.indexOf(String(r.masterId)) < 0) hit.push(String(r.masterId));
   });
-  return hit.length === 1 ? hit : [];   // 同姓同名・名簿に無い → 誰の絵か決められないので消さない
+  if (hit.length === 1) return { mids: hit, ambiguous: false };
+  return { mids: [], ambiguous: hit.length > 1 };   // 同姓同名 → 誰の絵か決められないので消さない
 }
 var SU_GENO_DEL_MISS_MSG = 'ほかの端末の絵は消せませんでした（入居者マスタからこの方の家族構成図を開いて、もう一度消してください）';
 /* 管理者が図を消した時だけ、ほかの端末に出す絵も消す（geno_del）。端末の su_genograms・送った控えは今のまま（消すと次の起動で送り直してしまう）。
-   管理者でない・断られた・関数が無い時は何も出さない。管理者で、誰の絵か決められない時だけ、削除の知らせの後に短く知らせる */
+   管理者でない・断られた・関数が無い時は何も出さない。管理者で、名簿に同じ名前が2名以上いて決められない時だけ、削除の知らせの後に短く知らせる */
 function suGenoDelThumbs(name) {
   if (!CloudSync.hasLogin()) return;
   var m = {}, roster = null;
   try { m = JSON.parse(localStorage.getItem('su_genograms') || '{}') || {}; } catch (e) { m = {}; }
   try { var rr = JSON.parse(localStorage.getItem('su_residents_common') || 'null'); if (rr && Array.isArray(rr.residents)) roster = rr.residents; } catch (e) { roster = null; }
-  var mids = suGenoDelTargets(m, roster, name);
+  var tg = suGenoDelTargets(m, roster, name), mids = tg.mids;
   CloudSync.thumbIsAdmin().then(function (yes) {
     if (!yes) return;
     if (!mids.length) {
+      if (!tg.ambiguous) return;   // 名簿に1名も一致しない＝ほかの端末に出ている絵が無い（知らせない）
       setTimeout(function () { try { flashStatus(SU_GENO_DEL_MISS_MSG); } catch (e) { CloudSync.note('thumb:flash', e); } }, 2400);
       return;
     }
