@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-miQdF+ms+U3TxeO7hnn12dRzuCU56ljCn8cvIF+4hmY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-MKoU6MqQstaLXNgA4JVS0ROFJ4jE+W1wPMNtpDb/e8A='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -9079,14 +9079,14 @@ function bfEditHtml(r){
 function medsLineHtml(line){
   var raw = String(line == null ? '' : line);
   if(!raw.trim()) return '　';
-  var q = medsDrugQuery(raw);
-  if(!q) return esc(raw);
-  var idx = raw.indexOf(q);
+  var w = medsDrugRun(raw), q = medsDrugQuery(raw);
+  if(!w || !q) return esc(raw);
+  var idx = raw.indexOf(w);
   if(idx < 0) return esc(raw);
   return esc(raw.slice(0, idx))
     + '<a class="mlink" href="'+esc(OKUSURI_FORM)+'" target="_blank" rel="noopener noreferrer"'
-    + ' data-q="'+esc(q)+'" title="お薬110番で「'+esc(q)+'」を調べる">'+esc(q)+'</a>'
-    + esc(raw.slice(idx + q.length));
+    + ' data-q="'+esc(q)+'" title="お薬110番で「'+esc(q)+'」を調べる">'+esc(w)+'</a>'
+    + esc(raw.slice(idx + w.length));
 }
 /* map は省略時に画面の mdMap を使う。null（未取得・取得失敗）なら1列（上の⑤）。 */
 function medsRegularCell(text, map){
@@ -9160,11 +9160,42 @@ var OKUSURI_FORM = 'http://www.jah.ne.jp/~kako/frame_dwm_search.html';
 var OKUSURI_CGI  = 'http://www.jah.ne.jp/~kako/cgi-bin/dwm_kana_search.cgi/~kako/';
 /* サイトの仕様: 全角カタカナ・漢字で3字以上、先頭一致。
    行の先頭から続くカタカナ・長音・漢字だけを取る（英字・数字・空白が来たら止める）。
-   「（院外）…」のような注記や「1錠 朝」はここで空になり、リンクを作らない。 */
-function medsDrugQuery(line){
-  var s = String(line == null ? '' : line).trim().replace(/^【般】/, '');
-  var m = s.match(/^[\u30A1-\u30FA\u30FC\u4E00-\u9FFF]{3,20}/);
+   「（院外）…」のような注記や「1錠 朝」はここで空になり、リンクを作らない。
+   ★2026-11-03 本人指示（リンクが切れている）: 取った語をそのまま送ると「該当がありません」になる行があった。
+     サイトの品名は「アムロジピンOD錠」「ドネペジル塩酸塩OD錠」の形で、一般名処方の
+     「口腔内崩壊錠」「腸溶性口腔内崩壊錠」は品名に無い（実測で0件）。
+     そこで【送る語】は末尾の剤形（錠・カプセル・口腔内崩壊錠…）と塩（塩酸塩・ナトリウム…）を落とした
+     薬の名前の幹にする（先頭一致なので幹で引けば、その薬の全規格が並ぶ）。落とすのは3字以上残る時だけ。
+     「散」だけは落とさない（抑肝散・五苓散が別の語になる）。
+     行頭の「・」「1)」のような箇条の印は飛ばす（印があるだけでリンクが出なかった）。
+     薬価リストから無作為に選んだ品名と一般名処方の137行で、引ける行が 107 → 118。別に選んだ品名だけの100行は 77 → 77（減った行なし）。
+     引けない残りはサイトに載っていない薬（デエビゴ・エンレストなど新しい薬、先発しか無い薬の一般名）で、語の工夫では引けない。
+   ★画面に下線で出す範囲（medsDrugRun）は今までどおり行頭の語のまま。変えたのは送る語だけ。 */
+var OKUSURI_FORMS = ['腸溶性口腔内崩壊錠','口腔内崩壊フィルム','口腔内崩壊錠','チュアブル錠','腸溶錠','徐放錠','配合錠',
+  '腸溶カプセル','徐放カプセル','カプセル','配合顆粒','配合散','配合内用液','エキス顆粒','エキス細粒','エキス錠',
+  'ドライシロップ','シロップ','内用液','内服液','内用ゼリー','ゼリー','フィルム','細粒','顆粒','分包','錠',
+  '軟膏','クリーム','ローション','テープ','パップ','点眼液','点鼻液','坐剤','外用液','吸入液','液'];
+var OKUSURI_SALTS = ['臭化水素酸塩','マレイン酸塩','メシル酸塩','ベシル酸塩','トシル酸塩','酒石酸塩','フマル酸塩',
+  'コハク酸塩','クエン酸塩','硫酸塩','リン酸塩','塩酸塩','水和物','メドキソミル','ナトリウム','カリウム','カルシウム'];
+function medsDrugRun(line){
+  var s = String(line == null ? '' : line).trim()
+    .replace(/^(?:[・･●○◆◇■□＊*\-－]|[0-9０-９]{1,2}[.．)）、])\s*/, '')
+    .replace(/^【般】/, '');
+  var m = s.match(/^[\u30A1-\u30FA\u30FC\u4E00-\u9FFF]{3,40}/);
   return m ? m[0] : '';
+}
+function okusuriCut_(s, list){
+  for(var i=0;i<list.length;i++){
+    var w = list[i];
+    if(s.length - w.length >= 3 && s.slice(-w.length) === w) return s.slice(0, -w.length);
+  }
+  return s;
+}
+function medsDrugQuery(line){
+  var s = medsDrugRun(line), prev;
+  if(!s) return '';
+  do{ prev = s; s = okusuriCut_(okusuriCut_(s, OKUSURI_FORMS), OKUSURI_SALTS); }while(s !== prev);
+  return s.slice(0, 20);
 }
 function openOkusuri(q){
   q = String(q || '').trim();
