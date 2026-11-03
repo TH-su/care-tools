@@ -4,7 +4,8 @@
  * 通信・端末への保存・画面の部品には触らない（localStorage も読まない・書かない）。
  *
  * 約束（共通 DB の設備・修繕の移行（eq_*）と同じ決まり）:
- *   1. 場所の鍵: 居室 'room:<部屋番号>'／図面の名前の箱 'area:<名前>'／図面に無い場所 'place:<eq_places.id>'。
+ *   1. 場所の鍵: 居室 'room:<部屋番号>'／図面の名前の箱 'area:<階キー>:<名前>'（例 'area:f1:浴室1'・2026-11-03 階つきに変更。
+ *      別の階の同じ名前の箱を分けるため。階キーが無い・形が違う時と、変更前に保存した鍵は 'area:<名前>'）／図面に無い場所 'place:<eq_places.id>'。
  *      図面は施設情報の roomPlan の cells の room と t だけを使う（入居者の氏名は扱わない）
  *   2. 並び・年度の集計の基準日は 対応日 → 完了日 → 故障日 の順で最初にある日。3つとも無い記録は集計に入れず「日付なし」に別に数える
  *   3. 年度は 4月1日〜翌年3月31日。年度の名前は始まりの年（2026年度 = 2026-04-01〜2027-03-31）
@@ -75,20 +76,30 @@
     return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate());
   }
 
-  /* 場所の鍵（図面の箱・その他の場所から作る）。作れない時は空 */
-  function placeKeyOf(x) {
+  /* 場所の鍵（図面の箱・その他の場所から作る）。作れない時は空。
+     名前の箱は階キー（roomPlan の鍵 f1・f2 …）を付ける。階キーが無い・形が違う時は階なしの 'area:<名前>' */
+  var FLOOR_KEY_RE = /^[A-Za-z0-9_-]{1,20}$/;
+  function placeKeyOf(x, floorKey) {
     if (!isObj(x)) return '';
     if (typeof x.room === 'string' && x.room.trim()) return 'room:' + x.room.trim();
     if (typeof x.room === 'number' && isFinite(x.room)) return 'room:' + String(x.room);
-    if (typeof x.t === 'string' && x.t.trim()) return 'area:' + x.t.trim();
+    if (typeof x.t === 'string' && x.t.trim()) return 'area:' + (typeof floorKey === 'string' && FLOOR_KEY_RE.test(floorKey) ? floorKey + ':' : '') + x.t.trim();
     if (x.r == null && x.c == null && (typeof x.id === 'string' || typeof x.id === 'number') && String(x.id)) return 'place:' + String(x.id);
     return '';
   }
-  /* 場所の鍵 → 画面に出す名前（その他の場所は eq_places の名前・見つからない時は「（消えた場所）」） */
-  function placeLabel(key, places) {
+  /* 場所の鍵 → 画面に出す名前（その他の場所は eq_places の名前・見つからない時は「（消えた場所）」）。
+     階つきの名前の箱は「名前（N階）」（階の名前は floorLabel・間取りに無い階は「名前（階キー）」）。階なしの古い鍵は名前だけ */
+  function placeLabel(key, places, plan) {
     var k = String(key || '');
     if (k.indexOf('room:') === 0) return k.slice(5);
-    if (k.indexOf('area:') === 0) return k.slice(5);
+    if (k.indexOf('area:') === 0) {
+      var rest = k.slice(5), j = rest.indexOf(':');
+      if (j > 0 && j < rest.length - 1 && FLOOR_KEY_RE.test(rest.slice(0, j))) {
+        var fk = rest.slice(0, j), fl = isObj(plan) && has(plan, fk) && isObj(plan[fk]) ? floorLabel(plan[fk].title, fk) : fk;
+        return rest.slice(j + 1) + '（' + fl + '）';
+      }
+      return rest;
+    }
     if (k.indexOf('place:') === 0) {
       var id = k.slice(6), list = Array.isArray(places) ? places : [];
       for (var i = 0; i < list.length; i++) if (list[i] && String(list[i].id) === id) return String(list[i].name || '');
@@ -339,7 +350,7 @@
       var ex = isObj(ev.extra) ? ev.extra : {};
       rows.push([
         effectiveDate(ev), dateOrEmpty(ev.found_on), dateOrEmpty(ev.requested_on), dateOrEmpty(ev.handled_on), dateOrEmpty(ev.done_on),
-        officeName(eventOffice(ev, assets, ctx.places)), placeLabel(ev.place_key, ctx.places), ev.asset_id != null ? nameById(assets, ev.asset_id) : '',
+        officeName(eventOffice(ev, assets, ctx.places)), placeLabel(ev.place_key, ctx.places, ctx.plan), ev.asset_id != null ? nameById(assets, ev.asset_id) : '',
         labelOf(EVENT_TYPES, ev.etype), ev.vendor_id != null ? nameById(vendors, ev.vendor_id) : '', amountOf(ev), ev.body == null ? '' : String(ev.body),
         isCancelled(ev) ? '取り消し' : ''
       ].concat(defs.map(function (f) { var v = ex[String(f.id)]; return v == null ? '' : v; })));
@@ -468,7 +479,7 @@
     src = isObj(src) ? src : {};
     f.etype = codeIn(EVENT_TYPES, src.etype) ? src.etype : '';
     f.kind = codeIn(OFFICE_KINDS, src.kind) ? src.kind : '';
-    f.place = (typeof src.place === 'string' && /^(room|area|place):[^\u0000-\u001f]{1,60}$/.test(src.place)) ? src.place : '';
+    f.place = (typeof src.place === 'string' && /^(?:(?:room|place):[^\u0000-\u001f]{1,60}|area:(?:[A-Za-z0-9_-]{1,20}:)?[^\u0000-\u001f]{1,60})$/.test(src.place)) ? src.place : '';
     f.vendor = (typeof src.vendor === 'string' && ID_RE.test(src.vendor)) ? src.vendor : '';
     f.fy = (typeof src.fy === 'string' && /^(20\d\d)$/.test(src.fy)) ? src.fy : '';
     return { tab: tab, floor: floor, filter: f };
