@@ -256,6 +256,24 @@ const CENSUS = {
     [E, "if(p&&ed&&cur) p.innerHTML=printHtml_(cur,ed.rec,ed.status)"],
     [F, "if(p) p.innerHTML=''"]
   ],
+  "equip-calc.js": [],
+  "equip-log.html": [
+    [F, "g.innerHTML='<h2>この画面は事務所のパソコンで使います</h2><p>この端末は「現場」として設定されているため、設備・修繕の記録は開きません。</p><p><a class=\"btn\" href=\"index.html\">メニューへ戻る</a></p>'"],
+    [F, "if(x) x.innerHTML=''"],
+    [E, "if(tab==='map') p.innerHTML=mapHtml_()"],
+    [E, "else if(tab==='assets') p.innerHTML=assetsHtml_()"],
+    [E, "else if(tab==='events') p.innerHTML=eventsHtml_()"],
+    [E, "else if(tab==='sched') p.innerHTML=schedHtml_()"],
+    [E, "else if(tab==='cost') p.innerHTML=costHtml_()"],
+    [E, "else if(tab==='vendors') p.innerHTML=vendorsHtml_()"],
+    [E, "else if(tab==='fields') p.innerHTML=fieldsHtml_()"],
+    [E, "w.innerHTML=vendorInner_(id,cur)"],
+    [E, "if(c&&form&&form.kind==='card'&&String(form.row.id)===cardFor) c.innerHTML=cardEventsHtml_(form.row)"],
+    [E, "d.innerHTML='<div class=\"dlg-in\">'+html+'</div>'"],
+    [F, "d.innerHTML=''"],
+    [E, "if(c&&form&&form.kind==='event'&&form.row) c.innerHTML=filesHtml_(form.row)"],
+    [F, "a.innerHTML='<p>保存していない入力があります。保存せずに閉じますか？</p><div class=\"acts\"><button type=\"button\" class=\"btn\" data-act=\"ask-no\">入力に戻る</button><button type=\"button\" class=\"btn ng\" data-act=\"ask-ok\">保存せずに閉じる</button></div>'"]
+  ],
   "care-schedule.html": [
     [E, "p.innerHTML = h"],   /* 「この方の画面 ▾」の一覧。部品（su-resident-hop.js）が全部の値を esc して返す（試験 resident_hop_test） */
     [F, "cb.innerHTML = ''"],

@@ -226,7 +226,7 @@ function fakeAuth(st, rpc) {
       t(file + ': 部品が無い時は開かない（案内だけ）', /if ?\(!window\.SUAppGate\)/.test(entry) && (/読み込めませんでした/.test(entry) || /appGateMissing_\(\)/.test(entry)));
       const startBody = html.slice(m2.index, m2.index + 20000);
       t(file + ': 続きの関数が中身を読む', reads.some((r) => startBody.indexOf(r) >= 0));
-      const tagI = html.indexOf('<script src="su-app-gate.js?v=2026-10-29"></script>');
+      const tagI = html.indexOf('<script src="su-app-gate.js?v=2026-11-03"></script>');
       t(file + ': 部品を画面のスクリプトより前に読む', tagI > 0 && tagI < m1.index);
     }
     const af = fs.readFileSync(path.join(ROOT, 'admission-flow.html'), 'utf8');
