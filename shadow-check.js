@@ -1117,6 +1117,7 @@
       $('kv-verdict').className = 'msg warn';
       $('kv-verdict').textContent = '週間計画の写しはまだ読めません（データベースの準備 0005 が未適用の可能性）。';
     }
+    await gateRefresh(sb);   // 読めない時はボタンを押せないままにする
   }
 
   /* 貼り薬の写し（段階2「送るだけ」・2026-10-17）: サーバーの行数と、この端末の控え（apc2_res）との差。
@@ -1271,6 +1272,7 @@
     } finally {
       btn.disabled = false;
       try { await loadResFullRuns(sb); } catch (e) { /* 記録の一覧が読めなくても結果の文は残す */ }
+      await gateRefresh(sb);
     }
   }
 
@@ -1350,6 +1352,7 @@
     } finally {
       btn.disabled = false;
       try { await loadTpRuns(sb); } catch (e) { /* 記録の一覧が読めなくても結果の文は残す */ }
+      await gateRefresh(sb);
     }
   }
 
@@ -1408,6 +1411,7 @@
     } finally {
       btn.disabled = false;
       try { await loadAdmRuns(sb); } catch (e) { /* 記録の一覧が読めなくても結果の文は残す */ }
+      await gateRefresh(sb);
     }
   }
 
@@ -1424,7 +1428,7 @@
     weight_mode: '0032', res_sync_runs: '0034', res_mode_get: '0036', tp_sync_runs: '0037', tp_mode_get: '0038',
     adm_sync_runs: '0040', adm_mode_get: '0042', stf_shadow_status: '0044', stf_mode_get: '0045',
     sup_shadow_status: '0046', sup_mode_get: '0047', mirror_bot_me: '0047',
-    sa_shadow_status: '0050', sa_mode_get: '0051'
+    sa_shadow_status: '0050', sa_mode_get: '0051', device_seen_summary: '0048', shadow_diff_days: '0055', shadow_diff_note: '0055'
   };
   var prepMissing = {};
   function dbErrKind(err) {
@@ -1715,6 +1719,10 @@
     var url = stfUrl(), gv = url ? await stfPing(url) : null;
     if (gv != null) kk.appendChild(kpi('Google の版', gv, ''));
     var tail = '（最後に写した時刻 ' + fmtTime(d.updatedAt) + '）';
+    /* 差の日ごとの記録（統合 0055）: 断った・写しが Google より新しい＝差1件、版が一致＝0件。Google が新しい（次の写しでそろう）・読めない時は残さない */
+    if (d.lastStatus === 'refused') await noteDiff(sb, 'stf', 1);
+    else if (url && gv != null && gv === d.ver) await noteDiff(sb, 'stf', 0);
+    else if (url && gv != null && gv < d.ver) await noteDiff(sb, 'stf', 1);
     if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + (STF_REFUSED[d.lastRefused] || String(d.lastRefused || '')) + '）。開発の担当へ知らせてください。' + tail, 'warn');
     else if (!url) say('写しはあります。この端末には職員マスタの接続先が無いので、Google の版とは見比べていません。' + tail);
     else if (gv == null) say('写しはあります。Google の版を読めませんでした（少し待ってから開き直してください）。' + tail, 'warn');
@@ -1767,6 +1775,7 @@
     var st = stfTarget();
     if (!st) { say('この端末には職員マスタの接続先（Google）がありません。この端末で職員マスタを開いてから、押し直してください。', 'warn'); return; }
     if (kind === 'cut') {
+      if (!(await gatePass('stf'))) { say(GATE_NG, 'warn'); return; }
       if (!staffOn()) { say('切り替えスイッチ（staff）が入っていません。', 'warn'); return; }
       if (!confirm('職員マスタの正本を新しい保存先（Supabase）へ切り替えますか？\n\n1分ほどかかります。その間は職員マスタ・採用管理からの保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n添付ファイルは今までどおり Google ドライブに置きます。切り替えた後は、保存のたびと1時間ごとに Google へ写し返します。いつでも「職員マスタを写しの期間に戻す」で戻せます。')) return;
     } else {
@@ -1793,6 +1802,7 @@
       bc.disabled = false; bb.disabled = false;
       var keep = v.textContent, kc = v.className;
       try { await loadStfMode(sb); await loadStf(sb); } catch (e) { /* 読み直せなくても結果の文は残す */ }
+      await gateRefresh(sb);   // 読み直しが途中で止まっても、ボタンは表の判定どおりに戻す（反証レビュー指摘4）
       v.className = kc; v.textContent = keep;
     }
   }
@@ -1827,6 +1837,7 @@
     var at = admTarget();
     if (!at) { say('この端末には入居調整の接続先（Google）がありません。この端末で入居調整を開いてから、押し直してください。', 'warn'); return; }
     if (kind === 'cut') {
+      if (!(await gatePass('adm'))) { say(GATE_NG, 'warn'); return; }
       if (!admissionOn()) { say('切り替えスイッチ（admission）が入っていません。', 'warn'); return; }
       if (!confirm('入居調整の台帳の正本を新しい保存先（Supabase）へ切り替えますか？\n\n1分ほどかかります。その間は台帳の保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n添付書類は今までどおり Google（Drive）に置きます。切り替えた後は、保存のたびに Google へ写し返します。いつでも「入居調整を写しの期間に戻す」で戻せます。')) return;
     } else {
@@ -1853,6 +1864,7 @@
       bc.disabled = false; bb.disabled = false;
       var keep = v.textContent, kc = v.className;
       try { await loadAdmMode(sb); await loadAdmRuns(sb); } catch (e) { /* 読み直せなくても結果の文は残す */ }
+      await gateRefresh(sb);   // 読み直しが途中で止まっても、ボタンは表の判定どおりに戻す（反証レビュー指摘4）
       v.className = kc; v.textContent = keep;
     }
   }
@@ -1923,6 +1935,7 @@
     var tt = tpTarget(), mt = rmasterTarget();
     if (!tt || (kind === 'cut' && !mt)) { say('この端末には計画書・入居者マスタの接続先（Google）がありません。この端末で両方を開いてから、押し直してください。', 'warn'); return; }
     if (kind === 'cut') {
+      if (!(await gatePass('tp'))) { say(GATE_NG, 'warn'); return; }
       if (!trainingOn()) { say('切り替えスイッチ（training）が入っていません。', 'warn'); return; }
       if (!confirm('個別機能訓練計画書の正本を新しい保存先（Supabase）へ切り替えますか？\n\n数分かかります。その間は計画書の保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、保存のたびに Google へ写し返します。いつでも「計画書を写しの期間に戻す」で戻せます。')) return;
     } else {
@@ -1954,6 +1967,7 @@
       bc.disabled = false; bb.disabled = false;
       var keep = v.textContent, kc = v.className;
       try { await loadTpMode(sb); await loadTpRuns(sb); } catch (e) { /* 読み直せなくても結果の文は残す */ }
+      await gateRefresh(sb);   // 読み直しが途中で止まっても、ボタンは表の判定どおりに戻す（反証レビュー指摘4）
       v.className = kc; v.textContent = keep;
     }
   }
@@ -1999,6 +2013,7 @@
     var tgt = rmasterTarget();
     if (!tgt) { say('この端末には入居者マスタの接続先（Google）がありません。この端末で入居者マスタを開いてから、押し直してください。', 'warn'); return; }
     if (kind === 'cut') {
+      if (!(await gatePass('res'))) { say(GATE_NG, 'warn'); return; }
       if (!masterLiveOn()) { say('切り替えスイッチ（master_live）が入っていません。', 'warn'); return; }
       if (!confirm('入居者マスタの正本を新しい保存先（Supabase）へ切り替えますか？\n\n数分かかります。その間は入居者マスタ・担当者会議・入居調整などの保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、保存のたびに Google へ写し返します。いつでも「写しの期間に戻す」で戻せます。')) return;
     } else {
@@ -2019,6 +2034,7 @@
       bc.disabled = false; bb.disabled = false;
       var keep = v.textContent, kc = v.className;
       try { await loadResMode(sb); await loadResFullRuns(sb); } catch (e) { /* 読み直せなくても結果の文は残す */ }
+      await gateRefresh(sb);   // 読み直しが途中で止まっても、ボタンは表の判定どおりに戻す（反証レビュー指摘4）
       v.className = kc; v.textContent = keep;
     }
   }
@@ -2052,6 +2068,7 @@
     if (!(me && me.role === 'admin' && me.status === SUAuth.STATUS.OK)) { msg('管理者（二段階認証済み）のアカウントで開いてください。', 'warn'); return; }
     var why0 = weightModeBlock(mode, weightSwitch());
     if (why0) { msg(why0, 'warn'); return; }
+    if (mode === 'live' && !(await gatePass('weight'))) { msg(GATE_NG, 'warn'); return; }
     var q = mode === 'live'
       ? '体重の保存先を Supabase（本番）に切り替えますか？\n\n15分以内に事務所PCで体重管理を開き、写しを最新にしてから進めてください。切り替えた後も、Google へは各端末が写し返します。'
       : '体重を「写しの期間」に戻しますか？\n\n各端末は次の通信から Google へ送ります（端末に残っている Google への写し返しを先に送ります）。';
@@ -2069,6 +2086,7 @@
     msg(mode === 'live' ? '体重の保存先を Supabase（本番）にしました。各端末は次の通信から Supabase へ送ります。'
                         : '体重を写しの期間に戻しました。各端末は次の通信から Google へ送ります。', 'ok');
     await loadWeight(SUAuth.client());
+    await gateRefresh(SUAuth.client());
   }
 
   /* 体重の写し（統合 0008）: 写しの件数と、写しを取った記録（件数だけ） */
@@ -2098,6 +2116,8 @@
       v.className = 'msg ok';
       v.textContent = '切り替え済みです（体重の正本は Supabase）。写しは止めてあります（下の記録は切り替える前のものです）。';
     } else {
+    /* 差の日ごとの記録（統合 0055）: 今日（日本時間）写した時だけ。受け付けた写しは体重管理が読んだ全件と同じ＝0件、断った写し＝差1件 */
+    if (SUCutGate.jstDay(last.at) === SUCutGate.jstDay(Date.now())) await noteDiff(sb, 'weight', last.refused ? 1 : 0);
     v.className = 'msg ' + (last.refused ? 'warn' : 'ok');
     v.textContent = last.refused
       ? '最後の写しは受け付けませんでした（' + (last.refused === 'shrink' ? '件数が急に減っていたため。読み込みの途中切れの可能性' : last.refused) + '）。体重管理を開き直してください。'
@@ -2112,6 +2132,105 @@
       li.appendChild(left);
       ul.appendChild(li);
     });
+  }
+
+  /* ── 正本を切り替える前の確かめの表（2026-11-03 代表者の依頼・判定は su-cutover-gate.js）──
+   * 管理者だけ。5つの「切り替える／本番にする」ボタン（入居者マスタ・計画書・入居調整・職員マスタ・体重）の前に4項目の表を出し、
+   * 全部そろった時だけ押せる。押した時も読み直して確かめる（表を出した後に別の画面で切り替えた時のため）。最後に決めるのは今までどおりデータベース。
+   * 戻すボタンと、備品・シフト分析・週間計画・勤務表のボタンには付けない（依頼の外）。
+   * 読むもの: 差の日ごとの記録（shadow_diff_days・0055）・端末の数（device_seen_summary・0048）・毎晩の通し試験の結果（GitHub・公開リポジトリなので読むだけ）・
+   *   今日の操作の記録（audit_log の *_mode と kv_families の「本番にした」記録）。どれかを読めない時は、その項目を満たさない扱いにする（押せない側に倒す） */
+  var GATE = { res: 'b-res-cut', tp: 'b-tp-cut', adm: 'b-adm-cut', stf: 'b-stf-cut', weight: 'b-live-weight' };
+  var GATE_NG = '切り替える前の確かめがそろっていません。ボタンの上の表の「満たさない」の理由を見てください。';
+  var FLOW_RUNS = 'https://api.github.com/repos/TH-su/care-tools/actions/workflows/flow-check.yml/runs?branch=main&per_page=20';
+  var gateIn = null;
+  /* 差の件数を日ごとに残す（事務所・管理者・統合 0055）。0055 の前・断られた時も見比べの表示は止めない */
+  async function noteDiff(sb, kind, n) {
+    try {
+      var r = await sb.rpc('shadow_diff_note', { p_kind: kind, p_diffs: n });
+      if (r && r.error && dbErrKind(r.error) === 'missing') notePrep('shadow_diff_note');
+    } catch (e) { /* 残せなくても見比べの表示は続ける */ }
+  }
+  async function readFlowRuns() {
+    var ctl = new AbortController(), tm = setTimeout(function () { ctl.abort(); }, 15000);
+    try {
+      var r = await fetch(FLOW_RUNS, { cache: 'no-store', credentials: 'omit', headers: { Accept: 'application/vnd.github+json' }, signal: ctl.signal });
+      if (!r.ok) return { error: 'other' };
+      var j = await r.json();
+      return Array.isArray(j && j.workflow_runs) ? { runs: j.workflow_runs } : { error: 'other' };
+    } catch (e) { return { error: 'other' }; } finally { clearTimeout(tm); }
+  }
+  async function gateSafe(p) { try { return await p; } catch (e) { return { error: { code: 'thrown' } }; } }
+  function gateErr(err, name) { var k = dbErrKind(err); if (k === 'missing') notePrep(name); return { error: k }; }
+  async function loadGate(sb) {
+    gateIn = null;
+    if (me && me.role === 'admin') {
+      var now = Date.now(), today = SUCutGate.jstDay(now);
+      var q = await Promise.all([
+        gateSafe(sb.rpc('shadow_diff_days', { p_days: 14 })),
+        gateSafe(sb.rpc('device_seen_summary')),
+        readFlowRuns(),
+        /* 端末の時計が少しずれても取りこぼさないよう、前の日の0時から読み、今日かどうかはデータベースの日付で決める（反証レビュー指摘10） */
+        gateSafe(sb.from('audit_log').select('at,entity,entity_ids,fields').eq('action', 'update').or('entity.like.*_mode,entity.eq.kv_families')
+          .gte('at', SUCutGate.jstDayStartIso(SUCutGate.jstDay(now - 86400000))).limit(1000))
+      ]);
+      gateIn = {
+        now: now, today: (!q[0].error && q[0].data && q[0].data.today) || today,
+        diff: q[0].error ? gateErr(q[0].error, 'shadow_diff_days') : { rows: (q[0].data || {}).rows },
+        dev: q[1].error ? gateErr(q[1].error, 'device_seen_summary') : { data: q[1].data },
+        flow: q[2],
+        cut: q[3].error ? { error: dbErrKind(q[3].error) } : { audit: q[3].data || [] }
+      };
+    }
+    gateApply();
+  }
+  /* 表を出すのは、その切り替えボタンが出ている時だけ（体重は、管理者の欄が出ていて、まだ写しの期間の時） */
+  function gateShown(k) {
+    if (!(me && me.role === 'admin')) return false;
+    return k === 'weight' ? !$('wt-admin').hidden && weightMode !== 'live' : !$(GATE[k]).hidden;
+  }
+  function gateApply() {
+    Object.keys(GATE).forEach(function (k) {
+      var box = $('gate-' + k), btn = $(GATE[k]);
+      box.replaceChildren();
+      box.hidden = !gateShown(k);
+      if (box.hidden) return;
+      if (!gateIn) { btn.disabled = true; box.appendChild(el('p', 'msg warn', '切り替える前の確かめの表を読めませんでした。「見比べ直す」を押してください（読めるまで押せません）。')); return; }
+      var v = SUCutGate.judge(Object.assign({ kind: k }, gateIn));
+      btn.disabled = !v.ok;
+      renderGate(box, v);
+    });
+  }
+  function renderGate(box, v) {
+    var tb = el('table', 'gate-t');
+    tb.appendChild(el('caption', v.ok ? 'ok' : 'ng', '切り替える前の確かめ：' + (v.ok ? '4項目そろっています。押せます。' : 'そろっていない項目があるので、まだ押せません。')));
+    var hd = el('tr');
+    ['項目', '今', '判定'].forEach(function (h) { var th = el('th', null, h); th.scope = 'col'; hd.appendChild(th); });
+    var thead = el('thead'), body = el('tbody');
+    thead.appendChild(hd);
+    v.items.forEach(function (x, i) {
+      var tr = el('tr', x.ok ? 'ok' : 'ng');
+      tr.appendChild(el('td', null, (i + 1) + '. ' + x.label));
+      tr.appendChild(el('td', null, x.value));
+      var td = el('td', null, x.ok ? '満たす' : '満たさない');
+      if (!x.ok && x.why) td.appendChild(el('div', 'em', x.why));
+      tr.appendChild(td);
+      body.appendChild(tr);
+    });
+    tb.appendChild(thead); tb.appendChild(body);
+    box.appendChild(tb);
+  }
+  /* 読み直して表とボタンを新しくする。例外は外へ出さない（読めない時は押せない側） */
+  async function gateRefresh(sb) {
+    try { await loadGate(sb); } catch (e) { gateIn = null; gateApply(); }
+  }
+  /* 押した時: 読み直してから判定する。そろっていなければ false（表も新しくなる）。
+   * 読み直す間（GitHub を最大15秒待つ）はボタンを押せなくして、二度押しで確認の窓が2回出ないようにする（反証レビュー指摘5） */
+  async function gatePass(k) {
+    var b = $(GATE[k]);
+    if (b) b.disabled = true;
+    await gateRefresh(SUAuth.client());
+    return !!gateIn && SUCutGate.judge(Object.assign({ kind: k }, gateIn)).ok;
   }
 
   async function start() {
