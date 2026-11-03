@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-ClQcwmueEMc5Jm7wVL0+fom6UuuoU6gPkJ+yOb3ZXZI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-HWMywylCmNEJWB0PTi8uZxIrF6zhyvleG+wQLUFGSrw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -2074,7 +2074,7 @@ function getGenogram(id,name){
    ログインの控えがある時だけ geno_get（その方の masterId）を読み、届いた絵の日時が端末の控えより新しい（または端末に無い）時だけ、
    その方の画面の家族構成図の枠の中身を差し替える。読んだ絵は端末に保存しない（メモリだけ）。
    関数が無い（準備前）・ログインなし・断られた時は今までどおり端末の控えだけで出す。 */
-/* geno_get の応答 {data, error} を分ける（純関数）。絵は JPEG の data URL・30万字以下・日時が読める時だけ ok */
+/* geno_get の応答 {data, error} を分ける（純関数）。絵は JPEG の data URL・100万字以下（共通 DB と同じ上限）・日時が読める時だけ ok */
 function genoCloudKind(r){
   var e=r&&r.error;
   if(e){
@@ -2088,7 +2088,7 @@ function genoCloudKind(r){
   if(!d||typeof d!=='object'||d.ok!==true) return (d&&d.error==='badid')?{kind:'empty'}:{kind:'fail',code:(d&&typeof d.error==='string')?d.error.slice(0,20):'shape'};
   if(d.row==null) return {kind:'empty'};
   var w=d.row;
-  if(typeof w!=='object'||typeof w.image!=='string'||w.image.indexOf('data:image/jpeg;base64,')!==0||w.image.length>300000||
+  if(typeof w!=='object'||typeof w.image!=='string'||w.image.indexOf('data:image/jpeg;base64,')!==0||w.image.length>1000000||
      typeof w.at!=='string'||!isFinite(Date.parse(w.at))) return {kind:'fail',code:'shape'};
   return {kind:'ok',row:{image:w.image,at:w.at}};
 }

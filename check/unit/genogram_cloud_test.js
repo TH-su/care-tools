@@ -102,8 +102,9 @@ group('2. geno_get の応答の分け方（genoCloudKind）');
   eq('絵と日時がある → ok', k(good), { kind: 'ok', row: { image: IMG('AAAA'), at: '2026-11-03T01:00:00+00:00' } });
   eq('JPEG の data URL でない → fail', k({ data: { ok: true, row: { image: 'javascript:alert(1)', at: '2026-11-03T01:00:00Z' } } }).kind, 'fail');
   eq('PNG も受けない → fail', k({ data: { ok: true, row: { image: 'data:image/png;base64,AA', at: '2026-11-03T01:00:00Z' } } }).kind, 'fail');
-  eq('30万字を超える → fail', k({ data: { ok: true, row: { image: IMG('A'.repeat(300000)), at: '2026-11-03T01:00:00Z' } } }).kind, 'fail');
-  eq('ちょうど30万字 → ok', k({ data: { ok: true, row: { image: IMG('A'.repeat(300000 - 23)), at: '2026-11-03T01:00:00Z' } } }).kind, 'ok');
+  eq('100万字を超える → fail（共通 DB と同じ上限）', k({ data: { ok: true, row: { image: IMG('A'.repeat(1000000)), at: '2026-11-03T01:00:00Z' } } }).kind, 'fail');
+  eq('ちょうど100万字 → ok', k({ data: { ok: true, row: { image: IMG('A'.repeat(1000000 - 23)), at: '2026-11-03T01:00:00Z' } } }).kind, 'ok');
+  eq('大きな図の長さ（約60万字）→ ok（前の上限30万字では落ちていた）', k({ data: { ok: true, row: { image: IMG('A'.repeat(605447 - 23)), at: '2026-11-03T01:00:00Z' } } }).kind, 'ok');
   eq('日時が読めない → fail', k({ data: { ok: true, row: { image: IMG('A'), at: 'きのう' } } }).kind, 'fail');
   eq('日時が文字列でない → fail', k({ data: { ok: true, row: { image: IMG('A'), at: 123 } } }).kind, 'fail');
   eq('row が文字列 → fail', k({ data: { ok: true, row: 'x' } }).kind, 'fail');
@@ -259,8 +260,8 @@ group('7. 書く側: 応答の分け方（suGenoRpcKind）');
 function genoBox(ls, extra){
   const sb = Object.assign({ localStorage: ls || makeLS(), window: {}, Promise, JSON, String, Object, Array, setTimeout, Date }, extra || {});
   vm.createContext(sb);
-  const names = ['suGenoRpcKind', 'suGenoReadSent', 'suGenoMarkSent', 'suGenoPutThumb', 'suGenoThumbTodo', 'sweepSuGenoThumbs', 'suGenoMidsOfName', 'suGenoDelThumbs', 'suGenoNameKey', 'suGenoMasterIdFor', 'writeSuGenogram'];
-  vm.runInContext([grabLine(SRC.geno, 'var SU_GENO_SENT_KEY = '), grabLine(SRC.geno, 'var _suThumbSweepDone = ')].concat(names.map(n => grabFn(SRC.geno, n))).join('\n'), sb);
+  const names = ['suGenoRpcKind', 'suGenoReadSent', 'suGenoMarkSent', 'suGenoFitImage', 'suGenoPutThumb', 'suGenoThumbTodo', 'sweepSuGenoThumbs', 'suGenoMidsOfName', 'suGenoDelTargets', 'suGenoDelThumbs', 'suGenoNameKey', 'suGenoMasterIdFor', 'writeSuGenogram'];
+  vm.runInContext([grabLine(SRC.geno, 'var SU_GENO_SENT_KEY = '), grabLine(SRC.geno, 'var SU_GENO_IMG_MAX = '), grabLine(SRC.geno, 'var SU_GENO_DEL_MISS_MSG = '), grabLine(SRC.geno, 'var _suThumbSweepDone = ')].concat(names.map(n => grabFn(SRC.geno, n))).join('\n'), sb);
   return sb;
 }
 {
@@ -311,7 +312,9 @@ async function writeCase(opts){
   });
   G.window._suMasterId = opts.mid; G.window._suMasterName = opts.mName;
   const got = [];
-  G.writeSuGenogram(opts.name, { cloud: (s) => got.push(s), nameKeyOnly: !!opts.nameKeyOnly });
+  const wo = { cloud: (s) => got.push(s), nameKeyOnly: !!opts.nameKeyOnly };
+  if('gate' in opts) wo.gate = opts.gate;
+  G.writeSuGenogram(opts.name, wo);
   await settle();
   return { got, rpc, notes, ls };
 }
@@ -335,6 +338,64 @@ async function writeCase(opts){
   eq('形で断られた → fail（記録に残す・控えない）', [r.got, r.notes.map(n => n[1]), r.ls.getItem('genogram:thumbSent')], [['fail'], ['badimage'], null]);
   r = await writeCase({ session: true, mid: 'R-1', mName: '架空 一郎', name: '架空 一郎', reply: { error: { code: '42501' } } });
   eq('断られた（42501）→ denied（記録しない）', [r.got, r.notes.length], [['denied'], 0]);
+  r = await writeCase({ session: true, mid: 'R-1', mName: '架空 一郎', name: '架空 一郎', reply: { data: { ok: true, result: 'stale', at: '2026-11-04T00:00:00+00:00' } } });
+  eq('サーバーの方が新しい・消した印より前（stale）→ 送れたと数えて控える（送り直さない）', [r.got, JSON.parse(r.ls.getItem('genogram:thumbSent'))], [['ok'], { 'R-1': '2026-11-03T10:00:00+09:00' }]);
+}
+
+group('9b. 書く側: 保存が中止された版の絵は送らない（gate）');
+{
+  let r = await writeCase({ session: true, mid: 'R-1', mName: '架空 一郎', name: '架空 一郎', gate: Promise.resolve(false), reply: { data: { ok: true } } });
+  eq('中止（gate=false）→ 送らない・結果は aborted', [r.rpc.length, r.got], [0, ['aborted']]);
+  eq('  └ 端末の su_genograms には今までどおり書く', !!JSON.parse(r.ls.getItem('su_genograms'))['R-1'], true);
+  r = await writeCase({ session: true, mid: 'R-1', mName: '架空 一郎', name: '架空 一郎', gate: Promise.resolve(true), reply: { data: { ok: true } } });
+  eq('中止されなかった（gate=true）→ 送る', [r.rpc.length, r.got], [1, ['ok']]);
+  let open = null;
+  const pending = new Promise(ok => { open = ok; });
+  r = await writeCase({ session: true, mid: 'R-1', mName: '架空 一郎', name: '架空 一郎', gate: pending, reply: { data: { ok: true } } });
+  eq('同期の結果が出るまでは送らない（端末には先に書く）', [r.rpc.length, r.got, !!JSON.parse(r.ls.getItem('su_genograms'))['R-1']], [0, [], true]);
+  open(true); await settle();
+  eq('  └ 中止されなかったと決まってから送る', [r.rpc.length, r.got], [1, ['ok']]);
+}
+
+group('9c. 書く側: 送る絵を上限（100万字）に収める（suGenoFitImage）');
+{
+  const mkFit = (shrinkLen) => {
+    const drawn = [];
+    const G = genoBox(makeLS(), {
+      CloudSync: { note: () => {} },
+      Image: function(){ const im = this; im.naturalWidth = 2000; im.naturalHeight = 1000; Object.defineProperty(im, 'src', { set(v){ im._src = v; setImmediate(() => im.onload()); } }); },
+      document: { createElement: () => { const cv = { width: 0, height: 0, getContext: () => ({ fillRect(){}, drawImage(){}, set fillStyle(v){} }),
+        toDataURL: (type, q) => { drawn.push([cv.width, cv.height, type, q]); return IMG('B'.repeat(shrinkLen(cv.width))); } }; return cv; } }
+    });
+    return { G, drawn };
+  };
+  let F = mkFit(() => 10);
+  eq('上限以下はそのまま', await F.G.suGenoFitImage(IMG('small')), IMG('small'));
+  eq('JPEG の data URL でない → 送らない', await F.G.suGenoFitImage('data:image/png;base64,AA'), '');
+  eq('  └ 小さい絵は描き直さない', F.drawn.length, 0);
+  eq('測った大きな図の長さ（約60万字）は描き直さずにそのまま送る', (await F.G.suGenoFitImage(IMG('A'.repeat(605447 - 23)))).length, 605447);
+  eq('  └ 描き直していない', F.drawn.length, 0);
+  const big = IMG('A'.repeat(1500000));
+  F = mkFit((w) => w * 600);   // 幅に比例して長くなる模型（幅 2000 で 120万字）
+  const got = await F.G.suGenoFitImage(big);
+  t('上限を超える → 幅を落として JPEG 0.6 で描き直し、上限に収める', got.length <= 1000000 && got.length > 0 && F.drawn.length >= 1 && F.drawn.every(d => d[2] === 'image/jpeg' && d[3] === 0.6 && d[0] < 2000), F.drawn);
+  F = mkFit(() => 1100000);
+  eq('縮めても収まらない → 送らない', await F.G.suGenoFitImage(big), '');
+  eq('  └ 8回で諦める', F.drawn.length, 8);
+  /* 送る時に使う（端末の su_genograms の絵は変えない） */
+  const ls = makeLS(Object.assign({ su_genograms: JSON.stringify({ 'R-1': { image: big, name: '架空 一郎', updatedAt: '2026-11-01T10:00:00+09:00' } }), su_residents_common: JSON.stringify({ residents: [{ masterId: 'R-1', name: '架空 一郎' }] }) }, SESSION));
+  const sent = [], notes = [];
+  const G = genoBox(ls, {
+    CloudSync: { hasLogin: () => true, note: (w, e) => notes.push(e), thumbRpc: (fn, a) => { sent.push(a.p_image.length); return Promise.resolve({ kind: 'ok' }); } },
+    Image: function(){ const im = this; im.naturalWidth = 2000; im.naturalHeight = 1000; Object.defineProperty(im, 'src', { set(v){ setImmediate(() => im.onload()); } }); },
+    document: { createElement: () => { const cv = { width: 0, height: 0, getContext: () => ({ fillRect(){}, drawImage(){} }), toDataURL: () => IMG('C'.repeat(cv.width * 400)) }; return cv; } }
+  });
+  G.sweepSuGenoThumbs(); await settle();
+  t('起動時の送りでも、送る絵だけ縮める', sent.length === 1 && sent[0] <= 1000000, sent);
+  eq('  └ 端末の su_genograms の絵は今のまま', JSON.parse(ls.getItem('su_genograms'))['R-1'].image.length, big.length);
+  const G2 = genoBox(makeLS(SESSION), { CloudSync: { hasLogin: () => true, note: (w, e) => notes.push(e), thumbRpc: () => { sent.push('x'); return Promise.resolve({ kind: 'ok' }); } },
+    Image: function(){ const im = this; Object.defineProperty(im, 'src', { set(v){ setImmediate(() => im.onerror()); } }); } });
+  eq('読めない絵 → 送らず fail・記録は toolarge', [await G2.suGenoPutThumb('R-1', { image: big, updatedAt: 'x' }), sent.length, notes.slice(-1)], ['fail', 1, ['toolarge']]);
 }
 
 group('10. 書く側: 起動時の送り（sweepSuGenoThumbs）');
@@ -373,34 +434,56 @@ group('11. 書く側: 図を消した時（suGenoDelThumbs）');
     'R-2': { image: IMG('2'), name: '架空 二郎', updatedAt: 'a' },
     'name:架空一郎': { image: IMG('1'), name: '架空 一郎', updatedAt: 'a' }
   });
-  const run = async (admin) => {
-    const ls = makeLS(Object.assign({ su_genograms: genos }, SESSION));
-    const rpc = [];
+  const run = async (admin, opt) => {
+    opt = opt || {};
+    const init = Object.assign({ su_genograms: opt.genos === undefined ? genos : opt.genos }, SESSION);
+    if(opt.roster) init.su_residents_common = JSON.stringify({ residents: opt.roster });
+    const ls = makeLS(init);
+    const rpc = [], flashes = [], timers = [];
     const G = genoBox(ls, { CloudSync: {
       hasLogin: () => true, note: () => {}, thumbIsAdmin: () => Promise.resolve(admin),
       thumbRpc: (fn, args) => { rpc.push([fn, args.p_resident_id]); return Promise.resolve({ kind: 'ok' }); }
-    } });
-    G.suGenoDelThumbs('架空　一郎');
+    }, flashStatus: (m) => flashes.push(m), setTimeout: (fn, ms) => { timers.push(ms); fn(); } });
+    G.suGenoDelThumbs(opt.name || '架空　一郎');
     await settle();
-    return { rpc, ls };
+    return { rpc, ls, flashes, timers };
   };
   let r = await run(true);
   eq('管理者 → その文書名の masterId だけ geno_del（氏名キーは送らない）', r.rpc, [['geno_del', 'R-1']]);
   eq('  └ 端末の su_genograms は今のまま', r.ls.getItem('su_genograms'), genos);
+  eq('  └ 知らせは出ない', r.flashes, []);
   r = await run(false);
   eq('管理者でない → 送らない', r.rpc, []);
   const G = genoBox();
   eq('suGenoMidsOfName は氏名キーを含めない', [...G.suGenoMidsOfName(JSON.parse(genos), '架空 一郎')], ['R-1']);
+  /* 端末に masterId のキーが無い（一覧から直接開いて作った図だけ）の時 */
+  const onlyName = JSON.stringify({ 'name:架空一郎': { image: IMG('1'), name: '架空 一郎', updatedAt: 'a' } });
+  const roster1 = [{ masterId: 'R-1', name: '架空　一郎' }, { masterId: 'R-2', name: '架空 二郎' }];
+  r = await run(true, { genos: onlyName, roster: roster1 });
+  eq('masterId のキーが無い → 名簿で1名にだけ一致したらその masterId を消す', [r.rpc, r.flashes], [[['geno_del', 'R-1']], []]);
+  r = await run(true, { genos: onlyName, roster: roster1.concat([{ masterId: 'R-3', name: '架空一郎' }]) });
+  eq('同姓同名（2名一致）→ 消さずに知らせる', [r.rpc, r.flashes.length, r.timers], [[], 1, [2400]]);
+  t('  └ 知らせの文（入居者マスタから開いて消す）', /^ほかの端末の絵は消せませんでした（入居者マスタから/.test(r.flashes[0] || ''), r.flashes);
+  r = await run(true, { genos: onlyName, roster: [{ masterId: 'R-2', name: '架空 二郎' }] });
+  eq('名簿に無い → 消さずに知らせる', [r.rpc, r.flashes.length], [[], 1]);
+  r = await run(true, { genos: onlyName });
+  eq('名簿が無い → 消さずに知らせる', [r.rpc, r.flashes.length], [[], 1]);
+  r = await run(false, { genos: onlyName });
+  eq('管理者でない → 知らせも出さない', [r.rpc, r.flashes], [[], []]);
+  eq('suGenoDelTargets: 同じ masterId が名簿に2行あっても1名と数える', [...G.suGenoDelTargets({}, [{ masterId: 'R-1', name: '架空 一郎' }, { masterId: 'R-1', name: '架空 一郎' }], '架空 一郎')], ['R-1']);
+  eq('suGenoDelTargets: 端末に masterId のキーがあれば名簿は見ない', [...G.suGenoDelTargets(JSON.parse(genos), [{ masterId: 'R-9', name: '架空 一郎' }], '架空 一郎')], ['R-1']);
 }
 
 group('12. 書く側: 画面の流れ');
 {
   const save = tryGrab(SRC.geno, 'saveDoc', 'async ');
   const del = tryGrab(SRC.geno, 'deleteCurrentDoc', 'async ');
-  t('保存の時に送った結果を受け取る（writeSuGenogram に cloud を渡す）', /writeSuGenogram\(name, \{ cloud: /.test(save));
+  t('保存の時に送った結果を受け取り、送るかは同期の結果で決める（writeSuGenogram に gate と cloud を渡す）', /writeSuGenogram\(name, \{ gate: thumbGate, cloud: /.test(save));
+  t('食い違いで中止した分岐で送らないと決める（thumbGo(false)）', /if \(err && err\.conflict\) \{\s*\/\/[^\n]*\n\s*thumbGo\(false\);/.test(save));
+  t('中止されなかった時は最後に送ると決める（thumbGo(true) → thumbDone）', /thumbGo\(true\);[^\n]*\n\s*thumbDone\(\);/.test(save));
   t('ログインなしの時の知らせの文がある', /'ログインしていないため、この図はほかの端末のフェイスシート・入居者マスタには出ません'/.test(save));
   t('知らせは保存の知らせ（同期の結果まで）の後に出す', /thumbSaved\.then\(/.test(save) && /thumbDone\(\);[^\n]*\n\}$/.test(save));
-  t('送った・送らなかった・関数が無い時は知らせない', /if \(st === 'ok' \|\| st === 'skip' \|\| st === 'nofunc'\) return;/.test(save));
+  t('送った・送らなかった・関数が無い・中止した時は知らせない', /if \(st === 'ok' \|\| st === 'skip' \|\| st === 'nofunc' \|\| st === 'aborted'\) return;/.test(save));
   t('図を消した時に suGenoDelThumbs を呼ぶ', /suGenoDelThumbs\(name\)/.test(del));
   t('起動時に1回だけ送る（sweepSuGenoThumbs）', /sweepSuGenoThumbs\(\)/.test(tryGrab(SRC.geno, 'init')));
   t('ログインの部品の読み込み関数を2つ作らない（genoAuthLoad_ だけ）', (SRC.geno.match(/function \w*[Aa]uthLoad\w*\(/g) || []).length === 1);
