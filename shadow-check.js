@@ -1108,6 +1108,7 @@
     try { await loadSaMode(sb); } catch (e) { saNote('印の欄', e); }   // 読めない時はボタンを出さない
     try { await loadGeno(sb); } catch (e) { $('geno-verdict').className = 'msg warn'; $('geno-verdict').textContent = '家族構成図の写しの記録を読めませんでした。'; }
     try { await loadGenoMode(sb); } catch (e) { genoNote('印の欄', e); }   // 読めない時はボタンを出さない
+    try { await loadHb(sb); } catch (e) { $('hb-verdict').className = 'msg warn'; $('hb-verdict').textContent = '排泄ケア記録の写しの記録を読めませんでした。'; }
     try { await loadPatch(sb); }
     catch (e) {
       $('pt-verdict').className = 'msg warn';
@@ -1431,7 +1432,7 @@
     adm_sync_runs: '0040', adm_mode_get: '0042', stf_shadow_status: '0044', stf_mode_get: '0045',
     sup_shadow_status: '0046', sup_mode_get: '0047', mirror_bot_me: '0047',
     sa_shadow_status: '0050', sa_mode_get: '0051', device_seen_summary: '0048', shadow_diff_days: '0055', shadow_diff_note: '0055',
-    geno_shadow_status: '0053', geno_mode_get: '0054'
+    geno_shadow_status: '0053', geno_mode_get: '0054', hb_shadow_status: '0062'
   };
   var prepMissing = {};
   function dbErrKind(err) {
@@ -1733,6 +1734,47 @@
     else if (!isNaN(last) && now - last <= SA_FRESH_MS) say('写しが1時間ごとに届いています。' + tail, 'ok');
     else say('しばらく写っていません。家族構成図同期の GAS の自動（autoMirror）が止まっていないか確かめてください。' + tail, 'warn');
   }
+  /* 排泄ケア記録の写し（統合 0062・2026-11-03 代表者の決定: 写すのは全部・1時間ごとに自動・写しと見比べは2週間以上）: hb_shadow_status（事務所・管理者）。
+   * 出すのは日数・件数・照らし合わせの数・最後に写した時刻と、その回の数（違った日・残った日など）だけ（氏名・記録の中身は返らない・出さない）。
+   * 切り替えのボタンはまだ無い（写しの期間だけ）。Google へは何も送らない */
+  var HB_REFUSED = {
+    stale: '前に読んだ写し', shrink: '急に減った', badrow: '形の違い', dup: '同じ日に同じ記録が2行', toomany: '一度に多すぎる',
+    toolarge: '大きすぎる', future: '時刻が先'
+  };
+  async function loadHb(sb, nowMs) {
+    var kk = $('hb-kpis'), v = $('hb-verdict'), dt = $('hb-detail');
+    function say(t, kind) { v.className = 'msg' + (kind ? ' ' + kind : ''); v.textContent = t; }
+    kk.replaceChildren(); dt.className = 'msg'; dt.textContent = '';
+    var st = await sb.rpc('hb_shadow_status');
+    if (st.error) { say(dbErrText(st.error, 'hb_shadow_status', '排泄ケア記録の写しの準備（データベース 0062）はまだです。')); return; }
+    var d = st.data || {}, s = (d.stat && typeof d.stat === 'object') ? d.stat : {};
+    if (!d.lastAt) { say('まだ写していません。排泄ケア記録DB の GAS に写しの部品（shadow.gs・automirror.gs）を貼り、自動（setupAutoMirror）を入れると、1時間以内に写ります。'); return; }
+    var now = typeof nowMs === 'number' ? nowMs : Date.now();
+    var since = Date.parse(d.since || '');
+    var sinceDays = isNaN(since) ? 0 : Math.max(0, Math.floor((now - since) / 86400000));
+    kk.appendChild(kpi('写した日', d.days, '日'));
+    kk.appendChild(kpi('写した記録', d.rows, '件'));
+    kk.appendChild(kpi('中身まで照らし合わせた日（14日）', d.verified14, '日'));
+    kk.appendChild(kpi('食い違い（14日）', d.mismatch14, '日'));
+    kk.appendChild(kpi('写し始めてから', sinceDays, '日'));
+    var tail = '（最後に写した時刻 ' + fmtTime(d.lastAt) + '）';
+    var last = Date.parse(d.lastAt || '');
+    var notes = [];
+    if (Number(s.left) > 0) notes.push('まだ写していない日が ' + Number(s.left) + '日あります（初めの写しの途中。次の回から続きを写します）。');
+    if (Number(s.emptyHeld) > 0) notes.push('Google で記録が無くなった日が ' + Number(s.emptyHeld) + '日あり、10日を超えるので写しからは消していません。スプレッドシートの記録のタブ（Records・RecordsArchive）が消えたり名前が変わったりしていないか確かめ、開発の担当へ知らせてください。');
+    if (Number(s.badId) > 0) notes.push('記録の番号か更新の時刻が新しい保存先で使えない形の記録が ' + Number(s.badId) + '件あり、写していません（開発の担当へ知らせてください）。');
+    if (Number(s.badRow) > 0) notes.push('項目が多すぎる・大きすぎる記録が ' + Number(s.badRow) + '件あり、写していません（開発の担当へ知らせてください）。');
+    if (Number(s.nodate) > 0) notes.push('日付の入っていない記録が ' + Number(s.nodate) + '件あります（どの日にも入らないので写していません。切り替える前に開発の担当へ知らせてください）。');
+    if (Number(d.refused24h) > 0) notes.push('この24時間に受け付けなかった写しが ' + Number(d.refused24h) + '回ありました。');
+    dt.textContent = (s.days != null ? 'Google の日数 ' + Number(s.days) + '日・記録 ' + Number(s.rows) + '件／最後の回: 違った日 ' + Number(s.diff || 0) + '日・写した日 ' + Number(s.sent || 0) + '日・照らし合わせ ' + Number(s.verify || 0) + '日。' : '') + (notes.length ? ' ' + notes.join(' ') : '');
+    if (notes.length) dt.className = 'msg warn';
+    if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + (HB_REFUSED[d.lastRefused] || String(d.lastRefused || '')) + '）。開発の担当へ知らせてください。' + tail, 'warn');
+    else if (isNaN(last) || now - last > SA_FRESH_MS) say('しばらく写っていません。排泄ケア記録DB の GAS の自動（autoMirror）が止まっていないか確かめてください。' + tail, 'warn');
+    else if (Number(d.mismatch14) > 0) say('この14日に、要約は同じなのに中身が違った日が ' + Number(d.mismatch14) + '日ありました（写しは直してあります）。切り替える前に開発の担当へ知らせてください。' + tail, 'warn');
+    else if (Number(s.left) > 0) say('写しが届いています（初めの写しの途中です）。' + tail, 'ok');
+    else if (notes.length) say('写しは1時間ごとに届いていますが、下の知らせがあります（このままでは切り替えられません）。' + tail, 'warn');
+    else say('写しが1時間ごとに届き、Google と同じです。写し始めてから ' + sinceDays + '日（2週間以上続けてから切り替えを決めます）。' + tail, 'ok');
+  }
   /* 切り替えボタンは、切り替えスイッチ genogram が入で、この端末に家族構成図の接続先（URL と合言葉）がある時だけ出す */
   function genoOn() { var sw = window.SUKv ? SUKv._flags() : null; return !!(sw && sw.supabase && sw.supabase.genogram === true); }
   function genoTarget() {
@@ -1856,14 +1898,27 @@
       return;
     }
     var d = r.data || {}, rows = Array.isArray(d.rows) ? d.rows : [];
-    if (!rows.length) { say('まだ記録がありません。送るスイッチ（device_seen）が入ると、端末が画面を開いた日に1回ずつ届きます。'); return; }
+    if (!rows.length && !(Array.isArray(d.hb) && d.hb.length)) { say('まだ記録がありません。送るスイッチ（device_seen）が入ると、端末が画面を開いた日に1回ずつ届きます。'); return; }
     function sum(login, k) { return rows.filter(function (x) { return x.login === login; }).reduce(function (n, x) { return n + (Number(x[k]) || 0); }, 0); }
     kk.appendChild(kpi('ログインしていない（7日）', sum(false, 'd7'), '台'));
     kk.appendChild(kpi('ログインしていない（30日）', sum(false, 'd30'), '台'));
     kk.appendChild(kpi('ログイン中（7日）', sum(true, 'd7'), '台'));
     var out7 = sum(false, 'd7'), tail = '（最後に届いた時刻 ' + fmtTime(d.lastAt) + '）';
+    /* 排泄ケア記録を開いた端末（統合 0062・2026-11-03）。切り替える前に「ログインしていない」が0台になったことを確かめる */
+    var hb = Array.isArray(d.hb) ? d.hb : null;
+    function hsum(login, k) { return (hb || []).filter(function (x) { return x.login === login; }).reduce(function (n, x) { return n + (Number(x[k]) || 0); }, 0); }
+    if (hb) kk.appendChild(kpi('排泄ケア記録・ログインしていない（7日）', hsum(false, 'd7'), '台'));
     if (out7 > 0) say('この7日に、ログインしていない端末が ' + out7 + '台 入居者マスタを読む画面を開いています。その端末でログインしてください。' + tail, 'warn');
     else say('この7日に入居者マスタを読む画面を開いた端末は、すべてログインしています。' + tail, 'ok');
+    if (hb) {
+      var hb7 = hsum(false, 'd7'), hbIn7 = hsum(true, 'd7');
+      var li0 = el('li'), left0 = el('div');
+      left0.appendChild(el('div', 'nm', '排泄ケア記録を開いた端末'));
+      left0.appendChild(el('div', 'em', hb7 + hbIn7 === 0 ? 'この7日はまだ届いていません（排泄ケア記録の画面が新しい版になると、開いた日に1回ずつ届きます）。'
+        : 'この7日: ログインしていない ' + hb7 + '台／ログイン中 ' + hbIn7 + '台' + (hb7 > 0 ? '（切り替える前に、その端末でログインしてください）' : '（切り替えの前の確かめ: すべてログインしています）')));
+      li0.appendChild(left0);
+      ul.appendChild(li0);
+    }
     rows.forEach(function (x) {
       var li = el('li'), left = el('div');
       left.appendChild(el('div', 'nm', (DS_ROLE[x.role] || String(x.role || '')) + '・' + (x.login ? 'ログイン中' : 'ログインしていない')));
