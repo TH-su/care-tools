@@ -1842,6 +1842,37 @@
     });
   }
 
+  /* ログインしていない端末の数（統合 0048・2026-11-02 代表者の依頼）: device_seen_summary（管理者・aal2 だけ）。
+   * 用途（事務所／現場）とログインの有無ごとに、今日・7日・30日以内に開いた端末の数だけを出す。端末の印は返らない・出さない */
+  var DS_ROLE = { office: '事務所の端末', field: '現場の端末' };
+  async function loadDeviceSeen(sb) {
+    var kk = $('ds-kpis'), v = $('ds-verdict'), ul = $('ds-rows');
+    function say(t, kind) { v.className = 'msg' + (kind ? ' ' + kind : ''); v.textContent = t; }
+    kk.replaceChildren(); ul.replaceChildren();
+    var r = await sb.rpc('device_seen_summary');
+    if (r.error) {
+      if (r.error.code === '42501') say('数を見られるのは管理者（2段階認証まで済んだ状態）だけです。');
+      else say('ログインしていない端末の数の準備（データベース 0048）はまだです。');
+      return;
+    }
+    var d = r.data || {}, rows = Array.isArray(d.rows) ? d.rows : [];
+    if (!rows.length) { say('まだ記録がありません。送るスイッチ（device_seen）が入ると、端末が画面を開いた日に1回ずつ届きます。'); return; }
+    function sum(login, k) { return rows.filter(function (x) { return x.login === login; }).reduce(function (n, x) { return n + (Number(x[k]) || 0); }, 0); }
+    kk.appendChild(kpi('ログインしていない（7日）', sum(false, 'd7'), '台'));
+    kk.appendChild(kpi('ログインしていない（30日）', sum(false, 'd30'), '台'));
+    kk.appendChild(kpi('ログイン中（7日）', sum(true, 'd7'), '台'));
+    var out7 = sum(false, 'd7'), tail = '（最後に届いた時刻 ' + fmtTime(d.lastAt) + '）';
+    if (out7 > 0) say('この7日に、ログインしていない端末が ' + out7 + '台 入居者マスタを読む画面を開いています。その端末でログインしてください。' + tail, 'warn');
+    else say('この7日に入居者マスタを読む画面を開いた端末は、すべてログインしています。' + tail, 'ok');
+    rows.forEach(function (x) {
+      var li = el('li'), left = el('div');
+      left.appendChild(el('div', 'nm', (DS_ROLE[x.role] || String(x.role || '')) + '・' + (x.login ? 'ログイン中' : 'ログインしていない')));
+      left.appendChild(el('div', 'em', '今日 ' + (Number(x.d1) || 0) + '台／7日 ' + (Number(x.d7) || 0) + '台／30日 ' + (Number(x.d30) || 0) + '台'));
+      li.appendChild(left);
+      ul.appendChild(li);
+    });
+  }
+
   /* 職員マスタの正本の切り替え（統合 0045・2026-11-02）: 入居調整と同じ手順（su-stf-full.js の cutover・back）。管理者だけ・事務所PCだけ。
    * 切り替えボタンは切り替えスイッチ staff が入で、この端末に職員マスタの接続先がある時だけ出す。添付ファイル（Google ドライブ）はどちらでも触らない */
   function staffOn() { var sw = window.SUKv ? SUKv._flags() : null; return !!(sw && sw.supabase && sw.supabase.staff === true); }

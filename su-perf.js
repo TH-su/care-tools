@@ -31,6 +31,11 @@
  * 見る場所: perf-report.html（端末ごとに集計・コピー・CSV）。
  * 止める: localStorage に su_perf_off = '1' を入れる（その端末だけ記録しない）。
  *
+ * ログインの有無と開いた日（2026-11-02・代表者の依頼）:
+ *   記録に login（true/false・分からない間は null）と day（日本時間の日付）を足した。login は入居者マスタを読む画面の帯の部品
+ *   （su-login-band.js）が SUPerf.login で入れる。端末の用途は今までの role。アカウント・メール・氏名は残さない。
+ *   管理者が全端末の数を見るのは写しの見比べ（受け口 device-seen へ送った分・su-login-band.js の冒頭を参照）。
+ *
  * ツール側からの追加（任意）:
  *   window.SUPerf.ready() … 「画面が使えるようになった」時に呼ぶと、開いてからの時間を残す（最初の1回だけ）。
  *   2026-10-17 から8画面（週間計画・入居者マスタ・フェイスシート・申送ビューア・体重・通所利用表・
@@ -70,6 +75,8 @@
     app: appName(),
     dev: deviceKind(),
     role: role(),
+    login: null,                                  /* ログインの有無（true/false・分からない間は null）。su-login-band.js が SUPerf.login で入れる（2026-11-02） */
+    day: jstDay(t0),                              /* 開いた日（日本時間の日付だけ・時刻は t に既にある）（2026-11-02） */
     conn: conn(),
     ready: null,
     tbt: null,
@@ -172,6 +179,9 @@
       var p = location.pathname.split('/').pop() || 'index.html';
       return p.slice(0, 60);
     } catch (e) { return '?'; }
+  }
+  function jstDay(ms) {
+    try { return new Date(ms + 9 * 3600 * 1000).toISOString().slice(0, 10); } catch (e) { return ''; }
   }
   function role() {
     try { return localStorage.getItem('su_device_role') === 'field' ? 'field' : 'office'; }
@@ -471,6 +481,11 @@
   window.SUPerf = {
     ready: function () {
       try { if (rec.ready == null) rec.ready = r(performance.now()); } catch (e) {}
+    },
+    /* ログインの有無（2026-11-02・入居者マスタを読む画面の帯 su-login-band.js が、確かめて分かった時だけ呼ぶ）。
+       残すのは true/false だけ（アカウント・メールは残さない） */
+    login: function (v) {
+      try { if (typeof v === 'boolean' && rec.login !== v) { rec.login = v; saveSoon(); } } catch (e) {}
     }
   };
 })();
