@@ -212,9 +212,11 @@ body {
 .copy-band:not([hidden]) { display: block; padding: 8px 16px; background: var(--warn-bg); color: var(--g9);
   border-bottom: 1px solid var(--g3); font-size: 0.875rem; line-height: 1.5; }
 @media print { .copy-band { display: none !important; } }
+/* 字と地の差を 7:1 以上にそろえる（画面だけ・色合いはそのまま濃くする・印刷の紙は元の色のまま・代表者「推奨どおり色も7:1にそろえて」2026-11-03） */
+@media screen { :root[data-su-theme] .ovsw-btn.is-support[aria-current="page"] { color: #904207; } }   /* 全支援の橙（白地 7.1:1） */
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
-<link rel="stylesheet" href="su-theme.css?v=2026-11-03">
+<link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 </head>
 <body>
 

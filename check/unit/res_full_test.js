@@ -128,7 +128,7 @@ function world(o) {
     const names = w.rpcs.map(x => x.name);
     t('成功する', r.ok === true, r);
     t('begin → chunk ×4（50・50・20 名と会議の塊・判断の塊）→ finish → res_get', names.join(',') ===
-      'res_import_begin,res_import_chunk,res_import_chunk,res_import_chunk,res_import_chunk,res_import_chunk,res_import_finish,res_get', names);
+      'res_import_begin,res_import_chunk,res_import_chunk,res_import_chunk,res_import_chunk,res_import_chunk,res_import_finish,res_get,shadow_diff_note', names);
     const ch = w.rpcs.filter(x => x.name === 'res_import_chunk');
     t('人の塊は 50 名まで・写しの番号つき', ch.slice(0, 3).every(x => x.args.p_run === 7 && x.args.p_rows.length <= 50 && x.args.p_meetings.length === 0));
     t('会議は入居者の利用者No を付けて別の塊', JSON.stringify(ch[3].args.p_meetings.map(m => [m.meetingId, m.residentId])) === '[["M1","1000"],["M2","1001"]]' && ch[3].args.p_rows.length === 0);
