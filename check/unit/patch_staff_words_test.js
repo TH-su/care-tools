@@ -102,7 +102,7 @@ console.log('\n— 1・2. 名簿が無い時の案内 —');
 
 console.log('\n— 3・4. 紙に出さない・目印の説明 —');
 {
-  const ctl = SRC.slice(SRC.indexOf('<div class="ctl noprint">'), SRC.indexOf('<div class="wrap">'));
+  const ctl = SRC.slice(SRC.indexOf('<div class="ctl noprint">'), SRC.indexOf('<div class="wrap"'));
   t('★案内の欄は .ctl noprint の中・紙（#sheet）の外', ctl.indexOf('<p class="hint" id="rshint" role="status" hidden></p>') > 0 && SRC.indexOf('id="rshint"') < SRC.indexOf('id="sheet"'));
   t('★今日の日付の枠の説明が画面だけにある', ctl.indexOf('今日の日付のますを<b>青い枠</b>で囲んでいます（紙には出ません）') > 0);
   t('紙の中に目印の説明を入れていない', SRC.slice(SRC.indexOf('<div class="sheet" id="sheet">')).indexOf('青い枠') < 0);

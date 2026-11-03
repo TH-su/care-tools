@@ -124,7 +124,7 @@ console.log('\n— ④⑤ 書く時の守り（形を見る）—');
 
 console.log('\n— ⑥ 画面のつなぎ —');
 {
-  const ctl = SRC.slice(SRC.indexOf('<div class="ctl noprint">'), SRC.indexOf('<div class="wrap">'));
+  const ctl = SRC.slice(SRC.indexOf('<div class="ctl noprint">'), SRC.indexOf('<div class="wrap"'));
   t('★欄は紙に出さない（.ctl noprint の中）', ctl.indexOf('id="ioBox"') > 0 && ctl.indexOf('id="ioExport"') > 0 && ctl.indexOf('id="ioFile"') > 0);
   t('「設定を読み込む」は本物のボタン（キーボードで押せる）でファイル選択を開く', /<button class="btn" id="ioPick" type="button">設定を読み込む<\/button>/.test(SRC) && /getElementById\('ioPick'\)\.addEventListener\('click', function \(\) \{ document\.getElementById\('ioFile'\)\.click\(\); \}\)/.test(SRC) && !/<label class="btn" for="ioFile">/.test(SRC));
   t('ボタンをつないでいる', /getElementById\('ioExport'\)\.addEventListener\('click', ioDoExport\)/.test(SRC) && /getElementById\('ioApply'\)\.addEventListener\('click', ioApply\)/.test(SRC));

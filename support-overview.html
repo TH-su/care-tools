@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-2d67pXuNEKHzfDvH6pt3BkZSXTsIq22mrIeTdZdgA00=' 'sha256-kwAifQBfvhff32cF5SUk9JG2jvWgV6uclGEK+W7/Hfs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4fqnnNNUWLE7RVWhYyGdCT4yuP/dmCmy0F5XFbvqgqc=' 'sha256-kwAifQBfvhff32cF5SUk9JG2jvWgV6uclGEK+W7/Hfs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -272,7 +272,7 @@ body {
 @media print { .copy-band { display: none !important; } }
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
-<link rel="stylesheet" href="su-theme.css?v=2026-11-02.2">
+<link rel="stylesheet" href="su-theme.css?v=2026-11-03">
 </head>
 <body>
 
@@ -425,6 +425,16 @@ function pickCode(t) {
 }
 
 const $ = id => document.getElementById(id);
+/* 盤面が空の間は、中身の無い表を読み上げに渡さない（aria-hidden）。空の表示（#boardEmpty の on）と見出しの有無に合わせる。
+   見た目・印刷は変えない（アクセシビリティの点検 2026-11-03） */
+(function () {
+  const em = $('boardEmpty'), bd = $('board'), hd = $('bHeads');
+  if (!em || !bd || !hd || typeof MutationObserver !== 'function') return;
+  const sync = () => { if (em.classList.contains('on') || !hd.hasChildNodes()) bd.setAttribute('aria-hidden', 'true'); else bd.removeAttribute('aria-hidden'); };
+  sync();
+  new MutationObserver(sync).observe(em, { attributes: true, attributeFilter: ['class'] });
+  new MutationObserver(sync).observe(hd, { childList: true });
+})();
 
 // ── 日付ユーティリティ（ワースケと同一規則） ──
 function pad2(n) { return n < 10 ? '0' + n : String(n); }
