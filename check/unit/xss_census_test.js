@@ -304,6 +304,7 @@ const CENSUS = {
   "connection-settings.html": [],
   "daycare-roster.html": [],
   "facesheet.html": [
+    [E, "gb.innerHTML=html"],   // 家族構成図の枠: ほかの端末から届いた絵（JPEG の data URL だけ）を esc を通して img に入れる（統合 0056）
     [E, "box.innerHTML=mealHtml(q)"],
     [F, "box.innerHTML='<div class=\"empty\">'+(roster.length?'該当する入居者がいません':(CFG.url?'入居者がいません。入居者マスタで登録するか「設定」で接続してください':fsNoCfgMsg_()))+'</div>'"],
     [E, "box.innerHTML=html"],
@@ -372,6 +373,7 @@ const CENSUS = {
     [E, "$('tVis').innerHTML = catRows.length ? '<thead><tr><th>アプリ</th><th>記録した<br>回数</th><th>分類</th><th>見えている時<br>回数</th><th>見えている時<br>合計秒</th>' + '<th>裏にある時<br>回数</th><th>裏にある時<br>合計秒</th></tr></thead><tbody>' + catRows.join('') + '</tbody>' : none"]
   ],
   "resident-master.html": [
+    [E, "gb.innerHTML=html"],   // 家族構成図の枠: ほかの端末から届いた絵（JPEG の data URL だけ）を esc を通して img に入れる（統合 0056）
     [E, "box.innerHTML=items.map(function(a){ return '<a href=\"'+esc(a.href)+'\" target=\"_blank\" rel=\"noopener\">'+ '<span class=\"ai\" aria-hidden=\"true\">'+esc(a.ic)+'</span>'+ '<span class=\"at\"><span>'+esc(facFill(a.name))+'</span><span class=\"ad\">'+esc(facFill(a.desc))+'</span></span></a>'; }).join('')"],
     [F, "if(!vma) box.innerHTML+='<p class=\"applead\" style=\"margin:4px 0 0\">訪問診療アプリは「☁️同期設定」でURLを登録すると表示されます。</p>'"],
     [E, "box.innerHTML=mealHtml(q)"],
