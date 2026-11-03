@@ -195,6 +195,14 @@
     </section>
 
     <section class="cd">
+      <h2>添付書類の写し（職員マスタ・入居調整）</h2>
+      <p class="muted">職員マスタと入居調整の Google（GAS）が1時間ごとに自動で、Google ドライブの添付書類を Supabase の置き場へ写します（統合 0063・2026-11-03）。まだ写していない書類だけを1回に少しずつ写し、中身の指紋も控えます。件数と最後に写した時刻だけを出し、書類の名前・氏名は出しません。正本は Google ドライブのままです。</p>
+      <div class="kpis" id="doc-kpis"></div>
+      <p id="doc-verdict" class="msg"></p>
+      <p id="doc-detail" class="msg"></p>
+    </section>
+
+    <section class="cd">
       <h2>訪問日・かかりつけ病院の写し（通所 利用表の☆）</h2>
       <p class="muted">事務所・管理者が入居者マスタを開くたびに、名簿の訪問日とかかりつけ病院が写されます（現場のアカウントは読めない写しです）。ボタンを押した時だけ、この端末の入居者マスタの接続先（Google）から名簿を読んで見比べます。人数と、違いのある利用者No だけを出し、氏名・病院名・曜日は出しません。</p>
       <div class="kpis" id="care-kpis"></div>
@@ -329,6 +337,6 @@
 <script src="su-sa-full.js?v=2026-11-03.2"></script>
 <script src="su-geno-full.js?v=2026-11-03"></script>
 <script src="su-cutover-gate.js?v=2026-11-03.4"></script>
-<script src="shadow-check.js?v=2026-11-03.8"></script>
+<script src="shadow-check.js?v=2026-11-03.9"></script>
 </body>
 </html>
