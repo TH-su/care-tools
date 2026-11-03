@@ -18,6 +18,6 @@
     "staff": true,
     "supplies": true,
     "analyzer": true,
-    "device_seen": false
+    "device_seen": true
   }
 }
