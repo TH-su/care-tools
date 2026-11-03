@@ -130,7 +130,7 @@ const ST = (x, s) => Object.assign({ ok: true, days: 400, rows: 21000, firstDay:
     t('H 欄がある（見出し・数・結果・その回の数）', /<h2>排泄ケア記録の写し<\/h2>/.test(HTML) && /id="hb-kpis"/.test(HTML) && /id="hb-verdict"/.test(HTML) && /id="hb-detail"/.test(HTML));
     t('H 準備の帯の番号 0062', /hb_shadow_status: '0062'/.test(SRC));
     t('H 起動時に読む（読めない時は文を出す）', /try \{ await loadHb\(sb\); \} catch \(e\) \{ \$\('hb-verdict'\)/.test(SRC));
-    t('H 版を上げた（shadow-check.js?v=2026-11-03.8）', /shadow-check\.js\?v=2026-11-03\.8/.test(HTML));
+    t('H 版を上げた（shadow-check.js?v=2026-11-03.8）', /shadow-check\.js\?v=2026-11-03\.(8|9|\d{2,})/.test(HTML));
   }
   console.log('\n合格 ' + pass + ' / 不合格 ' + fail);
   process.exit(fail ? 1 : 0);

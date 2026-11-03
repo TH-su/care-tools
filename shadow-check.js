@@ -1109,6 +1109,7 @@
     try { await loadGeno(sb); } catch (e) { $('geno-verdict').className = 'msg warn'; $('geno-verdict').textContent = '家族構成図の写しの記録を読めませんでした。'; }
     try { await loadGenoMode(sb); } catch (e) { genoNote('印の欄', e); }   // 読めない時はボタンを出さない
     try { await loadHb(sb); } catch (e) { $('hb-verdict').className = 'msg warn'; $('hb-verdict').textContent = '排泄ケア記録の写しの記録を読めませんでした。'; }
+    try { await loadDoc(sb); } catch (e) { $('doc-verdict').className = 'msg warn'; $('doc-verdict').textContent = '添付書類の写しの記録を読めませんでした。'; }
     try { await loadPatch(sb); }
     catch (e) {
       $('pt-verdict').className = 'msg warn';
@@ -1432,7 +1433,7 @@
     adm_sync_runs: '0040', adm_mode_get: '0042', stf_shadow_status: '0044', stf_mode_get: '0045',
     sup_shadow_status: '0046', sup_mode_get: '0047', mirror_bot_me: '0047',
     sa_shadow_status: '0050', sa_mode_get: '0051', device_seen_summary: '0048', shadow_diff_days: '0055', shadow_diff_note: '0055',
-    geno_shadow_status: '0053', geno_mode_get: '0054', hb_shadow_status: '0062'
+    geno_shadow_status: '0053', geno_mode_get: '0054', hb_shadow_status: '0062', doc_shadow_status: '0063'
   };
   var prepMissing = {};
   function dbErrKind(err) {
@@ -1733,6 +1734,36 @@
     else if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + (GENO_REFUSED[d.lastRefused] || String(d.lastRefused || '')) + '）。' + (d.lastRefused === 'dup' ? '' : '開発の担当へ知らせてください。') + tail, 'warn');
     else if (!isNaN(last) && now - last <= SA_FRESH_MS) say('写しが1時間ごとに届いています。' + tail, 'ok');
     else say('しばらく写っていません。家族構成図同期の GAS の自動（autoMirror）が止まっていないか確かめてください。' + tail, 'warn');
+  }
+  /* 添付書類の写し（統合 0063・2026-11-03 代表者の決定）: doc_shadow_status（事務所・管理者）。種類（職員マスタ・入居調整）ごとに
+   * 写した件数・目録の件数・残り・読めなかった件数・最後に写した時刻だけを出す（書類の名前・氏名は返らない・出さない） */
+  var DOC_KIND = { stf: '職員マスタ', adm: '入居調整' };
+  var DOC_REFUSED = { shrink: '目録が急に減った', badrow: '形の違い' };
+  async function loadDoc(sb, nowMs) {
+    var kk = $('doc-kpis'), v = $('doc-verdict'), dt = $('doc-detail');
+    function say(t, kind) { v.className = 'msg' + (kind ? ' ' + kind : ''); v.textContent = t; }
+    kk.replaceChildren(); dt.className = 'msg'; dt.textContent = '';
+    var st = await sb.rpc('doc_shadow_status');
+    if (st.error) { say(dbErrText(st.error, 'doc_shadow_status', '添付書類の写しの準備（データベース 0063）はまだです。')); return; }
+    var d = st.data || {}, now = typeof nowMs === 'number' ? nowMs : Date.now();
+    var warn = [], lines = [], none = true;
+    ['stf', 'adm'].forEach(function (k) {
+      var x = (d[k] && typeof d[k] === 'object') ? d[k] : {};
+      var nm = DOC_KIND[k];
+      kk.appendChild(kpi(nm + '・写した書類', Number(x.have) || 0, '件'));
+      if (!x.lastAt) { lines.push(nm + ': まだ写していません。'); warn.push(nm + 'はまだ写していません（' + nm + 'の GAS に docshadow.gs と新しい automirror.gs を貼ると、1時間以内に写り始めます）。'); return; }
+      none = false;
+      var last = Date.parse(x.lastAt || '');
+      lines.push(nm + ': 目録 ' + (Number(x.catalog) || 0) + '件・写した書類 ' + (Number(x.have) || 0) + '件・残り ' + (Number(x.left) || 0) + '件・読めなかった書類 ' + (Number(x.failed) || 0) + '件（最後に写した時刻 ' + fmtTime(x.lastAt) + '）。');
+      if (x.lastStatus === 'refused') warn.push(nm + 'の最後の写しは受け付けませんでした（' + (DOC_REFUSED[x.lastRefused] || String(x.lastRefused || '')) + '）。開発の担当へ知らせてください。');
+      else if (isNaN(last) || now - last > SA_FRESH_MS) warn.push(nm + 'の写しがしばらく届いていません。' + nm + 'の GAS の自動（autoMirror）が止まっていないか、' + nm + 'の写し返しそのものが止まっていないか（上の' + nm + 'の欄）を確かめてください。');
+      else if (Number(x.failed) > 0) warn.push(nm + 'に、ドライブで読めない書類が ' + Number(x.failed) + '件あります（ドライブで消された・形が違うなど。切り替える前に開発の担当へ知らせてください）。');
+    });
+    dt.textContent = lines.join(' ');
+    if (warn.length) { say(warn.join(' '), 'warn'); return; }
+    var leftAll = ['stf', 'adm'].reduce(function (n, k) { return n + (Number(d[k] && d[k].left) || 0); }, 0);
+    if (leftAll > 0) say('写しが届いています（初めの写しの途中です。残りは1時間ごとに少しずつ写します）。', 'ok');
+    else if (!none) say('添付書類の写しが1時間ごとに届き、目録の書類は全部写してあります。', 'ok');
   }
   /* 排泄ケア記録の写し（統合 0062・2026-11-03 代表者の決定: 写すのは全部・1時間ごとに自動・写しと見比べは2週間以上）: hb_shadow_status（事務所・管理者）。
    * 出すのは日数・件数・照らし合わせの数・最後に写した時刻と、その回の数（違った日・残った日など）だけ（氏名・記録の中身は返らない・出さない）。
