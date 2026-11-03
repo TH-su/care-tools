@@ -179,6 +179,7 @@ function world(o) {
     }, mangle: o.mangle });
     const g0 = w.gas;
     w.gas = async body => {
+      if (body.action === 'ping') { order.push('ping'); if (o.pingFail) throw new Error('Google に届きませんでした'); return st.switched ? { ok: true, switched: true } : { ok: true }; }
       if (body.action === 'tpCutover') {
         order.push('cut:' + body.on);
         if (body.accessToken !== 'h.p.s' || body.opToken !== 'TK') return { ok: false, error: 'Error: refused: 切り替えの操作の札がありません' };
@@ -234,6 +235,29 @@ function world(o) {
     t('戻す: 札→写しの期間→写し返しが残る間は続けて→印を外す→札を返す', r.ok === true && r.docs === 2 && order.join(',') === 'op:back,mode:shadow,cut:false,cut:false,cut:false,end:TK' && !st.switched, [r, order]);
   }
   {
+    const { w, order, st } = cw();
+    const r = await R.back(w);
+    t('戻す: 写しの期間で Google に止めた印が無い時は、札も取らず Google の止める指示も送らずに「戻すもの無し」で終わる（反証レビュー指摘2）', r.ok === true && r.nothing === true && order.join(',') === 'ping'
+      && st.mode === 'shadow' && st.switched === false && !w.rpcs.some(x => /_op_begin|_set_mode/.test(x.name)), [r, order]);
+  }
+  {
+    const { w, order, st } = cw({ pingFail: true });
+    const r = await R.back(w);
+    t('戻す: 写しの期間で Google に確かめられない時は、今までどおり戻しの手順を最後まで行う（止まったままかもしれないため）', r.ok === true && !r.nothing && order.join(',') === 'ping,op:back,mode:shadow,cut:false,end:TK', [r, order]);
+  }
+  {
+    const { w, order, st } = cw({ offLost: 9 });
+    st.switched = true;
+    const r = await R.back(w);
+    t('戻す: Google に届かない時は「戻した」と言い切らず、押し直しを伝えて札を返す', r.ok === false && /もう一度/.test(r.why) && st.switched === true && order[order.length - 1] === 'end:TK', [r, order]);
+  }
+  {
+    const { w, order, st } = cw({ busy: true });
+    st.switched = true;
+    const r = await R.back(w);
+    t('戻す: 別の画面で操作が動いている時は何もしない', r.ok === false && /別の画面/.test(r.why) && order.join(',') === 'ping,op:back', [r, order]);
+  }
+  {
     const { w, st } = cw({ noToken: true });
     st.mode = 'live'; st.switched = true;
     const r = await R.back(w);
@@ -249,9 +273,9 @@ function world(o) {
   {
     const SH = read('SHADOW_HTML', 'shadow-check.html'), SJ = read('SHADOW_JS', 'shadow-check.js');
     const fn = SJ.slice(SJ.indexOf('function trainingOn'), SJ.indexOf('/* 入居者マスタの正本の切り替え（統合 0036'));
-    t('写しの見比べ: 計画書の切り替える・戻すのボタンは最初は隠し、管理者だけ・スイッチ training が入の時だけ切り替えを出す',
+    t('写しの見比べ: 計画書の切り替える・戻すのボタンは最初は隠し、管理者だけ・スイッチ training が入の時だけ切り替えを出す・戻すは接続先がある管理者にはいつも出す',
       /id="b-tp-cut" hidden>計画書を新しい保存先へ切り替える</.test(SH) && /id="b-tp-back" hidden>計画書を写しの期間に戻す</.test(SH)
-      && /if \(!\(me && me\.role === 'admin'\)\) return;/.test(fn) && /bc\.hidden = live \|\| stuck \|\| !on \|\| !tt \|\| !mt;/.test(fn) && /bb\.hidden = !\(live \|\| stuck\) \|\| !tt;/.test(fn));
+      && /if \(!\(me && me\.role === 'admin'\)\) return;/.test(fn) && /bc\.hidden = live \|\| stuck \|\| !on \|\| !tt \|\| !mt;/.test(fn) && /\n    bb\.hidden = !tt;/.test(fn) && !/bb\.hidden = !\(live/.test(fn) && /途中でなければ押しても何も変わりません/.test(fn));
     t('写しの見比べ: 押した時も管理者・現場の端末・スイッチを確かめ、2回確かめてから行う・textContent', /me\.status === SUAuth\.STATUS\.OK/.test(fn) && /role === 'field'/.test(fn)
       && /if \(!trainingOn\(\)\)/.test(fn) && (fn.match(/confirm\(/g) || []).length === 4 && !/innerHTML/.test(fn));   // 4つ目は「AI の中継を確かめる」（2026-10-30）
   }

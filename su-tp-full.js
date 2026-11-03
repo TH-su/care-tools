@@ -303,9 +303,21 @@
       if (tok) await opEnd(io, tok);
     }
   }
+  /* 戻すものが無いか（2026-11-03 反証レビュー指摘2）: データベースが写しの期間で、Google に届いて「止めた印」が無いと答えた時だけ真。
+   * その時は札も取らず Google の止める指示も送らない（印の外しの道は写し返しの記録・済んだ印の時刻を書くため、何も無い時に通さない）。
+   * 切り替えた後・止めた印がある・Google に確かめられない時は偽＝今までどおり戻しの手順を最後まで行う */
+  async function nothingToUndo(io) {
+    try {
+      var g = await io.rpc('tp_mode_get', {});
+      if (!g || g.error || !g.data || g.data.mode !== 'shadow') return false;
+      var pg = await io.gas({ action: 'ping' });
+      return !!(pg && typeof pg === 'object' && !pg.error && pg.ok !== false && pg.switched !== true);
+    } catch (e) { return false; }
+  }
   async function back(io) {
     var say = io.progress || function () {};
     var tok = null;
+    if (await nothingToUndo(io)) return { ok: true, nothing: true };
     try {
       try { tok = await opBegin(io, 'back'); } catch (e) { return { ok: false, why: String(e && e.message || e) }; }
       say('写しの期間に戻しています…');

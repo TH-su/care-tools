@@ -293,6 +293,7 @@ function world(o) {
     }, mangle: o.mangle });
     const g0 = w.gas;
     w.gas = async body => {
+      if (body.action === 'ping') { order.push('ping'); if (o.pingFail) throw new Error('Google に届きませんでした'); return st.switched ? { ok: true, switched: true } : { ok: true }; }
       if (body.action === 'resCutover') {
         order.push('cut:' + body.on);
         if (body.accessToken !== 'h.p.s' || body.opToken !== 'TK') return { error: 'Error: refused: 切り替えの操作の札がありません' };
@@ -365,9 +366,27 @@ function world(o) {
     t('戻す: 写し返しが済まない時は、戻したことと押し直しを伝える', r.ok === false && /写しの期間には戻しました/.test(r.why) && st.mode === 'shadow' && st.switched === true, [r, order]);
   }
   {
-    const { w, order } = cw({ busy: true });
+    const { w, order, st } = cw();
     const r = await R.back(w);
-    t('戻す: 別の画面で操作が動いている時は何もしない', r.ok === false && /別の画面/.test(r.why) && order.join(',') === 'op:back', [r, order]);
+    t('戻す: 写しの期間で Google に止めた印が無い時は、札も取らず Google の止める指示も送らずに「戻すもの無し」で終わる（反証レビュー指摘2）', r.ok === true && r.nothing === true && order.join(',') === 'ping'
+      && st.mode === 'shadow' && st.switched === false && !w.rpcs.some(x => /_op_begin|_set_mode/.test(x.name)), [r, order]);
+  }
+  {
+    const { w, order, st } = cw({ pingFail: true });
+    const r = await R.back(w);
+    t('戻す: 写しの期間で Google に確かめられない時は、今までどおり戻しの手順を最後まで行う（止まったままかもしれないため）', r.ok === true && !r.nothing && order.join(',') === 'ping,op:back,mode:shadow,cut:false,end:TK', [r, order]);
+  }
+  {
+    const { w, order, st } = cw({ offLost: 9 });
+    st.switched = true;
+    const r = await R.back(w);
+    t('戻す: Google に届かない時は「戻した」と言い切らず、押し直しを伝えて札を返す', r.ok === false && /もう一度/.test(r.why) && st.switched === true && order[order.length - 1] === 'end:TK', [r, order]);
+  }
+  {
+    const { w, order, st } = cw({ busy: true });
+    st.switched = true;
+    const r = await R.back(w);
+    t('戻す: 別の画面で操作が動いている時は何もしない', r.ok === false && /別の画面/.test(r.why) && order.join(',') === 'ping,op:back', [r, order]);
   }
   {
     const calls = [];
@@ -380,7 +399,7 @@ function world(o) {
     const fn = SHADOW.slice(SHADOW.indexOf('function masterLiveOn'), SHADOW.indexOf('/* 体重の切り替え（統合 0032）'));
     t('写しの見比べ: 切り替える・戻すのボタンは最初は隠し、管理者だけに出す', /id="b-res-cut" hidden>入居者マスタを新しい保存先へ切り替える</.test(HTML)
       && /id="b-res-back" hidden>写しの期間に戻す</.test(HTML) && /if \(!\(me && me\.role === 'admin'\)\) return;/.test(fn));
-    t('写しの見比べ: 切り替えボタンはスイッチ master_live が入の時だけ・戻しの途中は切り替えを出さず戻すを出す', /bc\.hidden = live \|\| stuck \|\| !on \|\| !tgt;/.test(fn) && /bb\.hidden = !\(live \|\| stuck\) \|\| !tgt;/.test(fn)
+    t('写しの見比べ: 切り替えボタンはスイッチ master_live が入の時だけ・戻すは接続先がある管理者にはいつも出す（Google に確かめられない途中の時も押せる・2026-11-03）', /bc\.hidden = live \|\| stuck \|\| !on \|\| !tgt;/.test(fn) && /\n    bb\.hidden = !tgt;/.test(fn) && !/bb\.hidden = !\(live/.test(fn) && /途中でなければ押しても何も変わりません/.test(fn)
       && /stuck = !!\(pg && pg\.switched === true\)/.test(fn));
     t('写しの見比べ: 押した時も管理者・現場の端末・接続先・スイッチを確かめ、2回確かめてから行う', /me\.role === 'admin' && me\.status === SUAuth\.STATUS\.OK/.test(fn)
       && /role === 'field'/.test(fn) && /if \(!masterLiveOn\(\)\)/.test(fn) && (fn.match(/confirm\(/g) || []).length === 3 && /textContent = /.test(fn) && !/innerHTML/.test(fn));

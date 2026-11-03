@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-8rO2UhdTRTEZW+gynjVMYKlY4CPV21njCe+LZcaCHtA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-HEtCkEOoXmmbc3WayJxGtmxaqlqA0N2iRchtpUKt9I0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -1655,7 +1655,7 @@ select.inp { cursor: pointer; }
     </div>
     <p style="font-size:12px;color:var(--g6);margin-bottom:12px">
       Google スプレッドシートにデータを保存し、複数端末で共有できます。
-      初回はセットアップが必要です（下の「セットアップ手順」を参照）。
+      初めて使う端末は、接続設定の「週間計画・ワースケ・シフト」に接続先のURLと合言葉を入れてください（下の欄に入れて［設定を保存］を押しても同じです）。
     </p>
     <!-- 同期先が入っていない端末だけに出す案内（csRenderNoConnHint_ が組み立てる・画面だけ） -->
     <div class="hint-box warn" id="sync-noconn" style="display:none;margin-bottom:12px"></div>
@@ -1703,62 +1703,7 @@ select.inp { cursor: pointer; }
 
     <div id="sync-log" style="font-size:12px;color:var(--g7);background:var(--g1);padding:8px;border-radius:6px;min-height:36px;margin-bottom:14px;white-space:pre-wrap;font-family:monospace"></div>
 
-    <details style="border:1px solid var(--g3);border-radius:8px;padding:10px;margin-bottom:10px">
-      <summary style="font-weight:700;cursor:pointer">📋 セットアップ手順（初心者向け）</summary>
-      <div style="margin-top:10px;font-size:13px;line-height:1.7">
-        <p><strong>所要時間：約10分</strong></p>
-        <ol style="padding-left:22px;margin:8px 0">
-          <li>Google スプレッドシートで <a href="https://sheets.new" target="_blank" rel="noopener">新規シート</a> を作成</li>
-          <li>メニュー「拡張機能 → Apps Script」を開く</li>
-          <li>表示されたエディタの中身を全部消し、下の「📜 Apps Script コード」をコピペ</li>
-          <li>💾 保存（Ctrl+S）→「デプロイ」→「新しいデプロイ」</li>
-          <li>歯車⚙ →「ウェブアプリ」を選択</li>
-          <li>「次のユーザーとして実行: 自分」「アクセスできるユーザー: 全員」を選択 →「デプロイ」</li>
-          <li>初回はアクセス権限を求められます。「許可」して進む（警告画面が出たら「詳細」→「安全でないページに移動」）</li>
-          <li>表示された <strong>ウェブアプリ URL</strong> をコピー → 上の「同期先の URL（Google の受け口）」欄に貼り付け</li>
-          <li>「設定を保存」→「接続テスト」で OK と出れば完了</li>
-          <li>「⬆️ クラウドへ保存」で初回アップロード</li>
-        </ol>
-      </div>
-    </details>
-
-    <details style="border:1px solid var(--g3);border-radius:8px;padding:10px">
-      <summary style="font-weight:700;cursor:pointer">📜 Apps Script コード（コピーして貼り付け）</summary>
-      <button class="btn" style="margin:10px 0" data-on-click="copyGasCode">📋 コードをコピー</button>
-      <pre id="gas-code" style="background:#1e1e1e;color:#d4d4d4;padding:12px;border-radius:6px;font-size:11px;overflow:auto;max-height:300px;line-height:1.4">function doGet(e) {
-  return _handle(e, 'GET');
-}
-function doPost(e) {
-  return _handle(e, 'POST');
-}
-function _handle(e, method) {
-  try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName('Data');
-    if (!sheet) {
-      sheet = ss.insertSheet('Data');
-      sheet.getRange('A1').setValue('');
-      sheet.getRange('B1').setValue(0);
-    }
-    if (method === 'POST') {
-      var body = JSON.parse(e.postData.contents);
-      if (body && body.data !== undefined) {
-        sheet.getRange('A1').setValue(body.data);
-        sheet.getRange('B1').setValue(new Date().getTime());
-      }
-    }
-    var data = sheet.getRange('A1').getValue();
-    var ts   = sheet.getRange('B1').getValue();
-    return ContentService
-      .createTextOutput(JSON.stringify({ok:true, data:String(data||''), timestamp:Number(ts||0)}))
-      .setMimeType(ContentService.MimeType.JSON);
-  } catch (err) {
-    return ContentService
-      .createTextOutput(JSON.stringify({ok:false, error:String(err)}))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-}</pre>
-    </details>
+    <p style="font-size:12px;color:var(--g6);margin:0">受け口のコードは開発の担当が配ります（画面からは配りません）</p>
   </div>
 </div>
 
@@ -5273,13 +5218,6 @@ async function syncForcePush() {
     }
   } catch (e) { /* 確認できない時は止めない（復旧手段を塞がない） */ }
   SYNC.push(true); // force=true で競合検知をスキップ
-}
-function copyGasCode() {
-  const code = $('#gas-code').textContent;
-  navigator.clipboard.writeText(code).then(
-    () => showToast('Apps Script コードをコピーしました'),
-    () => showToast('コピーに失敗しました。手動で選択してください')
-  );
 }
 function currentResident() {
   return DB.residents.find(r => r.id === DB.currentResidentId) || null;
@@ -9715,7 +9653,6 @@ const CS_ACTIONS = {
   'closeSyncModal': (a) => closeSyncModal(...a),
   'copyEventListTSV': (a) => copyEventListTSV(...a),
   'copyEventListText': (a) => copyEventListText(...a),
-  'copyGasCode': (a) => copyGasCode(...a),
   'deleteCurrentEvent': (a) => deleteCurrentEvent(...a),
   'duplicateEvent': (a) => duplicateEvent(...a),
   'duplicateEventEveryday': (a) => duplicateEventEveryday(...a),
