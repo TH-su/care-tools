@@ -475,9 +475,11 @@ button.geno-box{width:100%; margin:0; padding:0; font:inherit; color:inherit; li
   .mtbl{min-width:0}
   .mtbl .mbad{color:#000}                        /* 赤はモノクロ印刷で潰れるので黒に落とす（文字は残す） */
 }
+/* 字と地の差を 7:1 以上にそろえる（画面だけ・色合いはそのまま濃くする・印刷の紙は元の色のまま・代表者「推奨どおり色も7:1にそろえて」2026-11-03） */
+@media screen { :root[data-su-theme] .tag.room { color: #5932a7; } }   /* 居室の札の紫（淡い紫の地 7.1:1） */
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
-<link rel="stylesheet" href="su-theme.css?v=2026-11-03">
+<link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 <link rel="stylesheet" href="su-resident-hop.css?v=2026-11-02">
 </head>
 <body>

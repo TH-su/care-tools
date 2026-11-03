@@ -73,7 +73,7 @@ function world(o) {
     t('中身のあるキーだけ写す（t2・t4 は中身なし）・名簿の前後の空白は外して読む', r.ok === true && r.docs === 3 && JSON.stringify(Object.keys(w.db).sort()) === '["training_plan:index","training_plan:t1","training_plan:t3"]'
       && w.gasCalls.some(b => b.key === 'training_plan:t4') && r.badIds === 1, [r, Object.keys(w.db)]);
     t('Google へは get だけ・索引は1回だけ読む', w.gasCalls.every(b => b.action === 'get') && w.gasCalls.filter(b => b.key === 'training_plan:index').length === 1);
-    t('データベースは begin → chunk → finish → tp_get の順・finish には写した全部のキー', w.rpcs.map(x => x.name).join(',') === 'tp_import_begin,tp_import_chunk,tp_import_finish,tp_get'
+    t('データベースは begin → chunk → finish → tp_get の順・finish には写した全部のキー', w.rpcs.map(x => x.name).join(',') === 'tp_import_begin,tp_import_chunk,tp_import_finish,tp_get,shadow_diff_note'
       && JSON.stringify(w.rpcs[2].args.p_keys) === JSON.stringify(w.rpcs[1].args.p_rows.map(x => x.key)) && w.rpcs[3].args.p_screen === 'shadow-check');
     t('全件一致', r.cmp.same === r.docs && r.cmp.diff.length === 0 && r.cmp.notInCopy.length === 0, r.cmp);
   }
