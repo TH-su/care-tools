@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-MKoU6MqQstaLXNgA4JVS0ROFJ4jE+W1wPMNtpDb/e8A='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-CGZ6MMAmNnjWzveW0Y7XkgYWdSpPPDVukbEDIkJw128='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -9167,7 +9167,8 @@ var OKUSURI_CGI  = 'http://www.jah.ne.jp/~kako/cgi-bin/dwm_kana_search.cgi/~kako
      そこで【送る語】は末尾の剤形（錠・カプセル・口腔内崩壊錠…）と塩（塩酸塩・ナトリウム…）を落とした
      薬の名前の幹にする（先頭一致なので幹で引けば、その薬の全規格が並ぶ）。落とすのは3字以上残る時だけ。
      「散」だけは落とさない（抑肝散・五苓散が別の語になる）。
-     行頭の「・」「1)」のような箇条の印は飛ばす（印があるだけでリンクが出なかった）。
+     行頭の「・」「1)」のような箇条の印は飛ばす（印があるだけでリンクが出なかった）。印の後はカタカナを含む語だけ（注記を送らない）。
+     塩の Ca・Na は落とす（サイトは「ポリスチレンスルホン酸Ca」の形で、残すと0件）。結果の一覧に両方が品名で並ぶ。
      薬価リストから無作為に選んだ品名と一般名処方の137行で、引ける行が 107 → 118。別に選んだ品名だけの100行は 77 → 77（減った行なし）。
      引けない残りはサイトに載っていない薬（デエビゴ・エンレストなど新しい薬、先発しか無い薬の一般名）で、語の工夫では引けない。
    ★画面に下線で出す範囲（medsDrugRun）は今までどおり行頭の語のまま。変えたのは送る語だけ。 */
@@ -9178,11 +9179,16 @@ var OKUSURI_FORMS = ['腸溶性口腔内崩壊錠','口腔内崩壊フィルム'
 var OKUSURI_SALTS = ['臭化水素酸塩','マレイン酸塩','メシル酸塩','ベシル酸塩','トシル酸塩','酒石酸塩','フマル酸塩',
   'コハク酸塩','クエン酸塩','硫酸塩','リン酸塩','塩酸塩','水和物','メドキソミル','ナトリウム','カリウム','カルシウム'];
 function medsDrugRun(line){
-  var s = String(line == null ? '' : line).trim()
-    .replace(/^(?:[・･●○◆◇■□＊*\-－]|[0-9０-９]{1,2}[.．)）、])\s*/, '')
-    .replace(/^【般】/, '');
+  var t = String(line == null ? '' : line).trim();
+  var s = t.replace(/^(?:[・･●○◆◇■□＊*\-－]|[0-9０-９]{1,2}[.．)）、])\s*/, '');
+  var marked = s !== t;
+  s = s.replace(/^【般】/, '');
   var m = s.match(/^[\u30A1-\u30FA\u30FC\u4E00-\u9FFF]{3,40}/);
-  return m ? m[0] : '';
+  if(!m) return '';
+  /* 印を飛ばした行は、カタカナを含む語だけをリンクにする。
+     「・長男様管理」「＊残薬調整中」「1、朝食後」のような注記を外部サイトへ送らない（レビュー指摘 2026-11-03） */
+  if(marked && !/[\u30A1-\u30FA]/.test(m[0])) return '';
+  return m[0];
 }
 function okusuriCut_(s, list){
   for(var i=0;i<list.length;i++){
