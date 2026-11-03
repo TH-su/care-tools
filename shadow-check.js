@@ -2221,6 +2221,10 @@
     await gateRefresh(SUAuth.client());
   }
 
+  /* 今日（日本時間）の体重の写しのうち、断った写しの数（差の日ごとの記録に使う） */
+  function weightRefusedToday(rows, today) {
+    return (Array.isArray(rows) ? rows : []).filter(function (r) { return r && r.refused && SUCutGate.jstDay(r.at) === today; }).length;
+  }
   /* 体重の写し（統合 0008）: 写しの件数と、写しを取った記録（件数だけ） */
   async function loadWeight(sb) {
     var kk = $('wt-kpis'), v = $('wt-verdict'), ul = $('wt-runs');
@@ -2248,8 +2252,12 @@
       v.className = 'msg ok';
       v.textContent = '切り替え済みです（体重の正本は Supabase）。写しは止めてあります（下の記録は切り替える前のものです）。';
     } else {
-    /* 差の日ごとの記録（統合 0055）: 今日（日本時間）写した時だけ。受け付けた写しは体重管理が読んだ全件と同じ＝0件、断った写し＝差1件 */
-    if (SUCutGate.jstDay(last.at) === SUCutGate.jstDay(Date.now())) await noteDiff(sb, 'weight', last.refused ? 1 : 0);
+    /* 差の日ごとの記録（統合 0055）: 今日（日本時間）写した時だけ。今日の写しを全部見て、断った写しの数を差の件数にする
+       （受け付けた写しは体重管理が読んだ全件と同じ＝0件。最後の1回だけを見ると、先に断った写しを見落とすため・反証レビュー指摘8） */
+    if (SUCutGate.jstDay(last.at) === SUCutGate.jstDay(Date.now())) {
+      var wt = await sb.from('weight_sync_runs').select('at,refused').gte('at', SUCutGate.jstDayStartIso(SUCutGate.jstDay(Date.now()))).limit(500);
+      if (!wt.error) await noteDiff(sb, 'weight', weightRefusedToday(wt.data, SUCutGate.jstDay(Date.now())));
+    }
     v.className = 'msg ' + (last.refused ? 'warn' : 'ok');
     v.textContent = last.refused
       ? '最後の写しは受け付けませんでした（' + (last.refused === 'shrink' ? '件数が急に減っていたため。読み込みの途中切れの可能性' : last.refused) + '）。体重管理を開き直してください。'
@@ -2278,6 +2286,7 @@
   var gateIn = null;
   /* 差の件数を日ごとに残す（事務所・管理者・統合 0055）。0055 の前・断られた時も見比べの表示は止めない */
   async function noteDiff(sb, kind, n) {
+    if (!(me && me.role === 'admin')) return;   // 残せるのは管理者だけ（統合 0058・事務所が「差0件」を作れないように）
     try {
       var r = await sb.rpc('shadow_diff_note', { p_kind: kind, p_diffs: n });
       if (r && r.error && dbErrKind(r.error) === 'missing') notePrep('shadow_diff_note');
