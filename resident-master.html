@@ -1518,6 +1518,8 @@ body.meal-on #sc-list{max-width:none}
     scroll-behavior: auto !important;
   }
 }
+/* 字と地の差を 7:1 以上にそろえる（画面だけ・色合いはそのまま濃くする・印刷の紙は元の色のまま・代表者「推奨どおり色も7:1にそろえて」2026-11-03） */
+@media screen { :root[data-su-theme] .tag.room { color: #5932a7; } }   /* 居室の札の紫（淡い紫の地 7.1:1） */
 </style>
 <!-- 印刷共通モジュール（用紙・余白・収め方の設定画面と、紙1枚に収める採寸の器）。
      ★link で読む＝JS が document.styleSheets からこのファイルの @media print も読めるようにする。
@@ -1525,7 +1527,7 @@ body.meal-on #sc-list{max-width:none}
        「新しいHTML × 古いCSS/JS」の組合せが現場端末に残る）。 -->
 <link rel="stylesheet" href="su-print.css?v=2026-09-12">
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
-<link rel="stylesheet" href="su-theme.css?v=2026-11-03">
+<link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 </head>
 <body>
 
