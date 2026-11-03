@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ga2it6U3ae9Onp4Ew10wNtbbbNdZfy5I7zKvlomL9OY=' 'sha256-Co3kTW6VHZ9c5LJLyxPSRzTmWrzj1KEn/ZztRRPK9Ko=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ga2it6U3ae9Onp4Ew10wNtbbbNdZfy5I7zKvlomL9OY=' 'sha256-UyF0I07+SPm/jOY1p6UT4/hX5XFyOrf0/60j2IG+jzQ=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
@@ -1778,6 +1778,7 @@ var curRec=null;
 var openSeq=0;
 function openResident(id){
   var seq=++openSeq;
+  fsGenoMem_=null;   /* 前の方に届いた家族構成図の絵を捨てる（開き直したら取り直す・統合 0053） */
   showScreen('view');
   saveOpenId(id);   /* 再読み込みでこの方の画面へ戻すための印（利用者Noのみ・sessionStorage） */
   /* 一覧から別の方を選んだ時は、前の方のバーを必ず消す（バーが取り違えの元にならないように）。
@@ -3262,6 +3263,49 @@ function renderOfficeView(r){
     /* 枠は <button>。Enter・スペースはボタンの既定で click になる（前の div 用のキー操作は要らない） */
     gb.addEventListener('click',go);
   });
+  /* ほかの端末で描いた家族構成図が新しければ、枠の中身だけ差し替える（統合 0053・事務所の画面だけ） */
+  fsGenoCloud_(r);
+}
+/* 開いている方の、ほかの端末から届いた家族構成図（{id, row}・メモリだけ。端末には保存しない）。
+   同じ方の描き直し（食形態一覧の後など）では取り直さずにこれを使う。別の方を開いた時・現場用へ変わった時に捨てる */
+var fsGenoMem_=null;
+function fsGenoCloud_(r){
+  if(isField()||!r||r.id==null||r.id==='') return;
+  var id=String(r.id);
+  if(fsGenoMem_&&fsGenoMem_.id===id){ if(fsGenoMem_.row) genoPaintBoxes($('viewBox'),id,r.name,fsGenoMem_.row); return; }
+  var mem={id:id,row:null}; fsGenoMem_=mem;
+  var seq=openSeq, dg=devGen;
+  genoCloudGet(id,fsAuthLoad_).then(function(x){
+    /* 出した時と違う方・現場用へ変わった後に届いた応答は捨てる */
+    if(seq!==openSeq||dg!==devGen||isField()||fsGenoMem_!==mem||duCurId_()!==id) return;
+    if(x.kind==='fail') fsNoteAs_('家族構成図', 'geno_get', x.code);
+    if(x.kind!=='ok') return;
+    mem.row=x.row;
+    genoPaintBoxes($('viewBox'),id,curRec&&curRec.name,x.row);
+  });
+}
+/* supabase-js と su-auth.js は使う時にだけ読み込む（フェイスシートの起動を重くしない・入居者マスタの msAuthLoad_ と同じ形） */
+function fsAuthLoad_(){
+  if(window.SUAuth) return Promise.resolve();
+  function has(re){ return Array.prototype.some.call(document.scripts,function(s){ return re.test(s.getAttribute('src')||''); }); }
+  function load(src){
+    return new Promise(function(ok,ng){
+      var s=document.createElement('script'); s.src=src; s.async=true;
+      s.onload=function(){ ok(); }; s.onerror=function(){ ng(new Error('load')); };
+      document.head.appendChild(s);
+    });
+  }
+  function wait(ready){
+    return new Promise(function(ok,ng){
+      var n=0; (function tick(){ if(ready()) return ok(); if(++n>100) return ng(new Error('timeout')); setTimeout(tick,100); })();
+    });
+  }
+  var p=window.supabase ? Promise.resolve()
+    : (has(/^supabase-js-/) ? wait(function(){ return !!window.supabase; }) : load('supabase-js-2.112.4.js'));
+  return p.then(function(){
+    if(window.SUAuth) return null;
+    return has(/^su-auth\.js/) ? wait(function(){ return !!window.SUAuth; }) : load('su-auth.js?v=2026-10-28');
+  });
 }
 
 /* ジェノグラム（同一オリジン共有・読み取り専用） */
@@ -3273,7 +3317,7 @@ function renderOfficeView(r){
      ジェノグラムアプリを ?resident=<この方> 付きで開いたまま【別の方の文書】を保存すると、
      その masterId のキーに別人の図が入り、この方の欄に他人の家族構成図が出ていた。
      ★入居者マスタと【逐語同一】にすること（check/unit/genogram_key_test.js が文字列で照合する）。 */
-function getGenogram(id,name){
+function getGenogramRec(id,name){
   try{
     var raw=localStorage.getItem(SU_GENO_KEY); if(!raw)return null;
     var m=JSON.parse(raw); if(!m||typeof m!=='object')return null;
@@ -3284,8 +3328,64 @@ function getGenogram(id,name){
       if(!nm||!rn||rn!==nm) g=null;   // 誰の図か確かめられない／別人の図 → 使わない
     }
     if(!(g&&g.image)&&nm) g=m['name:'+nm];
-    return (g&&typeof g.image==='string'&&g.image)?g.image:null;
+    return (g&&typeof g.image==='string'&&g.image)?{image:g.image,at:String(g.updatedAt==null?'':g.updatedAt)}:null;
   }catch(e){return null}
+}
+function getGenogram(id,name){
+  var g=getGenogramRec(id,name);
+  return g?g.image:null;
+}
+/* ── ほかの端末で描いた家族構成図を出す（統合 0053・代表者の決定 2026-11-03）──
+   ★ここから genoPaintBoxes までは入居者マスタ・フェイスシートで【逐語同一】（check/unit/genogram_cloud_test.js が照合する）。
+   ログインの控えがある時だけ geno_get（その方の masterId）を読み、届いた絵の日時が端末の控えより新しい（または端末に無い）時だけ、
+   その方の画面の家族構成図の枠の中身を差し替える。読んだ絵は端末に保存しない（メモリだけ）。
+   関数が無い（準備前）・ログインなし・断られた時は今までどおり端末の控えだけで出す。 */
+/* geno_get の応答 {data, error} を分ける（純関数）。絵は JPEG の data URL・30万字以下・日時が読める時だけ ok */
+function genoCloudKind(r){
+  var e=r&&r.error;
+  if(e){
+    var c=String(e.code==null?'':e.code);
+    if(c==='PGRST202'||c==='42883'||/Could not find the function/.test(String(e.message||''))) return {kind:'nofunc'};
+    if(c==='42501'||/^PGRST30[123]$/.test(c)) return {kind:'denied'};   // 権限が無い・ログインの証明が古い
+    if(!c) return {kind:'line'};                                       // 届かない（番号の無い失敗）
+    return {kind:'fail',code:c.slice(0,20)};
+  }
+  var d=r?r.data:null;
+  if(!d||typeof d!=='object'||d.ok!==true) return (d&&d.error==='badid')?{kind:'empty'}:{kind:'fail',code:(d&&typeof d.error==='string')?d.error.slice(0,20):'shape'};
+  if(d.row==null) return {kind:'empty'};
+  var w=d.row;
+  if(typeof w!=='object'||typeof w.image!=='string'||w.image.indexOf('data:image/jpeg;base64,')!==0||w.image.length>300000||
+     typeof w.at!=='string'||!isFinite(Date.parse(w.at))) return {kind:'fail',code:'shape'};
+  return {kind:'ok',row:{image:w.image,at:w.at}};
+}
+/* 届いた絵で差し替えるか（純関数）。日時は文字列でなく時刻で比べる（端末は +09:00・データベースは +00:00 で返る）。同じ日時・同じ絵は差し替えない */
+function genoRemoteWins(local,row){
+  if(!row||typeof row.image!=='string'||!row.image) return false;
+  var rt=Date.parse(row.at); if(!isFinite(rt)) return false;
+  if(!local||!local.image) return true;
+  if(local.image===row.image) return false;
+  var lt=Date.parse(local.at);
+  return !isFinite(lt)||rt>lt;
+}
+/* geno_get を1回読む。例外は外に出さない。authLoad はその画面のログインの部品の読み込み */
+function genoCloudGet(id,authLoad){
+  var has=false;
+  try{ for(var i=0;i<localStorage.length;i++) if(/^sb-[a-z0-9]+-auth-token$/.test(localStorage.key(i)||'')){ has=true; break; } }catch(e){ has=false; }
+  if(!has||id==null||id==='') return Promise.resolve({kind:'nologin'});
+  return Promise.resolve().then(authLoad).then(function(){
+    if(!window.SUAuth||typeof window.SUAuth.client!=='function') return {kind:'line'};
+    return Promise.resolve(window.SUAuth.client().rpc('geno_get',{p_resident_id:String(id)})).then(genoCloudKind);
+  }).catch(function(){ return {kind:'line'}; });   // 部品を読み込めない（圏外など）＝回線の失敗と同じ扱い
+}
+/* その方の画面の家族構成図の枠（.geno-box・data-geno がその方）の中身だけを、届いた絵に差し替える。差し替えた枠の数を返す */
+function genoPaintBoxes(root,id,name,row){
+  if(!root||!genoRemoteWins(getGenogramRec(id,name),row)) return 0;
+  var n=0, html='<img class="geno-img" src="'+esc(row.image)+'" alt="家族構成図">';
+  Array.prototype.forEach.call(root.querySelectorAll('.geno-box'),function(gb){
+    if(gb.getAttribute('data-geno')!==String(id)) return;
+    gb.innerHTML=html; n++;
+  });
+  return n;
 }
 
 /* ═══════════ 画面遷移・ナビ ═══════════ */
@@ -3323,6 +3423,8 @@ function applyRoleBadge(){
   if(f){ fsMdMap=null; fsMdErr=''; fsMdLoading=false; fsMdGen++; fsMdPromise=null; fsMdPromiseRetry=false; }
   /* 食形態一覧の控え（全入居者の氏名・食事・アレルギーを含む）も同じ理由で捨てる */
   if(f){ mealRows=null; mealVia=''; mealSeq++; mealLoading=false; mealMsg=''; }
+  /* ほかの端末から届いた家族構成図の絵（メモリだけ）も捨てる（統合 0053） */
+  if(f) fsGenoMem_=null;
   /* ★事務所PCとして描いた画面のまま現場用へ変わった時は、開いていた方の記録と画面も捨てて一覧へ戻す
      （病名・処方・家族連絡先を含む全項目の画面が、現場用の表示のまま残らないように）。
      この後ページを読み込み直すが、読み込み直しが効かなかった時の保険として先に消す。
