@@ -513,6 +513,7 @@ const CENSUS = {
   "su-itomari.js": [],
   "su-kv-shadow.js": [],
   "su-kv.js": [],
+  "su-login-band.js": [],   /* 帯の文言・ボタンは textContent と setAttribute だけ（2026-11-02） */
   "su-master-shadow.js": [],
   "su-menu.js": [],
   "su-patch-sync.js": [],
@@ -539,6 +540,8 @@ const CENSUS = {
   "su-sup-full.js": [],
   "su-sa.js": [],
   "su-sa-full.js": [],
+  "su-geno.js": [],
+  "su-geno-full.js": [],
   "supplies-calc.js": [],
   "supplies.html": [],
   "support-overview.html": [],
