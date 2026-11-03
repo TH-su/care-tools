@@ -61,7 +61,7 @@ function page(opt) {
   };
   const CloudSync = {
     isConfigured: () => !!o.cloud,
-    markDirty: () => 1, markConfirm() {}, getBase: () => null, setBaseline() {}, getPending: () => [],
+    markDirty: () => 1, blockedWhy: () => "", markConfirm() {}, getBase: () => null, setBaseline() {}, getPending: () => [],
     clearPendingFor() {}, queuePending: (x) => { log.queued.push(x); },
     delCurrent: (name) => {
       log.delCalls.push({ name, localAtCall: ls.getItem('genogram:doc:' + name) !== null });

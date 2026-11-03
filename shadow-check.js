@@ -1106,7 +1106,8 @@
     try { await loadSupMode(sb); } catch (e) { /* 0047 の前・読めない時はボタンを出さない */ }
     try { await loadSa(sb); } catch (e) { $('sa-verdict').className = 'msg warn'; $('sa-verdict').textContent = 'シフト分析の写しの記録を読めませんでした。'; }
     try { await loadSaMode(sb); } catch (e) { saNote('印の欄', e); }   // 読めない時はボタンを出さない
-    try { await loadDeviceSeen(sb); } catch (e) { $('ds-verdict').className = 'msg warn'; $('ds-verdict').textContent = 'ログインしていない端末の数を読めませんでした。'; }
+    try { await loadGeno(sb); } catch (e) { $('geno-verdict').className = 'msg warn'; $('geno-verdict').textContent = '家族構成図の写しの記録を読めませんでした。'; }
+    try { await loadGenoMode(sb); } catch (e) { genoNote('印の欄', e); }   // 読めない時はボタンを出さない
     try { await loadPatch(sb); }
     catch (e) {
       $('pt-verdict').className = 'msg warn';
@@ -1429,7 +1430,8 @@
     weight_mode: '0032', res_sync_runs: '0034', res_mode_get: '0036', tp_sync_runs: '0037', tp_mode_get: '0038',
     adm_sync_runs: '0040', adm_mode_get: '0042', stf_shadow_status: '0044', stf_mode_get: '0045',
     sup_shadow_status: '0046', sup_mode_get: '0047', mirror_bot_me: '0047',
-    sa_shadow_status: '0050', sa_mode_get: '0051', device_seen_summary: '0048', shadow_diff_days: '0055', shadow_diff_note: '0055'
+    sa_shadow_status: '0050', sa_mode_get: '0051', device_seen_summary: '0048', shadow_diff_days: '0055', shadow_diff_note: '0055',
+    geno_shadow_status: '0053', geno_mode_get: '0054'
   };
   var prepMissing = {};
   function dbErrKind(err) {
@@ -1623,8 +1625,8 @@
     else say('しばらく写っていません。アナライザ同期の GAS の自動（autoMirror）が止まっていないか確かめてください。' + tail, 'warn');
   }
   /* 大きさ: 新しい保存先は全部のキーの合計を 8MB までしか受けない。上限の7割を超えたら早めに知らせる */
-  function saSize(d) {
-    var e = $('sa-size');
+  function saSize(d) { saSizeInto($('sa-size'), d); }
+  function saSizeInto(e, d) {
     e.className = 'msg'; e.textContent = '';
     var total = Number(d && d.bytesTotal), limit = Number(d && d.bytesLimit);
     if (!(total >= 0) || !(limit > 0)) return;
@@ -1691,6 +1693,104 @@
       bc.disabled = false; bb.disabled = false;
       var keep = v.textContent, kc = v.className;
       try { await loadSaMode(sb); await loadSa(sb); } catch (e) { saNote('読み直し', e); }   // 読み直せなくても結果の文は残す
+      v.className = kc; v.textContent = keep;
+    }
+  }
+
+  /* 家族構成図のクラウド同期の写し（統合 0053・0054・2026-11-03 代表者の決定: 管理者と事務所が保存・現場は見るだけ・
+   *   名簿の1名にだけ一致した図を利用者No に結び付ける）: 写しは家族構成図同期の GAS が1時間ごとに自動で取る。
+   * 出すのは図の枚数・結び付いた枚数・大きさ・時刻・断った種類だけ（氏名・家族の中身は出さない）。Google へは何も送らない */
+  function genoNote(where, e) {
+    try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('写しの見比べ: 家族構成図の' + where, String(e && (e.code || e.message) || e)); } catch (x) { /* 記録できなくても止めない */ }
+  }
+  var GENO_REFUSED = {
+    stale: '前に読んだ写し', shrink: '急に減った', badrow: '形の違い（読めない図がある）', toolarge: '大きすぎる', future: '時刻が先',
+    toomany: '図が多すぎる', badchar: '使えない文字', cutover: '切り替えの途中',
+    dup: '同じ氏名の行が2つあります（家族構成図のスプレッドシートのタブ genograms で、片方の名前に区別を付けるか、要らない方を消すまで写せず・切り替えられません）'
+  };
+  async function loadGeno(sb, nowMs) {
+    var kk = $('geno-kpis'), v = $('geno-verdict');
+    function say(t, kind) { v.className = 'msg' + (kind ? ' ' + kind : ''); v.textContent = t; }
+    kk.replaceChildren(); $('geno-size').textContent = '';
+    var st = await sb.rpc('geno_shadow_status');
+    if (st.error) { say(dbErrText(st.error, 'geno_shadow_status', '家族構成図の写しの準備（データベース 0053）はまだです。')); return; }
+    var d = st.data || {};
+    if (d.ver == null && !d.lastAt) { say('まだ写していません。家族構成図同期の GAS の自動（autoMirror）が動くと、1時間以内に写ります。'); return; }
+    kk.appendChild(kpi('写しの図', d.docs, '枚'));
+    kk.appendChild(kpi('利用者No に結び付いた図', d.linked, '枚'));
+    kk.appendChild(kpi('氏名だけの図', d.unlinked, '枚'));
+    saSizeInto($('geno-size'), d);
+    var tail = '（最後に写した時刻 ' + fmtTime(d.lastAt || d.updatedAt) + '）';
+    var last = Date.parse(d.lastAt || d.updatedAt || '');
+    var now = typeof nowMs === 'number' ? nowMs : Date.now();
+    var live = false, mdd = null;
+    try { var md = await sb.rpc('geno_mode_get'); mdd = md && !md.error ? md.data : null; live = !!(mdd && mdd.mode === 'live'); } catch (e) { genoNote('印', e); live = false; }
+    var mAt = mdd ? Date.parse(mdd.mirroredAt || '') : NaN;
+    var lag = live && Number(mdd.version) > Number(mdd.mirroredVer) && !isNaN(mAt) && now - mAt > SA_FRESH_MS;
+    if (lag) say('切り替え済みです（家族構成図の正本は Supabase）。ただし Google への写し返しが75分を超えて遅れています（最後に写し返した時刻 ' + fmtTime(mdd.mirroredAt) + '）。家族構成図同期の GAS の自動（autoMirror）が止まっていないか確かめてください。', 'warn');
+    else if (live) say('切り替え済みです（家族構成図の正本は Supabase）。写しは止めてあります。Google へは1時間ごとに写し返しています。', 'ok');
+    else if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + (GENO_REFUSED[d.lastRefused] || String(d.lastRefused || '')) + '）。' + (d.lastRefused === 'dup' ? '' : '開発の担当へ知らせてください。') + tail, 'warn');
+    else if (!isNaN(last) && now - last <= SA_FRESH_MS) say('写しが1時間ごとに届いています。' + tail, 'ok');
+    else say('しばらく写っていません。家族構成図同期の GAS の自動（autoMirror）が止まっていないか確かめてください。' + tail, 'warn');
+  }
+  /* 切り替えボタンは、切り替えスイッチ genogram が入で、この端末に家族構成図の接続先（URL と合言葉）がある時だけ出す */
+  function genoOn() { var sw = window.SUKv ? SUKv._flags() : null; return !!(sw && sw.supabase && sw.supabase.genogram === true); }
+  function genoTarget() {
+    try {
+      var o = JSON.parse(localStorage.getItem('genogram:cloudCfg') || 'null');
+      var u = String(o && o.gasUrl || '').trim(), t = String(o && o.gasToken || '').trim();
+      return RMASTER_RE.test(u) && t ? { url: u, token: t } : null;
+    } catch (e) { return null; }
+  }
+  async function loadGenoMode(sb) {
+    var line = $('geno-mode'), bc = $('b-geno-cut'), bb = $('b-geno-back');
+    bc.hidden = true; bb.hidden = true; line.className = 'msg'; line.textContent = '';
+    if (!(me && me.role === 'admin')) return;
+    var r = await sb.rpc('geno_mode_get');
+    if (r.error && dbErrKind(r.error) === 'missing') notePrep('geno_mode_get');
+    if (r.error || !r.data) return;
+    var live = r.data.mode === 'live', on = genoOn(), st = genoTarget();
+    if (live && !on) { line.className = 'msg warn'; line.textContent = '家族構成図は新しい保存先へ切り替えた後ですが、切り替えスイッチ（genogram）が切です。家族構成図の画面が古い Google の中身を読まないよう、スイッチを入れ直すか「家族構成図を写しの期間に戻す」を押してください。'; }
+    else if (live) { line.className = 'msg ok'; line.textContent = '家族構成図の正本は新しい保存先（Supabase）です。Google へは1時間ごとに写し返しています。'; }
+    else line.textContent = '家族構成図の正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（genogram）を入れる PR の取り込みが要ります。') + (st ? '' : '切り替える・戻すには、この端末の家族構成図の ⚙ 設定で URL と編集できる合言葉を入れてください。') + (st ? '（前の「切り替える」「写しの期間に戻す」が途中で止まり、Google の保存が止まったままの時は「家族構成図を写しの期間に戻す」を押すと最後まで済ませます。途中でなければ押しても何も変わりません）' : '');
+    bc.hidden = live || !on || !st;
+    bb.hidden = !st;
+  }
+  async function runGenoOp(kind) {
+    var v = $('geno-mode');
+    function say(t, k) { v.className = 'msg' + (k ? ' ' + k : ''); v.textContent = t; }
+    if (!(me && me.role === 'admin' && me.status === SUAuth.STATUS.OK)) { say('管理者（二段階認証済み）のアカウントで開いてください。', 'warn'); return; }
+    var role = ''; try { role = localStorage.getItem('su_device_role') || ''; } catch (e) { role = ''; }
+    if (role === 'field') { say('この端末は「現場」です。事務所のパソコンで行ってください。', 'warn'); return; }
+    var st = genoTarget();
+    if (!st) { say('この端末には家族構成図の接続先（URL と合言葉）がありません。この端末の家族構成図の ⚙ 設定で入れてから、押し直してください。', 'warn'); return; }
+    if (kind === 'cut') {
+      if (!genoOn()) { say('切り替えスイッチ（genogram）が入っていません。', 'warn'); return; }
+      if (!confirm('家族構成図のクラウド同期の正本を新しい保存先（Supabase）へ切り替えますか？\n\n1分ほどかかります。その間はクラウドへの保存が断られます（端末には残ります）。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、事務所か管理者のアカウントでログインしている端末だけが図を保存・削除できます（現場のアカウントは見るだけ・ログインしていない端末は使えません）。Google へは1時間ごとに写し返します。いつでも「家族構成図を写しの期間に戻す」で戻せます。')) return;
+    } else {
+      if (!confirm('家族構成図を写しの期間に戻しますか？\n\n切り替えていた間の保存・削除を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。')) return;
+    }
+    if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
+    var bc = $('b-geno-cut'), bb = $('b-geno-back');
+    bc.disabled = true; bb.disabled = true;
+    var sb = SUAuth.client();
+    try {
+      var io = {
+        gas: function (body) { return rmasterPost(st, body); },
+        rpc: function (name, args) { return sb.rpc(name, args); },
+        token: async function () { var s2 = await sb.auth.getSession(); return s2 && s2.data && s2.data.session ? s2.data.session.access_token : null; },
+        progress: function (t) { say(t); }
+      };
+      var res = kind === 'cut' ? await SUGenoFull.cutover(io) : await SUGenoFull.back(io);
+      if (!res.ok) { say((kind === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + res.why, 'warn'); return; }
+      say(kind === 'cut' ? (res.unchanged ? 'もう切り替わっていました（何も変えていません）。' : '切り替えました（写した図 ' + res.docs + ' 枚・利用者No に結び付いた図 ' + res.linked + ' 枚）。') + '家族構成図の画面は、読み込み直すと新しい保存先で同期します。'
+                         : '写しの期間に戻しました。正本は Google です。', 'ok');
+    } catch (e) {
+      say('止まりました: ' + String(e && e.message || e), 'warn');
+    } finally {
+      bc.disabled = false; bb.disabled = false;
+      var keep = v.textContent, kc = v.className;
+      try { await loadGenoMode(sb); await loadGeno(sb); } catch (e) { genoNote('読み直し', e); }   // 読み直せなくても結果の文は残す
       v.className = kc; v.textContent = keep;
     }
   }
@@ -2308,6 +2408,8 @@
   $('b-sup-back').addEventListener('click', function () { msg(''); runSupOp('back'); });
   $('b-sa-cut').addEventListener('click', function () { msg(''); runSaOp('cut'); });
   $('b-sa-back').addEventListener('click', function () { msg(''); runSaOp('back'); });
+  $('b-geno-cut').addEventListener('click', function () { msg(''); runGenoOp('cut'); });
+  $('b-geno-back').addEventListener('click', function () { msg(''); runGenoOp('back'); });
   $('b-res-back').addEventListener('click', function () { msg(''); runResOp('back'); });
   $('b-check').addEventListener('click', function () { msg(''); runCheck(); });
   $('b-mirror-check').addEventListener('click', function () { msg(''); runMirrorCheck(); });
