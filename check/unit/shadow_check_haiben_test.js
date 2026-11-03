@@ -94,8 +94,11 @@ const ST = (x, s) => Object.assign({ ok: true, days: 400, rows: 21000, firstDay:
     const b2 = box({ status: ST({}, { left: 120 }) }); await b2.run();
     t('C 初めの写しの途中', /初めの写しの途中/.test(V(b2).textContent) && /まだ写していない日が 120日/.test(D(b2).textContent));
     const b3 = box({ status: ST({}, { emptyHeld: 15, badId: 1, nodate: 2 }) }); await b3.run();
-    t('C 空にしなかった日・使えない番号・日付の無い記録を知らせる', /15日あり、10日を超えるので/.test(D(b3).textContent) && /使えない文字が入った記録が 1件/.test(D(b3).textContent)
+    t('C 空にしなかった日・使えない番号・日付の無い記録を知らせる', /15日あり、10日を超えるので/.test(D(b3).textContent) && /使えない形の記録が 1件/.test(D(b3).textContent)
       && /日付の入っていない記録が 2件/.test(D(b3).textContent) && /warn/.test(D(b3).className), D(b3).textContent);
+    t('C 知らせがある時は「Google と同じ」と言わない（警告）', !/Google と同じ/.test(V(b3).textContent) && /このままでは切り替えられません/.test(V(b3).textContent) && /warn/.test(V(b3).className), V(b3).textContent);
+    const b4 = box({ status: ST({}, { badRow: 1 }) }); await b4.run();
+    t('C 大きすぎる記録を知らせる', /大きすぎる記録が 1件/.test(D(b4).textContent));
   }
   console.log('— D 出さないもの —');
   {
@@ -117,6 +120,8 @@ const ST = (x, s) => Object.assign({ ok: true, days: 400, rows: 21000, firstDay:
     t('E 全部ログイン中なら「すべてログインしています」', /すべてログインしています/.test(txt2), txt2);
     const b3 = box({ ds: { ok: true, rows, lastAt: 'x' } }); await b3.runDs();
     t('E 0062 の前（hb が無い）は排泄ケア記録の数を出さない', !b3.nodes['ds-kpis'].kids.some(k => /排泄/.test(k.label)) && !b3.nodes['ds-rows'].kids.some(li2 => /排泄/.test(JSON.stringify(li2))));
+    const b5 = box({ ds: { ok: true, rows: [], hb: [{ role: 'field', login: false, d1: 1, d7: 1, d30: 1 }], lastAt: 'x' } }); await b5.runDs();
+    t('E ほかの画面の記録が無くても、排泄ケア記録の数だけで出す', b5.nodes['ds-rows'].kids.length === 1 && !/まだ記録がありません/.test(b5.nodes['ds-verdict'].textContent));
     const b4 = box({ ds: { ok: true, rows, hb: [], lastAt: 'x' } }); await b4.runDs();
     t('E まだ届いていない時はそう出す', /まだ届いていません/.test(JSON.stringify(b4.nodes['ds-rows'].kids[0])));
   }

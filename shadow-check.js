@@ -1762,7 +1762,8 @@
     var notes = [];
     if (Number(s.left) > 0) notes.push('まだ写していない日が ' + Number(s.left) + '日あります（初めの写しの途中。次の回から続きを写します）。');
     if (Number(s.emptyHeld) > 0) notes.push('Google で記録が無くなった日が ' + Number(s.emptyHeld) + '日あり、10日を超えるので写しからは消していません。スプレッドシートの記録のタブ（Records・RecordsArchive）が消えたり名前が変わったりしていないか確かめ、開発の担当へ知らせてください。');
-    if (Number(s.badId) > 0) notes.push('記録の番号に使えない文字が入った記録が ' + Number(s.badId) + '件あり、写していません（開発の担当へ知らせてください）。');
+    if (Number(s.badId) > 0) notes.push('記録の番号か更新の時刻が新しい保存先で使えない形の記録が ' + Number(s.badId) + '件あり、写していません（開発の担当へ知らせてください）。');
+    if (Number(s.badRow) > 0) notes.push('項目が多すぎる・大きすぎる記録が ' + Number(s.badRow) + '件あり、写していません（開発の担当へ知らせてください）。');
     if (Number(s.nodate) > 0) notes.push('日付の入っていない記録が ' + Number(s.nodate) + '件あります（どの日にも入らないので写していません。切り替える前に開発の担当へ知らせてください）。');
     if (Number(d.refused24h) > 0) notes.push('この24時間に受け付けなかった写しが ' + Number(d.refused24h) + '回ありました。');
     dt.textContent = (s.days != null ? 'Google の日数 ' + Number(s.days) + '日・記録 ' + Number(s.rows) + '件／最後の回: 違った日 ' + Number(s.diff || 0) + '日・写した日 ' + Number(s.sent || 0) + '日・照らし合わせ ' + Number(s.verify || 0) + '日。' : '') + (notes.length ? ' ' + notes.join(' ') : '');
@@ -1771,6 +1772,7 @@
     else if (isNaN(last) || now - last > SA_FRESH_MS) say('しばらく写っていません。排泄ケア記録DB の GAS の自動（autoMirror）が止まっていないか確かめてください。' + tail, 'warn');
     else if (Number(d.mismatch14) > 0) say('この14日に、要約は同じなのに中身が違った日が ' + Number(d.mismatch14) + '日ありました（写しは直してあります）。切り替える前に開発の担当へ知らせてください。' + tail, 'warn');
     else if (Number(s.left) > 0) say('写しが届いています（初めの写しの途中です）。' + tail, 'ok');
+    else if (notes.length) say('写しは1時間ごとに届いていますが、下の知らせがあります（このままでは切り替えられません）。' + tail, 'warn');
     else say('写しが1時間ごとに届き、Google と同じです。写し始めてから ' + sinceDays + '日（2週間以上続けてから切り替えを決めます）。' + tail, 'ok');
   }
   /* 切り替えボタンは、切り替えスイッチ genogram が入で、この端末に家族構成図の接続先（URL と合言葉）がある時だけ出す */
@@ -1896,7 +1898,7 @@
       return;
     }
     var d = r.data || {}, rows = Array.isArray(d.rows) ? d.rows : [];
-    if (!rows.length) { say('まだ記録がありません。送るスイッチ（device_seen）が入ると、端末が画面を開いた日に1回ずつ届きます。'); return; }
+    if (!rows.length && !(Array.isArray(d.hb) && d.hb.length)) { say('まだ記録がありません。送るスイッチ（device_seen）が入ると、端末が画面を開いた日に1回ずつ届きます。'); return; }
     function sum(login, k) { return rows.filter(function (x) { return x.login === login; }).reduce(function (n, x) { return n + (Number(x[k]) || 0); }, 0); }
     kk.appendChild(kpi('ログインしていない（7日）', sum(false, 'd7'), '台'));
     kk.appendChild(kpi('ログインしていない（30日）', sum(false, 'd30'), '台'));
