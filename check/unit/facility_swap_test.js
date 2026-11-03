@@ -74,6 +74,17 @@ function get(url) {
   t('メニューとデイ利用表は「名前を出す」画面', ['index.html', 'daycare-roster.html'].every((f) => swap.PAGES.find((p) => p.file === f).shows));
   t('どの行にも理由（why）がある', swap.PAGES.every((p) => typeof p.why === 'string' && p.why.length > 4));
 
+  console.log('\n— C2. 20画面のほかの公開の画面（使い方など・2026-11-03 案3）—');
+  const extra = (swap.EXTRA_PAGES || []).map((p) => p.file);
+  const topHtml = fs.readdirSync(ROOT).filter((f) => f.endsWith('.html'));
+  const missing = topHtml.filter((f) => !files.includes(f) && !extra.includes(f));
+  t('公開の根にある画面は、20画面の表かそのほかの表のどちらかに必ずある', missing.length === 0, missing);
+  t('そのほかの表は20画面と重ならず、同じ画面が2回無い', extra.every((f) => !files.includes(f)) && new Set(extra).size === extra.length, extra);
+  const wrongReads2 = swap.EXTRA_PAGES.filter((p) => p.reads !== loadsFacility(p.file)).map((p) => p.file);
+  t('そのほかの表の「施設情報を読む」の印も画面が su-facility.js を読み込むかと一致する', wrongReads2.length === 0, wrongReads2);
+  t('使い方（help.html）は「名前を出す」画面（導入手順の「最初に確かめる画面」）', !!swap.EXTRA_PAGES.find((p) => p.file === 'help.html' && p.shows && p.reads));
+  t('そのほかの表のどの行にも理由（why）がある', swap.EXTRA_PAGES.every((p) => typeof p.why === 'string' && p.why.length > 4));
+
   console.log('\n— D. 手元の配信の施設情報 —');
   const { startServer } = await import(pathToFileURL(path.join(ROOT, 'check', 'lib.mjs')).href);
   const s1 = await startServer(ROOT, 0, { facilityProfile: alt });

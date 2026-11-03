@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /* check/facility-swap.mjs — facility-profile.json を差し替えるだけで全アプリが動くかを確かめる（2026-11-02 新設・施設の導入手順の試験）
  *
- *   node check/facility-swap.mjs                       … 2つ目の架空の施設（check/fixtures/facility-profile.alt.mjs）で配って20画面を開く
+ *   node check/facility-swap.mjs                       … 2つ目の架空の施設（check/fixtures/facility-profile.alt.mjs）で配って20画面＋そのほかの公開の画面10を開く
  *   node check/facility-swap.mjs --pages index.html,daycare-roster.html   … 画面を絞る
  *   node check/facility-swap.mjs --profile facility-profile.sample.json   … 配る施設情報を変える（守りが働くかの確かめ用。見本で配ると (a) が落ちる）
  *   node check/facility-swap.mjs --settle 2500         … 開いてから待つミリ秒（既定 2500・snap.mjs と同じ）
  *
  * 流れ: 施設情報をメモリに持った手元の配信（check/lib.mjs の startServer の facilityProfile）を立て、使い捨てのプロファイル
  *       （~/.claude/scripts/lib/chrome-temp.mjs の makeTempProfile・無い環境では同じ決まりの控え）のヘッドレス Chrome で
- *       PAGES の20画面を順に開き、1画面ごとに次の3つを見る。
+ *       PAGES の20画面と EXTRA_PAGES（そのほかの公開の画面10・使い方など）を順に開き、1画面ごとに次の3つを見る。
  *   (a) 見本の施設名・事業所名・法人名（SAMPLE_NAMES）が画面の文字に0件。画面の文字＝見出し（title）・本文の textContent（隠れた所も含む）・入力欄の値
  *   (b) 画面のスクリプトの例外（pageerror）が0件。snap.mjs・compare.mjs と同じく pageerror を数え、加えて CSP で止められたスクリプト
  *       （例外は出ないが動かない。CSP の指紋の作り直し忘れ）も数える。
@@ -58,6 +58,21 @@ export const PAGES = [
   { file: 'patch-calendar.html', title: '貼り薬カレンダー', reads: false, shows: false, why: '施設情報を読まない' },
   { file: 'shift-analyzer.html', title: 'シフト分析', reads: true, shows: false, why: '別の正本から配る画面。su-facility.js を読み込むが、施設名・事業所名は出さない' },
 ];
+/* 全アプリの20画面のほかに公開している画面（使い方・担当者会議・採用管理・管理者向けの画面・移転の案内）。
+   施設の導入手順の「最初に確かめる画面」に使い方（help.html）があるので、20画面と同じ (a)(b)(c) で一緒に確かめる（2026-11-03 案3）。
+   20画面の表（PAGES）は採点の決まりの表と同じなので変えず、別の表にする */
+export const EXTRA_PAGES = [
+  { file: 'help.html', title: '使い方・困った時', reads: true, shows: true, why: '問い合わせ先（support）の4項目を出す（問い合わせ先の名前に施設名が入る）' },
+  { file: 'care-meeting.html', title: '担当者会議の記録', reads: true, shows: false, why: '事務所向けのアプリ。ログインしていない時は覆いの画面だけ（SUAppGate）' },
+  { file: 'ats.html', title: '採用管理', reads: true, shows: false, why: '管理者＋2段階認証だけ。ログインしていない時は覆いの画面だけ' },
+  { file: 'menu-settings.html', title: 'メニューの設定', reads: true, shows: false, why: '管理者＋2段階認証だけ。ログインしていない時は中身を出さない' },
+  { file: 'login.html', title: 'ログイン', reads: false, shows: false, why: '施設情報を読まない' },
+  { file: 'accounts.html', title: '使える人の管理', reads: false, shows: false, why: '施設情報を読まない' },
+  { file: 'app-access.html', title: 'アプリの使える人', reads: false, shows: false, why: '施設情報を読まない' },
+  { file: 'perf-report.html', title: '動作の速さの記録', reads: false, shows: false, why: '施設情報を読まない' },
+  { file: 'shadow-check.html', title: '写しの見比べ', reads: false, shows: false, why: '施設情報を読まない' },
+  { file: 'kotowaza-jiten.html', title: 'ことわざ辞典（移転の案内）', reads: false, shows: false, why: '移転の案内だけで、施設情報を読まない' },
+];
 
 /* 施設情報から「名前」を集める（法人名・施設名・事業所名・正式名・問い合わせ先の名前・医療機関の名前）。空・重複は捨てる */
 export function profileNames(p) {
@@ -106,8 +121,9 @@ async function main() {
   try { profile = await loadProfile(profileFile); sample = await loadProfile(SAMPLE_PROFILE_FILE); }
   catch (e) { say('施設情報を読めません: ' + String(e.message || e).split('\n')[0]); process.exit(2); }
   const only = args.pages && args.pages !== 'true' ? String(args.pages).split(',') : null;
-  if (only) { const unknown = only.filter((f) => !PAGES.some((p) => p.file === f)); if (unknown.length) { say('知らない画面: ' + unknown.join(',')); process.exit(2); } }
-  const pages = PAGES.filter((p) => !only || only.includes(p.file));
+  const ALL = [...PAGES, ...EXTRA_PAGES];
+  if (only) { const unknown = only.filter((f) => !ALL.some((p) => p.file === f)); if (unknown.length) { say('知らない画面: ' + unknown.join(',')); process.exit(2); } }
+  const pages = ALL.filter((p) => !only || only.includes(p.file));
   const sampleNames = profileNames(sample);
   const wantNames = displayNames(profile);
   const wantFacility = typeof profile.facilityName === 'string' ? profile.facilityName : '';
