@@ -86,7 +86,7 @@ group('読み手の逐語同一（入居者マスタ ⇔ フェイスシート�
 const fnMaster = grabFn(SRC.master, 'getGenogram');
 const fnFace = grabFn(SRC.face, 'getGenogram');
 eq('getGenogram が2ファイルで同一', fnMaster === fnFace, true);
-/* 2026-11-03（統合 0053）: getGenogram は端末の控えの {image, at} を返す getGenogramRec を通す形にした。こちらも逐語同一 */
+/* 2026-11-03（統合 0056）: getGenogram は端末の控えの {image, at} を返す getGenogramRec を通す形にした。こちらも逐語同一 */
 eq('getGenogramRec が2ファイルで同一', grabFn(SRC.master, 'getGenogramRec') === grabFn(SRC.face, 'getGenogramRec'), true);
 
 /* ═══ 2. getGenogram の挙動 ═══ */

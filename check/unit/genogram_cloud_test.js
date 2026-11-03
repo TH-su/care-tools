@@ -1,4 +1,4 @@
-/* 家族構成図の絵を別の端末でも出す（統合 0053・代表者の決定 2026-11-03）の試験。
+/* 家族構成図の絵を別の端末でも出す（統合 0056・代表者の決定 2026-11-03）の試験。
    対象:
      読む側  resident-master.html / facesheet.html の getGenogramRec・genoCloudKind・genoRemoteWins・genoCloudGet・genoPaintBoxes（2画面で逐語同一）と、
              画面ごとのつなぎ（fsGenoCloud_ / rmGenoCloud_）
@@ -83,13 +83,13 @@ function readerBox(src, ls){
 }
 
 /* ═══ 2. 応答の分け方 ═══ */
-group('2. geno_get の応答の分け方（genoCloudKind）');
+group('2. geno_thumb_get の応答の分け方（genoCloudKind）');
 {
   const R = readerBox(SRC.master);
   const k = (r) => R.genoCloudKind(r);
   eq('関数が無い（PGRST202）→ nofunc', k({ error: { code: 'PGRST202', message: 'x' } }).kind, 'nofunc');
   eq('関数が無い（42883）→ nofunc', k({ error: { code: '42883', message: 'x' } }).kind, 'nofunc');
-  eq('関数が無い（文言だけ）→ nofunc', k({ error: { code: 'XX000', message: 'Could not find the function public.geno_get' } }).kind, 'nofunc');
+  eq('関数が無い（文言だけ）→ nofunc', k({ error: { code: 'XX000', message: 'Could not find the function public.geno_thumb_get' } }).kind, 'nofunc');
   eq('権限が無い（42501）→ denied', k({ error: { code: '42501', message: 'x' } }).kind, 'denied');
   eq('ログインの証明が古い（PGRST303）→ denied', k({ error: { code: 'PGRST303', message: 'x' } }).kind, 'denied');
   eq('番号の無い失敗（届かない）→ line', k({ error: { code: '', message: 'TypeError: Failed to fetch' } }).kind, 'line');
@@ -170,8 +170,8 @@ group('5. ログインの控えがある時だけ読む（genoCloudGet）');
   eq('ログインの控えが無い → nologin', (await x.R.genoCloudGet('R-1', x.load)).kind, 'nologin');
   eq('  └ 問い合わせない', calls.length, 0);
   x = mk(true, { data: { ok: true, row: { image: IMG('A'), at: '2026-11-03T01:00:00Z' } } });
-  eq('ログインあり → geno_get を読む', (await x.R.genoCloudGet('R-1', x.load)).kind, 'ok');
-  eq('  └ 呼ぶのは geno_get(p_resident_id) だけ', JSON.stringify(calls), JSON.stringify([['geno_get', { p_resident_id: 'R-1' }]]));
+  eq('ログインあり → geno_thumb_get を読む', (await x.R.genoCloudGet('R-1', x.load)).kind, 'ok');
+  eq('  └ 呼ぶのは geno_thumb_get(p_resident_id) だけ', JSON.stringify(calls), JSON.stringify([['geno_thumb_get', { p_resident_id: 'R-1' }]]));
   x = mk(true, { error: { code: 'PGRST202', message: 'Could not find the function' } });
   eq('関数が無い → nofunc', (await x.R.genoCloudGet('R-1', x.load)).kind, 'nofunc');
   x = mk(true, null, true);
@@ -320,7 +320,7 @@ async function writeCase(opts){
 }
 {
   let r = await writeCase({ session: true, mid: 'R-1', mName: '架空 一郎', name: '架空 一郎', reply: { data: { ok: true, result: 'insert' } } });
-  eq('masterId を書けた → geno_put を1回送る', r.rpc.map(x => x[0]), ['geno_put']);
+  eq('masterId を書けた → geno_thumb_put を1回送る', r.rpc.map(x => x[0]), ['geno_thumb_put']);
   eq('  └ 送るのは masterId・絵・保存した日時だけ（氏名は送らない）', r.rpc[0][1], { p_resident_id: 'R-1', p_image: IMG('SAVED'), p_at: '2026-11-03T10:00:00+09:00' });
   eq('  └ 結果は ok', r.got, ['ok']);
   eq('  └ 送れた版を控える（{masterId: 日時} だけ）', JSON.parse(r.ls.getItem('genogram:thumbSent')), { 'R-1': '2026-11-03T10:00:00+09:00' });
@@ -460,7 +460,7 @@ group('11. 書く側: 図を消した時（suGenoDelThumbs）');
     return { rpc, ls, flashes, timers };
   };
   let r = await run(true);
-  eq('管理者 → その文書名の masterId だけ geno_del（氏名キーは送らない）', r.rpc, [['geno_del', 'R-1']]);
+  eq('管理者 → その文書名の masterId だけ geno_thumb_del（氏名キーは送らない）', r.rpc, [['geno_thumb_del', 'R-1']]);
   eq('  └ 端末の su_genograms は今のまま', r.ls.getItem('su_genograms'), genos);
   eq('  └ 知らせは出ない', r.flashes, []);
   r = await run(false);
@@ -471,7 +471,7 @@ group('11. 書く側: 図を消した時（suGenoDelThumbs）');
   const onlyName = JSON.stringify({ 'name:架空一郎': { image: IMG('1'), name: '架空 一郎', updatedAt: 'a' } });
   const roster1 = [{ masterId: 'R-1', name: '架空　一郎' }, { masterId: 'R-2', name: '架空 二郎' }];
   r = await run(true, { genos: onlyName, roster: roster1 });
-  eq('masterId のキーが無い → 名簿で1名にだけ一致したらその masterId を消す', [r.rpc, r.flashes], [[['geno_del', 'R-1']], []]);
+  eq('masterId のキーが無い → 名簿で1名にだけ一致したらその masterId を消す', [r.rpc, r.flashes], [[['geno_thumb_del', 'R-1']], []]);
   r = await run(true, { genos: onlyName, roster: roster1.concat([{ masterId: 'R-3', name: '架空一郎' }]) });
   eq('同姓同名（2名一致）→ 消さずに知らせる（決められなかった時だけ）', [r.rpc, r.flashes.length, r.timers], [[], 1, [2400]]);
   t('  └ 知らせの文（入居者マスタから開いて消す）', /^ほかの端末の絵は消せませんでした（入居者マスタから/.test(r.flashes[0] || ''), r.flashes);
@@ -503,7 +503,7 @@ group('12. 書く側: 画面の流れ');
   t('図を消した時に suGenoDelThumbs を呼ぶ', /suGenoDelThumbs\(name\)/.test(del));
   t('起動時に1回だけ送る（sweepSuGenoThumbs）', /sweepSuGenoThumbs\(\)/.test(tryGrab(SRC.geno, 'init')));
   t('ログインの部品の読み込み関数を2つ作らない（genoAuthLoad_ だけ）', (SRC.geno.match(/function \w*[Aa]uthLoad\w*\(/g) || []).length === 1);
-  t('知らせの文に技術用語を出さない', !/Supabase|API|JSON|HTTP|トークン|geno_put/.test((save.match(/'[^']*ほかの端末[^']*'/g) || []).join('')));
+  t('知らせの文に技術用語を出さない', !/Supabase|API|JSON|HTTP|トークン|geno_thumb_put/.test((save.match(/'[^']*ほかの端末[^']*'/g) || []).join('')));
 }
 } catch(e){ ng++; say('  ✗ 試験が途中で止まった: ' + (e && e.message)); }
 

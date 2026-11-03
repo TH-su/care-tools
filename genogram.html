@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-font">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4tatwB5n4oQfG1K2BhClN4+9jBVdFhmNYce1TbRTqzo=' 'sha256-v3VUN0n/czqieUqC8GZRJIKwmclXYgNKRBwPaDal5IQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4tatwB5n4oQfG1K2BhClN4+9jBVdFhmNYce1TbRTqzo=' 'sha256-Kn/+4FMNTwmaaKNI1M1kf5qLXtEjn30hl30FbXwPN7U='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 入居者情報を表示する画面のため、ブラウザ・中継キャッシュに残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -3202,7 +3202,7 @@ const CloudSync = (function() {
     }
   }
 
-  /* 家族構成図の絵（サムネイル）をほかの端末のフェイスシート・入居者マスタへ出すための送受（統合 0053・代表者の決定 2026-11-03）。
+  /* 家族構成図の絵（サムネイル）をほかの端末のフェイスシート・入居者マスタへ出すための送受（統合 0056・代表者の決定 2026-11-03）。
      ログインの控えが無い端末は聞かずに 'nologin'。読み込みはこのアプリの genoAuthLoad_ を使う（2つ目を作らない）。
      応答の分け方は suGenoRpcKind（外側の純関数）。GAS の通信とは別の道で、GAS への要求の形は変えない */
   function thumbRpc(fn, args) {
@@ -3283,7 +3283,7 @@ function suGenoMasterIdFor(docName, masterId, masterName) {
 }
 /* opts.nameKeyOnly … masterId のキーを書かない（まとめ反映で他の方に現在のidを付けないため）
    opts.done       … 書き終わり（失敗時も）に必ず呼ぶ。まとめ反映の順送りに使う
-   opts.cloud      … ほかの端末へ絵を送った結果（'ok' 'skip' 'nofunc' 'nologin' 'denied' 'line' 'fail'）を1回だけ知らせる（統合 0053）。
+   opts.cloud      … ほかの端末へ絵を送った結果（'ok' 'skip' 'nofunc' 'nologin' 'denied' 'line' 'fail'）を1回だけ知らせる（統合 0056）。
                      送るのは masterId のキーを書けた時だけ（氏名キーだけの保存は誰の図か確かめられないので送らない）
    opts.gate       … 送ってよいかを後で決める約束（true で送る・false で送らない＝'aborted'）。保存がクラウドの食い違いで中止された版の絵を
                      ほかの端末へ広げないため、保存（saveDoc）が同期の結果を見てから決める。無い時は端末に書けた後すぐ送る */
@@ -3323,8 +3323,8 @@ function writeSuGenogram(name, opts) {
   } catch (e) { fin(); cloud('skip'); }
 }
 
-/* ── 家族構成図の絵をほかの端末へ（統合 0053・代表者の決定 2026-11-03）──
-   端末の su_genograms に書いた絵を、masterId のキーの分だけ geno_put で送る。読むのはフェイスシート・入居者マスタ（geno_get）。
+/* ── 家族構成図の絵をほかの端末へ（統合 0056・代表者の決定 2026-11-03）──
+   端末の su_genograms に書いた絵を、masterId のキーの分だけ geno_thumb_put で送る。読むのはフェイスシート・入居者マスタ（geno_thumb_get）。
    ★送るのは masterId・絵・保存した日時だけ（氏名は送らない）。送れた版は genogram:thumbSent に {masterId: 日時} だけ控える。
    ★関数が無い（SQL を流す前）時は何も出さず、今までどおり端末の控えだけで動く。 */
 var SU_GENO_SENT_KEY = 'genogram:thumbSent';
@@ -3384,7 +3384,7 @@ function suGenoFitImage(img) {
 function suGenoPutThumb(mid, rec) {
   return suGenoFitImage(rec.image).then(function (img) {
     if (!img) { CloudSync.note('thumb:put', 'toolarge'); return { kind: 'fail' }; }
-    return CloudSync.thumbRpc('geno_put', { p_resident_id: String(mid), p_image: img, p_at: String(rec.updatedAt) }).then(function (x) {
+    return CloudSync.thumbRpc('geno_thumb_put', { p_resident_id: String(mid), p_image: img, p_at: String(rec.updatedAt) }).then(function (x) {
       /* ok には stale（サーバーの方が新しい・消した印より前の版）も入る。送り直しても同じ答えなので「送れた」と控える */
       if (x.kind === 'ok') suGenoMarkSent(mid, rec.updatedAt);
       else if (x.kind === 'fail') CloudSync.note('thumb:put', x.code);
@@ -3441,7 +3441,7 @@ function suGenoMidsOfName(m, name) {
     return !!rec && typeof rec === 'object' && String(rec.name == null ? '' : rec.name).replace(/\s+/g, '') === want;
   });
 }
-/* 図を消した時に geno_del を送る masterId（純関数）。{mids, ambiguous} を返す。端末の控えにその文書名の masterId のキーがあればそれ。
+/* 図を消した時に geno_thumb_del を送る masterId（純関数）。{mids, ambiguous} を返す。端末の控えにその文書名の masterId のキーがあればそれ。
    無い時（一覧から直接開いて作った図だけの端末）は、共有名簿 su_residents_common で文書名（空白を除いて一致）が1名にだけ一致する時だけ、
    その方の masterId。2名以上が一致して決められない時だけ ambiguous（知らせを出す）。1名も一致しない（別名の控え・名簿に無い方・名簿が無い）時は黙る */
 function suGenoDelTargets(m, roster, name) {
@@ -3459,7 +3459,7 @@ function suGenoDelTargets(m, roster, name) {
   return { mids: [], ambiguous: hit.length > 1 };   // 同姓同名 → 誰の絵か決められないので消さない
 }
 var SU_GENO_DEL_MISS_MSG = 'ほかの端末の絵は消せませんでした（入居者マスタからこの方の家族構成図を開いて、もう一度消してください）';
-/* 管理者が図を消した時だけ、ほかの端末に出す絵も消す（geno_del）。端末の su_genograms・送った控えは今のまま（消すと次の起動で送り直してしまう）。
+/* 管理者が図を消した時だけ、ほかの端末に出す絵も消す（geno_thumb_del）。端末の su_genograms・送った控えは今のまま（消すと次の起動で送り直してしまう）。
    管理者でない・断られた・関数が無い時は何も出さない。管理者で、名簿に同じ名前が2名以上いて決められない時だけ、削除の知らせの後に短く知らせる */
 function suGenoDelThumbs(name) {
   if (!CloudSync.hasLogin()) return;
@@ -3476,7 +3476,7 @@ function suGenoDelThumbs(name) {
     }
     (function next(i) {
       if (i >= mids.length) return;
-      CloudSync.thumbRpc('geno_del', { p_resident_id: String(mids[i]) }).then(function (x) {
+      CloudSync.thumbRpc('geno_thumb_del', { p_resident_id: String(mids[i]) }).then(function (x) {
         if (x.kind === 'fail') CloudSync.note('thumb:del', x.code);
         if (x.kind === 'ok' || x.kind === 'fail') next(i + 1);
       });
@@ -3867,7 +3867,7 @@ async function saveDoc() {
   loadedFrom = name;           // 画面の図はこの名前の端末の図になった（次の保存で同じ確認を繰り返さない）
   // 入居者マスタ連携：サムネイルを共有キーへ（masterId と氏名の両方をキーにする）
   /* ほかの端末へ絵を送れなかった時（ログインしていない・送れなかった）の知らせは、この保存の知らせ（同期の結果まで）が
-     消えた後に出す（統合 0053）。関数が無い（準備前）・送らなかった（氏名だけの保存）時は何も出さない */
+     消えた後に出す（統合 0056）。関数が無い（準備前）・送らなかった（氏名だけの保存）時は何も出さない */
   let thumbDone = null, thumbGo = null;
   const thumbSaved = new Promise(ok => { thumbDone = ok; });
   /* 送るのは、この保存がクラウドの食い違いで中止されなかった時だけ（中止した版の絵をほかの端末へ広げない）。
@@ -4202,7 +4202,7 @@ async function deleteCurrentDoc() {
   } else {
     removeLocal();
   }
-  /* 管理者のログインなら、ほかの端末のフェイスシート・入居者マスタに出す絵も消す（統合 0053・管理者でなければ何もしない） */
+  /* 管理者のログインなら、ほかの端末のフェイスシート・入居者マスタに出す絵も消す（統合 0056・管理者でなければ何もしない） */
   if (typeof suGenoDelThumbs === 'function') suGenoDelThumbs(name);
   flashStatus(`「${name}」を削除しました`);
 }
@@ -4771,7 +4771,7 @@ function init() {
       try { flashStatus('別の方の欄に出ていた家族構成図 ' + pruned + '件を切り離しました（図はお名前で残っています）'); } catch (e) {}
     }
     try { backfillSuGenograms(); } catch (e) {}
-    /* まだ送っていない版をほかの端末へ送る（統合 0053・1回だけ・失敗しても編集には影響させない） */
+    /* まだ送っていない版をほかの端末へ送る（統合 0056・1回だけ・失敗しても編集には影響させない） */
     try { sweepSuGenoThumbs(); } catch (e) { CloudSync.note('thumb:sweep', e); }
   }, 1800); };
   /* 起動の読込が失敗して戻った時（図が見つからない等）も、確認と下書きが働くように基準を控える（2026-10-17 反証レビュー 低4） */
