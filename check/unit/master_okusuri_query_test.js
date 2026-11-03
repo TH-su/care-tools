@@ -93,6 +93,8 @@ t('新しいタブはクリックの直後（受け口へ送る前）に開く',
 t('タブを開けない時は false（リンクのまま KEGG が開く）', /if\(!w\) return false;/.test(op));
 t('クリックの受け口は、開けた時だけ既定の動きを止める', /if\(openOkusuri\(a\.getAttribute\('data-q'\)\)\) ev\.preventDefault\(\);/.test(src));
 t('受け口の住所は care-backend の okusuri-search', /var OKUSURI_FIND = 'https:\/\/jhbernqawjrzqwrmqrih\.supabase\.co\/functions\/v1\/okusuri-search';/.test(src));
+const pt = src.slice(src.indexOf('function okusuriPaint('), src.indexOf('function openOkusuri('));
+t('待ちの画面にも KEGG への逃げ道がある（候補が無くても KEGG のリンクを置く）', !/if\(!list\) return;/.test(pt) && /待たずに KEGG で調べる/.test(pt));
 t('待つのは 6 秒まで', /var OKUSURI_WAIT_MS = 6000;/.test(src));
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');

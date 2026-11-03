@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-JSKv1mfLvhbsceRQJzeBHRydg7LBWLGUHaYDuA8Ht6o='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-2bOWAt5zWMxKOQHmgAkd1SS5m4bpM7/BfwCr7NAL58M='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -9240,15 +9240,16 @@ function okusuriPaint(w, q, list){
     h.style.cssText = 'font-weight:700;margin:0 0 12px';
     h.textContent = list ? 'お薬110番で「' + q + '」に当たる薬が ' + list.length + ' つあります。開く薬を選んでください' : 'お薬110番で「' + q + '」を調べています…';
     b.appendChild(h);
-    if(!list) return;
-    list.forEach(function(p){
+    /* 待ちの画面にも KEGG への逃げ道を置く（元のタブを閉じた・再読み込みした・後ろのタブの時計が止まった時に
+       「調べています…」のまま残らないため・レビュー指摘 2026-11-03） */
+    (list || []).forEach(function(p){
       var a = d.createElement('a');
       a.href = p.url; a.rel = 'noreferrer'; a.textContent = p.name;
       a.style.cssText = 'display:flex;align-items:center;min-height:44px;padding:4px 12px;margin:0 0 8px;border:1px solid #c7c7cc;border-radius:8px;color:#0040dd;text-decoration:none';
       b.appendChild(a);
     });
     var k = d.createElement('a');
-    k.href = okusuriKeggUrl(q); k.rel = 'noreferrer'; k.textContent = '見つからない時は KEGG で調べる';
+    k.href = okusuriKeggUrl(q); k.rel = 'noreferrer'; k.textContent = list ? '見つからない時は KEGG で調べる' : '待たずに KEGG で調べる';
     k.style.cssText = 'display:inline-flex;align-items:center;min-height:44px;color:#0040dd';
     b.appendChild(k);
   }catch(e){}
