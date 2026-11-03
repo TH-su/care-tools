@@ -198,7 +198,10 @@
       } },
     { id: 'geno', title: 'ジェノグラム（家族構成図）',
       read: async function (t) {
-        var j = need(await post(t, { action: 'list' }));
+        var j0 = await post(t, { action: 'list' });
+        /* 新しい保存先へ切り替えた後（統合 0054）は、Google は一覧も図も返さない。図はデータベースの書き出しに入っている（Google から読まない） */
+        if (j0 && j0.code === 'geno_switched') { var sw = new Error('switched'); sw.switched = true; sw.note = '新しい保存先へ切り替え済み（図はデータベースの書き出し db/geno_docs に入っている）'; throw sw; }
+        var j = need(j0);
         var items = Array.isArray(j.items) ? j.items : [];
         var docs = [];
         var miss = await missCount(items, 3, async function (it) {
@@ -236,7 +239,7 @@
         out.push({ id: g.id, title: g.title, ok: true, count: r.count, unit: r.unit, note: r.note || '', parts: r.parts });
       } catch (e) {
         out.push({ id: g.id, title: g.title, ok: false, count: 0,
-                   note: e && e.refused ? '断られた（合言葉が違う・閲覧用の合言葉・サーバーの設定）' :
+                   note: e && e.switched ? e.note : e && e.refused ? '断られた（合言葉が違う・閲覧用の合言葉・サーバーの設定）' :
                          (e && e.name === 'AbortError' ? '時間切れ' : '通信できなかった') });
       }
     }
