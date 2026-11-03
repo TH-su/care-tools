@@ -51,7 +51,7 @@ export const sheets = [
   { key: 'room', view: 'room', print: 'room', ready: '.rp-sheet' },                          // 入居者居室一覧（A4横・1階と2階の2枚）
   { key: 'fam', view: 'fam', print: 'fam', ready: '#famSheet table tbody tr' },              // 家族情報一覧（A3縦）
   { key: 'hist', view: 'hist', print: 'hist', ready: '#histSheet table tbody tr' },          // 病歴・内服薬一覧（A3縦）
-  /* 薬効辞書（md）は撮らない: 辞書が先に届くと、処方のまとめ読みが終わっても表が描き直されず「取得しています…」のまま残る（画面の不具合・別に直す） */
+  { key: 'md', view: 'md', print: 'md', ready: '#mdSheet table tbody tr' },                // 薬効辞書の一覧（A4縦）。辞書が先に届いても表が描き直されること（2026-11-03 に直した不具合）もここで見る
   { key: 'cert', view: 'cert', print: 'cert', ready: '#certSheet table tbody tr' },          // 認定期限の一覧（A4縦）
   { key: 'mf', view: 'mf', print: 'mf', ready: '#mfSheet .mf-page' },                  // 食形態一覧（配布用・A4縦）
 ];
