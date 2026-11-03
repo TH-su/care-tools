@@ -1,6 +1,6 @@
 /* check/flow_e2e.mjs — 業務の流れを通す試験（2026-11-02 新設）
  *
- *   node check/flow_e2e.mjs [--shots <保存先>]
+ *   node check/flow_e2e.mjs [--shots <保存先>] [--only 5,6,7]
  *
  * 本物の Chromium で画面を順に開き、職員と同じボタン操作で業務の流れを通す。通信は全部横取りして偽物が答える
  * （入居者マスタ GAS・統合同期 GAS・計画書の GAS・申送の GAS・Supabase・su-backend.json）。横取りしていない
@@ -12,6 +12,12 @@
  *   (3) 週間計画→ワークスケジュール・俯瞰: 週間計画で予定を1コマ足して保存し、ワークスケジュール・訪問俯瞰・全支援俯瞰に載ることを確かめる
  *   (4) 現場の端末の守り: 事務所向けの画面が中身を出さずに止まり、全件の読み取り・同期の読み取りを送らないこと。
  *       現場でも使える画面（フェイスシート・体重管理・家族構成図）は開け、事務所向けの行き先を帯に出さないこと
+ *   (5) 体重管理: 事務所PCと現場の端末で、入居者マスタから開いた方に体重を入れて「記録を保存」し、体重の GAS にその方の記録だけが届き、
+ *       開き直すと出ること（現場の端末は入居者マスタの全件・同期の読み取りを送らない）（代表者「推奨どおり」案2 2026-11-03）
+ *   (6) 貼り薬カレンダー: 名簿から方を選んで開始日・場所を入れ、共通のデータベース（patch_put）にその方の設定だけが届き、開き直すと出ること。
+ *       現場の端末は開いた時に送信待ちの方だけを送り、全員分を送らず、サーバーから読まない（patch_get を呼ばない）こと
+ *   (7) 計画書: 入居者マスタから開いた方に「この日付で計画を追加」で期を作り、欄に書いて「保存」し、計画書の受け口にその方の計画だけが届き、
+ *       開き直すと書いた内容が出て、一覧にその方の計画が載ること
  * どの流れも、画面のエラー（pageerror）が出たら失敗にする。成功で exit 0、1つでも落ちたら exit 1。
  */
 import fs from 'node:fs';
@@ -25,6 +31,8 @@ const repoDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const args = parseArgs(process.argv.slice(2));
 const shots = args.shots ? path.resolve(args.shots) : '';
 if (shots) fs.mkdirSync(shots, { recursive: true });
+/* --only 5,7 のように番号を書くと、その流れだけを通す（直している間の確かめ用。毎晩と PR ごとは全部を通す） */
+const ONLY = args.only ? String(args.only).split(',').map((x) => x.trim()).filter(Boolean) : null;
 const { chromium } = loadPlaywright();
 
 let pass = 0, fail = 0;
@@ -42,6 +50,7 @@ const ME = { id: '1001', name: '架空 一郎' };          // 主に使う方
 const OTHER = { id: '1002', name: '見本 一郎' };       // 取り違えの相手（端末に「前に開いた方」として残しておく）
 const TP_URL = 'https://script.google.com/macros/s/CHECK-FLOW-TP/exec';
 const MSK_URL = 'https://script.google.com/macros/s/CHECK-FLOW-MSK/exec';
+const WT_URL = 'https://script.google.com/macros/s/CHECK-FLOW-WT/exec';
 const NAMES = F.masterRecords().map((r) => r.name);
 const OFFICE_HOP = ['resident-master.html', 'care-schedule.html', 'moushiokuri-viewer.html', 'training-plan.html', 'care-meeting.html'];
 /* 現場の端末で送ってはいけない入居者マスタ GAS の読み取り（getSection は facesheet_safe 以外を全部ここに数える） */
@@ -68,12 +77,39 @@ function mskRespond(b) {
   return { ok: true };
 }
 
+/* 体重管理の GAS の偽物。疎通の確かめ（action なし）には今の GAS と同じ能力（POST の読み込み・項目だけの送信）を答え、
+   getAll で入居者と記録を返し、saveRecord・saveResident・delRecord を覚える。受けた記録は saved に残す（試験が中身を見る） */
+function createWeightGas(seed) {
+  const s = { residents: JSON.parse(JSON.stringify((seed && seed.residents) || [])), records: JSON.parse(JSON.stringify((seed && seed.records) || [])), saved: [] };
+  const VER = { ok: true, ver: 5, caps: ['postGetAll', 'fieldMerge'], authRequired: true };
+  s.respond = (b) => {
+    if (!b.action) return VER;
+    if (b.action === 'getAll') return { ok: true, ver: 5, residents: s.residents, records: s.records, thresholds: null };
+    if (b.action === 'saveRecord' && b.record && b.record.id != null) {
+      const i = s.records.findIndex((r) => r.id === b.record.id);
+      if (i >= 0) s.records[i] = b.record; else s.records.push(b.record);
+      s.saved.push(JSON.parse(JSON.stringify(b.record)));
+      return { ok: true, ver: 5 };
+    }
+    if (b.action === 'saveResident' && b.resident && b.resident.id != null) {
+      const i = s.residents.findIndex((r) => r.id === b.resident.id);
+      if (i >= 0) s.residents[i] = { ...s.residents[i], ...b.resident }; else s.residents.push(b.resident);
+      return { ok: true, ver: 5 };
+    }
+    if (b.action === 'delRecord') { s.records = s.records.filter((r) => r.id !== b.id); return { ok: true, ver: 5 }; }
+    return { ok: true, ver: 5 };
+  };
+  return s;
+}
+
 /* 1つの流れ＝1つのブラウザの文脈（端末1台）。偽物の通信の状態と、受けた要求の記録を持つ */
-async function makeEnv({ device = 'office', kvSeed, extraStorage = {}, seedOnce = true } = {}) {
+async function makeEnv({ device = 'office', kvSeed, extraStorage = {}, seedOnce = true, flags = F.FLAGS_OFF, wtSeed, patchSeed } = {}) {
   const st = {
     master: F.createMaster(),
     kv: F.createKv(kvSeed || { care_schedule_v2: F.careDb() }),
     tp: F.createKv({}),
+    wt: createWeightGas(wtSeed),
+    patch: JSON.parse(JSON.stringify(patchSeed || {})), patchCalls: [],
     req: [], sb: [], ext: [], errors: [], dialogs: [], ct: [], tag: '',
   };
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, timezoneId: 'Asia/Tokyo', locale: 'ja-JP' });
@@ -84,7 +120,7 @@ async function makeEnv({ device = 'office', kvSeed, extraStorage = {}, seedOnce 
       for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v);
       localStorage.setItem('__flow_seeded', '1');
     } catch (e) { /* 端末の控えが使えない時は何もしない */ }
-  }, { s: { ...F.storage(device), tp_cfg: JSON.stringify({ url: TP_URL, token: 'check-flow' }), msk_cfg: JSON.stringify({ url: MSK_URL, token: 'check-flow' }), ...extraStorage }, once: seedOnce });
+  }, { s: { ...F.storage(device), su_backend_flags: JSON.stringify(flags), tp_cfg: JSON.stringify({ url: TP_URL, token: 'check-flow' }), msk_cfg: JSON.stringify({ url: MSK_URL, token: 'check-flow' }), ...extraStorage }, once: seedOnce });
   const gasBody = (req) => {
     if (req.method() === 'GET') return Object.fromEntries(new URL(req.url()).searchParams);
     try { return JSON.parse(req.postData() || '{}'); } catch (e) { return {}; }
@@ -96,17 +132,33 @@ async function makeEnv({ device = 'office', kvSeed, extraStorage = {}, seedOnce 
     if (req.method() === 'POST') st.ct.push({ tag: st.tag, to, ct: (req.headers()['content-type'] || '') + '' });
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(respond(b)) });
   };
-  const sbHandle = F.supabase(st);
+  const sbBase = F.supabase(st);
+  /* 貼り薬カレンダーの共通のデータベースの偽物（patch_put・patch_put_many・patch_get）。ほかは F.supabase に任せる */
+  const sbHandle = (route) => {
+    const req = route.request();
+    const m = /\/rest\/v1\/rpc\/(patch_put_many|patch_put|patch_get)$/.exec(new URL(req.url()).pathname);
+    if (!m || req.method() === 'OPTIONS') return sbBase(route);
+    const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' };
+    let b = {}; try { b = JSON.parse(req.postData() || '{}'); } catch (e) { b = {}; }
+    st.sb.push(req.method() + ' /rest/v1/rpc/' + m[1]);
+    const put = (x) => { st.patch[String(x.p_resident_id)] = { start: x.p_start, no: x.p_no, prev: x.p_prev, by: x.p_by, at: x.p_at }; return { ok: true }; };
+    let out;
+    if (m[1] === 'patch_put') { st.patchCalls.push({ tag: st.tag, fn: m[1], rids: [String(b.p_resident_id)] }); out = put(b); }
+    else if (m[1] === 'patch_put_many') { const items = Array.isArray(b.items) ? b.items : []; st.patchCalls.push({ tag: st.tag, fn: m[1], rids: items.map((x) => String(x.p_resident_id)) }); out = items.map(put); }
+    else { st.patchCalls.push({ tag: st.tag, fn: m[1], rids: [] }); out = { ok: true, rows: JSON.parse(JSON.stringify(st.patch)) }; }
+    return route.fulfill({ status: 200, contentType: 'application/json', headers: cors, body: JSON.stringify(out) });
+  };
   await context.route('**/*', (route) => {
     const u = route.request().url();
     if (u.startsWith(srv.url + '/')) {
-      if (/^[^?]*\/su-backend\.json(\?|$)/.test(u.slice(srv.url.length))) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(F.FLAGS_OFF) });
+      if (/^[^?]*\/su-backend\.json(\?|$)/.test(u.slice(srv.url.length))) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(flags) });
       return route.continue();
     }
     if (u.startsWith(F.MASTER_URL)) return gas('master', st.master.respond)(route);
     if (u.startsWith(F.SYNC_URL)) return gas('sync', st.kv.respond)(route);
     if (u.startsWith(TP_URL)) return gas('tp', st.tp.respond)(route);
     if (u.startsWith(MSK_URL)) return gas('msk', mskRespond)(route);
+    if (u.startsWith(WT_URL)) return gas('wt', st.wt.respond)(route);
     if (u.startsWith(F.SB + '/')) return sbHandle(route);
     st.ext.push(route.request().method() + ' ' + u.slice(0, 160));
     return route.abort();
@@ -582,11 +634,224 @@ async function flow4() {
   }
 }
 
+/* ═════════ (5) 体重管理: 体重を入れて保存すると、その方の記録だけが体重の GAS に届き、開き直すと出る ═════════ */
+const ymJst = () => ymdJst(0).slice(0, 7);
+function wtSeed() {
+  return { residents: [
+    { id: 'w1', name: ME.name, masterId: ME.id, room: '101', active: true, height: 160, targetWeight: true },
+    { id: 'w2', name: OTHER.name, masterId: OTHER.id, room: '102', active: true, height: 158, targetWeight: true },
+  ], records: [] };
+}
+async function weightFlow(device, label, value) {
+  const seed = wtSeed();
+  const env = await makeEnv({ device, wtSeed: seed, extraStorage: {
+    wtmgr_v1: JSON.stringify(seed), wtmgr_api_url: WT_URL, wtmgr_api_token: 'check-flow',
+  } });
+  const tag = 'weight-record.html';
+  try {
+    let page = await open(env, 'weight-record.html?masterId=' + ME.id);
+    const who = await waitFor(() => page.evaluate(() => { const e = document.getElementById('fromMaster'); return e && e.offsetParent ? e.innerText : null; }));
+    t(label + ': 入居者マスタから開いて「' + ME.name + 'さんを開いています」', !!who && who.includes(ME.name + 'さんを開いています'), who);
+    /* 起動の同期（getAll）が終わるのを待ってから入力へ（同期の間は保存のボタンが止まる） */
+    await waitFor(() => reqOf(env, tag).some((r) => r.to === 'wt' && r.action === 'getAll') && page.evaluate(() => !document.body.classList.contains('wr-sync-busy')));
+    await page.click('.tnav button[data-go="input"]');
+    const sel = await page.$eval('#inResident', (e) => ({ v: e.value, t: e.options[e.selectedIndex] ? e.options[e.selectedIndex].textContent : '' }));
+    t(label + ': 入力の画面も同じ方が選ばれている（' + ME.name + '）', sel.v === 'w1' && sel.t.includes(ME.name), sel);
+    const ym = ymJst(), day = ymdJst(0);
+    await page.fill('#inMonth', ym);
+    await page.fill('#inDate', day);
+    await page.fill('#inWeight', String(value));
+    await page.click('#inSave');
+    const got = await waitFor(() => env.st.wt.saved.find((r) => r.residentId === 'w1' && Number(r.weight) === value) || null);
+    t(label + ': 体重の GAS に「' + ME.name + '」の記録（' + value + 'kg・' + ym + '）が届く', !!got && got.yearMonth === ym && got.measuredOn === day, got || env.st.wt.saved);
+    t(label + ': ほかの方（' + OTHER.name + '）の記録は送らない', !env.st.wt.saved.some((r) => r.residentId !== 'w1'), env.st.wt.saved.map((r) => r.residentId));
+    const sv = reqOf(env, tag).filter((r) => r.to === 'wt' && r.action === 'saveRecord');
+    t(label + ': 送った保存（saveRecord）は1本', sv.length === 1, sv);
+    await shot(page, 'flow5-' + device);
+    await page.close();
+
+    /* 開き直す（同じ端末）: 記録の一覧（個人の画面）に入れた体重が出る */
+    page = await open(env, 'weight-record.html?masterId=' + ME.id);
+    const shown = await waitFor(() => page.evaluate((v) => { const s = document.querySelector('.scr.on'); return s && s.innerText.includes(String(v)) ? s.dataset.sc : null; }, value));
+    t(label + ': 開き直すと、この方の画面に ' + value + 'kg が出る', !!shown, shown);
+    await page.close();
+    if (device === 'field') {
+      const bad = env.st.req.filter((r) => (r.to === 'master' && (MASTER_FULL.includes(r.action) || (r.action === 'getSection' && r.section !== 'facesheet_safe'))) || (r.to === 'sync' && ['get', 'pull', 'head'].includes(r.action)));
+      t(label + ': 入居者マスタの全件・詳細の読み取り、同期の読み取りを送らない', bad.length === 0, bad);
+    }
+  } finally {
+    endChecks(env, label);
+    await env.context.close();
+  }
+
+  /* 別の端末（同じ用途・端末の記録は空）: 体重の GAS の getAll で読んで、同じ体重が出る＝端末の控えではなくサーバーに載った */
+  const seed2 = { residents: env.st.wt.residents, records: env.st.wt.records };
+  const env2 = await makeEnv({ device, wtSeed: seed2, extraStorage: {
+    wtmgr_v1: JSON.stringify(wtSeed()), wtmgr_api_url: WT_URL, wtmgr_api_token: 'check-flow',
+  } });
+  try {
+    const page = await open(env2, 'weight-record.html?masterId=' + ME.id);
+    const shown = await waitFor(() => page.evaluate((v) => { const s = document.querySelector('.scr.on'); return s && s.innerText.includes(String(v)) ? s.dataset.sc : null; }, value));
+    t(label + '（別の端末）: 端末に記録が無くても、サーバーから読んで ' + value + 'kg が出る', !!shown && reqOf(env2, 'weight-record.html').some((r) => r.to === 'wt' && r.action === 'getAll'), shown);
+    await page.close();
+  } finally {
+    endChecks(env2, label + '（別の端末）');
+    await env2.context.close();
+  }
+}
+async function flow5() {
+  console.log('\n— (5) 体重管理: 入れた体重が、その方の記録として届き、開き直すと出る —');
+  await weightFlow('office', '(5) 体重管理（事務所PC）', 52.3);
+  await weightFlow('field', '(5) 体重管理（現場）', 48.7);
+}
+
+/* ═════════ (6) 貼り薬カレンダー: 設定を入れると、その方の分だけ共通のデータベースに届き、開き直すと出る ═════════ */
+const PATCH_FLAGS = { supabase: { ...F.FLAGS_OFF.supabase, patch_push: true, patch_read: true } };   // 本番と同じ「送る・読む」が入の状態
+function patchRoster() {
+  return JSON.stringify({ v: 1, updatedAt: new Date().toISOString(), residents: F.masterRecords().map((r) => ({ masterId: r.id, name: r.name, kana: r.kana, room: r.room, active: true })) });
+}
+async function patchSet(page, start, no) {
+  await page.selectOption('#rs', ME.id);
+  await page.fill('#st', start);
+  await page.dispatchEvent('#st', 'change');
+  await page.selectOption('#no', String(no));
+}
+async function flow6() {
+  console.log('\n— (6) 貼り薬カレンダー: 入れた設定が、その方の分だけ届き、開き直すと出る —');
+  const START = ymdJst(-3), NO = 5;
+  const env = await makeEnv({ flags: PATCH_FLAGS, extraStorage: { su_residents_common: patchRoster() } });
+  const tag = 'patch-calendar.html';
+  try {
+    let page = await open(env, 'patch-calendar.html');
+    await waitFor(() => page.evaluate((id) => !!document.querySelector('#rs option[value="' + id + '"]'), ME.id));
+    await page.waitForTimeout(2500);   // 開いた後の送信・読み込み（あれば）を待つ
+    await patchSet(page, START, NO);
+    const got = await waitFor(() => env.st.patch[ME.id] && env.st.patch[ME.id].start === START && Number(env.st.patch[ME.id].no) === NO ? env.st.patch[ME.id] : null);
+    t('(6) 貼り薬（事務所PC）: 共通のデータベースに「' + ME.name + '」の設定（開始日・場所）が届く', !!got, env.st.patch);
+    t('(6) 貼り薬（事務所PC）: 送った中身は番号と設定だけ（氏名を送らない）', !JSON.stringify(env.st.patch).includes(ME.name), env.st.patch);
+    t('(6) 貼り薬（事務所PC）: ほかの方の設定は送らない', Object.keys(env.st.patch).every((k) => k === ME.id), Object.keys(env.st.patch));
+    await shot(page, 'flow6-office');
+    await page.close();
+
+    /* 開き直す: サーバーの値（patch_get）を読み、この方を選ぶと入れた開始日・場所が出る */
+    page = await open(env, 'patch-calendar.html');
+    await waitFor(() => page.evaluate((id) => !!document.querySelector('#rs option[value="' + id + '"]'), ME.id));
+    await page.selectOption('#rs', ME.id);
+    const back = await waitFor(() => page.evaluate(() => ({ st: document.getElementById('st').value, no: document.getElementById('no').value })).then((v) => (v.st ? v : null)));
+    t('(6) 貼り薬（事務所PC）: 開き直すと開始日 ' + START + '・場所 ' + NO + ' が出る', !!back && back.st === START && back.no === String(NO), back);
+    t('(6) 貼り薬（事務所PC）: 開いた時にサーバーから読む（patch_get）', env.st.patchCalls.some((c) => c.fn === 'patch_get'), env.st.patchCalls);
+    await page.close();
+  } finally {
+    endChecks(env, '(6) 貼り薬（事務所PC）');
+    await env.context.close();
+  }
+
+  /* 別の事務所PC（端末の控えが空）: サーバーの値（patch_get）を読んで、同じ開始日・場所が出る＝控えではなくサーバーに載った */
+  const env1b = await makeEnv({ flags: PATCH_FLAGS, patchSeed: env.st.patch, extraStorage: { su_residents_common: patchRoster() } });
+  try {
+    const page = await open(env1b, 'patch-calendar.html');
+    await waitFor(() => env1b.st.patchCalls.some((c) => c.fn === 'patch_get'), 15000);
+    await page.waitForTimeout(800);
+    await page.selectOption('#rs', ME.id);
+    const v = await waitFor(() => page.evaluate(() => ({ st: document.getElementById('st').value, no: document.getElementById('no').value })).then((x) => (x.st === '' ? null : x)));
+    t('(6) 貼り薬（別の事務所PC）: 端末に控えが無くても、サーバーから読んで開始日 ' + START + '・場所 ' + NO + ' が出る', !!v && v.st === START && v.no === String(NO), v);
+    await page.close();
+  } finally {
+    endChecks(env1b, '(6) 貼り薬（別の事務所PC）');
+    await env1b.context.close();
+  }
+
+  /* 現場の端末: 端末の控えに2名分の設定（送信済み）と、送信待ちの1名がある。開いた時は送信待ちの方だけを送り、全員分を送らない */
+  console.log('\n— (6b) 貼り薬カレンダー（現場の端末）: 開いた時は送信待ちの方だけを送る —');
+  const at = new Date(Date.now() - 60 * 1000).toISOString();
+  const local = { v: 1, r: {
+    [ME.id]: { start: START, no: 2, prev: 1, by: '現場の端末', at },
+    [OTHER.id]: { start: START, no: 3, prev: 2, by: '現場の端末', at },
+  } };
+  const env2 = await makeEnv({ device: 'field', flags: PATCH_FLAGS, extraStorage: {
+    su_residents_common: patchRoster(), apc2_res: JSON.stringify(local),
+    apc2_sync_q: JSON.stringify({ v: 1, q: { [ME.id]: at } }),
+  } });
+  try {
+    const page = await open(env2, 'patch-calendar.html');
+    await waitFor(() => env2.st.patchCalls.length > 0, 10000);
+    await page.waitForTimeout(2500);
+    const sent = [...new Set(env2.st.patchCalls.filter((c) => c.fn !== 'patch_get').flatMap((c) => c.rids))];
+    t('(6b) 貼り薬（現場）: 開いた時に送信待ちの方（' + ME.name + '）を送る', sent.includes(ME.id), env2.st.patchCalls);
+    t('(6b) 貼り薬（現場）: 送信待ちでない方（' + OTHER.name + '）は送らない＝全員分を送らない', !sent.includes(OTHER.id), env2.st.patchCalls);
+    t('(6b) 貼り薬（現場）: サーバーから読まない（patch_get を呼ばない）', !env2.st.patchCalls.some((c) => c.fn === 'patch_get'), env2.st.patchCalls);
+    /* 現場でも設定を直せば、その方を送る */
+    const before = env2.st.patchCalls.length;
+    await patchSet(page, START, NO);
+    const got = await waitFor(() => env2.st.patch[ME.id] && Number(env2.st.patch[ME.id].no) === NO ? env2.st.patch[ME.id] : null);
+    t('(6b) 貼り薬（現場）: 直した設定（場所 ' + NO + '）を送る', !!got && env2.st.patchCalls.length > before, env2.st.patch);
+    t('(6b) 貼り薬（現場）: 入居者マスタ・同期へ読みに行かない', !reqOf(env2, tag).some((r) => r.to === 'master' || r.to === 'sync'), reqOf(env2, tag));
+    await page.close();
+  } finally {
+    endChecks(env2, '(6b) 貼り薬（現場）');
+    await env2.context.close();
+  }
+}
+
+/* ═════════ (7) 計画書: 期を作って書いて保存すると、その方の計画だけが届き、開き直すと出て、一覧に載る ═════════ */
+async function flow7() {
+  console.log('\n— (7) 計画書: 作った計画が、その方の分だけ届き、開き直すと出て、一覧に載る —');
+  const NOTE = '試験の記入（架空）';
+  const env = await makeEnv();
+  const KEY = 'training_plan:' + ME.id;
+  try {
+    let page = await open(env, 'training-plan.html?masterId=' + ME.id);
+    const opened = await waitFor(() => page.evaluate(() => { const s = document.getElementById('scr-edit'); return s && s.classList.contains('on') && document.querySelector('#tpHop .srh') ? s.innerText.slice(0, 300) : null; }));
+    t('(7) 計画書: 入居者マスタから開いて、この方（' + ME.name + '）の計画書の画面が出る', !!opened && opened.includes(ME.name), opened);
+    await page.click('#btnAddAt');
+    /* 期を作った直後は「本人の様子」の窓（AI の文案の依頼）が開く。職員と同じく「あとで」で閉じる */
+    if (await waitFor(() => page.evaluate(() => document.getElementById('samplePop').classList.contains('on')), 5000)) await page.click('#spLater');
+    const has = await waitFor(() => page.evaluate(() => { const e = document.getElementById('fDiagnosis'); return e && !e.disabled && e.offsetParent ? true : null; }));
+    t('(7) 計画書: 「この日付で計画を追加」で期ができ、欄に書ける', !!has);
+    await page.fill('#fDiagnosis', NOTE);
+    await page.dispatchEvent('#fDiagnosis', 'input');
+    await page.click('#btnSave');
+    const doc = await waitFor(() => { const e = env.st.tp.kv.get(KEY); return e && JSON.stringify(e.data).includes(NOTE) ? e.data : null; });
+    t('(7) 計画書: 受け口に「' + ME.name + '」の計画（training_plan:' + ME.id + '）が届き、書いた内容が入っている', !!doc && Array.isArray(doc.plans) && doc.plans.length >= 1, doc ? { plans: doc.plans.length } : [...env.st.tp.kv.keys()]);
+    t('(7) 計画書: 計画の持ち主の番号は ' + ME.id, !!doc && doc.subject && String(doc.subject.masterId) === ME.id, doc && doc.subject);
+    const others = [...env.st.tp.kv.keys()].filter((k) => /^training_plan:/.test(k) && k !== KEY && k !== 'training_plan:index');
+    t('(7) 計画書: ほかの方の計画は書かない', others.length === 0, others);
+    /* 保存が通った後に、画面は一覧の索引（training_plan:index）のこの方の行を書き直す。職員と同じく保存が終わるのを待つ */
+    const idx = await waitFor(() => { const e = env.st.tp.kv.get('training_plan:index'); const r = e && e.data && e.data.rows && e.data.rows[ME.id]; return r && r.latestPlanDate ? r : null; });
+    t('(7) 計画書: 一覧の索引にこの方の行（最新の期の作成日・次回期限）が書かれる', !!idx && !!idx.nextDue, idx);
+    const idxRows = (env.st.tp.kv.get('training_plan:index') || { data: { rows: {} } }).data.rows || {};
+    t('(7) 計画書: 索引にほかの方の行を足さない', Object.keys(idxRows).every((k) => k === ME.id), Object.keys(idxRows));
+    await shot(page, 'flow7-edit');
+    await page.close();
+
+    /* 開き直す: 書いた内容が出る */
+    page = await open(env, 'training-plan.html?masterId=' + ME.id);
+    const v = await waitFor(() => page.evaluate(() => { const e = document.getElementById('fDiagnosis'); return e && e.value ? e.value : null; }));
+    t('(7) 計画書: 開き直すと書いた内容が出る', v === NOTE, v);
+    await page.close();
+
+    /* 一覧: この方に計画（1期）がある */
+    page = await open(env, 'training-plan.html');
+    let lastRow = null;
+    const row = await waitFor(() => page.evaluate((nm) => {
+      const s = document.getElementById('scr-list'); if (!s || !s.classList.contains('on')) return null;
+      /* 一覧の1行＝その方の氏名と「開く」を両方持ついちばん小さい部品 */
+      const rows = Array.from(s.querySelectorAll('*')).filter((x) => x.innerText && x.innerText.includes(nm) && x.innerText.includes('開く'));
+      rows.sort((a, b) => a.innerText.length - b.innerText.length);
+      return rows.length ? rows[0].innerText.replace(/\s+/g, ' ') : null;
+    }, ME.name).then((r) => { lastRow = r; return r && !r.includes('計画なし') ? r : null; }));   // 一覧は名簿の後に期限を読み込んで描き直す
+    t('(7) 計画書: 一覧に ' + ME.name + ' が出て、「計画なし」ではなく次回期限の日付が出る', !!row && !row.includes('計画なし') && /\d{4}-\d{2}-\d{2}.*\d{4}-\d{2}-\d{2}/.test(row), row || lastRow);
+    await shot(page, 'flow7-list');
+    await page.close();
+  } finally {
+    endChecks(env, '(7)');
+    await env.context.close();
+  }
+}
+
 try {
-  await flow1();
-  await flow2();
-  await flow3();
-  await flow4();
+  const FLOWS = { 1: flow1, 2: flow2, 3: flow3, 4: flow4, 5: flow5, 6: flow6, 7: flow7 };
+  for (const [k, fn] of Object.entries(FLOWS)) if (!ONLY || ONLY.includes(k)) await fn();
 } catch (e) {
   fail++;
   console.log('  ✗ 試験の道具が途中で止まりました  → ' + String(e && e.stack || e).slice(0, 800));
