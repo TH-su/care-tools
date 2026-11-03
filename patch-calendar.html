@@ -194,9 +194,14 @@ body {
 @media (prefers-reduced-motion: reduce) { .btn { transition: none; } }
 /* 用紙は固定寸法なので、狭い画面では横スクロールで全体を確認できるようにする */
 @media (max-width: 800px) { .wrap { justify-content: flex-start; overflow-x: auto; } }
+/* 字と地の差を 7:1 以上にそろえる（画面だけ・色合いはそのまま濃くする・印刷の紙は元の色のまま・代表者「推奨どおり色も7:1にそろえて」2026-11-03） */
+@media screen {
+  :root[data-su-theme] .hint.warn { color: #992b0a; }   /* 注意の字（淡い橙の地 7.1:1） */
+  :root[data-su-theme] .cell.sun .dn { color: #b30000; }   /* 日曜の日付（白地 7.2:1） */
+}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
-<link rel="stylesheet" href="su-theme.css?v=2026-11-02.2">
+<link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 </head>
 <body>
 
@@ -276,7 +281,7 @@ body {
   </div>
 </div>
 
-<div class="wrap">
+<div class="wrap" tabindex="0" role="region" aria-label="カレンダー（横に送れます）">
   <div class="sheet" id="sheet">
     <div class="sh-top">
       <div class="sh-ttl">

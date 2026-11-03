@@ -24,6 +24,7 @@
     --pri: #1F2A44; --pri-l: #EEF0F5; --pri-d: #141C2E;
     --pri2: #1F2A44;   /* 週間計画は --pri2 を標準の青に使う */
     --own: #1F2A44;    /* アプリの使える人の「この人だけ」の札（app-access.css）の青を藍にそろえる */
+    --chg: #6a3e00;    /* アプリの使える人の「変更あり」の札と枠（app-access.css）の茶を、淡い黄の地で 7:1 以上の濃さにする */
     --ok: #185a1c; --ok-l: #e8f5e9;
     --ng: #8f0c0c; --ng-l: #fdecea;
     --warn-bg: #fdf3e3; --warn-tx: #6a3e00;
@@ -48,8 +49,11 @@
     --c-link: #1F2A44;
     --c-hero: #FBF8F2; --c-hero-ink: #1F2A44; --c-hero-hover: #EEF0F5;
     --c-info: #1F2A44; --c-info-bg: #EEF0F5;
+    --c-danger: #951a22; --c-warn: #724600;   /* 危険・注意の字（淡い赤・淡い黄の地で 7:1 以上）。計画書などの帯と札 */
   }
   :root[data-su-theme][data-ds="ops"]:not([data-mode="dark"]) .hdr { box-shadow: inset 0 -2px 0 #E4DED2; }
+  /* 「不具合を報告」のボタン（su-report.css）は --pri の色を使うが、ops の画面は --pri を持たないため青のまま白い字が 6.4:1 だった。藍にして 7:1 以上にする */
+  :root[data-su-theme][data-ds="ops"]:not([data-mode="dark"]) .sur-fab { background: #1F2A44; }
 }
 
 @media screen {
@@ -121,6 +125,11 @@
   :root[data-su-theme] .sug-btn.pri { background: var(--su-ink); border-color: var(--su-ink); color: #fff; }
   :root[data-su-theme] .sug-btn:focus-visible { outline-color: var(--su-ink); }
 
+  /* 接続先が空の時の案内の帯（su-cfg-hint.js）の「接続設定を開く」：部品が直書きする青（白い字 6.4:1）を藍にして 7:1 以上にする。文言・位置は変えない */
+  :root[data-su-theme] #su-cfg-hint > a { background: #1F2A44 !important; }
+  /* 体重管理の下の段の「設定」（.tnav の .sub）：薄く見せる 0.8 の透け（白地 4.6:1）をやめ、補助の字の濃さ（7.6:1）にする */
+  :root[data-su-theme] .tnav button.sub { opacity: 1; }
+
   /* 見出しが .topbar で、色の名前が --bg・--ink・--mut・--accent の画面（過去シフト・アナライザ）：
      data-su-theme="topbar" を付けた画面だけ。見出しを生成りの地に藍の字にし、薄い灰の字（白地で 3:1）を 7:1 以上に濃くする。
      体重管理の .topbar（白い帯）は対象にしない。大きさ・並び・文言は変えない */
@@ -132,6 +141,7 @@
   :root[data-su-theme][data-su-theme~="topbar"] .badge { background: #185a1c; }   /* 白い字が 7:1 以上になる濃さ */
   :root[data-su-theme][data-su-theme~="topbar"] .tag { background: #4A5468; }
   :root[data-su-theme][data-su-theme~="topbar"] .cloudstat.ok { color: #185a1c; }
+  :root[data-su-theme][data-su-theme~="topbar"] code { color: var(--su-ink); }   /* 説明の中の灰色の地の語（6.7:1）を藍の字にする */
 }
 
 /* iPad 縦と iPhone：押す所を 44px 以上・入力の文字を 16px（iPhone で入力の時に勝手に拡大されないため） */

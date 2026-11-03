@@ -1101,8 +1101,11 @@
     try { await loadAdmMode(sb); } catch (e) { /* 0042 の前・読めない時はボタンを出さない */ }
     try { await loadStf(sb); } catch (e) { $('stf-verdict').className = 'msg warn'; $('stf-verdict').textContent = '職員マスタの写しの記録を読めませんでした。'; }
     try { await loadSup(sb); } catch (e) { $('sup-verdict').className = 'msg warn'; $('sup-verdict').textContent = '備品の写しの記録を読めませんでした。'; }
+    try { await probePrep(sb); } catch (e) { /* 確かめられなくても、ほかの欄はそのまま */ }
     try { await loadStfMode(sb); } catch (e) { /* 0045 の前・読めない時はボタンを出さない */ }
     try { await loadSupMode(sb); } catch (e) { /* 0047 の前・読めない時はボタンを出さない */ }
+    try { await loadSa(sb); } catch (e) { $('sa-verdict').className = 'msg warn'; $('sa-verdict').textContent = 'シフト分析の写しの記録を読めませんでした。'; }
+    try { await loadSaMode(sb); } catch (e) { saNote('印の欄', e); }   // 読めない時はボタンを出さない
     try { await loadPatch(sb); }
     catch (e) {
       $('pt-verdict').className = 'msg warn';
@@ -1114,6 +1117,7 @@
       $('kv-verdict').className = 'msg warn';
       $('kv-verdict').textContent = '週間計画の写しはまだ読めません（データベースの準備 0005 が未適用の可能性）。';
     }
+    await gateRefresh(sb);   // 読めない時はボタンを押せないままにする
   }
 
   /* 貼り薬の写し（段階2「送るだけ」・2026-10-17）: サーバーの行数と、この端末の控え（apc2_res）との差。
@@ -1208,7 +1212,7 @@
     ul.replaceChildren();
     $('b-res-full').hidden = !(me && me.role === 'admin');
     var r = await sb.from('res_sync_runs').select('*').order('at', { ascending: false }).limit(5);
-    if (r.error) { $('rf-verdict').className = 'msg'; $('rf-verdict').textContent = '全項目の写しの準備（データベース 0034）はまだです。'; $('b-res-full').hidden = true; return; }
+    if (r.error) { $('rf-verdict').className = 'msg'; $('rf-verdict').textContent = dbErrText(r.error, 'res_sync_runs', '全項目の写しの準備（データベース 0034）はまだです。'); $('b-res-full').hidden = true; return; }
     (r.data || []).forEach(function (x) {
       var li = el('li'), left = el('div');
       left.appendChild(el('div', 'nm', fmtTime(x.at)));
@@ -1268,6 +1272,7 @@
     } finally {
       btn.disabled = false;
       try { await loadResFullRuns(sb); } catch (e) { /* 記録の一覧が読めなくても結果の文は残す */ }
+      await gateRefresh(sb);
     }
   }
 
@@ -1285,7 +1290,7 @@
     ul.replaceChildren();
     $('b-tp-full').hidden = !(me && me.role === 'admin');
     var r = await sb.from('tp_sync_runs').select('*').order('at', { ascending: false }).limit(5);
-    if (r.error) { $('tpf-verdict').className = 'msg'; $('tpf-verdict').textContent = '計画書の写しの準備（データベース 0037）はまだです。'; $('b-tp-full').hidden = true; return; }
+    if (r.error) { $('tpf-verdict').className = 'msg'; $('tpf-verdict').textContent = dbErrText(r.error, 'tp_sync_runs', '計画書の写しの準備（データベース 0037）はまだです。'); $('b-tp-full').hidden = true; return; }
     (r.data || []).forEach(function (x) {
       var li = el('li'), left = el('div');
       left.appendChild(el('div', 'nm', fmtTime(x.at)));
@@ -1347,6 +1352,7 @@
     } finally {
       btn.disabled = false;
       try { await loadTpRuns(sb); } catch (e) { /* 記録の一覧が読めなくても結果の文は残す */ }
+      await gateRefresh(sb);
     }
   }
 
@@ -1365,7 +1371,7 @@
     ul.replaceChildren();
     $('b-adm-full').hidden = !(me && me.role === 'admin');
     var r = await sb.from('adm_sync_runs').select('*').order('at', { ascending: false }).limit(5);
-    if (r.error) { $('admf-verdict').className = 'msg'; $('admf-verdict').textContent = '入居調整の写しの準備（データベース 0040）はまだです。'; $('b-adm-full').hidden = true; return; }
+    if (r.error) { $('admf-verdict').className = 'msg'; $('admf-verdict').textContent = dbErrText(r.error, 'adm_sync_runs', '入居調整の写しの準備（データベース 0040）はまだです。'); $('b-adm-full').hidden = true; return; }
     (r.data || []).forEach(function (x) {
       var li = el('li'), left = el('div');
       left.appendChild(el('div', 'nm', fmtTime(x.at)));
@@ -1405,6 +1411,7 @@
     } finally {
       btn.disabled = false;
       try { await loadAdmRuns(sb); } catch (e) { /* 記録の一覧が読めなくても結果の文は残す */ }
+      await gateRefresh(sb);
     }
   }
 
@@ -1414,6 +1421,52 @@
   /* 備品の写し（統合 0046・2026-11-02 代表者「全て進めて」案2）: 写しは消耗品管理の GAS が1時間ごとに自動で取る。
    * 消耗品管理には全体の版の番号が無いので、最後の写しの結果と時刻（75分以内なら届いている）で確かめる。
    * 出すのは品目の数・出庫の行数・時刻・断った種類だけ（品名・入居者・金額は出さない）。Google へは何も送らない */
+  /* データベースの断りを種類で分ける（2026-11-03・備品の 0046 が入っていなかった時に「準備がまだ」とだけ出て、
+   *   ログインの断り・一時の失敗と見分けられなかったため）。
+   *   無い（関数・表が無い）→ 各欄の「準備はまだです」＋最上部に足りない統合の番号／権限で断られた → ログインの文／それ以外 → 読めなかった文（記録に残す） */
+  var DB_PREP = {
+    weight_mode: '0032', res_sync_runs: '0034', res_mode_get: '0036', tp_sync_runs: '0037', tp_mode_get: '0038',
+    adm_sync_runs: '0040', adm_mode_get: '0042', stf_shadow_status: '0044', stf_mode_get: '0045',
+    sup_shadow_status: '0046', sup_mode_get: '0047', mirror_bot_me: '0047',
+    sa_shadow_status: '0050', sa_mode_get: '0051', device_seen_summary: '0048', shadow_diff_days: '0055', shadow_diff_note: '0055'
+  };
+  var prepMissing = {};
+  function dbErrKind(err) {
+    var c = String(err && err.code || '');
+    if (/^(PGRST202|PGRST205|42883|42P01)$/.test(c)) return 'missing';
+    if (c === '42501') return 'denied';
+    return 'other';
+  }
+  function notePrep(name) {
+    var n = DB_PREP[name]; if (!n) return;
+    prepMissing[n] = 1; renderPrep();
+  }
+  function renderPrep() {
+    var b = $('db-prep'); if (!b) return;
+    var ks = Object.keys(prepMissing).sort();
+    if (!ks.length || !(me && me.role === 'admin')) { b.hidden = true; b.textContent = ''; return; }
+    b.textContent = 'データベースの準備が足りません：統合 ' + ks.join('・') + '（Supabase の SQL Editor で、番号の小さい順に流してください）';
+    b.hidden = false;
+  }
+  /* 印刷には出さない（画面だけ）。印刷の間だけ隠し、終わったら戻す */
+  try {
+    window.addEventListener('beforeprint', function () { var b = $('db-prep'); if (b) b.hidden = true; });
+    window.addEventListener('afterprint', function () { renderPrep(); });
+  } catch (x) { /* 印刷の知らせが無い環境でも止めない */ }
+  /* 職員マスタ・備品の受け口が使う口（mirror_bot_me・統合 0047）。画面からは呼ばないので、無い時だけ準備の帯に足す（管理者だけ・読むだけ） */
+  async function probePrep(sb) {
+    if (!(me && me.role === 'admin')) return;
+    var r = await sb.rpc('mirror_bot_me');
+    if (r && r.error && dbErrKind(r.error) === 'missing') notePrep('mirror_bot_me');
+  }
+  /* 欄に出す文。missingText は「準備はまだです」の文（その欄の今の文のまま） */
+  function dbErrText(err, name, missingText) {
+    var k = dbErrKind(err);
+    if (k === 'missing') { notePrep(name); return missingText; }
+    if (k === 'denied') return '管理者か事務所のアカウントでログインしてください（2段階認証まで）。';
+    try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('写しの見比べ: ' + name, String(err && err.code || 'error')); } catch (x) { /* 記録できなくても止めない */ }
+    return '写しの様子を読めませんでした（少し待って読み込み直してください）。';
+  }
   var SUP_FRESH_MS = 75 * 60 * 1000;
   var SUP_REFUSED = { stale: '前に読んだ写し', shrink: '急に減った', badrow: '形の違い', toolarge: '大きすぎる' };
   async function loadSup(sb, nowMs) {
@@ -1421,7 +1474,7 @@
     function say(t, kind) { v.className = 'msg' + (kind ? ' ' + kind : ''); v.textContent = t; }
     kk.replaceChildren(); ul.replaceChildren();
     var st = await sb.rpc('sup_shadow_status');
-    if (st.error) { say('備品の写しの準備（データベース 0046）はまだです。'); return; }
+    if (st.error) { say(dbErrText(st.error, 'sup_shadow_status', '備品の写しの準備（データベース 0046）はまだです。')); return; }
     var d = st.data || {};
     if (d.ver == null) { say('まだ写していません。消耗品管理の GAS の自動（autoMirror）が動くと、1時間以内に写ります。'); return; }
     kk.appendChild(kpi('写しの品目', d.items, '件'));
@@ -1477,6 +1530,7 @@
     bc.hidden = true; bb.hidden = true; line.className = 'msg'; line.textContent = '';
     if (!(me && me.role === 'admin')) return;
     var r = await sb.rpc('sup_mode_get');
+    if (r.error && dbErrKind(r.error) === 'missing') notePrep('sup_mode_get');
     if (r.error || !r.data) return;
     var live = r.data.mode === 'live', on = suppliesOn(), st = supTarget();
     if (live && !on) { line.className = 'msg warn'; line.textContent = '備品は新しい保存先へ切り替えた後ですが、切り替えスイッチ（supplies）が切です。画面が古い Google の中身を読まないよう、スイッチを入れ直すか「備品を写しの期間に戻す」を押してください。'; }
@@ -1526,6 +1580,120 @@
     }
   }
 
+  /* シフト分析（過去シフト・アナライザのクラウド同期）の写し（統合 0050・0051・2026-11-03 代表者の決定: アナライザを先に・管理者と事務所が編集）:
+   * 写しはアナライザ同期の GAS が1時間ごとに自動で取る。最後の写しの結果と時刻（75分以内なら届いている）で確かめる。
+   * 出すのはキーごとの版（rev）・月の数・人数・大きさ・時刻・断った種類だけ（氏名・資格の中身は出さない）。Google へは何も送らない */
+  var SA_FRESH_MS = 75 * 60 * 1000;
+  function saNote(where, e) {
+    try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('写しの見比べ: シフト分析の' + where, String(e && (e.code || e.message) || e)); } catch (x) { /* 記録できなくても止めない */ }
+  }
+  var SA_REFUSED = {
+    stale: '前に読んだ写し', shrink: '急に減った', badrow: '形の違い', toolarge: '大きすぎる', rewind: '版が巻き戻った', future: '時刻が先',
+    toomany: 'キーが多すぎる', cutover: '切り替えの途中',
+    trashed: '保存先フォルダのごみ箱に months.json があります。ごみ箱から取り出すか完全に消すまで、写せず・切り替えられません'
+  };
+  async function loadSa(sb, nowMs) {
+    var kk = $('sa-kpis'), v = $('sa-verdict');
+    function say(t, kind) { v.className = 'msg' + (kind ? ' ' + kind : ''); v.textContent = t; }
+    kk.replaceChildren(); $('sa-size').textContent = '';
+    var st = await sb.rpc('sa_shadow_status');
+    if (st.error) { say(dbErrText(st.error, 'sa_shadow_status', 'シフト分析の写しの準備（データベース 0050）はまだです。')); return; }
+    var d = st.data || {};
+    var m = d.keys && d.keys.months;
+    if (d.ver == null && !d.lastAt) { say('まだ写していません。アナライザ同期の GAS の自動（autoMirror）が動くと、1時間以内に写ります。'); return; }
+    if (m) {
+      kk.appendChild(kpi('写しの版（rev）', m.rev, ''));
+      kk.appendChild(kpi('写しの月', m.months, '月'));
+      kk.appendChild(kpi('資格の人数', m.quals, '人'));
+    }
+    saSize(d);
+    var tail = '（最後に写した時刻 ' + fmtTime(d.lastAt || d.updatedAt) + '）';
+    var last = Date.parse(d.lastAt || d.updatedAt || '');
+    var now = typeof nowMs === 'number' ? nowMs : Date.now();
+    var live = false, mdd = null;
+    try { var md = await sb.rpc('sa_mode_get'); mdd = md && !md.error ? md.data : null; live = !!(mdd && mdd.mode === 'live'); } catch (e) { saNote('印', e); live = false; }
+    /* 切り替えた後は、Google への写し返しが遅れていないかを見る（写し返し終えた版が今の版より古く、最後に写し返してから75分を超えた・指摘6） */
+    var mAt = mdd ? Date.parse(mdd.mirroredAt || '') : NaN;
+    var lag = live && Number(mdd.version) > Number(mdd.mirroredVer) && !isNaN(mAt) && now - mAt > SA_FRESH_MS;
+    if (lag) say('切り替え済みです（シフト分析の正本は Supabase）。ただし Google への写し返しが75分を超えて遅れています（最後に写し返した時刻 ' + fmtTime(mdd.mirroredAt) + '）。アナライザ同期の GAS の自動（autoMirror）が止まっていないか確かめてください。', 'warn');
+    else if (live) say('切り替え済みです（シフト分析の正本は Supabase）。写しは止めてあります。Google へは1時間ごとに写し返しています。', 'ok');
+    else if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + (SA_REFUSED[d.lastRefused] || String(d.lastRefused || '')) + '）。' + (d.lastRefused === 'trashed' ? '' : '開発の担当へ知らせてください。') + tail, 'warn');
+    else if (!isNaN(last) && now - last <= SA_FRESH_MS) say('写しが1時間ごとに届いています。' + tail, 'ok');
+    else say('しばらく写っていません。アナライザ同期の GAS の自動（autoMirror）が止まっていないか確かめてください。' + tail, 'warn');
+  }
+  /* 大きさ: 新しい保存先は全部のキーの合計を 8MB までしか受けない。上限の7割を超えたら早めに知らせる */
+  function saSize(d) {
+    var e = $('sa-size');
+    e.className = 'msg'; e.textContent = '';
+    var total = Number(d && d.bytesTotal), limit = Number(d && d.bytesLimit);
+    if (!(total >= 0) || !(limit > 0)) return;
+    var r = total / limit, pct = Math.round(r * 100), mb = function (n) { return (n / 1048576).toFixed(1) + 'MB'; };
+    var t = '記録の大きさ: ' + mb(total) + '／上限 ' + mb(limit) + '（' + pct + '%）';
+    if (r >= 0.7) { e.className = 'msg warn'; e.textContent = t + '。上限に近づいています。上限を超えると新しい保存先へ保存できなくなるので、開発の担当へ知らせてください。'; }
+    else e.textContent = t + '。';
+  }
+  /* 切り替えボタンは、切り替えスイッチ analyzer が入で、この端末にアナライザの接続先（URL と記憶した合言葉）がある時だけ出す */
+  function analyzerOn() { var sw = window.SUKv ? SUKv._flags() : null; return !!(sw && sw.supabase && sw.supabase.analyzer === true); }
+  function saTarget() {
+    try {
+      var o = JSON.parse(localStorage.getItem('shiftanalyzer:v1:cloud') || 'null');
+      var u = String(o && o.url || '').trim(), t = String(o && o.token || '').trim();
+      return RMASTER_RE.test(u) && t ? { url: u, token: t } : null;
+    } catch (e) { return null; }
+  }
+  async function loadSaMode(sb) {
+    var line = $('sa-mode'), bc = $('b-sa-cut'), bb = $('b-sa-back');
+    bc.hidden = true; bb.hidden = true; line.className = 'msg'; line.textContent = '';
+    if (!(me && me.role === 'admin')) return;
+    var r = await sb.rpc('sa_mode_get');
+    if (r.error && dbErrKind(r.error) === 'missing') notePrep('sa_mode_get');
+    if (r.error || !r.data) return;
+    var live = r.data.mode === 'live', on = analyzerOn(), st = saTarget();
+    if (live && !on) { line.className = 'msg warn'; line.textContent = 'シフト分析は新しい保存先へ切り替えた後ですが、切り替えスイッチ（analyzer）が切です。アナライザが古い Google の中身を読まないよう、スイッチを入れ直すか「シフト分析を写しの期間に戻す」を押してください。'; }
+    else if (live) { line.className = 'msg ok'; line.textContent = 'シフト分析の正本は新しい保存先（Supabase）です。Google へは1時間ごとに写し返しています。'; }
+    else line.textContent = 'シフト分析の正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（analyzer）を入れる PR の取り込みが要ります。') + (st ? '' : '切り替える・戻すには、この端末のアナライザで URL と合言葉を入れ「この端末にトークンを記憶する」に✔︎を入れてください。') + (st ? '（前の「切り替える」「写しの期間に戻す」が途中で止まり、Google の保存が止まったままの時は「シフト分析を写しの期間に戻す」を押すと最後まで済ませます。途中でなければ押しても何も変わりません）' : '');
+    bc.hidden = live || !on || !st;
+    bb.hidden = !st;   // 戻すは接続先がある管理者にはいつも出す（途中で止まった時に押せるように・備品と同じ）
+  }
+  async function runSaOp(kind) {
+    var v = $('sa-mode');
+    function say(t, k) { v.className = 'msg' + (k ? ' ' + k : ''); v.textContent = t; }
+    if (!(me && me.role === 'admin' && me.status === SUAuth.STATUS.OK)) { say('管理者（二段階認証済み）のアカウントで開いてください。', 'warn'); return; }
+    var role = ''; try { role = localStorage.getItem('su_device_role') || ''; } catch (e) { role = ''; }
+    if (role === 'field') { say('この端末は「現場」です。事務所のパソコンで行ってください。', 'warn'); return; }
+    var st = saTarget();
+    if (!st) { say('この端末にはアナライザの接続先（URL と記憶した合言葉）がありません。この端末のアナライザで入れてから、押し直してください。', 'warn'); return; }
+    if (kind === 'cut') {
+      if (!analyzerOn()) { say('切り替えスイッチ（analyzer）が入っていません。', 'warn'); return; }
+      if (!confirm('シフト分析（過去シフト・アナライザのクラウド同期）の正本を新しい保存先（Supabase）へ切り替えますか？\n\n1分ほどかかります。その間はクラウドへの保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、事務所か管理者のアカウントでログインしている端末だけがクラウド同期を使えます。切り替えた後の最初の同期で、どの端末も全部を読み直して統合します。Google へは1時間ごとに写し返します。いつでも「シフト分析を写しの期間に戻す」で戻せます。')) return;
+    } else {
+      if (!confirm('シフト分析を写しの期間に戻しますか？\n\n切り替えていた間の保存を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。')) return;
+    }
+    if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
+    var bc = $('b-sa-cut'), bb = $('b-sa-back');
+    bc.disabled = true; bb.disabled = true;
+    var sb = SUAuth.client();
+    try {
+      var io = {
+        gas: function (body) { return rmasterPost(st, body); },
+        rpc: function (name, args) { return sb.rpc(name, args); },
+        token: async function () { var s2 = await sb.auth.getSession(); return s2 && s2.data && s2.data.session ? s2.data.session.access_token : null; },
+        progress: function (t) { say(t); }
+      };
+      var res = kind === 'cut' ? await SUSaFull.cutover(io) : await SUSaFull.back(io);
+      if (!res.ok) { say((kind === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + res.why, 'warn'); return; }
+      say(kind === 'cut' ? (res.unchanged ? 'もう切り替わっていました（何も変えていません）。' : '切り替えました（写した月 ' + res.months + '）。') + 'アナライザの画面は、読み込み直すと新しい保存先で同期します。'
+                         : '写しの期間に戻しました。正本は Google です。', 'ok');
+    } catch (e) {
+      say('止まりました: ' + String(e && e.message || e), 'warn');
+    } finally {
+      bc.disabled = false; bb.disabled = false;
+      var keep = v.textContent, kc = v.className;
+      try { await loadSaMode(sb); await loadSa(sb); } catch (e) { saNote('読み直し', e); }   // 読み直せなくても結果の文は残す
+      v.className = kc; v.textContent = keep;
+    }
+  }
+
   var STF_REFUSED = { stale: '古い版', shrink: '急に減った', badrow: '形の違い', toolarge: '大きすぎる' };
   function stfUrl() {
     try { var o = JSON.parse(localStorage.getItem('stfm_cfg') || 'null'); var u = String(o && o.url || '').trim(); return RMASTER_RE.test(u) ? u : ''; } catch (e) { return ''; }
@@ -1543,7 +1711,7 @@
     function say(t, kind) { v.className = 'msg' + (kind ? ' ' + kind : ''); v.textContent = t; }
     kk.replaceChildren(); ul.replaceChildren();
     var st = await sb.rpc('stf_shadow_status');
-    if (st.error) { say('職員マスタの写しの準備（データベース 0044）はまだです。'); return; }
+    if (st.error) { say(dbErrText(st.error, 'stf_shadow_status', '職員マスタの写しの準備（データベース 0044）はまだです。')); return; }
     var d = st.data || {};
     if (d.ver == null) { say('まだ写していません。職員マスタの GAS の自動（autoMirror）が動くと、1時間以内に写ります。'); return; }
     kk.appendChild(kpi('写しの職員', d.staff, '人'));
@@ -1551,6 +1719,10 @@
     var url = stfUrl(), gv = url ? await stfPing(url) : null;
     if (gv != null) kk.appendChild(kpi('Google の版', gv, ''));
     var tail = '（最後に写した時刻 ' + fmtTime(d.updatedAt) + '）';
+    /* 差の日ごとの記録（統合 0055）: 断った・写しが Google より新しい＝差1件、版が一致＝0件。Google が新しい（次の写しでそろう）・読めない時は残さない */
+    if (d.lastStatus === 'refused') await noteDiff(sb, 'stf', 1);
+    else if (url && gv != null && gv === d.ver) await noteDiff(sb, 'stf', 0);
+    else if (url && gv != null && gv < d.ver) await noteDiff(sb, 'stf', 1);
     if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + (STF_REFUSED[d.lastRefused] || String(d.lastRefused || '')) + '）。開発の担当へ知らせてください。' + tail, 'warn');
     else if (!url) say('写しはあります。この端末には職員マスタの接続先が無いので、Google の版とは見比べていません。' + tail);
     else if (gv == null) say('写しはあります。Google の版を読めませんでした（少し待ってから開き直してください）。' + tail, 'warn');
@@ -1615,6 +1787,7 @@
     bc.hidden = true; bb.hidden = true; line.className = 'msg'; line.textContent = '';
     if (!(me && me.role === 'admin')) return;
     var r = await sb.rpc('stf_mode_get');
+    if (r.error && dbErrKind(r.error) === 'missing') notePrep('stf_mode_get');
     if (r.error || !r.data) return;
     var live = r.data.mode === 'live', on = staffOn(), st = stfTarget();
     if (live && !on) { line.className = 'msg warn'; line.textContent = '職員マスタは新しい保存先へ切り替えた後ですが、切り替えスイッチ（staff）が切です。画面が古い Google の中身を読まないよう、スイッチを入れ直すか「職員マスタを写しの期間に戻す」を押してください。'; }
@@ -1633,6 +1806,7 @@
     var st = stfTarget();
     if (!st) { say('この端末には職員マスタの接続先（Google）がありません。この端末で職員マスタを開いてから、押し直してください。', 'warn'); return; }
     if (kind === 'cut') {
+      if (!(await gatePass('stf'))) { say(GATE_NG, 'warn'); return; }
       if (!staffOn()) { say('切り替えスイッチ（staff）が入っていません。', 'warn'); return; }
       if (!confirm('職員マスタの正本を新しい保存先（Supabase）へ切り替えますか？\n\n1分ほどかかります。その間は職員マスタ・採用管理からの保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n添付ファイルは今までどおり Google ドライブに置きます。切り替えた後は、保存のたびと1時間ごとに Google へ写し返します。いつでも「職員マスタを写しの期間に戻す」で戻せます。')) return;
     } else {
@@ -1659,6 +1833,7 @@
       bc.disabled = false; bb.disabled = false;
       var keep = v.textContent, kc = v.className;
       try { await loadStfMode(sb); await loadStf(sb); } catch (e) { /* 読み直せなくても結果の文は残す */ }
+      await gateRefresh(sb);   // 読み直しが途中で止まっても、ボタンは表の判定どおりに戻す（反証レビュー指摘4）
       v.className = kc; v.textContent = keep;
     }
   }
@@ -1672,6 +1847,7 @@
     bc.hidden = true; bb.hidden = true; line.className = 'msg'; line.textContent = '';
     if (!(me && me.role === 'admin')) return;
     var r = await sb.rpc('adm_mode_get');
+    if (r.error && dbErrKind(r.error) === 'missing') notePrep('adm_mode_get');
     if (r.error || !r.data) return;
     var live = r.data.mode === 'live', on = admissionOn(), stuck = false;
     var at = admTarget();
@@ -1692,6 +1868,7 @@
     var at = admTarget();
     if (!at) { say('この端末には入居調整の接続先（Google）がありません。この端末で入居調整を開いてから、押し直してください。', 'warn'); return; }
     if (kind === 'cut') {
+      if (!(await gatePass('adm'))) { say(GATE_NG, 'warn'); return; }
       if (!admissionOn()) { say('切り替えスイッチ（admission）が入っていません。', 'warn'); return; }
       if (!confirm('入居調整の台帳の正本を新しい保存先（Supabase）へ切り替えますか？\n\n1分ほどかかります。その間は台帳の保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n添付書類は今までどおり Google（Drive）に置きます。切り替えた後は、保存のたびに Google へ写し返します。いつでも「入居調整を写しの期間に戻す」で戻せます。')) return;
     } else {
@@ -1718,6 +1895,7 @@
       bc.disabled = false; bb.disabled = false;
       var keep = v.textContent, kc = v.className;
       try { await loadAdmMode(sb); await loadAdmRuns(sb); } catch (e) { /* 読み直せなくても結果の文は残す */ }
+      await gateRefresh(sb);   // 読み直しが途中で止まっても、ボタンは表の判定どおりに戻す（反証レビュー指摘4）
       v.className = kc; v.textContent = keep;
     }
   }
@@ -1731,6 +1909,7 @@
     bc.hidden = true; bb.hidden = true; line.className = 'msg'; line.textContent = '';
     if (!(me && me.role === 'admin')) return;
     var r = await sb.rpc('tp_mode_get');
+    if (r.error && dbErrKind(r.error) === 'missing') notePrep('tp_mode_get');
     if (r.error || !r.data) return;
     var live = r.data.mode === 'live', on = trainingOn(), stuck = false;
     var tt = tpTarget(), mt = rmasterTarget();
@@ -1787,6 +1966,7 @@
     var tt = tpTarget(), mt = rmasterTarget();
     if (!tt || (kind === 'cut' && !mt)) { say('この端末には計画書・入居者マスタの接続先（Google）がありません。この端末で両方を開いてから、押し直してください。', 'warn'); return; }
     if (kind === 'cut') {
+      if (!(await gatePass('tp'))) { say(GATE_NG, 'warn'); return; }
       if (!trainingOn()) { say('切り替えスイッチ（training）が入っていません。', 'warn'); return; }
       if (!confirm('個別機能訓練計画書の正本を新しい保存先（Supabase）へ切り替えますか？\n\n数分かかります。その間は計画書の保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、保存のたびに Google へ写し返します。いつでも「計画書を写しの期間に戻す」で戻せます。')) return;
     } else {
@@ -1818,6 +1998,7 @@
       bc.disabled = false; bb.disabled = false;
       var keep = v.textContent, kc = v.className;
       try { await loadTpMode(sb); await loadTpRuns(sb); } catch (e) { /* 読み直せなくても結果の文は残す */ }
+      await gateRefresh(sb);   // 読み直しが途中で止まっても、ボタンは表の判定どおりに戻す（反証レビュー指摘4）
       v.className = kc; v.textContent = keep;
     }
   }
@@ -1833,6 +2014,7 @@
     bc.hidden = true; bb.hidden = true; line.className = 'msg'; line.textContent = '';
     if (!(me && me.role === 'admin')) return;
     var r = await sb.rpc('res_mode_get');
+    if (r.error && dbErrKind(r.error) === 'missing') notePrep('res_mode_get');
     if (r.error || !r.data) return;
     var live = r.data.mode === 'live', on = masterLiveOn(), stuck = false;
     var tgt = rmasterTarget();
@@ -1862,6 +2044,7 @@
     var tgt = rmasterTarget();
     if (!tgt) { say('この端末には入居者マスタの接続先（Google）がありません。この端末で入居者マスタを開いてから、押し直してください。', 'warn'); return; }
     if (kind === 'cut') {
+      if (!(await gatePass('res'))) { say(GATE_NG, 'warn'); return; }
       if (!masterLiveOn()) { say('切り替えスイッチ（master_live）が入っていません。', 'warn'); return; }
       if (!confirm('入居者マスタの正本を新しい保存先（Supabase）へ切り替えますか？\n\n数分かかります。その間は入居者マスタ・担当者会議・入居調整などの保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、保存のたびに Google へ写し返します。いつでも「写しの期間に戻す」で戻せます。')) return;
     } else {
@@ -1882,6 +2065,7 @@
       bc.disabled = false; bb.disabled = false;
       var keep = v.textContent, kc = v.className;
       try { await loadResMode(sb); await loadResFullRuns(sb); } catch (e) { /* 読み直せなくても結果の文は残す */ }
+      await gateRefresh(sb);   // 読み直しが途中で止まっても、ボタンは表の判定どおりに戻す（反証レビュー指摘4）
       v.className = kc; v.textContent = keep;
     }
   }
@@ -1895,7 +2079,7 @@
     var m = $('wt-mode');
     weightMode = '';
     var r = await sb.from('weight_mode').select('mode,updated_at').limit(1);
-    if (r.error) { m.className = 'msg'; m.textContent = '体重の切り替えの準備（データベース 0032）はまだです。今は写しの期間です。'; return; }
+    if (r.error) { m.className = 'msg'; m.textContent = dbErrText(r.error, 'weight_mode', '体重の切り替えの準備（データベース 0032）はまだです。今は写しの期間です。'); return; }
     var row = (r.data || [])[0];
     weightMode = row && row.mode === 'live' ? 'live' : 'shadow';
     var mc = weightMirrorCount();
@@ -1915,6 +2099,7 @@
     if (!(me && me.role === 'admin' && me.status === SUAuth.STATUS.OK)) { msg('管理者（二段階認証済み）のアカウントで開いてください。', 'warn'); return; }
     var why0 = weightModeBlock(mode, weightSwitch());
     if (why0) { msg(why0, 'warn'); return; }
+    if (mode === 'live' && !(await gatePass('weight'))) { msg(GATE_NG, 'warn'); return; }
     var q = mode === 'live'
       ? '体重の保存先を Supabase（本番）に切り替えますか？\n\n15分以内に事務所PCで体重管理を開き、写しを最新にしてから進めてください。切り替えた後も、Google へは各端末が写し返します。'
       : '体重を「写しの期間」に戻しますか？\n\n各端末は次の通信から Google へ送ります（端末に残っている Google への写し返しを先に送ります）。';
@@ -1932,6 +2117,7 @@
     msg(mode === 'live' ? '体重の保存先を Supabase（本番）にしました。各端末は次の通信から Supabase へ送ります。'
                         : '体重を写しの期間に戻しました。各端末は次の通信から Google へ送ります。', 'ok');
     await loadWeight(SUAuth.client());
+    await gateRefresh(SUAuth.client());
   }
 
   /* 体重の写し（統合 0008）: 写しの件数と、写しを取った記録（件数だけ） */
@@ -1961,6 +2147,8 @@
       v.className = 'msg ok';
       v.textContent = '切り替え済みです（体重の正本は Supabase）。写しは止めてあります（下の記録は切り替える前のものです）。';
     } else {
+    /* 差の日ごとの記録（統合 0055）: 今日（日本時間）写した時だけ。受け付けた写しは体重管理が読んだ全件と同じ＝0件、断った写し＝差1件 */
+    if (SUCutGate.jstDay(last.at) === SUCutGate.jstDay(Date.now())) await noteDiff(sb, 'weight', last.refused ? 1 : 0);
     v.className = 'msg ' + (last.refused ? 'warn' : 'ok');
     v.textContent = last.refused
       ? '最後の写しは受け付けませんでした（' + (last.refused === 'shrink' ? '件数が急に減っていたため。読み込みの途中切れの可能性' : last.refused) + '）。体重管理を開き直してください。'
@@ -1975,6 +2163,105 @@
       li.appendChild(left);
       ul.appendChild(li);
     });
+  }
+
+  /* ── 正本を切り替える前の確かめの表（2026-11-03 代表者の依頼・判定は su-cutover-gate.js）──
+   * 管理者だけ。5つの「切り替える／本番にする」ボタン（入居者マスタ・計画書・入居調整・職員マスタ・体重）の前に4項目の表を出し、
+   * 全部そろった時だけ押せる。押した時も読み直して確かめる（表を出した後に別の画面で切り替えた時のため）。最後に決めるのは今までどおりデータベース。
+   * 戻すボタンと、備品・シフト分析・週間計画・勤務表のボタンには付けない（依頼の外）。
+   * 読むもの: 差の日ごとの記録（shadow_diff_days・0055）・端末の数（device_seen_summary・0048）・毎晩の通し試験の結果（GitHub・公開リポジトリなので読むだけ）・
+   *   今日の操作の記録（audit_log の *_mode と kv_families の「本番にした」記録）。どれかを読めない時は、その項目を満たさない扱いにする（押せない側に倒す） */
+  var GATE = { res: 'b-res-cut', tp: 'b-tp-cut', adm: 'b-adm-cut', stf: 'b-stf-cut', weight: 'b-live-weight' };
+  var GATE_NG = '切り替える前の確かめがそろっていません。ボタンの上の表の「満たさない」の理由を見てください。';
+  var FLOW_RUNS = 'https://api.github.com/repos/TH-su/care-tools/actions/workflows/flow-check.yml/runs?branch=main&per_page=20';
+  var gateIn = null;
+  /* 差の件数を日ごとに残す（事務所・管理者・統合 0055）。0055 の前・断られた時も見比べの表示は止めない */
+  async function noteDiff(sb, kind, n) {
+    try {
+      var r = await sb.rpc('shadow_diff_note', { p_kind: kind, p_diffs: n });
+      if (r && r.error && dbErrKind(r.error) === 'missing') notePrep('shadow_diff_note');
+    } catch (e) { /* 残せなくても見比べの表示は続ける */ }
+  }
+  async function readFlowRuns() {
+    var ctl = new AbortController(), tm = setTimeout(function () { ctl.abort(); }, 15000);
+    try {
+      var r = await fetch(FLOW_RUNS, { cache: 'no-store', credentials: 'omit', headers: { Accept: 'application/vnd.github+json' }, signal: ctl.signal });
+      if (!r.ok) return { error: 'other' };
+      var j = await r.json();
+      return Array.isArray(j && j.workflow_runs) ? { runs: j.workflow_runs } : { error: 'other' };
+    } catch (e) { return { error: 'other' }; } finally { clearTimeout(tm); }
+  }
+  async function gateSafe(p) { try { return await p; } catch (e) { return { error: { code: 'thrown' } }; } }
+  function gateErr(err, name) { var k = dbErrKind(err); if (k === 'missing') notePrep(name); return { error: k }; }
+  async function loadGate(sb) {
+    gateIn = null;
+    if (me && me.role === 'admin') {
+      var now = Date.now(), today = SUCutGate.jstDay(now);
+      var q = await Promise.all([
+        gateSafe(sb.rpc('shadow_diff_days', { p_days: 14 })),
+        gateSafe(sb.rpc('device_seen_summary')),
+        readFlowRuns(),
+        /* 端末の時計が少しずれても取りこぼさないよう、前の日の0時から読み、今日かどうかはデータベースの日付で決める（反証レビュー指摘10） */
+        gateSafe(sb.from('audit_log').select('at,entity,entity_ids,fields').eq('action', 'update').or('entity.like.*_mode,entity.eq.kv_families')
+          .gte('at', SUCutGate.jstDayStartIso(SUCutGate.jstDay(now - 86400000))).limit(1000))
+      ]);
+      gateIn = {
+        now: now, today: (!q[0].error && q[0].data && q[0].data.today) || today,
+        diff: q[0].error ? gateErr(q[0].error, 'shadow_diff_days') : { rows: (q[0].data || {}).rows },
+        dev: q[1].error ? gateErr(q[1].error, 'device_seen_summary') : { data: q[1].data },
+        flow: q[2],
+        cut: q[3].error ? { error: dbErrKind(q[3].error) } : { audit: q[3].data || [] }
+      };
+    }
+    gateApply();
+  }
+  /* 表を出すのは、その切り替えボタンが出ている時だけ（体重は、管理者の欄が出ていて、まだ写しの期間の時） */
+  function gateShown(k) {
+    if (!(me && me.role === 'admin')) return false;
+    return k === 'weight' ? !$('wt-admin').hidden && weightMode !== 'live' : !$(GATE[k]).hidden;
+  }
+  function gateApply() {
+    Object.keys(GATE).forEach(function (k) {
+      var box = $('gate-' + k), btn = $(GATE[k]);
+      box.replaceChildren();
+      box.hidden = !gateShown(k);
+      if (box.hidden) return;
+      if (!gateIn) { btn.disabled = true; box.appendChild(el('p', 'msg warn', '切り替える前の確かめの表を読めませんでした。「見比べ直す」を押してください（読めるまで押せません）。')); return; }
+      var v = SUCutGate.judge(Object.assign({ kind: k }, gateIn));
+      btn.disabled = !v.ok;
+      renderGate(box, v);
+    });
+  }
+  function renderGate(box, v) {
+    var tb = el('table', 'gate-t');
+    tb.appendChild(el('caption', v.ok ? 'ok' : 'ng', '切り替える前の確かめ：' + (v.ok ? '4項目そろっています。押せます。' : 'そろっていない項目があるので、まだ押せません。')));
+    var hd = el('tr');
+    ['項目', '今', '判定'].forEach(function (h) { var th = el('th', null, h); th.scope = 'col'; hd.appendChild(th); });
+    var thead = el('thead'), body = el('tbody');
+    thead.appendChild(hd);
+    v.items.forEach(function (x, i) {
+      var tr = el('tr', x.ok ? 'ok' : 'ng');
+      tr.appendChild(el('td', null, (i + 1) + '. ' + x.label));
+      tr.appendChild(el('td', null, x.value));
+      var td = el('td', null, x.ok ? '満たす' : '満たさない');
+      if (!x.ok && x.why) td.appendChild(el('div', 'em', x.why));
+      tr.appendChild(td);
+      body.appendChild(tr);
+    });
+    tb.appendChild(thead); tb.appendChild(body);
+    box.appendChild(tb);
+  }
+  /* 読み直して表とボタンを新しくする。例外は外へ出さない（読めない時は押せない側） */
+  async function gateRefresh(sb) {
+    try { await loadGate(sb); } catch (e) { gateIn = null; gateApply(); }
+  }
+  /* 押した時: 読み直してから判定する。そろっていなければ false（表も新しくなる）。
+   * 読み直す間（GitHub を最大15秒待つ）はボタンを押せなくして、二度押しで確認の窓が2回出ないようにする（反証レビュー指摘5） */
+  async function gatePass(k) {
+    var b = $(GATE[k]);
+    if (b) b.disabled = true;
+    await gateRefresh(SUAuth.client());
+    return !!gateIn && SUCutGate.judge(Object.assign({ kind: k }, gateIn)).ok;
   }
 
   async function start() {
@@ -2018,6 +2305,8 @@
   $('b-stf-back').addEventListener('click', function () { msg(''); runStfOp('back'); });
   $('b-sup-cut').addEventListener('click', function () { msg(''); runSupOp('cut'); });
   $('b-sup-back').addEventListener('click', function () { msg(''); runSupOp('back'); });
+  $('b-sa-cut').addEventListener('click', function () { msg(''); runSaOp('cut'); });
+  $('b-sa-back').addEventListener('click', function () { msg(''); runSaOp('back'); });
   $('b-res-back').addEventListener('click', function () { msg(''); runResOp('back'); });
   $('b-check').addEventListener('click', function () { msg(''); runCheck(); });
   $('b-mirror-check').addEventListener('click', function () { msg(''); runMirrorCheck(); });

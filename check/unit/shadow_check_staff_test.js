@@ -28,11 +28,12 @@ function fn(name) {
 }
 const GAS = 'https://script.google.com/macros/s/EXAMPLE_STAFF/exec';
 
+const PREP_SRC = ['var DB_PREP = ' + /var DB_PREP = (\{[\s\S]*?\});/.exec(SRC)[1] + ';', 'var prepMissing = {};', fn('dbErrKind'), fn('notePrep'), fn('renderPrep'), fn('dbErrText')].join('\n');
 function box(o) {
   const nodes = {};
   const mk = (id) => (nodes[id] = { id, className: '', textContent: '', kids: [], replaceChildren() { this.kids = []; }, appendChild(c) { this.kids.push(c); return c; } });
-  ['stf-kpis', 'stf-verdict', 'stf-runs'].forEach(mk);
-  const sent = [], rpcs = [];
+  ['stf-kpis', 'stf-verdict', 'stf-runs', 'db-prep'].forEach(mk);
+  const sent = [], rpcs = [], notes = [];
   const store = { stfm_cfg: o.cfg === undefined ? JSON.stringify({ url: GAS, token: 'tok-staff' }) : o.cfg };
   const env = {
     $: (id) => nodes[id],
@@ -45,15 +46,16 @@ function box(o) {
     AbortController: class { constructor() { this.signal = {}; } abort() {} },
     setTimeout: () => 0, clearTimeout: () => {},
     fetch: (url, init) => { sent.push({ url, init, body: JSON.parse(init.body) }); return o.gasDown ? Promise.reject(new Error('x')) : Promise.resolve({ json: () => Promise.resolve({ ok: true, ver: o.gver }) }); },
-    JSON, String, Object, Promise, Error
+    me: { role: 'admin' }, window: {},
+    JSON, String, Object, Promise, Error, RegExp
   };
   vm.createContext(env);
-  vm.runInContext(['var STF_REFUSED = ' + /var STF_REFUSED = (\{[^;]*\});/.exec(SRC)[1] + ';', fn('stfUrl'), fn('stfPing'), fn('loadStf')].join('\n'), env);
+  vm.runInContext([PREP_SRC, 'var STF_REFUSED = ' + /var STF_REFUSED = (\{[^;]*\});/.exec(SRC)[1] + ';', fn('stfUrl'), fn('stfPing'), fn('noteDiff'), fn('loadStf')].join('\n'), env);
   const sb = {
-    rpc: (n) => { rpcs.push(n); return Promise.resolve(o.statusErr ? { error: { code: 'PGRST202' } } : { data: o.status }); },
+    rpc: (n, a) => { rpcs.push(n); if (n === 'shadow_diff_note') notes.push(a); return Promise.resolve(o.statusErr ? { error: { code: 'PGRST202' } } : { data: o.status }); },
     from: (tbl) => { rpcs.push('from:' + tbl); return { select: () => ({ order: () => ({ limit: () => Promise.resolve({ data: o.runs || [] }) }) }) }; }
   };
-  return { env, nodes, sent, rpcs, run: () => env.loadStf(sb) };
+  return { env, nodes, sent, rpcs, notes, run: () => env.loadStf(sb) };
 }
 const V = (b) => b.nodes['stf-verdict'];
 
@@ -111,11 +113,22 @@ const V = (b) => b.nodes['stf-verdict'];
     await b.run();
     t('C 接続先の形が違えば送らない（見比べずに案内）', b.sent.length === 0 && /接続先が無いので/.test(V(b).textContent));
   }
+  console.log('\n— E 差の日ごとの記録（統合 0055）—');
+  {
+    const n = async (o) => { const b = box(o); await b.run(); return JSON.stringify(b.notes); };
+    t('E 写しが Google より新しい＝差1件', (await n({ status: { ok: true, ver: 13, staff: 30, lastStatus: 'done' }, gver: 12 })) === '[{"p_kind":"stf","p_diffs":1}]');
+    t('E 最後の写しを断った＝差1件', (await n({ status: { ok: true, ver: 12, staff: 30, lastStatus: 'refused', lastRefused: 'stale' }, gver: 12 })) === '[{"p_kind":"stf","p_diffs":1}]');
+    t('E Google が新しい（次の写しでそろう）時は残さない', (await n({ status: { ok: true, ver: 11, staff: 30, lastStatus: 'done' }, gver: 12 })) === '[]');
+    t('E Google の版を読めない・接続先が無い時は残さない', (await n({ status: { ok: true, ver: 12, staff: 30, lastStatus: 'done' }, gasDown: true })) === '[]'
+      && (await n({ status: { ok: true, ver: 12, staff: 30, lastStatus: 'done' }, gver: 12, cfg: null })) === '[]');
+  }
+
   console.log('\n— D 中身を読まない —');
   {
     const b = box({ status: { ok: true, ver: 12, staff: 30, lastStatus: 'done' }, gver: 12 });
     await b.run();
-    t('D 呼ぶのは様子の口と記録の一覧だけ', JSON.stringify(b.rpcs) === '["stf_shadow_status","from:stf_sync_runs"]', b.rpcs);
+    t('D 呼ぶのは様子の口・差の件数を残す口・記録の一覧だけ', JSON.stringify(b.rpcs) === '["stf_shadow_status","shadow_diff_note","from:stf_sync_runs"]', b.rpcs);
+    t('D 差の記録に送るのは種類と件数だけ（版が一致＝0件）', JSON.stringify(b.notes) === '[{"p_kind":"stf","p_diffs":0}]', b.notes);
     t('D 画面に欄がある', /id="stf-kpis"/.test(HTML) && /id="stf-verdict"/.test(HTML) && /id="stf-runs"/.test(HTML));
   }
   console.log(`\n合格 ${pass} / 不合格 ${fail}`);

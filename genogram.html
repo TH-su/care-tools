@@ -265,7 +265,7 @@ textarea.fi{resize:vertical;min-height:60px}
 }
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
-<link rel="stylesheet" href="su-theme.css?v=2026-11-02.2">
+<link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 <link rel="stylesheet" href="su-resident-hop.css?v=2026-11-02">
 </head>
 <body>
@@ -430,13 +430,13 @@ textarea.fi{resize:vertical;min-height:60px}
       <button class="zbtn" id="btnZoomIn" title="拡大" aria-label="拡大">＋</button>
       <span class="zoom-level" id="zoomLevel">100%</span>
     </div>
-    <div class="canvas-scroll">
+    <div class="canvas-scroll" tabindex="0" role="region" aria-label="家族構成図の作図の場所">
       <div id="canvas"></div>
     </div>
     <div class="kb-hint">ショートカット: Delete=削除 / Esc=モード解除 / Ctrl+Z=元に戻す / Ctrl+0=全体表示</div>
   </div>
 
-  <aside class="props">
+  <aside class="props" tabindex="0" aria-label="プロパティ">
     <div class="props-h">プロパティ</div>
     <div id="propsEmpty" class="props-empty">
       シェイプを選択するとここに編集欄が表示されます。<br><br>

@@ -30,11 +30,12 @@ function fn(name) {
   }
   throw new Error('unterminated ' + name);
 }
+const PREP_SRC = ['var DB_PREP = ' + /var DB_PREP = (\{[\s\S]*?\});/.exec(SRC)[1] + ';', 'var prepMissing = {};', fn('dbErrKind'), fn('notePrep'), fn('renderPrep'), fn('dbErrText')].join('\n');
 const NOW = Date.parse('2026-11-02T12:00:00Z');
 function box(o) {
   const nodes = {};
   const mk = (id) => (nodes[id] = { id, className: '', textContent: '', kids: [], replaceChildren() { this.kids = []; }, appendChild(c) { this.kids.push(c); return c; } });
-  ['sup-kpis', 'sup-verdict', 'sup-size', 'sup-runs'].forEach(mk);
+  ['sup-kpis', 'sup-verdict', 'sup-size', 'sup-runs', 'db-prep'].forEach(mk);
   const sent = [], rpcs = [];
   const env = {
     $: (id) => nodes[id],
@@ -44,21 +45,23 @@ function box(o) {
     ADM_RESULT: { inserted: '初めて写した', updated: '直した', unchanged: '変化なし' },
     fetch: (url) => { sent.push(url); return Promise.reject(new Error('no')); },
     localStorage: { getItem: () => { sent.push('ls'); return null; } },
-    JSON, String, Object, Promise, Error, Date, isNaN, Number, Math
+    me: { role: o.role || 'admin' }, notes: [],
+    JSON, String, Object, Promise, Error, Date, isNaN, Number, Math, RegExp
   };
+  env.window = { SUErrors: { note: (k, m) => env.notes.push([k, m]) } };
   vm.createContext(env);
-  vm.runInContext(['var SUP_FRESH_MS = ' + /var SUP_FRESH_MS = ([^;]*);/.exec(SRC)[1] + ';',
+  vm.runInContext([PREP_SRC, 'var SUP_FRESH_MS = ' + /var SUP_FRESH_MS = ([^;]*);/.exec(SRC)[1] + ';',
     'var SUP_REFUSED = ' + /var SUP_REFUSED = (\{[^;]*\});/.exec(SRC)[1] + ';',
     'var SUP_SIZE_WARN = ' + /var SUP_SIZE_WARN = ([^;]*);/.exec(SRC)[1] + ';', fn('supSize'), fn('loadSup')].join('\n'), env);
   const sb = {
     rpc: (n) => {
       rpcs.push(n);
       if (n === 'sup_mode_get') return Promise.resolve(o.modeErr ? { error: { code: 'PGRST202' } } : { data: { ok: true, mode: o.mode || 'shadow', version: 1 } });
-      return Promise.resolve(o.statusErr ? { error: { code: 'PGRST202' } } : { data: o.status });
+      return Promise.resolve(o.statusErr ? { error: { code: o.errCode || 'PGRST202' } } : { data: o.status });
     },
     from: (tbl) => { rpcs.push('from:' + tbl); return { select: () => ({ order: () => ({ limit: () => Promise.resolve({ data: o.runs || [] }) }) }) }; }
   };
-  return { nodes, sent, rpcs, run: () => env.loadSup(sb, NOW) };
+  return { env, nodes, sent, rpcs, run: () => env.loadSup(sb, NOW) };
 }
 const V = (b) => b.nodes['sup-verdict'];
 const ago = (min) => new Date(NOW - min * 60000).toISOString();
@@ -152,6 +155,46 @@ const ago = (min) => new Date(NOW - min * 60000).toISOString();
     const body = fn('loadStfMode');
     t('G 職員マスタの戻すボタンも、接続先がある管理者にはいつも出す', /\n    bb\.hidden = !st;/.test(body) && !/bb\.hidden = !live/.test(body) && /途中で止まり/.test(body));
   }
+  console.log('\n— H 断りの種類を分ける（2026-11-03） —');
+  {
+    const b = box({ statusErr: true });
+    await b.run();
+    const p = b.nodes['db-prep'];
+    t('H 無い（PGRST202）→ 欄は準備はまだ・最上部に統合 0046', /0046）はまだです/.test(V(b).textContent) && p.hidden === false && /データベースの準備が足りません：統合 0046/.test(p.textContent), [V(b).textContent, p.textContent]);
+    t('H 記録には残さない（無いのは準備の話）', b.env.notes.length === 0);
+  }
+  for (const code of ['PGRST205', '42883', '42P01']) {
+    const b = box({ statusErr: true, errCode: code });
+    await b.run();
+    t('H ' + code + ' も準備はまだ', /0046）はまだです/.test(V(b).textContent) && /0046/.test(b.nodes['db-prep'].textContent));
+  }
+  {
+    const b = box({ statusErr: true, errCode: '42501' });
+    await b.run();
+    t('H 権限で断られた（42501）→ ログインの文・準備の帯は出さない', /管理者か事務所のアカウントでログインしてください（2段階認証まで）/.test(V(b).textContent) && !/0046/.test(V(b).textContent) && b.nodes['db-prep'].textContent === '', V(b).textContent);
+  }
+  {
+    const b = box({ statusErr: true, errCode: '57014' });
+    await b.run();
+    t('H それ以外 → 読めなかった文・記録に残す（種類の番号だけ）', /写しの様子を読めませんでした（少し待って読み込み直してください）/.test(V(b).textContent) && b.env.notes.length === 1 && b.env.notes[0][1] === '57014', [V(b).textContent, b.env.notes]);
+    t('H それ以外 → 準備の帯は出さない', b.nodes['db-prep'].textContent === '');
+  }
+  {
+    const b = box({ statusErr: true, role: 'office' });
+    await b.run();
+    t('H 事務所の人には準備の帯を出さない（SQL を流せるのは管理者）', b.nodes['db-prep'].hidden !== false && b.nodes['db-prep'].textContent === '');
+  }
+  {
+    const env = { $: () => null, me: { role: 'admin' }, Object, String };
+    vm.createContext(env);
+    vm.runInContext(PREP_SRC, env);
+    env.notePrep('sup_mode_get'); env.notePrep('stf_shadow_status'); env.notePrep('mirror_bot_me'); env.notePrep('unknown_fn');
+    t('H 番号は重ねず小さい順', JSON.stringify(Object.keys(env.prepMissing).sort()) === '["0044","0047"]', env.prepMissing);
+  }
+  t('H 画面に準備の帯の欄があり、隠れた状態で始まる・文は textContent だけ', /<p id="db-prep" class="msg warn" hidden><\/p>/.test(HTML) && !/innerHTML/.test(fn('renderPrep')));
+  t('H 印刷の間は帯を隠す', /beforeprint[\s\S]{0,120}db-prep[\s\S]{0,40}hidden = true/.test(SRC));
+  t('H 職員マスタの欄・ほかの「準備はまだ」の欄も同じ分け方', /dbErrText\(st\.error, 'stf_shadow_status'/.test(SRC) && /dbErrText\(r\.error, 'res_sync_runs'/.test(SRC) && /dbErrText\(r\.error, 'tp_sync_runs'/.test(SRC) && /dbErrText\(r\.error, 'adm_sync_runs'/.test(SRC) && /dbErrText\(r\.error, 'weight_mode'/.test(SRC) && !/textContent = '[^']*はまだです/.test(SRC.replace(/dbErrText\([^)]*\)/g, '')));
+  t('H 切り替えの印の口が無い時も準備の帯に足す', ['sup_mode_get', 'stf_mode_get', 'adm_mode_get', 'tp_mode_get', 'res_mode_get'].every(n => SRC.indexOf("notePrep('" + n + "')") >= 0));
   console.log(`\n合格 ${pass} / 不合格 ${fail}`);
   process.exitCode = fail ? 1 : 0;
 })();

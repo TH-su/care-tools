@@ -25,7 +25,7 @@
 -->
 <link rel="stylesheet" href="perf-report.css?v=2026-10-09">
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
-<link rel="stylesheet" href="su-theme.css?v=2026-11-02.2">
+<link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 </head>
 <body>
 <header class="hdr">
@@ -65,7 +65,7 @@
   <section class="cd" aria-labelledby="h-app">
     <h2 id="h-app">アプリごとの待ち時間</h2>
     <p class="muted">「中央値」はふだんの速さ、「遅い時」は10回に1回ぐらい起きる遅さ（上位10%）です。単位は秒。</p>
-    <div class="tw"><table id="tApp"></table></div>
+    <div class="tw" tabindex="0" role="region" aria-labelledby="h-app"><table id="tApp"></table></div>
     <div class="legend">
       <span class="lv-warn">注＝やや遅い</span>
       <span class="lv-ng">遅＝待たされている</span>
@@ -75,30 +75,30 @@
   <section class="cd" aria-labelledby="h-ep">
     <h2 id="h-ep">通信先（GAS）ごとの応答時間</h2>
     <p class="muted">接続先はURLの末尾4文字で見分けています。1回の通信にかかった秒数です。</p>
-    <div class="tw"><table id="tEp"></table></div>
+    <div class="tw" tabindex="0" role="region" aria-labelledby="h-ep"><table id="tEp"></table></div>
   </section>
 
   <section class="cd" aria-labelledby="h-kind">
     <h2 id="h-kind">GAS の種類ごとの回数（見えている時／裏にある時）</h2>
     <p class="muted">「裏にある時」は、ほかのタブやアプリに切り替えていて、その画面が見えていなかった間の通信です。画面を開いてから閉じるまでの合計で、2026-10-24 の更新より後に記録した分だけを数えます。GAS の種類は名前が分かる呼び出しだけを数えるので、ふつうは下の「分類ごとの合計」の GAS の回数より少なくなります。名前の分かる POST は送る直前に数えるため、届く前に止まった呼び出しや、閉じる間際の呼び出しがあると、その分だけ多くなることもあります。</p>
-    <div class="tw"><table id="tKind"></table></div>
+    <div class="tw" tabindex="0" role="region" aria-labelledby="h-kind"><table id="tKind"></table></div>
   </section>
 
   <section class="cd" aria-labelledby="h-file">
     <h2 id="h-file">同じサイトの JSON のファイルごとの回数（見えている時／裏にある時）</h2>
-    <div class="tw"><table id="tFile"></table></div>
+    <div class="tw" tabindex="0" role="region" aria-labelledby="h-file"><table id="tFile"></table></div>
   </section>
 
   <section class="cd" aria-labelledby="h-vis">
     <h2 id="h-vis">分類ごとの合計（見えている時／裏にある時）</h2>
     <p class="muted">通信の回数と、かかった時間の合計（秒）です。「記録した回数」は、その画面を開いて数えた回数です。</p>
-    <div class="tw"><table id="tVis"></table></div>
+    <div class="tw" tabindex="0" role="region" aria-labelledby="h-vis"><table id="tVis"></table></div>
   </section>
 
   <section class="cd" aria-labelledby="h-silent">
     <h2 id="h-silent">黙って失敗した回数（この端末）</h2>
     <p class="muted">保存・同期の途中で失敗したのに、画面には何も出さずに続けた回数です。「場所」は失敗した処理の名前です。同じ失敗（種類・内容・場所が同じもの）は30秒に1回しか数えていないので、続けて起きた時は実際より少なく出ます。上の「期間」は効かず、数え始めてからの合計です。氏名や記録の中身は残していません。</p>
-    <div class="tw"><table id="tSilent"></table></div>
+    <div class="tw" tabindex="0" role="region" aria-labelledby="h-silent"><table id="tSilent"></table></div>
   </section>
 </main>
 
