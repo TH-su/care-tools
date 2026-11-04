@@ -58,6 +58,8 @@
 !/check/flow_e2e.mjs
 # 押してから描き変わるまでの遅れを架空データで測る道具（2026-10-27）
 !/check/tap-latency.mjs
+# 体重管理の推移図：点の詳しい情報がグラフの外を押すと閉じるか（2026-11-04・iPhone の押し方を再現）
+!/check/weight_tooltip_outside_e2e.mjs
 # 画面・共通部品の純関数の試験（2026-10-08・CI の「試験」で回す）。*.js は試験、run-all.mjs は全部を回す道具
 !/check/unit
 /check/unit/*

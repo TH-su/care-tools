@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-DfxAsBUBjqePfLXV2tRZhLq3LEGQXAQFeGRtHyN3YQw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-Zv+//5C5CLgUtNprO3PRktRseibrh6O3/+uRaG9UK1Q='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -6381,6 +6381,22 @@ const wrRefLinePlugin = {
 function destroyChart(key){
   if(ivCharts[key]){ ivCharts[key].destroy(); ivCharts[key]=null; }
 }
+
+/* 推移図の点を押して出た詳しい情報（ツールチップ）は、そのグラフの外を押したら閉じる（本人指示 2026-11-04）。
+   Chart.js はグラフの外で押されたことを受け取らないため、画面全体で押した場所を見て、グラフの外なら出ている情報を消す。
+   グラフの中を押した時は今までどおり（近い点の情報に切り替わる）。押した先のボタン等の動きは止めない（消すだけ）。 */
+document.addEventListener('pointerdown', ev=>{
+  try{
+    Object.keys(ivCharts).forEach(k=>{
+      const ch = ivCharts[k];
+      if(!ch || !ch.canvas || !ch.tooltip || ch.canvas.contains(ev.target)) return;
+      if(!ch.tooltip.getActiveElements().length) return;
+      ch.tooltip.setActiveElements([], { x: 0, y: 0 });
+      ch.setActiveElements([]);
+      ch.update('none');
+    });
+  }catch(e){ /* 閉じられなくても画面の操作は止めない */ }
+}, true);
 
 /* グラフのドットの色と大きさ。**色は深刻度、向きは暖色／寒色**で表す2段のはしご。
 
