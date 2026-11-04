@@ -387,6 +387,8 @@ button.geno-box{width:100%; margin:0; padding:0; font:inherit; color:inherit; li
 .fb-geno>.cell{flex:1; min-width:0}
 /* 家族情報の4項目の行だけだと低く、縦書きの見出し「家族情報」が収まらないので、行の高さの下限を見出しに合わせる */
 .sheet .fam-biz>.sec{min-height:78px}
+.fam-biz>.sec>.sec-body{display:flex; flex-direction:column}
+.fam-biz>.sec>.sec-body>.row-cells{flex:1 1 auto}
 /* PC・MacBook（幅900px以上）と紙は、左に事業所・右に家族構成図の横並び（家族構成図は横幅の40%）。
    家族構成図の絵の大きさは前と同じ（今の面積の約6分の1・画面は高さ360pxまで・紙は85mmまで・本人指示 2026-11-03） */
 @media screen and (min-width:900px), print{
@@ -399,8 +401,6 @@ button.geno-box{width:100%; margin:0; padding:0; font:inherit; color:inherit; li
   .fb-row>.sec>.sec-body>.row-cells{flex:1 1 auto}
   .fb-geno>.cell{display:flex; flex-direction:column; border-top:1px solid var(--g3)}
   /* 家族情報の4項目の行は欄の高さいっぱいに伸ばし、下の線は家族構成図の枠の上の線（細い線）と事業所の上の太線に任せる */
-  .fam-biz>.sec>.sec-body{display:flex; flex-direction:column}
-  .fam-biz>.sec>.sec-body>.row-cells{flex:1 1 auto}
   .fam-biz>.sec>.sec-body>.row-cells>.cell{border-bottom:none}
   .fb-geno>.cell>.geno-box{flex:1 1 auto}
   /* 事業所を印刷しないにした時は、家族構成図が左端に来る。左の太線が紙の左内縁に残らないよう消し、幅いっぱいにする */
@@ -468,6 +468,12 @@ button.geno-box{width:100%; margin:0; padding:0; font:inherit; color:inherit; li
   .fam-biz:has(>.sec[data-nop="1"]):has(>.fb-row>.sec[data-nop="1"]){display:none !important}
   /* 「事業所」だけを印刷しないにした時も、家族構成図の絵の大きさは変えない（横幅の約40%まで） */
   .fb-row>.sec[data-nop="1"]+.fb-geno .geno-img{max-width:40% !important}
+  /* その時は家族構成図の左に家族情報の見出しの列を続けて描く（家族情報の一部と分かるように） */
+  .fb-row>.sec[data-nop="1"]+.fb-geno::before{display:block; border-right-color:#000}
+  /* 両方を印刷しない時は、後ろの欄の上の線を普通の太さに戻す（包みが消えても太線が残らないように） */
+  .fam-biz:has(>.sec[data-nop="1"]):has(>.fb-row>.sec[data-nop="1"])+.sec{border-top-width:1px}
+  /* 「全体を印刷」で、事業所と家族構成図の行がページの境目で片方だけ次のページへ送られないようにする */
+  body.fs-all-on .fpanel[data-panel="all"] .fb-row{page-break-inside:avoid; break-inside:avoid}
   /* 絵がある時は、枠も絵に合わせて低くする。絵が無い時の枠（手で書き足す所）は今の高さのまま */
   #viewBox button.geno-box:has(.geno-img){min-height:0 !important}
   .hlband{-webkit-print-color-adjust:exact; print-color-adjust:exact}
