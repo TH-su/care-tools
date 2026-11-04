@@ -517,6 +517,7 @@ const allPanels = (L) => { const out = []; for (const tb of CALC.TABS) { L.ctx.t
     const d = () => {
       const x = baseData();
       x.assets[0].status = 'repairing';
+      delete x.assets[0].cycle_months;   // 周期で次回予定日が今日より前にならないように（6か月の周期だと 2026-11-04 から期限切れになり、試験の結果が日付で変わっていた）
       x.assets.push({ id: 'a2', kind: 'facility', place_key: 'room:102', category: 'kitchen', name: '架空冷蔵庫', status: 'active', next_due: '2020-01-01', rev: 1, extra: {} });
       return x;
     };
