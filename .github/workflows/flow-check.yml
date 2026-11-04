@@ -44,6 +44,10 @@ jobs:
       - name: 業務の流れを通す（check/flow_e2e.mjs）
         run: node check/flow_e2e.mjs --shots check/out/flow
 
+      - name: 薬情の取り込みのまとめて反映を通す（check/yakujo_bulk_e2e.mjs・2026-11-04）
+        if: success() || failure()
+        run: node check/yakujo_bulk_e2e.mjs --shots check/out/flow
+
       - name: 画面の写し（架空データ）を成果物として残す
         if: failure()
         uses: actions/upload-artifact@v4
