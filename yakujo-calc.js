@@ -598,6 +598,62 @@
     return c.importDay ? String(today || '') : String(c.date || '');
   }
 
+  /* ── 9-2. まとめて反映できるか（半自動・代表者の決定 2026-11-04）──
+     確認表を1人ずつ開かずに反映してよいのは、人が確かめる所が何も無い書類だけ。次を全部満たす時だけ ok:
+       1. 振り分けが名簿の1人への一字一致で決まり（assign の id）、人が別の方へ選び直していない
+       2. 「調剤日」の語の付いた日付がちょうど1つ（取り込んだ日・語の無い日付・2つ以上は1人ずつ）
+       3. 書き換える・足す・入れない・書類に無い、のどの行にも ⚠ が無い（名前が今の定期薬・施設で使っている名前・薬価基準のどれかに一字一致・
+          屋号が合う・用法用量を組めた・頓服や外用や臨時の疑いが無い・規格の違いや書き方違いの疑いが無い）。
+          今の行と同じ意味の行（kind 'same'＝何も書き換えない行）の ⚠ は、確認表と同じく確かめを求めない（judge と同じ扱い）
+       4. 中止の行が無い。書類に無い今の薬（⚠ の無いもの）は「残す」にする（他の医療機関の薬を消さない側に倒す）
+       5. 変える・足す行が合わせて BULK_MAX 行まで。同じ名前の薬が2行にならない
+       6. 調剤日が今日より後・定期薬の最後の変更より前・同じ調剤日の薬情から反映済み、のどれでもない
+       7. 書類そのものに ⚠ が無い（薬情よみとりの読み残しの知らせ note・読めなかったページ・画像の無いページ・
+          途中までしか読んでいないページ数。確認表で ⚠ として見せるもの＝読めなかった薬が「書類に無い今の薬」として残り、
+          変更を取りこぼしたまま「反映済み」になるのを防ぐ・反証レビューの指摘 2026-11-04）
+     氏名の確かめ（identity）は 1 の一字一致で代える。それ以外の確かめの印（古い書類・同じ日・重なり・語の無い日付）は付けない＝
+     judge が止めるものは全部止まる。
+     変更が1行も無い書類は none（書かずに「変更なし」で終える）。
+     st: {autoId, pickId, id, dates, today, rows, current, server, lastChange, sameDay, doc:(parseResult の書類1件)}
+     戻り値 {ok, none, why:[1人ずつにする理由], rows:(左の行を「残す」にした写し), judged:(judge の結果), date, kept:(残す行の数)} */
+  var BULK_MAX = 3;
+  function bulkCheck(st) {
+    st = st || {};
+    var why = [], src = Array.isArray(st.rows) ? st.rows : [];
+    var rows = src.map(function (r) {
+      var o = {}; for (var k in r) if (Object.prototype.hasOwnProperty.call(r, k)) o[k] = r[k];
+      o.warns = Array.isArray(r.warns) ? r.warns.slice() : [];
+      o.checked = false;
+      if (o.kind === 'left' && !o.warns.length) o.action = 'keep';
+      return o;
+    });
+    var labeled = (st.dates && Array.isArray(st.dates.labeled)) ? st.dates.labeled : [];
+    var date = labeled.length === 1 ? String(labeled[0]) : '';
+    if (!st.autoId || String(st.autoId) !== String(st.pickId) || String(st.id) !== String(st.autoId)) why.push('振り分けが名簿の一字一致で決まっていません');
+    if (!labeled.length) why.push('書類から調剤日を読めません');
+    else if (labeled.length > 1) why.push('調剤日が2つ以上あります');
+    var warned = rows.filter(function (r) { return r.warns.length && r.kind !== 'same'; }).length;
+    if (warned) why.push('⚠ の行が ' + warned + ' 行あります');
+    if (!rows.some(function (r) { return r.kind !== 'left'; })) why.push('書類から薬の行を読めません');
+    var doc = st.doc && typeof st.doc === 'object' ? st.doc : null, pages = doc && Array.isArray(doc.pages) ? doc.pages : [];
+    if (!doc || doc.error || !pages.length) why.push('書類を読めていません');
+    else {
+      if (doc.note) why.push('書類に読み残しの知らせがあります（' + doc.note + '）');
+      if (pages.some(function (p) { return !p || p.error; })) why.push('読めなかったページがあります');
+      else if (pages.some(function (p) { return !p.img; })) why.push('原本の画像が無いページがあります');
+      if (doc.pagesTotal && doc.pagesTotal > pages.length) why.push('全部のページを読んでいません');
+    }
+    var j = judge({ id: st.id, dates: st.dates, date: date, today: st.today, identity: true, server: st.server, rows: rows, current: st.current,
+      lastChange: st.lastChange, oldChecked: false, sameDay: st.sameDay, ack: false, dupChecked: false, dateChecked: false });
+    var n = j.counts.change + j.counts.add, noChange = !n && !j.counts.stop;
+    if (j.counts.stop) why.push('中止の行があります');
+    if (n > BULK_MAX) why.push('変わる行が ' + n + ' 行あります（まとめて反映は ' + BULK_MAX + ' 行まで）');
+    if (j.importDay) why.push('取り込んだ日を調剤日にしています');
+    if (j.stop && !(noChange && /^反映する変更はありません/.test(j.stop)) && !why.length) why.push(j.stop);
+    var kept = rows.filter(function (r) { return r.kind === 'left' && r.action === 'keep'; }).length;
+    return { ok: !why.length && !noChange, none: !why.length && noChange, why: why, rows: rows, judged: j, date: date, kept: kept };
+  }
+
   /* 指紋（FNV-1a 32bit・小文字の16進8桁）。入居者マスタの判断の印 S|利用者No|調剤日|指紋 に使う */
   function fnv8(s) {
     var t = nfkc(s).replace(/\s+/g, ' ').trim(), h = 0x811c9dc5;
@@ -752,7 +808,7 @@
 
   var api = { parseResult: parseResult, assign: assign, findDates: findDates, datesIn: datesIn, parseUse: parseUse,
     parseRows: parseRows, looksDrug: looksDrug, stripEnum: stripEnum, snap: snap, lineSpec: lineSpec, shortDays: shortDays, splitMaker: splitMaker, stem: stem, matchCurrent: matchCurrent, sameMeaning: sameMeaning, buildRows: buildRows, judge: judge, buildAfter: buildAfter,
-    startDate: startDate, useDate: useDate,
+    startDate: startDate, useDate: useDate, bulkCheck: bulkCheck, BULK_MAX: BULK_MAX,
     fnv8: fnv8, srcKey: srcKey, logRows: logRows, nz: nz, kn: kn, dist: dist,
     correctionKinds: correctionKinds, metricOf: metricOf, metricsLoad: metricsLoad, metricsSave: metricsSave, summarize: summarize, metricText: metricText,
     METRIC_MAX: METRIC_MAX };

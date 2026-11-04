@@ -459,7 +459,7 @@ console.log('\n— 11. 変更記録の「書類の行と扱い」（logRows・20
   const RM2 = fs.readFileSync(path.join(ROOT, 'resident-master.html'), 'utf8');
   const cut2 = (src, name) => { const h = src.indexOf('function ' + name + '('); let i = src.indexOf('{', h), d = 0; for (; i < src.length; i++) { if (src[i] === '{') d++; else if (src[i] === '}') { d--; if (d === 0) return src.slice(h, i + 1); } } };
   const ap2 = cut2(RM2, 'yjApply_');
-  t('★反映は docRows を logRows で作って送る', /body\.docRows=YakujoCalc\.logRows\(c\.rows\)/.test(ap2));
+  t('★反映は docRows を logRows で作って送る（本文は yjBody_ で作り、1人ずつは確認表の行 c.rows を渡す）', /body\.docRows=YakujoCalc\.logRows\(rows\)/.test(cut2(RM2, 'yjBody_')) && /var body=yjBody_\(c, x, j, date, c\.rows, ''\);/.test(ap2));
   t('★反映はログインの証明を保存と同じ取り方（rmAccessToken_）で添え、取れなければ送らない', /rmAccessToken_\(\)/.test(ap2) && /if\(!at\)\{ c\.msg='ログインし直してから反映してください（何も書いていません）'; return; \}/.test(ap2) && /body\.accessToken=at;\s*return apiPostRaw\(body,40000\)/.test(ap2));
   t('★unverified の応答は確かめ中（unsure）にしない', /if\(r&&r\.unverified\)\{ c\.msg='ログインを確かめられませんでした。ログインし直してから反映してください（何も書いていません）'; return; \}/.test(ap2));
   t('★版の確かめは「反映記録」を含む版', /\/反映記録\/\.test\(String\(r\.build/.test(cut2(RM2, 'yjPing_')));
@@ -594,14 +594,83 @@ console.log('\n— 12. 取り込みの一致率（correctionKinds・metricOf・s
   const okBranch = ap3.slice(ap3.indexOf('if(r&&r.ok===true){'), ap3.indexOf('if(r&&r.already)'));
   t('★記録は「反映できた」（応答 ok）の分岐の中だけで、ほかの分岐（既に反映・確かめ中・食い違い・失敗）では記録しない', (ap3.match(/yjMetAdd_\(/g) || []).length === 1 && /yjMetAdd_\(met\)/.test(okBranch), okBranch);
   t('★記録の材料は送る時点の確認表で作る（自動の方 x.a.id と人が決めた方 x.pick）', /var met=yjMetOk_\(\)\?YakujoCalc\.metricOf\(\{autoId:x\.a&&x\.a\.id, pickId:x\.pick, rows:c\.rows\}\):null;/.test(ap3) && ap3.indexOf('var met=') < ap3.indexOf('c.busy=true; c.writing=true'));
-  t('★ほかの場所から記録しない（変更なし・一覧に戻る・閉じるでは記録しない）', (RM3.match(/yjMetAdd_\(/g) || []).length === 2, (RM3.match(/yjMetAdd_\(/g) || []).length);
+  t('★ほかの場所から記録しない（変更なし・一覧に戻る・閉じるでは記録しない。まとめて反映は ok の分岐の中だけ）', (RM3.match(/yjMetAdd_\(/g) || []).length === 3 && (cut3(RM3, 'yjBulkApply_').match(/yjMetAdd_\(/g) || []).length === 1 && /if\(r&&r\.ok===true\)\{[^\n]*yjMetAdd_\(met\); return; \}/.test(cut3(RM3, 'yjBulkApply_')), (RM3.match(/yjMetAdd_\(/g) || []).length);
   const pt = cut3(RM3, 'yjMetPaint_');
   t('★欄は textContent で入れる（innerHTML を使わない）', /el\.textContent=YakujoCalc\.metricText/.test(pt) && !/innerHTML/.test(pt + cut3(RM3, 'yjMetAdd_') + cut3(RM3, 'yjMetRead_')));
   t('★取り込みを開いた時に欄を描く', /yjMetPaint_\(\)/.test(cut3(RM3, 'yjOpen_')));
   t('★現場用への切り替えでは欄を空にする（端末の記録は消さない）', /mt\.textContent=''/.test(cut3(RM3, 'yjPurge_')) && !/removeItem/.test(cut3(RM3, 'yjPurge_')));
   const modal = RM3.slice(RM3.indexOf('<div class="modal" id="mYakujo"'), RM3.indexOf('<!-- 端末用途ガード'));
   t('★欄は取り込みの窓（#mYakujo）の中にあり、窓ごと印刷しない', /<div class="box">[\s\S]*<p class="yj-met" id="yjMetric"><\/p>\s*<div class="yj-body" id="yjBody"><\/div>\s*<\/div>\s*<\/div>\s*$/.test(modal.trim() + '\n') && /@media print\{ #mYakujo,#yjOpen\{display:none !important\} \}/.test(RM3));
-  t('共有部品の版（?v=）を上げた', /yakujo-calc\.js\?v=2026-10-26/.test(RM3));
+  t('共有部品の版（?v=）を上げた', /yakujo-calc\.js\?v=2026-11-04/.test(RM3));
+}
+
+/* ── まとめて反映できるか（bulkCheck・半自動・代表者の決定 2026-11-04）──
+   守りたいこと: 人が確かめる所が1つでもあれば1人ずつへ回す。書類に無い今の薬は消さず「残す」。中止はしない。変わる行は BULK_MAX まで */
+console.log('\n[まとめて反映できるか（bulkCheck）]');
+{
+  const A0 = 'テストロール錠5mg 1回1錠 朝食後', A1 = 'テストロール錠5mg 1回2錠 朝食後', B = 'ミホンジン錠10mg 1回1錠 夕食後', C = 'カクウパム錠2mg 1回1錠 眠前';
+  const row = (kind, cur, line, action, warns) => ({ kind, cur, line, raw: kind === 'left' ? '' : line, page: 1, box: null, warns: warns || [], action, checked: false, auto: line });
+  const base = () => ({ autoId: '11', pickId: '11', id: '11', dates: { labeled: ['2026-11-01'], other: [] }, today: '2026-11-04', server: 'ok',
+    current: [A0, B, C].join('\n'), lastChange: '2026-10-01', sameDay: '',
+    doc: { error: '', note: '', pagesTotal: 1, pages: [{ no: 1, img: 'data:image/jpeg;base64,AA==', error: '', lines: [] }] },
+    rows: [row('change', A0, A1, 'change'), row('same', B, B, 'keep'), row('left', C, C, '')] });
+  const b0 = base(), r0 = Y.bulkCheck(b0);
+  t('★人が確かめる所が無い書類は ok', r0.ok === true && r0.none === false && r0.why.length === 0, r0.why);
+  t('★書類に無い今の薬（⚠ 無し）は「残す」にして消さない', r0.kept === 1 && r0.judged.after.split('\n').indexOf(C) >= 0 && r0.judged.counts.stop === 0, r0.judged.after);
+  t('反映する全文は確認表と同じ組み立て（変える行だけ差し替え・並びを保つ）', r0.judged.after === [A1, B, C].join('\n'), r0.judged.after);
+  t('調剤日は「調剤日」の語の付いた日付', r0.date === '2026-11-01');
+  t('★渡した行は書き換えない（写しで判定する）', b0.rows[2].action === '' && b0.rows[0].checked === false);
+  const ng = (name, mut, re) => { const st = base(); mut(st); const r = Y.bulkCheck(st); t('★' + name, r.ok === false && r.none === false && r.why.some((w) => re.test(w)), r.why); };
+  ng('人が別の方を選び直した書類は1人ずつ', (s) => { s.pickId = '12'; s.id = '12'; }, /一字一致/);
+  ng('振り分けが自動で決まっていない書類は1人ずつ', (s) => { s.autoId = ''; }, /一字一致/);
+  ng('調剤日を書類から読めない書類は1人ずつ（取り込んだ日で自動にしない）', (s) => { s.dates = { labeled: [], other: ['2026-11-01'] }; }, /調剤日を読めません/);
+  ng('調剤日が2つ以上ある書類は1人ずつ', (s) => { s.dates = { labeled: ['2026-11-01', '2026-10-01'], other: [] }; }, /2つ以上/);
+  ng('⚠ の行がある書類は1人ずつ', (s) => { s.rows[0].warns = ['薬の名前が一字一致しません']; }, /⚠ の行が 1 行/);
+  const sw = base(); sw.rows[1].warns = ['量が1日量か1回量か読めません（1日量として計算しました）'];
+  t('今の行と同じ意味の行（書き換えない行）の ⚠ は止めない（確認表の judge と同じ扱い）', Y.bulkCheck(sw).ok === true, Y.bulkCheck(sw).why);
+  ng('⚠ の付いた「書類に無い今の薬」がある書類は1人ずつ（残すか中止かを人が決める）', (s) => { s.rows[2].warns = ['同じ薬の名前です']; }, /⚠ の行/);
+  ng('頓服・外用で「足さない」にした行（⚠ 付き）がある書類も1人ずつ', (s) => { s.rows.push(row('add', '', 'カクウゲル 適量', 'skip', ['外用・注射の薬のようです'])); }, /⚠ の行/);
+  ng('変わる行が上限を超える書類は1人ずつ', (s) => { for (let k = 0; k < Y.BULK_MAX; k++) s.rows.push(row('add', '', 'ツイカ' + k + 'ロール錠1mg 1回1錠 朝食後', 'add')); }, /行まで/);
+  ng('同じ調剤日の薬情から反映済みの方は1人ずつ', (s) => { s.sameDay = '2026-11-02T10:00'; }, /同じ調剤日/);
+  ng('定期薬の最後の変更より前の書類は1人ずつ', (s) => { s.lastChange = '2026-11-03'; }, /最後の変更/);
+  ng('調剤日が今日より後の書類は1人ずつ', (s) => { s.today = '2026-10-30'; }, /今日より後/);
+  ng('同じ名前の薬が2行になる書類は1人ずつ', (s) => { s.rows.push(row('add', '', 'カクウパム錠5mg 1回1錠 朝食後', 'add')); }, /同じ名前/);
+  ng('★薬情よみとりの読み残しの知らせ（note）がある書類は1人ずつ', (s) => { s.doc.note = 'はじめの 1 ページだけを読みました（残りは読んでいません）'; }, /読み残し/);
+  ng('★読めなかったページがある書類は1人ずつ', (s) => { s.doc.pages.push({ no: 2, img: '', error: '画像にできません', lines: [] }); }, /読めなかったページ/);
+  ng('★原本の画像が無いページがある書類は1人ずつ', (s) => { s.doc.pages[0].img = ''; }, /画像が無い/);
+  ng('★途中までしか読んでいない書類（pagesTotal がページ数より多い）は1人ずつ', (s) => { s.doc.pagesTotal = 3; }, /全部のページ/);
+  ng('★書類を渡さない・読めなかった書類は1人ずつ', (s) => { delete s.doc; }, /書類を読めていません/);
+  ng('書類に薬の行が1行も無い書類は1人ずつ', (s) => { s.rows = [row('left', A0, A0, ''), row('left', B, B, ''), row('left', C, C, '')]; }, /薬の行を読めません/);
+  const up = base(); up.rows = up.rows.concat([row('add', '', 'ツイカロール錠1mg 1回1錠 朝食後', 'add'), row('add', '', 'ツイカジン錠1mg 1回1錠 夕食後', 'add')]);
+  const ru = Y.bulkCheck(up);
+  t('変わる行がちょうど上限（' + Y.BULK_MAX + '行）なら ok', Y.BULK_MAX === 3 && ru.ok === true && ru.judged.counts.change + ru.judged.counts.add === 3, ru.why);
+  const nc = base(); nc.rows[0] = row('same', A0, A0, 'keep'); nc.current = [A0, B, C].join('\n');
+  const rn = Y.bulkCheck(nc);
+  t('★変更が1行も無い書類は none（書かずに終える）で ok ではない', rn.ok === false && rn.none === true && rn.why.length === 0, rn);
+  const nn = base(); nn.rows[0] = row('same', A0, A0, 'keep'); nn.sameDay = '2026-11-02T10:00';
+  t('変更が無くても、ほかに止める理由があれば none にしない', Y.bulkCheck(nn).none === false);
+  t('壊れた入力でも例外を出さない', (() => { try { const r = Y.bulkCheck(null); return r.ok === false && r.none === false; } catch (e) { return false; } })());
+}
+console.log('\n[まとめて反映の画面（resident-master.html）]');
+{
+  const RM4 = fs.readFileSync(path.join(ROOT, 'resident-master.html'), 'utf8');
+  const cut4 = (src, name) => { const h = src.indexOf('function ' + name + '('); if (h < 0) throw new Error('関数が見つかりません: ' + name); let i = src.indexOf('{', h), d = 0; for (; i < src.length; i++) { if (src[i] === '{') d++; else if (src[i] === '}') { d--; if (d === 0) return src.slice(h, i + 1); } } };
+  const ba = cut4(RM4, 'yjBulkApply_'), pl = cut4(RM4, 'yjPreload_'), bh = cut4(RM4, 'yjBulkHtml_');
+  t('★まとめて反映も1人ずつと同じ本文（yjBody_）・同じ受け口（apiPostRaw）で送り、記録に「まとめて反映」と残す', /yjBody_\(c, x, j, p\.bc\.date, p\.bc\.rows, 'まとめて反映'\)/.test(ba) && /apiPostRaw\(body,40000\)/.test(ba));
+  t('★ログインの証明が無い時は送らずに止める', /if\(!at\)\{ stopAll=/.test(ba));
+  t('★書き込みは再試行しない（apiPostRaw は1人1回・届いたか分からない時は確かめ中にして残りへは送らない）', (ba.match(/apiPostRaw\(/g) || []).length === 1 && /x\.status='unsure'; res\.unsure\+\+; stopAll=/.test(ba) && /r&&r\.unknown\)\{ x\.status='unsure'; res\.unsure\+\+; stopAll=/.test(ba));
+  t('★書類の ⚠（読み残し・読めないページ）を判定に渡す', /sameDay:cur\.sameDay, doc:x\.d\}\)/.test(pl));
+  t('★調べの描き直しは一覧を見ている時だけ', !/yjPaint_\(\)/.test(pl.replace(/if\(S\.phase==='queue'\) yjPaint_\(\)/g, '')));
+  t('★既に反映されていた方は、書き換えた人数に数えない', /r&&r\.already\)\{ x\.status='done'; res\.already\+\+; return; \}/.test(ba));
+  t('★1人ずつで開いた書類は、まとめての一覧から外す', /if\(x\.pre&&x\.pre\.st!=='busy'\) x\.pre=null;/.test(cut4(RM4, 'yjStartDoc_')));
+  t('★食い違い・同じ調剤日は何も書かずに1人ずつへ回す', /r&&r\.conflict\)\{ back\(/.test(ba) && /r&&r\.sameDay\)\{ back\(/.test(ba));
+  t('★確認の窓を1回出してから書く', ba.indexOf('confirm(') >= 0 && ba.indexOf('confirm(') < ba.indexOf('S.bulkBusy=true'));
+  t('★入居者マスタGASの版を確かめられない時は書かない', /if\(S\.server!=='ok'\)\{/.test(ba));
+  t('★まとめて反映の途中は窓を閉じない・振り分けに戻らない・1人ずつを開かない', /if\(yjSt&&yjSt\.bulkBusy\) return false;/.test(cut4(RM4, 'yjClose_')) && /if\(!S\|\|S\.bulkBusy\) return;/.test(cut4(RM4, 'yjStartDoc_')) && /if\(t\.id==='yjBack'\)\{ if\(yjSt\.bulkBusy\) return;/.test(RM4));
+  t('★調べは世代（bulkGen・devGen）が変わったら捨てる', /yjSt===S&&S\.bulkGen===bg&&dg===devGen/.test(pl));
+  t('★判定は YakujoCalc.bulkCheck で行い、確認表と同じ組み立て（yjBuild_）で行を作る', /yjBuild_\(cur, x\.d, r\[1\]\)/.test(pl) && /YakujoCalc\.bulkCheck\(/.test(pl));
+  t('★読んだ定期薬・行を端末に保存しない', !/localStorage|sessionStorage|indexedDB|console\./.test(ba + pl + bh));
+  t('★一覧に出す文字はすべて esc を通す', !/\+\s*(c\.name|r\.cur|r\.line)\s*\+/.test(bh.replace(/esc\([^)]*\)/g, '')));
 }
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
