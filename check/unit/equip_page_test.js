@@ -25,6 +25,19 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
+/* 試験の時計を 2026-11-03 12:00（日本時間）に止める。
+   期限切れ・もうすぐ・保証の残り・「今日」ボタンなどは今日の日付で決まるため、実際の日付で回すと
+   架空データの予定日を過ぎた日から結果が変わってしまう（2026-11-04 に「修理中」の確かめが落ちた）。
+   引数なしの new Date() と Date.now() だけを止め、日付を渡す new Date(…)・Date.UTC などはそのまま使う。
+   画面のスクリプト（vm の中）と計算の部品（EquipCalc）の両方がこの時計を使う。 */
+const FIXED_NOW = Date.parse('2026-11-03T12:00:00+09:00');
+const RealDate = Date;
+class FixedDate extends RealDate {
+  constructor(...a) { if (a.length === 0) super(FIXED_NOW); else super(...a); }
+  static now() { return FIXED_NOW; }
+}
+globalThis.Date = FixedDate;
+
 const ROOT = path.join(__dirname, '..', '..');
 const HTML = fs.readFileSync(process.env.EQUIP_HTML || path.join(ROOT, 'equip-log.html'), 'utf8');
 const CALC = require(path.join(ROOT, 'equip-calc.js'));
@@ -183,6 +196,10 @@ const BAD = '<img src=x onerror=alert(1)>"><script>alert(2)</script>';
 const allPanels = (L) => { const out = []; for (const tb of CALC.TABS) { L.ctx.tab = tb; L.ctx.paintAll_(); out.push(L.els['p-' + tb].innerHTML); } return out.join('\n'); };
 
 (async () => {
+  group('0. 試験の時計（実際の日付で結果が変わらない）');
+  t('試験の中の今日は 2026-11-03 に止まっている（画面の計算の部品も同じ時計）', CALC.todayJST() === '2026-11-03' && Date.now() === FIXED_NOW && new Date().getTime() === FIXED_NOW, CALC.todayJST());
+  t('日付を渡した日付の計算はそのまま（止めるのは今日だけ）', new Date('2027-01-10T00:00:00Z').toISOString() === '2027-01-10T00:00:00.000Z' && Date.UTC(2026, 0, 1) === RealDate.UTC(2026, 0, 1));
+
   group('1. 現場端末では通信0');
   {
     const L = load({ role: 'field', rpc: { eq_list: okList() } });
@@ -517,7 +534,7 @@ const allPanels = (L) => { const out = []; for (const tb of CALC.TABS) { L.ctx.t
     const d = () => {
       const x = baseData();
       x.assets[0].status = 'repairing';
-      delete x.assets[0].cycle_months;   // 周期で次回予定日が今日より前にならないように（6か月の周期だと 2026-11-04 から期限切れになり、試験の結果が日付で変わっていた）
+      delete x.assets[0].cycle_months;   // 周期で次回予定日が今日より前にならないように（6か月の周期だと 2026-11-04 から期限切れになる。時計も 2026-11-03 に止めている）
       x.assets.push({ id: 'a2', kind: 'facility', place_key: 'room:102', category: 'kitchen', name: '架空冷蔵庫', status: 'active', next_due: '2020-01-01', rev: 1, extra: {} });
       return x;
     };
