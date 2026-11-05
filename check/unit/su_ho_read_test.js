@@ -292,6 +292,23 @@ const MSP = { from: '2026-10-01', to: '2026-10-03' };
     t('部品の中に console.log が無い', SRC.indexOf('console.log') < 0);
   }
 
+  console.log('— I. スイッチを読み直している間も待たない（申送ビューアは読み込みの速さを優先する）');
+  {
+    // スイッチの読み直しが返ってこない（su-backend.json の取りに時間がかかる）時も、最後に読めた値（切）でその場で Google を呼ぶ
+    const L = load({ flags: OFF });
+    L.win.fetch = () => new Promise(() => {});
+    const g = gas();
+    const p = L.H.call('events', EVP, g.fn);
+    t('読み直しの答えを待たずに、その場で Google を1回呼ぶ', g.n === 1);
+    await p;
+    // まだ何も読めていない（端末に控えも無い）時は切として扱い、Google から読む
+    const L2 = load({});
+    L2.win.fetch = () => new Promise(() => {});
+    const g2 = gas();
+    L2.H.call('measures', MSP, g2.fn);
+    t('スイッチがまだ読めていない時は待たずに Google', g2.n === 1 && L2.rpcs.length === 0);
+  }
+
   finished = true;
   console.log(`\n${pass} 件合格 / ${fail} 件失敗`);
   if (fail) process.exitCode = 1;

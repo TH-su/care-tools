@@ -201,22 +201,16 @@
   }
 
   /* スイッチの決め方: 1分以内に読んだ値があればそれで決める（切なら gasFn をその場で呼ぶ＝今までと同じ順）。
-   * 読み直しが走っている間（開いた直後）だけ最大 FLAGS_WAIT_MS 待つ。古い値しか無い時はその値で決め、裏で読み直す */
+   * 古い値しか無い時もその値で決め、裏で読み直す（待たない。まだ何も読めていない時は切＝Google から読む） */
   function on() { try { return flagOn(flags(), Date.now()); } catch (e) { return false; } }
   function call(action, params, gasFn) {
-    var go = false, wait = false;
+    var go = false;
     try {
       go = eligible(action, params);
-      if (go && !flagsFresh()) {
-        if (ownPromise) wait = true;
-        else refreshFlags();
-      }
-    } catch (e) { go = false; wait = false; }
+      if (go && !flagsFresh()) refreshFlags();   // 裏で読み直すだけ。待たない（申送ビューアは読み込みの速さを優先する・CLAUDE.md §3）
+    } catch (e) { go = false; }
     if (!go) return gasFn();
-    if (!wait) return on() ? viaDb(action, params, gasFn) : gasFn();
-    return refreshFlags().then(function () {
-      return on() ? viaDb(action, params, gasFn) : gasFn();
-    }, function () { return gasFn(); });
+    return on() ? viaDb(action, params, gasFn) : gasFn();   // 最後に読めた値で決める（まだ何も読めていない時は切＝Google）
   }
   /* 開いた時に1回、スイッチを裏で読んでおく（現場の端末・su-kv.js がある画面は読まない） */
   try { if (!isField() && !hasKv() && typeof root.fetch === 'function') refreshFlags(); } catch (e) { /* 何もしない */ }
