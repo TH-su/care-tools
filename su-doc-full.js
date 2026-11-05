@@ -30,6 +30,7 @@
     if (c === 'notfrozen') return '書類の出し入れを止めた後の写しではありません。もう一度押してください。';
     if (c === 'notclean') return 'Google ドライブの目録と写した書類の数が合いません（写せない書類が残っています）。写しの見比べの知らせを確かめてから押してください。';
     if (c === 'badmode') return '操作の種類が違いました。';
+    if (c === 'stfshadow') return '先に職員マスタを新しい保存先へ切り替えてください（職員マスタの書類は、職員マスタの後に切り替えます）。';
     return 'データベースが受け付けませんでした（' + c + '）。';
   }
   function gasWhy(j) { return String(j && (j.hint || j.error) || 'Google が受け付けませんでした').replace(/^Error: (refused: )?/, ''); }   // GAS は断りの文を hint に入れる
@@ -132,6 +133,8 @@
     if (!NAME[kind]) return { ok: false, why: '書類の種類が違います。' };
     var tok = null;
     if (!(await io.token())) return { ok: false, why: 'ログインしてからもう一度押してください' };
+    var bad = await gasReady(io, kind);   // 古い GAS・別の GAS では何も変えずに止める（指摘12）
+    if (bad) return { ok: false, why: bad };
     try {
       try { tok = await opBegin(io, kind, 'back'); } catch (e) { return { ok: false, why: String(e && e.message || e) }; }
       var md = await modeOf(io, kind);

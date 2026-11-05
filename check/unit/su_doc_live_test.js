@@ -18,7 +18,7 @@ const b64 = s => Buffer.from(s).toString('base64');
 
 function world(o = {}) {
   o = Object.assign({ flag: true, login: true, status: 'ok', stf: 'live', adm: 'live' }, o);
-  const st = { gas: 0, rpcs: [], uploads: [], removes: [], downloads: [], modeCalls: 0, objects: {}, files: {}, ls: {} };
+  const st = { checks: 0, gas: 0, rpcs: [], uploads: [], removes: [], downloads: [], modeCalls: 0, objects: {}, files: {}, ls: {} };
   if (o.login) st.ls['sb-abc-auth-token'] = '{}';
   if (o.field) st.ls.su_device_role = 'field';
   const client = {
@@ -48,7 +48,7 @@ function world(o = {}) {
       return { data: null };
     },
     storage: { from: (b) => ({
-      upload: async (key, blob, opt) => { st.uploads.push({ b, key, type: opt.contentType, upsert: opt.upsert }); st.objects[key] = Buffer.from(await blob.arrayBuffer()); return o.uploadFail ? { error: { statusCode: '403' } } : { data: { path: key } }; },
+      upload: async (key, blob, opt) => { if (o.uploadHang) return new Promise(() => {}); st.uploads.push({ b, key, type: opt.contentType, upsert: opt.upsert }); st.objects[key] = Buffer.from(await blob.arrayBuffer()); return o.uploadFail ? { error: { statusCode: '403' } } : { data: { path: key } }; },
       remove: async (keys) => { st.removes.push(keys); return { data: [] }; },
       download: async (key) => { st.downloads.push(key); return st.objects[key] ? { data: new Blob([st.objects[key]], { type: 'application/pdf' }) } : { error: { statusCode: '400' } }; }
     }) }
@@ -61,7 +61,7 @@ function world(o = {}) {
       getItem: k => (k in st.ls ? st.ls[k] : null), setItem: () => { st.lsWrite = true; }, removeItem: () => { st.lsWrite = true; }
     },
     fetch: async () => ({ ok: true, json: async () => ({ supabase: { docs: !!o.flag } }) }),
-    SUAuth: { STATUS: { OK: 'ok' }, check: async () => ({ status: o.status }), client: () => client }
+    SUAuth: { STATUS: { OK: 'ok' }, check: async () => ({ status: typeof o.statusSeq === 'function' ? o.statusSeq(++st.checks) : o.status }), client: () => client }
   };
   w.window = w; vm.createContext(w); vm.runInContext(SRC, w);
   const gasRes = (d) => { const txt = JSON.stringify(d); return { ok: true, status: 200, text: async () => txt, clone() { return { text: async () => txt }; } }; };
@@ -126,7 +126,7 @@ const rd = async (res) => JSON.parse(await res.text());
       && Array.isArray(d.rows[1].filesJson) && d.rows[1].filesJson.length === 0, d);
     const w2 = world({ listFail: true });
     const d2 = await rd(await w2.D.staff({ action: 'list', token: 'kakuu' }, w2.gasSend(list)));
-    t('L 台帳を読めない時は Google の一覧のまま返す（職員の一覧は止めない）', d2.rows[0].filesJson[0].fid === 'drv_old', d2);
+    t('L 台帳を読めない時は、古い書類の欄で「入っていない」と言わないよう一覧ごと失敗にする（職員向けの文）', d2.ok === false && /書類の/.test(d2.error) && !d2.rows, d2);
     const w3 = world({ stf: 'shadow' });
     const d3 = await rd(await w3.D.staff({ action: 'list', token: 'kakuu' }, w3.gasSend(list)));
     t('L 写しの期間なら一覧は Google のまま', d3.rows[0].filesJson[0].fid === 'drv_old' && !w3.st.rpcs.includes('doc_list'));
@@ -183,6 +183,38 @@ const rd = async (res) => JSON.parse(await res.text());
     const w3 = world({ modeSeq: n => (n === 1 ? { stf: 'shadow', adm: 'shadow' } : { stf: 'live', adm: 'live' }) });
     const r3 = await w3.D.adm({ action: 'filesGet' }, w3.gasCall({ ok: false, error: '切り替えた後です', code: 'doc_switched' }));
     t('R 入居調整: 同じく読み直して新しい保存先から読む', r3.ok === true && w3.st.gas === 1 && w3.st.rpcs.includes('doc_list'), r3);
+  }
+  console.log('T 画面の反証レビューの直し');
+  {
+    const w = world({ uploadHang: true });
+    w.D._times(50);
+    let e1 = null; try { await w.D.staff(up(), w.gasSend({})); } catch (e) { e1 = e; }
+    t('T 置き場が返らない → 時間切れ（AbortError）にして「書けたか分からない」の扱いへ（画面が止まらない）', e1 && e1.name === 'AbortError', e1 && e1.message);
+    const w2 = world({ uploadFail: true, modeSeq: n => { if (n > 1) throw new Error('offline'); return { stf: 'live', adm: 'live' }; } });
+    await w2.D.staff(up(), w2.gasSend({}));          // 切り替えた後と分かる → 置き場で断られて印を捨てる
+    const gasBefore = w2.st.gas;
+    const d2 = await rd(await w2.D.staff({ action: 'list', token: 'kakuu' }, w2.gasSend({ ok: true, rows: [{ id: 'S0001', filesJson: [{ fid: 'drv_old' }] }] })));
+    t('T 前に切り替えた後と分かっていた端末で印を確かめられない → Google の古い一覧を返さずに失敗にする', d2.ok === false && /確かめられませんでした/.test(d2.error) && w2.st.gas === gasBefore, d2);
+    const w4 = world({ statusSeq: n => (n === 1 ? 'ok' : 'boom') });
+    await w4.D.staff({ action: 'list', token: 'kakuu' }, w4.gasSend({ ok: true, rows: [] }));
+    t('T 前の確かめで切り替えた後と分かっていた端末は liveNow が立つ', w4.D.liveNow('stf') === true);
+    const w5 = world({ statusSeq: () => 'signed_out' });
+    const d5 = await rd(await w5.D.staff(up(), w5.gasSend({ ok: false, error: '切り替えた後です', code: 'doc_switched' })));
+    t('T 切り替えた後にログインが切れた端末: Google の断りの代わりにログインを促す文（読み込み直しを繰り返させない）', d5.ok === false && /ログイン/.test(d5.error) && w5.st.gas === 2, d5);
+    const w6 = world({ flag: false });
+    const d6 = await rd(await w6.D.staff(up(), w6.gasSend({ ok: false, error: '切り替えた後です', code: 'doc_switched' })));
+    t('T スイッチが切の時は Google の答えをそのまま返す（送り直さない）', d6.code === 'doc_switched' && w6.st.gas === 1);
+    const w7 = world();
+    const d7 = await rd(await w7.D.staff(up({ name: 'あ'.repeat(121) + '.pdf' }), w7.gasSend({})));
+    t('T ファイル名が 120字を超える → 置かない（画面の照合と合わなくなるので切らない）', d7.ok === false && /長すぎます/.test(d7.error) && !w7.st.uploads.length);
+    const w8 = world({ uploadFail: true });
+    await w8.D.staff(up(), w8.gasSend({}));
+    const before = w8.st.modeCalls;
+    await w8.D.staff(up(), w8.gasSend({}));
+    t('T 置き場で断られたら覚えている印を捨て、次の送信で読み直す', w8.st.modeCalls === before + 1);
+    const w9 = world({ putRefuse: 'mismatch' });
+    const d9 = await rd(await w9.D.staff(up(), w9.gasSend({})));
+    t('T 置き場の中身が見出しと違う（mismatch）→ 選び直しを促す文', d9.ok === false && /選び直して/.test(d9.error), d9);
   }
   console.log('F 部品の決まり');
   {

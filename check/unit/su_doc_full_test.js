@@ -117,8 +117,8 @@ function io(o) {
   {
     const a = io({ mode: 'live' });
     const r = await F.back(a, 'stf');
-    t('D 順番: 札 → 印 → 写し返す → 写しの期間に戻す → GAS の印を外す → 札を返す',
-      r.ok && a.log.join() === 'rpc:doc_op_begin:stf:back,rpc:doc_mode_get,gas:docMirror,rpc:doc_set_mode:stf:shadow:T1,gas:docCutover:off:T1,rpc:doc_op_end:stf:T1', a.log);
+    t('D 順番: 部品の確かめ → 札 → 印 → 写し返す → 写しの期間に戻す → GAS の印を外す → 札を返す',
+      r.ok && a.log.join() === 'gas:docPing,rpc:doc_op_begin:stf:back,rpc:doc_mode_get,gas:docMirror,rpc:doc_set_mode:stf:shadow:T1,gas:docCutover:off:T1,rpc:doc_op_end:stf:T1', a.log);
     const b = io({ mode: 'live', unmirroredOnce: true });
     const r2 = await F.back(b, 'stf');
     t('D 写し返しが残っていた → 写し返してやり直す', r2.ok && b.log.filter(l => l === 'gas:docMirror').length === 2, b.log);
@@ -134,6 +134,13 @@ function io(o) {
     const e = io({ mode: 'live', mirrorFail: true });
     const r5 = await F.back(e, 'stf');
     t('D 写し返しが続けて断られる → 写しの期間に戻さない', !r5.ok && !e.log.some(l => /doc_set_mode/.test(l)) && /写し返す中身/.test(r5.why));
+  }
+  console.log('H 戻す前の確かめ');
+  {
+    const a = io({ mode: 'live', ping: { ok: false, error: 'unknown action' } });
+    const r = await F.back(a, 'adm');
+    t('H 古い GAS では戻す時も何も変えずに止める（札も取らない）', !r.ok && /部品が入っていないか/.test(r.why) && a.log.join() === 'gas:docPing', a.log);
+    t('H 職員マスタを先に切り替えていない時の断りの文', /先に職員マスタを新しい保存先へ切り替えて/.test(F._dbWhy('stfshadow')));
   }
   console.log('G 状態を読めない');
   {

@@ -27,6 +27,8 @@
   var BUCKET = 'doc-files';
   var MODE_MS = 60000;
   var CALL_MS = 120000;
+  var MODE_CALL_MS = 15000;
+  var NAME_MAX = 120;   // ファイル名の上限（今の GAS と同じ。長い名前を切ると、画面の「入っていたか」の照合が合わなくなる・指摘13）
   var MAX_BYTES = 10 * 1024 * 1024;
   var MIMES = {
     stf: ['application/pdf', 'image/jpeg', 'image/png'],
@@ -86,9 +88,19 @@
 
   /* ── 印（doc_mode_get）。1分は覚える。→ {stf, adm, tenant} / 'none'（0065 の前）/ 'denied'。届かない時は例外 ── */
   var modeCache = null, modeAt = 0, liveSeen = { stf: false, adm: false };
+  /* 新しい保存先への1回の通信に時計を付ける（返らない時に画面が「送信中」のまま止まらないように・画面の反証レビュー 指摘1）。時間切れは AbortError */
+  function withTime(p, ms) {
+    var tm = null;
+    var timer = new Promise(function (ok) { tm = setTimeout(function () { ok({ __timeout: true }); }, ms); });
+    return Promise.race([Promise.resolve(p), timer]).then(function (r) {
+      clearTimeout(tm);
+      if (r && r.__timeout) { var e = new Error('時間切れ'); e.name = 'AbortError'; throw e; }
+      return r;
+    }, function (e) { clearTimeout(tm); throw e; });
+  }
   function modeOf(A) {
     if (modeCache && Date.now() - modeAt < MODE_MS) return Promise.resolve(modeCache);
-    return Promise.resolve(A.client().rpc('doc_mode_get')).then(function (r) {
+    return withTime(A.client().rpc('doc_mode_get'), MODE_CALL_MS).then(function (r) {
       var c = String(r && r.error && (r.error.code || '') || '');
       if (r && r.error && /PGRST202|42883/.test(c)) return 'none';
       if (r && r.error && c === '42501') return 'denied';
@@ -100,33 +112,36 @@
   }
   function forget() { modeCache = null; modeAt = 0; }
 
-  /* その種類をこの送信で新しい保存先へ送るか → A（ログインの部品）か null（Google へ） */
+  /* その種類をこの送信でどこへ送るか → { A }（新しい保存先）/ { gas: true, why }（Google へ・why は login・denied・空）/ { err: 文 }（どちらへも送らない）。
+   * スイッチが入なのにログインしていない・使えないアカウントの時は Google へ送り（Google は切り替えた後の出し入れを自分で断る）、その理由を覚えて断りの文に使う（指摘6）。
+   * 確かめられない（届かない）時は、前に切り替えた後だと分かっていたなら Google の古い中身を返さずに失敗にする（指摘5）。分からなかったなら Google へ */
   function route(kind) {
-    if (fieldDevice()) return Promise.resolve(null);
+    if (fieldDevice()) return Promise.resolve({ gas: true, why: '' });
     return refreshFlags().then(function () {
-      if (!switchOn() || !hasLoginRecord()) { liveSeen[kind] = false; return null; }
+      if (!switchOn()) { liveSeen[kind] = false; return { gas: true, why: '', off: true }; }
+      if (!hasLoginRecord()) { liveSeen[kind] = false; return { gas: true, why: 'login' }; }
       return loadAuth().then(function (A) {
-        if (!A) return null;
+        if (!A) throw new Error('auth');
         return Promise.resolve(A.check()).then(function (st) {
-          if (!st || st.status !== A.STATUS.OK) { liveSeen[kind] = false; return null; }
+          if (!st || st.status !== A.STATUS.OK) { liveSeen[kind] = false; return { gas: true, why: st && st.status === 'signed_out' ? 'login' : 'denied' }; }
           return modeOf(A).then(function (m) {
+            if (m === 'denied') { liveSeen[kind] = false; return { gas: true, why: 'denied' }; }
             var on = !!(m && typeof m === 'object' && m[kind] === true && TENANT_RE.test(m.tenant));
             liveSeen[kind] = on;
-            return on ? A : null;
+            return on ? { A: A } : { gas: true, why: '' };
           });
         });
       });
-    }).catch(function (e) { note('印', e); return null; });   // 確かめられない時は Google へ（Google は切り替えた後の出し入れを自分で断る）
+    }).catch(function (e) {
+      note('印', e);
+      if (liveSeen[kind]) return { err: MSG.mode };
+      return { gas: true, why: '' };
+    });
   }
 
   /* ── 新しい保存先の口 ── */
-  function rpc(A, fn, args) {
-    var tm = null;
-    var call = Promise.resolve(A.client().rpc(fn, args));
-    var timer = new Promise(function (ok) { tm = setTimeout(function () { ok({ timeout: true }); }, CALL_MS); });
-    return Promise.race([call, timer]).then(function (r) {
-      clearTimeout(tm);
-      if (r && r.timeout) { var e = new Error('時間切れ'); e.name = 'AbortError'; throw e; }
+  function rpc(A, fn, args, ms) {
+    return withTime(A.client().rpc(fn, args), Number(ms) > 0 ? Number(ms) : CALL_MS).then(function (r) {
       if (r && r.error) {
         var c = String(r.error.code || '');
         if (c === '42501') return { ok: false, error: 'denied' };
@@ -144,6 +159,13 @@
     doc_frozen: '書類の保存先を戻している最中です。少し待ってから、画面を読み込み直してもう一度お試しください。',
     doc_not_live: '書類の保存先を切り替えている最中です。少し待ってから、画面を読み込み直してもう一度お試しください。',
     notfound: 'その書類は見つかりません（一覧を取り直してください）。',
+    dup: '書類を新しい保存先に置けませんでした。もう一度お試しください。',
+    noobject: '書類を置き場に置けたか確かめられませんでした。もう一度お試しください。',
+    mismatch: 'ファイルの中身が、選んだ時と違いました。ファイルを選び直してください。',
+    busy: 'ほかの操作が終わるのを待っています。少し待ってから、もう一度お試しください。',
+    login: 'この端末はログインしていないか、ログインが切れています。ログインしてから、もう一度お試しください（書類は新しい保存先に切り替わっています）。',
+    mode: '新しい保存先の状態を確かめられませんでした。少し待ってから、もう一度お試しください。',
+    longname: 'ファイル名が長すぎます（上限 120字）。名前を短くしてから選び直してください。',
     put: '書類を新しい保存先に置けませんでした。もう一度お試しください。',
     read: '書類を新しい保存先から取り出せませんでした。もう一度お試しください。',
     list: '書類の一覧を新しい保存先から読めませんでした。少し待ってから、もう一度お試しください。'
@@ -160,10 +182,10 @@
     return { fid: String(f.fid || ''), name: String(f.name == null ? '' : f.name), kind: String(f.kind == null ? '' : f.kind), title: String(f.title == null ? '' : f.title),
              size: Number(f.size) || 0, mime: String(f.mime || ''), addedAt: String(f.addedAt == null ? '' : f.addedAt), by: String(f.by == null ? '' : f.by) };
   }
-  function list(A, kind, owner) {
+  function list(A, kind, owner, ms) {
     var args = { p_kind: kind };
     if (owner) args.p_owner = owner;
-    return rpc(A, 'doc_list', args).then(function (d) {
+    return rpc(A, 'doc_list', args, ms).then(function (d) {
       if (!d || d.ok !== true || !d.files || typeof d.files !== 'object') {
         if (d && d.error === 'doc_not_live') forget();
         var e = new Error(String(d && d.error || 'list')); e.refused = d && d.error ? why(d.error) : MSG.list; throw e;
@@ -202,6 +224,7 @@
     var mime = String(b.mime || '').toLowerCase();
     if (!OWNER_RE.test(owner)) return Promise.resolve({ ok: false, error: MSG.badrow });
     if (MIMES[kind].indexOf(mime) < 0) return Promise.resolve({ ok: false, error: MSG.badtype });
+    if (String(b.name == null ? '' : b.name).length > NAME_MAX) return Promise.resolve({ ok: false, error: MSG.longname });
     var bytes;
     try { bytes = b64ToBytes(b.dataB64); } catch (e) { return Promise.resolve({ ok: false, error: 'ファイルの中身を読めませんでした。選び直してください。' }); }
     if (!bytes.length) return Promise.resolve({ ok: false, error: 'ファイルの中身がありません' });
@@ -212,10 +235,15 @@
     return Promise.resolve(root.crypto.subtle.digest('SHA-256', bytes)).then(function (d) {
       sha = hex(d);
       key = tenant + '/' + kind + '/' + owner + '/' + fid + '/' + sha.slice(0, 16);
-      return store.upload(key, new root.Blob([bytes], { type: mime }), { contentType: mime, upsert: false, cacheControl: '0' });
+      return withTime(store.upload(key, new root.Blob([bytes], { type: mime }), { contentType: mime, upsert: false, cacheControl: '0' }), CALL_MS);
     }).then(function (u) {
-      if (u && u.error) { note('置く', new Error(String(u.error.statusCode || u.error.message || 'upload').slice(0, 40))); return { ok: false, error: MSG.put }; }
-      var meta = { name: String(b.name == null ? '' : b.name).slice(0, 200), kind: String(b.kind == null ? '' : b.kind).slice(0, 40),
+      if (u && u.error) {
+        // 置き場で断られた（戻した直後など）時は、覚えている印を捨てる（次の送信で読み直す・指摘8）
+        if (/^40[13]$/.test(String(u.error.statusCode || ''))) forget();
+        note('置く', new Error(String(u.error.statusCode || u.error.message || 'upload').slice(0, 40)));
+        return { ok: false, error: MSG.put };
+      }
+      var meta = { name: String(b.name == null ? '' : b.name), kind: String(b.kind == null ? '' : b.kind).slice(0, 40),
                    title: String(b.title == null ? '' : b.title).slice(0, 200), size: bytes.length, mime: mime };
       return rpc(A, 'doc_put', { p_kind: kind, p_owner: owner, p_fid: fid, p_meta: meta, p_sha256: sha }).then(function (r) {
         if (r && r.ok === true && r.file) {
@@ -242,7 +270,7 @@
     var got = k ? Promise.resolve(k) : list(A, kind, owner).then(function () { return keyOf[kind + '/' + owner + '/' + fid] || ''; });
     return got.then(function (key) {
       if (!key) return { ok: false, error: MSG.notfound };
-      return Promise.resolve(A.client().storage.from(BUCKET).download(key)).then(function (r) {
+      return withTime(A.client().storage.from(BUCKET).download(key), CALL_MS).then(function (r) {
         if (!r || r.error || !r.data) { note('開く', new Error('download')); return { ok: false, error: MSG.read }; }
         return { ok: true, blob: r.data, size: r.data.size };
       });
@@ -257,24 +285,29 @@
   /* Google の答えに「切り替えた後」の断りがあるか（fetch の答え・物のどちらでも） */
   function switchedText(t) { return /"code"\s*:\s*"doc_switched"/.test(String(t || '')); }
 
-  /* ── 職員マスタ: list・uploadFile・removeFile ── */
-  function staff(p, gasSend) {
+  /* ── 職員マスタ: list・uploadFile・removeFile。opts.timeoutMs … 画面の待ち時間（一覧の台帳の読み取りもこれに合わせる・指摘2）── */
+  function staff(p, gasSend, opts) {
     var a = p && typeof p.action === 'string' ? p.action : '';
     if (a !== 'list' && a !== 'uploadFile' && a !== 'removeFile') return gasSend();
+    var waitMs = Math.min(CALL_MS, Number(opts && opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : CALL_MS);
     var tries = 0;
-    function viaGas() {
+    function viaGas(rt) {
       return Promise.resolve(gasSend()).then(function (res) {
-        if (!res || typeof res.clone !== 'function' || a === 'list') return res;
+        // スイッチが切の時は、Google の答えをそのまま返す（今までと同じ・指摘10）
+        if (!res || typeof res.clone !== 'function' || a === 'list' || rt.off) return res;
         return res.clone().text().then(function (t) {
-          if (!switchedText(t) || tries++ > 0) return res;
+          if (!switchedText(t)) return res;
+          if (tries++ > 0) return rt.why ? asResponse({ ok: false, error: MSG[rt.why] }) : res;   // 選び直しても Google: ログインの理由を伝える
           forget();
           return go();   // Google は書いていない＝道を選び直して送ってよい
         }, function () { return res; });
       });
     }
     function go() {
-      return route('stf').then(function (A) {
-        if (!A) return viaGas();
+      return route('stf').then(function (rt) {
+        if (rt.err) return asResponse({ ok: false, error: rt.err });
+        if (!rt.A) return viaGas(rt);
+        var A = rt.A;
         if (a === 'list') {
           return Promise.resolve(gasSend()).then(function (res) {
             if (!res || !res.ok || typeof res.text !== 'function') return res;
@@ -282,13 +315,14 @@
               var d = null;
               try { d = JSON.parse(t); } catch (e) { return asResponseText(t); }
               if (!d || d.ok !== true || !Array.isArray(d.rows)) return asResponseText(t);
-              return list(A, 'stf', null).then(function (files) {
+              return list(A, 'stf', null, waitMs).then(function (files) {
                 d.rows.forEach(function (row) { if (row && typeof row === 'object') row.filesJson = files[String(row.id || '')] || []; });
                 return asResponse(d);
               }, function (e) {
-                // 台帳を読めない時は、職員の一覧はそのまま返す（書類の欄は1時間ごとの写し返しまで古いことがある）
+                // 台帳を読めない時は、古い書類の欄で「入っていない」と言わないよう、一覧ごと失敗にする（指摘5）
                 note('一覧', e);
-                return asResponseText(t);
+                if (e && e.name === 'AbortError') throw e;
+                return asResponse({ ok: false, error: e && e.refused ? e.refused : MSG.list });
               });
             });
           });
@@ -309,19 +343,23 @@
     var a = p && typeof p.action === 'string' ? p.action : '';
     if (a !== 'filesGet' && a !== 'uploadFile' && a !== 'removeFile' && a !== 'downloadFile') return gasCall();
     var tries = 0;
-    function viaGas() {
+    function viaGas(rt) {
       return Promise.resolve(gasCall()).then(function (r) {
-        if (r && r.code === 'doc_switched' && tries++ === 0) { forget(); return go(); }
-        return r;
+        if (!(r && r.code === 'doc_switched') || rt.off) return r;
+        if (tries++ > 0) return rt.why ? { ok: false, error: MSG[rt.why] } : r;
+        forget();
+        return go();
       });
     }
     function go() {
-      return route('adm').then(function (A) {
-        if (!A) return viaGas();
+      return route('adm').then(function (rt) {
+        if (rt.err) return { ok: false, error: rt.err };
+        if (!rt.A) return viaGas(rt);
+        var A = rt.A;
         var cid = String(p.cid == null ? '' : p.cid).trim();
         if (a === 'filesGet') {
           return list(A, 'adm', null).then(function (files) { return { ok: true, filesRev: 0, files: files, updatedAt: '' }; },
-            function (e) { note('一覧', e); return { ok: false, error: e && e.refused ? e.refused : MSG.list }; });
+            function (e) { note('一覧', e); if (e && e.name === 'AbortError') throw e; return { ok: false, error: e && e.refused ? e.refused : MSG.list }; });
         }
         if (a === 'uploadFile') return put(A, 'adm', cid, p).then(function (r) { return r.ok ? { ok: true, file: r.file, filesRev: 0 } : r; });
         if (a === 'removeFile') return del(A, 'adm', cid, String(p.fid == null ? '' : p.fid).trim()).then(function (r) { return r.ok ? { ok: true, filesRev: 0, warnings: [] } : r; });
@@ -339,9 +377,10 @@
 
   /* ── 職員マスタの「開く」: 切り替えた後だけ使う（liveNow が true の時）。→ {ok, blob} / {ok:false, error} ── */
   function open(kind, owner, fid) {
-    return route(kind).then(function (A) {
-      if (!A) return { ok: false, error: MSG.doc_not_live };
-      return read(A, kind, String(owner || ''), String(fid || ''));
+    return route(kind).then(function (rt) {
+      if (rt.err) return { ok: false, error: rt.err };
+      if (!rt.A) return { ok: false, error: rt.why ? MSG[rt.why] : MSG.doc_not_live };
+      return read(rt.A, kind, String(owner || ''), String(fid || ''));
     }).catch(function (e) { note('開く', e); return { ok: false, error: MSG.read }; });
   }
   /* 直前の道の選び方で、その種類が新しい保存先だったか（画面の描き分けに使う・通信しない） */
@@ -349,6 +388,7 @@
 
   root.SUDocLive = {
     staff: staff, adm: adm, open: open, liveNow: liveNow, refreshFlags: refreshFlags,
+    _times: function (ms) { CALL_MS = ms; MODE_CALL_MS = ms; },   // 試験だけが使う（時計を短くする）
     _reset: function () { forget(); ownFlags = null; flagsAt = 0; flagsP = null; keyOf = {}; liveSeen = { stf: false, adm: false }; }
   };
 })(typeof window !== 'undefined' ? window : this);

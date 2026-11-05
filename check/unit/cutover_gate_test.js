@@ -108,6 +108,9 @@ console.log('D 1日1つ');
   t('今日本番にしてから戻した日も数える', !item(G.judge(base({ cut: { audit: [live('adm_mode', '2026-11-03T01:00:00Z'), { at: '2026-11-03T02:00:00Z', entity: 'adm_mode', entity_ids: ['shadow'] }] } })), 'oneday').ok);
   t('同じ日の記録が2つでも名前は1回', G.cutsToday([live('adm_mode', '2026-11-03T01:00:00Z'), live('adm_mode', '2026-11-03T02:00:00Z')], TODAY, 'tp').length === 1);
   t('読めない時は満たさない', !item(G.judge(base({ cut: { error: 'other' } })), 'oneday').ok && !item(G.judge(base({ cut: {} })), 'oneday').ok);
+  t('排泄ケア記録・添付書類を本番にした日は名前で数える（統合 0064・0065・添付書類の記録は種類と live）', G.cutsToday([live('hb_mode', '2026-11-03T01:00:00Z'), { at: '2026-11-03T02:00:00Z', entity: 'doc_mode', entity_ids: ['stf', 'live'] }], TODAY, 'tp').join() === '排泄ケア記録,添付書類'
+    && G.cutsToday([{ at: '2026-11-03T02:00:00Z', entity: 'doc_mode', entity_ids: ['adm', 'shadow'] }], TODAY, 'hb').length === 0);
+  t('添付書類の切り替えの確かめ（種類 doc）は、今日の職員マスタの切り替えを数え、添付書類どうしは数えない', G.cutsToday([live('stf_mode', '2026-11-03T01:00:00Z'), { at: '2026-11-03T02:00:00Z', entity: 'doc_mode', entity_ids: ['stf', 'live'] }], TODAY, 'doc').join() === '職員マスタ');
   t('日本時間の日付: 23:30 UTC は翌日', G.jstDay('2026-11-02T23:30:00Z') === '2026-11-03' && G.jstDay('2026-11-02T14:59:59Z') === '2026-11-02' && G.jstDay('x') === '');
   t('今日の0時（日本時間）は前日 15:00 UTC', G.jstDayStartIso('2026-11-03') === '2026-11-02T15:00:00.000Z' && G.jstDayStartIso('bad') === '');
   t('today が無ければ now から日本時間で決める', G.judge(Object.assign(base(), { today: undefined, now: Date.parse('2026-11-02T15:30:00Z') })).items.length === 4

@@ -1817,6 +1817,7 @@
     if (!st) { say('この端末には排泄ケア記録の接続先（URL と合言葉）がありません。この端末で排泄ケア記録を開き、設定で入れてから、押し直してください。', 'warn'); return; }
     if (kind === 'cut') {
       if (!hbOn()) { say('切り替えスイッチ（haiben）が入っていません。', 'warn'); return; }
+      if (!(await oneDayOk('hb', say))) return;
       if (!confirm('排泄ケア記録の正本を新しい保存先（Supabase）へ切り替えますか？\n\n数分かかります。その間の保存は各端末に控えられ、後で送られます。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、ログインしている端末だけが記録をサーバーへ送れます（ログインしていない端末は記録を端末に控え、帯で知らせます）。Google へは1時間ごとに写し返します。いつでも「排泄ケア記録を写しの期間に戻す」で戻せます。')) return;
     } else {
       if (!confirm('排泄ケア記録を写しの期間に戻しますか？\n\n切り替えていた間の記録を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します（その間の保存は各端末に控えられ、後で送られます）。')) return;
@@ -1882,6 +1883,7 @@
     if (!st) { say('この端末には' + nm + 'の接続先（URL と合言葉）がありません。この端末で' + nm + 'を開き、設定で入れてから、押し直してください。', 'warn'); return; }
     if (op === 'cut') {
       if (!docOn()) { say('切り替えスイッチ（docs）が入っていません。', 'warn'); return; }
+      if (!(await oneDayOk('doc', say))) return;
       if (!confirm(nm + 'の添付書類の正本を新しい保存先（Supabase）へ切り替えますか？\n\n数分かかります。その間は' + nm + 'で書類を置く・消すことができません。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、ログインしている事務所のパソコンだけが書類を置く・開く・消すことができます。Google ドライブへは1時間ごとに写し返します。いつでも「' + nm + 'の書類を写しの期間に戻す」で戻せます。')) return;
     } else {
       if (!confirm(nm + 'の書類を写しの期間に戻しますか？\n\n切り替えていた間に置いた・消した書類を最後まで Google ドライブへ写し返してから、Google での書類の出し入れを受け付けるように戻します（その間は書類を置く・消すことができません）。')) return;
@@ -1909,6 +1911,16 @@
       try { await loadDocMode(sb); await loadDoc(sb); } catch (e) { genoNote('書類の読み直し', e); }   // 読み直せなくても結果の文は残す
       v.className = kc; v.textContent = keep;
     }
+  }
+  /* 正本の切り替えは1日1つ（CLAUDE.md §4）。排泄ケア記録・添付書類の「切り替える」は、今日の操作の記録を読み直して、別の正本を今日すでに
+   * 切り替えていれば押させない（読めない時も押させない）。確かめの表の4項目のうち、この1つだけを当てる（画面の反証レビュー 指摘4） */
+  async function oneDayOk(kind, say) {
+    await gateRefresh(SUAuth.client());
+    var c = gateIn && gateIn.cut;
+    if (!c || c.error || !Array.isArray(c.audit)) { say('今日の切り替えの記録を読めませんでした（正本の切り替えは1日1つまでの確かめ）。少し待ってから、もう一度押してください。', 'warn'); return false; }
+    var done = SUCutGate.cutsToday(c.audit, gateIn.today, kind);
+    if (done.length) { say('今日すでに' + done.join('・') + 'を切り替えました。正本の切り替えは1日1つです。明日以降に押してください。', 'warn'); return false; }
+    return true;
   }
   async function loadHb(sb, nowMs) {
     var kk = $('hb-kpis'), v = $('hb-verdict'), dt = $('hb-detail');
