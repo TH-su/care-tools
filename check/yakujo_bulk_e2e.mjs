@@ -29,6 +29,7 @@ const MEDS = {
   R03: null,   // 1回目の組み立ての結果を見て決める（同じ行にする）
   R04: 'マグミット錠250mg 1回1錠 朝食後\n架空ロール錠5mg「見本」 1回1錠 夕食後',
   R05: 'マグミット錠250mg 1回1錠 朝食後\n架空ロール錠5mg「見本」 1回1錠 夕食後',
+  R06: 'マグミット錠330mg 1錠分1 朝食後',   // 施設の書き方（屋号なし・分N）。書類6は見出しの枠の書式で、朝夕へ変わる＋外用の貼り薬
 };
 const L = (t, x, y, w) => ({ t, x, y, w: w || 0.4, h: 0.02, c: 1 });
 const IMG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP////////////////////////////////////////////////////////////////////////////////////8AAAsIAAEAAQEBEQD/xAAUAAEAAAAAAAAAAAAAAAAAAAAA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQAAPwBH/9k=';   // 1画素の白い画像（架空）
@@ -41,12 +42,25 @@ const D_R02 = [['マグミット錠250mg', '1回1錠', '1日1回 朝食後'], ['
 const D_R03 = [['マグミット錠250mg', '1回1錠', '1日1回 朝食後']];
 const D_R04 = [['マグミット錠250mg', '1回1錠', '1日2回 朝夕食後']];
 const D_R05 = [['マグミット錠250mg', '1回1錠', '1日2回 朝夕食後']];   // 中身は書類4と同じだが、読み残しの知らせがある
+/* 実際の薬情と同じ「見出しの付いた枠」の書式（1剤ごとに お薬名・用法・1回量、量は時点の欄の下・色と形の行・説明の文） */
+const lblPage = (name, kana) => {
+  const hdr = (y) => [['起床時', 0.31], ['朝', 0.42], ['昼', 0.51], ['タ', 0.60], ['就寝前', 0.67]].map((h) => L(h[0], h[1], y, 0.03));
+  return { no: 1, w: 1000, h: 1400, img: IMG, codes: { qr: 0, other: 0 }, lines: [
+    L(name + ' 様', 0.1, 0.05), L(kana, 0.1, 0.07), L('調剤日 2026年11月01日', 0.5, 0.05),
+    L('お薬名', 0.25, 0.10, 0.05), L('マグミット錠330mg', 0.32, 0.10, 0.3), L('用法', 0.25, 0.13, 0.03), L('1日2回 朝夕食後', 0.32, 0.13, 0.18),
+    ...hdr(0.16), L('白色の錠剤', 0.09, 0.18, 0.07), L('1回量', 0.24, 0.18, 0.05), L('1錠', 0.41, 0.183, 0.04), L('1錠', 0.59, 0.183, 0.04), L('14日分(計28錠)', 0.82, 0.18, 0.11),
+    L('・見本の説明の文です。', 0.09, 0.22, 0.5),
+    L('お薬名', 0.25, 0.30, 0.05), L('架空クリーム0.1%「見本」', 0.32, 0.30, 0.3), L('用法', 0.25, 0.33, 0.03), L('外用', 0.32, 0.33, 0.04),
+    L('<外用>', 0.24, 0.345, 0.06), L('1日数回 患部に塗布', 0.32, 0.345, 0.21), L('1回量', 0.24, 0.38, 0.05), L('(計20g)', 0.87, 0.38, 0.06),
+  ] };
+};
 const resultFile = () => JSON.stringify({ kind: 'yakujo-yomitori', v: 1, createdAt: '2026-11-04T09:00:00+09:00', skipped: [], docs: [
   { no: 1, file: 'a.jpg', type: 'photo', error: '', pages: [page('架空 一郎', 'カクウ イチロウ', D_R01)] },
   { no: 2, file: 'b.jpg', type: 'photo', error: '', pages: [page('見本 一郎', 'ミホン イチロウ', D_R02)] },
   { no: 3, file: 'c.jpg', type: 'photo', error: '', pages: [page('試験 一郎', 'シケン イチロウ', D_R03)] },
   { no: 4, file: 'd.jpg', type: 'photo', error: '', pages: [page('仮名 一郎', 'カメイ イチロウ', D_R04)] },
   { no: 5, file: 'e.pdf', type: 'pdf', error: '', note: 'はじめの 1 ページだけを読みました（残りは読んでいません）', pagesTotal: 3, pages: [page('架空 花子', 'カクウ ハナコ', D_R05)] },
+  { no: 6, file: 'f.jpg', type: 'photo', error: '', pages: [lblPage('見本 花子', 'ミホン ハナコ')] },
 ] });
 
 const srv = await startServer(process.cwd(), 0);
@@ -73,7 +87,7 @@ async function run(opts) {
   p.on('pageerror', (e) => errors.push(String(e && e.message || e).slice(0, 200)));
   p.on('dialog', (d) => { dialogs.push(d.message()); d.accept().catch(() => {}); });
   await p.goto(srv.url + '/resident-master.html', { waitUntil: 'load' });
-  await p.waitForFunction(() => Array.isArray(window.roster) && window.roster.length >= 5, null, { timeout: 20000 });
+  await p.waitForFunction(() => Array.isArray(window.roster) && window.roster.length >= 6, null, { timeout: 20000 });
   /* 管理者の入口（yjGate_）はログインの確かめが要るので、ここでは窓を直接開く。ログインの証明は架空の文字列 */
   await p.evaluate((txt) => { window.rmAccessToken_ = function () { return Promise.resolve('check-token'); }; window.yjOpen_(); window.yjLoadText_(txt); }, resultFile());
   await p.waitForSelector('#yjGo:not([disabled])', { timeout: 10000 });
@@ -99,21 +113,23 @@ try {
   t('★書類4は「まとめて反映できる方」で、書類に無い今の薬は残す', st[3].st === 'ok' && /架空ロール錠5mg「見本」 1回1錠 夕食後/.test(st[3].after) && st[3].after.split('\n').length === 2, st[3]);
   t('★読めない薬のある書類2は1人ずつ（理由に ⚠）', st[1].st === 'ng' && (st[1].why || []).some((w) => /⚠ の行/.test(w)), st[1]);
   t('★書類と同じ書類3は「変更なし」', st[2].st === 'none', st[2]);
+  t('★見出しの枠の書式の書類6は「まとめて反映できる方」: 屋号の無い施設の書き方のまま朝夕へ変え、「1日数回」の外用は定期薬に入れない', st[5].st === 'ok' && st[5].after.split('\n').length === 1 && /^マグミット錠330mg /.test(st[5].after) && /朝夕/.test(st[5].after) && !/架空クリーム/.test(st[5].after), st[5]);
   t('★読み残しの知らせがある書類5は、中身に問題が無くても1人ずつ', st[4].st === 'ng' && (st[4].why || []).some((w) => /読み残し/.test(w)) && (st[4].why || []).some((w) => /全部のページ/.test(w)), st[4]);
   const txt = await r.p.textContent('#yjBody');
   t('一覧に「まとめて反映できる方」と理由が出る', /まとめて反映できる方/.test(txt) && /1人ずつ確かめる理由：⚠ の行/.test(txt) && /変更なし（書かずに終わりにします）/.test(txt));
   t('一覧に「書類に無い今の薬 1 行は残します」が出る', /書類に無い今の薬 1 行は残します/.test(txt));
-  t('ボタンの文言: 2人と変更なし1件', /チェックした 2 人をまとめて反映（変更なし 1 件も終わりにします）/.test(txt), txt.slice(0, 300));
+  t('一覧に「定期薬に入れない薬（外用・頓服など）：架空クリーム…」が出る', /定期薬に入れない薬（外用・頓服など）：架空クリーム0\.1%「見本」/.test(txt));
+  t('ボタンの文言: 3人と変更なし1件', /チェックした 3 人をまとめて反映（変更なし 1 件も終わりにします）/.test(txt), txt.slice(0, 300));
   if (shots) { fs.mkdirSync(shots, { recursive: true }); await r.p.screenshot({ path: path.join(shots, 'yj-bulk-before.png'), fullPage: false }); }
   await r.p.click('#yjBulkGo');
   await r.p.waitForFunction(() => window.yjSt && !window.yjSt.bulkBusy && /まとめて反映：/.test(window.yjSt.bulkMsg), null, { timeout: 20000 });
-  t('★確認の窓は1回だけ', r.dialogs.length === 1 && /次の 2 人/.test(r.dialogs[0]), r.dialogs);
-  t('★送ったのは書類1・4の方だけ・1人1回ずつ', r.applied.map((b) => b.id).join() === 'R01,R04', r.applied.map((b) => b.id));
+  t('★確認の窓は1回だけ', r.dialogs.length === 1 && /次の 3 人/.test(r.dialogs[0]), r.dialogs);
+  t('★送ったのは書類1・4・6の方だけ・1人1回ずつ', r.applied.map((b) => b.id).join() === 'R01,R04,R06', r.applied.map((b) => b.id));
   const b = r.applied[0] || {};
   t('★1人ずつと同じ形（srcKind 薬情・調剤日・判断の印・ログインの証明・書類の行）', b.srcKind === '薬情' && b.srcDate === '2026-11-01' && /^S\|R01\|2026-11-01\|[0-9a-f]{8}$/.test(b.srcKey) && b.accessToken === 'check-token' && typeof b.docRows === "string" && /^変える｜/.test(b.docRows) && /まとめて反映/.test(b.srcText), b);
   t('★送る前の定期薬は読んだ時の値・後は確認表の組み立てと同じ', b.before === MEDS.R01 && b.after === st[0].after);
   const st2 = await r.p.evaluate(() => window.yjSt.docs.map((x) => x.status));
-  t('★反映後: 書類1・4は反映済み・書類3は変更なしで終わり・書類2・5は残る', st2[0] === 'done' && st2[3] === 'done' && st2[2] === 'none' && st2[1] === '' && st2[4] === '', st2);
+  t('★反映後: 書類1・4・6は反映済み・書類3は変更なしで終わり・書類2・5は残る', st2[0] === 'done' && st2[3] === 'done' && st2[5] === 'done' && st2[2] === 'none' && st2[1] === '' && st2[4] === '', st2);
   if (shots) await r.p.screenshot({ path: path.join(shots, 'yj-bulk-after.png'), fullPage: false });
   t('画面の JS エラーなし', r.errors.length === 0, r.errors);
   await r.ctx.close();
@@ -122,10 +138,10 @@ try {
   r = await run({});
   await r.p.uncheck('[data-yjbulk="0"]');
   const t3 = await r.p.textContent('#yjBulkGo');
-  t('チェックを外すと人数が減る', /チェックした 1 人をまとめて反映/.test(t3), t3);
+  t('チェックを外すと人数が減る', /チェックした 2 人をまとめて反映/.test(t3), t3);
   await r.p.click('#yjBulkGo');
   await r.p.waitForFunction(() => window.yjSt && !window.yjSt.bulkBusy && /まとめて反映：/.test(window.yjSt.bulkMsg), null, { timeout: 20000 });
-  t('★チェックを外した方は送らない（書類4の方だけ送る）', r.applied.map((b) => b.id).join() === 'R04', r.applied.map((b) => b.id));
+  t('★チェックを外した方は送らない（書類4・6の方だけ送る）', r.applied.map((b) => b.id).join() === 'R04,R06', r.applied.map((b) => b.id));
   t('チェックを外した方は、まとめての対象のまま残る（1人ずつでも確かめられる）', await r.p.evaluate(() => window.yjSt.docs[0].status === '' && window.yjSt.docs[0].pre.st === 'ok'));
   await r.ctx.close();
 
@@ -134,7 +150,7 @@ try {
   await r.p.click('#yjBulkGo');
   await r.p.waitForFunction(() => window.yjSt && !window.yjSt.bulkBusy && /まとめて反映：/.test(window.yjSt.bulkMsg), null, { timeout: 20000 });
   const st4 = await r.p.evaluate(() => ({ s: window.yjSt.docs[0].status, pre: window.yjSt.docs[0].pre, msg: window.yjSt.bulkMsg }));
-  t('★食い違いの方は反映済みにせず、1人ずつへ回す（ほかの方は続けて反映する）', st4.s === '' && st4.pre.st === 'ng' && /定期薬が変わっていました/.test(st4.pre.why[0]) && /反映 1人・1人ずつに回した方 1人/.test(st4.msg), st4);
+  t('★食い違いの方は反映済みにせず、1人ずつへ回す（ほかの方は続けて反映する）', st4.s === '' && st4.pre.st === 'ng' && /定期薬が変わっていました/.test(st4.pre.why[0]) && /反映 2人・1人ずつに回した方 1人/.test(st4.msg), st4);
   await r.ctx.close();
 
   /* 5回目: 届いたか分からない（unknown）方が出たら、残りの方へは送らない */
@@ -150,7 +166,7 @@ try {
   await r.p.click('#yjBulkGo');
   await r.p.waitForFunction(() => window.yjSt && !window.yjSt.bulkBusy && /まとめて反映：/.test(window.yjSt.bulkMsg), null, { timeout: 20000 });
   const msg6 = await r.p.evaluate(() => window.yjSt.bulkMsg);
-  t('★既に反映されていた方は別に数える', /反映 1人・既に反映されていた方 1人/.test(msg6), msg6);
+  t('★既に反映されていた方は別に数える', /反映 2人・既に反映されていた方 1人/.test(msg6), msg6);
   await r.ctx.close();
 } catch (e) {
   fail++; console.log('  ✗ 途中で止まった: ' + String(e && e.message || e).split('\n')[0]);
