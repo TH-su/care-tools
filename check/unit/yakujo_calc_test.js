@@ -601,11 +601,71 @@ console.log('\n— 12. 取り込みの一致率（correctionKinds・metricOf・s
   t('★現場用への切り替えでは欄を空にする（端末の記録は消さない）', /mt\.textContent=''/.test(cut3(RM3, 'yjPurge_')) && !/removeItem/.test(cut3(RM3, 'yjPurge_')));
   const modal = RM3.slice(RM3.indexOf('<div class="modal" id="mYakujo"'), RM3.indexOf('<!-- 端末用途ガード'));
   t('★欄は取り込みの窓（#mYakujo）の中にあり、窓ごと印刷しない', /<div class="box">[\s\S]*<p class="yj-met" id="yjMetric"><\/p>\s*<div class="yj-body" id="yjBody"><\/div>\s*<\/div>\s*<\/div>\s*$/.test(modal.trim() + '\n') && /@media print\{ #mYakujo,#yjOpen\{display:none !important\} \}/.test(RM3));
-  t('共有部品の版（?v=）を上げた', /yakujo-calc\.js\?v=2026-11-04/.test(RM3));
+  t('共有部品の版（?v=）を上げた', /yakujo-calc\.js\?v=2026-11-05/.test(RM3));
 }
 
 /* ── まとめて反映できるか（bulkCheck・半自動・代表者の決定 2026-11-04）──
    守りたいこと: 人が確かめる所が1つでもあれば1人ずつへ回す。書類に無い今の薬は消さず「残す」。中止はしない。変わる行は BULK_MAX まで */
+/* ── 見出しの付いた枠の書式（parseLabeled・2026-11-05）──
+   実際の薬情（1剤ごとに「お薬名」「用法」「1回量」の見出し、量は時点の欄の下）の並びを架空の薬でまねる。
+   直す前は色・形の行（「白色の錠剤」）を薬と取り違え、量・日数がどの薬のものか分からず、取り込みが実用にならなかった */
+console.log('\n[見出しの付いた枠の書式（parseLabeled）]');
+{
+  const hdr = (y, skip) => [['起床時', 0.31], ['朝', 0.42], ['昼', 0.51], ['タ', 0.60], ['就寝前', 0.67]].filter((h) => h[0] !== skip).map((h) => L(h[0], h[1], y, 0.03));
+  const blk = (y, nameLines, use, doses, days, extra) => [].concat(nameLines,
+    [L('用法', 0.25, y + 0.03, 0.03), L(use, 0.32, y + 0.03, 0.15), L('残', 0.75, y + 0.03, 0.02)],
+    hdr(y + 0.06, extra && extra.skipHdr), [L('白色の錠剤', 0.09, y + 0.08, 0.07), L('1回量', 0.24, y + 0.08, 0.05)],
+    doses.map((d) => L(d[0], d[1], y + 0.083, 0.04)), days ? [L(days, 0.82, y + 0.08, 0.11)] : [],
+    [L('・見本の説明の文です。血圧を下げる薬です。', 0.09, y + 0.12, 0.6)]);
+  const pages = [
+    [L('薬剤情報提供書', 0.4, 0.02), L('架空 太郎 様', 0.1, 0.05), L('調剤日 2026年11月01日', 0.5, 0.05)].concat(
+      blk(0.10, [L('お薬名', 0.25, 0.10, 0.05), L('アゾセミド錠30mg「JG」(処方名:アゾセミド錠30mg)', 0.32, 0.10, 0.4)], '1日1回朝食後', [['1錠', 0.41]], '14日分(計14錠)', { skipHdr: '朝' }),
+      blk(0.30, [L('お薬名 アルファカルシドール錠0.5ug「アメル」', 0.25, 0.30, 0.5)], '1日1回朝食後', [['1錠', 0.41]], '14日分(計14錠)'),
+      [L('お薬名', 0.25, 0.50, 0.05), L('架空テープ4.5mg「見本」', 0.32, 0.50, 0.3), L('用法', 0.25, 0.53, 0.03), L('外用', 0.32, 0.53, 0.04),
+        L('<外用>', 0.24, 0.545, 0.06), L('1日1回1回1枚貼付', 0.32, 0.545, 0.21), L('1回量', 0.24, 0.58, 0.05), L('(計14枚)', 0.87, 0.58, 0.06)]),
+    blk(0.10, [L('お薬名', 0.25, 0.10, 0.05), L('マグミット錠330mg', 0.32, 0.10, 0.3)], '1日2回 朝夕食後', [['1錠', 0.41], ['1錠', 0.59]], '14日分(計28錠)').concat(
+      blk(0.30, [L('お薬名', 0.25, 0.30, 0.05), L('ランソプラゾール〇D錠15mg「ケミファ」', 0.32, 0.30, 0.3)], '1日2回 朝夕食後', [['1錠', 0.41]], '14日分(計14錠)'),
+      [L('*お薬の飲み合わせについての注意', 0.09, 0.6, 0.3), L('白色の錠剤', 0.09, 0.62, 0.07)]),
+  ];
+  const d = one(pages);
+  const rows = Y.parseRows(d, {});
+  t('★1剤1行で読み、色・形の行（白色の錠剤）や説明の文を薬と取り違えない', rows.length === 5 && rows.every((r) => r.labeled) && !rows.some((r) => /白色|説明/.test(r.raw)), rows.map((r) => r.raw));
+  t('★名前の後ろの「(処方名:…)」は名前に含めない', rows[0].raw === 'アゾセミド錠30mg「JG」' && /処方名/.test(rows[0].own), rows[0]);
+  t('★1回量・時点・食後・日数を、その薬の枠から読む（欠けた「朝」の見出しは並びの間隔から推す）', rows[0].use.per === 'dose' && rows[0].use.amount === 1 && rows[0].use.unit === '錠' && rows[0].use.slots.join() === '朝' && rows[0].use.meal === '食後' && rows[0].use.days === 14 && !rows[0].use.extra.length, rows[0].use);
+  t('「お薬名 〇〇」と1つの行に続けて書かれた名前も読み、読み違い ug を μg に直す', rows[1].raw === 'アルファカルシドール錠0.5μg「アメル」', rows[1].raw);
+  t('外用（<外用> の段の用法）は外用として読む', rows[2].topical === true && /貼付/.test(rows[2].rest), rows[2]);
+  t('ページをまたいでも1剤ずつ読み、朝夕の2つの欄の量を1回量として読む', rows[3].raw === 'マグミット錠330mg' && rows[3].page === 2 && rows[3].use.slots.join() === '朝,夕' && rows[3].use.amount === 1 && !rows[3].use.extra.length, rows[3].use);
+  t('★用法（朝夕）と時点の欄の量（朝だけ）が合わない時は、決めつけずに確かめる印を付ける', rows[4].use.extra.some((x) => /合いません/.test(x)), rows[4].use);
+  t('読み違い「〇D錠」を「OD錠」に直す', rows[4].raw === 'ランソプラゾールOD錠15mg「ケミファ」', rows[4].raw);
+  t('「*お薬の飲み合わせ」から後ろは薬の枠に入れない', rows.length === 5);
+  const sp0 = Y.lineSpec(rows[0], Y.snap(rows[0].raw, { current: [], used: [], items: ITEMS }));
+  t('★規格と剤形の並びだけが違う一般名（薬価基準「アゾセミド30mg錠」）と同じ薬として一字一致させ、1回1錠 朝食後に組む', sp0.warn.length === 0 && sp0.spec.slots.join() === '朝' && sp0.spec.dose === 1 && sp0.spec.unit === '錠', sp0);
+  const s1 = Y.snap('アゾセミド錠30mg「JG」', { current: ['アゾセミド30mg錠 1回1錠 朝食後'], used: [], items: ITEMS });
+  t('★今の定期薬の書き方（一般名の並び）とも同じ薬として結ぶ（施設の書き方の名前を使う）', s1.source === 'current' && s1.name === 'アゾセミド30mg錠', s1);
+  {
+    const cur = 'アゾセミド錠30mg 1錠分1 朝食後';
+    const sn = Y.snap(rows[0].raw, { current: [cur], used: [], items: ITEMS }), sp = Y.lineSpec(rows[0], sn);
+    const m = Y.matchCurrent([{ line: 'アゾセミド錠30mg 1錠分1 朝食後', spec: sp.spec, raw: rows[0].raw }], cur);
+    t('★施設の定期薬に屋号が無い時は、書類の屋号（「JG」）だけの違いで「変える」にしない（同じ意味なら今の行のまま）', sn.source === 'current' && sp.spec.maker === '' && m.pairs[0].kind === 'same', { sn, spec: sp.spec, kind: m.pairs[0].kind });
+  }
+  {
+    const sc = Y.snap('アゾセミド錠30mg「トーワ」', { current: ['アゾセミド錠30mg「サワイ」 1錠分1 朝食後'], used: ['アゾセミド錠30mg 1錠分1 朝食後'], items: ITEMS });
+    const lc = Y.lineSpec({ raw: 'アゾセミド錠30mg「トーワ」', rest: '', use: Y.parseUse('1日1回朝食後 1回1錠 14日分', 'dose') }, sc);
+    t('★今の定期薬に別の屋号で書かれた同じ薬は、ほかの方の屋号なしの名前で結ばず、屋号の不一致として ⚠（反証レビュー指摘2）', sc.makerOk === false && lc.warn.some((w) => /屋号/.test(w)), { sc, warn: lc.warn });
+    const pg = (ls) => one([ls]);
+    const mdoc = pg([L('お薬名', 0.25, 0.10, 0.05), L('アゾセミド錠30mg', 0.32, 0.10, 0.3), L('用法', 0.25, 0.13, 0.03), L('1日1回朝食後', 0.32, 0.13, 0.15), L('1回量', 0.24, 0.18, 0.05), L('1錠', 0.41, 0.183, 0.04),
+      L('用法', 0.25, 0.33, 0.03), L('1日1回夕食後', 0.32, 0.33, 0.15), L('1回量', 0.24, 0.38, 0.05), L('2錠', 0.59, 0.383, 0.04)]);
+    t('★1つの枠に用法・1回量が2つある（お薬名の読み落とし）時は、決めつけずに確かめる印（指摘3）', Y.parseRows(mdoc, {})[0].use.extra.some((x) => /2つ以上/.test(x)), Y.parseRows(mdoc, {})[0].use);
+    const ndoc = pg([L('お薬名', 0.25, 0.10, 0.05), L('アゾセミド錠30mg', 0.32, 0.10, 0.3), L('用法', 0.25, 0.13, 0.03), L('1日3回毎食後', 0.32, 0.13, 0.15), L('1回量', 0.24, 0.18, 0.05), L('1錠', 0.41, 0.183, 0.04), L('1錠', 0.51, 0.183, 0.04)]);
+    t('★時点の欄の見出しを読めない時、量の数（2）と用法の時点（3）が合わなければ確かめる印（指摘4）', Y.parseRows(ndoc, {})[0].use.extra.some((x) => /量の数/.test(x)), Y.parseRows(ndoc, {})[0].use);
+  }
+  t('規格の数字が無い名前では並びの鍵を作らない（広く結ばない）', Y.canonKey('見本錠') === '' && Y.canonKey('アゾセミド錠30mg') === Y.canonKey('アゾセミド30mg錠'));
+  t('規格が違えば同じ鍵にしない', Y.canonKey('アゾセミド錠30mg') !== Y.canonKey('アゾセミド60mg錠'));
+  t('読み違いの直し: 2:5mg→2.5mg・O.3%→0.3%・へパリン→ヘパリン・カブセル→カプセル', Y.cleanDrugName('見本錠2:5mg') === '見本錠2.5mg' && Y.cleanDrugName('へパリン類似物質クリームO.3%') === 'ヘパリン類似物質クリーム0.3%' && Y.cleanDrugName('見本カブセル24μg') === '見本カプセル24μg');
+  const old = one([[L('お薬の名前', 0.1, 0.10), L('1日量', 0.5, 0.10), L('用法', 0.6, 0.10), L('1.架空錠A5mg「見本」', 0.1, 0.15), L('2錠', 0.5, 0.15), L('1日2回朝夕食後 14日分', 0.6, 0.15)]]);
+  t('★見出しの枠が無い書類は今までどおりの読み方（parseLabeled は null）', Y.parseLabeled(old, {}) === null && Y.parseRows(old, {}).length === 1 && !Y.parseRows(old, {})[0].labeled);
+}
+
 console.log('\n[まとめて反映できるか（bulkCheck）]');
 {
   const A0 = 'テストロール錠5mg 1回1錠 朝食後', A1 = 'テストロール錠5mg 1回2錠 朝食後', B = 'ミホンジン錠10mg 1回1錠 夕食後', C = 'カクウパム錠2mg 1回1錠 眠前';
@@ -629,7 +689,16 @@ console.log('\n[まとめて反映できるか（bulkCheck）]');
   const sw = base(); sw.rows[1].warns = ['量が1日量か1回量か読めません（1日量として計算しました）'];
   t('今の行と同じ意味の行（書き換えない行）の ⚠ は止めない（確認表の judge と同じ扱い）', Y.bulkCheck(sw).ok === true, Y.bulkCheck(sw).why);
   ng('⚠ の付いた「書類に無い今の薬」がある書類は1人ずつ（残すか中止かを人が決める）', (s) => { s.rows[2].warns = ['同じ薬の名前です']; }, /⚠ の行/);
-  ng('頓服・外用で「足さない」にした行（⚠ 付き）がある書類も1人ずつ', (s) => { s.rows.push(row('add', '', 'カクウゲル 適量', 'skip', ['外用・注射の薬のようです'])); }, /⚠ の行/);
+  const sk = base(); sk.rows.push(row('add', '', 'カクウゲル 適量', 'skip', ['外用・注射の薬のようです']));
+  const rsk = Y.bulkCheck(sk);
+  t('★書類にあって「入れない」になった外用・頓服の足す行は止めず、名前を一覧に出す（定期薬には書かない・2026-11-05 仮置き）', rsk.ok === true && rsk.skipped.join() === 'カクウゲル' && rsk.judged.after.indexOf('カクウゲル') < 0, rsk);
+  const dp = base(); dp.rows[0] = row('same', A0, A0, 'keep'); dp.rows.push(row('add', '', 'カクウテープ4mg　1日1回1回1枚貼付 14日分', 'skip', ['外用・注射の薬のようです']));
+  const rdp = Y.bulkCheck(dp);
+  t('★毎日使う書き方の外用（新しい定期の貼り薬）が「入れない」になる書類は、変更なしで閉じず1人ずつ（反証レビュー指摘1）', rdp.ok === false && rdp.none === false && rdp.why.some((w) => /⚠ の行/.test(w)), rdp.why);
+  const pp = base(); pp.rows[0] = row('same', A0, A0, 'keep'); pp.rows.push(row('add', '', 'カクウ軟膏　1日数回 患部に塗布', 'skip', ['外用・注射の薬のようです']));
+  const rpp = Y.bulkCheck(pp);
+  t('「1日数回」「適宜」などの外用だけが入れない書類は、変更なしで終え、名前を返す（画面の変更なしの欄にも出す）', rpp.none === true && rpp.skipped.join() === 'カクウ軟膏', rpp);
+  ng('外用の足す行を「足す」に変えた（⚠ のまま）書類は1人ずつ', (s) => { s.rows.push(row('add', '', 'カクウゲル 適量', 'add', ['外用・注射の薬のようです'])); }, /⚠ の行/);
   ng('変わる行が上限を超える書類は1人ずつ', (s) => { for (let k = 0; k < Y.BULK_MAX; k++) s.rows.push(row('add', '', 'ツイカ' + k + 'ロール錠1mg 1回1錠 朝食後', 'add')); }, /行まで/);
   ng('同じ調剤日の薬情から反映済みの方は1人ずつ', (s) => { s.sameDay = '2026-11-02T10:00'; }, /同じ調剤日/);
   ng('定期薬の最後の変更より前の書類は1人ずつ', (s) => { s.lastChange = '2026-11-03'; }, /最後の変更/);

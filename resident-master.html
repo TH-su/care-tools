@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-+23SZyEjR646uPmN/0wCeKKz+F3yt24HvLQfexEQLJs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-H7AjqajXO/6+WGt9CNrKscXjaqywUyL38P6cnaJ9hVg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -1941,7 +1941,7 @@ function rmNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
 <script src="su-facility.js?v=2026-11-02.3"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>
 <!-- 薬情の取り込みの判定・組み立て（純関数・2026-10-22）。読めない時は入口のボタンを出さない（yjCalcOk_） -->
-<script src="yakujo-calc.js?v=2026-11-04"></script>
+<script src="yakujo-calc.js?v=2026-11-05"></script>
 <script src="su-print.js?v=2026-09-12"></script>
 <!-- 入居者マスタの写し（統合 0004）。supabase-js と su-auth.js は写す時にだけ読み込む -->
 <script src="su-master-shadow.js?v=2026-10-28"></script>
@@ -7542,9 +7542,10 @@ function yjBulkHtml_(){
       else if(r.kind==='add'&&r.action==='add'&&r.line) h+='<li><span class="mh-tag">足す</span> <b>'+esc(r.line)+'</b></li>';
     });
     if(p.bc.kept) h+='<li class="yj-sub">書類に無い今の薬 '+p.bc.kept+' 行は残します</li>';
+    if(p.bc.skipped&&p.bc.skipped.length) h+='<li class="yj-sub">書類にあって定期薬に入れない薬（外用・頓服など）：'+p.bc.skipped.map(esc).join('・')+'</li>';
     h+='</ul></div>';
   });
-  if(L.none.length) h+='<div class="yj-brow yj-sub">変更なし（書かずに終わりにします）：'+L.none.map(function(i){ var x=S.docs[i]; return '書類'+x.d.no+' '+esc(x.pre.cur.name)+' 様'; }).join('・')+'</div>';
+  if(L.none.length) h+='<div class="yj-brow yj-sub">変更なし（書かずに終わりにします）：'+L.none.map(function(i){ var x=S.docs[i], sk=x.pre.bc&&x.pre.bc.skipped||[]; return '書類'+x.d.no+' '+esc(x.pre.cur.name)+' 様'+(sk.length?'（定期薬に入れない薬：'+sk.map(esc).join('・')+'）':''); }).join('・')+'</div>';
   var n=L.ok.filter(function(i){ return S.docs[i].pre.on; }).length, can=(n||L.none.length)&&!busy&&!S.bulkBusy&&S.server==='ok';
   if(S.bulkMsg) h+='<p class="mc-msg" role="status">'+esc(S.bulkMsg)+'</p>';
   if(L.ok.length||L.none.length){
