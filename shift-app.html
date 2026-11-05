@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-nKsMrMtXWpj72thX6ECLhAaDFfEMHue2+kvisGrzjyk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-x5t4X+yVcxT95YZY9LkyhNkDD7PMtzHQVLruS/O+PtA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -12149,6 +12149,23 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         this.confirmInfo('編集モードは使えません', '閲覧専用トークンで接続しているため、この端末からは編集できません。');
         return;
       }
+      /* 同期先が無い（この端末だけで使う写し・2026-11-05）: 確かめる相手のサーバーが無いので、断ってから端末だけで編集する。
+       * 以前はサーバーの対応を確かめに行き、相手が無いため必ず「サーバーに接続できない」で止まっていた。 */
+      var cfgS = Store.getSyncConfig ? Store.getSyncConfig() : null;
+      if (!cfgS || !cfgS.url) {
+        revert();
+        this.confirm('この端末だけで編集します',
+          'この画面は同期先が設定されていないため、内容はこの端末（このブラウザ）の中だけに保存されます。\n' +
+          'ほかの端末やサーバーには送られません。\n編集モードにしますか？',
+          function () {
+            Store.editMode = true;
+            self._offlineEdit = false;
+            self.setEditModeUI_(true);
+            self.reloadFromStore();
+            self.afterEditOn_();
+          });
+        return;
+      }
       if (tog) tog.disabled = true;
       /* ①-a 対応可否が未確定（起動直後・前回の probe が通信失敗）: ここで1回だけ確かめる。
        * 未確定のまま劣化モードへ入れると、厳格モードのサーバーで全 push が拒否され、
@@ -12600,7 +12617,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (!el) return;
       var held = Store.getHeldConflicts ? Store.getHeldConflicts() : [];
       var n = Store.queue ? Store.queue.size() : 0;
-      var show = !Store.editMode && (n > 0 || held.length > 0);
+      var cfgP = Store.getSyncConfig ? Store.getSyncConfig() : null;
+      /* 同期先が無い画面には送る相手が無い＝「送信できていない」とは出さない（2026-11-05） */
+      var show = !!(cfgP && cfgP.url) && !Store.editMode && (n > 0 || held.length > 0);
       el.style.display = show ? '' : 'none';
       if (!show) return;
       var txt = document.getElementById('pendingText');
