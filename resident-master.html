@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-H7AjqajXO/6+WGt9CNrKscXjaqywUyL38P6cnaJ9hVg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-te2pedmXyVWznJbp8VbSxyzATPYV6rexcpOzXg+UwLA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -1941,7 +1941,7 @@ function rmNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
 <script src="su-facility.js?v=2026-11-02.3"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>
 <!-- 薬情の取り込みの判定・組み立て（純関数・2026-10-22）。読めない時は入口のボタンを出さない（yjCalcOk_） -->
-<script src="yakujo-calc.js?v=2026-11-05"></script>
+<script src="yakujo-calc.js?v=2026-11-05.2"></script>
 <script src="su-print.js?v=2026-09-12"></script>
 <!-- 入居者マスタの写し（統合 0004）。supabase-js と su-auth.js は写す時にだけ読み込む -->
 <script src="su-master-shadow.js?v=2026-10-28"></script>
@@ -7127,16 +7127,29 @@ function yjGate_(){
 }
 /* 薬価基準の品目（定期薬の入力パネルと同じファイル）。読めなくても取り込みは止めない（名前の確かめが弱くなるだけ） */
 function yjYakka_(){
-  if(window.MedsYakka&&Array.isArray(window.MedsYakka.items)) return Promise.resolve(window.MedsYakka.items);
+  if(window.MedsYakka&&Array.isArray(window.MedsYakka.items)&&window.MedsYakkaYJ) return Promise.resolve(window.MedsYakka.items);
   if(yjYakkaP) return yjYakkaP;
-  yjYakkaP=new Promise(function(ok){
-    var s=document.createElement('script'); s.src=MPK_YAKKA_SRC; s.async=true;
-    s.onload=function(){ ok(window.MedsYakka&&Array.isArray(window.MedsYakka.items)?window.MedsYakka.items:[]); };
-    s.onerror=function(){ if(s.parentNode) s.parentNode.removeChild(s); yjYakkaP=null; ok([]); };
-    document.head.appendChild(s);
+  /* 薬価基準の品目と、同じ成分・剤形・規格のまとまり（meds-yakka-yj.js・2026-11-05）を一緒に読む。どちらかが読めなくても取り込みは止めない */
+  var load=function(src, ready){
+    return new Promise(function(ok){
+      if(ready()) { ok(); return; }
+      var s=document.createElement('script'); s.src=src; s.async=true;
+      s.onload=function(){ ok(); };
+      s.onerror=function(){ if(s.parentNode) s.parentNode.removeChild(s); ok(); };
+      document.head.appendChild(s);
+    });
+  };
+  yjYakkaP=Promise.all([
+    load(MPK_YAKKA_SRC, function(){ return window.MedsYakka&&Array.isArray(window.MedsYakka.items); }),
+    load(YJ_YAKKA_YJ_SRC, function(){ return !!window.MedsYakkaYJ; })
+  ]).then(function(){
+    var items=window.MedsYakka&&Array.isArray(window.MedsYakka.items)?window.MedsYakka.items:[];
+    if(!items.length||!window.MedsYakkaYJ) yjYakkaP=null;   /* 読めなかった方は次に開いた時に読み直す */
+    return items;
   });
   return yjYakkaP;
 }
+var YJ_YAKKA_YJ_SRC='meds-yakka-yj.js?v=2026-11-01';
 function yjActive_(){ return roster.filter(function(r){ return r&&r.active!==false; }); }
 function yjWho_(id){ for(var i=0;i<roster.length;i++) if(String(roster[i].id)===String(id)) return roster[i]; return null; }
 /* 施設で使っている名前（全件データの在籍者の定期薬の行だけ。氏名は渡さない） */
@@ -7251,6 +7264,12 @@ function yjAssignHtml_(){
   var S=yjSt, h='', act=yjActive_().slice().sort(function(a,b){ return String(a.room).localeCompare(String(b.room),'ja',{numeric:true}); });
   var opt=function(sel){ return '<option value="">（選ぶ）</option>'+act.map(function(r){ return '<option value="'+esc(r.id)+'"'+(String(sel)===String(r.id)?' selected':'')+'>'+esc((r.room?r.room+' ':'')+r.name)+'</option>'; }).join(''); };
   h+='<p class="yj-lead">書類ごとに「誰の書類か」を確かめてください。決まっていない書類は、原本を見て方を選ぶか、外してください。</p>';
+  /* 結果のファイルを作った時刻（薬情よみとりが書く createdAt）。1日より前なら知らせる（古い結果を最新と思って取り込まない・2026-11-05） */
+  var made=S.res&&S.res.createdAt?new Date(S.res.createdAt):null;
+  if(made&&!isNaN(made.getTime())){
+    var age=(Date.now()-made.getTime())/3600000;
+    h+='<p class="'+(age>24?'yj-warn':'yj-sub')+'">'+(age>24?'⚠ ':'')+'この結果のファイルは '+esc(fmtJDate(made.getFullYear()+'-'+('0'+(made.getMonth()+1)).slice(-2)+'-'+('0'+made.getDate()).slice(-2)))+' '+esc(('0'+made.getHours()).slice(-2)+':'+('0'+made.getMinutes()).slice(-2))+' に作ったものです'+(age>24?'（1日より前です。新しい薬情があれば、薬情よみとりで作り直してください）':'')+'</p>';
+  }
   h+='<div class="yj-alist">';
   S.docs.forEach(function(x,i){
     var d=x.d, p0=d.pages[0], who=x.a.id?yjWho_(x.a.id):null;
@@ -7325,14 +7344,16 @@ function yjSlotWarn_(line){
 function yjBuild_(cur, d, items){
   var Y=YakujoCalc, current=cur.before.split('\n').filter(function(l){ return l.trim(); });
   var prs=Y.parseRows(d,{prnRe:MED_PRN_RE}), shorts=Y.shortDays(prs), used=yjUsed_(cur.id);
-  var specs=prs.map(function(r){ return Y.lineSpec(r, Y.snap(r.raw,{current:current, used:used, items:items||[]})); });
+  var yjText=window.MedsYakkaYJ&&typeof window.MedsYakkaYJ.text==='string'?window.MedsYakkaYJ.text:'';
+  var specs=prs.map(function(r){ return Y.lineSpec(r, Y.snap(r.raw,{current:current, used:used, items:items||[], yj:yjText})); });
   var lines=specs.map(function(sp){
     var s=sp.spec, l=s.free?'':mpkLine({name:s.name, maker:s.maker, slots:s.slots, dose:s.dose, unit:s.unit, meal:s.meal});
     return l||((s.name||'')+(s.maker?'「'+s.maker+'」':'')+(s.free?' '+s.free:'')).trim();
   });
   var m=Y.matchCurrent(prs.map(function(r,i){ return {line:lines[i], spec:specs[i].spec, raw:r.raw+(r.rest?'　'+r.rest:''), page:r.page, box:r.box}; }), cur.before);
   var slotWarn=lines.map(function(l,i){ return specs[i].spec.free?'':yjSlotWarn_(l); });
-  cur.rows=Y.buildRows(m.pairs, m.left, specs, {short:shorts, slotWarn:slotWarn});
+  cur.yjOf=yjText?Y.yjLookup(yjText):null;   /* 名前の違う同じ薬（コード9桁）を、知らせと重なりの確かめにも使う（2026-11-05） */
+  cur.rows=Y.buildRows(m.pairs, m.left, specs, {short:shorts, slotWarn:slotWarn, yjOf:cur.yjOf});
   /* 定期薬の最後の変更の日（変更履歴）と、同じ調剤日の薬情からの反映（変更履歴のラベル） */
   var mh=cur.rec&&Array.isArray(cur.rec.medsHistory)?cur.rec.medsHistory:[], last='';
   mh.forEach(function(e){ var at=e&&typeof e==='object'?String(e.at||'').slice(0,10):''; if(/^\d{4}-\d{2}-\d{2}$/.test(at)&&at>last) last=at; });
@@ -7353,7 +7374,7 @@ function yjJudge_(today){
   var c=yjSt.cur, td=today||todayISO(), d=YakujoCalc.useDate(c, td);
   if(c.sameDayFor!==d){ yjSameDay_(c, td); c.ack=false; }
   return YakujoCalc.judge({id:c.id, dates:c.dates, date:d, today:td, identity:c.identity, server:yjSt.server, rows:c.rows, current:c.before,
-    lastChange:c.lastChange, oldChecked:c.oldChecked, sameDay:c.sameDay, ack:c.ack, dupChecked:c.dupChecked, dateChecked:c.dateChecked});
+    lastChange:c.lastChange, oldChecked:c.oldChecked, sameDay:c.sameDay, ack:c.ack, dupChecked:c.dupChecked, dateChecked:c.dateChecked, yjOf:c.yjOf||null});
 }
 var YJ_KIND={same:'そのまま', change:'変える', add:'足す', left:'書類に無い'};
 function yjRowHtml_(r,k){
@@ -7490,6 +7511,8 @@ function yjPreload_(){
   var bg=++S.bulkGen, dg=devGen, list=[];
   S.bulkMsg='';
   S.docs.forEach(function(x,i){ x.pre=null; if(!x.out&&!x.status&&x.pick) list.push(i); });
+  var dupPick={};
+  S.docs.forEach(function(x){ if(!x.out&&x.pick) dupPick[String(x.pick)]=(dupPick[String(x.pick)]||0)+1; });
   S.preTotal=list.length; S.preDone=0;
   var alive=function(){ return yjSt===S&&S.bulkGen===bg&&dg===devGen; };
   /* ★描き直すのは一覧を見ている時だけ（1人ずつの確認表で打っている途中の行を消さない・反証レビューの指摘 2026-11-04） */
@@ -7512,7 +7535,9 @@ function yjPreload_(){
       yjBuild_(cur, x.d, r[1]);
       /* 入居者マスタGASの版（server）は反映する時に確かめる（ここでは判定に入れない） */
       var bc=YakujoCalc.bulkCheck({autoId:x.a&&x.a.id, pickId:x.pick, id:cur.id, dates:dates, today:todayISO(), rows:cur.rows,
-        current:cur.before, server:'ok', lastChange:cur.lastChange, sameDay:cur.sameDay, doc:x.d});
+        current:cur.before, server:'ok', lastChange:cur.lastChange, sameDay:cur.sameDay, doc:x.d, yjOf:cur.yjOf||null});
+      /* 同じ方の書類が2枚以上ある時は、どちらが新しいかを人が決める（古い方を先に書かない・反証レビュー 2026-11-05 指摘2） */
+      if(dupPick[String(x.pick)]>1&&(bc.ok||bc.none)){ bc.ok=false; bc.none=false; bc.why=['同じ方の書類が '+dupPick[String(x.pick)]+' 枚あります（新しい方を1人ずつで確かめてください）']; }
       x.pre={st:bc.ok?'ok':(bc.none?'none':'ng'), cur:cur, bc:bc, on:true, why:bc.why};
     }).catch(function(e){
       if(!alive()) return;

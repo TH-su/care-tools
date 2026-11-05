@@ -430,19 +430,25 @@
      後発品の多くは薬価基準では統一名（「◯◯ベシル酸塩5mg錠」）で、薬情の書き方（「◯◯錠5mg「屋号」」）と合わないため、
      施設の書き方を先に見る（定期薬の入力パネルと同じ考え・2026-10-01）。
      戻り値 {name, maker, unit, source:'current'|'used'|'yakka'|'', makerOk, near:[候補], ambiguous, dist} */
-  function drugKey(s) { return nfkc(s).replace(/\s+/g, '').replace(/^【[^】]*】/, '').replace(/^[(（][^)）]*[)）]/, ''); }
+  /* 照合の鍵（書き込む名前には使わない）。μg の書き方（ug・mcg）と「カブセル」の違いはここで吸収する（施設の定期薬にも同じ揺れがある・2026-11-05） */
+  function drugKey(s) { return nfkc(s).replace(/\s+/g, '').replace(/^【[^】]*】/, '').replace(/^[(（][^)）]*[)）]/, '').replace(/(\d)(?:ug|mcg)(?![A-Za-z])/gi, '$1μg').replace(/カブセル/g, 'カプセル'); }
   function splitMaker(s) {
     var t = nfkc(s).replace(/\s+/g, ''), m = /「([^」]+)」$/.exec(t);
     return m ? { base: t.slice(0, m.index), maker: m[1] } : { base: t.replace(/「[^」]*$/, ''), maker: '' };
   }
   function strength(s) { var m = /(\d+(?:\.\d+)?)(mg|μg|µg|g|mL|ml|%)/i.exec(s); return m ? m[1] + m[2].toLowerCase().replace('µ', 'μ') : ''; }
-  function lineName(s) { return String(s || '').trim().split(/\s/)[0] || ''; }
+  /* 行の頭の薬の名前。施設の定期薬は名前の後ろを全角の「：」で区切る書き方もある（「〇〇錠5mg：1日1回」・2026-11-05 実データ） */
+  function lineName(s) { return String(s || '').trim().split(/[\s：]/)[0] || ''; }
   /* 規格と剤形の並びだけが違う同じ薬（薬情「〇〇錠30mg「屋号」」と薬価基準の一般名「〇〇30mg錠」）を同じとみなす鍵
      （2026-11-05・実際の薬情で、後発品の多くがこの違いだけで一字一致しなかった）。規格の数字が無い名前は作らない（広く結ばない）。
      長音・ハイフンの違い（「アスパラーCA」と「アスパラ－CA」）は両方から外して比べる */
   function canonKey(s) {
     var t = drugKey(s).replace(/[ー\-‐－]/g, ''), st = '', fm = '';
-    t = t.replace(/(\d+(?:\.\d+)?)(mg|μg|g|mL|%)/i, function (m) { st = m.toLowerCase(); return ''; });
+    t = t.replace(/(\d+(?:\.\d+)?)(mg|μg|g|mL|%)/i, function (m, v, u) {
+      /* 規格の単位の違い（500μg と 0.5mg）はそろえる（一般名は mg・薬情は μg と書くことがある・反証レビュー 2026-11-05 指摘3） */
+      st = /^μg$/i.test(u) ? String(Number(v) / 1000) + 'mg' : m.toLowerCase();
+      return '';
+    });
     t = t.replace(/(OD)?(錠|カプセル|散|顆粒|細粒|内用液|液|シロップ|ゼリー|テープ|パップ|軟膏|クリーム|ローション|点眼液|ゲル)/, function (m) { fm = m; return ''; });
     return t && st && fm ? t + '|' + fm + '|' + st : '';
   }
@@ -451,6 +457,33 @@
     var keys = items.map(function (it) { return canonKey(it && it[0]); });
     yakkaCanon.memo = { items: items, keys: keys };
     return keys;
+  }
+  /* 薬価基準収載医薬品コードの先頭9桁（成分・剤形・規格）で、名前の違う同じ薬（先発の商品名と後発品）を結ぶ（meds-yakka-yj.js・2026-11-05）。
+     鍵は品名（屋号・かっこ書きを外す）と、塩の名前（ベシル酸塩など）を外した形・口腔内崩壊錠を OD錠 とした形の、規格と剤形の並びをそろえた鍵。
+     ★1つの鍵が2つ以上のコードに当たる時は結ばない（別の剤形・規格・塩を同じにしない） */
+  var YJ_SALT = /(ベシル酸塩|塩酸塩|臭化水素酸塩|マレイン酸塩|フマル酸塩|酒石酸塩|メシル酸塩|クエン酸塩|硫酸塩|リン酸塩|酢酸塩|コハク酸塩|ナトリウム水和物|カリウム水和物|カルシウム水和物|水和物|ナトリウム|カリウム|カルシウム)(?=[0-9]|錠|OD|カプセル|$)/g;
+  function yjKeys(name) {
+    var a = drugKey(splitMaker(name).base).replace(/[(（][^)）]*[)）]$/, '').replace(/口腔内崩壊錠/g, 'OD錠'), out = [];
+    [a, a.replace(YJ_SALT, '')].forEach(function (v) { var k = canonKey(v) || v; if (k && out.indexOf(k) < 0) out.push(k); });
+    return out;
+  }
+  function yjIndex(text) {
+    if (typeof text !== 'string' || !text) return null;
+    if (yjIndex.memo && yjIndex.memo.text === text) return yjIndex.memo.idx;
+    var idx = {};
+    text.split('\n').forEach(function (line) {
+      var t = line.split('\t'); if (t.length !== 2 || !/^[0-9A-Z]{9}$/.test(t[0])) return;
+      t[1].split('|').forEach(function (nm) { yjKeys(nm).forEach(function (k) { if (!idx[k]) idx[k] = t[0]; else if (idx[k] !== t[0]) idx[k] = '*'; }); });
+    });
+    yjIndex.memo = { text: text, idx: idx };
+    return idx;
+  }
+  function yjOf(name, idx) {
+    if (!idx) return '';
+    var got = '';
+    var ks = yjKeys(name);
+    for (var i = 0; i < ks.length; i++) { var y = idx[ks[i]]; if (!y || y === '*') continue; if (got && got !== y) return ''; got = y; }
+    return got;
   }
   function yakkaKeys(items) {
     if (yakkaKeys.memo && yakkaKeys.memo.items === items) return yakkaKeys.memo.keys;
@@ -479,6 +512,17 @@
          施設の書き方に屋号があって書類と違う時は、今までどおり一致にしない */
       if ((f.base === base || (canonKey(f.base) && canonKey(f.base) === canonKey(base))) && (!mk || !f.maker || nfkc(f.maker) === mk)) {
         res.name = f.name; res.maker = f.maker ? (mk ? sm.maker : (f.src === 'current' ? f.maker : '')) : ''; res.source = f.src; res.makerOk = true; return mark(res);
+      }
+    }
+    /* 名前が違っても、コード9桁（成分・剤形・規格）が同じ施設の書き方の薬があれば同じ薬とする（先発の商品名⇔後発品）。
+       書き込む名前は書類の名前（実際に調剤された品）にし、今の定期薬の行と結ぶために施設の名前を alias に持つ（仮置き 2026-11-05） */
+    var yidx = yjIndex(ctx.yj), ymine = yjOf(base, yidx);
+    if (ymine) {
+      for (i = 0; i < fac.length; i++) {
+        f = fac[i];
+        if (yjOf(f.base, yidx) !== ymine) continue;
+        res.name = sm.base.replace(/\s+/g, ''); res.maker = f.maker ? sm.maker : ''; res.source = f.src; res.makerOk = true; res.alias = f.name; res.yj = ymine;
+        return mark(res);
       }
     }
     var items = Array.isArray(ctx.items) ? ctx.items : [], keys = yakkaKeys(items), hit = -1;
@@ -519,7 +563,7 @@
     var u = row.use, warn = [], sm = splitMaker(row.raw);
     var name = sn && sn.source ? sn.name : sm.base, maker = sn && sn.source ? ((sn.source === 'current' || sn.source === 'used') ? sn.maker : (sn.maker || sm.maker)) : sm.maker;   /* 施設の書き方に合わせた時は、その屋号（無ければ無し）を使う */
     var unit = u.unit || (sn && sn.unit) || '';
-    var spec = { name: name, maker: maker, slots: [], dose: 0, unit: unit, meal: u.meal || '', free: '' };
+    var spec = { name: name, maker: maker, slots: [], dose: 0, unit: unit, meal: u.meal || '', free: '', alias: sn && sn.alias ? sn.alias : '' };
     var skip = false;
     if (!sn || !sn.source) warn.push(sn && sn.near && sn.near.length ? '薬の名前が一字一致しません（近い名前: ' + sn.near.join('・') + '）' : '薬の名前が、今の定期薬・施設で使っている名前・薬価基準のどれとも一字一致しません');
     else if (!sn.makerOk) warn.push('屋号「' + sm.maker + '」が一致しません' + (sn.near && sn.near.length ? '（近い名前: ' + sn.near.join('・') + '）' : ''));
@@ -595,6 +639,8 @@
       var a = drugKey(splitMaker(lineName(line)).base);
       for (j = 0; j < cur.length; j++) if (!used[j] && drugKey(splitMaker(lineName(cur[j])).base) === a && a) { hit = j; break; }
       if (hit < 0) { var st = stem(line); if (st) for (j = 0; j < cur.length; j++) if (!used[j] && stem(cur[j]) === st) { hit = j; break; } }
+      /* 名前の違う同じ薬（コード9桁が同じ・snap が alias に施設の名前を持たせた）を今の行と結ぶ */
+      if (hit < 0 && r.spec && r.spec.alias) { var al = drugKey(splitMaker(r.spec.alias).base); for (j = 0; j < cur.length; j++) if (!used[j] && drugKey(splitMaker(lineName(cur[j])).base) === al) { hit = j; break; } }
       if (hit >= 0) {
         used[hit] = 1;
         /* 書き方だけが違う（同じ薬・同じ屋号で、1日の量・単位・時点・食前後が同じ）なら、今の行のまま（kind 'same'・how 'meaning'） */
@@ -666,9 +712,13 @@
       if (r.kind === 'add' && lefts.length) r.warns.push('今の定期薬に、書類に無い薬が ' + lefts.length + ' 行あります。名前の書き方違い（先発・後発など）で同じ薬でないか確かめてください');
     });
     /* 書類に無い今の行のうち、書類の薬と同じ語幹の行（1つの薬を時点ごとに2行に分けて書いている等）には知らせを付ける */
+    /* 名前の違う同じ薬（コード9桁が同じ・opts.yjOf）も同じ薬として知らせる。施設が1つの薬を時点ごとに2行で書き、
+       書類が後発品の名前で1行の時、片方の行だけ結ばれて、もう片方が「残す」になり量が二重になるのを防ぐ（反証レビュー 2026-11-05 指摘1） */
+    var yjf = typeof opts.yjOf === 'function' ? opts.yjOf : null;
+    var yjOfLine = function (l) { if (!yjf) return ''; try { return String(yjf(lineName(l)) || ''); } catch (e) { return ''; } };
     lefts.forEach(function (r) {
-      var st = ident(r.cur);
-      var same = st && rows.filter(function (x) { return x.kind !== 'left' && ident(x.line || x.raw) === st; })[0];
+      var st = ident(r.cur), ly = yjOfLine(r.cur);
+      var same = rows.filter(function (x) { return x.kind !== 'left' && ((st && ident(x.line || x.raw) === st) || (ly && (yjOfLine(x.line) === ly || yjOfLine(x.raw) === ly || yjOfLine(x.cur) === ly))); })[0];
       if (same) r.warns.push('書類の「' + lineName(same.raw || same.line) + '」と同じ薬の名前です（行の分け方が違うかもしれません。量・時点が重ならないか確かめてください）');
     });
     return rows;
@@ -695,8 +745,11 @@
     lines.forEach(function (l) { var k = nfkc(l).replace(/\s+/g, ' ').trim(); if (seen[k]) dup++; seen[k] = 1; });
     /* 同じ薬（語幹）が2行以上になり、そのどれかが今回足す・変える行（設計書 §4-3・薬の変更候補の dupS と同じ考え） */
     var touched = {};
-    dec.add.concat(dec.change.map(function (x) { return x.to; })).forEach(function (l) { var k = ident(l); if (k) touched[k] = 1; });
-    lines.forEach(function (l) { var k = ident(l); if (!k) return; stems[k] = (stems[k] || 0) + 1; if (stems[k] === 2 && touched[k]) dupStems.push(lineName(l)); });
+    /* 同じ薬の鍵: 語幹（ident）と、渡された時はコード9桁（st.yjOf・名前の違う同じ薬も重なりとして見る） */
+    var keysOf = function (l) { var ks = [], k = ident(l); if (k) ks.push(k); if (typeof st.yjOf === 'function') { try { var y = st.yjOf(lineName(l)); if (y) ks.push('YJ:' + y); } catch (e) { /* 引けない時は語幹だけ */ } } return ks; };
+    dec.add.concat(dec.change.map(function (x) { return x.to; })).forEach(function (l) { keysOf(l).forEach(function (k) { touched[k] = 1; }); });
+    var listed = {};
+    lines.forEach(function (l) { keysOf(l).forEach(function (k) { stems[k] = (stems[k] || 0) + 1; if (stems[k] === 2 && touched[k] && !listed[lineName(l)]) { listed[lineName(l)] = 1; dupStems.push(lineName(l)); } }); });
     /* 「調剤日」の語の付いた日付が無い書類は、取り込んだ日（今日）を調剤日として記録し、止めない
        （最新の薬情だけを読む運用のため・代表者の決定 2026-10-22） */
     var importDay = !labeled.length && !!st.today && String(st.date) === String(st.today);
@@ -789,7 +842,7 @@
       if (doc.pagesTotal && doc.pagesTotal > pages.length) why.push('全部のページを読んでいません');
     }
     var j = judge({ id: st.id, dates: st.dates, date: date, today: st.today, identity: true, server: st.server, rows: rows, current: st.current,
-      lastChange: st.lastChange, oldChecked: false, sameDay: st.sameDay, ack: false, dupChecked: false, dateChecked: false });
+      lastChange: st.lastChange, oldChecked: false, sameDay: st.sameDay, ack: false, dupChecked: false, dateChecked: false, yjOf: st.yjOf });
     var n = j.counts.change + j.counts.add, noChange = !n && !j.counts.stop;
     if (j.counts.stop) why.push('中止の行があります');
     if (n > BULK_MAX) why.push('変わる行が ' + n + ' 行あります（まとめて反映は ' + BULK_MAX + ' 行まで）');
@@ -954,7 +1007,7 @@
 
   var api = { parseResult: parseResult, assign: assign, findDates: findDates, datesIn: datesIn, parseUse: parseUse,
     parseRows: parseRows, looksDrug: looksDrug, stripEnum: stripEnum, snap: snap, lineSpec: lineSpec, shortDays: shortDays, splitMaker: splitMaker, stem: stem, matchCurrent: matchCurrent, sameMeaning: sameMeaning, buildRows: buildRows, judge: judge, buildAfter: buildAfter,
-    startDate: startDate, useDate: useDate, bulkCheck: bulkCheck, BULK_MAX: BULK_MAX, parseLabeled: parseLabeled, cleanDrugName: cleanDrugName, canonKey: canonKey,
+    startDate: startDate, useDate: useDate, bulkCheck: bulkCheck, BULK_MAX: BULK_MAX, parseLabeled: parseLabeled, cleanDrugName: cleanDrugName, canonKey: canonKey, yjIndex: yjIndex, yjOf: yjOf, yjLookup: function (text) { var idx = yjIndex(text); return idx ? function (name) { return yjOf(name, idx); } : null; }, lineName: lineName, drugKey: drugKey,
     fnv8: fnv8, srcKey: srcKey, logRows: logRows, nz: nz, kn: kn, dist: dist,
     correctionKinds: correctionKinds, metricOf: metricOf, metricsLoad: metricsLoad, metricsSave: metricsSave, summarize: summarize, metricText: metricText,
     METRIC_MAX: METRIC_MAX };

@@ -373,6 +373,7 @@ const CENSUS = {
   "mailer/src/util.js": [],
   "meds-effect-dict.js": [],
   "meds-yakka-naiyo.js": [],
+  "meds-yakka-yj.js": [],
   "menu-settings.html": [],
   "menu-settings.js": [],
   "su-app-gate.js": [],
