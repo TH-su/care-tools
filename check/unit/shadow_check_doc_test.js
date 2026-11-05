@@ -95,7 +95,7 @@ const ST = (s, a) => ({ ok: true, stf: K(s), adm: K(a) });
     t('H 欄がある', /<h2>添付書類の写し（職員マスタ・入居調整）<\/h2>/.test(HTML) && /id="doc-kpis"/.test(HTML) && /id="doc-verdict"/.test(HTML) && /id="doc-detail"/.test(HTML));
     t('H 準備の帯の番号 0063', /doc_shadow_status: '0063'/.test(SRC));
     t('H 起動時に読む（読めない時は文を出す）', /try \{ await loadDoc\(sb\); \} catch \(e\) \{ \$\('doc-verdict'\)/.test(SRC));
-    t('H 版を上げた（shadow-check.js?v=2026-11-03.9）', /shadow-check\.js\?v=2026-11-03\.9/.test(HTML));
+    t('H 版を上げた（shadow-check.js?v=2026-11-03.9 以降）', /shadow-check\.js\?v=2026-11-(03\.(9|\d{2,})|0[4-9]|[1-3]\d)/.test(HTML));
   }
   console.log('\n合格 ' + pass + ' / 不合格 ' + fail);
   process.exit(fail ? 1 : 0);

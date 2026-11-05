@@ -130,7 +130,15 @@ const ST = (x, s) => Object.assign({ ok: true, days: 400, rows: 21000, firstDay:
     t('H 欄がある（見出し・数・結果・その回の数）', /<h2>排泄ケア記録の写し<\/h2>/.test(HTML) && /id="hb-kpis"/.test(HTML) && /id="hb-verdict"/.test(HTML) && /id="hb-detail"/.test(HTML));
     t('H 準備の帯の番号 0062', /hb_shadow_status: '0062'/.test(SRC));
     t('H 起動時に読む（読めない時は文を出す）', /try \{ await loadHb\(sb\); \} catch \(e\) \{ \$\('hb-verdict'\)/.test(SRC));
-    t('H 版を上げた（shadow-check.js?v=2026-11-03.8）', /shadow-check\.js\?v=2026-11-03\.(8|9|\d{2,})/.test(HTML));
+    t('H 版を上げた（shadow-check.js?v=2026-11-05 以降）', /shadow-check\.js\?v=2026-11-(0[5-9]|[1-3]\d)/.test(HTML));
+    t('H 切り替え・戻すのボタンと印の行がある（既定で隠す）', /id="hb-mode"/.test(HTML) && /<button type="button" class="btn" id="b-hb-cut" hidden>排泄ケア記録を新しい保存先へ切り替える<\/button>/.test(HTML)
+      && /<button type="button" class="btn" id="b-hb-back" hidden>排泄ケア記録を写しの期間に戻す<\/button>/.test(HTML));
+    t('H su-hb-full.js は画面の動きより先に読む（版の印つき）', /<script src="su-hb-full\.js\?v=\d{4}-\d{2}-\d{2}(\.\d+)?"><\/script>/.test(HTML) && HTML.indexOf('su-hb-full.js?v=') < HTML.indexOf('shadow-check.js?v='));
+    t('H 準備の帯の番号 0064・起動時に印を読む（読めない時はボタンを出さない）', /hb_mode_get: '0064'/.test(SRC) && /try \{ await loadHbMode\(sb\); \} catch \(e\)/.test(SRC));
+    t('H ボタンは管理者だけ・切り替えはスイッチ haiben と接続先がある時だけ', /function loadHbMode[\s\S]*?if \(!\(me && me\.role === 'admin'\)\) return;[\s\S]*?bc\.hidden = live \|\| !on \|\| !st;/.test(SRC)
+      && /sw\.supabase\.haiben === true/.test(SRC));
+    t('H 接続先は排泄ケア記録の画面の控え（hbcr_api_url・hbcr_api_token）を読むだけ（書かない）', /localStorage\.getItem\('hbcr_api_url'\)/.test(SRC) && !/localStorage\.setItem\('hbcr_api/.test(SRC));
+    t('H 実行は現場の端末では断り、2回確かめる', /function runHbOp[\s\S]*?role === 'field'[\s\S]*?confirm\('本当に実行しますか？/.test(SRC));
   }
   console.log('\n合格 ' + pass + ' / 不合格 ' + fail);
   process.exit(fail ? 1 : 0);
