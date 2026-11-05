@@ -1112,6 +1112,7 @@
     try { await loadHbMode(sb); } catch (e) { genoNote('排泄の印の欄', e); }   // 0064 の前・読めない時はボタンを出さない
     try { await loadDoc(sb); } catch (e) { $('doc-verdict').className = 'msg warn'; $('doc-verdict').textContent = '添付書類の写しの記録を読めませんでした。'; }
     try { await loadDocMode(sb); } catch (e) { genoNote('書類の印の欄', e); }   // 0065 の前・読めない時はボタンを出さない
+    try { await loadHo(sb); } catch (e) { $('ho-verdict').className = 'msg warn'; $('ho-verdict').textContent = '申し送りの写しの記録を読めませんでした。'; }
     try { await loadPatch(sb); }
     catch (e) {
       $('pt-verdict').className = 'msg warn';
@@ -1435,7 +1436,8 @@
     adm_sync_runs: '0040', adm_mode_get: '0042', stf_shadow_status: '0044', stf_mode_get: '0045',
     sup_shadow_status: '0046', sup_mode_get: '0047', mirror_bot_me: '0047',
     sa_shadow_status: '0050', sa_mode_get: '0051', device_seen_summary: '0048', shadow_diff_days: '0055', shadow_diff_note: '0055',
-    geno_shadow_status: '0053', geno_mode_get: '0054', hb_shadow_status: '0062', hb_mode_get: '0064', doc_shadow_status: '0063', doc_mode_get: '0065'
+    geno_shadow_status: '0053', geno_mode_get: '0054', hb_shadow_status: '0062', hb_mode_get: '0064', doc_shadow_status: '0063', doc_mode_get: '0065',
+    ho_shadow_status: '0067'
   };
   var prepMissing = {};
   function dbErrKind(err) {
@@ -1955,6 +1957,51 @@
     else if (Number(s.left) > 0) say('写しが届いています（初めの写しの途中です）。' + tail, 'ok');
     else if (notes.length) say('写しは1時間ごとに届いていますが、下の知らせがあります（このままでは切り替えられません）。' + tail, 'warn');
     else say('写しが1時間ごとに届き、Google と同じです。写し始めてから ' + sinceDays + '日（2週間以上続けてから切り替えを決めます）。' + tail, 'ok');
+  }
+  /* 申し送りの写し（統合 0067・2026-11-05 代表者の決定: 案C の最初の段＝まず写しを作る・AI 要約は写さない）: ho_shadow_status（事務所・管理者）。
+   * 出すのは種類（出来事・バイタル・食事量）ごとの日数・件数・照らし合わせの数・最後に写した時刻と、その回の数だけ（氏名・本文は返らない・出さない）。
+   * 切り替えのボタンは無い（写しの期間だけ）。Google へは何も送らない */
+  var HO_KIND = [['ev', '出来事'], ['vt', 'バイタル'], ['ml', '食事量']];
+  var HO_REFUSED = {
+    stale: '前に読んだ写し', shrink: '急に減った', badrow: '形の違い', badkind: '種類の違い', dup: '同じ日に同じ行が2つ', toomany: '一度に多すぎる',
+    toolarge: '大きすぎる', future: '時刻が先'
+  };
+  async function loadHo(sb, nowMs) {
+    var kk = $('ho-kpis'), v = $('ho-verdict'), dt = $('ho-detail');
+    function say(t, kind) { v.className = 'msg' + (kind ? ' ' + kind : ''); v.textContent = t; }
+    kk.replaceChildren(); dt.className = 'msg'; dt.textContent = '';
+    var st = await sb.rpc('ho_shadow_status');
+    if (st.error) { say(dbErrText(st.error, 'ho_shadow_status', '申し送りの写しの準備（データベース 0067）はまだです。')); return; }
+    var d = st.data || {}, ks = (d.kinds && typeof d.kinds === 'object') ? d.kinds : {}, s = (d.stat && typeof d.stat === 'object') ? d.stat : {};
+    if (!d.lastAt) { say('まだ写していません。申送ビューアの GAS に写しの部品（shadow.gs）を入れ、自動（setupHoShadow）を入れると、1時間以内に写ります。'); return; }
+    var now = typeof nowMs === 'number' ? nowMs : Date.now();
+    var since = Date.parse(d.since || '');
+    var sinceDays = isNaN(since) ? 0 : Math.max(0, Math.floor((now - since) / 86400000));
+    var ver = 0, mis = 0, left = 0, notes = [], parts = [];
+    HO_KIND.forEach(function (p) {
+      var k = ks[p[0]] || {}, x = (s[p[0]] && typeof s[p[0]] === 'object') ? s[p[0]] : {};
+      kk.appendChild(kpi(p[1] + 'の日', Number(k.days) || 0, '日'));
+      ver += Number(k.verified14) || 0; mis += Number(k.mismatch14) || 0; left += Number(x.left) || 0;
+      if (x.days != null) parts.push(p[1] + ': Google ' + Number(x.days) + '日・' + Number(x.rows || 0) + '行／最後の回 違った日 ' + Number(x.diff || 0) + '日・写した日 ' + Number(x.sent || 0) + '日・照らし合わせ ' + Number(x.verify || 0) + '日');
+      if (Number(x.emptyHeld) > 0) notes.push(p[1] + 'で Google の行が無くなった日が ' + Number(x.emptyHeld) + '日あり、10日を超えるので写しからは消していません。申送イベントDB のタブが消えたり名前が変わったりしていないか確かめ、開発の担当へ知らせてください。');
+      if (Number(x.bad) > 0) notes.push(p[1] + 'に新しい保存先で使えない形の行が ' + Number(x.bad) + '行あり、写していません（開発の担当へ知らせてください）。');
+      if (Number(x.nodate) > 0) notes.push(p[1] + 'に日付の入っていない行が ' + Number(x.nodate) + '行あります（どの日にも入らないので写していません）。');
+    });
+    kk.appendChild(kpi('中身まで照らし合わせた日（14日）', ver, '日'));
+    kk.appendChild(kpi('食い違い（14日）', mis, '日'));
+    kk.appendChild(kpi('写し始めてから', sinceDays, '日'));
+    if (left > 0) notes.unshift('まだ写していない日が ' + left + '日あります（初めの写しの途中。次の回から続きを写します）。');
+    if (Number(d.refused24h) > 0) notes.push('この24時間に受け付けなかった写しが ' + Number(d.refused24h) + '回ありました。');
+    var tail = '（最後に写した時刻 ' + fmtTime(d.lastAt) + '）';
+    var last = Date.parse(d.lastAt || '');
+    dt.textContent = parts.join('。') + (parts.length ? '。' : '') + (notes.length ? ' ' + notes.join(' ') : '');
+    if (notes.length) dt.className = 'msg warn';
+    if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + (HO_REFUSED[d.lastRefused] || String(d.lastRefused || '')) + '）。開発の担当へ知らせてください。' + tail, 'warn');
+    else if (isNaN(last) || now - last > SA_FRESH_MS) say('しばらく写っていません。申送ビューアの GAS の自動（hoShadowTick）が止まっていないか確かめてください。' + tail, 'warn');
+    else if (mis > 0) say('この14日に、要約は同じなのに中身が違った日が ' + mis + '日ありました（写しは直してあります）。読み先を移す前に開発の担当へ知らせてください。' + tail, 'warn');
+    else if (left > 0) say('写しが届いています（初めの写しの途中です）。' + tail, 'ok');
+    else if (notes.length) say('写しは1時間ごとに届いていますが、下の知らせがあります。' + tail, 'warn');
+    else say('写しが1時間ごとに届き、Google と同じです。写し始めてから ' + sinceDays + '日（2週間以上続けてから、申送ビューアの読み先を移すかを決めます）。' + tail, 'ok');
   }
   /* 切り替えボタンは、切り替えスイッチ genogram が入で、この端末に家族構成図の接続先（URL と合言葉）がある時だけ出す */
   function genoOn() { var sw = window.SUKv ? SUKv._flags() : null; return !!(sw && sw.supabase && sw.supabase.genogram === true); }
