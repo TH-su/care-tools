@@ -601,7 +601,7 @@ console.log('\n— 12. 取り込みの一致率（correctionKinds・metricOf・s
   t('★現場用への切り替えでは欄を空にする（端末の記録は消さない）', /mt\.textContent=''/.test(cut3(RM3, 'yjPurge_')) && !/removeItem/.test(cut3(RM3, 'yjPurge_')));
   const modal = RM3.slice(RM3.indexOf('<div class="modal" id="mYakujo"'), RM3.indexOf('<!-- 端末用途ガード'));
   t('★欄は取り込みの窓（#mYakujo）の中にあり、窓ごと印刷しない', /<div class="box">[\s\S]*<p class="yj-met" id="yjMetric"><\/p>\s*<div class="yj-body" id="yjBody"><\/div>\s*<\/div>\s*<\/div>\s*$/.test(modal.trim() + '\n') && /@media print\{ #mYakujo,#yjOpen\{display:none !important\} \}/.test(RM3));
-  t('共有部品の版（?v=）を上げた', /yakujo-calc\.js\?v=2026-11-05/.test(RM3));
+  t('共有部品の版（?v=）を上げた', /yakujo-calc\.js\?v=2026-11-05\.2"/.test(RM3));
 }
 
 /* ── まとめて反映できるか（bulkCheck・半自動・代表者の決定 2026-11-04）──
@@ -666,6 +666,55 @@ console.log('\n[見出しの付いた枠の書式（parseLabeled）]');
   t('★見出しの枠が無い書類は今までどおりの読み方（parseLabeled は null）', Y.parseLabeled(old, {}) === null && Y.parseRows(old, {}).length === 1 && !Y.parseRows(old, {})[0].labeled);
 }
 
+/* ── 名前の違う同じ薬（先発の商品名⇔後発品）を薬価基準コード9桁で結ぶ（meds-yakka-yj.js・2026-11-05）── */
+console.log('\n[コード9桁で結ぶ（yjIndex・snap・matchCurrent）]');
+{
+  const sb2 = { window: {} }; vm.createContext(sb2);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'meds-yakka-yj.js'), 'utf8'), sb2);
+  const YJT = sb2.window.MedsYakkaYJ.text, I = Y.yjIndex(YJT);
+  const same = (a, b) => !!Y.yjOf(a, I) && Y.yjOf(a, I) === Y.yjOf(b, I);
+  t('★先発の商品名と後発品（同じ成分・剤形・規格）を結ぶ', same('マグミット錠330mg', '酸化マグネシウム錠330mg「ケンエー」') && same('ムコスタ錠100mg', 'レバミピド錠100mg「JG」') && same('アルダクトンA錠25mg', 'スピロノラクトン錠25mg「CH」'));
+  t('★剤形が違う（普通の錠と OD錠）・規格が違う薬は結ばない', !same('アムロジピン錠5mg', 'アムロジピンOD錠5mg「CH」') && !same('ベルソムラ錠10mg', 'ベルソムラ錠15mg'));
+  t('一覧に無い名前はコードを返さない（推して結ばない）', Y.yjOf('カクウヨメナイ錠9mg', I) === '' && Y.yjOf('マグミット錠330mg', null) === '');
+  const cur = 'マグミット錠330mg 1錠分1 朝食後\nカクウ錠1mg 1錠分1 夕食後';
+  const row = { raw: '酸化マグネシウム錠330mg「ケンエー」', rest: '1日2回 朝夕食後 1回1錠 14日分', use: Y.parseUse('1日2回 朝夕食後 1回1錠 14日分', 'dose') };
+  const sn = Y.snap(row.raw, { current: cur.split('\n'), used: [], items: ITEMS, yj: YJT }), sp = Y.lineSpec(row, sn);
+  t('★施設の商品名と同じコードの後発品は、施設の行と結ぶ（名前は調剤された品・屋号は施設の書き方に合わせて付けない）', sn.source === 'current' && sn.alias === 'マグミット錠330mg' && sp.spec.name === '酸化マグネシウム錠330mg' && sp.spec.maker === '' && sp.warn.length === 0, { sn, warn: sp.warn });
+  const m = Y.matchCurrent([{ line: '酸化マグネシウム錠330mg 2錠分2 朝夕食後', spec: sp.spec, raw: row.raw }], cur);
+  t('★「足す」と「書類に無い今の薬」に分かれず、1つの「変える」になる（同じ薬を2行にしない）', m.pairs[0].kind === 'change' && m.pairs[0].cur === 'マグミット錠330mg 1錠分1 朝食後' && m.left.length === 1 && m.left[0] === 'カクウ錠1mg 1錠分1 夕食後', m);
+  const sn2 = Y.snap(row.raw, { current: cur.split('\n'), used: [], items: ITEMS });
+  t('コードの一覧が読めない時は今までどおり（結ばない）', sn2.alias === undefined && sn2.source !== 'current', sn2);
+  t('施設の書き方の「：」区切り（〇〇錠5mg：1日1回）でも名前を取る', Y.lineName('アトルバスタチン錠5mg：1日1回') === 'アトルバスタチン錠5mg' && Y.lineName('見本錠5mg　1錠分1') === '見本錠5mg');
+  t('照合の鍵では μg の書き方（ug）とカブセルの違いを吸収する', Y.drugKey('メコバラミン錠500ug') === Y.drugKey('メコバラミン錠500μg') && Y.drugKey('見本カブセル1mg') === Y.drugKey('見本カプセル1mg'));
+}
+
+/* ── 反証レビュー（2026-11-05 最終）の指摘の再現 ── */
+console.log('\n[コード9桁で結んだ時の重なり・単位・同じ方の2枚]');
+{
+  const sb3 = { window: {} }; vm.createContext(sb3);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'meds-yakka-yj.js'), 'utf8'), sb3);
+  const YJT = sb3.window.MedsYakkaYJ.text, yf = Y.yjLookup(YJT);
+  const cur = 'マグミット錠330mg 1回1錠 朝食後\nマグミット錠330mg 1回1錠 夕食後\nカクウ錠1mg 1回1錠 朝食後';
+  const rows0 = [{ raw: '酸化マグネシウム錠330mg「ケンエー」', rest: '1日2回 朝夕食後 1回1錠 14日分', use: Y.parseUse('1日2回 朝夕食後 1回1錠 14日分', 'dose'), page: 1 },
+    { raw: 'カクウ錠1mg', rest: '1日1回 朝食後 1回1錠 14日分', use: Y.parseUse('1日1回 朝食後 1回1錠 14日分', 'dose'), page: 1 }];
+  const specs = rows0.map((r) => Y.lineSpec(r, Y.snap(r.raw, { current: cur.split('\n'), used: [], items: ITEMS, yj: YJT })));
+  const lines = ['酸化マグネシウム錠330mg 2錠分2 朝夕食後', 'カクウ錠1mg 1錠分1 朝食後'];
+  const m = Y.matchCurrent(rows0.map((r, i) => ({ line: lines[i], spec: specs[i].spec, raw: r.raw })), cur);
+  const rows = Y.buildRows(m.pairs, m.left, specs, { yjOf: yf });
+  const left = rows.filter((r) => r.kind === 'left');
+  t('★施設が1つの薬を時点ごとに2行で書き、書類が後発品の名前で1行の時、結ばれなかった方の行に「同じ薬」の知らせを付ける（反証レビュー最終 指摘1）', left.length === 1 && left[0].warns.some((w) => /同じ薬/.test(w)), left);
+  const bc = Y.bulkCheck({ autoId: '11', pickId: '11', id: '11', dates: { labeled: ['2026-11-01'], other: [] }, today: '2026-11-04', server: 'ok', current: cur, lastChange: '', sameDay: '',
+    doc: { error: '', note: '', pagesTotal: 1, pages: [{ img: 'data:image/jpeg;base64,AA==', error: '' }] }, rows, yjOf: yf });
+  t('★その書類は、まとめて反映に入れない（量を二重にしない）', bc.ok === false && bc.why.some((w) => /⚠ の行/.test(w)), bc.why);
+  const keepAll = rows.map((r) => Object.assign({}, r, { checked: true, action: r.kind === 'left' ? 'keep' : r.action }));
+  const j = Y.judge({ id: '11', dates: { labeled: ['2026-11-01'], other: [] }, date: '2026-11-01', today: '2026-11-04', identity: true, server: 'ok', rows: keepAll, current: cur, yjOf: yf });
+  t('★1人ずつで「残す」を選んでも、名前の違う同じ薬が2行になることを重なりとして止める', /同じ名前の薬が2行/.test(j.stop) && j.dupStems.length >= 1, j.stop);
+  t('★規格の単位の違い（500μg と 0.5mg）をそろえる（指摘3）', Y.canonKey('メコバラミン錠500μg') === Y.canonKey('メコバラミン0.5mg錠') && Y.canonKey('見本錠0.25μg') !== Y.canonKey('見本錠0.25mg'));
+  const RM5 = fs.readFileSync(path.join(ROOT, 'resident-master.html'), 'utf8');
+  t('★同じ方の書類が2枚以上ある時は、まとめて反映に入れない（指摘2）', /dupPick\[String\(x\.pick\)\]>1&&\(bc\.ok\|\|bc\.none\)/.test(RM5) && /同じ方の書類が /.test(RM5));
+  t('結果のファイルを作った時刻を出し、1日より前なら知らせる（指摘4）', /この結果のファイルは /.test(RM5) && /age>24/.test(RM5));
+}
+
 console.log('\n[まとめて反映できるか（bulkCheck）]');
 {
   const A0 = 'テストロール錠5mg 1回1錠 朝食後', A1 = 'テストロール錠5mg 1回2錠 朝食後', B = 'ミホンジン錠10mg 1回1錠 夕食後', C = 'カクウパム錠2mg 1回1錠 眠前';
@@ -728,7 +777,7 @@ console.log('\n[まとめて反映の画面（resident-master.html）]');
   t('★まとめて反映も1人ずつと同じ本文（yjBody_）・同じ受け口（apiPostRaw）で送り、記録に「まとめて反映」と残す', /yjBody_\(c, x, j, p\.bc\.date, p\.bc\.rows, 'まとめて反映'\)/.test(ba) && /apiPostRaw\(body,40000\)/.test(ba));
   t('★ログインの証明が無い時は送らずに止める', /if\(!at\)\{ stopAll=/.test(ba));
   t('★書き込みは再試行しない（apiPostRaw は1人1回・届いたか分からない時は確かめ中にして残りへは送らない）', (ba.match(/apiPostRaw\(/g) || []).length === 1 && /x\.status='unsure'; res\.unsure\+\+; stopAll=/.test(ba) && /r&&r\.unknown\)\{ x\.status='unsure'; res\.unsure\+\+; stopAll=/.test(ba));
-  t('★書類の ⚠（読み残し・読めないページ）を判定に渡す', /sameDay:cur\.sameDay, doc:x\.d\}\)/.test(pl));
+  t('★書類の ⚠（読み残し・読めないページ）を判定に渡す', /sameDay:cur\.sameDay, doc:x\.d, yjOf:cur\.yjOf\|\|null\}\)/.test(pl));
   t('★調べの描き直しは一覧を見ている時だけ', !/yjPaint_\(\)/.test(pl.replace(/if\(S\.phase==='queue'\) yjPaint_\(\)/g, '')));
   t('★既に反映されていた方は、書き換えた人数に数えない', /r&&r\.already\)\{ x\.status='done'; res\.already\+\+; return; \}/.test(ba));
   t('★1人ずつで開いた書類は、まとめての一覧から外す', /if\(x\.pre&&x\.pre\.st!=='busy'\) x\.pre=null;/.test(cut4(RM4, 'yjStartDoc_')));
