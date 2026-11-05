@@ -6,7 +6,7 @@
      C スイッチが入でも、データベースの印が切り替える前（shadow）・0042 の前なら gas の道を同じ本文で
      D 切り替えた後（live）は adm-write へ（合言葉なし）。保存できたら Google へ写し返し（admMirror・ログインの証明つき）。
        Google が「切り替えた後」（switched）と返した読み取りは使わない。ログインしていない時は断り、Google へ流さない
-     E 画面: 台帳の読み書き・閉じる直前の送信・ping は入口を通る。添付書類の操作は今までどおり kvRaw（Google）
+     E 画面: 台帳の読み書き・閉じる直前の送信・ping は入口を通る。添付書類の操作は kvRaw（Google）。書類の正本を切り替えた後だけ su-doc-live.js の道（統合 0065）
    実行: node check/unit/adm_entry_test.js
    架空データのみ。 */
 'use strict';
@@ -139,7 +139,8 @@ async function both(oldFn, newFn, o) {
     t('台帳の読み取りは入口（kvGet(KV_KEY) を直接呼ばない）', !/SU\.data\.kvGet\(KV_KEY\)/.test(H) && (H.match(/SU\.data\.admission\.get\(KV_KEY\)/g) || []).length === 4);
     t('台帳の保存は入口（force・証明は extra で渡す）', /return SU\.data\.admission\.put\(KV_KEY, snap, rev, ex\);/.test(H) && !/action: 'put', key: KV_KEY/.test(H));
     t('閉じる直前の送信・ping は入口', /SU\.data\.admission\.putBeacon\(KV_KEY, DB, kvRev\)/.test(H) && /SU\.data\.admission\.ping\(\)/.test(H) && !/SU\.data\.kvPutBeacon/.test(H));
-    t('添付書類の操作は今までどおり kvRaw（Google）', /function apiFiles\(payload\) \{[\s\S]{0,300}return SU\.data\.kvRaw\(payload\);/.test(H));
+    t('添付書類の操作は kvRaw（Google）・切り替えた後だけ su-doc-live.js が新しい保存先へ（統合 0065）', /function apiFiles\(payload\) \{[\s\S]{0,700}if \(window\.SUDocLive\) return window\.SUDocLive\.adm\(payload, function \(\) \{ return SU\.data\.kvRaw\(payload\); \}\);\s*return SU\.data\.kvRaw\(payload\);/.test(H)
+      && /<script src="su-doc-live\.js\?v=/.test(H));
     t('中身が同じかの見比べは項目の並びを問わない（反証レビュー 指摘6）', (H.match(/var same = afCanon_\(/g) || []).length === 2 && /function afCanon_\(v\)/.test(H));
     t('送れていない変更があり、閉じる直前の送信もできなかった時は閉じる前に止める（反証レビュー 指摘11）', /if \(dirty && afBeaconLost_\) \{ ev\.preventDefault\(\);/.test(H)
       && /afBeaconLost_ = SU\.data\.admission\.putBeacon\(KV_KEY, DB, kvRev\) === false;/.test(H));

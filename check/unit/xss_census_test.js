@@ -564,6 +564,8 @@ const CENSUS = {
   "su-geno.js": [],
   "su-geno-full.js": [],
   "su-hb-full.js": [],
+  "su-doc-full.js": [],
+  "su-doc-live.js": [],
   "supplies-calc.js": [],
   "supplies.html": [],
   "support-overview.html": [],

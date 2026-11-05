@@ -11,6 +11,7 @@
 (function (root) {
   'use strict';
   function dbWhy(e) {
+    if (/doc_live/.test(String(e && e.message || ''))) return '先に「職員マスタの書類を写しの期間に戻す」で書類を戻してください（書類の正本が新しい保存先の間は、職員マスタを戻せません・統合 0065）。';
     var c = String(e && (e.code || e.error || e.message) || e || '');
     if (c === '42501' || /not allowed/.test(c)) return '管理者（二段階認証済み）のアカウントで開いてください。';
     if (/PGRST202|42883|PGRST205|42P01/.test(c)) return 'データベースの準備（0045）がまだです。';

@@ -1111,6 +1111,7 @@
     try { await loadHb(sb); } catch (e) { $('hb-verdict').className = 'msg warn'; $('hb-verdict').textContent = '排泄ケア記録の写しの記録を読めませんでした。'; }
     try { await loadHbMode(sb); } catch (e) { genoNote('排泄の印の欄', e); }   // 0064 の前・読めない時はボタンを出さない
     try { await loadDoc(sb); } catch (e) { $('doc-verdict').className = 'msg warn'; $('doc-verdict').textContent = '添付書類の写しの記録を読めませんでした。'; }
+    try { await loadDocMode(sb); } catch (e) { genoNote('書類の印の欄', e); }   // 0065 の前・読めない時はボタンを出さない
     try { await loadPatch(sb); }
     catch (e) {
       $('pt-verdict').className = 'msg warn';
@@ -1434,7 +1435,7 @@
     adm_sync_runs: '0040', adm_mode_get: '0042', stf_shadow_status: '0044', stf_mode_get: '0045',
     sup_shadow_status: '0046', sup_mode_get: '0047', mirror_bot_me: '0047',
     sa_shadow_status: '0050', sa_mode_get: '0051', device_seen_summary: '0048', shadow_diff_days: '0055', shadow_diff_note: '0055',
-    geno_shadow_status: '0053', geno_mode_get: '0054', hb_shadow_status: '0062', hb_mode_get: '0064', doc_shadow_status: '0063'
+    geno_shadow_status: '0053', geno_mode_get: '0054', hb_shadow_status: '0062', hb_mode_get: '0064', doc_shadow_status: '0063', doc_mode_get: '0065'
   };
   var prepMissing = {};
   function dbErrKind(err) {
@@ -1841,6 +1842,71 @@
       bc.disabled = false; bb.disabled = false;
       var keep = v.textContent, kc = v.className;
       try { await loadHbMode(sb); await loadHb(sb); } catch (e) { genoNote('排泄の読み直し', e); }   // 読み直せなくても結果の文は残す
+      v.className = kc; v.textContent = keep;
+    }
+  }
+  /* 添付書類の正本の切り替え（統合 0065）。ボタンは管理者だけ・種類ごとに、切り替えスイッチ docs が入で、この端末にその種類の GAS の接続先（URL と合言葉）がある時だけ出す。
+   * 職員マスタの書類は、職員マスタの正本を先に新しい保存先へ切り替えてある時だけ切り替えられる（GAS も確かめる） */
+  var DOC_NAME = { stf: '職員マスタ', adm: '入居調整' };
+  function docOn() { var sw = window.SUKv ? SUKv._flags() : null; return !!(sw && sw.supabase && sw.supabase.docs === true); }
+  function docTarget(kind) { return kind === 'stf' ? stfTarget() : admTarget(); }
+  async function loadDocMode(sb) {
+    var line = $('doc-mode');
+    ['stf', 'adm'].forEach(function (k) { $('b-doc-' + k + '-cut').hidden = true; $('b-doc-' + k + '-back').hidden = true; });
+    line.className = 'msg'; line.textContent = '';
+    if (!(me && me.role === 'admin')) return;
+    var r = await sb.rpc('doc_mode_get');
+    if (r.error && dbErrKind(r.error) === 'missing') notePrep('doc_mode_get');
+    if (r.error || !r.data || r.data.ok !== true) return;
+    var on = docOn(), parts = [], warn = false;
+    ['stf', 'adm'].forEach(function (k) {
+      var live = !!(r.data[k] && r.data[k].mode === 'live'), st = docTarget(k);
+      if (live && !on) { warn = true; parts.push(DOC_NAME[k] + 'の書類は新しい保存先へ切り替えた後ですが、切り替えスイッチ（docs）が切です。画面が書類を置けないので、スイッチを入れ直すか「' + DOC_NAME[k] + 'の書類を写しの期間に戻す」を押してください。'); }
+      else if (live) parts.push(DOC_NAME[k] + 'の書類の正本は新しい保存先（Supabase）です。Google ドライブへは1時間ごとに写し返しています。');
+      else parts.push(DOC_NAME[k] + 'の書類の正本は Google ドライブです（写しの期間）。' + (st ? '' : '切り替える・戻すには、この端末で' + DOC_NAME[k] + 'を開き、設定で接続先と合言葉を入れてください。'));
+      $('b-doc-' + k + '-cut').hidden = live || !on || !st;
+      $('b-doc-' + k + '-back').hidden = !st;
+    });
+    if (!on) parts.push('切り替えるには、先に切り替えスイッチ（docs）を入れる PR の取り込みが要ります。');
+    parts.push('（前の「切り替える」「写しの期間に戻す」が途中で止まり、Google での書類の出し入れが止まったままの時は「写しの期間に戻す」を押すと最後まで済ませます。途中でなければ押しても何も変わりません）');
+    line.className = 'msg' + (warn ? ' warn' : '');
+    line.textContent = parts.join('　');
+  }
+  async function runDocOp(kind, op) {
+    var v = $('doc-mode'), nm = DOC_NAME[kind];
+    function say(t, k) { v.className = 'msg' + (k ? ' ' + k : ''); v.textContent = t; }
+    if (!(me && me.role === 'admin' && me.status === SUAuth.STATUS.OK)) { say('管理者（二段階認証済み）のアカウントで開いてください。', 'warn'); return; }
+    var role = ''; try { role = localStorage.getItem('su_device_role') || ''; } catch (e) { role = ''; }
+    if (role === 'field') { say('この端末は「現場」です。事務所のパソコンで行ってください。', 'warn'); return; }
+    var st = docTarget(kind);
+    if (!st) { say('この端末には' + nm + 'の接続先（URL と合言葉）がありません。この端末で' + nm + 'を開き、設定で入れてから、押し直してください。', 'warn'); return; }
+    if (op === 'cut') {
+      if (!docOn()) { say('切り替えスイッチ（docs）が入っていません。', 'warn'); return; }
+      if (!confirm(nm + 'の添付書類の正本を新しい保存先（Supabase）へ切り替えますか？\n\n数分かかります。その間は' + nm + 'で書類を置く・消すことができません。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、ログインしている事務所のパソコンだけが書類を置く・開く・消すことができます。Google ドライブへは1時間ごとに写し返します。いつでも「' + nm + 'の書類を写しの期間に戻す」で戻せます。')) return;
+    } else {
+      if (!confirm(nm + 'の書類を写しの期間に戻しますか？\n\n切り替えていた間に置いた・消した書類を最後まで Google ドライブへ写し返してから、Google での書類の出し入れを受け付けるように戻します（その間は書類を置く・消すことができません）。')) return;
+    }
+    if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
+    var ids = ['b-doc-stf-cut', 'b-doc-stf-back', 'b-doc-adm-cut', 'b-doc-adm-back'];
+    ids.forEach(function (id) { $(id).disabled = true; });
+    var sb = SUAuth.client();
+    try {
+      var io = {
+        gas: function (body) { return hbPost(st, body); },
+        rpc: function (name, args) { return sb.rpc(name, args); },
+        token: async function () { var s2 = await sb.auth.getSession(); return s2 && s2.data && s2.data.session ? s2.data.session.access_token : null; },
+        progress: function (t) { say(t); }
+      };
+      var res = op === 'cut' ? await SUDocFull.cutover(io, kind) : await SUDocFull.back(io, kind);
+      if (!res.ok) { say((op === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + res.why, 'warn'); return; }
+      say(op === 'cut' ? (res.unchanged ? 'もう切り替わっていました（何も変えていません）。' : nm + 'の書類を切り替えました（止めた後に写した書類 ' + res.files + ' 件）。') + nm + 'の画面は、1分ほどで新しい保存先で書類を扱い始めます。'
+                       : nm + 'の書類を写しの期間に戻しました。正本は Google ドライブです。', 'ok');
+    } catch (e) {
+      say('止まりました: ' + String(e && e.message || e), 'warn');
+    } finally {
+      ids.forEach(function (id) { $(id).disabled = false; });
+      var keep = v.textContent, kc = v.className;
+      try { await loadDocMode(sb); await loadDoc(sb); } catch (e) { genoNote('書類の読み直し', e); }   // 読み直せなくても結果の文は残す
       v.className = kc; v.textContent = keep;
     }
   }
@@ -2603,6 +2669,10 @@
   $('b-geno-back').addEventListener('click', function () { msg(''); runGenoOp('back'); });
   $('b-hb-cut').addEventListener('click', function () { msg(''); runHbOp('cut'); });
   $('b-hb-back').addEventListener('click', function () { msg(''); runHbOp('back'); });
+  $('b-doc-stf-cut').addEventListener('click', function () { msg(''); runDocOp('stf', 'cut'); });
+  $('b-doc-stf-back').addEventListener('click', function () { msg(''); runDocOp('stf', 'back'); });
+  $('b-doc-adm-cut').addEventListener('click', function () { msg(''); runDocOp('adm', 'cut'); });
+  $('b-doc-adm-back').addEventListener('click', function () { msg(''); runDocOp('adm', 'back'); });
   $('b-res-back').addEventListener('click', function () { msg(''); runResOp('back'); });
   $('b-check').addEventListener('click', function () { msg(''); runCheck(); });
   $('b-mirror-check').addEventListener('click', function () { msg(''); runMirrorCheck(); });
