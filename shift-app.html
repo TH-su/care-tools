@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-TcQVx9Hqu1kKKhQ8DCC777+hMUJT70OrIZ0J0lPFqBk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-nKsMrMtXWpj72thX6ECLhAaDFfEMHue2+kvisGrzjyk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -151,6 +151,9 @@ body.edit-mode #syncBadge.nosync { background: rgba(43,16,0,.75); }
 .layerbar .adddraft { background: #fff; color: var(--warn); border-color: var(--warn); border-bottom: none; font-weight: 700; }
 .layerbar .confirmdraft { background: var(--ok); color: #fff; border: 1px solid var(--ok); border-radius: 7px;
   align-self: center; margin: 0 4px 4px; padding: 6px 14px; font-weight: 700; }
+.layerbar .monthxfer { align-self: center; margin: 0 2px 4px; padding: 6px 10px; min-height: 32px; font-size: 0.8125rem;
+  background: #fff; color: var(--blue-d); border: 1px solid var(--blue-d); border-radius: 7px; cursor: pointer; display: inline-flex; align-items: center; }
+.layerbar .monthxfer:focus-within, .layerbar .monthxfer:focus-visible { outline: 2px solid var(--blue-d); outline-offset: 2px; }
 .layerbar .confirmStamp { align-self: center; font-size: 0.6875rem; color: var(--blue-d); padding-right: 8px; white-space: nowrap; }
 #emptyGuide { background: #fff8e1; border: 1px solid var(--warn); border-radius: 10px; padding: 14px 18px; margin: 10px 0; }
 #emptyGuide h2 { margin: 0 0 6px; color: #9a3412; font-size: 0.9375rem; }
@@ -429,6 +432,7 @@ html.su-field #offTokutei,
 html.su-field #offTokuteiOut,
 html.su-field #offSvcUsersSave,
 html.su-field #backupExport,
+html.su-field .monthxfer,
 html.su-field #btnFreee,
 html.su-field #frCSV,
 html.su-field #frdCSV { display: none !important; }
@@ -515,6 +519,9 @@ html.su-field #frdCSV { display: none !important; }
   <span id="draftTabs"></span>
   <button id="btnAddDraft" class="adddraft" title="編集用シフト（試作）を新規作成。予定をコピーして開始します">＋編集用</button>
   <button id="btnConfirmDraft" class="confirmdraft" style="display:none" title="この編集用の内容を予定（確定版）に反映します">✓ この編集用を確定</button>
+  <!-- 月の受け渡し（2026-11-05）: 別のファイルで作った月を、職員の番号で突き合わせて「編集用」として取り込む -->
+  <button id="btnMonthExport" class="monthxfer noprint" title="表示中の月・表示中の版を、受け渡し用のファイルに書き出します（職員は番号で書き、氏名は入れません）">📤 月を書き出す</button>
+  <label id="btnMonthImportLabel" class="monthxfer noprint" tabindex="0" role="button" title="書き出したファイルを、その月の「編集用」として取り込みます（予定は書き換えません）">📥 月を取り込む<input type="file" id="monthImportFile" accept=".json,application/json" style="display:none"></label>
   <span class="spacer"></span>
   <span class="confirmStamp" id="confirmStamp"></span>
   <span class="hint" id="layerHint"></span>
@@ -834,6 +841,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
  *   svcUsers      行政提出の一覧表の前3か月の利用者数の保存（設定を書き換える・2026-10-16）
  *   backupExport  全データの書き出し（JSON。職員の氏名・資格・勤務表を丸ごと端末へ落とす・2026-10-17 改善プロンプト第2弾の7）
  *   freeeCsv      freee 用の CSV の出力（職員の氏名・従業員コードつき・同上）
+ *   monthExport   月の受け渡しの書き出し（1か月分の勤務を端末へ落とす・2026-11-05）
+ *   monthImport   月の受け渡しの取り込み（編集用を新しく作る・同上）
  */
 (function () {
   'use strict';
@@ -849,7 +858,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     tokutei: '現場の端末では、特定事業所加算の人の要件は数えません。事務所のパソコンで操作してください',
     svcUsers: '現場の端末では、利用者数を保存できません。事務所のパソコンで操作してください',
     backupExport: '現場の端末では、全データの書き出しはできません。事務所のパソコンで操作してください',
-    freeeCsv: '現場の端末では、freee用のCSVは出せません。事務所のパソコンで操作してください'
+    freeeCsv: '現場の端末では、freee用のCSVは出せません。事務所のパソコンで操作してください',
+    monthExport: '現場の端末では、月の書き出しはできません。事務所のパソコンで操作してください',
+    monthImport: '現場の端末では、月の取り込みはできません。事務所のパソコンで操作してください'
   };
   function readRole(ls) {
     try { return (ls && ls.getItem(DEVICE_KEY)) === 'field' ? 'field' : 'office'; } catch (e) { return 'office'; }
@@ -3642,6 +3653,143 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   var api = { shrinkZoomToFit: shrinkZoomToFit };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.ShiftPrintFit = api;
+})();
+/* ===== src/logic/monthpkg.js ===== */
+/* monthpkg.js — 1か月分の勤務表の受け渡し（純粋関数・2026-11-05 代表者の依頼）
+ *
+ * 目的: 別の端末・別のファイルで作った月を、本番の勤務表へ「職員の番号で突き合わせて」移す。
+ *   これまでの写し方（マスのコピー＆貼り付け）は行の位置で合わせるため、職員の追加・並べ替え・非表示があると
+ *   別の人の行に入る。色・太字・日ごとの必要人数・メモも移らなかった。
+ *
+ * 書き出す物（build）: 月・元の版の名前・職員の番号の並び・勤務（主の行と分割の行）・色・太字・メモ・必要人数。
+ *   職員の氏名は入れない（番号だけ。どの端末で開いても名簿は相手側のもの）。
+ * 取り込み（apply）: 土台（相手の予定の写し）に重ねる。
+ *   ファイルにある職員で、相手の名簿にもいる人 … その人の行を丸ごとファイルの内容に置き換える（空の行は空にする）
+ *   ファイルにあって相手の名簿にいない人      … 取り込まない（数と番号を知らせる）
+ *   相手の名簿にいてファイルにいない人        … 土台のまま（数を知らせる）
+ *   必要人数（日ごと・月）                    … ファイルに入っている時だけ置き換える（空なら土台のまま）
+ * 土台は書き換えない（写しを返す）。
+ */
+(function () {
+  'use strict';
+  var APP = 'shiftapp-month';
+  var VERSION = 1;
+  var MAX_STAFF = 500, MAX_VAL = 40;
+  var hasOwn = function (o, k) { return Object.prototype.hasOwnProperty.call(o, k); };
+  function isObj(v) { return !!v && typeof v === 'object' && Object.prototype.toString.call(v) === '[object Object]'; }
+  function safeKey(k) { return typeof k === 'string' && k !== '__proto__' && k !== 'constructor' && k !== 'prototype' && k.length > 0 && k.length <= 80; }
+  function clone(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); }
+  function validYm(ym) { return typeof ym === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(ym); }
+  function daysOf(ym) { return new Date(+ym.slice(0, 4), +ym.slice(5, 7), 0).getDate(); }
+  /* 日→記号 の表だけを残す（1〜その月の日数・文字列・長さの上限） */
+  function cleanDays(src, days) {
+    var out = {};
+    if (!isObj(src)) return out;
+    for (var d in src) {
+      if (!hasOwn(src, d)) continue;
+      var n = Number(d);
+      if (!(n >= 1 && n <= days && String(n) === d)) continue;
+      var v = src[d];
+      if (typeof v !== 'string' || v === '' || v.length > MAX_VAL) continue;
+      out[d] = v;
+    }
+    return out;
+  }
+  function hasAny(o) { for (var k in o) { if (hasOwn(o, k)) return true; } return false; }
+
+  /* 書き出し。sched は勤務表（cells・subCells・colors・bold・notes・dailyNeeds・monthNeeds）、staffIds はその月の職員の番号の並び */
+  function build(sched, ym, staffIds, fromLabel, now) {
+    if (!validYm(ym)) throw new Error('月の指定が正しくありません');
+    var s = sched || {}, ids = [], seen = {};
+    (staffIds || []).forEach(function (id) { if (safeKey(id) && !seen[id]) { seen[id] = 1; ids.push(id); } });
+    var days = daysOf(ym);
+    var cells = {}, subCells = {}, colors = {}, bold = {}, notes = {};
+    ids.forEach(function (sid) {
+      var c = cleanDays(s.cells && s.cells[sid], days);
+      if (hasAny(c)) cells[sid] = c;
+      var sc = s.subCells && s.subCells[sid], o = {};
+      if (isObj(sc)) for (var dv in sc) { if (hasOwn(sc, dv) && safeKey(dv)) { var dd = cleanDays(sc[dv], days); if (hasAny(dd)) o[dv] = dd; } }
+      if (hasAny(o)) subCells[sid] = o;
+      if (s.notes && typeof s.notes[sid] === 'string' && s.notes[sid]) notes[sid] = s.notes[sid];
+    });
+    [['colors', colors], ['bold', bold]].forEach(function (p) {
+      var src = s[p[0]];
+      if (!isObj(src)) return;
+      for (var k in src) {
+        if (!hasOwn(src, k)) continue;
+        var sid = String(k).split('|')[0];
+        if (seen[sid]) p[1][k] = src[k];
+      }
+    });
+    return {
+      app: APP, version: VERSION, ym: ym, from: String(fromLabel || ''),
+      exportedAt: (now || new Date()).toISOString(),
+      staffIds: ids,
+      data: { cells: cells, subCells: subCells, colors: colors, bold: bold, notes: notes,
+              dailyNeeds: clone(isObj(s.dailyNeeds) ? s.dailyNeeds : {}), monthNeeds: clone(isObj(s.monthNeeds) ? s.monthNeeds : {}) }
+    };
+  }
+
+  /* 読んだファイルの形を確かめる。正しくなければ理由の文を投げる */
+  function parse(obj) {
+    if (!isObj(obj) || obj.app !== APP) {
+      if (isObj(obj) && obj.app === 'shiftapp') throw new Error('これは全データのバックアップです。「この月を書き出す」で作ったファイルを選んでください');
+      throw new Error('月の受け渡し用のファイルではありません');
+    }
+    if (Number(obj.version) !== VERSION) throw new Error('ファイルの版が違います（' + String(obj.version) + '）');
+    if (!validYm(obj.ym)) throw new Error('ファイルの月が読めません');
+    if (!Array.isArray(obj.staffIds) || obj.staffIds.length > MAX_STAFF) throw new Error('職員の並びが読めません');
+    if (!isObj(obj.data)) throw new Error('勤務の中身が読めません');
+    return obj;
+  }
+
+  /* 取り込み。base は土台の勤務表、rosterIds は取り込む側のその月の職員の番号 */
+  function apply(base, pkg, rosterIds) {
+    parse(pkg);
+    var out = clone(base || {}) || {};
+    ['cells', 'subCells', 'colors', 'bold', 'notes', 'dailyNeeds', 'monthNeeds'].forEach(function (k) { if (!isObj(out[k])) out[k] = {}; });
+    var days = daysOf(pkg.ym), d = pkg.data;
+    var roster = {}, inFile = {};
+    (rosterIds || []).forEach(function (id) { roster[id] = 1; });
+    var matched = [], unknown = [];
+    pkg.staffIds.forEach(function (sid) {
+      if (!safeKey(sid) || inFile[sid]) return;
+      inFile[sid] = 1;
+      if (roster[sid]) matched.push(sid); else unknown.push(sid);
+    });
+    var matchedSet = {};
+    matched.forEach(function (sid) {
+      matchedSet[sid] = 1;
+      var c = cleanDays(isObj(d.cells) ? d.cells[sid] : null, days);
+      if (hasAny(c)) out.cells[sid] = c; else delete out.cells[sid];
+      var sc = isObj(d.subCells) ? d.subCells[sid] : null, o = {};
+      if (isObj(sc)) for (var dv in sc) { if (hasOwn(sc, dv) && safeKey(dv)) { var dd = cleanDays(sc[dv], days); if (hasAny(dd)) o[dv] = dd; } }
+      if (hasAny(o)) out.subCells[sid] = o; else delete out.subCells[sid];
+      var nt = isObj(d.notes) ? d.notes[sid] : null;
+      if (typeof nt === 'string' && nt) out.notes[sid] = nt.slice(0, 500); else delete out.notes[sid];
+    });
+    ['colors', 'bold'].forEach(function (k) {
+      var key;
+      for (key in out[k]) { if (hasOwn(out[k], key) && matchedSet[String(key).split('|')[0]]) delete out[k][key]; }
+      var src = isObj(d[k]) ? d[k] : {};
+      for (key in src) {
+        if (!hasOwn(src, key) || !safeKey(key)) continue;
+        if (!matchedSet[String(key).split('|')[0]]) continue;
+        var v = src[key];
+        if (k === 'bold' ? v === true : (typeof v === 'string' && v.length <= 40)) out[k][key] = v;
+      }
+    });
+    /* 必要人数は、ファイルに入っている時だけ置き換える（空のファイルで本番の値を消さない・2026-11-05 反証レビュー） */
+    var needs = false;
+    if (isObj(d.dailyNeeds) && hasAny(d.dailyNeeds)) { out.dailyNeeds = clone(d.dailyNeeds); needs = true; }
+    if (isObj(d.monthNeeds) && hasAny(d.monthNeeds)) { out.monthNeeds = clone(d.monthNeeds); needs = true; }
+    var missing = (rosterIds || []).filter(function (id) { return !inFile[id]; });
+    return { sched: out, report: { matched: matched.length, unknown: unknown, missing: missing, needs: needs } };
+  }
+
+  var api = { APP: APP, VERSION: VERSION, build: build, parse: parse, apply: apply };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') window.ShiftMonthPkg = api;
 })();
 /* ===== src/ui/store.js ===== */
 /* store.js — localStorageキャッシュ + GAS同期エンジン
@@ -9931,6 +10079,82 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       this.gotoLayer('draft:' + id);
     },
 
+    /* ── 月の受け渡し（2026-11-05 代表者の依頼）──
+     * 書き出し: 表示中の月・表示中の版（予定・編集用など）を、職員の番号つきのファイルにする（氏名は入れない）。
+     * 取り込み: ファイルの月を開き、予定の写しを土台に「編集用」を新しく作って重ねる＝予定（確定版）は書き換えない。
+     *   職員は番号で突き合わせる（行の並び・非表示に左右されない）。確定はいつもの［✓ この編集用を確定］で行う。 */
+    monthStaffIds_: function (list, ym) {
+      var self = this, out = [];
+      (list || []).forEach(function (st) { if (st && st.id && self.isVisibleInMonth(st, ym)) out.push(st.id); });
+      return out;
+    },
+    exportMonth: function () {
+      if (this.fieldGuard('monthExport')) return null;
+      var MP = window.ShiftMonthPkg;
+      var from = this.layerLabel(this.layer);
+      if (this.layer.indexOf('draft:') === 0) { var dd = this.findDraft(this.layer.slice(6)); if (dd && dd.label) from = dd.label; }
+      var pkg = MP.build(this.getSched(this.layer), this.ym, this.monthStaffIds_(this.monthStaff(), this.ym), from);
+      var blob = new Blob([JSON.stringify(pkg, null, 1)], { type: 'application/json' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'shift-month-' + this.ym + '.json';
+      a.click();
+      return pkg;
+    },
+    importMonth: function (obj, done) {
+      var self = this, MP = window.ShiftMonthPkg;
+      if (this.fieldGuard('monthImport')) return;
+      if (this.leaseGuard()) return;
+      if (this._monthImporting) { this.toast('取り込みの途中です。終わるまでお待ちください'); return; }
+      var pkg;
+      try { pkg = MP.parse(obj); } catch (e) { this.confirmInfo('取り込めません', String(e && e.message || e)); return; }
+      var y = +pkg.ym.slice(0, 4), m = +pkg.ym.slice(5, 7);
+      var at = new Date(pkg.exportedAt), pad = function (n) { return (n < 10 ? '0' : '') + n; };
+      var when = isNaN(at.getTime()) ? '' : (at.getMonth() + 1) + '/' + at.getDate() + ' ' + pad(at.getHours()) + ':' + pad(at.getMinutes());
+      var label = '取込 ' + String(pkg.from || '').slice(0, 30) + (when ? '（' + when + '）' : '');
+      this.confirm('この月を取り込みます',
+        y + '年' + m + '月の「編集用」を新しく作り、ファイルの内容を入れます。\n' +
+        '予定（確定版）は書き換えません。中身を確かめてから［✓ この編集用を確定］を押してください。\n実行しますか？',
+        function () {
+          if (self.ym !== pkg.ym) self.setYM(y, m);
+          var tries = 0;
+          self._monthImporting = true;
+          var stop = function (title, msg) { self._monthImporting = false; if (title) self.confirmInfo(title, msg); };
+          (function go() {
+            if (self.ym !== pkg.ym) { stop('取り込みをやめました', '待っている間に別の月へ移ったため、取り込みませんでした。もう一度お試しください。'); return; }
+            if (!self.monthReady_(pkg.ym)) {
+              if (++tries > 60) { stop('取り込めませんでした', y + '年' + m + '月をサーバーから読み込めませんでした。通信を確かめて、もう一度お試しください。'); return; }
+              setTimeout(go, 500); return;
+            }
+            /* 待つ間に編集モードが外れた（無操作の自動解除・他の端末への引継）時は書かない（2026-11-05 反証レビュー） */
+            if (self.leaseGuard()) { stop(); return; }
+            var roster = self.monthStaffIds_(self.staff, pkg.ym);
+            var plan = self.getSched('plan');
+            var r = MP.apply(plan, pkg, roster);
+            var copy = r.sched;
+            copy.meta = { seededFrom: 'monthImport', createdAt: new Date().toISOString(),
+              staffSnap: JSON.parse(JSON.stringify(self.staff)) };
+            var id = 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+            if (Store.noteLocallyCreated_) Store.noteLocallyCreated_(self.schedKey('draft:' + id));
+            if (self.saveSched('draft:' + id, copy) !== true) {
+              stop('取り込めませんでした', '編集用を保存できませんでした（編集モード・端末の保存容量を確かめて、もう一度お試しください）。予定は変わっていません。');
+              return;
+            }
+            var list = self.getDrafts();
+            list.push({ id: id, label: label.replace(/\s+/g, ' ').trim(), createdAt: new Date().toISOString() });
+            self.saveDrafts(list);
+            self.gotoLayer('draft:' + id);
+            self._monthImporting = false;
+            var msg = r.report.matched + '人分を入れました。';
+            if (r.report.needs) msg += '\n必要人数もファイルの内容にしました。';
+            if (r.report.unknown.length) msg += '\nこの月の名簿にいない職員（休職・非表示・退職後を含む） ' + r.report.unknown.length + '人分は入れていません（職員の番号: ' + r.report.unknown.join(', ') + '）。';
+            if (r.report.missing.length) msg += '\nファイルに無い職員 ' + r.report.missing.length + '人は、予定のままです。';
+            self.confirmInfo('取り込みました', msg);
+            if (done) done(r.report, id);
+          })();
+        });
+    },
+
     /* タブのダブルクリックでインライン名称変更（Enter=保存 / Esc=取消 / blur=保存）。
      * prompt()ダイアログを廃止。renderLayerBarが#draftTabsを作り直すため、最新DOMから対象を再取得する。 */
     renameDraft: function (id) {
@@ -10877,6 +11101,28 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         });
       });
       document.getElementById('btnAddDraft').addEventListener('click', function () { self.createDraft(); });
+      /* 月の受け渡し（2026-11-05） */
+      var mx = document.getElementById('btnMonthExport');
+      if (mx) mx.addEventListener('click', function () {
+        var pkg = self.exportMonth();
+        if (pkg) self.toast('📤 ' + self.year + '年' + self.month + '月（' + self.layerLabel(self.layer) + '）を書き出しました');
+      });
+      var mi = document.getElementById('monthImportFile');
+      var ml = document.getElementById('btnMonthImportLabel');
+      if (ml && mi) ml.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); mi.click(); } });
+      if (mi) mi.addEventListener('change', function (e) {
+        var file = e.target.files && e.target.files[0];
+        e.target.value = '';
+        if (!file) return;
+        if (file.size > 2 * 1024 * 1024) { self.confirmInfo('取り込めません', 'ファイルが大きすぎます（月の受け渡し用のファイルではないようです）'); return; }
+        var rd = new FileReader();
+        rd.onload = function () {
+          var obj;
+          try { obj = JSON.parse(rd.result); } catch (err) { self.confirmInfo('取り込めません', 'ファイルを読めませんでした（' + err.message + '）'); return; }
+          self.importMonth(obj);
+        };
+        rd.readAsText(file);
+      });
       document.getElementById('btnConfirmDraft').addEventListener('click', function () {
         if (self.layer.indexOf('draft:') === 0) self.confirmDraft(self.layer.slice(6));
       });
