@@ -34,7 +34,6 @@
   var FLAGS_URL = 'su-backend.json';
   var FLAGS_LS = 'su_backend_flags';
   var FLAGS_FRESH_MS = 60000;    // スイッチを読み直す間隔（su-kv.js と同じ1分）
-  var FLAGS_WAIT_MS = 1500;      // スイッチの読み直しを待つ長さ（過ぎたら最後に読めた値で決める）
   var READ_MS = 12000;           // 新しい保存先の読み取り全体（ログインの確かめ・部品の読み込みを含む）の打ち切り
   var NOTE_KIND = '保存・同期の失敗';
   var RPC = { events: 'ho_events', measures: 'ho_measures' };
@@ -44,11 +43,6 @@
   /* ── スイッチ（su-roster.js・su-res-read.js と同じ読み方。su-kv.js があればその値）── */
   var ownFlags = null, ownAt = 0, ownPromise = null;
   function hasKv() { try { return !!(root.SUKv && typeof root.SUKv._flags === 'function'); } catch (e) { return false; } }
-  function flags() {
-    try { if (hasKv()) return root.SUKv._flags(); } catch (e) { /* 何もしない */ }
-    if (ownFlags) return ownFlags;
-    try { return JSON.parse(root.localStorage.getItem(FLAGS_LS) || 'null'); } catch (e) { return null; }
-  }
   var UNTIL_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
   /* 純関数: su-data.js の flagOn と同じ決まり（_until の無いキーは true だけを見る） */
   function flagOn(f, now) {
@@ -60,19 +54,17 @@
     var end = Date.parse(u);
     return typeof now === 'number' && isFinite(end) && now < end;
   }
-  function flagsFresh() { return hasKv() || (ownAt > 0 && Date.now() - ownAt < FLAGS_FRESH_MS); }
   function refreshFlags() {
     if (hasKv()) return Promise.resolve();
     if (!ownPromise) {
       ownPromise = Promise.resolve().then(function () {
         return root.fetch(FLAGS_URL + '?t=' + Date.now(), { cache: 'no-store' });
       }).then(function (r) { return r && r.ok ? r.json() : null; })
-        .then(function (j) { if (j && j.supabase && typeof j.supabase === 'object') ownFlags = { supabase: j.supabase }; })
-        .catch(function () { /* 読めない時は最後に読めた値のまま */ })
-        .then(function () { ownAt = Date.now(); ownPromise = null; });
+        .then(function (j) { if (j && j.supabase && typeof j.supabase === 'object') { ownFlags = { supabase: j.supabase }; ownAt = Date.now(); } })
+        .catch(function () { /* 読めない時は確かめた印を付けない（入と確かめられない間は Google から読む） */ })
+        .then(function () { ownPromise = null; });
     }
-    var p = ownPromise;
-    return Promise.race([p, new Promise(function (ok) { setTimeout(ok, FLAGS_WAIT_MS); })]);
+    return ownPromise;
   }
   function isField() { try { return root.localStorage.getItem('su_device_role') === 'field'; } catch (e) { return false; } }
 
@@ -162,8 +154,10 @@
         return Promise.resolve(A.client().rpc(RPC[action], { p_from: arg(p.from), p_to: arg(p.to) })).then(function (r) {
           if (r && r.error) {
             if (String(r.error.code || '') === '42501') return null;
+            if (/fetch|network|load failed/i.test(String(r.error.message || ''))) throw named('NetworkError', 'rpc');   // supabase-js は通信の失敗を中身で返す
             throw named('DataError', String(r.error.code || 'db'));
           }
+          if (isField()) return null;   // 読んでいる間に用途が現場へ変わった（届いた写しは使わない）
           var d = r && r.data;
           if (d && typeof d === 'object' && d.ok === false) return null;   // 写しが古い・日付が読めない（GAS と同じ断り）
           if (!shapeOk(action, d)) throw named('ShapeError', action);
@@ -183,7 +177,7 @@
       var done = false;
       var timer = setTimeout(function () {
         if (done) return;
-        done = true; note('timeout', named('TimeoutError', action)); ok(null);   // 遅れて届いた写しの答えは捨てる
+        done = true; ok(null);   // 遅れて届いた写しの答えは捨てる。通信の遅れは記録しない（圏外の端末で報告の種を増やさない・apiErrMsg と同じ）
       }, READ_MS);
       var p;
       try { p = readDb(action, params); } catch (e) { p = Promise.reject(e); }
@@ -194,30 +188,40 @@
         if (done) return;
         done = true; clearTimeout(timer);
         var n = errName(e);
-        note(action + '.' + n, named(n, e && e.message));
+        if (n !== 'NetworkError') note(action + '.' + n, named(n, e && e.message));   // 通信の失敗は記録しない（apiErrMsg と同じ）
         ok(null);
       });
     }).then(function (d) { return d ? d : gasFn(); });
   }
 
-  /* スイッチの決め方: 1分以内に読んだ値があればそれで決める（切なら gasFn をその場で呼ぶ＝今までと同じ順）。
-   * 古い値しか無い時もその値で決め、裏で読み直す（待たない。まだ何も読めていない時は切＝Google から読む） */
-  function on() { try { return flagOn(flags(), Date.now()); } catch (e) { return false; } }
+  /* スイッチの決め方（待たない・切の間は通信を1本も増やさない。申送ビューアは読み込みの速さを優先する・CLAUDE.md §3）:
+   *   ・su-kv.js がある画面はその値（1分ごとに読み直されている）
+   *   ・無い画面（申送ビューア）は、端末の控え（ほかの画面の su-kv.js が書く su_backend_flags）と自分で読んだ値の
+   *     どちらも切なら切＝Google（su-backend.json を読みに行かない）
+   *   ・どちらかが入なら、自分で1分以内に su-backend.json を読んで入と確かめた時だけ入。確かめていない時は裏で読み直し、
+   *     この回は Google から読む（切に戻した後の古い「入」の控えで写しを読まない） */
+  function on() {
+    try {
+      var now = Date.now();
+      if (hasKv()) return flagOn(root.SUKv._flags(), now);
+      var cached = null;
+      try { cached = JSON.parse(root.localStorage.getItem(FLAGS_LS) || 'null'); } catch (e) { cached = null; }
+      if (!flagOn(cached, now) && !flagOn(ownFlags, now)) return false;
+      if (!(ownAt > 0 && now - ownAt < FLAGS_FRESH_MS)) { refreshFlags(); return false; }
+      return flagOn(ownFlags, now);
+    } catch (e) { return false; }
+  }
+  /* GAS の合言葉（接続先）の有無はここでは見ない。画面が読み取りの前に確かめて止める（load・vmLoad） */
   function call(action, params, gasFn) {
     var go = false;
-    try {
-      go = eligible(action, params);
-      if (go && !flagsFresh()) refreshFlags();   // 裏で読み直すだけ。待たない（申送ビューアは読み込みの速さを優先する・CLAUDE.md §3）
-    } catch (e) { go = false; }
-    if (!go) return gasFn();
-    return on() ? viaDb(action, params, gasFn) : gasFn();   // 最後に読めた値で決める（まだ何も読めていない時は切＝Google）
+    try { go = eligible(action, params) && on(); } catch (e) { go = false; }
+    return go ? viaDb(action, params, gasFn) : gasFn();
   }
-  /* 開いた時に1回、スイッチを裏で読んでおく（現場の端末・su-kv.js がある画面は読まない） */
-  try { if (!isField() && !hasKv() && typeof root.fetch === 'function') refreshFlags(); } catch (e) { /* 何もしない */ }
 
   root.SUHoRead = {
     call: call,
     _flagOn: flagOn,
+    _refresh: refreshFlags,   // 試験用（スイッチを読み直して待つ）
     _reset: function () { ownFlags = null; ownAt = 0; ownPromise = null; noted = {}; }
   };
 })(typeof window !== 'undefined' ? window : this);

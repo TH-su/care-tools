@@ -45,20 +45,27 @@ function load(o) {
     window: win, JSON, Object, Array, String, Number, Math, Error, Promise, Date, RegExp, isFinite, setTimeout, clearTimeout
   };
   win.localStorage = { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { writes.push(k); store[k] = v; }, removeItem: k => { writes.push(k); } };
-  win.fetch = () => (o.flagsJson !== undefined ? Promise.resolve({ ok: true, json: () => Promise.resolve(o.flagsJson) }) : Promise.reject(new Error('no network')));
+  const server = o.flagsJson !== undefined ? o.flagsJson : o.flags;   // 既定では su-backend.json も端末の控えと同じ値
+  const counts = { fetch: 0, check: 0, script: 0 };
+  win.fetch = () => { counts.fetch++; return server !== undefined ? Promise.resolve({ ok: true, json: () => Promise.resolve(server) }) : Promise.reject(new Error('no network')); };
   win.SUErrors = { note: (k, e, w) => notes.push(w) };
   if (o.auth !== null) {
     const a = o.auth || { status: 'ok', role: 'office' };
     win.SUAuth = {
       STATUS: { OK: 'ok', SIGNED_OUT: 'signed_out' },
-      check: () => (a === 'throw' ? Promise.reject(new Error('net')) : Promise.resolve(a)),
+      check: () => { counts.check++; return a === 'throw' ? Promise.reject(new Error('net')) : Promise.resolve(a); },
       client: () => ({ rpc: (name, args) => { rpcs.push({ name, args }); return o.rpc ? o.rpc(name, args) : Promise.resolve({ data: name === 'ho_events' ? EV_OK : MS_OK, error: null }); } })
     };
   }
-  win.document = { getElementsByTagName: () => [], createElement: () => ({}), head: { appendChild: (s) => { setTimeout(() => s.onerror && s.onerror(), 0); } } };
+  win.document = { getElementsByTagName: () => [], createElement: () => ({}), head: { appendChild: (s) => { counts.script++; setTimeout(() => s.onerror && s.onerror(), 0); } } };
   vm.createContext(ctx);
   vm.runInContext(SRC, ctx);
-  return { H: win.SUHoRead, win, writes, rpcs, notes, store };
+  // 入の控えがある時は、画面を開いてから1回 su-backend.json を読んで確かめた後の状態で試す（o.noWarm の時はそのまま）
+  const H0 = win.SUHoRead;
+  let ready = Promise.resolve();
+  if (!o.noWarm && H0 && H0._flagOn(o.flags, Date.now())) ready = H0._refresh();
+  const H = o.noWarm ? H0 : Object.assign({}, H0, { call: (a, p, f) => ready.then(() => H0.call(a, p, f)) });
+  return { H, win, writes, rpcs, notes, store, counts };
 }
 function gas(tag) {
   const g = { n: 0 };
@@ -87,12 +94,31 @@ const MSP = { from: '2026-10-01', to: '2026-10-03' };
     t('終わりの時刻の前なら写しから読む', g.n === 0 && r.events && r.events[0].key === 'k1', r);
   }
   {
-    // 端末の控えが切でも、su-backend.json を読めて入なら入（読み直しの後）
-    const L = load({ flags: OFF, flagsJson: ON });
-    await new Promise(r => setTimeout(r, 10));
+    // 端末の控えが切なら、su-backend.json を読みに行かずに Google（スイッチが切の間は通信を1本も増やさない）
+    const L = load({ flags: OFF, flagsJson: ON, noWarm: true });
     const g = gas();
     const r = await L.H.call('measures', MSP, g.fn);
-    t('su-backend.json の今の値（入）で決める', g.n === 0 && r.vitals && r.vitals.length === 1, r);
+    t('控えが切: su-backend.json を読まずに Google', g.n === 1 && r.fromGas === true && L.counts.fetch === 0, { n: g.n, f: L.counts.fetch });
+  }
+  {
+    // 控えが入でもまだ確かめていない1回目は Google（裏で読み直す）。読み直して切なら、その後も Google（切に戻した後の古い控えで写しを読まない）
+    const L = load({ flags: ON, flagsJson: OFF, noWarm: true });
+    const g = gas();
+    await L.H.call('events', EVP, g.fn);
+    t('控えが入・まだ確かめていない1回目は Google・裏で1本読む', g.n === 1 && L.rpcs.length === 0 && L.counts.fetch === 1, { n: g.n, f: L.counts.fetch });
+    await L.H._refresh();
+    await L.H.call('events', EVP, g.fn);
+    t('su-backend.json が切なら、控えが入でも Google', g.n === 2 && L.rpcs.length === 0, { n: g.n, r: L.rpcs.length });
+  }
+  {
+    // 控えが入で、su-backend.json を読めない（通信の失敗）時は、入と確かめられないので Google
+    const L = load({ flags: ON, flagsJson: undefined, noWarm: true });
+    L.win.fetch = () => { L.counts.fetch++; return Promise.reject(new Error('no network')); };
+    const g = gas();
+    await L.H.call('events', EVP, g.fn);
+    await L.H._refresh();
+    await L.H.call('events', EVP, g.fn);
+    t('su-backend.json を読めない間は Google', g.n === 2 && L.rpcs.length === 0, { n: g.n });
   }
 
   console.log('— B. 現場の端末・ログインなし・現場のアカウントは Google');
@@ -133,7 +159,8 @@ const MSP = { from: '2026-10-01', to: '2026-10-03' };
   const cases = [
     ['データベースの断り', () => Promise.resolve({ data: null, error: { code: 'PGRST500', message: 'x' } }), true],
     ['42501（読めない役割）', () => Promise.resolve({ data: null, error: { code: '42501', message: 'not allowed' } }), false],
-    ['通信の失敗', () => Promise.reject(new TypeError('Failed to fetch')), true],
+    ['通信の失敗', () => Promise.reject(new TypeError('Failed to fetch')), false],
+    ['通信の失敗（中身で返る）', () => Promise.resolve({ data: null, error: { message: 'TypeError: Failed to fetch' } }), false],
     ['rpc がその場で例外', () => { throw new Error('boom'); }, true],
     ['ok:false（写しが2時間を超えて古い）', () => Promise.resolve({ data: STALE, error: null }), false],
     ['events の欄が無い', () => Promise.resolve({ data: { ok: true, from: 'a', to: 'b', ingestedDates: [] }, error: null }), true],
@@ -277,7 +304,7 @@ const MSP = { from: '2026-10-01', to: '2026-10-03' };
     await L.H.call('events', EVP, gas().fn);
     await L.H.call('measures', MSP, gas().fn);
     t('localStorage へ書かない', L.writes.length === 0, L.writes);
-    const L2 = load({ flags: ON });
+    const L2 = load({ flags: ON, noWarm: true });   // まだ確かめていない状態で、端末の控えが読めない
     L2.win.localStorage.getItem = () => { throw new Error('blocked'); };
     const g = gas();
     let threw = false;
@@ -295,14 +322,17 @@ const MSP = { from: '2026-10-01', to: '2026-10-03' };
   console.log('— I. スイッチを読み直している間も待たない（申送ビューアは読み込みの速さを優先する）');
   {
     // スイッチの読み直しが返ってこない（su-backend.json の取りに時間がかかる）時も、最後に読めた値（切）でその場で Google を呼ぶ
-    const L = load({ flags: OFF });
-    L.win.fetch = () => new Promise(() => {});
+    const L = load({ flags: OFF, noWarm: true });
+    L.win.fetch = () => { L.counts.fetch++; return new Promise(() => {}); };
     const g = gas();
     const p = L.H.call('events', EVP, g.fn);
-    t('読み直しの答えを待たずに、その場で Google を1回呼ぶ', g.n === 1);
+    t('その場で Google を1回呼ぶ', g.n === 1);
     await p;
+    await L.H.call('measures', MSP, g.fn);
+    t('スイッチが切の間は、su-backend.json・ログインの確かめ・部品の読み込みを1回も呼ばない',
+      L.counts.fetch === 0 && L.counts.check === 0 && L.counts.script === 0 && L.rpcs.length === 0, L.counts);
     // まだ何も読めていない（端末に控えも無い）時は切として扱い、Google から読む
-    const L2 = load({});
+    const L2 = load({ noWarm: true });
     L2.win.fetch = () => new Promise(() => {});
     const g2 = gas();
     L2.H.call('measures', MSP, g2.fn);
