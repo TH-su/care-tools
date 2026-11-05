@@ -1,10 +1,10 @@
-/* 写しの見比べ（shadow-check）の「申し送りの写し」（統合 0066・2026-11-05 新設）。
+/* 写しの見比べ（shadow-check）の「申し送りの写し」（統合 0067・2026-11-05 新設）。
    守りたいこと:
-     A 最後の写しが75分以内なら「Google と同じ」・古ければ警告・まだ写していない・0066 の前（準備はまだ＋最上部に 0066）・権限の断り
+     A 最後の写しが75分以内なら「Google と同じ」・古ければ警告・まだ写していない・0067 の前（準備はまだ＋最上部に 0067）・権限の断り
      B 最後の写しを断っていたら、断った種類を職員向けの言葉で出す
      C 食い違い・初めの写しの途中・空にしなかった日・使えない形の行・日付の無い行を種類ごとに知らせる
      D 出すのは日数・照らし合わせ・時刻・写し始めてからの日数だけ（氏名・本文は出さない）。Google・端末の控えには触らない
-     H 画面: 欄・準備の帯の番号（0066）・起動時に読む・版
+     H 画面: 欄・準備の帯の番号（0067）・起動時に読む・版
    ★画面の本物の関数を切り出して、データベースの応答だけ偽物にして動かす。
    実行: node check/unit/shadow_check_moushi_test.js
    架空データのみ。 */
@@ -76,7 +76,7 @@ const ST = (x, s) => Object.assign({ ok: true,
     const b3 = box({ status: { ok: true, kinds: {}, lastAt: null } }); await b3.run();
     t('A まだ写していない（入れる部品の名前を出す）', /まだ写していません/.test(V(b3).textContent) && /shadow\.gs/.test(V(b3).textContent) && /setupHoShadow/.test(V(b3).textContent));
     const b4 = box({ statusErr: true }); await b4.run();
-    t('A 0066 の前 → 準備はまだ・最上部に統合 0066', /0066）はまだです/.test(V(b4).textContent) && /統合 0066/.test(b4.nodes['db-prep'].textContent), [V(b4).textContent, b4.nodes['db-prep'].textContent]);
+    t('A 0067 の前 → 準備はまだ・最上部に統合 0067', /0067）はまだです/.test(V(b4).textContent) && /統合 0067/.test(b4.nodes['db-prep'].textContent), [V(b4).textContent, b4.nodes['db-prep'].textContent]);
     const b5 = box({ statusErr: true, errCode: '42501' }); await b5.run();
     t('A 権限で断られた → ログインの文', /ログインしてください/.test(V(b5).textContent));
     const b6 = box({ status: ST({ kinds: null, stat: null }) }); await b6.run();
@@ -113,7 +113,7 @@ const ST = (x, s) => Object.assign({ ok: true,
   {
     t('H 欄がある（見出し・数・結果・その回の数）', /<h2>申し送りの写し<\/h2>/.test(HTML) && /id="ho-kpis"/.test(HTML) && /id="ho-verdict"/.test(HTML) && /id="ho-detail"/.test(HTML));
     t('H 切り替えのボタンは無い（写しの期間だけ）', !/id="b-ho-/.test(HTML));
-    t('H 準備の帯の番号 0066', /ho_shadow_status: '0066'/.test(SRC));
+    t('H 準備の帯の番号 0067', /ho_shadow_status: '0067'/.test(SRC));
     t('H 起動時に読む（読めない時は文を出す）', /try \{ await loadHo\(sb\); \} catch \(e\) \{ \$\('ho-verdict'\)/.test(SRC));
     t('H 版を上げた（shadow-check.js?v=2026-11-05.2 以降）', /shadow-check\.js\?v=2026-11-(05\.([2-9]|\d{2,})|0[6-9]|[1-3]\d)/.test(HTML));
   }

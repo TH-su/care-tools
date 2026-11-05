@@ -1437,7 +1437,7 @@
     sup_shadow_status: '0046', sup_mode_get: '0047', mirror_bot_me: '0047',
     sa_shadow_status: '0050', sa_mode_get: '0051', device_seen_summary: '0048', shadow_diff_days: '0055', shadow_diff_note: '0055',
     geno_shadow_status: '0053', geno_mode_get: '0054', hb_shadow_status: '0062', hb_mode_get: '0064', doc_shadow_status: '0063', doc_mode_get: '0065',
-    ho_shadow_status: '0066'
+    ho_shadow_status: '0067'
   };
   var prepMissing = {};
   function dbErrKind(err) {
@@ -1958,7 +1958,7 @@
     else if (notes.length) say('写しは1時間ごとに届いていますが、下の知らせがあります（このままでは切り替えられません）。' + tail, 'warn');
     else say('写しが1時間ごとに届き、Google と同じです。写し始めてから ' + sinceDays + '日（2週間以上続けてから切り替えを決めます）。' + tail, 'ok');
   }
-  /* 申し送りの写し（統合 0066・2026-11-05 代表者の決定: 案C の最初の段＝まず写しを作る・AI 要約は写さない）: ho_shadow_status（事務所・管理者）。
+  /* 申し送りの写し（統合 0067・2026-11-05 代表者の決定: 案C の最初の段＝まず写しを作る・AI 要約は写さない）: ho_shadow_status（事務所・管理者）。
    * 出すのは種類（出来事・バイタル・食事量）ごとの日数・件数・照らし合わせの数・最後に写した時刻と、その回の数だけ（氏名・本文は返らない・出さない）。
    * 切り替えのボタンは無い（写しの期間だけ）。Google へは何も送らない */
   var HO_KIND = [['ev', '出来事'], ['vt', 'バイタル'], ['ml', '食事量']];
@@ -1971,7 +1971,7 @@
     function say(t, kind) { v.className = 'msg' + (kind ? ' ' + kind : ''); v.textContent = t; }
     kk.replaceChildren(); dt.className = 'msg'; dt.textContent = '';
     var st = await sb.rpc('ho_shadow_status');
-    if (st.error) { say(dbErrText(st.error, 'ho_shadow_status', '申し送りの写しの準備（データベース 0066）はまだです。')); return; }
+    if (st.error) { say(dbErrText(st.error, 'ho_shadow_status', '申し送りの写しの準備（データベース 0067）はまだです。')); return; }
     var d = st.data || {}, ks = (d.kinds && typeof d.kinds === 'object') ? d.kinds : {}, s = (d.stat && typeof d.stat === 'object') ? d.stat : {};
     if (!d.lastAt) { say('まだ写していません。申送ビューアの GAS に写しの部品（shadow.gs）を入れ、自動（setupHoShadow）を入れると、1時間以内に写ります。'); return; }
     var now = typeof nowMs === 'number' ? nowMs : Date.now();
