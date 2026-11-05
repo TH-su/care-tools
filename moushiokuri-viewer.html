@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-BAbjs9tH/YMqL/s3RX7z9DTsTUlNzYhl8ir5YA5b7wA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-+cPldsdSgOLZJaqRifw9wIeGQzRVEEU06Pmp+s+PVNg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -849,6 +849,8 @@ mark { background:var(--mark-bg); color:inherit; padding:0 1px; border-radius:2p
 <script src="su-cfg-hint.js?v=2026-09-27"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-resident-hop.js?v=2026-11-02"></script>
+<!-- 出来事・バイタル・食事量を新しい保存先の写しから読む入口（2026-11-05 代表者の決定 案C・段1）。スイッチ moushi_read が切の間・読み込めない時は今までどおり Google から読む -->
+<script src="su-ho-read.js?v=2026-11-05"></script>
 <script>
 'use strict';
 /* ══════════════════════════════════════════════════════════════════
@@ -1057,11 +1059,18 @@ function parseJson(r){
       GET になる理由と起きる条件は未確認）。読み取りは何度送っても同じなので、
      この断りの時だけ最大2回まで送り直す（API_GET_RETRY）。ほかの失敗（合言葉違い等）は送り直さない。 */
 var API_GET_RETRY = 2;
-function apiGet(action, params, tries){
+/* ★2026-11-05（代表者の決定 案C・段1）: 出来事・バイタル・食事量は、入口（su-ho-read.js・SUHoRead）を通す。
+     スイッチ moushi_read が入で、事務所PCで事務所・管理者としてログインしている時だけ新しい保存先の写しから読み、
+     それ以外・読めない時は下の Google への読み取りをそのまま呼ぶ（送る本文・送り方は変えない）。
+     viaHo は入口から戻ってきた呼び出し・送り直しの印（入口を2回通らない）。 */
+function apiGet(action, params, tries, viaHo){
   tries = tries || 0;
+  if(!viaHo && typeof SUHoRead !== 'undefined' && SUHoRead && typeof SUHoRead.call === 'function'){
+    return SUHoRead.call(action, params, function(){ return apiGet(action, params, tries, true); });
+  }
   return apiGetOnce(action, params)['catch'](function(e){
     var m = String(e && e.message || e);
-    if(tries < API_GET_RETRY && m.indexOf('API:') === 0 && m.indexOf('POST でだけ') >= 0) return apiGet(action, params, tries + 1);
+    if(tries < API_GET_RETRY && m.indexOf('API:') === 0 && m.indexOf('POST でだけ') >= 0) return apiGet(action, params, tries + 1, true);
     throw e;
   });
 }
