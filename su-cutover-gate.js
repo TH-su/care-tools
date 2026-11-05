@@ -23,7 +23,8 @@
    * ここに無い *_mode も「本番にした」記録として数える（名前は entity のまま。正本を足した時に数え漏れないように・反証レビュー指摘3） */
   var CUT_ENTITY = {
     res_mode: ['res', '入居者マスタ'], tp_mode: ['tp', '個別機能訓練計画書'], adm_mode: ['adm', '入居調整'], stf_mode: ['stf', '職員マスタ'],
-    weight_mode: ['weight', '体重'], sup_mode: ['sup', '備品'], sa_mode: ['sa', 'シフト分析'], geno_mode: ['geno', '家族構成図']
+    weight_mode: ['weight', '体重'], sup_mode: ['sup', '備品'], sa_mode: ['sa', 'シフト分析'], geno_mode: ['geno', '家族構成図'],
+    hb_mode: ['hb', '排泄ケア記録'], doc_mode: ['doc', '添付書類']
   };
   /* 週間計画・ワークスケジュール・勤務表は entity が kv_families・entity_ids が種類・fields に 'mode:live'（統合 0007・0009） */
   var KV_FAMILY = { care: '週間計画', ws_master: 'ワークスケジュール', wsday: 'ワークスケジュール', shift: '勤務表' };

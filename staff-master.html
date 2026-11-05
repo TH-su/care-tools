@@ -3,7 +3,7 @@
 <head>
   <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-hBZbSvGmDNzUzXD603/Lx56MopewGGJxic2LSjg5JrE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-wl9PxTP2lPE5ey7uFx11DnJ+rNzbvyB4i8yC+yfFNWA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="stfm-build" content="2026-10-11.1">
@@ -1470,6 +1470,7 @@ body.cmt-print{page:cmt}
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
 <script src="su-stf.js?v=2026-11-02"></script>
+<script src="su-doc-live.js?v=2026-11-05.2"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-app-gate.js?v=2026-11-03"></script>
 <!-- ?v= は staff-master-calc.js の VERSION と必ず一緒に動かす。ここが古いままだと、
@@ -1866,8 +1867,14 @@ function apiPost(action, body, timeoutMs) {
     var opt = { method: 'POST', body: JSON.stringify(p), redirect: 'follow' };
     if (ctl) opt.signal = ctl.signal;
     /* 新しい保存先への切り替え（統合 0045・su-stf.js）。スイッチが切・部品が無い時は今までどおり Google へ（送り方は変えない） */
-    if (window.SUStf) return window.SUStf.send(p, function () { return fetch(cfg.url, opt); }, { screen: 'staff-master', url: cfg.url, timeoutMs: ms });
-    return fetch(cfg.url, opt);
+    function viaStf() {
+      if (window.SUStf) return window.SUStf.send(p, function () { return fetch(cfg.url, opt); }, { screen: 'staff-master', url: cfg.url, timeoutMs: ms });
+      return fetch(cfg.url, opt);
+    }
+    /* 添付書類の正本の切り替え（統合 0065・su-doc-live.js）。書類の置く・消すと一覧の書類の欄だけを、切り替えた後は新しい保存先で扱う。
+       スイッチが切・部品が無い時は今までどおり（送り方は変えない） */
+    if (window.SUDocLive) return window.SUDocLive.staff(p, viaStf, { timeoutMs: ms });
+    return viaStf();
   }
   /* 書く action にだけログインの証明を添える（2026-10-15）。ログインの控えが無い端末は今までどおりすぐ送る。
      読む action は、ログインしている時だけ su-gas-auth.js で証明を添える（GAS が READ_ROLE_CHECK の時に役割を確かめる・代表者の決定 2026-10-29） */
@@ -3640,7 +3647,13 @@ function renderFiles() {
     var fid = txt(f && f.fid);
     var nm = txt(f && f.title) || txt(f && f.name) || 'この書類';
     var act = h('td', { cls: 'act' });
-    if (FID_RE.test(fid)) {
+    if (window.SUDocLive && window.SUDocLive.liveNow('stf')) {
+      /* 書類の正本が新しい保存先の時（統合 0065）は、新しい保存先から読んで別のタブで開く（ドライブの書類の URL では開けない書類がある） */
+      act.appendChild(h('button', {
+        type: 'button', cls: 'btn sm', text: '開く', 'aria-label': nm + ' を開く（別のタブ）',
+        onclick: function () { openLiveFile(fid, nm); }
+      }));
+    } else if (FID_RE.test(fid)) {
       act.appendChild(h('a', {
         cls: 'open', href: 'https://drive.google.com/file/d/' + fid + '/view',
         target: '_blank', rel: 'noopener', 'aria-label': nm + ' を開く（別のタブ）', text: '開く'
@@ -3664,6 +3677,38 @@ function renderFiles() {
       act
     ]));
   });
+}
+
+/* 新しい保存先の書類を開く（統合 0065）。押した時にすぐ空のタブを開き（後から開くとポップアップとして止められる）、読めたらそのタブに出す。
+   タブを開けない端末では、端末に保存させる（名前に形の拡張子を付ける）。読んだ中身は端末に残さない（タブの URL は5分で捨てる） */
+var openingLive = false;
+var LIVE_EXT = { 'application/pdf': '.pdf', 'image/jpeg': '.jpg', 'image/png': '.png' };
+function openLiveFile(fid, nm) {
+  var id = ST.detail ? txt(ST.detail.id) : '';
+  if (!id || !txt(fid) || openingLive) return;   /* 押している間は重ねて開かない（空のタブを何枚も開かない） */
+  openingLive = true;
+  var w = null;
+  try { w = window.open('', '_blank'); } catch (e) { w = null; }
+  setState('fdState', '', '取り出しています…', '新しい保存先から書類を読んでいます。');
+  window.SUDocLive.open('stf', id, txt(fid)).then(function (r) {
+    openingLive = false;
+    if (!r || !r.ok || !r.blob) {
+      try { if (w) w.close(); } catch (e) { /* 何もしない */ }
+      setState('fdState', 'err', '開けませんでした', txt(r && r.error) || 'もう一度お試しください。');
+      return;
+    }
+    var url = URL.createObjectURL(r.blob);
+    if (w) { w.location.href = url; }
+    else {
+      var a = document.createElement('a');
+      var ext = LIVE_EXT[txt(r.blob.type)] || '', base = txt(nm) || 'document';
+      a.href = url; a.download = (ext && base.slice(-ext.length).toLowerCase() !== ext) ? base + ext : base; a.rel = 'noopener';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    }
+    /* 開いたタブで「保存」を押せるよう、5分は残す（ページを閉じれば消える） */
+    setTimeout(function () { try { URL.revokeObjectURL(url); } catch (e) { /* 何もしない */ } }, 300000);
+    setState('fdState', '', '', '');
+  }, function () { openingLive = false; });
 }
 
 function setFilesBusy(on) {
