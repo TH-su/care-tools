@@ -24,7 +24,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-11-02';
+  var VERSION = '2026-11-06';
 
   /* ── 日付の下ごしらえ（すべて整数演算） ───────────────────────── */
 
@@ -962,6 +962,102 @@
       todo: true,                                               /* 事業場の数え方で選任義務が変わる＝結論が出るまで「要確認」を出し続ける */
       todoNote: '3事業所がそれぞれ別の事業場に当たるかを労働基準監督署に確認してください（同じ場所なら1事業場、場所が分かれていれば原則別事業場）',
       inactive: false
+    },
+    /* ── 2026-11-06 追加の5件（指導指針などで担当者・体制を求める係）─────────────
+       ★staff-api.gs の COMMITTEE_DEFAULTS と1字一句そろえる（既存9件と同じ約束）。
+       事故発生防止は熊本市有料老人ホーム設置運営指導指針 13(8)（指針・報告と分析の体制・委員会と研修・担当者）、
+       苦情・個人情報・ハラスメントは居宅基準（第36条・第33条・第30条4項）、防火管理者は消防法 第8条。
+       どれも減算は無い（hasPenalty は false）。防火管理者は該当するかが収容人員で決まるので要確認を出し続ける。 */
+    {
+      code: 'accident',
+      label: '事故発生防止委員会',
+      kind: 'committee',
+      sites: ['facility'],
+      freq: '定期的',
+      basis: '同指導指針',
+      url: 'https://www.city.kumamoto.jp/kiji0032329/index.html',
+      startedAt: '訪問介護・通所介護は委員会の定めなし（事故の記録・市への報告の義務のみ）／有料老人ホームは熊本市指針が根拠で時期は確認できず',
+      siteStartedAt: '',
+      penalty: '',
+      hasPenalty: false,
+      purpose: '熊本市有料老人ホーム設置運営指導指針による義務',
+      training: '定期的',
+      note: '指針・報告と分析の体制・委員会と研修・担当者の4つをそろえる（指導指針）。身体的拘束等適正化委員会と同日開催でよいが、議事録は別に作る',
+      todoNote: '',
+      inactive: false
+    },
+    {
+      code: 'complaint',
+      label: '苦情受付担当者・苦情解決責任者',
+      kind: 'officer',
+      sites: ['facility', 'visit', 'day'],
+      freq: '委員会の設置義務はなし',
+      basis: '居宅基準 第36条（訪問）／第105条で準用（通所）／同指導指針',
+      url: 'https://laws.e-gov.go.jp/law/411M50000100037#Mp-At_36',
+      startedAt: '訪問介護・通所介護は2000年4月（基準制定当初）から／有料老人ホームは熊本市指針が根拠で時期は確認できず',
+      siteStartedAt: '',
+      penalty: '',
+      hasPenalty: false,
+      purpose: '法令上の義務（運営基準）',
+      training: '',
+      note: '受付の窓口と記録（5年保存）、重要事項説明書への記載、外部の苦情処理機関（市・国保連）の周知が要る。受付担当者と解決責任者は分けて置く',
+      todoNote: '',
+      inactive: false
+    },
+    {
+      code: 'privacy',
+      label: '個人情報保護管理責任者',
+      kind: 'officer',
+      sites: ['facility', 'visit', 'day'],
+      freq: '委員会の設置義務はなし',
+      basis: '個人情報保護法／居宅基準 第33条（訪問）／第105条で準用（通所）／同指導指針',
+      url: 'https://laws.e-gov.go.jp/law/411M50000100037#Mp-At_33',
+      startedAt: '2005年4月（個人情報保護法の全面施行）から／居宅基準 第33条は2000年4月（基準制定当初）から',
+      siteStartedAt: '',
+      penalty: '',
+      hasPenalty: false,
+      purpose: '法令上の義務（個人情報保護法・運営基準）',
+      training: '',
+      note: '規程の整備、従業者の秘密保持の措置（誓約書・退職後を含む）、利用目的の掲示、第三者提供の文書同意を担当する。法人で1名でよい',
+      todoNote: '',
+      inactive: false
+    },
+    {
+      code: 'harassment',
+      label: 'ハラスメント相談担当者',
+      kind: 'officer',
+      sites: ['facility', 'visit', 'day'],
+      freq: '委員会の設置義務はなし',
+      basis: '居宅基準 第30条4項（訪問）／第105条で準用（通所）／労働施策総合推進法 第30条の2',
+      url: 'https://laws.e-gov.go.jp/law/411M50000100037#Mp-At_30',
+      startedAt: '2021年4月（令和3年4月）に居宅基準へ追加／パワーハラスメント防止の措置は中小企業も2022年4月から義務',
+      siteStartedAt: '',
+      penalty: '',
+      hasPenalty: false,
+      purpose: '法令上の義務（運営基準・労働施策総合推進法）',
+      training: '年1回以上で運用',
+      note: '事業主の方針の明確化と相談窓口の設置・周知。利用者やご家族からのハラスメント（カスタマーハラスメント）への対応も含めることが望ましい。相談担当者は相談者と利害のない者を置く',
+      todoNote: '',
+      inactive: false
+    },
+    {
+      code: 'fire',
+      label: '防火管理者',
+      kind: 'officer',
+      sites: ['facility', 'day'],
+      freq: '委員会の設置義務はなし',
+      basis: '消防法 第8条／消防法施行令 第1条の2',
+      url: 'https://laws.e-gov.go.jp/law/323AC0000000186#Mp-At_8',
+      startedAt: '消防法 第8条が根拠。当事業所が該当するかは防火対象物の収容人員で決まる（要確認）',
+      siteStartedAt: '',
+      penalty: '',
+      hasPenalty: false,
+      purpose: '法令上の義務（消防法）',
+      training: '',
+      note: '収容人員が一定数以上の防火対象物に選任義務（有料老人ホーム・デイサービスは10人以上が目安）。消防署へ選任届を出し、消防計画を作る。施設と通所が同じ建物なら建物全体で1名',
+      todo: true,
+      todoNote: '施設と通所の建物が同じ防火対象物か、収容人員の数え方を消防署に確認してください',
+      inactive: false
     }
   ];
 
@@ -1231,6 +1327,7 @@
      そのまま返し、abuse.drill・kondan.alias などが undefined（setCommittees 後は ''）になる＝
      同じ公開APIが状況で別の形を返す。さらに sites 配列の参照を既定と共有してしまい、
      fromDefault の「★sites は必ず複製する」と矛盾する。 */
+  var COMMITTEE_MAX_ROWS = 20;   /* マスタに置ける委員会の数（staff-api.gs の COMMITTEE_MAX_ROWS と同じ値） */
   var COMMITTEES = LOCAL_DEFAULTS.map(function (d) { return fromDefault(d); });
 
   /* サーバーの委員会マスタを反映する。[{code,…}] の配列のときだけ差し替える。
@@ -1308,12 +1405,29 @@
     if (!out.length) return 0;
     /* 既定にあって送られてこなかった体制を、既定の順で末尾に足す（既定の値そのまま） */
     for (i = 0; i < LOCAL_DEFAULTS.length; i++) {
+      /* ★上限（20件）を超えてまでは足さない（2026-11-06・既定が14件になったため）。staff-api.gs の
+           normCommittees_（COMMITTEE_MAX_ROWS）と同じ規則。超えると保存時に validateCommittees_ の
+           「委員会は20件までです」で全件差し戻される */
+      if (out.length >= COMMITTEE_MAX_ROWS) break;
       if (Object.prototype.hasOwnProperty.call(seen, LOCAL_DEFAULTS[i].code)) continue;
+      /* ★同じ名前の委員会が既にあれば足さない（2026-11-06）。事業所が「防火管理者」等を独自に作っていた時、
+           同じ名前が2件になると validateCommittees_ の「同じ名前が2つあります」で保存が全件差し戻される。
+           staff-api.gs の normCommittees_・validateCommittees_ と同じ規則 */
+      if (labelTaken(out, LOCAL_DEFAULTS[i].label)) continue;
       out.push(fromDefault(LOCAL_DEFAULTS[i]));
     }
     COMMITTEES = out;
     LAST_SERVER_LIST = list;          /* 所在自治体が後から分かった時に、同じ規則で当て直すため（setLocality） */
     return out.length;
+  }
+
+  /* 名前が既にマスタにあるか（既定を末尾に足す時の重複よけ。改行・タブは空白に揃えて比べる＝validateCommittees_ と同じ） */
+  function labelTaken(list, label) {
+    var t = String(label == null ? '' : label).replace(/[\r\n\t]/g, ' ').trim();
+    for (var k = 0; k < list.length; k++) {
+      if (String(list[k].label == null ? '' : list[k].label).replace(/[\r\n\t]/g, ' ').trim() === t) return true;
+    }
+    return false;
   }
 
   /* いまのマスタ。写しを返す（呼び手の並べ替えでマスタが崩れない） */
@@ -1324,6 +1438,259 @@
     if (c === '') return null;
     for (var i = 0; i < COMMITTEES.length; i++) if (COMMITTEES[i].code === c) return COMMITTEES[i];
     return null;
+  }
+
+  /* ── 必要書類と開催の条件（2026-11-06）──────────────────────────
+     委員会ごとに「そろえる書類」と「開催の条件」を code で引く別表。画面の構成図カードと紙に出すだけ。
+     ★委員会マスタの各項目（committees() の要素）には入れない。画面は setCommittees で全件を送り返すので、
+       ここを要素に足すと staff-api.gs の検証（COMMITTEE_ITEM_KEYS に無い項目）で保存が全部断られる。
+       通信にも載せない（サーバーは知らなくてよい情報）。
+     COMMITTEE_DOCS: code → [{ name, kind, sites?, freq, basis }]。kind は COMMITTEE_DOC_KINDS のどれか。
+       sites を書かない書類は「その委員会の対象事業所と同じ」（committeeDocs が補う）。
+     COMMITTEE_MEET: code → { freq, attend, method, minutes, notify, keep }。無いものは '—'。 */
+  var COMMITTEE_DOC_KINDS = ['指針', '要綱', '規程', '計画', '議事録', '記録', '辞令', '様式', '掲示'];
+  var COMMITTEE_MEET_KEYS = ['freq', 'attend', 'method', 'minutes', 'notify', 'keep'];
+
+  var COMMITTEE_DOCS = {
+    abuse: [
+      { name: '虐待の防止のための指針', kind: '指針', freq: '常備・改正時に見直し', basis: '居宅基準 第37条の2／指導指針 10(4)ハ' },
+      { name: '虐待防止検討委員会 設置要綱', kind: '要綱', freq: '制定時', basis: '—' },
+      { name: '虐待防止検討委員会 議事録', kind: '議事録', freq: '開催ごと・5年保存', basis: '居宅基準 第37条の2／指導指針 10(4)ロ' },
+      { name: '虐待防止研修 記録', kind: '記録', freq: '年1回以上＋新規採用時', basis: '老企第25号／指導指針 10(4)ニ' },
+      { name: '虐待防止担当者の選任の辞令・体制表', kind: '辞令', freq: '選任・変更時', basis: '居宅基準 第37条の2第4号／指導指針 10(4)ホ' },
+      { name: '運営規程への虐待防止措置の記載', kind: '規程', sites: ['visit', 'day'], freq: '改正時', basis: '集団指導 共通編の指摘事項' },
+      { name: '市への通報体制・通報の記録', kind: '記録', freq: '事象ごと', basis: '高齢者虐待防止法 第21条' }
+    ],
+    restraint: [
+      { name: '身体的拘束等の適正化のための指針', kind: '指針', freq: '常備・改正時に見直し', basis: '指導指針 10(7)ロ' },
+      { name: '身体的拘束等適正化検討委員会 設置要綱', kind: '要綱', freq: '制定時', basis: '—' },
+      { name: '身体的拘束等適正化検討委員会 議事録', kind: '議事録', freq: '3か月に1回以上（年4回）・5年保存', basis: '指導指針 10(7)イ' },
+      { name: '身体的拘束等の適正化のための研修 記録', kind: '記録', freq: '年1回以上で運用', basis: '指導指針 10(7)ハ' },
+      { name: '身体的拘束等の判断・手続の記録（3要件の確認・家族への説明）', kind: '記録', freq: '事象ごと・5年保存', basis: '指導指針 10(5)(6)・帳簿 9(3)ニ' },
+      { name: '身体的拘束中の経過観察の記録', kind: '記録', freq: '事象ごと', basis: '指導指針 10(6)' }
+    ],
+    infection: [
+      { name: '感染症の予防及びまん延の防止のための指針', kind: '指針', freq: '常備・改正時に見直し', basis: '居宅基準 第31条3項／第104条2項／指導指針 9(7)ロ' },
+      { name: '感染対策委員会 議事録', kind: '議事録', freq: 'おおむね6か月に1回以上・5年保存', basis: '居宅基準 第31条3項／第104条2項／指導指針 9(7)イ' },
+      { name: '感染症研修 記録', kind: '記録', freq: '年1回以上（新規採用時は努力義務）', basis: '老企第25号／指導指針 9(7)ハ' },
+      { name: '感染症の訓練（机上・実地）記録', kind: '記録', freq: '年1回以上', basis: '老企第25号／指導指針 9(7)ハ' },
+      { name: '感染対策担当者の選任の記録', kind: '辞令', freq: '選任・変更時', basis: '老企第25号' },
+      { name: '職員健康診断の記録', kind: '記録', freq: '年1回以上', basis: '居宅基準 第31条／立入検査の確認書類' }
+    ],
+    safety: [
+      { name: '委員会 議事録', kind: '議事録', freq: '定期', basis: '令和6年度介護報酬改定' },
+      { name: '検討した方策と取組の記録', kind: '記録', freq: '随時', basis: '令和6年度介護報酬改定' }
+    ],
+    kondan: [
+      { name: '運営懇談会 開催状況の記録・議事録', kind: '議事録', freq: '定期開催・5年保存', basis: '指導指針 9(11)／立入検査の確認書類' },
+      { name: '入居者・身元引受人への開催周知の記録', kind: '記録', freq: '開催ごと', basis: '指導指針 9(11)ロ' },
+      { name: '報告資料（入居者の状況・サービス提供の状況・収支）', kind: '記録', freq: '開催ごと', basis: '指導指針 9(11)ニ' }
+    ],
+    dementia: [
+      { name: '事例検討・技術的指導の会議 記録', kind: '議事録', freq: '定期', basis: '通所介護 認知症加算' }
+    ],
+    bcp: [
+      { name: '感染症に係る業務継続計画', kind: '計画', freq: '策定・定期見直し', basis: '居宅基準 第30条の2／指導指針 9(5)イ' },
+      { name: '非常災害に係る業務継続計画（感染症と一体でも可）', kind: '計画', freq: '策定・定期見直し', basis: '居宅基準 第30条の2／指導指針 9(5)イ' },
+      { name: 'BCP研修 記録', kind: '記録', freq: '年1回以上（新規採用時は努力義務）', basis: '老企第25号／指導指針 9(5)ロ' },
+      { name: 'BCP訓練 記録（課題も残す）', kind: '記録', freq: '年1回以上', basis: '老企第25号／指導指針 9(5)ロ' },
+      { name: '職員への周知の記録', kind: '記録', freq: '策定・改訂時', basis: '居宅基準 第30条の2第2項' },
+      { name: 'BCP担当者の選任の記録', kind: '辞令', freq: '選任・変更時', basis: '—' }
+    ],
+    disaster: [
+      { name: '消防計画書（消防署へ届出）', kind: '計画', freq: '作成・変更時', basis: '消防法施行規則 第3条／指導指針 9(6)' },
+      { name: '風水害・地震等の非常災害に関する具体的計画', kind: '計画', freq: '策定・定期見直し', basis: '指導指針 9(6)イ' },
+      { name: '避難訓練 実施記録', kind: '記録', freq: '年2回以上（施設はうち1回は夜間想定）', basis: '消防法施行規則／有料老人ホーム集団指導資料' },
+      { name: '関係機関への通報・連携体制表', kind: '記録', freq: '定期見直し', basis: '指導指針 9(6)イ' },
+      { name: '避難確保計画（浸水想定区域等に当たる時）', kind: '計画', freq: '該当時', basis: '水防法・土砂災害防止法' }
+    ],
+    hygiene: [
+      { name: '衛生推進者の選任の記録', kind: '辞令', freq: '選任時', basis: '労働安全衛生法 第12条の2' },
+      { name: '職員への周知（掲示等）', kind: '掲示', freq: '選任時', basis: '労働安全衛生規則 第12条の4' }
+    ],
+    accident: [
+      { name: '事故発生の防止のための指針（事故対応・報告の方法を含む）', kind: '指針', freq: '常備・改正時に見直し', basis: '指導指針 13(8)一' },
+      { name: '事故発生防止委員会 設置要綱', kind: '要綱', freq: '制定時', basis: '—' },
+      { name: '事故発生防止委員会 議事録', kind: '議事録', freq: '定期（年4回程度で運用）・5年保存', basis: '指導指針 13(8)三' },
+      { name: '事故発生防止研修 記録', kind: '記録', freq: '年1回以上で運用', basis: '指導指針 13(8)三' },
+      { name: '担当者の選任の辞令', kind: '辞令', freq: '選任・変更時', basis: '指導指針 13(8)四' },
+      { name: '事故報告書・ヒヤリハット報告と、分析・改善策の周知記録', kind: '記録', freq: '事象ごと・5年保存', basis: '指導指針 13(8)二・帳簿 9(3)ヘ' },
+      { name: '市・家族への連絡記録と市への事故報告書', kind: '記録', freq: '事象ごと・速やかに', basis: '指導指針 13(9)' }
+    ],
+    complaint: [
+      { name: '苦情対応規程', kind: '規程', freq: '常備', basis: '居宅基準 第36条／指導指針 13(7)' },
+      { name: '苦情受付窓口の体制表（受付担当者・解決責任者）', kind: '記録', freq: '常備', basis: '居宅基準 第36条／指導指針 13(7)' },
+      { name: '苦情受付・対応の記録', kind: '記録', freq: '事象ごと・5年保存', basis: '居宅基準 第36条2項／帳簿 9(3)ホ' },
+      { name: '苦情相談窓口の掲示物（市・国保連の窓口を含む）', kind: '掲示', freq: '常時掲示', basis: '居宅基準 第32条／指導指針 13(7)' },
+      { name: '重要事項説明書・契約書への苦情窓口の記載', kind: '規程', freq: '改正時', basis: '居宅基準 第8条／指導指針 13(4)' }
+    ],
+    privacy: [
+      { name: '個人情報保護規程（医療・介護関係事業者のガイダンス準拠）', kind: '規程', freq: '常備', basis: '指導指針 9(4)／集団指導の手引き' },
+      { name: '従業者の秘密保持誓約書（退職後を含む）', kind: '様式', freq: '入職時', basis: '居宅基準 第33条' },
+      { name: '個人情報利用の同意書（担当者会議等での利用）', kind: '様式', freq: '契約時', basis: '居宅基準 第33条3項' },
+      { name: '利用目的の掲示', kind: '掲示', freq: '常時掲示', basis: '個人情報保護法 第21条' },
+      { name: '漏えい時の報告・本人通知の手順書', kind: '規程', freq: '常備', basis: '個人情報保護法 第26条' }
+    ],
+    harassment: [
+      { name: 'ハラスメント防止の方針（就業規則・運営規程への記載）', kind: '規程', freq: '改正時', basis: '居宅基準 第30条4項／労働施策総合推進法' },
+      { name: '相談窓口の周知（掲示・文書）', kind: '掲示', freq: '常時', basis: '労働施策総合推進法 第30条の2' },
+      { name: '相談・対応の記録', kind: '記録', freq: '事象ごと', basis: '—' },
+      { name: 'ハラスメント研修 記録', kind: '記録', freq: '年1回以上で運用', basis: '—' }
+    ],
+    fire: [
+      { name: '防火管理者 選任（解任）届出書（消防署へ）', kind: '辞令', freq: '選任・変更時', basis: '消防法 第8条' },
+      { name: '消防計画書（消防署へ届出）', kind: '計画', freq: '作成・変更時', basis: '消防法施行規則 第3条' },
+      { name: '防火管理講習 修了証', kind: '記録', freq: '選任時（甲種・乙種）', basis: '消防法施行令 第3条' },
+      { name: '消防訓練 実施記録（消防署へ事前通知）', kind: '記録', freq: '年2回以上', basis: '消防法施行規則 第3条' }
+    ]
+  };
+
+  var COMMITTEE_MEET = {
+    abuse: {
+      freq: '定期的（年2回以上で運用）',
+      attend: '管理者を含む幅広い職種で構成（管理者の出席が必須）',
+      method: 'テレビ電話等で開催可。3事業所の合同開催可',
+      minutes: '議事録は事業所ごとに分けて作る（日付・出席者・検討内容・結論・周知方法）',
+      notify: '結果を職員に周知徹底',
+      keep: '5年保存（熊本市）'
+    },
+    restraint: {
+      freq: '3か月に1回以上（年4回）',
+      attend: '施設長（責任者）・看護・介護・生活相談員など幅広い職種。責任者は虐待防止担当者と同一が望ましい',
+      method: 'テレビ電話等可。事故発生防止委員会と同日開催でよい',
+      minutes: '議事録は委員会ごとに別に作る',
+      notify: '結果を介護職員その他の従業者に周知徹底',
+      keep: '5年保存（熊本市）'
+    },
+    infection: {
+      freq: 'おおむね6か月に1回以上（年2回）',
+      attend: '感染対策の知識を有する者（看護職員など）を含む幅広い職種',
+      method: 'テレビ電話等可。合同開催可。BCP の研修・訓練と一体実施可',
+      minutes: '議事録は事業所ごとに分けて作る',
+      notify: '結果を職員に周知徹底',
+      keep: '5年保存（熊本市）'
+    },
+    safety: {
+      freq: '定期的（当社3事業所が対象かは要確認）',
+      attend: '管理者とケアを行う職種を含む幅広い職種',
+      method: 'テレビ電話等可',
+      minutes: '開催ごとに記録',
+      notify: '—',
+      keep: '—'
+    },
+    kondan: {
+      freq: '定期的（年2回程度で運用）',
+      attend: '管理者・職員・入居者（要介護の方は身元引受人等）。学識経験者・民生委員など第三者を加えるよう努める',
+      method: 'テレビ電話等可',
+      minutes: '開催ごとに記録。定員が少ない等で困難な時は代替措置と入居者への説明が要る',
+      notify: '入居者の要望・意見を運営に反映',
+      keep: '5年保存（熊本市）'
+    },
+    dementia: {
+      freq: '定期的（認知症加算を算定する時）',
+      attend: '認知症介護の指導に係る専門的な研修の修了者を中心に',
+      method: '—',
+      minutes: '開催ごとに記録',
+      notify: '—',
+      keep: '—'
+    },
+    bcp: {
+      freq: '委員会の設置義務はなし。研修・訓練は各年1回以上',
+      attend: '全職員（欠席者は個別に実施）',
+      method: '机上訓練でよい。感染症は感染対策の訓練と、災害は避難訓練と一体実施可。3事業所の合同可',
+      minutes: '研修記録・訓練記録は事業所ごとに作る',
+      notify: '計画を職員に周知',
+      keep: '5年保存（熊本市）'
+    },
+    disaster: {
+      freq: '避難訓練は年2回以上（施設はうち1回は夜間想定）',
+      attend: '全職員。地域住民の参加が得られるよう連携に努める',
+      method: '消防訓練として実施。BCP の訓練と併せて実施可',
+      minutes: '訓練ごとに記録（区分・参加者・課題）',
+      notify: '計画を定期的に職員へ周知',
+      keep: '5年保存（熊本市）'
+    },
+    hygiene: {
+      freq: '委員会の設置義務はなし',
+      attend: '選任の要否は事業場の数え方で決まる（要確認）',
+      method: '—',
+      minutes: '—',
+      notify: '選任したら氏名を職員に周知',
+      keep: '—'
+    },
+    accident: {
+      freq: '定期的（年4回程度で運用）',
+      attend: '施設長・看護・介護・生活相談員・機能訓練指導員など幅広い職種',
+      method: 'テレビ電話等可。身体的拘束等適正化委員会と同日開催でよい',
+      minutes: '議事録は委員会ごとに別に作る',
+      notify: '分析を通した改善策を職員に周知徹底',
+      keep: '5年保存（熊本市）'
+    },
+    complaint: {
+      freq: '委員会ではない（受付→記録→解決責任者の判断→改善の流れ）',
+      attend: '受付担当者と解決責任者を分けて置く',
+      method: '—',
+      minutes: '苦情ごとに記録',
+      notify: '外部の苦情処理機関（市・国保連）を利用者・入居者に周知',
+      keep: '5年保存（熊本市）'
+    },
+    privacy: {
+      freq: '委員会ではない',
+      attend: '管理責任者1名（法人で1名でよい）',
+      method: '—',
+      minutes: '誓約書・同意書の取得台帳',
+      notify: '利用目的を掲示・公表',
+      keep: '誓約書は退職後も保管'
+    },
+    harassment: {
+      freq: '委員会ではない（研修は年1回以上で運用）',
+      attend: '相談担当者は相談者と利害のない者を置く',
+      method: '—',
+      minutes: '相談ごとに記録（相談者の不利益にならないよう秘密を守る）',
+      notify: '方針と窓口を職員に周知',
+      keep: '—'
+    },
+    fire: {
+      freq: '委員会ではない',
+      attend: '防火管理者は管理的・監督的な地位の者で講習修了者',
+      method: '—',
+      minutes: '消防計画に基づく自主点検の記録',
+      notify: '—',
+      keep: '—'
+    }
+  };
+
+  /* ある委員会の必要書類と開催の条件。{ docs: [...], meet: {...} } の写しを返す（呼び手が壊しても表は崩れない）。
+     どちらの表にも無い code（人が足した委員会）・空・文字列でない値は null */
+  function committeeDocs(code) {
+    if (typeof code !== 'string') return null;
+    var c = trim(code);
+    if (c === '') return null;
+    var hasDocs = Object.prototype.hasOwnProperty.call(COMMITTEE_DOCS, c);
+    var hasMeet = Object.prototype.hasOwnProperty.call(COMMITTEE_MEET, c);
+    if (!hasDocs && !hasMeet) return null;
+    /* sites を書かない書類の補い先: いまのマスタ → 無ければ出荷時の既定 */
+    var cur = committeeOf(c), base = null, i, k;
+    for (i = 0; i < COMMITTEE_DEFAULTS.length; i++) if (COMMITTEE_DEFAULTS[i].code === c) { base = COMMITTEE_DEFAULTS[i]; break; }
+    var defSites = (cur && Object.prototype.toString.call(cur.sites) === '[object Array]') ? cur.sites
+                 : (base ? base.sites : []);
+    var docs = [], src = hasDocs ? COMMITTEE_DOCS[c] : [];
+    for (i = 0; i < src.length; i++) {
+      var d = src[i];
+      docs.push({
+        name: d.name,
+        kind: d.kind,
+        sites: (Object.prototype.toString.call(d.sites) === '[object Array]' ? d.sites : defSites).slice(),
+        freq: d.freq,
+        basis: d.basis
+      });
+    }
+    var meet = {}, m = hasMeet ? COMMITTEE_MEET[c] : {};
+    for (i = 0; i < COMMITTEE_MEET_KEYS.length; i++) {
+      k = COMMITTEE_MEET_KEYS[i];
+      meet[k] = (typeof m[k] === 'string' && trim(m[k]) !== '') ? m[k] : '—';
+    }
+    return { docs: docs, meet: meet };
   }
 
   /* 1人の所属 [{code,role}]。マスタに無い委員会・3種以外の役割は落とし、同じ委員会は先勝ち。
@@ -1424,6 +1791,8 @@
           warn.push('委員会ではないので委員長・委員は置けません（担当者に直してください）');
         }
         if (!noSite && c.code === 'safety' && jobKinds <= 1) warn.push('幅広い職種で構成することが望ましい委員会です（いまは1職種）');
+        /* 事故発生防止は減算こそ無いが、指導指針 13(8)四 が担当者を置くことを求める（2026-11-06）。減算の文面とは分ける */
+        if (!noSite && c.code === 'accident' && n.officer === 0) warn.push('担当者が決まっていません（指導指針の要件です）');
         /* 法令上の扱いが未確定のもの（衛生推進者の選任）。結論が出るまで画面に出し続ける */
         if (c.todo === true) warn.push('要確認（法令上の扱いを確かめてください）');
       }
@@ -1864,6 +2233,8 @@
     committeesOf: committeesOf,
     committeeMembers: committeeMembers,
     committeeStats: committeeStats,
+    committeeDocs: committeeDocs,
+    COMMITTEE_DOC_KINDS: COMMITTEE_DOC_KINDS,
     mapLegacyRow: mapLegacyRow,
     diffFields: diffFields,
     normQuals: normQuals,

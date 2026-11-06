@@ -17,7 +17,7 @@
     "_note": "法人設定。有料老人ホームの設置運営指導指針の名称と案内ページ（https:// で始まる URL）。職員マスタの委員会の根拠に出る。空なら municipality から決める",
     "homeGuidelineName": "",
     "homeGuidelineUrl": "",
-    "_noteCommitteeDefaults": "committeeDefaults: 職員マスタの委員会の出荷時の既定を差し替える時だけ書く配列。画面の既定と同じ9件（code は abuse・restraint・infection・safety・kondan・dementia・bcp・disaster・hygiene を1つずつ）を、同じ項目（code・label・kind・sites・freq・basis・url・startedAt・penalty・hasPenalty・purpose・training・drill・note・todo・todoNote など）で書く。kind は committee・plan・officer、sites は facility・visit・day・cm。名前は60字・文は200字・URL は300字まで。1件でも崩れていれば全部捨てて画面の既定を使う。書いていなければ画面の既定の値"
+    "_noteCommitteeDefaults": "committeeDefaults: 職員マスタの委員会の出荷時の既定を差し替える時だけ書く配列。画面の既定と同じ14件（code は abuse・restraint・infection・safety・kondan・dementia・bcp・disaster・hygiene・accident・complaint・privacy・harassment・fire を1つずつ）を、同じ項目（code・label・kind・sites・freq・basis・url・startedAt・penalty・hasPenalty・purpose・training・drill・note・todo・todoNote など）で書く。kind は committee・plan・officer、sites は facility・visit・day・cm。名前は60字・文は200字・URL は300字まで。1件でも崩れていれば全部捨てて画面の既定を使う。書いていなければ画面の既定の値"
   },
   "support": {
     "_note": "困った時の問い合わせ先。使い方・困った時（help.html）の4項目と、メニューの「困った時」の1行（問い合わせ先と受付時間）に出す。空の項目は「施設の管理者にお問い合わせください」と出る。この値は公開サイトの facility-profile.json として誰でも読める。電話は公表済みの事業所の番号だけを入れる（個人の携帯・夜間の当番の番号は入れない）",

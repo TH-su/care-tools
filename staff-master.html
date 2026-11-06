@@ -3,10 +3,10 @@
 <head>
   <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-wl9PxTP2lPE5ey7uFx11DnJ+rNzbvyB4i8yC+yfFNWA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-kIJTPyM8BzWv9IXoIerWtYdTq2B0TRCp9/1ZVukrt4c='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
-<meta name="stfm-build" content="2026-10-11.1">
+<meta name="stfm-build" content="2026-11-06">
 <title>職員マスタ</title>
 <style>
 /* ══════════════════════════════════════════════════════════════
@@ -705,6 +705,17 @@ dialog.fdlg::backdrop{background:var(--c-ink);opacity:.45}
 .cmt-pblk{margin-top:var(--sp-2)}
 .cmt-pblk .ttl{font-size:var(--fs-2xs);font-weight:var(--fw-bold)}
 .cmt-pblk .mem{font-size:var(--fs-2xs)}
+/* 必要書類と開催の条件（2026-11-06）。構成図のカードの中で開閉する区画。紙には出さない（.cmt-noprint）*/
+.cmt-docs{margin-top:var(--sp-2)}
+.cmt-docs dl{display:grid;grid-template-columns:7em minmax(0,1fr);gap:var(--sp-1) var(--sp-2);margin:var(--sp-2) 0}
+.cmt-docs dt{font-size:var(--fs-2xs);font-weight:var(--fw-bold);color:var(--c-ink2)}
+.cmt-docs dd{margin:0;font-size:var(--fs-sm)}
+.cmt-docs table{width:100%}
+.cmt-docs th,.cmt-docs td{white-space:normal;vertical-align:top}
+.cmt-pdoc{margin-top:var(--sp-2)}
+.cmt-pdoc p{margin:0;font-size:var(--fs-2xs)}
+/* 「新しい係をサーバーに登録する」は画面の操作だけ。どの印刷でも紙に出さない（2026-11-06）*/
+@media print{#cmtRegBox{display:none !important}}
 
 /* 所属委員会（詳細フォーム）。1行に収めるため .fld ではなく専用の行にする＝段を増やさない。
    2026-09-22.2 で既定が9件になり1行に入らなくなったので、委員会以外の種別（計画と訓練・選任）は
@@ -864,6 +875,12 @@ body.cmt-print{page:cmt}
   body.cmt-print.cmt-p-tbl #cmtPrintAll{display:none}
   body.cmt-print.cmt-p-org #cmtWrap,
   body.cmt-print.cmt-p-org #cmtTblNote{display:none}
+  /* 必要書類と開催の条件（2026-11-06）。この紙では表と構成員を出さず、#cmtPrintDocs だけを出す */
+  body.cmt-print.cmt-p-docs #cmtWrap, body.cmt-print.cmt-p-docs #cmtTblNote, body.cmt-print.cmt-p-docs #cmtPrintAll{display:none !important}
+  body.cmt-print.cmt-p-docs #cmtPrintDocs{display:block}
+  #cmtPrintDocs table{table-layout:fixed;width:100%}
+  #cmtPrintDocs tr{break-inside:avoid}
+  #cmtPrintDocs h3{break-after:avoid}
   /* 構成員は紙だけ2段組にする。中身は1件も減らさず、縦の高さだけを半分にする（2026-09-22.2）*/
   body.cmt-print #cmtPrintAll{column-count:3;column-gap:var(--sp-4)}
   body.cmt-print #cmtPrintAll h3.sub{column-span:all}
@@ -1149,6 +1166,7 @@ body.cmt-print{page:cmt}
           <option value="both">一覧と構成員</option>
           <option value="tbl">一覧だけ</option>
           <option value="org">構成員だけ</option>
+          <option value="docs">必要書類と開催の条件</option>
         </select>
       </span>
       <button type="button" class="btn" id="cmtPrintBtn" disabled>印刷（A4横）</button>
@@ -1237,6 +1255,12 @@ body.cmt-print{page:cmt}
         <p class="fnote" id="cmtSiteStartedHelp">分かる範囲で。空でも構いません</p>
         <p class="fnote" id="cmtSiteStartedNote" hidden></p>
       </div>
+      <!-- 必要書類と開催の条件（2026-11-06）。中身は算出モジュールの committeeDocs が正本で、開くたびに組み直す。
+           開閉の状態だけを端末に残す（stfm_cmtDocs）。紙には出さない（紙は「刷るもの」の「必要書類と開催の条件」）-->
+      <div class="cmt-docs cmt-noprint" id="cmtDocsWrap" hidden>
+        <button type="button" class="btn" id="cmtDocsBtn" aria-expanded="false" aria-controls="cmtDocs">📄 必要書類と開催の条件</button>
+        <div id="cmtDocs" role="region" hidden></div>
+      </div>
       <div class="cmt-org" id="cmtOrg"></div>
       <div class="row" style="margin-top:var(--sp-2)">
         <button type="button" class="btn" id="cmtAddBtn" aria-haspopup="dialog">＋ 追加</button>
@@ -1248,6 +1272,8 @@ body.cmt-print{page:cmt}
 
   <!-- 紙にだけ出す「各委員会の構成員」（画面は上の構成図が1件ずつ） -->
   <div id="cmtPrintAll"></div>
+  <!-- 紙にだけ出す「必要書類と開催の条件」（2026-11-06）。刷るものが「必要書類と開催の条件」の時だけ出す -->
+  <div id="cmtPrintDocs" hidden></div>
 </section>
 
 <!-- ══ 設定 ══ -->
@@ -1477,7 +1503,7 @@ body.cmt-print{page:cmt}
      端末が古い算出モジュールを掴んだまま新しい画面を開く（2026-09-22.3 で同期）。 -->
 <!-- 施設情報（facility-profile.json）の読み口。委員会の熊本市基準を所在自治体と法人設定から決めるため（2026-10-11・#10） -->
 <script src="su-facility.js?v=2026-11-02.3"></script>
-<script src="staff-master-calc.js?v=2026-11-02"></script>
+<script src="staff-master-calc.js?v=2026-11-06"></script>
 <!-- 職員の氏名の写し（不具合報告の伏せ字の名簿・2026-10-14）。事務所・管理者でログインしている時だけ書く。失敗しても画面は変わらない -->
 <script src="su-staff-names.js?v=2026-10-28"></script>
 <script>
@@ -1490,7 +1516,7 @@ body.cmt-print{page:cmt}
    ・添付書類（filesJson）はサーバー専用列。保存ペイロード・書出・取込には載せない。
    ════════════════════════════════════════════════════════════════ */
 
-var BUILD = '2026-10-11.1';
+var BUILD = '2026-11-06';
 var DEVICE_KEY = 'su_device_role';
 var CFG_KEY = 'stfm_cfg';
 /* 接続先は https の GAS だけ。127.0.0.1 は動作検証用のローカル模擬APIを許すため（インターネット側からは到達しない） */
@@ -1503,6 +1529,8 @@ var UI_KEYS = {
      cmtView は委員会タブの表に出す列の区分（2026-09-22.6）。どれも画面の状態だけで、
      氏名・記録・トークン等の業務データと個人情報は1文字も保存しない */
   cmtSel: 'stfm_cmtSel', cmtCol: 'stfm_cmtCol', cmtView: 'stfm_cmtView',
+  /* 必要書類と開催の条件を開いているか（2026-11-06）。'1' か '0' だけ。画面の状態だけ */
+  cmtDocs: 'stfm_cmtDocs',
   /* 初回の案内を出しているか（2026-10-11）。'1' の間だけ出す。画面の状態だけ */
   wiz: 'stfm_wiz'
 };
@@ -1696,6 +1724,8 @@ var ST = {
   /* 委員会タブの表に出す列（2026-09-22.6）。既定は両方オン＝2026-09-22.5 と同じ見え方で始まる */
   cmtReq: true, cmtOrg: true,
   cmtOpen: '', cmtAuto: false,
+  /* 必要書類と開催の条件の開閉（2026-11-06）。cmtServerCodes: サーバーが返した委員会の code（返さなければ null）*/
+  cmtDocsOpen: false, cmtServerCodes: null,
   /* 読み直し待ち（2026-09-23.8）。書けたか分からない送信の後は、一覧を読み直すまで同じ送信を止める。
      listOkAt: 最後に成功した一覧の読み込みを【始めた】時刻（ms）。listOkN: 成功した回数（ボタンで読めたかの判定）
      impHold: CSV の試算を止める期限。この時刻以降に始めた読み込みが成功したら外す（0＝止めていない）
@@ -5353,7 +5383,7 @@ var CMT_EXT_CODE = 'kondan';      /* 外部の方を足せるのは運営懇談�
      挙動にしない）。 */
 var CMT_VIEWS = ['both', 'req', 'org', 'none'];
 /* 刷るもの（2026-09-22.6）。端末には残さない＝画面を開くたび必ず「一覧と構成員」に戻る */
-var CMT_PRINT_WHATS = ['both', 'tbl', 'org'];
+var CMT_PRINT_WHATS = ['both', 'tbl', 'org', 'docs'];
 var CMT_URL_MAX = 300;
 var CMT_URL_RE = /^https?:\/\//i;
 var CMT_URL_NG_MSG = 'URLは https:// または http:// で始まるものを入れてください';
@@ -5620,11 +5650,145 @@ function cmtExternalsOf(code) {
   return Array.isArray(a) ? a : [];
 }
 
+/* ── サーバーの受け口がまだ知らない係（2026-11-06）──────────────
+   既定に係が増えても、古い受け口は知らない code の所属を受け付けない。
+   委員会マスタを一度送れば受け口が覚えるので、それまでは所属の欄を止めて登録を促す */
+function cmtCodesOf(list) {
+  if (!Array.isArray(list) || !list.length) return null;
+  return list.map(function (c) { return txt(c && c.code); });
+}
+function cmtMissingOnServer() {
+  if (!Array.isArray(ST.cmtServerCodes)) return [];
+  var a = SC() ? (typeof SC().localDefaults === 'function' ? SC().localDefaults() : SC().COMMITTEE_DEFAULTS) : null;
+  if (!Array.isArray(a)) return [];
+  /* 上限（20件）で画面のマスタに入らなかった既定は数えない＝登録しても送られないので、ボタンが消えなくなる */
+  var inList = (SC() && typeof SC().committees === 'function') ? SC().committees().map(function (x) { return txt(x && x.code); }) : null;
+  var out = [];
+  a.forEach(function (d) {
+    var c = txt(d && d.code);
+    if (inList && inList.indexOf(c) < 0) return;
+    if (c && ST.cmtServerCodes.indexOf(c) < 0 && out.indexOf(c) < 0) out.push(c);
+  });
+  return out;
+}
+/* 委員会タブの要約の末尾に出す「新しい係をサーバーに登録する」。描くたびに作り直す（box は呼び出し側が空にしている）*/
+function renderCmtReg(box) {
+  if (!box || !ST.cmtLoaded) return;
+  var miss = cmtMissingOnServer();
+  if (!miss.length) return;
+  /* 紙には出さない。ブラウザ直の印刷（.cmt-print が付かない）でも隠すため id を付けた箱に入れる */
+  box.appendChild(h('div', { id: 'cmtRegBox' }, [
+    h('p', { cls: 'muted', text: 'サーバーの受け口がまだ知らない係があります。職員の所属を保存する前に登録してください' }),
+    h('button', {
+      type: 'button', cls: 'btn pri', id: 'cmtRegBtn',
+      disabled: (!cmtCanEdit() || ST.cmtBusy),
+      onclick: function () { cmtSaveMaster(cmtMaster(), '新しい係を登録しました'); }
+    }, '新しい係をサーバーに登録する（' + miss.length + '件）')
+  ]));
+}
+
+/* ── 必要書類と開催の条件（2026-11-06）─────────────────────
+   中身は算出モジュールの committeeDocs(code) が正本。旧版の部品（関数が無い）と独自の係（null）では出さない */
+var CMT_MEET_ITEMS = [
+  ['freq', '開催の回数'], ['attend', '出席・構成'], ['method', '開き方'],
+  ['minutes', '議事録・記録'], ['notify', '周知'], ['keep', '保存']
+];
+var CMT_DOCS_NONE_MSG = 'この係に決まった書類はありません';
+function cmtDocsOf(code) {
+  if (!(SC() && typeof SC().committeeDocs === 'function')) return null;
+  var o = null;
+  try { o = SC().committeeDocs(txt(code)); } catch (e) { o = null; }
+  if (!o || typeof o !== 'object') return null;
+  return { docs: Array.isArray(o.docs) ? o.docs : [], meet: (o.meet && typeof o.meet === 'object') ? o.meet : {} };
+}
+function cmtMeetText(meet, k) { return txt(meet && meet[k]) || '—'; }
+function cmtDocsTable(docs, capText) {
+  return h('table', { cls: 'small-tbl' }, [
+    h('caption', { cls: 'sr-only', text: capText }),
+    h('thead', null, h('tr', null, ['書類', '種別', '対象事業所', '頻度と保存', '根拠'].map(function (t) {
+      return h('th', { scope: 'col', text: t });
+    }))),
+    h('tbody', null, docs.map(function (x) {
+      return h('tr', null, [
+        h('td', { text: txt(x && x.name) }),
+        h('td', { text: txt(x && x.kind) }),
+        h('td', { text: cmtSitesText(x && x.sites) }),
+        h('td', { text: txt(x && x.freq) }),
+        h('td', { text: txt(x && x.basis) })
+      ]);
+    }))
+  ]);
+}
+function renderCmtDocs() {
+  var wrap = $('cmtDocsWrap'), btn = $('cmtDocsBtn'), box = $('cmtDocs');
+  if (!wrap || !btn || !box) return;
+  clearNode(box);
+  var code = cmtSelected();
+  var o = code ? cmtDocsOf(code) : null;
+  if (!o) {
+    wrap.hidden = true;
+    btn.hidden = true;
+    box.hidden = true;
+    btn.setAttribute('aria-expanded', 'false');
+    return;
+  }
+  var open = !!ST.cmtDocsOpen;
+  wrap.hidden = false;
+  btn.hidden = false;
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  btn.textContent = open ? '📄 必要書類と開催の条件を閉じる' : '📄 必要書類と開催の条件';
+  var name = cmtLabelOf(code) || code;
+  box.setAttribute('aria-label', name + ' の必要書類と開催の条件');
+  box.hidden = !open;
+  if (!open) return;
+  var dl = h('dl');
+  CMT_MEET_ITEMS.forEach(function (p) {
+    dl.appendChild(h('dt', { text: p[1] }));
+    dl.appendChild(h('dd', { text: cmtMeetText(o.meet, p[0]) }));
+  });
+  box.appendChild(dl);
+  if (!o.docs.length) { box.appendChild(h('p', { cls: 'muted', text: CMT_DOCS_NONE_MSG })); return; }
+  box.appendChild(h('div', { cls: 'tbl-wrap' }, cmtDocsTable(o.docs, name + ' の必要書類')));
+}
+function toggleCmtDocs() {
+  ST.cmtDocsOpen = !ST.cmtDocsOpen;
+  lsSet(UI_KEYS.cmtDocs, ST.cmtDocsOpen ? '1' : '0');
+  renderCmtDocs();
+}
+/* 紙にだけ出す「必要書類と開催の条件」。刷るものが docs の時だけ CSS で出す。描くたびに作り直す */
+function renderCmtPrintDocs(stats) {
+  var box = $('cmtPrintDocs');
+  if (!box) return;
+  clearNode(box);
+  box.appendChild(h('h2', { text: '必要書類と開催の条件' }));
+  (stats || []).forEach(function (x) {
+    var code = txt(x && x.code);
+    if (!code) return;
+    var name = txt(x && x.label) || cmtLabelOf(code) || code;
+    var d = cmtDefOf(code);
+    var sites = cmtSitesText((x && x.sites !== undefined) ? x.sites : (d && d.sites));
+    var off = !!((x && x.inactive) || (d && d.inactive));
+    var blk = h('div', { cls: 'cmt-pdoc' }, h('h3', { text: name + '　' + sites + (off ? '（現在は対象外）' : '') }));
+    var o = cmtDocsOf(code);
+    if (!o) { blk.appendChild(h('p', { text: CMT_DOCS_NONE_MSG })); box.appendChild(blk); return; }
+    CMT_MEET_ITEMS.forEach(function (p) {
+      blk.appendChild(h('p', { text: p[1] + '：' + cmtMeetText(o.meet, p[0]) }));
+    });
+    if (!off) {
+      if (o.docs.length) blk.appendChild(cmtDocsTable(o.docs, name + ' の必要書類'));
+      else blk.appendChild(h('p', { text: CMT_DOCS_NONE_MSG }));
+    }
+    box.appendChild(blk);
+  });
+}
+
 /* ── サーバーから受け取った委員会を画面に入れる（取得経路はここに集約する） ── */
 function applyCommittees(d) {
   ST.cmtAt = txt(d && d.committeesAt);      /* 空文字も正しい値（まだ一度も保存されていない） */
   ST.cmtExternals = cmtNormExternals(d && d.externals);
   ST.cmtLoaded = true;
+  /* サーバーが知っている係（2026-11-06）。空でない配列の時だけ控える＝古い受け口でも判定を誤らない */
+  ST.cmtServerCodes = cmtCodesOf(d && d.committees);
   if (SC() && typeof SC().setCommittees === 'function') {
     try { SC().setCommittees(d && d.committees); } catch (e) { /* 既定のまま動かす */ }
   }
@@ -5821,9 +5985,14 @@ function syncCmtPicker() {
   if (!box) return;
   var why = cmtWhyNoEdit();
   var none = !cmtMaster().length;
+  var miss = why ? [] : cmtMissingOnServer();   /* サーバーが知らない係（2026-11-06）は登録するまで止める */
   cmtPickerSelects().forEach(function (s) {
     s.disabled = !!why;
     if (why) s.setAttribute('title', why); else s.removeAttribute('title');
+    if (!why && miss.indexOf(txt(s.getAttribute('data-cmt'))) >= 0) {
+      s.disabled = true;
+      s.setAttribute('title', '委員会タブで『新しい係をサーバーに登録する』を押してから');
+    }
   });
   var btn = $('cmtMoreBtn');
   if (btn) btn.disabled = false;               /* 開閉は表示だけの操作なので、保存できない時も使える */
@@ -5949,6 +6118,7 @@ function renderCmt() {
     ST.cmtAuto = false;            /* 次に読めた時、もう一度おすすめの委員会を開く */
     $('cmtPrintBtn').disabled = true;
     clearNode($('cmtPrintAll'));
+    clearNode($('cmtPrintDocs'));
     if (!cmtReady()) {
       setState('cmtState', 'warn', '画面の部品が委員会に対応していません',
         '画面の部品が古い版のままです。この画面を再読み込みしてください（続く時は管理者へ知らせてください）。');
@@ -5969,6 +6139,7 @@ function renderCmt() {
     ST.cmtAuto = false;
     $('cmtPrintBtn').disabled = true;
     clearNode($('cmtPrintAll'));
+    clearNode($('cmtPrintDocs'));
     setState('cmtState', '', '委員会が登録されていません', '委員会マスタを読み取れませんでした。');
     return;
   }
@@ -5983,6 +6154,7 @@ function renderCmt() {
   renderCmtTable(stats);           /* 中で placeCmtOrg → markCmtRows まで通る */
   renderCmtOrg();
   renderCmtPrint(stats);
+  renderCmtPrintDocs(stats);       /* 紙にだけ出す「必要書類と開催の条件」（2026-11-06）*/
 }
 
 /* 種別（委員会／計画と訓練／選任）でまとめる。見出しの文言は算出モジュールの COMMITTEE_KINDS から取り、
@@ -6025,6 +6197,7 @@ function renderCmtSum(stats) {
   });
   if (!order.length) {
     box.appendChild(h('p', { cls: 'none', text: 'いま埋まっていない所はありません' }));
+    renderCmtReg(box);                  /* サーバーが知らない係の登録（2026-11-06）*/
     return;
   }
   order.forEach(function (k) {
@@ -6036,6 +6209,7 @@ function renderCmtSum(stats) {
       onclick: function () { cmtPick(e.code, false); }
     }, [h('span', { text: cmtSumLabel(k) }), h('span', { cls: 'n', text: e.n + '件' })]));
   });
+  renderCmtReg(box);                    /* サーバーが知らない係の登録（2026-11-06）*/
 }
 /* ボタンに出す短い言い方。括弧の補足だけを外す（文言そのものは算出モジュールが正本）*/
 function cmtSumLabel(msg) {
@@ -6213,13 +6387,16 @@ function renderCmtOrg() {
     })));
   }
   $('cmtExtBtn').hidden = (code !== CMT_EXT_CODE);
-  $('cmtAddBtn').disabled = !canEdit || ST.cmtBusy;
+  var unreg = cmtMissingOnServer().indexOf(code) >= 0;   /* サーバーが知らない係は登録するまで足せない（2026-11-06）*/
+  $('cmtAddBtn').disabled = !canEdit || ST.cmtBusy || unreg;
+  $('cmtAddBtn').title = unreg ? '委員会タブで『新しい係をサーバーに登録する』を押してから' : '';
   $('cmtExtBtn').disabled = !canEdit || ST.cmtBusy;
   var wy = $('cmtEditWhy');
   var why = cmtWhyNoEdit();
   if (wy) { wy.textContent = why; wy.hidden = !why; }
   renderCmtUrl();                  /* 要件を確認できるページ（2026-09-22.5）*/
   renderCmtSiteStarted();          /* 当事業所が始めた月（2026-09-23.2）*/
+  renderCmtDocs();                 /* 必要書類と開催の条件（2026-11-06）*/
 }
 /* ── 要件を確認できるページ（2026-09-22.5）──────────────────
    いま開いている委員会の url を出し、書き換えて保存できるようにする。
@@ -6443,6 +6620,7 @@ function printCmt() {
     document.body.classList.remove('cmt-print');
     document.body.classList.remove('cmt-p-tbl');
     document.body.classList.remove('cmt-p-org');
+    document.body.classList.remove('cmt-p-docs');
     if (restoreCols) { ST.cmtReq = keepReq; ST.cmtOrg = keepOrg; renderCmt(); }
     window.removeEventListener('afterprint', done);
   };
@@ -6529,6 +6707,11 @@ function cmtRemoveStaff(code, id) {
 function cmtAddStaff(code, id, role) {
   var row = ST.byId[txt(id)];
   if (!row) return;
+  if (cmtMissingOnServer().indexOf(code) >= 0) {        /* 古いサーバーは知らない code を断る＝送らずに止める（2026-11-06）*/
+    setState('cmtState', 'warn', 'この係はまだサーバーに登録されていません',
+      '委員会タブの「新しい係をサーバーに登録する」を押してから、もう一度お願いします。');
+    return;
+  }
   var next = cmtWithRole(row, code, role);
   if (next.length > CMT_MAX_PER_STAFF) {
     setState('cmtAddState', 'warn', 'これ以上は増やせません',
@@ -6565,6 +6748,8 @@ function cmtSaveState(committees, externals, okMsg, ngTtl) {
     ST.cmtAt = txt(d && d.committeesAt);          /* 次の expect にそのまま使う */
     ST.cmtExternals = cmtNormExternals((d && d.externals) || externals);
     ST.cmtLoaded = true;
+    /* 受け口が覚えた係（2026-11-06）。返ってきた時だけ控え直す＝登録できたらボタンが消える */
+    if (Array.isArray(d && d.committees) && d.committees.length) ST.cmtServerCodes = cmtCodesOf(d.committees);
     if (SC() && typeof SC().setCommittees === 'function' && Array.isArray(d && d.committees)) {
       try { SC().setCommittees(d.committees); } catch (e) { /* 既定のまま動かす */ }
     }
@@ -6750,6 +6935,8 @@ function restoreUi() {
   /* 出す列（2026-09-22.6）。★既知の値だけを受け入れ、壊れた値・未知の値は既定（両方オン）へ落とす
      ＝壊れた値で「名称と対象事業所だけの表」になって起動できなくならない（dev-principles 11） */
   applyCmtView(lsGet(UI_KEYS.cmtView));
+  /* 必要書類と開催の条件の開閉（2026-11-06）。'1' だけを開くとして受け、それ以外は閉じる */
+  ST.cmtDocsOpen = (lsGet(UI_KEYS.cmtDocs) === '1');
   $('cmtReqChk').checked = ST.cmtReq;
   $('cmtOrgChk').checked = ST.cmtOrg;
   $('fl_' + ST.filter).checked = true;
@@ -6920,6 +7107,8 @@ function bindEvents() {
   /* 当事業所が始めた月（2026-09-23.2）。打つたびに「保存」を出し入れする（url と同じ作法）*/
   $('cmtSiteStarted').addEventListener('input', syncCmtSiteStarted);
   $('cmtSiteStartedSave').addEventListener('click', onCmtSiteStartedSave);
+  /* 必要書類と開催の条件（2026-11-06）。開閉だけ＝保存できない時も使える */
+  $('cmtDocsBtn').addEventListener('click', toggleCmtDocs);
   $('cmtExtBtn').addEventListener('click', openCmtExt);
   $('cmtAddClose').addEventListener('click', closeCmtAdd);
   $('cmtAddDo').addEventListener('click', doCmtAdd);
@@ -6943,6 +7132,7 @@ function bindEvents() {
     document.body.classList.remove('cmt-print');
     document.body.classList.remove('cmt-p-tbl');
     document.body.classList.remove('cmt-p-org');
+    document.body.classList.remove('cmt-p-docs');
   });
 
   $('saveCfgBtn').addEventListener('click', onSaveCfg);
