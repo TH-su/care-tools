@@ -69,7 +69,7 @@ test('COMMITTEE_DEFAULTS: 足した5件の種別・対象事業所・要確認',
     assert.equal(by[c].penalty, '', c);
     assert.equal(by[c].inactive, false, c);
     assert.equal(by[c].todo === true, c === 'fire', c);
-    assert.equal(by[c].alias, undefined, c);     /* 既存の例（hygiene）と同じく alias・drill は書かない */
+    assert.ok(by[c].alias, c);                    /* 2026-11-06.2 から通称は14件すべてに書く。drill は書かない */
     assert.equal(by[c].drill, undefined, c);
   });
   assert.equal(by.fire.todoNote, '施設と通所の建物が同じ防火対象物か、収容人員の数え方を消防署に確認してください');

@@ -154,7 +154,7 @@ export function respond(body) {
   const a = (body && body.action) || 'ping';
   if (a === 'ping') {
     return { ok: true, ver: VER,
-      caps: ['bulkSave', 'rev', 'lock', 'auth', 'dryRun', 'secure', 'import', 'files', 'enums', 'reqId', 'corp', 'editorverify', 'siteRatio', 'committee'],
+      caps: ['bulkSave', 'rev', 'lock', 'auth', 'dryRun', 'secure', 'import', 'files', 'enums', 'reqId', 'corp', 'editorverify', 'siteRatio', 'committee', 'alias'],
       authRequired: true, schemaVer: SCHEMA_VER, build: 'check-fixture' };
   }
   if (a === 'list') return { ok: true, ver: VER, rows: JSON.parse(JSON.stringify(STAFF)) };

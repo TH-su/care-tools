@@ -24,7 +24,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-11-06';
+  var VERSION = '2026-11-06.2';
 
   /* ── 日付の下ごしらえ（すべて整数演算） ───────────────────────── */
 
@@ -754,6 +754,7 @@
     {
       code: 'abuse',
       label: '虐待防止委員会',
+      alias: 'やさしいケア推進チーム',
       kind: 'committee',
       sites: ['facility', 'visit', 'day'],
       freq: '定期的',
@@ -780,6 +781,7 @@
     {
       code: 'restraint',
       label: '身体的拘束等適正化委員会',
+      alias: 'のびのび生活委員会',
       kind: 'committee',
       /* ★2026-09-23.4 条文どおりに訂正。訪問介護（第23条）・通所介護（第98条）は身体的拘束の原則禁止と記録の義務だけで、
          委員会の定めが無い（「委員会」の語が0回）。委員会を求めるのは熊本市有料老人ホーム設置運営指導指針＝施設だけ。 */
@@ -809,6 +811,7 @@
     {
       code: 'infection',
       label: '感染対策委員会',
+      alias: 'みんなの健康守り隊',
       kind: 'committee',
       sites: ['facility', 'visit', 'day'],
       freq: '概ね6か月に1回以上',
@@ -832,7 +835,7 @@
     {
       code: 'safety',
       label: '利用者の安全並びに介護サービスの質の確保及び職員の負担軽減に資する方策を検討するための委員会',
-      alias: '生産性向上委員会',
+      alias: 'みらいの職場づくりチーム',
       kind: 'committee',
       /* ★2026-09-23.4 条文どおりに訂正。第139条の2 は第九章 短期入所生活介護の条文で、訪問介護・通所介護には規定が無い
          （第105条の準用リストにも入っていない）。住宅型有料老人ホーム（特定施設の指定なし）も熊本市の指導指針に定めが無い。 */
@@ -866,6 +869,7 @@
     {
       code: 'kondan',
       label: '運営懇談会',
+      alias: 'みんなの暮らし会議',
       kind: 'committee',
       sites: ['facility'],
       freq: '定期的',
@@ -885,6 +889,7 @@
     {
       code: 'dementia',
       label: '認知症ケアの事例検討・技術的指導会議',
+      alias: '寄り添いケア会議',
       kind: 'committee',
       sites: ['day'],
       freq: '定期的',
@@ -905,6 +910,7 @@
     {
       code: 'bcp',
       label: '業務継続計画（BCP）',
+      alias: 'もしもの備え隊',
       kind: 'plan',
       sites: ['facility', 'visit', 'day'],
       freq: '委員会の設置義務はなし',
@@ -926,6 +932,7 @@
     {
       code: 'disaster',
       label: '非常災害対策',
+      alias: '避難マイスターズ',
       kind: 'plan',
       sites: ['facility', 'day'],                               /* ★訪問介護には計画策定・訓練の定めがない（visit は入れない） */
       freq: '委員会の設置義務はなし',
@@ -947,6 +954,7 @@
     {
       code: 'hygiene',
       label: '衛生推進者の選任',
+      alias: '働く環境の見守り役',
       kind: 'officer',
       sites: ['facility', 'visit', 'day'],
       freq: '委員会の設置義務はなし',
@@ -971,6 +979,7 @@
     {
       code: 'accident',
       label: '事故発生防止委員会',
+      alias: 'ヒヤリハット会議',
       kind: 'committee',
       sites: ['facility'],
       freq: '定期的',
@@ -989,6 +998,7 @@
     {
       code: 'complaint',
       label: '苦情受付担当者・苦情解決責任者',
+      alias: 'よりよくする窓口',
       kind: 'officer',
       sites: ['facility', 'visit', 'day'],
       freq: '委員会の設置義務はなし',
@@ -1007,6 +1017,7 @@
     {
       code: 'privacy',
       label: '個人情報保護管理責任者',
+      alias: '個人情報ガードマン',
       kind: 'officer',
       sites: ['facility', 'visit', 'day'],
       freq: '委員会の設置義務はなし',
@@ -1025,6 +1036,7 @@
     {
       code: 'harassment',
       label: 'ハラスメント相談担当者',
+      alias: '一人で抱えない窓口',
       kind: 'officer',
       sites: ['facility', 'visit', 'day'],
       freq: '委員会の設置義務はなし',
@@ -1043,6 +1055,7 @@
     {
       code: 'fire',
       label: '防火管理者',
+      alias: '火の用心係',
       kind: 'officer',
       sites: ['facility', 'day'],
       freq: '委員会の設置義務はなし',
@@ -1222,6 +1235,9 @@
     /* 2026-09-23.6 まで。身体的拘束は 2026-09-23.4 から施設だけ＝訪問・通所の頻度は要らなくなった */
     restraint: ['有料は3か月に1回以上／訪問・通所は定期的']
   };
+  /* 前の既定の通称（2026-11-06.2）。保存値がこれと同じ時だけ今の既定へ引き直す（aliasFrom）。
+     サーバー（staff-api.gs）と同じ中身にする。入れてよいのは前の版の既定に実際にあった文面だけ */
+  var RETIRED_DEFAULT_ALIAS = { safety: ['生産性向上委員会'] };
 
   var COMMITTEE_ROLES = [['chair', '委員長'], ['officer', '担当者'], ['member', '委員']];
 
@@ -1277,6 +1293,17 @@
     if (def && Object.prototype.hasOwnProperty.call(RETIRED_DEFAULT_FREQ, def.code) &&
         RETIRED_DEFAULT_FREQ[def.code].indexOf(f) >= 0) return trim(def.freq);
     return f;
+  }
+
+  /* 記録から通称を取り出す（2026-11-06.2）。書き換え可の側なので送られた値を尊重するが、
+     既定にある委員会で、空か前の既定の通称（RETIRED_DEFAULT_ALIAS）と一字一句同じ時だけ今の既定へ引き直す。
+     人が足した委員会は送られた値のまま */
+  function aliasFrom(src, def) {
+    var a = trim(src && src.alias);
+    if (!def) return a;
+    if (a === '' || (Object.prototype.hasOwnProperty.call(RETIRED_DEFAULT_ALIAS, def.code) &&
+        RETIRED_DEFAULT_ALIAS[def.code].indexOf(a) >= 0)) return trim(def.alias);
+    return a;
   }
 
   /* 知らない種別は 'committee' に寄せる（注意を静かに減らさない安全側。sites の検証と同じ作法） */
@@ -1366,7 +1393,8 @@
       out.push({
         code: code,
         label: trim(it.label) || code,                                           /* 名前が無ければコードを出す */
-        alias: def ? trim(def.alias) : trim(it.alias),
+        /* ★通称は 2026-11-06.2 から label・freq と同じ書き換え可の側。空＝既定の通称（aliasFrom） */
+        alias: aliasFrom(it, def),
         kind: def ? normKind(def.kind) : normKind(it.kind),
         /* ★対象事業所も既定が正（2026-09-23.4）。どの事業所が対象かは条文で決まる。人が足した委員会だけ送られた値 */
         sites: def ? def.sites.slice() : sites,
@@ -2222,6 +2250,7 @@
     visibleEnum: visibleEnum,
     COMMITTEE_DEFAULTS: COMMITTEE_DEFAULTS,
     RETIRED_DEFAULT_FREQ: RETIRED_DEFAULT_FREQ,
+    RETIRED_DEFAULT_ALIAS: RETIRED_DEFAULT_ALIAS,
     COMMITTEE_ROLES: COMMITTEE_ROLES,
     COMMITTEE_KINDS: COMMITTEE_KINDS,
     setCommittees: setCommittees,
