@@ -97,7 +97,7 @@ console.log('\n— 2. 正しい鍵はその値 —');
   });
   t('並びは書いた順', () => {
     const E = fresh(); const a = sample().reverse();
-    return E.setLocality({ committeeDefaults: a }) === true && E.localDefaults()[0].code === 'hygiene';
+    return E.setLocality({ committeeDefaults: a }) === true && E.localDefaults()[0].code === a[0].code;
   });
 }
 {

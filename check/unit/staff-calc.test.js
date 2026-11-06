@@ -865,7 +865,7 @@ test('setEnums のあとも既定の18資格・5区分は引ける（既定コ�
   assert.equal(S.visibleEnum('employmentType').length, 5);
   assert.equal(S.ENUMS.employmentType.officer, '役員兼使用人');
   assert.equal(S.ENUMS.qualCodes.cw, '介護福祉士');
-  assert.equal(S.VERSION, '2026-11-02');
+  assert.equal(S.VERSION, '2026-11-06');
 });
 
 /* ── 委員会と構成員（spec-committee.md §1・§4）────────────────────
@@ -976,7 +976,7 @@ test('COMMITTEE_DEFAULTS: 既定6件が熊本市資料どおり（コード・�
   assert.equal(S.committeeOf('abuse').label, '虐待防止委員会');
   assert.equal(S.committeeOf('ではない'), null);
   assert.equal(S.committeeOf(''), null);
-  assert.equal(S.committees().length, 9);                       /* 2026-09-22.2 で委員会以外の3件が増えた */
+  assert.equal(S.committees().length, 14);                       /* 2026-09-22.2 で委員会以外の3件が増えた */
 });
 
 test('committeesOf: 未知のコード・3種以外の役割・同じ委員会の重複・壊れた値を落とす', () => {
@@ -1031,7 +1031,7 @@ test('committeeMembers: 退職した人は構成員に出ない（基準日の�
 test('committeeStats: 減算のある委員会で担当者・委員長が空なら注意を出す（対象外の委員会には出さない）', () => {
   const st = S.committeeStats(COM_ROWS, COM_ASOF);
   assert.deepEqual(st.map((c) => c.code),
-    ['abuse', 'restraint', 'infection', 'safety', 'kondan', 'dementia', 'bcp', 'disaster', 'hygiene']);
+    ['abuse', 'restraint', 'infection', 'safety', 'kondan', 'dementia', 'bcp', 'disaster', 'hygiene', 'accident', 'complaint', 'privacy', 'harassment', 'fire']);
 
   const ab = comOf(st, 'abuse');
   assert.equal(ab.total, 3);
@@ -1112,7 +1112,7 @@ test('committeeStats: 幅広い職種の判定は、対象事業所がある時�
 
 test('committeeStats / committeeMembers: 空配列・不正な基準日でも落ちない', () => {
   const empty = S.committeeStats([], COM_ASOF);
-  assert.equal(empty.length, 9);
+  assert.equal(empty.length, 14);
   empty.forEach((c) => {
     assert.equal(c.total, 0);
     assert.equal(c.chair, 0);
@@ -1122,9 +1122,9 @@ test('committeeStats / committeeMembers: 空配列・不正な基準日でも落
     /* 2026-09-23.6: 既定の対象事業所が空の委員会（生産性向上）には体制の警告を出さない */
     assert.equal(c.warn.indexOf('委員が1人もいません') >= 0, !c.inactive && c.kind === 'committee' && c.sites.length > 0);
   });
-  assert.equal(S.committeeStats(null, COM_ASOF).length, 9);
-  assert.equal(S.committeeStats(COM_ROWS, 'ではない').length, 9);   /* 不正な基準日 */
-  assert.equal(S.committeeStats(COM_ROWS).length, 9);               /* 基準日の省略（today で数える） */
+  assert.equal(S.committeeStats(null, COM_ASOF).length, 14);
+  assert.equal(S.committeeStats(COM_ROWS, 'ではない').length, 14);   /* 不正な基準日 */
+  assert.equal(S.committeeStats(COM_ROWS).length, 14);               /* 基準日の省略（today で数える） */
   assert.deepEqual(S.committeeMembers([], 'abuse', COM_ASOF), []);
   assert.deepEqual(S.committeeMembers(null, 'abuse', COM_ASOF), []);
   assert.deepEqual(S.committeeMembers(COM_ROWS, 'ではない', COM_ASOF), []);
@@ -1153,10 +1153,10 @@ test('setCommittees: サーバーのマスタへ差し替える（壊れた項�
       null,
       'ではない'
     ]);
-    /* 送られた3件＋既定のうち送られてこなかった8件（2026-09-22.2 のマージ。下の専用テスト参照） */
-    assert.equal(n, 11);
+    /* 送られた3件＋既定のうち送られてこなかった13件（2026-09-22.2 のマージ。下の専用テスト参照） */
+    assert.equal(n, 16);
     assert.deepEqual(S.committees().map((c) => c.code),
-      ['abuse', 'x1', 'x2', 'restraint', 'infection', 'safety', 'kondan', 'dementia', 'bcp', 'disaster', 'hygiene']);
+      ['abuse', 'x1', 'x2', 'restraint', 'infection', 'safety', 'kondan', 'dementia', 'bcp', 'disaster', 'hygiene', 'accident', 'complaint', 'privacy', 'harassment', 'fire']);
     assert.equal(S.committeeOf('abuse').freq, '毎月');
     assert.equal(S.committeeOf('abuse').label, '虐待防止委員会');
     assert.deepEqual(S.committeeOf('x1').sites, ['visit']);     /* 知らない事業所コード・重複は落とす */
@@ -1167,11 +1167,11 @@ test('setCommittees: サーバーのマスタへ差し替える（壊れた項�
     assert.equal(S.committeeOf('x9'), null);
     assert.deepEqual(S.committeesOf({ committeesJson: [{ code: 'x9', role: 'chair' }] }), []);
     assert.deepEqual(S.committeeStats(COM_ROWS, COM_ASOF).map((c) => c.code),
-      ['abuse', 'x1', 'x2', 'restraint', 'infection', 'safety', 'kondan', 'dementia', 'bcp', 'disaster', 'hygiene']);
+      ['abuse', 'x1', 'x2', 'restraint', 'infection', 'safety', 'kondan', 'dementia', 'bcp', 'disaster', 'hygiene', 'accident', 'complaint', 'privacy', 'harassment', 'fire']);
     /* 差し替え後も職種の注意は safety のコードにだけ結びつく */
     assert.equal(comOf(S.committeeStats(COM_ROWS, COM_ASOF), 'x1').warn.length, 0);   /* inactive */
   } finally {
-    assert.equal(S.setCommittees(back), 9);
+    assert.equal(S.setCommittees(back), 14);
   }
   assert.deepEqual(S.committees().map((c) => c.code), S.COMMITTEE_DEFAULTS.map((c) => c.code));
   assert.equal(S.committeeOf('abuse').freq, '定期的');
@@ -1186,7 +1186,7 @@ test('setCommittees: 空配列・壊れた応答では既定の委員会を失�
   assert.equal(S.setCommittees({ 0: { code: 'abuse' } }), 0);   /* 配列でない */
   assert.equal(S.setCommittees([null, 'ではない', { label: 'コードなし' }]), 0);
   assert.deepEqual(S.committees(), before);
-  assert.equal(S.committees().length, 9);
+  assert.equal(S.committees().length, 14);
 });
 
 /* ★2026-09-22 実測の不具合の回帰テスト。
@@ -1244,7 +1244,7 @@ test('setCommittees: 減算の有無を持たない古いマスタを読んで�
 });
 
 /* ── 委員会以外の体制と「要件の表示」（spec-committee2.md §1〜§3・版 2026-09-22.2）──
-   既定は9件（委員会6・計画と訓練2・選任1）。BCP・非常災害対策・衛生推進者は委員会では
+   既定は9件（委員会6・計画と訓練2・選任1）→ 2026-11-06 に14件（委員会7・計画と訓練2・選任5）。BCP・非常災害対策・衛生推進者は委員会では
    ないので、「委員長が決まっていません」「委員が1人もいません」を出さない。出すと、実地指導に
    出す紙へ存在しない要件を自分から書くことになる。担当者の注意は減算のある体制にだけ出す
    （BCP は業務継続計画未策定減算があるので出る）。
@@ -1260,22 +1260,23 @@ const KIND_ROWS = [
   }
 ];
 
-test('COMMITTEE_DEFAULTS: 既定は9件、種別の内訳は 委員会6・計画と訓練2・選任1', () => {
+test('COMMITTEE_DEFAULTS: 既定は14件、内訳は委員会7・計画と訓練2・選任5', () => {
   assert.deepEqual(S.COMMITTEE_DEFAULTS.map((c) => c.code),
-    ['abuse', 'restraint', 'infection', 'safety', 'kondan', 'dementia', 'bcp', 'disaster', 'hygiene']);
+    ['abuse', 'restraint', 'infection', 'safety', 'kondan', 'dementia', 'bcp', 'disaster', 'hygiene', 'accident', 'complaint', 'privacy', 'harassment', 'fire']);
   const count = {};
   S.COMMITTEE_DEFAULTS.forEach((c) => { count[c.kind] = (count[c.kind] || 0) + 1; });
-  assert.deepEqual(count, { committee: 6, plan: 2, officer: 1 });
+  assert.deepEqual(count, { committee: 7, plan: 2, officer: 5 });   /* 2026-11-06 事故発生防止（委員会）と選任4件を追加 */
   S.COMMITTEE_DEFAULTS.slice(0, 6).forEach((c) => assert.equal(c.kind, 'committee', c.code));
   assert.equal(S.committeeOf('bcp').kind, 'plan');
   assert.equal(S.committeeOf('disaster').kind, 'plan');
   assert.equal(S.committeeOf('hygiene').kind, 'officer');
   /* 画面の見出しの区切りに使う種別の一覧 */
   assert.deepEqual(S.COMMITTEE_KINDS, [['committee', '委員会'], ['plan', '計画と訓練'], ['officer', '選任']]);
-  /* 要確認の印は衛生推進者と生産性向上委員会の2件（2026-09-22.5）。
-     衛生＝事業場の数え方で選任義務が変わる／安全＝3事業所が対象に含まれる根拠が見つからない */
+  /* 要確認の印は衛生推進者と生産性向上委員会の2件（2026-09-22.5）と防火管理者（2026-11-06）。
+     衛生＝事業場の数え方で選任義務が変わる／安全＝3事業所が対象に含まれる根拠が見つからない／
+     防火＝該当するかが防火対象物の収容人員で決まる */
   S.COMMITTEE_DEFAULTS.forEach((c) =>
-    assert.equal(c.todo === true, c.code === 'hygiene' || c.code === 'safety', c.code));
+    assert.equal(c.todo === true, c.code === 'hygiene' || c.code === 'safety' || c.code === 'fire', c.code));
 });
 
 test('COMMITTEE_DEFAULTS: 新しい3件（BCP・非常災害対策・衛生推進者）が熊本市資料どおり', () => {
@@ -1366,7 +1367,7 @@ test('COMMITTEE_DEFAULTS: 既存6件に足した「何のため・研修・訓�
 
 test('committeeStats: 各行に 種別・通称・何のため・研修・訓練・要確認 を載せる', () => {
   const st = S.committeeStats(KIND_ROWS, KIND_ASOF);
-  assert.equal(st.length, 9);
+  assert.equal(st.length, 14);
   st.forEach((c) => {
     assert.equal(typeof c.kind, 'string', c.code);
     assert.equal(typeof c.alias, 'string', c.code);
@@ -1454,9 +1455,9 @@ test('committeeStats: 衛生推進者は「要確認」を出し続ける（事�
     committeesJson: [{ code: 'hygiene', role: 'officer' }]
   }];
   assert.deepEqual(S.committeeStats(rows, KIND_ASOF).find((x) => x.code === 'hygiene').warn, [TODO]);
-  /* 要確認が出るのは衛生推進者と生産性向上委員会だけ（2026-09-22.5 で safety を追加）*/
+  /* 要確認が出るのは衛生推進者と生産性向上委員会と防火管理者だけ（2026-09-22.5 で safety、2026-11-06 で fire を追加）*/
   S.committeeStats(rows, KIND_ASOF).forEach((c) => {
-    if (c.code !== 'hygiene' && c.code !== 'safety') assert.equal(c.warn.indexOf(TODO), -1, c.code);
+    if (c.code !== 'hygiene' && c.code !== 'safety' && c.code !== 'fire') assert.equal(c.warn.indexOf(TODO), -1, c.code);
   });
   assert.notEqual(S.committeeStats(rows, KIND_ASOF).find((x) => x.code === 'safety').warn.indexOf(TODO), -1);
 });
@@ -1464,7 +1465,7 @@ test('committeeStats: 衛生推進者は「要確認」を出し続ける（事�
 test('setCommittees: 種別・通称・何のため・研修・訓練・要確認が落ちない（既定から引き直す）', () => {
   const back = S.committees();
   const check = (where) => {
-    assert.equal(S.committees().length, 9, where);
+    assert.equal(S.committees().length, 14, where);
     assert.equal(S.committeeOf('bcp').kind, 'plan', where);
     assert.equal(S.committeeOf('bcp').hasPenalty, true, where);
     assert.equal(S.committeeOf('bcp').purpose, '減算を避けるため（業務継続計画未策定減算）', where);
@@ -1491,9 +1492,9 @@ test('setCommittees: 種別・通称・何のため・研修・訓練・要確�
       [NOTCM, '要確認（法令上の扱いを確かめてください）'], where);
   };
   try {
-    assert.equal(S.setCommittees(S.COMMITTEE_DEFAULTS), 9);     /* そのまま渡す */
+    assert.equal(S.setCommittees(S.COMMITTEE_DEFAULTS), 14);     /* そのまま渡す */
     check('そのまま');
-    assert.equal(S.setCommittees(JSON.parse(JSON.stringify(S.COMMITTEE_DEFAULTS))), 9);   /* JSON を通す */
+    assert.equal(S.setCommittees(JSON.parse(JSON.stringify(S.COMMITTEE_DEFAULTS))), 14);   /* JSON を通す */
     check('JSON');
     /* 項目を抜いた古い形（2026-09-22.1 以前が保存したマスタ）。制度上の事実は既定から引き直す */
     const old = S.COMMITTEE_DEFAULTS.map((c) => {
@@ -1501,13 +1502,13 @@ test('setCommittees: 種別・通称・何のため・研修・訓練・要確�
       delete o.kind; delete o.alias; delete o.purpose; delete o.training; delete o.drill; delete o.todo; delete o.hasPenalty;
       return o;
     });
-    assert.equal(S.setCommittees(old), 9);
+    assert.equal(S.setCommittees(old), 14);
     check('古い形');
     /* 人が画面から変えた値を送ってきても、既定にある体制は既定の値のまま */
     const forged = S.COMMITTEE_DEFAULTS.map((c) => Object.assign({}, c, {
       kind: 'committee', alias: '架空の通称', purpose: '架空の目的', training: '架空の研修', drill: '架空の訓練', todo: true
     }));
-    assert.equal(S.setCommittees(forged), 9);
+    assert.equal(S.setCommittees(forged), 14);
     check('作り替えた値');
   } finally {
     S.setCommittees(back);
@@ -1523,7 +1524,7 @@ test('setCommittees: 既定に無い体制は送られた種別・説明をそ�
       { code: 'x1', label: '架空の計画', kind: 'plan', purpose: '架空の目的', training: '架空の研修', drill: '架空の訓練', todo: true },
       { code: 'x2', label: '架空の体制', kind: 'ではない' },
       { code: 'x3', label: '種別なし' }
-    ]), 12);                                                    /* 送った3件＋既定9件（マージ） */
+    ]), 17);                                                    /* 送った3件＋既定14件（マージ） */
     assert.equal(S.committeeOf('x1').kind, 'plan');
     assert.equal(S.committeeOf('x1').purpose, '架空の目的');
     assert.equal(S.committeeOf('x1').training, '架空の研修');
@@ -1536,7 +1537,7 @@ test('setCommittees: 既定に無い体制は送られた種別・説明をそ�
     assert.deepEqual(st.find((x) => x.code === 'x1').warn, ['要確認（法令上の扱いを確かめてください）']);
     assert.notEqual(st.find((x) => x.code === 'x2').warn.indexOf('委員が1人もいません'), -1);
   } finally {
-    assert.equal(S.setCommittees(back), 9);
+    assert.equal(S.setCommittees(back), 14);
   }
 });
 
@@ -1558,11 +1559,11 @@ function legacySix() {
 test('setCommittees: 6件だけのマスタを読んでも委員会以外の3件が消えない（既定から足し戻す）', () => {
   const back = S.committees();
   try {
-    assert.equal(S.setCommittees(legacySix()), 9);
-    assert.equal(S.committees().length, 9);
+    assert.equal(S.setCommittees(legacySix()), 14);
+    assert.equal(S.committees().length, 14);
     /* 並びは「送られた分をその順」→「既定にしか無い分を既定の順」 */
     assert.deepEqual(S.committees().map((c) => c.code),
-      ['abuse', 'restraint', 'infection', 'safety', 'kondan', 'dementia', 'bcp', 'disaster', 'hygiene']);
+      ['abuse', 'restraint', 'infection', 'safety', 'kondan', 'dementia', 'bcp', 'disaster', 'hygiene', 'accident', 'complaint', 'privacy', 'harassment', 'fire']);
 
     /* 足した3件は既定の値そのまま（画面の「要件の表示」が欠けない） */
     const bcp = S.committeeOf('bcp');
@@ -1588,7 +1589,7 @@ test('setCommittees: 6件だけのマスタを読んでも委員会以外の3件
 
     /* 注意も正しく出る（足しただけの体制でも warn の出し分けが効く） */
     const st = S.committeeStats([], KIND_ASOF);
-    assert.equal(st.length, 9);
+    assert.equal(st.length, 14);
     assert.deepEqual(st.find((x) => x.code === 'bcp').warn, ['担当者が決まっていません（減算の要件です）']);
     assert.deepEqual(st.find((x) => x.code === 'disaster').warn, []);
     assert.deepEqual(st.find((x) => x.code === 'hygiene').warn, ['要確認（法令上の扱いを確かめてください）']);
@@ -1605,7 +1606,7 @@ test('setCommittees: 足し戻しても、送られてきた分の編集（名�
     six[4].freq = '年1回以上';
     six[5].inactive = false;                                    /* 認知症加算を算定し始めて「対象」に直した保存値 */
     six[0].note = '架空の注記';
-    assert.equal(S.setCommittees(six), 9);
+    assert.equal(S.setCommittees(six), 14);
 
     assert.equal(S.committeeOf('kondan').label, '運営懇談会（毎年6月）');
     assert.equal(S.committeeOf('kondan').freq, '年1回以上');
@@ -1628,9 +1629,9 @@ test('setCommittees: 既定に無い体制（人が足した分）はマージ�
     const list = legacySix().concat([
       { code: 'x9', label: '架空の体制', kind: 'plan', sites: ['visit'], freq: '毎月', purpose: '架空の目的', todo: true }
     ]);
-    assert.equal(S.setCommittees(list), 10);
+    assert.equal(S.setCommittees(list), 15);
     assert.deepEqual(S.committees().map((c) => c.code),
-      ['abuse', 'restraint', 'infection', 'safety', 'kondan', 'dementia', 'x9', 'bcp', 'disaster', 'hygiene']);
+      ['abuse', 'restraint', 'infection', 'safety', 'kondan', 'dementia', 'x9', 'bcp', 'disaster', 'hygiene', 'accident', 'complaint', 'privacy', 'harassment', 'fire']);
     const x9 = S.committeeOf('x9');
     assert.equal(x9.label, '架空の体制');
     assert.equal(x9.kind, 'plan');
@@ -1648,7 +1649,7 @@ test('setCommittees: 既定に無い体制（人が足した分）はマージ�
 test('setCommittees: 空配列・壊れた応答ではマージもせず、いまのマスタ（既定9件）をそのまま保つ', () => {
   S.setCommittees(S.COMMITTEE_DEFAULTS);
   const before = S.committees();
-  assert.equal(before.length, 9);
+  assert.equal(before.length, 14);
   assert.equal(S.setCommittees([]), 0);
   assert.equal(S.setCommittees(null), 0);
   assert.equal(S.setCommittees(undefined), 0);
@@ -1657,7 +1658,7 @@ test('setCommittees: 空配列・壊れた応答ではマージもせず、い�
   assert.equal(S.setCommittees([null, 'ではない', { label: 'コードなし' }]), 0);
   assert.deepEqual(S.committees(), before);
   assert.deepEqual(S.committees().map((c) => c.code), S.COMMITTEE_DEFAULTS.map((c) => c.code));
-  assert.equal(S.committees().length, 9);
+  assert.equal(S.committees().length, 14);
 });
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -1686,7 +1687,7 @@ const CALC_KEYS = ['code', 'label', 'alias', 'kind', 'sites', 'freq', 'basis', '
 test('レビュー3: 起動直後の committees() が setCommittees 後とそろった形を返す', () => {
   const F = freshCalc();
   const before = F.committees();
-  assert.equal(before.length, 9);
+  assert.equal(before.length, 14);
   before.forEach((c) => {
     assert.deepEqual(Object.keys(c).sort(), CALC_KEYS.slice().sort(), c.code);
     ['label', 'alias', 'freq', 'basis', 'penalty', 'purpose', 'training', 'drill', 'note', 'url', 'todoNote',
@@ -1797,7 +1798,7 @@ test('レビュー6: committeeStats の行に減算の有無（hasPenalty）を�
     S.setCommittees(back);
   }
   assert.equal(S.committeeOf('zz9'), null);                  /* 後始末（幽霊を残さない） */
-  assert.equal(S.committeeStats([], A).length, 9);
+  assert.equal(S.committeeStats([], A).length, 14);
 });
 
 test('レビュー2（(b) 裁定）: 委員会でない体制に「委員」が入っていても注意を出す', () => {
@@ -1878,7 +1879,7 @@ test('レビュー4（(d) 裁定）: 第1版のサーバー応答で根拠を書
     v1[0].freq = '毎月';                            /* 頻度も残る */
     v1[0].note = 'テストの注記';                     /* 注記も残る */
     v1[0].sites = ['facility'];                     /* 対象事業所を書き換えて送る（2026-09-23.4 から既定へ戻る） */
-    assert.equal(S.setCommittees(v1), 9);
+    assert.equal(S.setCommittees(v1), 14);
 
     /* ★既定にある9件は根拠も減算の文面も既定のまま */
     assert.equal(S.committeeOf('abuse').basis,
@@ -1917,7 +1918,7 @@ test('レビュー4（(d) 裁定）: 第1版のサーバー応答で根拠を書
     S.setCommittees(back);
   }
   assert.equal(S.committeeOf('zz8'), null);
-  assert.equal(S.committees().length, 9);
+  assert.equal(S.committees().length, 14);
 });
 
 test('レビュー4（(d) 裁定）: サーバーと算出モジュールが既定を正とする項目がそろっている', () => {
@@ -2070,7 +2071,7 @@ test('C: 生産性向上委員会に「要確認」が立つ（行は消さな�
   S.COMMITTEE_DEFAULTS.forEach((c) => { by[c.code] = c; });
   assert.equal(by.safety.todo, true);
   assert.equal(by.safety.inactive, false);
-  assert.deepEqual(S.COMMITTEE_DEFAULTS.filter((c) => c.todo === true).map((c) => c.code), ['safety', 'hygiene']);
+  assert.deepEqual(S.COMMITTEE_DEFAULTS.filter((c) => c.todo === true).map((c) => c.code), ['safety', 'hygiene', 'fire']);
   /* 集計にも出る＝画面の「要確認」バッジと注意の文言が出る */
   const st = S.committeeStats([], KIND_ASOF);
   assert.equal(st.find((x) => x.code === 'safety').todo, true);
@@ -2082,7 +2083,7 @@ test('D: todoNote は要確認の2件だけに入り、画面から書き換え�
   S.COMMITTEE_DEFAULTS.forEach((c) => { by[c.code] = c; });
   assert.equal(by.safety.todoNote, TODONOTE_SAFETY);
   assert.equal(by.hygiene.todoNote, TODONOTE_HYGIENE);
-  assert.deepEqual(S.COMMITTEE_DEFAULTS.filter((c) => c.todoNote).map((c) => c.code), ['safety', 'hygiene']);
+  assert.deepEqual(S.COMMITTEE_DEFAULTS.filter((c) => c.todoNote).map((c) => c.code), ['safety', 'hygiene', 'fire']);   /* 2026-11-06 防火管理者を追加 */
   S.COMMITTEE_DEFAULTS.forEach((c) => assert.equal(typeof c.todoNote, 'string', c.code));
 
   const back = S.committees();
@@ -2099,7 +2100,7 @@ test('D: todoNote は要確認の2件だけに入り、画面から書き換え�
 
 test('D: committeeStats の各行に url と todoNote を載せる（画面はここを見る）', () => {
   const st = S.committeeStats(KIND_ROWS, KIND_ASOF);
-  assert.equal(st.length, 9);
+  assert.equal(st.length, 14);
   st.forEach((c) => {
     assert.equal(typeof c.url, 'string', c.code);
     assert.equal(typeof c.todoNote, 'string', c.code);
@@ -2152,7 +2153,7 @@ test('実機: url キーを持たない記録を読むと既定のURLが出る�
   try {
     const legacy = dropKey(S.COMMITTEE_DEFAULTS, 'url');
     assert.equal(legacy.filter((c) => Object.prototype.hasOwnProperty.call(c, 'url')).length, 0);
-    assert.equal(S.setCommittees(legacy), 9);
+    assert.equal(S.setCommittees(legacy), 14);
     Object.keys(URL_WANT).forEach((code) => {
       assert.equal(S.committeeOf(code).url, URL_WANT[code], code);
     });
@@ -2216,7 +2217,7 @@ test('実機: 第1版のサーバー応答（url を1件も持たない）でも
       delete o.purpose; delete o.training; delete o.drill; delete o.hasPenalty;
       return o;
     });
-    assert.equal(S.setCommittees(v1), 9);              /* 既定の増分3件は末尾に補われる */
+    assert.equal(S.setCommittees(v1), 14);              /* 既定の増分3件は末尾に補われる */
     ['abuse', 'restraint', 'infection', 'kondan', 'dementia'].forEach((code) => {
       assert.equal(S.committeeOf(code).url, URL_WANT[code], code);
     });
@@ -2265,7 +2266,7 @@ test('いつから: 起動直後（サーバー応答の前）に既定の start
   Object.keys(STARTED_WANT).forEach((code) => {
     assert.equal(F.committeeOf(code).startedAt, STARTED_WANT[code], code);
   });
-  assert.equal(F.committees().length, 9);
+  assert.equal(F.committees().length, 14);
   /* 一次資料で特定できなかったものを、それらしい日付で埋めていない */
   assert.match(F.committeeOf('kondan').startedAt, /確認できず/);
   assert.match(F.committeeOf('restraint').startedAt, /定めなし/);
@@ -2281,7 +2282,7 @@ test('いつから: 既定の siteStartedAt は全件空', () => {
 test('いつから: startedAt はサーバーが違う値を返しても既定に戻る（basis と同じ扱い）', () => {
   const F = freshCalc();
   const tampered = F.COMMITTEE_DEFAULTS.map((c) => Object.assign({}, c, { startedAt: '2099年1月（でたらめ）' }));
-  assert.equal(F.setCommittees(tampered), 9);
+  assert.equal(F.setCommittees(tampered), 14);
   Object.keys(STARTED_WANT).forEach((code) => {
     assert.equal(F.committeeOf(code).startedAt, STARTED_WANT[code], code);
   });
@@ -2293,7 +2294,7 @@ test('いつから: startedAt を持たない古いマスタを読んでも既�
     const o = Object.assign({}, c); delete o.startedAt; return o;
   });
   assert.equal(legacy.filter((c) => Object.prototype.hasOwnProperty.call(c, 'startedAt')).length, 0);
-  assert.equal(F.setCommittees(legacy), 9);
+  assert.equal(F.setCommittees(legacy), 14);
   Object.keys(STARTED_WANT).forEach((code) => {
     assert.equal(F.committeeOf(code).startedAt, STARTED_WANT[code], code);
   });
@@ -2309,13 +2310,13 @@ test('いつから: siteStartedAt は書き換えられる（url と同じ側）
   const F = freshCalc();
   const mine = F.COMMITTEE_DEFAULTS.map((c) => Object.assign({}, c,
     (c.code === 'abuse') ? { siteStartedAt: '2024年4月' } : {}));
-  assert.equal(F.setCommittees(mine), 9);
+  assert.equal(F.setCommittees(mine), 14);
   assert.equal(F.committeeOf('abuse').siteStartedAt, '2024年4月');
   ['restraint', 'infection', 'safety', 'kondan', 'dementia', 'bcp', 'disaster', 'hygiene']
     .forEach((code) => assert.equal(F.committeeOf(code).siteStartedAt, '', code));
   /* 空にできる */
   const cleared = F.committees().map((c) => Object.assign({}, c, { siteStartedAt: '' }));
-  assert.equal(F.setCommittees(cleared), 9);
+  assert.equal(F.setCommittees(cleared), 14);
   assert.equal(F.committeeOf('abuse').siteStartedAt, '');
 });
 
@@ -2346,7 +2347,7 @@ test('いつから: siteStartedAt のキーが無いマスタを読んでも落�
     const o = Object.assign({}, c); delete o.siteStartedAt; return o;
   });
   assert.equal(legacy.filter((c) => Object.prototype.hasOwnProperty.call(c, 'siteStartedAt')).length, 0);
-  assert.equal(F.setCommittees(legacy), 9);
+  assert.equal(F.setCommittees(legacy), 14);
   F.committees().forEach((c) => assert.equal(c.siteStartedAt, '', c.code));
   /* 読み出した形をそのまま戻しても値が育たない */
   const back = F.committees();
@@ -2390,7 +2391,7 @@ test('開催頻度: 保存値が前の既定の文面のままなら今の既定
   const F = freshCalc();
   const list = F.COMMITTEE_DEFAULTS.map((c) => Object.assign({}, c,
     (c.code === 'restraint') ? { freq: RETIRED_RESTRAINT_FREQ } : {}));
-  assert.equal(F.setCommittees(list), 9);
+  assert.equal(F.setCommittees(list), 14);
   assert.equal(F.committeeOf('restraint').freq, '3か月に1回以上');
   /* 前後の空白（全角を含む）は整形で落ちるので、同じ文面として引き直す */
   const F2 = freshCalc();
