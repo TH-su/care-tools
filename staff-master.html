@@ -3,10 +3,10 @@
 <head>
   <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-kIJTPyM8BzWv9IXoIerWtYdTq2B0TRCp9/1ZVukrt4c='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-zFOF6nv87fwkto1tAzl3Ub44QKPvryi+LkJcyQKuUCo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
-<meta name="stfm-build" content="2026-11-06">
+<meta name="stfm-build" content="2026-11-06.2">
 <title>職員マスタ</title>
 <style>
 /* ══════════════════════════════════════════════════════════════
@@ -1255,6 +1255,21 @@ body.cmt-print{page:cmt}
         <p class="fnote" id="cmtSiteStartedHelp">分かる範囲で。空でも構いません</p>
         <p class="fnote" id="cmtSiteStartedNote" hidden></p>
       </div>
+      <!-- 通称（呼び名・2026-11-06.2）。url と同じ作法（書き換え可・空＝既定の通称）。
+           受け口が alias を知っている時（caps）だけ使える。保存は cmtSaveMaster の経路。紙には出さない（.cmt-noprint）-->
+      <div class="fld cmt-url cmt-noprint">
+        <label for="cmtAlias">通称（呼び名）</label>
+        <div class="inrow">
+          <input type="text" id="cmtAlias" autocomplete="off" spellcheck="false"
+                 maxlength="40" placeholder="例: やさしいケア推進チーム"
+                 aria-describedby="cmtAliasErr cmtAliasHelp cmtAliasNote">
+          <button type="button" class="btn" id="cmtAliasReset" hidden>既定に戻す</button>
+          <button type="button" class="btn pri" id="cmtAliasSave" hidden>保存</button>
+        </div>
+        <p class="ferr" id="cmtAliasErr" hidden></p>
+        <p class="fnote" id="cmtAliasHelp">空にすると既定の通称に戻ります</p>
+        <p class="fnote" id="cmtAliasNote" hidden></p>
+      </div>
       <!-- 必要書類と開催の条件（2026-11-06）。中身は算出モジュールの committeeDocs が正本で、開くたびに組み直す。
            開閉の状態だけを端末に残す（stfm_cmtDocs）。紙には出さない（紙は「刷るもの」の「必要書類と開催の条件」）-->
       <div class="cmt-docs cmt-noprint" id="cmtDocsWrap" hidden>
@@ -1503,7 +1518,7 @@ body.cmt-print{page:cmt}
      端末が古い算出モジュールを掴んだまま新しい画面を開く（2026-09-22.3 で同期）。 -->
 <!-- 施設情報（facility-profile.json）の読み口。委員会の熊本市基準を所在自治体と法人設定から決めるため（2026-10-11・#10） -->
 <script src="su-facility.js?v=2026-11-02.3"></script>
-<script src="staff-master-calc.js?v=2026-11-06"></script>
+<script src="staff-master-calc.js?v=2026-11-06.2"></script>
 <!-- 職員の氏名の写し（不具合報告の伏せ字の名簿・2026-10-14）。事務所・管理者でログインしている時だけ書く。失敗しても画面は変わらない -->
 <script src="su-staff-names.js?v=2026-10-28"></script>
 <script>
@@ -1516,7 +1531,7 @@ body.cmt-print{page:cmt}
    ・添付書類（filesJson）はサーバー専用列。保存ペイロード・書出・取込には載せない。
    ════════════════════════════════════════════════════════════════ */
 
-var BUILD = '2026-11-06';
+var BUILD = '2026-11-06.2';
 var DEVICE_KEY = 'su_device_role';
 var CFG_KEY = 'stfm_cfg';
 /* 接続先は https の GAS だけ。127.0.0.1 は動作検証用のローカル模擬APIを許すため（インターネット側からは到達しない） */
@@ -5373,6 +5388,9 @@ var CMT_BASIS_PRINT_MAX = 24;     /* 紙だけ根拠を短くする字数（§5-
 var CMT_STARTED_PRINT_MAX = 20;
 var CMT_SITE_STARTED_MAX = 40;    /* 当事業所が始めた月。サーバー（COMMITTEE_SITE_STARTED_MAX）と同じ */
 var CMT_SITE_STARTED_LONG_MSG = '当事業所が始めた月が長すぎます（上限 ' + CMT_SITE_STARTED_MAX + '字）';
+var CMT_ALIAS_MAX = 40;           /* 通称（2026-11-06.2）。入力欄の maxlength と同じ */
+var CMT_ALIAS_LONG_MSG = '通称が長すぎます（上限 ' + CMT_ALIAS_MAX + '字）';
+var CMT_ALIAS_NO_CAPS_MSG = '受け口（職員マスタAPI）が古い版のため、通称はまだ変えられません。配備の後に使えます';
 var CMT_SITE_STARTED_LABEL = '当事業所: ';   /* 表と紙の2段目の頭に付ける言い方 */
 var CMT_EXT_CODE = 'kondan';      /* 外部の方を足せるのは運営懇談会だけ（本人裁定 2026-09-22） */
 /* 要件を確認できるページ（2026-09-22.5）。サーバー（COMMITTEE_URL_RE / COMMITTEE_URL_MAX）・
@@ -5485,7 +5503,18 @@ function cmtDefOf(code) {
   cmtMaster().forEach(function (d) { if (!out && txt(d && d.code) === c) out = d; });
   return out;
 }
+/* 画面と紙に出す名前（2026-11-06.2）。通称があれば「通称（正式名）」、無ければ正式名 */
+function cmtDisplayName(alias, label) {
+  var a = txt(alias).trim(), l = txt(label).trim();
+  if (a && l && a !== l) return a + '（' + l + '）';
+  return a || l;
+}
 function cmtLabelOf(code) {
+  var d = cmtDefOf(code);
+  return cmtDisplayName(d && d.alias, d && d.label) || txt(code);
+}
+/* 正式名だけ（通称を付けない）。通称の欄の読み上げ名など、通称が二重になる所で使う */
+function cmtFormalOf(code) {
   var d = cmtDefOf(code);
   return txt(d && d.label) || txt(code);
 }
@@ -5764,7 +5793,7 @@ function renderCmtPrintDocs(stats) {
   (stats || []).forEach(function (x) {
     var code = txt(x && x.code);
     if (!code) return;
-    var name = txt(x && x.label) || cmtLabelOf(code) || code;
+    var name = cmtDisplayName(x && x.alias, x && x.label) || cmtLabelOf(code) || code;
     var d = cmtDefOf(code);
     var sites = cmtSitesText((x && x.sites !== undefined) ? x.sites : (d && d.sites));
     var off = !!((x && x.inactive) || (d && d.inactive));
@@ -6235,7 +6264,7 @@ function renderCmtTable(stats) {
 function cmtTableRow(x) {
   var code = txt(x && x.code);
   var nameCell = h('th', { scope: 'row' }, h('button', {
-    type: 'button', cls: 'cmt-name', text: txt(x.label) || code,
+    type: 'button', cls: 'cmt-name', text: cmtDisplayName(x.alias, x.label) || code,
     /* 開いているかどうかは markCmtRows が付け直す（読み上げ名も「開く／閉じる」で入れ替わる）*/
     'aria-expanded': 'false', 'aria-label': cmtNameBtnLabel(code, false),
     onclick: function (ev) { ev.stopPropagation(); cmtPick(code, true); }
@@ -6244,8 +6273,7 @@ function cmtTableRow(x) {
   if (x.todo) nameCell.appendChild(h('span', { cls: 'cmt-badge', text: '要確認' }));
   /* 何を確認すればよいか（2026-09-22.5）。実地指導で「これから確認します」と説明できるよう紙にも出す */
   if (x.todo && txt(x.todoNote)) nameCell.appendChild(h('span', { cls: 'cmt-todonote', text: txt(x.todoNote) }));
-  /* 通称（§5-4）。職員が普段呼んでいる名前なので紙にも出す */
-  if (txt(x.alias)) nameCell.appendChild(h('span', { cls: 'cmt-note alias', text: '通称: ' + txt(x.alias) }));
+  /* 通称（§5-4）は 2026-11-06.2 から名称の前に出す（cmtDisplayName）ので、名前の下には出さない */
   if (x.inactive) nameCell.appendChild(h('span', { cls: 'cmt-note', text: CMT_OFF_MSG }));
   /* 補足（研修や担当者の重ね方）は集計に含まれないことがあるので、無ければマスタから取る。
      紙は1枚に収める約束なので、この補足だけ印刷では出さない（画面には必ず出す） */
@@ -6396,6 +6424,7 @@ function renderCmtOrg() {
   if (wy) { wy.textContent = why; wy.hidden = !why; }
   renderCmtUrl();                  /* 要件を確認できるページ（2026-09-22.5）*/
   renderCmtSiteStarted();          /* 当事業所が始めた月（2026-09-23.2）*/
+  renderCmtAlias();                /* 通称（2026-11-06.2）*/
   renderCmtDocs();                 /* 必要書類と開催の条件（2026-11-06）*/
 }
 /* ── 要件を確認できるページ（2026-09-22.5）──────────────────
@@ -6530,7 +6559,7 @@ function onCmtSiteStartedSave() {
   var code = cmtSsCode;
   if (!code) return;
   cmtSaveMaster(cmtMasterWithSiteStarted(code, v),
-    '「' + cmtLabelOf(code) + '」の当事業所が始めた月を保存しました');
+    '「' + cmtLabelOf(code) + '」の当事業所が始めた月を保存しました', '当事業所が始めた月を保存できません');
 }
 /* いまのマスタの写しに、1件だけ siteStartedAt を差し替えたものを作る（cmtMasterWithUrl と同じ）*/
 function cmtMasterWithSiteStarted(code, v) {
@@ -6540,6 +6569,96 @@ function cmtMasterWithSiteStarted(code, v) {
     var o = {}, k;
     for (k in c) { if (Object.prototype.hasOwnProperty.call(c, k)) o[k] = c[k]; }
     o.siteStartedAt = txt(v);
+    return o;
+  });
+}
+
+/* ── 通称（呼び名・2026-11-06.2）──────────────────────────────
+   url とまったく同じ作法（書き換え可）。空で保存すると算出モジュールとサーバーが既定の通称へ引き直す。
+   ★受け口が alias を知らない（caps に無い）古い版では、送っても既定へ戻されるので欄ごと止める（閲覧はできる）。
+   保存は cmtSaveMaster（既存の唯一の保存口）を通す。 */
+var cmtAliasCode = '';      /* いま欄に出している委員会 */
+var cmtAliasSaved = '';     /* その委員会のマスタの値（＝保存済み。手つかずかの判定に使う）*/
+var cmtAliasSent = null;    /* 保存で送った時の欄の値。保存が終わるまで控える（null＝送っていない）*/
+var cmtAliasSentAt = '';    /* 送った時の committeesAt。変わっていれば保存できた＝欄をマスタの値で入れ直す */
+function renderCmtAlias() {
+  var inp = $('cmtAlias');
+  if (!inp) return;
+  var code = cmtSelected();
+  var cur = txt((cmtDefOf(code) || {}).alias);
+  /* 入力中の値は消さない。委員会が変わった時と、まだ手を付けていない時だけ入れ直す（url と同じ）。
+     ★保存できた後（送った値のまま・committeesAt が進んだ）も入れ直す。保存の時点で既定へ引き直された値が欄とずれないため。
+       送っている途中（cmtBusy）は待ち、失敗した時（committeesAt が同じ）は入力をそのまま残す */
+  var sentDone = false;
+  if (cmtAliasSent !== null && !ST.cmtBusy) {
+    sentDone = (txt(inp.value).trim() === cmtAliasSent) && (txt(ST.cmtAt) !== txt(cmtAliasSentAt));
+    cmtAliasSent = null;
+  }
+  if (code !== cmtAliasCode || txt(inp.value) === cmtAliasSaved || sentDone) inp.value = cur;
+  cmtAliasCode = code;
+  cmtAliasSaved = cur;
+  inp.disabled = !cmtCanEdit() || !capsHas('alias') || ST.cmtBusy;
+  /* 読み上げ名は正式名で（cmtLabelOf だと通称が二重に読まれる）*/
+  inp.setAttribute('aria-label', '通称（呼び名） — ' + cmtFormalOf(code));
+  syncCmtAlias();
+}
+/* 欄の中身に合わせて「既定に戻す」「保存」と差し戻し文を出し入れする */
+function syncCmtAlias() {
+  var inp = $('cmtAlias');
+  if (!inp) return;
+  var v = txt(inp.value).trim();
+  var ng = (v.length > CMT_ALIAS_MAX) ? CMT_ALIAS_LONG_MSG : '';
+  var lock = inp.disabled;
+  var err = $('cmtAliasErr');
+  err.textContent = ng;
+  err.hidden = !ng;
+  if (ng) inp.setAttribute('aria-invalid', 'true'); else inp.removeAttribute('aria-invalid');
+  /* 「既定に戻す」は、出荷時の既定があって、いまの欄がそれと違う時だけ */
+  var def = txt((cmtShippedOf(cmtAliasCode) || {}).alias).trim();
+  var rst = $('cmtAliasReset');
+  rst.hidden = !def || v === def;
+  rst.disabled = lock;
+  /* 「保存」は保存済みの値と違う時だけ（空にする操作も「違う」に含まれる）*/
+  var dirty = (v !== cmtAliasSaved);
+  var sv = $('cmtAliasSave');
+  sv.hidden = !dirty;
+  sv.disabled = lock || !!ng;
+  var nt = $('cmtAliasNote');
+  var noCaps = !capsHas('alias');
+  nt.textContent = noCaps ? CMT_ALIAS_NO_CAPS_MSG : (dirty ? 'まだ保存していません' : '');
+  nt.hidden = !noCaps && !dirty;
+}
+/* 既定に戻す＝欄を出荷時の値にするところまで（保存は「保存」で行う＝保存の入口を増やさない）*/
+function onCmtAliasReset() {
+  var inp = $('cmtAlias'), b = $('cmtAliasReset');
+  if (!inp || inp.disabled || !b || b.disabled) return;
+  inp.value = txt((cmtShippedOf(cmtAliasCode) || {}).alias);
+  syncCmtAlias();
+  if (typeof inp.focus === 'function') inp.focus();
+}
+function onCmtAliasSave() {
+  var inp = $('cmtAlias'), b = $('cmtAliasSave');
+  if (!inp || inp.disabled || !b || b.disabled || ST.cmtBusy) return;
+  if (!capsHas('alias')) { setState('cmtState', 'warn', '保存できません', CMT_ALIAS_NO_CAPS_MSG); return; }
+  var v = txt(inp.value).trim();
+  if (v.length > CMT_ALIAS_MAX) { setState('cmtState', 'warn', '保存できません', CMT_ALIAS_LONG_MSG); return; }
+  var code = cmtAliasCode;
+  if (!code) return;
+  /* 空で保存＝出荷時の既定の通称の文字そのものを送る。★空文字は送らない（受け口は空を「古い画面からの送信」と見分ける）*/
+  var send = (v === '') ? txt((cmtShippedOf(code) || {}).alias).trim() : v;
+  /* 保存の後は欄をマスタの値で入れ直す（renderCmtAlias）。前の既定の通称などは保存の時点で既定へ引き直されるため */
+  cmtAliasSent = v;
+  cmtAliasSentAt = ST.cmtAt;
+  cmtSaveMaster(cmtMasterWithAlias(code, send), '「' + cmtFormalOf(code) + '」の通称を保存しました', '通称を保存できません');
+}
+/* いまのマスタの写しに、1件だけ alias を差し替えたものを作る（cmtMasterWithUrl と同じ）*/
+function cmtMasterWithAlias(code, v) {
+  var c0 = txt(code);
+  return cmtMaster().map(function (c) {
+    if (txt(c && c.code) !== c0) return c;
+    var o = {}, k;
+    for (k in c) { if (Object.prototype.hasOwnProperty.call(c, k)) o[k] = c[k]; }
+    o.alias = txt(v);
     return o;
   });
 }
@@ -6595,7 +6714,7 @@ function renderCmtPrint(stats) {
     }
     /* 1枚に収めるため、委員会名と構成員は同じ行に続けて出す */
     box.appendChild(h('div', { cls: 'cmt-pblk' }, [
-      h('span', { cls: 'ttl', text: (txt(x.label) || code) + (x.inactive ? '（' + CMT_OFF_MSG + '）' : '') + '　' }),
+      h('span', { cls: 'ttl', text: (cmtDisplayName(x.alias, x.label) || code) + (x.inactive ? '（' + CMT_OFF_MSG + '）' : '') + '　' }),
       h('span', { cls: 'mem', text: parts.join('　／　') })
     ]));
   });
@@ -6726,8 +6845,8 @@ function cmtSaveExternals(next, okMsg) {
 }
 /* 委員会マスタだけを書き換える（要件を確認できるページ。2026-09-22.5）。
    外部委員はいま画面が持っているものをそのまま送り返す＝この保存で消さない */
-function cmtSaveMaster(next, okMsg) {
-  cmtSaveState(next, ST.cmtExternals || {}, okMsg, '要件を確認できるページを保存できません');
+function cmtSaveMaster(next, okMsg, ngTtl) {
+  cmtSaveState(next, ST.cmtExternals || {}, okMsg, ngTtl || '要件を確認できるページを保存できません');
 }
 /* setCommittees の唯一の入口（委員会マスタ＋外部委員の全置換）。
    ★後勝ち防止（committeesAt）・権限・排他はここ1か所に持つ＝保存の入口を増やさない */
@@ -7107,6 +7226,10 @@ function bindEvents() {
   /* 当事業所が始めた月（2026-09-23.2）。打つたびに「保存」を出し入れする（url と同じ作法）*/
   $('cmtSiteStarted').addEventListener('input', syncCmtSiteStarted);
   $('cmtSiteStartedSave').addEventListener('click', onCmtSiteStartedSave);
+  /* 通称（2026-11-06.2）。打つたびに「既定に戻す」「保存」を出し入れする（url と同じ作法）*/
+  $('cmtAlias').addEventListener('input', syncCmtAlias);
+  $('cmtAliasReset').addEventListener('click', onCmtAliasReset);
+  $('cmtAliasSave').addEventListener('click', onCmtAliasSave);
   /* 必要書類と開催の条件（2026-11-06）。開閉だけ＝保存できない時も使える */
   $('cmtDocsBtn').addEventListener('click', toggleCmtDocs);
   $('cmtExtBtn').addEventListener('click', openCmtExt);
