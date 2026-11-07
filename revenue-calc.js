@@ -15,6 +15,8 @@
  *      退去した月は退去日までの日割りで、前の月に受け取る扱い（返金の時期のずれは見ない・仮置き）
  *      入院中も施設の利用料は変えない（仮置き）
  *   6. 円は1人・1か月ごとに四捨五入してから足す（合計と内訳の合計を一致させる）
+ *   7. 介護報酬を訪問と通所に分ける時は、その方の週間計画の予定の基本単位の割合（visitShare＝訪問÷（訪問＋通所））で按分する。
+ *      訪問＝四捨五入、通所＝残り（足すと介護報酬に一致）。割合が分からない方（予定が無い・入居予定）は「分けられない分」に入れる（2026-11-07 本人指示・割合の出し方は仮置き）
  */
 (function (root) {
   'use strict';
@@ -90,7 +92,8 @@
   function normResident(x, warnings) {
     var r = { key: String(x && x.key != null ? x.key : ''), name: String((x && x.name) || ''), level: normLevel(x && x.careLevel),
               admit: (x && isYmd(x.admit)) ? x.admit : '', leave: (x && isYmd(x.leave)) ? x.leave : '',
-              planned: !!(x && x.planned), absences: [], notes: [] };
+              planned: !!(x && x.planned), absences: [], notes: [],
+              share: (x && typeof x.visitShare === 'number' && isFinite(x.visitShare) && x.visitShare >= 0 && x.visitShare <= 1) ? x.visitShare : null };
     if (x && x.admit && !r.admit) r.notes.push('入居日の形が読めません（入居した月の日割りを数えていません）');
     else if (!r.admit) r.notes.push('入居日が入っていません（入居した月の日割りを数えていません）');
     if (!r.level) r.notes.push('介護度が分かりません（介護報酬0円で数えています）');
@@ -141,7 +144,8 @@
     var first = addMonths(start, -p.lag - 1), lastYm = addMonths(start, n);   /* 介護報酬は lag か月前の提供分・施設費は翌月分も要る */
     var span = monthDiff(first, lastYm) + 1;
     var months = [];
-    for (var i = 0; i < n; i++) months.push({ ym: addMonths(start, i), facility: 0, facilityAccrual: 0, care: 0, careAccrual: 0, careLostAbsent: 0, total: 0, rows: [] });
+    for (var i = 0; i < n; i++) months.push({ ym: addMonths(start, i), facility: 0, facilityAccrual: 0, care: 0, careAccrual: 0, careLostAbsent: 0, total: 0, rows: [],
+                                    careVisit: 0, careDay: 0, careOther: 0, careVisitAccrual: 0, careDayAccrual: 0, careOtherAccrual: 0 });
 
     res.forEach(function (r) {
       var per = {};
@@ -167,10 +171,58 @@
         M.rows.push(row);
         M.facility += row.facility; M.facilityAccrual += row.facilityAccrual;
         M.care += row.care; M.careAccrual += row.careAccrual; M.careLostAbsent += row.careLostAbsent;
+        var sc = splitCare(row.care, r.share), sa = splitCare(row.careAccrual, r.share);
+        row.careVisit = sc.v; row.careDay = sc.d; row.careOther = sc.o; row.careVisitAccrual = sa.v; row.careDayAccrual = sa.d; row.careOtherAccrual = sa.o; row.visitShare = r.share;
+        M.careVisit += sc.v; M.careDay += sc.d; M.careOther += sc.o; M.careVisitAccrual += sa.v; M.careDayAccrual += sa.d; M.careOtherAccrual += sa.o;
       });
     });
     months.forEach(function (M) { M.total = M.facility + M.care; M.totalAccrual = M.facilityAccrual + M.careAccrual; M.people = M.rows.filter(function (r) { return r.stay > 0; }).length; });
     return { ok: true, version: VERSION, start: start, months: months, warnings: warnings, params: p };
+  }
+
+  /* 介護報酬を訪問・通所・分けられない分に分ける（足すと元の額に一致） */
+  function splitCare(yenAmt, share) {
+    if (share == null) return { v: 0, d: 0, o: yenAmt };
+    var v = Math.round(yenAmt * share);
+    return { v: v, d: yenAmt - v, o: 0 };
+  }
+
+  /* 週間計画の1人分の予定から、訪問と通所の基本単位（1か月に直した値）を数え、訪問の割合を返す。
+     rm＝週間計画の報酬マスタ（visitBase・sogoVisit・daycareBase）。数えられない時は null（推測しない）。
+     ・予定に週間計画が数えた単位（ev.units・加算と減算を含む）があればそれを使う（週間計画の集計と同じ向きの割合になる）
+     ・無い予定だけ基本単位で数える: 訪問＝visitBase[区分]、通所＝daycareBase[介護度][時間区分]（時間区分は週間計画と同じ決め方）
+     ・週ごとの予定は × 4.3週（週間計画の月の換算と同じ）。総合事業の区分（sogoVisit）は月の単位を1回だけ数える */
+  var WEEKS_PER_MONTH = 4.3;
+  function dcTimeKey(st, et) {
+    var a = String(st || '').split(':'), b = String(et || '').split(':');
+    var m = (+b[0] * 60 + +b[1]) - (+a[0] * 60 + +a[1]);
+    if (!isFinite(m) || m <= 0) return '';
+    if (m <= 240) return '3h'; if (m < 300) return '4h'; if (m < 360) return '5h'; if (m < 420) return '6h'; if (m < 480) return '7h';
+    return '8h';
+  }
+  function serviceShare(events, careLevel, rm) {
+    rm = rm || {};
+    var vb = rm.visitBase || {}, sg = rm.sogoVisit || {}, db = rm.daycareBase || {}, lv = normLevel(careLevel);
+    var v = 0, d = 0, seenSogo = {};
+    (Array.isArray(events) ? events : []).forEach(function (ev) {
+      if (!ev) return;
+      var own = (typeof ev.units === 'number' && isFinite(ev.units) && ev.units > 0) ? ev.units : NaN;
+      if (ev.serviceType === 'daycare') {
+        var map = db[lv], k = dcTimeKey(ev.startTime, ev.endTime), u = isFinite(own) ? own : (map && Number(map[k]));
+        if (isFinite(u) && u > 0) d += u * WEEKS_PER_MONTH;
+        return;
+      }
+      var cat = String(ev.category || '');
+      if (Object.prototype.hasOwnProperty.call(sg, cat)) {
+        var su = isFinite(own) ? own : (sg[cat] && Number(sg[cat].units));
+        if (!seenSogo[cat] && isFinite(su) && su > 0) { v += su; seenSogo[cat] = 1; }
+        return;
+      }
+      var vu = isFinite(own) ? own : (Object.prototype.hasOwnProperty.call(vb, cat) ? Number(vb[cat]) : NaN);
+      if (isFinite(vu) && vu > 0) v += vu * WEEKS_PER_MONTH;
+    });
+    if (v + d <= 0) return null;
+    return v / (v + d);
   }
 
   /* 施設費の表（介護度 → 円）を確かめる。整数で 0〜1000000 の値だけを残す */
@@ -195,7 +247,7 @@
 
   var api = { VERSION: VERSION, LEVELS: LEVELS, compute: compute, normLevel: normLevel, jstDate: jstDate,
               absencesFromStateLog: absencesFromStateLog, daysIn: daysIn, addMonths: addMonths, isYmd: isYmd, isYm: isYm,
-              normFees: normFees, yen: yen, ymLabel: ymLabel };
+              normFees: normFees, yen: yen, ymLabel: ymLabel, serviceShare: serviceShare, splitCare: splitCare };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.RevenueCalc = api;
 })(typeof window !== 'undefined' ? window : this);

@@ -402,6 +402,7 @@ const CENSUS = {
     [F, "box.innerHTML='<div class=\"empty\">'+(roster.length?'該当する入居者がいません':'入居者がいません。「同期設定」でURLを設定するか「新規」で登録してください')+'</div>'"],
     [E, "box.innerHTML=html"],
     [E, "$('revMain').innerHTML=r.main"],   // 収支の見通しの数字の部分だけを差し替える（中身は revHtml と同じ）
+    [E, "if(ll) ll.innerHTML=revLimLineText_(r.o.L)"],   // 収支の見通しの限度額の行（介護度の名前は esc・単位は数だけ）
     [E, "a.innerHTML=esc(st.msg||'')+(st.login ? ' <a href=\"login.html?next=resident-master.html\" target=\"_blank\" rel=\"noopener\">ログイン画面を開く（別のタブ）</a>'+ '<br>ログインしたら、この小窓の「🔄 もう一度確かめる」を押してください。' : '')"],
     [E, "$('msScroll').innerHTML='<table class=\"ms-tbl\"><thead><tr><th>居室</th><th>氏名</th><th>時間帯（定期薬から）</th>'+ '<th>確認が必要な行・読み取れない行</th><th>care-log の今</th><th>差分</th></tr></thead><tbody id=\"msBody\">'+ msRows.map(msRowHtml_).join('')+'</tbody></table>'"],
     [N, "cell.innerHTML=msDfHtml_(row, d)"],   /* 決まった表（MED_SLOT_LBL）の時間帯の名前だけ */
