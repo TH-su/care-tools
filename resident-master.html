@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-AU6W145/4BMTOF0jAShlFN9AbdAY/u3JNpr+gLZFjhI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-UPGH1qRmdcfVFCJ06ipwL2Ykj7zDnighcTYUiFkKOH0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -2027,7 +2027,7 @@ function rmNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
 <script src="su-facility.js?v=2026-11-07"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>
 <!-- 薬情の取り込みの判定・組み立て（純関数・2026-10-22）。読めない時は入口のボタンを出さない（yjCalcOk_） -->
-<script src="yakujo-calc.js?v=2026-11-05.2"></script>
+<script src="yakujo-calc.js?v=2026-11-07"></script>
 <script src="revenue-calc.js?v=2026-11-07"></script>
 <script src="su-print.js?v=2026-09-12"></script>
 <!-- 入居者マスタの写し（統合 0004）。supabase-js と su-auth.js は写す時にだけ読み込む -->
@@ -7654,7 +7654,7 @@ function yjBulkHtml_(){
   var S=yjSt, L=yjBulkLists_(), busy=S.preDone<S.preTotal, h='';
   if(!L.ok.length&&!L.none.length&&!busy&&!S.bulkMsg) return '';
   h+='<section class="yj-bulk" aria-labelledby="yjBulkH"><h3 class="yj-h3" id="yjBulkH">まとめて反映できる方</h3>'+
-    '<p class="yj-sub">名簿の1人に氏名が一字一致し、調剤日が1つに決まり、⚠ の行が無く、変わる行が '+YakujoCalc.BULK_MAX+' 行までの書類です。'+
+    '<p class="yj-sub">名簿の1人に氏名が一字一致し、調剤日が1つに決まり、⚠ の行が無い書類です。'+
     '下の違いを見て、まとめて反映できます（書類に無い今の薬は残します。中止はしません）。違いを原本と見比べたい方は、チェックを外して下の一覧から1人ずつ確かめてください。</p>';
   if(busy) h+='<p class="yj-sub" role="status">まとめて反映できるかを調べています…（'+S.preDone+' / '+S.preTotal+'件）</p>';
   L.ok.forEach(function(i){
@@ -7665,6 +7665,7 @@ function yjBulkHtml_(){
       if(r.kind==='change'&&r.action==='change'&&r.line&&r.line!==r.cur) h+='<li><span class="mh-tag">変える</span> '+esc(r.cur)+' → <b>'+esc(r.line)+'</b></li>';
       else if(r.kind==='add'&&r.action==='add'&&r.line) h+='<li><span class="mh-tag">足す</span> <b>'+esc(r.line)+'</b></li>';
     });
+    if(p.bc.older) h+='<li class="yj-warn">⚠ 調剤日は、定期薬の最後の変更（'+esc(fmtJDate(p.bc.older))+'）より前です</li>';
     if(p.bc.kept) h+='<li class="yj-sub">書類に無い今の薬 '+p.bc.kept+' 行は残します</li>';
     if(p.bc.skipped&&p.bc.skipped.length) h+='<li class="yj-sub">書類にあって定期薬に入れない薬（外用・頓服など）：'+p.bc.skipped.map(esc).join('・')+'</li>';
     h+='</ul></div>';
@@ -7687,7 +7688,7 @@ function yjBulkApply_(){
     S.bulkMsg='編集画面・一括編集を閉じてから反映してください'; yjPaint_(); return; }
   var L=yjBulkLists_(), ok=L.ok.filter(function(i){ return S.docs[i].pre.on; }), none=L.none;
   if(!ok.length&&!none.length) return;
-  var lines=ok.map(function(i){ var p=S.docs[i].pre, j=p.bc.judged; return '・'+p.cur.name+' 様　変える '+j.counts.change+'行・足す '+j.counts.add+'行'+(p.bc.kept?'・残す '+p.bc.kept+'行':''); });
+  var lines=ok.map(function(i){ var p=S.docs[i].pre, j=p.bc.judged; return '・'+p.cur.name+' 様　変える '+j.counts.change+'行・足す '+j.counts.add+'行'+(p.bc.kept?'・残す '+p.bc.kept+'行':'')+(p.bc.older?'・⚠ 調剤日が定期薬の最後の変更（'+fmtJDate(p.bc.older)+'）より前':''); });
   if(!confirm((ok.length?'次の '+ok.length+' 人の「薬剤情報（定期）」を、一覧のとおりに書き換えます。\n'+lines.join('\n')+'\n\n':'')+
     (none.length?'変更なしの '+none.length+' 件は、書かずに終わりにします。\n\n':'')+
     (ok.length?'ほかの端末でこの方々の編集画面・一括編集を開いている場合は、先に閉じてください。\n':'')+'よろしいですか？')) return;
