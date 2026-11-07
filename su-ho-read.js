@@ -31,11 +31,14 @@
  *   上の 2〜5 がそろう時は、ho_events_cl・ho_measures_cl（care-backend 統合 0071）から読む。
  *   書き始めの日（施設ごと・種類ごと）より前の日は写し、後の日はケアログの記録（写しにしか無い行も1回だけ）を、GAS と同じ形で返す。
  *   moushi_read が切でも、moushi_carelog が入ならこの道を使う（ケアログの道の方が先）。
- *   ★この道で読めない時（通信の失敗・時間切れ・写しが古い・データベースの断り・形の違い）は Google へ戻さず、失敗にする
+ *   ★この道で読めない時（通信の失敗・時間切れ・写しが古い・データベースの断り・形の違い・ログインしていない・使えないアカウント・
+ *     ログインを確かめられない）は Google へ戻さず、失敗にする
  *     （書き始めの日から後のケアログの記録は Google に無いので、戻すと記録が抜けたまま「読めた」ように見えるため・CLAUDE.md §4）。
  *     画面は「読み込めませんでした。しばらくしてからもう一度お試しください」と出す（apiErrMsg の今の文）。
- *   ログインしていない・現場のアカウント・現場の端末・事務所以外の役割の時は、今までどおり Google から読む（書き始めの日から後の
- *     ケアログの記録は出ない。スイッチを入れる前に事務所PCが全部ログインしていることを確かめる）。
+ *   現場のアカウント・現場の端末・42501（読めない役割）の時だけは、今までどおり Google から読む（申送ビューアは事務所の画面）。
+ *   スイッチの確かめ: 端末の控え・自分で読んだ値のどちらかでケアログの道が入なのに1分以内に確かめていない時は、su-backend.json を読み直して
+ *     から決める（この時だけ待つ。確かめずに Google から読むと記録が抜けて見えるため・反証レビュー 高1）。また、su-kv.js の無いこの画面でも
+ *     ページを開いて最初の読み取りの時に1回だけ裏で su-backend.json を読む（待たない。ほかの画面を開かない端末もスイッチを知るため）。
  * ★共通部品の決まり: 読み込むだけで効く・読み込めなくても動く（画面は SUHoRead が無ければ Google へ送る）・例外を外に出さない
  *   （ケアログの道の失敗は、画面が受け取る Promise の失敗として返す。投げはしない）。
  */
@@ -160,12 +163,14 @@
   /* 新しい保存先から読む。読めた時は答え・予想どおり読まない時は null・写しが古い時は STALE・想定外は例外。
      rpc は呼ぶ関数の組（RPC＝写しの道・RPC_CL＝ケアログの道） */
   var STALE = { stale: true };
+  var NOLOGIN = { nologin: true };   // ログインしていない・使えないアカウント（写しの道は Google・ケアログの道は失敗）
   function readDb(action, params, rpc) {
     return loadAuth().then(function (A) {
       if (!A) throw named('NetworkError', 'noauth');
       return Promise.resolve(A.check()).then(null, function () { throw named('AuthError', 'check'); }).then(function (st) {
         var S = A.STATUS || {};
-        if (!st || st.status !== S.OK || (st.role !== 'office' && st.role !== 'admin')) return null;
+        if (!st || st.status !== S.OK) return NOLOGIN;
+        if (st.role !== 'office' && st.role !== 'admin') return null;
         if (isField()) return null;   // 確かめている間に用途が現場へ変わった
         var p = params || {};
         return Promise.resolve(A.client().rpc((rpc || RPC)[action], { p_from: arg(p.from), p_to: arg(p.to) })).then(function (r) {
@@ -204,6 +209,7 @@
         if (done) return;
         done = true; clearTimeout(timer);
         if (d === STALE) { if (strict) note(action + '.cl.Stale', named('DataError', 'stale')); ok(strict ? FAIL : null); return; }
+        if (d === NOLOGIN) { ok(strict ? FAIL : null); return; }   // 予想どおりの戻り（記録しない）
         ok(d);
       }, function (e) {
         if (done) return;
@@ -218,10 +224,10 @@
     });
   }
 
-  /* スイッチの決め方（待たない・切の間は通信を1本も増やさない。申送ビューアは読み込みの速さを優先する・CLAUDE.md §3）:
+  /* スイッチの決め方（待たない。申送ビューアは読み込みの速さを優先する・CLAUDE.md §3。ケアログの道だけは確かめるまで待つ）:
    *   ・su-kv.js がある画面はその値（1分ごとに読み直されている）
    *   ・無い画面（申送ビューア）は、端末の控え（ほかの画面の su-kv.js が書く su_backend_flags）と自分で読んだ値の
-   *     どちらも切なら切＝Google（su-backend.json を読みに行かない）
+   *     どちらも切なら切＝Google（その場で決める。su-backend.json はページごとに1回だけ裏で読む・2026-11-07）
    *   ・どちらかが入なら、自分で1分以内に su-backend.json を読んで入と確かめた時だけ入。確かめていない時は裏で読み直し、
    *     この回は Google から読む（切に戻した後の古い「入」の控えで写しを読まない） */
   function on(key) {
@@ -231,23 +237,41 @@
       var cached = null;
       try { cached = JSON.parse(root.localStorage.getItem(FLAGS_LS) || 'null'); } catch (e) { cached = null; }
       if (!flagOn(cached, now, key) && !flagOn(ownFlags, now, key)) return false;
-      if (!(ownAt > 0 && now - ownAt < FLAGS_FRESH_MS)) { refreshFlags(); return false; }
+      if (!(ownAt > 0 && now - ownAt < FLAGS_FRESH_MS)) { refreshFlags(); return 'wait'; }
       return flagOn(ownFlags, now, key);
     } catch (e) { return false; }
   }
   /* GAS の合言葉（接続先）の有無はここでは見ない。画面が読み取りの前に確かめて止める（load・vmLoad） */
+  var pageAsked = false;
+  /* on() の答え: true・false・'wait'（入かもしれないが確かめていない）。写しの道は待たずに Google（今までどおり）、
+     ケアログの道は読み直してから決める */
+  function pick(again) {
+    var cl = on(FLAG_CL);
+    if (cl === 'wait') return again ? '' : 'wait';
+    if (cl === true) return 'cl';
+    return on(FLAG) === true ? 'ho' : '';
+  }
+  function go(way, action, params, gasFn) { return way ? viaDb(action, params, gasFn, way === 'cl') : gasFn(); }
   function call(action, params, gasFn) {
     var way = '';
     try {
-      if (eligible(action, params)) way = on(FLAG_CL) ? 'cl' : (on(FLAG) ? 'ho' : '');
+      if (!pageAsked && !hasKv()) { pageAsked = true; refreshFlags(); }   // ページごとに1回だけ裏で読む（待たない）
+      if (eligible(action, params)) way = pick(false);
     } catch (e) { way = ''; }
-    return way ? viaDb(action, params, gasFn, way === 'cl') : gasFn();
+    if (way === 'wait') {
+      return refreshFlags().then(function () {
+        var w = '';
+        try { w = pick(true); } catch (e) { w = ''; }
+        return go(w, action, params, gasFn);
+      });
+    }
+    return go(way, action, params, gasFn);
   }
 
   root.SUHoRead = {
     call: call,
     _flagOn: flagOn,
     _refresh: refreshFlags,   // 試験用（スイッチを読み直して待つ）
-    _reset: function () { ownFlags = null; ownAt = 0; ownPromise = null; noted = {}; }
+    _reset: function () { ownFlags = null; ownAt = 0; ownPromise = null; noted = {}; pageAsked = false; }
   };
 })(typeof window !== 'undefined' ? window : this);

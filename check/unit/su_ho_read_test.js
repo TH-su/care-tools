@@ -13,8 +13,9 @@
        ／送り直しは今までどおり／入口から戻った呼び出しは入口を2回通らない
      H 端末に保存しない（localStorage へ書かない）・例外を外に出さない
      J ケアログの道（スイッチ moushi_carelog・2026-11-07 段2の準備）: 入（事務所PC・事務所/管理者）なら ho_events_cl / ho_measures_cl を読む
-       （moushi_read より先）。読めない時（通信・断り・写しが古い・形の違い）は Google へ戻さず失敗にし、画面は「読み込めませんでした。…」と出す。
-       ログインなし・現場・42501 は今までどおり Google。切・終わりの時刻を過ぎた時は今までの道
+       （moushi_read より先）。読めない時（通信・断り・写しが古い・形の違い・ログインなし・使えないアカウント・確かめの失敗）は Google へ戻さず
+       失敗にし、画面は「読み込めませんでした。…」と出す。現場の端末・現場のアカウント・42501 は今までどおり Google。切・終わりの時刻を過ぎた時は
+       今までの道。控えでケアログの道が入なのに確かめていない時は su-backend.json を読み直してから決める（Google から読まない）
    ★架空データのみ（氏名は使わない）。 */
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
@@ -101,7 +102,7 @@ const MSP = { from: '2026-10-01', to: '2026-10-03' };
     const L = load({ flags: OFF, flagsJson: ON, noWarm: true });
     const g = gas();
     const r = await L.H.call('measures', MSP, g.fn);
-    t('控えが切: su-backend.json を読まずに Google', g.n === 1 && r.fromGas === true && L.counts.fetch === 0, { n: g.n, f: L.counts.fetch });
+    t('控えが切: その場で Google（su-backend.json はページごとに1回だけ裏で読む・待たない）', g.n === 1 && r.fromGas === true && L.counts.fetch <= 1, { n: g.n, f: L.counts.fetch });
   }
   {
     // 控えが入でもまだ確かめていない1回目は Google（裏で読み直す）。読み直して切なら、その後も Google（切に戻した後の古い控えで写しを読まない）
@@ -332,8 +333,8 @@ const MSP = { from: '2026-10-01', to: '2026-10-03' };
     t('その場で Google を1回呼ぶ', g.n === 1);
     await p;
     await L.H.call('measures', MSP, g.fn);
-    t('スイッチが切の間は、su-backend.json・ログインの確かめ・部品の読み込みを1回も呼ばない',
-      L.counts.fetch === 0 && L.counts.check === 0 && L.counts.script === 0 && L.rpcs.length === 0, L.counts);
+    t('スイッチが切の間は、ログインの確かめ・部品の読み込みを1回も呼ばない・su-backend.json はページごとに1回だけ',
+      L.counts.fetch === 1 && L.counts.check === 0 && L.counts.script === 0 && L.rpcs.length === 0, L.counts);
     // まだ何も読めていない（端末に控えも無い）時は切として扱い、Google から読む
     const L2 = load({ noWarm: true });
     L2.win.fetch = () => new Promise(() => {});
@@ -359,7 +360,6 @@ const MSP = { from: '2026-10-01', to: '2026-10-03' };
   }
   for (const [label, o] of [
     ['現場の端末', { flags: CL, role: 'field' }],
-    ['ログインしていない', { flags: CL, auth: { status: 'signed_out' } }],
     ['現場のアカウント', { flags: CL, auth: { status: 'ok', role: 'field' } }],
     ['42501（読めない役割）', { flags: CL, rpc: () => Promise.resolve({ data: null, error: { code: '42501', message: 'not allowed' } }) }]]) {
     const L = load(o);
@@ -368,14 +368,17 @@ const MSP = { from: '2026-10-01', to: '2026-10-03' };
     t('ケアログの道・' + label + ': 今までどおり Google', g.n === 1 && r.fromGas === true && L.notes.length === 0, { n: g.n, notes: L.notes });
   }
   const clFails = [
+    ['ログインしていない', null, false, { status: 'signed_out' }],
+    ['使えないアカウント', null, false, { status: 'not_allowed', role: 'office' }],
+    ['ログインの確かめが失敗', null, true, 'throw'],
     ['データベースの断り', () => Promise.resolve({ data: null, error: { code: 'PGRST500', message: 'x' } }), true],
     ['通信の失敗', () => Promise.reject(new TypeError('Failed to fetch')), false],
     ['通信の失敗（中身で返る）', () => Promise.resolve({ data: null, error: { message: 'TypeError: Failed to fetch' } }), false],
     ['ok:false（写しが古い）', () => Promise.resolve({ data: STALE, error: null }), true],
     ['形の違い', () => Promise.resolve({ data: { ok: true, from: 'a', to: 'b', ingestedDates: [] }, error: null }), true],
     ['rpc がその場で例外', () => { throw new Error('boom'); }, true]];
-  for (const [label, rpc, noteIt] of clFails) {
-    const L = load({ flags: CLR, rpc });
+  for (const [label, rpc, noteIt, auth] of clFails) {
+    const L = load(Object.assign({ flags: CLR }, rpc ? { rpc } : {}, auth ? { auth } : {}));
     const g = gas();
     const r = await L.H.call('events', EVP, g.fn).then(v => ({ ok: v }), e => ({ err: e }));
     t('ケアログの道・' + label + ': Google へ戻さず失敗にする', g.n === 0 && r.err && r.err.name === 'Error' && r.err.message === 'carelog', { n: g.n, r: r.err && r.err.message });
@@ -413,6 +416,25 @@ const MSP = { from: '2026-10-01', to: '2026-10-03' };
     const L = load({ flags: CL });
     await L.H.call('events', EVP, gas().fn);
     t('ケアログの道でも localStorage へ書かない', L.writes.length === 0, L.writes);
+  }
+  {
+    // 控えがケアログの道を入と言うが、まだ確かめていない1回目: 読み直してからケアログの道で読む（Google から読まない・反証レビュー 高1）
+    const L = load({ flags: CL, noWarm: true });
+    const g = gas();
+    const r = await L.H.call('events', EVP, g.fn);
+    t('控えが入・まだ確かめていない1回目も、読み直してケアログの道（Google を呼ばない）', g.n === 0 && L.rpcs.length === 1 && L.rpcs[0].name === 'ho_events_cl' && r.events, { n: g.n, r: L.rpcs });
+    // 読み直したら切だった → Google
+    const L2 = load({ flags: CL, flagsJson: { supabase: { moushi_carelog: false } }, noWarm: true });
+    const g2 = gas();
+    await L2.H.call('events', EVP, g2.fn);
+    t('読み直して切なら Google', g2.n === 1 && L2.rpcs.length === 0, L2.rpcs);
+    // 控えが空の端末（ほかの画面を開かない事務所PC）でも、ページの最初の読み取りで裏で読んだ後はケアログの道
+    const L3 = load({ flagsJson: CL, noWarm: true });
+    const g3 = gas();
+    await L3.H.call('events', EVP, g3.fn);
+    await L3.H._refresh();
+    await L3.H.call('events', EVP, g3.fn);
+    t('控えが空でも、ページの最初の読み取りで裏で読み、次の読み取りからケアログの道', g3.n === 1 && L3.rpcs.length === 1 && L3.rpcs[0].name === 'ho_events_cl', { n: g3.n, r: L3.rpcs });
   }
 
   finished = true;
