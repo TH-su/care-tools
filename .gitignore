@@ -56,6 +56,7 @@
 !/check/care_schedule_masterid_e2e.mjs
 # 業務の流れを通す試験（2026-11-02・入居者マスタ→各画面・行き来の帯・週間計画→ワースケ・俯瞰・現場の守り。材料は check/fixtures/flow.mjs）
 !/check/flow_e2e.mjs
+!/check/revenue_e2e.mjs
 !/check/yakujo_bulk_e2e.mjs
 !/check/build-yakka-yj.py
 # 押してから描き変わるまでの遅れを架空データで測る道具（2026-10-27）
@@ -127,6 +128,8 @@
 # 設備・修繕の記録の画面と純関数（2026-11-03 本人の決定）。コードのみ公開。設備・対応の記録は共通ログインのデータベース（事務所・管理者だけ）にあり、端末には残さない
 !/equip-log.html
 !/equip-calc.js
+# 収支の見通し（入居者マスタの「💴 収支の見通し」）の計算の純関数（2026-11-07 本人指示）。規則だけで、入居者の氏名・金額は含まない
+!/revenue-calc.js
 # 共通データ層（Phase 0・2026-08-13）。各アプリの通信をここへ寄せる契約とドライバ。
 # 個人情報は一切含まない（接続先・合言葉もアプリ側の localStorage から渡される）。
 !/su-data.js

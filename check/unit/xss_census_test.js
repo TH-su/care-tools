@@ -257,6 +257,7 @@ const CENSUS = {
     [F, "if(p) p.innerHTML=''"]
   ],
   "equip-calc.js": [],
+  "revenue-calc.js": [],
   "equip-log.html": [
     [F, "g.innerHTML='<h2>この画面は事務所のパソコンで使います</h2><p>この端末は「現場」として設定されているため、設備・修繕の記録は開きません。</p><p><a class=\"btn\" href=\"index.html\">メニューへ戻る</a></p>'"],
     [F, "if(x) x.innerHTML=''"],
@@ -395,10 +396,12 @@ const CENSUS = {
     [E, "gb.innerHTML=html"],   // 家族構成図の枠: ほかの端末から届いた絵（JPEG の data URL だけ）を esc を通して img に入れる（統合 0056）
     [E, "box.innerHTML=items.map(function(a){ return '<a href=\"'+esc(a.href)+'\" target=\"_blank\" rel=\"noopener\">'+ '<span class=\"ai\" aria-hidden=\"true\">'+esc(a.ic)+'</span>'+ '<span class=\"at\"><span>'+esc(facFill(a.name))+'</span><span class=\"ad\">'+esc(facFill(a.desc))+'</span></span></a>'; }).join('')"],
     [F, "if(!vma) box.innerHTML+='<p class=\"applead\" style=\"margin:4px 0 0\">訪問診療アプリは「☁️同期設定」でURLを登録すると表示されます。</p>'"],
+    [E, "box.innerHTML=revHtml()"],   // 収支の見通し（2026-11-07）: 氏名・介護度・予定の名前・知らせの文は esc、金額は数だけ（RevenueCalc.yen）
     [E, "box.innerHTML=mealHtml(q)"],
     [E, "box.innerHTML=mfHtml()"],
     [F, "box.innerHTML='<div class=\"empty\">'+(roster.length?'該当する入居者がいません':'入居者がいません。「同期設定」でURLを設定するか「新規」で登録してください')+'</div>'"],
     [E, "box.innerHTML=html"],
+    [E, "$('revMain').innerHTML=r.main"],   // 収支の見通しの数字の部分だけを差し替える（中身は revHtml と同じ）
     [E, "a.innerHTML=esc(st.msg||'')+(st.login ? ' <a href=\"login.html?next=resident-master.html\" target=\"_blank\" rel=\"noopener\">ログイン画面を開く（別のタブ）</a>'+ '<br>ログインしたら、この小窓の「🔄 もう一度確かめる」を押してください。' : '')"],
     [E, "$('msScroll').innerHTML='<table class=\"ms-tbl\"><thead><tr><th>居室</th><th>氏名</th><th>時間帯（定期薬から）</th>'+ '<th>確認が必要な行・読み取れない行</th><th>care-log の今</th><th>差分</th></tr></thead><tbody id=\"msBody\">'+ msRows.map(msRowHtml_).join('')+'</tbody></table>'"],
     [N, "cell.innerHTML=msDfHtml_(row, d)"],   /* 決まった表（MED_SLOT_LBL）の時間帯の名前だけ */
