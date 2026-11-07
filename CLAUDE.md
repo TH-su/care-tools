@@ -11,6 +11,7 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
 
 - **公開リポジトリ**。`.gitignore` は「既定で全部除外・公開するファイルだけホワイトリスト」。
   新しいファイルを足す時は `.gitignore` に `!/ファイル名` を1行足す（明示 opt-in）。足し忘れると push されない。
+  `.claude/` の中で公開するのは、確認なしで通す道具を書く `.claude/settings.json` だけ（許可の決まりだけを書く・本人指示 2026-11-07）。
 - **素の HTML + JS。ビルドツール・フレームワーク・npm は入れない**（`mailer/`・`universe-sandbox/`・`yakujo-reader/`・検証道具の `check/` は別、§9）。
   共通部品は `<script src="su-xxx.js?v=YYYY-MM-DD">` の1本読みで、中身を変えたら `?v=` の日付も上げる
   （同じ日に2回目なら `.2`）。

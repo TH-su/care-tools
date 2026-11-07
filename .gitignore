@@ -203,6 +203,10 @@ mailer/.DS_Store
 !/yakujo-reader/README.md
 !/yakujo-reader/yakujo-reader.swift
 !/yakujo-reader/読む.command
+# Claude の作業の許可の設定（2026-11-07 本人指示）。.claude/ の中はこの1ファイルだけを公開する。許可の決まりだけを書く（鍵・氏名・内部の設計は書かない）
+!/.claude
+/.claude/*
+!/.claude/settings.json
 
 # ── 参考: 以下は上記ホワイトリスト外＝自動的に非公開 ──
 #  haiben-record.html / gas/haiben-api.gs → 正本は別リポ TH-su/haiben-record（テーマ内は受信ミラー）
