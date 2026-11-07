@@ -25,18 +25,32 @@
  * 記録: 想定外の失敗（通信・時間切れ・データベースの断り・形の違い）で Google へ戻した時だけ、
  *   SUErrors.note('保存・同期の失敗', 例外, 'ho:理由') を理由ごとに1画面1回残す。予想どおりの戻り
  *   （スイッチ切・現場・ログインなし・役割が違う・写しが古い・42501）は記録しない。
- * ★共通部品の決まり: 読み込むだけで効く・読み込めなくても動く（画面は SUHoRead が無ければ Google へ送る）・例外を外に出さない。
+ *
+ * ケアログの道（申し送りの移行・段2の準備・2026-11-07。スイッチ moushi_carelog は切のまま置く）:
+ *   スイッチ su-backend.json の supabase.moushi_carelog が true（終わりの時刻 moushi_carelog_until の決まりは moushi_read と同じ）で、
+ *   上の 2〜5 がそろう時は、ho_events_cl・ho_measures_cl（care-backend 統合 0071）から読む。
+ *   書き始めの日（施設ごと・種類ごと）より前の日は写し、後の日はケアログの記録（写しにしか無い行も1回だけ）を、GAS と同じ形で返す。
+ *   moushi_read が切でも、moushi_carelog が入ならこの道を使う（ケアログの道の方が先）。
+ *   ★この道で読めない時（通信の失敗・時間切れ・写しが古い・データベースの断り・形の違い）は Google へ戻さず、失敗にする
+ *     （書き始めの日から後のケアログの記録は Google に無いので、戻すと記録が抜けたまま「読めた」ように見えるため・CLAUDE.md §4）。
+ *     画面は「読み込めませんでした。しばらくしてからもう一度お試しください」と出す（apiErrMsg の今の文）。
+ *   ログインしていない・現場のアカウント・現場の端末・事務所以外の役割の時は、今までどおり Google から読む（書き始めの日から後の
+ *     ケアログの記録は出ない。スイッチを入れる前に事務所PCが全部ログインしていることを確かめる）。
+ * ★共通部品の決まり: 読み込むだけで効く・読み込めなくても動く（画面は SUHoRead が無ければ Google へ送る）・例外を外に出さない
+ *   （ケアログの道の失敗は、画面が受け取る Promise の失敗として返す。投げはしない）。
  */
 (function (root) {
   'use strict';
   if (root.SUHoRead) return;
   var FLAG = 'moushi_read';
+  var FLAG_CL = 'moushi_carelog';
   var FLAGS_URL = 'su-backend.json';
   var FLAGS_LS = 'su_backend_flags';
   var FLAGS_FRESH_MS = 60000;    // スイッチを読み直す間隔（su-kv.js と同じ1分）
   var READ_MS = 12000;           // 新しい保存先の読み取り全体（ログインの確かめ・部品の読み込みを含む）の打ち切り
   var NOTE_KIND = '保存・同期の失敗';
   var RPC = { events: 'ho_events', measures: 'ho_measures' };
+  var RPC_CL = { events: 'ho_events_cl', measures: 'ho_measures_cl' };
   var ARGS = { from: 1, to: 1, noLedger: 1 };
   var noted = {};
 
@@ -44,12 +58,13 @@
   var ownFlags = null, ownAt = 0, ownPromise = null;
   function hasKv() { try { return !!(root.SUKv && typeof root.SUKv._flags === 'function'); } catch (e) { return false; } }
   var UNTIL_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
-  /* 純関数: su-data.js の flagOn と同じ決まり（_until の無いキーは true だけを見る） */
-  function flagOn(f, now) {
+  /* 純関数: su-data.js の flagOn と同じ決まり（_until の無いキーは true だけを見る）。key を省くと moushi_read */
+  function flagOn(f, now, key) {
+    var K = key || FLAG;
     var s = f && f.supabase;
-    if (!s || typeof s !== 'object' || s[FLAG] !== true) return false;
-    if (!Object.prototype.hasOwnProperty.call(s, FLAG + '_until')) return true;
-    var u = s[FLAG + '_until'];
+    if (!s || typeof s !== 'object' || s[K] !== true) return false;
+    if (!Object.prototype.hasOwnProperty.call(s, K + '_until')) return true;
+    var u = s[K + '_until'];
     if (typeof u !== 'string' || !UNTIL_RE.test(u)) return false;
     var end = Date.parse(u);
     return typeof now === 'number' && isFinite(end) && now < end;
@@ -142,8 +157,10 @@
   }
   function arg(v) { return (v == null || v === '') ? null : String(v); }
 
-  /* 新しい保存先から読む。読めた時は答え・予想どおり読まない時は null・想定外は例外 */
-  function readDb(action, params) {
+  /* 新しい保存先から読む。読めた時は答え・予想どおり読まない時は null・写しが古い時は STALE・想定外は例外。
+     rpc は呼ぶ関数の組（RPC＝写しの道・RPC_CL＝ケアログの道） */
+  var STALE = { stale: true };
+  function readDb(action, params, rpc) {
     return loadAuth().then(function (A) {
       if (!A) throw named('NetworkError', 'noauth');
       return Promise.resolve(A.check()).then(null, function () { throw named('AuthError', 'check'); }).then(function (st) {
@@ -151,7 +168,7 @@
         if (!st || st.status !== S.OK || (st.role !== 'office' && st.role !== 'admin')) return null;
         if (isField()) return null;   // 確かめている間に用途が現場へ変わった
         var p = params || {};
-        return Promise.resolve(A.client().rpc(RPC[action], { p_from: arg(p.from), p_to: arg(p.to) })).then(function (r) {
+        return Promise.resolve(A.client().rpc((rpc || RPC)[action], { p_from: arg(p.from), p_to: arg(p.to) })).then(function (r) {
           if (r && r.error) {
             if (String(r.error.code || '') === '42501') return null;
             if (/fetch|network|load failed/i.test(String(r.error.message || ''))) throw named('NetworkError', 'rpc');   // supabase-js は通信の失敗を中身で返す
@@ -159,7 +176,7 @@
           }
           if (isField()) return null;   // 読んでいる間に用途が現場へ変わった（届いた写しは使わない）
           var d = r && r.data;
-          if (d && typeof d === 'object' && d.ok === false) return null;   // 写しが古い・日付が読めない（GAS と同じ断り）
+          if (d && typeof d === 'object' && d.ok === false) return STALE;  // 写しが古い・日付が読めない（GAS と同じ断り）
           if (!shapeOk(action, d)) throw named('ShapeError', action);
           return d;
         });
@@ -172,26 +189,33 @@
     if (/fetch|network|load failed/i.test(String(e && e.message || ''))) return 'NetworkError';
     return 'DataError';
   }
-  function viaDb(action, params, gasFn) {
+  /* strict（ケアログの道）: 読めない時は Google へ戻さず失敗にする。予想どおり読まない時（ログインなし・役割が違う・42501）だけ Google */
+  var FAIL = { fail: true };
+  function viaDb(action, params, gasFn, strict) {
     return new Promise(function (ok) {
       var done = false;
       var timer = setTimeout(function () {
         if (done) return;
-        done = true; ok(null);   // 遅れて届いた写しの答えは捨てる。通信の遅れは記録しない（圏外の端末で報告の種を増やさない・apiErrMsg と同じ）
+        done = true; ok(strict ? FAIL : null);   // 遅れて届いた写しの答えは捨てる。通信の遅れは記録しない（圏外の端末で報告の種を増やさない・apiErrMsg と同じ）
       }, READ_MS);
       var p;
-      try { p = readDb(action, params); } catch (e) { p = Promise.reject(e); }
+      try { p = readDb(action, params, strict ? RPC_CL : RPC); } catch (e) { p = Promise.reject(e); }
       p.then(function (d) {
         if (done) return;
-        done = true; clearTimeout(timer); ok(d);
+        done = true; clearTimeout(timer);
+        if (d === STALE) { if (strict) note(action + '.cl.Stale', named('DataError', 'stale')); ok(strict ? FAIL : null); return; }
+        ok(d);
       }, function (e) {
         if (done) return;
         done = true; clearTimeout(timer);
         var n = errName(e);
-        if (n !== 'NetworkError') note(action + '.' + n, named(n, e && e.message));   // 通信の失敗は記録しない（apiErrMsg と同じ）
-        ok(null);
+        if (n !== 'NetworkError') note(action + (strict ? '.cl.' : '.') + n, named(n, e && e.message));   // 通信の失敗は記録しない（apiErrMsg と同じ）
+        ok(strict ? FAIL : null);
       });
-    }).then(function (d) { return d ? d : gasFn(); });
+    }).then(function (d) {
+      if (d === FAIL) throw named('Error', 'carelog');   // 画面の apiErrMsg が「読み込めませんでした。…」と出す
+      return d ? d : gasFn();
+    });
   }
 
   /* スイッチの決め方（待たない・切の間は通信を1本も増やさない。申送ビューアは読み込みの速さを優先する・CLAUDE.md §3）:
@@ -200,22 +224,24 @@
    *     どちらも切なら切＝Google（su-backend.json を読みに行かない）
    *   ・どちらかが入なら、自分で1分以内に su-backend.json を読んで入と確かめた時だけ入。確かめていない時は裏で読み直し、
    *     この回は Google から読む（切に戻した後の古い「入」の控えで写しを読まない） */
-  function on() {
+  function on(key) {
     try {
       var now = Date.now();
-      if (hasKv()) return flagOn(root.SUKv._flags(), now);
+      if (hasKv()) return flagOn(root.SUKv._flags(), now, key);
       var cached = null;
       try { cached = JSON.parse(root.localStorage.getItem(FLAGS_LS) || 'null'); } catch (e) { cached = null; }
-      if (!flagOn(cached, now) && !flagOn(ownFlags, now)) return false;
+      if (!flagOn(cached, now, key) && !flagOn(ownFlags, now, key)) return false;
       if (!(ownAt > 0 && now - ownAt < FLAGS_FRESH_MS)) { refreshFlags(); return false; }
-      return flagOn(ownFlags, now);
+      return flagOn(ownFlags, now, key);
     } catch (e) { return false; }
   }
   /* GAS の合言葉（接続先）の有無はここでは見ない。画面が読み取りの前に確かめて止める（load・vmLoad） */
   function call(action, params, gasFn) {
-    var go = false;
-    try { go = eligible(action, params) && on(); } catch (e) { go = false; }
-    return go ? viaDb(action, params, gasFn) : gasFn();
+    var way = '';
+    try {
+      if (eligible(action, params)) way = on(FLAG_CL) ? 'cl' : (on(FLAG) ? 'ho' : '');
+    } catch (e) { way = ''; }
+    return way ? viaDb(action, params, gasFn, way === 'cl') : gasFn();
   }
 
   root.SUHoRead = {
