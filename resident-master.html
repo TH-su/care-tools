@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-H2etT3Q7gIYf/eLnR71WisZr98Pgsx9oNII/1a8fQeA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-UPGH1qRmdcfVFCJ06ipwL2Ykj7zDnighcTYUiFkKOH0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -7688,7 +7688,7 @@ function yjBulkApply_(){
     S.bulkMsg='編集画面・一括編集を閉じてから反映してください'; yjPaint_(); return; }
   var L=yjBulkLists_(), ok=L.ok.filter(function(i){ return S.docs[i].pre.on; }), none=L.none;
   if(!ok.length&&!none.length) return;
-  var lines=ok.map(function(i){ var p=S.docs[i].pre, j=p.bc.judged; return '・'+p.cur.name+' 様　変える '+j.counts.change+'行・足す '+j.counts.add+'行'+(p.bc.kept?'・残す '+p.bc.kept+'行':''); });
+  var lines=ok.map(function(i){ var p=S.docs[i].pre, j=p.bc.judged; return '・'+p.cur.name+' 様　変える '+j.counts.change+'行・足す '+j.counts.add+'行'+(p.bc.kept?'・残す '+p.bc.kept+'行':'')+(p.bc.older?'・⚠ 調剤日が定期薬の最後の変更（'+fmtJDate(p.bc.older)+'）より前':''); });
   if(!confirm((ok.length?'次の '+ok.length+' 人の「薬剤情報（定期）」を、一覧のとおりに書き換えます。\n'+lines.join('\n')+'\n\n':'')+
     (none.length?'変更なしの '+none.length+' 件は、書かずに終わりにします。\n\n':'')+
     (ok.length?'ほかの端末でこの方々の編集画面・一括編集を開いている場合は、先に閉じてください。\n':'')+'よろしいですか？')) return;
