@@ -113,7 +113,7 @@ function fn(name) {
       'function tpTarget() { return { url: "x" }; }', 'function rmasterTarget() { return { url: "x" }; }',
       'function suppliesOn() { return true; }', 'function staffOn() { return true; }', 'function admissionOn() { return true; }',
       'function trainingOn() { return true; }', 'function masterLiveOn() { return true; }',
-      'async function gatePass() { return true; }', 'async function gateRefresh() {}',
+      'async function gatePass() { return true; }', 'async function oneDayOk() { return true; }', 'async function gateRefresh() {}',
       'async function loadSupMode() {}', 'async function loadSup() {}', 'async function loadStfMode() {}', 'async function loadStf() {}',
       'async function loadAdmMode() {}', 'async function loadAdmRuns() {}', 'async function loadTpMode() {}', 'async function loadTpRuns() {}',
       'async function loadResMode() {}', 'async function loadResFullRuns() {}',
