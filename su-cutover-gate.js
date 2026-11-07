@@ -11,6 +11,12 @@
  *     または kv_families で項目に mode:live（週間計画・ワークスケジュール・勤務表）。後から足した正本（家族構成図など）も *_mode なら数える。
  *     写しの期間に戻した記録は数えない。同じ正本の切り替え直しは数えない。今日本番にしてから戻した日も数える）
  * ★純関数だけ（時計・画面・通信を使わない）。読んで渡すのは shadow-check.js の loadGate。試験: node check/unit/cutover_gate_test.js
+ * ★受け口の確かめ（2026-11-07）: 「切り替える」の前に、その種類の受け口（Edge Function）が本番で答えるかを確かめる（fnReady）。
+ *   切り替えた後の画面が読み書きを送る受け口が配られていないと、切り替えは成功しても画面が使えなくなるため（備品で起きた）。
+ *   送るのは中身の無い OPTIONS だけ（書き込む操作は送らない・ログインの情報も付けない）。通信は渡された io.fetch だけが行う。
+ *   答えの見分け: 404（Supabase は受け口が無い時 404 と NOT_FOUND を返す）→ 無い。2xx・404 以外の 4xx（OPTIONS は 204、ログイン無しは 401 など）→ ある。
+ *   5xx（起動できない 503 など）→ 正しく動いていない。届かない・答えを読めない（ブラウザが中身を見せない時を含む）・それ以外 → 確かめられない。
+ *   ある時だけ進める。戻す（写しの期間に戻す）には使わない（受け口が無くても戻せるように）
  * ★出すのは日数・台数・試験の結果・正本の名前だけ（氏名・中身を扱わない）
  */
 (function (root) {
@@ -28,6 +34,42 @@
   };
   /* 週間計画・ワークスケジュール・勤務表は entity が kv_families・entity_ids が種類・fields に 'mode:live'（統合 0007・0009） */
   var KV_FAMILY = { care: '週間計画', ws_master: 'ワークスケジュール', wsday: 'ワークスケジュール', shift: '勤務表' };
+
+  /* 種類 → 切り替えた後に画面が読み書きを送る受け口（su-sup.js・su-stf.js・su-data-supabase.js の GROUPS・su-res-read.js）。
+   * ここに無い種類（排泄ケア記録・添付書類・家族構成図・シフト分析・体重など）は受け口を使わないので確かめない */
+  var FN_OF = { sup: 'sup-write', stf: 'stf-write', adm: 'adm-write', tp: 'tp-write', res: 'res-write' };
+  var FN_BASE = 'https://jhbernqawjrzqwrmqrih.supabase.co/functions/v1/';
+  function fnFor(kind) { return Object.prototype.hasOwnProperty.call(FN_OF, kind) ? FN_OF[kind] : ''; }
+  /* 答えの番号 → 'ready'（ある）・'missing'（無い）・'broken'（正しく動いていない）・'unknown'（確かめられない） */
+  function fnState(status) {
+    if (typeof status !== 'number' || !isFinite(status) || status <= 0) return 'unknown';
+    if (status === 404) return 'missing';
+    if (status >= 200 && status < 300) return 'ready';
+    if (status >= 400 && status < 500 && status !== 408 && status !== 429) return 'ready';
+    if (status >= 500 && status < 600) return 'broken';
+    return 'unknown';
+  }
+  function fnWhy(name, state) {
+    if (state === 'missing') return '新しい保存先の受け口（' + name + '）がまだ本番に配られていません。配った後に押してください。';
+    if (state === 'broken') return '新しい保存先の受け口（' + name + '）が本番で正しく動いていません。直した後に押してください。';
+    return '新しい保存先の受け口（' + name + '）が本番で答えるかを確かめられませんでした（まだ配られていないか、通信が届きません）。配られているかを確かめ、少し待ってから押してください。';
+  }
+  /* 受け口が本番で答えるかを確かめる。io.fetch(url, init) は Response の形（status）を返す Promise。
+   * 返す: { ok, state, status, why }。例外は外へ出さない（確かめられない時は ok:false） */
+  async function fnReady(name, io) {
+    var out = { ok: false, state: 'unknown', status: 0, why: '' };
+    if (typeof name !== 'string' || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(name) || !io || typeof io.fetch !== 'function') { out.why = fnWhy(String(name || ''), 'unknown'); return out; }
+    try {
+      var r = await io.fetch(FN_BASE + name, { method: 'OPTIONS', credentials: 'omit', cache: 'no-store', redirect: 'error' });
+      out.status = r && typeof r.status === 'number' ? r.status : 0;
+      out.state = (r && r.type === 'opaque') ? 'unknown' : fnState(out.status);
+    } catch (e) {
+      out.state = 'unknown';
+    }
+    out.ok = out.state === 'ready';
+    if (!out.ok) out.why = fnWhy(name, out.state);
+    return out;
+  }
 
   function pad(n) { return (n < 10 ? '0' : '') + n; }
   /* 日本時間の日付（YYYY-MM-DD）。読めない時は '' */
@@ -179,7 +221,8 @@
   var api = {
     NEED_DAYS: NEED_DAYS, FLOW_MAX_MS: FLOW_MAX_MS, KINDS: KINDS,
     judge: judge, streak: streak, unlogged: unlogged, lastNightly: lastNightly, cutsToday: cutsToday,
-    jstDay: jstDay, jstDayStartIso: jstDayStartIso
+    jstDay: jstDay, jstDayStartIso: jstDayStartIso,
+    FN_OF: FN_OF, FN_BASE: FN_BASE, fnFor: fnFor, fnState: fnState, fnReady: fnReady
   };
   root.SUCutGate = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

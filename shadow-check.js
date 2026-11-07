@@ -1560,6 +1560,7 @@
     if (!st) { say('この端末には消耗品管理の接続先（Google）がありません。この端末で消耗品管理を開いてから、押し直してください。', 'warn'); return; }
     if (kind === 'cut') {
       if (!suppliesOn()) { say('切り替えスイッチ（supplies）が入っていません。', 'warn'); return; }
+      if (!(await fnOk('sup', 'b-sup-cut', say))) return;
       if (!confirm('備品（消耗品管理）の正本を新しい保存先（Supabase）へ切り替えますか？\n\n1分ほどかかります。その間は入出庫・品目・価格などの保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、ログインしている端末だけが消耗品管理を使えます。Google へは1時間ごとに写し返します。いつでも「備品を写しの期間に戻す」で戻せます。')) return;
     } else {
       if (!confirm('備品を写しの期間に戻しますか？\n\n切り替えていた間の保存を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。')) return;
@@ -1916,6 +1917,28 @@
   }
   /* 正本の切り替えは1日1つ（CLAUDE.md §4）。排泄ケア記録・添付書類の「切り替える」は、今日の操作の記録を読み直して、別の正本を今日すでに
    * 切り替えていれば押させない（読めない時も押させない）。確かめの表の4項目のうち、この1つだけを当てる（画面の反証レビュー 指摘4） */
+  /* 切り替える前に、その種類の受け口（Edge Function）が本番で答えるかを確かめる（2026-11-07・判定は SUCutGate.fnReady）。
+   * 答えなければ、何も止めずに（GAS もデータベースの切り替えも呼ばずに）断る。送るのは中身の無い OPTIONS だけ。
+   * 確かめる間はボタンを押せなくして、二度押しで確認の窓が2回出ないようにする。受け口を使わない種類は確かめない。戻す時は呼ばない */
+  var FN_MS = 10000;
+  function fnFetch(url, init) {
+    var ac = typeof AbortController === 'function' ? new AbortController() : null;
+    var tm = ac ? setTimeout(function () { ac.abort(); }, FN_MS) : null;
+    return fetch(url, Object.assign({}, init, ac ? { signal: ac.signal } : {})).finally(function () { if (tm) clearTimeout(tm); });
+  }
+  async function fnOk(kind, btnId, say) {
+    var name = SUCutGate.fnFor(kind);
+    if (!name) return true;
+    var b = $(btnId), was = b ? b.disabled : false;
+    if (b) b.disabled = true;
+    say('新しい保存先の受け口（' + name + '）が本番で答えるかを確かめています…');
+    var v;
+    try { v = await SUCutGate.fnReady(name, { fetch: fnFetch }); } finally { if (b) b.disabled = was; }
+    if (v.ok) { say(''); return true; }
+    try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('写しの見比べ: 受け口の確かめ', name + ' ' + v.state + ' ' + v.status); } catch (x) { /* 記録できなくても止めない */ }
+    say(v.why, 'warn');
+    return false;
+  }
   async function oneDayOk(kind, say) {
     await gateRefresh(SUAuth.client());
     var c = gateIn && gateIn.cut;
@@ -2192,6 +2215,7 @@
     if (kind === 'cut') {
       if (!(await gatePass('stf'))) { say(GATE_NG, 'warn'); return; }
       if (!staffOn()) { say('切り替えスイッチ（staff）が入っていません。', 'warn'); return; }
+      if (!(await fnOk('stf', 'b-stf-cut', say))) return;
       if (!confirm('職員マスタの正本を新しい保存先（Supabase）へ切り替えますか？\n\n1分ほどかかります。その間は職員マスタ・採用管理からの保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n添付ファイルは今までどおり Google ドライブに置きます。切り替えた後は、保存のたびと1時間ごとに Google へ写し返します。いつでも「職員マスタを写しの期間に戻す」で戻せます。')) return;
     } else {
       if (!confirm('職員マスタを写しの期間に戻しますか？\n\n切り替えていた間の保存を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。')) return;
@@ -2259,6 +2283,7 @@
     if (kind === 'cut') {
       if (!(await gatePass('adm'))) { say(GATE_NG, 'warn'); return; }
       if (!admissionOn()) { say('切り替えスイッチ（admission）が入っていません。', 'warn'); return; }
+      if (!(await fnOk('adm', 'b-adm-cut', say))) return;
       if (!confirm('入居調整の台帳の正本を新しい保存先（Supabase）へ切り替えますか？\n\n1分ほどかかります。その間は台帳の保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n添付書類は今までどおり Google（Drive）に置きます。切り替えた後は、保存のたびに Google へ写し返します。いつでも「入居調整を写しの期間に戻す」で戻せます。')) return;
     } else {
       /* 切り替えた後でも途中でもない時は、それに合う文で確かめる（反証レビュー指摘3） */
@@ -2365,6 +2390,7 @@
     if (kind === 'cut') {
       if (!(await gatePass('tp'))) { say(GATE_NG, 'warn'); return; }
       if (!trainingOn()) { say('切り替えスイッチ（training）が入っていません。', 'warn'); return; }
+      if (!(await fnOk('tp', 'b-tp-cut', say))) return;
       if (!confirm('個別機能訓練計画書の正本を新しい保存先（Supabase）へ切り替えますか？\n\n数分かかります。その間は計画書の保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、保存のたびに Google へ写し返します。いつでも「計画書を写しの期間に戻す」で戻せます。')) return;
     } else {
       /* 切り替えた後でも途中でもない時は、それに合う文で確かめる（反証レビュー指摘3） */
@@ -2451,6 +2477,7 @@
     if (kind === 'cut') {
       if (!(await gatePass('res'))) { say(GATE_NG, 'warn'); return; }
       if (!masterLiveOn()) { say('切り替えスイッチ（master_live）が入っていません。', 'warn'); return; }
+      if (!(await fnOk('res', 'b-res-cut', say))) return;
       if (!confirm('入居者マスタの正本を新しい保存先（Supabase）へ切り替えますか？\n\n数分かかります。その間は入居者マスタ・担当者会議・入居調整などの保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、保存のたびに Google へ写し返します。いつでも「写しの期間に戻す」で戻せます。')) return;
     } else {
       /* 切り替えた後でも途中でもない時は、それに合う文で確かめる（反証レビュー指摘3） */
