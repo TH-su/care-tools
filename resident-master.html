@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-te2pedmXyVWznJbp8VbSxyzATPYV6rexcpOzXg+UwLA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-3FzfkFOKIbdwtf+NUwWnnV2723t6tcnAAGd7gvKNSKk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -1525,6 +1525,80 @@ body.meal-on #sc-list{max-width:none}
 }
 /* 字と地の差を 7:1 以上にそろえる（画面だけ・色合いはそのまま濃くする・印刷の紙は元の色のまま・代表者「推奨どおり色も7:1にそろえて」2026-11-03） */
 @media screen { :root[data-su-theme] .tag.room { color: #5932a7; } }   /* 居室の札の紫（淡い紫の地 7.1:1） */
+/* ── 💴 収支の見通し（2026-11-07 本人指示）。画面だけ・印刷しない ── */
+.rev{--rv-f:#2f5d9a; --rv-c:#d9822b; max-width:1100px; margin:0 auto; padding:4px 0 24px}
+.rev [hidden]{display:none!important}
+.rev-hd{display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; margin:4px 0 10px}
+.rev-hd h2{font-size:1.125rem; margin:0}
+.rev-st{color:var(--g7); font-size:0.9375rem; flex:1; min-width:12em}
+.rev-btn{min-height:44px; padding:8px 14px; border:1px solid var(--g3); border-radius:8px; background:#fff; color:var(--g9); font-size:0.9375rem; font-weight:600}
+.rev-btn.pri{background:var(--pri); border-color:var(--pri); color:#fff}
+.rev-btn:focus-visible,.rev [tabindex]:focus-visible,.rev-seg button:focus-visible{outline:3px solid var(--pri-d); outline-offset:2px}
+.rev-warn{background:var(--warn-bg); color:#5d2b00; border:1px solid #f0c36d; border-radius:var(--r); padding:8px 14px; margin:0 0 12px; font-size:0.9375rem}
+.rev-warn ul{margin:4px 0 0; padding-left:1.2em}
+.rev-kpi{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:0 0 12px}
+.rev-tile{background:#fff; border:1px solid var(--g2); border-radius:var(--r); padding:10px 14px; box-shadow:var(--sh)}
+.rev-tile .k{font-size:0.875rem; color:var(--g7); font-weight:600}
+.rev-tile .v{font-size:1.625rem; font-weight:700; font-variant-numeric:tabular-nums; line-height:1.3}
+.rev-tile .v small{font-size:0.875rem; margin-left:2px; font-weight:600}
+.rev-tile .s{font-size:0.875rem; color:var(--g7)}
+.rev-ctl{display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; margin:0 0 8px}
+.rev-seg{display:inline-flex; border:1px solid var(--g3); border-radius:8px; overflow:hidden}
+.rev-seg button{min-height:44px; padding:8px 14px; border:none; background:#fff; color:var(--g9); font-size:0.9375rem; font-weight:600}
+.rev-seg button+button{border-left:1px solid var(--g3)}
+.rev-seg button[aria-pressed="true"]{background:var(--pri); color:#fff}
+.rev-lb{display:inline-flex; align-items:center; gap:6px; font-size:0.9375rem; color:var(--g9)}
+.rev-lb select,.rev-lb input,.rev-prem input,.rev-prem select{min-height:44px; padding:6px 8px; border:1px solid var(--g5); border-radius:6px; background:#fff; color:var(--g9); font-size:1rem}
+.rev-prem input[type=number]{width:6em}
+.rev-fig{margin:0 0 12px; background:#fff; border:1px solid var(--g2); border-radius:var(--r); padding:10px 12px}
+.rev-fig figcaption{display:flex; flex-wrap:wrap; gap:6px 16px; align-items:center; font-size:0.9375rem; margin-bottom:4px}
+.rev-leg{display:inline-flex; align-items:center; gap:6px; font-weight:600}
+.rev-leg .sw{width:14px; height:14px; border-radius:3px; display:inline-block}
+.rev-leg .sw.f{background:var(--rv-f)} .rev-leg .sw.c{background:var(--rv-c)}
+.rev-cap{color:var(--g7)}
+.rev-svg{width:100%; height:auto; display:block}
+.rev-svg .grid{stroke:var(--g2); stroke-width:1}
+.rev-svg .base{stroke:var(--g6); stroke-width:1}
+.rev-svg .ax{fill:var(--g7); font-size:12px}
+.rev-svg .ax.on{fill:var(--g9); font-weight:700}
+.rev-svg .lbl{fill:var(--g9); font-size:12px; font-weight:600}
+.rev-svg .f{fill:var(--rv-f)} .rev-svg .c{fill:var(--rv-c)}
+.rev-svg .hit{fill:transparent}
+.rev-svg .bar{cursor:pointer; outline:none}
+.rev-svg .bar:hover .hit,.rev-svg .bar:focus .hit{fill:rgba(11,87,208,.07)}
+.rev-svg .bar.on .hit{fill:rgba(11,87,208,.12)}
+.rev-tw{overflow-x:auto; margin:0 0 14px; background:#fff; border:1px solid var(--g2); border-radius:var(--r)}
+.rev-tbl{border-collapse:collapse; width:100%; font-size:0.9375rem; font-variant-numeric:tabular-nums}
+.rev-tbl caption{text-align:start; padding:8px 12px; color:var(--g7); font-size:0.875rem}
+.rev-tbl th,.rev-tbl td{padding:8px 10px; border-top:1px solid var(--g2); text-align:right; white-space:nowrap}
+.rev-tbl thead th{background:var(--g1); color:var(--g9); font-weight:700; text-align:right}
+.rev-tbl th[scope=row],.rev-tbl thead th:first-child{text-align:start}
+.rev-tbl td.tot{font-weight:700}
+.rev-tbl tbody tr[data-rev]{cursor:pointer}
+.rev-tbl tbody tr[data-rev]:hover{background:var(--pri-l)}
+.rev-tbl tbody tr.on{background:var(--pri-l); box-shadow:inset 4px 0 0 var(--pri)}
+.rev-tbl.det td.why{text-align:start; white-space:normal; min-width:16em; color:var(--g7)}
+.rev-tbl.det tr.plan th{font-style:italic}
+.rev-tbl tfoot th,.rev-tbl tfoot td{font-weight:700; background:var(--g0)}
+.rev-det h3,.rev-plan h3{font-size:1rem; margin:14px 0 6px}
+.rev-plan,.rev-prem{background:#fff; border:1px solid var(--g2); border-radius:var(--r); padding:10px 14px; margin:0 0 12px}
+.rev-form{display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center}
+.rev-plist{list-style:none; padding:0; margin:8px 0 0}
+.rev-plist li{display:flex; align-items:center; justify-content:space-between; gap:8px; padding:4px 0; border-top:1px solid var(--g2)}
+.rev-note{font-size:0.875rem; color:var(--g7); margin:6px 0 0}
+.rev-prem summary{min-height:44px; display:flex; align-items:center; font-weight:700; cursor:pointer}
+.rev-prem ul{margin:4px 0 8px; padding-left:1.2em; line-height:2.1}
+.rev-fgrid{display:flex; flex-wrap:wrap; gap:8px 14px; margin:6px 0}
+.rev-fgrid input{width:8em}
+@media (max-width:899px){ .rev-kpi{grid-template-columns:repeat(2,minmax(0,1fr))} }
+@media (max-width:700px){
+  .rev-fig{overflow-x:auto}
+  .rev-svg{min-width:640px}
+  .rev-tile .v{font-size:1.375rem}
+  .rev-lb select,.rev-lb input,.rev-prem input,.rev-prem select{font-size:16px}
+  .rev-svg .ax,.rev-svg .lbl{font-size:16px}
+}
+@media print{ .rev{display:none!important} }
 </style>
 <!-- 印刷共通モジュール（用紙・余白・収め方の設定画面と、紙1枚に収める採寸の器）。
      ★link で読む＝JS が document.styleSheets からこのファイルの @media print も読めるようにする。
@@ -1567,6 +1641,8 @@ body.meal-on #sc-list{max-width:none}
     <button class="vtab"    data-v="bday"  role="tab" aria-selected="false">誕生日</button>
     <!-- 未入力は印刷しない一覧なので「見る」の段に置く（2026-10-17 代表者の決定。帳票の段だと PC 幅で2行に折り返していた） -->
     <button class="vtab"    data-v="miss"  role="tab" aria-selected="false">📝 未入力</button>
+    <!-- 収支の見通し（2026-11-07 本人指示）。施設の利用料と介護報酬の入金の見込み。画面だけ・印刷しない・現場端末では出さない -->
+    <button class="vtab"    data-v="rev"   role="tab" aria-selected="false">💴 収支の見通し</button>
    </div>
    <div class="vt-row" role="presentation"><span class="vt-lbl" aria-hidden="true">帳票</span>
     <button class="vtab"    data-v="meal"  role="tab" aria-selected="false">🍚 食形態</button>
@@ -1938,10 +2014,11 @@ function rmNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
 <script src="su-perf.js?v=2026-11-02"></script>
 <script src="su-login-band.js?v=2026-11-02"></script>
 <script src="su-app-gate.js?v=2026-11-03"></script>
-<script src="su-facility.js?v=2026-11-02.3"></script>
+<script src="su-facility.js?v=2026-11-07"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>
 <!-- 薬情の取り込みの判定・組み立て（純関数・2026-10-22）。読めない時は入口のボタンを出さない（yjCalcOk_） -->
 <script src="yakujo-calc.js?v=2026-11-05.2"></script>
+<script src="revenue-calc.js?v=2026-11-07"></script>
 <script src="su-print.js?v=2026-09-12"></script>
 <!-- 入居者マスタの写し（統合 0004）。supabase-js と su-auth.js は写す時にだけ読み込む -->
 <script src="su-master-shadow.js?v=2026-10-28"></script>
@@ -2977,7 +3054,7 @@ var curFilter=(function(){try{var v=localStorage.getItem(FILTER_KEY);return FILT
 var VIEW_KEY='rmaster_view';
 /* 配列＋indexOf にする。オブジェクトだと VIEWS['toString'] 等が truthy になり
    不正値がそのまま採用されて「どのタブも点灯しないのに標準表示」になる */
-var VIEWS=['std','fl2','fl4','kana','adm','bday','meal','mf','cm','lvl','room','fam','hist','md','cert','miss'];
+var VIEWS=['std','fl2','fl4','kana','adm','bday','meal','mf','cm','lvl','room','fam','hist','md','cert','miss','rev'];
 /* ★介護ツールメニューの「誕生日一覧」は ?view=bday でこの画面のタブを直接ひらく。
    アプリを増やさず表示だけを指定する（名簿の取得・端末ガード・同期設定を二重に持たない）。
    ・値は VIEWS のホワイトリスト照合
@@ -3045,6 +3122,7 @@ function setView(v){
   /* ★「最新に取り直す」ボタンは廃止したが、他端末（薬剤師）の更新が永久に見えないのは困る。
      このビューへ入るたびに取り直す。★未保存の変更がある時は取り直さない（入力を捨てないため）。 */
   if(curView==='md'){ bkEnsure(false); fullEnsure(false); mdEnsure(!mdDirty); }
+  if(curView==='rev') revEnsure(false);   /* 収支の見通し: 入居日（getBulk）・週間計画の限度額・入院の記録を読む（2026-11-07） */
 }
 
 /* ═══════════ 入居日順（2026-09-02 指示） ═══════════
@@ -3468,6 +3546,17 @@ function renderRoster(){
     cntEl.textContent='';
   if(cntEl && curView==='cert') cntEl.textContent='';   /* 認定期限も同じ（母集団は shBase＝絞り込み前） */
   if(cntEl && curView==='miss') cntEl.textContent='';   /* 未入力も同じ（2026-10-17） */
+  if(curView==='rev'){
+    /* 収支の見通し（2026-11-07）。母集団は名簿の絞り込み前なので、検索語・絞り込みで0名でも「該当なし」にしない。
+       ★1分ごとの読み直し・裏の読み込みの終わりは、数字の部分（#revMain）だけを差し替える＝入力欄・予定の欄・押そうとした部品を消さない。
+       画面全体を作り直すのは、初めて開いた時と本人の操作（REV.force）の時だけ */
+    if(cntEl) cntEl.textContent='';
+    if(!REV.force&&getDeviceRole()!=='field'&&$('revRoot')&&box.contains($('revRoot'))){ revRedrawMain_(); return; }
+    REV.force=false;
+    box.innerHTML=revHtml();
+    revPaintForm_();
+    return;
+  }
   if(curView==='meal'){
     if(cntEl) cntEl.textContent='';
     box.innerHTML=mealHtml(q);
@@ -3687,7 +3776,7 @@ function bkEnsure(force){
   }).catch(function(){ if(dg!==devGen) return; bkErr='取得できませんでした（通信）'; })
     .then(function(){ if(dg!==devGen) return;   // 取得中の印は applyDeviceGuard が下ろし済み（新しい取得の印を消さない）
       bkLoading=false; paintShBars();
-      if(curView==='cm'||curView==='lvl'||curView==='cert'||curView==='miss') renderRoster();
+      if(curView==='cm'||curView==='lvl'||curView==='cert'||curView==='miss'||curView==='rev') renderRoster();
       admAfterBk_();   /* 入居日順タブは同じ控えから作る（2026-10-29） */
       /* 取得中に保存が通った時は、いま届いた控えは保存前のもの。認定期限を表示中なら1回だけ取り直す
          （失敗しただけの時は seq が同じなので取り直さない＝失敗の繰り返しで往復が止まらなくならない） */
@@ -12814,6 +12903,418 @@ function a4Days(from,to){
   var d=Math.floor((b-a)/86400000);
   return (isFinite(d)&&d>=0)?String(d):'';
 }
+/* ═════════ 💴 収支の見通し（2026-11-07 本人指示「ゴール：」）═════════
+   施設の利用料（介護度ごとの月額・前払い）と介護報酬（週間計画の限度額−2000単位・2か月後の月末に入金）を、
+   月ごとのグラフと表で見る。計算の規則は revenue-calc.js（純関数・check/unit/revenue_calc_test.js）。
+   ★読むだけ。入居者マスタ・週間計画には1バイトも書かない。
+   ★端末に残すのは表示の選び（期間・入金/発生）と施設の利用料の表（金額だけ）だけ。氏名・介護度・入院の記録・見通しに足した予定は残さない（メモリだけ）。
+   ★現場端末では取りに行かない・出さない。
+   ★入院の期間は入居者マスタの入院/復帰の記録（stateLog）から作る。stateLog は getBulk に無いので、対象の方の分を getResident で1人ずつ読む（同時3本）。 */
+var REV_UI_KEY='rmaster_rev_ui', REV_FEES_KEY='rmaster_rev_fees';
+var REV_DEFAULT_LIMITS={'要支援1':5032,'要支援2':10531,'要介護1':16765,'要介護2':19705,'要介護3':27048,'要介護4':30938,'要介護5':36217};   /* 週間計画の報酬マスタの既定と同じ（読めなかった時だけ使い、画面に出す） */
+var csRateMaster_=null;   /* 週間計画の報酬マスタ（a4EnsureDayMap が読んだ時に一緒に持つ・メモリだけ） */
+var REV={ force:false, ptrDown:false, mainPending:false, form:{}, st:null, stTried:{}, stLoading:false, stDone:0, stTotal:0, stBad:0, stGen:0, plan:[], planSeq:0, sel:'', csMsg:'', csAsked:false, bound:false,
+          params:{deduct:2000, cutoff:5, lag:2}, ui:{months:12, basis:'cash', openHosp:'eom'} };
+(function(){
+  try{ var u=JSON.parse(localStorage.getItem(REV_UI_KEY)||'{}');
+       if(u&&[6,12,18,24].indexOf(u.months)>=0) REV.ui.months=u.months;
+       if(u&&(u.basis==='cash'||u.basis==='accrual')) REV.ui.basis=u.basis;
+       if(u&&(u.openHosp==='eom'||u.openHosp==='open')) REV.ui.openHosp=u.openHosp; }catch(e){}
+})();
+/* 本人が押した・選んだ操作の描き直し（入力中の守りを通さない。守りは1分ごとの読み直しにだけ当てる） */
+function revRedraw_(){ REV.force=true; renderRoster(); }
+function revSaveUi_(){ try{ localStorage.setItem(REV_UI_KEY, JSON.stringify(REV.ui)); }catch(e){} }
+/* 施設の利用料の表: 端末で直した表 → 施設情報（residenceFees.monthly）→ 空 の順 */
+function revFees_(){
+  var C=window.RevenueCalc; if(!C) return {fees:{}, src:''};
+  try{ var s=localStorage.getItem(REV_FEES_KEY); if(s){ var f=C.normFees(JSON.parse(s)); if(Object.keys(f).length) return {fees:f, src:'device'}; } }catch(e){}
+  try{ var sec=window.SUFacility&&SUFacility.section&&SUFacility.section('residenceFees');
+       var f2=C.normFees(sec&&sec.monthly); if(Object.keys(f2).length) return {fees:f2, src:'facility'}; }catch(e){}
+  return {fees:{}, src:''};
+}
+function revLimits_(){
+  var m=csRateMaster_, lim={}, ok=false;
+  if(m&&m.careLimits&&typeof m.careLimits==='object'){
+    RevenueCalc.LEVELS.forEach(function(lv){ var v=Number(m.careLimits[lv]); if(isFinite(v)&&v>0){ lim[lv]=v; ok=true; } });
+  }
+  var fpu=Number(m&&m.feePerUnit);
+  return { limits: ok?lim:REV_DEFAULT_LIMITS, fromSchedule: ok, feePerUnit:(isFinite(fpu)&&fpu>0)?fpu:10, fpuFromSchedule:(isFinite(fpu)&&fpu>0) };
+}
+function revToday_(){ var d=new Date(); return d.getFullYear()+'-'+(d.getMonth()<9?'0':'')+(d.getMonth()+1)+'-'+(d.getDate()<10?'0':'')+d.getDate(); }
+/* 見通しに入れる方: 在籍の方＋退去日が「入金がまだ残る月」以降の方 */
+function revScope_(){
+  var C=RevenueCalc, today=revToday_(), from=C.addMonths(today.slice(0,7), -(REV.params.lag+1))+'-01';
+  return (roster||[]).filter(function(r){
+    if(!r) return false;
+    if(r.active!==false) return true;
+    var b=bkOf(r), lv=_ymd(b.dischargeDate)||_ymd(r.dischargeDate);
+    return !!(lv&&lv>=from);
+  });
+}
+function revEnsure(force){
+  if(getDeviceRole()==='field') return;
+  if(!window.RevenueCalc) return;
+  bkEnsure(!!force);
+  if(force||!REV.csAsked){
+    REV.csAsked=true;
+    if(force){ a4DayMap=null; a4DayFailAt=0; }
+    a4EnsureDayMap().then(function(msg){ REV.csMsg=msg||''; if(curView==='rev') renderRoster(); });
+  }
+  if(force){ REV.st=null; REV.stTried={}; REV.stBad=0; REV.stGen++; REV.stLoading=false; }
+  revLoadStates_();
+}
+/* 入院/復帰の記録を読む（同時3本・世代で古い応答を捨てる）。
+   ★まだ読んでいない方だけを読む（入居日・退去日が後から届いた・入金のずれを変えた時に、対象に入った方を足して読む）。
+   読めなかった方は REV.stTried に入れ、この画面の中では繰り返し取りに行かない（「最新に取り直す」で読み直す） */
+function revLoadStates_(){
+  if(REV.stLoading) return;
+  if(!roster||!roster.length) return;
+  if(!REV.st) REV.st={};
+  var ids=revScope_().map(function(r){ return String(r.id); }).filter(function(id){ return !REV.st[id]&&!REV.stTried[id]; });
+  if(!ids.length) return;
+  var gen=++REV.stGen, dg=devGen, i=0;
+  REV.stLoading=true; REV.stDone=0; REV.stTotal=ids.length;
+  function next(){
+    if(gen!==REV.stGen||dg!==devGen||i>=ids.length) return Promise.resolve();
+    var id=ids[i++];
+    return revApiGet_({action:'getResident',id:id}).then(function(d){
+      if(gen!==REV.stGen||dg!==devGen) return;
+      var rec=d&&d.record;
+      if(!rec){ REV.stTried[id]=1; REV.stBad++; return; }
+      /* 残すのは入院の期間と今の状態だけ（記録の他の項目はここで捨てる） */
+      var ab=RevenueCalc.absencesFromStateLog(rec.stateLog);
+      if(rec.hospitalized===true&&!ab.some(function(a){ return !a.to; })){
+        var f=RevenueCalc.jstDate(rec.hospitalizedAt)||revToday_();
+        ab.push({from:f, to:''});
+      }
+      REV.st[id]={ab:ab, hz:rec.hospitalized===true};
+    }).catch(function(){ if(gen===REV.stGen&&dg===devGen){ REV.stTried[id]=1; REV.stBad++; } })
+      .then(function(){ if(gen!==REV.stGen||dg!==devGen) return; REV.stDone++; revPaintStatus_(); return next(); });
+  }
+  var lanes=[]; for(var k=0;k<3;k++) lanes.push(next());
+  Promise.all(lanes).then(function(){
+    if(gen!==REV.stGen||dg!==devGen) return;
+    REV.stLoading=false;
+    if(curView==='rev') renderRoster();
+  });
+}
+/* 入院の記録の読み取り。入居者マスタの他の読み取りと同じ道（SUResRead）を通し、開いた記録の画面名だけを分ける
+   （収支の見通しから開いたと見分けられるように・2026-11-07）。SUResRead が無い時は Google へ */
+function revApiGet_(params){
+  return window.SUResRead ? window.SUResRead.call(params, function(){ return apiGetGas_(params,30000); }, {screen:'resident-master-rev'}) : apiGetGas_(params,30000);
+}
+function revPurge_(){ REV.form={}; REV.st=null; REV.stTried={}; REV.stBad=0; REV.stGen++; REV.stLoading=false; REV.plan=[]; REV.sel=''; REV.csAsked=false; csRateMaster_=null; }
+function revPaintStatus_(){
+  var el=$('revStatus'); if(!el) return;
+  el.textContent=revStatusText_();
+}
+function revStatusText_(){
+  var a=[];
+  if(bkLoading) a.push('入居日・退去日を取得しています…');
+  else if(bkErr) a.push('入居日・退去日を取得できませんでした（'+bkErr+'）');
+  if(REV.stLoading) a.push('入院の記録を読んでいます（'+REV.stDone+'／'+REV.stTotal+'名）…');
+  else if(REV.stBad) a.push('入院の記録を読めなかった方が'+REV.stBad+'名います（入院なしとして数えています）');
+  return a.join('　');
+}
+/* 計算に渡す入居者の並び（予定を重ねる） */
+function revResidents_(){
+  var C=RevenueCalc, today=revToday_(), nextM1=C.addMonths(today.slice(0,7),1)+'-01';
+  var list=revScope_().map(function(r){
+    var b=bkOf(r), id=String(r.id), s=REV.st&&REV.st[id];
+    var ab=s?s.ab.map(function(a){ return {from:a.from, to:a.to, open:!a.to}; }):[];
+    return {key:id, name:r.name||'', careLevel:r.careLevel||b.careLevel||'', admit:_ymd(b.admissionDate), leave:_ymd(b.dischargeDate)||(r.active===false?_ymd(r.dischargeDate):''),
+            absences:ab, hz:!!(s?s.hz:r.hospitalized)};
+  });
+  var byKey={}; list.forEach(function(x){ byKey[x.key]=x; });
+  REV.plan.forEach(function(p){
+    if(p.type==='in') list.push({key:'plan-'+p.seq, name:'入居予定（'+p.label+'）', careLevel:p.level, admit:p.date, planned:true, absences:[]});
+    var t=byKey[p.id]; if(!t) return;
+    if(p.type==='out') t.leave=p.date;
+    if(p.type==='hosp') t.absences.push({from:p.date, to:p.to||'', open:!p.to});
+    /* 戻る見込み: 戻る日が分からない入院（いちばん新しいもの）に戻る日を入れる */
+    if(p.type==='ret'){ var o=t.absences.filter(function(a){ return a.open&&a.from<p.date; }).pop(); if(o){ o.to=p.date; o.open=false; } }
+  });
+  /* 戻る日が分からない入院: 既定は「今月末に戻る」（選べる・仮置き） */
+  if(REV.ui.openHosp==='eom') list.forEach(function(x){ (x.absences||[]).forEach(function(a){ if(a.open) a.to=(nextM1>a.from?nextM1:C.addMonths(a.from.slice(0,7),1)+'-01'); }); });
+  return list;
+}
+function revCompute_(){
+  var C=RevenueCalc, L=revLimits_(), F=revFees_();
+  var out=C.compute({ residents:revResidents_(), start:revToday_().slice(0,7), months:REV.ui.months,
+                      limits:L.limits, fees:F.fees, feePerUnit:L.feePerUnit,
+                      deductUnits:REV.params.deduct, cutoffDay:REV.params.cutoff, lagMonths:REV.params.lag });
+  out.L=L; out.F=F; return out;
+}
+/* ── 描く ── */
+function revHtml(mainOnly){
+  if(getDeviceRole()==='field'){ revPurge_(); if(mainOnly) return null; return '<div class="empty">現場端末では収支の見通しを表示しません</div>'; }
+  if(!window.RevenueCalc){ if(mainOnly) return null; return '<div class="empty">収支の計算の部品（revenue-calc.js）を読み込めませんでした。ページを読み込み直してください</div>'; }
+  revBind_();
+  revLoadStates_();   /* まだ読んでいない方だけ（読み終えていれば何もしない） */
+  var C=RevenueCalc, o=revCompute_(), b=REV.ui.basis, P=REV.params;
+  if(!o.ok){ if(mainOnly) return null; return '<div class="empty">'+esc(o.error)+'</div>'; }
+  var ms=o.months, val=function(M){ return b==='cash'?M.total:M.totalAccrual; };
+  var fv=function(M){ return b==='cash'?M.facility:M.facilityAccrual; }, cv=function(M){ return b==='cash'?M.care:M.careAccrual; };
+  if(!REV.sel||!ms.some(function(M){ return M.ym===REV.sel; })) REV.sel=ms[0].ym;
+  var h='<div class="rev-hd"><h2>💴 収支の見通し</h2><span class="rev-st" id="revStatus" role="status" aria-live="polite">'+esc(revStatusText_())+'</span>'+
+     '<button type="button" class="rev-btn" data-rev="reload">🔄 最新に取り直す</button></div>';
+  var hd=h; h='';
+  /* 知らせる帯（前提が欠けている時） */
+  var warn=[];
+  if(!Object.keys(o.F.fees).length) warn.push('施設の利用料の表が入っていません。下の「施設の利用料（月額）」に介護度ごとの月額を入れてください（施設の利用料は0円で数えています）');
+  if(!o.L.fromSchedule) warn.push('週間計画の限度額を読めなかったため、全国の既定の限度額で数えています'+(REV.csMsg?'（'+esc(REV.csMsg.replace(/、デイ利用欄は「未確認」で印刷します/,''))+'）':''));
+  if(!bkRows&&!bkLoading) warn.push('入居日・退去日がまだ読めていないため、入居した月の日割り・退去を数えていません');
+  if(Object.keys(o.F.fees).length){
+    var nofee={}; o.months[0].rows.concat(o.months[o.months.length-1].rows).forEach(function(r){ if(r.level&&o.F.fees[r.level]==null) nofee[r.level]=1; });
+    var nf=Object.keys(nofee); if(nf.length) warn.push('施設の利用料の表に '+esc(nf.join('・'))+' の額が無いため、その方の施設の利用料は0円で数えています');
+  }
+  if(o.warnings.length) warn.push('入居日・介護度の分からない方が'+o.warnings.length+'名います（'+o.warnings.slice(0,5).map(function(w){ return esc(w.name||'予定')+'：'+esc(w.notes[0]); }).join('／')+(o.warnings.length>5?' ほか':'')+'）');
+  if(warn.length) h+='<div class="rev-warn" role="note"><b>⚠ 確かめてください</b><ul>'+warn.map(function(w){ return '<li>'+w+'</li>'; }).join('')+'</ul></div>';
+  /* 大きな数字 */
+  var m0=ms[0], m1=ms[1]||ms[0], sum=0, lost=0;
+  ms.forEach(function(M){ sum+=val(M); lost+=M.careLostAbsent; });
+  var bl=(b==='cash'?'入金':'発生');
+  h+='<div class="rev-kpi">'+
+     revTile_('今月（'+(+m0.ym.slice(5))+'月）の'+bl+'の見込み', val(m0), '施設 '+C.yen(fv(m0))+'円・介護報酬 '+C.yen(cv(m0))+'円')+
+     revTile_('来月（'+(+m1.ym.slice(5))+'月）の'+bl+'の見込み', val(m1), '前の月との差 '+revDiff_(val(m1)-val(m0)))+
+     revTile_(ms.length+'か月の'+bl+'の合計', sum, '1か月あたり '+C.yen(sum/ms.length)+'円')+
+     revTile_('入院で減る介護報酬（'+ms.length+'か月の入金）', -lost, '入院の日数ぶん日割りで減った分')+
+     '</div>';
+  /* 選び */
+  h+='<div class="rev-ctl">'+
+     '<span class="rev-seg" role="group" aria-label="グラフと表の数え方">'+
+       '<button type="button" data-rev="basis" data-val="cash" aria-pressed="'+(b==='cash')+'">お金が入る月で見る</button>'+
+       '<button type="button" data-rev="basis" data-val="accrual" aria-pressed="'+(b==='accrual')+'">利用した月で見る</button></span>'+
+     '<label class="rev-lb">期間 <select data-rev="months">'+[6,12,18,24].map(function(n){ return '<option value="'+n+'"'+(n===REV.ui.months?' selected':'')+'>'+n+'か月</option>'; }).join('')+'</select></label>'+
+     '</div>';
+  h+=revChart_(ms, b, fv, cv);
+  /* 月ごとの表 */
+  h+='<div class="rev-tw"><table class="rev-tbl"><caption>月ごとの'+(b==='cash'?'入金（お金が入る月）':'発生（利用した月）')+'の見込み（円）・行を押すとその月の内訳</caption>'+
+     '<thead><tr><th scope="col">月</th><th scope="col">人数</th><th scope="col">施設の利用料</th><th scope="col">介護報酬</th><th scope="col">合計</th><th scope="col">前の月との差</th><th scope="col">入院で減る分</th></tr></thead><tbody>';
+  ms.forEach(function(M,i){
+    var d=i?val(M)-val(ms[i-1]):null, on=M.ym===REV.sel;
+    h+='<tr class="'+(on?'on':'')+'" data-rev="sel" data-ym="'+esc(M.ym)+'" tabindex="0" aria-selected="'+on+'">'+
+       '<th scope="row">'+esc(C.ymLabel(M.ym))+(i===0?'（今月）':'')+'</th><td>'+M.people+'名</td><td>'+C.yen(fv(M))+'</td><td>'+C.yen(cv(M))+'</td>'+
+       '<td class="tot">'+C.yen(val(M))+'</td><td>'+(d==null?'—':revDiff_(d))+'</td><td>'+(b==='cash'&&M.careLostAbsent?'−'+C.yen(M.careLostAbsent):'—')+'</td></tr>';
+  });
+  h+='</tbody></table></div>';
+  h+=revDetail_(ms.filter(function(M){ return M.ym===REV.sel; })[0], b);
+  if(mainOnly) return {main:h, o:o};
+  return '<div class="rev" id="revRoot">'+hd+'<div id="revMain">'+h+'</div>'+revPlanHtml_()+revPremiseHtml_(o)+'</div>';
+}
+/* 数字の部分（大きな数字・グラフ・表・内訳・知らせ）だけを差し替える。入力欄はそのまま。
+   ★マウスを押している間（押した部品が消えると1回目のクリックが効かない）は、離した後に差し替える */
+function revRedrawMain_(){
+  if(curView!=='rev'||!$('revMain')) return;
+  if(REV.ptrDown){ REV.mainPending=true; return; }
+  REV.mainPending=false;
+  var r=revHtml(true); if(!r||typeof r!=='object') return;
+  var ae=document.activeElement, keep=(ae&&$('revMain').contains(ae))?revFocusKey_(ae):null;
+  $('revMain').innerHTML=r.main;
+  revPaintStatus_();
+  var fs=$('revFeeSrc'); if(fs) fs.textContent=revFeeSrcText_(r.o.F.src);
+  var fr=$('revFeeReset'); if(fr) fr.hidden=(r.o.F.src!=='device');
+  if(keep){ var el=$('revMain').querySelector(keep); if(el) el.focus(); }
+}
+/* 描き直した後に同じ部品へ戻るための目印（属性だけ・中身の値は使わない） */
+function revFocusKey_(el){
+  if(!el||!el.getAttribute) return null;
+  if(el.id) return '#'+el.id;
+  var a=el.getAttribute('data-rev'); if(!a) return null;
+  var k='[data-rev="'+a+'"]';
+  ['data-ym','data-val','data-k','data-lv','data-seq'].forEach(function(n){ var v=el.getAttribute(n); if(v!=null) k+='['+n+'="'+String(v).replace(/["\\]/g,'')+'"]'; });
+  return k;
+}
+function revFeeSrcText_(src){ return src==='device'?'この端末で入れた表':(src==='facility'?'施設情報の表':'まだ入っていません'); }
+function revDiff_(d){ var C=RevenueCalc; return d>0?'＋'+C.yen(d)+'円':(d<0?C.yen(d)+'円':'±0円'); }
+function revTile_(lb, v, sub){
+  return '<div class="rev-tile"><div class="k">'+esc(lb)+'</div><div class="v">'+esc(RevenueCalc.yen(v))+'<small>円</small></div><div class="s">'+esc(sub)+'</div></div>';
+}
+/* 積み上げの棒グラフ（施設の利用料＝下・介護報酬＝上）。数字は表にもある（色だけに頼らない） */
+function revChart_(ms, b, fv, cv){
+  var C=RevenueCalc, W=760, H=300, L=64, R=12, T=28, B=40, n=ms.length;
+  var max=0; ms.forEach(function(M){ max=Math.max(max, fv(M)+cv(M)); });
+  var step=revNiceStep_(max/4||1), top=Math.max(step, Math.ceil(max/step)*step);
+  var y=function(v){ return T+(H-T-B)*(1-v/top); }, bw=Math.min(40,(W-L-R)/n*0.6), gx=(W-L-R)/n;
+  var s='<figure class="rev-fig"><figcaption><span class="rev-leg"><i class="sw f" aria-hidden="true"></i>施設の利用料</span><span class="rev-leg"><i class="sw c" aria-hidden="true"></i>介護報酬</span>'+
+        '<span class="rev-cap">'+(b==='cash'?'お金が入る月':'利用した月')+'ごと・棒の上は合計（万円）</span></figcaption>'+
+        '<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="月ごとの施設の利用料と介護報酬の積み上げ棒グラフ（数字は下の表と同じ）" class="rev-svg">';
+  for(var g=0; g<=top+0.5; g+=step){
+    s+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+y(g).toFixed(1)+'" y2="'+y(g).toFixed(1)+'" class="grid"/>'+
+       '<text x="'+(L-6)+'" y="'+(y(g)+4).toFixed(1)+'" text-anchor="end" class="ax">'+esc(revMan_(g))+'</text>';
+  }
+  ms.forEach(function(M,i){
+    var cx=L+gx*i+gx/2, x=cx-bw/2, f=fv(M), c=cv(M), yf=y(f), yt=y(f+c), base=y(0), on=M.ym===REV.sel;
+    var tip=C.ymLabel(M.ym)+'：合計 '+C.yen(f+c)+'円（施設の利用料 '+C.yen(f)+'円・介護報酬 '+C.yen(c)+'円）';
+    s+='<g class="bar'+(on?' on':'')+'" data-rev="sel" data-ym="'+esc(M.ym)+'" tabindex="0" role="button" aria-label="'+esc(tip)+'"><title>'+esc(tip)+'</title>'+
+       '<rect class="hit" x="'+(cx-gx/2).toFixed(1)+'" y="'+T+'" width="'+gx.toFixed(1)+'" height="'+(H-T-B)+'"/>';
+    if(f>0) s+='<rect class="f" x="'+x.toFixed(1)+'" y="'+yf.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+Math.max(0,base-yf).toFixed(1)+'"/>';
+    if(c>0) s+=revTopBar_(x, yt, bw, Math.max(0,(yf-(f>0?2:0))-yt), 'c');
+    s+='<text x="'+cx.toFixed(1)+'" y="'+(yt-6).toFixed(1)+'" text-anchor="middle" class="lbl">'+esc(revMan_(f+c,1))+'</text>'+
+       '<text x="'+cx.toFixed(1)+'" y="'+(H-B+16)+'" text-anchor="middle" class="ax'+(on?' on':'')+'">'+(+M.ym.slice(5))+'月</text>'+
+       ((i===0||M.ym.slice(5)==='01')?'<text x="'+cx.toFixed(1)+'" y="'+(H-B+32)+'" text-anchor="middle" class="ax yr">'+M.ym.slice(0,4)+'年</text>':'')+
+       '</g>';
+  });
+  s+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+y(0)+'" y2="'+y(0)+'" class="base"/></svg></figure>';
+  return s;
+}
+function revTopBar_(x, y, w, h, cls){
+  if(h<=0) return '';
+  var r=Math.min(4, h, w/2);
+  return '<path class="'+cls+'" d="M'+x.toFixed(1)+' '+(y+h).toFixed(1)+'V'+(y+r).toFixed(1)+'Q'+x.toFixed(1)+' '+y.toFixed(1)+' '+(x+r).toFixed(1)+' '+y.toFixed(1)+
+         'H'+(x+w-r).toFixed(1)+'Q'+(x+w).toFixed(1)+' '+y.toFixed(1)+' '+(x+w).toFixed(1)+' '+(y+r).toFixed(1)+'V'+(y+h).toFixed(1)+'Z"/>';
+}
+function revNiceStep_(v){ var p=Math.pow(10, Math.floor(Math.log(v)/Math.LN10)), q=v/p; return (q<=1?1:q<=2?2:q<=5?5:10)*p; }
+function revMan_(v, d){ var m=v/10000; return (d?(Math.round(m*10)/10):Math.round(m))+(d?'':'万'); }
+/* 選んだ月の人ごとの内訳 */
+function revDetail_(M, b){
+  if(!M) return '';
+  var C=RevenueCalc, P=REV.params;
+  var rows=M.rows.slice().sort(function(x,y){ return (b==='cash'?(y.facility+y.care)-(x.facility+x.care):(y.facilityAccrual+y.careAccrual)-(x.facilityAccrual+x.careAccrual)); });
+  var h='<section class="rev-det" aria-labelledby="revDetH"><h3 id="revDetH">'+esc(C.ymLabel(M.ym))+'の内訳（'+(b==='cash'?'この月に入るお金':'この月に利用した分')+'）</h3>';
+  if(!rows.length) return h+'<p class="rev-note">この月に数える方はいません</p></section>';
+  h+='<div class="rev-tw"><table class="rev-tbl det"><thead><tr><th scope="col">入居者</th><th scope="col">介護度</th><th scope="col">施設の利用料</th><th scope="col">介護報酬</th><th scope="col">合計</th><th scope="col">内訳の理由</th></tr></thead><tbody>';
+  var sf=0, sc=0;
+  rows.forEach(function(r){
+    var f=b==='cash'?r.facility:r.facilityAccrual, c=b==='cash'?r.care:r.careAccrual, why=[];
+    sf+=f; sc+=c;
+    if(b==='cash'){
+      if(r.admitHere) why.push('入居した月：この月の日割り（'+r.stay+'日）＋翌月分');
+      else if(r.facility) why.push('施設の利用料は翌月分');
+      if(r.care){
+        var w=(+r.careFor.slice(5))+'月分の介護報酬';
+        if(r.svcAdmit) w+='（入居した月の日割り '+r.svcStay+'／'+r.svcMd+'日'+(r.svcDeducted?'・−'+P.deduct+'単位':'・'+P.cutoff+'日以降の入居なので差し引かない')+'）';
+        else if(r.svcStay<r.svcMd) w+='（退去まで '+r.svcStay+'／'+r.svcMd+'日）';
+        if(r.svcAbsent) w+='・入院 '+r.svcAbsent+'日で −'+C.yen(r.careLostAbsent)+'円';
+        why.push(w);
+      }
+    }else{
+      if(r.admitHere) why.push('入居した月（'+r.stay+'／'+r.md+'日）');
+      if(r.leaveHere) why.push('退去した月（'+r.stay+'／'+r.md+'日）');
+      if(r.absent) why.push('入院 '+r.absent+'日');
+    }
+    if(r.planned) why.push('見通しに足した予定');
+    if(r.notes.length) why.push('⚠ '+r.notes[0]);
+    h+='<tr'+(r.planned?' class="plan"':'')+'><th scope="row">'+esc(r.name||'（名前なし）')+'</th><td>'+esc((r.level||'—').replace('要介護','介護'))+'</td><td>'+C.yen(f)+'</td><td>'+C.yen(c)+'</td><td class="tot">'+C.yen(f+c)+'</td><td class="why">'+esc(why.join('　'))+'</td></tr>';
+  });
+  h+='</tbody><tfoot><tr><th scope="row">合計</th><td></td><td>'+C.yen(sf)+'</td><td>'+C.yen(sc)+'</td><td class="tot">'+C.yen(sf+sc)+'</td><td></td></tr></tfoot></table></div></section>';
+  return h;
+}
+/* 見通しに足す予定（メモリだけ・保存しない） */
+function revPlanHtml_(){
+  var C=RevenueCalc, opts=revScope_().filter(function(r){ return r.active!==false; }).slice().sort(byKana)
+        .map(function(r){ return '<option value="'+esc(r.id)+'">'+esc(r.name||'')+'</option>'; }).join('');
+  var h='<section class="rev-plan" aria-labelledby="revPlanH"><h3 id="revPlanH">見通しに予定を足す（この画面の中だけ・保存しません）</h3>'+
+    '<div class="rev-form">'+
+    '<label class="rev-lb">種類 <select id="revPType"><option value="in">入居予定</option><option value="out">退去予定</option><option value="hosp">入院予定</option><option value="ret">入院中の方が戻る見込み</option></select></label>'+
+    '<label class="rev-lb" id="revPWhoL">入居者 <select id="revPWho">'+opts+'</select></label>'+
+    '<label class="rev-lb" id="revPLvL">介護度 <select id="revPLv">'+['要介護1','要介護2','要介護3','要介護4','要介護5','要支援1','要支援2'].map(function(l){ return '<option>'+l+'</option>'; }).join('')+'</select></label>'+
+    '<label class="rev-lb"><span id="revPDateLb">入居日</span> <input type="date" id="revPDate"></label>'+
+    '<label class="rev-lb" id="revPToL">戻る日（空＝未定） <input type="date" id="revPTo"></label>'+
+    '<button type="button" class="rev-btn pri" data-rev="addplan">＋ 足す</button></div>'+
+    '<p class="rev-note" id="revPMsg" role="status" aria-live="polite"></p>';
+  if(REV.plan.length){
+    h+='<ul class="rev-plist">'+REV.plan.map(function(p){
+      var who=p.type==='in'?('介護度 '+p.level.replace('要介護','')):(p.name||'');
+      var lb={in:'入居予定',out:'退去予定',hosp:'入院予定',ret:'戻る見込み'}[p.type];
+      return '<li><span>'+esc(lb)+'：'+esc(who)+'　'+esc(p.date.replace(/-/g,'/'))+(p.type==='hosp'?'〜'+esc(p.to?p.to.replace(/-/g,'/'):'未定'):'')+'</span>'+
+             '<button type="button" class="rev-btn" data-rev="delplan" data-seq="'+p.seq+'" aria-label="'+esc(lb+' '+who+' を外す')+'">外す</button></li>';
+    }).join('')+'</ul>';
+  }
+  return h+'</section>';
+}
+/* 計算の前提（いつも見える所に出す）と、変えられる数字 */
+function revPremiseHtml_(o){
+  var C=RevenueCalc, P=REV.params, L=o.L, F=o.F;
+  var h='<details class="rev-prem" open><summary>計算の前提（数字を変えると、すぐに計算し直します・この画面の中だけ）</summary><ul>'+
+    '<li>介護報酬（1か月まるごと居た月）＝（介護度の限度額 − <input type="number" inputmode="numeric" min="0" max="10000" step="100" data-rev="p" data-k="deduct" value="'+P.deduct+'" aria-label="差し引く単位"> 単位）× '+esc(String(L.feePerUnit))+'円'+
+      '（限度額と1単位の円は'+(L.fromSchedule?'週間計画の報酬マスタ':'全国の既定（週間計画を読めなかったため）')+'）</li>'+
+    '<li>入居した月は日割り。入居日が <input type="number" inputmode="numeric" min="1" max="31" data-rev="p" data-k="cutoff" value="'+P.cutoff+'" aria-label="差し引きをやめる日"> 日以降なら、その月は差し引かない</li>'+
+    '<li>介護報酬は利用した月の <input type="number" inputmode="numeric" min="0" max="6" data-rev="p" data-k="lag" value="'+P.lag+'" aria-label="入金までの月数"> か月後の月末に入る（入院の日・退去の後の日は日割りで減る）</li>'+
+    '<li>施設の利用料は前払い：入居した月に「その月の日割り＋翌月分」、以後は毎月「翌月分」。退去した月は退去日までの日割り（返金の時期のずれは見ない）。入院中も施設の利用料は変えない</li>'+
+    '<li>戻る日が分からない入院は <select data-rev="openHosp" aria-label="戻る日が分からない入院の数え方"><option value="eom"'+(REV.ui.openHosp==='eom'?' selected':'')+'>今月末に戻るとみなす</option><option value="open"'+(REV.ui.openHosp==='open'?' selected':'')+'>戻らない（ずっと入院）とみなす</option></select></li>'+
+    '<li>入院の期間は、入居者マスタの「🏥 入院／復帰」を押した日から作る（押した日が実際の入院の日と違う時は、上の「見通しに予定を足す」で直す）</li>'+
+    '</ul>';
+  h+='<div class="rev-fees"><b>施設の利用料（月額・円）</b>　<span id="revFeeSrc">'+revFeeSrcText_(F.src)+'</span>'+
+     '<div class="rev-fgrid">'+['要介護1','要介護2','要介護3','要介護4','要介護5','要支援1','要支援2'].map(function(lv){
+       var v=F.fees[lv]; return '<label class="rev-lb">'+esc(lv)+' <input type="number" inputmode="numeric" min="0" max="1000000" step="10" data-rev="fee" data-lv="'+esc(lv)+'" value="'+(v==null?'':v)+'"></label>';
+     }).join('')+'</div>'+
+     '<button type="button" class="rev-btn" id="revFeeReset" data-rev="feereset"'+(F.src==='device'?'':' hidden')+'>この端末の表を消して施設情報の表に戻す</button>'+
+     '<p class="rev-note">入れた表（金額だけ）はこの端末に残します。氏名・介護度・入院の記録・足した予定は残しません。</p></div>';
+  h+='<p class="rev-note">限度額（単位/月）：'+C.LEVELS.map(function(lv){ return esc(lv.replace('要介護','介護').replace('要支援','支援'))+' '+C.yen(L.limits[lv]||0); }).join('・')+'</p>';
+  return h+'</details>';
+}
+/* 押す・選ぶ（1回だけ付ける・CSP のため直書きの onclick は使わない） */
+function revBind_(){
+  if(REV.bound) return; REV.bound=true;
+  var box=$('rosterBox'); if(!box) return;
+  function pick(e){ var t=e.target; while(t&&t!==box){ if(t.getAttribute&&t.getAttribute('data-rev')) return t; t=t.parentNode; } return null; }
+  box.addEventListener('click',function(e){
+    if(curView!=='rev') return; var t=pick(e); if(!t) return; var a=t.getAttribute('data-rev');
+    if(a==='reload'){ revEnsure(true); revRedraw_(); }
+    else if(a==='basis'){ REV.ui.basis=t.getAttribute('data-val')==='accrual'?'accrual':'cash'; revSaveUi_(); revRedrawMain_(); }
+    else if(a==='sel'){ REV.sel=t.getAttribute('data-ym')||''; revRedrawMain_(); var d=$('revDetH'); if(d&&d.scrollIntoView) d.scrollIntoView({block:'nearest'}); }
+    else if(a==='addplan') revAddPlan_();
+    else if(a==='delplan'){ var sq=+t.getAttribute('data-seq'); REV.plan=REV.plan.filter(function(p){ return p.seq!==sq; }); revRedraw_(); }
+    else if(a==='feereset'){ if(!confirm('この端末で入れた施設の利用料の表を消して、施設情報の表に戻します。よろしいですか？')) return; try{ localStorage.removeItem(REV_FEES_KEY); }catch(e2){} revRedraw_(); }
+  });
+  /* マウス・指を押している間は数字の部分を差し替えない（押した部品を消さない） */
+  box.addEventListener('pointerdown',function(){ if(curView==='rev') REV.ptrDown=true; });
+  window.addEventListener('pointerup',function(){ if(!REV.ptrDown) return; REV.ptrDown=false; if(REV.mainPending) setTimeout(revRedrawMain_,0); });
+  window.addEventListener('pointercancel',function(){ REV.ptrDown=false; if(REV.mainPending) setTimeout(revRedrawMain_,0); });
+  /* 予定の欄の入れかけの値はメモリに控え、画面を作り直しても戻す（端末には残さない） */
+  box.addEventListener('input',function(e){ if(curView==='rev') revFormKeep_(e.target); });
+  box.addEventListener('keydown',function(e){
+    if(curView!=='rev'||(e.key!=='Enter'&&e.key!==' ')) return; var t=pick(e); if(!t||t.getAttribute('data-rev')!=='sel') return;
+    e.preventDefault(); REV.sel=t.getAttribute('data-ym')||''; revRedrawMain_();
+    var again=box.querySelector('[data-rev="sel"][data-ym="'+REV.sel+'"]'); if(again) again.focus();
+  });
+  box.addEventListener('change',function(e){
+    if(curView!=='rev') return; var t=e.target, a=t&&t.getAttribute&&t.getAttribute('data-rev');
+    revFormKeep_(t);
+    if(t&&t.id==='revPType'){ revPaintForm_(); return; }
+    if(!a) return;
+    if(a==='months'){ var n=+t.value; if([6,12,18,24].indexOf(n)>=0){ REV.ui.months=n; revSaveUi_(); } revRedrawMain_(); }
+    else if(a==='openHosp'){ REV.ui.openHosp=t.value==='open'?'open':'eom'; revSaveUi_(); revRedrawMain_(); }
+    else if(a==='p'){
+      var k=t.getAttribute('data-k'), v=Math.floor(Number(t.value)), rg={deduct:[0,10000],cutoff:[1,31],lag:[0,6]}[k];
+      if(rg&&isFinite(v)&&v>=rg[0]&&v<=rg[1]){ REV.params[k]=v; }
+      else { toast('入れられる数は '+(rg?rg[0]+'〜'+rg[1]:'')+' です'); t.value=REV.params[k]; }
+      revRedrawMain_();
+    }
+    else if(a==='fee'){
+      var cur=revFees_().fees, nx={}; RevenueCalc.LEVELS.forEach(function(lv){ if(cur[lv]!=null) nx[lv]=cur[lv]; });
+      var lv=t.getAttribute('data-lv'), s=String(t.value).trim();
+      if(s===''){ delete nx[lv]; }
+      else { var f=RevenueCalc.normFees((function(){ var o={}; o[lv]=s; return o; })()); if(f[lv]==null){ toast('金額は0〜1,000,000円の整数で入れてください'); t.value=(cur[lv]==null?'':cur[lv]); return; } nx[lv]=f[lv]; }
+      try{ localStorage.setItem(REV_FEES_KEY, JSON.stringify(nx)); }catch(e3){ toast('この端末に表を残せませんでした（読み込み直すと消えます）'); }
+      revRedrawMain_();
+    }
+  });
+}
+var REV_FORM_IDS=['revPType','revPWho','revPLv','revPDate','revPTo'];
+function revFormKeep_(t){ if(t&&t.id&&REV_FORM_IDS.indexOf(t.id)>=0) REV.form[t.id]=String(t.value||''); }
+function revPaintForm_(){
+  REV_FORM_IDS.forEach(function(id){ var el=$(id), v=REV.form[id]; if(el&&v!=null&&el.value!==v){ el.value=v; if(el.value!==v) delete REV.form[id]; } });
+  var ty=($('revPType')||{}).value||'in';
+  var show=function(id,on){ var el=$(id); if(el) el.hidden=!on; };
+  show('revPWhoL', ty!=='in'); show('revPLvL', ty==='in'); show('revPToL', ty==='hosp');
+  var lb=$('revPDateLb'); if(lb) lb.textContent={in:'入居日',out:'退去日',hosp:'入院日',ret:'戻る日'}[ty]||'日付';
+}
+function revAddPlan_(){
+  var ty=($('revPType')||{}).value||'in', d=($('revPDate')||{}).value||'', to=($('revPTo')||{}).value||'', msg=$('revPMsg');
+  var say=function(s){ if(msg) msg.textContent=s; };
+  if(!RevenueCalc.isYmd(d)){ say('日付を入れてください'); return; }
+  var p={seq:++REV.planSeq, type:ty, date:d};
+  if(ty==='in'){ p.level=($('revPLv')||{}).value||'要介護1'; p.label=d.slice(5).replace('-','/')+'・'+p.level.replace('要介護','介護'); }
+  else {
+    var id=($('revPWho')||{}).value||'', r=(roster||[]).filter(function(x){ return String(x.id)===String(id); })[0];
+    if(!r){ say('入居者を選んでください'); return; }
+    p.id=String(r.id); p.name=r.name||'';
+    if(ty==='hosp'){ if(to&&!(RevenueCalc.isYmd(to)&&to>d)){ say('戻る日は入院日より後の日にしてください'); return; } p.to=to; }
+  }
+  REV.plan.push(p); REV.form={revPType:ty}; revRedraw_();
+}
 /* ═════════ デイ利用（週間計画 care_schedule_v2 の読み取り専用参照）2026-08-19 指示 ═════════
    A4様式の右上に「月〜土 × 利用時間帯」を出すため、入居者マスタが【統合GAS】
    （週間計画・ワースケ・シフト共通のGAS）の読み手として新しく加わる。
@@ -12945,6 +13446,8 @@ function a4EnsureDayMap(){
       if(!j||!j.ok||!j.data||!Array.isArray(j.data.residents)||!j.data.residents.length)
         throw new Error(String((j&&j.error)||'応答が不正です'));
       a4DayMap=a4BuildDayMap(j.data); a4DayFailAt=0; a4DayFailMsg='';
+      /* 収支の見通しが使う報酬マスタ（限度額・1単位の円）も同じ応答から持つ（2回取らない・メモリだけ・2026-11-07） */
+      csRateMaster_=(j.data.rateMaster&&typeof j.data.rateMaster==='object')?j.data.rateMaster:null;
       return '';
     })
     .catch(function(){ if(dg!==devGen) return ''; return a4DayFail_('週間計画を取得できなかったため、デイ利用欄は「未確認」で印刷します'); })
@@ -13573,6 +14076,7 @@ function applyDeviceGuard(){
     /* 週間計画から取ったデイ利用の一覧（氏名を含む）も端末に残さない。localStorage には
        元から書いていないが、メモリ上の控えもここで捨てる */
     a4DayMap=null; a4DayPromise=null; a4DayFailAt=0; a4DayFailMsg='';
+    if(typeof revPurge_==='function') revPurge_();   /* 収支の見通しの控え（入院の期間・足した予定・報酬マスタ）も捨てる（2026-11-07） */
     /* 帳票5種の控えも捨てる。fullMap は病名・処方・家族連絡先を持つ（要配慮情報） */
     bkRows=null; fullMap=null; fullBad=null; mdDict=null; mdMap=null;
     /* 取得中の全件データも捨てる。世代を進めないと、切り替えた後に届いた応答で fullMap（処方を含む）が
