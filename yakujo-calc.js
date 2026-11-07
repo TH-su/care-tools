@@ -800,17 +800,17 @@
           書類にあって「入れない」になった足す行（外用・頓服など・定期薬に何も書かない行）も問わず、一覧に名前を出して人が見る
           （実際の薬情はほぼ全員に外用薬が載り、これで止めるとまとめて反映が使えなかった・2026-11-05 仮置き）
        4. 中止の行が無い。書類に無い今の薬（⚠ の無いもの）は「残す」にする（他の医療機関の薬を消さない側に倒す）
-       5. 変える・足す行が合わせて BULK_MAX 行まで。同じ名前の薬が2行にならない
-       6. 調剤日が今日より後・定期薬の最後の変更より前・同じ調剤日の薬情から反映済み、のどれでもない
+       5. 同じ名前の薬が2行にならない（変える・足す行の数は問わない・本人指示 2026-11-07）
+       6. 調剤日が今日より後・同じ調剤日の薬情から反映済み、のどれでもない（定期薬の最後の変更より前の書類も止めない・本人指示 2026-11-07）
        7. 書類そのものに ⚠ が無い（薬情よみとりの読み残しの知らせ note・読めなかったページ・画像の無いページ・
           途中までしか読んでいないページ数。確認表で ⚠ として見せるもの＝読めなかった薬が「書類に無い今の薬」として残り、
           変更を取りこぼしたまま「反映済み」になるのを防ぐ・反証レビューの指摘 2026-11-04）
-     氏名の確かめ（identity）は 1 の一字一致で代える。それ以外の確かめの印（古い書類・同じ日・重なり・語の無い日付）は付けない＝
-     judge が止めるものは全部止まる。
+     氏名の確かめ（identity）は 1 の一字一致で代える。古い書類（最後の変更より前）の印は付いたものとして扱う（本人指示 2026-11-07）。
+     それ以外の確かめの印（同じ日・重なり・語の無い日付）は付けない＝judge が止めるものはそれ以外全部止まる。
      変更が1行も無い書類は none（書かずに「変更なし」で終える）。
      st: {autoId, pickId, id, dates, today, rows, current, server, lastChange, sameDay, doc:(parseResult の書類1件)}
-     戻り値 {ok, none, why:[1人ずつにする理由], rows:(左の行を「残す」にした写し), judged:(judge の結果), date, kept:(残す行の数)} */
-  var BULK_MAX = 3;
+     戻り値 {ok, none, why:[1人ずつにする理由], rows:(左の行を「残す」にした写し), judged:(judge の結果), date, kept:(残す行の数),
+       older:(調剤日が最後の変更より前ならその変更の日・違えば空)} */
   function bulkCheck(st) {
     st = st || {};
     var why = [], src = Array.isArray(st.rows) ? st.rows : [];
@@ -842,15 +842,16 @@
       if (doc.pagesTotal && doc.pagesTotal > pages.length) why.push('全部のページを読んでいません');
     }
     var j = judge({ id: st.id, dates: st.dates, date: date, today: st.today, identity: true, server: st.server, rows: rows, current: st.current,
-      lastChange: st.lastChange, oldChecked: false, sameDay: st.sameDay, ack: false, dupChecked: false, dateChecked: false, yjOf: st.yjOf });
+      lastChange: st.lastChange, oldChecked: true, sameDay: st.sameDay, ack: false, dupChecked: false, dateChecked: false, yjOf: st.yjOf });
     var n = j.counts.change + j.counts.add, noChange = !n && !j.counts.stop;
     if (j.counts.stop) why.push('中止の行があります');
-    if (n > BULK_MAX) why.push('変わる行が ' + n + ' 行あります（まとめて反映は ' + BULK_MAX + ' 行まで）');
     if (j.importDay) why.push('取り込んだ日を調剤日にしています');
     if (j.stop && !(noChange && /^反映する変更はありません/.test(j.stop)) && !why.length) why.push(j.stop);
     var kept = rows.filter(function (r) { return r.kind === 'left' && r.action === 'keep'; }).length;
     var skipped = rows.filter(function (r) { return r.kind === 'add' && r.action === 'skip'; }).map(function (r) { return lineName(r.raw || r.line); });
-    return { ok: !why.length && !noChange, none: !why.length && noChange, why: why, rows: rows, judged: j, date: date, kept: kept, skipped: skipped };
+    /* 止めずに一覧で知らせる（調剤日が定期薬の最後の変更より前・本人指示 2026-11-07） */
+    var older = !!(st.lastChange && date && date < String(st.lastChange)) ? String(st.lastChange) : '';
+    return { ok: !why.length && !noChange, none: !why.length && noChange, why: why, rows: rows, judged: j, date: date, kept: kept, skipped: skipped, older: older };
   }
 
   /* 指紋（FNV-1a 32bit・小文字の16進8桁）。入居者マスタの判断の印 S|利用者No|調剤日|指紋 に使う */
@@ -1007,7 +1008,7 @@
 
   var api = { parseResult: parseResult, assign: assign, findDates: findDates, datesIn: datesIn, parseUse: parseUse,
     parseRows: parseRows, looksDrug: looksDrug, stripEnum: stripEnum, snap: snap, lineSpec: lineSpec, shortDays: shortDays, splitMaker: splitMaker, stem: stem, matchCurrent: matchCurrent, sameMeaning: sameMeaning, buildRows: buildRows, judge: judge, buildAfter: buildAfter,
-    startDate: startDate, useDate: useDate, bulkCheck: bulkCheck, BULK_MAX: BULK_MAX, parseLabeled: parseLabeled, cleanDrugName: cleanDrugName, canonKey: canonKey, yjIndex: yjIndex, yjOf: yjOf, yjLookup: function (text) { var idx = yjIndex(text); return idx ? function (name) { return yjOf(name, idx); } : null; }, lineName: lineName, drugKey: drugKey,
+    startDate: startDate, useDate: useDate, bulkCheck: bulkCheck, parseLabeled: parseLabeled, cleanDrugName: cleanDrugName, canonKey: canonKey, yjIndex: yjIndex, yjOf: yjOf, yjLookup: function (text) { var idx = yjIndex(text); return idx ? function (name) { return yjOf(name, idx); } : null; }, lineName: lineName, drugKey: drugKey,
     fnv8: fnv8, srcKey: srcKey, logRows: logRows, nz: nz, kn: kn, dist: dist,
     correctionKinds: correctionKinds, metricOf: metricOf, metricsLoad: metricsLoad, metricsSave: metricsSave, summarize: summarize, metricText: metricText,
     METRIC_MAX: METRIC_MAX };
