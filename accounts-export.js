@@ -65,6 +65,7 @@
       case 'weight':   return { url: lsStr('wtmgr_api_url'), token: lsStr('wtmgr_api_token'), tokenOptional: true };
       case 'geno':     o = lsObj('genogram:cloudCfg'); return { url: o.gasUrl, token: o.gasToken };
       case 'analyzer': o = lsObj('shiftanalyzer:v1:cloud'); return { url: o.url, token: o.token };
+      case 'med':      o = lsObj('med_cfg'); return { url: o.url, token: o.token };   // 薬学管理（2026-11-07・接続設定の欄・読み取りの getAll だけ）
     }
     return {};
   }
@@ -215,12 +216,21 @@
         var j = need(await post(t, { action: 'pull' }));
         var e = (j.entries && typeof j.entries === 'object') ? j.entries : {};
         return { parts: { entries: e }, count: Object.keys(e).length, unit: 'キー' };
+      } },
+    /* 薬学管理（2026-11-07 代表者の決定 案C・A）: 薬学管理の GAS の getAll（読み取り・今の薬 meds・変更の出来事 events・危険のタグ dict）をそのまま入れる。
+       数えるのは meds の行（人分）。応答は ok の印のほかは全部残す（決め打ちの項目だけ拾うと取りこぼす） */
+    { id: 'med', title: '薬学管理',
+      read: async function (t) {
+        var j = need(await post(t, { action: 'getAll' }));
+        var parts = {};
+        Object.keys(j).forEach(function (k) { if (k !== 'ok') parts[k] = j[k]; });
+        return { parts: parts, count: Array.isArray(j.meds) ? j.meds.length : 0, unit: '人分' };
       } }
   ];
   /* 読み口が無い・この画面から読まないもの（説明書きに載せる） */
   var NOT_INCLUDED = [
     '申送ビューア（申し送りの正本は Google のスプレッドシート。入居者ごとに抜き出す読み口だけで、全部を読む口が無い）',
-    '薬学管理・職員マスタ・消耗品管理（接続設定に無い系統。それぞれの画面の書き出しを使う）',
+    '職員マスタ・消耗品管理（接続設定に無い系統。それぞれの画面の書き出しを使う）。薬学管理は接続設定の「薬学管理」の欄に入れた端末でだけ入る',
     '入居調整の添付ファイル・不具合の報告先（受け付けるだけ）・タイミー通知・申送抽出・決裁箱（介護の記録ではない）',
     '統合同期・過去シフト分析の過去の版（今の版だけ。過去の版は Google ドライブの history に残っている）'
   ];
