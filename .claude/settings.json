@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "mcp__claude-code-remote__register_repo_root"
+      "mcp__claude-code-remote__register_repo_root",
+      "mcp__claude-code-remote__send_later",
+      "mcp__claude-code-remote__update_trigger",
+      "mcp__claude-code-remote__list_triggers",
+      "mcp__claude-code-remote__get_trigger"
     ]
   }
 }
