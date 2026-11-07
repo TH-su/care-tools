@@ -214,13 +214,17 @@ console.log('\n— 5. GAS の読み方 —');
     wtmgr_api_url: 'https://script.google.com/macros/s/WT/exec', wtmgr_api_token: '',
     'genogram:cloudCfg': JSON.stringify({ gasUrl: 'https://script.google.com/macros/s/GE/exec', gasToken: 'tok-ge' }),
     rmaster_cfg: JSON.stringify({ url: 'https://script.google.com/macros/s/MA/exec', token: 'tok-ma' }),
-    adm_cfg: JSON.stringify({ url: 'https://evil.example/exec', token: 'tok-adm' })
+    adm_cfg: JSON.stringify({ url: 'https://evil.example/exec', token: 'tok-adm' }),
+    med_cfg: JSON.stringify({ url: 'https://script.google.com/macros/s/MED/exec', token: 'tok-med' })
   };
   const fetch = (url, opt) => {
     calls.push({ url, opt });
     const body = JSON.parse(opt.body);
     let res;
     if (url.includes('/WS/')) res = { ok: true, entries: { care_schedule_v2: { key: 'care_schedule_v2', rev: 1 } } };
+    else if (url.includes('/MED/')) res = body.action === 'getAll'
+      ? { ok: true, serverTime: '2026-11-07T00:00:00Z', meds: [{ masterId: 'X1' }, { masterId: 'X2' }], events: [{ eventId: 'e1' }], dict: [{ tagId: 't1' }] }
+      : { ok: false, error: '不明なaction' };
     else if (url.includes('/WT/')) res = { ok: true, residents: [{ id: 'r1' }], records: [{ id: 'w1' }, { id: 'w2' }], thresholds: {} };
     else if (url.includes('/GE/')) res = { ok: false, error: 'この図は権限がありません（架空の断りの文・氏名入り）' };
     else if (url.includes('/MA/')) res = body.action === 'getRoster' ? { roster: [{ id: 'X1' }, { id: 'X2' }, { id: 'X3' }] }
@@ -234,7 +238,13 @@ console.log('\n— 5. GAS の読み方 —');
   const steps = [];
   const out = await b.readGas((n, all, title) => steps.push(n + '/' + all));
   const by = {}; out.forEach(g => { by[g.id] = g; });
-  t('8つの系統を順に読む', steps.join(',') === '1/8,2/8,3/8,4/8,5/8,6/8,7/8,8/8' && out.length === 8, steps);
+  t('9つの系統を順に読む', steps.join(',') === '1/9,2/9,3/9,4/9,5/9,6/9,7/9,8/9,9/9' && out.length === 9, steps);
+  /* 薬学管理（2026-11-07 代表者の決定 案C・A）: 接続設定の med_cfg がある時だけ、読み取りの getAll を1回だけ送る */
+  const medCalls = calls.filter(c => c.url.includes('/MED/'));
+  t('薬学管理: getAll を1回だけ送る（書く操作は送らない）', medCalls.length === 1 && JSON.parse(medCalls[0].opt.body).action === 'getAll' &&
+    JSON.parse(medCalls[0].opt.body).token === 'tok-med', medCalls.map(c => c.opt.body));
+  t('薬学管理: 今の薬・変更の出来事・危険のタグをそのまま入れ、今の薬の行を数える', by.med.ok && by.med.count === 2 && by.med.unit === '人分' &&
+    by.med.parts.meds.length === 2 && by.med.parts.events.length === 1 && by.med.parts.dict.length === 1 && !('ok' in by.med.parts), by.med);
   t('統合同期: pull でキーの数を数える', by.ws.ok && by.ws.count === 1 && by.ws.parts.entries.care_schedule_v2.rev === 1, by.ws);
   t('体重管理: 合言葉なし（サーバー側で未設定の運用）でも読む・記録の数を数える', by.weight.ok && by.weight.count === 2, by.weight);
   t('入居者マスタ: 名簿のあと1人ずつ読む・1人読めなくても残りは残し、読めなかった数を書く', by.master.ok && by.master.count === 2 &&
