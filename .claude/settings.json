@@ -7,5 +7,18 @@
       "mcp__claude-code-remote__list_triggers",
       "mcp__claude-code-remote__get_trigger"
     ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/check-reply-japanese.py\""
+          }
+        ]
+      }
+    ]
   }
 }
