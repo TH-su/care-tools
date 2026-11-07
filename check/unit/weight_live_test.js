@@ -16,7 +16,7 @@
        職員向けの文で失敗を返す
      G スイッチを切った後・写しの期間に戻った後は、Google へ直接送る前に残っている写し返しを先に送る
      H 応答が来ない時は時間切れの失敗（画面の失敗の扱いへ）
-     J 統合 0074: データベースの印（weight_mirror_state）が 'server'（GAS が写し返している）の時だけ、写し返しを積まず・残りも送らずに外す。
+     J 統合 0075: データベースの印（weight_mirror_state）が 'server'（GAS が写し返している）の時だけ、写し返しを積まず・残りも送らずに外す。
        印が読めない・関数が無い・'device'・形の違う答えは今までどおり端末が写し返す。印は1分だけ覚える（保存のたびに問い合わせない）
      I 画面のつなぎ: apiGet・apiPost の入口だけで呼び、Google へ送る形（apiPostGas_）は前と1文字も変えていない。
        アラートの確認（alertAck）を外した入居者を送る。写しの部品は Supabase から読んだ中身を写さない
@@ -220,7 +220,7 @@ const liveRpc = (name, args) => name === 'weight_get_all' ? { data: LIVE_ALL, er
     t('G タブが2つでも1つだけが送る（ブラウザの鍵 wtmgr_mirror_q を取って送る）', (b.b0.lockNames || []).indexOf('wtmgr_mirror_q') >= 0 && mirror(b).length === 0, b.b0);
   }
 
-  console.log('J GAS が写し返している時（統合 0074）');
+  console.log('J GAS が写し返している時（統合 0075）');
   const srvRpc = by => (name, args) => name === 'weight_get_all' ? { data: LIVE_ALL, error: null }
     : name === 'weight_mirror_state' ? (typeof by === 'function' ? by() : { data: { ok: true, by }, error: null }) : { data: { ok: true, ver: 2 }, error: null };
   {
@@ -255,7 +255,7 @@ const liveRpc = (name, args) => name === 'weight_get_all' ? { data: LIVE_ALL, er
     const p = await b.L.post('saveRecord', { record: { id: 'x' } }, { record: { id: 'x' } }, b.post); await settle();
     t('J server: 送信待ちがあふれていても、外してから書ける', p && p.ok === true && mirror(b).length === 0 && b.rpcs.some(x => x[0] === 'weight_write'), p);
   }
-  for (const [lbl, rep] of [['device', { data: { ok: true, by: 'device' }, error: null }], ['関数が無い（0074 の前・戻した後）', { data: null, error: { code: 'PGRST202' } }],
+  for (const [lbl, rep] of [['device', { data: { ok: true, by: 'device' }, error: null }], ['関数が無い（0075 の前・戻した後）', { data: null, error: { code: 'PGRST202' } }],
                             ['権限', { data: null, error: { code: '42501' } }], ['形の違う答え', { data: { by: 'server' }, error: null }],
                             ['通信の失敗', () => { throw new Error('net'); }]]) {
     const b = box({ flags: { weight: true }, session: true, rpc: srvRpc(() => (typeof rep === 'function' ? rep() : rep)) });
