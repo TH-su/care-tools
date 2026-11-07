@@ -19,6 +19,10 @@
  *   ・ログインの控えが無い端末でスイッチが入っている時は、読み書きとも「ログインしてください」の失敗にする
  *     （切り替え済みかどうかを確かめられないため、Google へは流さない）。
  *   ・読み込み・書き込みとも、データベースに関数が無い（0032 を流す前）時は、写しの期間と同じく Google。
+ *   ・統合 0074（2026-11-07）: Google への写し返しを GAS が1時間ごとに新しい保存先から引く形にした。データベースの印（weight_mirror_state）が
+ *     'server'（GAS が全件を写し返し終えた後）の時だけ、端末は写し返しを積まず、残っている写し返しも送らずに外す
+ *     （GAS が同じ行の今の中身を写し返すので、古い書き込みを後から送ると Google を古い中身に戻すため）。
+ *     印が読めない・関数が無い（0074 の前・戻した後）・'device' の時は、今までどおり端末が写し返す。印は最長1分だけ覚える。
  * 読み込めなくても体重管理は今までどおり動く（画面は window.SUWeightLive が無ければ Google）。例外は外へ出さない
  * （ネットの失敗だけは、今までの Google の通信と同じく画面の失敗の扱いへ渡す）。
  */
@@ -28,6 +32,7 @@
   var FLAGS_URL = 'su-backend.json', FLAGS_LS = 'su_backend_flags', SWITCH = 'weight';
   var MIRROR_LS = 'wtmgr_mirror_q', MIRROR_MAX = 2000, MIRROR_RETRY_MS = 60000;
   var RPC_TIMEOUT_MS = 15000;
+  var MIRROR_BY_TTL_MS = 60000, MIRROR_BY_TIMEOUT_MS = 5000;
   var SESSION_RE = /^sb-[a-z0-9]+-auth-token$/;
   var NO_FUNC = { PGRST202: 1, '42883': 1 };
   var MSG = {
@@ -108,9 +113,9 @@
     });
   }
   /* データベースの関数を呼ぶ。{data} か {error:{code,message}}。時間切れ・ネットの失敗は例外（画面の失敗の扱いへ） */
-  function rpc(name, args) {
+  function rpc(name, args, ms) {
     var call = ensureAuth().then(function () { return window.SUAuth.client().rpc(name, args); });
-    var limit = new Promise(function (ok, ng) { setTimeout(function () { ng(new Error(MSG.timeout)); }, RPC_TIMEOUT_MS); });
+    var limit = new Promise(function (ok, ng) { setTimeout(function () { ng(new Error(MSG.timeout)); }, ms || RPC_TIMEOUT_MS); });
     return Promise.race([call, limit]);
   }
   function errCode(r) { return String((r && r.error && (r.error.code || r.error.message)) || ''); }
@@ -132,6 +137,20 @@
     var q = mirrorLoad();
     q.push({ action: action, data: data, at: Date.now() });
     mirrorSave(q);
+  }
+  function mirrorDrop() { if (mirrorLoad().length) mirrorSave([]); }
+  /* 統合 0074: Google へ写し返すのは誰か（'server'＝GAS・'device'＝この端末）。データベースの印を最長1分覚える。
+   * 読めない・関数が無い・時間切れ・形の違う答えは 'device'（今までどおり端末が写し返す）。例外は外へ出さない */
+  var mirrorBy_ = '', mirrorByAt = 0, mirrorByP = null;
+  function mirrorBy() {
+    if (mirrorBy_ && Date.now() - mirrorByAt < MIRROR_BY_TTL_MS) return Promise.resolve(mirrorBy_);
+    if (mirrorByP) return mirrorByP;
+    mirrorByP = rpc('weight_mirror_state', {}, MIRROR_BY_TIMEOUT_MS).then(function (r) {
+      return (r && !r.error && r.data && r.data.ok === true && r.data.by === 'server') ? 'server' : 'device';
+    }, function () { return 'device'; }).then(function (by) {
+      mirrorBy_ = by; mirrorByAt = Date.now(); mirrorByP = null; return by;
+    });
+    return mirrorByP;
   }
   var gasPost = null, draining = null, retryTimer = 0;
   /* 残っている写し返しを先頭から送る。失敗したらそこで止める（順番を入れ替えない）。同時に2本は走らせない。
@@ -203,7 +222,7 @@
         var d = r.data || {};
         if (!d.ok) { lastFrom = ''; return { error: String(d.error || '') || MSG.denied }; }
         lastFrom = 'supabase';
-        drainMirror();
+        if (mirrorLoad().length) mirrorBy().then(function (by) { if (by === 'server') mirrorDrop(); else drainMirror(); });
         return { ok: true, ver: 2, residents: fillKeys(d.residents), records: fillKeys(d.records),
                  thresholds: isObj(d.thresholds) ? d.thresholds : null };
       });
@@ -222,24 +241,37 @@
     return ensureFlags().then(function () {
       if (!switchOn()) return drainMirror().then(function (done) { return done ? null : { ok: false, error: MSG.mirror }; });
       if (!hasSession()) return { ok: false, error: MSG.login };
-      if (mirrorLoad().length >= MIRROR_MAX) { drainMirror(); return { ok: false, error: MSG.full }; }
-      return rpc('weight_write', { p_action: action, p_payload: payload || {} }).then(function (r) {
-        var code = errCode(r);
-        if (NO_FUNC[code] || (!r.error && r.data && r.data.error === 'shadow')) {
-          return drainMirror().then(function (done) { return done ? null : { ok: false, error: MSG.mirror }; });
-        }
-        if (r.error) return { ok: false, error: errMsg(r) };
-        var d = r.data || {};
-        if (!d.ok) return { ok: false, error: MSG[d.error] || String(d.error || '') || MSG.denied };
-        try { mirrorPush(action, JSON.parse(JSON.stringify(data || {}))); } catch (e) { note('写し返しの積み込み', e); }
-        drainMirror();
-        return { ok: true, ver: 2 };
+      var full = mirrorLoad().length >= MIRROR_MAX ? mirrorBy() : Promise.resolve('');
+      return full.then(function (by0) {
+        if (by0 === 'server') mirrorDrop();
+        else if (by0) { drainMirror(); return { ok: false, error: MSG.full }; }
+        return rpc('weight_write', { p_action: action, p_payload: payload || {} }).then(function (r) {
+          var code = errCode(r);
+          if (NO_FUNC[code] || (!r.error && r.data && r.data.error === 'shadow')) {
+            return drainMirror().then(function (done) { return done ? null : { ok: false, error: MSG.mirror }; });
+          }
+          if (r.error) return { ok: false, error: errMsg(r) };
+          var d = r.data || {};
+          if (!d.ok) return { ok: false, error: MSG[d.error] || String(d.error || '') || MSG.denied };
+          return mirrorBy().then(function (by) {
+            // GAS が写し返している時は積まない（残りも外す）。それ以外は今までどおり積んで送る
+            if (by === 'server') { mirrorDrop(); return { ok: true, ver: 2 }; }
+            try { mirrorPush(action, JSON.parse(JSON.stringify(data || {}))); } catch (e) { note('写し返しの積み込み', e); }
+            drainMirror();
+            return { ok: true, ver: 2 };
+          });
+        });
       });
     });
   }
 
   try {
-    document.addEventListener('visibilitychange', function () { if (!document.hidden && mirrorLoad().length) drainMirror(); });
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden || !mirrorLoad().length) return;
+      // 残りを送る前に、GAS が写し返しているかを確かめる（ログインして切り替えた後だけ。それ以外は今までどおり送る）
+      if (switchOn() && hasSession()) mirrorBy().then(function (by) { if (by === 'server') mirrorDrop(); else drainMirror(); });
+      else drainMirror();
+    });
   } catch (e) { /* 何もしない */ }
 
   window.SUWeightLive = {
@@ -247,6 +279,7 @@
     post: post,
     readFromSupabase: function () { return lastFrom === 'supabase'; },
     mirrorPending: function () { return mirrorLoad().length; },
+    mirrorBy: function () { return mirrorBy_ || 'device'; },
     _drainMirror: drainMirror
   };
 })();

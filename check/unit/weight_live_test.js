@@ -16,6 +16,8 @@
        職員向けの文で失敗を返す
      G スイッチを切った後・写しの期間に戻った後は、Google へ直接送る前に残っている写し返しを先に送る
      H 応答が来ない時は時間切れの失敗（画面の失敗の扱いへ）
+     J 統合 0074: データベースの印（weight_mirror_state）が 'server'（GAS が写し返している）の時だけ、写し返しを積まず・残りも送らずに外す。
+       印が読めない・関数が無い・'device'・形の違う答えは今までどおり端末が写し返す。印は1分だけ覚える（保存のたびに問い合わせない）
      I 画面のつなぎ: apiGet・apiPost の入口だけで呼び、Google へ送る形（apiPostGas_）は前と1文字も変えていない。
        アラートの確認（alertAck）を外した入居者を送る。写しの部品は Supabase から読んだ中身を写さない
    ★本物のファイルを砂場で動かす。架空データのみ（氏名は使わない）。 */
@@ -218,6 +220,55 @@ const liveRpc = (name, args) => name === 'weight_get_all' ? { data: LIVE_ALL, er
     t('G タブが2つでも1つだけが送る（ブラウザの鍵 wtmgr_mirror_q を取って送る）', (b.b0.lockNames || []).indexOf('wtmgr_mirror_q') >= 0 && mirror(b).length === 0, b.b0);
   }
 
+  console.log('J GAS が写し返している時（統合 0074）');
+  const srvRpc = by => (name, args) => name === 'weight_get_all' ? { data: LIVE_ALL, error: null }
+    : name === 'weight_mirror_state' ? (typeof by === 'function' ? by() : { data: { ok: true, by }, error: null }) : { data: { ok: true, ver: 2 }, error: null };
+  {
+    const b = box({ flags: { weight: true }, session: true, rpc: srvRpc('server') });
+    const p = await b.L.post('saveRecord', { record: { id: 'w9' } }, { record: { id: 'w9' } }, b.post); await settle();
+    t('J server: 書き込みは成功・Google へ送らない・写し返しを積まない', p && p.ok === true && b.gas.length === 0 && mirror(b).length === 0, [p, b.gas]);
+    t('J server: 書いた後に印を読む（書く前ではない）', b.rpcs.map(x => x[0]).join() === 'weight_write,weight_mirror_state', b.rpcs);
+    await b.L.post('saveRecord', { record: { id: 'w8' } }, { record: { id: 'w8' } }, b.post);
+    t('J 印は覚えて使う（2回目の保存で問い合わせない）', b.rpcs.filter(x => x[0] === 'weight_mirror_state').length === 1 && b.L.mirrorBy() === 'server');
+    t('J 印を覚えるのは1分（5秒で見切る）', b.timers.some(x => x[1] === 5000));
+  }
+  {
+    const store = { wtmgr_mirror_q: JSON.stringify([{ action: 'saveRecord', data: { record: { id: 'm1' } }, at: 1 }]) };
+    const b = box({ flags: { weight: true }, session: true, store, rpc: srvRpc('server') });
+    await b.L.post('saveRecord', { record: { id: 'w9' } }, { record: { id: 'w9' } }, b.post); await settle();
+    t('J server: 前から残っていた写し返しも送らずに外す（GAS が今の中身を写し返す）', mirror(b).length === 0 && b.gas.length === 0, b.gas);
+  }
+  {
+    const store = { wtmgr_mirror_q: JSON.stringify([{ action: 'saveRecord', data: { record: { id: 'm1' } }, at: 1 }]) };
+    const b = box({ flags: { weight: true }, session: true, store, rpc: srvRpc('server') });
+    const g = await b.L.getAll(b.post); await settle();
+    t('J server: 読み込みの後も残りを送らずに外す', g && g.ok === true && mirror(b).length === 0 && b.gas.length === 0, b.gas);
+  }
+  {
+    const b = box({ flags: { weight: true }, session: true, rpc: srvRpc('server') });
+    await b.L.getAll(b.post); await settle();
+    t('J 残りが無い時の読み込みでは印を問い合わせない', !b.rpcs.some(x => x[0] === 'weight_mirror_state'), b.rpcs);
+  }
+  {
+    const many = []; for (let i = 0; i < 2000; i++) many.push({ action: 'saveRecord', data: { record: { id: 'q' + i } }, at: i });
+    const b = box({ flags: { weight: true }, session: true, store: { wtmgr_mirror_q: JSON.stringify(many) }, rpc: srvRpc('server'), gas: () => ({ ok: false }) });
+    const p = await b.L.post('saveRecord', { record: { id: 'x' } }, { record: { id: 'x' } }, b.post); await settle();
+    t('J server: 送信待ちがあふれていても、外してから書ける', p && p.ok === true && mirror(b).length === 0 && b.rpcs.some(x => x[0] === 'weight_write'), p);
+  }
+  for (const [lbl, rep] of [['device', { data: { ok: true, by: 'device' }, error: null }], ['関数が無い（0074 の前・戻した後）', { data: null, error: { code: 'PGRST202' } }],
+                            ['権限', { data: null, error: { code: '42501' } }], ['形の違う答え', { data: { by: 'server' }, error: null }],
+                            ['通信の失敗', () => { throw new Error('net'); }]]) {
+    const b = box({ flags: { weight: true }, session: true, rpc: srvRpc(() => (typeof rep === 'function' ? rep() : rep)) });
+    const p = await b.L.post('saveRecord', { record: { id: 'w9' } }, { record: { id: 'w9' } }, b.post); await settle();
+    t('J ' + lbl + ': 今までどおり端末が写し返す', p && p.ok === true && b.gas.length === 1 && b.gas[0][0] === 'saveRecord' && mirror(b).length === 0, [p, b.gas]);
+  }
+  {
+    const store = { wtmgr_mirror_q: JSON.stringify([{ action: 'saveRecord', data: { record: { id: 'm1' } }, at: 1 }]) };
+    const b = box({ flags: {}, session: true, store, rpc: srvRpc('server') });
+    const p = await b.L.post('saveRecord', { record: { id: 'new' } }, { record: { id: 'new' } }, b.post);
+    t('J スイッチが切の時は、印を見ずに今までどおり残りを先に送る', p === null && b.gas.length === 1 && !b.rpcs.length, b.rpcs);
+  }
+
   console.log('H 応答が来ない');
   {
     const b = box({ flags: { weight: true }, session: true, rpc: () => new Promise(() => {}) });
@@ -232,7 +283,7 @@ const liveRpc = (name, args) => name === 'weight_get_all' ? { data: LIVE_ALL, er
 
   console.log('I 画面のつなぎ');
   {
-    t('I 部品を読み込む（写しの部品の直後）', /<script src="su-weight-shadow\.js\?v=2026-10-28\.2"><\/script>\n<script src="su-weight-live\.js\?v=2026-10-28\.2"><\/script>/.test(PAGE));
+    t('I 部品を読み込む（写しの部品の直後）', /<script src="su-weight-shadow\.js\?v=2026-10-28\.2"><\/script>\n<script src="su-weight-live\.js\?v=2026-11-07"><\/script>/.test(PAGE));
     const getBody = PAGE.slice(PAGE.indexOf('async function apiGet(){'), PAGE.indexOf('async function apiGet(){') + 2400);
     const iLive = getBody.indexOf('SUWeightLive.getAll(apiPostGas_)'), iGas = getBody.indexOf('fetchTO(');
     t('I 読み込みは Google の前に切り替えを確かめる', iLive > 0 && iGas > iLive);
