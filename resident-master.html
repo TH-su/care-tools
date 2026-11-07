@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-3FzfkFOKIbdwtf+NUwWnnV2723t6tcnAAGd7gvKNSKk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-AU6W145/4BMTOF0jAShlFN9AbdAY/u3JNpr+gLZFjhI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -1526,7 +1526,7 @@ body.meal-on #sc-list{max-width:none}
 /* 字と地の差を 7:1 以上にそろえる（画面だけ・色合いはそのまま濃くする・印刷の紙は元の色のまま・代表者「推奨どおり色も7:1にそろえて」2026-11-03） */
 @media screen { :root[data-su-theme] .tag.room { color: #5932a7; } }   /* 居室の札の紫（淡い紫の地 7.1:1） */
 /* ── 💴 収支の見通し（2026-11-07 本人指示）。画面だけ・印刷しない ── */
-.rev{--rv-f:#2f5d9a; --rv-c:#d9822b; max-width:1100px; margin:0 auto; padding:4px 0 24px}
+.rev{--rv-f:#d9822b; --rv-c:#2f5d9a; --rv-v:#2f5d9a; --rv-d:#1f8a70; --rv-o:#80868b; max-width:1100px; margin:0 auto; padding:4px 0 24px}
 .rev [hidden]{display:none!important}
 .rev-hd{display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; margin:4px 0 10px}
 .rev-hd h2{font-size:1.125rem; margin:0}
@@ -1554,7 +1554,9 @@ body.meal-on #sc-list{max-width:none}
 .rev-fig figcaption{display:flex; flex-wrap:wrap; gap:6px 16px; align-items:center; font-size:0.9375rem; margin-bottom:4px}
 .rev-leg{display:inline-flex; align-items:center; gap:6px; font-weight:600}
 .rev-leg .sw{width:14px; height:14px; border-radius:3px; display:inline-block}
-.rev-leg .sw.f{background:var(--rv-f)} .rev-leg .sw.c{background:var(--rv-c)}
+.rev-leg .sw.c,.rev-leg .sw.v{background:var(--rv-v)} .rev-leg .sw.d{background:var(--rv-d)} .rev-leg .sw.o{background:var(--rv-o)}
+.rev-leg .ln{width:22px; height:0; border-top:3px solid var(--rv-f); display:inline-block; position:relative}
+.rev-leg .ln::after{content:''; position:absolute; left:7px; top:-6px; width:8px; height:8px; border-radius:50%; background:var(--rv-f)}
 .rev-cap{color:var(--g7)}
 .rev-svg{width:100%; height:auto; display:block}
 .rev-svg .grid{stroke:var(--g2); stroke-width:1}
@@ -1562,7 +1564,15 @@ body.meal-on #sc-list{max-width:none}
 .rev-svg .ax{fill:var(--g7); font-size:12px}
 .rev-svg .ax.on{fill:var(--g9); font-weight:700}
 .rev-svg .lbl{fill:var(--g9); font-size:12px; font-weight:600}
-.rev-svg .f{fill:var(--rv-f)} .rev-svg .c{fill:var(--rv-c)}
+.rev-svg .c,.rev-svg .v{fill:var(--rv-v)} .rev-svg .d{fill:var(--rv-d)} .rev-svg .o{fill:var(--rv-o)}
+.rev-svg .fline{fill:none; stroke:var(--rv-f); stroke-width:2.5; stroke-linejoin:round; pointer-events:none}
+.rev-svg .fdot{fill:var(--rv-f); stroke:#fff; stroke-width:2; pointer-events:none}
+.rev-svg .now{stroke:var(--g7); stroke-width:1; stroke-dasharray:4 3}
+.rev-svg .nowl{fill:var(--g7); font-weight:600}
+.rev-svg .bar.past .v,.rev-svg .bar.past .d,.rev-svg .bar.past .o,.rev-svg .bar.past .c{opacity:.6}
+.rev-tbl tbody tr.past th,.rev-tbl tbody tr.past td{color:var(--g7)}
+.rev-chk{display:inline-flex; align-items:center; gap:8px; min-height:44px; font-size:0.9375rem; font-weight:600; cursor:pointer}
+.rev-chk input{width:22px; height:22px}
 .rev-svg .hit{fill:transparent}
 .rev-svg .bar{cursor:pointer; outline:none}
 .rev-svg .bar:hover .hit,.rev-svg .bar:focus .hit{fill:rgba(11,87,208,.07)}
@@ -12913,13 +12923,17 @@ function a4Days(from,to){
 var REV_UI_KEY='rmaster_rev_ui', REV_FEES_KEY='rmaster_rev_fees';
 var REV_DEFAULT_LIMITS={'要支援1':5032,'要支援2':10531,'要介護1':16765,'要介護2':19705,'要介護3':27048,'要介護4':30938,'要介護5':36217};   /* 週間計画の報酬マスタの既定と同じ（読めなかった時だけ使い、画面に出す） */
 var csRateMaster_=null;   /* 週間計画の報酬マスタ（a4EnsureDayMap が読んだ時に一緒に持つ・メモリだけ） */
+var csShare_=null;        /* 週間計画の予定から数えた訪問の割合 {byMid, byName}（同じ応答から作る・氏名は突き合わせにだけ使う・メモリだけ） */
 var REV={ force:false, ptrDown:false, mainPending:false, form:{}, st:null, stTried:{}, stLoading:false, stDone:0, stTotal:0, stBad:0, stGen:0, plan:[], planSeq:0, sel:'', csMsg:'', csAsked:false, bound:false,
-          params:{deduct:2000, cutoff:5, lag:2}, ui:{months:12, basis:'cash', openHosp:'eom'} };
+          params:{deduct:2000, cutoff:5, lag:2}, ui:{months:12, basis:'cash', openHosp:'eom', startBack:5, split:false} };
+var REV_START_BACKS=[0,3,5,11];   /* 表示の始まり: 今月・3か月前・半年前（5か月前＝11月なら6月）・1年前（11か月前）。既定は半年前（2026-11-07 本人指示） */
 (function(){
   try{ var u=JSON.parse(localStorage.getItem(REV_UI_KEY)||'{}');
        if(u&&[6,12,18,24].indexOf(u.months)>=0) REV.ui.months=u.months;
        if(u&&(u.basis==='cash'||u.basis==='accrual')) REV.ui.basis=u.basis;
-       if(u&&(u.openHosp==='eom'||u.openHosp==='open')) REV.ui.openHosp=u.openHosp; }catch(e){}
+       if(u&&(u.openHosp==='eom'||u.openHosp==='open')) REV.ui.openHosp=u.openHosp;
+       if(u&&REV_START_BACKS.indexOf(u.startBack)>=0) REV.ui.startBack=u.startBack;
+       if(u&&typeof u.split==='boolean') REV.ui.split=u.split; }catch(e){}
 })();
 /* 本人が押した・選んだ操作の描き直し（入力中の守りを通さない。守りは1分ごとの読み直しにだけ当てる） */
 function revRedraw_(){ REV.force=true; renderRoster(); }
@@ -12943,7 +12957,7 @@ function revLimits_(){
 function revToday_(){ var d=new Date(); return d.getFullYear()+'-'+(d.getMonth()<9?'0':'')+(d.getMonth()+1)+'-'+(d.getDate()<10?'0':'')+d.getDate(); }
 /* 見通しに入れる方: 在籍の方＋退去日が「入金がまだ残る月」以降の方 */
 function revScope_(){
-  var C=RevenueCalc, today=revToday_(), from=C.addMonths(today.slice(0,7), -(REV.params.lag+1))+'-01';
+  var C=RevenueCalc, from=C.addMonths(revStart_(), -(REV.params.lag+1))+'-01';
   return (roster||[]).filter(function(r){
     if(!r) return false;
     if(r.active!==false) return true;
@@ -12951,6 +12965,36 @@ function revScope_(){
     return !!(lv&&lv>=from);
   });
 }
+/* 週間計画の利用者ごとに、予定の基本単位から訪問の割合を数える（RevenueCalc.serviceShare）。
+   引くのは利用者No（氏名も一致する時だけ）→ 利用者No の無い記録は氏名（同姓同名は引かない）。デイ利用欄（a4DaysFor）と同じ作法 */
+function revBuildShare_(db){
+  if(!window.RevenueCalc) return null;
+  var out={byMid:Object.create(null), byName:Object.create(null), dupMid:Object.create(null), dupName:Object.create(null)};
+  var rm=(db&&db.rateMaster)||{};
+  ((db&&Array.isArray(db.residents))?db.residents:[]).forEach(function(r){
+    if(!r) return;
+    var sh=RevenueCalc.serviceShare(r.events, r.careLevel, rm), nk=a4NmKey(r.name);
+    var mid=(r.masterId==null||r.masterId==='')?null:String(r.masterId), rec={s:sh, nk:nk, mid:mid};
+    if(mid){ if(out.byMid[mid]) out.dupMid[mid]=true; else out.byMid[mid]=rec; }
+    if(nk){ if(out.byName[nk]) out.dupName[nk]=true; else out.byName[nk]=rec; }
+  });
+  return out;
+}
+/* 分けられない理由（画面の内訳の理由の欄に出す） */
+function revNoShareWhy_(r){
+  if(r.planned) return '入居予定で使う予定が分からない';
+  if(!csShare_) return '週間計画を読めなかった';
+  return '週間計画の予定から分けられない（予定が無い・利用者No と氏名で結べない）';
+}
+function revShareOf_(r){
+  var m=csShare_; if(!m||!r) return null;
+  var nk=a4NmKey(r.name), id=String(r.id);
+  if(m.dupMid[id]) return null;
+  var a=m.byMid[id]; if(a) return (nk&&a.nk===nk)?a.s:null;
+  if(!nk||m.dupName[nk]) return null;
+  var b=m.byName[nk]; return (b&&b.mid==null)?b.s:null;
+}
+function revStart_(){ return RevenueCalc.addMonths(revToday_().slice(0,7), -REV.ui.startBack); }
 function revEnsure(force){
   if(getDeviceRole()==='field') return;
   if(!window.RevenueCalc) return;
@@ -13003,7 +13047,7 @@ function revLoadStates_(){
 function revApiGet_(params){
   return window.SUResRead ? window.SUResRead.call(params, function(){ return apiGetGas_(params,30000); }, {screen:'resident-master-rev'}) : apiGetGas_(params,30000);
 }
-function revPurge_(){ REV.form={}; REV.st=null; REV.stTried={}; REV.stBad=0; REV.stGen++; REV.stLoading=false; REV.plan=[]; REV.sel=''; REV.csAsked=false; csRateMaster_=null; }
+function revPurge_(){ csShare_=null; REV.form={}; REV.st=null; REV.stTried={}; REV.stBad=0; REV.stGen++; REV.stLoading=false; REV.plan=[]; REV.sel=''; REV.csAsked=false; csRateMaster_=null; }
 function revPaintStatus_(){
   var el=$('revStatus'); if(!el) return;
   el.textContent=revStatusText_();
@@ -13023,11 +13067,11 @@ function revResidents_(){
     var b=bkOf(r), id=String(r.id), s=REV.st&&REV.st[id];
     var ab=s?s.ab.map(function(a){ return {from:a.from, to:a.to, open:!a.to}; }):[];
     return {key:id, name:r.name||'', careLevel:r.careLevel||b.careLevel||'', admit:_ymd(b.admissionDate), leave:_ymd(b.dischargeDate)||(r.active===false?_ymd(r.dischargeDate):''),
-            absences:ab, hz:!!(s?s.hz:r.hospitalized)};
+            absences:ab, hz:!!(s?s.hz:r.hospitalized), visitShare:revShareOf_(r)};
   });
   var byKey={}; list.forEach(function(x){ byKey[x.key]=x; });
   REV.plan.forEach(function(p){
-    if(p.type==='in') list.push({key:'plan-'+p.seq, name:'入居予定（'+p.label+'）', careLevel:p.level, admit:p.date, planned:true, absences:[]});
+    if(p.type==='in') list.push({key:'plan-'+p.seq, name:'入居予定（'+p.label+'）', careLevel:p.level, admit:p.date, planned:true, absences:[], visitShare:(typeof p.share==='number'?p.share:null)});
     var t=byKey[p.id]; if(!t) return;
     if(p.type==='out') t.leave=p.date;
     if(p.type==='hosp') t.absences.push({from:p.date, to:p.to||'', open:!p.to});
@@ -13040,7 +13084,8 @@ function revResidents_(){
 }
 function revCompute_(){
   var C=RevenueCalc, L=revLimits_(), F=revFees_();
-  var out=C.compute({ residents:revResidents_(), start:revToday_().slice(0,7), months:REV.ui.months,
+  /* 期間＝今月を含めた先の月数。表示の始まり（今月より前の月）はその前に足す＝先の月はいつも見える */
+  var out=C.compute({ residents:revResidents_(), start:revStart_(), months:REV.ui.startBack+REV.ui.months,
                       limits:L.limits, fees:F.fees, feePerUnit:L.feePerUnit,
                       deductUnits:REV.params.deduct, cutoffDay:REV.params.cutoff, lagMonths:REV.params.lag });
   out.L=L; out.F=F; return out;
@@ -13055,7 +13100,8 @@ function revHtml(mainOnly){
   if(!o.ok){ if(mainOnly) return null; return '<div class="empty">'+esc(o.error)+'</div>'; }
   var ms=o.months, val=function(M){ return b==='cash'?M.total:M.totalAccrual; };
   var fv=function(M){ return b==='cash'?M.facility:M.facilityAccrual; }, cv=function(M){ return b==='cash'?M.care:M.careAccrual; };
-  if(!REV.sel||!ms.some(function(M){ return M.ym===REV.sel; })) REV.sel=ms[0].ym;
+  var vv=function(M){ return b==='cash'?M.careVisit:M.careVisitAccrual; }, dv=function(M){ return b==='cash'?M.careDay:M.careDayAccrual; }, ov=function(M){ return b==='cash'?M.careOther:M.careOtherAccrual; };
+  if(!REV.sel||!ms.some(function(M){ return M.ym===REV.sel; })){ var cy=revToday_().slice(0,7); REV.sel=ms.some(function(M){ return M.ym===cy; })?cy:ms[0].ym; }
   var h='<div class="rev-hd"><h2>💴 収支の見通し</h2><span class="rev-st" id="revStatus" role="status" aria-live="polite">'+esc(revStatusText_())+'</span>'+
      '<button type="button" class="rev-btn" data-rev="reload">🔄 最新に取り直す</button></div>';
   var hd=h; h='';
@@ -13070,34 +13116,44 @@ function revHtml(mainOnly){
   }
   if(o.warnings.length) warn.push('入居日・介護度の分からない方が'+o.warnings.length+'名います（'+o.warnings.slice(0,5).map(function(w){ return esc(w.name||'予定')+'：'+esc(w.notes[0]); }).join('／')+(o.warnings.length>5?' ほか':'')+'）');
   if(warn.length) h+='<div class="rev-warn" role="note"><b>⚠ 確かめてください</b><ul>'+warn.map(function(w){ return '<li>'+w+'</li>'; }).join('')+'</ul></div>';
-  /* 大きな数字 */
-  var m0=ms[0], m1=ms[1]||ms[0], sum=0, lost=0;
-  ms.forEach(function(M){ sum+=val(M); lost+=M.careLostAbsent; });
-  var bl=(b==='cash'?'入金':'発生');
+  /* 大きな数字（今月・来月は表示の始まりに関わらず今月を基準にする） */
+  var cur=revToday_().slice(0,7), ci=0; ms.forEach(function(M,i){ if(M.ym===cur) ci=i; });
+  var m0=ms[ci], m1=ms[ci+1]||ms[ci], sumF=0, nF=0, lost=0;
+  ms.forEach(function(M,i){ if(i>=ci){ sumF+=val(M); nF++; } lost+=(i>=ci?M.careLostAbsent:0); });
+  var bl=(b==='cash'?'入金':'発生'), sp=REV.ui.split;
+  var subOf=function(M){ return sp ? ('施設 '+C.yen(fv(M))+'円・訪問 '+C.yen(vv(M))+'円・通所 '+C.yen(dv(M))+'円'+(ov(M)?'・分けられない '+C.yen(ov(M))+'円':''))
+                                   : ('施設 '+C.yen(fv(M))+'円・介護報酬 '+C.yen(cv(M))+'円'); };
   h+='<div class="rev-kpi">'+
-     revTile_('今月（'+(+m0.ym.slice(5))+'月）の'+bl+'の見込み', val(m0), '施設 '+C.yen(fv(m0))+'円・介護報酬 '+C.yen(cv(m0))+'円')+
+     revTile_('今月（'+(+m0.ym.slice(5))+'月）の'+bl+'の見込み', val(m0), subOf(m0))+
      revTile_('来月（'+(+m1.ym.slice(5))+'月）の'+bl+'の見込み', val(m1), '前の月との差 '+revDiff_(val(m1)-val(m0)))+
-     revTile_(ms.length+'か月の'+bl+'の合計', sum, '1か月あたり '+C.yen(sum/ms.length)+'円')+
-     revTile_('入院で減る介護報酬（'+ms.length+'か月の入金）', -lost, '入院の日数ぶん日割りで減った分')+
+     revTile_('今月から'+nF+'か月の'+bl+'の合計', sumF, '1か月あたり '+C.yen(nF?sumF/nF:0)+'円')+
+     revTile_('入院で減る介護報酬（今月から'+nF+'か月の入金）', -lost, '入院の日数ぶん日割りで減った分')+
      '</div>';
   /* 選び */
+  var sb=REV.ui.startBack, sbLab=function(k){ var ym=C.addMonths(cur,-k); return (k===0?'今月':(k===5?'半年前':(k===11?'1年前':k+'か月前')))+'（'+(+ym.slice(5))+'月）から'; };
   h+='<div class="rev-ctl">'+
      '<span class="rev-seg" role="group" aria-label="グラフと表の数え方">'+
        '<button type="button" data-rev="basis" data-val="cash" aria-pressed="'+(b==='cash')+'">お金が入る月で見る</button>'+
        '<button type="button" data-rev="basis" data-val="accrual" aria-pressed="'+(b==='accrual')+'">利用した月で見る</button></span>'+
-     '<label class="rev-lb">期間 <select data-rev="months">'+[6,12,18,24].map(function(n){ return '<option value="'+n+'"'+(n===REV.ui.months?' selected':'')+'>'+n+'か月</option>'; }).join('')+'</select></label>'+
+     '<label class="rev-lb">表示の始まり <select data-rev="startBack">'+REV_START_BACKS.map(function(k){ return '<option value="'+k+'"'+(k===sb?' selected':'')+'>'+esc(sbLab(k))+'</option>'; }).join('')+'</select></label>'+
+     '<label class="rev-lb">今月から先 <select data-rev="months">'+[6,12,18,24].map(function(n){ return '<option value="'+n+'"'+(n===REV.ui.months?' selected':'')+'>'+n+'か月（今月を含む）</option>'; }).join('')+'</select></label>'+
+     '<label class="rev-chk"><input type="checkbox" data-rev="split"'+(sp?' checked':'')+'> 介護報酬を訪問と通所に分ける</label>'+
      '</div>';
-  h+=revChart_(ms, b, fv, cv);
+  h+=revChart_(ms, b, fv, cv, vv, dv, ov, sp, cur);
   /* 月ごとの表 */
-  h+='<div class="rev-tw"><table class="rev-tbl"><caption>月ごとの'+(b==='cash'?'入金（お金が入る月）':'発生（利用した月）')+'の見込み（円）・行を押すとその月の内訳</caption>'+
-     '<thead><tr><th scope="col">月</th><th scope="col">人数</th><th scope="col">施設の利用料</th><th scope="col">介護報酬</th><th scope="col">合計</th><th scope="col">前の月との差</th><th scope="col">入院で減る分</th></tr></thead><tbody>';
+  h+='<div class="rev-tw"><table class="rev-tbl"><caption>月ごとの'+(b==='cash'?'入金（お金が入る月）':'発生（利用した月）')+'の見込み（円）・行を押すとその月の内訳。今月より前の月も記録から数えた見込みです（実際の入金の記録ではありません。過去の月も今の介護度・今の料金表で数えています）</caption>'+
+     '<thead><tr><th scope="col">月</th><th scope="col">人数</th><th scope="col">施設の利用料</th>'+
+     (sp?'<th scope="col">訪問</th><th scope="col">通所</th><th scope="col">分けられない分</th>':'')+
+     '<th scope="col">介護報酬'+(sp?'（計）':'')+'</th><th scope="col">合計</th><th scope="col">前の月との差</th><th scope="col">入院で減る分</th></tr></thead><tbody>';
   ms.forEach(function(M,i){
-    var d=i?val(M)-val(ms[i-1]):null, on=M.ym===REV.sel;
-    h+='<tr class="'+(on?'on':'')+'" data-rev="sel" data-ym="'+esc(M.ym)+'" tabindex="0" aria-selected="'+on+'">'+
-       '<th scope="row">'+esc(C.ymLabel(M.ym))+(i===0?'（今月）':'')+'</th><td>'+M.people+'名</td><td>'+C.yen(fv(M))+'</td><td>'+C.yen(cv(M))+'</td>'+
-       '<td class="tot">'+C.yen(val(M))+'</td><td>'+(d==null?'—':revDiff_(d))+'</td><td>'+(b==='cash'&&M.careLostAbsent?'−'+C.yen(M.careLostAbsent):'—')+'</td></tr>';
+    var d=i?val(M)-val(ms[i-1]):null, on=M.ym===REV.sel, tag=M.ym===cur?'（今月）':(M.ym<cur?'（前）':'');
+    h+='<tr class="'+(on?'on':'')+(M.ym<cur?' past':'')+'" data-rev="sel" data-ym="'+esc(M.ym)+'" tabindex="0" aria-selected="'+on+'">'+
+       '<th scope="row">'+esc(C.ymLabel(M.ym))+tag+'</th><td>'+M.people+'名</td><td>'+C.yen(fv(M))+'</td>'+
+       (sp?'<td>'+C.yen(vv(M))+'</td><td>'+C.yen(dv(M))+'</td><td>'+(ov(M)?C.yen(ov(M)):'—')+'</td>':'')+
+       '<td>'+C.yen(cv(M))+'</td><td class="tot">'+C.yen(val(M))+'</td><td>'+(d==null?'—':revDiff_(d))+'</td><td>'+(b==='cash'&&M.careLostAbsent?'−'+C.yen(M.careLostAbsent):'—')+'</td></tr>';
   });
   h+='</tbody></table></div>';
+  if(sp) h+='<p class="rev-note">訪問と通所の分け方：その方の週間計画の予定の単位（週間計画が数えた加算込みの単位。無い予定は基本単位）の割合で、介護報酬の見込みを按分しています。週間計画に予定の無い方・結べない方・使う予定の分からない入居予定の方は「分けられない分」です。'+(csShare_?'':'<b>いまは週間計画を読めていないため、全員が「分けられない分」です。</b>')+'</p>';
   h+=revDetail_(ms.filter(function(M){ return M.ym===REV.sel; })[0], b);
   if(mainOnly) return {main:h, o:o};
   return '<div class="rev" id="revRoot">'+hd+'<div id="revMain">'+h+'</div>'+revPlanHtml_()+revPremiseHtml_(o)+'</div>';
@@ -13114,6 +13170,10 @@ function revRedrawMain_(){
   revPaintStatus_();
   var fs=$('revFeeSrc'); if(fs) fs.textContent=revFeeSrcText_(r.o.F.src);
   var fr=$('revFeeReset'); if(fr) fr.hidden=(r.o.F.src!=='device');
+  /* 前提の欄の文も、週間計画を読み終えた後の値に合わせる（入力欄は作り直さない） */
+  var ls=$('revLimSrc'); if(ls) ls.textContent=revLimSrcText_(r.o.L);
+  var fp=$('revFpu'); if(fp) fp.textContent=String(r.o.L.feePerUnit);
+  var ll=$('revLimLine'); if(ll) ll.innerHTML=revLimLineText_(r.o.L);
   if(keep){ var el=$('revMain').querySelector(keep); if(el) el.focus(); }
 }
 /* 描き直した後に同じ部品へ戻るための目印（属性だけ・中身の値は使わない） */
@@ -13125,36 +13185,57 @@ function revFocusKey_(el){
   ['data-ym','data-val','data-k','data-lv','data-seq'].forEach(function(n){ var v=el.getAttribute(n); if(v!=null) k+='['+n+'="'+String(v).replace(/["\\]/g,'')+'"]'; });
   return k;
 }
+function revLimSrcText_(L){ return L.fromSchedule?'週間計画の報酬マスタ':'全国の既定（週間計画を読めなかったため）'; }
+function revLimLineText_(L){ var C=RevenueCalc; return '限度額（単位/月）：'+C.LEVELS.map(function(lv){ return esc(lv.replace('要介護','介護').replace('要支援','支援'))+' '+C.yen(L.limits[lv]||0); }).join('・'); }
 function revFeeSrcText_(src){ return src==='device'?'この端末で入れた表':(src==='facility'?'施設情報の表':'まだ入っていません'); }
 function revDiff_(d){ var C=RevenueCalc; return d>0?'＋'+C.yen(d)+'円':(d<0?C.yen(d)+'円':'±0円'); }
 function revTile_(lb, v, sub){
   return '<div class="rev-tile"><div class="k">'+esc(lb)+'</div><div class="v">'+esc(RevenueCalc.yen(v))+'<small>円</small></div><div class="s">'+esc(sub)+'</div></div>';
 }
-/* 積み上げの棒グラフ（施設の利用料＝下・介護報酬＝上）。数字は表にもある（色だけに頼らない） */
-function revChart_(ms, b, fv, cv){
-  var C=RevenueCalc, W=760, H=300, L=64, R=12, T=28, B=40, n=ms.length;
-  var max=0; ms.forEach(function(M){ max=Math.max(max, fv(M)+cv(M)); });
+/* 介護報酬＝棒（訪問と通所に分ける時は積み上げ）・施設の利用料＝折れ線。同じ円の目盛り1本（2026-11-07 本人指示）。
+   数字は表にもある（色だけに頼らない・線と棒で形も違う） */
+function revChart_(ms, b, fv, cv, vv, dv, ov, sp, cur){
+  var C=RevenueCalc, W=760, H=320, L=64, R=16, T=34, B=44, n=ms.length;
+  var max=0; ms.forEach(function(M){ max=Math.max(max, cv(M), fv(M)); });
   var step=revNiceStep_(max/4||1), top=Math.max(step, Math.ceil(max/step)*step);
-  var y=function(v){ return T+(H-T-B)*(1-v/top); }, bw=Math.min(40,(W-L-R)/n*0.6), gx=(W-L-R)/n;
-  var s='<figure class="rev-fig"><figcaption><span class="rev-leg"><i class="sw f" aria-hidden="true"></i>施設の利用料</span><span class="rev-leg"><i class="sw c" aria-hidden="true"></i>介護報酬</span>'+
-        '<span class="rev-cap">'+(b==='cash'?'お金が入る月':'利用した月')+'ごと・棒の上は合計（万円）</span></figcaption>'+
-        '<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="月ごとの施設の利用料と介護報酬の積み上げ棒グラフ（数字は下の表と同じ）" class="rev-svg">';
+  var y=function(v){ return T+(H-T-B)*(1-v/top); }, gx=(W-L-R)/n, bw=Math.min(36,gx*0.56);
+  var leg=sp
+    ? '<span class="rev-leg"><i class="sw v" aria-hidden="true"></i>訪問の介護報酬</span><span class="rev-leg"><i class="sw d" aria-hidden="true"></i>通所の介護報酬</span><span class="rev-leg"><i class="sw o" aria-hidden="true"></i>分けられない分</span>'
+    : '<span class="rev-leg"><i class="sw c" aria-hidden="true"></i>介護報酬</span>';
+  leg+='<span class="rev-leg"><i class="ln" aria-hidden="true"></i>施設の利用料（折れ線）</span>';
+  var s='<figure class="rev-fig"><figcaption>'+leg+'<span class="rev-cap">'+(b==='cash'?'お金が入る月':'利用した月')+'ごと・棒の上は介護報酬（万円）</span></figcaption>'+
+        '<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="月ごとの介護報酬（棒）と施設の利用料（折れ線）のグラフ（数字は下の表と同じ）" class="rev-svg">';
   for(var g=0; g<=top+0.5; g+=step){
     s+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+y(g).toFixed(1)+'" y2="'+y(g).toFixed(1)+'" class="grid"/>'+
        '<text x="'+(L-6)+'" y="'+(y(g)+4).toFixed(1)+'" text-anchor="end" class="ax">'+esc(revMan_(g))+'</text>';
   }
+  /* 今月の位置（今月より前は記録から数えた見込み） */
+  ms.forEach(function(M,i){ if(M.ym===cur&&i>0){ var x=L+gx*i; s+='<line x1="'+x.toFixed(1)+'" x2="'+x.toFixed(1)+'" y1="'+(T-18)+'" y2="'+(H-B)+'" class="now"/><text x="'+(x+4).toFixed(1)+'" y="'+(T-8)+'" class="ax nowl">今月→</text>'; } });
+  var pts=[], thin=n>24;   /* 25本以上は月の名前と数を1本おき（今月と選んだ月は必ず出す）＝隣と重ならない */
   ms.forEach(function(M,i){
-    var cx=L+gx*i+gx/2, x=cx-bw/2, f=fv(M), c=cv(M), yf=y(f), yt=y(f+c), base=y(0), on=M.ym===REV.sel;
-    var tip=C.ymLabel(M.ym)+'：合計 '+C.yen(f+c)+'円（施設の利用料 '+C.yen(f)+'円・介護報酬 '+C.yen(c)+'円）';
-    s+='<g class="bar'+(on?' on':'')+'" data-rev="sel" data-ym="'+esc(M.ym)+'" tabindex="0" role="button" aria-label="'+esc(tip)+'"><title>'+esc(tip)+'</title>'+
+    var cx=L+gx*i+gx/2, x=cx-bw/2, base=y(0), on=M.ym===REV.sel, c=cv(M), f=fv(M);
+    var parts=sp?[['v',vv(M)],['d',dv(M)],['o',ov(M)]]:[['c',c]];
+    var tip=C.ymLabel(M.ym)+'：介護報酬 '+C.yen(c)+'円'+(sp?'（訪問 '+C.yen(vv(M))+'円・通所 '+C.yen(dv(M))+'円'+(ov(M)?'・分けられない '+C.yen(ov(M))+'円':'')+'）':'')+'・施設の利用料 '+C.yen(f)+'円・合計 '+C.yen(c+f)+'円';
+    s+='<g class="bar'+(on?' on':'')+(M.ym<cur?' past':'')+'" data-rev="sel" data-ym="'+esc(M.ym)+'" tabindex="0" role="button" aria-label="'+esc(tip)+'"><title>'+esc(tip)+'</title>'+
        '<rect class="hit" x="'+(cx-gx/2).toFixed(1)+'" y="'+T+'" width="'+gx.toFixed(1)+'" height="'+(H-T-B)+'"/>';
-    if(f>0) s+='<rect class="f" x="'+x.toFixed(1)+'" y="'+yf.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+Math.max(0,base-yf).toFixed(1)+'"/>';
-    if(c>0) s+=revTopBar_(x, yt, bw, Math.max(0,(yf-(f>0?2:0))-yt), 'c');
-    s+='<text x="'+cx.toFixed(1)+'" y="'+(yt-6).toFixed(1)+'" text-anchor="middle" class="lbl">'+esc(revMan_(f+c,1))+'</text>'+
-       '<text x="'+cx.toFixed(1)+'" y="'+(H-B+16)+'" text-anchor="middle" class="ax'+(on?' on':'')+'">'+(+M.ym.slice(5))+'月</text>'+
+    var acc=0, live=parts.filter(function(p){ return p[1]>0; });
+    live.forEach(function(p,k){
+      var y0=y(acc), y1=y(acc+p[1]); acc+=p[1];
+      var gap=(k>0)?2:0, hgt=Math.max(0,(y0-gap)-y1);
+      s+=(k===live.length-1)?revTopBar_(x, y1, bw, hgt, p[0]):'<rect class="'+p[0]+'" x="'+x.toFixed(1)+'" y="'+y1.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+hgt.toFixed(1)+'"/>';
+    });
+    var showLb=!thin||i%2===0||on||M.ym===cur;
+    s+=(showLb?'<text x="'+cx.toFixed(1)+'" y="'+(y(c)-6).toFixed(1)+'" text-anchor="middle" class="lbl">'+esc(revMan_(c,1))+'</text>'+
+       '<text x="'+cx.toFixed(1)+'" y="'+(H-B+16)+'" text-anchor="middle" class="ax'+(on?' on':'')+'">'+(+M.ym.slice(5))+'月</text>':'')+
        ((i===0||M.ym.slice(5)==='01')?'<text x="'+cx.toFixed(1)+'" y="'+(H-B+32)+'" text-anchor="middle" class="ax yr">'+M.ym.slice(0,4)+'年</text>':'')+
        '</g>';
+    pts.push([cx, y(f), f]);
   });
+  /* 施設の利用料の折れ線（2px・点は8px）。最後の点の横に名前を直接書く */
+  if(pts.length){
+    s+='<polyline class="fline" points="'+pts.map(function(p){ return p[0].toFixed(1)+','+p[1].toFixed(1); }).join(' ')+'"/>';
+    pts.forEach(function(p){ s+='<circle class="fdot" cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="4"/>'; });
+  }
   s+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+y(0)+'" y2="'+y(0)+'" class="base"/></svg></figure>';
   return s;
 }
@@ -13173,11 +13254,13 @@ function revDetail_(M, b){
   var rows=M.rows.slice().sort(function(x,y){ return (b==='cash'?(y.facility+y.care)-(x.facility+x.care):(y.facilityAccrual+y.careAccrual)-(x.facilityAccrual+x.careAccrual)); });
   var h='<section class="rev-det" aria-labelledby="revDetH"><h3 id="revDetH">'+esc(C.ymLabel(M.ym))+'の内訳（'+(b==='cash'?'この月に入るお金':'この月に利用した分')+'）</h3>';
   if(!rows.length) return h+'<p class="rev-note">この月に数える方はいません</p></section>';
-  h+='<div class="rev-tw"><table class="rev-tbl det"><thead><tr><th scope="col">入居者</th><th scope="col">介護度</th><th scope="col">施設の利用料</th><th scope="col">介護報酬</th><th scope="col">合計</th><th scope="col">内訳の理由</th></tr></thead><tbody>';
-  var sf=0, sc=0;
+  var sp=REV.ui.split;
+  h+='<div class="rev-tw"><table class="rev-tbl det"><thead><tr><th scope="col">入居者</th><th scope="col">介護度</th><th scope="col">施設の利用料</th>'+(sp?'<th scope="col">訪問</th><th scope="col">通所</th><th scope="col">分けられない</th>':'')+'<th scope="col">介護報酬</th><th scope="col">合計</th><th scope="col">内訳の理由</th></tr></thead><tbody>';
+  var sf=0, sc=0, sv=0, sd=0, so=0;
   rows.forEach(function(r){
     var f=b==='cash'?r.facility:r.facilityAccrual, c=b==='cash'?r.care:r.careAccrual, why=[];
-    sf+=f; sc+=c;
+    var rv=b==='cash'?r.careVisit:r.careVisitAccrual, rd=b==='cash'?r.careDay:r.careDayAccrual, ro=b==='cash'?r.careOther:r.careOtherAccrual;
+    sf+=f; sc+=c; sv+=rv; sd+=rd; so+=ro;
     if(b==='cash'){
       if(r.admitHere) why.push('入居した月：この月の日割り（'+r.stay+'日）＋翌月分');
       else if(r.facility) why.push('施設の利用料は翌月分');
@@ -13193,11 +13276,12 @@ function revDetail_(M, b){
       if(r.leaveHere) why.push('退去した月（'+r.stay+'／'+r.md+'日）');
       if(r.absent) why.push('入院 '+r.absent+'日');
     }
+    if(sp&&c&&r.visitShare==null) why.push('訪問・通所に分けられない：'+revNoShareWhy_(r));
     if(r.planned) why.push('見通しに足した予定');
     if(r.notes.length) why.push('⚠ '+r.notes[0]);
-    h+='<tr'+(r.planned?' class="plan"':'')+'><th scope="row">'+esc(r.name||'（名前なし）')+'</th><td>'+esc((r.level||'—').replace('要介護','介護'))+'</td><td>'+C.yen(f)+'</td><td>'+C.yen(c)+'</td><td class="tot">'+C.yen(f+c)+'</td><td class="why">'+esc(why.join('　'))+'</td></tr>';
+    h+='<tr'+(r.planned?' class="plan"':'')+'><th scope="row">'+esc(r.name||'（名前なし）')+'</th><td>'+esc((r.level||'—').replace('要介護','介護'))+'</td><td>'+C.yen(f)+'</td>'+(sp?'<td>'+(r.visitShare==null?'—':C.yen(rv))+'</td><td>'+(r.visitShare==null?'—':C.yen(rd))+'</td><td>'+(ro?C.yen(ro):'—')+'</td>':'')+'<td>'+C.yen(c)+'</td><td class="tot">'+C.yen(f+c)+'</td><td class="why">'+esc(why.join('　'))+'</td></tr>';
   });
-  h+='</tbody><tfoot><tr><th scope="row">合計</th><td></td><td>'+C.yen(sf)+'</td><td>'+C.yen(sc)+'</td><td class="tot">'+C.yen(sf+sc)+'</td><td></td></tr></tfoot></table></div></section>';
+  h+='</tbody><tfoot><tr><th scope="row">合計</th><td></td><td>'+C.yen(sf)+'</td>'+(sp?'<td>'+C.yen(sv)+'</td><td>'+C.yen(sd)+'</td><td>'+C.yen(so)+'</td>':'')+'<td>'+C.yen(sc)+'</td><td class="tot">'+C.yen(sf+sc)+'</td><td></td></tr></tfoot></table></div></section>';
   return h;
 }
 /* 見通しに足す予定（メモリだけ・保存しない） */
@@ -13208,6 +13292,7 @@ function revPlanHtml_(){
     '<div class="rev-form">'+
     '<label class="rev-lb">種類 <select id="revPType"><option value="in">入居予定</option><option value="out">退去予定</option><option value="hosp">入院予定</option><option value="ret">入院中の方が戻る見込み</option></select></label>'+
     '<label class="rev-lb" id="revPWhoL">入居者 <select id="revPWho">'+opts+'</select></label>'+
+    '<label class="rev-lb" id="revPShL">使う予定 <select id="revPSh"><option value="">分からない</option><option value="1">訪問だけ</option><option value="0">通所だけ</option><option value="0.5">半々</option></select></label>'+
     '<label class="rev-lb" id="revPLvL">介護度 <select id="revPLv">'+['要介護1','要介護2','要介護3','要介護4','要介護5','要支援1','要支援2'].map(function(l){ return '<option>'+l+'</option>'; }).join('')+'</select></label>'+
     '<label class="rev-lb"><span id="revPDateLb">入居日</span> <input type="date" id="revPDate"></label>'+
     '<label class="rev-lb" id="revPToL">戻る日（空＝未定） <input type="date" id="revPTo"></label>'+
@@ -13227,8 +13312,8 @@ function revPlanHtml_(){
 function revPremiseHtml_(o){
   var C=RevenueCalc, P=REV.params, L=o.L, F=o.F;
   var h='<details class="rev-prem" open><summary>計算の前提（数字を変えると、すぐに計算し直します・この画面の中だけ）</summary><ul>'+
-    '<li>介護報酬（1か月まるごと居た月）＝（介護度の限度額 − <input type="number" inputmode="numeric" min="0" max="10000" step="100" data-rev="p" data-k="deduct" value="'+P.deduct+'" aria-label="差し引く単位"> 単位）× '+esc(String(L.feePerUnit))+'円'+
-      '（限度額と1単位の円は'+(L.fromSchedule?'週間計画の報酬マスタ':'全国の既定（週間計画を読めなかったため）')+'）</li>'+
+    '<li>介護報酬（1か月まるごと居た月）＝（介護度の限度額 − <input type="number" inputmode="numeric" min="0" max="10000" step="100" data-rev="p" data-k="deduct" value="'+P.deduct+'" aria-label="差し引く単位"> 単位）× <span id="revFpu">'+esc(String(L.feePerUnit))+'</span>円'+
+      '（限度額と1単位の円は<span id="revLimSrc">'+revLimSrcText_(L)+'</span>）</li>'+
     '<li>入居した月は日割り。入居日が <input type="number" inputmode="numeric" min="1" max="31" data-rev="p" data-k="cutoff" value="'+P.cutoff+'" aria-label="差し引きをやめる日"> 日以降なら、その月は差し引かない</li>'+
     '<li>介護報酬は利用した月の <input type="number" inputmode="numeric" min="0" max="6" data-rev="p" data-k="lag" value="'+P.lag+'" aria-label="入金までの月数"> か月後の月末に入る（入院の日・退去の後の日は日割りで減る）</li>'+
     '<li>施設の利用料は前払い：入居した月に「その月の日割り＋翌月分」、以後は毎月「翌月分」。退去した月は退去日までの日割り（返金の時期のずれは見ない）。入院中も施設の利用料は変えない</li>'+
@@ -13241,7 +13326,7 @@ function revPremiseHtml_(o){
      }).join('')+'</div>'+
      '<button type="button" class="rev-btn" id="revFeeReset" data-rev="feereset"'+(F.src==='device'?'':' hidden')+'>この端末の表を消して施設情報の表に戻す</button>'+
      '<p class="rev-note">入れた表（金額だけ）はこの端末に残します。氏名・介護度・入院の記録・足した予定は残しません。</p></div>';
-  h+='<p class="rev-note">限度額（単位/月）：'+C.LEVELS.map(function(lv){ return esc(lv.replace('要介護','介護').replace('要支援','支援'))+' '+C.yen(L.limits[lv]||0); }).join('・')+'</p>';
+  h+='<p class="rev-note" id="revLimLine">'+revLimLineText_(L)+'</p>';
   return h+'</details>';
 }
 /* 押す・選ぶ（1回だけ付ける・CSP のため直書きの onclick は使わない） */
@@ -13275,6 +13360,8 @@ function revBind_(){
     if(t&&t.id==='revPType'){ revPaintForm_(); return; }
     if(!a) return;
     if(a==='months'){ var n=+t.value; if([6,12,18,24].indexOf(n)>=0){ REV.ui.months=n; revSaveUi_(); } revRedrawMain_(); }
+    else if(a==='startBack'){ var sbk=+t.value; if(REV_START_BACKS.indexOf(sbk)>=0){ REV.ui.startBack=sbk; revSaveUi_(); } revRedrawMain_(); revLoadStates_(); }
+    else if(a==='split'){ REV.ui.split=!!t.checked; revSaveUi_(); revRedrawMain_(); }
     else if(a==='openHosp'){ REV.ui.openHosp=t.value==='open'?'open':'eom'; revSaveUi_(); revRedrawMain_(); }
     else if(a==='p'){
       var k=t.getAttribute('data-k'), v=Math.floor(Number(t.value)), rg={deduct:[0,10000],cutoff:[1,31],lag:[0,6]}[k];
@@ -13292,13 +13379,13 @@ function revBind_(){
     }
   });
 }
-var REV_FORM_IDS=['revPType','revPWho','revPLv','revPDate','revPTo'];
+var REV_FORM_IDS=['revPType','revPWho','revPLv','revPSh','revPDate','revPTo'];
 function revFormKeep_(t){ if(t&&t.id&&REV_FORM_IDS.indexOf(t.id)>=0) REV.form[t.id]=String(t.value||''); }
 function revPaintForm_(){
   REV_FORM_IDS.forEach(function(id){ var el=$(id), v=REV.form[id]; if(el&&v!=null&&el.value!==v){ el.value=v; if(el.value!==v) delete REV.form[id]; } });
   var ty=($('revPType')||{}).value||'in';
   var show=function(id,on){ var el=$(id); if(el) el.hidden=!on; };
-  show('revPWhoL', ty!=='in'); show('revPLvL', ty==='in'); show('revPToL', ty==='hosp');
+  show('revPWhoL', ty!=='in'); show('revPLvL', ty==='in'); show('revPShL', ty==='in'); show('revPToL', ty==='hosp');
   var lb=$('revPDateLb'); if(lb) lb.textContent={in:'入居日',out:'退去日',hosp:'入院日',ret:'戻る日'}[ty]||'日付';
 }
 function revAddPlan_(){
@@ -13306,7 +13393,8 @@ function revAddPlan_(){
   var say=function(s){ if(msg) msg.textContent=s; };
   if(!RevenueCalc.isYmd(d)){ say('日付を入れてください'); return; }
   var p={seq:++REV.planSeq, type:ty, date:d};
-  if(ty==='in'){ p.level=($('revPLv')||{}).value||'要介護1'; p.label=d.slice(5).replace('-','/')+'・'+p.level.replace('要介護','介護'); }
+  if(ty==='in'){ p.level=($('revPLv')||{}).value||'要介護1'; p.label=d.slice(5).replace('-','/')+'・'+p.level.replace('要介護','介護');
+    var shv=($('revPSh')||{}).value; if(shv==='1'||shv==='0'||shv==='0.5') p.share=Number(shv); }
   else {
     var id=($('revPWho')||{}).value||'', r=(roster||[]).filter(function(x){ return String(x.id)===String(id); })[0];
     if(!r){ say('入居者を選んでください'); return; }
@@ -13448,6 +13536,7 @@ function a4EnsureDayMap(){
       a4DayMap=a4BuildDayMap(j.data); a4DayFailAt=0; a4DayFailMsg='';
       /* 収支の見通しが使う報酬マスタ（限度額・1単位の円）も同じ応答から持つ（2回取らない・メモリだけ・2026-11-07） */
       csRateMaster_=(j.data.rateMaster&&typeof j.data.rateMaster==='object')?j.data.rateMaster:null;
+      try{ csShare_=revBuildShare_(j.data); }catch(eS){ csShare_=null; }
       return '';
     })
     .catch(function(){ if(dg!==devGen) return ''; return a4DayFail_('週間計画を取得できなかったため、デイ利用欄は「未確認」で印刷します'); })

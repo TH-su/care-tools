@@ -146,5 +146,38 @@ group('10. 料金表・表示');
   t('addMonths: 年をまたぐ', C.addMonths('2026-11', 2) === '2027-01' && C.addMonths('2026-01', -1) === '2025-12');
 }
 
+group('11. 訪問と通所に分ける（週間計画の予定の基本単位の割合・2026-11-07）');
+{
+  const RM = { visitBase: { '身体１': 244, '生活２': 179 }, sogoVisit: { 'A2111': { units: 1176 } },
+               daycareBase: { '要介護3': { '3h': 426, '4h': 448, '7h': 800 } } };
+  const ev = (o) => Object.assign({ serviceType: 'visit' }, o);
+  const W = 4.3;
+  const sh = C.serviceShare([ev({ category: '身体１' }), ev({ category: '身体１' }), { serviceType: 'daycare', startTime: '09:00', endTime: '13:00' }], '要介護3', RM);
+  t('訪問2回（244×2）と通所1回（4時間ちょうど＝3h の426）の割合', Math.abs(sh - (488 * W) / (488 * W + 426 * W)) < 1e-12, sh);
+  t('4時間30分は 4h（448）', Math.abs(C.serviceShare([{ serviceType: 'daycare', startTime: '09:00', endTime: '13:30' }, ev({ category: '生活２' })], '3', RM) - (179 / (179 + 448))) < 1e-12);
+  t('総合事業の区分は月の単位を1回だけ数える', Math.abs(C.serviceShare([ev({ category: 'A2111' }), ev({ category: 'A2111' }), { serviceType: 'daycare', startTime: '09:00', endTime: '16:30' }], '要介護3', RM) - (1176 / (1176 + 800 * W))) < 1e-12);
+  t('通所だけの方は 0・訪問だけの方は 1', C.serviceShare([{ serviceType: 'daycare', startTime: '09:00', endTime: '12:00' }], '要介護3', RM) === 0 && C.serviceShare([ev({ category: '身体１' })], '要介護3', RM) === 1);
+  t('予定が無い・単位の分からない予定だけの方は null（推測しない）', C.serviceShare([], '要介護3', RM) === null && C.serviceShare([ev({ category: '知らない区分' }), { serviceType: 'daycare', startTime: '09:00', endTime: '13:00' }], '要支援1', RM) === null);
+  t('予定に週間計画の単位（ev.units・加算込み）があればそれを使う', Math.abs(C.serviceShare([ev({ category: '身体１', units: 293 }), { serviceType: 'daycare', startTime: '09:00', endTime: '13:00', units: 600 }], '要介護3', RM) - 293 / (293 + 600)) < 1e-12);
+  t('ev.units が数でない・0以下の予定は基本単位で数える', Math.abs(C.serviceShare([ev({ category: '身体１', units: '293' }), { serviceType: 'daycare', startTime: '09:00', endTime: '13:00', units: 0 }], '要介護3', RM) - 244 / (244 + 426)) < 1e-12);
+  t('壊れた時刻の通所は数えない', C.serviceShare([{ serviceType: 'daycare', startTime: '13:00', endTime: '09:00' }, ev({ category: '身体１' })], '要介護3', RM) === 1);
+  const o = run([{ key: 's', careLevel: '要介護3', admit: '2025-01-01', visitShare: 0.3 }, { key: 'u', careLevel: '要介護2', admit: '2025-01-01' }], '2026-08', 2);
+  const r = row(o, '2026-08', 's'), u = row(o, '2026-08', 'u'), M = m(o, '2026-08');
+  t('訪問＝四捨五入・通所＝残り（足すと介護報酬）', r.careVisit === Math.round(r.care * 0.3) && r.careVisit + r.careDay === r.care && r.careOther === 0, r);
+  t('利用した月の分も同じ割合で分ける', r.careVisitAccrual + r.careDayAccrual === r.careAccrual && r.careVisitAccrual === Math.round(r.careAccrual * 0.3));
+  t('割合の無い方は「分けられない分」', u.careOther === u.care && u.careVisit === 0 && u.careDay === 0);
+  t('月の合計: 訪問＋通所＋分けられない分＝介護報酬', M.careVisit + M.careDay + M.careOther === M.care && M.careVisitAccrual + M.careDayAccrual + M.careOtherAccrual === M.careAccrual);
+  t('割合が 0〜1 の外・数でない時は使わない', row(run([{ key: 'z', careLevel: '要介護3', admit: '2025-01-01', visitShare: 1.5 }], '2026-08', 1), '2026-08', 'z').careOther > 0 && row(run([{ key: 'z', careLevel: '要介護3', admit: '2025-01-01', visitShare: '0.5' }], '2026-08', 1), '2026-08', 'z').careOther > 0);
+}
+
+group('12. 過去の月から始める（表示の始まりを半年前にする・2026-11-07）');
+{
+  /* 6月から: 4/10 入居の方は、6月の入金に4月分の日割りが入る */
+  const o = run([{ key: 'p', careLevel: '要介護3', admit: '2026-04-10' }], '2026-06', 6);
+  t('6月の入金に4月分の日割り（21/30・差し引かない）', row(o, '2026-06', 'p').care === Math.round(27048 * 21 / 30 * 10) && row(o, '2026-06', 'p').careFor === '2026-04', row(o, '2026-06', 'p'));
+  t('6月の施設の利用料の入金は7月分', row(o, '2026-06', 'p').facility === 98000);
+  t('過去の月の人数も数える', m(o, '2026-06').people === 1);
+}
+
 say('\n合格 ' + pass + ' ／ 不合格 ' + fail);
 process.exit(fail ? 1 : 0);
