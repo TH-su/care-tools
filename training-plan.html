@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-l4LjIlOsp+bW6NFw4Q6hqKCsEW1dNgxD2SdWKwMfebM=' 'sha256-8bu/MKgGKKrD5Q9WcF16k7OU6sYjd4HM1sz6MDY25vM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-l4LjIlOsp+bW6NFw4Q6hqKCsEW1dNgxD2SdWKwMfebM=' 'sha256-ND/XNXip+l5POMt3h6pY2nLX8kmQCSqzBNtv0HNr848='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- 要配慮情報（疾患・訓練内容）を表示する画面。ブラウザキャッシュ・検索索引に残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -951,16 +951,16 @@ body.blocked .sui-band{display:none}
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
-<script src="su-res-read.js?v=2026-11-08"></script>
+<script src="su-res-read.js?v=2026-11-08.3"></script>
 <script src="su-tp-full.js?v=2026-11-03.5"></script>
-<script src="su-cfg-hint.js?v=2026-09-27"></script>
+<script src="su-cfg-hint.js?v=2026-11-08"></script>
 <script src="su-perf.js?v=2026-11-02"></script>
 <script src="su-login-band.js?v=2026-11-02"></script>
 <script src="su-resident-hop.js?v=2026-11-02"></script>
 <script src="su-app-gate.js?v=2026-11-03"></script>
-<script src="su-data.js?v=2026-11-02"></script>
+<script src="su-data.js?v=2026-11-08.2"></script>
 <script src="su-data-gas.js?v=2026-10-29"></script>
-<script src="su-data-supabase.js?v=2026-11-01"></script>
+<script src="su-data-supabase.js?v=2026-11-08.2"></script>
 <!-- 週間計画の保存先の切り替え（統合 0005/0007）。デイ利用者の判定は、切り替え後は Supabase から読む（未ログインは Google） -->
 <script src="su-kv.js?v=2026-10-28"></script>
 <script src="su-facility.js?v=2026-11-07"></script>
@@ -2109,6 +2109,32 @@ if (SU_READY) {
   /* 接続先は毎回読み直す＝設定を変えたら次の通信から反映される（admission-flow と同型） */
   SU.data.init({ appId: 'training-plan', resolveTarget: function () { return { endpoint: CFG.url, token: CFG.token }; } });
 }
+/* 接続先・合言葉の無い端末でも、ログインして新しい保存先で使える時（2026-11-08 代表者「端末ごとの設定を極限までなくす」）。
+   計画書（と週間計画のデイ利用者の判定）は SU.data.training.liveReady、入居者マスタの名簿は SUResRead.liveReady で、
+   それぞれ要る時に1回だけ確かめる（端末には何も書かない）。使える時は新しい保存先へ送り、Google へは送らない。
+   部品が無い・分からない・時間切れの時は今までどおり（接続先の設定を求める）。
+   AI の下書き・計画書の写し（Google から読む）・閉じる直前の送信は、今までどおり接続先がある時だけ */
+var TP_LIVE = false, tpProbing_ = false, tpLiveP_ = null, TP_MLIVE = false, tpMLiveTried_ = false, tpMLiveP_ = null;
+function tpOn_() { return !!CFG.url || TP_LIVE; }
+function tpNoCfg_() { return !CFG.url && !TP_LIVE && !tpProbing_; }   /* 接続先の案内を出すか（確かめている間は出さない） */
+function tpProbeLive_() {
+  if (tpLiveP_) return tpLiveP_;
+  tpProbing_ = true;
+  var p = (SU_READY && SU.data.training && typeof SU.data.training.liveReady === 'function')
+    ? Promise.resolve().then(function () { return SU.data.training.liveReady(); }) : Promise.resolve(false);
+  tpLiveP_ = p.then(function (v) { return v === true; }, function () { return false; }).then(function (v) {
+    TP_LIVE = v; tpProbing_ = false;
+    if (v && !CFG.url) { try { if (window.SUCfgHint && typeof window.SUCfgHint.quiet === 'function') window.SUCfgHint.quiet(); } catch (e) { /* 案内の帯の失敗は止めない */ } }
+    return v;
+  });
+  return tpLiveP_;
+}
+function tpProbeMasterLive_() {
+  if (tpMLiveP_) return tpMLiveP_;   /* 確かめている間に読み直しが重なっても、確かめは1本だけ */
+  var p = (window.SUResRead && typeof window.SUResRead.liveReady === 'function') ? Promise.resolve().then(function () { return window.SUResRead.liveReady(); }) : Promise.resolve(false);
+  tpMLiveP_ = p.then(function (v) { return v === true; }, function () { return false; }).then(function (v) { TP_MLIVE = v; tpMLiveTried_ = true; return v; });
+  return tpMLiveP_;
+}
 var FORM_READY = !!(window.TP_FORM && typeof window.TP_FORM.buildSheet === 'function');
 
 function setSync(txt, cls) {
@@ -2319,7 +2345,9 @@ function loadRosterFromCommon() {
   } catch (e) { return false; }
 }
 function loadRoster() {
-  if (!MCFG.url) {
+  /* 入居者マスタの接続先の無い端末は、ログインだけで名簿を読めるかを1回だけ確かめてから進む（2026-11-08） */
+  if (!MCFG.url && !TP_MLIVE && !tpMLiveTried_) return tpProbeMasterLive_().then(function () { return loadRoster(); });
+  if (!MCFG.url && !TP_MLIVE) {
     MASTER_OK = false;
     MASTER_MSG = '入居者マスタの接続先が未設定です。氏名・生年月日・要介護度・自立度の引継ぎはできません（欄は空のままです）。';
     loadRosterFromCommon();
@@ -2356,7 +2384,7 @@ function loadRoster() {
 var ADM_MSG = '';
 function loadAdmissionDates() {
   ADM_MSG = '';
-  if (!MCFG.url || !ROSTER.length || ROSTER_SRC !== 'gas') return Promise.resolve(false);
+  if ((!MCFG.url && !TP_MLIVE) || !ROSTER.length || ROSTER_SRC !== 'gas') return Promise.resolve(false);
   return mGetRetry({ action: 'getBulk' }, 30000).then(function (d) {
     var rows = (d && Object.prototype.toString.call(d.rows) === '[object Array]') ? d.rows : [];
     if (!rows.length) { ADM_MSG = '入居日を取得できませんでした'; return false; }
@@ -2404,7 +2432,9 @@ function isDaycareResident(r) {
 }
 function loadDaySet() {
   if (!SU_READY) { DAY_OK = false; DAY_MSG = 'データ層を読み込めていません。'; return Promise.resolve(false); }
-  if (!SCFG.endpoint) {
+  /* 週間計画の接続先の無い端末は、ログインだけで使える時（TP_LIVE・1回だけ確かめる）だけ新しい保存先から読む。Google へは送らない（2026-11-08） */
+  if (!SCFG.endpoint && !TP_LIVE && (!tpLiveP_ || tpProbing_)) return tpProbeLive_().then(function () { return loadDaySet(); });
+  if (!SCFG.endpoint && !TP_LIVE) {
     DAY_OK = false;
     DAY_MSG = '週間計画の接続先が未設定のため、デイ利用者を絞り込めません。「全員」で表示しています。';
     return Promise.resolve(false);
@@ -2415,9 +2445,15 @@ function loadDaySet() {
   /* Supabase 側の応答が止まっても Google の持ち時間（30秒）を削らない: 8秒で見切って Google へ（反証レビュー指摘） */
   var viaKvCapped = Promise.race([viaKv, new Promise(function (ok) { setTimeout(function () { ok(null); }, 8000); })]);
   return viaKvCapped.then(function (v) {
+    if (!v && !SCFG.endpoint) return null;   /* 接続先の無い端末は Google へ送らない（新しい保存先で読めなかった時は今までと同じ「未設定」） */
     return v || withTimeout(SU.data.kvGet('care_schedule_v2', { endpoint: SCFG.endpoint, token: SCFG.token }), 30000);
   })
     .then(function (j) {
+      if (j === null && !SCFG.endpoint) {
+        DAY_OK = false;
+        DAY_MSG = '週間計画の接続先が未設定のため、デイ利用者を絞り込めません。「全員」で表示しています。';
+        return false;
+      }
       if (!j || !j.ok) throw new Error(s_((j && j.error) || '応答エラー'));
       var list = (j.data && Object.prototype.toString.call(j.data.residents) === '[object Array]') ? j.data.residents : null;
       if (!list) throw new Error('週間計画の中身がありません');
@@ -2456,7 +2492,7 @@ function normIndex(d) {
   };
 }
 function loadIndex() {
-  if (!CFG.url) { IDX = normIndex(null); IDX_OK = false; return Promise.resolve(false); }
+  if (!tpOn_()) { IDX = normIndex(null); IDX_OK = false; return Promise.resolve(false); }
   return tpGet(IDX_KEY).then(function (j) {
     if (!j || !j.ok) throw new Error(s_((j && j.error) || '応答エラー'));
     IDX_REV = Number(j.rev) || 0;
@@ -2478,7 +2514,7 @@ function loadIndex() {
      減らす作りにすると「確認したのに必ず失敗する」行き止まりになる（再構築は和集合で行う）。 */
 function saveIndex(mutate, allowShrink, tries) {
   tries = (tries == null) ? 2 : tries;
-  if (!CFG.url) return Promise.reject(new Error('同期先が未設定です'));
+  if (!tpOn_()) return Promise.reject(new Error('同期先が未設定です'));
   return tpGet(IDX_KEY).then(function (j) {
     if (!j || !j.ok) throw new Error(s_((j && j.error) || '応答エラー'));
     var rev = Number(j.rev) || 0;
@@ -2534,7 +2570,7 @@ function aiDraftCountOf(plans) {
 /* 計画の保存が通った後で索引を直す（別便）。失敗しても計画そのものは保存済み。
    失敗はメモリに覚えて画面に出し、「索引を再構築」で直せるようにする。 */
 function updateIndexFor(masterId, doc) {
-  if (!CFG.url) return Promise.resolve(false);
+  if (!tpOn_()) return Promise.resolve(false);
   var row = indexRowOf(doc);
   return saveIndex(function (idx) { idx.rows[masterId] = row; }).then(function () {
     delete IDX_PENDING[masterId];
@@ -2566,7 +2602,7 @@ function renderIndexChip() {
      読めた分だけ上書きする（和集合＝消失より復活）。行が減る保存はこの画面からは送らないので、
      サーバーの件数減少ガードに当たって再構築そのものが通らなくなることがない。 */
 function rebuildIndex() {
-  if (!CFG.url) { toast('先に設定画面で接続先を入れてください'); return; }
+  if (!tpOn_()) { toast('先に設定画面で接続先を入れてください'); return; }
   var seen = {}, ids = [];
   function addId(v) {
     var id = s_(v);
@@ -2625,7 +2661,7 @@ function idxRowBroken(r) {
   return false;
 }
 function healIndexOnBoot() {
-  if (!CFG.url || !IDX_OK || !IDX || !IDX.rows) return Promise.resolve(0);
+  if (!tpOn_() || !IDX_OK || !IDX || !IDX.rows) return Promise.resolve(0);
   var ids = Object.keys(IDX.rows).filter(function (id) {
     return TP.ID_RE.test(id) && idxRowBroken(IDX.rows[id]);
   }).slice(0, HEAL_MAX);
@@ -2776,7 +2812,7 @@ function renderBanners() {
   clear(host);
   if (!SU_READY) banner(host, 'err', '共通の部品を読み込めていません。ページを再読み込みしてください。直らない場合は管理者へ連絡してください。');
   if (!FORM_READY) banner(host, 'err', '印刷様式の部品を読み込めていません。印刷とプレビューはできません。');
-  if (!CFG.url) noCfgGuide(host, 'list');
+  if (tpNoCfg_()) noCfgGuide(host, 'list');
   if (MASTER_MSG) banner(host, 'warn', MASTER_MSG);
   if (ROSTER_SRC === 'common') banner(host, 'info', '入居者マスタへ繋がらないため、端末に配られている共有名簿で表示しています（古い可能性があります）。');
   if (DAY_MSG) banner(host, 'info', DAY_MSG);
@@ -3024,7 +3060,7 @@ function openResident(masterId, wantScr, opts) {
   if (dirty && !confirm('保存していない変更があります。別の方を開くと、この端末の入力は失われます。よろしいですか？')) return Promise.resolve(false);
   stopFormFor = ''; noTouchOnce = false;   /* 通知を止める欄: 開き直したら保存値から描き直す（2026-10-15） */
   addAtTouched = false; refreshAddAtDate();   /* 前の方で入れた過去の日付を持ち越さない（2026-10-16 審査 低3） */
-  if (!CFG.url) { toast('先に設定画面で計画書の接続先を入れてください'); showScreen('scr-settings'); return Promise.resolve(false); }
+  if (!tpOn_()) { toast('先に設定画面で計画書の接続先を入れてください'); showScreen('scr-settings'); return Promise.resolve(false); }
   setSync('読み込み中…');
   clearTimeout(saveTimer);
   clearAiError();
@@ -3954,7 +3990,7 @@ function saveNow(explicit) {
   var cfm = $('conflictModal');
   if (cfm && cfm.classList.contains('on')) { clearTimeout(saveTimer); return; }
   if (pushing) { clearTimeout(saveTimer); saveTimer = setTimeout(function () { saveNow(explicit); }, 900); return; }
-  if (!CFG.url) { showSaveError('計画書の接続先が未設定です。設定画面でURLと合言葉を入れてから保存してください（入力はこの画面に残っています）。'); return; }
+  if (!tpOn_()) { showSaveError('計画書の接続先が未設定です。設定画面でURLと合言葉を入れてから保存してください（入力はこの画面に残っています）。'); return; }
   var chk = subjectCheck();
   if (!chk.ok) {
     showSaveError('名簿の氏名（' + chk.rosterName + '）と、この計画書の氏名が一致しません。取り違えを防ぐため保存しませんでした。お名前の下にある「名簿の氏名に揃える」で氏名を合わせてから保存してください。');
@@ -7826,7 +7862,7 @@ function applyImport() {
   if (!TP.ID_RE.test(targetId)) { toast('対象者を選んでください'); return; }
   var row = rosterOf(targetId);
   if (res.needsPick && !pick) { toast('対象者を選んでください'); return; }
-  if (!CFG.url) { toast('先に設定画面で接続先を入れてください'); return; }
+  if (!tpOn_()) { toast('先に設定画面で接続先を入れてください'); return; }
   var incoming = res.doc.plans;
   /* 対象者を選び直した時は、印刷面に出る氏名（plans[].basic）も名簿の値へ揃える。
      利用者番号だけ直して氏名が前の方のまま紙に出る取り違えを防ぐ（M-034） */
@@ -8185,7 +8221,7 @@ function bkRunAll() {
       if (targets[i].masterId === curMasterId) { toast('先に保存してください'); return; }
     }
   }
-  if (!CFG.url) { toast('先に設定画面で接続先を入れてください'); return; }
+  if (!tpOn_()) { toast('先に設定画面で接続先を入れてください'); return; }
   run.running = true;
   $('bulkGo').disabled = true;
   $('bulkFiles').disabled = true;
@@ -8222,7 +8258,7 @@ function bkRunAll() {
 /* ═══════════ 設定 ═══════════ */
 function renderSettings() {
   clear($('cfgMissing'));
-  if (!CFG.url) noCfgGuide($('cfgMissing'), 'settings');
+  if (tpNoCfg_()) noCfgGuide($('cfgMissing'), 'settings');
   $('cfgUrl').value = CFG.url;
   $('cfgToken').value = CFG.token;
   var st = settings();
@@ -8445,7 +8481,7 @@ function switchPlan(idx) {
 }
 /* 起動時に1回だけ ping して、サーバーの守り一覧を控える（失敗しても止めない＝分からないまま進む） */
 function loadServerGuards() {
-  if (!CFG.url || !SU_READY) return Promise.resolve(null);
+  if (!tpOn_() || !SU_READY) return Promise.resolve(null);
   return tpPing().then(function (j) {
     if (j && j.ok && Object.prototype.toString.call(j.guards) === '[object Array]') SRV_GUARDS = j.guards.map(s_);
     noteAiSrv(j);
@@ -8474,7 +8510,7 @@ function refreshAll() {
       LOADED_YMD = (IDX_OK && DAY_OK && ROSTER_SRC === 'gas') ? todayYmd() : '';
       renderStaffSelects();
       renderList();
-      setSync(CFG.url ? (IDX_OK ? '同期OK' : '未接続') : '未接続', (CFG.url && IDX_OK) ? 'ok' : 'err');
+      setSync(tpOn_() ? (IDX_OK ? '同期OK' : '未接続') : '未接続', (tpOn_() && IDX_OK) ? 'ok' : 'err');
       tpFullAuto_();
       try { if (window.SUPerf) SUPerf.ready(); } catch (e) {}
     });
@@ -8532,7 +8568,7 @@ function bindUI() {
   $('btnReload').addEventListener('click', function () { refreshAll().then(function () { toast('最新を読み込みました'); }); });
   $('btnRebuildIdx').addEventListener('click', rebuildIndex);
   $('btnImport').addEventListener('click', function () {
-    if (!CFG.url) { toast('先に設定画面で接続先を入れてください'); showScreen('scr-settings'); return; }
+    if (!tpOn_()) { toast('先に設定画面で接続先を入れてください'); showScreen('scr-settings'); return; }
     $('importFile').click();
   });
   $('importFile').addEventListener('change', function () {
@@ -8540,7 +8576,7 @@ function bindUI() {
     this.value = '';
   });
   $('btnBulk').addEventListener('click', function () {
-    if (!CFG.url) { toast('先に設定画面で接続先を入れてください'); showScreen('scr-settings'); return; }
+    if (!tpOn_()) { toast('先に設定画面で接続先を入れてください'); showScreen('scr-settings'); return; }
     openBulkModal();
   });
   $('bulkFiles').addEventListener('change', function () {
@@ -8867,9 +8903,22 @@ function startApp_() {
   bindUI();
   syncBatchAiVisibility();   /* D47〜D50: 一括AI作成のボタンは aiReady() の端末だけに出す */
   restoreUiState();
+  if (SU_READY && !CFG.url) tpProbing_ = true;   /* 確かめ終わるまで「接続先がまだ入っていません」の案内を出さない */
   renderList();
   if (!SU_READY) { setSync('部品の読み込みエラー', 'err'); return; }
-  if (!CFG.url) { setSync('未接続', 'err'); showScreen('scr-settings'); return; }
+  /* 計画書の接続先の無い端末は、ログインだけで使えるかを1回だけ確かめてから進む（2026-11-08） */
+  if (!CFG.url) {
+    setSync('読み込み中…');
+    tpProbeLive_().then(function () {
+      if (!TP_LIVE) renderBanners();
+      startLoad_();
+    });
+    return;
+  }
+  startLoad_();
+}
+function startLoad_() {
+  if (!tpOn_()) { setSync('未接続', 'err'); showScreen('scr-settings'); return; }
   var want = lsGet(LS.scr, SCREENS, 'scr-list');
   var mid = urlMasterId();
   refreshAll().then(function () {

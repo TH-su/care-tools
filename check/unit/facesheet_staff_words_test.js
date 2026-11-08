@@ -83,10 +83,12 @@ const NO_CFG = noCfg(false), NO_CFG_FIELD = noCfg(true), NO_CFG_TEXT = noCfg(fal
 t('C1 案内の文がある（何が足りないか・どこに何を入れるか）', /入居者マスタの接続先が未設定です/.test(NO_CFG) && /「入居者マスタ・フェイスシート」に、接続先のURLと合言葉を入れてください/.test(NO_CFG), NO_CFG);
 t('C2 案内に接続設定へのリンクがある', NO_CFG.indexOf(LINK) >= 0);
 t('C3 案内に技術用語が無い', NO_CFG && !TECH.test(NO_CFG.replace(LINK, '')));
-t('C4 一覧が空で接続先も無い時はこの案内を出す（名簿があれば今までの文）', /\(CFG\.url\?'入居者がいません。入居者マスタで登録するか「設定」で接続してください':fsNoCfgMsg_\(\)\)/.test(SRC));
+t('C4 一覧が空で接続先も無い時はこの案内を出す（名簿があれば今までの文）', /\(fsOn_\(\)\?'入居者がいません。入居者マスタで登録するか「設定」で接続してください':fsNoCfgMsg_\(\)\)/.test(SRC));
 t('C9 現場端末では接続設定へのリンクを出さず、事務所に知らせる文にする', NO_CFG_FIELD && NO_CFG_FIELD.indexOf('connection-settings.html') < 0 && /事務所に知らせてください/.test(NO_CFG_FIELD) && !TECH.test(NO_CFG_FIELD), NO_CFG_FIELD);
 t('C10 リンクなしの文（食形態一覧の欄用）には a タグを入れない', NO_CFG_TEXT && !/<a /.test(NO_CFG_TEXT) && /接続設定のページ/.test(NO_CFG_TEXT), NO_CFG_TEXT);
 
+/* 接続先の有無の確かめ（2026-11-08 の fsOn_・ログインだけで使える印は立てない＝今までどおり）は本物を使う */
+const FS_ON = 'var FS_LIVE=false;\n' + (tryGrab(() => grabFn(SRC, 'fsOn_')) || 'function fsOn_(){ return !!CFG.url; }');
 /* 詳細を開く（openResident）を偽物の部品で動かす */
 function runOpen(cfgUrl, rejectWith, field){
   const els = {};
@@ -98,7 +100,7 @@ function runOpen(cfgUrl, rejectWith, field){
     fsMdEnsure_(){ return Promise.resolve(); }, renderFaceSheet(){}, fsNote_(w, e){ notes.push(w + ':' + (e && e.message)); },
     apiGet(){ return Promise.reject(rejectWith); }, curRec: null, notes, els,
   };
-  vm.runInNewContext([grabLine(SRC, 'function esc('), noCfgFn, errFn, grabFn(SRC, 'openResident')].join('\n'), box);
+  vm.runInNewContext([grabLine(SRC, 'function esc('), noCfgFn, errFn, FS_ON, grabFn(SRC, 'openResident')].join('\n'), box);
   box.openResident('901');
   return new Promise(r => setTimeout(() => r(box), 20));
 }
@@ -107,14 +109,14 @@ function runMeal(url, err){
   const msgs = [], notes = [];
   const box = { CFG: { url: url || '', token: '' }, isField(){ return false; }, fsNote_(w){ notes.push(w); }, notes, mealLoading: false, mealRows: null, mealSeq: 0, mealVia: '',
     mealSetMsg_(m){ msgs.push(m); }, paintMealBar(){}, renderRoster(){}, apiGet(){ return Promise.reject(err || new Error('x')); }, msgs };
-  vm.runInNewContext([noCfgFn, errFn, grabFn(SRC, 'mealLoad')].join('\n'), box);
+  vm.runInNewContext([noCfgFn, errFn, FS_ON, grabFn(SRC, 'mealLoad')].join('\n'), box);
   box.mealLoad(false);
   return new Promise(r => setTimeout(() => r({ msgs, notes }), 20));
 }
 /* 薬効辞書の取得（fsMdFetch_）の失敗の文 */
 function runMd(err){
   const notes = [];
-  const box = { isField(){ return false; }, fsMedsFxOk_(){ return true; }, apiGet(){ return Promise.reject(err); }, apiGetRetry(){ return Promise.reject(err); },
+  const box = { CFG: { url: 'https://example.invalid/exec', token: '' }, isField(){ return false; }, fsMedsFxOk_(){ return true; }, apiGet(){ return Promise.reject(err); }, apiGetRetry(){ return Promise.reject(err); },
     MedsEffect: { key(){ return ''; } }, fsNote_(w){ notes.push(w); }, notes };
   vm.runInNewContext([errFn, grabFn(SRC, 'fsMdFetch_')].join('\n'), box);
   return box.fsMdFetch_(false).then(() => ({ msg: '(成功)', notes }), e => ({ msg: String(e && e.message), notes }));

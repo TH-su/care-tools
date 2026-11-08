@@ -14,6 +14,10 @@
      H 端末に保存しない（localStorage へは書かない）
      I 名簿だけを読む画面の入口（officeOnly・2026-11-02）: 事務所PCの事務所・管理者のログインで印が「切り替えた後」の時だけ Supabase。
        ログインしていない・確かめられない・現場のアカウント・現場の端末・写しの期間は Google（データベースの印も読まない）
+     L 接続先の無い端末で、ログインだけで使えるか（liveReady・2026-11-08）: 5つがそろう時だけ true・例外を出さない・端末に書かない・8秒で打ち切り
+       画面のつなぎ（入居者マスタ・フェイスシートの本物の関数）: 確かめは1回だけ・使える時だけ接続設定の帯を止める・起動は確かめてから進む・
+       デイ利用日は新しい保存先から読めた時だけ使い Google へ送らない（2つの画面で同じ文面）・読み書きは新しい保存先だけで Google へ0件・
+       Google へ直接行く所（全項目の写し・薬効辞書・薬の変更候補・薬情の取り込み）は今までどおり接続先がある時だけ
    ★架空データのみ（氏名は使わない）。 */
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
@@ -29,13 +33,14 @@ function load(o) {
   const writes = [];
   const store = Object.assign({ su_backend_flags: o.flags === undefined ? null : JSON.stringify(o.flags) }, o.store || {});
   const ctx = {
-    window: {}, JSON, Object, Array, String, Number, Math, Error, Promise, Date, RegExp, isNaN, isFinite, parseInt, setTimeout,
+    window: {}, JSON, Object, Array, String, Number, Math, Error, Promise, Date, RegExp, isNaN, isFinite, parseInt, setTimeout, clearTimeout,
     localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { writes.push(k); store[k] = v; }, removeItem: k => { writes.push(k); } },
-    fetch: () => Promise.reject(new Error('no network'))
+    fetch: (u) => { fetches.push(String(u)); return Promise.reject(new Error('no network')); }
   };
+  const fetches = [];
   vm.createContext(ctx);
   vm.runInContext(SRC, ctx);
-  return { R: ctx.window.SUResRead, writes };
+  return { R: ctx.window.SUResRead, writes, win: ctx.window, fetches };
 }
 
 /* 架空の入居者マスタのシート（GAS の HEADERS の順）。形の違う値も混ぜる */
@@ -356,6 +361,221 @@ const SHEET = [
     const b0 = gasCalls.length;
     await R4.call({ action: 'getRoster' }, gasFn, { officeOnly: true }, auth({ mode: 'live' }).io);
     t('スイッチが切 → Google', gasCalls.length - b0 === 1);
+  }
+
+  console.log('L ログインだけで使える（入居者マスタの接続先・合言葉の無い端末・2026-11-08 代表者「端末ごとの設定を極限までなくす」）');
+  {
+    const ON = { supabase: { master_live: true } };
+    const cases = [
+      ['スイッチが入・事務所のログイン・切り替えた後', ON, { mode: 'live', role: 'office' }, null, true],
+      ['管理者のログイン', ON, { mode: 'live', role: 'admin' }, null, true],
+      ['スイッチが切', { supabase: { master_live: false } }, { mode: 'live' }, null, false],
+      ['スイッチが無い', null, { mode: 'live' }, null, false],
+      ['写しの期間', ON, { mode: 'shadow' }, null, false],
+      ['0036 の前（関数が無い）', ON, { mode: 'live', modeErr: { code: 'PGRST202' } }, null, false],
+      ['印を読めない', ON, { mode: 'live', modeErr: { code: 'XX000' } }, null, false],
+      ['ログインしていない', ON, { mode: 'live', signedOut: true }, null, false],
+      ['現場のアカウント', ON, { mode: 'live', role: 'field' }, null, false],
+      ['現場の端末', ON, { mode: 'live' }, { su_device_role: 'field' }, false],
+      ['ログインの部品が読めない', ON, null, null, false]
+    ];
+    for (const [label, flags, o, store, want] of cases) {
+      const { R: R5, writes: w5 } = load({ flags, store });
+      const a = o === null ? { io: { auth: async () => null }, calls: [] } : auth(o);
+      const b0 = gasCalls.length;
+      let v, threw = false;
+      try { v = await R5.liveReady(a.io); } catch (e) { threw = true; }
+      t('L ' + label + ' → ' + want + '（例外を出さない・名簿も Google も読まない・端末に書かない）',
+        !threw && v === want && gasCalls.length === b0 && a.calls.every(c => c[0] === 'res_mode_get') && w5.length === 0, { v, threw, calls: a.calls });
+    }
+    {
+      const { R: R6 } = load({ flags: ON });
+      const A = { STATUS: { OK: 'ok' }, check: () => new Promise(() => {}), client: () => ({}) };
+      const t0 = Date.now();
+      const v = await R6.liveReady({ auth: async () => A });
+      t('L ログインの確かめが返らない時は8秒で false', v === false && Date.now() - t0 >= 7900 && Date.now() - t0 < 12000, Date.now() - t0);
+    }
+  }
+
+  console.log('L 画面のつなぎ（入居者マスタ・フェイスシートの本物の関数・接続先の無い端末・2026-11-08）');
+  {
+    const RM = fs.readFileSync(path.join(ROOT, 'resident-master.html'), 'utf8');
+    const FS = fs.readFileSync(path.join(ROOT, 'facesheet.html'), 'utf8');
+    const grab = (src, name) => {
+      const i = src.indexOf('\nfunction ' + name + '(');
+      if (i < 0) return '';
+      let d = 0, q = null, k = src.indexOf('{', i);
+      for (let p = k; p < src.length; p++) {
+        const c = src[p];
+        if (q) { if (c === '\\') { p++; continue; } if (c === q) q = null; continue; }
+        if (c === "'" || c === '"') { q = c; continue; }
+        if (c === '{') d++; else if (c === '}') { d--; if (!d) return src.slice(i + 1, p + 1); }
+      }
+      return '';
+    };
+    const line = (src, head) => { const i = src.indexOf('\n' + head); return i < 0 ? '' : src.slice(i + 1, src.indexOf('\n', i + 1)); };
+    const settle = async () => { for (let i = 0; i < 8; i++) await new Promise(r => setImmediate(r)); };
+    const PAGES = [
+      { f: '入居者マスタ', src: RM, probe: 'rmProbeLive_', on: 'rmOn_', LIVE: 'RM_LIVE', tried: 'rmLiveTried_', head: 'var RM_LIVE=' },
+      { f: 'フェイスシート', src: FS, probe: 'fsProbeLive_', on: 'fsOn_', LIVE: 'FS_LIVE', tried: 'fsLiveTried_', head: 'var FS_LIVE=' }
+    ];
+    /* L-a 確かめは1回だけ・使える時だけ帯を止める・例外を出さない */
+    for (const P of PAGES) {
+      const code = [line(P.src, P.head), grab(P.src, P.on), grab(P.src, P.probe)].join('\n');
+      const mk = (o) => {
+        const c = { n: 0, q: 0 };
+        const box = { CFG: { url: o.url || '', token: '' }, Promise, setTimeout, window: {} };
+        if (o.res !== undefined) box.window.SUResRead = { liveReady: () => { c.n++; if (o.res === 'throw') throw new Error('x'); return o.res === 'reject' ? Promise.reject(new Error('x')) : Promise.resolve(o.res); } };
+        box.window.SUCfgHint = { quiet: () => { c.q++; } };
+        vm.createContext(box); vm.runInContext(code, box);
+        return { box, c, v: n => vm.runInContext(n, box) };
+      };
+      const cases = [
+        ['使える・接続先なし', { res: true }, true, 1],
+        ['使える・接続先あり（帯は今までどおり）', { res: true, url: 'https://example.invalid/exec' }, true, 0],
+        ['使えない', { res: false }, false, 0],
+        ['true 以外の答え', { res: 'yes' }, false, 0],
+        ['確かめが失敗', { res: 'reject' }, false, 0],
+        ['確かめが例外', { res: 'throw' }, false, 0],
+        ['部品が無い', {}, false, 0]
+      ];
+      for (const [label, o, want, wantQ] of cases) {
+        const L = mk(o);
+        let threw = false, r;
+        try { const p1 = L.box[P.probe](), p2 = L.box[P.probe](); r = await Promise.all([p1, p2]); } catch (e) { threw = true; }
+        t('L ' + P.f + ' 確かめ: ' + label + ' → ' + want + '（確かめは1本・帯を止めるのは ' + wantQ + ' 回・例外を出さない）',
+          !threw && r[0] === want && r[1] === want && L.v(P.LIVE) === want && L.v(P.tried) === true && L.c.n <= 1 && L.c.q === wantQ,
+          { threw, r, n: L.c.n, q: L.c.q });
+        t('L ' + P.f + ' ' + label + ': 使えるかの判定（' + P.on + '）', L.box[P.on]() === (want || !!o.url));
+      }
+    }
+    /* L-b 入居者マスタ: 起動・同期設定の保存の後は、接続先の無い事務所PCだけ確かめてから進む */
+    {
+      const code = [line(RM, 'var RM_LIVE='), grab(RM, 'rmOn_'), grab(RM, 'rmProbeLive_'), grab(RM, 'rmLiveGate_')].join('\n');
+      const mk = (url, role, res, flip) => {
+        const c = { n: 0, fn: 0, sync: [] };
+        const box = { CFG: { url, token: '' }, Promise, setTimeout, role,
+          window: { SUResRead: { liveReady: () => { c.n++; if (flip) box.role = 'field'; return Promise.resolve(res); } } },
+          setSync(m) { c.sync.push(m); } };
+        vm.createContext(box); vm.runInContext(code + '\nfunction getDeviceRole(){ return role; }', box);   // 端末の用途は箱の role（確かめの途中で変えられる）
+        return { box, c };
+      };
+      const run = async (url, role, res, flip) => { const L = mk(url, role, res, flip); L.box.rmLiveGate_(() => { L.c.fn++; }); const sync0 = L.c.fn; await settle(); return { L, sync0 }; };
+      let r = await run('https://example.invalid/exec', 'office', true);
+      t('L 入居者マスタ 起動: 接続先がある端末はその場で進む・確かめない（今までどおり）', r.sync0 === 1 && r.L.c.n === 0 && r.L.c.sync.length === 0);
+      r = await run('', 'field', true);
+      t('L 入居者マスタ 起動: 現場の端末は確かめない（今までどおり）', r.sync0 === 1 && r.L.c.n === 0);
+      r = await run('', 'office', true);
+      t('L 入居者マスタ 起動: 接続先の無い事務所PCは確かめ終わってから1回だけ進む（その間は「同期中…」）', r.sync0 === 0 && r.L.c.fn === 1 && r.L.c.n === 1 && r.L.c.sync[0] === '同期中…' && r.L.box.RM_LIVE === true);
+      r.L.box.rmLiveGate_(() => { r.L.c.fn++; });
+      t('L 入居者マスタ 起動: 2回目（同期設定の保存の後）は確かめ直さない', r.L.c.fn === 2 && r.L.c.n === 1);
+      r = await run('', 'office', false);
+      t('L 入居者マスタ 起動: 使えない時も進む（今までどおり「未接続」で止まる側へ）', r.L.c.fn === 1 && r.L.box.RM_LIVE === false);
+      r = await run('', 'office', true, true);
+      t('L 入居者マスタ 起動: 確かめている間に現場の端末へ変わったら進まない', r.L.c.fn === 0);
+    }
+    /* L-c デイ利用日（入居者マスタとフェイスシートで同じ文面）: 週間計画の接続先の無い端末は新しい保存先から読めた時だけ使い、Google へ送らない */
+    {
+      const NOEP = '週間計画の接続先が未設定のため、デイ利用欄は「未確認」で印刷します';
+      const DB = { ok: true, rev: 3, data: { residents: [{ name: '見本 甲', masterId: 'r1', events: [{ serviceType: 'daycare', dayOfWeek: 0, startTime: '09:00', endTime: '16:00' }] }] } };
+      const EP = 'https://script.google.com/macros/s/xxxx/exec';
+      for (const P of PAGES) {
+        const code = [line(P.src, 'var A4_GAS_RE='), ...['a4NmKey', 'a4SyncTarget', 'a4HM', 'a4BuildDayMap', 'a4EnsureDayMap', 'a4DayFail_'].map(n => grab(P.src, n))].join('\n');
+        const mk = (ep, kv) => {
+          const c = { fetch: [] };
+          const store = ep ? { su_sync_common: JSON.stringify({ endpoint: ep, token: '見本の合言葉' }) } : {};
+          const box = { Promise, setTimeout, JSON, Date, Object, Array, String, Number, isFinite, parseInt,
+            A4_DAY_TTL: 600000, A4_DAY_FAIL_TTL: 30000, a4DayMap: null, a4DayPromise: null, a4DayFailAt: 0, a4DayFailMsg: '', devGen: 0,
+            csRateMaster_: null, csShare_: null,
+            localStorage: { getItem: k => (k in store ? store[k] : null) },
+            getDeviceRole: () => 'office',
+            fetchWithTimeout: (u, o) => { c.fetch.push([u, o]); return Promise.resolve({ text: () => Promise.resolve(JSON.stringify(DB)) }); },
+            window: {} };
+          if (kv !== undefined) box.window.SUKv = box.SUKv = { readRouted: () => Promise.resolve(kv) };
+          vm.createContext(box); vm.runInContext(code, box);
+          return { box, c };
+        };
+        let L = mk('', DB);
+        let m = await L.box.a4EnsureDayMap();
+        t('L ' + P.f + ' デイ利用日: 接続先なし・新しい保存先から読めた → 使う・Google へ0件',
+          m === '' && L.c.fetch.length === 0 && L.box.a4DayMap && L.box.a4DayMap.byMid.r1 && L.box.a4DayMap.byMid.r1.days[0] === '9-16', { m, n: L.c.fetch.length });
+        L = mk('', null); m = await L.box.a4EnsureDayMap();
+        t('L ' + P.f + ' デイ利用日: 接続先なし・読めない → 今までと同じ「接続先が未設定」・Google へ0件', m === NOEP && L.c.fetch.length === 0, m);
+        L = mk('', undefined); m = await L.box.a4EnsureDayMap();
+        t('L ' + P.f + ' デイ利用日: 接続先なし・部品が無い → 今までと同じ「接続先が未設定」・Google へ0件', m === NOEP && L.c.fetch.length === 0, m);
+        L = mk(EP, null); m = await L.box.a4EnsureDayMap();
+        t('L ' + P.f + ' デイ利用日: 接続先あり・新しい保存先で読めない → 今までどおり Google へ同じ本文で1回',
+          m === '' && L.c.fetch.length === 1 && L.c.fetch[0][0] === EP && L.c.fetch[0][1].body === JSON.stringify({ action: 'get', key: 'care_schedule_v2', token: '見本の合言葉' })
+          && L.c.fetch[0][1].headers['Content-Type'] === 'text/plain;charset=utf-8', L.c.fetch);
+        L = mk(EP, DB); m = await L.box.a4EnsureDayMap();
+        t('L ' + P.f + ' デイ利用日: 接続先あり・新しい保存先から読めた → Google へ0件（今までどおり）', m === '' && L.c.fetch.length === 0);
+      }
+      const strip = s => s.split('\n').filter(l => !/csRateMaster_|csShare_|収支の見通しが使う報酬マスタ/.test(l)).join('\n');
+      t('L デイ利用日の処理は入居者マスタとフェイスシートで一字一句同じ（収支の見通しの3行を除く・前からの違い）',
+        strip(grab(RM, 'a4EnsureDayMap')) === strip(grab(FS, 'a4EnsureDayMap')) && grab(RM, 'a4EnsureDayMap').length > 0);
+    }
+    /* L-d 接続先なし・ログインだけで使える端末の読み書き: 画面の本物の口 → この部品 → 新しい保存先だけ（Google へ0件） */
+    {
+      const ON = { supabase: { master_live: true } };
+      for (const P of PAGES) {
+        for (const mode of ['live', 'shadow']) {
+          const part = load({ flags: ON });
+          const inv = [];
+          part.win.SUAuth = { STATUS: { OK: 'ok' }, check: async () => ({ status: 'ok', role: 'office' }),
+            client: () => ({ rpc: async (n, a) => {
+                if (n === 'res_mode_get') return { data: { mode, stateRev: 1 } };
+                if (n === 'res_roster') return { data: { ok: true, rows: rosterRecs } };
+                return { data: { ok: true, rows: recs.filter(r => a.p_ids.indexOf(r.id) >= 0) } }; },
+              functions: { invoke: async (n, o) => { inv.push([n, o.body]); return { data: { ok: true, id: 'r1' } }; } },
+              auth: { getSession: async () => ({ data: { session: { access_token: 'x' } } }) } }) };
+          const gfetch = [];
+          const box = { CFG: { url: '', token: '' }, Promise, setTimeout, clearTimeout, JSON, Object, String, Error,
+            window: { SUResRead: part.R },
+            fetchWithTimeout: (u) => { gfetch.push(String(u)); return Promise.reject(new Error('no')); }, parseJson: r => r };
+          vm.createContext(box);
+          const wrap = [grab(P.src, 'apiGet'), line(P.src, 'var apiGetGas_=apiGet;'), line(P.src, 'apiGet=function(params,timeoutMs){')];
+          if (P.src === RM) wrap.push(grab(RM, 'apiPost'), line(RM, 'var apiPostGas_=apiPost;'), line(RM, 'apiPost=function(body,timeoutMs){'));
+          vm.runInContext(wrap.join('\n'), box);
+          let r = null, err = null;
+          try { r = await box.apiGet({ action: 'getRoster' }); } catch (e) { err = e; }
+          if (mode === 'live') {
+            t('L ' + P.f + ' 接続先なし・切り替えた後: 名簿は新しい保存先から・Google へ0件',
+              !err && r && JSON.stringify(r) === JSON.stringify(want.roster) && gfetch.length === 0, err && err.message);
+            if (P.src === RM) {
+              let w = null, we = null;
+              try { w = await box.apiPost({ action: 'saveResident', token: '', record: { id: 'r1', name: '見本 甲' } }); } catch (e) { we = e; }
+              await settle();
+              t('L 入居者マスタ 接続先なし・切り替えた後: 保存は res-write へ（合言葉の欄は送らない）・Google へ0件（写し返しも送らない）',
+                !we && w && w.ok === true && inv.length === 1 && inv[0][0] === 'res-write' && !('token' in inv[0][1]) && gfetch.length === 0 && part.fetches.length === 0,
+                { we: we && we.message, inv, g: gfetch, g2: part.fetches });
+            }
+          } else {
+            t('L ' + P.f + ' 接続先なし・途中で写しの期間へ戻っていた: 今までと同じ断り（NO_URL）・Google へ0件', err && err.message === 'NO_URL' && gfetch.length === 0, err && err.message);
+          }
+        }
+      }
+    }
+    /* L-e 文面の分け方: 新しい保存先を通る所は rmOn_／fsOn_、Google へ直接行く所は今までどおり接続先がある時だけ */
+    {
+      const USE = ['refreshRoster', 'admEnsure', 'bkEnsure', 'fullEnsure', 'runMedsAudit', 'mealLoad', 'openResident', 'toggleHosp', 'saveResident', 'openBulk', 'loadData'];
+      const bad = USE.filter(n => { const b = grab(RM, n); return !b || b.indexOf('rmOn_()') < 0 || /!CFG\.url\b/.test(b); });
+      t('L 入居者マスタ: 新しい保存先を通る11か所は rmOn_ で分ける（' + USE.join('・') + '）', bad.length === 0, bad);
+      const KEEP = ['rmResFullAuto_', 'mdLoad_', 'mdSave', 'mcStart', 'yjGate_', 'yjlLoad_'];
+      const bad2 = KEEP.filter(n => { const b = grab(RM, n); return !b || !/!CFG\.url\b/.test(b) || b.indexOf('rmOn_') >= 0; });
+      t('L 入居者マスタ: Google へ直接行く6か所（全項目の写し・薬効辞書の読み書き・薬の変更候補・薬情の取り込み・反映の記録）は今までどおり接続先がある時だけ', bad2.length === 0, bad2);
+      t('L 入居者マスタ: 起動は確かめの待ち合わせを通る', /function rmStart_\(\)\{\n  rmGateOk_=true;\n[^\n]*\n  rmLiveGate_\(rmStartBody_\);\n\}/.test(RM));
+      const st = grab(RM, 'srevTick');
+      t('L 入居者マスタ: 版数の見張りは、ログインだけで使える端末でも動き、Google へは接続先がある時だけ聞く',
+        /if\(!mu&&!RM_LIVE\)return;/.test(st) && /var gasRev=function\(\)\{if\(!mu\)return Promise\.reject\(new Error\('NO_URL'\)\);/.test(st));
+      const FUSE = ['refreshRosterFromGas', 'mealLoad', 'openResident'];
+      const bad3 = FUSE.filter(n => { const b = grab(FS, n); return !b || b.indexOf('fsOn_()') < 0 || /!CFG\.url\b/.test(b); });
+      t('L フェイスシート: 新しい保存先を通る3か所は fsOn_ で分ける', bad3.length === 0, bad3);
+      t('L フェイスシート: 起動は接続先の無い事務所PCだけ確かめてから始める', /function boot\(\)\{\n[^\n]*\n  if\(!CFG\.url&&!fsLiveTried_&&!isField\(\)\)\{ setSync\('同期中…'\); fsProbeLive_\(\)\.then\(function\(\)\{ boot\(\); \}\); return; \}/.test(FS));
+      t('L フェイスシート: 現場の端末の名簿の道は今までどおり接続先がある時だけ', /else if\(!has&&CFG\.url\)refreshRosterFromGas\(\)/.test(FS));
+      t('L フェイスシート: 薬効辞書（Google だけ）は接続先が無い時に今までと同じ「接続先が未設定」の文で断る',
+        /if\(!CFG\.url\) return Promise\.reject\(new Error\(fsNoCfgMsg_\(true\)\)\);/.test(grab(FS, 'fsMdFetch_')));
+      t('L 新しい文言を足していない（断りの文は今までの関数・文だけ）', !/接続先なしで使えます|ログインだけで使えます/.test(RM + FS));
+    }
   }
 
   console.log('H 端末に保存しない');

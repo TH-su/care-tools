@@ -128,7 +128,8 @@ function load(src, mode, opt){
     fitHistSheet(){ cnt.fitHistSheet++; }
   };
   vm.createContext(box);
-  const code = [grabVar(src, 'fullMap'), grabFn(src, 'getDeviceRole'), grabFn(src, 'fullEnsure'), grabFn(src, 'fullOf')].join('\n');
+  const code = [grabVar(src, 'fullMap'), grabFn(src, 'getDeviceRole'), grabFn(src, 'fullEnsure'), grabFn(src, 'fullOf'),
+    src.indexOf('\nfunction rmOn_(') >= 0 ? 'var RM_LIVE=false;\n' + grabFn(src, 'rmOn_') : ''].join('\n');   // 接続先の有無の確かめ（2026-11-08）も本物
   vm.runInContext(code, box, { filename: 'resident-master.html(list-full)' });
   const v = name => vm.runInContext(name, box);
   return { box, v, calls, held, cnt, store, D, notes };

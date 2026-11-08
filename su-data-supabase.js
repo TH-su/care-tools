@@ -93,6 +93,9 @@
   /* Google への写し返し（保存できた後・待たない）。1本ずつ送り、送っている間の次の保存は終わった後に1回だけ */
   function mirrorSoon(group, A, opts) {
     var S = st(group);
+    /* 入居調整・計画書は、Google の接続先の無い端末（ログインだけで使っている端末・2026-11-08）からは写し返しを送らない
+       （送る先が無い。写し返しの残りは受け口の側に残り、接続先のある端末が開いた時・戻す時の写し返しで追いつく。入居者マスタの写し返しと同じ決まり） */
+    if ((group === 'admission' || group === 'training') && !gasTargetOf(opts)) return Promise.resolve(null);
     if (S.mirroring) { S.mirrorAgain = true; return S.mirroring; }
     S.mirroring = Promise.resolve(A.client().auth.getSession()).then(function (s) {
       var at = s && s.data && s.data.session && s.data.session.access_token;
@@ -108,6 +111,31 @@
       return j;
     });
     return S.mirroring;
+  }
+
+  function gasTargetOf(opts) {
+    try {
+      var t = global.SU.data._target(opts);
+      return !!(t && t.endpoint && t.endpoint !== '__su_missing_target__');
+    } catch (e) { return false; }
+  }
+  function fieldDevice() { try { return String(global.localStorage.getItem('su_device_role') || '') === 'field'; } catch (e) { return false; } }
+
+  /* この端末が「Google の接続先・合言葉なしで、ログインだけで」その入口を使えるか（2026-11-08 代表者「端末ごとの設定を極限までなくす」）。
+   * 現場の端末でない・ログインが確かめられた（OK）・役割が事務所か管理者・印が「切り替えた後」の4つがそろう時だけ true
+   * （スイッチは su-data.js の入口の側で先に確かめる）。それ以外・分からない時は false。読むだけで、端末には何も書かない。例外は外へ出さない */
+  function liveReady(group) {
+    try {
+      if (!Object.prototype.hasOwnProperty.call(GROUPS, group) || fieldDevice()) return Promise.resolve(false);
+      return loadAuth().then(function (A) {
+        if (!A) return false;
+        return Promise.resolve().then(function () { return A.check(); }).then(function (s) {
+          if (!s || s.status !== (A.STATUS || {}).OK) return false;
+          if (s.role !== 'admin' && s.role !== 'office') return false;
+          return readMode(group, A).then(function (m) { return m === 'live'; });
+        });
+      }).then(function (v) { return v === true; }, function (e) { note(group, '使える状態', e); return false; });
+    } catch (e) { return Promise.resolve(false); }
   }
 
   function bodyOf(group, method, args) {
@@ -202,6 +230,7 @@
       });
     },
     /* 閉じる直前の送信を Google へ送ってよいか（印が「切り替える前」と1分以内に確かめてある時だけ）。group を省くと計画書 */
+    liveReady: liveReady,
     beaconGas: function (group) { var S = st(GROUPS[group] ? group : 'training'); return S.modeCache === 'shadow' && Date.now() - S.modeAt < 60000; },
     _reset: function () { state = {}; }
   };
