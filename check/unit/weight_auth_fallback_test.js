@@ -37,6 +37,9 @@ let probeResult = null;          // apiProbe が観測に成功した時に入�
 let probeCount = 0;
 global.apiUrl = 'https://script.google.com/macros/s/TEST/exec';
 global.apiToken = '';
+/* 2026-11-08: 同期してよいかは接続先かログインだけで使えるか（wrSyncOn_）で決める。ここは接続先の有無だけ */
+global.wrLiveOk_ = false;
+global.wrSyncOn_ = () => !!global.apiUrl || global.wrLiveOk_;
 global.apiCaps = { ver: 0, caps: [], authRequired: false, seen: false };
 global.apiCan = (cap) => apiCaps.seen && apiCaps.caps.indexOf(cap) >= 0;
 global.fetchTO = (url, opts) => { calls.push({ url, opts: opts || {} }); return Promise.resolve({ __mock: true }); };

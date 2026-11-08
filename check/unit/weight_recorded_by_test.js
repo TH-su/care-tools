@@ -52,6 +52,7 @@ function makeCtx(opt) {
     _writeQ: [],
     _writeDrain: () => {},
     apiUrl: 'https://script.google.com/macros/s/TEST/exec',
+    wrSyncOn_: () => !!ctx.apiUrl,   /* 2026-11-08: 接続先かログインだけで使えるか（ここは接続先の有無だけ） */
     SU_DEVICE_KEY: 'su_device_role'
   };
   ctx.window = ctx;
@@ -118,7 +119,7 @@ const tick = () => new Promise(r => setTimeout(r, 20));
   console.log('\n— 3b. サーバーへ送る本文に by が載る（送る項目を決め打ちで並べているので、足し忘れると届かない）—');
   {
     const sent = [];
-    const ctx = { apiUrl: 'https://script.google.com/macros/s/TEST/exec', apiToken: 'tok',
+    const ctx = { apiUrl: 'https://script.google.com/macros/s/TEST/exec', apiToken: 'tok', wrSyncOn_: () => !!ctx.apiUrl,
       fetchTO: (u, o) => { sent.push(JSON.parse(o.body)); return Promise.resolve({}); },
       _parseApiResponse: () => Promise.resolve({ ok: true }), JSON, Promise,
       wrAccessToken_: () => Promise.resolve('tok-access') };   /* 2026-10-13: 書き込みにはログインの証明を添える */
