@@ -185,6 +185,10 @@ const KINDS = [F, E, N];
 const CENSUS = {
   "accounts.html": [],
   "accounts-export.js": [],
+  "accounts-enroll.js": [],   // 端末登録の QR（2026-11-08）: 代入なし（textContent と createElementNS だけ）
+  "enroll.html": [],
+  "enroll.js": [],
+  "su-qr.js": [],
   "accounts.js": [],
   "app-access.html": [],
   "app-access.js": [],

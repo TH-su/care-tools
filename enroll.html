@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ja" data-su-theme>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Cache-Control" content="no-store">
+<!-- 読み込めるのはこのサイトのファイルと Supabase（受け口 device-enroll とログイン）だけ。画面内に直書きのスクリプトは置かない -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; base-uri 'none'; form-action 'none'; object-src 'none'">
+<title>端末の登録</title>
+<!--
+  端末の登録（2026-11-08 新設・代表者の決定 段4・care-backend 統合 0082・受け口 device-enroll）
+  ════════════════════════════════════════════════════════════════
+  目的: 管理者が「使える人の管理」で出した QR を端末のカメラで読むとこの画面が開き、決めたアカウントでこの端末がログインする。
+  ★QR の住所の # の後ろの番号（1回限り・10分）を読んだらすぐ住所から消し（履歴・ブックマーク・画面の共有に残さない）、受け口へ送るだけ。
+    番号はメモリにだけ持ち、端末に保存しない。合言葉・メール・鍵は QR にも画面にも無い。
+  ★受け口が返したログインの鍵を、共通ログインの部品（su-auth.js）の保存場所に入れる（Google でログインした時と同じ場所）。
+    前のログインがあれば、先にこの端末だけログアウトする。誰が何を読めるかは、今までどおりデータベース（許可リスト）が決める。
+  ★QR に端末の用途が入っている時だけ、この端末の用途（su_device_role）をそれにする（入っていなければ今のまま）。
+  ★ログインできたらメニューへ移る（ページを読み込み直すので、端末の用途の止めは起動時のガードに任せる）。
+  ★この画面は氏名・記録を表示しない。出すのはログインしたアカウントの役割だけ。画面だけで印刷しない。
+  ★ログインの画面と同じく「不具合を報告」ボタンは置かない（まだログインしていない端末のための画面のため）。
+-->
+<link rel="stylesheet" href="su-auth.css?v=2026-09-26">
+<link rel="stylesheet" href="su-enroll.css?v=2026-11-08.2">
+<!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
+<link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
+</head>
+<body>
+<header class="hdr">
+  <a class="back" href="index.html" aria-label="メニューへ戻る">‹ メニュー</a>
+  <h1>端末の登録</h1>
+</header>
+
+<main>
+  <section class="cd" id="v-loading" aria-live="polite">
+    <p class="spin">この端末を登録しています…</p>
+  </section>
+
+  <section class="cd en-done" id="v-ok" hidden>
+    <h2>この端末を登録しました</h2>
+    <p><span class="pill" id="ok-role"></span> としてログインしました。メニューへ移ります。</p>
+    <div class="acts"><a class="btn pri wide" href="index.html" id="b-menu">メニューへ</a></div>
+  </section>
+
+  <section class="cd" id="v-ng" hidden>
+    <h2>登録できませんでした</h2>
+    <div id="ng-msg" class="msg ng" role="alert"></div>
+    <div class="acts">
+      <button type="button" class="btn pri" id="b-retry" hidden>もう一度試す</button>
+      <a class="btn" href="login.html">ログインの画面へ</a>
+    </div>
+  </section>
+
+  <section class="cd" id="v-none" hidden>
+    <h2>QR を読んで開いてください</h2>
+    <p>この画面は、管理者が「使える人の管理」で出した「端末登録の QR」を、この端末のカメラで読んだ時に開きます。</p>
+    <div class="acts"><a class="btn" href="login.html">ログインの画面へ</a></div>
+  </section>
+</main>
+
+<script src="supabase-js-2.112.4.js"></script>
+<script src="su-auth.js?v=2026-10-28"></script>
+<script src="enroll.js?v=2026-11-08.2"></script>
+</body>
+</html>

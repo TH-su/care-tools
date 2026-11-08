@@ -61,6 +61,7 @@
     var parts = [];
     if (m.indexOf('oauth') >= 0) parts.push('Google');
     if (m.indexOf('password') >= 0) parts.push('ID とパスワード');
+    if (m.indexOf('magiclink') >= 0 || m.indexOf('otp') >= 0) parts.push('端末登録の QR');   // 2026-11-08 統合 0082
     if (m.indexOf('totp') >= 0 || st.aal === 'aal2') parts.push('2段階認証');
     return parts.join(' ＋ ') || '—';
   }
