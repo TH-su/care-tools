@@ -298,6 +298,27 @@ console.log('\n— 5. GAS の読み方 —');
     t('入居調整: 台帳の読み口を断る印の断り（adm_read_closed）は「切り替え済み（db/adm_docs）」と書き、断りの文は写さない',
       a && !a.ok && /切り替え済み/.test(a.note) && /db\/adm_docs/.test(a.note) && !/架空/.test(a.note), a);
   }
+  /* 過去シフト分析: 切り替えた後に GAS が読み取りも断る（sa_switched）時は「切り替え済み（db/sa_entries）」と書く（2026-11-08） */
+  {
+    const sfetch = () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ error: '切り替え済み（架空）', code: 'sa_switched' }) });
+    const sb = box({ fetch: sfetch, AbortController, localStorage: { getItem: k => (k === 'shiftanalyzer:v1:cloud' ? JSON.stringify({ url: 'https://script.google.com/macros/s/SA/exec', token: 'tok-sa' }) : null) } });
+    vm.runInContext('var GAS = SUAccountsExport._GAS, cfg = SUAccountsExport._cfg, RE_GAS = /^https:\\/\\/script\\.google\\.com\\/.*\\/exec(\\?|#|$)/;' + src + ';this.readGas = readGas;', sb);
+    const sout = await sb.readGas(() => {});
+    const a = sout.find(g => g.id === 'analyzer');
+    t('過去シフト分析: 切り替え済みの断り（sa_switched）は「切り替え済み（db/sa_entries）」と書き、断りの文は写さない',
+      a && !a.ok && /切り替え済み/.test(a.note) && /db\/sa_entries/.test(a.note) && !/架空/.test(a.note), a);
+  }
+  /* 統合同期の pull だけは長く待つ（5分）。ほかの系統は今までどおり 90 秒（2026-11-08） */
+  {
+    const waits = [];
+    const wfetch = (url, opt) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(JSON.parse(opt.body).action === 'pull' ? { ok: true, entries: { a: 1 } } : { ok: true, data: null }) });
+    const wb = box({ fetch: wfetch, AbortController, setTimeout: (fn, ms) => { waits.push(ms); return 0; }, clearTimeout: () => {},
+      localStorage: { getItem: k => (k === 'su_sync_common' ? JSON.stringify({ endpoint: 'https://script.google.com/macros/s/WS/exec', token: 'tok-ws' }) : null) } });
+    vm.runInContext('var GAS = SUAccountsExport._GAS, cfg = SUAccountsExport._cfg, RE_GAS = /^https:\\/\\/script\\.google\\.com\\/.*\\/exec(\\?|#|$)/;' + src + ';this.readGas = readGas;', wb);
+    await wb.readGas(() => {});
+    t('統合同期の pull は 300000 ミリ秒（5分）まで待つ', waits.includes(300000), waits);
+    t('GAS の上限の 6 分（360000）より短い', !waits.some(ms => ms >= 360000), waits);
+  }
   /* データベースの1ページが時間の上限（57014）を超えた時だけ、同じ続きの印から行数を小さくして読み直す（2026-11-08） */
   {
     const rsrc = SRC_A.slice(SRC_A.indexOf('  var PAGE = 2000;'), SRC_A.indexOf('  async function readPage(') ) +
