@@ -114,8 +114,8 @@ console.log('\n【3】管理者向けの操作は設定画面へ・一覧は行�
 });
 t('設定画面に「データの管理（管理者向け）」の欄', /<h2>データの管理（管理者向け）<\/h2>/.test(SET));
 t('移したボタンの処理はそのまま', /\$\('btnRebuildIdx'\)\.addEventListener\('click', rebuildIndex\);/.test(S) &&
-  /\$\('btnImport'\)\.addEventListener\('click', function \(\) \{\s*if \(!CFG\.url\)[^\n]*\n\s*\$\('importFile'\)\.click\(\);/.test(S) &&
-  /\$\('btnBulk'\)\.addEventListener\('click', function \(\) \{\s*if \(!CFG\.url\)[^\n]*\n\s*openBulkModal\(\);/.test(S));
+  /\$\('btnImport'\)\.addEventListener\('click', function \(\) \{\s*if \(!tpOn_\(\)\)[^\n]*\n\s*\$\('importFile'\)\.click\(\);/.test(S) &&
+  /\$\('btnBulk'\)\.addEventListener\('click', function \(\) \{\s*if \(!tpOn_\(\)\)[^\n]*\n\s*openBulkModal\(\);/.test(S));
 t('一覧に「最新を読み込む」は残す', LIST.indexOf('id="btnReload"') >= 0 && LIST.indexOf('id="btnBatchAll"') >= 0);
 {
   const RB = grab(/function renderBanners\(\) \{[\s\S]*?\n\}/);
@@ -123,7 +123,7 @@ t('一覧に「最新を読み込む」は残す', LIST.indexOf('id="btnReload"'
   /* 帯を実際に作らせる */
   const box = { kids: [], appendChild(n) { this.kids.push(n); } };
   const sb = {
-    $: () => box, clear: (h) => { h.kids = []; }, SU_READY: true, FORM_READY: true, CFG: { url: 'x' }, MASTER_MSG: '',
+    $: () => box, clear: (h) => { h.kids = []; }, SU_READY: true, FORM_READY: true, CFG: { url: 'x' }, tpNoCfg_: () => false, MASTER_MSG: '',
     ROSTER_SRC: 'master', DAY_MSG: '', renderBatchAllSummary: () => {}, IDX_PENDING: { tp0001: true, tp0002: true },
     banner: (h, k, txt) => { h.appendChild({ k: k, txt: txt }); }
   };

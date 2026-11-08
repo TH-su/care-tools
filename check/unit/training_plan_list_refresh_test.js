@@ -28,6 +28,7 @@ function box(shown, busy) {
   const el = (id) => els[id] || (els[id] = { classList: { contains: (c) => c === 'on' && id === shown() } });
   const sb = {
     log: log, IDX_PENDING: {}, CFG: { url: 'https://example.invalid/exec' }, BULK: null,
+    tpOn_: () => true,   /* 計画書の接続先がある（またはログインだけで使える・2026-11-08）端末 */
     $: el, batchBusy: () => busy(), renderList: () => { log.render++; }, renderIndexChip: () => { log.chip++; },
     toast: (m) => { log.toast.push(m); }, errText: (e) => String(e), indexRowOf: () => ({ count: 1 }),
     saveIndex: (fn) => { const idx = { rows: {} }; fn(idx); return Promise.resolve(idx); },

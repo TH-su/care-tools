@@ -303,7 +303,10 @@
       /* AI の中継 {action:'ai', body} */
       ai: function (body, opts) {
         return entryCall('training_ai', 'training', 'ai', [body, opts], function () { return SU_DATA.kvRaw({ action: 'ai', body: body }, authed(opts)); });
-      }
+      },
+      /* この端末が接続先・合言葉なしで、ログインだけで計画書を使えるか（2026-11-08・上の entryLiveReady・印は tp_mode）→ Promise<boolean>。
+         AI の中継（training_ai）はここでは確かめない */
+      liveReady: function () { return entryLiveReady('training', 'training'); }
     },
     /* ── 入居調整の台帳（入居調整の専用GAS）の名前付きの入口（2026-10-29 代表者「入居調整の切り替えの土台に進む」）──
        スイッチのキーは admission。gas の道では今までと同じ action を同じ本文で送る（本文のキーの並びも同じ）。

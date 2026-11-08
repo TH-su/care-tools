@@ -8,6 +8,8 @@
      D 入口を通らない呼び出し（kvGet・kvRaw・入居者の4つ・context）は、端末の su_backend が 'supabase' でもスイッチが入でも gas の道
        （入居者マスタの GAS 宛ての mGet は巻き込まれない）
      E 読み込んだだけでは通信しない。スイッチの読み直しは入口が呼ばれた時だけ・1分に1回
+     L 接続先・合言葉の無い端末でも、ログインだけで使える時（2026-11-08）の判定（SU.data.training.liveReady）と画面の分け方
+       （計画書・入居者マスタの名簿・週間計画のデイ利用者の判定。AI の下書き・計画書の写し・閉じる直前の送信は今までどおり接続先がある時だけ）
    ★画面の本物の関数（tpGet・tpPutBody_・tpPut・tpPutAllowDrop・tpPing・mGet）を切り出して動かす。偽物にするのは fetch・sendBeacon・端末の控えだけ。
    実行: node check/unit/su_data_entry_test.js
    架空データのみ。 */
@@ -381,6 +383,204 @@ function sameShape(p) { return p && p.url === TP_URL && p.method === 'POST' && p
     const x = box({ remote: 'fail', flags: { supabase: { training: false } } });
     await x.w.tpGet('training_plan:index'); await settle();
     t('読めない時は最後に読めた値のまま（gas）', x.posts.length === 1 && JSON.parse(x.store.su_backend_flags).supabase.training === false);
+  }
+
+  console.log('\n— L. ログインだけで使える（接続先・合言葉の無い端末・2026-11-08 代表者「端末ごとの設定を極限までなくす」）—');
+  {
+    /* 接続先の無い端末を作る（CFG・resolveTarget が空）。fetch・受け口・端末の書き込みを数える */
+    function lbox(o) {
+      o = o || {};
+      const store = {};
+      if (o.cached) store.su_backend_flags = JSON.stringify(o.cached);
+      if (o.field) store.su_device_role = 'field';
+      const writes = [], posts = [], rpcs = [], invokes = [];
+      const A = {
+        STATUS: { OK: 'ok' },
+        check: async () => { if (o.checkReject) throw new Error('net'); return { status: o.status || 'ok', role: o.role || 'office' }; },
+        client: () => ({
+          rpc: async (n) => { rpcs.push(n); if (o.modeErr) return { data: null, error: o.modeErr }; return { data: { ok: true, mode: o.mode || 'live' }, error: null }; },
+          functions: { invoke: async (fn, opt) => { invokes.push({ fn, body: JSON.parse(JSON.stringify(opt.body)) }); return { data: { ok: true, rev: 5, data: DOC }, error: null }; } },
+          auth: { getSession: async () => ({ data: { session: { access_token: 'h.p.s' } } }) }
+        })
+      };
+      const w = {
+        localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { writes.push(k); store[k] = String(v); }, removeItem: k => { writes.push(k); delete store[k]; } },
+        performance: { mark() {} },
+        navigator: { sendBeacon: () => { posts.push('beacon'); return true; } },
+        fetch: (url) => {
+          if (/^su-backend\.json\?t=/.test(url)) {
+            if (o.flagsFail) return Promise.reject(new Error('net'));
+            return Promise.resolve({ ok: true, json: () => Promise.resolve(o.flags) });
+          }
+          posts.push(url);
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) });
+        },
+        Blob: function (parts, opt) { this.text = parts.join(''); this.type = opt && opt.type; },
+        Promise, JSON, Object, Array, String, Number, Error, Date, setTimeout: o.fastTimer ? ((f, ms) => setTimeout(f, ms >= 8000 ? 20 : ms)) : setTimeout, clearTimeout
+      };
+      if (!o.noAuth) w.SUAuth = o.authHang ? { STATUS: { OK: 'ok' }, check: () => new Promise(() => {}), client: A.client } : A;
+      w.window = w;
+      vm.createContext(w);
+      vm.runInContext(read('su-data.js'), w);
+      vm.runInContext(read('su-data-gas.js'), w);
+      if (o.supa !== false) vm.runInContext(read('su-data-supabase.js'), w);
+      w.SU.data.init({ appId: 'training-plan', resolveTarget: () => ({ endpoint: '', token: '' }) });
+      /* 画面の本物の関数（接続先は空） */
+      w.CFG = { url: '', token: '' };
+      w.SU_READY = true;
+      w.s_ = v => (v == null ? '' : String(v));
+      w.tpAccessToken_ = () => Promise.resolve('aaa.bbb.ccc');
+      vm.runInContext(['tpTarget', 'withTimeout', 'tpGet', 'tpPutBody_', 'tpPut', 'tpPing'].map(n => cutF(HTML, n)).join('\n'), w);
+      return { w, writes, posts, rpcs, invokes };
+    }
+    const ON = { supabase: { training: true } };
+    const cases = [
+      ['スイッチが入・事務所としてログイン・印が切り替えた後', { flags: ON }, true],
+      ['管理者としてログイン', { flags: ON, role: 'admin' }, true],
+      ['スイッチが切', { flags: { supabase: { training: false } } }, false],
+      ['スイッチの終わりの時刻を過ぎた', { flags: { supabase: { training: true, training_until: '2026-01-01T00:00:00+09:00' } } }, false],
+      ['AI の中継のスイッチだけが入（training_ai）', { flags: { supabase: { training_ai: true } } }, false],
+      ['写しの期間（shadow）', { flags: ON, mode: 'shadow' }, false],
+      ['印を読む関数が無い（0038 の前）', { flags: ON, modeErr: { code: 'PGRST202' } }, false],
+      ['印を読めない', { flags: ON, modeErr: { code: 'XX000' } }, false],
+      ['権限で断られた', { flags: ON, modeErr: { code: '42501' } }, false],
+      ['ログインしていない', { flags: ON, status: 'signed_out' }, false],
+      ['2段階認証がまだ', { flags: ON, status: 'mfa_verify' }, false],
+      ['使えないアカウント', { flags: ON, status: 'denied' }, false],
+      ['現場のアカウント', { flags: ON, role: 'field' }, false],
+      ['現場の端末', { flags: ON, field: true }, false],
+      ['ログインの確かめが失敗', { flags: ON, checkReject: true }, false],
+      ['ログインの部品が無い（読み込めない）', { flags: ON, noAuth: true }, false],
+      ['Supabase の道が読み込まれていない', { flags: ON, supa: false }, false],
+      ['スイッチを読めない（控えも無い）', { flagsFail: true }, false],
+      ['スイッチを読めない時は控えの値（控えが入）', { flagsFail: true, cached: ON }, true]
+    ];
+    for (const [label, o, want] of cases) {
+      const b = lbox(o);
+      let v, threw = false;
+      try { v = await b.w.SU.data.training.liveReady(); } catch (e) { threw = true; }
+      await settle();
+      t('L ' + label + ' → ' + want + '（例外を出さない・受け口も Google も呼ばない・端末にはスイッチの控えしか書かない）',
+        !threw && v === want && b.invokes.length === 0 && b.posts.length === 0 && b.writes.every(k => k === 'su_backend_flags'), { v, threw, inv: b.invokes, posts: b.posts, writes: b.writes });
+      if (label.indexOf('印') === 0 || label.indexOf('スイッチが入') === 0) t('L ' + label + ' の印は計画書の印（tp_mode_get）', b.rpcs.every(n => n === 'tp_mode_get') && b.rpcs.length === 1, b.rpcs);
+    }
+    {
+      const b = lbox({ flags: ON, authHang: true, fastTimer: true });
+      const t0 = Date.now(); const v = await b.w.SU.data.training.liveReady();
+      t('L ログインの確かめが返らない時は時間切れ（8秒）で false', v === false && Date.now() - t0 < 2000);
+    }
+    {
+      const b = lbox({ flags: ON });
+      const v = await b.w.SU.data.training.liveReady();
+      const g = await b.w.tpGet('training_plan:index');
+      const p = await b.w.tpPut('training_plan:M1', DOC, 3);
+      const pg = await b.w.tpPing();
+      await settle(30);
+      t('L 使える端末の読み・保存・確かめは tp-write へ・Google へは何も送らない（写し返しも送らない＝送る先が無い）',
+        v === true && g.ok === true && p.ok === true && pg.ok === true && b.invokes.length === 3 && b.invokes.every(x => x.fn === 'tp-write') && b.posts.length === 0, [b.invokes.map(x => x.fn), b.posts]);
+      t('L 使える端末の保存は今までと同じ本文（ログインの証明つき・合言葉なし）',
+        JSON.stringify(b.invokes[1].body) === '{"action":"put","key":"training_plan:M1","data":' + JSON.stringify(DOC) + ',"rev":3,"accessToken":"aaa.bbb.ccc"}', b.invokes[1].body);
+      t('L 使える端末の閉じる直前の送信は Google へ送らない', b.w.SU.data.training.putBeacon('training_plan:M1', DOC, 3, b.w.tpTarget()) === false && b.posts.length === 0);
+    }
+    {
+      const b = lbox({ flags: ON, mode: 'shadow' });
+      let err = null;
+      try { await b.w.tpGet('training_plan:index'); } catch (e) { err = e; }
+      t('L 接続先の無い端末で印が写しの期間なら、今までと同じ「同期先が未設定です」（Google へ送らない）', err && /同期先が未設定です/.test(err.message) && b.posts.length === 0);
+    }
+    {
+      const SUPA = read('su-data-supabase.js');
+      t('L 接続先のある端末は今までどおり写し返しを送る（入居調整・計画書だけ・接続先が無い時だけ省く）',
+        /if \(\(group === 'admission' \|\| group === 'training'\) && !gasTargetOf\(opts\)\) return Promise\.resolve\(null\);/.test(SUPA));
+    }
+
+    /* 画面の本物の関数（入居者マスタの名簿・週間計画のデイ利用者の判定）を動かす */
+    function pbox(o) {
+      o = o || {};
+      const calls = { mget: 0, common: 0, kvGet: 0, readRouted: 0, tpProbe: 0, mProbe: 0, quiet: 0 };
+      const w = {
+        Promise, JSON, Object, Array, String, Number, Error, setTimeout, clearTimeout,
+        CFG: { url: o.cfg || '', token: '' }, MCFG: { url: o.mcfg || '', token: '' }, SCFG: { endpoint: o.scfg || '', token: '' },
+        SU_READY: true, ROSTER: [], ROSTER_SRC: '', MASTER_OK: false, MASTER_MSG: '', DAY_OK: false, DAY_MSG: '', DAYSET: {}, DAYNAME: {},
+        s_: v => (v == null ? '' : String(v)), errText: e => String(e && e.message || e),
+        TP: { normalizeName: s => String(s), toYmd: s => String(s || '') },
+        normRosterRow: r => ({ masterId: String(r.id), name: r.name }),
+        loadRosterFromCommon: () => { calls.common++; return false; },
+        mGetRetry: () => { calls.mget++; return Promise.resolve({ roster: [{ id: 'T01', name: '架空 一郎', birthDate: '1938-04-05' }] }); },
+        SUCfgHint: { quiet: () => { calls.quiet++; } },
+        SUResRead: { liveReady: () => { calls.mProbe++; return Promise.resolve(o.mlive === true); } },
+        SUKv: { readRouted: () => { calls.readRouted++; return Promise.resolve(o.week === undefined ? null : o.week); } },
+        SU: { data: {
+          kvGet: () => { calls.kvGet++; return Promise.resolve({ ok: true, data: { residents: [] } }); },
+          training: { liveReady: () => { calls.tpProbe++; return Promise.resolve(o.live === true); } }
+        } }
+      };
+      w.window = w;
+      vm.createContext(w);
+      const vars = HTML.match(/var TP_LIVE = false[^\n]*\n/)[0];
+      vm.runInContext(vars + ['tpOn_', 'tpNoCfg_', 'tpProbeLive_', 'tpProbeMasterLive_', 'withTimeout', 'toMin', 'isDaycareResident', 'loadRoster', 'loadDaySet'].map(n => cutF(HTML, n)).join('\n'), w);
+      return { w, calls };
+    }
+    const WEEK = { ok: true, data: { residents: [{ masterId: 'T01', name: '架空 一郎', events: [{ serviceType: 'daycare', dayOfWeek: 1, startTime: '09:00', endTime: '16:00' }] }] } };
+    {
+      const x = pbox({ live: true, week: WEEK });
+      const v = await vm.runInContext('loadDaySet()', x.w);
+      t('L 週間計画の接続先の無い端末: 使える時は新しい保存先から読む（Google へは送らない・確かめは1回）',
+        v === true && vm.runInContext('DAY_OK', x.w) === true && x.calls.readRouted === 1 && x.calls.kvGet === 0 && x.calls.tpProbe === 1, x.calls);
+      await vm.runInContext('loadDaySet()', x.w);
+      t('L 読み直しても確かめは増えない', x.calls.tpProbe === 1, x.calls);
+      t('L 使える端末では接続設定の帯を止める（計画書の接続先が無い時）', x.calls.quiet === 1, x.calls);
+    }
+    {
+      const x = pbox({ live: true, week: null });
+      const v = await vm.runInContext('loadDaySet()', x.w);
+      t('L 使える端末でも新しい保存先で読めなければ、今までと同じ「週間計画の接続先が未設定…」・Google へは送らない',
+        v === false && /週間計画の接続先が未設定のため/.test(vm.runInContext('DAY_MSG', x.w)) && x.calls.kvGet === 0, [x.calls, vm.runInContext('DAY_MSG', x.w)]);
+    }
+    {
+      const x = pbox({ live: false, week: WEEK });
+      const v = await vm.runInContext('loadDaySet()', x.w);
+      t('L 使えない端末は今までどおり「週間計画の接続先が未設定…」（新しい保存先も Google も読まない）・帯は止めない',
+        v === false && /週間計画の接続先が未設定のため/.test(vm.runInContext('DAY_MSG', x.w)) && x.calls.kvGet === 0 && x.calls.readRouted === 0 && x.calls.quiet === 0, x.calls);
+      t('L 確かめ終わって使えない時は、計画書の接続先の案内を出す（確かめている間は出さない）', vm.runInContext('tpNoCfg_()', x.w) === true);
+    }
+    {
+      const x = pbox({ scfg: 'https://script.google.com/macros/s/EXAMPLE_SC/exec', cfg: TP_URL, week: null });
+      await vm.runInContext('loadDaySet()', x.w);
+      t('L 週間計画の接続先のある端末は今までどおり（確かめない・新しい保存先で読めない時は Google）', x.calls.tpProbe === 0 && x.calls.kvGet === 1, x.calls);
+    }
+    {
+      const x = pbox({ mlive: true });
+      const v = await vm.runInContext('loadRoster()', x.w);
+      t('L 入居者マスタの接続先の無い端末: 使える時は名簿を読む（SUResRead を通る mGetRetry・確かめは1回）',
+        v === true && x.calls.mget === 1 && x.calls.mProbe === 1 && vm.runInContext('ROSTER_SRC', x.w) === 'gas', x.calls);
+      await vm.runInContext('loadRoster()', x.w);
+      t('L 名簿の読み直しでも確かめは増えない', x.calls.mProbe === 1 && x.calls.mget === 2, x.calls);
+    }
+    {
+      const x = pbox({ mlive: false });
+      const v = await vm.runInContext('loadRoster()', x.w);
+      t('L 使えない端末は今までどおり「入居者マスタの接続先が未設定です…」・共有名簿へ（名簿は読まない）',
+        v === false && x.calls.mget === 0 && x.calls.common === 1 && /入居者マスタの接続先が未設定です/.test(vm.runInContext('MASTER_MSG', x.w)), x.calls);
+    }
+    {
+      const x = pbox({ mcfg: MS_URL });
+      await vm.runInContext('loadRoster()', x.w);
+      t('L 入居者マスタの接続先のある端末は確かめない（今までどおり）', x.calls.mProbe === 0 && x.calls.mget === 1, x.calls);
+    }
+
+    /* 画面の分け方（静的な確かめ） */
+    const left = (HTML.match(/!CFG\.url\b/g) || []).length;
+    t('L 画面: 計画書の接続先で止まる所は tpOn_ に分けた（残るのは確かめの口・AI の下書き・計画書の写し・閉じる直前の送信・起動の確かめだけ）',
+      left === 10 && /function tpFullAuto_\(\) \{\n  if \(tpFullDone_ \|\| !window\.SUTpFull \|\| isFieldDevice\(\) \|\| !CFG\.url \|\|/.test(HTML)
+      && /if \(!dirty \|\| !DOC \|\| !curMasterId \|\| !CFG\.url \|\| !SU_READY\) return;/.test(HTML), left);
+    t('L 画面: AI の下書きは今のまま（計画書の接続先と合言葉がある時だけ）', /function aiReady\(\) \{ return aiEnabled\(\) && SU_READY && !!CFG\.url && !!CFG\.token/.test(HTML));
+    t('L 画面: 起動の時、計画書の接続先の無い端末は1回だけ確かめてから読み込む・使えない時は今までどおり設定の画面へ',
+      /if \(!CFG\.url\) \{\n    setSync\('読み込み中…'\);\n    tpProbeLive_\(\)\.then\(function \(\) \{/.test(HTML) && /function startLoad_\(\) \{\n  if \(!tpOn_\(\)\) \{ setSync\('未接続', 'err'\); showScreen\('scr-settings'\); return; \}/.test(HTML));
+    t('L 画面: 接続先の案内は確かめ終わって使えない時だけ（一覧・設定）', (HTML.match(/if \(tpNoCfg_\(\)\) noCfgGuide\(/g) || []).length === 2 && !/if \(!CFG\.url\) noCfgGuide\(/.test(HTML));
+    t('L 画面: 計画書の接続先で止まっていた12か所が tpOn_ を見る', (HTML.match(/!tpOn_\(\)/g) || []).length >= 13, (HTML.match(/!tpOn_\(\)/g) || []).length);
+    t('L 部品の版は計画書・入居調整・デイ利用表でそろう',
+      ['training-plan.html', 'admission-flow.html'].every(f => /su-data\.js\?v=2026-11-08\.2"/.test(read(f)) && /su-data-supabase\.js\?v=2026-11-08\.2"/.test(read(f))) && /su-data\.js\?v=2026-11-08\.2"/.test(read('daycare-roster.html')));
   }
 
   console.log('\n— 画面の置き換え —');

@@ -243,8 +243,8 @@ async function both(oldFn, newFn, o) {
     }
     {
       const SUPA = read('su-data-supabase.js');
-      t('L 接続先のある端末は今までどおり写し返しを送る（入居調整だけ・接続先が無い時だけ省く）',
-        /if \(group === 'admission' && !gasTargetOf\(opts\)\) return Promise\.resolve\(null\);/.test(SUPA));
+      t('L 接続先のある端末は今までどおり写し返しを送る（入居調整・計画書だけ・接続先が無い時だけ省く）',
+        /if \(\(group === 'admission' \|\| group === 'training'\) && !gasTargetOf\(opts\)\) return Promise\.resolve\(null\);/.test(SUPA));
     }
     const H = read('admission-flow.html');
     t('L 画面: 接続先の無い端末は起動の時に1回だけ確かめる（afLiveTried_）・使える時（AF_LIVE）だけ台帳を読み書きする',

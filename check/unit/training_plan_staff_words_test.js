@@ -200,8 +200,10 @@ const CS = (() => { try { return fs.readFileSync(path.join(ROOT, 'connection-set
 t('接続設定の欄の名前が実物と同じ（個別機能訓練計画書・tp_cfg）', /title:'個別機能訓練計画書'[\s\S]{0,200}key:'tp_cfg'/.test(CS));
 
 console.log('\n【5】一覧の帯と設定の画面から案内を出す');
-t('一覧の帯から出す', /if \(!CFG\.url\) noCfgGuide\(host, 'list'\);/.test(grabFn(S, 'renderBanners')));
-t('設定の画面から出す（描き直しのたびに消してから）', /clear\(\$\('cfgMissing'\)\);\n  if \(!CFG\.url\) noCfgGuide\(\$\('cfgMissing'\), 'settings'\);/.test(grabFn(S, 'renderSettings')));
+t('一覧の帯から出す', /if \(tpNoCfg_\(\)\) noCfgGuide\(host, 'list'\);/.test(grabFn(S, 'renderBanners')));
+t('設定の画面から出す（描き直しのたびに消してから）', /clear\(\$\('cfgMissing'\)\);\n  if \(tpNoCfg_\(\)\) noCfgGuide\(\$\('cfgMissing'\), 'settings'\);/.test(grabFn(S, 'renderSettings')));
+/* 出すのは計画書の接続先が無く、ログインだけでも使えないと確かめ終わった時だけ（2026-11-08） */
+t('案内を出すのは接続先が無く・使えず・確かめ終わった時だけ', /function tpNoCfg_\(\) \{ return !CFG\.url && !TP_LIVE && !tpProbing_; \}/.test(S));
 t('設定の画面に置き場がある', S.indexOf('<div id="cfgMissing"></div>') >= 0);
 
 console.log('\n【6】管理者向けとして残す文・通信の符号');
