@@ -11,7 +11,8 @@
  *   写しの記録から組み立てた仮の行に当てて、Google と同じ形の応答を作る（形の作り直しを二重に書かない）。
  * ・スイッチが入で印が「切り替えた後」なのに Supabase で断られた時は、Google へ流さない（CLAUDE.md §4）。
  * ・読んだ中身は端末に保存しない（画面が今までどおり扱う）。現場の端末・現場のアカウントは、データベースが
- *   現場の項目だけを返す（res_get）。
+ *   現場の項目だけを返す（res_get）。名簿だけを読む画面の入口（officeOnly）は、現場の端末の現場のアカウントには
+ *   名簿の口（res_roster）だけを呼び、Google が現場の合言葉に返す形にそろえる（2026-11-08 代表者の決定 A）。
  * ★共通部品の決まり: 読み込むだけで効く・読み込めなくても動く（画面は SUResRead が無ければ Google へ送る）・例外を外に出さない。
  */
 (function (root) {
@@ -284,11 +285,13 @@
    * 版数（stateRev・srev）は同梱しない（古い GAS の応答と同じ形）。画面は版数を見張り（下の stateRev。事務所PCの事務所・管理者で
    * 切り替えた後は新しい保存先の版数、それ以外は Google の stateRev）で見ていて、ここで別の数を返すと見張りの数と食い違って
    * 取り直しが続くため。画面は同梱が無い時は見張りの値を基準にする */
-  function answer(action, body, recs) {
+  function answer(action, body, recs, safe) {
     GAS.setRows((recs || []).map(toRow));
     var o;
     try {
-      if (action === 'getRoster') o = { roster: GAS.getRoster(body.since) };
+      // 現場の端末の現場のアカウント（safe）は、Google が現場の合言葉に返す形（getRosterSafe・在籍者の7項目だけ）にそろえる
+      if (action === 'getRoster' && safe) o = { roster: GAS.getRosterSafe() };
+      else if (action === 'getRoster') o = { roster: GAS.getRoster(body.since) };
       else if (action === 'getResident') o = { record: GAS.getResident(body.id) };
       else if (action === 'getSection') o = { section: GAS.getSection(body.id, body.section) };
       else if (action === 'getBulk') o = { rows: GAS.getBulk() };
@@ -339,8 +342,9 @@
     return fail('入居者の記録を読めませんでした（新しい保存先）。少し待ってから、もう一度開いてください。', c || 'db');
   }
 
-  /* io（試験で差し替える）: { auth() → Promise<SUAuth> } */
-  async function readSupabase(body, opts, io) {
+  /* io（試験で差し替える）: { auth() → Promise<SUAuth> }
+   * safe: 現場の端末の現場のアカウントの名簿（officeOnly の現場の道）。名簿の口（res_roster）だけを呼び、1人ずつの記録（res_get）は呼ばない */
+  async function readSupabase(body, opts, io, safe) {
     var A = await (io && io.auth ? io.auth() : loadAuth());
     if (!A) throw fail('ログインの部品を読み込めませんでした。ページを読み込み直してください。', 'noauth');
     var st = await A.check();
@@ -348,6 +352,13 @@
     var sb = A.client();
     var screen = String(opts && opts.screen || '');
     var action = body.action;
+    if (safe) {
+      if (action !== 'getRoster' || st.role !== 'field') throw fail('この端末では読めません。', 'field');
+      var fr = await sb.rpc('res_roster');
+      if (fr.error) throw dbErr(fr.error);
+      if (!fr.data || fr.data.ok !== true) throw dbErr({ code: fr.data && fr.data.error });
+      return answer(action, body, fr.data.rows || [], true);
+    }
     var ids;
     if (action === 'getResident' || action === 'getSection') ids = [String(body.id == null ? '' : body.id)];
     else if (action === 'getMedsBulk') ids = String(body.ids == null ? '' : body.ids).split(',').map(function (x) { return x.trim(); }).filter(Boolean).slice(0, 100);
@@ -381,24 +392,34 @@
       return readSupabase(body, opts, io);
     });
   }
-  /* 名簿だけを読む画面（デイ利用表・全支援俯瞰・訪問俯瞰・ワークスケジュール・体重管理）の入口（2026-11-02 代表者「Google のまま読む」）。
-   * ・事務所PC（端末の用途が現場でない）で、事務所・管理者としてログインしている時だけ、上の call と同じ決まりで読む
+  /* 名簿だけを読む画面（デイ利用表・全支援俯瞰・訪問俯瞰・ワークスケジュール・体重管理・週間計画の名簿）の入口
+   * （2026-11-02 代表者「Google のまま読む」・2026-11-08 代表者の決定 A で現場の端末の現場のアカウントを足した）。
+   * ・事務所PC（端末の用途が現場でない）で、事務所・管理者としてログインしている時は、上の call と同じ決まりで読む
    *   （印が「切り替えた後」なら新しい保存先・写しの期間なら Google。ログインした後の断り・届かないは Google へ流さない）
-   * ・ログインしていない・確かめられない・現場のアカウント・現場の端末は、今までどおり Google へ送る関数をそのまま呼ぶ
-   *   （本文も送り方も変えない。Google は1時間ごとの写し返しで追いつく） */
+   * ・現場の端末で、現場のアカウントとしてログインしている時は、名簿（getRoster）だけを同じ決まりで新しい保存先から読む。
+   *   読むのは名簿の口（res_roster・現場には在籍者の7項目だけ・開いた記録は残さない）だけで、応答は Google が現場の合言葉に返す
+   *   形（getRosterSafe）にそろえる。1人ずつの記録（res_get・C 医療・D 家族）は読まない
+   * ・ログインしていない・確かめられない・事務所PCの現場のアカウント・現場の端末の事務所・管理者のアカウント・名簿でない読み取りは、
+   *   今までどおり Google へ送る関数をそのまま呼ぶ（本文も送り方も変えない。Google は1時間ごとの写し返しで追いつく）
+   * ・遅れて届いた答えは捨てる（CLAUDE.md §2-5）: 出した時と答えの時で端末の用途（現場かどうか）が違えば失敗にする */
+  function devRole() { try { return String(localStorage.getItem('su_device_role') || ''); } catch (e) { return ''; } }
   function officeOnly(body, gasFn, opts, io) {
-    var role = '';
-    try { role = String(localStorage.getItem('su_device_role') || ''); } catch (e) { role = ''; }
-    if (role === 'field') return gasFn(body);
+    var field = devRole() === 'field';
+    // ワークスケジュールは別の正本から配る画面のため、現場の端末では今までどおり Google（代表者の決定 2026-11-08 A・仮置き）
+    if (field && (body.action !== 'getRoster' || String(opts && opts.screen || '') === 'work-schedule')) return gasFn(body);
     return Promise.resolve().then(function () { return io && io.auth ? io.auth() : loadAuth(); })
       .then(function (A) { return A ? A.check().then(function (st) { return { A: A, st: st }; }) : null; })
       .catch(function () { return null; })
       .then(function (x) {
-        var ok = !!(x && x.st && x.st.status === x.A.STATUS.OK && (x.st.role === 'office' || x.st.role === 'admin'));
+        var r = x && x.st && x.st.status === x.A.STATUS.OK ? x.st.role : '';
+        var ok = field ? r === 'field' : (r === 'office' || r === 'admin');
         if (!ok) return gasFn(body);
         return mode(io).then(function (m) {
           if (m !== 'live') return gasFn(body);
-          return readSupabase(body, opts, io);
+          return readSupabase(body, opts, io, field).then(function (d) {
+            if ((devRole() === 'field') !== field) throw fail('遅れて届いた名簿を捨てました。', 'stale');
+            return d;
+          });
         });
       });
   }
@@ -514,12 +535,13 @@
    *   事務所・管理者としてログイン・データベースの印が「切り替えた後」の時だけ、新しい保存先の版数（res_mode の state_rev・
    *   res_mode_get が返す stateRev）を { ok:true, rev, srev:0 } の形で返す（訪問診療の clinic-write の stateRev と同じ形・数字だけ）。
    *   srev は新しい保存先には無いので 0（入院の印は res_set_hosp が state_rev を進める）
-   * ・それ以外（スイッチが切・現場の端末・ログインしていない・確かめられない・現場のアカウント・写しの期間・0036 の前）は、
-   *   Google へ聞く関数をそのまま呼ぶ（送り方も応答も1バイトも変えない）
+   * ・現場の端末（端末の用途が現場）は、現場のアカウントとしてログインしている時だけ同じ決まりで新しい保存先の版数を返す（2026-11-08 代表者の決定 A）
+   * ・それ以外（スイッチが切・ログインしていない・確かめられない・事務所PCの現場のアカウント・現場の端末の事務所・管理者のアカウント・
+   *   写しの期間・0036 の前）は、Google へ聞く関数をそのまま呼ぶ（送り方も応答も1バイトも変えない）
    * ・ログインした後に印を読めない・断られた・時間切れは、Google へ流さずに失敗にする（画面は今までの「照会の失敗」として扱う）
    * ・名簿を新しい保存先から読む時（call・officeOnly）は版数を同梱しないので、画面の基準はこの見張りの数だけで決まる
    *   （Google の版数と数え方は同じ向きに進むが同じ数ではないため、読み先が替わった時に1回だけ名簿を読み直す）
-   * ・遅れて届いた答えは捨てる（CLAUDE.md §2-5）: 同じ key で後から出した問い合わせがある・端末の用途が現場に変わった時は失敗にする
+   * ・遅れて届いた答えは捨てる（CLAUDE.md §2-5）: 同じ key で後から出した問い合わせがある・出した時と答えの時で端末の用途（現場かどうか）が違う時は失敗にする
    * ・as: 'response'（既定・fetch の応答と同じく json()・text() を持つ）／'json'（読んだ形のまま）。端末には何も残さない */
   var REV_MS = 10000, revSeq = {};
   function revBody(n) {
@@ -528,9 +550,13 @@
              json: function () { return Promise.resolve({ ok: b.ok, rev: b.rev, srev: b.srev }); },
              text: function () { return Promise.resolve(JSON.stringify(b)); } };
   }
-  function isFieldDev() { try { return String(localStorage.getItem('su_device_role') || '') === 'field'; } catch (e) { return false; } }
+  function isFieldDev() { return devRole() === 'field'; }
+  /* 2026-11-08 代表者の決定 A: 現場の端末でも、現場のアカウントとしてログインしている時は同じ決まりで新しい保存先の版数を読む
+   * （名簿の入口 officeOnly の現場の道と読み先をそろえる。版数は数字だけ）。現場の端末の事務所・管理者のアカウントは今までどおり Google。
+   * 出した時と答えの時で端末の用途（現場かどうか）が違えば捨てる */
   function stateRev(gasFn, opts, io) {
-    try { if (!switchOn() || isFieldDev()) return gasFn(); } catch (e) { return gasFn(); }
+    var field;
+    try { if (!switchOn()) return gasFn(); field = isFieldDev(); } catch (e) { return gasFn(); }
     var key = String(opts && opts.key || 'page'), as = opts && opts.as === 'json' ? 'json' : 'response';
     var my = (revSeq[key] = (revSeq[key] || 0) + 1);
     var ms = opts && typeof opts.timeoutMs === 'number' ? opts.timeoutMs : REV_MS;
@@ -538,9 +564,10 @@
       .then(function (A) { return A ? A.check().then(function (st) { return { A: A, st: st }; }) : null; })
       .catch(function () { return null; })
       .then(function (x) {
-        var ok = !!(x && x.st && x.st.status === x.A.STATUS.OK && (x.st.role === 'office' || x.st.role === 'admin'));
+        var rl = x && x.st && x.st.status === x.A.STATUS.OK ? x.st.role : '';
+        var ok = field ? rl === 'field' : (rl === 'office' || rl === 'admin');
         if (!ok) return gasFn();
-        var q = Promise.resolve().then(function () { return x.A.client().rpc('res_mode_get'); });
+        var q =Promise.resolve().then(function () { return x.A.client().rpc('res_mode_get'); });
         var r = Promise.race([q, new Promise(function (done) { setTimeout(function () { done({ timeout: true }); }, ms); })]);
         return r.then(function (d) {
           if (d && d.timeout) throw fail('新しい保存先の版数を読めませんでした（時間切れ）。', 'timeout');
@@ -552,7 +579,7 @@
           if (m !== 'live') return gasFn();
           var n = Number(d.data.stateRev);
           if (typeof d.data.stateRev !== 'number' || !isFinite(n)) throw fail('新しい保存先の版数の形が違います。', 'shape');
-          if (my !== revSeq[key] || isFieldDev()) throw fail('遅れて届いた版数を捨てました。', 'stale');
+          if (my !== revSeq[key] || isFieldDev() !== field) throw fail('遅れて届いた版数を捨てました。', 'stale');
           return as === 'json' ? { ok: true, rev: n, srev: 0 } : revBody(n);
         }, function (e) { throw dbErr(e); });
       });

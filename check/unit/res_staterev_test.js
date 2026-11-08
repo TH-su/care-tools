@@ -218,7 +218,7 @@ async function run(R, a, opts, gas) {
   for (const [f, re] of SCREENS) {
     const H = read(f);
     t(f + ': 見張りは SUResRead.stateRev を通し、Google への照会は今の形のまま中の関数に残る', re.test(H));
-    t(f + ': su-res-read.js を読み込む（版は 2026-11-08）', /<script src="su-res-read\.js\?v=2026-11-08"><\/script>/.test(H));
+    t(f + ': su-res-read.js を読み込む（版は 2026-11-08.2）', /<script src="su-res-read\.js\?v=2026-11-08\.2"><\/script>/.test(H));
     t(f + ': 入口を通らない見張りの照会（照会のすぐ後に応答を読む今までの形）が残っていない', !OLD.some(o => o.test(H)));
   }
   {
