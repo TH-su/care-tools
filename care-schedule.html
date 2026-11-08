@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-ZRZuzJXM6seVT2rDYOOt6wHISw2L88mxfs9/VctdyHg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-yDne69NsjyrgeNZcqO5WpNF+3RQlh63qo9F4Sr5JVHU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -1711,8 +1711,9 @@ select.inp { cursor: pointer; }
 
 <!-- 共通のエラー捕捉（2026-09-24 から週間計画も使う）。本体の <script> より前に置く＝起動時の例外も拾う -->
 <script src="su-errors.js?v=2026-10-27"></script>
+<script src="su-devcfg.js?v=2026-11-08"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
-<script src="su-res-read.js?v=2026-11-08.3"></script>
+<script src="su-res-read.js?v=2026-11-08.4"></script>
 <script>
 /* 黙ると困る失敗（保存・同期の補助）を、画面には出さずに記録へ残す（2026-10-08・監査10月版 #8）。
    行き先は su-errors.js の note＝コンソールと記録先（同期ログ・不具合報告の控えと自動報告）。トーストは出さない。
@@ -4163,7 +4164,16 @@ const SYNC = {
   // 次にワースケ設定(ws_settings)、無ければ自前configを使用。
   // どれか1アプリで設定すれば全アプリが同じ接続先を使う＝設定の食い違いを防止。
   // rev はワースケと共有の ws_sync_revs.care を単一の版番号源にする。
+  // ★管理者が全端末へ配った接続先（su-devcfg.js・統合 0080）があればそれを先に使う。配っていない時だけこの端末の値（targetLocal）
   target() {
+    try {
+      const d = window.SUDevCfg && window.SUDevCfg.get('ws');
+      if (d) return { endpoint: d.url, token: d.token };
+    } catch(e) {}
+    return this.targetLocal();
+  },
+  // この端末に入れた値（同期の画面の入力欄に出すのはこちらだけ＝配った合言葉は画面に出さない）
+  targetLocal() {
     // 前後空白を必ず除去（コピペ時の混入で unauthorized になるのを防ぐ）
     try {
       const c = JSON.parse(localStorage.getItem('su_sync_common') || '{}');
@@ -4473,6 +4483,7 @@ const SYNC = {
      統合GASは合言葉を action より先に確かめるため、ok:true の名乗りは合言葉が通った証拠でもある。
      通信失敗/unknown action継続/unauthorized/別の server 名 では上書きしない（誤切替・unauthorized固着を防止）。 */
   async healStaleTarget() {
+    try { if (window.SUDevCfg && window.SUDevCfg.get('ws')) return false; } catch(e) {}   // 配った接続先を使っている間は、端末の接続先を書き換えない
     const cur = this.target();
     let ws = {};
     try { ws = JSON.parse(localStorage.getItem('ws_settings') || '{}'); } catch(e) { return false; }
@@ -4995,12 +5006,12 @@ function syncTypedValues() {
   const tok = tokEl ? (tokEl.value || '').trim() : '';
   return { url, tok };
 }
-/* 入力欄が、いま実際に使っている接続先（SYNC.target()）と違う＝未保存の変更がある。
+/* 入力欄が、この端末に入れた接続先（SYNC.targetLocal()）と違う＝未保存の変更がある（配った接続先は入力欄に出さないので比べない）。
    ★空欄は「変更なし」とみなす（ワースケの接続先を使う端末はここを空で使ってきた＝操作を止めない） */
 function syncInputsEdited() {
   const { url, tok } = syncTypedValues();
   if (!url) return false;
-  const t = SYNC.target();
+  const t = SYNC.targetLocal();
   return url !== t.endpoint || tok !== t.token;
 }
 /* 同期先が入っていない時の案内（何が足りないか・次にすること）。
@@ -5076,7 +5087,7 @@ window.addEventListener('storage', function (e) {
   if (!m || !m.classList.contains('open') || !_syncShown) return;
   const { url, tok } = syncTypedValues();
   if (url !== _syncShown.url || tok !== _syncShown.tok) { refreshSyncIndicator(); return; }   // 打ちかけは消さない
-  const t = SYNC.target();
+  const t = SYNC.targetLocal();
   $('#sync-endpoint').value = t.endpoint || '';
   if ($('#sync-token')) $('#sync-token').value = t.token || '';
   _syncShown = { url: t.endpoint || '', tok: t.token || '' };
@@ -5095,7 +5106,7 @@ function openSyncModal() {
   if (SIM_ON) { showToast('試算中はクラウド同期を開けません（試算を終了してからお使いください）'); return; }
   /* 実際に使っている接続先（共通キー → ワースケ設定 → この画面の設定の順）を表示する（2026-09-25）。
      以前は自前の設定だけを表示しており、実際の同期先と違う値が見えることがあった */
-  const t0 = SYNC.target();
+  const t0 = SYNC.targetLocal();   // 配った接続先・合言葉は入力欄に出さない（su-devcfg.js）
   $('#sync-endpoint').value = t0.endpoint || '';
   if ($('#sync-token')) $('#sync-token').value = t0.token || '';
   _syncShown = { url: t0.endpoint || '', tok: t0.token || '' };
@@ -5393,6 +5404,7 @@ function mergeCommonSchedule(extData){
    片道通知（応答は表示だけに使う）。失敗しても運用は止めない。ログに個人情報は出さない。 */
 var CS_RMASTER_CFG_KEY = 'rmaster_cfg';
 function csGetMasterCfg(){
+  try{ var d = window.SUDevCfg && window.SUDevCfg.get('master'); if (d) return { url: d.url, token: d.token }; }catch(e){}
   try{
     var s = localStorage.getItem(CS_RMASTER_CFG_KEY); if (!s) return null;
     var o = JSON.parse(s);

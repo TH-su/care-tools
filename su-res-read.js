@@ -503,7 +503,8 @@
   }
   async function mirrorPost(io) {
     var cfg = null;
-    try { cfg = io && io.cfg ? io.cfg() : JSON.parse(localStorage.getItem('rmaster_cfg') || 'null'); } catch (e) { cfg = null; }
+    /* 接続先は、管理者が全端末へ配った値（su-devcfg.js・統合 0080）が先、配っていない時だけこの端末の rmaster_cfg */
+    try { cfg = io && io.cfg ? io.cfg() : ((root.SUDevCfg && root.SUDevCfg.get('master')) || JSON.parse(localStorage.getItem('rmaster_cfg') || 'null')); } catch (e) { cfg = null; }
     var url = String(cfg && cfg.url || '').trim(), token = String(cfg && cfg.token || '').trim();
     if (!url || !token) return null;   // 接続先の無い端末は送らない（ほかの端末・戻す時の写し返しで追いつく）
     var A = await (io && io.auth ? io.auth() : loadAuth());

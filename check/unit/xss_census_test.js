@@ -540,6 +540,8 @@ const CENSUS = {
   "su-kv-shadow.js": [],
   "su-kv.js": [],
   "su-login-band.js": [],   /* 帯の文言・ボタンは textContent と setAttribute だけ（2026-11-02） */
+  "su-device-role.js": [],   /* 端末の番号は textContent だけ（2026-11-08・統合 0081） */
+  "app-access-devices.js": [],   /* 端末の用途の一覧は createElement と textContent だけ（2026-11-08・統合 0081） */
   "su-master-shadow.js": [],
   "su-menu.js": [],
   "su-patch-sync.js": [],
@@ -572,6 +574,7 @@ const CENSUS = {
   "su-hb-full.js": [],
   "su-doc-full.js": [],
   "su-doc-live.js": [],
+  "su-devcfg.js": [],   // 統合 0080（2026-11-08）: 配った接続先と合言葉を返すだけで、画面に何も書かない
   "supplies-calc.js": [],
   "supplies.html": [],
   "support-overview.html": [],

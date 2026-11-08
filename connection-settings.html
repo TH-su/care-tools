@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-CXq1lwqJ0bMMpsgeAcqrStvCl04SDer9K/nrKTyocXI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-zQLVq5AOgh6i4TRM4k1i8RF9BPs9oT4nWnzq9TdE0CQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <meta name="robots" content="noindex,nofollow">
@@ -162,6 +162,13 @@ main {
 }
 .fld textarea:focus-visible { outline: 3px solid var(--pri); outline-offset: 1px; border-color: var(--pri); }
 .bk-sub { margin: 12px 0 6px; font-size: 0.875rem; font-weight: 700; }
+/* 全端末へ配る（管理者＋2段階認証の時だけ作る欄・統合 0080） */
+.dist-row { border-top: 1px solid var(--g2); padding-top: 4px; margin-top: 10px; }
+.dist-roles { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 8px; }
+.dist-roles label { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; font-size: 0.875rem; }
+.dist-roles input { width: 20px; height: 20px; }
+.dist-old { margin-top: 12px; }
+.dist-old summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-size: 0.875rem; font-weight: 700; }
 .note-card p { margin: 0 0 6px; font-size: 0.8125rem; color: var(--warn-tx); }
 .note-card p:last-child { margin-bottom: 0; }
 .note-card b { font-weight: 700; }
@@ -316,6 +323,7 @@ main {
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-27"></script>
+<script src="su-devcfg.js?v=2026-11-08"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-app-gate.js?v=2026-11-03"></script>
 <script src="su-facility.js?v=2026-11-07"></script>
@@ -1091,7 +1099,180 @@ function startApp_(){
   });
 
   setupBackup(cards);
+  setupDist_();                            /* 全端末へ配る（管理者＋2段階認証の時だけ欄を作る・統合 0080） */
   try{ if(window.SUPerf) SUPerf.ready(); }catch(e){}
+}
+
+/* ═══════════ 全端末へ配る（統合 0080・代表者の決定 2026-11-08）═══════════
+   管理者（Google＋2段階認証）でログインしている時だけ、欄を作る（それ以外の時は何も足さない＝見た目は今のまま）。
+   ・「この端末の値を全端末へ配る」… この端末に入っている接続先と合言葉を、そのまま device_config_set で送る
+   ・現場用の合言葉（ws_field・master_field）は管理者の端末に無い値なので、その欄だけ手で入れる
+   ・送る前に、各欄の保存と同じ確かめ（統合同期は verifySyncPair、入居者マスタは verifyMasterUrl、ほかは probe）を通った時だけ送る
+     （間違った値を配ると全端末が同時に止まるため。確かめられない時も送らない）
+   ・配っている系統の一覧は device_config_list（合言葉そのものは返らない・この画面にも出さない）
+   ・「配るのをやめる」は確認の窓の後に device_config_del
+   ★合言葉は入力欄にも結果の文にも出さない。値を console・控え（SUCFG1:）・不具合の報告に入れない。
+   ★誰が配れるかはデータベースが決める（管理者＋2段階認証だけ）。この画面の確かめは欄を出すかどうかだけ。 */
+var DIST_URL_RE=/^https:\/\/script\.google\.com\/(macros|a\/macros\/[A-Za-z0-9.-]+)\/s\/[A-Za-z0-9_-]{10,200}\/exec$/;
+var DIST_ROLE_LABEL={ admin:'管理者', office:'事務所', field:'現場' };
+var DIST_ITEMS=[
+  { key:'ws', sys:'ws', verify:'sync' },
+  { key:'ws_field', title:'週間計画・ワースケ・シフト（現場用の閲覧の合言葉）', verify:'sync', manual:true },
+  { key:'master', sys:'master', verify:'master' },
+  { key:'master_field', title:'入居者マスタ（現場用の合言葉）', verify:'master', manual:true },
+  { key:'haiben', sys:'haiben' },
+  { key:'moushi', sys:'msk' },
+  { key:'weight', sys:'weight' },
+  { key:'med', sys:'med' },
+  { key:'admission', sys:'adm', old:true },
+  { key:'training', sys:'tp', old:true },
+  { key:'genogram', sys:'geno', old:true },
+  { key:'analyzer', sys:'analyzer', old:true },
+  { key:'staff', title:'職員マスタ', manual:true, old:true }
+];
+var DIST_ERR={
+  badkey:'この系統は配れません。', badurl:'接続先の形が違います（Google の受け口の /exec で終わる URL だけ配れます）。',
+  badtoken:'合言葉の形が違います（8〜256文字・空白なし）。', badroles:'渡す役割を選び直してください（この系統に渡せない役割があります）。',
+  conflict:'ほかの画面で先に直されていました。一覧を読み直したので、もう一度お試しください。'
+};
+function distRpc_(fn, args){
+  try{
+    var c=window.SUAuth && typeof window.SUAuth.client==='function' ? window.SUAuth.client() : null;
+    if(!c) return Promise.resolve({ error:{ code:'noauth' } });
+    return Promise.resolve(c.rpc(fn, args||{})).then(function(r){ return r||{ error:{ code:'empty' } }; }, function(){ return { error:{ code:'net' } }; });
+  }catch(e){ return Promise.resolve({ error:{ code:'net' } }); }
+}
+function distErrText_(r){
+  var d=r && r.data, code=d && d.error ? String(d.error) : '';
+  if(code && DIST_ERR[code]) return DIST_ERR[code];
+  if(r && r.error && String(r.error.code||'')==='42501') return '管理者（2段階認証）でログインし直してから、もう一度お試しください。';
+  return '配れませんでした。通信できる状態で、もう一度お試しください。';
+}
+/* 送る前の確かめ。'ok' の時だけ送る */
+function distVerify_(it, url, token){
+  if(it.verify==='sync') return verifySyncPair(url, token).then(function(v){ return v==='ok' ? 'ok' : syncTargetMessage(v); });
+  if(it.verify==='master') return verifyMasterUrl(url).then(function(v){ return v==='ok' ? 'ok' : (v==='wrong' ? MASTER_WRONG_MSG : '入居者マスタの接続先か確かめられませんでした。通信できる状態でもう一度お試しください'); });
+  return probe(url).then(function(o){ return o && o.ok ? 'ok' : (o && o.msg || 'つながりませんでした。'); });
+}
+var distGen_=0;
+function setupDist_(){
+  if(!window.SUAuth || typeof window.SUAuth.check!=='function') return;
+  var my=++distGen_;
+  Promise.resolve().then(function(){ return window.SUAuth.check(); }).then(function(st){
+    if(!st || st.status!=='ok' || st.role!=='admin' || !st.mfa) return null;
+    return distRpc_('device_config_list').then(function(r){
+      if(my!==distGen_) return null;                 /* 後から読み直した一覧を古い答えで上書きしない */
+      if(!r || r.error || !r.data || r.data.ok!==true) return null;
+      buildDist_(r.data);
+      return null;
+    });
+  }).then(null, function(e){ try{ if(window.SUErrors && SUErrors.note) SUErrors.note('全端末へ配る: 一覧', e && e.code || 'error'); }catch(x){} });
+}
+function buildDist_(list){
+  var box=$('dist');
+  if(!box){ box=el('div','cd'); box.id='dist'; var at=$('restore'); at.parentNode.insertBefore(box, at); }
+  box.textContent='';
+  box.appendChild(el('h2', null, '全端末へ配る（管理者）'));
+  box.appendChild(el('p','apps','ここで配った接続先と合言葉は、ログインした端末が役割ごとに受け取り、端末に入れた値より先に使います。合言葉はこの画面には出しません。'));
+  var maxOf={}, rowOf={};
+  (Array.isArray(list.keys)?list.keys:[]).forEach(function(k){ if(k && typeof k.key==='string') maxOf[k.key]=Array.isArray(k.maxRoles)?k.maxRoles.slice():[]; });
+  (Array.isArray(list.rows)?list.rows:[]).forEach(function(r){ if(r && typeof r.key==='string') rowOf[r.key]=r; });
+  var oldBox=el('details','dist-old'); oldBox.appendChild(el('summary', null, '切り替え済みの系統（Google へ戻した時だけ）'));
+  DIST_ITEMS.forEach(function(it){
+    if(!maxOf[it.key] || !maxOf[it.key].length) return;   /* データベースの一覧に無い系統は出さない */
+    var node=distRow_(it, maxOf[it.key], rowOf[it.key] || null);
+    (it.old ? oldBox : box).appendChild(node);
+  });
+  box.appendChild(oldBox);
+}
+function distRow_(it, maxRoles, row){
+  var sys=it.sys ? sysById(it.sys) : null;
+  var name=it.title || (sys && sys.title) || it.key;
+  var wrap=el('div','dist-row');
+  wrap.appendChild(el('p','bk-sub', name));
+  var stat=el('p','apps');
+  if(row){
+    var when=''; try{ when=new Date(row.updatedAt).toLocaleString('ja-JP'); }catch(e){ when=''; }
+    stat.textContent='配っています（渡す役割：'+(Array.isArray(row.forRoles)?row.forRoles:[]).map(function(r){ return DIST_ROLE_LABEL[r]||String(r); }).join('・')+
+      '／合言葉'+(row.hasToken?'あり':'なし')+'／最後に直した日時：'+when+'）';
+  }else{
+    stat.textContent='配っていません';
+  }
+  wrap.appendChild(stat);
+  /* 渡す役割（その系統に渡せる役割だけ） */
+  var rolesP=el('div','dist-roles'), checks=[];
+  var cur=row && Array.isArray(row.forRoles) ? row.forRoles : maxRoles;
+  maxRoles.forEach(function(r){
+    if(!DIST_ROLE_LABEL[r]) return;
+    var lb=el('label'), cb=document.createElement('input');
+    cb.type='checkbox'; cb.value=r; cb.checked=cur.indexOf(r)>=0;
+    lb.appendChild(cb); lb.appendChild(document.createTextNode(DIST_ROLE_LABEL[r]));
+    rolesP.appendChild(lb); checks.push(cb);
+  });
+  wrap.appendChild(rolesP);
+  var urlIn=null, tokIn=null;
+  if(it.manual){
+    urlIn=input('du_'+it.key,'url','https://script.google.com/macros/…/exec');
+    if(row) urlIn.value=String(row.url||'');
+    wrap.appendChild(field('接続先のURL', null, urlIn));
+    tokIn=input('dt_'+it.key,'password', row && row.hasToken ? '変更する時だけ入力' : '');
+    tokIn.autocomplete='new-password';
+    wrap.appendChild(field('合言葉', row && row.hasToken ? '（空欄なら今の合言葉のまま）' : null, tokIn));
+  }
+  var acts=el('div','acts'), res=el('p','res'); res.setAttribute('role','status');
+  var bSet=el('button','btn pri sm', it.manual ? '入れた値を全端末へ配る' : 'この端末の値を全端末へ配る'); bSet.type='button';
+  acts.appendChild(bSet);
+  var bDel=null;
+  if(row){ bDel=el('button','btn sm','配るのをやめる'); bDel.type='button'; acts.appendChild(bDel); }
+  wrap.appendChild(acts); wrap.appendChild(res);
+  function lock(on){ bSet.disabled=on; if(bDel) bDel.disabled=on; }
+  function done(msg){
+    try{ if(window.SUDevCfg && typeof window.SUDevCfg.forget==='function') window.SUDevCfg.forget(); }catch(e){}
+    toast(msg); setupDist_();
+  }
+  bSet.addEventListener('click', function(){
+    var url='', token=null;
+    if(it.manual){
+      url=String(urlIn.value||'').trim();
+      var tv=String(tokIn.value||'').trim();
+      if(!tv && !(row && row.hasToken)){ setRes(res,'ng','合言葉を入力してください。'); return; }
+      token = tv ? tv : null;                        /* null＝今の合言葉のまま */
+    }else{
+      var c=sys ? readCur(sys) : { url:'', token:'' };
+      url=String(c.url||'').trim(); token=String(c.token||'').trim();
+      if(!url || !token){ setRes(res,'ng','この端末にはこの系統の接続先と合言葉がそろっていません。先に上の欄で保存してください。'); return; }
+    }
+    if(!DIST_URL_RE.test(url)){ setRes(res,'ng',DIST_ERR.badurl); return; }
+    var roles=checks.filter(function(cb){ return cb.checked; }).map(function(cb){ return cb.value; });
+    if(!roles.length){ setRes(res,'ng','渡す役割を1つ以上選んでください。'); return; }
+    if(token===null && it.verify==='sync'){ setRes(res,'ng','確かめるため、合言葉も入力してください。'); return; }
+    lock(true); setRes(res,'inf','接続先を確かめています…（最長30秒）');
+    distVerify_(it, url, token||'').then(function(v){
+      if(v!=='ok'){ lock(false); setRes(res,'ng','配っていません：'+v); return null; }
+      setRes(res,'inf','配っています…');
+      return distRpc_('device_config_set', { p_key:it.key, p_url:url, p_token:token, p_for_roles:roles, p_prev:row ? row.updatedAt : null }).then(function(r){
+        lock(false);
+        if(r && !r.error && r.data && r.data.ok===true){
+          if(tokIn) tokIn.value='';
+          done(r.data.unchanged ? '変わっていないため、そのままです' : '全端末へ配りました');
+          return null;
+        }
+        if(r && r.data && r.data.error==='conflict'){ toast(DIST_ERR.conflict); setupDist_(); return null; }   /* 一覧を作り直すので、知らせは消えない方に出す */
+        setRes(res,'ng',distErrText_(r));
+        return null;
+      });
+    }).then(null, function(){ lock(false); setRes(res,'ng','配れませんでした。'); });
+  });
+  if(bDel) bDel.addEventListener('click', function(){
+    if(!confirm('「'+name+'」を全端末へ配るのをやめますか？\nやめると、各端末は端末に入れた値だけを使います。')) return;
+    lock(true); setRes(res,'inf','やめています…');
+    distRpc_('device_config_del', { p_key:it.key }).then(function(r){
+      lock(false);
+      if(r && !r.error && r.data && r.data.ok===true){ done('配るのをやめました'); return; }
+      setRes(res,'ng',distErrText_(r));
+    });
+  });
+  return wrap;
 }
 
 /* ═══════════ 設定の控え（2026-09-27）═══════════
