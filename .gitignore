@@ -58,6 +58,7 @@
 !/check/flow_e2e.mjs
 !/check/revenue_e2e.mjs
 !/check/yakujo_bulk_e2e.mjs
+!/check/daycare_live_e2e.mjs
 !/check/build-yakka-yj.py
 # 押してから描き変わるまでの遅れを架空データで測る道具（2026-10-27）
 !/check/tap-latency.mjs

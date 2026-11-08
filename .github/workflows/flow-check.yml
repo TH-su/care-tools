@@ -48,6 +48,10 @@ jobs:
         if: success() || failure()
         run: node check/yakujo_bulk_e2e.mjs --shots check/out/flow
 
+      - name: 接続先の無い端末のデイ利用表と、合言葉の欄・端末の用途の守りを通す（check/daycare_live_e2e.mjs・2026-11-08）
+        if: success() || failure()
+        run: node check/daycare_live_e2e.mjs --shots check/out/flow
+
       - name: 画面の写し（架空データ）を成果物として残す
         if: failure()
         uses: actions/upload-artifact@v4

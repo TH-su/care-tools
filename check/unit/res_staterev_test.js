@@ -205,7 +205,7 @@ async function run(R, a, opts, gas) {
     ['weight-record.html', /var gasRev = function\(\)\{ return fetchTO\(url, \{ cache:'no-store' \}, WR_SREV_TIMEOUT_MS\); \};[\s\S]{0,200}SUResRead\.stateRev\(gasRev, \{ key:'weight' \}\)/],
     ['support-overview.html', /var gasRev = function \(\) \{ return fetch\(c\.url \+ \(c\.url\.indexOf\('\?'\)>=0\?'&':'\?'\) \+ 'action=stateRev',\s*\{method:'GET',cache:'no-store',redirect:'follow'\}\); \};[\s\S]{0,200}SUResRead\.stateRev\(gasRev, \{ key: 'support' \}\)/],
     ['visit-overview.html', /var gasRev = function \(\) \{ return fetch\(c\.url \+ \(c\.url\.indexOf\('\?'\)>=0\?'&':'\?'\) \+ 'action=stateRev',\s*\{method:'GET',cache:'no-store',redirect:'follow'\}\); \};[\s\S]{0,200}SUResRead\.stateRev\(gasRev, \{ key: 'visit' \}\)/],
-    ['daycare-roster.html', /var gasRev = function\(\)\{ return SU\.data\.kvRaw\(\{ action: 'stateRev' \}, \{ endpoint: cfg\.url \}\); \};[\s\S]{0,200}SUResRead\.stateRev\(gasRev, \{ key: 'daycare', as: 'json' \}\)/]
+    ['daycare-roster.html', /var gasRev = function\(\)\{ return cfg \? SU\.data\.kvRaw\(\{ action: 'stateRev' \}, \{ endpoint: cfg\.url \}\) : Promise\.resolve\(\{ ok: false, error: 'nocfg' \}\); \};[\s\S]{0,200}SUResRead\.stateRev\(gasRev, \{ key: 'daycare', as: 'json' \}\)/]
   ];
   /* 今までの見張りの形（照会の直後に .then で応答を読む）。入口に通した後は残らない */
   const OLD = [

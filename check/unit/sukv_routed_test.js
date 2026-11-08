@@ -433,6 +433,8 @@ function makeKv(o) {
         'var pendingFlags = new Map();',
         dDecl('DCR_DEVICE_KEY'), dDecl('DCR_FIELD_MSG'), dDecl('DCR_LOG_MAX'), dDecl('DCR_LOG_FIELDS'),
         'var dcrLogSeq_ = 0, dcrWhoAcct_ = "";',
+        'var DCR_LIVE = false;',   /* 接続先の無い端末でログインだけで使えるか（2026-11-08）。この試験は接続先のある端末 */
+        ...(DCR.indexOf('\nfunction dcrOn_(') >= 0 ? [dFn('dcrOn_')] : []),
         ...['suNormName_', 'findServerResident_', 'pendingKey_', 'dcrIsField_', 'dcrWho_', 'dcrStamp_', 'dcrMakeLog_',
             'dcrAddLog_', 'dcrRemoveLogs_', 'applyPendingFlag_', 'getRemoteWithRev', 'queueFlags', 'runSaver', 'writeResidentFlag', 'writeLunchMed']
             .concat(DCR.indexOf('\nfunction dcrSaveErrText_(') >= 0 ? ['dcrSaveErrText_'] : []).concat(DCR.indexOf('\nfunction dcrSaveErrWords_(') >= 0 ? ['dcrSaveErrWords_'] : []).map(dFn)   /* 断りの言い換え（2026-10-12〜） */
