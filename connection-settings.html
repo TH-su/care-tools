@@ -198,6 +198,17 @@ main {
 
 .foot { max-width: 720px; margin: 14px auto 0; padding: 0 16px; font-size: 0.71875rem; color: var(--g7); }
 
+/* ── 画面だけ文字を1段大きくする（2026-11-08 商用化の点検・高齢の職員にも読めるように）──
+   13px 未満だった画面の文字（アプリ名・状態の札・入力欄の見出し・書き戻しの注意・下の注記）を 0.8125rem（13px）へ上げる。
+   基の値は残し、@media screen の中だけで上書きする（印刷の紙には持ち込まない）。 */
+@media screen {
+  .cd .apps { font-size: 0.8125rem; }
+  .badge { font-size: 0.8125rem; }
+  .fld label { font-size: 0.8125rem; }
+  .wb { font-size: 0.8125rem; }
+  .foot { font-size: 0.8125rem; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .btn:active { transform: none; background: var(--pri-l); }
   #toast { transition: none; }
