@@ -18,7 +18,10 @@
      6. 枠の中の画面を読み込み直したら、配線と倍率そろえをやり直す（同じ見張りを二重に付けない）。
         比較の中では各画面の印刷ボタン・切替スイッチ・比較へのリンクを隠す
      7. 状態の保存（2026-10-22 代表者の決定 B）: 連動の入／切だけを端末の ocmp_sync に '1'／'0' で残し、読み込み直したら戻す。決まった値以外は既定（入）。ほかのキー・共有データ・通信には触れない。保存領域が使えなくても動く。
-        再読み込みすると連動は「入」で始まる（チェックボックスの既定が checked） */
+        再読み込みすると連動は「入」で始まる（チェックボックスの既定が checked）
+     8. 連動の準備をあきらめた時（2026-11-08 商用化の点検）: 約30秒たっても枠の準備ができず待つのをやめた時は、凡例の中に
+        「連動の準備ができませんでした。ページを読み込み直してください」を textContent で出す（innerHTML は使わない・画面だけ）。
+        連動が切の時は出さない。後から準備が整った時・連動の入切を押した時は消え、凡例の文言は今のまま */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -86,10 +89,15 @@ function boot(opt) {
   const timers = [];
   const storage = [];
   const syncOn = { checked: true, _ch: [], addEventListener(ev, fn) { if (ev === 'change') this._ch.push(fn); } };
-  const legend = { textContent: '' };
+  /* 凡例の欄。textContent を入れ直すと中に足した部品は消える（本物と同じ） */
+  const legend = { _t: '', children: [],
+    get textContent() { return this._t + this.children.map(c => c.textContent).join(''); },
+    set textContent(v) { this._t = String(v); this.children = []; },
+    appendChild(c) { this.children.push(c); return c; } };
   const spyStore = new Proxy({}, { get(_, k) { storage.push(String(k)); return () => null; } });
   const box = {
-    document: { getElementById: id => ({ fVisit: A.ifr, fSupport: B.ifr, syncOn, cmpLegend: legend }[id] || null) },
+    document: { getElementById: id => ({ fVisit: A.ifr, fSupport: B.ifr, syncOn, cmpLegend: legend }[id] || null),
+      createElement: tag => ({ tagName: String(tag).toUpperCase(), className: '', textContent: '' }) },
     setTimeout(fn) { timers.push(fn); return timers.length; },
     clearTimeout(id) { if (id) timers[id - 1] = null; },
     localStorage: spyStore, sessionStorage: spyStore,
@@ -278,6 +286,49 @@ console.log('\n— 7. 連動の入／切だけを覚える —');
   t('保存領域の読み書きは try で包む（使えない端末でも止まらない）', /try \{ if \(localStorage\.getItem\(SYNC_KEY\)/.test(SC) && /try \{ localStorage\.setItem\(SYNC_KEY/.test(SC), '');
   t('fetch・XMLHttpRequest・SUKv・gasCall・sessionStorage は使わない', !/sessionStorage\.|fetch\(|XMLHttpRequest|SUKv\.|gasCall\(/.test(SRC), '');
   t('連動のチェックボックスの既定は「入」（checked）', /<input type="checkbox" id="syncOn" checked/.test(HTML), '');
+}
+
+console.log('\n— 8. 連動の準備をあきらめた時の知らせ —');
+{
+  const GIVEUP = '連動の準備ができませんでした。ページを読み込み直してください';
+  const warnOf = r => r.legend.children.filter(c => c.className === 'sync-warn' && c.textContent === GIVEUP);
+  const giveUp = r => { let n = 0, k; while ((k = r.runTimers(1))) { n += k; if (n > 1000) break; } return n; };
+  const r = boot({ A: { rendered: true }, B: { rendered: false } });
+  r.A.load(); r.B.load();
+  r.runTimers(5);
+  t('待っている間は知らせを出さない', warnOf(r).length === 0, r.legend.textContent);
+  giveUp(r);
+  t('約30秒待ってあきらめたら、凡例の中に知らせを出す', warnOf(r).length === 1 && warnOf(r)[0].tagName === 'SPAN', r.legend.textContent);
+  t('知らせを出しても凡例の文言（連動中：…）は今のまま前に残る', /^連動中：/.test(r.legend._t), r.legend._t);
+  /* 右の画面を読み込み直して、今度は描き終わった＝準備が整った */
+  r.B.st.rendered = true;
+  r.B.load(); r.runTimers();
+  t('後から準備が整ったら知らせを消す', warnOf(r).length === 0 && /^連動中：/.test(r.legend.textContent), r.legend.textContent);
+}
+{
+  const GIVEUP = '連動の準備ができませんでした。ページを読み込み直してください';
+  const r = boot({ A: { rendered: true }, B: { rendered: false } });
+  r.A.load(); r.B.load();
+  let n = 0, k; while ((k = r.runTimers(1))) { n += k; if (n > 1000) break; }
+  t('（前提）あきらめた知らせが出ている', r.legend.textContent.indexOf(GIVEUP) >= 0, r.legend.textContent);
+  r.toggle(false);
+  t('連動を切ると知らせは消え、凡例は「連動を切っています」', r.legend.textContent.indexOf(GIVEUP) < 0 && /^連動を切っています：/.test(r.legend.textContent), r.legend.textContent);
+  r.toggle(true);
+  t('入れ直しても知らせは残らない（凡例は「連動中」）', r.legend.textContent.indexOf(GIVEUP) < 0 && /^連動中：/.test(r.legend.textContent), r.legend.textContent);
+}
+{
+  const GIVEUP = '連動の準備ができませんでした。ページを読み込み直してください';
+  const r = boot({ A: { rendered: true }, B: { rendered: false } });
+  r.toggle(false);
+  r.A.load(); r.B.load();
+  let n = 0, k; while ((k = r.runTimers(1))) { n += k; if (n > 1000) break; }
+  t('連動を切っている間に待つのをやめた時は知らせを出さない', r.legend.textContent.indexOf(GIVEUP) < 0, r.legend.textContent);
+}
+{
+  const r = ready();
+  t('準備が整った時は知らせを出さない', r.legend.children.length === 0, r.legend.textContent);
+  t('知らせは textContent で組み、innerHTML は使わない', !/innerHTML/.test(SRC) && /el\.textContent = GIVEUP;/.test(SRC), '');
+  t('知らせは画面だけ（印刷では隠す）', /@media print \{ \.sync-warn \{ display: none; \} \}/.test(HTML), '');
 }
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
