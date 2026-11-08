@@ -57,7 +57,7 @@ group('A 設定の窓（接続先・合言葉）の文字');
 const modal = (SRC.match(/<div class="modal" id="mSync">[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/) || [''])[0];
 t('A1 見出し「GAS Web App URL」が無い', modal && !/GAS Web App URL/.test(modal));
 t('A2 見出し「接続先のURL（入居者マスタと共通）」がある', /<label>接続先のURL（入居者マスタと共通）<\/label>/.test(modal));
-t('A3 見出し「アクセストークン」が無く「合言葉」がある', !/アクセストークン/.test(modal) && /<label>合言葉<\/label>/.test(modal));
+t('A3 見出し「アクセストークン」が無く「合言葉」がある', !/アクセストークン/.test(modal) && /<label( for=\"cfgToken\")?>合言葉<\/label>/.test(modal));
 t('A4 入力の例は「入居者マスタと同じ合言葉」', /placeholder="入居者マスタと同じ合言葉"/.test(modal) && !/同じトークン/.test(modal));
 t('A5 説明は「接続先のURL・合言葉はこの端末にのみ保存します」', /接続先のURL・合言葉はこの端末にのみ保存します/.test(modal) && !/URL・トークン/.test(modal));
 
