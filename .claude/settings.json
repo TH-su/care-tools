@@ -2,10 +2,23 @@
   "permissions": {
     "allow": [
       "mcp__claude-code-remote__register_repo_root",
+      "mcp__Claude_Code_Remote__register_repo_root",
       "mcp__claude-code-remote__send_later",
+      "mcp__Claude_Code_Remote__send_later",
       "mcp__claude-code-remote__update_trigger",
+      "mcp__Claude_Code_Remote__update_trigger",
       "mcp__claude-code-remote__list_triggers",
-      "mcp__claude-code-remote__get_trigger"
+      "mcp__Claude_Code_Remote__list_triggers",
+      "mcp__claude-code-remote__get_trigger",
+      "mcp__Claude_Code_Remote__get_trigger",
+      "mcp__claude-code-remote__subscribe_pr_activity",
+      "mcp__Claude_Code_Remote__subscribe_pr_activity",
+      "mcp__claude-code-remote__unsubscribe_pr_activity",
+      "mcp__Claude_Code_Remote__unsubscribe_pr_activity",
+      "mcp__claude-code-remote__read_documentation",
+      "mcp__Claude_Code_Remote__read_documentation",
+      "mcp__claude-code-remote__get_session",
+      "mcp__Claude_Code_Remote__get_session"
     ]
   },
   "hooks": {
