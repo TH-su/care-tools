@@ -37,6 +37,13 @@ t('ジェノグラムは同梱した PDF 部品を、開いた後の手すきか
 const J = fs.readFileSync(path.join(ROOT, 'jspdf-2.5.1.umd.js'), 'utf8');
 t('同梱した PDF 部品は jsPDF 2.5.1（版の札がある）', /\* Version 2\.5\.1 Built on/.test(J) && J.length > 300000, J.length);
 
+t('家族構成図は同梱した描画の部品 konva-9.3.22.min.js を読む（画面の中に直書きしない・2026-11-08）',
+  /<script src="konva-9\.3\.22\.min\.js"><\/script>/.test(G) && G.indexOf('Konva JavaScript Framework') < 0, '');
+const K = fs.readFileSync(path.join(ROOT, 'konva-9.3.22.min.js'), 'utf8');
+t('同梱した描画の部品は Konva v9.3.22（版の札がある）', /Konva JavaScript Framework v9\.3\.22/.test(K) && K.length > 150000, K.length);
+/* 描画の部品を読む札は、画面の自前のスクリプトより前（Konva を使う処理が先に動かない） */
+t('描画の部品の札は、画面の自前の処理（Konva.Stage を作る所）より前にある', G.indexOf('konva-9.3.22.min.js') >= 0 && G.indexOf('konva-9.3.22.min.js') < G.indexOf('new Konva.'), [G.indexOf('konva-9.3.22.min.js'), G.indexOf('new Konva.')]);
+
 /* (4) 読み込み先の定数と、札をその定数で作っていること（定数だけ直して別の所から読む、を防ぐ） */
 const srcOf = (html, name) => { const m = new RegExp("const " + name + " = '([^']*)';").exec(html); return m ? m[1] : null; };
 t('体重管理は読み込みの札を定数で作る（s.src = WR_CHART_SRC;）', W.indexOf('s.src = WR_CHART_SRC;') >= 0, '');
