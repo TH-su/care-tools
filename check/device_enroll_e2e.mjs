@@ -49,7 +49,7 @@ async function enrollRun(reply) {
       return route.fulfill({ status: reply.status, contentType: 'application/json', body: JSON.stringify(reply.body) });
     }
     if (u.pathname === '/auth/v1/user') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(USER) });
-    if (u.pathname === '/rest/v1/rpc/my_account') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ email: EMAIL, role: 'field', mfa: false }) });
+    if (u.pathname === '/rest/v1/rpc/my_account') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(reply.deny ? null : { email: EMAIL, role: 'field', mfa: false }) });
     if (u.pathname === '/rest/v1/allowed_accounts') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ role: 'field', label: '現場の端末（架空）' }) });
     if (u.pathname.startsWith('/auth/v1/logout')) return route.fulfill({ status: 204 });
     return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
@@ -96,6 +96,15 @@ try {
   t('「この QR は使えません」を出す・メニューへ移らない', /使えません/.test(msg) && /\/enroll\.html$/.test(page.url()), [msg, page.url()]);
   t('ログインの鍵も用途も書かない', !stor2.some((k) => /auth-token|su_device_role/.test(k)), stor2);
   t('画面のエラーなし', st.errors.length === 0, st.errors);
+  await context.close();
+
+  say('— B2. 受け取りページ（ログインはできたが、データベースが使えないと答えた時） —');
+  ({ context, page, st } = await enrollRun({ deny: true, status: 200, body: { ok: true, session: { access_token: ACCESS, refresh_token: 'refresh-kakuu', expires_at: now + 3600 }, deviceRole: 'field' } }));
+  await page.waitForSelector('#v-ng:not([hidden])', { timeout: 10000 }).catch(() => {});
+  await page.waitForTimeout(500);
+  const stor4 = await page.evaluate(() => Object.keys(localStorage));
+  t('ログアウトしてから断りを出す（ログインの鍵が端末に残らない・用途も書かない・メニューへ移らない）',
+    !stor4.some((k) => /auth-token|su_device_role/.test(k)) && /\/enroll\.html$/.test(page.url()) && /使えません/.test(await page.textContent('#ng-msg')), stor4);
   await context.close();
 
   say('— C. 使える人の管理（QR を出す） —');

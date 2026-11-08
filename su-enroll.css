@@ -6,7 +6,7 @@
 .en-qr .en-exp { margin: 0; font-variant-numeric: tabular-nums; }
 .tag.st-active { background: var(--ok-l); color: var(--ok); }
 .tag.st-open { background: var(--pri-l); color: var(--pri); }
-.tag.st-revoked, .tag.st-canceled, .tag.st-failed { background: var(--ng-l); color: var(--ng); }
+.tag.st-revoked, .tag.st-canceled, .tag.st-failed, .tag.st-lapsed { background: var(--ng-l); color: var(--ng); }
 .en-done { text-align: center; }
 [hidden] { display: none !important; }
 @media print {

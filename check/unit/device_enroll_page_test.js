@@ -93,7 +93,7 @@ async function runEnroll(opt) {
 /* ── 2. 管理者の欄 ── */
 async function runAdmin(opt) {
   opt = opt || {};
-  const { els, document } = mkDom(['sec-enroll', 'en-msg', 'en-form', 'en-acct', 'en-role', 'en-label', 'b-enroll', 'en-qr', 'en-qr-img', 'en-qr-for', 'en-qr-exp', 'b-enroll-close', 'en-list']);
+  const { els, document } = mkDom(['sec-enroll', 'en-msg', 'en-form', 'en-acct', 'en-role', 'en-label', 'b-enroll', 'en-qr', 'en-qr-img', 'en-qr-for', 'en-qr-exp', 'b-enroll-close', 'en-list', 'b-enroll-revoke-all']);
   els['sec-enroll'].hidden = true; els['en-form'].hidden = true; els['en-qr'].hidden = true;
   const ls = mkStorage(), ss = mkStorage();
   const calls = [];
@@ -105,6 +105,7 @@ async function runAdmin(opt) {
     if (name === 'device_enroll_list') return { data: { ok: true, rows: listRows }, error: null };
     if (name === 'device_enroll_issue') return { data: opt.issue || { ok: true, id: 5, code: CODE, expiresAt: new Date(Date.now() + 600000).toISOString(), email: args.p_email, deviceRole: args.p_device_role }, error: null };
     if (name === 'device_enroll_revoke') return { data: { ok: true, revoked: true }, error: null };
+    if (name === 'device_enroll_revoke_account') return { data: { ok: true, revoked: 3 }, error: null };
     return { data: null, error: { message: 'x' } };
   };
   const svgs = [];
@@ -152,8 +153,9 @@ async function runAdmin(opt) {
   r = await runEnroll({ netErr: true });
   t('通信できない時は「もう一度試す」を出す（番号はメモリにだけ）', !r.els['v-ng'].hidden && !r.els['b-retry'].hidden && r.ls.writes.length === 0 && r.ss.writes.length === 0);
   r = await runEnroll({ denied: true });
-  t('ログインできてもデータベースが使えないと答えた時は「使えません」を出し、メニューへ移らない・用途を書かない',
-    !r.els['v-ng'].hidden && r.log.replace.length === 0 && r.ls.writes.length === 0);
+  t('ログインできてもデータベースが使えないと答えた時は、この端末だけログアウトしてから「使えません」を出し、メニューへ移らない・用途を書かない',
+    !r.els['v-ng'].hidden && r.log.replace.length === 0 && r.ls.writes.length === 0
+    && r.log.signOut === 1 && r.log.order.indexOf('signOut') > r.log.order.indexOf('setSession'));
   r = await runEnroll({ setErr: true });
   t('鍵を入れられなかった時は断りを出す', !r.els['v-ng'].hidden && r.log.replace.length === 0);
   for (const h of ['', '#c=', '#c=' + CODE.toUpperCase(), '#c=' + CODE + 'x', '#code=' + CODE]) {
@@ -191,6 +193,24 @@ async function runAdmin(opt) {
     && a.els['en-list'].children[0].children[1].children[0].textContent === 'この端末を取り消す');
   await a.els['en-list'].children[0].children[1].children[0].listeners.click[0](); await settle();
   t('取り消しは行の番号だけを送る', JSON.stringify(a.calls.filter((c) => c.name === 'device_enroll_revoke').map((c) => c.args)) === JSON.stringify([{ p_id: 5 }]));
+
+  a = await runAdmin({ listRows: [
+    { id: 7, email: 'inv-f@example.invalid', label: '見本', state: 'lapsed', createdAt: new Date().toISOString() },
+    { id: 8, email: 'inv-f@example.invalid', label: '見本', state: 'failed', createdAt: new Date().toISOString() },
+    { id: 9, email: 'inv-f@example.invalid', label: '見本', state: 'revoked', createdAt: new Date().toISOString() },
+    { id: 10, email: 'inv-f@example.invalid', label: '見本', state: 'expired', createdAt: new Date().toISOString() }] });
+  const btnOf = (i) => a.els['en-list'].children[i].children[1].children[0];
+  t('90日を過ぎた端末・使った直後でまだ結んでいない行には取り消しのボタン・取り消した行と期限切れには無い',
+    btnOf(0) && btnOf(0).textContent === 'この端末を取り消す' && btnOf(1) && btnOf(1).textContent === 'この QR を取り消す' && !btnOf(2) && !btnOf(3));
+  a.els['en-acct'].value = 'inv-f@example.invalid';
+  a.els['en-acct'].selectedOptions = [{ textContent: '現場の端末（見本）（現場）' }];
+  await a.els['b-enroll-revoke-all'].listeners.click[0](); await settle();
+  t('「このアカウントの端末を全部取り消す」は選んだアカウントだけを送り、件数を出す',
+    JSON.stringify(a.calls.filter((c) => c.name === 'device_enroll_revoke_account').map((c) => c.args)) === JSON.stringify([{ p_email: 'inv-f@example.invalid' }])
+    && a.els['en-msg'].textContent.includes('3件'));
+  a.els['en-acct'].value = '';
+  await a.els['b-enroll-revoke-all'].listeners.click[0](); await settle();
+  t('アカウントを選ばない時は全部取り消しを送らない', a.calls.filter((c) => c.name === 'device_enroll_revoke_account').length === 1);
 
   for (const [err, want] of [['badaccount', '選べません'], ['toomany', '5つ'], ['badlabel', '20字']]) {
     a = await runAdmin({ issue: { ok: false, error: err } });

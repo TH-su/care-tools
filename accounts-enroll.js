@@ -1,10 +1,11 @@
 /*
  * accounts-enroll.js — 使える人の管理（accounts.html）の「端末登録の QR」（2026-11-08 新設・代表者の決定 段4・care-backend 統合 0082）
  * ════════════════════════════════════════════════════════════════
- * 1. 管理者がアカウント（同じ施設の有効な現場・事務所。管理者は選べない）と、必要なら端末の用途・呼び名を選んで「QR を出す」
+ * 1. 管理者が現場のアカウント（同じ施設の有効な現場だけ。事務所・管理者は選べない）と、必要なら端末の用途・呼び名を選んで「QR を出す」
  * 2. データベースの device_enroll_issue が1回限り・10分の番号を作り（データベースに置くのはハッシュだけ）、番号を1回だけ返す
  * 3. 画面は「このサイトの enroll.html#c=番号」を QR の絵（su-qr.js・同じサイトの部品）にして出す。端末のカメラで読むと受け取りページが開く
  * 4. 出している間は数秒ごとに一覧を読み直し、使われたら QR を消して「登録できました」と出す。期限が来たら QR を消す
+ * 5. 一覧の取り消していない行は「取り消す」（登録した端末はログインそのものが消える）。「このアカウントの端末を全部取り消す」もある
  * ★できる人の判定はデータベース（管理者＋2段階認証＝aal2 でなければ 42501）。この画面は見せ方を整えるだけ。
  * ★番号はメモリにだけ持つ（localStorage・sessionStorage・記録・送信のどれにも入れない）。QR を消したら変数も手放す。画面だけで印刷しない。
  * ★QR に入れるのは受け取りページの住所と番号だけ（合言葉・メール・鍵は入れない）。番号は URL の # の後ろ＝サーバーへは送られない。
@@ -15,7 +16,7 @@
   var $ = function (id) { return document.getElementById(id); };
   var ROLE = { field: '現場', office: '事務所' };
   var DEV = { field: '現場の端末', office: '事務所PC' };
-  var STATE = { open: '使われるのを待っています', expired: '期限切れ', active: '登録した端末', failed: '登録できませんでした', revoked: '取り消した端末', canceled: '取り消した QR' };
+  var STATE = { open: '使われるのを待っています', expired: '期限切れ', active: '登録した端末', lapsed: '90日を過ぎた端末', failed: '登録できませんでした', revoked: '取り消した端末', canceled: '取り消した QR' };
   var POLL_MS = 4000;
   var live = null;   // 出している QR { id, expiresAt, timer } ※番号そのものは持ち続けない
 
@@ -42,7 +43,7 @@
     return 'うまくいきませんでした。少し待ってからもう一度試してください。';
   }
   var REFUSE = {
-    badaccount: 'このアカウントは選べません（管理者・止めた人・まだ一度も Google でログインしていない人は選べません）。',
+    badaccount: 'このアカウントは選べません（選べるのは現場のアカウントだけです。止めた人・まだ一度も Google でログインしていない人も選べません）。',
     toomany: 'まだ使われていない QR が5つあります。使うか、下の一覧で取り消してから出してください。',
     badrole: '端末の用途を選び直してください。',
     badlabel: '端末の呼び名は20字までにしてください。'
@@ -91,8 +92,9 @@
       left.appendChild(tags);
       li.appendChild(left);
       var ops = el('div', 'ops');
-      if (r.state === 'open' || r.state === 'active') {
-        var b = el('button', 'btn sm ng', r.state === 'active' ? 'この端末を取り消す' : 'この QR を取り消す');
+      if (r.state === 'open' || r.state === 'active' || r.state === 'lapsed' || r.state === 'failed') {
+        var dev = r.state === 'active' || r.state === 'lapsed';
+        var b = el('button', 'btn sm ng', dev ? 'この端末を取り消す' : 'この QR を取り消す');
         b.type = 'button';
         b.addEventListener('click', function () { revoke(r, b); });
         ops.appendChild(b);
@@ -121,7 +123,7 @@
 
   async function revoke(r, btn) {
     var name = (r.deviceLabel ? r.deviceLabel + '（' : '') + (r.label || r.email) + (r.deviceLabel ? '）' : '');
-    var q = r.state === 'active'
+    var q = (r.state === 'active' || r.state === 'lapsed')
       ? name + ' の端末のログインを取り消しますか？\n\nその端末はその場で何も見られなくなります。使い続けるには、もう一度 QR を読むか Google でログインします。'
       : name + ' 用に出した QR を取り消しますか？';
     if (!confirm(q)) return;
@@ -212,7 +214,28 @@
     }
   }
 
+  async function revokeAll() {
+    var email = $('en-acct').value;
+    if (!email) { note('取り消すアカウントを選んでください。'); $('en-acct').focus(); return; }
+    var opt = $('en-acct').selectedOptions[0];
+    var name = opt ? opt.textContent.replace(/ … まだログインしていない$/, '') : email;
+    if (!confirm(name + ' で登録した端末と、まだ使われていない QR を全部取り消しますか？\n\nその端末はその場で何も見られなくなります。')) return;
+    var btn = $('b-enroll-revoke-all');
+    btn.disabled = true;
+    try {
+      var res = await rpc('device_enroll_revoke_account', { p_email: email });
+      hideQr();
+      var n = res && typeof res.revoked === 'number' ? res.revoked : 0;
+      note(n ? n + '件を取り消しました。' : '取り消すものはありませんでした。', 'ok');
+      await reload();
+    } catch (e) {
+      note(friendly(e));
+    }
+    btn.disabled = false;
+  }
+
   $('b-enroll').addEventListener('click', issue);
+  $('b-enroll-revoke-all').addEventListener('click', revokeAll);
   $('b-enroll-close').addEventListener('click', function () { hideQr(); note(''); });
   // 画面を離れる時は QR を消す（戻るボタンの控えに残さない）
   window.addEventListener('pagehide', hideQr);

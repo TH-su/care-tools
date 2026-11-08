@@ -71,7 +71,12 @@
     } catch (e) { fail(MSG.server, false); return; }
     var st;
     try { st = await SUAuth.check({ fresh: true }); } catch (e) { st = null; }
-    if (!st || st.status !== SUAuth.STATUS.OK) { fail(MSG.denied, false); return; }
+    if (!st || st.status !== SUAuth.STATUS.OK) {
+      // 使えないと言われたログインは端末に残さない（この端末だけログアウトしてから断りを出す）
+      try { await SUAuth.signOut(); } catch (e) { /* 外せなくても、データベースはこのログインに何も返さない */ }
+      fail(MSG.denied, false);
+      return;
+    }
     if (j.deviceRole === 'field' || j.deviceRole === 'office') {
       try { localStorage.setItem(DEVICE_KEY, j.deviceRole); } catch (e) { /* 書けない端末は今の用途のまま */ }
     }
