@@ -16,6 +16,10 @@
        （moushi_read より先）。読めない時（通信・断り・写しが古い・形の違い・ログインなし・使えないアカウント・確かめの失敗）は Google へ戻さず
        失敗にし、画面は「読み込めませんでした。…」と出す。現場の端末・現場のアカウント・42501 は今までどおり Google。切・終わりの時刻を過ぎた時は
        今までの道。控えでケアログの道が入なのに確かめていない時は su-backend.json を読み直してから決める（Google から読まない）
+     L 接続先・合言葉の無い端末（代表者の決定 2026-11-08「端末ごとの設定を極限までなくす」段1）: liveReady はスイッチ（自分で読んだ値）・
+       現場の端末でない・事務所/管理者のログインの3つがそろう時だけ真・時間切れ（8秒）と分からない時は偽・端末に書かない。
+       画面は接続先が無い時 noGas を付け、写しの道もスイッチを確かめてから読む（Google へは送らない）。読めない時は今までの断り。
+       起動は確かめてから1回だけ進み、使える時だけ帯と初回の案内を止める。ping・排泄は今までどおり接続先がある時だけ
    ★架空データのみ（氏名は使わない）。 */
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
@@ -46,7 +50,8 @@ function load(o) {
   if (o.role) store.su_device_role = o.role;
   const win = {};
   const ctx = {
-    window: win, JSON, Object, Array, String, Number, Math, Error, Promise, Date, RegExp, isFinite, setTimeout, clearTimeout
+    window: win, JSON, Object, Array, String, Number, Math, Error, Promise, Date, RegExp, isFinite,
+    setTimeout: o.fastTimers ? (f, ms) => setTimeout(f, ms >= 8000 ? 30 : ms) : setTimeout, clearTimeout
   };
   win.localStorage = { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { writes.push(k); store[k] = v; }, removeItem: k => { writes.push(k); } };
   const server = o.flagsJson !== undefined ? o.flagsJson : o.flags;   // 既定では su-backend.json も端末の控えと同じ値
@@ -57,7 +62,7 @@ function load(o) {
     const a = o.auth || { status: 'ok', role: 'office' };
     win.SUAuth = {
       STATUS: { OK: 'ok', SIGNED_OUT: 'signed_out' },
-      check: () => { counts.check++; return a === 'throw' ? Promise.reject(new Error('net')) : Promise.resolve(a); },
+      check: () => { counts.check++; if (a === 'hang') return new Promise(() => {}); if (a === 'late') return new Promise(ok => setTimeout(() => ok({ status: 'ok', role: 'office' }), 120)); return a === 'throw' ? Promise.reject(new Error('net')) : Promise.resolve(a); },
       client: () => ({ rpc: (name, args) => { rpcs.push({ name, args }); return o.rpc ? o.rpc(name, args) : Promise.resolve({ data: name.indexOf('ho_events') === 0 ? EV_OK : MS_OK, error: null }); } })
     };
   }
@@ -68,7 +73,7 @@ function load(o) {
   const H0 = win.SUHoRead;
   let ready = Promise.resolve();
   if (!o.noWarm && H0 && (H0._flagOn(o.flags, Date.now()) || H0._flagOn(o.flags, Date.now(), 'moushi_carelog'))) ready = H0._refresh();
-  const H = o.noWarm ? H0 : Object.assign({}, H0, { call: (a, p, f) => ready.then(() => H0.call(a, p, f)) });
+  const H = o.noWarm ? H0 : Object.assign({}, H0, { call: (a, p, f, x) => ready.then(() => H0.call(a, p, f, x)) });
   return { H, win, writes, rpcs, notes, store, counts };
 }
 function gas(tag) {
@@ -240,7 +245,7 @@ const MSP = { from: '2026-10-01', to: '2026-10-03' };
       return -1;
     }
     const grab = (name) => { const s = HTML.indexOf('\nfunction ' + name + '('); return HTML.slice(s, scanBlock(HTML, s) + 1); };
-    const code = [HTML.match(/\nvar API_GET_RETRY = [^;]+;/)[0], grab('fetchTO'), grab('parseJson'), grab('apiGet'), grab('apiGetOnce')].join('\n');
+    const code = [HTML.match(/\nvar API_GET_RETRY = [^;]+;/)[0], grab('fetchTO'), grab('parseJson'), grab('apiGet'), grab('apiGetOnce'), grab('mskCfgOk_')].join('\n');
     function box(withHo, answers, flags) {
       const sent = [];
       const sb = {
@@ -435,6 +440,215 @@ const MSP = { from: '2026-10-01', to: '2026-10-03' };
     await L3.H._refresh();
     await L3.H.call('events', EVP, g3.fn);
     t('控えが空でも、ページの最初の読み取りで裏で読み、次の読み取りからケアログの道', g3.n === 1 && L3.rpcs.length === 1 && L3.rpcs[0].name === 'ho_events_cl', { n: g3.n, r: L3.rpcs });
+  }
+
+  console.log('— L. 接続先・合言葉の無い端末（ログインだけで読む・2026-11-08）');
+  {
+    const CL = { supabase: { moushi_carelog: true } };
+    const okCases = [['ケアログの道が入・事務所', { flagsJson: CL }], ['ケアログの道が入・管理者', { flagsJson: CL, auth: { status: 'ok', role: 'admin' } }],
+      ['写しの道だけ入・事務所', { flagsJson: ON }]];
+    for (const [label, o] of okCases) {
+      const L = load(Object.assign({ noWarm: true }, o));
+      const v = await L.H.liveReady();
+      t('liveReady 真: ' + label, v === true, v);
+      t('liveReady 真: ' + label + '・端末に書かない・データベースは読まない', L.writes.length === 0 && L.rpcs.length === 0, { w: L.writes, r: L.rpcs });
+    }
+    const ngCases = [
+      ['現場の端末', { flagsJson: CL, role: 'field' }],
+      ['ログインしていない', { flagsJson: CL, auth: { status: 'signed_out' } }],
+      ['現場のアカウント', { flagsJson: CL, auth: { status: 'ok', role: 'field' } }],
+      ['使えないアカウント', { flagsJson: CL, auth: { status: 'not_allowed', role: 'office' } }],
+      ['ログインの確かめが失敗', { flagsJson: CL, auth: 'throw' }],
+      ['ログインの部品が読めない', { flagsJson: CL, auth: null }],
+      ['スイッチが両方切', { flagsJson: { supabase: { moushi_read: false, moushi_carelog: false } } }],
+      ['スイッチの終わりの時刻を過ぎた', { flagsJson: { supabase: { moushi_carelog: true, moushi_carelog_until: '2020-01-01T00:00:00+09:00' } } }],
+      ['su-backend.json が読めない（控えは入）', { flags: CL, flagsJson: undefined, netFail: true }]];
+    for (const [label, o] of ngCases) {
+      const L = load(Object.assign({ noWarm: true }, o));
+      if (o.netFail) L.win.fetch = () => { L.counts.fetch++; return Promise.reject(new Error('no network')); };
+      let threw = false, v;
+      try { v = await L.H.liveReady(); } catch (e) { threw = true; }
+      t('liveReady 偽: ' + label + '（例外を出さない）', v === false && !threw, v);
+      t('liveReady 偽: ' + label + '・端末に書かない', L.writes.length === 0, L.writes);
+    }
+    {
+      const L2 = load({ noWarm: true, flagsJson: { supabase: {} } });
+      await L2.H.liveReady();
+      t('スイッチが切の時はログインの確かめも部品の読み込みも呼ばない', L2.counts.check === 0 && L2.counts.script === 0, L2.counts);
+      const L3 = load({ noWarm: true, flagsJson: CL, role: 'field' });
+      await L3.H.liveReady();
+      t('現場の端末は su-backend.json もログインも確かめない', L3.counts.fetch === 0 && L3.counts.check === 0, L3.counts);
+    }
+    {
+      const L = load({ noWarm: true, flagsJson: CL, auth: 'hang', fastTimers: true });
+      const v = await L.H.liveReady();
+      t('ログインの確かめが返らない時は時間切れ（8秒）で偽', v === false, v);
+      const L2 = load({ noWarm: true, flagsJson: CL, auth: 'late', fastTimers: true });
+      const v2 = await L2.H.liveReady();
+      await new Promise(r => setTimeout(r, 200));
+      t('時間切れの後にログインの答えが届いても偽のまま', v2 === false, v2);
+    }
+    {
+      const L = load({ noWarm: true, flagsJson: CL });
+      L.win.SUAuth.check = () => { L.store.su_device_role = 'field'; return Promise.resolve({ status: 'ok', role: 'office' }); };
+      t('確かめている間に現場の端末へ変わったら偽', (await L.H.liveReady()) === false);
+    }
+
+    // noGas: 接続先の無い端末は、写しの道もスイッチを確かめてから読む
+    {
+      const L = load({ noWarm: true, flagsJson: ON });
+      const g = gas();
+      const r = await L.H.call('events', EVP, g.fn, { noGas: true });
+      t('noGas・写しの道: まだ確かめていない1回目も読み直して写しから読む（Google を呼ばない）', g.n === 0 && L.rpcs.length === 1 && L.rpcs[0].name === 'ho_events' && !!r.events, { n: g.n, r: L.rpcs });
+      const Lb = load({ noWarm: true, flagsJson: ON });
+      const gb = gas();
+      await Lb.H.call('events', EVP, gb.fn);
+      t('noGas が無い時は今までどおり1回目は Google（待たない）', gb.n === 1 && Lb.rpcs.length === 0, { n: gb.n });
+      const L2 = load({ noWarm: true, flagsJson: CL });
+      const g2 = gas();
+      await L2.H.call('measures', MSP, g2.fn, { noGas: true });
+      t('noGas・ケアログの道: 読み直してケアログの道', g2.n === 0 && L2.rpcs.length === 1 && L2.rpcs[0].name === 'ho_measures_cl', L2.rpcs);
+      const L3 = load({ noWarm: true, flagsJson: OFF });
+      const g3 = gas();
+      await L3.H.call('events', EVP, g3.fn, { noGas: true });
+      t('noGas・スイッチ切: 読み直した後、今までどおり画面の関数（接続先なしの断り）', g3.n === 1 && L3.rpcs.length === 0);
+      const L4 = load({ noWarm: true, flagsJson: ON, rpc: () => Promise.resolve({ data: STALE, error: null }) });
+      const g4 = gas();
+      await L4.H.call('events', EVP, g4.fn, { noGas: true });
+      t('noGas・写しが古い: 今までどおり画面の関数へ戻す（画面は接続先なしの断り）', g4.n === 1);
+      const L5 = load({ noWarm: true, flagsJson: ON });
+      L5.win.fetch = () => { L5.counts.fetch++; return Promise.reject(new Error('no network')); };
+      const g5 = gas();
+      await L5.H.call('events', EVP, g5.fn, { noGas: true });
+      t('noGas・su-backend.json が読めない: 画面の関数・データベースを呼ばない', g5.n === 1 && L5.rpcs.length === 0);
+      const L6 = load({ noWarm: true, flagsJson: ON });
+      const g6 = gas();
+      await L6.H.call('ping', {}, g6.fn, { noGas: true });
+      t('noGas でも ping は画面の関数（今までどおり）', g6.n === 1 && L6.rpcs.length === 0);
+      const L7 = load({ noWarm: true, flagsJson: ON, role: 'field' });
+      const g7 = gas();
+      await L7.H.call('events', EVP, g7.fn, { noGas: true });
+      t('noGas でも現場の端末はデータベースを読まない', g7.n === 1 && L7.rpcs.length === 0);
+      const L8 = load({ noWarm: true, flagsJson: CL });
+      await L8.H.call('events', EVP, gas().fn, { noGas: true });
+      t('noGas でも localStorage へ書かない', L8.writes.length === 0, L8.writes);
+    }
+
+    // 画面: 接続先の無い端末の apiGet は noGas を付け、新しい保存先だけへ届く
+    {
+      function scanBlock(src, from) {
+        let depth = 0, seen = false, q = null;
+        for (let i = from; i < src.length; i++) {
+          const c = src[i], n = src[i + 1], p = src[i - 1];
+          if (q) { if (c === q && p !== '\\') q = null; continue; }
+          if (c === '/' && n === '/') { i = src.indexOf('\n', i); continue; }
+          if (c === '/' && n === '*') { i = src.indexOf('*/', i + 2) + 1; continue; }
+          if (c === "'" || c === '"' || c === '`') { q = c; continue; }
+          if (c === '{') { depth++; seen = true; } else if (c === '}') { depth--; if (seen && depth === 0) return i; }
+        }
+        return -1;
+      }
+      const grab = (name) => { const s = HTML.indexOf('\nfunction ' + name + '('); return HTML.slice(s, scanBlock(HTML, s) + 1); };
+      const code = [HTML.match(/\nvar API_GET_RETRY = [^;]+;/)[0], 'var MSK_LIVE = false;', grab('fetchTO'), grab('parseJson'), grab('apiGet'), grab('apiGetOnce'),
+        grab('mskCfgOk_'), grab('mskOn_'), grab('ensureBaseData'), grab('ensureVmData'), grab('pfSteps'), grab('apiErrMsg')].join('\n');
+      function box(cfg, flagsJson) {
+        const sent = [], calls = [];
+        const sb = {
+          JSON, String, Object, Date, Error, Promise, setTimeout, clearTimeout, RegExp,
+          AbortController: class { constructor() { this.signal = {}; } abort() {} },
+          loadCfg: () => cfg,
+          fetch: (url, opt) => { sent.push(opt.body); return Promise.resolve({ text: () => Promise.resolve('{"ok":true}') }); },
+          baseStale: () => true, dataLoaded: () => false, LOADING: false, rgClearBase: () => calls.push('clearBase'), load: () => { calls.push('load'); return null; },
+          vmStale: () => true, vmLoaded: () => false, VM_LOADING: false, rgClearVm: () => calls.push('clearVm'), vmLoad: () => { calls.push('vmLoad'); return null; },
+          excReadCfg: () => null, excLoaded: () => false, excStale: () => true, EXC_LOADING: false, excLoad: () => null
+        };
+        vm.createContext(sb);
+        vm.runInContext(code, sb);
+        let L = null;
+        if (flagsJson !== undefined) { L = load({ noWarm: true, flagsJson }); sb.SUHoRead = L.H; }
+        return { sb, sent, calls, L };
+      }
+      const NOC = { url: '', token: '' };
+      const A = box(NOC, ON);
+      const ev = await A.sb.apiGet('events', EVP);
+      const ms = await A.sb.apiGet('measures', MSP);
+      t('画面・接続先なし: 出来事・バイタル食事は新しい保存先だけへ届き Google へ0件', A.sent.length === 0 && A.L.rpcs.length === 2 && !!ev.events && !!ms.vitals, { s: A.sent.length, r: A.L.rpcs });
+      const e1 = await A.sb.apiGet('ping', {}).then(() => null, e => e);
+      t('画面・接続先なし: ping は今までどおり「接続先と合言葉が入っていません」', !!e1 && A.sb.apiErrMsg(e1).indexOf('接続先と合言葉が入っていません') === 0 && A.sent.length === 0);
+      const B = box(NOC, ON);
+      const origB = B.L.H.call;
+      B.L.H.call = (a, p, f, x) => { B.seen = x; return origB(a, p, f, x); };
+      await B.sb.apiGet('events', EVP);
+      t('画面・接続先なし: 入口へ noGas を渡す', !!B.seen && B.seen.noGas === true, B.seen);
+      const C = box({ url: 'https://script.google.com/macros/s/EXAMPLE/exec', token: 'tok-example' }, OFF);
+      const origC = C.L.H.call;
+      C.L.H.call = (a, p, f, x) => { C.seen = x; return origC(a, p, f, x); };
+      await C.sb.apiGet('events', EVP);
+      t('画面・接続先あり: noGas は偽（今までどおり）・Google へ今までの本文で1回', !!C.seen && C.seen.noGas === false && C.sent.length === 1
+        && C.sent[0] === JSON.stringify({ action: 'events', from: '2026-10-01', to: '2026-10-03', noLedger: '1', token: 'tok-example' }), { seen: C.seen, sent: C.sent });
+      const D = box(NOC, ON);
+      D.L.H.call = (a, p, f) => f();   // 新しい保存先で読めず画面の関数へ戻った時
+      const e2 = await D.sb.apiGet('events', EVP).then(() => null, e => e);
+      t('画面・接続先なし・読めずに戻った時: 今までの断り（NO_CFG）で Google へ0件', !!e2 && e2.message === 'NO_CFG' && D.sent.length === 0);
+
+      // 読み始めの門（ensureBaseData・ensureVmData・pfSteps）
+      const E = box(NOC, undefined);
+      E.sb.ensureBaseData(); E.sb.ensureVmData();
+      t('接続先なし・使える印なし: 今までどおり読まない・先読みもしない', E.calls.join(',') === 'clearBase,clearVm' && E.sb.pfSteps().length === 0, E.calls);
+      const F = box(NOC, undefined);
+      vm.runInContext('MSK_LIVE = true;', F.sb);
+      F.sb.ensureBaseData(); F.sb.ensureVmData();
+      t('接続先なし・使える印あり: 出来事とバイタル食事を読む・先読みも2つ', F.calls.join(',') === 'load,vmLoad' && F.sb.pfSteps().length === 2, F.calls);
+    }
+
+    // 画面の起動: 接続先の無い事務所PCは確かめてから1回だけ進む
+    {
+      const st = HTML.indexOf('  function mskNoCfg_(){');
+      const en = HTML.indexOf('\n})();', st);
+      const startCode = 'function boot(){\n' + HTML.slice(st, en) + '\n}';
+      async function run(o) {
+        const calls = [];
+        const ls = { su_device_role: o.role || null };
+        const sb = {
+          cfg: o.cfg, opened: o.opened || 'scr-resident', MSK_LIVE: false, ROLE_KEY: 'su_device_role',
+          lsGet: k => ls[k], mskCfgOk_: () => !!(o.cfg.url && o.cfg.token),
+          goto: (s) => calls.push('goto:' + s), $: () => ({ textContent: '' }), sqSyncScope: () => {}, renderSearch: () => {},
+          ensureBaseData: () => calls.push('base'), ensureVmData: () => calls.push('vm'), ensureExcData: () => calls.push('exc'),
+          mskGuide_: () => calls.push('guide'), pfAfterFirst: () => calls.push('pf'),
+          window: { SUCfgHint: { quiet: () => calls.push('quiet') } },
+          Promise
+        };
+        if (!o.noHo) sb.SUHoRead = { liveReady: () => { calls.push('probe'); if (o.flipField) ls.su_device_role = 'field'; return o.probe; } };
+        sb.SUCfgHint = sb.window.SUCfgHint;
+        vm.createContext(sb);
+        vm.runInContext(startCode, sb);
+        sb.boot();
+        await new Promise(r => setTimeout(r, 10));
+        return { calls, live: sb.MSK_LIVE };
+      }
+      const NOC = { url: '', token: '' }, HAS = { url: 'u', token: 't' };
+      let r = await run({ cfg: NOC, probe: Promise.resolve(true) });
+      t('起動・接続先なし・使える: 帯と案内を止めて最初のタブを1回だけ読み、先読みへ', r.live === true && r.calls.join(',') === 'probe,quiet,guide,base,pf', r.calls);
+      r = await run({ cfg: NOC, probe: Promise.resolve(true), opened: 'scr-vm' });
+      t('起動・接続先なし・使える・バイタルのタブ: バイタルだけ読む', r.calls.join(',') === 'probe,quiet,guide,vm,pf', r.calls);
+      r = await run({ cfg: NOC, probe: Promise.resolve(false) });
+      t('起動・接続先なし・使えない: 今までどおり設定の画面へ（帯は止めない・読まない）', r.live === false && r.calls.join(',') === 'probe,goto:scr-cfg,pf', r.calls);
+      r = await run({ cfg: NOC, probe: Promise.reject(new Error('x')) });
+      t('起動・確かめが失敗: 設定の画面へ', r.calls.join(',') === 'probe,goto:scr-cfg,pf', r.calls);
+      r = await run({ cfg: NOC, noHo: true });
+      t('起動・部品が無い: その場で設定の画面へ', r.calls.join(',') === 'goto:scr-cfg,pf', r.calls);
+      r = await run({ cfg: NOC, probe: Promise.resolve(true), flipField: true });
+      t('起動・確かめている間に現場の端末へ変わった: 使える印を立てず読まない', r.live === false && r.calls.indexOf('base') < 0 && r.calls.indexOf('quiet') < 0, r.calls);
+      r = await run({ cfg: HAS });
+      t('起動・接続先あり: 確かめず今までどおり', r.calls.join(',') === 'base,pf', r.calls);
+      r = await run({ cfg: HAS, opened: 'scr-exc' });
+      t('起動・接続先あり・排泄のタブ: 今までどおり排泄だけ', r.calls.join(',') === 'exc,pf', r.calls);
+    }
+    t('画面: 起動の確かめは SUHoRead が無くても動く（typeof で確かめる）', /typeof SUHoRead !== 'undefined' && SUHoRead && typeof SUHoRead\.liveReady === 'function'/.test(HTML));
+    {
+      const s0 = HTML.indexOf('\nfunction ensureExcData(');
+      t('画面: 排泄の読み込み（排便記録アプリ）は使える印を見ない（今のまま）', s0 > 0 && !/MSK_LIVE|mskOn_/.test(HTML.slice(s0, HTML.indexOf('\n}\n', s0))));
+    }
   }
 
   finished = true;

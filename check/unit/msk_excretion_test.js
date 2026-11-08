@@ -1029,7 +1029,7 @@ group('10. 排泄の読み込み（excLoad の実関数・第2弾）: 同時読�
         vmLoad: (o) => { order.push('measures:' + !!(o && o.quiet)); return Promise.resolve(); },
         excLoad: (o) => { order.push('exc:' + !!(o && o.quiet)); return Promise.resolve(); } };
       vm.createContext(box);
-      vm.runInContext(['var PF_STARTED = false;', 'var LOADING = false, VM_LOADING = false, EXC_LOADING = false;', grabFn('pfBusy'), grabFn('pfSteps'), grabFn('pfRun'), grabFn('pfAfterFirst')].join('\n'), box);
+      vm.runInContext(['var PF_STARTED = false;', 'var LOADING = false, VM_LOADING = false, EXC_LOADING = false;', 'var MSK_LIVE = false;', grabFn('mskCfgOk_'), grabFn('mskOn_'), grabFn('pfBusy'), grabFn('pfSteps'), grabFn('pfRun'), grabFn('pfAfterFirst')].join('\n'), box);
       return box;
     };
     let bx = mk(true, true);

@@ -68,7 +68,7 @@ function make(store) {
     lsSet: (k, v) => writes.push([k, v])
   };
   vm.createContext(sb);
-  vm.runInContext(grabFn('loadCfg') + '\n' + grabFn('mskGuide_'), sb);
+  vm.runInContext('var MSK_LIVE = false;\n' + grabFn('loadCfg') + '\n' + grabFn('mskGuide_'), sb);
   return { sb, el, writes };
 }
 {
@@ -97,6 +97,14 @@ function make(store) {
   const e = make({ msk_cfg: '{壊れた' });
   e.sb.mskGuide_();
   t('設定が壊れている → 出す（起動を止めない）', e.el.hidden === false);
+}
+{
+  // 接続先が無くても、ログインだけで読めると確かめられた端末（MSK_LIVE・2026-11-08）では出さない
+  const e = make({});
+  vm.runInContext('MSK_LIVE = true;', e.sb);
+  e.sb.mskGuide_();
+  t('設定が無いがログインだけで読める端末 → 隠す', e.el.hidden === true);
+  t('その時も設定を書かない', e.writes.length === 0, e.writes);
 }
 {
   const sb = { $: () => null, loadCfg: () => { throw new Error('呼ばれてはいけない'); } };

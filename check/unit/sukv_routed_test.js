@@ -71,7 +71,7 @@ function makeKv(o) {
       if (o.rpcThrowOnce && !sb._thrown) { sb._thrown = true; return Promise.resolve({ error: { message: 'Failed to fetch' } }); }
       if (o.rpcError) return Promise.resolve({ error: o.rpcError });
       if (o.shiftRpc && /^shift_/.test(name)) return Promise.resolve(o.shiftRpc(name, args));   // F 節（勤務表）の偽のデータベース
-      if (name === 'kv_get') return Promise.resolve({ data: { ok: true, rev: db.rev, data: clone(db.data), updatedAt: 'x', mode: db.mode || 'live' } });
+      if (name === 'kv_get') return Promise.resolve(o.kvGetReply ? clone(o.kvGetReply) : { data: { ok: true, rev: db.rev, data: clone(db.data), updatedAt: 'x', mode: db.mode || 'live' } });
       if (name === 'kv_head') { const revs = {}; (args.p_keys || []).forEach(k => { revs[k] = db.rev; }); return Promise.resolve({ data: { revs } }); }
       if (name === 'kv_put_marks') {
         if (o.marksReply) return Promise.resolve({ data: o.marksReply });
@@ -103,7 +103,7 @@ function makeKv(o) {
   box.window = box;
   box.SUAuth = {
     STATUS,
-    check: () => o.checkThrows ? Promise.reject(new Error('net')) : Promise.resolve({ status: o.status || STATUS.OK, role: o.role || 'office' }),
+    check: () => o.checkHang ? new Promise(() => {}) : o.checkThrows ? Promise.reject(new Error('net')) : Promise.resolve({ status: o.status || STATUS.OK, role: o.role || 'office' }),
     client: () => sb
   };
   vm.createContext(box);
@@ -607,6 +607,140 @@ function makeKv(o) {
     t('★F スイッチ（shift）が切なら、受け取った通信をそのまま Google（rawGas）へ流す（データベース・ログインに触れない）',
       k.raws.length === 2 && JSON.stringify(k.raws[0]) === JSON.stringify(p0) && k.raws[1].action === 'lockAcquire' && k.rpcs.length === 0 && k.banners.length === 0 && r.ok === true && r5.ok === true,
       { raws: k.raws, rpcs: k.rpcs });
+  }
+
+  console.log('\n— L. 接続先の無い端末でもログインだけで使えるか（SUKv.liveReady・週間計画の起動の確かめ・2026-11-08 代表者の決定）—');
+  {
+    const SESSION = 'sb-jhbernqawjrzqwrmqrih-auth-token';
+    const KEY = 'care_schedule_v2';
+    async function lr(opt) {
+      const k = makeKv(opt);
+      if (!opt.noSession) k.ls.set(SESSION, '{"x":1}');
+      if (opt.deviceField) k.ls.set('su_device_role', 'field');
+      const roles = 'roles' in opt ? opt.roles : ['field'];
+      const v = await k.kv.liveReady(opt.key || KEY, roles === undefined ? undefined : { roles });
+      return { v, k };
+    }
+    /* 使える場合 */
+    for (const role of ['field', 'office', 'admin']) {
+      const x = await lr({ role, roles: [role] });
+      t('★L 使える（役割 ' + role + ' を許した時）: スイッチ入・ログイン OK・印が live で true', x.v === true, x.v);
+      t('L 使える時も Google へ送らない・帯を出さない・書くのはスイッチの控えだけ',
+        x.k.raws.length === 0 && x.k.banners.length === 0 && [...x.k.ls.keys()].every(kk => kk === 'su_backend_flags' || kk === SESSION),
+        { raws: x.k.raws.length, keys: [...x.k.ls.keys()] });
+      t('L 確かめに使うのは kv_get だけ（書く関数を呼ばない）', x.k.rpcs.length === 1 && x.k.rpcs[0].name === 'kv_get', x.k.rpcs.map(r => r.name));
+    }
+    /* 使えない場合（どれも false・Google へ送らない） */
+    const NG = [
+      ['役割を渡さない', { roles: undefined }],
+      ['役割が空', { roles: [] }],
+      ['事務所のアカウント（現場だけ許す）', { role: 'office', roles: ['field'] }],
+      ['管理者のアカウント（現場だけ許す）', { role: 'admin', roles: ['field'] }],
+      ['ログインしていない', { status: STATUS.SIGNED_OUT }],
+      ['使えないアカウント', { status: STATUS.DENIED }],
+      ['2段階認証がまだ', { status: STATUS.MFA_VERIFY }],
+      ['ログインの確かめが通信で失敗', { checkThrows: true }],
+      ['ログインの控えが無い', { noSession: true }],
+      ['現場の端末', { deviceField: true }],
+      ['スイッチが切', { flags: { care_schedule_v2: false, ws_weekly_master_v1: true, wsday: true } }],
+      ['週間計画のキーでない（勤務表のキー）', { key: 'staff' }],
+      ['知らないキー', { key: 'other_key' }],
+      ['印が写しの期間（shadow）', { db: { mode: 'shadow' } }],
+      ['印が読めない（データベースの断り）', { rpcError: { code: '42501', message: 'not allowed' } }],
+      ['印の応答が ok でない', { kvGetReply: { data: { ok: false, error: 'forbidden' } } }],
+      ['印の応答が空', { kvGetReply: { data: null } }],
+    ];
+    for (const [label, opt] of NG) {
+      const x = await lr(Object.assign({ role: 'field' }, opt));
+      t('★L 使えない: ' + label + ' → false', x.v === false, x.v);
+      t('L ' + label + ': Google へ送らない・帯を出さない', x.k.raws.length === 0 && x.k.banners.length === 0);
+    }
+    /* 時間切れ（8秒）: 確かめが返らない時は false */
+    {
+      const k = makeKv({ checkHang: true, role: 'field' });
+      k.ls.set(SESSION, '{"x":1}');
+      let done = null;
+      const p = k.kv.liveReady(KEY, { roles: ['field'] }).then(v => { done = v; return v; });
+      await settle(40);
+      t('L 確かめが返らない間は答えを出さない', done === null, done);
+      k.timers.slice().forEach(f => { try { f(); } catch (e) { /* 試験の打ち切りの呼び出し */ } });
+      const v = await p;
+      t('★L 時間切れ（8秒）は false', v === false, v);
+      t('L 時間切れでも Google へ送らない', k.raws.length === 0);
+    }
+    t('L 打ち切りの時間は 8秒', /var LIVE_WAIT_MS = 8000;/.test(SUKV_SRC));
+    t('L 例外を外に出さない（中身を try で包む）', /function liveReady\(key, opts\) \{\n\s*try \{/.test(SUKV_SRC));
+
+    /* ── 週間計画の画面（本物の関数を切り出して動かす）── */
+    const CS = read('care-schedule.html');
+    const method = name => { const s = CS.indexOf('\n  ' + name + '('); const s2 = CS.indexOf('\n  async ' + name + '('); const st = s2 >= 0 && (s < 0 || s2 < s) ? s2 : s; if (st < 0) throw new Error('メソッドなし ' + name); return CS.slice(st + 1, scanBlock(CS, st) + 1); };
+    const probeSrc = grab(CS, 'function csProbeLive_() {');
+    const rolesM = /var CS_LIVE_ROLES = (\[[^\]]*\]);/.exec(CS);
+    t('★L 週間計画で接続先なしに使える役割は現場のアカウントだけ（事務所・管理者は写し返しに接続先が要るため今までどおり）',
+      !!rolesM && JSON.stringify(JSON.parse(rolesM[1].replace(/'/g, '"'))) === '["field"]', rolesM && rolesM[1]);
+    t('L 起動の確かめは1回だけ呼ぶ', (CS.match(/\ncsProbeLive_\(\);/g) || []).length === 1);
+    const EP = JSON.stringify({ endpoint: 'https://script.google.com/macros/s/x/exec', token: 't' });
+    function page(o) {
+      const calls = [], fetches = [], kvCalls = [];
+      const ls = new Map(Object.entries(o.ls || {}));
+      const box = {
+        console, JSON, Math, Date, Number, String, Array, Object, Promise, Error, isFinite,
+        SIM_ON: !!o.sim, CS_LIVE_ROLES: ['field'], CS_NO_TARGET_MSG: '同期先が入っていません。',
+        localStorage: { getItem: x => (ls.has(x) ? ls.get(x) : null), setItem: (x, v) => ls.set(x, String(v)), removeItem: x => ls.delete(x) },
+        suGetDeviceRole: () => o.device || 'office',
+        csNote_() {}, csRenderNoConnHint_: () => calls.push('hint'),
+        csApplyMasterIdParam: (r) => calls.push('master:' + r), csFinishMasterIdPending_: (p) => calls.push('pending:' + p),
+        fetch: (...a) => { fetches.push(a); return Promise.reject(new Error('no')); },
+        csFetchTimeout_: (...a) => { fetches.push(a); return Promise.reject(new Error('no')); },
+        SUCfgHint: { quiet: () => calls.push('quiet') }
+      };
+      if (!o.noKv) box.SUKv = {
+        liveReady: (key, opt) => { calls.push('liveReady:' + key + ':' + JSON.stringify(opt)); return Promise.resolve(o.live === true); },
+        handles: p => !!p && p.key === 'care_schedule_v2',
+        call: (p) => { kvCalls.push(clone(p)); return Promise.resolve({ ok: true, rev: 3, data: null }); }
+      };
+      box.window = box;
+      vm.createContext(box);
+      vm.runInContext('var SYNC = {\n config:{ endpoint:"", token:"" },\n'
+        + [method('target'), '_liveHint: false', method('hasTarget'), method('gas')].join(',\n')
+        + ',\n startupPull(){ CALLS.push("startupPull"); return Promise.resolve(true); }, startPolling(){ CALLS.push("startPolling"); }\n};\n'
+        + probeSrc, Object.assign(box, { CALLS: calls }));
+      return { box, calls, fetches, kvCalls, S: box.SYNC };
+    }
+    let x = page({ live: true });
+    let r = await x.box.csProbeLive_(); await settle(10);
+    t('★L 接続先の無い事務所PCで使えると答えた時: 同期先があるとみなし、起動の取得と定期の見回りを始める',
+      r === true && x.S._liveHint === true && x.S.hasTarget() === true && x.calls.indexOf('startupPull') >= 0 && x.calls.indexOf('startPolling') > x.calls.indexOf('startupPull'), x.calls);
+    t('L 使える時は接続設定を促す帯を出さない（quiet）・同期先の案内を描き直す', x.calls.indexOf('quiet') >= 0 && x.calls.indexOf('hint') >= 0, x.calls);
+    t('L 確かめに渡す役割は現場だけ', x.calls[0] === 'liveReady:care_schedule_v2:{"roles":["field"]}', x.calls[0]);
+    r = await x.S.gas({ action: 'get', key: 'care_schedule_v2' });
+    t('★L 使える端末の読み取りは新しい保存先（SUKv.call）へ・Google へ0件', r.ok === true && x.kvCalls.length === 1 && x.fetches.length === 0, { r, f: x.fetches.length });
+    r = await x.S.gas({ action: 'put', key: 'care_schedule_v2', rev: 3, data: { residents: [] } });
+    t('★L 接続先の無い端末の保存は送らない（写し返しを取りこぼさないため）・新しい保存先へも Google へも0件',
+      r.ok === false && r.error === 'forbidden' && x.kvCalls.length === 1 && x.fetches.length === 0, r);
+    r = await x.S.gas({ action: 'ping' });
+    t('L 新しい保存先が受け持たない通信（ping）は、送る先が無いので今までと同じ「同期先が入っていません」', r.ok === false && r.error === '同期先が入っていません。' && x.fetches.length === 0, r);
+    r = await x.S.gas({ action: 'put', key: 'care_schedule_v2', rev: 0, data: {}, __raw: true });
+    t('L 写し返し（__raw）も接続先が無ければ送らない（端末の控えが残る）', r.ok === false && x.fetches.length === 0, r);
+    for (const [label, o, called] of [
+      ['使えないと答えた', { live: false }, true],
+      ['接続先がある端末', { live: true, ls: { su_sync_common: EP } }, false],
+      ['現場の端末', { live: true, device: 'field' }, false],
+      ['試算中', { live: true, sim: true }, false],
+      ['部品が無い', { live: true, noKv: true }, false],
+    ]) {
+      x = page(o);
+      r = await x.box.csProbeLive_(); await settle(10);
+      t('★L ' + label + ': 今までどおり（起動の取得・帯の静めをしない）',
+        r === false && x.S._liveHint === false && x.calls.indexOf('startupPull') < 0 && x.calls.indexOf('quiet') < 0, x.calls);
+      t('L ' + label + ': 確かめを' + (called ? '1回だけ呼ぶ' : '呼ばない'), x.calls.filter(c => /^liveReady/.test(c)).length === (called ? 1 : 0), x.calls);
+    }
+    x = page({ live: false });
+    t('L 接続先も確かめも無い端末は同期先なし（今までどおり）', x.S.hasTarget() === false);
+    x = page({ ls: { su_sync_common: EP } });
+    r = await x.S.gas({ action: 'put', key: 'care_schedule_v2', rev: 3, data: {} });
+    t('L （対照）接続先のある端末の保存は今までどおり SUKv.call へ渡す', x.kvCalls.length === 1 && x.kvCalls[0].action === 'put', x.kvCalls);
+    t('L 離脱の時の送信（sendBeacon）は接続先がある時だけ', /if \(SYNC\._dirty && SYNC\.target\(\)\.endpoint\) \{/.test(CS));
   }
 
   console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');

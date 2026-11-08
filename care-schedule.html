@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-7tLYPAv1JTK+jSth5HNMmANzfiNMtSFtZJYlzE5zb6M='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-ZRZuzJXM6seVT2rDYOOt6wHISw2L88mxfs9/VctdyHg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -1726,7 +1726,7 @@ function csNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
 <!-- 同期データの写し（統合 0005・写しの期間）。supabase-js と su-auth.js は写す時にだけ読み込む -->
 <script src="su-kv-shadow.js?v=2026-10-28"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
-<script src="su-kv.js?v=2026-10-28"></script>
+<script src="su-kv.js?v=2026-11-08"></script>
 <script src="su-roster.js?v=2026-10-28"></script>
 <script>
 /* ══ 画面が黙って壊れないようにする（2026-08-29 追加）════════════════════════
@@ -4175,7 +4175,10 @@ const SYNC = {
     } catch(e) {}
     return { endpoint: String(this.config.endpoint || '').trim(), token: String(this.config.token || '').trim() };
   },
-  hasTarget() { return !!this.target().endpoint; },
+  /* 2026-11-08（代表者の決定「端末ごとの設定を極限までなくす」段1）: 接続先の無い端末でも、起動の時の確かめ（csProbeLive_・SUKv.liveReady）が
+     時間内に「使える」と答えた時だけ、同期先があるとみなす（_liveHint）。その時の読み書きは su-kv.js が新しい保存先で行い、Google へは送らない */
+  _liveHint: false,
+  hasTarget() { return !!this.target().endpoint || this._liveHint === true; },
   loadCareRev() {
     try { return (JSON.parse(localStorage.getItem('ws_sync_revs') || '{}').care) || 0; }
     catch(e) { return 0; }
@@ -4269,8 +4272,15 @@ const SYNC = {
        スイッチ（su-backend.json）が入っていなければ、su-kv.js が下の Google への送信へそのまま戻す＝切り替え前は何も変わらない。
        __raw は su-kv.js からの「Google へ送って」の印（写し返し・切り替え前の素通し）。 */
     if (payload && payload.__raw) delete payload.__raw;
-    else if (window.SUKv && SUKv.handles(payload)) return SUKv.call(payload, (p) => { p.__raw = true; return this.gas(p); });
+    else {
+      /* 接続先の無い端末（_liveHint）は保存を送らない。保存の後の Google への写し返しには接続先が要り、送れないと Google が古いまま残るため。
+         今は現場のアカウントだけを「使える」にしている（現場のアカウントは週間計画を書けない＝今までと同じ断り） */
+      if (this._liveHint && !this.target().endpoint && payload && payload.action === 'put') return { ok: false, error: 'forbidden' };
+      if (window.SUKv && SUKv.handles(payload)) return SUKv.call(payload, (p) => { p.__raw = true; return this.gas(p); });
+    }
     const t = this.target();
+    /* 接続先の無い端末から Google へは送らない（送る先が無い。今までどおりの「同期先が入っていません」） */
+    if (!t.endpoint) return { ok: false, error: CS_NO_TARGET_MSG };
     payload.token = t.token;
     /* 週間計画の保存だけ、ログインの証明を添える（GAS が確かめて editedBy を決める・2026-10-15 editorverify）。
        payload は呼び出し元の物なので、送る直前に足して送った後に外す（記録や再送の材料に証明を残さない） */
@@ -9512,6 +9522,34 @@ if (SYNC.hasTarget() && suGetDeviceRole() !== 'field') {
   if (SYNC.hasTarget()) SYNC.updateStatusUI('同期');
   try { migrateClearNotes_(); } catch (e) {}   // field/オフライン端末: pullしない→ローカルでクリア（後続の同期で伝播）
 }
+/* ── 接続先の無い端末でも、ログインしていれば新しい保存先で使う（2026-11-08 代表者の決定「端末ごとの設定を極限までなくす」段1）──
+   接続先（su_sync_common・ws_settings・この画面の設定）の無い事務所PCで、起動の時に1回だけ確かめる（SUKv.liveReady・8秒で打ち切り）。
+   使える時だけ、同期先があるとみなして（_liveHint）起動の取得と定期の見回りを始め、接続設定を促す帯を出さない（SUCfgHint.quiet）。
+   ★使えるにする役割は CS_LIVE_ROLES だけ。事務所・管理者は保存の20秒後に Google へ写し返す（su-kv.js scheduleMirror）が、写し返しは
+     この端末の接続先へ送るため、接続先の無い端末では Google が古いまま残る（ほかの端末が次に保存するまで・Google を読む画面が古い予定を出す）。
+     取りこぼさない形が今の作りに無いので、事務所・管理者は今までどおり接続先を求める。現場のアカウントは週間計画を書けない（読むだけ）ので写し返しが要らない。
+   使えない・分からない時は何もしない（今までどおり）。新しい文言は足していない */
+var CS_LIVE_ROLES = ['field'];
+function csProbeLive_() {
+  try {
+    if (SIM_ON || SYNC.target().endpoint || suGetDeviceRole() === 'field') return Promise.resolve(false);
+    if (!window.SUKv || typeof SUKv.liveReady !== 'function') return Promise.resolve(false);
+    return Promise.resolve(SUKv.liveReady('care_schedule_v2', { roles: CS_LIVE_ROLES })).then(function (ok) {
+      if (ok !== true || SIM_ON || SYNC.target().endpoint) return false;
+      SYNC._liveHint = true;
+      try { if (window.SUCfgHint && typeof window.SUCfgHint.quiet === 'function') window.SUCfgHint.quiet(); } catch (e) { csNote_('接続の案内', e); }
+      try { csRenderNoConnHint_(); } catch (e) { csNote_('接続の案内', e); }
+      const afterPull = (pulled) => {
+        try { csApplyMasterIdParam(true); } catch (e4) {}
+        try { csFinishMasterIdPending_(pulled); } catch (e5) {}
+        try { SYNC.startPolling(); } catch (e3) {}
+      };
+      SYNC.startupPull().then(afterPull, afterPull);
+      return true;
+    }, function () { return false; });
+  } catch (e) { return Promise.resolve(false); }
+}
+csProbeLive_();
 // タブ復帰時の自動チェック：他端末の更新を即時反映
 document.addEventListener('visibilitychange', () => {
   if (SIM_ON) return;   /* 試算中に他タブから戻っても取り込まない */
@@ -9621,7 +9659,7 @@ function csFlushOnExit_() {
   /* 統合 0005: 保存先を Supabase に切り替えた後は、離脱時に Google へ送らない（Google は写し返しの受け皿なので、
      ここで送ると最新の写しを古い版で上書きしうる）。未送信フラグが残り、次回起動時に Supabase へ送られる */
   if (window.SUKv && SUKv.routed('care_schedule_v2')) return;
-  if (SYNC._dirty && SYNC.hasTarget()) {
+  if (SYNC._dirty && SYNC.target().endpoint) {   /* 接続先の無い端末（_liveHint）からは送らない（2026-11-08） */
     // 離脱時は sendBeacon を使用（非同期 fetch は中断されるため）
     try {
       const t = SYNC.target();
