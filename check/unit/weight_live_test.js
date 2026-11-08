@@ -18,6 +18,10 @@
      H 応答が来ない時は時間切れの失敗（画面の失敗の扱いへ）
      J 統合 0075: データベースの印（weight_mirror_state）が 'server'（GAS が写し返している）の時だけ、写し返しを積まず・残りも送らずに外す。
        印が読めない・関数が無い・'device'・形の違う答えは今までどおり端末が写し返す。印は1分だけ覚える（保存のたびに問い合わせない）
+     L 2026-11-08（代表者の決定「端末ごとの設定を極限までなくす」）: 接続先の無い端末がログインだけで使えるか（liveReady）。
+       スイッチが入・ログインの控え・ログインを確かめられた・GAS が写し返している（'server'）・データベースが切り替えた後、の5つがそろう時だけ真。
+       時間切れ（8秒）は偽・後から届いても偽のまま・端末にはスイッチの控えしか書かない。接続先の無い端末の書き込みは 'server' の時だけ
+       データベースへ書き、それ以外は書く前に断る（Google へも送らない・写し返しを積まない）。画面は接続先が無い時に Google へ送らない
      I 画面のつなぎ: apiGet・apiPost の入口だけで呼び、Google へ送る形（apiPostGas_）は前と1文字も変えていない。
        アラートの確認（alertAck）を外した入居者を送る。写しの部品は Supabase から読んだ中身を写さない
    ★本物のファイルを砂場で動かす。架空データのみ（氏名は使わない）。 */
@@ -71,6 +75,7 @@ function box(o) {
   if (o.locks) ctx.navigator = { locks: { request: (name, fn) => { (b0.lockNames = b0.lockNames || []).push(name); return Promise.resolve().then(fn); } } };
   const b0 = {};
   const auth = {
+    check: () => (o.check === null ? Promise.reject(new Error('net')) : Promise.resolve(o.check || { status: 'ok', role: 'office' })),
     client: () => ({ rpc: (name, args) => { rpcs.push([name, JSON.parse(JSON.stringify(args))]); return Promise.resolve(o.rpc ? o.rpc(name, args) : { data: null, error: { code: 'x' } }); } })
   };
   ctx.window = ctx;
@@ -283,12 +288,12 @@ const liveRpc = (name, args) => name === 'weight_get_all' ? { data: LIVE_ALL, er
 
   console.log('I 画面のつなぎ');
   {
-    t('I 部品を読み込む（写しの部品の直後）', /<script src="su-weight-shadow\.js\?v=2026-10-28\.2"><\/script>\n<script src="su-weight-live\.js\?v=2026-11-07"><\/script>/.test(PAGE));
+    t('I 部品を読み込む（写しの部品の直後）', /<script src="su-weight-shadow\.js\?v=2026-10-28\.2"><\/script>\n<script src="su-weight-live\.js\?v=2026-11-08"><\/script>/.test(PAGE));
     const getBody = PAGE.slice(PAGE.indexOf('async function apiGet(){'), PAGE.indexOf('async function apiGet(){') + 2400);
     const iLive = getBody.indexOf('SUWeightLive.getAll(apiPostGas_)'), iGas = getBody.indexOf('fetchTO(');
     t('I 読み込みは Google の前に切り替えを確かめる', iLive > 0 && iGas > iLive);
     const m = PAGE.match(/async function apiPost\(action, data\)\{([\s\S]*?)\n\}\nasync function apiPostGas_\(action, data\)\{/);
-    t('I apiPost は切り替えを確かめてから apiPostGas_', !!m && /SUWeightLive\.post\(action, \{ resident: wrResForSend_\(data\), record: data\.record, id: data\.id, thresholds: data\.thresholds \}, data, apiPostGas_\)/.test(m[1])
+    t('I apiPost は切り替えを確かめてから apiPostGas_', !!m && /SUWeightLive\.post\(action, \{ resident: wrResForSend_\(data\), record: data\.record, id: data\.id, thresholds: data\.thresholds \}, data, apiPostGas_, !apiUrl\)/.test(m[1])
       && /return apiPostGas_\(action, data\);/.test(m[1]));
     let old = '';
     try { old = cp.execSync('git show 62c7410:weight-record.html', { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 << 20, stdio: ['ignore', 'pipe', 'ignore'] }); } catch (e) { old = ''; }
@@ -325,6 +330,134 @@ const liveRpc = (name, args) => name === 'weight_get_all' ? { data: LIVE_ALL, er
     ctx.SUWeightLive = { readFromSupabase: () => false };
     ctx.SUWeightShadow.fromGetAll([{ id: 'r1' }], [{ id: 'w1' }], null);
     t('I 写しの部品: Google から読んだ時は今までどおり写しを予約する', ctx.fired === 1);
+  }
+
+  console.log('L 接続先の無い端末がログインだけで使えるか（2026-11-08）');
+  const lvRpc = (by, all) => (name) => name === 'weight_mirror_state' ? (typeof by === 'function' ? by() : { data: { ok: true, by }, error: null })
+    : name === 'weight_get_all' ? (all === undefined ? { data: LIVE_ALL, error: null } : (typeof all === 'function' ? all() : all))
+    : { data: { ok: true, ver: 2 }, error: null };
+  for (const [lbl, st] of [['事務所', { status: 'ok', role: 'office' }], ['管理者', { status: 'ok', role: 'admin' }], ['現場のアカウント', { status: 'ok', role: 'field' }],
+                           ['2段階認証がまだの管理者', { status: 'mfa_verify' }]]) {
+    const b = box({ flags: { weight: true }, session: true, check: st, rpc: lvRpc('server') });
+    const before = Object.keys(b.store).sort().join();
+    const v = await b.L.liveReady();
+    t('L ' + lbl + ': 使える', v === true, v);
+    t('L ' + lbl + ': 端末にはスイッチの控えしか書かない', Object.keys(b.store).filter(k => k !== 'su_backend_flags').sort().join() === before.split(',').filter(k => k && k !== 'su_backend_flags').join(), Object.keys(b.store));
+    t('L ' + lbl + ': Google へ送らない', b.gas.length === 0);
+  }
+  for (const [lbl, o] of [
+    ['スイッチが切', { flags: {}, session: true }], ['スイッチが読めない', { flags: null, session: true }], ['ログインの控えが無い', { flags: { weight: true }, session: false }],
+    ['ログインしていない', { flags: { weight: true }, session: true, check: { status: 'signed_out' } }],
+    ['使えないアカウント', { flags: { weight: true }, session: true, check: { status: 'denied' } }],
+    ['確かめられない（通信）', { flags: { weight: true }, session: true, check: { status: 'error' } }],
+    ['確かめが例外', { flags: { weight: true }, session: true, check: null }],
+    ['端末が写し返す（device）', { flags: { weight: true }, session: true, rpc: lvRpc('device') }],
+    ['写し返しの印の関数が無い', { flags: { weight: true }, session: true, rpc: lvRpc(() => ({ data: null, error: { code: 'PGRST202' } })) }],
+    ['写し返しの印が権限で読めない', { flags: { weight: true }, session: true, rpc: lvRpc(() => ({ data: null, error: { code: '42501' } })) }],
+    ['写し返しの印が通信の失敗', { flags: { weight: true }, session: true, rpc: lvRpc(() => { throw new Error('net'); }) }],
+    ['写しの期間（shadow）', { flags: { weight: true }, session: true, rpc: lvRpc('server', { data: { ok: false, error: 'shadow' }, error: null }) }],
+    ['読む関数が無い', { flags: { weight: true }, session: true, rpc: lvRpc('server', { data: null, error: { code: 'PGRST202' } }) }],
+    ['読むのを権限で断られた', { flags: { weight: true }, session: true, rpc: lvRpc('server', { data: null, error: { code: '42501' } }) }],
+    ['読んだ答えの形が違う', { flags: { weight: true }, session: true, rpc: lvRpc('server', { data: { residents: [] }, error: null }) }],
+    ['読むのが通信の失敗', { flags: { weight: true }, session: true, rpc: lvRpc('server', () => { throw new Error('net'); }) }]]) {
+    const b = box(Object.assign({ rpc: lvRpc('server') }, o));
+    const v = await b.L.liveReady();
+    t('L ' + lbl + ': 使えない（今までどおり接続先を求める）', v === false, v);
+    t('L ' + lbl + ': Google へ送らない', b.gas.length === 0);
+  }
+  {
+    // 時間切れ（8秒）: 読み込みが後から届いても使えるにしない・その読み込みを使い回さない
+    let release = null;
+    const late = new Promise(r => { release = r; });
+    const b = box({ flags: { weight: true }, session: true, rpc: (name) => name === 'weight_mirror_state' ? { data: { ok: true, by: 'server' }, error: null }
+      : name === 'weight_get_all' ? late : { data: { ok: true, ver: 2 }, error: null } });
+    const pr = b.L.liveReady(); await settle();
+    const tm = b.timers.find(x => x[1] === 8000);
+    t('L 8秒の時間切れを掛ける', !!tm);
+    if (tm) tm[0]();
+    const v = await pr;
+    release({ data: LIVE_ALL, error: null }); await settle();
+    t('L 時間切れは使えない', v === false, v);
+    const n0 = b.rpcs.filter(x => x[0] === 'weight_get_all').length;
+    await b.L.getAll(b.post);
+    t('L 時間切れの後に届いた読み込みは使い回さない（読み直す）', b.rpcs.filter(x => x[0] === 'weight_get_all').length === n0 + 1, b.rpcs);
+  }
+  {
+    const b = box({ flags: { weight: true }, session: true, rpc: lvRpc('server') });
+    await b.L.liveReady();
+    const g = await b.L.getAll(b.post);
+    t('L 確かめの直後の読み込みは、確かめで読んだ中身を使い回す（2回読まない）', g && g.ok === true && g.residents.length === 2 && b.rpcs.filter(x => x[0] === 'weight_get_all').length === 1, b.rpcs);
+    t('L 使い回した読み込みも Supabase から読んだ印を付ける', b.L.readFromSupabase() === true);
+    await b.L.getAll(b.post);
+    t('L 使い回すのは1回だけ（次は読み直す）', b.rpcs.filter(x => x[0] === 'weight_get_all').length === 2, b.rpcs);
+  }
+  {
+    const b = box({ flags: { weight: true }, session: true, rpc: lvRpc('server') });
+    const p = await b.L.post('saveRecord', { record: { id: 'n1' } }, { record: { id: 'n1' } }, b.post, true); await settle();
+    t('L 接続先の無い端末: GAS が写し返している時はデータベースへ書く・Google へ送らない・写し返しを積まない',
+      p && p.ok === true && b.rpcs.some(x => x[0] === 'weight_write') && b.gas.length === 0 && mirror(b).length === 0, [p, b.rpcs, b.gas]);
+    t('L 接続先の無い端末: 書く前に写し返しの印を確かめる', b.rpcs.map(x => x[0]).indexOf('weight_mirror_state') < b.rpcs.map(x => x[0]).indexOf('weight_write'), b.rpcs);
+  }
+  for (const [lbl, by] of [['device', 'device'], ['関数が無い', () => ({ data: null, error: { code: 'PGRST202' } })], ['通信の失敗', () => { throw new Error('net'); }]]) {
+    const store = { wtmgr_mirror_q: JSON.stringify([{ action: 'saveRecord', data: { record: { id: 'm1' } }, at: 1 }]) };
+    const b = box({ flags: { weight: true }, session: true, store, rpc: lvRpc(by) });
+    const p = await b.L.post('saveRecord', { record: { id: 'n1' } }, { record: { id: 'n1' } }, b.post, true); await settle();
+    t('L 接続先の無い端末・写し返しが ' + lbl + ': 書く前に断る（データベースへも書かない・職員向けの文）',
+      p && p.ok === false && /接続先が入っていない/.test(p.error || '') && !b.rpcs.some(x => x[0] === 'weight_write'), [p, b.rpcs]);
+    t('L 接続先の無い端末・写し返しが ' + lbl + ': 残っている写し返しを捨てない・Google へ送らない', mirror(b).length === 1 && b.gas.length === 0, [mirror(b), b.gas]);
+  }
+  {
+    const b = box({ flags: { weight: true }, session: true, rpc: lvRpc('device') });
+    const p = await b.L.post('saveRecord', { record: { id: 'n1' } }, { record: { id: 'n1' } }, b.post); await settle();
+    t('L 接続先のある端末は今までどおり（device なら書いて写し返す）', p && p.ok === true && b.gas.length === 1 && b.rpcs.some(x => x[0] === 'weight_write'), [p, b.gas]);
+  }
+  {
+    const on = box({ flags: { weight: true }, session: true, store: { su_backend_flags: JSON.stringify({ supabase: { weight: true } }) } });
+    const off1 = box({ flags: { weight: true }, session: false, store: { su_backend_flags: JSON.stringify({ supabase: { weight: true } }) } });
+    const off2 = box({ flags: { weight: true }, session: true, store: { su_backend_flags: JSON.stringify({ supabase: { weight: false } }) } });
+    t('L 起動の時の見込み（maybeLive）: スイッチの控えが入でログインの控えがある時だけ真・通信しない',
+      on.L.maybeLive() === true && off1.L.maybeLive() === false && off2.L.maybeLive() === false && on.fetches.length === 0 && on.rpcs.length === 0);
+  }
+  {
+    // 画面: 本物の apiGet・apiPost を動かす（接続先の有無 × ログインだけで使えるか）
+    const cutFn = (head) => { const i = PAGE.indexOf(head); return i < 0 ? '' : PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2); };
+    const src = cutFn('async function apiGet(){') + cutFn('async function apiPost(action, data){');
+    const WRMSG = (PAGE.match(/const WR_NOGAS_MSG = '([^']+)';/) || [])[1] || '';
+    t('L 画面: 接続先の無い時の断りは職員向けの文', /接続先が入っていない/.test(WRMSG) && !/[A-Za-z]/.test(WRMSG.replace(/Google/g, '')));
+    const run = async (o) => {
+      const calls = [];
+      const c = { apiUrl: o.url || '', wrLiveOk_: !!o.live, WR_NOGAS_MSG: WRMSG, apiToken: '', apiCaps: { seen: true, caps: [] },
+        apiCan: () => false, apiProbe: async () => null, wrResForSend_: d => d && d.resident,
+        fetchTO: async (u) => { calls.push(['fetch', u]); return {}; }, _parseApiResponse: async () => ({ ok: true, from: 'gas' }),
+        apiPostGas_: async (a) => { calls.push(['gas', a]); return { ok: true, from: 'gas' }; },
+        SUWeightLive: { getAll: async () => o.lv, post: async (a, p, d, g, noGas) => { calls.push(['live', a, noGas]); return o.lv; } } };
+      c.wrSyncOn_ = () => !!c.apiUrl || c.wrLiveOk_;
+      vm.createContext(c); vm.runInContext(src + '\nthis.apiGet = apiGet; this.apiPost = apiPost;', c);
+      return { g: await c.apiGet(), p: await c.apiPost('saveRecord', { record: { id: 'x' } }), calls };
+    };
+    let r = await run({ url: '', live: false, lv: { ok: true } });
+    t('L 画面: 接続先が無く使えない端末は、今までどおり読み書きとも null（部品も Google も呼ばない）', r.g === null && r.p === null && r.calls.length === 0, r);
+    r = await run({ url: '', live: true, lv: { ok: true, ver: 2, from: 'live' } });
+    t('L 画面: 接続先が無く使える端末は新しい保存先で読み書きし、接続先が無いと部品に伝える', r.g.from === 'live' && r.p.from === 'live' && r.calls.length === 1 && r.calls[0][2] === true, r);
+    r = await run({ url: '', live: true, lv: null });
+    t('L 画面: 接続先が無い端末で部品が Google を指した時（写しの期間へ戻った等）は、Google へ送らず断る',
+      r.g && r.g.error === WRMSG && r.p && r.p.ok === false && r.p.error === WRMSG && !r.calls.some(x => x[0] === 'fetch' || x[0] === 'gas'), r);
+    r = await run({ url: 'https://script.google.com/macros/s/x/exec', live: false, lv: null });
+    t('L 画面: 接続先のある端末は今までどおり（部品が Google を指せば Google・接続先はあると伝える）', r.g.from === 'gas' && r.p.from === 'gas' && r.calls.some(x => x[0] === 'live' && x[2] === false), r);
+    // 起動の段
+    const boot = PAGE.slice(PAGE.indexOf("}else if(typeof SUWeightLive !== 'undefined' && typeof SUWeightLive.liveReady === 'function'){"));
+    const bb = boot.slice(0, boot.indexOf('updateAuthNote_();'));
+    t('L 画面: 起動の確かめは接続先が無い時だけ（接続先のある道の else）', bb.length > 0 && /\n  \}else if\(typeof SUWeightLive/.test(PAGE));
+    t('L 画面: 使えると分かった時だけ同期の印を立て、案内の帯を止め、同期する', /if\(!ok\)\{[\s\S]*?return;\s*\}\s*wrLiveOk_ = true;[\s\S]*SUCfgHint\.quiet\(\)[\s\S]*syncFromAPI\(/.test(bb));
+    t('L 画面: 確かめの間に接続先を入れた時は今までどおりの道', /if\(apiUrl\) return;/.test(bb));
+    t('L 画面: 使えない時は、見送った入居者の取り込みを今までどおり行う', /if\(wrBootNoAdd_\)\{ try\{ if\(mergeCommonWeight\(\)\) wrRefreshViews\(\);/.test(bb));
+    t('L 画面: 起動の取り込みは、ログインだけで使えるかもしれない端末でも作らない（二重に作らない）', /mergeCommonWeight\(\{ noAdd: !!apiUrl \|\| wrBootNoAdd_ \}\)/.test(PAGE)
+      && /wrBootNoAdd_ = !apiUrl && typeof SUWeightLive !== 'undefined' && typeof SUWeightLive\.maybeLive === 'function' && SUWeightLive\.maybeLive\(\) === true;/.test(PAGE));
+    t('L 画面: 同期・送信・送り直し・まとめの前の同期・現場の帯は、接続先かログインだけで使えるかで決める',
+      /async function _syncFromAPIImpl\(showLoader\)\{\n  if\(!wrSyncOn_\(\)\) return false;/.test(PAGE) && /if\(!wrSyncOn_\(\) \|\| _pqFlushing\) return;/.test(PAGE)
+      && /function apiPush\(action, data\)\{\n  if\(!wrSyncOn_\(\)\) return;/.test(PAGE) && /nb\.hidden = !\(field && !wrSyncOn_\(\)\);/.test(PAGE)
+      && (PAGE.match(/\n  if\(wrSyncOn_\(\)\)\{\n    let ok = false;/g) || []).length === 5 && !/\n  if\(apiUrl\)\{\n    let ok = false;/.test(PAGE));
+    t('L 画面: Google の受け口を確かめる所（版の観測）は接続先のある時だけのまま', /async function apiProbe\(\)\{\n  if\(!apiUrl\) return null;/.test(PAGE));
   }
 
   finished = true;

@@ -23,6 +23,12 @@
  *     'server'（GAS が全件を写し返し終えた後）の時だけ、端末は写し返しを積まず、残っている写し返しも送らずに外す
  *     （GAS が同じ行の今の中身を写し返すので、古い書き込みを後から送ると Google を古い中身に戻すため）。
  *     印が読めない・関数が無い（0075 の前・戻した後）・'device' の時は、今までどおり端末が写し返す。印は最長1分だけ覚える。
+ *   ・2026-11-08（代表者の決定「端末ごとの設定を極限までなくす」）: Google の接続先・合言葉の無い端末でも、ログインしていれば使えるか（liveReady）。
+ *     スイッチが入・ログインの控えがある・ログインを確かめられた・GAS が写し返している（weight_mirror_state が 'server'）・
+ *     データベースが切り替えた後と答えた（weight_get_all が ok）、の5つがそろう時だけ使える。分からない・時間切れ（8秒）は使えない。
+ *     ★写し返しを GAS がしている時だけにする（接続先の無い端末は Google へ写し返せないため。端末が写し返す間は今までどおり接続先を求める）。
+ *     接続先の無い端末（noGas）が書く時は、書く前にもう一度その印を見て、'server' でなければデータベースへも書かずに断る
+ *     （記録は画面の未送信に残る）。確かめに使った全件の読み込みは、直後の1回の読み込みにだけ使い回す（15秒まで）。端末には何も書かない。
  * 読み込めなくても体重管理は今までどおり動く（画面は window.SUWeightLive が無ければ Google）。例外は外へ出さない
  * （ネットの失敗だけは、今までの Google の通信と同じく画面の失敗の扱いへ渡す）。
  */
@@ -33,6 +39,7 @@
   var MIRROR_LS = 'wtmgr_mirror_q', MIRROR_MAX = 2000, MIRROR_RETRY_MS = 60000;
   var RPC_TIMEOUT_MS = 15000;
   var MIRROR_BY_TTL_MS = 60000, MIRROR_BY_TIMEOUT_MS = 5000;
+  var READY_MS = 8000, PROBE_REUSE_MS = 15000;
   var SESSION_RE = /^sb-[a-z0-9]+-auth-token$/;
   var NO_FUNC = { PGRST202: 1, '42883': 1 };
   var MSG = {
@@ -44,7 +51,8 @@
     timeout: 'サーバーの応答が時間内にありませんでした（記録はこの端末に残っています）。通信を確かめてください',
     server: 'サーバーで保存できませんでした（記録はこの端末に残っています）。しばらくしてから自動で送り直します',
     mirror: 'Google へまだ送れていない記録があります（記録はこの端末に残っています）。順番が入れ替わらないよう、それを送れてから続きを送ります',
-    full: 'Google へまだ送れていない記録が多すぎるため、いったん止めました（記録はこの端末に残っています）。通信を確かめてください'
+    full: 'Google へまだ送れていない記録が多すぎるため、いったん止めました（記録はこの端末に残っています）。通信を確かめてください',
+    nogas: 'この端末には Google の接続先が入っていないため、今は体重をサーバーへ送れません（記録はこの端末に残っています）。事務所に連絡してください'
   };
   var LOGIN_CODES = { PGRST301: 1, PGRST302: 1, '401': 1 };
 
@@ -212,7 +220,9 @@
     return ensureFlags().then(function () {
       if (!switchOn()) { lastFrom = ''; return drainMirror().then(function (done) { return done ? null : { error: MSG.mirror }; }); }
       if (!hasSession()) { lastFrom = ''; return { error: MSG.login }; }
-      return rpc('weight_get_all', {}).then(function (r) {
+      var reuse = probeAll && Date.now() - probeAt < PROBE_REUSE_MS ? probeAll : null;
+      probeAll = null;   // 使い回すのは確かめの直後の1回だけ
+      return (reuse ? Promise.resolve(reuse) : rpc('weight_get_all', {})).then(function (r) {
         var code = errCode(r);
         if (NO_FUNC[code] || (!r.error && r.data && r.data.error === 'shadow')) {
           lastFrom = '';
@@ -236,13 +246,15 @@
    * payload＝データベースへ送る中身（画面が GAS へ送る resident・record・id・thresholds と同じもの）。
    * data＝画面の書き込みの元（Google へ写し返す時に post(action, data) でそのまま送る）。
    */
-  function post(action, payload, data, postFn) {
+  function post(action, payload, data, postFn, noGas) {
     if (postFn) gasPost = postFn;
     return ensureFlags().then(function () {
       if (!switchOn()) return drainMirror().then(function (done) { return done ? null : { ok: false, error: MSG.mirror }; });
       if (!hasSession()) return { ok: false, error: MSG.login };
-      var full = mirrorLoad().length >= MIRROR_MAX ? mirrorBy() : Promise.resolve('');
+      // 接続先の無い端末は、GAS が写し返している時だけ書く（Google へ写し返せないため・書く前に確かめる）
+      var full = noGas === true ? mirrorBy() : (mirrorLoad().length >= MIRROR_MAX ? mirrorBy() : Promise.resolve(''));
       return full.then(function (by0) {
+        if (noGas === true && by0 !== 'server') return { ok: false, error: MSG.nogas };
         if (by0 === 'server') mirrorDrop();
         else if (by0) { drainMirror(); return { ok: false, error: MSG.full }; }
         return rpc('weight_write', { p_action: action, p_payload: payload || {} }).then(function (r) {
@@ -265,6 +277,45 @@
     });
   }
 
+  /* この端末が「Google の接続先・合言葉なしで、ログインだけで」体重管理の同期を使えるか（2026-11-08 代表者の決定）。
+   * 上の決めごとの5つがそろう時だけ true。それ以外・分からない・時間切れ（8秒）は false（画面は今までどおり接続先の設定を求める）。
+   * ログインの確かめは家族構成図（SUGeno.liveReady）と同じに、2段階認証がまだの管理者もログインしているとみなす（データベースが断れば false）。
+   * 端末には何も書かない。例外は外へ出さない */
+  var probeAll = null, probeAt = 0, readyOk = false;
+  function liveReady() {
+    try {
+      var tm = null, expired = false;
+      var late = new Promise(function (ok) { tm = setTimeout(function () { expired = true; ok(false); }, READY_MS); });
+      var p = ensureFlags().then(function () {
+        if (!switchOn() || !hasSession()) return false;
+        return ensureAuth().then(function () {
+          var A = window.SUAuth;
+          if (!A || typeof A.check !== 'function') return false;
+          return Promise.resolve().then(function () { return A.check(); }).then(function (st) {
+            var s0 = st && st.status;
+            if (s0 !== 'ok' && s0 !== 'mfa_verify' && s0 !== 'mfa_enroll') return false;
+            return mirrorBy().then(function (by) {
+              if (by !== 'server') return false;
+              return rpc('weight_get_all', {}, READY_MS).then(function (r) {
+                if (expired || !r || r.error || !r.data || r.data.ok !== true) return false;
+                probeAll = r; probeAt = Date.now();
+                return true;
+              });
+            });
+          });
+        });
+      }).then(function (v) { return v === true; }, function (e) { note('起動の確かめ', e); return false; });
+      return Promise.race([p, late]).then(function (v) {
+        clearTimeout(tm);
+        readyOk = v === true;
+        if (!readyOk) probeAll = null;   // 時間切れの後に届いた読み込みは使わない
+        return readyOk;
+      });
+    } catch (e) { note('起動の確かめ', e); return Promise.resolve(false); }
+  }
+  /* 起動の時に、ログインだけで使えるかもしれない端末か（スイッチの控えが入・ログインの控えがある）。通信しない・読むだけ */
+  function maybeLive() { try { return switchOn() && hasSession(); } catch (e) { return false; } }
+
   try {
     document.addEventListener('visibilitychange', function () {
       if (document.hidden || !mirrorLoad().length) return;
@@ -277,6 +328,8 @@
   window.SUWeightLive = {
     getAll: getAll,
     post: post,
+    liveReady: liveReady,
+    maybeLive: maybeLive,
     readFromSupabase: function () { return lastFrom === 'supabase'; },
     mirrorPending: function () { return mirrorLoad().length; },
     mirrorBy: function () { return mirrorBy_ || 'device'; },
