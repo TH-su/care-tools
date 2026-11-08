@@ -287,6 +287,38 @@ console.log('\n— 5. GAS の読み方 —');
         h.ok && h.count === 2 && !('archive' in h.parts), { count: h.count, ok: h.ok });
     }
   }
+  /* 入居調整: 段2の印（ADMISSION_READ_CLOSED）で GAS が台帳の get を断った時は「切り替え済み」と書く（2026-11-08） */
+  {
+    const afetch = (url, opt) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(
+      { ok: false, error: '入居調整の台帳は新しい保存先へ移りました（架空）', code: 'adm_read_closed' }) });
+    const ab = box({ fetch: afetch, AbortController, localStorage: { getItem: k => (k === 'adm_cfg' ? JSON.stringify({ url: 'https://script.google.com/macros/s/ADM/exec', token: 'tok-adm' }) : null) } });
+    vm.runInContext('var GAS = SUAccountsExport._GAS, cfg = SUAccountsExport._cfg, RE_GAS = /^https:\\/\\/script\\.google\\.com\\/.*\\/exec(\\?|#|$)/;' + src + ';this.readGas = readGas;', ab);
+    const aout = await ab.readGas(() => {});
+    const a = aout.find(g => g.id === 'adm');
+    t('入居調整: 台帳の読み口を断る印の断り（adm_read_closed）は「切り替え済み（db/adm_docs）」と書き、断りの文は写さない',
+      a && !a.ok && /切り替え済み/.test(a.note) && /db\/adm_docs/.test(a.note) && !/架空/.test(a.note), a);
+  }
+  /* データベースの1ページが時間の上限（57014）を超えた時だけ、同じ続きの印から行数を小さくして読み直す（2026-11-08） */
+  {
+    const rsrc = SRC_A.slice(SRC_A.indexOf('  var PAGE = 2000;'), SRC_A.indexOf('  async function readPage(') ) +
+      SRC_A.slice(SRC_A.indexOf('  async function readPage('), SRC_A.indexOf('\n  }\n', SRC_A.indexOf('  async function readPage(')) + 4);
+    const run = async (codes) => {
+      const calls = [];
+      const c = { rpc: (fn, a) => { calls.push(a); const code = codes[calls.length - 1]; return Promise.resolve(code ? { error: { code } } : { data: { rows: [1], next: null } }); } };
+      const rb = box({});
+      vm.runInContext(rsrc + ';this.readPage = readPage;', rb);
+      const r = await rb.readPage(c, 9, 'kv_history', { id: 5 });
+      return { r, calls };
+    };
+    let x = await run([]);
+    t('時間切れが無ければ 2000 行で1回だけ読む', x.calls.length === 1 && x.calls[0].p_limit === 2000 && !x.r.error, x.calls);
+    x = await run(['57014']);
+    t('1回時間切れなら、同じ続きの印から 500 行で読み直す', x.calls.length === 2 && x.calls[1].p_limit === 500 && JSON.stringify(x.calls[1].p_after) === '{"id":5}' && x.calls[1].p_run === 9 && !x.r.error, x.calls);
+    x = await run(['57014', '57014', '57014', '57014']);
+    t('読み直しは最大3回（2000→500→125→30）で、だめなら時間切れのまま返す', x.calls.map(c => c.p_limit).join(',') === '2000,500,125,30' && x.r.error && x.r.error.code === '57014', x.calls.map(c => c.p_limit));
+    x = await run(['42501']);
+    t('時間切れ以外の断り（権限など）は読み直さない', x.calls.length === 1 && x.r.error.code === '42501', x.calls.length);
+  }
   const SRC_GAS = fs.readFileSync(path.join(ROOT, 'su-data-gas.js'), 'utf8');
   t('su-data-gas.js の post の形（ヘッダー・redirect）がこのファイルと同じ文',
     SRC_GAS.includes("headers: { 'Content-Type': 'text/plain;charset=utf-8' }") && SRC_A.includes("headers: { 'Content-Type': 'text/plain;charset=utf-8' }") &&
