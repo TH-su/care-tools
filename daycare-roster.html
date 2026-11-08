@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ecqJJCzvkwrXi1pOCYFnSdc+rC33x9fu+PzNO8JI1oA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Udjs0vOn1/oBwT4xF28RkcWpxesIECduAd+TUS42hRM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -698,7 +698,7 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
 <script src="su-kv.js?v=2026-10-28"></script>
 <!-- 入居者マスタの名簿の読み取り（getRoster）の入口。スイッチ（master_roster_read と master_care_read）が入っている時だけ、訪問日・かかりつけ病院も含めて写しから読む（切の間は今までどおり Google・段2b・2026-10-24） -->
 <script src="su-roster.js?v=2026-10-28"></script>
-<script src="su-res-read.js?v=2026-11-02"></script>
+<script src="su-res-read.js?v=2026-11-08"></script>
 <script src="su-facility.js?v=2026-11-07"></script>
 <script src="su-data.js?v=2026-11-02"></script>
 <script src="su-data-gas.js?v=2026-10-29"></script>
@@ -1510,7 +1510,14 @@ function dcrWatchMasterState(){
   /* Phase 0: 状態版数の監視も共通データ層へ。★合言葉は渡さない（この口は個人情報を返さないため、
      不要な合言葉を投げない）。token を渡さなければ本文の token は空のまま届く。
      ★2026-09-23: su-data の GET 経路廃止に伴い POST 本文で送る。GAS の doPost は stateRev を認証前に受ける（gas/README.md）。 */
-  SU.data.kvRaw({ action: 'stateRev' }, { endpoint: cfg.url })
+  /* 2026-11-08（写し返しを止める計画・代表者の決定 2026-11-07 問い6=A）: 入居者マスタを新しい保存先へ切り替えた後は、事務所PCで
+     事務所・管理者としてログインしている時だけ、新しい保存先の版数を読む（su-res-read.js の stateRev・応答の形は同じ）。
+     それ以外・部品が無い時は下の Google への照会をそのまま送る（送り方は変えない） */
+  var gasRev = function(){ return SU.data.kvRaw({ action: 'stateRev' }, { endpoint: cfg.url }); };
+  var revP;
+  try { revP = (window.SUResRead && window.SUResRead.stateRev) ? window.SUResRead.stateRev(gasRev, { key: 'daycare', as: 'json' }) : gasRev(); }
+  catch (eV) { revP = gasRev(); }
+  Promise.resolve(revP)
     .then(function(j){
       if (!j || j.ok !== true) return;                       // 未対応GAS＝静かに見送る
       var changed = !dcrHospRev || j.rev !== dcrHospRev.rev || j.srev !== dcrHospRev.srev;

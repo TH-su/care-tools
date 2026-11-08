@@ -61,7 +61,7 @@ function sandbox(apps) {
   t('★不具合の報告先は apps に無くても出す', b.csAppUsed_('report') === true);
   const steps = b.wizSteps_().map(s => s.id + (s.sys ? ':' + s.sys.join('+') : ''));
   t('★初回の案内は使うアプリの段だけ（入居者マスタの段は出さない・専用GASの段は申送と報告先だけ）', JSON.stringify(steps) === JSON.stringify(['fac', 'ws:ws', 'own:msk+report']), steps);
-  t('元の WIZ_STEPS は書き換えない', b.WIZ_STEPS[3].sys.length === 8, b.WIZ_STEPS[3].sys);
+  t('元の WIZ_STEPS は書き換えない', b.WIZ_STEPS[3].sys.length === 9, b.WIZ_STEPS[3].sys);
 }
 {
   const b = sandbox(null);

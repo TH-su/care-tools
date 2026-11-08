@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-UubdrB1xOfOi262LV5jxfyb7H09xbrMAHzOMr762ejk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-CXq1lwqJ0bMMpsgeAcqrStvCl04SDer9K/nrKTyocXI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <meta name="robots" content="noindex,nofollow">
@@ -399,6 +399,15 @@ var SYSTEMS = [
   { id:'analyzer', title:'過去シフト分析',
     apps:'過去シフト分析', shape:'obj', key:'shiftanalyzer:v1:cloud', urlF:'url', tokenF:'token',
     urlRe:RE_GAS_EXEC },
+
+  /* 薬学管理（2026-11-07 代表者の決定: 薬学管理は当面このまま見張る＝案C・書き出しは接続設定に欄を足す＝A）。
+     画面 medication.html はこのサイトの外にあるので、この欄は「使える人の管理」の全データの書き出し（accounts-export.js）が
+     読むためだけに使う（同じオリジンの読み手はそれだけ）。書き出しは読み取りの getAll だけを送り、書く操作は送らない。
+     合言葉は GAS の MED_TOKEN。他の系統と同じく画面に出さない（プリフィルしない）・控え（SUCFG1:）にも入る。
+     初回の案内では「その他のアプリ」の段に入れる（全部の系統を1回ずつ扱う決まり。書き出しをする事務所PCでだけ入れればよく、ほかの端末は空欄のまま） */
+  { id:'med', title:'薬学管理',
+    apps:'使える人の管理の「全データの書き出し」だけが使います（薬学管理のスプレッドシートを読むだけ。薬学管理の画面はこの欄を使いません）',
+    shape:'obj', key:'med_cfg', urlF:'url', tokenF:'token', urlRe:RE_GAS_ANY },
 
   /* 不具合の報告先（2026-10-04 代表者の決定）: 全画面の「不具合を報告」ボタンと、画面のエラーの自動報告の送り先。
      URL（受け口GASの exec）と合言葉（GAS の SECRET_K）は別の欄。合言葉は他の系統と同じく画面に出さない（プリフィルしない）。
@@ -871,7 +880,7 @@ var WIZ_STEPS = [
   { id:'fac', title:'施設情報', note:'施設の名前と事業所（施設情報のファイル）。この画面の説明文にも使います' },
   { id:'ws', title:'統合同期（週間計画・ワースケ・シフト）', sys:['ws'] },
   { id:'master', title:'入居者マスタ・フェイスシート', sys:['master'] },
-  { id:'own', title:'その他のアプリ（アプリごとの専用の接続先）', sys:['adm','tp','haiben','weight','msk','geno','analyzer','report'],
+  { id:'own', title:'その他のアプリ（アプリごとの専用の接続先）', sys:['adm','tp','haiben','weight','msk','geno','analyzer','med','report'],
     note:'使っているアプリの分だけで足ります。使わないアプリは空欄のままで構いません' }
 ];
 /* 施設で使うアプリか（2026-10-12・監査10月版 v2 接続設定 第3手）。facility-profile.json の apps に載っている id だけ。

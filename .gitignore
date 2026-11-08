@@ -210,6 +210,10 @@ mailer/.DS_Store
 !/.claude
 /.claude/*
 !/.claude/settings.json
+# 返事の日本語の見張り（2026-11-07 本人指示「確実に改善せよ」）。クラウドのセッションでも英語の返事を出させない
+!/.claude/hooks
+/.claude/hooks/*
+!/.claude/hooks/check-reply-japanese.py
 
 # ── 参考: 以下は上記ホワイトリスト外＝自動的に非公開 ──
 #  haiben-record.html / gas/haiben-api.gs → 正本は別リポ TH-su/haiben-record（テーマ内は受信ミラー）
