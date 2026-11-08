@@ -174,8 +174,10 @@ t('3-17 空の画面に案内の箱がある（画面だけ noprint・最初は�
 t('3-18 hidden の箱は必ず隠れる', /\.cfg-guide\[hidden\]\s*\{\s*display:\s*none;\s*\}/.test(src));
 t('3-19 印刷では noprint を消す（既存の規則）', /@media print[\s\S]*\.noprint\s*\{\s*display:\s*none\s*!important;\s*\}/.test(src));
 const fRenderAll = cut('renderAll') || '';
-t('3-20 空の時、接続先が無ければ案内を出し、あれば隠す',
-  /if \(!syncTarget\(\)\.endpoint\) \{ dcrNoCfgGuide_\(cfgBox\); cfgBox\.hidden = false; \}\s*else \{ cfgBox\.textContent = ''; cfgBox\.hidden = true; \}/.test(fRenderAll));
+/* 2026-11-08: 接続先が無くてもログインだけで週間計画を読めた端末（dcrOn_ ＝接続先あり または DCR_LIVE）では案内を出さない */
+t('3-20 空の時、接続先が無く（ログインだけでも読めず）なら案内を出し、あれば隠す',
+  /if \(!dcrOn_\(\)\) \{ dcrNoCfgGuide_\(cfgBox\); cfgBox\.hidden = false; \}\s*else \{ cfgBox\.textContent = ''; cfgBox\.hidden = true; \}/.test(fRenderAll)
+  && /function dcrOn_\(\) \{ return !!syncTarget\(\)\.endpoint \|\| DCR_LIVE; \}/.test(src));
 
 console.log('— 4. 階が分からない方の色の凡例（画面だけ） —');
 const fLegend = cut('renderLegend'), legDecl = cutObj('LEGENDS');

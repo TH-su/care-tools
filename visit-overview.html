@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-nkwYc+yoSLfFNGjDhbOT2DmJCAXzQc9ApHWyICZrspQ=' 'sha256-fiiCHD0MBlF2wV+NudqERX+mzEI9CHzGp+FncjfxYa4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-bmhc6nx+svAsXjXb2iAQJVc3eVB7JGjb6TDbpn9YsYU=' 'sha256-fiiCHD0MBlF2wV+NudqERX+mzEI9CHzGp+FncjfxYa4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -850,6 +850,11 @@ function init() {
   /* 入居者マスタの入院を重ねる（2026-08-02 追加）。
      接続設定が無い端末では何も起きない＝従来どおりの表示。 */
   voFetchHosp().then(function(ok){ if(ok && DB) render(DB); });
+  /* 別のタブ（接続設定・入居者マスタ）で端末の用途が変わったら、ページを読み込み直して起動の時の守りに任せる（CLAUDE.md §2-5・2026-11-08 商用化の点検）。
+     描き直すまで待つと、現場用に変わった後もしばらくフルネームが出たままになっていた */
+  window.addEventListener('storage', function (e) {
+    if (e && e.key === 'su_device_role' && e.oldValue !== e.newValue) { try { location.reload(); } catch (e2) {} }
+  });
   setInterval(function(){ try{ voWatchState(); }catch(e){} }, 60000);
   document.addEventListener('visibilitychange', function(){
     if(!document.hidden){ try{ voWatchState(); }catch(e){} }
