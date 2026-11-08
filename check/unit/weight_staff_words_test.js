@@ -86,7 +86,7 @@ let sec6 = Promise.resolve();
   const g = cut('applyWeightDeviceGuard') || '';
   const run = (field) => {
     const el = { hidden: false }, nb = { hidden: true };
-    const ctx = { wrIsField: () => field, apiUrl: '', goto: () => {},
+    const ctx = { wrIsField: () => field, apiUrl: '', wrSyncOn_: () => !!ctx.apiUrl, goto: () => {},
       document: { documentElement: { classList: { toggle: () => {} } }, querySelector: () => null,
         getElementById: (id) => id === 'apiCsLink' ? el : (id === 'wrNoApi' ? nb : null) } };
     vm.createContext(ctx);
@@ -102,7 +102,7 @@ let sec6 = Promise.resolve();
   async function runSync(getImpl, field) {
     const toasts = [], notes = [], status = [];
     const ctx = {
-      apiUrl: 'https://script.google.com/macros/s/TEST/exec', apiToken: field ? '' : 'x', apiCaps: { seen: true },
+      apiUrl: 'https://script.google.com/macros/s/TEST/exec', apiToken: field ? '' : 'x', apiCaps: { seen: true }, wrSyncOn_: () => !!ctx.apiUrl,
       wrIsField: () => !!field,
       wrSyncLock_: () => {}, ldShow: () => {}, ldHide: () => {},
       apiSetStatus: (st, m) => status.push(m), apiGet: getImpl,
