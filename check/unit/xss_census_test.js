@@ -46,6 +46,7 @@ const EXCLUDE_FILES = [
   { re: /^supabase-js-[\d.]+\.js$/, head: '@supabase/supabase-js', why: 'Supabase の公式部品（npm の原本をそのまま同梱）' },
   { re: /^jspdf-[\d.]+\.umd\.js$/, head: 'jsPDF', why: 'jsPDF（PDF を作る部品・原本のまま）' },
   { re: /^chart-js-[\d.]+\.umd\.js$/, head: 'chart.js', why: 'Chart.js（グラフの部品・npm の原本のまま）' },
+  { re: /^konva-[\d.]+\.min\.js$/, head: 'Konva JavaScript Framework', why: 'Konva（家族構成図の描画の部品・npm の原本のまま・2026-11-08 に画面の中から切り出した）' },
   { re: /^universe-sandbox\/vendor\/three\.module\.js$/, head: 'Three.js Authors', why: 'three.js（3D の部品・原本のまま）' },
   { re: /^universe-sandbox\/vendor\/OrbitControls\.js$/, head: 'OrbitControls performs orbiting', why: 'three.js の OrbitControls（原本のまま）' }
 ];
@@ -55,7 +56,7 @@ const EXCLUDE_DIRS = [
 ];
 /* HTML の中に丸ごと埋め込んだ部品（その <script> 1つを除外）。先頭の印の両方が合った時だけ */
 const EXCLUDE_BLOCKS = [
-  { file: 'genogram.html', heads: ['.Konva=e()', 'Konva JavaScript Framework'], why: '家族構成図に埋め込んだ Konva（描画の部品・圧縮済みの原本）' }
+  /* 家族構成図に埋め込んでいた Konva は、2026-11-08 に konva-9.3.22.min.js へ切り出した（上の EXCLUDE_FILES） */
 ];
 /* 部品をまとめた成果物の中の、部品側の文（ちょうどこの文だけを除外する） */
 const EXCLUDE_STMTS = [

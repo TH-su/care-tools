@@ -14,11 +14,10 @@
  *                                                   備考など記録由来）は training-plan-form.js が textContent で入れる
  *   申送ビューア                 0          0      記録の本文・要約・記入者・検索語は textContent／createTextNode と
  *    （moushiokuri-viewer.html）                     <mark> の createElement（hlText・sumNode・evNode・jumpBtn）
- *   家族構成図                   2          0      1 保存済みの一覧の先頭（refreshDocList）＝固定文
+ *   家族構成図                   1          0      1 保存済みの一覧の先頭（refreshDocList）＝固定文
  *    （genogram.html）                               '<option value="">— 保存済みから読込 —</option>' だけ。図の名前・
  *                                                    最後に直した人（クラウド由来）は option の textContent で入れる
- *                                                  2 同梱の Konva（圧縮済みの描画部品）が入れ物を空にする
- *                                                    t.innerHTML=""＝固定の空文字（部品には触らない）
+ *                                                  （同梱の Konva の t.innerHTML="" は、2026-11-08 に konva-9.3.22.min.js へ切り出したので画面の中に無い）
  *   接続設定                     0          0      系統名・説明・端末に保存された URL・接続確認の応答文は textContent と
  *    （connection-settings.html）                    input の value（el・field・input・setRes・buildCard）
  *   全支援の週間俯瞰             0          0      氏名・支援コード・吹き出しは textContent・title・aria-label（render）
@@ -113,18 +112,18 @@ const INNER = /\.innerHTML\s*\+?=(?!=)/g;
 const OTHER = /insertAdjacentHTML|\.outerHTML\s*\+?=(?!=)|document\.write|\bsrcdoc\b|createContextualFragment|parseFromString/g;
 const cntOf = (src, re) => (src.match(re) || []).length;
 [
-  ['機能訓練計画書', TP, 0, 1], ['申送ビューア', MSK, 0, 0], ['家族構成図', GENO, 2, 0],
+  ['機能訓練計画書', TP, 0, 1], ['申送ビューア', MSK, 0, 0], ['家族構成図', GENO, 1, 0],
   ['接続設定', CS, 0, 0], ['全支援の週間俯瞰', SO, 0, 0], ['訪問支援の週間俯瞰', VO, 0, 0]
 ].forEach(([nm, src, inner, other]) => {
   const a = cntOf(src, INNER), b = cntOf(src, OTHER);
   t('Z ' + nm + '：innerHTML への代入は点検した' + inner + 'か所のまま（増えたら点検してこの表に足してから通す）', a === inner, a);
   t('Z ' + nm + '：insertAdjacentHTML・outerHTML・document.write・srcdoc・parseFromString 等は点検した' + other + 'か所のまま', b === other, b);
 });
-/* 家族構成図の2か所は固定文のまま（値をつないでいない） */
+/* 家族構成図の1か所は固定文のまま（値をつないでいない） */
 {
   const rhs = [...GENO.matchAll(/\.innerHTML\s*\+?=(?!=)\s*([^;\n]*?)\s*[;,]/g)].map((m) => m[1]);
-  t('Z 家族構成図：2か所は固定の空文字（同梱の Konva）と固定の先頭行だけ',
-    rhs.length === 2 && rhs.includes('""') && rhs.includes("'<option value=\"\">— 保存済みから読込 —</option>'"), rhs.join(' / '));
+  t('Z 家族構成図：1か所は固定の先頭行だけ（同梱の Konva は 2026-11-08 に別のファイルへ切り出した）',
+    rhs.length === 1 && rhs.includes("'<option value=\"\">— 保存済みから読込 —</option>'"), rhs.join(' / '));
   t('Z 家族構成図：先頭行の代入は保存済みの一覧（refreshDocList）の中', /sel\.innerHTML = '<option value="">— 保存済みから読込 —<\/option>';/.test(grabFn(GENO, 'refreshDocList')), '');
 }
 /* 機能訓練計画書の parseFromString は mountSheet の中だけ・mountSheet には buildSheet の戻り値だけを渡す */
