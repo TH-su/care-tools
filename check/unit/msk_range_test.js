@@ -201,6 +201,7 @@ function makeBox(opts) {
     grabFn('baseStale'), grabFn('vmStale'), grabFn('rgClearBase'), grabFn('rgClearVm'),
     grabFn('rgApply'), grabFn('rgReload'), grabFn('rgBusyBase'), grabFn('rgBusyVm'),
     grabFn('dataLoaded'), grabFn('vmLoaded'), grabFn('sqUsable'),
+    'var MSK_LIVE = false;', grabFn('mskCfgOk_'), grabFn('mskOn_'),
     grabFn('ensureBaseData'), grabFn('ensureVmData'),
     /* 描画（stale ガードを実際に動かす） */
     grabFn('rosterByNorm'), grabFn('kanaKey'), grabFn('byKana'),
@@ -831,8 +832,8 @@ group('⑨ 配線（HTML・呼び出し側）');
   has('タブ切替から ensureVmData', init, "if(scr === 'scr-vm') ensureVmData();");
   has('起動時に期間を復元する', init, 'rgRestore();');
   has('起動時に3タブへ反映する', init, 'rgSyncUI();');
-  has('起動時の復元も ensure 経由（バイタル）', init, 'ensureVmData();\n    sqSyncScope();');
-  has('起動時の復元も ensure 経由（申し送り）', init, 'ensureBaseData();\n    if(opened === ');
+  has('起動時の復元も ensure 経由（バイタル）', init, 'ensureVmData();\n      sqSyncScope();');
+  has('起動時の復元も ensure 経由（申し送り）', init, 'ensureBaseData();\n      if(opened === ');
   has('3タブぶんの配線がある', init, "RG_TABS.forEach(function(p){");
   eq('バイタル専用の2本目の bnav 配線は消えている',
     (init.match(/document\.querySelectorAll\('\.bnav button'\)/g) || []).length, 1);
