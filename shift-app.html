@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-x5t4X+yVcxT95YZY9LkyhNkDD7PMtzHQVLruS/O+PtA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-XyvIgd8qpDlGzs0hU/4+WLwDqAxRBe6X0rnVQGM19JI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -3668,6 +3668,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
  *   ファイルにあって相手の名簿にいない人      … 取り込まない（数と番号を知らせる）
  *   相手の名簿にいてファイルにいない人        … 土台のまま（数を知らせる）
  *   必要人数（日ごと・月）                    … ファイルに入っている時だけ置き換える（空なら土台のまま）
+ * 希望休（2026-11-08 追加）: 勤務表の希望休は「名前 → 日 → 希／有」で持つ。ファイルには氏名を入れないため、
+ *   書き出す時に職員の番号へ置き換え（requestsToIds）、取り込む時に相手の名前へ戻して足す（mergeRequests）。
+ *   取り込みは足すだけ: 相手に無い日だけ入れ、相手に先に入っている希望休は消さない・書き換えない（数を知らせる）。
  * 土台は書き換えない（写しを返す）。
  */
 (function () {
@@ -3697,8 +3700,60 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
   function hasAny(o) { for (var k in o) { if (hasOwn(o, k)) return true; } return false; }
 
+  var REQ_VALS = { '希': 1, '有': 1 };
+  function normName(n) { return String(n || '').replace(/[\s　]+/g, ''); }
+  /* 希望休（名前で持つ）を職員の番号で持つ形にする。staffList の名前で引けない行は落とす */
+  function requestsToIds(reqsByName, staffList, ym) {
+    var out = {}, days = validYm(ym) ? daysOf(ym) : 31, byName = {};
+    (staffList || []).forEach(function (st) { if (st && safeKey(st.id) && st.name) byName[normName(st.name)] = st.id; });
+    if (!isObj(reqsByName)) return out;
+    for (var nm in reqsByName) {
+      if (!hasOwn(reqsByName, nm)) continue;
+      var sid = byName[normName(nm)];
+      if (!sid) continue;
+      var row = reqsByName[nm], o = out[sid] || {};
+      if (!isObj(row)) continue;
+      for (var d in row) {
+        if (!hasOwn(row, d)) continue;
+        var n = Number(d);
+        if (n >= 1 && n <= days && String(n) === d && REQ_VALS[row[d]] === 1) o[d] = row[d];
+      }
+      if (hasAny(o)) out[sid] = o;
+    }
+    return out;
+  }
+  /* 取り込み側の希望休（名前で持つ）に、ファイルの希望休（番号で持つ）を足す。cur は書き換えない。
+   * 足すだけ: 相手に無い日だけ入れる。相手に先に入っている日は、違っていても書き換えない（kept に数える） */
+  function mergeRequests(cur, reqById, staffList, ym) {
+    var out = clone(isObj(cur) ? cur : {}) || {}, days = validYm(ym) ? daysOf(ym) : 31, byId = {};
+    var added = 0, kept = 0, unknown = [];
+    (staffList || []).forEach(function (st) { if (st && safeKey(st.id) && st.name) byId[st.id] = st.name; });
+    if (!isObj(reqById)) return { requests: out, added: 0, kept: 0, unknown: [] };
+    for (var sid in reqById) {
+      if (!hasOwn(reqById, sid) || !safeKey(sid)) continue;
+      var name = byId[sid];
+      if (!name) { unknown.push(sid); continue; }
+      /* 読む側（希望休の画面・勤務表の警告・自動作成）はどれも空白を除いた名前で引く。足すのも比べるのも
+       * 必ずその行にする（空白入りの古い行へ足すと、どの画面からも見えない・2026-11-08 反証レビュー） */
+      var key = normName(name);
+      if (!safeKey(key)) continue;
+      var row = isObj(out[key]) ? out[key] : {}, src = reqById[sid];
+      if (!isObj(src)) continue;
+      for (var d in src) {
+        if (!hasOwn(src, d)) continue;
+        var n = Number(d), v = src[d];
+        if (!(n >= 1 && n <= days && String(n) === d) || REQ_VALS[v] !== 1) continue;
+        var curV = row[d] || '';
+        if (!curV) { row[d] = v; added++; }
+        else if (curV !== v) kept++;
+      }
+      if (hasAny(row)) out[key] = row;
+    }
+    return { requests: out, added: added, kept: kept, unknown: unknown };
+  }
+
   /* 書き出し。sched は勤務表（cells・subCells・colors・bold・notes・dailyNeeds・monthNeeds）、staffIds はその月の職員の番号の並び */
-  function build(sched, ym, staffIds, fromLabel, now) {
+  function build(sched, ym, staffIds, fromLabel, now, reqById) {
     if (!validYm(ym)) throw new Error('月の指定が正しくありません');
     var s = sched || {}, ids = [], seen = {};
     (staffIds || []).forEach(function (id) { if (safeKey(id) && !seen[id]) { seen[id] = 1; ids.push(id); } });
@@ -3726,7 +3781,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       exportedAt: (now || new Date()).toISOString(),
       staffIds: ids,
       data: { cells: cells, subCells: subCells, colors: colors, bold: bold, notes: notes,
-              dailyNeeds: clone(isObj(s.dailyNeeds) ? s.dailyNeeds : {}), monthNeeds: clone(isObj(s.monthNeeds) ? s.monthNeeds : {}) }
+              dailyNeeds: clone(isObj(s.dailyNeeds) ? s.dailyNeeds : {}), monthNeeds: clone(isObj(s.monthNeeds) ? s.monthNeeds : {}),
+              requests: (function () { var r = {}; if (isObj(reqById)) for (var k in reqById) { if (hasOwn(reqById, k) && seen[k] && isObj(reqById[k]) && hasAny(reqById[k])) r[k] = clone(reqById[k]); } return r; })() }
     };
   }
 
@@ -3787,7 +3843,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return { sched: out, report: { matched: matched.length, unknown: unknown, missing: missing, needs: needs } };
   }
 
-  var api = { APP: APP, VERSION: VERSION, build: build, parse: parse, apply: apply };
+  var api = { APP: APP, VERSION: VERSION, build: build, parse: parse, apply: apply, requestsToIds: requestsToIds, mergeRequests: mergeRequests };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.ShiftMonthPkg = api;
 })();
@@ -10093,7 +10149,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var MP = window.ShiftMonthPkg;
       var from = this.layerLabel(this.layer);
       if (this.layer.indexOf('draft:') === 0) { var dd = this.findDraft(this.layer.slice(6)); if (dd && dd.label) from = dd.label; }
-      var pkg = MP.build(this.getSched(this.layer), this.ym, this.monthStaffIds_(this.monthStaff(), this.ym), from);
+      /* 希望休は月ごとに1つ（版に関係なく同じ）。名前で持つので、書き出す時に職員の番号へ置き換える（2026-11-08） */
+      var reqIds = MP.requestsToIds(Store.get(this.reqKey(), {}), this.staff, this.ym);
+      var pkg = MP.build(this.getSched(this.layer), this.ym, this.monthStaffIds_(this.monthStaff(), this.ym), from, null, reqIds);
       var blob = new Blob([JSON.stringify(pkg, null, 1)], { type: 'application/json' });
       var a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -10114,7 +10172,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var label = '取込 ' + String(pkg.from || '').slice(0, 30) + (when ? '（' + when + '）' : '');
       this.confirm('この月を取り込みます',
         y + '年' + m + '月の「編集用」を新しく作り、ファイルの内容を入れます。\n' +
-        '予定（確定版）は書き換えません。中身を確かめてから［✓ この編集用を確定］を押してください。\n実行しますか？',
+        '予定（確定版）は書き換えません。中身を確かめてから［✓ この編集用を確定］を押してください。\n' +
+        'ファイルの希望休は、この勤務表の希望休に足します（入っている希望休は消しません）。\n実行しますか？',
         function () {
           if (self.ym !== pkg.ym) self.setYM(y, m);
           var tries = 0;
@@ -10144,8 +10203,22 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
             list.push({ id: id, label: label.replace(/\s+/g, ' ').trim(), createdAt: new Date().toISOString() });
             self.saveDrafts(list);
             self.gotoLayer('draft:' + id);
+            /* 希望休: 月に1つの共有の表（予定と同じく全員に見える）へ、無い日だけ足す（2026-11-08） */
+            var reqMsg = '';
+            /* 足すのは勤務を入れたのと同じ人だけ（休職・非表示・退職後の人には足さない・2026-11-08 反証レビュー） */
+            var reqStaff = self.staff.filter(function (st) { return st && roster.indexOf(st.id) >= 0; });
+            var rq = MP.mergeRequests(Store.get(self.reqKey(), {}), pkg.data.requests, reqStaff, pkg.ym);
+            if (rq.added > 0) {
+              if (Store.set(self.reqKey(), rq.requests) === true) {
+                self.requests = rq.requests;
+                self.rerender();   /* 勤務表の希望休との食い違いの印を、足した希望休で描き直す */
+                reqMsg = '\n希望休を ' + rq.added + '件足しました（希望休の画面で確かめられます）。';
+              }
+              else reqMsg = '\n希望休は保存できませんでした（勤務は入っています）。希望休の画面で入れてください。';
+            }
+            if (rq.kept > 0) reqMsg += '\nこの勤務表に先に入っていた希望休 ' + rq.kept + '件は、そのままにしました（ファイルと違う日です）。';
             self._monthImporting = false;
-            var msg = r.report.matched + '人分を入れました。';
+            var msg = r.report.matched + '人分を入れました。' + reqMsg;
             if (r.report.needs) msg += '\n必要人数もファイルの内容にしました。';
             if (r.report.unknown.length) msg += '\nこの月の名簿にいない職員（休職・非表示・退職後を含む） ' + r.report.unknown.length + '人分は入れていません（職員の番号: ' + r.report.unknown.join(', ') + '）。';
             if (r.report.missing.length) msg += '\nファイルに無い職員 ' + r.report.missing.length + '人は、予定のままです。';
