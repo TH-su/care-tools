@@ -41,6 +41,20 @@ t('★設定済みの端末では①を閉じて開く', a.cfgAdminSetup.open ==
 t('★未設定の端末では①を開いて開く', b.cfgAdminSetup.open === true && b.cloudModal.hidden === false);
 t('入っている URL・合言葉は今までどおり入力欄に出す', a.cfgGasUrl.value.indexOf('script.google.com') > 0 && a.cfgGasToken.value === 't');
 
+console.log('\n— 3b. 接続先なしでログインだけで使える端末（2026-11-08 代表者「端末ごとの設定を極限までなくす」）—');
+function runLive(cfg, hint, noGuide) {
+  const els = { cfgGasUrl: { value: '' }, cfgGasToken: { value: '' }, cloudModal: { hidden: true }, cfgResult: { hidden: false }, cfgAdminSetup: { open: true }, btnCopyGas: { hidden: false } };
+  if (!noGuide) els.cfgFirstGuide = { hidden: false };
+  const box = { $: id => els[id], window: { SUGeno: hint === undefined ? undefined : { liveHint: () => hint, copyBlocked: () => false } },
+    CloudSync: { getCfg: () => cfg, isConfigured: () => !!(cfg.gasUrl || hint) } };
+  vm.createContext(box); vm.runInContext(cut('openCloudModal'), box); box.openCloudModal();
+  return els;
+}
+const L1 = runLive({}, true), L2 = runLive({}, false), L3 = runLive({ gasUrl: 'https://script.google.com/macros/s/X/exec', gasToken: 't' }, true), L4 = runLive({}, undefined);
+t('★接続先が無く使える端末には、職員向けの初回の案内を出さない（①も閉じて開く）', L1.cfgFirstGuide.hidden === true && L1.cfgAdminSetup.open === false && L1.cloudModal.hidden === false);
+t('★使えない端末・接続先のある端末・部品の無い端末には今までどおり出す', L2.cfgFirstGuide.hidden === false && L3.cfgFirstGuide.hidden === false && L4.cfgFirstGuide.hidden === false);
+t('案内の箱が見つからなくても窓は開く', runLive({}, true, true).cloudModal.hidden === false);
+
 console.log('\n— 4. 既存の部品 —');
 t('GAS のコードの写しとコピーのボタンは残っている', /const GAS_SCRIPT_CODE = `/.test(src) && /id="btnCopyGas"/.test(src));
 
