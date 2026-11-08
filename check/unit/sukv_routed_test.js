@@ -702,7 +702,7 @@ function makeKv(o) {
       box.window = box;
       vm.createContext(box);
       vm.runInContext('var SYNC = {\n config:{ endpoint:"", token:"" },\n'
-        + [method('target'), '_liveHint: false', method('hasTarget'), method('gas')].join(',\n')
+        + [method('target'), method('targetLocal'), '_liveHint: false', method('hasTarget'), method('gas')].join(',\n')
         + ',\n startupPull(){ CALLS.push("startupPull"); return Promise.resolve(true); }, startPolling(){ CALLS.push("startPolling"); }\n};\n'
         + probeSrc, Object.assign(box, { CALLS: calls }));
       return { box, calls, fetches, kvCalls, S: box.SYNC };

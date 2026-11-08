@@ -210,7 +210,7 @@ const items = (o) => () => ({ data: { ok: true, role: 'office', items: o, ver: '
   t('申送ビューア: 設定の入力欄は端末の値だけ（loadCfgLocal_）', /var cfg = loadCfgLocal_\(\);\n  \$\('cfgUrl'\)\.value = cfg\.url;/.test(MV));
   const RM = read('resident-master.html'), FS = read('facesheet.html');
   t('入居者マスタ: 設定の窓の入力欄は端末の値だけ', /function openSync\(\)\{var _lc=rmLocalCfg_\(\);\$\('cfgUrl'\)\.value=_lc\.url;\$\('cfgToken'\)\.value=_lc\.token;/.test(RM));
-  t('フェイスシート: 設定の窓の入力欄は端末の値だけ', /function openSync\(\)\{\n  var _lc=readSavedCfg_\(\);\$\('cfgUrl'\)\.value=_lc\.url;\$\('cfgToken'\)\.value=_lc\.token;/.test(FS));
+  t('フェイスシート: 設定の窓の入力欄は端末の値だけ（合言葉の欄は空のまま・2026-11-08 商用化の点検）', /function openSync\(\)\{\n[\s\S]{0,400}?var _lc=readSavedCfg_\(\);\$\('cfgUrl'\)\.value=_lc\.url;\$\('cfgToken'\)\.value='';/.test(FS));
   t('入居者マスタ・フェイスシート: 使う接続先は配った値が先', /function rmDistCfg_\(\)\{try\{var d=window\.SUDevCfg&&window\.SUDevCfg\.get\('master'\)/.test(RM) && /function fsEffCfg_\(\)\{ return fsDistCfg_\(\)\|\|readSavedCfg_\(\); \}/.test(FS));
   const TP = read('training-plan.html');
   t('計画書: 入居者マスタ・週間計画の接続先は配った値が先', /SUDevCfg\.get\('master'\); if \(dm\)/.test(TP) && /SUDevCfg\.get\('ws'\); if \(dw\)/.test(TP));
