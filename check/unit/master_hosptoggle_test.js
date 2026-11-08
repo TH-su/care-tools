@@ -108,7 +108,8 @@ function load(src){
   const opt = ['hospWho_', 'hospDoneMsg_', 'hospOnList_', 'hospNote_', 'hospApplyPend_'].filter(n => src.indexOf('\nfunction ' + n + '(') >= 0);
   const code = ['_toTargetArr', '_ymd', 'normRosterRow', 'saveRosterCache', 'writeCommonRoster',
     'srevPickMeta', 'srevSeen', 'refreshRoster'].concat(opt, ['toggleHosp']).map(n => grabFn(src, n)).join('\n')
-    + (src.indexOf('\nvar hospPend_=') >= 0 ? '\n' + src.slice(src.indexOf('\nvar hospPend_=') + 1).split('\n')[0] : '');
+    + (src.indexOf('\nvar hospPend_=') >= 0 ? '\n' + src.slice(src.indexOf('\nvar hospPend_=') + 1).split('\n')[0] : '')
+    + (src.indexOf('\nfunction rmOn_(') >= 0 ? '\nvar RM_LIVE=false;\n' + grabFn(src, 'rmOn_') : '');   // 接続先の有無の確かめ（2026-11-08）も本物
   vm.runInContext(code, box, { filename: 'resident-master.html(hosptoggle)' });
   /* 起動時と同じく、最初の名簿を控えと共有名簿へ書いておく */
   box.saveRosterCache(); box.writeCommonRoster();

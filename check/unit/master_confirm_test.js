@@ -325,7 +325,7 @@ async function runSave(opt){
     apiGet: (p, ms) => { log.get.push({p: copy(p), ms}); return opt.get ? opt.get(p, log) : Promise.reject(new Error('照会は呼ばれない想定')); }
   };
   vm.createContext(sb);
-  vm.runInContext(STAMP_FN + '\n' + SAVE, sb);
+  vm.runInContext('var RM_LIVE=false;\n' + grabFn('rmOn_') + '\n' + STAMP_FN + '\n' + SAVE, sb);   // 接続先の有無の確かめ（2026-11-08 の rmOn_）も本物
   sb.saveResident();
   await settle();
   log.btnDisabled = btn.disabled;

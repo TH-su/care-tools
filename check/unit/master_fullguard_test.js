@@ -128,7 +128,8 @@ function load(src){
     grabFn(src, 'setDeviceRole'),
     grabFn(src, 'fullEnsure'),
     grabFn(src, 'fullOf'),
-    grabFn(src, 'applyDeviceGuard')
+    grabFn(src, 'applyDeviceGuard'),
+    src.indexOf('\nfunction rmOn_(') >= 0 ? 'var RM_LIVE=false;\n' + grabFn(src, 'rmOn_') : ''   // 接続先の有無の確かめ（2026-11-08）も本物
   ].join('\n');
   vm.runInContext(code, box, { filename: 'resident-master.html(fullguard)' });
   const v = name => vm.runInContext(name, box);

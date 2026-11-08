@@ -325,7 +325,7 @@ const CENSUS = {
   "facesheet.html": [
     [E, "gb.innerHTML=html"],   // 家族構成図の枠: ほかの端末から届いた絵（JPEG の data URL だけ）を esc を通して img に入れる（統合 0056）
     [E, "box.innerHTML=mealHtml(q)"],
-    [F, "box.innerHTML='<div class=\"empty\">'+(roster.length?'該当する入居者がいません':(CFG.url?'入居者がいません。入居者マスタで登録するか「設定」で接続してください':fsNoCfgMsg_()))+'</div>'"],
+    [F, "box.innerHTML='<div class=\"empty\">'+(roster.length?'該当する入居者がいません':(fsOn_()?'入居者がいません。入居者マスタで登録するか「設定」で接続してください':fsNoCfgMsg_()))+'</div>'"],
     [E, "box.innerHTML=html"],
     [F, "$('hlBand').innerHTML=''"],
     [F, "$('ftabs').innerHTML=''"],
