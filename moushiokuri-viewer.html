@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-+0b2jUwpTRafxSpz2wsyiaUK+QtXQxhxHvZHqO3v6CU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-nUGauBLN18h1/HTsZd5KqDYYgyc+GBOOSIHljLoMq84='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -846,6 +846,7 @@ mark { background:var(--mark-bg); color:inherit; padding:0 1px; border-radius:2p
 <link rel="stylesheet" href="su-resident-hop.css?v=2026-11-02">
 <script src="su-print.js?v=2026-09-12"></script>
 <script src="su-errors.js?v=2026-10-27"></script>
+<script src="su-devcfg.js?v=2026-11-08"></script>
 <script src="su-cfg-hint.js?v=2026-11-08"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-resident-hop.js?v=2026-11-02"></script>
@@ -991,7 +992,16 @@ function applyDeviceGuard(){
 }
 
 /* ── 設定 ─────────────────────────────────────────── */
+/* 使う接続先: 管理者が全端末へ配った値（su-devcfg.js・統合 0080）が先、配っていない時だけこの端末の値（loadCfgLocal_）。
+   設定の入力欄に出すのは端末の値だけ（配った合言葉は画面に出さない） */
 function loadCfg(){
+  try{ var d = window.SUDevCfg && window.SUDevCfg.get('moushi'); if(d) return { url: d.url, token: d.token }; }catch(e){ /* 部品が無い・壊れている時は端末の値で動く */ }
+  try{
+    var o = JSON.parse(lsGet(LS_CFG) || '{}');
+    return { url: String(o.url || ''), token: String(o.token || '') };
+  }catch(e){ return { url:'', token:'' }; }
+}
+function loadCfgLocal_(){
   try{
     var o = JSON.parse(lsGet(LS_CFG) || '{}');
     return { url: String(o.url || ''), token: String(o.token || '') };
@@ -3308,6 +3318,10 @@ var EXC_BRISTOL = { 1:'硬球状', 2:'硬塊状', 3:'ひび割れ', 4:'普通便
 
 /* ── 接続設定（読むだけ）。get は試験で差し替える（既定は lsGet） ── */
 function excReadCfg(get){
+  /* 管理者が全端末へ配った値（su-devcfg.js・統合 0080）が先。試験で get を渡した時は端末の値だけを見る */
+  if(!get){
+    try{ var d = window.SUDevCfg && window.SUDevCfg.get('haiben'); if(d && EXC_GAS_RE.test(d.url)) return { url:d.url, token:d.token }; }catch(e){}
+  }
   get = get || lsGet;
   function first(keys){
     for(var i = 0; i < keys.length; i++){
@@ -4912,7 +4926,7 @@ function applyMasterIdParam(){
   $('copyDate').checked = (lsGet(LS_CPDT) !== '0');
   $('theDate').value = ymd(addDays(new Date(), -1));
 
-  var cfg = loadCfg();
+  var cfg = loadCfgLocal_();
   $('cfgUrl').value = cfg.url;
   $('cfgToken').value = cfg.token;
 

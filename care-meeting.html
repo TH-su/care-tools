@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-GhJjz41cXYI59aIGhzftMtX9APiiS7Q4JIxWnkkmzwM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-7VflpnVCraaMyWF0igIUQdR1xxohd6tjnm2r/OfA5uc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 会議の記録（要配慮の情報）を扱うためキャッシュ無効 -->
@@ -13,8 +13,9 @@
 <link rel="stylesheet" href="su-resident-hop.css?v=2026-11-02">
 <!-- 画面が黙って壊れないようにする共通部品（いちばん先に読む）→ 速さの記録 → 施設情報 → 印刷 → 振り分けと確かめの計算 -->
 <script src="su-errors.js?v=2026-10-27"></script>
+<script src="su-devcfg.js?v=2026-11-08"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
-<script src="su-res-read.js?v=2026-11-08.3"></script>
+<script src="su-res-read.js?v=2026-11-08.4"></script>
 <script src="su-cfg-hint.js?v=2026-11-08"></script>
 <script src="su-perf.js?v=2026-11-02"></script>
 <script src="su-login-band.js?v=2026-11-02"></script>
@@ -375,6 +376,7 @@ function cmNote_(where,e){ try{ if(window.SUErrors&&typeof window.SUErrors.note=
 function getDeviceRole(){try{return localStorage.getItem(DEVICE_KEY)||'office'}catch(e){return'office'}}
 function isField(){return getDeviceRole()==='field'}
 function readCfg_(){
+  try{ var d=window.SUDevCfg&&window.SUDevCfg.get('master'); if(d) return {url:d.url, token:d.token}; }catch(e){}
   try{var s=localStorage.getItem(CFG_KEY);if(s){var o=JSON.parse(s);return{url:String(o&&o.url||''),token:String(o&&o.token||'')}}}catch(e){ cmNote_('接続設定の読込', e); }
   return{url:'',token:''};
 }

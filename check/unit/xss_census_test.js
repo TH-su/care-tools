@@ -574,6 +574,7 @@ const CENSUS = {
   "su-hb-full.js": [],
   "su-doc-full.js": [],
   "su-doc-live.js": [],
+  "su-devcfg.js": [],   // 統合 0080（2026-11-08）: 配った接続先と合言葉を返すだけで、画面に何も書かない
   "supplies-calc.js": [],
   "supplies.html": [],
   "support-overview.html": [],
