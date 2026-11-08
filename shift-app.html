@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-XyvIgd8qpDlGzs0hU/4+WLwDqAxRBe6X0rnVQGM19JI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-J/QHwZtqC8HCtGizdRip/SgbCR66+cRunZLsJJvO1LE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -3668,6 +3668,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
  *   ファイルにあって相手の名簿にいない人      … 取り込まない（数と番号を知らせる）
  *   相手の名簿にいてファイルにいない人        … 土台のまま（数を知らせる）
  *   必要人数（日ごと・月）                    … ファイルに入っている時だけ置き換える（空なら土台のまま）
+ * その月だけの並び（2026-11-08 追加）: 作業用ファイルで変えた帯ごとの並び・所属の帯・区分の行の非表示を番号つきで運ぶ（下の layoutDiff）。
+ *   取り込みで作る編集用の名簿の写しに重ね、確定の時に、ロックしたことのある月は予定の名簿の写しへ、
+ *   ロックしていない月は職員の登録へ反映する（勤務表で並べ替えた時と同じ・app.js confirmDraftAsk_ の layoutImported）。
  * 希望休（2026-11-08 追加）: 勤務表の希望休は「名前 → 日 → 希／有」で持つ。ファイルには氏名を入れないため、
  *   書き出す時に職員の番号へ置き換え（requestsToIds）、取り込む時に相手の名前へ戻して足す（mergeRequests）。
  *   取り込みは足すだけ: 相手に無い日だけ入れ、相手に先に入っている希望休は消さない・書き換えない（数を知らせる）。
@@ -3752,8 +3755,95 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return { requests: out, added: added, kept: kept, unknown: unknown };
   }
 
+  /* その月だけの並び（2026-11-08 追加・同日 反証レビューで作り直し）
+   * 運ぶのは「作業用ファイルで実際に変えた分」だけ: 書き出す時に、編集用タブの名簿の写し（cur）と、そのタブを作った時の
+   * 並びの控え（base＝meta.layoutBase）を比べる（今の職員の登録と比べると、古い写しとのずれまで運んでしまう・反証レビュー）。
+   *   order  … 帯（night/visit/day）ごとの勤務表の並び。並びか顔ぶれが違う帯だけ、番号の並び（配列）で運ぶ
+   *   group  … 所属の帯が違う人だけ
+   *   hidden … 区分の行の非表示が違う人だけ（空の配列＝すべて表示に戻す）
+   * 何も変えていなければ空（取り込み側は何もしない）。氏名は運ばない。
+   * 取り込み側（applyLayout）は、渡された名簿（編集用の写し・職員の登録・予定の写しのどれでも）をその場で書き換える。
+   *   帯の並びは、その帯の人たちが今持っている shiftOrder の番号を並べ直して振り直す（ほかの帯の番号とぶつからない）。
+   *   ファイルの並びにいない人は、その帯の後ろへ今の順のまま回す。 */
+  var LAYOUT_GROUPS = { night: 1, visit: 1, day: 1 };
+  var LAYOUT_DIVS = { '施設': 1, '訪問': 1, '通所': 1 };
+  function grpOf(st) { return (st && LAYOUT_GROUPS[st.group] === 1) ? st.group : 'visit'; }
+  function ordOf(st) { return typeof st.shiftOrder === 'number' ? st.shiftOrder : (st.order || 0); }
+  function cleanHidden(a) {
+    if (!Array.isArray(a)) return null;
+    var out = [];
+    a.forEach(function (d) { if (typeof d === 'string' && LAYOUT_DIVS[d] === 1 && out.indexOf(d) < 0) out.push(d); });
+    return out.sort();
+  }
+  function groupSeq(list, ids, g) {
+    var want = {};
+    (ids || []).forEach(function (id) { want[id] = 1; });
+    return (list || []).filter(function (st) { return st && want[st.id] && grpOf(st) === g; })
+      .slice().sort(function (a, b) { return ordOf(a) - ordOf(b); }).map(function (st) { return st.id; });
+  }
+  function layoutDiff(base, cur, ids) {
+    var out = { order: {}, group: {}, hidden: {} }, byBase = {}, any = false;
+    (base || []).forEach(function (st) { if (st && safeKey(st.id)) byBase[st.id] = st; });
+    var want = {};
+    (ids || []).forEach(function (id) { if (safeKey(id)) want[id] = 1; });
+    (cur || []).forEach(function (st) {
+      if (!st || !want[st.id]) return;
+      var b = byBase[st.id];
+      if (!b || grpOf(b) !== grpOf(st)) { out.group[st.id] = grpOf(st); any = true; }
+      var hc = cleanHidden(st.hiddenDivisions) || [], hb = (b && cleanHidden(b.hiddenDivisions)) || [];
+      if (hc.join('|') !== hb.join('|')) { out.hidden[st.id] = hc; any = true; }
+    });
+    Object.keys(LAYOUT_GROUPS).forEach(function (g) {
+      var sc = groupSeq(cur, ids, g), sb = groupSeq(base, ids, g);
+      if (sc.join('|') !== sb.join('|')) { out.order[g] = sc; any = true; }
+    });
+    return any ? out : {};
+  }
+  /* 差の基準にする並びの控え（氏名を持たない）。編集用タブを作った時に meta.layoutBase として持つ */
+  function layoutBaseOf(list) {
+    return (list || []).filter(function (st) { return st && safeKey(st.id); }).map(function (st) {
+      var o = { id: st.id, group: grpOf(st), shiftOrder: ordOf(st) };
+      var h = cleanHidden(st.hiddenDivisions); if (h) o.hiddenDivisions = h;
+      return o;
+    });
+  }
+  function hasLayout(layout) {
+    return isObj(layout) && ((isObj(layout.order) && hasAny(layout.order)) || (isObj(layout.group) && hasAny(layout.group)) ||
+      (isObj(layout.hidden) && hasAny(layout.hidden)));
+  }
+  function applyLayout(list, layout, rosterIds) {
+    if (!Array.isArray(list) || !hasLayout(layout)) return 0;
+    var roster = {}, byId = {}, changed = {}, i;
+    (rosterIds || []).forEach(function (id) { roster[id] = 1; });
+    for (i = 0; i < list.length; i++) { if (list[i] && roster[list[i].id]) byId[list[i].id] = list[i]; }
+    var G = isObj(layout.group) ? layout.group : {}, H = isObj(layout.hidden) ? layout.hidden : {}, O = isObj(layout.order) ? layout.order : {};
+    for (var sid in G) {
+      if (!hasOwn(G, sid) || !byId[sid] || LAYOUT_GROUPS[G[sid]] !== 1) continue;
+      if (byId[sid].group !== G[sid]) { byId[sid].group = G[sid]; changed[sid] = 1; }
+    }
+    for (sid in H) {
+      if (!hasOwn(H, sid) || !byId[sid]) continue;
+      var h = cleanHidden(H[sid]);
+      if (h === null) continue;
+      if ((cleanHidden(byId[sid].hiddenDivisions) || []).join('|') !== h.join('|')) { byId[sid].hiddenDivisions = h; changed[sid] = 1; }
+    }
+    Object.keys(LAYOUT_GROUPS).forEach(function (g) {
+      if (!Array.isArray(O[g])) return;
+      var members = list.filter(function (st) { return st && byId[st.id] === st && grpOf(st) === g; })
+        .sort(function (a, b) { return ordOf(a) - ordOf(b); });
+      if (!members.length) return;
+      var nums = members.map(ordOf).sort(function (a, b) { return a - b; });
+      for (var k = 1; k < nums.length; k++) { if (nums[k] <= nums[k - 1]) nums[k] = nums[k - 1] + 1; }   /* 同じ番号が並んでいたらずらす */
+      var inFile = {}, seq = [];
+      O[g].forEach(function (id) { var st = byId[id]; if (st && grpOf(st) === g && !inFile[id]) { inFile[id] = 1; seq.push(st); } });
+      members.forEach(function (st) { if (!inFile[st.id]) seq.push(st); });
+      seq.forEach(function (st, idx) { if (st.shiftOrder !== nums[idx]) { st.shiftOrder = nums[idx]; changed[st.id] = 1; } });
+    });
+    return Object.keys(changed).length;
+  }
+
   /* 書き出し。sched は勤務表（cells・subCells・colors・bold・notes・dailyNeeds・monthNeeds）、staffIds はその月の職員の番号の並び */
-  function build(sched, ym, staffIds, fromLabel, now, reqById) {
+  function build(sched, ym, staffIds, fromLabel, now, reqById, layoutIn) {
     if (!validYm(ym)) throw new Error('月の指定が正しくありません');
     var s = sched || {}, ids = [], seen = {};
     (staffIds || []).forEach(function (id) { if (safeKey(id) && !seen[id]) { seen[id] = 1; ids.push(id); } });
@@ -3782,6 +3872,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       staffIds: ids,
       data: { cells: cells, subCells: subCells, colors: colors, bold: bold, notes: notes,
               dailyNeeds: clone(isObj(s.dailyNeeds) ? s.dailyNeeds : {}), monthNeeds: clone(isObj(s.monthNeeds) ? s.monthNeeds : {}),
+              layout: hasLayout(layoutIn) ? clone(layoutIn) : {},
               requests: (function () { var r = {}; if (isObj(reqById)) for (var k in reqById) { if (hasOwn(reqById, k) && seen[k] && isObj(reqById[k]) && hasAny(reqById[k])) r[k] = clone(reqById[k]); } return r; })() }
     };
   }
@@ -3843,7 +3934,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return { sched: out, report: { matched: matched.length, unknown: unknown, missing: missing, needs: needs } };
   }
 
-  var api = { APP: APP, VERSION: VERSION, build: build, parse: parse, apply: apply, requestsToIds: requestsToIds, mergeRequests: mergeRequests };
+  var api = { APP: APP, VERSION: VERSION, build: build, parse: parse, apply: apply, requestsToIds: requestsToIds, mergeRequests: mergeRequests, layoutDiff: layoutDiff, layoutBaseOf: layoutBaseOf, hasLayout: hasLayout, applyLayout: applyLayout };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.ShiftMonthPkg = api;
 })();
@@ -10125,6 +10216,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        * （新入職員を含む）で開始できる。以後この編集用タブは自動反映されない（既存タブと同じ凍結特性）。 */
       copy.meta = { seededFrom: 'plan', createdAt: new Date().toISOString(),
         staffSnap: JSON.parse(JSON.stringify(this.staff)) };
+      /* 月の受け渡しで「このタブで変えた並び」だけを運ぶための、作った時の並びの控え（氏名なし・2026-11-08） */
+      if (window.ShiftMonthPkg) copy.meta.layoutBase = window.ShiftMonthPkg.layoutBaseOf(copy.meta.staffSnap);
       /* この端末で作った新規キー＝サーバに存在しないことが手元で確定している。
        * 印を立てないと monthReady_ が永久に false になり、作った直後のタブを編集できない。 */
       if (Store.noteLocallyCreated_) Store.noteLocallyCreated_(this.schedKey('draft:' + id));
@@ -10151,7 +10244,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (this.layer.indexOf('draft:') === 0) { var dd = this.findDraft(this.layer.slice(6)); if (dd && dd.label) from = dd.label; }
       /* 希望休は月ごとに1つ（版に関係なく同じ）。名前で持つので、書き出す時に職員の番号へ置き換える（2026-11-08） */
       var reqIds = MP.requestsToIds(Store.get(this.reqKey(), {}), this.staff, this.ym);
-      var pkg = MP.build(this.getSched(this.layer), this.ym, this.monthStaffIds_(this.monthStaff(), this.ym), from, null, reqIds);
+      /* その月だけの並び・所属の帯・行の非表示は、表示中の版の名簿の写しと職員の登録の違い（＝この月で変えた分）だけ運ぶ（2026-11-08） */
+      var ids = this.monthStaffIds_(this.monthStaff(), this.ym);
+      var curSched = this.getSched(this.layer), base = curSched.meta && curSched.meta.layoutBase;
+      /* 並びを運ぶのは、作った時の並びの控えを持つ編集用タブだけ（予定の版などは運ばない） */
+      var lay = (this.layer.indexOf('draft:') === 0 && Array.isArray(base)) ? MP.layoutDiff(base, this.monthStaff(), ids) : {};
+      var pkg = MP.build(curSched, this.ym, ids, from, null, reqIds, lay);
       var blob = new Blob([JSON.stringify(pkg, null, 1)], { type: 'application/json' });
       var a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -10193,6 +10291,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
             var copy = r.sched;
             copy.meta = { seededFrom: 'monthImport', createdAt: new Date().toISOString(),
               staffSnap: JSON.parse(JSON.stringify(self.staff)) };
+            /* その月だけの並び・非表示を、この編集用タブの名簿の写しにだけ重ねる（マスタ・ほかの月には及ばない） */
+            copy.meta.layoutBase = MP.layoutBaseOf(copy.meta.staffSnap);   /* 取り込む前の並び＝この先この写しで変えた分の基準 */
+            var nLayout = MP.applyLayout(copy.meta.staffSnap, pkg.data.layout, roster);
+            /* 確定の時に、この並びを予定（または職員の登録）へ反映するため、運んできた並びそのものを持っておく（confirmDraftAsk_） */
+            if (MP.hasLayout(pkg.data.layout)) copy.meta.layoutImported = JSON.parse(JSON.stringify(pkg.data.layout));
             var id = 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
             if (Store.noteLocallyCreated_) Store.noteLocallyCreated_(self.schedKey('draft:' + id));
             if (self.saveSched('draft:' + id, copy) !== true) {
@@ -10218,7 +10321,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
             }
             if (rq.kept > 0) reqMsg += '\nこの勤務表に先に入っていた希望休 ' + rq.kept + '件は、そのままにしました（ファイルと違う日です）。';
             self._monthImporting = false;
-            var msg = r.report.matched + '人分を入れました。' + reqMsg;
+            var msg = r.report.matched + '人分を入れました。' + (nLayout ? '\n作業用ファイルで変えた並び順・行の表示／非表示（' + nLayout + '人分）も入れました。確定の時に反映します（反映先は確定の確認画面に出ます）。' : '') + reqMsg;
             if (r.report.needs) msg += '\n必要人数もファイルの内容にしました。';
             if (r.report.unknown.length) msg += '\nこの月の名簿にいない職員（休職・非表示・退職後を含む） ' + r.report.unknown.length + '人分は入れていません（職員の番号: ' + r.report.unknown.join(', ') + '）。';
             if (r.report.missing.length) msg += '\nファイルに無い職員 ' + r.report.missing.length + '人は、予定のままです。';
@@ -10387,16 +10490,29 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var draftYm = this.ym;
       var draftSched = this.getSched('draft:' + id);
       var ow = this.countPlanOverwrite_(this.getSched('plan'), draftSched);
+      var MP_ = window.ShiftMonthPkg;
+      var planHasSnap = !!(this.getSched('plan').meta && this.getSched('plan').meta.staffSnap);   /* 確定処理の分岐（prevMeta.staffSnap）と同じ判定 */
+      var layAsk = (draftSched.meta && MP_ && MP_.hasLayout(draftSched.meta.layoutImported))
+        ? (planHasSnap ? '\n\n取り込んだ並び順・行の表示／非表示は、この月の予定にだけ反映します。'
+                       : '\n\n取り込んだ並び順・行の表示／非表示は、職員の登録に反映します（ロックしていないほかの月の表示も同じ並びになります）。')
+        : '';
       var owMsg = (ow.onlyPlan + ow.differ > 0)
         ? '\n\n予定にだけある入力 ' + ow.onlyPlan + 'マス・内容が違う入力 ' + ow.differ + 'マスは、確定すると編集用の内容に置き換わります。'
         : '';
       this.confirm('編集用を確定',
         '編集用「' + draft.label + '」を予定（確定版）に反映します。\n' +
-        '現在の予定は上書きされます（直前の予定は「確定前（自動退避）」に保存され、復元できます）。' + owMsg + '\nよろしいですか？',
+        '現在の予定は上書きされます（直前の予定は「確定前（自動退避）」に保存され、復元できます）。' + owMsg + layAsk + '\nよろしいですか？',
         function () {
           var plan = self.getSched('plan');
           var prevMeta = plan.meta || {};   /* 既存のロック/職員スナップショットを保全（確定で凍結名簿を消さない） */
           if (self.ym !== draftYm) return;   /* 確認を出している間に月が変わった＝別の月の予定を触らない */
+          /* 取り込んだ並びを職員の登録へ反映する確定は、職員の登録を読み込めていない時は何も書かずに止める（2026-11-08 反証レビュー） */
+          var lay = draftSched.meta && draftSched.meta.layoutImported;
+          var layOn = !!(lay && MP_.hasLayout(lay));
+          if (layOn && !prevMeta.staffSnap && !self.masterReady_('staff')) {
+            self.confirmInfo('確定を中止しました', '職員の登録をまだ読み込めていないため、取り込んだ並び順を反映できません。予定は変わっていません。少し待ってから、もう一度押してください。');
+            return;
+          }
           /* 控えを作るのは予定に何か入っている時。区分行・メモ・必要数だけの予定も守る（2026-10-20 レビュー指摘：
              従来は通常のセルしか見ず、区分行だけの予定は控え無しで上書きしていた） */
           var hasPlan = false;
@@ -10431,12 +10547,39 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           }
           /* 予定がスナップショットを持たない(未ロック)場合は付与しない＝予定はマスタ追従のまま
            * （draftで入れた新規職員もマスタに居るため予定で可視＝消失しない）。 */
+          /* 「月を取り込む」で運んできた並び（2026-11-08）: ロックしたことのある月は予定の名簿の写しへ重ねる。
+           * ロックしていない月は予定がマスタに追従するため、勤務表で並べ替えた時と同じく職員の登録へ反映する
+           * （月を切り離さない＝あとの氏名・資格・退職の変更もこの月に効く）。 */
+          var layToMaster = false;
+          var monthIds = self.monthStaffIds_(self.staff, draftYm);   /* その月に出る職員だけを並べ直す（休職・退職後の人は動かさない） */
+          if (layOn) {
+            if (copy.meta.staffSnap) MP_.applyLayout(copy.meta.staffSnap, lay, self.monthStaffIds_(copy.meta.staffSnap, draftYm));
+            else layToMaster = true;
+          }
           if (prevMeta.locked) copy.meta.locked = prevMeta.locked;
           if (prevMeta.lockedAt) copy.meta.lockedAt = prevMeta.lockedAt;
-          self.saveSched('plan', copy);
+          var savedPlan = self.saveSched('plan', copy);
+          if (!savedPlan) {
+            self.confirmInfo('確定できませんでした', '予定を保存できませんでした（通信・編集モードを確かめてください）。予定は変わっていません。');
+            return;
+          }
+          var layMsg = '';
+          if (layToMaster) {
+            /* 写しに当ててから、保存できる時だけ置き換える（途中で止まってもメモリの職員の登録を汚さない） */
+            var staff2 = JSON.parse(JSON.stringify(self.staff));
+            var nM = MP_.applyLayout(staff2, lay, monthIds);
+            if (nM && self.masterReady_('staff')) {
+              /* 同じ職員の物をその場で書き換える（ほかの画面が持つ参照を切らない） */
+              staff2.forEach(function (n2) { for (var q = 0; q < self.staff.length; q++) { var o2 = self.staff[q]; if (o2 && o2.id === n2.id) { o2.group = n2.group; o2.shiftOrder = n2.shiftOrder; if (n2.hiddenDivisions) o2.hiddenDivisions = n2.hiddenDivisions; break; } } });
+              self.saveStaff();
+              layMsg = '\n作業用ファイルで変えた並び順・行の表示／非表示を、職員の登録に反映しました（ロックしていないほかの月の表示も同じ並びになります）。';
+            } else if (nM) {
+              layMsg = '\n並び順・行の表示／非表示は、職員の登録を読み込めなかったため反映していません（勤務表で並べ替えてください）。';
+            }
+          }
           self.gotoLayer('plan');
           self.confirmInfo('確定しました',
-            '予定（確定版）を「' + draft.label + '」の内容で更新しました。\n確定日時: ' + fmtDateTime(copy.meta.confirmedAt));
+            '予定（確定版）を「' + draft.label + '」の内容で更新しました。\n確定日時: ' + fmtDateTime(copy.meta.confirmedAt) + layMsg);
         });
     },
 
