@@ -199,6 +199,7 @@
       render(list);
       view('admin');
       if (window.SUAccountsExport) window.SUAccountsExport.show();   // 全データの書き出し（2026-10-26・accounts-export.js）
+      if (window.SUAccountsEnroll) window.SUAccountsEnroll.show();   // 端末登録の QR（2026-11-08・accounts-enroll.js）
     } catch (e) {
       $('gate-why').textContent = friendly(e);
       view('gate');

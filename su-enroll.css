@@ -1,0 +1,14 @@
+/* su-enroll.css — 端末登録の QR（使える人の管理の「端末登録の QR」と、端末の受け取りページ enroll.html）の見た目（2026-11-08）
+   ・su-auth.css の部品（.cd・.btn・.msg・.acct など）に足す分だけ。画面だけで、紙には QR も一覧も出さない。 */
+.en-qr { display: grid; justify-items: center; gap: 8px; margin: 14px 0 0; padding: 16px; border: 2px solid var(--pri); border-radius: 12px; background: #fff; }
+.en-qr svg { width: min(280px, 80vw); height: auto; display: block; }
+.en-qr .en-for { font-weight: 700; text-align: center; word-break: break-all; margin: 0; }
+.en-qr .en-exp { margin: 0; font-variant-numeric: tabular-nums; }
+.tag.st-active { background: var(--ok-l); color: var(--ok); }
+.tag.st-open { background: var(--pri-l); color: var(--pri); }
+.tag.st-revoked, .tag.st-canceled, .tag.st-failed { background: var(--ng-l); color: var(--ng); }
+.en-done { text-align: center; }
+[hidden] { display: none !important; }
+@media print {
+  #sec-enroll, .en-qr { display: none !important; }
+}

@@ -54,6 +54,8 @@
 !/check/export-decrypt.mjs
 !/check/menu_sync_stale_e2e.mjs
 !/check/care_schedule_masterid_e2e.mjs
+# 端末登録の QR の通し試験（2026-11-08・受け取りページと使える人の管理の欄・通信は全部偽物）
+!/check/device_enroll_e2e.mjs
 # 業務の流れを通す試験（2026-11-02・入居者マスタ→各画面・行き来の帯・週間計画→ワースケ・俯瞰・現場の守り。材料は check/fixtures/flow.mjs）
 !/check/flow_e2e.mjs
 !/check/revenue_e2e.mjs
@@ -238,6 +240,12 @@ mailer/.DS_Store
 !/accounts.html
 !/accounts.js
 !/accounts-export.js
+# 端末登録の QR（2026-11-08 段4・care-backend 統合 0082）: 使える人の管理の欄・QR の絵の部品・端末の受け取りページ（番号はファイルに含まない）
+!/accounts-enroll.js
+!/su-qr.js
+!/su-enroll.css
+!/enroll.html
+!/enroll.js
 !/su-export.js
 !/su-export-crypt.js
 !/su-auth.css

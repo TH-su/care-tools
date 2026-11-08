@@ -69,6 +69,7 @@ export const EXTRA_PAGES = [
   { file: 'menu-settings.html', title: 'メニューの設定', reads: true, shows: false, why: '管理者＋2段階認証だけ。ログインしていない時は中身を出さない' },
   { file: 'login.html', title: 'ログイン', reads: false, shows: false, why: '施設情報を読まない' },
   { file: 'accounts.html', title: '使える人の管理', reads: false, shows: false, why: '施設情報を読まない' },
+  { file: 'enroll.html', title: '端末の登録', reads: false, shows: false, why: '施設情報を読まない（2026-11-08 端末登録の QR）' },
   { file: 'app-access.html', title: 'アプリの使える人', reads: false, shows: false, why: '施設情報を読まない' },
   { file: 'perf-report.html', title: '動作の速さの記録', reads: false, shows: false, why: '施設情報を読まない' },
   { file: 'shadow-check.html', title: '写しの見比べ', reads: false, shows: false, why: '施設情報を読まない' },

@@ -26,8 +26,12 @@
     暗号化しない時は理由（5〜200文字）を求め、データベースの記録に残す（0025 の export_begin）。0024 の決定「ZIP に鍵はかけない」はこれで置き換わった。
     暗号化した書き出し（.suenc）は、下の「暗号化した書き出しを開く」か、ターミナルの check/export-decrypt.mjs で元の ZIP に戻す。
     パスフレーズは保存しない（端末にも記録にも送信にも入れない。使い終えたら入力欄を空にする）。
+  ★「端末登録の QR」（2026-11-08 代表者の決定 段4・accounts-enroll.js・su-qr.js・care-backend 統合 0082）: 管理者が選んだアカウント
+    （同じ施設の有効な現場・事務所・管理者は選べない）でログインさせる1回限り・10分の QR を出す。端末はカメラで読むと enroll.html が開いてログインする。
+    QR に入れるのは enroll.html の住所と番号（# の後ろ）だけ。番号は画面のメモリにだけ持ち、データベースにはハッシュだけを置く。画面だけで印刷しない。
 -->
 <link rel="stylesheet" href="su-auth.css?v=2026-09-26">
+<link rel="stylesheet" href="su-enroll.css?v=2026-11-08">
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 </head>
@@ -93,6 +97,43 @@
       <ul class="acct" id="list-off"></ul>
     </section>
 
+    <section class="cd" id="sec-enroll" hidden>
+      <h2>端末登録の QR</h2>
+      <p class="muted">端末のカメラでこの QR を読むと、選んだアカウントでその端末がログインします（Google のアカウントを端末に入れなくてよくなります）。QR は1回だけ・10分まで使えます。</p>
+      <div id="en-msg" class="msg" role="status" aria-live="polite"></div>
+      <div id="en-form" hidden>
+        <div class="grid2">
+          <div class="fld">
+            <label for="en-acct">ログインさせるアカウント</label>
+            <select id="en-acct" class="sel"></select>
+            <span class="hint">管理者のアカウントは選べません。一度 Google でログインしたことのあるアカウントだけ選べます。</span>
+          </div>
+          <div class="fld">
+            <label for="en-role">端末の用途</label>
+            <select id="en-role" class="sel">
+              <option value="">決めない（端末の今のまま）</option>
+              <option value="field">現場の端末</option>
+              <option value="office">事務所PC</option>
+            </select>
+          </div>
+        </div>
+        <div class="fld">
+          <label for="en-label">端末の呼び名（メモ・20字まで）</label>
+          <input id="en-label" class="inp" type="text" autocomplete="off" maxlength="20" placeholder="例: 2階の iPad">
+          <span class="hint">下の一覧で端末を見分けるためのメモです。入居者・職員の氏名は書かないでください。</span>
+        </div>
+        <div class="acts"><button type="button" class="btn pri" id="b-enroll">QR を出す</button></div>
+        <div class="en-qr" id="en-qr" hidden>
+          <div id="en-qr-img"></div>
+          <p class="en-for" id="en-qr-for"></p>
+          <p class="en-exp muted" id="en-qr-exp" aria-live="off"></p>
+          <button type="button" class="btn" id="b-enroll-close">QR を消す</button>
+        </div>
+        <h3>出した QR と登録した端末（直近30日）</h3>
+        <ul class="acct" id="en-list"></ul>
+      </div>
+    </section>
+
     <section class="cd" id="sec-export" hidden>
       <h2>全データの書き出し</h2>
       <p class="muted">この事業者のデータベースの全部の表と、この端末の接続設定で読める Google の分を、1つの ZIP（JSON・表計算用の CSV・表の説明書き）にして、この端末に保存します。書き出した日時・人・件数は記録に残ります。</p>
@@ -155,6 +196,8 @@
 <script src="su-export-crypt.js?v=2026-10-26.2"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
 <script src="accounts-export.js?v=2026-11-08"></script>
-<script src="accounts.js?v=2026-10-26"></script>
+<script src="su-qr.js?v=2026-11-08"></script>
+<script src="accounts-enroll.js?v=2026-11-08"></script>
+<script src="accounts.js?v=2026-11-08"></script>
 </body>
 </html>
