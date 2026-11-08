@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-+cPldsdSgOLZJaqRifw9wIeGQzRVEEU06Pmp+s+PVNg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-+0b2jUwpTRafxSpz2wsyiaUK+QtXQxhxHvZHqO3v6CU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -850,7 +850,7 @@ mark { background:var(--mark-bg); color:inherit; padding:0 1px; border-radius:2p
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-resident-hop.js?v=2026-11-02"></script>
 <!-- 出来事・バイタル・食事量を新しい保存先の写しから読む入口（2026-11-05 代表者の決定 案C・段1）。スイッチ moushi_read が切の間・読み込めない時は今までどおり Google から読む -->
-<script src="su-ho-read.js?v=2026-11-07"></script>
+<script src="su-ho-read.js?v=2026-11-08"></script>
 <script>
 'use strict';
 /* ══════════════════════════════════════════════════════════════════
@@ -1002,8 +1002,15 @@ function mskGuide_(){
   var el = $('cfgGuide');
   if(!el) return;
   var c = loadCfg();
-  el.hidden = !!(c.url && c.token);
+  el.hidden = !!(c.url && c.token) || MSK_LIVE;
 }
+/* ★2026-11-08（代表者の決定「端末ごとの設定を極限までなくす」段1）: 接続先と合言葉の無い事務所PCでも、
+     起動の時に1回だけ確かめて（SUHoRead.liveReady・8秒で時間切れ）ログインだけで新しい保存先から読めると分かった時は、
+     出来事・バイタル・食事量を接続先なしで読む（MSK_LIVE）。端末には何も書かない。現場の端末は確かめない（今までどおり）。
+     ping（接続テスト）と排泄（排便記録アプリ）は Google にしか無いので、今までどおり接続先がある時だけ。 */
+var MSK_LIVE = false;
+function mskCfgOk_(){ var c = loadCfg(); return !!(c.url && c.token); }
+function mskOn_(){ return mskCfgOk_() || MSK_LIVE; }
 function saveCfg(url, token){
   /* このキーは本ツール専用（共有キーではない）ので丸ごと書いてよい。 */
   lsSet(LS_CFG, JSON.stringify({ url:url, token:token }));
@@ -1066,7 +1073,7 @@ var API_GET_RETRY = 2;
 function apiGet(action, params, tries, viaHo){
   tries = tries || 0;
   if(!viaHo && typeof SUHoRead !== 'undefined' && SUHoRead && typeof SUHoRead.call === 'function'){
-    return SUHoRead.call(action, params, function(){ return apiGet(action, params, tries, true); });
+    return SUHoRead.call(action, params, function(){ return apiGet(action, params, tries, true); }, { noGas: !mskCfgOk_() });
   }
   return apiGetOnce(action, params)['catch'](function(e){
     var m = String(e && e.message || e);
@@ -1381,8 +1388,7 @@ function ensureBaseData(){
   var stale = baseStale();
   if(!stale && dataLoaded()) return;
   if(LOADING) return;
-  var c = loadCfg();
-  if(!c.url || !c.token){ if(stale) rgClearBase(); return; }
+  if(!mskOn_()){ if(stale) rgClearBase(); return; }
   load();
 }
 /* opts.quiet＝先読み（2026-10-17 第2弾）。失敗しても申し送りを使う画面を見ていなければ赤帯・設定画面への移動を出さない */
@@ -2030,7 +2036,7 @@ function ensureVmData(){
   var stale = vmStale();
   if(!stale && vmLoaded()) return;
   if(VM_LOADING) return;
-  if(!loadCfg().url){ if(stale) rgClearVm(); return; }
+  if(!loadCfg().url && !MSK_LIVE){ if(stale) rgClearVm(); return; }
   vmLoad();
 }
 /* opts.quiet＝先読み（2026-10-17 第2弾）。失敗してもこの画面を見ていなければ赤帯・設定画面への移動を出さず、開いた時に読み直す。
@@ -4806,7 +4812,7 @@ function excPrintSetup_(){
 var PF_STARTED = false;
 function pfBusy(){ return LOADING || VM_LOADING || EXC_LOADING; }
 function pfSteps(){
-  var c = loadCfg(), have = !!(c.url && c.token), steps = [];
+  var have = mskOn_(), steps = [];
   if(have){
     steps.push(function(){ return ((dataLoaded() && !baseStale()) || LOADING) ? null : load({ quiet:true }); });
     steps.push(function(){ return ((vmLoaded() && !vmStale()) || VM_LOADING) ? null : vmLoad({ quiet:true }); });
@@ -5062,26 +5068,50 @@ function applyMasterIdParam(){
   /* 接続設定の画面で「控えから戻す」をした後に戻ってきた時も、案内の出し入れを合わせる */
   mskGuide_();
   window.addEventListener('storage', function(e){ if(!e || !e.key || e.key === LS_CFG) mskGuide_(); });
-  if(!cfg.url || !cfg.token){
+  function mskNoCfg_(){
     goto('scr-cfg', false);
     $('cfgInfo').textContent = '最初に接続先と合言葉を登録してください。';
     sqSyncScope();
-  }else if(opened === 'scr-exc'){
-    /* 排泄に復元した時は、排便記録だけを読む（申し送り・バイタルは開いた時に読む） */
-    ensureExcData();
-    sqSyncScope();
-  }else if(opened === 'scr-vm'){
-    /* ★表示中のタブに必要なものだけ読む（2026-08-25）。バイタル・食事に復元した時は
-       申し送り（events）を読みに行かない。入居者別・日付別・検索へ切り替えた時に
-       ensureBaseData() が読む。 */
-    ensureVmData();
-    sqSyncScope();
-  }else{
-    ensureBaseData();
-    if(opened === 'scr-search') renderSearch();
   }
-  /* 最初のタブを読み終えたら、裏でほかのタブを読んでおく（先読み・2026-10-17 第2弾） */
-  pfAfterFirst();
+  function mskFirst_(){
+    if(opened === 'scr-exc'){
+      /* 排泄に復元した時は、排便記録だけを読む（申し送り・バイタルは開いた時に読む） */
+      ensureExcData();
+      sqSyncScope();
+    }else if(opened === 'scr-vm'){
+      /* ★表示中のタブに必要なものだけ読む（2026-08-25）。バイタル・食事に復元した時は
+         申し送り（events）を読みに行かない。入居者別・日付別・検索へ切り替えた時に
+         ensureBaseData() が読む。 */
+      ensureVmData();
+      sqSyncScope();
+    }else{
+      ensureBaseData();
+      if(opened === 'scr-search') renderSearch();
+    }
+  }
+  if(!cfg.url || !cfg.token){
+    /* 接続先の無い事務所PC: ログインだけで読めるかを1回だけ確かめてから決める（確かめている間は何も読まない）。
+       読めない・分からない時は今までどおり設定の画面へ */
+    var hoLive = (typeof SUHoRead !== 'undefined' && SUHoRead && typeof SUHoRead.liveReady === 'function') ? SUHoRead.liveReady() : null;
+    if(!hoLive){ mskNoCfg_(); pfAfterFirst(); }
+    else hoLive.then(function(ok){
+      if(ok && lsGet(ROLE_KEY) !== 'field' && !mskCfgOk_()){
+        MSK_LIVE = true;
+        try{ if(window.SUCfgHint && typeof SUCfgHint.quiet === 'function') SUCfgHint.quiet(); }catch(e){ /* 帯を止められなくても読み込みは進める */ }
+        mskGuide_();
+        mskFirst_();
+      }else if(mskCfgOk_()){
+        mskFirst_();   // 確かめている間に接続先を保存した
+      }else{
+        mskNoCfg_();
+      }
+      pfAfterFirst();
+    }, function(){ mskNoCfg_(); pfAfterFirst(); });
+  }else{
+    mskFirst_();
+    /* 最初のタブを読み終えたら、裏でほかのタブを読んでおく（先読み・2026-10-17 第2弾） */
+    pfAfterFirst();
+  }
 })();
 </script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
