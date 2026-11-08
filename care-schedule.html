@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-HEtCkEOoXmmbc3WayJxGtmxaqlqA0N2iRchtpUKt9I0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-7tLYPAv1JTK+jSth5HNMmANzfiNMtSFtZJYlzE5zb6M='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -1712,7 +1712,7 @@ select.inp { cursor: pointer; }
 <!-- 共通のエラー捕捉（2026-09-24 から週間計画も使う）。本体の <script> より前に置く＝起動時の例外も拾う -->
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
-<script src="su-res-read.js?v=2026-11-02"></script>
+<script src="su-res-read.js?v=2026-11-08"></script>
 <script>
 /* 黙ると困る失敗（保存・同期の補助）を、画面には出さずに記録へ残す（2026-10-08・監査10月版 #8）。
    行き先は su-errors.js の note＝コンソールと記録先（同期ログ・不具合報告の控えと自動報告）。トーストは出さない。
@@ -5486,7 +5486,14 @@ function csStateRevTick_(){
     csStateRevBusy_ = true;
     csStateRevAt_ = Date.now();
     var sep = cfg.url.indexOf('?') >= 0 ? '&' : '?';
-    csFetchTimeout_(cfg.url + sep + 'action=stateRev', { method: 'GET', redirect: 'follow' }, CS_STATEREV_PROBE_TIMEOUT_MS)
+    /* 2026-11-08（写し返しを止める計画・代表者の決定 2026-11-07 問い6=A）: 入居者マスタを新しい保存先へ切り替えた後は、事務所PCで
+       事務所・管理者としてログインしている時だけ、新しい保存先の版数を読む（su-res-read.js の stateRev・応答の形は同じ）。
+       それ以外・部品が無い時は下の Google への照会をそのまま送る（送り方は変えない） */
+    var csRevGas_ = function(){ return csFetchTimeout_(cfg.url + sep + 'action=stateRev', { method: 'GET', redirect: 'follow' }, CS_STATEREV_PROBE_TIMEOUT_MS); };
+    var csRevP_;
+    try{ csRevP_ = (window.SUResRead && window.SUResRead.stateRev) ? window.SUResRead.stateRev(csRevGas_, { key: 'care' }) : csRevGas_(); }
+    catch(eV){ csRevP_ = csRevGas_(); }
+    Promise.resolve(csRevP_)
       .then(function(r){ return r.json(); })
       .then(function(j){
         var rev = (j && j.ok === true && typeof j.rev === 'number' && isFinite(j.rev)) ? j.rev : NaN;
@@ -5541,9 +5548,16 @@ function csStateRevRefresh_(cfg, rev, srev){
     })
       .then(function(r){ return r.json(); });
   };
+  var csRosterOld_ = function(){
+    try{ return window.SURoster ? window.SURoster.getRoster(csRosterRaw_, { where: 'care', masterUrl: cfg.url, withRev: true }) : csRosterRaw_(); }
+    catch(eR){ return csRosterRaw_(); }
+  };
+  /* 2026-11-08（写し返しを止める計画）: 版数の見張りが新しい保存先の版数を読む時（事務所PCの事務所・管理者・切り替えた後）は、
+     名簿も新しい保存先から読む（su-res-read.js の officeOnly。名簿だけを読む画面と同じ決まり）。見張りと名簿の読み先をそろえ、
+     Google の版数が名簿に同梱されて基準が食い違い、読み直しが続くことを防ぐ。それ以外は上の今までの読み方（写し→Google）のまま */
   var csRosterP_;
-  try{ csRosterP_ = window.SURoster ? window.SURoster.getRoster(csRosterRaw_, { where: 'care', masterUrl: cfg.url, withRev: true }) : csRosterRaw_(); }
-  catch(eR){ csRosterP_ = csRosterRaw_(); }
+  try{ csRosterP_ = window.SUResRead ? Promise.resolve(window.SUResRead.call({ action: 'getRoster' }, csRosterOld_, { screen: 'care-schedule', officeOnly: true })) : csRosterOld_(); }
+  catch(eR2){ csRosterP_ = csRosterOld_(); }
   csRosterP_
     .then(function(d){
       var list = (d && Array.isArray(d.roster)) ? d.roster : null;

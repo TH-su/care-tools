@@ -281,8 +281,9 @@
             rec.active === false ? false : true, rec.updatedAt == null ? '' : rec.updatedAt, JSON.stringify(rec), apps];
   }
   /* 仮の行に GAS の読み取り関数を当てて、Google と同じ応答（JSON にして戻した形）を作る。
-   * 版数（stateRev・srev）は同梱しない（古い GAS の応答と同じ形）。画面は版数を Google の stateRev の見張りで見ていて、
-   * ここで別の数を返すと見張りの数と食い違って取り直しが続くため。画面は同梱が無い時は見張りの値を基準にする */
+   * 版数（stateRev・srev）は同梱しない（古い GAS の応答と同じ形）。画面は版数を見張り（下の stateRev。事務所PCの事務所・管理者で
+   * 切り替えた後は新しい保存先の版数、それ以外は Google の stateRev）で見ていて、ここで別の数を返すと見張りの数と食い違って
+   * 取り直しが続くため。画面は同梱が無い時は見張りの値を基準にする */
   function answer(action, body, recs) {
     GAS.setRows((recs || []).map(toRow));
     var o;
@@ -507,5 +508,55 @@
     return mirroring;
   }
 
-  root.SUResRead = { call: call, write: write, mirror: mirrorSoon, refreshFlags: refreshFlags, _answer: answer, _toRow: toRow, _gas: GAS, _reset: function () { modeCache = null; modeAt = 0; ownFlags = null; mirroring = null; mirrorAgain = false; caughtUp = false; } };
+  /* ── 版数の見張り（2026-11-08・写し返しを止める計画の入居者マスタの順2・代表者の決定 2026-11-07 問い6=A）──
+   * 画面の版数の見張り（今までは入居者マスタの GAS の stateRev を聞いていた）を SUResRead.stateRev(Google へ聞く関数, { as, key }) に通す。
+   * ・名簿だけを読む画面の入口（officeOnly）と同じ決まり: スイッチ master_live が入・事務所PC（端末の用途が現場でない）・
+   *   事務所・管理者としてログイン・データベースの印が「切り替えた後」の時だけ、新しい保存先の版数（res_mode の state_rev・
+   *   res_mode_get が返す stateRev）を { ok:true, rev, srev:0 } の形で返す（訪問診療の clinic-write の stateRev と同じ形・数字だけ）。
+   *   srev は新しい保存先には無いので 0（入院の印は res_set_hosp が state_rev を進める）
+   * ・それ以外（スイッチが切・現場の端末・ログインしていない・確かめられない・現場のアカウント・写しの期間・0036 の前）は、
+   *   Google へ聞く関数をそのまま呼ぶ（送り方も応答も1バイトも変えない）
+   * ・ログインした後に印を読めない・断られた・時間切れは、Google へ流さずに失敗にする（画面は今までの「照会の失敗」として扱う）
+   * ・名簿を新しい保存先から読む時（call・officeOnly）は版数を同梱しないので、画面の基準はこの見張りの数だけで決まる
+   *   （Google の版数と数え方は同じ向きに進むが同じ数ではないため、読み先が替わった時に1回だけ名簿を読み直す）
+   * ・遅れて届いた答えは捨てる（CLAUDE.md §2-5）: 同じ key で後から出した問い合わせがある・端末の用途が現場に変わった時は失敗にする
+   * ・as: 'response'（既定・fetch の応答と同じく json()・text() を持つ）／'json'（読んだ形のまま）。端末には何も残さない */
+  var REV_MS = 10000, revSeq = {};
+  function revBody(n) {
+    var b = { ok: true, rev: n, srev: 0 };
+    return { ok: true, status: 200,
+             json: function () { return Promise.resolve({ ok: b.ok, rev: b.rev, srev: b.srev }); },
+             text: function () { return Promise.resolve(JSON.stringify(b)); } };
+  }
+  function isFieldDev() { try { return String(localStorage.getItem('su_device_role') || '') === 'field'; } catch (e) { return false; } }
+  function stateRev(gasFn, opts, io) {
+    try { if (!switchOn() || isFieldDev()) return gasFn(); } catch (e) { return gasFn(); }
+    var key = String(opts && opts.key || 'page'), as = opts && opts.as === 'json' ? 'json' : 'response';
+    var my = (revSeq[key] = (revSeq[key] || 0) + 1);
+    var ms = opts && typeof opts.timeoutMs === 'number' ? opts.timeoutMs : REV_MS;
+    return Promise.resolve().then(function () { return io && io.auth ? io.auth() : loadAuth(); })
+      .then(function (A) { return A ? A.check().then(function (st) { return { A: A, st: st }; }) : null; })
+      .catch(function () { return null; })
+      .then(function (x) {
+        var ok = !!(x && x.st && x.st.status === x.A.STATUS.OK && (x.st.role === 'office' || x.st.role === 'admin'));
+        if (!ok) return gasFn();
+        var q = Promise.resolve().then(function () { return x.A.client().rpc('res_mode_get'); });
+        var r = Promise.race([q, new Promise(function (done) { setTimeout(function () { done({ timeout: true }); }, ms); })]);
+        return r.then(function (d) {
+          if (d && d.timeout) throw fail('新しい保存先の版数を読めませんでした（時間切れ）。', 'timeout');
+          var c = String(d && d.error && (d.error.code || '') || '');
+          if (d && d.error && /PGRST202|42883/.test(c)) return gasFn();   // 0036 の前＝写しの期間と同じ
+          if (!d || d.error || !d.data) throw dbErr(d && d.error);
+          var m = d.data.mode === 'live' ? 'live' : 'shadow';
+          modeCache = m; modeAt = Date.now();   // 名簿の読み取り（call）と同じ印で動く
+          if (m !== 'live') return gasFn();
+          var n = Number(d.data.stateRev);
+          if (typeof d.data.stateRev !== 'number' || !isFinite(n)) throw fail('新しい保存先の版数の形が違います。', 'shape');
+          if (my !== revSeq[key] || isFieldDev()) throw fail('遅れて届いた版数を捨てました。', 'stale');
+          return as === 'json' ? { ok: true, rev: n, srev: 0 } : revBody(n);
+        }, function (e) { throw dbErr(e); });
+      });
+  }
+
+  root.SUResRead = { call: call, write: write, mirror: mirrorSoon, stateRev: stateRev, refreshFlags: refreshFlags, _answer: answer, _toRow: toRow, _gas: GAS, _reset: function () { modeCache = null; modeAt = 0; ownFlags = null; mirroring = null; mirrorAgain = false; caughtUp = false; revSeq = {}; } };
 })(typeof window !== 'undefined' ? window : this);

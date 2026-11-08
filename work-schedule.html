@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-2PI/vHVDDfnUxdO8/sdB0x7OsDKY/WX8krKH4TLC7Y4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-M2XRQokT4VYNIM31l/TNpzZ5jEZ/f+N6P9VKRJ2RdW8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -763,7 +763,7 @@ body.su-print-staff24 #rp-print, body.su-print-staff24range #rp-print { display:
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
 <script src="su-kv.js?v=2026-10-28"></script>
 <script src="su-roster.js?v=2026-10-28"></script>
-<script src="su-res-read.js?v=2026-11-02"></script>
+<script src="su-res-read.js?v=2026-11-08"></script>
 <script src="su-kv-shadow.js?v=2026-10-28"></script>
 <link rel="stylesheet" href="su-print.css?v=2026-09-12">
 <script src="su-print.js?v=2026-09-12"></script>
@@ -12556,8 +12556,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* 版数だけを見張る（合言葉不要・数値2つのみ・個人情報ゼロ） */
   function wsWatchMasterState_() {
     var c = wsMasterCfg_(); if (!c || document.hidden) return;
-    fetch(c.url + (c.url.indexOf('?') >= 0 ? '&' : '?') + 'action=stateRev',
-          { method: 'GET', cache: 'no-store', redirect: 'follow' })
+    /* 2026-11-08（写し返しを止める計画・代表者の決定 2026-11-07 問い6=A）: 入居者マスタを新しい保存先へ切り替えた後は、事務所PCで
+       事務所・管理者としてログインしている時だけ、新しい保存先の版数を読む（su-res-read.js の stateRev・応答の形は同じ）。
+       それ以外・部品が無い時は下の Google への照会をそのまま送る（送り方は変えない） */
+    var gasRev = function () { return fetch(c.url + (c.url.indexOf('?') >= 0 ? '&' : '?') + 'action=stateRev',
+            { method: 'GET', cache: 'no-store', redirect: 'follow' }); };
+    var revP;
+    try { revP = (window.SUResRead && window.SUResRead.stateRev) ? window.SUResRead.stateRev(gasRev, { key: 'ws' }) : gasRev(); }
+    catch (eV) { revP = gasRev(); }
+    Promise.resolve(revP)
       .then(function (r) { return r.json(); })
       .then(function (j) {
         if (!j || j.ok !== true) return;
