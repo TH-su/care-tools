@@ -93,9 +93,9 @@
   /* Google への写し返し（保存できた後・待たない）。1本ずつ送り、送っている間の次の保存は終わった後に1回だけ */
   function mirrorSoon(group, A, opts) {
     var S = st(group);
-    /* 入居調整は、Google の接続先の無い端末（ログインだけで使っている端末・2026-11-08）からは写し返しを送らない
+    /* 入居調整・計画書は、Google の接続先の無い端末（ログインだけで使っている端末・2026-11-08）からは写し返しを送らない
        （送る先が無い。写し返しの残りは受け口の側に残り、接続先のある端末が開いた時・戻す時の写し返しで追いつく。入居者マスタの写し返しと同じ決まり） */
-    if (group === 'admission' && !gasTargetOf(opts)) return Promise.resolve(null);
+    if ((group === 'admission' || group === 'training') && !gasTargetOf(opts)) return Promise.resolve(null);
     if (S.mirroring) { S.mirrorAgain = true; return S.mirroring; }
     S.mirroring = Promise.resolve(A.client().auth.getSession()).then(function (s) {
       var at = s && s.data && s.data.session && s.data.session.access_token;
