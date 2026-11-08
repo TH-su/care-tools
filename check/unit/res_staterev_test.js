@@ -205,7 +205,7 @@ async function run(R, a, opts, gas) {
     ['weight-record.html', /var gasRev = function\(\)\{ return fetchTO\(url, \{ cache:'no-store' \}, WR_SREV_TIMEOUT_MS\); \};[\s\S]{0,200}SUResRead\.stateRev\(gasRev, \{ key:'weight' \}\)/],
     ['support-overview.html', /var gasRev = function \(\) \{ return fetch\(c\.url \+ \(c\.url\.indexOf\('\?'\)>=0\?'&':'\?'\) \+ 'action=stateRev',\s*\{method:'GET',cache:'no-store',redirect:'follow'\}\); \};[\s\S]{0,200}SUResRead\.stateRev\(gasRev, \{ key: 'support' \}\)/],
     ['visit-overview.html', /var gasRev = function \(\) \{ return fetch\(c\.url \+ \(c\.url\.indexOf\('\?'\)>=0\?'&':'\?'\) \+ 'action=stateRev',\s*\{method:'GET',cache:'no-store',redirect:'follow'\}\); \};[\s\S]{0,200}SUResRead\.stateRev\(gasRev, \{ key: 'visit' \}\)/],
-    ['daycare-roster.html', /var gasRev = function\(\)\{ return SU\.data\.kvRaw\(\{ action: 'stateRev' \}, \{ endpoint: cfg\.url \}\); \};[\s\S]{0,200}SUResRead\.stateRev\(gasRev, \{ key: 'daycare', as: 'json' \}\)/]
+    ['daycare-roster.html', /var gasRev = function\(\)\{ return cfg \? SU\.data\.kvRaw\(\{ action: 'stateRev' \}, \{ endpoint: cfg\.url \}\) : Promise\.resolve\(\{ ok: false, error: 'nocfg' \}\); \};[\s\S]{0,200}SUResRead\.stateRev\(gasRev, \{ key: 'daycare', as: 'json' \}\)/]
   ];
   /* 今までの見張りの形（照会の直後に .then で応答を読む）。入口に通した後は残らない */
   const OLD = [
@@ -218,7 +218,7 @@ async function run(R, a, opts, gas) {
   for (const [f, re] of SCREENS) {
     const H = read(f);
     t(f + ': 見張りは SUResRead.stateRev を通し、Google への照会は今の形のまま中の関数に残る', re.test(H));
-    t(f + ': su-res-read.js を読み込む（版は 2026-11-08.3）', /<script src="su-res-read\.js\?v=2026-11-08\.3"><\/script>/.test(H));
+    t(f + ': su-res-read.js を読み込む（版は 2026-11-08.4）', /<script src="su-res-read\.js\?v=2026-11-08\.4"><\/script>/.test(H));
     t(f + ': 入口を通らない見張りの照会（照会のすぐ後に応答を読む今までの形）が残っていない', !OLD.some(o => o.test(H)));
   }
   {

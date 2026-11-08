@@ -96,7 +96,8 @@ const gm = /<div[^>]*id="cfgGuide"[^>]*>([\s\S]*?)<\/ol>\s*<\/div>/.exec(S);
 const guide = gm ? gm[1] : '';
 t('はじめて使う時の案内に接続設定へのリンクがある', /<a\s+href="connection-settings\.html">接続設定<\/a>/.test(guide));
 t('案内の見出しの名前が、断りの文が指す名前と同じ（「はじめて使う時」）', S.indexOf('はじめて使う時（3ステップ）') >= 0 && NEW[2][1].indexOf('「はじめて使う時」') >= 0);
-t('未設定で開いた時は設定タブへ移り、案内を出す', /if\(!cfg\.url \|\| !cfg\.token\)\{\s*goto\('scr-cfg', false\);/.test(S) && S.indexOf('mskGuide_();') >= 0);
+t('未設定で開いた時は設定タブへ移り、案内を出す（ログインだけで読めると確かめられた端末を除く・2026-11-08）',
+  /function mskNoCfg_\(\)\{\s*goto\('scr-cfg', false\);/.test(S) && /if\(!cfg\.url \|\| !cfg\.token\)\{[\s\S]{0,400}if\(!hoLive\)\{ mskNoCfg_\(\);/.test(S) && S.indexOf('mskGuide_();') >= 0);
 t('現場の端末は画面全体を覆って止める（接続設定へは案内しない）',
   S.indexOf("var blocked = (lsGet(ROLE_KEY) === 'field');") >= 0 && S.indexOf('申送ビューアは事務所端末専用です。') >= 0);
 

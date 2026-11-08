@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-7tLYPAv1JTK+jSth5HNMmANzfiNMtSFtZJYlzE5zb6M='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-yDne69NsjyrgeNZcqO5WpNF+3RQlh63qo9F4Sr5JVHU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -1711,8 +1711,9 @@ select.inp { cursor: pointer; }
 
 <!-- 共通のエラー捕捉（2026-09-24 から週間計画も使う）。本体の <script> より前に置く＝起動時の例外も拾う -->
 <script src="su-errors.js?v=2026-10-27"></script>
+<script src="su-devcfg.js?v=2026-11-08"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
-<script src="su-res-read.js?v=2026-11-08.3"></script>
+<script src="su-res-read.js?v=2026-11-08.4"></script>
 <script>
 /* 黙ると困る失敗（保存・同期の補助）を、画面には出さずに記録へ残す（2026-10-08・監査10月版 #8）。
    行き先は su-errors.js の note＝コンソールと記録先（同期ログ・不具合報告の控えと自動報告）。トーストは出さない。
@@ -1726,7 +1727,7 @@ function csNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
 <!-- 同期データの写し（統合 0005・写しの期間）。supabase-js と su-auth.js は写す時にだけ読み込む -->
 <script src="su-kv-shadow.js?v=2026-10-28"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
-<script src="su-kv.js?v=2026-10-28"></script>
+<script src="su-kv.js?v=2026-11-08"></script>
 <script src="su-roster.js?v=2026-10-28"></script>
 <script>
 /* ══ 画面が黙って壊れないようにする（2026-08-29 追加）════════════════════════
@@ -4163,7 +4164,16 @@ const SYNC = {
   // 次にワースケ設定(ws_settings)、無ければ自前configを使用。
   // どれか1アプリで設定すれば全アプリが同じ接続先を使う＝設定の食い違いを防止。
   // rev はワースケと共有の ws_sync_revs.care を単一の版番号源にする。
+  // ★管理者が全端末へ配った接続先（su-devcfg.js・統合 0080）があればそれを先に使う。配っていない時だけこの端末の値（targetLocal）
   target() {
+    try {
+      const d = window.SUDevCfg && window.SUDevCfg.get('ws');
+      if (d) return { endpoint: d.url, token: d.token };
+    } catch(e) {}
+    return this.targetLocal();
+  },
+  // この端末に入れた値（同期の画面の入力欄に出すのはこちらだけ＝配った合言葉は画面に出さない）
+  targetLocal() {
     // 前後空白を必ず除去（コピペ時の混入で unauthorized になるのを防ぐ）
     try {
       const c = JSON.parse(localStorage.getItem('su_sync_common') || '{}');
@@ -4175,7 +4185,10 @@ const SYNC = {
     } catch(e) {}
     return { endpoint: String(this.config.endpoint || '').trim(), token: String(this.config.token || '').trim() };
   },
-  hasTarget() { return !!this.target().endpoint; },
+  /* 2026-11-08（代表者の決定「端末ごとの設定を極限までなくす」段1）: 接続先の無い端末でも、起動の時の確かめ（csProbeLive_・SUKv.liveReady）が
+     時間内に「使える」と答えた時だけ、同期先があるとみなす（_liveHint）。その時の読み書きは su-kv.js が新しい保存先で行い、Google へは送らない */
+  _liveHint: false,
+  hasTarget() { return !!this.target().endpoint || this._liveHint === true; },
   loadCareRev() {
     try { return (JSON.parse(localStorage.getItem('ws_sync_revs') || '{}').care) || 0; }
     catch(e) { return 0; }
@@ -4269,8 +4282,15 @@ const SYNC = {
        スイッチ（su-backend.json）が入っていなければ、su-kv.js が下の Google への送信へそのまま戻す＝切り替え前は何も変わらない。
        __raw は su-kv.js からの「Google へ送って」の印（写し返し・切り替え前の素通し）。 */
     if (payload && payload.__raw) delete payload.__raw;
-    else if (window.SUKv && SUKv.handles(payload)) return SUKv.call(payload, (p) => { p.__raw = true; return this.gas(p); });
+    else {
+      /* 接続先の無い端末（_liveHint）は保存を送らない。保存の後の Google への写し返しには接続先が要り、送れないと Google が古いまま残るため。
+         今は現場のアカウントだけを「使える」にしている（現場のアカウントは週間計画を書けない＝今までと同じ断り） */
+      if (this._liveHint && !this.target().endpoint && payload && payload.action === 'put') return { ok: false, error: 'forbidden' };
+      if (window.SUKv && SUKv.handles(payload)) return SUKv.call(payload, (p) => { p.__raw = true; return this.gas(p); });
+    }
     const t = this.target();
+    /* 接続先の無い端末から Google へは送らない（送る先が無い。今までどおりの「同期先が入っていません」） */
+    if (!t.endpoint) return { ok: false, error: CS_NO_TARGET_MSG };
     payload.token = t.token;
     /* 週間計画の保存だけ、ログインの証明を添える（GAS が確かめて editedBy を決める・2026-10-15 editorverify）。
        payload は呼び出し元の物なので、送る直前に足して送った後に外す（記録や再送の材料に証明を残さない） */
@@ -4463,6 +4483,7 @@ const SYNC = {
      統合GASは合言葉を action より先に確かめるため、ok:true の名乗りは合言葉が通った証拠でもある。
      通信失敗/unknown action継続/unauthorized/別の server 名 では上書きしない（誤切替・unauthorized固着を防止）。 */
   async healStaleTarget() {
+    try { if (window.SUDevCfg && window.SUDevCfg.get('ws')) return false; } catch(e) {}   // 配った接続先を使っている間は、端末の接続先を書き換えない
     const cur = this.target();
     let ws = {};
     try { ws = JSON.parse(localStorage.getItem('ws_settings') || '{}'); } catch(e) { return false; }
@@ -4985,12 +5006,12 @@ function syncTypedValues() {
   const tok = tokEl ? (tokEl.value || '').trim() : '';
   return { url, tok };
 }
-/* 入力欄が、いま実際に使っている接続先（SYNC.target()）と違う＝未保存の変更がある。
+/* 入力欄が、この端末に入れた接続先（SYNC.targetLocal()）と違う＝未保存の変更がある（配った接続先は入力欄に出さないので比べない）。
    ★空欄は「変更なし」とみなす（ワースケの接続先を使う端末はここを空で使ってきた＝操作を止めない） */
 function syncInputsEdited() {
   const { url, tok } = syncTypedValues();
   if (!url) return false;
-  const t = SYNC.target();
+  const t = SYNC.targetLocal();
   return url !== t.endpoint || tok !== t.token;
 }
 /* 同期先が入っていない時の案内（何が足りないか・次にすること）。
@@ -5066,7 +5087,7 @@ window.addEventListener('storage', function (e) {
   if (!m || !m.classList.contains('open') || !_syncShown) return;
   const { url, tok } = syncTypedValues();
   if (url !== _syncShown.url || tok !== _syncShown.tok) { refreshSyncIndicator(); return; }   // 打ちかけは消さない
-  const t = SYNC.target();
+  const t = SYNC.targetLocal();
   $('#sync-endpoint').value = t.endpoint || '';
   if ($('#sync-token')) $('#sync-token').value = t.token || '';
   _syncShown = { url: t.endpoint || '', tok: t.token || '' };
@@ -5085,7 +5106,7 @@ function openSyncModal() {
   if (SIM_ON) { showToast('試算中はクラウド同期を開けません（試算を終了してからお使いください）'); return; }
   /* 実際に使っている接続先（共通キー → ワースケ設定 → この画面の設定の順）を表示する（2026-09-25）。
      以前は自前の設定だけを表示しており、実際の同期先と違う値が見えることがあった */
-  const t0 = SYNC.target();
+  const t0 = SYNC.targetLocal();   // 配った接続先・合言葉は入力欄に出さない（su-devcfg.js）
   $('#sync-endpoint').value = t0.endpoint || '';
   if ($('#sync-token')) $('#sync-token').value = t0.token || '';
   _syncShown = { url: t0.endpoint || '', tok: t0.token || '' };
@@ -5383,6 +5404,7 @@ function mergeCommonSchedule(extData){
    片道通知（応答は表示だけに使う）。失敗しても運用は止めない。ログに個人情報は出さない。 */
 var CS_RMASTER_CFG_KEY = 'rmaster_cfg';
 function csGetMasterCfg(){
+  try{ var d = window.SUDevCfg && window.SUDevCfg.get('master'); if (d) return { url: d.url, token: d.token }; }catch(e){}
   try{
     var s = localStorage.getItem(CS_RMASTER_CFG_KEY); if (!s) return null;
     var o = JSON.parse(s);
@@ -9512,6 +9534,34 @@ if (SYNC.hasTarget() && suGetDeviceRole() !== 'field') {
   if (SYNC.hasTarget()) SYNC.updateStatusUI('同期');
   try { migrateClearNotes_(); } catch (e) {}   // field/オフライン端末: pullしない→ローカルでクリア（後続の同期で伝播）
 }
+/* ── 接続先の無い端末でも、ログインしていれば新しい保存先で使う（2026-11-08 代表者の決定「端末ごとの設定を極限までなくす」段1）──
+   接続先（su_sync_common・ws_settings・この画面の設定）の無い事務所PCで、起動の時に1回だけ確かめる（SUKv.liveReady・8秒で打ち切り）。
+   使える時だけ、同期先があるとみなして（_liveHint）起動の取得と定期の見回りを始め、接続設定を促す帯を出さない（SUCfgHint.quiet）。
+   ★使えるにする役割は CS_LIVE_ROLES だけ。事務所・管理者は保存の20秒後に Google へ写し返す（su-kv.js scheduleMirror）が、写し返しは
+     この端末の接続先へ送るため、接続先の無い端末では Google が古いまま残る（ほかの端末が次に保存するまで・Google を読む画面が古い予定を出す）。
+     取りこぼさない形が今の作りに無いので、事務所・管理者は今までどおり接続先を求める。現場のアカウントは週間計画を書けない（読むだけ）ので写し返しが要らない。
+   使えない・分からない時は何もしない（今までどおり）。新しい文言は足していない */
+var CS_LIVE_ROLES = ['field'];
+function csProbeLive_() {
+  try {
+    if (SIM_ON || SYNC.target().endpoint || suGetDeviceRole() === 'field') return Promise.resolve(false);
+    if (!window.SUKv || typeof SUKv.liveReady !== 'function') return Promise.resolve(false);
+    return Promise.resolve(SUKv.liveReady('care_schedule_v2', { roles: CS_LIVE_ROLES })).then(function (ok) {
+      if (ok !== true || SIM_ON || SYNC.target().endpoint) return false;
+      SYNC._liveHint = true;
+      try { if (window.SUCfgHint && typeof window.SUCfgHint.quiet === 'function') window.SUCfgHint.quiet(); } catch (e) { csNote_('接続の案内', e); }
+      try { csRenderNoConnHint_(); } catch (e) { csNote_('接続の案内', e); }
+      const afterPull = (pulled) => {
+        try { csApplyMasterIdParam(true); } catch (e4) {}
+        try { csFinishMasterIdPending_(pulled); } catch (e5) {}
+        try { SYNC.startPolling(); } catch (e3) {}
+      };
+      SYNC.startupPull().then(afterPull, afterPull);
+      return true;
+    }, function () { return false; });
+  } catch (e) { return Promise.resolve(false); }
+}
+csProbeLive_();
 // タブ復帰時の自動チェック：他端末の更新を即時反映
 document.addEventListener('visibilitychange', () => {
   if (SIM_ON) return;   /* 試算中に他タブから戻っても取り込まない */
@@ -9621,7 +9671,7 @@ function csFlushOnExit_() {
   /* 統合 0005: 保存先を Supabase に切り替えた後は、離脱時に Google へ送らない（Google は写し返しの受け皿なので、
      ここで送ると最新の写しを古い版で上書きしうる）。未送信フラグが残り、次回起動時に Supabase へ送られる */
   if (window.SUKv && SUKv.routed('care_schedule_v2')) return;
-  if (SYNC._dirty && SYNC.hasTarget()) {
+  if (SYNC._dirty && SYNC.target().endpoint) {   /* 接続先の無い端末（_liveHint）からは送らない（2026-11-08） */
     // 離脱時は sendBeacon を使用（非同期 fetch は中断されるため）
     try {
       const t = SYNC.target();

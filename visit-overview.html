@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-nkwYc+yoSLfFNGjDhbOT2DmJCAXzQc9ApHWyICZrspQ=' 'sha256-fiiCHD0MBlF2wV+NudqERX+mzEI9CHzGp+FncjfxYa4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ep1D8HCKjbHbe6dkiquH9e6BGDngHJ6gZsbIoBmBGPE=' 'sha256-fiiCHD0MBlF2wV+NudqERX+mzEI9CHzGp+FncjfxYa4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -270,13 +270,14 @@ body {
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-27"></script>
+<script src="su-devcfg.js?v=2026-11-08"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
 <script src="su-cfg-hint.js?v=2026-11-08"></script>
 <!-- 同期データの保存先の切り替え（統合 0005/0007）。見るだけの画面は切り替え後に Supabase から読む（未ログインは Google） -->
-<script src="su-kv.js?v=2026-10-28"></script>
+<script src="su-kv.js?v=2026-11-08"></script>
 <!-- 入居者マスタの名簿の読み取り（getRoster）の入口。スイッチが入っている時だけ写しから読む（切の間は今までどおり Google・段階1・2026-10-22） -->
 <script src="su-roster.js?v=2026-10-28"></script>
-<script src="su-res-read.js?v=2026-11-08.3"></script>
+<script src="su-res-read.js?v=2026-11-08.4"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script>
 'use strict';
@@ -400,6 +401,11 @@ function loadLocal() {
 
 // GAS 接続先（care-schedule と同じ解決順: su_sync_common → ws_settings）
 function syncTarget() {
+  /* 管理者が全端末へ配った接続先（su-devcfg.js・統合 0080）があればそれを先に使う。配っていない時だけこの端末の値 */
+  try {
+    const d = window.SUDevCfg && window.SUDevCfg.get('ws');
+    if (d) return { endpoint: d.url, token: d.token };
+  } catch (e) {}
   try {
     const c = JSON.parse(localStorage.getItem('su_sync_common') || '{}');
     if (c && c.endpoint) return { endpoint: String(c.endpoint).trim(), token: String(c.token || '').trim() };
@@ -590,6 +596,7 @@ var VO_CFG_KEY = 'rmaster_cfg';
 var voHospMap = null, voHospRev = null, voHospBusy = false;
 
 function voMasterCfg(){
+  try{ var d = window.SUDevCfg && window.SUDevCfg.get('master'); if (d) return { url: d.url, token: d.token }; }catch(e){}
   try{
     var s = localStorage.getItem(VO_CFG_KEY); if(!s) return null;
     var o = JSON.parse(s), u = String((o&&o.url)||'').trim();
@@ -850,6 +857,11 @@ function init() {
   /* 入居者マスタの入院を重ねる（2026-08-02 追加）。
      接続設定が無い端末では何も起きない＝従来どおりの表示。 */
   voFetchHosp().then(function(ok){ if(ok && DB) render(DB); });
+  /* 別のタブ（接続設定・入居者マスタ）で端末の用途が変わったら、ページを読み込み直して起動の時の守りに任せる（CLAUDE.md §2-5・2026-11-08 商用化の点検）。
+     描き直すまで待つと、現場用に変わった後もしばらくフルネームが出たままになっていた */
+  window.addEventListener('storage', function (e) {
+    if (e && e.key === 'su_device_role' && e.oldValue !== e.newValue) { try { location.reload(); } catch (e2) {} }
+  });
   setInterval(function(){ try{ voWatchState(); }catch(e){} }, 60000);
   document.addEventListener('visibilitychange', function(){
     if(!document.hidden){ try{ voWatchState(); }catch(e){} }

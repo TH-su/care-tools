@@ -469,6 +469,35 @@
     }).catch(function () { return null; });
   }
 
+  /* ── この端末がログインだけで使えるか（2026-11-08 代表者の決定「端末ごとの設定を極限までなくす」段1）──
+   * Google の接続先・合言葉の無い端末で、画面が起動の時に1回だけ聞く。消耗品管理（SUSup.liveReady）・家族構成図（SUGeno.liveReady）と同じ作り。
+   * 次の5つがそろう時だけ true（Promise）:
+   *   スイッチ（su-backend.json）でそのキーが入・現場の端末でない・ログインの控えがあり確かめられた・
+   *   役割が opts.roles のどれか・データベースの印（kv_get の mode）が切り替えた後（live）。
+   * 分からない・断られた・時間切れ（8秒）は false。端末にはスイッチの控え（今までと同じ su_backend_flags）しか書かない。
+   * Google へは送らない・帯は出さない・例外を外に出さない。
+   * ★役割は画面が決める（opts.roles は必ず渡す・無ければ false）。保存した後に Google へ写し返す（scheduleMirror）役割は、
+   *   写し返しに Google の接続先が要るので、接続先の無い端末で使えるにしてはいけない（写し返しを取りこぼす）。 */
+  var LIVE_WAIT_MS = 8000;
+  function deviceField() { try { return localStorage.getItem('su_device_role') === 'field'; } catch (e) { return false; } }
+  function liveReady(key, opts) {
+    try {
+      var roles = opts && Array.isArray(opts.roles) ? opts.roles : null;
+      if (!roles || !roles.length || !kvFlagOf(key)) return Promise.resolve(false);
+      var p = ensureFlags().then(function () {
+        if (!kvRouted(key) || deviceField() || !hasSession()) return false;
+        return authState().then(function (st) {
+          if (!st || st.status !== window.SUAuth.STATUS.OK || roles.indexOf(st.role) < 0) return false;
+          return rpc('kv_get', { p_key: key }).then(function (r) {
+            return !!(r && !r.error && r.data && r.data.ok === true && r.data.mode === 'live');
+          });
+        });
+      }).catch(function () { return false; });
+      var late = new Promise(function (ok) { setTimeout(function () { ok(false); }, LIVE_WAIT_MS); });
+      return Promise.race([p, late]).then(function (v) { return v === true; }, function () { return false; });
+    } catch (e) { return Promise.resolve(false); }
+  }
+
   /* ── 勤務表（シフト）の保存先の切り替え（統合 0009・2026-09-27 代表者の決定 B）──
    * 勤務表アプリの通信関数 Store.api の入口で SUKv.handlesShift(payload) が真なら SUKv.callShift(payload, rawGas) に任せる。
    * スイッチ "shift" が切なら rawGas（これまでの Google）へそのまま流す＝切り替え前は何も変わらない。
@@ -604,6 +633,6 @@
     if (!authCache) return null;
     return authCache.role === 'field';
   }
-  window.SUKv = { handles: handles, call: call, routed: routed, flagOf: flagOf, readRouted: readRouted, marksOnlyFor: marksOnlyFor,
+  window.SUKv = { handles: handles, call: call, routed: routed, flagOf: flagOf, readRouted: readRouted, marksOnlyFor: marksOnlyFor, liveReady: liveReady,
                   handlesShift: handlesShift, callShift: callShift, shiftLastUpdate: shiftLastUpdate, _flags: function () { return flags; } };
 })();

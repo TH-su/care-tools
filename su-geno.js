@@ -24,6 +24,8 @@
  * ・2段階認証がまだの管理者はログインしているとみなし、断られた時だけ「2段階認証を済ませて」と出す。
  * ・読み取りの前は印をいつも読み直す（切り替えた直後に古い印で Google から読まない）。保存・削除は1分覚える。
  * ・Google への写し返しは、家族構成図同期の GAS の自動（1時間ごと・写し返し専用のアカウント）に任せる（画面からは頼まない）。
+ * ・接続先・合言葉の無い端末は、起動の時に liveReady で1回だけ確かめ、使える時だけ画面が「設定済み」とみなす（liveHint・8秒で時間切れは使えない・
+ *   現場の端末は確かめない・2026-11-08 代表者「端末ごとの設定を極限までなくす」）。probe は同じ関数の古い名前。
  * ★共通部品の決まり: 読み込むだけで効く・読み込めなくても動く（画面は SUGeno が無ければ Google へ送る）・例外を外に出さない
  *   （外へ出すのは、新しい保存先へ届かない・時間切れの時だけ＝画面の今までの通信の失敗と同じ扱い）。
  *   端末に書くのは、su-kv.js と同じスイッチの控え（su_backend_flags）だけ。図・氏名・利用者No は端末に残さない。
@@ -242,28 +244,40 @@
     });
   }
 
-  /* 切り替えた後は、端末に URL・合言葉が無くても同期してよいか（最後に確かめた印が live で、スイッチが入）。画面の「設定済みか」の判定に足す */
-  function liveHint() { return switchOn() && !fieldDevice() && modeCache === 'live'; }   // 現場の端末は今の接続設定のまま（新しく全件を読みに行かない・指摘9）
-  /* 起動の時に1回: スイッチが入で、ログインしていて印が live なら true。例外は外へ出さない */
-  function probe() {
-    return refreshFlags().then(function () {
-      if (!switchOn() || fieldDevice()) return false;
-      return loadAuth().then(function (A) {
-        if (!A) return false;
-        return Promise.resolve(A.check()).then(function (st) {
-          var S = A.STATUS || {}, s0 = st && st.status;
-          if (s0 !== S.OK && s0 !== S.MFA_VERIFY && s0 !== S.MFA_ENROLL) return false;
-          return mode(A, true).then(function (m) { return m === 'live'; });
+  /* 切り替えた後は、端末に URL・合言葉が無くても同期してよいか。画面の「設定済みか」の判定に足す。
+     スイッチが入・現場の端末でない・最後に確かめた印が live・liveReady が時間内に「使える」と答えた、の4つがそろう時だけ真
+     （liveReady が時間切れの後に印が届いても使えるにしない・2026-11-08） */
+  var liveOk = false;
+  function liveHint() { return liveOk && switchOn() && !fieldDevice() && modeCache === 'live'; }   // 現場の端末は今の接続設定のまま（新しく全件を読みに行かない・指摘9）
+  /* この端末が「接続先・合言葉なしで、ログインだけで」家族構成図のクラウド同期を使えるか（2026-11-08 代表者「端末ごとの設定を極限までなくす」）。
+   * スイッチが入・現場の端末でない・ログインを確かめられた・印が「切り替えた後」の4つがそろう時だけ true。それ以外・分からない・時間切れ（8秒）は false
+   * （false の時、画面は今までどおり接続先の設定を求める）。ログインの確かめは送る時の決まり（plan）と同じに、使える人の役割は全部（現場のアカウントは
+   * 見るだけ・保存と削除は送る時に断る）、2段階認証がまだの管理者もログインしているとみなす（送る時に「2段階認証を済ませて」と出す）。
+   * 読むだけで、端末には何も書かない（スイッチの控えは refreshFlags と同じ）。例外は外へ出さない */
+  function liveReady() {
+    try {
+      var tm = null;
+      var late = new Promise(function (ok) { tm = setTimeout(function () { ok(false); }, 8000); });
+      var p = refreshFlags().then(function () {
+        if (!switchOn() || fieldDevice()) return false;
+        return loadAuth().then(function (A) {
+          if (!A) return false;
+          return Promise.resolve().then(function () { return A.check(); }).then(function (st) {
+            var S = A.STATUS || {}, s0 = st && st.status;
+            if (s0 !== S.OK && s0 !== S.MFA_VERIFY && s0 !== S.MFA_ENROLL) return false;
+            return mode(A, true).then(function (m) { return m === 'live'; });
+          });
         });
-      });
-    }).then(function (v) { return !!v; }, function (e) { note('起動の確かめ', e); return false; });
+      }).then(function (v) { return v === true; }, function (e) { note('起動の確かめ', e); return false; });
+      return Promise.race([p, late]).then(function (v) { clearTimeout(tm); liveOk = v === true; return liveOk; });
+    } catch (e) { note('起動の確かめ', e); return Promise.resolve(false); }
   }
   /* 切り替えた後か（スイッチが入で、最後に確かめた印が live） */
   function isLive() { return switchOn() && modeCache === 'live'; }
   /* 「GAS のコードをコピー」を止めるか: スイッチが入で、写しの期間と確かめられていない間（分からない・切り替えた後）は止める（指摘10） */
   function copyBlocked() { return switchOn() && modeCache !== 'shadow'; }
 
-  root.SUGeno = { call: function (a, p, g, c) { return call(a, p, g, c, false); }, liveHint: liveHint, probe: probe, isLive: isLive, copyBlocked: copyBlocked, refreshFlags: refreshFlags,
+  root.SUGeno = { call: function (a, p, g, c) { return call(a, p, g, c, false); }, liveHint: liveHint, liveReady: liveReady, probe: liveReady, isLive: isLive, copyBlocked: copyBlocked, refreshFlags: refreshFlags,
     _forgetMode: function () { modeCache = null; modeAt = 0; },
-    _reset: function () { modeCache = null; modeAt = 0; ownFlags = null; flagsAt = 0; flagsP = null; authP = null; } };
+    _reset: function () { modeCache = null; modeAt = 0; ownFlags = null; flagsAt = 0; flagsP = null; authP = null; liveOk = false; } };
 })(typeof window !== 'undefined' ? window : this);

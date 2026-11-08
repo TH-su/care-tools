@@ -194,7 +194,7 @@ console.log('\n— 2d. 不具合報告の合言葉は URL に載せず、本文�
 
 console.log('\n— 3. 4画面の記録の口と置き換え —');
 const PAGES = [
-  ['weight-record.html', 'wrNote_', 'weight', 15],
+  ['weight-record.html', 'wrNote_', 'weight', 17],   // 2026-11-08 ログインだけで使える端末の起動の2か所（取り込み・端末の守り）を足した
   ['care-schedule.html', 'csNote_', 'care', 41],   // 2026-10-10 直した人の印・基準の4か所を足した
   ['resident-master.html', 'rmNote_', 'master', 9],
   ['facesheet.html', 'fsNote_', 'facesheet', 1]   // 2026-10-10 入居者マスタの接続設定の読込（デイ利用日の部品は入居者マスタと逐語同一の約束で触らない）

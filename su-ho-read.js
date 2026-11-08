@@ -39,6 +39,13 @@
  *   スイッチの確かめ: 端末の控え・自分で読んだ値のどちらかでケアログの道が入なのに1分以内に確かめていない時は、su-backend.json を読み直して
  *     から決める（この時だけ待つ。確かめずに Google から読むと記録が抜けて見えるため・反証レビュー 高1）。また、su-kv.js の無いこの画面でも
  *     ページを開いて最初の読み取りの時に1回だけ裏で su-backend.json を読む（待たない。ほかの画面を開かない端末もスイッチを知るため）。
+ * 接続先・合言葉の無い端末（代表者の決定 2026-11-08「端末ごとの設定を極限までなくす」段1）:
+ *   SUHoRead.liveReady() は「この端末がログインだけで新しい保存先から読めるか」を確かめる（Promise<boolean>）。
+ *   スイッチ moushi_carelog か moushi_read が入（自分で su-backend.json を読んで確かめた値）・現場の端末でない・
+ *   事務所・管理者としてログインしている、の3つがそろう時だけ真。分からない・時間切れ（8秒）は偽。端末に書かない・例外を出さない。
+ *   画面は接続先が無い時、SUHoRead.call の4つ目の引数に { noGas: true } を付ける。この時は写しの道もケアログの道と同じく
+ *   スイッチを確かめるまで待つ（確かめずに Google へ送ると、接続先が無いので必ず断りになるため）。読めない時の動きは今までどおり
+ *   （写しの道は gasFn＝画面の今の断り・ケアログの道は失敗）。
  * ★共通部品の決まり: 読み込むだけで効く・読み込めなくても動く（画面は SUHoRead が無ければ Google へ送る）・例外を外に出さない
  *   （ケアログの道の失敗は、画面が受け取る Promise の失敗として返す。投げはしない）。
  */
@@ -230,10 +237,11 @@
    *     どちらも切なら切＝Google（その場で決める。su-backend.json はページごとに1回だけ裏で読む・2026-11-07）
    *   ・どちらかが入なら、自分で1分以内に su-backend.json を読んで入と確かめた時だけ入。確かめていない時は裏で読み直し、
    *     この回は Google から読む（切に戻した後の古い「入」の控えで写しを読まない） */
-  function on(key) {
+  function on(key, noGas) {
     try {
       var now = Date.now();
       if (hasKv()) return flagOn(root.SUKv._flags(), now, key);
+      if (noGas && !(ownAt > 0 && now - ownAt < FLAGS_FRESH_MS)) { refreshFlags(); return 'wait'; }   // 接続先の無い端末: 確かめてから決める
       var cached = null;
       try { cached = JSON.parse(root.localStorage.getItem(FLAGS_LS) || 'null'); } catch (e) { cached = null; }
       if (!flagOn(cached, now, key) && !flagOn(ownFlags, now, key)) return false;
@@ -245,31 +253,64 @@
   var pageAsked = false;
   /* on() の答え: true・false・'wait'（入かもしれないが確かめていない）。写しの道は待たずに Google（今までどおり）、
      ケアログの道は読み直してから決める */
-  function pick(again) {
-    var cl = on(FLAG_CL);
+  function pick(again, noGas) {
+    var cl = on(FLAG_CL, noGas);
     if (cl === 'wait') return again ? '' : 'wait';
     if (cl === true) return 'cl';
-    return on(FLAG) === true ? 'ho' : '';
+    var ho = on(FLAG, noGas);
+    if (ho === 'wait' && noGas && !again) return 'wait';
+    return ho === true ? 'ho' : '';
   }
   function go(way, action, params, gasFn) { return way ? viaDb(action, params, gasFn, way === 'cl') : gasFn(); }
-  function call(action, params, gasFn) {
-    var way = '';
+  function call(action, params, gasFn, opts) {
+    var way = '', noGas = false;
     try {
+      noGas = !!(opts && typeof opts === 'object' && opts.noGas === true);
       if (!pageAsked && !hasKv()) { pageAsked = true; refreshFlags(); }   // ページごとに1回だけ裏で読む（待たない）
-      if (eligible(action, params)) way = pick(false);
+      if (eligible(action, params)) way = pick(false, noGas);
     } catch (e) { way = ''; }
     if (way === 'wait') {
       return refreshFlags().then(function () {
         var w = '';
-        try { w = pick(true); } catch (e) { w = ''; }
+        try { w = pick(true, noGas); } catch (e) { w = ''; }
         return go(w, action, params, gasFn);
       });
     }
     return go(way, action, params, gasFn);
   }
 
+  /* 接続先・合言葉の無い端末がログインだけで読めるか（上の説明）。io は試験用（{ auth: () => SUAuth }） */
+  var LIVE_MS = 8000;
+  function liveReady(io) {
+    try {
+      if (isField()) return Promise.resolve(false);
+      var tm = null;
+      var late = new Promise(function (ok) { tm = setTimeout(function () { ok(false); }, LIVE_MS); });
+      var probe = Promise.resolve().then(function () { return hasKv() ? null : refreshFlags(); }).then(function () {
+        var now = Date.now(), f;
+        if (hasKv()) f = root.SUKv._flags();
+        else { if (!(ownAt > 0 && now - ownAt < FLAGS_FRESH_MS)) return false; f = ownFlags; }   // 自分で1分以内に読めていない時は確かめられない＝使えない
+        if (!flagOn(f, now, FLAG_CL) && !flagOn(f, now, FLAG)) return false;
+        return Promise.resolve().then(function () { return io && io.auth ? io.auth() : loadAuth(); }).then(function (A) {
+          if (!A) return false;
+          return Promise.resolve().then(function () { return A.check(); }).then(function (st) {
+            if (!st || st.status !== (A.STATUS || {}).OK) return false;
+            if (st.role !== 'office' && st.role !== 'admin') return false;
+            return !isField();   // 確かめている間に用途が現場へ変わった
+          });
+        });
+      }).then(function (v) { return v === true; }, function (e) {
+        var n = errName(e);
+        if (n !== 'NetworkError') note('live.' + n, named(n, e && e.message));
+        return false;
+      });
+      return Promise.race([probe, late]).then(function (v) { clearTimeout(tm); return v === true; }).then(null, function () { return false; });
+    } catch (e) { return Promise.resolve(false); }
+  }
+
   root.SUHoRead = {
     call: call,
+    liveReady: liveReady,
     _flagOn: flagOn,
     _refresh: refreshFlags,   // 試験用（スイッチを読み直して待つ）
     _reset: function () { ownFlags = null; ownAt = 0; ownPromise = null; noted = {}; pageAsked = false; }

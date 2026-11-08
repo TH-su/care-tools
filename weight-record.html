@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-6cTU8Y6YEPOphDVGKtr8P6Nr1s0VI/3p5Ad/Uo8UG6g='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-nAco7Ptm1EaSXSPwftoZPp7uGC2X3WC065BbG4HbjP8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -12,6 +12,7 @@
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-27"></script>
+<script src="su-devcfg.js?v=2026-11-08"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
 <script>
 /* 黙ると困る失敗（保存・同期の補助）を、画面には出さずに記録へ残す（2026-10-08・監査10月版 #8）。
@@ -56,8 +57,8 @@ try{ const t = (JSON.parse(localStorage.getItem('wtmgr_ui_v1') || '{}') || {}).t
 <script src="su-facility.js?v=2026-11-07"></script>
 <!-- 体重の写し（統合 0008・写しの期間）。supabase-js と su-auth.js は写す時にだけ読み込む -->
 <script src="su-weight-shadow.js?v=2026-10-28.2"></script>
-<script src="su-weight-live.js?v=2026-11-07"></script>
-<script src="su-res-read.js?v=2026-11-08.3"></script>
+<script src="su-weight-live.js?v=2026-11-08"></script>
+<script src="su-res-read.js?v=2026-11-08.4"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-resident-hop.js?v=2026-11-02"></script>
 <style>
@@ -1989,6 +1990,12 @@ function loadApiUrlOnBoot(){
 }
 
 let apiUrl = '';  // wireSync IIFE / loadApiUrlOnBoot 経由で初期化（DB ロード後）
+/* 2026-11-08（代表者の決定「端末ごとの設定を極限までなくす」）: Google の接続先が無い端末でも、起動の時に部品（SUWeightLive.liveReady）が
+   「ログインだけで新しい保存先を使える」と時間内に答えた時だけ、接続先がある端末と同じく同期する（wrLiveOk_）。
+   使えない・分からない時は今までどおり接続先の設定を求める（端末には何も書かない） */
+let wrLiveOk_ = false, wrBootNoAdd_ = false;
+function wrSyncOn_(){ return !!apiUrl || wrLiveOk_; }
+const WR_NOGAS_MSG = 'この端末には Google の接続先が入っていないため、今は体重をサーバーと合わせられません（記録はこの端末に残っています）。事務所に連絡してください';
 
 /* save() フックを追加：DB を localStorage に書き出す度に API_KEY を「触る」ことで、
    Safari ITP の最終アクセス時刻を更新し、7日後の自動消去を抑止する。
@@ -2279,10 +2286,11 @@ function apiFriendlyError_(raw){
   return '合言葉が一致しません。この端末の合言葉（「設定」→「🌐 複数端末で共有」）が、管理者が Google の受け口に決めた合言葉と同じか確認してください（前後の空白・全角に注意）';
 }
 async function apiGet(){
-  if(!apiUrl) return null;
+  if(!wrSyncOn_()) return null;
   /* 統合 0032（2026-10-28）: スイッチ（weight）が入り、データベースが切り替え済みなら Supabase から読む（su-weight-live.js）。
      それ以外（スイッチが切・写しの期間）は null が返り、下の今までどおりの Google の読み込みへ進む */
   if(typeof SUWeightLive !== 'undefined'){ const lj = await SUWeightLive.getAll(apiPostGas_); if(lj) return lj; }
+  if(!apiUrl) return { error: WR_NOGAS_MSG };   /* 接続先の無い端末は Google へ読みに行かない（写しの期間へ戻った時など） */
   /* 取得は可能なら POST で行う。GET だと合言葉がURLに載り、履歴やアクセスログに残るため。
      旧サーバー（postGetAll 非対応）は従来どおり GET にフォールバックする。
      ★合言葉を持っていて、かつサーバーを【観測できていない】時も POST で送る（2026-08-13 追加）。
@@ -2331,12 +2339,14 @@ function wrResForSend_(data){
 /* 統合 0032（2026-10-28）: スイッチ（weight）が入り、データベースが切り替え済みなら Supabase へ書き、Google へは写し返す（su-weight-live.js）。
    それ以外（スイッチが切・写しの期間）は null が返り、今までどおり Google へ送る（apiPostGas_・送る形は変えていない） */
 async function apiPost(action, data){
-  if(!apiUrl) return null;
+  if(!wrSyncOn_()) return null;
   data = data || {};
   if(typeof SUWeightLive !== 'undefined'){
-    const lj = await SUWeightLive.post(action, { resident: wrResForSend_(data), record: data.record, id: data.id, thresholds: data.thresholds }, data, apiPostGas_);
+    /* 接続先の無い端末（!apiUrl）は、GAS が写し返している時だけ新しい保存先へ書く（部品が書く前に確かめる） */
+    const lj = await SUWeightLive.post(action, { resident: wrResForSend_(data), record: data.record, id: data.id, thresholds: data.thresholds }, data, apiPostGas_, !apiUrl);
     if(lj) return lj;
   }
+  if(!apiUrl) return { ok:false, error: WR_NOGAS_MSG };   /* 接続先の無い端末は Google へ送らない（記録は未送信に残る） */
   return apiPostGas_(action, data);
 }
 async function apiPostGas_(action, data){
@@ -2531,7 +2541,7 @@ function wrStaffText_(s){
   return /[\u3040-\u30ff\u4e00-\u9fff]/.test(t) && !/[A-Za-z]/.test(t.replace(/Google/g, ''));
 }
 async function _syncFromAPIImpl(showLoader){
-  if(!apiUrl) return false;
+  if(!wrSyncOn_()) return false;
   wrSyncLock_(true);   /* 止めたら必ず finally で戻す（表示の失敗で止めたまま残さない） */
   try{
     if(showLoader) ldShow('サーバーからデータを取得中...');
@@ -2750,7 +2760,7 @@ function _pqFreshenData(item){
 }
 let _pqFlushing = false;
 function flushPendingQueue(){
-  if(!apiUrl || _pqFlushing) return;
+  if(!wrSyncOn_() || _pqFlushing) return;
   const q = loadPendingQueue();
   if(!q.length) return;
   _pqFlushing = true;
@@ -2816,7 +2826,7 @@ function _writeDrain(){
     });
 }
 function apiPush(action, data){
-  if(!apiUrl) return;
+  if(!wrSyncOn_()) return;
   /* 削除には「誰が」を添える（GAS が「削除の記録」シートへ残す・監査10月版 #7）。添えるのは積んだ時点の人 */
   if((action === 'delRecord' || action === 'delResident') && data && data.by == null) data = Object.assign({}, data, { by: wrWho_() });
   _writeQ.push({ action, data: data || {}, _at: Date.now() });   // _at＝積んだ時刻。成功時の古い未送信掃除の境界に使う
@@ -2837,7 +2847,7 @@ function _drainWriteQueueSync(){
   // bfcache 復帰時は退避分を再送し、中断された送信中フラグの取り残しも解除する
   window.addEventListener('pageshow', ()=>{
     _writeSending = false; _writeInFlight = null;
-    if(apiUrl) flushPendingQueue();
+    if(wrSyncOn_()) flushPendingQueue();
   });
 })();
 
@@ -3509,6 +3519,7 @@ var WR_PROXY_MIN_MS = 600000;            // 10分以内の再取得はスキッ�
 var _wrProxyBusy = false;                // 二重取得の防止
 /* 排泄記録アプリの接続情報を読む。欠けていれば null＝この機能は完全に無動作。 */
 function wrProxyCreds(){
+  try{ var d = window.SUDevCfg && window.SUDevCfg.get('haiben'); if (d) return { url: d.url, token: d.token }; }catch(e){}
   var u = '', t = '';
   try{
     u = localStorage.getItem(HBCR_URL_KEY) || '';
@@ -3646,6 +3657,7 @@ function wrPickSrev(j){
 }
 /* 入居者マスタの接続設定を読む。url が無ければ null＝この機能は完全に無動作。 */
 function wrMasterCfg(){
+  try{ var d = window.SUDevCfg && window.SUDevCfg.get('master'); if (d) return { url: d.url, token: d.token }; }catch(e){}
   var s; try{ s = localStorage.getItem(WR_RMASTER_CFG_KEY); }catch(e){ return null; }
   if(!s) return null;
   var o; try{ o = JSON.parse(s); }catch(e){ return null; }
@@ -3882,7 +3894,7 @@ function applyWeightDeviceGuard(){
   document.documentElement.classList.toggle('wr-field', field);
   if(field && document.querySelector('.scr[data-sc="cfg"].on')) goto('list');
   var nb = document.getElementById('wrNoApi');
-  if(nb) nb.hidden = !(field && !apiUrl);   /* 現場端末は接続先を直せないので、無い時は帯で知らせ続ける */
+  if(nb) nb.hidden = !(field && !wrSyncOn_());   /* 現場端末は接続先を直せないので、無い時は帯で知らせ続ける */
   var csl = document.getElementById('apiCsLink');
   if(csl) csl.hidden = field;   /* 接続設定は現場では開けないので、リンクを出さない */
   return field;
@@ -7546,7 +7558,7 @@ function wrMergeResidents(keepId, dropIds, opts){
    接続先がある端末では同期に成功した時だけ進める。合わせた結果、行が無くなっていたら止める */
 async function wrMergeAfterSync(keepId, dropIds, opts){
   if(wrFieldDeny()) return false;
-  if(apiUrl){
+  if(wrSyncOn_()){
     let ok = false;
     try{ ok = await syncFromAPI(true); }catch(e){ ok = false; }
     if(!ok){ toast('サーバーと合わせられなかったため、まとめませんでした。通信を確かめて、もう一度押してください', 'err'); return false; }
@@ -7585,7 +7597,7 @@ function wrOrphanRecordGroups(){
 /* 持ち主のいない記録を、選んだ入居者へ付け替える（同期してから） */
 async function wrAdoptOrphans(oldRid, keepId){
   if(wrFieldDeny()) return false;
-  if(apiUrl){
+  if(wrSyncOn_()){
     let ok = false;
     try{ ok = await syncFromAPI(true); }catch(e){ ok = false; }
     if(!ok){ toast('サーバーと合わせられなかったため、付け替えませんでした', 'err'); return false; }
@@ -7611,7 +7623,7 @@ async function wrAdoptOrphans(oldRid, keepId){
    確認と JSON の控えつき。サーバーからも消す */
 async function wrClearOrphans(oldRid){
   if(wrFieldDeny()) return false;
-  if(apiUrl){
+  if(wrSyncOn_()){
     let ok = false;
     try{ ok = await syncFromAPI(true); }catch(e){ ok = false; }
     if(!ok){ toast('サーバーと合わせられなかったため、消しませんでした。通信を確かめて、もう一度押してください', 'err'); return false; }
@@ -7635,7 +7647,7 @@ async function wrClearOrphans(oldRid){
 /* 作るのを見送ったマスタの人を、選んだ行へ紐づける（その行にマスタの番号を付けてサーバーにも書く） */
 async function wrLinkSkippedMaster(masterId, residentId){
   if(wrFieldDeny()) return false;
-  if(apiUrl){
+  if(wrSyncOn_()){
     let ok = false;
     try{ ok = await syncFromAPI(true); }catch(e){ ok = false; }
     if(!ok){ toast('サーバーと合わせられなかったため、紐づけませんでした', 'err'); return false; }
@@ -7658,7 +7670,7 @@ async function wrLinkSkippedMaster(masterId, residentId){
 /* 作るのを見送ったマスタの人を、新しい入居者として作る（番号はマスタの番号から決まる） */
 async function wrCreateSkippedMaster(entry){
   if(wrFieldDeny() || !entry) return false;
-  if(apiUrl){
+  if(wrSyncOn_()){
     let ok = false;
     try{ ok = await syncFromAPI(true); }catch(e){ ok = false; }
     if(!ok){ toast('サーバーと合わせられなかったため、作りませんでした', 'err'); return false; }
@@ -8673,6 +8685,22 @@ function wrHasLocalCopy_(){
         await syncFromAPI(!hasLocal);
       }finally{ wrSyncLock_(false); }
     }, 100);
+  }else if(typeof SUWeightLive !== 'undefined' && typeof SUWeightLive.liveReady === 'function'){
+    /* 2026-11-08（代表者の決定「端末ごとの設定を極限までなくす」）: 接続先の無い端末は、ログインだけで新しい保存先を使えるかを1回だけ確かめる
+       （8秒で時間切れは使えない・端末には書かない）。使える時だけ、接続設定を促す帯を出さず、同期の札を「同期中」にそろえ、同期する。
+       使えない時は今までどおり（接続先の設定を求める・この端末の記録だけで動く） */
+    SUWeightLive.liveReady().then(ok=>{
+      if(apiUrl) return;   // 確かめの間に接続先を入れた＝今までどおりの道
+      if(!ok){
+        if(wrBootNoAdd_){ try{ if(mergeCommonWeight()) wrRefreshViews(); }catch(e){ wrNote_('マスタの取り込み', e); } }
+        return;
+      }
+      wrLiveOk_ = true;
+      try{ if(window.SUCfgHint) SUCfgHint.quiet(); }catch(e){ /* 帯の失敗は同期を止めない */ }
+      apiSetStatus('ok', '✅ ログインしているため、接続先を入れなくても体重を共有できます');
+      try{ applyWeightDeviceGuard(); }catch(e){ wrNote_('端末の守り', e); }
+      syncFromAPI(!wrHasLocalCopy_()).catch(e=>wrNote_('起動の同期', e));
+    }, e=>wrNote_('起動の確かめ', e));
   }
   updateAuthNote_();   // 未接続・未観測の時も「状態は未確認」と出す（空欄のまま放置しない）
   /* 診断結果パネルの表示／非表示 */
@@ -8803,7 +8831,7 @@ function wrHasLocalCopy_(){
     toast('連携を解除しました');
   });
   // replay any pending writes when the network comes back
-  window.addEventListener('online', ()=>{ if(apiUrl) flushPendingQueue(); });
+  window.addEventListener('online', ()=>{ if(wrSyncOn_()) flushPendingQueue(); });
 })();
 
 /* ============================================================
@@ -8814,7 +8842,10 @@ function wrHasLocalCopy_(){
    起動直後はまだサーバーと合わせていないので、ここで作ると、サーバーに居る人を
    別の番号で二重に作る（新しい端末・初めて開く現場端末で全員が2人ずつになっていた）。
    作るのは同期が成功した後の取り込み（syncFromAPI 内）だけ。居室・退去などの反映は今までどおり行う。 */
-try{ mergeCommonWeight({ noAdd: !!apiUrl }); }catch(e){ /* 取り込み失敗は運用を止めない */ }
+/* 接続先が無くても、ログインだけで使えるかもしれない端末（スイッチの控えが入・ログインの控えがある）は、確かめが終わるまで作らない。
+   使えないと分かった時は、確かめの後に今までどおり作る（wireSync の liveReady の後） */
+wrBootNoAdd_ = !apiUrl && typeof SUWeightLive !== 'undefined' && typeof SUWeightLive.maybeLive === 'function' && SUWeightLive.maybeLive() === true;
+try{ mergeCommonWeight({ noAdd: !!apiUrl || wrBootNoAdd_ }); }catch(e){ /* 取り込み失敗は運用を止めない */ }
 /* 排泄記録GAS 経由の代理名簿（接続情報が無ければ no-op・10分スロットル・非同期）。
    ★この経路は氏名一致で masterId を後付けするため、起動時点では紐づいていない。
      マスタから本人指定で来ていて見つからなかった場合に限り、取得完了後に1回だけ再試行する

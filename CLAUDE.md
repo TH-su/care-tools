@@ -72,7 +72,7 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
 | 予定・支援 | `care-schedule.html`（週間計画） `work-schedule.html` `visit-overview.html` `support-overview.html` `overview-compare.html` `daycare-roster.html` |
 | 職員・勤務 | `shift-app.html` `shift-analyzer.html` `staff-master.html` |
 | 運営 | `supplies.html` `connection-settings.html` `accounts.html` `menu-settings.html` `app-access.html` `login.html` `perf-report.html` `shadow-check.html` |
-| 共通部品 | `su-errors.js` `su-perf.js` `su-cfg-hint.js` `su-facility.js` + `facility-profile.json` `su-print.js` + `su-print.css` `su-report.js` + `su-annot.js` `su-data.js` + `su-data-gas.js` + `su-data-supabase.js` `su-kv.js` `su-kv-shadow.js` `su-master-shadow.js` `su-roster.js` `su-weight-shadow.js` `su-patch-sync.js` `su-auth.js` + `supabase-js-*.js` `su-itomari.js`（メニューの毬の絵） `su-app-gate.js` + `su-app-gate.css`（事務所向けのアプリを開く前のログインの役割の確かめ） `su-gas-auth.js`（事務所用の合言葉で GAS へ読みに行く要求に、ログイン中だけ証明を添える） `su-intro.js` + `su-intro.css`（初回の案内の帯） `su-theme.css`（見た目の共通の型「つむぐケアの型」・画面だけ） `su-resident-hop.js` + `su-resident-hop.css`（「この方の画面：」同じ方の別の画面へ移るボタン） |
+| 共通部品 | `su-errors.js` `su-perf.js` `su-cfg-hint.js` `su-facility.js` + `facility-profile.json` `su-print.js` + `su-print.css` `su-report.js` + `su-annot.js` `su-data.js` + `su-data-gas.js` + `su-data-supabase.js` `su-kv.js` `su-kv-shadow.js` `su-master-shadow.js` `su-roster.js` `su-weight-shadow.js` `su-patch-sync.js` `su-auth.js` + `supabase-js-*.js` `su-itomari.js`（メニューの毬の絵） `su-app-gate.js` + `su-app-gate.css`（事務所向けのアプリを開く前のログインの役割の確かめ） `su-gas-auth.js`（事務所用の合言葉で GAS へ読みに行く要求に、ログイン中だけ証明を添える） `su-intro.js` + `su-intro.css`（初回の案内の帯） `su-theme.css`（見た目の共通の型「つむぐケアの型」・画面だけ） `su-resident-hop.js` + `su-resident-hop.css`（「この方の画面：」同じ方の別の画面へ移るボタン） `su-devcfg.js`（管理者が接続設定の「全端末へ配る」で入れた接続先と合言葉を、ログインした端末が役割ごとに受け取り、同じタブの控えだけで使う。配った値が先・配っていない系統は端末の値・現場の端末は現場用の系統だけ・統合 0080） |
 | 検証道具 | `check/`（撮影・画素比較・JS構文・実名ガード・配置図の絵・受け口 GAS・夜の定期タスクの指示書。配布物ではない）・`.github/workflows/pixel-check.yml`（PR ごとの画素の見比べ）・`.github/workflows/report-image.yml`（画面の指摘に配置図の絵を付ける） |
 | 辞書 | `meds-effect-dict.js`（薬効辞書） `meds-yakka-naiyo.js`（厚労省 薬価基準収載品目を加工した候補） `meds-yakka-yj.js`（同じ一覧のコード9桁＝成分・剤形・規格ごとの品名のまとまり。作り方は `check/build-yakka-yj.py`） |
 | 薬情の取り込み | `yakujo-calc.js`（入居者マスタの「📥 薬情の取り込み」の振り分け・組み立て・反映を止める規則の純関数。試験は `check/unit/yakujo_calc_test.js`） |
@@ -160,6 +160,7 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
   - 名簿だけを読む画面（デイ利用表・全支援俯瞰・訪問俯瞰・ワークスケジュール・体重管理・週間計画の名簿）は、入居者マスタを切り替えた後、事務所PCで事務所・管理者としてログインしている時と、現場の端末で現場のアカウントとしてログインしている時だけ名簿を新しい保存先から読む（`SUResRead.call` の officeOnly）。現場の端末が読むのは名簿の口（res_roster）の在籍者の7項目だけで、応答は Google が現場の合言葉に返す形（getRosterSafe）にそろえ、1人ずつの記録（C 医療・D 家族）は読まない。ログインしていない・確かめられない・事務所PCの現場のアカウント・現場の端末の事務所・管理者のアカウントは今までどおり Google から読む（1時間ごとの写し返しで追いつく）。別の正本から配るワークスケジュールは、現場の端末では今までどおり Google から読む。出した時と答えの時で端末の用途（現場かどうか）が違う答えは捨てる（代表者の決定 2026-11-08 A）。
   - 週間計画・ワークスケジュールの予定（週間計画・週の型・日ごと）は、現場の端末でも現場のアカウントとしてログインしていれば新しい保存先から読む（画面の通信の入口 `SUKv.call` と見るだけの読み取り `SUKv.readRouted`）。現場のアカウントが書けるのは日ごとの印とコメントだけで、週間計画・週の型は書かない。見るだけの読み取りは、ログインしていない・確かめられない・読めない時に今までどおり Google を読む（代表者の決定 2026-11-08 A・試験は `check/unit/res_field_read_test.js`）。
   - 入居者マスタの版数の見張り（入居者マスタ・週間計画・体重管理・全支援俯瞰・訪問俯瞰・デイ利用表）は `SUResRead.stateRev`（`su-res-read.js`）に通す。名簿だけを読む画面と同じ決まり（事務所PCで事務所・管理者として、または現場の端末で現場のアカウントとしてログインし、入居者マスタを切り替えた後）の時だけ新しい保存先の版数（res_mode_get の stateRev・srev は 0）を読み、それ以外は Google の stateRev をそのまま聞く。ログインした後に読めない時は Google へ流さない。見張りと名簿の読み先はそろえる（週間計画の名簿の取り直しも officeOnly を通す）。別の正本から配るワークスケジュールは今までどおり Google の stateRev を聞く（代表者の決定 2026-11-07 問い6=A・2026-11-08 A・現場の端末は 2026-11-08 A）。
+  - 端末の用途（su_device_role）は、管理者が「アプリの使える人」の「端末の用途」で端末の印（意味のない乱数・画面に出すのは頭の8文字だけ）ごとに決め、その端末がメニューを開いた時に `su-device-role.js` が受け口 device-seen から受け取る（統合 0081・スイッチ device_role が入の時だけ）。届いた用途が今と違う時だけ書き換えてページを読み込み直し、読めない・決めていない時は端末の今の用途のまま（消さない）。アカウントでは決めない（代表者の決定 2026-11-08 段3 案A）。
   - 現場の端末では氏名を姓だけで出す。姓と名の切れ目は空白か入居者マスタの区切りを使い、推測しない。
   - 保存の時に「最後に直した人」と時刻を残す。直した人はログインの証明で確かめ、画面が名乗った名前を信じない。
   - 不具合報告の合言葉は URL に付けず、本文で送る。公開の CI の記録には、実名ガードが見つけた語を出さない。
@@ -262,6 +263,7 @@ PR を出すと同じ比較が GitHub Actions で自動で回り（チェック�
 - 確認の質問は**先に**、まとめて、選択肢つきで。作業の途中で1つずつ聞かない。
   特に「文言」「位置」「どの端末幅から」「印刷に出すか」は作る前に確かめる。
 - ゴールが決まっている作業は、確認の質問をせず推奨案で最後まで進め、必要なら実行して結果だけを報告する。推奨案で決めた所は報告に「仮置き」と書く。聞くのは、セキュリティ・消す処理・外部への送信や公開・代表者にしかできない操作・ゴールがあいまいな時と、上の「文言」「位置」などを代表者が指定していない時だけ（本人指示 2026-11-05・すべてのセッション）。
+- 自動で作業を進め、本当に必要な時だけ質問する。1つの作業が済んだら、聞かずに次に進められる作業を自分で選んで進める。「進めて」を待たない。待つしかない時（日にち・代表者の作業）は、待っているものを1回だけ短く伝え、同じ報告を繰り返さない（本人指示 2026-11-08）。
 - 代表者への返答・報告・確認の質問は、**すべて日本語**で書く。予約した確認や定期タスクの知らせで起きた時も同じ。
   英語の文で返さない（コード・ファイル名・関数名など、そのまま書くしかない語だけは英字でよい）。
   最後の報告だけでなく、作業の合間の一言（今何をしているか・終わったことの知らせ）・確認のお願い（「許可を押してください」など）・自動の知らせ（試験の結果・push の催促など）へのお返事・道具の説明欄も、代表者に見える文はすべて日本語にする。道具の結果やシステムの知らせが英語でも、返す文は日本語にする。送る前に、英語の文で始まる行がないかを見直す（本人指示 2026-11-05）。
