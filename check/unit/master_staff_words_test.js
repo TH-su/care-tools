@@ -174,11 +174,11 @@ console.log('\n【6】案内を出す場所');
 {
   const rr = grabFn(S, 'renderRoster');
   t('一覧が空で接続先が無い時（現場端末を除く）に案内を添える',
-    /if\(!roster\.length&&!CFG\.url&&getDeviceRole\(\)!=='field'\)\{ if\(box\.firstChild\) box\.firstChild\.appendChild\(rmNoUrlGuide_\(\)\); \}/.test(rr));
+    /if\(!roster\.length&&!rmOn_\(\)&&getDeviceRole\(\)!=='field'\)\{ if\(box\.firstChild\) box\.firstChild\.appendChild\(rmNoUrlGuide_\(\)\); \}/.test(rr));
   t('一覧が空の時の innerHTML の代入文は変えない（点検表どおり）',
     rr.indexOf("box.innerHTML='<div class=\"empty\">'+(roster.length?'該当する入居者がいません':'入居者がいません。「同期設定」でURLを設定するか「新規」で登録してください')+'</div>';") >= 0);
   t('詳細画面でも接続先が無い時に案内を添える（現場端末では出さない＝接続設定は事務所専用）',
-    S.indexOf("if(!CFG.url){$('viewBox').innerHTML='<div class=\"empty\">同期設定のURLが未設定です</div>';if(typeof rmNoUrlGuide_==='function'&&getDeviceRole()!=='field'&&$('viewBox').firstChild)$('viewBox').firstChild.appendChild(rmNoUrlGuide_());return}") >= 0);
+    S.indexOf("if(!rmOn_()){$('viewBox').innerHTML='<div class=\"empty\">同期設定のURLが未設定です</div>';if(typeof rmNoUrlGuide_==='function'&&getDeviceRole()!=='field'&&$('viewBox').firstChild)$('viewBox').firstChild.appendChild(rmNoUrlGuide_());return}") >= 0);
   /* 画面を開く順（端末の用途の止め → ログインの役割の確かめ → 中身）は変えない */
   t('ログインの役割の確かめの後で始める形はそのまま', /window\.SUAppGate\.run\('resident-master',\{dirty:rmGateDirty_\}\)\.then\(function\(ok\)\{ if\(ok\) rmStart_\(\); \}\)/.test(S));
 }

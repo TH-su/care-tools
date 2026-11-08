@@ -378,7 +378,7 @@ function main(){
   t('storage の受け口の行がソースにある', /\nwindow\.addEventListener\('storage',function\(e\)\{ try\{ onDeviceRoleChange_\(e\); \}catch\(err\)\{( fsNoteAs_\('端末の用途', '[^']+', err\); )?\} \}\);\n/.test(SRC));
   t('pageshow の受け口の行がソースにある', /\nwindow\.addEventListener\('pageshow',function\(e\)\{ try\{ if\(e&&e\.persisted\) onDeviceRoleChange_\(\{key:DEVICE_KEY\}\); \}catch\(err\)\{( fsNoteAs_\('端末の用途', '[^']+', err\); )?\} \}\);\n/.test(SRC));
   t('既存の storage の受け口（COMMON_KEY で名簿を読み直す）が残っている',
-    /\nwindow\.addEventListener\('storage',function\(e\)\{\n  if\(e\.key!==COMMON_KEY\)return;\n  loadCommonRoster\(\);\n  if\(!isField\(\)&&CFG\.url\) refreshRosterFromGas\(\); else renderRoster\(\);\n\}\);\n/.test(SRC));
+    /\nwindow\.addEventListener\('storage',function\(e\)\{\n  if\(e\.key!==COMMON_KEY\)return;\n  loadCommonRoster\(\);\n  if\(!isField\(\)&&fsOn_\(\)\) refreshRosterFromGas\(\); else renderRoster\(\);\n\}\);\n/.test(SRC));
   {
     const L = load(SRC);
     eq('実物の行を評価すると storage・pageshow が1つずつ登録される', [(L.listeners.storage || []).length, (L.listeners.pageshow || []).length], [1, 1]);

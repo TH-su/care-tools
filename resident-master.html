@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-qWYTbnwad1ulJSgHUO69/UNYOPTPhMxvgLJhd9212yg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-uxCih6FNPWTDve2K0f0osbU9O0/D0GwC08xPquN2M0Q='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -2552,6 +2552,28 @@ apiPostRaw=function(body,timeoutMs){return window.SUResRead?window.SUResRead.wri
    スイッチ master_live が切の間・部品が無い時は、今までの apiGet をそのまま呼ぶ（本文・送り方は1バイトも変えない）。読み取り以外の本文はそのまま通す */
 var apiGetGas_=apiGet;
 apiGet=function(params,timeoutMs){return window.SUResRead?window.SUResRead.call(params,function(){return apiGetGas_(params,timeoutMs)},{screen:'resident-master'}):apiGetGas_(params,timeoutMs)};
+/* 接続先・合言葉の無い端末でも、ログインして新しい保存先で使える時（2026-11-08 代表者「端末ごとの設定を極限までなくす」）。
+   起動の時に SUResRead.liveReady で1回だけ確かめる（端末には何も書かない）。使える時（RM_LIVE）は、上の読み取り・保存の口（SUResRead を通る）へ
+   接続先なしで送る＝Google へは送らない。部品が無い・分からない・時間切れの時は今までどおり（接続先の設定を求める）。
+   Google へ直接行く処理（全項目の写し・薬効辞書・薬の変更候補・薬情の取り込み）は、今までどおり接続先がある時だけ */
+var RM_LIVE=false, rmLiveTried_=false, rmLiveP_=null;
+function rmOn_(){ return !!CFG.url||RM_LIVE; }
+function rmProbeLive_(){
+  if(rmLiveP_) return rmLiveP_;   /* 確かめている間に呼び直されても、確かめは1本だけ */
+  var p=(window.SUResRead&&typeof window.SUResRead.liveReady==='function')?Promise.resolve().then(function(){ return window.SUResRead.liveReady(); }):Promise.resolve(false);
+  rmLiveP_=p.then(function(v){ return v===true; },function(){ return false; }).then(function(v){
+    RM_LIVE=v; rmLiveTried_=true;
+    if(v&&!CFG.url){ try{ if(window.SUCfgHint&&typeof window.SUCfgHint.quiet==='function') window.SUCfgHint.quiet(); }catch(e){ /* 案内の帯の失敗は止めない */ } }
+    return v;
+  });
+  return rmLiveP_;
+}
+/* 接続先の無い事務所PCは、確かめ終わってから fn を進める（確かめている間は一覧の「読み込み中…」のまま。現場の端末は確かめない） */
+function rmLiveGate_(fn){
+  if(CFG.url||rmLiveTried_||getDeviceRole()==='field'){ fn(); return; }
+  setSync('同期中…');
+  rmProbeLive_().then(function(){ if(getDeviceRole()==='field') return; fn(); });
+}
 /* 読み取りだけ1回やり直す。★書き込みは絶対に再試行しない（同じ保存が2回通り、
    他端末の変更を巻き戻す・支援経過が二重になる等の実害が出る）。
    間隔を1.2秒空けるのは、GAS の同時実行が詰まっている瞬間を外すため。 */
@@ -2636,7 +2658,7 @@ function saveRosterCache(){if(getDeviceRole()==='field'||rosterPurged_)return;tr
 function refreshRoster(){
   /* ★現場端末では取りに行かない（追い読み srevTick や一括保存の後始末から呼ばれうる）（2026-10-01） */
   if(getDeviceRole()==='field')return Promise.resolve(false);
-  if(!CFG.url){setSync('未接続');renderRoster();return Promise.resolve(false)}
+  if(!rmOn_()){setSync('未接続');renderRoster();return Promise.resolve(false)}
   setSync('同期中…');
   var dg=devGen;   // 出した時の世代。現場へ切り替わると applyDeviceGuard が進める
   return apiGet({action:'getRoster'}).then(function(d){
@@ -2729,7 +2751,7 @@ function srevTick(){
   if(document.hidden)return;                       // hidden 中はスキップ（visible 復帰時に即時1回）
   if(getDeviceRole()==='field')return;             // 現場端末では動かさない（init 前段ガードの防御的二重化）
   if(srevBusy)return;
-  var mu=srevMasterUrl();if(!mu)return;            // URL未設定の端末は現状動作のまま
+  var mu=srevMasterUrl();if(!mu&&!RM_LIVE)return;  // URL未設定の端末は現状動作のまま（ログインだけで使える端末は新しい保存先の版数だけを読む・2026-11-08）
   var gap=Date.now()-srevAt;
   if(gap>=0&&gap<SREV_MIN_GAP_MS)return;           // 負値（端末時計の巻き戻し）では締め出さない
   if(srevFailAt){
@@ -2745,7 +2767,7 @@ function srevTick(){
   /* 2026-11-08（写し返しを止める計画・代表者の決定 2026-11-07 問い6=A）: 入居者マスタを新しい保存先へ切り替えた後は、事務所PCで
      事務所・管理者としてログインしている時だけ、新しい保存先の版数を読む（su-res-read.js の stateRev・応答の形は同じ）。
      それ以外・部品が無い時は下の Google への照会をそのまま送る（送り方は変えない） */
-  var gasRev=function(){return fetchWithTimeout(url,{method:'GET',cache:'no-store',redirect:'follow'},10000)};
+  var gasRev=function(){if(!mu)return Promise.reject(new Error('NO_URL'));return fetchWithTimeout(url,{method:'GET',cache:'no-store',redirect:'follow'},10000)};   // 接続先の無い端末は Google へ聞かない
   var revP;try{revP=(window.SUResRead&&window.SUResRead.stateRev)?window.SUResRead.stateRev(gasRev,{key:'srev'}):gasRev()}catch(eR){revP=gasRev()}
   return Promise.resolve(revP)
     .then(function(r){return r.text()})
@@ -3183,7 +3205,7 @@ function admAfterBk_(){
 function admEnsure(){
   if(getDeviceRole()==='field') return;   /* ★現場端末では取りに行かない（2026-10-01） */
   if(admMap||admLoading) return;
-  if(!CFG.url){ admErr='入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）'; paintAdmBar(); return; }
+  if(!rmOn_()){ admErr='入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）'; paintAdmBar(); return; }
   /* ★保存の後で控えが古い時（bkStale_）は使わずに取り直す（保存した入居日を出すため） */
   if(!bkStale_&&admFromBk_()){ paintAdmBar(); if(curView==='adm') renderRoster(); return; }   // 控えから作れた（呼び出し元は先に描いているので描き直す）
   admLoading=true; admErr=''; paintAdmBar();
@@ -3595,7 +3617,7 @@ function renderRoster(){
   }
   if(!list.length){box.innerHTML='<div class="empty">'+(roster.length?'該当する入居者がいません':'入居者がいません。「同期設定」でURLを設定するか「新規」で登録してください')+'</div>';
     /* 接続先が無い時は、何が足りないかと接続設定へのリンクを添える（2026-11-02 便4・現場端末は接続設定を使わないので出さない） */
-    if(!roster.length&&!CFG.url&&getDeviceRole()!=='field'){ if(box.firstChild) box.firstChild.appendChild(rmNoUrlGuide_()); }
+    if(!roster.length&&!rmOn_()&&getDeviceRole()!=='field'){ if(box.firstChild) box.firstChild.appendChild(rmNoUrlGuide_()); }
     return}
   var html;
   if(curView==='fl2'||curView==='fl4'){
@@ -3776,7 +3798,7 @@ function bkEnsure(force){
   if(getDeviceRole()==='field') return;   /* ★現場端末では取りに行かない（2026-10-01） */
   if(bkLoading) return;
   if(bkRows&&!force) return;
-  if(!CFG.url){ bkErr='入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）'; paintShBars(); return; }
+  if(!rmOn_()){ bkErr='入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）'; paintShBars(); return; }
   var seq=bkStaleSeq_;
   /* ★出した時の世代。応答を待つ間に現場用へ切り替わったら（devGen が進む）、届いた応答は捨てる（2026-10-01） */
   var dg=devGen;
@@ -4891,7 +4913,7 @@ function fullEnsure(force){
   if(getDeviceRole()==='field') return;
   if(fullLoading) return;
   if(fullMap&&!force) return;
-  if(!CFG.url){ fullErr='入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）'; paintShBars(); return; }
+  if(!rmOn_()){ fullErr='入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）'; paintShBars(); return; }
   var ids=shBase().map(function(r){ return r.id; });
   if(!ids.length){ fullErr='在籍者が居ません'; paintShBars(); return; }
   var gen=++fullGen;
@@ -8485,7 +8507,7 @@ function mealLoad(force){
   if(getDeviceRole()==='field') return;
   if(mealLoading||mealSaving) return;
   if(mealRows&&!force) return;
-  if(!CFG.url){ mealRows=null; mealSetMsg_('入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）'); paintMealBar(); renderRoster(); return }
+  if(!rmOn_()){ mealRows=null; mealSetMsg_('入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）'); paintMealBar(); renderRoster(); return }
   var seq=++mealSeq;
   var dg=devGen;   // 出した時の世代。現場用へ切り替わった後に届いた応答は捨てる（mealSeq は保存の確認と共用なので進めない）（2026-10-01）
   mealLoading=true; mealSetMsg_('取得中…'); paintMealBar(); renderRoster();
@@ -8988,7 +9010,7 @@ function openResident(id){
   $('viewBox').innerHTML='<div class="loading">読み込み中…</div>';
   if($('viewToc'))$('viewToc').hidden=true;   /* 前の方の目次を残さない（2026-10-16 第2弾） */
   paintHospBtn(null);   // 取得できるまでは入院トグルを出さない（前の人の状態で押させない）
-  if(!CFG.url){$('viewBox').innerHTML='<div class="empty">同期設定のURLが未設定です</div>';if(typeof rmNoUrlGuide_==='function'&&getDeviceRole()!=='field'&&$('viewBox').firstChild)$('viewBox').firstChild.appendChild(rmNoUrlGuide_());return}
+  if(!rmOn_()){$('viewBox').innerHTML='<div class="empty">同期設定のURLが未設定です</div>';if(typeof rmNoUrlGuide_==='function'&&getDeviceRole()!=='field'&&$('viewBox').firstChild)$('viewBox').firstChild.appendChild(rmNoUrlGuide_());return}
   /* ★現場端末では取りに行かない（保険・2026-10-01）。ブロック表示の下で取りに行かない。この画面は現場端末では使えない */
   if(getDeviceRole()==='field') return;
   /* 薬効辞書（med_dict）も同時に取りに行く（2026-09-24 本人決定・案A）。
@@ -9668,7 +9690,7 @@ function runMedsAudit(){
   if(medsAuditBusy) return;
   var out=$('medsAuditOut'); if(!out) return;
   if(!medsFxOk_()){ out.innerHTML='<p class="muted" style="color:var(--ng)">'+esc(MEDS_FX_NG)+'</p>'; return; }
-  if(!CFG.url){ out.innerHTML='<p class="muted" style="color:var(--ng)">先に同期設定のURLと合言葉を保存してください。</p>'; return; }
+  if(!rmOn_()){ out.innerHTML='<p class="muted" style="color:var(--ng)">先に同期設定のURLと合言葉を保存してください。</p>'; return; }
   var targets=roster.filter(function(r){ return r && r.active!==false && r.id!=null; });
   if(!targets.length){ out.innerHTML='<p class="muted">名簿が空です。先に一覧を読み込んでください。</p>'; return; }
   if(!confirm(targets.length+' 名を1人ずつ読み取ります（書き込みはしません）。\n'
@@ -10823,7 +10845,7 @@ function hospApplyPend_(rec){
 }
 function toggleHosp(){
   if(!curResident||curResident.id==null)return;
-  if(!CFG.url){toast('⚠️ 入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）');return}
+  if(!rmOn_()){toast('⚠️ 入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）');return}
   var next=!curResident.hospitalized, b=$('hospBtn');
   /* ★取り直しで照合する時のために「誰の・どちらへの変更か」を控える。
      応答を待つ間に別の方を開かれても、控えた id で判定すれば取り違えない。 */
@@ -12573,7 +12595,7 @@ function collectForm(){
 function saveResident(){
   var rec=collectForm();
   if(!rec.name){toast('⚠️ 氏名は必須です');return}
-  if(!CFG.url){toast('⚠️ 入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）');return}
+  if(!rmOn_()){toast('⚠️ 入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）');return}
   rec.updatedAt=new Date().toISOString();
   if(typeof rmWho_==='function'){ rec.updatedBy=rmWho_(); rec.updatedByAt=rec.updatedAt; }   /* 最後に直した人（GAS は dataJson に丸ごと残す） */
   /* ★baseUpdatedAt は record の外に添える（旧GASは未知の項目を無視＝後方互換。
@@ -13520,12 +13542,15 @@ function a4EnsureDayMap(){
   /* ★出した時の世代。応答を待つ間に現場用へ切り替わったら、届いた応答は控えにも失敗の印にも入れない（2026-10-01） */
   var dg=devGen;
   var t=a4SyncTarget();
-  if(!t.endpoint)return Promise.resolve(a4DayFail_('週間計画の接続先が未設定のため、デイ利用欄は「未確認」で印刷します'));
+  /* 週間計画の接続先の無い端末は、新しい保存先から読めた時だけ使う（2026-11-08 代表者「端末ごとの設定を極限までなくす」）。
+     読めない時は今までと同じ「接続先が未設定」で、Google へは送らない */
+  if(!t.endpoint&&!(window.SUKv&&SUKv.readRouted))return Promise.resolve(a4DayFail_('週間計画の接続先が未設定のため、デイ利用欄は「未確認」で印刷します'));
   /* 統合（2026-09-27）: 週間計画の保存先を Supabase に切り替えた後は、ログインしている端末だけ Supabase から読む。
      スイッチが切・未ログイン・失敗の時は null＝今までどおり Google（写し返しで最新）。読むだけ。 */
   var viaKv=(window.SUKv&&SUKv.readRouted)?SUKv.readRouted({action:'get', key:'care_schedule_v2'}):Promise.resolve(null);
   a4DayPromise=viaKv.then(function(v){
       if(v) return JSON.stringify(v);
+      if(!t.endpoint) throw new Error('A4_NO_EP');
       return fetchWithTimeout(t.endpoint,{method:'POST',
         headers:{'Content-Type':'text/plain;charset=utf-8'},
         body:JSON.stringify({action:'get', key:'care_schedule_v2', token:t.token})},25000)
@@ -13544,7 +13569,7 @@ function a4EnsureDayMap(){
       try{ csShare_=revBuildShare_(j.data); }catch(eS){ csShare_=null; }
       return '';
     })
-    .catch(function(){ if(dg!==devGen) return ''; return a4DayFail_('週間計画を取得できなかったため、デイ利用欄は「未確認」で印刷します'); })
+    .catch(function(e){ if(dg!==devGen) return ''; if(e&&e.message==='A4_NO_EP') return a4DayFail_('週間計画の接続先が未設定のため、デイ利用欄は「未確認」で印刷します'); return a4DayFail_('週間計画を取得できなかったため、デイ利用欄は「未確認」で印刷します'); })
     /* ★切り替え後に始まった新しい取得の印（a4DayPromise）を、古い応答が消さないように世代を見る */
     .then(function(msg){ if(dg===devGen) a4DayPromise=null; return msg; });
   return a4DayPromise;
@@ -14248,7 +14273,7 @@ function loadData(){
   paintShBars();
   if(curView==='cm'||curView==='lvl'||curView==='cert') bkEnsure(false);
   if(curView==='fam'||curView==='hist'||curView==='md'){ bkEnsure(false); fullEnsure(false); mdEnsure(false); }
-  if(CFG.url)refreshRoster();else setSync('未接続');
+  if(rmOn_())refreshRoster();else setSync('未接続');
   srevStart(); // stateRev 追い読み開始（URL未設定中は tick が無動作・二重呼びは内部ガード）
   mcStart();   // 薬の変更候補（管理者だけ・現場端末では何もしない）（2026-10-06）
   yjGate_();   // 薬情の取り込みの入口（管理者だけ・現場端末では出さない）（2026-10-22）
@@ -14368,7 +14393,7 @@ function saveSyncCfg(){
   /* ★ログインの役割の確かめ（su-app-gate.js）をまだ通っていない時（現場端末の止めの画面から事務所PCへ戻した時）は、
      ここで読まずに確かめに任せる（2026-10-29 反証レビューの指摘・確かめを通らずに名簿を読む経路を閉じる） */
   if(!rmGateOk_){ rmGate_(); return; }
-  loadData();
+  rmLiveGate_(loadData);
 }
 function testSync(){
   if(!$('cfgUrl').value.trim()){toast('URLを入力してください');return}
@@ -14551,7 +14576,7 @@ function bulkFamBuild(r, dirty){
 }
 
 function openBulk(){
-  if(!CFG.url){ toast('⚠️ 入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）'); return; }
+  if(!rmOn_()){ toast('⚠️ 入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）'); return; }
   $('mBulk').classList.add('on');
   navEnter();   // 戻る（スワイプ）1回で、ページを出ずにこのモーダルを閉じられるようにする
   if(bulkRows){ renderBulk(); return; }
@@ -15395,6 +15420,10 @@ function rmGate_(){
 }
 function rmStart_(){
   rmGateOk_=true;
+  /* 接続先の無い事務所PCは、ログインだけで使えるかを確かめてから読み始める（2026-11-08・確かめは1回だけ） */
+  rmLiveGate_(rmStartBody_);
+}
+function rmStartBody_(){
   loadData();
   /* ★前回開いていた方の詳細画面へ戻す（原則11）。復元順は「保存済みタブ・絞り込みの後」。
      次のどれかに当たれば開かない＝迷ったら一覧のままにする（開かない側へ倒す）:
@@ -15417,8 +15446,8 @@ function rmStart_(){
          history.replaceState(history.state,'',location.pathname+(_q?'?'+_q:'')+location.hash); }catch(e){}
   }
   var _openId=readOpenId();
-  if(_urlId!==null && !_urlView && CFG.url) openResident(_urlId);
-  else if(!_urlView && CFG.url && _openId!=null &&
+  if(_urlId!==null && !_urlView && rmOn_()) openResident(_urlId);
+  else if(!_urlView && rmOn_() && _openId!=null &&
      roster.some(function(r){return String(r.id)===String(_openId)})) openResident(_openId);
   /* 個人画面を復元しなかったのに段が残っている場合は消費する（一覧からの戻るを1回で出られるように） */
   if(_hadNavState&&$('sc-list').classList.contains('on')){ _navPushed=false; try{history.back();}catch(e){} }

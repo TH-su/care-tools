@@ -200,7 +200,7 @@ async function run(R, a, opts, gas) {
   console.log('H 画面のつなぎ');
   const read = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
   const SCREENS = [
-    ['resident-master.html', /var gasRev=function\(\)\{return fetchWithTimeout\(url,\{method:'GET',cache:'no-store',redirect:'follow'\},10000\)\};[\s\S]{0,200}SUResRead\.stateRev\(gasRev,\{key:'srev'\}\)/],
+    ['resident-master.html', /var gasRev=function\(\)\{if\(!mu\)return Promise\.reject\(new Error\('NO_URL'\)\);return fetchWithTimeout\(url,\{method:'GET',cache:'no-store',redirect:'follow'\},10000\)\};[\s\S]{0,200}SUResRead\.stateRev\(gasRev,\{key:'srev'\}\)/],
     ['care-schedule.html', /var csRevGas_ = function\(\)\{ return csFetchTimeout_\(cfg\.url \+ sep \+ 'action=stateRev', \{ method: 'GET', redirect: 'follow' \}, CS_STATEREV_PROBE_TIMEOUT_MS\); \};[\s\S]{0,200}SUResRead\.stateRev\(csRevGas_, \{ key: 'care' \}\)/],
     ['weight-record.html', /var gasRev = function\(\)\{ return fetchTO\(url, \{ cache:'no-store' \}, WR_SREV_TIMEOUT_MS\); \};[\s\S]{0,200}SUResRead\.stateRev\(gasRev, \{ key:'weight' \}\)/],
     ['support-overview.html', /var gasRev = function \(\) \{ return fetch\(c\.url \+ \(c\.url\.indexOf\('\?'\)>=0\?'&':'\?'\) \+ 'action=stateRev',\s*\{method:'GET',cache:'no-store',redirect:'follow'\}\); \};[\s\S]{0,200}SUResRead\.stateRev\(gasRev, \{ key: 'support' \}\)/],

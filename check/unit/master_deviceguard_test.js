@@ -79,7 +79,7 @@ const RMARK = '{"目印":"一覧キャッシュは書き換えられていない
 /* 直す前の版には無いことがある名前（G7 で旧版を読む時は、旧版に有る時だけ切り出す。
    旧版が 23089f2 相当なら全部無い・006442b 相当なら全部有る） */
 const NEW_VARS = ['devGen'];
-const NEW_FNS = ['devDirty_', 'devReload_', 'onDeviceRoleStorage_'];
+const NEW_FNS = ['devDirty_', 'devReload_', 'onDeviceRoleStorage_', 'rmOn_', 'rmLiveGate_'];
 const hasVar = (src, n) => src.indexOf('\nvar ' + n + '=') >= 0;
 const hasFn = (src, n) => src.indexOf('\nfunction ' + n + '(') >= 0;
 
@@ -113,7 +113,7 @@ function load(src, old){
   const box = {
     localStorage: { getItem(k){ return store.has(k) ? store.get(k) : null; }, setItem(k, v){ store.set(k, String(v)); }, removeItem(k){ store.delete(k); } },
     DEVICE_KEY: 'su_device_role', ROSTER_KEY: 'rmaster_roster',
-    CFG: { url: 'https://example.invalid/exec', token: '', vmaUrl: '' },
+    CFG: { url: 'https://example.invalid/exec', token: '', vmaUrl: '' }, RM_LIVE: false, rmLiveTried_: true,   /* 2026-11-08: ログインだけで使えるかは確かめ済み・使えない＝今までどおり */
     $: fakeEl,
     /* openResident・a4EnsureDayMap・bkEnsure・admEnsure・mealLoad は実物を切り出す（下の fns。G9〜G12 で使う） */
     /* showScreen・navEnter・navLeave・navTopModal と popstate の受け口は実物を切り出す（下の fns・lines）。

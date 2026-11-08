@@ -235,7 +235,7 @@ function fakeAuth(st, rpc) {
     const rm = fs.readFileSync(path.join(ROOT, 'resident-master.html'), 'utf8');
     const ss = rm.slice(rm.indexOf('\nfunction saveSyncCfg('), rm.indexOf('\nfunction testSync('));
     t('入居者マスタ: 現場端末の止めから事務所PCへ戻した時も、確かめを通ってから名簿を読む（反証レビューの指摘）',
-      ss.indexOf('if(!rmGateOk_){ rmGate_(); return; }') > 0 && ss.indexOf('if(!rmGateOk_){ rmGate_(); return; }') < ss.lastIndexOf('loadData();'));
+      ss.indexOf('if(!rmGateOk_){ rmGate_(); return; }') > 0 && ss.indexOf('if(!rmGateOk_){ rmGate_(); return; }') < ss.lastIndexOf('rmLiveGate_(loadData);'));
     t('入居者マスタ: 確かめが通った時だけ印を立てる', /function rmStart_\(\)\{\n  rmGateOk_=true;/.test(rm));
     t('入居調整: 確かめが通った時だけ印を立てる', /function afStart_\(\) \{\n  afGateOk_ = true;/.test(af));
   }
