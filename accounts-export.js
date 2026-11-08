@@ -128,7 +128,10 @@
       } },
     { id: 'adm', title: '入居調整',
       read: async function (t) {
-        var j = need(await post(t, { action: 'get', key: 'admission_flow_v1' }));
+        var j0 = await post(t, { action: 'get', key: 'admission_flow_v1' });
+        // 写し返しを止める計画の段2（入居調整の GAS の読み口を断る印 ADMISSION_READ_CLOSED）を入れた後は、Google の台帳を読めない（care-backend 2026-11-08）
+        if (j0 && j0.code === 'adm_read_closed') { var sw = new Error('switched'); sw.switched = true; sw.note = '新しい保存先へ切り替え済み（台帳はデータベースの書き出し db/adm_docs に入っている）'; throw sw; }
+        var j = need(j0);
         // 入居調整を新しい保存先へ切り替えた後（GAS の応答に switched）は、Google の台帳は写し返しの分だけ遅れていることがある（入居調整の反証レビュー 指摘4）
         var lag = j.switched === true ? '。新しい保存先へ切り替えた後のため、Google の台帳は写し返しの分だけ遅れていることがあります（正本は新しい保存先）' : '';
         return { parts: { ledger: j.data == null ? null : j.data }, count: j.data == null ? 0 : 1, unit: '台帳', note: '添付ファイルは入っていません' + lag };
