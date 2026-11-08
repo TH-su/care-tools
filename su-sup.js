@@ -202,5 +202,26 @@
     return res;
   }
 
-  root.SUSup = { send: send, refreshFlags: refreshFlags, _forgetMode: function () { modeCache = null; modeAt = 0; }, _reset: function () { modeCache = null; modeAt = 0; ownFlags = null; flagsAt = 0; flagsP = null; authP = null; } };
+  /* この端末が「接続先・合言葉なしで、ログインだけで」消耗品管理を使えるか（2026-11-08 代表者「端末ごとの設定を極限までなくす」）。
+   * スイッチが入・ログインが確かめられた（OK）・印が「切り替えた後」の3つがそろう時だけ true。それ以外・分からない・時間切れは false
+   * （false の時、画面は今までどおり接続先の設定を求める）。読むだけで、端末には何も書かない（スイッチの控えは refreshFlags と同じ）。例外は外へ出さない */
+  function liveReady() {
+    try {
+      var tm = null;
+      var late = new Promise(function (ok) { tm = setTimeout(function () { ok(false); }, 8000); });
+      var probe = refreshFlags().then(function () {
+        if (!switchOn()) return false;
+        return loadAuth().then(function (A) {
+          if (!A) return false;
+          return Promise.resolve().then(function () { return A.check(); }).then(function (st) {
+            if (!st || st.status !== (A.STATUS || {}).OK) return false;
+            return mode(A, true).then(function (m) { return m === 'live'; });
+          });
+        });
+      }).then(function (v) { return v === true; }, function (e) { note('使える状態', e); return false; });
+      return Promise.race([probe, late]).then(function (v) { clearTimeout(tm); return v === true; });
+    } catch (e) { return Promise.resolve(false); }
+  }
+
+  root.SUSup = { send: send, liveReady: liveReady, refreshFlags: refreshFlags, _forgetMode: function () { modeCache = null; modeAt = 0; }, _reset: function () { modeCache = null; modeAt = 0; ownFlags = null; flagsAt = 0; flagsP = null; authP = null; } };
 })(typeof window !== 'undefined' ? window : this);
