@@ -435,7 +435,9 @@ const ON = { supabase: { care_schedule_v2: true, master_roster_read: true } };
     t('care-schedule.html: Google への要求（raw）は今までと同じ本文・同じ打ち切り',
       body.indexOf("var rb = { action: 'getRoster', token: cfg.token };") > 0 &&
       body.indexOf("body: JSON.stringify(b), redirect: 'follow' },\n                  CS_STATEREV_ROSTER_TIMEOUT_MS);\n    })\n      .then(function(r){ return r.json(); });") > 0);
-    t('care-schedule.html: 入口が無い・例外の時は今までどおり Google', /catch\(eR\)\{ csRosterP_ = csRosterRaw_\(\); \}/.test(body));
+    /* 2026-11-08: 名簿の取り直しは officeOnly（su-res-read.js）の内側に写し→Google の今の読み方を置く。部品が無い・例外の時も今の読み方 */
+    t('care-schedule.html: 入口が無い・例外の時は今までどおり Google', /catch\(eR\)\{ return csRosterRaw_\(\); \}/.test(body) && /catch\(eR2\)\{ csRosterP_ = csRosterOld_\(\); \}/.test(body)
+      && /window\.SUResRead \? Promise\.resolve\(window\.SUResRead\.call\(\{ action: 'getRoster' \}, csRosterOld_, \{ screen: 'care-schedule', officeOnly: true \}\)\) : csRosterOld_\(\)/.test(body));
   }
 
   t('部品は console.log を使わない', !/console\.log/.test(SRC));

@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-AU6W145/4BMTOF0jAShlFN9AbdAY/u3JNpr+gLZFjhI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-qWYTbnwad1ulJSgHUO69/UNYOPTPhMxvgLJhd9212yg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -2011,7 +2011,7 @@ body.meal-on #sc-list{max-width:none}
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
-<script src="su-res-read.js?v=2026-11-02"></script>
+<script src="su-res-read.js?v=2026-11-08"></script>
 <script>
 /* 黙ると困る失敗（保存・同期の補助）を、画面には出さずに記録へ残す（2026-10-08・監査10月版 #8）。
    行き先は su-errors.js の note＝コンソールと記録先（同期ログ・不具合報告の控えと自動報告）。トーストは出さない。
@@ -2742,7 +2742,12 @@ function srevTick(){
      最大3.5秒かかっており、通信を足すと5秒を超えて空振りしていた。空振りすると
      srevFailAt により【5分間まるごと休止】するため、他端末の変更が最大6分遅れて届く
      （実行ログに6分間隔の穴として現れていた）。 */
-  return fetchWithTimeout(url,{method:'GET',cache:'no-store',redirect:'follow'},10000)
+  /* 2026-11-08（写し返しを止める計画・代表者の決定 2026-11-07 問い6=A）: 入居者マスタを新しい保存先へ切り替えた後は、事務所PCで
+     事務所・管理者としてログインしている時だけ、新しい保存先の版数を読む（su-res-read.js の stateRev・応答の形は同じ）。
+     それ以外・部品が無い時は下の Google への照会をそのまま送る（送り方は変えない） */
+  var gasRev=function(){return fetchWithTimeout(url,{method:'GET',cache:'no-store',redirect:'follow'},10000)};
+  var revP;try{revP=(window.SUResRead&&window.SUResRead.stateRev)?window.SUResRead.stateRev(gasRev,{key:'srev'}):gasRev()}catch(eR){revP=gasRev()}
+  return Promise.resolve(revP)
     .then(function(r){return r.text()})
     .then(function(t){
       var d=null;try{d=JSON.parse(t)}catch(e){}
