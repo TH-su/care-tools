@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-vod1u6TW5AQX+arLYCC7F0/D9vA19KUF0DEze3pvHks='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-feRe40rQ8QR4ZH3gcGLUqBALLYDW88YvJ9ZlsqXmIYU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -60,6 +60,9 @@ body {
 .purpose .pv { color: var(--pri-d); }
 .purpose .ps { color: var(--orange); }
 .purpose-legend { color: var(--g7); }
+/* 連動の準備ができずにあきらめた時だけ凡例の後ろに出す知らせ（2026-11-08 商用化の点検）。画面だけ・印刷に出さない */
+.sync-warn { margin-left: 8px; color: #8f0c0c; font-weight: 700; }
+@media print { .sync-warn { display: none; } }
 
 .panes { flex: 1; display: flex; min-height: 0; }
 .pane { flex: 1 1 50%; min-width: 0; position: relative; }
@@ -258,8 +261,8 @@ body {
       bindOnce(B, 's', A, 'v');
       equalize();
     } catch (e) {}                               // 一度の失敗でポーリングを止めない
-    if (bound.v && bound.s && equalized) return;
-    if (tries++ > 150) return;                   // 約30秒（12週取得＋描画の待ちを含む上限）
+    if (bound.v && bound.s && equalized) { if (warn) showLegend(); return; }   // 後から整ったら知らせを消す
+    if (tries++ > 150) { showGiveUp(); return; } // 約30秒（12週取得＋描画の待ちを含む上限）。あきらめた時は画面で知らせる
     schedule();
   }
 
@@ -284,7 +287,19 @@ body {
   var legend = document.getElementById('cmpLegend');
   var LEGEND_ON = '連動中：縦に動かすと同じ時刻、横に動かすと同じ曜日、拡大・縮小すると同じ倍率に、もう片方がそろいます。';
   var LEGEND_OFF = '連動を切っています：左右は別々に動きます。「時刻・曜日・倍率を連動」を入れると、次に動かした時からまたそろいます。';
-  function showLegend() { if (legend) legend.textContent = syncOn.checked ? LEGEND_ON : LEGEND_OFF; }
+  function showLegend() { warn = null; if (legend) legend.textContent = syncOn.checked ? LEGEND_ON : LEGEND_OFF; }   // 言い換えると、あきらめた知らせも消える
+  // 連動の準備ができずにあきらめた時の知らせ（連動が入の時だけ）。凡例の中に textContent で足す
+  var warn = null;
+  var GIVEUP = '連動の準備ができませんでした。ページを読み込み直してください';
+  function showGiveUp() {
+    if (!legend || !syncOn.checked || warn) return;
+    showLegend();
+    var el = document.createElement('span');
+    el.className = 'sync-warn';
+    el.textContent = GIVEUP;
+    legend.appendChild(el);
+    warn = el;
+  }
   syncOn.addEventListener('change', showLegend);
   showLegend();
   tick();
