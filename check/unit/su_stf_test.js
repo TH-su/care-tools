@@ -19,12 +19,12 @@ const GAS = 'https://script.google.com/macros/s/EXAMPLE_STAFF/exec';
 
 function box(o) {
   o = o || {};
-  const store = { su_backend_flags: JSON.stringify({ supabase: o.flags || {} }) };
+  const store = o.flagsFail ? {} : { su_backend_flags: JSON.stringify({ supabase: o.flags || {} }) };
   if (o.field) store.su_device_role = 'field';
   const writes = [], invokes = [], rpcs = [], fetches = [];
   const A = {
     STATUS: { OK: 'ok' },
-    check: async () => (o.signedOut ? { status: 'signed_out' } : o.forbidden ? { status: 'forbidden' } : { status: 'ok', role: 'office' }),
+    check: async () => { if (o.checkReject) throw new Error('net'); return (o.signedOut ? { status: 'signed_out' } : o.forbidden ? { status: 'forbidden' } : o.status ? { status: o.status } : { status: 'ok', role: o.role || 'office' }); },
     client: () => ({
       rpc: async (n) => { rpcs.push(n); if (o.modeErr) return { error: o.modeErr }; return { data: { ok: true, mode: (o.modeRef ? o.modeRef.m : o.mode) || 'shadow', version: 3 } }; },
       functions: { invoke: (fn, opt) => { invokes.push({ fn, body: JSON.parse(JSON.stringify(opt.body)) }); return typeof o.reply === 'function' ? o.reply(invokes.length) : Promise.resolve(o.reply || { data: { ok: true, ver: 4, rows: [] }, error: null }); } },
@@ -35,7 +35,7 @@ function box(o) {
     localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k) => writes.push(k), removeItem: (k) => writes.push(k) },
     fetch: (url, init) => {
       fetches.push({ url, init });
-      if (/su-backend\.json/.test(url)) return Promise.resolve({ ok: true, json: async () => ({ supabase: o.flags || {} }) });
+      if (/su-backend\.json/.test(url)) return o.flagsFail ? Promise.reject(new Error('net')) : Promise.resolve({ ok: true, json: async () => ({ supabase: o.flags || {} }) });
       return Promise.resolve({ ok: true, json: async () => ({ ok: true, rows: 1 }) });
     },
     SUAuth: A, setTimeout, clearTimeout, Promise, JSON, Object, Error, String, Number, Date
@@ -161,6 +161,86 @@ const BODY = () => ({ action: 'bulkSave', token: 'tok-staff', accessToken: 'h.p.
     await b.send(BODY());
     t('H localStorage へ書かない', b.writes.length === 0 && !/setItem|sessionStorage/.test(SRC));
     t('H 読み込み済みなら二重に動かさない', /if \(root\.SUStf\) return;/.test(SRC));
+  }
+  console.log('L ログインだけで使える（接続先・合言葉の無い端末・2026-11-08 代表者「端末ごとの設定を極限までなくす」）');
+  {
+    const cases = [
+      ['スイッチが入・ログイン OK（事務所）・印が切り替えた後', { flags: { staff: true }, mode: 'live' }, true],
+      ['管理者のアカウント', { flags: { staff: true }, mode: 'live', role: 'admin' }, true],
+      ['スイッチが切', { flags: { staff: false }, mode: 'live' }, false],
+      ['スイッチが無い', { mode: 'live' }, false],
+      ['写しの期間', { flags: { staff: true }, mode: 'shadow' }, false],
+      ['0045 の前（印の関数が無い）', { flags: { staff: true }, modeErr: { code: 'PGRST202' } }, false],
+      ['印の口で断られた', { flags: { staff: true }, modeErr: { code: '42501' } }, false],
+      ['印を読めない', { flags: { staff: true }, modeErr: { code: 'XX000' } }, false],
+      ['現場の端末', { flags: { staff: true }, mode: 'live', field: true }, false],
+      ['現場のアカウント', { flags: { staff: true }, mode: 'live', role: 'field' }, false],
+      ['ログインしていない', { flags: { staff: true }, mode: 'live', signedOut: true }, false],
+      ['2段階認証がまだ', { flags: { staff: true }, mode: 'live', status: 'mfa_verify' }, false],
+      ['使えないアカウント', { flags: { staff: true }, mode: 'live', status: 'denied' }, false],
+      ['ログインの確かめが失敗', { flags: { staff: true }, mode: 'live', checkReject: true }, false],
+      ['スイッチを読めない（控えも無い）', { flagsFail: true, mode: 'live' }, false]
+    ];
+    for (const [label, o, want] of cases) {
+      const b = box(o);
+      let v, threw = false;
+      try { v = await b.w.SUStf.liveReady(); } catch (e) { threw = true; }
+      t('L ' + label + ' → ' + want + '（例外を出さない・受け口も Google も呼ばない・端末に書かない）',
+        !threw && v === want && b.invokes.length === 0 && b.gas() === 0 && b.writes.length === 0 && b.fetches.every(f => /su-backend\.json/.test(f.url)), { v, threw, inv: b.invokes.length, w: b.writes });
+    }
+    {
+      const b = box({ flags: { staff: true }, mode: 'live', reply: () => new Promise(() => {}) });
+      b.w.SUAuth.check = () => new Promise(() => {});
+      const st = Date.now();
+      const v = await b.w.SUStf.liveReady();
+      t('L 答えが来ない時は8秒で false（待ち続けない）', v === false && Date.now() - st >= 7900 && Date.now() - st < 9500, Date.now() - st);
+    }
+    {
+      const b = box({ flags: { staff: true }, mode: 'live' });
+      await b.w.SUStf.liveReady();
+      let gasN = 0;
+      const r = await b.w.SUStf.send({ action: 'list', token: '' }, () => { gasN++; return Promise.reject(new Error('nocfg')); }, { screen: 'staff-master', url: '' });
+      const d = JSON.parse(await r.text());
+      await tick(); await tick();
+      t('L 使える時は接続先なしで受け口へ送れる（Google へ送る関数は呼ばない・写し返しは頼まない）', d.ok === true && b.invokes.length === 1 && gasN === 0 && b.fetches.filter(f => !/su-backend\.json/.test(f.url)).length === 0, d);
+    }
+  }
+  console.log('L 画面の分け方（静的な確かめ）');
+  {
+    const PAGE = fs.readFileSync(path.join(__dirname, '..', '..', 'staff-master.html'), 'utf8');
+    const ATS = fs.readFileSync(path.join(__dirname, '..', '..', 'ats.html'), 'utf8');
+    t('L 職員マスタ: 部品の版は2画面でそろう', /su-stf\.js\?v=2026-11-08"/.test(PAGE) && /su-stf\.js\?v=2026-11-08"/.test(ATS));
+    t('L 職員マスタ: 接続先・合言葉が無くても ST.live の時だけ受け口へ送る（それ以外は今までと同じ断り）',
+      /if \(noCfg && !\(ST\.live === true && window\.SUStf\)\) return Promise\.reject\(noCfg\);/.test(PAGE)
+      && /if \(noCfg\) return window\.SUStf\.send\(p, function \(\) \{ return Promise\.reject\(noCfg\); \}, \{ screen: 'staff-master', url: ''/.test(PAGE));
+    t('L 職員マスタ: 接続先が無い時は Google へ送らない（fetch(cfg.url) の前に noCfg で分ける）',
+      PAGE.indexOf("if (noCfg) return window.SUStf.send(p,") > 0 && PAGE.indexOf("if (noCfg) return window.SUStf.send(p,") < PAGE.indexOf("if (window.SUStf) return window.SUStf.send(p, function () { return fetch(cfg.url, opt); }"));
+    t('L 職員マスタ: 送れるかは cfgReady（接続先と合言葉、または ST.live）で見る',
+      /function cfgReady\(\) \{ var c = loadCfg\(\); return \(URL_OK_RE\.test\(c\.url\) && !!c\.token\) \|\| ST\.live === true; \}/.test(PAGE));
+    const fnBody = (src, name) => { const i = src.indexOf('function ' + name + '('); return i < 0 ? '' : src.slice(i, src.indexOf('\n}', i)); };
+    t('L 職員マスタ: corpWhy は接続先と合言葉、または ST.live で見る', /if \(\(!URL_OK_RE\.test\(cfg\.url\) \|\| !cfg\.token\) && ST\.live !== true\) return '接続先URLと合言葉を入れて保存してください';/.test(fnBody(PAGE, 'corpWhy')));
+    t('L 職員マスタ: 初回の案内は、ログインだけで使える端末（ST.live）では始めない', /if \(\(URL_OK_RE\.test\(cfg\.url\) && cfg\.token\) \|\| ST\.live === true\) return false;/.test(fnBody(PAGE, 'startWizIfNew')));
+    for (const fn of ['loadList', 'loadEnums', 'loadCorp', 'loadCommittees', 'cmtWhyNoEdit', 'updateEnumBtn']) {
+      const b = fnBody(PAGE, fn);
+      t('L 職員マスタ: ' + fn + ' は cfgReady で見る（接続先だけの確かめを残さない）', /cfgReady\(\)/.test(b) && !/URL_OK_RE\.test\(cfg\.url\) \|\| !cfg\.token/.test(b), b.slice(0, 200));
+    }
+    t('L 職員マスタ: 使えるかの確かめは起動の時に1回だけ（ST.liveTried）・その後に読み込む',
+      /if \(!cfgReady\(\) && !ST\.liveTried\) \{\s*ST\.liveTried = true;[\s\S]{0,120}probeLive\(\)\.then\(startLoads_, startLoads_\);\s*\} else startLoads_\(\);/.test(PAGE));
+    const ping = fnBody(PAGE, 'pingNow_');
+    t('L 職員マスタ: 疎通確認は、接続先があれば今までどおり Google（apiPing）・無ければ ST.live の時だけ受け口・どちらでもなければ呼ばない',
+      /if \(URL_OK_RE\.test\(loadCfg\(\)\.url\)\) return apiPing\(\);\s*if \(ST\.live === true\) return apiPost\('ping', \{\}\);\s*return null;/.test(ping));
+    t('L 職員マスタ: apiPing（Google への GET）は変えていない', /function apiPing\(\) \{\n  var cfg = loadCfg\(\);\n  if \(!URL_OK_RE\.test\(cfg\.url\)\) \{/.test(PAGE));
+    t('L 職員マスタ: ログインだけの端末に初回の案内（接続先の入力）を出さない',
+      /var on = lsGet\(UI_KEYS\.wiz\) === '1' && ST\.live !== true;/.test(PAGE));
+    t('L 職員マスタ: 書類は、ログインだけの端末では書類の正本も新しい保存先の時だけ押せる',
+      /\(!URL_OK_RE\.test\(cfg\.url\) \|\| !cfg\.token\) && !\(ST\.live === true && window\.SUDocLive && window\.SUDocLive\.liveNow\('stf'\)\)/.test(PAGE));
+    t('L 採用管理: 接続先が無くても stfLive の時だけ受け口へ送る（Google へ送る関数は断るだけ）',
+      /if\(noCfg&&!\(stfLive===true&&window\.SUStf\)\) return Promise\.reject\(\{nocfg:true\}\);/.test(ATS)
+      && /if\(noCfg\) return window\.SUStf\.send\(b,function\(\)\{ return Promise\.reject\(\{nocfg:true\}\); \},\{screen:'ats',url:''/.test(ATS)
+      && ATS.indexOf('if(noCfg) return window.SUStf.send(b,') < ATS.indexOf("if(window.SUStf) return window.SUStf.send(b,function(){ return fetch(cfg.url,opt); }"));
+    t('L 採用管理: 送れるかは接続先と合言葉、または stfLive・確かめは1回だけ',
+      /function stfReady_\(\)\{ return stfCfgSet_\(\)\|\|stfLive===true; \}/.test(ATS) && /if\(stfReady_\(\)\|\|stfLiveTried\) return Promise\.resolve\(stfReady_\(\)\);/.test(ATS));
+    t('L 採用管理: 「接続先が見つかりません」の断りは受け口の後でもそのまま伝える（届かないと取り違えない）', /if\(e&&\(e\.noAnswer\|\|e\.nocfg\)\) throw e;/.test(ATS));
   }
   console.log(`\n合格 ${pass} / 不合格 ${fail}`);
   process.exitCode = fail ? 1 : 0;

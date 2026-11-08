@@ -3,7 +3,7 @@
 <head>
   <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-zFOF6nv87fwkto1tAzl3Ub44QKPvryi+LkJcyQKuUCo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-VUkGgXs5mIgxzgwLyFR0TMi3fisNdmwcnYA/YJt/neo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="stfm-build" content="2026-11-06.2">
@@ -1510,7 +1510,7 @@ body.cmt-print{page:cmt}
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
-<script src="su-stf.js?v=2026-11-02"></script>
+<script src="su-stf.js?v=2026-11-08"></script>
 <script src="su-doc-live.js?v=2026-11-05.2"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-app-gate.js?v=2026-11-03"></script>
@@ -1721,6 +1721,9 @@ var ST = {
   caps: null, capsRetried: false, filesBusy: false,
   /* authOk: 合言葉が通ったか（初回の案内の2段目・2026-10-11）。疎通確認（ping）は合言葉を見ないので別に持つ */
   authOk: false,
+  /* live: 接続先・合言葉の無い端末で、ログインだけで新しい保存先を使える（SUStf.liveReady・2026-11-08 代表者「端末ごとの設定を極限までなくす」）。
+     liveTried: その確かめを起動の後に1回だけ行ったか（端末には残さない） */
+  live: false, liveTried: false,
   /* enums: サーバー（meta.enumsJson）の選択肢。null＝まだ取れていない＝calc.js の既定値で動く
      enumsAt: 選択肢を最後に保存した時刻（サーバーの目印）。null＝受け取れていない＝突き合わせを求めない */
   enums: {}, enumUsage: {}, enumsAt: null, enumDraft: null, enumBusy: false,
@@ -1779,6 +1782,20 @@ function saveCfg(patch) {
   var cur = loadCfg(), k;                     /* read-modify-write（他のキーを消さない） */
   for (k in patch) { if (Object.prototype.hasOwnProperty.call(patch, k) && patch[k] !== undefined) cur[k] = txt(patch[k]); }
   lsSet(CFG_KEY, JSON.stringify(cur));
+}
+/* 送れるか: この端末に接続先と合言葉がある、またはログインだけで新しい保存先を使える（ST.live）時 */
+function cfgReady() { var c = loadCfg(); return (URL_OK_RE.test(c.url) && !!c.token) || ST.live === true; }
+/* 接続先・合言葉の無い端末で、ログインだけで新しい保存先を使えるかを確かめる（2026-11-08 代表者「端末ごとの設定を極限までなくす」）。
+   使える時は ST.live を立てる。部品が無い・分からない時は今までどおり（接続先の設定を求める） */
+var liveProbeP = null;
+function probeLive() {
+  if (ST.live === true) return Promise.resolve(true);
+  if (!(window.SUStf && typeof window.SUStf.liveReady === 'function')) return Promise.resolve(false);
+  if (!liveProbeP) {
+    liveProbeP = window.SUStf.liveReady().then(function (v) { ST.live = v === true; return ST.live; }, function () { return false; });
+    liveProbeP.then(function () { liveProbeP = null; });
+  }
+  return liveProbeP;
 }
 
 /* ── 通信 ─────────────────────────────────────────────── */
@@ -1894,12 +1911,11 @@ function stfmAccessToken_() {
 /* timeoutMs を渡すと待ち時間を変えられる（省略時は 45 秒。大きい添付だけ長く待たせる） */
 function apiPost(action, body, timeoutMs) {
   var cfg = loadCfg(), payload = { action: action, token: cfg.token }, k;
-  if (!URL_OK_RE.test(cfg.url)) {
-    return Promise.reject(mkErr('接続先が設定されていません', '右上の歯車（設定）で接続先URLと合言葉を入れて保存してください。'));
-  }
-  if (!cfg.token) {
-    return Promise.reject(mkErr('合言葉が設定されていません', '右上の歯車（設定）で合言葉を入れて保存してください。'));
-  }
+  var noCfg = !URL_OK_RE.test(cfg.url) ? mkErr('接続先が設定されていません', '右上の歯車（設定）で接続先URLと合言葉を入れて保存してください。')
+    : (!cfg.token ? mkErr('合言葉が設定されていません', '右上の歯車（設定）で合言葉を入れて保存してください。') : null);
+  /* 接続先・合言葉の無い端末でも、ログインして新しい保存先で使える時（ST.live・SUStf.liveReady）は受け口へ送る（2026-11-08 代表者「端末ごとの設定を極限までなくす」）。
+     途中で写しの期間へ戻っていた時・添付を Google へ送る時は Google へ送れないので、今までと同じ「接続先が設定されていません」にする */
+  if (noCfg && !(ST.live === true && window.SUStf)) return Promise.reject(noCfg);
   if (body) { for (k in body) { if (Object.prototype.hasOwnProperty.call(body, k)) payload[k] = body[k]; } }
   /* 受付番号（REQ_WRITE_ACTIONS）。apiPost を呼ぶたびに新しい番号＝ブラウザの黙った送り直しだけが同じ番号になる */
   if (REQ_WRITE_ACTIONS.indexOf(action) >= 0) payload.reqId = newReqId();
@@ -1913,6 +1929,7 @@ function apiPost(action, body, timeoutMs) {
     if (ctl) opt.signal = ctl.signal;
     /* 新しい保存先への切り替え（統合 0045・su-stf.js）。スイッチが切・部品が無い時は今までどおり Google へ（送り方は変えない） */
     function viaStf() {
+      if (noCfg) return window.SUStf.send(p, function () { return Promise.reject(noCfg); }, { screen: 'staff-master', url: '', timeoutMs: ms });
       if (window.SUStf) return window.SUStf.send(p, function () { return fetch(cfg.url, opt); }, { screen: 'staff-master', url: cfg.url, timeoutMs: ms });
       return fetch(cfg.url, opt);
     }
@@ -2344,8 +2361,7 @@ function applyFilter() {
 
 function loadList(quiet) {
   if (ST.loading) return Promise.resolve();
-  var cfg = loadCfg();
-  if (!URL_OK_RE.test(cfg.url) || !cfg.token) {
+  if (!cfgReady()) {
     $('listWrap').hidden = true;
     setState('listState', 'warn', '接続先が未設定です', '右上の歯車（設定）で、接続先URLと合言葉を入れて保存してください。', '設定を開く', function () { showScreen('settings'); });
     return Promise.resolve();
@@ -3626,7 +3642,8 @@ function updateFilesBtn() {
   var why = '';
   if (!id) why = '先に保存してください';
   else if (ST.detail.pending) why = '登録を確かめるまで使えません（「一覧を読み込み直して確かめる」を押してください）';
-  else if (!URL_OK_RE.test(cfg.url) || !cfg.token) why = '右上の歯車（設定）で接続先を設定してください';
+  /* ログインだけで使っている端末（ST.live）は、書類の正本も新しい保存先の時だけ使える（Google ドライブへは接続先が無いと送れない） */
+  else if ((!URL_OK_RE.test(cfg.url) || !cfg.token) && !(ST.live === true && window.SUDocLive && window.SUDocLive.liveNow('stf'))) why = '右上の歯車（設定）で接続先を設定してください';
   else if (ST.caps === null) why = '接続を確かめられていません。設定画面の「接続テスト」で確かめてください';
   else if (!capsHas('files')) why = '職員マスタの Google の受け口が古い版のため、まだ使えません。管理者へ知らせてください';
   b.disabled = !!why;
@@ -3636,11 +3653,18 @@ function updateFilesBtn() {
   if (wy) { wy.textContent = why; wy.hidden = !why; }
 }
 
+/* 疎通確認の送り先。接続先がある端末は今までどおり Google へ（apiPing）。接続先が無くログインだけで使っている端末（ST.live）は、
+   新しい保存先の受け口へ ping を送る（Google へは送らない・2026-11-08）。どちらでもない時は null（呼ばない） */
+function pingNow_() {
+  if (URL_OK_RE.test(loadCfg().url)) return apiPing();
+  if (ST.live === true) return apiPost('ping', {});
+  return null;
+}
 /* サーバーが持っている機能を ping で確かめる（失敗しても画面は動かす） */
 function refreshCaps() {
-  var cfg = loadCfg();
-  if (!URL_OK_RE.test(cfg.url)) { ST.caps = null; updateFilesBtn(); updateEnumBtn(); return Promise.resolve(); }
-  return apiPing().then(function (d) {
+  var ping = pingNow_();
+  if (!ping) { ST.caps = null; updateFilesBtn(); updateEnumBtn(); return Promise.resolve(); }
+  return ping.then(function (d) {
     setCaps(d);
   }).catch(function () {
     ST.caps = null;
@@ -4723,11 +4747,11 @@ function onSaveCfg() {
 }
 function onTest() {
   setState('cfgState', '', '確認中…', 'サーバーに問い合わせています。');
-  apiPing().then(function (d) {
+  (pingNow_() || apiPing()).then(function (d) {
     setCaps(d);                       /* 使える機能はここでも取り直す（書類ボタンの可否に効く） */
     var caps = Array.isArray(d.caps) ? d.caps.join('・') : '—';
     setState('cfgState', 'ok', '接続できました', '版 ' + txt(d.build || d.ver) + '／使える機能: ' + caps
-      + (d.authRequired === true ? '／合言葉が必要です' : ''));
+      + (d.authRequired === true && URL_OK_RE.test(loadCfg().url) ? '／合言葉が必要です' : ''));
     loadEnums();                      /* 合言葉が通るかも確かめる（初回の案内の2段目。疎通確認は合言葉を見ないため） */
   }).catch(function (e) {
     setState('cfgState', 'err', '接続できませんでした（' + errText(e) + '）', errHint(e));
@@ -4820,7 +4844,7 @@ function corpFormError(o) {
 }
 function corpWhy() {
   var cfg = loadCfg();
-  if (!URL_OK_RE.test(cfg.url) || !cfg.token) return '接続先URLと合言葉を入れて保存してください';
+  if ((!URL_OK_RE.test(cfg.url) || !cfg.token) && ST.live !== true) return '接続先URLと合言葉を入れて保存してください';
   if (ST.caps === null) return '接続を確かめられていません。「接続テスト」で確かめてください';
   if (!capsHas('corp')) return '職員マスタの Google の受け口を新しい版に替えると、ここで変えられます。管理者へ知らせてください（いまは既定のまま動いています）';
   if (!(SC() && typeof SC().setCorp === 'function')) return '画面の部品が古い版のままです。この画面を再読み込みしてください（続く時は管理者へ知らせてください）';
@@ -4862,8 +4886,7 @@ function applyCorpResp(d) {
 }
 /* 起動時・接続設定の保存時・「読み込み直す」。取れなくても既定のまま動く（旧GASでも止めない） */
 function loadCorp() {
-  var cfg = loadCfg();
-  if (!URL_OK_RE.test(cfg.url) || !cfg.token) { updateCorpUi(); return Promise.resolve(false); }
+  if (!cfgReady()) { updateCorpUi(); return Promise.resolve(false); }
   var gen = ++CORP.gen;
   return apiPost('getCorp', {}).then(function (d) {
     if (gen !== CORP.gen) return CORP.loaded;          /* 後から保存か読み込みが始まった＝古い応答は当てない */
@@ -4915,7 +4938,7 @@ function wizSteps() {
 }
 function startWizIfNew() {
   var cfg = loadCfg();
-  if (URL_OK_RE.test(cfg.url) && cfg.token) return false;
+  if ((URL_OK_RE.test(cfg.url) && cfg.token) || ST.live === true) return false;   /* ログインだけで使える（ST.live）端末にも出さない */
   if (lsGet(UI_KEYS.wiz) === '0') return false;        /* 一度閉じた端末には出し直さない */
   lsSet(UI_KEYS.wiz, '1');
   return true;
@@ -4923,7 +4946,7 @@ function startWizIfNew() {
 function renderWiz() {
   var card = $('wizCard');
   if (!card) return;
-  var on = lsGet(UI_KEYS.wiz) === '1';
+  var on = lsGet(UI_KEYS.wiz) === '1' && ST.live !== true;   /* ログインだけで使える端末には接続先の入力を求めない（端末の印は書き換えない） */
   card.hidden = !on;
   if (!on) return;
   var st = wizSteps(), all = st[0] && st[1] && st[2];
@@ -5089,8 +5112,7 @@ function enumUsageOf(group, item) {
 
 /* 起動時に1回。取れなくても既定値で動く（旧GASでも止めない） */
 function loadEnums() {
-  var cfg = loadCfg();
-  if (!URL_OK_RE.test(cfg.url) || !cfg.token) return Promise.resolve(false);
+  if (!cfgReady()) return Promise.resolve(false);
   return apiPost('getEnums', {}).then(function (d) {
     ST.authOk = true;                    /* 合言葉が通った（初回の案内の2段目。2026-10-11） */
     renderWiz();
@@ -5105,8 +5127,8 @@ function loadEnums() {
 function updateEnumBtn() {
   var b = $('enumBtn');
   if (!b) return;
-  var cfg = loadCfg(), why = '';
-  if (!URL_OK_RE.test(cfg.url) || !cfg.token) why = '接続先URLと合言葉を入れて保存してください';
+  var why = '';
+  if (!cfgReady()) why = '接続先URLと合言葉を入れて保存してください';
   else if (ST.caps === null) why = '接続を確かめられていません。「接続テスト」で確かめてください';
   else if (!capsHas('enums')) why = '職員マスタの Google の受け口が古い版のため、まだ使えません。管理者へ知らせてください';
   b.disabled = !!why;
@@ -5861,8 +5883,7 @@ function applyLocalityNow() {
   if (ST.loaded && ST.cmtCol) renderList();
 }
 function loadCommittees() {
-  var cfg = loadCfg();
-  if (!URL_OK_RE.test(cfg.url) || !cfg.token) { failCommittees(); return Promise.resolve(false); }
+  if (!cfgReady()) { failCommittees(); return Promise.resolve(false); }
   return apiPost('getCommittees', {}).then(function (d) {
     applyCommittees(d);
     return true;
@@ -5894,8 +5915,7 @@ function mergedDetailRow() {
 
 /* ── 編集できるか（サーバーが対応していなければ閲覧だけ） ── */
 function cmtWhyNoEdit() {
-  var cfg = loadCfg();
-  if (!URL_OK_RE.test(cfg.url) || !cfg.token) return '右上の歯車（設定）で接続先を設定してください';
+  if (!cfgReady()) return '右上の歯車（設定）で接続先を設定してください';
   if (ST.caps === null) return '接続を確かめられていません。設定画面の「接続テスト」で確かめてください';
   if (!capsHas('committee')) return CMT_NO_CAPS_MSG;
   /* 読めていない内容で保存させない。外部委員は全置換なので、空のまま送ると既存が消える */
@@ -7306,9 +7326,6 @@ function start_() {
     return;
   }
   restoreUi();
-  /* 接続先が空のまま開いた端末は、設定タブに初回の案内を出す。開く画面は変えない（再読み込みで現在地を保つ・
-     承認した計画の範囲。一覧の「接続先が設定されていません」の案内から設定タブへ進む） */
-  startWizIfNew();
   snapshotDefaultEnumCodes();      /* 既定コード（消せない）を、差し替えの前に控える */
   fillSelect('f_gender', 'gender', '—');
   fillSelect('f_primarySite', 'primarySite', '—');
@@ -7323,6 +7340,20 @@ function start_() {
   buildListHead();
   showScreen(ST.screen);
   $('bulkBar').hidden = true;
+  /* 接続先・合言葉の無い端末は、ログインだけで新しい保存先を使えるかを先に1回だけ確かめてから読む（2026-11-08 代表者「端末ごとの設定を極限までなくす」）。
+     使えない・分からない時は今までどおり（初回の案内と「接続先が未設定です」） */
+  if (!cfgReady() && !ST.liveTried) {
+    ST.liveTried = true;
+    setState('listState', '', '読み込み中…', '職員データを取得しています。');
+    probeLive().then(startLoads_, startLoads_);
+  } else startLoads_();
+}
+
+/* 起動の読み込み。接続先が空のまま開いた端末（ログインだけでは使えない端末）は、設定タブに初回の案内を出す。開く画面は変えない
+   （再読み込みで現在地を保つ・承認した計画の範囲。一覧の「接続先が設定されていません」の案内から設定タブへ進む） */
+function startLoads_() {
+  startWizIfNew();
+  renderWiz();
   updateFilesBtn();
   updateEnumBtn();
   refreshCaps();               /* サーバーが持っている機能を先に確かめる（書類ボタンの可否） */
