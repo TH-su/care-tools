@@ -14,6 +14,7 @@
      H 端末に保存しない（localStorage へは書かない）
      I 名簿だけを読む画面の入口（officeOnly・2026-11-02）: 事務所PCの事務所・管理者のログインで印が「切り替えた後」の時だけ Supabase。
        ログインしていない・確かめられない・現場のアカウント・現場の端末・写しの期間は Google（データベースの印も読まない）
+     L 接続先の無い端末で、ログインだけで使えるか（liveReady・2026-11-08）: 5つがそろう時だけ true・例外を出さない・端末に書かない・8秒で打ち切り
    ★架空データのみ（氏名は使わない）。 */
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
@@ -29,7 +30,7 @@ function load(o) {
   const writes = [];
   const store = Object.assign({ su_backend_flags: o.flags === undefined ? null : JSON.stringify(o.flags) }, o.store || {});
   const ctx = {
-    window: {}, JSON, Object, Array, String, Number, Math, Error, Promise, Date, RegExp, isNaN, isFinite, parseInt, setTimeout,
+    window: {}, JSON, Object, Array, String, Number, Math, Error, Promise, Date, RegExp, isNaN, isFinite, parseInt, setTimeout, clearTimeout,
     localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { writes.push(k); store[k] = v; }, removeItem: k => { writes.push(k); } },
     fetch: () => Promise.reject(new Error('no network'))
   };
@@ -356,6 +357,40 @@ const SHEET = [
     const b0 = gasCalls.length;
     await R4.call({ action: 'getRoster' }, gasFn, { officeOnly: true }, auth({ mode: 'live' }).io);
     t('スイッチが切 → Google', gasCalls.length - b0 === 1);
+  }
+
+  console.log('L ログインだけで使える（入居者マスタの接続先・合言葉の無い端末・2026-11-08 代表者「端末ごとの設定を極限までなくす」）');
+  {
+    const ON = { supabase: { master_live: true } };
+    const cases = [
+      ['スイッチが入・事務所のログイン・切り替えた後', ON, { mode: 'live', role: 'office' }, null, true],
+      ['管理者のログイン', ON, { mode: 'live', role: 'admin' }, null, true],
+      ['スイッチが切', { supabase: { master_live: false } }, { mode: 'live' }, null, false],
+      ['スイッチが無い', null, { mode: 'live' }, null, false],
+      ['写しの期間', ON, { mode: 'shadow' }, null, false],
+      ['0036 の前（関数が無い）', ON, { mode: 'live', modeErr: { code: 'PGRST202' } }, null, false],
+      ['印を読めない', ON, { mode: 'live', modeErr: { code: 'XX000' } }, null, false],
+      ['ログインしていない', ON, { mode: 'live', signedOut: true }, null, false],
+      ['現場のアカウント', ON, { mode: 'live', role: 'field' }, null, false],
+      ['現場の端末', ON, { mode: 'live' }, { su_device_role: 'field' }, false],
+      ['ログインの部品が読めない', ON, null, null, false]
+    ];
+    for (const [label, flags, o, store, want] of cases) {
+      const { R: R5, writes: w5 } = load({ flags, store });
+      const a = o === null ? { io: { auth: async () => null }, calls: [] } : auth(o);
+      const b0 = gasCalls.length;
+      let v, threw = false;
+      try { v = await R5.liveReady(a.io); } catch (e) { threw = true; }
+      t('L ' + label + ' → ' + want + '（例外を出さない・名簿も Google も読まない・端末に書かない）',
+        !threw && v === want && gasCalls.length === b0 && a.calls.every(c => c[0] === 'res_mode_get') && w5.length === 0, { v, threw, calls: a.calls });
+    }
+    {
+      const { R: R6 } = load({ flags: ON });
+      const A = { STATUS: { OK: 'ok' }, check: () => new Promise(() => {}), client: () => ({}) };
+      const t0 = Date.now();
+      const v = await R6.liveReady({ auth: async () => A });
+      t('L ログインの確かめが返らない時は8秒で false', v === false && Date.now() - t0 >= 7900 && Date.now() - t0 < 12000, Date.now() - t0);
+    }
   }
 
   console.log('H 端末に保存しない');

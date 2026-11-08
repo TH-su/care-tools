@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-evgMcYgOuif9oWyXbGtK66NdO9OHKEbRgxPt/GEmSY4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-J4SQg9AMXY5zqhm3FgTMYPnYXOhBetM78DL2RDQIXf4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
@@ -708,15 +708,15 @@ details.dcd > .dbody > .cd > h3 { display: none; }   /* 見出しは summary に
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
-<script src="su-res-read.js?v=2026-11-08"></script>
-<script src="su-cfg-hint.js?v=2026-09-27"></script>
+<script src="su-res-read.js?v=2026-11-08.2"></script>
+<script src="su-cfg-hint.js?v=2026-11-08"></script>
 <script src="su-perf.js?v=2026-11-02"></script>
 <script src="su-login-band.js?v=2026-11-02"></script>
 <script src="su-app-gate.js?v=2026-11-03"></script>
 <script src="su-facility.js?v=2026-11-07"></script>
-<script src="su-data.js?v=2026-11-02"></script>
+<script src="su-data.js?v=2026-11-08"></script>
 <script src="su-data-gas.js?v=2026-10-29"></script>
-<script src="su-data-supabase.js?v=2026-11-01"></script>
+<script src="su-data-supabase.js?v=2026-11-08"></script>
 <script src="su-adm-full.js?v=2026-11-03.5"></script>
 <script src="su-doc-live.js?v=2026-11-05.2"></script>
 <!-- 日付の和暦⇔西暦変換。職員マスタと同じものを使う（規則を2か所に書かない） -->
@@ -1388,6 +1388,28 @@ if (SU_DATA_READY) {
   /* gasAuth: 入居調整の GAS は読み取りでログインの証明を確かめる＝ログインしている時だけ証明を添える（2026-10-29） */
   SU.data.init({ appId: 'admission-flow', resolveTarget: function () { return syncTarget(); }, gasAuth: true });
 }
+/* 接続先・合言葉の無い端末でも、ログインして新しい保存先で使える時（2026-11-08 代表者「端末ごとの設定を極限までなくす」）。
+   台帳は SU.data.admission.liveReady、入居者マスタへの登録は SUResRead.liveReady で、それぞれ1回だけ確かめる（端末には何も書かない）。
+   使える時は新しい保存先へ送り、Google へは送らない。部品が無い・分からない・時間切れの時は今までどおり（接続先の設定を求める） */
+var AF_LIVE = false, afLiveTried_ = false, AF_MLIVE = false, afMLiveTried_ = false;
+var AF_NOCFG_MSG = '接続先が未設定です';
+function afProbeLive_() {
+  afLiveTried_ = true;
+  if (!(SU_DATA_READY && SU.data.admission && typeof SU.data.admission.liveReady === 'function')) return Promise.resolve(false);
+  return SU.data.admission.liveReady().then(function (v) {
+    AF_LIVE = v === true;
+    if (AF_LIVE) { try { if (window.SUCfgHint && typeof window.SUCfgHint.quiet === 'function') window.SUCfgHint.quiet(); } catch (e) { /* 案内の帯の失敗は止めない */ } }
+    return AF_LIVE;
+  }, function () { return false; });
+}
+var afMLiveP_ = null;
+function afProbeMasterLive_() {
+  if (afMLiveP_) return afMLiveP_;   /* 確かめている間に押し直されても、確かめは1本だけ */
+  var p = (window.SUResRead && typeof window.SUResRead.liveReady === 'function') ? window.SUResRead.liveReady() : Promise.resolve(false);
+  afMLiveP_ = Promise.resolve(p).then(function (v) { AF_MLIVE = v === true; return AF_MLIVE; }, function () { return false; })
+    .then(function (v) { afMLiveTried_ = true; afMLiveP_ = null; return v; });
+  return afMLiveP_;
+}
 
 function setSync(txt, cls) {
   var el = $('syncChip'); el.textContent = txt;
@@ -1609,7 +1631,7 @@ function serverLooksLost(remote) {
 function pull(showToast) {
   if (!SU_DATA_READY) { setSync('部品の読み込みエラー', 'err'); return Promise.resolve(false); }
   var t = syncTarget();
-  if (!t.endpoint) { setSync('未接続'); return Promise.resolve(false); }
+  if (!t.endpoint && !AF_LIVE) { setSync('未接続'); return Promise.resolve(false); }
   setSync('同期中…');
   return SU.data.admission.get(KV_KEY).then(function (j) {
     if (!j || !j.ok) throw new Error((j && j.error) || '応答エラー');
@@ -1671,7 +1693,9 @@ function admFullAuto_() {
 function startupPull() {
   if (!SU_DATA_READY) { setSync('部品の読み込みエラー', 'err'); return Promise.resolve(false); }
   var t = syncTarget();
-  if (!t.endpoint) { setSync('未接続'); return Promise.resolve(false); }
+  /* 接続先の無い端末は、ログインだけで使えるかを1回だけ確かめてから進む（2026-11-08） */
+  if (!t.endpoint && !AF_LIVE && !afLiveTried_) return afProbeLive_().then(function () { return startupPull(); });
+  if (!t.endpoint && !AF_LIVE) { setSync('未接続'); return Promise.resolve(false); }
   setSync('同期中…');
   return SU.data.admission.get(KV_KEY).then(function (j) {
     if (!j || !j.ok) throw new Error((j && j.error) || '応答エラー');
@@ -1724,7 +1748,7 @@ function schedulePushRetry() {
 function push(force) {
   if (!dirty || pushing || !SU_DATA_READY) return;
   var t = syncTarget();
-  if (!t.endpoint) { setSync('未接続'); return; }
+  if (!t.endpoint && !AF_LIVE) { setSync('未接続'); return; }
   pushing = true; setSync('保存中…');
   var sentAt = DB.updatedAt;
   var opts = force ? { force: true } : null;
@@ -3069,7 +3093,11 @@ function candFiles(id) { return asArr(FILES[asStr(id)]); }
 
 function apiFiles(payload) {
   if (!SU_DATA_READY) return Promise.reject(new Error('共通の部品を読み込めませんでした'));
-  if (!syncTarget().endpoint) return Promise.reject(new Error('接続先が未設定です'));
+  if (!syncTarget().endpoint) {
+    /* 接続先の無い端末で、ログインだけで使える時（AF_LIVE）は、書類の正本も新しい保存先の時だけ扱う。Google へは送らない（2026-11-08） */
+    if (!(AF_LIVE && window.SUDocLive)) return Promise.reject(new Error(AF_NOCFG_MSG));
+    return window.SUDocLive.adm(payload, function () { return Promise.reject(new Error(AF_NOCFG_MSG)); });
+  }
   /* 添付書類の正本の切り替え（統合 0065・su-doc-live.js）。切り替えた後は書類の一覧・置く・開く・消すを新しい保存先で扱い、Google と同じ形の答えを返す。
      スイッチが切・部品が無い時は今までどおり Google へ（送り方は変えない） */
   if (window.SUDocLive) return window.SUDocLive.adm(payload, function () { return SU.data.kvRaw(payload); });
@@ -3077,8 +3105,9 @@ function apiFiles(payload) {
 }
 
 /* 目録を取り直す。失敗しても画面は動かす（添付だけが使えない状態にする） */
+var AF_NOCFG_WHY = '接続先が未設定です。接続設定ページで「入居調整」の接続先を入れてください。';
 function refreshFiles() {
-  if (!syncTarget().endpoint) {
+  if (!syncTarget().endpoint && !AF_LIVE) {
     FILES = {}; filesState = { ready: false, why: '接続先が未設定です。接続設定ページで「入居調整」の接続先を入れてください。' };
     return Promise.resolve(false);
   }
@@ -3095,6 +3124,8 @@ function refreshFiles() {
       : { ready: false, why: '書類の一覧を取れませんでした（' + ((r && r.error) ? afErrWords_(r.error, '書類の一覧') : '応答がありませんでした') + '）。右上の ⟳ で取り直してください。' };
     return false;
   }).catch(function (e) {
+    /* 接続先の無い端末で、書類の正本がまだ Google の時は、今までと同じ「接続先が未設定です」 */
+    if (e && e.message === AF_NOCFG_MSG && !syncTarget().endpoint) { FILES = {}; filesState = { ready: false, why: AF_NOCFG_WHY }; return false; }
     filesState = { ready: false, why: '書類の一覧を取れませんでした（' + afErrWords_(e, '書類の一覧') + '）。右上の ⟳ で取り直してください。' };
     return false;
   });
@@ -4688,7 +4719,9 @@ function parseJson(r) {
 var msRec = null;   // 送信予定の record（プレビューで確定したもの）
 function openMasterModal(c) {
   var cfg = masterCfg();
-  if (!cfg.url) {
+  /* 入居者マスタの接続先の無い端末は、ログインだけで入居者マスタを使えるかを1回だけ確かめる（2026-11-08）。使える時は新しい保存先へ送る */
+  if (!cfg.url && !AF_MLIVE && !afMLiveTried_) { afProbeMasterLive_().then(function () { openMasterModal(c); }); return; }
+  if (!cfg.url && !AF_MLIVE) {
     $('msBody').innerHTML = '<p class="note err">入居者マスタの接続先が未設定です。<a href="connection-settings.html">接続設定</a>で「入居者マスタ」のURL・合言葉を設定してください。</p>';
     $('msSendBtn').disabled = true; openModal('mk-master'); return;
   }
@@ -4849,6 +4882,7 @@ function confirmMasterWrite(c, stamp) {
 function verifyMaster(c) {
   var stamp = c.masterPendingStamp;
   if (!stamp) return;
+  if (!masterCfg().url && !AF_MLIVE && !afMLiveTried_) { afProbeMasterLive_().then(function () { verifyMaster(c); }); return; }
   toast('確認中…');
   masterGet({ action: 'getRoster' }, 25000).then(function (d) {
     var list = (d && d.roster) || d || [];
@@ -5056,8 +5090,8 @@ function renderSyncModal() {
   var serverOk = !caps || asStr(caps.server) === 'silverunix-admission';
   $('syncBody').innerHTML =
     '<dl class="kv">' +
-    '<dt>台帳の同期先</dt><dd>' + (t.endpoint ? '設定済み（入居調整の専用サーバー）' : '<span style="color:var(--err)">未設定</span>') + '</dd>' +
-    '<dt>入居者マスタ</dt><dd>' + (m.url ? '設定済み' : '<span style="color:var(--err)">未設定</span>') + '</dd>' +
+    '<dt>台帳の同期先</dt><dd>' + (t.endpoint ? '設定済み（入居調整の専用サーバー）' : AF_LIVE ? '—' : '<span style="color:var(--err)">未設定</span>') + '</dd>' +
+    '<dt>入居者マスタ</dt><dd>' + (m.url ? '設定済み' : AF_MLIVE ? '—' : '<span style="color:var(--err)">未設定</span>') + '</dd>' +
     '<dt>状態</dt><dd>' + esc($('syncChip').textContent) + (dirty ? '（未送信の変更あり）' : '') + '</dd>' +
     '<dt>案件</dt><dd>' + DB.candidates.filter(function (c) { return !c.deleted; }).length + '件（削除済み ' +
       DB.candidates.filter(function (c) { return c.deleted; }).length + '件）</dd>' +
@@ -5089,7 +5123,7 @@ function renderSyncModal() {
 }
 function pingServer() {
   if (!SU_DATA_READY) { toast('共通の部品を読み込めませんでした。画面を読み込み直してください'); return; }
-  if (!syncTarget().endpoint) { toast('同期先が未設定です'); return; }
+  if (!syncTarget().endpoint && !AF_LIVE) { toast('同期先が未設定です'); return; }
   toast('確認中…');
   SU.data.admission.ping().then(function (j) {
     if (!j || !j.ok) throw new Error((j && j.error) || '応答エラー');

@@ -79,6 +79,42 @@
         .then(function () { flagsBusy = false; });
     } catch (e) { flagsBusy = false; }
   }
+  /* 待てる読み直し（2026-11-08・「ログインだけで使えるか」の確かめにだけ使う）。refreshFlags と同じ控え（su_backend_flags）にだけ書く。
+     3秒で読めない・読めない時は最後に読めた値のまま。例外は外へ出さない */
+  function flagsNow() {
+    try {
+      if (typeof global.fetch !== 'function') return Promise.resolve(readFlags());
+      flagsTriedAt = Date.now();
+      var tm = null;
+      return Promise.race([
+        Promise.resolve().then(function () { return global.fetch(FLAGS_URL + '?t=' + Date.now(), { cache: 'no-store' }); })
+          .then(function (r) { return r && r.ok ? r.json() : null; })
+          .then(function (j) {
+            if (j && j.supabase && typeof j.supabase === 'object') {
+              try { global.localStorage.setItem(FLAGS_LS, JSON.stringify({ supabase: j.supabase })); } catch (e) { /* 何もしない */ }
+            }
+          }, function () { /* 読めない時は最後に読めた値のまま */ }),
+        new Promise(function (ok) { tm = setTimeout(ok, 3000); })
+      ]).then(function () { clearTimeout(tm); return readFlags(); }).then(null, function () { return readFlags(); });
+    } catch (e) { return Promise.resolve(readFlags()); }
+  }
+  /* 入口がこの端末で「Google の接続先・合言葉なしで、ログインだけで」使えるか（2026-11-08 代表者「端末ごとの設定を極限までなくす」）。
+     スイッチが入・supabase の道がある・現場の端末でない・ログインが確かめられた・役割が事務所か管理者・印が「切り替えた後」がそろう時だけ true。
+     それ以外・分からない・時間切れ（8秒）は false（false の時、画面は今までどおり接続先の設定を求める）。
+     端末にはスイッチの控えしか書かない。受け口へも Google へも送らない。例外は外へ出さない */
+  function entryLiveReady(flag, group) {
+    try {
+      var d = drivers.supabase;
+      if (!d || typeof d.liveReady !== 'function') return Promise.resolve(false);
+      var tm = null;
+      var late = new Promise(function (ok) { tm = setTimeout(function () { ok(false); }, 8000); });
+      var probe = flagsNow().then(function (f) {
+        if (!flagOn(f, flag, Date.now())) return false;
+        return d.liveReady(group);
+      }).then(function (v) { return v === true; }, function () { return false; });
+      return Promise.race([probe, late]).then(function (v) { clearTimeout(tm); return v === true; }).then(null, function () { return false; });
+    } catch (e) { return Promise.resolve(false); }
+  }
   /* 純関数: スイッチの値 f（supabase の中身）・キー・今の時刻（ミリ秒）から、入かどうかを返す */
   var UNTIL_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
   function flagOn(f, flag, now) {
@@ -301,7 +337,9 @@
       /* 接続の確かめ・守り一覧 {action:'ping'} */
       ping: function (opts) {
         return entryCall('admission', 'admission', 'ping', [opts], function () { return SU_DATA.kvRaw({ action: 'ping' }, authed(opts)); });
-      }
+      },
+      /* この端末が接続先・合言葉なしで、ログインだけで台帳を使えるか（2026-11-08・上の entryLiveReady）→ Promise<boolean> */
+      liveReady: function () { return entryLiveReady('admission', 'admission'); }
     },
     _entryRoute: entryRoute,
     _flagOn: flagOn,

@@ -660,7 +660,7 @@ button.geno-box{width:100%; margin:0; padding:0; font:inherit; color:inherit; li
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
-<script src="su-res-read.js?v=2026-11-08"></script>
+<script src="su-res-read.js?v=2026-11-08.2"></script>
 <script>
 /* 黙ると困る失敗（接続先の設定・取得の補助）を、画面には出さずに記録へ残す（2026-10-10・監査10月版 第2版 フェイスシート 第1手）。
    行き先は su-errors.js の note＝コンソールと記録先（不具合報告の控えと自動報告）。トーストは出さない。
@@ -675,7 +675,7 @@ function fsNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
      古いブラウザ向けの印刷の保険の登録・トーストの失敗）。同じ失敗の連続は su-errors が間引く */
 function fsNoteAs_(kind, where, e){ try{ if(window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note(kind, e, 'facesheet:' + where); }catch(_){} }
 </script>
-<script src="su-cfg-hint.js?v=2026-09-27"></script>
+<script src="su-cfg-hint.js?v=2026-11-08"></script>
 <!-- 同期データの保存先の切り替え（統合 0005/0007）。見るだけの画面は切り替え後に Supabase から読む（未ログインは Google） -->
 <script src="su-kv.js?v=2026-10-28"></script>
 <script src="su-perf.js?v=2026-11-02"></script>
