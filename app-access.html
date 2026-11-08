@@ -22,9 +22,12 @@
   ★メニューに出すかどうかは「メニューの設定」（menu_settings）で別に決める。この画面は役割の行に「メニューに出ない」の印を出すだけ。
   ★名前（メモ）・メールアドレスはデータベースからだけ読み、このファイルには含まれない。表示はすべて textContent。
   ★端末に残すのは表の絞り込み（aac_filter・全員／管理者／事務所／現場）だけ。
+  ★端末の用途（2026-11-08 代表者の決定 段3 案A・統合 0081）: 最近見た端末（意味のない乱数の印・頭の8文字だけを出す）の用途と呼び名を、
+    管理者が1台ずつ決める（device_role_list・device_role_set）。決めた用途は、その端末がメニューを開いた時に su-device-role.js が受け取る。
+    呼び名は置き場所だけ（氏名は入れない）。端末には何も残さない。
 -->
 <link rel="stylesheet" href="su-auth.css?v=2026-09-26">
-<link rel="stylesheet" href="app-access.css?v=2026-10-29">
+<link rel="stylesheet" href="app-access.css?v=2026-11-08">
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 </head>
@@ -94,6 +97,15 @@
       </div>
     </section>
   </section>
+
+  <!-- 端末の用途（2026-11-08 代表者の決定 段3 案A・統合 0081）。動きは app-access-devices.js。上の表とは別に1台ずつ保存する -->
+  <section class="cd" id="v-devices" hidden aria-labelledby="dv-h">
+    <h2 id="dv-h">端末の用途</h2>
+    <p class="muted">最近メニューを開いた端末の一覧です。「現場」に決めると、その端末が次にメニューを開いた時に現場用に切り替わります。番号は、その端末の「使い方・困った時」に出ています。</p>
+    <p class="muted">呼び名には置き場所だけを書き、氏名は入れないでください。</p>
+    <div id="dv-msg" class="msg" role="status" aria-live="polite"></div>
+    <ul class="dv-list" id="dv-list"></ul>
+  </section>
 </main>
 
 <dialog class="pick" id="pick" aria-labelledby="pick-h">
@@ -111,6 +123,7 @@
 <script src="su-app-gate.js?v=2026-11-03"></script>
 <script src="su-menu.js?v=2026-11-02"></script>
 <script src="app-access.js?v=2026-10-29"></script>
+<script src="app-access-devices.js?v=2026-11-08"></script>
 <script src="su-report.js?v=2026-10-28" data-tool="アプリの使える人"></script>
 </body>
 </html>
