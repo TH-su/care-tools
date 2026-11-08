@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Udjs0vOn1/oBwT4xF28RkcWpxesIECduAd+TUS42hRM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-+CO3NUQKFxCaxGPCkTcpSmrtIFuLzLXmyk1UkA4ENaM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -817,9 +817,45 @@ async function gasCall(payload) {
    分岐があり、従来は破棄した場合でも版だけが進んでいた。すると【古い DB × 新しい rev】の組合せが残り、
    その後の背景保存(runSaver)の PUT が版ガードをすり抜けて通ってしまう＝他端末の更新を無言で巻き戻す。
    データと版は必ず同時に更新する必要があるため、版は呼び出し側へ返して DB 差し替えと同時に代入する。 */
-async function fetchRemote() {
+/* 接続先・合言葉の無い端末でも、ログインして新しい保存先で使える時（2026-11-08 代表者「端末ごとの設定を極限までなくす」）。
+   週間計画（care_schedule_v2）を切り替えた後は、ログインしていれば見るだけの読み取りの口（SUKv.readRouted）が新しい保存先から読める。
+   接続先の無い端末では、取得のたびにこの口で読み、読めた時だけ DCR_LIVE を真にする（端末には何も書かない・Google へは送らない）。
+   ★読めないと分かる時（スイッチが切・ログインしていない・確かめられない・通信の失敗・8秒の時間切れ）は null＝今までどおり接続先の設定を求める。
+   ★時間切れの後に答えが届いても使わない（Promise.race で先に決まった方だけを使う）。
+   ★保存（queueFlags → runSaver → gasCall）は SUKv.call が受け持つので、事務所・管理者のアカウントだけが書ける（現場のアカウントは断られて、断りの文が出る）。 */
+let DCR_LIVE = false;
+const DCR_LIVE_WAIT_MS = 8000;
+function dcrOn_() { return !!syncTarget().endpoint || DCR_LIVE; }
+function dcrLiveRead_() {
+  if (!(window.SUKv && typeof SUKv.readRouted === 'function')) return Promise.resolve(null);
+  let tm = null;
+  const late = new Promise(function (ok) { tm = setTimeout(function () { ok(null); }, DCR_LIVE_WAIT_MS); });
+  const read = Promise.resolve().then(function () { return SUKv.readRouted({ action: 'get', key: LS_KEY }); });
+  return Promise.race([read, late]).then(function (v) { clearTimeout(tm); return (v && v.ok === true) ? v : null; },
+                                         function () { clearTimeout(tm); return null; });
+}
+function dcrQuietCfgHint_() {
+  try { if (window.SUCfgHint && typeof window.SUCfgHint.quiet === 'function') window.SUCfgHint.quiet(); } catch (e) { /* 案内の帯の失敗は止めない */ }
+}
+async function fetchRemote(silent) {
   const t = syncTarget();
-  if (!t.endpoint) { toast(dcrNoCfgToast_(), true); return null; }
+  if (!t.endpoint) {
+    const wasLive = DCR_LIVE;
+    const v = await dcrLiveRead_();
+    if (!v) {
+      /* 使えていた端末で一度読み損なった（遅い回線の時間切れ等）だけでは「使える」を外さない＝取得の失敗として知らせる。
+         外すと、次にチェックを押した時に「接続先を入れてください」と、端末に設定を入れる逆の手順を案内してしまう（反証レビュー 2026-11-08）。
+         保存してよいかは送る時に SUKv.call が決める（ログアウト・スイッチが切・役割が合わない時は断られ、断りの文が出る） */
+      if (wasLive) throw new Error('新しい保存先から読めませんでした');
+      if (!silent) toast(dcrNoCfgToast_(), true);
+      return null;
+    }
+    DCR_LIVE = true;
+    dcrQuietCfgHint_();
+    // 初めて使えると分かった時に、入院・往診・居室の重ね読みも1回行う（起動の時は DCR_LIVE が偽で見送っている）
+    if (!wasLive) setTimeout(function () { dcrFetchMasterHosp(true).then(function (ok) { if (ok && DB) renderAll(DB); }, function () {}); }, 0);
+    return (v.data && Array.isArray(v.data.residents)) ? { data: v.data, rev: Number(v.rev) || 0 } : null;
+  }
   const j = await gasCall({ action: 'get', key: LS_KEY });
   if (!j.ok) throw new Error(j.error || '応答エラー');
   return (j.data && Array.isArray(j.data.residents)) ? { data: j.data, rev: Number(j.rev) || 0 } : null;
@@ -1038,8 +1074,7 @@ function pendingKey_(item, field) {
 // items の field を DB へ即時反映し、背景保存キューへ積む（楽観的UI）。
 function queueFlags(items, field, value, label) {
   if (dcrIsField_()) { toast(DCR_FIELD_MSG, true); renderAll(DB); return; }   // 見た目だけ変わったチェックを戻す
-  const t = syncTarget();
-  if (!t.endpoint) { toast(dcrNoCfgToast_(), true); renderAll(DB); return; }
+  if (!dcrOn_()) { toast(dcrNoCfgToast_(), true); renderAll(DB); return; }
   if (!DB || !Array.isArray(DB.residents)) { toast('データがありません', true); return; }
   if (!items || !items.length) return;
   let applied = 0;
@@ -1431,7 +1466,12 @@ function dcrOverlayMaster(db){
      位置（数値2つ）と masterId のみ）。氏名の文字そのものはこの経路では持たない。 */
 function dcrFetchMasterHosp(force){
   if (dcrHospBusy) return Promise.resolve(false);
-  var cfg = dcrGetMasterCfg(); if (!cfg || !cfg.token) return Promise.resolve(false);
+  var cfg = dcrGetMasterCfg();
+  /* 入居者マスタの接続先・合言葉が無い端末でも、週間計画をログインだけで読めた端末（DCR_LIVE）は、名簿だけを読む口（officeOnly）で
+     新しい保存先から読む（2026-11-08 代表者「端末ごとの設定を極限までなくす」）。この時は Google へは送らない（raw は読めなかった答えを返すだけ）。
+     読めない時（切り替える前・ログインの役割が合わない）は今までどおり重ねない */
+  var noCfg = !cfg || !cfg.token;
+  if (noCfg && !(DCR_LIVE && window.SUResRead)) return Promise.resolve(false);
   if (!force && dcrHospMap && (Date.now() - dcrHospAt) < DCR_HOSP_TTL_MS) return Promise.resolve(false);
   dcrHospBusy = true;
   /* Phase 0: 入居者マスタからの名簿取得を共通データ層へ移した。
@@ -1441,8 +1481,8 @@ function dcrFetchMasterHosp(force){
      訪問日・かかりつけ病院（☆の元）も含めて写しから読む（care）。それ以外・読めない時は raw（今までの要求そのまま）を呼ぶ。
      写しから読んだ時も見張りの基準（stateRev・srev）が応答に添えられる（withRev）。部品が読み込めない時も raw を呼ぶ。
      現場の端末では入口が raw をそのまま呼ぶ（今までどおり）。☆・入院・居室・姓名の切れ目の作り方は下のまま変えない。 */
-  var raw = function(){ return SU.data.getRoster({ endpoint: cfg.url, token: cfg.token }); };
-  var old = function(){ try { return window.SURoster ? window.SURoster.getRoster(raw, { where: 'daycare', masterUrl: cfg.url, care: true, withRev: true }) : raw(); } catch (e) { return raw(); } };
+  var raw = function(){ return noCfg ? Promise.resolve({ ok: false, error: 'nocfg' }) : SU.data.getRoster({ endpoint: cfg.url, token: cfg.token }); };
+  var old = function(){ if (noCfg) return raw(); try { return window.SURoster ? window.SURoster.getRoster(raw, { where: 'daycare', masterUrl: cfg.url, care: true, withRev: true }) : raw(); } catch (e) { return raw(); } };
   /* 2026-11-02（代表者「Google のまま読む」）: 入居者マスタを新しい保存先へ切り替えた後は、事務所PCで事務所・管理者としてログインしている時だけ、名簿を新しい保存先から読む（su-res-read.js の officeOnly）。
      ログインしていない・現場の端末・現場のアカウントは、下の今までの読み方（写し→Google）のまま。部品が無い時も今までどおり */
   var rosterP;
@@ -1505,7 +1545,7 @@ function dcrFetchMasterHosp(force){
 /* 版数(stateRev)だけを見張り、動いた時に名簿を取り直す。
    合言葉不要・応答は数値2つだけ＝個人情報ゼロ。表示中のみ回す。 */
 function dcrWatchMasterState(){
-  var cfg = dcrGetMasterCfg(); if (!cfg) return;
+  var cfg = dcrGetMasterCfg(); if (!cfg && !DCR_LIVE) return;   // 接続先の無い端末は、週間計画をログインだけで読めた時だけ見張る（2026-11-08）
   if (document.hidden) return;
   /* Phase 0: 状態版数の監視も共通データ層へ。★合言葉は渡さない（この口は個人情報を返さないため、
      不要な合言葉を投げない）。token を渡さなければ本文の token は空のまま届く。
@@ -1513,7 +1553,7 @@ function dcrWatchMasterState(){
   /* 2026-11-08（写し返しを止める計画・代表者の決定 2026-11-07 問い6=A）: 入居者マスタを新しい保存先へ切り替えた後は、事務所PCで
      事務所・管理者としてログインしている時だけ、新しい保存先の版数を読む（su-res-read.js の stateRev・応答の形は同じ）。
      それ以外・部品が無い時は下の Google への照会をそのまま送る（送り方は変えない） */
-  var gasRev = function(){ return SU.data.kvRaw({ action: 'stateRev' }, { endpoint: cfg.url }); };
+  var gasRev = function(){ return cfg ? SU.data.kvRaw({ action: 'stateRev' }, { endpoint: cfg.url }) : Promise.resolve({ ok: false, error: 'nocfg' }); };
   var revP;
   try { revP = (window.SUResRead && window.SUResRead.stateRev) ? window.SUResRead.stateRev(gasRev, { key: 'daycare', as: 'json' }) : gasRev(); }
   catch (eV) { revP = gasRev(); }
@@ -2924,7 +2964,7 @@ function renderAll(db) {
     // 週間計画の接続先が無い端末では、何が足りないか・次にすることを出す（画面だけ）。ある端末では出さない
     const cfgBox = $('emptyCfg');
     if (cfgBox) {
-      if (!syncTarget().endpoint) { dcrNoCfgGuide_(cfgBox); cfgBox.hidden = false; }
+      if (!dcrOn_()) { dcrNoCfgGuide_(cfgBox); cfgBox.hidden = false; }
       else { cfgBox.textContent = ''; cfgBox.hidden = true; }
     }
     // タブ(.tnav)は空状態でも押せるため、退避値を消さないと goto() が前回の件数を復活させてしまう。
@@ -2957,9 +2997,11 @@ async function refresh(silent) {
   $('btnRefresh').disabled = true;
   setSyncState('取得中…');
   try {
-    const remote = await fetchRemote();
+    const remote = await fetchRemote(silent);
     // 取得の往復中にトグルが始まっていたら、この結果は破棄（未送信の楽観的変更をサーバ版で潰さない）。
     if (saverRunning || pendingFlags.size) { setSyncState(DB && DB.residents ? ('端末表示（' + DB.residents.length + '名）') : ''); return; }
+    // 接続先が無く、ログインだけでも読めなかった端末: 状態の表示は起動の時のまま（「クラウドにデータなし」と言わない）
+    if (!dcrOn_()) { setSyncState(DB && DB.residents ? ('端末キャッシュ表示（' + DB.residents.length + '名）') : 'データなし'); return; }
     if (remote) {
       DB = remote.data; careRev = remote.rev;   // ★データと版は必ず同時に更新する（片方だけ進めない）
       renderAll(DB);
@@ -3180,7 +3222,9 @@ function init() {
      これが無いと「薬用タブで保存した昼食薬がリロードで古く見える」「他端末の居室変更が見えない」。
      薬用の色は印刷に出る＝古い状態のまま与薬帳票を刷る事故を防ぐ意味でも、開いた時点で最新に揃える。
      失敗しても従来どおり端末キャッシュ表示のまま（オフラインでも起動を妨げない・トーストも出さない）。 */
-  if (syncTarget().endpoint) refresh(true);
+  /* 接続先の無い端末も、ログインしていれば新しい保存先から読む（fetchRemote の DCR_LIVE・2026-11-08）。
+     接続先もログインの控えも無い端末では呼ばない＝今までどおり何も送らず、状態の表示も起動の時のまま（「取得中…」を出さない） */
+  if (syncTarget().endpoint || dcrHasSession_()) refresh(true);
 
   /* 入居者マスタの入院状態を重ねる（2026-08-02 追加）。
      接続設定が無い端末では何も起きない＝従来どおりの表示のまま。 */
