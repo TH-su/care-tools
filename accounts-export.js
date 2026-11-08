@@ -33,6 +33,7 @@
     return rp;
   }
   var GAS_TIMEOUT_MS = 90000;
+  var WS_PULL_TIMEOUT_MS = 300000;   // 統合同期の pull だけ（全部のキーを1回で返すため・2026-11-08）
 
   function el(tag, cls, text) {
     var e = document.createElement(tag);
@@ -82,7 +83,7 @@
   }
 
   /* GAS への POST（su-data-gas.js の post と同じ形。合言葉は本文の token・URL に載せない） */
-  function post(t, payload) {
+  function post(t, payload, waitMs) {
     var body = {};
     for (var k in payload) if (Object.prototype.hasOwnProperty.call(payload, k)) body[k] = payload[k];
     body.token = t.token;
@@ -92,7 +93,7 @@
        排泄・体重・家族構成図・シフト分析・統合同期には添えない。打ち切りの時計は証明を取った後に始める（待ち時間を減らさない） */
     var ga = (t && t.readAuth === true && window.SUGasAuth) ? window.SUGasAuth : null;
     return (ga ? ga.addTo(body) : Promise.resolve(body)).then(function (b) {
-      timer = ac ? setTimeout(function () { ac.abort(); }, GAS_TIMEOUT_MS) : null;
+      timer = ac ? setTimeout(function () { ac.abort(); }, waitMs || GAS_TIMEOUT_MS) : null;
       return fetch(t.url, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -133,7 +134,8 @@
   var GAS = [
     { id: 'ws', title: '週間計画・ワースケ・勤務表（統合同期）',
       read: async function (t) {
-        var j = need(await post(t, { action: 'pull' }));
+        // 統合同期の pull は全部のキーを1回で返すので、ほかより長く待つ（11/08 の書き出しで 90 秒を超えて「時間切れ」になった。GAS の上限の6分より前で打ち切る）
+        var j = need(await post(t, { action: 'pull' }, WS_PULL_TIMEOUT_MS));
         var e = (j.entries && typeof j.entries === 'object') ? j.entries : {};
         return { parts: { entries: e }, count: Object.keys(e).length, unit: 'キー' };
       } },
@@ -227,7 +229,10 @@
       } },
     { id: 'analyzer', title: '過去シフト分析',
       read: async function (t) {
-        var j = need(await post(t, { action: 'pull' }));
+        var j0 = await post(t, { action: 'pull' });
+        // 新しい保存先へ切り替えた後は、アナライザ同期の GAS が読み取りも断る（sa_switched・2026-11-03）。中身はデータベースの書き出しに入っている
+        if (j0 && j0.code === 'sa_switched') { var sw = new Error('switched'); sw.switched = true; sw.note = '新しい保存先へ切り替え済み（中身はデータベースの書き出し db/sa_entries に入っている）'; throw sw; }
+        var j = need(j0);
         var e = (j.entries && typeof j.entries === 'object') ? j.entries : {};
         return { parts: { entries: e }, count: Object.keys(e).length, unit: 'キー' };
       } },
