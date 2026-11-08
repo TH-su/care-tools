@@ -3,7 +3,7 @@
 <head>
 <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-aRO6hoew48umW5PI3Kzr/T83U/FRpQgoi2qq+6/5/kY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-uYLLdc9x3pweAiBNdKFRkuY2oSOjlvCIzEsgPaNDxY8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="spl-build" content="2026-09-23.1">
@@ -1194,7 +1194,7 @@ body.staff .adm{display:none !important}
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-facility.js?v=2026-11-07"></script>   <!-- 明細・料金表の発行者（施設名・住所・電話）・監査10月版 #14 -->
 <script src="supplies-calc.js?v=2026-09-23.1"></script>
-<script src="su-sup.js?v=2026-11-02.2"></script>   <!-- 新しい保存先への切り替え（統合 0047） -->
+<script src="su-sup.js?v=2026-11-08"></script>   <!-- 新しい保存先への切り替え（統合 0047） -->
 <script>
 'use strict';
 
@@ -1454,7 +1454,19 @@ function saveCfg(patch) {
   for (k in patch) { if (Object.prototype.hasOwnProperty.call(patch, k) && patch[k] !== undefined) cur[k] = txt(patch[k]); }
   lsSet(CFG_KEY, JSON.stringify(cur));
 }
-function cfgReady() { var c = loadCfg(); return URL_OK_RE.test(c.url) && !!c.token; }
+function cfgReady() { var c = loadCfg(); return (URL_OK_RE.test(c.url) && !!c.token) || ST.live === true; }
+/* 接続先・合言葉の無い端末で、ログインだけで新しい保存先を使えるかを1回確かめる（2026-11-08 代表者「端末ごとの設定を極限までなくす」）。
+   使える時は ST.live を立てる。部品が無い・分からない時は今までどおり（接続先の設定を求める） */
+var liveProbeP = null;
+function probeLive() {
+  if (ST.live === true) return Promise.resolve(true);
+  if (!(window.SUSup && typeof window.SUSup.liveReady === 'function')) return Promise.resolve(false);
+  if (!liveProbeP) {
+    liveProbeP = window.SUSup.liveReady().then(function (v) { ST.live = v === true; return ST.live; }, function () { return false; });
+    liveProbeP.then(function () { liveProbeP = null; });
+  }
+  return liveProbeP;
+}
 
 /* ── 明細・料金表の発行者（2026-10-09・監査10月版 #14・本人決定 2a）──
    施設名・住所・電話は施設情報（su-facility.js・facility-profile.json の「施設」）から。担当者だけこの端末の設定（spl_issuer）。
@@ -1565,12 +1577,11 @@ function splAccessToken_() {
 }
 function apiPost(action, body, timeoutMs) {
   var cfg = loadCfg(), payload = { action: action, token: cfg.token, by: cfg.by }, k;
-  if (!URL_OK_RE.test(cfg.url)) {
-    return Promise.reject(mkErr('接続先が設定されていません', '下の「設定」で接続先URLと合言葉を入れて保存してください。'));
-  }
-  if (!cfg.token) {
-    return Promise.reject(mkErr('合言葉が設定されていません', '下の「設定」で合言葉を入れて保存してください。'));
-  }
+  var noCfg = !URL_OK_RE.test(cfg.url) ? mkErr('接続先が設定されていません', '下の「設定」で接続先URLと合言葉を入れて保存してください。')
+    : (!cfg.token ? mkErr('合言葉が設定されていません', '下の「設定」で合言葉を入れて保存してください。') : null);
+  /* 接続先・合言葉の無い端末でも、ログインして新しい保存先で使える時（ST.live・SUSup.liveReady）は受け口へ送る（2026-11-08 代表者「端末ごとの設定を極限までなくす」）。
+     途中で写しの期間へ戻っていた時は Google へ送れないので、今までと同じ「接続先が設定されていません」にする */
+  if (noCfg && !(ST.live === true && typeof window !== 'undefined' && window.SUSup)) return Promise.reject(noCfg);
   if (body) { for (k in body) { if (Object.prototype.hasOwnProperty.call(body, k)) payload[k] = body[k]; } }
   var ctl = (typeof AbortController === 'function') ? new AbortController() : null;
   var ms = Number(timeoutMs);
@@ -1580,6 +1591,7 @@ function apiPost(action, body, timeoutMs) {
     var opt = { method: 'POST', body: JSON.stringify(payload), redirect: 'follow' };
     if (ctl) opt.signal = ctl.signal;
     /* 新しい保存先への切り替え（統合 0047・su-sup.js）。スイッチが切・部品が無い時は今までどおり Google へ（送り方は変えない） */
+    if (noCfg) return window.SUSup.send(payload, function () { return Promise.reject(noCfg); }, { screen: 'supplies', timeoutMs: ms });
     if (typeof window !== 'undefined' && window.SUSup) return window.SUSup.send(payload, function () { return fetch(cfg.url, opt); }, { screen: 'supplies', timeoutMs: ms });
     return fetch(cfg.url, opt);
   }
@@ -1926,6 +1938,10 @@ function normItem(raw) {
 }
 function loadList(quiet) {
   if (ST.loading) return Promise.resolve();
+  if (!cfgReady() && !ST.liveTried) {
+    ST.liveTried = true;
+    return probeLive().then(function () { return loadList(quiet); });
+  }
   if (!cfgReady()) {
     $('listWrap').hidden = true;
     setState('listState', 'warn', '接続先がまだ設定されていません',

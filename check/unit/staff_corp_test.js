@@ -149,6 +149,16 @@ console.log('\n— ⑤ 初回の案内 —');
   t('閉じたら出さない', els.wizCard.hidden === true);
   sb.cfg = { url: '', token: '', by: '' };
   t('閉じた端末は、接続先が空のままでも出し直さない', sb.startWizIfNew() === false && sb.lsGet('stfm_wiz') === '0');
+  /* ログインだけで新しい保存先を使える端末（ST.live・2026-11-08 代表者「端末ごとの設定を極限までなくす」）には、接続先の入力を求めない */
+  delete store.stfm_wiz;
+  sb.ST.live = true;
+  t('ログインだけで使える端末では、接続先が空でも始めない（印も付けない）', sb.startWizIfNew() === false && sb.lsGet('stfm_wiz') === null);
+  sb.lsSet('stfm_wiz', '1');
+  sb.renderWiz();
+  t('前に案内を出した端末でも、ログインだけで使える間は出さない（端末の印は書き換えない）', els.wizCard.hidden === true && sb.lsGet('stfm_wiz') === '1');
+  sb.ST.live = false;
+  sb.renderWiz();
+  t('使えなくなったら、今までどおり出す', els.wizCard.hidden === false);
 }
 
 console.log('\n— ⑦ レビューの指摘（2026-10-11）—');

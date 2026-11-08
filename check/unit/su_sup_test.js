@@ -223,6 +223,35 @@ const BODY = () => ({ action: 'addMoves', token: 'tok-supplies', by: '見本', a
     t('S 2段階認証の断りの言葉がある', /\bmfa: '2段階認証が済んでいません'/.test(PAGE));
     t('S 不具合を報告のボタンは今までどおり', /<script src="su-report\.js\?v=[^"]+" data-tool="消耗品管理"><\/script>\s*<\/body>/.test(PAGE));
   }
+  console.log('L ログインだけで使える（接続先・合言葉の無い端末・2026-11-08 代表者「端末ごとの設定を極限までなくす」）');
+  {
+    const cases = [
+      ['スイッチが入・ログイン OK・印が切り替えた後', { flags: { supplies: true }, mode: 'live' }, true],
+      ['スイッチが切', { flags: { supplies: false }, mode: 'live' }, false],
+      ['写しの期間', { flags: { supplies: true }, mode: 'shadow' }, false],
+      ['ログインしていない', { flags: { supplies: true }, mode: 'live', signedOut: true }, false],
+      ['2段階認証がまだ', { flags: { supplies: true }, mode: 'live', status: 'mfa_verify' }, false],
+      ['使えないアカウント', { flags: { supplies: true }, mode: 'live', status: 'denied' }, false],
+      ['ログインの確かめが失敗', { flags: { supplies: true }, mode: 'live', checkReject: true }, false],
+      ['印を読めない', { flags: { supplies: true }, mode: 'live', modeErr: { code: 'XX000' } }, false],
+      ['スイッチを読めない（控えも無い）', { flagsFail: true, mode: 'live' }, false]
+    ];
+    for (const [label, o, want] of cases) {
+      const b = box(o);
+      let v, threw = false;
+      try { v = await b.w.SUSup.liveReady(); } catch (e) { threw = true; }
+      t('L ' + label + ' → ' + want + '（例外を出さない・受け口も Google も呼ばない・端末にはスイッチの控えしか書かない）',
+        !threw && v === want && b.invokes.length === 0 && b.gas() === 0 && b.writes.every(k => k === 'su_backend_flags'), { v, threw });
+    }
+    t('L 画面: 接続先・合言葉が無くても ST.live の時だけ受け口へ送る（それ以外は今までと同じ断り）',
+      /if \(noCfg && !\(ST\.live === true && typeof window !== 'undefined' && window\.SUSup\)\) return Promise\.reject\(noCfg\);/.test(PAGE)
+      && /if \(noCfg\) return window\.SUSup\.send\(payload, function \(\) \{ return Promise\.reject\(noCfg\); \}/.test(PAGE));
+    t('L 画面: 接続先が無い時は Google へ送らない（fetch(cfg.url) を呼ぶ前に noCfg で分ける）',
+      PAGE.indexOf('if (noCfg) return window.SUSup.send(') < PAGE.indexOf('return window.SUSup.send(payload, function () { return fetch(cfg.url, opt); }'));
+    t('L 画面: 使えるかの確かめは一覧の読み込みで1回だけ（ST.liveTried）・使える時だけ cfgReady が通る',
+      /function cfgReady\(\) \{ var c = loadCfg\(\); return \(URL_OK_RE\.test\(c\.url\) && !!c\.token\) \|\| ST\.live === true; \}/.test(PAGE)
+      && /if \(!cfgReady\(\) && !ST\.liveTried\) \{\s*ST\.liveTried = true;\s*return probeLive\(\)/.test(PAGE));
+  }
   console.log(`\n合格 ${pass} / 不合格 ${fail}`);
   process.exitCode = fail ? 1 : 0;
 })();
