@@ -9,6 +9,7 @@
  * ★表示するだけ。アプリの動き・保存・通信には一切触れない。localStorage は読むだけ（書かない）。
  * ★アプリが自分で設定を直す時間（体重管理の多層復元など）を待つため、4秒後に確かめ、出す直前にもう一度確かめる。
  * ★帯は × で閉じられる（その画面を開いている間は再び出さない）。印刷には出さない。
+ * ★画面が SUCfgHint.quiet() を呼んだ時（接続先なしでログインだけで使える端末・2026-11-08）は出さない。
  * ★現場の端末（su_device_role === 'field'）では「事務所に連絡」とだけ出す（接続設定は事務所専用）。
  */
 (function () {
@@ -117,12 +118,19 @@
     } catch (e) { /* 位置の調整に失敗しても帯は従来の位置で出す */ }
   }
 
+  /* 画面が「この端末は接続先なしで、ログインだけで使える」と確かめた時に呼ぶ（2026-11-08 代表者「端末ごとの設定を極限までなくす」）。
+     出ている帯を外し、この画面を開いている間はもう出さない。端末には何も書かない */
+  var quieted = false;
+  function quiet() {
+    quieted = true;
+    try { var b = document.getElementById('su-cfg-hint'); if (b) b.remove(); } catch (e) { /* 何もしない */ }
+  }
   function check() {
     var p = page();
-    if (!p || !document.body) return;
+    if (!p || !document.body || quieted) return;
     if (!empty(MAP[p])) return;
     // アプリ側の自動復元（多層保存・接続先の自己修復）を待ってから、もう一度確かめる
-    setTimeout(function () { if (empty(MAP[p])) show(); }, WAIT_MS);
+    setTimeout(function () { if (!quieted && empty(MAP[p])) show(); }, WAIT_MS);
   }
 
   try {
@@ -130,5 +138,5 @@
     else check();
   } catch (e) { /* 案内の失敗は画面に影響させない */ }
 
-  window.SUCfgHint = { _map: MAP, _empty: function () { var p = page(); return p ? empty(MAP[p]) : false; } };
+  window.SUCfgHint = { quiet: quiet, _map: MAP, _empty: function () { var p = page(); return p ? empty(MAP[p]) : false; } };
 })();

@@ -7,6 +7,7 @@
      D 切り替えた後（live）は adm-write へ（合言葉なし）。保存できたら Google へ写し返し（admMirror・ログインの証明つき）。
        Google が「切り替えた後」（switched）と返した読み取りは使わない。ログインしていない時は断り、Google へ流さない
      E 画面: 台帳の読み書き・閉じる直前の送信・ping は入口を通る。添付書類の操作は kvRaw（Google）。書類の正本を切り替えた後だけ su-doc-live.js の道（統合 0065）
+     L 接続先・合言葉の無い端末でも、ログインだけで使える時（2026-11-08）の判定（SU.data.admission.liveReady）と画面の分け方
    実行: node check/unit/adm_entry_test.js
    架空データのみ。 */
 'use strict';
@@ -147,6 +148,123 @@ async function both(oldFn, newFn, o) {
     t('Supabase の道を読み込む（gas の道の後）', H.indexOf('su-data-supabase.js?v=') > H.indexOf('su-data-gas.js?v=') && H.indexOf('su-data-gas.js?v=') > 0);
   }
 
+  console.log('L ログインだけで使える（接続先・合言葉の無い端末・2026-11-08 代表者「端末ごとの設定を極限までなくす」）');
+  {
+    /* 接続先の無い端末を作る（resolveTarget が空を返す）。fetch・受け口・端末の書き込みを数える */
+    function lbox(o) {
+      o = o || {};
+      const store = {};
+      if (o.cached) store.su_backend_flags = JSON.stringify(o.cached);
+      if (o.field) store.su_device_role = 'field';
+      const writes = [], posts = [], rpcs = [], invokes = [];
+      const A = {
+        STATUS: { OK: 'ok' },
+        check: async () => { if (o.checkReject) throw new Error('net'); return { status: o.status || 'ok', role: o.role || 'office' }; },
+        client: () => ({
+          rpc: async (n) => { rpcs.push(n); if (o.modeErr) return { data: null, error: o.modeErr }; return { data: { ok: true, mode: o.mode || 'live' }, error: null }; },
+          functions: { invoke: async (fn, opt) => { invokes.push({ fn, body: JSON.parse(JSON.stringify(opt.body)) }); return { data: { ok: true, rev: 5, data: DB }, error: null }; } },
+          auth: { getSession: async () => ({ data: { session: { access_token: 'h.p.s' } } }) }
+        })
+      };
+      const w = {
+        localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { writes.push(k); store[k] = String(v); }, removeItem: k => { writes.push(k); delete store[k]; } },
+        performance: { mark() {} },
+        navigator: { sendBeacon: () => { posts.push('beacon'); return true; } },
+        fetch: (url, init) => {
+          if (/^su-backend\.json\?t=/.test(url)) {
+            if (o.flagsFail) return Promise.reject(new Error('net'));
+            if (o.flagsHang) return new Promise(() => {});
+            return Promise.resolve({ ok: true, json: () => Promise.resolve(o.flags) });
+          }
+          posts.push(url);
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) });
+        },
+        Blob: function (parts, opt) { this.text = parts.join(''); this.type = opt && opt.type; },
+        Promise, JSON, Object, Array, String, Number, Error, Date, setTimeout: o.fastTimer ? ((f, ms) => setTimeout(f, ms >= 8000 ? 20 : ms)) : setTimeout, clearTimeout
+      };
+      if (!o.noAuth) w.SUAuth = o.authHang ? { STATUS: { OK: 'ok' }, check: () => new Promise(() => {}), client: A.client } : A;
+      w.window = w;
+      vm.createContext(w);
+      vm.runInContext(read('su-data.js'), w);
+      vm.runInContext(read('su-data-gas.js'), w);
+      if (o.supa !== false) vm.runInContext(read('su-data-supabase.js'), w);
+      w.SU.data.init({ appId: 'admission-flow', resolveTarget: () => ({ endpoint: '', token: '' }), gasAuth: true });
+      return { w, writes, posts, rpcs, invokes };
+    }
+    const ON = { supabase: { admission: true } };
+    const cases = [
+      ['スイッチが入・事務所としてログイン・印が切り替えた後', { flags: ON }, true],
+      ['管理者としてログイン', { flags: ON, role: 'admin' }, true],
+      ['スイッチが切', { flags: { supabase: { admission: false } } }, false],
+      ['スイッチの終わりの時刻を過ぎた', { flags: { supabase: { admission: true, admission_until: '2026-01-01T00:00:00+09:00' } } }, false],
+      ['写しの期間（shadow）', { flags: ON, mode: 'shadow' }, false],
+      ['印を読む関数が無い（0042 の前）', { flags: ON, modeErr: { code: 'PGRST202' } }, false],
+      ['印を読めない', { flags: ON, modeErr: { code: 'XX000' } }, false],
+      ['権限で断られた', { flags: ON, modeErr: { code: '42501' } }, false],
+      ['ログインしていない', { flags: ON, status: 'signed_out' }, false],
+      ['2段階認証がまだ', { flags: ON, status: 'mfa_verify' }, false],
+      ['使えないアカウント', { flags: ON, status: 'denied' }, false],
+      ['現場のアカウント', { flags: ON, role: 'field' }, false],
+      ['現場の端末', { flags: ON, field: true }, false],
+      ['ログインの確かめが失敗', { flags: ON, checkReject: true }, false],
+      ['ログインの部品が無い（読み込めない）', { flags: ON, noAuth: true }, false],
+      ['Supabase の道が読み込まれていない', { flags: ON, supa: false }, false],
+      ['スイッチを読めない（控えも無い）', { flagsFail: true }, false],
+      ['スイッチを読めない時は控えの値（控えが入）', { flagsFail: true, cached: ON }, true]
+    ];
+    for (const [label, o, want] of cases) {
+      const b = lbox(o);
+      let v, threw = false;
+      try { v = await b.w.SU.data.admission.liveReady(); } catch (e) { threw = true; }
+      await settle();
+      t('L ' + label + ' → ' + want + '（例外を出さない・受け口も Google も呼ばない・端末にはスイッチの控えしか書かない）',
+        !threw && v === want && b.invokes.length === 0 && b.posts.length === 0 && b.writes.every(k => k === 'su_backend_flags'), { v, threw, inv: b.invokes, posts: b.posts, writes: b.writes });
+    }
+    {
+      const b = lbox({ flags: ON, authHang: true, fastTimer: true });
+      const t0 = Date.now(); const v = await b.w.SU.data.admission.liveReady();
+      t('L ログインの確かめが返らない時は時間切れ（8秒）で false', v === false && Date.now() - t0 < 2000);
+    }
+    {
+      const b = lbox({ flags: ON });
+      const v = await b.w.SU.data.admission.liveReady();
+      const g = await b.w.SU.data.admission.get(KEY);
+      const p = await b.w.SU.data.admission.put(KEY, DB, 3, { accessToken: 'h.p.s' });
+      await settle();
+      t('L 使える端末の読み書きは adm-write へ・Google へは何も送らない（写し返しも送らない＝送る先が無い）',
+        v === true && g.ok === true && p.ok === true && b.invokes.length === 2 && b.invokes.every(x => x.fn === 'adm-write') && b.posts.length === 0, [b.invokes.map(x => x.fn), b.posts]);
+      t('L 使える端末の閉じる直前の送信は Google へ送らない', b.w.SU.data.admission.putBeacon(KEY, DB, 3) === false && b.posts.length === 0);
+    }
+    {
+      const b = lbox({ flags: ON, mode: 'shadow' });
+      let err = null;
+      try { await b.w.SU.data.admission.get(KEY); } catch (e) { err = e; }
+      t('L 接続先の無い端末で印が写しの期間なら、今までと同じ「同期先が未設定です」（Google へ送らない）', err && /同期先が未設定です/.test(err.message) && b.posts.length === 0);
+    }
+    {
+      const SUPA = read('su-data-supabase.js');
+      t('L 接続先のある端末は今までどおり写し返しを送る（入居調整だけ・接続先が無い時だけ省く）',
+        /if \(group === 'admission' && !gasTargetOf\(opts\)\) return Promise\.resolve\(null\);/.test(SUPA));
+    }
+    const H = read('admission-flow.html');
+    t('L 画面: 接続先の無い端末は起動の時に1回だけ確かめる（afLiveTried_）・使える時（AF_LIVE）だけ台帳を読み書きする',
+      /if \(!t\.endpoint && !AF_LIVE && !afLiveTried_\) return afProbeLive_\(\)\.then\(function \(\) \{ return startupPull\(\); \}\);/.test(H)
+      && (H.match(/if \(!t\.endpoint && !AF_LIVE\) \{ setSync\('未接続'\);/g) || []).length === 3);
+    t('L 画面: 書類は、接続先が無い時は使える時だけ su-doc-live.js へ。Google へ送る関数は渡さない（今までと同じ断り）',
+      /if \(!\(AF_LIVE && window\.SUDocLive\)\) return Promise\.reject\(new Error\(AF_NOCFG_MSG\)\);\s*return window\.SUDocLive\.adm\(payload, function \(\) \{ return Promise\.reject\(new Error\(AF_NOCFG_MSG\)\); \}\);/.test(H)
+      && H.indexOf('return window.SUDocLive.adm(payload, function () { return Promise.reject(') < H.indexOf('return window.SUDocLive.adm(payload, function () { return SU.data.kvRaw(payload); });'));
+    t('L 画面: 台帳の写し（Google から読む）は接続先がある時だけ（今までどおり）', /admFullBlocked_\(\) \|\| !syncTarget\(\)\.endpoint\) return;/.test(H));
+    t('L 画面: 使える端末では接続先の帯（su-cfg-hint.js）を出さない', /if \(AF_LIVE\) \{ try \{ if \(window\.SUCfgHint && typeof window\.SUCfgHint\.quiet === 'function'\) window\.SUCfgHint\.quiet\(\);/.test(H)
+      && /function quiet\(\) \{/.test(read('su-cfg-hint.js')) && /setTimeout\(function \(\) \{ if \(!quieted && empty\(MAP\[p\]\)\) show\(\); \}, WAIT_MS\);/.test(read('su-cfg-hint.js')));
+    t('L 画面: 入居者マスタへの登録・登録確認は、接続先が無い時に1回だけ SUResRead.liveReady で確かめ、使えない時は今までと同じ断り',
+      /if \(!cfg\.url && !AF_MLIVE && !afMLiveTried_\) \{ afProbeMasterLive_\(\)\.then\(function \(\) \{ openMasterModal\(c\); \}\); return; \}\s*if \(!cfg\.url && !AF_MLIVE\) \{/.test(H)
+      && /if \(!masterCfg\(\)\.url && !AF_MLIVE && !afMLiveTried_\) \{ afProbeMasterLive_\(\)\.then\(function \(\) \{ verifyMaster\(c\); \}\); return; \}/.test(H)
+      && /typeof window\.SUResRead\.liveReady === 'function'/.test(H));
+    t('L 画面: Google へ送る関数（masterPostGas_・masterGetGas_）は接続先が無ければ今までどおり送らない', /function masterPost\(body, timeoutMs\) \{\s*var cfg = masterCfg\(\);\s*if \(!cfg\.url\) return Promise\.reject\(new Error\('NO_URL'\)\);/.test(H)
+      && /function masterGet\(params, timeoutMs\) \{\s*var cfg = masterCfg\(\);\s*if \(!cfg\.url\) return Promise\.reject\(new Error\('NO_URL'\)\);/.test(H));
+    t('L 画面: 使える端末の設定の窓は「未設定」を赤で出さない（新しい文言は足さない）', /AF_LIVE \? '—' : '<span style="color:var\(--err\)">未設定<\/span>'/.test(H) && /AF_MLIVE \? '—' : '<span style="color:var\(--err\)">未設定<\/span>'/.test(H));
+    t('L 画面: 守り（su-app-gate.js の確かめ）が通ってから確かめる（afStart_ の中の startupPull）', H.indexOf('window.SUAppGate.run(') < H.indexOf("startupPull().then(function (ok) { if (ok) admFullAuto_();"));
+  }
   console.log(`\n合格 ${pass} / 不合格 ${fail}`);
   process.exitCode = fail ? 1 : 0;
 })();

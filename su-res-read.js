@@ -558,5 +558,34 @@
       });
   }
 
-  root.SUResRead = { call: call, write: write, mirror: mirrorSoon, stateRev: stateRev, refreshFlags: refreshFlags, _answer: answer, _toRow: toRow, _gas: GAS, _reset: function () { modeCache = null; modeAt = 0; ownFlags = null; mirroring = null; mirrorAgain = false; caughtUp = false; revSeq = {}; } };
+  /* この端末が「入居者マスタの接続先・合言葉なしで、ログインだけで」入居者マスタを読み書きできるか（2026-11-08 代表者「端末ごとの設定を極限までなくす」）。
+   * スイッチ master_live が入・現場の端末でない・ログインが確かめられた（OK）・役割が事務所か管理者・印が「切り替えた後」の5つがそろう時だけ true。
+   * それ以外・分からない・時間切れ（8秒）は false（false の時、画面は今までどおり接続先の設定を求める）。
+   * 読むだけで、端末には何も書かない（スイッチはこの部品の中にだけ覚える）。受け口へも Google へも送らない。例外は外へ出さない */
+  function liveReady(io) {
+    try {
+      var role = '';
+      try { role = String(localStorage.getItem('su_device_role') || ''); } catch (e) { role = ''; }
+      if (role === 'field') return Promise.resolve(false);
+      var tm = null;
+      var late = new Promise(function (ok) { tm = setTimeout(function () { ok(false); }, 8000); });
+      var probe = Promise.resolve().then(function () { return refreshFlags(); }).then(function () {
+        if (!switchOn()) return false;
+        return Promise.resolve().then(function () { return io && io.auth ? io.auth() : loadAuth(); }).then(function (A) {
+          if (!A) return false;
+          return Promise.resolve().then(function () { return A.check(); }).then(function (st) {
+            if (!st || st.status !== (A.STATUS || {}).OK) return false;
+            if (st.role !== 'admin' && st.role !== 'office') return false;
+            return mode(io).then(function (m) { return m === 'live'; });
+          });
+        });
+      }).then(function (v) { return v === true; }, function (e) {
+        try { if (root.SUErrors && typeof root.SUErrors.note === 'function') root.SUErrors.note('入居者マスタの新しい保存先: 使える状態', e && e.message || e); } catch (x) { /* 記録できなくても止めない */ }
+        return false;
+      });
+      return Promise.race([probe, late]).then(function (v) { clearTimeout(tm); return v === true; }).then(null, function () { return false; });
+    } catch (e) { return Promise.resolve(false); }
+  }
+
+  root.SUResRead = { call: call, write: write, mirror: mirrorSoon, stateRev: stateRev, liveReady: liveReady, refreshFlags: refreshFlags, _answer: answer, _toRow: toRow, _gas: GAS, _reset: function () { modeCache = null; modeAt = 0; ownFlags = null; mirroring = null; mirrorAgain = false; caughtUp = false; revSeq = {}; } };
 })(typeof window !== 'undefined' ? window : this);
