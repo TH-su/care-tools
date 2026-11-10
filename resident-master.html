@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-FnYpvlcgHY0cENLFosKzjq8adR/tQJZ0MSQRPgRskmQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-hD21mtlDNdoX1Jg4Hjrx07g0wnVY2tNU7XlT1jG9UD4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -15462,6 +15462,8 @@ function init(){
   // ── 端末用途ガード：現場タブレットはデータを一切読み込まずブロック表示 ──
   if(applyDeviceGuard()){
     setSync('現場端末','err');
+    /* 現場端末は入居者マスタを読まないので接続先が要らない。「接続先が入っていません」の帯を出さない（2026-11-10 本人指示） */
+    try{ if(window.SUCfgHint&&typeof window.SUCfgHint.quiet==='function') window.SUCfgHint.quiet(); }catch(e){ /* 案内の帯の失敗は止めない */ }
     /* 現場端末でも、前回残った履歴の段は消費しておく（残すと「戻る」が1回空振りする） */
     try{ if(history.state&&history.state.rmScr)history.back(); }catch(e){}
     return;
