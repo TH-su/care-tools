@@ -1,9 +1,9 @@
-/* メニューの設定（menu-settings.html・menu-settings.js）の「メニューの毬の柄（施設の既定）」の試験（2026-10-26 代表者の決定）
+/* メニューの設定（menu-settings.html・menu-settings.js）の「メニューの毬の柄（施設の既定）」の試験（2026-10-26 代表者の決定・藤の手毬は 2026-11-10 本人指示）
    実行: node check/unit/menu_settings_ball_test.js
    守ること:
-     1 保存の規則: 麻の葉の時だけ ball:'asanoha' を書く。菊かがりは書かない（無い＝菊かがり）
+     1 保存の規則: 麻の葉の時だけ ball:'asanoha' を書く。藤の手毬は書かない（無い＝藤の手毬）。選べるのは 藤の手毬（既定）と麻の葉だけ（菊かがりは各端末で選ぶ）
      2 麻の葉を保存 → ほかの設定（役割の表示）だけ直して保存 → 柄は残る
-     3 「既定に戻す」で菊かがりに戻る。確かめの文に「毬の柄（施設の既定）」が入る
+     3 「既定に戻す」で藤の手毬に戻る。確かめの文に「毬の柄（施設の既定）」が入る
      4 データベースがまだ柄を受け付けない（移行 0025 の前・badshape）時は NEED_0025 の案内。形が違う（badball）時の文
      5 見本は毬の部品が描く。部品が無くても選べて保存できる
      6 画面の決まり: CSP は style を許さないまま・部品の版をそろえる・欄の見出しと1行の説明
@@ -56,8 +56,8 @@ function run(opt) {
   const ids = {};
   ['msg', 'v-loading', 'v-gate', 'v-admin', 'gate-why', 'secs', 'state', 'b-save', 'b-undo', 'b-reset'].forEach(id => { ids[id] = makeEl(id === 'secs' ? 'div' : 'section'); ids[id].id = id; });
   ['b-save', 'b-undo', 'b-reset'].forEach(id => { ids[id].tagName = 'BUTTON'; });
-  const radios = ['kiku', 'asanoha'].map(v => { const r = makeEl('input'); r.type = 'radio'; r.value = v; r.name = 'ball'; return r; });
-  const pvs = ['kiku', 'asanoha'].map(v => { const s = makeEl('span'); s.setAttribute('data-ball', v); return s; });
+  const radios = ['fuji', 'asanoha'].map(v => { const r = makeEl('input'); r.type = 'radio'; r.value = v; r.name = 'ball'; return r; });
+  const pvs = ['fuji', 'asanoha'].map(v => { const s = makeEl('span'); s.setAttribute('data-ball', v); return s; });
   const db = { config: opt.config === undefined ? null : opt.config, puts: [], updatedAt: 't0' };
   const confirms = [];
   const box = {
@@ -112,7 +112,7 @@ function run(opt) {
   {
     const p = run({ config: null });
     await p.settle();
-    t('1a 開いた時（設定なし）は菊かがりが選ばれ、保存のボタンは押せない', p.ids['v-admin'].hidden === false && p.radios[0].checked && !p.radios[1].checked && p.ids['b-save'].disabled, [p.ids['v-admin'].hidden, p.radios.map(r => r.checked)]);
+    t('1a 開いた時（設定なし）は藤の手毬が選ばれ、保存のボタンは押せない', p.ids['v-admin'].hidden === false && p.radios[0].checked && !p.radios[1].checked && p.ids['b-save'].disabled, [p.ids['v-admin'].hidden, p.radios.map(r => r.checked)]);
     p.pick('asanoha');
     t('1b 麻の葉を選ぶと「保存していない変更があります」・保存のボタンが押せる', !p.ids['b-save'].disabled && /保存していない変更があります/.test(p.ids.state.textContent), p.ids.state.textContent);
     p.ids['b-save'].click(); await p.settle();
@@ -123,9 +123,9 @@ function run(opt) {
     p.ids['b-save'].click(); await p.settle();
     t('2a ほかの設定（役割の表示）だけ直して保存しても、柄（ball:"asanoha"）は残る', p.db.puts.length === 2 && p.db.puts[1].ball === 'asanoha'
       && Object.keys(p.db.puts[1].hide).some(r => p.db.puts[1].hide[r].length === 1), p.db.puts[1]);
-    p.pick('kiku');
+    p.pick('fuji');
     p.ids['b-save'].click(); await p.settle();
-    t('1e 菊かがりに戻して保存すると ball を書かない（無い＝菊かがり）', p.db.puts.length === 3 && !('ball' in p.db.puts[2]), p.db.puts[2]);
+    t('1e 藤の手毬に戻して保存すると ball を書かない（無い＝藤の手毬）', p.db.puts.length === 3 && !('ball' in p.db.puts[2]), p.db.puts[2]);
   }
   {
     const p = run({ config: { ver: 1, ball: 'asanoha', hide: { field: ['weight-record.html'] } } });
@@ -135,14 +135,22 @@ function run(opt) {
     cb.checked = false; cb.fire('change');
     p.ids['b-save'].click(); await p.settle();
     t('2c 開き直した画面でほかの設定だけ直して保存しても、柄は残る', p.db.puts.length === 1 && p.db.puts[0].ball === 'asanoha', p.db.puts);
-    p.pick('kiku');
+    p.pick('fuji');
     p.ids['b-undo'].click(); await p.settle();
     t('2d 「変更を取り消す」で保存済みの麻の葉に戻る', p.radios[1].checked, p.radios.map(r => r.checked));
   }
   {
     const p = run({ config: { ver: 1, ball: 'kiku' } });
     await p.settle();
-    t('1f 不正な ball（"kiku" を書いた古い設定）は菊かがりとして読み、保存の時は書かない', p.radios[0].checked && p.ids['b-save'].disabled, p.radios.map(r => r.checked));
+    t('1f 不正な ball（"kiku" を書いた古い設定）は藤の手毬として読み、保存の時は書かない', p.radios[0].checked && p.ids['b-save'].disabled, p.radios.map(r => r.checked));
+  }
+  {
+    const p = run({ config: null });
+    await p.settle();
+    const kiku = p.radios[0];
+    kiku.value = 'kiku'; kiku.checked = true; kiku.fire('change');   // 画面に無い値（菊かがり）が来ても柄を変えない
+    kiku.value = 'fuji';
+    t('1g 施設の既定に菊かがり・知らない値は選べない（変更にならない）', p.ids['b-save'].disabled, p.ids.state.textContent);
   }
 
   console.log('\n— 3. 既定に戻す —');
@@ -152,7 +160,7 @@ function run(opt) {
     p.ids['b-reset'].click(); await p.settle();
     const msg = p.confirms[p.confirms.length - 1] || '';
     t('3a 確かめの文に「毬の柄（施設の既定）」が入る', msg.indexOf('毬の柄（施設の既定）') >= 0 && /ボタンの移動・毬の柄（施設の既定）の設定は消えます。/.test(msg), msg);
-    t('3b 既定に戻すと設定を消し（null）、菊かがりに戻る', p.db.puts.length === 1 && p.db.puts[0] === null && p.radios[0].checked, [p.db.puts, p.radios.map(r => r.checked)]);
+    t('3b 既定に戻すと設定を消し（null）、藤の手毬に戻る', p.db.puts.length === 1 && p.db.puts[0] === null && p.radios[0].checked, [p.db.puts, p.radios.map(r => r.checked)]);
   }
 
   console.log('\n— 4. データベースが断った時の文 —');
@@ -162,12 +170,12 @@ function run(opt) {
     p.pick('asanoha');
     p.ids['b-save'].click(); await p.settle();
     const m = p.ids.msg.textContent;
-    t('4a 移行 0025 の前（ball を badshape で断る）: 0025 が要ることと、菊かがりに戻せば保存できることを出す', /移行 0025/.test(m) && /「菊かがり」に戻す/.test(m) && !/badshape/.test(m), m);
+    t('4a 移行 0025 の前（ball を badshape で断る）: 0025 が要ることと、藤の手毬に戻せば保存できることを出す', /移行 0025/.test(m) && /「藤の手毬」に戻す/.test(m) && !/badshape/.test(m), m);
     t('4b 断られた時は保存しない・麻の葉の選択は画面に残る', p.db.config === null && p.radios[1].checked && !p.ids['b-save'].disabled, [p.db.config, p.radios.map(r => r.checked)]);
-    p.pick('kiku');
+    p.pick('fuji');
     const cb = p.firstCheckbox(); cb.checked = false; cb.fire('change');
     p.ids['b-save'].click(); await p.settle();
-    t('4c 0025 の前でも、菊かがりのままならほかの変更は保存できる', p.db.config && !('ball' in p.db.config), p.db.config);
+    t('4c 0025 の前でも、藤の手毬のままならほかの変更は保存できる', p.db.config && !('ball' in p.db.config), p.db.config);
   }
   {
     const p = run({ config: null, accepts: () => ({ ok: false, error: 'badball' }) });
@@ -205,7 +213,9 @@ function run(opt) {
   console.log('\n— 6. 画面の決まり —');
   t('6a CSP は style を許さないまま（style-src \'self\'）', /style-src 'self';/.test(PAGE) && !/unsafe-inline/.test(PAGE), '');
   t('6b 欄の見出しと、端末の選択が優先される1行の説明', /<h2 id="ball-h">メニューの毬の柄（施設の既定）<\/h2>/.test(PAGE) && /各端末でメニューの毬を押して選んだ柄は、その端末ではこの既定より優先されます。/.test(PAGE), '');
-  t('6c 2つの柄を選ぶ（name="ball"・値は kiku と asanoha）', /<input type="radio" name="ball" value="kiku">/.test(PAGE) && /<input type="radio" name="ball" value="asanoha">/.test(PAGE), '');
+  t('6c 2つの柄を選ぶ（name="ball"・値は fuji と asanoha・菊かがりは施設の既定に出さない）', /<input type="radio" name="ball" value="fuji"><span class="ms-ball-pv" data-ball="fuji"><\/span><span class="ms-ball-nm">藤の手毬（既定）<\/span>/.test(PAGE)
+    && /<input type="radio" name="ball" value="asanoha">/.test(PAGE) && !/name="ball" value="kiku"/.test(PAGE) && (PAGE.match(/name="ball"/g) || []).length === 2, '');
+  t('6c2 菊かがりは各端末で毬を押して選べることの説明', /菊かがりは、各端末でメニューの毬を押すと選べます。/.test(PAGE), '');
   t('6d 画面に style の属性・<style> を書いていない', !/\sstyle=|<style/.test(PAGE), '');
   const v = f => ((new RegExp('<script src="' + f.replace(/\./g, '\\.') + '\\?v=([^"]+)"')).exec(PAGE) || [])[1];
   const vi = f => ((new RegExp('<script src="' + f.replace(/\./g, '\\.') + '\\?v=([^"]+)"')).exec(INDEX) || [])[1];

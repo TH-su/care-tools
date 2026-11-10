@@ -21,7 +21,19 @@
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
   var PAGE = 2000;
+  /* 1ページの読み取りがデータベースの時間の上限（ログインした人は8秒）を超えた時（57014）だけ、同じ続きの印から行数を小さくして読み直す。
+     1つの表の大きな行（週間計画の控えなど）が、データが温まっていない時に1回だけ上限を超えて書き出し全体が止まっていたため（2026-11-08）。
+     読み直しは最大3回（2000 → 500 → 125 → 30 行）。ほかの断り・通信の失敗は今までどおりそのまま止める */
+  var PAGE_RETRY = [500, 125, 30];
+  async function readPage(c, run, table, after) {
+    var rp = await c.rpc('export_page', { p_run: run, p_table: table, p_after: after, p_limit: PAGE });
+    for (var k = 0; k < PAGE_RETRY.length && rp && rp.error && rp.error.code === '57014'; k++) {
+      rp = await c.rpc('export_page', { p_run: run, p_table: table, p_after: after, p_limit: PAGE_RETRY[k] });
+    }
+    return rp;
+  }
   var GAS_TIMEOUT_MS = 90000;
+  var WS_PULL_TIMEOUT_MS = 300000;   // 統合同期の pull だけ（全部のキーを1回で返すため・2026-11-08）
 
   function el(tag, cls, text) {
     var e = document.createElement(tag);
@@ -71,7 +83,7 @@
   }
 
   /* GAS への POST（su-data-gas.js の post と同じ形。合言葉は本文の token・URL に載せない） */
-  function post(t, payload) {
+  function post(t, payload, waitMs) {
     var body = {};
     for (var k in payload) if (Object.prototype.hasOwnProperty.call(payload, k)) body[k] = payload[k];
     body.token = t.token;
@@ -81,7 +93,7 @@
        排泄・体重・家族構成図・シフト分析・統合同期には添えない。打ち切りの時計は証明を取った後に始める（待ち時間を減らさない） */
     var ga = (t && t.readAuth === true && window.SUGasAuth) ? window.SUGasAuth : null;
     return (ga ? ga.addTo(body) : Promise.resolve(body)).then(function (b) {
-      timer = ac ? setTimeout(function () { ac.abort(); }, GAS_TIMEOUT_MS) : null;
+      timer = ac ? setTimeout(function () { ac.abort(); }, waitMs || GAS_TIMEOUT_MS) : null;
       return fetch(t.url, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -122,13 +134,17 @@
   var GAS = [
     { id: 'ws', title: '週間計画・ワースケ・勤務表（統合同期）',
       read: async function (t) {
-        var j = need(await post(t, { action: 'pull' }));
+        // 統合同期の pull は全部のキーを1回で返すので、ほかより長く待つ（11/08 の書き出しで 90 秒を超えて「時間切れ」になった。GAS の上限の6分より前で打ち切る）
+        var j = need(await post(t, { action: 'pull' }, WS_PULL_TIMEOUT_MS));
         var e = (j.entries && typeof j.entries === 'object') ? j.entries : {};
         return { parts: { entries: e }, count: Object.keys(e).length, unit: 'キー' };
       } },
     { id: 'adm', title: '入居調整',
       read: async function (t) {
-        var j = need(await post(t, { action: 'get', key: 'admission_flow_v1' }));
+        var j0 = await post(t, { action: 'get', key: 'admission_flow_v1' });
+        // 写し返しを止める計画の段2（入居調整の GAS の読み口を断る印 ADMISSION_READ_CLOSED）を入れた後は、Google の台帳を読めない（care-backend 2026-11-08）
+        if (j0 && j0.code === 'adm_read_closed') { var sw = new Error('switched'); sw.switched = true; sw.note = '新しい保存先へ切り替え済み（台帳はデータベースの書き出し db/adm_docs に入っている）'; throw sw; }
+        var j = need(j0);
         // 入居調整を新しい保存先へ切り替えた後（GAS の応答に switched）は、Google の台帳は写し返しの分だけ遅れていることがある（入居調整の反証レビュー 指摘4）
         var lag = j.switched === true ? '。新しい保存先へ切り替えた後のため、Google の台帳は写し返しの分だけ遅れていることがあります（正本は新しい保存先）' : '';
         return { parts: { ledger: j.data == null ? null : j.data }, count: j.data == null ? 0 : 1, unit: '台帳', note: '添付ファイルは入っていません' + lag };
@@ -213,7 +229,10 @@
       } },
     { id: 'analyzer', title: '過去シフト分析',
       read: async function (t) {
-        var j = need(await post(t, { action: 'pull' }));
+        var j0 = await post(t, { action: 'pull' });
+        // 新しい保存先へ切り替えた後は、アナライザ同期の GAS が読み取りも断る（sa_switched・2026-11-03）。中身はデータベースの書き出しに入っている
+        if (j0 && j0.code === 'sa_switched') { var sw = new Error('switched'); sw.switched = true; sw.note = '新しい保存先へ切り替え済み（中身はデータベースの書き出し db/sa_entries に入っている）'; throw sw; }
+        var j = need(j0);
         var e = (j.entries && typeof j.entries === 'object') ? j.entries : {};
         return { parts: { entries: e }, count: Object.keys(e).length, unit: 'キー' };
       } },
@@ -399,7 +418,7 @@
         /* 続きは「最後に読んだ行の後」から（データベースが次の印 next を返す。1回は最大 2000 行・約 8MB） */
         for (var guard = 0; guard < 100000; guard++) {
           prog('データベース ' + (i + 1) + ' / ' + tables.length + ' 表（' + t.name + '・' + rows.length + ' / ' + t.count + ' 行）');
-          var rp = await c.rpc('export_page', { p_run: b.run_id, p_table: t.name, p_after: after, p_limit: PAGE });
+          var rp = await readPage(c, b.run_id, t.name, after);
           if (rp.error) throw rp.error;
           var part = (rp.data && Array.isArray(rp.data.rows)) ? rp.data.rows : [];
           for (var q = 0; q < part.length; q++) rows.push(part[q]);

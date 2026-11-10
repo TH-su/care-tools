@@ -9,7 +9,7 @@
      3. 印を付ける処理は <body> より前にある（タイルが一瞬見えてから消える「ちらつき」を出さない）。
         印のある時に事務所専用（data-office-only）のタイルを隠す CSS は !important 付き。
         このページは su_device_role を読むだけで、端末の保存領域へ直接書かない。
-        書いてよいのは毬の柄（鍵 su_menu_ball・値は 'kiku'・'asanoha' だけ）だけで、書くのは su-menu.js の setBall だけ（2026-10-26 代表者の決定）
+        書いてよいのは毬の柄（鍵 su_menu_ball・値は 'fuji'・'kiku'・'asanoha' だけ）だけで、書くのは su-menu.js の setBall だけ（2026-10-26 代表者の決定）
      4. 事業所名の差し込み（data-fac-name）は、施設情報が読めた時だけ officeName の名前に置き換える。
         読めていない時は一般名のまま触らず、読めた時（onReady）に置き換える。施設情報の部品が無くても止まらない */
 'use strict';
@@ -104,7 +104,7 @@ t('ページのどこにも端末の保存領域への直接の書き込み（se
      毬の柄の鍵を書くのは setBall の中だけ */
   const SM = fs.readFileSync(path.join(ROOT, 'su-menu.js'), 'utf8');
   t('ページが端末に書く道は SUMenu.setBall の1か所だけ', (HTML.match(/SUMenu\.setBall\(/g) || []).length === 1, (HTML.match(/SUMenu\.setBall\(/g) || []).length);
-  t("su-menu.js の毬の柄の鍵は su_menu_ball・値は 'kiku'・'asanoha' だけ", /var BALL_KEY = 'su_menu_ball';/.test(SM) && /var BALLS = \['kiku', 'asanoha'\];/.test(SM), '');
+  t("su-menu.js の毬の柄の鍵は su_menu_ball・値は 'fuji'・'kiku'・'asanoha' だけ", /var BALL_KEY = 'su_menu_ball';/.test(SM) && /var BALLS = \['fuji', 'kiku', 'asanoha'\];/.test(SM), '');
   const writes = SM.match(/localStorage\.(setItem|removeItem)\(([A-Z_]+)/g) || [];
   t('su-menu.js が書く鍵は控え（CACHE_KEY）と毬の柄（BALL_KEY）だけ', writes.length > 0 && writes.every(w => /\((CACHE_KEY|BALL_KEY)$/.test(w)), writes);
   const sb = SM.slice(SM.indexOf('function setBall'), SM.indexOf('\n  }\n', SM.indexOf('function setBall')));

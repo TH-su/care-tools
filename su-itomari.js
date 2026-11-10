@@ -1,5 +1,5 @@
 /*
- * su-itomari.js — メニューの毬（菊かがり・麻の葉）を描く部品（2026-10-26 代表者の決定）
+ * su-itomari.js — メニューの毬（藤の手毬・菊かがり・麻の葉）を描く部品（2026-10-26 代表者の決定・藤の手毬は 2026-11-10 本人指示）
  * ════════════════════════════════════════════════════════════════
  * 目的: メニュー（index.html）の見出しの左と、メニューの設定（menu-settings.html）の見本に、
  *       「出ているツールの数」に合わせて育つ手まりを描く。アプリのアイコン（ロゴ v3 の菊かがり）と同じ球の描き方。
@@ -15,11 +15,14 @@
  *           ツールが0本の分野は花びらの形を点線で出す。
  *   asanoha 麻の葉。正二十面体を2つに割った格子に、ツール1本＝花1輪（いちばん手前の枠から順に咲く・32の枠）。
  *           半分から麻の葉の線。ツールが32本を超えた時は、出ている割合だけ32の枠に咲かせる。全部そろうと金の結び目。
+ *   fuji    藤の手毬（写真の手毬をもとにした柄・既定）。薄紫の地＋地の細い糸、上下の極に白の三角8つ、紫の八つの星（3つ飛ばしの大円）、
+ *           桃色の帯（緯度88〜104）、銅色の金糸。出ている割合（0〜1）で 白の三角 → 紫の星 → 帯 → 金糸 の順に育ち、全部そろうと完成形。
+ *           見出し用（small）は地の糸の本数を減らす。
  *   分野（色の順）: 記録・くすり/もの・入居者・計画・職員。表に無いリンク先は「入居者」の色。
  *
  * 使い方:
  *   SUItomari.render({kind, small, shown, all, px}) → <svg> の要素か null
- *     kind   'kiku' | 'asanoha'（それ以外は kiku）
+ *     kind   'fuji' | 'kiku' | 'asanoha'（それ以外は fuji）
  *     small  true で見出し用（線を太く・本数を減らす。麻の葉の糸の質感は描かない）
  *     shown  出ているツールのリンク先の配列（分子）  all  数えるツールのリンク先の配列（分母）
  *     px     幅と高さ（px）。無ければ viewBox だけ
@@ -27,7 +30,7 @@
  *   SUItomari.tally(shown, all) → {n, N, have:[5], total:[5]}（純関数。n は min(出ている数, 全体)）
  *   SUItomari.flowerCount(n, N) → 麻の葉に咲かせる花の数（純関数。32の枠）
  *   SUItomari.label(kind, n, N) → 読み上げの名前（純関数）
- *   SUItomari.name(kind) / other(kind)
+ *   SUItomari.name(kind) / next(kind)（押した時の次の柄。藤の手毬 → 菊かがり → 麻の葉 → 藤の手毬）
  */
 (function () {
   'use strict';
@@ -38,8 +41,8 @@
   var COLORS = ['#D9483B', '#E8A92E', '#6BAA5A', '#3BA6B5', '#E58FA8'];
   var LIGHT = ['#F0A79F', '#F5D08A', '#B5D6A8', '#9FD3DA', '#F5C6D3'];
   var TIER = ['#F3E3B5', '#FBF7EE'];
-  var KINDS = ['kiku', 'asanoha'];
-  var NAMES = { kiku: '菊かがり', asanoha: '麻の葉' };
+  var KINDS = ['fuji', 'kiku', 'asanoha'];
+  var NAMES = { fuji: '藤の手毬', kiku: '菊かがり', asanoha: '麻の葉' };
   var FAMILY_NAMES = ['記録', 'くすり・もの', '入居者', '計画', '職員'];
   var OTHER = 2;   // 表に無いリンク先は「入居者」
   // リンク先 → 分野（メニューの定義 #menuDef の業務ツール 23本・2026-10-26）。新しいツールは表に足す（足さなければ入居者の色）
@@ -94,11 +97,11 @@
     if (n <= 0) return 0;
     return Math.max(1, Math.min(SLOTS - 1, Math.round(SLOTS * n / N)));
   }
-  function kindOf(k) { return KINDS.indexOf(k) >= 0 ? k : 'kiku'; }
+  function kindOf(k) { return KINDS.indexOf(k) >= 0 ? k : 'fuji'; }
   function name(k) { return NAMES[kindOf(k)]; }
-  function other(k) { return kindOf(k) === 'kiku' ? 'asanoha' : 'kiku'; }
+  function next(k) { return KINDS[(KINDS.indexOf(kindOf(k)) + 1) % KINDS.length]; }
   function label(k, n, N) {
-    return '毬の柄：' + name(k) + '。' + (N | 0) + '本中' + (n | 0) + '本。押すと' + name(other(k)) + 'に切り替わります';
+    return '毬の柄：' + name(k) + '。' + (N | 0) + '本中' + (n | 0) + '本。押すと' + name(next(k)) + 'に切り替わります';
   }
   /* 分野を交互に並べた順（どの分野も早めに出る） */
   function interleave(counts) {
@@ -367,6 +370,142 @@
     E('circle', { cx: CX, cy: CY, r: f2(R - sw / 2), fill: 'none', stroke: done ? GOLD : '#C9C2B4', 'stroke-width': f2(sw) }, svg);
   }
 
+  /* ── 藤の手毬（写真の手毬をもとにした柄・2026-11-10 本人指示）──
+     見本（つむぐケアの立ち上がりアニメの ballSVG）を移した。色・極の向き・緯度は見本の値のまま。g＝出ている割合（0〜1） */
+  var F_BASE = '#C3BCEA', F_TEX1 = '#DAD5F6', F_TEX2 = '#A9A0DE', F_PURPLE = '#5B3DB2', F_WHITE = '#F8F5FB',
+      F_PINK = '#F1A9CC', F_PINK2 = '#E48DB9', F_COPPER = '#C7743A';
+  var F_POLE = [-0.55, -0.5, 0.67];
+  var F_TEX = null;   // 地の糸（細い大円44本）。数だけなので、初めて描く時に1回だけ作る（種を決めた乱数・毎回同じ絵）
+  function fujiTex() {
+    if (F_TEX) return F_TEX;
+    var a = [], seed = 7;
+    function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+    for (var k = 0; k < 44; k++) a.push({ n: norm([rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1]), c: k % 3 === 0 ? F_TEX2 : F_TEX1, o: 0.35 + rnd() * 0.4 });
+    F_TEX = a;
+    return F_TEX;
+  }
+  function clamp(x, a, b) { return x < a ? a : x > b ? b : x; }
+  function seg(t, a, b) { return clamp((t - a) / (b - a), 0, 1); }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function eout(t) { return 1 - Math.pow(1 - t, 3); }
+  function drawFuji(svg, t, small) {
+    var N = t.N, g = N > 0 ? clamp(t.n / N, 0, 1) : 0;
+    var P = norm(F_POLE), U = Math.abs(P[2]) < 0.999 ? norm(cross(P, [0, 0, 1])) : [1, 0, 0], V = cross(P, U);
+    var b = Ball(F_POLE), n8 = 8, ST = 45, TU = 72, TL = 118;
+    var thin = R * 0.013, mid = R * 0.042;
+    function xy(p) { return f1(CX + R * p[0]) + ',' + f1(CY + R * p[1]); }
+    // 点の並びのうち、手前（z≧0）の所だけを線にする。frac＝描く割合
+    function visD(pts, frac) {
+      var M = Math.max(0, Math.min(pts.length, Math.round(pts.length * frac))), d = '', on = false;
+      for (var j = 0; j < M; j++) { var p = pts[j]; if (p[2] >= 0) { d += (on ? 'L' : 'M') + xy(p); on = true; } else on = false; }
+      return d;
+    }
+    // 球の上の折れ線（[緯度, 経度] の並び）
+    function sLine(seq, frac, steps) {
+      var pts = [];
+      for (var i = 0; i < seq.length - 1; i++) for (var k = 0; k < steps; k++) {
+        var u = k / steps;
+        pts.push(b.pt(seq[i][0] + (seq[i + 1][0] - seq[i][0]) * u, seq[i][1] + (seq[i + 1][1] - seq[i][1]) * u));
+      }
+      var l = seq[seq.length - 1];
+      pts.push(b.pt(l[0], l[1]));
+      return visD(pts, frac);
+    }
+    // 球の上の大円の折れ線（頂点どうしを球面の最短の線で結ぶ）
+    function gLine(seq, frac) {
+      var pts = [], S = small ? 12 : 24;
+      for (var i = 0; i < seq.length - 1; i++) {
+        var a = b.pt(seq[i][0], seq[i][1]), c = b.pt(seq[i + 1][0], seq[i + 1][1]);
+        var om = Math.acos(clamp(a[0] * c[0] + a[1] * c[1] + a[2] * c[2], -1, 1)), so = Math.sin(om) || 1e-9;
+        for (var k = 0; k < S; k++) {
+          var u = k / S, w1 = Math.sin((1 - u) * om) / so, w2 = Math.sin(u * om) / so;
+          pts.push([a[0] * w1 + c[0] * w2, a[1] * w1 + c[1] * w2, a[2] * w1 + c[2] * w2]);
+        }
+      }
+      var l = seq[seq.length - 1];
+      pts.push(b.pt(l[0], l[1]));
+      return visD(pts, frac);
+    }
+    // 三角（花びら）。先の sin が丸めで負になると NaN になるので 0 で止める
+    function tri(ph0, T, Wd, th0, n, sharp) {
+      if (!(T > th0 + 0.5)) return null;
+      var L = [], Rr = [];
+      for (var i = 0; i <= n; i++) {
+        var th = th0 + (T - th0) * i / n, f = Math.pow(Math.max(0, Math.sin(Math.PI * i / n)), sharp);
+        L.push(b.pt(th, ph0 - Wd * f)); Rr.push(b.pt(th, ph0 + Wd * f));
+      }
+      return b.path(L.concat(Rr.reverse()));
+    }
+    var id = 'su-itomari-' + (++uid);
+    var defs = E('defs', {}, svg);
+    shade(defs, id + 's', [['0', '#fff', '.30'], ['.45', '#fff', '0'], ['.8', '#2A1A55', '.10'], ['1', '#2A1A55', '.36']]);
+    E('circle', { cx: CX, cy: CY, r: R }, E('clipPath', { id: id + 'c' }, defs));
+    E('circle', { cx: CX, cy: CY, r: R, fill: F_BASE }, svg);
+    var gr = E('g', { 'clip-path': 'url(#' + id + 'c)' }, svg);
+    var i, d;
+    // 地の糸（見出し用は本数を減らす）
+    var tex = fujiTex(), tn = small ? 14 : tex.length, tsteps = small ? 24 : 48;
+    for (var x = 0; x < tn; x++) {
+      var nl = tex[x].n;
+      var nw = [nl[0] * P[0] + nl[1] * U[0] + nl[2] * V[0], nl[0] * P[1] + nl[1] * U[1] + nl[2] * V[1], nl[0] * P[2] + nl[1] * U[2] + nl[2] * V[2]];
+      var ta = norm(cross(nw, Math.abs(nw[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0])), tb = cross(nw, ta), pts = [];
+      for (i = 0; i <= tsteps; i++) {
+        var q = i / tsteps * Math.PI * 2;
+        pts.push([Math.cos(q) * ta[0] + Math.sin(q) * tb[0], Math.cos(q) * ta[1] + Math.sin(q) * tb[1], Math.cos(q) * ta[2] + Math.sin(q) * tb[2]]);
+      }
+      d = visD(pts, 1);
+      if (d) E('path', { d: d, fill: 'none', stroke: tex[x].c, 'stroke-width': f2(R * (small ? 0.024 : 0.016)), 'stroke-opacity': f2(tex[x].o) }, gr);
+    }
+    var gp = seg(g, 0, 0.7), gl = seg(g, 0.15, 0.85), gb = seg(g, 0.4, 0.95), gc = seg(g, 0.6, 1), pn = small ? 14 : 26;
+    // 白の三角（星の先）。上の極は先が緯度72度、下の極は緯度118度
+    for (i = 0; i < n8; i++) {
+      var ph = i * ST;
+      d = tri(ph, lerp(10, TU, eout(gp)), 15, 3, pn, 0.9);
+      if (d) E('path', { d: d, fill: F_WHITE }, gr);
+      d = tri(ph + ST / 2, 174, 12, lerp(174, TL, eout(gp)), pn, 1.0);
+      if (d) E('path', { d: d, fill: F_WHITE }, gr);
+    }
+    // 紫の糸の八つの星（先を3つ飛ばしに長い大円で結ぶ）
+    var su = [], su2 = [], sl = [];
+    for (var k = 0; k <= n8; k++) { su.push([TU, (k * 3 % n8) * ST]); su2.push([58, ST / 2 + (k * 3 % n8) * ST]); sl.push([TL, ST / 2 + (k * 3 % n8) * ST]); }
+    [su, sl, su2].forEach(function (z, ix) {
+      var dd = gLine(z, eout(seg(gl, ix * 0.08, ix * 0.08 + 0.84)));
+      if (!dd) return;
+      E('path', { d: dd, fill: 'none', stroke: F_PURPLE, 'stroke-width': f2(mid * 1.25), 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, gr);
+      E('path', { d: dd, fill: 'none', stroke: '#7A5FD0', 'stroke-width': f2(mid * 0.35), 'stroke-linejoin': 'round', 'stroke-linecap': 'round', 'stroke-opacity': '0.55' }, gr);
+    });
+    // 桃色の帯（緯度88〜104）
+    if (gb > 0) {
+      var bd = '', bs = small ? 36 : 72, bw = 360 / bs;
+      for (var m = 0; m < bs; m++) {
+        var p0 = b.path([b.pt(88, m * bw), b.pt(88, (m + 1) * bw), b.pt(104, (m + 1) * bw), b.pt(104, m * bw)]);
+        if (p0) bd += p0;
+      }
+      if (bd) E('path', { d: bd, fill: mix(F_BASE, F_PINK, gb) }, gr);   // 育つ途中は地の色から桃色へ（透ける指定は使わない）
+      [88, 104].forEach(function (th) {
+        var e = [];
+        for (var m2 = 0; m2 <= bs; m2++) e.push([th, m2 * bw]);
+        var dd = sLine(e, 1, 1);
+        if (dd) E('path', { d: dd, fill: 'none', stroke: F_PINK2, 'stroke-width': f2(thin * 1.4), 'stroke-opacity': f2(gb) }, gr);
+      });
+    }
+    // 銅色の金糸（白の三角の芯・極の星・帯の格子）
+    if (gc > 0) {
+      var cs = '', ec = eout(gc);
+      for (i = 0; i < n8; i++) {
+        var ph2 = i * ST;
+        cs += sLine([[0, ph2], [11, ph2]], ec, 3);
+        cs += sLine([[26, ph2], [TU - 6, ph2]], ec, 6);
+        cs += sLine([[168, ph2 + ST / 2], [TL + 6, ph2 + ST / 2]], ec, 6);
+      }
+      var l1 = [], l2 = [];
+      for (var m3 = 0; m3 <= 24; m3++) { l1.push([m3 % 2 ? 104 : 88, m3 * 15]); l2.push([m3 % 2 ? 88 : 104, m3 * 15]); }
+      cs += sLine(l1, ec, 4) + sLine(l2, ec, 4);
+      if (cs) E('path', { d: cs, fill: 'none', stroke: F_COPPER, 'stroke-width': f2(thin * 1.3), 'stroke-linecap': 'round', 'stroke-opacity': f2(gc) }, gr);
+    }
+    E('circle', { cx: CX, cy: CY, r: R, fill: 'url(#' + id + 's)' }, svg);
+  }
+
   function note(e) {
     try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('メニューの毬', e, 'su-itomari.js'); } catch (e2) { /* 記録できなくても描かないだけ */ }
   }
@@ -379,7 +518,7 @@
       var svg = E('svg', { viewBox: '0 0 100 100', 'aria-hidden': 'true', focusable: 'false' });
       var px = Number(o.px);
       if (isFinite(px) && px > 0) { svg.setAttribute('width', f1(px)); svg.setAttribute('height', f1(px)); }
-      if (kind === 'asanoha') drawAsanoha(svg, t, small); else drawKiku(svg, t, small);
+      if (kind === 'asanoha') drawAsanoha(svg, t, small); else if (kind === 'kiku') drawKiku(svg, t, small); else drawFuji(svg, t, small);
       return svg;
     } catch (e) {
       note(e);
@@ -389,6 +528,6 @@
 
   window.SUItomari = {
     render: render, familyOf: familyOf, tally: tally, flowerCount: flowerCount, label: label,
-    name: name, other: other, KINDS: KINDS.slice(), FAMILY_NAMES: FAMILY_NAMES.slice(), SLOTS: SLOTS
+    name: name, next: next, KINDS: KINDS.slice(), FAMILY_NAMES: FAMILY_NAMES.slice(), SLOTS: SLOTS
   };
 })();
