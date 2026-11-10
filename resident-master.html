@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-hD21mtlDNdoX1Jg4Hjrx07g0wnVY2tNU7XlT1jG9UD4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-Xh9iKgZr0DtnXYKyYk36+uF5J4eGf4YcS7RwMl6UHjs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -13019,6 +13019,12 @@ var REV_UI_KEY='rmaster_rev_ui', REV_FEES_KEY='rmaster_rev_fees';
 var REV_DEFAULT_LIMITS={'要支援1':5032,'要支援2':10531,'要介護1':16765,'要介護2':19705,'要介護3':27048,'要介護4':30938,'要介護5':36217};   /* 週間計画の報酬マスタの既定と同じ（読めなかった時だけ使い、画面に出す） */
 var csRateMaster_=null;   /* 週間計画の報酬マスタ（a4EnsureDayMap が読んだ時に一緒に持つ・メモリだけ） */
 var csShare_=null;        /* 週間計画の予定から数えた訪問の割合 {byMid, byName}（同じ応答から作る・氏名は突き合わせにだけ使う・メモリだけ） */
+/* 収支の見通しが使う報酬マスタ（限度額・1単位の円）も同じ応答から持つ（2回取らない・メモリだけ・2026-11-07）。
+   a4EnsureDayMap はフェイスシートと一字一句同じ共有の処理なので、入居者マスタだけの後処理はここに置く（2026-11-11） */
+function a4OnDayData_(data){
+  csRateMaster_=(data.rateMaster&&typeof data.rateMaster==='object')?data.rateMaster:null;
+  try{ csShare_=revBuildShare_(data); }catch(eS){ csShare_=null; }
+}
 var REV={ force:false, ptrDown:false, mainPending:false, form:{}, st:null, stTried:{}, stLoading:false, stDone:0, stTotal:0, stBad:0, stGen:0, plan:[], planSeq:0, sel:'', csMsg:'', csAsked:false, bound:false,
           params:{deduct:2000, cutoff:5, lag:2}, ui:{months:12, basis:'cash', openHosp:'eom', startBack:5, split:false} };
 var REV_START_BACKS=[0,3,5,11];   /* 表示の始まり: 今月・3か月前・半年前（5か月前＝11月なら6月）・1年前（11か月前）。既定は半年前（2026-11-07 本人指示） */
@@ -13635,9 +13641,8 @@ function a4EnsureDayMap(){
       if(!j||!j.ok||!j.data||!Array.isArray(j.data.residents)||!j.data.residents.length)
         throw new Error(String((j&&j.error)||'応答が不正です'));
       a4DayMap=a4BuildDayMap(j.data); a4DayFailAt=0; a4DayFailMsg='';
-      /* 収支の見通しが使う報酬マスタ（限度額・1単位の円）も同じ応答から持つ（2回取らない・メモリだけ・2026-11-07） */
-      csRateMaster_=(j.data.rateMaster&&typeof j.data.rateMaster==='object')?j.data.rateMaster:null;
-      try{ csShare_=revBuildShare_(j.data); }catch(eS){ csShare_=null; }
+      /* 画面ごとの後処理（入居者マスタは収支の見通しの報酬マスタを同じ応答から持つ・無い画面は何もしない・2026-11-11） */
+      if(typeof a4OnDayData_==='function') a4OnDayData_(j.data);
       return '';
     })
     .catch(function(e){ if(dg!==devGen) return ''; if(e&&e.message==='A4_NO_EP') return a4DayFail_('週間計画の接続先が未設定のため、デイ利用欄は「未確認」で印刷します'); return a4DayFail_('週間計画を取得できなかったため、デイ利用欄は「未確認」で印刷します'); })
