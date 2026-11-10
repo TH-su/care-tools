@@ -790,6 +790,56 @@
     return c.importDay ? String(today || '') : String(c.date || '');
   }
 
+  /* ── 9-1. 書類の医療機関と、書類に無い今の薬の扱い（本人指示 2026-11-10）──
+     同じ医療機関からの処方なら、新しい薬情がすべて正しい（完全入れ替え）。ただし書類の薬が3剤以下で、その医療機関の定期薬より
+     2剤以上少ない時は臨時薬と判断し、足す・変えるだけにする（書類に無い今の薬は残す）。
+     定期薬の行には医療機関の記録が無いため、入れ替えるのは「かかりつけ病院が1つだけ入っていて、その名前が書類に書いてある」方だけ。
+     かかりつけ病院が無い・2つ以上・書類に名前が見つからない時は、今までどおり書類に無い今の薬を残す側に倒す（ほかの医療機関の薬を消さない）。
+     名前は全角半角・空白をそろえ、4文字以上の名前（かっこ書きは除く）が書類の【1つの行】に含まれる時だけ一致とする。「薬局」を含む行
+     （門前の薬局の名前に病院名が入る）は照合に使わない。法人の頭書き（医療法人〇〇会 など）を除いた名前でも探すが、病院・医院・クリニック
+     などの一般の語を除いて固有の名前が2文字以上残る時だけ使う（「内科医院」だけで別の医院に当てない・反証レビュー 2026-11-10 指摘2）。
+     書類の薬の数（nDoc）は定期薬に書く行だけで数える（外用・頓服で定期薬に入れない行は数えない・同 指摘1）。
+     st: {hospital:かかりつけ病院の欄（1行1件）, doc:(parseResult の書類1件), rows:(確認表の行), current:今の定期薬の全文}
+     戻り値 {mode:'replace'（入れ替え）|'temp'（臨時薬・足すだけ）|'keep'（残す）, clinic:一致した名前, why:'keep・temp の理由', nDoc, nReg} */
+  function clinicKey(s) {
+    return nfkc(s).replace(/[（(【\[][^）)】\]]*[）)】\]]?/g, '').replace(/[\s\u3000・･]/g, '');
+  }
+  function clinicPlan(st) {
+    st = st || {};
+    var seen = {}, hs = [];
+    String(st.hospital == null ? '' : st.hospital).split(/\r\n|\r|\n/).forEach(function (l) {
+      var k = clinicKey(l); if (k && !seen[k]) { seen[k] = 1; hs.push({ name: String(l).trim(), key: k }); }
+    });
+    var doc = st.doc && typeof st.doc === 'object' ? st.doc : null, txts = [];
+    (doc && Array.isArray(doc.pages) ? doc.pages : []).forEach(function (p) {
+      (p && Array.isArray(p.lines) ? p.lines : []).forEach(function (l) { var k = clinicKey(l && l.t); if (k && k.indexOf('薬局') < 0) txts.push(k); });
+    });
+    var rows = Array.isArray(st.rows) ? st.rows : [];
+    var nDoc = rows.filter(function (r) { return r && r.kind !== 'left' && !(r.kind === 'add' && r.action === 'skip'); }).length;
+    var nReg = String(st.current == null ? '' : st.current).split(/\r\n|\r|\n/).filter(function (l) { return l.trim(); }).length;
+    var found = function (h) {
+      var ks = [h.key], b = h.key.replace(/^(社会医療法人|特定医療法人|医療法人社団|医療法人財団|医療法人|一般社団法人|社会福祉法人)[^会団]{1,20}?[会団]/, '');
+      if (b !== h.key && b.replace(/(総合病院|病院|医院|クリニック|診療所|内科|外科|整形外科|皮膚科|眼科|耳鼻咽喉科|精神科|心療内科|歯科|泌尿器科|循環器科|消化器科|呼吸器科|脳神経外科|中央|医療センター|センター)/g, '').length >= 2) ks.push(b);
+      return ks.some(function (k) { return k.length >= 4 && txts.some(function (t) { return t.indexOf(k) >= 0; }); });
+    };
+    var out = { mode: 'keep', clinic: '', why: '', nDoc: nDoc, nReg: nReg };
+    if (!hs.length) { out.why = 'かかりつけ病院が入っていないため、書類に無い今の薬は残します'; return out; }
+    if (hs.length > 1) { out.why = 'かかりつけ病院が2つ以上のため、書類に無い今の薬は残します（消す薬は1行ずつ選んでください）'; return out; }
+    if (!txts.length || !found(hs[0])) { out.why = '書類にかかりつけ病院（' + hs[0].name + '）の名前が見つからないため、書類に無い今の薬は残します'; return out; }
+    out.clinic = hs[0].name;
+    if (nDoc <= 3 && nDoc <= nReg - 2) { out.mode = 'temp'; out.why = '書類の薬が ' + nDoc + ' 剤で、定期薬（' + nReg + ' 剤）より2剤以上少ないため、臨時薬と判断し、足す・変えるだけにします（書類に無い今の薬は残します）'; return out; }
+    out.mode = 'replace';
+    return out;
+  }
+  /* 確認表の行に扱いの既定を当てる（入れ替えの時だけ、書類に無い今の行で、まだ選んでいない行を「中止」にする）。行の写しを返す */
+  function planRows(rows, plan) {
+    return (Array.isArray(rows) ? rows : []).map(function (r) {
+      var o = {}; for (var k in r) if (Object.prototype.hasOwnProperty.call(r, k)) o[k] = r[k];
+      if (plan && plan.mode === 'replace' && o.kind === 'left' && !o.action) { o.action = 'stop'; o.byPlan = true; }
+      return o;
+    });
+  }
+
   /* ── 9-2. まとめて反映できるか（半自動・代表者の決定 2026-11-04）──
      確認表を1人ずつ開かずに反映してよいのは、人が確かめる所が何も無い書類だけ。次を全部満たす時だけ ok:
        1. 振り分けが名簿の1人への一字一致で決まり（assign の id）、人が別の方へ選び直していない
@@ -799,7 +849,9 @@
           今の行と同じ意味の行（kind 'same'＝何も書き換えない行）の ⚠ は、確認表と同じく確かめを求めない（judge と同じ扱い）。
           書類にあって「入れない」になった足す行（外用・頓服など・定期薬に何も書かない行）も問わず、一覧に名前を出して人が見る
           （実際の薬情はほぼ全員に外用薬が載り、これで止めるとまとめて反映が使えなかった・2026-11-05 仮置き）
-       4. 中止の行が無い。書類に無い今の薬（⚠ の無いもの）は「残す」にする（他の医療機関の薬を消さない側に倒す）
+       4. 書類に無い今の薬（⚠ の無いもの）は、入れ替え（clinicPlan の mode 'replace'）の時は「中止」、それ以外は「残す」を既定にする。
+          人が一覧で選び直した扱い（st.leftAct: {行の番号: 'keep'|'stop'}）はその既定より先に効く（一覧で消せる・本人指示 2026-11-10）。
+          調剤日が定期薬の最後の変更より前で、中止の行がある時は1人ずつへ回す（古い書類で新しい薬を消さない・本人指示 2026-11-10）
        5. 同じ名前の薬が2行にならない（変える・足す行の数は問わない・本人指示 2026-11-07）
        6. 調剤日が今日より後・同じ調剤日の薬情から反映済み、のどれでもない（定期薬の最後の変更より前の書類も止めない・本人指示 2026-11-07）
        7. 書類そのものに ⚠ が無い（薬情よみとりの読み残しの知らせ note・読めなかったページ・画像の無いページ・
@@ -808,9 +860,9 @@
      氏名の確かめ（identity）は 1 の一字一致で代える。古い書類（最後の変更より前）の印は付いたものとして扱う（本人指示 2026-11-07）。
      それ以外の確かめの印（同じ日・重なり・語の無い日付）は付けない＝judge が止めるものはそれ以外全部止まる。
      変更が1行も無い書類は none（書かずに「変更なし」で終える）。
-     st: {autoId, pickId, id, dates, today, rows, current, server, lastChange, sameDay, doc:(parseResult の書類1件)}
-     戻り値 {ok, none, why:[1人ずつにする理由], rows:(左の行を「残す」にした写し), judged:(judge の結果), date, kept:(残す行の数),
-       older:(調剤日が最後の変更より前ならその変更の日・違えば空)} */
+     st: {autoId, pickId, id, dates, today, rows, current, server, lastChange, sameDay, doc:(parseResult の書類1件), plan:(clinicPlan の結果), leftAct}
+     戻り値 {ok, none, why:[1人ずつにする理由], rows:(左の行に扱いを当てた写し), judged:(judge の結果), date, kept:(残す行の数),
+       older:(調剤日が最後の変更より前ならその変更の日・違えば空), plan, lefts:[{k:行の番号, cur, action}]（⚠ の無い書類に無い今の行・一覧で選び直せる）} */
   function bulkCheck(st) {
     st = st || {};
     var why = [], src = Array.isArray(st.rows) ? st.rows : [];
@@ -818,8 +870,12 @@
       var o = {}; for (var k in r) if (Object.prototype.hasOwnProperty.call(r, k)) o[k] = r[k];
       o.warns = Array.isArray(r.warns) ? r.warns.slice() : [];
       o.checked = false;
-      if (o.kind === 'left' && !o.warns.length) o.action = 'keep';
+      if (o.kind === 'left' && !o.warns.length) o.action = st.plan && st.plan.mode === 'replace' ? 'stop' : 'keep';
       return o;
+    });
+    var la = st.leftAct && typeof st.leftAct === 'object' ? st.leftAct : {};
+    rows.forEach(function (o, k) {
+      if (o.kind === 'left' && !o.warns.length && (la[k] === 'keep' || la[k] === 'stop')) o.action = la[k];
     });
     var labeled = (st.dates && Array.isArray(st.dates.labeled)) ? st.dates.labeled : [];
     var date = labeled.length === 1 ? String(labeled[0]) : '';
@@ -844,14 +900,17 @@
     var j = judge({ id: st.id, dates: st.dates, date: date, today: st.today, identity: true, server: st.server, rows: rows, current: st.current,
       lastChange: st.lastChange, oldChecked: true, sameDay: st.sameDay, ack: false, dupChecked: false, dateChecked: false, yjOf: st.yjOf });
     var n = j.counts.change + j.counts.add, noChange = !n && !j.counts.stop;
-    if (j.counts.stop) why.push('中止の行があります');
+    var older = !!(st.lastChange && date && date < String(st.lastChange)) ? String(st.lastChange) : '';
+    if (j.counts.stop && older) why.push('調剤日が定期薬の最後の変更より前で、消す行があります');
     if (j.importDay) why.push('取り込んだ日を調剤日にしています');
     if (j.stop && !(noChange && /^反映する変更はありません/.test(j.stop)) && !why.length) why.push(j.stop);
     var kept = rows.filter(function (r) { return r.kind === 'left' && r.action === 'keep'; }).length;
     var skipped = rows.filter(function (r) { return r.kind === 'add' && r.action === 'skip'; }).map(function (r) { return lineName(r.raw || r.line); });
-    /* 止めずに一覧で知らせる（調剤日が定期薬の最後の変更より前・本人指示 2026-11-07） */
-    var older = !!(st.lastChange && date && date < String(st.lastChange)) ? String(st.lastChange) : '';
-    return { ok: !why.length && !noChange, none: !why.length && noChange, why: why, rows: rows, judged: j, date: date, kept: kept, skipped: skipped, older: older };
+    /* 消す行が無ければ止めずに一覧で知らせる（調剤日が定期薬の最後の変更より前・本人指示 2026-11-07） */
+    var lefts = [];
+    rows.forEach(function (o, k) { if (o.kind === 'left' && !o.warns.length) lefts.push({ k: k, cur: o.cur, action: o.action }); });
+    return { ok: !why.length && !noChange, none: !why.length && noChange, why: why, rows: rows, judged: j, date: date, kept: kept, skipped: skipped, older: older,
+      plan: st.plan || null, lefts: lefts };
   }
 
   /* 指紋（FNV-1a 32bit・小文字の16進8桁）。入居者マスタの判断の印 S|利用者No|調剤日|指紋 に使う */
@@ -1008,7 +1067,7 @@
 
   var api = { parseResult: parseResult, assign: assign, findDates: findDates, datesIn: datesIn, parseUse: parseUse,
     parseRows: parseRows, looksDrug: looksDrug, stripEnum: stripEnum, snap: snap, lineSpec: lineSpec, shortDays: shortDays, splitMaker: splitMaker, stem: stem, matchCurrent: matchCurrent, sameMeaning: sameMeaning, buildRows: buildRows, judge: judge, buildAfter: buildAfter,
-    startDate: startDate, useDate: useDate, bulkCheck: bulkCheck, parseLabeled: parseLabeled, cleanDrugName: cleanDrugName, canonKey: canonKey, yjIndex: yjIndex, yjOf: yjOf, yjLookup: function (text) { var idx = yjIndex(text); return idx ? function (name) { return yjOf(name, idx); } : null; }, lineName: lineName, drugKey: drugKey,
+    startDate: startDate, useDate: useDate, bulkCheck: bulkCheck, clinicPlan: clinicPlan, planRows: planRows, parseLabeled: parseLabeled, cleanDrugName: cleanDrugName, canonKey: canonKey, yjIndex: yjIndex, yjOf: yjOf, yjLookup: function (text) { var idx = yjIndex(text); return idx ? function (name) { return yjOf(name, idx); } : null; }, lineName: lineName, drugKey: drugKey,
     fnv8: fnv8, srcKey: srcKey, logRows: logRows, nz: nz, kn: kn, dist: dist,
     correctionKinds: correctionKinds, metricOf: metricOf, metricsLoad: metricsLoad, metricsSave: metricsSave, summarize: summarize, metricText: metricText,
     METRIC_MAX: METRIC_MAX };
