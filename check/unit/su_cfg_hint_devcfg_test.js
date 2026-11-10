@@ -5,6 +5,7 @@
      2. SUDevCfg が無い・何も返さない時は、今までどおり「入っていない」とする
      3. メニューは、ログインの印がある端末では「入っていない」としない（ログインしていない端末は今までどおり）
      4. 端末の控えに接続先がある時は、今までどおり「入っていない」としない
+     5. 入居者マスタは現場端末の止めの道で SUCfgHint.quiet を呼ぶ（読まない画面に「接続先が入っていません」を出さない・2026-11-10 本人指示）
    ★架空データのみ。 */
 'use strict';
 const fs = require('fs');
@@ -58,6 +59,15 @@ t('ほかの画面はログインの印だけでは出さない扱いにしな�
 
 console.log('\n— 4. 端末の控えがある時 —');
 t('控えに接続先がある時は出さない', make('resident-master.html', { rmaster_cfg: JSON.stringify({ url: URL1.url }) }, null)._empty() === false);
+
+console.log('\n— 5. 入居者マスタの現場端末の止め —');
+{
+  const RM = fs.readFileSync(path.join(ROOT, 'resident-master.html'), 'utf8');
+  const i = RM.indexOf('if(applyDeviceGuard()){');
+  const blk = i < 0 ? '' : RM.slice(i, RM.indexOf('return;', i));
+  t('止めの道で帯を出さない合図を送る', /SUCfgHint\.quiet\(\)/.test(blk), blk.slice(0, 200));
+  t('合図は止めの道の中だけ（読み始める前に return する）', blk.indexOf('setSync(\'現場端末\'') >= 0);
+}
 
 console.log('\n' + (fail ? '✗' : '✓') + ' su_cfg_hint_devcfg: ' + pass + ' 件成功 / ' + fail + ' 件失敗');
 process.exit(fail ? 1 : 0);
