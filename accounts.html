@@ -27,7 +27,7 @@
     暗号化した書き出し（.suenc）は、下の「暗号化した書き出しを開く」か、ターミナルの check/export-decrypt.mjs で元の ZIP に戻す。
     パスフレーズは保存しない（端末にも記録にも送信にも入れない。使い終えたら入力欄を空にする）。
   ★「端末登録の QR」（2026-11-08 代表者の決定 段4・accounts-enroll.js・su-qr.js・care-backend 統合 0082）: 管理者が選んだ現場のアカウント
-    （同じ施設の有効な現場だけ・事務所と管理者は選べない・登録したログインは90日で切れる）でログインさせる1回限り・10分の QR を出す。端末はカメラで読むと enroll.html が開いてログインする。
+    （同じ施設の有効な現場だけ・事務所と管理者は選べない・登録したログインは180日使わないと切れる）でログインさせる1回限り・10分の QR を出す。端末はカメラで読むと enroll.html が開いてログインする。
     QR に入れるのは enroll.html の住所と番号（# の後ろ）だけ。番号は画面のメモリにだけ持ち、データベースにはハッシュだけを置く。画面だけで印刷しない。
 -->
 <link rel="stylesheet" href="su-auth.css?v=2026-09-26">
@@ -99,7 +99,7 @@
 
     <section class="cd" id="sec-enroll" hidden>
       <h2>端末登録の QR</h2>
-      <p class="muted">現場の端末のカメラでこの QR を読むと、選んだ現場のアカウントでその端末がログインします（Google のアカウントを端末に入れなくてよくなります）。QR は1回だけ・10分まで使えます。登録した端末のログインは90日で切れます。</p>
+      <p class="muted">現場の端末のカメラでこの QR を読むと、選んだ現場のアカウントでその端末がログインします（Google のアカウントを端末に入れなくてよくなります）。QR は1回だけ・10分まで使えます。登録した端末のログインは、180日使わないと切れます（使っている間は切れません）。</p>
       <div id="en-msg" class="msg" role="status" aria-live="polite"></div>
       <div id="en-form" hidden>
         <div class="grid2">
@@ -200,7 +200,7 @@
 <script src="su-gas-auth.js?v=2026-10-29"></script>
 <script src="accounts-export.js?v=2026-11-08.2"></script>
 <script src="su-qr.js?v=2026-11-08"></script>
-<script src="accounts-enroll.js?v=2026-11-08.2"></script>
+<script src="accounts-enroll.js?v=2026-11-10"></script>
 <script src="accounts.js?v=2026-11-08"></script>
 </body>
 </html>
