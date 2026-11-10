@@ -11,6 +11,8 @@
  * ★帯は × で閉じられる（その画面を開いている間は再び出さない）。印刷には出さない。
  * ★画面が SUCfgHint.quiet() を呼んだ時（接続先なしでログインだけで使える端末・2026-11-08）は出さない。
  * ★現場の端末（su_device_role === 'field'）では「事務所に連絡」とだけ出す（接続設定は事務所専用）。
+ * ★管理者が接続設定の「全端末へ配る」で配った接続先（su-devcfg.js・統合 0080）を受け取っている画面では出さない。
+ *   メニューは部品を読まないので、ログインしている端末では出さない（ログインしていれば配った値と切り替え済みのアプリで動く・2026-11-10）。
  */
 (function () {
   'use strict';
@@ -34,6 +36,40 @@
     'index.html': SYNC.concat([['rmaster_cfg', 'url']])
   };
   var WAIT_MS = 4000;
+  // 端末の控えのキー → 管理者が全端末へ配る系統（su-devcfg.js の SUDevCfg.get の名前）
+  var DEV = {
+    su_sync_common: 'ws', ws_settings: 'ws', care_schedule_sync_v1: 'ws', rmaster_cfg: 'master', wtmgr_api_url: 'weight',
+    msk_cfg: 'moushi', 'genogram:cloudCfg': 'genogram', adm_cfg: 'admission', tp_cfg: 'training', 'shiftanalyzer:v1:cloud': 'analyzer'
+  };
+  var SESSION_RE = /^sb-[a-z0-9]+-auth-token$/;
+  function loggedIn() {
+    try {
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (k && SESSION_RE.test(k) && String(localStorage.getItem(k) || '').trim()) return true;
+      }
+    } catch (e) { return true; }   // 読めない＝判断しない（出さない側に倒す）
+    return false;
+  }
+  // 配った接続先を受け取っているか（部品が無い・まだ届いていない時は false）
+  function distributed(list) {
+    try {
+      var D = window.SUDevCfg;
+      if (!D || typeof D.get !== 'function') return false;
+      for (var i = 0; i < list.length; i++) {
+        var k = DEV[list[i][0]];
+        var v = k ? D.get(k) : null;
+        if (v && v.url) return true;
+      }
+    } catch (e) { return true; }
+    return false;
+  }
+  function missing(p) {
+    var list = MAP[p];
+    if (!empty(list)) return false;
+    if (p === 'index.html' && loggedIn()) return false;
+    return !distributed(list);
+  }
 
   function page() {
     var p = (location.pathname.split('/').pop() || 'index.html');
@@ -128,9 +164,14 @@
   function check() {
     var p = page();
     if (!p || !document.body || quieted) return;
-    if (!empty(MAP[p])) return;
-    // アプリ側の自動復元（多層保存・接続先の自己修復）を待ってから、もう一度確かめる
-    setTimeout(function () { if (!quieted && empty(MAP[p])) show(); }, WAIT_MS);
+    if (!missing(p)) return;
+    // アプリ側の自動復元（多層保存・接続先の自己修復）と、配った接続先の受け取りを待ってから、もう一度確かめる
+    setTimeout(function () {
+      if (quieted || !missing(p)) return;
+      var D = window.SUDevCfg;
+      var wait = D && typeof D.ready === 'function' ? D.ready(8000) : Promise.resolve();
+      Promise.resolve(wait).then(function () { if (!quieted && missing(p)) show(); }, function () { if (!quieted && missing(p)) show(); });
+    }, WAIT_MS);
   }
 
   try {
@@ -138,5 +179,5 @@
     else check();
   } catch (e) { /* 案内の失敗は画面に影響させない */ }
 
-  window.SUCfgHint = { quiet: quiet, _map: MAP, _empty: function () { var p = page(); return p ? empty(MAP[p]) : false; } };
+  window.SUCfgHint = { quiet: quiet, _map: MAP, _empty: function () { var p = page(); return p ? missing(p) : false; } };
 })();

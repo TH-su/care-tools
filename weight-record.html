@@ -52,7 +52,7 @@ try{ const t = (JSON.parse(localStorage.getItem('wtmgr_ui_v1') || '{}') || {}).t
   if(document.readyState === 'complete') idle(); else window.addEventListener('load', idle, { once:true });
 })();
 </script>
-<script src="su-cfg-hint.js?v=2026-11-08"></script>
+<script src="su-cfg-hint.js?v=2026-11-10"></script>
 <!-- 施設情報（facility-profile.json）。食事形態の表示名を施設ごとに差し替える時だけ使う（書いていなければ画面の既定のまま・2026-11-02 便8） -->
 <script src="su-facility.js?v=2026-11-07"></script>
 <!-- 体重の写し（統合 0008・写しの期間）。supabase-js と su-auth.js は写す時にだけ読み込む -->

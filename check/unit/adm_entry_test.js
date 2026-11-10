@@ -255,7 +255,7 @@ async function both(oldFn, newFn, o) {
       && H.indexOf('return window.SUDocLive.adm(payload, function () { return Promise.reject(') < H.indexOf('return window.SUDocLive.adm(payload, function () { return SU.data.kvRaw(payload); });'));
     t('L 画面: 台帳の写し（Google から読む）は接続先がある時だけ（今までどおり）', /admFullBlocked_\(\) \|\| !syncTarget\(\)\.endpoint\) return;/.test(H));
     t('L 画面: 使える端末では接続先の帯（su-cfg-hint.js）を出さない', /if \(AF_LIVE\) \{ try \{ if \(window\.SUCfgHint && typeof window\.SUCfgHint\.quiet === 'function'\) window\.SUCfgHint\.quiet\(\);/.test(H)
-      && /function quiet\(\) \{/.test(read('su-cfg-hint.js')) && /setTimeout\(function \(\) \{ if \(!quieted && empty\(MAP\[p\]\)\) show\(\); \}, WAIT_MS\);/.test(read('su-cfg-hint.js')));
+      && /function quiet\(\) \{/.test(read('su-cfg-hint.js')) && /if \(quieted \|\| !missing\(p\)\) return;/.test(read('su-cfg-hint.js')) && /if \(!quieted && missing\(p\)\) show\(\);/.test(read('su-cfg-hint.js')));
     t('L 画面: 入居者マスタへの登録・登録確認は、接続先が無い時に1回だけ SUResRead.liveReady で確かめ、使えない時は今までと同じ断り',
       /if \(!cfg\.url && !AF_MLIVE && !afMLiveTried_\) \{ afProbeMasterLive_\(\)\.then\(function \(\) \{ openMasterModal\(c\); \}\); return; \}\s*if \(!cfg\.url && !AF_MLIVE\) \{/.test(H)
       && /if \(!masterCfg\(\)\.url && !AF_MLIVE && !afMLiveTried_\) \{ afProbeMasterLive_\(\)\.then\(function \(\) \{ verifyMaster\(c\); \}\); return; \}/.test(H)
