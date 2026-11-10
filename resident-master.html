@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-IcQS5v9PhM0ZoEgVZm67eKBMY2lTMEesMfqSUexSNWE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-wI69hNuFIojEybcv0hsdGIKoo7hbhDQcTPqTyLa39Eo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -2028,7 +2028,7 @@ function rmNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
 <script src="su-facility.js?v=2026-11-07"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>
 <!-- 薬情の取り込みの判定・組み立て（純関数・2026-10-22）。読めない時は入口のボタンを出さない（yjCalcOk_） -->
-<script src="yakujo-calc.js?v=2026-11-07"></script>
+<script src="yakujo-calc.js?v=2026-11-10"></script>
 <script src="revenue-calc.js?v=2026-11-07"></script>
 <script src="su-print.js?v=2026-09-12"></script>
 <!-- 入居者マスタの写し（統合 0004）。supabase-js と su-auth.js は写す時にだけ読み込む -->
@@ -7489,6 +7489,10 @@ function yjBuild_(cur, d, items){
   var slotWarn=lines.map(function(l,i){ return specs[i].spec.free?'':yjSlotWarn_(l); });
   cur.yjOf=yjText?Y.yjLookup(yjText):null;   /* 名前の違う同じ薬（コード9桁）を、知らせと重なりの確かめにも使う（2026-11-05） */
   cur.rows=Y.buildRows(m.pairs, m.left, specs, {short:shorts, slotWarn:slotWarn, yjOf:cur.yjOf});
+  /* 同じ医療機関の新しい薬情は完全入れ替え・3剤以下で2剤以上少ない書類は臨時薬（足すだけ）（本人指示 2026-11-10）。
+     入れ替えの時は、書類に無い今の行の既定を「中止」にする（人が選び直せる） */
+  cur.plan=typeof Y.clinicPlan==='function'?Y.clinicPlan({hospital:cur.rec&&cur.rec.hospital, doc:d, rows:cur.rows, current:cur.before}):null;
+  if(cur.plan&&typeof Y.planRows==='function') cur.rows=Y.planRows(cur.rows, cur.plan);
   /* 定期薬の最後の変更の日（変更履歴）と、同じ調剤日の薬情からの反映（変更履歴のラベル） */
   var mh=cur.rec&&Array.isArray(cur.rec.medsHistory)?cur.rec.medsHistory:[], last='';
   mh.forEach(function(e){ var at=e&&typeof e==='object'?String(e.at||'').slice(0,10):''; if(/^\d{4}-\d{2}-\d{2}$/.test(at)&&at>last) last=at; });
@@ -7558,6 +7562,7 @@ function yjWorkHtml_(){
   if(d&&c.dates.labeled.indexOf(d)<0&&!j.importDay) h+='<label class="yj-chk yj-warn"><input type="checkbox" id="yjDateOk"'+(c.dateChecked?' checked':'')+'> ⚠ 選んだ日付には「調剤日」などの語がありません。原本でこの日付が調剤日だと確かめた</label>';
   if(c.sameDay) h+='<label class="yj-chk yj-warn"><input type="checkbox" id="yjAck"'+(c.ack?' checked':'')+'> ⚠ 同じ日付のこの方の記録（申送・薬情）から、既に反映しています（'+esc(mhAt_(c.sameDay))+'）。変更履歴と見比べ、別の変更だと確かめた</label>';
   h+='</div>';
+  if(c.plan) h+='<p class="'+(c.plan.mode==='replace'?'yj-warn':'yj-sub')+'">'+(c.plan.mode==='replace'?'⚠ かかりつけ病院（'+esc(c.plan.clinic)+'）の新しい薬情として入れ替えます。書類に無い今の薬は「中止」にしています（残す薬は「残す」に選び直してください）':esc(c.plan.why))+'</p>';
   h+='<div class="yj-tblw"><table class="yj-tbl"><thead><tr><th>区分</th><th>書類（読んだ文字）</th><th>今の定期薬</th><th>反映する行</th><th>どうするか</th></tr></thead><tbody>'+
     c.rows.map(yjRowHtml_).join('')+'</tbody></table></div>';
   h+='<div class="yj-after"><div class="mc-lbl">反映すると、定期薬はこうなります（変える '+j.counts.change+'・足す '+j.counts.add+'・中止 '+j.counts.stop+'）</div><pre class="mc-pre">'+esc(j.after||'（記載なし）')+'</pre></div>';
@@ -7669,11 +7674,12 @@ function yjPreload_(){
       cur.rec=rec; cur.before=String(rec.medsRegular==null?'':rec.medsRegular).replace(/\r\n?/g,'\n');
       yjBuild_(cur, x.d, r[1]);
       /* 入居者マスタGASの版（server）は反映する時に確かめる（ここでは判定に入れない） */
-      var bc=YakujoCalc.bulkCheck({autoId:x.a&&x.a.id, pickId:x.pick, id:cur.id, dates:dates, today:todayISO(), rows:cur.rows,
-        current:cur.before, server:'ok', lastChange:cur.lastChange, sameDay:cur.sameDay, doc:x.d, yjOf:cur.yjOf||null});
+      var arg={autoId:x.a&&x.a.id, pickId:x.pick, id:cur.id, dates:dates, today:todayISO(), rows:cur.rows,
+        current:cur.before, server:'ok', lastChange:cur.lastChange, sameDay:cur.sameDay, doc:x.d, yjOf:cur.yjOf||null, plan:cur.plan||null};
+      var bc=YakujoCalc.bulkCheck(arg);
       /* 同じ方の書類が2枚以上ある時は、どちらが新しいかを人が決める（古い方を先に書かない・反証レビュー 2026-11-05 指摘2） */
       if(dupPick[String(x.pick)]>1&&(bc.ok||bc.none)){ bc.ok=false; bc.none=false; bc.why=['同じ方の書類が '+dupPick[String(x.pick)]+' 枚あります（新しい方を1人ずつで確かめてください）']; }
-      x.pre={st:bc.ok?'ok':(bc.none?'none':'ng'), cur:cur, bc:bc, on:true, why:bc.why};
+      x.pre={st:bc.ok?'ok':(bc.none?'none':'ng'), cur:cur, bc:bc, on:true, why:bc.why, arg:arg, leftAct:{}};
     }).catch(function(e){
       if(!alive()) return;
       x.pre={st:'ng', why:['定期薬を読めませんでした（'+rmErrWords_(e,'定期薬の読み込み')+'）']};
@@ -7691,7 +7697,7 @@ function yjBulkHtml_(){
   if(!L.ok.length&&!L.none.length&&!busy&&!S.bulkMsg) return '';
   h+='<section class="yj-bulk" aria-labelledby="yjBulkH"><h3 class="yj-h3" id="yjBulkH">まとめて反映できる方</h3>'+
     '<p class="yj-sub">名簿の1人に氏名が一字一致し、調剤日が1つに決まり、⚠ の行が無い書類です。'+
-    '下の違いを見て、まとめて反映できます（書類に無い今の薬は残します。中止はしません）。違いを原本と見比べたい方は、チェックを外して下の一覧から1人ずつ確かめてください。</p>';
+    '下の違いを見て、まとめて反映できます（かかりつけ病院が1つで、その名前が書類にある方は入れ替えとして、書類に無い今の薬を消します。それ以外の方は残します。どちらも1行ずつ選び直せます）。違いを原本と見比べたい方は、チェックを外して下の一覧から1人ずつ確かめてください。</p>';
   if(busy) h+='<p class="yj-sub" role="status">まとめて反映できるかを調べています…（'+S.preDone+' / '+S.preTotal+'件）</p>';
   L.ok.forEach(function(i){
     var x=S.docs[i], p=x.pre, c=p.cur;
@@ -7701,8 +7707,14 @@ function yjBulkHtml_(){
       if(r.kind==='change'&&r.action==='change'&&r.line&&r.line!==r.cur) h+='<li><span class="mh-tag">変える</span> '+esc(r.cur)+' → <b>'+esc(r.line)+'</b></li>';
       else if(r.kind==='add'&&r.action==='add'&&r.line) h+='<li><span class="mh-tag">足す</span> <b>'+esc(r.line)+'</b></li>';
     });
-    if(p.bc.older) h+='<li class="yj-warn">⚠ 調剤日は、定期薬の最後の変更（'+esc(fmtJDate(p.bc.older))+'）より前です</li>';
+    (p.bc.lefts||[]).forEach(function(l){
+      var on=l.action==='stop';
+      h+='<li><label class="yj-chk'+(on?' yj-warn':'')+'"><input type="checkbox" data-yjbleft="'+i+':'+l.k+'"'+(on?' checked':'')+(S.bulkBusy||(p.bc.older&&!on)?' disabled':'')+'> '+
+        '<span class="mh-tag">'+(on?'消す':'残す')+'</span> '+(on?'<s>'+esc(l.cur)+'</s>':esc(l.cur))+'</label></li>';
+    });
+    if(p.bc.plan) h+='<li class="'+(p.bc.plan.mode==='replace'?'yj-warn':'yj-sub')+'">'+(p.bc.plan.mode==='replace'?'⚠ かかりつけ病院（'+esc(p.bc.plan.clinic)+'）の新しい薬情として入れ替えます（書類に無い今の薬は、チェックを外すと残します）':esc(p.bc.plan.why)+'（消す薬はチェックを付けてください）')+'</li>';
     if(p.bc.kept) h+='<li class="yj-sub">書類に無い今の薬 '+p.bc.kept+' 行は残します</li>';
+    if(p.bc.older) h+='<li class="yj-warn">⚠ 調剤日は、定期薬の最後の変更（'+esc(fmtJDate(p.bc.older))+'）より前です'+(p.bc.lefts&&p.bc.lefts.length?'（古い書類のため、ここでは消せません。消す時は1人ずつで確かめてください）':'')+'</li>';
     if(p.bc.skipped&&p.bc.skipped.length) h+='<li class="yj-sub">書類にあって定期薬に入れない薬（外用・頓服など）：'+p.bc.skipped.map(esc).join('・')+'</li>';
     h+='</ul></div>';
   });
@@ -7724,8 +7736,10 @@ function yjBulkApply_(){
     S.bulkMsg='編集画面・一括編集を閉じてから反映してください'; yjPaint_(); return; }
   var L=yjBulkLists_(), ok=L.ok.filter(function(i){ return S.docs[i].pre.on; }), none=L.none;
   if(!ok.length&&!none.length) return;
-  var lines=ok.map(function(i){ var p=S.docs[i].pre, j=p.bc.judged; return '・'+p.cur.name+' 様　変える '+j.counts.change+'行・足す '+j.counts.add+'行'+(p.bc.kept?'・残す '+p.bc.kept+'行':'')+(p.bc.older?'・⚠ 調剤日が定期薬の最後の変更（'+fmtJDate(p.bc.older)+'）より前':''); });
+  var lines=ok.map(function(i){ var p=S.docs[i].pre, j=p.bc.judged; return '・'+p.cur.name+' 様　変える '+j.counts.change+'行・足す '+j.counts.add+'行'+(j.counts.stop?'・消す '+j.counts.stop+'行（'+p.bc.rows.filter(function(r){ return r.kind==='left'&&r.action==='stop'; }).map(function(r){ return YakujoCalc.lineName(r.cur); }).join('・')+'）':'')+(p.bc.kept?'・残す '+p.bc.kept+'行':'')+(p.bc.older?'・⚠ 調剤日が定期薬の最後の変更（'+fmtJDate(p.bc.older)+'）より前':''); });
+  var nStop=ok.reduce(function(a,i){ return a+S.docs[i].pre.bc.judged.counts.stop; },0);
   if(!confirm((ok.length?'次の '+ok.length+' 人の「薬剤情報（定期）」を、一覧のとおりに書き換えます。\n'+lines.join('\n')+'\n\n':'')+
+    (nStop?'消す薬が '+nStop+' 行あります。書類どおりで、飲んでいる薬を消していないことを確かめてください（取りこぼすと飲んでいる薬がマスタから消えます）。\n\n':'')+
     (none.length?'変更なしの '+none.length+' 件は、書かずに終わりにします。\n\n':'')+
     (ok.length?'ほかの端末でこの方々の編集画面・一括編集を開いている場合は、先に閉じてください。\n':'')+'よろしいですか？')) return;
   none.forEach(function(i){ S.docs[i].status='none'; });
@@ -7788,7 +7802,7 @@ function yjPaint_(){
   var ae=document.activeElement, fsel='';
   if(ae&&box.contains(ae)){
     if(ae.id) fsel='#'+ae.id;
-    else ['data-yjline','data-yjact','data-yjchk','data-yjpick','data-yjout','data-yjdoc','data-yjbulk'].some(function(a){ var v=ae.getAttribute(a); if(v!=null){ fsel='['+a+'="'+v+'"]'; return true; } return false; });
+    else ['data-yjline','data-yjact','data-yjchk','data-yjpick','data-yjout','data-yjdoc','data-yjbulk','data-yjbleft'].some(function(a){ var v=ae.getAttribute(a); if(v!=null){ fsel='['+a+'="'+v+'"]'; return true; } return false; });
   }
   var pg=box.querySelector('.yj-pages'), keepPg=pg?pg.scrollTop:0, keepBody=box.scrollTop;
   var h='';
@@ -7845,6 +7859,13 @@ function yjWire_(){
     var t=e.target; if(!t||!yjSt) return;
     if(t.id==='yjFile'){ yjReadFile_(t.files&&t.files[0]); return; }
     var pk=t.getAttribute('data-yjpick'); if(pk!=null){ var dx=yjSt.docs[+pk]; if(dx&&!dx.status) dx.pick=t.value; yjPaint_(); return; }
+    var bl=t.getAttribute('data-yjbleft'); if(bl!=null){ var bp=bl.split(':'), dl=yjSt.docs[+bp[0]], pl=dl&&dl.pre;
+      if(pl&&pl.arg&&(pl.st==='ok'||pl.st==='none')&&!yjSt.bulkBusy&&!dl.status){
+        pl.leftAct[+bp[1]]=t.checked?'stop':'keep';
+        var nb=YakujoCalc.bulkCheck(Object.assign({}, pl.arg, {leftAct:pl.leftAct}));
+        pl.bc=nb; pl.why=nb.why; pl.st=nb.ok?'ok':(nb.none?'none':'ng');
+      }
+      yjPaint_(); return; }
     var bk=t.getAttribute('data-yjbulk'); if(bk!=null){ var db=yjSt.docs[+bk]; if(db&&db.pre&&db.pre.st==='ok'&&!yjSt.bulkBusy) db.pre.on=!!t.checked; yjPaint_(); return; }
     var ou=t.getAttribute('data-yjout'); if(ou!=null){ var dy=yjSt.docs[+ou]; if(dy&&!dy.status&&!dy.d.error) dy.out=!!t.checked; yjPaint_(); return; }
     var c=yjSt.cur; if(!c||!c.loaded||c.busy) return;

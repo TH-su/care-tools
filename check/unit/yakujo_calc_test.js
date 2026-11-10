@@ -601,7 +601,7 @@ console.log('\n— 12. 取り込みの一致率（correctionKinds・metricOf・s
   t('★現場用への切り替えでは欄を空にする（端末の記録は消さない）', /mt\.textContent=''/.test(cut3(RM3, 'yjPurge_')) && !/removeItem/.test(cut3(RM3, 'yjPurge_')));
   const modal = RM3.slice(RM3.indexOf('<div class="modal" id="mYakujo"'), RM3.indexOf('<!-- 端末用途ガード'));
   t('★欄は取り込みの窓（#mYakujo）の中にあり、窓ごと印刷しない', /<div class="box">[\s\S]*<p class="yj-met" id="yjMetric"><\/p>\s*<div class="yj-body" id="yjBody"><\/div>\s*<\/div>\s*<\/div>\s*$/.test(modal.trim() + '\n') && /@media print\{ #mYakujo,#yjOpen\{display:none !important\} \}/.test(RM3));
-  t('共有部品の版（?v=）を上げた', /yakujo-calc\.js\?v=2026-11-07"/.test(RM3));
+  t('共有部品の版（?v=）を上げた', /yakujo-calc\.js\?v=2026-11-10"/.test(RM3));
 }
 
 /* ── まとめて反映できるか（bulkCheck・半自動・代表者の決定 2026-11-04）──
@@ -773,15 +773,67 @@ console.log('\n[まとめて反映できるか（bulkCheck）]');
   t('変更が無くても、ほかに止める理由があれば none にしない', Y.bulkCheck(nn).none === false);
   t('壊れた入力でも例外を出さない', (() => { try { const r = Y.bulkCheck(null); return r.ok === false && r.none === false; } catch (e) { return false; } })());
 }
+console.log('\n[医療機関ごとの入れ替えと臨時薬（clinicPlan・本人指示 2026-11-10）]');
+{
+  const H = 'ミホン内科クリニック';
+  const docOf = (...ts) => ({ error: '', note: '', pagesTotal: 1, pages: [{ no: 1, img: 'data:image/jpeg;base64,AA==', error: '', lines: ts.map((t) => ({ t })) }] });
+  const D = docOf('お薬の説明書', '医療機関名　ミホン 内科クリニック', '調剤日 2026年11月1日');
+  const rowsN = (n) => { const r = []; for (let k = 0; k < n; k++) r.push({ kind: 'same' }); return r; };
+  const curN = (n) => Array.from({ length: n }, (_, k) => 'カクウ' + k + '錠1mg 1回1錠 朝食後').join('\n');
+  const plan = (nDoc, nReg, o) => Y.clinicPlan(Object.assign({ hospital: H, doc: D, rows: rowsN(nDoc), current: curN(nReg) }, o || {}));
+  t('★3剤で定期薬5剤（2剤以上少ない）は臨時薬', plan(3, 5).mode === 'temp');
+  t('★3剤で定期薬4剤（1剤だけ少ない）は入れ替え', plan(3, 4).mode === 'replace');
+  t('★4剤で定期薬10剤（4剤以上）は入れ替え', plan(4, 10).mode === 'replace');
+  t('★1剤で定期薬3剤は臨時薬', plan(1, 3).mode === 'temp');
+  t('同じ数・増えた書類は入れ替え', plan(5, 5).mode === 'replace' && plan(6, 2).mode === 'replace');
+  t('★医療機関名は全角半角・空白の違いを問わない（書類の「ミホン 内科クリニック」と欄の「ミホン内科クリニック」）', plan(5, 5).clinic === H);
+  t('★法人の頭書きの付いた欄でも、書類に法人名が無ければ頭書きを除いて探す', plan(5, 5, { hospital: '医療法人社団ミホン会 ミホン内科クリニック' }).mode === 'replace');
+  t('★かかりつけ病院が2つ以上の方は残す（どの薬がどの医療機関か分からない）', plan(5, 5, { hospital: H + '\nカクウ整形外科医院' }).mode === 'keep' && /2つ以上/.test(plan(5, 5, { hospital: H + '\nカクウ整形外科医院' }).why));
+  t('同じ名前が2行あるだけなら1つと数える', plan(5, 5, { hospital: H + '\n' + H }).mode === 'replace');
+  t('★かかりつけ病院が空の方は残す', plan(5, 5, { hospital: '' }).mode === 'keep');
+  t('★書類にかかりつけ病院の名前が無い（ほかの医療機関の書類かもしれない）時は残す', plan(5, 5, { hospital: 'カクウ皮膚科医院' }).mode === 'keep');
+  t('★4文字に満たない名前では一致にしない', plan(5, 5, { hospital: 'ミホン', doc: docOf('ミホン') }).mode === 'keep');
+  t('かっこ書き（診療科など）は除いて探す', plan(5, 5, { hospital: H + '（内科）' }).mode === 'replace');
+  t('書類に文字が無い時は残す', plan(5, 5, { doc: docOf() }).mode === 'keep');
+  t('壊れた入力でも例外を出さない', (() => { try { return Y.clinicPlan(null).mode === 'keep' && Y.clinicPlan({ doc: { pages: [null] } }).mode === 'keep'; } catch (e) { return false; } })());
+  const pr = Y.planRows([{ kind: 'left', action: '' }, { kind: 'left', action: 'keep' }, { kind: 'add', action: 'add' }], { mode: 'replace' });
+  t('★入れ替えの時は、書類に無い今の行でまだ選んでいない行を「中止」にする（選んだ行は変えない）', pr[0].action === 'stop' && pr[1].action === 'keep' && pr[2].action === 'add');
+  t('臨時薬・残すの時は既定を当てない', Y.planRows([{ kind: 'left', action: '' }], { mode: 'temp' })[0].action === '' && Y.planRows([{ kind: 'left', action: '' }], { mode: 'keep' })[0].action === '');
+
+  const A0 = 'テストロール錠5mg 1回1錠 朝食後', A1 = 'テストロール錠5mg 1回2錠 朝食後', B = 'ミホンジン錠10mg 1回1錠 夕食後', C = 'カクウパム錠2mg 1回1錠 眠前';
+  const row = (kind, cur, line, action, warns) => ({ kind, cur, line, raw: kind === 'left' ? '' : line, page: 1, box: null, warns: warns || [], action, checked: false, auto: line });
+  const base = (mode) => ({ autoId: '11', pickId: '11', id: '11', dates: { labeled: ['2026-11-01'], other: [] }, today: '2026-11-04', server: 'ok',
+    current: [A0, B, C].join('\n'), lastChange: '2026-10-01', sameDay: '', doc: D, plan: { mode: mode || 'replace', clinic: H },
+    rows: [row('change', A0, A1, 'change'), row('same', B, B, 'keep'), row('left', C, C, '')] });
+  const r1 = Y.bulkCheck(base());
+  t('★入れ替えの時は、書類に無い今の薬を消して、まとめて反映に入れる', r1.ok === true && r1.judged.counts.stop === 1 && r1.judged.after === [A1, B].join('\n') && r1.lefts.length === 1 && r1.lefts[0].action === 'stop' && r1.lefts[0].k === 2, r1);
+  const r2 = Y.bulkCheck(Object.assign(base(), { leftAct: { 2: 'keep' } }));
+  t('★一覧で「残す」に選び直した行は消さない', r2.ok === true && r2.judged.counts.stop === 0 && r2.judged.after === [A1, B, C].join('\n'), r2);
+  const r3 = Y.bulkCheck(Object.assign(base('keep'), { leftAct: { 2: 'stop' } }));
+  t('★残すの時も、一覧で「消す」を選んだ行は消して、まとめて反映に入れる（先発と後発の重なりを同じ画面で消す）', r3.ok === true && r3.judged.counts.stop === 1 && r3.judged.after.indexOf(C) < 0, r3);
+  const r4 = Y.bulkCheck(base('temp'));
+  t('★臨時薬の時は、書類に無い今の薬を残す（足す・変えるだけ）', r4.ok === true && r4.judged.counts.stop === 0 && r4.kept === 1, r4);
+  const r5 = Y.bulkCheck(Object.assign(base(), { lastChange: '2026-11-03' }));
+  t('★調剤日が定期薬の最後の変更より前で、消す行がある書類は1人ずつ', r5.ok === false && r5.why.some((w) => /最後の変更より前で、消す行/.test(w)), r5.why);
+  const r6 = Y.bulkCheck(Object.assign(base(), { lastChange: '2026-11-03', leftAct: { 2: 'keep' } }));
+  t('消す行が無ければ、古い書類も止めずに知らせだけ', r6.ok === true && r6.older === '2026-11-03', r6.why);
+  const r7 = Y.bulkCheck(Object.assign(base(), { leftAct: { 0: 'stop', 9: 'stop' } }));
+  t('書類に無い今の行でない行・無い番号への選び直しは効かない', r7.judged.counts.change === 1 && r7.judged.counts.stop === 1, r7.judged.counts);
+  const w8 = base(); w8.rows[2].warns = ['同じ薬の名前です'];
+  t('⚠ の付いた書類に無い今の行は、入れ替えでも1人ずつ（選び直しの一覧に出さない）', Y.bulkCheck(w8).ok === false && Y.bulkCheck(w8).lefts.length === 0);
+  const r9 = Y.bulkCheck(Object.assign(base(), { rows: [row('same', A0, A0, 'keep'), row('same', B, B, 'keep'), row('left', C, C, '')] }));
+  t('★書類と同じ薬だけで、書類に無い今の薬がある時は「変更なし」にせず消す行として出す', r9.ok === true && r9.none === false && r9.judged.counts.stop === 1, r9);
+}
 console.log('\n[まとめて反映の画面（resident-master.html）]');
 {
   const RM4 = fs.readFileSync(path.join(ROOT, 'resident-master.html'), 'utf8');
   const cut4 = (src, name) => { const h = src.indexOf('function ' + name + '('); if (h < 0) throw new Error('関数が見つかりません: ' + name); let i = src.indexOf('{', h), d = 0; for (; i < src.length; i++) { if (src[i] === '{') d++; else if (src[i] === '}') { d--; if (d === 0) return src.slice(h, i + 1); } } };
   const ba = cut4(RM4, 'yjBulkApply_'), pl = cut4(RM4, 'yjPreload_'), bh = cut4(RM4, 'yjBulkHtml_');
+  t('★1人ずつの確認表も、同じ判断（clinicPlan）で書類に無い今の行の既定を当てる（本人指示 2026-11-10）', /cur\.plan=typeof Y\.clinicPlan==='function'\?Y\.clinicPlan\(\{hospital:cur\.rec&&cur\.rec\.hospital, doc:d, rows:cur\.rows, current:cur\.before\}\):null;/.test(cut4(RM4, 'yjBuild_')) && /cur\.rows=Y\.planRows\(cur\.rows, cur\.plan\)/.test(cut4(RM4, 'yjBuild_')));
   t('★まとめて反映も1人ずつと同じ本文（yjBody_）・同じ受け口（apiPostRaw）で送り、記録に「まとめて反映」と残す', /yjBody_\(c, x, j, p\.bc\.date, p\.bc\.rows, 'まとめて反映'\)/.test(ba) && /apiPostRaw\(body,40000\)/.test(ba));
   t('★ログインの証明が無い時は送らずに止める', /if\(!at\)\{ stopAll=/.test(ba));
   t('★書き込みは再試行しない（apiPostRaw は1人1回・届いたか分からない時は確かめ中にして残りへは送らない）', (ba.match(/apiPostRaw\(/g) || []).length === 1 && /x\.status='unsure'; res\.unsure\+\+; stopAll=/.test(ba) && /r&&r\.unknown\)\{ x\.status='unsure'; res\.unsure\+\+; stopAll=/.test(ba));
-  t('★書類の ⚠（読み残し・読めないページ）を判定に渡す', /sameDay:cur\.sameDay, doc:x\.d, yjOf:cur\.yjOf\|\|null\}\)/.test(pl));
+  t('★書類の ⚠（読み残し・読めないページ）を判定に渡す', /sameDay:cur\.sameDay, doc:x\.d, yjOf:cur\.yjOf\|\|null, plan:cur\.plan\|\|null\};\s*var bc=YakujoCalc\.bulkCheck\(arg\)/.test(pl));
   t('★調べの描き直しは一覧を見ている時だけ', !/yjPaint_\(\)/.test(pl.replace(/if\(S\.phase==='queue'\) yjPaint_\(\)/g, '')));
   t('★既に反映されていた方は、書き換えた人数に数えない', /r&&r\.already\)\{ x\.status='done'; res\.already\+\+; return; \}/.test(ba));
   t('★1人ずつで開いた書類は、まとめての一覧から外す', /if\(x\.pre&&x\.pre\.st!=='busy'\) x\.pre=null;/.test(cut4(RM4, 'yjStartDoc_')));

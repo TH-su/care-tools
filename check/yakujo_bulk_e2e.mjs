@@ -54,11 +54,13 @@ const lblPage = (name, kana) => {
     L('<外用>', 0.24, 0.345, 0.06), L('1日数回 患部に塗布', 0.32, 0.345, 0.21), L('1回量', 0.24, 0.38, 0.05), L('(計20g)', 0.87, 0.38, 0.06),
   ] };
 };
+/* 書類にかかりつけ病院の名前の行を足す（架空の名前・本人指示 2026-11-10 の入れ替えの試験） */
+const withLine = (pg, ln) => Object.assign({}, pg, { lines: pg.lines.concat([ln]) });
 const resultFile = () => JSON.stringify({ kind: 'yakujo-yomitori', v: 1, createdAt: '2026-11-04T09:00:00+09:00', skipped: [], docs: [
   { no: 1, file: 'a.jpg', type: 'photo', error: '', pages: [page('架空 一郎', 'カクウ イチロウ', D_R01)] },
   { no: 2, file: 'b.jpg', type: 'photo', error: '', pages: [page('見本 一郎', 'ミホン イチロウ', D_R02)] },
   { no: 3, file: 'c.jpg', type: 'photo', error: '', pages: [page('試験 一郎', 'シケン イチロウ', D_R03)] },
-  { no: 4, file: 'd.jpg', type: 'photo', error: '', pages: [page('仮名 一郎', 'カメイ イチロウ', D_R04)] },
+  { no: 4, file: 'd.jpg', type: 'photo', error: '', pages: [withLine(page('仮名 一郎', 'カメイ イチロウ', D_R04), L('処方 架空 内科クリニック', 0.1, 0.9))] },
   { no: 5, file: 'e.pdf', type: 'pdf', error: '', note: 'はじめの 1 ページだけを読みました（残りは読んでいません）', pagesTotal: 3, pages: [page('架空 花子', 'カクウ ハナコ', D_R05)] },
   { no: 6, file: 'f.jpg', type: 'photo', error: '', pages: [lblPage('見本 花子', 'ミホン ハナコ')] },
 ] });
@@ -77,6 +79,7 @@ async function run(opts) {
     else {
       res = fx.respond(body);
       if (body.action === 'getResident' && res.record && MEDS[res.record.id] != null) { res.record.medsRegular = MEDS[res.record.id]; res.record.medsHistory = []; }
+      if (body.action === 'getResident' && res.record && opts.hospital && opts.hospital[res.record.id] != null) res.record.hospital = opts.hospital[res.record.id];
     }
     route.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify(res) });
   });
@@ -167,6 +170,30 @@ try {
   await r.p.waitForFunction(() => window.yjSt && !window.yjSt.bulkBusy && /まとめて反映：/.test(window.yjSt.bulkMsg), null, { timeout: 20000 });
   const msg6 = await r.p.evaluate(() => window.yjSt.bulkMsg);
   t('★既に反映されていた方は別に数える', /反映 2人・既に反映されていた方 1人/.test(msg6), msg6);
+  await r.ctx.close();
+
+  /* 7回目: かかりつけ病院が1つで、書類にその名前がある方は入れ替え（書類に無い今の薬を消す）・一覧で残すに選び直せる（本人指示 2026-11-10） */
+  r = await run({ hospital: { R04: '架空内科クリニック', R01: '架空内科クリニック' } });
+  const pre7 = () => r.p.evaluate(() => { const p = window.yjSt.docs[3].pre; return { st: p.st, after: p.bc.judged.after, stop: p.bc.judged.counts.stop, lefts: p.bc.lefts, mode: p.bc.plan && p.bc.plan.mode }; });
+  let s7 = await pre7();
+  t('★かかりつけ病院が1つで書類にその名前がある方は入れ替え：書類に無い今の薬を消す', s7.st === 'ok' && s7.mode === 'replace' && s7.stop === 1 && !/架空ロール/.test(s7.after) && s7.lefts.length === 1, s7);
+  const st7 = await r.p.evaluate(() => window.yjSt.docs[0].pre.bc.plan && window.yjSt.docs[0].pre.bc.plan.mode);
+  t('★書類にかかりつけ病院の名前が無い方（書類1）は入れ替えにしない', st7 === 'keep', st7);
+  const txt7 = await r.p.textContent('#yjBody');
+  t('一覧に「入れ替えます」と、消す行が出る', /新しい薬情として入れ替えます/.test(txt7) && /消す 架空ロール錠5mg「見本」/.test(txt7), txt7.slice(0, 600));
+  const sel7 = '[data-yjbleft="3:' + s7.lefts[0].k + '"]';
+  await r.p.uncheck(sel7);
+  s7 = await pre7();
+  t('★チェックを外すと残す（消さない）', s7.st === 'ok' && s7.stop === 0 && /架空ロール/.test(s7.after), s7);
+  await r.p.check(sel7);
+  s7 = await pre7();
+  t('もう一度チェックすると消す', s7.stop === 1 && !/架空ロール/.test(s7.after), s7);
+  await r.p.click('#yjBulkGo');
+  await r.p.waitForFunction(() => window.yjSt && !window.yjSt.bulkBusy && /まとめて反映：/.test(window.yjSt.bulkMsg), null, { timeout: 20000 });
+  t('★確認の窓に消す行の名前と注意が出る', r.dialogs.length === 1 && /消す 1行（架空ロール錠5mg「見本」）/.test(r.dialogs[0]) && /消す薬が 1 行あります/.test(r.dialogs[0]), r.dialogs);
+  const b7 = r.applied.find((b) => b.id === 'R04');
+  t('★送った定期薬から、書類に無い今の薬が消えている', b7 && b7.before === MEDS.R04 && !/架空ロール/.test(b7.after) && /^マグミット錠250mg /.test(b7.after), b7 && b7.after);
+  t('画面の JS エラーなし（入れ替え）', r.errors.length === 0, r.errors);
   await r.ctx.close();
 } catch (e) {
   fail++; console.log('  ✗ 途中で止まった: ' + String(e && e.message || e).split('\n')[0]);
