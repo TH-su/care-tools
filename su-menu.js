@@ -21,11 +21,11 @@
  *   mv    既定と違う区分へ移したボタン。移し先が無い・消した区分なら既定の区分に出す。
  *         事務所専用の区分（officeOnly）から移したボタンは、移した先でも事務所専用のまま（現場端末で出さない仕組みを外さない）
  *   設定に無い区分（後から足した区分）は、既定で前にある区分の直後に置く（末尾に回さない）。
- *   ball  施設の既定の毬の柄。'asanoha' の時だけ書く（無い＝菊かがり）。'kiku' やほかの値は捨てる
+ *   ball  施設の既定の毬の柄。'asanoha' の時だけ書く（無い＝藤の手毬・2026-11-10 本人指示）。'kiku' やほかの値は捨てる（菊かがりは各端末で毬を押して選ぶ）
  *
- * 毬の柄（2026-10-26 代表者の決定）:
- *   ★端末に書いてよいのは鍵 su_menu_ball だけ、値は 'kiku'・'asanoha' だけ。書くのはここの setBall だけ（メニューの画面は書かない）。
- *   柄の決め方: 端末の選択 → 施設の既定（ログインして読めた設定の控えだけ）→ 菊かがり。
+ * 毬の柄（2026-10-26 代表者の決定・藤の手毬は 2026-11-10 本人指示）:
+ *   ★端末に書いてよいのは鍵 su_menu_ball だけ、値は 'fuji'・'kiku'・'asanoha' だけ。書くのはここの setBall だけ（メニューの画面は書かない）。
+ *   柄の決め方: 端末の選択 → 施設の既定（ログインして読めた設定の控えだけ）→ 藤の手毬。
  *   選んだ柄が施設の既定と同じ時は鍵を消す（端末の選択を解いて、施設の既定に従う状態に戻す）。
  *
  * 使い方:
@@ -40,7 +40,7 @@
  *   SUMenu.readCache()                → 端末の控え {role, config} か null
  *   SUMenu.startSync(onChange, onDone) → ページの読み込みが終わってから設定を読み、控えと違えば onChange(config, role) を呼ぶ。
  *                                       onDone(kind) は結果（'ok'・'out'・'error'）が出るたびに呼ぶ
- *   SUMenu.ball()                     → 今の毬の柄 'kiku' | 'asanoha'（端末の選択 → 施設の既定 → 菊かがり）
+ *   SUMenu.ball()                     → 今の毬の柄 'fuji' | 'kiku' | 'asanoha'（端末の選択 → 施設の既定 → 藤の手毬）
  *   SUMenu.getBall() / setBall(kind)  → 端末の選択（無い・壊れている時は null）／端末の選択を残す（成功で true）
  *   SUMenu.chooseBall(device, config) → 柄の決め方の純関数（config は clean() を通したもの）
  *   SUMenu.hasLogin() / loadAuth()    → この端末にログインの記録があるか／ログインの部品を読み込む（二重に入れない）。
@@ -52,7 +52,7 @@
 
   var CACHE_KEY = 'su_menu_v1';
   var BALL_KEY = 'su_menu_ball';
-  var BALLS = ['kiku', 'asanoha'];
+  var BALLS = ['fuji', 'kiku', 'asanoha'];
   var ROLES = ['admin', 'office', 'field'];
   var KEY_RE = /^[A-Za-z0-9_.:\/?=&#%~-]{1,200}$/;
   var SEC_RE = /^[A-Za-z0-9_-]{1,40}$/;
@@ -101,7 +101,7 @@
     if (isObj(cfg.mv)) Object.keys(cfg.mv).forEach(function (k) {
       if (KEY_RE.test(k) && typeof cfg.mv[k] === 'string' && SEC_RE.test(cfg.mv[k])) out.mv[k] = cfg.mv[k];
     });
-    // 0025 の施設の既定の毬の柄。'asanoha' の時だけ持つ（'kiku'・ほかの値は捨てる＝無い時は菊かがり）
+    // 0025 の施設の既定の毬の柄。'asanoha' の時だけ持つ（'kiku'・ほかの値は捨てる＝無い時は藤の手毬）
     if (cfg.ball === 'asanoha') out.ball = 'asanoha';
     return out;
   }
@@ -357,12 +357,12 @@
   /* ── 毬の柄（2026-10-26 代表者の決定）── */
   function chooseBall(device, config) {
     if (BALLS.indexOf(device) >= 0) return device;
-    return (config && typeof config === 'object' && config.ball === 'asanoha') ? 'asanoha' : 'kiku';
+    return (config && typeof config === 'object' && config.ball === 'asanoha') ? 'asanoha' : 'fuji';
   }
   function getBall() {
     try { var v = localStorage.getItem(BALL_KEY); return BALLS.indexOf(v) >= 0 ? v : null; } catch (e) { return null; }
   }
-  /* 施設の既定（ログインして読めた設定の控えだけ。ログインしていない端末は菊かがり） */
+  /* 施設の既定（ログインして読めた設定の控えだけ。ログインしていない端末は藤の手毬） */
   function cachedConfig() {
     try { var c = readCache(); return c && c.config; } catch (e) { return null; }
   }
@@ -370,7 +370,7 @@
   function setBall(kind) {
     if (BALLS.indexOf(kind) < 0) return false;
     try {
-      // 鍵を消すのは施設の既定が分かっている時だけ（ログイン直後・電波が無い間は控えが無く、既定を菊かがりと決めつけると最後に選んだ柄が残らない）
+      // 鍵を消すのは施設の既定が分かっている時だけ（ログイン直後・電波が無い間は控えが無く、既定を藤の手毬と決めつけると最後に選んだ柄が残らない）
       var c = cachedConfig();
       if (c && kind === chooseBall(null, c)) localStorage.removeItem(BALL_KEY);
       else localStorage.setItem(BALL_KEY, kind);

@@ -5,15 +5,16 @@
  * 区分の作成・名前と絵文字の変更・削除・ボタンを別の区分へ移す（2026-10-26 本人指示）。保存には移行 0023 が要る。
  *   0023 の前でも、区分に触らない変更（並び・非表示）は今までどおり保存できる（sdef・gone・mv は空なら設定に書かない）。
  * メニューの毬の柄（施設の既定・2026-10-26 代表者の決定）。保存には移行 0025 が要る。
- *   画面の中では柄を持っておき（toModel で読む）、保存の時は麻の葉の時だけ ball:'asanoha' を書く（菊かがりは書かない＝無い時は菊かがり）。
- *   麻の葉にした後でほかの設定だけ直して保存しても、柄は消えない。0025 の前でも菊かがりのままなら今までどおり保存できる。
+ *   画面の中では柄を持っておき（toModel で読む）、保存の時は麻の葉の時だけ ball:'asanoha' を書く（藤の手毬は書かない＝無い時は藤の手毬・2026-11-10 本人指示）。
+ *   菊かがりは施設の既定に選べない（データベースが受け付けるのは麻の葉だけ）。各端末で毬を押して選ぶ。
+ *   麻の葉にした後でほかの設定だけ直して保存しても、柄は消えない。0025 の前でも藤の手毬のままなら今までどおり保存できる。
  */
 (function () {
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
   var ROLES = [['admin', '管理者'], ['office', '事務所'], ['field', '現場']];
   var def = null;          // index.html の定義
-  var model = null;        // { secs:[{id, mk, title, officeOnly, custom, tiles:[tile…]}], hide:{admin:{href:1}…}, ball:'kiku'|'asanoha' }
+  var model = null;        // { secs:[{id, mk, title, officeOnly, custom, tiles:[tile…]}], hide:{admin:{href:1}…}, ball:'fuji'|'asanoha' }
   var defSec = {};         // 最初からある区分 id → {mk, title, officeOnly}
   var homeOf = {};         // ボタンの鍵 → 既定の区分 id
   var editing = null;      // 名前を変えている区分の id
@@ -54,9 +55,9 @@
     badkey: 'ボタンのリンク先に使えない文字があります。', toolarge: '設定が大きすぎます。',
     badsdef: '区分の名前・絵文字の形が正しくありません（名前は1〜20字・絵文字は8字まで）。', badgone: '消した区分の形が正しくありません。',
     badmv: 'ボタンの移し先の形が正しくありません。',
-    badball: 'メニューの毬の柄の形が正しくありません。「菊かがり」か「麻の葉」を選び直してから、もう一度保存してください。'
+    badball: 'メニューの毬の柄の形が正しくありません。「藤の手毬」か「麻の葉」を選び直してから、もう一度保存してください。'
   };
-  var NEED_0025 = 'メニューの毬の柄を「麻の葉」にして保存するには、データベースの更新（移行 0025）が必要です。毬の柄を「菊かがり」に戻すと、ほかの変更は保存できます。';
+  var NEED_0025 = 'メニューの毬の柄を「麻の葉」にして保存するには、データベースの更新（移行 0025）が必要です。毬の柄を「藤の手毬」に戻すと、ほかの変更は保存できます。';
   var NEED_0023 = '区分の追加・名前の変更・削除・ボタンの移動を保存するには、データベースの更新（移行 0023）が必要です。区分を変えた設定が残っている間は、並び・表示の変更も保存できません。その時は区分の変更を元に戻すか、「既定に戻す」を押してください。';
 
   // ── 定義を読む（index.html の中の JSON。定義の正本は1つ）──
@@ -89,7 +90,7 @@
                  tiles: s.tiles.filter(function (t) { return t && typeof t.href === 'string' && t.href; }) };
       }),
       hide: hide,
-      ball: c.ball === 'asanoha' ? 'asanoha' : 'kiku'
+      ball: c.ball === 'asanoha' ? 'asanoha' : 'fuji'
     };
   }
   // 画面の形 → 保存する設定（並びは全部書く。後から足したボタンは載らない＝メニューでは区分の末尾・全員に出る）
@@ -113,7 +114,7 @@
     if (Object.keys(sdef).length) cfg.sdef = sdef;
     if (gone.length) cfg.gone = gone;
     if (Object.keys(mv).length) cfg.mv = mv;
-    if (model.ball === 'asanoha') cfg.ball = 'asanoha';   // 菊かがりは書かない（無い＝菊かがり・0025 の前でも保存できる）
+    if (model.ball === 'asanoha') cfg.ball = 'asanoha';   // 藤の手毬は書かない（無い＝藤の手毬・0025 の前でも保存できる）
     return cfg;
   }
   function needs0023(cfg) { return !!(cfg && (cfg.sdef || cfg.gone || cfg.mv)); }
@@ -375,7 +376,7 @@
   (function () {
     var rs = ballRadios();
     for (var i = 0; i < rs.length; i++) rs[i].addEventListener('change', function (e) {
-      if (!model || !e.target.checked || (e.target.value !== 'kiku' && e.target.value !== 'asanoha')) return;
+      if (!model || !e.target.checked || (e.target.value !== 'fuji' && e.target.value !== 'asanoha')) return;
       model.ball = e.target.value;
       refreshState();
     });

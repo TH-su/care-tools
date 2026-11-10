@@ -18,7 +18,7 @@
   ★これは入口の整理であって守りではない。隠したボタンのアプリも、URL を知っていれば開ける（守りは各アプリと RLS）。
   ★現場の端末では、事務所専用のボタンはこの設定にかかわらず出ない（index.html の is-field の仕組み）。
   ★表示はすべて textContent。氏名・記録は扱わない。
-  ★メニューの毬の柄（施設の既定・2026-10-26 代表者の決定・移行 0025）。麻の葉の時だけ設定に ball を書く（菊かがりは書かない＝無い時は菊かがり）。
+  ★メニューの毬の柄（施設の既定・2026-10-26 代表者の決定・移行 0025）。麻の葉の時だけ設定に ball を書く（藤の手毬は書かない＝無い時は藤の手毬・2026-11-10 本人指示）。菊かがりは各端末で毬を押して選ぶ（データベースが受け付けるのは麻の葉だけ）。
     見本は su-itomari.js が図形を1つずつ作って描く（style を使わない＝この画面の CSP のまま）。
 -->
 <link rel="stylesheet" href="su-auth.css?v=2026-09-26">
@@ -58,10 +58,10 @@
     <section class="cd" id="ball-card">
       <h2 id="ball-h">メニューの毬の柄（施設の既定）</h2>
       <div class="ms-ball" role="radiogroup" aria-labelledby="ball-h">
-        <label class="ms-ball-opt"><input type="radio" name="ball" value="kiku"><span class="ms-ball-pv" data-ball="kiku"></span><span class="ms-ball-nm">菊かがり</span></label>
+        <label class="ms-ball-opt"><input type="radio" name="ball" value="fuji"><span class="ms-ball-pv" data-ball="fuji"></span><span class="ms-ball-nm">藤の手毬（既定）</span></label>
         <label class="ms-ball-opt"><input type="radio" name="ball" value="asanoha"><span class="ms-ball-pv" data-ball="asanoha"></span><span class="ms-ball-nm">麻の葉</span></label>
       </div>
-      <p class="muted">各端末でメニューの毬を押して選んだ柄は、その端末ではこの既定より優先されます。</p>
+      <p class="muted">各端末でメニューの毬を押して選んだ柄は、その端末ではこの既定より優先されます。菊かがりは、各端末でメニューの毬を押すと選べます。</p>
     </section>
     <div id="secs"></div>
     <section class="cd sticky-acts">
@@ -76,10 +76,10 @@
 </main>
 <script src="supabase-js-2.112.4.js"></script>
 <script src="su-auth.js?v=2026-10-28"></script>
-<script src="su-menu.js?v=2026-11-02"></script>
-<script src="su-itomari.js?v=2026-10-26.2"></script>
+<script src="su-menu.js?v=2026-11-10"></script>
+<script src="su-itomari.js?v=2026-11-10"></script>
 <script src="su-facility.js?v=2026-11-07"></script>
-<script src="menu-settings.js?v=2026-10-29"></script>
+<script src="menu-settings.js?v=2026-11-10"></script>
 <script src="su-report.js?v=2026-10-28" data-tool="メニューの設定"></script>
 </body>
 </html>

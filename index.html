@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-u9Mz+PobfhgDbQ9J12BNKFwJbVdJJPILYNfH5TOj27I=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-G6EzR0pzmUP5/ZxhDmgZAW0d4Zl/xqVNwhlFB7gb2wU=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 検索エンジンにこのページと配下ツールを辿らせない。
@@ -18,7 +18,7 @@
        読み、そのタイルに札として出す（2026-10-24 代表者の決定 案A）。メニューから書かない・送らない。
        管理者（Google＋2段階認証）でログイン中の事務所の端末でだけ、写しの記録（master_sync_runs の at・failed だけ）を読み、
        最後の成功が24時間より前なら入居者マスタのタイルに札を出す（su-sync-stale.js・2026-10-26 本人指示）。札に出すのは時刻だけ。
-     ★端末に書くのは、見出しの毬を押した時の毬の柄（su_menu_ball・値は 'kiku'・'asanoha' だけ）だけで、
+     ★端末に書くのは、見出しの毬を押した時の毬の柄（su_menu_ball・値は 'fuji'・'kiku'・'asanoha' だけ）だけで、
        書くのは su-menu.js の SUMenu.setBall だけ（このページは保存領域へ直接書かない・2026-10-26 代表者の決定）。
      ★端末の用途（su_device_role）は、管理者が決めた用途が届いた時に su-device-role.js だけが書く（このページは直接書かない・2026-11-08 代表者の決定 段3 案A）。
      ★<body> より前に class を付けるのは、タイルが一瞬見えてから消える「ちらつき」を防ぐため
@@ -33,8 +33,8 @@
 <link rel="preload" as="script" href="su-errors.js?v=2026-10-27">
 <link rel="preload" as="script" href="su-cfg-hint.js?v=2026-11-08">
 <link rel="preload" as="script" href="su-perf.js?v=2026-10-27">
-<link rel="preload" as="script" href="su-menu.js?v=2026-11-02">
-<link rel="preload" as="script" href="su-itomari.js?v=2026-10-26.2">
+<link rel="preload" as="script" href="su-menu.js?v=2026-11-10">
+<link rel="preload" as="script" href="su-itomari.js?v=2026-11-10">
 <link rel="preload" as="script" href="su-sync-stale.js?v=2026-10-26">
 <link rel="preload" as="script" href="su-device-role.js?v=2026-11-08">
 <link rel="preload" as="script" href="su-report.js?v=2026-10-28">
@@ -44,9 +44,9 @@
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-cfg-hint.js?v=2026-11-08"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
-<script src="su-menu.js?v=2026-11-02"></script>
-<!-- メニューの毬（菊かがり・麻の葉）を描く部品（2026-10-26 代表者の決定）。読めなくてもメニューは動く（毬のボタンを出さないだけ） -->
-<script src="su-itomari.js?v=2026-10-26.2"></script>
+<script src="su-menu.js?v=2026-11-10"></script>
+<!-- メニューの毬（藤の手毬・菊かがり・麻の葉）を描く部品（2026-10-26 代表者の決定・藤の手毬は 2026-11-10 本人指示）。読めなくてもメニューは動く（毬のボタンを出さないだけ） -->
+<script src="su-itomari.js?v=2026-11-10"></script>
 <!-- 写しが止まっている時の札（2026-10-26 本人指示）。現場端末では何も読まない・読めなくてもメニューは動く -->
 <script src="su-sync-stale.js?v=2026-10-26"></script>
 <!-- 端末の用途を、管理者が「アプリの使える人」の「端末の用途」で決めたとおりに受け取る（2026-11-08 代表者の決定 段3 案A・統合 0081）。
@@ -591,7 +591,7 @@ main {
   var def = null, broken = 0, firstErr = null;
   function fail(e) { broken++; if (!firstErr) firstErr = e; }
   try { def = JSON.parse(document.getElementById('menuDef').textContent); } catch (e) { firstErr = e; }
-  /* メニューの毬（2026-10-26 代表者の決定）。見出しの左に、出ている業務ツールの数で育つ毬を出し、押すと柄（菊かがり・麻の葉）を切り替える。
+  /* メニューの毬（2026-10-26 代表者の決定）。見出しの左に、出ている業務ツールの数で育つ毬を出し、押すと柄を 藤の手毬 → 菊かがり → 麻の葉 の順に切り替える（藤の手毬は 2026-11-10 本人指示）。
      ★柄はこの端末だけに残す。書くのは su-menu.js の SUMenu.setBall だけ（このページは保存領域へ直接書かない）。
      ★業務ツール＝定義の「既定の区分」が設定・困った時でないもの（管理者が移した先の区分では決めない）。分母は定義の業務ツールの数。
        分子は組み立てたボタンのうち業務ツールで、現場端末では自分も親も事務所専用でないもの（CSS で隠れているものは数えない）。
@@ -644,7 +644,7 @@ main {
         ballBtn.type = 'button';
         ballBtn.addEventListener('click', function () {
           try {
-            var next = SUItomari.other(ballPick || SUMenu.ball());
+            var next = SUItomari.next(ballPick || SUMenu.ball());
             SUMenu.setBall(next);
             // 端末に残せない時（保存領域が使えない端末）も、開いている間はこの画面で切り替える
             ballPick = SUMenu.ball() === next ? null : next;
