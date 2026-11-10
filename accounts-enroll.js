@@ -16,7 +16,7 @@
   var $ = function (id) { return document.getElementById(id); };
   var ROLE = { field: '現場', office: '事務所' };
   var DEV = { field: '現場の端末', office: '事務所PC' };
-  var STATE = { open: '使われるのを待っています', expired: '期限切れ', active: '登録した端末', lapsed: '90日を過ぎた端末', failed: '登録できませんでした', revoked: '取り消した端末', canceled: '取り消した QR' };
+  var STATE = { open: '使われるのを待っています', expired: '期限切れ', active: '登録した端末', lapsed: '180日使っていない端末', failed: '登録できませんでした', revoked: '取り消した端末', canceled: '取り消した QR' };
   var POLL_MS = 4000;
   var live = null;   // 出している QR { id, expiresAt, timer } ※番号そのものは持ち続けない
 

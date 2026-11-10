@@ -200,7 +200,7 @@ async function runAdmin(opt) {
     { id: 9, email: 'inv-f@example.invalid', label: '見本', state: 'revoked', createdAt: new Date().toISOString() },
     { id: 10, email: 'inv-f@example.invalid', label: '見本', state: 'expired', createdAt: new Date().toISOString() }] });
   const btnOf = (i) => a.els['en-list'].children[i].children[1].children[0];
-  t('90日を過ぎた端末・使った直後でまだ結んでいない行には取り消しのボタン・取り消した行と期限切れには無い',
+  t('180日使っていない端末・使った直後でまだ結んでいない行には取り消しのボタン・取り消した行と期限切れには無い',
     btnOf(0) && btnOf(0).textContent === 'この端末を取り消す' && btnOf(1) && btnOf(1).textContent === 'この QR を取り消す' && !btnOf(2) && !btnOf(3));
   a.els['en-acct'].value = 'inv-f@example.invalid';
   a.els['en-acct'].selectedOptions = [{ textContent: '現場の端末（見本）（現場）' }];
