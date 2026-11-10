@@ -205,7 +205,7 @@ console.log('\n— 8b. 確認表の行と「反映する」を止める規則（
   stopIf('調剤日が2つ以上で選んでいなければ止める', st => { st.dates = { labeled: ['2026-10-04', '2026-10-18'], other: [] }; st.date = ''; }, /2つ以上/);
   stopIf('調剤日の形が違えば止める', st => { st.date = 'R081018'; }, /形/);
   stopIf('本人の照合の印が無ければ止める', st => { st.identity = false; }, /この方の書類/);
-  stopIf('書類に無い今の行を決めていなければ止める', st => { st.rows[3].action = ''; }, /残す」か「中止/);
+  stopIf('書類に無い今の行を決めていなければ止める', st => { st.rows[3].action = ''; }, /「残す」「直す」「中止」/);
   stopIf('⚠ の行を確かめていなければ止める', st => { st.rows[1].checked = false; }, /⚠ の行が 1 行/);
   stopIf('頓服を「足す」に変えたら、確かめるまで止める', st => { st.rows[2].action = 'add'; }, /⚠ の行が 1 行/);
   stopIf('調剤日が最後の変更より前なら、確かめるまで止める', st => { st.lastChange = '2026-10-20'; }, /最後の変更/);
@@ -248,6 +248,18 @@ console.log('\n— 8c. 反証レビュー（2026-10-22）の指摘の再発防�
   const mA = Y.matchCurrent([{ line: '架空ゾール錠10mg 1錠分1 朝食後', spec: { slots: ['朝'], dose: 1 }, raw: '架空ゾール錠10mg' }], '先発架空錠10 1錠分1 朝食後');
   const rA = Y.buildRows(mA.pairs, mA.left, [{ warn: [], skip: false, spec: { slots: ['朝'], dose: 1 } }], {});
   t('★対応の付かない「足す」と書類に無い今の行が同時にあれば「足す」に印', rA[0].kind === 'add' && rA[0].warns.some(w => /書き方違い/.test(w)), rA);
+  /* 同じ成分（コードの先頭7桁）の足す行と今の行を結ぶ（先発→後発・本人指示 2026-11-10）。自動では消さない */
+  const yjF = (n) => (/架空ゾール/.test(n) ? '1234567F1' : /先発架空/.test(n) ? '1234567F2' : /別成分/.test(n) ? '7654321F1' : '');
+  const rT = Y.buildRows(mA.pairs, mA.left, [{ warn: [], skip: false, spec: { slots: ['朝'], dose: 1 } }], { yjOf: yjF });
+  t('★同じ成分の足す行に、結んだ今の行の番号と「置き換える」の知らせを付ける（今の行は中止にしない）', rT[0].twin === 1 && rT[0].warns.some(w => /同じ成分/.test(w) && /先発架空錠10/.test(w)) && rT[1].action === '', rT);
+  const mN = Y.matchCurrent([{ line: '架空ゾール錠10mg 1錠分1 朝食後', spec: { slots: ['朝'], dose: 1 }, raw: '架空ゾール錠10mg' }], '別成分錠10 1錠分1 朝食後');
+  const rN = Y.buildRows(mN.pairs, mN.left, [{ warn: [], skip: false, spec: { slots: ['朝'], dose: 1 } }], { yjOf: yjF });
+  t('成分の違う今の行とは結ばない', rN[0].twin === undefined && !rN[0].warns.some(w => /同じ成分/.test(w)), rN);
+  const rU = Y.buildRows(mA.pairs, mA.left, [{ warn: [], skip: false, spec: { slots: ['朝'], dose: 1 } }], {});
+  t('コードを引けない・名前も違う時は結ばない（今までの知らせだけ）', rU[0].twin === undefined, rU);
+  const mI = Y.matchCurrent([{ line: '架空ゾール錠10mg「後発」 1錠分1 朝食後', spec: { slots: ['朝'], dose: 1 }, raw: '架空ゾール錠10mg「後発」' }], '架空ゾール錠20mg 1錠分1 夕食後\n別成分錠10 1錠分1 朝食後');
+  const rI = Y.buildRows(mI.pairs.filter((p) => p.kind === 'add').length ? mI.pairs : mI.pairs, mI.left, [{ warn: [], skip: false, spec: { slots: ['朝'], dose: 1 } }], {});
+  t('名前の語幹だけで結んだ時は「同じ成分」と言い切らない（指摘5）', rI.every((r) => !r.warns.some((w) => /と同じ成分です/.test(w))), rI);
   /* 同じ薬が2行になる時は、確かめた印が無ければ止める */
   const cur2 = '架空錠5mg 1錠分1 朝食後\n架空錠5mg 1錠分1 就寝前';
   const m2 = Y.matchCurrent([{ line: '架空錠5mg 2錠分2 朝食後・就寝前', spec: { name: '架空錠5mg', maker: '', slots: ['朝', '眠前'], dose: 1, unit: '錠', meal: '食後', free: '' }, raw: '架空錠5mg' }], cur2);
@@ -321,7 +333,7 @@ console.log('\n— 8e. 調剤日を読めない書類は、取り込んだ日で
   const j9 = Y.judge(Object.assign(st({ labeled: [], other: [] }, '2026-10-22'), { rows: [{ kind: 'add', action: 'add', line: '架空錠C 1錠分1 就寝前', warns: ['頓服の書き方です'], checked: false }] }));
   t('★取り込んだ日でも、⚠ の行を確かめていなければ止める', /⚠ の行が 1 行/.test(j9.stop), j9.stop);
   const j10 = Y.judge(Object.assign(st({ labeled: [], other: [] }, '2026-10-22'), { rows: [{ kind: 'left', cur: '架空錠A 1錠分1 朝食後', action: '', warns: [] }, ...rows()] }));
-  t('★取り込んだ日でも、書類に無い今の行を決めていなければ止める', /残す」か「中止/.test(j10.stop), j10.stop);
+  t('★取り込んだ日でも、書類に無い今の行を決めていなければ止める', /「残す」「直す」「中止」/.test(j10.stop), j10.stop);
 }
 
 console.log('\n— 8f. 調剤日の既定と、取り込んだ日を使う時の日付（0時をまたいでも選んだまま・審査の指摘 2026-10-22）—');
@@ -601,7 +613,7 @@ console.log('\n— 12. 取り込みの一致率（correctionKinds・metricOf・s
   t('★現場用への切り替えでは欄を空にする（端末の記録は消さない）', /mt\.textContent=''/.test(cut3(RM3, 'yjPurge_')) && !/removeItem/.test(cut3(RM3, 'yjPurge_')));
   const modal = RM3.slice(RM3.indexOf('<div class="modal" id="mYakujo"'), RM3.indexOf('<!-- 端末用途ガード'));
   t('★欄は取り込みの窓（#mYakujo）の中にあり、窓ごと印刷しない', /<div class="box">[\s\S]*<p class="yj-met" id="yjMetric"><\/p>\s*<div class="yj-body" id="yjBody"><\/div>\s*<\/div>\s*<\/div>\s*$/.test(modal.trim() + '\n') && /@media print\{ #mYakujo,#yjOpen\{display:none !important\} \}/.test(RM3));
-  t('共有部品の版（?v=）を上げた', /yakujo-calc\.js\?v=2026-11-10"/.test(RM3));
+  t('共有部品の版（?v=）を上げた', /yakujo-calc\.js\?v=2026-11-10\.2"/.test(RM3));
 }
 
 /* ── まとめて反映できるか（bulkCheck・半自動・代表者の決定 2026-11-04）──
@@ -812,30 +824,66 @@ console.log('\n[医療機関ごとの入れ替えと臨時薬（clinicPlan・本
     current: [A0, B, C].join('\n'), lastChange: '2026-10-01', sameDay: '', doc: D, plan: { mode: mode || 'replace', clinic: H },
     rows: [row('change', A0, A1, 'change'), row('same', B, B, 'keep'), row('left', C, C, '')] });
   const r1 = Y.bulkCheck(base());
-  t('★入れ替えの時は、書類に無い今の薬を消して、まとめて反映に入れる', r1.ok === true && r1.judged.counts.stop === 1 && r1.judged.after === [A1, B].join('\n') && r1.lefts.length === 1 && r1.lefts[0].action === 'stop' && r1.lefts[0].k === 2, r1);
+  t('★かかりつけ病院の新しい薬情でも、書類に無い今の薬は自動で消さず「残す」（消すのは人が選んだ時だけ・本人指示 2026-11-10）', r1.ok === true && r1.judged.counts.stop === 0 && r1.judged.after === [A1, B, C].join('\n') && r1.lefts.length === 1 && r1.lefts[0].action === 'keep' && r1.lefts[0].k === 2, r1);
   const r2 = Y.bulkCheck(Object.assign(base(), { leftAct: { 2: 'keep' } }));
   t('★一覧で「残す」に選び直した行は消さない', r2.ok === true && r2.judged.counts.stop === 0 && r2.judged.after === [A1, B, C].join('\n'), r2);
   const r3 = Y.bulkCheck(Object.assign(base('keep'), { leftAct: { 2: 'stop' } }));
   t('★残すの時も、一覧で「消す」を選んだ行は消して、まとめて反映に入れる（先発と後発の重なりを同じ画面で消す）', r3.ok === true && r3.judged.counts.stop === 1 && r3.judged.after.indexOf(C) < 0, r3);
   const r4 = Y.bulkCheck(base('temp'));
   t('★臨時薬の時は、書類に無い今の薬を残す（足す・変えるだけ）', r4.ok === true && r4.judged.counts.stop === 0 && r4.kept === 1, r4);
-  const r5 = Y.bulkCheck(Object.assign(base(), { lastChange: '2026-11-03' }));
+  const r5 = Y.bulkCheck(Object.assign(base(), { lastChange: '2026-11-03', leftAct: { 2: 'stop' } }));
   t('★調剤日が定期薬の最後の変更より前で、消す行がある書類は1人ずつ', r5.ok === false && r5.why.some((w) => /最後の変更より前で、消す行/.test(w)), r5.why);
   const r6 = Y.bulkCheck(Object.assign(base(), { lastChange: '2026-11-03', leftAct: { 2: 'keep' } }));
   t('消す行が無ければ、古い書類も止めずに知らせだけ', r6.ok === true && r6.older === '2026-11-03', r6.why);
   const r7 = Y.bulkCheck(Object.assign(base(), { leftAct: { 0: 'stop', 9: 'stop' } }));
-  t('書類に無い今の行でない行・無い番号への選び直しは効かない', r7.judged.counts.change === 1 && r7.judged.counts.stop === 1, r7.judged.counts);
+  t('書類に無い今の行でない行・無い番号への選び直しは効かない', r7.judged.counts.change === 1 && r7.judged.counts.stop === 0, r7.judged.counts);
   const w8 = base(); w8.rows[2].warns = ['同じ薬の名前です'];
   t('⚠ の付いた書類に無い今の行は、入れ替えでも1人ずつ（選び直しの一覧に出さない）', Y.bulkCheck(w8).ok === false && Y.bulkCheck(w8).lefts.length === 0);
   const r9 = Y.bulkCheck(Object.assign(base(), { rows: [row('same', A0, A0, 'keep'), row('same', B, B, 'keep'), row('left', C, C, '')] }));
-  t('★書類と同じ薬だけで、書類に無い今の薬がある時は「変更なし」にせず消す行として出す', r9.ok === true && r9.none === false && r9.judged.counts.stop === 1, r9);
+  t('★書類と同じ薬だけで、書類に無い今の薬がある時は「変更なし」（残す）で、一覧に消す候補として出す', r9.ok === false && r9.none === true && r9.judged.counts.stop === 0 && r9.lefts.length === 1, r9);
+  const r9b = Y.bulkCheck(Object.assign(base(), { rows: [row('same', A0, A0, 'keep'), row('same', B, B, 'keep'), row('left', C, C, '')], leftAct: { 2: 'stop' } }));
+  t('★その時に一覧で「消す」を選ぶと、まとめて反映に入る', r9b.ok === true && r9b.judged.counts.stop === 1, r9b);
+
+  /* すべて入れ替え（本人指示 2026-11-10）: 人が押した時だけ、書類に無い今の行を全部中止にする。取り消すと選ぶ前に戻る */
+  const ra = Y.replaceAll([row('change', A0, A1, 'change'), row('left', C, C, ''), row('left', B, B, 'keep'), row('add', '', A1, 'add')], true);
+  t('★すべて入れ替え: 書類に無い今の行は全部「中止」（残すを選んでいた行も）・書類の行は変えない', ra[1].action === 'stop' && ra[2].action === 'stop' && ra[0].action === 'change' && ra[3].action === 'add' && ra[1].byAll === true);
+  const rb = Y.replaceAll(ra, false);
+  t('★取り消すと、この印で中止にした行は押す前の選び（選ぶ前・残す）に戻る', rb[1].action === '' && rb[2].action === 'keep' && rb[1].byAll === undefined);
+  const re1 = Y.replaceAll([Object.assign(row('left', C, 'カクウパム錠2mg「ミホン」 1回1錠 眠前', 'edit'), { checked: true })], true);
+  t('★「直す」で直した行も中止にし、確かめた印を外す（指摘3）', re1[0].action === 'stop' && re1[0].line === C && re1[0].checked === false);
+  const re2 = Y.replaceAll(re1, false);
+  t('★取り消すと、直した行の文に戻る（直した文を失わない・指摘3）', re2[0].action === 'edit' && re2[0].line === 'カクウパム錠2mg「ミホン」 1回1錠 眠前' && re2[0].checked === false);
+  const rc = Y.replaceAll([row('left', C, C, 'stop')], true);
+  t('もとから中止を選んでいた行は、取り消しても中止のまま', Y.replaceAll(rc, false)[0].action === 'stop');
+  t('入れ替えは元の行を書き換えない（写しを返す）', (() => { const src = [row('left', C, C, '')]; Y.replaceAll(src, true); return src[0].action === ''; })());
+  t('壊れた入力でも例外を出さない', Array.isArray(Y.replaceAll(null, true)) && Y.replaceAll(null, true).length === 0);
+  const jall = Y.judge({ id: '11', dates: { labeled: ['2026-11-01'], other: [] }, date: '2026-11-01', today: '2026-11-04', identity: true, server: 'ok', current: [A0, B, C].join('\n'),
+    rows: Y.replaceAll([row('change', A0, A1, 'change'), row('same', B, B, 'keep'), row('left', C, C, '')], true) });
+  t('★すべて入れ替えの結果は書類どおり（中止の知らせ付き）', !jall.stop && jall.after === [A1, B].join('\n') && jall.counts.stop === 1 && jall.notes.some((n) => /中止/.test(n)), jall);
+
+  /* 書類に無い今の行を「直す」（先発の行を後発の名前に直す等・本人指示 2026-11-10） */
+  const ed = row('left', C, 'カクウパム錠2mg「ミホン」 1回1錠 眠前', 'edit');
+  const jed = Y.judge({ id: '11', dates: { labeled: ['2026-11-01'], other: [] }, date: '2026-11-01', today: '2026-11-04', identity: true, server: 'ok', current: [A0, B, C].join('\n'),
+    rows: [row('same', A0, A0, 'keep'), row('same', B, B, 'keep'), ed] });
+  t('★「直す」を選んだ今の行は、直した行に書き換える（並びは今のまま）', !jed.stop && jed.after === [A0, B, 'カクウパム錠2mg「ミホン」 1回1錠 眠前'].join('\n') && jed.counts.change === 1, jed);
+  const jed2 = Y.judge({ id: '11', dates: { labeled: ['2026-11-01'], other: [] }, date: '2026-11-01', today: '2026-11-04', identity: true, server: 'ok', current: [A0, B, C].join('\n'),
+    rows: [row('same', A0, A0, 'keep'), row('same', B, B, 'keep'), row('left', C, C, 'edit')] });
+  t('「直す」を選んで何も直していなければ、変更なし（止めない・中止にもしない）', /反映する変更はありません/.test(jed2.stop) && jed2.counts.stop === 0, jed2);
+  const jed3 = Y.judge({ id: '11', dates: { labeled: ['2026-11-01'], other: [] }, date: '2026-11-01', today: '2026-11-04', identity: true, server: 'ok', current: [A0, B, C].join('\n'),
+    rows: [row('same', A0, A0, 'keep'), row('same', B, B, 'keep'), row('left', C, '   ', 'edit')] });
+  t('★「直す」で行を空にしたら止める（黙って残さない・消すのは「中止」だけ・指摘4）', /「直す」の行が空です/.test(jed3.stop) && jed3.counts.stop === 0, jed3);
+  const lg = Y.logRows([ed, Object.assign(row('left', B, B, 'stop'), { byAll: true })]);
+  t('★変更記録に「直す」と「中止（すべて入れ替え）」を残す', /直す｜（書類に無い今の行）｜カクウパム錠2mg「ミホン」/.test(lg) && /中止（すべて入れ替え）｜（書類に無い今の行）｜（中止）/.test(lg), lg);
 }
 console.log('\n[まとめて反映の画面（resident-master.html）]');
 {
   const RM4 = fs.readFileSync(path.join(ROOT, 'resident-master.html'), 'utf8');
   const cut4 = (src, name) => { const h = src.indexOf('function ' + name + '('); if (h < 0) throw new Error('関数が見つかりません: ' + name); let i = src.indexOf('{', h), d = 0; for (; i < src.length; i++) { if (src[i] === '{') d++; else if (src[i] === '}') { d--; if (d === 0) return src.slice(h, i + 1); } } };
   const ba = cut4(RM4, 'yjBulkApply_'), pl = cut4(RM4, 'yjPreload_'), bh = cut4(RM4, 'yjBulkHtml_');
-  t('★1人ずつの確認表も、同じ判断（clinicPlan）で書類に無い今の行の既定を当てる（本人指示 2026-11-10）', /cur\.plan=typeof Y\.clinicPlan==='function'\?Y\.clinicPlan\(\{hospital:cur\.rec&&cur\.rec\.hospital, doc:d, rows:cur\.rows, current:cur\.before\}\):null;/.test(cut4(RM4, 'yjBuild_')) && /cur\.rows=Y\.planRows\(cur\.rows, cur\.plan\)/.test(cut4(RM4, 'yjBuild_')));
+  t('★1人ずつの確認表は、かかりつけ病院の判断を知らせに使うだけで、書類に無い今の行を自動で中止にしない（本人指示 2026-11-10）', /cur\.plan=typeof Y\.clinicPlan==='function'/.test(cut4(RM4, 'yjBuild_')) && !/planRows/.test(cut4(RM4, 'yjBuild_')));
+  t('★「すべて入れ替え」は確認の窓のあとに YakujoCalc.replaceAll で当て、取り消せる', /if\(t\.id==='yjAll'/.test(RM4) && /confirm\(ca\.name\+' 様の今の定期薬のうち、書類に無い次の '/.test(RM4) && /ca\.rows=YakujoCalc\.replaceAll\(ca\.rows, !undo\)/.test(RM4));
+  t('★書類に無い今の行は「直す」を選べ、選ぶと今の行から書き始める', /\['edit','直す'\]/.test(cut4(RM4, 'yjRowHtml_')) && /\(r\.kind==='left'&&r\.action==='edit'\)/.test(cut4(RM4, 'yjRowHtml_')) && /if\(r\.kind==='left'\)\{ r\.line=r\.cur;/.test(RM4));
+  t('★同じ成分の「置き換える」は押した時だけ今の行を中止にする（ボタンの文字は esc を通す）', /data-yjtwin="'\+k\+'"/.test(cut4(RM4, 'yjRowHtml_')) && /esc\(YakujoCalc\.lineName\(tw\.cur\)\)/.test(cut4(RM4, 'yjRowHtml_')) && /rl\.action='stop';/.test(RM4));
   t('★まとめて反映も1人ずつと同じ本文（yjBody_）・同じ受け口（apiPostRaw）で送り、記録に「まとめて反映」と残す', /yjBody_\(c, x, j, p\.bc\.date, p\.bc\.rows, 'まとめて反映'\)/.test(ba) && /apiPostRaw\(body,40000\)/.test(ba));
   t('★ログインの証明が無い時は送らずに止める', /if\(!at\)\{ stopAll=/.test(ba));
   t('★書き込みは再試行しない（apiPostRaw は1人1回・届いたか分からない時は確かめ中にして残りへは送らない）', (ba.match(/apiPostRaw\(/g) || []).length === 1 && /x\.status='unsure'; res\.unsure\+\+; stopAll=/.test(ba) && /r&&r\.unknown\)\{ x\.status='unsure'; res\.unsure\+\+; stopAll=/.test(ba));
