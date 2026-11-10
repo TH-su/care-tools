@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-wI69hNuFIojEybcv0hsdGIKoo7hbhDQcTPqTyLa39Eo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-ZZptpqEL8XUc0k8kco1cF8an1e9kRezE1FZcYWswpdI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -7719,6 +7719,13 @@ function yjBulkHtml_(){
     h+='</ul></div>';
   });
   if(L.none.length) h+='<div class="yj-brow yj-sub">変更なし（書かずに終わりにします）：'+L.none.map(function(i){ var x=S.docs[i], sk=x.pre.bc&&x.pre.bc.skipped||[]; return '書類'+x.d.no+' '+esc(x.pre.cur.name)+' 様'+(sk.length?'（定期薬に入れない薬：'+sk.map(esc).join('・')+'）':''); }).join('・')+'</div>';
+  /* 変更なしの書類でも、書類に無い今の薬（先発と後発の重なりなど）を一覧で消せる（チェックを付けると「まとめて反映できる方」へ移る・反証レビュー 2026-11-10 指摘3） */
+  L.none.forEach(function(i){
+    var x=S.docs[i], p=x.pre, ls=p.bc&&p.bc.lefts||[];
+    if(!ls.length) return;
+    h+='<div class="yj-brow"><span class="yj-sub">書類'+x.d.no+'　'+esc(x.pre.cur.name)+' 様の、書類に無い今の薬（消す薬にチェック）</span><ul class="yj-blist">'+
+      ls.map(function(l){ return '<li><label class="yj-chk"><input type="checkbox" data-yjbleft="'+i+':'+l.k+'"'+(S.bulkBusy||p.bc.older?' disabled':'')+'> <span class="mh-tag">残す</span> '+esc(l.cur)+'</label></li>'; }).join('')+'</ul></div>';
+  });
   var n=L.ok.filter(function(i){ return S.docs[i].pre.on; }).length, can=(n||L.none.length)&&!busy&&!S.bulkBusy&&S.server==='ok';
   if(S.bulkMsg) h+='<p class="mc-msg" role="status">'+esc(S.bulkMsg)+'</p>';
   if(L.ok.length||L.none.length){

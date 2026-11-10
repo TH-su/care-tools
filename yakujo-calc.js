@@ -795,8 +795,10 @@
      2剤以上少ない時は臨時薬と判断し、足す・変えるだけにする（書類に無い今の薬は残す）。
      定期薬の行には医療機関の記録が無いため、入れ替えるのは「かかりつけ病院が1つだけ入っていて、その名前が書類に書いてある」方だけ。
      かかりつけ病院が無い・2つ以上・書類に名前が見つからない時は、今までどおり書類に無い今の薬を残す側に倒す（ほかの医療機関の薬を消さない）。
-     名前は全角半角・空白をそろえ、4文字以上の名前（かっこ書きは除く）が書類の文字に含まれる時だけ一致とする。法人の頭書き（医療法人〇〇会 など）を
-     除いた名前でも探す。
+     名前は全角半角・空白をそろえ、4文字以上の名前（かっこ書きは除く）が書類の【1つの行】に含まれる時だけ一致とする。「薬局」を含む行
+     （門前の薬局の名前に病院名が入る）は照合に使わない。法人の頭書き（医療法人〇〇会 など）を除いた名前でも探すが、病院・医院・クリニック
+     などの一般の語を除いて固有の名前が2文字以上残る時だけ使う（「内科医院」だけで別の医院に当てない・反証レビュー 2026-11-10 指摘2）。
+     書類の薬の数（nDoc）は定期薬に書く行だけで数える（外用・頓服で定期薬に入れない行は数えない・同 指摘1）。
      st: {hospital:かかりつけ病院の欄（1行1件）, doc:(parseResult の書類1件), rows:(確認表の行), current:今の定期薬の全文}
      戻り値 {mode:'replace'（入れ替え）|'temp'（臨時薬・足すだけ）|'keep'（残す）, clinic:一致した名前, why:'keep・temp の理由', nDoc, nReg} */
   function clinicKey(s) {
@@ -808,22 +810,22 @@
     String(st.hospital == null ? '' : st.hospital).split(/\r\n|\r|\n/).forEach(function (l) {
       var k = clinicKey(l); if (k && !seen[k]) { seen[k] = 1; hs.push({ name: String(l).trim(), key: k }); }
     });
-    var doc = st.doc && typeof st.doc === 'object' ? st.doc : null, txt = '';
+    var doc = st.doc && typeof st.doc === 'object' ? st.doc : null, txts = [];
     (doc && Array.isArray(doc.pages) ? doc.pages : []).forEach(function (p) {
-      (p && Array.isArray(p.lines) ? p.lines : []).forEach(function (l) { txt += clinicKey(l && l.t); });
+      (p && Array.isArray(p.lines) ? p.lines : []).forEach(function (l) { var k = clinicKey(l && l.t); if (k && k.indexOf('薬局') < 0) txts.push(k); });
     });
     var rows = Array.isArray(st.rows) ? st.rows : [];
-    var nDoc = rows.filter(function (r) { return r && r.kind !== 'left'; }).length;
+    var nDoc = rows.filter(function (r) { return r && r.kind !== 'left' && !(r.kind === 'add' && r.action === 'skip'); }).length;
     var nReg = String(st.current == null ? '' : st.current).split(/\r\n|\r|\n/).filter(function (l) { return l.trim(); }).length;
     var found = function (h) {
       var ks = [h.key], b = h.key.replace(/^(社会医療法人|特定医療法人|医療法人社団|医療法人財団|医療法人|一般社団法人|社会福祉法人)[^会団]{1,20}?[会団]/, '');
-      if (b !== h.key) ks.push(b);
-      return ks.some(function (k) { return k.length >= 4 && txt.indexOf(k) >= 0; });
+      if (b !== h.key && b.replace(/(総合病院|病院|医院|クリニック|診療所|内科|外科|整形外科|皮膚科|眼科|耳鼻咽喉科|精神科|心療内科|歯科|泌尿器科|循環器科|消化器科|呼吸器科|脳神経外科|中央|医療センター|センター)/g, '').length >= 2) ks.push(b);
+      return ks.some(function (k) { return k.length >= 4 && txts.some(function (t) { return t.indexOf(k) >= 0; }); });
     };
     var out = { mode: 'keep', clinic: '', why: '', nDoc: nDoc, nReg: nReg };
     if (!hs.length) { out.why = 'かかりつけ病院が入っていないため、書類に無い今の薬は残します'; return out; }
     if (hs.length > 1) { out.why = 'かかりつけ病院が2つ以上のため、書類に無い今の薬は残します（消す薬は1行ずつ選んでください）'; return out; }
-    if (!txt || !found(hs[0])) { out.why = '書類にかかりつけ病院（' + hs[0].name + '）の名前が見つからないため、書類に無い今の薬は残します'; return out; }
+    if (!txts.length || !found(hs[0])) { out.why = '書類にかかりつけ病院（' + hs[0].name + '）の名前が見つからないため、書類に無い今の薬は残します'; return out; }
     out.clinic = hs[0].name;
     if (nDoc <= 3 && nDoc <= nReg - 2) { out.mode = 'temp'; out.why = '書類の薬が ' + nDoc + ' 剤で、定期薬（' + nReg + ' 剤）より2剤以上少ないため、臨時薬と判断し、足す・変えるだけにします（書類に無い今の薬は残します）'; return out; }
     out.mode = 'replace';

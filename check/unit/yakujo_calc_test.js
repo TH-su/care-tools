@@ -795,6 +795,12 @@ console.log('\n[医療機関ごとの入れ替えと臨時薬（clinicPlan・本
   t('★4文字に満たない名前では一致にしない', plan(5, 5, { hospital: 'ミホン', doc: docOf('ミホン') }).mode === 'keep');
   t('かっこ書き（診療科など）は除いて探す', plan(5, 5, { hospital: H + '（内科）' }).mode === 'replace');
   t('書類に文字が無い時は残す', plan(5, 5, { doc: docOf() }).mode === 'keep');
+  const skipRows = [{ kind: 'same' }, { kind: 'add', action: 'skip' }, { kind: 'add', action: 'skip' }, { kind: 'add', action: 'skip' }];
+  t('★外用・頓服で定期薬に入れない行は書類の薬の数に数えない（内服1剤＋頓服3行／定期薬5剤は臨時薬・反証レビュー指摘1）', Y.clinicPlan({ hospital: H, doc: D, rows: skipRows, current: curN(5) }).mode === 'temp' && Y.clinicPlan({ hospital: H, doc: D, rows: skipRows, current: curN(5) }).nDoc === 1);
+  t('★門前の薬局の名前に病院名が入っていても、「薬局」の行では一致にしない（指摘2a）', plan(5, 5, { hospital: 'カクウ中央病院', doc: docOf('処方 ミホン内科', 'カクウ中央病院前薬局') }).mode === 'keep');
+  t('★法人の頭書きを除くと一般の語だけ（内科医院）が残る名前では、別の医院に当てない（指摘2b）', plan(5, 5, { hospital: '医療法人カクウ会 内科医院', doc: docOf('処方 ミホン内科医院') }).mode === 'keep');
+  t('★行をまたいだ文字では一致にしない（指摘2c）', plan(5, 5, { hospital: 'カクウ中央病院', doc: docOf('市立カクウ中央', '病院前') }).mode === 'keep');
+  t('法人の頭書きを除いても固有の名前が4文字以上残る時は、頭書きを除いて探す', plan(5, 5, { hospital: '医療法人カクウ会 ミホンミホン内科', doc: docOf('処方 ミホンミホン内科') }).mode === 'replace');
   t('壊れた入力でも例外を出さない', (() => { try { return Y.clinicPlan(null).mode === 'keep' && Y.clinicPlan({ doc: { pages: [null] } }).mode === 'keep'; } catch (e) { return false; } })());
   const pr = Y.planRows([{ kind: 'left', action: '' }, { kind: 'left', action: 'keep' }, { kind: 'add', action: 'add' }], { mode: 'replace' });
   t('★入れ替えの時は、書類に無い今の行でまだ選んでいない行を「中止」にする（選んだ行は変えない）', pr[0].action === 'stop' && pr[1].action === 'keep' && pr[2].action === 'add');
