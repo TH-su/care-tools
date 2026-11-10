@@ -716,6 +716,29 @@
        書類が後発品の名前で1行の時、片方の行だけ結ばれて、もう片方が「残す」になり量が二重になるのを防ぐ（反証レビュー 2026-11-05 指摘1） */
     var yjf = typeof opts.yjOf === 'function' ? opts.yjOf : null;
     var yjOfLine = function (l) { if (!yjf) return ''; try { return String(yjf(lineName(l)) || ''); } catch (e) { return ''; } };
+    /* 同じ成分（コードの先頭7桁）の「足す」と書類に無い今の行を結ぶ（先発→後発の切り替えで、後発品が足す行・先発品が残す行に分かれる時・本人指示 2026-11-10）。
+       自動では消さない。足す行に知らせと結んだ今の行の番号（twin）を付け、画面の「置き換える」で人が今の行を中止にする */
+    var ingOf = function (l) { var y = yjOfLine(l); return /^\w{7}/.test(y) ? y.slice(0, 7) : ''; };
+    rows.forEach(function (r) {
+      if (r.kind !== 'add') return;
+      var ia = ingOf(r.line) || ingOf(r.raw), sa = ident(r.line || r.raw);
+      if (!ia && !sa) return;
+      for (var k = 0; k < rows.length; k++) {
+        var x = rows[k];
+        if (x.kind !== 'left') continue;
+        var ib = ingOf(x.cur);
+        var byCode = !!(ia && ib && ia === ib);
+        if (byCode || (sa && ident(x.cur) === sa)) {
+          r.twin = k;
+          /* コードで結んだ時だけ「同じ成分」と言い切る。名前の語幹だけで結んだ時は「同じ薬かもしれない」にとどめる（反証レビュー 2026-11-10 指摘5） */
+          r.twinWarn = byCode
+            ? '今の定期薬の「' + lineName(x.cur) + '」と同じ成分です。先発品から後発品への切り替えなら「今の行と置き換える」を押してください（両方飲む薬なら、そのまま足してください）'
+            : '今の定期薬の「' + lineName(x.cur) + '」と同じ薬かもしれません（名前が似ています）。切り替えなら「今の行と置き換える」を押してください（別の薬なら、そのまま足してください）';
+          r.warns.push(r.twinWarn);
+          break;
+        }
+      }
+    });
     lefts.forEach(function (r) {
       var st = ident(r.cur), ly = yjOfLine(r.cur);
       var same = rows.filter(function (x) { return x.kind !== 'left' && ((st && ident(x.line || x.raw) === st) || (ly && (yjOfLine(x.line) === ly || yjOfLine(x.raw) === ly || yjOfLine(x.cur) === ly))); })[0];
@@ -734,12 +757,15 @@
       if (r.kind === 'change' && r.action === 'change' && r.line && r.line !== r.cur) dec.change.push({ from: r.cur, to: r.line });
       else if (r.kind === 'add' && r.action === 'add' && r.line) dec.add.push(r.line);
       else if (r.kind === 'left' && r.action === 'stop') dec.stop.push(r.cur);
+      /* 書類に無い今の行をその場で直した（先発の行を後発の名前に直す等・本人指示 2026-11-10） */
+      else if (r.kind === 'left' && r.action === 'edit' && r.line && r.line.trim() && r.line !== r.cur) dec.change.push({ from: r.cur, to: r.line });
     });
     var after = buildAfter(current, dec);
     var lines = after.split('\n').filter(function (l) { return l.trim(); });
     var counts = { change: dec.change.length, add: dec.add.length, stop: dec.stop.length };
     var unchecked = rows.filter(function (r) { return r.warns && r.warns.length && !r.checked && !(r.action === 'skip' || (r.kind === 'same')); }).length;
-    var undecided = rows.filter(function (r) { return r.kind === 'left' && r.action !== 'keep' && r.action !== 'stop'; }).length;
+    var undecided = rows.filter(function (r) { return r.kind === 'left' && r.action !== 'keep' && r.action !== 'stop' && r.action !== 'edit'; }).length;
+    var emptyEdit = rows.filter(function (r) { return r.kind === 'left' && r.action === 'edit' && !String(r.line || '').trim(); }).length;
     var labeled = (st.dates && st.dates.labeled) || [], other = (st.dates && st.dates.other) || [];
     var seen = {}, dup = 0, stems = {}, dupStems = [];
     lines.forEach(function (l) { var k = nfkc(l).replace(/\s+/g, ' ').trim(); if (seen[k]) dup++; seen[k] = 1; });
@@ -761,7 +787,8 @@
     else if (labeled.indexOf(String(st.date)) < 0 && !importDay && !st.dateChecked) stop = '選んだ日付（' + st.date + '）には「調剤日」などの語がありません。原本でこの日付が調剤日か確かめて、印を付けてください';
     else if (st.today && String(st.date) > String(st.today)) stop = '調剤日（' + st.date + '）が今日より後です。書類の日付を確かめてください（次回の予定日などを読んでいないか）';
     else if (!st.identity) stop = '書類の氏名を見て、この方の書類だと確かめたら、印を付けてください';
-    else if (undecided) stop = '書類に無い今の薬が ' + undecided + ' 行あります。「残す」か「中止」を選んでください';
+    else if (undecided) stop = '書類に無い今の薬が ' + undecided + ' 行あります。「残す」「直す」「中止」のどれかを選んでください';
+    else if (emptyEdit) stop = '「直す」の行が空です（' + emptyEdit + ' 行）。消す時は「中止」を選んでください';
     else if (unchecked) stop = '⚠ の行が ' + unchecked + ' 行あります。原本と見比べて「確かめた」に印を付けてください';
     else if (st.lastChange && String(st.date) < String(st.lastChange) && !st.oldChecked)
       stop = 'この書類の調剤日は、定期薬の最後の変更（' + st.lastChange + '）より前です。古い書類で戻さないか確かめて、印を付けてください';
@@ -840,6 +867,19 @@
     });
   }
 
+  /* すべて入れ替え（本人指示 2026-11-10）。人がボタンで選んだ時だけ、書類に無い今の行をすべて「中止」にする（on が偽なら、この印で中止にした行を選ぶ前に戻す）。
+     書類の行（足す・変える）は変えない。自動では使わない（かかりつけ病院の名前などから推し量って消さない）。行の写しを返す */
+  function replaceAll(rows, on) {
+    return (Array.isArray(rows) ? rows : []).map(function (r) {
+      var o = {}; for (var k in r) if (Object.prototype.hasOwnProperty.call(r, k)) o[k] = r[k];
+      if (o.kind !== 'left') return o;
+      /* 中止にする前の選び（直した行を含む）を控え、取り消すとそれに戻す。中止にした行・戻した行は「確かめた」を外す（反証レビュー 2026-11-10 指摘3） */
+      if (on) { if (o.action !== 'stop') { o.prevAct = o.action || ''; o.prevLine = o.line; o.action = 'stop'; o.byAll = true; o.line = o.cur; o.checked = false; } }
+      else if (o.byAll) { o.action = o.prevAct || ''; o.line = o.prevLine != null ? o.prevLine : o.cur; delete o.byAll; delete o.prevAct; delete o.prevLine; o.checked = false; }
+      return o;
+    });
+  }
+
   /* ── 9-2. まとめて反映できるか（半自動・代表者の決定 2026-11-04）──
      確認表を1人ずつ開かずに反映してよいのは、人が確かめる所が何も無い書類だけ。次を全部満たす時だけ ok:
        1. 振り分けが名簿の1人への一字一致で決まり（assign の id）、人が別の方へ選び直していない
@@ -849,7 +889,7 @@
           今の行と同じ意味の行（kind 'same'＝何も書き換えない行）の ⚠ は、確認表と同じく確かめを求めない（judge と同じ扱い）。
           書類にあって「入れない」になった足す行（外用・頓服など・定期薬に何も書かない行）も問わず、一覧に名前を出して人が見る
           （実際の薬情はほぼ全員に外用薬が載り、これで止めるとまとめて反映が使えなかった・2026-11-05 仮置き）
-       4. 書類に無い今の薬（⚠ の無いもの）は、入れ替え（clinicPlan の mode 'replace'）の時は「中止」、それ以外は「残す」を既定にする。
+       4. 書類に無い今の薬（⚠ の無いもの）は、いつも「残す」を既定にする（clinicPlan の結果は知らせに使うだけで、自動で中止にしない・本人指示 2026-11-10）。
           人が一覧で選び直した扱い（st.leftAct: {行の番号: 'keep'|'stop'}）はその既定より先に効く（一覧で消せる・本人指示 2026-11-10）。
           調剤日が定期薬の最後の変更より前で、中止の行がある時は1人ずつへ回す（古い書類で新しい薬を消さない・本人指示 2026-11-10）
        5. 同じ名前の薬が2行にならない（変える・足す行の数は問わない・本人指示 2026-11-07）
@@ -870,7 +910,8 @@
       var o = {}; for (var k in r) if (Object.prototype.hasOwnProperty.call(r, k)) o[k] = r[k];
       o.warns = Array.isArray(r.warns) ? r.warns.slice() : [];
       o.checked = false;
-      if (o.kind === 'left' && !o.warns.length) o.action = st.plan && st.plan.mode === 'replace' ? 'stop' : 'keep';
+      /* 書類に無い今の薬は、いつも「残す」が既定（消すのは人が一覧で選んだ時だけ・自動で中止にしない・本人指示 2026-11-10） */
+      if (o.kind === 'left' && !o.warns.length) o.action = 'keep';
       return o;
     });
     var la = st.leftAct && typeof st.leftAct === 'object' ? st.leftAct : {};
@@ -936,7 +977,8 @@
       var doc = left ? '（書類に無い今の行）' : logOne(r.raw), word, to;
       if (r.kind === 'change' && a === 'change' && r.line && r.line !== r.cur) { word = '変える'; to = line; }
       else if (r.kind === 'add' && a === 'add' && r.line) { word = '足す'; to = line; }
-      else if (left && a === 'stop') { word = '中止'; to = '（中止）'; }
+      else if (left && a === 'stop') { word = r.byAll ? '中止（すべて入れ替え）' : '中止'; to = '（中止）'; }
+      else if (left && a === 'edit') { if (r.line && r.line.trim() && r.line !== r.cur) { word = '直す'; to = line; } else { word = '残す'; to = cur; } }
       else if (a === 'change' || a === 'add') {
         word = r.kind === 'add' ? '入れない（反映先が空）' : '変えない（反映先が空か今の行と同じ）';
         to = cur || '（入れない）';
@@ -1067,7 +1109,7 @@
 
   var api = { parseResult: parseResult, assign: assign, findDates: findDates, datesIn: datesIn, parseUse: parseUse,
     parseRows: parseRows, looksDrug: looksDrug, stripEnum: stripEnum, snap: snap, lineSpec: lineSpec, shortDays: shortDays, splitMaker: splitMaker, stem: stem, matchCurrent: matchCurrent, sameMeaning: sameMeaning, buildRows: buildRows, judge: judge, buildAfter: buildAfter,
-    startDate: startDate, useDate: useDate, bulkCheck: bulkCheck, clinicPlan: clinicPlan, planRows: planRows, parseLabeled: parseLabeled, cleanDrugName: cleanDrugName, canonKey: canonKey, yjIndex: yjIndex, yjOf: yjOf, yjLookup: function (text) { var idx = yjIndex(text); return idx ? function (name) { return yjOf(name, idx); } : null; }, lineName: lineName, drugKey: drugKey,
+    startDate: startDate, useDate: useDate, bulkCheck: bulkCheck, clinicPlan: clinicPlan, planRows: planRows, replaceAll: replaceAll, parseLabeled: parseLabeled, cleanDrugName: cleanDrugName, canonKey: canonKey, yjIndex: yjIndex, yjOf: yjOf, yjLookup: function (text) { var idx = yjIndex(text); return idx ? function (name) { return yjOf(name, idx); } : null; }, lineName: lineName, drugKey: drugKey,
     fnv8: fnv8, srcKey: srcKey, logRows: logRows, nz: nz, kn: kn, dist: dist,
     correctionKinds: correctionKinds, metricOf: metricOf, metricsLoad: metricsLoad, metricsSave: metricsSave, summarize: summarize, metricText: metricText,
     METRIC_MAX: METRIC_MAX };

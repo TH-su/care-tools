@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-JVdtS1JMNCTMsxPkI2Y2LZbLwDWlp9afBPogbZAyOj8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-hD21mtlDNdoX1Jg4Hjrx07g0wnVY2tNU7XlT1jG9UD4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -2028,7 +2028,7 @@ function rmNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
 <script src="su-facility.js?v=2026-11-07"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>
 <!-- 薬情の取り込みの判定・組み立て（純関数・2026-10-22）。読めない時は入口のボタンを出さない（yjCalcOk_） -->
-<script src="yakujo-calc.js?v=2026-11-10"></script>
+<script src="yakujo-calc.js?v=2026-11-10.2"></script>
 <script src="revenue-calc.js?v=2026-11-07"></script>
 <script src="su-print.js?v=2026-09-12"></script>
 <!-- 入居者マスタの写し（統合 0004）。supabase-js と su-auth.js は写す時にだけ読み込む -->
@@ -7489,10 +7489,9 @@ function yjBuild_(cur, d, items){
   var slotWarn=lines.map(function(l,i){ return specs[i].spec.free?'':yjSlotWarn_(l); });
   cur.yjOf=yjText?Y.yjLookup(yjText):null;   /* 名前の違う同じ薬（コード9桁）を、知らせと重なりの確かめにも使う（2026-11-05） */
   cur.rows=Y.buildRows(m.pairs, m.left, specs, {short:shorts, slotWarn:slotWarn, yjOf:cur.yjOf});
-  /* 同じ医療機関の新しい薬情は完全入れ替え・3剤以下で2剤以上少ない書類は臨時薬（足すだけ）（本人指示 2026-11-10）。
-     入れ替えの時は、書類に無い今の行の既定を「中止」にする（人が選び直せる） */
+  /* かかりつけ病院の新しい薬情かどうかは、知らせに使うだけ（本人指示 2026-11-10）。書類に無い今の行を自動で「中止」にしない。
+     全部を書類どおりにする時は、人が「すべて入れ替え」を押す（YakujoCalc.replaceAll） */
   cur.plan=typeof Y.clinicPlan==='function'?Y.clinicPlan({hospital:cur.rec&&cur.rec.hospital, doc:d, rows:cur.rows, current:cur.before}):null;
-  if(cur.plan&&typeof Y.planRows==='function') cur.rows=Y.planRows(cur.rows, cur.plan);
   /* 定期薬の最後の変更の日（変更履歴）と、同じ調剤日の薬情からの反映（変更履歴のラベル） */
   var mh=cur.rec&&Array.isArray(cur.rec.medsHistory)?cur.rec.medsHistory:[], last='';
   mh.forEach(function(e){ var at=e&&typeof e==='object'?String(e.at||'').slice(0,10):''; if(/^\d{4}-\d{2}-\d{2}$/.test(at)&&at>last) last=at; });
@@ -7517,16 +7516,21 @@ function yjJudge_(today){
 }
 var YJ_KIND={same:'そのまま', change:'変える', add:'足す', left:'書類に無い'};
 function yjRowHtml_(r,k){
+  /* 書類に無い今の行は、その場で「直す」（先発の行を後発の名前に直す等）こともできる（本人指示 2026-11-10） */
   var acts=r.kind==='same'?[['keep','変えない']]:r.kind==='change'?[['change','書類の行に変える'],['keep','今の行のまま']]
-    :r.kind==='add'?[['add','足す'],['skip','足さない']]:[['','（選ぶ）'],['keep','残す'],['stop','中止']];
+    :r.kind==='add'?[['add','足す'],['skip','足さない']]:[['','（選ぶ）'],['keep','残す'],['edit','直す'],['stop','中止']];
   var need=r.warns.length&&!(r.action==='skip'||r.kind==='same');
-  var editable=(r.kind==='change'&&r.action==='change')||(r.kind==='add'&&r.action==='add');
+  var editable=(r.kind==='change'&&r.action==='change')||(r.kind==='add'&&r.action==='add')||(r.kind==='left'&&r.action==='edit');
+  /* 同じ成分の今の行（先発品など）と置き換えるボタン（足す行だけ・押した時だけ今の行を中止にする） */
+  var tw=r.kind==='add'&&r.action==='add'&&r.twin!=null&&yjSt&&yjSt.cur&&yjSt.cur.rows[r.twin]&&yjSt.cur.rows[r.twin].kind==='left'?yjSt.cur.rows[r.twin]:null;
+  var twBtn=tw?(tw.action==='stop'?'<div class="yj-sub">今の「'+esc(YakujoCalc.lineName(tw.cur))+'」を中止にして置き換えます</div>'
+    :'<button type="button" class="btn btn-sec yj-twin" data-yjtwin="'+k+'">今の「'+esc(YakujoCalc.lineName(tw.cur))+'」と置き換える</button>'):'';
   return '<tr class="yj-r'+(need&&!r.checked?' need':'')+'">'+
     '<td><span class="mh-tag">'+YJ_KIND[r.kind]+'</span></td>'+
     '<td class="yj-src">'+(r.raw?esc(r.raw):'<span class="yj-sub">（書類に無い）</span>')+(r.page&&yjSt.res&&yjSt.cur&&yjSt.docs[yjSt.cur.di].d.pages.length>1?'<span class="yj-sub">（'+r.page+'ページ）</span>':'')+'</td>'+
     '<td class="yj-cur">'+(r.cur?esc(r.cur):'<span class="yj-sub">（今は無い）</span>')+'</td>'+
     '<td>'+(editable?'<textarea class="yj-line" rows="3" spellcheck="false" data-yjline="'+k+'" aria-label="反映する行（'+(k+1)+'行目）">'+esc(r.line)+'</textarea>':'<span class="yj-fix">'+esc(r.kind==='left'&&r.action==='stop'?'（中止）':(r.action==='skip'?'（入れない）':(r.kind==='change'||r.kind==='add'?r.line:r.cur)))+'</span>')+'</td>'+
-    '<td><select data-yjact="'+k+'" aria-label="この行をどうするか（'+(k+1)+'行目）">'+acts.map(function(a){ return '<option value="'+a[0]+'"'+(r.action===a[0]?' selected':'')+'>'+a[1]+'</option>'; }).join('')+'</select>'+
+    '<td><select data-yjact="'+k+'" aria-label="この行をどうするか（'+(k+1)+'行目）">'+acts.map(function(a){ return '<option value="'+a[0]+'"'+(r.action===a[0]?' selected':'')+'>'+a[1]+'</option>'; }).join('')+'</select>'+twBtn+
     (need?'<div class="yj-w">'+r.warns.map(function(w){ return '<div>⚠ '+esc(w)+'</div>'; }).join('')+
       '<label class="yj-chk"><input type="checkbox" data-yjchk="'+k+'"'+(r.checked?' checked':'')+'> 原本と見比べて確かめた</label></div>':'')+
     '</td></tr>';
@@ -7562,7 +7566,13 @@ function yjWorkHtml_(){
   if(d&&c.dates.labeled.indexOf(d)<0&&!j.importDay) h+='<label class="yj-chk yj-warn"><input type="checkbox" id="yjDateOk"'+(c.dateChecked?' checked':'')+'> ⚠ 選んだ日付には「調剤日」などの語がありません。原本でこの日付が調剤日だと確かめた</label>';
   if(c.sameDay) h+='<label class="yj-chk yj-warn"><input type="checkbox" id="yjAck"'+(c.ack?' checked':'')+'> ⚠ 同じ日付のこの方の記録（申送・薬情）から、既に反映しています（'+esc(mhAt_(c.sameDay))+'）。変更履歴と見比べ、別の変更だと確かめた</label>';
   h+='</div>';
-  if(c.plan) h+='<p class="'+(c.plan.mode==='replace'?'yj-warn':'yj-sub')+'">'+(c.plan.mode==='replace'?'⚠ かかりつけ病院（'+esc(c.plan.clinic)+'）の新しい薬情として入れ替えます。書類に無い今の薬は「中止」にしています（残す薬は「残す」に選び直してください）':esc(c.plan.why))+'</p>';
+  if(c.plan&&c.plan.mode==='replace') h+='<p class="yj-sub">かかりつけ病院（'+esc(c.plan.clinic)+'）の書類です。新しく入居した方・先発品から後発品へまとめて切り替わった時など、全部を書類どおりにする時は「すべて入れ替え」を押してください（書類に無い今の薬は、押すまで消しません）</p>';
+  /* すべて入れ替え（本人指示 2026-11-10）。書類に無い今の行が1行でもある時だけ出す。押すと確認の窓のあと、書類に無い今の行を全部「中止」にする */
+  var lefts=c.rows.filter(function(r){ return r.kind==='left'; });
+  if(lefts.length){
+    var allOn=lefts.every(function(r){ return r.action==='stop'; });
+    h+='<div class="yj-actions"><button type="button" class="btn btn-sec" id="yjAll"'+(c.busy?' disabled':'')+'>'+(allOn&&lefts.some(function(r){ return r.byAll; })?'すべて入れ替えを取り消す':'すべて入れ替え（書類に無い今の薬 '+lefts.length+' 行を中止）')+'</button></div>';
+  }
   h+='<div class="yj-tblw"><table class="yj-tbl"><thead><tr><th>区分</th><th>書類（読んだ文字）</th><th>今の定期薬</th><th>反映する行</th><th>どうするか</th></tr></thead><tbody>'+
     c.rows.map(yjRowHtml_).join('')+'</tbody></table></div>';
   h+='<div class="yj-after"><div class="mc-lbl">反映すると、定期薬はこうなります（変える '+j.counts.change+'・足す '+j.counts.add+'・中止 '+j.counts.stop+'）</div><pre class="mc-pre">'+esc(j.after||'（記載なし）')+'</pre></div>';
@@ -7697,7 +7707,7 @@ function yjBulkHtml_(){
   if(!L.ok.length&&!L.none.length&&!busy&&!S.bulkMsg) return '';
   h+='<section class="yj-bulk" aria-labelledby="yjBulkH"><h3 class="yj-h3" id="yjBulkH">まとめて反映できる方</h3>'+
     '<p class="yj-sub">名簿の1人に氏名が一字一致し、調剤日が1つに決まり、⚠ の行が無い書類です。'+
-    '下の違いを見て、まとめて反映できます（かかりつけ病院が1つで、その名前が書類にある方は入れ替えとして、書類に無い今の薬を消します。それ以外の方は残します。どちらも1行ずつ選び直せます）。違いを原本と見比べたい方は、チェックを外して下の一覧から1人ずつ確かめてください。</p>';
+    '下の違いを見て、まとめて反映できます（書類に無い今の薬は残します。消す薬はチェックを付けてください。全部を書類どおりにする方は、チェックを外して1人ずつ開き「すべて入れ替え」を押してください）。違いを原本と見比べたい方は、チェックを外して下の一覧から1人ずつ確かめてください。</p>';
   if(busy) h+='<p class="yj-sub" role="status">まとめて反映できるかを調べています…（'+S.preDone+' / '+S.preTotal+'件）</p>';
   L.ok.forEach(function(i){
     var x=S.docs[i], p=x.pre, c=p.cur;
@@ -7712,7 +7722,7 @@ function yjBulkHtml_(){
       h+='<li><label class="yj-chk'+(on?' yj-warn':'')+'"><input type="checkbox" data-yjbleft="'+i+':'+l.k+'"'+(on?' checked':'')+(S.bulkBusy||(p.bc.older&&!on)?' disabled':'')+'> '+
         '<span class="mh-tag">'+(on?'消す':'残す')+'</span> '+(on?'<s>'+esc(l.cur)+'</s>':esc(l.cur))+'</label></li>';
     });
-    if(p.bc.plan) h+='<li class="'+(p.bc.plan.mode==='replace'?'yj-warn':'yj-sub')+'">'+(p.bc.plan.mode==='replace'?'⚠ かかりつけ病院（'+esc(p.bc.plan.clinic)+'）の新しい薬情として入れ替えます（書類に無い今の薬は、チェックを外すと残します）':esc(p.bc.plan.why)+'（消す薬はチェックを付けてください）')+'</li>';
+    if(p.bc.plan&&p.bc.plan.mode==='replace') h+='<li class="yj-sub">かかりつけ病院（'+esc(p.bc.plan.clinic)+'）の書類です。書類に無い今の薬は残します（消す薬はチェックを付けてください）</li>';
     if(p.bc.kept) h+='<li class="yj-sub">書類に無い今の薬 '+p.bc.kept+' 行は残します</li>';
     if(p.bc.older) h+='<li class="yj-warn">⚠ 調剤日は、定期薬の最後の変更（'+esc(fmtJDate(p.bc.older))+'）より前です'+(p.bc.lefts&&p.bc.lefts.length?'（古い書類のため、ここでは消せません。消す時は1人ずつで確かめてください）':'')+'</li>';
     if(p.bc.skipped&&p.bc.skipped.length) h+='<li class="yj-sub">書類にあって定期薬に入れない薬（外用・頓服など）：'+p.bc.skipped.map(esc).join('・')+'</li>';
@@ -7850,6 +7860,19 @@ function yjWire_(){
     if(t.id==='yjBack'){ if(yjSt.bulkBusy) return; yjSt.bulkGen++; yjSt.docs.forEach(function(x){ x.pre=null; }); yjSt.preTotal=0; yjSt.preDone=0; yjSt.bulkMsg=''; yjSt.phase='assign'; yjPaint_(); return; }
     if(t.id==='yjBulkGo'){ yjBulkApply_(); return; }
     if(t.id==='yjApply'){ yjApply_(); return; }
+    if(t.id==='yjAll'&&yjSt.cur&&yjSt.cur.loaded&&!yjSt.cur.busy){
+      var ca=yjSt.cur, la=ca.rows.filter(function(r){ return r.kind==='left'; });
+      var undo=la.length&&la.every(function(r){ return r.action==='stop'; })&&la.some(function(r){ return r.byAll; });
+      if(!undo&&!confirm(ca.name+' 様の今の定期薬のうち、書類に無い次の '+la.length+' 行を、すべて「中止」にします。\n'+la.map(function(r){ return '・'+YakujoCalc.lineName(r.cur); }).join('\n')+'\n\nほかの医療機関の薬・頓服の扱いの薬が入っていないか確かめてください。残す薬は、この後に「残す」へ選び直せます。よろしいですか？')) return;
+      ca.rows=YakujoCalc.replaceAll(ca.rows, !undo); ca.dupChecked=false; ca.touched=true; yjPaint_(); return; }
+    var twb=t.closest('[data-yjtwin]'); if(twb&&yjSt.cur&&yjSt.cur.loaded&&!yjSt.cur.busy){
+      var cw=yjSt.cur, ra=cw.rows[+twb.getAttribute('data-yjtwin')], rl=ra&&ra.twin!=null?cw.rows[ra.twin]:null;
+      if(ra&&rl&&rl.kind==='left'){
+        /* 今の行を中止にし、足す行の知らせを「置き換えます」に替えて、もう一度確かめを求める（知らせは消さない・反証レビュー 2026-11-10 指摘1） */
+        rl.action='stop'; rl.line=rl.cur; delete rl.byAll; rl.byTwin=+twb.getAttribute('data-yjtwin'); rl.checked=false;
+        ra.warns=ra.warns.map(function(w){ return w===ra.twinWarn?'今の定期薬の「'+YakujoCalc.lineName(rl.cur)+'」を中止にして、この行に置き換えます。原本と見比べてください':w; });
+        ra.checked=false; cw.dupChecked=false; cw.touched=true; }
+      yjPaint_(); return; }
     if(t.id==='yjRetry'&&yjSt.cur&&!yjSt.cur.busy){ yjStartDoc_(yjSt.cur.di); return; }
     if(t.id==='yjNone'&&yjSt.cur&&!yjSt.cur.writing){ yjSt.docs[yjSt.cur.di].status='none'; yjSt.cur=null; yjGen++; yjSt.phase='queue'; yjPaint_(); return; }
     if(t.id==='yjQueue'&&yjSt.cur&&!yjSt.cur.writing){
@@ -7882,7 +7905,14 @@ function yjWire_(){
     if(t.id==='yjAck'){ c.ack=!!t.checked; yjPaint_(); return; }
     if(t.id==='yjDup'){ c.dupChecked=!!t.checked; yjPaint_(); return; }
     if(t.id==='yjDateOk'){ c.dateChecked=!!t.checked; c.touched=true; yjPaint_(); return; }
-    var ak=t.getAttribute('data-yjact'); if(ak!=null){ var r=c.rows[+ak]; if(r){ r.action=t.value; r.checked=false; c.dupChecked=false; c.touched=true; } yjPaint_(); return; }
+    var ak=t.getAttribute('data-yjact'); if(ak!=null){ var r=c.rows[+ak]; if(r){ r.action=t.value; r.checked=false; c.dupChecked=false; c.touched=true;
+      /* 書類に無い今の行は、選び直したら直した行を今の行に戻す（「直す」は今の行から書き始める）。すべて入れ替えの印も外す */
+      if(r.kind==='left'){ r.line=r.cur; delete r.byAll; r.warns=r.warns.filter(function(w){ return w.indexOf('手で直した行')<0&&w.indexOf('与薬チェック')<0; });
+        /* 置き換えで中止にした今の行を選び直したら、結んだ足す行の知らせを元に戻し、確かめを外す（両方残るのを黙って通さない・指摘1） */
+        if(r.byTwin!=null){ var ta=c.rows[r.byTwin]; if(ta&&ta.twinWarn){ ta.warns=ta.warns.filter(function(w){ return w.indexOf('この行に置き換えます')<0; }); if(ta.warns.indexOf(ta.twinWarn)<0) ta.warns.push(ta.twinWarn); ta.checked=false; } delete r.byTwin; } }
+      /* 置き換えた足す行を「足さない」にしたら、結んだ今の行の中止を外して選ぶ前に戻す（両方とも消えるのを防ぐ・指摘2） */
+      if(r.kind==='add'){ var tk=+ak; c.rows.forEach(function(x){ if(x.kind==='left'&&x.byTwin===tk&&r.action!=='add'){ x.action=''; x.line=x.cur; delete x.byTwin; x.checked=false; } });
+        if(r.action==='add'&&r.twinWarn){ r.warns=r.warns.filter(function(w){ return w.indexOf('この行に置き換えます')<0; }); if(!c.rows.some(function(x){ return x.byTwin===tk; })&&r.warns.indexOf(r.twinWarn)<0) r.warns.push(r.twinWarn); } } } yjPaint_(); return; }
     var ck=t.getAttribute('data-yjchk'); if(ck!=null){ var r2=c.rows[+ck]; if(r2){ r2.checked=!!t.checked; c.touched=true; } yjPaint_(); return; }
     var ln=t.getAttribute('data-yjline'); if(ln!=null){
       /* 行を直したら、同じ規則で判定し直す（与薬チェックで読める形か）。確かめた印は外す */

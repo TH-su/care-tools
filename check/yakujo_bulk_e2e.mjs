@@ -172,28 +172,71 @@ try {
   t('★既に反映されていた方は別に数える', /反映 2人・既に反映されていた方 1人/.test(msg6), msg6);
   await r.ctx.close();
 
-  /* 7回目: かかりつけ病院が1つで、書類にその名前がある方は入れ替え（書類に無い今の薬を消す）・一覧で残すに選び直せる（本人指示 2026-11-10） */
+  /* 7回目: かかりつけ病院が1つで、書類にその名前がある方でも、書類に無い今の薬は自動で消さず残す。消すのは一覧でチェックした時だけ（本人指示 2026-11-10） */
   r = await run({ hospital: { R04: '架空内科クリニック', R01: '架空内科クリニック' } });
   const pre7 = () => r.p.evaluate(() => { const p = window.yjSt.docs[3].pre; return { st: p.st, after: p.bc.judged.after, stop: p.bc.judged.counts.stop, lefts: p.bc.lefts, mode: p.bc.plan && p.bc.plan.mode }; });
   let s7 = await pre7();
-  t('★かかりつけ病院が1つで書類にその名前がある方は入れ替え：書類に無い今の薬を消す', s7.st === 'ok' && s7.mode === 'replace' && s7.stop === 1 && !/架空ロール/.test(s7.after) && s7.lefts.length === 1, s7);
+  t('★かかりつけ病院の書類でも、書類に無い今の薬は自動で消さない（残す）', s7.st === 'ok' && s7.mode === 'replace' && s7.stop === 0 && /架空ロール/.test(s7.after) && s7.lefts.length === 1 && s7.lefts[0].action === 'keep', s7);
   const st7 = await r.p.evaluate(() => window.yjSt.docs[0].pre.bc.plan && window.yjSt.docs[0].pre.bc.plan.mode);
-  t('★書類にかかりつけ病院の名前が無い方（書類1）は入れ替えにしない', st7 === 'keep', st7);
+  t('★書類にかかりつけ病院の名前が無い方（書類1）は、かかりつけ病院の書類と知らせない', st7 === 'keep', st7);
   const txt7 = await r.p.textContent('#yjBody');
-  t('一覧に「入れ替えます」と、消す行が出る', /新しい薬情として入れ替えます/.test(txt7) && /消す 架空ロール錠5mg「見本」/.test(txt7), txt7.slice(0, 600));
+  t('一覧に「かかりつけ病院の書類です」の知らせと、残す行が出る（「入れ替えます」とは出さない）', /かかりつけ病院（架空内科クリニック）の書類です/.test(txt7) && /残す 架空ロール錠5mg「見本」/.test(txt7) && !/入れ替えます/.test(txt7), txt7.slice(0, 600));
   const sel7 = '[data-yjbleft="3:' + s7.lefts[0].k + '"]';
-  await r.p.uncheck(sel7);
-  s7 = await pre7();
-  t('★チェックを外すと残す（消さない）', s7.st === 'ok' && s7.stop === 0 && /架空ロール/.test(s7.after), s7);
   await r.p.check(sel7);
   s7 = await pre7();
-  t('もう一度チェックすると消す', s7.stop === 1 && !/架空ロール/.test(s7.after), s7);
+  t('★チェックを付けると消す', s7.st === 'ok' && s7.stop === 1 && !/架空ロール/.test(s7.after), s7);
+  await r.p.uncheck(sel7);
+  s7 = await pre7();
+  t('チェックを外すと残す', s7.stop === 0 && /架空ロール/.test(s7.after), s7);
+  await r.p.check(sel7);
   await r.p.click('#yjBulkGo');
   await r.p.waitForFunction(() => window.yjSt && !window.yjSt.bulkBusy && /まとめて反映：/.test(window.yjSt.bulkMsg), null, { timeout: 20000 });
   t('★確認の窓に消す行の名前と注意が出る', r.dialogs.length === 1 && /消す 1行（架空ロール錠5mg「見本」）/.test(r.dialogs[0]) && /消す薬が 1 行あります/.test(r.dialogs[0]), r.dialogs);
   const b7 = r.applied.find((b) => b.id === 'R04');
   t('★送った定期薬から、書類に無い今の薬が消えている', b7 && b7.before === MEDS.R04 && !/架空ロール/.test(b7.after) && /^マグミット錠250mg /.test(b7.after), b7 && b7.after);
   t('画面の JS エラーなし（入れ替え）', r.errors.length === 0, r.errors);
+  await r.ctx.close();
+
+  /* 8回目: 1人ずつの確認表の「すべて入れ替え」（押した時だけ・確認の窓・取り消せる）と、書類に無い今の行の「直す」（本人指示 2026-11-10） */
+  r = await run({ hospital: { R04: '架空内科クリニック' } });
+  await r.p.click('[data-yjdoc="3"]');
+  await r.p.waitForFunction(() => window.yjSt && window.yjSt.cur && window.yjSt.cur.loaded, null, { timeout: 20000 });
+  const cur8 = () => r.p.evaluate(() => window.yjSt.cur.rows.filter((x) => x.kind === 'left').map((x) => ({ a: x.action, all: !!x.byAll, line: x.line })));
+  let l8 = await cur8();
+  t('★1人ずつでも、書類に無い今の行は自動で中止にしない（選ぶ前のまま）', l8.length === 1 && l8[0].a === '', l8);
+  t('「すべて入れ替え」のボタンが出る', /すべて入れ替え（書類に無い今の薬 1 行を中止）/.test(await r.p.textContent('#yjAll')));
+  await r.p.click('#yjAll');
+  l8 = await cur8();
+  t('★押すと確認の窓のあと、書類に無い今の行を全部「中止」にする', r.dialogs.length === 1 && /書類に無い次の 1 行を、すべて「中止」/.test(r.dialogs[0]) && /架空ロール錠5mg「見本」/.test(r.dialogs[0]) && l8[0].a === 'stop' && l8[0].all, { d: r.dialogs, l8 });
+  t('ボタンが「取り消す」に変わる', /すべて入れ替えを取り消す/.test(await r.p.textContent('#yjAll')));
+  await r.p.click('#yjAll');
+  l8 = await cur8();
+  t('★取り消すと選ぶ前に戻る（取り消しには確認の窓を出さない）', r.dialogs.length === 1 && l8[0].a === '' && !l8[0].all, l8);
+  const k8 = await r.p.evaluate(() => window.yjSt.cur.rows.findIndex((x) => x.kind === 'left'));
+  await r.p.selectOption('[data-yjact="' + k8 + '"]', 'edit');
+  await r.p.fill('[data-yjline="' + k8 + '"]', '架空ロール錠5mg「後発」 1回1錠 夕食後');
+  await r.p.dispatchEvent('[data-yjline="' + k8 + '"]', 'change');
+  await r.p.waitForTimeout(100);
+  const j8 = await r.p.evaluate(() => window.yjJudge_());
+  t('★「直す」を選んで行を直すと、反映する定期薬で今の行がその行に変わる（並びは今のまま）', /架空ロール錠5mg「後発」 1回1錠 夕食後/.test(j8.after) && !/架空ロール錠5mg「見本」/.test(j8.after) && j8.counts.stop === 0, j8.after);
+  const w8 = await r.p.evaluate((k) => window.yjSt.cur.rows[k].warns, k8);
+  t('直した行は ⚠（手で直した行）として確かめを求める', w8.some((w) => /手で直した行/.test(w)), w8);
+  /* 同じ成分の「置き換える」（反証レビュー 2026-11-10 指摘1・2）。足す行を1行足して、今の行と結んだ形を作って確かめる */
+  await r.p.selectOption('[data-yjact="' + k8 + '"]', '');
+  const ka = await r.p.evaluate((k) => { const c = window.yjSt.cur, w = '今の定期薬の「架空ロール錠5mg「見本」」と同じ成分です。先発品から後発品への切り替えなら「今の行と置き換える」を押してください（両方飲む薬なら、そのまま足してください）';
+    c.rows.push({ kind: 'add', cur: '', line: '架空ロール錠5mg「後発」 1回1錠 夕食後', raw: '架空ロール錠5mg「後発」 1回1錠 夕食後', page: 1, box: null, warns: [w], twinWarn: w, twin: k, action: 'add', checked: true, auto: '' });
+    window.yjPaint_(); return c.rows.length - 1; }, k8);
+  await r.p.click('[data-yjtwin="' + ka + '"]');
+  let tw = await r.p.evaluate(([k, a]) => { const c = window.yjSt.cur; return { left: c.rows[k].action, chk: c.rows[a].checked, w: c.rows[a].warns }; }, [k8, ka]);
+  t('★「置き換える」で今の行を中止にし、足す行は「置き換えます」の知らせでもう一度確かめを求める', tw.left === 'stop' && tw.chk === false && tw.w.some((w) => /この行に置き換えます/.test(w)), tw);
+  await r.p.selectOption('[data-yjact="' + k8 + '"]', 'keep');
+  tw = await r.p.evaluate(([k, a]) => { const c = window.yjSt.cur; return { left: c.rows[k].action, chk: c.rows[a].checked, w: c.rows[a].warns }; }, [k8, ka]);
+  t('★置き換えた後に今の行を「残す」へ戻すと、足す行に「同じ成分」の知らせが戻り確かめを外す（指摘1）', tw.left === 'keep' && tw.chk === false && tw.w.some((w) => /と同じ成分です/.test(w)) && !tw.w.some((w) => /置き換えます/.test(w)), tw);
+  await r.p.click('[data-yjtwin="' + ka + '"]');
+  await r.p.selectOption('[data-yjact="' + ka + '"]', 'skip');
+  tw = await r.p.evaluate(([k, a]) => { const c = window.yjSt.cur; return { left: c.rows[k].action, add: c.rows[a].action }; }, [k8, ka]);
+  t('★置き換えた後に足す行を「足さない」にすると、今の行の中止を外して選ぶ前に戻す（両方消えない・指摘2）', tw.left === '' && tw.add === 'skip', tw);
+  t('画面の JS エラーなし（1人ずつ）', r.errors.length === 0, r.errors);
   await r.ctx.close();
 } catch (e) {
   fail++; console.log('  ✗ 途中で止まった: ' + String(e && e.message || e).split('\n')[0]);
