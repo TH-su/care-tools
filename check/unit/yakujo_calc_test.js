@@ -601,11 +601,11 @@ console.log('\n— 12. 取り込みの一致率（correctionKinds・metricOf・s
   t('★現場用への切り替えでは欄を空にする（端末の記録は消さない）', /mt\.textContent=''/.test(cut3(RM3, 'yjPurge_')) && !/removeItem/.test(cut3(RM3, 'yjPurge_')));
   const modal = RM3.slice(RM3.indexOf('<div class="modal" id="mYakujo"'), RM3.indexOf('<!-- 端末用途ガード'));
   t('★欄は取り込みの窓（#mYakujo）の中にあり、窓ごと印刷しない', /<div class="box">[\s\S]*<p class="yj-met" id="yjMetric"><\/p>\s*<div class="yj-body" id="yjBody"><\/div>\s*<\/div>\s*<\/div>\s*$/.test(modal.trim() + '\n') && /@media print\{ #mYakujo,#yjOpen\{display:none !important\} \}/.test(RM3));
-  t('共有部品の版（?v=）を上げた', /yakujo-calc\.js\?v=2026-11-05\.2"/.test(RM3));
+  t('共有部品の版（?v=）を上げた', /yakujo-calc\.js\?v=2026-11-07"/.test(RM3));
 }
 
 /* ── まとめて反映できるか（bulkCheck・半自動・代表者の決定 2026-11-04）──
-   守りたいこと: 人が確かめる所が1つでもあれば1人ずつへ回す。書類に無い今の薬は消さず「残す」。中止はしない。変わる行は BULK_MAX まで */
+   守りたいこと: 人が確かめる所が1つでもあれば1人ずつへ回す。書類に無い今の薬は消さず「残す」。中止はしない。変わる行の数・最後の変更より前かでは止めない（本人指示 2026-11-07） */
 /* ── 見出しの付いた枠の書式（parseLabeled・2026-11-05）──
    実際の薬情（1剤ごとに「お薬名」「用法」「1回量」の見出し、量は時点の欄の下）の並びを架空の薬でまねる。
    直す前は色・形の行（「白色の錠剤」）を薬と取り違え、量・日数がどの薬のものか分からず、取り込みが実用にならなかった */
@@ -748,9 +748,13 @@ console.log('\n[まとめて反映できるか（bulkCheck）]');
   const rpp = Y.bulkCheck(pp);
   t('「1日数回」「適宜」などの外用だけが入れない書類は、変更なしで終え、名前を返す（画面の変更なしの欄にも出す）', rpp.none === true && rpp.skipped.join() === 'カクウ軟膏', rpp);
   ng('外用の足す行を「足す」に変えた（⚠ のまま）書類は1人ずつ', (s) => { s.rows.push(row('add', '', 'カクウゲル 適量', 'add', ['外用・注射の薬のようです'])); }, /⚠ の行/);
-  ng('変わる行が上限を超える書類は1人ずつ', (s) => { for (let k = 0; k < Y.BULK_MAX; k++) s.rows.push(row('add', '', 'ツイカ' + k + 'ロール錠1mg 1回1錠 朝食後', 'add')); }, /行まで/);
+  { const mx = base(); for (let k = 0; k < 6; k++) mx.rows.push(row('add', '', 'ツイカ' + k + 'ロール錠1mg 1回1錠 朝食後', 'add'));
+    const rmx = Y.bulkCheck(mx);
+    t('★変わる行が多い（7行）書類も、ほかに止める理由が無ければ ok（行の数では止めない・本人指示 2026-11-07）', rmx.ok === true && rmx.judged.counts.change + rmx.judged.counts.add === 7 && Y.BULK_MAX === undefined, rmx.why); }
   ng('同じ調剤日の薬情から反映済みの方は1人ずつ', (s) => { s.sameDay = '2026-11-02T10:00'; }, /同じ調剤日/);
-  ng('定期薬の最後の変更より前の書類は1人ずつ', (s) => { s.lastChange = '2026-11-03'; }, /最後の変更/);
+  { const od = base(); od.lastChange = '2026-11-03'; const rod = Y.bulkCheck(od);
+    t('★定期薬の最後の変更より前の書類も、まとめて反映に入れ、一覧で知らせる日を返す（本人指示 2026-11-07）', rod.ok === true && rod.older === '2026-11-03', rod);
+    t('最後の変更より後の書類は知らせない', r0.older === ''); }
   ng('調剤日が今日より後の書類は1人ずつ', (s) => { s.today = '2026-10-30'; }, /今日より後/);
   ng('同じ名前の薬が2行になる書類は1人ずつ', (s) => { s.rows.push(row('add', '', 'カクウパム錠5mg 1回1錠 朝食後', 'add')); }, /同じ名前/);
   ng('★薬情よみとりの読み残しの知らせ（note）がある書類は1人ずつ', (s) => { s.doc.note = 'はじめの 1 ページだけを読みました（残りは読んでいません）'; }, /読み残し/);
@@ -761,7 +765,7 @@ console.log('\n[まとめて反映できるか（bulkCheck）]');
   ng('書類に薬の行が1行も無い書類は1人ずつ', (s) => { s.rows = [row('left', A0, A0, ''), row('left', B, B, ''), row('left', C, C, '')]; }, /薬の行を読めません/);
   const up = base(); up.rows = up.rows.concat([row('add', '', 'ツイカロール錠1mg 1回1錠 朝食後', 'add'), row('add', '', 'ツイカジン錠1mg 1回1錠 夕食後', 'add')]);
   const ru = Y.bulkCheck(up);
-  t('変わる行がちょうど上限（' + Y.BULK_MAX + '行）なら ok', Y.BULK_MAX === 3 && ru.ok === true && ru.judged.counts.change + ru.judged.counts.add === 3, ru.why);
+  t('変わる行が3行の書類も ok', ru.ok === true && ru.judged.counts.change + ru.judged.counts.add === 3, ru.why);
   const nc = base(); nc.rows[0] = row('same', A0, A0, 'keep'); nc.current = [A0, B, C].join('\n');
   const rn = Y.bulkCheck(nc);
   t('★変更が1行も無い書類は none（書かずに終える）で ok ではない', rn.ok === false && rn.none === true && rn.why.length === 0, rn);
