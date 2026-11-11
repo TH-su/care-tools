@@ -432,6 +432,18 @@ async function runFlushCases(){
   eq('目印が違えば「保存失敗」', E2.sync, [['保存中…'], ['確認中…'], ['保存失敗','err']]);
   t('その時の案内は「サーバー側にも入っていない」',
     E2.toast.length === 1 && E2.toast[0].indexOf('サーバー側にも入っていないことを確認しました') >= 0, E2.toast);
+  /* 2026-11-11: 部分更新（一括編集・食形態一覧・訪問診療の定期薬）も更新時刻を進めるようになった。
+     取り直した時刻が送った時刻より1秒以上新しい＝後から部分更新が書いたかもしれない→「入っていない」と断定しない */
+  const later = (p, log) => Promise.resolve({record:{id:12, updatedAt:new Date(Date.parse(log.post[0].record.updatedAt) + 60000).toISOString()}});
+  const E6 = await runSave({rec:{id:12, name:'テスト 既存'}, post: rejectWith('タイムアウト'), get: later});
+  eq('取り直した時刻が送った時刻より新しい → 「確認できず」', E6.sync, [['保存中…'], ['確認中…'], ['確認できず','err']]);
+  eq('　その時の案内は「確認できず」の文言（「入っていない」と言わない）', E6.toast, [UNSURE_TOAST]);
+  t('　保存済み扱いにもしない', E6.okCalls === 0 && E6.alert.length === 0, E6);
+  const nearLater = (p, log) => Promise.resolve({record:{id:12, updatedAt:new Date(Date.parse(log.post[0].record.updatedAt) + 500).toISOString()}});
+  const E7 = await runSave({rec:{id:12, name:'テスト 既存'}, post: rejectWith('タイムアウト'), get: nearLater});
+  eq('1秒未満の差は同じ保存とみなして保存OK', E7.sync, [['保存中…'], ['確認中…'], ['保存OK','ok']]);
+  const E8 = await runSave({rec:{id:12, name:'テスト 既存'}, post: rejectWith('タイムアウト'), get: () => Promise.resolve({record:{id:12, updatedAt:'不正な値'}})});
+  eq('取り直した時刻が読めない時は従来どおり「保存失敗」', E8.sync, [['保存中…'], ['確認中…'], ['保存失敗','err']]);
   const E3 = await runSave({rec:{id:12, name:'テスト 既存'}, post: rejectWith('タイムアウト'), get: rejectWith('タイムアウト')});
   eq('照会もできなければ「確認できず」', E3.sync, [['保存中…'], ['確認中…'], ['確認できず','err']]);
   eq('その時の案内は新規と同じ文言', E3.toast, [UNSURE_TOAST]);

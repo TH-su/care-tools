@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-CZW47YEgVs7jbHX7wwiH5TF2MEVQfVNFxPkaycDaIUM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-ihalD258zaSfewErM9IjFloNC9vqxZJrPSx4PYy0MuE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -2138,14 +2138,16 @@ function rmEditedHtml_(r){
   if(!r) return '';
   var at=rmEditedFmt_(r.updatedAt), byAt=rmEditedFmt_(r.updatedByAt), by=String(r.updatedBy==null?'':r.updatedBy).trim().slice(0,60);
   if(by && byAt){
-    /* ★対象は詳細画面の「保存」だけ。一括編集・食形態一覧・訪問診療からの定期薬の更新は updatedAt も進めないので
-       ここには出ない（審査の指摘・言い切らない）。updatedAt の方が1秒以上新しい時だけ「その後…」を添える */
+    /* ★対象は詳細画面の「保存」だけ。薬の変更候補の反映・一括編集・食形態一覧・訪問診療からの定期薬の更新は
+       updatedAt だけを進める（直した人の印は触らない・2026-11-11 から一括編集・食形態一覧・定期薬も進める）ので、
+       ここには「その後…」として出る。入院・退院の切り替え（setState）・排泄記録GAS・医療支援経過への転記（setMedLog）・
+       支援経過の取り込み・介護度の履歴の初期作成は updatedAt を進めないので注記で断る（審査の指摘・言い切らない）。updatedAt の方が1秒以上新しい時だけ「その後…」を添える */
     var t='詳細画面の「保存」で最後に直した人：'+esc(by)+'（'+esc(byAt)+'）';
     var a=new Date(r.updatedAt).getTime(), b=new Date(r.updatedByAt).getTime();
-    if(at && isFinite(a) && isFinite(b) && a-b>=1000) t+='。その後 '+esc(at)+' に、薬の変更候補の反映など別の経路で更新されています';
-    return '<p class="rm-edited">'+t+'<span class="rm-edited-note">（一括編集・食形態一覧・訪問診療からの定期薬の更新は含みません）</span></p>';
+    if(at && isFinite(a) && isFinite(b) && a-b>=1000) t+='。その後 '+esc(at)+' に、薬の変更候補の反映・一括編集など別の経路で更新されています';
+    return '<p class="rm-edited">'+t+'<span class="rm-edited-note">（入院・退院の切り替えや、経過記録の転記など一部の更新は含みません）</span></p>';
   }
-  if(at) return '<p class="rm-edited">詳細画面の最後の保存：'+esc(at)+'（誰が直したかの記録はありません）</p>';
+  if(at) return '<p class="rm-edited">最後の更新：'+esc(at)+'（誰が直したかの記録はありません）</p>';
   return '';
 }
 function setDeviceRole(v){
@@ -12995,6 +12997,15 @@ function saveResident(){
         afterSaveOk_(rec,got,dg,ed);
         return;
       }
+      /* ★取り直した更新時刻が送った時刻より1秒以上新しい時は、この保存の後に一括編集・食形態一覧・訪問診療の
+         定期薬などの部分更新が書いた（2026-11-11 からこれらも更新時刻を進める）かもしれない＝今回の保存が入ったかは
+         どちらとも言えない。「入っていない」と断定せず「確認できず」に回す（断定するとやり直しで二重反映になる） */
+      var pg=got?Date.parse(got.updatedAt):NaN, ps=Date.parse(rec.updatedAt);
+      if(isFinite(pg)&&isFinite(ps)&&pg-ps>=1000){
+        setSync('確認できず','err');
+        toast('⚠️ 保存できたか確認できませんでした。画面を再読み込みして、内容が入っているか確かめてください（もう一度保存する前に必ず確認）');
+        return;
+      }
       setSync('保存失敗','err');
       toast('⚠️ 保存できませんでした（サーバー側にも入っていないことを確認しました）。もう一度お試しください');
     }).catch(function(){
@@ -15562,7 +15573,8 @@ function saveBulkGo_(changes,nmv){
   }).catch(function(e){
     /* ★保存が「失敗」と返っても、サーバーには書かれていることがある（契約書 §13）。
        1人保存と同じく、必ず取り直して実物を確かめてから表示を決める。
-       一括は updatedAt の目印が使えないため、送った項目の【値そのもの】を getBulk で突き合わせる。 */
+       一括の updatedAt はサーバーが決めた時刻（2026-11-11 から書いた方だけ進む）で画面は知らない＝目印に使えないため、
+       送った項目の【値そのもの】を getBulk で突き合わせる。 */
     setSync('確認中…');
     apiGet({action:'getBulk'},30000).then(function(d){
       var v=verifyAppliedRows_(changes,(d&&d.rows)||[]);
