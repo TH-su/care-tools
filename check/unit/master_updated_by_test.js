@@ -47,7 +47,7 @@ console.log('\n— 2. 詳細画面の表示 —');
   const b = box();
   const at = new Date(2026, 9, 10, 9, 5).toISOString();
   const h1 = b.rmEditedHtml_({ updatedAt: at, updatedBy: 'staff-a', updatedByAt: at });
-  t('「詳細画面の『保存』で最後に直した人：誰（年/月/日 時:分）」と、含まないものの注記', h1.indexOf('<p class="rm-edited">詳細画面の「保存」で最後に直した人：staff-a（2026/10/10 09:05）') === 0 && /（入院・退院の切り替えは含みません）/.test(h1) && h1.indexOf('一括編集') < 0 && h1.indexOf('食形態一覧') < 0, h1);
+  t('「詳細画面の『保存』で最後に直した人：誰（年/月/日 時:分）」と、含まないものの注記', h1.indexOf('<p class="rm-edited">詳細画面の「保存」で最後に直した人：staff-a（2026/10/10 09:05）') === 0 && /（入院・退院の切り替えや、経過記録の転記など一部の更新は含みません）/.test(h1) && h1.indexOf('一括編集') < 0 && h1.indexOf('食形態一覧') < 0, h1);
   const earlier = new Date(2026, 9, 10, 8, 0).toISOString();
   t('updatedAt の方が古い（updatedAt を進めない経路）時は「その後…」を付けない', b.rmEditedHtml_({ updatedAt: earlier, updatedBy: 'staff-a', updatedByAt: at }).indexOf('その後') < 0, '');
   const later = new Date(2026, 9, 10, 11, 30).toISOString();
