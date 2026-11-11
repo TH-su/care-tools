@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-coRQwCsYYFONfz3I02rOpAWb+dqDMjTCzqWK+VR4ZRU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ljQiVY2D3jvV+1n2X9UBo1Wqca2y7XadS+kp64Om/jU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -635,7 +635,7 @@ body.printing .b-lane, body.printing .b-lane.z-facility, body.printing .b-lane.z
  * 斜線色(#c2c6cc)は据え置き＝白地に斜線だけが乗り、印刷で普通のグレーに埋もれない。
  * print-color-adjust:exact で斜線が出力される。斜線幅はzoom縮小後も視認できる密度。 */
 body.printing .lane-off { background: #fff;
-  background-image: repeating-linear-gradient(45deg, #c2c6cc 0 2px, #fff 2px 8px); }   /* 出勤時間外=白地＋現色斜線(印刷) */
+  background-image: repeating-linear-gradient(45deg, #c2c6cc 0 4px, #fff 4px 16px); }   /* 出勤時間外=白地＋現色斜線(印刷)。幅4・間隔16＝見本の3（本人選択 2026-11-11）。細い線はプリンタの網点と干渉して濃い縞が出た */
 /* カラー印刷: 各枠を画面と同じ色で印刷する（.p-task の白塗り!importantを枠種別ごとに上書き＝同等以上の詳細度＋!important）。
  * 背景色のみ＝A3寸法/フィット/罫線/斜線に非干渉。print-color-adjust:exact(下記 * )で背景が印刷出力される。
  * 入居者支援(k-phys/life/mix)は :not(.hosp):not(.pre-admit) で除外＝入院中/入居前の極薄+斜線表示を保持。
@@ -21487,7 +21487,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261111141153';
+  var WS_BUILD = '20261111144058';
   var WS_APP_VER = 2026102701;   /* 2026-10-27 まだ届いていないロックを「外した」に変えて送り、版の進んでいない古い未送信を退避して捨てる前の版の画面が、仕上げたロックの盤面を前の版で上書きしないよう上げた（代表者承認 A・B）
                                   * （2026101706: 2026-10-23 トレイへ入った理由の印（parkedByHand・absentMoved・routineTray）を知らない前の版の画面が、手で戻した札・休みで移した札を印なしで残し、
                                   * 新しい版がそれを列へ戻してしまわないよう上げた）
