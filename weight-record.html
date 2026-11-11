@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-nAco7Ptm1EaSXSPwftoZPp7uGC2X3WC065BbG4HbjP8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-cFo72blAi0AJ00MndpenoAuCBnu3N2+3gbKDYcAGE48='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -1777,10 +1777,23 @@ function save(){
     const cur = localStorage.getItem(LS_KEY);
     if(cur && cur.length > 30){       // 微小な値（例: '{}'）はバックアップしない
       const prevBak = localStorage.getItem(LS_BAK);
+      /* 同じサイトの画面は端末の保存領域（約5MB）を分け合う。容量が足りない時は控えが本体の保存の場所を奪わないよう、
+         古い方の控え（二世代目）から捨てて、一世代目だけ書き直す（2026-11-11・自動報告 QuotaExceededError の直し）。
+         容量の不足は端末の状態なので、捨てて書けた時は記録しない。二世代目まで捨てても書けない時だけ記録する（1回の保存で1件まで） */
+      const isQuota = (e) => !!(e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || e.code === 22 || e.code === 1014));
       if(prevBak && prevBak !== cur){
-        try{ localStorage.setItem(LS_BAK2, prevBak); }catch(e){ wrNote_('控えの書き込み（二世代目）', e); }   /* 二世代目は best-effort。記録だけ残す */
+        try{ localStorage.setItem(LS_BAK2, prevBak); }
+        catch(e){ if(isQuota(e)){ try{ localStorage.removeItem(LS_BAK2); }catch(_){} } else wrNote_('控えの書き込み（二世代目）', e); }   /* 二世代目は best-effort */
       }
-      try{ localStorage.setItem(LS_BAK, cur); }catch(e){ wrNote_('控えの書き込み', e); }   /* バックアップ失敗は続行。記録だけ残す */
+      try{ localStorage.setItem(LS_BAK, cur); }
+      catch(e){
+        if(!isQuota(e)) wrNote_('控えの書き込み', e);
+        else{
+          try{ localStorage.removeItem(LS_BAK2); }catch(_){}
+          try{ localStorage.setItem(LS_BAK, cur); }
+          catch(e2){ wrNote_('控えの書き込み（容量）', e2); }   /* 二世代目を捨てても入らない。古い一世代目はそのまま残す */
+        }
+      }
     }
   }catch(e){ /* 履歴側のエラーで本体保存を阻害しない */ }
   // 本体書込み + 検証
