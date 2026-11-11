@@ -76,7 +76,13 @@ function get(url) {
 
   console.log('\n— C2. 20画面のほかの公開の画面（使い方など・2026-11-03 案3）—');
   const extra = (swap.EXTRA_PAGES || []).map((p) => p.file);
-  const topHtml = fs.readdirSync(ROOT).filter((f) => f.endsWith('.html'));
+  // Count only files git tracks (= published). Untracked/ignored local-only pages must not fail this test.
+  let topHtml;
+  try {
+    topHtml = require('child_process').execFileSync('git', ['ls-files', '-z', '--', '*.html'], { cwd: ROOT, encoding: 'utf8' })
+      .split('\0').filter((f) => f && !f.includes('/'));
+  } catch (e) { topHtml = null; }
+  if (!topHtml || !topHtml.length) topHtml = fs.readdirSync(ROOT).filter((f) => f.endsWith('.html'));
   const missing = topHtml.filter((f) => !files.includes(f) && !extra.includes(f));
   t('公開の根にある画面は、20画面の表かそのほかの表のどちらかに必ずある', missing.length === 0, missing);
   t('そのほかの表は20画面と重ならず、同じ画面が2回無い', extra.every((f) => !files.includes(f)) && new Set(extra).size === extra.length, extra);
