@@ -157,7 +157,7 @@ group('3つ全部は外せない');
   b.bulkDirty = { 902: { tgt_excretion: false }, 903: { room: '113' } };
   b.saveBulk();
   t('確認を出さない・送らない', b.calls.confirm.length === 0 && b.calls.go.length === 0, b.calls);
-  t('氏名（居室）で知らせる', b.calls.alert.length === 1 && /見本 乙（102）/.test(b.calls.alert[0]) && /3つ全部は外せません/.test(b.calls.alert[0]), b.calls.alert);
+  t('氏名（居室）で知らせる', b.calls.alert.length === 1 && /見本 乙（102）/.test(b.calls.alert[0]) && /チェックを1つ以上入れてください/.test(b.calls.alert[0]), b.calls.alert);
   t('未保存の変更は残す', JSON.stringify(b.bulkDirty[902]) === JSON.stringify({ tgt_excretion: false }) && b.bulkDirty[903].room === '113');
 }
 {
