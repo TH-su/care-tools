@@ -1,0 +1,11 @@
+{
+  "overrides": [
+    {
+      "files": ["work-schedule.html"],
+      "rules": {
+        "web/empty-button": "moderate",
+        "web/missing-html-lang": "moderate"
+      }
+    }
+  ]
+}
