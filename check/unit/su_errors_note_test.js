@@ -196,7 +196,7 @@ console.log('\n— 3. 4画面の記録の口と置き換え —');
 const PAGES = [
   ['weight-record.html', 'wrNote_', 'weight', 16],   // 2026-11-08 ログインだけで使える端末の起動の2か所（取り込み・端末の守り）を足した。2026-11-11 控えの2か所は容量の不足を記録しない形にし、1か所（二世代目を捨てても入らない時）にまとめた（weight_backup_quota_test で確かめる）
   ['care-schedule.html', 'csNote_', 'care', 41],   // 2026-10-10 直した人の印・基準の4か所を足した
-  ['resident-master.html', 'rmNote_', 'master', 9],
+  ['resident-master.html', 'rmNote_', 'master', 10],   // 2026-11-11: 薬情の見直しの印を描く所（yrPaintSlot_）を足した
   ['facesheet.html', 'fsNote_', 'facesheet', 1]   // 2026-10-10 入居者マスタの接続設定の読込（デイ利用日の部品は入居者マスタと逐語同一の約束で触らない）
 ];
 for (const [file, fn, tag, want] of PAGES) {

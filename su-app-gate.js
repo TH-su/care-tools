@@ -28,7 +28,11 @@
     { key: 'care-meeting', href: 'care-meeting.html', ic: '🤝', nm: '担当者会議の記録', def: { office: true, field: false } },
     { key: 'training-plan', href: 'training-plan.html', ic: '🏃', nm: '個別機能訓練計画書', def: { office: true, field: false } },
     { key: 'connection-settings', href: 'connection-settings.html', ic: '🔌', nm: '接続設定', def: { office: true, field: false } },
-    { key: 'equip-log', href: 'equip-log.html', ic: '🔧', nm: '設備・修繕の記録', def: { office: true, field: false } }
+    { key: 'equip-log', href: 'equip-log.html', ic: '🔧', nm: '設備・修繕の記録', def: { office: true, field: false } },
+    /* 画面ではなく操作の許可（2026-11-11 代表者の決定「管理者が人ごとに許す」）。入居者マスタの詳細画面の「見直した」
+       （薬情のまとめて反映・完全入れ替えの後の見直しの印を消す）を押せる人。看護職・薬剤師のアカウントにだけ許す。
+       既定は押せない。管理者は常に押せる。現場は許しても押せない（入居者マスタの GAS／res-write が決める・この部品の run では使わない） */
+    { key: 'yj-review', href: 'resident-master.html#yj-review', ic: '💊', nm: '薬の見直し（見直したを押せる）', op: true, def: { office: false, field: false } }
   ];
   /* 管理者＋2段階認証に固定のもの（設定では変えない・図に鍵の印で出すだけ） */
   var FIXED = [

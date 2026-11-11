@@ -713,7 +713,7 @@ const allPanels = (L) => { const out = []; for (const tb of CALC.TABS) { L.ctx.t
   {
     const srcs = [...HTML.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]);
     t('su-errors.js が最初の script', srcs[0] === 'su-errors.js?v=2026-10-27', srcs);
-    t('su-app-gate.js・su-facility.js・equip-calc.js を読む', srcs.includes('su-app-gate.js?v=2026-11-03') && srcs.includes('su-facility.js?v=2026-11-07') && srcs.some((s) => /^equip-calc\.js\?v=/.test(s)), srcs);
+    t('su-app-gate.js・su-facility.js・equip-calc.js を読む', srcs.includes('su-app-gate.js?v=2026-11-11') && srcs.includes('su-facility.js?v=2026-11-07') && srcs.some((s) => /^equip-calc\.js\?v=/.test(s)), srcs);
     t('su-report.js（data-tool="設備・修繕の記録"）が </body> の直前', /<script src="su-report\.js\?v=2026-10-28" data-tool="設備・修繕の記録"><\/script>\n<\/body>/.test(HTML));
     t('<html lang="ja" data-su-theme> と su-theme.css', /<html lang="ja" data-su-theme>/.test(HTML) && /<link rel="stylesheet" href="su-theme\.css\?v=/.test(HTML));
     t('Content-Security-Policy の meta が <meta charset> の直後', /<meta charset="UTF-8">\n<meta http-equiv="Content-Security-Policy" data-su-csp content="/.test(HTML));

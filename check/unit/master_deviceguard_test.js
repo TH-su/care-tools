@@ -178,7 +178,9 @@ function load(src, old){
     /* 薬情の取り込み（2026-10-22 追加）。applyDeviceGuard が現場用への切り替えで yjPurge_ を呼ぶ。それより前の版には無いので、有る時だけ */
     .concat(['yjSt'].filter(n => hasVar(src, n)))   /* 宣言の1行（var yjSt=…, yjGen=…, yjBy=…）を丸ごと切り出す */
     /* 薬情・お薬シールの写真を入れる帯（2026-10-23 追加）。yjPurge_ が yjpPurge_ を呼ぶ。それより前の版には無いので、有る時だけ */
-    .concat(['yjpDir'].filter(n => hasVar(src, n)));   /* 宣言の1行（var yjpDir=…, yjpGen=…, yjpRt=…）を丸ごと切り出す */
+    .concat(['yjpDir'].filter(n => hasVar(src, n)))   /* 宣言の1行（var yjpDir=…, yjpGen=…, yjpRt=…）を丸ごと切り出す */
+    /* 薬情の見直し（2026-11-11 追加）。yjPurge_ が yrPurge_ を呼ぶ。それより前の版には無いので、有る時だけ */
+    .concat(['yrGen'].filter(n => hasVar(src, n)));   /* 宣言の1行（var yrGen=…, yrAudit=…）を丸ごと切り出す */
   const fns = ['getDeviceRole', 'setDeviceRole', 'loadRosterCache', 'saveRosterCache', 'refreshRoster', '_toTargetArr', '_ymd',
     'normRosterRow', 'writeCommonRoster', 'mealDirtyCells', 'bulkCellCount', 'toggleHosp', 'afterSaveOk_',
     'applyDeviceGuard', 'saveSyncCfg', 'mdClearPending_',
@@ -192,7 +194,8 @@ function load(src, old){
     .concat(['yjPurge_'].filter(n => hasFn(src, n)))
     /* 入居日を帳票の控え（bkRows）から作る関数（2026-10-29 追加）。それより前の版には無いので、有る時だけ */
     .concat(['admFromBk_', 'admAfterBk_'].filter(n => hasFn(src, n)))
-    .concat(['yjpPurge_'].filter(n => hasFn(src, n)));
+    .concat(['yjpPurge_'].filter(n => hasFn(src, n)))
+    .concat(['yrPurge_'].filter(n => hasFn(src, n)));
   /* storage・pageshow の受け口（トップレベルの1行）も実物から切り出して登録させる（旧版は有る時だけ） */
   const lines = ['storage', 'pageshow'].map(type => {
     const m = src.match(new RegExp("\\nwindow\\.addEventListener\\('" + type + "',[^\\n]*\\n"));
@@ -614,6 +617,15 @@ async function main(){
     const g0 = L.v('yjGen');
     L.store.set('su_device_role', 'field'); L.box.applyDeviceGuard();
     eq('現場用へ切り替えると薬情の取り込み（yjSt・ログインの名前）を捨て、世代を進める', [L.v('yjSt'), L.v('yjBy'), L.v('yjGen') > g0], [null, '', true]);
+  }
+  if(hasFn(SRC, 'yrPurge_')){
+    /* 薬情の見直し（全員の反映記録をメモリに持つ）も、現場用へ切り替えた時に捨てる（2026-11-11・applyDeviceGuard → yjPurge_ → yrPurge_） */
+    const L = load(SRC);
+    L.box.applyDeviceGuard();
+    L.set('yrAudit={rows:[{id:"901",before:"架空錠A5mg"}]}; yrMsg={k:"架空"}; yrBusy=true;');
+    const g0 = L.v('yrGen');
+    L.store.set('su_device_role', 'field'); L.box.applyDeviceGuard();
+    eq('現場用へ切り替えると薬情の見直し（全員の記録・知らせ）を捨て、世代を進める', [L.v('yrAudit'), JSON.stringify(L.v('yrMsg')), L.v('yrBusy'), L.v('yrGen') > g0], [null, '{}', false, true]);
   }
   if(hasFn(SRC, 'yjpPurge_')){
     /* 薬情・お薬シールの写真を入れる帯も、現場用へ切り替えた時に捨てる（2026-10-23・applyDeviceGuard → yjPurge_ → yjpPurge_） */

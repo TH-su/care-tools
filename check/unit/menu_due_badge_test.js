@@ -104,10 +104,27 @@ t('メニューは端末の保存領域へ直接書かない・通信しない�
 const def = JSON.parse(INDEX.slice(INDEX.indexOf('>', INDEX.indexOf('id="menuDef"')) + 1, INDEX.indexOf('</script>', INDEX.indexOf('id="menuDef"'))));
 const tiles = def.sections.flatMap((s) => s.tiles);
 const withDue = tiles.filter((x) => x.due);
-t('札を出すのは個別機能訓練計画書と採用管理（2026-10-29）のタイルだけで、どちらも事務所専用（officeOnly）・採用管理は管理者だけ（adminOnly）',
-  withDue.length === 2 && withDue.every((x) => x.officeOnly === true)
+/* 2026-11-11: 入居者マスタのタイルに、薬情の見直し待ちの数の札（管理者だけ）を足した（代表者の決定）。入居者マスタのタイルは
+   事務所専用の印を持たないが、札は現場端末では読まず（dueBadge）、控えの admin の印があり管理者のログインの時だけ出す（dueText）ので、
+   「事務所専用のタイルだけ」の決まりを「事務所専用か、管理者だけに出す札か」に広げた */
+t('札を出すのは個別機能訓練計画書と採用管理（2026-10-29）と入居者マスタ（2026-11-11・管理者だけの札）のタイルだけ',
+  withDue.length === 3 && withDue.filter((x) => x.href !== 'resident-master.html').every((x) => x.officeOnly === true)
   && withDue.some((x) => x.href === 'training-plan.html' && x.due === 'tp_menu_due')
-  && withDue.some((x) => x.href === 'ats.html' && x.due === 'ats_menu_due' && x.adminOnly === true), withDue);
+  && withDue.some((x) => x.href === 'ats.html' && x.due === 'ats_menu_due' && x.adminOnly === true)
+  && withDue.some((x) => x.href === 'resident-master.html' && x.due === 'rm_yjrev_due'), withDue);
+/* 薬情の見直し待ち（2026-11-11 代表者の決定）: 入居者マスタが管理者のログインで数え、件数と日付だけを残す。メニューは管理者にだけ出す */
+const rv = (o) => JSON.stringify(Object.assign({ v: 1, at: '2026-10-24', admin: true, review: 2 }, o));
+t('見直し待ち: 管理者のログインの時だけ「見直し待ちn（日付時点）」', dueText(rv({}), TODAY, 'admin') === '見直し待ち2（10/24時点）', dueText(rv({}), TODAY, 'admin'));
+t('見直し待ち: 事務所・現場・ログインしていない・役割が分からない時は出さない',
+  ['office', 'field', null, undefined, 'pending', 'unsure'].every((r) => dueText(rv({}), TODAY, r) === ''), '');
+t('見直し待ち: 0件・形の違う数・admin の印が無い控えは出さない',
+  dueText(rv({ review: 0 }), TODAY, 'admin') === '' && dueText(rv({ review: 1.5 }), TODAY, 'admin') === '' && dueText(rv({ review: '2' }), TODAY, 'admin') === ''
+  && dueText(rv({ review: -1 }), TODAY, 'admin') === '' && dueText(rv({ admin: false }), TODAY, 'admin') === '' && dueText(rv({ admin: 'true' }), TODAY, 'admin') === '', '');
+t('見直し待ち: 数えた日が今日より先なら出さない・前の日はその日付のまま', dueText(rv({ at: '2026-10-25' }), TODAY, 'admin') === ''
+  && dueText(rv({ at: '2026-10-03' }), TODAY, 'admin') === '見直し待ち2（10/3時点）', '');
+t('見直し待ち: admin の印は計画書の控えに混ぜても管理者以外には出さない', dueText(rv({ overdue: 3 }), TODAY, 'office') === '', '');
+t('札の文字には今の役割を渡す', /dueText\(raw, todayYmd\(\), role\)/.test(INDEX), '');
+t('今までの札は役割を渡さなくても今までどおり', dueText(ok({ overdue: 1 }), TODAY, 'office') === '超過1（10/24時点）', '');
 /* 採用管理の保管期限（2026-10-29 本人指示）: 端末に残すのは期限の日付だけ。メニューが今日の日付で数える */
 const ex = (dates, at) => J({ v: 1, at: at || TODAY, overdue: 0, warn: 0, none: 0, expire: dates });
 t('保管期限: 今日より前の日付の数を「保管期限切れn」と書く（今日の日付ちょうどはまだ切れていない）',

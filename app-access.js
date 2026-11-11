@@ -157,10 +157,14 @@
     var st, locked = false, label, changed;
     if (kind === 'role') { st = stateOf('role', app.key, who); locked = who === 'admin'; changed = !locked && cellChanged('role', app.key, who); }
     else { st = stateOf('acct', app.key, who); locked = who.role === 'admin'; changed = !locked && cellChanged('acct', app.key, who.email); }
-    var b = el('button', 'cell ' + (st.allow ? 'ok' : 'ng') + (locked ? ' lock' : '') + (changed ? ' chg' : '') + (st.src === 'acct' ? ' own' : ''));
+    /* 操作の許可（op・2026-11-11 薬の見直し）は「押せる／押せない」と書き、現場には許せない（サーバーが現場を断るため・図と動きをそろえる） */
+    var fieldNo = !!app.op && (kind === 'role' ? who === 'field' : who.role === 'field');
+    if (fieldNo) { st = { allow: false, src: 'default' }; changed = false; }
+    var yes = app.op ? '押せる' : '開ける', no = app.op ? '押せない' : '開けない';
+    var b = el('button', 'cell ' + (st.allow ? 'ok' : 'ng') + (locked || fieldNo ? ' lock' : '') + (changed ? ' chg' : '') + (st.src === 'acct' ? ' own' : ''));
     b.type = 'button';
-    b.appendChild(el('span', 'mk', locked ? '🔒' : (st.allow ? '✓' : '✕')));
-    b.appendChild(el('span', 't', st.allow ? '開ける' : '開けない'));
+    b.appendChild(el('span', 'mk', locked || fieldNo ? '🔒' : (st.allow ? '✓' : '✕')));
+    b.appendChild(el('span', 't', st.allow ? yes : no));
     var tags = [];
     if (st.src === 'acct') tags.push(['own', 'この人だけ']);
     if (kind === 'role' && st.src === 'default' && !locked) tags.push(['dflt', '既定']);
@@ -168,11 +172,11 @@
     if (changed) tags.push(['chg', '未保存']);
     tags.forEach(function (t) { b.appendChild(el('span', 'bdg ' + t[0], t[1])); });
     var whoName = kind === 'role' ? ROLE[who] + 'の決まり' : (who.label || who.email) + '（' + ROLE[who.role] + '）';
-    label = whoName + '・' + app.nm + '：' + (st.allow ? '開ける' : '開けない') +
-      (locked ? '（管理者は常に開ける・変えられない）' : (st.src === 'acct' ? '（この人だけの決まり）' : (st.src === 'default' ? '（既定）' : (kind === 'role' ? '' : '（役割の決まりどおり）')))) +
+    label = whoName + '・' + app.nm + '：' + (st.allow ? yes : no) +
+      (fieldNo ? '（現場は押せない・変えられない）' : locked ? '（管理者は常に' + yes + '・変えられない）' : (st.src === 'acct' ? '（この人だけの決まり）' : (st.src === 'default' ? '（既定）' : (kind === 'role' ? '' : '（役割の決まりどおり）')))) +
       (changed ? '・未保存' : '');
     b.setAttribute('aria-label', label);
-    if (locked || !canWrite) { b.disabled = true; if (!locked) b.title = '移行 0033 の適用の後に変えられます'; }
+    if (locked || fieldNo || !canWrite) { b.disabled = true; if (!locked) b.title = '移行 0033 の適用の後に変えられます'; }
     else b.addEventListener('click', function () { openPick(kind, app, who); });
     return b;
   }
