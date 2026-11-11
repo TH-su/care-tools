@@ -187,6 +187,7 @@
         o.name = String(v[i][1] || '');
         o.kana = String(v[i][2] || ''); o.room = String(v[i][3] || '');
         o.gender = String(v[i][4] || ''); o.careLevel = String(v[i][5] || '');
+        if(v[i][9]) o.targetApps = String(v[i][9]).split(',').map(function(x){return x.trim();}).filter(String);
         out.push(o);
       }
       return out;
