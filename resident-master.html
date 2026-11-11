@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-Xh9iKgZr0DtnXYKyYk36+uF5J4eGf4YcS7RwMl6UHjs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-pjh9UyZEg7A+1Jb8bbWDkkYtNk+Mo4j5ptkMcCzc7E0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -536,6 +536,21 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .yjl-lbl{font-size:0.8125rem; font-weight:700; color:var(--g7); margin:6px 0 2px}
 .yjl-pre{margin:0 0 4px; white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; font:inherit; font-size:0.875rem}
 @media print{.sec-yjlog,.yjl-slot{display:none !important}}
+/* ── 薬情の反映の見直し（2026-11-11 代表者の決定）。詳細画面の「薬剤情報」の欄の頭に出す印と、管理者の一覧。
+   ★事務所PCだけ・画面だけ＝印刷しない。印は黄色の地に⚠の文字（色だけで伝えない）・文字は地との差 7:1 以上（--g9） ── */
+.yr-box{border:2px solid var(--warn-tx); background:var(--warn-bg); border-radius:8px; padding:8px 12px; margin:6px 8px}
+.yr-mark+.yr-mark{border-top:1px dotted var(--warn-tx); margin-top:6px; padding-top:6px}
+.yr-t{font-weight:700; color:var(--g9); overflow-wrap:anywhere}
+.yr-g,.yr-u{font-size:0.875rem; color:var(--g9); overflow-wrap:anywhere}
+.yr-acts{display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:6px}
+.yr-msg{font-size:0.875rem; color:var(--g9); font-weight:700}
+.yr-tbl{width:100%; border-collapse:collapse; font-size:0.875rem}
+.yr-tbl th,.yr-tbl td{border-bottom:1px solid var(--g3); padding:6px 8px; text-align:left; vertical-align:top; overflow-wrap:anywhere}
+.yr-tbl th{background:var(--g1); color:var(--g9)}
+.yr-sec{margin:12px 0 4px; font-size:1rem}
+.yr-note{font-size:0.875rem; color:var(--g9); margin:4px 0 8px}
+.yr-wrap{overflow-x:auto}
+@media print{.yr-slot,#mYjRev{display:none !important}}
 /* ── 担当者会議（2026-10-25 本人指示）。詳細画面の「意向・人生会議（ACP）」の直後に、担当者会議のページへのリンクだけを置く。
    ★事務所PCだけ・画面だけ＝印刷しない（PRINT_SECS に入れない・data-k を付けない） ── */
 @media print{.sec-cmeet{display:none !important}}
@@ -1638,6 +1653,8 @@ body.meal-on #sc-list{max-width:none}
     <button class="bulk-open" id="bulkOpen" type="button">📊 一括編集</button>
     <!-- 薬情の取り込み（2026-10-22）。管理者が事務所PCでログインしている時だけ出す（yjGate_）。印刷しない -->
     <button class="bulk-open" id="yjOpen" type="button" hidden>📥 薬情の取り込み</button>
+    <!-- 薬情の反映の見直し（2026-11-11 代表者の決定）。管理者が事務所PCでログインしている時だけ出す（yjGate_）。印刷しない -->
+    <button class="bulk-open" id="yrOpen" type="button" hidden>🔎 薬情の見直し</button>
   </div>
   <!-- 2026-10-16 第2弾: 「見る」（並べ方）と「帳票」（印刷する表）の2段に分けた。押せば1回で開くのは従来どおり。
        ★段と見出しは見た目のまとまりだけ（role="presentation"）。←→の移動は2段をまたいで14個を順に回る -->
@@ -1971,6 +1988,17 @@ body.meal-on #sc-list{max-width:none}
 </div>
 
 <!-- 薬情の取り込み（2026-10-22 代表者の決定）。管理者だけ。中身は yjPaint_ が描く。印刷しない -->
+<!-- 薬情の反映の見直し（2026-11-11 代表者の決定）。管理者だけ・事務所PCだけ・画面だけ（.modal は印刷で消える）。中身は yrPaint_ が入れる -->
+<div class="modal" id="mYjRev" role="dialog" aria-modal="true" aria-labelledby="mYjRevH">
+  <div class="box">
+    <div class="mc-head">
+      <h2 id="mYjRevH" tabindex="-1">🔎 薬情の見直し</h2>
+      <span><button class="btn btn-gray" id="yrReload" type="button">読み直す</button> <button class="btn btn-gray" id="yrClose" type="button">閉じる</button></span>
+    </div>
+    <div id="yrBody"></div>
+  </div>
+</div>
+
 <div class="modal" id="mYakujo" role="dialog" aria-modal="true" aria-labelledby="mYakujoH">
   <div class="box">
     <div class="mc-head">
@@ -2024,11 +2052,11 @@ function rmNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
 <script src="su-kv.js?v=2026-11-08"></script>
 <script src="su-perf.js?v=2026-11-02"></script>
 <script src="su-login-band.js?v=2026-11-02"></script>
-<script src="su-app-gate.js?v=2026-11-03"></script>
+<script src="su-app-gate.js?v=2026-11-11"></script>
 <script src="su-facility.js?v=2026-11-07"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>
 <!-- 薬情の取り込みの判定・組み立て（純関数・2026-10-22）。読めない時は入口のボタンを出さない（yjCalcOk_） -->
-<script src="yakujo-calc.js?v=2026-11-10.2"></script>
+<script src="yakujo-calc.js?v=2026-11-11"></script>
 <script src="revenue-calc.js?v=2026-11-07"></script>
 <script src="su-print.js?v=2026-09-12"></script>
 <!-- 入居者マスタの写し（統合 0004）。supabase-js と su-auth.js は写す時にだけ読み込む -->
@@ -7251,6 +7279,7 @@ function yjCalcOk_(){ return typeof YakujoCalc!=='undefined'&&typeof YakujoCalc.
 function yjGate_(){
   var b=$('yjOpen'); if(!b) return;
   b.hidden=true; yjBy=''; yjpPaint_();
+  try{ var rb0=$('yrOpen'); if(rb0) rb0.hidden=true; }catch(e){}
   if(getDeviceRole()==='field'||!CFG.url||!mcHasLogin_()||!yjCalcOk_()||typeof Promise==='undefined'){ yjpPurge_(); return; }
   var dg=devGen;
   msAuthLoad_().then(function(){ return window.SUAuth.check(); }).then(function(st){
@@ -7258,6 +7287,8 @@ function yjGate_(){
     if(!(st&&st.status===window.SUAuth.STATUS.OK&&st.role==='admin')){ yjpPurge_(); return; }
     yjBy=String(st.email||''); b.hidden=false;
     yjpRefresh_();   /* 写真を入れる帯（2026-10-23） */
+    var rb=$('yrOpen'); if(rb) rb.hidden=false;
+    yrCountLoad_();   /* メニューの札の数だけ（記録の中身は読まない・一覧は開いた時だけ読む・2026-11-11） */
   }).catch(function(){ /* 聞けない時は出さない */ });
 }
 /* 薬価基準の品目（定期薬の入力パネルと同じファイル）。読めなくても取り込みは止めない（名前の確かめが弱くなるだけ） */
@@ -7344,6 +7375,7 @@ function yjPurge_(){
   if(typeof yjlReset_==='function') yjlReset_();   /* 薬情の反映記録（定期薬を持つ）も捨てる（2026-10-24） */
   yjpPurge_();   /* 写真を入れる帯（2026-10-23） */
   try{ $('mYakujo').classList.remove('on'); $('yjBody').innerHTML=''; var b=$('yjOpen'); if(b) b.hidden=true; }catch(e){}
+  if(typeof yrPurge_==='function') yrPurge_();   /* 薬情の見直しの一覧（全員の記録をメモリに持つ）も捨てる（2026-11-11） */
   try{ var mt=$('yjMetric'); if(mt) mt.textContent=''; }catch(e){}   /* 一致率の欄も消す（端末の記録は消さない） */
 }
 
@@ -7628,6 +7660,7 @@ function yjApply_(){
       if(yjSt&&yjSt.cur===c){ yjSt.cur=null; yjSt.phase='queue'; }
       if(curResident&&String(curResident.id)===c.id&&$('sc-view')&&$('sc-view').classList.contains('on')) openResident(c.id);
       refreshRoster();
+      yrAfterApply_();   /* すべて入れ替えの後の見直し待ちの数を読み直す（2026-11-11） */
       return;
     }
     if(r&&r.already){ x.status='done'; if(yjSt&&yjSt.cur===c){ yjSt.cur=null; yjSt.phase='queue'; } toast('この内容は既に反映されています'); return; }
@@ -7806,6 +7839,7 @@ function yjBulkApply_(){
       toast('✅ '+res.done+' 人の定期薬を書き換えました（変更履歴にも残りました）');
       if(curResident&&ids[String(curResident.id)]&&$('sc-view')&&$('sc-view').classList.contains('on')) openResident(String(curResident.id));
       refreshRoster();
+      yrAfterApply_();   /* 見直し待ちの一覧とメニューの札の数を読み直す（2026-11-11 反証レビューの指摘1） */
     }
     yjPaint_();
   });
@@ -9994,7 +10028,231 @@ function yjlLoad_(id){
     if(!r||r.ok!==true||!Array.isArray(r.rows)) return;                    /* 古いGAS・読めない時は欄を出さない */
     yjlMem.rows=r.rows;
     var el=$('yjlSlot'); if(el&&el.getAttribute('data-id')===id) el.innerHTML=yjlHtml_(r.rows);
+    yrPaintSlot_();   /* 見直しの印（薬剤情報の欄の頭・2026-11-11） */
   })['catch'](function(){ /* 読めない時は欄を出さない（画面は止めない） */ });
+}
+/* ── 薬情の反映の見直し（2026-11-11 代表者の決定）──
+   まとめて反映・完全入れ替え（すべて入れ替え・11/10 夜の自動の中止）で定期薬を消した・変えた方に、詳細画面の「薬剤情報」の欄の頭へ
+   「まとめて反映（日時・確かめた人）」の印を7日間出し、看護職・薬剤師が「見直した」を押すと消す。管理者には一覧（🔎 薬情の見直し）と、
+   メニューの札の数（rm_yjrev_due・件数と日付だけ）を出す。
+   ★印を出すかは YakujoCalc.reviewMark（純関数・check/unit/yakujo_review_test.js）。記録は反映記録（yjLog・yjAudit）を使う
+   ★「見直した」を押せるかはサーバー（入居者マスタの GAS／res-write の yjReview）が、ログインと「アプリの使える人」の「薬の見直し」
+     （yj-review）で決める。管理者は常に可・事務所は許された人だけ・現場は不可。画面は押せる人を決めない
+   ★事務所PCだけ・画面だけ（印刷しない）。記録はメモリにだけ置き、localStorage にはメニューの札の件数と日付だけを書く
+   ★応答は、出した時の世代（yrGen・devGen）と開いている方が同じ時だけ使う */
+var yrGen=0, yrCountGen=0, yrAudit=null, yrBusy=false, yrMsg={}, yrOpener=null, yrShown={id:'', marks:[]};
+var YR_MENU_KEY='rm_yjrev_due';
+var YR_SRV_OLD='まだ使えません（入居者マスタの受け口の更新が必要です。管理者に連絡してください）';
+function yrCalcOk_(){ return typeof YakujoCalc!=='undefined'&&typeof YakujoCalc.reviewMark==='function'; }
+function yrKey_(m){ return m.id+'\n'+m.srcKey+'\n'+m.at; }
+function yrMarksOf_(rows, id){
+  if(!yrCalcOk_()||!Array.isArray(rows)) return [];
+  var now=Date.now();
+  return rows.map(function(e){
+    var m=YakujoCalc.reviewMark(e, now);
+    if(m&&!m.id) m.id=String(id==null?'':id);
+    return m;
+  }).filter(function(m){ return m&&m.srcKey&&m.at; });
+}
+function yrGoneText_(m){
+  if(!m.gone.length) return m.stop?('中止 '+m.stop+'行（消えた行は記録から読めませんでした）'):'';
+  return '定期薬から無くなった行'+(m.change?'（中止の行と、変える前の行）':'')+'：'+m.gone.join('、');
+}
+/* 詳細画面の「薬剤情報」の欄の頭の枠（renderView が置く）。中身は反映記録が届いた時に入る */
+function yrSlot_(r){
+  if(getDeviceRole()==='field'||!r||r.id==null||r.id==='') return '';
+  var id=String(r.id);
+  return '<div class="yr-slot" id="yrSlot" data-id="'+esc(id)+'">'+(yjlMem.id===id&&yjlMem.rows?yrMarkHtml_(id, yjlMem.rows):'')+'</div>';
+}
+function yrMarkHtml_(id, rows){
+  var ms=yrMarksOf_(rows, id);
+  yrShown={id:String(id), marks:ms};   /* 押したボタンは、描いた時の印を指す（描いた後に7日を過ぎた印で並びがずれないように・反証レビューの指摘4） */
+  if(!ms.length) return '';
+  var login=mcHasLogin_();
+  return '<div class="yr-box" role="note">'+ms.map(function(m, i){
+    var g=yrGoneText_(m), msg=yrMsg[yrKey_(m)]||'';
+    return '<div class="yr-mark"><div class="yr-t">⚠ 見直してください：'+esc(m.text)+'</div>'+
+      (g?'<div class="yr-g">'+esc(g)+(m.truncated?'（記録が長く、途中までです）':'')+'</div>':'')+
+      '<div class="yr-u">'+esc(m.until)+' まで出します。看護職・薬剤師が今の定期薬を見直したら「見直した」を押してください。</div>'+
+      '<div class="yr-acts">'+(login?'<button type="button" class="btn btn-ok yr-done" data-i="'+i+'"'+(yrBusy?' disabled':'')+'>✔ 見直した</button>':'<span class="yr-msg">「見直した」はログインしてから押せます</span>')+
+      (msg?'<span class="yr-msg" role="status">'+esc(msg)+'</span>':'')+'</div></div>';
+  }).join('')+'</div>';
+}
+function yrPaintSlot_(){
+  try{
+    var el=$('yrSlot'); if(!el) return;
+    var id=el.getAttribute('data-id');
+    if(getDeviceRole()==='field'||yjlMem.id!==id||!yjlMem.rows){ el.innerHTML=''; return; }
+    el.innerHTML=yrMarkHtml_(id, yjlMem.rows);
+  }catch(e){ rmNote_('見直しの印', e); }
+}
+/* 「見直した」を押した（i は印の並びの番号） */
+function yrReview_(i){
+  if(yrBusy||getDeviceRole()==='field') return;
+  var el=$('yrSlot'); if(!el) return;
+  var id=el.getAttribute('data-id');
+  if(yjlMem.id!==id||!yjlMem.rows||yrShown.id!==id) return;
+  var m=yrShown.marks[i]; if(!m) return;
+  if(!confirm('「'+m.text+'」の反映を見直しましたか？\n今の定期薬が処方どおりかを確かめてから押してください。\n押すとこの印は消え、反映記録に見直した時刻とあなたのログインが残ります。')) return;
+  var key=yrKey_(m), dg=devGen, gen=yrGen;
+  yrBusy=true; yrMsg[key]='残しています…'; yrPaintSlot_();
+  function done(msg){ yrMsg[key]=msg||''; }
+  rmAccessToken_()['catch'](function(){ return ''; }).then(function(at){
+    if(dg!==devGen) return;
+    if(!at){ done('ログインし直してから押してください（何も書いていません）'); return; }
+    return apiPostRaw({action:'medCand', op:'yjReview', id:m.id, srcKey:m.srcKey, at:m.at, accessToken:at},30000).then(function(r){
+      if(dg!==devGen) return;
+      if(r&&r.ok===true){
+        var ra=String(r.reviewedAt||new Date().toISOString()), rb=String(r.reviewedBy||'');
+        [yjlMem.rows, yrAudit&&yrAudit.rows].forEach(function(list){
+          (Array.isArray(list)?list:[]).forEach(function(e){
+            if(e&&String(e.id||id)===m.id&&e.srcKey===m.srcKey&&e.at===m.at){ e.reviewedAt=ra; e.reviewedBy=rb; }
+          });
+        });
+        done(''); toast(r.already?'この反映は既に見直されています（'+(rb||'記録あり')+'）':'✅ 見直した印を残しました');
+        if(yrAudit&&Array.isArray(yrAudit.rows)) yrSaveDue_(); else yrCountLoad_();
+        if(gen===yrGen) yrPaint_();
+        return;
+      }
+      if(r&&r.denied) done('「見直した」は、管理者が「アプリの使える人」の「薬の見直し」で許した方だけが押せます。管理者は2段階認証を済ませてから押してください（何も書いていません）');
+      else if(r&&r.unverified) done('ログインを確かめられませんでした。ログインし直してから押してください（何も書いていません）');
+      else if(r&&r.missing) done('反映記録が見つかりませんでした（30日を過ぎて消えた可能性があります）');
+      else if(r&&/不明な操作/.test(String(r.error||''))) done(YR_SRV_OLD);
+      else done('残せませんでした：'+rmErrWords_(String((r&&r.error)||'不明な応答'),'見直しの印'));
+    }).catch(function(e){
+      if(dg!==devGen) return;
+      var s=String(e&&e.message||e);
+      if(/受け付けていません|不明なaction|不明な操作/.test(s)) done(YR_SRV_OLD);
+      else done('残せたか分かりません（'+rmErrWords_(s,'見直しの印')+'）。画面を開き直して、印が消えているか確かめてください');
+    });
+  }).then(function(){ yrBusy=false; if(dg===devGen) yrPaintSlot_(); });
+}
+/* 管理者の一覧（全員の反映記録・30日）を読む。メニューの札の数もここで書く */
+function yrAuditLoad_(){
+  if(getDeviceRole()==='field'||!CFG.url||!yrCalcOk_()) return;
+  var gen=++yrGen, dg=devGen;
+  if(yrAudit) yrAudit.loading=true; else yrAudit={loading:true};
+  yrPaint_();
+  rmAccessToken_()['catch'](function(){ return ''; }).then(function(at){
+    if(!at) return {ok:false, error:'ログインし直してから開いてください'};
+    return apiPostRaw({action:'medCand', op:'yjAudit', accessToken:at, screen:'resident-master'},40000);
+  }).then(function(r){
+    if(gen!==yrGen||dg!==devGen||getDeviceRole()==='field') return;
+    if(!r||r.ok!==true||!Array.isArray(r.rows)){
+      var er=String((r&&r.error)||'不明な応答');
+      yrAudit={err:/不明な操作/.test(er)?YR_SRV_OLD:rmErrWords_(er,'見直しの一覧')}; return;
+    }
+    yrAudit={rows:r.rows, more:!!r.more, at:Date.now()};
+    yrSaveDue_();
+  })['catch'](function(e){
+    if(gen!==yrGen||dg!==devGen) return;
+    var s=String(e&&e.message||e);
+    yrAudit={err:/受け付けていません|不明なaction|不明な操作/.test(s)?YR_SRV_OLD:rmErrWords_(s,'見直しの一覧')};
+  }).then(function(){ if(gen===yrGen) yrPaint_(); });
+}
+/* 札の数だけを読む（countOnly: サーバーは時刻・まとめて反映か・扱いの語・見直したかだけを返し、薬の名前・番号を返さない＝開いた記録も残らない）。
+   ページを開いた時と反映の後に呼ぶ。全員分の中身は「🔎 薬情の見直し」を開いた時だけ読む（審査の指摘・必要最小限の取得） */
+function yrCountLoad_(){
+  if(getDeviceRole()==='field'||!CFG.url||!yrCalcOk_()) return;
+  var gen=++yrCountGen, dg=devGen;
+  rmAccessToken_()['catch'](function(){ return ''; }).then(function(at){
+    if(!at) return null;
+    return apiPostRaw({action:'medCand', op:'yjAudit', countOnly:true, accessToken:at},40000);
+  }).then(function(r){
+    if(gen!==yrCountGen||dg!==devGen||getDeviceRole()==='field') return;
+    if(r&&r.ok===true&&Array.isArray(r.rows)) yrSaveDueRows_(r.rows);
+  })['catch'](function(){ /* 数えられない時は札を前のままにする（画面は止めない） */ });
+}
+/* 反映の後: 一覧を開いていれば読み直し、開いていなければ次に開いた時に読み直す。札の数も読み直す */
+function yrAfterApply_(){
+  var m=$('mYjRev');
+  if(m&&m.classList.contains('on')) yrAuditLoad_(); else { yrGen++; yrAudit=null; }
+  yrCountLoad_();
+}
+function yrSaveDueRows_(rows){
+  try{
+    if(getDeviceRole()==='field'||!Array.isArray(rows)||!yrCalcOk_()) return;
+    var d=YakujoCalc.reviewMenuDue(rows, Date.now(), todayISO());
+    if(d) localStorage.setItem(YR_MENU_KEY, JSON.stringify(d));
+  }catch(e){ /* 残せなくても画面は動く */ }
+}
+/* メニューの札（管理者にだけ出る・件数と日付だけ）。全員の記録を読めた時だけ書く */
+function yrSaveDue_(){ if(yrAudit&&Array.isArray(yrAudit.rows)) yrSaveDueRows_(yrAudit.rows); }
+function yrPaint_(){
+  var box=$('yrBody'), m=$('mYjRev'); if(!box||!m||!m.classList.contains('on')) return;
+  var A=yrAudit, h='';
+  if(!A||A.loading&&!A.rows){ box.innerHTML='<p class="yr-note" role="status">読み込んでいます…</p>'; return; }
+  if(A.err){ box.innerHTML='<p class="yr-note" role="alert">読み込めませんでした：'+esc(A.err)+'</p>'; return; }
+  var now=Date.now(), pend=[];
+  A.rows.forEach(function(e){ var k=YakujoCalc.reviewMark(e, now); if(k) pend.push(k); });
+  var open=function(id){ return '<button type="button" class="btn btn-gray yr-go" data-id="'+esc(id)+'">開く</button>'; };
+  h+='<h3 class="yr-sec">見直し待ち '+pend.length+' 件</h3>';
+  h+='<p class="yr-note">まとめて反映・すべて入れ替えで定期薬を消した・変えた方です。反映から7日間、詳細画面の「薬剤情報」の欄に印が出ます。</p>';
+  if(pend.length){
+    h+='<div class="yr-wrap"><table class="yr-tbl"><thead><tr><th scope="col">番号</th><th scope="col">印</th><th scope="col">無くなった行</th><th scope="col">印が出る期限</th><th scope="col"></th></tr></thead><tbody>'+
+      pend.map(function(k){ return '<tr><td>'+esc(k.id)+'</td><td>'+esc(k.text)+'</td><td>'+esc(yrGoneText_(k)||'なし（変えただけ）')+'</td><td>'+esc(k.until)+'</td><td>'+open(k.id)+'</td></tr>'; }).join('')+
+      '</tbody></table></div>';
+  }
+  var au=YakujoCalc.replaceAudit(A.rows);
+  h+='<h3 class="yr-sec">完全入れ替えで定期薬を消した反映 '+au.length+' 件</h3>';
+  h+='<p class="yr-note">11/10 夜の公開（21:51ごろ）から自動の中止をやめた公開（23:19ごろ）までは、かかりつけ病院の名前が書類にある方の「書類に無い今の薬」を自動で中止にしていました。'+
+     'その間の中止は、自動か人が選んだかを記録から見分けられないため全部出しています（古い画面を開いたままの端末を見込み、11/10 の終わりまでを含めます）。それ以後は「すべて入れ替え」を押した反映だけです。'+
+     '「無くなった行」は反映の前後の差で、変える前の行も含みます。反映記録は30日で消えます。</p>';
+  if(au.length){
+    h+='<div class="yr-wrap"><table class="yr-tbl"><thead><tr><th scope="col">番号</th><th scope="col">日時</th><th scope="col">種類</th><th scope="col">無くなった行</th><th scope="col">確かめた人</th><th scope="col">見直し</th><th scope="col"></th></tr></thead><tbody>'+
+      au.map(function(x){
+        var kind=(x.type==='all'?'すべて入れ替え':'自動の中止の期間（中止 '+x.stop+'行）')+(x.bulk?'・まとめて反映':'');
+        var gone=x.gone.length?x.gone.join('、')+(x.truncated?'（記録は途中まで）':''):'（読めませんでした）';
+        return '<tr><td>'+esc(x.id)+'</td><td>'+esc(x.at)+'</td><td>'+esc(kind)+'</td><td>'+esc(gone)+'</td><td>'+esc(x.by||'不明')+'</td><td>'+
+          esc(x.reviewedAt?(x.reviewedAt+' '+x.reviewedBy):'まだ')+'</td><td>'+open(x.id)+'</td></tr>';
+      }).join('')+'</tbody></table></div>';
+  } else h+='<p class="yr-note">ありません。</p>';
+  if(A.more) h+='<p class="yr-note">記録が500件を超えたため、古い分は出していません。</p>';
+  box.innerHTML=h;
+}
+function yrOpen_(){
+  if(getDeviceRole()==='field') return;
+  var m=$('mYjRev'); if(!m) return;
+  yrOpener=document.activeElement;
+  m.classList.add('on'); navEnter();
+  try{ $('mYjRevH').focus(); }catch(e){}
+  if(!yrAudit||yrAudit.err) yrAuditLoad_(); else yrPaint_();
+}
+function yrClose_(){
+  var m=$('mYjRev'); if(!m||!m.classList.contains('on')) return;
+  m.classList.remove('on'); $('yrBody').innerHTML='';
+  if($('sc-list').classList.contains('on')) navLeave();
+  try{ if(yrOpener&&yrOpener.focus&&document.contains(yrOpener)) yrOpener.focus(); }catch(e){}
+}
+function yrPurge_(){
+  yrGen++; yrCountGen++; yrAudit=null; yrMsg={}; yrBusy=false;
+  try{ var m=$('mYjRev'); if(m) m.classList.remove('on'); var b=$('yrBody'); if(b) b.innerHTML=''; var o=$('yrOpen'); if(o) o.hidden=true; var sl=$('yrSlot'); if(sl) sl.innerHTML=''; }catch(e){}
+}
+function yrWire_(){
+  var ob=$('yrOpen'), m=$('mYjRev');
+  if(ob) ob.addEventListener('click', yrOpen_);
+  document.addEventListener('click', function(e){
+    var t=e.target&&e.target.closest?e.target.closest('.yr-done'):null;
+    if(t&&!t.disabled) yrReview_(Number(t.getAttribute('data-i')));
+  });
+  if(!m) return;
+  m.addEventListener('keydown', function(e){
+    if(e.isComposing||e.keyCode===229) return;
+    if(e.key==='Escape'){ yrClose_(); return; }
+    if(e.key==='Tab'){
+      var f=Array.prototype.filter.call(m.querySelectorAll('button,[tabindex]'),function(x){ return !x.disabled&&x.offsetParent!==null&&x.tabIndex>=0; });
+      if(!f.length) return;
+      if(e.shiftKey&&document.activeElement===f[0]){ e.preventDefault(); f[f.length-1].focus(); }
+      else if(!e.shiftKey&&document.activeElement===f[f.length-1]){ e.preventDefault(); f[0].focus(); }
+    }
+  });
+  m.addEventListener('click', function(e){
+    var t=e.target; if(!t||!t.closest) return;
+    if(t.id==='yrClose'||t===m){ yrClose_(); return; }
+    if(t.id==='yrReload'){ yrAuditLoad_(); return; }
+    var g=t.closest('.yr-go');
+    if(g){ var id=g.getAttribute('data-id'); yrClose_(); if(id) openResident(id); }
+  });
 }
 function applyPrintHide(box,r){
   if(!box)return;
@@ -10653,7 +10911,7 @@ function renderView(r){
      先頭に ■薬剤情報（定期）■＋効果・効能、その右に頓服・外用等を並べる。
      管理方法・服薬介助は様式の4段階（上の大表）へ移した。 */
   h+=yjpSlot_(r);   // 薬情・お薬シールの写真を入れる帯（管理者・事務所の Mac の Chrome だけ・印刷しない）（2026-10-23）
-  h+='<div class="sec"><div class="sec-lbl">薬剤情報</div><div class="sec-body">'+
+  h+='<div class="sec"><div class="sec-lbl">薬剤情報</div><div class="sec-body">'+yrSlot_(r)+
     '<div class="row-cells">'+
       /* 左右の境目は 65:35（2026-08-12 指示で 75:25 から10%ぶん左へ寄せた）。
          ★元は 3:1（=75:25）。2:1 まで狭めると薬剤名の長い方で3行折り返したので、
@@ -12901,6 +13159,8 @@ function navTopModal(){
   if($('mMedCand')&&$('mMedCand').classList.contains('on'))return function(){return mcClose_()};
   /* 薬情の取り込み（2026-10-22）。反映の送信中は閉じない（false＝開いたまま） */
   if($('mYakujo')&&$('mYakujo').classList.contains('on'))return function(){return yjClose_()};
+  /* 薬情の見直し（2026-11-11）。読むだけの一覧なので、いつでも閉じる */
+  if($('mYjRev')&&$('mYjRev').classList.contains('on'))return function(){yrClose_();return true};
   if($('mBulk')&&$('mBulk').classList.contains('on'))return function(){closeBulk();return !$('mBulk').classList.contains('on')};
   if($('mSync')&&$('mSync').classList.contains('on'))return function(){closeSync();return true};
   if($('mApps')&&$('mApps').classList.contains('on'))return function(){closeApps();return true};
@@ -15293,6 +15553,7 @@ function init(){
   if($('mMedSlots'))$('mMedSlots').addEventListener('keydown',function(e){ if(e.key==='Escape') msClose_(); });
   mcWire_();   /* 薬の変更候補（2026-10-06 追加） */
   yjWire_();   /* 薬情の取り込み（2026-10-22 追加） */
+  yrWire_();   /* 薬情の反映の見直し（2026-11-11 追加） */
   yjpWire_();   /* 薬情・お薬シールの写真を入れる帯（2026-10-23 追加） */
   /* 薬効辞書（2026-09-04 追加） */
   if($('mdAdd'))   $('mdAdd').addEventListener('click',mdAddDrug);

@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-G6EzR0pzmUP5/ZxhDmgZAW0d4Zl/xqVNwhlFB7gb2wU=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-jEcbR1NyOmea9GOBOxKn7I5ks+ADYv0W8x7QenEyF+A=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 検索エンジンにこのページと配下ツールを辿らせない。
@@ -360,7 +360,9 @@ main {
      "href": "resident-master.html",
      "ic": "🗂️",
      "nm": "入居者マスタ",
-     "note": "入居者情報の管理"
+     "note": "入居者情報の管理",
+     "due": "rm_yjrev_due",
+     "_why": "due: 薬情のまとめて反映・完全入れ替えの後の見直し待ちの数の札（2026-11-11 代表者の決定）。管理者のログインの時だけ出す（入居者マスタが管理者のログインで数えて端末に残すのは件数と日付だけ）"
     },
     {
      "href": "patch-calendar.html",
@@ -541,8 +543,10 @@ main {
      raw は端末の控えの文字列 {"v":1,"at":"YYYY-MM-DD","overdue":n,"warn":n,"none":n}。today は今日の YYYY-MM-DD。
      形が違う・数えた日が今日より先・件数が整数でない時は出さない（''）。0件の項目は書かず、全部0件なら出さない＝今と同じ見た目。
      expire（2026-10-29 本人指示・採用管理）: 保管期限の日付 "YYYY-MM-DD" の並び（2000件まで）。今日より前の日付の数を「保管期限切れn」と書く
-     （日付で持つので、採用管理を開かない日が続いても期限を過ぎた日から出る）。形の違う日付が1つでもあれば出さない */
-  function dueText(raw, today) {
+     （日付で持つので、採用管理を開かない日が続いても期限を過ぎた日から出る）。形の違う日付が1つでもあれば出さない
+     admin・review（2026-11-11 代表者の決定・入居者マスタ）: {"v":1,"at":…,"admin":true,"review":n} は薬情の見直し待ちの数で、
+     role（今のログインの役割）が管理者の時だけ「見直し待ちn」と書く。admin の印の無い review・管理者でない時・0件は出さない */
+  function dueText(raw, today, role) {
     var d;
     try { d = JSON.parse(raw); } catch (e) { return ''; }
     if (!d || typeof d !== 'object' || d.v !== 1) return '';
@@ -550,6 +554,12 @@ main {
     if (!m || !tm || String(d.at) > String(today)) return '';
     var mo = Number(m[2]), dd = Number(m[3]);
     if (mo < 1 || mo > 12 || dd < 1 || dd > 31) return '';
+    var when = '（' + (m[1] !== tm[1] ? m[1] + '/' : '') + mo + '/' + dd + '時点）';
+    if (d.admin === true || d.review != null) {
+      var rv = d.review;
+      if (d.admin !== true || role !== 'admin' || typeof rv !== 'number' || !isFinite(rv) || rv < 0 || rv > 9999 || Math.floor(rv) !== rv) return '';
+      return rv > 0 ? '見直し待ち' + rv + when : '';
+    }
     var parts = [], keys = [['overdue', '超過'], ['warn', '要注意'], ['none', '計画なし']];
     for (var i = 0; i < keys.length; i++) {
       var n = d[keys[i][0]];
@@ -568,7 +578,7 @@ main {
     }
     if (!parts.length) return '';
     /* 年が違う時は年も書く（去年の同じ月日を今年の日と読み違えないため） */
-    return parts.join('・') + '（' + (m[1] !== tm[1] ? m[1] + '/' : '') + mo + '/' + dd + '時点）';
+    return parts.join('・') + when;
   }
   /* DUE_TEXT_END */
   function todayYmd() {
@@ -582,7 +592,7 @@ main {
       if (!/^[a-z0-9_]{1,40}$/.test(key)) return null;
       var raw = localStorage.getItem(key);
       if (raw == null) return null;
-      var txt = dueText(raw, todayYmd());
+      var txt = dueText(raw, todayYmd(), role);
       return txt ? el('span', 'due', txt) : null;
     } catch (e) { return null; }
   }

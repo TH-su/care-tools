@@ -1107,12 +1107,114 @@
       s.fixed + '/' + s.rows + ' 行（薬名 ' + s.name + '・量 ' + s.dose + '・単位 ' + s.unit + '・時点 ' + s.time + '・その他 ' + s.other + '）';
   }
 
+  /* ── 12. 反映の見直しの印（2026-11-11 代表者の決定）──
+     まとめて反映・完全入れ替えで定期薬を消した・変えた方に、詳細画面の「薬剤情報」の欄で7日間「見直してください」の印を出し、
+     看護職・薬剤師（管理者が「アプリの使える人」で許した人）が「見直した」を押すと消す。ここは記録の1件から印を出すかを決めるだけ。
+     記録の1件 e は入居者マスタGAS の yjLog・yjAudit の行 { at, id, srcKey, docRows, before, after, by, how, reviewedAt, reviewedBy }。
+     ★変更記録の書類の行（docRows）は logRows の「扱い｜書類の行｜反映後」の並び。中止の行には消した薬の名前が無いので、
+       消えた薬は反映前（before）と反映後（after）の行の差で出す（変える行の元の行も混ざるので、そう書く）
+     ★自動の中止の期間（AUTO_STOP_FROM〜TO）: 8205e6d・507916f（同じ取り込み 71dfe76 で公開）から、7ef0a62（e8fc33e で公開）で
+       自動の中止をやめるまでは、かかりつけ病院の名前が書類にある方の書類に無い今の薬を既定で「中止」にしていた。
+       この間の記録は、自動の中止と人が選んだ中止が同じ語（中止）で、見分けられない。古い画面を開いたままの端末を見込み、
+       終わりは 11/10 の終わり（日本時間）にする */
+  var REVIEW_DAYS = 7, DAY_MS = 86400000;
+  var AUTO_STOP_FROM = Date.parse('2026-11-10T12:47:00Z'), AUTO_STOP_TO = Date.parse('2026-11-10T15:00:00Z');
+  var STOP_ALL = '中止（すべて入れ替え）';
+  function atMs(v) { var t = Date.parse(String(v == null ? '' : v)); return isFinite(t) ? t : NaN; }
+  /* 日本時間の YYYY-MM-DD HH:mm */
+  function jst(ms) {
+    if (!isFinite(ms)) return '';
+    var d = new Date(ms + 9 * 3600000); function p2(n) { return ('0' + n).slice(-2); }
+    return d.getUTCFullYear() + '-' + p2(d.getUTCMonth() + 1) + '-' + p2(d.getUTCDate()) + ' ' + p2(d.getUTCHours()) + ':' + p2(d.getUTCMinutes());
+  }
+  /* 変更記録の書類の行を数える。truncated は「…（以下 N 行）」で切れていた時（数えた数は少ない側） */
+  function logCount(docRows) {
+    var c = { change: 0, add: 0, stop: 0, stopAll: 0, edit: 0, truncated: false };
+    String(docRows == null ? '' : docRows).split('\n').forEach(function (l) {
+      if (/^…（以下 \d+ 行）$/.test(l)) { c.truncated = true; return; }
+      if (/…$/.test(l)) c.truncated = true;   // 1行目だけで収まらず切った行（logRows）
+      var w = l.split('｜')[0];
+      if (w === '変える') c.change++;
+      else if (w === '足す') c.add++;
+      else if (w === STOP_ALL) c.stopAll++;
+      else if (w === '中止') c.stop++;
+      else if (w === '直す') c.edit++;
+    });
+    return c;
+  }
+  /* 反映前にあって反映後に無い行（同じ行が2つあれば2つ目も数える）。行末の空白は見ない */
+  function goneLines(before, after) {
+    function lines(x) { return String(x == null ? '' : x).replace(/\r\n?/g, '\n').split('\n').map(function (l) { return l.replace(/\s+$/, ''); }).filter(function (l) { return l.trim() !== ''; }); }
+    var left = {}, out = [];
+    lines(after).forEach(function (l) { left[l] = (left[l] || 0) + 1; });
+    lines(before).forEach(function (l) { if (left[l] > 0) left[l]--; else out.push(l); });
+    return out;
+  }
+  /* 記録の1件の種類。'bulk' まとめて反映で消した・変えた／'all' すべて入れ替え／'auto' 自動の中止の期間の中止／null 印の対象外 */
+  function reviewKind(e) {
+    if (!e || typeof e !== 'object') return null;
+    var c = logCount(e.docRows), t = atMs(e.at);
+    if (e.how === 'まとめて反映' && (c.change + c.stop + c.stopAll + c.edit) > 0) return 'bulk';
+    if (c.stopAll > 0) return 'all';
+    if (c.stop > 0 && t >= AUTO_STOP_FROM && t < AUTO_STOP_TO) return 'auto';
+    return null;
+  }
+  var KIND_LABEL = { bulk: 'まとめて反映', all: 'すべて入れ替え', auto: '完全入れ替え' };
+  function str(v) { return typeof v === 'string' ? v : ''; }
+  /* 印（詳細画面の「薬剤情報」の欄）。出さない時は null。nowMs は今（ミリ秒）
+     出すのは: 種類がある・反映から7日未満・見直していない（reviewedAt が空）・時刻が読める・先の時刻でない（1分のずれまで） */
+  function reviewMark(e, nowMs) {
+    var k = reviewKind(e), t = atMs(e && e.at);
+    if (!k || !isFinite(t) || !isFinite(nowMs)) return null;
+    if (str(e.reviewedAt)) return null;
+    if (nowMs - t >= REVIEW_DAYS * DAY_MS || t - nowMs > 60000) return null;
+    var c = logCount(e.docRows);
+    return { kind: k, label: KIND_LABEL[k], at: str(e.at), id: str(e.id), srcKey: str(e.srcKey), by: str(e.by),
+      text: KIND_LABEL[k] + '（' + jst(t) + '・確かめた人 ' + (str(e.by) || '不明') + '）',
+      until: jst(t + REVIEW_DAYS * DAY_MS), stop: c.stop + c.stopAll, change: c.change + c.edit, truncated: c.truncated,
+      gone: goneLines(e.before, e.after) };
+  }
+  /* 見直し待ちの数（印が出る記録の数）。同じ記録（id・srcKey・at）は1つに数える */
+  function reviewPending(rows, nowMs) {
+    var seen = {}, n = 0;
+    (Array.isArray(rows) ? rows : []).forEach(function (e) {
+      var m = reviewMark(e, nowMs); if (!m) return;
+      var k = m.id + '\n' + m.srcKey + '\n' + m.at; if (seen[k]) return; seen[k] = 1; n++;
+    });
+    return n;
+  }
+  /* メニューの札の控え（index.html の dueText が読む・管理者にだけ出す）。today は YYYY-MM-DD。件数と日付だけ（氏名・番号を持たない） */
+  function reviewMenuDue(rows, nowMs, today) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(today || ''))) return null;
+    return { v: 1, at: String(today), admin: true, review: Math.min(reviewPending(rows, nowMs), 9999) };
+  }
+  /* 管理者の一覧: 自動の中止の期間の中止と、すべて入れ替えの中止がある記録（新しい順）。
+     type は 'auto'（期間の中・自動と手の中止を見分けられない）／'all'（すべて入れ替え） */
+  function replaceAudit(rows) {
+    var out = [];
+    (Array.isArray(rows) ? rows : []).forEach(function (e) {
+      if (!e || typeof e !== 'object') return;
+      var t = atMs(e.at), c = logCount(e.docRows), type = null;
+      if (!isFinite(t) || t < AUTO_STOP_FROM) return;
+      if (c.stopAll > 0) type = 'all';
+      else if (c.stop > 0 && t < AUTO_STOP_TO) type = 'auto';
+      if (!type) return;
+      out.push({ t: t, type: type, at: jst(t), id: str(e.id), srcDate: str(e.srcDate), by: str(e.by), bulk: e.how === 'まとめて反映',
+        stop: c.stop + c.stopAll, change: c.change + c.edit, truncated: c.truncated, gone: goneLines(e.before, e.after),
+        reviewedAt: jst(atMs(e.reviewedAt)), reviewedBy: str(e.reviewedAt) ? str(e.reviewedBy) : '' });
+    });
+    out.sort(function (a, b) { return b.t - a.t; });
+    return out;
+  }
+
   var api = { parseResult: parseResult, assign: assign, findDates: findDates, datesIn: datesIn, parseUse: parseUse,
     parseRows: parseRows, looksDrug: looksDrug, stripEnum: stripEnum, snap: snap, lineSpec: lineSpec, shortDays: shortDays, splitMaker: splitMaker, stem: stem, matchCurrent: matchCurrent, sameMeaning: sameMeaning, buildRows: buildRows, judge: judge, buildAfter: buildAfter,
     startDate: startDate, useDate: useDate, bulkCheck: bulkCheck, clinicPlan: clinicPlan, planRows: planRows, replaceAll: replaceAll, parseLabeled: parseLabeled, cleanDrugName: cleanDrugName, canonKey: canonKey, yjIndex: yjIndex, yjOf: yjOf, yjLookup: function (text) { var idx = yjIndex(text); return idx ? function (name) { return yjOf(name, idx); } : null; }, lineName: lineName, drugKey: drugKey,
     fnv8: fnv8, srcKey: srcKey, logRows: logRows, nz: nz, kn: kn, dist: dist,
     correctionKinds: correctionKinds, metricOf: metricOf, metricsLoad: metricsLoad, metricsSave: metricsSave, summarize: summarize, metricText: metricText,
-    METRIC_MAX: METRIC_MAX };
+    METRIC_MAX: METRIC_MAX,
+    logCount: logCount, goneLines: goneLines, reviewKind: reviewKind, reviewMark: reviewMark, reviewPending: reviewPending,
+    reviewMenuDue: reviewMenuDue, replaceAudit: replaceAudit, jst: jst, REVIEW_DAYS: REVIEW_DAYS, AUTO_STOP_FROM: AUTO_STOP_FROM, AUTO_STOP_TO: AUTO_STOP_TO };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.YakujoCalc = api;
 })(typeof window !== 'undefined' ? window : this);
