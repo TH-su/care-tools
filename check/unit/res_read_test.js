@@ -510,9 +510,11 @@ const SHEET = [
         L = mk(EP, DB); m = await L.box.a4EnsureDayMap();
         t('L ' + P.f + ' デイ利用日: 接続先あり・新しい保存先から読めた → Google へ0件（今までどおり）', m === '' && L.c.fetch.length === 0);
       }
-      const strip = s => s.split('\n').filter(l => !/csRateMaster_|csShare_|収支の見通しが使う報酬マスタ/.test(l)).join('\n');
-      t('L デイ利用日の処理は入居者マスタとフェイスシートで一字一句同じ（収支の見通しの3行を除く・前からの違い）',
-        strip(grab(RM, 'a4EnsureDayMap')) === strip(grab(FS, 'a4EnsureDayMap')) && grab(RM, 'a4EnsureDayMap').length > 0);
+      /* 収支の見通しの3行は入居者マスタだけの後処理（a4OnDayData_）へ移したので、除かずに一字一句同じを求める（2026-11-11） */
+      t('L デイ利用日の処理は入居者マスタとフェイスシートで一字一句同じ',
+        grab(RM, 'a4EnsureDayMap') === grab(FS, 'a4EnsureDayMap') && grab(RM, 'a4EnsureDayMap').length > 0);
+      t('L 収支の見通しの報酬マスタは入居者マスタだけの後処理で持つ（フェイスシートには無い）',
+        /function a4OnDayData_\(data\)\{[\s\S]*?csRateMaster_=[\s\S]*?csShare_=revBuildShare_\(data\)/.test(RM) && !/function a4OnDayData_/.test(FS));
     }
     /* L-d 接続先なし・ログインだけで使える端末の読み書き: 画面の本物の口 → この部品 → 新しい保存先だけ（Google へ0件） */
     {
