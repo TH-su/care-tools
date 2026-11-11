@@ -48,7 +48,7 @@ function runSave(targetApps){
 const none = runSave([]);
 t('1 3つ全部外すと止まる（知らせが1回）', none.alert.length === 1);
 t('1 止めた時は保存へ進まない', none.reachedConn === false);
-t('1 知らせの文に「3つ全部は外せません」がある', /3つ全部は外せません/.test(none.alert[0] || ''));
+t('1 知らせの文に「チェックを1つ以上入れてください」がある', /チェックを1つ以上入れてください/.test(none.alert[0] || ''));
 
 const one = runSave(['weight']);
 t('2 1つでもチェックがあれば止めない', one.alert.length === 0 && one.reachedConn === true);

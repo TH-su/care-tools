@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-eAhf6QXpHRqIip2fgl3nRjrHr3OW+igtn6QWRUbjNLw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-8OPKsBz9LFvodFGWr2tDlcW+cX1ygY+bjEWk8NS3ZXo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -12930,7 +12930,7 @@ function saveResident(){
   /* 対象アプリを3つ全部外した保存は止める（全部外すと名簿の対象アプリの列が空になり、すべてのアプリに表示される扱いに戻るため。
      一括編集と同じ決まり・2026-11-11 本人指示） */
   if(Array.isArray(rec.targetApps)&&!rec.targetApps.length){
-    alert('保存できません。対象アプリを3つ全部は外せません。\n\n全部外すと、すべてのアプリに表示される扱いに戻ります。少なくとも1つにチェックを入れてから、もう一度「保存」を押してください。');
+    alert('チェックを1つ以上入れてください。\n全部外すと、すべてのアプリに表示されてしまいます。');
     return;
   }
   if(!rmOn_()){toast('⚠️ 入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）');return}
@@ -15311,9 +15311,9 @@ function saveBulk(){
   /* ★対象アプリを3つ全部外した方は送らない。J 列が空になると、読む側は「未設定＝全部に表示」と読み、全部に表示へ戻ってしまう
      （サーバーでも断るが、ここで止めた方が氏名で示せる） */
   if(appsNone.length){
-    alert('保存できません。対象アプリを3つ全部は外せません。\n\n'+appsNone.slice(0,10).join('\n')+
+    alert(appsNone.slice(0,10).join('\n')+
       (appsNone.length>10?('\nほか '+(appsNone.length-10)+'名'):'')+
-      '\n\n全部外すと、すべてのアプリに表示される扱いに戻ります。少なくとも1つにチェックを入れてから、もう一度「保存」を押してください。');
+      '\n\nチェックを1つ以上入れてください。\n全部外すと、すべてのアプリに表示されてしまいます。');
     return;
   }
   var appsHit=false;
