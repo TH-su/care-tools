@@ -7,6 +7,9 @@
      4 3つ全部外した方は、確認の前に止めて氏名で知らせ、送らない
      5 確認文に「チェックを外したアプリには、その方が表示されなくなります（記録は消えません）」を出す
      6 保存の実物確認（verifyAppliedRows_）は並びをそろえて中身で比べ、サーバーに無い時は未保存に残す
+     7 送る直前の取り直し（bulkFamGuard_・反証レビューの指摘）: 対象アプリを送る方は、開いてから他の端末で対象アプリが
+       変わっていたら（未設定⇔設定済みも違いとみなす）1文字も送らずに止め、表の控えを新しい値に直して知らせる。
+       変わっていなければ送る。家族の取り直しと1回の getBulk にまとめる
    実データは1件も含まない（氏名・居室はすべて架空）。
    実行: node check/unit/master_bulk_apps_test.js（読む HTML は環境変数 MASTER_HTML で差し替えられる） */
 'use strict';
@@ -191,5 +194,97 @@ group('保存の実物確認（verifyAppliedRows_）');
     v([{ id: 1, fields: { targetApps: ['weight'] } }], [{ id: 1, targetApps: 'weight' }]), { applied: [], kept: ['1'] });
 }
 
-process.stdout.write('\n合格 ' + ok + ' / 不合格 ' + ng + '\n');
-process.exit(ng ? 1 : 0);
+/* ═══ 7. 送る直前の取り直し（saveBulkGo_ と bulkFamGuard_ を偽物の通信で動かす） ═══ */
+function makeGoBox(serverRows){
+  const box = { calls: { alert: [], getBulk: 0, post: [] }, bulkGen: 0 };
+  const el = () => ({ disabled: false, textContent: '', className: '' });
+  const els = { bulkSave: el(), bulkClose: el(), syncStatus: el() };
+  box.$ = (id) => els[id] || null;
+  box.alert = (m) => box.calls.alert.push(String(m));
+  box.setSync = () => {};
+  box.renderBulk = () => {};
+  box.paintBulkDirty = () => {};
+  box.refreshRoster = () => {};
+  box.bkMarkStale_ = () => {};
+  box.toast = () => {};
+  box.apiGet = (p) => { if(p && p.action === 'getBulk') box.calls.getBulk++; return Promise.resolve({ rows: JSON.parse(JSON.stringify(serverRows)) }); };
+  box.apiPostRaw = (body) => { box.calls.post.push(JSON.parse(JSON.stringify(body))); return Promise.resolve({ ok: true, saved: (body.changes || []).length, warn: [], warnIds: [] }); };
+  vm.createContext(box);
+  vm.runInContext([
+    grabVar('APP_TARGETS'), grabFn('famCmp_'), grabFn('appsCmp_'), grabFn('bulkTruthy'), grabFn('bulkWho'),
+    grabFn('bulkAppsSame_'), grabFn('bulkFamGuard_'), grabFn('saveBulkGo_'),
+    'var bulkRows=null, bulkDirty={}, RM_SRV_OLD="";'
+  ].join('\n'), box);
+  return box;
+}
+const settle = () => new Promise((r) => setTimeout(r, 0));
+(async () => {
+  group('送る直前の取り直し（他の端末の変更を戻さない）');
+  const nmv = { spaceOnly: [], keyChanged: [] };
+  {
+    /* 開いた時: 乙＝排泄記録だけ。その後、他の端末で乙に週間計画が足された。こちらは体重記録を足して送ろうとする */
+    const server = rows().map((r) => r.id === 902 ? Object.assign({}, r, { targetApps: ['excretion', 'schedule'] }) : r);
+    const b = makeGoBox(server);
+    b.bulkRows = rows(); b.bulkDirty = { 902: { tgt_weight: true } };
+    b.saveBulkGo_([{ id: 902, name: '見本 乙', fields: { targetApps: ['excretion', 'weight'] } }], nmv);
+    await settle(); await settle();
+    t('他の端末で変わっていたら送らない', b.calls.post.length === 0, b.calls.post);
+    t('取り直しは1回', b.calls.getBulk === 1, b.calls.getBulk);
+    t('職員に分かる言葉で知らせる', b.calls.alert.length === 1 && /1文字も書いていません/.test(b.calls.alert[0]) && /他の端末で対象アプリが変わった方がいます（1名）/.test(b.calls.alert[0]), b.calls.alert);
+    t('家族の文は出さない（家族は変わっていない）', !/家族情報が変わった/.test(b.calls.alert[0] || ''));
+    eq('表の控えを新しい値に直す', b.bulkRows.filter((r) => r.id === 902)[0].targetApps, ['excretion', 'schedule']);
+    t('未保存の変更は残す', b.bulkDirty[902] && b.bulkDirty[902].tgt_weight === true);
+    t('ボタンを戻す', !b.$('bulkSave').disabled && !b.$('bulkClose').disabled);
+  }
+  {
+    /* 開いた時は未設定（全部に表示）。他の端末で「排泄記録・体重記録・週間計画」と3つ全部が明示で入った＝中身は同じでも別のもの */
+    const server = rows().map((r) => r.id === 901 ? Object.assign({}, r, { targetApps: ['excretion', 'weight', 'schedule'] }) : r);
+    const b = makeGoBox(server);
+    b.bulkRows = rows();
+    b.saveBulkGo_([{ id: 901, name: '見本 甲', fields: { targetApps: ['excretion'] } }], nmv);
+    await settle(); await settle();
+    t('未設定と設定済みは別のものとして止める', b.calls.post.length === 0 && b.calls.alert.length === 1);
+    eq('控えに設定済みの値が入る', b.bulkRows.filter((r) => r.id === 901)[0].targetApps, ['excretion', 'weight', 'schedule']);
+  }
+  {
+    /* 逆: 開いた時は設定済み、他の端末で未設定に戻った（J 列が空） */
+    const server = rows().map((r) => { const o = Object.assign({}, r); if(o.id === 903) delete o.targetApps; return o; });
+    const b = makeGoBox(server);
+    b.bulkRows = rows();
+    b.saveBulkGo_([{ id: 903, name: '見本 丙', fields: { targetApps: ['weight'] } }], nmv);
+    await settle(); await settle();
+    t('設定済み→未設定も止める', b.calls.post.length === 0 && b.calls.alert.length === 1);
+    t('控えから消す（全部に表示として見せる）', !('targetApps' in b.bulkRows.filter((r) => r.id === 903)[0]));
+  }
+  {
+    /* 変わっていない（並びだけ違う）なら送る */
+    const server = rows().map((r) => r.id === 903 ? Object.assign({}, r, { targetApps: ['weight', 'schedule'] }) : r);
+    const b = makeGoBox(server);
+    b.bulkRows = rows();
+    b.saveBulkGo_([{ id: 903, name: '見本 丙', fields: { targetApps: ['weight'] } }], nmv);
+    await settle(); await settle();
+    t('変わっていなければ送る', b.calls.post.length === 1 && b.calls.alert.length === 0, b.calls);
+    eq('送る中身', b.calls.post[0] && b.calls.post[0].changes, [{ id: 903, name: '見本 丙', fields: { targetApps: ['weight'] } }]);
+  }
+  {
+    /* 対象アプリを送らない方は、他の端末で対象アプリが変わっていても取り直さない（往復を増やさない） */
+    const server = rows().map((r) => r.id === 902 ? Object.assign({}, r, { targetApps: ['weight'] }) : r);
+    const b = makeGoBox(server);
+    b.bulkRows = rows();
+    b.saveBulkGo_([{ id: 902, name: '見本 乙', fields: { room: '112' } }], nmv);
+    await settle(); await settle();
+    t('対象アプリも家族も送らない時は取り直さずに送る', b.calls.getBulk === 0 && b.calls.post.length === 1);
+  }
+  {
+    /* 家族と対象アプリの両方を送る時も getBulk は1回。両方の文を出す */
+    const server = rows().map((r) => r.id === 902 ? Object.assign({}, r, { targetApps: ['weight'], family: [{ name: '見本 子', relation: '長男', phone: '000', address: '', emergency: false, kp: false, role: '' }] }) : r);
+    const b = makeGoBox(server);
+    b.bulkRows = rows();
+    b.saveBulkGo_([{ id: 902, name: '見本 乙', fields: { family: [], targetApps: ['schedule'] } }], nmv);
+    await settle(); await settle();
+    t('家族と一緒でも取り直しは1回・送らない', b.calls.getBulk === 1 && b.calls.post.length === 0);
+    t('家族と対象アプリの両方の文', /家族情報が変わった方がいます（1名）/.test(b.calls.alert[0] || '') && /対象アプリが変わった方がいます（1名）/.test(b.calls.alert[0] || ''), b.calls.alert);
+  }
+  process.stdout.write('\n合格 ' + ok + ' / 不合格 ' + ng + '\n');
+  process.exit(ng ? 1 : 0);
+})();

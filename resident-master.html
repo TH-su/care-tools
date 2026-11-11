@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-WXtttrXuGdEO9YpNsD35BFLia9dfJH3fVCJHbQOUH8g='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-e+a0Fz+qIPDxG0z5QdNLcVEj+G2V6/tHSf6ldu5qpLg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -15139,9 +15139,17 @@ function openNameWarn_(nmv,onOk){
    開いている間に他端末・他タブがその方に家族を足していると、それを消してしまう
    （savePartial は書く直前に行を読み直すが、family だけはその意味が消える）。
    送る直前に取り直し、対象の方の家族が開いた時と違っていたら【1文字も書かずに】人へ見せる
-   （氏名の refreshBulkNames_ と同じ作法・2026-09-07 レビュー H-2）。 */
-function bulkFamGuard_(famIds){
-  if(!famIds||!famIds.length) return Promise.resolve(null);
+   （氏名の refreshBulkNames_ と同じ作法・2026-09-07 レビュー H-2）。
+   ★対象アプリ（targetApps・2026-11-11）も3つ丸ごと置き換わるので同じ守りを通す（反証レビューの指摘）。
+     取り直しは家族と合わせて1回の getBulk。未設定（配列が無い）と設定済みは別のものとして比べる。 */
+function bulkAppsSame_(a,b){
+  var aa=Object.prototype.toString.call(a)==='[object Array]', ba=Object.prototype.toString.call(b)==='[object Array]';
+  if(!aa||!ba) return aa===ba;
+  return JSON.stringify(appsCmp_(a))===JSON.stringify(appsCmp_(b));
+}
+function bulkFamGuard_(famIds,appIds){
+  famIds=famIds||[]; appIds=appIds||[];
+  if(!famIds.length&&!appIds.length) return Promise.resolve(null);
   return apiGet({action:'getBulk'},30000).then(function(d){
     var rows=(d&&d.rows)||[];
     if(!rows.length) return null;              /* 取れなければ従来どおり進む（保存を止めない） */
@@ -15154,7 +15162,14 @@ function bulkFamGuard_(famIds){
       if(!sv||!mine) continue;
       if(JSON.stringify(famCmp_(sv.family))!==JSON.stringify(famCmp_(mine.family))) moved.push(id);
     }
-    return moved.length?{moved:moved, rows:rows}:null;
+    var appMoved=[];
+    for(i=0;i<appIds.length;i++){
+      var aid=appIds[i], asv=byId[aid], amine=null;
+      for(var aj=0;aj<bulkRows.length;aj++) if(String(bulkRows[aj].id)===aid){ amine=bulkRows[aj]; break; }
+      if(!asv||!amine) continue;
+      if(!bulkAppsSame_(asv.targetApps,amine.targetApps)) appMoved.push(aid);
+    }
+    return (moved.length||appMoved.length)?{moved:moved, appMoved:appMoved, rows:rows}:null;
   }).catch(function(){ return null; });        /* 通信できない時は止めない（現場を止めない） */
 }
 function saveBulkGo_(changes,nmv){
@@ -15163,24 +15178,37 @@ function saveBulkGo_(changes,nmv){
   if($('bulkClose')) $('bulkClose').disabled=true;
   /* ★終わったら全ての終端で「保存」と「閉じる」を両方戻す。閉じるが死ぬと、未保存の確認を挟むこのモーダルから出られなくなる */
   setSync('保存中…');
-  /* ★家族を含む保存だけ、送る直前に割り込みを確かめる（他は従来どおり素通し＝往復を増やさない） */
-  var famIds2=[]; for(var ci=0;ci<changes.length;ci++)
+  /* ★家族・対象アプリを含む保存だけ、送る直前に割り込みを確かめる（他は従来どおり素通し＝往復を増やさない） */
+  var famIds2=[], appIds2=[]; for(var ci=0;ci<changes.length;ci++){
     if(changes[ci].fields&&Object.prototype.hasOwnProperty.call(changes[ci].fields,'family'))
       famIds2.push(String(changes[ci].id));
-  bulkFamGuard_(famIds2).then(function(g){
+    if(changes[ci].fields&&Object.prototype.hasOwnProperty.call(changes[ci].fields,'targetApps'))
+      appIds2.push(String(changes[ci].id));
+  }
+  bulkFamGuard_(famIds2,appIds2).then(function(g){
   if(g){
     btn.disabled=false; if($('bulkClose')) $('bulkClose').disabled=false;
     setSync('中止しました','err');
-    /* 取り直した家族を表に反映して、人が見比べてから送り直せるようにする（未保存の変更は残す） */
+    /* 取り直した家族・対象アプリを表に反映して、人が見比べてから送り直せるようにする（未保存の変更は残す）。
+       対象アプリは未設定（配列が無い）なら控えからも消す＝「全部に表示」として見せる */
+    var gApps=g.appMoved||[];
     for(var gi=0;gi<g.rows.length;gi++){
       var sv=g.rows[gi]; if(!sv||sv.id==null) continue;
       for(var gj=0;gj<bulkRows.length;gj++)
-        if(String(bulkRows[gj].id)===String(sv.id)) bulkRows[gj].family=sv.family;
+        if(String(bulkRows[gj].id)===String(sv.id)){
+          if(g.moved.length) bulkRows[gj].family=sv.family;
+          if(gApps.length){
+            if(Object.prototype.toString.call(sv.targetApps)==='[object Array]') bulkRows[gj].targetApps=sv.targetApps.slice();
+            else delete bulkRows[gj].targetApps;
+          }
+        }
     }
     renderBulk();
     alert('保存を中止しました（1文字も書いていません）。\n\n'+
-      '表を開いてから、他の端末で家族情報が変わった方がいます（'+g.moved.length+'名）。\n'+
-      '家族は枠の内容で【丸ごと置き換わる】ので、このまま送ると相手の変更が消えます。\n\n'+
+      (g.moved.length?('表を開いてから、他の端末で家族情報が変わった方がいます（'+g.moved.length+'名）。\n'+
+        '家族は枠の内容で【丸ごと置き換わる】ので、このまま送ると相手の変更が消えます。\n\n'):'')+
+      (gApps.length?('表を開いてから、他の端末で対象アプリが変わった方がいます（'+gApps.length+'名）。\n'+
+        '対象アプリは3つの組み合わせで【丸ごと置き換わる】ので、このまま送ると相手の変更が消えます。\n\n'):'')+
       '最新の内容を表に反映しました。見比べてから、もう一度「保存」を押してください。');
     return;
   }
