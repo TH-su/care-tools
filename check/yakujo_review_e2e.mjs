@@ -150,6 +150,38 @@ try {
   t('画面の JS エラーなし（一覧）', r.errors.length === 0, r.errors);
   await r.ctx.close();
 
+  /* 3b. 入口の門（yjGate_）: ログインの確かめ（SUAuth.check）の答えで、管理者の時だけ「🔎 薬情の見直し」を出し、札の数を読む。
+     ほかの答え（事務所・2段階認証の前・ログインしていない・確かめられない）では出さず、全員分の記録も札の数も読まない。
+     ★確かめの答えだけを差し替え、門そのもの（yjGate_）は画面の本物を通す */
+  for (const [label, st, want] of [
+    ['管理者', { status: 'ok', role: 'admin', email: 'adm@example.invalid' }, true],
+    ['事務所', { status: 'ok', role: 'office', email: 'office@example.invalid' }, false],
+    ['2段階認証の前の管理者', { status: 'mfa_verify', role: 'admin', email: 'adm@example.invalid' }, false],
+    ['ログインしていない', { status: 'signed_out' }, false],
+    ['確かめられない', { status: 'error' }, false],
+  ]) {
+    r = await run({});
+    await r.p.evaluate((a) => {
+      window.SUAuth = Object.assign({}, window.SUAuth || {}, { STATUS: { OK: 'ok', SIGNED_OUT: 'signed_out', ERROR: 'error' }, check: function () { return Promise.resolve(a); } });
+      window.yjGate_();
+    }, st);
+    await r.p.waitForTimeout(800);
+    const shown = await r.p.evaluate(() => !document.getElementById('yrOpen').hidden);
+    const asked = r.sent.filter((b) => b.op === 'yjAudit');
+    t('★入口の門: ' + label + 'は「🔎 薬情の見直し」を' + (want ? '出し、札の数だけを読む（countOnly）' : '出さず、記録を読まない'),
+      shown === want && (want ? asked.length === 1 && asked[0].countOnly === true : asked.length === 0), { shown, asked: asked.map((b) => b.countOnly) });
+    await r.ctx.close();
+  }
+  /* 3c. 現場の端末では、管理者の答えでも門を開けない */
+  r = await run({ field: true, storage: { su_device_role: 'field' } });
+  await r.p.evaluate(() => {
+    window.SUAuth = Object.assign({}, window.SUAuth || {}, { STATUS: { OK: 'ok' }, check: function () { return Promise.resolve({ status: 'ok', role: 'admin', email: 'adm@example.invalid' }); } });
+    if (typeof window.yjGate_ === 'function') window.yjGate_();
+  });
+  await r.p.waitForTimeout(800);
+  t('★入口の門: 現場の端末では管理者でも出さず、記録を読まない', await r.p.evaluate(() => { const b = document.getElementById('yrOpen'); return !b || b.hidden; }) && r.sent.filter((b) => b.op === 'yjAudit').length === 0);
+  await r.ctx.close();
+
   /* 4. 現場の端末では出さない */
   r = await run({ field: true, storage: { su_device_role: 'field' } });
   const fieldSlot = await r.p.evaluate(() => typeof window.yrSlot_ === 'function' ? window.yrSlot_({ id: 'R01' }) : 'nofn');
