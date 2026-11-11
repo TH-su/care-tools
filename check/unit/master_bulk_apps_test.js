@@ -212,7 +212,7 @@ function makeGoBox(serverRows){
   vm.createContext(box);
   vm.runInContext([
     grabVar('APP_TARGETS'), grabFn('famCmp_'), grabFn('appsCmp_'), grabFn('bulkTruthy'), grabFn('bulkWho'),
-    grabFn('bulkAppsSame_'), grabFn('bulkFamGuard_'), grabFn('saveBulkGo_'),
+    grabFn('bulkAppsSame_'), grabFn('bulkFamGuard_'), grabFn('saveBulkGo_'), grabFn('bulkNamed'),
     'var bulkRows=null, bulkDirty={}, RM_SRV_OLD="";'
   ].join('\n'), box);
   return box;
@@ -284,6 +284,20 @@ const settle = () => new Promise((r) => setTimeout(r, 0));
     await settle(); await settle();
     t('家族と一緒でも取り直しは1回・送らない', b.calls.getBulk === 1 && b.calls.post.length === 0);
     t('家族と対象アプリの両方の文', /家族情報が変わった方がいます（1名）/.test(b.calls.alert[0] || '') && /対象アプリが変わった方がいます（1名）/.test(b.calls.alert[0] || ''), b.calls.alert);
+  }
+  group('古いサーバーに断られた時の補足の文（家族・薬剤）');
+  for (const [lbl, item, want, notWant] of [
+    ['家族情報で断られたら家族・薬剤の補足を出す', '家族情報', /家族情報と薬剤情報の一括編集は、まだ使えません/, /対象アプリの一括編集は、まだ使えません/],
+    ['薬剤情報（定期）で断られても同じ補足を出す', '薬剤情報（定期）', /家族情報と薬剤情報の一括編集は、まだ使えません/, null],
+    ['対象アプリで断られたら対象アプリの補足だけ', '対象アプリ', /対象アプリの一括編集は、まだ使えません/, /家族情報と薬剤情報の一括編集は、まだ使えません/],
+  ]) {
+    const b = makeGoBox(rows());
+    b.bulkRows = rows();
+    b.apiPostRaw = (body) => { b.calls.post.push(body); return Promise.resolve({ ok: false, error: '保存を中止しました（1文字も書いていません）', detail: ['No901: 「' + item + '」は一括編集できません'] }); };
+    b.saveBulkGo_([{ id: 901, name: '見本 甲', fields: { room: '101' } }], nmv);
+    await settle(); await settle(); await settle();
+    const a = b.calls.alert[0] || '';
+    t(lbl, b.calls.alert.length === 1 && want.test(a) && !(notWant && notWant.test(a)), b.calls.alert);
   }
   process.stdout.write('\n合格 ' + ok + ' / 不合格 ' + ng + '\n');
   process.exit(ng ? 1 : 0);
