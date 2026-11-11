@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-e+a0Fz+qIPDxG0z5QdNLcVEj+G2V6/tHSf6ldu5qpLg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-NNyQL72uo2db/u35Odc9dcWxRthZrA8zu6/LVoPiqoU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -12601,8 +12601,13 @@ function collectForm(){
      （GAS は dataJson を丸ごと置き換えるため）。現場タブレットの安全情報にも使われている値なので、
      消すと現場のフェイスシートから移動・服薬管理・問題行動が空になる。 */
   BF_LEGACY_KEYS.forEach(function(p){ if(editing[p[0]]!==undefined) rec[p[0]]=editing[p[0]]; });
-  rec.targetApps=[];
-  Array.prototype.forEach.call($('editBox').querySelectorAll('[data-target]'),function(inp){if(inp.checked)rec.targetApps.push(inp.getAttribute('data-target'))});
+  /* 対象アプリ。チェック欄が描かれている時だけ欄から集める。欄が無い時は開いた時の値をそのまま引き継ぐ
+     （空の配列で送ると名簿の対象アプリの列が空になり、「未設定＝全アプリに表示」に戻るため・2026-11-11） */
+  var tgEls=$('editBox').querySelectorAll('[data-target]');
+  if(tgEls.length){
+    rec.targetApps=[];
+    Array.prototype.forEach.call(tgEls,function(inp){if(inp.checked)rec.targetApps.push(inp.getAttribute('data-target'))});
+  }else if(Array.isArray(editing.targetApps))rec.targetApps=editing.targetApps.slice();
   /* 印刷しない欄（2026-08-17）。入力欄が描画されていない時は既存値を温存する
      （部分フォームでの全消し防止・dayUse / consents と同じ作法）。
      ★1つもチェックが無ければキー自体を持たせない＝「全部印刷する」に戻る。
@@ -12663,6 +12668,12 @@ function collectForm(){
 function saveResident(){
   var rec=collectForm();
   if(!rec.name){toast('⚠️ 氏名は必須です');return}
+  /* 対象アプリを3つ全部外した保存は止める（全部外すと名簿の対象アプリの列が空になり、すべてのアプリに表示される扱いに戻るため。
+     一括編集と同じ決まり・2026-11-11 本人指示） */
+  if(Array.isArray(rec.targetApps)&&!rec.targetApps.length){
+    alert('保存できません。対象アプリを3つ全部は外せません。\n\n全部外すと、すべてのアプリに表示される扱いに戻ります。少なくとも1つにチェックを入れてから、もう一度「保存」を押してください。');
+    return;
+  }
   if(!rmOn_()){toast('⚠️ 入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）');return}
   rec.updatedAt=new Date().toISOString();
   if(typeof rmWho_==='function'){ rec.updatedBy=rmWho_(); rec.updatedByAt=rec.updatedAt; }   /* 最後に直した人（GAS は dataJson に丸ごと残す） */
