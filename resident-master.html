@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-pjh9UyZEg7A+1Jb8bbWDkkYtNk+Mo4j5ptkMcCzc7E0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-8dot5YaMqHIBZQnaQqa8+ejnQuI1Xyt8JPiU3BR/hzg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -2040,7 +2040,7 @@ body.meal-on #sc-list{max-width:none}
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-devcfg.js?v=2026-11-08"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
-<script src="su-res-read.js?v=2026-11-08.4"></script>
+<script src="su-res-read.js?v=2026-11-11"></script>
 <script>
 /* 黙ると困る失敗（保存・同期の補助）を、画面には出さずに記録へ残す（2026-10-08・監査10月版 #8）。
    行き先は su-errors.js の note＝コンソールと記録先（同期ログ・不具合報告の控えと自動報告）。トーストは出さない。
@@ -12859,8 +12859,13 @@ function collectForm(){
      （GAS は dataJson を丸ごと置き換えるため）。現場タブレットの安全情報にも使われている値なので、
      消すと現場のフェイスシートから移動・服薬管理・問題行動が空になる。 */
   BF_LEGACY_KEYS.forEach(function(p){ if(editing[p[0]]!==undefined) rec[p[0]]=editing[p[0]]; });
-  rec.targetApps=[];
-  Array.prototype.forEach.call($('editBox').querySelectorAll('[data-target]'),function(inp){if(inp.checked)rec.targetApps.push(inp.getAttribute('data-target'))});
+  /* 対象アプリ。チェック欄が描かれている時だけ欄から集める。欄が無い時は開いた時の値をそのまま引き継ぐ
+     （空の配列で送ると名簿の対象アプリの列が空になり、「未設定＝全アプリに表示」に戻るため・2026-11-11） */
+  var tgEls=$('editBox').querySelectorAll('[data-target]');
+  if(tgEls.length){
+    rec.targetApps=[];
+    Array.prototype.forEach.call(tgEls,function(inp){if(inp.checked)rec.targetApps.push(inp.getAttribute('data-target'))});
+  }else if(Array.isArray(editing.targetApps))rec.targetApps=editing.targetApps.slice();
   /* 印刷しない欄（2026-08-17）。入力欄が描画されていない時は既存値を温存する
      （部分フォームでの全消し防止・dayUse / consents と同じ作法）。
      ★1つもチェックが無ければキー自体を持たせない＝「全部印刷する」に戻る。
@@ -12921,6 +12926,12 @@ function collectForm(){
 function saveResident(){
   var rec=collectForm();
   if(!rec.name){toast('⚠️ 氏名は必須です');return}
+  /* 対象アプリを3つ全部外した保存は止める（全部外すと名簿の対象アプリの列が空になり、すべてのアプリに表示される扱いに戻るため。
+     一括編集と同じ決まり・2026-11-11 本人指示） */
+  if(Array.isArray(rec.targetApps)&&!rec.targetApps.length){
+    alert('保存できません。対象アプリを3つ全部は外せません。\n\n全部外すと、すべてのアプリに表示される扱いに戻ります。少なくとも1つにチェックを入れてから、もう一度「保存」を押してください。');
+    return;
+  }
   if(!rmOn_()){toast('⚠️ 入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）');return}
   rec.updatedAt=new Date().toISOString();
   if(typeof rmWho_==='function'){ rec.updatedBy=rmWho_(); rec.updatedByAt=rec.updatedAt; }   /* 最後に直した人（GAS は dataJson に丸ごと残す） */
@@ -13023,6 +13034,12 @@ function famCmp_(v){
   }
   return out;
 }
+/* 対象アプリの配列を比べる形にそろえる（APP_TARGETS の順・知らない値と重複は落とす）。配列でなければ空 */
+function appsCmp_(v){
+  var a=(Object.prototype.toString.call(v)==='[object Array]')?v:[], out=[];
+  for(var j=0;j<APP_TARGETS.length;j++) if(a.indexOf(APP_TARGETS[j][0])>=0) out.push(APP_TARGETS[j][0]);
+  return out;
+}
 function verifyAppliedRows_(changes,rows){
   var byId={},i;
   for(i=0;i<(rows||[]).length;i++){ var r=rows[i]; if(r&&r.id!=null) byId[String(r.id)]=r; }
@@ -13037,6 +13054,12 @@ function verifyAppliedRows_(changes,rows){
          【入っていなくても「保存済み」と判定する】。中身で比べる（2026-09-07）。 */
       if(k==='family'){
         if(JSON.stringify(famCmp_(sv[k]))!==JSON.stringify(famCmp_(c.fields[k]))){ ok=false; break; }
+        continue;
+      }
+      /* ★対象アプリも配列。並びをそろえて中身で比べる。サーバーに無い（未設定）時は「3つ全部」とみなさず未保存に残す */
+      if(k==='targetApps'){
+        if(Object.prototype.toString.call(sv[k])!=='[object Array]'||
+           JSON.stringify(appsCmp_(sv[k]))!==JSON.stringify(appsCmp_(c.fields[k]))){ ok=false; break; }
         continue;
       }
       if(String(sv[k]==null?'':sv[k])!==String(c.fields[k]==null?'':c.fields[k])){ ok=false; break; } } }
@@ -14796,6 +14819,32 @@ function bulkFamKey(k){
   for(var j=0;j<BULK_FAM_ITEMS.length;j++) if(BULK_FAM_ITEMS[j][0]===m[2]) return {i:i, key:m[2]};
   return null;
 }
+/* 対象アプリの一括編集（2026-11-11）。サーバーが受けるのは targetApps の配列1つだけ（家族と同じ作法）。
+   画面は APP_TARGETS の3つをチェックの列に開き、送る時に配列1つへ組み直す。
+   ★未設定（targetApps が無い）の方は「全部に表示」なので3つともチェック済みで見せるだけ。触っていない方は送らない（既定を書き込まない）。 */
+var BULK_APP_COLS=APP_TARGETS.map(function(p){ return ['tgt_'+p[0], p[1], 'check']; });
+/* 'tgt_weight' → 'weight'。合わない文字列には null */
+function bulkAppKey(k){
+  var m=/^tgt_([a-z]+)$/.exec(String(k==null?'':k));
+  if(!m) return null;
+  for(var j=0;j<APP_TARGETS.length;j++) if(APP_TARGETS[j][0]===m[1]) return m[1];
+  return null;
+}
+/* サーバーから取った時の対象アプリ（配列）。無い・形が違う時は未設定＝全部 */
+function bulkAppsOrig_(r){
+  var t=(r&&Object.prototype.toString.call(r.targetApps)==='[object Array]')?r.targetApps:null;
+  return t?t.slice():defaultTargetApps();
+}
+/* 変更のあったチェックから、その方の対象アプリを APP_TARGETS の順で組み直す */
+function bulkAppsBuild(r, dirty){
+  var orig=bulkAppsOrig_(r), out=[];
+  for(var j=0;j<APP_TARGETS.length;j++){
+    var a=APP_TARGETS[j][0], dk='tgt_'+a;
+    var on=Object.prototype.hasOwnProperty.call(dirty,dk)?bulkTruthy(dirty[dk]):(orig.indexOf(a)>=0);
+    if(on) out.push(a);
+  }
+  return out;
+}
 var BULK_GROUPS=[
   ['basic','基本',[
     ['kana','ふりがな','text'],['gender','性別','select',['','女','男']],
@@ -14846,7 +14895,9 @@ var BULK_GROUPS=[
      実測（2026-09-07・在籍32名）: 0名1人・1名6人・2名14人・3名11人＝【最大3名】。
      ★4人目以降が居る方は、この画面の枠に出ない。保存の時も【触らずそのまま残す】
        （枠に無いものを消してしまうと、画面に一度も出なかった家族が黙って消える）。 */
-  ['family','家族',BULK_FAM_COLS]
+  ['family','家族',BULK_FAM_COLS],
+  /* ★対象アプリ（2026-11-11）。3つ全部は外せない（保存の前に止める・サーバーでも断る） */
+  ['apps','対象アプリ',BULK_APP_COLS]
 ];
 /* 直すと現場アプリ側の値まで置き換わる項目（data-contracts §5「マスタ非空常勝」）。保存前に必ず知らせる */
 var BULK_DOWNSTREAM={room:'居室',careLevel:'介護度',height:'身長',kana:'ふりがな',gender:'性別',
@@ -14881,6 +14932,9 @@ function bulkOrig_(r,k){
     if(!f) return (fk.key==='emergency'||fk.key==='kp')?false:'';
     return (f[fk.key]==null)?((fk.key==='emergency'||fk.key==='kp')?false:''):f[fk.key];
   }
+  /* 対象アプリのチェックも r[k] には無い。配列から引く（未設定は全部チェック済み） */
+  var ak=bulkAppKey(k);
+  if(ak) return bulkAppsOrig_(r).indexOf(ak)>=0;
   return (r&&r[k]==null)?'':(r?r[k]:'');
 }
 function bulkVal(r,k){
@@ -15220,7 +15274,7 @@ function saveBulk(){
       if(!Object.keys(d0).length) delete bulkDirty[id];
     }
   });
-  var changes=[], ids=Object.keys(bulkDirty), hitDown={}, famIds=[];
+  var changes=[], ids=Object.keys(bulkDirty), hitDown={}, famIds=[], appsNone=[];
   for(var i=0;i<ids.length;i++){
     var id=ids[i], f=bulkDirty[id], r=null;
     for(var j=0;j<bulkRows.length;j++) if(String(bulkRows[j].id)===String(id)){ r=bulkRows[j]; break; }
@@ -15229,20 +15283,40 @@ function saveBulk(){
     /* ★家族の枠（fam0_name 等）は、そのままでは送らない。サーバーが受けるのは family の
        配列1つだけ。枠を1つでも直していたら、その方の家族を組み立て直して差し替える。
        ★枠のキーは必ず取り除く（残すと「一括編集できません」でその方の保存が丸ごと落ちる）。 */
-    var famHit=false, snd={};
+    var famHit=false, appHit=false, snd={};
     for(k in f){
       if(!Object.prototype.hasOwnProperty.call(f,k)) continue;
       /* ★読めなかった行は家族を組み立て直さない（画面でも触れないが、二重の歯止め） */
       if(bulkFamKey(k)){ if(!r.familyBad) famHit=true; continue; }
+      /* ★対象アプリのチェック（tgt_*）もそのままでは送らない。targetApps の配列1つに組み直す */
+      if(bulkAppKey(k)){ appHit=true; continue; }
       snd[k]=f[k];
     }
     if(famHit){ snd.family=bulkFamBuild(r,f); famIds.push(String(r.id)); }
+    if(appHit){
+      var apps=bulkAppsBuild(r,f);
+      /* 開いた時と同じ組み合わせ（未設定の方は3つ全部）に戻っていれば送らない＝既定を書き込まない */
+      if(JSON.stringify(apps)!==JSON.stringify(appsCmp_(bulkAppsOrig_(r)))){
+        snd.targetApps=apps;
+        if(!apps.length) appsNone.push(bulkWho(r.id));
+      }
+    }
     if(!Object.keys(snd).length) continue;
     /* 氏名を一緒に送る。サーバーが照合して、開いてから別の方に変わっていたら中止する */
     changes.push({id:r.id,name:r.name,fields:snd});
   }
   /* ★trim で dirty が空になった時、ここで戻ると黄色いセルと「未保存 1名」が残る（L-1） */
   if(!changes.length){ paintBulkDirty(); if(bulkRows) renderBulk(); toast('変更がありません'); return; }
+  /* ★対象アプリを3つ全部外した方は送らない。J 列が空になると、読む側は「未設定＝全部に表示」と読み、全部に表示へ戻ってしまう
+     （サーバーでも断るが、ここで止めた方が氏名で示せる） */
+  if(appsNone.length){
+    alert('保存できません。対象アプリを3つ全部は外せません。\n\n'+appsNone.slice(0,10).join('\n')+
+      (appsNone.length>10?('\nほか '+(appsNone.length-10)+'名'):'')+
+      '\n\n全部外すと、すべてのアプリに表示される扱いに戻ります。少なくとも1つにチェックを入れてから、もう一度「保存」を押してください。');
+    return;
+  }
+  var appsHit=false;
+  for(var q1=0;q1<changes.length;q1++) if(Object.prototype.hasOwnProperty.call(changes[q1].fields,'targetApps')) appsHit=true;
   /* 退去日を入れても在籍は自動で変わらない。共有名簿には active===false の方の退去日しか
      載らないため、「入れたのに他アプリに出ない」になる。保存前に必ず知らせる */
   var leftOpen=[];
@@ -15276,6 +15350,7 @@ function saveBulk(){
       '　在籍状態は自動で変わりません。1人ずつの編集画面で「退去」に変えるまで、他アプリには退去日が伝わりません。\n\n'):'')+
     '直した項目だけが書き換わり、他の項目には触れません。\n'+
     (down?('\n⚠ '+down+' は週間計画・体重管理・排泄ケア記録にもそのまま伝わります。\n'):'')+
+    (appsHit?'\n⚠ 対象アプリ: チェックを外したアプリには、その方が表示されなくなります（記録は消えません）。\n':'')+
     '\nよろしいですか？';
   if(!confirm(msg)) return;
   /* ── 2段階目（2026-09-02 管理者の裁定＝案B）。文字そのものが変わる氏名だけ、もう一度確認する。
@@ -15335,9 +15410,17 @@ function openNameWarn_(nmv,onOk){
    開いている間に他端末・他タブがその方に家族を足していると、それを消してしまう
    （savePartial は書く直前に行を読み直すが、family だけはその意味が消える）。
    送る直前に取り直し、対象の方の家族が開いた時と違っていたら【1文字も書かずに】人へ見せる
-   （氏名の refreshBulkNames_ と同じ作法・2026-09-07 レビュー H-2）。 */
-function bulkFamGuard_(famIds){
-  if(!famIds||!famIds.length) return Promise.resolve(null);
+   （氏名の refreshBulkNames_ と同じ作法・2026-09-07 レビュー H-2）。
+   ★対象アプリ（targetApps・2026-11-11）も3つ丸ごと置き換わるので同じ守りを通す（反証レビューの指摘）。
+     取り直しは家族と合わせて1回の getBulk。未設定（配列が無い）と設定済みは別のものとして比べる。 */
+function bulkAppsSame_(a,b){
+  var aa=Object.prototype.toString.call(a)==='[object Array]', ba=Object.prototype.toString.call(b)==='[object Array]';
+  if(!aa||!ba) return aa===ba;
+  return JSON.stringify(appsCmp_(a))===JSON.stringify(appsCmp_(b));
+}
+function bulkFamGuard_(famIds,appIds){
+  famIds=famIds||[]; appIds=appIds||[];
+  if(!famIds.length&&!appIds.length) return Promise.resolve(null);
   return apiGet({action:'getBulk'},30000).then(function(d){
     var rows=(d&&d.rows)||[];
     if(!rows.length) return null;              /* 取れなければ従来どおり進む（保存を止めない） */
@@ -15350,7 +15433,14 @@ function bulkFamGuard_(famIds){
       if(!sv||!mine) continue;
       if(JSON.stringify(famCmp_(sv.family))!==JSON.stringify(famCmp_(mine.family))) moved.push(id);
     }
-    return moved.length?{moved:moved, rows:rows}:null;
+    var appMoved=[];
+    for(i=0;i<appIds.length;i++){
+      var aid=appIds[i], asv=byId[aid], amine=null;
+      for(var aj=0;aj<bulkRows.length;aj++) if(String(bulkRows[aj].id)===aid){ amine=bulkRows[aj]; break; }
+      if(!asv||!amine) continue;
+      if(!bulkAppsSame_(asv.targetApps,amine.targetApps)) appMoved.push(aid);
+    }
+    return (moved.length||appMoved.length)?{moved:moved, appMoved:appMoved, rows:rows}:null;
   }).catch(function(){ return null; });        /* 通信できない時は止めない（現場を止めない） */
 }
 function saveBulkGo_(changes,nmv){
@@ -15359,24 +15449,37 @@ function saveBulkGo_(changes,nmv){
   if($('bulkClose')) $('bulkClose').disabled=true;
   /* ★終わったら全ての終端で「保存」と「閉じる」を両方戻す。閉じるが死ぬと、未保存の確認を挟むこのモーダルから出られなくなる */
   setSync('保存中…');
-  /* ★家族を含む保存だけ、送る直前に割り込みを確かめる（他は従来どおり素通し＝往復を増やさない） */
-  var famIds2=[]; for(var ci=0;ci<changes.length;ci++)
+  /* ★家族・対象アプリを含む保存だけ、送る直前に割り込みを確かめる（他は従来どおり素通し＝往復を増やさない） */
+  var famIds2=[], appIds2=[]; for(var ci=0;ci<changes.length;ci++){
     if(changes[ci].fields&&Object.prototype.hasOwnProperty.call(changes[ci].fields,'family'))
       famIds2.push(String(changes[ci].id));
-  bulkFamGuard_(famIds2).then(function(g){
+    if(changes[ci].fields&&Object.prototype.hasOwnProperty.call(changes[ci].fields,'targetApps'))
+      appIds2.push(String(changes[ci].id));
+  }
+  bulkFamGuard_(famIds2,appIds2).then(function(g){
   if(g){
     btn.disabled=false; if($('bulkClose')) $('bulkClose').disabled=false;
     setSync('中止しました','err');
-    /* 取り直した家族を表に反映して、人が見比べてから送り直せるようにする（未保存の変更は残す） */
+    /* 取り直した家族・対象アプリを表に反映して、人が見比べてから送り直せるようにする（未保存の変更は残す）。
+       対象アプリは未設定（配列が無い）なら控えからも消す＝「全部に表示」として見せる */
+    var gApps=g.appMoved||[];
     for(var gi=0;gi<g.rows.length;gi++){
       var sv=g.rows[gi]; if(!sv||sv.id==null) continue;
       for(var gj=0;gj<bulkRows.length;gj++)
-        if(String(bulkRows[gj].id)===String(sv.id)) bulkRows[gj].family=sv.family;
+        if(String(bulkRows[gj].id)===String(sv.id)){
+          if(g.moved.length) bulkRows[gj].family=sv.family;
+          if(gApps.length){
+            if(Object.prototype.toString.call(sv.targetApps)==='[object Array]') bulkRows[gj].targetApps=sv.targetApps.slice();
+            else delete bulkRows[gj].targetApps;
+          }
+        }
     }
     renderBulk();
     alert('保存を中止しました（1文字も書いていません）。\n\n'+
-      '表を開いてから、他の端末で家族情報が変わった方がいます（'+g.moved.length+'名）。\n'+
-      '家族は枠の内容で【丸ごと置き換わる】ので、このまま送ると相手の変更が消えます。\n\n'+
+      (g.moved.length?('表を開いてから、他の端末で家族情報が変わった方がいます（'+g.moved.length+'名）。\n'+
+        '家族は枠の内容で【丸ごと置き換わる】ので、このまま送ると相手の変更が消えます。\n\n'):'')+
+      (gApps.length?('表を開いてから、他の端末で対象アプリが変わった方がいます（'+gApps.length+'名）。\n'+
+        '対象アプリは3つの組み合わせで【丸ごと置き換わる】ので、このまま送ると相手の変更が消えます。\n\n'):'')+
       '最新の内容を表に反映しました。見比べてから、もう一度「保存」を押してください。');
     return;
   }
@@ -15401,6 +15504,11 @@ function saveBulkGo_(changes,nmv){
         ? '\n\n※ 家族情報と薬剤情報の一括編集は、まだ使えません。データは1文字も変わっていません。'
           +'\n'+RM_SRV_OLD+'。'
         : '';
+      /* 対象アプリは 2026-11-11 に足した項目。古いGASのままだと「targetApps」の名前で弾かれる */
+      var hintApps=/「(対象アプリ|targetApps)」は一括編集できません/.test(det)
+        ? '\n\n※ 対象アプリの一括編集は、まだ使えません。データは1文字も変わっていません。'
+          +'\n'+RM_SRV_OLD+'。'
+        : '';
       var hint=((nmv.spaceOnly.length||nmv.keyChanged.length)&&/「name」は一括編集できません/.test(det))
         ? '\n\n※ 氏名の一括編集は、まだ使えません。氏名以外の項目は従来どおり保存できます。'
           +'\n'+RM_SRV_OLD+'。'
@@ -15412,7 +15520,7 @@ function saveBulkGo_(changes,nmv){
       var failHead=/確定できたか確かめられませんでした/.test(String((d&&d.error)||''))
         ? '保存できたか確かめられませんでした（書き込めている方もいます）。'
         : '保存できませんでした。1文字も書き込んでいません。';
-      alert(failHead+'\n\n'+((d&&d.error)||'原因不明')+det+hint);
+      alert(failHead+'\n\n'+((d&&d.error)||'原因不明')+det+hint+hintApps);
       /* ★「氏名が変わっています」＝サーバー側の氏名が動いた（他端末の編集、または
          直前の書き込みが B列まで通って dataJson で失敗した行）。この状態は照合が
          二度と通らず、表を閉じる以外に手が無かった＝【他の方の未保存も道連れ】になる。
