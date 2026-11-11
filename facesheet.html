@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ga2it6U3ae9Onp4Ew10wNtbbbNdZfy5I7zKvlomL9OY=' 'sha256-EV2oSRUlAJn4/0LeQtJ5EFFV7k1utAJIpzJlM0NPtSo=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ga2it6U3ae9Onp4Ew10wNtbbbNdZfy5I7zKvlomL9OY=' 'sha256-wEWKWow9hgVu/4kULiM210A7u0jAohHyokyPz/xZUgg=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
@@ -2736,6 +2736,8 @@ function a4EnsureDayMap(){
       if(!j||!j.ok||!j.data||!Array.isArray(j.data.residents)||!j.data.residents.length)
         throw new Error(String((j&&j.error)||'応答が不正です'));
       a4DayMap=a4BuildDayMap(j.data); a4DayFailAt=0; a4DayFailMsg='';
+      /* 画面ごとの後処理（入居者マスタは収支の見通しの報酬マスタを同じ応答から持つ・無い画面は何もしない・2026-11-11） */
+      if(typeof a4OnDayData_==='function') a4OnDayData_(j.data);
       return '';
     })
     .catch(function(e){ if(dg!==devGen) return ''; if(e&&e.message==='A4_NO_EP') return a4DayFail_('週間計画の接続先が未設定のため、デイ利用欄は「未確認」で印刷します'); return a4DayFail_('週間計画を取得できなかったため、デイ利用欄は「未確認」で印刷します'); })
