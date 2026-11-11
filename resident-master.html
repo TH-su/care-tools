@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-h60xbuHqWla0eGb2wJbiO2KLSL7IfQif0o1JhzyWOks='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-p7VvI/TovMdR7j4g1abOnmDCPE343MUryq9/JYuuXEk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -2140,8 +2140,8 @@ function rmEditedHtml_(r){
   if(by && byAt){
     /* ★対象は詳細画面の「保存」だけ。薬の変更候補の反映・一括編集・食形態一覧・訪問診療からの定期薬の更新は
        updatedAt だけを進める（直した人の印は触らない・2026-11-11 から一括編集・食形態一覧・定期薬も進める）ので、
-       ここには「その後…」として出る。入院・退院の切り替え（setState）・排泄記録GAS・医療支援経過への転記（setMedLog）・
-       支援経過の取り込み・介護度の履歴の初期作成は updatedAt を進めないので注記で断る（審査の指摘・言い切らない）。updatedAt の方が1秒以上新しい時だけ「その後…」を添える */
+       ここには「その後…」として出る。入院・退院の切り替え（setState）・排泄記録GAS・医療支援経過への転記（setMedLog）は
+       updatedAt を進めないので注記で断る（審査の指摘・言い切らない。支援経過の取り込み・介護度の履歴の初期作成も 2026-11-11 から進める）。updatedAt の方が1秒以上新しい時だけ「その後…」を添える */
     var t='詳細画面の「保存」で最後に直した人：'+esc(by)+'（'+esc(byAt)+'）';
     var a=new Date(r.updatedAt).getTime(), b=new Date(r.updatedByAt).getTime();
     if(at && isFinite(a) && isFinite(b) && a-b>=1000) t+='。その後 '+esc(at)+' に、薬の変更候補の反映・一括編集など別の経路で更新されています';
