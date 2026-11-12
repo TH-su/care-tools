@@ -30,11 +30,15 @@
 <link rel="stylesheet" href="app-access.css?v=2026-11-08">
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
+<!-- 見出しの「← メニュー」とログイン中の役割の札の見た目（画面だけ・印刷しない・2026-11-12） -->
+<link rel="stylesheet" href="su-shell.css?v=2026-11-12">
 </head>
 <body>
-<header class="hdr">
+<header class="hdr su-shell-hdr">
   <a class="back" href="login.html" aria-label="ログインの画面へ戻る">‹ 戻る</a>
+  <a class="back su-menu-back" href="index.html" aria-label="メニューへ戻る">← メニュー</a>
   <h1>アプリの使える人</h1>
+  <span class="su-shell-role" hidden></span>
 </header>
 <main class="aac">
   <div id="msg" class="msg" role="alert" aria-live="assertive"></div>
@@ -124,6 +128,7 @@
 <script src="su-menu.js?v=2026-11-10"></script>
 <script src="app-access.js?v=2026-11-11"></script>
 <script src="app-access-devices.js?v=2026-11-08"></script>
+<script src="su-shell.js?v=2026-11-12"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 <script src="su-report.js?v=2026-10-28" data-tool="アプリの使える人"></script>
 </body>
