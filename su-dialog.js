@@ -122,6 +122,7 @@
         try { var ev = window.event; if (ev && ev.type === 'keydown' && (ev.key === 'Escape' || ev.key === 'Esc')) ev.preventDefault(); } catch (err) { /* 何もしない */ }
         item.opening = true;
         setTimeout(function () { item.opening = false; }, 0);
+        installKeyGuard();
         dlg.showModal();
         try { parts.ok.focus(); } catch (e) { /* 何もしない */ }
       } catch (e) {
@@ -130,6 +131,30 @@
         return false;
       }
       return true;
+    }
+
+    /* 窓が出ている間に、入力の的が窓の外（文の上や暗い後ろを押した時の body など）にある時のキーは、画面へ渡さない。
+       ブラウザの窓では画面の処理が全部止まっていたので、画面のキー操作（Esc で窓を閉じる・Cmd+Z で取り消す・Cmd+S で保存する）は動かなかった。
+       Esc は今の窓のキャンセル（開いたのと同じ一続きの処理の中の Esc は受けない）、ほかのキーは何もしないで OK に入力の的を戻す（Enter で OK にはしない）（2026-11-13 反証レビューの指摘） */
+    var keyGuardOn = false;
+    function keyGuard(e) {
+      try {
+        var it = current;
+        if (!it || !it.parts) return;
+        var dlg = it.parts.dlg;
+        if (e.target && dlg.contains && dlg.contains(e.target)) return;
+        e.stopImmediatePropagation();
+        /* 窓の文をなぞって写す（Cmd+C・Ctrl+C）は止めない（画面へは渡さない） */
+        if ((e.metaKey || e.ctrlKey) && (e.key === 'c' || e.key === 'C')) return;
+        if (e.key === 'Tab') { e.preventDefault(); try { it.parts.ok.focus(); } catch (er) { /* 何もしない */ } return; }
+        e.preventDefault();
+        if ((e.key === 'Escape' || e.key === 'Esc') && !it.opening) { finish(it, false); return; }
+        try { it.parts.ok.focus(); } catch (er) { /* 何もしない */ }
+      } catch (err) { /* 何もしない */ }
+    }
+    function installKeyGuard() {
+      if (keyGuardOn) return;
+      try { window.addEventListener('keydown', keyGuard, true); keyGuardOn = true; } catch (e) { /* 何もしない */ }
     }
 
     function next() {
