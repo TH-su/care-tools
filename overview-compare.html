@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-FwD8nI4RxD0CSIT+iP837k8TeRR9yZ1t1P9k3VcDppI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-FwD8nI4RxD0CSIT+iP837k8TeRR9yZ1t1P9k3VcDppI=' 'sha256-pKy1pQG69/QniCj7jYGkUYQkrI6SfKZ27jzp3QZQDJI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -12,7 +12,7 @@
 <style>
 /* 訪問 週間俯瞰 と 全支援 週間俯瞰 を同一オリジンの iframe で左右に並べ、時刻・曜日・表示倍率を連動させる比較シェル。
    ★このシェル自身は氏名を一切描画せず、共有データ・GAS へ書き込まない（iframe のスクロール/倍率の読み書きのみ）。
-     端末に残すのは連動の入／切だけ（ocmp_sync・'1'／'0'・2026-10-22 代表者の決定 B・再読み込みで現在地を失わない決まり）。
+     端末に残すのは連動の入／切（ocmp_sync・'1'／'0'・2026-10-22 代表者の決定 B）と、幅700px以下で選んだタブ（ocmp_tab・'visit'／'support'・2026-11-13）だけ（再読み込みで現在地を失わない決まり）。
    既存2ツールのコードには非干渉（連動は各 iframe が公開する window.OVLINK を呼ぶだけ）。 */
 :root {
   --pri: #0b57d0; --pri-d: #0842a0; --orange: #b45309; --orange-l: #ffe0b2;
@@ -96,6 +96,35 @@ body {
 .su-menu-row{display:contents}
 @media screen and (max-width:899px){.su-menu-back{min-height:44px} .su-menu-row{display:block;flex:0 0 100%}}
 @media print{.su-menu-back{display:none !important}}
+
+/* 見出しの使い方の1行（全幅・画面だけ・印刷しない・代表者の指示 2026-11-13）。見出しは左が青・右が薄橙なので、白い地を持たせて読めるようにする */
+.hdr-usage { display: none; }
+@media screen {
+  .hdr-usage {
+    display: block; flex: 0 0 100%; margin: 0; padding: 3px 10px; border-radius: 6px;
+    background: #fff; color: var(--g9); font-size: 0.75rem; font-weight: 600; line-height: 1.5; text-shadow: none;
+  }
+}
+/* 幅700px以下は「訪問／全支援」のタブで片方ずつ全幅に見せる（代表者の指示 2026-11-13・画面だけ）。
+   隠す方は読み込み直さず、同じ場所に重ねて見えなくするだけ（display:none にすると中の幅が 0 になり、連動の倍率そろえが進まない） */
+.cmp-tabs { display: none; }
+@media screen and (max-width: 700px) {
+  .cmp-tabs { flex-shrink: 0; display: flex; gap: 6px; padding: 6px 8px; background: #fff; border-bottom: 1px solid var(--g3); }
+  .cmp-tab {
+    flex: 1 1 50%; min-height: 44px; border-radius: 6px; font: inherit; font-size: 0.9375rem; font-weight: 700; cursor: pointer;
+    background: #fff; color: var(--pri-d); box-shadow: inset 0 0 0 2px var(--pri-d); border: 0;
+  }
+  .cmp-tab[data-tab="support"] { color: var(--orange); box-shadow: inset 0 0 0 2px var(--orange); }
+  .cmp-tab[aria-selected="true"] { background: var(--pri-d); color: #fff; }
+  .cmp-tab[data-tab="support"][aria-selected="true"] { background: var(--orange); color: #fff; }
+  .cmp-tab:focus-visible { outline: 3px solid var(--g9); outline-offset: 2px; }
+  .panes { position: relative; }
+  .pane { position: absolute; top: 0; right: 0; bottom: 0; left: 0; }
+  .pane.left { border-bottom: none; }
+  .pane-tag { display: none; }   /* どちらを見ているかはタブで分かる */
+  .panes[data-tab="visit"] .pane.right,
+  .panes[data-tab="support"] .pane.left { visibility: hidden; }
+}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
@@ -112,6 +141,7 @@ body {
   <span class="hdr-note">印刷は各単独画面から →</span>
   <a class="link-single" href="visit-overview.html" aria-label="訪問 週間俯瞰を単独で開く">訪問だけ</a>
   <a class="link-single" href="support-overview.html" aria-label="全支援 週間俯瞰を単独で開く">全支援だけ</a>
+  <p class="hdr-usage" id="cmpUsage">訪問と全支援の週間の予定を並べて見比べる画面です。見るだけで、ここでは直せません。</p>
 </header>
 
 <p class="purpose" id="cmpPurpose">
@@ -119,9 +149,15 @@ body {
   <span class="purpose-legend" id="cmpLegend" aria-live="polite">連動中：縦に動かすと同じ時刻、横に動かすと同じ曜日、拡大・縮小すると同じ倍率に、もう片方がそろいます。</span>
 </p>
 
-<div class="panes">
-  <div class="pane left"><span class="pane-tag">訪問</span><iframe id="fVisit" title="訪問 週間俯瞰" src="visit-overview.html"></iframe></div>
-  <div class="pane right"><span class="pane-tag">全支援</span><iframe id="fSupport" title="全支援 週間俯瞰" src="support-overview.html"></iframe></div>
+<!-- 幅700px以下だけ出すタブ（701px以上は出さない・印刷しない） -->
+<div class="cmp-tabs" id="cmpTabs" role="tablist" aria-label="見る画面を選ぶ">
+  <button type="button" class="cmp-tab" id="tabVisit" data-tab="visit" role="tab" aria-selected="true" aria-controls="paneVisit" tabindex="0">訪問</button>
+  <button type="button" class="cmp-tab" id="tabSupport" data-tab="support" role="tab" aria-selected="false" aria-controls="paneSupport" tabindex="-1">全支援</button>
+</div>
+
+<div class="panes" id="cmpPanes" data-tab="visit">
+  <div class="pane left" id="paneVisit"><span class="pane-tag">訪問</span><iframe id="fVisit" title="訪問 週間俯瞰" src="visit-overview.html"></iframe></div>
+  <div class="pane right" id="paneSupport"><span class="pane-tag">全支援</span><iframe id="fSupport" title="全支援 週間俯瞰" src="support-overview.html"></iframe></div>
 </div>
 
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
@@ -313,6 +349,70 @@ body {
   syncOn.addEventListener('change', showLegend);
   showLegend();
   tick();
+})();
+</script>
+<script>
+'use strict';
+/* 幅700px以下のタブ（訪問／全支援）。選んだ方だけを見せ、もう片方は隠すだけで読み込み直さない（2026-11-13 代表者の指示）。
+   ★端末に残すのは選んだタブ（ocmp_tab・'visit'／'support'）だけ。それ以外の値は既定の「訪問」。氏名・業務データは残さない。
+   ★幅は JS で見ない。.panes の data-tab を書き換えるだけで、効くのは CSS の 700px 以下の中だけ（701px 以上・印刷は変わらない）。 */
+(function () {
+  var TAB_KEY = 'ocmp_tab';
+  var KNOWN = { visit: 'paneVisit', support: 'paneSupport' };
+  var panes = document.getElementById('cmpPanes');
+  var tabs = [document.getElementById('tabVisit'), document.getElementById('tabSupport')];
+  if (!panes || !tabs[0] || !tabs[1]) return;
+  function note(where, e) { try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('左右比較のタブ', e, 'ovcmp:' + where); } catch (_) {} }
+  function known(v) { return Object.prototype.hasOwnProperty.call(KNOWN, v); }
+
+  // タブを読み上げで「タブ」と分かるのは、タブが出ている 700px 以下の時だけにする（701px 以上は2画面とも見えている）
+  var mq = null;
+  try { mq = window.matchMedia ? window.matchMedia('screen and (max-width: 700px)') : null; } catch (eM) { note('mq', eM); }
+  function applyRoles() {
+    var narrow = !!(mq && mq.matches);
+    for (var id in KNOWN) {
+      if (!known(id)) continue;
+      var p = document.getElementById(KNOWN[id]); if (!p) continue;
+      if (narrow) { p.setAttribute('role', 'tabpanel'); p.setAttribute('aria-labelledby', id === 'visit' ? 'tabVisit' : 'tabSupport'); }
+      else { p.removeAttribute('role'); p.removeAttribute('aria-labelledby'); }
+    }
+  }
+
+  function select(v, focus) {
+    if (!known(v)) v = 'visit';
+    panes.setAttribute('data-tab', v);
+    for (var i = 0; i < tabs.length; i++) {
+      var on = tabs[i].getAttribute('data-tab') === v;
+      tabs[i].setAttribute('aria-selected', on ? 'true' : 'false');
+      tabs[i].tabIndex = on ? 0 : -1;
+      if (on && focus) tabs[i].focus();
+    }
+    return v;
+  }
+  function save(v) { try { localStorage.setItem(TAB_KEY, v); } catch (eW) { note('save', eW); } }
+
+  var saved = null;
+  try { saved = localStorage.getItem(TAB_KEY); } catch (eR) { note('load', eR); }
+  select(known(saved) ? saved : 'visit', false);
+
+  for (var i = 0; i < tabs.length; i++) {
+    tabs[i].addEventListener('click', function () { save(select(this.getAttribute('data-tab'), false)); });
+    tabs[i].addEventListener('keydown', function (ev) {
+      var k = ev.key, idx = tabs.indexOf(this), next = -1;
+      if (k === 'ArrowRight' || k === 'Right') next = (idx + 1) % tabs.length;
+      else if (k === 'ArrowLeft' || k === 'Left') next = (idx + tabs.length - 1) % tabs.length;
+      else if (k === 'Home') next = 0;
+      else if (k === 'End') next = tabs.length - 1;
+      if (next < 0) return;
+      ev.preventDefault();
+      save(select(tabs[next].getAttribute('data-tab'), true));
+    });
+  }
+  applyRoles();
+  if (mq) {
+    if (typeof mq.addEventListener === 'function') mq.addEventListener('change', applyRoles);
+    else if (typeof mq.addListener === 'function') mq.addListener(applyRoles);
+  }
 })();
 </script>
 <!-- 見出しの下の初回の案内の帯（2026-11-02 本人の決定）。×で閉じた端末では出さない。画面の動き・保存・印刷には触れない -->
