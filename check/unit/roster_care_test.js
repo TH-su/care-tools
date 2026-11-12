@@ -517,7 +517,7 @@ async function seed(s, roster, opts) {
       vm.createContext(box);
       vm.runInContext([/var CARE_CMP = [^\n]*\n/.exec(SC)[0], /var RMASTER_RE = [^\n]*\n/.exec(SC)[0], 'var CARE_LIST_MAX = 50;',
         grabIndented(SC, 'el'), grabIndented(SC, 'kpi'), grabIndented(SC, 'careCompare'), grabIndented(SC, 'rmasterTarget'),
-        grabIndented(SC, 'rmasterRoster'), grabIndented(SC, 'careNoTable'), 'async ' + grabIndented(SC, 'runCareCheck')].join('\n'), box);
+        grabIndented(SC, 'rmasterRoster'), grabIndented(SC, 'careNoTable'), /var JA_CHAR = [^\n]*\n/.exec(SC)[0], /var JA_WHY = \{[\s\S]*?\n  \};\n/.exec(SC)[0], grabIndented(SC, 'jaWhy'), 'async ' + grabIndented(SC, 'runCareCheck')].join('\n'), box);
       await box.runCareCheck();
       const text = x => (x.textContent || '') + (x.children || []).map(text).join('');
       return { els, posts, all: Object.values(els).map(text).join('|') };
