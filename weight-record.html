@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-AIhNl6NuaGpGBzKoABgPRTdX5MIjqJ56dbFubjy+hN0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-MAtlfneqiYsEdaZ72VA/A8WnnqNnLlEIPDofXiN2Va8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -111,7 +111,7 @@ body{font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic UI','Mei
 /* 現場端末（su_device_role==='field'）では管理用の入口を出さない（関数の入口でも止めている） */
 .wr-field .tnav button[data-go="cfg"],.wr-field #inMealEdit,.wr-field .in-meal-hd small{display:none !important}
 /* 現場端末で接続先が無い時の帯（記録がこの端末にしか残らないことを隠さない） */
-.wr-noapi{background:#fff3e0;color:#8a2c00;border-bottom:1px solid #ffb74d;padding:8px 16px;font-size:0.9375rem;font-weight:700;line-height:1.5}
+.wr-noapi{background:var(--up-l);color:#8a2c00;border-bottom:1px solid #ffb74d;padding:8px 16px;font-size:0.9375rem;font-weight:700;line-height:1.5}
 .wr-noapi[hidden]{display:none}
 /* 接続設定の画面へのリンクは現場端末では出さない（接続設定は現場では開けない） */
 .wr-field #apiCsLink,#apiCsLink[hidden]{display:none !important}
@@ -164,19 +164,19 @@ body{font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic UI','Mei
 .gr-menu button{min-height:44px;text-align:start;padding:8px 12px;border:none;background:none;font-size:0.9375rem;border-radius:8px;cursor:pointer;color:var(--g9)}
 .gr-menu button:hover,.gr-menu button:focus-visible{background:var(--pri-l)}
 /* 集計：注意・警告の月のセル（色だけに頼らず、▼▲と文字も付ける） */
-.gr-t tbody tr td.gr-al-w{background:#fff3e0}
+.gr-t tbody tr td.gr-al-w{background:var(--up-l)}
 .gr-t tbody tr td.gr-al-ng{background:#ffebee}
 .gr-al-mk{display:block;font-size:0.9375rem;font-weight:700;color:var(--g9)}
 /* 入力：編集中の帯の削除ボタン */
 #inEditBanner .eb-del{margin-left:auto}
 /* 低栄養リスク（厚労省の区切り・体重とBMIだけで判定）の札 */
 .rk{display:inline-block;margin-top:4px;padding:2px 8px;border-radius:10px;font-size:0.9375rem;font-weight:700;white-space:nowrap}
-.rk-mid{background:#fff3e0;color:#b23c00;border:1px solid #f9a825}
-.rk-high{background:#ffebee;color:#b71c1c;border:1px solid #ef5350}
+.rk-mid{background:var(--up-l);color:#b23c00;border:1px solid var(--warn-br)}
+.rk-high{background:#ffebee;color:#b71c1c;border:1px solid var(--ng-br)}
 .st-v.rk-v-high{color:#b71c1c}.st-v.rk-v-mid{color:#b23c00}
 /* 測り直し：まとめて入力の行の注意と、履歴の「測り直し済み」の印 */
-.bk-row.bk-recheck{background:#fff3e0 !important;box-shadow:inset 4px 0 0 #f9a825}
-.bk-rc{display:block;padding:2px 6px;border-radius:8px;background:#fff;border:1px solid #f9a825;color:#b23c00;font-weight:700;font-size:0.9375rem}
+.bk-row.bk-recheck{background:var(--up-l) !important;box-shadow:inset 4px 0 0 var(--warn-br)}
+.bk-rc{display:block;padding:2px 6px;border-radius:8px;background:#fff;border:1px solid var(--warn-br);color:#b23c00;font-weight:700;font-size:0.9375rem}
 .rc-badge{display:inline-block;margin-top:2px;padding:1px 6px;border-radius:8px;background:var(--g1);color:var(--g7);font-size:0.9375rem;font-weight:700}
 /* 一覧：今月まだ測っていない人 */
 .fc button .fc-n{margin-left:4px;font-weight:700}
@@ -222,7 +222,7 @@ textarea{resize:vertical;min-height:60px}
   transition:all .15s;line-height:1.3}
 .mf-b small{display:block;font-size:0.9375rem;font-weight:400;color:var(--g6);margin-top:2px}
 .mf-b.on{background:var(--pri-l);border-color:var(--pri);color:var(--pri-d)}
-.mf-b[data-g="s"].on{background:#fff3e0;border-color:#ef6c00;color:#bf360c}
+.mf-b[data-g="s"].on{background:var(--up-l);border-color:#ef6c00;color:#bf360c}
 
 /* submit */
 .btn-go{width:100%;padding:15px;background:var(--pri);color:#fff;border:none;
@@ -471,7 +471,7 @@ textarea{resize:vertical;min-height:60px}
 .wm-b.on small{color:var(--pri-d)}
 
 /* wheelchair calc display */
-.wc-calc{margin-top:10px;padding:12px;background:#e3f2fd;border:1px solid #64b5f6;border-radius:10px;text-align:center}
+.wc-calc{margin-top:10px;padding:12px;background:var(--dn-l);border:1px solid #64b5f6;border-radius:10px;text-align:center}
 .wc-calc .wc-eq{font-size:0.9375rem;color:var(--g7);margin-bottom:4px;font-variant-numeric:tabular-nums}
 .wc-calc .wc-net{font-size: 1.5rem;font-weight:700;color:var(--dn);font-variant-numeric:tabular-nums;letter-spacing:1px}
 .wc-calc .wc-net small{font-size:0.9375rem;font-weight:400;color:var(--g7);margin-left:4px}
@@ -521,7 +521,7 @@ textarea{resize:vertical;min-height:60px}
 .in-meal-tbl dt{color:var(--g6);font-size:0.9375rem;margin:0;padding:0}
 .in-meal-tbl dd{margin:0;padding:0;color:var(--g9);font-weight:700}
 .in-meal-tbl dd .sa-chip{margin-left:6px;font-size:0.9375rem;background:var(--pri-l);color:var(--pri-d);padding:1px 6px;border-radius:8px;font-weight:700;vertical-align:middle}
-.in-meal-tbl dd .tg-chip{display:inline-block;margin-right:4px;font-size:0.9375rem;background:#e8f5e9;color:#1b5e20;padding:1px 6px;border-radius:8px;font-weight:700}
+.in-meal-tbl dd .tg-chip{display:inline-block;margin-right:4px;font-size:0.9375rem;background:var(--ok-l);color:#1b5e20;padding:1px 6px;border-radius:8px;font-weight:700}
 .in-meal-tbl dd.empty{color:var(--g5);font-weight:400}
 /* staple amount (主食g) input */
 .sa-wrap{margin-top:10px;padding:12px 12px 10px;background:var(--g0);border:1px solid var(--g2);border-radius:10px}
@@ -567,7 +567,7 @@ textarea{resize:vertical;min-height:60px}
 .gr-t .gr-ind{display:inline-block;padding:2px 8px;border:1px solid #2e7d32;color:#1b5e20;
   background:#fff;border-radius:12px;font-size:0.9375rem;font-weight:700;cursor:pointer;
   font-family:inherit;transition:all .15s}
-.gr-t .gr-ind:hover{background:#e8f5e9}
+.gr-t .gr-ind:hover{background:var(--ok-l)}
 /* vertical stack for the two action buttons in name cell */
 .gr-t .gr-btns{display:flex;flex-direction:column;gap:3px;align-items:stretch;flex-shrink:0}
 .gr-t .gr-hl{background:#fff59d !important}
@@ -577,15 +577,15 @@ textarea{resize:vertical;min-height:60px}
 .gr-3y-block thead th.gr-hl{color:#000 !important}
 /* clickable cells */
 .gr-t td.gr-clk{cursor:pointer}
-.gr-t td.gr-clk:hover{background:#e3f2fd !important}
-.gr-t td.gr-nm.gr-clk:hover{background:#e3f2fd !important}
-.gr-t tr.ev td.gr-clk:hover{background:#e3f2fd !important}
+.gr-t td.gr-clk:hover{background:var(--dn-l) !important}
+.gr-t td.gr-nm.gr-clk:hover{background:var(--dn-l) !important}
+.gr-t tr.ev td.gr-clk:hover{background:var(--dn-l) !important}
 /* bulk input modal */
 .bk-wrap{border:1px solid var(--g2);border-radius:8px;max-height:calc(100vh - 360px);min-height:180px;overflow:auto;background:#fff}
 .bk-row{display:grid;grid-template-columns:1fr 92px 104px 76px 64px;gap:8px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--g1)}
 .bk-row:last-child{border-bottom:none}
-.bk-row.filled{background:#e8f5e9}
-.bk-row.existing{background:#fff3e0}
+.bk-row.filled{background:var(--ok-l)}
+.bk-row.existing{background:var(--up-l)}
 .bk-row .bk-nm{font-size:0.9375rem;font-weight:700;color:var(--g9);min-width:0;overflow-wrap:anywhere}
 .bk-row .bk-nm .bk-rm{font-size:0.9375rem;color:var(--g6);font-weight:400;margin-left:4px}
 .bk-row .bk-nm .bk-wc{display:inline-block;padding:0 6px;background:var(--pri-l);color:var(--pri-d);border-radius:8px;font-size:0.9375rem;font-weight:700;margin-left:4px;vertical-align:middle}
@@ -657,13 +657,13 @@ body.wr-sync-busy :is(#inSave,#inEditDelete,[data-iex-del],#bulkSave,.bk-save,#m
   font-family:ui-monospace,Menlo,Consolas,monospace}
 /* URL 保存済み ステータス表示（永続化されている事を視覚的に明示） */
 .api-persist-badge{display:inline-block;margin-left:8px;padding:2px 9px;font-size:0.9375rem;font-weight:700;
-  background:#e8f5e9;color:#1b5e20;border:1px solid #66bb6a;border-radius:10px;vertical-align:middle;
+  background:var(--ok-l);color:#1b5e20;border:1px solid #66bb6a;border-radius:10px;vertical-align:middle;
   letter-spacing:.5px}
 .api-persist-badge.is-partial{background:#fff8e1;color:#e65100;border-color:#ffb74d}
 .api-persist-detail{margin-top:6px;padding:6px 10px;font-size:0.9375rem;line-height:1.55;
   background:#f1f8e9;border:1px solid #c5e1a5;border-radius:6px;color:#33691e;
   font-family:ui-monospace,Menlo,Consolas,monospace}
-.api-persist-detail.is-partial{background:#fff3e0;border-color:#ffb74d;color:#e65100}
+.api-persist-detail.is-partial{background:var(--up-l);border-color:#ffb74d;color:#e65100}
 
 /* 生年月日 三分割入力 + 和暦ヘルパー */
 .bd-trio{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
@@ -712,7 +712,7 @@ body.wr-sync-busy :is(#inSave,#inEditDelete,[data-iex-del],#bulkSave,.bk-save,#m
 .wc-log-empty{margin-top:6px;font-size:0.9375rem;color:var(--g7)}
 
 /* 退去者表示 */
-.md-discharge-banner{margin:8px 12px 0;padding:8px 12px;background:#fff3e0;border:1px solid #ffb74d;
+.md-discharge-banner{margin:8px 12px 0;padding:8px 12px;background:var(--up-l);border:1px solid #ffb74d;
   border-radius:8px;color:#e65100;font-size:0.9375rem;font-weight:700;display:flex;align-items:center;gap:8px}
 .md-discharge-banner .dc-ic{font-size: 1rem}
 .md-discharge-banner .dc-msg{flex:1}
@@ -724,7 +724,7 @@ body.wr-sync-busy :is(#inSave,#inEditDelete,[data-iex-del],#bulkSave,.bk-save,#m
 .rli.rli-discharged{opacity:.62;background:#fafafa}
 .rli.rli-discharged .rli-n{color:var(--g7)}
 .rli .rli-tag-discharged{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:8px;
-  font-size:0.9375rem;font-weight:700;background:#fff3e0;color:#e65100;vertical-align:middle}
+  font-size:0.9375rem;font-weight:700;background:var(--up-l);color:#e65100;vertical-align:middle}
 .rli-section-divider{margin:12px 0 6px;padding:6px 10px;border-top:1px dashed var(--g3);
   font-size:0.9375rem;font-weight:700;color:var(--g6);background:transparent}
 
@@ -1196,7 +1196,7 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
       <button id="openBulkInput" class="bn bp" style="margin-left:auto;background:var(--pri);color:#fff;border-color:var(--pri);padding:7px 14px;font-weight:700" title="全入居者の体重をまとめて入力">＋ 一括入力</button>
     </div>
     <div style="font-size:0.9375rem;color:var(--g6);margin-bottom:8px">
-      セルは「体重(kg) <small>(前月比)</small>」（前月の記録が無い時は前回の記録との差）。<b style="color:#d32f2f">+増加</b>は赤／<b style="color:#1565c0">−減少</b>は青。氏名横の <span style="padding:1px 6px;background:var(--pri-l);color:var(--pri-d);border-radius:8px;font-weight:700">車椅子 Xkg</span> は計測時の車椅子重量。<br>
+      セルは「体重(kg) <small>(前月比)</small>」（前月の記録が無い時は前回の記録との差）。<b style="color:#d32f2f">+増加</b>は赤／<b style="color:var(--dn)">−減少</b>は青。氏名横の <span style="padding:1px 6px;background:var(--pri-l);color:var(--pri-d);border-radius:8px;font-weight:700">車椅子 Xkg</span> は計測時の車椅子重量。<br>
       <b>氏名セル</b>…入力・個別のグラフ・3年分の表を選ぶ／<b>体重セル</b>…その記録を編集（空白は新規入力）／<b>▼▲注意・警告</b>…その月の前月比・3ヶ月比・6ヶ月比で注意か警告
     </div>
     <div class="gr-wrap">
@@ -1252,7 +1252,7 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
     </div>
     <div class="mk-body">
       <div id="gr3yBlocks" class="gr-3y-blocks"></div>
-      <div style="font-size:0.9375rem;color:var(--g6);margin-top:8px">セル：体重(kg) <small>(前月比。前月の記録が無い時は前回の記録との差)</small>　／　<b style="color:#d32f2f">+増加</b>は赤・<b style="color:#1565c0">−減少</b>は青　／　直近12ヶ月を最下段に表示</div>
+      <div style="font-size:0.9375rem;color:var(--g6);margin-top:8px">セル：体重(kg) <small>(前月比。前月の記録が無い時は前回の記録との差)</small>　／　<b style="color:#d32f2f">+増加</b>は赤・<b style="color:var(--dn)">−減少</b>は青　／　直近12ヶ月を最下段に表示</div>
     </div>
   </div>
 </div>
@@ -4263,17 +4263,17 @@ function openPrintSheet(){
           <th rowspan="2">№</th>
           <th rowspan="2">部屋</th>
           <th rowspan="2">氏名</th>
-          <th colspan="3" style="background:#fff3e0">前月（${ymFmt(prevYm)}）</th>
-          <th colspan="3" style="background:#e3f2fd">今月（${ymFmt(targetYm)}）測定値 ✏️</th>
+          <th colspan="3" style="background:var(--up-l)">前月（${ymFmt(prevYm)}）</th>
+          <th colspan="3" style="background:var(--dn-l)">今月（${ymFmt(targetYm)}）測定値 ✏️</th>
           <th rowspan="2">備考</th>
         </tr>
         <tr>
-          <th style="background:#fff3e0">実測<br><small>(kg)</small></th>
-          <th style="background:#fff3e0">車椅子<br><small>(kg)</small></th>
-          <th style="background:#fff3e0">差引<br><small>(kg)</small></th>
-          <th style="background:#e3f2fd">実測<br><small>(kg)</small></th>
-          <th style="background:#e3f2fd">車椅子<br><small>(kg)</small></th>
-          <th style="background:#e3f2fd">差引<br><small>(kg)</small></th>
+          <th style="background:var(--up-l)">実測<br><small>(kg)</small></th>
+          <th style="background:var(--up-l)">車椅子<br><small>(kg)</small></th>
+          <th style="background:var(--up-l)">差引<br><small>(kg)</small></th>
+          <th style="background:var(--dn-l)">実測<br><small>(kg)</small></th>
+          <th style="background:var(--dn-l)">車椅子<br><small>(kg)</small></th>
+          <th style="background:var(--dn-l)">差引<br><small>(kg)</small></th>
         </tr>
       </thead>
       <tbody>
@@ -5478,7 +5478,7 @@ function updateWeightHint(){
   const resident = rid ? residentById(rid) : null;
   const bmi = bmiOf(w, resident?.heightCm);
   const bmiPart = bmi!=null
-    ? `<span class="bmi-b" style="background:#e3f2fd;color:var(--dn)">BMI ${bmi.toFixed(1)} <small style="font-weight:400">(${bmiCat(bmi).l})</small></span>`
+    ? `<span class="bmi-b" style="background:var(--dn-l);color:var(--dn)">BMI ${bmi.toFixed(1)} <small style="font-weight:400">(${bmiCat(bmi).l})</small></span>`
     : (w && rid && !resident?.heightCm ? `<span style="color:var(--g5);font-size:0.9375rem">（BMI算出には設定で身長登録が必要）</span>` : '');
   if(!rid || !ym || !w){ hint.innerHTML = bmiPart; return; }
   // Use the most recent INDIVIDUAL measurement (day-level) so daily/weekly
