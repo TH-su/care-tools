@@ -38,6 +38,8 @@ function runSave(targetApps){
     collectForm: () => ({ name: '架空 一郎', targetApps }),
     toast: () => {},
     alert: (m) => { log.alert.push(String(m)); },
+    /* 2026-11-13: 確かめ・知らせは画面の中の窓（su-dialog.js）になり、答えを約束（Promise）で返す。記録と答え方は今までどおり */
+    SUDialog: { alert: (m) => { log.alert.push(String(m)); return Promise.resolve(); } },
     rmOn_: () => { log.reachedConn = true; return false; },   // 接続先なしで止めて、通信には進ませない
   };
   vm.createContext(ctx);

@@ -202,6 +202,8 @@ console.log('\n— D. 写し返しの流れ（砂場） —');
       $, me: { role: o.role || 'admin', status: 'ok' }, SUAuth: { STATUS: { OK: 'ok' }, client: () => sb }, FILL_BATCH: 8, Promise, Error,
       gasTarget: () => ({ url: 'u', token: 't' }),
       confirm: (q) => { asks.push(q); return o.confirm !== false; },
+      /* 確かめは画面の中の窓（SUDialog.confirm・2026-11-13）で聞く。偽物は上の confirm と同じ記録・同じ答え（約束で返す） */
+      window: { SUDialog: { confirm: async (q) => { asks.push(q); return o.confirm !== false; } } },
       gasPostRetry: (tgt, body) => {
         if (body.action === 'pull') { const e = {}; body.keys.forEach(k => { if (gasEnts[k]) e[k] = gasEnts[k]; }); return Promise.resolve({ ok: true, entries: e }); }
         pushes.push(body);

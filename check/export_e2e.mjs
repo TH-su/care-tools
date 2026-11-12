@@ -140,6 +140,17 @@ async function openPage({ role = 'office', mfa = true, dialog = 'accept', denyAl
   page.on('pageerror', (e) => state.errors.push(String(e.message).slice(0, 160)));
   page.on('request', (r) => { if (r.method() === 'POST') state.posts.push(String(r.postData() || '')); });
   page.on('dialog', (d) => { state.dialogs.push(d.message()); (dialog === 'accept' ? d.accept() : d.dismiss()).catch(() => {}); });
+  /* 2026-11-13: 使える人の管理の確かめは画面の中の窓（su-dialog.js）になった（655f82b）。出た窓の文を同じ dialogs に記録し、同じ答え（OK／キャンセル）を押す（確かめる中身は同じ） */
+  await page.exposeFunction('__sudSeen', (m) => { state.dialogs.push(m); });
+  await page.addInitScript((accept) => {
+    new MutationObserver(() => {
+      const g = document.querySelector('dialog.sud-dlg[open]');
+      if (!g || g.__seen) return;
+      g.__seen = true;
+      window.__sudSeen((g.querySelector('.sud-msg') || {}).textContent || '');
+      setTimeout(() => { const b = g.querySelector(accept ? '.sud-btn.pri' : '.sud-btn:not(.pri)'); if (b) b.click(); }, 0);
+    }).observe(document, { subtree: true, childList: true, attributes: true });
+  }, dialog === 'accept');
   await page.goto(srv.url + '/accounts.html', { waitUntil: 'load' });
   return { context, page, state };
 }

@@ -70,6 +70,8 @@ async function sandbox(o) {
     famOf: k => (k === 'care_schedule_v2' ? 'care' : k === 'ws_weekly_master_v1' ? 'ws_master' : /^wsday_/.test(k) ? 'wsday' : 'shift'),
     gasPostRetry: (tgt, body) => { gasPuts.push(body); if (body.action === 'put') o.gas[body.key] = body.data; return Promise.resolve({ ok: true }); },
     confirm: () => o.confirm !== false,
+    /* 確かめは画面の中の窓（SUDialog.confirm・2026-11-13）で聞く。偽物は上の confirm と同じ答え（約束で返す） */
+    window: { SUDialog: { confirm: async () => o.confirm !== false } },
     me: o.me === undefined ? { role: 'admin', status: 'ok' } : o.me,
     mcToday: () => '2026-10-16'
   });
