@@ -233,13 +233,14 @@
 
   /* 「法定」の印（2026-11-13 代表者の指示・消防設備・エレベーター・受水槽など）。新しい列は作らず「増やした項目」で持つ:
      付け先が設備・種類が選択肢・「使わない」でない項目のどれかで「法定」（LEGAL_VALUE）を選んでいる設備だけを法定とする。
-     ほかの値（「任意」など）・文字の項目に書いた「法定」・使わないにした項目の値は数えない */
+     選択肢に「法定」が残っている項目だけを見る。ほかの値（「任意」など）・文字の項目に書いた「法定」・使わないにした項目の値は数えない */
   function isLegalAsset(asset, fields) {
     if (!isObj(asset) || !isObj(asset.extra)) return false;
     var fl = Array.isArray(fields) ? fields : [];
     for (var i = 0; i < fl.length; i++) {
       var f = fl[i];
       if (!isObj(f) || f.id == null || f.target !== 'asset' || f.ftype !== 'select' || f.disabled) continue;
+      if (!Array.isArray(f.options) || f.options.indexOf(LEGAL_VALUE) < 0) continue;   // 選択肢から「法定」を外した項目は数えない（設定の画面 hasLegalField_ と同じ判定・反証レビューの指摘）
       if (asset.extra[String(f.id)] === LEGAL_VALUE) return true;
     }
     return false;

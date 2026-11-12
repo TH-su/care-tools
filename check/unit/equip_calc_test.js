@@ -269,6 +269,9 @@ group('メニューの札の件数と「法定」の印（2026-11-13 代表者�
     C.isLegalAsset({ extra: { fl: '任意' } }, F) === false && C.isLegalAsset({ extra: { ft: '法定' } }, F) === false
     && C.isLegalAsset({ extra: { fo: '法定' } }, F) === false && C.isLegalAsset({ extra: { fe: '法定' } }, F) === false
     && C.isLegalAsset({ extra: {} }, F) === false && C.isLegalAsset({}, F) === false && C.isLegalAsset(null, F) === false && C.isLegalAsset({ extra: { fl: '法定' } }, null) === false);
+  t('法定: 選択肢から「法定」を外した項目に前の値が残っていても法定にしない（設定の画面の判定とそろえる）',
+    C.isLegalAsset({ extra: { fx: '法定' } }, [{ id: 'fx', target: 'asset', name: '法定点検', ftype: 'select', options: ['任意'], disabled: false }]) === false
+    && C.isLegalAsset({ extra: { fx: '法定' } }, [{ id: 'fx', target: 'asset', name: '法定点検', ftype: 'select', disabled: false }]) === false);
   const A = [
     { id: 'a1', status: 'active', next_due: '2026-11-01', extra: { fl: '法定' } },          // 期限切れ・法定
     { id: 'a2', status: 'active', next_due: '2026-11-12', extra: { fl: '任意' } },          // 期限切れ（法定でない）
