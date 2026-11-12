@@ -121,12 +121,21 @@
     $('b-enroll').disabled = false;
   }
 
-  async function revoke(r, btn) {
+  function isLogin(st) { return st === 'active' || st === 'lapsed'; }
+  async function revoke(r, btn, again) {
     var name = (r.deviceLabel ? r.deviceLabel + '（' : '') + (r.label || r.email) + (r.deviceLabel ? '）' : '');
-    var q = (r.state === 'active' || r.state === 'lapsed')
+    var q = isLogin(r.state)
       ? name + ' の端末のログインを取り消しますか？\n\nその端末はその場で何も見られなくなります。使い続けるには、もう一度 QR を読むか Google でログインします。'
       : name + ' 用に出した QR を取り消しますか？';
-    if (!confirm(q)) return;
+    if (!(await window.SUDialog.confirm(q))) return;
+    /* 画面の中の窓は答えを待つ間も画面が動く。窓の間にその QR が端末で読まれると、聞いた文（QR を取り消す）と効き目（端末のログインを取り消す）がずれる。
+       答えの後に今の一覧で確かめ直し、ログインかどうかが変わっていれば今の状態の文で聞き直す（1回だけ）。行が無くなっていれば何も送らない（2026-11-13 反証レビューの指摘・仮置き） */
+    if (!again) {
+      var now = null;
+      try { var rows = await reload(); for (var i = 0; i < rows.length; i++) if (rows[i].id === r.id) now = rows[i]; } catch (e) { now = r; }
+      if (!now) return;
+      if (isLogin(now.state) !== isLogin(r.state)) return revoke(now, btn, true);
+    }
     btn.disabled = true;
     try {
       await rpc('device_enroll_revoke', { p_id: r.id });
@@ -219,7 +228,7 @@
     if (!email) { note('取り消すアカウントを選んでください。'); $('en-acct').focus(); return; }
     var opt = $('en-acct').selectedOptions[0];
     var name = opt ? opt.textContent.replace(/ … まだログインしていない$/, '') : email;
-    if (!confirm(name + ' で登録した端末と、まだ使われていない QR を全部取り消しますか？\n\nその端末はその場で何も見られなくなります。')) return;
+    if (!(await window.SUDialog.confirm(name + ' で登録した端末と、まだ使われていない QR を全部取り消しますか？\n\nその端末はその場で何も見られなくなります。'))) return;
     var btn = $('b-enroll-revoke-all');
     btn.disabled = true;
     try {
