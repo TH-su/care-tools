@@ -77,6 +77,8 @@ function page(opt) {
     $: id => els[id] || null,
     confirm: m => { log.confirms.push(m); return log.answers.length ? log.answers.shift() : false; },
     alert: m => { log.alerts.push(m); },
+    /* 2026-11-12: 確かめと知らせは画面の中の窓（su-dialog.js）になり、答えを約束（Promise）で返す。記録と答えは上の confirm・alert と同じ */
+    SUDialog: { confirm: m => Promise.resolve(ctx.confirm(m)), alert: m => { ctx.alert(m); return Promise.resolve(); } },
     setTimeout: (fn, ms) => { const h = { fn, ms, live: true }; log.timers.push(h); return h; },
     clearTimeout: h => { if (h) { h.live = false; log.cleared++; } },
     render: () => { log.renders++; }, showProperties() {}, setMode() {}, fitStageSize() {}, updateModeStatus() {},
@@ -97,8 +99,8 @@ function page(opt) {
     cutF('isFieldDevice'), cutF('makeEmptyDoc'), cutF('hasAnyContent'), cutF('nowISO'), cutF('parseTs'), cutF('fmtTsLabel'), cutF('listDocs'),
     cutLine('const LS_DRAFT = '), cutLine('const DRAFT_DELAY_MS = '), cutLine('let unsavedBase = '), cutLine('let draftTimer = '),
     cutF('docPrint'), cutF('viewNow'), cutF('hasUnsavedChanges'), cutF('clearDraft'), cutF('markClean'), cutF('writeDraftNow'),
-    cutF('scheduleDraft'), cutF('readDraft'), cutF('offerDraftRestore'), cutF('onDocListChange'), cutF('onBeforeUnload'),
-    cutF('saveDoc', 'async '), cutF('loadDoc', 'async '), cutF('newDoc'), cutF('deleteCurrentDoc', 'async '),
+    cutF('scheduleDraft'), cutF('readDraft'), cutF('offerDraftRestore', 'async '), cutF('onDocListChange', 'async '), cutF('onBeforeUnload'),
+    cutF('saveDoc', 'async '), cutF('loadDoc', 'async '), cutF('newDoc', 'async '), cutF('deleteCurrentDoc', 'async '),
     // 一覧の選択から呼ばれた読込を記録する（本物の loadDoc は api.realLoad で呼ぶ）
     'const realLoad = loadDoc; loadDoc = function (n, op) { __log.loads.push(n); return realLoad(n, op); };',
     'this.api = { docPrint, hasUnsavedChanges, markClean, writeDraftNow, scheduleDraft, readDraft, offerDraftRestore, onDocListChange,',
@@ -230,10 +232,10 @@ function page(opt) {
     const P = page({ answers: [false, true] });
     P.api.markClean();
     P.draw('A1'); P.api.writeDraftNow();
-    P.api.newDoc();
+    await P.api.newDoc();
     t('新規: 今の確認の文言のまま', P.log.confirms[0] === '現在の内容を破棄して新規作成しますか？\n（保存していない変更は失われます）', P.log.confirms);
     t('新規でキャンセル: 図も下書きもそのまま', P.state.doc.nodes[0].id === 'A1' && !!P.draft());
-    P.api.newDoc();
+    await P.api.newDoc();
     t('新規で破棄を選んだら空の図・下書きを消す・変更なし', P.state.doc.nodes.length === 0 && P.draft() === null && P.api.hasUnsavedChanges() === false);
   }
   {
@@ -265,38 +267,38 @@ function page(opt) {
   const draftOf = (o) => JSON.stringify(Object.assign({ v: 1, clientName: N1, loadedFrom: N1, at: '2026-10-17T09:05:00.000+09:00', doc: docOf('draft') }, o || {}));
   {
     const P = page();
-    t('下書きが無ければ確かめない', P.api.offerDraftRestore() === false && P.log.confirms.length === 0);
+    t('下書きが無ければ確かめない', (await P.api.offerDraftRestore()) === false && P.log.confirms.length === 0);
   }
   for (const [label, raw] of [['JSON でない', '{壊れ'], ['v が違う', draftOf({ v: 2 })], ['doc が無い', draftOf({ doc: null })],
     ['nodes が配列でない', draftOf({ doc: { nodes: {}, lines: [], frames: [], texts: [] } })], ['texts が無い', draftOf({ doc: { nodes: [], lines: [], frames: [] } })],
     ['clientName が文字でない', draftOf({ clientName: 3 })], ['null', 'null']]) {
     const P = page({ store: { [DRAFT]: raw } });
-    t('壊れた下書き（' + label + '）は黙って消す', P.api.offerDraftRestore() === false && P.log.confirms.length === 0 && P.draft() === null);
+    t('壊れた下書き（' + label + '）は黙って消す', (await P.api.offerDraftRestore()) === false && P.log.confirms.length === 0 && P.draft() === null);
   }
   {
     const P = page({ store: { [DRAFT]: draftOf({ doc: docOf('same') }) } });
     P.saveLocal(N1, 'same');
-    t('保存済みの同じ名前の図と中身が同じなら黙って消す', P.api.offerDraftRestore() === false && P.log.confirms.length === 0 && P.draft() === null);
+    t('保存済みの同じ名前の図と中身が同じなら黙って消す', (await P.api.offerDraftRestore()) === false && P.log.confirms.length === 0 && P.draft() === null);
   }
   {
     const P = page({ store: { [DRAFT]: draftOf() }, answers: [false] });
     P.saveLocal(N1, 'saved');
-    const r = P.api.offerDraftRestore('別の方');
+    const r = await P.api.offerDraftRestore('別の方');
     t('★別の方を開きに来た時（?resident=）は、その方の下書きでなければ尋ねず、下書きを残す（反証レビュー 中1）', r === false && P.log.confirms.length === 0 && !!P.draft(), P.log.confirms);
-    const r2 = P.api.offerDraftRestore(' ' + N1 + ' ');
+    const r2 = await P.api.offerDraftRestore(' ' + N1 + ' ');
     t('同じ方（空白の違いは同じとみなす）なら尋ねる', P.log.confirms.length === 1 && r2 === false && P.draft() === null, P.log.confirms);
   }
   {
     const P = page({ store: { [DRAFT]: draftOf() }, answers: [false] });
     P.saveLocal(N1, 'saved');
-    const r = P.api.offerDraftRestore();
+    const r = await P.api.offerDraftRestore();
     t('中身が違えば確かめる（利用者名・時刻）', P.log.confirms.length === 1 && P.log.confirms[0].indexOf('保存していない編集が残っています（' + N1 + '・') === 0 && /。戻しますか？\n（キャンセルすると、この下書きは消えます）$/.test(P.log.confirms[0]) && /\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(P.log.confirms[0]), P.log.confirms);
     t('戻さないなら下書きを消し、図は変えない', r === false && P.draft() === null && P.state.doc.nodes[0].id === 'x0');
   }
   {
     const P = page({ store: { [DRAFT]: draftOf() }, answers: [true] });
     P.saveLocal(N1, 'saved');
-    const r = P.api.offerDraftRestore();
+    const r = await P.api.offerDraftRestore();
     t('戻すなら下書きの中身を開く（名前・出発点も）', r === true && P.state.doc.nodes[0].id === 'draft' && P.state.clientName === N1 && P.els.clientName.value === N1 && P.api.loaded() === N1);
     t('戻した後は変更ありのまま・下書きは残る', P.api.hasUnsavedChanges() === true && !!P.draft());
     await P.api.saveDoc();
@@ -304,7 +306,7 @@ function page(opt) {
   }
   {
     const P = page({ store: { [DRAFT]: draftOf({ clientName: '', loadedFrom: '' }) }, answers: [true] });
-    const r = P.api.offerDraftRestore();
+    const r = await P.api.offerDraftRestore();
     t('名前の無い新規の下書きも確かめて戻せる', r === true && P.log.confirms[0].indexOf('（利用者名なし・') > 0 && P.api.hasUnsavedChanges() === true, P.log.confirms);
   }
 
@@ -313,7 +315,7 @@ function page(opt) {
     const P = page({ field: true, store: { [DRAFT]: draftOf() }, answers: [true, true] });
     P.api.markClean();
     t('前提 現場の端末でも下書きには触れない（起動・控え直しで消さない）', !!P.draft());
-    t('起動時に確かめない・下書きもそのまま', P.api.offerDraftRestore() === false && P.log.confirms.length === 0 && !!P.draft());
+    t('起動時に確かめない・下書きもそのまま', (await P.api.offerDraftRestore()) === false && P.log.confirms.length === 0 && !!P.draft());
     P.draw('F1');
     t('変更ありと判定しない', P.api.hasUnsavedChanges() === false);
     P.api.scheduleDraft(); P.api.writeDraftNow();
