@@ -53,12 +53,15 @@
 <link rel="stylesheet" href="su-auth.css?v=2026-09-26">
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
+<!-- 見出しの右のログイン中の役割の札の見た目（画面だけ・印刷しない・2026-11-12） -->
+<link rel="stylesheet" href="su-shell.css?v=2026-11-12">
 <link rel="stylesheet" href="su-cutover-gate.css?v=2026-11-03.4">
 </head>
 <body>
-<header class="hdr">
+<header class="hdr su-shell-hdr">
   <a class="back" href="index.html" aria-label="メニューへ戻る">‹ メニュー</a>
   <h1>写しの見比べ</h1>
+  <span class="su-shell-role" hidden></span>
 </header>
 
 <main class="wide">
@@ -359,6 +362,7 @@
 <script src="su-doc-full.js?v=2026-11-05.2"></script>
 <script src="su-cutover-gate.js?v=2026-11-07"></script>
 <script src="shadow-check.js?v=2026-11-13"></script>
+<script src="su-shell.js?v=2026-11-12.2"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 </body>
 </html>
