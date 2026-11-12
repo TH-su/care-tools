@@ -38,6 +38,9 @@
       return kind === 'confirm' ? false : undefined;
     }
 
+    /* 経過時間は端末の時計の戻り（時刻合わせ）に左右されない performance.now で測る。無い時は Date.now（反証レビューの指摘） */
+    function nowMs() { try { if (window.performance && typeof performance.now === 'function') return performance.now(); } catch (e) { /* 何もしない */ } return Date.now(); }
+
     function css(el, o) { try { for (var k in o) el.style[k] = o[k]; } catch (e) { /* 何もしない */ } }
 
     function build(item) {
@@ -101,7 +104,7 @@
       try {
         /* 窓を開いた押下の続き（素早い二度押しの2回目が、画面の中央に出た OK・キャンセルに重なる）で答えないようにする。
            マウス・指の押下（e.detail が1以上）だけを、開いてから少しの間は受けない。Enter・Space（e.detail が0）は今までどおり（2026-11-13 実測の指摘・仮置き 350ms） */
-        function tooSoon(e) { try { return !!e && e.detail > 0 && (Date.now() - (item.openedAt || 0)) < 350; } catch (err) { return false; } }
+        function tooSoon(e) { try { return !!e && e.detail > 0 && (nowMs() - (item.openedAt || 0)) < 350; } catch (err) { return false; } }
         parts.ok.addEventListener('click', function (e) { if (tooSoon(e)) return; finish(item, true); });
         if (parts.cancel) parts.cancel.addEventListener('click', function (e) { if (tooSoon(e)) return; finish(item, false); });
         /* Esc（ブラウザが cancel を出す）と、ほかの理由で閉じた時はキャンセル扱い */
@@ -126,7 +129,7 @@
            答えを待った後の続き（2つ目の確かめ）など、出来事の外で開いた時は window.event が空なので、Esc で開いたとは扱わない */
         var escOpen = false;
         try { var ev = window.event; escOpen = !!ev && ev.type === 'keydown' && (ev.key === 'Escape' || ev.key === 'Esc'); if (escOpen) ev.preventDefault(); } catch (err) { /* 何もしない */ }
-        item.openedAt = Date.now();
+        item.openedAt = nowMs();
         if (escOpen) { item.opening = true; setTimeout(function () { item.opening = false; }, 0); }
         installKeyGuard();
         dlg.showModal();
