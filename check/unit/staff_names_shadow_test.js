@@ -14,7 +14,9 @@ const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..', '..');
 const SRC = fs.readFileSync(path.join(ROOT, 'su-staff-names.js'), 'utf8');
-const SM = fs.readFileSync(path.join(ROOT, 'staff-master.html'), 'utf8');
+/* 職員マスタの画面のスクリプトは 2026-11-12 に staff-master.js へ移した。読み込みの札をその中身に戻し、移す前と同じ文字で確かめる */
+const stfmPage_ = (h) => h.replace(/<script src="staff-master\.js\?v=[^"]*"><\/script>/, () => '<script>\n' + fs.readFileSync(path.join(__dirname, '..', '..', 'staff-master.js'), 'utf8') + '</script>');
+const SM = stfmPage_(fs.readFileSync(path.join(ROOT, 'staff-master.html'), 'utf8'));
 
 let pass = 0, fail = 0;
 function t(label, ok, detail) {

@@ -21,6 +21,8 @@ const path = require('path');
 const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..', '..');
+/* 職員マスタの画面のスクリプトは 2026-11-12 に staff-master.js へ移した。読み込みの札をその中身に戻し、移す前と同じ文字で確かめる */
+const stfmPage_ = (h) => h.replace(/<script src="staff-master\.js\?v=[^"]*"><\/script>/, () => '<script>\n' + fs.readFileSync(path.join(__dirname, '..', '..', 'staff-master.js'), 'utf8') + '</script>');
 const SRC = {
   master: fs.readFileSync(path.join(ROOT, 'resident-master.html'), 'utf8'),
   face: fs.readFileSync(path.join(ROOT, 'facesheet.html'), 'utf8'),
@@ -342,8 +344,9 @@ function touchesGenoKey(src){
 ].forEach(([s, want]) => eq('判定: ' + s, touchesGenoKey(s), want));
 
 const allHtml = fs.readdirSync(ROOT).filter(f => /\.html$/.test(f));
-const mentions = allHtml.filter(f => fs.readFileSync(path.join(ROOT, f), 'utf8').indexOf('su_genograms') >= 0);
-const readers = mentions.filter(f => touchesGenoKey(fs.readFileSync(path.join(ROOT, f), 'utf8')));
+const readPage_ = (f) => f === 'staff-master.html' ? stfmPage_(fs.readFileSync(path.join(ROOT, f), 'utf8')) : fs.readFileSync(path.join(ROOT, f), 'utf8');
+const mentions = allHtml.filter(f => readPage_(f).indexOf('su_genograms') >= 0);
+const readers = mentions.filter(f => touchesGenoKey(readPage_(f)));
 process.stdout.write('  （テーマ直下の *.html を ' + allHtml.length + '件 走査・名前が出るのは ' + mentions.length + '件'
   + (mentions.length > readers.length ? '＝比較・説明だけ: ' + mentions.filter(f => readers.indexOf(f) < 0).join(', ') : '') + '）\n');
 eq('su_genograms に触るのは3ファイルだけ', readers.sort(),
