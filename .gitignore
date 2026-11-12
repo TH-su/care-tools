@@ -31,6 +31,8 @@
 !/.github/workflows/unit-tests.yml
 # 業務の流れを通す試験（2026-11-02・PR ごとと毎晩。check/flow_e2e.mjs）
 !/.github/workflows/flow-check.yml
+# 画面ごとの商用の点を毎晩出す（2026-11-12・知らせであって門ではない。check/score.mjs）
+!/.github/workflows/score.yml
 # 画面の指摘の Issue に配置図の絵を付ける（2026-10-04・提案3）
 !/.github/workflows/report-image.yml
 !/.github/workflows/pages.yml
@@ -66,6 +68,9 @@
 !/check/build-yakka-yj.py
 # 押してから描き変わるまでの遅れを架空データで測る道具（2026-10-27）
 !/check/tap-latency.mjs
+# 画面ごとの商用の点を出す物差し（2026-11-12・代表者の決定 案1）。score-calc.mjs は採点の純関数、score.mjs は入口
+!/check/score-calc.mjs
+!/check/score.mjs
 # 体重管理の推移図：点の詳しい情報がグラフの外を押すと閉じるか（2026-11-04・iPhone の押し方を再現）
 !/check/weight_tooltip_outside_e2e.mjs
 # 画面・共通部品の純関数の試験（2026-10-08・CI の「試験」で回す）。*.js は試験、run-all.mjs は全部を回す道具
