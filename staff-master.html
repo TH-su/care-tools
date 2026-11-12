@@ -1518,6 +1518,8 @@ body.cmt-print{page:cmt}
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-11-12"></script>
+<!-- 止めて知らせる窓（alert・confirm）の代わりに画面の中の窓を出す共通部品（2026-11-12 代表者の決定）。画面のスクリプトより前に置く -->
+<script src="su-dialog.js?v=2026-11-12"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
 <script src="su-stf.js?v=2026-11-08"></script>
 <script src="su-doc-live.js?v=2026-11-05.2"></script>
@@ -1530,7 +1532,7 @@ body.cmt-print{page:cmt}
 <script src="staff-master-calc.js?v=2026-11-06.2"></script>
 <!-- 職員の氏名の写し（不具合報告の伏せ字の名簿・2026-10-14）。事務所・管理者でログインしている時だけ書く。失敗しても画面は変わらない -->
 <script src="su-staff-names.js?v=2026-10-28"></script>
-<script src="staff-master.js?v=2026-11-12"></script>
+<script src="staff-master.js?v=2026-11-12.2"></script>
 <!-- インターネットにつながっていない時の帯（2026-11-12 商用化の見直し・画面だけ・通信と保存には触れない） -->
 <script src="su-net.js?v=2026-11-12.2"></script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
