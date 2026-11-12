@@ -14,6 +14,8 @@ const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..', '..');
 const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
+/* 職員マスタの画面のスクリプトは 2026-11-12 に staff-master.js へ移した。読み込みの札をその中身に戻し、移す前と同じ文字で確かめる */
+const stfmPage_ = (h) => h.replace(/<script src="staff-master\.js\?v=[^"]*"><\/script>/, () => '<script>\n' + fs.readFileSync(path.join(__dirname, '..', '..', 'staff-master.js'), 'utf8') + '</script>');
 
 let pass = 0, fail = 0;
 function t(name, ok, info) {
@@ -88,7 +90,7 @@ const Q = '保存していない変更があります。メニューへ移ると
   t('入居者マスタ: beforeunload は印が立っていれば聞かない', /window\.addEventListener\('beforeunload',function\(e\)\{\n  if\(rmMenuLeaveOk_\) return;/.test(s), '');
 }
 { // 職員マスタ
-  const s = read('staff-master.html');
+  const s = stfmPage_(read('staff-master.html'));
   const i = s.indexOf("document.addEventListener('click', function (e) {\n    var a = e.target && e.target.closest ? e.target.closest('a.su-menu-back')");
   const on = i >= 0 ? s.slice(i, i + block(s, i).length + 2) : '';
   t('職員マスタ: 受け口がある・既存の判定（hasUnsaved）を呼ぶ', !!on && /hasUnsaved\(\)/.test(on), '');

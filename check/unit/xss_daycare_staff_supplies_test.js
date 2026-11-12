@@ -30,7 +30,9 @@ const vm = require('vm');
 const ROOT = path.join(__dirname, '..', '..');
 const rd = (env, name) => fs.readFileSync(process.env[env] || path.join(ROOT, name), 'utf8');
 const DC = rd('DAYCARE_HTML', 'daycare-roster.html');
-const SM = rd('STAFF_HTML', 'staff-master.html');
+/* 職員マスタの画面のスクリプトは 2026-11-12 に staff-master.js へ移した。読み込みの札をその中身に戻し、移す前と同じ文字で確かめる */
+const stfmPage_ = (h) => h.replace(/<script src="staff-master\.js\?v=[^"]*"><\/script>/, () => '<script>\n' + fs.readFileSync(path.join(__dirname, '..', '..', 'staff-master.js'), 'utf8') + '</script>');
+const SM = process.env.STAFF_HTML ? rd('STAFF_HTML', 'staff-master.html') : stfmPage_(rd('STAFF_HTML', 'staff-master.html'));
 const SMC = rd('STAFF_CALC_JS', 'staff-master-calc.js');
 const SP = rd('SUPPLIES_HTML', 'supplies.html');
 const SPC = rd('SUPPLIES_CALC_JS', 'supplies-calc.js');

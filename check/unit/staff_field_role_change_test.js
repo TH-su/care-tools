@@ -10,7 +10,9 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const SRC = fs.readFileSync(process.env.STFM_HTML || path.join(__dirname, '..', '..', 'staff-master.html'), 'utf8');
+/* 職員マスタの画面のスクリプトは 2026-11-12 に staff-master.js へ移した。読み込みの札をその中身に戻し、移す前と同じ文字で確かめる */
+const stfmPage_ = (h) => h.replace(/<script src="staff-master\.js\?v=[^"]*"><\/script>/, () => '<script>\n' + fs.readFileSync(path.join(__dirname, '..', '..', 'staff-master.js'), 'utf8') + '</script>');
+const SRC = process.env.STFM_HTML ? fs.readFileSync(process.env.STFM_HTML, 'utf8') : stfmPage_(fs.readFileSync(path.join(__dirname, '..', '..', 'staff-master.html'), 'utf8'));
 let pass = 0, fail = 0;
 function t(name, ok, info) {
   if (ok) { pass++; console.log('  ✓ ' + name); }

@@ -207,7 +207,9 @@ const BODY = () => ({ action: 'bulkSave', token: 'tok-staff', accessToken: 'h.p.
   }
   console.log('L 画面の分け方（静的な確かめ）');
   {
-    const PAGE = fs.readFileSync(path.join(__dirname, '..', '..', 'staff-master.html'), 'utf8');
+    /* 職員マスタの画面のスクリプトは 2026-11-12 に staff-master.js へ移した。読み込みの札をその中身に戻し、移す前と同じ文字で確かめる */
+    const stfmPage_ = (h) => h.replace(/<script src="staff-master\.js\?v=[^"]*"><\/script>/, () => '<script>\n' + fs.readFileSync(path.join(__dirname, '..', '..', 'staff-master.js'), 'utf8') + '</script>');
+    const PAGE = stfmPage_(fs.readFileSync(path.join(__dirname, '..', '..', 'staff-master.html'), 'utf8'));
     const ATS = fs.readFileSync(path.join(__dirname, '..', '..', 'ats.html'), 'utf8');
     t('L 職員マスタ: 部品の版は2画面でそろう', /su-stf\.js\?v=2026-11-08"/.test(PAGE) && /su-stf\.js\?v=2026-11-08"/.test(ATS));
     t('L 職員マスタ: 接続先・合言葉が無くても ST.live の時だけ受け口へ送る（それ以外は今までと同じ断り）',

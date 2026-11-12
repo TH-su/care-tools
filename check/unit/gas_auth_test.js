@@ -14,9 +14,12 @@ const path = require('path');
 const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..', '..');
+/* 職員マスタの画面のスクリプトは 2026-11-12 に staff-master.js へ移した。読み込みの札をその中身に戻し、移す前と同じ文字で確かめる */
+const stfmPage_ = (h) => h.replace(/<script src="staff-master\.js\?v=[^"]*"><\/script>/, () => '<script>\n' + fs.readFileSync(path.join(__dirname, '..', '..', 'staff-master.js'), 'utf8') + '</script>');
 const SRC = fs.readFileSync(process.env.GAS_AUTH_JS || path.join(ROOT, 'su-gas-auth.js'), 'utf8');
 /* MUT_FILE・MUT_PATH: 変異の検査の時だけ、そのファイルを差し替えて読む */
-const read = (f) => fs.readFileSync(process.env.MUT_FILE === f && process.env.MUT_PATH ? process.env.MUT_PATH : path.join(ROOT, f), 'utf8');
+const read0_ = (f) => fs.readFileSync(process.env.MUT_FILE === f && process.env.MUT_PATH ? process.env.MUT_PATH : path.join(ROOT, f), 'utf8');
+const read = (f) => f === 'staff-master.html' && !(process.env.MUT_FILE === f && process.env.MUT_PATH) ? stfmPage_(read0_(f)) : read0_(f);
 let ok = 0, ng = 0;
 let finished = false;
 /* 約束が解決しないまま node が抜けた時（待ちが効かない版など）も失敗にする */
