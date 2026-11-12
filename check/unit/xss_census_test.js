@@ -432,7 +432,7 @@ const CENSUS = {
     [F, "if(b) b.innerHTML=''"],
     [F, "$('viewBox').innerHTML='<div class=\"loading\">読み込み中…</div>'"],
     [F, "$('viewBox').innerHTML='<div class=\"empty\">同期設定のURLが未設定です</div>'"],
-    [E, "$('viewBox').innerHTML='<div class=\"empty\">取得に失敗しました: '+esc(e.message)+ (e&&e.gone?'':'<div style=\"margin-top:12px\"><button class=\"btn btn-sec\" id=\"viewRetry\" type=\"button\">🔄 もう一度読み込む</button></div>'+ '<div style=\"margin-top:8px;font-size:0.8125rem;color:var(--g6)\">混み合う時間帯は、どなたかの保存が終わるまで数十秒かかることがあります。</div>')+ '</div>'"],
+    [E, "$('viewBox').innerHTML='<div class=\"empty\">取得に失敗しました: '+esc(e&&e.gone?String(e.message||''):rmErrWords_(e,'この方の取得'))+ (e&&e.gone?'':'<div style=\"margin-top:12px\"><button class=\"btn btn-sec\" id=\"viewRetry\" type=\"button\">🔄 もう一度読み込む</button></div>'+ '<div style=\"margin-top:8px;font-size:0.8125rem;color:var(--g6)\">混み合う時間帯は、どなたかの保存が終わるまで数十秒かかることがあります。</div>')+ '</div>'"],
     [E, "if(c.getAttribute('data-meds-id')===key) c.innerHTML=medsRegularCell(curResident.medsRegular)"],
     [F, "box.innerHTML='<div class=\"sheet\"><div class=\"sec\"><div class=\"sec-lbl\">薬剤情報</div><div class=\"sec-body\"><div class=\"row-cells\">'+ '<div class=\"cell\" style=\"flex:65\" data-two></div>'+ '<div class=\"cell\" style=\"flex:35;border-right:none\"></div>'+ '</div></div></div></div>'"],
     [E, "cellTwo.innerHTML=medsRegularCell(raw, map||null)"],
@@ -480,7 +480,7 @@ const CENSUS = {
     [F, "if(b)b.innerHTML=''"],
     [F, "$('bulkScroll').innerHTML='<div class=\"loading\">読み込み中…</div>'"],
     [F, "$('bulkScroll').innerHTML='<div class=\"empty\">対象の方がいません</div>'"],
-    [E, "$('bulkScroll').innerHTML='<div class=\"empty\">取得に失敗しました: '+esc(e.message)+'</div>'"],
+    [E, "$('bulkScroll').innerHTML='<div class=\"empty\">取得に失敗しました: '+esc(rmErrWords_(e,'一括編集の読み込み'))+'</div>'"],
     [N, "$('bulkTabs').innerHTML=BULK_GROUPS.map(function(g){ return '<button class=\"chip'+(g[0]===bulkGroup?' on':'')+'\" type=\"button\" data-bg=\"'+esc(g[0])+'\">'+esc(g[1])+'</button>'; }).join('')"],
     [E, "$('bulkScroll').innerHTML=h"],
     [E, "$('nameWarnBody').innerHTML= '<p>次の <b>'+nmv.keyChanged.length+'名</b> の氏名を、スペースではなく<b>文字そのもの</b>を変えます。</p>'+ '<div class=\"nw-names\">'+names+'</div>'+ (nmv.dup.length?('<p class=\"nw-danger\"><b>⚠️ 直した後に同姓同名になります: '+esc(nmv.dup.join('・'))+'</b><br>'+ '同姓同名の方は、家族構成図や体重の最新値が同じ方のものとして扱われます。</p>'):'')+ '<p class=\"nw-danger\"><b>① デイ利用日が、紙の上で誤って読まれることがあります（いちばん重い）</b><br>'+ 'A4様式・詳細画面の印刷・フェイスシートで「▲ 未確認」になります。'+ '<b>週間計画側の記録が利用者Noで紐づいていない方は「未確認」ではなく【空欄】</b>になり、'+ '紙の上で「デイ利用なし」と読まれます。この様式は救急搬送先や処方と同じ紙で'+ '<b>外部（居宅・病院）へ渡ります</b>。<br>'+ '→ <b>印刷の前に、週間計画アプリでも同じ氏名に直してください。</b></p>'+ '<p>スペースの調整と違い、文字が変わると次のことも起きます（<b>エラーは出ません。「無い」ように見えるだけです</b>）。</p>'+ '<ol>'+ '<li><b>排泄ケア記録のマスタ連携が止まります。</b>以後この方をマスタで入院・退去にしても届かず、'+ '居室・ふりがな・介護度も更新されません。<b>自然には戻りません</b>'+ '（排泄ケア記録で氏名を揃えるか「表記ゆれ確認済み」にすると戻ります）</li>'+ '<li><b>家族構成図</b>が「未作成」になります（図そのものは消えていません。'+ 'ジェノグラムで新しい氏名で保存し直すと戻ります）</li>'+ '<li><b>支援経過の取込</b>が見送られます（元のスプレッドシートの氏名も直してください）</li>'+ '<li><b>申送ビューア</b>で居室が出ず、五十音の並びが変わります</li>'+ '<li><b>体重の最新値</b>が古い値に戻ります（体重管理アプリ側が利用者Noで紐づいていない方だけ）</li>'+ '</ol>'+ '<p class=\"muted\">週間計画・ワークスケジュールの表示は自動では変わりません（旧表記のまま残ります）。'+ '週間計画側に利用者Noで紐づいていない行があると、予定ゼロの行が新しく作られることがあります。</p>'"]

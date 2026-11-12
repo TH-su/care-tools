@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-7VflpnVCraaMyWF0igIUQdR1xxohd6tjnm2r/OfA5uc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-uFNdalqPLmp31lqjaAN0mTYPAuLTb2wXlBdMVl4mjSM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 会議の記録（要配慮の情報）を扱うためキャッシュ無効 -->
@@ -751,6 +751,14 @@ function impListHtml_(res){
   });
   return h;
 }
+/* 通信の例外を職員向けの語にする（2026-11-12 商用化の見直し）。「Failed to fetch」「NO_URL」などの英語の文を括弧の中にそのまま出さない */
+function impExWords_(e){
+  var m=String((e&&e.message)||e||'');
+  if(m==='NO_URL') return '接続先が入っていません';
+  if(/タイムアウト|時間切れ|timeout|timed out|abort/i.test(m)) return '時間切れになりました';
+  if(!m||/[A-Za-z]/.test(m.replace(/Google|URL/g,''))) return '通信がうまくいきませんでした';
+  return m;
+}
 function impErr_(d){
   var c=d&&d.code;
   if(c==='not_admin') return '管理者（Google＋2段階認証）でログインしている時だけ使えます。ログインし直してから押してください（何も書いていません）';
@@ -771,7 +779,7 @@ function impScan_(){
   impPaint_();
   return impPost_({action:'meeting',op:'importScan'}).then(function(r){
     if(!r||r.skip||g!==impGen||isField()) return false;
-    if(r.e){ impSt={phase:'idle',res:null,msg:'一覧を作れませんでした（'+String(r.e&&r.e.message||r.e)+'）。少し待ってから、もう一度押してください',err:true}; impPaint_(); return false; }
+    if(r.e){ impSt={phase:'idle',res:null,msg:'一覧を作れませんでした（'+impExWords_(r.e)+'）。少し待ってから、もう一度押してください',err:true}; impPaint_(); return false; }
     if(!r.d||r.d.ok!==true){ impSt={phase:'idle',res:null,msg:impErr_(r.d),err:true}; impPaint_(); return false; }
     impSt={phase:'scanned',res:r.d,msg:'一覧を作りました（まだ何も書いていません）',err:false}; impPaint_();
     return true;
@@ -789,7 +797,7 @@ function impApply_(){
     return impPost_({action:'meeting',op:'importApply',gids:gids}).then(function(r){
       if(!r||r.skip||g!==impGen||isField()) return false;
       if(r.e||(r.d&&r.d.ok!==true&&(r.d.unknown||classify_(r.d)==='unknown'))){
-        impSt={phase:'idle',res:null,err:true,msg:'取り込めたか分かりません（'+(r.e?String(r.e&&r.e.message||r.e):'書いた後の確かめができませんでした')+'）。5分ほど待ってから「一覧を作る」を押すと、入った分は「取り込み済み」と出ます（2回入ることはありません）'};
+        impSt={phase:'idle',res:null,err:true,msg:'取り込めたか分かりません（'+(r.e?impExWords_(r.e):'書いた後の確かめができませんでした')+'）。5分ほど待ってから「一覧を作る」を押すと、入った分は「取り込み済み」と出ます（2回入ることはありません）'};
         impPaint_(); return false;
       }
       if(!r.d||r.d.ok!==true){ impSt={phase:'idle',res:null,msg:impErr_(r.d),err:true}; impPaint_(); return false; }

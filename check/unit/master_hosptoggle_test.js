@@ -105,7 +105,7 @@ function load(src){
   };
   vm.createContext(box);
   /* 案内の文言の関数（hospWho_・hospDoneMsg_）は直した版にだけある。直す前の版では無いまま読み込む */
-  const opt = ['hospWho_', 'hospDoneMsg_', 'hospOnList_', 'hospNote_', 'hospApplyPend_'].filter(n => src.indexOf('\nfunction ' + n + '(') >= 0);
+  const opt = ['hospWho_', 'hospDoneMsg_', 'hospOnList_', 'hospNote_', 'hospApplyPend_', 'rmNote_', 'rmErrWords_']   /* 失敗の文の言い換え（2026-11-12）も本物 */.filter(n => src.indexOf('\nfunction ' + n + '(') >= 0);
   const code = ['_toTargetArr', '_ymd', 'normRosterRow', 'saveRosterCache', 'writeCommonRoster',
     'srevPickMeta', 'srevSeen', 'refreshRoster'].concat(opt, ['toggleHosp']).map(n => grabFn(src, n)).join('\n')
     + (src.indexOf('\nvar hospPend_=') >= 0 ? '\n' + src.slice(src.indexOf('\nvar hospPend_=') + 1).split('\n')[0] : '')

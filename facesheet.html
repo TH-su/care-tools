@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ga2it6U3ae9Onp4Ew10wNtbbbNdZfy5I7zKvlomL9OY=' 'sha256-wEWKWow9hgVu/4kULiM210A7u0jAohHyokyPz/xZUgg=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ga2it6U3ae9Onp4Ew10wNtbbbNdZfy5I7zKvlomL9OY=' 'sha256-7zmGtnQtxikFN0uGcSK1W3m4DsRXwBbTyXfwjRZ2epg=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
@@ -3673,7 +3673,7 @@ function testSync(){
      もう一度テストを押した時に前回の"未保存の試行値"が戻り先になり、この関数が消そうとした
      「未保存URLをセッション中使い続ける」状態がそのまま再発する。 */
   var saved=fsEffCfg_();
-  var tried={url:($('cfgUrl').value||'').trim(),token:($('cfgToken').value||'').trim()||String(saved.token||'').trim()};   /* 空欄なら保存してある合言葉で試す */
+  var tried={url:($('cfgUrl').value||'').trim(),token:($('cfgToken').value||'').trim()||String(readSavedCfg_().token||'').trim()};   /* 空欄なら、この端末に保存してある合言葉で試す（管理者が配った合言葉は、入れた住所へ送らない・2026-11-12） */
   CFG.url=tried.url;CFG.token=tried.token;
   if(!CFG.url){CFG.url=saved.url;CFG.token=saved.token;toast('接続先のURLを入力してください（入居者マスタと同じ値です）');return}
   setSync('テスト中…');
