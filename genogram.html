@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-font">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-/9NdFQEhrPpmjqcuZgPmlrA+VEWsvBiZ5NcB9HsrfJw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tSDkFHNDw6jjQoernaCsowtW7PdMhn4bxFlJHwkzp/Q='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 入居者情報を表示する画面のため、ブラウザ・中継キャッシュに残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -260,6 +260,9 @@ textarea.fi{resize:vertical;min-height:60px}
 /* 幅900〜1099px は、見出しの右の入力群が「← メニュー」の分だけ早く2段目へ落ちないよう、副題を隠し（900px 以下と同じ）リンクを詰める（2026-11-12） */
 @media screen and (min-width:900px) and (max-width:1099px){.hdr-l .sub{display:none} .su-menu-back{padding:0 4px;font-size:0.75rem}}
 @media print{.su-menu-back{display:none !important}}
+/* 家族構成図の保存先の仕組み（受け口）が古い時の消せない帯（代表者の指示 2026-11-13・画面だけ・印刷しない） */
+.geno-stale-bar{background:var(--warn-bg);color:var(--g9);border-bottom:2px solid var(--warn-tx);padding:6px 14px;font-size:0.875rem;font-weight:700;text-align:center}
+@media print{.geno-stale-bar{display:none !important}}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
@@ -295,6 +298,8 @@ textarea.fi{resize:vertical;min-height:60px}
   </div>
   <!-- 入居者マスタやほかの画面の「この方の画面：」から、ある方で開いた時だけ出す本人確認の帯（代表者の決定 2026-11-02 案A・画面だけ） -->
   <div class="srh-bar" id="suHopBar" role="status" aria-live="polite" hidden></div>
+  <!-- 保存先の仕組み（受け口）が古い時だけ出す消せない帯（代表者の指示 2026-11-13・画面だけ・閉じるボタンは置かない） -->
+  <div class="geno-stale-bar" id="genoStaleBar" role="alert" hidden></div>
 </div>
 
 <!-- Cloud Settings Modal -->
@@ -2872,17 +2877,75 @@ const CloudSync = (function() {
   // ---- High-level API ----
   // ★2026-09-23: 読み取りも POST 本文で送る（利用者名 name を URL のクエリに載せない）。
   //   GAS の doPost は doGet と同じ route() を通る（本番 GAS を取得して確認済み）。
+  /* ── 受け口の版の確かめ（代表者の指示 2026-11-13）──
+     ping の応答の auth が 'ok' 以外（合言葉に対応していない古い受け口のコード）なら、共通の受け口との一覧・読込・保存・削除を止め、
+     消せない帯を出す。端末の控えでの表示・編集・端末への保存は止めない。
+     「古い」と決めるのは ping が ok:true で答えた時だけ（通信の失敗・合言葉の断り・新しい保存先の断りは分からない＝今の状態のまま・仮置き）。
+     ping は起動の時と、画面が見えている間1時間ごと（隠れている間は休み、見えた時に1時間を過ぎていれば1回）に打つ。
+     通信の形（POST 本文・合言葉は本文）は gasCall のまま変えない */
+  const GENO_STALE_MSG = '家族構成図の保存先の仕組みが古いままです。ほかの端末へ保存できません。管理者に知らせてください。';
+  const GENO_PING_EVERY_MS = 60 * 60 * 1000;
+  let genoStale = false, genoPingP = null, genoPingAt = 0, genoWatchOn = false;
+  function genoStaleErr_() { const e = new Error(GENO_STALE_MSG); e.stale = true; return e; }
+  function genoStaleBar_(on) {
+    const bar = document.getElementById('genoStaleBar');
+    if (!bar) return;
+    bar.textContent = on ? GENO_STALE_MSG : '';
+    bar.hidden = !on;
+    window.dispatchEvent(new Event('resize'));   /* 作図の枠の高さを合わせ直す（本人確認の帯と同じ） */
+  }
+  function genoSetStale_(v, r) {
+    if (v === genoStale) return;
+    genoStale = v;
+    /* 管理者向けの記録は古いと分かった時に1回だけ（URL・合言葉は書かない。auth の値と版表記だけ） */
+    if (v) genoNote_('gas:ping', 'auth:' + ((r && 'auth' in r) ? String(r.auth).slice(0, 20) : 'なし') + ' codeVersion:' + ((r && r.codeVersion) ? String(r.codeVersion).slice(0, 32) : 'なし'));
+    try { genoStaleBar_(v); } catch (e) { genoNote_('古い受け口の帯', e); }
+  }
   async function ping() {
-    return await gasCall('ping', {});
+    const p = gasCall('ping', {});
+    genoPingP = p;
+    genoPingAt = Date.now();
+    try {
+      const r = await p;
+      genoSetStale_(!!(r && r.ok === true) && r.auth !== 'ok', r);
+      return r;
+    } finally {
+      if (genoPingP === p) genoPingP = null;
+    }
+  }
+  /* 一覧・読込・保存・削除の入口。古い受け口と分かっている間は送らない。保存・削除は確かめの途中ならその答えを待ってから送る。
+     読込・一覧は待たずに確かめと並べて送り（端末の図の表示を確かめの分だけ遅らせない）、応答の後に確かめの答えを待って、古いと分かったら捨てる */
+  async function syncCall(action, params, opts) {
+    const write = GENO_WRITE_ACTIONS.indexOf(action) >= 0;
+    const settle = () => genoPingP ? genoPingP.then(null, () => null) : null;   // 確かめの失敗は gasCall の中で記録済み。分からない時は止めない
+    if (write) await settle();
+    if (genoStale) throw genoStaleErr_();
+    const r = await gasCall(action, params, opts);
+    if (!write) { await settle(); if (genoStale) throw genoStaleErr_(); }
+    return r;
+  }
+  function authCheck(force) {
+    try {
+      if (genoPingP || !isConfigured()) return;
+      if (!force && (document.hidden || (genoPingAt && Date.now() - genoPingAt < GENO_PING_EVERY_MS))) return;
+      ping().then(null, () => null);   // 記録は gasCall の中（回線の失敗は記録しない決まり）。分からない時は今の状態のまま
+    } catch (e) { genoNote_('受け口の確かめ', e); }
+  }
+  function authWatch() {
+    if (genoWatchOn) return;
+    genoWatchOn = true;
+    authCheck(true);
+    setInterval(() => authCheck(false), 60 * 1000);   // 1分ごとに「1時間たったか」を見るだけ（隠れている間は打たない）
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) authCheck(false); });
   }
   async function list() {
-    const r = await gasCall('list', {});
+    const r = await syncCall('list', {});
     return r.items || [];
   }
   /* opts.rid … 保留の再送で積んだ時の利用者No／opts.allowOther … 返った図の氏名が頼んだ名前と違っても返す（読込で、名前を直した方の図へ移るため）。
      既定は、氏名の違う図は「別の図」として null を返す（保存の前の確かめで、同じ図との食い違いと取り違えない・指摘3） */
   async function get(name, opts) {
-    const r = await gasCall('get', { name }, (opts && 'rid' in opts) ? { rid: opts.rid } : undefined);
+    const r = await syncCall('get', { name }, (opts && 'rid' in opts) ? { rid: opts.rid } : undefined);
     /* 新しい保存先は、利用者No で開いた時の取り違えの守りの印を返す（統合 0054）。Google は返さない（無ければ今までどおり） */
     try {
       const mid = window._suMasterId;
@@ -2906,13 +2969,13 @@ const CloudSync = (function() {
   /* base（この端末の編集が出発したサーバー版の updatedAt）がある時だけ本文に付ける。
      無い時は従来と同じ本文（旧 GAS・旧画面との互換）。GAS はロックの中で現在の版と突き合わせ、違えば書かない */
   async function save(doc, base, ro) {
-    const r = await gasCall('save', base == null ? { doc } : { doc, base }, ro);
+    const r = await syncCall('save', base == null ? { doc } : { doc, base }, ro);
     return r.saved;
   }
   async function del(name, base, ro) {
     let deleted;
     try {
-      deleted = (await gasCall('delete', base == null ? { name } : { name, base }, ro)).deleted;
+      deleted = (await syncCall('delete', base == null ? { name } : { name, base }, ro)).deleted;
     } catch (e) {
       /* 食い違いでも、サーバーの現在の版が ''（行がもう無い＝別の端末で削除済み）なら削除の目的は達成している。
          成功として扱う（扱わないと、削除の保留が「食い違い」のまま外れなくなる）。'' 以外の食い違いはそのまま投げる */
@@ -3020,7 +3083,7 @@ const CloudSync = (function() {
       /* 合言葉で断られた時は「競合なし」と読み替えない（2026-09-23）。合言葉の不一致は直すまで
          何日も続き、その間は一覧からクラウドの図が黙って消える。同じ名前で描いた図を「競合なし」で
          保留に積むと、合言葉を直した後の再送で他端末の図を確認なしに上書きするため、そのまま投げる */
-      if (e && e.auth) throw e;
+      if (e && (e.auth || e.stale)) throw e;   // 古い受け口で止めた取得も同じ（2026-11-13）
       return null;   // 取得できない時は競合なしとして従来どおり保存を試みる
     }
   }
@@ -3047,7 +3110,7 @@ const CloudSync = (function() {
     else {
       try { remote = await get(name); }
       catch (e) {
-        if (e && e.auth) throw e;   // fetchRemoteQuiet と同じ: 合言葉で断られた取得を「競合なし」と読み替えない
+        if (e && (e.auth || e.stale)) throw e;   // fetchRemoteQuiet と同じ: 合言葉で断られた取得・古い受け口で止めた取得を「競合なし」と読み替えない
         fetched = false;            // 取得できない時は競合なしとして従来どおり保存を試みる（「削除済み」とは読まない）
       }
     }
@@ -3319,7 +3382,7 @@ const CloudSync = (function() {
   return {
     thumbRpc, thumbIsAdmin, hasLogin: genoHasLogin_, note: genoNote_,
     getCfg, setCfg, isConfigured, purgeRetiredGithubCfg,
-    ping, list, get, save, setBaseline,
+    ping, list, get, save, setBaseline, authCheck, authWatch,
     // クラウドへの書き込みは列を通す（直接の保存・削除・再送が重ならない）
     del: (name, base) => serial(() => del(name, base)),
     // 直接の削除: この端末の基準は列の中で読む（前に並んだ再送で基準が進むため。観測していない時は付けない）
@@ -4030,6 +4093,14 @@ async function saveDoc() {
         setSyncStatus('err', 'この端末にだけ保存（クラウド未反映）: ' + err.message);
         flashStatus(`「${name}」はクラウドに入っていません（この端末にだけ保存しました）`);
         await SUDialog.alert('クラウドへは保存されていません。\n' + err.message + '\n\nこの内容はこの端末にのみ保存されています。');
+      } else if (err && err.stale) {
+        /* 古い受け口で止めた（代表者の指示 2026-11-13）: 合言葉で断られた時と同じく保留には積まない（止めている間はクラウドの図が見えず、
+           貼り替えた後の自動の再送で同じ名前の他端末の図を確認なしに上書きし得るため・仮置き）。図は端末に保存済み。印を残し、次の保存で突き合わせる */
+        cloudUnverified.add(name);
+        authUnverified.add(name);
+        CloudSync.markConfirm(name);
+        setSyncStatus('err', 'この端末にだけ保存（クラウド未反映）: ' + err.message);
+        flashStatus(`「${name}」はこの端末にだけ保存しました（ほかの端末へは保存されていません）`);
       } else if ((err && err.auth) || authUnverified.has(name)) {
         /* 合言葉で断られた（2026-09-23）: 保留には積まない。合言葉の不一致は直すまで続き、その間は
            一覧からクラウドの図が見えない。積むと、合言葉を直した後の自動の再送で、同じ名前の
@@ -4323,8 +4394,8 @@ async function deleteCurrentDoc() {
         flashStatus(`「${name}」は削除できませんでした（端末の図も残しています）`);
         return;
       }
-      if (err && err.auth) {
-        /* 合言葉で断られた削除は積まない（2026-09-23）。断られている間は一覧からクラウドの図が見えず、
+      if (err && (err.auth || err.stale)) {
+        /* 合言葉で断られた削除・古い受け口で止めた削除（2026-11-13）は積まない（2026-09-23）。断られている間は一覧からクラウドの図が見えず、
            同じ名前の他端末の図を、合言葉を直した後の自動の再送で消し得るため。クラウド側は残る */
         setSyncStatus('err', 'クラウドからは削除できていません: ' + err.message);
         flashStatus(`「${name}」は削除できませんでした（端末の図も残しています）`);
@@ -4799,6 +4870,7 @@ function saveCloudConfig() {
   const cfg = readCfgFromForm();
   CloudSync.setCfg(cfg);
   applyCloudConfigUI();
+  CloudSync.authCheck(true);   // 接続先を変えたら受け口の版を確かめ直す（直しても1時間止まったままにしない）
   refreshDocList();
   closeCloudModal();
   flashStatus('クラウド設定を保存しました');
@@ -4867,6 +4939,7 @@ async function init() {
   attachDomTextFallback();
   CloudSync.purgeRetiredGithubCfg();
   applyCloudConfigUI();
+  CloudSync.authWatch();   // 受け口の版の確かめ（起動の時と1時間ごと・代表者の指示 2026-11-13）。一覧・読込より前に打つ
   refreshDocList();
   fitStageSize();
   // 入居者マスタ連携：?resident=<masterId>&name=<氏名> 付きで開かれたら、その入居者の家系図を開く
