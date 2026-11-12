@@ -10,7 +10,8 @@
      5. 古い版の保存は「他で直されました。読み直してください」を出して行を差し替える（入力は残す）
      6. 取り消した記録は印つきで残り、費用の合計から外れる
      7. 準備中（PGRST202・PGRST205・42P01）は帯を出し、保存・追加・取り消し・項目の設定を押せない。ほかの失敗は通常のエラー
-     8. 端末に残すのは eql_tab・eql_floor・eql_filter だけ（UI 状態の復元のホワイトリスト・未知値は既定へ）
+     8. 端末に残すのは eql_tab・eql_floor・eql_filter だけ（UI 状態の復元のホワイトリスト・未知値は既定へ）。
+        ほかはメニューの札の件数 eql_menu_due だけ（件数と数えた日だけ・2026-11-13 代表者の指示）
      9. 危険な値（<img onerror> など）がエスケープされる
     10. 増やした項目の値が種類違いなら保存の前に断る・「使わない」は値を消さない・削除の操作は無い
     11. 添付は JPEG・PNG・PDF・10MB まで・台帳 → 置き場の順・置けなければ台帳から外す
@@ -358,7 +359,7 @@ const allPanels = (L) => { const out = []; for (const tb of CALC.TABS) { L.ctx.t
     B.ctx.onChange_({ target: { getAttribute: (k) => (k === 'data-filter' ? 'kind' : null), value: '<b>' } });
     t('絞り込み: 既知の値だけを控える（不正な値は空に戻す）', JSON.parse(B.ls.getItem('eql_filter')).etype === 'cleaning' && JSON.parse(B.ls.getItem('eql_filter')).kind === '');
     const keys = [...new Set(B.writes.filter((w) => w[0] === 'set').map((w) => w[1]))].sort();
-    t('端末に書く鍵は eql_tab・eql_floor・eql_filter だけ（記録・業者・氏名は書かない）', keys.every((k) => /^eql_(tab|floor|filter)$/.test(k)) && !B.writes.some((w) => /架空/.test(w[2] || '')), keys);
+    t('端末に書く鍵は eql_tab・eql_floor・eql_filter と札の件数 eql_menu_due だけ（記録・業者・氏名は書かない）', keys.every((k) => /^eql_(tab|floor|filter|menu_due)$/.test(k)) && !B.writes.some((w) => /架空/.test(w[2] || '')), keys);
   }
 
   group('9. 危険な値（<img onerror>）がエスケープされる');
@@ -525,7 +526,7 @@ const allPanels = (L) => { const out = []; for (const tb of CALC.TABS) { L.ctx.t
     L.ctx.act_('q-clear', {});
     h = L.els['p-sched'].innerHTML;
     t('「検索を消す」で全部に戻り、欄も空になる', L.ctx.query === '' && L.els['e-q'].value === '' && /data-asset="a1"/.test(h) && /data-asset="a2"/.test(h));
-    t('検索語は端末に保存しない（書いたのは eql_ の鍵だけ・検索語の文字が無い）', L.writes.every((w) => /^eql_(tab|floor|filter)$/.test(w[1])) && !L.writes.some((w) => /RF-9|霜取り|架空設備/.test(w[2] || '')), L.writes);
+    t('検索語は端末に保存しない（書いたのは eql_ の鍵だけ・検索語の文字が無い）', L.writes.every((w) => /^eql_(tab|floor|filter|menu_due)$/.test(w[1])) && !L.writes.some((w) => /RF-9|霜取り|架空設備/.test(w[2] || '')), L.writes);
     t('検索の欄以外の入力（id が e-q でない）は受け付けない', L.ctx.onAppInput_({ target: { id: 'x', value: 'abc' } }) === false && L.ctx.query === '');
   }
 
@@ -624,7 +625,7 @@ const allPanels = (L) => { const out = []; for (const tb of CALC.TABS) { L.ctx.t
     L.ctx.closeDlg_();
     L.ctx.openEvent_('e1');
     t('今ある記録を開く時は、その記録の種類・業者のまま', L.ctx.form.row.etype === 'repair' && L.ctx.form.row.vendor_id === 'v1' && !/直前に保存した記録と同じ/.test(L.els['e-dlg'].innerHTML));
-    t('直前の記録の続きは端末に保存しない（eql_ の鍵だけ）', L.writes.every((w) => /^eql_(tab|floor|filter)$/.test(w[1])), L.writes);
+    t('直前の記録の続きは端末に保存しない（eql_ の鍵だけ）', L.writes.every((w) => /^eql_(tab|floor|filter|menu_due)$/.test(w[1])), L.writes);
     const N = await opened({ rpc: { eq_list: okList(), eq_save_vendor: () => ({ __error: { code: '500', message: 'Failed to fetch' } }) } });
     N.ctx.openAsset_(null, 'room:101');
     t('設備の窓の「購入先の業者」も同じ作り', /<div class="fi" id="a-vendor-w"><label for="a-vendor">購入先の業者<\/label>/.test(N.els['e-dlg'].innerHTML));
@@ -720,7 +721,7 @@ const allPanels = (L) => { const out = []; for (const tb of CALC.TABS) { L.ctx.t
     t('SUAppGate.run(\'equip-log\'', /SUAppGate\.run\('equip-log'/.test(S));
     t('console を使わない・インラインの on〜 が無い', !/console\./.test(S) && !/[\s"']on(click|change|input|load|error)=["']/.test(HTML));
     const sets = [...S.matchAll(/localStorage\.setItem\(([^,]*)/g)].map((m) => m[1]);
-    t('localStorage に書く鍵は全部 eql_ 始まりの文字列', sets.length === 3 && sets.every((k) => /^'eql_(tab|floor|filter)'$/.test(k)), sets);
+    t('localStorage に書く鍵は全部 eql_ 始まりの文字列', sets.length === 4 && sets.every((k) => /^'eql_(tab|floor|filter|menu_due)'$/.test(k)), sets);
     t('施設名・事業所名を書かず、施設情報（SUFacility.officeName）から読む', /SUFacility\.officeName/.test(S));
     t('名簿を読まない（入居者の氏名の読み口を使わない）', !/getRoster|roster|resident/i.test(S));
   }
@@ -757,6 +758,52 @@ const allPanels = (L) => { const out = []; for (const tb of CALC.TABS) { L.ctx.t
     const ev = L.els['p-events'].innerHTML;
     t('対応の記録の一覧: 場所の列は「トイレ（1階）」・絞り込みの場所に 1階・2階のトイレが別々に並ぶ', /<td data-label="場所"><div class="v">トイレ（1階）<\/div><\/td>/.test(ev)
       && /<option value="area:f1:トイレ">トイレ（1階）<\/option>/.test(ev) && /<option value="area:f2:トイレ">トイレ（2階）<\/option>/.test(ev), (ev.match(/area:f[12]:トイレ[^<]*/g) || []));
+  }
+
+  group('15. メニューの札の件数（eql_menu_due）と「法定」の印（2026-11-13 代表者の指示・試験の今日は 2026-11-03）');
+  {
+    const due = (L) => { const v = L.ls.getItem('eql_menu_due'); return v == null ? null : JSON.parse(v); };
+    const L = await opened();
+    t('読めた時: 件数と数えた日だけを残す（a1 は 2026-11-03 が期限＝30日以内1）',
+      JSON.stringify(due(L)) === JSON.stringify({ v: 1, at: '2026-11-03', eq: true, overdue: 0, soon: 1, legal: 0 }), due(L));
+    t('残す中身に設備名・場所・業者を入れない', !L.writes.some((w) => w[1] === 'eql_menu_due' && /架空|room:|v1|a1/.test(w[2] || '')), L.writes);
+    const n0 = L.writes.filter((w) => w[1] === 'eql_menu_due').length;
+    L.ctx.setTab_('cost'); L.ctx.setTab_('map');
+    t('件数が変わらない描き直しでは書き直さない', L.writes.filter((w) => w[1] === 'eql_menu_due').length === n0, L.writes.filter((w) => w[1] === 'eql_menu_due'));
+    const PREV = JSON.stringify({ v: 1, at: '2026-11-02', eq: true, overdue: 4, soon: 0, legal: 2 });
+    for (const code of ['PGRST202', '500']) {
+      const N = await opened({ local: { eql_menu_due: PREV }, rpc: { eq_list: () => ({ __error: { code, message: code === '500' ? 'Failed to fetch' : 'not found' } }) } });
+      t('読めない時（' + (code === '500' ? '通信の失敗' : '準備中') + '）は書かない＝前の件数を0件で上書きしない', N.ls.getItem('eql_menu_due') === PREV && !N.writes.some((w) => w[1] === 'eql_menu_due'), N.writes);
+    }
+    const F = await opened({ role: 'field', local: { eql_menu_due: PREV } });
+    t('現場端末では数えない・書かない', F.ls.getItem('eql_menu_due') === PREV && F.writes.length === 0, F.writes);
+    const LEG = { id: 'fl', target: 'asset', name: '法定点検', ftype: 'select', options: ['法定', '任意'], sort: 20, disabled: false, rev: 1 };
+    const store = {};
+    const S2 = await opened({ rpc: { eq_list: okList({ fields: baseData().fields.concat([LEG]) }), eq_save_asset: saver(store) } });
+    const ok = await S2.ctx.saveRow_('asset', { kind: 'facility', place_key: 'room:102', category: 'fire', name: '架空消火器', status: 'active', next_due: '2026-10-01', extra: { fl: '法定' } }, null, []); await settle();
+    t('保存の後に数え直す: 法定の印の設備の期限切れが「法定の期限切れ」に入る', ok === true && JSON.stringify(due(S2)) === JSON.stringify({ v: 1, at: '2026-11-03', eq: true, overdue: 1, soon: 1, legal: 1 }), due(S2));
+    S2.ctx.openAsset_(null, 'room:101');
+    const adlg = S2.els['e-dlg'].innerHTML;
+    S2.el('a-name').value = '架空照明'; S2.el('a-category').value = 'electric'; S2.el('a-place').value = 'room:101'; S2.el('a-kind').value = 'facility'; S2.el('a-status').value = 'active';
+    const okN = await S2.ctx.saveForm_(); await settle();
+    const sN = S2.rpcs('eq_save_asset').slice(-1)[0];
+    t('法定の項目は初め「（選ばない）」で、触らずに保存しても法定の印は付かない', /<select id="fx-1"><option value="" selected>（選ばない）<\/option>/.test(adlg) && okN === true && sN && !Object.prototype.hasOwnProperty.call(sN.args.p_row.extra, 'fl'), sN && sN.args.p_row.extra);
+    const id = S2.ctx.data.assets.find((x) => x.name === '架空消火器').id;
+    await S2.ctx.saveRow_('asset', Object.assign({}, S2.ctx.data.assets.find((x) => x.id === id), { next_due: '2027-04-01' }), 1, []); await settle();
+    t('直した後は札の件数も減る（0件の項目は 0 のまま書く）', JSON.stringify(due(S2)) === JSON.stringify({ v: 1, at: '2026-11-03', eq: true, overdue: 0, soon: 1, legal: 0 }), due(S2));
+    L.ctx.setTab_('fields'); L.ctx.act_('ftarget', { getAttribute: (k) => (k === 'data-target' ? 'asset' : null) });
+    let h = L.els['p-fields'].innerHTML;
+    t('項目の設定（設備に付ける項目）: 「法定」の印の案内と「「法定」の印の項目を足す」を出す', /法定点検のある設備は、選択肢の項目で「法定」を選ぶと/.test(h) && /data-act="field-legal"/.test(h), h.slice(0, 600));
+    L.ctx.act_('field-legal', { getAttribute: () => null });
+    const dlg = L.els['e-dlg'].innerHTML;
+    t('押すと名前「法定点検」・種類「選択肢」・選択肢「法定」を入れた「項目を足す」の窓を開く（自動では保存しない）',
+      L.ctx.form && L.ctx.form.kind === 'field' && L.ctx.form.row.target === 'asset' && /value="法定点検"/.test(dlg) && /<option value="select" selected>/.test(dlg) && /<textarea id="k-options">法定<\/textarea>/.test(dlg) && !L.rpcs('eq_save_field').length, dlg.slice(0, 800));
+    L.ctx.closeDlg_();
+    S2.ctx.setTab_('fields'); S2.ctx.act_('ftarget', { getAttribute: (k) => (k === 'data-target' ? 'asset' : null) });
+    h = S2.els['p-fields'].innerHTML;
+    t('印に使える項目がもうある時は、案内だけでボタンは出さない', /法定点検のある設備は/.test(h) && !/data-act="field-legal"/.test(h));
+    L.ctx.act_('ftarget', { getAttribute: (k) => (k === 'data-target' ? 'event' : null) });
+    t('対応の記録に付ける項目では案内を出さない', !/field-legal|法定点検のある設備/.test(L.els['p-fields'].innerHTML));
   }
 
   say('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');

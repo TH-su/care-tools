@@ -16,7 +16,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-11-03';
+  var VERSION = '2026-11-13';
 
   /* 設備の種類（ROOT の 10 種・固定）。保存するのは code */
   var CATEGORIES = [
@@ -38,6 +38,8 @@
   var TARGETS = ['asset', 'event'];
   var TEXT_MAX = 500;
   var SOON_DAYS = 30;
+  /* 「法定」の印の値（2026-11-13 代表者の指示）。設備に付ける選択肢の項目でこの値を選んだ設備を法定点検の設備として数える */
+  var LEGAL_VALUE = '法定';
   /* 画面のタブ（端末に残すのは名前だけ） */
   var TABS = ['map', 'assets', 'events', 'sched', 'cost', 'vendors', 'fields'];
   var DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -226,6 +228,37 @@
       out.push({ asset_id: null, event_id: e.id, place_key: e.place_key, due: e.next_due, status: dueStatus(e.next_due, today), src: 'event' });
     }
     out.sort(function (x, y) { return x.due < y.due ? -1 : x.due > y.due ? 1 : 0; });
+    return out;
+  }
+
+  /* 「法定」の印（2026-11-13 代表者の指示・消防設備・エレベーター・受水槽など）。新しい列は作らず「増やした項目」で持つ:
+     付け先が設備・種類が選択肢・「使わない」でない項目のどれかで「法定」（LEGAL_VALUE）を選んでいる設備だけを法定とする。
+     選択肢に「法定」が残っている項目だけを見る。ほかの値（「任意」など）・文字の項目に書いた「法定」・使わないにした項目の値は数えない */
+  function isLegalAsset(asset, fields) {
+    if (!isObj(asset) || !isObj(asset.extra)) return false;
+    var fl = Array.isArray(fields) ? fields : [];
+    for (var i = 0; i < fl.length; i++) {
+      var f = fl[i];
+      if (!isObj(f) || f.id == null || f.target !== 'asset' || f.ftype !== 'select' || f.disabled) continue;
+      if (!Array.isArray(f.options) || f.options.indexOf(LEGAL_VALUE) < 0) continue;   // 選択肢から「法定」を外した項目は数えない（設定の画面 hasLegalField_ と同じ判定・反証レビューの指摘）
+      if (asset.extra[String(f.id)] === LEGAL_VALUE) return true;
+    }
+    return false;
+  }
+  /* メニューのタイルの札に残す件数（2026-11-13 代表者の指示）。予定の一覧（schedule）の status だけで数える:
+     overdue＝期限切れ・soon＝今日から30日以内・legal＝期限切れのうち法定の印の設備（overdue の内数・設備に付かない予定は数えない）。
+     返すのは件数と数えた日だけ（設備名・場所は入れない）。today が 年-月-日 でない時は null（今日の日付に落とさない） */
+  function menuDueSummary(assets, events, fields, today) {
+    if (!isDate(today)) return null;
+    var al = Array.isArray(assets) ? assets : [], byId = {};
+    for (var i = 0; i < al.length; i++) if (isObj(al[i]) && al[i].id != null) byId[String(al[i].id)] = al[i];
+    var out = { v: 1, at: today, eq: true, overdue: 0, soon: 0, legal: 0 };
+    schedule(assets, events, today).forEach(function (x) {
+      if (x.status === 'overdue') {
+        out.overdue++;
+        if (x.asset_id != null && has(byId, String(x.asset_id)) && isLegalAsset(byId[String(x.asset_id)], fields)) out.legal++;
+      } else if (x.status === 'soon') out.soon++;
+    });
     return out;
   }
 
@@ -487,7 +520,7 @@
 
   var api = {
     VERSION: VERSION, CATEGORIES: CATEGORIES, EVENT_TYPES: EVENT_TYPES, STATUSES: STATUSES, OFFICE_KINDS: OFFICE_KINDS, FTYPES: FTYPES,
-    TARGETS: TARGETS, TABS: TABS, TEXT_MAX: TEXT_MAX, SOON_DAYS: SOON_DAYS, CSV_FIXED: CSV_FIXED, FILTER_DEF: FILTER_DEF,
+    TARGETS: TARGETS, TABS: TABS, TEXT_MAX: TEXT_MAX, SOON_DAYS: SOON_DAYS, LEGAL_VALUE: LEGAL_VALUE, CSV_FIXED: CSV_FIXED, FILTER_DEF: FILTER_DEF,
     esc: esc, isDate: isDate, todayJST: todayJST, addDays: addDays, labelOf: labelOf,
     placeKeyOf: placeKeyOf, placeLabel: placeLabel, placeKind: placeKind, eventOffice: eventOffice,
     nextDueDate: nextDueDate, dueStatus: dueStatus, effectiveDate: effectiveDate, dateOrderWarnings: dateOrderWarnings,
@@ -495,7 +528,8 @@
     fieldsFor: fieldsFor, validateExtra: validateExtra, validateField: validateField, parseAmount: parseAmount,
     buildCsv: buildCsv, restoreUiState: restoreUiState,
     queryTerms: queryTerms, matchQuery: matchQuery, assetTexts: assetTexts, eventTexts: eventTexts, matchAsset: matchAsset, matchEvent: matchEvent, matchSchedule: matchSchedule,
-    placeMarks: placeMarks, floorLabel: floorLabel, daysUntil: daysUntil, assetHistory: assetHistory
+    placeMarks: placeMarks, floorLabel: floorLabel, daysUntil: daysUntil, assetHistory: assetHistory,
+    isLegalAsset: isLegalAsset, menuDueSummary: menuDueSummary
   };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.EquipCalc = api;
