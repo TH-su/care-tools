@@ -196,6 +196,7 @@ for (const c of [
 {
   const E = await run('support-overview.html', { label: '読めていた端末' });
   await waitFor(async () => { const x = await lanes(E.page); return x.length === 7 && fullNameShown(x) ? x : null; }, 20000);
+  const srcFirst = await srcOf(E.page);   // 読めた時の札（後で前の盤面を描き直した時に同じ文・時刻で出るか比べる）
   E.st.kvFail = true;
   await E.page.click('#btnRefresh');
   const failed = await waitFor(async () => ((await stateOf(E.page)) === '取得失敗' ? 1 : null), 15000);
@@ -205,6 +206,11 @@ for (const c of [
   t('全支援俯瞰 読めていた端末: 接続先を入れる逆の案内・リンクを出さない', !msg.includes('接続先が入っていません') && !msg.includes('接続先のURL') && !toast.includes('接続先') && !(await linkShown(E.page)), { msg, toast });
   t('全支援俯瞰 読めていた端末: 知らせ（toast）は通信とログインを確かめる文', toast === '取得に失敗しました。通信環境と、ログインしているかをご確認ください', toast);
   t('全支援俯瞰 読めていた端末: Google へもこの画面自身へも送らない・画面のエラーなし', E.st.gas.length === 0 && E.st.selfPost.length === 0 && !E.st.errors.length, [E.st.gas, E.st.selfPost, E.st.errors]);
+  /* 盤面を空にした後に施設／外部を切り替えると、前に読んだ盤面を描き直す。その時は前に読んだ読み先と時刻で札を出し直す（反証レビューの指摘 2026-11-13） */
+  await E.page.click('#segExt');
+  const redrawn = await waitFor(async () => (/^前回取得分を表示中/.test(await stateOf(E.page)) ? 1 : null), 5000);
+  t('全支援俯瞰 読めていた端末: 施設／外部の切り替えで前の盤面を描き直すと「前回取得分を表示中」', !!redrawn, await stateOf(E.page));
+  t('全支援俯瞰 読めていた端末: その時は前に読んだ読み先と時刻で札を出し直す', /^新しい保存先から読みました \d{1,2}:\d{2}$/.test(srcFirst || '') && (await srcOf(E.page)) === srcFirst, [srcFirst, await srcOf(E.page)]);
   await E.context.close();
 }
 {

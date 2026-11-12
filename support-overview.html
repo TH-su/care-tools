@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-YBl5kvjrvMtdJ+77N1ee75ljfTIJTDDEZKMpnLMDsCE=' 'sha256-kwAifQBfvhff32cF5SUk9JG2jvWgV6uclGEK+W7/Hfs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rv3zPxlVG0A9HToPpKEmyF6ggdlb7REytrzRkfFgJGQ=' 'sha256-kwAifQBfvhff32cF5SUk9JG2jvWgV6uclGEK+W7/Hfs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -81,6 +81,7 @@ body {
 .src-state[hidden] { display: none !important; }
 @media screen { .src-state { flex: 0 0 100%; text-align: right; font-size: 0.6875rem; line-height: 13px; white-space: nowrap; } }
 @media print { .src-state { display: none !important; } }
+@media screen and (max-width:700px) { .src-state { white-space: normal; } }   /* iPhone の文字を大きくした時に、長い札（読み先が混ざった時）を横にはみ出させず折り返す */
 
 /* ===== 凡例 ===== */
 .legend {
@@ -516,7 +517,8 @@ let VIEW = 'fac';                          // 表示対象ビュー: 'fac'=施�
    読んでいる間は出どころを控えるだけ（noteCopyRead_）で、帯は盤面を描き直した時にだけ決める（applyCopyBand_）。
    取り直しが失敗して盤面を描き直さない時は帯に触れない（前の盤面のまま＝前の帯のまま）。週を1つも読めず盤面を空にした時は消す */
 var copyUsed_ = false;
-var srcFresh_ = false, srcGoogle_ = false;   // この表示で新しい保存先から読んだ分・Google（切り替える前のキー）から読んだ分があるか（読み先の札・2026-11-13）
+var srcFresh_ = false, srcGoogle_ = false;
+var soLastSrc_ = null;   // 最後に盤面を描いた時の読み先と時刻（施設／外部の切り替えで前の盤面を描き直した時に札を出し直す・反証レビューの指摘 2026-11-13）   // この表示で新しい保存先から読んだ分・Google（切り替える前のキー）から読んだ分があるか（読み先の札・2026-11-13）
 /* 盤面の読み先の札（代表者の指示 2026-11-13）。いま出ている盤面を描いた時に、どこから・いつ読んだかを見出しに小さく出す。
    ★全支援俯瞰（support-overview.html）と訪問俯瞰（visit-overview.html）に同じ文面で入れている（片方を直したら両方を一字一句同じに戻す）。
    src: fresh=新しい保存先から読んだ分がある／google=Google から読んだ分（切り替える前のキー）がある／
@@ -1164,6 +1166,7 @@ function setView(view) {
     const stat = '（' + RAW_N + '週' + RAW_MISS + '・' + total + '枠）';         // 枠数を現ビューに合わせる
     // 直近の取得が失敗している時に出るのは前回取得分。ここで「集計OK」と出すと最新に見えてしまう
     setSyncState(lastFetchFailed ? ('前回取得分を表示中（最新の取得は失敗）' + stat) : ('集計OK' + stat));
+    if (soLastSrc_) ovShowSrc_(soLastSrc_.src, soLastSrc_.at);   // 前の盤面を描き直した＝その盤面を読んだ時の読み先と時刻で札を出し直す（時刻は前に読んだ時のまま）
   }
 }
 function setButtons(enabled) {
@@ -1272,7 +1275,8 @@ async function refresh() {
     const model = buildModel(raw, masks, VIEW);
     render(model, N, VIEW);
     applyCopyBand_(copyUsed_);                             // 描き直した盤面の出どころで帯を決める（写しから1つでも読んだら出す）
-    ovShowSrc_({ fresh: srcFresh_, google: srcGoogle_, copy: copyUsed_ }, new Date());   // 描き直した盤面の読み先と時刻を見出しに出す（2026-11-13）
+    soLastSrc_ = { src: { fresh: srcFresh_, google: srcGoogle_, copy: copyUsed_ }, at: new Date() };   // 最後に描いた盤面の読み先と時刻の控え（施設／外部の描き直しで使う）
+    ovShowSrc_(soLastSrc_.src, soLastSrc_.at);            // 描き直した盤面の読み先と時刻を見出しに出す（2026-11-13）
     if (!t.endpoint) soQuietCfgHint_();                    // ログインだけで盤面が出た＝画面の下の「接続先が入っていません」の帯を出さない
     let total = 0; for (const arr of model.byDow) total += arr.length;
     RAW_MISS = raw.weeksError > 0 ? '・' + raw.weeksError + '/' + raw.weeksTotal + '週欠測' : '';

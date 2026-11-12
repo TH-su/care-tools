@@ -70,7 +70,8 @@ for (const [file, src] of [['support-overview.html', SO], ['visit-overview.html'
   t('3-2 ' + file + ' 隠した時は必ず隠れる', src.indexOf('.src-state[hidden] { display: none !important; }') >= 0);
   t('3-3 ' + file + ' 見た目は画面だけ・印刷に出さない',
     src.indexOf('@media screen { .src-state {') >= 0 && src.indexOf('@media print { .src-state { display: none !important; } }') >= 0);
-  t('3-4 ' + file + ' 札を出すのは盤面を描き直した所だけ（ovShowSrc_ に時刻を渡すのは1か所）', (src.match(/^.*ovShowSrc_\(.*new Date\(\)\);.*$/gm) || []).length === 1);
+  t('3-5 ' + file + ' 幅700px以下では札を折り返す（文字を大きくした iPhone で横にはみ出さない）', src.indexOf('@media screen and (max-width:700px) { .src-state { white-space: normal; } }') >= 0);
+  t('3-4 ' + file + ' 読んだ時刻を取るのは盤面を読んで描き直した所だけ（札に渡す時刻 new Date() は1か所）', (src.match(/^.*(?:ovShowSrc_\(|soLastSrc_ = ).*new Date\(\).*$/gm) || []).length === 1);
 }
 
 console.log('— 4. 訪問俯瞰の読み先 —');
@@ -99,6 +100,7 @@ console.log('— 5. 全支援俯瞰の控え —');
   t('5-2 予定の型は新しい保存先・日ごとは切り替える前で Google', run(['a'], [[['a'], false], [['d1'], true]]) === '{"fresh":true,"google":true,"copy":false}');
   t('5-3 切り替えた後を Google から＝写し', run(['a', 'd1'], [[['d1'], true]]) === '{"fresh":false,"google":false,"copy":true}');
   t('5-4 表示の取り直しの始めで控えを戻す', /showCsLink_\(false\);[^\n]*\n\s*srcFresh_ = false; srcGoogle_ = false;/.test(SO));
+  t('5-6 施設／外部の切り替えで前の盤面を描き直した時は、控えた読み先と時刻で札を出し直す', /if \(soLastSrc_\) ovShowSrc_\(soLastSrc_\.src, soLastSrc_\.at\);/.test(cut(SO, 'setView') || ''));
   t('5-5 盤面を空にする2か所で札も消す', (SO.match(/applyCopyBand_\(false\);[^\n]*\n\s*ovShowSrc_\(null\);/g) || []).length === 2);
 }
 
