@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-bZpITzAERNIXm1gRRvRUzdqOrmRiBbEocBSXHgH9UOI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-1cIku5LmKNIDYx16MADHEUZxNa0BdxcU5TX3L+sREb8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -1624,6 +1624,11 @@ body.meal-on #sc-list{max-width:none}
   .rev-svg .ax,.rev-svg .lbl{font-size:16px}
 }
 @media print{ .rev{display:none!important} }
+/* 見出しの「← メニュー」（ホーム画面から開いた iPhone でもメニューへ戻れるように・画面だけ・印刷しない・2026-11-12） */
+.su-menu-back{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+.su-menu-back{display:inline-flex;align-items:center;padding:2px 10px;border:1px solid currentColor;border-radius:8px;color:inherit;font-size:0.8125rem;font-weight:700;line-height:1.2}
+@media screen and (max-width:899px){.su-menu-back{min-height:44px}}
+@media print{.su-menu-back{display:none !important}}
 </style>
 <!-- 印刷共通モジュール（用紙・余白・収め方の設定画面と、紙1枚に収める採寸の器）。
      ★link で読む＝JS が document.styleSheets からこのファイルの @media print も読めるようにする。
@@ -1636,6 +1641,7 @@ body.meal-on #sc-list{max-width:none}
 <body>
 
 <div class="hdr">
+  <a class="su-menu-back" href="index.html">← メニュー</a>
   <h1>🗂️ 入居者マスタ</h1>
   <span class="sync" id="syncStatus">未接続</span>
 </div>
@@ -9088,8 +9094,27 @@ function editLeaveOk_(){
   if(!editDirty_()) return true;
   return confirm('編集中の内容が保存されていません。\n移動すると、入力した内容は消えます。よろしいですか？');
 }
+/* 見出しの「← メニュー」で離れる時の確かめ（2026-11-12 反証レビュー）。iOS Safari は beforeunload の確かめを出さないため、
+   押した時に下の beforeunload と同じ条件（＋覆いの確かめと同じ rmGateDirty_）で聞く。「はい」の時は直後の beforeunload で二重に聞かない。
+   ★条件は beforeunload の中と同じ。片方を変えたら両方を同じにする */
+var rmMenuLeaveOk_=false;
+function rmMenuLeaveDirty_(){
+  try{
+    var yjBusy=!!(yjSt&&((yjSt.cur&&yjSt.cur.writing)||yjDirty_()||yjSt.docs.some(function(x){ return x.status==='unsure'; })));
+    if(typeof yjpBusy!=='undefined' && yjpBusy) yjBusy=true;
+    if(mealDirtyCells() || (typeof mdDirty!=='undefined' && mdDirty) || editDirty_() || yjBusy) return true;
+    return rmGateDirty_();
+  }catch(e){ return false; }
+}
+document.addEventListener('click',function(e){
+  var a=e.target&&e.target.closest?e.target.closest('a.su-menu-back'):null;
+  if(!a||!rmMenuLeaveDirty_()) return;
+  if(!confirm('保存していない変更があります。メニューへ移ると消えます。移りますか？')){ e.preventDefault(); return; }
+  rmMenuLeaveOk_=true; setTimeout(function(){ rmMenuLeaveOk_=false; },3000);
+});
 /* 未保存のまま閉じる・再読込するのを止める（メモリにしか無いため。原則4） */
 window.addEventListener('beforeunload',function(e){
+  if(rmMenuLeaveOk_) return;   /* 「← メニュー」の確かめで「はい」を押した直後は二重に聞かない（2026-11-12） */
   /* ★薬効辞書の未保存も対象。AIの下書きはメモリにしか無く、再読込・タブを閉じると消える
      （2026-09-04 に再描画で155件消えた件と同じ損失がリロード経路に残っていた） */
   /* ★編集画面の未保存も対象（2026-10-16） */

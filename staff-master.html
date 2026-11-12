@@ -3,7 +3,7 @@
 <head>
   <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-8YVuyUi4gIGcoy3KMCttaCTK6iWFY6cJcAT94PwCjzU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-/5hovPWosbSXSzzb4CNFlnvfBWdDUB/nYlkrCUq8f2I='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="stfm-build" content="2026-11-06.2">
@@ -886,6 +886,14 @@ body.cmt-print{page:cmt}
   body.cmt-print #cmtPrintAll h3.sub{column-span:all}
   body.cmt-print #cmtPrintAll .cmt-pblk{break-inside:avoid;page-break-inside:avoid}
 }
+/* 見出しの「← メニュー」（ホーム画面から開いた iPhone でもメニューへ戻れるように・画面だけ・印刷しない・2026-11-12） */
+.su-menu-back{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+.su-menu-back{display:inline-flex;align-items:center;padding:2px 10px;border:1px solid currentColor;border-radius:8px;color:inherit;font-size:0.8125rem;font-weight:700;line-height:1.2}
+@media screen and (max-width:899px){.su-menu-back{min-height:44px}}
+/* 表示200%ほどの狭い幅（359px 以下）だけ、「← メニュー」を見出しの1段目に単独で置き、横にはみ出さないようにする（2026-11-12） */
+.su-menu-row{display:contents}
+@media screen and (max-width:359px){.hdr{flex-wrap:wrap} .su-menu-row{display:block;flex:0 0 100%}}
+@media print{.su-menu-back{display:none !important}}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
@@ -905,6 +913,7 @@ body.cmt-print{page:cmt}
 </div>
 
 <header class="hdr">
+  <span class="su-menu-row"><a class="su-menu-back" href="index.html">← メニュー</a></span>
   <h1>職員マスタ</h1>
   <nav class="tabs" aria-label="画面切替">
     <button type="button" id="tabList" data-scr="list" aria-current="page">一覧</button>
@@ -7289,7 +7298,16 @@ function bindEvents() {
     if (ST.screen === 'detail') { e.preventDefault(); saveDetail(); }
     else if (ST.screen === 'list' && ST.bulk) { e.preventDefault(); bulkSave(); }
   });
+  /* 見出しの「← メニュー」で離れる時の確かめ（2026-11-12 反証レビュー）。iOS Safari は beforeunload の確かめを出さないため、
+     押した時に beforeunload と同じ判定（hasUnsaved）で聞く。「はい」の時は直後の beforeunload で二重に聞かない */
+  document.addEventListener('click', function (e) {
+    var a = e.target && e.target.closest ? e.target.closest('a.su-menu-back') : null;
+    if (!a || !hasUnsaved()) return;
+    if (!confirm('保存していない変更があります。メニューへ移ると消えます。移りますか？')) { e.preventDefault(); return; }
+    smMenuLeaveOk_ = true; setTimeout(function () { smMenuLeaveOk_ = false; }, 3000);
+  });
   window.addEventListener('beforeunload', function (e) {
+    if (smMenuLeaveOk_) return;
     if (!hasUnsaved()) return;
     e.preventDefault();
     e.returnValue = '';
@@ -7302,6 +7320,7 @@ function stepYear(n) {
   lsSet(UI_KEYS.dashYear, ST.dashYear);
   renderDash();
 }
+var smMenuLeaveOk_ = false;   // 「← メニュー」の確かめで「はい」を押した直後（2026-11-12）
 function hasUnsaved() {
   if (dirtyCount().cells > 0) return true;
   return !!(ST.detail && ST.screen === 'detail' && detailDirty());

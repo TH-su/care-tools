@@ -673,6 +673,11 @@ body.staff .adm{display:none !important}
   main{padding:var(--sp-2)}
   .subbar{margin:0 calc(-1 * var(--sp-2)) var(--sp-3)}
 }
+/* 見出しの「← メニュー」（ホーム画面から開いた iPhone でもメニューへ戻れるように・画面だけ・印刷しない・2026-11-12） */
+.su-menu-back{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+.su-menu-back{display:inline-flex;align-items:center;padding:2px 10px;border:1px solid currentColor;border-radius:8px;color:inherit;font-size:0.8125rem;font-weight:700;line-height:1.2}
+@media screen and (max-width:899px){.su-menu-back{min-height:44px}}
+@media print{.su-menu-back{display:none !important}}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
@@ -687,6 +692,7 @@ body.staff .adm{display:none !important}
 </div>
 
 <header class="hdr">
+  <a class="su-menu-back" href="index.html">← メニュー</a>
   <h1>消耗品管理</h1>
   <span class="rolechip" id="roleChip" hidden>—</span>
   <span class="grow"></span>

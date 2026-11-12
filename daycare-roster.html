@@ -592,6 +592,12 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
      （最大行数でもA4縦1枚に収まる範囲＝氏名の文字を小さくせずに済む）。 */
   body.pr-batch table.wk tr.wk-total td.wk-sum { padding-top: 2.5mm; height: 13mm; }
 }
+/* 見出しの「← メニュー」（ホーム画面から開いた iPhone でもメニューへ戻れるように・画面だけ・印刷しない・2026-11-12） */
+.su-menu-back{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+/* 見出しがすでに折り返す画面は、899px 以下で「← メニュー」を1段目に単独で置く（既存の部品の並び・段を変えない・代表者の決定 2026-11-12） */
+.su-menu-row{display:contents}
+@media screen and (max-width:899px){.su-menu-back{min-height:44px} .su-menu-row{display:block;flex:0 0 100%}}
+@media print{.su-menu-back{display:none !important}}
 </style>
 <!-- 印刷共通モジュール（用紙・余白・収め方の設定画面と、1枚に収める採寸）。
      ★link で読む＝JS が document.styleSheets からこのファイルの @media print も読めるようにする。
@@ -604,6 +610,7 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
 <body>
 
 <header class="hdr">
+  <span class="su-menu-row"><a class="hdr-btn su-menu-back" href="index.html">← メニュー</a></span>
   <span class="hdr-title" id="dcrHdrTitle">通所</span>
   <span class="hdr-sub" id="hdrSub">読込中…</span>
   <span class="hdr-sp"></span>

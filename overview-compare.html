@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-feRe40rQ8QR4ZH3gcGLUqBALLYDW88YvJ9ZlsqXmIYU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-FwD8nI4RxD0CSIT+iP837k8TeRR9yZ1t1P9k3VcDppI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -90,6 +90,12 @@ body {
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 /* 字と地の差を 7:1 以上にそろえる（画面だけ・色合いはそのまま濃くする・印刷の紙は元の色のまま・代表者「推奨どおり色も7:1にそろえて」2026-11-03） */
 @media screen { :root[data-su-theme] { --orange: #904207; } }   /* 全支援の橙（白地・白い字とも 7.1:1） */
+/* 見出しの「← メニュー」（ホーム画面から開いた iPhone でもメニューへ戻れるように・画面だけ・印刷しない・2026-11-12） */
+.su-menu-back{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+/* 見出しがすでに折り返す画面は、899px 以下で「← メニュー」を1段目に単独で置く（既存の部品の並び・段を変えない・代表者の決定 2026-11-12） */
+.su-menu-row{display:contents}
+@media screen and (max-width:899px){.su-menu-back{min-height:44px} .su-menu-row{display:block;flex:0 0 100%}}
+@media print{.su-menu-back{display:none !important}}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
@@ -97,6 +103,7 @@ body {
 <body>
 
 <header class="hdr">
+  <span class="su-menu-row"><a class="link-single su-menu-back" href="index.html">← メニュー</a></span>
   <span class="hdr-title">訪問／全支援 左右比較</span>
   <label class="sync-toggle" title="スクロール位置（時刻・曜日）と表示倍率を左右で連動させる">
     <input type="checkbox" id="syncOn" checked aria-label="左右の時刻・曜日・表示倍率を連動させる">時刻・曜日・倍率を連動
@@ -149,6 +156,9 @@ body {
       var pb = d.getElementById('btnPrint'); if (pb) pb.style.display = 'none';
       var hide = d.querySelectorAll('.ovsw, .ovcmp');
       for (var i = 0; i < hide.length; i++) hide[i].style.display = 'none';
+      // 枠の中では「← メニュー」も出さない（この画面の見出しに同じ道がある・2026-11-12）
+      var back = d.querySelectorAll('.su-menu-row, .su-menu-back');
+      for (var j = 0; j < back.length; j++) back[j].style.display = 'none';
     } catch (e) {}
   }
 
