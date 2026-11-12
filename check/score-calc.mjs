@@ -26,8 +26,9 @@
  *   leave  beforeunload か、confirm( の文言に「保存」「破棄」「変更」「閉じ」「消え」がある。
  *          入力欄（input・select・textarea・contenteditable）が静的にも JS の文字にも無い画面は対象外
  *          画面の中のスクリプトに加えて、画面が <script src> で読む同じサイトの「その画面のための部品」（isOwnScript: ファイル名が
- *          画面名と同じか「画面名-」で始まる .js。例 menu-settings.html → menu-settings.js、app-access.html → app-access-devices.js）の中身も見る
- *          （2026-11-12 直し）。共通部品の su-*.js・ほかの画面の部品（ats.html が借りる staff-master-calc.js など）・外の部品の同梱物は見ない
+ *          画面名と同じか「画面名-」で始まる .js。例 menu-settings.html → menu-settings.js、app-access.html → app-access-devices.js）の中の
+ *          beforeunload も見る（2026-11-12 直し）。confirm の語の決め方は画面の中のスクリプトだけに当て、部品の中の confirm では「あり」にしない
+ *          （部品の書き出し・消す処理の confirm の「保存」「消え」に当たるため・代表者の決定 2026-11-12 推奨1・仮置き）。共通部品の su-*.js・ほかの画面の部品（ats.html が借りる staff-master-calc.js など）・外の部品の同梱物は見ない
  *          （共通部品に確かめがあると、読むだけのどの画面も「あり」になるため）。入力欄の有無の判定は今までどおり画面の中だけで見る
  *   engmsg 英語の例外文を画面にそのまま出す形の数（同じ文の中に「出す先」textContent・innerHTML・innerText・alert(・confirm( と、
  *          「出す元」e.message・err.message・error.message・String(e) か 'Failed to fetch'・'Load failed'・NetworkError の直書きがあるもの）。
@@ -357,12 +358,12 @@ export function scorePage(name, html, opts = {}) {
     || /<(input|textarea|select)\b|createElement\(\s*['"`](input|textarea|select)['"`]|contentEditable/i.test(js);
   if (!editable) r.leave = NA('入力欄が無い');
   else {
-    /* 画面の中のスクリプトと、その画面のための部品（isOwnScript）の中身を合わせて見る。共通部品・借りた部品は見ない */
+    /* その画面のための部品（isOwnScript）は beforeunload だけを見る。confirm の語の決め方は画面の中のスクリプトだけに当てる
+       （部品の書き出し・消す処理の confirm の「保存」「消え」で「あり」にしない・代表者の決定 2026-11-12 推奨1・仮置き）。共通部品・借りた部品は見ない */
     const own = opts && opts.scripts && typeof opts.scripts === 'object'
       ? Object.keys(opts.scripts).filter((k) => isOwnScript(page, k)).map((k) => stripJsComments(opts.scripts[k])).join('\n;\n') : '';
-    const lj = js + '\n;\n' + own;
-    const ok = /beforeunload/i.test(lj) || /onbeforeunload/i.test(parts.markup)
-      || /\bconfirm\s*\([^)]{0,200}?(保存|破棄|変更|閉じ|消え)/.test(lj);
+    const ok = /beforeunload/i.test(js) || /beforeunload/i.test(own) || /onbeforeunload/i.test(parts.markup)
+      || /\bconfirm\s*\([^)]{0,200}?(保存|破棄|変更|閉じ|消え)/.test(js);
     r.leave = bool(ok, ok ? 'あり' : 'なし');
   }
   const eng = countEnglishErrorExposure(js);

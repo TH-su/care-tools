@@ -162,7 +162,10 @@ async function main() {
     const page = '<html><body><input id="kakuu3" aria-label="架空"><script src="su-errors.js"></script><script src="kakuu-page.js"></script></body></html>';
     const leave = (name, scripts) => item(C.scorePage(name, page, { scripts }), 'leave').status;
     t('画面名.js の中の beforeunload で合格', leave('kakuu-page.html', { 'kakuu-page.js': 'window.addEventListener("beforeunload",function(){});' }) === '合格');
-    t('画面名-○○.js の中の保存の confirm でも合格', leave('kakuu-page.html', { 'kakuu-page-sub.js': 'if(!confirm("保存していない変更があります")) return;' }) === '合格');
+    t('画面名-○○.js の中の beforeunload でも合格', leave('kakuu-page.html', { 'kakuu-page-sub.js': 'window.onbeforeunload = function(){ return "x"; };' }) === '合格');
+    t('外の部品の confirm の語（保存・消え・変更など）では あり にならない', ['保存', '破棄', '変更', '閉じ', '消え'].every((w) =>
+      leave('kakuu-page.html', { 'kakuu-page.js': 'if(!confirm("架空の記録を' + w + 'ますか")) return;', 'kakuu-page-sub.js': 'confirm("架空の書き出しをこの端末に' + w + '");' }) === '不合格'));
+    t('画面の中のスクリプトの confirm の語は今までどおり合格', item(C.scorePage('kakuu-page.html', page.replace('</body>', '<script>if(!confirm("保存していない変更があります")) return;</script></body>'), { scripts: {} }), 'leave').status === '合格');
     t('部品を渡さない時は今までどおり不合格', leave('kakuu-page.html', undefined) === '不合格');
     t('共通部品 su-*.js の中の beforeunload は数えない（どの画面も合格になるため）', leave('kakuu-page.html', { 'su-errors.js': 'addEventListener("beforeunload",f)' }) === '不合格');
     t('画面名が su- で始まっても共通部品は数えない', leave('su-kakuu.html', { 'su-kakuu.js': 'addEventListener("beforeunload",f)' }) === '不合格');
