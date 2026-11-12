@@ -19,7 +19,9 @@ const vm = require('vm');
 const ROOT = path.join(__dirname, '..', '..');
 const CALC_PATH = process.env.STAFF_CALC || path.join(ROOT, 'staff-master-calc.js');
 const FAC_PATH = path.join(ROOT, 'su-facility.js');
-const HTML = fs.readFileSync(process.env.STAFF_HTML || path.join(ROOT, 'staff-master.html'), 'utf8');
+/* 職員マスタの画面のスクリプトは 2026-11-12 に staff-master.js へ移した。読み込みの札をその中身に戻し、移す前と同じ文字で確かめる */
+const stfmPage_ = (h) => h.replace(/<script src="staff-master\.js\?v=[^"]*"><\/script>/, () => '<script>\n' + fs.readFileSync(path.join(__dirname, '..', '..', 'staff-master.js'), 'utf8') + '</script>');
+const HTML = process.env.STAFF_HTML ? fs.readFileSync(process.env.STAFF_HTML, 'utf8') : stfmPage_(fs.readFileSync(path.join(ROOT, 'staff-master.html'), 'utf8'));
 const PROFILE = JSON.parse(fs.readFileSync(path.join(ROOT, 'facility-profile.sample.json'), 'utf8'));
 
 let pass = 0, fail = 0;

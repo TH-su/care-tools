@@ -20,6 +20,8 @@
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const ROOT = path.join(__dirname, '..', '..');
+/* 職員マスタの画面のスクリプトは 2026-11-12 に staff-master.js へ移した。読み込みの札をその中身に戻し、移す前と同じ文字で確かめる */
+const stfmPage_ = (h) => h.replace(/<script src="staff-master\.js\?v=[^"]*"><\/script>/, () => '<script>\n' + fs.readFileSync(path.join(__dirname, '..', '..', 'staff-master.js'), 'utf8') + '</script>');
 const SRC = fs.readFileSync(process.env.RES_READ_JS || path.join(ROOT, 'su-res-read.js'), 'utf8');
 let pass = 0, fail = 0;
 function t(n, c, e) { if (c) { pass++; console.log('  ✓ ' + n); } else { fail++; console.log('  ✗ ' + n + (e !== undefined ? '  → ' + JSON.stringify(e).slice(0, 400) : '')); } }
@@ -198,7 +200,7 @@ async function run(R, a, opts, gas) {
   }
 
   console.log('H 画面のつなぎ');
-  const read = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
+  const read = f => f === 'staff-master.html' ? stfmPage_(fs.readFileSync(path.join(ROOT, f), 'utf8')) : fs.readFileSync(path.join(ROOT, f), 'utf8');
   const SCREENS = [
     ['resident-master.html', /var gasRev=function\(\)\{if\(!mu\)return Promise\.reject\(new Error\('NO_URL'\)\);return fetchWithTimeout\(url,\{method:'GET',cache:'no-store',redirect:'follow'\},10000\)\};[\s\S]{0,200}SUResRead\.stateRev\(gasRev,\{key:'srev'\}\)/],
     ['care-schedule.html', /var csRevGas_ = function\(\)\{ return csFetchTimeout_\(cfg\.url \+ sep \+ 'action=stateRev', \{ method: 'GET', redirect: 'follow' \}, CS_STATEREV_PROBE_TIMEOUT_MS\); \};[\s\S]{0,200}SUResRead\.stateRev\(csRevGas_, \{ key: 'care' \}\)/],

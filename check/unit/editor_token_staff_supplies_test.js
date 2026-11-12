@@ -14,6 +14,8 @@ const path = require('path');
 const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..', '..');
+/* 職員マスタの画面のスクリプトは 2026-11-12 に staff-master.js へ移した。読み込みの札をその中身に戻し、移す前と同じ文字で確かめる */
+const stfmPage_ = (h) => h.replace(/<script src="staff-master\.js\?v=[^"]*"><\/script>/, () => '<script>\n' + fs.readFileSync(path.join(__dirname, '..', '..', 'staff-master.js'), 'utf8') + '</script>');
 let pass = 0, fail = 0;
 function t(name, ok, info) {
   if (ok) { pass++; console.log('  ✓ ' + name); }
@@ -77,7 +79,7 @@ function box(app, opt) {
 }
 
 const APPS = [
-  { label: '職員マスタ', src: fs.readFileSync(process.env.STFM_HTML || path.join(ROOT, 'staff-master.html'), 'utf8'),
+  { label: '職員マスタ', src: process.env.STFM_HTML ? fs.readFileSync(process.env.STFM_HTML, 'utf8') : stfmPage_(fs.readFileSync(path.join(ROOT, 'staff-master.html'), 'utf8')),
     has: 'stfmHasLogin_', load: 'stfmAuthLoad_', token: 'stfmAccessToken_', writeVar: 'REQ_WRITE_ACTIONS', sessionVar: 'STFM_SESSION_RE', newReqId: true,
     writes: ['bulkSave', 'importRows', 'uploadFile', 'removeFile', 'setEnums', 'setCommittees', 'setCorp'],
     reads: ['list', 'dryRun', 'getSecure', 'getEnums', 'getCommittees', 'getCorp'] },
