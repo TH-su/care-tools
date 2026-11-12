@@ -3,6 +3,15 @@
  * 読み書きの可否はデータベース（許可リストの RLS・最後の管理者の保護）が決める。
  * この画面は「管理者でなければ何も出さない」「自分の行は触らせない」を重ねて見せ方を整えるだけ。
  */
+/* 画面の中の窓（su-dialog.js）が読めなかった時の受け口（2026-11-13）。ブラウザの窓に落とし、呼ぶ側と同じ約束（Promise）で答える。
+   この画面は CSP で直書きのスクリプトを置かないため、職員マスタと同じ中身をここに置く。書き出し・端末登録の QR の欄は
+   この部品（start → show）が開くので、受け口はここ1か所で足りる */
+if (!window.SUDialog) window.SUDialog = {
+  alert: function (m) { try { window.alert(m); } catch (_) { /* 何もしない */ } return Promise.resolve(); },
+  confirm: function (m) { var r = false; try { r = !!window.confirm(m); } catch (_) { /* 何もしない */ } return Promise.resolve(r); },
+  busy: function () { return false; },
+  idle: function () { return Promise.resolve(); }
+};
 (function () {
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
@@ -114,7 +123,7 @@
     var to = sel.value;
     var name = a.label || a.email;
     var extra = to === 'admin' ? '\n\n管理者は、次のログインで2段階認証の登録が必要になります。' : '';
-    if (!confirm(name + ' の役割を「' + ROLE[a.role] + '」から「' + ROLE[to] + '」に変えますか？' + extra)) {
+    if (!(await window.SUDialog.confirm(name + ' の役割を「' + ROLE[a.role] + '」から「' + ROLE[to] + '」に変えますか？' + extra))) {
       sel.value = a.role;
       return;
     }
@@ -135,7 +144,7 @@
     var name = a.label || a.email;
     var q = on ? name + ' を再開しますか？（また使えるようになります）'
                : name + ' を停止しますか？\n\n停止すると、その人はその場で何も見られなくなります（あとで再開できます）。';
-    if (!confirm(q)) return;
+    if (!(await window.SUDialog.confirm(q))) return;
     msg('');
     btn.disabled = true;
     var r = await SUAuth.client().from('allowed_accounts').update({ is_active: on }).eq('email', a.email).select('email');
@@ -157,7 +166,7 @@
     if (!label) { msg('名前（メモ）を入れてください。一覧で見分けるために使います。'); $('f-label').focus(); return; }
     var q = email + '（' + label + '）を「' + ROLE[role] + '」として追加しますか？';
     if (role === 'admin') q += '\n\n管理者はこの画面も使えるようになります。初めてのログインで2段階認証の登録が必要です。';
-    if (!confirm(q)) return;
+    if (!(await window.SUDialog.confirm(q))) return;
     msg('');
     var btn = this;
     btn.disabled = true;
