@@ -126,8 +126,35 @@ const flush = () => new Promise((r) => setImmediate(r));
   }
   {
     const e = env({});
-    e.load(); e.tick(20); await flush();
+    e.load(); e.tick(70); await flush();
     t('現れなければ聞かずに札を出さない', e.slot.hidden === true);
+  }
+  {
+    const c = { n: 0 };
+    const e = env({});
+    e.load(); e.tick(40); await flush();
+    e.win.SUAuth = auth({ status: 'ok', role: 'admin' }, c);
+    e.tick(1); await flush(); e.tick(5); await flush();
+    t('8秒を過ぎて（20秒目）現れても1回だけ聞いて出す', c.n === 1 && e.slot.textContent === '管理者としてログイン中', { n: c.n });
+  }
+  {
+    const c = { n: 0 };
+    const e = env({});
+    e.load(); e.tick(60); await flush();
+    e.win.SUAuth = auth({ status: 'ok', role: 'admin' }, c);
+    e.tick(10); await flush();
+    t('30秒を過ぎたら待つのをやめる（後から現れても聞かない）', c.n === 0);
+  }
+  {
+    const c = { n: 0 };
+    let res = { status: 'ok', role: 'admin' };
+    const e = env({ auth: { STATUS, check: () => { c.n++; return Promise.resolve(res); } } });
+    e.load(); await flush();
+    res = { status: 'signed_out' };
+    e.fire('win', 'storage', { key: 'su_device_role' }); await flush();
+    t('ログインと関係の無い控えの変化では聞き直さない', c.n === 1);
+    e.fire('win', 'storage', { key: 'sb-abc-auth-token' }); await flush();
+    t('別のタブでログアウトしたら聞き直して札を消す', c.n === 2 && e.slot.hidden === true);
   }
   t('部品から su-auth.js を読み込まない', !/su-auth\.js['"]/.test(SRC.replace(/\/\*[\s\S]*?\*\//g, '')) && !/createElement\(\s*['"]script/.test(SRC));
 
@@ -174,6 +201,14 @@ const flush = () => new Promise((r) => setImmediate(r));
     t(f + ': 部品の版がそろう', (s.match(/su-shell\.js\?v=([^"]+)"/) || [])[1] === vJs && (s.match(/su-shell\.css\?v=([^"]+)"/) || [])[1] === vCss && !!vJs && !!vCss);
     const iA = s.indexOf('<script src="su-auth.js'), iS = s.indexOf('<script src="su-shell.js');
     t(f + ': su-auth.js の後で su-shell.js を読む', iA >= 0 && iS > iA);
+  }
+  console.log('4b 役割の札だけを当てた画面（メニューへ戻る道は前からある）');
+  for (const f of ['ats.html', 'equip-log.html', 'shadow-check.html']) {
+    const s = read(f).replace(/<!--[\s\S]*?-->/g, '');
+    const hdr = (s.match(/<header class="hdr su-shell-hdr">([\s\S]*?)<\/header>/) || [])[1] || '';
+    t(f + ': 見出しの題の右に札の場所が1つ', hdr.split('su-shell-role').length === 2 && hdr.indexOf('<span class="su-shell-role" hidden></span>') > hdr.indexOf('<h1'));
+    t(f + ': 部品の版がそろう', (s.match(/su-shell\.js\?v=([^"]+)"/) || [])[1] === vJs && (s.match(/su-shell\.css\?v=([^"]+)"/) || [])[1] === vCss);
+    t(f + ': su-net.js より前で su-shell.js を読む', s.indexOf('<script src="su-shell.js') > 0 && s.indexOf('<script src="su-shell.js') < s.indexOf('<script src="su-net.js'));
   }
   console.log('5 当てない画面');
   for (const f of ['login.html', 'index.html']) t(f + ': su-shell.js を読まない', read(f).indexOf('su-shell.js') < 0);

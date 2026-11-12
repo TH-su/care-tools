@@ -248,13 +248,16 @@ body.split .pane{width:50vw}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
+<!-- 見出しの右のログイン中の役割の札の見た目（画面だけ・印刷しない・2026-11-12） -->
+<link rel="stylesheet" href="su-shell.css?v=2026-11-12">
 </head>
 <body>
 
-<header class="hdr">
+<header class="hdr su-shell-hdr">
   <a class="hdr-btn" href="index.html">← メニュー</a>
   <h1>採用管理</h1>
   <span class="sync" id="a-sync" role="status" aria-live="polite"></span>
+  <span class="su-shell-role" hidden></span>
 </header>
 
 <main id="a-main">
@@ -2367,6 +2370,7 @@ boot_();
 </script>
 
 <!-- インターネットにつながっていない時の帯（2026-11-12 商用化の見直し・画面だけ・通信と保存には触れない） -->
+<script src="su-shell.js?v=2026-11-12.2"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 <script src="su-report.js?v=2026-10-28" data-tool="採用管理"></script>
 </body>

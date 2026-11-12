@@ -3,7 +3,7 @@
  * 何をするか: 見出しの中の決まった場所 <span class="su-shell-role" hidden></span> にだけ、ログインの役割の文を入れて見せる。
  *   文はメニューの帯と同じ3つだけ（管理者としてログイン中・事務所としてログイン中・現場としてログイン中）。
  *   役割は、画面がすでに読んでいる su-auth.js の SUAuth.check()（強制でない確かめ）に相乗りして受け取る。
- *   SUAuth がまだ無い時は、少しの間（最長 8 秒）現れるのを待ってから1回だけ聞く。su-auth.js をこの部品から読み込むことはしない。
+ *   SUAuth がまだ無い時は、少しの間（最長 30 秒・ログインの覆いが後から読む画面のため）現れるのを待ってから1回だけ聞く。su-auth.js をこの部品から読み込むことはしない。
  * 何をしないか（CLAUDE.md §2-6 共通部品の決まり）:
  *   - 誰が何をできるかを決めない（札は知らせだけ。守りはデータベースと各画面の確かめが持つ）
  *   - 確かめている間・確かめられない時・ログインしていない時は札を出さない（決めつけない）
@@ -55,7 +55,7 @@
       var timer = setInterval(function () {
         n++;
         ask();
-        if (asked || n >= 16) clearInterval(timer);
+        if (asked || n >= 60) clearInterval(timer);
       }, 500);
     }
     window.SUShell = { TEXT: TEXT, _draw: draw, _ask: ask };
@@ -65,6 +65,13 @@
     try {
       window.addEventListener('pageshow', function (ev) {
         if (!ev || !ev.persisted || inFrame || !slots().length) return;
+        asked = false; draw(''); start();
+      });
+      /* 別のタブでログアウト・アカウントの入れ替えがあった時（ログインの控え sb-…-auth-token が変わった時）は、札を消してから聞き直す。
+         su-auth.js も同じ出来事で同じタブの控えを捨てるので、古い役割を受け取らない */
+      window.addEventListener('storage', function (ev) {
+        if (inFrame || !slots().length) return;
+        if (ev && ev.key !== null && !/^sb-[a-z0-9]+-auth-token$/.test(String(ev.key))) return;
         asked = false; draw(''); start();
       });
     } catch (e) { /* 聞き直せなくても画面は動く */ }
