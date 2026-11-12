@@ -532,6 +532,7 @@ const CENSUS = {
   ],
   "staff-master-calc.js": [],
   "staff-master.html": [],
+  "staff-master.js": [],
   "su-annot.js": [
     [F, "root.innerHTML = '<div class=\"sua-board\"></div><div class=\"sua-hover\"></div><div class=\"sua-cur\"></div><div class=\"sua-marks\"></div>' + '<div class=\"sua-bar\" role=\"toolbar\" aria-label=\"画面の指摘\">' + '<span class=\"sua-t\" aria-live=\"polite\"></span>' + '<button class=\"sua-btn sub\" type=\"button\" data-a=\"move\">帯を下へ</button>' + '<button class=\"sua-btn pri\" type=\"button\" data-a=\"done\">できた</button>' + '<button class=\"sua-btn sub\" type=\"button\" data-a=\"quit\">やめる</button>' + '</div>'"],
     [F, "marksBox.innerHTML = ''"],

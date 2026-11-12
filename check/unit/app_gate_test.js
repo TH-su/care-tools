@@ -11,6 +11,8 @@ const path = require('path');
 const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..', '..');
+/* 職員マスタの画面のスクリプトは 2026-11-12 に staff-master.js へ移した。読み込みの札をその中身に戻し、移す前と同じ文字で確かめる */
+const stfmPage_ = (h) => h.replace(/<script src="staff-master\.js\?v=[^"]*"><\/script>/, () => '<script>\n' + fs.readFileSync(path.join(__dirname, '..', '..', 'staff-master.js'), 'utf8') + '</script>');
 const SRC = fs.readFileSync(process.env.APP_GATE_JS || path.join(ROOT, 'su-app-gate.js'), 'utf8');   // APP_GATE_JS: 条件を抜いた版で試験が落ちるかを見る時だけ
 let ok = 0, ng = 0;
 const say = (m) => process.stdout.write(m + '\n');
@@ -213,7 +215,7 @@ function fakeAuth(st, rpc) {
       ['connection-settings.html', 'connection-settings', /\nfunction init\(\)\{/, /\nfunction startApp_\(\)\{/, ['buildCard(', 'setupBackup(', 'wizInit(']]
     ];
     for (const [file, key, entryRe, startRe, reads] of PAGES) {
-      const html = fs.readFileSync(path.join(ROOT, file), 'utf8');
+      const html = file === 'staff-master.html' ? stfmPage_(fs.readFileSync(path.join(ROOT, file), 'utf8')) : fs.readFileSync(path.join(ROOT, file), 'utf8');
       const m1 = entryRe.exec(html), m2 = startRe.exec(html);
       if (!m1 || !m2 || m2.index < m1.index) { t(file + ': 入口と続きの関数が見つかる', false); continue; }
       const entry = html.slice(m1.index, m2.index);

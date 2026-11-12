@@ -27,6 +27,8 @@ const vm = require('vm');
 const nodeCrypto = require('crypto');
 
 const ROOT = path.join(__dirname, '..', '..');
+/* 職員マスタの画面のスクリプトは 2026-11-12 に staff-master.js へ移した。読み込みの札をその中身に戻し、移す前と同じ文字で確かめる */
+const stfmPage_ = (h) => h.replace(/<script src="staff-master\.js\?v=[^"]*"><\/script>/, () => '<script>\n' + fs.readFileSync(path.join(__dirname, '..', '..', 'staff-master.js'), 'utf8') + '</script>');
 const HTML = fs.readFileSync(process.env.ATS_HTML || path.join(ROOT, 'ats.html'), 'utf8');
 const CALC = require(path.join(ROOT, 'ats-calc.js'));
 
@@ -660,7 +662,7 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
   }
 
   group('7. 文字・部品・CSP');
-  const SMH = fs.readFileSync(path.join(ROOT, 'staff-master.html'), 'utf8');
+  const SMH = stfmPage_(fs.readFileSync(path.join(ROOT, 'staff-master.html'), 'utf8'));
   t('FLUSH_FAIL_MSG は職員マスタの画面の写し（＝GAS の定数）と1文字も違わない', FLUSH === /var FLUSH_FAIL_MSG = '([^']+)';/.exec(SMH)[1]);
   const scripts = [...HTML.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]);
   t('su-errors.js がいちばん先・su-report.js が </body> の直前', /^su-errors\.js\?v=/.test(scripts[0]) && /<script src="su-report\.js\?v=[^"]+" data-tool="採用管理"><\/script>\n<\/body>/.test(HTML), scripts);
