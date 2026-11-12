@@ -654,7 +654,7 @@ const CENSUS = {
     [F, "box.innerHTML = '<div class=\"dup-none\">重複している入居者・氏名の無い行・持ち主のいない記録・登録を見送った人はいません。</div>'"],
     [E, "box.innerHTML = html"],
     [F, "list.innerHTML = ''"],
-    [F, "list.innerHTML = `<div class=\"empty\">入居者が登録されていません。<br>「＋ 追加」または「サンプル投入」から開始してください。</div>`"],
+    [F, "list.innerHTML = `<div class=\"empty\">入居者が登録されていません。<br>「＋ 追加」から開始してください。</div>`"],
     [E, "div.innerHTML = ` <div class=\"rli-l\"> <div class=\"rli-n\">${escapeHtml(r.name)}${dcTag}</div> <div class=\"rli-s\">${r.room ? '部屋 ' + escapeHtml(r.room) + ' / ' : ''}${hStr}記録 ${n} 件</div> </div> <div class=\"rli-btns\"> <button class=\"bn bo bsm\" data-ed=\"${escapeHtml(r.id)}\">編集</button> </div> `"],
     [E, "body.innerHTML = THR_ROWS.map(({k,label})=>{ const t = THR[k]; const mk = (field, step) => `<input type=\"number\" min=\"0\" step=\"${step}\" data-thr=\"${k}.${field}\" value=\"${escapeHtml(t[field])}\">`; return `<tr> <td>${label}</td> <td class=\"th-w\">${mk('wKg','0.1')}</td> <td class=\"th-w\">${mk('wPct','0.1')}</td> <td class=\"th-ng\">${mk('ngKg','0.1')}</td> <td class=\"th-ng\">${mk('ngPct','0.1')}</td> </tr>`; }).join('')"],
     [N, "el.innerHTML = `<b>検知ルール：</b>${part('前月比', THR.m1)}<br>${part('3ヶ月比', THR.m3)}<br>${part('6ヶ月比', THR.m6)}` + `<br><span style=\"color:var(--g6)\">比べる相手は暦の月です（前月比＝1か月前、3ヶ月比＝3か月前・無ければ2か月前、6ヶ月比＝6か月前・無ければ5→4か月前）。それより前へはさかのぼりません。</span>` + `<br><span style=\"color:var(--g6)\">低栄養リスク（厚労省の区切り・体重とBMIだけで判定）：高＝1か月5%・3か月7.5%・6か月10%以上の減少／中＝どれかの期間で3%以上の減少かBMI 18.5未満。一覧と個別に札を出し、アラートには高リスクだけを上げます。</span>` + `<br><span style=\"color:var(--g6)\">前回の測定から5%以上か2.5kg以上変わった値は、保存の前に「測り直しましたか」と確かめます。</span>`"],   /* しきい値は kg > 0・pct > 0 を満たす時だけ出る＝数に読める値だけ */

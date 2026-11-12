@@ -3,7 +3,7 @@
 <head>
 <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-uYLLdc9x3pweAiBNdKFRkuY2oSOjlvCIzEsgPaNDxY8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-8nUZDQN21XOKmstsfMNYcgRjq4iKkyCWEvM7txD1sVY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="spl-build" content="2026-09-23.1">
@@ -582,6 +582,7 @@ dialog.fdlg::backdrop{background:var(--c-ink);opacity:.45}
      background:var(--c-ink);color:var(--c-bg);border-radius:9999px;padding:var(--sp-2) var(--sp-5);
      font-size:var(--fs-sm);box-shadow:var(--shadow-2);z-index:200;display:none;max-width:88vw}
 #toast.on{display:block}
+#toast.err{background:var(--c-danger-bg);color:var(--c-danger);border:1px solid var(--c-danger)}
 
 /* 職員（staff）には出さない部品。サーバー側の許可表が正で、これは二重の防御 */
 body.staff .adm{display:none !important}
@@ -1294,12 +1295,15 @@ function svgEl(tag, opt) {
   return n;
 }
 
-function toast(msg) {
+/* kind が 'err' の時は失敗の見た目（赤系）で、読めるよう長めに出す（2026-11-12） */
+function toast(msg, kind) {
   var t = $('toast');
+  var err = kind === 'err';
   t.textContent = txt(msg);
+  t.classList.toggle('err', err);
   t.classList.add('on');
   if (toast._t) clearTimeout(toast._t);
-  toast._t = setTimeout(function () { t.classList.remove('on'); }, 2600);
+  toast._t = setTimeout(function () { t.classList.remove('on'); }, err ? 6000 : 2600);
 }
 
 /* 3状態の表示（読み込み中／空／エラー＋次の一手） */
@@ -2784,7 +2788,7 @@ function offerReprice(it, from, count) {
   apiPost('repriceMoves', { itemId: it.id, from: from, to: to }).then(function (d) {
     toast('付け直しました（' + (Number(d.changed) || 0) + '件）');
   }).catch(function (e) {
-    window.alert('付け直せませんでした: ' + errText(e) + '\n' + errHint(e));
+    toast('付け直せませんでした: ' + errText(e) + ' ' + errHint(e), 'err');
   });
 }
 
@@ -4905,11 +4909,41 @@ function openNew() {
   $('ndReorder').value = '0';
   $('ndNote').value = '';
   syncNewDlg();
+  ND_SNAP = newDlgSnap();
   var dlg = $('newDlg');
   if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
   $('ndName').focus();
 }
+/* 「新しい品目」の窓を開いた時の入力の値（メモリだけ・端末に残さない）。Esc で閉じる時に比べ、違えば確かめる（2026-11-12） */
+var ND_SNAP = null;
+var ND_UNSAVED_MSG = '保存していない変更があります。閉じてもよろしいですか？';
+function newDlgSnap() {
+  var out = [];
+  Array.prototype.forEach.call($('newDlg').querySelectorAll('input, select, textarea'), function (el) {
+    out.push((el.type === 'radio' || el.type === 'checkbox') ? (el.checked ? '1' : '0') : txt(el.value));
+  });
+  return JSON.stringify(out);
+}
+/* Esc（cancel）で閉じてよいか。登録中は閉じない・変更があれば確かめる */
+function newDlgMayCancel() {
+  if ($('ndSave').disabled) return false;
+  if (ND_SNAP !== null && newDlgSnap() !== ND_SNAP && !window.confirm(ND_UNSAVED_MSG)) return false;
+  return true;
+}
+/* 閉じる道（登録の後・「閉じる」・確かめて「はい」）を通らずに窓が閉じた時、開き直すか。
+   登録中・「いいえ」と答えた後・確かめて「いいえ」なら開き直す（入力はそのまま残っている） */
+var ND_SAID_NO = false;
+function newDlgKeepOnClose() {
+  var said = ND_SAID_NO;
+  ND_SAID_NO = false;
+  if (ND_SNAP === null) return false;
+  if ($('ndSave').disabled || (newDlgSnap() !== ND_SNAP && (said || !window.confirm(ND_UNSAVED_MSG)))) return true;
+  ND_SNAP = null;
+  return false;
+}
 function closeNew() {
+  ND_SNAP = null;
+  ND_SAID_NO = false;
   var dlg = $('newDlg');
   if (typeof dlg.close === 'function' && dlg.open) dlg.close(); else dlg.removeAttribute('open');
 }
@@ -5116,7 +5150,7 @@ function bindEvents() {
   $('printBtn').addEventListener('click', printSheet);
 
   /* 品目を追加（ダイアログ） */
-  $('ndClose').addEventListener('click', closeNew);
+  $('ndClose').addEventListener('click', function () { if (newDlgMayCancel()) closeNew(); });   /* Esc と同じく、登録中は閉じない・変更があれば確かめる */
   $('ndSave').addEventListener('click', saveNewItem);
   $('ndBillType').addEventListener('change', function () {
     /* 請求方式を選び直した時だけ在庫の追い方を既定へ（月額品は入庫と棚卸だけ・承認事項 J） */
@@ -5252,7 +5286,14 @@ function bindEvents() {
     if (ST.ask && ST.ask.busy) ev.preventDefault();
   });
   $('newDlg').addEventListener('cancel', function (ev) {
-    if ($('ndSave').disabled) ev.preventDefault();
+    if (!newDlgMayCancel()) { ND_SAID_NO = true; ev.preventDefault(); return; }
+    ND_SNAP = null;
+  });
+  /* Chrome は、操作の無いまま Esc を続けて押すと、止めた後でも窓を閉じてしまう。閉じる道を通らずに閉じた時は守り直す */
+  $('newDlg').addEventListener('close', function () {
+    if (!newDlgKeepOnClose()) return;
+    var dlg = $('newDlg');
+    if (typeof dlg.showModal === 'function' && !dlg.open) dlg.showModal();
   });
 }
 function pickIn(v, allowed, def) { return allowed.indexOf(v) >= 0 ? v : def; }
