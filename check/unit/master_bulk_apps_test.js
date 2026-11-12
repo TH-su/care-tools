@@ -22,7 +22,9 @@ const src = fs.readFileSync(HTML, 'utf8');
 
 /* 関数を名前で切り出す（master_confirm_test.js と同じ作法） */
 function grabFn(name){
-  const start = src.indexOf('\nfunction ' + name + '(');
+  let start = src.indexOf('\nfunction ' + name + '(');
+  /* 2026-11-13: 画面の中の窓（su-dialog.js）の答えを待つ関数は async になった。頭の async も一緒に切り出す（確かめる中身は同じ） */
+  if(start < 0) start = src.indexOf('\nasync function ' + name + '(');
   if(start < 0) throw new Error('関数が見つかりません: ' + name);
   let depth = 0, seen = false, q = null;
   for(let i = start; i < src.length; i++){
@@ -67,6 +69,9 @@ function makeBox(){
   const box = { calls: { alert: [], confirm: [], toast: [], go: [] }, confirmAnswer: true };
   box.alert = (m) => box.calls.alert.push(String(m));
   box.confirm = (m) => { box.calls.confirm.push(String(m)); return box.confirmAnswer; };
+  /* 2026-11-13: 確かめ・知らせは画面の中の窓（su-dialog.js）になり、答えを約束（Promise）で返す。記録と答え方は今までどおり */
+  box.SUDialog = { alert: (m) => { box.alert(m); return Promise.resolve(); }, confirm: (m) => Promise.resolve(box.confirm(m)) };
+  box.devGen = 0; box.bulkGen = 0;
   box.toast = (m) => box.calls.toast.push(String(m));
   box.paintBulkDirty = () => {};
   box.renderBulk = () => {};
@@ -119,13 +124,15 @@ group('表示（取得時の値）');
   eq('ほかの列の取り方は変えていない', [b.bulkOrig_(a, 'room'), b.bulkOrig_(a, 'kana')], ['101', '']);
 }
 
+/* 2026-11-13: saveBulk は確かめの答えを待つ（async）。3・4 は答えを待ってから同じ値を確かめる（最後の async の流れの頭で待つ） */
+const asyncGroups = (async () => {
 /* ═══ 3. 送る形 ═══ */
 group('送る形（saveBulk）');
 {
   const b = makeBox();
   b.bulkRows = rows();
   b.bulkDirty = { 901: { tgt_weight: false }, 902: { tgt_schedule: true, room: '112' } };
-  b.saveBulk();
+  await b.saveBulk();
   t('確認を1回出して送った', b.calls.confirm.length === 1 && b.calls.go.length === 1, b.calls);
   const ch = b.calls.go[0] || [];
   const byId = {}; ch.forEach((c) => { byId[c.id] = c; });
@@ -142,7 +149,7 @@ group('送る形（saveBulk）');
   b.bulkRows = rows();
   /* 未設定の方の3つを全部 true にした印だけが残っていても（通常は onBulkInput が消す）、既定を書き込まない */
   b.bulkDirty = { 901: { tgt_excretion: true, tgt_weight: true, tgt_schedule: true }, 903: { room: '113' } };
-  b.saveBulk();
+  await b.saveBulk();
   const ch = b.calls.go[0] || [];
   t('未設定の方に既定（3つ全部）を書き込まない', !ch.some((c) => c.id === 901), ch);
   t('ほかの方の変更は送る', ch.length === 1 && ch[0].id === 903 && !('targetApps' in ch[0].fields), ch);
@@ -155,7 +162,7 @@ group('3つ全部は外せない');
   const b = makeBox();
   b.bulkRows = rows();
   b.bulkDirty = { 902: { tgt_excretion: false }, 903: { room: '113' } };
-  b.saveBulk();
+  await b.saveBulk();
   t('確認を出さない・送らない', b.calls.confirm.length === 0 && b.calls.go.length === 0, b.calls);
   t('氏名（居室）で知らせる', b.calls.alert.length === 1 && /見本 乙（102）/.test(b.calls.alert[0]) && /チェックを1つ以上入れてください/.test(b.calls.alert[0]), b.calls.alert);
   t('未保存の変更は残す', JSON.stringify(b.bulkDirty[902]) === JSON.stringify({ tgt_excretion: false }) && b.bulkDirty[903].room === '113');
@@ -164,16 +171,17 @@ group('3つ全部は外せない');
   const b = makeBox();
   b.bulkRows = rows();
   b.bulkDirty = { 901: { tgt_excretion: false, tgt_weight: false, tgt_schedule: false } };
-  b.saveBulk();
+  await b.saveBulk();
   t('未設定の方の3つを全部外しても止める', b.calls.go.length === 0 && b.calls.alert.length === 1 && /見本 甲/.test(b.calls.alert[0]));
 }
 {
   const b = makeBox();
   b.bulkRows = rows(); b.confirmAnswer = false;
   b.bulkDirty = { 903: { tgt_excretion: true } };
-  b.saveBulk();
+  await b.saveBulk();
   t('確認で「キャンセル」なら送らない', b.calls.confirm.length === 1 && b.calls.go.length === 0);
 }
+})();
 
 /* ═══ 5. 保存の実物確認 ═══ */
 group('保存の実物確認（verifyAppliedRows_）');
@@ -201,6 +209,8 @@ function makeGoBox(serverRows){
   const els = { bulkSave: el(), bulkClose: el(), syncStatus: el() };
   box.$ = (id) => els[id] || null;
   box.alert = (m) => box.calls.alert.push(String(m));
+  /* 2026-11-13: 確かめ・知らせは画面の中の窓（su-dialog.js）になり、答えを約束（Promise）で返す。記録と答え方は今までどおり */
+  box.SUDialog = { alert: (m) => { box.alert(m); return Promise.resolve(); }, confirm: () => Promise.resolve(true) };
   box.setSync = () => {};
   box.renderBulk = () => {};
   box.paintBulkDirty = () => {};
@@ -219,6 +229,7 @@ function makeGoBox(serverRows){
 }
 const settle = () => new Promise((r) => setTimeout(r, 0));
 (async () => {
+  await asyncGroups;
   group('送る直前の取り直し（他の端末の変更を戻さない）');
   const nmv = { spaceOnly: [], keyChanged: [] };
   {

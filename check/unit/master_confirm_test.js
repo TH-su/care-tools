@@ -21,7 +21,9 @@ const src = fs.readFileSync(HTML, 'utf8');
 /* 関数を名前で切り出す（HTML ごと評価すると DOM 依存の初期化まで走る）。
    波かっこを数えて終端を探し、文字列の中のかっこは数えない（bf_form_test.js と同じ作法）。 */
 function grabFn(name){
-  const start = src.indexOf('\nfunction ' + name + '(');
+  let start = src.indexOf('\nfunction ' + name + '(');
+  /* 2026-11-13: 画面の中の窓（su-dialog.js）の答えを待つ関数は async になった。頭の async も一緒に切り出す（確かめる中身は同じ） */
+  if(start < 0) start = src.indexOf('\nasync function ' + name + '(');
   if(start < 0) throw new Error('関数が見つかりません: ' + name);
   let depth = 0, seen = false, q = null;
   for(let i = start; i < src.length; i++){
@@ -253,7 +255,8 @@ t('一括編集は全終端（割り込み中止・保存中に閉じられた�
 /* ── 追補（2026-08-27 レビュー裁定） ── */
 group('確認中の追い越し・誤報を防ぐ配線');
 const MEALSAVE = grabFn('mealSaveGo');
-const MCATCH = grabBlock(MEALSAVE, MEALSAVE.indexOf('.catch(function(e){'));
+/* 2026-11-13: 知らせ（画面の中の窓）を待つため、応答の受け口は async function になった。頭の async を許す（確かめる中身は同じ） */
+const MCATCH = grabBlock(MEALSAVE, MEALSAVE.search(/\.catch\((?:async )?function\(e\)\{/));
 const MHEAD = MCATCH.slice(0, MCATCH.indexOf('var seq0=mealSeq;'));
 t('【高1】確認の往復中は mealSaving を戻さない（catch 冒頭に mealSaving=false が無い）',
   MCATCH.indexOf('var seq0=mealSeq;') > 0 && MHEAD.indexOf('mealSaving=false') < 0);
@@ -263,7 +266,7 @@ t('【高1】mealSaving は全終端で戻す（旧GAS案内・取り直し検�
   && /mealSetMsg_\(''\); mealSaving=false; paintMealBar\(\); renderRoster\(\);/.test(MCATCH),
   {'mealSaving を戻す箇所数': (MCATCH.match(/mealSaving=false;/g) || []).length});
 t('【高1】確認の .then 先頭で取り直しの追い越しを見る（seq ガード）',
-  /getMealList'\},30000\)\.then\(function\(d\)\{\s*\/\*[\s\S]*?\*\/\s*if\(seq0!==mealSeq\)\{/.test(MEALSAVE));
+  /getMealList'\},30000\)\.then\((?:async )?function\(d\)\{\s*\/\*[\s\S]*?\*\/\s*if\(seq0!==mealSeq\)\{/.test(MEALSAVE));
 
 t('【中2】一括編集の成功終端で保存ボタンの状態を描き直す（一部失敗をやり直せる）',
   /paintBulkDirty\(\);[^\n]*\n\s*renderBulk\(\);\s*\n\s*refreshRoster\(\);/.test(BULKSAVE));
@@ -318,6 +321,8 @@ async function runSave(opt){
     setSync: (s, c) => { log.sync.push(c === undefined ? [s] : [s, c]); },
     toast: m => { log.toast.push(m); },
     alert: m => { log.alert.push(m); },
+    /* 2026-11-13: 確かめ・知らせは画面の中の窓（su-dialog.js）になり、答えを約束（Promise）で返す。記録と答え方は今までどおり */
+    SUDialog: { alert: m => { log.alert.push(m); return Promise.resolve(); }, confirm: () => Promise.resolve(true) },
     afterSaveOk_: (r, s, dg, ed) => { log.okCalls++; log.okArgs.push({dg, edSame: ed === ED}); },
     apiPost: body => { log.post.push(copy(body)); return opt.post(body); },
     /* 2026-10-13: 保存の前にログインの証明を取り出す（rmAccessToken_）。この試験ではログインしていない＝'' */
@@ -344,6 +349,8 @@ async function runBulk(resp){
     setSync: (s, c) => { log.sync.push(c === undefined ? [s] : [s, c]); },
     toast: m => { log.toast.push(m); },
     alert: m => { log.alert.push(m); },
+    /* 2026-11-13: 確かめ・知らせは画面の中の窓（su-dialog.js）になり、答えを約束（Promise）で返す。記録と答え方は今までどおり */
+    SUDialog: { alert: m => { log.alert.push(m); return Promise.resolve(); }, confirm: () => Promise.resolve(true) },
     apiPostRaw: () => Promise.resolve(resp),
     apiGet: () => Promise.reject(new Error('照会は呼ばれない想定')),
     bulkNamed: s => String(s),
@@ -378,6 +385,9 @@ async function runMeal(resp){
     setSync: (s, c) => { log.sync.push(c === undefined ? [s] : [s, c]); },
     toast: m => { log.toast.push(m); },
     alert: m => { log.alert.push(m); },
+    /* 2026-11-13: 確かめ・知らせは画面の中の窓（su-dialog.js）になり、答えを約束（Promise）で返す。記録と答え方は今までどおり */
+    SUDialog: { alert: m => { log.alert.push(m); return Promise.resolve(); }, confirm: () => Promise.resolve(true) },
+    devGen: 0,
     mealSetMsg_: () => {}, paintMealBar: () => {}, renderRoster: () => {},
     apiPostRaw: () => Promise.resolve(resp),
     apiGet: () => Promise.reject(new Error('照会は呼ばれない想定')),

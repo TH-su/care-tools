@@ -45,7 +45,9 @@ function eq(label, got, want){ const g = JSON.stringify(got), w = JSON.stringify
 
 /* 関数を名前で切り出す（master_fullguard_test.js と同じ作法） */
 function grabFn(src, name){
-  const start = src.indexOf('\nfunction ' + name + '(');
+  let start = src.indexOf('\nfunction ' + name + '(');
+  /* 2026-11-13: 画面の中の窓（su-dialog.js）の答えを待つ関数は async になった。頭の async も一緒に切り出す（確かめる中身は同じ） */
+  if(start < 0) start = src.indexOf('\nasync function ' + name + '(');
   if(start < 0) throw new Error('関数が見つかりません: ' + name);
   let depth = 0, seen = false, q = null;
   for(let i = start; i < src.length; i++){
@@ -81,7 +83,7 @@ const RMARK = '{"目印":"一覧キャッシュは書き換えられていない
 const NEW_VARS = ['devGen'];
 const NEW_FNS = ['devDirty_', 'devReload_', 'onDeviceRoleStorage_', 'rmOn_', 'rmLiveGate_'];
 const hasVar = (src, n) => src.indexOf('\nvar ' + n + '=') >= 0;
-const hasFn = (src, n) => src.indexOf('\nfunction ' + n + '(') >= 0;
+const hasFn = (src, n) => src.indexOf('\nfunction ' + n + '(') >= 0 || src.indexOf('\nasync function ' + n + '(') >= 0;
 
 function load(src, old){
   const store = new Map();
@@ -145,6 +147,8 @@ function load(src, old){
     /* ログインの役割の確かめ（2026-10-29）。既定は「確かめが通った後」（事務所PCで開いて使っている状態）。rmGate_ は数えるだけ */
     rmGateOk_: true, rmGate_(){ cnt.gate++; },
     alert(m){ cnt.alert.push(String(m)); },
+    /* 2026-11-13: 確かめ・知らせは画面の中の窓（su-dialog.js）になり、答えを約束（Promise）で返す。記録と答え方は今までどおり */
+    SUDialog: { alert(m){ cnt.alert.push(String(m)); return Promise.resolve(); }, confirm(){ return Promise.resolve(true); } },
     location: { reload(){ cnt.reload++; } },
     apiGet(args, timeout){ return deferred('apiGet:' + (args && args.action), args, timeout); },
     apiPost(body, timeout){ return deferred('apiPost:' + (body && body.action), body, timeout); },

@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-+gl0fTf5WLKHTzT5/hQcIz/dC4lk8AU/OQusc6I1Z4g='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-TeGaaWhcxr6anMyA4wsF4SL35Eo3mYj9bUezoSTuiSk=' 'sha256-XA6WLxfWV2/16pFOJl/xfoWgnUplFVMNeMzxV98HfHE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -2050,11 +2050,20 @@ body.meal-on #sc-list{max-width:none}
 <script src="su-devcfg.js?v=2026-11-08"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
 <script src="su-res-read.js?v=2026-11-11"></script>
+<!-- 止めて知らせる窓（alert・confirm）の代わりに画面の中の窓を出す共通部品（2026-11-12 代表者の決定）。画面のスクリプトより前に置く -->
+<script src="su-dialog.js?v=2026-11-13"></script>
 <script>
 /* 黙ると困る失敗（保存・同期の補助）を、画面には出さずに記録へ残す（2026-10-08・監査10月版 #8）。
    行き先は su-errors.js の note＝コンソールと記録先（同期ログ・不具合報告の控えと自動報告）。トーストは出さない。
    ★どの script より先に定義する（起動中の catch から呼んでも未定義にならないように）。note が無い古いキャッシュでは何もしない。 */
 function rmNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('保存・同期の失敗', e, 'master:' + where); }catch(_){} }
+/* 画面の中の窓（su-dialog.js）が読めなかった時の受け口（2026-11-12）。ブラウザの窓に落とし、呼ぶ側と同じ約束（Promise）で答える */
+if(!window.SUDialog) window.SUDialog = {
+  alert: function(m){ try{ window.alert(m); }catch(_){} return Promise.resolve(); },
+  confirm: function(m){ var r = false; try{ r = !!window.confirm(m); }catch(_){} return Promise.resolve(r); },
+  busy: function(){ return false; },
+  idle: function(){ return Promise.resolve(); }
+};
 </script>
 <script src="su-cfg-hint.js?v=2026-11-10"></script>
 <!-- 同期データの保存先の切り替え（統合 0005/0007）。見るだけの画面は切り替え後に Supabase から読む（未ログインは Google） -->
@@ -2806,6 +2815,7 @@ function srevTick(){
   if(document.hidden)return;                       // hidden 中はスキップ（visible 復帰時に即時1回）
   if(getDeviceRole()==='field')return;             // 現場端末では動かさない（init 前段ガードの防御的二重化）
   if(srevBusy)return;
+  if(window.SUDialog&&typeof SUDialog.busy==='function'&&SUDialog.busy())return;   // 画面の中の窓が出ている間は名簿を取り直さない（次の回に任せる）（画面の中の窓・2026-11-13・仮置き）
   var mu=srevMasterUrl();if(!mu&&!RM_LIVE)return;  // URL未設定の端末は現状動作のまま（ログインだけで使える端末は新しい保存先の版数だけを読む・2026-11-08）
   var gap=Date.now()-srevAt;
   if(gap>=0&&gap<SREV_MIN_GAP_MS)return;           // 負値（端末時計の巻き戻し）では締め出さない
@@ -3186,14 +3196,16 @@ function paintTabs(){
     b.setAttribute('aria-pressed', b.getAttribute('data-mfv')===curView?'true':'false');
   });
 }
-function setView(v){
+async function setView(v){
   var next=VIEWS.indexOf(v)>=0?v:'std';
+  var dg0=devGen, cv0=curView;   /* 窓の答えを待つ間に端末の用途・表示が変わったら切り替えない（画面の中の窓・2026-11-13・仮置き） */
   /* ★食形態一覧に未保存の変更があるまま離れさせない（変更はメモリにしか無い）。
      止めた時はタブの点灯も元へ戻す（押した見た目だけ変わって中身が変わらないのを防ぐ） */
-  if(curView==='meal'&&next!=='meal'&&!mealLeaveOk('ほかの表示に切り替える')){ paintTabs(); return }
+  if(curView==='meal'&&next!=='meal'){ var mok=mealLeaveOk('ほかの表示に切り替える'); if(mok!==true&&!(await mok)){ paintTabs(); return } }
   /* 薬効辞書の未保存も同じ（メモリにしか無い） */
   if(curView==='md'&&next!=='md'&&mdDirty&&
-     !confirm('薬効辞書に未保存の変更があります。\n切り替えると失われます。よろしいですか？')){ paintTabs(); return }
+     !(await SUDialog.confirm('薬効辞書に未保存の変更があります。\n切り替えると失われます。よろしいですか？'))){ paintTabs(); return }
+  if(dg0!==devGen||curView!==cv0){ paintTabs(); return }
   /* ★「失われます」に同意したのだから、本当に捨てる。残すと、破棄したはずの改名（＝旧行の削除）や
      非表示が、あとから別の保存に紛れてサーバーの行を消す（2026-09-08 レビュー M-3）。 */
   if(curView==='md') mdClearPending_();
@@ -5907,7 +5919,7 @@ function msOnCheck_(ev){
    ★update は slots だけ（note は看護師・事務所のメモなので上書きしない）。edited_by は null を明示
      （前にこの行を触った職員が、今回の変更の記入者として残らないように）。
    ★rev が合わない・権限が無い（0行）・23505（他の端末が先に作った）は上書きせず、取り直して見せる */
-function msSend_(){
+async function msSend_(){
   if(msBusy||!msRows||!msRemote||!msAuthSt||!msAuthSt.ok) return;
   var tg=msRows.filter(msSendable_);
   var held=msRows.filter(function(r){ return msDiff_(r)==='diff'&&msHold_(r); }).length;
@@ -5918,7 +5930,9 @@ function msSend_(){
   var q=tg.length+'名の服薬の時間帯を care-log へ送ります。';
   if(held) q+='\n・確認済みでない要確認の方 '+held+'名は送りません。';
   if(drop.length) q+='\n・時間帯が減る方が '+drop.length+'名います（そのうち全部なしになる方 '+clr+'名）。';
-  if(!confirm(q+'\n送りますか？')) return;
+  var g0=msGen, rm0=msRemote, dg0=devGen;
+  if(!(await SUDialog.confirm(q+'\n送りますか？'))) return;
+  if(g0!==msGen||rm0!==msRemote||msBusy||dg0!==devGen) return;   /* 窓の間に閉じた・読み直した・端末の用途が変わった時は送らない（画面の中の窓・2026-11-13・仮置き） */
   var sb=window.SUAuth.client(), stamp=String(Date.now()), note='入居者マスタの定期薬から（'+msToday_()+'）';
   var sent=0, fail=0, conflict=0, done=0, remote=msRemote;
   msBusy=true; msMsg='送っています… 0 / '+tg.length; msPaintFoot_();
@@ -6335,7 +6349,7 @@ function mdRenameGuard_(ren){
 }
 /* 保存。★効能が空の行は送らない（サーバー側でも弾くが、二重の歯止め）。
    空を送って既存の効能を潰さない＝原則4の空上書き保護。 */
-function mdSave(){
+async function mdSave(){
   /* ★保存の応答も取得と同じ世代（mdGen）で捨てる。保存の途中で端末が現場用に切り替わると
      （applyDeviceGuard が mdDict・mdMap を消して世代を進める）、遅れて届いた応答が mdDict・mdMap を
      埋め直し、表を描き直していた。世代が変わった後の応答では【何もしない】（ボタンも戻さない・案内も出さない。
@@ -6368,10 +6382,10 @@ function mdSave(){
   for(ri=0;ri<ren.length;ri++)
     if(mdDrugName(ren[ri].to)!==ren[ri].to)
       dz.push('・'+ren[ri].to+' →（引く時は「'+mdDrugName(ren[ri].to)+'」になります）');
-  if(dz.length && !confirm('次の名前には用量が付いています。\n\n'+dz.join('\n')+
+  if(dz.length && !(await SUDialog.confirm('次の名前には用量が付いています。\n\n'+dz.join('\n')+
       '\n\n効能は【末尾の用量を落とした名前】で引くので、このままだと処方欄と結び付きません。\n'+
-      '用量を外した名前にすることをおすすめします。\n\nこのまま進めますか？')) return;
-  if(warn.length && !confirm('次の薬は、いまの処方に出ている名前です。\n\n'+warn.join('\n')+
+      '用量を外した名前にすることをおすすめします。\n\nこのまま進めますか？'))) return;
+  if(warn.length && !(await SUDialog.confirm('次の薬は、いまの処方に出ている名前です。\n\n'+warn.join('\n')+
       '\n\n名前を変えると、次の2つが起きます。\n'+
       '① この方たちの「病歴・薬一覧」の効能列が【空になります】\n'+
       '　（効能は処方欄の薬剤名で引いているためです）\n'+
@@ -6379,7 +6393,8 @@ function mdSave(){
       '　（処方欄から拾っているので、辞書の行を消しても戻ってきます）\n'+
       '　消したい場合は、保存したあと元の名前の行で「削除」も押してください\n\n'+
       '処方欄の書き方そのものを直したい場合は、その方の詳細画面で内服の行を直してください。\n\n'+
-      'このまま名前を変えますか？')) return;
+      'このまま名前を変えますか？'))) return;
+  if(gen!==mdGen||!mdDict) return;   /* 窓の間に端末の用途が変わった（世代が進んだ）時は送らない（画面の中の窓・2026-11-13・仮置き） */
 
   var items=all.filter(function(x){
     if(mdDels[x.name]) return false;                      /* 消す行は下で del として送る */
@@ -6426,7 +6441,7 @@ function mdSave(){
     mdDict=gd.rows; mdMap=Object.create(null);
     for(var qi=0;qi<gd.rows.length;qi++){ var qk=mdKey(gd.rows[qi].name); if(qk) mdMap[qk]=gd.rows[qi]; }
     renderRoster(); paintShBars();
-    alert('保存を中止しました（1文字も書いていません）。\n\n'+
+    SUDialog.alert('保存を中止しました（1文字も書いていません）。\n\n'+
       '表を開いてから、他の端末で次の薬が変わっています（'+gd.moved.length+'件）。\n'+
       gd.moved.map(function(x){ return '・'+x; }).join('\n')+'\n\n'+
       '名前を変える操作は、その行を【丸ごと置き換えます】。このまま送ると相手の変更が消えます。\n'+
@@ -6834,11 +6849,13 @@ function mcOpen_(id){
 }
 /* ★閉じられないのは書き込みの送信中だけ（AI・読み込みの待ちでは閉じられる・指摘14）。
    手で直した直し案は、確かめてから捨てる */
-function mcClose_(){
+async function mcClose_(){
   if(mcCur&&mcCur.writing) return false;
   if(mcBulk&&mcBulk.busy) return false;
   mcBulk=null;
-  if(mcCur&&mcCur.loaded&&mcCur.edited&&!confirm('直し案の変更は保存されていません。閉じてよいですか？')) return false;
+  var cur0=mcCur;
+  if(mcCur&&mcCur.loaded&&mcCur.edited&&!(await SUDialog.confirm('直し案の変更は保存されていません。閉じてよいですか？'))) return false;
+  if(mcCur!==cur0||(mcCur&&mcCur.writing)) return false;   /* 窓の間に作業が変わった・反映が始まった時は閉じない（画面の中の窓・2026-11-13・仮置き） */
   mcCur=null; mcFilterId=''; mcWorkGen++;   /* ★一覧の読み直し（mcGen）は捨てない（2回目の指摘D） */
   $('mMedCand').classList.remove('on');
   $('mcListBox').innerHTML=''; $('mcWork').innerHTML='';   /* 閉じたら本文・定期薬を画面に残さない */
@@ -6887,9 +6904,11 @@ function mcPaintModal_(){
 var mcBulk=null;   /* {sel:{srcKey:1}, why, busy, msg} */
 /* まとめて選べる候補（保留中・反映できたか確かめ中は選ばせない＝医師・薬局の確認待ちを閉じない） */
 function mcBulkable_(c){ return !c.hold&&!c.dayHold&&!(mcSt&&mcSt.unsure&&mcSt.unsure[c.srcKey]); }
-function mcBulkOpen_(){
+async function mcBulkOpen_(){
   if(!mcSt||mcSt.server!=='ok'||(mcCur&&mcCur.busy)) return;
-  if(mcCur&&mcCur.edited&&!confirm('直し案の変更は保存されていません。まとめて片付ける画面へ移ってよいですか？')) return;
+  var cur0=mcCur, st0=mcSt;
+  if(mcCur&&mcCur.edited&&!(await SUDialog.confirm('直し案の変更は保存されていません。まとめて片付ける画面へ移ってよいですか？'))) return;
+  if(mcCur!==cur0||mcSt!==st0||(mcCur&&mcCur.busy)) return;   /* 窓の間に作業・一覧が変わった時は移らない（画面の中の窓・2026-11-13・仮置き） */
   mcCur=null; mcWorkGen++;
   mcBulk={sel:{}, why:'', busy:false, msg:''};
   mcPaintModal_();
@@ -6915,7 +6934,7 @@ function mcBulkHtml_(){
     '<button class="btn btn-ok" type="button" id="mcBulkRun"'+(n&&!mcBulk.busy?'':' disabled')+'>選んだ '+n+'件を「反映しない」にする</button></div>';
   return h;
 }
-function mcBulkRun_(){
+async function mcBulkRun_(){
   if(!mcBulk||mcBulk.busy||!mcSt) return;
   var why=$('mcBulkWhy')?$('mcBulkWhy').value:'', more=$('mcBulkNote')?String($('mcBulkNote').value||'').trim():'';
   var L=mcList_().filter(function(c){ return mcBulk.sel[c.srcKey]&&mcBulkable_(c); });
@@ -6924,7 +6943,9 @@ function mcBulkRun_(){
   if(!why){ setMsg('反映しない理由を選んでください'); try{ $('mcBulkWhy').focus(); }catch(e){} return; }
   if(why==='その他'&&!more){ setMsg('「その他」の時は補足を書いてください'); try{ $('mcBulkNote').focus(); }catch(e){} return; }
   if(more) why=(why+'：'+more).slice(0,200);
-  if(!confirm(L.length+'件を「反映しない」として残します（理由: '+why+'）。定期薬は書き換えません。よろしいですか？')) return;
+  var dg0=devGen, b0=mcBulk, st0=mcSt;
+  if(!(await SUDialog.confirm(L.length+'件を「反映しない」として残します（理由: '+why+'）。定期薬は書き換えません。よろしいですか？'))) return;
+  if(dg0!==devGen||mcBulk!==b0||b0.busy||mcSt!==st0) return;   /* 窓の間に端末の用途・作業が変わった時は送らない（二重に残さない）（画面の中の窓・2026-11-13・仮置き） */
   var dg=devGen, b=mcBulk, i=0, ok=0, skip=0;
   b.busy=true; b.why=why; mcPaintModal_();
   function step(){
@@ -6948,22 +6969,26 @@ function mcBulkRun_(){
   }
   step();
 }
-function mcPick_(key){
+async function mcPick_(key){
   if(mcCur&&mcCur.busy) return;
   if(mcBulk&&mcBulk.busy) return;
+  var st0=mcSt, cur0=mcCur;   /* 窓の答えを待つ間に一覧・作業が変わったら開かない（画面の中の窓・2026-11-13・仮置き） */
   /* 「反映できたか確かめ中」の候補は、人が確かめたと答えた時だけ開く（2026-10-07 審査の指摘）。
      黙って止めると画面の中に出口が無かった。反映済みだった場合は、サーバーの二重反映止め（already）が止める。
      ★まとめて片付けるの取りやめの確認より前に聞く（取りやめた後に止めると、動かない画面が残る） */
   if(mcSt&&mcSt.unsure&&mcSt.unsure[key]){
-    if(!confirm('この候補は前回「反映できたか分からない」で止まっています。\n\n'+
+    if(!(await SUDialog.confirm('この候補は前回「反映できたか分からない」で止まっています。\n\n'+
                 'この方の定期薬と変更履歴を確かめて、まだ反映されていないと分かった時だけ「OK」を押してください。\n'+
-                '（反映されていた時は「キャンセル」を押し、ページを読み込み直してください）')) return;
+                '（反映されていた時は「キャンセル」を押し、ページを読み込み直してください）'))) return;
+    if(mcSt!==st0||mcCur!==cur0||(mcBulk&&mcBulk.busy)) return;
     delete mcSt.unsure[key];
     mcPaint_();
   }
-  if(mcBulk&&Object.keys(mcBulk.sel).length&&!confirm('まとめて片付けるの選択を取りやめて、この候補を開きますか？')) return;
+  if(mcBulk&&Object.keys(mcBulk.sel).length&&!(await SUDialog.confirm('まとめて片付けるの選択を取りやめて、この候補を開きますか？'))) return;
+  if(mcSt!==st0||mcCur!==cur0||(mcBulk&&mcBulk.busy)) return;
   mcBulk=null;
-  if(mcCur&&mcCur.edited&&!confirm('直し案の変更は保存されていません。開き直してよいですか？')) return;
+  if(mcCur&&mcCur.edited&&!(await SUDialog.confirm('直し案の変更は保存されていません。開き直してよいですか？'))) return;
+  if(mcSt!==st0||mcCur!==cur0||(mcCur&&mcCur.busy)) return;
   var c=null; mcAll_().forEach(function(x){ if(x.srcKey===key&&(!mcFilterId||x.id===mcFilterId)) c=x; });
   if(!c) return;
   mcCur={c:c, before:null, after:'', ai:null, busy:true, writing:false, msg:'今の定期薬を読み込んでいます…', loaded:false, edited:false};
@@ -7157,7 +7182,7 @@ function mcKeepUnsure_(prev,dec){
 }
 /* 確実に書いていない失敗（合言葉・権限・貼り替え前）かどうか（2回目の指摘J） */
 function mcNoWrite_(m){ return /不明なaction|認証エラー|保存できません|参照専用|NO_URL/.test(String(m||'')); }
-function mcApply_(){
+async function mcApply_(){
   if(!mcCur||mcCur.busy||!mcCur.loaded||!mcCanApply_()) return;
   var cur=mcCur, d=mcDiff_(cur.before,cur.after);
   /* ★この端末で編集画面・一括編集が開いていたら止める（保存すると反映が巻き戻るため・指摘8） */
@@ -7166,9 +7191,11 @@ function mcApply_(){
   var k=mcCheck_();
   var lines=['追加 '+d.add.length+'行・変更 '+d.chg.length+'行・中止 '+d.del.length+'行'];
   k.warn.forEach(function(w){ lines.push('⚠ '+w); });
-  if(!confirm(cur.c.name+' 様の「薬剤情報（定期）」を直し案のとおりに書き換えます。\n'+lines.join('\n')+'\n\n'+
-    'ほかの端末でこの方の編集画面・一括編集を開いている場合は、先に閉じてください。\nよろしいですか？')) return;
-  if(d.del.length&&!confirm('「中止」が '+d.del.length+'行あります。記録どおりの中止で、飲んでいる薬を消していないことを確かめましたか？')) return;
+  var dg0=devGen;
+  if(!(await SUDialog.confirm(cur.c.name+' 様の「薬剤情報（定期）」を直し案のとおりに書き換えます。\n'+lines.join('\n')+'\n\n'+
+    'ほかの端末でこの方の編集画面・一括編集を開いている場合は、先に閉じてください。\nよろしいですか？'))) return;
+  if(d.del.length&&!(await SUDialog.confirm('「中止」が '+d.del.length+'行あります。記録どおりの中止で、飲んでいる薬を消していないことを確かめましたか？'))) return;
+  if(dg0!==devGen||mcCur!==cur||cur.busy||!cur.loaded) return;   /* 窓の間に端末の用途・作業が変わった時は書かない（二重の反映にしない）（画面の中の窓・2026-11-13・仮置き） */
   var dg=devGen, sent=cur.after, before=cur.before;    /* ★送る値を固定する（送信中に欄が変わっても控えを間違えない・指摘9） */
   cur.busy=true; cur.writing=true; cur.msg='反映しています…'; mcPaintModal_();
   apiPostRaw(mcBody_(cur,'apply',{before:before, after:sent, note:''}),40000).then(function(r){
@@ -7256,14 +7283,14 @@ function mcWire_(){
       var ab=$('mcApply'); if(ab) ab.disabled=!mcCanApply_();
     }
   });
-  m.addEventListener('click',function(e){
+  m.addEventListener('click',async function(e){
     var t=e.target; if(!t||!t.closest) return;
     var it=t.closest('.mc-item'); if(it){ mcPick_(it.getAttribute('data-src')); return; }
     if(t.closest('.mc-all')){ mcFilterId=''; mcPaintModal_(); return; }
     if(t.id==='mcApply') mcApply_();
     else if(t.id==='mcSkip') mcSkip_();
     else if(t.id==='mcClose') mcClose_();
-    else if(t.id==='mcReload'&&!(mcCur&&mcCur.writing)&&!(mcBulk&&mcBulk.busy)){ if(mcCur&&mcCur.edited&&!confirm('直し案の変更は保存されていません。取り直してよいですか？')) return; mcCur=null; mcBulk=null; mcLoad_(); }
+    else if(t.id==='mcReload'&&!(mcCur&&mcCur.writing)&&!(mcBulk&&mcBulk.busy)){ var rc0=mcCur; if(mcCur&&mcCur.edited&&!(await SUDialog.confirm('直し案の変更は保存されていません。取り直してよいですか？'))) return; if(mcCur!==rc0||(mcCur&&mcCur.writing)||(mcBulk&&mcBulk.busy)) return; mcCur=null; mcBulk=null; mcLoad_(); }
     else if(t.id==='mcBulkBtn') mcBulkOpen_();
     else if(mcBulk&&!mcBulk.busy&&(t.id==='mcBulkAll'||t.id==='mcBulkNone')){
       mcBulk.sel={}; if(t.id==='mcBulkAll') mcList_().forEach(function(c){ if(mcBulkable_(c)) mcBulk.sel[c.srcKey]=1; });
@@ -7375,11 +7402,15 @@ function yjPing_(){
   }).then(function(){ if(yjSt===st) yjPaint_(); });
 }
 function yjDirty_(){ return !!(yjSt&&yjSt.cur&&yjSt.cur.loaded&&yjSt.cur.touched); }
-function yjClose_(){
+async function yjClose_(){
   if(yjSt&&yjSt.cur&&yjSt.cur.writing) return false;
   if(yjSt&&yjSt.bulkBusy) return false;   /* まとめて反映の途中は閉じない（2026-11-04） */
-  if(yjSt&&yjSt.docs.some(function(x){ return x.status==='unsure'; })&&!confirm('反映できたか確かめられなかった書類があります。閉じた後、その方の定期薬と変更履歴を確かめてください。閉じてよいですか？')) return false;
-  if(yjDirty_()&&!confirm('確認表の印・直した行は保存されていません。閉じてよいですか？')) return false;
+  var S0=yjSt, c0=yjSt&&yjSt.cur;   /* 窓の答えを待つ間に作業が変わった・反映が始まった時は閉じない（画面の中の窓・2026-11-13・仮置き） */
+  var stale=function(){ return yjSt!==S0||(yjSt&&(yjSt.cur!==c0||yjSt.bulkBusy||(yjSt.cur&&yjSt.cur.writing))); };
+  if(yjSt&&yjSt.docs.some(function(x){ return x.status==='unsure'; })&&!(await SUDialog.confirm('反映できたか確かめられなかった書類があります。閉じた後、その方の定期薬と変更履歴を確かめてください。閉じてよいですか？'))) return false;
+  if(stale()) return false;
+  if(yjDirty_()&&!(await SUDialog.confirm('確認表の印・直した行は保存されていません。閉じてよいですか？'))) return false;
+  if(stale()) return false;
   yjSt=null; yjGen++;
   $('mYakujo').classList.remove('on');
   $('yjBody').innerHTML='';   /* 画像・読んだ文字・定期薬を画面に残さない */
@@ -7677,7 +7708,7 @@ function yjBody_(c, x, j, date, rows, how){
   return body;
 }
 /* 送る値を固定して反映する（薬の変更候補の反映と同じ守り・同じ受け口） */
-function yjApply_(){
+async function yjApply_(){
   var S=yjSt; if(!S||!S.cur||S.cur.busy||!S.cur.loaded) return;
   /* 判定と送る調剤日は同じ「今日」で決める（取り込んだ日を選んでいる時に0時をまたいでも食い違わない） */
   var c=S.cur, x=S.docs[c.di], today=todayISO(), j=yjJudge_(today);
@@ -7686,8 +7717,10 @@ function yjApply_(){
     c.msg='編集画面・一括編集を閉じてから反映してください'; yjPaint_(); return; }
   var lines=['変える '+j.counts.change+'行・足す '+j.counts.add+'行・中止 '+j.counts.stop+'行'];
   j.notes.forEach(function(n){ lines.push('⚠ '+n); });
-  if(!confirm(c.name+' 様の「薬剤情報（定期）」を、確認表のとおりに書き換えます。\n'+lines.join('\n')+'\n\nほかの端末でこの方の編集画面・一括編集を開いている場合は、先に閉じてください。\nよろしいですか？')) return;
-  if(j.counts.stop&&!confirm('「中止」が '+j.counts.stop+'行あります。書類どおりの中止で、飲んでいる薬を消していないことを確かめましたか？')) return;
+  var dg0=devGen, g0=yjGen;
+  if(!(await SUDialog.confirm(c.name+' 様の「薬剤情報（定期）」を、確認表のとおりに書き換えます。\n'+lines.join('\n')+'\n\nほかの端末でこの方の編集画面・一括編集を開いている場合は、先に閉じてください。\nよろしいですか？'))) return;
+  if(j.counts.stop&&!(await SUDialog.confirm('「中止」が '+j.counts.stop+'行あります。書類どおりの中止で、飲んでいる薬を消していないことを確かめましたか？'))) return;
+  if(dg0!==devGen||g0!==yjGen||yjSt!==S||S.cur!==c||c.busy||!c.loaded) return;   /* 窓の間に端末の用途・作業が変わった時は書かない（二重の反映にしない）（画面の中の窓・2026-11-13・仮置き） */
   var dg=devGen, gen=yjGen, sent=j.after, date=YakujoCalc.useDate(c, today);
   var body=yjBody_(c, x, j, date, c.rows, '');
   /* 取り込みの一致率の記録（数だけ）。送る時点の確認表で作り、反映できた時だけ端末に置く */
@@ -7827,7 +7860,7 @@ function yjBulkHtml_(){
   }
   return h+'</section>';
 }
-function yjBulkApply_(){
+async function yjBulkApply_(){
   var S=yjSt; if(!S||S.bulkBusy||S.cur||S.phase!=='queue') return;
   if(S.preDone<S.preTotal) return;
   if(S.server!=='ok'){ S.bulkMsg='入居者マスタGASの版を確かめられないため、まとめて反映できません（何も書いていません）'; yjPaint_(); return; }
@@ -7837,10 +7870,13 @@ function yjBulkApply_(){
   if(!ok.length&&!none.length) return;
   var lines=ok.map(function(i){ var p=S.docs[i].pre, j=p.bc.judged; return '・'+p.cur.name+' 様　変える '+j.counts.change+'行・足す '+j.counts.add+'行'+(j.counts.stop?'・消す '+j.counts.stop+'行（'+p.bc.rows.filter(function(r){ return r.kind==='left'&&r.action==='stop'; }).map(function(r){ return YakujoCalc.lineName(r.cur); }).join('・')+'）':'')+(p.bc.kept?'・残す '+p.bc.kept+'行':'')+(p.bc.older?'・⚠ 調剤日が定期薬の最後の変更（'+fmtJDate(p.bc.older)+'）より前':''); });
   var nStop=ok.reduce(function(a,i){ return a+S.docs[i].pre.bc.judged.counts.stop; },0);
-  if(!confirm((ok.length?'次の '+ok.length+' 人の「薬剤情報（定期）」を、一覧のとおりに書き換えます。\n'+lines.join('\n')+'\n\n':'')+
+  var dg0=devGen, bg0=S.bulkGen, pre0=ok.concat(none).map(function(i){ return S.docs[i].pre; });
+  if(!(await SUDialog.confirm((ok.length?'次の '+ok.length+' 人の「薬剤情報（定期）」を、一覧のとおりに書き換えます。\n'+lines.join('\n')+'\n\n':'')+
     (nStop?'消す薬が '+nStop+' 行あります。書類どおりで、飲んでいる薬を消していないことを確かめてください（取りこぼすと飲んでいる薬がマスタから消えます）。\n\n':'')+
     (none.length?'変更なしの '+none.length+' 件は、書かずに終わりにします。\n\n':'')+
-    (ok.length?'ほかの端末でこの方々の編集画面・一括編集を開いている場合は、先に閉じてください。\n':'')+'よろしいですか？')) return;
+    (ok.length?'ほかの端末でこの方々の編集画面・一括編集を開いている場合は、先に閉じてください。\n':'')+'よろしいですか？'))) return;
+  /* 窓の間に端末の用途・調べ直し・一覧が変わった時は書かない（調べた時の判定のまま送らない・二重の反映にしない）（画面の中の窓・2026-11-13・仮置き） */
+  if(dg0!==devGen||yjSt!==S||S.bulkBusy||S.cur||S.phase!=='queue'||S.bulkGen!==bg0||ok.concat(none).some(function(i,k){ return S.docs[i].pre!==pre0[k]; })) return;
   none.forEach(function(i){ S.docs[i].status='none'; });
   if(!ok.length){ S.bulkMsg='変更なしの '+none.length+' 件を終わりにしました'; yjPaint_(); return; }
   var dg=devGen, res={done:0, already:0, back:0, unsure:0}, stopAll='', ids={};
@@ -7936,7 +7972,7 @@ function yjWire_(){
       else if(!e.shiftKey&&document.activeElement===f[f.length-1]){ e.preventDefault(); f[0].focus(); }
     }
   });
-  m.addEventListener('click',function(e){
+  m.addEventListener('click',async function(e){
     var t=e.target; if(!t||!t.closest||!yjSt) return;
     if(t.id==='yjClose'){ yjClose_(); return; }
     if(t.id==='yjGo'){ yjSt.phase='queue'; yjPaint_(); yjPreload_(); return; }
@@ -7946,7 +7982,8 @@ function yjWire_(){
     if(t.id==='yjAll'&&yjSt.cur&&yjSt.cur.loaded&&!yjSt.cur.busy){
       var ca=yjSt.cur, la=ca.rows.filter(function(r){ return r.kind==='left'; });
       var undo=la.length&&la.every(function(r){ return r.action==='stop'; })&&la.some(function(r){ return r.byAll; });
-      if(!undo&&!confirm(ca.name+' 様の今の定期薬のうち、書類に無い次の '+la.length+' 行を、すべて「中止」にします。\n'+la.map(function(r){ return '・'+YakujoCalc.lineName(r.cur); }).join('\n')+'\n\nほかの医療機関の薬・頓服の扱いの薬が入っていないか確かめてください。残す薬は、この後に「残す」へ選び直せます。よろしいですか？')) return;
+      if(!undo&&!(await SUDialog.confirm(ca.name+' 様の今の定期薬のうち、書類に無い次の '+la.length+' 行を、すべて「中止」にします。\n'+la.map(function(r){ return '・'+YakujoCalc.lineName(r.cur); }).join('\n')+'\n\nほかの医療機関の薬・頓服の扱いの薬が入っていないか確かめてください。残す薬は、この後に「残す」へ選び直せます。よろしいですか？'))) return;
+      if(!yjSt||yjSt.cur!==ca||!ca.loaded||ca.busy) return;   /* 窓の間に確認表が変わった時は当てない（画面の中の窓・2026-11-13・仮置き） */
       ca.rows=YakujoCalc.replaceAll(ca.rows, !undo); ca.dupChecked=false; ca.touched=true; yjPaint_(); return; }
     var twb=t.closest('[data-yjtwin]'); if(twb&&yjSt.cur&&yjSt.cur.loaded&&!yjSt.cur.busy){
       var cw=yjSt.cur, ra=cw.rows[+twb.getAttribute('data-yjtwin')], rl=ra&&ra.twin!=null?cw.rows[ra.twin]:null;
@@ -7959,7 +7996,9 @@ function yjWire_(){
     if(t.id==='yjRetry'&&yjSt.cur&&!yjSt.cur.busy){ yjStartDoc_(yjSt.cur.di); return; }
     if(t.id==='yjNone'&&yjSt.cur&&!yjSt.cur.writing){ yjSt.docs[yjSt.cur.di].status='none'; yjSt.cur=null; yjGen++; yjSt.phase='queue'; yjPaint_(); return; }
     if(t.id==='yjQueue'&&yjSt.cur&&!yjSt.cur.writing){
-      if(yjDirty_()&&!confirm('確認表の印・直した行は保存されていません。一覧に戻ってよいですか？')) return;
+      var qc0=yjSt.cur;
+      if(yjDirty_()&&!(await SUDialog.confirm('確認表の印・直した行は保存されていません。一覧に戻ってよいですか？'))) return;
+      if(!yjSt||yjSt.cur!==qc0||qc0.writing) return;   /* 窓の間に確認表が変わった・反映が始まった時は戻らない（画面の中の窓・2026-11-13・仮置き） */
       yjSt.cur=null; yjGen++; yjSt.phase='queue'; yjPaint_(); return; }
     var dbn=t.closest('[data-yjdoc]'); if(dbn){ yjStartDoc_(+dbn.getAttribute('data-yjdoc')); return; }
   });
@@ -8437,7 +8476,7 @@ function mdAiParse(j, names){
   });
   return out;
 }
-function mdAiFill(){
+async function mdAiFill(){
   /* ★AIの下書きも保存（mdSave）と同じ世代（mdGen）で捨てる。尋ねている途中で端末が現場用に切り替わると
      （applyDeviceGuard が世代を進め、「AIに尋ねています…」の印も下ろす）、残りの塊を尋ね続けて印を出し直し、
      届いた下書きを表の入力欄と編集の控え（mdEdits）へ書き込んで案内を出していた。
@@ -8462,11 +8501,12 @@ function mdAiFill(){
     toast('この端末には個別機能訓練計画書の接続先が無いため、AIを使えません（訓練計画アプリの設定画面で接続先を入れた端末で使えます）',false);
     return;
   }
-  if(!confirm('未登録の '+todo.length+' 種類の効能をAIに下書きさせます。\n\n'+
+  if(!(await SUDialog.confirm('未登録の '+todo.length+' 種類の効能をAIに下書きさせます。\n\n'+
               '・薬剤名だけを送ります（入居者の情報は送りません）\n'+
               '・入った効能は【薬剤師の確認前】です。確認したら「確認済み」に印を付けてください\n'+
               '・そのままでは保存されません。内容を見てから「保存」を押してください\n\n'+
-              '進めますか？')) return;
+              '進めますか？'))) return;
+  if(gen!==mdGen||curView!=='md') return;   /* 窓の間に端末の用途・表示が変わった時は尋ねない（画面の中の窓・2026-11-13・仮置き） */
   var chunks=[], i;
   for(i=0;i<todo.length;i+=MD_AI_CHUNK) chunks.push(todo.slice(i,i+MD_AI_CHUNK));
   var got={}, done=0, ng=0;
@@ -8813,10 +8853,11 @@ function mealOnInput_(e){
 /* 未保存のまま離れようとした時の確認。離れてよければ true */
 function mealLeaveOk(what){
   if(!mealDirtyCells()) return true;
-  return confirm('食形態一覧に未保存の変更が '+mealDirtyPeople()+'名 / '+mealDirtyCells()+'項目あります。\n'+
+  /* 変更が無い時は true をすぐ返し、ある時は画面の中の窓の答え（約束）を返す（呼ぶ側が待つ・2026-11-13） */
+  return SUDialog.confirm('食形態一覧に未保存の変更が '+mealDirtyPeople()+'名 / '+mealDirtyCells()+'項目あります。\n'+
     what+'と、この変更は失われます。よろしいですか？');
 }
-function mealSaveGo(){
+async function mealSaveGo(){
   if(mealSaving) return;
   /* ★送る直前に、画面のセルの【いまの文字】をもう一度拾う。入力途中（IMEの変換確定前など）で
      input が飛んでいないセルがあると、画面に見えている文字と送る値がずれる。
@@ -8842,7 +8883,7 @@ function mealSaveGo(){
   }
   if(!changes.length){ toast('変更がありません'); return; }
   if(toolong.length){
-    alert('長すぎる項目があるため保存しませんでした（'+MEAL_MAX_LEN+'文字まで）。\n\n'+toolong.slice(0,10).join('\n'));
+    SUDialog.alert('長すぎる項目があるため保存しませんでした（'+MEAL_MAX_LEN+'文字まで）。\n\n'+toolong.slice(0,10).join('\n'));
     return;
   }
   var msg=changes.length+'名 / '+cells+'項目を入居者マスタへ保存します。\n\n'+
@@ -8850,9 +8891,11 @@ function mealSaveGo(){
       blanks.slice(0,10).join('\n　')+(blanks.length>10?('\n　…ほか'+(blanks.length-10)+'項目'):'')+'\n\n'):'')+
     '直した項目だけが書き換わり、他の項目には触れません。\n'+
     'この5項目はフェイスシートにもそのまま出ます。\n\nよろしいですか？';
-  if(!confirm(msg)) return;
+  var dg0=devGen;
+  if(!(await SUDialog.confirm(msg))) return;
+  if(mealSaving||dg0!==devGen) return;   /* 窓の間に保存が始まった・端末の用途が変わった時は送らない（画面の中の窓・2026-11-13・仮置き） */
   mealSaving=true; mealSetMsg_('保存中…'); paintMealBar(); setSync('保存中…');
-  apiPostRaw({action:'saveMealList',changes:changes},60000).then(function(d){
+  apiPostRaw({action:'saveMealList',changes:changes},60000).then(async function(d){
     mealSaving=false;
     if(!d||d.ok!==true){
       setSync('保存失敗','err'); mealSetMsg_('');
@@ -8862,7 +8905,7 @@ function mealSaveGo(){
       var failHead=/確定できたか確かめられませんでした/.test(String((d&&d.error)||''))
         ? '保存できたか確かめられませんでした（書き込めている方もいます）。'
         : '保存できませんでした。1文字も書き込んでいません。';
-      alert(failHead+'\n\n'+rmSaveErrWords_(d,'食形態一覧の保存')+det);
+      await SUDialog.alert(failHead+'\n\n'+rmSaveErrWords_(d,'食形態一覧の保存')+det);
       paintMealBar(); return;
     }
     if(d.saved>0){ setSync('保存OK','ok'); toast('✅ '+d.saved+'名を保存しました'); }
@@ -8885,10 +8928,10 @@ function mealSaveGo(){
       delete mealDirty[String(c.id)];
     }
     if(d.warn&&d.warn.length)
-      alert('一部が保存できませんでした（'+kept+'名）。その方の変更は黄色のまま残してあります。\n\n'+
+      await SUDialog.alert('一部が保存できませんでした（'+kept+'名）。その方の変更は黄色のまま残してあります。\n\n'+
         d.warn.map(mealNamed).join('\n'));
     mealSetMsg_(''); paintMealBar(); renderRoster();
-  }).catch(function(e){
+  }).catch(async function(e){
     /* ★mealSaving はここでは戻さない。戻すと確認の往復中に「保存」「取り直し」が復活し、
        追い越した応答で未保存の印を消しかねない（paintMealBar が両ボタンを mealSaving で止めている）。
        戻すのは下の3つの終端それぞれで行う（戻し漏れ＝保存ボタンが二度と押せない）。 */
@@ -8896,13 +8939,13 @@ function mealSaveGo(){
     var m=String((e&&e.message)||e);
     if(/不明なaction/.test(m)){
       setSync('保存失敗','err'); mealSetMsg_('');
-      alert('保存できませんでした。1文字も書き込んでいません。\n'+
+      await SUDialog.alert('保存できませんでした。1文字も書き込んでいません。\n'+
         RM_SRV_OLD+'。\n（管理者向け：手順書「DEPLOY-食形態一覧.md」のとおり貼り替えて公開し直してください）');
       mealSaving=false; paintMealBar(); return;
     }
     /* ★§13: 失敗表示でも書けていることがある。getMealList で実物を突き合わせる（H2と同じ方針） */
     setSync('確認中…'); mealSetMsg_('保存の確認中…');
-    apiGet({action:'getMealList'},30000).then(function(d){
+    apiGet({action:'getMealList'},30000).then(async function(d){
       /* ★この間に取り直しが走っていたら焼き付けない（mealRows が別物に差し替わっている。saveBulk の if(bulkRows) と同じ考え方） */
       if(seq0!==mealSeq){ mealSaving=false; paintMealBar(); return; }
       var v=verifyAppliedRows_(changes,(d&&d.rows)||[]);
@@ -8917,12 +8960,12 @@ function mealSaveGo(){
       if(kN===0){ setSync('保存OK','ok'); toast('✅ 保存しました（応答は届きませんでしたが、全'+aN+'名分の保存を確認しました）'); }
       else{
         setSync('保存失敗','err');
-        alert('通信の応答が届かなかったため、保存の実物を確認しました。\n\n✅ 保存済み: '+aN+'名\n⚠️ 未保存: '+kN+'名（黄色のまま残しています）\n\n未保存の方は、もう一度「保存」を押してください。同じ値の上書きなので二重には反映されません。');
+        await SUDialog.alert('通信の応答が届かなかったため、保存の実物を確認しました。\n\n✅ 保存済み: '+aN+'名\n⚠️ 未保存: '+kN+'名（黄色のまま残しています）\n\n未保存の方は、もう一度「保存」を押してください。同じ値の上書きなので二重には反映されません。');
       }
       mealSetMsg_(''); mealSaving=false; paintMealBar(); renderRoster();
-    }).catch(function(){
+    }).catch(async function(){
       setSync('確認できず','err'); mealSetMsg_('');
-      alert('保存できたか確認できませんでした（通信が不安定です）。\n変更は黄色のまま残しています。\n\n電波の良い場所で、もう一度「保存」を押してください。同じ値の上書きなので二重には反映されません。');
+      await SUDialog.alert('保存できたか確認できませんでした（通信が不安定です）。\n変更は黄色のまま残しています。\n\n電波の良い場所で、もう一度「保存」を押してください。同じ値の上書きなので二重には反映されません。');
       mealSaving=false; paintMealBar();
     });
   });
@@ -9122,10 +9165,10 @@ function editDirty_(){
   if(!sc||!sc.classList.contains('on')||editSnap_===null) return false;
   try{ return editSerial_()!==editSnap_; }catch(e){ return false; }
 }
-/* 離れてよければ true。変更が無ければ何も聞かない */
+/* 離れてよければ true。変更が無ければ何も聞かない（true をすぐ返す）。変更がある時は画面の中の窓の答え（約束）を返す（呼ぶ側が待つ・2026-11-13） */
 function editLeaveOk_(){
   if(!editDirty_()) return true;
-  return confirm('編集中の内容が保存されていません。\n移動すると、入力した内容は消えます。よろしいですか？');
+  return SUDialog.confirm('編集中の内容が保存されていません。\n移動すると、入力した内容は消えます。よろしいですか？');
 }
 /* 見出しの「← メニュー」で離れる時の確かめ（2026-11-12 反証レビュー）。iOS Safari は beforeunload の確かめを出さないため、
    押した時に下の beforeunload と同じ条件（＋覆いの確かめと同じ rmGateDirty_）で聞く。「はい」の時は直後の beforeunload で二重に聞かない。
@@ -9856,15 +9899,17 @@ function medsAuditHandwritten(notes){
   if(stop>=0) body=body.slice(0,stop);
   return body.replace(/\r\n/g,'\n').split('\n');
 }
-function runMedsAudit(){
+async function runMedsAudit(){
   if(medsAuditBusy) return;
   var out=$('medsAuditOut'); if(!out) return;
   if(!medsFxOk_()){ out.innerHTML='<p class="muted" style="color:var(--ng)">'+esc(MEDS_FX_NG)+'</p>'; return; }
   if(!rmOn_()){ out.innerHTML='<p class="muted" style="color:var(--ng)">先に同期設定のURLと合言葉を保存してください。</p>'; return; }
   var targets=roster.filter(function(r){ return r && r.active!==false && r.id!=null; });
   if(!targets.length){ out.innerHTML='<p class="muted">名簿が空です。先に一覧を読み込んでください。</p>'; return; }
-  if(!confirm(targets.length+' 名を1人ずつ読み取ります（書き込みはしません）。\n'
-      +'数分かかることがあります。始めますか？')) return;
+  var dg0=devGen;
+  if(!(await SUDialog.confirm(targets.length+' 名を1人ずつ読み取ります（書き込みはしません）。\n'
+      +'数分かかることがあります。始めますか？'))) return;
+  if(medsAuditBusy||dg0!==devGen||getDeviceRole()==='field') return;   /* 窓の間に点検が始まった・端末の用途が変わった時は始めない（画面の中の窓・2026-11-13・仮置き） */
   /* ★先に薬効辞書（med_dict）を取る。取れないまま数えると、画面と違う規則（予備辞書だけ）で数えることになり、
      A4の折返しの実測も1列のまま測って「0 行 ✅」の誤報になる（本人決定 Q1 と同じく、取れない時は点検しない） */
   medsAuditBusy=true;
@@ -10155,13 +10200,16 @@ function yrPaintSlot_(){
   }catch(e){ rmNote_('見直しの印', e); }
 }
 /* 「見直した」を押した（i は印の並びの番号） */
-function yrReview_(i){
+async function yrReview_(i){
   if(yrBusy||getDeviceRole()==='field') return;
   var el=$('yrSlot'); if(!el) return;
   var id=el.getAttribute('data-id');
   if(yjlMem.id!==id||!yjlMem.rows||yrShown.id!==id) return;
   var m=yrShown.marks[i]; if(!m) return;
-  if(!confirm('「'+m.text+'」の反映を見直しましたか？\n今の定期薬が処方どおりかを確かめてから押してください。\n押すとこの印は消え、反映記録に見直した時刻とあなたのログインが残ります。')) return;
+  var dg0=devGen;
+  if(!(await SUDialog.confirm('「'+m.text+'」の反映を見直しましたか？\n今の定期薬が処方どおりかを確かめてから押してください。\n押すとこの印は消え、反映記録に見直した時刻とあなたのログインが残ります。'))) return;
+  /* 窓の間に端末の用途・開いている方・印が変わった・送り始めた時は送らない（画面の中の窓・2026-11-13・仮置き） */
+  if(yrBusy||dg0!==devGen||getDeviceRole()==='field'||el.getAttribute('data-id')!==id||yjlMem.id!==id||yrShown.id!==id||yrShown.marks[i]!==m) return;
   var key=yrKey_(m), dg=devGen, gen=yrGen;
   yrBusy=true; yrMsg[key]='残しています…'; yrPaintSlot_();
   function done(msg){ yrMsg[key]=msg||''; }
@@ -12997,7 +13045,7 @@ function saveResident(){
   /* 対象アプリを3つ全部外した保存は止める（全部外すと名簿の対象アプリの列が空になり、すべてのアプリに表示される扱いに戻るため。
      一括編集と同じ決まり・2026-11-11 本人指示） */
   if(Array.isArray(rec.targetApps)&&!rec.targetApps.length){
-    alert('チェックを1つ以上入れてください。\n全部外すと、すべてのアプリに表示されてしまいます。');
+    SUDialog.alert('チェックを1つ以上入れてください。\n全部外すと、すべてのアプリに表示されてしまいます。');
     return;
   }
   if(!rmOn_()){toast('⚠️ 入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）');return}
@@ -13028,12 +13076,12 @@ function saveResident(){
     var rf=m0.indexOf('refused:');
     if(rf>=0){
       setSync('保存を止めました','err');
-      alert('⚠️ 保存を止めました（1文字も書き込んでいません。この画面の内容は残っています）。\n\n'+m0.slice(rf+8).trim());
+      SUDialog.alert('⚠️ 保存を止めました（1文字も書き込んでいません。この画面の内容は残っています）。\n\n'+m0.slice(rf+8).trim());
       return;
     }
     if(m0.indexOf('conflict')>=0){
       setSync('競合','err');
-      alert('⚠️ 他の端末がこの方を先に保存しています。\nこの画面の内容は保存されていません（1文字も書き込んでいません）。\n\n次の手順で直し直してください：\n1) いま直した箇所を控える（メモ・スクリーンショット）\n2) 一覧に戻って開き直し、最新の内容を確かめる\n3) 必要な箇所をもう一度直して保存する\n\n※開き直さずにもう一度保存しても、同じ理由で保存できません。');
+      SUDialog.alert('⚠️ 他の端末がこの方を先に保存しています。\nこの画面の内容は保存されていません（1文字も書き込んでいません）。\n\n次の手順で直し直してください：\n1) いま直した箇所を控える（メモ・スクリーンショット）\n2) 一覧に戻って開き直し、最新の内容を確かめる\n3) 必要な箇所をもう一度直して保存する\n\n※開き直さずにもう一度保存しても、同じ理由で保存できません。');
       return;
     }
     /* ★新規登録（番号がまだ無い方）は、下の取り直しで確かめられない（2026-09-23）。
@@ -13261,7 +13309,7 @@ function navTopModal(){
   if($('mYakujo')&&$('mYakujo').classList.contains('on'))return function(){return yjClose_()};
   /* 薬情の見直し（2026-11-11）。読むだけの一覧なので、いつでも閉じる */
   if($('mYjRev')&&$('mYjRev').classList.contains('on'))return function(){yrClose_();return true};
-  if($('mBulk')&&$('mBulk').classList.contains('on'))return function(){closeBulk();return !$('mBulk').classList.contains('on')};
+  if($('mBulk')&&$('mBulk').classList.contains('on'))return function(){var p=closeBulk();if(p&&typeof p.then==='function')return p.then(function(){return !$('mBulk').classList.contains('on')});return !$('mBulk').classList.contains('on')};
   if($('mSync')&&$('mSync').classList.contains('on'))return function(){closeSync();return true};
   if($('mApps')&&$('mApps').classList.contains('on'))return function(){closeApps();return true};
   return null;
@@ -13272,12 +13320,19 @@ window.addEventListener('popstate',function(ev){
   /* ★積んだ段へ「着地」した popstate（進むボタン・一部ブラウザの読み込み直後の発火）では
      画面を変えない。ここで一覧へ落とすと、復元した個人画面が勝手に閉じる */
   if(_navPushed)return;
+  /* ★画面の中の窓（su-dialog.js）が出ている間の「戻る」は、段を積み直して何もしない（ブラウザの窓の間は戻るを押せなかったのと同じ）（画面の中の窓・2026-11-13・仮置き） */
+  if(window.SUDialog&&typeof SUDialog.busy==='function'&&SUDialog.busy()){ try{history.pushState({rmScr:1},'');_navPushed=true;}catch(e){} return; }
   /* ★モーダルが開いていれば、戻る1回ぶんは「閉じる」に充てる（画面は変えない） */
   var m=navTopModal();
   if(m){
     var closed;
     _navInPop=true;
     try{closed=m();}finally{_navInPop=false;}
+    /* 閉じる前の確かめを画面の中の窓で聞いた時は、答えを待ってから同じ順で段を積み直す（2026-11-13） */
+    if(closed&&typeof closed.then==='function'){
+      closed.then(function(c){ if(!c||!$('sc-list').classList.contains('on')){ try{history.pushState({rmScr:1},'');_navPushed=true;}catch(e){} } });
+      return;
+    }
     /* 取り消された（開いたまま）か、個人画面の上のモーダルだった場合は段を積み直す */
     if(!closed||!$('sc-list').classList.contains('on')){
       try{history.pushState({rmScr:1},'');_navPushed=true;}catch(e){}
@@ -13286,7 +13341,18 @@ window.addEventListener('popstate',function(ev){
   }
   if($('sc-list').classList.contains('on'))return;   // UI操作の消費分・一覧での戻る＝何もしない
   /* ★編集画面で未保存の変更がある時は確かめる。やめたら段を積み直して画面は変えない（2026-10-16） */
-  if(!editLeaveOk_()){
+  var lok=editLeaveOk_();
+  if(lok!==true){
+    /* 確かめを画面の中の窓で聞いた時は答えを待つ（やめたら段を積み直す・離れるなら一覧へ）（2026-11-13） */
+    if(lok&&typeof lok.then==='function'){
+      lok.then(function(ok){
+        if(!ok){ try{history.pushState({rmScr:1},'');_navPushed=true;}catch(e){} return; }
+        if($('sc-list').classList.contains('on'))return;
+        _navInPop=true;
+        try{showScreen('list');}finally{_navInPop=false;}
+      });
+      return;
+    }
     try{history.pushState({rmScr:1},'');_navPushed=true;}catch(e){}
     return;
   }
@@ -13795,14 +13861,14 @@ function revBind_(){
   if(REV.bound) return; REV.bound=true;
   var box=$('rosterBox'); if(!box) return;
   function pick(e){ var t=e.target; while(t&&t!==box){ if(t.getAttribute&&t.getAttribute('data-rev')) return t; t=t.parentNode; } return null; }
-  box.addEventListener('click',function(e){
+  box.addEventListener('click',async function(e){
     if(curView!=='rev') return; var t=pick(e); if(!t) return; var a=t.getAttribute('data-rev');
     if(a==='reload'){ revEnsure(true); revRedraw_(); }
     else if(a==='basis'){ REV.ui.basis=t.getAttribute('data-val')==='accrual'?'accrual':'cash'; revSaveUi_(); revRedrawMain_(); }
     else if(a==='sel'){ REV.sel=t.getAttribute('data-ym')||''; revRedrawMain_(); var d=$('revDetH'); if(d&&d.scrollIntoView) d.scrollIntoView({block:'nearest'}); }
     else if(a==='addplan') revAddPlan_();
     else if(a==='delplan'){ var sq=+t.getAttribute('data-seq'); REV.plan=REV.plan.filter(function(p){ return p.seq!==sq; }); revRedraw_(); }
-    else if(a==='feereset'){ if(!confirm('この端末で入れた施設の利用料の表を消して、施設情報の表に戻します。よろしいですか？')) return; try{ localStorage.removeItem(REV_FEES_KEY); }catch(e2){} revRedraw_(); }
+    else if(a==='feereset'){ if(!(await SUDialog.confirm('この端末で入れた施設の利用料の表を消して、施設情報の表に戻します。よろしいですか？'))) return; if(curView!=='rev') return; try{ localStorage.removeItem(REV_FEES_KEY); }catch(e2){} revRedraw_(); }
   });
   /* マウス・指を押している間は数字の部分を差し替えない（押した部品を消さない） */
   box.addEventListener('pointerdown',function(){ if(curView==='rev') REV.ptrDown=true; });
@@ -14788,11 +14854,11 @@ function saveSyncCfg(){
       _ins.forEach(function(e){ e.disabled=false; });
       /* 確かめている間に設定の窓を閉じた・入力が変わった時は書かない（遅れて届いた答えで、取りやめた保存を走らせない） */
       if((_wasOpen && !$('mSync').classList.contains('on')) || ($('cfgUrl').value||'').trim()!==_nu) return;
-      if(v==='wrong'){ alert('保存していません：'+MASTER_WRONG_MSG+'。\n今の接続先のままです。'); return; }
+      if(v==='wrong'){ SUDialog.alert('保存していません：'+MASTER_WRONG_MSG+'。\n今の接続先のままです。'); return; }
       saveSyncCfg._checked=true;
-      try{ saveSyncCfg(); }finally{ saveSyncCfg._checked=false; }
-      /* 確かめられなかった知らせは、保存の知らせの後に出す（先に出すと上書きされて見えない） */
-      if(v==='offline') toast('保存しました。ただし通信できず、入居者マスタのGASかは確かめられませんでした');
+      var _r; try{ _r=saveSyncCfg(); }finally{ saveSyncCfg._checked=false; }
+      /* 確かめられなかった知らせは、保存の知らせの後に出す（先に出すと上書きされて見えない）。画面の中の窓で止めた時は、窓を閉じた後に出す（2026-11-13） */
+      if(v==='offline') Promise.resolve(_r).then(function(){ toast('保存しました。ただし通信できず、入居者マスタのGASかは確かめられませんでした'); });
     });
     return;
   }
@@ -14802,8 +14868,7 @@ function saveSyncCfg(){
   if(_toField){
     var _dirty=devDirty_();
     if(_dirty.length){
-      alert('保存していない変更があります（'+_dirty.join('・')+'）。\n先に保存するか取り消してから、現場用に切り替えてください。\n\n設定は保存していません。');
-      return;
+      return SUDialog.alert('保存していない変更があります（'+_dirty.join('・')+'）。\n先に保存するか取り消してから、現場用に切り替えてください。\n\n設定は保存していません。');
     }
   }
   var _oldLc=rmLocalCfg_(), _tkIn=$('cfgToken').value.trim();
@@ -14846,7 +14911,7 @@ function testSync(){
        確かめは合言葉も CFG も使わないので、試しの接続先はここで戻す（メモリに残る時間を延ばさない） */
     CFG.url=saved.url;CFG.token=saved.token;
     return verifyMasterUrl(_tu).then(function(v){
-      if(v==='wrong') alert('⚠️ '+MASTER_WRONG_MSG+'。');
+      if(v==='wrong') return SUDialog.alert('⚠️ '+MASTER_WRONG_MSG+'。');
       else toast(v==='ok'?'✅ 接続OK（入居者マスタのGASと確認）':'✅ 接続OK');
     });
   }).catch(function(e){toast('⚠️ つながりませんでした（'+rmErrWords_(e,'接続テスト')+'）。URLと合言葉を確かめてください')}).then(function(){CFG.url=saved.url;CFG.token=saved.token});
@@ -15088,8 +15153,10 @@ function openBulk(){
     $('bulkScroll').innerHTML='<div class="empty">取得に失敗しました: '+esc(rmErrWords_(e,'一括編集の読み込み'))+'</div>';   /* 英語の例外文を職員に出さない（2026-11-12 商用化の見直し） */
   });
 }
-function closeBulk(){
-  if(bulkCellCount() && !confirm('保存していない変更が '+bulkCellCount()+'件あります。破棄して閉じますか？')) return;
+async function closeBulk(){
+  var g0=bulkGen;
+  if(bulkCellCount() && !(await SUDialog.confirm('保存していない変更が '+bulkCellCount()+'件あります。破棄して閉じますか？'))) return;
+  if(g0!==bulkGen) return;   /* 窓の間に保存が始まった・閉じた時は何もしない（画面の中の窓・2026-11-13・仮置き） */
   bulkGen++;                     // 実行中の氏名取り直しの応答を無効にする
   bulkDirty={}; bulkRows=null;   // ★次に開いた時は必ず取り直す（古い表を現在値として出さない）
   paintBulkDirty(); $('mBulk').classList.remove('on');
@@ -15322,7 +15389,7 @@ function refreshBulkNames_(){
     renderBulk(); paintBulkDirty(); back();
     if(!moved.length&&!both.length){
       setSync('変わっていません','err');
-      alert('サーバー側の氏名は、表と同じでした。\n\nもう一度「保存」を押してください。'+
+      SUDialog.alert('サーバー側の氏名は、表と同じでした。\n\nもう一度「保存」を押してください。'+
         '\nそれでも同じ理由で止まる場合は、表を閉じて開き直してください'+
         '（未保存の変更は失われます。先に控えを取ってください）。');
       return;
@@ -15330,7 +15397,7 @@ function refreshBulkNames_(){
     setSync('氏名を最新にしました','ok');
     /* ★「相手」を断定しない。同じ分岐は【この表からの直前の保存】が
        B列まで通って dataJson で失敗した時にも起きる（§15 の不変条件9） */
-    alert('この方の氏名が、いま保存しようとした内容と食い違っていました。\n'+
+    SUDialog.alert('この方の氏名が、いま保存しようとした内容と食い違っていました。\n'+
       '（他の端末で直された場合と、この表からの直前の保存が途中で止まった場合があります）\n\n'+
       '表の氏名をサーバーの現在の値にしました。'+
       '未保存の変更（黄色いセル）はそのまま残っています。もう一度「保存」を押してください。\n\n'+
@@ -15342,7 +15409,7 @@ function refreshBulkNames_(){
   }).catch(function(){ setSync('確認できず','err'); back(); });
 }
 
-function saveBulk(){
+async function saveBulk(){
   /* ★氏名の前後の空白は落とす（1人ずつの編集画面 collectForm が .trim() しているのと同じ作法）。
      名寄せは空白除去なので突合には影響しないが、共有名簿に配られて【全アプリの表示】に残る。
      落とした結果が元と同じなら「変更なし」に戻す（空白だけ足して消しても未保存が残らない）。 */
@@ -15392,7 +15459,7 @@ function saveBulk(){
   /* ★対象アプリを3つ全部外した方は送らない。J 列が空になると、読む側は「未設定＝全部に表示」と読み、全部に表示へ戻ってしまう
      （サーバーでも断るが、ここで止めた方が氏名で示せる） */
   if(appsNone.length){
-    alert(appsNone.slice(0,10).join('\n')+
+    SUDialog.alert(appsNone.slice(0,10).join('\n')+
       (appsNone.length>10?('\nほか '+(appsNone.length-10)+'名'):'')+
       '\n\nチェックを1つ以上入れてください。\n全部外すと、すべてのアプリに表示されてしまいます。');
     return;
@@ -15413,7 +15480,7 @@ function saveBulk(){
      「どの方か」を氏名で示せる（サーバーは利用者Noしか知らない） ── */
   var nmv=bulkNameReview(changes);
   if(nmv.bad.length){
-    alert('保存できません。氏名を直してから、もう一度「保存」を押してください。\n\n'+nmv.bad.join('\n')+
+    SUDialog.alert('保存できません。氏名を直してから、もう一度「保存」を押してください。\n\n'+nmv.bad.join('\n')+
       '\n\n氏名を空にすると、この方を全てのアプリで探せなくなります。');
     return;
   }
@@ -15434,7 +15501,9 @@ function saveBulk(){
     (down?('\n⚠ '+down+' は週間計画・体重管理・排泄ケア記録にもそのまま伝わります。\n'):'')+
     (appsHit?'\n⚠ 対象アプリ: チェックを外したアプリには、その方が表示されなくなります（記録は消えません）。\n':'')+
     '\nよろしいですか？';
-  if(!confirm(msg)) return;
+  var g0=bulkGen, dg0=devGen;
+  if(!(await SUDialog.confirm(msg))) return;
+  if(!bulkRows||g0!==bulkGen||dg0!==devGen) return;   /* 窓の間に表を閉じた・取り直した・端末の用途が変わった時は送らない（画面の中の窓・2026-11-13・仮置き） */
   /* ── 2段階目（2026-09-02 管理者の裁定＝案B）。文字そのものが変わる氏名だけ、もう一度確認する。
      氏名は他の項目と違い、直した瞬間に別のアプリの表示が【エラーを出さずに】欠ける。
      「無い」ように見えるだけなので、後から誰も気づけない。だから件数ではなく1件ずつ出す。
@@ -15557,7 +15626,7 @@ function saveBulkGo_(changes,nmv){
         }
     }
     renderBulk();
-    alert('保存を中止しました（1文字も書いていません）。\n\n'+
+    SUDialog.alert('保存を中止しました（1文字も書いていません）。\n\n'+
       (g.moved.length?('表を開いてから、他の端末で家族情報が変わった方がいます（'+g.moved.length+'名）。\n'+
         '家族は枠の内容で【丸ごと置き換わる】ので、このまま送ると相手の変更が消えます。\n\n'):'')+
       (gApps.length?('表を開いてから、他の端末で対象アプリが変わった方がいます（'+gApps.length+'名）。\n'+
@@ -15565,7 +15634,7 @@ function saveBulkGo_(changes,nmv){
       '最新の内容を表に反映しました。見比べてから、もう一度「保存」を押してください。');
     return;
   }
-  apiPostRaw({action:'savePartial',changes:changes},60000).then(function(d){
+  apiPostRaw({action:'savePartial',changes:changes},60000).then(async function(d){
     /* ★保存中に「閉じる」が押されると bulkRows が null になる。
        サーバー側は保存済みなので、失敗として報告しない（一覧の更新だけ行う） */
     if(!bulkRows){ setSync(d&&d.ok?'保存OK':'保存失敗',d&&d.ok?'ok':'err'); refreshRoster();
@@ -15602,7 +15671,7 @@ function saveBulkGo_(changes,nmv){
       var failHead=/確定できたか確かめられませんでした/.test(String((d&&d.error)||''))
         ? '保存できたか確かめられませんでした（書き込めている方もいます）。'
         : '保存できませんでした。1文字も書き込んでいません。';
-      alert(failHead+'\n\n'+rmSaveErrWords_(d,'一括保存')+det+hint+hint2+hintApps);
+      await SUDialog.alert(failHead+'\n\n'+rmSaveErrWords_(d,'一括保存')+det+hint+hint2+hintApps);
       /* ★「氏名が変わっています」＝サーバー側の氏名が動いた（他端末の編集、または
          直前の書き込みが B列まで通って dataJson で失敗した行）。この状態は照合が
          二度と通らず、表を閉じる以外に手が無かった＝【他の方の未保存も道連れ】になる。
@@ -15636,7 +15705,7 @@ function saveBulkGo_(changes,nmv){
       delete bulkDirty[String(c.id)];
     }
     if(d.warn&&d.warn.length)
-      alert('一部が保存できませんでした（'+kept+'名）。その方の変更は黄色のまま残してあります。\n\n'+d.warn.map(bulkNamed).join('\n'));
+      await SUDialog.alert('一部が保存できませんでした（'+kept+'名）。その方の変更は黄色のまま残してあります。\n\n'+d.warn.map(bulkNamed).join('\n'));
     paintBulkDirty();  // 未保存が残る方がいれば「保存」を押せる状態に戻す（全件成功なら無効のまま）
     renderBulk();
     refreshRoster();   // 一覧と共有名簿を最新化（他アプリへも伝わる）
@@ -15647,7 +15716,7 @@ function saveBulkGo_(changes,nmv){
        一括の updatedAt はサーバーが決めた時刻（2026-11-11 から書いた方だけ進む）で画面は知らない＝目印に使えないため、
        送った項目の【値そのもの】を getBulk で突き合わせる。 */
     setSync('確認中…');
-    apiGet({action:'getBulk'},30000).then(function(d){
+    apiGet({action:'getBulk'},30000).then(async function(d){
       var v=verifyAppliedRows_(changes,(d&&d.rows)||[]);
       var aN=v.applied.length,kN=v.kept.length,ap={},x;
       if(aN>0) bkMarkStale_();   /* 実物で保存を確認できた方がいる＝帳票の控えが古くなった印 */
@@ -15667,12 +15736,12 @@ function saveBulkGo_(changes,nmv){
         toast('✅ 保存しました（応答は届きませんでしたが、全'+aN+'名分の保存を確認しました）');
       }else{
         setSync('保存失敗','err');
-        alert('通信の応答が届かなかったため、保存の実物を確認しました。\n\n✅ 保存済み: '+aN+'名（表の色を戻しました）\n⚠️ 未保存: '+kN+'名（黄色のまま残しています）\n\n未保存の方は、もう一度「保存」を押してください。同じ値の上書きなので二重には反映されません。');
+        await SUDialog.alert('通信の応答が届かなかったため、保存の実物を確認しました。\n\n✅ 保存済み: '+aN+'名（表の色を戻しました）\n⚠️ 未保存: '+kN+'名（黄色のまま残しています）\n\n未保存の方は、もう一度「保存」を押してください。同じ値の上書きなので二重には反映されません。');
       }
       refreshRoster();
-    }).catch(function(){
+    }).catch(async function(){
       setSync('確認できず','err');
-      alert('保存できたか確認できませんでした（通信が不安定です）。\n変更は黄色のまま残しています。\n\n電波の良い場所で、もう一度「保存」を押してください。同じ値の上書きなので二重には反映されません。');
+      await SUDialog.alert('保存できたか確認できませんでした（通信が不安定です）。\n変更は黄色のまま残しています。\n\n電波の良い場所で、もう一度「保存」を押してください。同じ値の上書きなので二重には反映されません。');
     }).then(function(){ if($('bulkSave')) $('bulkSave').disabled=false;
       if($('bulkClose')) $('bulkClose').disabled=false; });
   });
@@ -15776,9 +15845,9 @@ function init(){
   });
   /* 食形態一覧表（配布用・2026-10-15） */
   if($('mfPrint'))  $('mfPrint').addEventListener('click',function(){rmPrint_('mf')});
-  if($('mfReload')) $('mfReload').addEventListener('click',function(){
+  if($('mfReload')) $('mfReload').addEventListener('click',async function(){
     /* 食形態一覧の未保存の変更は、取り直すと消える（同じデータを共有しているため） */
-    if(!mealLeaveOk('サーバーから取り直す')) return;
+    var mok=mealLeaveOk('サーバーから取り直す'); if(mok!==true){ if(!(await mok)) return; if(mealSaving) return; }   /* 窓の間に保存が始まった時は取り直さない（画面の中の窓・2026-11-13・仮置き） */
     mealDirty={}; mealLoad(true);
   });
   if($('mfDate')) $('mfDate').addEventListener('change',function(){
@@ -15802,8 +15871,8 @@ function init(){
       mdMarkDirty(e.target.closest('tr[data-md]'));
   });
   /* 食形態一覧: 取り直し・保存・A3縦印刷 */
-  if($('mealReload'))$('mealReload').addEventListener('click',function(){
-    if(!mealLeaveOk('サーバーから取り直す')) return;
+  if($('mealReload'))$('mealReload').addEventListener('click',async function(){
+    var mok=mealLeaveOk('サーバーから取り直す'); if(mok!==true){ if(!(await mok)) return; if(mealSaving) return; }   /* 窓の間に保存が始まった時は取り直さない（画面の中の窓・2026-11-13・仮置き） */
     mealDirty={}; mealLoad(true);
   });
   if($('mealSave'))$('mealSave').addEventListener('click',mealSaveGo);
@@ -15817,9 +15886,9 @@ function init(){
   Array.prototype.forEach.call($('filterRow').querySelectorAll('.chip'),function(x){
     x.classList.toggle('on',x.getAttribute('data-f')===curFilter)});
   Array.prototype.forEach.call(document.querySelectorAll('.bnav button'),function(b){
-    b.addEventListener('click',function(){var sc=this.getAttribute('data-sc');
+    b.addEventListener('click',async function(){var sc=this.getAttribute('data-sc');
       /* ★編集画面から一覧・新規へ移る時は、未保存の変更を確かめる（同期設定・アプリは上に重なるだけなので聞かない） */
-      if((sc==='new'||sc==='list')&&!editLeaveOk_()) return;
+      if(sc==='new'||sc==='list'){ var lok=editLeaveOk_(); if(lok!==true&&!(await lok)) return; }
       if(sc==='new'){openEdit(null)}else if(sc==='sync'){openSync()}else if(sc==='apps'){openApps()}else{showScreen('list')}});
   });
   $('backBtn').addEventListener('click',function(){showScreen('list')});
@@ -15881,8 +15950,8 @@ function init(){
     requestAnimationFrame(function(){ tabTick=false; try{markEditTab()}catch(e){} });
   },{passive:true});
   $('hospBtn').addEventListener('click',toggleHosp);
-  $('editCancel').addEventListener('click',function(){
-    if(!editLeaveOk_()) return;   /* 未保存の変更があれば確かめる（2026-10-16） */
+  $('editCancel').addEventListener('click',async function(){
+    var lok=editLeaveOk_(); if(lok!==true){ if(!(await lok)) return; if(!$('sc-edit').classList.contains('on')) return; }   /* 未保存の変更があれば確かめる（2026-10-16）。画面の中の窓の答えを待ち、窓の間に編集画面を離れていた時は何もしない（画面の中の窓・2026-11-13・仮置き） */
     if(curResident)openResident(curResident.id);else showScreen('list')});
   $('saveBtn').addEventListener('click',saveResident);
   /* ── 一括編集（2026-08-08 追加）。既存のリスナーには一切触れない ── */

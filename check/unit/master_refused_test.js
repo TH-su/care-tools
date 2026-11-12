@@ -24,7 +24,8 @@ console.log('— A 入居者マスタ —');
   t('★A refused の時は理由を見せて return（取り直しへ進まない）', /alert\([^;]*m0\.slice\(rf\+8\)\.trim\(\)\);\s*return;/.test(seg), seg.slice(0, 300));
   /* 判定の部分だけを動かす */
   const shown = [];
-  const box = { alert: m => shown.push(m), setSync: () => {}, String };
+  /* 2026-11-13: 知らせは画面の中の窓（su-dialog.js）になった。記録の仕方は今までどおり */
+  const box = { alert: m => shown.push(m), SUDialog: { alert: m => { shown.push(m); return Promise.resolve(); } }, setSync: () => {}, String };
   vm.createContext(box);
   vm.runInContext('function h(e){ var m0=String((e&&e.message)||e);' + seg + ' return "next"; }; this.h=h;', box);
   t('A 理由の文が利用者に出る', box.h(new Error('refused: 氏名が空の保存は受け付けません')) === undefined && /氏名が空の保存は受け付けません/.test(shown[0]) && !/refused:/.test(shown[0]), shown);

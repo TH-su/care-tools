@@ -77,6 +77,8 @@ console.log('\n— D. 変更候補の流れを動かしても AI の中継を呼
     document: { activeElement: null, contains: () => false },
     $: el, esc: s => String(s == null ? '' : s), fmtJDate: s => String(s || ''), mhAt_: s => String(s || ''),
     getDeviceRole: () => 'office', navEnter() {}, navLeave() {}, toast() {}, confirm: () => true,
+    /* 2026-11-13: 確かめは画面の中の窓（su-dialog.js）になり、答えを約束（Promise）で返す。記録と答え方は今までどおり */
+    SUDialog: { confirm: () => Promise.resolve(true), alert: () => Promise.resolve() },
     devGen: 0, fullMap: {}, curResident: null, refreshRoster() {}, openResident() {},
     roster: [{ id: '101', name: '架空 一郎', room: '201', active: true }],
     fetch: (url, opt) => { net.push({ via: 'fetch', body: String(opt && opt.body || '') }); return Promise.reject(new Error('NO_NET')); },

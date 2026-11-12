@@ -65,6 +65,17 @@ async function run(opts) {
   const errors = [], dialogs = [];
   p.on('pageerror', (e) => errors.push(String(e && e.message || e).slice(0, 200)));
   p.on('dialog', (d) => { dialogs.push(d.message()); (opts.decline ? d.dismiss() : d.accept()).catch(() => {}); });
+  /* 2026-11-13: 確かめは画面の中の窓（su-dialog.js）になった。出た窓の文を同じ dialogs に記録し、同じ答え（OK／キャンセル）を押す（確かめる中身は同じ） */
+  await p.exposeFunction('__sudSeen', (m) => { dialogs.push(m); });
+  await p.addInitScript((decline) => {
+    new MutationObserver(() => {
+      const g = document.querySelector('dialog.sud-dlg[open]');
+      if (!g || g.__seen) return;
+      g.__seen = true;
+      window.__sudSeen((g.querySelector('.sud-msg') || {}).textContent || '');
+      setTimeout(() => { const b = g.querySelector(decline ? '.sud-btn:not(.pri)' : '.sud-btn.pri'); if (b) b.click(); }, 0);
+    }).observe(document, { subtree: true, childList: true, attributes: true });
+  }, !!opts.decline);
   await p.goto(srv.url + '/resident-master.html', { waitUntil: 'load' });
   if (opts.field) await p.waitForFunction(() => typeof window.yrSlot_ === 'function', null, { timeout: 20000 });
   else await p.waitForFunction(() => Array.isArray(window.roster) && window.roster.length >= 6, null, { timeout: 20000 });
