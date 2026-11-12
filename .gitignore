@@ -151,6 +151,9 @@
 !/su-report.js
 # インターネットにつながっていない時の帯（2026-11-12）
 !/su-net.js
+# ブラウザの止めて知らせる窓（alert・confirm）の代わりの画面の中の窓と、その見た目（2026-11-12 代表者の決定）
+!/su-dialog.js
+!/su-dialog.css
 !/su-shell.js
 !/su-shell.css
 # 「不具合を報告」と画面の指摘の見た目（2026-10-27）。CSP で直書きの style を禁じる画面でも効くように外の CSS にした

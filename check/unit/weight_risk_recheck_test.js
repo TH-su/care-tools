@@ -125,7 +125,7 @@ console.log('\n— D. つなぎ込み —');
   const inSave = SRC.slice(SRC.indexOf("$('#inSave').addEventListener('click'"), SRC.indexOf("$('#inSave').addEventListener('click'") + 6000);
   t('1人ずつの保存で確かめ、印を残す', /wrRecheckInfo\(rid, d, ym/.test(inSave) && /savedRec\.recheck = 'confirmed'/.test(inSave));
   t('まとめて入力の1行保存で確かめ、印を残す', /wrRecheckInfo\(rid, date, ym, weight/.test(body('saveSingleBulkRow')) && /rec\.recheck = 'confirmed'/.test(body('saveSingleBulkRow')));
-  t('まとめて保存は大きく変わった行をまとめて1回だけ確かめる（キャンセルなら何も保存しない）', /if\(rcLines\.length && !wrRecheckConfirm\(rcLines\)\) return;/.test(body('bulkSave')) && /recheckRows\.has\(row\)/.test(body('bulkSave')));
+  t('まとめて保存は大きく変わった行をまとめて1回だけ確かめる（キャンセルなら何も保存しない）', /if\(rcLines\.length && !\(await wrRecheckConfirm\(rcLines\)\)\) return;/.test(body('bulkSave')) && /recheckRows\.has\(row\)/.test(body('bulkSave')));
   t('★アラートに上げるのは高リスクだけ（中は上げない）', /rk\.level === 'high'/.test(body('collectAlerts')) && !/rk\.level === 'mid'/.test(body('collectAlerts')));
   t('注意・警告の基準を変えていても高リスクは拾う', /a\.level==='none' && !\(rkAl && rkAl\.level === 'high'\)/.test(body('collectAlerts')));
   t('一覧に「低栄養リスク」の絞り込みがある', /data-f="risk"/.test(SRC) && /listFilter==='risk'/.test(SRC));
