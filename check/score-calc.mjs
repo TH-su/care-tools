@@ -23,7 +23,7 @@
  * 失わない（守り）
  *   net    su-net.js を読む、または画面が online／offline（navigator.onLine）を自分で扱う
  *   errors su-errors.js を読む
- *   leave  beforeunload の形（addEventListener('beforeunload' か onbeforeunload =・行の後ろの // コメントは外す）か、
+ *   leave  beforeunload の形（addEventListener('beforeunload' か、右辺が null・undefined・'' でない onbeforeunload =）か、
  *          画面の中のスクリプトの confirm( の文言に「保存」「破棄」「変更」「閉じ」「消え」がある。
  *          入力欄（input・select・textarea・contenteditable）が静的にも JS の文字にも無い画面は対象外
  * ★その画面のための部品（2026-11-12 直し）: 画面が <script src> で読む同じサイトの部品のうち、ファイル名が画面名と同じか「画面名-」で始まる .js
@@ -40,7 +40,8 @@
  *          (1) === ・!== ・== ・!= で比べているだけの出現（String((e&&e.message)||'')==='…' のような包み方も含む）
  *          (2) V.印 ? … V.message … : （条件は V.印 か V && V.印 だけ）の真の側にだけある出現で、その印の代入がスクリプト全体ですべて
  *              「new Error('日本語の直書き') で作った同じ変数への = true」であり（||= ・??= ・&&= なども代入に数える）、
- *              印を {印: …}・{印}・['印']・関数(物, '印') の形で付ける所が無く、印を付けた変数の message へ代入する所も無い時
+ *              印を {印: …}・{印}・['印']・関数(物, '印') の形で付ける所が無く、
+ *              数える範囲（画面の中＋その画面のための部品）のどこにも message の書き換え（= ・+= ・||= ・??=・Object.assign で message）が無い時
  *          受け口・通信の応答を入れた Error の message（印が受け口の答えで決まるものを含む）は日本語か確かめられないので数えたまま
  *   pgerr  動的: 開いた時の画面のエラー（pageerror）0件=1・1件=1/2・2件以上=0
  * 読める（見た目・アクセシビリティ）
@@ -140,26 +141,10 @@ export function parseAttrs(s) {
 export function stripJsComments(js) {
   return String(js || '').replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^[ \t]*\/\/.*$/gm, '');
 }
-/* 行の後ろの // コメントを外す（文字列 '…'・"…"・`…` の中の // は残す）。stripJsComments の後に使う */
-export function stripLineComments(js) {
-  const s = String(js || '');
-  let out = '', q = '', i = 0;
-  while (i < s.length) {
-    const c = s[i];
-    if (q) {
-      out += c;
-      if (c === '\\' && i + 1 < s.length) { out += s[i + 1]; i += 2; continue; }
-      if (c === q || (c === '\n' && q !== '`')) q = '';
-      i++; continue;
-    }
-    if (c === '"' || c === "'" || c === '`') { q = c; out += c; i++; continue; }
-    if (c === '/' && s[i + 1] === '/') { while (i < s.length && s[i] !== '\n') i++; continue; }
-    out += c; i++;
-  }
-  return out;
-}
-/* 閉じる前の確かめの形（addEventListener('beforeunload' か onbeforeunload =）。removeEventListener だけ・文の中の語だけでは当たらない */
-const BEFOREUNLOAD_FORM = /addEventListener\(\s*['"`]beforeunload['"`]|\bonbeforeunload\s*=(?![=>])/;
+/* 閉じる前の確かめの形（addEventListener('beforeunload' か、右辺が null・undefined・'' でない onbeforeunload =）。removeEventListener だけ・文の中の語だけでは当たらない。
+   行の後ろの // コメントに書いた形も当たるが、その形をコメントに書く画面は無いとして許す（コメントの外し方を数える処理ごとに変えると、
+   画面から部品へ移しただけで件数が動き、正規表現の中の // も壊すため。どこでも stripJsComments だけで外す・2回目の反証レビュー） */
+const BEFOREUNLOAD_FORM = /addEventListener\s*\(\s*['"`]beforeunload['"`]|\bonbeforeunload\s*=(?![=>])(?!\s*(?:null|undefined|''|""|``)\s*(?:[;,)}\n]|$))/;
 function stripCssComments(css) { return String(css || '').replace(/\/\*[\s\S]*?\*\//g, ' '); }
 
 function scriptText(parts) {
@@ -295,6 +280,8 @@ function japaneseErrorMarks(js) {
     vars.get(p).add(v);
   }
   const marks = new Set();
+  /* 数える範囲のどこかで message を書き換える（= ・+= ・||= ・??=）か Object.assign で message を入れる所があれば、印による除外はしない（守りの固い側に倒す・2回目の反証レビュー） */
+  if (/\.message\s*(?:=(?![=>])|\+=|\|\|=|\?\?=)|Object\.assign\s*\([^)]*message/.test(js)) return marks;
   for (const [p, good] of ok) {
     if (!good) continue;
     if ([...vars.get(p)].some((v) => msgSet.has(v))) continue;   // 印を付けた変数の message を書き換える所があれば入れない
@@ -367,7 +354,7 @@ export function scorePage(name, html, opts = {}) {
   /* その画面のための部品（isOwnScript）の中身。画面の中から部品へ移しても点が見かけだけ動かないよう、
      入力欄の有無・閉じる前の確かめ（beforeunload の形だけ）・英語の例外文・16進色の JS の部分・止めて知らせる窓で、画面の中のスクリプトと同じに数える */
   const own = opts && opts.scripts && typeof opts.scripts === 'object'
-    ? Object.keys(opts.scripts).filter((k) => isOwnScript(page, k)).map((k) => stripLineComments(stripJsComments(opts.scripts[k]))).join('\n;\n') : '';
+    ? Object.keys(opts.scripts).filter((k) => isOwnScript(page, k)).map((k) => stripJsComments(opts.scripts[k])).join('\n;\n') : '';
   const jsAll = own ? js + '\n;\n' + own : js;
   const raw = String(html == null ? '' : html).replace(/<!--[\s\S]*?-->/g, '');
   const dyn = (opts && opts.dynamic) || {};
@@ -397,7 +384,7 @@ export function scorePage(name, html, opts = {}) {
   else {
     /* その画面のための部品は beforeunload の形（addEventListener('beforeunload' か onbeforeunload =）だけを見る。confirm の語の決め方は画面の中のスクリプトだけに当てる
        （部品の書き出し・消す処理の confirm の「保存」「消え」で「あり」にしない・代表者の決定 2026-11-12 推奨1・仮置き）。共通部品・借りた部品は見ない */
-    const ok = BEFOREUNLOAD_FORM.test(stripLineComments(js)) || BEFOREUNLOAD_FORM.test(own) || /onbeforeunload/i.test(parts.markup)
+    const ok = BEFOREUNLOAD_FORM.test(js) || BEFOREUNLOAD_FORM.test(own) || /onbeforeunload/i.test(parts.markup)
       || /\bconfirm\s*\([^)]{0,200}?(保存|破棄|変更|閉じ|消え)/.test(js);
     r.leave = bool(ok, ok ? 'あり' : 'なし');
   }

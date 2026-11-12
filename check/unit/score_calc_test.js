@@ -223,12 +223,37 @@ async function main() {
     const page = '<html><body><input id="kakuu4" aria-label="架空"><script src="kakuu-page.js"></script></body></html>';
     const leave = (scripts, html) => item(C.scorePage('kakuu-page.html', html || page, { scripts }), 'leave').status;
     t('部品の removeEventListener(beforeunload) だけでは あり にならない', leave({ 'kakuu-page.js': 'window.removeEventListener("beforeunload", f);' }) === '不合格');
-    t('部品の行の後ろのコメントの中の beforeunload では あり にならない', leave({ 'kakuu-page.js': 'var a = 1; // beforeunload は使わない\nwindow.onbeforeunload_x = 1;' }) === '不合格');
+    t('部品の行の後ろのコメントの中の語（形でない beforeunload）では あり にならない', leave({ 'kakuu-page.js': 'var a = 1; // beforeunload は使わない\nwindow.onbeforeunload_x = 1;' }) === '不合格');
     t('部品の onbeforeunload = は あり', leave({ 'kakuu-page.js': 'window.onbeforeunload = function(){ return "x"; };' }) === '合格');
     t('文字列の中の // は壊さない（後ろの addEventListener を読む）', leave({ 'kakuu-page.js': 'var u = "https://example.invalid/x"; window.addEventListener("beforeunload", f);' }) === '合格');
     t('画面の中のスクリプトも同じ形だけ（removeEventListener だけ・コメントの語は なし）',
       leave(undefined, page.replace('</body>', '<script>window.removeEventListener("beforeunload", f); var b = 2; // beforeunload\n</script></body>')) === '不合格');
-    t('stripLineComments: 文字列の中の // と改行は残す', C.stripLineComments("a('//x'); // c\nb(\"//y\") //d\n`//z`") === "a('//x'); \nb(\"//y\") \n`//z`", C.stripLineComments("a('//x'); // c\nb(\"//y\") //d\n`//z`"));
+  }
+
+  group('11. 2回目の反証レビューの指摘（2026-11-12）');
+  {
+    const n = (js) => C.countEnglishErrorExposure(js);
+    /* 1・2: 画面の中と部品の中は同じコメントの外し方。正規表現の中の // の後ろも消さずに数える */
+    const body = 'var re = /^https:\\/\\/x/; alert("架空1"); el.style.color = "#123456"; var s = "a"; // 架空のコメント\nconfirm("架空2"); try{}catch(e){ var t = /\\/\\//; el.textContent = e.message; }\nvar i = document.createElement("input");';
+    const inline = '<html><body><p>架空</p><script>' + body + '</script></body></html>';
+    const split = '<html><body><p>架空</p><script src="kakuu-page.js"></script></body></html>';
+    const ri = C.scorePage('kakuu-page.html', inline);
+    const rs = C.scorePage('kakuu-page.html', split, { scripts: { 'kakuu-page.js': body } });
+    t('行の後ろの // や正規表現の中の // があっても、移す前と後で件数が同じ（窓・英語の例外文・色・閉じる前の確かめ）',
+      ['dialog', 'engmsg', 'hex', 'leave'].every((id) => JSON.stringify(item(ri, id)) === JSON.stringify(item(rs, id))), ['dialog', 'engmsg', 'hex'].map((id) => [item(ri, id).detail, item(rs, id).detail]));
+    t('部品の中の正規表現 /^https:\\/\\/…/ の後ろの窓・英語の例外文も数える', item(rs, 'dialog').detail === '2件' && item(rs, 'engmsg').detail === '1件', [item(rs, 'dialog').detail, item(rs, 'engmsg').detail]);
+    /* 3: 数える範囲のどこかで message を書き換えるなら、印による除外はしない */
+    const jaMark = "function f(){var _k=new Error('架空のデータなし');_k.kakuuMark=true;throw _k}\n";
+    const use = "\nbox.innerHTML='失敗: '+esc(e&&e.kakuuMark?String(e.message||''):words(e))";
+    t('別の変数の message を書き換える所があっても除外しない', ['other.message = json.error;', 'x.message += "a";', 'x.message ||= t;', 'x.message ??= t;', 'Object.assign(x, { message: t });'].every((w) => n(jaMark + w + use) === 1));
+    t('部品の中で message を書き換えていれば、画面の中の印も除外しない', item(C.scorePage('kakuu-page.html', '<script>' + jaMark + use + '</script><script src="kakuu-page.js"></script>', { scripts: { 'kakuu-page.js': 'y.message = json.error;' } }), 'engmsg').detail === '1件');
+    t('書き換えが無ければ印は今までどおり除外する', n(jaMark + use) === 0);
+    /* 4: onbeforeunload を空にするだけの代入は あり にしない */
+    const page = '<html><body><input id="kakuu5" aria-label="架空"><script src="kakuu-page.js"></script></body></html>';
+    const leave = (js) => item(C.scorePage('kakuu-page.html', page, { scripts: { 'kakuu-page.js': js } }), 'leave').status;
+    t('onbeforeunload = null・undefined・\'\'・"" では あり にしない', ['null;', 'undefined;', "'';", '"";', 'null', 'null\nvar a = 1;'].every((r) => leave('window.onbeforeunload = ' + r) === '不合格'));
+    t('onbeforeunload = 関数・nullish でない名前は あり', leave('window.onbeforeunload = function(){};') === '合格' && leave('window.onbeforeunload = nullGuard;') === '合格');
+    t('addEventListener (beforeunload の空白の入った形も あり', leave('window.addEventListener ( "beforeunload", f);') === '合格');
   }
 
   group('10. その画面のための部品の中身も、画面の中と同じに数える（画面から部品へ移しても点が動かない・2026-11-12）');
