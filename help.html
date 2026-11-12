@@ -41,6 +41,8 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
 .sup { margin: 0; }
 .sup dt { font-weight: 700; }
 .sup dd { margin: 0 0 8px; -webkit-user-select: text; user-select: text; }
+/* 画面ごとの使い方の目次のリンクは、指で押せる高さ（44px）にする（画面だけ・2026-11-13） */
+@media screen { .toc li { margin: 0; } .toc a { display: inline-flex; align-items: center; min-height: 44px; } }
 .key { display: inline-block; padding: 0 8px; border: 1px solid var(--g3); border-radius: 999px; background: var(--pri-l); white-space: nowrap; }
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
@@ -68,7 +70,7 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
   <nav class="cd" aria-labelledby="h-screens">
     <h2 id="h-screens">画面ごとの使い方</h2>
     <p>よく使う画面の「できること」と「よくある困りごと」を、画面ごとにまとめています。</p>
-    <ul>
+    <ul class="toc">
       <li><a href="#h-care-schedule">週間計画</a></li>
       <li><a href="#h-work-schedule">ワークスケジュール</a></li>
       <li><a href="#h-resident-master">入居者マスタ</a></li>
@@ -167,8 +169,8 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
     <p><strong>よくある困りごと</strong></p>
     <dl class="sup">
       <dt>「この端末の変更がまだ送れていません（日付）」の帯が出た</dt>
-      <dd>帯の <span class="key">今すぐ送信する</span> を押します。帯の後ろに理由が出ます。「ログインが切れています」の時はログインし直し（<a href="#h-login">ログインの帯の節</a>）、「画面が古いため送れません」の時は画面を読み込み直し、「インターネットのつながりを確かめてください」の時は電波・Wi-Fi を確かめてから、もう一度押してください。送れるまで、変更はこの端末に残っています。</dd>
-      <dt>「🔒 この日はロック中のため…反映しません」「🔒 ロック中のためシフト反映をスキップしました」と出た</dt>
+      <dd>帯の後ろに理由が出ます。「インターネットのつながりを確かめてください」の時は電波・Wi-Fi を確かめてから、帯の <span class="key">今すぐ送信する</span> を押します。「ログインが切れています」の時はログインし直し（<a href="#h-login">ログインの帯の節</a>）、「画面が古いため送れません」の時は画面を読み込み直してください。ほかの理由の時は、帯の文のとおりにしてください。</dd>
+      <dt>「🔒 ロック中のためシフト反映をスキップしました（ロックを外してください）」と出た</dt>
       <dd>その日はロックされているので、自動では書き換わりません。反映したい時は、見出しの <span class="key">🔒ロック</span> のチェックを外してから、もう一度反映・取り込みをしてください。</dd>
       <dt>「サービス区分は週間計画アプリが正本です」「週間計画アプリ側に未送信があります」と出た</dt>
       <dd>サービス区分は週間計画で直します。週間計画にまだ送れていない変更がある時は、週間計画を開くと送られます。どちらも見出しの <span class="key">📅 週間計画</span> から開けます。</dd>
