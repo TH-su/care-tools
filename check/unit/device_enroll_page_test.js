@@ -118,6 +118,9 @@ async function runAdmin(opt) {
     confirm: () => true, addEventListener() {},
   };
   ctx.window = ctx;
+  /* 2026-11-13: 確かめは画面の中の窓（su-dialog.js）になり、答えを約束（Promise）で返す。受け口は accounts.js の頭にあり
+     この試験は accounts-enroll.js だけを読むので、同じ形の受け口を置く。答えは上の confirm のまま */
+  ctx.SUDialog = { confirm: (m) => Promise.resolve(!!ctx.confirm(m)), alert: () => Promise.resolve(), busy: () => false, idle: () => Promise.resolve() };
   vm.runInNewContext(read('accounts-enroll.js'), ctx);
   await ctx.SUAccountsEnroll.show();
   return { els, ls, ss, calls, svgs, ctx, setList: (r) => { listRows = r; }, intervals };

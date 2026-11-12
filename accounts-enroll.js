@@ -126,7 +126,7 @@
     var q = (r.state === 'active' || r.state === 'lapsed')
       ? name + ' の端末のログインを取り消しますか？\n\nその端末はその場で何も見られなくなります。使い続けるには、もう一度 QR を読むか Google でログインします。'
       : name + ' 用に出した QR を取り消しますか？';
-    if (!confirm(q)) return;
+    if (!(await window.SUDialog.confirm(q))) return;
     btn.disabled = true;
     try {
       await rpc('device_enroll_revoke', { p_id: r.id });
@@ -219,7 +219,7 @@
     if (!email) { note('取り消すアカウントを選んでください。'); $('en-acct').focus(); return; }
     var opt = $('en-acct').selectedOptions[0];
     var name = opt ? opt.textContent.replace(/ … まだログインしていない$/, '') : email;
-    if (!confirm(name + ' で登録した端末と、まだ使われていない QR を全部取り消しますか？\n\nその端末はその場で何も見られなくなります。')) return;
+    if (!(await window.SUDialog.confirm(name + ' で登録した端末と、まだ使われていない QR を全部取り消しますか？\n\nその端末はその場で何も見られなくなります。'))) return;
     var btn = $('b-enroll-revoke-all');
     btn.disabled = true;
     try {
