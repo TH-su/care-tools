@@ -30,6 +30,7 @@ function makeEnv(opt){
       fire(ev, obj){ const o = Object.assign({ type: ev, defaultPrevented: false, stopped: false,
         preventDefault(){ this.defaultPrevented = true; }, stopPropagation(){ this.stopped = true; } }, obj || {});
         (L[ev] || []).slice().forEach((f) => f.call(this, o)); return o; },
+      contains(x){ for(let n = x; n; n = n.parentNode) if(n === this) return true; return false; },
       focus(){ focused = this; } };
     if(e.tagName === 'DIALOG' && !opt.noShowModal){
       e.showModal = function(){ if(opt.throwShow) throw new Error('壊れた'); this.open = true; };
@@ -39,17 +40,19 @@ function makeEnv(opt){
   }
   const body = el('body'), head = el('head');
   const document = { body, head, documentElement: body, createElement: el };
-  const winL = {};
+  const winL = {}; const winCap = [];
   const win = { document, setTimeout, clearTimeout, Promise,
     alert(m){ nativeLog.push(['alert', m]); },
     confirm(m){ nativeLog.push(['confirm', m]); return opt.nativeAnswer !== undefined ? opt.nativeAnswer : true; },
-    addEventListener(ev, fn){ (winL[ev] = winL[ev] || []).push(fn); } };
+    addEventListener(ev, fn, opt){ (winL[ev] = winL[ev] || []).push(fn); if(ev === 'keydown') winCap.push(opt === true || !!(opt && opt.capture)); } };
   win.window = win; win.self = win; win.top = opt.inFrame ? {} : win;
   const ctx = vm.createContext(win);
   return { ctx, win, body, nativeLog, links, styles, focused: () => focused,
     load(){ vm.runInContext(SRC, ctx); },
     dialogs(){ return body.children.filter((c) => c.tagName === 'DIALOG'); },
-    winFire(ev){ (winL[ev] || []).forEach((f) => f()); } };
+    winCap: () => winCap,
+    winFire(ev){ (winL[ev] || []).forEach((f) => f()); },
+    winKey(o){ const e = Object.assign({ defaultPrevented: false, imm: false, preventDefault(){ this.defaultPrevented = true; }, stopImmediatePropagation(){ this.imm = true; } }, o); (winL.keydown || []).forEach((f) => f(e)); return e; } };
 }
 function partsOf(d){
   const inner = d.children[0];
@@ -95,10 +98,46 @@ function partsOf(d){
     const E = makeEnv(); E.load();
     let ans = 'まだ'; E.win.SUDialog.confirm('消しますか？').then((v) => { ans = v; });
     const d = E.dialogs()[0];
+    await new Promise((r) => setTimeout(r, 5));   // 人が Esc を押すのは、窓が開いた後の別の処理の中
     const kd = d.fire('keydown', { key: 'Escape' });
     t('窓の中のキーは画面へ伝えない（画面の Esc の処理を一緒に動かさない）', kd.stopped === true);
     d.fire('cancel'); d.open = false; await tick();   // Esc はブラウザが cancel を出して窓を閉じる
     t('Esc＝false', ans === false);
+  }
+  {
+    /* 窓が出ている間に、入力の的が窓の外（body など）にある時のキーは画面へ渡さない（2026-11-13 反証レビューの指摘・週間計画の偽りの「削除しました」の道） */
+    const E = makeEnv(); E.load();
+    let ans = 'まだ'; E.win.SUDialog.confirm('この予定を削除しますか？').then((v) => { ans = v; });
+    await new Promise((r) => setTimeout(r, 5));
+    const P = partsOf(E.dialogs()[0]);
+    const k1 = E.winKey({ key: 'z', metaKey: true, target: E.body });
+    t('窓の外のキー（Cmd+Z など）は画面へ渡さず、既定の動きも止め、OK に入力の的を戻す', k1.imm === true && k1.defaultPrevented === true && E.focused() === P.ok && ans === 'まだ');
+    const k2 = E.winKey({ key: 'Enter', target: E.body });
+    t('窓の外の Enter では OK にしない（答えはまだ）', k2.imm === true && ans === 'まだ');
+    const kIn = E.winKey({ key: 'Enter', target: P.ok });
+    t('窓の中のキーはそのまま（守りは手を出さない）', kIn.imm === false && kIn.defaultPrevented === false);
+    t('守りは画面より先に受ける（window の capture で付ける）', E.winCap().length === 1 && E.winCap()[0] === true, E.winCap());
+    const kc = E.winKey({ key: 'c', metaKey: true, target: E.body });
+    t('窓の文を写す Cmd+C は画面へ渡さないが、写す動き（既定）は止めない', kc.imm === true && kc.defaultPrevented === false && ans === 'まだ');
+    E.winKey({ key: 'Escape', target: E.body }); await tick();
+    t('窓の外の Esc は、今の窓のキャンセル＝false（画面の Esc の処理は動かない）', ans === false);
+    const k3 = E.winKey({ key: 'Escape', target: E.body });
+    t('窓が閉じた後のキーは、画面へそのまま渡す', k3.imm === false && k3.defaultPrevented === false);
+  }
+  {
+    /* 画面の Esc の処理の中で窓を開いた時、同じ Esc が開いたばかりの窓をすぐ閉じない（週間計画で実測した穴・部品の側で塞ぐ） */
+    const E = makeEnv(); E.load();
+    const esc = { type: 'keydown', key: 'Escape', defaultPrevented: false, preventDefault(){ this.defaultPrevented = true; } };
+    E.win.event = esc;
+    let ans = 'まだ'; E.win.SUDialog.confirm('閉じますか？').then((v) => { ans = v; });
+    E.win.event = undefined;
+    const d = E.dialogs()[0];
+    t('Esc キーの押下の中で開いた時は、その Esc の既定の動き（窓を閉じる）を止める', esc.defaultPrevented === true);
+    const c1 = d.fire('cancel'); await tick();
+    t('開いたのと同じ一続きの処理の中の cancel は受けない（窓は出たまま・答えはまだ）', c1.defaultPrevented === true && ans === 'まだ' && E.dialogs().length === 1);
+    await new Promise((r) => setTimeout(r, 5));
+    d.fire('cancel'); d.open = false; await tick();
+    t('その後の Esc（cancel）は今までどおりキャンセル＝false', ans === false);
   }
   {
     const E = makeEnv(); E.load();
@@ -178,7 +217,7 @@ function partsOf(d){
   console.log('\n体重管理（weight-record.html）への当て方');
   {
     const WR = fs.readFileSync(path.join(ROOT, 'weight-record.html'), 'utf8');
-    const iErr = WR.indexOf('<script src="su-errors.js'), iDlg = WR.indexOf('<script src="su-dialog.js?v=2026-11-12"></script>'), iInline = WR.indexOf('<script>', iErr);
+    const iErr = WR.indexOf('<script src="su-errors.js'), iDlg = WR.indexOf('<script src="su-dialog.js?v=2026-11-13"></script>'), iInline = WR.indexOf('<script>', iErr);
     t('su-dialog.js を su-errors.js の後・画面のスクリプトより前に読む', iErr > 0 && iDlg > iErr && iDlg < iInline);
     /* 部品が読めない時の受け口：ブラウザの窓に落とし、同じ約束の形で答える */
     const shimM = /if\(!window\.SUDialog\) window\.SUDialog = \{[\s\S]*?\n\};/.exec(WR);
