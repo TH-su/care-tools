@@ -2761,6 +2761,24 @@ if (!window.SUDialog) window.SUDialog = {
     }
   }
   var me = null;
+  /* 切り替え・戻す・写し返し・厳格モード・止める・写すの操作は、画面全体で1つずつ（2026-11-13 反証レビューの指摘・仮置き）。
+   * ブラウザの窓はページを止めていたので、1回目の2段の確かめは途切れずに続いた。画面の中の窓では、確かめの前の待ち（1日1つの確かめなど）の間に
+   * 二度押し・別の種類のボタンを押すと、窓が交互に並び、どの押しの「本当に」か見分けられないまま同じ切り替えが2本・別の種類が1日に2つ走り得る。
+   * 押した最初に印が立っていれば何もせずに戻る（新しい文は出さない）。印は押した最初に立て、どの道で終わっても外す。
+   * 関数の中身（ボタンを押せなくする処理を含む）は変えず、名前の指す先を包む */
+  var opBusy = false;
+  function oneOp(fn) {
+    return async function () {
+      if (opBusy) return;
+      opBusy = true;
+      try { return await fn.apply(null, arguments); } finally { opBusy = false; }
+    };
+  }
+  setMode = oneOp(setMode); setShiftMode = oneOp(setShiftMode); writeBackShift = oneOp(writeBackShift); setLock = oneOp(setLock);
+  stopWsday = oneOp(stopWsday); runMirrorFix = oneOp(runMirrorFix); runResFull = oneOp(runResFull); runTpFull = oneOp(runTpFull);
+  runAdmFull = oneOp(runAdmFull); runSupOp = oneOp(runSupOp); runSaOp = oneOp(runSaOp); runHbOp = oneOp(runHbOp); runDocOp = oneOp(runDocOp);
+  runGenoOp = oneOp(runGenoOp); runStfOp = oneOp(runStfOp); runAdmOp = oneOp(runAdmOp); runTpAi = oneOp(runTpAi); runTpOp = oneOp(runTpOp);
+  runResOp = oneOp(runResOp); setWeightMode = oneOp(setWeightMode);
   $('b-live').addEventListener('click', function () { setMode('live'); });
   $('b-shadow').addEventListener('click', function () { setMode('shadow'); });
   $('b-live-shift').addEventListener('click', function () { setShiftMode('live'); });
