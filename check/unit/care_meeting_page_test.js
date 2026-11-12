@@ -17,6 +17,7 @@
      ほか: 読み込む部品の並び（§2）・紙面（§7）・未保存の止め（§5）・再読み込みで戻す（§6）
     12. innerHTML の全数点検（2026-10-25 本人指示・xss_facesheet_admission_test.js と同じやり方）
     13. 出席者の✔︎（この方の前回までの出席者から選ぶ）・印刷を A4 横いっぱいに・過去の記録の取り込み（管理者だけ）（2026-10-25 代表者の決定）
+    14. 印の無い議事録は見出しから欄の候補を出し、✔︎を付けて押した時だけ欄へ入れる（2026-11-13 代表者の指示）
 
    ── 12 の点検表（innerHTML への代入17か所。insertAdjacentHTML・outerHTML は0か所。行番号は 2026-10-25 時点の目安） ──
    画面のスクリプトの innerHTML への代入を全部洗い、入る値が記録・名簿・自由入力・サーバーの文に由来するものは
@@ -212,7 +213,7 @@ async function opened(opt) {
     const head = HTML.slice(0, HTML.indexOf('</head>'));
     const srcs = [...head.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]);
     t('head の部品は su-errors → su-devcfg → su-gas-auth → su-res-read → su-cfg-hint → su-perf → su-login-band → su-app-gate → su-facility → su-print → care-meeting-calc → su-resident-hop の順（su-cfg-hint は改善プロンプト第6弾の2・su-gas-auth と su-res-read は 2026-10-29・su-devcfg は統合 0080）', JSON.stringify(srcs) === JSON.stringify(
-      ['su-errors.js?v=2026-11-12', 'su-devcfg.js?v=2026-11-08', 'su-gas-auth.js?v=2026-10-29', 'su-res-read.js?v=2026-11-11', 'su-cfg-hint.js?v=2026-11-10', 'su-perf.js?v=2026-11-02', 'su-login-band.js?v=2026-11-02', 'su-app-gate.js?v=2026-11-11', 'su-facility.js?v=2026-11-07', 'su-print.js?v=2026-09-12', 'care-meeting-calc.js?v=2026-10-25', 'su-resident-hop.js?v=2026-11-02']), srcs);
+      ['su-errors.js?v=2026-11-12', 'su-devcfg.js?v=2026-11-08', 'su-gas-auth.js?v=2026-10-29', 'su-res-read.js?v=2026-11-11', 'su-cfg-hint.js?v=2026-11-10', 'su-perf.js?v=2026-11-02', 'su-login-band.js?v=2026-11-02', 'su-app-gate.js?v=2026-11-11', 'su-facility.js?v=2026-11-07', 'su-print.js?v=2026-09-12', 'care-meeting-calc.js?v=2026-11-13', 'su-resident-hop.js?v=2026-11-02']), srcs);
     t('su-print.css を読み、su-errors.js より前にスクリプトが無い', /<link rel="stylesheet" href="su-print\.css\?v=2026-09-12">/.test(head) && head.indexOf('<script') === head.indexOf('<script src="su-errors.js'));
     t('CSP・拡大を禁止しない viewport・no-store・noindex・題', /data-su-csp/.test(head) && /<meta name="viewport" content="width=device-width,initial-scale=1">/.test(head) && !/user-scalable=no|maximum-scale=1[^.0-9]/.test(head) &&
       /Cache-Control" content="no-store"/.test(head) && /robots" content="noindex/.test(head) && /<title>担当者会議の記録<\/title>/.test(head));
@@ -1178,6 +1179,72 @@ async function opened(opt) {
     t('「取り込める」の表も開いて出す（確定で書く中身を見てから押せる）', /\['new','取り込める（名簿の1名に一致・まだ入っていない）',true\]/.test(S));
     t('取り込みは GAS の上限（6分）より長く待つ', /meetingPost_\(body,380000\)/.test(cutF(S, 'impPost_')));
     t('分からない時は code unknown でも見分ける', /classify_\(r\.d\)==='unknown'/.test(cutF(S, 'impApply_')));
+  }
+
+  group('14. 印の無い議事録の見出しから欄の候補を出す（2026-11-13 代表者の指示）');
+  {
+    const NOMARK = ['架空の会議のメモ', '【開催日】2026年4月1日', '【結論】', '架空の結論（候補から入れる）', '【今後の課題】なし'].join('\n');
+    const T = await opened();
+    await T.ctx.openNew_('');
+    T.ctx.ed.rec = fullRec(T.ctx, { sourceName: '架空 三郎' });
+    const before = JSON.stringify(T.ctx.ed.rec);
+    T.el('cm-paste').value = NOMARK;
+    const r0 = await T.ctx.cmParse_(); await settle();
+    const h0 = T.ctx.editorHtml_(T.ctx.ed, T.ctx.cur);
+    t('★印の無い議事録を「振り分ける」→ 欄には何も入れず、候補の欄を出す', r0 === false && JSON.stringify(T.ctx.ed.rec) === before && !!T.ctx.ed.guess && T.ctx.ed.guess.cands.length === 3 &&
+      /id="cm-guess"/.test(h0) && /見出しから欄の候補を出しました/.test(h0) && T.cnt.ask.length === 0, T.ctx.ed.guess);
+    t('候補の✔︎は初めは外してある（推測で黙って振り分けない）', T.ctx.ed.guess.sel.every((x) => x === false) && !/data-gi="\d+" checked/.test(h0));
+    t('候補ごとに入れる欄を選べる（初めは見出しから当てた欄）', /<select data-gk="1"[^>]*>[\s\S]*?<option value="conclusion" selected>結論<\/option>/.test(h0));
+    t('最初の見出しより前の文を「振り分けられなかった文」として見せる', /振り分けられなかった文/.test(h0) && h0.indexOf('架空の会議のメモ') >= 0);
+    await T.ctx.cmGuessApply_(); await settle();
+    t('★✔︎を付けずに押しても欄に入れない（知らせるだけ）', JSON.stringify(T.ctx.ed.rec) === before && T.cnt.toast.some((m) => /✔︎を付けてください/.test(m)) && !!T.ctx.ed.guess);
+    T.ctx.guessPick_(1, true);
+    T.ctx.guessKey_(1, 'nosuchfield');
+    t('知らない欄の名前は受け付けない', T.ctx.ed.guess.keys[1] === 'conclusion');
+    T.ctx.guessPick_(99, true);
+    t('範囲の外の番号は何もしない', T.ctx.ed.guess.sel.length === 3);
+    const ok = await T.ctx.cmGuessApply_(); await settle();
+    const a = T.cnt.ask[T.cnt.ask.length - 1] || { lines: [] };
+    t('★入力済みの欄がある時は、確かめの窓を通す（貼り付けと同じ道）', a.title === '入力済みの欄があります' && a.lines.some((l) => /選んだ見出しの文に置き換わります：.*結論/.test(l)), a);
+    t('★✔︎を付けた見出しだけを欄へ入れる（ほかの欄は前の内容のまま）', ok === true && T.ctx.ed.rec.conclusion === '架空の結論（候補から入れる）' && T.ctx.ed.rec.heldDate === JSON.parse(before).heldDate &&
+      T.ctx.ed.rec.issues === JSON.parse(before).issues && T.ctx.ed.guess === null, T.ctx.ed.rec);
+    t('利用者名を選ばなかった時は、貼り付けと同じく名前を空にして帯を赤にする', T.ctx.ed.rec.sourceName === '' && /nb-ng/.test(T.ctx.editorHtml_(T.ctx.ed, T.ctx.cur)));
+    const h1 = T.ctx.editorHtml_(T.ctx.ed, T.ctx.cur);
+    t('★選ばなかった見出しと前書きは「振り分けられなかった文」に残して見せる', /振り分けられなかった文/.test(h1) && h1.indexOf('【開催日】2026年4月1日') >= 0 && h1.indexOf('【今後の課題】なし') >= 0 && h1.indexOf('架空の会議のメモ') >= 0, h1.slice(0, 800));
+    const U = await opened({ answer: false });
+    await U.ctx.openNew_('');
+    U.ctx.ed.rec = fullRec(U.ctx, {});
+    const ub = JSON.stringify(U.ctx.ed.rec);
+    U.el('cm-paste').value = NOMARK; await U.ctx.cmParse_(); U.ctx.guessPick_(1, true);
+    await U.ctx.cmGuessApply_(); await settle();
+    t('確かめの窓で「やめる」を押したら欄に入れない（候補はそのまま）', JSON.stringify(U.ctx.ed.rec) === ub && !!U.ctx.ed.guess);
+    U.ctx.guessClose_();
+    t('「候補を閉じる」で候補を消す（欄は変えない）', U.ctx.ed.guess === null && JSON.stringify(U.ctx.ed.rec) === ub);
+    const V = await opened();
+    await V.ctx.openNew_('');
+    V.el('cm-paste').value = '◆結論：印のある結論';
+    await V.ctx.cmParse_(); await settle();
+    t('★印のある議事録は今までどおり振り分ける（候補を出さない）', V.ctx.ed.guess === null && V.ctx.ed.rec.conclusion === '印のある結論');
+    V.el('cm-paste').value = '会議のメモ。見出しもありません。';
+    await V.ctx.cmParse_(); await settle();
+    const hv = V.ctx.editorHtml_(V.ctx.ed, V.ctx.cur);
+    t('候補になる見出しが無い時は、そう知らせて文を全部見せる（振り分けのボタンは出さない）', /欄の候補になる見出しが見つかりませんでした/.test(hv) && !/見出しから欄の候補を出しました/.test(hv) && hv.indexOf('会議のメモ。見出しもありません。') >= 0 &&
+      !/data-act="guess-apply"/.test(hv) && V.ctx.ed.rec.conclusion === '印のある結論');
+    /* esc: 見出し・本文・振り分けられなかった文に壊れた値を入れても、実行される形にならない */
+    const EVIL = '<img src=x onerror=alert(1)>', BREAK = '"><script>alert(1)</script>';
+    V.el('cm-paste').value = [EVIL, '【結論】' + EVIL, BREAK, '検討事項：' + BREAK].join('\n');
+    await V.ctx.cmParse_(); await settle();
+    const hx = V.ctx.editorHtml_(V.ctx.ed, V.ctx.cur);
+    t('候補の欄は見出し・本文・振り分けられなかった文を esc して出す', V.ctx.ed.guess.cands.length === 2 && !/<img/i.test(hx) && !/<script/i.test(hx) && hx.indexOf('&lt;img src=x onerror=alert(1)&gt;') >= 0 &&
+      hx.indexOf('&quot;&gt;&lt;script&gt;') >= 0, hx.slice(0, 600));
+    V.ctx.guessPick_(0, true); V.ctx.guessPick_(1, true);
+    await V.ctx.cmGuessApply_(); await settle();
+    const hy = V.ctx.editorHtml_(V.ctx.ed, V.ctx.cur);
+    t('選んで入れた後の入力欄・知らせも esc して出す', V.ctx.ed.rec.conclusion.indexOf(EVIL) === 0 && !/<img/i.test(hy) && !/<script/i.test(hy), hy.slice(0, 600));
+    t('受け口: ✔︎と欄の選択は変更の時（data-gi・data-gk）、ボタンはクリックの時に見分ける', /data-gi/.test(cutF(S, 'onEdChange_')) && /data-gk/.test(cutF(S, 'onEdChange_')) &&
+      /a==='guess-apply'/.test(cutF(S, 'onEdClick_')) && /a==='guess-close'/.test(cutF(S, 'onEdClick_')));
+    t('記録を開き直す・受け取った時は候補も捨てる', /guess:null/.test(cutF(S, 'newEditor_')) && /guess:null/.test(cutF(S, 'editorFromRow_')) && /e\.guess=null/.test(cutF(S, 'adopt_')));
+    t('候補は端末に書かない（localStorage・sessionStorage に書くのは今の UI の状態だけ）', T.writes.every((w) => !/guess|cand/i.test(w[2] || '')) && !/Storage\.setItem/.test(cutF(S, 'cmGuessApply_') + cutF(S, 'guessPick_')));
   }
 
   say('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');

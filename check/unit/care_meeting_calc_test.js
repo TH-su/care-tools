@@ -7,6 +7,7 @@
      4. 利用者名が開いている方と合わない・同じ名前の方が2人いる時は確定させない
      5. 上限を超える欄・出席者は切り詰めない（保存の前に止める）
      6. 期限の知らせは確定した会議だけを数える。認定の始まりは30日前から数える。退院・区分変更・入院中も知らせる
+     8. 印の無い議事録は見出しから欄の候補を出すだけで、人が選んだ候補だけを欄へ入れる。どの行も捨てない（2026-11-13）
    ★文章・氏名はすべて架空。 */
 'use strict';
 const path = require('path');
@@ -245,6 +246,114 @@ console.log('\n— 7. 期限の知らせ —');
   const any = C.dueAlerts(Object.assign({}, base, { meetings: [M('2026-04-01'), M('2026-10-12')], stateLog: LOG(['2026-10-10T01:00:00.000Z', false], ['2026-09-20T01:00:00.000Z', true]) }));
   t('★どの理由の会議でも6か月を数え直す（臨時の会議の後は6か月の知らせが消える）', kinds(any) === '', any);
   t('今日（日本時間）を数える', C.todayJST(Date.UTC(2026, 9, 22, 15, 0)) === '2026-10-23' && C.todayJST(Date.UTC(2026, 9, 22, 14, 59)) === '2026-10-22');
+}
+
+console.log('\n— 8. 印の無い議事録の見出しから欄の候補を出す（2026-11-13 代表者の指示） —');
+{
+  const keys = (g) => g.cands.map((c) => c.key).join(',');
+  const nonEmpty = (s) => String(s).split('\n').map((l) => l.trim()).filter(Boolean);
+  /* どの行も失わない（空でない行は、どれか1つの候補の元の文か、最初の見出しより前の文に1回だけ入る） */
+  const keepsAll = (src, g) => {
+    const got = nonEmpty([g.rest].concat(g.cands.map((c) => c.src)).join('\n'));
+    const want = nonEmpty(src);
+    return got.length === want.length && got.every((l, i) => l === want[i]);
+  };
+  /* (1) 見出しが【】の形 */
+  const A = [
+    '担当者会議の記録（架空）',
+    '【利用者名】甲野 太郎 様',
+    '【開催日】2026年10月16日（金）',
+    '【開催場所】架空の相談室',
+    '【出席者】',
+    '介護支援専門員／乙野 花子',
+    '介護職員／丙野 一郎',
+    '【検討した項目】',
+    '1. 夜間の排泄の支援',
+    '2. 入浴の回数',
+    '【検討内容】',
+    '【CM】夜間の誘導の時間を見直したい。',
+    '【施設】2時と5時の誘導で失敗が減った。',
+    '【結論】',
+    '夜間の誘導を2時と5時にする。',
+    '【今後の課題】なし'
+  ].join('\n');
+  t('(1) 印の無い議事録は parse では何も入れない（今の振り分けのまま）', Object.keys(C.parse(A).fields).length === 0 && C.parse(A).found.length === 0);
+  const ga = C.guess(A);
+  t('★(1)【】の見出しを欄の候補にする（本文の【CM】【施設】は候補にしない）', keys(ga) === 'sourceName,heldDate,place,attendees,items,content,conclusion,issues', keys(ga));
+  t('(1) 候補の本文は次の見出しの前まで（同じ行の後ろの文も入れる）', ga.cands[0].body === '甲野 太郎 様' && ga.cands[5].body === '【CM】夜間の誘導の時間を見直したい。\n【施設】2時と5時の誘導で失敗が減った。' &&
+    ga.cands[7].head === '今後の課題' && ga.cands[7].body === 'なし', ga.cands);
+  t('(1) 最初の見出しより前の文は「振り分けられなかった文」として返す', ga.rest === '担当者会議の記録（架空）', ga.rest);
+  t('★(1) どの行も捨てない', keepsAll(A, ga));
+  const none = C.guessApply(ga, []);
+  t('★(1) 人が選ばない限り、どの欄にも入れない', none.chosen === 0 && Object.keys(none.fields).length === 0 && none.found.length === 0 && none.attendees.length === 0, none);
+  t('(1) 選ばない時は全部の文を「振り分けられなかった文」に返す', keepsAll(A, { rest: none.rest, cands: [] }), none.rest);
+  const ch = ga.cands.map((c) => (c.key === 'conclusion' || c.key === 'heldDate' || c.key === 'attendees' ? c.key : ''));
+  const pa = C.guessApply(ga, ch);
+  t('★(1) 選んだ見出しだけを欄へ入れる（日付・出席者は parse と同じ形の確かめを通る）', pa.chosen === 3 && pa.fields.conclusion === '夜間の誘導を2時と5時にする。' && pa.fields.heldDate === '2026-10-16' &&
+    pa.attendees.length === 2 && pa.attendees[0].name === '乙野 花子' && !('content' in pa.fields) && !('sourceName' in pa.fields), pa);
+  t('(1) 選ばなかった見出しは見出しの行ごと「振り分けられなかった文」に残す', /【検討内容】\n【CM】/.test(pa.rest) && /^担当者会議の記録（架空）/.test(pa.rest) && pa.rest.indexOf('夜間の誘導を2時と5時にする') < 0, pa.rest);
+  const other = C.guessApply(ga, ga.cands.map((c) => (c.key === 'issues' ? 'conclusion' : '')));
+  t('(1) 人が入れる欄を変えた時はその欄へ入れる（今後の課題 → 結論）', other.fields.conclusion === 'なし' && !('issues' in other.fields), other.fields);
+  const bad = C.guessApply(ga, ga.cands.map(() => 'nosuchfield'));
+  t('知らない欄の名前を渡しても、欄に入れない', bad.chosen === 0 && Object.keys(bad.fields).length === 0, bad);
+
+  /* (2) 見出しが「〜：」の形 */
+  const B = [
+    '利用者：甲野 次郎',
+    '開催日：令和8年10月20日',
+    '開催時間：10時〜10時30分',
+    '参加者：',
+    '・介護支援専門員／乙野 花子',
+    '検討事項：歩行の見守り',
+    '協議内容：',
+    '甲野：転ばないか心配です。',
+    '乙野：結論としては見守りを続けたいと思います。',
+    '決定事項：日中の見守りを続ける。',
+    '課題：夜間の様子を見る。',
+    '次回：6か月後'
+  ].join('\n');
+  const gb = C.guess(B);
+  t('★(2)「語：」の見出しを欄の候補にする（「甲野：」「結論としては…」は候補にしない）', keys(gb) === 'sourceName,heldDate,timeText,attendees,items,content,conclusion,issues,nextText', keys(gb));
+  t('(2) 話した人の行は検討内容の本文に残る', gb.cands[5].body === '甲野：転ばないか心配です。\n乙野：結論としては見守りを続けたいと思います。', gb.cands[5].body);
+  t('★(2) どの行も捨てない', keepsAll(B, gb) && gb.rest === '');
+  const pb = C.guessApply(gb, gb.cands.map((c) => c.key));
+  t('(2) 全部選ぶと、和暦の日付・時刻も parse と同じに読む', pb.fields.heldDate === '2026-10-20' && pb.fields.timeText === '10:00〜10:30' && pb.fields.conclusion === '日中の見守りを続ける。' &&
+    pb.fields.nextText === '6か月後' && pb.fields.sourceName === '甲野 次郎' && pb.rest === '', pb.fields);
+
+  /* (3) 箇条書きの形（■・番号・見出しの語だけの行） */
+  const C3 = [
+    '架空の会議のメモ',
+    '■検討内容',
+    '・入浴の時間を夕方にしたい（丁野）',
+    '1. 結論',
+    '入浴は夕方にする。',
+    '・残された課題',
+    '・まとめの時に見守りの人数を決める',
+    '# 次回の開催予定',
+    '状態が変わった時',
+    '★結論',
+    '週2回を続ける。'
+  ].join('\n');
+  const gc = C.guess(C3);
+  t('★(3) 箇条書きの見出し（■・番号・中黒・#）を欄の候補にする（文の中の語は候補にしない）', keys(gc) === 'content,conclusion,issues,nextText,conclusion', keys(gc));
+  t('(3) 箇条書きの本文の中黒の行は本文に残す', gc.cands[2].body === '・まとめの時に見守りの人数を決める', gc.cands[2].body);
+  t('★(3) どの行も捨てない', keepsAll(C3, gc) && gc.rest === '架空の会議のメモ');
+  const pc = C.guessApply(gc, gc.cands.map((c) => c.key));
+  t('(3) 同じ欄に2つ選んだ時は、見出しの順につないで知らせる', pc.fields.conclusion === '入浴は夕方にする。\n週2回を続ける。' && pc.warns.some((w) => /「結論」の欄に 2 つの見出しの文をつないで/.test(w)), pc);
+  const pc1 = C.guessApply(gc, gc.cands.map((c, i) => (i === 0 ? c.key : '')));
+  t('(3) 1つだけ選ぶと、その欄だけに入る', Object.keys(pc1.fields).join(',') === 'content' && pc1.fields.content === '・入浴の時間を夕方にしたい（丁野）', pc1.fields);
+
+  /* 印のある議事録・長すぎる・飾りだけの長い行 */
+  const gf = C.guess(FULL);
+  t('★印のある議事録では候補を出さない（今の振り分けのまま）', gf.marked === true && gf.cands.length === 0);
+  const gt = C.guess('a'.repeat(C.INPUT_MAX + 1));
+  t('長すぎる文章では候補を出さない', gt.tooLong === true && gt.cands.length === 0);
+  const t0 = Date.now(), gl = C.guess('*'.repeat(29000) + '結論');
+  t('飾りだけの長い行でも時間がかからない（1秒未満）', Date.now() - t0 < 1000 && Array.isArray(gl.cands), Date.now() - t0);
+  const gm = C.guess('【結論】◆開催日：2026/10/1');
+  const pm = C.guessApply(gm, gm.cands.map((c) => c.key));
+  t('★見出しの後ろが「◆欄名：」の形の行は見出しにしない（選んでいない欄に入らない）', gm.cands.length === 0 && pm.chosen === 0 && Object.keys(pm.fields).length === 0 && gm.rest === '【結論】◆開催日：2026/10/1', [gm, pm.fields]);
+  t('見出しの語の言い換えは parse の区切りにしない（「◆課題：」は今も知らない印）', C.parse('◆結論：続ける\n◆課題：なし').unknown.length === 1 && C.parse('◆結論：続ける\n◆課題：なし').fields.conclusion === '続ける\n◆課題：なし');
 }
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
