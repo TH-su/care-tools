@@ -11,11 +11,13 @@
  *   4. 利用者名は、開いている入居者と照らし合わせる。合わない・同じ名前の方が名簿に2人以上いる時は確定させない
  *   5. 上限を超える欄・出席者は切り詰めない（知らせて、保存の前に直してもらう）
  *   6. 個人情報を外へ送らない・保存しない（この部品は計算だけ）
+ *   7. 印が1つも無い議事録は、よくある見出しから欄の候補を出すだけ（guess）。欄へ入れるのは人が選んだ候補だけ（guessApply）。
+ *      候補にならなかった文も捨てずに返す（2026-11-13 代表者の指示）
  */
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-10-25a';
+  var VERSION = '2026-11-13b';
   /* 様式の欄（並びは様式どおり）。max は1欄の上限の文字数（GAS の meeting.gs と同じ値）。optional は無くても知らせない欄 */
   var FIELDS = [
     { key: 'sourceName', label: '利用者名', max: 40 },
@@ -399,8 +401,129 @@
     return out;
   }
 
+  /* ── 印の無い議事録の見出しから欄の候補を出す（2026-11-13 代表者の指示） ──
+     「◆欄名：」の印が1つも無い時（parse の found が空の時）だけ使う。決まった表の語に一致する見出しの行を候補にし、
+     どの欄へ入れるかは人が選ぶ（この関数は欄へ入れない）。
+     ★この表は parse の区切りに使わない（ALIASES に入れると「◆課題：」などが欄の区切りになり、印のある議事録の振り分けが変わるため）
+     見出しと認める形は2つだけ: (1) 飾り（【】■●・# 番号など）を外した残り全体が表の語 (2)「語：本文」の語が表の語。
+     本文の中の【CM】【施設】・「結論としては…」のような文は見出しにしない */
+  var GUESS_WORDS = {
+    sourceName: ['利用者名', '利用者', '利用者氏名', '対象者'],
+    kind: ['開催の理由', '開催理由', '開催目的', '会議の目的'],
+    author: ['作成担当者', '作成者', '記録者'],
+    createdDate: ['作成年月日', '作成日'],
+    heldDate: ['開催日', '開催年月日', '会議日', '実施日'],
+    place: ['開催場所', '場所', '会場'],
+    timeText: ['開催時間', '時間'],
+    count: ['開催回数', '回数'],
+    attendees: ['出席者', '参加者', '会議出席者', '出席者一覧', '参加者一覧'],
+    items: ['検討した項目', '検討項目', '検討事項', '議題', '協議事項'],
+    content: ['検討内容', '検討の内容', '協議内容', '話し合いの内容', '主な意見'],
+    conclusion: ['結論', '決定事項', '決まったこと', 'まとめ'],
+    issues: ['残された課題', '今後の課題', '残った課題', '課題'],
+    nextText: ['次回の開催時期', '次回開催時期', '次回の開催予定', '次回開催予定', '次回の予定', '次回']
+  };
+  var GUESS_BY = {};
+  Object.keys(GUESS_WORDS).forEach(function (k) { GUESS_WORDS[k].forEach(function (w) { GUESS_BY[labelKey(w)] = k; }); });
+  var GUESS_HEAD_MAX = 20;    // 見出しの語の長さの上限（これより長い「〜：」は文として扱う）
+  /* 行の先頭の飾りを1つずつ外す（★正規表現1本で繰り返すと、飾りの長く続く行で時間がかかるため markBody と同じく1つずつ） */
+  function stripDecor(line) {
+    var s = String(line).replace(/^\s+/, ''), prev;
+    for (var i = 0; i < 20 && s; i++) {
+      prev = s;
+      s = s.replace(/^(?:#{1,6}|>|[-+]|\*+|_{2,}|[・■□●○◎◯▼▽▶►▷◆◇★☆※]|\d{1,2}[.．)）]|[(（]\d{1,2}[)）]|[一二三四五六七八九十]{1,2}[、.．])\s*/, '');
+      if (s === prev) break;
+    }
+    return s;
+  }
+  /* 見出しの行なら {head, key, rest} を返す。違えば null */
+  function guessHead(line) {
+    var s = stripDecor(line), mm, word, rest;
+    if (!s) return null;
+    if ((mm = /^[【［\[〔《]([^】］\]〕》]{1,20})[】］\]〕》]\s*(?:[：:]\s*)?([\s\S]*)$/.exec(s))) { word = mm[1]; rest = mm[2]; }
+    else {
+      var colon = s.search(/[：:]/);
+      if (colon > 0 && colon <= GUESS_HEAD_MAX) { word = s.slice(0, colon); rest = s.slice(colon + 1); }
+      else if (colon < 0 && s.length <= GUESS_HEAD_MAX) { word = s; rest = ''; }
+      else return null;
+    }
+    var key = GUESS_BY[labelKey(word)];
+    if (!key) return null;
+    rest = rest.replace(/^\s*(?:\*\*|__)\s*/, '').trim();
+    /* 同じ行の後ろが「◆」の印の形の時は見出しにしない（組み直した文の中で別の欄の印として読まれ、選んでいない欄に入るため） */
+    if (rest && markBody(rest) !== null) return null;
+    return { head: word.trim(), key: key, rest: rest };
+  }
+  /* 印の無い文章 → {cands:[{head, key, line, body, lines, src}], rest, tooLong, marked}
+     cands は見出しの順。body は見出しの行の後ろの文（同じ行の「：」の後ろを含む）から次の見出しの前まで。
+     src は見出しの行からの元の文のまま（選ばなかった時に返す）。rest は最初の見出しより前の文（どの候補にも入らない文）。空でない行はすべて、どれか1つの候補か rest に入る（捨てない）
+     印のある文章（parse で欄が1つでも見つかる）・長すぎる文章では候補を出さない（marked・tooLong） */
+  function guess(text) {
+    var src = String(text == null ? '' : text);
+    if (src.length > INPUT_MAX) return { cands: [], rest: '', tooLong: true, marked: false };
+    if (parse(src).found.length) return { cands: [], rest: '', tooLong: false, marked: true };
+    var cands = [], pre = [], cur = null;
+    src.replace(/\r\n?/g, '\n').split('\n').forEach(function (line) {
+      var h = guessHead(line);
+      if (h) { cur = { head: h.head, key: h.key, line: line.trim(), body: [], src: [line] }; if (h.rest) cur.body.push(h.rest); cands.push(cur); return; }
+      if (cur) { cur.body.push(line); cur.src.push(line); } else pre.push(line);
+    });
+    cands.forEach(function (c) {
+      c.body = c.body.join('\n').replace(/^\s*\n/, '').replace(/\s+$/, '');
+      c.lines = c.body ? c.body.split('\n').length : 0;
+      c.src = c.src.join('\n').replace(/\s+$/, '');
+    });
+    return { cands: cands, rest: pre.join('\n').trim(), tooLong: false, marked: false };
+  }
+  /* 人が選んだ候補だけを欄へ入れる形にする。choices は候補と同じ並びで、欄の key（入れない時は '' か null）。
+     選んだ分を「◆欄名：」の形に組み直して parse に通す（日付・時刻・回数・出席者の形の確かめは parse と同じ）。
+     同じ欄に2つ以上選んだ時は、見出しの順につないで1つにして知らせる。選ばなかった候補は見出しの行ごと rest に足す。
+     戻り値 parse と同じ形 ＋ {rest, chosen}。1つも選んでいない時は chosen が 0 で fields は空 */
+  var ONE_LINE = { createdDate: 1, heldDate: 1, timeText: 1, count: 1, kind: 1 };   // parse が形を確かめる1行の欄
+  function guessApply(g, choices) {
+    var cands = (g && Array.isArray(g.cands)) ? g.cands : [], ch = Array.isArray(choices) ? choices : [];
+    var by = {}, left = [], dupWarn = [];
+    if (g && g.rest) left.push(String(g.rest));
+    cands.forEach(function (c, i) {
+      var k = ch[i];
+      if (k && fieldOf(k)) {
+        var body = String(c.body || '');
+        /* 形を確かめる1行の欄は、最初の文の行（見出しの行の後ろ、無ければ次の行）だけを入れ、続く行は振り分けられなかった文へ回す
+           （続く行まで入れると形を読めずに空になり、どこにも残らなかった・反証レビューの指摘 2026-11-13） */
+        if (ONE_LINE[k]) {
+          var bl = body.split('\n'), j = 0;
+          while (j < bl.length && !bl[j].trim()) j++;
+          var more = bl.slice(j + 1).join('\n').trim();
+          body = j < bl.length ? bl[j].trim() : '';
+          if (more) left.push(more);
+        }
+        (by[k] = by[k] || []).push(body);
+        return;
+      }
+      left.push(String(c.src || c.line || ''));
+    });
+    var parts = [], chosen = 0;
+    FIELDS.forEach(function (f) {
+      if (!by[f.key]) return;
+      chosen += by[f.key].length;
+      if (by[f.key].length > 1) dupWarn.push('「' + f.label + '」の欄に ' + by[f.key].length + ' つの見出しの文をつないで入れました（確かめてください）');
+      parts.push('◆' + f.label + '：\n' + by[f.key].join('\n'));
+    });
+    var res = chosen ? parse(parts.join('\n')) : { fields: {}, attendees: [], warns: [], found: [], unknown: [], preamble: '', raw: {}, tooLong: false,
+      missing: FIELDS.filter(function (f) { return !f.optional; }).map(function (f) { return f.key; }) };
+    res.warns = dupWarn.concat(res.warns);
+    /* 形を読めずに空にした欄の元の文も、振り分けられなかった文へ足す（黙って捨てない） */
+    Object.keys(ONE_LINE).forEach(function (k) {
+      var raw = res.raw && res.raw[k] !== undefined ? String(res.raw[k]).trim() : '';
+      if (raw && !String(res.fields[k] == null ? '' : res.fields[k]).trim()) left.push(raw);
+    });
+    res.rest = left.join('\n\n').trim();
+    res.chosen = chosen;
+    return res;
+  }
+
   var api = { VERSION: VERSION, FIELDS: FIELDS, KINDS: KINDS, ATTENDEE_MAX: ATTENDEE_MAX, ATTENDEE_LEN: ATTENDEE_LEN, ATTENDEE_PRINT: ATTENDEE_PRINT, INPUT_MAX: INPUT_MAX,
-    parse: parse, normDate: normDate, normTime: normTime, normCount: normCount, normKind: normKind, parseAttendees: parseAttendees,
+    parse: parse, guess: guess, guessApply: guessApply, guessHead: guessHead, normDate: normDate, normTime: normTime, normCount: normCount, normKind: normKind, parseAttendees: parseAttendees,
     residentMatch: residentMatch, checkSave: checkSave, checkFinal: checkFinal, dueAlerts: dueAlerts, lastHeld: lastHeld,
     addMonths: addMonths, todayJST: todayJST, hospitalState: hospitalState, lastCareChange: lastCareChange,
     attKey: attKey, attendeeCandidates: attendeeCandidates };
