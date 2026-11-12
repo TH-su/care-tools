@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-YAw/utqAJika2bhEz4XaQE/Hmy7ZmvrJxW8GdYdpbmE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-IjA4rtlvxwHdohHxzUWpq0O4rRDqhJB0aYqIG8w+tuc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -7434,7 +7434,16 @@ function yjLoadText_(text){
     var a=d.error||!d.pages.length?{id:'', why:'読めなかった書類です', cands:[]}:YakujoCalc.assign(d, act);
     /* 自動で決まらなかった書類でも、候補の氏名を出す時は、その方（候補が2名以上なら最初の方）をプルダウンの既定にする（本人指示 2026-11-12）。
        ★人が選んだのと同じ扱い（guess の印）で、まとめて反映には入らない（bulkCheck は自動の一字一致だけを通す）。1人ずつの確認で本人確認を求める */
-    var gid=!a.id&&!d.error&&d.pages.length?((a.cands||[]).map(function(c){ return String(c.id); }).filter(function(id){ return !!yjWho_(id); })[0]||''):'';
+    var gid='';
+    if(!a.id&&!d.error&&d.pages.length){
+      /* 候補が2名以上の時は、書類の上の方（前のページ・上の行）に名前がある方を既定にする（番号順にしない・反証レビューの指摘 2026-11-12） */
+      var gs=(a.cands||[]).map(function(c){ return String(c.id); }).filter(function(id){ return !!yjWho_(id); }).map(function(id,k){
+        var w=yjWho_(id), z=typeof YakujoCalc.nameZoom==='function'?YakujoCalc.nameZoom(d,{name:w.name, kana:w.kana}):null;
+        return {id:id, k:k, pos:z&&z.box?[z.page, z.box.y, z.box.x]:[1e9,0,0]};
+      });
+      gs.sort(function(p,q){ for(var j=0;j<3;j++) if(p.pos[j]!==q.pos[j]) return p.pos[j]-q.pos[j]; return p.k-q.k; });
+      gid=gs.length?gs[0].id:'';
+    }
     return {d:d, a:a, pick:a.id||gid, guess:!!gid, out:!!(d.error||!d.pages.length), status:''};
   });
   yjSt.phase='assign'; yjSt.msg='';

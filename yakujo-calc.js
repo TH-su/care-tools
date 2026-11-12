@@ -1225,9 +1225,9 @@
       }
       return null;
     }
-    var f = null, hit = 'top';
-    if (nre && (f = find(function (l) { return nre.test(nfkc(l.t)); }))) hit = 'name';
-    else if (kre && (f = find(function (l) { return kre.test(hira(l.t)); }))) hit = 'kana';
+    var f = null, hit = 'top', at = null;   /* at: 行の中で見つけた所（字の位置 i・字数 n・行の字数 len） */
+    if (nre && (f = find(function (l) { var t = nfkc(l.t), m = nre.exec(t); if (m) at = { i: m.index, n: m[0].length, len: t.length }; return !!m; }))) hit = 'name';
+    else if (kre && (f = find(function (l) { var t = hira(l.t), m = kre.exec(t); if (m) at = { i: m.index, n: m[0].length, len: t.length }; return !!m; }))) hit = 'kana';
     else if (pn.length >= 2 && (f = find(function (l) {
       var z = nz(l.t);
       for (var w = pn.length - 1; w <= pn.length + 1; w++) for (var s = 0; w > 0 && s + w <= z.length; s++) if (dist(pn, z.slice(s, s + w), 1) === 1) return true;
@@ -1237,6 +1237,12 @@
     if (!f) return { page: pages[0].no || 1, x: 0, y: 0, w: 1, h: 0.25, box: null, hit: 'top' };
     var b = f.l, cx = b.x + b.w / 2;
     var w = Math.min(0.7, Math.max(0.4, b.w + 0.1)), h = Math.min(0.3, Math.max(0.06, b.h * 4));
+    /* 行が横に長く範囲に入りきらない時は、氏名の字の位置（字数の割合で見積もる）を中心にする。
+       位置が分からない行（1字違い・見出し）は行の頭から見せる（氏名は行の頭にあることが多い・反証レビューの指摘 2026-11-12） */
+    if (b.w + 0.02 > w) {
+      if (at && at.len > 0) cx = b.x + b.w * (at.i + at.n / 2) / at.len;
+      else cx = b.x - 0.02 + w / 2;
+    }
     var x = Math.min(1 - w, Math.max(0, cx - w / 2)), y = Math.min(1 - h, Math.max(0, b.y + b.h / 2 - h / 2));
     return { page: pages[f.pi].no || (f.pi + 1), x: x, y: y, w: w, h: h, box: { x: b.x, y: b.y, w: b.w, h: b.h }, hit: hit };
   }

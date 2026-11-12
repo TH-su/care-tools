@@ -61,7 +61,7 @@ try {
   const st = () => p.evaluate(() => window.yjSt.docs.map((x) => ({ auto: x.a.id, pick: x.pick, guess: x.guess, sel: (document.querySelector('select[data-yjpick="' + window.yjSt.docs.indexOf(x) + '"]') || {}).value })));
   let s = await st();
   t('★書類1（1字違い）: 候補の「架空 一郎」がプルダウンの既定', s[0].auto === '' && s[0].pick === 'R01' && s[0].sel === 'R01' && s[0].guess === true, s[0]);
-  t('★書類2（2名の氏名）: 最初の候補がプルダウンの既定', s[1].auto === '' && s[1].pick !== '' && s[1].sel === s[1].pick && ['R01', 'R02'].includes(s[1].pick), s[1]);
+  t('★書類2（2名の氏名）: 書類の上の方にある「見本 一郎」がプルダウンの既定（番号の小さい方ではない）', s[1].auto === '' && s[1].pick === 'R02' && s[1].sel === 'R02', s[1]);
   t('★書類3（候補なし）: （選ぶ）のまま', s[2].pick === '' && s[2].sel === '' && s[2].guess === false, s[2]);
   t('書類4（一字一致）: 今までどおり自動で決まる・仮の印なし', s[3].auto === 'R03' && s[3].sel === 'R03' && s[3].guess === false, s[3]);
   const body = await p.textContent('#yjBody');
