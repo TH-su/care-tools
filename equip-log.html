@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ejuq+ANfvBNBXc91dPMg8ZsicxtD9RMPbNmxe+LOSXo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-MzGXfV5ogu+42WW2S4pMWD/uvaDimy1PddGh0tFcp80='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
@@ -15,7 +15,7 @@
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-app-gate.js?v=2026-11-11"></script>
 <script src="su-facility.js?v=2026-11-07"></script>
-<script src="equip-calc.js?v=2026-11-03.4"></script>
+<script src="equip-calc.js?v=2026-11-13"></script>
 <style>
 /* 設備・修繕の記録（2026-11-03 本人の決定）。色は採用管理と同じ濃さ（コントラスト7:1目標）。ライト固定。
    文字は 17px・押せる所は 44px 以上・フォーカスは 3px の枠。印刷はしない（画面と CSV だけ） */
@@ -260,6 +260,7 @@ tr.soon td{background:var(--warn-bg)}
    - 事務所PCだけ。現場端末（su_device_role==='field'）では何も取りに行かず、案内だけを出す（ログインの部品も読まない）
    - 開く前にログインの役割を確かめる（su-app-gate.js の 'equip-log'）。開けない時は何も読まない
    - 端末に残すのは UI の状態だけ: localStorage の eql_tab（タブ）・eql_floor（図面の階）・eql_filter（対応の記録の絞り込み）。
+     ほかに、メニューのタイルの札に出す件数だけを eql_menu_due に残す（期限切れ・30日以内・法定の期限切れの数と数えた日・設備名と場所は残さない・2026-11-13）。
      読む時は既知の値だけを戻す（EquipCalc.restoreUiState）。記録・業者・氏名は端末に置かない
    - 図面は施設情報の間取り（SUFacility.roomPlan）の部屋番号と名前の箱だけを使う。入居者の名簿は読まない（氏名を出さない）
    - 施設名・事業所名はコードに書かず、施設情報（SUFacility.officeName）から読む
@@ -485,6 +486,20 @@ function paintAll_(){
   else if(tab==='cost') p.innerHTML=costHtml_();
   else if(tab==='vendors') p.innerHTML=vendorsHtml_();
   else if(tab==='fields') p.innerHTML=fieldsHtml_();
+  saveMenuDue_();
+}
+/* メニューのタイルの札に出す件数を端末に残す（2026-11-13 代表者の指示・個別機能訓練計画書の札と同じ作り）。
+   ★残すのは件数と数えた日だけ（EquipCalc.menuDueSummary）。設備名・場所・業者は残さない。
+   ★鍵は eql_menu_due（メニューの定義の due と同じ名前）。書くのはデータベースから読めている時（dbState==='ok'）だけ。準備中・読み込めない時は前の件数を0件で上書きしない。
+     読めた時の0件は書く（直した後に札が消えるように）。保存・取り消し・廃棄の後も描き直しのたびに数え直し、変わった時だけ書く */
+function saveMenuDue_(){
+  try{
+    if(view!=='app'||dbState!=='ok'||isField()) return;
+    var sum=EquipCalc.menuDueSummary(data.assets,data.events,data.fields,EquipCalc.todayJST());
+    if(!sum) return;
+    var v=JSON.stringify(sum);
+    if(localStorage.getItem('eql_menu_due')!==v) localStorage.setItem('eql_menu_due',v);
+  }catch(e){ eqNote_('メニューの札の件数の保存', e); }
 }
 /* どのタブからも押せる主ボタン（U1）。準備中・読み込めていない時は押せない。図面で場所を選んでいれば名前に添える */
 function paintTools_(){
@@ -724,6 +739,7 @@ function fieldsHtml_(){
     '<button type="button" class="btn sm" data-act="ftarget" data-target="event" aria-pressed="'+(fieldTarget==='event'?'true':'false')+'">対応の記録に付ける項目</button>'+
     '<button type="button" class="btn sm" data-act="ftarget" data-target="asset" aria-pressed="'+(fieldTarget==='asset'?'true':'false')+'">設備に付ける項目</button></div>';
   h+='<p class="acts"><button type="button" class="btn pri" data-act="field-new"'+dis_()+'>項目を足す</button></p>';
+  if(fieldTarget==='asset') h+=legalHtml_();
   if(!list.length) return h+guide_(fieldTarget==='asset'?'設備に付ける項目はまだありません。資産番号・設置日など、設備ごとに残したい項目を足せます。':'対応の記録に付ける項目はまだありません。見積受領日・緊急度など、記録ごとに残したい項目を足せます。','<button type="button" class="btn pri" data-act="field-new"'+dis_()+'>＋ 項目を足す</button>');
   return h+'<div class="tbl-wrap"><table class="tbl"><thead><tr><th scope="col">並び</th><th scope="col">項目の名前</th><th scope="col">種類</th><th scope="col">選択肢</th><th scope="col">状態</th><th scope="col">操作</th></tr></thead><tbody>'+
     list.map(function(f,i){
@@ -1066,10 +1082,19 @@ function openPlace_(){
     selectHtml_('l-kind','事業所',EquipCalc.OFFICE_KINDS.map(function(k){ return [k.code,officeName_(k.code)]; }),'facility')+'</div>'+dlgBtns_('保存する'));
   return true;
 }
-function openField_(id){
+/* 「法定」の印の案内（2026-11-13 代表者の指示）。設備に付ける選択肢の項目で「法定」を選んだ設備を、メニューの札で法定の期限切れとして数える。
+   印に使える項目がまだ無い時だけ、名前と選択肢を入れた「項目を足す」の窓を開くボタンを出す（保存は人が押す・自動で項目を作らない） */
+function hasLegalField_(){
+  return data.fields.some(function(f){ return f&&f.target==='asset'&&f.ftype==='select'&&!f.disabled&&Array.isArray(f.options)&&f.options.indexOf(EquipCalc.LEGAL_VALUE)>=0; });
+}
+function legalHtml_(){
+  return '<p class="hint">消防設備・エレベーター・受水槽など法定点検のある設備は、選択肢の項目で「'+esc(EquipCalc.LEGAL_VALUE)+'」を選ぶと「法定」の印になり、期限切れの時にメニューの札が赤くなります。</p>'+
+    (hasLegalField_()?'':'<p class="acts"><button type="button" class="btn sm" data-act="field-legal"'+dis_()+'>「法定」の印の項目を足す</button></p>');
+}
+function openField_(id,preset){
   var f=id!=null?byId_(data.fields,id):null;
   if(id!=null&&!f) return false;
-  var r=f||{target:fieldTarget,ftype:'text'};
+  var r=f||preset||{target:fieldTarget,ftype:'text'};
   form={kind:'field',row:r,rev:f?f.rev:null,dirty:false,busy:false};
   openDlg_('<h2 id="e-dlg-h">'+(f?'項目の名前を変える':'項目を足す')+'（'+(r.target==='asset'?'設備に付ける項目':'対応の記録に付ける項目')+'）</h2><div class="fgrid">'+
     inputHtml_('k-name','項目の名前（1〜20字）',r.name,'text',' maxlength="20" required')+
@@ -1339,6 +1364,7 @@ function act_(a,b){
   if(a==='vendor-edit') return openVendor_(attr_(b,'data-id'));
   if(a==='ftarget'){ fieldTarget=attr_(b,'data-target')==='asset'?'asset':'event'; paintAll_(); return; }
   if(a==='field-new') return openField_(null);
+  if(a==='field-legal') return openField_(null,{target:'asset',ftype:'select',name:'法定点検',options:[EquipCalc.LEGAL_VALUE]});
   if(a==='field-edit') return openField_(attr_(b,'data-id'));
   if(a==='field-up') return moveField_(attr_(b,'data-id'),-1);
   if(a==='field-down') return moveField_(attr_(b,'data-id'),1);
