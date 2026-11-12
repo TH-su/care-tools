@@ -1126,9 +1126,9 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
     <details class="iv-yrange-d" id="ivYRangeD"><summary>縦軸の範囲を指定する</summary>
     <div class="iv-yrange" id="ivYRange">
       <span class="iv-yrange-l">Y軸表示範囲</span>
-      <input type="number" id="ivYMin" class="iv-yrange-i" inputmode="decimal" step="1" min="0" placeholder="自動">
+      <input type="number" id="ivYMin" class="iv-yrange-i" inputmode="decimal" step="1" min="0" placeholder="自動" aria-label="Y軸表示範囲の下限">
       <span class="iv-yrange-sep">〜</span>
-      <input type="number" id="ivYMax" class="iv-yrange-i" inputmode="decimal" step="1" min="0" placeholder="自動">
+      <input type="number" id="ivYMax" class="iv-yrange-i" inputmode="decimal" step="1" min="0" placeholder="自動" aria-label="Y軸表示範囲の上限">
       <span class="iv-yrange-u">kg</span>
       <button type="button" class="iv-yrange-rst" id="ivYRangeReset" title="自動範囲に戻す">リセット</button>
     </div>
@@ -1189,7 +1189,7 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
     </div>
     <div class="mp-w" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
       <span style="font-size:0.9375rem;color:var(--g7);font-weight:700;margin-right:4px">基準月</span>
-      <input type="month" id="gridMonth">
+      <input type="month" id="gridMonth" aria-label="基準月">
       <button id="gridMonthPrev" aria-label="基準月を前の月へ" title="基準月を前の月へ">◀</button>
       <button id="gridMonthNext" aria-label="基準月を次の月へ" title="基準月を次の月へ">▶</button>
       <button id="gridMonthNow" style="margin-left:6px">今月</button>
@@ -1219,11 +1219,11 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
       <div class="fr" style="gap:10px;align-items:end;margin-bottom:12px">
         <div class="fg" style="flex:1;min-width:160px">
           <label class="fl">測定日</label>
-          <input type="date" id="bulkDate">
+          <input type="date" id="bulkDate" aria-label="測定日">
         </div>
         <div class="fg" style="flex:1;min-width:160px">
           <label class="fl">対象月</label>
-          <input type="month" id="bulkMonth">
+          <input type="month" id="bulkMonth" aria-label="対象月">
         </div>
         <div style="font-size:0.9375rem;color:var(--g6);padding-bottom:10px">
           <div>空欄の行はスキップされます</div>
@@ -1325,7 +1325,7 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
       <button class="bn bs" id="cfgSample">サンプル投入</button>
       <button class="bn br" id="cfgClear">全データ削除</button>
     </div>
-    <input type="file" id="cfgFile" accept="application/json" style="display:none">
+    <input type="file" id="cfgFile" accept="application/json" style="display:none" aria-label="控えのファイルから読み込む">
     <!-- ストレージ診断（保存状態を可視化） -->
     <div class="storage-diag" id="storageDiag">
       <div class="sd-row"><span class="sd-l">最終保存：</span><span class="sd-v" id="sdLastSave">—</span></div>
@@ -1348,7 +1348,7 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
     </div>
     <div class="fg">
       <label class="fl">Google の受け口の URL <span id="apiPersistBadge" class="api-persist-badge" style="display:none">保存済み</span></label>
-      <input type="text" id="cfgApi" placeholder="https://script.google.com/macros/s/〇〇〇/exec">
+      <input type="text" id="cfgApi" placeholder="https://script.google.com/macros/s/〇〇〇/exec" aria-label="Google の受け口の URL">
       <div id="apiPersistDetail" class="api-persist-detail" style="display:none"></div>
     </div>
     <div class="fg">
@@ -1405,16 +1405,16 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
     <div class="mk-body">
       <div class="fg">
         <label class="fl">お名前<span class="req">*</span></label>
-        <input type="text" id="mdName" placeholder="例：山田 花子">
+        <input type="text" id="mdName" placeholder="例：山田 花子" aria-label="お名前">
       </div>
       <div class="fr">
         <div class="fg">
           <label class="fl">部屋番号</label>
-          <input type="text" id="mdRoom" placeholder="例：101">
+          <input type="text" id="mdRoom" placeholder="例：101" aria-label="部屋番号">
         </div>
         <div class="fg">
           <label class="fl">性別</label>
-          <select id="mdSex">
+          <select id="mdSex" aria-label="性別">
             <option value="">未設定</option>
             <option value="f">女性</option>
             <option value="m">男性</option>
@@ -1425,11 +1425,11 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
         <div class="fg">
           <label class="fl">生年月日 <span class="bd-age" id="mdBirthAge"></span></label>
           <div class="bd-trio">
-            <input type="text" id="mdBirthY" inputmode="numeric" maxlength="4" placeholder="1935" autocomplete="off">
+            <input type="text" id="mdBirthY" inputmode="numeric" maxlength="4" placeholder="1935" autocomplete="off" aria-label="生年月日の年">
             <span class="bd-sep">年</span>
-            <input type="text" id="mdBirthM" inputmode="numeric" maxlength="2" placeholder="3" autocomplete="off">
+            <input type="text" id="mdBirthM" inputmode="numeric" maxlength="2" placeholder="3" autocomplete="off" aria-label="生年月日の月">
             <span class="bd-sep">月</span>
-            <input type="text" id="mdBirthD" inputmode="numeric" maxlength="2" placeholder="15" autocomplete="off">
+            <input type="text" id="mdBirthD" inputmode="numeric" maxlength="2" placeholder="15" autocomplete="off" aria-label="生年月日の日">
             <span class="bd-sep">日</span>
           </div>
           <div class="bd-eras">
@@ -1438,7 +1438,7 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
             <button type="button" class="bd-era-b" data-era="S" title="昭和 1926〜1989">昭和</button>
             <button type="button" class="bd-era-b" data-era="H" title="平成 1989〜2019">平成</button>
             <button type="button" class="bd-era-b" data-era="R" title="令和 2019〜">令和</button>
-            <input type="text" id="mdBirthEraY" inputmode="numeric" maxlength="2" placeholder="例：25" class="bd-era-y" disabled>
+            <input type="text" id="mdBirthEraY" inputmode="numeric" maxlength="2" placeholder="例：25" class="bd-era-y" disabled aria-label="和暦の年">
             <span class="bd-era-hint" id="mdBirthEraHint">年号を選んで元号年を入力</span>
           </div>
           <!-- 既存の保存パスとの互換のため、ISO YYYY-MM-DD を hidden で保持 -->
@@ -1446,18 +1446,18 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
         </div>
         <div class="fg">
           <label class="fl">入居日</label>
-          <input type="date" id="mdAdmit">
+          <input type="date" id="mdAdmit" aria-label="入居日">
         </div>
       </div>
       <div class="fg">
         <label class="fl">身長 (cm) <span style="color:var(--g5);font-weight:400">— BMI計算に使用</span></label>
-        <input type="number" id="mdHeight" step="0.1" min="80" max="220" inputmode="decimal" placeholder="例：150.5">
+        <input type="number" id="mdHeight" step="0.1" min="80" max="220" inputmode="decimal" placeholder="例：150.5" aria-label="身長 (cm)">
         <!-- 入居者マスタに身長が登録されている人にだけ出す注記（openResident が textContent で設定） -->
         <div class="md-src-note" id="mdHeightSrc" style="display:none"></div>
       </div>
       <div class="fg">
         <label class="fl">車椅子重量 (kg) <span style="color:var(--g5);font-weight:400">— 車椅子計測時に自動適用</span></label>
-        <input type="number" id="mdChair" step="0.1" min="0" max="50" inputmode="decimal" placeholder="例：10.2（未使用なら空欄）">
+        <input type="number" id="mdChair" step="0.1" min="0" max="50" inputmode="decimal" placeholder="例：10.2（未使用なら空欄）" aria-label="車椅子重量 (kg)">
         <div class="wc-log" id="mdChairLog">
           <div class="wc-log-hd">車椅子の変更履歴<small>変更日の計測から新しい重さで計算します。日付は後から直せます。</small></div>
           <div id="mdChairLogRows"></div>
@@ -1476,12 +1476,12 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
             <div class="sa-ctrl">
               <button type="button" class="md-sa-step" data-md-sa-st="-10">−10</button>
               <div class="sa-inp">
-                <input type="number" id="mdStapleAmt" inputmode="numeric" step="10">
+                <input type="number" id="mdStapleAmt" inputmode="numeric" step="10" aria-label="主食の量">
                 <span class="unit">g</span>
               </div>
               <button type="button" class="md-sa-step" data-md-sa-st="10">+10</button>
             </div>
-            <input type="range" id="mdStapleAmtSlider" class="sa-slider">
+            <input type="range" id="mdStapleAmtSlider" class="sa-slider" aria-label="主食の量（つまみ）">
           </div>
         </div>
         <div class="fg">
@@ -1496,7 +1496,7 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
 
       <div class="fg">
         <label class="fl">備考</label>
-        <textarea id="mdNote" placeholder="アレルギー・持病など"></textarea>
+        <textarea id="mdNote" placeholder="アレルギー・持病など" aria-label="備考"></textarea>
       </div>
     </div>
     <!-- 退去者の場合に表示するバナー（編集時のみ） -->

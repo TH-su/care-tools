@@ -1863,14 +1863,14 @@ body.meal-on #sc-list{max-width:none}
     <h2>☁️ クラウド同期設定</h2>
     <div class="fld" style="margin-bottom:10px">
       <label>この端末の用途</label>
-      <select id="cfgDeviceRole">
+      <select id="cfgDeviceRole" aria-label="この端末の用途">
         <option value="office">事務所PC（全機能を使用）</option>
         <option value="field">現場タブレット（入居者マスタは使用不可）</option>
       </select>
     </div>
     <div class="fld" style="margin-bottom:10px">
       <label>接続先のURL</label>
-      <input id="cfgUrl" placeholder="https://script.google.com/macros/s/..../exec">
+      <input id="cfgUrl" placeholder="https://script.google.com/macros/s/..../exec" aria-label="接続先のURL">
     </div>
     <div class="fld" style="margin-bottom:10px">
       <label for="cfgToken">合言葉</label> <span class="muted">（空欄なら今の設定のまま）</span>
@@ -1878,7 +1878,7 @@ body.meal-on #sc-list{max-width:none}
     </div>
     <div class="fld" style="margin-bottom:10px">
       <label>訪問診療アプリURL（任意）</label>
-      <input id="cfgVmaUrl" placeholder="http://（別サイトのため端末ごとに異なります）">
+      <input id="cfgVmaUrl" placeholder="http://（別サイトのため端末ごとに異なります）" aria-label="訪問診療アプリURL（任意）">
     </div>
     <p class="muted">URL・合言葉はこの端末にのみ保存され、入居者の機微情報は端末に残しません。<br>
       訪問診療アプリは別サイトのため、URLを登録した端末でだけ「🔗アプリ」に表示されます。</p>

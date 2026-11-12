@@ -1190,7 +1190,7 @@ select.inp { cursor: pointer; }
     <div class="form-row" id="dup-row" style="display:none">
       <label>他の曜日に複製</label>
       <div style="display:flex;gap:8px;align-items:center">
-        <select class="inp" id="f-dup-dow" style="flex:1">
+        <select class="inp" id="f-dup-dow" style="flex:1" aria-label="他の曜日に複製">
           <option value="">曜日を選択</option>
           <option value="0">月曜日</option><option value="1">火曜日</option>
           <option value="2">水曜日</option><option value="3">木曜日</option>
@@ -1230,7 +1230,7 @@ select.inp { cursor: pointer; }
         <span>新規利用者として登録する</span>
       </label>
       <div id="sim-new-row" style="display:none;margin:6px 0 0 22px">
-        <input class="inp" id="sim-new-name" placeholder="氏名を入力" style="width:100%;max-width:280px">
+        <input class="inp" id="sim-new-name" placeholder="氏名を入力" style="width:100%;max-width:280px" aria-label="新規利用者の氏名">
         <div style="font-size:12px;color:var(--g6);margin-top:4px">入居者マスタに同じ氏名が登録されると、後から自動で紐づきます。</div>
       </div>
     </div>
@@ -1258,7 +1258,7 @@ select.inp { cursor: pointer; }
       <label for="f-new-res">利用者を追加</label>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <input class="inp" id="f-new-res" placeholder="氏名（例：田中一郎）" style="flex:1;min-width:120px">
-        <input class="inp" id="f-new-kana" placeholder="ふりがな（任意）" style="flex:1;min-width:120px">
+        <input class="inp" id="f-new-kana" placeholder="ふりがな（任意）" style="flex:1;min-width:120px" aria-label="ふりがな（任意）">
         <label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;cursor:pointer"><input type="checkbox" id="f-new-external">外部</label>
         <button class="btn btn-pri" data-on-click="addResident" style="white-space:nowrap">追加</button>
       </div>
@@ -1281,7 +1281,7 @@ select.inp { cursor: pointer; }
     <div class="form-row">
       <label>1行＝1予定。<b>タブ区切り</b>で貼り付けてください（Excel/スプレッドシートからコピー可）：</label>
       <div style="font-size:12px;color:var(--g6);margin:2px 0 6px">利用者　曜日(月〜日)　区分(訪問/通所)　開始(H:MM)　終了(H:MM)　サービスコード(任意)　ケア内容(任意)</div>
-      <textarea class="inp" id="f-bulk" rows="9" placeholder="山田花子	土	訪問	0:00	0:19	身体０１	&#10;佐藤太郎	土	訪問	2:00	2:19	身体０１	"></textarea>
+      <textarea class="inp" id="f-bulk" rows="9" placeholder="山田花子	土	訪問	0:00	0:19	身体０１	&#10;佐藤太郎	土	訪問	2:00	2:19	身体０１	" aria-label="貼り付ける予定（1行＝1予定・タブ区切り）"></textarea>
     </div>
     <div class="form-row" id="f-bulk-result" style="font-size:13px;white-space:pre-wrap;color:var(--g7)"></div>
     <div class="btn-row">
@@ -1485,7 +1485,7 @@ select.inp { cursor: pointer; }
           <button class="btn btn-sec" data-on-click="rmExportJSON">報酬マスタを控えのファイルに書き出す</button>
           <button class="btn btn-sec" data-on-click="csPickRmImport_">控えのファイルから報酬マスタを読み込む</button>
           <button class="btn btn-undo" id="rm-undo-btn" data-on-click="rmUndo" style="display:none">直前の内容へ戻す</button>
-          <input type="file" id="rm-import-file" accept="application/json,.json" style="display:none" data-on-change="rmImportJSON" data-this="1">
+          <input type="file" id="rm-import-file" accept="application/json,.json" style="display:none" data-on-change="rmImportJSON" data-this="1" aria-label="控えのファイルから報酬マスタを読み込む">
         </div>
       </div>
     </div>
@@ -1543,7 +1543,7 @@ select.inp { cursor: pointer; }
       <button class="btn" data-on-click="copyEventListTSV">📊 タブ区切り（Excel貼付用）</button>
     </div>
     <div id="event-list-body" style="border:1px solid var(--g3);border-radius:8px;max-height:60vh;overflow:auto"></div>
-    <textarea id="event-list-textarea" style="position:absolute;left:-9999px;top:-9999px;width:1px;height:1px"></textarea>
+    <textarea id="event-list-textarea" style="position:absolute;left:-9999px;top:-9999px;width:1px;height:1px" aria-label="タブ区切りの写し（コピー用）"></textarea>
   </div>
 </div>
 
