@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-font">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-0/n7t7c5RleRCbTY+BwKQi0g4cyOHk/F3CuaPzpdIU8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-GJN53TIJ4FrixD929ldSCoH79X0kiPsDH875iE3fupY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 入居者情報を表示する画面のため、ブラウザ・中継キャッシュに残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -29,7 +29,7 @@
   --g0:#f4f9f7;--g1:#e9f1ed;--g2:#dbe7e2;--g3:#c2d3cd;
   --g5:#8fa19b;--g6:#778881;--g7:#5a6a64;--g9:#1f2a27;
   --r:10px;--sh:0 1px 6px rgba(0,90,70,.10);
-  --gn-surface:#fff;--gn-on-pri:#fff;
+  --gn-surface:#fff;--gn-on-pri:#fff;--gn-hdr-from:#0842a0;--gn-hdr-to:#0b57d0;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%}
@@ -38,7 +38,7 @@ body{font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic UI','Mei
 
 /* topbar */
 .topbar{position:sticky;top:0;z-index:100;background:var(--gn-surface);box-shadow:0 2px 8px rgba(0,0,0,.1)}
-.hdr{background:linear-gradient(135deg,#0842a0,#0b57d0);color:var(--gn-on-pri);padding:10px 14px;
+.hdr{background:linear-gradient(135deg,var(--gn-hdr-from),var(--gn-hdr-to));color:var(--gn-on-pri);padding:10px 14px;
   display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;row-gap:8px}
 .hdr-l{flex:0 0 auto;min-width:0}
 .hdr-l h1{font-size: 1rem;font-weight:700;line-height:1.2;white-space:nowrap}
@@ -177,7 +177,7 @@ textarea.fi{resize:vertical;min-height:60px}
 .modal{background:var(--gn-surface);border-radius:12px;max-width:720px;width:100%;max-height:90vh;
   display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.25)}
 .modal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 22px;
-  border-bottom:1px solid var(--g2);background:linear-gradient(135deg,#0842a0,#0b57d0);color:var(--gn-on-pri);
+  border-bottom:1px solid var(--g2);background:linear-gradient(135deg,var(--gn-hdr-from),var(--gn-hdr-to));color:var(--gn-on-pri);
   border-radius:12px 12px 0 0}
 .modal-head h2{font-size: 1rem;font-weight:700}
 .modal-close{background:rgba(255,255,255,.2);color:var(--gn-on-pri);border:none;width:30px;height:30px;
@@ -612,6 +612,9 @@ const LINE_INK = '#202124';                    // 線の既定色
 const SEL_INK = '#26a69a';                     // 選択中の色
 const PAPER_WHITE = '#ffffff';                 // 図の地と書き出しの地の白（亡くなった方の塗りの上の字も同じ白）
 const NODE_FILL = '#fff';                      // 人の図形とつまみの地の白
+const PICK_INK = '#e65100';                    // 線を引く途中・枠を作る途中で選んだ人の枠の色
+const GRID_INK = '#f1f3f4';                    // 図の方眼の線
+const NOTE_INK = '#5f6368';                    // 人のメモと書き出しの作成日の字
 
 // GAS script that users need to paste into Apps Script
 // ★正本は care-backend の gas/bound/genogram-sync/genogram-sync.gs（非公開）。ここは一字一句同じ写し（check/unit/su_geno_test.js が指紋で照合する・2026-11-03 統合 0054 の版）。
@@ -1085,12 +1088,12 @@ function drawBackground() {
   }));
   for (let x = 50; x < STAGE_W; x += 50) {
     layerBg.add(new Konva.Line({
-      points: [x, 0, x, STAGE_H], stroke: '#f1f3f4', strokeWidth: 1, listening: false
+      points: [x, 0, x, STAGE_H], stroke: GRID_INK, strokeWidth: 1, listening: false
     }));
   }
   for (let y = 50; y < STAGE_H; y += 50) {
     layerBg.add(new Konva.Line({
-      points: [0, y, STAGE_W, y], stroke: '#f1f3f4', strokeWidth: 1, listening: false
+      points: [0, y, STAGE_W, y], stroke: GRID_INK, strokeWidth: 1, listening: false
     }));
   }
   layerBg.draw();
@@ -1263,8 +1266,8 @@ function render() {
 }
 
 function nodeStrokeColor(n) {
-  if (state.mode.type === 'frame' && state.mode.nodeIds.includes(n.id)) return '#e65100';
-  if (state.mode.type === 'line' && state.mode.firstId === n.id) return '#e65100';
+  if (state.mode.type === 'frame' && state.mode.nodeIds.includes(n.id)) return PICK_INK;
+  if (state.mode.type === 'line' && state.mode.firstId === n.id) return PICK_INK;
   if (state.selectedId === n.id) return SEL_INK;
   return LINE_INK;
 }
@@ -1375,7 +1378,7 @@ function drawNode(n) {
       x: -80, y: NODE_SIZE / 2 + 30,
       width: 160, align: 'center',
       text: n.note, fontSize: 11, fontFamily: NODE_FONT,
-      fill: '#5f6368', listening: false
+      fill: NOTE_INK, listening: false
     }));
   }
 
@@ -4456,7 +4459,7 @@ function buildExportCanvas(callback) {
   ctx.font = '13px ' + NODE_FONT;
   ctx.textAlign = 'right';
   const dateStr = new Date().toLocaleDateString('ja-JP');
-  ctx.fillStyle = '#5f6368';
+  ctx.fillStyle = NOTE_INK;
   ctx.fillText(`作成日: ${dateStr}`, totalW - 18, headerH / 2);
 
   ctx.strokeStyle = '#dadce0';
