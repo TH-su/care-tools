@@ -125,6 +125,31 @@ function partsOf(d){
     t('窓が閉じた後のキーは、画面へそのまま渡す', k3.imm === false && k3.defaultPrevented === false);
   }
   {
+    /* Esc 以外（ボタンの押下・答えを待った後の続き）で開いた窓は、開いた直後の Esc（cancel）もキャンセルとして受ける（2026-11-13 実測の指摘） */
+    const E = makeEnv(); E.load();
+    E.win.event = { type: 'click' };
+    let ans = 'まだ'; E.win.SUDialog.confirm('消しますか？').then((v) => { ans = v; });
+    E.win.event = undefined;
+    const d = E.dialogs()[0];
+    const c0 = d.fire('cancel'); d.open = false; await tick();
+    t('ボタンの押下で開いた窓は、開いた直後の Esc でもキャンセル＝false', c0.defaultPrevented === false && ans === false);
+  }
+  {
+    /* 素早い二度押しの2回目が、中央に出た OK に重なっても答えない（マウス・指の押下だけ・開いてから少しの間） */
+    const E = makeEnv(); E.load();
+    let ans = 'まだ'; E.win.SUDialog.confirm('切り替えますか？').then((v) => { ans = v; });
+    const P = partsOf(E.dialogs()[0]);
+    P.ok.fire('click', { detail: 1 }); await tick();
+    t('開いてすぐのマウスの押下（二度押しの2回目）では OK にしない', ans === 'まだ' && E.dialogs().length === 1);
+    P.ok.fire('click', { detail: 0 }); await tick();
+    t('キーボード（Enter・Space）の押下は、開いてすぐでも今までどおり OK', ans === true);
+    const E2 = makeEnv(); E2.load();
+    let ans2 = 'まだ'; E2.win.SUDialog.confirm('切り替えますか？').then((v) => { ans2 = v; });
+    await new Promise((r) => setTimeout(r, 400));
+    partsOf(E2.dialogs()[0]).ok.fire('click', { detail: 1 }); await tick();
+    t('少し経った後のマウスの押下は、今までどおり OK', ans2 === true);
+  }
+  {
     /* 画面の Esc の処理の中で窓を開いた時、同じ Esc が開いたばかりの窓をすぐ閉じない（週間計画で実測した穴・部品の側で塞ぐ） */
     const E = makeEnv(); E.load();
     const esc = { type: 'keydown', key: 'Escape', defaultPrevented: false, preventDefault(){ this.defaultPrevented = true; } };
@@ -217,7 +242,7 @@ function partsOf(d){
   console.log('\n体重管理（weight-record.html）への当て方');
   {
     const WR = fs.readFileSync(path.join(ROOT, 'weight-record.html'), 'utf8');
-    const iErr = WR.indexOf('<script src="su-errors.js'), iDlg = WR.indexOf('<script src="su-dialog.js?v=2026-11-13"></script>'), iInline = WR.indexOf('<script>', iErr);
+    const iErr = WR.indexOf('<script src="su-errors.js'), iDlg = WR.indexOf('<script src="su-dialog.js?v=2026-11-13.2"></script>'), iInline = WR.indexOf('<script>', iErr);
     t('su-dialog.js を su-errors.js の後・画面のスクリプトより前に読む', iErr > 0 && iDlg > iErr && iDlg < iInline);
     /* 部品が読めない時の受け口：ブラウザの窓に落とし、同じ約束の形で答える */
     const shimM = /if\(!window\.SUDialog\) window\.SUDialog = \{[\s\S]*?\n\};/.exec(WR);
