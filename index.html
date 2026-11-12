@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-jEcbR1NyOmea9GOBOxKn7I5ks+ADYv0W8x7QenEyF+A=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-JoRcf2XvaV2N4M3Alj6GpjTmszs7fD3IlnWga7iCpFI=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 検索エンジンにこのページと配下ツールを辿らせない。
@@ -204,6 +204,8 @@ main {
 }
 @media (min-width: 648px) { .role-band { margin-left: auto; margin-right: auto; } }
 .role-band[hidden] { display: none !important; }
+/* 帯の中の「ログインする」（2026-11-12）。押す所を 44px にし、色は帯の字の色・下線で見分ける */
+.role-band .rb-login { display: inline-flex; align-items: center; min-height: 44px; padding: 0 6px; color: inherit; font-weight: 700; text-decoration: underline; }
 .role-band[data-role="admin"]  { --rb-bar: #7b1fa2; --rb-bg: #f5ebfa; --rb-tx: #4a148c; }
 .role-band[data-role="office"] { --rb-bar: #0b57d0; --rb-bg: #ecf3fe; --rb-tx: #0842a0; }
 .role-band[data-role="field"]  { --rb-bar: #188038; --rb-bg: #e6f4ea; --rb-tx: #0d5223; }
@@ -690,6 +692,18 @@ main {
       if (!b) return;
       var k = Object.prototype.hasOwnProperty.call(BAND, state) ? state : 'none';
       b.textContent = BAND[k];
+      /* 次に押す所を帯の中に置く（2026-11-12 商用化の見直し・帯の文そのものは変えない）。ログインしていない・確かめられない時だけ。
+         現場の端末は Google ではなく端末登録の QR でログインするので、リンクではなく案内の文にする */
+      if (k === 'none' || k === 'unsure') {
+        if (document.documentElement.classList.contains('is-field')) {
+          if (k === 'none') b.appendChild(document.createTextNode('。現場の端末は、管理者に端末登録の QR を出してもらってください'));
+        } else {
+          b.appendChild(document.createTextNode(' '));
+          var a = document.createElement('a');
+          a.href = 'login.html?next=index.html'; a.className = 'rb-login'; a.textContent = 'ログインする';
+          b.appendChild(a);
+        }
+      }
       b.setAttribute('data-role', k);
       b.hidden = false;
     } catch (e) { /* 出せなくてもメニューは動く */ }
