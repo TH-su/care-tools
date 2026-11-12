@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-TeGaaWhcxr6anMyA4wsF4SL35Eo3mYj9bUezoSTuiSk=' 'sha256-XA6WLxfWV2/16pFOJl/xfoWgnUplFVMNeMzxV98HfHE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-TeGaaWhcxr6anMyA4wsF4SL35Eo3mYj9bUezoSTuiSk=' 'sha256-qCTqK20WBVFgPbbpZaHhEb1WFaJBasmAqgAXUn9F+p8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -6849,12 +6849,12 @@ function mcOpen_(id){
 }
 /* ★閉じられないのは書き込みの送信中だけ（AI・読み込みの待ちでは閉じられる・指摘14）。
    手で直した直し案は、確かめてから捨てる */
-async function mcClose_(){
+async function mcClose_(fromPop){   /* fromPop: ブラウザの「戻る」（popstate）から呼ばれた時（fromPop）は、ブラウザの窓のまま聞く。画面の中の窓だと、窓が出ている間にもう一度「戻る」を押せてしまい、保存していない変更が確かめなしでページごと消える（実測・2026-11-13） */
   if(mcCur&&mcCur.writing) return false;
   if(mcBulk&&mcBulk.busy) return false;
   mcBulk=null;
   var cur0=mcCur;
-  if(mcCur&&mcCur.loaded&&mcCur.edited&&!(await SUDialog.confirm('直し案の変更は保存されていません。閉じてよいですか？'))) return false;
+  if(mcCur&&mcCur.loaded&&mcCur.edited&&!(fromPop===true?confirm('直し案の変更は保存されていません。閉じてよいですか？'):(await SUDialog.confirm('直し案の変更は保存されていません。閉じてよいですか？')))) return false;
   if(mcCur!==cur0||(mcCur&&mcCur.writing)) return false;   /* 窓の間に作業が変わった・反映が始まった時は閉じない（画面の中の窓・2026-11-13・仮置き） */
   mcCur=null; mcFilterId=''; mcWorkGen++;   /* ★一覧の読み直し（mcGen）は捨てない（2回目の指摘D） */
   $('mMedCand').classList.remove('on');
@@ -7402,14 +7402,14 @@ function yjPing_(){
   }).then(function(){ if(yjSt===st) yjPaint_(); });
 }
 function yjDirty_(){ return !!(yjSt&&yjSt.cur&&yjSt.cur.loaded&&yjSt.cur.touched); }
-async function yjClose_(){
+async function yjClose_(fromPop){   /* fromPop: mcClose_ と同じ（「戻る」から呼ばれた時はブラウザの窓のまま聞く） */
   if(yjSt&&yjSt.cur&&yjSt.cur.writing) return false;
   if(yjSt&&yjSt.bulkBusy) return false;   /* まとめて反映の途中は閉じない（2026-11-04） */
   var S0=yjSt, c0=yjSt&&yjSt.cur;   /* 窓の答えを待つ間に作業が変わった・反映が始まった時は閉じない（画面の中の窓・2026-11-13・仮置き） */
   var stale=function(){ return yjSt!==S0||(yjSt&&(yjSt.cur!==c0||yjSt.bulkBusy||(yjSt.cur&&yjSt.cur.writing))); };
-  if(yjSt&&yjSt.docs.some(function(x){ return x.status==='unsure'; })&&!(await SUDialog.confirm('反映できたか確かめられなかった書類があります。閉じた後、その方の定期薬と変更履歴を確かめてください。閉じてよいですか？'))) return false;
+  if(yjSt&&yjSt.docs.some(function(x){ return x.status==='unsure'; })&&!(fromPop===true?confirm('反映できたか確かめられなかった書類があります。閉じた後、その方の定期薬と変更履歴を確かめてください。閉じてよいですか？'):(await SUDialog.confirm('反映できたか確かめられなかった書類があります。閉じた後、その方の定期薬と変更履歴を確かめてください。閉じてよいですか？')))) return false;
   if(stale()) return false;
-  if(yjDirty_()&&!(await SUDialog.confirm('確認表の印・直した行は保存されていません。閉じてよいですか？'))) return false;
+  if(yjDirty_()&&!(fromPop===true?confirm('確認表の印・直した行は保存されていません。閉じてよいですか？'):(await SUDialog.confirm('確認表の印・直した行は保存されていません。閉じてよいですか？')))) return false;
   if(stale()) return false;
   yjSt=null; yjGen++;
   $('mYakujo').classList.remove('on');
@@ -9166,8 +9166,9 @@ function editDirty_(){
   try{ return editSerial_()!==editSnap_; }catch(e){ return false; }
 }
 /* 離れてよければ true。変更が無ければ何も聞かない（true をすぐ返す）。変更がある時は画面の中の窓の答え（約束）を返す（呼ぶ側が待つ・2026-11-13） */
-function editLeaveOk_(){
+function editLeaveOk_(fromPop){   /* fromPop: mcClose_ と同じ（「戻る」から呼ばれた時はブラウザの窓のまま聞き、true／false をすぐ返す） */
   if(!editDirty_()) return true;
+  if(fromPop===true) return confirm('編集中の内容が保存されていません。\n移動すると、入力した内容は消えます。よろしいですか？');
   return SUDialog.confirm('編集中の内容が保存されていません。\n移動すると、入力した内容は消えます。よろしいですか？');
 }
 /* 見出しの「← メニュー」で離れる時の確かめ（2026-11-12 反証レビュー）。iOS Safari は beforeunload の確かめを出さないため、
@@ -10209,7 +10210,8 @@ async function yrReview_(i){
   var dg0=devGen;
   if(!(await SUDialog.confirm('「'+m.text+'」の反映を見直しましたか？\n今の定期薬が処方どおりかを確かめてから押してください。\n押すとこの印は消え、反映記録に見直した時刻とあなたのログインが残ります。'))) return;
   /* 窓の間に端末の用途・開いている方・印が変わった・送り始めた時は送らない（画面の中の窓・2026-11-13・仮置き） */
-  if(yrBusy||dg0!==devGen||getDeviceRole()==='field'||el.getAttribute('data-id')!==id||yjlMem.id!==id||yrShown.id!==id||yrShown.marks[i]!==m) return;
+  var el1=$('yrSlot');   /* 描き直しで印の物は作り直されるので、同じ印か（番号・印・時刻）で比べる */
+  if(yrBusy||dg0!==devGen||getDeviceRole()==='field'||!el1||el1.getAttribute('data-id')!==id||yjlMem.id!==id||yrShown.id!==id||!yrShown.marks.some(function(x){ return yrKey_(x)===yrKey_(m); })) return;
   var key=yrKey_(m), dg=devGen, gen=yrGen;
   yrBusy=true; yrMsg[key]='残しています…'; yrPaintSlot_();
   function done(msg){ yrMsg[key]=msg||''; }
@@ -13304,12 +13306,12 @@ function navTopModal(){
   /* 与薬チェックへ時間帯を送る小窓（2026-09-27）。送っている間は閉じない（false＝開いたまま） */
   if($('mMedSlots')&&$('mMedSlots').classList.contains('on'))return function(){return msClose_()};
   /* 薬の変更候補（2026-10-06）。反映・記録の送信中は閉じない（false＝開いたまま） */
-  if($('mMedCand')&&$('mMedCand').classList.contains('on'))return function(){return mcClose_()};
+  if($('mMedCand')&&$('mMedCand').classList.contains('on'))return function(){return mcClose_(true)};
   /* 薬情の取り込み（2026-10-22）。反映の送信中は閉じない（false＝開いたまま） */
-  if($('mYakujo')&&$('mYakujo').classList.contains('on'))return function(){return yjClose_()};
+  if($('mYakujo')&&$('mYakujo').classList.contains('on'))return function(){return yjClose_(true)};
   /* 薬情の見直し（2026-11-11）。読むだけの一覧なので、いつでも閉じる */
   if($('mYjRev')&&$('mYjRev').classList.contains('on'))return function(){yrClose_();return true};
-  if($('mBulk')&&$('mBulk').classList.contains('on'))return function(){var p=closeBulk();if(p&&typeof p.then==='function')return p.then(function(){return !$('mBulk').classList.contains('on')});return !$('mBulk').classList.contains('on')};
+  if($('mBulk')&&$('mBulk').classList.contains('on'))return function(){var p=closeBulk(true);if(p&&typeof p.then==='function')return p.then(function(){return !$('mBulk').classList.contains('on')});return !$('mBulk').classList.contains('on')};
   if($('mSync')&&$('mSync').classList.contains('on'))return function(){closeSync();return true};
   if($('mApps')&&$('mApps').classList.contains('on'))return function(){closeApps();return true};
   return null;
@@ -13341,7 +13343,7 @@ window.addEventListener('popstate',function(ev){
   }
   if($('sc-list').classList.contains('on'))return;   // UI操作の消費分・一覧での戻る＝何もしない
   /* ★編集画面で未保存の変更がある時は確かめる。やめたら段を積み直して画面は変えない（2026-10-16） */
-  var lok=editLeaveOk_();
+  var lok=editLeaveOk_(true);
   if(lok!==true){
     /* 確かめを画面の中の窓で聞いた時は答えを待つ（やめたら段を積み直す・離れるなら一覧へ）（2026-11-13） */
     if(lok&&typeof lok.then==='function'){
@@ -15153,9 +15155,9 @@ function openBulk(){
     $('bulkScroll').innerHTML='<div class="empty">取得に失敗しました: '+esc(rmErrWords_(e,'一括編集の読み込み'))+'</div>';   /* 英語の例外文を職員に出さない（2026-11-12 商用化の見直し） */
   });
 }
-async function closeBulk(){
+async function closeBulk(fromPop){   /* fromPop: mcClose_ と同じ（「戻る」から呼ばれた時はブラウザの窓のまま聞く）。ボタンの出来事（Event）が渡っても true だけを見る */
   var g0=bulkGen;
-  if(bulkCellCount() && !(await SUDialog.confirm('保存していない変更が '+bulkCellCount()+'件あります。破棄して閉じますか？'))) return;
+  if(bulkCellCount() && !(fromPop===true?confirm('保存していない変更が '+bulkCellCount()+'件あります。破棄して閉じますか？'):(await SUDialog.confirm('保存していない変更が '+bulkCellCount()+'件あります。破棄して閉じますか？')))) return;
   if(g0!==bulkGen) return;   /* 窓の間に保存が始まった・閉じた時は何もしない（画面の中の窓・2026-11-13・仮置き） */
   bulkGen++;                     // 実行中の氏名取り直しの応答を無効にする
   bulkDirty={}; bulkRows=null;   // ★次に開いた時は必ず取り直す（古い表を現在値として出さない）
