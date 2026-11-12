@@ -52,6 +52,10 @@ jobs:
         if: success() || failure()
         run: node check/daycare_live_e2e.mjs --shots check/out/flow
 
+      - name: 接続先の無い端末の訪問俯瞰・全支援俯瞰をログインだけで通す（check/overview_live_e2e.mjs・2026-11-12）
+        if: success() || failure()
+        run: node check/overview_live_e2e.mjs --shots check/out/flow
+
       - name: 画面の写し（架空データ）を成果物として残す
         if: failure()
         uses: actions/upload-artifact@v4

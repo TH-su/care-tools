@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ep1D8HCKjbHbe6dkiquH9e6BGDngHJ6gZsbIoBmBGPE=' 'sha256-fiiCHD0MBlF2wV+NudqERX+mzEI9CHzGp+FncjfxYa4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-sNzM46e7p+Sn/7CJ2Ija4K764jLc9cb3JlDcME49iZU=' 'sha256-fiiCHD0MBlF2wV+NudqERX+mzEI9CHzGp+FncjfxYa4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -148,6 +148,10 @@ body {
   font-size: 0.875rem; text-align: center; padding: 24px;
 }
 .board-empty.on { display: flex; }
+/* 接続先が無い時の接続設定へのリンク（全支援俯瞰と同じ・2026-11-12）。事務所PCだけに出す。印刷には出さない */
+#emptyCsLink { display: inline-block; padding: 10px 4px; font-size: 0.9375rem; }
+#emptyCsLink[hidden] { display: none !important; }
+@media print { #emptyCsLink { display: none !important; } }
 #toast {
   position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
   background: var(--g9); color: #fff; border-radius: 8px; padding: 10px 18px;
@@ -261,6 +265,7 @@ body {
   </div>
   <div class="board-empty" id="boardEmpty">
     <div id="emptyMsg">週間計画のデータが見つかりません。</div>
+    <a id="emptyCsLink" href="connection-settings.html" hidden>接続設定の画面を開く</a>
     <button class="hdr-btn solid" id="btnRefresh2">クラウドから取得</button>
   </div>
 </main>
@@ -432,15 +437,50 @@ function showCopyBand_(keys, fromCopy) {
   try { routed = !!(window.SUKv && SUKv.routed && (keys || []).some(function (k) { return SUKv.routed(k); })); } catch (e) { routed = false; }
   el.hidden = !(fromCopy && routed);
 }
-async function fetchRemote() {
+/* 接続先が無い時の案内（全支援俯瞰の soNoTargetMsg_ と同じ文・2026-11-12）。現場端末では接続設定を開けないので事務所へ知らせる文にする */
+function voNoTargetMsg_() {
+  if (ovIsField_()) return 'この端末には週間計画・ワースケ・シフトの接続先が入っていません。事務所に知らせてください。';
+  return '週間計画・ワースケ・シフトの接続先が入っていません。接続設定の「週間計画・ワースケ・シフト」の欄に、接続先のURLと合言葉を入れてください。';
+}
+/* 接続設定へのリンクは事務所PCだけに出す（接続設定は現場では開けない） */
+function voShowCsLink_(on) { const a = $('emptyCsLink'); if (a) a.hidden = !on || ovIsField_(); }
+
+/* 接続先・合言葉の無い端末でも、ログインして新しい保存先で使える時（代表者の決定 2026-11-08 A・デイ利用表の DCR_LIVE と同じ作り・2026-11-12）。
+   接続先の無い端末だけ、見るだけの読み取りの口（SUKv.readRouted）を8秒で見切り、時間切れの後に届いた答えは使わない（Promise.race）。
+   読めた時だけ VO_LIVE を真にし、画面の下の「接続先が入っていません」の帯を出さない。端末には何も書かない・Google へは送らない。
+   接続先のある端末の読み方は今までのまま（時間切れを足さない）。
+   VO_NOCFG は「直近の取得で、接続先が無くログインだけでも読めなかった」印（状態の欄で「未設定」と「クラウドにデータなし」を分ける） */
+let VO_LIVE = false, VO_NOCFG = false;
+const VO_LIVE_WAIT_MS = 8000;
+const VO_SESSION_RE = /^sb-[a-z0-9]+-auth-token$/;
+function voHasSession_() {
+  try { for (let i = 0; i < localStorage.length; i++) if (VO_SESSION_RE.test(localStorage.key(i) || '')) return true; } catch (e) {}
+  return false;
+}
+function voLiveRead_() {
+  let tm = null;
+  const late = new Promise(function (ok) { tm = setTimeout(function () { ok(null); }, VO_LIVE_WAIT_MS); });
+  const read = Promise.resolve().then(function () { return SUKv.readRouted({ action: 'get', key: LS_KEY }); });
+  return Promise.race([read, late]).then(function (v) { clearTimeout(tm); return (v && v.ok === true) ? v : null; },
+                                         function () { clearTimeout(tm); return null; });
+}
+function voQuietCfgHint_() {
+  try { if (window.SUCfgHint && typeof window.SUCfgHint.quiet === 'function') window.SUCfgHint.quiet(); } catch (e) { /* 案内の帯の失敗は止めない */ }
+}
+async function fetchRemote(silent) {
+  VO_NOCFG = false;
+  const noCfg = !syncTarget().endpoint;
   /* 統合（2026-09-27）: 週間計画の保存先を Supabase に切り替えた後は、ログインしている端末だけ Supabase から読む（速い）。
      スイッチが切・未ログイン・失敗の時は null が返り、下の Google へ（写し返しで最新）。読むだけ。 */
-  if (window.SUKv && SUKv.readRouted) {
-    const v = await SUKv.readRouted({ action: 'get', key: LS_KEY });
+  if (window.SUKv && SUKv.readRouted && (!noCfg || VO_LIVE || voHasSession_())) {
+    const v = noCfg ? await voLiveRead_() : await SUKv.readRouted({ action: 'get', key: LS_KEY });
+    if (v && noCfg) { VO_LIVE = true; voQuietCfgHint_(); }   // ログインだけで読めた＝画面の下の「接続先が入っていません」の帯を出さない
     if (v) { remoteFromCopy_ = false; return (v.data && Array.isArray(v.data.residents)) ? v.data : null; }
+    /* 使えていた端末で一度読み損なった（遅い回線の時間切れ等）だけでは、接続先を入れる逆の案内を出さない＝取得の失敗として知らせる */
+    if (noCfg && VO_LIVE) throw new Error('新しい保存先から読めませんでした');
   }
   const t = syncTarget();
-  if (!t.endpoint) { toast('同期先が未設定です（週間計画アプリで設定してください）', true); return null; }
+  if (!t.endpoint) { VO_NOCFG = true; if (!silent) toast(voNoTargetMsg_(), true); return null; }
   const res = await fetch(t.endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // CORS preflight 回避（care-schedule と同一）
@@ -691,7 +731,8 @@ function render(db) {
     $('bHeads').textContent = '';
     $('bCanvas').textContent = '';
     empty.classList.add('on');
-    $('emptyMsg').textContent = db ? (viewLabel + 'の訪問支援がありません。') : '週間計画のデータが見つかりません。';
+    $('emptyMsg').textContent = db ? (viewLabel + 'の訪問支援がありません。') : (VO_NOCFG ? voNoTargetMsg_() : '週間計画のデータが見つかりません。');
+    voShowCsLink_(!db && VO_NOCFG);                          // 接続先が無い時だけ接続設定へのリンクを出す（2026-11-12）
     $('hdrSub').textContent = '月〜日／' + viewLabel + 'の訪問支援枠';
     return;
   }
@@ -810,29 +851,39 @@ function toast(msg, isNg) {
 function setSyncState(txt) { $('syncState').textContent = txt; }
 
 let busy = false;
-async function refresh() {
+async function refresh(silent) {
+  silent = silent === true;                                 // 真の時だけ知らせ（toast）を出さない（起動の時の自動の取得・2026-11-12）
   if (busy) return;
   busy = true;
   $('btnRefresh').disabled = true;
   setSyncState('取得中…');
   try {
-    const remote = await fetchRemote();
+    const remote = await fetchRemote(silent);
     if (remote) {
       DB = remote;
       render(DB);
       showCopyBand_([LS_KEY], remoteFromCopy_);           // 描き直した盤面の出どころで帯を決める
       setSyncState('取得OK（' + DB.residents.length + '名）');
-      toast('最新の週間計画を取得しました');
+      if (!silent) toast('最新の週間計画を取得しました');
     } else {
       setSyncState('クラウドにデータなし');
     }
   } catch (e) {
     setSyncState('取得失敗');
-    toast('取得に失敗しました。通信環境を確認してください', true);
+    if (!silent) toast('取得に失敗しました。通信環境を確認してください', true);
   } finally {
     busy = false;
     $('btnRefresh').disabled = false;
   }
+}
+
+/* 取得の後に、接続先が無い時の表示を決める（2026-11-12）。
+   接続先が無く、ログインだけでも読めなかった時は「クラウドにデータなし」と言わず「未設定」とし、盤面が空なら全支援俯瞰と同じ案内と接続設定へのリンクを出す。
+   盤面が出た時はリンクを消す */
+async function voRefresh_(silent) {
+  await refresh(silent === true);
+  if (VO_NOCFG) { setSyncState('未設定'); if (!DB) render(DB); }
+  else if (DB) voShowCsLink_(false);
 }
 
 // ── 起動 ──
@@ -841,8 +892,8 @@ function init() {
   applySegUI();
   $('segFac').addEventListener('click', () => setView('fac'));
   $('segExt').addEventListener('click', () => setView('ext'));
-  $('btnRefresh').addEventListener('click', refresh);
-  $('btnRefresh2').addEventListener('click', refresh);
+  $('btnRefresh').addEventListener('click', () => voRefresh_(false));
+  $('btnRefresh2').addEventListener('click', () => voRefresh_(false));
   $('btnPrint').addEventListener('click', printNow);
 
   DB = loadLocal();
@@ -857,6 +908,9 @@ function init() {
   /* 入居者マスタの入院を重ねる（2026-08-02 追加）。
      接続設定が無い端末では何も起きない＝従来どおりの表示。 */
   voFetchHosp().then(function(ok){ if(ok && DB) render(DB); });
+  /* 接続先の無い端末で、ログインの控えがある時だけ、起動の時に黙って新しい保存先から読む（デイ利用表の起動の取得と同じ・2026-11-12 仮置き）。
+     接続先のある端末は今までどおり「更新」を押した時だけ読む。ログインの控えも無い端末では呼ばない（何も送らない） */
+  if (!syncTarget().endpoint && voHasSession_()) voRefresh_(true);
   /* 別のタブ（接続設定・入居者マスタ）で端末の用途が変わったら、ページを読み込み直して起動の時の守りに任せる（CLAUDE.md §2-5・2026-11-08 商用化の点検）。
      描き直すまで待つと、現場用に変わった後もしばらくフルネームが出たままになっていた */
   window.addEventListener('storage', function (e) {
