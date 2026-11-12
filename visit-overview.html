@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-I/n1r+IxeykoolhGNmdirrxP2YHs03GinPLR6KTq+W0=' 'sha256-fiiCHD0MBlF2wV+NudqERX+mzEI9CHzGp+FncjfxYa4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-NU13+Y+Z/bEeKsy9RYzY47lMGiaooj65RnBlTPrKxHw=' 'sha256-fiiCHD0MBlF2wV+NudqERX+mzEI9CHzGp+FncjfxYa4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -64,6 +64,10 @@ body {
 .seg-btn:last-child { border-radius: 0 6px 6px 0; border-left: none; }
 .seg-btn[aria-pressed="true"] { background: #fff; color: var(--pri-d); font-weight: 700; }
 .sync-state { font-size: 0.6875rem; opacity: .9; white-space: nowrap; }
+/* 盤面の読み先の札（代表者の指示 2026-11-13）。画面だけ・印刷に出さない。出す時だけ見出しの下に右寄せの小さな1行が増える（ボタンの位置は動かさない） */
+.src-state[hidden] { display: none !important; }
+@media screen { .src-state { flex: 0 0 100%; text-align: right; font-size: 0.6875rem; line-height: 13px; white-space: nowrap; } }
+@media print { .src-state { display: none !important; } }
 
 /* ===== 凡例 ===== */
 .legend {
@@ -252,6 +256,7 @@ body {
   <span class="sync-state" id="syncState">読込中…</span>
   <button class="hdr-btn" id="btnRefresh" aria-label="クラウドから最新の週間計画を取得">更新</button>
   <button class="hdr-btn" id="btnPrint" aria-label="A3縦で印刷">印刷</button>
+  <span class="src-state" id="srcState" role="status" hidden></span>   <!-- 読み先の札は見出しの最後（出す時だけ下に1行・ボタンを動かさない） -->
 </header>
 <div id="copyBand" class="copy-band" role="status" aria-live="polite" hidden>⚠️ 共通のデータベースから読めず、Google の写しから表示しています。写しは古いことがあります。ログインし直すか、時間をおいて読み込み直してください。</div>
 
@@ -437,6 +442,33 @@ function syncTarget() {
    読んだ時は出どころを remoteFromCopy_ に控えるだけで、帯は盤面を描き直した時（refresh で remote を描いた時）にだけ決める。
    取り直しが失敗した・データが無く描き直さない時は帯に触れない（前の盤面のまま＝前の帯のまま） */
 let remoteFromCopy_ = false;
+/* 盤面の読み先の札（代表者の指示 2026-11-13）。いま出ている盤面を描いた時に、どこから・いつ読んだかを見出しに小さく出す。
+   ★全支援俯瞰（support-overview.html）と訪問俯瞰（visit-overview.html）に同じ文面で入れている（片方を直したら両方を一字一句同じに戻す）。
+   src: fresh=新しい保存先から読んだ分がある／google=Google から読んだ分（切り替える前のキー）がある／
+        copy=切り替えた後なのに Google の写しから読んだ分がある（写しの帯と同じ条件）。
+   読んでいない・盤面を空にした時（src が空）は出さない。端末には何も残さない */
+function ovSrcText_(src, at) {
+  if (!src || !(at instanceof Date) || isNaN(at.getTime())) return '';
+  var g = src.copy ? 'Google の写し' : (src.google ? 'Google' : '');
+  var where = src.fresh && g ? '新しい保存先と ' + g : (src.fresh ? '新しい保存先' : g);
+  if (!where) return '';
+  var mm = at.getMinutes();
+  return where + (/[A-Za-z]$/.test(where) ? ' ' : '') + 'から読みました ' + at.getHours() + ':' + (mm < 10 ? '0' : '') + mm;   // 英字の後だけ1字あける（Google から）
+}
+function ovShowSrc_(src, at) {
+  var el = document.getElementById('srcState');
+  if (!el) return;
+  var s = ovSrcText_(src, at);
+  el.textContent = s;
+  el.hidden = !s;
+}
+/* 読み先を帯と同じ条件で決める（新しい保存先から読めた／Google（切り替える前）／Google の写し（切り替えた後）） */
+function voSrcOf_(fromCopy) {
+  if (!fromCopy) return { fresh: true };
+  var routed = false;
+  try { routed = !!(window.SUKv && SUKv.routed && SUKv.routed(LS_KEY)); } catch (e) { routed = false; }
+  return routed ? { copy: true } : { google: true };
+}
 function showCopyBand_(keys, fromCopy) {
   var el = document.getElementById('copyBand');
   if (!el) return;
@@ -894,6 +926,7 @@ async function refresh(silent) {
       DB = remote;
       render(DB);
       showCopyBand_([LS_KEY], remoteFromCopy_);           // 描き直した盤面の出どころで帯を決める
+      ovShowSrc_(voSrcOf_(remoteFromCopy_), new Date());   // 描き直した盤面の読み先と時刻を見出しに出す（2026-11-13）
       setSyncState('取得OK（' + DB.residents.length + '名）');
       if (!silent) toast('最新の週間計画を取得しました');
     } else {
