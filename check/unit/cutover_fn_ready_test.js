@@ -100,7 +100,8 @@ function fn(name) {
     const sb = { rpc: async (nm) => { log.push('rpc:' + nm); return { data: null, error: null }; }, auth: { getSession: async () => ({ data: { session: null } }) } };
     const ctx = {
       $: node, me: { role: 'admin', status: 'ok' }, SUAuth: { STATUS: { OK: 'ok' }, client: () => sb },
-      localStorage: { getItem: () => 'office' }, window: { SUErrors: { note: (a, b) => log.push('note:' + b) } },
+      /* 確かめは画面の中の窓（SUDialog.confirm・2026-11-13）で聞く。偽物は今までの confirm と同じ記録・同じ答え（約束で返す） */
+      localStorage: { getItem: () => 'office' }, window: { SUErrors: { note: (a, b) => log.push('note:' + b) }, SUDialog: { confirm: async () => { log.push('confirm'); return true; } } },
       confirm: () => { log.push('confirm'); return true; },
       fetch: async (u, init) => { log.push('fetch:' + init.method + ' ' + u); if (answer === 'throw') throw new TypeError('Failed to fetch'); return { status: answer }; },
       SUCutGate: G, Object, Array, String, Promise, JSON, AbortController, setTimeout, clearTimeout,
