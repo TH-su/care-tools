@@ -22,6 +22,8 @@
   --g5:#6b7075; --g6:#5f6368; --g7:#4b4f52; --g9:#1f2124;
   --r:12px; --sh:0 1px 4px rgba(0,0,0,.10);
   --focus:#0b57d0;
+  /* 白い地（カード・ボタン・紙の地）・濃い地（--pri・--g9）の上の白い字と線・帳票の黒の線と字。値は直書きの時と同じ */
+  --fs-surface:#fff; --fs-on-dark:#fff; --fs-sheet-ink:#000;
 }
 /* キーボード操作の現在地を必ず見せる（フォーカスリングを消さない） */
 :focus-visible{outline:3px solid var(--focus); outline-offset:2px; border-radius:6px}
@@ -37,7 +39,7 @@ button{font-family:inherit; cursor:pointer}
 input,select{font-family:inherit; font-size: 0.9375rem}
 
 /* ── ヘッダー ── */
-.hdr{position:sticky; top:0; z-index:50; background:var(--pri); color:#fff;
+.hdr{position:sticky; top:0; z-index:50; background:var(--pri); color:var(--fs-on-dark);
   padding:10px 14px; display:flex; align-items:center; gap:10px; box-shadow:var(--sh)}
 .hdr h1{font-size: 1.0625rem; margin:0; font-weight:700; flex:1}
 /* ★2026-10-01: iPhone で見出しが「フェイス／シート」と2行に折れ、表示200%では1文字ずつ縦に並んで右側のボタン・表示が
@@ -46,9 +48,9 @@ input,select{font-family:inherit; font-size: 0.9375rem}
 .hdr h1{white-space:nowrap}
 /* アプリ間ジャンプ（care-schedule / daycare-roster と同じ見た目。共通部品が無いため各ファイルに持つ） */
 .hdr-btn{min-height:40px; background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.35);
-  color:#fff; border-radius:6px; padding:6px 12px; font-size: 0.8125rem; cursor:pointer; white-space:nowrap}
+  color:var(--fs-on-dark); border-radius:6px; padding:6px 12px; font-size: 0.8125rem; cursor:pointer; white-space:nowrap}
 .hdr-btn:hover{background:rgba(255,255,255,.28)}
-.hdr-btn:focus-visible{outline:2px solid #fff; outline-offset:1px}
+.hdr-btn:focus-visible{outline:2px solid var(--fs-on-dark); outline-offset:1px}
 /* 入居者マスタから開いた時の本人確認バー（誰を開いているかを常に見せる＝取り違え防止）。
    ヘッダ直下に貼り付いてスクロールしても消えない。色は既定の警告トークンを使う
    （白背景でコントラスト比4.5:1以上・本ファイル冒頭の配色方針に従う）。 */
@@ -57,7 +59,7 @@ input,select{font-family:inherit; font-size: 0.9375rem}
   background:var(--warn-bg); border-bottom:1px solid var(--warn-tx); font-size: 0.8125rem; color:var(--warn-tx)}
 .frombar b{font-size: 0.9375rem}
 .frombar button{min-height:44px; padding:6px 14px; border:1px solid var(--warn-tx); border-radius:6px;
-  background:#fff; color:var(--warn-tx); font-size: 0.8125rem; cursor:pointer}
+  background:var(--fs-surface); color:var(--warn-tx); font-size: 0.8125rem; cursor:pointer}
 .frombar button:focus-visible{outline:2px solid var(--warn-tx); outline-offset:1px}
 @media print{.frombar{display:none !important}}
 /* 退去日・ご逝去日・退去先・退去後状況は紙には出さない（2026-08-09 管理者指示）。
@@ -96,7 +98,7 @@ input,select{font-family:inherit; font-size: 0.9375rem}
 .scr.on{display:block}
 
 /* ── カード ── */
-.cd{background:#fff; border-radius:var(--r); box-shadow:var(--sh); padding:14px; margin-bottom:12px}
+.cd{background:var(--fs-surface); border-radius:var(--r); box-shadow:var(--sh); padding:14px; margin-bottom:12px}
 
 /* ── 一覧 ── */
 .search-bar{display:flex; gap:8px; margin-bottom:12px; align-items:center}
@@ -104,8 +106,8 @@ input,select{font-family:inherit; font-size: 0.9375rem}
 .search-bar input{min-width:0}   /* ★2026-10-01: 表示200%で入力欄の本来の幅が画面を超えてはみ出していた（レビュー指摘） */
 .filter-row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px}
 /* タップ領域は最小44px（誤タップ防止・HIG） */
-.chip{min-height:44px; padding:0 16px; border:1px solid var(--g3); border-radius:22px; background:#fff; font-size: 0.875rem; color:var(--g7)}
-.chip.on{background:var(--pri); color:#fff; border-color:var(--pri)}
+.chip{min-height:44px; padding:0 16px; border:1px solid var(--g3); border-radius:22px; background:var(--fs-surface); font-size: 0.875rem; color:var(--g7)}
+.chip.on{background:var(--pri); color:var(--fs-on-dark); border-color:var(--pri)}
 /* ── 一覧のビュー切替・区画（2026-08-15: 入居者マスタと同じ見た目・同じ機能に揃える）──
    ★以下は resident-master.html の一覧CSSからの移植。あちらを直したらこちらも直す。 */
 .view-tabs{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; border-bottom:2px solid var(--g2)}
@@ -136,7 +138,7 @@ input,select{font-family:inherit; font-size: 0.9375rem}
   .fl-4col .rlist{grid-template-columns:1fr}
 }
 .rlist{display:grid; grid-template-columns:repeat(auto-fill,minmax(205px,1fr)); gap:8px}
-.rcard{background:#fff; border:1px solid var(--g2); border-radius:9px; padding:8px 10px; cursor:pointer; transition:.12s}
+.rcard{background:var(--fs-surface); border:1px solid var(--g2); border-radius:9px; padding:8px 10px; cursor:pointer; transition:.12s}
 /* カードは本物のボタン（キーボード・読み上げで押せる）。見た目は前の div のままにするため、ボタンの既定の
    文字・行の高さ・中寄せ・幅・余白を打ち消し、中身を上から積む（ボタンの既定は中身を縦の中央に寄せる） */
 button.rcard{display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start;
@@ -158,13 +160,13 @@ button.rcard{display:flex; flex-direction:column; align-items:stretch; justify-c
 /* ── 誕生日一覧（A4縦1枚の帳票・入居者マスタからの移植）── */
 .bday-bar{display:flex; align-items:center; gap:8px; margin:8px 0; flex-wrap:wrap}
 .bday-bar button{min-height:44px; min-width:44px; padding:6px 12px; border:1px solid var(--g3);
-  border-radius:8px; background:#fff; color:var(--g9); font-size: 0.875rem; cursor:pointer}
+  border-radius:8px; background:var(--fs-surface); color:var(--g9); font-size: 0.875rem; cursor:pointer}
 .bday-bar button:focus-visible{outline:2px solid var(--pri); outline-offset:1px}
 /* 年度の端。無効だと分かる見た目にする（押しても無反応、の理由が見えないのを防ぐ） */
 .bday-bar button:disabled{opacity:.45; cursor:default; background:var(--g1)}
 .bday-bar #bdayFY{font-size: 0.9375rem; font-weight:700; min-width:6em; text-align:center}
-.bday-bar .btn-print{margin-left:auto; background:var(--pri); color:#fff; border-color:var(--pri)}
-.bday-sheet{background:#fff; padding:6px 4px}
+.bday-bar .btn-print{margin-left:auto; background:var(--pri); color:var(--fs-on-dark); border-color:var(--pri)}
+.bday-sheet{background:var(--fs-surface); padding:6px 4px}
 .bday-hd{text-align:center; margin-bottom:6px}
 .bday-hd .bt1{font-size:var(--bhd1,26px); font-weight:700; letter-spacing:.08em; line-height:1.2}
 .bday-hd .bt2{font-size:var(--bhd2,17px); font-weight:700; margin-top:2px; line-height:1.2}
@@ -179,7 +181,7 @@ button.rcard{display:flex; flex-direction:column; align-items:stretch; justify-c
 }
 .bcol-t{font-weight:700; margin-bottom:3px; line-height:1.2; font-size:var(--btitle,20px)}
 .btbl{width:auto; border-collapse:collapse; table-layout:auto}
-.btbl th,.btbl td{border:1px solid #000; padding:var(--bpad,2px) 6px; text-align:center;
+.btbl th,.btbl td{border:1px solid var(--fs-sheet-ink); padding:var(--bpad,2px) 6px; text-align:center;
   line-height:1.25; white-space:nowrap}
 .btbl th{background:var(--g2); font-weight:700}
 .btbl .bn{text-align:start}
@@ -187,7 +189,7 @@ button.rcard{display:flex; flex-direction:column; align-items:stretch; justify-c
 .btbl .bd{font-variant-numeric:tabular-nums}
 .btbl .ba{font-variant-numeric:tabular-nums}
 /* 誕生日順の表は月の変わり目を太線で区切る（先頭行はヘッダ罫と重なるので対象外） */
-.bt-date tbody tr.mstart:not(:first-child)>td{border-top:2px solid #000}
+.bt-date tbody tr.mstart:not(:first-child)>td{border-top:2px solid var(--fs-sheet-ink)}
 .bday-ft{margin-top:6px; text-align:end; font-size: 0.625rem; color:var(--g7)}
 .bday-warn{margin-bottom:6px; padding:6px 10px; border-radius:8px;
   background:var(--warn-bg); color:var(--warn-tx); font-size: 0.75rem; font-weight:700}
@@ -209,23 +211,23 @@ button.rcard{display:flex; flex-direction:column; align-items:stretch; justify-c
      配るため。氏名は必ず1行に収める（.mnm の nowrap ＋ 氏名列の幅を実データから決める）。 */
 .meal-bar{display:flex; align-items:center; gap:8px; margin:8px 0; flex-wrap:wrap}
 .meal-bar button{min-height:44px; min-width:44px; padding:6px 12px; border:1px solid var(--g3);
-  border-radius:8px; background:#fff; color:var(--g9); font-size: 0.875rem; cursor:pointer}
+  border-radius:8px; background:var(--fs-surface); color:var(--g9); font-size: 0.875rem; cursor:pointer}
 .meal-bar button:focus-visible{outline:2px solid var(--pri); outline-offset:1px}
 /* ★色も戻すこと。戻さないと塗りボタン（印刷）の白文字が薄い地色に載って読めなくなる
    （2026-08-24 実測: #fff on #f1f3f4 ＝ コントラスト比 1.07:1） */
 .meal-bar button:disabled{opacity:.45; cursor:default; background:var(--g1); color:var(--g9)}
-.meal-bar .btn-print{margin-left:auto; background:var(--pri); color:#fff; border-color:var(--pri)}
+.meal-bar .btn-print{margin-left:auto; background:var(--pri); color:var(--fs-on-dark); border-color:var(--pri)}
 .meal-bar .st{font-size: 0.875rem; color:var(--g7); font-weight:700}
 .meal-bar .note{flex-basis:100%; font-size: 0.8125rem; color:var(--g7)}
 /* 画面では横スクロール（狭い端末でも表を潰さない）。紙では全幅＝スクロールしない */
-.meal-sheet{background:#fff; padding:6px 4px; overflow-x:auto}
+.meal-sheet{background:var(--fs-surface); padding:6px 4px; overflow-x:auto}
 .meal-hd{display:flex; align-items:baseline; gap:14px; margin-bottom:4px;
-  font-size:var(--mfs,12px); line-height:1.3; color:#000}
+  font-size:var(--mfs,12px); line-height:1.3; color:var(--fs-sheet-ink)}
 .meal-hd .mt1{font-weight:700; font-size:calc(var(--mfs,12px) * 1.7); letter-spacing:.06em}
 .meal-hd .mt3{margin-left:auto; white-space:nowrap}
 .mtbl{border-collapse:collapse; table-layout:fixed; width:100%; min-width:720px;
-  font-size:var(--mfs,12px); line-height:1.25; color:#000}
-.mtbl th,.mtbl td{border:1px solid #000; text-align:center; vertical-align:middle;
+  font-size:var(--mfs,12px); line-height:1.25; color:var(--fs-sheet-ink)}
+.mtbl th,.mtbl td{border:1px solid var(--fs-sheet-ink); text-align:center; vertical-align:middle;
   padding:var(--mpv,.3em) .25em; height:3.3em; font-weight:400;
   white-space:pre-wrap; overflow-wrap:anywhere}
 /* 氏名は折り返さない（2026-08-24 指示）。列幅は fitMealSheet() が実データの最長氏名から決める。
@@ -236,7 +238,7 @@ button.rcard{display:flex; flex-direction:column; align-items:stretch; justify-c
 .mtbl thead .mno{border:none}         /* 見出しの連番セルは罫線なし（原本と同じ） */
 .mtbl .mnum{font-variant-numeric:tabular-nums}
 .mtbl .mbad{color:var(--ng); font-weight:700}   /* 取得できなかった欄。紙では黒に落とす */
-.meal-ft{margin-top:6px; font-size:calc(var(--mfs,12px) * .85); line-height:1.35; color:#000}
+.meal-ft{margin-top:6px; font-size:calc(var(--mfs,12px) * .85); line-height:1.35; color:var(--fs-sheet-ink)}
 /* 画面だけに出す警告。紙に出ないので用紙の大きさに縛られない＝業務ツールの下限15pxで出す */
 .meal-warn{margin-bottom:6px; padding:6px 10px; border-radius:8px;
   background:var(--warn-bg); color:var(--warn-tx); font-size: 0.9375rem; font-weight:700}
@@ -250,20 +252,20 @@ button.rcard{display:flex; flex-direction:column; align-items:stretch; justify-c
    色だけに意味を持たせず、必ずアイコン＋文言を併記する（色覚特性配慮・HIG） */
 .hlband{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px}
 .hlchip{border-radius:8px; padding:6px 12px 6px 10px; font-weight:700; font-size: 0.875rem;
-  background:#fff; color:var(--g9); border:1px solid var(--g2); border-left:4px solid var(--g3)}
+  background:var(--fs-surface); color:var(--g9); border:1px solid var(--g2); border-left:4px solid var(--g3)}
 .hl-danger{background:var(--ng-l); border-color:#f2c9c5; border-left-color:var(--ng); color:var(--ng)}
 .hl-warn{background:var(--warn-bg); border-color:#ecdcbe; border-left-color:var(--warn-tx); color:var(--warn-tx)}
-.hl-info{background:#fff; border-left-color:var(--pri); color:var(--g9)}
+.hl-info{background:var(--fs-surface); border-left-color:var(--pri); color:var(--g9)}
 
 /* ── タブ ── */
 .ftabs{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px}
-.ftab{padding:0 16px; border:1px solid var(--g3); border-radius:22px; background:#fff; font-size: 0.875rem; color:var(--g7); min-height:44px}
-.ftab.on{background:var(--pri); color:#fff; border-color:var(--pri)}
+.ftab{padding:0 16px; border:1px solid var(--g3); border-radius:22px; background:var(--fs-surface); font-size: 0.875rem; color:var(--g7); min-height:44px}
+.ftab.on{background:var(--pri); color:var(--fs-on-dark); border-color:var(--pri)}
 .fpanel{display:none}
 .fpanel.on{display:block}
 
 /* ── フェイスシート（印刷レイアウト） ── */
-.sheet{background:#fff; border:2px solid var(--g9); border-radius:6px; overflow:hidden; margin-bottom:12px}
+.sheet{background:var(--fs-surface); border:2px solid var(--g9); border-radius:6px; overflow:hidden; margin-bottom:12px}
 .sheet .sec{display:flex; border-top:1px solid var(--g9)}
 .sheet .sec:first-child{border-top:none}
 /* 2026-08-14 コンパクト化（入居者マスタと同時・同値）。セルは上下も詰める */
@@ -309,9 +311,9 @@ button.rcard{display:flex; flex-direction:column; align-items:stretch; justify-c
 .meds-note{margin-top:4px; font-size:0.75rem; color:var(--warn-tx)}
 @media print{
   .meds2-h{border-bottom-color:#999}
-  .meds2-e{color:#000; font-size:0.8125rem}   /* 紙では右列をさらに詰めて左列を広く保つ */
+  .meds2-e{color:var(--fs-sheet-ink); font-size:0.8125rem}   /* 紙では右列をさらに詰めて左列を広く保つ */
   .meds2-na{color:#666}
-  .meds2-ft{color:#000}
+  .meds2-ft{color:var(--fs-sheet-ink)}
   .meds-note{display:none !important}   /* 理由書きは画面だけ（2026-09-24 本人決定 Q1） */
 }
 /* ── 入居者基本情報（外部様式）のチェック表示（2026-08-12 追加） ──
@@ -344,13 +346,13 @@ button.rcard{display:flex; flex-direction:column; align-items:stretch; justify-c
   .sec-bflegacy{display:none !important}   /* 移行前の記載は画面だけ（紙の高さを変えない） */
   .bfadl,.bfdis{page-break-inside:avoid}
   .bfck{line-height:1.35; margin-right:10px}
-  .bfck i{border-color:#333; color:#000}
+  .bfck i{border-color:#333; color:var(--fs-sheet-ink)}
   .bfadl th,.bfadl td,.bfdis th,.bfdis td{padding:1px 4px; border-color:#666}
   /* グレーの小さい文字はモノクロ印刷で潰れる（既存 .btbl .bno と同じ扱い） */
-  .bfadl thead th,.bfdis thead th,.bfdis .bfno{color:#000}
+  .bfadl thead th,.bfdis thead th,.bfdis .bfno{color:var(--fs-sheet-ink)}
   /* デイ利用日が「未確認」の時の理由書きも黒に落とす。ここが読めないと、
      受け取った側は空欄と区別できず『デイを使っていない』と読む（2026-08-19） */
-  .rhythm .du-note{color:#000}
+  .rhythm .du-note{color:var(--fs-sheet-ink)}
 }
 .rhythm{display:flex; flex-wrap:wrap; gap:4px 14px; font-size: 0.875rem}
 .rhythm span b{color:var(--pri-d)}
@@ -414,14 +416,14 @@ button.geno-box{width:100%; margin:0; padding:0; font:inherit; color:inherit; li
 
 .detail-actions{display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; align-items:center}
 .btn{padding:10px 16px; border:none; border-radius:10px; font-size: 0.875rem; font-weight:700; min-height:44px}
-.btn-pri{background:var(--pri); color:#fff}
-.btn-sec{background:#fff; color:var(--pri); border:1px solid var(--pri)}
+.btn-pri{background:var(--pri); color:var(--fs-on-dark)}
+.btn-sec{background:var(--fs-surface); color:var(--pri); border:1px solid var(--pri)}
 .btn-gray{background:var(--g2); color:var(--g7)}
 .btn:disabled{opacity:.5}
 .vname{font-size: 1.125rem; font-weight:700; margin-left:auto}
 
 /* ── ボトムナビ ── */
-.bnav{position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:1px solid var(--g2);
+.bnav{position:fixed; bottom:0; left:0; right:0; background:var(--fs-surface); border-top:1px solid var(--g2);
   display:flex; z-index:50; box-shadow:0 -1px 6px rgba(0,0,0,.08)}
 .bnav button{flex:1; border:none; background:none; padding:8px 4px; font-size: 0.6875rem; color:var(--g6);
   display:flex; flex-direction:column; align-items:center; gap:2px; min-height:56px; justify-content:center}
@@ -429,12 +431,12 @@ button.geno-box{width:100%; margin:0; padding:0; font:inherit; color:inherit; li
 
 /* ── トースト・モーダル ── */
 #toast{position:fixed; bottom:80px; left:50%; transform:translateX(-50%) translateY(20px);
-  background:var(--g9); color:#fff; padding:10px 18px; border-radius:22px; font-size: 0.875rem; z-index:200;
+  background:var(--g9); color:var(--fs-on-dark); padding:10px 18px; border-radius:22px; font-size: 0.875rem; z-index:200;
   opacity:0; transition:.25s; pointer-events:none; max-width:90%; text-align:center}
 #toast.on{opacity:1; transform:translateX(-50%) translateY(0)}
 .modal{position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:150; display:none; align-items:center; justify-content:center; padding:16px}
 .modal.on{display:flex}
-.modal .box{background:#fff; border-radius:var(--r); max-width:520px; width:100%; max-height:88vh; overflow:auto; padding:18px}
+.modal .box{background:var(--fs-surface); border-radius:var(--r); max-width:520px; width:100%; max-height:88vh; overflow:auto; padding:18px}
 .modal h2{font-size: 1rem; margin:0 0 12px}
 .muted{color:var(--g6); font-size: 0.75rem}
 .fld{display:flex; flex-direction:column; margin-bottom:10px}
@@ -443,15 +445,15 @@ button.geno-box{width:100%; margin:0; padding:0; font:inherit; color:inherit; li
 
 /* ── 印刷（自己完結・A4・1人1シート） ── */
 @media print{
-  body{padding:0; background:#fff}
+  body{padding:0; background:var(--fs-surface)}
   .hdr,.bnav,.detail-actions,.ftabs,#toast,.modal{display:none !important}
   .scr{padding:0; max-width:none}
   .scr:not(.on){display:none}
   .fpanel{display:block !important}      /* 全カテゴリを印刷 */
   /* ★「全体」タブは従来の印刷では出さない。出すと同じ内容が9タブぶんと全体とで2回刷られる */
   .fpanel[data-panel="all"]{display:none !important}
-  .sheet{border:2px solid #000; page-break-inside:avoid; margin-bottom:6mm}
-  .sheet .sec{border-top:1px solid #000}
+  .sheet{border:2px solid var(--fs-sheet-ink); page-break-inside:avoid; margin-bottom:6mm}
+  .sheet .sec{border-top:1px solid var(--fs-sheet-ink)}
   .cell{border-color:#999}
   .geno-box{border:none !important; cursor:default !important}
   .geno-hint{display:none !important}
@@ -459,8 +461,8 @@ button.geno-box{width:100%; margin:0; padding:0; font:inherit; color:inherit; li
   .geno-img{-webkit-print-color-adjust:exact; print-color-adjust:exact}
   /* 紙でも家族構成図の絵を今の面積の約6分の1（右の列の幅いっぱい＝紙の横幅の約40%・高さは 85mm まで）にする（本人指示 2026-11-03） */
   .geno-img{max-width:100% !important; max-height:85mm !important}
-  .sheet .fam-biz,.sheet .fam-biz+.sec,.sheet .fam-biz .fb-row>.sec{border-top-color:#000}
-  .fb-geno{border-left-color:#000}
+  .sheet .fam-biz,.sheet .fam-biz+.sec,.sheet .fam-biz .fb-row>.sec{border-top-color:var(--fs-sheet-ink)}
+  .fb-geno{border-left-color:var(--fs-sheet-ink)}
   .fb-geno>.cell{border-top-color:#999}
   /* 「家族情報」を印刷しないにした時（家族構成図も一緒に外れる）は、事業所の上の太線を消す（紙の上の枠や前の欄の太線と二重にしない） */
   .fam-biz>.sec[data-nop="1"]+.fb-row>.sec{border-top:none}
@@ -469,7 +471,7 @@ button.geno-box{width:100%; margin:0; padding:0; font:inherit; color:inherit; li
   /* 「事業所」だけを印刷しないにした時も、家族構成図の絵の大きさは変えない（横幅の約40%まで） */
   .fb-row>.sec[data-nop="1"]+.fb-geno .geno-img{max-width:40% !important}
   /* その時は家族構成図の左に家族情報の見出しの列を続けて描く（家族情報の一部と分かるように） */
-  .fb-row>.sec[data-nop="1"]+.fb-geno::before{display:block; border-right-color:#000}
+  .fb-row>.sec[data-nop="1"]+.fb-geno::before{display:block; border-right-color:var(--fs-sheet-ink)}
   /* 両方を印刷しない時は、後ろの欄の上の線を普通の太さに戻す（包みが消えても太線が残らないように） */
   .fam-biz:has(>.sec[data-nop="1"]):has(>.fb-row>.sec[data-nop="1"])+.sec{border-top-width:1px}
   /* 「全体を印刷」で、事業所と家族構成図の行がページの境目で片方だけ次のページへ送られないようにする */
@@ -493,8 +495,8 @@ button.geno-box{width:100%; margin:0; padding:0; font:inherit; color:inherit; li
   .bday-2col{grid-template-columns:auto auto !important; gap:10px; justify-content:center}
   .btbl{page-break-inside:avoid}
   .btbl th{background:#e8eaed !important; -webkit-print-color-adjust:exact; print-color-adjust:exact}
-  .btbl .bno{color:#000}   /* 連番のグレーはモノクロ印刷で潰れるため黒に落とす */
-  .bday-ft{font-size:8px; color:#000}
+  .btbl .bno{color:var(--fs-sheet-ink)}   /* 連番のグレーはモノクロ印刷で潰れるため黒に落とす */
+  .bday-ft{font-size:8px; color:var(--fs-sheet-ink)}
 
   /* ── 「全体を印刷」（2026-08-15 指示）──
      ★body.fs-all-on を付けた時だけ【全体タブ1枚だけ】を刷る。
@@ -516,7 +518,7 @@ button.geno-box{width:100%; margin:0; padding:0; font:inherit; color:inherit; li
   body.fs-all-on .fpanel[data-panel="all"] .sheet .sec{background:linear-gradient(to right, var(--g1) 0 30px, transparent 30px)}
   body.fs-all-on .fpanel[data-panel="all"] .sheet .sec-lbl{align-self:flex-start; width:30px; min-width:30px; box-sizing:border-box;
     background:transparent; border-right:none}
-  body.fs-all-on .fpanel[data-panel="all"] .sheet .sec-body{border-left:1px solid #000}
+  body.fs-all-on .fpanel[data-panel="all"] .sheet .sec-body{border-left:1px solid var(--fs-sheet-ink)}
 
   /* ── 食形態一覧（A3縦1枚・2026-08-24）──
      ★body.meal-on を付けている時だけ効かせる。付けないと他のビュー・他タブの紙まで変わる
@@ -530,7 +532,7 @@ button.geno-box{width:100%; margin:0; padding:0; font:inherit; color:inherit; li
   body.meal-on .meal-bar{display:none !important}
   .meal-sheet{padding:0; overflow:visible}      /* 紙では横スクロールを作らない＝全幅で刷る */
   .mtbl{min-width:0}
-  .mtbl .mbad{color:#000}                        /* 赤はモノクロ印刷で潰れるので黒に落とす（文字は残す） */
+  .mtbl .mbad{color:var(--fs-sheet-ink)}                        /* 赤はモノクロ印刷で潰れるので黒に落とす（文字は残す） */
 }
 /* 字と地の差を 7:1 以上にそろえる（画面だけ・色合いはそのまま濃くする・印刷の紙は元の色のまま・代表者「推奨どおり色も7:1にそろえて」2026-11-03） */
 @media screen { :root[data-su-theme] .tag.room { color: #5932a7; } }   /* 居室の札の紫（淡い紫の地 7.1:1） */
