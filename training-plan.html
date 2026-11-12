@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-dtlQcT2DulDoVCpMaSzmUZUWMcsQvCImtWIuDaJCDuk=' 'sha256-8bzE0DuBjLJGJ5PxFqaRaZB2RZswI9ZRr0RbNQ3Uv6I='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-/yjemBhwzQ593xA1tElzXIFQTso+U2WTSMjNZk0q/VM=' 'sha256-8bzE0DuBjLJGJ5PxFqaRaZB2RZswI9ZRr0RbNQ3Uv6I='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- 要配慮情報（疾患・訓練内容）を表示する画面。ブラウザキャッシュ・検索索引に残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -1726,6 +1726,8 @@ function goalHasPrefix(v, prefix) {
 var AI_MASK_PART_STOP = '市町村郡県区';
 /* 1文字の姓の前後を見る「漢字」（異体字・互換漢字・々〆を含む。AI_HONOR_K の漢字の部分と同じ範囲） */
 var AI_MASK_KANJI_RE = /[一-龥㐀-䶵豈-﫿々〆]/;
+/* 伏せ字の記号そのものの形（1文字の姓を伏せる時に、記号の中の字を触らないため） */
+var AI_MASK_TOKEN_RE = /^〔(?:(?:ご本人|利用者[0-9]+)(?:・(?:姓|名|かな|姓かな|名かな))?|人名[0-9]+)〕$/;
 function aiToKatakana(v) {
   return s_(v).replace(/[ぁ-ゖ]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) + 0x60); });
 }
@@ -1940,7 +1942,9 @@ function aiMaskDeep(obj, terms, used) {
         str = str.replace(new RegExp(aiReEsc(x.term), 'g'), function (m, at, whole) {
           var pv = at > 0 ? whole.charAt(at - 1) : '', nx = whole.charAt(at + m.length);
           if ((pv && AI_MASK_KANJI_RE.test(pv)) || (nx && AI_MASK_KANJI_RE.test(nx))) return m;
-          if (whole.lastIndexOf('〔', at) > whole.lastIndexOf('〕', at)) return m;   // 先に置いた記号〔…〕の中の字は触らない
+          /* 先に置いた記号（〔ご本人・名〕〔利用者N・姓〕〔人名N〕 など）の中の字は触らない。職員が書いた〔甲〕などは伏せる */
+          var op = whole.lastIndexOf('〔', at), cl = whole.indexOf('〕', at);
+          if (op >= 0 && cl >= 0 && op > whole.lastIndexOf('〕', at) && AI_MASK_TOKEN_RE.test(whole.slice(op, cl + 1))) return m;
           hit = true; return x.token;
         });
       } else if (x.part) {
