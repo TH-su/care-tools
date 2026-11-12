@@ -95,10 +95,26 @@ function partsOf(d){
     const E = makeEnv(); E.load();
     let ans = 'まだ'; E.win.SUDialog.confirm('消しますか？').then((v) => { ans = v; });
     const d = E.dialogs()[0];
+    await new Promise((r) => setTimeout(r, 5));   // 人が Esc を押すのは、窓が開いた後の別の処理の中
     const kd = d.fire('keydown', { key: 'Escape' });
     t('窓の中のキーは画面へ伝えない（画面の Esc の処理を一緒に動かさない）', kd.stopped === true);
     d.fire('cancel'); d.open = false; await tick();   // Esc はブラウザが cancel を出して窓を閉じる
     t('Esc＝false', ans === false);
+  }
+  {
+    /* 画面の Esc の処理の中で窓を開いた時、同じ Esc が開いたばかりの窓をすぐ閉じない（週間計画で実測した穴・部品の側で塞ぐ） */
+    const E = makeEnv(); E.load();
+    const esc = { type: 'keydown', key: 'Escape', defaultPrevented: false, preventDefault(){ this.defaultPrevented = true; } };
+    E.win.event = esc;
+    let ans = 'まだ'; E.win.SUDialog.confirm('閉じますか？').then((v) => { ans = v; });
+    E.win.event = undefined;
+    const d = E.dialogs()[0];
+    t('Esc キーの押下の中で開いた時は、その Esc の既定の動き（窓を閉じる）を止める', esc.defaultPrevented === true);
+    const c1 = d.fire('cancel'); await tick();
+    t('開いたのと同じ一続きの処理の中の cancel は受けない（窓は出たまま・答えはまだ）', c1.defaultPrevented === true && ans === 'まだ' && E.dialogs().length === 1);
+    await new Promise((r) => setTimeout(r, 5));
+    d.fire('cancel'); d.open = false; await tick();
+    t('その後の Esc（cancel）は今までどおりキャンセル＝false', ans === false);
   }
   {
     const E = makeEnv(); E.load();

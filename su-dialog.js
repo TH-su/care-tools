@@ -102,7 +102,11 @@
         parts.ok.addEventListener('click', function () { finish(item, true); });
         if (parts.cancel) parts.cancel.addEventListener('click', function () { finish(item, false); });
         /* Esc（ブラウザが cancel を出す）と、ほかの理由で閉じた時はキャンセル扱い */
-        dlg.addEventListener('cancel', function () { finish(item, false); });
+        dlg.addEventListener('cancel', function (e) {
+          /* 画面の Esc の処理の中で窓を開いた時、同じ Esc が開いたばかりの窓をすぐ閉じないようにする（開いたのと同じ一続きの処理の中の cancel は受けない） */
+          if (item.opening) { try { e.preventDefault(); } catch (err) { /* 何もしない */ } return; }
+          finish(item, false);
+        });
         dlg.addEventListener('close', function () { finish(item, false); });
         dlg.addEventListener('keydown', function (e) {
           /* 押しっぱなしの Enter（窓を開いたボタンの Enter の続き）で OK にしない。窓の中のキーは画面へ伝えない（画面の Esc の処理を一緒に動かさない） */
@@ -114,6 +118,10 @@
         /* 画面の中央に置く（画面の「*{margin:0}」などで UA の中央寄せが消えても中央に出す） */
         css(dlg, { position: 'fixed', top: '0', right: '0', bottom: '0', left: '0', margin: 'auto', height: 'fit-content' });
         (document.body || document.documentElement).appendChild(dlg);
+        /* 今の Esc キーの押下の中で開く時は、その既定の動き（開いた窓を閉じる）を止める。window.event が無いブラウザでは下の opening の守りだけが効く */
+        try { var ev = window.event; if (ev && ev.type === 'keydown' && (ev.key === 'Escape' || ev.key === 'Esc')) ev.preventDefault(); } catch (err) { /* 何もしない */ }
+        item.opening = true;
+        setTimeout(function () { item.opening = false; }, 0);
         dlg.showModal();
         try { parts.ok.focus(); } catch (e) { /* 何もしない */ }
       } catch (e) {
