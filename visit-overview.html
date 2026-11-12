@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-sNzM46e7p+Sn/7CJ2Ija4K764jLc9cb3JlDcME49iZU=' 'sha256-fiiCHD0MBlF2wV+NudqERX+mzEI9CHzGp+FncjfxYa4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-I/n1r+IxeykoolhGNmdirrxP2YHs03GinPLR6KTq+W0=' 'sha256-fiiCHD0MBlF2wV+NudqERX+mzEI9CHzGp+FncjfxYa4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -663,14 +663,30 @@ function voApplyHosp(db){
   });
   return n;
 }
+/* 接続先が無い端末で、入院の印をログインだけで受け取りに行ってよいか（2026-11-12 商用化の見直し 6）。
+   名簿の入口（su-res-read.js）があり、ログインの控えがあり、現場の端末でない時だけ。役割と切り替えの印の確かめは入口が行う */
+function voHospLoginOnly_(){
+  try{
+    if(!window.SUResRead || typeof window.SUResRead.call!=='function') return false;
+    if(localStorage.getItem('su_device_role')==='field') return false;
+    for(var i=0;i<localStorage.length;i++) if(/^sb-[a-z0-9]+-auth-token$/.test(localStorage.key(i)||'')) return true;
+  }catch(e){}
+  return false;
+}
 /* ★2026-09-23: 合言葉を URL に載せないため getRoster は POST 本文へ。GAS の doPost は読み取り action を受ける（gas/README.md）。
    合言葉の無い stateRev 照会（voWatchState）は GET のまま。 */
 function voFetchHosp(){
   if(voHospBusy) return Promise.resolve(false);
-  var c = voMasterCfg(); if(!c || !c.token) return Promise.resolve(false);
+  var c = voMasterCfg();
+  /* 2026-11-12（商用化の見直し 6）: 入居者マスタの接続先が無い端末でも、事務所PCで事務所・管理者としてログインしていて、入居者マスタを
+     新しい保存先へ切り替えた後なら、名簿の入口（officeOnly）から入院の印を受け取る（ログインだけで盤面を読む端末に斜線が出なかった）。
+     それ以外（ログインの控えが無い・現場の端末・切り替える前）は Google へは何も送らず、今までどおり重ねない */
+  var noCfg = !c || !c.token;
+  if(noCfg && !voHospLoginOnly_()) return Promise.resolve(false);
   voHospBusy = true;
   /* ログインしている時だけ証明を添える（su-gas-auth.js・GAS が READ_ROLE_CHECK の時に役割を確かめる・代表者の決定 2026-10-29） */
   var raw = function(){
+    if(noCfg) return Promise.reject(new Error('入居者マスタの接続先がありません'));
     var rb = {action:'getRoster',token:c.token};
     return (window.SUGasAuth?window.SUGasAuth.addTo(rb):Promise.resolve(rb)).then(function(b){
       return fetch(c.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
@@ -682,7 +698,7 @@ function voFetchHosp(){
      スイッチ master_roster_read が入っている時だけ写しから読み、切・読めない時は raw（上の要求そのまま）を呼ぶ。
      この画面が使うのは利用者No と入院中だけ（写しにある項目）。部品が読み込めない時も raw を呼ぶ。
      masterUrl は版数（action=stateRev）を聞く先。Google の版数が写しの記録と同じ時だけ写しを使う（移行 0019・反証レビューの指摘）。 */
-  var old = function(){ try{ return window.SURoster ? window.SURoster.getRoster(raw, {where:'visit', masterUrl:c.url}) : raw(); }catch(e){ return raw(); } };
+  var old = function(){ if(noCfg) return raw(); try{ return window.SURoster ? window.SURoster.getRoster(raw, {where:'visit', masterUrl:c.url}) : raw(); }catch(e){ return raw(); } };
   /* 2026-11-02（代表者「Google のまま読む」）: 入居者マスタを新しい保存先へ切り替えた後は、事務所PCで事務所・管理者としてログインしている時だけ、名簿を新しい保存先から読む（su-res-read.js の officeOnly）。
      ログインしていない・現場の端末・現場のアカウントは、下の今までの読み方（写し→Google）のまま。部品が無い時も今までどおり */
   var p;
@@ -705,14 +721,22 @@ function voFetchHosp(){
 }
 /* 版数だけを見張る（合言葉不要・数値2つのみ・個人情報ゼロ） */
 function voWatchState(){
-  var c = voMasterCfg(); if(!c || document.hidden) return;
+  var c = voMasterCfg(); if(document.hidden) return;
+  if(!c && !voHospLoginOnly_()) return;   // 接続先が無い端末は、ログインだけで読める時だけ新しい保存先の版数を見張る（2026-11-12）
   /* 2026-11-08（写し返しを止める計画・代表者の決定 2026-11-07 問い6=A）: 入居者マスタを新しい保存先へ切り替えた後は、事務所PCで
      事務所・管理者としてログインしている時だけ、新しい保存先の版数を読む（su-res-read.js の stateRev・応答の形は同じ）。
      それ以外・部品が無い時は下の Google への照会をそのまま送る（送り方は変えない） */
+  /* 接続先が無い端末（ログインだけで読む）: Google へは何も聞かない。入口が Google へ戻す時は失敗にして何もしない（2026-11-12） */
+  var revN = null;
+  if (!c) {
+    try { revN = window.SUResRead.stateRev(function () { return Promise.reject(new Error('入居者マスタの接続先がありません')); }, { key: 'visit' }); }
+    catch (eN) { return; }
+  }
   var gasRev = function () { return fetch(c.url + (c.url.indexOf('?')>=0?'&':'?') + 'action=stateRev',
           {method:'GET',cache:'no-store',redirect:'follow'}); };
   var revP;
-  try { revP = (window.SUResRead && window.SUResRead.stateRev) ? window.SUResRead.stateRev(gasRev, { key: 'visit' }) : gasRev(); }
+  if (revN) revP = revN;
+  else try { revP = (window.SUResRead && window.SUResRead.stateRev) ? window.SUResRead.stateRev(gasRev, { key: 'visit' }) : gasRev(); }
   catch (eV) { revP = gasRev(); }
   Promise.resolve(revP)
     .then(function(r){return r.json()})
