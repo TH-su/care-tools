@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-MAtlfneqiYsEdaZ72VA/A8WnnqNnLlEIPDofXiN2Va8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-+a6M7AUchzQy68UCJfqAQyAw8RagRoLRqMJUjx7EXXo=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-Ik9bsX6E+adh4Dx5Nyfysspj3viQWdvwsL/W+4MVcRU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -14,11 +14,20 @@
 <script src="su-errors.js?v=2026-11-12"></script>
 <script src="su-devcfg.js?v=2026-11-08"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
+<!-- 止めて知らせる窓（alert・confirm）の代わりに画面の中の窓を出す共通部品（2026-11-12 代表者の決定）。画面のスクリプトより前に置く -->
+<script src="su-dialog.js?v=2026-11-12"></script>
 <script>
 /* 黙ると困る失敗（保存・同期の補助）を、画面には出さずに記録へ残す（2026-10-08・監査10月版 #8）。
    行き先は su-errors.js の note＝コンソールと記録先（同期ログ・不具合報告の控えと自動報告）。トーストは出さない。
    ★どの script より先に定義する（起動中の catch から呼んでも未定義にならないように）。note が無い古いキャッシュでは何もしない。 */
 function wrNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('保存・同期の失敗', e, 'weight:' + where); }catch(_){} }
+/* 画面の中の窓（su-dialog.js）が読めなかった時の受け口（2026-11-12）。ブラウザの窓に落とし、呼ぶ側と同じ約束（Promise）で答える */
+if(!window.SUDialog) window.SUDialog = {
+  alert: function(m){ try{ window.alert(m); }catch(_){} return Promise.resolve(); },
+  confirm: function(m){ var r = false; try{ r = !!window.confirm(m); }catch(_){} return Promise.resolve(r); },
+  busy: function(){ return false; },
+  idle: function(){ return Promise.resolve(); }
+};
 </script>
 <!-- グラフの部品は npm の原本をテーマに同梱して自前で配る（2026-10-10・第三者の配信元から読まない）。
      起動を軽くするため、開く時には待たずに読む（2026-10-24）: 前回の画面が「個別」ならここ（ほかの部品より前）で、
@@ -2548,7 +2557,10 @@ function wrSyncDeny(){
 }
 function syncFromAPI(showLoader){
   if(_wrSyncInFlight) return _wrSyncInFlight;
-  const p = _syncFromAPIImpl(showLoader);
+  /* 画面の中の窓（su-dialog.js・2026-11-12）が出ている間は同期を始めない。ブラウザの窓と違い、答えを待つ間も画面の処理は動くため、
+     窓の前に掴んだ入居者・記録が同期の取り込み（行の入れ替え）で古くなり、答えの後の書き換えが端末に残らなくなる。窓が全部閉じて、
+     答えの後の処理が終わってから始める。窓が出ていない時は今までどおりすぐ始める */
+  const p = (window.SUDialog && typeof SUDialog.busy === 'function' && SUDialog.busy()) ? SUDialog.idle().then(()=> _syncFromAPIImpl(showLoader)) : _syncFromAPIImpl(showLoader);
   _wrSyncInFlight = p;
   const done = () => { if(_wrSyncInFlight === p) _wrSyncInFlight = null; };
   p.then(done, done);
@@ -3729,6 +3741,7 @@ async function wrFetchMasterRoster(cfg){
 async function wrStateRevTick(){
   if(document.hidden) return;                        // 非表示中は照会しない
   if(_wrSrevBusy) return;                            // 多重照会の防止
+  if(window.SUDialog && typeof SUDialog.busy === 'function' && SUDialog.busy()) return;   // 画面の中の窓が出ている間は名簿を取り込まない（次の回に任せる・2026-11-12）
   var cfg = wrMasterCfg();
   if(!cfg) return;                                   // 設定なし＝通信ゼロ（従来動作のまま）
   var now = Date.now();
@@ -4409,7 +4422,7 @@ function wrRecheckDesc(info){
   return `前回（${when}・${p.weight.toFixed(1)}kg）から ${s}${info.df.toFixed(1)}kg（${s}${info.pc.toFixed(1)}%）`;
 }
 function wrRecheckConfirm(lines){
-  return confirm(`前回の測定から大きく変わっています。\n${lines.join('\n')}\n\n体重計の置き方・服装・車椅子の重さを確かめ、測り直しても同じ値でしたか？\n\nOK＝この値で保存する（「測り直し済み」の印を付けます）\nキャンセル＝保存せずに戻る（測り直してから入れ直してください）`);
+  return SUDialog.confirm(`前回の測定から大きく変わっています。\n${lines.join('\n')}\n\n体重計の置き方・服装・車椅子の重さを確かめ、測り直しても同じ値でしたか？\n\nOK＝この値で保存する（「測り直し済み」の印を付けます）\nキャンセル＝保存せずに戻る（測り直してから入れ直してください）`);
 }
 /* ── 一覧の12か月の小さな折れ線（2026-10-17・代表者承認） ──
    縦軸は全員そろえる：その方の12か月の中で最初の記録を基準に ±10%（はみ出しは端に寄せる）。
@@ -4926,7 +4939,7 @@ function updateBulkSummary(){
   $('#bulkSummary').innerHTML = `入力済み: <b>${filled}</b> 名${existing?` （うち<b>${existing}</b>名は既存記録を上書き）`:''}`;
 }
 
-function bulkSave(){
+async function bulkSave(){
   if(wrSyncDeny()) return;
   const date = $('#bulkDate').value || dNow();
   const ym   = $('#bulkMonth').value || date.slice(0,7);
@@ -4960,7 +4973,7 @@ function bulkSave(){
     const info = wrRecheckInfo(rid, date, ym, Math.round(w*10)/10, row.dataset.existing || null);
     if(info){ recheckRows.add(row); rcLines.push(`${residentById(rid)?.name || ''}：${wrRecheckDesc(info)}`); }
   }
-  if(rcLines.length && !wrRecheckConfirm(rcLines)) return;
+  if(rcLines.length && !(await wrRecheckConfirm(rcLines))) return;
 
   for(const row of rows){
     const rid   = row.dataset.rid;
@@ -5047,8 +5060,8 @@ function bulkSave(){
   if(typeof renderGrid  === 'function') renderGrid();
   if(typeof updateAlertBadge === 'function') updateAlertBadge();
   // 履歴が変わって車椅子重量の変わる保存済みの記録があれば、入居者ごとに確認して計算し直す
-  chairResChanged.forEach(rid=> wcRecalcAsk_(rid, wcLogStored_(residentById(rid))));
-  alertChairChange_(chairAsks);
+  for(const rid of chairResChanged) await wcRecalcAsk_(rid, wcLogStored_(residentById(rid)));
+  await alertChairChange_(chairAsks);
 }
 
 /* ============================================================
@@ -5059,7 +5072,7 @@ function bulkSave(){
    車椅子換算・上書き/新規・食事スナップショット・正規化）は bulkSave と同一に保つこと。
    モーダルは開いたまま・他行の入力中データは保持（renderBulkList は呼ばない）。
    ============================================================ */
-function saveSingleBulkRow(row){
+async function saveSingleBulkRow(row){
   if(!row) return;
   if(wrSyncDeny()) return;
   const date = $('#bulkDate').value || dNow();
@@ -5102,7 +5115,7 @@ function saveSingleBulkRow(row){
   let recheckOk = false;
   {
     const info = wrRecheckInfo(rid, date, ym, weight, row.dataset.existing || null);
-    if(info){ if(!wrRecheckConfirm([`${resident.name || ''}：${wrRecheckDesc(info)}`])) return; recheckOk = true; }
+    if(info){ if(!(await wrRecheckConfirm([`${resident.name || ''}：${wrRecheckDesc(info)}`]))) return; recheckOk = true; }
   }
   const existingId = row.dataset.existing;
   const existing   = existingId ? getRecordById(existingId) : null;
@@ -5161,8 +5174,8 @@ function saveSingleBulkRow(row){
   if(typeof renderIndiv === 'function') renderIndiv();
   if(typeof renderGrid  === 'function' && document.querySelector('.scr[data-sc="grid"].on')) renderGrid();
   if(typeof updateAlertBadge === 'function') updateAlertBadge();
-  if(chairResChanged) wcRecalcAsk_(rid, wcLogStored_(resident));
-  alertChairChange_([chairChangeLine_(rec)]);
+  if(chairResChanged) await wcRecalcAsk_(rid, wcLogStored_(resident));
+  await alertChairChange_([chairChangeLine_(rec)]);
 }
 
 /* 36-month per-resident modal */
@@ -5659,14 +5672,14 @@ function wcAffectedRecs_(rid, log){
   });
 }
 /* 確認してから、実測値 − 正しい車椅子重量 で体重を計算し直す（キャンセルなら記録には触らない） */
-function wcRecalcAsk_(rid, log){
+async function wcRecalcAsk_(rid, log){
   if(wrSyncDeny()) return;
   const recs = wcAffectedRecs_(rid, log);
   if(!recs.length) return;
   const lbl = x=> x.measuredOn || ymFmt(x.yearMonth);
   const range = recs.length === 1 ? lbl(recs[0]) : `${lbl(recs[0])}〜${lbl(recs[recs.length - 1])}`;
   const name = residentById(rid)?.name || '';
-  if(!confirm(`${name}：車椅子の変更日・重さに合わせて、保存済みの記録 ${recs.length}件（${range}）の体重を計算し直しますか？\n\n「キャンセル」なら記録はそのままにします。`)) return;
+  if(!(await SUDialog.confirm(`${name}：車椅子の変更日・重さに合わせて、保存済みの記録 ${recs.length}件（${range}）の体重を計算し直しますか？\n\n「キャンセル」なら記録はそのままにします。`))) return;
   const nowIso = new Date().toISOString();
   const done = []; let skipped = 0;
   recs.forEach(x=>{
@@ -5734,7 +5747,7 @@ function chairChangeLine_(rec){
 }
 function alertChairChange_(lines){
   const ls = (lines || []).filter(Boolean);
-  if(ls.length) alert(CHAIR_CHANGE_ASK + '\n\n' + ls.join('\n'));
+  if(ls.length) return SUDialog.alert(CHAIR_CHANGE_ASK + '\n\n' + ls.join('\n'));
 }
 
 /* Edit mode. When set, Save overwrites this specific record instead of
@@ -5867,9 +5880,9 @@ $('#inEditCancel')?.addEventListener('click', ()=>{
   clearInputForm();
 });
 /* 編集中の記録を消す（2026-10-17：個別画面の履歴の各行から移した入口。確認は deleteRecordById が出す） */
-$('#inEditDelete')?.addEventListener('click', ()=>{
+$('#inEditDelete')?.addEventListener('click', async ()=>{
   if(!editingRecordId) return;
-  deleteRecordById(editingRecordId);
+  await deleteRecordById(editingRecordId);
   try{ updateEditBanner(); }catch(e){}
 });
 
@@ -5924,7 +5937,7 @@ function renderInputExistingList(){
   });
 }
 
-$('#inSave').addEventListener('click', ()=>{
+$('#inSave').addEventListener('click', async ()=>{
   if(wrSyncDeny()) return;
   const rid = $('#inResident').value;
   const ym  = $('#inMonth').value;
@@ -5949,7 +5962,7 @@ $('#inSave').addEventListener('click', ()=>{
   let recheckOk = false;
   {
     const info = wrRecheckInfo(rid, d, ym, Math.round(w*10)/10, editingRecordId);
-    if(info){ if(!wrRecheckConfirm([wrRecheckDesc(info)])) return; recheckOk = true; }
+    if(info){ if(!(await wrRecheckConfirm([wrRecheckDesc(info)]))) return; recheckOk = true; }
   }
   const mode = inMode;
   // 第一優先：明示的な編集モード（編集ボタンから入った状態）
@@ -6053,17 +6066,17 @@ $('#inSave').addEventListener('click', ()=>{
   if(typeof renderList === 'function') renderList();
   if(typeof renderIndiv === 'function') renderIndiv();
   if(typeof renderGrid === 'function' && document.querySelector('.scr[data-sc="grid"].on')) renderGrid();
-  if(chairLogNew) wcRecalcAsk_(rid, chairLogNew);
-  alertChairChange_([chairAsk]);
+  if(chairLogNew) await wcRecalcAsk_(rid, chairLogNew);
+  await alertChairChange_([chairAsk]);
 });
 
-function deleteRecordById(id){
+async function deleteRecordById(id){
   if(wrSyncDeny()) return;
   const rec = getRecordById(id);
   if(!rec) return;
   const resident = residentById(rec.residentId);
   const dateLabel = rec.measuredOn || ymFmt(rec.yearMonth);
-  if(!confirm(`${resident?.name || ''} ${dateLabel} の記録を削除します。よろしいですか？`)) return;
+  if(!(await SUDialog.confirm(`${resident?.name || ''} ${dateLabel} の記録を削除します。よろしいですか？`))) return;
   DB.records = DB.records.filter(r=> r.id !== id);
   if(editingRecordId === id){ editingRecordId = null; clearInputForm(); }
   /* この記録から作った車椅子の変更履歴の行も消す（打ち間違いの重さがその後の計測に使われ続けないように） */
@@ -7426,7 +7439,7 @@ function renderStorageDiag(){
   }
 }
 $('#sdRefresh')?.addEventListener('click', renderStorageDiag);
-$('#sdRecover')?.addEventListener('click', ()=>{
+$('#sdRecover')?.addEventListener('click', async ()=>{
   if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   if(wrSyncDeny()) return;
   const bak1 = _readDbFromKey(LS_BAK);
@@ -7434,7 +7447,7 @@ $('#sdRecover')?.addEventListener('click', ()=>{
   const cand = bak1 || bak2;
   if(!cand){ toast('利用可能なバックアップがありません','err'); return; }
   const which = bak1 ? '1世代前' : '2世代前';
-  if(!confirm(`バックアップ（${which}）から復元します。\n現在のデータは置き換えられます。続行しますか？`)) return;
+  if(!(await SUDialog.confirm(`バックアップ（${which}）から復元します。\n現在のデータは置き換えられます。続行しますか？`))) return;
   // 念のため現状をさらに backup へ退避（save() のローテーションが回る）
   DB = cand;
   if(typeof normalizeAllResidents === 'function') normalizeAllResidents();
@@ -7522,7 +7535,7 @@ function wrDownloadDbJson(prefix){
 }
 /* keepId の行に dropIds の行をまとめる。記録は付け替えるだけで消さない。
    opts.silent: 確認画面と控えの保存を出さない（試験用） */
-function wrMergeResidents(keepId, dropIds, opts){
+async function wrMergeResidents(keepId, dropIds, opts){
   if(wrFieldDeny()) return false;
   const silent = !!(opts && opts.silent);
   const keep = residentById(keepId);
@@ -7539,7 +7552,7 @@ function wrMergeResidents(keepId, dropIds, opts){
       + `・記録 ${moving.length} 件を残す行へ移します（記録は消えません）\n`
       + `・まとめた ${drops.length} 行は消します。元には戻せません\n`
       + `・始める前に、今のデータを控えのファイルに保存します\n\nよろしいですか？`;
-    if(!confirm(msg)) return false;
+    if(!(await SUDialog.confirm(msg))) return false;
     try{ wrDownloadDbJson('weight-record-before-merge'); }catch(e){}
   }
   const now = new Date().toISOString();
@@ -7625,7 +7638,7 @@ async function wrAdoptOrphans(oldRid, keepId){
   const recs = (DB.records || []).filter(x => x && String(x.residentId) === String(oldRid));
   if(!keep || !recs.length || residentById(oldRid)){ try{ renderCfg(); }catch(e){} return false; }
   if(wrPendingCount() > 0){ toast('まだ送っていない記録があります。同期が終わってから、もう一度押してください', 'err'); return false; }
-  if(!confirm(`持ち主のいない記録 ${recs.length} 件を「${keep.name || '（氏名なし）'}」（居室 ${keep.room || '—'}）へ付けます。\n付ける相手に間違いがないか、月と体重で確かめてから進めてください。\nよろしいですか？`)) return false;
+  if(!(await SUDialog.confirm(`持ち主のいない記録 ${recs.length} 件を「${keep.name || '（氏名なし）'}」（居室 ${keep.room || '—'}）へ付けます。\n付ける相手に間違いがないか、月と体重で確かめてから進めてください。\nよろしいですか？`))) return false;
   try{ wrDownloadDbJson('weight-record-before-merge'); }catch(e){}
   const now = new Date().toISOString();
   recs.forEach(rec => { const _hb = wrSnap_(rec); rec.residentId = keep.id; rec.updatedAt = now; rec.updatedBy = wrWho_(); wrPushHist_(rec, _hb, now); });
@@ -7652,7 +7665,7 @@ async function wrClearOrphans(oldRid){
   if(!recs.length){ try{ renderCfg(); }catch(e){} return false; }
   if(wrPendingCount() > 0){ toast('まだ送っていない記録があります。同期が終わってから、もう一度押してください', 'err'); return false; }
   const list = recs.map(x => `${ymFmt(x.yearMonth)} ${wrWeightOk(x) ? x.weight.toFixed(1) + 'kg' : '—'}`).join('、');
-  if(!confirm(`持ち主のいない記録 ${recs.length} 件（${list}）を消します。\n消した記録は元に戻せません（消す前に、今のデータを控えのファイルに保存します）。\nよろしいですか？`)) return false;
+  if(!(await SUDialog.confirm(`持ち主のいない記録 ${recs.length} 件（${list}）を消します。\n消した記録は元に戻せません（消す前に、今のデータを控えのファイルに保存します）。\nよろしいですか？`))) return false;
   try{ wrDownloadDbJson('weight-record-before-clear'); }catch(e){}
   const ids = new Set(recs.map(x => String(x.id)));
   DB.records = DB.records.filter(x => !(x && ids.has(String(x.id))));
@@ -7676,7 +7689,7 @@ async function wrLinkSkippedMaster(masterId, residentId){
   if((DB.residents || []).some(x => wrHasMid(x) && String(x.masterId) === String(masterId))){
     toast('この人は、ほかの端末で既に登録・紐づけされていました。一覧を確かめてください', 'err'); try{ renderCfg(); }catch(e){} return false;
   }
-  if(!confirm(`「${r.name || '（氏名なし）'}」（居室 ${r.room || '—'}・記録 ${wrRecCountOf(r.id)} 件）を、入居者マスタのこの人として紐づけます。\n別の人（同姓同名・退去した前の入居者）でないか確かめてから進めてください。\nよろしいですか？`)) return false;
+  if(!(await SUDialog.confirm(`「${r.name || '（氏名なし）'}」（居室 ${r.room || '—'}・記録 ${wrRecCountOf(r.id)} 件）を、入居者マスタのこの人として紐づけます。\n別の人（同姓同名・退去した前の入居者）でないか確かめてから進めてください。\nよろしいですか？`))) return false;
   r.masterId = masterId;
   save();
   pushResidentFields_(r, ['masterId']);
@@ -7698,7 +7711,7 @@ async function wrCreateSkippedMaster(entry){
   if(residentById(id) || (DB.residents || []).some(r => wrHasMid(r) && String(r.masterId) === String(entry.masterId))){
     toast('この人は既に登録されていました', 'ok'); try{ renderCfg(); }catch(e){} return false;
   }
-  if(!confirm(`「${entry.name}」（居室 ${entry.room || '—'}）を、新しい入居者として登録します。\nよろしいですか？`)) return false;
+  if(!(await SUDialog.confirm(`「${entry.name}」（居室 ${entry.room || '—'}）を、新しい入居者として登録します。\nよろしいですか？`))) return false;
   const nr = { id, name: entry.name, room: entry.room, masterId: entry.masterId, targetWeight: true, _fromMaster: true, createdAt: new Date().toISOString() };
   normalizeResident(nr);
   DB.residents.push(nr);
@@ -7712,12 +7725,12 @@ async function wrCreateSkippedMaster(entry){
   return true;
 }
 /* 記録の無い、氏名の無い行を消す */
-function wrDeleteEmptyResident(id){
+async function wrDeleteEmptyResident(id){
   if(wrFieldDeny()) return false;
   if(wrSyncDeny()) return false;
   const r = residentById(id);
   if(!r || wrRecCountOf(id) > 0) return false;
-  if(!confirm('氏名の無い行（記録 0 件）を消します。元には戻せません。よろしいですか？')) return false;
+  if(!(await SUDialog.confirm('氏名の無い行（記録 0 件）を消します。元には戻せません。よろしいですか？'))) return false;
   DB.residents = DB.residents.filter(x => x !== r);
   save();
   apiPush('delResident', { id: r.id });
@@ -8001,10 +8014,10 @@ function renderRuleDesc(){
     + `<br><span style="color:var(--g6)">低栄養リスク（厚労省の区切り・体重とBMIだけで判定）：高＝1か月5%・3か月7.5%・6か月10%以上の減少／中＝どれかの期間で3%以上の減少かBMI 18.5未満。一覧と個別に札を出し、アラートには高リスクだけを上げます。</span>`
     + `<br><span style="color:var(--g6)">前回の測定から5%以上か2.5kg以上変わった値は、保存の前に「測り直しましたか」と確かめます。</span>`;
 }
-$('#thrReset')?.addEventListener('click', ()=>{
+$('#thrReset')?.addEventListener('click', async ()=>{
   if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   if(wrSyncDeny()) return;
-  if(!confirm('アラート検知ルールを初期値に戻しますか？')) return;
+  if(!(await SUDialog.confirm('アラート検知ルールを初期値に戻しますか？'))) return;
   THR = cloneThr(DEFAULT_THR);
   saveThr(THR);
   apiPush('saveThr', { thresholds: THR });
@@ -8319,7 +8332,7 @@ function mdChairReconcile_(){
 $('#mdChair').addEventListener('input', mdChairReconcile_);
 $('#mdChair').addEventListener('change', mdChairReconcile_);
 
-$('#mdSave').addEventListener('click', ()=>{
+$('#mdSave').addEventListener('click', async ()=>{
   if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   if(wrSyncDeny()) return;
   const name = $('#mdName').value.trim();
@@ -8362,7 +8375,7 @@ $('#mdSave').addEventListener('click', ()=>{
   apiPush('saveResident', { resident: savedResident });
   $('#mdResident').classList.remove('on');
   // 履歴が変わって車椅子重量の変わる保存済みの記録があれば、確認してから計算し直す
-  if(editingId) wcRecalcAsk_(savedResident.id, chairLogSave);
+  if(editingId) await wcRecalcAsk_(savedResident.id, chairLogSave);
   // すべての画面を再描画：今 cfg にいてもユーザはすぐに他のタブに移るため、
   // 一覧・集計・入居者選択プルダウンも併せて更新しておく。
   renderCfg();
@@ -8379,7 +8392,7 @@ $('#mdSave').addEventListener('click', ()=>{
      一括/アラートから非表示。設定と個別では引き続き参照可能。
    - 復帰：dischargedAt をクリアして通常の入居者に戻す。
    - 体重記録は一切削除しない（退去後も履歴アクセス可能）。 */
-$('#mdDischarge').addEventListener('click', ()=>{
+$('#mdDischarge').addEventListener('click', async ()=>{
   if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   if(wrSyncDeny()) return;
   if(!editingId) return;
@@ -8390,7 +8403,7 @@ $('#mdDischarge').addEventListener('click', ()=>{
   if(r.masterId != null && r.masterId !== ''){ toast('入居者マスタで操作してください'); return; }
   const wasDischarged = isDischarged(r);
   if(wasDischarged){
-    if(!confirm(`${r.name} の退去を取り消し、通常の入居者として復帰させます。よろしいですか？`)) return;
+    if(!(await SUDialog.confirm(`${r.name} の退去を取り消し、通常の入居者として復帰させます。よろしいですか？`))) return;
     delete r.dischargedAt;
     r.updatedAt = new Date().toISOString();
     save();
@@ -8400,13 +8413,13 @@ $('#mdDischarge').addEventListener('click', ()=>{
     toast('復帰しました');
   } else {
     const n = (DB.records || []).filter(x=> x && x.residentId===editingId).length;
-    if(!confirm(
+    if(!(await SUDialog.confirm(
       `${r.name} を退去にします。\n` +
       `・体重記録 ${n} 件はそのまま保持されます\n` +
       `・一覧・入力・集計・アラート画面から非表示になります\n` +
       `・個別画面と設定画面では引き続き参照・編集できます\n\n` +
       `続行しますか？`
-    )) return;
+    ))) return;
     r.dischargedAt = dNow();
     r.updatedAt = new Date().toISOString();
     save();
@@ -8424,13 +8437,13 @@ $('#mdDischarge').addEventListener('click', ()=>{
   if(typeof updateAlertBadge === 'function') updateAlertBadge();
 });
 
-$('#mdDel').addEventListener('click', ()=>{
+$('#mdDel').addEventListener('click', async ()=>{
   if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   if(wrSyncDeny()) return;
   if(!editingId) return;
   const r = residentById(editingId);
   const n = DB.records.filter(x=>x.residentId===editingId).length;
-  if(!confirm(`${r.name} を削除します。\n関連する体重記録 ${n} 件も削除されます。\nよろしいですか？`)) return;
+  if(!(await SUDialog.confirm(`${r.name} を削除します。\n関連する体重記録 ${n} 件も削除されます。\nよろしいですか？`))) return;
   const relatedIds = DB.records.filter(x=> x.residentId===editingId).map(x=> x.id);
   DB.residents = DB.residents.filter(x=> x.id!==editingId);
   DB.records   = DB.records.filter(x=> x.residentId!==editingId);
@@ -8468,7 +8481,7 @@ $('#cfgFile').addEventListener('change', async e=>{
     const text = await f.text();
     const d = JSON.parse(text);
     if(!d.residents || !d.records) throw new Error('bad file');
-    if(!confirm(`現在のデータを置き換えます（入居者${d.residents.length}名 / 記録${d.records.length}件）。続行しますか？`)) return;
+    if(!(await SUDialog.confirm(`現在のデータを置き換えます（入居者${d.residents.length}名 / 記録${d.records.length}件）。続行しますか？`))) return;
     // 現在の GAS 連携URLは原則として保持。インポートファイル側にも URL があれば
     // 「自分の URL を保つ／ファイル側に従う」をユーザに選ばせる。
     const currentUrl = apiUrl || (DB && DB.apiUrl) || '';
@@ -8481,12 +8494,12 @@ $('#cfgFile').addEventListener('change', async e=>{
     if(Array.isArray(DB.records)) DB.records.forEach(r => normalizeRecord(r));
     let finalUrl = currentUrl;
     if(fileUrl && fileUrl !== currentUrl){
-      finalUrl = confirm(
+      finalUrl = (await SUDialog.confirm(
         `読み込むファイルにも、共有の接続先（Google の受け口の URL）が入っています。\n\n` +
         `現在: ${currentUrl ? '…'+currentUrl.slice(-40) : '（未設定）'}\n` +
         `ファイル: …${fileUrl.slice(-40)}\n\n` +
         `OK = ファイル側のURLに切り替える / キャンセル = 現在のURLを維持`
-      ) ? fileUrl : currentUrl;
+      )) ? fileUrl : currentUrl;
     }
     DB.apiUrl = finalUrl;
     save();
@@ -8536,10 +8549,10 @@ $('#cfgCsv').addEventListener('click', ()=>{
   a.href=url; a.download=`weight-record-${new Date().toISOString().slice(0,10)}.csv`;
   a.click(); URL.revokeObjectURL(url);
 });
-$('#cfgClear').addEventListener('click', ()=>{
+$('#cfgClear').addEventListener('click', async ()=>{
   if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   if(wrSyncDeny()) return;
-  if(!confirm('全データを削除します。本当によろしいですか？（元に戻せません）')) return;
+  if(!(await SUDialog.confirm('全データを削除します。本当によろしいですか？（元に戻せません）'))) return;
   // GAS連携URLは「アプリ設定」なので、データ削除では保持する
   const keepUrl = (DB && DB.apiUrl) || apiUrl || '';
   DB = deepClone(DEFAULT_DB);
@@ -8555,11 +8568,11 @@ $('#cfgClear').addEventListener('click', ()=>{
 /* sample data */
 /* 「サンプル投入」は架空の6名を今の名簿に入れて保存する。名簿が空でも必ず確かめる（2026-11-12） */
 const WR_SAMPLE_MSG = '架空の6名と12か月分の体重を、この名簿に入れて保存します。本番の名簿では使わないでください。入れますか？';
-function wrSampleConfirm(){ return confirm(WR_SAMPLE_MSG); }
-$('#cfgSample').addEventListener('click', ()=>{
+function wrSampleConfirm(){ return SUDialog.confirm(WR_SAMPLE_MSG); }
+$('#cfgSample').addEventListener('click', async ()=>{
   if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   if(wrSyncDeny()) return;
-  if(!wrSampleConfirm()) return;
+  if(!(await wrSampleConfirm())) return;
   const names = [
     {name:'山田 花子', room:'101', sex:'f', heightCm:148.5, m:'normal',    s:'normal', soupThick:false,sauceThick:false,lowSalt:false},
     {name:'佐藤 太郎', room:'102', sex:'m', heightCm:162.0, m:'normal',    s:'bite',   soupThick:false,sauceThick:false,lowSalt:true},
@@ -8833,10 +8846,10 @@ function wrHasLocalCopy_(){
     }
     refreshUrlPersistBadge();
   });
-  $('#btnApiClear')?.addEventListener('click', ()=>{
+  $('#btnApiClear')?.addEventListener('click', async ()=>{
     if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
     if(wrSyncDeny()) return;
-    if(!confirm('サーバー連携を解除します。ローカルデータは残ります。続行しますか？')) return;
+    if(!(await SUDialog.confirm('サーバー連携を解除します。ローカルデータは残ります。続行しますか？'))) return;
     // 三層すべてからクリア
     clearApiUrl();
     wrClearSrvResIds();   /* 前の接続先で控えた入居者の番号も消す（別のシートへ繋ぎ直した時に使わない） */
