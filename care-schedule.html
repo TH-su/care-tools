@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-xAQffd+2t6l70jOn885iQaLGtNS0rjeOXSsPuof+AE0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-+I8h9mNKLh6Ww0hUNgM+rnlhr4luSE0ApTAQlU3KI80='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -1719,11 +1719,20 @@ select.inp { cursor: pointer; }
 <script src="su-devcfg.js?v=2026-11-08"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
 <script src="su-res-read.js?v=2026-11-11"></script>
+<!-- 止めて知らせる窓（alert・confirm）の代わりに画面の中の窓を出す共通部品（2026-11-12 代表者の決定）。画面のスクリプトより前に置く -->
+<script src="su-dialog.js?v=2026-11-12"></script>
 <script>
 /* 黙ると困る失敗（保存・同期の補助）を、画面には出さずに記録へ残す（2026-10-08・監査10月版 #8）。
    行き先は su-errors.js の note＝コンソールと記録先（同期ログ・不具合報告の控えと自動報告）。トーストは出さない。
    ★どの script より先に定義する（起動中の catch から呼んでも未定義にならないように）。note が無い古いキャッシュでは何もしない。 */
 function csNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('保存・同期の失敗', e, 'care:' + where); }catch(_){} }
+/* 画面の中の窓（su-dialog.js）が読めなかった時の受け口（2026-11-12）。ブラウザの窓に落とし、呼ぶ側と同じ約束（Promise）で答える */
+if(!window.SUDialog) window.SUDialog = {
+  alert: function(m){ try{ window.alert(m); }catch(_){} return Promise.resolve(); },
+  confirm: function(m){ var r = false; try{ r = !!window.confirm(m); }catch(_){} return Promise.resolve(r); },
+  busy: function(){ return false; },
+  idle: function(){ return Promise.resolve(); }
+};
 </script>
 <script src="su-facility.js?v=2026-11-07"></script>   <!-- 施設情報（報酬マスタの「自治体」の既定・監査10月版 #10） -->
 <script src="su-cfg-hint.js?v=2026-11-10"></script>
@@ -3664,7 +3673,7 @@ function openRestoreModal(note) {
 }
 function closeRestoreModal() { $('#mk-restore').classList.remove('open'); }
 
-function restoreFromGen_(idx, whole) {
+async function restoreFromGen_(idx, whole) {
   if (SIM_ON) { showToast('試算中は復元できません'); return; }
   const gens = csReadGens_();
   const g = gens[idx];
@@ -3680,7 +3689,7 @@ function restoreFromGen_(idx, whole) {
     : ('【足す】' + when + ' にあって今は無い予定 ' + d.add + '件を戻します。\n'
        + '今ある予定は1件も消えません。\n\nよろしいですか？');
   if (!d.add && !d.del) { showToast('この控えと今の内容に差はありません'); return; }
-  if (!confirm(q)) return;
+  if (!(await SUDialog.confirm(q))) return;
   csApplyRestore_(res, whole, when, d);
 }
 
@@ -3803,7 +3812,7 @@ async function restoreFromCloud_(day, rev) {
           + '・戻せる予定：' + d.add + '件\n・今だけにある予定：' + d.del + '件\n\n'
           + '「OK」＝足す（いま無い予定だけを戻します。今の予定は1件も消えません）\n'
           + '「キャンセル」＝何もしません';
-  if (!confirm(q)) return;
+  if (!(await SUDialog.confirm(q))) return;
   csApplyRestore_(res, false, when, d);
 }
 
@@ -4519,6 +4528,8 @@ const SYNC = {
     if (SIM_ON) { this.log('🧪 試算モード中は同期しません'); return false; }
     if (!this.hasTarget()) { this.log('❌ ' + CS_NO_TARGET_MSG); return false; }
     if (this._busy) { this.log('⚠️ 同期中…完了をお待ちください'); return false; }
+    /* 画面の中の窓が出ている間は取得を始めない。窓が全部閉じて、答えの後の処理が終わってから始める（2026-11-12・仮置き） */
+    if (typeof SUDialog !== 'undefined' && SUDialog.busy()) { await SUDialog.idle(); return this.pull(); }
     this._busy = true;
     this.updateStatusUI('取得中…');
     try {
@@ -4526,6 +4537,8 @@ const SYNC = {
       if (!j.ok && this.isWrongEndpointErr(j.error) && await this.healStaleTarget()) {
         j = await this.gas({ action: 'get', key: 'care_schedule_v2' });   // 切替後に1回だけ再取得（pull再入はしない）
       }
+      /* 応答の間に画面の中の窓が出ていたら、答えの後の処理を先に済ませてから取り込む（ブラウザの窓の時と同じ順番・2026-11-12・仮置き） */
+      if (typeof SUDialog !== 'undefined' && SUDialog.busy()) await SUDialog.idle();
       if (!j.ok) throw new Error(this.friendlyErr(j.error));
       if (!j.data) { this.log('ℹ️ クラウドにデータがありません'); this.updateStatusUI('同期'); this._busy = false; return true; }
       this.adopt(j.data, j.rev);
@@ -4557,6 +4570,7 @@ const SYNC = {
     this._dirty = true;   // 前セッションの未送信状態を引き継ぐ（storage/poll の上書き保護も有効化）
     if (!this.hasTarget()) { this.log('❌ ' + CS_NO_TARGET_MSG); return false; }
     if (this._busy) return false;
+    if (typeof SUDialog !== 'undefined' && SUDialog.busy()) { await SUDialog.idle(); return this.startupPull(); }   // 画面の中の窓の後へ回す（pull と同じ・2026-11-12・仮置き）
     this._busy = true;
     this.updateStatusUI('確認中…');
     try {
@@ -4564,6 +4578,7 @@ const SYNC = {
       if (!j.ok && this.isWrongEndpointErr(j.error) && await this.healStaleTarget()) {
         j = await this.gas({ action: 'get', key: 'care_schedule_v2' });
       }
+      if (typeof SUDialog !== 'undefined' && SUDialog.busy()) await SUDialog.idle();   // 応答の間に出た窓の答えの後で扱う（pull と同じ・2026-11-12・仮置き）
       if (!j.ok) throw new Error(this.friendlyErr(j.error));
       this._busy = false;
       if (!j.data) {
@@ -4620,6 +4635,10 @@ const SYNC = {
     if (SIM_ON) { this.log('🧪 試算モード中は送信しません'); return false; }
     if (!this.hasTarget()) { this.log('❌ ' + CS_NO_TARGET_MSG); return false; }
     if (this._busy) { return false; }
+    /* 画面の中の窓が出ている間は送信を始めない（2026-11-12・仮置き）。送信の頭の取り込み（他タブの書き込みの取り込み）が
+       DB を差し替えると、窓の前に掴んだ利用者・予定が古くなり、答えの後の書き換えが保存に入らなくなる。
+       窓が全部閉じて、答えの後の処理が終わってから送る（送る形は変えない） */
+    if (typeof SUDialog !== 'undefined' && SUDialog.busy()) { await SUDialog.idle(); return this.push(force); }
     this._busy = true;
     this.updateStatusUI('保存中…');
     try {
@@ -4642,6 +4661,9 @@ const SYNC = {
       try { viaSb = !!(window.SUKv && typeof SUKv.routed === 'function' && SUKv.routed('care_schedule_v2')); } catch (e) {}
       const j = await this.gas({ action: 'put', key: 'care_schedule_v2',
                                  rev: baseRev, data: DB, force: !!force });
+      /* 応答の間に画面の中の窓が出ていたら、答えの後の処理を先に済ませてから応答を扱う（競合の取り込みで DB が差し替わる前に、
+         窓の答えの後の書き換えを「自分の編集」に入れる＝ブラウザの窓の時と同じ順番・2026-11-12・仮置き） */
+      if (typeof SUDialog !== 'undefined' && SUDialog.busy()) await SUDialog.idle();
       /* 接続先が死んだ／別アプリのGASだった: 取得と同じく ws_settings の統合同期GASへ自動切替して1回だけ送り直す
          （2026-09-24）。以前は送信では切替を試みず、未送信のまま「保存失敗」を出し続けていた。
          送り直しは push() の先頭からやり直す＝他タブの取り込み・版数・競合処理は通常の送信と同じ規則を通る。
@@ -4701,7 +4723,7 @@ const SYNC = {
         if (csBathRestored_) {                        // 入浴を戻したら必ず知らせる（黙って加算側へ倒さない）
           this.updateStatusUI('要確認');
           this.log('⚠ 競合の解消で通所の入浴 ' + csBathRestored_ + ' 件をクラウド側の値（入浴あり）に戻しました');
-          alert('競合の解消のため、通所の入浴（加算）' + csBathRestored_ + ' 件をクラウド側の値（入浴あり）に戻しました。\n\n'
+          await SUDialog.alert('競合の解消のため、通所の入浴（加算）' + csBathRestored_ + ' 件をクラウド側の値（入浴あり）に戻しました。\n\n'
               + '入浴を外す操作をしていた場合は反映されていません。\n利用者の入浴設定をご確認のうえ、必要なら操作し直してください。');
         }
         saveLocalOnly();
@@ -4730,7 +4752,7 @@ const SYNC = {
                   : (j.scope === 'resident')
                       ? ((j.who ? '「' + j.who + '」さんの予定' : 'ある利用者の予定'))
                       : (j.scope === 'total' ? '予定' : '訪問の予定');
-        const ok = confirm('⚠ ' + lbl + 'が大きく減るため、クラウドが保存を拒否しました。\n\n'
+        const ok = await SUDialog.confirm('⚠ ' + lbl + 'が大きく減るため、クラウドが保存を拒否しました。\n\n'
           + 'クラウド：' + j.was + ' 件\nこの端末：' + j.now + ' 件\n\n'
           + '【この端末の画面が正しい場合】「OK」で上書きします。\n'
           + '【身に覚えがない場合】「キャンセル」を押し、設定 → クラウド同期の\n'
@@ -5226,7 +5248,7 @@ function csCountBathing(db) {
    通信できない時は従来どおりの確認だけで通す（現場の復旧手段を塞がない）。 */
 async function syncForcePush() {
   if (syncBlockIfUnsaved()) return;   // 打った先ではなく今の同期先を上書きしてしまうのを防ぐ
-  if (!confirm('クラウドの最新更新を無視して、このローカルのデータで上書きします。よろしいですか？')) return;
+  if (!(await SUDialog.confirm('クラウドの最新更新を無視して、このローカルのデータで上書きします。よろしいですか？'))) return;
   persistSyncInputs();
   try {
     if (SYNC.hasTarget()) {
@@ -5235,10 +5257,10 @@ async function syncForcePush() {
       if (j && j.ok && j.data) {
         const sv = csCountBathing(j.data), lc = csCountBathing(DB);
         if (sv > lc) {
-          if (!confirm('⚠ 通所の入浴（加算）が減ります\n\nクラウド: ' + sv + ' 件\nこの端末: ' + lc + ' 件\n\n' +
+          if (!(await SUDialog.confirm('⚠ 通所の入浴（加算）が減ります\n\nクラウド: ' + sv + ' 件\nこの端末: ' + lc + ' 件\n\n' +
                        'この端末の内容で上書きすると、差の ' + (sv - lc) + ' 件が消えます。\n' +
                        '入浴の設定が正しいのがクラウド側なら「キャンセル」を押し、\n' +
-                       '「⬇️ クラウドから取得」を実行してください。\n\nそれでも上書きしますか？')) return;
+                       '「⬇️ クラウドから取得」を実行してください。\n\nそれでも上書きしますか？'))) return;
         }
       }
     }
@@ -5867,7 +5889,7 @@ function parseBulkLine_(line, idx) {
            cat: stype === 'visit' ? normCat_(catS || '') : '',
            detail: (detailS || '').trim() };
 }
-function applyBulkImport() {
+async function applyBulkImport() {
   const lines = $('#f-bulk').value.split('\n').map(l => l.trim()).filter(l => l.length);
   if (!lines.length) { $('#f-bulk-result').textContent = '貼り付け内容がありません'; return; }
   const parsed = lines.map((line, idx) => parseBulkLine_(line, idx));
@@ -5907,7 +5929,7 @@ function applyBulkImport() {
          + '取り込んだ後、入居者マスタで介護度を設定してください（事業対象者の方は総合事業のコードで算定します）。\n';
     }
     q += '\nこのまま取り込みますか？（取り込んだ後は利用者一覧の「⚠区分ちがい」でも確認できます）';
-    if (!confirm(q)) {
+    if (!(await SUDialog.confirm(q))) {
       /* 何も書かずに戻ると、前回の「✓ 登録 N件」が残って取り込んだように見える。 */
       $('#f-bulk-result').textContent = '取り込みを中止しました（貼り付けた内容はそのまま残っています）';
       return;
@@ -5939,7 +5961,7 @@ function applyBulkImport() {
     (errs.length ? '\n⚠ ' + errs.join('\n') : '');
   showToast(`一括登録: ${added}件を追加しました`);
 }
-function removeResident(id) {
+async function removeResident(id) {
   const idx = DB.residents.findIndex(r => r.id === id);
   if (idx < 0) return;
   const res = DB.residents[idx];
@@ -5953,7 +5975,7 @@ function removeResident(id) {
   }
   /* 破壊的操作の前に「何が消えるか」を数えて出す（件数を見せずに通さない）。 */
   const evN = Array.isArray(res.events) ? res.events.length : 0;
-  if (!confirm(`「${res.name}」を削除しますか？\n\n・この利用者の週間計画（予定 ${evN}件）も一緒に削除されます\n\n直後であれば ↩ 取消（Ctrl・Cmd+Z）で元に戻せます。`)) return;
+  if (!(await SUDialog.confirm(`「${res.name}」を削除しますか？\n\n・この利用者の週間計画（予定 ${evN}件）も一緒に削除されます\n\n直後であれば ↩ 取消（Ctrl・Cmd+Z）で元に戻せます。`))) return;
   /* 削除の前に care_schedule_v2 全体を退避する。この直後の saveDB() は csBackupResidents() を
      呼び、端末バックアップ(cs_residents_backup_v1)を【削除後の名簿】で上書きしてしまう。
      既存の自動復元 csRestoreResidentsIfLost は「全消し／サンプルのみ」しか対象にしないため、
@@ -6004,13 +6026,13 @@ async function csReassertResidentFlag_(id, field, val, label) {
     if (!pushed) SYNC.scheduleAutoPush();
   } catch (e) { try { SYNC.scheduleAutoPush(); } catch(e2){ csNote_('再送の予約', e2); } }
 }
-function moveOutResident(id) {
+async function moveOutResident(id) {
   const res = DB.residents.find(r => r.id === id);
   if (!res) return;
   /* マスタ紐づきの在籍状態はマスタが正本（ボタンも無効化してある）。
      万一ここへ届いても書き換えずに操作先だけ案内する＝二重管理にしない。 */
   if (res.masterId != null && res.masterId !== '') { showToast('入居者マスタで操作してください'); return; }
-  if (!confirm(`「${res.name}」を退去にしますか？\n（一覧から非表示になります。計画データは保持され、「退去者・対象外も表示」から復帰できます）`)) return;
+  if (!(await SUDialog.confirm(`「${res.name}」を退去にしますか？\n（一覧から非表示になります。計画データは保持され、「退去者・対象外も表示」から復帰できます）`))) return;
   res.movedOut = true;
   if (DB.currentResidentId === id) {
     const next = DB.residents.find(r => !r.movedOut && isScheduleTarget(r));
@@ -6824,14 +6846,14 @@ function csEventSnap_() {
 const CS_OFFICE_FIELDS = ['oi-unit-price', 'oi-v-tokuteijigyo', 'oi-v-svc-strength', 'oi-v-chiiki', 'oi-v-nursing', 'oi-v-douitsu',
   'oi-dc-bathing', 'oi-dc-heavy', 'oi-dc-dementia', 'oi-dc-training', 'oi-dc-svc-strength', 'oi-dc-nursing', 'oi-dc-douitsu'];
 function csOfficeSnap_() { return csFieldsSnap_(CS_OFFICE_FIELDS.map(id => $('#' + id))); }
-function askCloseEventModal() {
+async function askCloseEventModal() {
   if (!$('#mk-event').classList.contains('open')) return;
-  if (_csEventSnap !== null && csEventSnap_() !== _csEventSnap && !confirm(CS_UNSAVED_MSG)) return;
+  if (_csEventSnap !== null && csEventSnap_() !== _csEventSnap && !(await SUDialog.confirm(CS_UNSAVED_MSG))) return;
   closeEventModal();
 }
-function askCloseOfficeInfoModal() {
+async function askCloseOfficeInfoModal() {
   if (!$('#mk-office-info').classList.contains('open')) return;
-  if (_csOfficeSnap !== null && csOfficeSnap_() !== _csOfficeSnap && !confirm(CS_UNSAVED_MSG)) return;
+  if (_csOfficeSnap !== null && csOfficeSnap_() !== _csOfficeSnap && !(await SUDialog.confirm(CS_UNSAVED_MSG))) return;
   closeOfficeInfoModal();
 }
 
@@ -6990,7 +7012,7 @@ function validateForm() {
   return null;
 }
 
-function saveEvent() {
+async function saveEvent() {
   const err = validateForm();
   if (err) { showToast(err); return; }
   const res = currentResident();
@@ -7009,7 +7031,7 @@ function saveEvent() {
      警告枠は select の下＝狭い画面では折り返しの下に隠れうるため、保存の手前でもう一度出す。 */
   if (($('input[name="serviceType"]:checked') || {}).value === 'visit') {
     const catWarn = visitCatMismatch_($('#f-category').value, res.careLevel);
-    if (catWarn && !confirm(catWarn + '\n\nこのまま保存しますか？')) return;
+    if (catWarn && !(await SUDialog.confirm(catWarn + '\n\nこのまま保存しますか？'))) return;
   }
   /* 時間の重なり・2時間ルールも保存の手前でまとめて1回だけ聞く（区分ちがいと同じ作法）。
      警告枠は時刻欄の下＝狭い画面では折り返しの下に隠れうるため、ここでもう一度出す。 */
@@ -7021,7 +7043,7 @@ function saveEvent() {
       category: st0 === 'visit' ? $('#f-category').value : '',
       startTime: t0.start, endTime: t0.end
     }, editingEventId);
-    if (tw && !confirm(tw + '\n\nこのまま保存しますか？')) return;
+    if (tw && !(await SUDialog.confirm(tw + '\n\nこのまま保存しますか？'))) return;
   }
   pushUndo();
   const stype = $('input[name="serviceType"]:checked').value;
@@ -7052,7 +7074,7 @@ function saveEvent() {
   saveDB(); closeEventModal(); renderAll();
 }
 
-function duplicateEvent() {
+async function duplicateEvent() {
   if (!editingEventId) return;
   const dowStr = $('#f-dup-dow').value;
   if (!dowStr) { showToast('複製先の曜日を選択してください'); return; }
@@ -7064,12 +7086,12 @@ function duplicateEvent() {
      ev の取得を pushUndo より前に移した＝対象が見つからない時に空の取り消し履歴を積まない。 */
   if (ev.serviceType !== 'daycare') {
     const catWarn = visitCatMismatch_(ev.category, res.careLevel);
-    if (catWarn && !confirm(catWarn + '\n\nこのまま複製しますか？')) return;
+    if (catWarn && !(await SUDialog.confirm(catWarn + '\n\nこのまま複製しますか？'))) return;
   }
   /* 複製先の曜日で重なり・2時間ルールを見る（元の曜日では問題なくても複製先で起きる）。 */
   {
     const tw = planWarnConfirmText_(res, { ...ev, dayOfWeek: parseInt(dowStr, 10) }, null);
-    if (tw && !confirm(tw + '\n\nこのまま複製しますか？')) return;
+    if (tw && !(await SUDialog.confirm(tw + '\n\nこのまま複製しますか？'))) return;
   }
   pushUndo();
   const newEv = csStampAuthored_(null, { ...ev, id: uid(), dayOfWeek: parseInt(dowStr) });
@@ -7083,7 +7105,7 @@ function duplicateEvent() {
 /* この予定を月〜日の全曜日へ複製（「毎日」設定）。
  * 同曜日・同種別・同開始時刻が既にある曜日は作らない（重複event防止＝bulk取込と同方針）。
  * これにより全7曜日に確実に支援が揃い、ワースケで各日付に毎日反映される。 */
-function duplicateEventEveryday() {
+async function duplicateEventEveryday() {
   if (!editingEventId) return;
   const res = currentResident();
   if (!res) return;
@@ -7100,7 +7122,7 @@ function duplicateEventEveryday() {
   /* 1件の食い違いが7曜日ぶんに増えるのを止める（saveEvent・duplicateEvent と同じ確認）。 */
   if (ev.serviceType !== 'daycare') {
     const catWarn = visitCatMismatch_(ev.category, res.careLevel);
-    if (catWarn && !confirm(catWarn + `\n\nこのまま${targets.length}曜日へ複製しますか？`)) return;
+    if (catWarn && !(await SUDialog.confirm(catWarn + `\n\nこのまま${targets.length}曜日へ複製しますか？`))) return;
   }
   /* 1件の複製が7曜日ぶんに増える経路。どの曜日で起きるかを数えて、まとめて1回だけ聞く
      （曜日ごとに確認を出すと現場が回らない）。 */
@@ -7108,8 +7130,8 @@ function duplicateEventEveryday() {
     const hit = targets.filter(dow => planTimeWarnings_(res, { ...ev, dayOfWeek: dow }, null).length);
     if (hit.length) {
       const sample = planTimeWarnings_(res, { ...ev, dayOfWeek: hit[0] }, null).join('\n\n');
-      if (!confirm(sample + `\n\n同じことが ${hit.length}曜日（`
-        + hit.map(d => DAYS_JA[d]).join('・') + `）で起きます。\nこのまま${targets.length}曜日へ複製しますか？`)) return;
+      if (!(await SUDialog.confirm(sample + `\n\n同じことが ${hit.length}曜日（`
+        + hit.map(d => DAYS_JA[d]).join('・') + `）で起きます。\nこのまま${targets.length}曜日へ複製しますか？`))) return;
     }
   }
   pushUndo();
@@ -7119,9 +7141,9 @@ function duplicateEventEveryday() {
   showToast(`毎日に設定しました（${targets.length}曜日へ複製）`);
 }
 
-function deleteCurrentEvent() {
+async function deleteCurrentEvent() {
   if (!editingEventId) return;
-  if (!confirm('この予定を削除しますか？')) return;
+  if (!(await SUDialog.confirm('この予定を削除しますか？'))) return;
   const res = currentResident();
   if (!res) return;
   pushUndo();
@@ -7594,9 +7616,9 @@ function rmApplyConfirmed() {
   showToast(ok ? '報酬マスタを適用しました（戻すには「直前の内容へ戻す」）' : '保存に失敗しました。内容は画面にのみ反映しています');
 }
 
-function rmUndo() {
+async function rmUndo() {
   if (!RM_UNDO) { showToast('戻せる変更がありません'); return; }
-  if (!confirm('報酬マスタを直前の内容へ戻します。よろしいですか？')) return;
+  if (!(await SUDialog.confirm('報酬マスタを直前の内容へ戻します。よろしいですか？'))) return;
   const back = RM_UNDO;
   back.rev = (Number(DB.rateMaster && DB.rateMaster.rev) || 0) + 1;   // 戻すのも「新しい変更」＝版数は進める
   RM_UNDO = null;
@@ -7631,21 +7653,21 @@ function rmImportJSON(input) {
   reader.onload = () => {
     let raw;
     try { raw = JSON.parse(String(reader.result)); }
-    catch (e) { alert('読み込めませんでした。ファイルが壊れているか、報酬マスタの控えのファイルではありません。\n書き出したファイルをそのまま選んでください。'); return; }
+    catch (e) { SUDialog.alert('読み込めませんでした。ファイルが壊れているか、報酬マスタの控えのファイルではありません。\n書き出したファイルをそのまま選んでください。'); return; }
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-      alert('報酬マスタの形式ではありません。\n「報酬マスタを控えのファイルに書き出す」で作ったファイルを選んでください。'); return;
+      SUDialog.alert('報酬マスタの形式ではありません。\n「報酬マスタを控えのファイルに書き出す」で作ったファイルを選んでください。'); return;
     }
     const norm = normalizeRateMaster_(raw);
     // 表がひとつも入っていない＝別物のJSON。適用せず理由を出す（黙って既定で埋めない）
     const hasAny = ['visitBase', 'visitCodeTable', 'sogoVisit', 'daycareBase', 'careLimits']
       .some(k => raw[k] && typeof raw[k] === 'object' && Object.keys(raw[k]).length);
     if (!hasAny) {
-      alert('報酬マスタの表（訪問基本単位・コード表・総合事業・通所・限度額）が1つも入っていません。\n適用しませんでした。');
+      SUDialog.alert('報酬マスタの表（訪問基本単位・コード表・総合事業・通所・限度額）が1つも入っていません。\n適用しませんでした。');
       return;
     }
     rmOpenPreview_(norm.master, '読み込んだ控えのファイル', norm.filled);
   };
-  reader.onerror = () => alert('ファイルを読み込めませんでした。もう一度お試しください。');
+  reader.onerror = () => SUDialog.alert('ファイルを読み込めませんでした。もう一度お試しください。');
   reader.readAsText(file, 'utf-8');
 }
 
@@ -9039,7 +9061,7 @@ function residentFingerprint_(r) {
 /* 一括取込の取り消し（逆操作）。この取込が作った id だけを取り除く。
    DB を変更する前に「何をどれだけ消すか」を確定させ、人に確認してから適用する
    （複数の利用者にまたがる破壊的操作を1キーで無確認に通さない＝介護現場要件3）。 */
-function undoBulk_(entry) {
+async function undoBulk_(entry) {
   /* ── (1) 影響範囲の算出。ここでは DB を一切変更しない ── */
   const evByRid = Object.create(null);   // プロトタイプ汚染を避ける
   (entry.added || []).forEach(a => {
@@ -9076,7 +9098,7 @@ function undoBulk_(entry) {
   let q = `一括取込を取り消します。\n\n・予定 ${willRemoveEv}件 を削除`;
   if (delIds.length) q += `\n・利用者 ${delIds.length}名 を削除\n　（${delNames.join('、')}）`;
   q += '\n\nこの操作は元に戻せません。よろしいですか。';
-  if (!confirm(q)) { pushUndoEntry_(entry); showToast('取り消しを中止しました'); return; }
+  if (!(await SUDialog.confirm(q))) { pushUndoEntry_(entry); showToast('取り消しを中止しました'); return; }
   /* ── (3) 適用 ── */
   let removedEv = 0, removedRes = 0;
   Object.keys(evByRid).forEach(rid => {
@@ -9101,7 +9123,7 @@ function undoBulk_(entry) {
   showToast(`一括取込を取り消しました（予定 ${removedEv}件`
           + (removedRes ? ` / 利用者 ${removedRes}名` : '') + 'を取り除きました）');
   if (kept.length) {
-    alert('次の利用者は取り除きませんでした。\n（取込の後に予定が追加された、介護度などが入力された、'
+    await SUDialog.alert('次の利用者は取り除きませんでした。\n（取込の後に予定が追加された、介護度などが入力された、'
         + 'または入居者マスタと紐づいたため）\n\n'
         + kept.join('\n') + '\n\n必要なら利用者一覧から個別に削除してください。');
   }
@@ -9139,7 +9161,7 @@ async function csVerifyBulkUndo_(entry) {
       if (r) backRes.push(r.name || '（無名）');
     });
     if (backEv > 0 || backRes.length > 0) {
-      alert('⚠ 他端末の更新と競合したため、一括取込を取り消しきれませんでした。\n\n'
+      SUDialog.alert('⚠ 他端末の更新と競合したため、一括取込を取り消しきれませんでした。\n\n'
           + (backEv ? '・予定 ' + backEv + '件 が残っています\n' : '')
           + (backRes.length ? '・利用者 ' + backRes.length + '名 が残っています（' + backRes.join('、') + '）\n' : '')
           + '\n画面の内容を確認し、必要なら個別に削除してください。');
@@ -9179,7 +9201,7 @@ function hideCtxMenu() {
   ctxEvId = null;
 }
 
-function ctxDuplicate(dow) {
+async function ctxDuplicate(dow) {
   const res = currentResident();
   if (!res || ctxEvId === null) return;
   const ev = res.events.find(e => e.id === ctxEvId);
@@ -9188,12 +9210,12 @@ function ctxDuplicate(dow) {
      ＝いちばん手数の少ない経路だけ無言で通る、という抜けを作らない。 */
   if (ev.serviceType !== 'daycare') {
     const catWarn = visitCatMismatch_(ev.category, res.careLevel);
-    if (catWarn && !confirm(catWarn + '\n\nこのまま複製しますか？')) return;
+    if (catWarn && !(await SUDialog.confirm(catWarn + '\n\nこのまま複製しますか？'))) return;
   }
   /* 盤面からの複製も同じ確認を通す（いちばん手数の少ない経路だけ無言で通る抜けを作らない）。 */
   {
     const tw = planWarnConfirmText_(res, { ...ev, dayOfWeek: dow }, null);
-    if (tw && !confirm(tw + '\n\nこのまま複製しますか？')) return;
+    if (tw && !(await SUDialog.confirm(tw + '\n\nこのまま複製しますか？'))) return;
   }
   pushUndo();
   const newEv = { ...ev, id: uid(), dayOfWeek: dow };
@@ -9235,6 +9257,9 @@ document.addEventListener('keydown', e => {
     if ($('#mk-rm-preview').classList.contains('open')) { closeRmPreview(); return; }
     if ($('#mk-sim-apply').classList.contains('open')) { SIM.closeApply(); return; }
     if ($('#mk-care-info').classList.contains('open')) { closeCareInfoModal(); return; }
+    /* 予定の窓の Esc は、書きかけの時に画面の中の窓（su-dialog.js・2026-11-12）で確かめる。この Esc の既定の動き（閉じる求め）を止めないと、
+       今開いた確かめの窓を同じ Esc がすぐに「キャンセル」で閉じ、確かめが見えないまま何も起きない（実測）。止めるのはこの道の Esc だけ */
+    if ($('#mk-event').classList.contains('open')) e.preventDefault();
     if ($('#mk-event').classList.contains('open'))     { askCloseEventModal(); return; }
     if ($('#mk-resident').classList.contains('open'))  { closeResidentModal(); return; }
     if ($('#mk-bulk').classList.contains('open'))      { closeBulkImport(); return; }
@@ -9347,9 +9372,9 @@ const SIM = {
   },
 
   /* ── 終了（破棄） ── */
-  exit(silent) {
+  async exit(silent) {
     if (!SIM_ON) return;
-    if (!silent && !confirm('試算を破棄して通常モードへ戻ります。よろしいですか。')) return;
+    if (!silent && !(await SUDialog.confirm('試算を破棄して通常モードへ戻ります。よろしいですか。'))) return;
     try { restoreWeekPrint_(); } catch (e) {}
     SIM_ON = false;
     document.body.classList.remove('sim-mode');
@@ -9455,7 +9480,7 @@ const SIM = {
   },
 
   /* ── 反映の実行（実データへ書き込む唯一の経路） ── */
-  applyGo() {
+  async applyGo() {
     if (!SIM_ON) return;
     if (suGetDeviceRole() === 'field') { showToast('この端末（現場用）からは反映できません'); return; }
     const mode = (document.querySelector('input[name="sim-target"]:checked') || {}).value;
@@ -9476,12 +9501,12 @@ const SIM = {
     };
     const baseId = this.baseId, srcName = simRes.name || '';
 
-    if (!confirm(mode === 'new'
+    if (!(await SUDialog.confirm(mode === 'new'
       ? '「' + newName + '」を新規利用者として登録し、試算の予定を反映します。\nこの内容は全端末へ配信されます。よろしいですか。'
-      : '「' + srcName + '」の予定を試算の内容で置き換えます。\nこの内容は全端末へ配信されます。よろしいですか。')) return;
+      : '「' + srcName + '」の予定を試算の内容で置き換えます。\nこの内容は全端末へ配信されます。よろしいですか。'))) return;
 
     this.closeApply();
-    this.exit(true);   /* 実データへ戻す。ここで localStorage の最新版が DB に入る */
+    await this.exit(true);   /* 実データへ戻す。ここで localStorage の最新版が DB に入る */
 
     try { SYNC.stopPolling(); } catch (e) {}
     let okMsg = '';
@@ -9639,6 +9664,10 @@ document.addEventListener('visibilitychange', () => {
 // 未送信の自編集(_dirty)がある間は上書きしない（既存のpoll/競合処理に委ねる）。デバウンスで連続書込を集約。
 let _csStorageTimer = null;
 function _csBusyEditing() {
+  /* 画面の中の窓（su-dialog.js・2026-11-12）が出ている・待っている間も取り込みを保留する（仮置き）。ブラウザの窓と違い、答えを待つ間も
+     30秒ごとの取得・別タブの書き込みの取り込み・名簿の版数の見張りが動き、窓の前に掴んだ利用者・予定が DB の差し替えで古くなるため。
+     別タブの取り込みは捨てずに1秒ごとに待ち直す（下の csScheduleStorageAdopt_）＝窓が閉じた後に必ず取り込む */
+  if (typeof SUDialog !== 'undefined' && SUDialog.busy()) return true;
   /* 編集モーダル表示中／ドラッグ中は取り込みを保留（編集中イベントの下でDB差し替え・ドラッグ中断を防ぐ）。
      事業所情報（報酬マスタを内蔵）と影響プレビューも保留対象に入れる。
      ここを開いたまま取り込みが走ると、画面の入力欄は古いまま DB.rateMaster だけ新しくなり、
