@@ -250,6 +250,17 @@ async function openContext(label, server, storage, extraRoutes, opts) {
     page.__dialogs.push({ t: Date.now(), text: d.message().slice(0, 160), type: d.type() });
     try { if (d.type() === 'prompt' && page.__promptValue != null) await d.accept(page.__promptValue); else await d.accept(); } catch (e) { /* 閉じた */ }
   });
+  /* 2026-11-13: 確かめ・知らせは画面の中の窓（su-dialog.js）になった画面がある。ブラウザの窓と同じに文を記録し、OK を押す（受け方は今までどおり） */
+  await page.exposeFunction('__sudSeen', (m, kind) => { page.__dialogs.push({ t: Date.now(), text: String(m || '').slice(0, 160), type: kind }); });
+  await page.addInitScript(() => {
+    new MutationObserver(() => {
+      const g = document.querySelector('dialog.sud-dlg[open]');
+      if (!g || g.__seen) return;
+      g.__seen = true;
+      window.__sudSeen((g.querySelector('.sud-msg') || {}).textContent || '', g.querySelector('.sud-btn:not(.pri)') ? 'confirm' : 'alert');
+      setTimeout(() => { const b = g.querySelector('.sud-btn.pri'); if (b) b.click(); }, 0);
+    }).observe(document, { subtree: true, childList: true, attributes: true });
+  });
   page.__errors = 0;
   page.on('pageerror', () => { page.__errors++; });
   /* コンソールのエラー（読み込みの失敗も含む）も数える。文は先頭だけ控える（架空データだけの画面） */
