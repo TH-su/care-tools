@@ -201,7 +201,7 @@ const PAGES = [
 ];
 for (const [file, fn, tag, want] of PAGES) {
   const html = fs.readFileSync(path.join(ROOT, file), 'utf8');
-  const tagAt = html.indexOf('<script src="su-errors.js?v=2026-10-27"></script>');
+  const tagAt = html.indexOf('<script src="su-errors.js?v=2026-11-12"></script>');
   const defAt = html.indexOf('function ' + fn + '(');
   const firstOther = (() => {
     const re = /<script\b[^>]*>/g; let m;
