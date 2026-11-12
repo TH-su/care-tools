@@ -190,7 +190,7 @@ const items = (o) => () => ({ data: { ok: true, role: 'office', items: o, ver: '
     'care-meeting.html', 'resident-master.html', 'facesheet.html', 'training-plan.html', 'moushiokuri-viewer.html', 'connection-settings.html'];
   for (const p of PAGES) {
     const h = read(p);
-    t(p + ' は su-errors.js の直後で su-devcfg.js を読む', h.indexOf('<script src="su-errors.js?v=2026-10-27"></script>\n<script src="su-devcfg.js?v=2026-11-08"></script>') >= 0);
+    t(p + ' は su-errors.js の直後で su-devcfg.js を読む', h.indexOf('<script src="su-errors.js?v=2026-11-12"></script>\n<script src="su-devcfg.js?v=2026-11-08"></script>') >= 0);
   }
   const fnBody = (h, head) => { const i = h.indexOf(head); return i < 0 ? '' : h.slice(i, i + 600); };
   const firstGet = (body, key) => { const i = body.indexOf("SUDevCfg.get('" + key + "')"), j = body.indexOf('localStorage'); return i >= 0 && (j < 0 || i < j); };
