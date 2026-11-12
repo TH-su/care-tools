@@ -26,9 +26,9 @@
       band.textContent = '📡 ' + MSG;
       var s = band.style;
       /* ★見出しのボタン・窓を押せなくしない（2026-11-12 反証レビュー）: 1行の小さな札にし、札の上を押しても下のボタンに届く
-         （pointer-events:none）。重なり順は各画面の見出し（〜100）より上・窓（200〜）より下（150）。iPhone の切り欠きをよける */
+         （pointer-events:none）。重なり順は各画面の見出し（〜100）より上・窓より下（140。入居者マスタ・フェイスシートの窓は150・2026-11-12 反証レビュー）。iPhone の切り欠きをよける */
       s.position = 'fixed'; s.left = '50%'; s.top = 'max(6px, env(safe-area-inset-top))'; s.transform = 'translateX(-50%)';
-      s.zIndex = '150'; s.pointerEvents = 'none';
+      s.zIndex = '140'; s.pointerEvents = 'none';
       s.padding = '6px 14px'; s.margin = '0'; s.boxSizing = 'border-box'; s.maxWidth = 'calc(100vw - 24px)';
       s.whiteSpace = 'nowrap'; s.overflow = 'hidden'; s.textOverflow = 'ellipsis'; s.borderRadius = '999px';
       s.background = '#5c2b00'; s.color = '#ffffff';   /* 地との差 約 11:1 */
