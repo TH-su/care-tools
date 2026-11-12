@@ -242,7 +242,7 @@ function partsOf(d){
   console.log('\n体重管理（weight-record.html）への当て方');
   {
     const WR = fs.readFileSync(path.join(ROOT, 'weight-record.html'), 'utf8');
-    const iErr = WR.indexOf('<script src="su-errors.js'), iDlg = WR.indexOf('<script src="su-dialog.js?v=2026-11-13"></script>'), iInline = WR.indexOf('<script>', iErr);
+    const iErr = WR.indexOf('<script src="su-errors.js'), iDlg = WR.indexOf('<script src="su-dialog.js?v=2026-11-13.2"></script>'), iInline = WR.indexOf('<script>', iErr);
     t('su-dialog.js を su-errors.js の後・画面のスクリプトより前に読む', iErr > 0 && iDlg > iErr && iDlg < iInline);
     /* 部品が読めない時の受け口：ブラウザの窓に落とし、同じ約束の形で答える */
     const shimM = /if\(!window\.SUDialog\) window\.SUDialog = \{[\s\S]*?\n\};/.exec(WR);
