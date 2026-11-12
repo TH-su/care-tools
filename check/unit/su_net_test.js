@@ -45,7 +45,7 @@ console.log('su-net.js');
   t('読み上げに知らせる（role=status・aria-live=polite）', b && b.attrs.role === 'status' && b.attrs['aria-live'] === 'polite');
   t('文字は15px・1行の札', b && /15px/.test(b.style.font) && b.style.whiteSpace === 'nowrap');
   t('札の上を押しても下のボタンに届く（pointer-events:none）', b && b.style.pointerEvents === 'none');
-  t('重なり順は見出し（〜100）より上・窓（200〜）より下', b && Number(b.style.zIndex) > 100 && Number(b.style.zIndex) < 200);
+  t('重なり順は見出し（〜100）より上・窓（入居者マスタ・フェイスシートの150〜）より下', b && Number(b.style.zIndex) > 100 && Number(b.style.zIndex) < 150);
   E.fire('online');
   t('つながった: 帯が消える', hiddenOrNone(E) && b.hidden === true);
   E.fire('offline');
