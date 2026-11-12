@@ -11,6 +11,14 @@
  * 入居者マスタの全項目の写し（統合 0034・2026-10-29 代表者の決定5）: 管理者がボタンを押した時だけ、su-res-full.js で Google（rmaster_cfg）から
  *   全員分を読み、Supabase へ写して読み直し、見比べる。Google へは読むだけ。出すのは人数・件数・利用者No・項目名だけ。
  */
+/* 画面の中の窓（su-dialog.js）が読めなかった時の受け口（2026-11-13）。ブラウザの窓に落とし、呼ぶ側と同じ約束（Promise）で答える。
+   この画面は CSP で直書きのスクリプトを置かないため、職員マスタと同じく、体重管理の HTML の受け口と同じ中身をここに置く */
+if (!window.SUDialog) window.SUDialog = {
+  alert: function (m) { try { window.alert(m); } catch (_) { /* 何もしない */ } return Promise.resolve(); },
+  confirm: function (m) { var r = false; try { r = !!window.confirm(m); } catch (_) { /* 何もしない */ } return Promise.resolve(r); },
+  busy: function () { return false; },
+  idle: function () { return Promise.resolve(); }
+};
 (function () {
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
@@ -28,6 +36,9 @@
    * 最上部の「見比べ直す」など、ページの上の方（v-main の外）のボタンは最上部の欄だけで足りる。 */
   var msgAnchor = null;
   document.addEventListener('click', function (e) {
+    /* 画面の中の窓（su-dialog.js）の中（OK・キャンセル・Enter も押した扱い・窓の文・暗い後ろ）を押した時は付け替えない。
+       答えの後の文を、窓を開いたボタンの並びの下に出すため（2026-11-13） */
+    if (e.target && e.target.closest && e.target.closest('dialog')) return;
     var b = e.target && e.target.closest ? e.target.closest('button') : null;
     msgAnchor = b && b.closest ? b.closest('.acts') : null;
   }, true);
@@ -351,8 +362,8 @@
     var q = mode === 'live'
       ? '週間計画とワークスケジュールの保存先を Supabase（本番）に切り替えますか？\n\n「切り替え前の点検」がそろっていることを確かめてから進めてください。'
       : '週間計画とワークスケジュールを「写しの期間」に戻しますか？\n\n統合 GAS のスクリプト プロパティ KV_SWITCHED_FAMILIES から care・ws_master・wsday を外しましたか？（外さないと、Google へ戻した後の全端末の保存が断られます）';
-    if (!confirm(q)) return;
-    if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
+    if (!(await window.SUDialog.confirm(q))) return;
+    if (!(await window.SUDialog.confirm('本当に実行しますか？（操作は記録に残ります）'))) return;
     var r = await SUAuth.client().rpc('kv_set_family_mode', { p_families: CUT_FAMS, p_mode: mode });
     if (r.error || !r.data || !r.data.ok) {
       var why = String((r.error && (r.error.code || r.error.message)) || (r.data && r.data.error) || '');
@@ -385,8 +396,8 @@
     var q = mode === 'live'
       ? '勤務表の保存先を Supabase（本番）に切り替えますか？\n\n編集中の端末は、いったん閲覧モードに戻ります（入力は端末に退避されます）。'
       : '勤務表を「写しの期間」に戻しますか？\n\n戻している間、勤務表の保存は各端末に残ります。続けて「勤務表を Google へ写し返す」を押し、全部そろってから勤務表のスイッチを切る PR を取り込んでください（スイッチを切るのは最後）。';
-    if (!confirm(q)) return;
-    if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
+    if (!(await window.SUDialog.confirm(q))) return;
+    if (!(await window.SUDialog.confirm('本当に実行しますか？（操作は記録に残ります）'))) return;
     var r = await SUAuth.client().rpc('kv_set_family_mode', { p_families: ['shift'], p_mode: mode });
     if (r.error || !r.data || !r.data.ok) {
       var why = String((r.error && (r.error.code || r.error.message)) || (r.data && r.data.error) || '');
@@ -472,7 +483,7 @@
       todo = p.write; same = p.same;
       if (!todo.length) { shbMsg('全部そろっています（勤務表 ' + keys.length + '件とも Google と同じ中身）。勤務表のスイッチを切る PR を取り込んでかまいません。', 'ok'); return; }
       shbMsg('Google と中身が違う勤務表が ' + todo.length + '件あります（同じ ' + same + '件）。例: ' + todo.slice(0, 6).join('、'), 'warn');
-      if (!confirm('勤務表の ' + todo.length + '件を、Supabase の中身で Google へ上書きします（中身が同じ ' + same + '件は飛ばします）。\n\nよろしいですか？')) return;
+      if (!(await window.SUDialog.confirm('勤務表の ' + todo.length + '件を、Supabase の中身で Google へ上書きします（中身が同じ ' + same + '件は飛ばします）。\n\nよろしいですか？'))) return;
       // 確認の間に本番へ切り替えられていないか、もう一度確かめる（2026-10-16 差分審査 低6）
       if (await shiftFamMode(sb) !== 'shadow') { shbMsg(SHB_MODE_LOST + '（まだ1件も写していません）', 'ng'); return; }
       for (var i = 0; i < todo.length; i++) {
@@ -529,8 +540,8 @@
     var q = on
       ? 'Supabase 側の勤務表を厳格モードにしますか？\n\n編集の権利（券）を持たない端末の保存を、すべて断るようになります。'
       : 'Supabase 側の勤務表の厳格モードを外しますか？\n\n誰も編集中でない間は、編集の権利（券）を持たない端末の保存も通るようになります。';
-    if (!confirm(q)) return;
-    if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
+    if (!(await window.SUDialog.confirm(q))) return;
+    if (!(await window.SUDialog.confirm('本当に実行しますか？（操作は記録に残ります）'))) return;
     $('b-lock-on').disabled = true; $('b-lock-off').disabled = true;
     try {
       var r = await SUAuth.client().rpc('shift_set_lock_required', { p_on: !!on });
@@ -559,8 +570,8 @@
     return (r.data && r.data[0] && r.data[0].mode) || 'shadow';
   }
   async function stopWsday() {
-    if (!confirm('ワークスケジュールの日ごとの保存先（Supabase）を止めますか？\n\n止めている間、日ごとの保存は各端末に残り、日ごとのスイッチを切った後に Google へ届きます。\n\nスイッチを切る前に、統合 GAS のスクリプト プロパティ KV_SWITCHED_FAMILIES から wsday を外してください（外さないと日ごとの保存が全部断られます）。')) return;
-    if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
+    if (!(await window.SUDialog.confirm('ワークスケジュールの日ごとの保存先（Supabase）を止めますか？\n\n止めている間、日ごとの保存は各端末に残り、日ごとのスイッチを切った後に Google へ届きます。\n\nスイッチを切る前に、統合 GAS のスクリプト プロパティ KV_SWITCHED_FAMILIES から wsday を外してください（外さないと日ごとの保存が全部断られます）。'))) return;
+    if (!(await window.SUDialog.confirm('本当に実行しますか？（操作は記録に残ります）'))) return;
     wbBusy(true);
     try {
       var r = await SUAuth.client().rpc('kv_set_family_mode', { p_families: ['wsday'], p_mode: 'shadow' });
@@ -712,7 +723,7 @@
     var tgt = gasTarget(), sb = SUAuth.client();
     if (!tgt) { say('この端末には Google の接続先がありません。'); return; }
     var keys = mcFix.slice();
-    if (!confirm('Google の古い ' + keys.length + '件を、Supabase（本番）の中身で上書きしますか？\n\nGoogle を読む画面（俯瞰など）の表示が新しくなります。本番の中身（Supabase）は変わりません。')) return;
+    if (!(await window.SUDialog.confirm('Google の古い ' + keys.length + '件を、Supabase（本番）の中身で上書きしますか？\n\nGoogle を読む画面（俯瞰など）の表示が新しくなります。本番の中身（Supabase）は変わりません。'))) return;
     mcOn = true; $('b-mirror-check').disabled = true; $('b-mirror-fix').disabled = true;
     var wrote = 0, failed = [];
     try {
@@ -954,7 +965,13 @@
       if (res[3].error) throw new Error(String(res[3].error.message || res[3].error.code));
       var returning = shiftReturning((res[3].data || [])[0] || null, shiftSwitch());
       var idxErr = idx.filter(function (r) { return r.error; })[0];
-      if (idxErr) throw new Error(/PGRST202|42883/.test(String(idxErr.error.code || idxErr.error.message)) ? 'データベースの準備（0007）がまだです。' : String(idxErr.error.message || idxErr.error.code));
+      /* データベースの準備がまだの時は、今までどおりの文をここで出して終える（下の「点検できませんでした。」の一文にまとめないため・2026-11-13） */
+      if (idxErr && /PGRST202|42883/.test(String(idxErr.error.code || idxErr.error.message))) {
+        verdict.className = 'msg ng';
+        verdict.textContent = '点検できませんでした: データベースの準備（0007）がまだです。';
+        return;
+      }
+      if (idxErr) throw new Error(String(idxErr.error.message || idxErr.error.code));
       var ready = true, reasons = [], shiftBad = 0;
       FAMS.forEach(function (f, i) {
         var copy = (idx[i].data && idx[i].data.revs) || {};
@@ -1022,7 +1039,13 @@
         : 'まだ切り替えられません: ' + reasons.join('／') + '。' + (plan.length ? '「足りない分を写す」を押すと、Google から写しを取り直します。' : '');
     } catch (e) {
       verdict.className = 'msg ng';
-      verdict.textContent = '点検できませんでした: ' + String(e && e.message || e);
+      /* 元の文（英語のことがある）は画面に出さず記録に残す。画面の文は仮置き（2026-11-13） */
+      try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('写しの見比べ: 切り替え前の点検', String(e && e.message || e)); } catch (x) { /* 記録できなくても止めない */ }
+      /* Google の時間切れ（gasPost が作る日本語の文）だけは、切り替えの夜に原因が分かるよう今までどおりの文を出す（2026-11-13・仮置き）。
+         ほかの失敗（Google の断り・応答の番号・通信の失敗など）は一文にまとめる */
+      var timedOut = String(e && e.message || '') === 'Google の応答がありません（時間切れ）';
+      verdict.textContent = timedOut ? '点検できませんでした: Google の応答がありません（時間切れ）'
+        : '点検できませんでした。通信の状態を確かめて、もう一度押してください。';
     } finally {
       busy(false);
     }
@@ -1085,7 +1108,11 @@
     $('kv-admin').hidden = !(me && me.role === 'admin');
     if (me && me.role === 'admin') {
       try { await loadLock(sb); }
-      catch (e) { $('lk-state').className = 'msg warn'; $('lk-state').textContent = 'Supabase 側の厳格モードの状態を読めませんでした: ' + String(e && e.message || e); }
+      catch (e) {
+        /* 元の文は記録に残し、画面には職員に分かる一文だけを出す（仮置き・2026-11-13） */
+        try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('写しの見比べ: 厳格モードの状態の読み込み', String(e && e.message || e)); } catch (x) { /* 記録できなくても止めない */ }
+        $('lk-state').className = 'msg warn'; $('lk-state').textContent = 'Supabase 側の厳格モードの状態を読めませんでした。「見比べ直す」を押してください。';
+      }
     }
     try { await loadWeight(sb); }
     catch (e) {
@@ -1239,7 +1266,7 @@
     if (role === 'field') { say('この端末は「現場」です。事務所のパソコンで行ってください。', 'warn'); return; }
     var tgt = rmasterTarget();
     if (!tgt) { say('この端末には入居者マスタの接続先（Google）がありません。この端末で入居者マスタを開いてから、押し直してください。', 'warn'); return; }
-    if (!confirm('入居者マスタの全員分を Supabase へ写しますか？\n\n数分かかります。終わるまでこの画面を閉じないでください。Google の入居者マスタは読むだけで、変えません。')) return;
+    if (!(await window.SUDialog.confirm('入居者マスタの全員分を Supabase へ写しますか？\n\n数分かかります。終わるまでこの画面を閉じないでください。Google の入居者マスタは読むだけで、変えません。'))) return;
     kk.replaceChildren(); ul.replaceChildren();
     btn.disabled = true;
     var sb = SUAuth.client();
@@ -1317,7 +1344,7 @@
     var tt = tpTarget(), mt = rmasterTarget();
     if (!tt) { say('この端末には個別機能訓練計画書の接続先（Google）がありません。この端末で計画書を開いてから、押し直してください。', 'warn'); return; }
     if (!mt) { say('この端末には入居者マスタの接続先（Google）がありません。この端末で入居者マスタを開いてから、押し直してください。', 'warn'); return; }
-    if (!confirm('個別機能訓練計画書の全部を Supabase へ写しますか？\n\n数分かかります。終わるまでこの画面を閉じないでください。Google の計画書は読むだけで、変えません。')) return;
+    if (!(await window.SUDialog.confirm('個別機能訓練計画書の全部を Supabase へ写しますか？\n\n数分かかります。終わるまでこの画面を閉じないでください。Google の計画書は読むだけで、変えません。'))) return;
     kk.replaceChildren(); ul.replaceChildren();
     btn.disabled = true;
     var sb = SUAuth.client();
@@ -1397,7 +1424,7 @@
     if (role === 'field') { say('この端末は「現場」です。事務所のパソコンで行ってください。', 'warn'); return; }
     var at = admTarget();
     if (!at) { say('この端末には入居調整の接続先（Google）がありません。この端末で入居調整を開いてから、押し直してください。', 'warn'); return; }
-    if (!confirm('入居調整の台帳を Supabase へ写しますか？\n\nGoogle の台帳は読むだけで、変えません。添付書類は写しません。')) return;
+    if (!(await window.SUDialog.confirm('入居調整の台帳を Supabase へ写しますか？\n\nGoogle の台帳は読むだけで、変えません。添付書類は写しません。'))) return;
     kk.replaceChildren();
     btn.disabled = true;
     var sb = SUAuth.client();
@@ -1562,11 +1589,11 @@
       if (!suppliesOn()) { say('切り替えスイッチ（supplies）が入っていません。', 'warn'); return; }
       if (!(await oneDayOk('sup', say))) return;
       if (!(await fnOk('sup', 'b-sup-cut', say))) return;
-      if (!confirm('備品（消耗品管理）の正本を新しい保存先（Supabase）へ切り替えますか？\n\n1分ほどかかります。その間は入出庫・品目・価格などの保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、ログインしている端末だけが消耗品管理を使えます。Google へは1時間ごとに写し返します。いつでも「備品を写しの期間に戻す」で戻せます。')) return;
+      if (!(await window.SUDialog.confirm('備品（消耗品管理）の正本を新しい保存先（Supabase）へ切り替えますか？\n\n1分ほどかかります。その間は入出庫・品目・価格などの保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、ログインしている端末だけが消耗品管理を使えます。Google へは1時間ごとに写し返します。いつでも「備品を写しの期間に戻す」で戻せます。'))) return;
     } else {
-      if (!confirm('備品を写しの期間に戻しますか？\n\n切り替えていた間の保存を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。')) return;
+      if (!(await window.SUDialog.confirm('備品を写しの期間に戻しますか？\n\n切り替えていた間の保存を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。'))) return;
     }
-    if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
+    if (!(await window.SUDialog.confirm('本当に実行しますか？（操作は記録に残ります）'))) return;
     var bc = $('b-sup-cut'), bb = $('b-sup-back');
     bc.disabled = true; bb.disabled = true;
     var sb = SUAuth.client();
@@ -1677,11 +1704,11 @@
     if (kind === 'cut') {
       if (!analyzerOn()) { say('切り替えスイッチ（analyzer）が入っていません。', 'warn'); return; }
       if (!(await oneDayOk('sa', say))) return;
-      if (!confirm('シフト分析（過去シフト・アナライザのクラウド同期）の正本を新しい保存先（Supabase）へ切り替えますか？\n\n1分ほどかかります。その間はクラウドへの保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、事務所か管理者のアカウントでログインしている端末だけがクラウド同期を使えます。切り替えた後の最初の同期で、どの端末も全部を読み直して統合します。Google へは1時間ごとに写し返します。いつでも「シフト分析を写しの期間に戻す」で戻せます。')) return;
+      if (!(await window.SUDialog.confirm('シフト分析（過去シフト・アナライザのクラウド同期）の正本を新しい保存先（Supabase）へ切り替えますか？\n\n1分ほどかかります。その間はクラウドへの保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、事務所か管理者のアカウントでログインしている端末だけがクラウド同期を使えます。切り替えた後の最初の同期で、どの端末も全部を読み直して統合します。Google へは1時間ごとに写し返します。いつでも「シフト分析を写しの期間に戻す」で戻せます。'))) return;
     } else {
-      if (!confirm('シフト分析を写しの期間に戻しますか？\n\n切り替えていた間の保存を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。')) return;
+      if (!(await window.SUDialog.confirm('シフト分析を写しの期間に戻しますか？\n\n切り替えていた間の保存を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。'))) return;
     }
-    if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
+    if (!(await window.SUDialog.confirm('本当に実行しますか？（操作は記録に残ります）'))) return;
     var bc = $('b-sa-cut'), bb = $('b-sa-back');
     bc.disabled = true; bb.disabled = true;
     var sb = SUAuth.client();
@@ -1823,11 +1850,11 @@
     if (kind === 'cut') {
       if (!hbOn()) { say('切り替えスイッチ（haiben）が入っていません。', 'warn'); return; }
       if (!(await oneDayOk('hb', say))) return;
-      if (!confirm('排泄ケア記録の正本を新しい保存先（Supabase）へ切り替えますか？\n\n数分かかります。その間の保存は各端末に控えられ、後で送られます。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、ログインしている端末だけが記録をサーバーへ送れます（ログインしていない端末は記録を端末に控え、帯で知らせます）。Google へは1時間ごとに写し返します。いつでも「排泄ケア記録を写しの期間に戻す」で戻せます。')) return;
+      if (!(await window.SUDialog.confirm('排泄ケア記録の正本を新しい保存先（Supabase）へ切り替えますか？\n\n数分かかります。その間の保存は各端末に控えられ、後で送られます。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、ログインしている端末だけが記録をサーバーへ送れます（ログインしていない端末は記録を端末に控え、帯で知らせます）。Google へは1時間ごとに写し返します。いつでも「排泄ケア記録を写しの期間に戻す」で戻せます。'))) return;
     } else {
-      if (!confirm('排泄ケア記録を写しの期間に戻しますか？\n\n切り替えていた間の記録を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します（その間の保存は各端末に控えられ、後で送られます）。')) return;
+      if (!(await window.SUDialog.confirm('排泄ケア記録を写しの期間に戻しますか？\n\n切り替えていた間の記録を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します（その間の保存は各端末に控えられ、後で送られます）。'))) return;
     }
-    if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
+    if (!(await window.SUDialog.confirm('本当に実行しますか？（操作は記録に残ります）'))) return;
     var bc = $('b-hb-cut'), bb = $('b-hb-back');
     bc.disabled = true; bb.disabled = true;
     var sb = SUAuth.client();
@@ -1889,11 +1916,11 @@
     if (op === 'cut') {
       if (!docOn()) { say('切り替えスイッチ（docs）が入っていません。', 'warn'); return; }
       if (!(await oneDayOk('doc', say))) return;
-      if (!confirm(nm + 'の添付書類の正本を新しい保存先（Supabase）へ切り替えますか？\n\n数分かかります。その間は' + nm + 'で書類を置く・消すことができません。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、ログインしている事務所のパソコンだけが書類を置く・開く・消すことができます。Google ドライブへは1時間ごとに写し返します。いつでも「' + nm + 'の書類を写しの期間に戻す」で戻せます。')) return;
+      if (!(await window.SUDialog.confirm(nm + 'の添付書類の正本を新しい保存先（Supabase）へ切り替えますか？\n\n数分かかります。その間は' + nm + 'で書類を置く・消すことができません。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、ログインしている事務所のパソコンだけが書類を置く・開く・消すことができます。Google ドライブへは1時間ごとに写し返します。いつでも「' + nm + 'の書類を写しの期間に戻す」で戻せます。'))) return;
     } else {
-      if (!confirm(nm + 'の書類を写しの期間に戻しますか？\n\n切り替えていた間に置いた・消した書類を最後まで Google ドライブへ写し返してから、Google での書類の出し入れを受け付けるように戻します（その間は書類を置く・消すことができません）。')) return;
+      if (!(await window.SUDialog.confirm(nm + 'の書類を写しの期間に戻しますか？\n\n切り替えていた間に置いた・消した書類を最後まで Google ドライブへ写し返してから、Google での書類の出し入れを受け付けるように戻します（その間は書類を置く・消すことができません）。'))) return;
     }
-    if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
+    if (!(await window.SUDialog.confirm('本当に実行しますか？（操作は記録に残ります）'))) return;
     var ids = ['b-doc-stf-cut', 'b-doc-stf-back', 'b-doc-adm-cut', 'b-doc-adm-back'];
     ids.forEach(function (id) { $(id).disabled = true; });
     var sb = SUAuth.client();
@@ -2062,11 +2089,11 @@
     if (kind === 'cut') {
       if (!genoOn()) { say('切り替えスイッチ（genogram）が入っていません。', 'warn'); return; }
       if (!(await oneDayOk('geno', say))) return;
-      if (!confirm('家族構成図のクラウド同期の正本を新しい保存先（Supabase）へ切り替えますか？\n\n1分ほどかかります。その間はクラウドへの保存が断られます（端末には残ります）。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、事務所か管理者のアカウントでログインしている端末だけが図を保存・削除できます（現場のアカウントは見るだけ・ログインしていない端末は使えません）。Google へは1時間ごとに写し返します。いつでも「家族構成図を写しの期間に戻す」で戻せます。')) return;
+      if (!(await window.SUDialog.confirm('家族構成図のクラウド同期の正本を新しい保存先（Supabase）へ切り替えますか？\n\n1分ほどかかります。その間はクラウドへの保存が断られます（端末には残ります）。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、事務所か管理者のアカウントでログインしている端末だけが図を保存・削除できます（現場のアカウントは見るだけ・ログインしていない端末は使えません）。Google へは1時間ごとに写し返します。いつでも「家族構成図を写しの期間に戻す」で戻せます。'))) return;
     } else {
-      if (!confirm('家族構成図を写しの期間に戻しますか？\n\n切り替えていた間の保存・削除を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。')) return;
+      if (!(await window.SUDialog.confirm('家族構成図を写しの期間に戻しますか？\n\n切り替えていた間の保存・削除を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。'))) return;
     }
-    if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
+    if (!(await window.SUDialog.confirm('本当に実行しますか？（操作は記録に残ります）'))) return;
     var bc = $('b-geno-cut'), bb = $('b-geno-back');
     bc.disabled = true; bb.disabled = true;
     var sb = SUAuth.client();
@@ -2219,11 +2246,11 @@
       if (!(await gatePass('stf'))) { say(GATE_NG, 'warn'); return; }
       if (!staffOn()) { say('切り替えスイッチ（staff）が入っていません。', 'warn'); return; }
       if (!(await fnOk('stf', 'b-stf-cut', say))) return;
-      if (!confirm('職員マスタの正本を新しい保存先（Supabase）へ切り替えますか？\n\n1分ほどかかります。その間は職員マスタ・採用管理からの保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n添付ファイルは今までどおり Google ドライブに置きます。切り替えた後は、保存のたびと1時間ごとに Google へ写し返します。いつでも「職員マスタを写しの期間に戻す」で戻せます。')) return;
+      if (!(await window.SUDialog.confirm('職員マスタの正本を新しい保存先（Supabase）へ切り替えますか？\n\n1分ほどかかります。その間は職員マスタ・採用管理からの保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n添付ファイルは今までどおり Google ドライブに置きます。切り替えた後は、保存のたびと1時間ごとに Google へ写し返します。いつでも「職員マスタを写しの期間に戻す」で戻せます。'))) return;
     } else {
-      if (!confirm('職員マスタを写しの期間に戻しますか？\n\n切り替えていた間の保存を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。')) return;
+      if (!(await window.SUDialog.confirm('職員マスタを写しの期間に戻しますか？\n\n切り替えていた間の保存を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。'))) return;
     }
-    if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
+    if (!(await window.SUDialog.confirm('本当に実行しますか？（操作は記録に残ります）'))) return;
     var bc = $('b-stf-cut'), bb = $('b-stf-back');
     bc.disabled = true; bb.disabled = true;
     var sb = SUAuth.client();
@@ -2287,14 +2314,14 @@
       if (!(await gatePass('adm'))) { say(GATE_NG, 'warn'); return; }
       if (!admissionOn()) { say('切り替えスイッチ（admission）が入っていません。', 'warn'); return; }
       if (!(await fnOk('adm', 'b-adm-cut', say))) return;
-      if (!confirm('入居調整の台帳の正本を新しい保存先（Supabase）へ切り替えますか？\n\n1分ほどかかります。その間は台帳の保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n添付書類は今までどおり Google（Drive）に置きます。切り替えた後は、保存のたびに Google へ写し返します。いつでも「入居調整を写しの期間に戻す」で戻せます。')) return;
+      if (!(await window.SUDialog.confirm('入居調整の台帳の正本を新しい保存先（Supabase）へ切り替えますか？\n\n1分ほどかかります。その間は台帳の保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n添付書類は今までどおり Google（Drive）に置きます。切り替えた後は、保存のたびに Google へ写し返します。いつでも「入居調整を写しの期間に戻す」で戻せます。'))) return;
     } else {
       /* 切り替えた後でも途中でもない時は、それに合う文で確かめる（反証レビュー指摘3） */
       var idle = !!(admState && !admState.live && !admState.stuck);
-      if (!confirm(idle ? '入居調整の「写しの期間に戻す」を押しますか？\n\n止まったままの切り替えを終わらせます。止まっていなければ何も変わりません。'
-                        : '入居調整を写しの期間に戻しますか？\n\n新しい保存先での保存を止め、切り替えていた間の保存を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。')) return;
+      if (!(await window.SUDialog.confirm(idle ? '入居調整の「写しの期間に戻す」を押しますか？\n\n止まったままの切り替えを終わらせます。止まっていなければ何も変わりません。'
+                        : '入居調整を写しの期間に戻しますか？\n\n新しい保存先での保存を止め、切り替えていた間の保存を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。'))) return;
     }
-    if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
+    if (!(await window.SUDialog.confirm('本当に実行しますか？（操作は記録に残ります）'))) return;
     var bc = $('b-adm-cut'), bb = $('b-adm-back');
     bc.disabled = true; bb.disabled = true;
     var sb = SUAuth.client();
@@ -2370,7 +2397,7 @@
     var v = $('tpf-ai');
     function say(t, k) { v.className = 'msg' + (k ? ' ' + k : ''); v.textContent = t; }
     if (!(me && me.role === 'admin' && me.status === SUAuth.STATUS.OK)) { say('管理者（二段階認証済み）のアカウントで開いてください。', 'warn'); return; }
-    if (!confirm('AI の中継（新しい受け口）へ、「はい」とだけ答えさせる短い依頼を1回送りますか？\n\n入居者の情報は送りません。1回の利用として数えます。')) return;
+    if (!(await window.SUDialog.confirm('AI の中継（新しい受け口）へ、「はい」とだけ答えさせる短い依頼を1回送りますか？\n\n入居者の情報は送りません。1回の利用として数えます。'))) return;
     var b = $('b-tp-ai'), t0 = Date.now();
     b.disabled = true; say('送っています…');
     try {
@@ -2394,14 +2421,14 @@
       if (!(await gatePass('tp'))) { say(GATE_NG, 'warn'); return; }
       if (!trainingOn()) { say('切り替えスイッチ（training）が入っていません。', 'warn'); return; }
       if (!(await fnOk('tp', 'b-tp-cut', say))) return;
-      if (!confirm('個別機能訓練計画書の正本を新しい保存先（Supabase）へ切り替えますか？\n\n数分かかります。その間は計画書の保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、保存のたびに Google へ写し返します。いつでも「計画書を写しの期間に戻す」で戻せます。')) return;
+      if (!(await window.SUDialog.confirm('個別機能訓練計画書の正本を新しい保存先（Supabase）へ切り替えますか？\n\n数分かかります。その間は計画書の保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、保存のたびに Google へ写し返します。いつでも「計画書を写しの期間に戻す」で戻せます。'))) return;
     } else {
       /* 切り替えた後でも途中でもない時は、それに合う文で確かめる（反証レビュー指摘3） */
       var idle = !!(tpState && !tpState.live && !tpState.stuck);
-      if (!confirm(idle ? '個別機能訓練計画書の「写しの期間に戻す」を押しますか？\n\n止まったままの切り替えを終わらせます。止まっていなければ何も変わりません。'
-                        : '個別機能訓練計画書を写しの期間に戻しますか？\n\n新しい保存先での保存を止め、切り替えていた間の保存を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。')) return;
+      if (!(await window.SUDialog.confirm(idle ? '個別機能訓練計画書の「写しの期間に戻す」を押しますか？\n\n止まったままの切り替えを終わらせます。止まっていなければ何も変わりません。'
+                        : '個別機能訓練計画書を写しの期間に戻しますか？\n\n新しい保存先での保存を止め、切り替えていた間の保存を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。'))) return;
     }
-    if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
+    if (!(await window.SUDialog.confirm('本当に実行しますか？（操作は記録に残ります）'))) return;
     var bc = $('b-tp-cut'), bb = $('b-tp-back');
     bc.disabled = true; bb.disabled = true;
     var sb = SUAuth.client();
@@ -2481,14 +2508,14 @@
       if (!(await gatePass('res'))) { say(GATE_NG, 'warn'); return; }
       if (!masterLiveOn()) { say('切り替えスイッチ（master_live）が入っていません。', 'warn'); return; }
       if (!(await fnOk('res', 'b-res-cut', say))) return;
-      if (!confirm('入居者マスタの正本を新しい保存先（Supabase）へ切り替えますか？\n\n数分かかります。その間は入居者マスタ・担当者会議・入居調整などの保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、保存のたびに Google へ写し返します。いつでも「写しの期間に戻す」で戻せます。')) return;
+      if (!(await window.SUDialog.confirm('入居者マスタの正本を新しい保存先（Supabase）へ切り替えますか？\n\n数分かかります。その間は入居者マスタ・担当者会議・入居調整などの保存が断られます（「読み込み直して」と出ます）。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、保存のたびに Google へ写し返します。いつでも「写しの期間に戻す」で戻せます。'))) return;
     } else {
       /* 切り替えた後でも途中でもない時は、それに合う文で確かめる（反証レビュー指摘3） */
       var idle = !!(resState && !resState.live && !resState.stuck);
-      if (!confirm(idle ? '入居者マスタの「写しの期間に戻す」を押しますか？\n\n止まったままの切り替えを終わらせます。止まっていなければ何も変わりません。'
-                        : '入居者マスタを写しの期間に戻しますか？\n\n新しい保存先での保存を止め、切り替えていた間の保存を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。')) return;
+      if (!(await window.SUDialog.confirm(idle ? '入居者マスタの「写しの期間に戻す」を押しますか？\n\n止まったままの切り替えを終わらせます。止まっていなければ何も変わりません。'
+                        : '入居者マスタを写しの期間に戻しますか？\n\n新しい保存先での保存を止め、切り替えていた間の保存を最後まで Google へ写し返してから、Google での保存を受け付けるように戻します。'))) return;
     }
-    if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
+    if (!(await window.SUDialog.confirm('本当に実行しますか？（操作は記録に残ります）'))) return;
     var bc = $('b-res-cut'), bb = $('b-res-back');
     bc.disabled = true; bb.disabled = true;
     var sb = SUAuth.client();
@@ -2541,8 +2568,8 @@
     var q = mode === 'live'
       ? '体重の保存先を Supabase（本番）に切り替えますか？\n\n15分以内に事務所PCで体重管理を開き、写しを最新にしてから進めてください。切り替えた後も、Google へは各端末が写し返します。'
       : '体重を「写しの期間」に戻しますか？\n\n各端末は次の通信から Google へ送ります（端末に残っている Google への写し返しを先に送ります）。';
-    if (!confirm(q)) return;
-    if (!confirm('本当に実行しますか？（操作は記録に残ります）')) return;
+    if (!(await window.SUDialog.confirm(q))) return;
+    if (!(await window.SUDialog.confirm('本当に実行しますか？（操作は記録に残ります）'))) return;
     var r = await SUAuth.client().rpc('weight_set_mode', { p_mode: mode });
     if (r.error || !r.data || !r.data.ok) {
       var why = String((r.error && (r.error.code || r.error.message)) || (r.data && r.data.error) || '');
@@ -2727,11 +2754,31 @@
       await load();
       view('main');
     } catch (e) {
-      $('gate-why').textContent = '読み込めませんでした: ' + String(e && e.message || e);
+      /* 元の文は記録に残し、画面にはほかの画面と同じ一文を出す（仮置き・2026-11-13） */
+      try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('写しの見比べ: 開いた時の読み込み', String(e && e.message || e)); } catch (x) { /* 記録できなくても止めない */ }
+      $('gate-why').textContent = '読み込めませんでした。ページを読み込み直してください。';
       view('gate');
     }
   }
   var me = null;
+  /* 切り替え・戻す・写し返し・厳格モード・止める・写すの操作は、画面全体で1つずつ（2026-11-13 反証レビューの指摘・仮置き）。
+   * ブラウザの窓はページを止めていたので、1回目の2段の確かめは途切れずに続いた。画面の中の窓では、確かめの前の待ち（1日1つの確かめなど）の間に
+   * 二度押し・別の種類のボタンを押すと、窓が交互に並び、どの押しの「本当に」か見分けられないまま同じ切り替えが2本・別の種類が1日に2つ走り得る。
+   * 押した最初に印が立っていれば何もせずに戻る（新しい文は出さない）。印は押した最初に立て、どの道で終わっても外す。
+   * 関数の中身（ボタンを押せなくする処理を含む）は変えず、名前の指す先を包む */
+  var opBusy = false;
+  function oneOp(fn) {
+    return async function () {
+      if (opBusy) return;
+      opBusy = true;
+      try { return await fn.apply(null, arguments); } finally { opBusy = false; }
+    };
+  }
+  setMode = oneOp(setMode); setShiftMode = oneOp(setShiftMode); writeBackShift = oneOp(writeBackShift); setLock = oneOp(setLock);
+  stopWsday = oneOp(stopWsday); runMirrorFix = oneOp(runMirrorFix); runResFull = oneOp(runResFull); runTpFull = oneOp(runTpFull);
+  runAdmFull = oneOp(runAdmFull); runSupOp = oneOp(runSupOp); runSaOp = oneOp(runSaOp); runHbOp = oneOp(runHbOp); runDocOp = oneOp(runDocOp);
+  runGenoOp = oneOp(runGenoOp); runStfOp = oneOp(runStfOp); runAdmOp = oneOp(runAdmOp); runTpAi = oneOp(runTpAi); runTpOp = oneOp(runTpOp);
+  runResOp = oneOp(runResOp); setWeightMode = oneOp(setWeightMode);
   $('b-live').addEventListener('click', function () { setMode('live'); });
   $('b-shadow').addEventListener('click', function () { setMode('shadow'); });
   $('b-live-shift').addEventListener('click', function () { setShiftMode('live'); });
