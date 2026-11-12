@@ -19,6 +19,7 @@ const vm = require('vm');
 const ROOT = path.join(__dirname, '..', '..');
 const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
 let pass = 0, fail = 0;
+const PENDING = [];   // 答えを待つ試験（最後にそろってから合計を出す）
 function t(name, ok, info) {
   if (ok) { pass++; console.log('  ✓ ' + name); }
   else { fail++; console.log('  ✗ ' + name + '  → ' + JSON.stringify(info)); }
@@ -330,16 +331,20 @@ console.log('\n— 5. 体重管理：サンプル投入の確かめ・見出し 
 {
   const h0 = WR.indexOf("$('#cfgSample').addEventListener('click'");
   const handler = WR.slice(h0, WR.indexOf("toast('サンプルを投入しました');", h0));
-  const iConf = handler.indexOf('if(!wrSampleConfirm()) return;');
+  /* 2026-11-12: 確かめは画面の中の窓（su-dialog.js）になり、答えを待つ形（await）で呼ぶ。確かめる順番・場所は今までどおり */
+  const iConf = handler.indexOf('if(!(await wrSampleConfirm())) return;');
   t('5-1 現場の止め・同期中の止めの後、名簿に入れる前に必ず確かめる', iConf > handler.indexOf('wrSyncDeny()') && handler.indexOf('wrFieldDeny()') < iConf && iConf < handler.indexOf('DB.residents.push'), iConf);
   t('5-2 名簿の人数で確かめを飛ばさない（古い条件付きの確かめは無い）', !/DB\.residents\.length\s*>\s*0\s*&&\s*!confirm/.test(handler));
   const asked = [];
-  for (const ans of [false, true]) {
-    const ctx = vm.createContext({ confirm: (m) => { asked.push(m); return ans; } });
-    vm.runInContext(cutStmt(WR, 'const WR_SAMPLE_MSG', ';').replace(/^const /, 'var ') + '\n' + cutF(WR, 'wrSampleConfirm'), ctx);
-    t('5-3 答え ' + ans + ' をそのまま返す', vm.runInContext('wrSampleConfirm()', ctx) === ans);
-  }
-  t('5-4 確かめの文', asked[0] === '架空の6名と12か月分の体重を、この名簿に入れて保存します。本番の名簿では使わないでください。入れますか？', asked[0]);
+  /* 画面の中の窓は答えを約束（Promise）で返す。答えを待ってから、そのまま返しているかを確かめる */
+  PENDING.push((async () => {
+    for (const ans of [false, true]) {
+      const ctx = vm.createContext({ SUDialog: { confirm: (m) => { asked.push(m); return Promise.resolve(ans); } } });
+      vm.runInContext(cutStmt(WR, 'const WR_SAMPLE_MSG', ';').replace(/^const /, 'var ') + '\n' + cutF(WR, 'wrSampleConfirm'), ctx);
+      t('5-3 答え ' + ans + ' をそのまま返す', (await vm.runInContext('wrSampleConfirm()', ctx)) === ans);
+    }
+    t('5-4 確かめの文', asked[0] === '架空の6名と12か月分の体重を、この名簿に入れて保存します。本番の名簿では使わないでください。入れますか？', asked[0]);
+  })());
   t('5-5 ボタンは残す', /<button class="bn bs" id="cfgSample">サンプル投入<\/button>/.test(WR));
   t('5-6 空の時の案内に「サンプル投入」を出さない', /入居者が登録されていません。<br>「＋ 追加」から開始してください。/.test(WR) && !/または「サンプル投入」/.test(WR));
   const L = { inResident: '入居者', inMonth: '対象月', inDate: '測定日', inWeight: '体重', inRaw: '実測値（車椅子込み）', inChair: '車椅子重量', inNote: 'メモ（任意）' };
@@ -354,5 +359,7 @@ console.log('\n— 6. 入居者マスタ：検索欄の読み上げの名前 —
 t('6-1 一覧の検索欄', /<input type="search" id="q" [^>]*aria-label="[^"]+"/.test(RM));
 t('6-2 一括編集の絞り込み欄', /<input type="search" id="bulkQ" [^>]*aria-label="[^"]+"/.test(RM));
 
-console.log('\n' + pass + ' 件成功 / ' + fail + ' 件失敗');
-process.exit(fail ? 1 : 0);
+Promise.all(PENDING).catch((e) => { fail++; console.log('  ✗ 答えを待つ試験で例外 ' + (e && e.message)); }).then(() => {
+  console.log('\n' + pass + ' 件成功 / ' + fail + ' 件失敗');
+  process.exit(fail ? 1 : 0);
+});
