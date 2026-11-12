@@ -118,6 +118,9 @@ async function runAdmin(opt) {
     confirm: () => true, addEventListener() {},
   };
   ctx.window = ctx;
+  /* 2026-11-13: 確かめは画面の中の窓（su-dialog.js）になり、答えを約束（Promise）で返す。受け口は accounts.js の頭にあり
+     この試験は accounts-enroll.js だけを読むので、同じ形の受け口を置く。答えは上の confirm のまま */
+  ctx.SUDialog = { confirm: (m) => Promise.resolve(!!ctx.confirm(m)), alert: () => Promise.resolve(), busy: () => false, idle: () => Promise.resolve() };
   vm.runInNewContext(read('accounts-enroll.js'), ctx);
   await ctx.SUAccountsEnroll.show();
   return { els, ls, ss, calls, svgs, ctx, setList: (r) => { listRows = r; }, intervals };
@@ -193,6 +196,25 @@ async function runAdmin(opt) {
     && a.els['en-list'].children[0].children[1].children[0].textContent === 'この端末を取り消す');
   await a.els['en-list'].children[0].children[1].children[0].listeners.click[0](); await settle();
   t('取り消しは行の番号だけを送る', JSON.stringify(a.calls.filter((c) => c.name === 'device_enroll_revoke').map((c) => c.args)) === JSON.stringify([{ p_id: 5 }]));
+
+  /* 2026-11-13 反証レビューの指摘: QR の取り消しの窓の間にその QR が使われたら、今の状態（端末のログイン）の文で聞き直す。行が消えていれば送らない */
+  {
+    const b = await runAdmin({ listRows: [{ id: 7, email: 'inv-f@example.invalid', label: '見本', state: 'open', createdAt: new Date().toISOString() }] });
+    const asked = [];
+    b.ctx.confirm = (m) => { asked.push(m); if (asked.length === 1) b.setList([{ id: 7, email: 'inv-f@example.invalid', label: '見本', state: 'active', deviceLabel: '見本の iPad', createdAt: new Date().toISOString(), boundAt: new Date().toISOString() }]); return true; };
+    await b.els['en-list'].children[0].children[1].children[0].listeners.click[0](); await settle(); await settle();
+    t('QR の取り消しの窓の間に端末のログインに変わったら、ログインを取り消す文で聞き直してから送る',
+      asked.length === 2 && asked[0].includes('QR を取り消しますか') && asked[1].includes('端末のログインを取り消しますか')
+      && JSON.stringify(b.calls.filter((c) => c.name === 'device_enroll_revoke').map((c) => c.args)) === JSON.stringify([{ p_id: 7 }]), asked);
+    const c = await runAdmin({ listRows: [{ id: 8, email: 'inv-f@example.invalid', label: '見本', state: 'open', createdAt: new Date().toISOString() }] });
+    c.ctx.confirm = () => { c.setList([]); return true; };
+    await c.els['en-list'].children[0].children[1].children[0].listeners.click[0](); await settle(); await settle();
+    t('窓の間にその行が無くなっていたら、取り消しを送らない', c.calls.filter((x) => x.name === 'device_enroll_revoke').length === 0);
+    const d = await runAdmin({ listRows: [{ id: 9, email: 'inv-f@example.invalid', label: '見本', state: 'open', createdAt: new Date().toISOString() }] });
+    const asked2 = []; d.ctx.confirm = (m) => { asked2.push(m); return true; };
+    await d.els['en-list'].children[0].children[1].children[0].listeners.click[0](); await settle(); await settle();
+    t('状態が変わらなければ1回だけ聞いて送る（今までどおり）', asked2.length === 1 && d.calls.filter((x) => x.name === 'device_enroll_revoke').length === 1);
+  }
 
   a = await runAdmin({ listRows: [
     { id: 7, email: 'inv-f@example.invalid', label: '見本', state: 'lapsed', createdAt: new Date().toISOString() },

@@ -364,14 +364,15 @@ const DOC = { clientName: '架空 一郎', nodes: [], lines: [], updatedAt: '202
     t('S 切り替えた後・分からない間は受け口のコードをコピーしない（ボタンも隠す・指摘10）', /if \(window\.SUGeno && window\.SUGeno\.copyBlocked\(\)\) \{[\s\S]{0,200}この画面からはコピーしません/.test(PAGE) && /\$\('btnCopyGas'\)\.hidden = !!\(window\.SUGeno && window\.SUGeno\.copyBlocked\(\)\)/.test(PAGE));
     t('S 名前の違う図を「届いていた」と見ない（中身の比べに氏名を入れる・指摘5）', /const pick = \(d\) => JSON\.stringify\(\{ clientName: d\.clientName, canvasSize/.test(PAGE));
     t('S 起動の後に切り替えた後と分かったら、描き変えていなければこの方の図を読み直す（指摘1）', /if \(suName\) \{\s*Promise\.resolve\(bootLoad\)[\s\S]{0,200}if \(state\.clientName === suName && !hasUnsavedChanges\(\)\) \{[\s\S]{0,200}return loadDoc\(suName, \{ silentIfMissing: true \}\);/.test(PAGE));
+    /* 2026-11-12: 知らせは画面の中の窓（su-dialog.js）になり、答えを待つ形（await SUDialog.alert）で呼ぶ。確かめる場所・順番は今までどおり */
     const ld = (PAGE.match(/async function loadDoc\(name, opts\) \{[\s\S]*?\n\}\n/) || [''])[0];
-    t('S 読込: 別の方・同姓同名の方の図は端末の図も使わず・基準も変えず・消えない帯と知らせで止める（指摘2）', /const blockedWhy = CloudSync\.blockedWhy\(name\);\s*if \(blockedWhy\) \{\s*setSyncStatus\('err', blockedWhy\);\s*alert\(blockedWhy\);[\s\S]{0,200}markClean\(\);\s*return;\s*\}/.test(ld)
+    t('S 読込: 別の方・同姓同名の方の図は端末の図も使わず・基準も変えず・消えない帯と知らせで止める（指摘2）', /const blockedWhy = CloudSync\.blockedWhy\(name\);\s*if \(blockedWhy\) \{\s*setSyncStatus\('err', blockedWhy\);\s*await SUDialog\.alert\(blockedWhy\);[\s\S]{0,200}markClean\(\);\s*return;\s*\}/.test(ld)
       && ld.indexOf('CloudSync.blockedWhy(name)') < ld.indexOf('cloudSeenAt = remote.updatedAt'));
     t('S 読込: 名前を直した方の図は、その図の名前で読み直す（端末の控え・基準・最後に開いた図をそろえる・1回だけ・指摘3）', /if \(remote && remote\.clientName != null && String\(remote\.clientName\) !== String\(name\) && !\(opts && opts\._redirected\)\) \{\s*return await loadDoc\(String\(remote\.clientName\), Object\.assign\(\{\}, opts \|\| \{\}, \{ _redirected: true \}\)\);/.test(ld)
       && /CloudSync\.get\(name, \{ allowOther: true \}\)/.test(ld));
     t('S 保存の前の確かめ: 名前の違う図は別の図（null）として扱う（同じ図との食い違いにしない・指摘3）', /if \(d && d\.clientName != null && String\(d\.clientName\) !== String\(name\) && !\(opts && opts\.allowOther\)\) return null;/.test(PAGE));
     t('S 別の方・同姓同名の方の図の印は、この画面の間だけ持ち（端末に書かない）・その名前では保存しない（指摘2）', /window\._suGenoBlocked\[String\(name\)\] = why;\s*return null;/.test(PAGE) && !/localStorage\.setItem\([^)]*_suGenoBlocked/.test(PAGE)
-      && /const blockedWhy = CloudSync\.blockedWhy\(name\);\s*if \(blockedWhy\) \{ alert\(/.test(PAGE));
+      && /const blockedWhy = CloudSync\.blockedWhy\(name\);\s*if \(blockedWhy\) \{ await SUDialog\.alert\(/.test(PAGE));
     const m = PAGE.match(/const GAS_SCRIPT_CODE = (`[\s\S]*?\n`);/);
     const v = m ? vm.runInNewContext(m[1]) : '';
     const h = crypto.createHash('sha256').update(v).digest('hex');

@@ -26,8 +26,10 @@ function t(name, ok, info) {
 }
 function cutF(src, name) {
   const key = 'function ' + name + '(';
-  const h = src.indexOf(key);
+  let h = src.indexOf(key);
   if (h < 0) throw new Error('関数が見つかりません: ' + name);
+  /* 2026-11-12: 画面の中の窓（su-dialog.js）の答えを待つ関数は async になった。頭の async も一緒に切り出す（await が構文の誤りにならないように） */
+  if (src.slice(h - 6, h) === 'async ') h -= 6;
   let i = src.indexOf('{', h), d = 0;
   for (; i < src.length; i++) { if (src[i] === '{') d++; else if (src[i] === '}') { d--; if (d === 0) return src.slice(h, i + 1); } }
   throw new Error('閉じていません: ' + name);
@@ -63,7 +65,8 @@ function csPage(answers) {
   const ans = (answers || []).slice();
   const ctx = {
     $: (s) => map[s] || null, Array, JSON, String,
-    confirm: (m) => { log.confirms.push(m); return ans.length ? ans.shift() : false; },
+    /* 2026-11-12: 確かめは画面の中の窓（su-dialog.js）になり、答えを約束（Promise）で返す。記録と答え方は今までどおり */
+    SUDialog: { confirm: (m) => { log.confirms.push(m); return Promise.resolve(ans.length ? ans.shift() : false); } },
     closeEventModal: () => { log.closedEv++; mkEvent.classList.remove('open'); ctx._csEventSnap = null; },
     closeOfficeInfoModal: () => { log.closedOi++; mkOffice.classList.remove('open'); ctx._csOfficeSnap = null; },
   };
@@ -76,54 +79,54 @@ function csPage(answers) {
   /* 偽の closeXxx が控えを消せるよう、vm の変数を ctx から見えるようにする（var は ctx の上に乗る） */
   return { ctx, log, evFields, oi, rmField, mkEvent, mkOffice };
 }
-{
+PENDING.push((async () => {
   const p = csPage();
-  vm.runInContext('askCloseEventModal()', p.ctx);
+  await vm.runInContext('askCloseEventModal()', p.ctx);
   t('1-1 予定の窓：変えていなければ確かめずに閉じる', p.log.confirms.length === 0 && p.log.closedEv === 1, p.log);
-}
-{
+})());
+PENDING.push((async () => {
   const p = csPage();
   p.evFields[5].value = '999';   // 読み取り専用の単位数（自動計算）
-  vm.runInContext('askCloseEventModal()', p.ctx);
+  await vm.runInContext('askCloseEventModal()', p.ctx);
   t('1-2 予定の窓：単位数（自動計算）だけ変わっても確かめない', p.log.confirms.length === 0 && p.log.closedEv === 1, p.log);
-}
-{
+})());
+PENDING.push((async () => {
   const p = csPage([false]);
   p.evFields[3].value = '架空の支援';
-  vm.runInContext('askCloseEventModal()', p.ctx);
+  await vm.runInContext('askCloseEventModal()', p.ctx);
   t('1-3 予定の窓：書きかけがあれば確かめ、「いいえ」なら閉じない', p.log.confirms.length === 1 && p.log.closedEv === 0 && p.mkEvent.classList.contains('open'), p.log);
   t('1-4 確かめの文', p.log.confirms[0] === '保存していない変更があります。閉じてもよろしいですか？', p.log.confirms[0]);
-}
-{
+})());
+PENDING.push((async () => {
   const p = csPage([true]);
   p.evFields[1].checked = false; p.evFields[2].checked = true;   // 訪問→通所
-  vm.runInContext('askCloseEventModal()', p.ctx);
+  await vm.runInContext('askCloseEventModal()', p.ctx);
   t('1-5 予定の窓：ラジオを変えても確かめ、「はい」なら閉じる', p.log.confirms.length === 1 && p.log.closedEv === 1, p.log);
-}
-{
+})());
+PENDING.push((async () => {
   const p = csPage();
   p.mkEvent.classList.remove('open');
-  vm.runInContext('askCloseEventModal()', p.ctx);
+  await vm.runInContext('askCloseEventModal()', p.ctx);
   t('1-6 窓が閉じている時は何もしない', p.log.confirms.length === 0 && p.log.closedEv === 0, p.log);
-}
-{
+})());
+PENDING.push((async () => {
   const p = csPage();
   p.rmField.value = '別の架空市';   // 報酬マスタの欄は別の道
-  vm.runInContext('askCloseOfficeInfoModal()', p.ctx);
+  await vm.runInContext('askCloseOfficeInfoModal()', p.ctx);
   t('1-7 事業所情報：報酬マスタの欄だけ変えても確かめない', p.log.confirms.length === 0 && p.log.closedOi === 1, p.log);
-}
-{
+})());
+PENDING.push((async () => {
   const p = csPage([false]);
   p.oi['oi-dc-heavy'].value = '45';
-  vm.runInContext('askCloseOfficeInfoModal()', p.ctx);
+  await vm.runInContext('askCloseOfficeInfoModal()', p.ctx);
   t('1-8 事業所情報：加算を変えたら確かめ、「いいえ」なら閉じない（自動同期の再開も呼ばない）', p.log.confirms.length === 1 && p.log.closedOi === 0, p.log);
-}
-{
+})());
+PENDING.push((async () => {
   const p = csPage([true]);
   p.oi['oi-unit-price'].value = '10.9';
-  vm.runInContext('askCloseOfficeInfoModal()', p.ctx);
+  await vm.runInContext('askCloseOfficeInfoModal()', p.ctx);
   t('1-9 事業所情報：単位単価を変えて「はい」なら閉じる', p.log.confirms.length === 1 && p.log.closedOi === 1, p.log);
-}
+})());
 {
   const ids = vm.runInContext(cutStmt(CS, 'const CS_OFFICE_FIELDS', '];').replace(/^const /, 'var ') + '; CS_OFFICE_FIELDS', vm.createContext({}));
   const saveSrc = cutF(CS, 'saveOfficeInfo');
@@ -143,13 +146,13 @@ console.log('\n— 1b. 週間計画：閉じる道のつなぎ方 —');
   t('1-18 受け口の表に確かめ付きの2つがある', /'askCloseEventModal': \(a\) => askCloseEventModal\(\.\.\.a\),/.test(CS) && /'askCloseOfficeInfoModal': \(a\) => askCloseOfficeInfoModal\(\.\.\.a\),/.test(CS));
 }
 console.log('\n— 1c. 週間計画：反証レビューの指摘（報酬マスタの適用・戻す／複製の曜日）—');
-{
+PENDING.push((async () => {
   const p = csPage();
   p.evFields[6].value = '3';   // 「他の曜日に複製」の曜日（保存しない欄）
-  vm.runInContext('askCloseEventModal()', p.ctx);
+  await vm.runInContext('askCloseEventModal()', p.ctx);
   t('1-19 複製の曜日を選んだだけでは確かめない', p.log.confirms.length === 0 && p.log.closedEv === 1, p.log);
-}
-{
+})());
+PENDING.push((async () => {
   /* 偽の select: 選択肢を作り直すと、ブラウザと同じく先頭の選択肢へ戻る */
   function fakeSel(id, value) {
     const s = { id, type: 'select-one', _opts: ['0', '1', '2'], _v: value, parentElement: { querySelector: () => ({ textContent: '' }) } };
@@ -185,9 +188,9 @@ console.log('\n— 1c. 週間計画：反証レビューの指摘（報酬マス
   p.ctx.$ = (s) => sel2.sels[s.slice(1)] || orig(s);
   vm.runInContext('_csOfficeSnap = csOfficeSnap_();', p.ctx);
   vm.runInContext('renderAddonOptions_()', sel2.ctx);
-  vm.runInContext('askCloseOfficeInfoModal()', p.ctx);
+  await vm.runInContext('askCloseOfficeInfoModal()', p.ctx);
   t('1-22 報酬マスタの適用の後に閉じても確かめが出ず、値が残る', p.log.confirms.length === 0 && p.log.closedOi === 1 && vals(sel2) === '["2","1"]', [p.log, vals(sel2)]);
-}
+})());
 console.log('\n— 2. 週間計画：加算の見出しと開け閉めの見出し —');
 {
   const IDS = ['oi-v-tokuteijigyo', 'oi-v-svc-strength', 'oi-v-chiiki', 'oi-v-nursing', 'oi-v-douitsu', 'oi-dc-bathing', 'oi-dc-heavy', 'oi-dc-dementia', 'oi-dc-training', 'oi-dc-svc-strength', 'oi-dc-nursing', 'oi-dc-douitsu'];

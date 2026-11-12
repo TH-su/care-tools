@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-font">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-GJN53TIJ4FrixD929ldSCoH79X0kiPsDH875iE3fupY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-/9NdFQEhrPpmjqcuZgPmlrA+VEWsvBiZ5NcB9HsrfJw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 入居者情報を表示する画面のため、ブラウザ・中継キャッシュに残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -17,6 +17,8 @@
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-resident-hop.js?v=2026-11-02"></script>
 <script src="su-geno.js?v=2026-11-08"></script>
+<!-- 止めて知らせる窓（alert・confirm）の代わりに画面の中の窓を出す共通部品（2026-11-12 代表者の決定）。画面のスクリプトより前に置く -->
+<script src="su-dialog.js?v=2026-11-13"></script>
 <script src="konva-9.3.22.min.js"></script>
 <!-- PDF 出力の部品（jsPDF 2.5.1）は jspdf-2.5.1.umd.js に同梱し、開いた後の手すきか PDF 出力を最初に押した時に読み込む（2026-10-24・起動を軽くするため） -->
 <style>
@@ -577,6 +579,20 @@ textarea.fi{resize:vertical;min-height:60px}
 <script>
 (() => {
 'use strict';
+
+/* 画面の中の窓（su-dialog.js）が読めなかった時の受け口（2026-11-12）。ブラウザの窓に落とし、呼ぶ側と同じ約束（Promise）で答える */
+if(!window.SUDialog) window.SUDialog = {
+  alert: function(m){ try{ window.alert(m); }catch(_){} return Promise.resolve(); },
+  confirm: function(m){ var r = false; try{ r = !!window.confirm(m); }catch(_){} return Promise.resolve(r); },
+  busy: function(){ return false; },
+  idle: function(){ return Promise.resolve(); }
+};
+/* 画面の中の窓が出ている間は、自動で動く処理（まとめ反映・オンライン復帰の再送・起動の後の読み直し）を窓の後へ回す（2026-11-12・仮置き）。
+   ブラウザの窓と違い、答えを待つ間も画面の処理が動くため。窓が出ていない時はすぐ解ける */
+function genoDlgIdle_() {
+  try { if (window.SUDialog && typeof SUDialog.busy === 'function' && SUDialog.busy()) return SUDialog.idle(); } catch (e) { /* 確かめられなければ待たない */ }
+  return Promise.resolve();
+}
 
 // ========== Constants ==========
 const NODE_SIZE = 50;
@@ -2063,7 +2079,7 @@ function addNode(type) {
 
 function toggleNodeFlag(flag) {
   const node = currentNode();
-  if (!node) { alert('ノードを選択してください'); return; }
+  if (!node) { SUDialog.alert('ノードを選択してください'); return; }
   beforeChange();
   node[flag] = !node[flag];
   render();
@@ -2115,9 +2131,9 @@ function deleteSelected() {
   showProperties();
 }
 
-function clearAll() {
+async function clearAll() {
   if (!hasAnyContent()) return;
-  if (!confirm('キャンバス上の全要素を削除しますか？（保存済みデータは残ります）')) return;
+  if (!(await SUDialog.confirm('キャンバス上の全要素を削除しますか？（保存済みデータは残ります）'))) return;
   beforeChange();
   state.doc = makeEmptyDoc();
   state.selectedId = null;
@@ -3046,19 +3062,19 @@ const CloudSync = (function() {
     const wasWritten = (r) => sameContent(r, doc);
     if (remote && remoteDiffers(name, remote) && wasWritten(remote)) return markLanded({ doc, dirtySeq }, remote);
     if (needsConfirm && remote && !remoteDiffers(name, remote)) {
-      if (!confirm('クラウドに同じ名前の図があります（この端末ではまだ開いていない版です）。\nこの端末の内容で上書きしますか？\n（キャンセルで保存を中止します）')) {
+      if (!(await SUDialog.confirm('クラウドに同じ名前の図があります（この端末ではまだ開いていない版です）。\nこの端末の内容で上書きしますか？\n（キャンセルで保存を中止します）'))) {
         throw conflictErr('クラウドに同じ名前の図があるため、クラウドへの保存を中止しました');
       }
       base = String(remote.updatedAt);
     }
     if (remote && remoteDiffers(name, remote)) {
-      if (!confirm('別の端末で保存された新しい版がクラウドにあります。\nこの端末の内容で上書きしますか？\n（キャンセルで保存を中止します）')) {
+      if (!(await SUDialog.confirm('別の端末で保存された新しい版がクラウドにあります。\nこの端末の内容で上書きしますか？\n（キャンセルで保存を中止します）'))) {
         throw conflictErr('別端末の新しい版があるため、クラウドへの保存を中止しました');
       }
       base = String(remote.updatedAt);
     } else if (!remote && fetched && b && b.seen && b.at !== '') {
       // この端末が知っている版がクラウドから消えている＝別の端末で削除された
-      if (!confirm('クラウドでは別の端末でこの図が削除されています。この端末の図で作り直しますか？')) {
+      if (!(await SUDialog.confirm('クラウドでは別の端末でこの図が削除されています。この端末の図で作り直しますか？'))) {
         const err = conflictErr('クラウドでは別の端末で削除されているため、クラウドへの保存を中止しました');
         err.deleted = true;   // 中止の案内を言い分ける（再読み込みしても選ぶ版が無い）
         throw err;
@@ -3821,7 +3837,7 @@ function readDraft() {
 }
 /* 起動時（自動の読込の前）: 下書きが残っていて、端末に保存済みの同じ名前の図と中身が違う時だけ戻すかを確かめる。
    戻したら true（起動の自動読込はしない・変更ありのまま）。同じ中身・戻さない・壊れた下書きは消して false */
-function offerDraftRestore(openName) {
+async function offerDraftRestore(openName) {
   if (isFieldDevice()) return false;
   const d = readDraft();
   if (!d) return false;
@@ -3838,7 +3854,7 @@ function offerDraftRestore(openName) {
     return false;
   }
   const when = fmtTsLabel(d.at);
-  if (!confirm('保存していない編集が残っています（' + (d.clientName || '利用者名なし') + (when ? '・' + when : '') + '）。戻しますか？\n（キャンセルすると、この下書きは消えます）')) {
+  if (!(await SUDialog.confirm('保存していない編集が残っています（' + (d.clientName || '利用者名なし') + (when ? '・' + when : '') + '）。戻しますか？\n（キャンセルすると、この下書きは消えます）'))) {
     clearDraft();
     return false;
   }
@@ -3862,14 +3878,14 @@ function offerDraftRestore(openName) {
   return true;
 }
 // 一覧から別の図を選んだ時: 保存していない変更があれば確かめる（キャンセルなら開かない）
-function onDocListChange(e) {
+async function onDocListChange(e) {
   const name = e.target.value;
   e.target.value = '';
   if (!name) return;
   /* 判定は viewNow（まとめ反映の途中は退避中の本人の図）で行うので、まとめ反映を止めるのは開くと決まった後
      （キャンセルした時にまとめ反映を打ち切らない・2026-10-17 反証レビュー 低3） */
   if (hasUnsavedChanges()) {
-    if (!confirm('保存していない変更があります。破棄して「' + name + '」を開きますか？')) return;
+    if (!(await SUDialog.confirm('保存していない変更があります。破棄して「' + name + '」を開きますか？'))) return;
     clearDraft();
   }
   abortSuBackfill();
@@ -3885,19 +3901,19 @@ function onBeforeUnload(e) {
 }
 
 async function saveDoc() {
-  if (isFieldDevice()) { alert(FIELD_READONLY_MSG); return; }
+  if (isFieldDevice()) { await SUDialog.alert(FIELD_READONLY_MSG); return; }
   abortSuBackfill();   // まとめ反映の途中なら、先に元の図へ戻す（他の方の図を保存しない）
   const name = $('clientName').value.trim();
   if (!name) {
-    alert('利用者名を入力してから保存してください');
+    await SUDialog.alert('利用者名を入力してから保存してください');
     $('clientName').focus();
     return;
   }
   const blockedWhy = CloudSync.blockedWhy(name);
-  if (blockedWhy) { alert(blockedWhy + '\n\nこの名前では保存しません（端末にも保存していません）。'); setSyncStatus('err', blockedWhy); return; }   // 別の方・同姓同名の方の図（指摘2）
+  if (blockedWhy) { await SUDialog.alert(blockedWhy + '\n\nこの名前では保存しません（端末にも保存していません）。'); setSyncStatus('err', blockedWhy); return; }   // 別の方・同姓同名の方の図（指摘2）
   const renamed = loadedFrom !== name;
   if (renamed && localStorage.getItem(LS_DOC_PREFIX + name) != null) {
-    if (!confirm('この端末に同じ名前「' + name + '」の図があります。いま表示している図で置き換えますか？（キャンセルで保存を中止します）')) return;
+    if (!(await SUDialog.confirm('この端末に同じ名前「' + name + '」の図があります。いま表示している図で置き換えますか？（キャンセルで保存を中止します）'))) return;
   }
   state.clientName = name;
   const now = nowISO();
@@ -3945,7 +3961,7 @@ async function saveDoc() {
     }
     if (!retried) {
       try { window.SUErrors.note('保存・同期の失敗', e, 'genogram:saveLocal'); } catch (_) { /* 記録できなくても知らせは出す */ }
-      alert('端末への保存に失敗しました。端末に保存できる量がいっぱいの可能性があります。使わなくなった図を削除してから、もう一度保存してください。');
+      await SUDialog.alert('端末への保存に失敗しました。端末に保存できる量がいっぱいの可能性があります。使わなくなった図を削除してから、もう一度保存してください。');
       return;
     }
   }
@@ -4003,9 +4019,9 @@ async function saveDoc() {
            未反映であることと次の操作をここで言い切る */
         flashStatus(`「${name}」はこの端末に保存（クラウド未反映）`);
         if (err.deleted) {
-          alert('クラウドへの保存を中止しました。\nこの内容はこの端末にのみ保存されています。\n\nクラウドでは別の端末でこの図が削除されています。この端末の図で作り直す時は、もう一度保存してください。');
+          await SUDialog.alert('クラウドへの保存を中止しました。\nこの内容はこの端末にのみ保存されています。\n\nクラウドでは別の端末でこの図が削除されています。この端末の図で作り直す時は、もう一度保存してください。');
         } else {
-          alert('クラウドへの保存を中止しました。\nこの内容はこの端末にのみ保存されています。\n\nページを再読み込みすると、クラウドの版を開くか、この端末の図のままにするかを選べます。\nもう一度保存すると、上書きしてよいかをもう一度確認します。');
+          await SUDialog.alert('クラウドへの保存を中止しました。\nこの内容はこの端末にのみ保存されています。\n\nページを再読み込みすると、クラウドの版を開くか、この端末の図のままにするかを選べます。\nもう一度保存すると、上書きしてよいかをもう一度確認します。');
         }
       } else if (err && err.refused) {
         /* 新しい保存先がこの保存を受け付けなかった（統合 0054・見るだけのアカウント・ほかの方の図・同姓同名・大きすぎる等）。
@@ -4013,7 +4029,7 @@ async function saveDoc() {
         thumbGo(false);   // 断られた版の絵も、ほかの端末へ送らない（ほかの方・同姓同名の方の図のことがある・統合 0056）
         setSyncStatus('err', 'この端末にだけ保存（クラウド未反映）: ' + err.message);
         flashStatus(`「${name}」はクラウドに入っていません（この端末にだけ保存しました）`);
-        alert('クラウドへは保存されていません。\n' + err.message + '\n\nこの内容はこの端末にのみ保存されています。');
+        await SUDialog.alert('クラウドへは保存されていません。\n' + err.message + '\n\nこの内容はこの端末にのみ保存されています。');
       } else if ((err && err.auth) || authUnverified.has(name)) {
         /* 合言葉で断られた（2026-09-23）: 保留には積まない。合言葉の不一致は直すまで続き、その間は
            一覧からクラウドの図が見えない。積むと、合言葉を直した後の自動の再送で、同じ名前の
@@ -4113,7 +4129,7 @@ async function loadDoc(name, opts) {
       const blockedWhy = CloudSync.blockedWhy(name);
       if (blockedWhy) {
         setSyncStatus('err', blockedWhy);
-        alert(blockedWhy);
+        await SUDialog.alert(blockedWhy);
         loadedFrom = '';
         state.clientName = '';
         state.doc = makeEmptyDoc();
@@ -4140,7 +4156,7 @@ async function loadDoc(name, opts) {
           const mustAsk = !!(base && base.confirm);
           if (!differs && !mustAsk) {
             doc = localDoc;   // クラウドはこの端末の出発点のまま＝端末の図がその続き
-          } else if (confirm('「' + name + '」は、この端末にクラウドへ未反映の図があります。'
+          } else if (await SUDialog.confirm('「' + name + '」は、この端末にクラウドへ未反映の図があります。'
               + (differs ? 'クラウドには別の端末で保存された新しい版があります。'
                 : authUnverified.has(name) ? 'クラウドには同じ名前の図があります（この端末の図は、合言葉が違っていた間に保存したもので、クラウドへ届いていません）。'
                 : 'クラウドには同じ名前の図があります（この端末の図は、その版を開いて描いたものではありません）。') + '\n\n'
@@ -4193,37 +4209,40 @@ async function loadDoc(name, opts) {
       if (cloudFetchFailed) {
         cloudUnverified.add(name);
         CloudSync.markConfirm(name);   // 再読み込みしても、保存の時にクラウドの既存版と突き合わせる
-        alert('クラウドの既存データを確認できませんでした。\nこのまま新規として開始しますが、保存するとクラウドの既存版を上書きする恐れがあります。\n\n通信が回復したらページを再読み込みしてください。');
+        await SUDialog.alert('クラウドの既存データを確認できませんでした。\nこのまま新規として開始しますが、保存するとクラウドの既存版を上書きする恐れがあります。\n\n通信が回復したらページを再読み込みしてください。');
       }
       loadedFrom = name;
       render();
       markClean();   // 名前だけの新規として開いた（まだ変更なし）
       return;   // 端末にもクラウドにも無い＝新規作成として続行
     }
-    alert('データが見つかりません: ' + name);
+    await SUDialog.alert('データが見つかりません: ' + name);
     return;
   }
-  state.clientName = doc.clientName || name;
+  /* 画面の名前（state.clientName）は、下の知らせを閉じた後、図を差し替える直前に入れる（2026-11-12）。
+     知らせの間に下書きの控え・閉じる前の確かめが走っても、名前と図が別の方にならないように */
+  const docName = doc.clientName || name;
   /* 基準は端末に残した「この端末が最後に確かめたサーバー版」。端末の図を出した時も読込時のクラウド版で
      上書きしない（上書きすると、未反映の図が別端末の版を確認なしに上書きする＝9/23 の事故）。
      基準を観測していない旧データだけ、以前どおり「読込時に観測したクラウド版の時刻」を基準にする
      （クラウド未観測＝未設定・取得失敗はローカル時刻へフォールバック） */
   if (!keepBase) {
-    const b = CloudSync.getBase(state.clientName);
-    if (!(b && b.seen)) CloudSync.setBaseline(state.clientName, cloudSeenAt || doc.updatedAt, !!cloudSeenAt);
+    const b = CloudSync.getBase(docName);
+    if (!(b && b.seen)) CloudSync.setBaseline(docName, cloudSeenAt || doc.updatedAt, !!cloudSeenAt);
   }
-  if (!cloudFetchFailed) cloudUnverified.delete(state.clientName);   // クラウドを確認できた時点で印を外す
+  if (!cloudFetchFailed) cloudUnverified.delete(docName);   // クラウドを確認できた時点で印を外す
   // 案内は削除の保留が実際に残った時だけ（2択で OK を選ぶと同じ名前の保留はすべて外れる）
   if (keptDelete && !CloudSync.getPending().some(x => x && x.kind === 'delete' && x.name === name)) keptDelete = '';
   if (keptDelete === 'unverified') {
     // 基準の無い削除の保留は、クラウドに版があれば再送で消さない（F7）。そのとおりに知らせる
-    alert('「' + name + '」は、この端末で削除した操作がまだクラウドへ届いていません。この端末ではクラウドの版を確かめられていないため、通信が戻っても自動では削除しません。\n削除する場合は、もう一度「削除」を押してください。残す場合は、この図を保存してください。');
+    await SUDialog.alert('「' + name + '」は、この端末で削除した操作がまだクラウドへ届いていません。この端末ではクラウドの版を確かめられていないため、通信が戻っても自動では削除しません。\n削除する場合は、もう一度「削除」を押してください。残す場合は、この図を保存してください。');
   } else if (keptDelete) {
-    alert('「' + name + '」は、この端末で削除した操作がまだクラウドへ届いていません。通信が戻ると削除されます。\n残す場合は、この図を保存してください。');
+    await SUDialog.alert('「' + name + '」は、この端末で削除した操作がまだクラウドへ届いていません。通信が戻ると削除されます。\n残す場合は、この図を保存してください。');
   }
   if (copyFailed) {
-    alert('「' + name + '」のこの端末の図を別の名前で残せなかったため、クラウドの版には切り替えず、この端末の図のまま開きます。');
+    await SUDialog.alert('「' + name + '」のこの端末の図を別の名前で残せなかったため、クラウドの版には切り替えず、この端末の図のまま開きます。');
   }
+  state.clientName = docName;
   state.doc = {
     nodes: doc.nodes || [],
     lines: doc.lines || [],
@@ -4245,10 +4264,10 @@ async function loadDoc(name, opts) {
   flashStatus(`「${name}」を読み込みました`);
 }
 
-function newDoc() {
+async function newDoc() {
   abortSuBackfill();   // まとめ反映の途中なら、先に元の図へ戻す（確認の対象を取り違えない）
   if (hasAnyContent() &&
-    !confirm('現在の内容を破棄して新規作成しますか？\n（保存していない変更は失われます）')) return;
+    !(await SUDialog.confirm('現在の内容を破棄して新規作成しますか？\n（保存していない変更は失われます）'))) return;
   loadedFrom = '';
   state.clientName = '';
   state.doc = makeEmptyDoc();
@@ -4265,18 +4284,18 @@ function newDoc() {
 }
 
 async function deleteCurrentDoc() {
-  if (isFieldDevice()) { alert(FIELD_READONLY_MSG); return; }
+  if (isFieldDevice()) { await SUDialog.alert(FIELD_READONLY_MSG); return; }
   const name = $('clientName').value.trim();
-  if (!name) { alert('削除対象の利用者名を指定してください'); return; }
+  if (!name) { await SUDialog.alert('削除対象の利用者名を指定してください'); return; }
   const hasLocal = !!localStorage.getItem(LS_DOC_PREFIX + name);
   if (!hasLocal && !CloudSync.isConfigured()) {
-    alert(`「${name}」の保存データはありません`);
+    await SUDialog.alert(`「${name}」の保存データはありません`);
     return;
   }
   const scope = CloudSync.isConfigured()
     ? `保存済みデータ「${name}」を端末＋クラウドから削除しますか？\n（この操作は取り消せません）`
     : `保存済みデータ「${name}」を削除しますか？\n（この操作は取り消せません）`;
-  if (!confirm(scope)) return;
+  if (!(await SUDialog.confirm(scope))) return;
   /* ★2026-10-17 削除の順番: クラウドが設定されている時は、クラウドの削除が通ってから端末の図と一覧を消す。
      断られた（合言葉）・別の端末の新しい版があった（食い違い）時は端末の図を残して知らせる。
      通信の失敗は従来どおり保留に積み、端末からは消す（通信が戻ると削除される・読込で残す道もある） */
@@ -4473,7 +4492,7 @@ function buildExportCanvas(callback) {
     ctx.drawImage(img, 0, headerH, bounds.width, bounds.height);
     callback(off, totalW, totalH);
   };
-  img.onerror = () => alert('画像生成に失敗しました');
+  img.onerror = () => SUDialog.alert('画像生成に失敗しました');
   img.src = stagePng;
 }
 
@@ -4785,14 +4804,14 @@ function saveCloudConfig() {
   flashStatus('クラウド設定を保存しました');
 }
 
-function clearCloudConfig() {
+async function clearCloudConfig() {
   /* 未送信キュー（LS_PENDING）も一緒に消える。消した分は二度と同期されないため、
      残件がある時は件数を出して既定は中止（キャンセル）に倒す */
   const pendingN = CloudSync.getPending().length;
   const msg = pendingN > 0
     ? `未送信${pendingN}件があります。クリアすると同期されません。\n先に「↻ 同期」で送信してください。\n\nそれでもクラウド設定をすべて削除しますか？\n（キャンセルで中止します）`
     : 'クラウド設定をすべて削除しますか？\n（端末内のジェノグラムデータは残ります）';
-  if (!confirm(msg)) return;
+  if (!(await SUDialog.confirm(msg))) return;
   localStorage.removeItem(LS_CLOUD_CFG);
   localStorage.removeItem(LS_PENDING);
   $('cfgGasUrl').value = '';
@@ -4815,7 +4834,7 @@ function applyCloudConfigUI() {
 
 async function forceSync() {
   if (!CloudSync.isConfigured()) {
-    alert('クラウドの接続先がまだ入っていません。\n「⚙ 設定」か接続設定の画面の「ジェノグラム（家族構成図）」の欄に、管理者から受け取った URL と合言葉を入れてください。');
+    await SUDialog.alert('クラウドの接続先がまだ入っていません。\n「⚙ 設定」か接続設定の画面の「ジェノグラム（家族構成図）」の欄に、管理者から受け取った URL と合言葉を入れてください。');
     return;
   }
   const btn = $('btnSyncNow');
@@ -4843,7 +4862,7 @@ async function forceSync() {
 }
 
 // ========== Init ==========
-function init() {
+async function init() {
   bindUIEvents();
   attachDomTextFallback();
   CloudSync.purgeRetiredGithubCfg();
@@ -4860,8 +4879,12 @@ function init() {
   window._suMasterName = suName;
   let bootLoad = null;   // 起動時の自動読込（まとめ反映はこれが終わってから始める）
   /* 下書きが残っていれば、起動の自動読込より前に戻すかを確かめる。保存済みの基準（unsavedBase）は
-     読込（loadDoc の最後）か、下の読込の無い分岐の markClean で控える */
-  if (offerDraftRestore(suName)) {
+     読込（loadDoc の最後）か、下の読込の無い分岐の markClean で控える。
+     確かめは画面の中の窓（2026-11-12）なので、答えを待ってから起動の続き（自動の読込・まとめ反映の予約など）を同じ順で進める */
+  const draftAsk = offerDraftRestore(suName);
+  /* 確かめの窓を出して答えを待ったか（待っている間は下の online などの受け口がまだ無く、オンラインに戻ったことを取りこぼす） */
+  const bootAsked = !!(window.SUDialog && typeof SUDialog.busy === 'function' && SUDialog.busy());
+  if (await draftAsk) {
     /* 保存していない編集を戻した。起動の自動読込はしない（戻した図を上書きしないため） */
   } else if (suName) {
     $('clientName').value = suName;
@@ -4895,7 +4918,8 @@ function init() {
        開始時点の文書を控えて最後に必ず戻す。途中で保存・読込・新規をしたら、その場で戻して打ち切る。
      ★先に「別人の欄に入ってしまった控え」を始末する（順序はどちらでもよいが、誤りを残したまま
        増やさないため先にする）。どちらも失敗しても本体の編集には影響させない。 */
-  var startBackfill = function () { setTimeout(function () {
+  /* 画面の中の窓（2026-11-12）が出ている間は始めない（まとめ反映は図を差し替えるため、窓の答えの後の処理が他の方の図に当たらないように・仮置き） */
+  var startBackfill = function () { setTimeout(function () { genoDlgIdle_().then(function () {
     var pruned = 0;
     try { pruned = pruneWrongMasterGenograms(); } catch (e) {}
     /* ★お知らせで転んでも backfill を止めない（コメントの「影響させない」と実装を揃える）。
@@ -4906,7 +4930,7 @@ function init() {
     try { backfillSuGenograms(); } catch (e) {}
     /* まだ送っていない版をほかの端末へ送る（統合 0056・1回だけ・失敗しても編集には影響させない） */
     try { sweepSuGenoThumbs(); } catch (e) { CloudSync.note('thumb:sweep', e); }
-  }, 1800); };
+  }); }, 1800); };
   /* 起動の読込が失敗して戻った時（図が見つからない等）も、確認と下書きが働くように基準を控える（2026-10-17 反証レビュー 低4） */
   if (bootLoad) { const keepBase = () => { if (unsavedBase === null) markClean(); }; bootLoad.then(keepBase, keepBase); }
   if (bootLoad) bootLoad.then(startBackfill, startBackfill);
@@ -4922,7 +4946,8 @@ function init() {
   });
 
   // Auto-flush pending sync on app return online
-  window.addEventListener('online', () => {
+  /* 画面の中の窓（2026-11-12）が出ている間は送り直しを窓の後へ回す（窓の前に掴んだ基準・保留の印を窓の間に動かさない・仮置き） */
+  const flushOnOnline = () => { genoDlgIdle_().then(() => {
     if (CloudSync.isConfigured() && CloudSync.getPending().length > 0) {
       setSyncStatus('syncing', 'オンライン復帰: 保留分を同期中…');
       CloudSync.flushPending().then(r => {
@@ -4932,7 +4957,11 @@ function init() {
                        : `${r.processed}件を再同期しました`);
       });
     }
-  });
+  }); };
+  window.addEventListener('online', flushOnOnline);
+  /* 起動の下書きの確かめを待っている間にオンラインへ戻っていた時の取りこぼしを埋める（2026-11-12）。
+     確かめの窓を出した時で、今オンラインで保留がある時だけ、上の受け口と同じ送り直しを1回始める（保留が無い・オフラインの時は何もしない） */
+  if (bootAsked && navigator.onLine && CloudSync.isConfigured() && CloudSync.getPending().length > 0) flushOnOnline();
   window.addEventListener('offline', () => {
     setSyncStatus('offline', 'オフライン — 端末のみで動作中');
   });
@@ -4951,9 +4980,10 @@ function init() {
       try { applyCloudConfigUI(); } catch (e) { noteBoot(e); }
       Promise.resolve().then(refreshDocList).catch(noteBoot);
       /* URL の無い端末で ?resident= から開いた時、起動の読込はクラウドを見ずに端末の図か空の図で始まっている（切り替えた後と分かったのが後のため）。
-         まだ何も描き変えていなければ、この方の図をクラウドから読み直す（反証レビュー 指摘1） */
+         まだ何も描き変えていなければ、この方の図をクラウドから読み直す（反証レビュー 指摘1）。
+         画面の中の窓（2026-11-12）が出ている間は、閉じてから確かめて読み直す（窓の間に図を差し替えない・仮置き） */
       if (suName) {
-        Promise.resolve(bootLoad).catch(() => null).then(() => {
+        Promise.resolve(bootLoad).catch(() => null).then(() => (window.SUDialog && window.SUDialog.busy && window.SUDialog.busy()) ? window.SUDialog.idle() : null).then(() => {
           if (state.clientName === suName && !hasUnsavedChanges()) {   // 描き始めていない時だけ（端末の図との突き合わせは loadDoc が今までどおり行う）
             return loadDoc(suName, { silentIfMissing: true });
           }
