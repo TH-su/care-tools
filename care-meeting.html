@@ -1736,6 +1736,8 @@ window.addEventListener('storage',function(e){ try{ onDeviceRoleChange_(e); }cat
 window.addEventListener('pageshow',function(e){ try{ if(e&&e.persisted) onDeviceRoleChange_({key:DEVICE_KEY}); }catch(err){ cmNote_('戻るで復元した時の切り替え', err); } });
 boot();
 </script>
+<!-- インターネットにつながっていない時の帯（2026-11-12 商用化の見直し・画面だけ・通信と保存には触れない） -->
+<script src="su-net.js?v=2026-11-12"></script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通）。画面の動き・保存・印刷には触れない -->
 <script src="su-report.js?v=2026-10-28" data-tool="担当者会議の記録"></script>
 </body>
