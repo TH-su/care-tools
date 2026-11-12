@@ -87,14 +87,30 @@ console.log('su-net.js');
 }
 
 console.log('入れる画面');
+/* ★入居者マスタ・フェイスシート・接続設定は、はじめ「自分で扱う画面」に入れていたが、online／offline の出来事も navigator.onLine も
+   扱っていなかった（'offline' は接続先を確かめられなかった時の判定の名前）。2026-11-12 第2段の設計で入れる側へ移した */
 const WITH = ['overview-compare', 'index', 'daycare-roster', 'support-overview', 'visit-overview', 'staff-master', 'supplies', 'training-plan',
-  'moushiokuri-viewer', 'care-meeting', 'ats', 'equip-log'];
-const SELF = ['admission-flow', 'connection-settings', 'care-schedule', 'facesheet', 'genogram', 'shift-app', 'patch-calendar',
-  'shift-analyzer', 'weight-record', 'resident-master', 'work-schedule'];
+  'moushiokuri-viewer', 'care-meeting', 'ats', 'equip-log', 'facesheet', 'resident-master', 'connection-settings', 'help'];
+/* エラーの記録（su-errors.js）を読まない画面（管理者向け・端末の登録）。su-net.js は本文の終わり（</body> の前）で読む */
+const WITH_NOERR = ['login', 'accounts', 'app-access', 'menu-settings', 'perf-report', 'shadow-check', 'enroll'];
+const SELF = ['admission-flow', 'care-schedule', 'genogram', 'shift-app', 'patch-calendar',
+  'shift-analyzer', 'weight-record', 'work-schedule'];
 for (const p of WITH) {
   const s = fs.readFileSync(path.join(ROOT, p + '.html'), 'utf8');
   const i = s.indexOf('<script src="su-net.js?v='), j = s.indexOf('<script src="su-errors.js?v=');
   t(p + '.html: su-net.js を su-errors.js の後に読む', i > j && j >= 0);
+}
+for (const p of WITH_NOERR) {
+  const s = fs.readFileSync(path.join(ROOT, p + '.html'), 'utf8');
+  const i = s.indexOf('<script src="su-net.js?v='), b = s.lastIndexOf('</body>');
+  t(p + '.html: su-net.js を本文の終わりで1回だけ読む', i >= 0 && i < b && s.indexOf('su-net.js', i + 30) < 0);
+}
+/* 自分で扱う画面は、本当に online／offline か navigator.onLine を扱っている（扱っていない画面を「自分で扱う」に入れて札を出さない取り違えを防ぐ） */
+for (const p of SELF) {
+  const f = path.join(ROOT, p + '.html');
+  if (!fs.existsSync(f)) continue;
+  const s = fs.readFileSync(f, 'utf8');
+  t(p + '.html: 通信切れを本当に自分で扱っている', /addEventListener\(\s*['"`](online|offline)['"`]|navigator\.onLine|\bon(online|offline)\s*=/.test(s));
 }
 for (const p of SELF) {
   const f = path.join(ROOT, p + '.html');
