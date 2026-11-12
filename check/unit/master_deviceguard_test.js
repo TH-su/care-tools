@@ -190,6 +190,10 @@ function load(src, old){
     'bulkTruthy', 'mealSaveGo', 'openBulk', 'showScreen', 'navEnter', 'navLeave', 'navTopModal'].concat(NEW_FNS.filter(n => !old || hasFn(src, n)))
     /* toggleHosp が使う案内の文言の関数（2026-10-02 追加）。それより前の版には無いので、有る時だけ切り出す */
     .concat(['hospWho_', 'hospDoneMsg_', 'hospOnList_', 'hospNote_', 'hospApplyPend_'].filter(n => hasFn(src, n)))
+    /* 合言葉の欄が空の時に保存済みの値を使う（2026-11-12 追加）。それより前の版には無いので、有る時だけ */
+    .concat(['rmLocalCfg_'].filter(n => hasFn(src, n)))
+    /* toggleHosp の失敗の文の言い換え（2026-11-12 追加）。有る時だけ */
+    .concat(['rmNote_', 'rmErrWords_'].filter(n => hasFn(src, n)))
     .concat(['mcPurge_'].filter(n => hasFn(src, n)))
     .concat(['yjPurge_'].filter(n => hasFn(src, n)))
     /* 入居日を帳票の控え（bkRows）から作る関数（2026-10-29 追加）。それより前の版には無いので、有る時だけ */

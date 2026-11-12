@@ -352,7 +352,7 @@ async function runBulk(resp){
     verifyAppliedRows_: verifyAppliedRows_
   };
   vm.createContext(sb);
-  vm.runInContext(FAMGUARD_FN + '\n' + BULKSAVE, sb);
+  vm.runInContext(FAMGUARD_FN + '\n' + grabFn('rmSaveErrWords_') + '\n' + BULKSAVE, sb);
   sb.saveBulkGo_([{id:1, name:'テスト 一郎', fields:{room:'111'}}, {id:2, name:'テスト 二郎', fields:{room:'122'}}],
                  {spaceOnly:[], keyChanged:[]});
   await settle();
@@ -385,7 +385,7 @@ async function runMeal(resp){
   };
   sb.mealDirtyCells = () => Object.keys(sb.mealDirty).reduce((n, k) => n + Object.keys(sb.mealDirty[k]).length, 0);
   vm.createContext(sb);
-  vm.runInContext(MEALSAVE, sb);
+  vm.runInContext(grabFn('rmSaveErrWords_') + '\n' + MEALSAVE, sb);
   sb.mealSaveGo();
   await settle();
   log.dirty = copy(sb.mealDirty); log.rows = copy(rows); log.saving = sb.mealSaving;
@@ -471,9 +471,9 @@ async function runFlushCases(){
   const B2 = await runBulk({ok:false, error:OTHER_ERR});
   eq('他の失敗 → 見出しは従来どおり', B2.alert, [HEAD_OLD + '\n\n' + OTHER_ERR]);
   const B3 = await runBulk({ok:false});
-  eq('error の無い失敗 → 従来どおり（原因不明）', B3.alert, [HEAD_OLD + '\n\n原因不明']);
+  eq('error の無い失敗 → 見出しは従来どおり・中身は次にすることを添える（2026-11-12 「原因不明」だけをやめた）', B3.alert, [HEAD_OLD + '\n\n理由が分かりませんでした。もう一度保存を押してください']);
   const B4 = await runBulk(null);
-  eq('応答が空 → 従来どおり（原因不明）', B4.alert, [HEAD_OLD + '\n\n原因不明']);
+  eq('応答が空 → 見出しは従来どおり・中身は次にすることを添える（2026-11-12）', B4.alert, [HEAD_OLD + '\n\n理由が分かりませんでした。もう一度保存を押してください']);
   const B5 = await runBulk({ok:false, error:FLUSH_FAIL_MSG, saved:2, warn:[], warnIds:[]});
   eq('flush の応答に件数が添えてあっても見出しと中身は同じ', B5.alert, [HEAD_FLUSH + '\n\n' + FLUSH_FAIL_MSG]);
   for(const [label, L] of [['flush', B1], ['他の失敗', B2], ['件数つきの flush', B5]]){
@@ -483,6 +483,8 @@ async function runFlushCases(){
     eq(label + ' → 同期表示は従来どおり「保存失敗」', L.sync[L.sync.length - 1], ['保存失敗','err']);
     eq(label + ' → 成功の案内は出さない', L.toast, []);
   }
+  const B7 = await runBulk({ok:false, error:'targetApps: invalid'});
+  eq('英語の項目名が混ざる断り → 職員向けの決まった文にする（2026-11-12）', B7.alert, [HEAD_OLD + '\n\n通信がうまくいきませんでした（一括保存）。もう一度保存を押してください']);
   const B6 = await runBulk({ok:false, error:'テスト用の失敗', detail:['テスト 一郎: 氏名が変わっています（別の方の可能性）']});
   t('氏名が変わっていた時の戻し方も従来どおり（取り直しへ回し、保存ボタンはその終端で戻す）',
     B6.names === 1 && B6.saveDisabled === true && B6.closeDisabled === false, B6);
@@ -493,7 +495,7 @@ async function runFlushCases(){
   const M2 = await runMeal({ok:false, error:OTHER_ERR});
   eq('他の失敗 → 見出しは従来どおり', M2.alert, [HEAD_OLD + '\n\n' + OTHER_ERR]);
   const M3 = await runMeal(null);
-  eq('応答が空 → 従来どおり（原因不明）', M3.alert, [HEAD_OLD + '\n\n原因不明']);
+  eq('応答が空 → 見出しは従来どおり・中身は次にすることを添える（2026-11-12）', M3.alert, [HEAD_OLD + '\n\n理由が分かりませんでした。もう一度保存を押してください']);
   const M4 = await runMeal({ok:false, error:FLUSH_FAIL_MSG, detail:['テスト 一郎: 照合できませんでした']});
   eq('flush に内訳が付いていれば見出しの後ろへ従来どおり続ける',
     M4.alert, [HEAD_FLUSH + '\n\n' + FLUSH_FAIL_MSG + '\n\nテスト 一郎: 照合できませんでした']);

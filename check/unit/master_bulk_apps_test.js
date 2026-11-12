@@ -212,7 +212,7 @@ function makeGoBox(serverRows){
   vm.createContext(box);
   vm.runInContext([
     grabVar('APP_TARGETS'), grabFn('famCmp_'), grabFn('appsCmp_'), grabFn('bulkTruthy'), grabFn('bulkWho'),
-    grabFn('bulkAppsSame_'), grabFn('bulkFamGuard_'), grabFn('saveBulkGo_'), grabFn('bulkNamed'),
+    grabFn('bulkAppsSame_'), grabFn('bulkFamGuard_'), grabFn('saveBulkGo_'), grabFn('bulkNamed'), grabFn('rmSaveErrWords_'),
     'var bulkRows=null, bulkDirty={}, RM_SRV_OLD="";'
   ].join('\n'), box);
   return box;

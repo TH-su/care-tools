@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-p7VvI/TovMdR7j4g1abOnmDCPE343MUryq9/JYuuXEk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-bZpITzAERNIXm1gRRvRUzdqOrmRiBbEocBSXHgH9UOI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -1864,8 +1864,8 @@ body.meal-on #sc-list{max-width:none}
       <input id="cfgUrl" placeholder="https://script.google.com/macros/s/..../exec">
     </div>
     <div class="fld" style="margin-bottom:10px">
-      <label>合言葉</label>
-      <input id="cfgToken" placeholder="管理者から伝えられた合言葉">
+      <label for="cfgToken">合言葉</label> <span class="muted">（空欄なら今の設定のまま）</span>
+      <input id="cfgToken" type="password" autocomplete="new-password" placeholder="管理者から伝えられた合言葉">
     </div>
     <div class="fld" style="margin-bottom:10px">
       <label>訪問診療アプリURL（任意）</label>
@@ -2674,6 +2674,14 @@ function rmErrWords_(e, where){
   if(/不明なaction/.test(m)) return 'Google の受け口が古い版です';
   if(/認証エラー/.test(m)) return '合言葉が通りませんでした';
   if(!m||/[A-Za-z]/.test(m.replace(/Google|URL/g,''))) return '通信がうまくいきませんでした';
+  return m;
+}
+/* 保存の失敗でサーバーが返した文を職員向けにする（2026-11-12 商用化の見直し）。日本語の文はそのまま、英語の項目名や例外文が混ざる時は決まった文にする。
+   空の時は「理由が分かりませんでした」（以前は「原因不明」だけで次にすることが無かった） */
+function rmSaveErrWords_(d, where){
+  var m=String((d&&d.error)||'');
+  if(!m) return '理由が分かりませんでした。もう一度保存を押してください';
+  if(/[A-Za-z]/.test(m.replace(/Google|URL/g,''))) return '通信がうまくいきませんでした（'+where+'）。もう一度保存を押してください';
   return m;
 }
 /* 接続先が無い時の案内（接続設定へのリンクつき）。外からの値は入れない（固定の文と textContent だけ） */
@@ -8815,7 +8823,7 @@ function mealSaveGo(){
       var failHead=/確定できたか確かめられませんでした/.test(String((d&&d.error)||''))
         ? '保存できたか確かめられませんでした（書き込めている方もいます）。'
         : '保存できませんでした。1文字も書き込んでいません。';
-      alert(failHead+'\n\n'+((d&&d.error)||'原因不明')+det);
+      alert(failHead+'\n\n'+rmSaveErrWords_(d,'食形態一覧の保存')+det);
       paintMealBar(); return;
     }
     if(d.saved>0){ setSync('保存OK','ok'); toast('✅ '+d.saved+'名を保存しました'); }
@@ -9143,7 +9151,7 @@ function openResident(id){
     if(e&&e.gone)saveOpenId(null);
     /* ★やり直す手段を必ず画面に置く。従来はこの文言だけで、ページを再読み込みするしか
        手が無かった（そして混み合う時間帯は再読み込みも同じ理由で失敗する） */
-    $('viewBox').innerHTML='<div class="empty">取得に失敗しました: '+esc(e.message)+
+    $('viewBox').innerHTML='<div class="empty">取得に失敗しました: '+esc(e&&e.gone?String(e.message||''):rmErrWords_(e,'この方の取得'))+
       (e&&e.gone?'':'<div style="margin-top:12px"><button class="btn btn-sec" id="viewRetry" type="button">🔄 もう一度読み込む</button></div>'+
         '<div style="margin-top:8px;font-size:0.8125rem;color:var(--g6)">混み合う時間帯は、どなたかの保存が終わるまで数十秒かかることがあります。</div>')+
       '</div>';
@@ -11240,7 +11248,7 @@ function toggleHosp(){
         renderRoster();
         return;
       }
-      setSync('保存失敗','err');toast('⚠️ '+((same&&!hospOnList_())||!who?'':who+'の入院・退院を')+'変更できていません: '+e.message+'。もう一度お試しください');
+      setSync('保存失敗','err');toast('⚠️ '+((same&&!hospOnList_())||!who?'':who+'の入院・退院を')+'変更できていません: '+rmErrWords_(e,'入院・退院の切り替え')+'。もう一度お試しください');
     }).catch(function(){
       if(dg!==devGen) return;   // 同上
       var same=!!(curResident&&String(curResident.id)===String(sid));
@@ -14650,7 +14658,9 @@ function loadData(){
 }
 
 /* ═══════════ 同期設定 ═══════════ */
-function openSync(){var _lc=rmLocalCfg_();$('cfgUrl').value=_lc.url;$('cfgToken').value=_lc.token;if($('cfgVmaUrl'))$('cfgVmaUrl').value=CFG.vmaUrl||'';if($('cfgDeviceRole'))$('cfgDeviceRole').value=getDeviceRole();$('mSync').classList.add('on');navEnter()}
+/* ★合言葉は欄に入れない（2026-11-12 商用化の見直し・フェイスシート・接続設定と同じ形）。保存した合言葉を欄に入れて開くと、
+   ☁️設定を押した人なら誰でも読めた。空欄のまま保存・テストした時は、保存してある合言葉をそのまま使う（saveSyncCfg・testSync） */
+function openSync(){var _lc=rmLocalCfg_();$('cfgUrl').value=_lc.url;$('cfgToken').value='';if($('cfgVmaUrl'))$('cfgVmaUrl').value=CFG.vmaUrl||'';if($('cfgDeviceRole'))$('cfgDeviceRole').value=getDeviceRole();$('mSync').classList.add('on');navEnter()}
 function closeSync(){$('mSync').classList.remove('on');if($('sc-list').classList.contains('on'))navLeave()}
 /* 現場用へ切り替えると消えてしまう「メモリにしか無い入力」が残っている場所の名前を返す（無ければ空配列） */
 function devDirty_(){
@@ -14738,7 +14748,9 @@ function saveSyncCfg(){
       return;
     }
   }
-  CFG.url=$('cfgUrl').value.trim();CFG.token=$('cfgToken').value.trim();
+  var _oldLc=rmLocalCfg_(), _tkIn=$('cfgToken').value.trim();
+  CFG.url=$('cfgUrl').value.trim();CFG.token=_tkIn||(CFG.url?_oldLc.token.trim():'');   /* 空欄なら今の合言葉のまま（URL も空にした時は合言葉も消す） */
+  var _tkKept=!_tkIn&&!!CFG.url&&!!_oldLc.token&&CFG.url!==_oldLc.url.trim();   /* 接続先を変えて、合言葉は前のままにした */
   if($('cfgVmaUrl'))CFG.vmaUrl=$('cfgVmaUrl').value.trim();
   /* ★このキーはフェイスシートと共用。起動時に読んだ CFG をそのまま書くと、
      起動後に相手側が入れた項目を古い値で潰しうる。保存の直前に読み直し、
@@ -14759,6 +14771,7 @@ function saveSyncCfg(){
      残った履歴の段は、起動時の現場端末の処理（init）が消費する */
   if(_toField){ applyDeviceGuard(); devReload_(); return; }
   closeSync();
+  if(_tkKept) toast('合言葉は前の接続先のものを使っています。違う時は合言葉も入れて保存し直してください');
   // 現場タブレットに設定された場合は即ブロック。事務所PCなら解除して読み込み。
   if(applyDeviceGuard())return;
   /* ★ログインの役割の確かめ（su-app-gate.js）をまだ通っていない時（現場端末の止めの画面から事務所PCへ戻した時）は、
@@ -14768,7 +14781,7 @@ function saveSyncCfg(){
 }
 function testSync(){
   if(!$('cfgUrl').value.trim()){toast('URLを入力してください');return}
-  var saved={url:CFG.url,token:CFG.token};CFG.url=$('cfgUrl').value.trim();CFG.token=$('cfgToken').value.trim();
+  var saved={url:CFG.url,token:CFG.token};CFG.url=$('cfgUrl').value.trim();CFG.token=$('cfgToken').value.trim()||rmLocalCfg_().token.trim();   /* 空欄なら、この端末に保存してある合言葉で試す（管理者が配った合言葉は、入れた住所へ送らない） */
   var _tu=CFG.url;
   apiGet({action:'ping'},8000).then(function(){
     /* ★ping が通っても入居者マスタとは限らない（別アプリのGASも自分の合言葉なら通る）。名乗りまで確かめる（2026-10-10）。
@@ -15014,7 +15027,7 @@ function openBulk(){
   }).catch(function(e){
     if(staleGen()) return;   // 同上（切り替え後の失敗は画面に出さない）
     bulkLoading=false;
-    $('bulkScroll').innerHTML='<div class="empty">取得に失敗しました: '+esc(e.message)+'</div>';
+    $('bulkScroll').innerHTML='<div class="empty">取得に失敗しました: '+esc(rmErrWords_(e,'一括編集の読み込み'))+'</div>';   /* 英語の例外文を職員に出さない（2026-11-12 商用化の見直し） */
   });
 }
 function closeBulk(){
@@ -15531,7 +15544,7 @@ function saveBulkGo_(changes,nmv){
       var failHead=/確定できたか確かめられませんでした/.test(String((d&&d.error)||''))
         ? '保存できたか確かめられませんでした（書き込めている方もいます）。'
         : '保存できませんでした。1文字も書き込んでいません。';
-      alert(failHead+'\n\n'+((d&&d.error)||'原因不明')+det+hint+hint2+hintApps);
+      alert(failHead+'\n\n'+rmSaveErrWords_(d,'一括保存')+det+hint+hint2+hintApps);
       /* ★「氏名が変わっています」＝サーバー側の氏名が動いた（他端末の編集、または
          直前の書き込みが B列まで通って dataJson で失敗した行）。この状態は照合が
          二度と通らず、表を閉じる以外に手が無かった＝【他の方の未保存も道連れ】になる。

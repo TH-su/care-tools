@@ -209,7 +209,9 @@ const items = (o) => () => ({ data: { ok: true, role: 'office', items: o, ver: '
   const MV = read('moushiokuri-viewer.html');
   t('申送ビューア: 設定の入力欄は端末の値だけ（loadCfgLocal_）', /var cfg = loadCfgLocal_\(\);\n  \$\('cfgUrl'\)\.value = cfg\.url;/.test(MV));
   const RM = read('resident-master.html'), FS = read('facesheet.html');
-  t('入居者マスタ: 設定の窓の入力欄は端末の値だけ', /function openSync\(\)\{var _lc=rmLocalCfg_\(\);\$\('cfgUrl'\)\.value=_lc\.url;\$\('cfgToken'\)\.value=_lc\.token;/.test(RM));
+  t('入居者マスタ: 設定の窓の入力欄は端末の値だけ（合言葉の欄は空のまま・2026-11-12 商用化の見直し）', /function openSync\(\)\{var _lc=rmLocalCfg_\(\);\$\('cfgUrl'\)\.value=_lc\.url;\$\('cfgToken'\)\.value='';/.test(RM));
+  t('入居者マスタ: 合言葉の欄は伏せ字・空欄の保存とテストはこの端末に保存済みの合言葉を使い、配った合言葉を入れた住所へ送らない（2026-11-12）', /<input id="cfgToken" type="password" autocomplete="new-password"/.test(RM) && /CFG\.token=_tkIn\|\|\(CFG\.url\?_oldLc\.token\.trim\(\):''\);/.test(RM) && /CFG\.token=\$\('cfgToken'\)\.value\.trim\(\)\|\|rmLocalCfg_\(\)\.token\.trim\(\);   \/\* 空欄なら、この端末に/.test(RM) && !/String\(saved\.token/.test(RM.slice(RM.indexOf('function testSync(){'), RM.indexOf('function testSync(){')+900)));
+  t('フェイスシート: 接続テストの空欄は端末に保存した合言葉だけ（配った合言葉を入れた住所へ送らない・2026-11-12）', /token:\(\$\('cfgToken'\)\.value\|\|''\)\.trim\(\)\|\|String\(readSavedCfg_\(\)\.token\|\|''\)\.trim\(\)\};/.test(FS));
   t('フェイスシート: 設定の窓の入力欄は端末の値だけ（合言葉の欄は空のまま・2026-11-08 商用化の点検）', /function openSync\(\)\{\n[\s\S]{0,400}?var _lc=readSavedCfg_\(\);\$\('cfgUrl'\)\.value=_lc\.url;\$\('cfgToken'\)\.value='';/.test(FS));
   t('入居者マスタ・フェイスシート: 使う接続先は配った値が先', /function rmDistCfg_\(\)\{try\{var d=window\.SUDevCfg&&window\.SUDevCfg\.get\('master'\)/.test(RM) && /function fsEffCfg_\(\)\{ return fsDistCfg_\(\)\|\|readSavedCfg_\(\); \}/.test(FS));
   const TP = read('training-plan.html');
