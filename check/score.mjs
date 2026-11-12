@@ -15,7 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { listPages, parseArgs, startServer, loadPlaywright, ensureDir } from './lib.mjs';
-import { scorePage, localAssets, AXES, ITEMS, AXIS_POINTS } from './score-calc.mjs';
+import { scorePage, localAssets, isOwnScript, AXES, ITEMS, AXIS_POINTS } from './score-calc.mjs';
 
 /* 採点しない画面（移転の案内だけの画面） */
 export const EXCLUDE = ['kotowaza-jiten.html'];
@@ -95,11 +95,16 @@ const results = [];
 for (const p of pages) {
   const html = fs.readFileSync(path.join(repoDir, p), 'utf8');
   const assets = localAssets(html);
-  const css = {}, sizes = {};
+  const css = {}, sizes = {}, scripts = {};
   for (const c of assets.css) { const f = readLocal(c); if (f) css[path.basename(f)] = fs.readFileSync(f, 'utf8'); }
-  for (const s of assets.scripts) { const f = readLocal(s); if (f) sizes[path.basename(f)] = fs.statSync(f).size; }
+  for (const s of assets.scripts) {
+    const f = readLocal(s);
+    if (!f) continue;
+    sizes[path.basename(f)] = fs.statSync(f).size;
+    if (isOwnScript(p, f)) scripts[path.basename(f)] = fs.readFileSync(f, 'utf8');   // その画面のための部品だけ中身を読む（閉じる前の確かめ）
+  }
   const d = dyn.res[p] || {};
-  const r = scorePage(p, html, { css, sizes, dynamic: { overflowPx: d.overflowPx, pageErrors: d.pageErrors, loadMs: d.loadMs } });
+  const r = scorePage(p, html, { css, sizes, scripts, dynamic: { overflowPx: d.overflowPx, pageErrors: d.pageErrors, loadMs: d.loadMs } });
   if (d.note) r.dynamicNote = d.note;
   results.push(r);
 }

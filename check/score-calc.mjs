@@ -1,7 +1,7 @@
 /* check/score-calc.mjs — 画面ごとの「商用の点」を出す採点の純関数（2026-11-12 新設・代表者の決定 2026-11-12 案1 の第1段）
  *
  *   import { scorePage } from './score-calc.mjs';
- *   scorePage(name, html, { css: { 'su-theme.css': '…' }, sizes: { 'chart.js': 123456 }, dynamic: { overflowPx, pageErrors, loadMs } })
+ *   scorePage(name, html, { css: { 'su-theme.css': '…' }, sizes: { 'chart.js': 123456 }, scripts: { 'menu-settings.js': '…' }, dynamic: { overflowPx, pageErrors, loadMs } })
  *
  * ・純関数だけ。ファイル・通信・時計に触れない（入口は check/score.mjs・試験は check/unit/score_calc_test.js）
  * ・画面の HTML は読むだけ。採点は「知らせ」であって門ではない（PR の必須チェックにしない）
@@ -25,9 +25,18 @@
  *   errors su-errors.js を読む
  *   leave  beforeunload か、confirm( の文言に「保存」「破棄」「変更」「閉じ」「消え」がある。
  *          入力欄（input・select・textarea・contenteditable）が静的にも JS の文字にも無い画面は対象外
+ *          画面の中のスクリプトに加えて、画面が <script src> で読む同じサイトの「その画面のための部品」（isOwnScript: ファイル名が
+ *          画面名と同じか「画面名-」で始まる .js。例 menu-settings.html → menu-settings.js、app-access.html → app-access-devices.js）の中身も見る
+ *          （2026-11-12 直し）。共通部品の su-*.js・ほかの画面の部品（ats.html が借りる staff-master-calc.js など）・外の部品の同梱物は見ない
+ *          （共通部品に確かめがあると、読むだけのどの画面も「あり」になるため）。入力欄の有無の判定は今までどおり画面の中だけで見る
  *   engmsg 英語の例外文を画面にそのまま出す形の数（同じ文の中に「出す先」textContent・innerHTML・innerText・alert(・confirm( と、
  *          「出す元」e.message・err.message・error.message・String(e) か 'Failed to fetch'・'Load failed'・NetworkError の直書きがあるもの）。
  *          0件=1・1〜2件=2/3・3〜5件=1/3・6件以上=0（誤検出を減らすための段階点）
+ *          出す元のうち次の2つは数えない（2026-11-12 直し・どちらも画面の中身から機械で確かめられる時だけ）:
+ *          (1) === ・!== ・== ・!= で比べているだけの出現（String((e&&e.message)||'')==='…' のような包み方も含む）
+ *          (2) V.印 ? … V.message … : （条件は V.印 か V && V.印 だけ）の真の側にだけある出現で、その印の代入がスクリプト全体ですべて
+ *              「new Error('日本語の直書き') で作った同じ変数への = true」であり、印を {印: …}・['印'] の形で付ける所が無い時
+ *          受け口・通信の応答を入れた Error の message（印が受け口の答えで決まるものを含む）は日本語か確かめられないので数えたまま
  *   pgerr  動的: 開いた時の画面のエラー（pageerror）0件=1・1件=1/2・2件以上=0
  * 読める（見た目・アクセシビリティ）
  *   theme  <html data-su-theme> が付く。THEME_EXEMPT（CLAUDE.md で型を当てないと決めた6画面）は対象外
@@ -197,13 +206,85 @@ export function labelStats(markup) {
   return { total, named };
 }
 
-/* 英語の例外文を画面にそのまま出す形の数（文を ; と改行で切り、同じ文の中に出す先と出す元がある数） */
+/* 英語の例外文を画面にそのまま出す形の数（文を ; と改行で切り、同じ文の中に出す先と、数えない出現（上の説明の (1)(2)）を除いた出す元がある数） */
+const ENG_SINK = /\.(textContent|innerHTML|innerText)\s*(\+?=)|\b(alert|confirm)\s*\(/;
+const ENG_SOURCE = /\b(e|err|error|ex|er|e2|err2)\.message\b|\bString\(\s*(e|err|error|ex)\s*\)|['"`](Failed to fetch|Load failed)['"`]|NetworkError/g;
+const JA_CHAR = /[\u3040-\u30ff\u3400-\u9fff]/;
 export function countEnglishErrorExposure(js) {
-  const SINK = /\.(textContent|innerHTML|innerText)\s*(\+?=)|\b(alert|confirm)\s*\(/;
-  const SOURCE = /\b(e|err|error|ex|er|e2|err2)\.message\b|\bString\(\s*(e|err|error|ex)\s*\)|['"`](Failed to fetch|Load failed)['"`]|NetworkError/;
+  const all = String(js || '');
+  const marks = japaneseErrorMarks(all);
   let n = 0;
-  for (const st of String(js || '').split(/;|\n/)) if (SINK.test(st) && SOURCE.test(st)) n++;
+  for (const st of all.split(/;|\n/)) {
+    if (!ENG_SINK.test(st)) continue;
+    let shown = false;
+    for (const m of st.matchAll(ENG_SOURCE)) {
+      const v = (m[0].match(/^([\w$]+)\.message$/) || [])[1] || '';
+      if (onlyCompared(st, m.index, m.index + m[0].length, v)) continue;
+      if (guardedByJapaneseMark(st, m, marks)) continue;
+      shown = true; break;
+    }
+    if (shown) n++;
+  }
   return n;
+}
+/* 出す元の出現が === ・!== ・== ・!= で比べられているだけか。
+   出す元を包む形（「(」「String(」と、開き括弧のすぐ後の「同じ変数 &&」）だけを前から外し、後ろは外した「(」の数までの「)」と ||'' だけを飛ばす。
+   出す先の alert(・confirm( の括弧や、別の比較の右辺の「名前 &&」は飛ばさない */
+function onlyCompared(st, from, to, v) {
+  let before = st.slice(0, from), opens = 0;
+  const amp = v ? new RegExp('\\(\\s*' + v.replace(/\$/g, '\\$') + '\\s*&&\\s*$') : null;
+  for (;;) {
+    const b = before.replace(/\s+$/, '');
+    if (amp && amp.test(b)) { before = b.replace(/[\w$]+\s*&&\s*$/, ''); continue; }   // 「(V &&」の V && を外す（「(」は次で数える）
+    if (/String\($/.test(b)) { before = b.slice(0, -7); opens++; continue; }
+    if (/\($/.test(b) && !/[\w$\]]\s*\($/.test(b)) { before = b.slice(0, -1); opens++; continue; }   // 呼び出しの括弧（alert( など）は包む形ではない
+    before = b; break;
+  }
+  let after = st.slice(to), closes = 0;
+  for (;;) {
+    const a = after.replace(/^\s+/, '');
+    const e = a.match(/^\|\|\s*(?:''|""|``)/);
+    if (e) { after = a.slice(e[0].length); continue; }
+    if (a[0] === ')' && closes < opens) { after = a.slice(1); closes++; continue; }
+    after = a; break;
+  }
+  if (/^(?:===|!==|==|!=)(?!=)/.test(after)) return true;
+  return closes === opens && /(?:===|!==|==|!=)$/.test(before);
+}
+/* 日本語の直書きの Error にだけ付く印の名前の集まり（上の説明の (2)）。1つでも当てはまらない代入・付け方があれば、その印は入れない */
+function japaneseErrorMarks(js) {
+  const ok = new Map();   // 印 → すべて日本語の Error への = true か
+  for (const m of js.matchAll(/\b([\w$]+)\.([\w$]+)\s*=(?!=)\s*([^;\n]*)/g)) {
+    const v = m[1], p = m[2];
+    if (p === 'message' || /^(textContent|innerHTML|innerText|value|href|className|hidden|disabled|onclick)$/.test(p)) continue;
+    const before = js.slice(Math.max(0, m.index - 300), m.index);
+    const decl = before.match(new RegExp('(?:var|let|const)\\s+' + v.replace(/\$/g, '\\$') + '\\s*=\\s*new\\s+Error\\(\\s*([\'"])([^\'"\\\\]*)\\1\\s*\\)\\s*[;,]?\\s*$'));
+    const good = /^true\b/.test(m[3].trim()) && !!decl && JA_CHAR.test(decl[2]) && !/[A-Za-z]/.test(decl[2]);
+    ok.set(p, ok.has(p) ? ok.get(p) && good : good);
+  }
+  const marks = new Set();
+  for (const [p, good] of ok) {
+    if (!good) continue;
+    const q = p.replace(/\$/g, '\\$');
+    /* ほかの付け方（{印: …}・{印}・['印']・関数(物, '印', …)）があれば、受け口の答えで付くこともあるので入れない */
+    const other = [
+      '[{,]\\s*[\'"`]?' + q + '[\'"`]?\\s*:', '[{,]\\s*' + q + '\\s*[,}]',
+      '\\[\\s*[\'"`]' + q + '[\'"`]\\s*\\]', '\\(\\s*[\\w$.]+\\s*,\\s*[\'"`]' + q + '[\'"`]',
+    ];
+    if (other.some((re) => new RegExp(re).test(js))) continue;
+    marks.add(p);
+  }
+  return marks;
+}
+/* 出す元 V.message が「V.印 ?」の真の側（? の後から次の : まで）にだけあるか。
+   条件は「V.印」そのものか「V && V.印」だけ（!V.印・x || V.印・'a' + V.印 のように条件が印そのものでない形は外さない）。
+   条件の前に来てよいのは、文の頭・( ・, ・: ・? ・代入の = ・return だけ */
+function guardedByJapaneseMark(st, m, marks) {
+  const v = (m[0].match(/^([\w$]+)\.message$/) || [])[1];
+  if (!v || !marks.size) return false;
+  const before = st.slice(0, m.index);
+  const g = before.match(/(?:^|[(,:?]|[^=!<>]=|\breturn)\s*(?:([\w$]+)\s*&&\s*)?([\w$]+)\.([\w$]+)\s*\?([^?:]*)$/);
+  return !!g && g[2] === v && (g[1] == null || g[1] === v) && marks.has(g[3]);
 }
 
 export function countDialogs(js) {
@@ -234,7 +315,18 @@ const NA = (detail) => ({ status: '対象外', detail });
 const UNMEASURED = { status: '未測定', detail: '測れなかった' };
 function num(v) { return typeof v === 'number' && Number.isFinite(v) ? v : null; }
 
-/* 1画面を採点する。opts.css: 読み込んでいる同じサイトの CSS（名前→中身）・opts.sizes: 部品の大きさ（名前→バイト）・opts.dynamic: 動的に測った値 */
+/* その画面のための部品か（ファイル名が「画面名.js」か「画面名-」で始まる .js。共通部品 su-*.js は画面名が su- で始まっても入れない）。
+   「-」の境目を求めるのは、名前の頭がたまたま同じ別の部品（例 login.html に対する loginx.js のような形）を入れないため。
+   ほかの画面の部品を借りる形（ats.html・admission-flow.html が読む staff-master-calc.js）は、借りた画面の部品として数えない */
+export function isOwnScript(page, file) {
+  const stem = String(page || '').replace(/\.html$/i, '');
+  const f = baseName(file);
+  if (!stem || !/\.js$/i.test(f) || /^su-/i.test(f)) return false;
+  return f === stem + '.js' || f.startsWith(stem + '-');
+}
+
+/* 1画面を採点する。opts.css: 読み込んでいる同じサイトの CSS（名前→中身）・opts.sizes: 部品の大きさ（名前→バイト）・
+   opts.scripts: 画面が読む同じサイトのスクリプト（名前→中身・使うのはその画面のための部品だけ＝isOwnScript）・opts.dynamic: 動的に測った値 */
 export function scorePage(name, html, opts = {}) {
   const page = String(name || '');
   const parts = splitHtml(html);
@@ -265,8 +357,12 @@ export function scorePage(name, html, opts = {}) {
     || /<(input|textarea|select)\b|createElement\(\s*['"`](input|textarea|select)['"`]|contentEditable/i.test(js);
   if (!editable) r.leave = NA('入力欄が無い');
   else {
-    const ok = /beforeunload/i.test(js) || /onbeforeunload/i.test(parts.markup)
-      || /\bconfirm\s*\([^)]{0,200}?(保存|破棄|変更|閉じ|消え)/.test(js);
+    /* 画面の中のスクリプトと、その画面のための部品（isOwnScript）の中身を合わせて見る。共通部品・借りた部品は見ない */
+    const own = opts && opts.scripts && typeof opts.scripts === 'object'
+      ? Object.keys(opts.scripts).filter((k) => isOwnScript(page, k)).map((k) => stripJsComments(opts.scripts[k])).join('\n;\n') : '';
+    const lj = js + '\n;\n' + own;
+    const ok = /beforeunload/i.test(lj) || /onbeforeunload/i.test(parts.markup)
+      || /\bconfirm\s*\([^)]{0,200}?(保存|破棄|変更|閉じ|消え)/.test(lj);
     r.leave = bool(ok, ok ? 'あり' : 'なし');
   }
   const eng = countEnglishErrorExposure(js);

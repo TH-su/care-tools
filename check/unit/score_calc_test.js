@@ -157,6 +157,54 @@ async function main() {
     t('読み込む CSS の 44px も数える', item(C.scorePage('k.html', '<html><body></body></html>', { css: { 'su-theme.css': '@media (max-width:899px){a{min-height:44px}}' } }), 'tap44').status === '合格');
   }
 
+  group('7. 閉じる前の確かめは、その画面のための部品の中も見る（2026-11-12 直し）');
+  {
+    const page = '<html><body><input id="kakuu3" aria-label="架空"><script src="su-errors.js"></script><script src="kakuu-page.js"></script></body></html>';
+    const leave = (name, scripts) => item(C.scorePage(name, page, { scripts }), 'leave').status;
+    t('画面名.js の中の beforeunload で合格', leave('kakuu-page.html', { 'kakuu-page.js': 'window.addEventListener("beforeunload",function(){});' }) === '合格');
+    t('画面名-○○.js の中の保存の confirm でも合格', leave('kakuu-page.html', { 'kakuu-page-sub.js': 'if(!confirm("保存していない変更があります")) return;' }) === '合格');
+    t('部品を渡さない時は今までどおり不合格', leave('kakuu-page.html', undefined) === '不合格');
+    t('共通部品 su-*.js の中の beforeunload は数えない（どの画面も合格になるため）', leave('kakuu-page.html', { 'su-errors.js': 'addEventListener("beforeunload",f)' }) === '不合格');
+    t('画面名が su- で始まっても共通部品は数えない', leave('su-kakuu.html', { 'su-kakuu.js': 'addEventListener("beforeunload",f)' }) === '不合格');
+    t('ほかの画面の部品（借りた部品）は数えない', leave('kakuu-page.html', { 'kakuu-other-calc.js': 'addEventListener("beforeunload",f)' }) === '不合格');
+    t('名前の頭が同じだけの部品（「-」の境目が無い）は数えない', leave('kakuu-page.html', { 'kakuu-pagex.js': 'addEventListener("beforeunload",f)' }) === '不合格');
+    t('部品のコメントの中の beforeunload は数えない', leave('kakuu-page.html', { 'kakuu-page.js': '/* beforeunload は使わない */\n// beforeunload\nvar a=1;' }) === '不合格');
+    t('入力欄が無い画面は部品に確かめがあっても対象外のまま', item(C.scorePage('kakuu-page.html', '<html><body><p>架空</p></body></html>', { scripts: { 'kakuu-page.js': 'addEventListener("beforeunload",f)' } }), 'leave').status === '対象外');
+    t('isOwnScript: 画面名.js・画面名-○○.js（?v= つき・フォルダつき）だけ', C.isOwnScript('a-b.html', 'a-b.js') && C.isOwnScript('a-b.html', './a-b-c.js?v=2026-01-01')
+      && !C.isOwnScript('a-b.html', 'a-bc.js') && !C.isOwnScript('a-b.html', 'su-a-b.js') && !C.isOwnScript('a-b.html', 'a-b.css') && !C.isOwnScript('', 'a.js'));
+  }
+
+  group('8. 英語の例外文: 出していない・日本語と確かめられる所は数えず、本物の英語は数える（2026-11-12 直し）');
+  {
+    const n = (js) => C.countEnglishErrorExposure(js);
+    /* 直る場面 */
+    t('比べているだけ（包んだ形・===）は数えない', n("box.innerHTML='<div>'+esc(String((e&&e.message)||'')==='架空の印'?'見つかりませんでした':words(e))+'</div>'") === 0);
+    t('比べているだけ（!==・==・!=・前に置く形）は数えない', n("el.textContent = e.message !== 'x' ? '失敗しました' : '見つかりません'") === 0
+      && n("el.textContent = (err.message == 'x') ? 'あ' : 'い'") === 0 && n("alert('x' != e.message ? '失敗' : '済み')") === 0 && n("alert('x' === String(e) ? 'あ' : 'い')") === 0);
+    const jaMark = "function f(){var _k=new Error('架空のデータなし');_k.kakuuMark=true;throw _k}\n";
+    t('日本語の直書きの Error にだけ付く印の真の側の message は数えない', n(jaMark + "box.innerHTML='失敗: '+esc(e&&e.kakuuMark?String(e.message||''):words(e))") === 0);
+    /* 直した後も数える場面 */
+    t('そのまま出す（textContent = e.message）は数える', n('el.textContent = e.message;') === 1);
+    t('比べた後にそのまま出す（偽の側で e.message）は数える', n("el.textContent = e.message === 'x' ? '済み' : e.message") === 1);
+    t('String(e && e.message || e) のように包んで出すのは数える', n("out.innerHTML = '数えられませんでした（' + esc(String(e && e.message || e)) + '）'") === 1);
+    t('印の偽の側の message は数える', n(jaMark + "box.innerHTML = e.kakuuMark ? '見つかりません' : e.message") === 1);
+    t('印が受け口の答えで付く（= true でない）なら数える', n("var _k=new Error('架空のデータなし');_k.kakuuMark=true;\nx.kakuuMark = json.ok;\nalert(e.kakuuMark ? e.message : '失敗')") === 1);
+    t('印を付けた Error が日本語の直書きでない（受け口の文）なら数える', n("var _k=new Error(json.error);_k.kakuuMark=true;\nalert(e.kakuuMark ? e.message : '失敗')") === 1);
+    t('印を付けた Error が英字まじりなら数える', n("var _k=new Error('not found');_k.kakuuMark=true;\nalert(e.kakuuMark ? e.message : '失敗')") === 1);
+    t('印を {印: …}・{印}・[\'印\'] でも付けていれば数える', n(jaMark + "throw Object.assign(new Error(t), {kakuuMark: true});\nalert(e.kakuuMark ? e.message : '失敗')") === 1
+      && n(jaMark + "var kakuuMark=1;throw Object.assign(new Error(t), {kakuuMark});\nalert(e.kakuuMark ? e.message : '失敗')") === 1
+      && n(jaMark + "er['kakuuMark']=true;\nalert(e.kakuuMark ? e.message : '失敗')") === 1);
+    t('コメントの印だけでは外れない（数える）', item(C.scorePage('k.html', "<script>/* 日本語の文だけを出す */\nalert(e.message);</script>"), 'engmsg').detail === '1件');
+    t('印の変数とちがう例外の message は数える', n(jaMark + "alert(e.kakuuMark ? err.message : '失敗')") === 1);
+    t('条件が印そのものでない（!印・x || 印・文字 + 印）なら数える', n(jaMark + "alert(!e.kakuuMark ? e.message : '失敗')") === 1
+      && n(jaMark + "alert(x || e.kakuuMark ? e.message : '失敗')") === 1 && n(jaMark + "alert('a' + e.kakuuMark ? e.message : '失敗')") === 1
+      && n(jaMark + "alert(x && e.kakuuMark ? e.message : '失敗')") === 1);
+    t('出す先の括弧の後ろの比較（confirm(… + e.message) === false）は比べているだけではないので数える', n("if (confirm('失敗: ' + e.message) === false) return") === 1
+      && n("if (alert(e.message) == null) x()") === 1);
+    t('別の比較の右辺の「名前 &&」の後ろの message は数える', n('el.textContent = n === max && e.message') === 1 && n('el.textContent = a === e && e.message') === 1);
+    t('包んだ形の比較（(e.message) === ・String(e) !==）は数えない', n("el.textContent = (e.message) === 'x' ? 'あ' : 'い'") === 0 && n("alert(String(e) !== 'x' ? 'あ' : 'い')") === 0);
+  }
+
   say('\n' + (fail ? '✗' : '✓') + ' 採点の物差し: 成功 ' + pass + '／失敗 ' + fail);
   process.exit(fail ? 1 : 0);
 }
