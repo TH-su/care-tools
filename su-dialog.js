@@ -44,6 +44,8 @@
       var dlg = document.createElement('dialog');
       dlg.className = 'sud-dlg';
       dlg.setAttribute('aria-modal', 'true');
+      /* 読み上げ用の窓の名前（画面には出さない・仮置き）。名前の無いダイアログと読まれないように */
+      dlg.setAttribute('aria-label', item.kind === 'confirm' ? '確認' : 'お知らせ');
       if (typeof dlg.showModal !== 'function') return null;
       css(dlg, { boxSizing: 'border-box', width: 'min(520px, calc(100vw - 24px))', maxHeight: 'calc(100vh - 24px)', padding: '0',
         border: '1px solid #5f6368', borderRadius: '12px', background: '#ffffff', color: '#1b1b1b', overflow: 'auto' });

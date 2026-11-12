@@ -76,6 +76,7 @@ function partsOf(d){
     t('改行が見える（white-space: pre-wrap）', P.msg.style.whiteSpace === 'pre-wrap' && /\.sud-msg\{[^}]*white-space:pre-wrap/.test(CSS));
     t('ボタンは「キャンセル」「OK」の2つ', P.btns.length === 2 && !!P.ok && !!P.cancel);
     t('OK に初めから合わせる', E.focused() === P.ok);
+    t('confirm: 窓に読み上げ用の名前「確認」が付く（名前の無いダイアログにしない）', ds[0].attrs['aria-label'] === '確認', ds[0].attrs['aria-label']);
     t('文字 17px・ボタン 44px 以上（要素への直接の指定と CSS の両方）', P.msg.style.fontSize === '17px' && P.ok.style.minHeight === '44px' && P.cancel.style.minHeight === '44px'
       && /\.sud-btn\{min-height:44px/.test(CSS) && /\.sud-msg\{[^}]*font-size:17px/.test(CSS));
     t('窓が出ている間は busy', E.win.SUDialog.busy() === true);
@@ -116,6 +117,7 @@ function partsOf(d){
     const P = partsOf(E.dialogs()[0]);
     t('alert: ボタンは「OK」1つで、文がそのまま', P.btns.length === 1 && !!P.ok && P.msg.textContent === 'お知らせ\n2行目');
     t('alert: OK に初めから合わせる', E.focused() === P.ok);
+    t('alert: 窓に読み上げ用の名前「お知らせ」が付く', E.dialogs()[0].attrs['aria-label'] === 'お知らせ', E.dialogs()[0].attrs['aria-label']);
     P.ok.fire('click'); await tick();
     t('alert: 閉じたら約束が解ける', done === true);
   }
