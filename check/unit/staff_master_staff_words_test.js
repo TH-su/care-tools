@@ -9,7 +9,9 @@ const path = require('path');
 const vm = require('vm');
 
 const HTML = process.env.STAFF_HTML || path.join(__dirname, '..', '..', 'staff-master.html');
-const src = fs.readFileSync(HTML, 'utf8');
+/* 職員マスタの画面のスクリプトは 2026-11-12 に staff-master.js へ移した。読み込みの札をその中身に戻し、移す前と同じ文字で確かめる */
+const stfmPage_ = (h) => h.replace(/<script src="staff-master\.js\?v=[^"]*"><\/script>/, () => '<script>\n' + fs.readFileSync(path.join(__dirname, '..', '..', 'staff-master.js'), 'utf8') + '</script>');
+const src = process.env.STAFF_HTML ? fs.readFileSync(HTML, 'utf8') : stfmPage_(fs.readFileSync(HTML, 'utf8'));
 
 let pass = 0, fail = 0;
 function t(n, c, e) { if (c) { pass++; console.log('  ✓ ' + n); } else { fail++; console.log('  ✗ ' + n + (e !== undefined ? '  → ' + JSON.stringify(e) : '')); } }
