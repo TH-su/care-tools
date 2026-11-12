@@ -62,6 +62,7 @@
 !/check/yakujo_bulk_e2e.mjs
 !/check/yakujo_review_e2e.mjs
 !/check/daycare_live_e2e.mjs
+!/check/overview_live_e2e.mjs
 !/check/build-yakka-yj.py
 # 押してから描き変わるまでの遅れを架空データで測る道具（2026-10-27）
 !/check/tap-latency.mjs
@@ -142,6 +143,8 @@
 # 不具合報告の共有部品（2026-09-06）。個人情報は集めない設計で、収集するのは端末・ブラウザ・
 # 画面サイズ・JSエラー・接続設定の有無（真偽のみ）だけ。localStorage の値は読まない。
 !/su-report.js
+# インターネットにつながっていない時の帯（2026-11-12）
+!/su-net.js
 # 「不具合を報告」と画面の指摘の見た目（2026-10-27）。CSP で直書きの style を禁じる画面でも効くように外の CSS にした
 !/su-report.css
 # 見出しの下の初回の案内の帯と、その見た目（2026-11-02 本人の決定）。文言だけを持ち、端末に残すのは閉じた印（su_intro_closed_<画面>）だけ

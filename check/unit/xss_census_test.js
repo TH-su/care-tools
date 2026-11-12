@@ -547,6 +547,7 @@ const CENSUS = {
   "su-export.js": [],
   "su-facility.js": [],
   "su-intro.js": [],
+  "su-net.js": [],   /* 帯の文は固定の文を textContent で入れる（2026-11-12） */
   "su-resident-hop.js": [],
   "su-cutover-gate.js": [],   /* 判定だけの純関数（画面に触らない）。表は shadow-check.js が el と textContent で作る（試験 cutover_gate_test） */   /* 帯の HTML を作って返すだけ（代入しない）。中の値は全部 esc を通る（試験 resident_hop_test） */
   "su-itomari.js": [],

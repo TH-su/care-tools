@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ZX2oHqc9XbH0BmpWmoo3ueh1YKVeqnKV5F/jB9oxJOs=' 'sha256-kwAifQBfvhff32cF5SUk9JG2jvWgV6uclGEK+W7/Hfs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-iz55l7sR8twAy2PxPoNOILXmdZtyjnr4ZMLRDRxCb4Q=' 'sha256-kwAifQBfvhff32cF5SUk9JG2jvWgV6uclGEK+W7/Hfs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -518,6 +518,8 @@ async function gasCall(payload) {
      Supabase から読む（速い）。スイッチが切・未ログイン・失敗の時は null が返り、下の Google へ（写し返しで最新）。 */
   const keys_ = Array.isArray(payload.keys) ? payload.keys : [payload.key];
   if (window.SUKv && SUKv.readRouted) { const v = await SUKv.readRouted(payload); if (v) { noteCopyRead_(keys_, false); return v; } }
+  /* 接続先の無い端末（ログインだけで使う端末・2026-11-12）は、新しい保存先から読めなければ Google へは送らない（空の接続先へ送るとこの画面自身へ送ってしまう） */
+  if (!TARGET.endpoint) throw new Error('新しい保存先から読めませんでした');
   const res = await fetch(TARGET.endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -549,8 +551,10 @@ async function fetchWeek(weekDates) {
         }
         return { data: out, gotResponse: gotResponse, hadError: hadError };
       }
+      if (!TARGET.endpoint) return { data: out, gotResponse: false, hadError: true };   // ログインだけで使う端末: 1日ずつの読み直しに切り替えない（2026-11-12）
       getOnlyMode = true;                                   // entries 無し＝pull 非対応 → 以後 get（例外ではない）
     } catch (e) {
+      if (!TARGET.endpoint) return { data: out, gotResponse: false, hadError: true };   // 同上（読めない週ごとに7回待たせない）
       getOnlyMode = true;                                   // pull 例外＝非対応か通信断。get フォールバックの成否で判定する
     }
   }
@@ -1123,6 +1127,38 @@ function soFetchFailMsg_() {
 /* 接続設定へのリンクは事務所PCだけに出す（接続設定は現場では開けない） */
 function showCsLink_(on) { const a = $('emptyCsLink'); if (a) a.hidden = !on || ovIsField_(); }
 
+/* 接続先・合言葉の無い端末でも、ログインして新しい保存先で使える時（代表者の決定 2026-11-08 A・デイ利用表の DCR_LIVE と同じ作り・2026-11-12）。
+   週間計画（care_schedule_v2）を見るだけの読み取りの口（SUKv.readRouted）で読めた時だけ SO_LIVE を真にし、盤面の週もその口で読む。
+   ★読めないと分かる時（スイッチが切・ログインしていない・確かめられない・通信の失敗・8秒の時間切れ）は null＝今までどおり接続先の案内を出す。
+   ★時間切れの後に答えが届いても使わない（Promise.race で先に決まった方だけを使う）。端末には何も書かない・Google へは送らない。
+   ★ログインの控えが無い端末では呼ばない（何も送らない）。 */
+let SO_LIVE = false;
+const SO_LIVE_WAIT_MS = 8000;
+const SO_SESSION_RE = /^sb-[a-z0-9]+-auth-token$/;
+function soHasSession_() {
+  try { for (let i = 0; i < localStorage.length; i++) if (SO_SESSION_RE.test(localStorage.key(i) || '')) return true; } catch (e) {}
+  return false;
+}
+function soLiveRead_() {
+  if (!(window.SUKv && typeof SUKv.readRouted === 'function')) return Promise.resolve(null);
+  let tm = null;
+  const late = new Promise(function (ok) { tm = setTimeout(function () { ok(null); }, SO_LIVE_WAIT_MS); });
+  const read = Promise.resolve().then(function () { return SUKv.readRouted({ action: 'get', key: CARE_KEY }); });
+  return Promise.race([read, late]).then(function (v) { clearTimeout(tm); return (v && v.ok === true) ? v : null; },
+                                         function () { clearTimeout(tm); return null; });
+}
+function soDaysRouted_() {
+  try { return !!(window.SUKv && typeof SUKv.routed === 'function' && SUKv.routed(dayKey(todayKey()))); } catch (e) { return false; }
+}
+function soQuietCfgHint_() {
+  try { if (window.SUCfgHint && typeof window.SUCfgHint.quiet === 'function') window.SUCfgHint.quiet(); } catch (e) { /* 案内の帯の失敗は止めない */ }
+}
+/* ログインだけで使えていた端末で読めなかった時の文（接続先を入れる逆の案内を出さない・仮置き 2026-11-12） */
+function soLiveFailMsg_() {
+  if (ovIsField_()) return soFetchFailMsg_();
+  return 'データを取得できませんでした。通信環境と、ログインしているかをご確認ください。';
+}
+
 let busy = false;
 let refreshPending = false;     // 取得中に来た再取得要求（週数変更等）。無言破棄するとセレクタと盤面の週数が食い違う
 let lastFetchFailed = false;    // 直近の取得が失敗したか。旧データを再表示する場面でラベルを偽らないために持つ
@@ -1135,6 +1171,14 @@ async function refresh() {
   setButtons(false);
   const t = syncTarget();
   if (!t.endpoint) {
+    if (!SO_LIVE && soHasSession_()) {               // 接続先が無くても、ログインの控えがあれば新しい保存先から読めるかを確かめる（2026-11-12）
+      setSyncState('取得中…');
+      /* 読めた時だけ使える。盤面は日ごとの盤面（wsday）から作るので、それも新しい保存先へ切り替え済みの時だけ（週間計画だけ切り替えた端末は今までどおり接続先の案内）。
+         使えていた端末は一度読み損なっても外さない（取得の失敗として知らせる） */
+      if (await soLiveRead_() && soDaysRouted_()) SO_LIVE = true;
+    }
+  }
+  if (!t.endpoint && !SO_LIVE) {
     $('boardEmpty').classList.add('on');
     $('bHeads').textContent = ''; $('bCanvas').textContent = '';
     $('emptyMsg').textContent = soNoTargetMsg_(); showCsLink_(true);
@@ -1156,9 +1200,10 @@ async function refresh() {
       applyCopyBand_(false);                               // 盤面を空にした＝写しの盤面は出ていない（予定の型だけ写しから読めても帯は出さない）
       $('boardEmpty').classList.add('on');
       $('bHeads').textContent = ''; $('bCanvas').textContent = '';
-      $('emptyMsg').textContent = soFetchFailMsg_(); showCsLink_(true);
+      if (!t.endpoint) { $('emptyMsg').textContent = soLiveFailMsg_(); showCsLink_(false); }   // ログインだけで使う端末には接続先を入れる案内を出さない
+      else { $('emptyMsg').textContent = soFetchFailMsg_(); showCsLink_(true); }
       setSyncState('取得失敗');
-      toast('取得に失敗しました。通信環境・接続先をご確認ください', true);
+      toast(t.endpoint ? '取得に失敗しました。通信環境・接続先をご確認ください' : '取得に失敗しました。通信環境と、ログインしているかをご確認ください', true);
       return;
     }
     lastFetchFailed = false;
@@ -1166,6 +1211,7 @@ async function refresh() {
     const model = buildModel(raw, masks, VIEW);
     render(model, N, VIEW);
     applyCopyBand_(copyUsed_);                             // 描き直した盤面の出どころで帯を決める（写しから1つでも読んだら出す）
+    if (!t.endpoint) soQuietCfgHint_();                    // ログインだけで盤面が出た＝画面の下の「接続先が入っていません」の帯を出さない
     let total = 0; for (const arr of model.byDow) total += arr.length;
     RAW_MISS = raw.weeksError > 0 ? '・' + raw.weeksError + '/' + raw.weeksTotal + '週欠測' : '';
     setSyncState('集計OK（' + N + '週' + RAW_MISS + '・' + total + '枠）');
@@ -1174,7 +1220,7 @@ async function refresh() {
   } catch (e) {
     lastFetchFailed = true;                                // 例外時も保持中のRAWは古いまま
     setSyncState('取得失敗');
-    toast('取得に失敗しました。通信環境・接続先をご確認ください', true);
+    toast(t.endpoint ? '取得に失敗しました。通信環境・接続先をご確認ください' : '取得に失敗しました。通信環境と、ログインしているかをご確認ください', true);
   } finally {
     busy = false;
     setButtons(true);
@@ -1205,7 +1251,7 @@ function init() {
   });
 
   const t = syncTarget();
-  if (!t.endpoint) {
+  if (!t.endpoint && !soHasSession_()) {               // ログインの控えがある端末は、下の取得で読めるかを確かめてから案内を決める（2026-11-12）
     $('boardEmpty').classList.add('on');
     $('emptyMsg').textContent = soNoTargetMsg_(); showCsLink_(true);
     setSyncState('未設定');
@@ -1217,7 +1263,7 @@ function init() {
        soFetchHosp は失敗時も false で解決するため、ここは必ず1回呼ばれる＝自動集計は従来どおり走る）
      接続設定が無い端末では何も起きない＝従来どおり。 */
   soFetchHosp().then(function(){
-    if (syncTarget().endpoint) refresh();                  // 接続先があれば自動集計（名簿反映後）
+    if (syncTarget().endpoint || soHasSession_()) refresh();   // 接続先があれば自動集計（名簿反映後）。接続先が無くてもログインの控えがあれば、新しい保存先から読めるかを確かめる（2026-11-12）
   });
   /* 別のタブ（接続設定・入居者マスタ）で端末の用途が変わったら、ページを読み込み直して起動の時の守りに任せる（CLAUDE.md §2-5・2026-11-08 商用化の点検）。
      描き直すまで待つと、現場用に変わった後もしばらくフルネームが出たままになっていた */
@@ -1458,6 +1504,8 @@ init();
 </script>
 <!-- 見出しの下の初回の案内の帯（2026-11-02 本人の決定）。×で閉じた端末では出さない。画面の動き・保存・印刷には触れない -->
 <script src="su-intro.js?v=2026-11-02.3"></script>
+<!-- インターネットにつながっていない時の帯（2026-11-12 商用化の見直し・画面だけ・通信と保存には触れない） -->
+<script src="su-net.js?v=2026-11-12"></script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
 <script src="su-report.js?v=2026-10-28" data-tool="全支援 週間俯瞰"></script>
 </body>
