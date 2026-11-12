@@ -1,0 +1,29 @@
+/* su-shell.css — 見出しの中の共通の部品の見た目（2026-11-12 商用90点・案1 第2段・代表者の決定 2026-11-12「推奨どおりで」）
+ *
+ * ・左の「← メニュー」（.su-menu-back）と、右の「ログイン中の役割」の札（.su-shell-role・中身は su-shell.js が入れる）
+ * ・画面だけ。印刷の紙には出さない（@media print で消す）。見出しの大きさは変えない（押す所の高さは見出しの中の余白に収める）
+ * ・CSP で直書きの style を禁じる画面でも効くように、外のファイルにしている（su-report.css と同じ形）
+ * ・色は「つむぐケアの型」と同じ藍（#1F2A44）。白地との差 14.3:1
+ */
+.su-menu-back { white-space: nowrap; text-decoration: none; }
+.su-shell-role[hidden] { display: none !important; }
+.su-shell-role {
+  display: inline-flex; align-items: center; flex: 0 0 auto;
+  margin: -6px 0; padding: 4px 12px; border-radius: 999px;
+  background: #fff; color: #1F2A44; box-shadow: inset 0 0 0 1px #1F2A44;
+  font-size: 15px; font-weight: 700; line-height: 1.4; white-space: nowrap;
+}
+/* iPhone の幅（699px 以下）では1段に収まらないので、札を見出しの2段目に右寄せで置き、上の段の「戻る」「メニュー」と題を詰めない（札が出ている時だけ見出しが2段になる） */
+@media screen and (max-width: 699px) {
+  .hdr.su-shell-hdr.su-shell-on { flex-wrap: wrap; row-gap: 4px; }
+  .hdr.su-shell-hdr.su-shell-on .su-shell-role { order: 9; margin: 0 0 0 auto; }
+}
+/* 文字を大きくした iPhone（200% で幅 195px 前後）では「‹ 戻る」「← メニュー」と題が1段に入らないので、題を2段目に置く（横にはみ出さない） */
+@media screen and (max-width: 299px) {
+  .hdr.su-shell-hdr { flex-wrap: wrap; row-gap: 0; }
+  .hdr.su-shell-hdr h1 { flex: 1 1 100%; }
+  .hdr.su-shell-hdr .su-menu-back, .hdr.su-shell-hdr .su-shell-role { white-space: normal; min-width: 0; flex: 0 1 auto; max-width: 100%; }
+}
+@media print {
+  .su-menu-back, .su-shell-role { display: none !important; }
+}
