@@ -875,6 +875,11 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
   .tnav button{flex:0 0 auto;min-width:64px;padding-left:6px;padding-right:6px}
 }
 @media print{.tnav{display:none !important}}
+/* 見出しの「← メニュー」（ホーム画面から開いた iPhone でもメニューへ戻れるように・画面だけ・印刷しない・2026-11-12） */
+.su-menu-back{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+.su-menu-back + div{margin-right:auto}
+@media screen and (max-width:899px){.su-menu-back{min-height:44px}}
+@media print{.su-menu-back{display:none !important}}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
@@ -884,6 +889,7 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
 
 <div class="topbar" data-su-intro-after>
 <header class="hdr">
+  <a class="hdr-btn su-menu-back" href="index.html">← メニュー</a>
   <div>
     <h1>体重管理システム</h1>
     <div class="hdr-sub">月次体重記録 / アラート / 食事形態</div>

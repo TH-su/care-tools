@@ -1,0 +1,65 @@
+# 画面ごとの商用の点（自動）— 毎晩、check/score.mjs --dynamic を回して点を残す（2026-11-12 新設・代表者の決定 2026-11-12 案1）
+#
+# ・業務画面を読んで、迷わない・失わない・読める・速い・そろっている の5つの軸で採点する（配点は仮置き・check/score-calc.mjs の冒頭）
+# ・本物の Chromium で各画面を開き、幅375px の横はみ出し・画面のエラーの数・読み込みの時間も測る。外への通信は全部止める（データは無い）
+# ・採点は知らせであって門ではない: 必須のチェックにしない・PR では回さない・点が低くても、道具が止まっても赤にしない
+# ・結果は実行の要約（score.md）と成果物（score.json・score.md）に残す。件数・割合だけで、画面のソースやエラーの文面は出さない
+name: 商用の点の採点
+
+on:
+  schedule:
+    # 毎晩 日本時間 3:23（UTC 18:23）。0分・30分は混み合うので避ける
+    - cron: '23 18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: score-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  score:
+    name: 画面ごとの商用の点を出す
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: リポジトリを取り出す
+        uses: actions/checkout@v4
+
+      - name: Node を用意する
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: ブラウザの道具を入れる
+        continue-on-error: true
+        working-directory: check
+        run: |
+          npm install --no-save --no-package-lock --no-audit --no-fund playwright@1.56.1
+          npx playwright install --with-deps chromium
+
+      - name: 採点する（check/score.mjs --dynamic）
+        continue-on-error: true
+        run: node check/score.mjs --dynamic
+
+      - name: 実行の要約に点を出す
+        if: always()
+        run: |
+          if [ -f check/out/score.md ]; then
+            cat check/out/score.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "採点の結果がありません（道具が途中で止まった）" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: 点を成果物として残す
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: score
+          path: |
+            check/out/score.json
+            check/out/score.md
+          retention-days: 30
+          if-no-files-found: ignore

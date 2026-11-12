@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-cX+gBzo3hdr1X+EGHw+gCNQTy4UGVZdKcBlZ5gvvOc0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-hvWhfRSVLCJk8BCU1Evt1b4BVEfoMWY3ZTJIFz2EC9A='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
@@ -492,6 +492,14 @@ details.dcd > .dbody > .cd > h3 { display: none; }   /* 見出しは summary に
 .admf-band{margin:8px 12px;border-radius:var(--r);padding:8px 12px;background:#fef3c7;color:#92400e;font-size:13px;font-weight:700}
 .admf-band[hidden]{display:none !important}
 @media print{.admf-band{display:none !important}}
+/* 見出しの「← メニュー」（ホーム画面から開いた iPhone でもメニューへ戻れるように・画面だけ・印刷しない・2026-11-12） */
+.su-menu-back{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+.su-menu-back{display:inline-flex;align-items:center;padding:2px 10px;border:1px solid currentColor;border-radius:8px;color:inherit;font-size:0.8125rem;font-weight:700;line-height:1.2}
+@media screen and (max-width:899px){.su-menu-back{min-height:44px}}
+/* 表示200%ほどの狭い幅（359px 以下）だけ、「← メニュー」を見出しの1段目に単独で置き、横にはみ出さないようにする（2026-11-12） */
+.su-menu-row{display:contents}
+@media screen and (max-width:359px){.hdr{flex-wrap:wrap} .su-menu-row{display:block;flex:0 0 100%}}
+@media print{.su-menu-back{display:none !important}}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
@@ -499,6 +507,7 @@ details.dcd > .dbody > .cd > h3 { display: none; }   /* 見出しは summary に
 <body>
 
 <header class="hdr">
+  <span class="su-menu-row"><a class="su-menu-back" href="index.html">← メニュー</a></span>
   <h1>入居調整</h1>
   <button class="sync" id="syncChip" type="button" aria-label="同期状態の詳細を開く">未接続</button>
   <button class="reload" id="reloadBtn" type="button" aria-label="サーバーから再読込">⟳</button>
@@ -1858,10 +1867,20 @@ function flushOnExit() {
   }
 }
 window.addEventListener('pagehide', flushOnExit);
+/* 見出しの「← メニュー」で離れる時の確かめ（2026-11-12 反証レビュー）。iOS Safari は beforeunload の確かめを出さないため、
+   押した時に beforeunload と同じ判定（編集中の入力を抱えている）で聞く。「はい」の時は直後の beforeunload でこの確かめを二重に聞かない
+   （閉じる直前の送信と、送れなかった時の止めはそのまま） */
+var afMenuLeaveOk_ = false;
+document.addEventListener('click', function (e) {
+  var a = e.target && e.target.closest ? e.target.closest('a.su-menu-back') : null;
+  if (!a || !(editing && editDirty)) return;
+  if (!confirm('保存していない変更があります。メニューへ移ると消えます。移りますか？')) { e.preventDefault(); return; }
+  afMenuLeaveOk_ = true; setTimeout(function () { afMenuLeaveOk_ = false; }, 3000);
+});
 window.addEventListener('beforeunload', function (ev) {
   flushOnExit();
   /* 編集中の入力を抱えたまま閉じようとしたら止める（保存していない内容は復元できない） */
-  if (editing && editDirty) { ev.preventDefault(); ev.returnValue = ''; return ''; }
+  if (editing && editDirty && !afMenuLeaveOk_) { ev.preventDefault(); ev.returnValue = ''; return ''; }
   /* まだ送れていない変更があり、閉じる直前の送信もできなかった時（切り替えた後）は止める（入居調整の反証レビュー 指摘11） */
   if (dirty && afBeaconLost_) { ev.preventDefault(); ev.returnValue = ''; return ''; }
 });

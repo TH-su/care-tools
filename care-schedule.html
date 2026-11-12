@@ -912,6 +912,10 @@ select.inp { cursor: pointer; }
 /* 介護度は入居者マスタで直す、の案内（介護情報の窓・画面だけ・代表者の決定 2026-11-02） */
 .ci-level-note { margin: -4px 0 8px; font-size: 0.8125rem; color: var(--warn-tx, #6a3e00); }
 .ci-level-note[hidden] { display: none !important; }
+/* 見出しの「← メニュー」（ホーム画面から開いた iPhone でもメニューへ戻れるように・画面だけ・印刷しない・2026-11-12） */
+.su-menu-back{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+@media screen and (max-width:899px){.su-menu-back{min-height:44px}}
+@media print{.su-menu-back{display:none !important}}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
@@ -933,6 +937,7 @@ select.inp { cursor: pointer; }
 <div id="wk-sheet" class="wk-sheet" aria-hidden="true"></div>
 
 <header class="hdr">
+  <a class="hdr-btn su-menu-back" href="index.html">← メニュー</a>
   <h1>週間計画<span class="sim-tag">（試算・未確定）</span></h1>
   <!-- 週ボードA4印刷のときだけ紙に出る注記。ヘッダの中に置くので、盤面の高さ計算（yOf）にも
        行送りにも影響しない＝既存の印刷レイアウトを動かさない。画面では非表示（下の注記が出ている）。 -->

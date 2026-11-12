@@ -275,6 +275,12 @@ body {
   :root[data-su-theme] .ovsw-btn.is-support[aria-current="page"] { color: #904207; }   /* 全支援の橙（白地 7.1:1） */
   :root[data-su-theme] .hdr-sub, :root[data-su-theme] .hdr-ctl label, :root[data-su-theme] .sync-state { opacity: 1; }   /* 見出しの補足の字の透け（6.6:1）をやめる */
 }
+/* 見出しの「← メニュー」（ホーム画面から開いた iPhone でもメニューへ戻れるように・画面だけ・印刷しない・2026-11-12） */
+.su-menu-back{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+/* 見出しがすでに折り返す画面は、899px 以下で「← メニュー」を1段目に単独で置く（既存の部品の並び・段を変えない・代表者の決定 2026-11-12） */
+.su-menu-row{display:contents}
+@media screen and (max-width:899px){.su-menu-back{min-height:44px} .su-menu-row{display:block;flex:0 0 100%}}
+@media print{.su-menu-back{display:none !important}}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
@@ -282,6 +288,7 @@ body {
 <body>
 
 <header class="hdr">
+  <span class="su-menu-row"><a class="hdr-btn su-menu-back" href="index.html">← メニュー</a></span>
   <span class="hdr-title">全支援 週間俯瞰</span>
   <span class="ovsw" role="group" aria-label="ビュー切替（訪問／全支援）">
     <a class="ovsw-btn is-visit" href="visit-overview.html">訪問</a>
