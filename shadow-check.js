@@ -36,9 +36,10 @@ if (!window.SUDialog) window.SUDialog = {
    * 最上部の「見比べ直す」など、ページの上の方（v-main の外）のボタンは最上部の欄だけで足りる。 */
   var msgAnchor = null;
   document.addEventListener('click', function (e) {
+    /* 画面の中の窓（su-dialog.js）の中（OK・キャンセル・Enter も押した扱い・窓の文・暗い後ろ）を押した時は付け替えない。
+       答えの後の文を、窓を開いたボタンの並びの下に出すため（2026-11-13） */
+    if (e.target && e.target.closest && e.target.closest('dialog')) return;
     var b = e.target && e.target.closest ? e.target.closest('button') : null;
-    /* 画面の中の窓（su-dialog.js）の OK・キャンセル（Enter も押した扱い）では付け替えない。答えの後の文を、窓を開いたボタンの並びの下に出すため（2026-11-13） */
-    if (b && b.closest && b.closest('dialog')) return;
     msgAnchor = b && b.closest ? b.closest('.acts') : null;
   }, true);
   function msg(text, kind) {
@@ -964,7 +965,13 @@ if (!window.SUDialog) window.SUDialog = {
       if (res[3].error) throw new Error(String(res[3].error.message || res[3].error.code));
       var returning = shiftReturning((res[3].data || [])[0] || null, shiftSwitch());
       var idxErr = idx.filter(function (r) { return r.error; })[0];
-      if (idxErr) throw new Error(/PGRST202|42883/.test(String(idxErr.error.code || idxErr.error.message)) ? 'データベースの準備（0007）がまだです。' : String(idxErr.error.message || idxErr.error.code));
+      /* データベースの準備がまだの時は、今までどおりの文をここで出して終える（下の「点検できませんでした。」の一文にまとめないため・2026-11-13） */
+      if (idxErr && /PGRST202|42883/.test(String(idxErr.error.code || idxErr.error.message))) {
+        verdict.className = 'msg ng';
+        verdict.textContent = '点検できませんでした: データベースの準備（0007）がまだです。';
+        return;
+      }
+      if (idxErr) throw new Error(String(idxErr.error.message || idxErr.error.code));
       var ready = true, reasons = [], shiftBad = 0;
       FAMS.forEach(function (f, i) {
         var copy = (idx[i].data && idx[i].data.revs) || {};
@@ -1033,7 +1040,7 @@ if (!window.SUDialog) window.SUDialog = {
     } catch (e) {
       verdict.className = 'msg ng';
       /* 元の文（英語のことがある）は画面に出さず記録に残す。画面の文は仮置き（2026-11-13） */
-      try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('写しの見比べ: 切り替え前の点検', String(e && (e.code || e.message) || e)); } catch (x) { /* 記録できなくても止めない */ }
+      try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('写しの見比べ: 切り替え前の点検', String(e && e.message || e)); } catch (x) { /* 記録できなくても止めない */ }
       verdict.textContent = '点検できませんでした。通信の状態を確かめて、もう一度押してください。';
     } finally {
       busy(false);
@@ -1099,7 +1106,7 @@ if (!window.SUDialog) window.SUDialog = {
       try { await loadLock(sb); }
       catch (e) {
         /* 元の文は記録に残し、画面には職員に分かる一文だけを出す（仮置き・2026-11-13） */
-        try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('写しの見比べ: 厳格モードの状態の読み込み', String(e && (e.code || e.message) || e)); } catch (x) { /* 記録できなくても止めない */ }
+        try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('写しの見比べ: 厳格モードの状態の読み込み', String(e && e.message || e)); } catch (x) { /* 記録できなくても止めない */ }
         $('lk-state').className = 'msg warn'; $('lk-state').textContent = 'Supabase 側の厳格モードの状態を読めませんでした。「見比べ直す」を押してください。';
       }
     }
@@ -2744,7 +2751,7 @@ if (!window.SUDialog) window.SUDialog = {
       view('main');
     } catch (e) {
       /* 元の文は記録に残し、画面にはほかの画面と同じ一文を出す（仮置き・2026-11-13） */
-      try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('写しの見比べ: 開いた時の読み込み', String(e && (e.code || e.message) || e)); } catch (x) { /* 記録できなくても止めない */ }
+      try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('写しの見比べ: 開いた時の読み込み', String(e && e.message || e)); } catch (x) { /* 記録できなくても止めない */ }
       $('gate-why').textContent = '読み込めませんでした。ページを読み込み直してください。';
       view('gate');
     }
