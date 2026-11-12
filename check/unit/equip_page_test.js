@@ -782,6 +782,12 @@ const allPanels = (L) => { const out = []; for (const tb of CALC.TABS) { L.ctx.t
     const S2 = await opened({ rpc: { eq_list: okList({ fields: baseData().fields.concat([LEG]) }), eq_save_asset: saver(store) } });
     const ok = await S2.ctx.saveRow_('asset', { kind: 'facility', place_key: 'room:102', category: 'fire', name: '架空消火器', status: 'active', next_due: '2026-10-01', extra: { fl: '法定' } }, null, []); await settle();
     t('保存の後に数え直す: 法定の印の設備の期限切れが「法定の期限切れ」に入る', ok === true && JSON.stringify(due(S2)) === JSON.stringify({ v: 1, at: '2026-11-03', eq: true, overdue: 1, soon: 1, legal: 1 }), due(S2));
+    S2.ctx.openAsset_(null, 'room:101');
+    const adlg = S2.els['e-dlg'].innerHTML;
+    S2.el('a-name').value = '架空照明'; S2.el('a-category').value = 'electric'; S2.el('a-place').value = 'room:101'; S2.el('a-kind').value = 'facility'; S2.el('a-status').value = 'active';
+    const okN = await S2.ctx.saveForm_(); await settle();
+    const sN = S2.rpcs('eq_save_asset').slice(-1)[0];
+    t('法定の項目は初め「（選ばない）」で、触らずに保存しても法定の印は付かない', /<select id="fx-1"><option value="" selected>（選ばない）<\/option>/.test(adlg) && okN === true && sN && !Object.prototype.hasOwnProperty.call(sN.args.p_row.extra, 'fl'), sN && sN.args.p_row.extra);
     const id = S2.ctx.data.assets.find((x) => x.name === '架空消火器').id;
     await S2.ctx.saveRow_('asset', Object.assign({}, S2.ctx.data.assets.find((x) => x.id === id), { next_due: '2027-04-01' }), 1, []); await settle();
     t('直した後は札の件数も減る（0件の項目は 0 のまま書く）', JSON.stringify(due(S2)) === JSON.stringify({ v: 1, at: '2026-11-03', eq: true, overdue: 0, soon: 1, legal: 0 }), due(S2));
