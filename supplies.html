@@ -3,7 +3,7 @@
 <head>
 <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-jw5wPW/XyKwNpR327kR62+TpnbtGapPK8EHMTa94vQg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-85guLC3g/W8Cwwle8iZqQFoXvSmSGcVNlEVN9CrcVqU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="spl-build" content="2026-09-23.1">
@@ -2436,6 +2436,7 @@ function openPriceRow(itemId, keep) {
       warn: warn, err: '', busy: false
     };
     if (cur && cur.basis === 'bill') ST.edit.basis = 'bill';
+    ST.editSnap = priceEditSnap(ST.edit);
   }
   var tr = $('listBody').querySelector('tr[data-id="' + cssEsc(itemId) + '"]');
   if (!tr) return;
@@ -3856,7 +3857,7 @@ function billNoteWritable() {
   return billNotesUsable() && ST.billNotesOk !== false;
 }
 function openNoteEdit(r, i) {
-  ST.billEdit = { idx: i, residentId: txt(r.residentId), itemId: txt(r.itemId), text: txt(r.note) };
+  ST.billEdit = { idx: i, residentId: txt(r.residentId), itemId: txt(r.itemId), text: txt(r.note), orig: txt(r.note) };
   renderBill();
   var el = $('billNoteInput');
   if (el) el.focus();
@@ -4570,6 +4571,7 @@ function renderProfiles(it) {
         isDefault: !!p.isDefault
       };
     });
+    ST.profSnap = JSON.stringify(ST.profDraft);
   }
   var body = $('dtProfBody'), cur = priceInfo(it.id).current;
   clearNode(body);
@@ -4721,6 +4723,7 @@ function renderCats() {
         m1000: (catM1000(c) === null) ? '' : dec1(catM1000(c))
       };
     });
+    ST.catSnap = JSON.stringify(ST.catDraft);
   }
   var body = $('catBody');
   clearNode(body);
@@ -4820,7 +4823,7 @@ function saveDefaults() {
   });
 }
 function renderClosed() {
-  if (!ST.closedDraft) ST.closedDraft = ST.closed.slice();
+  if (!ST.closedDraft) { ST.closedDraft = ST.closed.slice(); ST.closedSnap = ST.closed.slice().sort().join(','); }
   var box = $('closedBox');
   clearNode(box);
   if (!ST.closedDraft.length) {
@@ -4846,7 +4849,7 @@ function addClosed() {
     setState('closedState', 'err', '月を選んでください', '締める月をカレンダーから選んでください。');
     return;
   }
-  if (!ST.closedDraft) ST.closedDraft = ST.closed.slice();
+  if (!ST.closedDraft) { ST.closedDraft = ST.closed.slice(); ST.closedSnap = ST.closed.slice().sort().join(','); }
   if (ST.closedDraft.indexOf(ym) < 0) ST.closedDraft.push(ym);
   setState('closedState', '', '', '');
   renderClosed();
@@ -4947,17 +4950,49 @@ function newDlgKeepOnClose() {
   ND_SNAP = null;
   return false;
 }
-/* タブを閉じる・再読み込みする時も、「新しい品目」の窓の入力が残っていれば確かめる（Esc で閉じる時と同じ判定・2026-11-12 商用90点 第3段）。
-   窓が開いていない時・入力が開いた時のままの時は何もしない */
-window.addEventListener('beforeunload', function (ev) {
+/* 改定行の入力の控え（開いた時の値）。入力が変わったかを比べるためだけに使う */
+function priceEditSnap(E) {
+  if (!E) return '';
+  return JSON.stringify([E.cost, E.unitPrice10, E.billPrice, E.m1000, E.effDate, E.reason, E.reasonText, E.basis, !!E.editUnits, E.units]);
+}
+/* 保存していない入力が残っているか（2026-11-12 商用化の見直し 5）。
+   「新しい品目」の窓（Esc で閉じる時と同じ判定）・改定行・請求のメモ・プロファイル・分類・締めた月・入出庫の記録の入力欄。
+   開いた時のままの入力は数えない。判定に失敗した時は聞かない（画面を止めない） */
+function supUnsaved() {
   try {
-    if (ND_SNAP === null) return;
-    var dlg = $('newDlg');
-    if (!dlg || !(dlg.open || dlg.hasAttribute('open'))) return;
-    if (!$('ndSave').disabled && newDlgSnap() === ND_SNAP) return;
-    ev.preventDefault();
-    ev.returnValue = '';
-  } catch (e) {}
+    if (ND_SNAP !== null) {
+      var dlg = $('newDlg');
+      if (dlg && (dlg.open || dlg.hasAttribute('open')) && ($('ndSave').disabled || newDlgSnap() !== ND_SNAP)) return true;
+    }
+    if (ST.edit && (ST.edit.busy || priceEditSnap(ST.edit) !== ST.editSnap)) return true;
+    if (ST.billEdit && txt(ST.billEdit.text) !== txt(ST.billEdit.orig)) return true;
+    if (ST.profDraft && JSON.stringify(ST.profDraft) !== ST.profSnap) return true;
+    if (ST.catDraft && JSON.stringify(ST.catDraft) !== ST.catSnap) return true;
+    if (ST.closedDraft && ST.closedDraft.slice().sort().join(',') !== ST.closedSnap) return true;
+    var ids = ['mvQty', 'mvNote', 'mvCost', 'mvResidentNo'], i, el;
+    for (i = 0; i < ids.length; i++) {
+      el = $(ids[i]);
+      if (el && txt(el.value).trim() !== '') return true;
+    }
+  } catch (e) { return false; }
+  return false;
+}
+/* タブを閉じる・再読み込みする時に、保存していない入力が残っていれば確かめる。
+   見出しの「← メニュー」は iOS Safari が beforeunload の確かめを出さないため、押した時に同じ判定で聞く。
+   「はい」の時は直後の beforeunload で二重に聞かない */
+var SUP_LEAVE_OK = false;
+document.addEventListener('click', function (e) {
+  var a = e.target && e.target.closest ? e.target.closest('a.su-menu-back') : null;
+  if (!a || e.defaultPrevented || e.button > 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;   // 新しいタブで開く押し方では今の画面は残る
+  if (!supUnsaved()) return;
+  if (!window.confirm('保存していない変更があります。メニューへ移ると消えます。移りますか？')) { e.preventDefault(); return; }
+  SUP_LEAVE_OK = true;
+  setTimeout(function () { SUP_LEAVE_OK = false; }, 3000);
+});
+window.addEventListener('beforeunload', function (ev) {
+  if (SUP_LEAVE_OK || !supUnsaved()) return;
+  ev.preventDefault();
+  ev.returnValue = '';
 });
 function closeNew() {
   ND_SNAP = null;
