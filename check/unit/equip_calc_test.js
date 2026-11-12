@@ -1,7 +1,8 @@
 /* 設備・修繕の記録の純関数（equip-calc.js）の試験（2026-11-03 新設・本人の決定 2026-11-03）
    実行: node check/unit/equip_calc_test.js
    守ること: 場所の鍵・次回予定日・期限の判定・基準日の代わり・日付の順の逆転・年度の境・費用の合計と取り消しの除外・
-            増やした項目の値の確かめ（共通 DB と同じ規則）・CSV（BOM・CRLF・引用符・増やした項目の列）・エスケープ・UI 状態の復元
+            増やした項目の値の確かめ（共通 DB と同じ規則）・CSV（BOM・CRLF・引用符・増やした項目の列）・エスケープ・UI 状態の復元・
+            メニューの札の件数と「法定」の印（2026-11-13）
    ★データはすべて架空（業者「架空設備」・部屋 101 など）。出力に console を使わない。 */
 'use strict';
 const path = require('path');
@@ -252,6 +253,45 @@ group('17. 設備のカルテ（U7）');
   t('その設備の記録だけを新しい順に（取り消しも印のために含む）', h.events.map((e) => e.id).join() === 'e3,e2,e1', h.events.map((e) => e.id));
   t('累計費用は取り消しを除く（11000 + 2200 = 13200・2件）', h.total.amount === 13200 && h.total.count === 2, h.total);
   t('設備が無い・記録が無い時は空', C.assetHistory(null, evs).events.length === 0 && C.assetHistory({ id: 'zz' }, null).total.amount === 0);
+}
+
+group('メニューの札の件数と「法定」の印（2026-11-13 代表者の指示・日付は固定）');
+{
+  const D = '2026-11-13';
+  const F = [
+    { id: 'fl', target: 'asset', name: '法定点検', ftype: 'select', options: ['法定', '任意'], disabled: false },
+    { id: 'fo', target: 'asset', name: '古い印', ftype: 'select', options: ['法定'], disabled: true },
+    { id: 'ft', target: 'asset', name: 'メモ', ftype: 'text', disabled: false },
+    { id: 'fe', target: 'event', name: '区分', ftype: 'select', options: ['法定'], disabled: false }
+  ];
+  t('法定: 設備に付ける選択肢の項目で「法定」を選んだ設備だけ', C.LEGAL_VALUE === '法定' && C.isLegalAsset({ extra: { fl: '法定' } }, F) === true);
+  t('法定: 「任意」・文字の項目の「法定」・使わない項目の値・付け先が記録の項目・印なしは法定にしない',
+    C.isLegalAsset({ extra: { fl: '任意' } }, F) === false && C.isLegalAsset({ extra: { ft: '法定' } }, F) === false
+    && C.isLegalAsset({ extra: { fo: '法定' } }, F) === false && C.isLegalAsset({ extra: { fe: '法定' } }, F) === false
+    && C.isLegalAsset({ extra: {} }, F) === false && C.isLegalAsset({}, F) === false && C.isLegalAsset(null, F) === false && C.isLegalAsset({ extra: { fl: '法定' } }, null) === false);
+  const A = [
+    { id: 'a1', status: 'active', next_due: '2026-11-01', extra: { fl: '法定' } },          // 期限切れ・法定
+    { id: 'a2', status: 'active', next_due: '2026-11-12', extra: { fl: '任意' } },          // 期限切れ（法定でない）
+    { id: 'a3', status: 'repairing', next_due: '2026-11-13', extra: { fl: '法定' } },       // 今日＝30日以内
+    { id: 'a4', status: 'active', next_due: '2026-12-13', extra: {} },                     // 30日目＝30日以内
+    { id: 'a5', status: 'active', next_due: '2026-12-14', extra: { fl: '法定' } },          // 31日目＝数えない
+    { id: 'a6', status: 'retired', next_due: '2026-01-01', extra: { fl: '法定' } },         // 廃棄は数えない
+    { id: 'a7', status: 'active', cycle_months: 6, bought_on: '2026-04-10', extra: { fl: '法定' } }  // 周期から 2026-10-10＝期限切れ・法定
+  ];
+  const E = [
+    { id: 'x1', asset_id: null, next_due: '2026-10-01' },                                 // 設備に付かない予定の期限切れ（法定にはできない）
+    { id: 'x2', asset_id: 'a2', handled_on: '2026-11-10', next_due: '2027-05-10' },       // a2 の新しい記録で期限が先へ
+    { id: 'x3', asset_id: null, next_due: '2026-11-20', cancelled_at: '2026-11-05T00:00:00Z' }   // 取り消しは数えない
+  ];
+  const m = C.menuDueSummary(A, E, F, D);
+  t('件数: 期限切れ3（a1・a7・設備に付かない予定）・30日以内2（a3・a4）・法定の期限切れ2（a1・a7）',
+    JSON.stringify(m) === JSON.stringify({ v: 1, at: D, eq: true, overdue: 3, soon: 2, legal: 2 }), m);
+  t('件数と数えた日だけ（設備名・場所・番号は入れない）', Object.keys(m).sort().join() === 'at,eq,legal,overdue,soon,v');
+  t('予定の一覧（schedule）の期限の判定と同じ数', (() => { const sc = C.schedule(A, E, D); return sc.filter((x) => x.status === 'overdue').length === m.overdue && sc.filter((x) => x.status === 'soon').length === m.soon; })());
+  t('使わないにした法定の項目の値は法定に数えない', C.menuDueSummary([{ id: 'b1', status: 'active', next_due: '2026-11-01', extra: { fo: '法定' } }], [], F, D).legal === 0);
+  t('設備が無い時は全部0件', JSON.stringify(C.menuDueSummary([], [], F, D)) === JSON.stringify({ v: 1, at: D, eq: true, overdue: 0, soon: 0, legal: 0 }));
+  t('今日の日付が 年-月-日 でなければ null（実際の今日に落とさない）', C.menuDueSummary(A, E, F, '') === null && C.menuDueSummary(A, E, F, '2026-02-30') === null && C.menuDueSummary(A, E, F) === null);
+  t('壊れた入力でも落ちない', JSON.stringify(C.menuDueSummary(null, null, null, D)) === JSON.stringify({ v: 1, at: D, eq: true, overdue: 0, soon: 0, legal: 0 }));
 }
 
 say('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');

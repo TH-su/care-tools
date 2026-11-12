@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-JoRcf2XvaV2N4M3Alj6GpjTmszs7fD3IlnWga7iCpFI=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-uWlDbrlbsQEsRphKlIDa93pfwOlPyVl4g0xM9/1/Ga8=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 検索エンジンにこのページと配下ツールを辿らせない。
@@ -16,6 +16,7 @@
        役割と並びは共通ログイン（Supabase の menu_get）から読み、端末に su_menu_v1 として控える（リンク先と区分 id だけ）。
        ほかに、事務所の端末でだけ、個別機能訓練計画書が数えて端末に残した期限の件数（tp_menu_due・件数と数えた日だけ・氏名なし）を
        読み、そのタイルに札として出す（2026-10-24 代表者の決定 案A）。メニューから書かない・送らない。
+       設備・修繕の記録が数えて残した期限の件数（eql_menu_due・件数と数えた日だけ・設備名と場所なし）も同じ作りで読む（2026-11-13）。
        管理者（Google＋2段階認証）でログイン中の事務所の端末でだけ、写しの記録（master_sync_runs の at・failed だけ）を読み、
        最後の成功が24時間より前なら入居者マスタのタイルに札を出す（su-sync-stale.js・2026-10-26 本人指示）。札に出すのは時刻だけ。
      ★端末に書くのは、見出しの毬を押した時の毬の柄（su_menu_ball・値は 'fuji'・'kiku'・'asanoha' だけ）だけで、
@@ -67,7 +68,7 @@
 <style>
 /* care-tools 共通の CSS 変数体系（各アプリと同じ見た目に揃える）。
    このページは氏名・記録を持たない。localStorage は読み取りのみ（端末用途 su_device_role・メニューの設定の控え su_menu_v1・
-   期限の件数の控え tp_menu_due・毬の柄 su_menu_ball）。毬の柄だけは、毬を押した時に su-menu.js の SUMenu.setBall が書く。 */
+   期限の件数の控え tp_menu_due・eql_menu_due・毬の柄 su_menu_ball）。毬の柄だけは、毬を押した時に su-menu.js の SUMenu.setBall が書く。 */
 /* 現場端末では事務所専用のタイルを出さない（押してもブロック画面になるだけの行き止まりを作らない）。
    ★data-office-only を付ける条件＝リンク先が su_device_role==='field' で起動をブロックするタイル。
    ★現在この属性が付いているのは誕生日一覧・入居調整・接続設定の3つ
@@ -174,6 +175,8 @@ main {
 .tile .note { font-size: 0.6875rem; color: var(--g7); font-weight: 400; }
 /* 期限の件数の札（2026-10-24 代表者の決定 案A）。色だけに頼らず「超過」等の語で書く */
 .tile .due { font-size: 0.6875rem; color: var(--due-tx); font-weight: 700; line-height: 1.4; }
+/* 法定の期限切れの赤の札（2026-11-13 代表者の指示）。地を --due-tx・文字を白にして約 7.9:1。色だけに頼らず「法定の期限切れ」の語で書く */
+.tile .due.legal { color: #fff; background: var(--due-tx); border-radius: 4px; padding: 0 6px; justify-self: start; }
 /* 写しが止まっている時の札（2026-10-26 本人指示）。期限の件数の札と同じ見た目 */
 .tile .stale { font-size: 0.6875rem; color: var(--due-tx); font-weight: 700; line-height: 1.4; }
 /* 定義の一部が壊れていた時の帯（2026-10-10）。#7a4200 on #fff4e5 で約 7.6:1 */
@@ -425,7 +428,8 @@ main {
      "nm": "設備・修繕の記録",
      "note": "購入・修理・点検の履歴",
      "officeOnly": true,
-     "_why": "設備・修繕の記録（2026-11-03 本人の決定）。メニューに「運営」の区分が無いため、消耗品管理と同じ入居者の区分の末尾に足す（途中へ挿すと上の指定ペアの行割りが崩れる）。officeOnly: 業者・費用を扱う事務所業務のため現場端末では出さない（アプリ側も現場端末では何も読まず、ログインの役割を su-app-gate.js で確かめる＝二重）"
+     "due": "eql_menu_due",
+     "_why": "due: 点検・清掃の周期から数えた期限切れと30日以内の数の札・法定の印の設備の期限切れは赤の札（2026-11-13 代表者の指示・設備の記録が事務所PCで数えて端末に残すのは件数と日付だけ）。設備・修繕の記録（2026-11-03 本人の決定）。メニューに「運営」の区分が無いため、消耗品管理と同じ入居者の区分の末尾に足す（途中へ挿すと上の指定ペアの行割りが崩れる）。officeOnly: 業者・費用を扱う事務所業務のため現場端末では出さない（アプリ側も現場端末では何も読まず、ログインの役割を su-app-gate.js で確かめる＝二重）"
     }
    ]
   },
@@ -548,7 +552,9 @@ main {
      expire（2026-10-29 本人指示・採用管理）: 保管期限の日付 "YYYY-MM-DD" の並び（2000件まで）。今日より前の日付の数を「保管期限切れn」と書く
      （日付で持つので、採用管理を開かない日が続いても期限を過ぎた日から出る）。形の違う日付が1つでもあれば出さない
      admin・review（2026-11-11 代表者の決定・入居者マスタ）: {"v":1,"at":…,"admin":true,"review":n} は薬情の見直し待ちの数で、
-     role（今のログインの役割）が管理者の時だけ「見直し待ちn」と書く。admin の印の無い review・管理者でない時・0件は出さない */
+     role（今のログインの役割）が管理者の時だけ「見直し待ちn」と書く。admin の印の無い review・管理者でない時・0件は出さない
+     eq（2026-11-13 代表者の指示・設備・修繕の記録）: {"v":1,"at":…,"eq":true,"overdue":n,"soon":n,"legal":n} は点検・清掃の期限で、
+     「期限切れn・30日以内n」と書く。legal（法定の期限切れ・overdue の内数）は dueLegal が別の赤の札にする。legal が overdue より多い時は出さない */
   function dueText(raw, today, role) {
     var d;
     try { d = JSON.parse(raw); } catch (e) { return ''; }
@@ -562,6 +568,13 @@ main {
       var rv = d.review;
       if (d.admin !== true || role !== 'admin' || typeof rv !== 'number' || !isFinite(rv) || rv < 0 || rv > 9999 || Math.floor(rv) !== rv) return '';
       return rv > 0 ? '見直し待ち' + rv + when : '';
+    }
+    if (d.eq != null) {
+      if (!dueEq(d)) return '';
+      var eqp = [];
+      if (d.overdue > 0) eqp.push('期限切れ' + d.overdue);
+      if (d.soon > 0) eqp.push('30日以内' + d.soon);
+      return eqp.length ? eqp.join('・') + when : '';
     }
     var parts = [], keys = [['overdue', '超過'], ['warn', '要注意'], ['none', '計画なし']];
     for (var i = 0; i < keys.length; i++) {
@@ -583,6 +596,15 @@ main {
     /* 年が違う時は年も書く（去年の同じ月日を今年の日と読み違えないため） */
     return parts.join('・') + when;
   }
+  function dueNum(n) { return typeof n === 'number' && isFinite(n) && n >= 0 && n <= 9999 && Math.floor(n) === n; }
+  function dueEq(d) { return d.eq === true && dueNum(d.overdue) && dueNum(d.soon) && dueNum(d.legal) && d.legal <= d.overdue; }
+  function dueLegal(raw, today) {
+    var d;
+    try { d = JSON.parse(raw); } catch (e) { return ''; }
+    if (!d || typeof d !== 'object' || d.v !== 1 || d.eq !== true || !dueEq(d) || d.legal < 1) return '';
+    if (!dueText(raw, today, '')) return '';
+    return '法定の期限切れ' + d.legal;
+  }
   /* DUE_TEXT_END */
   function todayYmd() {
     var t = new Date();
@@ -597,6 +619,17 @@ main {
       if (raw == null) return null;
       var txt = dueText(raw, todayYmd(), role);
       return txt ? el('span', 'due', txt) : null;
+    } catch (e) { return null; }
+  }
+  /* 法定の期限切れの赤の札（2026-11-13 代表者の指示・設備・修繕の記録）。件数の札と同じ守りで読み、無い時は null */
+  function dueLegalBadge(key) {
+    try {
+      if (document.documentElement.classList.contains('is-field')) return null;
+      if (!/^[a-z0-9_]{1,40}$/.test(key)) return null;
+      var raw = localStorage.getItem(key);
+      if (raw == null) return null;
+      var txt = dueLegal(raw, todayYmd());
+      return txt ? el('span', 'due legal', txt) : null;
     } catch (e) { return null; }
   }
   /* ★壊れた1件だけを飛ばす（2026-10-10・監査10月版 第2版 15）。区分ごと・タイルごとに try で囲み、出せた分は出す。
@@ -777,8 +810,13 @@ main {
       for (var i = 0; i < tiles.length; i++) {
         var old = tiles[i].querySelector('.due');
         if (old) tiles[i].removeChild(old);
+        /* 法定の赤の札（2つ目の .due）も外す。外さないと「戻る」のたびに赤の札が増える */
+        var oldL = tiles[i].querySelector('.due');
+        if (oldL) tiles[i].removeChild(oldL);
         var nb = dueBadge(tiles[i].getAttribute('data-due'));
         if (nb) tiles[i].appendChild(nb);
+        var lb = dueLegalBadge(tiles[i].getAttribute('data-due'));
+        if (lb) tiles[i].appendChild(lb);
       }
     } catch (e) { /* 付け直せなくてもメニューは動く */ }
   }
@@ -813,7 +851,7 @@ main {
         if (s.id !== 'sec-setup' && s.id !== 'sec-help' && window.SUItomari && typeof SUItomari.familyOf === 'function') { var fam = SUItomari.familyOf(t.href); if (fam >= 0 && fam <= 4) a.setAttribute('data-fam', String(fam)); }
         var ic = el('span', 'ic', t.ic); ic.setAttribute('aria-hidden', 'true');
         a.appendChild(ic); a.appendChild(facText('nm', t.nm)); a.appendChild(note(t.note));
-        if (typeof t.due === 'string') { a.setAttribute('data-due', t.due); var db = dueBadge(t.due); if (db) a.appendChild(db); }
+        if (typeof t.due === 'string') { a.setAttribute('data-due', t.due); var db = dueBadge(t.due); if (db) a.appendChild(db); var lb = dueLegalBadge(t.due); if (lb) a.appendChild(lb); }
         grid.appendChild(a);
         if (!t.officeOnly) open = true;
         } catch (e) { fail(e); }
