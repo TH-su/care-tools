@@ -7,6 +7,26 @@
    ・添付書類（filesJson）はサーバー専用列。保存ペイロード・書出・取込には載せない。
    ════════════════════════════════════════════════════════════════ */
 
+/* 画面の中の窓（su-dialog.js）が読めなかった時の受け口（2026-11-12）。ブラウザの窓に落とし、呼ぶ側と同じ約束（Promise）で答える。
+   この画面は CSP で直書きのスクリプトを置かないため、体重管理の HTML の受け口と同じ中身をここに置く */
+if (!window.SUDialog) window.SUDialog = {
+  alert: function (m) { try { window.alert(m); } catch (_) { /* 何もしない */ } return Promise.resolve(); },
+  confirm: function (m) { var r = false; try { r = !!window.confirm(m); } catch (_) { /* 何もしない */ } return Promise.resolve(r); },
+  busy: function () { return false; },
+  idle: function () { return Promise.resolve(); }
+};
+/* 画面の中の窓が出ている間に届いた一覧・委員会の応答は、窓が全部閉じて答えの後の処理が終わってから当てる（2026-11-12・仮置き）。
+   ブラウザの窓と違い、答えを待つ間も応答の処理は動くため、窓の前に掴んだ行・外部委員の一覧が入れ替わり、答えの後の保存が
+   新しい版（rev・committeesAt）に古い中身を載せて送られる（他の端末の変更を黙って消す）。窓が出ていない時は今までどおりすぐ当てる */
+function smAfterDialog_(v) {
+  try {
+    if (window.SUDialog && typeof window.SUDialog.busy === 'function' && window.SUDialog.busy()) {
+      return window.SUDialog.idle().then(function () { return v; });
+    }
+  } catch (e) { /* 判定できない時は今までどおりすぐ当てる */ }
+  return v;
+}
+
 var BUILD = '2026-11-06.2';
 var DEVICE_KEY = 'su_device_role';
 var CFG_KEY = 'stfm_cfg';
@@ -524,7 +544,7 @@ var SCREEN_IDS = { list: 'scr-list', detail: 'scr-detail', dash: 'scr-dash', io:
 var SAVED_SCREENS = ['list', 'dash', 'io', 'cmt', 'settings'];   /* detail は保存しない */
 var TAB_IDS = ['tabList', 'tabDash', 'tabIo', 'tabCmt', 'tabSet'];
 
-function showScreen(key) {
+async function showScreen(key) {
   if (!SCREEN_IDS[key]) key = 'list';
   /* 保存を送っている間は詳細を離れない（2026-09-23.8）。離れて別の方を開くと、届いた応答（新しい職員ID・
      確かめ待ち）がその方の画面に書き込まれ、次の「保存」で別の方の行を書き換える */
@@ -532,7 +552,10 @@ function showScreen(key) {
     toast('保存中です。終わるまでお待ちください');
     return;
   }
-  if (ST.screen === 'detail' && key !== 'detail' && !confirmLeaveDetail()) return;
+  if (ST.screen === 'detail' && key !== 'detail') {
+    var leaveMsg = confirmLeaveDetail();
+    if (leaveMsg !== null && !(await window.SUDialog.confirm(leaveMsg))) return;
+  }
   ST.screen = key;
   Object.keys(SCREEN_IDS).forEach(function (k) {
     $(SCREEN_IDS[k]).classList.toggle('on', k === key);
@@ -550,19 +573,20 @@ function showScreen(key) {
   window.scrollTo(0, 0);
 }
 
+/* 詳細を離れる前に聞く文を返す（聞かない時は null）。聞くのは呼ぶ側（showScreen）が画面の中の窓で行う（2026-11-12） */
 function confirmLeaveDetail() {
-  if (!ST.detail) return true;
+  if (!ST.detail) return null;
   /* 登録を確かめている途中（2026-09-23.8）。離れると止めていた印も消える＝確かめる手順を先に伝える
      （職員IDを受け取った方は入力が未保存に見えないので、ここで聞かないと黙って離れてしまう） */
   var p = ST.detail.pending;
   if (p) {
-    return window.confirm('この方が登録されたか、まだ確かめていません。移動すると、この画面の入力は消えます。\n'
+    return ('この方が登録されたか、まだ確かめていません。移動すると、この画面の入力は消えます。\n'
       + '移動した後は、一覧で「再読み込み」を押してこの方がいるか確かめ、いない時だけ「＋ 新規」から入れ直してください'
       + (p.kind === 'create' && Date.now() < p.at ? '（いないと判断できるのは ' + hhmm(p.at) + ' 以降に読み込んだ時です）' : '')
       + '。確かめずに入れ直すと、同じ方が二重に登録されることがあります。\n移動しますか？');
   }
-  if (!detailDirty()) return true;
-  return window.confirm('保存していない入力があります。破棄して移動しますか？');
+  if (!detailDirty()) return null;
+  return '保存していない入力があります。破棄して移動しますか？';
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -846,7 +870,7 @@ function loadList(quiet) {
   var startedAt = Date.now();                /* 読み直し待ち（2026-09-23.8）は、始めた時刻で「失敗の後の読み込みか」を見る */
   if (ST.screen === 'cmt') renderCmt();      /* 委員会タブに「読み込んでいます」を出す */
   if (!quiet) setState('listState', '', '読み込み中…', '職員データを取得しています。');
-  return apiPost('list', {}).then(function (d) {
+  return apiPost('list', {}).then(smAfterDialog_).then(function (d) {
     var rows = Array.isArray(d.rows) ? d.rows : null;
     ST.ver = Number(d.ver) || ST.ver;
     if (rows === null) {
@@ -934,9 +958,9 @@ function showReloadNg(stateId, r, label, fn) {
 }
 
 /* ── 一括編集 ─────────────────────────────────────────── */
-function setBulk(on) {
+async function setBulk(on) {
   if (!on && dirtyCount().rows > 0) {
-    if (!window.confirm('保存していない変更があります。破棄して一括編集を終わりますか？')) return;
+    if (!(await window.SUDialog.confirm('保存していない変更があります。破棄して一括編集を終わりますか？'))) return;
     ST.dirty = {};
   }
   ST.bulk = !!on;
@@ -1036,7 +1060,7 @@ function onCellKey(ev) {
   if (next && next.focus) { next.focus(); if (next.select) next.select(); }
 }
 
-function bulkSave() {
+async function bulkSave() {
   if (ST.busy) return;
   var ids = Object.keys(ST.dirty);
   if (!ids.length) return;
@@ -1074,7 +1098,7 @@ function bulkSave() {
   var c = { rows: rows.length, cells: rows.reduce(function (n, r) { return n + Object.keys(r.fields).length; }, 0) };
   var msg = c.rows + '名 / ' + c.cells + '項目を保存します。直した項目だけが書き換わります。'
     + (willRetire ? '\n※ ' + willRetire + '名に退職日が入ります（退職済の扱いになります）。' : '');
-  if (!window.confirm(msg)) return;
+  if (!(await window.SUDialog.confirm(msg))) return;
   ST.busy = true;
   updateBulkBar();
   setState('listState', '', '保存中…', 'サーバーに送っています。');
@@ -2000,8 +2024,8 @@ function showDetailConflict() {
   box.appendChild(h('p', { cls: 'muted', text: 'サーバー側の更新: ' + (txt(info.serverRow.updatedAt) || '不明') + '／版 ' + info.serverRev }));
   box.appendChild(h('div', { cls: 'row' }, [
     h('button', {
-      type: 'button', cls: 'btn sm', text: 'サーバー値を採用（入力を破棄）', onclick: function () {
-        if (!window.confirm('この画面の入力を破棄して、サーバーの内容に入れ替えます。よろしいですか？')) return;
+      type: 'button', cls: 'btn sm', text: 'サーバー値を採用（入力を破棄）', onclick: async function () {
+        if (!(await window.SUDialog.confirm('この画面の入力を破棄して、サーバーの内容に入れ替えます。よろしいですか？'))) return;
         var row = ST.byId[ST.detail.id];
         if (row) { Object.keys(info.serverRow).forEach(function (k) { row[k] = info.serverRow[k]; }); row.rev = info.serverRev || row.rev; refreshRow(row.id); }
         openDetail(ST.detail.id);
@@ -2042,11 +2066,11 @@ function revealIns() {
     showFieldError('f_empIns', 'e_empIns', errText(e) + '／' + errHint(e));
   }).then(function () { $('insShow').disabled = false; }, function () { $('insShow').disabled = false; });
 }
-function hideIns() {
+async function hideIns() {
   if (!ST.detail) return;
   var v = txt($('f_empIns').value);
   var f = $('f_empIns');
-  if (!sameVal(v, txt(ST.detail.insBase)) && !window.confirm('雇用保険番号の変更は保存されていません。隠すと入力は失われます。よろしいですか？')) return;
+  if (!sameVal(v, txt(ST.detail.insBase)) && !(await window.SUDialog.confirm('雇用保険番号の変更は保存されていません。隠すと入力は失われます。よろしいですか？'))) return;
   ST.detail.insShown = false;
   f.value = v ? ('••••' + v.replace(/[^0-9]/g, '').slice(-4)) : '';
   f.readOnly = true;
@@ -2562,12 +2586,12 @@ function reloadForFiles(id) {
   });
 }
 
-function removeFileEntry(fid, f) {
+async function removeFileEntry(fid, f) {
   if (ST.filesBusy) return;
   var id = ST.detail ? txt(ST.detail.id) : '';
   if (!id || !txt(fid)) return;
   var nm = txt(f && f.title) || txt(f && f.name) || 'この書類';
-  if (!window.confirm(nm + ' を書類の一覧から外します。\nGoogle ドライブの「削除済み」フォルダへ移動します。元に戻す時は Google ドライブで戻せます。\nよろしいですか？')) return;
+  if (!(await window.SUDialog.confirm(nm + ' を書類の一覧から外します。\nGoogle ドライブの「削除済み」フォルダへ移動します。元に戻す時は Google ドライブで戻せます。\nよろしいですか？'))) return;
   var cfg = loadCfg();
   setFilesBusy(true);
   setState('fdState', '', '削除中…', 'サーバーに送っています。');
@@ -3020,7 +3044,7 @@ function impRow(no, kind, cls, name, detail) {
   ]);
 }
 
-function runImport() {
+async function runImport() {
   if (!ST.imp || !ST.imp.plan || !ST.imp.payloadJson) { toast('先に「内容を確認する（試算）」を押してください'); return; }
   var plan = ST.imp.plan;
   var payload = {
@@ -3032,7 +3056,7 @@ function runImport() {
     setState('impState', 'err', '試算したときと内容が変わっています', '安全のため送信を中止しました。もう一度「内容を確認する（試算）」を押してから取り込んでください。');
     return;
   }
-  if (!window.confirm('新規 ' + plan.creates.length + '件、更新 ' + plan.updates.length + '件を取り込みます。よろしいですか？')) return;
+  if (!(await window.SUDialog.confirm('新規 ' + plan.creates.length + '件、更新 ' + plan.updates.length + '件を取り込みます。よろしいですか？'))) return;
   setState('impState', '', '取り込み中…', 'サーバーに送っています。');
   $('impRunBtn').disabled = true;
   /* 送っている間は試算も止める。試算は取り込む前の一覧で計画を作り直し、「取り込む」をまた押せるようにする
@@ -3137,7 +3161,7 @@ function exportCell(row, k) {
   return txt(row[k]);
 }
 
-function runExport() {
+async function runExport() {
   if (!ST.loaded || !ST.rows.length) {
     setState('expState', 'warn', '書き出す職員がいません', '先に「一覧」で職員データを読み込んでください。');
     return;
@@ -3150,7 +3174,7 @@ function runExport() {
     + '\n雇用保険番号: ' + (withIns ? '含める（取り扱いに注意してください）' : '含めない')
     + '\n年齢・勤続の列: ' + (withCalc ? '付ける' : '付けない')
     + '\n\n氏名・生年月日・住所・電話を含むファイルです。よろしいですか？';
-  if (!window.confirm(msg)) return;
+  if (!(await window.SUDialog.confirm(msg))) return;
   setState('expState', '', '書き出しています…', '');
   var work = withIns ? fetchAllSecure() : Promise.resolve({});
   work.then(function (secure) {
@@ -3760,11 +3784,11 @@ function moveEnumRow(group, i, step) {
   var el = $(want);
   focusEnumEl((el && !el.disabled) ? want : (base + '_label'));
 }
-function removeEnumRow(group, i) {
+async function removeEnumRow(group, i) {
   if (ST.enumBusy || !ST.enumDraft) return;
   var a = ST.enumDraft[group];
   if (!a || !a[i]) return;
-  if (!window.confirm('「' + (a[i].label || a[i].code) + '」を選択肢から消します。よろしいですか？')) return;
+  if (!(await window.SUDialog.confirm('「' + (a[i].label || a[i].code) + '」を選択肢から消します。よろしいですか？'))) return;
   a.splice(i, 1);
   renderEnumRows();
   var gx = enumGroupDef(group);
@@ -4360,7 +4384,7 @@ function applyLocalityNow() {
 }
 function loadCommittees() {
   if (!cfgReady()) { failCommittees(); return Promise.resolve(false); }
-  return apiPost('getCommittees', {}).then(function (d) {
+  return apiPost('getCommittees', {}).then(smAfterDialog_).then(function (d) {
     applyCommittees(d);
     return true;
   }).catch(function () { failCommittees(); return false; });
@@ -4371,7 +4395,7 @@ function loadCommittees() {
 function loadCmtDialog(stateId, doId, refill) {
   $(doId).disabled = true;
   setState(stateId, '', '読み込み中…', 'いまの委員会と外部委員を取り直しています。');
-  apiPost('getCommittees', {}).then(function (d) {
+  apiPost('getCommittees', {}).then(smAfterDialog_).then(function (d) {
     applyCommittees(d);
     setState(stateId, '', '', '');
     refill();                               /* 押せるかどうかは refill が最終判断する */
@@ -5312,11 +5336,11 @@ function cmtSaveStaff(id, list, okMsg) {
     setState('cmtState', 'err', '保存できませんでした（' + errText(e) + '）', errHint(e) + errDetail(e, 3));
   }).then(function () { setCmtBusy(false); }, function () { setCmtBusy(false); });
 }
-function cmtRemoveStaff(code, id) {
+async function cmtRemoveStaff(code, id) {
   var row = ST.byId[txt(id)];
   if (!row || !cmtCanEdit() || ST.cmtBusy) return;
   var nm = txt(row.name) || 'この方';
-  if (!window.confirm(nm + ' を「' + cmtLabelOf(code) + '」から外します。よろしいですか？')) return;
+  if (!(await window.SUDialog.confirm(nm + ' を「' + cmtLabelOf(code) + '」から外します。よろしいですか？'))) return;
   cmtSaveStaff(row.id, cmtWithRole(row, code, ''), nm + ' を外しました');
 }
 function cmtAddStaff(code, id, role) {
@@ -5383,11 +5407,11 @@ function cmtSaveState(committees, externals, okMsg, ngTtl) {
       errHint(e) + ' 画面の内容は変えていません。' + errDetail(e, 3));
   }).then(function () { setCmtBusy(false); }, function () { setCmtBusy(false); });
 }
-function cmtRemoveExternal(code, i) {
+async function cmtRemoveExternal(code, i) {
   var list = cmtExternalsOf(code);
   if (!list[i] || !cmtCanEdit() || ST.cmtBusy) return;
   var nm = txt(list[i].name);
-  if (!window.confirm(nm + ' を「' + cmtLabelOf(code) + '」の外部委員から外します。よろしいですか？')) return;
+  if (!(await window.SUDialog.confirm(nm + ' を「' + cmtLabelOf(code) + '」の外部委員から外します。よろしいですか？'))) return;
   var next = {}, k;
   for (k in ST.cmtExternals) { if (Object.prototype.hasOwnProperty.call(ST.cmtExternals, k)) next[k] = ST.cmtExternals[k].slice(); }
   next[txt(code)] = list.filter(function (x, j) { return j !== i; });
@@ -5573,9 +5597,9 @@ function bindEvents() {
   $('reloadBtn').addEventListener('click', function () { loadList(); });
   $('newBtn').addEventListener('click', function () { openDetail(''); });
   $('bulkBtn').addEventListener('click', function () { setBulk(!ST.bulk); });
-  $('bulkCancel').addEventListener('click', function () {
+  $('bulkCancel').addEventListener('click', async function () {
     if (!dirtyCount().cells) return;
-    if (!window.confirm('未保存の変更をすべて捨てます。よろしいですか？')) return;
+    if (!(await window.SUDialog.confirm('未保存の変更をすべて捨てます。よろしいですか？'))) return;
     ST.dirty = {}; ST.conflicts = {}; renderList();
   });
   $('bulkSaveBtn').addEventListener('click', bulkSave);
@@ -5600,9 +5624,9 @@ function bindEvents() {
 
   $('backBtn').addEventListener('click', function () { showScreen('list'); });
   $('dtSave').addEventListener('click', saveDetail);
-  $('dtCancel').addEventListener('click', function () {
+  $('dtCancel').addEventListener('click', async function () {
     if (!ST.detail) return;
-    if (!window.confirm('入力を捨てて、読み込んだ内容に戻します。よろしいですか？')) return;
+    if (!(await window.SUDialog.confirm('入力を捨てて、読み込んだ内容に戻します。よろしいですか？'))) return;
     fillForm(ST.detail.base); onFormInput();
   });
   $('insShow').addEventListener('click', revealIns);
