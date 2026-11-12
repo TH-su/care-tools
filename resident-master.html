@@ -1646,7 +1646,7 @@ body.meal-on #sc-list{max-width:none}
 <!-- ════════ 一覧 ════════ -->
 <section class="scr on" id="sc-list">
   <div class="search-bar">
-    <input type="search" id="q" placeholder="氏名・ふりがな・居室で検索" autocomplete="off">
+    <input type="search" id="q" placeholder="氏名・ふりがな・居室で検索" autocomplete="off" aria-label="入居者を検索（氏名・ふりがな・居室）">
     <!-- 一括編集（2026-08-08 追加）。★.filter-row の中に置かないこと。既存の init が
          `#filterRow .chip` を総なめして在籍/退去フィルタのハンドラを付けるため、
          ここに chip を1つ足すと在籍フィルタが壊れる（curFilter が null になる） -->
@@ -1904,7 +1904,7 @@ body.meal-on #sc-list{max-width:none}
     </p>
     <div class="bulk-tabs" id="bulkTabs"></div>
     <div class="bulk-tools">
-      <input type="search" id="bulkQ" placeholder="氏名・ふりがな・居室で絞り込み" autocomplete="off">
+      <input type="search" id="bulkQ" placeholder="氏名・ふりがな・居室で絞り込み" autocomplete="off" aria-label="一括編集の入居者を絞り込む（氏名・ふりがな・居室）">
       <label><input type="checkbox" id="bulkOut"> 退去者も表示</label>
       <span id="bulkCount" class="muted"></span>
     </div>

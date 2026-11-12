@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ciq3Gil9DEwRqd6VxcgOa08yt3zV5muSb688u6CHmMk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-cX+gBzo3hdr1X+EGHw+gCNQTy4UGVZdKcBlZ5gvvOc0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
@@ -3805,9 +3805,9 @@ function renderEdit() {
   h += '<div class="cd"><h3>ご家族</h3><div id="famBox">';
   r.family.forEach(function (f, i) {
     h += '<div class="subrow" data-fam="' + i + '"><button class="rm" type="button" data-famrm="' + i + '" aria-label="この行を削除">✕</button><div class="frow">' +
-      '<div class="fld"><label>氏名</label><input data-famk="name" data-fami="' + i + '" value="' + esc(f.name || '') + '"></div>' +
-      '<div class="fld"><label>続柄</label><input data-famk="relation" data-fami="' + i + '" value="' + esc(f.relation || '') + '"></div>' +
-      '<div class="fld"><label>電話</label><input data-famk="phone" data-fami="' + i + '" type="tel" value="' + esc(f.phone || '') + '"></div>' +
+      '<div class="fld"><label for="fam-name-' + i + '">氏名</label><input id="fam-name-' + i + '" data-famk="name" data-fami="' + i + '" value="' + esc(f.name || '') + '"></div>' +
+      '<div class="fld"><label for="fam-relation-' + i + '">続柄</label><input id="fam-relation-' + i + '" data-famk="relation" data-fami="' + i + '" value="' + esc(f.relation || '') + '"></div>' +
+      '<div class="fld"><label for="fam-phone-' + i + '">電話</label><input id="fam-phone-' + i + '" data-famk="phone" data-fami="' + i + '" type="tel" value="' + esc(f.phone || '') + '"></div>' +
       '<label class="chk"><input type="checkbox" data-famk="emergency" data-fami="' + i + '"' + (f.emergency ? ' checked' : '') + '>緊急連絡先</label>' +
       '</div></div>';
   });
@@ -3817,14 +3817,14 @@ function renderEdit() {
   h += '<div class="cd"><h3>連携先（事業所・機関）</h3><div id="ctBox">';
   r.contacts.forEach(function (ct, i) {
     h += '<div class="subrow"><button class="rm" type="button" data-ctrm="' + i + '" aria-label="この行を削除">✕</button><div class="frow">' +
-      '<div class="fld"><label>区分</label><select data-ctk="cat" data-cti="' + i + '">' +
+      '<div class="fld"><label for="ct-cat-' + i + '">区分</label><select id="ct-cat-' + i + '" data-ctk="cat" data-cti="' + i + '">' +
       CATS.map(function (p) { return '<option value="' + esc(p[0]) + '"' + (ct.cat === p[0] ? ' selected' : '') + '>' + esc(p[1]) + '</option>'; }).join('') + '</select></div>' +
-      '<div class="fld" style="flex:2"><label>事業所・機関名</label><input data-ctk="org" data-cti="' + i + '" value="' + esc(ct.org || '') + '"></div>' +
-      '<div class="fld"><label>担当者</label><input data-ctk="person" data-cti="' + i + '" value="' + esc(ct.person || '') + '"></div>' +
+      '<div class="fld" style="flex:2"><label for="ct-org-' + i + '">事業所・機関名</label><input id="ct-org-' + i + '" data-ctk="org" data-cti="' + i + '" value="' + esc(ct.org || '') + '"></div>' +
+      '<div class="fld"><label for="ct-person-' + i + '">担当者</label><input id="ct-person-' + i + '" data-ctk="person" data-cti="' + i + '" value="' + esc(ct.person || '') + '"></div>' +
       '</div><div class="frow" style="margin-top:6px">' +
-      '<div class="fld"><label>TEL</label><input data-ctk="tel" data-cti="' + i + '" type="tel" value="' + esc(ct.tel || '') + '"></div>' +
-      '<div class="fld"><label>FAX</label><input data-ctk="fax" data-cti="' + i + '" type="tel" value="' + esc(ct.fax || '') + '"></div>' +
-      '<div class="fld" style="flex:2"><label>メモ</label><input data-ctk="note" data-cti="' + i + '" value="' + esc(ct.note || '') + '"></div>' +
+      '<div class="fld"><label for="ct-tel-' + i + '">TEL</label><input id="ct-tel-' + i + '" data-ctk="tel" data-cti="' + i + '" type="tel" value="' + esc(ct.tel || '') + '"></div>' +
+      '<div class="fld"><label for="ct-fax-' + i + '">FAX</label><input id="ct-fax-' + i + '" data-ctk="fax" data-cti="' + i + '" type="tel" value="' + esc(ct.fax || '') + '"></div>' +
+      '<div class="fld" style="flex:2"><label for="ct-note-' + i + '">メモ</label><input id="ct-note-' + i + '" data-ctk="note" data-cti="' + i + '" value="' + esc(ct.note || '') + '"></div>' +
       '</div></div>';
   });
   h += '</div><div class="frow"><button class="btn sm" id="ctAdd" type="button">＋ 連携先を追加</button>' +
