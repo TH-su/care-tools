@@ -34,7 +34,7 @@
   --g0:#f7f8f9; --g1:#f1f3f4; --g2:#e5e7ea; --g3:#d2d5d9;
   --g5:#6b7075; --g6:#5f6368; --g7:#4b4f52; --g9:#1f2124;
   --r:12px; --sh:0 1px 4px rgba(0,0,0,.10);
-  --focus:#0b57d0;
+  --focus:#0b57d0; --ats-surface:#fff;
 }
 :focus-visible{outline:3px solid var(--focus); outline-offset:2px}
 @media (prefers-reduced-motion: reduce){
@@ -62,7 +62,7 @@ a{color:var(--pri-d)}
 .hdr .sync:empty{display:none}
 
 #a-main{max-width:1600px; margin:0 auto; padding:12px}
-.cd{background:#fff; border-radius:var(--r); box-shadow:var(--sh); padding:14px; margin-bottom:12px; min-width:0}
+.cd{background:var(--ats-surface); border-radius:var(--r); box-shadow:var(--sh); padding:14px; margin-bottom:12px; min-width:0}
 h2{font-size:1.125rem; margin:0 0 10px}
 h3{font-size:1.0625rem; margin:14px 0 6px}
 .hint{color:var(--g7); margin:6px 0}
@@ -78,7 +78,7 @@ h3{font-size:1.0625rem; margin:14px 0 6px}
 
 /* ── ボタン ── */
 .btn{display:inline-flex; align-items:center; justify-content:center; min-height:44px; min-width:44px; padding:8px 16px;
-  border-radius:10px; border:1px solid var(--g5); background:#fff; color:var(--g9); font-weight:600; text-decoration:none}
+  border-radius:10px; border:1px solid var(--g5); background:var(--ats-surface); color:var(--g9); font-weight:600; text-decoration:none}
 .btn:hover{background:var(--g1)}
 .btn.pri{background:var(--pri); border-color:var(--pri); color:#fff}
 .btn.pri:hover{background:var(--pri-d)}
@@ -90,14 +90,14 @@ h3{font-size:1.0625rem; margin:14px 0 6px}
 
 /* ── タブ ── */
 .tabs{display:flex; flex-wrap:wrap; gap:6px; margin:0 0 12px}
-.tab{min-height:44px; padding:8px 14px; border-radius:10px; border:1px solid var(--g5); background:#fff; font-weight:600}
+.tab{min-height:44px; padding:8px 14px; border-radius:10px; border:1px solid var(--g5); background:var(--ats-surface); font-weight:600}
 .tab[aria-selected="true"]{background:var(--pri); border-color:var(--pri); color:#fff}
 
 /* ── 選考ボード ── */
 .bar{display:flex; flex-wrap:wrap; gap:8px 12px; align-items:flex-end; margin:0 0 10px}
 .fi{display:flex; flex-direction:column; gap:3px; min-width:0}
 .fi label,.fl{font-weight:700; font-size:1rem}
-.fi input,.fi select,.fi textarea,.dlg textarea,.dlg select,.dlg input{width:100%; min-height:44px; padding:8px 10px; border:1px solid var(--g5); border-radius:8px; background:#fff; min-width:0}
+.fi input,.fi select,.fi textarea,.dlg textarea,.dlg select,.dlg input{width:100%; min-height:44px; padding:8px 10px; border:1px solid var(--g5); border-radius:8px; background:var(--ats-surface); min-width:0}
 .fi textarea,.dlg textarea{line-height:1.6; resize:vertical; min-height:88px}
 /* 生年月日の読み下し（和暦・満年齢）。打ち間違いの疑いは注意の色、読めない時は赤 */
 .bnote{margin:0; font-size:0.9375rem; color:var(--g7); min-height:1.4em}
@@ -110,7 +110,7 @@ h3{font-size:1.0625rem; margin:14px 0 6px}
 .col.drop-ok{border:2px dashed var(--pri); background:var(--pri-l)}
 .col.drop-no{opacity:.55}
 .cards{list-style:none; margin:0; padding:0; display:grid; gap:8px}
-.card{background:#fff; border:1px solid var(--g3); border-radius:10px; padding:8px 10px; display:flex; flex-direction:column; gap:4px}
+.card{background:var(--ats-surface); border:1px solid var(--g3); border-radius:10px; padding:8px 10px; display:flex; flex-direction:column; gap:4px}
 .card.late{border:3px solid var(--ng)}
 .card.soon{background:var(--warn-bg)}
 .card-n{font-weight:700; text-align:left; background:none; border:0; padding:4px 0; min-height:44px; color:var(--pri-d); text-decoration:underline}
@@ -128,7 +128,7 @@ h3{font-size:1.0625rem; margin:14px 0 6px}
 .cal-bar{display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:8px}
 .cal-ym{font-size:1.125rem; font-weight:700; min-width:8.5em; text-align:center}
 .cal-kinds{display:flex; flex-wrap:wrap; gap:6px; border:0; margin:0 0 8px; padding:0}
-.cal-kinds label{display:inline-flex; align-items:center; gap:6px; min-height:44px; padding:0 10px; border:1px solid var(--g5); border-radius:8px; background:#fff; cursor:pointer}
+.cal-kinds label{display:inline-flex; align-items:center; gap:6px; min-height:44px; padding:0 10px; border:1px solid var(--g5); border-radius:8px; background:var(--ats-surface); cursor:pointer}
 .cal{width:100%; border-collapse:collapse; table-layout:fixed}
 .cal th{background:var(--g1); border:1px solid var(--g3); padding:4px; font-size:0.9375rem}
 .cal td{border:1px solid var(--g3); vertical-align:top; padding:4px; height:88px; min-width:0}
@@ -137,7 +137,7 @@ h3{font-size:1.0625rem; margin:14px 0 6px}
 .cal .sun{color:var(--ng)} .cal .sat{color:var(--pri-d)}
 .cal-d{font-weight:700; font-size:0.9375rem}
 .cal-evs{list-style:none; margin:2px 0 0; padding:0; display:grid; gap:3px}
-.cal-ev{display:block; width:100%; text-align:left; border:1px solid var(--g3); border-left:5px solid var(--g5); border-radius:6px; background:#fff; color:var(--g9);
+.cal-ev{display:block; width:100%; text-align:left; border:1px solid var(--g3); border-left:5px solid var(--g5); border-radius:6px; background:var(--ats-surface); color:var(--g9);
   padding:2px 4px; font-size:0.875rem; line-height:1.35; min-height:28px; cursor:pointer; overflow-wrap:anywhere}
 .cal-ev:hover{background:var(--g1)}
 .cal-ev .k{font-weight:700; margin-right:4px}
@@ -152,9 +152,9 @@ h3{font-size:1.0625rem; margin:14px 0 6px}
 .cal-ag .cal-ev{min-height:44px; font-size:1rem; padding:6px 8px}
 .undo{position:fixed; left:50%; bottom:20px; transform:translateX(-50%); z-index:120; background:var(--g9); color:#fff; border-radius:14px;
   padding:8px 10px 8px 16px; display:flex; align-items:center; gap:10px; max-width:94vw; box-shadow:0 6px 20px rgba(0,0,0,.3)}
-.undo .btn{background:#fff; color:var(--g9)}
+.undo .btn{background:var(--ats-surface); color:var(--g9)}
 .m-stage{display:none}
-.tbl{width:100%; border-collapse:collapse; background:#fff}
+.tbl{width:100%; border-collapse:collapse; background:var(--ats-surface)}
 .tbl th,.tbl td{border:1px solid var(--g3); padding:6px 8px; text-align:left; vertical-align:top}
 .tbl th{background:var(--g1)}
 .tbl td.num,.tbl th.num{text-align:right; white-space:nowrap}
@@ -166,9 +166,9 @@ h3{font-size:1.0625rem; margin:14px 0 6px}
 .ng-t{color:var(--ng); font-weight:700}
 
 /* ── 詳細（右から出る板） ── */
-.pane{position:fixed; top:0; right:0; bottom:0; width:min(560px,100vw); background:#fff; z-index:90; box-shadow:-4px 0 20px rgba(0,0,0,.2);
+.pane{position:fixed; top:0; right:0; bottom:0; width:min(560px,100vw); background:var(--ats-surface); z-index:90; box-shadow:-4px 0 20px rgba(0,0,0,.2);
   overflow-y:auto; padding:0 16px 80px}
-.pane-h{position:sticky; top:0; background:#fff; z-index:2; display:flex; align-items:center; gap:8px; padding:10px 0; border-bottom:1px solid var(--g3)}
+.pane-h{position:sticky; top:0; background:var(--ats-surface); z-index:2; display:flex; align-items:center; gap:8px; padding:10px 0; border-bottom:1px solid var(--g3)}
 .pane-h h2{flex:1; margin:0; font-size:1.25rem}
 .sec{border-top:1px solid var(--g3); padding:8px 0 12px}
 .sec h3{margin:8px 0}
@@ -189,10 +189,10 @@ h3{font-size:1.0625rem; margin:14px 0 6px}
 /* 書類を左に出して右で入力する（2026-10-29）。左が書類、右が詳細の板。幅の狭い画面は上下 */
 .viewer{position:fixed; top:0; left:0; bottom:0; width:50vw; z-index:89; background:#525659; display:flex; flex-direction:column}
 .viewer[hidden]{display:none}
-.viewer-h{display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; padding:8px 10px; background:#fff; border-bottom:1px solid var(--g3)}
+.viewer-h{display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; padding:8px 10px; background:var(--ats-surface); border-bottom:1px solid var(--g3)}
 .viewer-h .vt{flex:1 1 160px; min-width:0; font-weight:700; overflow-wrap:anywhere}
-.viewer iframe{flex:1; width:100%; border:0; background:#fff}
-.viewer .vmsg{margin:12px; background:#fff}
+.viewer iframe{flex:1; width:100%; border:0; background:var(--ats-surface)}
+.viewer .vmsg{margin:12px; background:var(--ats-surface)}
 body.split .pane{width:50vw}
 @media (max-width:899px){ .viewer{width:100vw; bottom:auto; height:45vh} body.split .pane{width:100vw; top:45vh} }
 .rt{border-collapse:collapse; width:100%}
