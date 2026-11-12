@@ -208,6 +208,42 @@ async function main() {
     t('包んだ形の比較（(e.message) === ・String(e) !==）は数えない', n("el.textContent = (e.message) === 'x' ? 'あ' : 'い'") === 0 && n("alert(String(e) !== 'x' ? 'あ' : 'い')") === 0);
   }
 
+  group('9. 反証レビューの指摘（2026-11-12）');
+  {
+    const n = (js) => C.countEnglishErrorExposure(js);
+    const jaMark = "function f(){var _k=new Error('架空のデータなし');_k.kakuuMark=true;throw _k}\n";
+    const use = "\nbox.innerHTML='失敗: '+esc(e&&e.kakuuMark?String(e.message||''):words(e))";
+    t('印を付けた変数の message を書き換える所があれば数える', n("function f(){var _k=new Error('架空のデータなし');_k.kakuuMark=true;_k.message=json.error;throw _k}" + use) === 1
+      && n(jaMark + "_k.message += json.error;" + use) === 1);
+    t('印の代入に ||= ・??= ・&&= があれば数える', ['||=', '??=', '&&='].every((op) => n(jaMark + 'err2.kakuuMark ' + op + ' json.kakuuMark;' + use) === 1));
+    t('印の書き換えが無ければ今までどおり数えない', n(jaMark + use) === 0);
+    t("e.message || '' === 'x' は '' と比べているだけなので数える", n("el.textContent = e.message || '' === 'x'") === 1
+      && n("el.textContent = String(e.message) || '' === 'x'") === 1);
+    t("包んだ括弧の中の ||'' の後ろの比較は今までどおり数えない", n("el.textContent = (e.message || '') === 'x' ? 'あ' : 'い'") === 0);
+    const page = '<html><body><input id="kakuu4" aria-label="架空"><script src="kakuu-page.js"></script></body></html>';
+    const leave = (scripts, html) => item(C.scorePage('kakuu-page.html', html || page, { scripts }), 'leave').status;
+    t('部品の removeEventListener(beforeunload) だけでは あり にならない', leave({ 'kakuu-page.js': 'window.removeEventListener("beforeunload", f);' }) === '不合格');
+    t('部品の行の後ろのコメントの中の beforeunload では あり にならない', leave({ 'kakuu-page.js': 'var a = 1; // beforeunload は使わない\nwindow.onbeforeunload_x = 1;' }) === '不合格');
+    t('部品の onbeforeunload = は あり', leave({ 'kakuu-page.js': 'window.onbeforeunload = function(){ return "x"; };' }) === '合格');
+    t('文字列の中の // は壊さない（後ろの addEventListener を読む）', leave({ 'kakuu-page.js': 'var u = "https://example.invalid/x"; window.addEventListener("beforeunload", f);' }) === '合格');
+    t('画面の中のスクリプトも同じ形だけ（removeEventListener だけ・コメントの語は なし）',
+      leave(undefined, page.replace('</body>', '<script>window.removeEventListener("beforeunload", f); var b = 2; // beforeunload\n</script></body>')) === '不合格');
+    t('stripLineComments: 文字列の中の // と改行は残す', C.stripLineComments("a('//x'); // c\nb(\"//y\") //d\n`//z`") === "a('//x'); \nb(\"//y\") \n`//z`", C.stripLineComments("a('//x'); // c\nb(\"//y\") //d\n`//z`"));
+  }
+
+  group('10. その画面のための部品の中身も、画面の中と同じに数える（画面から部品へ移しても点が動かない・2026-11-12）');
+  {
+    const body = 'function a(){ alert("架空1"); confirm("架空2"); prompt("架空3"); }\nfunction b(){ try{}catch(e){ el.textContent = e.message; } }\nel.style.color = "#123456";\nvar box = document.createElement("input");';
+    const inline = '<html><body><p>架空</p><script>' + body + '</script></body></html>';
+    const split = '<html><body><p>架空</p><script src="kakuu-page.js"></script></body></html>';
+    const ri = C.scorePage('kakuu-page.html', inline);
+    const rs = C.scorePage('kakuu-page.html', split, { scripts: { 'kakuu-page.js': body } });
+    for (const id of ['dialog', 'engmsg', 'hex', 'leave']) t('移す前と移した後で同じ: ' + id, JSON.stringify(item(ri, id)) === JSON.stringify(item(rs, id)), [item(ri, id), item(rs, id)]);
+    t('入力欄が部品の JS にだけある画面は対象外にしない', item(rs, 'leave').status === '不合格');
+    const rb = C.scorePage('kakuu-page.html', split, { scripts: { 'su-kakuu.js': body, 'kakuu-other.js': body } });
+    t('共通部品・借りた部品の中身は数えない', item(rb, 'dialog').detail === '0件' && item(rb, 'engmsg').detail === '0件' && item(rb, 'hex').detail === '0件' && item(rb, 'leave').status === '対象外');
+  }
+
   say('\n' + (fail ? '✗' : '✓') + ' 採点の物差し: 成功 ' + pass + '／失敗 ' + fail);
   process.exit(fail ? 1 : 0);
 }

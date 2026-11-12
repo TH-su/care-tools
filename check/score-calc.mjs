@@ -23,20 +23,24 @@
  * 失わない（守り）
  *   net    su-net.js を読む、または画面が online／offline（navigator.onLine）を自分で扱う
  *   errors su-errors.js を読む
- *   leave  beforeunload か、confirm( の文言に「保存」「破棄」「変更」「閉じ」「消え」がある。
+ *   leave  beforeunload の形（addEventListener('beforeunload' か onbeforeunload =・行の後ろの // コメントは外す）か、
+ *          画面の中のスクリプトの confirm( の文言に「保存」「破棄」「変更」「閉じ」「消え」がある。
  *          入力欄（input・select・textarea・contenteditable）が静的にも JS の文字にも無い画面は対象外
- *          画面の中のスクリプトに加えて、画面が <script src> で読む同じサイトの「その画面のための部品」（isOwnScript: ファイル名が
- *          画面名と同じか「画面名-」で始まる .js。例 menu-settings.html → menu-settings.js、app-access.html → app-access-devices.js）の中の
- *          beforeunload も見る（2026-11-12 直し）。confirm の語の決め方は画面の中のスクリプトだけに当て、部品の中の confirm では「あり」にしない
- *          （部品の書き出し・消す処理の confirm の「保存」「消え」に当たるため・代表者の決定 2026-11-12 推奨1・仮置き）。共通部品の su-*.js・ほかの画面の部品（ats.html が借りる staff-master-calc.js など）・外の部品の同梱物は見ない
- *          （共通部品に確かめがあると、読むだけのどの画面も「あり」になるため）。入力欄の有無の判定は今までどおり画面の中だけで見る
+ * ★その画面のための部品（2026-11-12 直し）: 画面が <script src> で読む同じサイトの部品のうち、ファイル名が画面名と同じか「画面名-」で始まる .js
+ *          （isOwnScript。例 menu-settings.html → menu-settings.js、staff-master.html → staff-master.js・staff-master-calc.js）は、
+ *          入力欄の有無・leave の beforeunload の形・engmsg・hex の JS の部分・dialog で、画面の中のスクリプトと同じに数える
+ *          （画面の中から部品へ移しただけで点が動かないように）。leave の confirm の語は部品の中では数えない
+ *          （部品の書き出し・消す処理の confirm の「保存」「消え」で「あり」にしない・代表者の決定 2026-11-12 推奨1・仮置き。移した時に動くのは下がる向きだけ）。
+ *          共通部品の su-*.js・ほかの画面の部品（ats.html が借りる staff-master-calc.js など）・外の部品の同梱物は見ない
+ *          （共通部品に確かめや窓があると、読むだけのどの画面にも数えてしまうため）
  *   engmsg 英語の例外文を画面にそのまま出す形の数（同じ文の中に「出す先」textContent・innerHTML・innerText・alert(・confirm( と、
  *          「出す元」e.message・err.message・error.message・String(e) か 'Failed to fetch'・'Load failed'・NetworkError の直書きがあるもの）。
  *          0件=1・1〜2件=2/3・3〜5件=1/3・6件以上=0（誤検出を減らすための段階点）
  *          出す元のうち次の2つは数えない（2026-11-12 直し・どちらも画面の中身から機械で確かめられる時だけ）:
  *          (1) === ・!== ・== ・!= で比べているだけの出現（String((e&&e.message)||'')==='…' のような包み方も含む）
  *          (2) V.印 ? … V.message … : （条件は V.印 か V && V.印 だけ）の真の側にだけある出現で、その印の代入がスクリプト全体ですべて
- *              「new Error('日本語の直書き') で作った同じ変数への = true」であり、印を {印: …}・['印'] の形で付ける所が無い時
+ *              「new Error('日本語の直書き') で作った同じ変数への = true」であり（||= ・??= ・&&= なども代入に数える）、
+ *              印を {印: …}・{印}・['印']・関数(物, '印') の形で付ける所が無く、印を付けた変数の message へ代入する所も無い時
  *          受け口・通信の応答を入れた Error の message（印が受け口の答えで決まるものを含む）は日本語か確かめられないので数えたまま
  *   pgerr  動的: 開いた時の画面のエラー（pageerror）0件=1・1件=1/2・2件以上=0
  * 読める（見た目・アクセシビリティ）
@@ -136,6 +140,26 @@ export function parseAttrs(s) {
 export function stripJsComments(js) {
   return String(js || '').replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^[ \t]*\/\/.*$/gm, '');
 }
+/* 行の後ろの // コメントを外す（文字列 '…'・"…"・`…` の中の // は残す）。stripJsComments の後に使う */
+export function stripLineComments(js) {
+  const s = String(js || '');
+  let out = '', q = '', i = 0;
+  while (i < s.length) {
+    const c = s[i];
+    if (q) {
+      out += c;
+      if (c === '\\' && i + 1 < s.length) { out += s[i + 1]; i += 2; continue; }
+      if (c === q || (c === '\n' && q !== '`')) q = '';
+      i++; continue;
+    }
+    if (c === '"' || c === "'" || c === '`') { q = c; out += c; i++; continue; }
+    if (c === '/' && s[i + 1] === '/') { while (i < s.length && s[i] !== '\n') i++; continue; }
+    out += c; i++;
+  }
+  return out;
+}
+/* 閉じる前の確かめの形（addEventListener('beforeunload' か onbeforeunload =）。removeEventListener だけ・文の中の語だけでは当たらない */
+const BEFOREUNLOAD_FORM = /addEventListener\(\s*['"`]beforeunload['"`]|\bonbeforeunload\s*=(?![=>])/;
 function stripCssComments(css) { return String(css || '').replace(/\/\*[\s\S]*?\*\//g, ' '); }
 
 function scriptText(parts) {
@@ -245,7 +269,8 @@ function onlyCompared(st, from, to, v) {
   for (;;) {
     const a = after.replace(/^\s+/, '');
     const e = a.match(/^\|\|\s*(?:''|""|``)/);
-    if (e) { after = a.slice(e[0].length); continue; }
+    /* ||'' を飛ばすのは、外した括弧の中にまだいる時（閉じた数 < 外した数）だけ。e.message || '' === 'x' は '' と比べているだけで e.message は出ている */
+    if (e && closes < opens) { after = a.slice(e[0].length); continue; }
     if (a[0] === ')' && closes < opens) { after = a.slice(1); closes++; continue; }
     after = a; break;
   }
@@ -255,17 +280,24 @@ function onlyCompared(st, from, to, v) {
 /* 日本語の直書きの Error にだけ付く印の名前の集まり（上の説明の (2)）。1つでも当てはまらない代入・付け方があれば、その印は入れない */
 function japaneseErrorMarks(js) {
   const ok = new Map();   // 印 → すべて日本語の Error への = true か
-  for (const m of js.matchAll(/\b([\w$]+)\.([\w$]+)\s*=(?!=)\s*([^;\n]*)/g)) {
+  const vars = new Map();   // 印 → 印を付けた変数の名前
+  const msgSet = new Set();   // .message へ代入している変数の名前（日本語の直書きの後で受け口の文に書き換える形）
+  /* 代入は = のほか ||= ・??= ・&&= ・+= なども数える（どれも印や message を書き換えうる）。== ・=== ・!= ・<= ・>= ・=> は代入ではない */
+  for (const m of js.matchAll(/\b([\w$]+)\.([\w$]+)\s*(\|\||\?\?|&&|\*\*|<<|>>>?|[-+*/%&|^])?=(?![=>])\s*([^;\n]*)/g)) {
     const v = m[1], p = m[2];
-    if (p === 'message' || /^(textContent|innerHTML|innerText|value|href|className|hidden|disabled|onclick)$/.test(p)) continue;
+    if (p === 'message') { msgSet.add(v); continue; }
+    if (/^(textContent|innerHTML|innerText|value|href|className|hidden|disabled|onclick)$/.test(p)) continue;
     const before = js.slice(Math.max(0, m.index - 300), m.index);
     const decl = before.match(new RegExp('(?:var|let|const)\\s+' + v.replace(/\$/g, '\\$') + '\\s*=\\s*new\\s+Error\\(\\s*([\'"])([^\'"\\\\]*)\\1\\s*\\)\\s*[;,]?\\s*$'));
-    const good = /^true\b/.test(m[3].trim()) && !!decl && JA_CHAR.test(decl[2]) && !/[A-Za-z]/.test(decl[2]);
+    const good = !m[3] && /^true\b/.test(m[4].trim()) && !!decl && JA_CHAR.test(decl[2]) && !/[A-Za-z]/.test(decl[2]);
     ok.set(p, ok.has(p) ? ok.get(p) && good : good);
+    if (!vars.has(p)) vars.set(p, new Set());
+    vars.get(p).add(v);
   }
   const marks = new Set();
   for (const [p, good] of ok) {
     if (!good) continue;
+    if ([...vars.get(p)].some((v) => msgSet.has(v))) continue;   // 印を付けた変数の message を書き換える所があれば入れない
     const q = p.replace(/\$/g, '\\$');
     /* ほかの付け方（{印: …}・{印}・['印']・関数(物, '印', …)）があれば、受け口の答えで付くこともあるので入れない */
     const other = [
@@ -332,6 +364,11 @@ export function scorePage(name, html, opts = {}) {
   const page = String(name || '');
   const parts = splitHtml(html);
   const js = scriptText(parts);
+  /* その画面のための部品（isOwnScript）の中身。画面の中から部品へ移しても点が見かけだけ動かないよう、
+     入力欄の有無・閉じる前の確かめ（beforeunload の形だけ）・英語の例外文・16進色の JS の部分・止めて知らせる窓で、画面の中のスクリプトと同じに数える */
+  const own = opts && opts.scripts && typeof opts.scripts === 'object'
+    ? Object.keys(opts.scripts).filter((k) => isOwnScript(page, k)).map((k) => stripLineComments(stripJsComments(opts.scripts[k]))).join('\n;\n') : '';
+  const jsAll = own ? js + '\n;\n' + own : js;
   const raw = String(html == null ? '' : html).replace(/<!--[\s\S]*?-->/g, '');
   const dyn = (opts && opts.dynamic) || {};
   const linkedCss = (opts && opts.css && typeof opts.css === 'object') ? Object.values(opts.css).map(String).join('\n') : '';
@@ -355,18 +392,16 @@ export function scorePage(name, html, opts = {}) {
   r.net = bool(loadsPart(parts, js, 'su-net.js') || ownNet, loadsPart(parts, js, 'su-net.js') ? 'su-net.js' : ownNet ? '画面が自分で扱う' : 'なし');
   r.errors = bool(loadsPart(parts, js, 'su-errors.js'), '');
   const editable = labelStats(parts.markup).total > 0 || /contenteditable/i.test(parts.markup)
-    || /<(input|textarea|select)\b|createElement\(\s*['"`](input|textarea|select)['"`]|contentEditable/i.test(js);
+    || /<(input|textarea|select)\b|createElement\(\s*['"`](input|textarea|select)['"`]|contentEditable/i.test(jsAll);
   if (!editable) r.leave = NA('入力欄が無い');
   else {
-    /* その画面のための部品（isOwnScript）は beforeunload だけを見る。confirm の語の決め方は画面の中のスクリプトだけに当てる
+    /* その画面のための部品は beforeunload の形（addEventListener('beforeunload' か onbeforeunload =）だけを見る。confirm の語の決め方は画面の中のスクリプトだけに当てる
        （部品の書き出し・消す処理の confirm の「保存」「消え」で「あり」にしない・代表者の決定 2026-11-12 推奨1・仮置き）。共通部品・借りた部品は見ない */
-    const own = opts && opts.scripts && typeof opts.scripts === 'object'
-      ? Object.keys(opts.scripts).filter((k) => isOwnScript(page, k)).map((k) => stripJsComments(opts.scripts[k])).join('\n;\n') : '';
-    const ok = /beforeunload/i.test(js) || /beforeunload/i.test(own) || /onbeforeunload/i.test(parts.markup)
+    const ok = BEFOREUNLOAD_FORM.test(stripLineComments(js)) || BEFOREUNLOAD_FORM.test(own) || /onbeforeunload/i.test(parts.markup)
       || /\bconfirm\s*\([^)]{0,200}?(保存|破棄|変更|閉じ|消え)/.test(js);
     r.leave = bool(ok, ok ? 'あり' : 'なし');
   }
-  const eng = countEnglishErrorExposure(js);
+  const eng = countEnglishErrorExposure(jsAll);
   r.engmsg = { frac: step(eng, [0, 2, 5], STEP3), detail: eng + '件' };
   const pe = num(dyn.pageErrors);
   r.pgerr = pe == null ? UNMEASURED : { frac: pe === 0 ? 1 : pe === 1 ? 0.5 : 0, detail: pe + '件' };
@@ -395,9 +430,9 @@ export function scorePage(name, html, opts = {}) {
   const hdr = [...parts.markup.matchAll(/\sclass\s*=\s*("([^"]*)"|'([^']*)')/gi)]
     .some((m) => String(m[2] != null ? m[2] : m[3]).split(/\s+/).some((c) => c === 'hdr' || c === 'topbar'));
   r.hdr = bool(hdr, '');
-  const hex = countHexColors(parts.styles.join('\n'), styleAttrs, js);
+  const hex = countHexColors(parts.styles.join('\n'), styleAttrs, jsAll);
   r.hex = { frac: step(hex, [20, 80, 200], STEP3), detail: hex + '件' };
-  const dl = countDialogs(js);
+  const dl = countDialogs(jsAll);
   r.dialog = { frac: step(dl, [5, 20, 50], STEP3), detail: dl + '件' };
 
   return summarize(page, r);
