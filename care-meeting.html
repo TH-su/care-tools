@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-uFNdalqPLmp31lqjaAN0mTYPAuLTb2wXlBdMVl4mjSM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-0ZBcQhQp/YP4sg2ctzFQFaMyvmAdyiXB4jSgvL4tcmc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 会議の記録（要配慮の情報）を扱うためキャッシュ無効 -->
@@ -261,11 +261,18 @@ h3{font-size:1.0625rem; margin:14px 0 6px}
   .hdr,#cm-main,#toast,.dlg{display:none !important}
   #cm-print{display:block; font-size:var(--cm-fs,12px)}
 }
+/* 見出しの「← メニュー」（ホーム画面から開いた iPhone でもメニューへ戻れるように・画面だけ・印刷しない・2026-11-12） */
+.su-menu-back{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+/* 見出しがすでに折り返す画面は、899px 以下で「← メニュー」を1段目に単独で置く（既存の部品の並び・段を変えない・代表者の決定 2026-11-12） */
+.su-menu-row{display:contents}
+@media screen and (max-width:899px){.su-menu-back{min-height:44px} .su-menu-row{display:block;flex:0 0 100%}}
+@media print{.su-menu-back{display:none !important}}
 </style>
 </head>
 <body>
 
 <header class="hdr">
+  <span class="su-menu-row"><a class="hdr-btn su-menu-back" href="index.html">← メニュー</a></span>
   <a class="hdr-btn" href="resident-master.html">← 入居者マスタ</a>
   <h1>担当者会議の記録</h1>
   <span class="sync" id="cmSync" role="status" aria-live="polite"></span>
@@ -1682,7 +1689,19 @@ function onDeviceRoleChange_(e){
   showFieldOnly_();
   cmReload_();
 }
+/* 見出しの「← メニュー」「← 入居者マスタ」で離れる時の確かめ（2026-11-12 反証レビュー）。iOS Safari は beforeunload の確かめを出さないため、
+   押した時に beforeunload と同じ判定で聞く。「はい」の時は直後の beforeunload で二重に聞かない */
+var cmLeaveOk_=false;
+function cmLeaveDirty_(){ return !!(isDirty_(ed)||(ed&&ed.busy)||(impSt&&impSt.phase==='applying')); }
+function onHdrLeaveClick_(e){
+  var a=e.target&&e.target.closest?e.target.closest('a.su-menu-back, a[href="resident-master.html"]'):null;
+  if(!a||!cmLeaveDirty_()) return;
+  var to=a.classList&&a.classList.contains('su-menu-back')?'メニュー':'入居者マスタ';
+  if(!confirm('保存していない変更があります。'+to+'へ移ると消えます。移りますか？')){ e.preventDefault(); return; }
+  cmLeaveOk_=true; setTimeout(function(){ cmLeaveOk_=false; },3000);
+}
 function onBeforeUnload_(e){
+  if(cmLeaveOk_) return;
   if(isDirty_(ed)||(ed&&ed.busy)||(impSt&&impSt.phase==='applying')){ e.preventDefault(); e.returnValue=''; return ''; }
 }
 function onCommonRoster_(e){
@@ -1702,6 +1721,7 @@ function bindEvents_(){
   $('cm-pick').addEventListener('change',onPickChange_);
   $('cm-new').addEventListener('click',function(){ openNew_('').then(function(ok){ if(ok) scrollToEditor_(); }); });
   window.addEventListener('beforeunload',onBeforeUnload_);
+  var hdrEl=document.querySelector('header.hdr'); if(hdrEl) hdrEl.addEventListener('click',onHdrLeaveClick_);
   window.addEventListener('storage',function(e){ try{ onCommonRoster_(e); }catch(err){ cmNote_('共有名簿の更新', err); } });
 }
 function boot(){

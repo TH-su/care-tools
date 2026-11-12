@@ -251,6 +251,12 @@ textarea.fi{resize:vertical;min-height:60px}
     scroll-behavior: auto !important;
   }
 }
+/* 見出しの「← メニュー」（ホーム画面から開いた iPhone でもメニューへ戻れるように・画面だけ・印刷しない・2026-11-12） */
+.su-menu-back{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+@media screen and (max-width:899px){.su-menu-back{min-height:44px}}
+/* 幅900〜1099px は、見出しの右の入力群が「← メニュー」の分だけ早く2段目へ落ちないよう、副題を隠し（900px 以下と同じ）リンクを詰める（2026-11-12） */
+@media screen and (min-width:900px) and (max-width:1099px){.hdr-l .sub{display:none} .su-menu-back{padding:0 4px;font-size:0.75rem}}
+@media print{.su-menu-back{display:none !important}}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
@@ -260,6 +266,7 @@ textarea.fi{resize:vertical;min-height:60px}
 
 <div class="topbar">
   <div class="hdr">
+    <a class="hbtn su-menu-back" href="index.html">← メニュー</a>
     <div class="hdr-l">
       <h1>ジェノグラム作成</h1>
       <div class="sub">家族関係図を作成して PDF / JPG で出力</div>

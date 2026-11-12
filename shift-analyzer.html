@@ -101,6 +101,13 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
   .big{color:#000}
   th{background:#eee!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
+/* 見出しの「← メニュー」（ホーム画面から開いた iPhone でもメニューへ戻れるように・画面だけ・印刷しない・2026-11-12） */
+.su-menu-back{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+.su-menu-back{display:inline-flex;align-items:center;padding:2px 10px;border:1px solid currentColor;border-radius:8px;color:inherit;font-size:0.8125rem;font-weight:700;line-height:1.2} .topbar .su-menu-back{margin-right:12px;vertical-align:middle}
+/* 見出しがすでに折り返す画面は、899px 以下で「← メニュー」を1段目に単独で置く（既存の部品の並び・段を変えない・代表者の決定 2026-11-12） */
+.su-menu-row{display:contents}
+@media screen and (max-width:899px){.su-menu-back{min-height:44px} .su-menu-row{display:block;flex:0 0 100%}}
+@media print{.su-menu-back{display:none !important}}
 </style>
 <script src="su-errors.js?v=2026-10-27"></script>
 <script src="su-cfg-hint.js?v=2026-11-10"></script>
@@ -111,6 +118,7 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
 </head>
 <body>
 <header class="topbar">
+  <span class="su-menu-row"><a class="su-menu-back" href="index.html">← メニュー</a></span>
   <h1>過去シフト・アナライザ</h1>
   <span class="sub">訪問介護員の勤務時間・介護福祉士割合・常勤換算（ライブのシフトとは独立）</span>
 </header>
