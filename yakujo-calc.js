@@ -1207,6 +1207,40 @@
     return out;
   }
 
+  /* ── 13. 振り分けの画面で氏名の所を拡大する範囲（本人指示 2026-11-12）──
+     doc: parseResult の書類1件。person: {name, kana}（プルダウンで選んでいる方。無ければ null）。
+     戻り値 {page（1始まり）, x, y, w, h（拡大して見せる範囲・ページに対する 0〜1）, box（読んだ行の枠・無ければ null）, hit}
+       hit: 'name'（その方の氏名の行）・'kana'（カナの行）・'near'（1字違いの行）・'label'（「様」「氏名」などの行）・'top'（見つからない時はページの上の方）
+     書類にページが無い時は null。画像の有無は見ない（画面が確かめる） */
+  var ZOOM_LABEL = /(様|さま|殿)\s*$|氏名|患者名|お名前|利用者名/;
+  function nameZoom(doc, person) {
+    var pages = doc && Array.isArray(doc.pages) ? doc.pages : [];
+    if (!pages.length) return null;
+    var nre = person && nz(person.name).length >= 2 ? nameRe(person.name) : null, kre = person ? kanaRe(person.kana) : null;
+    var pn = person ? nz(person.name) : '';
+    function find(test) {
+      for (var i = 0; i < pages.length; i++) {
+        var ls = Array.isArray(pages[i].lines) ? pages[i].lines : [];
+        for (var j = 0; j < ls.length; j++) if (ls[j] && ls[j].w > 0 && ls[j].h > 0 && test(ls[j])) return { pi: i, l: ls[j] };
+      }
+      return null;
+    }
+    var f = null, hit = 'top';
+    if (nre && (f = find(function (l) { return nre.test(nfkc(l.t)); }))) hit = 'name';
+    else if (kre && (f = find(function (l) { return kre.test(hira(l.t)); }))) hit = 'kana';
+    else if (pn.length >= 2 && (f = find(function (l) {
+      var z = nz(l.t);
+      for (var w = pn.length - 1; w <= pn.length + 1; w++) for (var s = 0; w > 0 && s + w <= z.length; s++) if (dist(pn, z.slice(s, s + w), 1) === 1) return true;
+      return false;
+    }))) hit = 'near';
+    else if ((f = find(function (l) { return ZOOM_LABEL.test(nfkc(l.t)); }))) hit = 'label';
+    if (!f) return { page: pages[0].no || 1, x: 0, y: 0, w: 1, h: 0.25, box: null, hit: 'top' };
+    var b = f.l, cx = b.x + b.w / 2;
+    var w = Math.min(0.7, Math.max(0.4, b.w + 0.1)), h = Math.min(0.3, Math.max(0.06, b.h * 4));
+    var x = Math.min(1 - w, Math.max(0, cx - w / 2)), y = Math.min(1 - h, Math.max(0, b.y + b.h / 2 - h / 2));
+    return { page: pages[f.pi].no || (f.pi + 1), x: x, y: y, w: w, h: h, box: { x: b.x, y: b.y, w: b.w, h: b.h }, hit: hit };
+  }
+
   var api = { parseResult: parseResult, assign: assign, findDates: findDates, datesIn: datesIn, parseUse: parseUse,
     parseRows: parseRows, looksDrug: looksDrug, stripEnum: stripEnum, snap: snap, lineSpec: lineSpec, shortDays: shortDays, splitMaker: splitMaker, stem: stem, matchCurrent: matchCurrent, sameMeaning: sameMeaning, buildRows: buildRows, judge: judge, buildAfter: buildAfter,
     startDate: startDate, useDate: useDate, bulkCheck: bulkCheck, clinicPlan: clinicPlan, planRows: planRows, replaceAll: replaceAll, parseLabeled: parseLabeled, cleanDrugName: cleanDrugName, canonKey: canonKey, yjIndex: yjIndex, yjOf: yjOf, yjLookup: function (text) { var idx = yjIndex(text); return idx ? function (name) { return yjOf(name, idx); } : null; }, lineName: lineName, drugKey: drugKey,
@@ -1214,7 +1248,7 @@
     correctionKinds: correctionKinds, metricOf: metricOf, metricsLoad: metricsLoad, metricsSave: metricsSave, summarize: summarize, metricText: metricText,
     METRIC_MAX: METRIC_MAX,
     logCount: logCount, goneLines: goneLines, reviewKind: reviewKind, reviewMark: reviewMark, reviewPending: reviewPending,
-    reviewMenuDue: reviewMenuDue, replaceAudit: replaceAudit, jst: jst, REVIEW_DAYS: REVIEW_DAYS, AUTO_STOP_FROM: AUTO_STOP_FROM, AUTO_STOP_TO: AUTO_STOP_TO };
+    reviewMenuDue: reviewMenuDue, replaceAudit: replaceAudit, jst: jst, REVIEW_DAYS: REVIEW_DAYS, AUTO_STOP_FROM: AUTO_STOP_FROM, AUTO_STOP_TO: AUTO_STOP_TO, nameZoom: nameZoom };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.YakujoCalc = api;
 })(typeof window !== 'undefined' ? window : this);

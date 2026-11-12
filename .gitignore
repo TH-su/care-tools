@@ -61,6 +61,7 @@
 !/check/revenue_e2e.mjs
 !/check/yakujo_bulk_e2e.mjs
 !/check/yakujo_review_e2e.mjs
+!/check/yakujo_assign_e2e.mjs
 !/check/daycare_live_e2e.mjs
 !/check/overview_live_e2e.mjs
 !/check/build-yakka-yj.py

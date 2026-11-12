@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-bZpITzAERNIXm1gRRvRUzdqOrmRiBbEocBSXHgH9UOI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rzb+cmQian2r/lccC4cwx6BplhSk40PsUlji/S1GKCk=' 'sha256-YAw/utqAJika2bhEz4XaQE/Hmy7ZmvrJxW8GdYdpbmE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -625,6 +625,9 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 #yjOpen{min-height:44px}
 .yj-thumb img{display:block; max-width:150px; max-height:200px; border:1px solid var(--g2); border-radius:4px}
 .yj-ainfo>div{margin:2px 0}
+.yj-zoomw{margin:6px 0}
+.yj-zoom{display:block; width:100%; max-width:640px; height:auto; border:1px solid var(--g2); border-radius:4px; background:#fff}
+.yj-zoom .yj-box{fill:none; stroke:var(--warn-tx); stroke-width:2; vector-effect:non-scaling-stroke}
 .yj-lbl{display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:6px 0 0; font-weight:700}
 .yj-lbl select,.yj-tbl select{min-height:44px; font:inherit; font-size:0.9375rem; padding:0 8px; border:1px solid var(--g3); border-radius:6px; background:#fff; max-width:100%}
 .yj-chk{display:flex; gap:8px; align-items:center; min-height:44px; cursor:pointer}
@@ -2056,7 +2059,7 @@ function rmNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
 <script src="su-facility.js?v=2026-11-07"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>
 <!-- 薬情の取り込みの判定・組み立て（純関数・2026-10-22）。読めない時は入口のボタンを出さない（yjCalcOk_） -->
-<script src="yakujo-calc.js?v=2026-11-11"></script>
+<script src="yakujo-calc.js?v=2026-11-12"></script>
 <script src="revenue-calc.js?v=2026-11-07"></script>
 <script src="su-print.js?v=2026-09-12"></script>
 <!-- 入居者マスタの写し（統合 0004）。supabase-js と su-auth.js は写す時にだけ読み込む -->
@@ -7429,7 +7432,10 @@ function yjLoadText_(text){
   yjSt.res=res;
   yjSt.docs=res.docs.map(function(d){
     var a=d.error||!d.pages.length?{id:'', why:'読めなかった書類です', cands:[]}:YakujoCalc.assign(d, act);
-    return {d:d, a:a, pick:a.id||'', out:!!(d.error||!d.pages.length), status:''};
+    /* 自動で決まらなかった書類でも、候補の氏名を出す時は、その方（候補が2名以上なら最初の方）をプルダウンの既定にする（本人指示 2026-11-12）。
+       ★人が選んだのと同じ扱い（guess の印）で、まとめて反映には入らない（bulkCheck は自動の一字一致だけを通す）。1人ずつの確認で本人確認を求める */
+    var gid=!a.id&&!d.error&&d.pages.length?((a.cands||[]).map(function(c){ return String(c.id); }).filter(function(id){ return !!yjWho_(id); })[0]||''):'';
+    return {d:d, a:a, pick:a.id||gid, guess:!!gid, out:!!(d.error||!d.pages.length), status:''};
   });
   yjSt.phase='assign'; yjSt.msg='';
   yjPaint_();
@@ -7458,6 +7464,8 @@ function yjAssignHtml_(){
       (x.a.id?'<div class="yj-ok">✓ '+esc(x.a.how)+'：'+esc(who?((who.room?who.room+' ':'')+who.name):'')+'</div>'
              :(!d.error?'<div class="yj-warn">⚠ 振り分けていません：'+esc(x.a.why||'')+'</div>':''))+
       ((x.a.cands||[]).filter(function(c){ return c.id!==x.a.id; }).length?'<div class="yj-sub">候補：'+x.a.cands.filter(function(c){ return c.id!==x.a.id; }).map(function(c){ var w=yjWho_(c.id); return esc((w?w.name:'')+'（'+c.how+'）'); }).join('・')+'</div>':'')+
+      yjZoomHtml_(x)+
+      (x.guess&&x.pick&&!x.status?'<div class="yj-sub">候補の方を仮に選んでいます。上の拡大した氏名と見比べてください</div>':'')+
       '<label class="yj-lbl">この書類の方 <select data-yjpick="'+i+'"'+(x.out||x.status?' disabled':'')+'>'+opt(x.pick)+'</select></label>'+
       '<label class="yj-chk"><input type="checkbox" data-yjout="'+i+'"'+(x.out?' checked':'')+(d.error||x.status?' disabled':'')+'> この書類は取り込まない</label>'+
       '</div></div>';
@@ -7469,6 +7477,22 @@ function yjAssignHtml_(){
   h+='<div class="yj-actions"><button type="button" class="btn btn-pri" id="yjGo"'+(left||!n?' disabled':'')+'>この振り分けで進める（'+n+'件）</button>'+
     (left?'<span class="yj-sub">決まっていない書類が '+left+'件あります（方を選ぶか、外してください）</span>':'')+'</div>';
   return h;
+}
+
+/* 振り分けの画面で、書類の氏名の所を拡大して見せる（本人指示 2026-11-12）。
+   範囲は YakujoCalc.nameZoom（選んでいる方の氏名の行→カナ→1字違い→「様」「氏名」の行→ページの上の方）。
+   ★画像は読んだ書類の中身（メモリだけ）を同じ SVG の viewBox で切り出すだけで、端末に保存しない・印刷しない（#mYakujo ごと） */
+function yjZoomHtml_(x){
+  var d=x.d; if(!d||!d.pages||!d.pages.length||typeof YakujoCalc.nameZoom!=='function') return '';
+  var w=x.pick?yjWho_(x.pick):null, z=YakujoCalc.nameZoom(d, w?{name:w.name, kana:w.kana}:null); if(!z) return '';
+  var p=null; d.pages.forEach(function(q){ if(!p&&q.no===z.page) p=q; }); if(!p) p=d.pages[0];
+  if(!p.img) return '';
+  var W=p.w>0?p.w:1000, H=p.h>0?p.h:1400, f=function(v){ return (+v).toFixed(1); };
+  var cap=z.hit==='name'?'氏名の所を拡大しています':z.hit==='kana'?'カナの所を拡大しています':z.hit==='near'?'氏名に似た所を拡大しています':z.hit==='label'?'氏名らしい所を拡大しています':'氏名の行が見つからないため、ページの上の方を拡大しています';
+  return '<div class="yj-zoomw"><svg class="yj-zoom" viewBox="'+f(z.x*W)+' '+f(z.y*H)+' '+f(z.w*W)+' '+f(z.h*H)+'" preserveAspectRatio="xMinYMin meet" role="img" aria-label="書類'+d.no+'の氏名の所の拡大">'+
+    '<image href="'+p.img+'" x="0" y="0" width="'+W+'" height="'+H+'"/>'+
+    (z.box?'<rect class="yj-box" x="'+f(z.box.x*W)+'" y="'+f(z.box.y*H)+'" width="'+f(z.box.w*W)+'" height="'+f(z.box.h*H)+'"/>':'')+
+    '</svg><div class="yj-sub">'+cap+(d.pages.length>1?'（'+esc(p.no)+'ページ）':'')+'</div></div>';
 }
 
 /* ── 3. 1人ずつ確かめる ── */
@@ -7932,7 +7956,7 @@ function yjWire_(){
   m.addEventListener('change',function(e){
     var t=e.target; if(!t||!yjSt) return;
     if(t.id==='yjFile'){ yjReadFile_(t.files&&t.files[0]); return; }
-    var pk=t.getAttribute('data-yjpick'); if(pk!=null){ var dx=yjSt.docs[+pk]; if(dx&&!dx.status) dx.pick=t.value; yjPaint_(); return; }
+    var pk=t.getAttribute('data-yjpick'); if(pk!=null){ var dx=yjSt.docs[+pk]; if(dx&&!dx.status){ dx.pick=t.value; dx.guess=false; } yjPaint_(); return; }
     var bl=t.getAttribute('data-yjbleft'); if(bl!=null){ var bp=bl.split(':'), dl=yjSt.docs[+bp[0]], pl=dl&&dl.pre;
       if(pl&&pl.arg&&(pl.st==='ok'||pl.st==='none')&&!yjSt.bulkBusy&&!dl.status){
         pl.leftAct[+bp[1]]=t.checked?'stop':'keep';
