@@ -1041,7 +1041,11 @@ if (!window.SUDialog) window.SUDialog = {
       verdict.className = 'msg ng';
       /* 元の文（英語のことがある）は画面に出さず記録に残す。画面の文は仮置き（2026-11-13） */
       try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('写しの見比べ: 切り替え前の点検', String(e && e.message || e)); } catch (x) { /* 記録できなくても止めない */ }
-      verdict.textContent = '点検できませんでした。通信の状態を確かめて、もう一度押してください。';
+      /* Google の時間切れ（gasPost が作る日本語の文）だけは、切り替えの夜に原因が分かるよう今までどおりの文を出す（2026-11-13・仮置き）。
+         ほかの失敗（Google の断り・応答の番号・通信の失敗など）は一文にまとめる */
+      var timedOut = String(e && e.message || '') === 'Google の応答がありません（時間切れ）';
+      verdict.textContent = timedOut ? '点検できませんでした: Google の応答がありません（時間切れ）'
+        : '点検できませんでした。通信の状態を確かめて、もう一度押してください。';
     } finally {
       busy(false);
     }
