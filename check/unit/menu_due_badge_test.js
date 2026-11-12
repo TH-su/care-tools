@@ -107,8 +107,8 @@ const withDue = tiles.filter((x) => x.due);
 /* 2026-11-11: 入居者マスタのタイルに、薬情の見直し待ちの数の札（管理者だけ）を足した（代表者の決定）。入居者マスタのタイルは
    事務所専用の印を持たないが、札は現場端末では読まず（dueBadge）、控えの admin の印があり管理者のログインの時だけ出す（dueText）ので、
    「事務所専用のタイルだけ」の決まりを「事務所専用か、管理者だけに出す札か」に広げた */
-t('札を出すのは個別機能訓練計画書と採用管理（2026-10-29）と入居者マスタ（2026-11-11・管理者だけの札）のタイルだけ',
-  withDue.length === 3 && withDue.filter((x) => x.href !== 'resident-master.html').every((x) => x.officeOnly === true)
+t('札を出すのは個別機能訓練計画書と採用管理（2026-10-29）と入居者マスタ（2026-11-11・管理者だけの札）と設備・修繕の記録（2026-11-13）のタイルだけ',
+  withDue.length === 4 && withDue.some((x) => x.href === 'equip-log.html' && x.due === 'eql_menu_due') && withDue.filter((x) => x.href !== 'resident-master.html').every((x) => x.officeOnly === true)
   && withDue.some((x) => x.href === 'training-plan.html' && x.due === 'tp_menu_due')
   && withDue.some((x) => x.href === 'ats.html' && x.due === 'ats_menu_due' && x.adminOnly === true)
   && withDue.some((x) => x.href === 'resident-master.html' && x.due === 'rm_yjrev_due'), withDue);
@@ -138,6 +138,26 @@ t('保管期限: 形の違う日付・並びでない・2000件を超える時�
 t('札の色は変数で持ち、白地で 7:1 以上（--due-tx: #a50e0e）', /--due-tx: #a50e0e;/.test(INDEX) && /\.tile \.due \{[^}]*color: var\(--due-tx\)/.test(INDEX), '');
 t('「戻る」で戻った時（pageshow の persisted）と、別のタブで件数が書き換わった時（storage）に札だけ付け直す', /addEventListener\('pageshow', function \(e\) \{ if \(e\.persisted\) refreshDue\(\); \}\)/.test(INDEX) && /addEventListener\('storage', function \(e\) \{\s*if \(!e\.key \|\| \(\/\^\[a-z0-9_\]\{1,40\}\$\/\.test\(e\.key\) && main\.querySelector\('a\.tile\[data-due="' \+ e\.key \+ '"\]'\)\)\) refreshDue\(\);/.test(INDEX), '');
 t('付け直しは札のあるタイル（data-due）だけを読み、古い札を外してから付ける', /querySelectorAll\('a\.tile\[data-due\]'\)/.test(INDEX) && /if \(old\) tiles\[i\]\.removeChild\(old\);/.test(INDEX), '');
+
+/* 設備・修繕の記録（2026-11-13 代表者の指示）: 設備の記録が事務所PCで数えた期限切れ・30日以内・法定の期限切れの数と数えた日だけを残す。
+   ★日付は固定（TODAY = 2026-10-24） */
+const BOX = (() => { const s = INDEX.slice(B, E); const b2 = {}; vm.createContext(b2); vm.runInContext(s.slice(s.indexOf('function dueText')) + '\nthis.dueLegal = dueLegal;', b2); return b2; })();
+const dueLegal = BOX.dueLegal;
+const eq = (o) => J(Object.assign({ v: 1, at: '2026-10-24', eq: true, overdue: 2, soon: 3, legal: 1 }, o));
+t('設備: 「期限切れn・30日以内n（日付時点）」と書く', dueText(eq({}), TODAY, 'office') === '期限切れ2・30日以内3（10/24時点）', dueText(eq({}), TODAY, 'office'));
+t('設備: 0件の項目は書かない・全部0件なら札を出さない（今と同じ見た目）',
+  dueText(eq({ overdue: 0, legal: 0 }), TODAY) === '30日以内3（10/24時点）' && dueText(eq({ soon: 0 }), TODAY) === '期限切れ2（10/24時点）'
+  && dueText(eq({ overdue: 0, soon: 0, legal: 0 }), TODAY) === '' && dueLegal(eq({ overdue: 0, soon: 0, legal: 0 }), TODAY) === '', '');
+t('設備: 法定の期限切れは別の赤の札の文字「法定の期限切れn」・0件なら出さない',
+  dueLegal(eq({}), TODAY) === '法定の期限切れ1' && dueLegal(eq({ legal: 0 }), TODAY) === '' && dueLegal(ok({ overdue: 1 }), TODAY) === '', dueLegal(eq({}), TODAY));
+t('設備: 形の違う数・法定が期限切れより多い・eq の印の違う控えは出さない（どちらの札も）',
+  [{ overdue: 1.5 }, { soon: '3' }, { legal: -1 }, { legal: 3 }, { eq: 'true' }, { soon: undefined }, { overdue: 10000 }].every((o) => dueText(eq(o), TODAY) === '' && dueLegal(eq(o), TODAY) === ''), '');
+t('設備: 数えた日が今日より先なら出さない・前の日はその日付のまま',
+  dueText(eq({ at: '2026-10-25' }), TODAY) === '' && dueLegal(eq({ at: '2026-10-25' }), TODAY) === '' && dueText(eq({ at: '2026-10-03' }), TODAY) === '期限切れ2・30日以内3（10/3時点）', '');
+t('設備: 壊れた控え・版の違う控えは出さない', dueText('{壊れ', TODAY) === '' && dueLegal('{壊れ', TODAY) === '' && dueLegal(eq({ v: 2 }), TODAY) === '', '');
+t('設備: 赤の札は地が --due-tx・文字が白（白と #a50e0e で約 7.9:1）', /\.tile \.due\.legal \{[^}]*color: #fff;[^}]*background: var\(--due-tx\)/.test(INDEX), '');
+t('設備: 赤の札は件数の札と同じ守り（現場端末では読まない・鍵の形を確かめる）で付け、付け直しでも外す',
+  /function dueLegalBadge\(key\) \{[\s\S]{0,200}is-field[\s\S]{0,120}\^\[a-z0-9_\]\{1,40\}\$/.test(INDEX) && /var oldL = tiles\[i\]\.querySelector\('\.due'\);\s*if \(oldL\) tiles\[i\]\.removeChild\(oldL\);/.test(INDEX), '');
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);
