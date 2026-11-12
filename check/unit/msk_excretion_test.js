@@ -994,7 +994,7 @@ group('10. 排泄の読み込み（excLoad の実関数・第2弾）: 同時読�
     const box = {
       console, JSON, Math, Object, String, Number, Array, isNaN, isFinite, parseInt, Promise, Date,
       $: () => ({ textContent: '', appendChild() {}, set disabled(v) {} }), document: { createElement: () => ({ appendChild() {} }) },
-      apiGet: (a, p) => { calls.push(p); const vitals = [], meals = []; for (let d = p.from; d <= p.to; d = addD(d, 1)) { vitals.push({ date: d, name: '利用者01', temp: 36.5 }); meals.push({ date: d, name: '利用者01', bMain: 5 }); }
+      apiRead: (a, p) => { calls.push(p); const vitals = [], meals = []; for (let d = p.from; d <= p.to; d = addD(d, 1)) { vitals.push({ date: d, name: '利用者01', temp: 36.5 }); meals.push({ date: d, name: '利用者01', bMain: 5 }); }
         return Promise.resolve({ from: p.from, to: p.to, vitals, meals, vitalDates: vitals.map(v => v.date), mealDates: meals.map(v => v.date) }); },
       rgBusyVm() {}, rgClearVm() {}, vmRenderBanner() {}, vmRenderList() {}, vmRenderBody() {}, currentScreen: () => 'scr-vm', goto() {}, apiErrMsg: () => 'x'
     };
