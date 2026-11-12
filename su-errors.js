@@ -81,6 +81,15 @@
         el = document.createElement('div');
         el.setAttribute('data-su-err', '1');
         el.setAttribute('role', 'status');
+        /* 直書きの <style> を禁じる画面（CSP の style-src 'self'・管理者向けの画面など）でも帯が下に固定して読めるように、
+           要素へ直接付ける（CSSOM の指定は CSP でも効く）。値は上の <style> と同じ＝<style> が効く画面の見た目は変わらない。 */
+        try {
+          var S = el.style;
+          S.position = 'fixed'; S.left = '12px'; S.right = '12px'; S.bottom = '12px'; S.zIndex = '2147483647';
+          S.background = '#fff8e1'; S.color = '#7a4200'; S.border = '1px solid #ffa000'; S.borderRadius = '8px';
+          S.padding = '12px 14px'; S.fontSize = '17px'; S.fontWeight = '600'; S.lineHeight = '1.5';
+          S.boxShadow = '0 2px 10px rgba(0,0,0,.2)';
+        } catch (e) {}
         document.body.appendChild(el);
       }
       el.textContent = msg;
@@ -88,6 +97,9 @@
       ownBanner._t = setTimeout(function () { try { el.remove(); } catch (e) {} }, 12000);
     } catch (e) {}
   }
+
+  /* 紙には出さない: <style> の @media print が効かない画面でも、印刷の前に帯を外す */
+  try { window.addEventListener('beforeprint', function () { try { var b = document.querySelector('[data-su-err]'); if (b) b.remove(); } catch (e) {} }); } catch (e) {}
 
   function report(kind, msg, where) {
     try {
