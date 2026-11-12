@@ -75,7 +75,7 @@ try {
   t('書類4: 氏名の行を拡大', zooms[3] && /氏名の所を拡大/.test(zooms[3].cap), zooms[3]);
   t('拡大の範囲はページの中に収まり、ページ全体より小さい', zooms.every((z) => { const [x, y, w, h] = z.vb.split(' ').map(Number); return x >= 0 && y >= 0 && x + w <= 1000.1 && y + h <= 1400.1 && w * h < 1000 * 1400 / 4; }), zooms.map((z) => z && z.vb));
   const sz = await p.evaluate(() => { const r = document.querySelector('.yj-arow svg.yj-zoom').getBoundingClientRect(); return { w: r.width, h: r.height }; });
-  t('拡大の絵は小さな見本（幅150px）より大きく出る', sz.w > 300 && sz.h > 40, sz);
+  t('拡大の絵は小さな見本（幅150px）より大きく、幅は320pxまで（本人指示 2026-11-12 で半分に）', sz.w > 300 && sz.w <= 320.5 && sz.h > 40, sz);
   if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.screenshot({ path: path.join(shots, 'yj-assign.png'), fullPage: false }); }
 
   /* 書類2の選択を、もう一人の候補へ変えると、拡大する所もその方の行へ移る */
