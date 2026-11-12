@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-cFo72blAi0AJ00MndpenoAuCBnu3N2+3gbKDYcAGE48='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gjhDeADVzAUFT7aRUXE2adMv4wsN8TZKMXNxL8CRU8o=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-AIhNl6NuaGpGBzKoABgPRTdX5MIjqJ56dbFubjy+hN0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -1008,17 +1008,17 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
     </div>
 
     <div class="fg">
-      <label class="fl">入居者<span class="req">*</span></label>
+      <label class="fl" for="inResident">入居者<span class="req">*</span></label>
       <select id="inResident"></select>
     </div>
 
     <div class="fr">
       <div class="fg">
-        <label class="fl">対象月<span class="req">*</span></label>
+        <label class="fl" for="inMonth">対象月<span class="req">*</span></label>
         <input type="month" id="inMonth">
       </div>
       <div class="fg">
-        <label class="fl">測定日</label>
+        <label class="fl" for="inDate">測定日</label>
         <input type="date" id="inDate">
       </div>
     </div>
@@ -1033,7 +1033,7 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
 
     <!-- 通常モード -->
     <div class="fg" id="wtGroupNormal">
-      <label class="fl">体重<span class="req">*</span></label>
+      <label class="fl" for="inWeight">体重<span class="req">*</span></label>
       <div class="wt-input">
         <input type="number" id="inWeight" step="0.1" min="20" max="150" inputmode="decimal" placeholder="0.0">
         <span class="unit">kg</span>
@@ -1053,14 +1053,14 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
     <div class="fg" id="wtGroupChair" style="display:none">
       <div class="fr">
         <div>
-          <label class="fl">実測値（車椅子込み）<span class="req">*</span></label>
+          <label class="fl" for="inRaw">実測値（車椅子込み）<span class="req">*</span></label>
           <div class="wt-input">
             <input type="number" id="inRaw" step="0.1" min="20" max="250" inputmode="decimal" placeholder="0.0">
             <span class="unit">kg</span>
           </div>
         </div>
         <div>
-          <label class="fl">車椅子重量<span class="req">*</span></label>
+          <label class="fl" for="inChair">車椅子重量<span class="req">*</span></label>
           <div class="wt-input">
             <input type="number" id="inChair" step="0.1" min="1" max="50" inputmode="decimal" placeholder="0.0">
             <span class="unit">kg</span>
@@ -1089,7 +1089,7 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
     </div>
 
     <div class="fg">
-      <label class="fl">メモ（任意）</label>
+      <label class="fl" for="inNote">メモ（任意）</label>
       <textarea id="inNote" placeholder="食欲不振・投薬変更・浮腫など特記事項"></textarea>
     </div>
 
@@ -1113,7 +1113,7 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
       </div>
     </div>
     <div class="fg" style="margin-bottom:10px">
-      <select id="ivResident"></select>
+      <select id="ivResident" aria-label="推移を見る入居者"></select>
     </div>
     <div class="st-g" id="ivStats"></div>
     <!-- Y軸範囲オーバーライド：空欄=自動、数値=固定。普段は自動で足りるので畳む（2026-10-17） -->
@@ -7865,7 +7865,7 @@ function renderCfg(){
   list.innerHTML = '';
 
   if(valid.length === 0){
-    list.innerHTML = `<div class="empty">入居者が登録されていません。<br>「＋ 追加」または「サンプル投入」から開始してください。</div>`;
+    list.innerHTML = `<div class="empty">入居者が登録されていません。<br>「＋ 追加」から開始してください。</div>`;
     return;
   }
 
@@ -8547,10 +8547,13 @@ $('#cfgClear').addEventListener('click', ()=>{
 });
 
 /* sample data */
+/* 「サンプル投入」は架空の6名を今の名簿に入れて保存する。名簿が空でも必ず確かめる（2026-11-12） */
+const WR_SAMPLE_MSG = '架空の6名と12か月分の体重を、この名簿に入れて保存します。本番の名簿では使わないでください。入れますか？';
+function wrSampleConfirm(){ return confirm(WR_SAMPLE_MSG); }
 $('#cfgSample').addEventListener('click', ()=>{
   if(wrFieldDeny()) return;   /* 現場端末では止める（管理用の操作） */
   if(wrSyncDeny()) return;
-  if(DB.residents.length>0 && !confirm('既存データに追加します。続行しますか？')) return;
+  if(!wrSampleConfirm()) return;
   const names = [
     {name:'山田 花子', room:'101', sex:'f', heightCm:148.5, m:'normal',    s:'normal', soupThick:false,sauceThick:false,lowSalt:false},
     {name:'佐藤 太郎', room:'102', sex:'m', heightCm:162.0, m:'normal',    s:'bite',   soupThick:false,sauceThick:false,lowSalt:true},

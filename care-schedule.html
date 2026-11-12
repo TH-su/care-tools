@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-yDne69NsjyrgeNZcqO5WpNF+3RQlh63qo9F4Sr5JVHU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G/I40NDvDVBpc/jgF1ziPPlOP1zyYDtxMaELW88vlmc=' 'sha256-xAQffd+2t6l70jOn885iQaLGtNS0rjeOXSsPuof+AE0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -1060,7 +1060,7 @@ select.inp { cursor: pointer; }
   <div class="md">
     <div class="md-hd">
       <h2 id="modal-title">予定を追加</h2>
-      <button class="md-close" data-on-click="closeEventModal" aria-label="予定の入力を閉じる" title="予定の入力を閉じる">✕</button>
+      <button class="md-close" data-on-click="askCloseEventModal" aria-label="予定の入力を閉じる" title="予定の入力を閉じる">✕</button>
     </div>
 
     <div class="form-row">
@@ -1346,7 +1346,7 @@ select.inp { cursor: pointer; }
   <div class="md" style="max-width:480px">
     <div class="md-hd">
       <h2>事業所情報</h2>
-      <button class="md-close" data-on-click="closeOfficeInfoModal" aria-label="事業所情報を閉じる" title="事業所情報を閉じる">✕</button>
+      <button class="md-close" data-on-click="askCloseOfficeInfoModal" aria-label="事業所情報を閉じる" title="事業所情報を閉じる">✕</button>
     </div>
     <p style="font-size:12px;color:var(--g6);margin-bottom:14px">
       全利用者に共通する事業所単位の設定です（単位単価・加算・減算）
@@ -1361,30 +1361,30 @@ select.inp { cursor: pointer; }
 
     <!-- 訪問介護 加算設定 -->
     <div class="ci-section">
-      <div class="ci-section-hd" data-on-click="toggleCiSection" data-args="[&quot;oi-visit-body&quot;]">
+      <div class="ci-section-hd" role="button" tabindex="0" aria-expanded="false" aria-controls="oi-visit-body" data-on-click="toggleCiSection" data-args="[&quot;oi-visit-body&quot;]">
         <span>▸ 訪問介護 加算設定</span>
         <span style="font-size:11px;color:var(--g6);font-weight:400">単位数を自動計算</span>
       </div>
       <div class="ci-section-body" id="oi-visit-body">
         <div class="ci-grid">
           <div class="ci-field">
-            <label>特定事業所加算</label>
+            <label for="oi-v-tokuteijigyo">特定事業所加算</label>
             <select id="oi-v-tokuteijigyo"></select>
           </div>
           <div class="ci-field">
-            <label>サービス提供体制強化加算</label>
+            <label for="oi-v-svc-strength">サービス提供体制強化加算</label>
             <select id="oi-v-svc-strength"></select>
           </div>
           <div class="ci-field">
-            <label>特別地域・中山間地域加算</label>
+            <label for="oi-v-chiiki">特別地域・中山間地域加算</label>
             <select id="oi-v-chiiki"></select>
           </div>
           <div class="ci-field">
-            <label>介護職員等処遇改善加算</label>
+            <label for="oi-v-nursing">介護職員等処遇改善加算</label>
             <select id="oi-v-nursing"></select>
           </div>
           <div class="ci-field" style="grid-column:1/-1">
-            <label>同一建物減算（訪問介護）</label>
+            <label for="oi-v-douitsu">同一建物減算（訪問介護）</label>
             <select id="oi-v-douitsu"></select>
           </div>
         </div>
@@ -1396,38 +1396,38 @@ select.inp { cursor: pointer; }
 
     <!-- 通所介護 加算設定 -->
     <div class="ci-section">
-      <div class="ci-section-hd" data-on-click="toggleCiSection" data-args="[&quot;oi-dc-body&quot;]">
+      <div class="ci-section-hd" role="button" tabindex="0" aria-expanded="false" aria-controls="oi-dc-body" data-on-click="toggleCiSection" data-args="[&quot;oi-dc-body&quot;]">
         <span>▸ 通所介護 加算設定</span>
         <span style="font-size:11px;color:var(--g6);font-weight:400">単位数を自動計算</span>
       </div>
       <div class="ci-section-body" id="oi-dc-body">
         <div class="ci-grid">
           <div class="ci-field">
-            <label>入浴介助加算（種別）</label>
+            <label for="oi-dc-bathing">入浴介助加算（種別）</label>
             <select id="oi-dc-bathing"></select>
           </div>
           <div class="ci-field">
-            <label>中重度者ケア体制加算</label>
+            <label for="oi-dc-heavy">中重度者ケア体制加算</label>
             <select id="oi-dc-heavy"></select>
           </div>
           <div class="ci-field">
-            <label>認知症加算</label>
+            <label for="oi-dc-dementia">認知症加算</label>
             <select id="oi-dc-dementia"></select>
           </div>
           <div class="ci-field">
-            <label>個別機能訓練加算</label>
+            <label for="oi-dc-training">個別機能訓練加算</label>
             <select id="oi-dc-training"></select>
           </div>
           <div class="ci-field">
-            <label>サービス提供体制強化加算</label>
+            <label for="oi-dc-svc-strength">サービス提供体制強化加算</label>
             <select id="oi-dc-svc-strength"></select>
           </div>
           <div class="ci-field">
-            <label>介護職員等処遇改善加算</label>
+            <label for="oi-dc-nursing">介護職員等処遇改善加算</label>
             <select id="oi-dc-nursing"></select>
           </div>
           <div class="ci-field" style="grid-column:1/-1">
-            <label>同一建物減算（送迎なし減算）</label>
+            <label for="oi-dc-douitsu">同一建物減算（送迎なし減算）</label>
             <select id="oi-dc-douitsu"></select>
           </div>
         </div>
@@ -1440,7 +1440,7 @@ select.inp { cursor: pointer; }
     <!-- ── 報酬マスタ（サービスコード・単位数・限度額）──
          単位数はここでしか変えられない。適用は必ず「影響を確認して適用」を通す（差分プレビュー→確認→Undo可）。 -->
     <div class="ci-section">
-      <div class="ci-section-hd" data-on-click="toggleCiSection" data-args="[&quot;oi-rm-body&quot;]">
+      <div class="ci-section-hd" role="button" tabindex="0" aria-expanded="false" aria-controls="oi-rm-body" data-on-click="toggleCiSection" data-args="[&quot;oi-rm-body&quot;]">
         <span>▸ 報酬マスタ（サービスコード・単位数）</span>
         <span style="font-size:11px;color:var(--g6);font-weight:400">改定・自治体差はここ</span>
       </div>
@@ -6752,6 +6752,7 @@ function openAddModal(dow, startTime) {
   if (dow !== undefined) $('#f-dow').value = String(dow);
   if (startTime) $('#f-start').value = startTime;
   $('#mk-event').classList.add('open');
+  _csEventSnap = csEventSnap_();
   setTimeout(() => $('#f-dow').focus(), 50);
 }
 
@@ -6786,11 +6787,47 @@ function openEditModal(id) {
   $('#dup-row').style.display = '';
   if (ev.serviceType === 'visit') renderCareChips();   /* detail設定後にチップを現状態へ同期(要件4) */
   $('#mk-event').classList.add('open');
+  _csEventSnap = csEventSnap_();
 }
 
 function closeEventModal() {
   $('#mk-event').classList.remove('open');
   editingEventId = null;
+  _csEventSnap = null;
+}
+/* ── 保存していない変更の確かめ（2026-11-12）──
+   Esc・枠の外・✕ で閉じる時だけ、窓を開いた時の入力の値と比べ、違いがある時だけ確かめる。
+   保存・削除・キャンセルのボタンは今までどおり closeEventModal / closeOfficeInfoModal を直接呼ぶ（確かめない）。
+   控えはメモリにだけ持つ（端末に残さない）。 */
+const CS_UNSAVED_MSG = '保存していない変更があります。閉じてもよろしいですか？';
+let _csEventSnap = null;
+let _csOfficeSnap = null;
+/* 入力欄の値を並べた文字列（ラジオ・チェックは入/切）。読み取り専用の単位数（自動計算）と、保存しない「他の曜日に複製」の曜日は比べない */
+function csFieldsSnap_(els) {
+  const out = [];
+  els.forEach(el => {
+    if (!el || el.id === 'f-units' || el.id === 'f-dup-dow' || el.type === 'file') return;
+    out.push((el.type === 'radio' || el.type === 'checkbox') ? (el.checked ? '1' : '0') : String(el.value));
+  });
+  return JSON.stringify(out);
+}
+function csEventSnap_() {
+  const root = $('#mk-event');
+  return root ? csFieldsSnap_(Array.from(root.querySelectorAll('input, select, textarea'))) : '';
+}
+/* 事業所情報は「保存」が書く13項目だけを比べる（報酬マスタの欄は「影響を確認して適用」の別の道） */
+const CS_OFFICE_FIELDS = ['oi-unit-price', 'oi-v-tokuteijigyo', 'oi-v-svc-strength', 'oi-v-chiiki', 'oi-v-nursing', 'oi-v-douitsu',
+  'oi-dc-bathing', 'oi-dc-heavy', 'oi-dc-dementia', 'oi-dc-training', 'oi-dc-svc-strength', 'oi-dc-nursing', 'oi-dc-douitsu'];
+function csOfficeSnap_() { return csFieldsSnap_(CS_OFFICE_FIELDS.map(id => $('#' + id))); }
+function askCloseEventModal() {
+  if (!$('#mk-event').classList.contains('open')) return;
+  if (_csEventSnap !== null && csEventSnap_() !== _csEventSnap && !confirm(CS_UNSAVED_MSG)) return;
+  closeEventModal();
+}
+function askCloseOfficeInfoModal() {
+  if (!$('#mk-office-info').classList.contains('open')) return;
+  if (_csOfficeSnap !== null && csOfficeSnap_() !== _csOfficeSnap && !confirm(CS_UNSAVED_MSG)) return;
+  closeOfficeInfoModal();
 }
 
 function clearForm() {
@@ -7111,6 +7148,7 @@ function closeCareInfoModal() {
 function toggleCiSection(id) {
   const body = $('#' + id);
   const isOpen = body.classList.toggle('open');
+  body.previousElementSibling.setAttribute('aria-expanded', isOpen ? 'true' : 'false');   /* 読み上げに開いているかを伝える */
   const arrow = body.previousElementSibling.querySelector('span');
   if (arrow) arrow.textContent = arrow.textContent.replace(/[▸▾]/, isOpen ? '▾' : '▸');
 }
@@ -7178,8 +7216,12 @@ function renderAddonOptions_() {
       const ent = group[field];
       const sel = ent && ent.selId ? $('#' + ent.selId) : null;
       if (!sel) continue;
+      /* 作り直す前の選択を控え、同じ値の選択肢がまだある時だけ戻す（事業所情報の窓を開いたまま報酬マスタを
+         適用・戻すと、加算が先頭の「なし」に戻り、そのまま保存すると全部0で保存されていた・2026-11-12） */
+      const keep = sel.value;
       sel.innerHTML = (ent.opts || [])
         .map(p => `<option value="${escHtml(String(p[0]))}">${escHtml(String(p[1]))}</option>`).join('');
+      if (keep !== '' && (ent.opts || []).some(p => String(p[0]) === keep)) sel.value = keep;
       // 画面のラベルもマスタ側の文言に合わせる（表記のばらつきを1箇所で直せるように）
       const lab = sel.parentElement && sel.parentElement.querySelector('label');
       if (lab && ent.label) lab.textContent = ent.label;
@@ -7626,9 +7668,11 @@ function openOfficeInfoModal() {
   $('#oi-dc-nursing').value      = da.nursingKasan  || 0;
   $('#oi-dc-douitsu').value      = da.douitsuGensan || 0;
   $('#mk-office-info').classList.add('open');
+  _csOfficeSnap = csOfficeSnap_();
 }
 function closeOfficeInfoModal() {
   $('#mk-office-info').classList.remove('open');
+  _csOfficeSnap = null;
   try { SYNC.startPolling(); } catch (e) {}   // 自動同期を再開（idempotent）
 }
 function saveOfficeInfo() {
@@ -9186,7 +9230,7 @@ document.addEventListener('keydown', e => {
     if ($('#mk-rm-preview').classList.contains('open')) { closeRmPreview(); return; }
     if ($('#mk-sim-apply').classList.contains('open')) { SIM.closeApply(); return; }
     if ($('#mk-care-info').classList.contains('open')) { closeCareInfoModal(); return; }
-    if ($('#mk-event').classList.contains('open'))     { closeEventModal(); return; }
+    if ($('#mk-event').classList.contains('open'))     { askCloseEventModal(); return; }
     if ($('#mk-resident').classList.contains('open'))  { closeResidentModal(); return; }
     if ($('#mk-bulk').classList.contains('open'))      { closeBulkImport(); return; }
   }
@@ -9205,10 +9249,18 @@ document.addEventListener('keydown', e => {
     undo();
   }
 });
-$('#mk-event').addEventListener('click',     e => { if (e.target === $('#mk-event'))     closeEventModal(); });
+$('#mk-event').addEventListener('click',     e => { if (e.target === $('#mk-event'))     askCloseEventModal(); });
 $('#mk-resident').addEventListener('click',  e => { if (e.target === $('#mk-resident'))  closeResidentModal(); });
 $('#mk-care-info').addEventListener('click', e => { if (e.target === $('#mk-care-info')) closeCareInfoModal(); });
-$('#mk-office-info').addEventListener('click', e => { if (e.target === $('#mk-office-info')) closeOfficeInfoModal(); });
+$('#mk-office-info').addEventListener('click', e => { if (e.target === $('#mk-office-info')) askCloseOfficeInfoModal(); });
+/* 開け閉めの見出し（事業所情報の加算・報酬マスタ）は、キーボードでも Enter・スペースで開け閉めできる（2026-11-12） */
+document.addEventListener('keydown', e => {
+  const hd = e.target;
+  if (!hd || !hd.classList || !hd.classList.contains('ci-section-hd')) return;
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  e.preventDefault();
+  hd.click();
+});
 $('#mk-rm-preview').addEventListener('click', e => { if (e.target === $('#mk-rm-preview')) closeRmPreview(); });
 $('#mk-sync').addEventListener('click', e => { if (e.target === $('#mk-sync')) closeSyncModal(); });
 $('#mk-event-list').addEventListener('click', e => { if (e.target === $('#mk-event-list')) closeEventListModal(); });
@@ -9707,6 +9759,8 @@ const CS_ACTIONS = {
   'closeBulkImport': (a) => closeBulkImport(...a),
   'closeCareInfoModal': (a) => closeCareInfoModal(...a),
   'closeEventListModal': (a) => closeEventListModal(...a),
+  'askCloseEventModal': (a) => askCloseEventModal(...a),
+  'askCloseOfficeInfoModal': (a) => askCloseOfficeInfoModal(...a),
   'closeEventModal': (a) => closeEventModal(...a),
   'closeOfficeInfoModal': (a) => closeOfficeInfoModal(...a),
   'closeResidentBulkModal': (a) => closeResidentBulkModal(...a),
