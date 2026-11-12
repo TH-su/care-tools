@@ -23,8 +23,10 @@
    架空データのみ（架空の氏名・架空病院・見本クリニック）。 */
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
+/* 入居者マスタの画面のスクリプトは 2026-11-13 に resident-master.js へ移した（判定の区間 MC-JUDGE だけ HTML に残す）。移す前と同じ文字に戻して確かめる */
+const { readMaster } = require('../master-page.cjs');
 const ROOT = path.join(__dirname, '..', '..');
-const read = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
+const read = f => readMaster(path.join(ROOT, f));
 const ROSTER_SRC = read('su-roster.js'), SHADOW_SRC = read('su-master-shadow.js');
 const DCR = read('daycare-roster.html'), RM = read('resident-master.html'), SC = read('shadow-check.js');
 let pass = 0, fail = 0;

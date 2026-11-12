@@ -9,9 +9,11 @@
    実行: node check/unit/facility_swap_test.js */
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http');
+/* 入居者マスタの画面のスクリプトは 2026-11-13 に resident-master.js へ移した（判定の区間 MC-JUDGE だけ HTML に残す）。移す前と同じ文字に戻して確かめる */
+const { readMaster } = require('../master-page.cjs');
 const { pathToFileURL } = require('url');
 const ROOT = path.join(__dirname, '..', '..');
-const read = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
+const read = f => readMaster(path.join(ROOT, f));
 let pass = 0, fail = 0;
 function t(n, c, e) { if (c) { pass++; console.log('  ✓ ' + n); } else { fail++; console.log('  ✗ ' + n + (e !== undefined ? '  → ' + JSON.stringify(e) : '')); } }
 

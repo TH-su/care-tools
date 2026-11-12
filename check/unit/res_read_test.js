@@ -21,6 +21,8 @@
    ★架空データのみ（氏名は使わない）。 */
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
+/* 入居者マスタの画面のスクリプトは 2026-11-13 に resident-master.js へ移した（判定の区間 MC-JUDGE だけ HTML に残す）。移す前と同じ文字に戻して確かめる */
+const { readMaster } = require('../master-page.cjs');
 const ROOT = path.join(__dirname, '..', '..');
 const SRC = fs.readFileSync(process.env.RES_READ_JS || path.join(ROOT, 'su-res-read.js'), 'utf8');
 let pass = 0, fail = 0;
@@ -195,7 +197,7 @@ const SHEET = [
   console.log('I 画面のつなぎ（スイッチが切の間は今までの関数をそのまま呼ぶ）');
   for (const [f, fn, screen] of [['facesheet.html', 'apiGet', 'facesheet'], ['care-meeting.html', 'apiGet', 'care-meeting'], ['resident-master.html', 'apiGet', 'resident-master'],
                                  ['training-plan.html', 'mGet', 'training-plan'], ['admission-flow.html', 'masterGet', 'admission-flow']]) {
-    const H = fs.readFileSync(path.join(ROOT, f), 'utf8');
+    const H = readMaster(path.join(ROOT, f));
     const line = (H.match(new RegExp('^' + fn + '=function\\(.*$', 'm')) || [''])[0];
     t(f + ': 部品を読み込み、' + fn + ' を口に通す（画面の名前 ' + screen + '）', /<script src="su-res-read\.js\?v=/.test(H)
       && new RegExp('^var ' + fn + 'Gas_=' + fn + ';$', 'm').test(H) && line.indexOf("{screen:'" + screen + "'}") > 0);
@@ -258,7 +260,7 @@ const SHEET = [
   }
   for (const [f, fn, screen, parse] of [['resident-master.html', 'apiPost', 'resident-master', 'throw'], ['resident-master.html', 'apiPostRaw', 'resident-master', 'raw'],
                                         ['care-meeting.html', 'meetingPost_', 'care-meeting', 'json'], ['admission-flow.html', 'masterPost', 'admission-flow', 'throw']]) {
-    const H = fs.readFileSync(path.join(ROOT, f), 'utf8');
+    const H = readMaster(path.join(ROOT, f));
     const line = (H.match(new RegExp('^' + fn.replace('$', '\\$') + '=function\\(.*$', 'm')) || [''])[0];
     t(f + ': ' + fn + ' を保存の口に通す（' + screen + '・' + parse + '）', new RegExp('^var ' + fn + 'Gas_=' + fn + ';$', 'm').test(H)
       && line.indexOf('SUResRead.write(') > 0 && line.indexOf("{screen:'" + screen + "',parse:'" + parse + "'}") > 0);
@@ -399,7 +401,7 @@ const SHEET = [
 
   console.log('L 画面のつなぎ（入居者マスタ・フェイスシートの本物の関数・接続先の無い端末・2026-11-08）');
   {
-    const RM = fs.readFileSync(path.join(ROOT, 'resident-master.html'), 'utf8');
+    const RM = readMaster(path.join(ROOT, 'resident-master.html'));
     const FS = fs.readFileSync(path.join(ROOT, 'facesheet.html'), 'utf8');
     const grab = (src, name) => {
       let i = src.indexOf('\nfunction ' + name + '(');

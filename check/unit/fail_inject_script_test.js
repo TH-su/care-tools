@@ -19,6 +19,8 @@
 'use strict';
 const assert = require('assert');
 const fs = require('fs');
+/* 入居者マスタの画面のスクリプトは 2026-11-13 に resident-master.js へ移した（判定の区間 MC-JUDGE だけ HTML に残す）。移す前と同じ文字に戻して確かめる */
+const { readMaster } = require('../master-page.cjs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 
@@ -250,7 +252,7 @@ async function main() {
   });
   await t('入居者マスタの場面の後片付けで、画面に無い関数（closeEdit）を呼ばない', () => {
     const src = fs.readFileSync(path.join(DIR, 'observe.mjs'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
-    const html = fs.readFileSync(path.join(ROOT, 'resident-master.html'), 'utf8');
+    const html = readMaster(path.join(ROOT, 'resident-master.html'));
     assert.ok(!/function\s+closeEdit\b/.test(html), '画面に closeEdit がある時はこの試験を直す');
     assert.ok(!/closeEdit\s*\(/.test(src));
   });
