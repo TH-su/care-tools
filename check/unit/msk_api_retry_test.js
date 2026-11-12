@@ -1,4 +1,4 @@
-/* 申送ビューア 読み取りの送り直し（moushiokuri-viewer.html の apiGet）のテスト（2026-10-17 新設）
+/* 申送ビューア 読み取りの送り直し（moushiokuri-viewer.html の apiRead）のテスト（2026-10-17 新設）
    実行: node check/unit/msk_api_retry_test.js
    対象を差し替える: MSK_HTML=/tmp/変異版.html node check/unit/msk_api_retry_test.js（変異試験用）
 
@@ -65,10 +65,10 @@ function box(answers) {
     }
   };
   vm.createContext(sb);
-  vm.runInContext([grabVar('API_GET_RETRY'), grabFn('fetchTO'), grabFn('parseJson'), grabFn('apiGet'), grabFn('apiGetOnce')].join('\n'), sb);
+  vm.runInContext([grabVar('API_GET_RETRY'), grabFn('fetchTO'), grabFn('parseJson'), grabFn('apiRead'), grabFn('apiReadOnce')].join('\n'), sb);
   return { sb, sent };
 }
-const run = (b) => b.sb.apiGet('events', { from: '2026-10-01', to: '2026-10-14' })
+const run = (b) => b.sb.apiRead('events', { from: '2026-10-01', to: '2026-10-14' })
   .then((o) => ({ ok: true, o }), (e) => ({ ok: false, m: String(e && e.message || e) }));
 
 (async () => {
