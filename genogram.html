@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-font">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ig7D9DDj8Ge+d3YP27zovCaOjlkdvs7k5nayoTv3S3o='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-/9NdFQEhrPpmjqcuZgPmlrA+VEWsvBiZ5NcB9HsrfJw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 入居者情報を表示する画面のため、ブラウザ・中継キャッシュに残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -18,7 +18,7 @@
 <script src="su-resident-hop.js?v=2026-11-02"></script>
 <script src="su-geno.js?v=2026-11-08"></script>
 <!-- 止めて知らせる窓（alert・confirm）の代わりに画面の中の窓を出す共通部品（2026-11-12 代表者の決定）。画面のスクリプトより前に置く -->
-<script src="su-dialog.js?v=2026-11-12"></script>
+<script src="su-dialog.js?v=2026-11-13"></script>
 <script src="konva-9.3.22.min.js"></script>
 <!-- PDF 出力の部品（jsPDF 2.5.1）は jspdf-2.5.1.umd.js に同梱し、開いた後の手すきか PDF 出力を最初に押した時に読み込む（2026-10-24・起動を軽くするため） -->
 <style>
@@ -4219,16 +4219,18 @@ async function loadDoc(name, opts) {
     await SUDialog.alert('データが見つかりません: ' + name);
     return;
   }
-  state.clientName = doc.clientName || name;
+  /* 画面の名前（state.clientName）は、下の知らせを閉じた後、図を差し替える直前に入れる（2026-11-12）。
+     知らせの間に下書きの控え・閉じる前の確かめが走っても、名前と図が別の方にならないように */
+  const docName = doc.clientName || name;
   /* 基準は端末に残した「この端末が最後に確かめたサーバー版」。端末の図を出した時も読込時のクラウド版で
      上書きしない（上書きすると、未反映の図が別端末の版を確認なしに上書きする＝9/23 の事故）。
      基準を観測していない旧データだけ、以前どおり「読込時に観測したクラウド版の時刻」を基準にする
      （クラウド未観測＝未設定・取得失敗はローカル時刻へフォールバック） */
   if (!keepBase) {
-    const b = CloudSync.getBase(state.clientName);
-    if (!(b && b.seen)) CloudSync.setBaseline(state.clientName, cloudSeenAt || doc.updatedAt, !!cloudSeenAt);
+    const b = CloudSync.getBase(docName);
+    if (!(b && b.seen)) CloudSync.setBaseline(docName, cloudSeenAt || doc.updatedAt, !!cloudSeenAt);
   }
-  if (!cloudFetchFailed) cloudUnverified.delete(state.clientName);   // クラウドを確認できた時点で印を外す
+  if (!cloudFetchFailed) cloudUnverified.delete(docName);   // クラウドを確認できた時点で印を外す
   // 案内は削除の保留が実際に残った時だけ（2択で OK を選ぶと同じ名前の保留はすべて外れる）
   if (keptDelete && !CloudSync.getPending().some(x => x && x.kind === 'delete' && x.name === name)) keptDelete = '';
   if (keptDelete === 'unverified') {
@@ -4240,6 +4242,7 @@ async function loadDoc(name, opts) {
   if (copyFailed) {
     await SUDialog.alert('「' + name + '」のこの端末の図を別の名前で残せなかったため、クラウドの版には切り替えず、この端末の図のまま開きます。');
   }
+  state.clientName = docName;
   state.doc = {
     nodes: doc.nodes || [],
     lines: doc.lines || [],
@@ -4878,7 +4881,10 @@ async function init() {
   /* 下書きが残っていれば、起動の自動読込より前に戻すかを確かめる。保存済みの基準（unsavedBase）は
      読込（loadDoc の最後）か、下の読込の無い分岐の markClean で控える。
      確かめは画面の中の窓（2026-11-12）なので、答えを待ってから起動の続き（自動の読込・まとめ反映の予約など）を同じ順で進める */
-  if (await offerDraftRestore(suName)) {
+  const draftAsk = offerDraftRestore(suName);
+  /* 確かめの窓を出して答えを待ったか（待っている間は下の online などの受け口がまだ無く、オンラインに戻ったことを取りこぼす） */
+  const bootAsked = !!(window.SUDialog && typeof SUDialog.busy === 'function' && SUDialog.busy());
+  if (await draftAsk) {
     /* 保存していない編集を戻した。起動の自動読込はしない（戻した図を上書きしないため） */
   } else if (suName) {
     $('clientName').value = suName;
@@ -4941,7 +4947,7 @@ async function init() {
 
   // Auto-flush pending sync on app return online
   /* 画面の中の窓（2026-11-12）が出ている間は送り直しを窓の後へ回す（窓の前に掴んだ基準・保留の印を窓の間に動かさない・仮置き） */
-  window.addEventListener('online', () => { genoDlgIdle_().then(() => {
+  const flushOnOnline = () => { genoDlgIdle_().then(() => {
     if (CloudSync.isConfigured() && CloudSync.getPending().length > 0) {
       setSyncStatus('syncing', 'オンライン復帰: 保留分を同期中…');
       CloudSync.flushPending().then(r => {
@@ -4951,7 +4957,11 @@ async function init() {
                        : `${r.processed}件を再同期しました`);
       });
     }
-  }); });
+  }); };
+  window.addEventListener('online', flushOnOnline);
+  /* 起動の下書きの確かめを待っている間にオンラインへ戻っていた時の取りこぼしを埋める（2026-11-12）。
+     確かめの窓を出した時で、今オンラインで保留がある時だけ、上の受け口と同じ送り直しを1回始める（保留が無い・オフラインの時は何もしない） */
+  if (bootAsked && navigator.onLine && CloudSync.isConfigured() && CloudSync.getPending().length > 0) flushOnOnline();
   window.addEventListener('offline', () => {
     setSyncStatus('offline', 'オフライン — 端末のみで動作中');
   });
