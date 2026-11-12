@@ -502,7 +502,8 @@ group('12. 書く側: 画面の流れ');
   t('知らせは保存の知らせ（同期の結果まで）の後に出す', /thumbSaved\.then\(/.test(save) && /thumbDone\(\);[^\n]*\n\}$/.test(save));
   t('送った・送らなかった・関数が無い・中止した時は知らせない', /if \(st === 'ok' \|\| st === 'skip' \|\| st === 'nofunc' \|\| st === 'aborted'\) return;/.test(save));
   t('図を消した時に suGenoDelThumbs を呼ぶ', /suGenoDelThumbs\(name\)/.test(del));
-  t('起動時に1回だけ送る（sweepSuGenoThumbs）', /sweepSuGenoThumbs\(\)/.test(tryGrab(SRC.geno, 'init')));
+  /* 2026-11-12: 起動（init）は下書きの確かめ（画面の中の窓）の答えを待つため async になった。切り出す名前の形だけ合わせる */
+  t('起動時に1回だけ送る（sweepSuGenoThumbs）', /sweepSuGenoThumbs\(\)/.test(tryGrab(SRC.geno, 'init', 'async ')));
   t('ログインの部品の読み込み関数を2つ作らない（genoAuthLoad_ だけ）', (SRC.geno.match(/function \w*[Aa]uthLoad\w*\(/g) || []).length === 1);
   t('知らせの文に技術用語を出さない', !/Supabase|API|JSON|HTTP|トークン|geno_thumb_put/.test((save.match(/'[^']*ほかの端末[^']*'/g) || []).join('')));
 }
