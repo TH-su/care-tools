@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="topbar">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-WkP/PnXYnxt53QRxRrApPGhkJgguP9AYRcOJVrriQHE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-aPHfWsdfEx4qiQ1ETbWpPcj6ELi546/nnLoxUfQYf54='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -2363,10 +2363,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     run();
     /* 常勤換算をシフト作成と同じ数え方にする前（2026-10-18 より前）に保存した月は、いま出ている数字が数え直したものだと知らせる。
      * 保存の記録は書き換えない（保存し直した時だけ変わる） */
-    if (!rec.fteMethod && lastAnalysis) {
-      if (lastRun) lastRun.oldNotice = true;   /* 施設情報が届いて集計し直した時も出し直す */
-      showOldMethodNotice();
-    }
+    /* 施設情報が届いて集計し直した時も出し直す（届く前に区分の列を特定できず結果が出ていない月も、印は立てておく） */
+    if (!rec.fteMethod && lastRun) lastRun.oldNotice = true;
+    if (!rec.fteMethod && lastAnalysis) showOldMethodNotice();
     var out = $('results'); if (out && out.scrollIntoView) out.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 

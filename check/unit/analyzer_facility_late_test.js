@@ -62,9 +62,17 @@ function fakeFacility(aliases) {
   };
 }
 
-function boot(fac) {
+function boot(fac, storage) {
   const els = new Proxy({}, { get: (o, k) => (typeof k !== 'string' ? o[k] : (o[k] = o[k] || mkEl(k))) });
-  const data = {};
+  const data = Object.assign({}, storage || {});
+  /* 保存した月の一覧の「表示」ボタン（data-view）を、保存した月ごとに1つ返す */
+  const views = {};
+  els.savedMonths.querySelectorAll = (sel) => {
+    if (sel !== '[data-view]') return [];
+    let months = [];
+    try { months = JSON.parse(data['shiftanalyzer:v1:months'] || '[]'); } catch (e) { months = []; }
+    return months.map((m) => { const b = mkEl(); b.getAttribute = () => m.label; views[m.label] = b; return b; });
+  };
   const ls = {
     getItem(k) { return Object.prototype.hasOwnProperty.call(data, k) ? data[k] : null; },
     setItem(k, v) { data[k] = String(v); }, removeItem(k) { delete data[k]; },
@@ -83,7 +91,7 @@ function boot(fac) {
   vm.createContext(win);
   ['src/logic/symbols.js', 'src/logic/timecalc.js', 'src/logic/aggregate.js', 'src/logic/analyzer-import.js', 'src/analyzer-ui.js']
     .forEach((f) => vm.runInContext(section(ANA, f), win, { filename: f }));
-  return { win, els };
+  return { win, els, views };
 }
 
 /* 架空の勤務表。区分の列に事業所の名前（見本の家＝施設・見本ヘルパー＝訪問）を使う */
@@ -178,6 +186,21 @@ const count = (h, s) => h.split(s).length - 1;
   els.runBtn.fire('click');
   const h = els.results.innerHTML;
   t('5行を捨てた時: 数は5行・例は3つまで', h.includes('区分を判定できなかった行 5 行') && count(h, '列目（区分の列）') === 3, h.slice(0, 800));
+}
+
+/* 7 保存した月（旧い数え方で保存＝fteMethod なし）を、施設情報が届く前に開いた時 */
+const OLD = '旧い数え方で保存されています';
+for (const [what, text] of [['一部が事業所の名前の月', MIXED], ['全部が事業所の名前の月', ALLNAMED]]) {
+  const fac = fakeFacility(ALIASES);
+  const months = [{ label: '2026-07', rawText: text, settings: { fteBaseHours: 160, paidLeaveCountsAsWork: true } }];
+  const { els, views } = boot(fac, { 'shiftanalyzer:v1:months': JSON.stringify(months) });
+  t(what + ': 保存した月の「表示」ボタンがある', !!views['2026-07'], Object.keys(views));
+  if (!views['2026-07']) continue;
+  views['2026-07'].fire('click');
+  fac.settle(true);
+  const h = els.results.innerHTML;
+  t(what + ': 届いた後に集計し直し、行が戻る', h.includes('見本甲') && h.includes('見本乙'), h.slice(0, 300));
+  t(what + ': 集計し直した後も旧い数え方の知らせがちょうど1つ出る', count(h, OLD) === 1, count(h, OLD));
 }
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
