@@ -353,6 +353,29 @@ console.log('\n— 8. 印の無い議事録の見出しから欄の候補を出�
   const gm = C.guess('【結論】◆開催日：2026/10/1');
   const pm = C.guessApply(gm, gm.cands.map((c) => c.key));
   t('★見出しの後ろが「◆欄名：」の形の行は見出しにしない（選んでいない欄に入らない）', gm.cands.length === 0 && pm.chosen === 0 && Object.keys(pm.fields).length === 0 && gm.rest === '【結論】◆開催日：2026/10/1', [gm, pm.fields]);
+  /* 形を確かめる1行の欄（日付・時刻・回数・開催の理由）を選んだ時、続く行も読めなかった値も消さない（反証レビューの指摘 2026-11-13） */
+  const lost = (src, res) => nonEmpty(src).filter((l) => !/^(?:開催日|開催時間|開催回数|開催の理由|結論)：/.test(l)).filter((l) => {
+    const inFields = Object.keys(res.fields).some((k) => String(res.fields[k]).indexOf(l) >= 0);
+    return !inFields && String(res.rest).indexOf(l) < 0;
+  });
+  [
+    ['開催日', 'heldDate', '2026年11月1日', '2026-11-01'],
+    ['開催時間', 'timeText', '14:00〜14:30', '14:00〜14:30'],
+    ['開催回数', 'count', '3回目', '3'],
+    ['開催の理由', 'kind', '認定の更新', '認定の更新']
+  ].forEach(([lab, key, val, want]) => {
+    const src = lab + '：' + val + '\n本日は架空の話し合いをした。\nご本人は架空の希望を話した。\n結論：現状維持';
+    const g = C.guess(src), r = C.guessApply(g, g.cands.map((c) => c.key));
+    t('★' + lab + 'を選ぶと、見出しの行の値だけを欄に入れ、続く行は「振り分けられなかった文」に残す', r.fields[key] === want && r.fields.conclusion === '現状維持' &&
+      /本日は架空の話し合いをした。\nご本人は架空の希望を話した。/.test(r.rest) && lost(src, r).length === 0, [r.fields, r.rest]);
+    const bad = lab + '：来週のどこか\n続きの架空の文。';
+    const gb2 = C.guess(bad), rb = C.guessApply(gb2, gb2.cands.map((c) => c.key));
+    t(lab + 'の値を読めない時は、欄を空にし、読めなかった値と続く行を「振り分けられなかった文」に残す', !rb.fields[key] && /来週のどこか/.test(rb.rest) && /続きの架空の文。/.test(rb.rest) && rb.warns.length > 0, [rb.fields, rb.rest]);
+  });
+  const sep = C.guess('【開催日】\n2026年11月2日\n補足の架空の文'), rs = C.guessApply(sep, ['heldDate']);
+  t('見出しだけの行の時は、次の行を値として入れ、その後ろの行は残す', rs.fields.heldDate === '2026-11-02' && rs.rest === '補足の架空の文', [rs.fields, rs.rest]);
+  const ch2 = C.guess('【結論】\n1行目\n2行目'), rc = C.guessApply(ch2, ['conclusion']);
+  t('文の欄（結論など）は今までどおり続く行も全部入れる', rc.fields.conclusion === '1行目\n2行目' && rc.rest === '', rc);
   t('見出しの語の言い換えは parse の区切りにしない（「◆課題：」は今も知らない印）', C.parse('◆結論：続ける\n◆課題：なし').unknown.length === 1 && C.parse('◆結論：続ける\n◆課題：なし').fields.conclusion === '続ける\n◆課題：なし');
 }
 

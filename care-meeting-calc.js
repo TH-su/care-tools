@@ -17,7 +17,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-11-13a';
+  var VERSION = '2026-11-13b';
   /* 様式の欄（並びは様式どおり）。max は1欄の上限の文字数（GAS の meeting.gs と同じ値）。optional は無くても知らせない欄 */
   var FIELDS = [
     { key: 'sourceName', label: '利用者名', max: 40 },
@@ -479,13 +479,27 @@
      選んだ分を「◆欄名：」の形に組み直して parse に通す（日付・時刻・回数・出席者の形の確かめは parse と同じ）。
      同じ欄に2つ以上選んだ時は、見出しの順につないで1つにして知らせる。選ばなかった候補は見出しの行ごと rest に足す。
      戻り値 parse と同じ形 ＋ {rest, chosen}。1つも選んでいない時は chosen が 0 で fields は空 */
+  var ONE_LINE = { createdDate: 1, heldDate: 1, timeText: 1, count: 1, kind: 1 };   // parse が形を確かめる1行の欄
   function guessApply(g, choices) {
     var cands = (g && Array.isArray(g.cands)) ? g.cands : [], ch = Array.isArray(choices) ? choices : [];
     var by = {}, left = [], dupWarn = [];
     if (g && g.rest) left.push(String(g.rest));
     cands.forEach(function (c, i) {
       var k = ch[i];
-      if (k && fieldOf(k)) { (by[k] = by[k] || []).push(String(c.body || '')); return; }
+      if (k && fieldOf(k)) {
+        var body = String(c.body || '');
+        /* 形を確かめる1行の欄は、最初の文の行（見出しの行の後ろ、無ければ次の行）だけを入れ、続く行は振り分けられなかった文へ回す
+           （続く行まで入れると形を読めずに空になり、どこにも残らなかった・反証レビューの指摘 2026-11-13） */
+        if (ONE_LINE[k]) {
+          var bl = body.split('\n'), j = 0;
+          while (j < bl.length && !bl[j].trim()) j++;
+          var more = bl.slice(j + 1).join('\n').trim();
+          body = j < bl.length ? bl[j].trim() : '';
+          if (more) left.push(more);
+        }
+        (by[k] = by[k] || []).push(body);
+        return;
+      }
       left.push(String(c.src || c.line || ''));
     });
     var parts = [], chosen = 0;
@@ -498,6 +512,11 @@
     var res = chosen ? parse(parts.join('\n')) : { fields: {}, attendees: [], warns: [], found: [], unknown: [], preamble: '', raw: {}, tooLong: false,
       missing: FIELDS.filter(function (f) { return !f.optional; }).map(function (f) { return f.key; }) };
     res.warns = dupWarn.concat(res.warns);
+    /* 形を読めずに空にした欄の元の文も、振り分けられなかった文へ足す（黙って捨てない） */
+    Object.keys(ONE_LINE).forEach(function (k) {
+      var raw = res.raw && res.raw[k] !== undefined ? String(res.raw[k]).trim() : '';
+      if (raw && !String(res.fields[k] == null ? '' : res.fields[k]).trim()) left.push(raw);
+    });
     res.rest = left.join('\n\n').trim();
     res.chosen = chosen;
     return res;
