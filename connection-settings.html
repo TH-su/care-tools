@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-zQLVq5AOgh6i4TRM4k1i8RF9BPs9oT4nWnzq9TdE0CQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-rRreL5X/6XR3bPWzdb3CUnEWGtKNJ0f5A0dpalPiwqY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <meta name="robots" content="noindex,nofollow">
@@ -887,7 +887,14 @@ function buildCard(sys, onSaved){
     refreshBadge();
   }
 
-  return { node:cd, save:save, refresh:refresh, tokenInput:tokIn, title:sys.title };
+  /* 保存していない入力があるか（URL・追加の欄が保存した値と違う／合言葉の欄に何か入っている）。
+     タブを閉じる・再読み込みする前の確かめに使う（2026-11-12 商用90点 第3段）。合言葉の欄は保存すると空に戻る */
+  function dirty(){
+    var v=collect();
+    return v.url!==String(cur.url||'').trim() || !!v.token || (!!extIn && v.extra!==String(cur.extra||'').trim());
+  }
+
+  return { node:cd, save:save, refresh:refresh, dirty:dirty, tokenInput:tokIn, title:sys.title };
 }
 
 /* ═══════════ 初回の案内（2026-10-09・監査10月版 #13・本人決定 1a）═══════════
@@ -1027,6 +1034,14 @@ function startApp_(){
     c.sys=SYSTEMS[i];
     cards.push(c); box.appendChild(c.node);
   }
+  /* タブを閉じる・再読み込みする時、どれかの欄に保存していない入力があれば確かめる（入力が無い時は何も出さない） */
+  window.addEventListener('beforeunload', function(ev){
+    try{
+      for(var k=0;k<cards.length;k++){
+        if(cards[k].dirty && cards[k].dirty()){ ev.preventDefault(); ev.returnValue=''; return; }
+      }
+    }catch(e){}
+  });
   /* 施設で使わないアプリの欄は隠す。★すでに URL が入っている欄は隠さない（入っている設定を見えなくしない）。
      隠した欄は空欄のまま＝一括保存でも何も変えない。施設情報が後から読めた時にもう一度当てる */
   var applyUsedApps=function(){
