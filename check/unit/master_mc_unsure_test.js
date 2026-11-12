@@ -10,8 +10,10 @@ const src = fs.readFileSync(HTML, 'utf8');
 let pass = 0, fail = 0;
 function t(n, c, e) { if (c) { pass++; console.log('  ✓ ' + n); } else { fail++; console.log('  ✗ ' + n + (e !== undefined ? '  → ' + JSON.stringify(e) : '')); } }
 function cut(name) {
-  const h = src.indexOf('function ' + name + '(');
+  let h = src.indexOf('function ' + name + '(');
   if (h < 0) throw new Error('not found: ' + name);
+  /* 2026-11-13: 画面の中の窓（su-dialog.js）の答えを待つ関数は async になった。頭の async も一緒に切り出す（確かめる中身は同じ） */
+  if (src.slice(h - 6, h) === 'async ') h -= 6;
   let d = 0, i = src.indexOf('{', h);
   for (; i < src.length; i++) { if (src[i] === '{') d++; else if (src[i] === '}') { d--; if (d === 0) return src.slice(h, i + 1); } }
   throw new Error('unbalanced: ' + name);
@@ -39,7 +41,8 @@ t('0 の印は捨てる', K(sb.mcKeepUnsure_({ a: 0, b: 1 }, {})) === '["b"]');
 console.log('\n— 2. 読み直しで使われている —');
 t('★mcLoad_ は印を全部消さず、mcKeepUnsure_ で引き継ぐ', /mcSt\.unsure=mcKeepUnsure_\(mcSt\.unsure,dec\);/.test(cut('mcLoad_')) && !/mcSt\.unsure=\{\};/.test(cut('mcLoad_')));
 t('結果が分からない時は、読み直しの前に印を付ける（mcRecheck_）', /mcSt\.unsure\[cur\.c\.srcKey\]=1;[\s\S]*mcLoad_\(\)/.test(cut('mcRecheck_')));
-t('印の付いた候補は、確かめたと答えない限り開けない（mcPick_）', /mcSt\.unsure\[key\]\)\{\s*if\(!confirm\(/.test(cut('mcPick_')));
+/* 2026-11-13: 確かめは画面の中の窓の答えを待つ形（if(!(await SUDialog.confirm(…)))）になった。印の付いた候補で最初に聞くことは同じ */
+t('印の付いた候補は、確かめたと答えない限り開けない（mcPick_）', /mcSt\.unsure\[key\]\)\{\s*if\(!\(await SUDialog\.confirm\(/.test(cut('mcPick_')));
 
 console.log('\n— 3. 印の付いた候補を押した時（2026-10-07 再審査の指摘）—');
 function pickEnv(answer) {
@@ -47,27 +50,29 @@ function pickEnv(answer) {
     mcCur: null, mcBulk: { busy: false, sel: { x: 1 } }, mcFilterId: '',
     mcSt: { unsure: { K1: 1 } }, painted: 0, opened: null,
     confirm: m => { asked.push(m); return answer(m); },
+    /* 2026-11-13: 確かめは画面の中の窓（su-dialog.js）になり、答えを約束（Promise）で返す。記録と答え方は今までどおり */
+    SUDialog: { confirm: m => { asked.push(m); return Promise.resolve(answer(m)); } },
     mcPaint_: () => { env.painted++; }, mcPaintModal_: () => {}, mcFetchRec_: (c) => { env.opened = c.c.srcKey; },
     mcAll_: () => [{ srcKey: 'K1', id: '1' }], Object
   };
   vm.createContext(env); vm.runInContext(cut('mcPick_'), env);
   return { env, asked };
 }
-{
+(async () => {
   const a = pickEnv(() => false);
-  a.env.mcPick_('K1');
+  await a.env.mcPick_('K1');
   t('★「キャンセル」なら開かず、印も残す', a.env.opened === null && a.env.mcSt.unsure.K1 === 1);
   t('★確かめたかを最初に聞く（まとめて片付けるの取りやめより前）', a.asked.length === 1 && /反映できたか分からない/.test(a.asked[0]), a.asked);
   t('★キャンセルの時は、まとめて片付けるの選択を壊さない（動かない画面を残さない）', a.env.mcBulk !== null);
   const b = pickEnv(() => true);
-  b.env.mcPick_('K1');
+  await b.env.mcPick_('K1');
   t('「OK」なら印を外して開く', b.env.opened === 'K1' && !b.env.mcSt.unsure.K1 && b.env.painted >= 1, { opened: b.env.opened, u: b.env.mcSt.unsure });
   t('その後にまとめて片付けるの取りやめを聞く', b.asked.length === 2 && /まとめて片付ける/.test(b.asked[1]), b.asked);
   const c = pickEnv(() => true); c.env.mcSt.unsure = {}; c.env.mcBulk = null;
-  c.env.mcPick_('K1');
+  await c.env.mcPick_('K1');
   t('印の無い候補は確かめを聞かずに開く', c.env.opened === 'K1' && c.asked.length === 0, c.asked);
-}
 t('印の付いた候補は反映できない（mcCanApply_）', /mcSt\.unsure\[mcCur\.c\.srcKey\]/.test(cut('mcCanApply_')));
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);
+})();

@@ -89,6 +89,17 @@ async function run(opts) {
   const errors = [], dialogs = [];
   p.on('pageerror', (e) => errors.push(String(e && e.message || e).slice(0, 200)));
   p.on('dialog', (d) => { dialogs.push(d.message()); d.accept().catch(() => {}); });
+  /* 2026-11-13: 確かめは画面の中の窓（su-dialog.js）になった。出た窓の文を同じ dialogs に記録し、同じ答え（OK）を押す（確かめる中身は同じ・yakujo_review_e2e と同じ仕掛け） */
+  await p.exposeFunction('__sudSeen', (m) => { dialogs.push(m); });
+  await p.addInitScript(() => {
+    new MutationObserver(() => {
+      const g = document.querySelector('dialog.sud-dlg[open]');
+      if (!g || g.__seen) return;
+      g.__seen = true;
+      window.__sudSeen((g.querySelector('.sud-msg') || {}).textContent || '');
+      setTimeout(() => { const b = g.querySelector('.sud-btn.pri'); if (b) b.click(); }, 0);
+    }).observe(document, { subtree: true, childList: true, attributes: true });
+  });
   await p.goto(srv.url + '/resident-master.html', { waitUntil: 'load' });
   await p.waitForFunction(() => Array.isArray(window.roster) && window.roster.length >= 6, null, { timeout: 20000 });
   /* 管理者の入口（yjGate_）はログインの確かめが要るので、ここでは窓を直接開く。ログインの証明は架空の文字列 */
@@ -206,6 +217,8 @@ try {
   t('★1人ずつでも、書類に無い今の行は自動で中止にしない（選ぶ前のまま）', l8.length === 1 && l8[0].a === '', l8);
   t('「すべて入れ替え」のボタンが出る', /すべて入れ替え（書類に無い今の薬 1 行を中止）/.test(await r.p.textContent('#yjAll')));
   await r.p.click('#yjAll');
+  /* 画面の中の窓の答えを待ってから読む（OK の後に行が「中止」になる・2026-11-13） */
+  await r.p.waitForFunction(() => !document.querySelector('dialog.sud-dlg[open]') && window.yjSt.cur.rows.some((x) => x.kind === 'left' && x.action === 'stop'), null, { timeout: 10000 }).catch(() => {});
   l8 = await cur8();
   t('★押すと確認の窓のあと、書類に無い今の行を全部「中止」にする', r.dialogs.length === 1 && /書類に無い次の 1 行を、すべて「中止」/.test(r.dialogs[0]) && /架空ロール錠5mg「見本」/.test(r.dialogs[0]) && l8[0].a === 'stop' && l8[0].all, { d: r.dialogs, l8 });
   t('ボタンが「取り消す」に変わる', /すべて入れ替えを取り消す/.test(await r.p.textContent('#yjAll')));

@@ -402,7 +402,9 @@ const SHEET = [
     const RM = fs.readFileSync(path.join(ROOT, 'resident-master.html'), 'utf8');
     const FS = fs.readFileSync(path.join(ROOT, 'facesheet.html'), 'utf8');
     const grab = (src, name) => {
-      const i = src.indexOf('\nfunction ' + name + '(');
+      let i = src.indexOf('\nfunction ' + name + '(');
+      /* 2026-11-13: 画面の中の窓（su-dialog.js）の答えを待つ関数は async になった。頭の async も一緒に切り出す（確かめる中身は同じ） */
+      if (i < 0) i = src.indexOf('\nasync function ' + name + '(');
       if (i < 0) return '';
       let d = 0, q = null, k = src.indexOf('{', i);
       for (let p = k; p < src.length; p++) {
