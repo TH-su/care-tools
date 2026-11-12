@@ -64,19 +64,36 @@ if (!window.SUDialog) window.SUDialog = {
     prep: ['データベースの準備がまだです。開発の担当へ知らせてください。', 'データベースの準備がまだです'],
     other: ['うまくいきませんでした。少し待ってから、もう一度押してください。続く時は開発の担当へ知らせてください。', 'うまくいきませんでした']
   };
-  function jaWhy(where, x, short) {
-    var s = '', nm = '', c = '';
-    if (x && typeof x === 'object') { s = String(x.message || x.error || ''); c = String(x.code || ''); nm = String(x.name || ''); }
-    else s = String(x == null ? '' : x);
-    if (JA_CHAR.test(s)) return s;
-    var all = (c ? c + ' ' : '') + s;
-    try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('写しの見比べ: ' + where, (nm ? nm + ' ' : '') + (all || '（理由なし）')); } catch (e) { /* 記録できなくても止めない */ }
-    var k = /42501|permission denied|not allowed|unauthori[sz]ed|forbidden|jwt|\b40[13]\b/i.test(all) ? 'denied'
+  /* 英語の文の種類（権限・時間切れ・通信・準備がまだ・そのほか）。nm は例外の名前 */
+  function jaKind(all, nm) {
+    return /42501|permission denied|not allowed|unauthori[sz]ed|forbidden|jwt|^40[13](\s|$)|\bstatus[ :=]*40[13]\b|\bHTTP\S*\s+40[13]\b/i.test(all) ? 'denied'
       : (nm === 'AbortError' || /abort|time ?out|timed out/i.test(all)) ? 'timeout'
       : (nm === 'FunctionsFetchError' || /failed to fetch|load failed|networkerror|network ?error|network request failed|fetch failed|failed to send a request/i.test(all)) ? 'net'
       : /PGRST202|PGRST205|42883|42P01/.test(all) ? 'prep'
       : 'other';
-    return JA_WHY[k][short ? 1 : 0];
+  }
+  /* 日本語の文の中の英語の連なり（部品が英語の例外文に日本語の前後を付けた時）。
+     英字の語が2つ以上つながったもの、または例外らしい語（Error・Failed・fetch など）を含むものだけを英語の文とみなす。
+     Google・PC・GAS のような1語の名前と、番号・英字1語の印は残す（反証レビューの指摘 2026-11-13） */
+  var EN_RUN = /[A-Za-z][\w.'\/-]*(?:[:,;]?[ \t]+[\w.'\/<>-]+)+|[A-Za-z]\w*(?:Error|Exception)\b/g;
+  var EN_NAME = /^(Google|Drive|Supabase|GAS|PC|AI|PR|Mac|iPhone|iPad|Chrome|GitHub|OK|NG)$/;
+  var EN_KEY = /Error|Exception|\bFailed\b|\bfetch\b|\bundefined\b|\bnull\b/;
+  function enSentence(m) {
+    var w = (m.match(/[A-Za-z]{2,}/g) || []).filter(function (x) { return !EN_NAME.test(x); });
+    return w.length >= 2 || EN_KEY.test(m);
+  }
+  function jaWhy(where, x, short) {
+    var s = '', nm = '', c = '';
+    if (x && typeof x === 'object') { s = String(x.message || x.error || ''); c = String(x.code || ''); nm = String(x.name || ''); }
+    else s = String(x == null ? '' : x);
+    var all = (c ? c + ' ' : '') + s;
+    if (JA_CHAR.test(s)) {
+      var out = s.replace(EN_RUN, function (m) { return enSentence(m) ? JA_WHY[jaKind(m, '')][1] : m; });
+      if (out !== s) { try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('写しの見比べ: ' + where, s); } catch (e) { /* 記録できなくても止めない */ } }
+      return out;
+    }
+    try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('写しの見比べ: ' + where, (nm ? nm + ' ' : '') + (all || '（理由なし）')); } catch (e) { /* 記録できなくても止めない */ }
+    return JA_WHY[jaKind(all, nm)][short ? 1 : 0];
   }
   /* 写しの断りの印（表に無い英字の印）を画面に出す言葉にする。表に無い印は記録に残して「ほかの理由」と出す */
   function refusedWord(map, code, where) {

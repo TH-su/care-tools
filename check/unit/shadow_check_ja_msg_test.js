@@ -61,10 +61,11 @@ SRC.split('\n').forEach(function (line, n) {
   else STMTS.push([line, n]);
 });
 STMTS.forEach(function (st) {
-  const line = st[0], n = st[1];
+  let line = st[0]; const n = st[1];
   const s = line.trim();
   if (!s || s.startsWith('/*') || s.startsWith('*') || s.startsWith('//')) return;
-  if (/SUErrors\.note/.test(line)) return;            // 記録（画面には出ない）
+  // 記録（画面には出ない）の部分は除いて見る。同じ行に画面へ出す所があれば、そこは見る（反証レビューの指摘 2026-11-13）
+  line = stripCalls(line, 'window.SUErrors.note');
   if (!SINK.test(line)) return;
   if (/^\s*function (say|msg|shbMsg|wbMsg)\(/.test(line) || /function \(t(, k(ind)?)?\) \{ say\(t\)/.test(line)) return;   // 出す関数そのもの・進み具合の受け渡し
   let x = stripCalls(stripCalls(line, 'jaWhy'), 'aiWhyTail');
@@ -83,11 +84,13 @@ t('★B 画面へ出す所に、英語の直書きの文を渡していない', 
 const notes = [];
 const box = { window: { SUErrors: { note: (a, b) => notes.push([a, b]) } }, String };
 vm.createContext(box);
-const parts = [/var JA_CHAR = [^\n]*\n/.exec(SRC), /var JA_WHY = \{[\s\S]*?\n  \};\n/.exec(SRC)];
-const haveHelpers = !!(parts[0] && parts[1] && fn('jaWhy') && fn('refusedWord'));
+/* JA_CHAR から jaWhy の終わりまで（文の表・種類分け・英語の連なりの見分けを含む）を1つの塊で切り出す */
+const hA = SRC.indexOf('  var JA_CHAR = '), hB = SRC.indexOf('  /* 写しの断りの印');
+const HELP = hA > 0 && hB > hA ? SRC.slice(hA, hB) : '';
+const haveHelpers = !!(HELP && /function jaWhy\(/.test(HELP) && fn('refusedWord'));
 t('jaWhy・refusedWord と文の表を切り出せる', haveHelpers);
 if (haveHelpers) {
-  vm.runInContext([parts[0][0], parts[1][0], fn('jaWhy'), fn('refusedWord'), fn('aiWhyTail'), fn('aiProbeText'),
+  vm.runInContext([HELP, fn('refusedWord'), fn('aiWhyTail'), fn('aiProbeText'),
     'this.__j = jaWhy; this.__r = refusedWord; this.__a = aiProbeText;'].join('\n'), box);
   const noAscii = s => typeof s === 'string' && s.length > 0 && !/[A-Za-z]{2,}/.test(s) && JA.test(s);
   const cases = [
@@ -113,6 +116,28 @@ if (haveHelpers) {
   notes.length = 0;
   t('★C 日本語を含む文はそのまま返す（記録しない）', box.__j('試験', new Error('Google の応答がありません（時間切れ）')) === 'Google の応答がありません（時間切れ）'
     && box.__j('試験', '別の画面で「切り替える」が動いています。') === '別の画面で「切り替える」が動いています。' && notes.length === 0, notes);
+  /* 部品が英語の元の文に日本語の前後を付けた理由（反証レビューの指摘 2026-11-13） */
+  const mixed = [
+    ['データベースの断り（dbWhy）', 'データベースが受け付けませんでした（TypeError: Failed to fetch）。', 'データベースが受け付けませんでした（つながりませんでした）。'],
+    ['戻す途中（back）', '写しの期間には戻しました。Google への写し返しが終わっていません: Load failed　もう一度「写しの期間に戻す」を押してください。',
+      '写しの期間には戻しました。Google への写し返しが終わっていません: つながりませんでした　もう一度「写しの期間に戻す」を押してください。'],
+    ['後片付け（undo）', 'permission denied for function stf_op_end（Google の保存を止めたままです）', 'この操作の権限がありません（Google の保存を止めたままです）'],
+    ['例外の名前だけ', '止まりました（SyntaxError）', '止まりました（うまくいきませんでした）']
+  ];
+  mixed.forEach(function (c) {
+    notes.length = 0;
+    const r = box.__j('試験', c[1]);
+    t('★C 混ざった文（' + c[0] + '）→ 英語の連なりだけを日本語にする', r === c[2], r);
+    t('★C 混ざった文（' + c[0] + '）→ 元の文を記録に残す（1回）', notes.length === 1 && notes[0][1] === c[1], notes);
+  });
+  notes.length = 0;
+  const keep = ['Google の名簿に訪問日がありません（入居者マスタの GAS が古い可能性）。', 'データベースが受け付けませんでした（P0001）。',
+    '受け付けませんでした（busy）。', 'Google Drive へ写し返しています。', 'Supabase（本番）の印は KV_SWITCHED_FAMILIES から外してください。'];
+  t('★C 1語の名前・番号・英字1語の印は残す（記録しない）', keep.every(k => box.__j('試験', k) === k) && notes.length === 0, keep.map(k => box.__j('試験', k)));
+  /* 権限の番号の判定を絞る（反証レビューの指摘 2026-11-13） */
+  t('★C 「position 401」は権限にしない', /うまくいきませんでした/.test(box.__j('試験', new Error('Unexpected token at position 401'))));
+  const den = ['401', '403', 'status 401', 'HTTP/1.1 403 Forbidden', 'Request failed with status: 403'];
+  t('★C 番号だけ・status 401・HTTP 403 は権限', den.every(x => /権限がありません/.test(box.__j('試験', x))), den.map(x => box.__j('試験', x)));
   notes.length = 0;
   t('★D 表にある印は表の言葉', box.__r({ shrink: '急に減った' }, 'shrink', '試験') === '急に減った' && notes.length === 0);
   t('★D 表に無い英字の印は「ほかの理由」・印は記録に残す', box.__r({ shrink: '急に減った' }, 'weird_code', '試験') === 'ほかの理由' && notes.length === 1 && notes[0][1] === 'weird_code', notes);
