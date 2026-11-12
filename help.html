@@ -64,6 +64,19 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
     </ol>
   </section>
 
+  <!-- 画面ごとの使い方の目次（2026-11-13 代表者の指示・文は仮置き）。各画面の節へは help.html?sec=<画面> でも飛べる（help-sec.js） -->
+  <nav class="cd" aria-labelledby="h-screens">
+    <h2 id="h-screens">画面ごとの使い方</h2>
+    <p>よく使う画面の「できること」と「よくある困りごと」を、画面ごとにまとめています。</p>
+    <ul>
+      <li><a href="#h-care-schedule">週間計画</a></li>
+      <li><a href="#h-work-schedule">ワークスケジュール</a></li>
+      <li><a href="#h-resident-master">入居者マスタ</a></li>
+      <li><a href="#h-weight-record">体重管理</a></li>
+    </ul>
+    <p class="muted">ここに無い困りごとや、書いてあるとおりにしても直らない時は、<a href="#h-trouble">「不具合を報告」</a>から知らせるか、<a href="#h-contact">連絡先</a>へお問い合わせください。</p>
+  </nav>
+
   <section class="cd" aria-labelledby="h-trouble">
     <h2 id="h-trouble">困った時は「不具合を報告」から</h2>
     <p>ほとんどの画面の右下（下に帯がある画面はその上）に <span class="key">不具合を報告</span> のボタンがあります（このページにもあります）。</p>
@@ -118,6 +131,89 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
     <p>現場の端末で帯が出た時は、帯の <span class="key">ログインする</span> は押さずに、管理者に端末登録の QR を出してもらい、読み取ってログインし直してください（ログインが切れた・まだ登録していない・アカウントが止められた時などに出ます）。</p>
   </section>
 
+  <!-- 画面ごとの節（2026-11-13 代表者の指示・文は仮置き）。困りごとの「」の中は、その画面が実際に出す文のとおり。
+       見出しの id は help-sec.js の対応表と同じにする（check/unit/help_sections_test.js が確かめる） -->
+  <section class="cd" id="sec-care-schedule" aria-labelledby="h-care-schedule">
+    <h2 id="h-care-schedule" tabindex="-1">週間計画</h2>
+    <p><strong>できること</strong></p>
+    <ul>
+      <li>利用者を選んで、曜日ごとの予定を盤面に並べ、単位数の合計を見ます。</li>
+      <li><span class="key">🧪 試算</span> を押すと、今の予定を変えずに盤面を試せます。試した内容は <span class="key">✅ 実装</span> を押すまで、ワークスケジュール・デイ利用表には届きません。</li>
+      <li><span class="key">↩ 元に戻す</span> で直前の操作を取り消し、<span class="key">💾 保存</span> で今すぐ保存します。<span class="key">🖨</span> で週ボードを印刷します。</li>
+      <li>事務所PCで使う画面です。</li>
+    </ul>
+    <p><strong>よくある困りごと</strong></p>
+    <dl class="sup">
+      <dt>「この端末は現場用に設定されています」と出て開けない</dt>
+      <dd>週間計画は事務所PCで使う画面です。事務所PCで開いてください。端末の用途（事務所PC・現場の端末）は管理者が決めています。</dd>
+      <dt>「🔒 ロック中です。動かすには「🔒 ロック中」を押して解除してください」と出て、枠が動かない</dt>
+      <dd>盤面の <span class="key">🔒 ロック中</span> を押すと解除され、<span class="key">🔓 移動ロック</span> に戻ります。ロック中でも、枠を押して内容を見る・直すことはできます。ロックはその端末だけに効きます。</dd>
+      <dt>「介護度は入居者マスタで直してください」と出て、介護度を直せない</dt>
+      <dd>入居者マスタとつながっている方の介護度は、入居者マスタの値を使います。入居者マスタで直すと、週間計画もそれにそろいます。</dd>
+    </dl>
+    <p class="muted">画面の下に赤い帯が出た時は、上の<a href="#h-login">「Google でのログインが必要です」の赤い帯が出た時</a>を見てください。</p>
+  </section>
+
+  <section class="cd" id="sec-work-schedule" aria-labelledby="h-work-schedule">
+    <h2 id="h-work-schedule" tabindex="-1">ワークスケジュール</h2>
+    <p><strong>できること</strong></p>
+    <ul>
+      <li>1日ごとに、職員の列へ支援の枠を並べた盤面を見て、直します。<span class="key">◀</span> <span class="key">▶</span> で日を、<span class="key">先週</span> <span class="key">今日</span> <span class="key">来週</span> で週を移ります。</li>
+      <li>シフトの職員と、週間計画の支援を盤面に取り込みます。置けなかった支援は「未配置トレイ」に並びます。</li>
+      <li>見出しの <span class="key">🔒ロック</span> にチェックを入れると、その日の盤面は自動では書き換わりません（シフトの反映・週間計画の取り込み・自動の配置を止めます。手で直すことはできます）。</li>
+      <li>事務所PCでは <span class="key">🧾 24時間配置表</span> で、その日の施設職員の配置と食事対応の枠を A4 縦1枚の確認表にできます。</li>
+      <li>現場の端末では、盤面は見るだけです（実施・チェック・コメントは付けられます）。</li>
+    </ul>
+    <p><strong>よくある困りごと</strong></p>
+    <dl class="sup">
+      <dt>「この端末の変更がまだ送れていません（日付）」の帯が出た</dt>
+      <dd>帯の <span class="key">今すぐ送信する</span> を押します。帯の後ろに理由が出ます。「ログインが切れています」の時はログインし直し（<a href="#h-login">ログインの帯の節</a>）、「画面が古いため送れません」の時は画面を読み込み直し、「インターネットのつながりを確かめてください」の時は電波・Wi-Fi を確かめてから、もう一度押してください。送れるまで、変更はこの端末に残っています。</dd>
+      <dt>「🔒 この日はロック中のため…反映しません」「🔒 ロック中のためシフト反映をスキップしました」と出た</dt>
+      <dd>その日はロックされているので、自動では書き換わりません。反映したい時は、見出しの <span class="key">🔒ロック</span> のチェックを外してから、もう一度反映・取り込みをしてください。</dd>
+      <dt>「サービス区分は週間計画アプリが正本です」「週間計画アプリ側に未送信があります」と出た</dt>
+      <dd>サービス区分は週間計画で直します。週間計画にまだ送れていない変更がある時は、週間計画を開くと送られます。どちらも見出しの <span class="key">📅 週間計画</span> から開けます。</dd>
+    </dl>
+  </section>
+
+  <section class="cd" id="sec-resident-master" aria-labelledby="h-resident-master">
+    <h2 id="h-resident-master" tabindex="-1">入居者マスタ</h2>
+    <p><strong>できること</strong></p>
+    <ul>
+      <li>入居者お一人ずつの基本情報・病歴と薬・家族などを見て、直します。週間計画の介護度・居室は、ここの値にそろいます。</li>
+      <li><span class="key">📊 一括編集</span> で、何人分かをまとめて直せます。対象アプリ（排泄記録・体重記録・週間計画）の切り替えもできます。</li>
+      <li>帳票（<span class="key">🍚 食形態</span> <span class="key">📋 ケアマネ一覧</span> <span class="key">📊 介護度別</span> <span class="key">🗺️ 居室一覧</span> <span class="key">👪 家族情報</span> <span class="key">💊 病歴・薬</span> <span class="key">⏳ 認定期限</span>）を見て、印刷します。</li>
+      <li>事務所PCで、事務所・管理者のアカウントでログインして開く画面です。</li>
+    </ul>
+    <p><strong>よくある困りごと</strong></p>
+    <dl class="sup">
+      <dt>「この端末は現場用に設定されています」「このページは開けません」と出て開けない</dt>
+      <dd>入居者マスタは、事務所PCで、事務所・管理者のアカウントでログインして開きます。開ける人は管理者が決めています。開く必要がある時は、管理者に伝えてください。「ログインを確かめられませんでした」の時は、電波・Wi-Fi を確かめてから <span class="key">もう一度確かめる</span> を押します。</dd>
+      <dt>「⚠️ 他の端末がこの方を先に保存しています。」と出た</dt>
+      <dd>この画面の内容は保存されていません。いま直した所を控え（メモ・スクリーンショット）、一覧に戻ってこの方を開き直し、最新の内容を確かめてから、もう一度直して保存します。開き直さずに保存しても、同じ理由で保存できません。</dd>
+      <dt>「保存できたか確認できませんでした」と出た</dt>
+      <dd>1人ずつの編集画面の時は、もう一度保存する前に、画面を読み込み直して内容が入っているかを確かめてください。一括編集の時は、変更が黄色のまま残っています。電波の良い所で、もう一度 <span class="key">保存</span> を押してください（同じ値の上書きなので、二重には入りません）。</dd>
+    </dl>
+  </section>
+
+  <section class="cd" id="sec-weight-record" aria-labelledby="h-weight-record">
+    <h2 id="h-weight-record" tabindex="-1">体重管理</h2>
+    <p><strong>できること</strong></p>
+    <ul>
+      <li>入居者ごとに月ごとの体重を記録し、前の記録との差を見ます。上のタブ（一覧・入力・個別・集計・アラート）で切り替えます。</li>
+      <li>車椅子で測る方は、車椅子ごと測った値から車椅子の重さを引いて体重にします。</li>
+      <li>現場の端末でも記録できます（記録を直したり消したりもできます）。「設定」のタブは事務所PCだけに出ます。</li>
+    </ul>
+    <p><strong>よくある困りごと</strong></p>
+    <dl class="sup">
+      <dt>「この端末はログインしていません。」の帯が出た</dt>
+      <dd>ログインしていないと、体重をサーバーへ送れません。事務所PCはメニューの <span class="key">ログインする</span> から、現場の端末は管理者に端末登録の QR を出してもらってログインします（上の<a href="#h-start">「はじめて使う時」</a>）。ログインすると帯は消えます。</dd>
+      <dt>「⚠ この端末はサーバーに接続されていません。」の帯が出た</dt>
+      <dd>記録はこの端末にだけ残っていて、事務所PCや他の端末には届いていません。ブラウザのデータを消さずに、事務所に連絡してください。つなぐ設定は、管理者が事務所PCで行います。</dd>
+      <dt>「前回の測定から大きく変わっています。」と出た</dt>
+      <dd>体重計の置き方・服装・車椅子の重さを確かめて、測り直してください。測り直しても同じ値なら <span class="key">OK</span>（「測り直し済み」の印が付いて保存されます）、測り直す時は <span class="key">キャンセル</span>（保存せずに戻ります）を押します。</dd>
+    </dl>
+  </section>
+
   <!-- 応募者向けの個人情報の取り扱い（2026-10-29 本人指示）。応募者へはこの欄へのリンク（help.html#privacy）を渡す。
        保管期間の「6か月」は採用管理の既定の月数（ats-calc.js）と ats.html の HELP_RETAIN_MONTHS に合わせる
        （check/unit/ats_page_test.js が一致を確かめる。設定で月数を変えた時は、採用管理の設定の画面に知らせが出る）。
@@ -162,6 +258,8 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
 </script>
 
 <!-- この端末の番号（端末の印の頭の8文字だけ・2026-11-08 代表者の決定 段3 案A）。この画面では送らない・印を作らない -->
+<!-- 住所の ?sec=<画面> から画面ごとの節へ飛ぶ（決まった4つの値だけ・2026-11-13） -->
+<script src="help-sec.js?v=2026-11-13"></script>
 <script src="su-device-role.js?v=2026-11-08" data-mode="show"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 <script src="su-report.js?v=2026-10-28" data-tool="使い方・困った時"></script>
