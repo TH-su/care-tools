@@ -334,14 +334,14 @@ textarea.fi{resize:vertical;min-height:60px}
           <li>合言葉：エディタ左の歯車「プロジェクトの設定」→「スクリプト プロパティ」に <code>GENOGRAM_TOKEN</code> を追加して合言葉を保存し、同じ合言葉を下のフォームの「合言葉」欄に入力。<strong>先に全端末へ合言葉を入れてから</strong>プロパティを保存してください（保存した瞬間から、合言葉の無い端末は同期できなくなります）。</li>
         </ol>
         <button class="hbtn primary setup-copy" id="btnCopyGas">📋 受け口のコードをコピー</button>
-        <textarea class="setup-code" id="gasCodeBox" readonly rows="6">（コピーボタンを押すとここに表示されます）</textarea>
+        <textarea class="setup-code" id="gasCodeBox" readonly rows="6" aria-label="受け口のコード">（コピーボタンを押すとここに表示されます）</textarea>
       </details>
 
       <div class="setup-form">
         <h3>設定入力</h3>
         <div class="fg">
           <label class="fl">① Google の受け口の URL <span class="req">*</span></label>
-          <input type="url" class="fi" id="cfgGasUrl" placeholder="管理者から受け取った URL（https://script.google.com/ で始まる）" autocomplete="off">
+          <input type="url" class="fi" id="cfgGasUrl" placeholder="管理者から受け取った URL（https://script.google.com/ で始まる）" autocomplete="off" aria-label="Google の受け口の URL">
         </div>
         <div class="fg">
           <label class="fl" for="cfgGasToken">① 合言葉</label>
@@ -461,17 +461,17 @@ textarea.fi{resize:vertical;min-height:60px}
 
     <div id="propsNode" hidden>
       <div class="fg"><label class="fl">名前</label>
-        <input type="text" class="fi" id="pName" autocomplete="off"></div>
+        <input type="text" class="fi" id="pName" autocomplete="off" aria-label="名前"></div>
       <div class="fr">
         <div class="fg"><label class="fl">年齢</label>
-          <input type="number" class="fi" id="pAge" min="0" max="130"></div>
+          <input type="number" class="fi" id="pAge" min="0" max="130" aria-label="年齢"></div>
         <div class="fg"><label class="fl">続柄</label>
-          <input type="text" class="fi" id="pRelation" autocomplete="off" placeholder="例: 父・娘"></div>
+          <input type="text" class="fi" id="pRelation" autocomplete="off" placeholder="例: 父・娘" aria-label="続柄"></div>
       </div>
       <div class="fg"><label class="fl">メモ</label>
-        <textarea class="fi" id="pNote" rows="3" placeholder="病歴・職業など"></textarea></div>
+        <textarea class="fi" id="pNote" rows="3" placeholder="病歴・職業など" aria-label="メモ"></textarea></div>
       <div class="fg"><label class="fl">図形内の文字（図形の中に大きく表示）</label>
-        <input type="text" class="fi" id="pInner" autocomplete="off" placeholder="例: 父・キーパーソン・☆"></div>
+        <input type="text" class="fi" id="pInner" autocomplete="off" placeholder="例: 父・キーパーソン・☆" aria-label="図形内の文字"></div>
       <div class="props-info" id="pInfo"></div>
     </div>
 
@@ -487,14 +487,14 @@ textarea.fi{resize:vertical;min-height:60px}
       </div>
       <div class="fr">
         <div class="fg"><label class="fl">太さ</label>
-          <select class="fi" id="lWidth">
+          <select class="fi" id="lWidth" aria-label="太さ">
             <option value="1">細い（1px）</option>
             <option value="2" selected>標準（2px）</option>
             <option value="3">太い（3px）</option>
             <option value="5">極太（5px）</option>
           </select></div>
         <div class="fg"><label class="fl">線種</label>
-          <select class="fi" id="lDash">
+          <select class="fi" id="lDash" aria-label="線種">
             <option value="solid" selected>実線</option>
             <option value="dashed">破線</option>
             <option value="dotted">点線</option>
@@ -502,7 +502,7 @@ textarea.fi{resize:vertical;min-height:60px}
       </div>
       <div class="fr">
         <div class="fg"><label class="fl">色</label>
-          <select class="fi" id="lColor">
+          <select class="fi" id="lColor" aria-label="色">
             <option value="#202124" selected>黒</option>
             <option value="#5f6368">グレー</option>
             <option value="#c62828">赤</option>
@@ -511,7 +511,7 @@ textarea.fi{resize:vertical;min-height:60px}
             <option value="#e65100">橙</option>
           </select></div>
         <div class="fg" id="lArrowRow"><label class="fl">矢印</label>
-          <select class="fi" id="lArrow">
+          <select class="fi" id="lArrow" aria-label="矢印">
             <option value="none" selected>なし</option>
             <option value="end">片方（終点）</option>
             <option value="both">両方</option>
@@ -521,10 +521,10 @@ textarea.fi{resize:vertical;min-height:60px}
 
     <div id="propsFrame" hidden>
       <div class="fg"><label class="fl">枠ラベル</label>
-        <input type="text" class="fi" id="fLabel" placeholder="同居" autocomplete="off"></div>
+        <input type="text" class="fi" id="fLabel" placeholder="同居" autocomplete="off" aria-label="枠ラベル"></div>
       <div class="fr" id="fEllipseRow" hidden>
         <div class="fg"><label class="fl">線の色</label>
-          <select class="fi" id="fColor">
+          <select class="fi" id="fColor" aria-label="線の色">
             <option value="#26a69a" selected>ミント</option>
             <option value="#202124">黒</option>
             <option value="#c62828">赤</option>
@@ -532,7 +532,7 @@ textarea.fi{resize:vertical;min-height:60px}
             <option value="#e65100">橙</option>
           </select></div>
         <div class="fg"><label class="fl">線の太さ</label>
-          <select class="fi" id="fWidth">
+          <select class="fi" id="fWidth" aria-label="線の太さ">
             <option value="1">細い（1px）</option>
             <option value="2" selected>標準（2px）</option>
             <option value="3">太い（3px）</option>
@@ -544,9 +544,9 @@ textarea.fi{resize:vertical;min-height:60px}
 
     <div id="propsText" hidden>
       <div class="fg"><label class="fl">テキスト</label>
-        <textarea class="fi" id="tText" rows="3"></textarea></div>
+        <textarea class="fi" id="tText" rows="3" aria-label="テキスト"></textarea></div>
       <div class="fg"><label class="fl">文字サイズ</label>
-        <select class="fi" id="tFontSize">
+        <select class="fi" id="tFontSize" aria-label="文字サイズ">
           <option value="11">11px(極小)</option>
           <option value="14" selected>14px(標準)</option>
           <option value="18">18px(大)</option>
@@ -554,7 +554,7 @@ textarea.fi{resize:vertical;min-height:60px}
           <option value="28">28px(見出し)</option>
         </select></div>
       <div class="fg"><label class="fl">スタイル</label>
-        <select class="fi" id="tFontStyle">
+        <select class="fi" id="tFontStyle" aria-label="スタイル">
           <option value="normal" selected>標準</option>
           <option value="bold">太字</option>
           <option value="italic">斜体</option>
