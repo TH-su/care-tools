@@ -99,6 +99,8 @@ const box = {
   $: (sel) => el(String(sel).replace('#', '')),
   SYNC: { _dirty: false, log: (m) => { logs.push(String(m)); }, hasTarget: () => false, push: () => {}, gas: null },
   confirm: (q) => { confirms.push(String(q)); return box.__answerConfirm; },
+  /* 2026-11-12: 週間計画の確かめは画面の中の窓（su-dialog.js）になり、答えを約束（Promise）で返す。記録と答え方は上の confirm のまま */
+  SUDialog: { confirm: (q) => Promise.resolve(box.confirm(q)) },
   __answerConfirm: true,
   /* 復元経路が呼ぶ相手（呼ばれた回数だけ数える。DB を壊さない） */
   pushUndo: () => { box.__undo++; },

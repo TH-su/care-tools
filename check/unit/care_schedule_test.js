@@ -42,7 +42,8 @@ function scanBlock(src, from, open, close) {
   return -1;
 }
 function grabFn(name) {
-  const start = SRC.indexOf('\nfunction ' + name + '(');
+  let start = SRC.indexOf('\nfunction ' + name + '(');
+  if (start < 0) start = SRC.indexOf('\nasync function ' + name + '(');   /* 2026-11-12: 画面の中の窓の答えを待つ関数は async になった */
   if (start < 0) throw new Error('関数が見つかりません: ' + name);
   const end = scanBlock(SRC, start, '{', '}');
   if (end < 0) throw new Error('関数の終わりが見つかりません: ' + name);
