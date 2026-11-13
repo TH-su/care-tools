@@ -281,8 +281,21 @@ console.log('\n【8】AI のキーが無い時の（管理者向け：…）は�
   const ca = grabFn(S, 'tpCheckAdmin_');
   t('8-4 管理者の見分けは SUAuth.check の ok・admin だけ・確かめられない時は管理者ではない', /TP_IS_ADMIN = !!\(st && st\.status === 'ok' && st\.role === 'admin'\);/.test(ca) && /function \(\) \{ TP_IS_ADMIN = false; \}/.test(ca) && /var TP_IS_ADMIN = false;/.test(S), ca);
   t('8-5 起動の時に確かめる', /function startApp_\(\) \{\n  tpCheckAdmin_\(\);/.test(S));
-  t('8-6 入居者マスタの接続先の取り違え: 職員には直し方を出さず、今の文は管理者の時だけ（2026-11-13 反証レビュー）',
-    /\? \(TP_IS_ADMIN \? '入居者マスタの接続先が、入居者マスタ以外のGAS（薬学管理・申送など）になっています。[^']*'\n        : '入居者マスタの接続先が違うため、引継ぎはできません。管理者に伝えてください。'\)/.test(S));
+  /* 8-6: 2回目の反証レビューで、文を決める時ではなく表示の時に TP_IS_ADMIN を見る形にした（管理者と分かるのが名簿の失敗より後でも直し方の文になる） */
+  {
+    const mb = { TP_IS_ADMIN: false, MASTER_MSG: '' };
+    vm.createContext(mb);
+    vm.runInContext((S.match(/var MASTER_WRONG_MSG = '[^']*';/) || [''])[0] + '\n' + grabFn(S, 'masterMsg_'), mb);
+    vm.runInContext('MASTER_MSG = MASTER_WRONG_MSG;', mb);
+    t('8-6 入居者マスタの接続先の取り違え: 職員には直し方を出さない', mb.masterMsg_() === '入居者マスタの接続先が違うため、引継ぎはできません。管理者に伝えてください。', mb.masterMsg_());
+    mb.TP_IS_ADMIN = true;   // 名簿の失敗の後で管理者と分かった
+    t('8-7 管理者と分かった後の表示は今の直し方の文（文を決めた時がその前でも）', /^入居者マスタの接続先が、入居者マスタ以外のGAS（薬学管理・申送など）になっています。/.test(mb.masterMsg_()), mb.masterMsg_());
+    vm.runInContext("MASTER_MSG = '入居者マスタの接続先が未設定です。';", mb);
+    t('8-8 ほかの知らせは管理者でもそのまま', mb.masterMsg_() === '入居者マスタの接続先が未設定です。');
+    t('8-9 表示の3か所（一覧の帯・編集の帯・引継ぎの知らせ）は masterMsg_ を通す', !/banner\(host, 'warn', MASTER_MSG\)|\(MASTER_MSG \|\| '入居者マスタを参照できません'\)/.test(S)
+      && (S.match(/masterMsg_\(\)/g) || []).length >= 3);
+    t('8-10 管理者と分かった時に取り違えの帯が出ていれば一覧の帯を描き直す', /if \(TP_IS_ADMIN && MASTER_MSG === MASTER_WRONG_MSG\) \{ try \{ renderBanners\(\); \}/.test(grabFn(S, 'tpCheckAdmin_')));
+  }
 }
 
 Promise.resolve(sec7).catch((e) => t('【7】の動きの試験が最後まで動く', false, String(e && e.stack))).then(() => {
