@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Xlk4F+zybV1zqH9fEPdCOfPo1TcwZAiAcYWZyfHMF4c=' 'sha256-8bzE0DuBjLJGJ5PxFqaRaZB2RZswI9ZRr0RbNQ3Uv6I='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-2BuSvxGUVXfjulylfzJ6hGIP9X6tZm6BWOURIp0DN2E=' 'sha256-8bzE0DuBjLJGJ5PxFqaRaZB2RZswI9ZRr0RbNQ3Uv6I='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- 要配慮情報（疾患・訓練内容）を表示する画面。ブラウザキャッシュ・検索索引に残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -1721,13 +1721,16 @@ function goalHasPrefix(v, prefix) {
              この姓・名と1文字の姓は、敬称の前の名前の伏せ字の後で置き換える（名簿に無い姓が記号の前に取り残されないように）
    ・異体字（髙→高 など foldName の表）と、かなのカタカナ書きも同じ記号にする
    ・姓・名だけの置き換えは、直後が 市 町 村 郡 県 区 の時はしない（菊池市・山鹿市のような地名を壊さない）
-   ・1文字の姓（ご本人・他の利用者とも）は、前後の字が漢字でない所だけ伏せる（熟語の中の同じ字は壊さない・2026-11-13）。
+   ・1文字の姓（ご本人・他の利用者とも）は、前の字が漢字でなく、後ろが空白・句読点・記号・カタカナ・文の終わりの所だけ伏せる
+     （熟語の中の字や「立ち上がり」「高い」のような送り仮名の付く語は壊さない。敬称の付いた書き方は敬称の前の名前として伏せる）。
+     異体字にそろえた形は足さず、名簿に書いた字そのものだけ（2026-11-13）。
      それ以外の1文字の語（1文字の名・かな）は伏せない。長い語から先に置き換える（短い語が長い名前の一部を先に食わない）
    ★置き換えられるのは名簿の氏名・かなだけ。愛称・家族や職員の名前・ローマ字は置き換えられない（確認画面で伝える） */
 var AI_MASK_PART_STOP = '市町村郡県区';
 /* 1文字の姓の前後を見る「漢字」（異体字・互換漢字・々〆を含む。AI_HONOR_K の漢字の部分と同じ範囲） */
 var AI_MASK_KANJI_RE = /[一-龥㐀-䶵豈-﫿々〆]/;
-var AI_MASK_KANJI_ONLY_RE = /^[一-龥㐀-䶵豈-﫿々〆]+$/;
+var AI_MASK_KANJI_ONLY_RE = /^[一-龥㐀-䶵豈-﫿々〆ノヶヵ]+$/;   // 漢字だけの姓・名（一ノ瀬・八ヶ代 のようなノ・ヶを含む）
+var AI_MASK_ONE_AFTER_NG = /[ぁ-ゖ一-龥㐀-䶵豈-﫿々〆]/;   // 1文字の姓のすぐ後ろにこれが来たら伏せない（ひらがな・漢字）
 /* 伏せ字の記号そのものの形（1文字の姓を伏せる時に、記号の中の字を触らないため） */
 var AI_MASK_TOKEN_RE = /^〔(?:(?:ご本人|利用者[0-9]+)(?:・(?:姓|名|かな|姓かな|名かな))?|人名[0-9]+)〕$/;
 function aiToKatakana(v) {
@@ -1766,7 +1769,8 @@ function aiMaskTerms(roster, subjectId, subjectExtra) {
     var parts = nm ? nm.split(WS) : [], fparts = parts.map(foldName);
     if (parts.length < 2) return;
     var sei = tok.replace('〕', '・姓〕'), mei = tok.replace('〕', '・名〕');
-    [parts[0], fparts[0]].forEach(function (v) { addLate(v, sei, parts[0]); addOne(v, sei, parts[0]); });
+    [parts[0], fparts[0]].forEach(function (v) { addLate(v, sei, parts[0]); });
+    addOne(parts[0], sei, parts[0]);   // 1文字の姓は書いた字だけ（髙と高を同じ記号にすると、戻す時に一般の語の字が書き換わる）
     [parts.slice(1).join(''), fparts.slice(1).join('')].forEach(function (v) { addLate(v, mei, parts.slice(1).join('')); });
   }
   function joins(parts) { return [parts.join(''), parts.join(' '), parts.join('　')]; }
@@ -1964,8 +1968,8 @@ function aiMaskDeep(obj, terms, used) {
       var hit2 = false;
       str = str.replace(new RegExp(aiReEsc(y.term), 'g'), function (m, at, whole) {
         var pv = at > 0 ? whole.charAt(at - 1) : '', nx = whole.charAt(at + m.length);
-        /* 1文字の姓: 前後の字が漢字でない所だけ（後読みは古い Safari で読めないので、置き換えの中で前後を見る） */
-        if (y.one && ((pv && AI_MASK_KANJI_RE.test(pv)) || (nx && AI_MASK_KANJI_RE.test(nx)))) return m;
+        /* 1文字の姓: 前が漢字でなく、後ろがひらがな・漢字でない所だけ（後読みは古い Safari で読めないので、置き換えの中で前後を見る） */
+        if (y.one && ((pv && AI_MASK_KANJI_RE.test(pv)) || (nx && AI_MASK_ONE_AFTER_NG.test(nx)))) return m;
         if (nx && AI_MASK_PART_STOP.indexOf(nx) >= 0) return m;   // 地名（〇〇市 など）は壊さない
         var op = whole.lastIndexOf('〔', at), cl = whole.indexOf('〕', at);
         if (op >= 0 && cl >= 0 && op > whole.lastIndexOf('〕', at) && AI_MASK_TOKEN_RE.test(whole.slice(op, cl + 1))) return m;
