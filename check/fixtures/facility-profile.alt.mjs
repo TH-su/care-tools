@@ -27,6 +27,9 @@ export default {
     { kind: '通所', type: '地域密着型通所介護', name: '架空ゆめデイ', formalName: '通所介護 架空ゆめデイ', officeNo: '0000000012', address: '架空県架空郷町4-5-6', tel: '000-111-2224', aliases: [] },
   ],
   floors: [{ no: 1, label: '一の階' }, { no: 2, label: '二の階' }],
+  /* 貼り薬カレンダーの薬の名前と貼る場所（2026-11-13）。6か所の架空の値で、背中8箇所でない施設でも開けるかを見る */
+  patchCalendar: { drug: '架空ゆめテープ', sites: [{ name: '左の肩', short: '左肩' }, { name: '右の肩', short: '右肩' }, { name: '左の背中', short: '左背中' },
+    { name: '右の背中', short: '右背中' }, { name: '左の腰', short: '左腰' }, { name: '右の腰', short: '右腰' }] },
   visitingClinics: [{ name: '架空ゆめ診療所', aliases: ['架空ゆめ診'] }],
   roomPlan: {
     f1: { title: '居室の割り当て（一の階）', align: 'left', ar: [800, 400], cols: [40, 180, 180, 180, 180, 40], rows: [40, 200, 160],

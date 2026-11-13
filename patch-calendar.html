@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Qcrdu32MsVElhPnqUtXWKNpmOOTCXn0SUk3mLoaArsM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-rBNP1yAesSZEyh23UIHJY++XPRHGAv+SMP+Y98kANdA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <!-- 他ツールと同じ指定を揃えている。氏名はこのHTMLには含まれず入力欄にしか存在しないため、
      この meta が効かないブラウザでもキャッシュ経由で氏名が残ることはない -->
@@ -139,6 +139,7 @@ body {
 .notes { flex: 1 1 auto; font-size: 3.1mm; line-height: 1.55; display: flex; flex-direction: column; }
 .notes .big { font-size: 3.6mm; font-weight: 800; }
 .notes .ln { display: block; }
+.notes .ln[hidden] { display: none; }   /* 施設情報で貼る場所を書いた時は「背中側から見た向き」の行を出さない */
 .notes .ast { color: #b00; font-weight: 700; }
 .notes .legend { margin-top: auto; border: .4mm solid #000; padding: 1.6mm 2mm; display: flex; gap: 2.5mm; align-items: center; flex-wrap: wrap; }
 .notes .legend .sw { width: 6.5mm; height: 6.5mm; border: .7mm solid var(--mark); border-radius: 1mm; flex: 0 0 auto; }
@@ -211,12 +212,14 @@ body {
   <a class="back" href="index.html">← メニュー</a>
   <a class="back su-help-link" href="help.html?sec=patch-calendar">使い方</a>
   <h1>貼り薬カレンダー</h1>
-  <p class="sub">アリドネパッチの貼付部位（背中8箇所ローテーション）</p>
+  <p class="sub" id="pcSub">アリドネパッチの貼付部位（背中8箇所ローテーション）</p>
 </header>
 
 <div class="ctl noprint">
   <!-- サーバーの設定を読めない時だけ出す（事務所PC・スイッチ patch_read が入の時だけ。届いたら消す・紙には出さない） -->
   <p class="hint warn svband noprint" id="svband" role="status" hidden>サーバーに届かないため、この端末の控えを表示しています</p>
+  <!-- 施設情報が読めず端末の控えも無い時だけ出す（既定の背中8箇所で表示していることを知らせる・保存は止めない・紙には出さない・2026-11-13） -->
+  <p class="hint warn svband noprint" id="pcFacBand" role="status" hidden>施設情報が読めないため、既定の貼る場所で表示しています。</p>
   <div class="cd">
     <div class="row">
       <div class="fld" style="flex:1 1 210px">
@@ -289,7 +292,7 @@ body {
     <div class="sh-top">
       <div class="sh-ttl">
         <h2>貼り薬カレンダー</h2>
-        <span class="drug">アリドネ<sup>®</sup>パッチ／背中8箇所</span>
+        <span class="drug" id="pcDrug">アリドネ<sup>®</sup>パッチ／背中8箇所</span>
         <span class="sp"></span>
         <span class="ym" id="p-ym"></span>
       </div>
@@ -301,15 +304,15 @@ body {
 
       <div class="sh-body">
         <div class="gbox">
-          <div class="cap">背中（貼る順番）</div>
+          <div class="cap" id="pcCap">背中（貼る順番）</div>
           <div id="guide"></div>
         </div>
         <div class="notes">
-          <span class="ln big">アリドネ<sup>®</sup>パッチは 1日1回1枚。<b>1→2→…→8</b> の順に貼り、8が終わったら再び1に戻ります。</span>
+          <span class="ln big" id="pcLnUse">アリドネ<sup>®</sup>パッチは 1日1回1枚。<b>1→2→…→8</b> の順に貼り、8が終わったら再び1に戻ります。</span>
           <span class="ln"><span class="ast">※</span><b>新しいパッチを貼る前に、前日の分を必ずはがしてください。</b></span>
           <span class="ln"><span class="ast">※</span>一度に2枚貼らないでください。　<span class="ast">※</span>貼る場所は毎日変えてください。</span>
-          <span class="ln"><span class="ast">※</span>同じ場所に戻るのは8日後です（間隔7日）。</span>
-          <span class="ln"><span class="ast">※</span>図は<b>背中側から見た向き</b>です（図の左＝ご本人の左）。</span>
+          <span class="ln" id="pcLnBack"><span class="ast">※</span>同じ場所に戻るのは8日後です（間隔7日）。</span>
+          <span class="ln" id="pcLnView"><span class="ast">※</span>図は<b>背中側から見た向き</b>です（図の左＝ご本人の左）。</span>
           <div class="legend">
             <span class="sw" aria-hidden="true"></span><b>赤い枠＝その日に貼る場所</b>
             <span class="sw off" aria-hidden="true"></span><b>点線の枠＝はがす場所</b>
@@ -335,6 +338,8 @@ body {
 <!-- 入居者ごとの設定を Supabase へ送る部品（段階2「送るだけ」・2026-10-17）。スイッチ su-backend.json の patch_push が入った時だけ送る。
      段階3（2026-10-25）: スイッチ patch_read が入の時だけ、事務所PCはサーバーの設定を読んで表示する（端末の控えは控えとして残す） -->
 <script src="su-patch-sync.js?v=2026-10-28"></script>
+<!-- 施設情報（facility-profile.json）。貼り薬の名前と貼る場所を施設ごとに書いた時だけ使う（書いていなければ今のまま・代表者の決定 2026-11-13） -->
+<script src="su-facility.js?v=2026-11-13"></script>
 <script>
 'use strict';
 (function () {
@@ -347,7 +352,7 @@ body {
    図は背中側から見た向きなので、図の左＝ご本人の左。
    1・3・5・7 が左列（本人の左）、2・4・6・8 が右列（本人の右）。
    ──────────────────────────────────────────────────────────── */
-var SITES = [
+var DEF_SITES = [
   { n: 1, full: '左・1段目', short: '左1段' },
   { n: 2, full: '右・1段目', short: '右1段' },
   { n: 3, full: '左・2段目', short: '左2段' },
@@ -357,7 +362,8 @@ var SITES = [
   { n: 7, full: '左・4段目', short: '左4段' },
   { n: 8, full: '右・4段目', short: '右4段' }
 ];
-var CYCLE = SITES.length;                 /* 8箇所を順に一巡 */
+var SITES = DEF_SITES;                    /* いま使う場所の一覧（施設情報で書いた時だけ差し替える・下の pcApplyCfg） */
+var CYCLE = SITES.length;                 /* 8箇所を順に一巡（施設情報で書いた時はその数） */
 
 /* 番号枠の位置。画像そのもののピクセル座標で持つ（画像から実測した値）。
    赤枠はこれより PAD だけ外側に描いて、番号枠を囲む形にする。 */
@@ -474,6 +480,7 @@ var BACK_SRC = (function () {
    図は必ず <img alt=""> で置く（背景画像にすると「背景のグラフィックを印刷」を
    切っている環境で図だけ消えた紙が出るため）。 */
 function backFig(no, isOff) {
+  if (SITES !== DEF_SITES) return pcGenFig(no, isOff, false);   /* 施設情報で場所を書いた時は番号の枠の図 */
   var svg = document.createElementNS(SVGNS, 'svg');
   svg.setAttribute('class', 'fig-svg');
   svg.setAttribute('viewBox', '0 0 ' + IMG_W + ' ' + IMG_H);
@@ -508,6 +515,153 @@ function backFig(no, isOff) {
   }
   return svg;
 }
+
+/* ── 施設ごとの貼り薬の名前と貼る場所（代表者の決定 2026-11-13）──
+   施設情報（facility-profile.json の patchCalendar・SUFacility.section）に
+     { "drug": "薬の名前", "sites": [ { "name": "左・1段目", "short": "左1段" }, … ] }
+   を書いた時だけ、薬の名前と貼る場所の一覧を差し替える。drug と sites はどちらか片方だけでもよい。
+   書いていない・崩れている（1つでも形が違う）時は丸ごと捨てて既定（今の薬の名前・背中8箇所の図）のまま＝今の画面と紙は変わらない。
+   ・場所は2〜8か所。保存（端末の控え・共通 DB の patch_settings）は番号を 1〜8 でしか持たないため、9か所以上は書いても使わない
+   ・種類は施設で1つ。入居者ごとに選ぶには、どの種類の番号かを保存に持たせる必要があり、保存の形を変えないと作れないため
+   ・場所を書いた時は背中の写真の図を使わない（写真に 1〜8 の番号が描いてあるため）。番号の枠と名前の図を描く
+   ・外からの文字は textContent・createTextNode だけで入れる（innerHTML を使わない）
+   ・あとから場所の並びを入れ替えると、保存してある番号が別の場所を指す（保存の形を変えずには見分けられない）。並びは変えないこと */
+var PC_SITE_MIN = 2, PC_SITE_MAX = 8, PC_DRUG_MAX = 20, PC_NAME_MAX = 12, PC_SHORT_MAX = 6;
+var PC_BAD_CH = /[\u0000-\u001f\u007f<>]/;
+function pcStr(v, max) {
+  if (typeof v !== 'string') return null;
+  var t = v.trim();
+  return (t && t.length <= max && !PC_BAD_CH.test(t)) ? t : null;
+}
+/* 施設情報の塊を確かめて { drug, sites } にする（純関数）。崩れていれば null＝既定 */
+function pcCfgOf(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  var out = { drug: '', sites: null };
+  if (v.drug !== undefined) { out.drug = pcStr(v.drug, PC_DRUG_MAX); if (out.drug === null) return null; }
+  if (v.sites !== undefined) {
+    if (!Array.isArray(v.sites) || v.sites.length < PC_SITE_MIN || v.sites.length > PC_SITE_MAX) return null;
+    var seen = {}, list = [];
+    for (var i = 0; i < v.sites.length; i++) {
+      var x = v.sites[i];
+      if (!x || typeof x !== 'object' || Array.isArray(x)) return null;
+      var nm = pcStr(x.name, PC_NAME_MAX);
+      if (nm === null || seen['k' + nm]) return null;            /* 同じ名前の場所が2つあると紙で見分けられない */
+      seen['k' + nm] = true;
+      var sh = x.short === undefined ? (nm.length <= PC_SHORT_MAX ? nm : null) : pcStr(x.short, PC_SHORT_MAX);
+      if (sh === null) return null;                              /* ますの下の名前は6字まで（ますからはみ出さない長さ） */
+      list.push({ n: i + 1, full: nm, short: sh });
+    }
+    out.sites = list;
+  }
+  if (!out.drug && !out.sites) return null;
+  return out;
+}
+function pcReadCfg() {
+  var v = null;
+  try { v = (window.SUFacility && typeof SUFacility.section === 'function') ? SUFacility.section('patchCalendar') : null; }
+  catch (e) { v = null; /* 捨ててよい: 読めない時は既定の薬の名前と背中8箇所 */ }
+  return pcCfgOf(v);
+}
+var PCFG = null, pcCfgSig = '';
+/* 確かめた設定を当てる。変わった時だけ true（描き直しは呼んだ側） */
+function pcApplyCfg(cfg) {
+  var sig = cfg ? JSON.stringify(cfg) : '';
+  if (sig === pcCfgSig) return false;
+  pcCfgSig = sig; PCFG = cfg;
+  SITES = (cfg && cfg.sites) ? cfg.sites : DEF_SITES;
+  CYCLE = SITES.length;
+  pcApplyTexts();
+  return true;
+}
+/* 見出し・注意書きの文。既定の時は HTML に書いてある元の文に戻す（元の文は起動の時に写しておく） */
+var PC_TX_IDS = ['pcSub', 'pcDrug', 'pcCap', 'pcLnUse', 'pcLnBack', 'pcLnView'], PC_ORIG = {};
+PC_TX_IDS.forEach(function (id) { var n = document.getElementById(id); if (n) PC_ORIG[id] = n.cloneNode(true); });
+function pcFill(id, parts) {          /* parts を入れ直す。parts が null なら元の文に戻す */
+  var n = document.getElementById(id);
+  if (!n || !PC_ORIG[id]) return;
+  while (n.firstChild) n.removeChild(n.firstChild);
+  if (!parts) { var c = PC_ORIG[id].cloneNode(true); while (c.firstChild) n.appendChild(c.firstChild); return; }
+  parts.forEach(function (p) {
+    if (typeof p === 'string') { n.appendChild(document.createTextNode(p)); return; }
+    var e = document.createElement(p.tag);
+    if (p.cls) e.className = p.cls;
+    e.textContent = p.tx;
+    n.appendChild(e);
+  });
+}
+function pcApplyTexts() {
+  var c = PCFG, N = SITES.length, own = !!(c && c.sites);
+  if (!c) { PC_TX_IDS.forEach(function (id) { pcFill(id, null); }); }
+  else {
+    var plain = c.drug || 'アリドネパッチ';
+    var mark = c.drug ? [c.drug] : ['アリドネ', { tag: 'sup', tx: '®' }, 'パッチ'];
+    var where = own ? (N + '箇所') : '背中8箇所';
+    var seq = N === 2 ? '1→2' : (N === 3 ? '1→2→3' : '1→2→…→' + N);
+    pcFill('pcSub', [plain + 'の貼付部位（' + where + 'ローテーション）']);
+    pcFill('pcDrug', mark.concat(['／' + where]));
+    pcFill('pcCap', own ? ['貼る場所（貼る順番）'] : null);
+    pcFill('pcLnUse', mark.concat(['は 1日1回1枚。', { tag: 'b', tx: seq }, ' の順に貼り、' + N + 'が終わったら再び1に戻ります。']));
+    pcFill('pcLnBack', own ? [{ tag: 'span', cls: 'ast', tx: '※' }, '同じ場所に戻るのは' + N + '日後です（間隔' + (N - 1) + '日）。'] : null);
+    pcFill('pcLnView', null);
+  }
+  var v = document.getElementById('pcLnView');
+  if (v) v.hidden = own;                /* 描くのは背中の写真ではないので「背中側から見た向き」は出さない */
+}
+/* 施設情報で場所を書いた時の図。背中の図と同じ大きさの入れ物に、番号の枠を2列で並べる（奇数が左・偶数が右＝今の図と同じ並び）。
+   no を渡すとその番号を赤枠で囲む。withNames の時は枠の外に場所の名前を添える（上部の順番図だけ） */
+var PG_W = 64, PG_H = 56, PG_GAP = 20, PG_X = [96, 176];
+function pcBoxAt(i, N) {
+  var rows = Math.ceil(N / 2), tot = rows * PG_H + (rows - 1) * PG_GAP, y0 = Math.round((IMG_H - tot) / 2);
+  return { x: PG_X[i % 2], y: y0 + Math.floor(i / 2) * (PG_H + PG_GAP), c: i % 2 };
+}
+function pcGenFig(no, isOff, withNames) {
+  var N = SITES.length;
+  var svg = document.createElementNS(SVGNS, 'svg');
+  svg.setAttribute('class', 'fig-svg');
+  svg.setAttribute('viewBox', '0 0 ' + IMG_W + ' ' + IMG_H);
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+  svg.setAttribute('role', 'img');
+  var ttl = document.createElementNS(SVGNS, 'title');
+  ttl.textContent = no ? ('貼る場所の図：' + no + '番' + (isOff ? '（はがす場所）' : '（貼る場所）'))
+                       : ('貼る場所' + N + '箇所の順番図');
+  svg.appendChild(ttl);
+  for (var i = 0; i < N; i++) {
+    var b = pcBoxAt(i, N);
+    var r = document.createElementNS(SVGNS, 'rect');
+    r.setAttribute('x', b.x); r.setAttribute('y', b.y);
+    r.setAttribute('width', PG_W); r.setAttribute('height', PG_H); r.setAttribute('rx', '6');
+    r.setAttribute('fill', '#fff'); r.setAttribute('stroke', '#555'); r.setAttribute('stroke-width', '3');
+    svg.appendChild(r);
+    var t = document.createElementNS(SVGNS, 'text');
+    t.setAttribute('x', b.x + PG_W / 2); t.setAttribute('y', b.y + PG_H / 2 + 11);
+    t.setAttribute('text-anchor', 'middle'); t.setAttribute('font-size', '32'); t.setAttribute('font-weight', '700'); t.setAttribute('fill', '#000');
+    t.textContent = String(i + 1);
+    svg.appendChild(t);
+    if (withNames) {
+      var nm = SITES[i].short, w = 82, fs = 16;
+      var tn = document.createElementNS(SVGNS, 'text');
+      tn.setAttribute('x', b.c ? b.x + PG_W + 8 : b.x - 8); tn.setAttribute('y', b.y + PG_H / 2 + 6);
+      tn.setAttribute('text-anchor', b.c ? 'start' : 'end'); tn.setAttribute('font-size', String(fs)); tn.setAttribute('fill', '#000');
+      if (nm.length * fs > w) { tn.setAttribute('textLength', String(w)); tn.setAttribute('lengthAdjust', 'spacingAndGlyphs'); }   /* 長い名前は図の外へはみ出さないよう詰める */
+      tn.textContent = nm;
+      svg.appendChild(tn);
+    }
+  }
+  if (no && no <= N) {
+    var bb = pcBoxAt(no - 1, N);
+    var rc = document.createElementNS(SVGNS, 'rect');
+    rc.setAttribute('x', bb.x - PAD); rc.setAttribute('y', bb.y - PAD);
+    rc.setAttribute('width', PG_W + PAD * 2); rc.setAttribute('height', PG_H + PAD * 2);
+    rc.setAttribute('rx', '4'); rc.setAttribute('fill', 'none');
+    rc.setAttribute('stroke', '#e0002a'); rc.setAttribute('stroke-width', '7');
+    if (isOff) rc.setAttribute('stroke-dasharray', '15 10');
+    svg.appendChild(rc);
+  }
+  return svg;
+}
+/* 既定の開始番号・前日の場所が場所の数を超える時（4か所以下）は 1番・なしにする */
+function pcDefNo() { return DEFAULT_NO <= CYCLE ? DEFAULT_NO : 1; }
+function pcDefPrev() { return DEFAULT_PREV <= CYCLE ? DEFAULT_PREV : 0; }
 
 /* ── 日付ユーティリティ ──
    時差・夏時間で1日ずれないよう、日付はすべて「UTCの正午」で表す */
@@ -567,8 +721,8 @@ function loadState() {
   if (state.confirmed) { try { sb0 = pcSetByOf(JSON.parse(localStorage.getItem(LS_SETBY) || 'null')); } catch (e) { sb0 = { by: '', at: '' }; } }
   state.setBy = sb0.by; state.setAt = sb0.at;
   state.start = okD || parseISODate(DEFAULT_START);
-  state.no    = okN !== null ? okN : DEFAULT_NO;
-  state.prev  = okP !== null ? okP : DEFAULT_PREV;
+  state.no    = okN !== null ? okN : pcDefNo();
+  state.prev  = okP !== null ? okP : pcDefPrev();
 
   /* 旧版（胸・上腕を含む8日サイクル）の設定は意味が変わったので端末から掃除する */
   try {
@@ -785,7 +939,7 @@ function selectResident(rid) {
     state.start = parseISODate(t.getFullYear() + '-' + pad2(t.getMonth() + 1) + '-' + pad2(t.getDate()));
     state.no = 1; state.prev = 0; state.confirmed = false;
   } else {
-    state.start = parseISODate(DEFAULT_START); state.no = DEFAULT_NO; state.prev = DEFAULT_PREV;
+    state.start = parseISODate(DEFAULT_START); state.no = pcDefNo(); state.prev = pcDefPrev();
     state.confirmed = false;
   }
   state.canSave = true;
@@ -837,7 +991,19 @@ function fillSelects() {
 }
 
 /* 上部の順番図。番号は図に描かれているので枠は付けない */
-function renderGuide() { el.guide.appendChild(backFig(0, false)); }
+function renderGuide() {
+  el.guide.textContent = '';
+  el.guide.appendChild(SITES !== DEF_SITES ? pcGenFig(0, false, true) : backFig(0, false));
+}
+/* 施設情報の貼る場所が変わった時（読み終えて端末の控えと違った時・印刷の前に読めた時）に、選ぶ欄・図・表を作り直す */
+function pcRebuild() {
+  el.no.textContent = ''; el.pv.textContent = '';
+  fillSelects();
+  renderGuide();
+  printAck = null;
+  if (state.rid) selectResident(state.rid);
+  else { loadState(); render(); }
+}
 
 function renderCalendar() {
   var y = state.y, m = state.m, startMs = state.start.ms;
@@ -1101,6 +1267,7 @@ function ioApply() {
 }
 
 /* ── 起動 ── */
+pcApplyCfg(pcReadCfg());                  /* 施設情報（端末の控え）に貼り薬の名前・場所があれば先に当てる。無ければ何もしない */
 fillSelects();
 loadState();
 loadRoster();
@@ -1112,6 +1279,18 @@ try { if (window.SUPerf) SUPerf.ready(); } catch (e) {}
 pcPull();
 /* 画面を開いた後、端末の控えの全員分をサーバーへ1回送る（送るだけ。表示・控えは書き換えない。最初の描画と競らないよう少し待つ） */
 if (window.SUPatchSync) setTimeout(function () { try { window.SUPatchSync.pushAll(); } catch (e) { /* 送れなくても画面は使える */ } }, 1500);
+
+/* 施設情報を読み終えたら（読めないと分かった時も）もう一度確かめ、変わった時だけ作り直す */
+/* 読めないと分かった時（控えも無い）は、既定の貼る場所で表示していることを帯で知らせる（読めた時は出さない＝今の画面のまま）。
+   部品が無い時も同じ（読めないので既定で描いている） */
+function pcFacBand() {
+  var b = document.getElementById('pcFacBand'), rdy = false;
+  try { rdy = !!(window.SUFacility && SUFacility.ready()); } catch (e) { rdy = false; }
+  if (b) b.hidden = rdy;
+}
+if (!window.SUFacility) pcFacBand();
+try { if (window.SUFacility && typeof SUFacility.onReady === 'function') SUFacility.onReady(function () { if (pcApplyCfg(pcReadCfg())) pcRebuild(); pcFacBand(); }); }
+catch (e) { try { if (window.SUErrors && SUErrors.note) SUErrors.note('貼り薬カレンダーの施設情報の読み直し', e && e.message, 'patch-calendar'); } catch (e2) { /* 記録できなくても既定で動く */ } }
 
 el.rs.addEventListener('change', function () { selectResident(el.rs.value); });
 document.getElementById('ioExport').addEventListener('click', ioDoExport);
@@ -1162,7 +1341,43 @@ document.getElementById('today').addEventListener('click', function () {
    確認済みかどうかはメモリだけで持つ（氏名は localStorage に残さない）。
    確認キーに氏名・月・開始日・番号を全部入れてあるので、どれか1つでも変えれば再確認になる。 */
 var printAck = null;
+/* ── 印刷の前に施設情報を待つ（2026-10-14 代表者の依頼・入居者マスタ・デイ利用表・フェイスシートと同じ中身）──
+   施設情報で貼り薬の名前・場所を書いた施設で、読む前に刷ると既定の背中8箇所の紙が黙って出る（貼る場所を取り違える）。
+   読めていれば（端末の控えでも）その場で刷る＝今までどおり。まだなら最大3秒待ち、読めなければ刷らずに知らせる */
+var SU_FAC_WAIT_MS = 3000;
+var PC_FAC_NG_MSG = '⚠️ 施設情報が読めません。貼り薬の名前と貼る場所を正しく刷れないため、印刷を中止しました。通信を確かめて画面を再読み込みしてから、もう一度押してください';
+function suFacReady_(ms) {
+  return new Promise(function (ok) {
+    var F = window.SUFacility, done = false, tm = null;
+    function fin() {
+      if (done) return;
+      done = true;
+      if (tm) clearTimeout(tm);
+      var r = false;
+      try { r = !!F.ready(); } catch (e) { r = false; }
+      ok(r);
+    }
+    if (!F || typeof F.ready !== 'function') { ok(false); return; }
+    try { if (F.ready()) { ok(true); return; } } catch (e) { ok(false); return; }
+    tm = setTimeout(fin, ms == null ? SU_FAC_WAIT_MS : ms);
+    try { if (typeof F.onReady === 'function') F.onReady(fin); } catch (e) { /* 呼べなくても、上でかけた時計で必ず終わる */ }
+  });
+}
+var pcPrintWaiting = false;
 document.getElementById('print').addEventListener('click', function () {
+  var rdy = false;
+  try { rdy = !!(window.SUFacility && SUFacility.ready()); } catch (e) { rdy = false; }
+  if (rdy) { if (pcApplyCfg(pcReadCfg())) pcRebuild(); pcPrint(); return; }
+  if (pcPrintWaiting) return;               /* 待つ間の二重押しは無視する */
+  pcPrintWaiting = true;
+  suFacReady_().then(function (ok) {
+    pcPrintWaiting = false;
+    if (!ok) { window.alert(PC_FAC_NG_MSG); return; }
+    if (pcApplyCfg(pcReadCfg())) pcRebuild();
+    pcPrint();
+  }, function () { pcPrintWaiting = false; });
+});
+function pcPrint() {
   var nm = el.nm.value.trim();
   var key = nm + '|' + isoMonth(state.y, state.m) + '|' + state.start.iso + '|' + state.no + '|' + state.prev
     + '|' + (state.confirmed ? 1 : 0);
@@ -1175,7 +1390,7 @@ document.getElementById('print').addEventListener('click', function () {
     printAck = key;
   }
   window.print();
-});
+}
 
 el.nm.addEventListener('input', function () { el.pnm.textContent = el.nm.value.trim(); });
 
