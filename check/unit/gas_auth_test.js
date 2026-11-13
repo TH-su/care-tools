@@ -10,6 +10,8 @@
    ★出力に console を使わない（個人情報を出力に流さない作法をそろえる）。 */
 'use strict';
 const fs = require('fs');
+/* 入居者マスタの画面のスクリプトは 2026-11-13 に resident-master.js へ移した（判定の区間 MC-JUDGE だけ HTML に残す）。移す前と同じ文字に戻して確かめる */
+const { readMaster } = require('../master-page.cjs');
 const path = require('path');
 const vm = require('vm');
 
@@ -18,7 +20,7 @@ const ROOT = path.join(__dirname, '..', '..');
 const stfmPage_ = (h) => h.replace(/<script src="staff-master\.js\?v=[^"]*"><\/script>/, () => '<script>\n' + fs.readFileSync(path.join(__dirname, '..', '..', 'staff-master.js'), 'utf8') + '</script>');
 const SRC = fs.readFileSync(process.env.GAS_AUTH_JS || path.join(ROOT, 'su-gas-auth.js'), 'utf8');
 /* MUT_FILE・MUT_PATH: 変異の検査の時だけ、そのファイルを差し替えて読む */
-const read0_ = (f) => fs.readFileSync(process.env.MUT_FILE === f && process.env.MUT_PATH ? process.env.MUT_PATH : path.join(ROOT, f), 'utf8');
+const read0_ = (f) => process.env.MUT_FILE === f && process.env.MUT_PATH ? fs.readFileSync(process.env.MUT_PATH, 'utf8') : readMaster(path.join(ROOT, f));
 const read = (f) => f === 'staff-master.html' && !(process.env.MUT_FILE === f && process.env.MUT_PATH) ? stfmPage_(read0_(f)) : read0_(f);
 let ok = 0, ng = 0;
 let finished = false;

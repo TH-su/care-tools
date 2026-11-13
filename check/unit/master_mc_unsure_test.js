@@ -5,8 +5,10 @@
    実行: node check/unit/master_mc_unsure_test.js（MASTER_HTML で別の resident-master.html を当てられる） */
 'use strict';
 const fs = require('fs'), vm = require('vm'), path = require('path');
+/* 入居者マスタの画面のスクリプトは 2026-11-13 に resident-master.js へ移した（判定の区間 MC-JUDGE だけ HTML に残す）。移す前と同じ文字に戻して確かめる */
+const { readMaster } = require('../master-page.cjs');
 const HTML = process.env.MASTER_HTML || path.join(__dirname, '..', '..', 'resident-master.html');
-const src = fs.readFileSync(HTML, 'utf8');
+const src = readMaster(HTML);
 let pass = 0, fail = 0;
 function t(n, c, e) { if (c) { pass++; console.log('  ✓ ' + n); } else { fail++; console.log('  ✗ ' + n + (e !== undefined ? '  → ' + JSON.stringify(e) : '')); } }
 function cut(name) {

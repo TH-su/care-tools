@@ -11,6 +11,8 @@
    ★実際のブラウザで止まるかは、PR の画素の見比べ（画面の例外）と手元のヘッドレス Chrome で確かめた（2026-10-15） */
 'use strict';
 const fs = require('fs');
+/* 入居者マスタの画面のスクリプトは 2026-11-13 に resident-master.js へ移した（判定の区間 MC-JUDGE だけ HTML に残す）。移す前と同じ文字に戻して確かめる */
+const { readMaster } = require('../master-page.cjs');
 const path = require('path');
 const ROOT = path.join(__dirname, '..', '..');
 /* 職員マスタの画面のスクリプトは 2026-11-12 に staff-master.js へ移した。読み込みの札をその中身に戻し、移す前と同じ文字で確かめる */
@@ -42,7 +44,7 @@ function t(label, ok, detail) {
 
   console.log('\n— 3. インラインのイベント属性・javascript: の URL を書かない —');
   for (const p of C.PAGES.concat(['shift-app.html'])) {
-    const html = p === 'staff-master.html' ? stfmPage_(fs.readFileSync(path.join(ROOT, p), 'utf8')) : fs.readFileSync(path.join(ROOT, p), 'utf8');
+    const html = p === 'staff-master.html' ? stfmPage_(fs.readFileSync(path.join(ROOT, p), 'utf8')) : readMaster(path.join(ROOT, p));
     if (p === 'shift-app.html' && !/data-su-csp/.test(html)) continue;   // シフト作成は次の配信で CSP が入ってから見る
     const at = [...html.matchAll(/[\s"'`]on(click|change|input|submit|keydown|keyup|load|error|focus|blur|mouseover|mouseout|dblclick|contextmenu)=\\?["']/g)].map(x => x[0].trim());
     t(p + ': onclick= などを書いていない', at.length === 0, at.slice(0, 5));
