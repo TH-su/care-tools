@@ -18,6 +18,9 @@
  *       現場の端末は開いた時に送信待ちの方だけを送り、全員分を送らず、サーバーから読まない（patch_get を呼ばない）こと
  *   (7) 計画書: 入居者マスタから開いた方に「この日付で計画を追加」で期を作り、欄に書いて「保存」し、計画書の受け口にその方の計画だけが届き、
  *       開き直すと書いた内容が出て、一覧にその方の計画が載ること
+ *   (8) 画面の中の窓（su-dialog.js）: 入居者マスタの一括編集の保存・食形態一覧の保存・薬情の取り込みを閉じる、体重管理の記録の削除と保存、
+ *       職員マスタの一括保存、家族構成図の読込と削除、写しの見比べの「勤務表を写しの期間に戻す」で、OK で先へ進み・キャンセルで何も変わらず・
+ *       素早い二度押し（守りの時間の後の2回押し・窓の外の2回押し）で二重にならないこと。落ちた時は画面の名前と操作の名前だけを出す（代表者の指示 2026-11-13）
  * どの流れも、画面のエラー（pageerror）が出たら失敗にする。成功で exit 0、1つでも落ちたら exit 1。
  */
 import fs from 'node:fs';
@@ -26,6 +29,7 @@ import { fileURLToPath } from 'node:url';
 import { loadPlaywright, startServer, parseArgs } from './lib.mjs';
 import * as F from './fixtures/flow.mjs';
 import { seed as wsSeed } from './fixtures/work-schedule.mjs';
+import * as SF from './fixtures/staff-master.mjs';
 
 const repoDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = parseArgs(process.argv.slice(2));
@@ -103,14 +107,18 @@ function createWeightGas(seed) {
 }
 
 /* 1つの流れ＝1つのブラウザの文脈（端末1台）。偽物の通信の状態と、受けた要求の記録を持つ */
-async function makeEnv({ device = 'office', kvSeed, extraStorage = {}, seedOnce = true, flags = F.FLAGS_OFF, wtSeed, patchSeed } = {}) {
+/* role・rpc・gas・sudCount は (8) 画面の中の窓 のために足した（既定は今までと同じ＝ほかの流れは変わらない）。
+   role … ログインの役割（既定 office）／rpc … 共通のデータベースの関数の偽物 {名前: (本文)=>応答}（呼ばれた本文は st.rpc に残す）／
+   tables … 共通のデータベースの表の読み取りの偽物 {表の名前: 行の配列}／
+   gas … ほかの GAS の偽物 [[住所の頭, (本文)=>応答, 名前]]／sudCount … 画面の中の窓（dialog.sud-dlg）が出た回数を window.__sudShown に数える */
+async function makeEnv({ device = 'office', kvSeed, extraStorage = {}, seedOnce = true, flags = F.FLAGS_OFF, wtSeed, patchSeed, role = 'office', rpc = null, tables = null, gas: gasExtra = [], sudCount = false } = {}) {
   const st = {
     master: F.createMaster(),
     kv: F.createKv(kvSeed || { care_schedule_v2: F.careDb() }),
     tp: F.createKv({}),
     wt: createWeightGas(wtSeed),
     patch: JSON.parse(JSON.stringify(patchSeed || {})), patchCalls: [],
-    req: [], sb: [], ext: [], errors: [], dialogs: [], ct: [], tag: '',
+    req: [], sb: [], ext: [], errors: [], dialogs: [], ct: [], tag: '', rpc: [],
   };
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, timezoneId: 'Asia/Tokyo', locale: 'ja-JP' });
   /* 端末の設定は最初の1回だけ入れる（その後に画面が書いた値を上書きしない） */
@@ -132,7 +140,38 @@ async function makeEnv({ device = 'office', kvSeed, extraStorage = {}, seedOnce 
     if (req.method() === 'POST') st.ct.push({ tag: st.tag, to, ct: (req.headers()['content-type'] || '') + '' });
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(respond(b)) });
   };
-  const sbBase = F.supabase(st);
+  const sbBase0 = F.supabase(st, role);
+  const sbBase = !rpc && !tables ? sbBase0 : (route) => {
+    const req = route.request();
+    const pth = new URL(req.url()).pathname;
+    const tb = /^\/rest\/v1\/([a-z0-9_]+)$/.exec(pth);
+    if (tb && tables && tables[tb[1]] && req.method() === 'GET') {
+      st.sb.push('GET ' + pth);
+      return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' }, body: JSON.stringify(tables[tb[1]]) });
+    }
+    const m = /\/rest\/v1\/rpc\/([a-z0-9_]+)$/.exec(pth);
+    if (!m || req.method() === 'OPTIONS' || !rpc || !rpc[m[1]]) return sbBase0(route);
+    let b = {}; try { b = JSON.parse(req.postData() || '{}'); } catch (e) { b = {}; }
+    st.sb.push(req.method() + ' /rest/v1/rpc/' + m[1]);
+    st.rpc.push({ tag: st.tag, fn: m[1], body: b });
+    return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' }, body: JSON.stringify(rpc[m[1]](b)) });
+  };
+  if (sudCount) await context.addInitScript(() => {
+    window.__sudShown = 0;
+    /* __sudPoke を立てておくと、次に開いた窓の OK に、開いた直後（守りの時間の中）の押下（押下の回数 1）を1回当てる＝素早い2回押しの2回目が中央に出た OK に重なった時と同じ */
+    window.__sudPoke = false; window.__sudPoked = false;
+    new MutationObserver((ms) => {
+      for (const m of ms) for (const n of m.addedNodes) {
+        if (!(n && n.nodeType === 1 && n.matches && n.matches('dialog.sud-dlg'))) continue;
+        window.__sudShown++;
+        if (window.__sudPoke && n.open) {
+          window.__sudPoke = false;
+          const ok = n.querySelector('.sud-btn.pri');
+          if (ok) { ok.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1, view: window })); window.__sudPoked = true; }
+        }
+      }
+    }).observe(document, { subtree: true, childList: true });
+  });
   /* 貼り薬カレンダーの共通のデータベースの偽物（patch_put・patch_put_many・patch_get）。ほかは F.supabase に任せる */
   const sbHandle = (route) => {
     const req = route.request();
@@ -160,6 +199,7 @@ async function makeEnv({ device = 'office', kvSeed, extraStorage = {}, seedOnce 
     if (u.startsWith(MSK_URL)) return gas('msk', mskRespond)(route);
     if (u.startsWith(WT_URL)) return gas('wt', st.wt.respond)(route);
     if (u.startsWith(F.SB + '/')) return sbHandle(route);
+    for (const [head, fn, name] of gasExtra) if (u.startsWith(head)) return gas(name, fn)(route);
     st.ext.push(route.request().method() + ' ' + u.slice(0, 160));
     return route.abort();
   });
@@ -849,8 +889,400 @@ async function flow7() {
   }
 }
 
+/* ═════════ (8) 画面の中の窓（su-dialog.js）: 確かめの窓を通る操作で、OK で先へ進み・キャンセルで何も変わらず・素早い二度押しで二重にならない ═════════
+   代表者の指示 2026-11-13（横断の一手 cross 3）。操作ごとに次の場面を通す:
+     (a) キャンセル … 窓が画面の中に出て（ブラウザの窓は出ない）、キャンセルを押すと何も送らず・窓が閉じ・画面の状態（直した印など）が残る
+     (b) OK … 窓が開いてから守りの時間（開いてすぐの押下を受けない・350ms）を過ぎてから OK を素早く2回押す＝1回だけ先へ進む
+     (c) 窓の外の2回押し … 操作のボタンを素早く2回押し（2回目は開いた窓か暗い後ろに当たる）、暗い後ろも2回押す＝窓は1つだけ・後ろの押下では答えない。
+         その後 OK を1回押す＝1回だけ先へ進む
+   確かめが2つ続く操作（写しの見比べの「本当に実行しますか？」）は、1つ目・2つ目のキャンセルを両方通し、1つ目で OK を2回押しても2つ目が1つだけ待つことも確かめる。
+   落ちた時は「画面の名前／操作の名前：場面」だけを出す（窓の文・氏名・送った中身は出さない）。
+   押すのは本物のマウスの押下（page.mouse）。要素の click() は押下の回数（detail）が0で、開いてすぐの押下の守りを素通りするため使わない */
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const GUARD_MS = 350;   // su-dialog.js の「開いてすぐの押下を受けない」時間。押すのはこれより後
+const tn = (scr, op, what, ok) => t(scr + '／' + op + '：' + what, !!ok);
+const dlgOpenN = (page) => page.evaluate(() => document.querySelectorAll('dialog.sud-dlg[open]').length).catch(() => -1);
+const shownN = (page) => page.evaluate(() => window.__sudShown || 0).catch(() => -1);
+async function waitDlg(page, timeout = 6000) {
+  const h = await page.waitForSelector('dialog.sud-dlg[open]', { timeout }).catch(() => null);
+  if (!h) return false;
+  await sleep(GUARD_MS + 150);
+  return true;
+}
+const centerOf = (page, sel) => page.evaluate((s) => {
+  const e = document.querySelector(s); if (!e) return null;
+  const r = e.getBoundingClientRect(); return r.width && r.height ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null;
+}, sel).catch(() => null);
+/* 窓のボタンを押す（which: 'ok' | 'cancel'・times 回を素早く） */
+async function pressDlg(page, which, times = 1) {
+  const c = await centerOf(page, 'dialog.sud-dlg[open] .sud-btn' + (which === 'ok' ? '.pri' : ':not(.pri)'));
+  if (!c) return false;
+  for (let i = 0; i < times; i++) { await page.mouse.click(c.x, c.y); if (i + 1 < times) await sleep(40); }
+  return true;
+}
+/* 画面のボタンを押す（times=2 は素早い2回押し＝2回目は窓が出た後なら窓か暗い後ろに当たる） */
+async function pressAt(page, sel, times = 1) {
+  await page.evaluate((s) => { const e = document.querySelector(s); if (e && e.scrollIntoView) e.scrollIntoView({ block: 'center' }); }, sel).catch(() => {});
+  const c = await centerOf(page, sel);
+  if (!c) return false;
+  if (times === 2) await page.mouse.dblclick(c.x, c.y); else await page.mouse.click(c.x, c.y);
+  return true;
+}
+/* 操作1つを (a)(b)(c) の順に通す。
+   prep(場面) … 確かめが出る状態（直した・開いた）を作る。true で用意できた
+   go(times) … 操作のボタンを押す／effect() … 先へ進んだ回数（送った保存の数など）／kept() … キャンセルの後に画面の状態が残っているか
+   steps … 先へ進むまでに続けて出る確かめの数 */
+async function dialogOp(env, page, scr, op, { prep, go, effect, kept, steps = 1, settle = 900 }) {
+  const native0 = env.st.dialogs.length, err0 = env.st.errors.length;
+  for (let at = 1; at <= steps; at++) {
+    const ready = await prep('a' + at);
+    tn(scr, op, '確かめの前の状態を作れる（キャンセルの場面' + (steps > 1 ? at : '') + '）', ready);
+    if (!ready) return;
+    const e0 = await effect();
+    await go(1);
+    let shown = await waitDlg(page);
+    tn(scr, op, '押すと画面の中の窓が出る（ブラウザの窓ではない）', shown && env.st.dialogs.length === native0);
+    for (let k = 1; k < at && shown; k++) {
+      await pressDlg(page, 'ok'); shown = await waitDlg(page);
+      if (!shown) tn(scr, op, 'キャンセルの場面で' + (k + 1) + 'つ目の窓が出る', false);
+    }
+    if (!shown) return;
+    await pressDlg(page, 'cancel');
+    await sleep(settle);
+    tn(scr, op, (steps > 1 ? at + 'つ目の窓の' : '') + 'キャンセルで何も変わらない（送らない・窓が閉じる・画面の状態が残る）',
+      (await effect()) === e0 && (await dlgOpenN(page)) === 0 && (await kept()));
+  }
+  if (!(await prep('b'))) { tn(scr, op, '確かめの前の状態を作れる（OK の場面）', false); return; }
+  const e1 = await effect();
+  await go(1);
+  for (let k = 1; k <= steps; k++) {
+    if (!(await waitDlg(page))) { tn(scr, op, 'OK の場面で' + k + 'つ目の窓が出る', false); return; }
+    await pressDlg(page, 'ok', 2);
+    if (k < steps) {
+      await sleep(300);
+      tn(scr, op, '1つ目の窓で OK を2回押しても、まだ先へ進まず次の窓が1つだけ待つ', (await effect()) === e1 && (await dlgOpenN(page)) === 1);
+    }
+  }
+  await waitFor(async () => (await effect()) > e1, 8000);
+  await sleep(settle);
+  const e2 = await effect();
+  tn(scr, op, 'OK で先へ進む', e2 > e1);
+  tn(scr, op, '守りの時間の後に OK を2回押しても1回だけ（二重にならない・窓が残らない）', e2 === e1 + 1 && (await dlgOpenN(page)) === 0);
+  if (!(await prep('c'))) { tn(scr, op, '確かめの前の状態を作れる（窓の外の2回押しの場面）', false); return; }
+  const e3 = await effect(), s0 = await shownN(page);
+  await ev(page, () => { window.__sudPoke = true; window.__sudPoked = false; });
+  await go(2);
+  const shownC = await waitDlg(page);
+  await page.mouse.click(6, 6); await sleep(40); await page.mouse.click(6, 6);
+  await sleep(300);
+  tn(scr, op, '開いてすぐ（守りの時間の中）に OK に当たった押下では答えない',
+    shownC && !!(await ev(page, () => window.__sudPoked)) && (await dlgOpenN(page)) === 1 && (await effect()) === e3);
+  tn(scr, op, '操作のボタンを素早く2回押しても窓は1つだけ・暗い後ろを押しても答えない',
+    shownC && (await dlgOpenN(page)) === 1 && (await shownN(page)) === s0 + 1 && (await effect()) === e3);
+  for (let k = 1; k <= steps; k++) {
+    if (k > 1 && !(await waitDlg(page))) { tn(scr, op, '窓の外の2回押しの場面で' + k + 'つ目の窓が出る', false); return; }
+    await pressDlg(page, 'ok');
+  }
+  await waitFor(async () => (await effect()) > e3, 8000);
+  await sleep(settle);
+  tn(scr, op, '操作のボタンを素早く2回押しても1回だけ先へ進む（二重にならない・窓が残らない）',
+    (await effect()) === e3 + 1 && (await dlgOpenN(page)) === 0 && (await shownN(page)) === s0 + steps);
+  tn(scr, op, '画面のエラーなし・ブラウザの窓なし', env.st.errors.length === err0 && env.st.dialogs.length === native0);
+}
+/* 名前だけを出す終わりの確かめ（endChecks と同じ中身・文や中身は出さない） */
+function endChecksQuiet(env, scr) {
+  tn(scr, '全体', '画面のエラー（pageerror）なし', env.st.errors.length === 0);
+  tn(scr, '全体', '横取りしていない外への通信なし', env.st.ext.length === 0);
+  const badCt = env.st.ct.filter((c) => c.ct.toLowerCase().replace(/\s+/g, '') !== 'text/plain;charset=utf-8');
+  tn(scr, '全体', 'GAS への送信はすべて text/plain;charset=utf-8', badCt.length === 0);
+}
+const ev = (page, fn, arg) => page.evaluate(fn, arg).catch(() => null);
+
+/* 入居者マスタ: 一括編集の保存・食形態一覧の保存・薬情の取り込みを閉じる */
+async function flow8master() {
+  const SCR = '入居者マスタ';
+  const env = await makeEnv({ sudCount: true });
+  const base = env.st.master.respond;
+  const cnt = (a) => env.st.master.log.filter((l) => l.action === a).length;
+  /* 一括保存・食形態一覧の保存は、送った方の数だけ「保存した」と答える（GAS の savePartial・saveMealList と同じ形） */
+  env.st.master.respond = (b) => {
+    if (b && (b.action === 'savePartial' || b.action === 'saveMealList')) { base(b); return { ok: true, saved: (b.changes || []).length, warn: [], warnIds: [] }; }
+    if (b && b.action === 'medCand' && b.op === 'ping') { base(b); return { ok: true, build: 'check 反映記録' }; }
+    return base(b);
+  };
+  try {
+    const page = await open(env, 'resident-master.html');
+    await page.waitForSelector(`.rcard[data-id="${ME.id}"]`, { timeout: 15000 });
+    /* 一括編集の保存: 居室を直して「変更を保存」 */
+    let n = 0;
+    const room = `#bulkBody input[data-id="${ME.id}"][data-k="room"]`;
+    await dialogOp(env, page, SCR, '一括編集の保存', {
+      prep: async (sc) => {
+        if (!(await ev(page, () => document.getElementById('mBulk').classList.contains('on')))) await page.click('#bulkOpen', { timeout: 8000 });
+        if (!(await page.waitForSelector(room, { timeout: 15000 }).catch(() => null))) return false;
+        if (sc !== 'b' && sc !== 'c' && (await ev(page, () => bulkCellCount() > 0))) return true;
+        await page.fill(room, String(301 + (n++)));
+        return !!(await ev(page, () => bulkCellCount() > 0 && !document.getElementById('bulkSave').disabled));
+      },
+      go: (k) => pressAt(page, '#bulkSave', k),
+      effect: async () => cnt('savePartial'),
+      kept: async () => !!(await ev(page, () => bulkCellCount() > 0 && document.getElementById('mBulk').classList.contains('on'))),
+    });
+    await page.click('#bulkClose', { timeout: 8000 });
+    await waitFor(() => ev(page, () => !document.getElementById('mBulk').classList.contains('on')), 5000);
+
+    /* 食形態一覧の保存: 表の1つの欄を直して「保存」 */
+    await page.click('.vtab[data-v="meal"]', { timeout: 8000 });
+    const cell = `#rosterBox .med[contenteditable][data-id="${ME.id}"]`;
+    await dialogOp(env, page, SCR, '食形態一覧の保存', {
+      prep: async () => {
+        if (!(await page.waitForSelector(cell, { timeout: 15000 }).catch(() => null))) return false;
+        if (await ev(page, () => mealDirtyCells() > 0)) return true;
+        await page.evaluate(([s, v]) => { const e = document.querySelector(s); e.focus(); e.textContent = v; e.dispatchEvent(new Event('input', { bubbles: true })); }, [cell, '見本食' + (n++)]);
+        return !!(await ev(page, () => mealDirtyCells() > 0 && !document.getElementById('mealSave').disabled));
+      },
+      go: (k) => pressAt(page, '#mealSave', k),
+      effect: async () => cnt('saveMealList'),
+      kept: async () => !!(await ev(page, () => mealDirtyCells() > 0)),
+    });
+
+    /* 薬情の取り込みを閉じる: 書類を1枚読み、確認表で印を付けた（保存していない）まま「閉じる」。
+       管理者の入口（ログインの確かめ）は yakujo_bulk_e2e と同じく飛ばし、窓を直接開く */
+    const yjFile = JSON.stringify({ kind: 'yakujo-yomitori', v: 1, createdAt: '2026-11-13T09:00:00+09:00', skipped: [], docs: [
+      { no: 1, file: 'a.jpg', type: 'photo', error: '', pages: [{ no: 1, w: 1000, h: 1400, img: '', codes: { qr: 0, other: 0 }, lines: [
+        { t: ME.name + ' 様', x: 0.1, y: 0.05, w: 0.4, h: 0.02, c: 1 }, { t: 'カクウ イチロウ', x: 0.1, y: 0.07, w: 0.4, h: 0.02, c: 1 },
+        { t: '調剤日 2026年11月01日', x: 0.5, y: 0.05, w: 0.4, h: 0.02, c: 1 },
+        { t: 'Rp1 1日1回 朝食後 14日分', x: 0.1, y: 0.12, w: 0.6, h: 0.02, c: 1 }, { t: '見本薬A', x: 0.1, y: 0.15, w: 0.4, h: 0.02, c: 1 }, { t: '1回2錠', x: 0.6, y: 0.15, w: 0.4, h: 0.02, c: 1 },
+      ] }] }] });
+    await dialogOp(env, page, SCR, '薬情の取り込みを閉じる', {
+      prep: async () => {
+        if (!(await ev(page, () => !!(window.yjSt && yjSt.cur && yjSt.cur.loaded)))) {
+          await page.evaluate((txt) => { window.rmAccessToken_ = function () { return Promise.resolve('check-token'); }; window.yjOpen_(); window.yjLoadText_(txt); }, yjFile);
+          if (!(await page.waitForSelector('#yjGo:not([disabled])', { timeout: 10000 }).catch(() => null))) return false;
+          await page.click('#yjGo', { timeout: 8000 });
+          if (!(await page.waitForSelector('[data-yjdoc="0"]', { timeout: 15000 }).catch(() => null))) return false;
+          await page.click('[data-yjdoc="0"]', { timeout: 8000 });
+          if (!(await waitFor(() => ev(page, () => !!(window.yjSt && yjSt.cur && yjSt.cur.loaded)), 15000))) return false;
+        }
+        if (!(await ev(page, () => yjDirty_()))) {
+          if (!(await page.waitForSelector('#yjId', { timeout: 10000 }).catch(() => null))) return false;
+          await page.click('#yjId', { timeout: 8000 });
+        }
+        return !!(await ev(page, () => yjDirty_() && document.getElementById('mYakujo').classList.contains('on')));
+      },
+      go: (k) => pressAt(page, '#yjClose', k),
+      effect: async () => ((await ev(page, () => document.getElementById('mYakujo').classList.contains('on'))) === false ? 1 : 0),
+      kept: async () => !!(await ev(page, () => yjDirty_() && document.getElementById('mYakujo').classList.contains('on'))),
+    });
+    await page.close();
+  } finally {
+    endChecksQuiet(env, SCR);
+    await env.context.close();
+  }
+}
+
+/* 体重管理: 記録の削除・記録の保存（前回から大きく変わった時の「測り直しても同じ値でしたか？」） */
+async function flow8weight() {
+  const SCR = '体重管理';
+  /* 架空の過去の記録3件（削除の3つの場面で1件ずつ消す）。体重はどれも 50.0kg＝今日 60.0kg を入れると大きく変わった扱い */
+  const old = [-70, -100, -130].map((d, i) => { const day = ymdJst(d); return { id: 'flow8-r' + (i + 1), residentId: 'w1', yearMonth: day.slice(0, 7), measuredOn: day, weight: 50, mode: 'normal' }; });
+  const seed = { residents: wtSeed().residents, records: old };
+  const env = await makeEnv({ wtSeed: seed, sudCount: true, extraStorage: { wtmgr_v1: JSON.stringify(seed), wtmgr_api_url: WT_URL, wtmgr_api_token: 'check-flow' } });
+  const tag = 'weight-record.html';
+  const cnt = (a) => reqOf(env, tag).filter((r) => r.to === 'wt' && r.action === a).length;
+  try {
+    const page = await open(env, 'weight-record.html?masterId=' + ME.id);
+    await waitFor(() => reqOf(env, tag).some((r) => r.to === 'wt' && r.action === 'getAll') && page.evaluate(() => !document.body.classList.contains('wr-sync-busy')));
+    await page.click('.tnav button[data-go="input"]', { timeout: 8000 });
+    let k = 0;
+    await dialogOp(env, page, SCR, '記録の削除', {
+      prep: async (sc) => {
+        k = sc === 'c' ? 1 : 0;   // キャンセルと OK の場面は1件目、窓の外の2回押しの場面は2件目
+        const id = old[k].id;
+        return !!(await page.waitForSelector(`[data-iex-del="${id}"]`, { timeout: 10000 }).catch(() => null));
+      },
+      go: (times) => pressAt(page, `[data-iex-del="${old[k].id}"]`, times),
+      effect: async () => cnt('delRecord'),
+      kept: async () => !!(await ev(page, (id) => !!document.querySelector(`[data-iex-del="${id}"]`), old[k].id)),
+    });
+    /* 消えた記録を数える（場面ごとに1件ずつ・キャンセルの場面では消さない） */
+    const gone = old.filter((r) => !env.st.wt.records.some((x) => x.id === r.id)).length;
+    tn(SCR, '記録の削除', 'サーバーから消えた記録は OK を押した2回分だけ', gone === 2);
+
+    /* 記録の保存: 前回 50.0kg の方に 60.0kg を入れて「記録を保存」→「測り直しても同じ値でしたか？」 */
+    let d = 0;
+    await dialogOp(env, page, SCR, '記録の保存（測り直しの確かめ）', {
+      prep: async (sc) => {
+        if (sc === 'a1' || sc === 'b' || sc === 'c') {
+          const day = ymdJst(-(d++));
+          await page.fill('#inMonth', day.slice(0, 7));
+          await page.fill('#inDate', day);
+          await page.fill('#inWeight', '60');
+        }
+        return !!(await ev(page, () => document.getElementById('inWeight').value === '60' && !document.getElementById('inSave').disabled));
+      },
+      go: (times) => pressAt(page, '#inSave', times),
+      effect: async () => cnt('saveRecord'),
+      kept: async () => !!(await ev(page, () => document.getElementById('inWeight').value === '60')),
+    });
+    await page.close();
+  } finally {
+    endChecksQuiet(env, SCR);
+    await env.context.close();
+  }
+}
+
+/* 職員マスタ: 一括編集の「一括保存」。職員マスタ GAS の偽物は撮影の材料（check/fixtures/staff-master.mjs・架空の職員3名）の答えを使い、
+   一括保存は送った行をそのまま「保存した」と答える（staff-api.gs の bulkSave と同じ形） */
+const STAFF_URL = 'https://script.google.com/macros/s/CHECK-FLOW-STAFF/exec';
+async function flow8staff() {
+  const SCR = '職員マスタ';
+  const rev = {};
+  const respond = (b) => {
+    if (b && b.action === 'bulkSave') {
+      return { ok: true, ver: 1, applied: (b.rows || []).map((r) => { rev[r.id] = (rev[r.id] || Number(r.rev) || 1) + 1; return { id: r.id, rev: rev[r.id] }; }), conflicts: [], warnings: [] };
+    }
+    return SF.respond(b);
+  };
+  const env = await makeEnv({ sudCount: true, gas: [[STAFF_URL, respond, 'staff']],
+    extraStorage: { stfm_cfg: JSON.stringify({ url: STAFF_URL, token: 'check-flow', by: '検証PC' }) } });
+  const tag = 'staff-master.html';
+  const cnt = () => reqOf(env, tag).filter((r) => r.to === 'staff' && r.action === 'bulkSave').length;
+  const row = '#listBody tr[data-id="S0002"]';
+  try {
+    const page = await open(env, 'staff-master.html');
+    let n = 0;
+    await dialogOp(env, page, SCR, '一括保存', {
+      prep: async () => {
+        if (!(await page.waitForSelector(row, { timeout: 15000 }).catch(() => null))) return false;
+        if (!(await ev(page, () => !!ST.bulk))) await page.click('#bulkBtn', { timeout: 8000 });
+        const inp = row + ' input[type="text"][data-f="position"]';
+        if (!(await page.waitForSelector(inp, { timeout: 10000 }).catch(() => null))) return false;
+        if (await ev(page, () => Object.keys(ST.dirty).length > 0)) return true;
+        await page.fill(inp, '見本係' + (n++));
+        await page.dispatchEvent(inp, 'change');
+        return !!(await ev(page, () => Object.keys(ST.dirty).length > 0 && !ST.busy));
+      },
+      go: (k) => pressAt(page, '#bulkSaveBtn', k),
+      effect: async () => cnt(),
+      kept: async () => !!(await ev(page, () => Object.keys(ST.dirty).length > 0 && !!ST.bulk)),
+    });
+    await page.close();
+  } finally {
+    endChecksQuiet(env, SCR);
+    await env.context.close();
+  }
+}
+
+/* 家族構成図: 保存していない変更があるまま一覧から別の図を開く（読込）・保存した図の削除。クラウドの接続先は入れない（端末の図だけ） */
+async function flow8geno() {
+  const SCR = '家族構成図';
+  const env = await makeEnv({ sudCount: true });
+  const has = (page, nm) => ev(page, (x) => localStorage.getItem('genogram:doc:' + x) != null, nm);
+  /* 窓が出ていたら OK で閉じる（図を作る準備の間に出た知らせ） */
+  const drain = async (page) => { for (let i = 0; i < 4 && (await dlgOpenN(page)) > 0; i++) { await sleep(GUARD_MS + 150); await pressDlg(page, 'ok'); await sleep(200); } };
+  /* 今の図をこの名前で端末に保存する */
+  const saveAs = async (page, nm) => {
+    await page.fill('#clientName', nm);
+    await page.dispatchEvent('#clientName', 'input');
+    await page.click('#btnSave', { timeout: 8000 });
+    await waitFor(async () => (await has(page, nm)) || (await dlgOpenN(page)) > 0, 8000);
+    await drain(page);
+    return !!(await waitFor(() => has(page, nm), 5000));
+  };
+  try {
+    const page = await open(env, 'genogram.html');
+    await page.waitForSelector('#btnSave', { timeout: 15000 });
+    await sleep(500);
+    await drain(page);
+    const made = (await saveAs(page, OTHER.name)) && (await saveAs(page, ME.name));
+    tn(SCR, '準備', '架空の図を2つ端末に保存できる', made);
+    const cur = () => ev(page, () => document.getElementById('clientName').value.trim());
+    /* 保存していない変更がある印＝画面が端末に書く下書き（genogram:draft）。画面の中の関数は外から呼べないため、見える印で確かめる */
+    const unsaved = () => ev(page, () => localStorage.getItem('genogram:draft') != null);
+    const docOpt = (nm) => '#docList option[value="' + nm + '"]';
+    await dialogOp(env, page, SCR, '保存していない変更があるまま別の図を読込', {
+      prep: async () => {
+        if ((await cur()) !== ME.name) {
+          if (!(await page.waitForSelector(docOpt(ME.name), { state: 'attached', timeout: 5000 }).catch(() => null))) return false;
+          await page.selectOption('#docList', ME.name);
+          await drain(page);
+          if (!(await waitFor(async () => (await cur()) === ME.name, 8000))) return false;
+        }
+        if (!(await unsaved())) { await page.click('.tbtn[data-add="male"]', { timeout: 8000 }); await drain(page); }
+        return !!(await waitFor(unsaved, 8000)) && (await cur()) === ME.name;
+      },
+      /* 読込は一覧から選ぶ操作。2回押しの場面は、選んだ直後に一覧の所を素早く2回押す（窓か暗い後ろに当たる） */
+      go: async (times) => {
+        await page.selectOption('#docList', OTHER.name);
+        if (times === 2) { const c = await centerOf(page, '#docList'); if (c) await page.mouse.dblclick(c.x, c.y); }
+        return true;
+      },
+      effect: async () => ((await cur()) === OTHER.name ? 1 : 0),
+      kept: async () => (await cur()) === ME.name && !!(await unsaved()),
+    });
+    await drain(page);
+    await dialogOp(env, page, SCR, '保存した図の削除', {
+      prep: async () => {
+        if (!(await has(page, OTHER.name)) || (await cur()) !== OTHER.name || (await unsaved())) {
+          if (!(await saveAs(page, OTHER.name))) return false;
+        }
+        return !!(await has(page, OTHER.name)) && (await cur()) === OTHER.name;
+      },
+      go: (k) => pressAt(page, '#btnDelete', k),
+      effect: async () => ((await has(page, OTHER.name)) ? 0 : 1),
+      kept: async () => !!(await has(page, OTHER.name)) && !!(await ev(page, (nm) => JSON.parse(localStorage.getItem('genogram:index') || '[]').some((e) => e.name === nm), OTHER.name)),
+    });
+    tn(SCR, '保存した図の削除', 'もう1つの図は消えない', !!(await has(page, ME.name)));
+    await page.close();
+  } finally {
+    endChecksQuiet(env, SCR);
+    await env.context.close();
+  }
+}
+
+/* 写しの見比べ: 「勤務表を写しの期間に戻す」（確かめが2つ続く・管理者だけ）。共通のデータベースの kv_set_family_mode の偽物は「変えた」と答え、呼ばれた数を数える */
+async function flow8shadow() {
+  const SCR = '写しの見比べ';
+  /* 管理者＋2段階認証を通したログイン（my_account が mfa を返す）として開く */
+  const env = await makeEnv({ sudCount: true, role: 'admin', rpc: { my_account: () => ({ role: 'admin', mfa: true }), kv_set_family_mode: () => ({ ok: true }) },
+    tables: { master_residents: [], master_sync_runs: [] },
+    /* 切り替える前の確かめが読む GitHub の試験の記録（読むだけ）も偽物が「記録なし」と答える＝外へは出ない */
+    gas: [['https://api.github.com/', () => ({ total_count: 0, workflow_runs: [] }), 'github']] });
+  const cnt = () => env.st.rpc.filter((r) => r.fn === 'kv_set_family_mode').length;
+  try {
+    const page = await open(env, 'shadow-check.html');
+    const btn = '#b-shadow-shift';
+    const ready = await waitFor(() => ev(page, (s) => { const b = document.querySelector(s); return !!(b && b.offsetParent && !b.disabled); }, btn), 20000);
+    tn(SCR, '準備', '管理者として開き、「勤務表を写しの期間に戻す」が押せる', ready);
+    if (ready) {
+      await dialogOp(env, page, SCR, '勤務表を写しの期間に戻す', {
+        steps: 2,
+        prep: async () => !!(await ev(page, (s) => { const b = document.querySelector(s); return !!(b && b.offsetParent && !b.disabled); }, btn)),
+        go: (k) => pressAt(page, btn, k),
+        effect: async () => cnt(),
+        kept: async () => !!(await ev(page, (s) => { const b = document.querySelector(s); return !!(b && b.offsetParent); }, btn)),
+      });
+      const fams = env.st.rpc.filter((r) => r.fn === 'kv_set_family_mode').map((r) => JSON.stringify(r.body));
+      tn(SCR, '勤務表を写しの期間に戻す', '送ったのは勤務表を写しの期間に戻す変更だけ', fams.length > 0 && fams.every((f) => f === JSON.stringify({ p_families: ['shift'], p_mode: 'shadow' })));
+    }
+    await page.close();
+  } finally {
+    endChecksQuiet(env, SCR);
+    await env.context.close();
+  }
+}
+
+async function flow8() {
+  console.log('\n— (8) 画面の中の窓: OK で先へ進み、キャンセルで何も変わらず、素早い二度押しで二重にならない —');
+  /* 1つの画面で道具が止まっても、ほかの画面は続けて通す（落ちた時は画面の名前だけを出す） */
+  for (const [scr, fn] of [['入居者マスタ', flow8master], ['体重管理', flow8weight], ['職員マスタ', flow8staff], ['家族構成図', flow8geno], ['写しの見比べ', flow8shadow]]) {
+    try { await fn(); } catch (e) { tn(scr, '全体', '試験の道具が途中で止まらない', false); }
+  }
+}
+
 try {
-  const FLOWS = { 1: flow1, 2: flow2, 3: flow3, 4: flow4, 5: flow5, 6: flow6, 7: flow7 };
+  const FLOWS = { 1: flow1, 2: flow2, 3: flow3, 4: flow4, 5: flow5, 6: flow6, 7: flow7, 8: flow8 };
   for (const [k, fn] of Object.entries(FLOWS)) if (!ONLY || ONLY.includes(k)) await fn();
 } catch (e) {
   fail++;
