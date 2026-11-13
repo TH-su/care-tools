@@ -16,6 +16,8 @@
      薬剤名は一般的な品名だけで、実在の入居者の処方は1件も含まない。 */
 'use strict';
 const fs = require('fs');
+/* 入居者マスタの画面のスクリプトは 2026-11-13 に resident-master.js へ移した（判定の区間 MC-JUDGE だけ HTML に残す）。移す前と同じ文字に戻して確かめる */
+const { readMaster } = require('../master-page.cjs');
 const path = require('path');
 const vm = require('vm');
 
@@ -23,7 +25,7 @@ const HTML_PATH = process.env.MASTER_HTML || path.join(__dirname, '..', '..', 'r
 const DIR = path.dirname(HTML_PATH);
 const FX_PATH = process.env.MEDS_FX_JS || path.join(DIR, 'meds-effect-dict.js');
 const YK_PATH = process.env.MEDS_YAKKA_JS || path.join(DIR, 'meds-yakka-naiyo.js');
-const src = fs.readFileSync(HTML_PATH, 'utf8');
+const src = readMaster(HTML_PATH);
 
 let ok = 0, ng = 0;
 const say = m => process.stdout.write(m + '\n');

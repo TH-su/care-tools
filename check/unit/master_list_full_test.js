@@ -15,6 +15,8 @@
    ★出力に console を使わない（個人情報を出力に流さない決まり。master_fullguard_test.js と同じ）。 */
 'use strict';
 const fs = require('fs');
+/* 入居者マスタの画面のスクリプトは 2026-11-13 に resident-master.js へ移した（判定の区間 MC-JUDGE だけ HTML に残す）。移す前と同じ文字に戻して確かめる */
+const { readMaster } = require('../master-page.cjs');
 const path = require('path');
 const vm = require('vm');
 
@@ -149,7 +151,7 @@ const count = (L, a) => L.calls.filter(c => c.action === a).length;
 function st(L){ return { loading: L.v('fullLoading'), err: L.v('fullErr'), done: L.v('fullDone'), total: L.v('fullTotal'), bad: L.v('fullBad') }; }
 
 async function main(){
-  const SRC = fs.readFileSync(HTML_PATH, 'utf8');
+  const SRC = readMaster(HTML_PATH);
   say('対象: ' + HTML_PATH);
   const ALL = IDS.map(String).sort();
 

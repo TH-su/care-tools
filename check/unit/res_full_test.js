@@ -20,8 +20,10 @@
    ★架空データのみ（氏名は使わない）。 */
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
+/* 入居者マスタの画面のスクリプトは 2026-11-13 に resident-master.js へ移した（判定の区間 MC-JUDGE だけ HTML に残す）。移す前と同じ文字に戻して確かめる */
+const { readMaster } = require('../master-page.cjs');
 const ROOT = path.join(__dirname, '..', '..');
-const read = (env, f) => fs.readFileSync(process.env[env] || path.join(ROOT, f), 'utf8');
+const read = (env, f) => readMaster(process.env[env] || path.join(ROOT, f));
 const SRC = read('RES_FULL_JS', 'su-res-full.js');
 const SHADOW = read('SHADOW_JS', 'shadow-check.js');
 const HTML = read('SHADOW_HTML', 'shadow-check.html');

@@ -10,6 +10,8 @@
      TP_HTML=/path/to/training-plan.html node check/unit/training_plan_aiproxy_client_test.js */
 'use strict';
 const fs = require('fs');
+/* 入居者マスタの画面のスクリプトは 2026-11-13 に resident-master.js へ移した（判定の区間 MC-JUDGE だけ HTML に残す）。移す前と同じ文字に戻して確かめる */
+const { readMaster } = require('../master-page.cjs');
 const path = require('path');
 const vm = require('vm');
 /* 本物の su-data.js（入口 SU.data.training）を読み、その先の kvRaw・kvPut だけを差し替える（2026-10-27・M1 段0） */
@@ -33,7 +35,7 @@ const MERGED = true;
 {
   const RM0 = process.env.RM_HTML || path.join(__dirname, '..', '..', 'resident-master.html');
   const hasRelay = (s) => /action:\s*'ai'/.test(s);
-  const relayHere = hasRelay(src) && hasRelay(fs.readFileSync(RM0, 'utf8'));
+  const relayHere = hasRelay(src) && hasRelay(readMaster(RM0));
   if (!relayHere) {
     if (MERGED || process.env.TP_HTML || process.env.RM_HTML) {
       console.log('  ✗ AI 中継（action:\'ai\'）が対象のファイルに無い（MERGED=' + MERGED + '）');
@@ -197,7 +199,7 @@ async function msgOf(sb, body) {
   console.log('\n【7】入居者マスタの薬効の下書きも中継を使う（RM_HTML で差し替え可）');
   {
     const RM = process.env.RM_HTML || path.join(__dirname, '..', '..', 'resident-master.html');
-    const rsrc = fs.readFileSync(RM, 'utf8');
+    const rsrc = readMaster(RM);
     const cutR = (name) => { const h = rsrc.indexOf('function ' + name + '('); let d = 0, i = rsrc.indexOf('{', h);
       for (; i < rsrc.length; i++) { if (rsrc[i] === '{') d++; else if (rsrc[i] === '}') { d--; if (d === 0) return rsrc.slice(h, i + 1); } } };
     const store = { tp_cfg: JSON.stringify({ url: 'https://script.google.com/macros/s/TEST/exec', token: 'tok-test' }), tp_ai_key: 'sk-ant-OLD' };

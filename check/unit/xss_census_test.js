@@ -398,7 +398,9 @@ const CENSUS = {
     [E, "$('tFile').innerHTML = vs.files.length ? '<thead><tr><th>アプリ</th><th>ファイル</th><th>見えている時<br>回数</th><th>裏にある時<br>回数</th></tr></thead><tbody>' + vs.files.map(function (k) { return '<tr><td>' + esc(k.name) + '</td><td>' + esc(k.k) + '</td><td>' + k.v + '</td><td>' + k.h + '</td></tr>'; }).join('') + '</tbody>' : none"],
     [E, "$('tVis').innerHTML = catRows.length ? '<thead><tr><th>アプリ</th><th>記録した<br>回数</th><th>分類</th><th>見えている時<br>回数</th><th>見えている時<br>合計秒</th>' + '<th>裏にある時<br>回数</th><th>裏にある時<br>合計秒</th></tr></thead><tbody>' + catRows.join('') + '</tbody>' : none"]
   ],
-  "resident-master.html": [
+  "resident-master.html": [],
+  /* 2026-11-13 に画面のスクリプトを resident-master.js へ移した（代入の一覧はそのまま移した・HTML に残した判定の区間には代入が無い） */
+  "resident-master.js": [
     [E, "gb.innerHTML=html"],   // 家族構成図の枠: ほかの端末から届いた絵（JPEG の data URL だけ）を esc を通して img に入れる（統合 0056）
     [E, "box.innerHTML=items.map(function(a){ return '<a href=\"'+esc(a.href)+'\" target=\"_blank\" rel=\"noopener\">'+ '<span class=\"ai\" aria-hidden=\"true\">'+esc(a.ic)+'</span>'+ '<span class=\"at\"><span>'+esc(facFill(a.name))+'</span><span class=\"ad\">'+esc(facFill(a.desc))+'</span></span></a>'; }).join('')"],
     [F, "if(!vma) box.innerHTML+='<p class=\"applead\" style=\"margin:4px 0 0\">訪問診療アプリは「☁️同期設定」でURLを登録すると表示されます。</p>'"],
