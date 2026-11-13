@@ -7,6 +7,7 @@
      4. 2台で別々の家族を足すと両方残る
      5. 表示・入居者マスタへの転載の数え方では消した家族を出さない／取り消しで電話の直しと消した行が戻る
      6. 行ごとの時刻（updatedAt）: 古い控えの端末が後から別の欄を保存しても、直した電話・空にした電話が戻らない
+     7. 番号は1つの案件の中で重ならない（PR #550 の反証レビュー）／編集の保存は家族を番号で突き合わせる・編集中は取り直さない
    ★氏名・電話は全て架空。 */
 'use strict';
 const fs = require('fs');
@@ -33,7 +34,7 @@ function box() {
   vm.runInContext([line(/var DB_V = [^\n]*/), line(/var STAGES = \[[\s\S]*?\];/), line(/var STAGE_MIGRATE = [^\n]*/),
     line(/var CLEAR_META = \{[\s\S]*?\};/), line(/var CLEAR_MARK_RE = [^\n]*/), line(/var UNDO_ARRAY_KEYS = [^\n]*/),
     ...['newId', 'nowIso', 'isObj', 'asObj', 'asArr', 'asStr', 'stageIdx', 'isBlankVal', 'clearHash', 'parseClearMark', 'pickClearMark', 'reviveMark',
-        'applyCleared', 'famLegacyKey_', 'famLegacyId_', 'famEnsureIds_', 'famStamp_', 'famLive_', 'normalizeCand', 'normalizeDb',
+        'applyCleared', 'famLegacyKey_', 'famLegacyId_', 'famEnsureIds_', 'famStamp_', 'famSaveMerge_', 'famLive_', 'normalizeCand', 'normalizeDb',
         'mergeById', 'mergeShallowPreferFilled', 'mergeAssess', 'mergeCand', 'mergeDb', 'undoKeyOf', 'afCanon_', 'undoApply'].map(cutF)].join('\n'), b);
   return b;
 }
@@ -216,7 +217,7 @@ console.log('\n— 6. 行ごとの時刻 —');
   list[1].deleted = true; list[1].deletedAt = T2; list.push({ id: 'fnew', name: '架空 三郎', relation: '孫', phone: '', emergency: false });
   b.famStamp_(before, list, T2);
   t('famStamp_: 消した行と足した行に時刻・変わらない行には入れない', !('updatedAt' in list[0]) && list[1].updatedAt === T2 && list[2].updatedAt === T2, list);
-  t('編集の保存は famStamp_ を通す', /famStamp_\(asObj\(editBase\)\.family, editing\.family, nowIso\(\)\);/.test(cutF('saveEdit')), '');
+  t('編集の保存は famStamp_ を通す', /var famAt = nowIso\(\);\s*famStamp_\(asObj\(editBase\)\.family, editing\.family, famAt\);/.test(cutF('saveEdit')), '');
   /* 取り消しで戻した行は今の時刻になり、直した後の姿を持つ端末との統合でも戻したまま */
   const pre = b.normalizeCand(clone(legacy()));
   const post = clone(pre); post.family[0].phone = '000-0000-0099'; post.family[0].updatedAt = T1; post.updatedAt = T1;
@@ -225,6 +226,55 @@ console.log('\n— 6. 行ごとの時刻 —');
   t('取り消しで戻した行に時刻が入る', cur.family[0].phone === '000-0000-0001' && cur.family[0].updatedAt > T1, cur.family[0]);
   const M = b.mergeCand(clone(post), cur);
   t('戻した後に直した姿を持つ端末と統合しても戻したまま', M.family[0].phone === '000-0000-0001', M.family[0]);
+}
+
+console.log('\n— 7. 番号の重なり・編集の保存 —');
+{
+  const b = box();
+  /* 番号ありの行（電話を直した後）と、古い版のタブが残した同じ鍵の番号なしの行 */
+  const A = b.normalizeCand(clone(legacy()));
+  A.family[0].phone = '000-0000-0099'; A.family[0].updatedAt = T1; A.updatedAt = T1;
+  const oldTab = clone(A); oldTab.family.push(clone(legacy().family[0])); oldTab.updatedAt = T2;
+  const N = b.normalizeCand(clone(oldTab));
+  t('番号ありの行と同じ鍵の番号なしの行に別の番号', new Set(N.family.map(f => f.id)).size === 3, N.family.map(f => f.id));
+  t('2台で読んでも同じ番号', N.family.map(f => f.id).join() === b.normalizeCand(clone(oldTab)).family.map(f => f.id).join(), '');
+  const before = clone(N.family); N.family[2].deleted = true; N.family[2].deletedAt = T2; b.famStamp_(before, N.family, T2); N.updatedAt = T2;
+  const M = b.mergeCand(N, b.normalizeCand(clone(oldTab)));
+  t('古い行を消しても、直した花子は消えない', b.famLive_(M.family).some(f => f.name === '架空 花子' && f.phone === '000-0000-0099') && b.famLive_(M.family).length === 2, M.family);
+  /* 同じ番号が2行 */
+  const D = clone(A); D.family.push(Object.assign(clone(A.family[1]), { phone: '000-0000-0055' }));
+  const ND = b.normalizeCand(clone(D));
+  t('同じ番号が2行あれば後の行に付け直す（前の行の番号はそのまま）',
+    new Set(ND.family.map(f => f.id)).size === 3 && ND.family[1].id === A.family[1].id && ND.family[2].id !== A.family[1].id, ND.family.map(f => f.id));
+  t('付け直す番号も2台で同じ', ND.family.map(f => f.id).join() === b.normalizeCand(clone(D)).family.map(f => f.id).join(), '');
+  const bd = clone(ND.family); ND.family[2].deleted = true; ND.family[2].deletedAt = T2; b.famStamp_(bd, ND.family, T2); ND.updatedAt = T2;
+  const MD = b.mergeCand(ND, b.normalizeCand(clone(D)));
+  t('付け直した行を消しても前の行は残る', b.famLive_(MD.family).length === 2 && b.famLive_(MD.family).some(f => f.id === A.family[1].id), MD.family);
+
+  /* 編集の保存: 編集の間に他の端末が1行目を消し・孫を足し・2行目の電話を直した。編集では新しい行を足しただけ */
+  const base = b.normalizeCand(clone(legacy())).family;
+  const cur = clone(base);
+  cur[0].deleted = true; cur[0].deletedAt = T1; cur[0].updatedAt = T1;
+  cur.push({ id: 'fother', name: '架空 三郎', relation: '孫', phone: '', emergency: false, updatedAt: T1 });
+  cur[1].phone = '000-0000-0066'; cur[1].updatedAt = T1;
+  const ed = clone(base); ed.push({ id: 'fmine', name: '架空 四子', relation: '姪', phone: '', emergency: false });
+  b.famStamp_(base, ed, T2);
+  const out = b.famSaveMerge_(cur, base, ed, T2);
+  t('保存: 他の端末の消した印が残る', out.some(f => f.id === base[0].id && f.deleted), out);
+  t('保存: 他の端末が足した家族が残る', out.some(f => f.id === 'fother'), out);
+  t('保存: 編集で変えていない行は他の端末の直しのまま', out.find(f => f.id === base[1].id).phone === '000-0000-0066', out);
+  t('保存: 編集で足した行が入る', out.some(f => f.id === 'fmine' && f.updatedAt === T2), out);
+  /* 編集で直した行は時刻の新しい方。消した行を編集で直しても消したまま */
+  const ed2 = clone(base); ed2[1].phone = '000-0000-0077'; ed2[0].phone = '000-0000-0088';
+  b.famStamp_(base, ed2, T2);
+  const out2 = b.famSaveMerge_(cur, base, ed2, T2);
+  t('保存: 編集で直した行は新しい方（編集の行）', out2.find(f => f.id === base[1].id).phone === '000-0000-0077', out2);
+  t('保存: 他の端末が消した行は、編集で直しても消したまま', out2.find(f => f.id === base[0].id).deleted === true, out2);
+  const cur3 = clone(cur); cur3[1].updatedAt = '2026-11-13T09:00:00.000Z';
+  const out3 = b.famSaveMerge_(cur3, base, ed2, T2);
+  t('保存: 今の行の方が新しい時は今の行', out3.find(f => f.id === base[1].id).phone === '000-0000-0066', out3);
+  t('saveEdit は家族を famSaveMerge_ で突き合わせる', /target\.family = famSaveMerge_\(target\.family, asObj\(editBase\)\.family, editing\.family, famAt\);/.test(cutF('saveEdit')), '');
+  t('online の出来事は編集中に取り直さない', /addEventListener\('online'[\s\S]{0,400}!busyEditing\(\) && Date\.now\(\) - lastPullAt > 60000\) pull\(false\)/.test(SRC), '');
 }
 
 console.log('\n' + (fail ? '✗' : '✓') + ' ' + pass + ' 件成功 / ' + fail + ' 件失敗');

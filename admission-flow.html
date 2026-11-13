@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-YGCHE8ewes3vpnfJaLijcunCMYSexNm3mM/BmXAWyRo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-QtmuPd/xtVPW+i5Y/Kz4/+HCTlR89voEWU0/TmZFB9Y='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
@@ -1318,14 +1318,26 @@ function famLegacyId_(cid, key, n) {
   }
   return 'fx' + ('0000000' + h1.toString(16)).slice(-8) + ('0000000' + h2.toString(16)).slice(-8);
 }
+/* 番号は1つの案件の中で必ず重ならないようにする。重なると、統合（番号ごと）と消した印（番号ごと）で別の方が
+   1行にまとめられたり、1行を消しただけで同じ番号の別の行まで消えたりする（PR #550 の反証レビュー）。
+   1. 番号を持つ行の番号を先に集め、2行目以降の同じ番号には付け直す（「元の番号＋何番目か」から決まる番号）
+   2. 番号の無い行は今の鍵から作り、すでにある番号と重なれば何番目かを進めて作り直す
+   どちらも決まる番号なので、同じ記録を読んだ端末どうしは同じ番号になる */
 function famEnsureIds_(list, cid) {
-  var seen = {};
+  var used = {}, seen = {}, redo = [], noId = [];
   asArr(list).forEach(function (f) {
-    if (!isObj(f) || f.id) return;
-    var k = famLegacyKey_(f), n = seen[k] || 0;
-    seen[k] = n + 1;
-    f.id = famLegacyId_(cid, k, n);
+    if (!isObj(f)) return;
+    if (!f.id) { noId.push(f); return; }
+    if (used[f.id]) redo.push(f); else used[f.id] = 1;
   });
+  function fresh(base) {
+    var n = seen[base] || 0, id;
+    do { id = famLegacyId_(cid, base, n); n++; } while (used[id]);
+    seen[base] = n; used[id] = 1;
+    return id;
+  }
+  redo.forEach(function (f) { f.id = fresh('dup:' + String(f.id)); });
+  noId.forEach(function (f) { f.id = fresh(famLegacyKey_(f)); });
 }
 /* 編集の保存の直前に、編集を始めた時の姿（base）と比べて、足した・直した・消した行にだけ時刻を入れる。比べは項目の並びと時刻を問わない */
 function famStamp_(baseList, list, at) {
@@ -1337,6 +1349,32 @@ function famStamp_(baseList, list, at) {
     var b = f.id ? prev[f.id] : null;
     if (!b || strip(b) !== strip(f)) f.updatedAt = at;
   });
+}
+/* 編集の保存で、ご家族を丸ごと入れ替えずに番号で突き合わせる（cur＝今の台帳の行・base＝編集を始めた時・ed＝編集画面の行）。
+   ・編集で変えていない行は今の行のまま（編集の間に他の端末が直した・消した分を消さない）
+   ・編集で変えた行は updatedAt の新しい方（同じなら編集の行）
+   ・編集を始めた時に無かった今の行（他の端末が足した行）は残す。消した印はどちらにあっても残す
+   （base は今は使わない。変えた行かどうかは famStamp_ が付けた時刻 at で見分ける） */
+function famSaveMerge_(cur, base, ed, at) {
+  var out = [], done = {};
+  function sticky(pick, other) {
+    if (!pick || pick.deleted || !other || !other.deleted) return pick;
+    var g = JSON.parse(JSON.stringify(pick)); g.deleted = true; g.deletedAt = other.deletedAt; return g;
+  }
+  var edBy = {};
+  asArr(ed).forEach(function (f) { if (isObj(f) && f.id) edBy[f.id] = f; });
+  asArr(cur).forEach(function (c) {
+    if (!isObj(c) || !c.id) { out.push(c); return; }
+    done[c.id] = 1;
+    var e = edBy[c.id];
+    if (!e || e.updatedAt !== at) { out.push(sticky(c, e)); return; }
+    out.push(asStr(c.updatedAt) > asStr(e.updatedAt) ? sticky(c, e) : sticky(e, c));
+  });
+  asArr(ed).forEach(function (e) {
+    if (isObj(e) && e.id && done[e.id]) return;
+    out.push(e);   /* 編集で足した行・今の台帳から無くなっていた行（消えるより戻す） */
+  });
+  return out;
 }
 function famLive_(list) { return asArr(list).filter(function (f) { return isObj(f) && !f.deleted; }); }
 function normalizeDb(db) {
@@ -1964,9 +2002,11 @@ document.addEventListener('visibilitychange', function () {
   if (busyEditing()) return;
   if (Date.now() - lastPullAt > 5 * 60000) pull(false);
 });
+/* つながった時: 未送信があれば送り、無ければ取り直す。編集中は取り直さない
+   （取り直して版を進めると、編集の保存が統合を通らずに他の端末の変更を上書きする・PR #550 の反証レビュー） */
 window.addEventListener('online', function () {
   if (!afGateOk_) return;
-  if (dirty) { retryWait = 0; push(); } else if (Date.now() - lastPullAt > 60000) pull(false);
+  if (dirty) { retryWait = 0; push(); } else if (!busyEditing() && Date.now() - lastPullAt > 60000) pull(false);
 });
 /* 同じ端末の別タブが書いた時に取り込む。編集中・未送信中は取り込まない */
 window.addEventListener('storage', function (ev) {
@@ -4128,7 +4168,8 @@ function saveEdit() {
   /* ★空行は落とさない。メモだけ書いた連携先・続柄だけ入れた家族も、書いた人には意味がある */
   var isNew = !findCand(editing.id);
   /* ご家族の行ごとの時刻（足した・直した・消した行だけ）。統合で古い控えの値に戻されないため */
-  famStamp_(asObj(editBase).family, editing.family, nowIso());
+  var famAt = nowIso();
+  famStamp_(asObj(editBase).family, editing.family, famAt);
   var target = isNew ? null : findCand(editing.id);
   var prev = target ? JSON.parse(JSON.stringify(target)) : blankCand();
   var saved;
@@ -4140,7 +4181,12 @@ function saveEdit() {
     var ck = changedKeys(editBase, editing);
     pushUndoCand(target, '編集の保存');
     Object.keys(ck).forEach(function (k) {
-      if (k === 'contacts' || k === 'family') {
+      if (k === 'family') {
+        /* ご家族は番号で突き合わせる（丸ごと入れ替えると、編集の間に他の端末が足した・消した家族が消える） */
+        target.family = famSaveMerge_(target.family, asObj(editBase).family, editing.family, famAt);
+        return;
+      }
+      if (k === 'contacts') {
         target[k] = editing[k];      /* 画面で全行を持っているので、そのまま採る */
         return;
       }
