@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-1FJE6Pvez/n5YPSYUUrKOPK0Tlo67ChBx2828I7ob5I='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Em3AuTwX6nyrotCcnK0Jwf4PJyn5AVwhn89VDqu0wuM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <meta name="robots" content="noindex,nofollow">
@@ -950,8 +950,9 @@ function wizState(step){
   /* ログインで、ふだんの読み書きができる系統（wizLive）は「入れなくてもよい」系統として扱う（✕ にしない）。
      段は飛ばさず ✓ にもしない（AI の下書き・添付書類・閉じる直前の送り・管理者が戻す時には接続先が要るため・2026-11-13 反証レビュー） */
   var rest=step.sys.filter(function(id){ return !wizLive[id]; });
-  var live=step.sys.filter(function(id){ return !!wizLive[id]; }).map(function(id){ var s=sysById(id); return s ? s.title : id; });
-  var liveNote = live.length ? '（'+WIZ_LIVE_MSG+'：'+live.join('・')+'。'+WIZ_LIVE_NEED+'）' : '';
+  /* 接続先が要る場面は系統ごとの事実の文（WIZ_LIVE_NEED）で書く */
+  var live=step.sys.filter(function(id){ return !!wizLive[id]; }).map(function(id){ var s=sysById(id); return (s ? s.title : id)+(WIZ_LIVE_NEED[id] ? '（'+WIZ_LIVE_NEED[id]+'には接続先が要ります）' : ''); });
+  var liveNote = live.length ? '（'+WIZ_LIVE_MSG+'：'+live.join('・')+'。'+WIZ_LIVE_KEEP+'）' : '';
   var set=[];
   step.sys.forEach(function(id){ var s=sysById(id); if(s && readCur(s).url) set.push(s.title); });
   if(wizRes[step.id]) return liveNote ? { ok:wizRes[step.id].ok, msg:wizRes[step.id].msg+liveNote } : wizRes[step.id];
@@ -997,7 +998,9 @@ function wizCheck(step, btn){
      ★読み足した部品（su-data・su-geno・su-sa）が端末に書くのは、スイッチの控え（su_backend_flags・今までの画面と同じ）だけ。
    ★管理者が配った接続先（su-devcfg.js）は、この案内では読まない（今までどおり端末に保存した値だけを確かめる）。 */
 var WIZ_LIVE_MSG = 'ふだんの読み書きはログインで使えます';
-var WIZ_LIVE_NEED = 'AI の下書き・添付書類・管理者が戻す時などには接続先が要るので、管理者の端末には入れておいてください';
+/* 系統ごとに、ログインしていても端末の接続先を使う場面（事実だけ・文は仮置き） */
+var WIZ_LIVE_NEED = { tp:'AI の下書き・閉じる直前の送信・管理者が戻す時', adm:'添付書類・管理者が戻す時', geno:'管理者が戻す時', analyzer:'管理者が戻す時' };
+var WIZ_LIVE_KEEP = '管理者の端末には入れておいてください';
 var WIZ_TOKEN_NG = '合言葉が違います';
 var wizLive = {};      // {系統id: true}（この画面を開いている間だけ・端末に保存しない）
 var wizLiveStarted = false;
@@ -1046,8 +1049,8 @@ function tokenVerdict_(id, j, status){
     return 'unknown';
   }
   if(id==='msk'){
-    /* 申送の GAS の ping は ver を持ち auth を持たない（家族構成図は auth・codeVersion、入居者マスタは readRole） */
-    if(j.ok===true && j.role==='full' && ('ver' in j) && !('auth' in j) && !('server' in j) && !('readRole' in j)) return 'ok';
+    /* 申送の GAS の ping は auth・readRole・server を持たない（家族構成図は auth、入居者マスタは readRole を持つ）。古い申送の GAS は ver を返さないので ver は求めない */
+    if(j.ok===true && j.role==='full' && !('auth' in j) && !('server' in j) && !('readRole' in j)) return 'ok';
     if(/^認証エラー/.test(err) || j.code===403) return 'ng';
     return 'unknown';
   }
@@ -1088,7 +1091,8 @@ function tokenPing_(url, token){
 function tokenMsg_(v){
   if(v==='ok') return { ok:true, msg:'合言葉が通りました' };
   if(v==='limited') return { ok:false, msg:'合言葉は通りましたが、事務所用の合言葉ではありません（現場用などの合言葉です）' };
-  if(v==='readonly') return { ok:false, msg:'合言葉は通りましたが、読むだけの合言葉です（保存できません）' };
+  /* 見るだけの合言葉は、現場の端末では正しい形なので ✕ にせず △ の注意にする */
+  if(v==='readonly') return { ok:null, warn:true, msg:'合言葉は通りました（見るだけの合言葉です。保存するには事務所用の合言葉が要ります）' };
   if(v==='ng') return { ok:false, msg:WIZ_TOKEN_NG };
   if(v==='wrong') return { ok:false, msg:'別のアプリの接続先です' };
   if(v==='offline') return { ok:null, msg:'つながらず、合言葉を確かめられませんでした' };
@@ -1130,11 +1134,11 @@ function wizTokenCheck(step, btn){
   btn.disabled=true; btn.textContent='確かめています…';
   Promise.all(list.map(function(s){ return wizTokenOne_(s).then(function(r){ return { t:s.title, r:r }; }, function(){ return { t:s.title, r:tokenMsg_('offline') }; }); })).then(function(rs){
     if(gen!==wizGen) return;   // 確かめている間に設定が変わった＝古い結果は出さない
-    var mark=function(o){ return o===true ? '✓ ' : (o===false ? '✕ ' : '・ '); };
+    var mark=function(o, w){ return w ? '△ ' : (o===true ? '✓ ' : (o===false ? '✕ ' : '・ ')); };
     var allOk=rs.length>0 && rs.every(function(x){ return x.r.ok===true; });
     var anyNg=rs.some(function(x){ return x.r.ok===false; });
     wizTokRes[step.id]={ ok: allOk ? true : (anyNg ? false : null),
-      msg: rs.length ? rs.map(function(x){ return mark(x.r.ok)+x.t+'：'+x.r.msg; }).join(' ／ ') : '確かめる系統がありません' };
+      msg: rs.length ? rs.map(function(x){ return mark(x.r.ok, x.r.warn)+x.t+'：'+x.r.msg; }).join(' ／ ') : '確かめる系統がありません' };
     wizRender();
   });
 }
