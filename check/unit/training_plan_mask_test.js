@@ -284,7 +284,8 @@ console.log('\n【敬称・漏れの再現】2026-10-08 審査で漏れた書き
 }
 
 console.log('\n【確認画面・設定】送信の説明と、設定画面の確認・取り消し（2026-10-08・監査10月版 #12）');
-{
+/* 確かめの窓は画面の中の窓（SUDialog.confirm・答えは約束）になった（2026-11-13 第6段 TP-02）。偽物の窓は box.confirm の答えを約束で返す */
+const consentDone = (async () => {
   t('★説明に「〜さん・〜様・〜氏の直前の名前も置き換える」「機械的な目安で取りこぼしがある」がある', /〜さん・〜様・〜氏/.test(raw) && /機械的な目安なので取りこぼしがあります/.test(raw));
   t('★AIへの指示に〔人名1〕も記号として載っている（形を崩さない）', /〔利用者1〕〔人名1〕などは、氏名を伏せた記号。記号は〔 〕も数字もそのままの形で使い/.test(raw));
   t('設定画面に確認の状態と、確認・取り消しのボタンがある', /id="aiConsentState"/.test(raw) && /id="btnAiConsent"/.test(raw) && /id="btnAiConsentRevoke"/.test(raw));
@@ -296,18 +297,21 @@ console.log('\n【確認画面・設定】送信の説明と、設定画面の�
   const el = id => (els[id] = els[id] || { textContent: '', hidden: false });
   const box = { localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } },
     confirm: () => true, $: el, AI_NOTICE_KEY: 'tp_ai_notice_v1' };
+  box.SUDialog = { confirm: (m) => Promise.resolve(box.confirm(m)) };
   vm.createContext(box);
   vm.runInContext([cut('renderAiConsent'), cut('aiConsentRevoke')].join('\n'), box);
   box.renderAiConsent();
   t('確認済みの端末では「取り消す」だけが出る', els.btnAiConsent.hidden === true && els.btnAiConsentRevoke.hidden === false && /確認済み/.test(els.aiConsentState.textContent), els);
-  box.aiConsentRevoke();
+  await box.aiConsentRevoke();
   t('★取り消すと印が消え、次に送る時にもう一度説明が出る状態になる', !('tp_ai_notice_v1' in store) && els.btnAiConsent.hidden === false && /取り消しました/.test(els.aiState.textContent), [store, els.aiState.textContent]);
   box.confirm = () => false; store.tp_ai_notice_v1 = '1';
-  box.aiConsentRevoke();
+  await box.aiConsentRevoke();
   t('取り消しの確認で「キャンセル」なら何も変えない', store.tp_ai_notice_v1 === '1');
   t('★印に保存するのは「確認した」の1だけ（氏名・記録は保存しない）', /localStorage\.setItem\(AI_NOTICE_KEY, '1'\)/.test(raw));
-}
+})().catch((e) => t('【確認画面・設定】の試験が最後まで動く', false, String(e && e.stack)));
 
-console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
-console.log('対象: ' + HTML);
-process.exit(fail ? 1 : 0);
+consentDone.then(() => {
+  console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
+  console.log('対象: ' + HTML);
+  process.exit(fail ? 1 : 0);
+});

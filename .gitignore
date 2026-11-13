@@ -61,6 +61,7 @@
 # 業務の流れを通す試験（2026-11-02・入居者マスタ→各画面・行き来の帯・週間計画→ワースケ・俯瞰・現場の守り。材料は check/fixtures/flow.mjs）
 !/check/flow_e2e.mjs
 !/check/revenue_e2e.mjs
+!/check/patch_config_e2e.mjs
 !/check/yakujo_bulk_e2e.mjs
 !/check/yakujo_review_e2e.mjs
 !/check/yakujo_assign_e2e.mjs

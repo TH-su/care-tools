@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-+a6M7AUchzQy68UCJfqAQyAw8RagRoLRqMJUjx7EXXo=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-Ik9bsX6E+adh4Dx5Nyfysspj3viQWdvwsL/W+4MVcRU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-+a6M7AUchzQy68UCJfqAQyAw8RagRoLRqMJUjx7EXXo=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-/8NMJXJIuWHznlbsxYUg9uRqyBbxX3KF07YIkjWyTbA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -63,7 +63,7 @@ try{ const t = (JSON.parse(localStorage.getItem('wtmgr_ui_v1') || '{}') || {}).t
 </script>
 <script src="su-cfg-hint.js?v=2026-11-10"></script>
 <!-- 施設情報（facility-profile.json）。食事形態の表示名を施設ごとに差し替える時だけ使う（書いていなければ画面の既定のまま・2026-11-02 便8） -->
-<script src="su-facility.js?v=2026-11-07"></script>
+<script src="su-facility.js?v=2026-11-13"></script>
 <!-- 体重の写し（統合 0008・写しの期間）。supabase-js と su-auth.js は写す時にだけ読み込む -->
 <script src="su-weight-shadow.js?v=2026-10-28.2"></script>
 <script src="su-weight-live.js?v=2026-11-08"></script>
@@ -652,8 +652,13 @@ body.wr-sync-busy :is(#inSave,#inEditDelete,[data-iex-del],#bulkSave,.bk-save,#m
 .spin{display:inline-block;animation:spin .8s linear infinite;line-height:1}
 /* 接続診断パネル：🩺 ボタンの結果 / 接続失敗時の詳細情報 */
 .api-diag{margin-top:10px;padding:10px 12px;background:#0d2031;color:#e1f1ff;border:1px solid #1e3a52;
-  border-radius:8px;font-size:0.9375rem;font-family:ui-monospace,Menlo,Consolas,monospace;
-  white-space:pre-wrap;word-break:break-all;max-height:280px;overflow:auto;line-height:1.55}
+  border-radius:8px;font-size:0.9375rem;max-height:280px;overflow:auto;line-height:1.55}
+/* 診断の文（細かい行）は等幅のまま。職員向けの1文と「管理者向けの詳しい内容」は画面の字（2026-11-13） */
+.api-diag pre{margin:0;font-size:inherit;font-family:ui-monospace,Menlo,Consolas,monospace;
+  white-space:pre-wrap;word-break:break-all;line-height:1.55}
+.api-diag-lead{margin:0 0 6px;font-weight:700}
+.api-diag-more summary{cursor:pointer;padding:6px 0}
+@media screen and (max-width:899px){ .api-diag-more summary{padding:12px 0} }   /* 押す所 44px 以上（開閉の三角は残す） */
 .api-diag.is-ok{border-color:#2e7d32;background:#0d2820}
 .api-diag.is-err{border-color:#c62828;background:#2a0d0d}
 .api-help{margin-top:12px;padding:10px 12px;background:var(--g0);border:1px solid var(--g2);
@@ -1382,7 +1387,7 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
     </div>
     <div id="apiCsLink" style="margin-top:6px;font-size:0.9375rem;line-height:1.55"><a href="connection-settings.html">接続設定の画面を開く</a>（「体重管理」の欄に URL と合言葉を入れられます）</div>
     <!-- 診断結果パネル：🩺 ボタンや接続失敗時に表示される -->
-    <pre id="apiDiagOut" class="api-diag" style="display:none"></pre>
+    <div id="apiDiagOut" class="api-diag" style="display:none"></div>
     <details class="api-help">
       <summary>うまく繋がらない時のチェック項目</summary>
       <ol>
@@ -2083,7 +2088,7 @@ const WR_NOGAS_MSG = 'この端末には Google の接続先が入っていな�
   window.addEventListener('pagehide', lastDitchSave);
 })();
 
-function apiSetStatus(st, msg){
+function apiSetStatus(st, msg, staff){
   const b = document.getElementById('apiBd');
   if(b){
     b.className = 'api-bd';
@@ -2093,7 +2098,28 @@ function apiSetStatus(st, msg){
     else               { b.classList.add('api-of'); }
   }
   const si = document.getElementById('apiStatus');
-  if(si && msg) si.textContent = msg;
+  if(!si || !msg) return;
+  /* 失敗の時、技術の語を含む文（英字の例外・応答の番号など）は職員向けの1文だけを出し、元の文は「管理者向けの詳しい内容」に文を変えずに畳む
+     （第6段 反証レビューの指摘・2026-11-13・文は仮置き）。診断の枠（showDiagPanel）と同じ形。
+     職員がその場で直せる理由（合言葉が要る・一致しない・ログインしていない・事務所に連絡 など）は、呼ぶ側が staff を付けて渡し、今までどおりそのまま出す */
+  if(st === 'er' && !staff){
+    si.textContent = '';
+    const lead = document.createElement('p');
+    lead.className = 'api-diag-lead';
+    lead.textContent = 'うまくつながりませんでした。管理者に伝えてください。';
+    const more = document.createElement('details');
+    more.className = 'api-diag-more';
+    const sum = document.createElement('summary');
+    sum.textContent = '管理者向けの詳しい内容';
+    const body = document.createElement('div');
+    body.textContent = String(msg);
+    more.appendChild(sum);
+    more.appendChild(body);
+    si.appendChild(lead);
+    si.appendChild(more);
+    return;
+  }
+  si.textContent = msg;
 }
 function ldShow(msg){
   const ov = document.getElementById('ldOv');
@@ -2111,7 +2137,8 @@ function ldHide(){
 function fetchTO(url, opts, ms){
   ms = ms || 12000;
   return new Promise((resolve, reject)=>{
-    const timer = setTimeout(()=> reject(new Error('タイムアウト('+Math.round(ms/1000)+'秒)')), ms);
+    /* 職員にも出る文なので、技術の語（タイムアウト・秒数）を出さない（2026-11-13 第6段 反証レビュー・文は仮置き） */
+    const timer = setTimeout(()=> reject(new Error('通信が時間内に終わりませんでした。通信を確かめてください')), ms);
     fetch(url, opts || {})
       .then(r=>{ clearTimeout(timer); resolve(r); })
       .catch(e=>{ clearTimeout(timer); reject(e); });
@@ -2463,7 +2490,7 @@ async function apiDiagnose(url){
   }
   if(errMsg){
     lines.push(`❌ 通信エラー: ${errMsg}`);
-    if(/タイムアウト/.test(errMsg)){
+    if(/タイムアウト|時間内に終わりませんでした/.test(errMsg)){
       lines.push('  → Google の受け口の起動に時間がかかっている可能性。数秒後に再試行してください');
       lines.push('  → 続けて失敗する時は、次の順で切り分けてください：');
       lines.push('     ① 上のURLをブラウザのアドレス欄に貼って開く');
@@ -2691,7 +2718,7 @@ async function _syncFromAPIImpl(showLoader){
     flushPendingQueue();
     return true;
   }catch(e){
-    apiSetStatus('er', '接続エラー: '+ e.message);
+    apiSetStatus('er', '接続エラー: '+ e.message, !!(e && e.wrStaff) || wrStaffText_(e && e.message));   /* 合言葉の案内・部品の断り（時間切れ等）など職員向けの文は畳まない */
     /* 職員向けの文だけを出す。元の文は設定の接続状態欄（上）に残す（圏外の端末で開くたびに不具合報告の種を増やさないため、記録には流さない） */
     toast((e && e.wrStaff) ? '⚠️ 同期できませんでした：' + e.message : '⚠️ 同期できませんでした。この端末の記録は残っています。しばらくしてから、もう一度お試しください', 'err');
     /* サーバーと合わせられない時も、新しく入居した人は記録できるようにする（2026-09-28）。
@@ -2844,13 +2871,13 @@ function _writeDrain(){
         /* 理由が分かる時は必ず出す。「書き込み失敗」だけだと、合言葉の不一致でも
            回線障害でも同じ表示になり、現場が何を直せばよいか判断できない。 */
         const why = apiFriendlyError_(r && r.error);
-        apiSetStatus('er', why || '書き込みエラー');
+        apiSetStatus('er', why || '書き込みエラー', !!why && (why !== String(r && r.error) || wrStaffText_(why)));   /* 合言葉の案内に言い換えた時・職員向けの文の時は畳まない */
         if(!item._drained) enqueuePending(item.action, item.data);
         toast('⚠️ サーバー書き込み失敗（後で再送します）' + (why ? '：' + why : ''),'err');
       }
     })
     .catch(e=>{
-      apiSetStatus('er', e.message);
+      apiSetStatus('er', e.message, !!(e && e.wrStaff) || wrStaffText_(e && e.message));   /* 部品の断り（ログインしていない等）は畳まない */
       // 離脱時排水（_drained）済みなら既に永続キューにある＝二重登録しない。
       // 二重登録を許すと pending が [save, del, save] になり、再送で削除済みが復活し得る
       if(!item._drained) enqueuePending(item.action, item.data);
@@ -8744,14 +8771,30 @@ function wrHasLocalCopy_(){
     }, e=>wrNote_('起動の確かめ', e));
   }
   updateAuthNote_();   // 未接続・未観測の時も「状態は未確認」と出す（空欄のまま放置しない）
-  /* 診断結果パネルの表示／非表示 */
-  function showDiagPanel(lines, ok){
+  /* 診断結果パネルの表示／非表示。
+     診断（apiDiagnose）の結果（asDiag）は、職員向けの1文だけを出し、診断の行は「管理者向けの詳しい内容」に畳む
+     （第6段 WR-01・2026-11-13・文は仮置き）。診断の行の文そのものは変えない。それ以外の知らせは今までどおり行をそのまま出す */
+  function showDiagPanel(lines, ok, asDiag){
     const panel = $('#apiDiagOut');
     if(!panel) return;
     panel.style.display = '';
     panel.classList.remove('is-ok','is-err');
     panel.classList.add(ok ? 'is-ok' : 'is-err');
-    panel.textContent = lines.join('\n');
+    panel.textContent = '';
+    const pre = document.createElement('pre');
+    pre.textContent = lines.join('\n');
+    if(!asDiag){ panel.appendChild(pre); return; }
+    const lead = document.createElement('p');
+    lead.className = 'api-diag-lead';
+    lead.textContent = ok ? '✅ つながりました。' : 'うまくつながりませんでした。管理者に伝えてください。';
+    const more = document.createElement('details');
+    more.className = 'api-diag-more';
+    const sum = document.createElement('summary');
+    sum.textContent = '管理者向けの詳しい内容';
+    more.appendChild(sum);
+    more.appendChild(pre);
+    panel.appendChild(lead);
+    panel.appendChild(more);
   }
   function hideDiagPanel(){
     const panel = $('#apiDiagOut');
@@ -8814,7 +8857,7 @@ function wrHasLocalCopy_(){
       // 失敗時は自動で診断を実行して具体的な原因を表示
       toast('接続失敗。診断を実行します…','err');
       const diag = await apiDiagnose(url);
-      showDiagPanel(diag.lines, diag.ok);
+      showDiagPanel(diag.lines, diag.ok, true);
     }
     refreshUrlPersistBadge();
   });
@@ -8823,7 +8866,7 @@ function wrHasLocalCopy_(){
     if(!url){ toast('URLを入力してください','err'); return; }
     showDiagPanel(['🔍 診断中…'], true);
     const diag = await apiDiagnose(url);
-    showDiagPanel(diag.lines, diag.ok);
+    showDiagPanel(diag.lines, diag.ok, true);
     if(diag.ok) toast('✅ 接続OK','ok');
   });
   $('#btnApiSync')?.addEventListener('click', async ()=>{
@@ -8848,7 +8891,7 @@ function wrHasLocalCopy_(){
     if(ok) toast('✅ 同期完了','ok');
     else {
       const diag = await apiDiagnose(apiUrl);
-      showDiagPanel(diag.lines, diag.ok);
+      showDiagPanel(diag.lines, diag.ok, true);
     }
     refreshUrlPersistBadge();
   });
@@ -9004,7 +9047,7 @@ $('#mdResident').addEventListener('click', e=>{
 });
 </script>
 <!-- 見出しの下の初回の案内の帯（2026-11-02 本人の決定）。×で閉じた端末では出さない。画面の動き・保存・印刷には触れない -->
-<script src="su-intro.js?v=2026-11-02.3"></script>
+<script src="su-intro.js?v=2026-11-13"></script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
 <script src="su-report.js?v=2026-10-28" data-tool="体重管理システム"></script>
 </body>

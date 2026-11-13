@@ -14,7 +14,7 @@
 <script src="su-errors.js?v=2026-11-12"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-app-gate.js?v=2026-11-11"></script>
-<script src="su-facility.js?v=2026-11-07"></script>
+<script src="su-facility.js?v=2026-11-13"></script>
 <script src="equip-calc.js?v=2026-11-13"></script>
 <style>
 /* 設備・修繕の記録（2026-11-03 本人の決定）。色は採用管理と同じ濃さ（コントラスト7:1目標）。ライト固定。
@@ -198,6 +198,8 @@ tr.soon td{background:var(--warn-bg)}
   .hdr{position:static}
   #toast,.dlg{display:none !important}
 }
+/* 初回の案内の帯（su-intro.js）は、現場端末などの止めの案内を出している間は出さない（個別機能訓練計画書と同じ・代表者の決定 2026-11-13・仮置き） */
+body:has(#e-gate:not([hidden])) .sui-band{display:none}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
@@ -1463,6 +1465,7 @@ init_();
 <!-- インターネットにつながっていない時の帯（2026-11-12 商用化の見直し・画面だけ・通信と保存には触れない） -->
 <script src="su-shell.js?v=2026-11-13.2"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
+<script src="su-intro.js?v=2026-11-13"></script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通）。画面の動き・保存・印刷には触れない -->
 <script src="su-report.js?v=2026-10-28" data-tool="設備・修繕の記録"></script>
 </body>
