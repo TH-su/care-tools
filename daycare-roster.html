@@ -598,6 +598,10 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
 .su-menu-row{display:contents}
 @media screen and (max-width:899px){.su-menu-back{min-height:44px} .su-menu-row{display:block;flex:0 0 100%}}
 @media print{.su-menu-back{display:none !important}}
+/* 見出しの「使い方」（「← メニュー」の右隣・同じ大きさと色・使い方の画面のこの画面の節へ・画面だけ・印刷しない・代表者の決定 2026-11-13） */
+.su-help-link{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+@media screen and (max-width:899px){.su-help-link{min-height:44px}}
+@media print{.su-help-link{display:none !important}}
 </style>
 <!-- 印刷共通モジュール（用紙・余白・収め方の設定画面と、1枚に収める採寸）。
      ★link で読む＝JS が document.styleSheets からこのファイルの @media print も読めるようにする。
@@ -610,7 +614,7 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
 <body>
 
 <header class="hdr">
-  <span class="su-menu-row"><a class="hdr-btn su-menu-back" href="index.html">← メニュー</a></span>
+  <span class="su-menu-row"><a class="hdr-btn su-menu-back" href="index.html">← メニュー</a> <a class="hdr-btn su-help-link" href="help.html">使い方</a></span>
   <span class="hdr-title" id="dcrHdrTitle">通所</span>
   <span class="hdr-sub" id="hdrSub">読込中…</span>
   <span class="hdr-sp"></span>

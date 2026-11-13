@@ -96,6 +96,10 @@ body {
 .su-menu-row{display:contents}
 @media screen and (max-width:899px){.su-menu-back{min-height:44px} .su-menu-row{display:block;flex:0 0 100%}}
 @media print{.su-menu-back{display:none !important}}
+/* 見出しの「使い方」（「← メニュー」の右隣・同じ大きさと色・使い方の画面のこの画面の節へ・画面だけ・印刷しない・代表者の決定 2026-11-13） */
+.su-help-link{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+@media screen and (max-width:899px){.su-help-link{min-height:44px}}
+@media print{.su-help-link{display:none !important}}
 
 /* 見出しの使い方の1行（全幅・画面だけ・印刷しない・代表者の指示 2026-11-13）。見出しは左が青・右が薄橙なので、白い地を持たせて読めるようにする */
 .hdr-usage { display: none; }
@@ -132,7 +136,7 @@ body {
 <body>
 
 <header class="hdr">
-  <span class="su-menu-row"><a class="link-single su-menu-back" href="index.html">← メニュー</a></span>
+  <span class="su-menu-row"><a class="link-single su-menu-back" href="index.html">← メニュー</a> <a class="link-single su-help-link" href="help.html">使い方</a></span>
   <span class="hdr-title">訪問／全支援 左右比較</span>
   <label class="sync-toggle" title="スクロール位置（時刻・曜日）と表示倍率を左右で連動させる">
     <input type="checkbox" id="syncOn" checked aria-label="左右の時刻・曜日・表示倍率を連動させる">時刻・曜日・倍率を連動

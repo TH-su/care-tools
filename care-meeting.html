@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-9r7Y5VdY3FF5nHvMlwO8mqwdmJPlRDtqz/o+P4TcpWo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-x2bDgsvwLdzO3jzhqK6xRn61j4n1WxHlRB3m2RCLlEQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 会議の記録（要配慮の情報）を扱うためキャッシュ無効 -->
@@ -277,12 +277,16 @@ h3{font-size:1.0625rem; margin:14px 0 6px}
 .su-menu-row{display:contents}
 @media screen and (max-width:899px){.su-menu-back{min-height:44px} .su-menu-row{display:block;flex:0 0 100%}}
 @media print{.su-menu-back{display:none !important}}
+/* 見出しの「使い方」（「← メニュー」の右隣・同じ大きさと色・使い方の画面のこの画面の節へ・画面だけ・印刷しない・代表者の決定 2026-11-13） */
+.su-help-link{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+@media screen and (max-width:899px){.su-help-link{min-height:44px}}
+@media print{.su-help-link{display:none !important}}
 </style>
 </head>
 <body>
 
 <header class="hdr">
-  <span class="su-menu-row"><a class="hdr-btn su-menu-back" href="index.html">← メニュー</a></span>
+  <span class="su-menu-row"><a class="hdr-btn su-menu-back" href="index.html">← メニュー</a> <a class="hdr-btn su-help-link" href="help.html">使い方</a></span>
   <a class="hdr-btn" href="resident-master.html">← 入居者マスタ</a>
   <h1>担当者会議の記録</h1>
   <span class="sync" id="cmSync" role="status" aria-live="polite"></span>
@@ -1777,6 +1781,13 @@ function onHdrLeaveClick_(e){
   if(!confirm('保存していない変更があります。'+to+'へ移ると消えます。移りますか？')){ e.preventDefault(); return; }
   cmLeaveOk_=true; setTimeout(function(){ cmLeaveOk_=false; },3000);
 }
+/* 見出しの「使い方」で離れる時も、同じ判定で確かめる（代表者の決定 2026-11-13） */
+function onHdrHelpClick_(e){
+  var a=e.target&&e.target.closest?e.target.closest('a.su-help-link'):null;
+  if(!a||!cmLeaveDirty_()) return;
+  if(!confirm('保存していない変更があります。使い方へ移ると消えます。移りますか？')){ e.preventDefault(); return; }
+  cmLeaveOk_=true; setTimeout(function(){ cmLeaveOk_=false; },3000);
+}
 function onBeforeUnload_(e){
   if(cmLeaveOk_) return;
   if(isDirty_(ed)||(ed&&ed.busy)||(impSt&&impSt.phase==='applying')){ e.preventDefault(); e.returnValue=''; return ''; }
@@ -1799,6 +1810,7 @@ function bindEvents_(){
   $('cm-new').addEventListener('click',function(){ openNew_('').then(function(ok){ if(ok) scrollToEditor_(); }); });
   window.addEventListener('beforeunload',onBeforeUnload_);
   var hdrEl=document.querySelector('header.hdr'); if(hdrEl) hdrEl.addEventListener('click',onHdrLeaveClick_);
+  if(hdrEl) hdrEl.addEventListener('click',onHdrHelpClick_);
   window.addEventListener('storage',function(e){ try{ onCommonRoster_(e); }catch(err){ cmNote_('共有名簿の更新', err); } });
 }
 function boot(){

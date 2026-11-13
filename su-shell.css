@@ -1,11 +1,13 @@
 /* su-shell.css — 見出しの中の共通の部品の見た目（2026-11-12 商用90点・案1 第2段・代表者の決定 2026-11-12「推奨どおりで」）
  *
  * ・左の「← メニュー」（.su-menu-back）と、右の「ログイン中の役割」の札（.su-shell-role・中身は su-shell.js が入れる）
+ * ・「← メニュー」の右隣の「使い方」（.su-help-link・su-shell.js が置く・メニューのリンクと同じ型の名前を写すので同じ大きさと色・代表者の決定 2026-11-13）
  * ・画面だけ。印刷の紙には出さない（@media print で消す）。見出しの大きさは変えない（押す所の高さは見出しの中の余白に収める）
  * ・CSP で直書きの style を禁じる画面でも効くように、外のファイルにしている（su-report.css と同じ形）
  * ・色は「つむぐケアの型」と同じ藍（#1F2A44）。白地との差 14.3:1
  */
 .su-menu-back { white-space: nowrap; text-decoration: none; }
+.su-help-link { white-space: nowrap; text-decoration: none; }
 .su-shell-role[hidden] { display: none !important; }
 .su-shell-role {
   display: inline-flex; align-items: center; flex: 0 0 auto;
@@ -23,7 +25,11 @@
   .hdr.su-shell-hdr { flex-wrap: wrap; row-gap: 0; }
   .hdr.su-shell-hdr h1 { flex: 1 1 100%; }
   .hdr.su-shell-hdr .su-menu-back, .hdr.su-shell-hdr .su-shell-role { white-space: normal; min-width: 0; flex: 0 1 auto; max-width: 100%; }
+  .hdr.su-shell-hdr .su-help-link { white-space: normal; min-width: 0; flex: 0 1 auto; max-width: 100%; }
 }
 @media print {
   .su-menu-back, .su-shell-role { display: none !important; }
+}
+@media print {
+  .su-help-link { display: none !important; }
 }

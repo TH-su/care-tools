@@ -3,7 +3,7 @@
 <head>
 <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-85guLC3g/W8Cwwle8iZqQFoXvSmSGcVNlEVN9CrcVqU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-keOknDl1NeJ/UzLzdTAF/f3iruDz6ndkluAL+AIO38E='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="spl-build" content="2026-09-23.1">
@@ -678,6 +678,11 @@ body.staff .adm{display:none !important}
 .su-menu-back{display:inline-flex;align-items:center;padding:2px 10px;border:1px solid currentColor;border-radius:8px;color:inherit;font-size:0.8125rem;font-weight:700;line-height:1.2}
 @media screen and (max-width:899px){.su-menu-back{min-height:44px}}
 @media print{.su-menu-back{display:none !important}}
+/* 見出しの「使い方」（「← メニュー」の右隣・同じ大きさと色・使い方の画面のこの画面の節へ・画面だけ・印刷しない・代表者の決定 2026-11-13） */
+.su-help-link{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+.su-help-link{display:inline-flex;align-items:center;padding:2px 10px;border:1px solid currentColor;border-radius:8px;color:inherit;font-size:0.8125rem;font-weight:700;line-height:1.2}
+@media screen and (max-width:899px){.su-help-link{min-height:44px}}
+@media print{.su-help-link{display:none !important}}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
@@ -693,6 +698,7 @@ body.staff .adm{display:none !important}
 
 <header class="hdr">
   <a class="su-menu-back" href="index.html">← メニュー</a>
+  <a class="su-help-link" href="help.html">使い方</a>
   <h1>消耗品管理</h1>
   <span class="rolechip" id="roleChip" hidden>—</span>
   <span class="grow"></span>
@@ -5000,6 +5006,16 @@ function closeNew() {
   var dlg = $('newDlg');
   if (typeof dlg.close === 'function' && dlg.open) dlg.close(); else dlg.removeAttribute('open');
 }
+/* 見出しの「使い方」で離れる時も、「← メニュー」と同じ判定（supUnsaved）で確かめる（代表者の決定 2026-11-13）。
+   「はい」の時は直後の beforeunload で二重に聞かない（同じ印 SUP_LEAVE_OK） */
+document.addEventListener('click', function (e) {
+  var a = e.target && e.target.closest ? e.target.closest('a.su-help-link') : null;
+  if (!a || e.defaultPrevented || e.button > 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;   // 新しいタブで開く押し方では今の画面は残る
+  if (!supUnsaved()) return;
+  if (!window.confirm('保存していない変更があります。使い方へ移ると消えます。移りますか？')) { e.preventDefault(); return; }
+  SUP_LEAVE_OK = true;
+  setTimeout(function () { SUP_LEAVE_OK = false; }, 3000);
+});
 function newSteps() {
   var r = document.querySelector('input[name="ndSteps"]:checked');
   return r ? Number(r.value) : 3;

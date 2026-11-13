@@ -260,6 +260,11 @@ textarea.fi{resize:vertical;min-height:60px}
 /* 幅900〜1099px は、見出しの右の入力群が「← メニュー」の分だけ早く2段目へ落ちないよう、副題を隠し（900px 以下と同じ）リンクを詰める（2026-11-12） */
 @media screen and (min-width:900px) and (max-width:1099px){.hdr-l .sub{display:none} .su-menu-back{padding:0 4px;font-size:0.75rem}}
 @media print{.su-menu-back{display:none !important}}
+/* 見出しの「使い方」（「← メニュー」の右隣・同じ大きさと色・使い方の画面のこの画面の節へ・画面だけ・印刷しない・代表者の決定 2026-11-13） */
+.su-help-link{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+@media screen and (max-width:899px){.su-help-link{min-height:44px}}
+@media screen and (min-width:900px) and (max-width:1099px){.su-help-link{padding:0 4px;font-size:0.75rem}}
+@media print{.su-help-link{display:none !important}}
 /* 家族構成図の保存先の仕組み（受け口）が古い時の消せない帯（代表者の指示 2026-11-13・画面だけ・印刷しない） */
 .geno-stale-bar{background:var(--warn-bg);color:var(--g9);border-bottom:2px solid var(--warn-tx);padding:6px 14px;font-size:0.875rem;font-weight:700;text-align:center}
 @media print{.geno-stale-bar{display:none !important}}
@@ -273,6 +278,7 @@ textarea.fi{resize:vertical;min-height:60px}
 <div class="topbar">
   <div class="hdr">
     <a class="hbtn su-menu-back" href="index.html">← メニュー</a>
+    <a class="hbtn su-help-link" href="help.html">使い方</a>
     <div class="hdr-l">
       <h1>ジェノグラム作成</h1>
       <div class="sub">家族関係図を作成して PDF / JPG で出力</div>

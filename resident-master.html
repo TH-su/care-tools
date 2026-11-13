@@ -1632,6 +1632,11 @@ body.meal-on #sc-list{max-width:none}
 .su-menu-back{display:inline-flex;align-items:center;padding:2px 10px;border:1px solid currentColor;border-radius:8px;color:inherit;font-size:0.8125rem;font-weight:700;line-height:1.2}
 @media screen and (max-width:899px){.su-menu-back{min-height:44px}}
 @media print{.su-menu-back{display:none !important}}
+/* 見出しの「使い方」（「← メニュー」の右隣・同じ大きさと色・使い方の画面のこの画面の節へ・画面だけ・印刷しない・代表者の決定 2026-11-13） */
+.su-help-link{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+.su-help-link{display:inline-flex;align-items:center;padding:2px 10px;border:1px solid currentColor;border-radius:8px;color:inherit;font-size:0.8125rem;font-weight:700;line-height:1.2}
+@media screen and (max-width:899px){.su-help-link{min-height:44px}}
+@media print{.su-help-link{display:none !important}}
 </style>
 <!-- 印刷共通モジュール（用紙・余白・収め方の設定画面と、紙1枚に収める採寸の器）。
      ★link で読む＝JS が document.styleSheets からこのファイルの @media print も読めるようにする。
@@ -1645,6 +1650,7 @@ body.meal-on #sc-list{max-width:none}
 
 <div class="hdr">
   <a class="su-menu-back" href="index.html">← メニュー</a>
+  <a class="su-help-link" href="help.html?sec=resident-master">使い方</a>
   <h1>🗂️ 入居者マスタ</h1>
   <span class="sync" id="syncStatus">未接続</span>
 </div>
@@ -2334,7 +2340,7 @@ function mcBuild_(d){
 }
 /* ==== 薬の変更候補の判定ここまで（MC-JUDGE-END） ==== */
 </script>
-<script src="resident-master.js?v=2026-11-13"></script>
+<script src="resident-master.js?v=2026-11-13.2"></script>
 <!-- 見出しの下の初回の案内の帯（2026-11-02 本人の決定）。×で閉じた端末では出さない。画面の動き・保存・印刷には触れない -->
 <script src="su-intro.js?v=2026-11-02.3"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>

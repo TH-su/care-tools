@@ -199,6 +199,8 @@ body {
   :root[data-su-theme] .hint.warn { color: #992b0a; }   /* 注意の字（淡い橙の地 7.1:1） */
   :root[data-su-theme] .cell.sun .dn { color: #b30000; }   /* 日曜の日付（白地 7.2:1） */
 }
+/* 見出しの「使い方」（「← メニュー」の右隣・同じ大きさと色・使い方の画面のこの画面の節へ・画面だけ・印刷しない・代表者の決定 2026-11-13） */
+@media print{.su-help-link{display:none !important}}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
@@ -207,6 +209,7 @@ body {
 
 <header class="hdr noprint">
   <a class="back" href="index.html">← メニュー</a>
+  <a class="back su-help-link" href="help.html">使い方</a>
   <h1>貼り薬カレンダー</h1>
   <p class="sub">アリドネパッチの貼付部位（背中8箇所ローテーション）</p>
 </header>
