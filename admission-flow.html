@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-feoJcqXSDv03v3s1No0sgOXuhw624Em/zCbUkAVVr4c='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-YGCHE8ewes3vpnfJaLijcunCMYSexNm3mM/BmXAWyRo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
@@ -1233,7 +1233,7 @@ function assessObjChanged(p, n, keys) {
    DB = { v:2, updatedAt:ISO, candidates:[c…] }
    c  = { id, name, kana, gender, birthDate, phone, careLevel, source, sourceDetail,
           desiredDate, room, note, insuredNo, insurer, careCertStart, careCertEnd, copayRate,
-          family:[{id,name,relation,phone,emergency,deleted?,deletedAt?}], contacts:[{id,cat,org,person,tel,fax,note}],
+          family:[{id,name,relation,phone,emergency,updatedAt?,deleted?,deletedAt?}], contacts:[{id,cat,org,person,tel,fax,note}],
           tasks:[{id,cat,title,dir,due,st,doneAt,note,updatedAt}],
           log:[{id,at,partner,method,summary}],
           nudges:[{id,at,rule,cats,title,why,done,doneAt}],
@@ -1303,6 +1303,10 @@ function normalizeCand(c) {
    ・番号の無い古い行は「案件の id＋今の鍵＋同じ鍵の何番目か」から決まる番号にする（fx＋16桁・台帳の中で重ならない）。乱数にすると、2台が同じ古い記録を
      別々に読んだ時に別の番号が付いて全員が二重になるため。どの端末で読んでも同じ番号になる
    ・消した行は deleted:true と deletedAt の墓標で残す（案件と同じ消し方）。表示・印刷・入居者マスタへの転載では出さない
+   ・足す・直す・消す時に、その行の updatedAt を入れる（famStamp_）。統合は番号ごとに updatedAt の新しい方を採る
+     （片方だけにあれば持っている方・両方に無ければ新しい案件の側）。人が空にした欄も古い控えの値で埋まらない
+   ・消した印は時刻に関わらず残す（後から別の端末が直した行でも、消した行は戻さない）
+   ★時刻は端末の時計のまま比べる（案件・タスクの updatedAt と同じ扱い・ずれの補正はしない）。時計が大きく進んだ端末の直しは勝ちやすい
    ★番号を付けるだけでは保存しない（dirty を立てない）。次に人が保存した時に一緒に送られる */
 function famLegacyKey_(f) { return (f.name || '') + '|' + (f.relation || '') + '|' + (f.phone || ''); }
 function famLegacyId_(cid, key, n) {
@@ -1321,6 +1325,17 @@ function famEnsureIds_(list, cid) {
     var k = famLegacyKey_(f), n = seen[k] || 0;
     seen[k] = n + 1;
     f.id = famLegacyId_(cid, k, n);
+  });
+}
+/* 編集の保存の直前に、編集を始めた時の姿（base）と比べて、足した・直した・消した行にだけ時刻を入れる。比べは項目の並びと時刻を問わない */
+function famStamp_(baseList, list, at) {
+  var prev = {};
+  asArr(baseList).forEach(function (f) { if (isObj(f) && f.id) prev[f.id] = f; });
+  var strip = function (f) { var o = {}; Object.keys(f).forEach(function (k) { if (k !== 'updatedAt') o[k] = f[k]; }); return afCanon_(o); };
+  asArr(list).forEach(function (f) {
+    if (!isObj(f)) return;
+    var b = f.id ? prev[f.id] : null;
+    if (!b || strip(b) !== strip(f)) f.updatedAt = at;
   });
 }
 function famLive_(list) { return asArr(list).filter(function (f) { return isObj(f) && !f.deleted; }); }
@@ -1463,7 +1478,7 @@ function setSync(txt, cls) {
 /* ── 統合（項目単位の和集合） ──
    同じ案件を2端末が触っていた時、片方の入力を丸ごと捨てないための中核。
    ・配列（tasks / log / contacts / family / nudges）は id で union。両方にあるものは updatedAt の新しい方
-     （ご家族は updatedAt を持たないので、新しい案件の側の行を土台にし、消した印はどちらにあっても残す）
+     （ご家族は updatedAt の無い古い行どうしなら新しい案件の側の行を土台にし、消した印はどちらにあっても残す）
    ・log は追記専用（消さない）
    ・単純な項目は「案件の updatedAt が新しい方」を土台にし、土台側が空で相手に値があれば相手を採る
      （空で上書きしない＝消失より復活） */
@@ -1608,9 +1623,21 @@ function mergeCand(a, b, opt) {
   out.contacts = mergeById(a.contacts, b.contacts, function (t) { return t.id; });
   out.nudges = mergeById(a.nudges, b.nudges, function (t) { return t.id; });
   /* ご家族は番号（id）で突き合わせる。番号は normalizeCand が付ける（無い行だけ今の鍵に戻す）。
-     行に時刻が無いので、新しい案件（base）の行を先に置いて土台にする。消した印（deleted）は
-     空でない値なので、どちらの側にあっても土台の空き欄へ埋まって残る＝消した行は統合で戻らない */
-  out.family = mergeById(base.family, other.family, function (f) { return f.id || ((f.name || '') + '|' + (f.relation || '') + '|' + (f.phone || '')); });
+     行ごとの updatedAt の新しい方を採る（片方だけにあれば持っている方）。両方に無い古い行は、新しい案件（base）の
+     行を先に置いて土台にする。消した印は時刻に関わらず残す＝後から直された行でも消した行は統合で戻らない */
+  var famKey = function (f) { return f.id || ((f.name || '') + '|' + (f.relation || '') + '|' + (f.phone || '')); };
+  var famGone = {};
+  asArr(a.family).concat(asArr(b.family)).forEach(function (f) {
+    if (f && f.deleted) { var gk = famKey(f); if (!famGone[gk] || asStr(f.deletedAt) > famGone[gk]) famGone[gk] = asStr(f.deletedAt); }
+  });
+  out.family = mergeById(base.family, other.family, famKey).map(function (f) {
+    var gk = f ? famKey(f) : '';
+    if (!f || f.deleted || !Object.prototype.hasOwnProperty.call(famGone, gk)) return f;
+    var g = {}, k;
+    for (k in f) if (Object.prototype.hasOwnProperty.call(f, k)) g[k] = f[k];
+    g.deleted = true; g.deletedAt = famGone[gk];
+    return g;
+  });
   /* 連絡記録は追記専用。消えることの害が、重複することの害より大きい */
   out.log = mergeById(a.log, b.log, function (l) { return l.id; });
   /* ステージ日付は union。同じ段階に両方の日付があるときは【新しい版の値】を採る。
@@ -2056,10 +2083,13 @@ function undoApply(cur, pre, post) {
           if (!p) return x;
           if (post && (!postObj[id] || afCanon_(x) !== afCanon_(postObj[id]))) return x;
           if (x.deleted && !p.deleted) {
-            var cp = JSON.parse(JSON.stringify(p)); cp.id = newId('f'); readd.push(cp);
+            var cp = JSON.parse(JSON.stringify(p)); cp.id = newId('f'); cp.updatedAt = nowIso(); readd.push(cp);
             return x;
           }
-          return p;
+          /* 戻した行には今の時刻を入れる（入れないと、直した後の姿を持つ他の端末との統合で直した方が勝つ） */
+          if (afCanon_(x) === afCanon_(p)) return x;
+          var rp = JSON.parse(JSON.stringify(p)); rp.updatedAt = nowIso();
+          return rp;
         });
         var haveF = {};
         out.forEach(function (x) { haveF[undoKeyOf(key, x)] = 1; });
@@ -4097,6 +4127,8 @@ function saveEdit() {
   }
   /* ★空行は落とさない。メモだけ書いた連携先・続柄だけ入れた家族も、書いた人には意味がある */
   var isNew = !findCand(editing.id);
+  /* ご家族の行ごとの時刻（足した・直した・消した行だけ）。統合で古い控えの値に戻されないため */
+  famStamp_(asObj(editBase).family, editing.family, nowIso());
   var target = isNew ? null : findCand(editing.id);
   var prev = target ? JSON.parse(JSON.stringify(target)) : blankCand();
   var saved;
