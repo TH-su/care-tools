@@ -281,6 +281,8 @@ console.log('\n【8】AI のキーが無い時の（管理者向け：…）は�
   const ca = grabFn(S, 'tpCheckAdmin_');
   t('8-4 管理者の見分けは SUAuth.check の ok・admin だけ・確かめられない時は管理者ではない', /TP_IS_ADMIN = !!\(st && st\.status === 'ok' && st\.role === 'admin'\);/.test(ca) && /function \(\) \{ TP_IS_ADMIN = false; \}/.test(ca) && /var TP_IS_ADMIN = false;/.test(S), ca);
   t('8-5 起動の時に確かめる', /function startApp_\(\) \{\n  tpCheckAdmin_\(\);/.test(S));
+  t('8-6 入居者マスタの接続先の取り違え: 職員には直し方を出さず、今の文は管理者の時だけ（2026-11-13 反証レビュー）',
+    /\? \(TP_IS_ADMIN \? '入居者マスタの接続先が、入居者マスタ以外のGAS（薬学管理・申送など）になっています。[^']*'\n        : '入居者マスタの接続先が違うため、引継ぎはできません。管理者に伝えてください。'\)/.test(S));
 }
 
 Promise.resolve(sec7).catch((e) => t('【7】の動きの試験が最後まで動く', false, String(e && e.stack))).then(() => {

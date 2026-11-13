@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-kH7CDNl9vlrcYtfDZpMlJT8h5IvgFJB6FcUT/iclsgg=' 'sha256-bIownur1fdZ2YuTRTjSNgaIGvVkybXaJMIFynct+Q64='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-kH7CDNl9vlrcYtfDZpMlJT8h5IvgFJB6FcUT/iclsgg=' 'sha256-ZHWsboW9zudEt7UgyRHkDrC6fetWwbp0csUp9ahWDC4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- 要配慮情報（疾患・訓練内容）を表示する画面。ブラウザキャッシュ・検索索引に残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -2470,8 +2470,10 @@ function loadRoster() {
     MASTER_OK = false;
     /* 「不明なaction」＝入居者マスタの接続先に、別アプリのGAS（薬学管理・申送ビューア等）の URL と合言葉が
        組で入っている時の応答（入居者マスタ自身は名簿の取得を必ず受け付ける）。何を直せばよいかを出す（2026-10-10 実発生） */
+    /* 職員には次にすることだけを出し、直し方（どの接続先か）は管理者のログインの時だけ出す（2026-11-13 第6段 TP-03・文は仮置き） */
     MASTER_MSG = (s_(e && e.message ? e.message : e) === '不明なaction')
-      ? '入居者マスタの接続先が、入居者マスタ以外のGAS（薬学管理・申送など）になっています。接続設定の「入居者マスタ・フェイスシート」のURLと合言葉を確かめてください。引継ぎはできません。'
+      ? (TP_IS_ADMIN ? '入居者マスタの接続先が、入居者マスタ以外のGAS（薬学管理・申送など）になっています。接続設定の「入居者マスタ・フェイスシート」のURLと合言葉を確かめてください。引継ぎはできません。'
+        : '入居者マスタの接続先が違うため、引継ぎはできません。管理者に伝えてください。')
       : '入居者マスタから名簿を取得できませんでした（' + errText(e) + '）。引継ぎはできません。';
     if (!ROSTER.length) loadRosterFromCommon();
     return false;
