@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-oNV5CcoNLGGRTPxjraOAQuHKX4uLJ0BAQ7gs9lAL/ks='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-pgTCuHpK146F74XiXXb5pcmATZuBasGUhjwUReQclTg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -1739,7 +1739,7 @@ if(!window.SUDialog) window.SUDialog = {
   idle: function(){ return Promise.resolve(); }
 };
 </script>
-<script src="su-facility.js?v=2026-11-13"></script>   <!-- 施設情報（報酬マスタの「自治体」の既定・監査10月版 #10） -->
+<script src="su-facility.js?v=2026-11-13.2"></script>   <!-- 施設情報（報酬マスタの「自治体」の既定・監査10月版 #10） -->
 <script src="su-cfg-hint.js?v=2026-11-10"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-resident-hop.js?v=2026-11-13"></script>
@@ -1824,7 +1824,7 @@ const RATE_MASTER_DEFAULT = {
   municipality: '',                        // 既定は施設情報（facility-profile.json の municipality）から入れる（csProfileMunicipality_・2026-10-08 監査10月版 #10）
   facilityType: 'jutaku',                  // jutaku=住宅型有料＋訪問介護併設 / tokutei=介護付(特定施設) / sakoju=サ高住
   feePerUnit: 10,                          // 利用者一覧の報酬額(10割)の単価（円/単位・地域加算は反映しない運用）
-  unitPrice: 10.27,                        // 事業所情報「単位単価」の初期値（円/単位）
+  unitPrice: 10.27,                        // 事業所情報「単位単価」の初期値（円/単位）。施設情報の rateDefaults.unitPrice があればそちらが既定（rmBaseUnitPrice_・2026-11-13）
   // 単位単価の説明文（地域区分による差の案内）。文言ごと差し替えられるようにマスタへ置く
   unitPriceHint: '地域加算により変わります。1級地(東京都特別区等)=11.40、2級地=11.12、3級地=10.84…標準=10.00',
 
@@ -2051,6 +2051,20 @@ if (window.SUFacility && typeof SUFacility.onReady === 'function') {
     try { if (typeof DB === 'object' && DB && DB.rateMaster && !DB.rateMaster.municipality) DB.rateMaster.municipality = csProfileMunicipality_(); } catch (e) {}
   });
 }
+/* 単位単価の施設の既定（2026-11-13 代表者の決定・台帳 CS-02）。施設情報（facility-profile.json）の rateDefaults.unitPrice が
+   報酬マスタと同じ範囲（1〜100 円）の数の時だけ使い、書いていない・崩れている・読めない時は null。
+   ★使うのは端末にも共有データにも単価の保存が無い時の既定だけ。保存済みの値は変えない。
+   ★施設情報が起動より後に届いた時の差し替えはしない（単価は空で見分けられず、保存済みの 10.27 と区別できないため） */
+function csProfileUnitPrice_() {
+  try {
+    const rd = (window.SUFacility && typeof SUFacility.section === 'function') ? SUFacility.section('rateDefaults') : null;
+    return (rd && typeof rd.unitPrice === 'number') ? rmNum_(rd.unitPrice, 1, 100) : null;
+  } catch (e) { return null; }
+}
+/* 単位単価の既定（施設情報が先・無ければコードの既定 10.27） */
+function rmBaseUnitPrice_() {
+  return csProfileUnitPrice_() || RATE_MASTER_DEFAULT.unitPrice;
+}
 function normalizeRateMaster_(raw) {
   const d = RATE_MASTER_DEFAULT;
   /* マスタを一度も保存していない端末（初回起動・この改修より前からの端末）は「異常」ではない。
@@ -2059,6 +2073,7 @@ function normalizeRateMaster_(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     const m0 = rmClone_(d);
     if (!m0.municipality) m0.municipality = csProfileMunicipality_();
+    m0.unitPrice = rmBaseUnitPrice_();
     return { master: m0, filled: [] };
   }
   const filled = [];
@@ -2072,7 +2087,7 @@ function normalizeRateMaster_(raw) {
     facilityType:  (src.facilityType === 'tokutei' || src.facilityType === 'sakoju' || src.facilityType === 'jutaku')
                      ? src.facilityType : 'jutaku',
     feePerUnit: rmNum_(src.feePerUnit, 0.01, 1000) || d.feePerUnit,
-    unitPrice:  rmNum_(src.unitPrice,  1,    100)  || d.unitPrice,
+    unitPrice:  rmNum_(src.unitPrice,  1,    100)  || rmBaseUnitPrice_(),
     unitPriceHint: typeof src.unitPriceHint === 'string' && src.unitPriceHint ? src.unitPriceHint : d.unitPriceHint,
   };
   if (src.facilityType && m.facilityType !== src.facilityType) filled.push('施設類型（未知の値のため住宅型を使用）');
@@ -2082,7 +2097,7 @@ function normalizeRateMaster_(raw) {
     filled.push('報酬額(10割)の単価（値が不正なため既定 ' + d.feePerUnit + ' 円を使用）');
   }
   if (src.unitPrice !== undefined && rmNum_(src.unitPrice, 1, 100) === null) {
-    filled.push('単位単価（値が不正なため既定 ' + d.unitPrice + ' 円を使用）');
+    filled.push('単位単価（値が不正なため既定 ' + rmBaseUnitPrice_() + ' 円を使用）');
   }
 
   m.visitBase      = rmNormUnitsTable_(src.visitBase,      d.visitBase,      '訪問介護 基本単位',   filled);
@@ -2216,7 +2231,7 @@ function normalizeRateMaster_(raw) {
 /* 単位単価の既定値。事業所情報が未設定・不正なときの落とし先を1箇所にまとめる
    （以前は 10.27 が4箇所に直書きされ、直すときに拾い漏れる形だった）。 */
 function rmDefaultUnitPrice_() {
-  return Number(DB.rateMaster && DB.rateMaster.unitPrice) || RATE_MASTER_DEFAULT.unitPrice;
+  return Number(DB.rateMaster && DB.rateMaster.unitPrice) || rmBaseUnitPrice_();
 }
 
 /* DB.rateMaster を正規化して各表へ展開する。起動時と、クラウドから採用した直後に呼ぶ。
@@ -3938,16 +3953,17 @@ function loadDB() {
               || DB.residents.find(r => r.unitPrice || r.visitAddons || r.daycareAddons);
     if (taro) {
       DB.office = {
-        unitPrice:     taro.unitPrice     || DEFAULT_OFFICE.unitPrice,
+        unitPrice:     taro.unitPrice     || rmBaseUnitPrice_(),
         visitAddons:   { ...DEFAULT_OFFICE.visitAddons,   ...(taro.visitAddons   || {}) },
         daycareAddons: { ...DEFAULT_OFFICE.daycareAddons, ...(taro.daycareAddons || {}) },
       };
     } else {
       DB.office = JSON.parse(JSON.stringify(DEFAULT_OFFICE));
+      DB.office.unitPrice = rmBaseUnitPrice_();
     }
   }
-  // 既存項目欠落補完
-  DB.office.unitPrice     = DB.office.unitPrice     || DEFAULT_OFFICE.unitPrice;
+  // 既存項目欠落補完（単位単価が無い時は施設の既定・2026-11-13）
+  DB.office.unitPrice     = DB.office.unitPrice     || rmBaseUnitPrice_();
   DB.office.visitAddons   = { ...DEFAULT_OFFICE.visitAddons,   ...(DB.office.visitAddons   || {}) };
   DB.office.daycareAddons = { ...DEFAULT_OFFICE.daycareAddons, ...(DB.office.daycareAddons || {}) };
   /* 報酬マスタを展開する（未設定の端末は既定＝改修前と同じ数値で動く）。

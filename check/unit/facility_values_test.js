@@ -8,6 +8,7 @@
    4. 入居者マスタのデイの判定は、以前の /デイ|（通所の事業所名）/ と同じ結果を、事業所の名前をコードに書かずに出す
    5. 週間計画・入居者マスタに以前の直書き（'熊本市'・デイの判定の事業所名）が残っていない
    6. 貼り薬カレンダーの薬の名前と貼る場所は、施設情報に書いた時だけ差し替わり、書いていない（見本）・崩れている時は既定（2026-11-13）
+   7. 週間計画の単位単価は、施設情報の rateDefaults.unitPrice（1〜100 円）を保存の無い時の既定にだけ使い、保存済みの値・見本の時は今の 10.27（2026-11-13）
    ★配っている facility-profile.json の値そのもの（市の名前など）には縛らない＝外販で差し替えても落ちない */
 'use strict';
 const fs = require('fs');
@@ -121,6 +122,41 @@ console.log('\n— 6. 貼り薬カレンダーの薬の名前と貼る場所（�
   const bad = JSON.parse(JSON.stringify(PROFILE)); bad.patchCalendar = '架空テープ';
   t('塊でない値は既定＝null', run(facility(bad)) === null);
   t('施設情報が読めない（su-facility.js が無い）時は既定＝null', run(undefined) === null);
+}
+
+console.log('\n— 7. 週間計画の単位単価の既定（代表者の決定 2026-11-13・台帳 CS-02） —');
+{
+  const src = read('care-schedule.html');
+  /* 報酬マスタの既定から単価の既定までを本物のまま切り出して動かす（写経しない） */
+  const a = src.indexOf('const RATE_MASTER_SCHEMA_V'), b = src.indexOf('function rmDefaultUnitPrice_');
+  const chunk = src.slice(a, src.indexOf('\n}\n', b) + 3);
+  const boot = (F) => {
+    const c = { window: { SUFacility: F }, SUFacility: F };
+    vm.createContext(c);
+    vm.runInContext(chunk + '\nthis.N = normalizeRateMaster_; this.B = rmBaseUnitPrice_; this.D = RATE_MASTER_DEFAULT;', c);
+    return c;
+  };
+  const withUp = (v) => { const p = JSON.parse(JSON.stringify(PROFILE)); p.rateDefaults = { unitPrice: v }; return facility(p); };
+  const S = boot(facility(PROFILE));
+  t('コードの既定は今の 10.27 のまま', S.D.unitPrice === 10.27, S.D.unitPrice);
+  t('配っている見本（rateDefaults を書いていない）では既定＝10.27', S.B() === 10.27 && S.N(null).master.unitPrice === 10.27, S.B());
+  t('見本には rateDefaults そのものは書かない（撮影で見本が配られても画面と紙が変わらない）・書き方の説明はある',
+    !('rateDefaults' in PROFILE) && typeof PROFILE._noteRateDefaults === 'string' && /unitPrice/.test(PROFILE._noteRateDefaults), '');
+  const X = boot(withUp(10.84));
+  t('施設情報に単価がある時、保存の無い報酬マスタの既定はその値', X.B() === 10.84 && X.N(null).master.unitPrice === 10.84, X.N(null).master.unitPrice);
+  t('保存した報酬マスタに単価の欄が無い時も施設の既定', X.N({ revisionLabel: '架空' }).master.unitPrice === 10.84, '');
+  t('保存済みの単価はそのまま（コードの既定と同じ 10.27 でも施設情報で上書きしない）', X.N({ unitPrice: 10.27 }).master.unitPrice === 10.27 && X.N({ unitPrice: 11.4 }).master.unitPrice === 11.4, '');
+  const bad = X.N({ unitPrice: 'あ' });
+  t('保存の単価が崩れている時は施設の既定に戻し、その値を知らせに書く', bad.master.unitPrice === 10.84 && bad.filled.some(f => /既定 10\.84 円/.test(f)), bad.filled);
+  t('範囲外（1〜100 円の外）・数でない・0 の単価は捨てて 10.27', [0, 0.5, 101, '10.84', null, NaN].every(v => boot(withUp(v)).B() === 10.27), '');
+  { const p = JSON.parse(JSON.stringify(PROFILE)); p.rateDefaults = 10.84; t('塊でない rateDefaults は捨てて 10.27', boot(facility(p)).B() === 10.27, ''); }
+  t('施設情報が読めない（su-facility.js が無い）時は 10.27', boot(undefined).B() === 10.27, '');
+  t('事業所情報の単位単価も、保存の無い時・欄の無い時だけ施設の既定（保存済みは || の左で残す）',
+    /DB\.office = JSON\.parse\(JSON\.stringify\(DEFAULT_OFFICE\)\);\s*DB\.office\.unitPrice = rmBaseUnitPrice_\(\);/.test(src)
+    && /DB\.office\.unitPrice\s*=\s*DB\.office\.unitPrice\s*\|\|\s*rmBaseUnitPrice_\(\);/.test(src)
+    && /return Number\(DB\.rateMaster && DB\.rateMaster\.unitPrice\) \|\| rmBaseUnitPrice_\(\);/.test(src), '');
+  t('施設情報が後から届いた時に単価を差し替えない（保存済みの値と見分けられないため）', (src.match(/SUFacility\.onReady\(function \(\) \{[\s\S]*?\n  \}\);/g) || []).every(b => !/unitPrice/.test(b)), '');
+  t('単位単価の説明文（unitPriceHint）は変えない', /unitPriceHint: '地域加算により変わります。1級地\(東京都特別区等\)=11\.40、2級地=11\.12、3級地=10\.84…標準=10\.00',/.test(src), '');
 }
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
