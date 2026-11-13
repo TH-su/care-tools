@@ -142,6 +142,84 @@ let sec6 = Promise.resolve();
   })().catch(e => { t('6-x 同期の関数を動かせる', false, e && e.message); });
 }
 
+console.log('— 8. 接続の診断の結果は職員向けの1文＋「管理者向けの詳しい内容」に畳む（2026-11-13 第6段 WR-01・実物の showDiagPanel を動かす） —');
+{
+  const fn = cut('showDiagPanel');
+  t('8-1 showDiagPanel を切り出せた', !!fn);
+  t('8-2 診断の枠は pre ではなく div（中に details を入れるため）', has('<div id="apiDiagOut" class="api-diag" style="display:none"></div>') && !has('<pre id="apiDiagOut"'));
+  t('8-3 診断の結果を出す3か所はすべて畳む形で出す', (src.match(/showDiagPanel\(diag\.lines, diag\.ok, true\);/g) || []).length === 3 && !/showDiagPanel\(diag\.lines, diag\.ok\);/.test(src));
+  function mk(tag) {
+    const el = { tag, children: [], className: '', style: {}, _txt: '',
+      classList: { _s: new Set(), add(c) { this._s.add(c); }, remove(...c) { c.forEach(x => this._s.delete(x)); }, has(c) { return this._s.has(c); } },
+      appendChild(c) { this.children.push(c); return c; } };
+    Object.defineProperty(el, 'textContent', { get() { return this._txt + this.children.map(c => c.textContent).join(''); }, set(v) { this._txt = String(v); this.children = []; } });
+    return el;
+  }
+  function run(lines, ok, asDiag) {
+    const panel = mk('div'); panel.style.display = 'none';
+    const sb = { $: (q) => (q === '#apiDiagOut' ? panel : null), document: { createElement: mk } };
+    vm.createContext(sb);
+    vm.runInContext(fn + '\nthis.showDiagPanel = showDiagPanel;', sb);
+    sb.showDiagPanel(lines, ok, asDiag);
+    return panel;
+  }
+  const DIAG = ['❌ Google の受け口のエラー: 架空のエラー', '  → 体重管理用の Google の受け口の URL か確かめてください'];
+  let P = run(DIAG, false, true);
+  const lead = P.children[0], more = P.children[1];
+  t('8-4 失敗: 先頭は職員向けの1文', P.style.display === '' && lead && lead.tag === 'p' && lead.textContent === 'うまくつながりませんでした。管理者に伝えてください。', lead && lead.textContent);
+  t('8-5 失敗: 診断の行は「管理者向けの詳しい内容」の中に、文を変えずに畳む', more && more.tag === 'details' && more.children[0].tag === 'summary' && more.children[0].textContent === '管理者向けの詳しい内容'
+    && more.children[1].tag === 'pre' && more.children[1].textContent === DIAG.join('\n') && P.classList.has('is-err'), more && more.textContent);
+  P = run(['✓ 応答取得 OK（residents:0件 / records:0件）'], true, true);
+  t('8-6 成功: 先頭は「✅ つながりました。」・行は畳む', (P.children[0] || {}).textContent === '✅ つながりました。' && (P.children[1] || {}).tag === 'details' && P.classList.has('is-ok'), P.textContent);
+  P = run(['🔍 診断中…'], true);
+  t('8-7 診断の結果でない知らせ（診断中・未保存の合言葉）は今までどおり行をそのまま出す', P.children.length === 1 && (P.children[0] || {}).tag === 'pre' && (P.children[0] || {}).textContent === '🔍 診断中…', P.textContent);
+}
+
+console.log('— 9. 設定の接続状態欄も、失敗の時は職員向けの1文＋「管理者向けの詳しい内容」に畳む（2026-11-13 第6段 反証レビュー・実物の apiSetStatus を動かす） —');
+{
+  const fn = cut('apiSetStatus');
+  t('9-1 apiSetStatus を切り出せた', !!fn);
+  function mk(tag) {
+    const el = { tag, children: [], className: '', innerHTML: '', _txt: '',
+      classList: { _s: new Set(), add(c) { this._s.add(c); }, remove(...c) { c.forEach(x => this._s.delete(x)); } },
+      appendChild(c) { this.children.push(c); return c; } };
+    Object.defineProperty(el, 'textContent', { get() { return this._txt + this.children.map(c => c.textContent).join(''); }, set(v) { this._txt = String(v); this.children = []; } });
+    return el;
+  }
+  const bd = mk('span'), si = mk('div');
+  const sb = { document: { getElementById: (id) => (id === 'apiBd' ? bd : id === 'apiStatus' ? si : null), createElement: mk }, String };
+  vm.createContext(sb);
+  vm.runInContext(cut('wrStaffText_') + '\n' + fn, sb);
+  const RAW = '接続エラー: サーバーが応答しませんでした（HTTP 500・架空）';
+  sb.apiSetStatus('er', RAW);
+  const lead = si.children[0] || {}, more = si.children[1] || {};
+  t('9-2 失敗: 先頭は職員向けの1文', lead.tag === 'p' && lead.textContent === 'うまくつながりませんでした。管理者に伝えてください。', si.textContent);
+  t('9-3 失敗: 元の文は「管理者向けの詳しい内容」の中に文を変えずに畳む', more.tag === 'details' && (more.children[0] || {}).textContent === '管理者向けの詳しい内容' && (more.children[1] || {}).textContent === RAW, more.textContent);
+  /* 職員がその場で直せる理由は畳まずにそのまま先頭に出す（2026-11-13 2回目の反証レビュー） */
+  for (const [nm, m] of [
+    ['合言葉が要る', '接続エラー: このサーバーは合言葉が必要ですが、この端末には保存されていません。体重管理アプリの「設定」→「🌐 複数端末で共有」の合言葉欄に入れて「💾 URLを保存・接続」を押してください'],
+    ['ログインしていない', 'ログインしていないため、体重をサーバーへ送れません（記録はこの端末に残っています）。ログインの画面でログインしてから、体重管理を開き直してください'],
+    ['現場端末は事務所に連絡', '合言葉が通らず、サーバーと同期できません。この端末（現場用）では直せないので、事務所に連絡してください（事務所PCとして開き直し、合言葉を入れ直します）。記録はこの端末に残っています']
+  ]) {
+    sb.apiSetStatus('er', m, true);
+    t('9-6 職員が直せる理由（' + nm + '）はそのまま出し、「管理者に伝えて」に替えない', si.textContent === m && si.children.length === 0, si.textContent);
+  }
+  t('9-7 呼ぶ3か所は職員向けの文の時に印を付ける（同期＝e.wrStaff か職員向けの文・書き込みの断り＝合言葉の案内に言い換えた時か職員向けの文・書き込みの例外＝e.wrStaff か職員向けの文）',
+    has("apiSetStatus('er', '接続エラー: '+ e.message, !!(e && e.wrStaff) || wrStaffText_(e && e.message));")
+    && has("apiSetStatus('er', why || '書き込みエラー', !!why && (why !== String(r && r.error) || wrStaffText_(why)));")
+    && has("apiSetStatus('er', e.message, !!(e && e.wrStaff) || wrStaffText_(e && e.message));"));
+  t('9-8 部品の断り（ログインしていない）の実物の文は職員向けと判定される', sb.wrStaffText_('ログインしていないため、体重をサーバーへ送れません（記録はこの端末に残っています）。ログインの画面でログインしてから、体重管理を開き直してください') === true);
+  t('9-10 通信の時間切れの文は職員向け（技術の語・秒数を出さない）', has("reject(new Error('通信が時間内に終わりませんでした。通信を確かめてください'))") && !has("new Error('タイムアウト(")
+    && sb.wrStaffText_('通信が時間内に終わりませんでした。通信を確かめてください') === true);
+  t('9-11 診断は新しい時間切れの文でも切り分けの手順を出す', has("if(/タイムアウト|時間内に終わりませんでした/.test(errMsg)){"));
+  sb.apiSetStatus('er', 'Failed to fetch', false);
+  t('9-9 英字の例外文は印が無ければ畳む', (si.children[0] || {}).textContent === 'うまくつながりませんでした。管理者に伝えてください。', si.textContent);
+  sb.apiSetStatus('ok', '最終同期: 10:00:00');
+  t('9-4 成功の文は今までどおりそのまま出す（畳んだ欄は残らない）', si.textContent === '最終同期: 10:00:00' && si.children.length === 0, si.textContent);
+  sb.apiSetStatus('sy');
+  t('9-5 文の無い呼び出しは欄を変えない', si.textContent === '最終同期: 10:00:00');
+}
+
 sec6.then(() => {
   console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
   process.exit(fail ? 1 : 0);

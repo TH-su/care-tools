@@ -218,5 +218,91 @@ console.log('\n【6】管理者向けとして残す文・通信の符号');
   "if (m === '同期先が未設定です')"
 ].forEach(w => t('残す: ' + w, S.indexOf(w) >= 0, w));
 
-console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' 件合格 / ' + fail + ' 件不合格');
-process.exit(fail ? 1 : 0);
+let sec7 = null;   // 【7】の動きの試験（窓の答えは約束なので待つ）
+console.log('\n【7】止めて知らせる窓（confirm）は画面の中の窓（su-dialog.js）で出す（2026-11-13 第6段 TP-02）');
+{
+  const MAIN = S.slice(S.indexOf('<script>\n/* ═══'));
+  t('7-1 ブラウザの確かめの窓（confirm(…)）を直接呼ばない（読めない時の受け口の window.confirm だけ）',
+    (S.match(/(?<![\w.])confirm\(/g) || []).length === 0 && (S.match(/window\.confirm\(/g) || []).length === 1, (S.match(/.{30}(?<![\w.])confirm\(.{20}/g) || []).slice(0, 3));
+  t('7-2 画面の中の窓で聞く所は23か所', (S.match(/SUDialog\.confirm\(/g) || []).length === 23, (S.match(/SUDialog\.confirm\(/g) || []).length);
+  const iDlg = S.indexOf('<script src="su-dialog.js?v=2026-11-13.2"></script>');
+  t('7-3 su-dialog.js を画面のスクリプトより前で読む（版は他画面と同じ）', iDlg > 0 && iDlg < S.indexOf('<script>\n/* ═══'), iDlg);
+  t('7-4 読めない時はブラウザの窓に落とす受け口がある', /if \(!window\.SUDialog\) window\.SUDialog = \{\n  alert:[^\n]*\n  confirm: function \(m\) \{ var r = false; try \{ r = !!window\.confirm\(m\); \} catch \(_\) \{\} return Promise\.resolve\(r\); \},/.test(MAIN));
+  const sn = grabFn(S, 'saveNow');
+  t('7-5 窓が出ている間は、タイマーから来る保存（saveNow(false)）を窓が全部閉じた後へ1回だけ回す',
+    /if \(!explicit && tpDlgBusy_\(\)\) \{\n    clearTimeout\(saveTimer\);\n    if \(!tpDlgWait_\) \{ tpDlgWait_ = true; SUDialog\.idle\(\)\.then\(function \(\) \{ tpDlgWait_ = false; saveNow\(false\); \}\); \}\n    return;\n  \}/.test(sn), sn.slice(0, 400));
+
+  /* 実物の clearStop を動かす: OK で取り消し・キャンセルで何もしない・窓の間に別の方へ移ったら何もしない */
+  const src = [grabFn(S, 'tpHold_'), grabFn(S, 'tpSame_'), grabFn(S, 'clearStop')].join('\n');
+  function env(answer, swap) {
+    const log = [];
+    const sb = { TP: { normalizeStop: (x) => x || null }, dirty: false, noTouchOnce: false, stopFormDirty: true,
+      markDirty: () => log.push('dirty'), renderStopCard: () => {}, renderTimeline: () => {}, toast: (m) => log.push(m) };
+    sb.SUDialog = { confirm: () => new Promise((res) => setTimeout(() => {
+      if (swap) vm.runInContext('DOC = { stop: { reason: "x" } }; curMasterId = "B2";', sb);
+      res(answer);
+    }, 0)) };
+    vm.createContext(sb);
+    vm.runInContext('var DOC = { stop: { reason: "discharge" } }, curMasterId = "A1";\n' + src, sb);
+    return { sb, log };
+  }
+  const flush = () => new Promise((r) => setTimeout(r, 5));
+  sec7 = (async () => {
+    let e = env(true, false); e.sb.clearStop(); await flush();
+    t('7-6 OK で通知を止める指定を取り消す（答えを待ってから）', vm.runInContext('DOC.stop', e.sb) === null && e.log.indexOf('dirty') >= 0, e.log);
+    e = env(false, false); e.sb.clearStop(); await flush();
+    t('7-7 キャンセルなら何も変えない', !!vm.runInContext('DOC.stop', e.sb) && e.log.length === 0, e.log);
+    e = env(true, true); e.sb.clearStop(); await flush();
+    t('7-8 窓の間に別の方の計画書へ替わったら、OK でも何もしない（別の方の指定を消さない）', vm.runInContext('DOC.stop && DOC.stop.reason', e.sb) === 'x' && e.log.length === 0, e.log);
+  })();
+  const ap = grabFn(S, 'addPlanAt');
+  t('7-9 期を足す関数は、同じ作成日がある時だけ窓の答えの約束を返し、無い時は今までどおりその場で作る',
+    /return SUDialog\.confirm\('同じ作成日（' \+ d \+ '）の計画が既にあります。もう1つ作りますか？'\)\.then\(function \(ok\) \{\n        return \(ok && tpSame_\(h0\)\) \? go\(\) : null;/.test(ap) && /\n  return go\(\);\n  function go\(\) \{/.test(ap), ap.slice(0, 300));
+  t('7-10 期を足す関数を呼ぶ3か所（ボタン・一括・次の期）は約束でもその場でも受ける',
+    /tpThen_\(addPlanAt\(d\), function \(p\) \{ if \(p\) \{ addAtTouched = false; refreshAddAtDate\(\); \} \}\);/.test(S)
+    && /return tpThen_\(addPlanAt\(date, \{ silent: true \}\), function \(p\) \{ return stepWith\(i, date, p\); \}\);/.test(S)
+    && /if \(ok && tpSame_\(h0\)\) addPlanAt\(d\);/.test(S));
+  t('7-11 番号で掴む取り消し・完全に削除は、答えの後に期そのものが同じかを1段ごとに確かめる',
+    /function same\(\) \{ return tpSame_\(h0\) && DOC\.plans\[idx\] === p; \}/.test(grabFn(S, 'deletePlan'))
+    && /function same\(\) \{ return tpSame_\(h0\) && DOC\.trash && DOC\.trash\[idx\] === item; \}/.test(grabFn(S, 'permanentlyDeleteTrash'))
+    && (grabFn(S, 'permanentlyDeleteTrash').match(/same\(\)\)/g) || []).length === 2);
+}
+
+console.log('\n【8】AI のキーが無い時の（管理者向け：…）は管理者のログインの時だけ出す（2026-11-13 第6段 TP-03）');
+{
+  const sb = { s_: (v) => String(v == null ? '' : v), TP_IS_ADMIN: false };
+  vm.createContext(sb);
+  vm.runInContext(grabFn(S, 'aiErrText'), sb);
+  const e = new Error('AI_NO_KEY');
+  t('8-1 職員: 括弧を出さない', sb.aiErrText(e) === 'いまはAIを使えません。管理者に伝えてください', sb.aiErrText(e));
+  sb.TP_IS_ADMIN = true;
+  t('8-2 管理者: 今までの文のまま', sb.aiErrText(e) === 'いまはAIを使えません。管理者に伝えてください（管理者向け：サーバーのスクリプトプロパティ ANTHROPIC_API_KEY が空です）', sb.aiErrText(e));
+  t('8-3 設定の画面の AI の状態も、括弧は管理者の時だけ', /: \(TP_IS_ADMIN \? 'サーバーにAIのキーがありません。管理者に伝えてください（管理者向け：スクリプトプロパティ ANTHROPIC_API_KEY に入れる）'\n        : 'サーバーにAIのキーがありません。管理者に伝えてください'\);/.test(S));
+  const ca = grabFn(S, 'tpCheckAdmin_');
+  t('8-4 管理者の見分けは SUAuth.check の ok・admin だけ・確かめられない時は管理者ではない', /TP_IS_ADMIN = !!\(st && st\.status === 'ok' && st\.role === 'admin'\);/.test(ca) && /function \(\) \{ TP_IS_ADMIN = false; \}/.test(ca) && /var TP_IS_ADMIN = false;/.test(S), ca);
+  t('8-5 起動の時に確かめる', /function startApp_\(\) \{\n  tpCheckAdmin_\(\);/.test(S));
+  /* 8-6: 2回目の反証レビューで、文を決める時ではなく表示の時に TP_IS_ADMIN を見る形にした（管理者と分かるのが名簿の失敗より後でも直し方の文になる） */
+  {
+    const mb = { TP_IS_ADMIN: false, MASTER_MSG: '' };
+    vm.createContext(mb);
+    vm.runInContext((S.match(/var MASTER_WRONG_MSG = '[^']*';/) || [''])[0] + '\n' + grabFn(S, 'masterMsg_'), mb);
+    vm.runInContext('MASTER_MSG = MASTER_WRONG_MSG;', mb);
+    t('8-6 入居者マスタの接続先の取り違え: 職員には直し方を出さない（名簿の失敗では職員向けの文を控える）', mb.masterMsg_() === '入居者マスタの接続先が違うため、引継ぎはできません。管理者に伝えてください。'
+      && /=== '不明なaction'\)\n\s*\? MASTER_WRONG_MSG\n/.test(S), mb.masterMsg_());
+    mb.TP_IS_ADMIN = true;   // 名簿の失敗の後で管理者と分かった
+    t('8-7 管理者と分かった後の表示は今の直し方の文（文を決めた時がその前でも）', /^入居者マスタの接続先が、入居者マスタ以外のGAS（薬学管理・申送など）になっています。/.test(mb.masterMsg_()), mb.masterMsg_());
+    vm.runInContext("MASTER_MSG = '入居者マスタの接続先が未設定です。';", mb);
+    t('8-8 ほかの知らせは管理者でもそのまま', mb.masterMsg_() === '入居者マスタの接続先が未設定です。');
+    t('8-9 表示の3か所（一覧の帯・編集の帯・引継ぎの知らせ）は masterMsg_ を通す', !/banner\(host, 'warn', MASTER_MSG\)|\(MASTER_MSG \|\| '入居者マスタを参照できません'\)/.test(S)
+      && S.replace(/function masterMsg_\(\)/, '').match(/masterMsg_\(\)/g).length === 3
+      && /if \(MASTER_MSG\) banner\(host, 'warn', masterMsg_\(\)\);/.test(grabFn(S, 'renderBanners'))
+      && /if \(!MASTER_OK\) banner\(host, 'warn', '引継ぎ不可：' \+ \(masterMsg_\(\) \|\| '入居者マスタを参照できません'\)/.test(grabFn(S, 'renderEdit'))
+      && /if \(!MASTER_OK\) \{ toast\('引継ぎ不可：' \+ \(masterMsg_\(\) \|\| '入居者マスタを参照できません'\)\); return; \}/.test(grabFn(S, 'pullMaster')));
+    t('8-10 管理者と分かった時に取り違えの帯が出ていれば一覧の帯を描き直す', /if \(TP_IS_ADMIN && MASTER_MSG === MASTER_WRONG_MSG\) \{ try \{ renderBanners\(\); \}/.test(grabFn(S, 'tpCheckAdmin_')));
+  }
+}
+
+Promise.resolve(sec7).catch((e) => t('【7】の動きの試験が最後まで動く', false, String(e && e.stack))).then(() => {
+  console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' 件合格 / ' + fail + ' 件不合格');
+  process.exit(fail ? 1 : 0);
+});

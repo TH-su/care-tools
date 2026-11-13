@@ -246,6 +246,8 @@ body.split .pane{width:50vw}
   .hdr,#a-main,#toast,.dlg,.pane,.undo{display:none !important}
   #a-print{display:block; font-size:var(--ap-fs,12px)}
 }
+/* 初回の案内の帯（su-intro.js）は、現場端末などの止めの案内を出している間は出さない（個別機能訓練計画書と同じ・代表者の決定 2026-11-13・仮置き） */
+body:has(#a-gate:not([hidden])) .sui-band{display:none}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
@@ -2372,8 +2374,9 @@ boot_();
 </script>
 
 <!-- インターネットにつながっていない時の帯（2026-11-12 商用化の見直し・画面だけ・通信と保存には触れない） -->
-<script src="su-shell.js?v=2026-11-13"></script>
+<script src="su-shell.js?v=2026-11-13.2"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
+<script src="su-intro.js?v=2026-11-13"></script>
 <script src="su-report.js?v=2026-10-28" data-tool="採用管理"></script>
 </body>
 </html>
