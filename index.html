@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-uWlDbrlbsQEsRphKlIDa93pfwOlPyVl4g0xM9/1/Ga8=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-OYI8/roJC/IXzTV39DYkPzjyYdVtAg+ed3YNezV6VTc=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 検索エンジンにこのページと配下ツールを辿らせない。
@@ -553,12 +553,14 @@ main {
      （日付で持つので、採用管理を開かない日が続いても期限を過ぎた日から出る）。形の違う日付が1つでもあれば出さない
      admin・review（2026-11-11 代表者の決定・入居者マスタ）: {"v":1,"at":…,"admin":true,"review":n} は薬情の見直し待ちの数で、
      role（今のログインの役割）が管理者の時だけ「見直し待ちn」と書く。admin の印の無い review・管理者でない時・0件は出さない
+       v:2（2026-11-13 代表者の決定）: {"v":2,"at":…,"admin":true,"review":n,"overdue":n} の overdue は見直しの期限切れの数（review の内数）で、
+       dueLegal が別の赤の札「期限切れn」にする。overdue が review より多い・形が違う時は出さない。v:1（overdue なし）の控えも今までどおり読む
      eq（2026-11-13 代表者の指示・設備・修繕の記録）: {"v":1,"at":…,"eq":true,"overdue":n,"soon":n,"legal":n} は点検・清掃の期限で、
      「期限切れn・30日以内n」と書く。legal（法定の期限切れ・overdue の内数）は dueLegal が別の赤の札にする。legal が overdue より多い時は出さない */
   function dueText(raw, today, role) {
     var d;
     try { d = JSON.parse(raw); } catch (e) { return ''; }
-    if (!d || typeof d !== 'object' || d.v !== 1) return '';
+    if (!d || typeof d !== 'object' || !(d.v === 1 || (d.v === 2 && d.admin === true))) return '';
     var ymd = /^(\d{4})-(\d{2})-(\d{2})$/, m = ymd.exec(String(d.at || '')), tm = ymd.exec(String(today || ''));
     if (!m || !tm || String(d.at) > String(today)) return '';
     var mo = Number(m[2]), dd = Number(m[3]);
@@ -567,6 +569,7 @@ main {
     if (d.admin === true || d.review != null) {
       var rv = d.review;
       if (d.admin !== true || role !== 'admin' || typeof rv !== 'number' || !isFinite(rv) || rv < 0 || rv > 9999 || Math.floor(rv) !== rv) return '';
+      if (d.v === 2 && !(dueNum(d.overdue) && d.overdue <= rv)) return '';
       return rv > 0 ? '見直し待ち' + rv + when : '';
     }
     if (d.eq != null) {
@@ -598,9 +601,14 @@ main {
   }
   function dueNum(n) { return typeof n === 'number' && isFinite(n) && n >= 0 && n <= 9999 && Math.floor(n) === n; }
   function dueEq(d) { return d.eq === true && dueNum(d.overdue) && dueNum(d.soon) && dueNum(d.legal) && d.legal <= d.overdue; }
-  function dueLegal(raw, today) {
+  function dueLegal(raw, today, role) {
     var d;
     try { d = JSON.parse(raw); } catch (e) { return ''; }
+    /* 見直しの期限切れ（v:2・入居者マスタ・管理者だけ）。件数の札と同じ守り（dueText が出せる控えだけ） */
+    if (d && typeof d === 'object' && d.v === 2 && d.admin === true) {
+      if (!dueText(raw, today, role) || !(d.overdue >= 1)) return '';
+      return '期限切れ' + d.overdue;
+    }
     if (!d || typeof d !== 'object' || d.v !== 1 || d.eq !== true || !dueEq(d) || d.legal < 1) return '';
     if (!dueText(raw, today, '')) return '';
     return '法定の期限切れ' + d.legal;
@@ -621,14 +629,15 @@ main {
       return txt ? el('span', 'due', txt) : null;
     } catch (e) { return null; }
   }
-  /* 法定の期限切れの赤の札（2026-11-13 代表者の指示・設備・修繕の記録）。件数の札と同じ守りで読み、無い時は null */
+  /* 法定の期限切れの赤の札（2026-11-13 代表者の指示・設備・修繕の記録）と、薬情の見直しの期限切れの赤の札（2026-11-13 代表者の決定・入居者マスタ・管理者だけ）。
+     件数の札と同じ守りで読み、無い時は null */
   function dueLegalBadge(key) {
     try {
       if (document.documentElement.classList.contains('is-field')) return null;
       if (!/^[a-z0-9_]{1,40}$/.test(key)) return null;
       var raw = localStorage.getItem(key);
       if (raw == null) return null;
-      var txt = dueLegal(raw, todayYmd());
+      var txt = dueLegal(raw, todayYmd(), role);
       return txt ? el('span', 'due legal', txt) : null;
     } catch (e) { return null; }
   }

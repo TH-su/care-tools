@@ -1109,6 +1109,7 @@
 
   /* ── 12. 反映の見直しの印（2026-11-11 代表者の決定）──
      まとめて反映・完全入れ替えで定期薬を消した・変えた方に、詳細画面の「薬剤情報」の欄で7日間「見直してください」の印を出し、
+     7日を過ぎて見直されていない方は赤い「期限切れ」の印にして反映から14日まで残し（2026-11-13 代表者の決定）、
      看護職・薬剤師（管理者が「アプリの使える人」で許した人）が「見直した」を押すと消す。ここは記録の1件から印を出すかを決めるだけ。
      記録の1件 e は入居者マスタGAS の yjLog・yjAudit の行 { at, id, srcKey, docRows, before, after, by, how, reviewedAt, reviewedBy }。
      ★変更記録の書類の行（docRows）は logRows の「扱い｜書類の行｜反映後」の並び。中止の行には消した薬の名前が無いので、
@@ -1117,7 +1118,7 @@
        自動の中止をやめるまでは、かかりつけ病院の名前が書類にある方の書類に無い今の薬を既定で「中止」にしていた。
        この間の記録は、自動の中止と人が選んだ中止が同じ語（中止）で、見分けられない。古い画面を開いたままの端末を見込み、
        終わりは 11/10 の終わり（日本時間）にする */
-  var REVIEW_DAYS = 7, DAY_MS = 86400000;
+  var REVIEW_DAYS = 7, REVIEW_KEEP_DAYS = 14, DAY_MS = 86400000;
   var AUTO_STOP_FROM = Date.parse('2026-11-10T12:47:00Z'), AUTO_STOP_TO = Date.parse('2026-11-10T15:00:00Z');
   var STOP_ALL = '中止（すべて入れ替え）';
   function atMs(v) { var t = Date.parse(String(v == null ? '' : v)); return isFinite(t) ? t : NaN; }
@@ -1162,31 +1163,37 @@
   var KIND_LABEL = { bulk: 'まとめて反映', all: 'すべて入れ替え', auto: '完全入れ替え' };
   function str(v) { return typeof v === 'string' ? v : ''; }
   /* 印（詳細画面の「薬剤情報」の欄）。出さない時は null。nowMs は今（ミリ秒）
-     出すのは: 種類がある・反映から7日未満・見直していない（reviewedAt が空）・時刻が読める・先の時刻でない（1分のずれまで） */
+     出すのは: 種類がある・反映から14日未満・見直していない（reviewedAt が空）・時刻が読める・先の時刻でない（1分のずれまで）
+     反映から7日以上（14日未満）は overdue（期限切れ・2026-11-13 代表者の決定）。until は見直しの期限（7日）、end は印を出す終わり（14日）。
+     ★反映記録は GAS が30日で消すので、14日はその内側（消える前に印が終わる） */
   function reviewMark(e, nowMs) {
     var k = reviewKind(e), t = atMs(e && e.at);
     if (!k || !isFinite(t) || !isFinite(nowMs)) return null;
     if (str(e.reviewedAt)) return null;
-    if (nowMs - t >= REVIEW_DAYS * DAY_MS || t - nowMs > 60000) return null;
+    if (nowMs - t >= REVIEW_KEEP_DAYS * DAY_MS || t - nowMs > 60000) return null;
     var c = logCount(e.docRows);
     return { kind: k, label: KIND_LABEL[k], at: str(e.at), id: str(e.id), srcKey: str(e.srcKey), by: str(e.by),
       text: KIND_LABEL[k] + '（' + jst(t) + '・確かめた人 ' + (str(e.by) || '不明') + '）',
-      until: jst(t + REVIEW_DAYS * DAY_MS), stop: c.stop + c.stopAll, change: c.change + c.edit, truncated: c.truncated,
+      until: jst(t + REVIEW_DAYS * DAY_MS), end: jst(t + REVIEW_KEEP_DAYS * DAY_MS), overdue: nowMs - t >= REVIEW_DAYS * DAY_MS, stop: c.stop + c.stopAll, change: c.change + c.edit, truncated: c.truncated,
       gone: goneLines(e.before, e.after) };
   }
-  /* 見直し待ちの数（印が出る記録の数）。同じ記録（id・srcKey・at）は1つに数える */
-  function reviewPending(rows, nowMs) {
-    var seen = {}, n = 0;
+  /* 見直し待ちの数（印が出る記録の数・期限切れも含む）と、そのうち期限切れの数。同じ記録（id・srcKey・at）は1つに数える */
+  function reviewCounts(rows, nowMs) {
+    var seen = {}, n = 0, over = 0;
     (Array.isArray(rows) ? rows : []).forEach(function (e) {
       var m = reviewMark(e, nowMs); if (!m) return;
       var k = m.id + '\n' + m.srcKey + '\n' + m.at; if (seen[k]) return; seen[k] = 1; n++;
+      if (m.overdue) over++;
     });
-    return n;
+    return { pending: n, overdue: over };
   }
-  /* メニューの札の控え（index.html の dueText が読む・管理者にだけ出す）。today は YYYY-MM-DD。件数と日付だけ（氏名・番号を持たない） */
+  function reviewPending(rows, nowMs) { return reviewCounts(rows, nowMs).pending; }
+  /* メニューの札の控え（index.html の dueText・dueLegal が読む・管理者にだけ出す）。today は YYYY-MM-DD。件数と日付だけ（氏名・番号を持たない）
+     v:2（2026-11-13）: review は見直し待ちの数（期限切れも含む）、overdue はそのうち期限切れの数。メニューは v:1（overdue なし）の控えも読む */
   function reviewMenuDue(rows, nowMs, today) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(today || ''))) return null;
-    return { v: 1, at: String(today), admin: true, review: Math.min(reviewPending(rows, nowMs), 9999) };
+    var c = reviewCounts(rows, nowMs);
+    return { v: 2, at: String(today), admin: true, review: Math.min(c.pending, 9999), overdue: Math.min(c.overdue, 9999) };
   }
   /* 管理者の一覧: 自動の中止の期間の中止と、すべて入れ替えの中止がある記録（新しい順）。
      type は 'auto'（期間の中・自動と手の中止を見分けられない）／'all'（すべて入れ替え） */
@@ -1253,8 +1260,8 @@
     fnv8: fnv8, srcKey: srcKey, logRows: logRows, nz: nz, kn: kn, dist: dist,
     correctionKinds: correctionKinds, metricOf: metricOf, metricsLoad: metricsLoad, metricsSave: metricsSave, summarize: summarize, metricText: metricText,
     METRIC_MAX: METRIC_MAX,
-    logCount: logCount, goneLines: goneLines, reviewKind: reviewKind, reviewMark: reviewMark, reviewPending: reviewPending,
-    reviewMenuDue: reviewMenuDue, replaceAudit: replaceAudit, jst: jst, REVIEW_DAYS: REVIEW_DAYS, AUTO_STOP_FROM: AUTO_STOP_FROM, AUTO_STOP_TO: AUTO_STOP_TO, nameZoom: nameZoom };
+    logCount: logCount, goneLines: goneLines, reviewKind: reviewKind, reviewMark: reviewMark, reviewPending: reviewPending, reviewCounts: reviewCounts,
+    reviewMenuDue: reviewMenuDue, replaceAudit: replaceAudit, jst: jst, REVIEW_DAYS: REVIEW_DAYS, REVIEW_KEEP_DAYS: REVIEW_KEEP_DAYS, AUTO_STOP_FROM: AUTO_STOP_FROM, AUTO_STOP_TO: AUTO_STOP_TO, nameZoom: nameZoom };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.YakujoCalc = api;
 })(typeof window !== 'undefined' ? window : this);
