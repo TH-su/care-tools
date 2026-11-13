@@ -209,9 +209,10 @@ function rmGenoCloud_(r){
     genoPaintBoxes($('viewBox'),id,curResident.name,x.row);
   });
 }
-function openGenogram(id,name){
+/* 渡すのは番号だけ。氏名は URL に載せない（家族構成図が共有名簿で引く・代表者の決定 2026-11-13） */
+function openGenogram(id){
   if(id==null)return;
-  location.href=GENOGRAM_APP+'?resident='+encodeURIComponent(id)+(name?'&name='+encodeURIComponent(name):'');
+  location.href=GENOGRAM_APP+'?resident='+encodeURIComponent(id);
 }
 
 /* ── ユーティリティ ── */
@@ -819,10 +820,9 @@ var PER_RESIDENT_APPS={
 function residentLink(href,id,name){
   if(id==null||id==='')return href;
   if(!Object.prototype.hasOwnProperty.call(PER_RESIDENT_APPS,href))return href;
-  /* ジェノグラムだけは既存の受け口（?resident=&name=）に合わせる。
-     あちらは氏名が文書の保存キーそのものなので name が必須。勝手に変えると既存導線が壊れる。 */
+  /* ジェノグラムだけは受け口の名前が ?resident=。氏名は渡さない（家族構成図が共有名簿で番号から引く・代表者の決定 2026-11-13） */
   if(href==='genogram.html'){
-    return href+'?resident='+encodeURIComponent(id)+(name?'&name='+encodeURIComponent(name):'');
+    return href+'?resident='+encodeURIComponent(id);
   }
   return href+'?masterId='+encodeURIComponent(id);
 }
@@ -8615,7 +8615,7 @@ function renderView(r){
       '<div class="row-cells"><div class="cell" style="flex:1;border-right:none"><span class="lab">生活リズム</span><div class="rhythm">'+(rh||'　')+'</div></div></div>'+
     '</div></div>'+
     '<div style="flex:1.25;min-width:0;display:flex;border-left:1px solid var(--g9)"><div class="sec-lbl">家族構成図</div><div class="sec-body" style="display:flex;padding:4px">'+
-      '<div class="geno-box" data-geno="'+esc(r.id)+'" data-name="'+esc(r.name||'')+'" title="クリックで家族構成図の作成／編集" style="flex:1;min-height:150px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--g0);border:1px dashed var(--g3);border-radius:8px;overflow:hidden">'+genoInner+'</div>'+
+      '<div class="geno-box" data-geno="'+esc(r.id)+'" title="クリックで家族構成図の作成／編集" style="flex:1;min-height:150px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--g0);border:1px dashed var(--g3);border-radius:8px;overflow:hidden">'+genoInner+'</div>'+
     '</div></div>'+
   '</div>';
   /* ══ 入居者基本情報（外部様式）ここから ══
@@ -8915,7 +8915,7 @@ function renderView(r){
   paintHospBtn(r);
   // ジェノグラム欄クリック → 家系図アプリで作成/編集
   var gb=$('viewBox').querySelector('.geno-box');
-  if(gb)gb.addEventListener('click',function(){openGenogram(this.getAttribute('data-geno'),this.getAttribute('data-name'))});
+  if(gb)gb.addEventListener('click',function(){openGenogram(this.getAttribute('data-geno'))});
   /* ほかの端末で描いた家族構成図が新しければ、枠の中身だけ差し替える（統合 0056） */
   rmGenoCloud_(r);
   viewNavPaint_();   /* 目次と、欄をたたむ見出し（画面だけ・2026-10-16 第2弾） */
