@@ -189,12 +189,28 @@ console.log('— 9. 設定の接続状態欄も、失敗の時は職員向けの
   const bd = mk('span'), si = mk('div');
   const sb = { document: { getElementById: (id) => (id === 'apiBd' ? bd : id === 'apiStatus' ? si : null), createElement: mk }, String };
   vm.createContext(sb);
-  vm.runInContext(fn, sb);
+  vm.runInContext(cut('wrStaffText_') + '\n' + fn, sb);
   const RAW = '接続エラー: サーバーが応答しませんでした（HTTP 500・架空）';
   sb.apiSetStatus('er', RAW);
   const lead = si.children[0] || {}, more = si.children[1] || {};
   t('9-2 失敗: 先頭は職員向けの1文', lead.tag === 'p' && lead.textContent === 'うまくつながりませんでした。管理者に伝えてください。', si.textContent);
   t('9-3 失敗: 元の文は「管理者向けの詳しい内容」の中に文を変えずに畳む', more.tag === 'details' && (more.children[0] || {}).textContent === '管理者向けの詳しい内容' && (more.children[1] || {}).textContent === RAW, more.textContent);
+  /* 職員がその場で直せる理由は畳まずにそのまま先頭に出す（2026-11-13 2回目の反証レビュー） */
+  for (const [nm, m] of [
+    ['合言葉が要る', '接続エラー: このサーバーは合言葉が必要ですが、この端末には保存されていません。体重管理アプリの「設定」→「🌐 複数端末で共有」の合言葉欄に入れて「💾 URLを保存・接続」を押してください'],
+    ['ログインしていない', 'ログインしていないため、体重をサーバーへ送れません（記録はこの端末に残っています）。ログインの画面でログインしてから、体重管理を開き直してください'],
+    ['現場端末は事務所に連絡', '合言葉が通らず、サーバーと同期できません。この端末（現場用）では直せないので、事務所に連絡してください（事務所PCとして開き直し、合言葉を入れ直します）。記録はこの端末に残っています']
+  ]) {
+    sb.apiSetStatus('er', m, true);
+    t('9-6 職員が直せる理由（' + nm + '）はそのまま出し、「管理者に伝えて」に替えない', si.textContent === m && si.children.length === 0, si.textContent);
+  }
+  t('9-7 呼ぶ3か所は職員向けの文の時に印を付ける（同期＝e.wrStaff・書き込みの断り＝合言葉の案内に言い換えた時か職員向けの文・書き込みの例外＝e.wrStaff か職員向けの文）',
+    has("apiSetStatus('er', '接続エラー: '+ e.message, !!(e && e.wrStaff));")
+    && has("apiSetStatus('er', why || '書き込みエラー', !!why && (why !== String(r && r.error) || wrStaffText_(why)));")
+    && has("apiSetStatus('er', e.message, !!(e && e.wrStaff) || wrStaffText_(e && e.message));"));
+  t('9-8 部品の断り（ログインしていない）の実物の文は職員向けと判定される', sb.wrStaffText_('ログインしていないため、体重をサーバーへ送れません（記録はこの端末に残っています）。ログインの画面でログインしてから、体重管理を開き直してください') === true);
+  sb.apiSetStatus('er', 'Failed to fetch', false);
+  t('9-9 英字の例外文は印が無ければ畳む', (si.children[0] || {}).textContent === 'うまくつながりませんでした。管理者に伝えてください。', si.textContent);
   sb.apiSetStatus('ok', '最終同期: 10:00:00');
   t('9-4 成功の文は今までどおりそのまま出す（畳んだ欄は残らない）', si.textContent === '最終同期: 10:00:00' && si.children.length === 0, si.textContent);
   sb.apiSetStatus('sy');

@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-+a6M7AUchzQy68UCJfqAQyAw8RagRoLRqMJUjx7EXXo=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-ikjO4Hwam9WgVdTwge60WDmYbbVlm4E4UNJVzPIGDM0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-+a6M7AUchzQy68UCJfqAQyAw8RagRoLRqMJUjx7EXXo=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-DhjuOP0RdEif7GGKejHbUCBuVJyaTSWbkOjfV4BLO4Q='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -2088,7 +2088,7 @@ const WR_NOGAS_MSG = 'この端末には Google の接続先が入っていな�
   window.addEventListener('pagehide', lastDitchSave);
 })();
 
-function apiSetStatus(st, msg){
+function apiSetStatus(st, msg, staff){
   const b = document.getElementById('apiBd');
   if(b){
     b.className = 'api-bd';
@@ -2099,9 +2099,10 @@ function apiSetStatus(st, msg){
   }
   const si = document.getElementById('apiStatus');
   if(!si || !msg) return;
-  /* 失敗の時は職員向けの1文だけを出し、元の文（分類・応答の細かい理由）は「管理者向けの詳しい内容」に文を変えずに畳む
-     （第6段 反証レビューの指摘・2026-11-13・文は仮置き）。診断の枠（showDiagPanel）と同じ形 */
-  if(st === 'er'){
+  /* 失敗の時、技術の語を含む文（英字の例外・応答の番号など）は職員向けの1文だけを出し、元の文は「管理者向けの詳しい内容」に文を変えずに畳む
+     （第6段 反証レビューの指摘・2026-11-13・文は仮置き）。診断の枠（showDiagPanel）と同じ形。
+     職員がその場で直せる理由（合言葉が要る・一致しない・ログインしていない・事務所に連絡 など）は、呼ぶ側が staff を付けて渡し、今までどおりそのまま出す */
+  if(st === 'er' && !staff){
     si.textContent = '';
     const lead = document.createElement('p');
     lead.className = 'api-diag-lead';
@@ -2716,7 +2717,7 @@ async function _syncFromAPIImpl(showLoader){
     flushPendingQueue();
     return true;
   }catch(e){
-    apiSetStatus('er', '接続エラー: '+ e.message);
+    apiSetStatus('er', '接続エラー: '+ e.message, !!(e && e.wrStaff));   /* 合言葉の案内・部品の断りなど職員向けの文は畳まない */
     /* 職員向けの文だけを出す。元の文は設定の接続状態欄（上）に残す（圏外の端末で開くたびに不具合報告の種を増やさないため、記録には流さない） */
     toast((e && e.wrStaff) ? '⚠️ 同期できませんでした：' + e.message : '⚠️ 同期できませんでした。この端末の記録は残っています。しばらくしてから、もう一度お試しください', 'err');
     /* サーバーと合わせられない時も、新しく入居した人は記録できるようにする（2026-09-28）。
@@ -2869,13 +2870,13 @@ function _writeDrain(){
         /* 理由が分かる時は必ず出す。「書き込み失敗」だけだと、合言葉の不一致でも
            回線障害でも同じ表示になり、現場が何を直せばよいか判断できない。 */
         const why = apiFriendlyError_(r && r.error);
-        apiSetStatus('er', why || '書き込みエラー');
+        apiSetStatus('er', why || '書き込みエラー', !!why && (why !== String(r && r.error) || wrStaffText_(why)));   /* 合言葉の案内に言い換えた時・職員向けの文の時は畳まない */
         if(!item._drained) enqueuePending(item.action, item.data);
         toast('⚠️ サーバー書き込み失敗（後で再送します）' + (why ? '：' + why : ''),'err');
       }
     })
     .catch(e=>{
-      apiSetStatus('er', e.message);
+      apiSetStatus('er', e.message, !!(e && e.wrStaff) || wrStaffText_(e && e.message));   /* 部品の断り（ログインしていない等）は畳まない */
       // 離脱時排水（_drained）済みなら既に永続キューにある＝二重登録しない。
       // 二重登録を許すと pending が [save, del, save] になり、再送で削除済みが復活し得る
       if(!item._drained) enqueuePending(item.action, item.data);
