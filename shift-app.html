@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-FJkRN2DLy+PqGoyNrVNIZZYsATMgZP4OK75VJwmDfsQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-/vw6NAexedxZg86isiB+1NhtlHjnw6fVFpGMUnxvzEk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -44,6 +44,15 @@ body { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-s
 #toolbar button.savebtn { background: #2e7d32; color: #fff; font-weight: 700; }
 #toolbar button.savebtn:hover { background: #1b5e20; }
 #toolbar button.savebtn.saving { background: #66bb6a; color: #fff; }
+/* 見出しの左の「← メニュー」（care-tools のほかの画面と同じ .su-menu-back・2026-11-13）。ツールバーのボタンと同じ見た目にし、
+ * 編集モードの帯の色にも合わせる。#toolbar ごと印刷・印刷の計測（printsim）では隠れる。
+ * 狭い幅（899px 以下）では押す所を 44px にする */
+#toolbar a.su-menu-back { display: inline-flex; align-items: center; white-space: nowrap; text-decoration: none;
+  border-radius: 5px; padding: 5px 10px; background: rgba(255,255,255,.15); color: #fff; font-size: 0.78125rem; }
+#toolbar a.su-menu-back:hover { background: rgba(255,255,255,.3); }
+body.edit-mode #toolbar a.su-menu-back { background: rgba(255,255,255,.35); color: var(--edit-ink); }
+body.edit-mode #toolbar a.su-menu-back:hover { background: rgba(255,255,255,.5); }
+@media screen and (max-width: 899px) { #toolbar a.su-menu-back { min-height: 44px; box-sizing: border-box; } }
 #toolbar #ymLabel { font-weight: 700; font-size: 0.9375rem; padding: 0 8px; min-width: 86px; text-align: center; }
 .tabs { display: flex; gap: 2px; }
 .tabs button.on { background: #fff; color: var(--blue-d); font-weight: 600; }
@@ -444,6 +453,9 @@ html.su-field #frdCSV { display: none !important; }
 </head>
 <body>
 <div id="toolbar">
+  <!-- メニュー（index.html）へ戻る（care-tools のほかの画面と同じ形・2026-11-13）。移る時の保存は pagehide の flushNow_ が確定し、
+       編集中で送っていない変更がある時は beforeunload の確認が出る -->
+  <a class="su-menu-back" href="index.html">← メニュー</a>
   <h1>シフト作成・管理</h1>
   <span class="ymnav">
     <button id="ymPrev" title="前月" aria-label="前月">◀</button>
@@ -2315,6 +2327,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     for (i = 0; i < staff.length; i++) {
       st = staff[i];
       if (st.active === false || st.countInHeadcount === false) continue;
+      if (typeof opts.isVisible === 'function' && !opts.isVisible(st)) continue;   /* 退職月より後の職員には勤務を入れない（2026-11-13） */
       active.push(st);
     }
 
@@ -3354,6 +3367,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     for (var i = 0; i < opts.staff.length; i++) {
       var st = opts.staff[i];
       if (st.active === false) continue;
+      if (typeof opts.isVisible === 'function' && !opts.isVisible(st)) continue;   /* 退職月より後の職員は出さない（シフト表に出ない行・2026-11-13） */
       if (division && division !== '全' && (st.mainDivision || '施設') !== division) continue;
       var cells = opts.cells[st.id] || {};
       var subDivs = subCellsAll[st.id] || {};
@@ -7959,10 +7973,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var hdr = '<tr class="reqhdr"><th>氏名</th>';
       for (var d = 1; d <= days; d++) hdr += '<th style="text-align:center">' + d + '</th>';
       hdr += '</tr>';
-      /* 当月の表示対象（active）職員のみ先に抽出して中間位置を確定する */
-      var staffAll = app.requestsSorted();
-      var staff = [];
-      for (var si = 0; si < staffAll.length; si++) { if (staffAll[si].active !== false) staff.push(staffAll[si]); }
+      /* 当月の表示対象の職員だけを先に抽出し、日付の見出しを挟む行を決める。
+       * 休職・非表示に加え、退職月より後の月は退職した職員を出さない（シフト表と同じ判定 isStaffVisible・本人指示 2026-11-13） */
+      var staff = visibleStaff(app, app.requestsSorted());
       var mid = staff.length >= 6 ? Math.floor(staff.length / 2) : -1;  /* 行数が少なければ中盤行は出さない */
       h += hdr;  /* 最上部 */
       for (var i = 0; i < staff.length; i++) {
@@ -8023,7 +8036,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var text = document.getElementById('reqPaste').value;
       var msg = document.getElementById('reqParseMsg');
       if (!text.trim()) { msg.textContent = 'データを貼り付けてください'; return; }
-      var r = IM.parseRequestTSV(text, app.staff);
+      var r = IM.parseRequestTSV(text, visibleStaff(app, app.staff));   /* 退職月より後の職員は名簿に入れない＝「不一致」に出る */
       this.parsed = r;
       msg.textContent = '';
       var names = [];
@@ -8044,13 +8057,22 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       document.getElementById('reqImportGo').onclick = function () {
         if (app.leaseGuard()) return;        /* 取込の登録も編集モードだけ（解析・プレビューは閲覧でも可） */
         var reqs = app.requests;
-        var n = 0;
+        var n = 0, hiddenN = 0;
+        /* この月に出ない職員（退職月より後・休職・非表示）の名前の行は登録しない（2026-11-13）。
+         * 名簿に無い名前（表記ゆれ等）はこれまでどおり登録する */
+        var hidden = {};
+        for (var hi = 0; hi < (app.staff || []).length; hi++) {
+          var hs = app.staff[hi];
+          if (hs && visibleStaff(app, [hs]).length === 0) hidden[IM.normalizeName(hs.name)] = true;
+        }
         for (var nm2 in r.entries) {
+          if (hidden[nm2]) { hiddenN++; continue; }
           reqs[nm2] = r.entries[nm2];
           n++;
         }
         app.saveRequests();
-        document.getElementById('reqPreview').innerHTML = '<p>✓ ' + n + '名分を登録しました</p>';
+        document.getElementById('reqPreview').innerHTML = '<p>✓ ' + n + '名分を登録しました' +
+          (hiddenN ? '（この月に表示しない職員（退職・休職・非表示） ' + hiddenN + '名分は登録していません）' : '') + '</p>';
         self.render();
         app.rerender();
       };
@@ -8062,8 +8084,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (app.lockGuard()) return;   /* ロック中の月は予定（確定版）へ反映しない */
       var sched = app.getSched('plan');
       var n = 0, skipped = 0;
-      for (var i = 0; i < app.staff.length; i++) {
-        var st = app.staff[i];
+      var staffList = visibleStaff(app, app.staff);   /* 退職月より後・休職・非表示の職員の行へは書かない */
+      for (var i = 0; i < staffList.length; i++) {
+        var st = staffList[i];
         var row = app.requests[IM.normalizeName(st.name)];
         if (!row) continue;
         if (!sched.cells[st.id]) sched.cells[st.id] = {};
@@ -8079,6 +8102,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       app.rerender();
     }
   };
+
+  /* 表示中の月に出る職員だけを返す（判定は app.isStaffVisible＝休職・非表示・退職月より後を除く） */
+  function visibleStaff(app, list) {
+    var out = [];
+    for (var i = 0; i < (list || []).length; i++) {
+      var st = list[i];
+      if (!st) continue;
+      if (typeof app.isStaffVisible === 'function' ? app.isStaffVisible(st) : st.active !== false) out.push(st);
+    }
+    return out;
+  }
 
   function esc(s) { return ShiftEsc.esc(s); }   /* 中身は src/logic/esc.js の1か所（2026-10-14） */
 
@@ -8716,6 +8750,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       for (var i = 0; i < staff.length; i++) {
         var st = staff[i];
         if (st.active === false || !st.empCode) continue;
+        if (typeof this.app.isVisibleInMonth === 'function' && !this.app.isVisibleInMonth(st, this.app.ym)) continue;   /* CSV と同じ数え方（退職月より後は数えない） */
         if (division && division !== '全' && (st.mainDivision || '施設') !== division) continue;
         n++;
       }
@@ -8905,6 +8940,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var res = F.buildCsv({
         ym: app.ym,
         staff: this.exportRoster(),
+        isVisible: (typeof app.isVisibleInMonth === 'function') ? function (st) { return app.isVisibleInMonth(st, app.ym); } : null,
         cells: sched.cells || {},
         subCells: sched.subCells || {},
         symbols: app.symbols || [],
@@ -11503,6 +11539,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           var r = window.ShiftAutoAssign.autoAssign({
             year: self.year, month: self.month, days: self.days,
             staff: self.staff, symbols: self.symbols, settings: self.settings,
+            isVisible: function (st) { return self.isStaffVisible(st); },   /* 退職月より後の職員は自動作成の対象にしない */
             requests: self.requests, dailyNeeds: self.sched.dailyNeeds,
             monthNeeds: self.sched.monthNeeds,
             existingCells: self.sched.cells,
