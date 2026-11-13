@@ -38,8 +38,8 @@ function grabFn(src, name) {
   throw new Error('関数の終わりが見つかりません: ' + name);
 }
 const box = { window: {}, URLSearchParams };
-vm.runInNewContext([grabFn(GENO, 'suGenoNameFromRoster'), grabFn(GENO, 'suGenoUrlWithoutName'), grabFn(GENO, 'suGenoMasterIdFor'),
-  'this.nameOf = suGenoNameFromRoster; this.strip = suGenoUrlWithoutName; this.midFor = suGenoMasterIdFor;'].join('\n'), box);
+vm.runInNewContext([grabFn(GENO, 'suGenoNameFromRoster'), grabFn(GENO, 'suGenoUrlWithoutName'), grabFn(GENO, 'suGenoMasterIdFor'), grabFn(GENO, 'suGenoPickName'),
+  'this.pick = suGenoPickName; this.nameOf = suGenoNameFromRoster; this.strip = suGenoUrlWithoutName; this.midFor = suGenoMasterIdFor;'].join('\n'), box);
 
 console.log('1 番号から共有名簿で氏名を引く（suGenoNameFromRoster）');
 const roster = [{ masterId: 'A1', name: '見本 一郎' }, { masterId: 'B2', name: '架空 花子' }, { masterId: 'D4', name: '' }, { masterId: 'E5', name: '重複 一' }, { masterId: 'E5', name: '重複 二' }];
@@ -67,9 +67,14 @@ const iStrip = init.indexOf('history.replaceState(history.state, \'\', suClean)'
 t('3a init が URL から name を消す（history.replaceState）', iStrip > 0);
 t('3b 消すのは何より先（UI の配線・受け口の確かめ・一覧の読込より前）',
   iStrip > 0 && iStrip < init.indexOf('bindUIEvents();') && iStrip < init.indexOf('CloudSync.authWatch()') && iStrip < init.indexOf('refreshDocList();'));
-t('3c 氏名は共有名簿の番号で引き、名簿に無い時だけ古い URL の氏名を使う',
-  /suName = suGenoNameFromRoster\(window\._suMasterId, suRr && suRr\.residents\);[\s\S]{0,60}if \(!suName\) suName = suOldName;/.test(init));
-t('3d 古い URL の氏名の控えは使った後に捨てる', /if \(!suName\) suName = suOldName;\s*suOldName = '';/.test(init));
+t('3c 氏名は共有名簿の番号で引き、名簿に無い時だけ古い URL の氏名を使う（suGenoPickName）',
+  /suName = suGenoPickName\(window\._suMasterId, suRr && suRr\.residents, suOldName\);/.test(init) && /\} catch \(e\) \{ suName = suGenoPickName\(window\._suMasterId, null, suOldName\); \}/.test(init));
+t('3c-1 名簿に1名だけ → 名簿の氏名（古い URL の氏名より先）', box.pick('B2', roster, '古い 名前') === '架空 花子');
+t('3c-2 名簿にその番号が1件も無い → 古い URL の氏名', box.pick('Z9', roster, ' 古い 名前 ') === '古い 名前' && box.pick('A1', null, '古い 名前') === '古い 名前');
+t('3c-3 名簿に同じ番号が2件 → 古い URL の氏名に戻さず空（帯で知らせる側）', box.pick('E5', roster, '古い 名前') === '');
+t('3c-4 名簿の氏名が空 → 古い URL の氏名に戻さず空', box.pick('D4', roster, '古い 名前') === '');
+t('3c-5 古い URL の氏名も無ければ空', box.pick('Z9', roster, '') === '' && box.pick('Z9', roster, null) === '');
+t('3d 古い URL の氏名の控えは使った後に捨てる', /suName = suGenoPickName\(window\._suMasterId, null, suOldName\); \}[^\n]*\n\s*suOldName = '';/.test(init));
 t('3e 番号はあって氏名を引けない時の印（_suNameMissing）', /window\._suNameMissing = !!\(window\._suMasterId && !suName\);/.test(init));
 t('3f 氏名を引けない時は下書きを尋ねない（別の方の下書きを戻さない）', /const draftAsk = window\._suNameMissing \? Promise\.resolve\(false\) : offerDraftRestore\(suName\);/.test(init));
 t('3g 氏名を引けない時は前回の図（LS_LAST）を開かず空の新規で始める',

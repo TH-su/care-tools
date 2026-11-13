@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-font">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-cmZPO6Nmo71Roh1c3YkAlFN8/hwuKWZoGO4HFPDP9kM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-kZeUIHinGrNaQ4/m+9agOZToPsBLHklJwm+kz32aRpY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 入居者情報を表示する画面のため、ブラウザ・中継キャッシュに残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -3626,6 +3626,15 @@ function suGenoNameFromRoster(mid, roster) {
   if (hit.length !== 1) return '';
   return String(hit[0].name == null ? '' : hit[0].name).trim();
 }
+/* 起動で使う氏名を決める（純関数）。名簿で1名にだけ一致して氏名があればそれ。名簿にその番号が1件も無い時だけ、古い URL の氏名（oldName）を使う（仮置き）。
+   名簿に2件以上ある・名簿の氏名が空の時は ''（古い URL の氏名に戻さない・名前の欄を空にして帯で知らせる側へ倒す） */
+function suGenoPickName(mid, roster, oldName) {
+  var nm = suGenoNameFromRoster(mid, roster);
+  if (nm) return nm;
+  var id = (mid == null) ? '' : String(mid);
+  var hits = (id && Array.isArray(roster)) ? roster.filter(function (r) { return !!r && r.masterId != null && String(r.masterId) === id; }).length : 0;
+  return hits ? '' : String(oldName == null ? '' : oldName).trim();
+}
 /* 起動の URL から氏名（name=・古い入口が付けていたもの）を消した後の住所（純関数）。name が無ければ null（書き換えない）。
    ほかの値（resident= など）と # の後ろはそのまま残す（再読み込みで同じ方を開くため） */
 function suGenoUrlWithoutName(search, pathname, hash) {
@@ -4995,9 +5004,8 @@ async function init() {
   var suName = '';
   try {
     var suRr = JSON.parse(localStorage.getItem('su_residents_common') || 'null');
-    suName = suGenoNameFromRoster(window._suMasterId, suRr && suRr.residents);
-  } catch (e) { suName = ''; }
-  if (!suName) suName = suOldName;
+    suName = suGenoPickName(window._suMasterId, suRr && suRr.residents, suOldName);
+  } catch (e) { suName = suGenoPickName(window._suMasterId, null, suOldName); }   // 名簿の控えが読めない＝名簿に無い
   suOldName = '';
   window._suNameMissing = !!(window._suMasterId && !suName);
   /* ★この masterId は「この氏名の方」のもの。別の方の文書を保存する時に masterId のキーを
