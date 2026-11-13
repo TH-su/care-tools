@@ -115,5 +115,15 @@ for (const k of ['badge', 'tag']) {
 }
 t('8e 体重管理（.topbar を持つ別の画面）には topbar の印を付けない', !/data-su-theme="[^"]*\btopbar\b/.test(fs.readFileSync(path.join(ROOT, 'weight-record.html'), 'utf8')), '');
 
+console.log('9 画面の書体で測って紙の列幅を決める画面（keep-font）');
+/* デイ利用表は、印刷の直前に「利用時間」の欄の文字を画面の書体（getComputedStyle の fontFamily）で測り、紙の列の幅を決める。
+   型の書体（画面だけ）に替えると、紙（元の書体）より狭く測って「10:00～16…」と時刻が欠けた（2026-11-02 dca7de6 から・11-13 に印刷比較で特定）。
+   家族構成図と同じく keep-font で書体を残す */
+{
+  const dr = fs.readFileSync(path.join(ROOT, 'daycare-roster.html'), 'utf8');
+  t('9a デイ利用表は時刻の列を画面の書体で測っている（前提）', /function rosterTimeColW_[\s\S]*?'font-family:' \+ cs\.fontFamily/.test(dr), '');
+  t('9b デイ利用表は keep-font で書体を残す', /<html\b[^>]*data-su-theme="[^"]*\bkeep-font\b/.test(dr), '');
+}
+
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);
