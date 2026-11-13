@@ -357,8 +357,8 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
     <p><strong>できること</strong></p>
     <ul>
       <li>消耗品の品目と価格・在庫を管理し、入居者への出庫を記録します。</li>
-      <li><span class="key">前月の月額出庫を複写</span> で、毎月決まった出庫を今月へ写せます。</li>
-      <li>ご利用明細と <span class="key">料金表を印刷</span> で印刷し、<span class="key">CSV を書き出す</span> で表にして持ち出せます。</li>
+      <li><span class="key">前月の月額出庫を複写</span> で、毎月決まった出庫を今月へ写せます（事務所・管理者の時だけ出ます）。</li>
+      <li>ご利用明細と <span class="key">料金表を印刷</span> で印刷し、<span class="key">CSV を書き出す</span> で表にして持ち出せます（明細・集計・料金表は事務所・管理者の時だけ出ます）。</li>
     </ul>
     <p><strong>よくある困りごと</strong></p>
     <dl class="sup">
@@ -498,7 +498,7 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
     <p><strong>よくある困りごと</strong></p>
     <dl class="sup">
       <dt>「⚠ 他の端末がこの方を先に保存しています」と出た</dt>
-      <dd>この画面の内容は保存されていません。どちらを残すかを選びます。<span class="key">サーバー値を採用（入力を破棄）</span> は先に保存された内容に入れ替え、<span class="key">自分の値で上書き（もう一度 保存を押す）</span> はこの画面の内容で保存し直します。</dd>
+      <dd>この画面の内容は保存されていません。どちらを残すかを選びます。<span class="key">サーバー値を採用（入力を破棄）</span> は先に保存された内容に入れ替えます。<span class="key">自分の値で上書き（もう一度 保存を押す）</span> を押した後に、もう一度 <span class="key">保存</span> を押すと、この画面の内容で上書きします。</dd>
       <dt>「保存できたか確かめられませんでした」と出た</dt>
       <dd>入力は画面に残っています。もう一度 <span class="key">保存</span> を押すと送り直します（二重には書きません）。保存できていた時は「他の端末がこの方を先に保存しています」と出るので、<span class="key">サーバー値を採用（入力を破棄）</span> を選んでください。</dd>
       <dt>「赤い欄を直してください」と出た</dt>
@@ -667,7 +667,7 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
 </script>
 
 <!-- この端末の番号（端末の印の頭の8文字だけ・2026-11-08 代表者の決定 段3 案A）。この画面では送らない・印を作らない -->
-<!-- 住所の ?sec=<画面> から画面ごとの節へ飛ぶ（決まった4つの値だけ・2026-11-13） -->
+<!-- 住所の ?sec=<画面> から画面ごとの節へ飛ぶ（対応表 SEC にある値だけ・2026-11-13） -->
 <script src="help-sec.js?v=2026-11-13.2"></script>
 <script src="su-device-role.js?v=2026-11-08" data-mode="show"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
