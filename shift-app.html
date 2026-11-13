@@ -35,13 +35,19 @@ body { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-s
 #toolbar { position: sticky; top: 0; z-index: 50; background: var(--blue); color: #fff;
   padding: 6px 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 #toolbar h1 { font-size: 0.9375rem; margin: 0 8px 0 0; font-weight: 600; }
-#toolbar .ymnav { display: flex; align-items: center; gap: 2px; background: rgba(255,255,255,.12);
+/* 月の枠の地の白の重ねは .06、枠の中の前月・翌月のボタンは .08（2026-11-13・代表者「推奨どおり」）。枠 .12＋ボタン .14 では
+ * 白文字との差が 3.65:1 だったため、枠とボタンの見分けを残したまま少しだけ濃くした（ボタン 4.59:1（丸めない計算でも 4.58:1）・月の文字 5.41:1） */
+#toolbar .ymnav { display: flex; align-items: center; gap: 2px; background: rgba(255,255,255,.06);
   border-radius: 6px; padding: 2px; }
 /* ボタンの地の白の重ねは .14（2026-11-13・代表者の決定「直す（推奨）」）。.15 では白文字との差が 4.46:1 で 4.5:1 に届かなかったため、
  * 届く所まで少しだけ濃くした（青帯 #2563a8 の上で 4.53:1・8ビットの丸め込みで計算）。編集モードの帯は下の body.edit-mode の指定のまま */
 #toolbar button { border: none; border-radius: 5px; padding: 5px 10px; cursor: pointer;
   background: rgba(255,255,255,.14); color: #fff; font-size: 0.78125rem; }
-#toolbar button:hover { background: rgba(255,255,255,.3); }
+/* 指を乗せた時は白を重ねず黒を .1 重ねて少しだけ濃くする（2026-11-13・代表者「推奨どおり」）。白の .3 では 3.25:1（月の枠の中は 2.76:1）で、
+ * ふだんのボタンが 4.5:1 の境目にあり白を足すと必ず下回るため。青帯の上 7.14:1・月の枠の中 6.36:1 */
+#toolbar button:hover { background: rgba(0,0,0,.1); }
+#toolbar .ymnav button { background: rgba(255,255,255,.08); }
+#toolbar .ymnav button:hover { background: rgba(0,0,0,.1); }
 #toolbar button.primary { background: #fff; color: var(--blue-d); font-weight: 600; }
 #toolbar button.savebtn { background: #2e7d32; color: #fff; font-weight: 700; }
 #toolbar button.savebtn:hover { background: #1b5e20; }
@@ -51,7 +57,7 @@ body { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-s
  * 狭い幅（899px 以下）では押す所を 44px にする */
 #toolbar a.su-menu-back { display: inline-flex; align-items: center; white-space: nowrap; text-decoration: none;
   border-radius: 5px; padding: 5px 10px; background: rgba(255,255,255,.14); color: #fff; font-size: 0.78125rem; }
-#toolbar a.su-menu-back:hover { background: rgba(255,255,255,.3); }
+#toolbar a.su-menu-back:hover { background: rgba(0,0,0,.1); }
 body.edit-mode #toolbar a.su-menu-back { background: rgba(255,255,255,.35); color: var(--edit-ink); }
 body.edit-mode #toolbar a.su-menu-back:hover { background: rgba(255,255,255,.5); }
 @media screen and (max-width: 899px) { #toolbar a.su-menu-back { min-height: 44px; box-sizing: border-box; } }
@@ -77,7 +83,7 @@ body.edit-mode #toolbar a.su-menu-back:hover { background: rgba(255,255,255,.5);
 #syncBadge.synced { background: #156736; }
 #syncBadge.dirty { background: #7a4f00; font-weight: 700; }
 #syncBadge.offline { background: #922b21; }
-#syncBadge.nosync { background: rgba(255,255,255,.15); }
+#syncBadge.nosync { background: rgba(255,255,255,.14); }   /* .15 では 4.46:1。少しだけ濃くして 4.53:1（2026-11-13・代表者「推奨どおり」） */
 #syncBadge.syncing { background: #6c5ce7; }
 /* 未定義だった状態（readonly/conflict/storeerror）。JSは以前からこのクラスを付けており、
    CSSが無いぶん既定の半透明白のまま＝「閲覧専用」「競合」「保存失敗」が視覚的に埋もれていた。
@@ -92,9 +98,10 @@ body.edit-mode #toolbar a.su-menu-back:hover { background: rgba(255,255,255,.5);
 /* ── 編集モード（サーバー発行の編集権を1台だけが持つ・2026-08-17） ──
    閲覧中は編集操作を受け付けない。状態は「帯の色」だけでなく必ず文字（✎/👁）でも示す。 */
 #toolbar #editToggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
-  white-space: nowrap; font-size: 0.78125rem; color: #fff; background: rgba(255,255,255,.15);
+  white-space: nowrap; font-size: 0.78125rem; color: #fff; background: rgba(255,255,255,.14);
   border-radius: 6px; padding: 0 12px; min-height: 44px; }
-#toolbar #editToggle:hover { background: rgba(255,255,255,.3); }
+/* 地 .15（4.46:1）→.14（4.53:1）、指を乗せた時は白 .3（3.25:1）→黒 .1（7.14:1）。ツールバーのボタンと同じ直し（2026-11-13・代表者「推奨どおり」） */
+#toolbar #editToggle:hover { background: rgba(0,0,0,.1); }
 #toolbar #editToggle input { cursor: pointer; margin: 0; width: 18px; height: 18px; }
 #toolbar #editToggle.disabled { opacity: .55; cursor: not-allowed; }
 #toolbar #modeBadge { font-size: 0.75rem; padding: 4px 10px; border-radius: 12px; white-space: nowrap;
@@ -187,6 +194,7 @@ body.fitscreen table.sheet thead th { position: static; }
 body.fitscreen table.sheet .sticky1, body.fitscreen table.sheet .sticky2 { position: static; }
 body.fitscreen table.sheet .noprint { display: none; }   /* 俯瞰時は連絡事項等の補助列を隠して縮小率を確保 */
 #btnFit.on { background: rgba(255,255,255,.38); }
+#toolbar #btnFit.on:hover { background: rgba(255,255,255,.38); }   /* 指を乗せても「全体表示」を選んでいる印を消さない（ほかのボタンの hover を黒 .1 にしたため・2026-11-13） */
 table.sheet { border-collapse: separate; border-spacing: 0; font-size: 0.75rem; table-layout: fixed; }
 table.sheet th, table.sheet td { border-right: 1px solid #000; border-bottom: 1px solid #000;
   padding: 2px 3px; text-align: center; white-space: nowrap; background: #fff; }
