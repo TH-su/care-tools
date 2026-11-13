@@ -5523,14 +5523,14 @@ function yjBulkHtml_(){
   if(L.ok.length||L.none.length){
     h+='<div class="yj-actions"><button type="button" class="btn btn-pri" id="yjBulkGo"'+(can?'':' disabled')+'>'+
       (n?'チェックした '+n+' 人をまとめて反映':'変更なしの書類を終わりにする')+(n&&L.none.length?'（変更なし '+L.none.length+' 件も終わりにします）':'')+'</button>'+
-      (S.server!=='ok'&&!S.bulkBusy?'<span class="yj-sub">入居者マスタGASの版を確かめられないため、まだ反映できません</span>':'')+'</div>';
+      (S.server!=='ok'&&!S.bulkBusy?'<span class="yj-sub">入居者マスタの受け口を確かめられないため、まだ反映できません</span>':'')+'</div>';
   }
   return h+'</section>';
 }
 async function yjBulkApply_(){
   var S=yjSt; if(!S||S.bulkBusy||S.cur||S.phase!=='queue') return;
   if(S.preDone<S.preTotal) return;
-  if(S.server!=='ok'){ S.bulkMsg='入居者マスタGASの版を確かめられないため、まとめて反映できません（何も書いていません）'; yjPaint_(); return; }
+  if(S.server!=='ok'){ S.bulkMsg='入居者マスタの受け口を確かめられないため、まとめて反映できません（何も書いていません）'; yjPaint_(); return; }
   if(($('sc-edit')&&$('sc-edit').classList.contains('on'))||($('mBulk')&&$('mBulk').classList.contains('on'))){
     S.bulkMsg='編集画面・一括編集を閉じてから反映してください'; yjPaint_(); return; }
   var L=yjBulkLists_(), ok=L.ok.filter(function(i){ return S.docs[i].pre.on; }), none=L.none;
