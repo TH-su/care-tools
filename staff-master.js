@@ -3912,7 +3912,7 @@ var CMT_SITE_STARTED_MAX = 40;    /* 当事業所が始めた月。サーバー�
 var CMT_SITE_STARTED_LONG_MSG = '当事業所が始めた月が長すぎます（上限 ' + CMT_SITE_STARTED_MAX + '字）';
 var CMT_ALIAS_MAX = 40;           /* 通称（2026-11-06.2）。入力欄の maxlength と同じ */
 var CMT_ALIAS_LONG_MSG = '通称が長すぎます（上限 ' + CMT_ALIAS_MAX + '字）';
-var CMT_ALIAS_NO_CAPS_MSG = '受け口（職員マスタAPI）が古い版のため、通称はまだ変えられません。配備の後に使えます';
+var CMT_ALIAS_NO_CAPS_MSG = 'まだ準備ができていません。管理者に伝えてください。';   // 職員に見える文（受け口の版・配備の話は出さない・2026-11-13・文は仮置き）
 var CMT_SITE_STARTED_LABEL = '当事業所: ';   /* 表と紙の2段目の頭に付ける言い方 */
 var CMT_EXT_CODE = 'kondan';      /* 外部の方を足せるのは運営懇談会だけ（本人裁定 2026-09-22） */
 /* 要件を確認できるページ（2026-09-22.5）。サーバー（COMMITTEE_URL_RE / COMMITTEE_URL_MAX）・

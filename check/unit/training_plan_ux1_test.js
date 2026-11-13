@@ -85,7 +85,9 @@ t('作成日の欄は1つだけ', (S.match(/id="fPlanDate"/g) || []).length === 
     addPlanAt: (d) => { log.add.push(d); return d !== '2026-01-01'; }
   };
   vm.createContext(sb);
-  try { vm.runInContext(RF + '\n' + H, sb); } catch (e) { t('ボタンの処理が動く', false, String(e)); }
+  /* 期を足す関数は、窓を出した時だけ約束を返す（2026-11-13 第6段 TP-02）。ボタンは実物の tpThen_ で答えを受ける（窓の無い時はその場で） */
+  const TT = grab(/function tpThen_\(v, f\) \{[^\n]*\}/);
+  try { vm.runInContext(TT + '\n' + RF + '\n' + H, sb); } catch (e) { t('ボタンの処理が動く', false, String(e)); }
   if (h && RF) try {
     vm.runInContext('refreshAddAtDate()', sb);
     t('起動時に今日と上限が入る', els.addAtDate.value === '2026-10-16' && els.addAtDate.max === '2026-10-16', els.addAtDate);

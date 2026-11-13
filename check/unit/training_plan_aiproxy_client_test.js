@@ -91,7 +91,8 @@ function makeEnv() {
       if (r === 'hang') return new Promise(() => {});
       return Promise.resolve(r);
     }) },
-    Promise, JSON, Object, Number, String, Error, setTimeout, clearTimeout
+    Promise, JSON, Object, Number, String, Error, setTimeout, clearTimeout,
+    TP_IS_ADMIN: false   /* 断りの文の「（管理者向け：…）」は管理者のログインの時だけ（2026-11-13 第6段 TP-03）。ここは職員の端末として動かす */
   };
   vm.createContext(sb);
   vm.runInContext(cut('aiFetch') + '\n' + cut('aiErrText') + '\n' + cut('aiErrFatal'), sb);
