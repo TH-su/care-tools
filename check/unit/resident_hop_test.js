@@ -42,8 +42,10 @@ t('1d 帯の文言は「この方の画面：」', h.indexOf('この方の画面
 console.log('2 URL に載せるもの');
 const all = office.targets('weight-record.html', '12', '見本 一郎', false);
 for (const x of all) {
-  if (/^genogram\.html/.test(x.href)) t('2a 家族構成図だけ ?resident=&name=', x.href === 'genogram.html?resident=12&name=' + encodeURIComponent('見本 一郎'), x.href);
+  /* 家族構成図も番号だけ（代表者の決定 2026-11-13・前は ?resident=&name= で氏名を渡していた） */
+  if (/^genogram\.html/.test(x.href)) t('2a 家族構成図も ?resident= の番号だけ（氏名を URL に載せない）', x.href === 'genogram.html?resident=12', x.href);
   else t('2b ' + x.href.split('?')[0] + ' は番号だけ', !/name=/.test(x.href) && /=12$/.test(x.href), x.href);
+  t('2e ' + x.href.split('?')[0] + ' の URL に氏名（そのまま・符号化）が無い', x.href.indexOf('見本') < 0 && x.href.indexOf(encodeURIComponent('見本')) < 0, x.href);
 }
 t('2c 入居者マスタは ?id=、担当者会議は ?resident=', all.some((x) => x.href === 'resident-master.html?id=12') && all.some((x) => x.href === 'care-meeting.html?resident=12'), '');
 t('2d 氏名が無い時は家族構成図を出さない', !office.targets('facesheet.html', '12', '', false).some((x) => /^genogram/.test(x.href)), '');
@@ -51,9 +53,10 @@ t('2d 氏名が無い時は家族構成図を出さない', !office.targets('fac
 console.log('3 現場の端末');
 const f = field.targets('facesheet.html', '12', '見本 一郎', true).map((x) => x.href.split('?')[0]);
 for (const off of ['resident-master.html', 'care-schedule.html', 'moushiokuri-viewer.html', 'training-plan.html', 'care-meeting.html']) t('3a 現場では ' + off + ' を出さない', f.indexOf(off) < 0, f);
-t('3b 現場では家族構成図（氏名を URL に載せる）を出さない', f.indexOf('genogram.html') < 0, f);
+t('3b 現場では家族構成図を出さない（番号だけで渡すようにした後も今までどおり）', f.indexOf('genogram.html') < 0, f);
 t('3c 現場でも出す画面（体重管理・排便ケア記録）は出る', ['weight-record.html', '../haiben-record/haiben-record.html'].every((x) => f.indexOf(x) >= 0), f);
 const fh = field.html('facesheet.html', '12', '見本 一郎');
+t('3e html() の帯（事務所）にも氏名を URL に載せない', h.indexOf(encodeURIComponent('見本')) < 0 && !/name=/.test(h), h);
 t('3d html() は端末の用途を読んで現場の決まりを当てる', fh && !/resident-master|care-schedule|moushiokuri|training-plan|care-meeting|genogram/.test(fh), fh);
 
 console.log('4 正しくない番号・危ない値');

@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ga2it6U3ae9Onp4Ew10wNtbbbNdZfy5I7zKvlomL9OY=' 'sha256-7zmGtnQtxikFN0uGcSK1W3m4DsRXwBbTyXfwjRZ2epg=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ga2it6U3ae9Onp4Ew10wNtbbbNdZfy5I7zKvlomL9OY=' 'sha256-svrXZNjF/VgqEkVx3p5zGXGlQvV0fhqk4VYT97SyvZM=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
@@ -695,7 +695,7 @@ function fsNoteAs_(kind, where, e){ try{ if(window.SUErrors && typeof window.SUE
 <script src="su-perf.js?v=2026-11-02"></script>
 <script src="su-login-band.js?v=2026-11-02"></script>
 <script src="su-facility.js?v=2026-11-07"></script>
-<script src="su-resident-hop.js?v=2026-11-02"></script>
+<script src="su-resident-hop.js?v=2026-11-13"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>
 <script>
 /* ═══════════════════════════════════════════════════════════════
@@ -3286,7 +3286,7 @@ function renderOfficeView(r){
      伏せ漏れの実害が大きい（2026-08-17）。
      ★家族構成図は家族情報の一部なので、包み（.fb-geno）に data-nop-of="family" を付け、
        「家族情報」を印刷しないにした時も一緒に紙から外す（2026-11-03）。 */
-  var genoCell='<div class="cell" data-nop-of="geno" style="border-right:none;border-bottom:none"><span class="lab">家族構成図</span><button type="button" class="geno-box" aria-label="家族構成図を作成・編集する" data-geno="'+esc(r.id)+'" data-name="'+esc(r.name||'')+'">'+genoInner+'</button></div>';
+  var genoCell='<div class="cell" data-nop-of="geno" style="border-right:none;border-bottom:none"><span class="lab">家族構成図</span><button type="button" class="geno-box" aria-label="家族構成図を作成・編集する" data-geno="'+esc(r.id)+'">'+genoInner+'</button></div>';
   S.biz=sec('事業所',
     '<div class="row-cells">'+cell('居宅介護支援事業所',r.careOffice)+cell('介護支援専門員',r.careManager)+cell('電話番号',r.careOfficeTel)+cell('FAX番号',r.careOfficeFax)+'</div>'+
     '<div class="row-cells">'+cell('福祉用具',r.welfareEquip)+cell('担当者',r.welfareEquipStaff)+cell('電話番号',r.welfareEquipTel)+cell('サ責',r.serviceManager)+'</div>'+
@@ -3369,8 +3369,9 @@ function renderOfficeView(r){
      querySelectorAll で【全部】に配線する（id で1つだけ拾うと片方が押せない）。 */
   Array.prototype.forEach.call($('viewBox').querySelectorAll('.geno-box'),function(gb){
     var go=function(){
-      var id=gb.getAttribute('data-geno'), nm=gb.getAttribute('data-name');
-      if(id!=null&&id!=='')location.href=GENOGRAM_APP+'?resident='+encodeURIComponent(id)+(nm?'&name='+encodeURIComponent(nm):'');
+      /* 渡すのは番号だけ。氏名は URL に載せない（家族構成図が共有名簿で引く・代表者の決定 2026-11-13） */
+      var id=gb.getAttribute('data-geno');
+      if(id!=null&&id!=='')location.href=GENOGRAM_APP+'?resident='+encodeURIComponent(id);
     };
     /* 枠は <button>。Enter・スペースはボタンの既定で click になる（前の div 用のキー操作は要らない） */
     gb.addEventListener('click',go);
