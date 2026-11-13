@@ -342,10 +342,12 @@ console.log('\n— シフト分析 —');
     'function $(id) { return document.getElementById(id); }',
     grabLine(ui, /function esc\(s\) \{[^\n]*\n[^\n]*\n[^\n]*/),
     grabLine(ui, /var LS_KEY = [^\n]*/), grabLine(ui, /var MASTER_KEY = [^\n]*/), grabLine(ui, /var QUAL_LIST = [^\n]*/),
+    grabLine(ui, /var lastRun = null;[^\n]*/),
     'var dataCorrupt = { months: false, master: false }; var lastAnalysis = null, lastParsed = null; var AI = null;',
     'function scheduleAutoSync(){} function loadSaved(){} function saveMaster(){ return true; } function saveMonths(){ return true; }',
     ['h1', 'pct', 'markCorrupt', 'showCorruptWarning', 'loadMaster', 'settings', 'run', 'render', 'formInfoHTML', 'cell', 'numH',
-     'cellStyle', 'renderGridHTML', 'loadMonths', 'renderMonths', 'renderCombined', 'renderMaster', 'oldMethodNoticeHTML']
+     'cellStyle', 'renderGridHTML', 'loadMonths', 'renderMonths', 'renderCombined', 'renderMaster', 'oldMethodNoticeHTML',
+     'facilityKey', 'unknownDivHTML']
       .map((n) => grabFn(ui, n)).join('\n')
   ].join('\n'), win);
 
@@ -388,6 +390,11 @@ console.log('\n— シフト分析 —');
 
   /* S5 旧い数え方の知らせ（insertAdjacentHTML）は固定文だけ */
   t('S5 旧い数え方の知らせは固定文だけ（値を差し込まない）', /function oldMethodNoticeHTML\(\) \{\n\s*return '[^'+]*' \+ esc\('[^'+]*'\) \+ '[^'+]*';\n\s*\}/.test(grabFn(ui, 'oldMethodNoticeHTML')), grabFn(ui, 'oldMethodNoticeHTML'));
+
+  /* S6 区分を判定できなかった行（results ← render の中・区分の列の文字は貼り付けた値・2026-11-13） */
+  win.render(r, Object.assign({}, parsed, { unknownDiv: { count: 2, examples: [{ line: 3, col: 2, text: EVIL }, { line: 5, col: 2, text: BREAK }] } }));
+  const ud = els.results.innerHTML;
+  t('S6 区分を判定できなかった行：区分の列の文字に入れても実行される形にならない・印刷しない枠に出す', !unsafe(ud) && kept(ud) && /<section class="card warn noprint"[^>]*>[^]*区分を判定できなかった行 2 行/.test(ud), ud);
 }
 
 /* 点検した数のまま（増えたら点検して表に足してから通す・10/25 反証レビュー指摘3） */

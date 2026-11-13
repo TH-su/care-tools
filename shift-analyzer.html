@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="topbar">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-NV6qnhlUHjhvH6A8wxqxJ5OsaC1+UybCXxnduy2UH7k='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-aPHfWsdfEx4qiQ1ETbWpPcj6ELi546/nnLoxUfQYf54='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -1488,11 +1488,21 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var staff = [];
     var byName = {};       /* 同名の連続ブロックを1職員に束ねる(merged fill-down 用) */
     var current = null;
+    /* 区分の列に文字があるのに訪問/施設/通所のどれにも当たらず捨てた行（施設情報の読込前の事業所名など・2026-11-13）。
+     * 画面に数と例を出すためだけに持つ。例は行・列の番号と区分の列の文字だけ（氏名の列は持たない） */
+    var unknownDiv = { count: 0, examples: [] };
 
     for (var r = headerRow + 1; r < grid.length; r++) {
       var row = grid[r];
       var division = normDiv(row[col.divCol]);
-      if (!division) { current = null; continue; }   /* 区分でない行(曜日行・区切り行)は無視し連結を切る */
+      if (!division) {   /* 区分でない行(曜日行・区切り行)は無視し連結を切る */
+        var dvText = trim(row[col.divCol]);
+        if (dvText !== '') {
+          unknownDiv.count++;
+          if (unknownDiv.examples.length < 3) unknownDiv.examples.push({ line: r + 1, col: col.divCol + 1, text: dvText.slice(0, 20) });
+        }
+        current = null; continue;
+      }
 
       var nameCell = trim(row[col.nameCol]);
       if (nameCell !== '') {
@@ -1561,7 +1571,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
     return {
       ok: true, error: null, days: days, dayLabels: col.dayLabels,
-      columns: col, staff: staff, warnings: warnings
+      columns: col, staff: staff, warnings: warnings, unknownDiv: unknownDiv
     };
   }
 
@@ -2112,12 +2122,35 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     };
   }
 
-  function run() {
-    var text = $('pasteArea').value || '';
+  /* 施設情報（事業所の呼び名）が届く前に集計すると、事業所の名前で書いた区分の行を判定できずに捨てる。
+   * 集計した文字と、その時に施設情報を読めていたか・呼び名の中身を控え、届いた後に同じ文字で集計し直す（2026-11-13）。
+   * 控えるのはメモリだけ（端末に保存しない） */
+  var lastRun = null;   /* { text, facKey, oldNotice, lossy }（lossy＝捨てた行がある・区分の列を特定できなかった） */
+  function facilityKey() {
+    try {
+      var F = window.SUFacility;
+      if (!F || !F.ready()) return '';
+      return JSON.stringify(F.aliases());
+    } catch (e) { return ''; }
+  }
+  function rerunAfterFacility() {
+    if (!lastRun) return;
+    var key = facilityKey();
+    if (!key || key === lastRun.facKey) return;   /* 読めなかった・呼び名が変わっていない＝今の結果のまま */
+    if (!lastRun.lossy) return;                    /* 捨てた行が無い集計は、呼び名が増えても結果は同じ（描き直さない） */
+    var keep = lastRun.oldNotice;
+    run(lastRun.text);   /* 入力欄ではなく、集計した時の文字で（貼り替え途中の文字を勝手に集計しない） */
+    if (keep && lastAnalysis) { lastRun.oldNotice = true; showOldMethodNotice(); }
+  }
+
+  function run(textArg) {
+    var text = (typeof textArg === 'string') ? textArg : ($('pasteArea').value || '');
     var out = $('results');
-    if (!text.trim()) { out.innerHTML = '<p class="muted">勤務表を貼り付けて「集計」を押してください。</p>'; return; }
+    if (!text.trim()) { lastRun = null; out.innerHTML = '<p class="muted">勤務表を貼り付けて「集計」を押してください。</p>'; return; }
+    lastRun = { text: text, facKey: facilityKey(), oldNotice: false, lossy: false };
     var parsed;
     try { parsed = AI.parseGrid(text); } catch (e) { out.innerHTML = '<p class="err">読み取りに失敗しました: ' + esc(e.message) + '</p>'; return; }
+    lastRun.lossy = !parsed.ok || !!(parsed.unknownDiv && parsed.unknownDiv.count > 0);
     if (!parsed.ok) { out.innerHTML = '<p class="err">' + esc(parsed.error) + '</p>'; lastAnalysis = null; lastParsed = null; return; }
     lastParsed = parsed;
     try {
@@ -2137,6 +2170,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function render(r, parsed) {
     var m = r.metrics;
     var html = '';
+
+    /* 区分を判定できずに捨てた行（画面だけ・印刷しない・2026-11-13）。例は行・列の番号と区分の列の文字だけで、氏名の列は出さない */
+    html += unknownDivHTML(parsed && parsed.unknownDiv);
 
     /* 月次サマリ(訪問介護・特定事業所加算の人材要件) */
     html += '<section class="card"><h2>月次サマリ（訪問介護）</h2>';
@@ -2327,11 +2363,27 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     run();
     /* 常勤換算をシフト作成と同じ数え方にする前（2026-10-18 より前）に保存した月は、いま出ている数字が数え直したものだと知らせる。
      * 保存の記録は書き換えない（保存し直した時だけ変わる） */
-    if (!rec.fteMethod && lastAnalysis) {
-      var res0 = $('results');
-      if (res0) res0.insertAdjacentHTML('afterbegin', oldMethodNoticeHTML());
-    }
+    /* 施設情報が届いて集計し直した時も出し直す（届く前に区分の列を特定できず結果が出ていない月も、印は立てておく） */
+    if (!rec.fteMethod && lastRun) lastRun.oldNotice = true;
+    if (!rec.fteMethod && lastAnalysis) showOldMethodNotice();
     var out = $('results'); if (out && out.scrollIntoView) out.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function unknownDivHTML(u) {
+    if (!u || !(u.count > 0)) return '';
+    var h = '<section class="card warn noprint" role="status"><h2>' + esc('⚠ 区分を判定できなかった行 ' + u.count + ' 行') + '</h2>';
+    h += '<p>' + esc('区分の列の文字が「訪問」「施設」「通所」と事業所の呼び名のどれにも当たらないため、この行は集計に入れていません。') + '</p><ul>';
+    var ex = u.examples || [];
+    for (var i = 0; i < ex.length && i < 3; i++) {
+      h += '<li>' + esc(ex[i].line + '行目・' + ex[i].col + '列目（区分の列）「' + ex[i].text + '」') + '</li>';
+    }
+    h += '</ul><p class="note">' + esc('事業所の名前で書いた区分は、施設情報が届くと自動で集計し直します。それでも残る時は、区分の列を「訪問」「施設」「通所」のどれかに直して貼り直してください。') + '</p></section>';
+    return h;
+  }
+
+  function showOldMethodNotice() {
+    var res0 = $('results');
+    if (res0) res0.insertAdjacentHTML('afterbegin', oldMethodNoticeHTML());
   }
 
   function oldMethodNoticeHTML() {
@@ -2802,7 +2854,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
   function init() {
     $('runBtn').addEventListener('click', run);
-    $('clearBtn').addEventListener('click', function () { $('pasteArea').value = ''; $('results').innerHTML = ''; lastAnalysis = null; });
+    $('clearBtn').addEventListener('click', function () { $('pasteArea').value = ''; $('results').innerHTML = ''; lastAnalysis = null; lastRun = null; });
     $('printBtn').addEventListener('click', printResults);
     $('saveMonthBtn').addEventListener('click', saveCurrent);
     $('exportBtn').addEventListener('click', exportAll);
@@ -2842,6 +2894,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     });
     renderMaster();
     renderMonths();
+    /* 施設情報が届いたら（読めないと分かった時も呼ばれる）、届く前の集計を同じ文字で集計し直す（2026-11-13） */
+    if (window.SUFacility && typeof window.SUFacility.onReady === 'function') window.SUFacility.onReady(rerunAfterFacility);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();

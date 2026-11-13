@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-nUGauBLN18h1/HTsZd5KqDYYgyc+GBOOSIHljLoMq84='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-scWe7yXIgPBz7DGq0vwqkKmH+yabEHFFtCphUirYRro='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -1079,19 +1079,20 @@ var API_GET_RETRY = 2;
 /* ★2026-11-05（代表者の決定 案C・段1）: 出来事・バイタル・食事量は、入口（su-ho-read.js・SUHoRead）を通す。
      スイッチ moushi_read が入で、事務所PCで事務所・管理者としてログインしている時だけ新しい保存先の写しから読み、
      それ以外・読めない時は下の Google への読み取りをそのまま呼ぶ（送る本文・送り方は変えない）。
-     viaHo は入口から戻ってきた呼び出し・送り直しの印（入口を2回通らない）。 */
-function apiGet(action, params, tries, viaHo){
+     viaHo は入口から戻ってきた呼び出し・送り直しの印（入口を2回通らない）。
+   ★2026-11-13（代表者の指示）: 名前を apiGet から apiRead に改めた（中身は POST の読み取りのため）。送る形は変えていない。 */
+function apiRead(action, params, tries, viaHo){
   tries = tries || 0;
   if(!viaHo && typeof SUHoRead !== 'undefined' && SUHoRead && typeof SUHoRead.call === 'function'){
-    return SUHoRead.call(action, params, function(){ return apiGet(action, params, tries, true); }, { noGas: !mskCfgOk_() });
+    return SUHoRead.call(action, params, function(){ return apiRead(action, params, tries, true); }, { noGas: !mskCfgOk_() });
   }
-  return apiGetOnce(action, params)['catch'](function(e){
+  return apiReadOnce(action, params)['catch'](function(e){
     var m = String(e && e.message || e);
-    if(tries < API_GET_RETRY && m.indexOf('API:') === 0 && m.indexOf('POST でだけ') >= 0) return apiGet(action, params, tries + 1, true);
+    if(tries < API_GET_RETRY && m.indexOf('API:') === 0 && m.indexOf('POST でだけ') >= 0) return apiRead(action, params, tries + 1, true);
     throw e;
   });
 }
-function apiGetOnce(action, params){
+function apiReadOnce(action, params){
   var cfg = loadCfg();
   if(!cfg.url || !cfg.token) return Promise.reject(new Error('NO_CFG'));
   var body = { action: String(action) };
@@ -1109,8 +1110,8 @@ function apiGetOnce(action, params){
 function apiErrMsg(e){
   var m = String(e && e.message || e);
   if(m === 'NO_CFG') return '接続先と合言葉が入っていません。「設定」タブの「はじめて使う時」の手順で入れてください';
-  if(m === 'GAS_LOGIN') return '申し送りの Google の受け口から、ログインを求める画面が返りました。受け口の公開の設定が「全員」になっているか、管理者に確かめてもらってください';
-  if(m === 'GAS_BAD_RESPONSE') return '申し送りの Google の受け口から、思っていた形と違う返事が届きました。「設定」タブの URL が正しいか確かめてください';
+  if(m === 'GAS_LOGIN') return '申し送りの Google の受け口から、ログインを求める画面が返りました。接続先の設定が古くなっているかもしれません。管理者に連絡してください';
+  if(m === 'GAS_BAD_RESPONSE') return '申し送りの Google の受け口から、思っていた形と違う返事が届きました。接続先が古くなっているかもしれません。「設定」タブの接続先が正しいか確かめてください';
   if(m.indexOf('API:認証エラー') === 0) return '合言葉が違います。「設定」タブで確認してください';
   if(m.indexOf('API:') === 0) return '申し送りの Google の受け口で問題が起きました。しばらくしてからもう一度お試しください';
   if(m.indexOf('abort') >= 0 || m.indexOf('Abort') >= 0) return '時間内に返事がありませんでした。通信状況を確かめてください';
@@ -1120,7 +1121,7 @@ function apiErrMsg(e){
        画面の中のエラー（TypeError 等）→ 読み込み直しの文・記録に残す／ほかの英語の文 → 記録に残す */
   var nm = String(e && e.name || '');
   if(/Failed to fetch|Load failed|network|Error in body stream|offline/i.test(m)) return '読み込みに失敗しました。通信環境を確認してください';
-  if(nm === 'SyntaxError') return '申し送りの Google の受け口から、思っていた形と違う返事が届きました。「設定」タブの URL が正しいか確かめてください';
+  if(nm === 'SyntaxError') return '申し送りの Google の受け口から、思っていた形と違う返事が届きました。接続先が古くなっているかもしれません。「設定」タブの接続先が正しいか確かめてください';
   try{ if(typeof SUErrors !== 'undefined' && SUErrors && typeof SUErrors.note === 'function') SUErrors.note('申送ビューアの読み込み', e, 'moushiokuri:apiErrMsg'); }catch(_){ /* 捨ててよい: 記録できなくても断りの文は出す */ }
   if(/^(TypeError|ReferenceError|RangeError)$/.test(nm)) return '画面の中で思わぬエラーが起きました。画面を読み込み直してください';
   return '読み込めませんでした。しばらくしてからもう一度お試しください';
@@ -1415,7 +1416,7 @@ function load(opts){
   if(baseStale()) rgClearBase();
   else if($('scr-search').classList.contains('on')) renderSearch();
   rgSetStatus('読み込み中…');
-  return apiGet('events', evParams({ from:r.from, to:r.to })).then(function(res){
+  return apiRead('events', evParams({ from:r.from, to:r.to })).then(function(res){
     DATA = { from:(okYmd(res.from) ? res.from : r.from), to:(okYmd(res.to) ? res.to : r.to),
              reqFrom:r.from, reqTo:r.to, reqMode:r.mode, reqDays:rgDays(),
              events:normRows(res.events), ledger:ledgerRows(res.ledger),
@@ -1835,7 +1836,7 @@ function renderDateView(force){
   $('dateFresh').hidden = true;
   $('dstatus').textContent = '読み込み中…';
   $('dateGo').disabled = true;
-  apiGet('events', evParams({ from:d, to:d })).then(function(res){
+  apiRead('events', evParams({ from:d, to:d })).then(function(res){
     if(seq !== DV_SEQ) return;              // 後から出した要求がある＝この応答は使わない
     box.textContent = '';                   // 採用する応答の直前に消す（前回分と混ざらないように）
     var evs = normRows(res.events), lgs = ledgerRows(res.ledger);
@@ -2064,7 +2065,7 @@ function vmLoad(opts){
   if(vmStale()) rgClearVm();
   $('vmStatus').textContent = '読み込み中…';
   var wf = vmUsualFrom(r.to), qFrom = (r.from < wf) ? r.from : wf;
-  return apiGet('measures', { from:qFrom, to:r.to }).then(function(res){
+  return apiRead('measures', { from:qFrom, to:r.to }).then(function(res){
     var inDay = function(d){ return okYmd(d) && d >= r.from && d <= r.to; };
     var inRow = function(x){ return !!x && inDay(x.date); };
     var to0 = okYmd(res.to) ? res.to : r.to;
@@ -5018,7 +5019,7 @@ function applyMasterIdParam(){
     toast('保存しました');
   });
   $('cfgTest').addEventListener('click', function(){
-    apiGet('ping', {}).then(function(r){
+    apiRead('ping', {}).then(function(r){
       /* ★「つながった」だけを成功と表示しない。1件も取り込めていなくても接続は成功するため、
          直近の取込件数と失敗内容まで出して、沈黙故障が正常に見えないようにする。 */
       var info = '接続できました。';
