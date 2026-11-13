@@ -273,6 +273,24 @@ console.log('\n— 7. 番号の重なり・編集の保存 —');
   const cur3 = clone(cur); cur3[1].updatedAt = '2026-11-13T09:00:00.000Z';
   const out3 = b.famSaveMerge_(cur3, base, ed2, T2);
   t('保存: 今の行の方が新しい時は今の行', out3.find(f => f.id === base[1].id).phone === '000-0000-0066', out3);
+  /* 時計の進んだ端末が前に直した行（今の行の時刻が1時間先）でも、編集の間に触られていなければ編集が残る */
+  const FUT = '2026-11-13T04:00:00.000Z';
+  const base4 = b.normalizeCand(clone(legacy())).family; base4[0].phone = '000-0000-0010'; base4[0].updatedAt = FUT;
+  const cur4 = clone(base4);
+  const ed4 = clone(base4); ed4[0].phone = '000-0000-0020';
+  b.famStamp_(base4, ed4, T2);
+  const out4 = b.famSaveMerge_(cur4, base4, ed4, T2);
+  t('保存: 今の行の時刻が1時間先でも、編集の間に触られていなければ編集が残る', out4[0].phone === '000-0000-0020' && out4[0].updatedAt === T2, out4[0]);
+  /* 編集の間に今の行も変わっていた時は時刻の新しい方 */
+  const cur5 = clone(base4); cur5[0].phone = '000-0000-0030'; cur5[0].updatedAt = '2026-11-13T05:00:00.000Z';
+  t('保存: 編集の間に今の行も変わっていれば時刻の新しい方', b.famSaveMerge_(cur5, base4, ed4, T2)[0].phone === '000-0000-0030', '');
+  /* 元に戻す: 編集の保存の後に直後の姿を封じる。直後の姿があれば、編集で足した行は取り消しで外れる */
+  t('saveEdit は保存の後に sealUndo(target) を呼ぶ', /target\.updatedAt = nowIso\(\); afStamp_\(target\);\s*\/\*[^*]*\*\/\s*sealUndo\(target\);/.test(cutF('saveEdit')), '');
+  const preU = b.normalizeCand(clone(legacy()));
+  const postU = clone(preU); postU.family.push({ id: 'fadd', name: '架空 五郎', relation: '孫', phone: '', emergency: false, updatedAt: T2 });
+  const curU = clone(postU);
+  b.undoApply(curU, clone(preU), clone(postU));
+  t('元に戻す: 編集で足した行が外れる', curU.family.length === 2 && !curU.family.some(f => f.id === 'fadd'), curU.family);
   t('saveEdit は家族を famSaveMerge_ で突き合わせる', /target\.family = famSaveMerge_\(target\.family, asObj\(editBase\)\.family, editing\.family, famAt\);/.test(cutF('saveEdit')), '');
   t('online の出来事は編集中に取り直さない', /addEventListener\('online'[\s\S]{0,400}!busyEditing\(\) && Date\.now\(\) - lastPullAt > 60000\) pull\(false\)/.test(SRC), '');
 }

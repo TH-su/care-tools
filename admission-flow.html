@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-QtmuPd/xtVPW+i5Y/Kz4/+HCTlR89voEWU0/TmZFB9Y='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-SylzjJV+IrjjilJZ0eO1xLgTBlQ2zemZvESrM5JGadg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
@@ -1352,11 +1352,14 @@ function famStamp_(baseList, list, at) {
 }
 /* 編集の保存で、ご家族を丸ごと入れ替えずに番号で突き合わせる（cur＝今の台帳の行・base＝編集を始めた時・ed＝編集画面の行）。
    ・編集で変えていない行は今の行のまま（編集の間に他の端末が直した・消した分を消さない）
-   ・編集で変えた行は updatedAt の新しい方（同じなら編集の行）
+   ・編集で変えた行は、今の行が編集を始めた時（base）から変わっていなければ編集の行をそのまま採る。
+     編集の間に今の行も変わっていた時だけ updatedAt の新しい方（同じなら編集の行）。時計の進んだ端末が前に直した行でも編集が負けないように
    ・編集を始めた時に無かった今の行（他の端末が足した行）は残す。消した印はどちらにあっても残す
-   （base は今は使わない。変えた行かどうかは famStamp_ が付けた時刻 at で見分ける） */
+   （変えた行かどうかは famStamp_ が付けた時刻 at で見分ける） */
 function famSaveMerge_(cur, base, ed, at) {
-  var out = [], done = {};
+  var out = [], done = {}, baseBy = {};
+  asArr(base).forEach(function (f) { if (isObj(f) && f.id) baseBy[f.id] = f; });
+  var strip = function (f) { var o = {}; Object.keys(f).forEach(function (k) { if (k !== 'updatedAt') o[k] = f[k]; }); return afCanon_(o); };
   function sticky(pick, other) {
     if (!pick || pick.deleted || !other || !other.deleted) return pick;
     var g = JSON.parse(JSON.stringify(pick)); g.deleted = true; g.deletedAt = other.deletedAt; return g;
@@ -1368,6 +1371,8 @@ function famSaveMerge_(cur, base, ed, at) {
     done[c.id] = 1;
     var e = edBy[c.id];
     if (!e || e.updatedAt !== at) { out.push(sticky(c, e)); return; }
+    var b0 = baseBy[c.id];
+    if (b0 && strip(b0) === strip(c)) { out.push(sticky(e, c)); return; }   /* 編集の間に今の行は触られていない */
     out.push(asStr(c.updatedAt) > asStr(e.updatedAt) ? sticky(c, e) : sticky(e, c));
   });
   asArr(ed).forEach(function (e) {
@@ -4207,6 +4212,8 @@ function saveEdit() {
       noteCleared(target, 'c', k, prev[k], target[k]);
     });
     target.updatedAt = nowIso(); afStamp_(target);
+    /* 取り消しに「操作の直後の姿」を封じる（他の操作は touch() が呼ぶ）。無いと「元に戻す」で、この編集で足した行が消えない */
+    sealUndo(target);
     saved = target;
   }
   var n = applyNudgeRules(prev, saved);
