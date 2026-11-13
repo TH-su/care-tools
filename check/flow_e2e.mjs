@@ -328,6 +328,8 @@ async function flow1() {
     t('フェイスシート: 介護度が 要介護3', cells && cells['介護度'] && cells['介護度'].includes('要介護3') && !cells['介護度'].includes('要介護1'), cells && cells['介護度']);
     t('フェイスシート: 居室が 209', cells && cells['居室'] && cells['居室'].includes('209'), cells && cells['居室']);
     t('フェイスシート: 身長が 172 cm', cells && cells['身長'] && cells['身長'].includes('172 cm'), cells && cells['身長']);
+    const gbo = await page.evaluate(() => Array.from(document.querySelectorAll('#viewBox .geno-box')).map((g) => ({ dis: g.disabled, geno: g.getAttribute('data-geno'), cur: getComputedStyle(g).cursor })));
+    t('フェイスシート（事務所PC）: 家族構成図の枠は今のまま押せる（番号つき・指の形）', gbo.length > 0 && gbo.every((g) => g.dis === false && g.geno === String(ME.id) && g.cur === 'pointer'), gbo);
     await shot(page, 'flow1-facesheet');
     await page.close();
 
@@ -626,6 +628,9 @@ async function flow4() {
       const rs = reqOf(env, 'facesheet.html').filter((r) => r.to === 'master');
       const secs = rs.filter((r) => r.action === 'getSection');
       t('フェイスシート（現場）: この方の中身は getSection（facesheet_safe）で読む', secs.length > 0 && secs.every((r) => r.section === 'facesheet_safe' && String(r.id) === ME.id), secs);
+      /* 現場の端末のフェイスシート（安全情報だけの表示）には家族構成図の枠を出さない＝現場から家族構成図へは移れない（代表者の決定 2026-11-03 とそろう） */
+      const gbs = await page.evaluate(() => document.querySelectorAll('.geno-box, [data-geno]').length);
+      t('フェイスシート（現場）: 家族構成図の枠（家族構成図へ移る入口）を出さない', gbs === 0, gbs);
       const other = rs.filter((r) => r.action !== 'getSection' && r.action !== 'getRoster');
       t('フェイスシート（現場）: getResident・getBulk・getListFull などの全項目・全件の読み取りを送らない', other.length === 0, other);
       const rosters = rs.filter((r) => r.action === 'getRoster');
@@ -644,9 +649,12 @@ async function flow4() {
       await page.close();
     }
     {
+      /* 古い入口（?resident=&name=）で開かれた時も動く。開いたらすぐ URL から氏名を消す（代表者の決定 2026-11-13） */
       const page = await open(env, 'genogram.html?resident=' + ME.id + '&name=' + encodeURIComponent(ME.name));
       const who = await waitFor(() => page.evaluate(() => { const e = document.getElementById('suHopBar'); return e && !e.hidden && e.querySelector('.srh') ? e.innerText : null; }));
-      t('家族構成図（現場）: 開けて「' + ME.name + 'さんを開いています」', !!who && who.includes(ME.name + 'さんを開いています'), who);
+      t('家族構成図（現場・古い URL）: 開けて「' + ME.name + 'さんを開いています」', !!who && who.includes(ME.name + 'さんを開いています'), who);
+      const geUrl = await page.evaluate(() => location.href);
+      t('家族構成図（古い URL）: 開いた後の URL に氏名が残らない・番号は残る', !/[?&]name=/.test(geUrl) && !geUrl.includes(encodeURIComponent(ME.name)) && new URL(geUrl).searchParams.get('resident') === String(ME.id), geUrl);
       const ps = hopOk('家族構成図（現場）', 'genogram.html', await page.evaluate(() => Array.from(document.querySelectorAll('#suHopBar .srh a')).map((a) => a.getAttribute('href'))), { field: true });
       t('家族構成図（現場）: 帯の URL に氏名を載せない', ps.every((p) => p.name == null), ps);
       t('家族構成図（現場）: 入居者マスタ・同期へ読みに行かない', !reqOf(env, 'genogram.html').some((r) => r.to === 'master' || r.to === 'sync'), reqOf(env, 'genogram.html'));
@@ -671,6 +679,43 @@ async function flow4() {
   } finally {
     endChecks(env2, '(4b)');
     await env2.context.close();
+  }
+
+  /* 家族構成図は番号だけで開き、氏名は共有名簿で引く。名簿に無い時は名前の欄を空にして帯で知らせる（代表者の決定 2026-11-13） */
+  console.log('\n— (4c) 家族構成図を番号だけで開く —');
+  const env3 = await makeEnv({ extraStorage: { su_residents_common: JSON.stringify(common) } });
+  try {
+    const page = await open(env3, 'genogram.html?resident=' + ME.id);
+    const who = await waitFor(() => page.evaluate(() => { const e = document.getElementById('suHopBar'); return e && !e.hidden && e.querySelector('.srh') ? e.innerText : null; }));
+    t('家族構成図（番号だけ）: 共有名簿の氏名で「' + ME.name + 'さんを開いています」', !!who && who.includes(ME.name + 'さんを開いています'), who);
+    t('家族構成図（番号だけ）: 名前の欄は共有名簿の氏名', (await page.inputValue('#clientName')) === ME.name, await page.inputValue('#clientName'));
+    const hrefs = await page.evaluate(() => Array.from(document.querySelectorAll('#suHopBar .srh a')).map((a) => a.getAttribute('href')));
+    t('家族構成図（番号だけ）: 帯の行き先に氏名を載せない', hrefs.length > 0 && hrefs.every((h) => !/name=/.test(h) && !h.includes(encodeURIComponent(ME.name))), hrefs);
+    await page.close();
+  } finally {
+    endChecks(env3, '(4c)');
+    await env3.context.close();
+  }
+  const env4 = await makeEnv({});
+  try {
+    const page = await open(env4, 'genogram.html?resident=' + ME.id);
+    const msg = await waitFor(() => page.evaluate(() => { const e = document.getElementById('suHopBar'); return e && !e.hidden ? e.innerText : null; }));
+    t('家族構成図（名簿なし）: 「お名前を読めませんでした」と帯で知らせる', !!msg && msg.includes('この方のお名前を読めませんでした'), msg);
+    t('家族構成図（名簿なし）: 名前の欄は空のまま', (await page.inputValue('#clientName')) === '', await page.inputValue('#clientName'));
+    await page.close();
+  } finally {
+    endChecks(env4, '(4c-2)');
+    await env4.context.close();
+  }
+  const env5 = await makeEnv({ device: 'field' });
+  try {
+    const page = await open(env5, 'genogram.html?resident=' + ME.id);
+    const msg = await waitFor(() => page.evaluate(() => { const e = document.getElementById('suHopBar'); return e && !e.hidden ? e.innerText : null; }));
+    t('家族構成図（現場・名簿なし）: 「お名前を読めませんでした」だけを出し、現場でできない「入居者マスタを一度開いて」は出さない', !!msg && msg.includes('お名前を読めませんでした') && !msg.includes('入居者マスタを一度開いて'), msg);
+    await page.close();
+  } finally {
+    endChecks(env5, '(4c-3)');
+    await env5.context.close();
   }
 }
 
