@@ -134,7 +134,18 @@ console.log('\n— 6. 読み込みの順・部品・印刷の前の待ち —');
   t('施設情報の部品を画面のスクリプトより前に読む（端末の控えで最初から描ける）', fi > 0 && main > fi, [fi, main]);
   t('施設情報の部品に塊の名前 patchCalendar がある（最上位から読む）', /patchCalendar: function \(p\) \{ return p\.patchCalendar; \}/.test(FAC));
   t('画面は SUFacility.section(\'patchCalendar\') で読む', /SUFacility\.section\('patchCalendar'\)/.test(grabFn('pcReadCfg')));
-  t('読み終えた時に確かめ直す（onReady）', /SUFacility\.onReady\(function \(\) \{ if \(pcApplyCfg\(pcReadCfg\(\)\)\) pcRebuild\(\); \}\)/.test(SRC));
+  t('読み終えた時に確かめ直し、帯を出し入れする（onReady）', /SUFacility\.onReady\(function \(\) \{ if \(pcApplyCfg\(pcReadCfg\(\)\)\) pcRebuild\(\); pcFacBand\(\); \}\)/.test(SRC));
+  /* 施設情報が読めず控えも無い時の帯（2026-11-13 反証の指摘）。読めた時は出さない・紙に出さない・保存は止めない */
+  {
+    const run = (F, el) => { const c = { window: { SUFacility: F }, SUFacility: F, document: { getElementById: () => el } }; vm.createContext(c); vm.runInContext(grabFn('pcFacBand'), c); c.pcFacBand(); return el.hidden; };
+    t('読めた（控えでも）時は帯を出さない', run({ ready: () => true }, { hidden: true }) === true && run({ ready: () => true }, { hidden: false }) === true);
+    t('読めないと分かった時は帯を出す', run({ ready: () => false }, { hidden: true }) === false);
+    t('部品が無い・ready が例外の時も帯を出す', run(undefined, { hidden: true }) === false && run({ ready: () => { throw new Error('x'); } }, { hidden: true }) === false);
+    t('帯の文（仮置き）・初めは隠す・画面だけ（.ctl noprint の中・#sheet の外）',
+      SRC.indexOf('<p class="hint warn svband noprint" id="pcFacBand" role="status" hidden>施設情報が読めないため、既定の貼る場所で表示しています。</p>') > SRC.indexOf('<div class="ctl noprint">')
+      && SRC.indexOf('id="pcFacBand"') < SRC.indexOf('<div class="sheet" id="sheet">'));
+    t('帯は保存を止めない（pcFacBand は帯の hidden だけを変える）', !/saveSettings|localStorage|return/.test(grabFn('pcFacBand').replace(/^[^{]*\{/, '')));
+  }
   const ready = grabFn('suFacReady_');
   const dcr = fs.readFileSync(path.join(ROOT, 'daycare-roster.html'), 'utf8');
   const s = dcr.indexOf('\nfunction suFacReady_(');

@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-6A0PqAmX+KobKUFLiXHFiXAKJ5WR/IXk7SttWfuOAIo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-rBNP1yAesSZEyh23UIHJY++XPRHGAv+SMP+Y98kANdA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <!-- 他ツールと同じ指定を揃えている。氏名はこのHTMLには含まれず入力欄にしか存在しないため、
      この meta が効かないブラウザでもキャッシュ経由で氏名が残ることはない -->
@@ -218,6 +218,8 @@ body {
 <div class="ctl noprint">
   <!-- サーバーの設定を読めない時だけ出す（事務所PC・スイッチ patch_read が入の時だけ。届いたら消す・紙には出さない） -->
   <p class="hint warn svband noprint" id="svband" role="status" hidden>サーバーに届かないため、この端末の控えを表示しています</p>
+  <!-- 施設情報が読めず端末の控えも無い時だけ出す（既定の背中8箇所で表示していることを知らせる・保存は止めない・紙には出さない・2026-11-13） -->
+  <p class="hint warn svband noprint" id="pcFacBand" role="status" hidden>施設情報が読めないため、既定の貼る場所で表示しています。</p>
   <div class="cd">
     <div class="row">
       <div class="fld" style="flex:1 1 210px">
@@ -1279,7 +1281,15 @@ pcPull();
 if (window.SUPatchSync) setTimeout(function () { try { window.SUPatchSync.pushAll(); } catch (e) { /* 送れなくても画面は使える */ } }, 1500);
 
 /* 施設情報を読み終えたら（読めないと分かった時も）もう一度確かめ、変わった時だけ作り直す */
-try { if (window.SUFacility && typeof SUFacility.onReady === 'function') SUFacility.onReady(function () { if (pcApplyCfg(pcReadCfg())) pcRebuild(); }); }
+/* 読めないと分かった時（控えも無い）は、既定の貼る場所で表示していることを帯で知らせる（読めた時は出さない＝今の画面のまま）。
+   部品が無い時も同じ（読めないので既定で描いている） */
+function pcFacBand() {
+  var b = document.getElementById('pcFacBand'), rdy = false;
+  try { rdy = !!(window.SUFacility && SUFacility.ready()); } catch (e) { rdy = false; }
+  if (b) b.hidden = rdy;
+}
+if (!window.SUFacility) pcFacBand();
+try { if (window.SUFacility && typeof SUFacility.onReady === 'function') SUFacility.onReady(function () { if (pcApplyCfg(pcReadCfg())) pcRebuild(); pcFacBand(); }); }
 catch (e) { try { if (window.SUErrors && SUErrors.note) SUErrors.note('貼り薬カレンダーの施設情報の読み直し', e && e.message, 'patch-calendar'); } catch (e2) { /* 記録できなくても既定で動く */ } }
 
 el.rs.addEventListener('change', function () { selectResident(el.rs.value); });

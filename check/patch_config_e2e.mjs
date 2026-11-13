@@ -172,6 +172,32 @@ try {
     await o.ctx.close();
   }
 
+  /* 10. 施設情報が読めず控えも無い時は帯で知らせる（保存は止めない）・読めた時は出さない */
+  {
+    const o = await open(null, { wait: 800, storage: {} });
+    const band = await o.p.evaluate(() => { const b = document.getElementById('pcFacBand'); return { hidden: b.hidden, shown: getComputedStyle(b).display !== 'none', tx: b.textContent }; });
+    t('読めない・控えなし: 帯を出す', !band.hidden && band.shown && band.tx === '施設情報が読めないため、既定の貼る場所で表示しています。', band);
+    await o.p.selectOption('#no', '4');
+    const saved = await o.p.evaluate(() => localStorage.getItem('apc2_no'));
+    t('読めない・控えなし: 保存は止めない（貼る場所を変えると端末に残る）', saved === '4', saved);
+    await o.p.emulateMedia({ media: 'print' });
+    const pr = await o.p.evaluate(() => getComputedStyle(document.getElementById('pcFacBand')).display);
+    t('帯は紙に出さない', pr === 'none', pr);
+    await o.ctx.close();
+    const ok = await open(sample);
+    const h = await ok.p.evaluate(() => document.getElementById('pcFacBand').hidden);
+    t('読めた施設（見本）では帯を出さない', h === true);
+    await ok.ctx.close();
+    let cur = sample;
+    const c2 = await open(() => cur);
+    cur = null;
+    await c2.p.reload({ waitUntil: 'load' });
+    await c2.p.waitForTimeout(800);
+    const h2 = await c2.p.evaluate(() => document.getElementById('pcFacBand').hidden);
+    t('控えがあれば、届かなくても帯を出さない（控えで読めている）', h2 === true);
+    await c2.ctx.close();
+  }
+
   /* 6. 施設情報が読めない時は刷らない・読めれば刷る */
   {
     const o = await open(null, { wait: 300 });
