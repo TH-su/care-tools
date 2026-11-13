@@ -37,6 +37,9 @@
  *   SUPrint.prefs(name).get()/set()/reset()   保存設定（su_print_prefs）
  *   SUPrint.last                      直近の印刷診断（su-report.js が添付できる）
  *   SUPrint.clear()                   状態の強制クリア（デバッグ用）
+ *   SUPrint.fillHeads(ctx?)           印 data-su-print-head の要素に「施設名・印刷日」を入れる（印刷の準備と beforeprint でも自動で呼ぶ）
+ *   SUPrint.headText(parts, kind?)    その文だけを返す（parts: 'name date' | 'name' | 'date'）
+ *   SUPrint.facGate(go, ng)           施設情報を最大3秒待ってから go()・読めなければ ng(知らせの文)（ボタンからの印刷の門）
  *
  * ツール側フック: before(state) / after(state) / onShrink(px, diag) / pagesOf(state, 既定枚数)
  *   / when() → false なら準備しない（移行途中の同居対策）／ afterMeasure(state, diag)
@@ -120,6 +123,83 @@
   function todayText() {
     var d = new Date(), w = '日月火水木金土'[d.getDay()];
     return d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日（' + w + '）';
+  }
+
+  /* ───────── 紙の見出しの「施設名・印刷日」（2026-11-13 代表者の決定） ─────────
+     紙の見出しの右上に1行だけ出す。印 data-su-print-head="name date"（施設名と印刷日）／"name"（施設名だけ・
+     その紙に印刷日が既にある時）／"date"（印刷日だけ）を付けた要素の文字を、ここが埋める。
+     data-su-print-kind="通所" 等を付けると、その事業所の名前（無ければ施設名）を出す。
+     ★置き場所と大きさは各画面が決める（su-print.css の .su-print-head は画面では出さない・印刷だけ）。
+       本文を押し下げないよう、見出しの行の中の余りか、位置を外した（absolute）所に置くこと。
+     ★施設名は施設情報（SUFacility）からだけ読む。読めていなければ施設名を出さない（空）。
+       ボタンからの印刷は facGate で最大 FAC_WAIT_MS 待ち、読めなければ FAC_NG_MSG を出して刷らない。
+       Cmd/Ctrl+P は止められないので、読めている分だけを出す（施設名が無ければ印刷日だけ）。 */
+  var FAC_WAIT_MS = 3000;
+  var FAC_NG_MSG = '⚠️ 施設情報が読めません。印刷を中止しました。通信を確かめて画面を再読み込みしてから、もう一度押してください';
+  function headDate() {
+    var d = new Date();
+    return d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日';
+  }
+  function facName(kind) {
+    var F = global.SUFacility, n = '';
+    try {
+      if (!F || typeof F.ready !== 'function' || !F.ready() || typeof F.nameOf !== 'function') return '';
+      if (kind && kind !== '施設名') n = String(F.nameOf(kind) || '');
+      if (!n) n = String(F.nameOf('施設名') || '');
+    } catch (e) { n = ''; }
+    return n.replace(/\s+/g, ' ').trim();
+  }
+  function headText(parts, kind) {
+    var p = String(parts == null ? 'name date' : parts), out = [];
+    if (/\bname\b/.test(p)) { var n = facName(kind); if (n) out.push(n); }
+    if (/\bdate\b/.test(p)) out.push('印刷日：' + headDate());
+    return out.join('　');
+  }
+  /* 施設名と印刷日は別の span に分ける（長い施設名は … で切っても、印刷日は必ず残す・su-print.css の .su-print-head-n / -d）。
+     文字は textContent で入れる（施設情報の値を HTML として読まない） */
+  function fillHeads(ctx) {
+    var list;
+    try { list = (ctx || document).querySelectorAll('[data-su-print-head]'); } catch (e) { return 0; }
+    for (var i = 0; i < list.length; i++) {
+      var el = list[i], p = String(el.getAttribute('data-su-print-head') || '');
+      var n = /\bname\b/.test(p) ? facName(el.getAttribute('data-su-print-kind')) : '';
+      var d = /\bdate\b/.test(p) ? '印刷日：' + headDate() : '';
+      if (el.textContent === n + (n && d ? '　' : '') + d) continue;
+      while (el.firstChild) el.removeChild(el.firstChild);
+      if (n) { var a = document.createElement('span'); a.className = 'su-print-head-n'; a.textContent = n; el.appendChild(a); }
+      if (d) { var b = document.createElement('span'); b.className = 'su-print-head-d'; b.textContent = (n ? '　' : '') + d; el.appendChild(b); }
+    }
+    return list.length;
+  }
+  /* 施設情報が読めているか（読めていればすぐ true・まだなら最大 ms 待つ・su-facility.js が無ければ false） */
+  function facReady(ms) {
+    return new Promise(function (ok) {
+      var F = global.SUFacility, done = false, tm = null;
+      function fin() {
+        if (done) return;
+        done = true;
+        if (tm) clearTimeout(tm);
+        var r = false;
+        try { r = !!F.ready(); } catch (e) { r = false; }
+        ok(r);
+      }
+      if (!F || typeof F.ready !== 'function') { ok(false); return; }
+      try { if (F.ready()) { ok(true); return; } } catch (e) { ok(false); return; }
+      tm = setTimeout(fin, ms == null ? FAC_WAIT_MS : ms);
+      try { if (typeof F.onReady === 'function') F.onReady(fin); } catch (e) { /* 呼べなくても、上でかけた時計で必ず終わる */ }
+    });
+  }
+  /* ボタンからの印刷の門。読めていればその場で go() を呼ぶ（待たない＝今までと同じ順で刷る）。
+     まだなら待ち、読めれば go()、読めなければ ng(知らせの文) を呼んで刷らない。返り値は go を呼べば true の Promise */
+  function facGate(go, ng) {
+    var F = global.SUFacility, now = false;
+    try { now = !!(F && typeof F.ready === 'function' && F.ready()); } catch (e) { now = false; }
+    if (now) { go(); return Promise.resolve(true); }
+    return facReady().then(function (r) {
+      if (r) { go(); return true; }
+      if (typeof ng === 'function') ng(FAC_NG_MSG);
+      return false;
+    });
   }
 
   /* ───────── 設定の保存（個人情報なし） ───────── */
@@ -357,6 +437,7 @@
        「準備済み」と誤認して早期 return し、前のタブの用紙で刷られる。 */
     try {
     if (spec.before) spec.before(state);                        // 一括ページの構築など（root の中身を作る）
+    fillHeads(document);                                        // 見出しの「施設名・印刷日」を印刷のこの時の値に（流れの外に置く前提）
     document.body.classList.add('su-printing', 'su-print-' + spec.name);
     root.classList.add('su-print-root');
     state.hidden = hideOutside(root);
@@ -421,6 +502,7 @@
        まだ移していない画面が同居していると、移していない画面（個票・様式など）で印刷した時に
        「最後に見ていた帳票ビュー」の用紙と幅固定が乗ってしまう。when はその横取りを塞ぐ唯一の門。 */
   window.addEventListener('beforeprint', function () {
+    fillHeads(document);                                        // 共通部品の準備を通らない紙（window.print を直接呼ぶ画面）にも効かせる
     if (state || !active || !views[active]) return;
     if (prepare(active, null, true)) timer = setTimeout(clear, (views[active].clearDelay || CLEAR_DELAY));
   });
@@ -534,5 +616,21 @@
   api.papers = PAPERS;
   api.paperLabel = function (key) { return PAPER_LABEL[key] || key; };   // 'A4 portrait' → 'A4 縦'
   api.metrics = function (paper, margin) { return metrics(paper, marginObj(margin == null ? 8 : margin)); };
+  /* 紙の見出しの「施設名・印刷日」（2026-11-13）。headText(parts, kind) は文だけを返す・fillHeads(ctx) は印の要素を埋める */
+  api.headText = headText;
+  api.fillHeads = fillHeads;
+  api.facReady = facReady;
+  api.facGate = facGate;
+  api.FAC_NG_MSG = FAC_NG_MSG;
+  api.FAC_WAIT_MS = FAC_WAIT_MS;
+  /* 画面に置いたままの見出しの印（俯瞰・申送など）は、読み込んだ時と施設情報が読めた時にも埋めておく（画面では出さない） */
+  (function () {
+    function fill() { try { fillHeads(document); } catch (e) { /* 印刷の直前にもう一度埋めるので、ここで失敗しても紙には効く */ } }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fill); else fill();
+    try { if (global.SUFacility && typeof global.SUFacility.onReady === 'function') global.SUFacility.onReady(fill); } catch (e) { /* 同上 */ }
+    document.addEventListener('DOMContentLoaded', function () {
+      try { if (global.SUFacility && typeof global.SUFacility.onReady === 'function') global.SUFacility.onReady(fill); } catch (e) { /* 同上 */ }
+    });
+  })();
   global.SUPrint = api;
 })(window);

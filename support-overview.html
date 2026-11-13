@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Rv3zPxlVG0A9HToPpKEmyF6ggdlb7REytrzRkfFgJGQ=' 'sha256-kwAifQBfvhff32cF5SUk9JG2jvWgV6uclGEK+W7/Hfs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4wlrFY++NQoOjMf+7heCPOG244+nt7uKRaK07BXeVP4=' 'sha256-kwAifQBfvhff32cF5SUk9JG2jvWgV6uclGEK+W7/Hfs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -234,6 +234,8 @@ body {
 }
 .print-title { display: none; font-size: 13px; font-weight: 700; padding: 2px 4px; }
 @media print { .print-title { display: block; } }
+/* 施設名・印刷日（2026-11-13 代表者の決定）。表題の行の右端に位置を外して重ねる＝表題の高さ・盤面の位置は変えない（紙だけ） */
+@media print { .print-title .su-print-head.ov-fac { top: auto; bottom: 3px; right: 4px; max-width: 40%; font-size: 11px; } }
 
 /* ===== 全支援ビューの識別色：ヘッダー帯を薄オレンジに（訪問=青 と対）=====
    すべて .hdr 子孫に限定＝ヘッダー外の .hdr-btn.solid（空状態の #btnRefresh2）は青のまま保護。 */
@@ -301,6 +303,7 @@ body {
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
+<link rel="stylesheet" href="su-print.css?v=2026-11-13">   <!-- 紙の見出しの施設名・印刷日（.su-print-head・印刷だけ・2026-11-13） -->
 </head>
 <body>
 
@@ -351,7 +354,7 @@ body {
   <span class="lg-note">○ 空き＝支援が薄い時間帯／斜線＝現在入院中（空き）／「外部」＝週間計画で外部指定の利用者</span>
 </div>
 
-<div class="print-title" id="printTitle">全支援 週間俯瞰（月〜日・複数週の標準パターン）</div>
+<div class="print-title su-print-head-host" id="printTitle"><span id="printTitleTx">全支援 週間俯瞰（月〜日・複数週の標準パターン）</span><span class="su-print-head su-print-head-abs ov-fac" data-su-print-head="name date"></span></div>
 
 <main class="board-wrap" id="boardWrap">
   <div class="board" id="board" role="table" aria-label="全支援の週間俯瞰表">
@@ -379,6 +382,8 @@ body {
 <script src="su-roster.js?v=2026-10-28"></script>
 <script src="su-res-read.js?v=2026-11-11"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
+<script src="su-facility.js?v=2026-11-07"></script>   <!-- 紙の見出しの施設名（2026-11-13） -->
+<script src="su-print.js?v=2026-11-13"></script>   <!-- 紙の見出しの施設名・印刷日と、印刷の前に施設情報を待つ門だけに使う（2026-11-13） -->
 <script>
 'use strict';
 
@@ -1014,7 +1019,7 @@ function render(model, N, view) {
   for (const k in byDow) if (Object.prototype.hasOwnProperty.call(byDow, k) && Array.isArray(byDow[k])) byDow[k].forEach(b => { if (b && b.name) ovNames.push(b.name); });
   const ovLabel = ovNameLabeler_(ovNames, (typeof MASKS !== 'undefined' && MASKS && MASKS.cuts) || {});
   const viewLabel = view === 'ext' ? '外部' : '施設';
-  $('printTitle').textContent = '全支援 週間俯瞰（' + viewLabel + '・月〜日・複数週の標準パターン）';
+  $('printTitleTx').textContent = '全支援 週間俯瞰（' + viewLabel + '・月〜日・複数週の標準パターン）';
   const empty = $('boardEmpty');
 
   let total = 0;
@@ -1144,7 +1149,11 @@ function render(model, N, view) {
 }
 
 // ── 印刷（A3縦1枚・純CSS） ──
-function printNow() { window.print(); }
+/* 紙の見出しに施設名を刷るので、施設情報を最大3秒待ち、読めなければ刷らない（su-print.js の facGate・2026-11-13）。部品が無い時は今までどおり */
+function printNow() {
+  if (window.SUPrint && SUPrint.facGate) SUPrint.facGate(function () { window.print(); }, function (msg) { toast(msg, true); });
+  else window.print();
+}
 
 // ── UI ──
 let toastTimer = null;

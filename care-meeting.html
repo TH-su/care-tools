@@ -2,14 +2,14 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-x2bDgsvwLdzO3jzhqK6xRn61j4n1WxHlRB3m2RCLlEQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-yMIbXwF2/F7KzcCYELDVooJNWL559EEzZ97607FFfgw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 会議の記録（要配慮の情報）を扱うためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
 <title>担当者会議の記録</title>
-<link rel="stylesheet" href="su-print.css?v=2026-09-12">
+<link rel="stylesheet" href="su-print.css?v=2026-11-13">
 <link rel="stylesheet" href="su-resident-hop.css?v=2026-11-02">
 <!-- 画面が黙って壊れないようにする共通部品（いちばん先に読む）→ 速さの記録 → 施設情報 → 印刷 → 振り分けと確かめの計算 -->
 <script src="su-errors.js?v=2026-11-12"></script>
@@ -21,7 +21,7 @@
 <script src="su-login-band.js?v=2026-11-02"></script>
 <script src="su-app-gate.js?v=2026-11-11"></script>
 <script src="su-facility.js?v=2026-11-07"></script>
-<script src="su-print.js?v=2026-09-12"></script>
+<script src="su-print.js?v=2026-11-13"></script>
 <script src="care-meeting-calc.js?v=2026-11-13.2"></script>
 <script src="su-resident-hop.js?v=2026-11-02"></script>
 <style>
@@ -257,6 +257,8 @@ h3{font-size:1.0625rem; margin:14px 0 6px}
 .pv-h{display:flex; align-items:baseline; justify-content:center; gap:1em; margin:0 0 .5em}
 .pv-title{font-size:1.6em; font-weight:700; letter-spacing:.08em}
 .pv-draft{font-size:1.1em; font-weight:700; border:1.5px solid #000; padding:0 .5em}
+/* 施設名・印刷日（2026-11-13 代表者の決定）。表題の段の右下に位置を外して重ねる＝段の高さ・本文の配り方は変えない（紙だけ・文は su-print.js が入れる） */
+@media print{ .pv-h .su-print-head.cm-fac{top:auto; bottom:.2em; max-width:30%; font-size:10px} }
 .pv-t{width:100%; border-collapse:collapse; table-layout:fixed}
 .pv-t+.pv-t,.pv-more+.pv-t{margin-top:-1px}
 .pv-t th,.pv-t td{border:1px solid #000; padding:.25em .4em; vertical-align:top; text-align:left; font-size:1em; overflow-wrap:anywhere}
@@ -1007,7 +1009,7 @@ function printHtml_(c,rec,status){
   var att=rec.attendees, P=CareMeetingCalc.ATTENDEE_PRINT, td=function(v){return '<td>'+esc(v)+'</td>'};
   /* 出席者の枠は、空でも人が入った枠と同じ高さにする（空の段が細く潰れないよう、空の枠には空白1文字を置く＝様式の3段×3組の見た目） */
   var tdA=function(v){return '<td class="pv-ac">'+(v?esc(v):'&nbsp;')+'</td>'};
-  var h='<div class="pv"><div class="pv-h"><span class="pv-title">サービス担当者会議の要点</span>'+(status==='final'?'':'<span class="pv-draft">下書き</span>')+'</div>';
+  var h='<div class="pv"><div class="pv-h su-print-head-host"><span class="pv-title">サービス担当者会議の要点</span>'+(status==='final'?'':'<span class="pv-draft">下書き</span>')+'<span class="su-print-head su-print-head-abs cm-fac" data-su-print-head="name date"></span></div>';
   h+='<table class="pv-t"><colgroup><col style="width:12%"><col style="width:26%"><col style="width:10%"><col style="width:20%"><col style="width:10%"><col style="width:22%"></colgroup>'+
     '<tr><th>利用者名</th>'+td(c.name)+'<th>作成担当者</th>'+td(rec.author)+'<th>作成年月日</th>'+td(fmtDate_(rec.createdDate))+'</tr></table>';
   h+='<table class="pv-t"><colgroup><col style="width:12%"><col style="width:15%"><col style="width:9%"><col style="width:23%"><col style="width:9%"><col style="width:14%"><col style="width:9%"><col style="width:9%"></colgroup>'+
@@ -1756,7 +1758,12 @@ function cmPrint_(){
   if(!window.SUPrint){ toast('印刷の部品（su-print.js）を読み込めていません。ページを読み込み直してください'); return Promise.resolve(false); }
   var est=null; try{ est=SUPrint.estimate('meeting'); }catch(e){ est=null; cmNote_('印刷の見込み', e); }
   var go=(est&&est.pages>1)?askConfirm_('1枚に収まりません（約'+est.pages+'ページ）',['文字をいちばん小さくしても A4 横1枚に入りません。そのまま2ページ目へ続けて印刷します。'],'印刷する',false):Promise.resolve(true);
-  return go.then(function(ok){ if(ok&&ed&&cur) SUPrint.print('meeting'); return !!ok; });
+  /* 紙の見出しに施設名を刷るので、施設情報を最大3秒待ち、読めなければ刷らない（su-print.js の facGate・2026-11-13） */
+  return go.then(function(ok){
+    if(!(ok&&ed&&cur)) return !!ok;
+    if(!SUPrint.facGate){ SUPrint.print('meeting'); return true; }
+    return SUPrint.facGate(function(){ if(ed&&cur) SUPrint.print('meeting'); }, function(msg){ toast(msg); });
+  });
 }
 
 /* ═══════════ 端末の用途・未保存の止め ═══════════ */

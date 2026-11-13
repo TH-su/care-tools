@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Qcrdu32MsVElhPnqUtXWKNpmOOTCXn0SUk3mLoaArsM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-/Iu2UPzn+0Oal1QBBr28bHB5ZAeXooxYY94v7YmEhqg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <!-- 他ツールと同じ指定を揃えている。氏名はこのHTMLには含まれず入力欄にしか存在しないため、
      この meta が効かないブラウザでもキャッシュ経由で氏名が残ることはない -->
@@ -189,6 +189,8 @@ body {
   .wrap { padding: 0; display: block; }
   .sheet { box-shadow: none; width: 100%; height: 279mm; }
   .cell.today { box-shadow: none; }
+  /* 施設名・印刷日（2026-11-13 代表者の決定）。年月の左に小さく1行。見出しの段の高さは年月が決めるので変わらない */
+  .sh-ttl .su-print-head.pc-fac { flex: 0 1 auto; min-width: 0; font-size: 2.6mm; font-weight: 400; padding-bottom: .6mm; }
   @page { size: A4 portrait; margin: 8mm; }
 }
 @media (prefers-reduced-motion: reduce) { .btn { transition: none; } }
@@ -204,6 +206,7 @@ body {
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
+<link rel="stylesheet" href="su-print.css?v=2026-11-13">   <!-- 紙の見出しの施設名・印刷日（.su-print-head・印刷だけ・2026-11-13） -->
 </head>
 <body>
 
@@ -291,6 +294,7 @@ body {
         <h2>貼り薬カレンダー</h2>
         <span class="drug">アリドネ<sup>®</sup>パッチ／背中8箇所</span>
         <span class="sp"></span>
+        <span class="su-print-head pc-fac" data-su-print-head="name date"></span>
         <span class="ym" id="p-ym"></span>
       </div>
       <div class="sh-meta">
@@ -332,6 +336,9 @@ body {
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-11-12"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
+<!-- 紙の見出しの施設名・印刷日（施設情報から読む・印刷の前に施設情報を待つ門・2026-11-13） -->
+<script src="su-facility.js?v=2026-11-07"></script>
+<script src="su-print.js?v=2026-11-13"></script>
 <!-- 入居者ごとの設定を Supabase へ送る部品（段階2「送るだけ」・2026-10-17）。スイッチ su-backend.json の patch_push が入った時だけ送る。
      段階3（2026-10-25）: スイッチ patch_read が入の時だけ、事務所PCはサーバーの設定を読んで表示する（端末の控えは控えとして残す） -->
 <script src="su-patch-sync.js?v=2026-10-28"></script>
@@ -1174,7 +1181,9 @@ document.getElementById('print').addEventListener('click', function () {
         + ' ＝ ' + state.no + '番' + who + 'で印刷します。よろしいですか' + prov)) return;
     printAck = key;
   }
-  window.print();
+  /* 紙の見出しに施設名を刷るので、施設情報を最大3秒待ち、読めなければ刷らない（su-print.js の facGate・2026-11-13）。部品が無い時は今までどおり */
+  if (window.SUPrint && SUPrint.facGate) SUPrint.facGate(function () { window.print(); }, function (msg) { window.alert(msg); });
+  else window.print();
 });
 
 el.nm.addEventListener('input', function () { el.pnm.textContent = el.nm.value.trim(); });

@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-scWe7yXIgPBz7DGq0vwqkKmH+yabEHFFtCphUirYRro='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-N8OCs3KJNcAxOflSqnjR1WVfGBP49Ryt8lEhG+vChdg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -361,6 +361,8 @@ button.btn:focus-visible, select:focus-visible, input:focus-visible { outline:2p
 .who { background:var(--surf); border:1px solid var(--g2); border-radius:8px; padding:6px 10px;
        margin-bottom:6px; font-size: 0.9375rem; font-weight:700; }
 .who .rm { font-weight:400; font-size: 0.75rem; color:var(--g6); margin-left:8px; }
+/* 施設名・印刷日（紙だけ・本人確認バーの右下に重ねる・2026-11-13） */
+@media print { .who .su-print-head.ms-fac { top:auto; bottom:6px; right:10px; max-width:40%; font-size:10px; } }
 
 .field { margin-bottom:12px; }
 .field label { display:block; font-size: 0.75rem; color:var(--g7); margin-bottom:4px; }
@@ -845,13 +847,14 @@ mark { background:var(--mark-bg); color:inherit; padding:0 1px; border-radius:2p
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <!-- 印刷の共通部品（2026-10-12・監査10月版 v2 申送ビューア 第1手）。入居者別は A4 縦・バイタル・食事は A4 横。
      読めない時は従来どおりの印刷（下の @media print の @page）に倒れる -->
-<link rel="stylesheet" href="su-print.css?v=2026-09-12">
+<link rel="stylesheet" href="su-print.css?v=2026-11-13">
 <link rel="stylesheet" href="su-resident-hop.css?v=2026-11-02">
-<script src="su-print.js?v=2026-09-12"></script>
+<script src="su-print.js?v=2026-11-13"></script>
 <script src="su-errors.js?v=2026-11-12"></script>
 <script src="su-devcfg.js?v=2026-11-08"></script>
 <script src="su-cfg-hint.js?v=2026-11-10"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
+<script src="su-facility.js?v=2026-11-07"></script>   <!-- 紙の見出しの施設名（施設情報から読む・2026-11-13） -->
 <script src="su-resident-hop.js?v=2026-11-02"></script>
 <!-- 出来事・バイタル・食事量を新しい保存先の写しから読む入口（2026-11-05 代表者の決定 案C・段1）。スイッチ moushi_read が切の間・読み込めない時は今までどおり Google から読む -->
 <script src="su-ho-read.js?v=2026-11-08"></script>
@@ -1664,6 +1667,7 @@ function renderTimeline(){
   cnt.textContent = DATA.from + '〜' + DATA.to + '／' + rows.length + '件';
   who.appendChild(cnt);
   if(typeof appendResHop === 'function') appendResHop(who, m);
+  if(typeof msHeadStamp_ === 'function') msHeadStamp_(who);
   $('who').appendChild(who);
   $('ractions').hidden = false;
 
@@ -2656,6 +2660,7 @@ function vmRenderBody(){
   cnt.textContent = VM.from + '〜' + VM.to;
   who.appendChild(cnt);
   if(typeof appendResHop === 'function') appendResHop(who, rosterByNorm(VMSEL));
+  if(typeof msHeadStamp_ === 'function') msHeadStamp_(who);
   $('vmWho').appendChild(who);
   $('vmActions').hidden = false;
 
@@ -4659,6 +4664,7 @@ function excRenderBody(){
   who.appendChild(document.createTextNode(res.name + ' 様'));
   if(res.roomLabel){ var rm = document.createElement('span'); rm.className = 'rm'; rm.textContent = res.roomLabel; who.appendChild(rm); }
   var pr = document.createElement('span'); pr.className = 'rm'; pr.textContent = EXC.from + '〜' + EXC.to; who.appendChild(pr);
+  if(typeof msHeadStamp_ === 'function') msHeadStamp_(who);
   $('excWho').appendChild(who);
   $('excActions').hidden = false;
 
@@ -4876,8 +4882,24 @@ function msPrintSetup_(){
   return true;
 }
 function msPrint_(view){
-  if(msPrintSetup_()){ SUPrint.print(view); return; }
+  if(msPrintSetup_()){
+    /* 紙の見出しに施設名を刷るので、施設情報を最大3秒待ち、読めなければ刷らない（su-print.js の facGate・2026-11-13） */
+    if(SUPrint.facGate) SUPrint.facGate(function(){ SUPrint.print(view); }, function(msg){ toast(msg, true); });
+    else SUPrint.print(view);
+    return;
+  }
   window.print();   /* 共通部品を読めなかった時は従来どおり */
+}
+/* 紙の見出しの「施設名・印刷日」（2026-11-13 代表者の決定）。本人確認バー（入居者別・バイタル・排泄）の右に位置を外して重ねる＝
+   バーの高さ・本文の位置は変えない。画面では出さない（su-print.css）。文は su-print.js が印刷の準備の時に入れ直す */
+function msHeadStamp_(who){
+  if(!window.SUPrint || !SUPrint.fillHeads) return;
+  var s = document.createElement('span');
+  s.className = 'su-print-head su-print-head-abs ms-fac';
+  s.setAttribute('data-su-print-head', 'name date');
+  who.classList.add('su-print-head-host');
+  who.appendChild(s);
+  try{ SUPrint.fillHeads(who); }catch(e){ try{ if(window.SUErrors && typeof SUErrors.note === 'function') SUErrors.note('申送ビューアの紙の施設名', e, 'moushiokuri:headStamp'); }catch(_){ /* 捨ててよい: 印刷の直前にもう一度入れる */ } }
 }
 function goto(id, remember){
   if(SCREENS.indexOf(id) < 0) id = SCREENS[0];
