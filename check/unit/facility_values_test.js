@@ -55,6 +55,21 @@ console.log('\n— 1. 施設情報の読み口 —');
   t('営業日の数の項目は持たない（帳票の形なので施設情報へは移さない）', !('weekDays' in N) && !/weekDays/.test(read('su-facility.js')), '');
 }
 
+console.log('\n— 1b. 適格請求書発行事業者の登録番号（2026-11-13 第6段 SP-03）—');
+{
+  t('見本には登録番号の項目があり、空（見本の施設の紙には出ない）', Object.prototype.hasOwnProperty.call(PROFILE, 'invoiceNo') && PROFILE.invoiceNo === '' && facility(PROFILE).invoiceNo() === '', PROFILE.invoiceNo);
+  const withNo = (v) => { const p = JSON.parse(JSON.stringify(PROFILE)); p.invoiceNo = v; return facility(p).invoiceNo(); };
+  t('T と13桁の数字ならそのまま返す（架空の番号）', withNo('T0000000000001') === 'T0000000000001', withNo('T0000000000001'));
+  t('空白・ハイフンは除いて読む', withNo(' T0000-0000-00001 ') === 'T0000000000001', withNo(' T0000-0000-00001 '));
+  t('桁が違う・T が無い・文字でない時は空（紙に出さない）', withNo('T000000000000') === '' && withNo('0000000000001') === '' && withNo(123) === '' && withNo('T00000000000０1') === '', '');
+  t('書いていない施設は空', (() => { const p = JSON.parse(JSON.stringify(PROFILE)); delete p.invoiceNo; return facility(p).invoiceNo(); })() === '');
+  t('設定が無ければ空', facility(undefined).invoiceNo() === '');
+  /* 端末の控え（norm 済みの形）から読み直しても残る */
+  const p2 = JSON.parse(JSON.stringify(PROFILE)); p2.invoiceNo = 'T0000000000002';
+  const once = facility(p2).get();
+  t('端末の控えから読み直しても登録番号は残る', facility(once).invoiceNo() === 'T0000000000002', once && once.invoiceNo);
+}
+
 console.log('\n— 2. デイ利用表の曜日の列 —');
 {
   const src = read('daycare-roster.html');
