@@ -9,8 +9,10 @@
    実行: node check/unit/master_refused_test.js */
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
+/* 入居者マスタの画面のスクリプトは 2026-11-13 に resident-master.js へ移した（判定の区間 MC-JUDGE だけ HTML に残す）。移す前と同じ文字に戻して確かめる */
+const { readMaster } = require('../master-page.cjs');
 const ROOT = path.join(__dirname, '..', '..');
-const RM = fs.readFileSync(path.join(ROOT, 'resident-master.html'), 'utf8');
+const RM = readMaster(path.join(ROOT, 'resident-master.html'));
 const AF = fs.readFileSync(path.join(ROOT, 'admission-flow.html'), 'utf8');
 let pass = 0, fail = 0;
 function t(n, c, e) { if (c) { pass++; console.log('  ✓ ' + n); } else { fail++; console.log('  ✗ ' + n + (e !== undefined ? '  → ' + JSON.stringify(e) : '')); } }

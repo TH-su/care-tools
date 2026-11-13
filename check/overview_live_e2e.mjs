@@ -115,6 +115,8 @@ async function run(pg, { device = 'office', role = 'office', flags = FLAGS_ON, w
 }
 const lanes = (page) => page.evaluate(() => Array.from(document.querySelectorAll('#board .b-lane, .b-lane')).map((l) => Array.from(l.querySelectorAll('.b-task')).map((c) => c.title)));
 const stateOf = (page) => page.textContent('#syncState');
+const srcOf = (page) => page.evaluate(() => { const el = document.getElementById('srcState'); return el && !el.hidden ? el.textContent : null; });   // 見出しの読み先の札（隠れていれば null・2026-11-13）
+const printHidesSrc = async (page) => { await page.emulateMedia({ media: 'print' }); const hid = await page.evaluate(() => { const el = document.getElementById('srcState'); return !!el && !el.hidden && getComputedStyle(el).display === 'none'; }); await page.emulateMedia({ media: 'screen' }); return hid; };   // 出ている札が印刷では消える
 const hintOn = (page) => page.evaluate(() => !!document.getElementById('su-cfg-hint'));
 const linkShown = (page) => page.evaluate(() => { const a = document.getElementById('emptyCsLink'); return !!a && !a.hidden && a.getAttribute('href') === 'connection-settings.html' && a.offsetParent !== null; });
 const emptyMsg = (page) => page.textContent('#emptyMsg');
@@ -133,6 +135,8 @@ console.log('\n— 全支援俯瞰（support-overview.html） —');
   const L = await waitFor(async () => { const x = await lanes(E.page); return x.length === 7 && fullNameShown(x) ? x : null; }, 20000);
   t('全支援俯瞰 事務所PC: 接続先が無くてもログインしていれば新しい保存先から読み、盤面に架空の方が出る', !!L, { state: await stateOf(E.page), sb: E.st.sb.slice(0, 6) });
   t('全支援俯瞰 事務所PC: 状態は「集計OK」', /^集計OK/.test(await stateOf(E.page)), await stateOf(E.page));
+  t('全支援俯瞰 事務所PC: 見出しに読み先と時刻を小さく出す（新しい保存先）', /^新しい保存先から読みました \d{1,2}:\d{2}$/.test(await srcOf(E.page)), await srcOf(E.page));
+  t('全支援俯瞰 事務所PC: 読み先の札は印刷に出さない', await printHidesSrc(E.page));
   t('全支援俯瞰 事務所PC: 「接続先が入っていません」の文を出さない', !(await emptyMsg(E.page)).includes('接続先が入っていません'), await emptyMsg(E.page));
   await untilSince(E, 7000);
   t('全支援俯瞰 事務所PC: 読めた時は画面の下の「接続先が入っていません」の帯を出さない', !(await hintOn(E.page)));
@@ -150,6 +154,7 @@ for (const c of [
   await untilSince(E, 2000);
   t('全支援俯瞰 ' + c.label + ': 今までどおり接続先が無い時の文と接続設定へのリンクを出す', (await emptyMsg(E.page)) === NO_TARGET && await linkShown(E.page), await emptyMsg(E.page));
   t('全支援俯瞰 ' + c.label + ': 状態は「未設定」', (await stateOf(E.page)) === '未設定', await stateOf(E.page));
+  t('全支援俯瞰 ' + c.label + ': 見出しに読み先の札を出さない（読んでいない）', (await srcOf(E.page)) === null, await srcOf(E.page));
   const hint = await waitFor(() => hintOn(E.page), 15000);
   t('全支援俯瞰 ' + c.label + ': 画面の下の帯は今までどおり出る', !!hint);
   t('全支援俯瞰 ' + c.label + ': 新しい保存先にも Google にも読みに行かない', !E.st.sb.some((x) => /^kv_/.test(x)) && E.st.gas.length === 0 && E.st.selfPost.length === 0, [E.st.sb, E.st.gas, E.st.selfPost]);
@@ -171,6 +176,7 @@ for (const c of [
   const E = await run('support-overview.html', { label: '接続先のある端末', withCfg: true });
   const L = await waitFor(async () => { const x = await lanes(E.page); return x.length === 7 && fullNameShown(x) ? x : null; }, 20000);
   t('全支援俯瞰 接続先のある端末: 今までどおり盤面が出る（新しい保存先から読む）', !!L && E.st.sb.some((x) => /^kv_/.test(x)), { state: await stateOf(E.page), sb: E.st.sb.slice(0, 4) });
+  t('全支援俯瞰 接続先のある端末: 見出しに読み先と時刻を小さく出す（新しい保存先）', /^新しい保存先から読みました \d{1,2}:\d{2}$/.test(await srcOf(E.page)), await srcOf(E.page));
   t('全支援俯瞰 接続先のある端末: Google へは送らない（読めたため）', E.st.gas.length === 0, E.st.gas);
   t('全支援俯瞰 接続先のある端末: 画面のエラーなし・外への通信なし', !E.st.errors.length && !E.st.ext.length, [E.st.errors, E.st.ext]);
   await E.context.close();
@@ -179,6 +185,7 @@ for (const c of [
   const E = await run('support-overview.html', { label: '答えが遅い端末', delayMs: 12000 });
   const st1 = await waitFor(async () => ((await stateOf(E.page)) === '未設定' ? '未設定' : null), 11000);
   t('全支援俯瞰 答えが遅い端末: 8秒で見切って「未設定」に戻る（取得中のまま止まらない）', !!st1, await stateOf(E.page));
+  t('全支援俯瞰 答えが遅い端末: 見出しに読み先の札を出さない（読んでいない）', (await srcOf(E.page)) === null, await srcOf(E.page));
   await untilSince(E, 15000);
   const L = await lanes(E.page);
   t('全支援俯瞰 答えが遅い端末: 時間切れの後に届いた答えで盤面を描かない', !anyName(L) && (await stateOf(E.page)) === '未設定', await stateOf(E.page));
@@ -189,14 +196,21 @@ for (const c of [
 {
   const E = await run('support-overview.html', { label: '読めていた端末' });
   await waitFor(async () => { const x = await lanes(E.page); return x.length === 7 && fullNameShown(x) ? x : null; }, 20000);
+  const srcFirst = await srcOf(E.page);   // 読めた時の札（後で前の盤面を描き直した時に同じ文・時刻で出るか比べる）
   E.st.kvFail = true;
   await E.page.click('#btnRefresh');
   const failed = await waitFor(async () => ((await stateOf(E.page)) === '取得失敗' ? 1 : null), 15000);
   t('全支援俯瞰 読めていた端末: 後で読めなくなった時は「取得失敗」', !!failed, await stateOf(E.page));
+  t('全支援俯瞰 読めていた端末: 見出しに読み先の札を出さない（盤面を空にした）', (await srcOf(E.page)) === null, await srcOf(E.page));
   const msg = await emptyMsg(E.page), toast = await E.page.textContent('#toast');
   t('全支援俯瞰 読めていた端末: 接続先を入れる逆の案内・リンクを出さない', !msg.includes('接続先が入っていません') && !msg.includes('接続先のURL') && !toast.includes('接続先') && !(await linkShown(E.page)), { msg, toast });
   t('全支援俯瞰 読めていた端末: 知らせ（toast）は通信とログインを確かめる文', toast === '取得に失敗しました。通信環境と、ログインしているかをご確認ください', toast);
   t('全支援俯瞰 読めていた端末: Google へもこの画面自身へも送らない・画面のエラーなし', E.st.gas.length === 0 && E.st.selfPost.length === 0 && !E.st.errors.length, [E.st.gas, E.st.selfPost, E.st.errors]);
+  /* 盤面を空にした後に施設／外部を切り替えると、前に読んだ盤面を描き直す。その時は前に読んだ読み先と時刻で札を出し直す（反証レビューの指摘 2026-11-13） */
+  await E.page.click('#segExt');
+  const redrawn = await waitFor(async () => (/^前回取得分を表示中/.test(await stateOf(E.page)) ? 1 : null), 5000);
+  t('全支援俯瞰 読めていた端末: 施設／外部の切り替えで前の盤面を描き直すと「前回取得分を表示中」', !!redrawn, await stateOf(E.page));
+  t('全支援俯瞰 読めていた端末: その時は前に読んだ読み先と時刻で札を出し直す', /^新しい保存先から読みました \d{1,2}:\d{2}$/.test(srcFirst || '') && (await srcOf(E.page)) === srcFirst, [srcFirst, await srcOf(E.page)]);
   await E.context.close();
 }
 {
@@ -218,6 +232,8 @@ console.log('\n— 訪問俯瞰（visit-overview.html） —');
   t('訪問俯瞰 事務所PC: 接続先が無くてもログインしていれば新しい保存先から読み、盤面に架空の方が出る', !!L, { state: await stateOf(E.page), sb: E.st.sb.slice(0, 4) });
   const okSt = await waitFor(async () => /^取得OK（\d+名）/.test(await stateOf(E.page)), 10000);   // 自動の取得の後に「更新」を押した時は、2回目の取得が終わるまで待つ
   t('訪問俯瞰 事務所PC: 状態は「取得OK」', !!okSt, await stateOf(E.page));
+  t('訪問俯瞰 事務所PC: 見出しに読み先と時刻を小さく出す（新しい保存先）', /^新しい保存先から読みました \d{1,2}:\d{2}$/.test(await srcOf(E.page)), await srcOf(E.page));
+  t('訪問俯瞰 事務所PC: 読み先の札は印刷に出さない', await printHidesSrc(E.page));
   await untilSince(E, 7000);
   t('訪問俯瞰 事務所PC: 読めた時は画面の下の「接続先が入っていません」の帯を出さない', !(await hintOn(E.page)));
   t('訪問俯瞰 事務所PC: Google へは1本も送らない・この画面自身へも送らない', E.st.gas.length === 0 && E.st.selfPost.length === 0, [E.st.gas, E.st.selfPost]);
@@ -263,6 +279,7 @@ for (const c of [
   await pressRefresh(E.page);
   const st1 = await waitFor(async () => ((await stateOf(E.page)) === 'クラウドにデータなし' ? 1 : null), 10000);
   t('訪問俯瞰 保存先が空の端末: 読めたが空の時は「クラウドにデータなし」（未設定と分ける）', !!st1, await stateOf(E.page));
+  t('訪問俯瞰 保存先が空の端末: 見出しに読み先の札を出さない（盤面を描いていない）', (await srcOf(E.page)) === null, await srcOf(E.page));
   t('訪問俯瞰 保存先が空の端末: 接続先を入れる文・リンクは出さない', !(await emptyMsg(E.page)).includes('接続先が入っていません') && !(await linkShown(E.page)), await emptyMsg(E.page));
   t('訪問俯瞰 保存先が空の端末: Google へは送らない・画面のエラーなし', E.st.gas.length === 0 && E.st.selfPost.length === 0 && !E.st.errors.length, [E.st.gas, E.st.errors]);
   await E.context.close();
@@ -273,6 +290,7 @@ for (const c of [
   await pressRefresh(E.page);
   const st1 = await waitFor(async () => ((await stateOf(E.page)) === '未設定' ? 1 : null), 11000);
   t('訪問俯瞰 答えが遅い端末: 8秒で見切って「未設定」に戻る（取得中のまま止まらない）', !!st1, await stateOf(E.page));
+  t('訪問俯瞰 答えが遅い端末: 見出しに読み先の札を出さない（読んでいない）', (await srcOf(E.page)) === null, await srcOf(E.page));
   await untilSince(E, 15000);
   const L = await lanes(E.page);
   t('訪問俯瞰 答えが遅い端末: 時間切れの後に届いた答えで盤面を描かない', !anyName(L) && (await stateOf(E.page)) === '未設定', await stateOf(E.page));
@@ -289,6 +307,7 @@ for (const c of [
   await E.page.click('#btnRefresh');
   const failed = await waitFor(async () => ((await stateOf(E.page)) === '取得失敗' ? 1 : null), 15000);
   t('訪問俯瞰 読めていた端末: 後で読めなくなった時は「取得失敗」', !!failed, await stateOf(E.page));
+  t('訪問俯瞰 読めていた端末: 読めなかった時は前の盤面のまま＝前に読んだ読み先と時刻のまま', /^新しい保存先から読みました \d{1,2}:\d{2}$/.test(await srcOf(E.page)), await srcOf(E.page));
   const msg = await emptyMsg(E.page), toast = await E.page.textContent('#toast');
   t('訪問俯瞰 読めていた端末: 接続先を入れる逆の案内・リンクを出さない', !msg.includes('接続先が入っていません') && !toast.includes('接続先が入っていません') && !(await linkShown(E.page)), { msg, toast });
   t('訪問俯瞰 読めていた端末: Google へもこの画面自身へも送らない・画面のエラーなし', E.st.gas.length === 0 && E.st.selfPost.length === 0 && !E.st.errors.length, [E.st.gas, E.st.selfPost, E.st.errors]);
@@ -301,7 +320,23 @@ for (const c of [
   await pressRefresh(E.page);
   const L = await waitFor(async () => { const x = await lanes(E.page); return x.length === 7 && fullNameShown(x) ? x : null; }, 15000);
   t('訪問俯瞰 接続先のある端末: 今までどおり盤面が出る（新しい保存先から読む）', !!L && E.st.sb.includes('kv_get care_schedule_v2'), { state: await stateOf(E.page), sb: E.st.sb.slice(0, 4) });
+  t('訪問俯瞰 接続先のある端末: 見出しに読み先と時刻を小さく出す（新しい保存先）', /^新しい保存先から読みました \d{1,2}:\d{2}$/.test(await srcOf(E.page)), await srcOf(E.page));
   t('訪問俯瞰 接続先のある端末: Google へは送らない（読めたため）・画面のエラーなし', E.st.gas.length === 0 && E.st.selfPost.length === 0 && !E.st.errors.length && !E.st.ext.length, [E.st.gas, E.st.errors, E.st.ext]);
+  await E.context.close();
+}
+
+/* ═════ 切り替えた後なのにログインしていない・接続先ありの端末: Google の写しから読む（見出しの札と写しの帯が食い違わない・2026-11-13） ═════ */
+console.log('\n— 切り替えた後でログインしていない・接続先のある端末: 写しから表示 —');
+for (const pg of ['support-overview.html', 'visit-overview.html']) {
+  const E = await run(pg, { label: '写し', withCfg: true, role: null });
+  await E.page.waitForTimeout(500);
+  if (pg === 'visit-overview.html') await pressRefresh(E.page);
+  const L = await waitFor(async () => { const x = await lanes(E.page); return x.length === 7 && fullNameShown(x) ? x : null; }, 20000);
+  t(pg + ' 写し: Google の写しから読んで盤面が出る', !!L && E.st.gas.length > 0, { state: await stateOf(E.page), gas: E.st.gas.slice(0, 3) });
+  const band = await E.page.evaluate(() => { const el = document.getElementById('copyBand'); return !!el && !el.hidden; });
+  t(pg + ' 写し: 写しの帯が出る', band);
+  t(pg + ' 写し: 見出しの札も「Google の写しから読みました」と時刻（帯と食い違わない）', /^Google の写しから読みました \d{1,2}:\d{2}$/.test(await srcOf(E.page)), await srcOf(E.page));
+  t(pg + ' 写し: 画面のエラーなし・外への通信なし', !E.st.errors.length && !E.st.ext.length && !E.st.selfPost.length, [E.st.errors, E.st.ext]);
   await E.context.close();
 }
 
@@ -314,6 +349,7 @@ for (const pg of ['support-overview.html', 'visit-overview.html']) {
   if (pg === 'visit-overview.html') await pressRefresh(E.page);
   const L = await waitFor(async () => { const x = await lanes(E.page); return x.length === 7 && fullNameShown(x) ? x : null; }, 20000);
   t(pg + ' スイッチが切: Google から読んで盤面が出る', !!L, { state: await stateOf(E.page), gas: E.st.gas.slice(0, 3) });
+  t(pg + ' スイッチが切: 見出しに「Google から読みました」と時刻を出す（写しとは言わない）', /^Google から読みました \d{1,2}:\d{2}$/.test(await srcOf(E.page)), await srcOf(E.page));
   const care = E.st.gasReq.find((r) => r.body.action === 'get' && r.body.key === 'care_schedule_v2');
   t(pg + ' スイッチが切: 週間計画の読み取りは POST・text/plain;charset=utf-8・本文 {action:get, key, token}', !!care && sentOk(care) && JSON.stringify(care.body) === JSON.stringify({ action: 'get', key: 'care_schedule_v2', token: 'check-flow' }), care);
   if (pg === 'support-overview.html') {

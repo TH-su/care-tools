@@ -18,6 +18,8 @@
    ★出力に console を使わない（gas/tests にあった頃からの決まり。個人情報を出力に流さないため）。 */
 'use strict';
 const fs = require('fs');
+/* 入居者マスタの画面のスクリプトは 2026-11-13 に resident-master.js へ移した（判定の区間 MC-JUDGE だけ HTML に残す）。移す前と同じ文字に戻して確かめる */
+const { readMaster } = require('../master-page.cjs');
 const path = require('path');
 const vm = require('vm');
 
@@ -163,7 +165,7 @@ async function startThenSwitch(L, direct){
 }
 
 async function main(){
-  const SRC = fs.readFileSync(HTML_PATH, 'utf8');
+  const SRC = readMaster(HTML_PATH);
   say('対象: ' + HTML_PATH);
 
   /* ── 1. 事務所PCの通常動作（デグレ確認） ── */
@@ -366,7 +368,7 @@ async function main(){
     say('  （省略: MASTER_HTML_OLD が渡されていない）');
   } else {
     say('  直す前の版: ' + OLD_PATH);
-    const L = load(fs.readFileSync(OLD_PATH, 'utf8'));
+    const L = load(readMaster(OLD_PATH));
     const { first, blocked } = await startThenSwitch(L, false);
     eq('（直す前）applyDeviceGuard の戻り値は true', blocked, true);
     t('（直す前）切り替え直後に fullLoading が true のまま残る＝再現した', L.v('fullLoading') === true, { fullLoading: L.v('fullLoading') });

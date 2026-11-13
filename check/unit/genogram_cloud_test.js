@@ -15,12 +15,14 @@
    ★出力に console を使わない（個人情報を出力に流さないための決まり）。 */
 'use strict';
 const fs = require('fs');
+/* 入居者マスタの画面のスクリプトは 2026-11-13 に resident-master.js へ移した（判定の区間 MC-JUDGE だけ HTML に残す）。移す前と同じ文字に戻して確かめる */
+const { readMaster } = require('../master-page.cjs');
 const path = require('path');
 const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..', '..');
 const SRC = {
-  master: fs.readFileSync(process.env.MASTER_HTML || path.join(ROOT, 'resident-master.html'), 'utf8'),
+  master: readMaster(process.env.MASTER_HTML || path.join(ROOT, 'resident-master.html')),
   face: fs.readFileSync(process.env.FACESHEET_HTML || path.join(ROOT, 'facesheet.html'), 'utf8'),
   geno: fs.readFileSync(process.env.GENO_HTML || path.join(ROOT, 'genogram.html'), 'utf8')
 };

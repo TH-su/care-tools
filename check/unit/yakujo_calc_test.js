@@ -11,6 +11,8 @@
      6. 判断の印は S|利用者No|YYYY-MM-DD|小文字16進8桁 */
 'use strict';
 const fs = require('fs'), vm = require('vm'), path = require('path');
+/* 入居者マスタの画面のスクリプトは 2026-11-13 に resident-master.js へ移した（判定の区間 MC-JUDGE だけ HTML に残す）。移す前と同じ文字に戻して確かめる */
+const { readMaster } = require('../master-page.cjs');
 const ROOT = path.join(__dirname, '..', '..');
 const Y = require(process.env.YAKUJO_CALC || path.join(ROOT, 'yakujo-calc.js'));
 const sb = { window: {} }; vm.createContext(sb);
@@ -348,7 +350,7 @@ console.log('\n— 8f. 調剤日の既定と、取り込んだ日を使う時の
   t('★取り込んだ日でない時は、選んだ日付をそのまま使う（今日に変えない）', Y.useDate({ importDay: false, date: '2026-10-18' }, '2026-10-23') === '2026-10-18');
   t('今日が分からない時は空（止める側へ）', Y.useDate({ importDay: true, date: '' }, '') === '');
   /* 画面の関数を切り出して動かす（0時をまたいだ時） */
-  const RM = fs.readFileSync(path.join(ROOT, 'resident-master.html'), 'utf8');
+  const RM = readMaster(path.join(ROOT, 'resident-master.html'));
   const cutF = (src, name) => { const h = src.indexOf('function ' + name + '('); if (h < 0) throw new Error('関数が見つかりません: ' + name);
     let i = src.indexOf('{', h), d = 0; for (; i < src.length; i++) { if (src[i] === '{') d++; else if (src[i] === '}') { d--; if (d === 0) return src.slice(h, i + 1); } } };
   const box = { YakujoCalc: Y, String, Array, todayISO: () => box.now, now: '2026-10-22' };
@@ -468,7 +470,7 @@ console.log('\n— 11. 変更記録の「書類の行と扱い」（logRows・20
   const huge1 = Y.logRows([{ kind: 'add', action: 'add', raw: 'x', line: 'y'.repeat(9000) }]);
   t('1行だけで超える時は「…」で切る', huge1.length === 8000 && /…$/.test(huge1), huge1.length);
   /* 画面の配線 */
-  const RM2 = fs.readFileSync(path.join(ROOT, 'resident-master.html'), 'utf8');
+  const RM2 = readMaster(path.join(ROOT, 'resident-master.html'));
   const cut2 = (src, name) => { const h = src.indexOf('function ' + name + '('); let i = src.indexOf('{', h), d = 0; for (; i < src.length; i++) { if (src[i] === '{') d++; else if (src[i] === '}') { d--; if (d === 0) return src.slice(h, i + 1); } } };
   const ap2 = cut2(RM2, 'yjApply_');
   t('★反映は docRows を logRows で作って送る（本文は yjBody_ で作り、1人ずつは確認表の行 c.rows を渡す）', /body\.docRows=YakujoCalc\.logRows\(rows\)/.test(cut2(RM2, 'yjBody_')) && /var body=yjBody_\(c, x, j, date, c\.rows, ''\);/.test(ap2));
@@ -569,7 +571,7 @@ console.log('\n— 12. 取り込みの一致率（correctionKinds・metricOf・s
   t('集計も直近30件まで', Y.summarize(Array.from({ length: 40 }, (_, i) => rec(i, true))).n === 30);
 
   /* 画面の配線（切り出して偽の localStorage で動かす） */
-  const RM3 = fs.readFileSync(path.join(ROOT, 'resident-master.html'), 'utf8');
+  const RM3 = readMaster(path.join(ROOT, 'resident-master.html'));
   const cut3 = (src, name) => { const h = src.indexOf('function ' + name + '('); if (h < 0) throw new Error('関数が見つかりません: ' + name);
     let i = src.indexOf('{', h), d = 0; for (; i < src.length; i++) { if (src[i] === '{') d++; else if (src[i] === '}') { d--; if (d === 0) return src.slice(h, i + 1); } } };
   const mkBox = (role, stored) => {
@@ -722,7 +724,7 @@ console.log('\n[コード9桁で結んだ時の重なり・単位・同じ方の
   const j = Y.judge({ id: '11', dates: { labeled: ['2026-11-01'], other: [] }, date: '2026-11-01', today: '2026-11-04', identity: true, server: 'ok', rows: keepAll, current: cur, yjOf: yf });
   t('★1人ずつで「残す」を選んでも、名前の違う同じ薬が2行になることを重なりとして止める', /同じ名前の薬が2行/.test(j.stop) && j.dupStems.length >= 1, j.stop);
   t('★規格の単位の違い（500μg と 0.5mg）をそろえる（指摘3）', Y.canonKey('メコバラミン錠500μg') === Y.canonKey('メコバラミン0.5mg錠') && Y.canonKey('見本錠0.25μg') !== Y.canonKey('見本錠0.25mg'));
-  const RM5 = fs.readFileSync(path.join(ROOT, 'resident-master.html'), 'utf8');
+  const RM5 = readMaster(path.join(ROOT, 'resident-master.html'));
   t('★同じ方の書類が2枚以上ある時は、まとめて反映に入れない（指摘2）', /dupPick\[String\(x\.pick\)\]>1&&\(bc\.ok\|\|bc\.none\)/.test(RM5) && /同じ方の書類が /.test(RM5));
   t('結果のファイルを作った時刻を出し、1日より前なら知らせる（指摘4）', /この結果のファイルは /.test(RM5) && /age>24/.test(RM5));
 }
@@ -877,7 +879,7 @@ console.log('\n[医療機関ごとの入れ替えと臨時薬（clinicPlan・本
 }
 console.log('\n[まとめて反映の画面（resident-master.html）]');
 {
-  const RM4 = fs.readFileSync(path.join(ROOT, 'resident-master.html'), 'utf8');
+  const RM4 = readMaster(path.join(ROOT, 'resident-master.html'));
   const cut4 = (src, name) => { const h = src.indexOf('function ' + name + '('); if (h < 0) throw new Error('関数が見つかりません: ' + name); let i = src.indexOf('{', h), d = 0; for (; i < src.length; i++) { if (src[i] === '{') d++; else if (src[i] === '}') { d--; if (d === 0) return src.slice(h, i + 1); } } };
   const ba = cut4(RM4, 'yjBulkApply_'), pl = cut4(RM4, 'yjPreload_'), bh = cut4(RM4, 'yjBulkHtml_');
   t('★1人ずつの確認表は、かかりつけ病院の判断を知らせに使うだけで、書類に無い今の行を自動で中止にしない（本人指示 2026-11-10）', /cur\.plan=typeof Y\.clinicPlan==='function'/.test(cut4(RM4, 'yjBuild_')) && !/planRows/.test(cut4(RM4, 'yjBuild_')));

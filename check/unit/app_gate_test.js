@@ -7,6 +7,8 @@
    ★出力に console を使わない（個人情報を出力に流さない作法をそろえる）。 */
 'use strict';
 const fs = require('fs');
+/* 入居者マスタの画面のスクリプトは 2026-11-13 に resident-master.js へ移した（判定の区間 MC-JUDGE だけ HTML に残す）。移す前と同じ文字に戻して確かめる */
+const { readMaster } = require('../master-page.cjs');
 const path = require('path');
 const vm = require('vm');
 
@@ -215,7 +217,7 @@ function fakeAuth(st, rpc) {
       ['connection-settings.html', 'connection-settings', /\nfunction init\(\)\{/, /\nfunction startApp_\(\)\{/, ['buildCard(', 'setupBackup(', 'wizInit(']]
     ];
     for (const [file, key, entryRe, startRe, reads] of PAGES) {
-      const html = file === 'staff-master.html' ? stfmPage_(fs.readFileSync(path.join(ROOT, file), 'utf8')) : fs.readFileSync(path.join(ROOT, file), 'utf8');
+      const html = file === 'staff-master.html' ? stfmPage_(fs.readFileSync(path.join(ROOT, file), 'utf8')) : readMaster(path.join(ROOT, file));
       const m1 = entryRe.exec(html), m2 = startRe.exec(html);
       if (!m1 || !m2 || m2.index < m1.index) { t(file + ': 入口と続きの関数が見つかる', false); continue; }
       const entry = html.slice(m1.index, m2.index);
@@ -234,7 +236,7 @@ function fakeAuth(st, rpc) {
     const af = fs.readFileSync(path.join(ROOT, 'admission-flow.html'), 'utf8');
     t('入居調整: 画面に戻った時・つながった時・別タブの控えの取り込みも、確かめが通るまでしない',
       /if \(!afGateOk_ \|\| document\.hidden\) return;/.test(af) && /if \(!afGateOk_\) return;\n  if \(dirty\)/.test(af) && /if \(!afGateOk_ \|\| !ev \|\| ev\.key !== CACHE_KEY\) return;/.test(af));
-    const rm = fs.readFileSync(path.join(ROOT, 'resident-master.html'), 'utf8');
+    const rm = readMaster(path.join(ROOT, 'resident-master.html'));
     const ss = rm.slice(rm.indexOf('\nfunction saveSyncCfg('), rm.indexOf('\nfunction testSync('));
     t('入居者マスタ: 現場端末の止めから事務所PCへ戻した時も、確かめを通ってから名簿を読む（反証レビューの指摘）',
       ss.indexOf('if(!rmGateOk_){ rmGate_(); return; }') > 0 && ss.indexOf('if(!rmGateOk_){ rmGate_(); return; }') < ss.lastIndexOf('rmLiveGate_(loadData);'));
