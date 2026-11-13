@@ -287,13 +287,17 @@ console.log('\n【8】AI のキーが無い時の（管理者向け：…）は�
     vm.createContext(mb);
     vm.runInContext((S.match(/var MASTER_WRONG_MSG = '[^']*';/) || [''])[0] + '\n' + grabFn(S, 'masterMsg_'), mb);
     vm.runInContext('MASTER_MSG = MASTER_WRONG_MSG;', mb);
-    t('8-6 入居者マスタの接続先の取り違え: 職員には直し方を出さない', mb.masterMsg_() === '入居者マスタの接続先が違うため、引継ぎはできません。管理者に伝えてください。', mb.masterMsg_());
+    t('8-6 入居者マスタの接続先の取り違え: 職員には直し方を出さない（名簿の失敗では職員向けの文を控える）', mb.masterMsg_() === '入居者マスタの接続先が違うため、引継ぎはできません。管理者に伝えてください。'
+      && /=== '不明なaction'\)\n\s*\? MASTER_WRONG_MSG\n/.test(S), mb.masterMsg_());
     mb.TP_IS_ADMIN = true;   // 名簿の失敗の後で管理者と分かった
     t('8-7 管理者と分かった後の表示は今の直し方の文（文を決めた時がその前でも）', /^入居者マスタの接続先が、入居者マスタ以外のGAS（薬学管理・申送など）になっています。/.test(mb.masterMsg_()), mb.masterMsg_());
     vm.runInContext("MASTER_MSG = '入居者マスタの接続先が未設定です。';", mb);
     t('8-8 ほかの知らせは管理者でもそのまま', mb.masterMsg_() === '入居者マスタの接続先が未設定です。');
     t('8-9 表示の3か所（一覧の帯・編集の帯・引継ぎの知らせ）は masterMsg_ を通す', !/banner\(host, 'warn', MASTER_MSG\)|\(MASTER_MSG \|\| '入居者マスタを参照できません'\)/.test(S)
-      && (S.match(/masterMsg_\(\)/g) || []).length >= 3);
+      && S.replace(/function masterMsg_\(\)/, '').match(/masterMsg_\(\)/g).length === 3
+      && /if \(MASTER_MSG\) banner\(host, 'warn', masterMsg_\(\)\);/.test(grabFn(S, 'renderBanners'))
+      && /if \(!MASTER_OK\) banner\(host, 'warn', '引継ぎ不可：' \+ \(masterMsg_\(\) \|\| '入居者マスタを参照できません'\)/.test(grabFn(S, 'renderEdit'))
+      && /if \(!MASTER_OK\) \{ toast\('引継ぎ不可：' \+ \(masterMsg_\(\) \|\| '入居者マスタを参照できません'\)\); return; \}/.test(grabFn(S, 'pullMaster')));
     t('8-10 管理者と分かった時に取り違えの帯が出ていれば一覧の帯を描き直す', /if \(TP_IS_ADMIN && MASTER_MSG === MASTER_WRONG_MSG\) \{ try \{ renderBanners\(\); \}/.test(grabFn(S, 'tpCheckAdmin_')));
   }
 }
