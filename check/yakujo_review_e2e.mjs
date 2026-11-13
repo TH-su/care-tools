@@ -5,11 +5,11 @@
  *
  * 確かめること:
  *   1. まとめて反映で消した方の詳細画面の「薬剤情報」の欄の頭に「⚠ 見直してください：まとめて反映（日時・確かめた人）」が出る。
- *      足すだけ・見直した・7日を過ぎた記録には出ない
+ *      足すだけ・見直した・14日を過ぎた記録には出ない。7日を過ぎて見直されていない記録は赤い「期限切れ」の印にする（2026-11-13 代表者の決定）
  *   2. 「見直した」は確認の窓の後に medCand 'yjReview'（番号・印・時刻・ログインの証明）を1回送り、通れば印が消える。
  *      断られた時は職員に分かる文で出し、印は残す
  *   3. 印は紙に出さない（@media print で消える）・現場の端末では出さない
- *   4. 管理者の一覧は、見直し待ちと完全入れ替えの記録を出し、メニューの札の控え（rm_yjrev_due）に件数と日付だけを書く
+ *   4. 管理者の一覧は、見直し待ち（期限切れの行は赤）と完全入れ替えの記録を出し、メニューの札の控え（rm_yjrev_due・v:2）に件数と日付だけを書く
  * ★架空データだけ（CLAUDE.md §2-1）。通信は全部横取りし、外へは出ない。ログインの証明は架空の文字列を返す。
  */
 import fs from 'node:fs';
@@ -31,15 +31,21 @@ const LOG = {
       after: '見本A錠 1錠 朝食後', by: 'adm@example.invalid', how: 'まとめて反映', reviewedAt: '', reviewedBy: '' },
     { at: iso(NOW - 7200000), id: 'R01', srcKey: 'S|R01|2026-11-10|0000000b', srcDate: '2026-11-10', docRows: ADD, before: '', after: '見本D錠 1錠 朝食後',
       by: 'adm@example.invalid', how: 'まとめて反映', reviewedAt: '', reviewedBy: '' },
-    { at: iso(NOW - 8 * 86400000), id: 'R01', srcKey: 'S|R01|2026-11-03|0000000c', srcDate: '2026-11-03', docRows: STOP, before: '見本E錠\n見本F錠', after: '見本E錠',
+    /* 2026-11-13: 印が消える日が7日から14日になったので、「古くて出さない記録」を8日前から15日前へ移した（8日前は R04 で期限切れとして確かめる） */
+    { at: iso(NOW - 15 * 86400000), id: 'R01', srcKey: 'S|R01|2026-10-27|0000000c', srcDate: '2026-10-27', docRows: STOP, before: '見本E錠\n見本F錠', after: '見本E錠',
       by: 'adm@example.invalid', how: 'まとめて反映', reviewedAt: '', reviewedBy: '' },
   ],
   R02: [
     { at: iso(NOW - 3600000), id: 'R02', srcKey: 'S|R02|2026-11-11|0000000d', srcDate: '2026-11-11', docRows: STOP, before: '見本A錠\n見本G錠', after: '見本A錠',
       by: 'adm@example.invalid', how: 'まとめて反映', reviewedAt: iso(NOW - 600000), reviewedBy: 'nurse@example.invalid' },
   ],
+  /* 期限切れ（反映から8日・見直していない・2026-11-13 代表者の決定） */
+  R04: [
+    { at: iso(NOW - 8 * 86400000), id: 'R04', srcKey: 'S|R04|2026-11-05|0000000f', srcDate: '2026-11-05', docRows: STOP, before: '見本J錠\n見本K錠', after: '見本J錠',
+      by: 'adm@example.invalid', how: 'まとめて反映', reviewedAt: '', reviewedBy: '' },
+  ],
 };
-const AUDIT = [].concat(LOG.R01, LOG.R02, [
+const AUDIT = [].concat(LOG.R01, LOG.R02, LOG.R04, [
   { at: '2026-11-10T13:30:00.000Z', id: 'R03', srcKey: 'S|R03|2026-11-10|0000000e', srcDate: '2026-11-10', docRows: STOP, before: '見本H錠\n見本I錠', after: '見本H錠',
     by: 'adm@example.invalid', how: '', reviewedAt: '', reviewedBy: '' },
 ]);
@@ -92,7 +98,8 @@ try {
   let r = await run({});
   await openR(r.p, 'R01');
   const marks = await r.p.$$eval('#yrSlot .yr-mark', (els) => els.map((e) => e.textContent));
-  t('★まとめて反映で消した記録だけに印（足すだけ・8日前の記録は出さない）', marks.length === 1, marks);
+  t('★まとめて反映で消した記録だけに印（足すだけ・15日前の記録は出さない）', marks.length === 1, marks);
+  t('★7日以内の印は期限切れにしない', (await r.p.$$('#yrSlot .yr-mark.yr-over')).length === 0 && (await r.p.$$('#yrSlot .yr-tag')).length === 0 && /^⚠ 見直してください：/.test(marks[0] || ''), marks[0]);
   t('★印の文言「⚠ 見直してください：まとめて反映（日時・確かめた人 …）」', /^⚠ 見直してください：まとめて反映（\d{4}-\d{2}-\d{2} \d{2}:\d{2}・確かめた人 adm@example\.invalid）/.test(marks[0] || ''), marks[0]);
   t('★消えた行（見本B錠）を出す', /定期薬から無くなった行：見本B錠 1錠 夕食後/.test(marks[0] || ''), marks[0]);
   const inMeds = await r.p.evaluate(() => { const s = document.getElementById('yrSlot'); const sec = s && s.closest('.sec'); const l = sec && sec.querySelector('.sec-lbl'); return l ? l.textContent : ''; });
@@ -102,6 +109,21 @@ try {
   await r.p.emulateMedia({ media: 'screen' });
   t('★紙には出さない（@media print で消える）', printShown === 'none', printShown);
   if (shots) { fs.mkdirSync(shots, { recursive: true }); await (await r.p.$('#yrSlot')).screenshot({ path: path.join(shots, 'yr-mark.png') }); }
+
+  /* 1b. 期限切れ（反映から8日） */
+  await openR(r.p, 'R04');
+  const om = await r.p.$$eval('#yrSlot .yr-mark', (els) => els.map((e) => ({ t: e.textContent, over: e.classList.contains('yr-over') })));
+  t('★7日を過ぎた印は赤い「期限切れ」（見直してくださいの文言の頭に札）', om.length === 1 && om[0].over && /^⚠ 期限切れ 見直してください：まとめて反映（/.test(om[0].t) && /見直しの期限（\d{4}-\d{2}-\d{2} \d{2}:\d{2}）を過ぎています。\d{4}-\d{2}-\d{2} \d{2}:\d{2} まで出します。/.test(om[0].t), om);
+  /* 地は画面の --ng（つむぐケアの型が濃くした値を含む）。比べる色は、その画面の --ng を地にした見本の要素を測って取る */
+  const tagC = await r.p.$eval('#yrSlot .yr-tag', (e) => {
+    const x = document.createElement('span'); x.style.backgroundColor = 'var(--ng)'; e.parentNode.appendChild(x);
+    const ng = getComputedStyle(x).backgroundColor; e.parentNode.removeChild(x);
+    return [getComputedStyle(e).color, getComputedStyle(e).backgroundColor, ng];
+  });
+  t('★期限切れの札は白の文字・赤の地（--ng）', tagC[0] === 'rgb(255, 255, 255)' && tagC[1] === tagC[2] && /^rgb\((1[2-9]\d|2\d\d), \d{1,2}, \d{1,2}\)$/.test(tagC[1]), tagC);
+  t('★期限切れでも「見直した」を押せる', !!(await r.p.$('#yrSlot .yr-mark.yr-over .yr-done:not([disabled])')));
+  if (shots) await (await r.p.$('#yrSlot')).screenshot({ path: path.join(shots, 'yr-mark-over.png') });
+  await openR(r.p, 'R01');
 
   /* 2. 見直した */
   await r.p.click('#yrSlot .yr-done');
@@ -143,12 +165,15 @@ try {
   await r.p.evaluate(() => { document.getElementById('yrOpen').hidden = false; window.yrOpen_(); });
   await r.p.waitForFunction(() => /見直し待ち \d+ 件/.test((document.getElementById('yrBody') || {}).textContent || ''), null, { timeout: 10000 });
   const body = await r.p.textContent('#yrBody');
-  /* R03（11/10 夜の自動の中止の期間）は 11/17 22:30 まで印が出る。それ以後にこの試験を回した時は R01 だけ */
-  const want = 1 + (Date.now() < Date.parse('2026-11-10T13:30:00.000Z') + 7 * 86400000 ? 1 : 0);
-  t('★見直し待ち（R01 のまとめて反映・7日以内なら R03 の自動の中止の期間。足すだけ・見直した・8日前は数えない）', new RegExp('見直し待ち ' + want + ' 件').test(body), body.slice(0, 400));
+  /* R03（11/10 夜の自動の中止の期間）は 11/24 22:30 まで印が出る（11/17 22:30 からは期限切れ）。それ以後にこの試験を回した時は R01・R04 だけ */
+  const r03 = Date.parse('2026-11-10T13:30:00.000Z'), r03on = Date.now() < r03 + 14 * 86400000, r03over = r03on && Date.now() >= r03 + 7 * 86400000;
+  const want = 2 + (r03on ? 1 : 0), wantOver = 1 + (r03over ? 1 : 0);
+  t('★見直し待ち（R01 のまとめて反映・R04 の期限切れ・14日以内なら R03 の自動の中止の期間。足すだけ・見直した・15日前は数えない）', new RegExp('見直し待ち ' + want + ' 件（うち期限切れ ' + wantOver + ' 件）').test(body), body.slice(0, 400));
+  const overRows = await r.p.$$eval('#yrBody tr.yr-over', (els) => els.map((e) => e.textContent));
+  t('★一覧の期限切れの行は赤（R04 を含む・期限切れの札つき）', overRows.length === wantOver && overRows.some((x) => /R04/.test(x) && /期限切れ/.test(x)), overRows);
   t('★完全入れ替えの一覧に、自動の中止の期間の記録（R03）が出る', /完全入れ替えで定期薬を消した反映 1 件/.test(body) && /R03/.test(body) && /自動の中止の期間（中止 1行）/.test(body) && /見本I錠/.test(body), body);
   const due = await r.p.evaluate(() => localStorage.getItem('rm_yjrev_due'));
-  t('★メニューの札の控えは件数と日付と管理者の印だけ', new RegExp('^\\{"v":1,"at":"\\d{4}-\\d{2}-\\d{2}","admin":true,"review":' + want + '\\}$').test(due || ''), due);
+  t('★メニューの札の控えは件数と日付と管理者の印だけ（v:2・期限切れの数つき）', new RegExp('^\\{"v":2,"at":"\\d{4}-\\d{2}-\\d{2}","admin":true,"review":' + want + ',"overdue":' + wantOver + '\\}$').test(due || ''), due);
   t('★一覧は管理者の口（yjAudit）にログインの証明を添えて読む', r.sent.some((b) => b.op === 'yjAudit' && b.accessToken === 'check-token'));
   await r.p.emulateMedia({ media: 'print' });
   const mp = await r.p.evaluate(() => getComputedStyle(document.getElementById('mYjRev')).display);
