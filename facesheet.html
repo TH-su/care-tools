@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-i9qt5D2d72ViilON7Fp21zSGEddzjKrBeQbOlip9jNA=' 'sha256-FaUkPoaLDPyYr22WYg1/efe9oXM7eff3NczDPn0wG8s=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-i9qt5D2d72ViilON7Fp21zSGEddzjKrBeQbOlip9jNA=' 'sha256-+2fA/ZBP54ZOZfbcz2CN1KPlaCCMw0UFmTC6Ko3tusQ=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
@@ -3607,8 +3607,6 @@ function masterTargetVerdict(j){
   return 'offline';
 }
 var MASTER_WRONG_MSG='このURLは入居者マスタのGASではありません（薬学管理・申送など別のアプリのGASの可能性があります）';
-/* 職員に見える断りの文（2026-11-13 第6段 FS-02・文は仮置き）。上の MASTER_WRONG_MSG は入居者マスタ・接続設定と3画面で一字一句同じ文のまま残し（非公開の試験が確かめる）、画面にはこちらを出す */
-var MASTER_WRONG_SAY='この接続先は入居者マスタのものではありません（薬学管理・申送など別のアプリの接続先の可能性があります）';
 function verifyMasterUrl(url){
   var ac=(typeof AbortController==='function') ? new AbortController() : null;
   return new Promise(function(resolve){
@@ -3626,6 +3624,8 @@ function verifyMasterUrl(url){
     }catch(e){ fin('offline'); }
   });
 }
+/* 職員に見える断りの文（2026-11-13 第6段 FS-02・文は仮置き）。MASTER_WRONG_MSG は入居者マスタ・接続設定と3画面で一字一句同じ文のまま残し（非公開の試験が確かめる・判定と verifyMasterUrl の並びも3画面と同じに保つ）、画面にはこちらを出す */
+var MASTER_WRONG_SAY='この接続先は入居者マスタのものではありません（薬学管理・申送など別のアプリの接続先の可能性があります）';
 function saveSync(){
   /* ★URL を変える保存は、書き込む前に入居者マスタのGASかを確かめる（2026-10-10）。
      別アプリのGASと分かった時だけ止め、今の接続先を残す。通信できず確かめられない時は止めない。
