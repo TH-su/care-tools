@@ -154,6 +154,19 @@ t('設備: 形の違う数・法定が期限切れより多い・eq の印の違
   [{ overdue: 1.5 }, { soon: '3' }, { legal: -1 }, { legal: 3 }, { eq: 'true' }, { soon: undefined }, { overdue: 10000 }].every((o) => dueText(eq(o), TODAY) === '' && dueLegal(eq(o), TODAY) === ''), '');
 t('設備: 数えた日が今日より先なら出さない・前の日はその日付のまま',
   dueText(eq({ at: '2026-10-25' }), TODAY) === '' && dueLegal(eq({ at: '2026-10-25' }), TODAY) === '' && dueText(eq({ at: '2026-10-03' }), TODAY) === '期限切れ2・30日以内3（10/3時点）', '');
+/* 薬情の見直しの期限切れ（2026-11-13 代表者の決定）: 控えは v:2 で overdue（review の内数）を持つ。赤の札「期限切れn」は管理者だけ。v:1 の控えも読む */
+const rv2 = (o) => J(Object.assign({ v: 2, at: '2026-10-24', admin: true, review: 3, overdue: 1 }, o));
+t('見直し v:2: 件数の札は今までどおり「見直し待ちn」・赤の札は「期限切れn」', dueText(rv2({}), TODAY, 'admin') === '見直し待ち3（10/24時点）' && dueLegal(rv2({}), TODAY, 'admin') === '期限切れ1',
+  [dueText(rv2({}), TODAY, 'admin'), dueLegal(rv2({}), TODAY, 'admin')]);
+t('見直し v:2: 管理者でない時はどちらも出さない', ['office', 'field', null, undefined, 'pending'].every((r) => dueText(rv2({}), TODAY, r) === '' && dueLegal(rv2({}), TODAY, r) === ''), '');
+t('見直し v:2: 期限切れ0件なら赤の札は出さない・overdue が review より多い・形が違う控えは両方出さない',
+  dueLegal(rv2({ overdue: 0 }), TODAY, 'admin') === '' && dueText(rv2({ overdue: 0 }), TODAY, 'admin') === '見直し待ち3（10/24時点）'
+  && [{ overdue: 4 }, { overdue: 1.5 }, { overdue: '1' }, { overdue: -1 }, { overdue: undefined }, { admin: false }, { admin: 'true' }]
+    .every((o) => dueText(rv2(o), TODAY, 'admin') === '' && dueLegal(rv2(o), TODAY, 'admin') === ''), '');
+t('見直し v:2: 数えた日が今日より先なら出さない', dueText(rv2({ at: '2026-10-25' }), TODAY, 'admin') === '' && dueLegal(rv2({ at: '2026-10-25' }), TODAY, 'admin') === '', '');
+t('見直し v:1（古い控え）は今までどおり読み、赤の札は出さない', dueText(rv({}), TODAY, 'admin') === '見直し待ち2（10/24時点）' && dueLegal(rv({ overdue: 1 }), TODAY, 'admin') === '', '');
+t('v:2 は admin の印の控えだけ（計画書・設備の形の v:2 は出さない）', dueText(J({ v: 2, at: '2026-10-24', overdue: 1, warn: 0, none: 0 }), TODAY, 'admin') === '', '');
+t('メニューの赤の札は今のログインの役割を渡して読む', /dueLegal\(raw, todayYmd\(\), role\)/.test(INDEX), '');
 t('設備: 壊れた控え・版の違う控えは出さない', dueText('{壊れ', TODAY) === '' && dueLegal('{壊れ', TODAY) === '' && dueLegal(eq({ v: 2 }), TODAY) === '', '');
 t('設備: 赤の札は地が --due-tx・文字が白（白と #a50e0e で約 7.9:1）', /\.tile \.due\.legal \{[^}]*color: #fff;[^}]*background: var\(--due-tx\)/.test(INDEX), '');
 t('設備: 赤の札は件数の札と同じ守り（現場端末では読まない・鍵の形を確かめる）で付け、付け直しでも外す',

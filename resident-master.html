@@ -550,6 +550,11 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .yr-sec{margin:12px 0 4px; font-size:1rem}
 .yr-note{font-size:0.875rem; color:var(--g9); margin:4px 0 8px}
 .yr-wrap{overflow-x:auto}
+/* 期限切れ（反映から7日を過ぎて見直されていない・2026-11-13 代表者の決定）。札は白地に --ng（約 5.6:1）・色だけに頼らず「期限切れ」の語で書く */
+.yr-mark.yr-over{border-left:4px solid var(--ng); padding-left:8px}
+.yr-tag{display:inline-block; background:var(--ng); color:#fff; border-radius:4px; padding:0 6px; font-weight:700}
+.yr-tbl tr.yr-over td{background:var(--ng-l)}
+.yr-over-n{color:var(--ng)}
 @media print{.yr-slot,#mYjRev{display:none !important}}
 /* ── 担当者会議（2026-10-25 本人指示）。詳細画面の「意向・人生会議（ACP）」の直後に、担当者会議のページへのリンクだけを置く。
    ★事務所PCだけ・画面だけ＝印刷しない（PRINT_SECS に入れない・data-k を付けない） ── */
@@ -2074,7 +2079,7 @@ if(!window.SUDialog) window.SUDialog = {
 <script src="su-facility.js?v=2026-11-07"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>
 <!-- 薬情の取り込みの判定・組み立て（純関数・2026-10-22）。読めない時は入口のボタンを出さない（yjCalcOk_） -->
-<script src="yakujo-calc.js?v=2026-11-12"></script>
+<script src="yakujo-calc.js?v=2026-11-13"></script>
 <script src="revenue-calc.js?v=2026-11-07"></script>
 <script src="su-print.js?v=2026-09-12"></script>
 <!-- 入居者マスタの写し（統合 0004）。supabase-js と su-auth.js は写す時にだけ読み込む -->
@@ -2334,7 +2339,7 @@ function mcBuild_(d){
 }
 /* ==== 薬の変更候補の判定ここまで（MC-JUDGE-END） ==== */
 </script>
-<script src="resident-master.js?v=2026-11-13"></script>
+<script src="resident-master.js?v=2026-11-13.2"></script>
 <!-- 見出しの下の初回の案内の帯（2026-11-02 本人の決定）。×で閉じた端末では出さない。画面の動き・保存・印刷には触れない -->
 <script src="su-intro.js?v=2026-11-02.3"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
