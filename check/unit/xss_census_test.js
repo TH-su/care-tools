@@ -520,7 +520,7 @@ const CENSUS = {
     [E, "document.getElementById('drawer').innerHTML = html"],
     [E, "el.innerHTML = h"],
     [E, "document.getElementById('reqPreview').innerHTML = h"],
-    [N, "document.getElementById('reqPreview').innerHTML = '<p>✓ ' + n + '名分を登録しました</p>'"],
+    [N, "document.getElementById('reqPreview').innerHTML = '<p>✓ ' + n + '名分を登録しました' + (hiddenN ? '（この月に表示しない職員（退職・休職・非表示） ' + hiddenN + '名分は登録していません）' : '') + '</p>'"],
     [N, "out.innerHTML = '<div class=\"panel\"><p class=\"muted\">勤務表を読んでいます（' + months.length + 'か月分）…</p></div>'"],
     [E, "out.innerHTML = self.tokuteiHtml_(ym, W, months, r)"],
     [E, "out.innerHTML = '<div class=\"panel\"><p class=\"muted\">数えられませんでした（' + esc(String(e && e.message || e)) + '）。</p></div>'"],
