@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-L4vCMZ2kMfKlQbR6aj/DQi1b1syV8QVaH0dH6UX1O9c='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-5aJYiXHm1vGDohDcE6M0LIb/4byrsA4SI8MMx4LmNuA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -50,6 +50,9 @@ body {
   border: 1px solid rgba(255,255,255,.3); border-radius: 6px; padding: 4px 10px;
   cursor: pointer; white-space: nowrap;
 }
+/* 見出しの日付は押すとカレンダーが開くので、div から本物のボタンにした（キーボードの Enter・Space で開け、読み上げでもボタンと分かる・2026-11-13・代表者「推奨どおり」）。
+ * ボタンの既定の書体・色・行の高さ・余白は使わず、div の時と同じ見た目のままにする */
+button.hdr-date { font-family: inherit; color: inherit; line-height: inherit; margin: 0; text-align: inherit; letter-spacing: inherit; -webkit-appearance: none; appearance: none; }
 .hdr-btn {
   background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.3);
   color: #fff; border-radius: 6px; padding: 6px 10px; font-size: 0.875rem; cursor: pointer;
@@ -310,7 +313,8 @@ body.printing .b-head .h-absent { display: none; }
 /* グループ化固定マーカー(画面のみ): アウトライン色は groupId のハッシュで JS が inline 指定。
  * outline は枠寸法に影響しない＝D&D座標計算/レイアウトに非干渉。🔗 バッジは枠左下に絶対配置。 */
 .b-task .t-group { position: absolute; bottom: 0; left: 2px; font-size: 0.625rem; line-height: 1; opacity: .9; pointer-events: none; }
-body.printing .b-task.grouped { outline: none !important; }
+/* 印刷中は束ねの点線の目印を消す（目印は JS が inline で付けるので !important）。札は押す所ではなく選ぶ時の枠でもないので、線の種類だけを消す（2026-11-13） */
+body.printing .b-task.grouped { outline-style: none !important; }
 body.printing .b-task .t-group { display: none !important; }
 /* コメント: 固定ON=枠外フローティング吹き出し(b-cmt-layer)・未固定=📝バッジのみ */
 /* canvas直下のオーバーレイ層（枠のoverflow:hiddenに切られない）。線はpointer-events無し・吹き出しのみ操作可 */
@@ -376,7 +380,9 @@ body.printing .b-cmt-line { stroke: #000; stroke-width: 0.8px; stroke-dasharray:
 .note-ctx .nctx-bg.on { box-shadow: 0 0 0 2px var(--pri); }
 .note-ctx .nctx-del { color: #c62828; font-weight: 700; margin-left: auto; }
 body.printing .note-ctx { display: none !important; }
-.b-note-body { padding: 4px 6px; min-height: 22px; min-width: 60px; line-height: 1.3; outline: none; white-space: pre-wrap; word-break: break-word; }
+.b-note-body { padding: 4px 6px; min-height: 22px; min-width: 60px; line-height: 1.3; white-space: pre-wrap; word-break: break-word; }
+/* 付箋のメモを書いている間は、どこに書いているかが見える枠を出す（以前は枠を消していて、書いている所が分からなかった・画面だけ・2026-11-13・代表者「推奨どおり」） */
+.b-note-body:focus-visible { outline: 2px solid var(--pri); outline-offset: -2px; }
 .b-note-rs {
   position: absolute; right: 1px; bottom: 1px; width: 13px; height: 13px;
   cursor: nwse-resize; pointer-events: auto;
@@ -781,7 +787,7 @@ body.su-print-staff24 #rp-print, body.su-print-staff24range #rp-print { display:
   <!-- メニュー（index.html）へ戻る（care-tools のほかの画面と同じ形・2026-11-13）。移る時の保存は pagehide の flushAll_ が確定する -->
   <a class="hdr-btn su-menu-back" href="index.html">← メニュー</a>
   <button class="hdr-btn" id="btnPrev" aria-label="前の日へ" title="前日(-1日)">◀</button>
-  <div class="hdr-date" id="hdrDate" role="button" title="クリックでカレンダー">----/--/--</div>
+  <button type="button" class="hdr-date" id="hdrDate" title="クリックでカレンダー">----/--/--</button>
   <button class="hdr-btn" id="btnNext" aria-label="次の日へ" title="翌日(+1日)">▶</button>
   <button class="hdr-btn wk" id="btnPrevWeek" title="先週(-7日)">先週</button>
   <button class="hdr-btn wk" id="btnToday" title="今日へ">今日</button>
@@ -877,11 +883,11 @@ body.su-print-staff24 #rp-print, body.su-print-staff24range #rp-print { display:
 
 <!-- カレンダー（日付ジャンプ） -->
 <div class="modal" id="mCal">
-  <div class="cal-nav">
+  <nav class="cal-nav" aria-label="月の切り替え">
     <button class="hdr-btn cal-mbtn" id="calPrev" type="button" aria-label="前の月へ" title="前の月へ">◀</button>
     <h3 id="calTitle" class="cal-title">----年--月</h3>
     <button class="hdr-btn cal-mbtn" id="calNext" type="button" aria-label="次の月へ" title="次の月へ">▶</button>
-  </div>
+  </nav>
   <div class="cal-dow"><span>日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span></div>
   <div class="cal-grid" id="calGrid"></div>
   <div class="cal-foot"><button class="btn" id="calClose" type="button">閉じる</button></div>
@@ -21494,7 +21500,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261113120853';
+  var WS_BUILD = '20261113164106';
   var WS_APP_VER = 2026102701;   /* 2026-10-27 まだ届いていないロックを「外した」に変えて送り、版の進んでいない古い未送信を退避して捨てる前の版の画面が、仕上げたロックの盤面を前の版で上書きしないよう上げた（代表者承認 A・B）
                                   * （2026101706: 2026-10-23 トレイへ入った理由の印（parkedByHand・absentMoved・routineTray）を知らない前の版の画面が、手で戻した札・休みで移した札を印なしで残し、
                                   * 新しい版がそれを列へ戻してしまわないよう上げた）
