@@ -49,7 +49,8 @@
     mealTimes: function (p) { return p.mealTimes; },                                                   /* 入居者マスタ・フェイスシートの食事の時刻の施設の既定 */
     mealForms: function (p) { return p.mealForms; },                                                   /* 体重管理の食事形態の表示名 */
     daycareNotes: function (p) { return p.daycareNotes; },                                             /* デイ利用表の昼食場所・備考の文（2026-11-02 便10） */
-    residenceFees: function (p) { return p.residenceFees; }                                            /* 入居者マスタの収支の見通しの施設の利用料（介護度ごとの月額・2026-11-07） */
+    residenceFees: function (p) { return p.residenceFees; },                                           /* 入居者マスタの収支の見通しの施設の利用料（介護度ごとの月額・2026-11-07） */
+    patchCalendar: function (p) { return p.patchCalendar; }                                            /* 貼り薬カレンダーの薬の名前と貼る場所（2026-11-13） */
   };
   var SECTION_MAX = 50000;   /* 職員マスタの委員会を上限いっぱいに書いても収まる大きさ（9件×各欄の上限で約3万字） */
 

@@ -7,6 +7,7 @@
    3. 週間計画の報酬マスタの「自治体」は、保存済みの値を優先し、無ければ施設情報から（コードに市の名前を書かない）
    4. 入居者マスタのデイの判定は、以前の /デイ|（通所の事業所名）/ と同じ結果を、事業所の名前をコードに書かずに出す
    5. 週間計画・入居者マスタに以前の直書き（'熊本市'・デイの判定の事業所名）が残っていない
+   6. 貼り薬カレンダーの薬の名前と貼る場所は、施設情報に書いた時だけ差し替わり、書いていない（見本）・崩れている時は既定（2026-11-13）
    ★配っている facility-profile.json の値そのもの（市の名前など）には縛らない＝外販で差し替えても落ちない */
 'use strict';
 const fs = require('fs');
@@ -117,6 +118,25 @@ console.log('\n— 4. 入居者マスタのデイの判定 —');
   /* 事業所名はこの試験にも書かない（公開リポジトリの固有データ0件・2026-10-16）。語はつなぎ合わせて作る */
   const DAY_OLD = new RegExp('デイ\\|' + 'せせ' + 'らぎ');
   t('以前の /デイ|（通所の事業所名）/ の直書きが無い', !DAY_OLD.test(src), '');
+}
+
+console.log('\n— 6. 貼り薬カレンダーの薬の名前と貼る場所（代表者の決定 2026-11-13） —');
+{
+  const src = read('patch-calendar.html');
+  const varLine = (n) => (src.match(new RegExp('\\nvar ' + n + ' = [^\\n]*')) || [''])[0];
+  const run = (F) => { const c = { window: { SUFacility: F }, SUFacility: F, Array, JSON, String }; vm.createContext(c);
+    vm.runInContext([varLine('PC_SITE_MIN'), varLine('PC_BAD_CH'), cutFrom(src, 'pcStr'), cutFrom(src, 'pcCfgOf'), cutFrom(src, 'pcReadCfg')].join('\n'), c); return c.pcReadCfg(); };
+  t('配っている見本（patchCalendar を書いていない）では既定＝null', run(facility(PROFILE)) === null);
+  const six = JSON.parse(JSON.stringify(PROFILE));
+  six.patchCalendar = { drug: '架空テープ', sites: ['左の肩', '右の肩', '左の背中', '右の背中', '左の腰', '右の腰'].map(n => ({ name: n })) };
+  const r6 = run(facility(six));
+  t('別の施設の設定（6か所）ならその名前と場所', r6 && r6.drug === '架空テープ' && r6.sites.length === 6 && r6.sites[3].full === '右の背中', r6);
+  const ten = JSON.parse(JSON.stringify(PROFILE));
+  ten.patchCalendar = { sites: Array.from({ length: 10 }, (_, i) => ({ name: '場所' + (i + 1) })) };
+  t('10か所（保存の番号は 1〜8 だけ）は既定＝null', run(facility(ten)) === null);
+  const bad = JSON.parse(JSON.stringify(PROFILE)); bad.patchCalendar = '架空テープ';
+  t('塊でない値は既定＝null', run(facility(bad)) === null);
+  t('施設情報が読めない（su-facility.js が無い）時は既定＝null', run(undefined) === null);
 }
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
