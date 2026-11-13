@@ -149,6 +149,8 @@ main {
 .wiz .acts { margin-top: 8px; }
 /* 初回の案内は画面だけ（2026-10-10・監査10月版 第2版 12）。案内を開いた端末で印刷しても紙に刷らない */
 @media print { #wiz, .wiz-open { display: none !important; } }
+/* 見出しの「使い方」（2026-11-13 代表者の指示）。戻るのリンクと同じ見た目（.hdr .back）で、印刷では消す */
+@media print{.su-help-link{display:none !important}}
 .wiz-open { margin: -4px 0 12px; font-size: 0.8125rem; }
 .wiz-open button { background: none; border: 0; color: var(--pri); text-decoration: underline; padding: 0; min-height: 44px; font-size: inherit; cursor: pointer; }
 
@@ -228,6 +230,7 @@ main {
 
 <header class="hdr">
   <a class="back" href="index.html" aria-label="メニューへ戻る">‹ 戻る</a>
+  <a class="back su-help-link" href="help.html?sec=connection-settings">使い方</a>
   <h1>接続設定</h1>
 </header>
 
