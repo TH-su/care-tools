@@ -6856,6 +6856,13 @@ document.addEventListener('click',function(e){
   if(!confirm('保存していない変更があります。メニューへ移ると消えます。移りますか？')){ e.preventDefault(); return; }
   rmMenuLeaveOk_=true; setTimeout(function(){ rmMenuLeaveOk_=false; },3000);
 });
+/* 見出しの「使い方」で離れる時も、「← メニュー」と同じ判定で確かめる（代表者の決定 2026-11-13・iOS Safari は beforeunload の確かめを出さないため） */
+document.addEventListener('click',function(e){
+  var a=e.target&&e.target.closest?e.target.closest('a.su-help-link'):null;
+  if(!a||!rmMenuLeaveDirty_()) return;
+  if(!confirm('保存していない変更があります。使い方へ移ると消えます。移りますか？')){ e.preventDefault(); return; }
+  rmMenuLeaveOk_=true; setTimeout(function(){ rmMenuLeaveOk_=false; },3000);
+});
 /* 未保存のまま閉じる・再読込するのを止める（メモリにしか無いため。原則4） */
 window.addEventListener('beforeunload',function(e){
   if(rmMenuLeaveOk_) return;   /* 「← メニュー」の確かめで「はい」を押した直後は二重に聞かない（2026-11-12） */

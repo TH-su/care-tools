@@ -5797,6 +5797,13 @@ function bindEvents() {
     if (!confirm('保存していない変更があります。メニューへ移ると消えます。移りますか？')) { e.preventDefault(); return; }
     smMenuLeaveOk_ = true; setTimeout(function () { smMenuLeaveOk_ = false; }, 3000);
   });
+  /* 見出しの「使い方」で離れる時も、「← メニュー」と同じ判定（hasUnsaved）で確かめる（代表者の決定 2026-11-13） */
+  document.addEventListener('click', function (e) {
+    var a = e.target && e.target.closest ? e.target.closest('a.su-help-link') : null;
+    if (!a || !hasUnsaved()) return;
+    if (!confirm('保存していない変更があります。使い方へ移ると消えます。移りますか？')) { e.preventDefault(); return; }
+    smMenuLeaveOk_ = true; setTimeout(function () { smMenuLeaveOk_ = false; }, 3000);
+  });
   window.addEventListener('beforeunload', function (e) {
     if (smMenuLeaveOk_) return;
     if (!hasUnsaved()) return;

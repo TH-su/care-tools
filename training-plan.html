@@ -352,6 +352,11 @@ body.blocked .sui-band{display:none}
 .su-menu-row{display:contents}
 @media screen and (max-width:899px){.su-menu-back{min-height:44px} .su-menu-row{display:block;flex:0 0 100%}}
 @media print{.su-menu-back{display:none !important}}
+/* 見出しの「使い方」（「← メニュー」の右隣・同じ大きさと色・使い方の画面のこの画面の節へ・画面だけ・印刷しない・代表者の決定 2026-11-13） */
+.su-help-link{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+.su-help-link{display:inline-flex;align-items:center;padding:2px 10px;border:1px solid currentColor;border-radius:8px;color:inherit;font-size:0.8125rem;font-weight:700;line-height:1.2}
+@media screen and (max-width:899px){.su-help-link{min-height:44px}}
+@media print{.su-help-link{display:none !important}}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
@@ -360,7 +365,7 @@ body.blocked .sui-band{display:none}
 <body>
 
 <header class="hdr">
-  <span class="su-menu-row"><a class="su-menu-back" href="index.html">← メニュー</a></span>
+  <span class="su-menu-row"><a class="su-menu-back" href="index.html">← メニュー</a> <a class="su-help-link" href="help.html">使い方</a></span>
   <button id="btnBack" class="hbtn" type="button" aria-label="一覧へ戻る" hidden>&#8249;</button>
   <h1 id="hdrTitle">個別機能訓練計画書</h1>
   <span id="syncChip" class="chip" role="status" aria-live="polite">未接続</span>

@@ -542,6 +542,10 @@ button.geno-box{width:100%; margin:0; padding:0; font:inherit; color:inherit; li
 .su-menu-row{display:contents}
 @media screen and (max-width:899px){.su-menu-back{min-height:44px} .su-menu-row{display:block;flex:0 0 100%}}
 @media print{.su-menu-back{display:none !important}}
+/* 見出しの「使い方」（「← メニュー」の右隣・同じ大きさと色・使い方の画面のこの画面の節へ・画面だけ・印刷しない・代表者の決定 2026-11-13） */
+.su-help-link{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+@media screen and (max-width:899px){.su-help-link{min-height:44px}}
+@media print{.su-help-link{display:none !important}}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
@@ -550,7 +554,7 @@ button.geno-box{width:100%; margin:0; padding:0; font:inherit; color:inherit; li
 <body>
 
 <div class="hdr">
-  <span class="su-menu-row"><a class="hdr-btn su-menu-back" href="index.html">← メニュー</a></span>
+  <span class="su-menu-row"><a class="hdr-btn su-menu-back" href="index.html">← メニュー</a> <a class="hdr-btn su-help-link" href="help.html">使い方</a></span>
   <h1>📄 フェイスシート</h1>
   <!-- アプリ間ジャンプ（daycare-roster.html と同形式）。h1 が flex:1 で伸びるため
        右側のバッジ群の【手前に足す】と既存の表示位置が動かない。.hdr は @media print で非表示。 -->

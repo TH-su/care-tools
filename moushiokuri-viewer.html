@@ -615,12 +615,15 @@ mark { background:var(--mark-bg); color:inherit; padding:0 1px; border-radius:2p
     --cl-shade-hatch-line: #4d4d4d;
   }
 }
+/* 見出しの「使い方」（「← メニュー」の右隣・同じ大きさと色・使い方の画面のこの画面の節へ・画面だけ・印刷しない・代表者の決定 2026-11-13） */
+@media print{.su-help-link{display:none !important}}
 </style>
 </head>
 <body>
 
 <header class="hdr noprint">
   <a class="back" href="index.html">← メニュー</a>
+  <a class="back su-help-link" href="help.html">使い方</a>
   <h1>申送ビューア</h1>
   <p class="sub">申し送りを入居者ごとの時系列で見る</p>
 </header>

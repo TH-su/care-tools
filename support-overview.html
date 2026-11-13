@@ -286,6 +286,10 @@ body {
 .su-menu-row{display:contents}
 @media screen and (max-width:899px){.su-menu-back{min-height:44px} .su-menu-row{display:block;flex:0 0 100%}}
 @media print{.su-menu-back{display:none !important}}
+/* 見出しの「使い方」（「← メニュー」の右隣・同じ大きさと色・使い方の画面のこの画面の節へ・画面だけ・印刷しない・代表者の決定 2026-11-13） */
+.su-help-link{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+@media screen and (max-width:899px){.su-help-link{min-height:44px}}
+@media print{.su-help-link{display:none !important}}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
@@ -293,7 +297,7 @@ body {
 <body>
 
 <header class="hdr">
-  <span class="su-menu-row"><a class="hdr-btn su-menu-back" href="index.html">← メニュー</a></span>
+  <span class="su-menu-row"><a class="hdr-btn su-menu-back" href="index.html">← メニュー</a> <a class="hdr-btn su-help-link" href="help.html">使い方</a></span>
   <span class="hdr-title">全支援 週間俯瞰</span>
   <span class="ovsw" role="group" aria-label="ビュー切替（訪問／全支援）">
     <a class="ovsw-btn is-visit" href="visit-overview.html">訪問</a>

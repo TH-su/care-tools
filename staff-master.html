@@ -894,6 +894,11 @@ body.cmt-print{page:cmt}
 .su-menu-row{display:contents}
 @media screen and (max-width:359px){.hdr{flex-wrap:wrap} .su-menu-row{display:block;flex:0 0 100%}}
 @media print{.su-menu-back{display:none !important}}
+/* 見出しの「使い方」（「← メニュー」の右隣・同じ大きさと色・使い方の画面のこの画面の節へ・画面だけ・印刷しない・代表者の決定 2026-11-13） */
+.su-help-link{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+.su-help-link{display:inline-flex;align-items:center;padding:2px 10px;border:1px solid currentColor;border-radius:8px;color:inherit;font-size:0.8125rem;font-weight:700;line-height:1.2}
+@media screen and (max-width:899px){.su-help-link{min-height:44px}}
+@media print{.su-help-link{display:none !important}}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
@@ -913,7 +918,7 @@ body.cmt-print{page:cmt}
 </div>
 
 <header class="hdr">
-  <span class="su-menu-row"><a class="su-menu-back" href="index.html">← メニュー</a></span>
+  <span class="su-menu-row"><a class="su-menu-back" href="index.html">← メニュー</a> <a class="su-help-link" href="help.html">使い方</a></span>
   <h1>職員マスタ</h1>
   <nav class="tabs" aria-label="画面切替">
     <button type="button" id="tabList" data-scr="list" aria-current="page">一覧</button>
@@ -1532,7 +1537,7 @@ body.cmt-print{page:cmt}
 <script src="staff-master-calc.js?v=2026-11-06.2"></script>
 <!-- 職員の氏名の写し（不具合報告の伏せ字の名簿・2026-10-14）。事務所・管理者でログインしている時だけ書く。失敗しても画面は変わらない -->
 <script src="su-staff-names.js?v=2026-10-28"></script>
-<script src="staff-master.js?v=2026-11-12.2"></script>
+<script src="staff-master.js?v=2026-11-13"></script>
 <!-- インターネットにつながっていない時の帯（2026-11-12 商用化の見直し・画面だけ・通信と保存には触れない） -->
 <script src="su-net.js?v=2026-11-12.2"></script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->

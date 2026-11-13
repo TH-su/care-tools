@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-hvWhfRSVLCJk8BCU1Evt1b4BVEfoMWY3ZTJIFz2EC9A='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-7rjBhEVs2/pTx3Sai62wJSgEhevHocLHRyzdVFynVb4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
@@ -500,6 +500,11 @@ details.dcd > .dbody > .cd > h3 { display: none; }   /* 見出しは summary に
 .su-menu-row{display:contents}
 @media screen and (max-width:359px){.hdr{flex-wrap:wrap} .su-menu-row{display:block;flex:0 0 100%}}
 @media print{.su-menu-back{display:none !important}}
+/* 見出しの「使い方」（「← メニュー」の右隣・同じ大きさと色・使い方の画面のこの画面の節へ・画面だけ・印刷しない・代表者の決定 2026-11-13） */
+.su-help-link{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+.su-help-link{display:inline-flex;align-items:center;padding:2px 10px;border:1px solid currentColor;border-radius:8px;color:inherit;font-size:0.8125rem;font-weight:700;line-height:1.2}
+@media screen and (max-width:899px){.su-help-link{min-height:44px}}
+@media print{.su-help-link{display:none !important}}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
@@ -507,7 +512,7 @@ details.dcd > .dbody > .cd > h3 { display: none; }   /* 見出しは summary に
 <body>
 
 <header class="hdr">
-  <span class="su-menu-row"><a class="su-menu-back" href="index.html">← メニュー</a></span>
+  <span class="su-menu-row"><a class="su-menu-back" href="index.html">← メニュー</a> <a class="su-help-link" href="help.html">使い方</a></span>
   <h1>入居調整</h1>
   <button class="sync" id="syncChip" type="button" aria-label="同期状態の詳細を開く">未接続</button>
   <button class="reload" id="reloadBtn" type="button" aria-label="サーバーから再読込">⟳</button>
@@ -1875,6 +1880,13 @@ document.addEventListener('click', function (e) {
   var a = e.target && e.target.closest ? e.target.closest('a.su-menu-back') : null;
   if (!a || !(editing && editDirty)) return;
   if (!confirm('保存していない変更があります。メニューへ移ると消えます。移りますか？')) { e.preventDefault(); return; }
+  afMenuLeaveOk_ = true; setTimeout(function () { afMenuLeaveOk_ = false; }, 3000);
+});
+/* 見出しの「使い方」で離れる時も、「← メニュー」と同じ判定で確かめる（代表者の決定 2026-11-13） */
+document.addEventListener('click', function (e) {
+  var a = e.target && e.target.closest ? e.target.closest('a.su-help-link') : null;
+  if (!a || !(editing && editDirty)) return;
+  if (!confirm('保存していない変更があります。使い方へ移ると消えます。移りますか？')) { e.preventDefault(); return; }
   afMenuLeaveOk_ = true; setTimeout(function () { afMenuLeaveOk_ = false; }, 3000);
 });
 window.addEventListener('beforeunload', function (ev) {
