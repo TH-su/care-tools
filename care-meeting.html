@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-0ZBcQhQp/YP4sg2ctzFQFaMyvmAdyiXB4jSgvL4tcmc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-9r7Y5VdY3FF5nHvMlwO8mqwdmJPlRDtqz/o+P4TcpWo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 会議の記録（要配慮の情報）を扱うためキャッシュ無効 -->
@@ -22,7 +22,7 @@
 <script src="su-app-gate.js?v=2026-11-11"></script>
 <script src="su-facility.js?v=2026-11-07"></script>
 <script src="su-print.js?v=2026-09-12"></script>
-<script src="care-meeting-calc.js?v=2026-10-25"></script>
+<script src="care-meeting-calc.js?v=2026-11-13.2"></script>
 <script src="su-resident-hop.js?v=2026-11-02"></script>
 <style>
 /* サービス担当者会議の記録（2026-10-23 代表者の決定・段階2）。
@@ -155,6 +155,16 @@ h3{font-size:1.0625rem; margin:14px 0 6px}
 .pn details{margin-top:6px}
 .pn summary{min-height:44px; padding:10px 0; cursor:pointer; font-weight:600}
 .pn pre{white-space:pre-wrap; margin:6px 0 0; font-family:inherit; background:#fff; border:1px solid var(--g3); border-radius:8px; padding:8px}
+/* 印の無い議事録の見出しから出した欄の候補（2026-11-13 代表者の指示・画面だけ） */
+.gs{border:2px solid var(--g5); border-radius:10px; padding:8px 12px; margin:0 0 12px; background:var(--g0)}
+.gs h3{margin:0 0 4px}
+.gs-l{list-style:none; margin:8px 0; padding:0}
+.gs-i{border-top:1px solid var(--g3); padding:6px 0}
+.gs-row{display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center}
+.gs-row select{min-height:44px; padding:6px 8px; border:1px solid var(--g5); border-radius:8px; background:#fff; max-width:100%}
+.gs details{margin-top:4px}
+.gs summary{min-height:44px; padding:10px 0; cursor:pointer; font-weight:600}
+.gs pre{white-space:pre-wrap; margin:6px 0 0; font-family:inherit; background:#fff; border:1px solid var(--g3); border-radius:8px; padding:8px}
 .fgrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,210px),1fr)); gap:10px 14px; margin:0 0 6px}
 .fi{display:flex; flex-direction:column; gap:3px; min-width:0; margin-bottom:8px}
 .fi label,.fl{font-weight:700; font-size:1rem; color:var(--g9)}
@@ -592,12 +602,12 @@ function newClientKey_(){
 }
 function newEditor_(kind){
   return {mode:'new',meetingId:'',baseRev:0,status:'draft',clientKey:newClientKey_(),base:null,rec:emptyRec_(kind),touched:false,
-    view:false,busy:false,parse:null,conflict:null,msg:'',msgKind:'',paste:'',nameNote:false};
+    view:false,busy:false,parse:null,guess:null,conflict:null,msg:'',msgKind:'',paste:'',nameNote:false};
 }
 function editorFromRow_(row){
   var fin=row.status!=='draft';
   return {mode:'edit',meetingId:String(row.meetingId),baseRev:Number(row.rev)||0,status:fin?'final':'draft',clientKey:'',base:recOf_(row),rec:recOf_(row),
-    touched:false,view:fin,busy:false,parse:null,conflict:null,msg:'',msgKind:'',paste:'',nameNote:false};
+    touched:false,view:fin,busy:false,parse:null,guess:null,conflict:null,msg:'',msgKind:'',paste:'',nameNote:false};
 }
 function edMsg_(m,kind){ if(ed){ ed.msg=m||''; ed.msgKind=kind||''; } }
 
@@ -886,14 +896,39 @@ function attHtml_(list,cands){
 }
 function parseNoticeHtml_(p){
   if(!p) return '';
-  var warns=p.warns||[], unk=p.unknown||[], miss=p.missing||[], pre=String(p.preamble||'');
-  if(!warns.length&&!unk.length&&!miss.length&&!pre) return '<div class="pn clean" role="status"><h3>✓ すべての欄に振り分けました</h3><p>内容を確かめてから保存してください。</p></div>';
+  var warns=p.warns||[], unk=p.unknown||[], miss=p.missing||[], pre=String(p.preamble||''), rest=String(p.rest||'');
+  if(!warns.length&&!unk.length&&!miss.length&&!pre&&!rest) return '<div class="pn clean" role="status"><h3>✓ すべての欄に振り分けました</h3><p>内容を確かめてから保存してください。</p></div>';
   var h='<div class="pn" role="status"><h3>⚠ 振り分けの知らせ（確かめてください）</h3>';
   if(warns.length) h+='<ul>'+warns.map(function(w){return '<li>'+esc(w)+'</li>'}).join('')+'</ul>';
   if(unk.length) h+='<p>本文のまま残した「◆」の行：</p><ul>'+unk.map(function(u){
     return '<li>「'+esc(u.label)+'」…'+(u.in?'「'+esc(fieldLabel_(u.in))+'」の中':'最初の印より前（どの欄にも入れていません）')+'</li>'}).join('')+'</ul>';
   if(miss.length) h+='<p>入っていない欄：'+esc(miss.map(fieldLabel_).join('・'))+'</p>';
   if(pre) h+='<details><summary>どの欄にも入れていない文章（'+pre.length+' 字）</summary><pre>'+esc(pre)+'</pre></details>';
+  if(rest) h+='<details open><summary>振り分けられなかった文（'+rest.length+' 字・どの欄にも入れていません）</summary><pre>'+esc(rest)+'</pre></details>';
+  return h+'</div>';
+}
+/* 印の無い議事録の見出しから出した欄の候補（CareMeetingCalc.guess）。✔︎を付けて「選んだ見出しを振り分ける」を押した時だけ欄へ入れる。
+   ✔︎は初めは外しておく（推測で黙って振り分けない・2026-11-13 代表者の指示）。data- には候補の番号と欄の名前（FIELDS の key）だけを載せる */
+function guessHtml_(g){
+  if(!g) return '';
+  var c=g.cands||[], rest=String(g.rest||'');
+  var h='<div class="gs" id="cm-guess" role="group" aria-labelledby="cm-gs-h"><h3 id="cm-gs-h">'+(c.length?'「◆欄名：」の印が無いため、見出しから欄の候補を出しました':'「◆欄名：」の印も、欄の候補になる見出しもありません')+'</h3>';
+  if(!c.length) h+='<p>欄の候補になる見出しが見つかりませんでした。下の文を見ながら、手で欄に入れてください。</p>';
+  else{
+    h+='<p>欄に入れる見出しに✔︎を付け、入れる欄を確かめてから「選んだ見出しを振り分ける」を押してください。✔︎の無い見出しは欄に入れません。</p><ul class="gs-l">';
+    c.forEach(function(x,i){
+      var on=!!(g.sel&&g.sel[i]), k=(g.keys&&g.keys[i])||x.key;
+      h+='<li class="gs-i"><div class="gs-row"><label class="chk"><input type="checkbox" data-gi="'+i+'"'+(on?' checked':'')+'><span>見出し「'+esc(x.head)+'」（'+esc(x.lines)+' 行）を</span></label>'+
+        '<select data-gk="'+i+'" aria-label="見出し「'+esc(x.head)+'」を入れる欄">';
+      CareMeetingCalc.FIELDS.forEach(function(fd){ h+='<option value="'+esc(fd.key)+'"'+(fd.key===k?' selected':'')+'>'+esc(fd.label)+'</option>'; });
+      h+='</select><span>の欄に入れる</span></div>'+
+        (x.body?'<details><summary>入る文を見る</summary><pre>'+esc(x.body)+'</pre></details>':'<p class="fhint">（見出しの下に文がありません）</p>')+'</li>';
+    });
+    h+='</ul>';
+  }
+  if(rest) h+='<details open><summary>振り分けられなかった文（'+rest.length+' 字・最初の見出しより前）</summary><pre>'+esc(rest)+'</pre></details>';
+  h+='<div class="paste-row">'+(c.length?'<button type="button" class="btn pri" data-act="guess-apply">選んだ見出しを振り分ける</button>':'')+
+    '<button type="button" class="btn" data-act="guess-close">候補を閉じる</button></div>';
   return h+'</div>';
 }
 function conflictHtml_(e){
@@ -945,6 +980,7 @@ function editorHtml_(e,c){
     '<label class="fl" for="cm-paste">NotebookLM の議事録（「◆欄名：」の印つき）</label><textarea id="cm-paste" rows="6">\n'+esc(e.paste)+'</textarea>'+
     '<div class="paste-row"><button type="button" class="btn pri" data-act="parse">振り分ける</button><span class="fhint">貼った文章は端末に残しません</span></div></details>';
   h+=parseNoticeHtml_(e.parse);
+  h+=guessHtml_(e.guess);
   h+='<div class="nb" id="cm-nb"><div class="fi"><label for="cm-f-sourceName">議事録の利用者名</label><input id="cm-f-sourceName" type="text" data-f="sourceName" value="'+esc(r.sourceName)+'" autocomplete="off" aria-describedby="cm-cnt-sourceName">'+
     cntHtml_('sourceName',r.sourceName)+'</div><div id="cm-nb-st">'+nameStateHtml_(e)+'</div></div>';
   h+='<div class="fgrid"><div class="fi"><label for="cm-f-kind">開催の理由</label><select id="cm-f-kind" data-f="kind"><option value="">（選ばない）</option>';
@@ -1258,7 +1294,7 @@ function writeOp_(what,body,flow){
 function adopt_(e,row,keep){
   e.mode='edit'; e.meetingId=String(row.meetingId); e.baseRev=Number(row.rev)||0; e.clientKey='';
   e.status=row.status!=='draft'?'final':'draft'; e.view=e.status==='final';
-  e.base=recOf_(row); e.rec=(keep&&!e.view)?keep:recOf_(row); e.touched=false; e.conflict=null; e.parse=null; e.paste=''; e.nameNote=false;
+  e.base=recOf_(row); e.rec=(keep&&!e.view)?keep:recOf_(row); e.touched=false; e.conflict=null; e.parse=null; e.guess=null; e.paste=''; e.nameNote=false;
   saveOpenMeeting_(e.meetingId);
 }
 /* 新しい記録の保存が「前に送った分が保存されていた」と分かったが、その行の版が 1 より大きい（ほかの端末で手が入った）時。
@@ -1436,9 +1472,17 @@ function parsePlan_(rec,res){
 function cmParse_(){
   if(!ed||ed.view||ed.busy) return Promise.resolve(false);
   var e=ed, ta=$('cm-paste'), text=ta?ta.value:e.paste;
-  e.paste=text;
+  e.paste=text; e.guess=null;
   var res=CareMeetingCalc.parse(text);
   if(res.tooLong){ e.parse={warns:res.warns.slice(),unknown:[],preamble:'',missing:[]}; paintEditor_(); return Promise.resolve(false); }
+  /* 印が1つも無い時は欄に入れず、見出しから欄の候補を出す（人が選んで押した時だけ入れる・2026-11-13 代表者の指示） */
+  if(!res.found.length){
+    var g=CareMeetingCalc.guess(text);
+    e.parse=null;
+    e.guess={cands:g.cands,rest:g.rest,sel:g.cands.map(function(){ return false; }),keys:g.cands.map(function(c){ return c.key; })};
+    paintEditor_();
+    return Promise.resolve(false);
+  }
   var plan=parsePlan_(e.rec,res), lines=[];
   if(plan.over.length) lines.push('次の欄は、貼った文章の内容に置き換わります：'+plan.over.join('・'));
   if(plan.keep.length) lines.push('貼った文章に無いため、前の内容のまま残る欄：'+plan.keep.join('・'));
@@ -1446,6 +1490,35 @@ function cmParse_(){
   return go.then(function(ok){
     if(!ok||ed!==e) return false;
     applyParse_(e,res); paintEditor_(); paintPrev_();
+    return true;
+  });
+}
+/* 候補の✔︎・入れる欄を変えた（i は候補の番号・k は FIELDS の key）。状態だけ変え、描き直さない */
+function guessPick_(i,on){
+  var g=ed&&!ed.view&&!ed.busy?ed.guess:null;
+  if(!g||!(i>=0)||i>=g.cands.length) return;
+  g.sel[i]=on===true;
+}
+function guessKey_(i,k){
+  var g=ed&&!ed.view&&!ed.busy?ed.guess:null;
+  if(!g||!(i>=0)||i>=g.cands.length) return;
+  if(CareMeetingCalc.FIELDS.some(function(fd){ return fd.key===k; })) g.keys[i]=k;
+}
+function guessClose_(){ if(!ed||ed.view||ed.busy) return; ed.guess=null; paintEditor_(); }
+/* ✔︎を付けた候補だけを、貼り付けと同じ道（入力済みの欄の確かめの窓 → applyParse_）で欄へ入れる */
+function cmGuessApply_(){
+  if(!ed||ed.view||ed.busy||!ed.guess) return Promise.resolve(false);
+  var e=ed, g=e.guess;
+  var res=CareMeetingCalc.guessApply(g,g.cands.map(function(c,i){ return g.sel[i]?g.keys[i]:''; }));
+  if(!res.chosen){ toast('欄に入れる見出しに✔︎を付けてください'); return Promise.resolve(false); }
+  if(res.tooLong){ e.parse={warns:res.warns.slice(),unknown:[],preamble:'',missing:[]}; paintEditor_(); return Promise.resolve(false); }
+  var plan=parsePlan_(e.rec,res), lines=[];
+  if(plan.over.length) lines.push('次の欄は、選んだ見出しの文に置き換わります：'+plan.over.join('・'));
+  if(plan.keep.length) lines.push('選んだ見出しに無いため、前の内容のまま残る欄：'+plan.keep.join('・'));
+  var go=lines.length?askConfirm_('入力済みの欄があります',lines,'振り分ける',false):Promise.resolve(true);
+  return go.then(function(ok){
+    if(!ok||ed!==e||e.guess!==g) return false;
+    applyParse_(e,res); e.parse.rest=res.rest; e.guess=null; paintEditor_(); paintPrev_();
     return true;
   });
 }
@@ -1488,6 +1561,8 @@ function onEdInput_(ev){
 function onEdChange_(ev){
   var t=ev.target; if(!ed||ed.view||!t||!t.getAttribute) return;
   var ak=t.getAttribute('data-apk'); if(ak!=null){ attPick_(String(ak),t.checked===true); return; }
+  var gi=t.getAttribute('data-gi'); if(gi!=null){ guessPick_(parseInt(gi,10),t.checked===true); return; }
+  var gk=t.getAttribute('data-gk'); if(gk!=null){ guessKey_(parseInt(gk,10),String(t.value)); return; }
   var f=t.getAttribute('data-f');
   if(f==='nameChecked'){ setField_('nameChecked',t.checked===true); paintNameBand_(); }
   else if(f==='kind'||f==='heldDate'||f==='createdDate'){ setField_(f,t.value); if(f==='heldDate') paintPrev_(); }
@@ -1543,6 +1618,8 @@ function onEdClick_(ev){
   else if(a==='remove') cmRemove_();
   else if(a==='print') cmPrint_();
   else if(a==='parse') cmParse_();
+  else if(a==='guess-apply') cmGuessApply_();
+  else if(a==='guess-close') guessClose_();
   else if(a==='att-add') attAdd_();
   else if(a==='att-del') attDel_(parseInt(b.getAttribute('data-i'),10));
   else if(a==='reopen') reopenCurrent_();

@@ -200,6 +200,8 @@
 !/pdfjs-4.10.38/
 !/perf-report.html
 !/help.html
+# 使い方の「画面ごとの使い方」へ ?sec=<画面> で飛ぶ部品（2026-11-13）
+!/help-sec.js
 !/perf-report.js
 !/perf-report.css
 !/training-plan.html

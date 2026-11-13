@@ -50,6 +50,58 @@ if (!window.SUDialog) window.SUDialog = {
     if (n.previousElementSibling !== a) a.parentNode.insertBefore(n, a.nextSibling);
     n.className = m.className; n.textContent = text;
   }
+  /* 失敗の理由を画面に出す文にする（2026-11-13 代表者の指示・文は仮置き）。
+     x は例外・データベースの断り（code・message）・文字列のどれでもよい。
+     日本語（かな・漢字）を含む文は、この画面や部品が作った文なのでそのまま返す。
+     含まない文（'Failed to fetch' などの英語の例外文・番号だけの断り）は画面に出さず、
+     調べる人のために su-errors の記録へ残して、種類ごとの日本語の文を返す。
+     short が真の時は、前後の文に挟むための短い言い方（句点なし）を返す */
+  var JA_CHAR = /[\u3040-\u30ff\u3400-\u9fff]/;
+  var JA_WHY = {
+    net: ['つながりませんでした。インターネットの接続を確かめて、もう一度押してください。', 'つながりませんでした'],
+    timeout: ['応答がありませんでした（時間切れ）。少し待ってから、もう一度押してください。', '応答がありませんでした（時間切れ）'],
+    denied: ['この操作の権限がありません。管理者としてログインしているか確かめてください。', 'この操作の権限がありません'],
+    prep: ['データベースの準備がまだです。開発の担当へ知らせてください。', 'データベースの準備がまだです'],
+    other: ['うまくいきませんでした。少し待ってから、もう一度押してください。続く時は開発の担当へ知らせてください。', 'うまくいきませんでした']
+  };
+  /* 英語の文の種類（権限・時間切れ・通信・準備がまだ・そのほか）。nm は例外の名前 */
+  function jaKind(all, nm) {
+    return /42501|permission denied|not allowed|unauthori[sz]ed|forbidden|jwt|^40[13](\s|$)|\bstatus[ :=]*40[13]\b|\bHTTP\S*\s+40[13]\b/i.test(all) ? 'denied'
+      : (nm === 'AbortError' || /abort|time ?out|timed out/i.test(all)) ? 'timeout'
+      : (nm === 'FunctionsFetchError' || /failed to fetch|load failed|networkerror|network ?error|network request failed|fetch failed|failed to send a request/i.test(all)) ? 'net'
+      : /PGRST202|PGRST205|42883|42P01/.test(all) ? 'prep'
+      : 'other';
+  }
+  /* 日本語の文の中の英語の連なり（部品が英語の例外文に日本語の前後を付けた時）。
+     英字の語が2つ以上つながったもの、または例外らしい語（Error・Failed・fetch など）を含むものだけを英語の文とみなす。
+     Google・PC・GAS のような1語の名前と、番号・英字1語の印は残す（反証レビューの指摘 2026-11-13） */
+  var EN_RUN = /[A-Za-z][\w.'\/-]*(?:[:,;]?[ \t]+[\w.'\/<>-]+)+|[A-Za-z]\w*(?:Error|Exception)\b/g;
+  var EN_NAME = /^(Google|Drive|Supabase|GAS|PC|AI|PR|Mac|iPhone|iPad|Chrome|GitHub|OK|NG)$/;
+  var EN_KEY = /Error|Exception|\bFailed\b|\bfetch\b|\bundefined\b|\bnull\b/;
+  function enSentence(m) {
+    var w = (m.match(/[A-Za-z]{2,}/g) || []).filter(function (x) { return !EN_NAME.test(x); });
+    return w.length >= 2 || EN_KEY.test(m);
+  }
+  function jaWhy(where, x, short) {
+    var s = '', nm = '', c = '';
+    if (x && typeof x === 'object') { s = String(x.message || x.error || ''); c = String(x.code || ''); nm = String(x.name || ''); }
+    else s = String(x == null ? '' : x);
+    var all = (c ? c + ' ' : '') + s;
+    if (JA_CHAR.test(s)) {
+      var out = s.replace(EN_RUN, function (m) { return enSentence(m) ? JA_WHY[jaKind(m, '')][1] : m; });
+      if (out !== s) { try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('写しの見比べ: ' + where, s); } catch (e) { /* 記録できなくても止めない */ } }
+      return out;
+    }
+    try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('写しの見比べ: ' + where, (nm ? nm + ' ' : '') + (all || '（理由なし）')); } catch (e) { /* 記録できなくても止めない */ }
+    return JA_WHY[jaKind(all, nm)][short ? 1 : 0];
+  }
+  /* 写しの断りの印（表に無い英字の印）を画面に出す言葉にする。表に無い印は記録に残して「ほかの理由」と出す */
+  function refusedWord(map, code, where) {
+    if (map[code]) return map[code];
+    if (!code) return '';
+    try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('写しの見比べ: ' + where + 'の断りの印', String(code)); } catch (e) { /* 記録できなくても止めない */ }
+    return 'ほかの理由';
+  }
   function view(name) {
     $('v-loading').hidden = name !== 'loading';
     $('v-gate').hidden = name !== 'gate';
@@ -232,7 +284,7 @@ if (!window.SUDialog) window.SUDialog = {
       var c = q[1];
       if (c.error) {
         say(careNoTable(c.error) ? '訪問日・かかりつけ病院の写しはまだ読めません（データベースの準備 0022 が未適用の可能性）。'
-          : '訪問日・かかりつけ病院の写しを読めませんでした（' + String(c.error.code || '') + '）。', 'warn');
+          : '訪問日・かかりつけ病院の写しを読めませんでした（' + jaWhy('訪問日・かかりつけ病院の写し', c.error, true) + '）。', 'warn');
         return;
       }
       var d = careCompare(q[0], c.data || []);
@@ -259,7 +311,7 @@ if (!window.SUDialog) window.SUDialog = {
       });
       if (items.length > CARE_LIST_MAX) ul.appendChild(el('li', null, 'ほか ' + (items.length - CARE_LIST_MAX) + '件'));
     } catch (e) {
-      say('見比べられませんでした: ' + String(e && e.message || e), 'warn');
+      say('見比べられませんでした: ' + jaWhy('runCareCheck', e), 'warn');
     } finally {
       btn.disabled = false;
     }
@@ -367,7 +419,7 @@ if (!window.SUDialog) window.SUDialog = {
     var r = await SUAuth.client().rpc('kv_set_family_mode', { p_families: CUT_FAMS, p_mode: mode });
     if (r.error || !r.data || !r.data.ok) {
       var why = String((r.error && (r.error.code || r.error.message)) || (r.data && r.data.error) || '');
-      msg('変更できませんでした: ' + (/PGRST202|42883/.test(why) ? 'データベースの準備（0007）がまだです。' : why));
+      msg('変更できませんでした: ' + (/PGRST202|42883/.test(why) ? 'データベースの準備（0007）がまだです。' : jaWhy('週間計画とワークスケジュールの切り替え', why)));
       return;
     }
     msg(mode === 'live' ? '週間計画とワークスケジュールの保存先を Supabase（本番）にしました。明日の朝、全部のパソコンで3つの画面を開き直してください。'
@@ -401,7 +453,7 @@ if (!window.SUDialog) window.SUDialog = {
     var r = await SUAuth.client().rpc('kv_set_family_mode', { p_families: ['shift'], p_mode: mode });
     if (r.error || !r.data || !r.data.ok) {
       var why = String((r.error && (r.error.code || r.error.message)) || (r.data && r.data.error) || '');
-      msg('変更できませんでした: ' + (why === 'notready' ? 'データベースの準備（0009）がまだです。' : /PGRST202|42883/.test(why) ? 'データベースの準備（0007）がまだです。' : why));
+      msg('変更できませんでした: ' + (why === 'notready' ? 'データベースの準備（0009）がまだです。' : /PGRST202|42883/.test(why) ? 'データベースの準備（0007）がまだです。' : jaWhy('勤務表の切り替え', why)));
       return;
     }
     msg(mode === 'live' ? '勤務表の保存先を Supabase（本番）にしました。明日の朝、勤務表を使う全部の端末で画面を開き直してください。'
@@ -504,7 +556,7 @@ if (!window.SUDialog) window.SUDialog = {
       if (failed.length) shbMsg('途中まで写しました（同じ ' + same + '件・写した ' + wrote + '件・写せなかった ' + failed.length + '件　例: ' + failed.slice(0, 4).join('、') + '）。もう一度押すと、まだ違う勤務表だけを写します。', 'warn');
       else shbMsg('全部そろいました（同じ ' + same + '件・写した ' + wrote + '件）。勤務表のスイッチを切る PR を取り込んでかまいません。', 'ok');
     } catch (e) {
-      shbMsg('途中で止まりました（' + done + '／' + todo.length + '件まで）: ' + String(e && e.message || e) + '。もう一度押すと、まだ違う勤務表だけを写します。', 'warn');
+      shbMsg('途中で止まりました（' + done + '／' + todo.length + '件まで）: ' + jaWhy('writeBackShift', e, true) + '。もう一度押すと、まだ違う勤務表だけを写します。', 'warn');
     } finally { shbBusy(false); }
   }
 
@@ -547,7 +599,7 @@ if (!window.SUDialog) window.SUDialog = {
       var r = await SUAuth.client().rpc('shift_set_lock_required', { p_on: !!on });
       if (r.error || !r.data || !r.data.ok) {
         var why = String((r.error && (r.error.code || r.error.message)) || (r.data && r.data.error) || '');
-        msg('変更できませんでした: ' + (/PGRST202|42883/.test(why) ? 'データベースの準備（0009）がまだです。' : why === '42501' ? '管理者だけが変えられます。' : why));
+        msg('変更できませんでした: ' + (/PGRST202|42883/.test(why) ? 'データベースの準備（0009）がまだです。' : why === '42501' ? '管理者だけが変えられます。' : jaWhy('勤務表の厳格モード', why)));
         return;
       }
       showLock(r.data.lockRequired === true, new Date().toISOString());
@@ -577,7 +629,7 @@ if (!window.SUDialog) window.SUDialog = {
       var r = await SUAuth.client().rpc('kv_set_family_mode', { p_families: ['wsday'], p_mode: 'shadow' });
       if (r.error || !r.data || !r.data.ok) {
         var why = String((r.error && (r.error.code || r.error.message)) || (r.data && r.data.error) || '');
-        wbMsg('止められませんでした: ' + why, 'ng');
+        wbMsg('止められませんでした: ' + jaWhy('日ごとを止める', why), 'ng');
         return;
       }
       wbMsg('日ごとを止めました。続けて「手順2 日ごとを Google へ写し返す」を押してください。', 'ok');
@@ -619,7 +671,7 @@ if (!window.SUDialog) window.SUDialog = {
       if (failed.length) wbMsg('途中まで写しました（同じ ' + same + '件・写した ' + wrote + '件・写せなかった ' + failed.length + '件　例: ' + failed.slice(0, 4).join('、') + '）。もう一度押すと、まだ違う日だけを写します。', 'warn');
       else wbMsg('全部そろいました（' + keys.length + '日のうち、同じ ' + same + '件・写した ' + wrote + '件）。日ごとのスイッチを切る PR を取り込んでかまいません。', 'ok');
     } catch (e) {
-      wbMsg('途中で止まりました（' + done + '／' + keys.length + '件まで）: ' + String(e && e.message || e) + '。もう一度押すと、まだ違う日だけを写します。', 'warn');
+      wbMsg('途中で止まりました（' + done + '／' + keys.length + '件まで）: ' + jaWhy('writeBackWsday', e, true) + '。もう一度押すと、まだ違う日だけを写します。', 'warn');
     } finally { wbBusy(false); }
   }
 
@@ -706,7 +758,7 @@ if (!window.SUDialog) window.SUDialog = {
       else if (unreadAll) say('比べられた分は全部同じですが、Supabase から読めなかったものが ' + unreadAll + '件あります。もう一度押してください。', 'warn');
       else say('本番の中身は、Google にも全部届いています（写し返しは遅れていません）。', 'ok');
     } catch (e) {
-      say('比べられませんでした: ' + String(e && e.message || e), 'ng');
+      say('比べられませんでした: ' + jaWhy('runMirrorCheck', e), 'ng');
     } finally { mcOn = false; $('b-mirror-check').disabled = false; mcShowFix(); }
   }
   /* 違う分を Google へ写す（2026-10-16 代表者の決定）。本番の間は Supabase が正しい中身＝Google をそれに合わせて force で上書きするだけ
@@ -744,7 +796,7 @@ if (!window.SUDialog) window.SUDialog = {
         } catch (e) { failed.push(k); }
       }
     } catch (e) {
-      say('写せませんでした: ' + String(e && e.message || e), 'ng');
+      say('写せませんでした: ' + jaWhy('runMirrorFix', e), 'ng');
       mcOn = false; $('b-mirror-check').disabled = false; $('b-mirror-fix').disabled = false;
       return;
     }
@@ -1076,7 +1128,7 @@ if (!window.SUDialog) window.SUDialog = {
       }
       msg('写し終えました（' + okN + '件' + (failN ? '・写せなかった ' + failN + '件' : '') + '）。続けて点検し直します。', failN ? 'warn' : 'ok');
     } catch (e) {
-      msg('途中で止まりました（' + done + '／' + keys.length + '件まで）: ' + String(e && e.message || e) + '。もう一度押すと続きから写します。', 'warn');
+      msg('途中で止まりました（' + done + '／' + keys.length + '件まで）: ' + jaWhy('fillMissing', e, true) + '。もう一度押すと続きから写します。', 'warn');
     }
     busy(false);
     await runCheck();
@@ -1253,7 +1305,7 @@ if (!window.SUDialog) window.SUDialog = {
       left.appendChild(el('div', 'em', x.status === 'done'
         ? '入居者 ' + x.residents + '人／追加 ' + x.inserted + '・更新 ' + x.updated + '・変化なし ' + x.unchanged + '・消えた印 ' + x.missing
           + '／担当者会議 ' + x.meetings + '件・薬の判断 ' + x.med_decisions + '件'
-        : x.status === 'running' ? '途中で止まった写し（次に押すと取り消します）' : '受け付けず（' + String(x.refused || '') + '）'));
+        : x.status === 'running' ? '途中で止まった写し（次に押すと取り消します）' : '受け付けず（' + refusedWord({}, x.refused, 'loadResFullRuns') + '）'));
       li.appendChild(left);
       ul.appendChild(li);
     });
@@ -1277,7 +1329,7 @@ if (!window.SUDialog) window.SUDialog = {
         lastRun: async function (id) { var r = await sb.from('res_sync_runs').select('unknown_keys').eq('id', id).limit(1); return r.error ? null : (r.data || [])[0]; },
         progress: function (t) { say(t); }
       });
-      if (!res.ok) { say('写せませんでした: ' + res.why, 'warn'); return; }
+      if (!res.ok) { say('写せませんでした: ' + jaWhy('runResFull', res.why), 'warn'); return; }
       var c = res.cmp;
       kk.appendChild(kpi('写した入居者', res.residents, '人'));
       kk.appendChild(kpi('一致', c.same, '人'));
@@ -1302,7 +1354,7 @@ if (!window.SUDialog) window.SUDialog = {
       });
       if (items.length > RF_LIST_MAX) ul.appendChild(el('li', null, 'ほか ' + (items.length - RF_LIST_MAX) + '件'));
     } catch (e) {
-      say('写せませんでした: ' + String(e && e.message || e), 'warn');
+      say('写せませんでした: ' + jaWhy('runResFull', e), 'warn');
     } finally {
       btn.disabled = false;
       try { await loadResFullRuns(sb); } catch (e) { /* 記録の一覧が読めなくても結果の文は残す */ }
@@ -1330,7 +1382,7 @@ if (!window.SUDialog) window.SUDialog = {
       left.appendChild(el('div', 'nm', fmtTime(x.at)));
       left.appendChild(el('div', 'em', x.status === 'done'
         ? '計画書 ' + x.docs + '件／追加 ' + x.inserted + '・更新 ' + x.updated + '・変化なし ' + x.unchanged + '・消えた印 ' + x.missing
-        : x.status === 'running' ? '途中で止まった写し（次に押すと取り消します）' : '受け付けず（' + String(x.refused || '') + '）'));
+        : x.status === 'running' ? '途中で止まった写し（次に押すと取り消します）' : '受け付けず（' + refusedWord({}, x.refused, 'loadTpRuns') + '）'));
       li.appendChild(left);
       ul.appendChild(li);
     });
@@ -1359,7 +1411,7 @@ if (!window.SUDialog) window.SUDialog = {
         rpc: function (name, args) { return sb.rpc(name, args); },
         progress: function (t) { say(t); }
       });
-      if (!res.ok) { say('写せませんでした: ' + res.why, 'warn'); return; }
+      if (!res.ok) { say('写せませんでした: ' + jaWhy('runTpFull', res.why), 'warn'); return; }
       var c = res.cmp;
       kk.appendChild(kpi('写した計画書', res.docs, '件'));
       kk.appendChild(kpi('一致', c.same, '件'));
@@ -1382,7 +1434,7 @@ if (!window.SUDialog) window.SUDialog = {
       });
       if (items.length > RF_LIST_MAX) ul.appendChild(el('li', null, 'ほか ' + (items.length - RF_LIST_MAX) + '件'));
     } catch (e) {
-      say('写せませんでした: ' + String(e && e.message || e), 'warn');
+      say('写せませんでした: ' + jaWhy('runTpFull', e), 'warn');
     } finally {
       btn.disabled = false;
       try { await loadTpRuns(sb); } catch (e) { /* 記録の一覧が読めなくても結果の文は残す */ }
@@ -1411,7 +1463,7 @@ if (!window.SUDialog) window.SUDialog = {
       left.appendChild(el('div', 'nm', fmtTime(x.at)));
       left.appendChild(el('div', 'em', x.status === 'done'
         ? '版 ' + x.rev + '／生きている案件 ' + x.active + '件／' + (ADM_RESULT[x.result] || '')
-        : '受け付けず（' + String(x.refused || '') + '）'));
+        : '受け付けず（' + refusedWord({}, x.refused, 'loadAdmRuns') + '）'));
       li.appendChild(left);
       ul.appendChild(li);
     });
@@ -1434,14 +1486,14 @@ if (!window.SUDialog) window.SUDialog = {
         rpc: function (name, args) { return sb.rpc(name, args); },
         progress: function (t) { say(t); }
       });
-      if (!res.ok) { say('写せませんでした: ' + res.why, 'warn'); return; }
+      if (!res.ok) { say('写せませんでした: ' + jaWhy('runAdmFull', res.why), 'warn'); return; }
       kk.appendChild(kpi('台帳の版', res.rev, ''));
       kk.appendChild(kpi('生きている案件', res.active, '件'));
       var tail = '（' + (ADM_RESULT[res.result] || '') + '）';
       say(res.diff.length ? '写しましたが、読み直すと違いがあります（' + res.diff.join('・') + '）。開発の担当へ知らせてください。' + tail
                           : '写して読み直し、Google と一致しました。' + tail, res.diff.length ? 'warn' : 'ok');
     } catch (e) {
-      say('写せませんでした: ' + String(e && e.message || e), 'warn');
+      say('写せませんでした: ' + jaWhy('runAdmFull', e), 'warn');
     } finally {
       btn.disabled = false;
       try { await loadAdmRuns(sb); } catch (e) { /* 記録の一覧が読めなくても結果の文は残す */ }
@@ -1522,7 +1574,7 @@ if (!window.SUDialog) window.SUDialog = {
     var live = false;
     try { var md = await sb.rpc('sup_mode_get'); live = !!(md && !md.error && md.data && md.data.mode === 'live'); } catch (e) { live = false; }
     if (live) say('切り替え済みです（備品の正本は Supabase）。写しは止めてあります（下の記録は切り替える前のものです）。Google へは1時間ごとに写し返しています。', 'ok');
-    else if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + (SUP_REFUSED[d.lastRefused] || String(d.lastRefused || '')) + '）。開発の担当へ知らせてください。' + tail, 'warn');
+    else if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + refusedWord(SUP_REFUSED, d.lastRefused, 'loadSup') + '）。開発の担当へ知らせてください。' + tail, 'warn');
     else if (!isNaN(last) && now - last <= SUP_FRESH_MS) say('写しが1時間ごとに届いています。' + tail, 'ok');
     else say('しばらく写っていません。消耗品管理の GAS の自動（autoMirror）が止まっていないか確かめてください。' + tail, 'warn');
     var r = await sb.from('sup_sync_runs').select('at,status,refused,result,items,moves').order('id', { ascending: false }).limit(5);
@@ -1531,7 +1583,7 @@ if (!window.SUDialog) window.SUDialog = {
       left.appendChild(el('div', 'nm', fmtTime(x.at)));
       left.appendChild(el('div', 'em', x.status === 'done'
         ? '品目 ' + x.items + '件／出庫 ' + x.moves + '行／' + (ADM_RESULT[x.result] || '')
-        : '受け付けず（' + (SUP_REFUSED[x.refused] || String(x.refused || '')) + '）'));
+        : '受け付けず（' + refusedWord(SUP_REFUSED, x.refused, 'loadSup') + '）'));
       li.appendChild(left);
       ul.appendChild(li);
     });
@@ -1605,11 +1657,11 @@ if (!window.SUDialog) window.SUDialog = {
         progress: function (t) { say(t); }
       };
       var res = kind === 'cut' ? await SUSupFull.cutover(io) : await SUSupFull.back(io);
-      if (!res.ok) { say((kind === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + res.why, 'warn'); return; }
+      if (!res.ok) { say((kind === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + jaWhy('runSupOp', res.why), 'warn'); return; }
       say(kind === 'cut' ? '切り替えました（写した品目 ' + res.rows + '件）。消耗品管理の画面は、読み込み直すと新しい保存先で保存します。'
                          : '写しの期間に戻しました。正本は Google です。', 'ok');
     } catch (e) {
-      say('止まりました: ' + String(e && e.message || e), 'warn');
+      say('止まりました: ' + jaWhy('runSupOp', e), 'warn');
     } finally {
       bc.disabled = false; bb.disabled = false;
       var keep = v.textContent, kc = v.className;
@@ -1655,7 +1707,7 @@ if (!window.SUDialog) window.SUDialog = {
     var lag = live && Number(mdd.version) > Number(mdd.mirroredVer) && !isNaN(mAt) && now - mAt > SA_FRESH_MS;
     if (lag) say('切り替え済みです（シフト分析の正本は Supabase）。ただし Google への写し返しが75分を超えて遅れています（最後に写し返した時刻 ' + fmtTime(mdd.mirroredAt) + '）。アナライザ同期の GAS の自動（autoMirror）が止まっていないか確かめてください。', 'warn');
     else if (live) say('切り替え済みです（シフト分析の正本は Supabase）。写しは止めてあります。Google へは1時間ごとに写し返しています。', 'ok');
-    else if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + (SA_REFUSED[d.lastRefused] || String(d.lastRefused || '')) + '）。' + (d.lastRefused === 'trashed' ? '' : '開発の担当へ知らせてください。') + tail, 'warn');
+    else if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + refusedWord(SA_REFUSED, d.lastRefused, 'loadSa') + '）。' + (d.lastRefused === 'trashed' ? '' : '開発の担当へ知らせてください。') + tail, 'warn');
     else if (!isNaN(last) && now - last <= SA_FRESH_MS) say('写しが1時間ごとに届いています。' + tail, 'ok');
     else say('しばらく写っていません。アナライザ同期の GAS の自動（autoMirror）が止まっていないか確かめてください。' + tail, 'warn');
   }
@@ -1720,11 +1772,11 @@ if (!window.SUDialog) window.SUDialog = {
         progress: function (t) { say(t); }
       };
       var res = kind === 'cut' ? await SUSaFull.cutover(io) : await SUSaFull.back(io);
-      if (!res.ok) { say((kind === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + res.why, 'warn'); return; }
+      if (!res.ok) { say((kind === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + jaWhy('runSaOp', res.why), 'warn'); return; }
       say(kind === 'cut' ? (res.unchanged ? 'もう切り替わっていました（何も変えていません）。' : '切り替えました（写した月 ' + res.months + '）。') + 'アナライザの画面は、読み込み直すと新しい保存先で同期します。'
                          : '写しの期間に戻しました。正本は Google です。', 'ok');
     } catch (e) {
-      say('止まりました: ' + String(e && e.message || e), 'warn');
+      say('止まりました: ' + jaWhy('runSaOp', e), 'warn');
     } finally {
       bc.disabled = false; bb.disabled = false;
       var keep = v.textContent, kc = v.className;
@@ -1765,7 +1817,7 @@ if (!window.SUDialog) window.SUDialog = {
     var lag = live && Number(mdd.version) > Number(mdd.mirroredVer) && !isNaN(mAt) && now - mAt > SA_FRESH_MS;
     if (lag) say('切り替え済みです（家族構成図の正本は Supabase）。ただし Google への写し返しが75分を超えて遅れています（最後に写し返した時刻 ' + fmtTime(mdd.mirroredAt) + '）。家族構成図同期の GAS の自動（autoMirror）が止まっていないか確かめてください。', 'warn');
     else if (live) say('切り替え済みです（家族構成図の正本は Supabase）。写しは止めてあります。Google へは1時間ごとに写し返しています。', 'ok');
-    else if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + (GENO_REFUSED[d.lastRefused] || String(d.lastRefused || '')) + '）。' + (d.lastRefused === 'dup' ? '' : '開発の担当へ知らせてください。') + tail, 'warn');
+    else if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + refusedWord(GENO_REFUSED, d.lastRefused, 'loadGeno') + '）。' + (d.lastRefused === 'dup' ? '' : '開発の担当へ知らせてください。') + tail, 'warn');
     else if (!isNaN(last) && now - last <= SA_FRESH_MS) say('写しが1時間ごとに届いています。' + tail, 'ok');
     else say('しばらく写っていません。家族構成図同期の GAS の自動（autoMirror）が止まっていないか確かめてください。' + tail, 'warn');
   }
@@ -1789,7 +1841,7 @@ if (!window.SUDialog) window.SUDialog = {
       none = false;
       var last = Date.parse(x.lastAt || '');
       lines.push(nm + ': 目録 ' + (Number(x.catalog) || 0) + '件・写した書類 ' + (Number(x.have) || 0) + '件・残り ' + (Number(x.left) || 0) + '件・読めなかった書類 ' + (Number(x.failed) || 0) + '件（最後に写した時刻 ' + fmtTime(x.lastAt) + '）。');
-      if (x.lastStatus === 'refused') warn.push(nm + 'の最後の写しは受け付けませんでした（' + (DOC_REFUSED[x.lastRefused] || String(x.lastRefused || '')) + '）。開発の担当へ知らせてください。');
+      if (x.lastStatus === 'refused') warn.push(nm + 'の最後の写しは受け付けませんでした（' + refusedWord(DOC_REFUSED, x.lastRefused, 'loadDoc') + '）。開発の担当へ知らせてください。');
       else if (isNaN(last) || now - last > SA_FRESH_MS) warn.push(nm + 'の写しがしばらく届いていません。' + nm + 'の GAS の自動（autoMirror）が止まっていないか、' + nm + 'の写し返しそのものが止まっていないか（上の' + nm + 'の欄）を確かめてください。');
       else if (Number(x.failed) > 0) warn.push(nm + 'に、ドライブで読めない書類が ' + Number(x.failed) + '件あります（ドライブで消された・形が違うなど。切り替える前に開発の担当へ知らせてください）。');
     });
@@ -1866,11 +1918,11 @@ if (!window.SUDialog) window.SUDialog = {
         progress: function (t) { say(t); }
       };
       var res = kind === 'cut' ? await SUHbFull.cutover(io) : await SUHbFull.back(io);
-      if (!res.ok) { say((kind === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + res.why, 'warn'); return; }
+      if (!res.ok) { say((kind === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + jaWhy('runHbOp', res.why), 'warn'); return; }
       say(kind === 'cut' ? (res.unchanged ? 'もう切り替わっていました（何も変えていません）。' : '切り替えました（止めた後に写した日 ' + res.days + ' 日）。') + '排泄ケア記録の画面は、1分ほどで新しい保存先へ送り始めます。'
                          : '写しの期間に戻しました。正本は Google です。', 'ok');
     } catch (e) {
-      say('止まりました: ' + String(e && e.message || e), 'warn');
+      say('止まりました: ' + jaWhy('runHbOp', e), 'warn');
     } finally {
       bc.disabled = false; bb.disabled = false;
       var keep = v.textContent, kc = v.className;
@@ -1932,11 +1984,11 @@ if (!window.SUDialog) window.SUDialog = {
         progress: function (t) { say(t); }
       };
       var res = op === 'cut' ? await SUDocFull.cutover(io, kind) : await SUDocFull.back(io, kind);
-      if (!res.ok) { say((op === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + res.why, 'warn'); return; }
+      if (!res.ok) { say((op === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + jaWhy('runDocOp', res.why), 'warn'); return; }
       say(op === 'cut' ? (res.unchanged ? 'もう切り替わっていました（何も変えていません）。' : nm + 'の書類を切り替えました（止めた後に写した書類 ' + res.files + ' 件）。') + nm + 'の画面は、1分ほどで新しい保存先で書類を扱い始めます。'
                        : nm + 'の書類を写しの期間に戻しました。正本は Google ドライブです。', 'ok');
     } catch (e) {
-      say('止まりました: ' + String(e && e.message || e), 'warn');
+      say('止まりました: ' + jaWhy('runDocOp', e), 'warn');
     } finally {
       ids.forEach(function (id) { $(id).disabled = false; });
       var keep = v.textContent, kc = v.className;
@@ -2003,7 +2055,7 @@ if (!window.SUDialog) window.SUDialog = {
     if (Number(d.refused24h) > 0) notes.push('この24時間に受け付けなかった写しが ' + Number(d.refused24h) + '回ありました。');
     dt.textContent = (s.days != null ? 'Google の日数 ' + Number(s.days) + '日・記録 ' + Number(s.rows) + '件／最後の回: 違った日 ' + Number(s.diff || 0) + '日・写した日 ' + Number(s.sent || 0) + '日・照らし合わせ ' + Number(s.verify || 0) + '日。' : '') + (notes.length ? ' ' + notes.join(' ') : '');
     if (notes.length) dt.className = 'msg warn';
-    if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + (HB_REFUSED[d.lastRefused] || String(d.lastRefused || '')) + '）。開発の担当へ知らせてください。' + tail, 'warn');
+    if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + refusedWord(HB_REFUSED, d.lastRefused, 'loadHb') + '）。開発の担当へ知らせてください。' + tail, 'warn');
     else if (isNaN(last) || now - last > SA_FRESH_MS) say('しばらく写っていません。排泄ケア記録DB の GAS の自動（autoMirror）が止まっていないか確かめてください。' + tail, 'warn');
     else if (Number(d.mismatch14) > 0) say('この14日に、要約は同じなのに中身が違った日が ' + Number(d.mismatch14) + '日ありました（写しは直してあります）。切り替える前に開発の担当へ知らせてください。' + tail, 'warn');
     else if (Number(s.left) > 0) say('写しが届いています（初めの写しの途中です）。' + tail, 'ok');
@@ -2048,7 +2100,7 @@ if (!window.SUDialog) window.SUDialog = {
     var last = Date.parse(d.lastAt || '');
     dt.textContent = parts.join('。') + (parts.length ? '。' : '') + (notes.length ? ' ' + notes.join(' ') : '');
     if (notes.length) dt.className = 'msg warn';
-    if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + (HO_REFUSED[d.lastRefused] || String(d.lastRefused || '')) + '）。開発の担当へ知らせてください。' + tail, 'warn');
+    if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + refusedWord(HO_REFUSED, d.lastRefused, 'loadHo') + '）。開発の担当へ知らせてください。' + tail, 'warn');
     else if (isNaN(last) || now - last > SA_FRESH_MS) say('しばらく写っていません。申送ビューアの GAS の自動（hoShadowTick）が止まっていないか確かめてください。' + tail, 'warn');
     else if (mis > 0) say('この14日に、要約は同じなのに中身が違った日が ' + mis + '日ありました（写しは直してあります）。読み先を移す前に開発の担当へ知らせてください。' + tail, 'warn');
     else if (left > 0) say('写しが届いています（初めの写しの途中です）。' + tail, 'ok');
@@ -2105,11 +2157,11 @@ if (!window.SUDialog) window.SUDialog = {
         progress: function (t) { say(t); }
       };
       var res = kind === 'cut' ? await SUGenoFull.cutover(io) : await SUGenoFull.back(io);
-      if (!res.ok) { say((kind === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + res.why, 'warn'); return; }
+      if (!res.ok) { say((kind === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + jaWhy('runGenoOp', res.why), 'warn'); return; }
       say(kind === 'cut' ? (res.unchanged ? 'もう切り替わっていました（何も変えていません）。' : '切り替えました（写した図 ' + res.docs + ' 枚・利用者No に結び付いた図 ' + res.linked + ' 枚）。') + '家族構成図の画面は、読み込み直すと新しい保存先で同期します。'
                          : '写しの期間に戻しました。正本は Google です。', 'ok');
     } catch (e) {
-      say('止まりました: ' + String(e && e.message || e), 'warn');
+      say('止まりました: ' + jaWhy('runGenoOp', e), 'warn');
     } finally {
       bc.disabled = false; bb.disabled = false;
       var keep = v.textContent, kc = v.className;
@@ -2147,7 +2199,7 @@ if (!window.SUDialog) window.SUDialog = {
     if (d.lastStatus === 'refused') await noteDiff(sb, 'stf', 1);
     else if (url && gv != null && gv === d.ver) await noteDiff(sb, 'stf', 0);
     else if (url && gv != null && gv < d.ver) await noteDiff(sb, 'stf', 1);
-    if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + (STF_REFUSED[d.lastRefused] || String(d.lastRefused || '')) + '）。開発の担当へ知らせてください。' + tail, 'warn');
+    if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + refusedWord(STF_REFUSED, d.lastRefused, 'loadStf') + '）。開発の担当へ知らせてください。' + tail, 'warn');
     else if (!url) say('写しはあります。この端末には職員マスタの接続先が無いので、Google の版とは見比べていません。' + tail);
     else if (gv == null) say('写しはあります。Google の版を読めませんでした（少し待ってから開き直してください）。' + tail, 'warn');
     else if (gv === d.ver) say('写しの版が Google と一致しています。' + tail, 'ok');
@@ -2159,7 +2211,7 @@ if (!window.SUDialog) window.SUDialog = {
       left.appendChild(el('div', 'nm', fmtTime(x.at)));
       left.appendChild(el('div', 'em', x.status === 'done'
         ? '版 ' + x.ver + '／職員 ' + x.staff + '人／' + (ADM_RESULT[x.result] || '')
-        : '受け付けず（' + (STF_REFUSED[x.refused] || String(x.refused || '')) + '）'));
+        : '受け付けず（' + refusedWord(STF_REFUSED, x.refused, 'loadStf') + '）'));
       li.appendChild(left);
       ul.appendChild(li);
     });
@@ -2262,11 +2314,11 @@ if (!window.SUDialog) window.SUDialog = {
         progress: function (t) { say(t); }
       };
       var res = kind === 'cut' ? await SUStfFull.cutover(io) : await SUStfFull.back(io);
-      if (!res.ok) { say((kind === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + res.why, 'warn'); return; }
+      if (!res.ok) { say((kind === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + jaWhy('runStfOp', res.why), 'warn'); return; }
       say(kind === 'cut' ? '切り替えました（写した職員 ' + res.rows + '人）。職員マスタ・採用管理の画面は、読み込み直すと新しい保存先で保存します。'
                          : '写しの期間に戻しました。正本は Google です。', 'ok');
     } catch (e) {
-      say('止まりました: ' + String(e && e.message || e), 'warn');
+      say('止まりました: ' + jaWhy('runStfOp', e), 'warn');
     } finally {
       bc.disabled = false; bb.disabled = false;
       var keep = v.textContent, kc = v.className;
@@ -2333,11 +2385,11 @@ if (!window.SUDialog) window.SUDialog = {
         progress: function (t) { say(t); }
       };
       var res = kind === 'cut' ? await SUAdmFull.cutover(io) : await SUAdmFull.back(io);
-      if (!res.ok) { say((kind === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + res.why, 'warn'); return; }
+      if (!res.ok) { say((kind === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + jaWhy('runAdmOp', res.why), 'warn'); return; }
       say(kind === 'cut' ? '切り替えました（生きている案件 ' + res.active + '件）。入居調整の画面は読み込み直すと新しい保存先で保存します。'
                          : (res.nothing ? '切り替えていないので、戻すものはありません。' : '写しの期間に戻しました（Google へ写し返した台帳 ' + res.docs + '件）。正本は Google です。'), 'ok');
     } catch (e) {
-      say('止まりました: ' + String(e && e.message || e), 'warn');
+      say('止まりました: ' + jaWhy('runAdmOp', e), 'warn');
     } finally {
       bc.disabled = false; bb.disabled = false;
       var keep = v.textContent, kc = v.className;
@@ -2377,20 +2429,27 @@ if (!window.SUDialog) window.SUDialog = {
   /* AI の中継の受け口（su-ai・統合 0028）へ、「はい」とだけ答えさせる決まった短い依頼を1回送り、届いたか・答えの状態だけを出す
    * （2026-10-30 代表者「確かめボタン」。切り替えスイッチ training_ai が切のままでも確かめられる）。管理者だけ。
    * 入居者の情報は送らない。1回の利用として数える。出すのは状態の番号・断りの種類・かかった秒数だけ */
+  /* 受け口が返した断りの文は、日本語の時だけ「・文」で添える。英語・印だけの時は画面に出さず記録に残す（2026-11-13・仮置き） */
+  function aiWhyTail(s, max) {
+    s = String(s || '');
+    if (!s) return '';
+    if (JA_CHAR.test(s)) return '・' + s.slice(0, max);
+    try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('写しの見比べ: AI の受け口の断り', s.slice(0, 200)); } catch (e) { /* 記録できなくても止めない */ }
+    return '';
+  }
   function aiProbeText(r, sec) {
     if (r && r.error) {
       var ctx = r.error.context, nm = String(r.error.name || '');
       if (ctx && typeof ctx.status === 'number') return Promise.resolve(typeof ctx.json === 'function' ? ctx.json().catch(function () { return null; }) : null).then(function (d) {
-        return { k: 'warn', t: '受け口は答えましたが、断られました（状態 ' + ctx.status + (d && typeof d.error === 'string' ? '・' + d.error.slice(0, 40) : d && typeof d.message === 'string' ? '・' + d.message.slice(0, 60) : '') + '・' + sec + '秒）。' };
+        return { k: 'warn', t: '受け口は答えましたが、断られました（状態 ' + ctx.status + (d && typeof d.error === 'string' ? aiWhyTail(d.error, 40) : d && typeof d.message === 'string' ? aiWhyTail(d.message, 60) : '') + '・' + sec + '秒）。' };
       });
-      var why = String(r.error.message || '').slice(0, 80);
-      if (nm === 'FunctionsRelayError') return Promise.resolve({ k: 'warn', t: '受け口の手前の中継で止まりました（' + why + '・' + sec + '秒）。' });
-      return Promise.resolve({ k: 'warn', t: '受け口に届きませんでした（' + (nm || 'error') + '：' + why + '・' + sec + '秒）。' });
+      if (nm === 'FunctionsRelayError') { aiWhyTail(nm + ' ' + String(r.error.message || ''), 80); return Promise.resolve({ k: 'warn', t: '受け口の手前の中継で止まりました（' + sec + '秒）。' }); }
+      return Promise.resolve({ k: 'warn', t: '受け口に届きませんでした（' + sec + '秒）。' + jaWhy('AI の受け口', r.error) });
     }
     var d = r ? r.data : null;
     if (d && d.ok === true && Number(d.status) >= 200 && Number(d.status) < 300) return Promise.resolve({ k: 'ok', t: '届きました。AI が答えました（' + sec + '秒）。新しい受け口は使えます。' });
     if (d && d.ok === true) return Promise.resolve({ k: 'warn', t: '受け口には届きましたが、AI が断りました（状態 ' + d.status + '・' + sec + '秒）。' });
-    if (d && d.ok === false) return Promise.resolve({ k: 'warn', t: '受け口には届きましたが、断られました（' + String(d.error || '').slice(0, 40) + '・' + sec + '秒）。' });
+    if (d && d.ok === false) { var tl = aiWhyTail(d.error, 40); return Promise.resolve({ k: 'warn', t: '受け口には届きましたが、断られました（' + (tl ? tl.slice(1) + '・' : '') + sec + '秒）。' }); }
     return Promise.resolve({ k: 'warn', t: '受け口から読めない答えが返りました（' + sec + '秒）。' });
   }
   async function runTpAi() {
@@ -2406,7 +2465,7 @@ if (!window.SUDialog) window.SUDialog = {
       var o = await aiProbeText(r, Math.round((Date.now() - t0) / 1000));
       say(o.t, o.k);
     } catch (e) {
-      say('送れませんでした（' + String(e && e.message || e).slice(0, 80) + '・' + Math.round((Date.now() - t0) / 1000) + '秒）。', 'warn');
+      say('送れませんでした（' + jaWhy('runTpAi', e, true) + '・' + Math.round((Date.now() - t0) / 1000) + '秒）。', 'warn');
     } finally { b.disabled = false; }
   }
   async function runTpOp(kind) {
@@ -2445,11 +2504,11 @@ if (!window.SUDialog) window.SUDialog = {
         progress: function (t) { say(t); }
       };
       var res = kind === 'cut' ? await SUTpFull.cutover(io) : await SUTpFull.back(io);
-      if (!res.ok) { say((kind === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + res.why, 'warn'); return; }
+      if (!res.ok) { say((kind === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + jaWhy('runTpOp', res.why), 'warn'); return; }
       say(kind === 'cut' ? '切り替えました（計画書 ' + res.docs + '件）。計画書の画面は読み込み直すと新しい保存先で保存します。'
                          : (res.nothing ? '切り替えていないので、戻すものはありません。' : '写しの期間に戻しました（Google へ写し返した計画書 ' + res.docs + '件）。正本は Google です。'), 'ok');
     } catch (e) {
-      say('止まりました: ' + String(e && e.message || e), 'warn');
+      say('止まりました: ' + jaWhy('runTpOp', e), 'warn');
     } finally {
       bc.disabled = false; bb.disabled = false;
       var keep = v.textContent, kc = v.className;
@@ -2521,11 +2580,11 @@ if (!window.SUDialog) window.SUDialog = {
     var sb = SUAuth.client();
     try {
       var res = kind === 'cut' ? await SUResFull.cutover(resOpIo(sb, tgt, say)) : await SUResFull.back(resOpIo(sb, tgt, say));
-      if (!res.ok) { say((kind === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + res.why, 'warn'); return; }
+      if (!res.ok) { say((kind === 'cut' ? '切り替えられませんでした: ' : '戻せませんでした: ') + jaWhy('runResOp', res.why), 'warn'); return; }
       say(kind === 'cut' ? '切り替えました（入居者 ' + res.residents + '人）。各画面は読み込み直すと新しい保存先で保存します。'
                          : (res.nothing ? '切り替えていないので、戻すものはありません。' : '写しの期間に戻しました（Google へ写し返した方 ' + res.records + '人）。正本は Google です。'), 'ok');
     } catch (e) {
-      say('止まりました: ' + String(e && e.message || e), 'warn');
+      say('止まりました: ' + jaWhy('runResOp', e), 'warn');
     } finally {
       bc.disabled = false; bb.disabled = false;
       var keep = v.textContent, kc = v.className;
@@ -2577,7 +2636,7 @@ if (!window.SUDialog) window.SUDialog = {
         : why === 'writes' ? '最後の写しの後に（または写しの直前に）体重の保存がありました。体重を入れていない時に、事務所PCで体重管理を開き直し、6分ほど待ってから、もう一度押してください。'
         : why === 'unmirrored' ? 'Google への体重の写し返しがまだ残っています。体重管理の GAS のエディタで autoMirror を1回実行するか、1時間ほど待ってから、もう一度押してください。'
         : /PGRST202|42883/.test(why) ? 'データベースの準備（0032）がまだです。'
-        : why === '42501' ? '管理者（二段階認証済み）のアカウントで開いてください。' : why));
+        : why === '42501' ? '管理者（二段階認証済み）のアカウントで開いてください。' : jaWhy('体重の切り替え', why)));
       return;
     }
     msg(mode === 'live' ? '体重の保存先を Supabase（本番）にしました。各端末は次の通信から Supabase へ送ります。'
@@ -2746,7 +2805,12 @@ if (!window.SUDialog) window.SUDialog = {
     me = st;
     if (st.status !== SUAuth.STATUS.OK || (st.role !== 'office' && st.role !== 'admin')) {
       if (st.status === SUAuth.STATUS.OK) $('gate-why').textContent = 'このアカウント（現場）では開けません。事務所または管理者のアカウントでログインしてください。';
-      else if (st.status === SUAuth.STATUS.ERROR) $('gate-why').textContent = st.message || '確かめられませんでした。';
+      else if (st.status === SUAuth.STATUS.ERROR) {
+        /* 日本語の文はそのまま出す。英語の文は記録に残し、覆いの画面には押す所が無いので今までの既定の文を出す（仮置き・2026-11-13） */
+        var gm = String(st.message || '');
+        if (gm && !JA_CHAR.test(gm)) jaWhy('ログインの確かめ', gm);
+        $('gate-why').textContent = gm && JA_CHAR.test(gm) ? gm : '確かめられませんでした。';
+      }
       view('gate');
       return;
     }
@@ -2782,10 +2846,10 @@ if (!window.SUDialog) window.SUDialog = {
   $('b-live').addEventListener('click', function () { setMode('live'); });
   $('b-shadow').addEventListener('click', function () { setMode('shadow'); });
   $('b-live-shift').addEventListener('click', function () { setShiftMode('live'); });
-  $('b-live-weight').addEventListener('click', function () { setWeightMode('live').catch(function (e) { msg(String(e && e.message || e)); }); });
-  $('b-shadow-weight').addEventListener('click', function () { setWeightMode('shadow').catch(function (e) { msg(String(e && e.message || e)); }); });
+  $('b-live-weight').addEventListener('click', function () { setWeightMode('live').catch(function (e) { msg(jaWhy('体重の切り替え', e)); }); });
+  $('b-shadow-weight').addEventListener('click', function () { setWeightMode('shadow').catch(function (e) { msg(jaWhy('体重を写しの期間に戻す', e)); }); });
   $('b-shadow-shift').addEventListener('click', function () { setShiftMode('shadow'); });
-  $('b-reload').addEventListener('click', function () { msg(''); load().catch(function (e) { msg(String(e && e.message || e)); }); });
+  $('b-reload').addEventListener('click', function () { msg(''); load().catch(function (e) { msg(jaWhy('見比べ直す', e)); }); });
   $('b-care-check').addEventListener('click', function () { msg(''); runCareCheck(); });
   $('b-res-full').addEventListener('click', function () { msg(''); runResFull(); });
   $('b-res-cut').addEventListener('click', function () { msg(''); runResOp('cut'); });

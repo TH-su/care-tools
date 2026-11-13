@@ -351,6 +351,7 @@ const CENSUS = {
   "genogram.html": [
     [F, "sel.innerHTML = '<option value=\"\">— 保存済みから読込 —</option>'"]
   ],
+  "help-sec.js": [],
   "help.html": [],
   "index.html": [],
   "kotowaza-jiten.html": [],
