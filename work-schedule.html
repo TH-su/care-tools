@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ljQiVY2D3jvV+1n2X9UBo1Wqca2y7XadS+kp64Om/jU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-+iztI+RXgS7aYsrR9r0M1nH80B8DvwMyCdACLScGlAk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -63,6 +63,10 @@ body {
 /* 現場の端末の表示（2026-10-11）。見出しの中＝印刷では .hdr ごと隠れる */
 .hdr-field { font-size: 12px; font-weight: 700; color: #7a4b00; background: #fff4e0; border: 1px solid #e0a040; border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
 .hdr-field[hidden] { display: none; }
+/* 見出しの左の「← メニュー」（care-tools のほかの画面と同じ .su-menu-back・2026-11-13）。見出しの中＝印刷では .hdr ごと隠れる。
+ * 狭い幅（899px 以下）では押す所を 44px にする（見出しの高さ 50px の中に収まる） */
+.su-menu-back { display: inline-flex; align-items: center; white-space: nowrap; text-decoration: none; }
+@media screen and (max-width: 899px) { .su-menu-back { min-height: 44px; box-sizing: border-box; } }
 /* 勤務表を写しから表示中の知らせは文言が長いので折り返す（狭い幅で見出しからあふれない・2026-10-17） */
 #shiftFallbackBanner { white-space: normal; }
 /* 日単位ロックのチェックボックス（ヘッダー内・.hdrごと@media printで非表示＝印刷非干渉・盤面レイアウト非接触） */
@@ -774,6 +778,8 @@ body.su-print-staff24 #rp-print, body.su-print-staff24range #rp-print { display:
 </head>
 <body>
 <div class="hdr">
+  <!-- メニュー（index.html）へ戻る（care-tools のほかの画面と同じ形・2026-11-13）。移る時の保存は pagehide の flushAll_ が確定する -->
+  <a class="hdr-btn su-menu-back" href="index.html">← メニュー</a>
   <button class="hdr-btn" id="btnPrev" aria-label="前の日へ" title="前日(-1日)">◀</button>
   <div class="hdr-date" id="hdrDate" role="button" title="クリックでカレンダー">----/--/--</div>
   <button class="hdr-btn" id="btnNext" aria-label="次の日へ" title="翌日(+1日)">▶</button>
@@ -21487,7 +21493,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261111144058';
+  var WS_BUILD = '20261113100101';
   var WS_APP_VER = 2026102701;   /* 2026-10-27 まだ届いていないロックを「外した」に変えて送り、版の進んでいない古い未送信を退避して捨てる前の版の画面が、仕上げたロックの盤面を前の版で上書きしないよう上げた（代表者承認 A・B）
                                   * （2026101706: 2026-10-23 トレイへ入った理由の印（parkedByHand・absentMoved・routineTray）を知らない前の版の画面が、手で戻した札・休みで移した札を印なしで残し、
                                   * 新しい版がそれを列へ戻してしまわないよう上げた）
