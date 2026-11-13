@@ -7,6 +7,7 @@
      3. su-shell.js を読む6画面: 見出しの「← メニュー」の右隣に置く（表どおりの行き先・型の名前を写す・二重に置かない・枠の中とメニュー・ログイン・使い方の画面では置かない・文字は textContent）
      4. 保存していない入力がある5画面（入居者マスタ・職員マスタ・担当者会議・入居調整・消耗品管理）は、「使い方」を押した時も「← メニュー」と同じ判定で確かめ、
         「いいえ」なら移らない・「はい」なら直後の beforeunload で二重に聞かない印を立てる・変更が無ければ聞かない
+     4.4 接続設定: 「‹ 戻る」の右隣に「使い方」を直接書く（行き先は表どおり・印刷では消す・保存していない入力は戻ると同じ beforeunload の判定で確かめる）
      5. メニュー・ログイン・使い方の画面と、別の正本から配る3画面（ワークスケジュール・シフト作成・シフト分析）には置かない
    画面のコードは書き換えず、ソースを読んで切り出して動かすだけ。 */
 'use strict';
@@ -79,7 +80,7 @@ let SEC = null;
   t('表の値ごとに help.html に節の見出しがある', want.every((k) => help.indexOf('id="' + SEC[k] + '"') >= 0), want);
   const H = shellRun.win.SUShell.helpHref;
   t('節のある画面は help.html?sec=<画面>', H('care-schedule.html') === 'help.html?sec=care-schedule' && H('weight-record.html') === 'help.html?sec=weight-record');
-  t('節の無い画面・壊れた値は help.html', H('facesheet.html') === 'help.html' && H('') === 'help.html' && H('__proto__') === 'help.html' && H('constructor') === 'help.html');
+  t('節の無い画面・壊れた値は help.html', H('shift-app.html') === 'help.html' && H('index.html') === 'help.html' && H('') === 'help.html' && H('__proto__') === 'help.html' && H('constructor') === 'help.html');
 }
 const expHref = (f) => (Object.prototype.hasOwnProperty.call(HELP_SEC || {}, f) ? 'help.html?sec=' + HELP_SEC[f] : 'help.html');
 
@@ -240,6 +241,25 @@ for (const c of CASES) {
   const clean = runClick(code, { isDirty_: () => false, ed: null, impSt: null }, false, helpLink);
   t('担当者会議: 変更が無ければ聞かない', !clean.prevented && clean.asked === 0, clean);
   t('担当者会議: 見出しに受け口を付ける', /hdrEl\.addEventListener\('click',onHdrHelpClick_\)/.test(s));
+}
+
+console.log('4.4 接続設定（見出しの戻るのリンクは「‹ 戻る」のまま・2026-11-13 代表者の指示）');
+{
+  const s = raw('connection-settings.html').replace(/<!--[\s\S]*?-->/g, '');
+  const helps = [...s.matchAll(/<a class="([^"]*\bsu-help-link\b[^"]*)" href="([^"]*)">([^<]*)<\/a>/g)];
+  t('接続設定: 「使い方」が1本', helps.length === 1 && (s.match(/su-help-link"/g) || []).length === 1, helps.length);
+  if (helps.length) {
+    t('接続設定: 文言は「使い方」', helps[0][3] === '使い方', helps[0][3]);
+    t('接続設定: 行き先は表どおり', helps[0][2] === expHref('connection-settings.html'), helps[0][2]);
+    t('接続設定: 戻るのリンクの右隣にあり、同じ型の名前（back）を持つ', /<a class="back" href="index\.html"[^>]*>‹ 戻る<\/a>\s*<a class="back su-help-link" href=/.test(s));
+  }
+  t('接続設定: 印刷では消す', /@media print\{\.su-help-link\{display:none !important\}\}/.test(s));
+  t('接続設定: 保存していない入力の確かめは、戻ると同じく離れる時（beforeunload）の判定で効く', /addEventListener\('beforeunload', function\(ev\)\{[\s\S]{0,200}cards\[k\]\.dirty\(\)/.test(s));
+}
+
+console.log('4.5 「使い方」を持つ画面は全部、その画面の節へ飛ぶ（2026-11-13 代表者の指示）');
+for (const f of DIRECT.concat(SHELL, ['connection-settings.html'])) {
+  t(f + ': 行き先の表にあり、help.html?sec=<画面> へ飛ぶ', Object.prototype.hasOwnProperty.call(HELP_SEC || {}, f) && expHref(f) === 'help.html?sec=' + f.replace(/\.html$/, ''), expHref(f));
 }
 
 console.log('5 置かない画面');
