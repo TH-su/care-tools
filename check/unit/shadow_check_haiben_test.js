@@ -155,7 +155,10 @@ const ST = (x, s) => Object.assign({ ok: true, days: 400, rows: 21000, firstDay:
       ['この14日に食い違い', ST({ mismatch14: 2 }), 2],
       ['初めの写しの途中', ST({}, { left: 120 }), 120],
       ['空にしなかった日・使えない番号・日付の無い記録', ST({}, { emptyHeld: 15, badId: 1, nodate: 2 }), 18],
-      ['大きすぎる記録', ST({}, { badRow: 1 }), 1]
+      ['大きすぎる記録', ST({}, { badRow: 1 }), 1],
+      ['Google と写しの日数が違う（印は全部0）', ST({ days: 399 }), 1],
+      ['Google と写しの記録の数が違う（印は全部0）', ST({ rows: 20990 }), 10],
+      ['最後の回の食い違い（stat.mismatched）', ST({}, { mismatched: 2 }), 2]
     ];
     for (const [name, st, n] of warn) {
       const w = await run({ status: st });
@@ -173,12 +176,23 @@ const ST = (x, s) => Object.assign({ ok: true, days: 400, rows: 21000, firstDay:
       ['その回の数（stat）が無い', { status: ST({ stat: {} }) }],
       ['最後の時刻が読めない', { status: ST({ lastAt: 'x' }) }]
     ];
+    const noneStrict = [
+      ['この14日に中身の照らし合わせが無い（verified14 が0）', { status: ST({ verified14: 0 }) }],
+      ['最後の回に中身の照らし合わせが無い（stat.verify が0）', { status: ST({}, { verify: 0 }) }],
+      ['写しの記録の数が無い', { status: ST({ rows: null }) }],
+      ['Google の記録の数が無い', { status: ST({}, { rows: undefined }) }]
+    ];
     for (const [name, o] of none) {
       const w = await run(o);
       t('I ' + name + ' → 残さない（0件とみなさない）', w.env.noted.length === 0, w.env.noted);
     }
+    for (const [name, o] of noneStrict) {
+      const w = await run(o);
+      t('I ' + name + ' → 残さない（0件とみなさない）・画面も「Google と同じ」と言わない', w.env.noted.length === 0 && !/Google と同じ/.test(V(w).textContent) && /warn/.test(V(w).className), [w.env.noted, V(w).textContent]);
+    }
     // 画面が「Google と同じです」と出さない組み合わせで0件を残さない（警告の間に表が通らない）
-    const combos = [{ lastStatus: 'refused' }, { refused24h: 1 }, { mismatch14: 1 }].map((x) => ST(x)).concat(['left', 'emptyHeld', 'badId', 'badRow', 'nodate'].map((k) => ST({}, { [k]: 1 })));
+    const combos = [{ lastStatus: 'refused' }, { refused24h: 1 }, { mismatch14: 1 }, { days: 399 }, { rows: 20999 }, { verified14: 0 }].map((x) => ST(x))
+      .concat(['left', 'emptyHeld', 'badId', 'badRow', 'nodate', 'mismatched'].map((k) => ST({}, { [k]: 1 })), [ST({}, { verify: 0 }), ST({}, { days: 401 })]);
     let bad = 0;
     for (const st of combos) { const w = await run({ status: st }); if (!/Google と同じ/.test(V(w).textContent) && w.env.noted.some(([, n]) => n === 0)) bad++; }
     t('I 警告・知らせが出る組み合わせで0件を残さない', bad === 0, bad);

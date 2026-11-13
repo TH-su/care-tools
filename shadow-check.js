@@ -1863,8 +1863,11 @@ if (!window.SUDialog) window.SUDialog = {
    * 差の件数は、この画面が「Google と同じです」と出す時だけ0件で、警告・知らせが出る時は1件以上にする（仮置き）:
    *   最後の写しを断った（1）＋この24時間に断った回数（refused24h）＋この14日の食い違いの日（mismatch14）＋
    *   最後の回のまだ写していない日（left）・空にしなかった日（emptyHeld）・使えない番号（badId）・大きすぎる記録（badRow）・日付の無い記録（nodate）。
+   *   ＋最後の回の食い違いの日（stat.mismatched）＋Google と写しの日数の差と記録の数の差（|stat.days−days|＋|stat.rows−rows|）。
    * 最後の回の「違った日」（stat.diff）は数えない（1時間の間に Google で記録が増えた日を写した数で、差ではないため）。
-   * 写していない・しばらく写っていない（75分を超える）・その回の数（stat）が無い・読めない時は残さない（職員マスタと同じ・0件とみなさない） */
+   * 写していない・しばらく写っていない（75分を超える）・その回の数（stat）が無い・Google か写しの日数・記録の数が無い・
+   * 中身の照らし合わせが動いていない（この14日の照らし合わせ verified14 か最後の回の stat.verify が0）・読めない時は残さない
+   * （職員マスタと同じ・0件とみなさない。反証レビュー 2026-11-13 中1・中2） */
   var hbSeen = null;
   function hbDiffCount(d, now) {
     if (!d || !d.lastAt) return null;
@@ -1872,8 +1875,12 @@ if (!window.SUDialog) window.SUDialog = {
     if (isNaN(last) || !(now - last <= SA_FRESH_MS)) return null;
     var s = (d.stat && typeof d.stat === 'object') ? d.stat : null;
     if (!s || s.days == null) return null;
+    var cnt = [s.days, s.rows, d.days, d.rows].map(function (x) { return x == null || x === '' ? NaN : Number(x); });
+    if (!cnt.every(function (x) { return x >= 0; })) return null;   // 片方の数が無い・形が違う時は比べられない
+    if (!(Number(d.verified14) > 0) || !(Number(s.verify) > 0)) return null;   // 中身の照らし合わせが動いていない
     var n = d.lastStatus === 'refused' ? 1 : 0;
-    [d.refused24h, d.mismatch14, s.left, s.emptyHeld, s.badId, s.badRow, s.nodate].forEach(function (x) {
+    n += Math.abs(cnt[0] - cnt[2]) + Math.abs(cnt[1] - cnt[3]);
+    [d.refused24h, d.mismatch14, s.mismatched, s.left, s.emptyHeld, s.badId, s.badRow, s.nodate].forEach(function (x) {
       var v = Number(x);
       if (x != null && !(v >= 0)) n += 1;   // 形の違う数は差に数える（0件とみなさない）
       else if (v > 0) n += Math.floor(v);
@@ -2082,6 +2089,12 @@ if (!window.SUDialog) window.SUDialog = {
     if (Number(s.badRow) > 0) notes.push('項目が多すぎる・大きすぎる記録が ' + Number(s.badRow) + '件あり、写していません（開発の担当へ知らせてください）。');
     if (Number(s.nodate) > 0) notes.push('日付の入っていない記録が ' + Number(s.nodate) + '件あります（どの日にも入らないので写していません。切り替える前に開発の担当へ知らせてください）。');
     if (Number(d.refused24h) > 0) notes.push('この24時間に受け付けなかった写しが ' + Number(d.refused24h) + '回ありました。');
+    /* 「Google と同じです」と言う条件を差の数え方（hbDiffCount）とそろえる（反証レビュー 2026-11-13 中1・中2・知らせの文は仮置き） */
+    if (s.days != null && (Number(s.days) !== Number(d.days) || Number(s.rows) !== Number(d.rows)) && !(Number(s.left) > 0))
+      notes.push('Google と写しの日数・記録の数が合っていません（Google ' + Number(s.days) + '日・' + Number(s.rows) + '件／写し ' + Number(d.days) + '日・' + Number(d.rows) + '件）。開発の担当へ知らせてください。');
+    if (s.days != null && (!(Number(d.verified14) > 0) || !(Number(s.verify) > 0)))
+      notes.push('中身の照らし合わせが動いていません（この14日 ' + Number(d.verified14 || 0) + '日・最後の回 ' + Number(s.verify || 0) + '日）。開発の担当へ知らせてください。');
+    if (Number(s.mismatched) > 0 && !(Number(d.mismatch14) > 0)) notes.push('最後の回に、要約は同じなのに中身が違った日が ' + Number(s.mismatched) + '日ありました（写しは直してあります）。');
     dt.textContent = (s.days != null ? 'Google の日数 ' + Number(s.days) + '日・記録 ' + Number(s.rows) + '件／最後の回: 違った日 ' + Number(s.diff || 0) + '日・写した日 ' + Number(s.sent || 0) + '日・照らし合わせ ' + Number(s.verify || 0) + '日。' : '') + (notes.length ? ' ' + notes.join(' ') : '');
     if (notes.length) dt.className = 'msg warn';
     if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + refusedWord(HB_REFUSED, d.lastRefused, 'loadHb') + '）。開発の担当へ知らせてください。' + tail, 'warn');
