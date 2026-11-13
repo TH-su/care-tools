@@ -1,9 +1,10 @@
-/* 接続設定（connection-settings.html）の初回の案内の「合言葉も確かめる」と「ログインで使えます（設定不要）」（2026-11-13 代表者の指示）。
+/* 接続設定（connection-settings.html）の初回の案内の「合言葉も確かめる」と「ふだんの読み書きはログインで使えます」（2026-11-13 代表者の指示・同日の反証レビューで段を飛ばさない形へ）。
    1. 合言葉は本文（text/plain の POST・{action:'ping', token}）で送り、URL に載せない。書く要求は送らない
    2. GAS は合言葉が違っても 200 で返す。本文の印（unauthorized・認証エラー・code:403）と、本当の 403 を「合言葉が違います」にする
    3. 決まった形でない答えは「確かめられません」（「通りました」と出さない）。ping の口が無い系統（排泄・体重・報告先）は送らない
    4. 統合同期・入居者マスタは、先に合言葉なしで別アプリと分かったら合言葉を送らない
-   5. ログインで使える系統は段から外し、段の全部がそうなら段を飛ばす。対象は入居調整・計画書・家族構成図・過去シフトの4つだけ
+   5. ログインで使える系統は ✕ にせず、接続先が要る場面を書いて任意の段として残す（飛ばさない・✓ にしない）。対象は入居調整・計画書・家族構成図・過去シフトの4つだけ
+   6. 読むだけの合言葉（家族構成図の閲覧用・過去シフトの ro）は「通りました」にしない。申送は申送の GAS の ping の形でだけ「通りました」
    架空の接続先・合言葉だけを使う。 */
 'use strict';
 const fs = require('fs');
@@ -96,6 +97,10 @@ function cfg(store, id, url, token) {
     ['msk', { error: '認証エラー' }, 200, 'ng'],
     ['msk', { ok: true, role: 'full', ver: 'x' }, 200, 'ok'],
     ['msk', { ok: true, role: 'full', readRole: false }, 200, 'unknown'],
+    ['msk', { ok: true, auth: 'ok', role: 'full', codeVersion: 'x', cutover: true }, 200, 'unknown'],   // 申送の欄に家族構成図の接続先
+    ['msk', { ok: true, role: 'full' }, 200, 'unknown'],
+    ['geno', { ok: true, auth: 'ok', role: 'view' }, 200, 'readonly'],
+    ['analyzer', { ok: true, server: 'shiftanalyzer-gas', role: 'ro' }, 200, 'readonly'],
     ['med', { error: 'unauthorized' }, 200, 'ng'],
     ['med', { ok: true }, 200, 'ok'],
     ['ws', { ok: false, error: 'unauthorized' }, 200, 'ng'],
@@ -111,6 +116,7 @@ function cfg(store, id, url, token) {
     const b = makeBox({}, () => ({ status: 200, json: {} }));
     const bad = cases.filter(c => b.tokenVerdict_(c[0], c[1], c[2]) !== c[3]).map(c => [c[0], c[1], c[2], c[3], b.tokenVerdict_(c[0], c[1], c[2])]);
     t('系統ごとの答えを見分ける（' + cases.length + '場面）', bad.length === 0, bad);
+    t('読むだけの合言葉は ✕ で「読むだけの合言葉です（保存できません）」', b.tokenMsg_('readonly').ok === false && /読むだけの合言葉です（保存できません）/.test(b.tokenMsg_('readonly').msg), b.tokenMsg_('readonly'));
     t('合言葉が違う時の文は「合言葉が違います」', b.tokenMsg_('ng').msg === '合言葉が違います' && b.tokenMsg_('ng').ok === false, b.tokenMsg_('ng'));
     t('分からない時は「確かめられません」の側（✓ にしない）', b.tokenMsg_('unknown').ok === null && /確かめられません/.test(b.tokenMsg_('unknown').msg), b.tokenMsg_('unknown'));
   }
@@ -161,33 +167,37 @@ function cfg(store, id, url, token) {
     t('入居者マスタ: 版数の確かめで別アプリ → 合言葉を送らない', b.sent.length === 1 && JSON.parse(b.sent[0].opt.body).action === 'stateRev' && !('token' in JSON.parse(b.sent[0].opt.body)) && r.ok === false, { sent: b.sent.map(s => s.opt.body), r });
   }
 
-  console.log('\n— 5. ログインで使える系統 —');
-  t('文は「ログインで使えます（設定不要）」', /var WIZ_LIVE_MSG = 'ログインで使えます（設定不要）';/.test(src), '');
+  console.log('\n— 5. ログインで使える系統（段は飛ばさない・要る場面を書く）—');
+  t('文は「ふだんの読み書きはログインで使えます」と、接続先が要る場面', /var WIZ_LIVE_MSG = 'ふだんの読み書きはログインで使えます';/.test(src) && /var WIZ_LIVE_NEED = '[^']*AI の下書き[^']*添付書類[^']*管理者が戻す時[^']*管理者の端末には入れておいてください';/.test(src), '');
+  t('「設定不要」とは言わない（接続先が要る場面があるため）', !/設定不要/.test(src.slice(src.indexOf('/* ═══════════ 初回の案内（'), src.indexOf('/* ═══════════ 初期化 ═══════════ */'))), '');
   const liveDef = grab(/var WIZ_LIVE_CHECKS = \{[\s\S]*?\n\};/);
   const liveIds = (liveDef.match(/^  ([a-z]+): function/mg) || []).map(s => s.trim().split(':')[0]);
   t('対象は入居調整・計画書・家族構成図・過去シフトの4つだけ（統合同期・入居者マスタ・体重・排泄・申送は入れない）', liveIds.join() === 'adm,tp,geno,analyzer', liveIds);
   t('持ち主の画面と同じ確かめ（liveReady／probe）を呼ぶ', /SU\.data\.admission\.liveReady\(\)/.test(liveDef) && /SU\.data\.training\.liveReady\(\)/.test(liveDef) && /SUGeno\.liveReady\(\)/.test(liveDef) && /SUSa\.probe\(\)/.test(liveDef), '');
   t('true の時だけ印を付ける（分からない・時間切れは付けない）', /if\(v!==true\) return;\s*wizLive\[id\]=true;/.test(cut('wizLiveStart')) && /ok\(false\); \}, 10000\)/.test(cut('wizLiveStart')), '');
   {
-    const store = {}; store.adm_cfg = JSON.stringify({ url: URL_A, token: 'x' });
+    const store = {};
     const b = { localStorage: { getItem: k => (k in store ? store[k] : null) }, JSON, String, Object, window: {} };
     vm.createContext(b);
     vm.runInContext([grab(/var SYSTEMS = \[[\s\S]*?\n\];/).replace(/urlRe:RE_GAS_[A-Z]+/g, 'urlRe:null'), cut('lsGetStr'), cut('lsGetObj'), cut('readCur'), cut('sysById'),
-      line(/var WIZ_LIVE_MSG = '[^']+';/), 'var wizLive = {}; var wizRes = {};', cut('wizState')].join('\n') + '\nthis.wizLive=wizLive; this.wizRes=wizRes;', b);
-    const own = { id: 'own', sys: ['adm', 'tp'] };
-    t('段の全部が使えない間は今までどおり', b.wizState(own).ok === null && !b.wizState(own).live, b.wizState(own));
-    b.wizLive.adm = true;
+      line(/var WIZ_LIVE_MSG = '[^']+';/), line(/var WIZ_LIVE_NEED = '[^']+';/), 'var wizLive = {}; var wizRes = {};', cut('wizState')].join('\n') + '\nthis.wizLive=wizLive; this.wizRes=wizRes;', b);
+    const own = { id: 'own', sys: ['adm', 'tp', 'msk'] };
+    t('何も入っていない・使える系統なし: 今までどおり ✕', b.wizState(own).ok === false, b.wizState(own));
+    b.wizLive.adm = true; b.wizLive.tp = true;
     const part = b.wizState(own);
-    t('一部が使える時は、その系統を外し「（ログインで使えます（設定不要）：入居調整）」を添える', part.ok === false && /まだ入っていません/.test(part.msg) && /（ログインで使えます（設定不要）：入居調整）$/.test(part.msg) && !part.live, part);
-    b.wizLive.tp = true;
-    const all = b.wizState(own);
-    t('段の全部が使える時は ✓ で段を飛ばす', all.ok === true && all.live === true && /^ログインで使えます（設定不要）/.test(all.msg), all);
+    t('一部が使える時: ✕ のまま、使える系統と要る場面を添える', part.ok === false && /まだ入っていません/.test(part.msg) && /（ふだんの読み書きはログインで使えます：入居調整・個別機能訓練計画書。AI の下書き/.test(part.msg), part);
+    const two = { id: 'own', sys: ['adm', 'tp'] };
+    const all = b.wizState(two);
+    t('★段の全部が使える時も ✓ にせず飛ばさない（・ で任意の段として残し、要る場面を出す）', all.ok === null && !all.live && /^入れなくても使えます（/.test(all.msg) && /管理者の端末には入れておいてください）$/.test(all.msg), all);
+    store.adm_cfg = JSON.stringify({ url: URL_A, token: 'x' });
+    const set = b.wizState(two);
+    t('使える系統でも接続先が入っていれば「入っています」で確かめられる', set.ok === null && /^入っています：入居調整/.test(set.msg), set);
   }
-  t('「確かめる」も「合言葉も確かめる」も、使える系統へは送らない', /if\(wizLive\[id\]\) return;/.test(cut('wizCheck')) && /if\(wizLive\[id\]\) return;/.test(cut('wizTokenCheck')), '');
-  t('「この欄へ」はログインで使える系統の欄へ飛ばさない（使えない系統の最初の欄へ）', /var first=step\.sys\.filter\(function\(id\)\{ return !wizLive\[id\]; \}\)\[0\];/.test(cut('wizRender')) && /if\(first && \$\('card-'\+first\)\) c=\$\('card-'\+first\);/.test(cut('wizRender')), '');
-  t('使えると届いたら、その系統を含む段の結果を捨て、途中の確かめも出さない', /wizGen\+\+;/.test(cut('wizLiveStart')) && /delete wizRes\[st\.id\]; delete wizTokRes\[st\.id\];/.test(cut('wizLiveStart')), '');
+  t('★「確かめる」「合言葉も確かめる」は使える系統も入っていれば確かめる（外さない）', !/wizLive/.test(cut('wizCheck')) && !/wizLive/.test(cut('wizTokenCheck')), '');
+  t('「この欄へ」は要る系統の欄へ先に飛ぶ', /var first=step\.sys\.filter\(function\(id\)\{ return !wizLive\[id\]; \}\)\[0\];/.test(cut('wizRender')) && /if\(first && \$\('card-'\+first\)\) c=\$\('card-'\+first\);/.test(cut('wizRender')), '');
   t('接続先を入れていない系統は確かめない（✕ にしない）', /if\(s && readCur\(s\)\.url\) list\.push\(s\);/.test(cut('wizTokenCheck')), '');
-  t('飛ばす段にはボタンを出さない', /if\(step\.sys && !st\.live\)\{/.test(cut('wizRender')), '');
+  t('★どの段にもボタンを出す（段を飛ばさない）', /if\(step\.sys\)\{\s*var acts=el\('div','acts'\);/.test(cut('wizRender')) && !/st\.live/.test(cut('wizRender')), '');
+  t('注記: 写し返し・戻す・AI の下書き・添付書類に接続先が要ること、端末に書くのはスイッチの控えだけ', /写しの見比べの「戻す」/.test(src) && /su_backend_flags/.test(src) && !/写し返しを端末が受け持たない/.test(src), '');
 
   console.log('\n— 6. 画面の作り —');
   const render = cut('wizRender');
