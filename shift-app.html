@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-J/QHwZtqC8HCtGizdRip/SgbCR66+cRunZLsJJvO1LE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-FJkRN2DLy+PqGoyNrVNIZZYsATMgZP4OK75VJwmDfsQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -437,9 +437,9 @@ html.su-field #btnFreee,
 html.su-field #frCSV,
 html.su-field #frdCSV { display: none !important; }
 </style>
-<script src="su-errors.js?v=2026-10-27"></script>
+<script src="su-errors.js?v=2026-11-12"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
-<script src="su-kv.js?v=2026-10-28"></script>
+<script src="su-kv.js?v=2026-11-08"></script>
 <script src="su-kv-shadow.js?v=2026-10-28"></script>
 </head>
 <body>
@@ -7771,8 +7771,24 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         reader.onload = function () {
           var msgEl = document.getElementById('backupMsg');
           var obj;
-          try { obj = JSON.parse(reader.result); }
-          catch (err) { msgEl.textContent = '✗ ' + err.message; e.target.value = ''; return; }
+          /* 先頭の見えない印（BOM）は外して読む（Windows のメモ帳などで開いて保存し直すと付く・2026-11-13） */
+          try { obj = JSON.parse(String(reader.result).replace(/^\uFEFF/, '')); }
+          catch (err) { msgEl.textContent = '✗ ファイルを読めませんでした（' + err.message + '）'; e.target.value = ''; return; }
+          /* 「📤 月を書き出す」で作ったファイルをここで選んだ時は、「📥 月を取り込む」と同じ処理へ回す
+           * （全データのバックアップとは形が違うため、以前は「バックアップ形式が不正です」で止まっていた・2026-11-13 代表者の報告） */
+          if (obj && obj.app === 'shiftapp-month') {
+            e.target.value = '';
+            msgEl.textContent = '月の受け渡し用のファイルです。「📥 月を取り込む」と同じ処理で取り込みます。';
+            app.importMonth(obj);
+            return;
+          }
+          if (!obj || obj.app !== 'shiftapp' || !obj.data) {
+            e.target.value = '';
+            msgEl.textContent = '✗ シフト作成アプリのバックアップではありません（' +
+              (obj && obj.app ? '種類: ' + String(obj.app).slice(0, 40) : '形が違います') +
+              '）。勤務表の［マスタ］→［設定］の「JSONエクスポート」で作ったファイル（shiftapp-backup-日付.json）を選んでください。';
+            return;
+          }
           /* 取込は現在のデータを上書きするため、中身（書き出し日時・キー数）を示して明示確認を取る。
            * 確認前にファイル選択を解除する＝キャンセル時は何も書き換わらず、同じファイルを選び直せる。 */
           var keys = 0;
@@ -11334,7 +11350,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         var rd = new FileReader();
         rd.onload = function () {
           var obj;
-          try { obj = JSON.parse(rd.result); } catch (err) { self.confirmInfo('取り込めません', 'ファイルを読めませんでした（' + err.message + '）'); return; }
+          try { obj = JSON.parse(String(rd.result).replace(/^\uFEFF/, '')); } catch (err) { self.confirmInfo('取り込めません', 'ファイルを読めませんでした（' + err.message + '）'); return; }
           self.importMonth(obj);
         };
         rd.readAsText(file);
