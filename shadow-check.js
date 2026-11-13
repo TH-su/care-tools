@@ -1900,6 +1900,7 @@ if (!window.SUDialog) window.SUDialog = {
     var st = hbTarget();
     if (!st) { say('この端末には排泄ケア記録の接続先（URL と合言葉）がありません。この端末で排泄ケア記録を開き、設定で入れてから、押し直してください。', 'warn'); return; }
     if (kind === 'cut') {
+      if (!(await gatePass('hb'))) { say(GATE_NG, 'warn'); return; }
       if (!hbOn()) { say('切り替えスイッチ（haiben）が入っていません。', 'warn'); return; }
       if (!(await oneDayOk('hb', say))) return;
       if (!(await window.SUDialog.confirm('排泄ケア記録の正本を新しい保存先（Supabase）へ切り替えますか？\n\n数分かかります。その間の保存は各端末に控えられ、後で送られます。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、ログインしている端末だけが記録をサーバーへ送れます（ログインしていない端末は記録を端末に控え、帯で知らせます）。Google へは1時間ごとに写し返します。いつでも「排泄ケア記録を写しの期間に戻す」で戻せます。'))) return;
@@ -1927,6 +1928,7 @@ if (!window.SUDialog) window.SUDialog = {
       bc.disabled = false; bb.disabled = false;
       var keep = v.textContent, kc = v.className;
       try { await loadHbMode(sb); await loadHb(sb); } catch (e) { genoNote('排泄の読み直し', e); }   // 読み直せなくても結果の文は残す
+      await gateRefresh(sb);   // 読み直しが途中で止まっても、ボタンは表の判定どおりに戻す（ほかの4つと同じ）
       v.className = kc; v.textContent = keep;
     }
   }
@@ -2699,12 +2701,14 @@ if (!window.SUDialog) window.SUDialog = {
   }
 
   /* ── 正本を切り替える前の確かめの表（2026-11-03 代表者の依頼・判定は su-cutover-gate.js）──
-   * 管理者だけ。5つの「切り替える／本番にする」ボタン（入居者マスタ・計画書・入居調整・職員マスタ・体重）の前に4項目の表を出し、
+   * 管理者だけ。6つの「切り替える／本番にする」ボタン（入居者マスタ・計画書・入居調整・職員マスタ・体重・排泄ケア記録）の前に4項目の表を出し、
    * 全部そろった時だけ押せる。押した時も読み直して確かめる（表を出した後に別の画面で切り替えた時のため）。最後に決めるのは今までどおりデータベース。
-   * 戻すボタンと、備品・シフト分析・週間計画・勤務表のボタンには付けない（依頼の外）。
+   * 戻すボタンと、備品・シフト分析・家族構成図・添付書類・週間計画・勤務表のボタンには付けない（依頼の外）。
+   * 排泄ケア記録は 2026-11-13 に足した（代表者の指示・cross 6）。差の記録（0055）が排泄ケア記録を受け付けないので、今は1項目めが「確かめられません」で押せない。
+   * 切り替えのボタンを足す時は、ここ（GATE）に足すか、check/unit/cutover_gate_registry_test.js の「付けない種類」に理由つきで足す（どちらも無いと試験で落ちる）
    * 読むもの: 差の日ごとの記録（shadow_diff_days・0055）・端末の数（device_seen_summary・0048）・毎晩の通し試験の結果（GitHub・公開リポジトリなので読むだけ）・
    *   今日の操作の記録（audit_log の *_mode と kv_families の「本番にした」記録）。どれかを読めない時は、その項目を満たさない扱いにする（押せない側に倒す） */
-  var GATE = { res: 'b-res-cut', tp: 'b-tp-cut', adm: 'b-adm-cut', stf: 'b-stf-cut', weight: 'b-live-weight' };
+  var GATE = { res: 'b-res-cut', tp: 'b-tp-cut', adm: 'b-adm-cut', stf: 'b-stf-cut', weight: 'b-live-weight', hb: 'b-hb-cut' };
   var GATE_NG = '切り替える前の確かめがそろっていません。ボタンの上の表の「満たさない」の理由を見てください。';
   var FLOW_RUNS = 'https://api.github.com/repos/TH-su/care-tools/actions/workflows/flow-check.yml/runs?branch=main&per_page=20';
   var gateIn = null;

@@ -25,7 +25,7 @@
     この端末の共通接続先（su_sync_common）から読み、Google へだけ送る（Supabase へは送らない）。
     あわせて、各画面に切り替えの部品が入っているか（Mac 側の公開で消えていないか）も確かめる。
     connect-src に Google（script.google.com と、その転送先 script.googleusercontent.com）を足したのはこのため。
-  ★切り替える前の確かめの表（2026-11-03 代表者の依頼・su-cutover-gate.js）: 5つの「切り替える／本番にする」ボタンの前に、差が0件の連続日数・
+  ★切り替える前の確かめの表（2026-11-03 代表者の依頼・su-cutover-gate.js）: 6つの「切り替える／本番にする」ボタン（排泄ケア記録は 2026-11-13 に足した）の前に、差が0件の連続日数・
     ログインしていない端末の数・毎晩の通し試験の結果・今日の切り替えの4項目を出し、全部そろった時だけ押せる。通し試験の結果は
     公開リポジトリの GitHub から読むだけ（ログインも合言葉も送らない）。connect-src に api.github.com を足したのはこのため。
   ★貼り薬の写し（段階2「送るだけ」・2026-10-17）: サーバーの行数（patch_get）と、この端末の控え（apc2_res）との差を入居者IDだけで出す。
@@ -196,6 +196,7 @@
       <p id="hb-verdict" class="msg"></p>
       <p id="hb-detail" class="msg"></p>
       <p id="hb-mode" class="msg"></p>
+      <div class="gate" id="gate-hb" hidden></div>
       <div class="acts"><button type="button" class="btn" id="b-hb-cut" hidden>排泄ケア記録を新しい保存先へ切り替える</button>
         <button type="button" class="btn" id="b-hb-back" hidden>排泄ケア記録を写しの期間に戻す</button></div>
     </section>
@@ -360,8 +361,8 @@
 <script src="su-geno-full.js?v=2026-11-03"></script>
 <script src="su-hb-full.js?v=2026-11-05"></script>
 <script src="su-doc-full.js?v=2026-11-05.2"></script>
-<script src="su-cutover-gate.js?v=2026-11-07"></script>
-<script src="shadow-check.js?v=2026-11-13.2"></script>
+<script src="su-cutover-gate.js?v=2026-11-13"></script>
+<script src="shadow-check.js?v=2026-11-13.3"></script>
 <script src="su-shell.js?v=2026-11-12.2"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 </body>
