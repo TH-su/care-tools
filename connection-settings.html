@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-rRreL5X/6XR3bPWzdb3CUnEWGtKNJ0f5A0dpalPiwqY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Em3AuTwX6nyrotCcnK0Jwf4PJyn5AVwhn89VDqu0wuM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <meta name="robots" content="noindex,nofollow">
@@ -327,6 +327,13 @@ main {
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-app-gate.js?v=2026-11-11"></script>
 <script src="su-facility.js?v=2026-11-07"></script>
+<!-- 初回の案内で「ログインで使えます（設定不要）」を出すかの確かめだけに使う（2026-11-13）。持ち主の画面と同じ liveReady／probe を呼ぶだけで、
+     この画面からはその系統の読み書きをしない（SU.data.init も呼ばない） -->
+<script src="su-data.js?v=2026-11-08.2"></script>
+<script src="su-data-gas.js?v=2026-10-29"></script>
+<script src="su-data-supabase.js?v=2026-11-08.2"></script>
+<script src="su-geno.js?v=2026-11-08"></script>
+<script src="su-sa.js?v=2026-11-03.2"></script>
 <script>
 (function(){
 'use strict';
@@ -940,11 +947,18 @@ function wizState(step){
     return ok && fac.facilityName ? { ok:true, msg:'読めました：'+fac.facilityName }
                                   : { ok:false, msg:'施設情報を読めていません。ネットにつないで開き直してください（直らない時は管理者へ）' };
   }
-  var set=[], unset=[];
-  step.sys.forEach(function(id){ var s=sysById(id); if(!s) return; (readCur(s).url ? set : unset).push(s.title); });
-  if(wizRes[step.id]) return wizRes[step.id];
-  if(!set.length) return { ok:false, msg:'まだ入っていません。「この欄へ」から接続先のURLと合言葉を入れて保存してください' };
-  return { ok:null, msg:'入っています：'+set.join('・')+'。「確かめる」でつながるかを見られます' };
+  /* ログインで、ふだんの読み書きができる系統（wizLive）は「入れなくてもよい」系統として扱う（✕ にしない）。
+     段は飛ばさず ✓ にもしない（AI の下書き・添付書類・閉じる直前の送り・管理者が戻す時には接続先が要るため・2026-11-13 反証レビュー） */
+  var rest=step.sys.filter(function(id){ return !wizLive[id]; });
+  /* 接続先が要る場面は系統ごとの事実の文（WIZ_LIVE_NEED）で書く */
+  var live=step.sys.filter(function(id){ return !!wizLive[id]; }).map(function(id){ var s=sysById(id); return (s ? s.title : id)+(WIZ_LIVE_NEED[id] ? '（'+WIZ_LIVE_NEED[id]+'には接続先が要ります）' : ''); });
+  var liveNote = live.length ? '（'+WIZ_LIVE_MSG+'：'+live.join('・')+'。'+WIZ_LIVE_KEEP+'）' : '';
+  var set=[];
+  step.sys.forEach(function(id){ var s=sysById(id); if(s && readCur(s).url) set.push(s.title); });
+  if(wizRes[step.id]) return liveNote ? { ok:wizRes[step.id].ok, msg:wizRes[step.id].msg+liveNote } : wizRes[step.id];
+  if(!rest.length && !set.length) return { ok:null, msg:'入れなくても使えます'+liveNote };
+  if(!set.length) return { ok:false, msg:'まだ入っていません。「この欄へ」から接続先のURLと合言葉を入れて保存してください'+liveNote };
+  return { ok:null, msg:'入っています：'+set.join('・')+'。「確かめる」でつながるかを見られます'+liveNote };
 }
 function wizCheck(step, btn){
   var urls=[];
@@ -966,12 +980,177 @@ function wizCheck(step, btn){
     wizRender();
   });
 }
+/* ═══════════ 初回の案内：合言葉も確かめる・ログインで使える系統（2026-11-13 代表者の指示）═══════════
+   ★合言葉を確かめるのは「合言葉も確かめる」を押した時だけ。送るのはこの端末に保存した値（readCur）だけで、入力の途中の値は送らない。
+     送るのは読むだけの {action:'ping', token}（本文・text/plain の POST。URL に合言葉を載せない）。書く要求は送らない。
+   ★GAS は HTTP の状態コードを変えられないので、合言葉が違っても 200 で返る。見分けは本文の印（系統ごとに下の tokenVerdict_）。
+     本文に code:403 を書く GAS（家族構成図）と、本当に 403 を返す受け口も「合言葉が違います」に数える。
+     決まった形でない答えは推測せず「確かめられません」に倒す（「合っています」と出さない）。
+   ★ping で合言葉を確かめられない系統（排泄ケア記録・体重管理は ping の口が無く、正しい合言葉だと保存の順番待ちに入ってしまう。
+     不具合の報告先は ping の口が無く、合言葉が合うと報告として受け付けてしまう）は送らずに「確かめられません」と出す。
+   ★統合同期は、先に合言葉なしの probe で別アプリの GAS と分かったら合言葉を送らない。入居者マスタも先に verifyMasterUrl で同じく確かめる。
+   ★「ふだんの読み書きはログインで使えます」は、持ち主の画面が接続先なしでふだんの読み書きをするかを決めている確かめ（liveReady／probe：
+     スイッチ su-backend.json が入・ログインの役割・データベースの印が「切り替えた後」）が true と答えた系統だけ。分からない・時間切れ・部品が無い時は出さない。
+     対象は4つ（入居調整・計画書・家族構成図・過去シフト）だけ。統合同期（週間計画は事務所の端末だと写し返しに接続先が要る）・入居者マスタ・体重・排泄・申送は対象にしない。
+     ★それでも接続先は要らなくならない: 計画書の AI の下書き（接続先と合言葉を求める）・閉じる直前の送り・入居調整の添付書類（書類の正本が Google の間）・
+       写しの見比べの「戻す」・Google への写し返し（入居調整・計画書は端末が送る）は端末の接続先を使う。だから段は飛ばさず ✓ にもせず、
+       「入れなくても使える・要る場面」を書いて任意の段として残す（管理者の端末には入れておく）。
+     ★読み足した部品（su-data・su-geno・su-sa）が端末に書くのは、スイッチの控え（su_backend_flags・今までの画面と同じ）だけ。
+   ★管理者が配った接続先（su-devcfg.js）は、この案内では読まない（今までどおり端末に保存した値だけを確かめる）。 */
+var WIZ_LIVE_MSG = 'ふだんの読み書きはログインで使えます';
+/* 系統ごとに、ログインしていても端末の接続先を使う場面（事実だけ・文は仮置き） */
+var WIZ_LIVE_NEED = { tp:'AI の下書き・閉じる直前の送信・管理者が戻す時', adm:'添付書類・管理者が戻す時', geno:'管理者が戻す時', analyzer:'管理者が戻す時' };
+var WIZ_LIVE_KEEP = '管理者の端末には入れておいてください';
+var WIZ_TOKEN_NG = '合言葉が違います';
+var wizLive = {};      // {系統id: true}（この画面を開いている間だけ・端末に保存しない）
+var wizLiveStarted = false;
+var wizTokRes = {};    // 合言葉を確かめた結果 {段のid: {ok, msg}}（この画面を開いている間だけ）
+var WIZ_LIVE_CHECKS = {
+  adm: function(){ return window.SU && SU.data && SU.data.admission && typeof SU.data.admission.liveReady==='function' ? SU.data.admission.liveReady() : false; },
+  tp: function(){ return window.SU && SU.data && SU.data.training && typeof SU.data.training.liveReady==='function' ? SU.data.training.liveReady() : false; },
+  geno: function(){ return window.SUGeno && typeof SUGeno.liveReady==='function' ? SUGeno.liveReady() : false; },
+  analyzer: function(){ return window.SUSa && typeof SUSa.probe==='function' ? SUSa.probe() : false; }
+};
+function wizLiveStart(){
+  var used={};                             /* 案内に出す段の系統だけ（使わないアプリは確かめない） */
+  wizSteps_().forEach(function(st){ (st.sys||[]).forEach(function(id){ used[id]=true; }); });
+  Object.keys(WIZ_LIVE_CHECKS).forEach(function(id){
+    if(!used[id]) return;
+    var late=new Promise(function(ok){ setTimeout(function(){ ok(false); }, 10000); });
+    Promise.race([Promise.resolve().then(WIZ_LIVE_CHECKS[id]), late]).then(function(v){
+      if(v!==true) return;
+      wizLive[id]=true; wizRender();
+    }, function(e){ try{ if(window.SUErrors && SUErrors.note) SUErrors.note('初回の案内: ログインで使えるかの確かめ', e && e.code || 'error'); }catch(x){} });
+  });
+}
+/* 系統ごとの答えの見分け（純関数）。'ok'＝合言葉が通った／'limited'＝通ったが事務所用の合言葉ではない／'readonly'＝通ったが読むだけの合言葉／'ng'＝合言葉が違う／
+   'wrong'＝別のアプリの接続先／'unknown'＝確かめられない。印は各 GAS の ping の答え（統合同期の「別アプリ」は syncTargetVerdict と同じ物差し） */
+var WIZ_TOKEN_SERVER = { adm:'silverunix-admission', tp:'silverunix-training', analyzer:'shiftanalyzer-gas' };
+function tokenVerdict_(id, j, status){
+  if(status===403) return 'ng';
+  if(!j || typeof j!=='object') return 'unknown';
+  var err=String(j.error||'');
+  if(id==='ws'){
+    if(j.ok===true && j.server===SYNC_SERVER_ID) return 'ok';
+    if(err==='unauthorized') return 'ng';
+    return syncTargetVerdict(j)==='wrong' ? 'wrong' : 'unknown';
+  }
+  if(id==='master'){
+    if(j.ok===true && j.role==='full') return 'ok';
+    if(j.ok===true && typeof j.role==='string' && j.role) return 'limited';
+    if(/^認証エラー/.test(err)) return 'ng';
+    return 'unknown';
+  }
+  if(id==='adm' || id==='tp' || id==='analyzer'){
+    if(id==='analyzer' && j.ok===true && j.server===WIZ_TOKEN_SERVER[id] && j.role==='ro') return 'readonly';
+    if(j.ok===true && j.server===WIZ_TOKEN_SERVER[id]) return 'ok';
+    if(j.ok===true && j.server) return 'wrong';
+    if(err==='unauthorized' || j.code===403) return 'ng';
+    return 'unknown';
+  }
+  if(id==='msk'){
+    /* 申送の GAS の ping は auth・readRole・server を持たない（家族構成図は auth、入居者マスタは readRole を持つ）。古い申送の GAS は ver を返さないので ver は求めない */
+    if(j.ok===true && j.role==='full' && !('auth' in j) && !('server' in j) && !('readRole' in j)) return 'ok';
+    if(/^認証エラー/.test(err) || j.code===403) return 'ng';
+    return 'unknown';
+  }
+  if(id==='geno'){
+    if(j.ok===true && j.auth==='ok' && j.role==='view') return 'readonly';
+    if(j.ok===true && j.auth==='ok') return 'ok';
+    if(err==='unauthorized' || j.code===403) return 'ng';
+    return 'unknown';
+  }
+  if(id==='med'){
+    if(j.ok===true && Object.keys(j).length===1) return 'ok';
+    if(err==='unauthorized') return 'ng';
+    return 'unknown';
+  }
+  return 'unknown';
+}
+var WIZ_TOKEN_UNSUPPORTED = { haiben:1, weight:1, report:1 };
+/* 合言葉を添えた ping（読むだけ）。答えの本文（JSON）と状態コードを返す。読めない・時間切れは null */
+function tokenPing_(url, token){
+  var ac=(typeof AbortController==='function') ? new AbortController() : null;
+  return new Promise(function(resolve){
+    var done=false;
+    function fin(v){ if(done) return; done=true; clearTimeout(timer); resolve(v); }
+    var timer=setTimeout(function(){ if(ac) ac.abort(); fin(null); }, 30000);
+    try{
+      fetch(url, {
+        method:'POST',
+        headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action:'ping', token: token }),
+        signal: ac ? ac.signal : undefined
+      }).then(function(r){
+        if(r.status===403) return { status:403, json:null };
+        return r.json().then(function(j){ return { status:r.status, json:j }; }, function(){ return { status:r.status, json:null }; });
+      }).then(fin, function(){ fin(null); });
+    }catch(e){ fin(null); }
+  });
+}
+function tokenMsg_(v){
+  if(v==='ok') return { ok:true, msg:'合言葉が通りました' };
+  if(v==='limited') return { ok:false, msg:'合言葉は通りましたが、事務所用の合言葉ではありません（現場用などの合言葉です）' };
+  /* 見るだけの合言葉は、現場の端末では正しい形なので ✕ にせず △ の注意にする */
+  if(v==='readonly') return { ok:null, warn:true, msg:'合言葉は通りました（見るだけの合言葉です。保存するには事務所用の合言葉が要ります）' };
+  if(v==='ng') return { ok:false, msg:WIZ_TOKEN_NG };
+  if(v==='wrong') return { ok:false, msg:'別のアプリの接続先です' };
+  if(v==='offline') return { ok:null, msg:'つながらず、合言葉を確かめられませんでした' };
+  return { ok:null, msg:'合言葉を確かめられませんでした（思った答えが返りませんでした）' };
+}
+/* 1つの系統の合言葉を確かめる。{ok:true|false|null, msg} を返す（失敗しない） */
+function wizTokenOne_(s){
+  var c=readCur(s);
+  if(!c.url) return Promise.resolve({ ok:false, msg:'接続先がまだ入っていません' });
+  if(WIZ_TOKEN_UNSUPPORTED[s.id]) return Promise.resolve({ ok:null, msg:'このアプリの接続先は合言葉だけを確かめる口が無いため、ここでは確かめられません（アプリの画面で確かめてください）' });
+  if(!c.token) return Promise.resolve({ ok:false, msg:'合言葉がまだ入っていません' });
+  if(s.id==='ws'){
+    /* 先に合言葉なしで別アプリの GAS でないかを見る（別アプリなら合言葉を送らない） */
+    return probe(c.url).then(function(r){
+      if(!r.ok) return { ok:false, msg:r.msg };
+      if(syncForeign(r.json)) return { ok:false, msg:syncTargetMessage('wrong') };
+      return tokenPing_(c.url, c.token).then(function(x){
+        if(!x) return tokenMsg_('offline');
+        var v=tokenVerdict_('ws', x.json, x.status);
+        return v==='wrong' ? { ok:false, msg:syncTargetMessage('wrong') } : tokenMsg_(v);
+      });
+    });
+  }
+  var pre = s.id==='master' ? verifyMasterUrl(c.url) : Promise.resolve('ok');
+  return pre.then(function(mv){
+    if(mv==='wrong') return { ok:false, msg:MASTER_WRONG_MSG };
+    return tokenPing_(c.url, c.token).then(function(r){
+      if(!r) return tokenMsg_('offline');
+      return tokenMsg_(tokenVerdict_(s.id, r.json, r.status));
+    });
+  });
+}
+function wizTokenCheck(step, btn){
+  var list=[];
+  /* 接続先を入れていない系統は確かめない（使わないアプリは空欄のままでよいため ✕ にしない） */
+  step.sys.forEach(function(id){ var s=sysById(id); if(s && readCur(s).url) list.push(s); });
+  var gen=wizGen;
+  if(!list.length){ wizTokRes[step.id]={ ok:false, msg:'接続先がまだ入っていないので、確かめられません' }; wizRender(); return; }
+  btn.disabled=true; btn.textContent='確かめています…';
+  Promise.all(list.map(function(s){ return wizTokenOne_(s).then(function(r){ return { t:s.title, r:r }; }, function(){ return { t:s.title, r:tokenMsg_('offline') }; }); })).then(function(rs){
+    if(gen!==wizGen) return;   // 確かめている間に設定が変わった＝古い結果は出さない
+    var mark=function(o, w){ return w ? '△ ' : (o===true ? '✓ ' : (o===false ? '✕ ' : '・ ')); };
+    var allOk=rs.length>0 && rs.every(function(x){ return x.r.ok===true; });
+    var anyNg=rs.some(function(x){ return x.r.ok===false; });
+    wizTokRes[step.id]={ ok: allOk ? true : (anyNg ? false : null),
+      msg: rs.length ? rs.map(function(x){ return mark(x.r.ok, x.r.warn)+x.t+'：'+x.r.msg; }).join(' ／ ') : '確かめる系統がありません' };
+    wizRender();
+  });
+}
 function wizRender(){
   var box=$('wiz');
   if(!box || box.hidden) return;
+  if(!wizLiveStarted){ wizLiveStarted=true; wizLiveStart(); }   /* 案内を開いた時に1回だけ、ログインで使える系統を確かめる（答えが届いたら描き直す・2026-11-13） */
   box.replaceChildren();
   box.appendChild(el('h2',null,'初回の案内（上から順に）'));
   box.appendChild(el('p','apps','新しい端末では、上から順に入れて「確かめる」を押してください。✓ は「URL につながった」という印です。合言葉が正しいか・そのアプリの接続先かは、各アプリの保存や接続テストで確かめてください。✕ は「まだ入っていない・つながらなかった・思った応答が返らなかった・施設情報を読めなかった・別のアプリの接続先だった」、・ は「入っているが、まだ確かめていない」という印です。'));
+  /* 合言葉も確かめる（2026-11-13・文は仮置き） */
+  box.appendChild(el('p','apps','「合言葉も確かめる」は、この端末に保存した合言葉を接続先へ送り、通るかを見ます（読むだけで、何も書きません）。確かめる口の無いアプリは「確かめられません」と出します。「'+WIZ_LIVE_MSG+'」と出たアプリは、職員の端末では入れなくても使えます。'));
   var ol=el('ol');
   wizSteps_().forEach(function(step, i){
     var st=wizState(step);
@@ -982,13 +1161,22 @@ function wizRender(){
     li.appendChild(head);
     if(step.note) li.appendChild(el('p','msg',step.note));
     var m=el('p','msg',st.msg); m.setAttribute('role','status'); li.appendChild(m);
+    if(step.sys && wizTokRes[step.id]){
+      var tm=el('p','msg','合言葉：'+wizTokRes[step.id].msg); tm.setAttribute('role','status'); li.appendChild(tm);
+    }
     if(step.sys){
       var acts=el('div','acts');
       var bGo=el('button','btn sm','この欄へ'); bGo.type='button';
-      bGo.addEventListener('click', function(){ var c=$('card-'+step.sys[0]); if(c){ c.scrollIntoView({ block:'start' }); var f=c.querySelector('input'); if(f) f.focus({ preventScroll:true }); } });
+      bGo.addEventListener('click', function(){ var c=$('card-'+step.sys[0]);
+        var first=step.sys.filter(function(id){ return !wizLive[id]; })[0];   /* 入れなくても使える系統の欄より、要る系統の欄へ先に飛ぶ（2026-11-13） */
+        if(first && $('card-'+first)) c=$('card-'+first);
+        if(c){ c.scrollIntoView({ block:'start' }); var f=c.querySelector('input'); if(f) f.focus({ preventScroll:true }); } });
       var bChk=el('button','btn sm','確かめる'); bChk.type='button';
       bChk.addEventListener('click', function(){ wizCheck(step, bChk); });
-      acts.appendChild(bGo); acts.appendChild(bChk); li.appendChild(acts);
+      var bTok=el('button','btn sm','合言葉も確かめる'); bTok.type='button';
+      bTok.setAttribute('aria-label','合言葉も確かめる（'+step.title+'）');
+      bTok.addEventListener('click', function(){ wizTokenCheck(step, bTok); });
+      acts.appendChild(bGo); acts.appendChild(bChk); acts.appendChild(bTok); li.appendChild(acts);
     }
     ol.appendChild(li);
   });
@@ -998,7 +1186,7 @@ function wizRender(){
   bClose.addEventListener('click', function(){ box.hidden=true; try{ localStorage.setItem(WIZ_HIDDEN_KEY,'1'); }catch(e){} $('wizOpen').parentNode.hidden=false; });
   close.appendChild(bClose); box.appendChild(close);
 }
-function wizRefresh(){ wizGen++; wizRes={}; wizRender(); }
+function wizRefresh(){ wizGen++; wizRes={}; wizTokRes={}; wizRender(); }
 function wizInit(){
   var hidden=false; try{ hidden = localStorage.getItem(WIZ_HIDDEN_KEY)==='1'; }catch(e){}
   var open = !anyConfigured() && !hidden;
