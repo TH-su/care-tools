@@ -7814,7 +7814,8 @@ function yjlLoad_(id){
 }
 /* ── 薬情の反映の見直し（2026-11-11 代表者の決定）──
    まとめて反映・完全入れ替え（すべて入れ替え・11/10 夜の自動の中止）で定期薬を消した・変えた方に、詳細画面の「薬剤情報」の欄の頭へ
-   「まとめて反映（日時・確かめた人）」の印を7日間出し、看護職・薬剤師が「見直した」を押すと消す。管理者には一覧（🔎 薬情の見直し）と、
+   「まとめて反映（日時・確かめた人）」の印を7日間出し、看護職・薬剤師が「見直した」を押すと消す。
+   7日を過ぎて見直されていない方は赤い「期限切れ」の印にし、反映から14日まで残す（2026-11-13 代表者の決定・期限切れの語のほかの文は仮置き）。管理者には一覧（🔎 薬情の見直し）と、
    メニューの札の数（rm_yjrev_due・件数と日付だけ）を出す。
    ★印を出すかは YakujoCalc.reviewMark（純関数・check/unit/yakujo_review_test.js）。記録は反映記録（yjLog・yjAudit）を使う
    ★「見直した」を押せるかはサーバー（入居者マスタの GAS／res-write の yjReview）が、ログインと「アプリの使える人」の「薬の見直し」
@@ -7852,9 +7853,10 @@ function yrMarkHtml_(id, rows){
   var login=mcHasLogin_();
   return '<div class="yr-box" role="note">'+ms.map(function(m, i){
     var g=yrGoneText_(m), msg=yrMsg[yrKey_(m)]||'';
-    return '<div class="yr-mark"><div class="yr-t">⚠ 見直してください：'+esc(m.text)+'</div>'+
+    var over=m.overdue===true;
+    return '<div class="yr-mark'+(over?' yr-over':'')+'"><div class="yr-t">⚠ '+(over?'<span class="yr-tag">期限切れ</span> ':'')+'見直してください：'+esc(m.text)+'</div>'+
       (g?'<div class="yr-g">'+esc(g)+(m.truncated?'（記録が長く、途中までです）':'')+'</div>':'')+
-      '<div class="yr-u">'+esc(m.until)+' まで出します。看護職・薬剤師が今の定期薬を見直したら「見直した」を押してください。</div>'+
+      '<div class="yr-u">'+(over?'見直しの期限（'+esc(m.until)+'）を過ぎています。'+esc(m.end)+' まで出します。':esc(m.until)+' までに見直してください（過ぎると「期限切れ」になり、'+esc(m.end)+' まで出します）。')+'看護職・薬剤師が今の定期薬を見直したら「見直した」を押してください。</div>'+
       '<div class="yr-acts">'+(login?'<button type="button" class="btn btn-ok yr-done" data-i="'+i+'"'+(yrBusy?' disabled':'')+'>✔ 見直した</button>':'<span class="yr-msg">「見直した」はログインしてから押せます</span>')+
       (msg?'<span class="yr-msg" role="status">'+esc(msg)+'</span>':'')+'</div></div>';
   }).join('')+'</div>';
@@ -7968,14 +7970,18 @@ function yrPaint_(){
   var A=yrAudit, h='';
   if(!A||A.loading&&!A.rows){ box.innerHTML='<p class="yr-note" role="status">読み込んでいます…</p>'; return; }
   if(A.err){ box.innerHTML='<p class="yr-note" role="alert">読み込めませんでした：'+esc(A.err)+'</p>'; return; }
-  var now=Date.now(), pend=[];
-  A.rows.forEach(function(e){ var k=YakujoCalc.reviewMark(e, now); if(k) pend.push(k); });
+  var now=Date.now(), pend=[], nOver=0;
+  A.rows.forEach(function(e){ var k=YakujoCalc.reviewMark(e, now); if(k){ pend.push(k); if(k.overdue===true) nOver++; } });
   var open=function(id){ return '<button type="button" class="btn btn-gray yr-go" data-id="'+esc(id)+'">開く</button>'; };
-  h+='<h3 class="yr-sec">見直し待ち '+pend.length+' 件</h3>';
-  h+='<p class="yr-note">まとめて反映・すべて入れ替えで定期薬を消した・変えた方です。反映から7日間、詳細画面の「薬剤情報」の欄に印が出ます。</p>';
+  h+='<h3 class="yr-sec">見直し待ち '+pend.length+' 件'+(nOver?'（うち<span class="yr-over-n">期限切れ '+nOver+' 件</span>）':'')+'</h3>';
+  h+='<p class="yr-note">まとめて反映・すべて入れ替えで定期薬を消した・変えた方です。反映から7日間、詳細画面の「薬剤情報」の欄に印が出ます。7日を過ぎて見直されていない方は「期限切れ」（赤）にし、反映から14日まで印を出します。</p>';
   if(pend.length){
-    h+='<div class="yr-wrap"><table class="yr-tbl"><thead><tr><th scope="col">番号</th><th scope="col">印</th><th scope="col">無くなった行</th><th scope="col">印が出る期限</th><th scope="col"></th></tr></thead><tbody>'+
-      pend.map(function(k){ return '<tr><td>'+esc(k.id)+'</td><td>'+esc(k.text)+'</td><td>'+esc(yrGoneText_(k)||'なし（変えただけ）')+'</td><td>'+esc(k.until)+'</td><td>'+open(k.id)+'</td></tr>'; }).join('')+
+    h+='<div class="yr-wrap"><table class="yr-tbl"><thead><tr><th scope="col">番号</th><th scope="col">印</th><th scope="col">無くなった行</th><th scope="col">見直しの期限</th><th scope="col"></th></tr></thead><tbody>'+
+      pend.map(function(k){
+        var over=k.overdue===true;
+        return '<tr'+(over?' class="yr-over"':'')+'><td>'+esc(k.id)+'</td><td>'+(over?'<span class="yr-tag">期限切れ</span> ':'')+esc(k.text)+'</td><td>'+esc(yrGoneText_(k)||'なし（変えただけ）')+'</td><td>'+
+          (over?'期限切れ（'+esc(k.until)+'）・'+esc(k.end)+' まで出します':esc(k.until))+'</td><td>'+open(k.id)+'</td></tr>';
+      }).join('')+
       '</tbody></table></div>';
   }
   var au=YakujoCalc.replaceAudit(A.rows);
