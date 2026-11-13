@@ -74,8 +74,9 @@
       if (sj && sj.length <= SECTION_MAX) out.sections[sn] = JSON.parse(sj);
     }
     /* 適格請求書発行事業者の登録番号（2026-11-13 第6段 SP-03）。明細・料金表の発行者の欄に出す。
-       空白・ハイフンを除いて「T と13桁の数字」の形だけを持ち、それ以外は空（書き損じを紙に出さない） */
-    var inv = str(p.invoiceNo).replace(/[\s\-‐－]/g, '');
+       空白・ハイフンを除き、全角の英数字を半角に直して「T と13桁の数字」の形だけを持ち、それ以外は空（書き損じを紙に出さない）。
+       ★貼る前の確かめ（check/facility-secret-check.mjs の invoiceNo）と同じ読み方。片方を変えたら両方を同じにする */
+    var inv = str(p.invoiceNo).replace(/[\s\-‐－−]/g, '').replace(/[Ａ-Ｚａ-ｚ０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); });
     out.invoiceNo = /^T[0-9]{13}$/.test(inv) ? inv : '';
     /* 訪問診療の医療機関（2026-10-14）。name は1〜40字、aliases は1〜40字の文字列だけ（空の名前・空の別名は捨てる＝空文字は何にでも当たるため） */
     if (Array.isArray(p.visitingClinics)) {

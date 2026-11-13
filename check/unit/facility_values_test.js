@@ -61,7 +61,8 @@ console.log('\n— 1b. 適格請求書発行事業者の登録番号（2026-11-1
   const withNo = (v) => { const p = JSON.parse(JSON.stringify(PROFILE)); p.invoiceNo = v; return facility(p).invoiceNo(); };
   t('T と13桁の数字ならそのまま返す（架空の番号）', withNo('T0000000000001') === 'T0000000000001', withNo('T0000000000001'));
   t('空白・ハイフンは除いて読む', withNo(' T0000-0000-00001 ') === 'T0000000000001', withNo(' T0000-0000-00001 '));
-  t('桁が違う・T が無い・文字でない時は空（紙に出さない）', withNo('T000000000000') === '' && withNo('0000000000001') === '' && withNo(123) === '' && withNo('T00000000000０1') === '', '');
+  t('全角の英数字は半角に直して読む（貼る前の確かめと同じ読み方）', withNo('Ｔ００００００００００００１') === 'T0000000000001', withNo('Ｔ００００００００００００１'));
+  t('桁が違う・T が無い・文字でない時は空（紙に出さない）', withNo('T000000000000') === '' && withNo('0000000000001') === '' && withNo(123) === '' && withNo('T00000000000001X') === '', '');
   t('書いていない施設は空', (() => { const p = JSON.parse(JSON.stringify(PROFILE)); delete p.invoiceNo; return facility(p).invoiceNo(); })() === '');
   t('設定が無ければ空', facility(undefined).invoiceNo() === '');
   /* 端末の控え（norm 済みの形）から読み直しても残る */
