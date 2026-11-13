@@ -79,8 +79,11 @@ t('3i URL の resident はそのまま読む（再読み込みで同じ方を開
 
 console.log('4 知らせの帯');
 t('4a 氏名を引けない間は帯（role=status）に職員向けの文を出す',
-  /const SU_NAME_MISSING_MSG = '入居者マスタの名簿から、この方のお名前を読めませんでした。[^']*';/.test(GENO) && /if \(miss\) \{ bar\.textContent = SU_NAME_MISSING_MSG; bar\.hidden = false; \}/.test(GENO)
+  /const SU_NAME_MISSING_MSG = '入居者マスタの名簿から、この方のお名前を読めませんでした。[^']*';/.test(GENO) && /if \(miss\) \{ bar\.textContent = isFieldDevice\(\) \? SU_NAME_MISSING_MSG_FIELD : SU_NAME_MISSING_MSG; bar\.hidden = false; \}/.test(GENO)
   && /id="suHopBar" role="status"/.test(GENO));
+t('4c 現場の端末では「入居者マスタを一度開いて」を出さない（できない操作のため・文は仮置き）',
+  /const SU_NAME_MISSING_MSG_FIELD = 'お名前を読めませんでした。名前の欄は空のままです。';/.test(GENO)
+  && /bar\.textContent = isFieldDevice\(\) \? SU_NAME_MISSING_MSG_FIELD : SU_NAME_MISSING_MSG;/.test(GENO));
 t('4b 帯は文字として入れる（innerHTML を使わない）', !/suHopBar[^\n]*innerHTML|bar\.innerHTML/.test(GENO));
 
 console.log('5 氏名が空のまま保存しても番号の鍵を書かない（suGenoMasterIdFor）');

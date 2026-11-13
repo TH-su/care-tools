@@ -702,6 +702,16 @@ async function flow4() {
     endChecks(env4, '(4c-2)');
     await env4.context.close();
   }
+  const env5 = await makeEnv({ device: 'field' });
+  try {
+    const page = await open(env5, 'genogram.html?resident=' + ME.id);
+    const msg = await waitFor(() => page.evaluate(() => { const e = document.getElementById('suHopBar'); return e && !e.hidden ? e.innerText : null; }));
+    t('家族構成図（現場・名簿なし）: 「お名前を読めませんでした」だけを出し、現場でできない「入居者マスタを一度開いて」は出さない', !!msg && msg.includes('お名前を読めませんでした') && !msg.includes('入居者マスタを一度開いて'), msg);
+    await page.close();
+  } finally {
+    endChecks(env5, '(4c-3)');
+    await env5.context.close();
+  }
 }
 
 /* ═════════ (5) 体重管理: 体重を入れて保存すると、その方の記録だけが体重の GAS に届き、開き直すと出る ═════════ */

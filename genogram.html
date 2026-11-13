@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-font">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-eKevnBXV6h4vqCSZJGYp/OHxMTRsprqR1J8zH06KXVY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-cmZPO6Nmo71Roh1c3YkAlFN8/hwuKWZoGO4HFPDP9kM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 入居者情報を表示する画面のため、ブラウザ・中継キャッシュに残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -1253,7 +1253,9 @@ function applyZOrder() {
 /* 本人確認の帯（「〇〇さんを開いています」＋「この方の画面：」）。?resident= で開いた方（氏名は共有名簿で引く）の図を開いている間だけ出す。
    別の方の図に切り替えたら消す（帯が取り違えの元にならないように）。出し消しで作図の枠の高さが変わるので、その時だけ枠を合わせ直す */
 let suHopKey = '';
+/* 「入居者マスタを一度開いて」は現場の端末ではできない操作なので、事務所PCの時だけ添える（文は仮置き） */
 const SU_NAME_MISSING_MSG = '入居者マスタの名簿から、この方のお名前を読めませんでした。名前の欄は空のままです。入居者マスタを一度開いてから、もう一度この画面を開いてください。';
+const SU_NAME_MISSING_MSG_FIELD = 'お名前を読めませんでした。名前の欄は空のままです。';
 function suHopSync() {
   const bar = $('suHopBar'); if (!bar) return;
   const id = window._suMasterId, nm = window._suMasterName;
@@ -1264,7 +1266,7 @@ function suHopSync() {
   const key = on ? id + '\n' + nm : (miss ? 'miss' : '');
   if (key === suHopKey) return;
   suHopKey = key;
-  if (miss) { bar.textContent = SU_NAME_MISSING_MSG; bar.hidden = false; }
+  if (miss) { bar.textContent = isFieldDevice() ? SU_NAME_MISSING_MSG_FIELD : SU_NAME_MISSING_MSG; bar.hidden = false; }
   else if (!on) { bar.hidden = true; bar.textContent = ''; }
   else {
     const who = document.createElement('span');
