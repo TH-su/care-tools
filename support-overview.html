@@ -290,6 +290,14 @@ body {
 .su-help-link{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
 @media screen and (max-width:899px){.su-help-link{min-height:44px}}
 @media print{.su-help-link{display:none !important}}
+/* PC の幅（900〜1439px）で見出しを1段に収める（「使い方」を足して1280px 前後で2段に折り返したため・文言とボタンの並びはそのまま・
+   ボタンの左右の余白を少し詰め、補足の字と集計の状態は2行まで折り返す・1440px 以上と iPhone・iPad 縦・印刷は変えない・代表者「推奨どおり」2026-11-13） */
+@media screen and (min-width:900px) and (max-width:1439px){
+  .hdr{gap:6px}
+  .hdr .hdr-btn{padding-left:10px;padding-right:10px}   /* 見出しの中だけ（本文の「クラウドから集計」は変えない） */
+  .hdr .ovsw-btn{padding:0 10px}
+  .hdr .hdr-sub,.hdr .sync-state{white-space:normal;max-width:12em;line-height:1.25}
+}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
