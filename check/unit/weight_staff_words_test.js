@@ -175,6 +175,32 @@ console.log('— 8. 接続の診断の結果は職員向けの1文＋「管理�
   t('8-7 診断の結果でない知らせ（診断中・未保存の合言葉）は今までどおり行をそのまま出す', P.children.length === 1 && (P.children[0] || {}).tag === 'pre' && (P.children[0] || {}).textContent === '🔍 診断中…', P.textContent);
 }
 
+console.log('— 9. 設定の接続状態欄も、失敗の時は職員向けの1文＋「管理者向けの詳しい内容」に畳む（2026-11-13 第6段 反証レビュー・実物の apiSetStatus を動かす） —');
+{
+  const fn = cut('apiSetStatus');
+  t('9-1 apiSetStatus を切り出せた', !!fn);
+  function mk(tag) {
+    const el = { tag, children: [], className: '', innerHTML: '', _txt: '',
+      classList: { _s: new Set(), add(c) { this._s.add(c); }, remove(...c) { c.forEach(x => this._s.delete(x)); } },
+      appendChild(c) { this.children.push(c); return c; } };
+    Object.defineProperty(el, 'textContent', { get() { return this._txt + this.children.map(c => c.textContent).join(''); }, set(v) { this._txt = String(v); this.children = []; } });
+    return el;
+  }
+  const bd = mk('span'), si = mk('div');
+  const sb = { document: { getElementById: (id) => (id === 'apiBd' ? bd : id === 'apiStatus' ? si : null), createElement: mk }, String };
+  vm.createContext(sb);
+  vm.runInContext(fn, sb);
+  const RAW = '接続エラー: サーバーが応答しませんでした（HTTP 500・架空）';
+  sb.apiSetStatus('er', RAW);
+  const lead = si.children[0] || {}, more = si.children[1] || {};
+  t('9-2 失敗: 先頭は職員向けの1文', lead.tag === 'p' && lead.textContent === 'うまくつながりませんでした。管理者に伝えてください。', si.textContent);
+  t('9-3 失敗: 元の文は「管理者向けの詳しい内容」の中に文を変えずに畳む', more.tag === 'details' && (more.children[0] || {}).textContent === '管理者向けの詳しい内容' && (more.children[1] || {}).textContent === RAW, more.textContent);
+  sb.apiSetStatus('ok', '最終同期: 10:00:00');
+  t('9-4 成功の文は今までどおりそのまま出す（畳んだ欄は残らない）', si.textContent === '最終同期: 10:00:00' && si.children.length === 0, si.textContent);
+  sb.apiSetStatus('sy');
+  t('9-5 文の無い呼び出しは欄を変えない', si.textContent === '最終同期: 10:00:00');
+}
+
 sec6.then(() => {
   console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
   process.exit(fail ? 1 : 0);

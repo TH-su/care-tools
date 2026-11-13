@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-+a6M7AUchzQy68UCJfqAQyAw8RagRoLRqMJUjx7EXXo=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-rAh/qUXpnAKHqhfj8VhSBalJN0FrR9qfwCH9Hojabtw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-+a6M7AUchzQy68UCJfqAQyAw8RagRoLRqMJUjx7EXXo=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-ikjO4Hwam9WgVdTwge60WDmYbbVlm4E4UNJVzPIGDM0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -2098,7 +2098,27 @@ function apiSetStatus(st, msg){
     else               { b.classList.add('api-of'); }
   }
   const si = document.getElementById('apiStatus');
-  if(si && msg) si.textContent = msg;
+  if(!si || !msg) return;
+  /* 失敗の時は職員向けの1文だけを出し、元の文（分類・応答の細かい理由）は「管理者向けの詳しい内容」に文を変えずに畳む
+     （第6段 反証レビューの指摘・2026-11-13・文は仮置き）。診断の枠（showDiagPanel）と同じ形 */
+  if(st === 'er'){
+    si.textContent = '';
+    const lead = document.createElement('p');
+    lead.className = 'api-diag-lead';
+    lead.textContent = 'うまくつながりませんでした。管理者に伝えてください。';
+    const more = document.createElement('details');
+    more.className = 'api-diag-more';
+    const sum = document.createElement('summary');
+    sum.textContent = '管理者向けの詳しい内容';
+    const body = document.createElement('div');
+    body.textContent = String(msg);
+    more.appendChild(sum);
+    more.appendChild(body);
+    si.appendChild(lead);
+    si.appendChild(more);
+    return;
+  }
+  si.textContent = msg;
 }
 function ldShow(msg){
   const ov = document.getElementById('ldOv');
