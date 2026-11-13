@@ -31,6 +31,8 @@
    ★出力に console を使わない（gas/tests にあった頃からの決まり。個人情報を出力に流さないため）。 */
 'use strict';
 const fs = require('fs');
+/* 入居者マスタの画面のスクリプトは 2026-11-13 に resident-master.js へ移した（判定の区間 MC-JUDGE だけ HTML に残す）。移す前と同じ文字に戻して確かめる */
+const { readMaster } = require('../master-page.cjs');
 const path = require('path');
 const vm = require('vm');
 
@@ -272,7 +274,7 @@ const KINDS = {
 };
 
 async function main(){
-  const SRC = fs.readFileSync(HTML_PATH, 'utf8');
+  const SRC = readMaster(HTML_PATH);
   say('対象: ' + HTML_PATH);
 
   /* ── G1. 保存の出口 ── */
@@ -1386,7 +1388,7 @@ async function main(){
     say('  （省略: MASTER_HTML_OLD が渡されていない）');
   } else {
     say('  直す前の版: ' + OLD_PATH);
-    const OLD = fs.readFileSync(OLD_PATH, 'utf8');
+    const OLD = readMaster(OLD_PATH);
     let reproRan = 0;   // 旧版で実際に走らせた再現の数（0 なら旧版の取り違え＝✗ にする）
     /* G7-1: 名簿の書き戻し・縮み（23089f2 相当の旧版で再現する。devGen を持つ旧版＝006442b 以降は直し済みなので省く） */
     g7a: {

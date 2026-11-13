@@ -4,6 +4,8 @@
    対象 HTML は環境変数 DAYCARE_ROSTER_HTML で差し替えられる（直す前の版で落ちることを確かめるため）。 */
 'use strict';
 const fs = require('fs');
+/* 入居者マスタの画面のスクリプトは 2026-11-13 に resident-master.js へ移した（判定の区間 MC-JUDGE だけ HTML に残す）。移す前と同じ文字に戻して確かめる */
+const { readMaster } = require('../master-page.cjs');
 const path = require('path');
 const vm = require('vm');
 
@@ -62,7 +64,7 @@ function walk(n, f) { f(n); (n.children || []).forEach(c => walk(c, f)); }
 
 const TECH = /Supabase|GAS|トークン|token|JSON|API|localStorage|HTTP|fetch|\.js\b/i;
 const CS = fs.readFileSync(path.join(ROOT, 'connection-settings.html'), 'utf8');
-const RM = fs.readFileSync(path.join(ROOT, 'resident-master.html'), 'utf8');
+const RM = readMaster(path.join(ROOT, 'resident-master.html'));
 const HINT = fs.readFileSync(path.join(ROOT, 'su-cfg-hint.js'), 'utf8');
 
 console.log('— 1. 部品のファイル名を出さない —');

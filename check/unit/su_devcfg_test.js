@@ -9,12 +9,14 @@
    ★出力に console を使わない（個人情報を出力に流さない作法をそろえる）。 */
 'use strict';
 const fs = require('fs');
+/* 入居者マスタの画面のスクリプトは 2026-11-13 に resident-master.js へ移した（判定の区間 MC-JUDGE だけ HTML に残す）。移す前と同じ文字に戻して確かめる */
+const { readMaster } = require('../master-page.cjs');
 const path = require('path');
 const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..', '..');
 const SRC = fs.readFileSync(path.join(ROOT, 'su-devcfg.js'), 'utf8');
-const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
+const read = (f) => readMaster(path.join(ROOT, f));
 let ok = 0, ng = 0, finished = false;
 process.on('exit', () => { if (!finished) { process.stdout.write('\n試験が終わる前に止まりました\n'); process.exitCode = 1; } });
 const say = (m) => process.stdout.write(m + '\n');
