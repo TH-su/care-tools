@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-2BuSvxGUVXfjulylfzJ6hGIP9X6tZm6BWOURIp0DN2E=' 'sha256-8bzE0DuBjLJGJ5PxFqaRaZB2RZswI9ZRr0RbNQ3Uv6I='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-kH7CDNl9vlrcYtfDZpMlJT8h5IvgFJB6FcUT/iclsgg=' 'sha256-8bzE0DuBjLJGJ5PxFqaRaZB2RZswI9ZRr0RbNQ3Uv6I='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- 要配慮情報（疾患・訓練内容）を表示する画面。ブラウザキャッシュ・検索索引に残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -1716,7 +1716,7 @@ function goalHasPrefix(v, prefix) {
    返事の記号は【送る時に置き換えた書き方】へ戻す（無ければ名簿の表記）。
    ・ご本人: フルネーム→〔ご本人〕／姓→〔ご本人・姓〕／名→〔ご本人・名〕／かな→〔ご本人・かな〕／
              かなの姓・名→〔ご本人・姓かな〕〔ご本人・名かな〕（どれも2文字以上）
-   ・他の利用者: フルネーム→〔利用者N〕／かな→〔利用者N・かな〕／姓→〔利用者N・姓〕／名→〔利用者N・名〕
+   ・他の利用者: フルネーム→〔利用者N〕／かな→〔利用者N・かな〕／姓→〔利用者N・姓〕／名→〔利用者N・名〕（姓・名は書いた字だけ・異体字にそろえない）
              （姓・名は漢字だけの書き方で2文字以上の時だけ。かなの姓・名だけ・かなの混じる名だけは伏せない＝一般の語に多く当たるため）（2026-11-13）
              この姓・名と1文字の姓は、敬称の前の名前の伏せ字の後で置き換える（名簿に無い姓が記号の前に取り残されないように）
    ・異体字（髙→高 など foldName の表）と、かなのカタカナ書きも同じ記号にする
@@ -1764,14 +1764,16 @@ function aiMaskTerms(roster, subjectId, subjectExtra) {
     add(term, token, orig, true);
     if (out.length > n0) out[out.length - 1].late = true;
   }
+  /* 後で足す語は名簿に書いた字そのものだけ（異体字にそろえた形を同じ記号にすると、戻す時に一般の語の字が書き換わり
+     〔髙原・高原〕、名簿の別の2人〔髙橋・高橋〕が同じ人として AI に渡るため・反証レビュー 2026-11-13）。ご本人の分は今までどおり */
   function addParts(row, tok) {
     var nm = trim(row.name);
-    var parts = nm ? nm.split(WS) : [], fparts = parts.map(foldName);
+    var parts = nm ? nm.split(WS) : [];
     if (parts.length < 2) return;
     var sei = tok.replace('〕', '・姓〕'), mei = tok.replace('〕', '・名〕');
-    [parts[0], fparts[0]].forEach(function (v) { addLate(v, sei, parts[0]); });
-    addOne(parts[0], sei, parts[0]);   // 1文字の姓は書いた字だけ（髙と高を同じ記号にすると、戻す時に一般の語の字が書き換わる）
-    [parts.slice(1).join(''), fparts.slice(1).join('')].forEach(function (v) { addLate(v, mei, parts.slice(1).join('')); });
+    addLate(parts[0], sei, parts[0]);
+    addOne(parts[0], sei, parts[0]);
+    addLate(parts.slice(1).join(''), mei, parts.slice(1).join(''));
   }
   function joins(parts) { return [parts.join(''), parts.join(' '), parts.join('　')]; }
   function addRow(row, tok, isSubject) {

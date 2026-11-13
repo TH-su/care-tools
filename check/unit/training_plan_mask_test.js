@@ -167,6 +167,14 @@ console.log('\n【5】1文字の姓・他の利用者の姓だけ／名だけ（
     const mg = TP.aiMaskDeep({ a: '髙。', b: '意欲が高い。' }, tg, ug);
     const bg = TP.aiUnmaskDeep(mg, tg, ug);
     t('★1文字の姓は異体字にそろえない（項目をまたいで控えを共有しても「高い」が「髙い」に化けない）', bg.a === '髙。' && bg.b === '意欲が高い。' && mg.b === '意欲が高い。', [mg, bg]);
+    /* 3回目の反証レビュー: 他の利用者の2文字以上の姓・名も、書いた字だけを伏せる（異体字にそろえない） */
+    const th = TP.aiMaskTerms([{ masterId: 'H0', name: '試験 一郎', kana: '' }, { masterId: 'H1', name: '髙原 一', kana: '' }, { masterId: 'H2', name: '髙橋 一', kana: '' }, { masterId: 'H3', name: '高橋 二', kana: '' }], 'H0');
+    const uh = {};
+    const mh = TP.aiMaskDeep({ a: '髙原の家族。', b: '高原へ旅行した。' }, th, uh);
+    const bh = TP.aiUnmaskDeep(mh, th, uh);
+    t('★項目をまたいで控えを共有しても、一般の語「高原」が「髙原」に化けない', mh.b === '高原へ旅行した。' && bh.a === '髙原の家族。' && bh.b === '高原へ旅行した。', [mh, bh]);
+    const m2h = TP.aiMaskDeep({ a: '髙橋と高橋が散歩' }, th, {}).a;
+    t('★名簿の別の2人（髙橋・高橋）を同じ記号にしない', m2h === '〔利用者2・姓〕と〔利用者3・姓〕が散歩', m2h);
     t('★ノ・ヶの入る姓（一ノ瀬）も他の利用者の姓だけとして伏せる', TP.aiMaskDeep({ a: '一ノ瀬と散歩' }, tg, {}).a === '〔利用者5・姓〕と散歩', TP.aiMaskDeep({ a: '一ノ瀬と散歩' }, tg, {}).a);
   }
   /* 往復: 新しい記号すべてで、伏せて戻すと元の文・控えに書いた形 */
