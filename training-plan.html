@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-l4LjIlOsp+bW6NFw4Q6hqKCsEW1dNgxD2SdWKwMfebM=' 'sha256-8bzE0DuBjLJGJ5PxFqaRaZB2RZswI9ZRr0RbNQ3Uv6I='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-kH7CDNl9vlrcYtfDZpMlJT8h5IvgFJB6FcUT/iclsgg=' 'sha256-8bzE0DuBjLJGJ5PxFqaRaZB2RZswI9ZRr0RbNQ3Uv6I='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- 要配慮情報（疾患・訓練内容）を表示する画面。ブラウザキャッシュ・検索索引に残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -1716,12 +1716,23 @@ function goalHasPrefix(v, prefix) {
    返事の記号は【送る時に置き換えた書き方】へ戻す（無ければ名簿の表記）。
    ・ご本人: フルネーム→〔ご本人〕／姓→〔ご本人・姓〕／名→〔ご本人・名〕／かな→〔ご本人・かな〕／
              かなの姓・名→〔ご本人・姓かな〕〔ご本人・名かな〕（どれも2文字以上）
-   ・他の利用者: フルネーム→〔利用者N〕／かな→〔利用者N・かな〕。姓だけは伏せない（一般の語を壊さないため）
+   ・他の利用者: フルネーム→〔利用者N〕／かな→〔利用者N・かな〕／姓→〔利用者N・姓〕／名→〔利用者N・名〕（姓・名は書いた字だけ・異体字にそろえない）
+             （姓・名は漢字だけの書き方で2文字以上の時だけ。かなの姓・名だけ・かなの混じる名だけは伏せない＝一般の語に多く当たるため）（2026-11-13）
+             この姓・名と1文字の姓は、敬称の前の名前の伏せ字の後で置き換える（名簿に無い姓が記号の前に取り残されないように）
    ・異体字（髙→高 など foldName の表）と、かなのカタカナ書きも同じ記号にする
    ・姓・名だけの置き換えは、直後が 市 町 村 郡 県 区 の時はしない（菊池市・山鹿市のような地名を壊さない）
-   ・1文字の語は伏せない。長い語から先に置き換える（短い語が長い名前の一部を先に食わない）
+   ・1文字の姓（ご本人・他の利用者とも）は、前の字が漢字でなく、後ろが空白・句読点・記号・カタカナ・文の終わりの所だけ伏せる
+     （熟語の中の字や「立ち上がり」「高い」のような送り仮名の付く語は壊さない。敬称の付いた書き方は敬称の前の名前として伏せる）。
+     異体字にそろえた形は足さず、名簿に書いた字そのものだけ（2026-11-13）。
+     それ以外の1文字の語（1文字の名・かな）は伏せない。長い語から先に置き換える（短い語が長い名前の一部を先に食わない）
    ★置き換えられるのは名簿の氏名・かなだけ。愛称・家族や職員の名前・ローマ字は置き換えられない（確認画面で伝える） */
 var AI_MASK_PART_STOP = '市町村郡県区';
+/* 1文字の姓の前後を見る「漢字」（異体字・互換漢字・々〆を含む。AI_HONOR_K の漢字の部分と同じ範囲） */
+var AI_MASK_KANJI_RE = /[一-龥㐀-䶵豈-﫿々〆]/;
+var AI_MASK_KANJI_ONLY_RE = /^[一-龥㐀-䶵豈-﫿々〆ノヶヵ]+$/;   // 漢字だけの姓・名（一ノ瀬・八ヶ代 のようなノ・ヶを含む）
+var AI_MASK_ONE_AFTER_NG = /[ぁ-ゖ一-龥㐀-䶵豈-﫿々〆]/;   // 1文字の姓のすぐ後ろにこれが来たら伏せない（ひらがな・漢字）
+/* 伏せ字の記号そのものの形（1文字の姓を伏せる時に、記号の中の字を触らないため） */
+var AI_MASK_TOKEN_RE = /^〔(?:(?:ご本人|利用者[0-9]+)(?:・(?:姓|名|かな|姓かな|名かな))?|人名[0-9]+)〕$/;
 function aiToKatakana(v) {
   return s_(v).replace(/[ぁ-ゖ]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) + 0x60); });
 }
@@ -1735,6 +1746,34 @@ function aiMaskTerms(roster, subjectId, subjectExtra) {
     if (term.length < 2 || seen[term]) return;
     seen[term] = 1;
     out.push({ term: term, token: token, orig: s_(orig), part: !!part });
+  }
+  /* 1文字の漢字の姓だけの道（前後が漢字でない所だけ伏せる。かな・名の1文字はここを通さない） */
+  function addOne(term, token, orig) {
+    term = s_(term);
+    if (term.length !== 1 || !AI_MASK_KANJI_RE.test(term) || seen[term]) return;
+    seen[term] = 1;
+    out.push({ term: term, token: token, orig: s_(orig), part: true, one: true, late: true });
+  }
+  /* 名簿の行の姓・名だけ（2026-11-13）。既存の語を全員分足した後に呼ぶ（先に足した語の伏せ方を条件つきに変えない） */
+  /* 足すのは漢字だけで書いた姓・名（かな・カタカナの混じる名は「声をきく」「ハルシオン」のような一般の語に当たるので足さない）。
+     足した語は印 late を付け、敬称の前の名前の伏せ字（aiMaskHonor）の後で置き換える（先に置くと「架山花子さん」の
+     「架山」が記号の前に取り残され、敬称の処理で伏せられなくなるため・反証レビュー 2026-11-13） */
+  function addLate(term, token, orig) {
+    var n0 = out.length;
+    if (!AI_MASK_KANJI_ONLY_RE.test(s_(term))) return;
+    add(term, token, orig, true);
+    if (out.length > n0) out[out.length - 1].late = true;
+  }
+  /* 後で足す語は名簿に書いた字そのものだけ（異体字にそろえた形を同じ記号にすると、戻す時に一般の語の字が書き換わり
+     〔髙原・高原〕、名簿の別の2人〔髙橋・高橋〕が同じ人として AI に渡るため・反証レビュー 2026-11-13）。ご本人の分は今までどおり */
+  function addParts(row, tok) {
+    var nm = trim(row.name);
+    var parts = nm ? nm.split(WS) : [];
+    if (parts.length < 2) return;
+    var sei = tok.replace('〕', '・姓〕'), mei = tok.replace('〕', '・名〕');
+    addLate(parts[0], sei, parts[0]);
+    addOne(parts[0], sei, parts[0]);
+    addLate(parts.slice(1).join(''), mei, parts.slice(1).join(''));
   }
   function joins(parts) { return [parts.join(''), parts.join(' '), parts.join('　')]; }
   function addRow(row, tok, isSubject) {
@@ -1761,12 +1800,18 @@ function aiMaskTerms(roster, subjectId, subjectExtra) {
   var extra = subjectExtra && typeof subjectExtra === 'object' ? subjectExtra : null;
   if (subj) addRow(subj, '〔ご本人〕', true);
   if (extra && (trim(extra.name) || trim(extra.kana))) addRow(extra, '〔ご本人〕', true);
+  var others = [];
   rows.forEach(function (r) {
     if (r === subj) return;
     if (!trim(r.name) && !trim(r.kana)) return;
     n++;
+    others.push({ row: r, tok: '〔利用者' + n + '〕' });
     addRow(r, '〔利用者' + n + '〕', false);
   });
+  /* 第2の段: ご本人の1文字の姓、他の利用者の姓・名（今までの語の後に足すので、今までの語の伏せ方は変わらない） */
+  if (subj) addParts(subj, '〔ご本人〕');
+  if (extra && (trim(extra.name) || trim(extra.kana))) addParts(extra, '〔ご本人〕');
+  others.forEach(function (o) { addParts(o.row, o.tok); });
   out.sort(function (a, b) { return b.term.length - a.term.length; });
   return out;
 }
@@ -1907,7 +1952,7 @@ function aiMaskDeep(obj, terms, used) {
   return aiMapStrings(obj, function (str) {
     for (var i = 0; i < ts.length; i++) {
       var x = ts[i];
-      if (str.indexOf(x.term) < 0) continue;
+      if (x.late || str.indexOf(x.term) < 0) continue;
       var hit = false;
       if (x.part) {
         str = str.replace(new RegExp(aiReEsc(x.term) + '(?![' + AI_MASK_PART_STOP + '])', 'g'), function () { hit = true; return x.token; });
@@ -1916,7 +1961,25 @@ function aiMaskDeep(obj, terms, used) {
       }
       if (hit && !Object.prototype.hasOwnProperty.call(u, x.token)) u[x.token] = x.term;
     }
-    return aiMaskHonor(str, u);   // 名簿で伏せた後に、敬称の前の名前を伏せる（名簿の記号〔…〕は漢字・カタカナではないので二重に伏せない）
+    str = aiMaskHonor(str, u);   // 名簿で伏せた後に、敬称の前の名前を伏せる（名簿の記号〔…〕は漢字・カタカナではないので二重に伏せない）
+    /* 後で足した語（印 late: 他の利用者の姓・名・1文字の姓）は敬称の処理の後に置き換える。
+       先に置いた記号（〔ご本人・名〕〔利用者N・姓〕〔人名N〕 など）の中の字は触らない。職員が書いた〔甲〕などは伏せる */
+    for (var j = 0; j < ts.length; j++) {
+      var y = ts[j];
+      if (!y.late || str.indexOf(y.term) < 0) continue;
+      var hit2 = false;
+      str = str.replace(new RegExp(aiReEsc(y.term), 'g'), function (m, at, whole) {
+        var pv = at > 0 ? whole.charAt(at - 1) : '', nx = whole.charAt(at + m.length);
+        /* 1文字の姓: 前が漢字でなく、後ろがひらがな・漢字でない所だけ（後読みは古い Safari で読めないので、置き換えの中で前後を見る） */
+        if (y.one && ((pv && AI_MASK_KANJI_RE.test(pv)) || (nx && AI_MASK_ONE_AFTER_NG.test(nx)))) return m;
+        if (nx && AI_MASK_PART_STOP.indexOf(nx) >= 0) return m;   // 地名（〇〇市 など）は壊さない
+        var op = whole.lastIndexOf('〔', at), cl = whole.indexOf('〕', at);
+        if (op >= 0 && cl >= 0 && op > whole.lastIndexOf('〕', at) && AI_MASK_TOKEN_RE.test(whole.slice(op, cl + 1))) return m;
+        hit2 = true; return y.token;
+      });
+      if (hit2 && !Object.prototype.hasOwnProperty.call(u, y.token)) u[y.token] = y.term;
+    }
+    return str;
   });
 }
 function aiUnmaskDeep(obj, terms, used) {
