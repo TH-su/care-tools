@@ -242,8 +242,10 @@ const sec8 = (async () => {
   let L = await runTc(false, { ok: true, role: 'sync', guards: ['visitwipe'] });
   t('職員: ガードが無い時は「管理者に伝えてください」の1文', L.some(x => x === '　⚠ 入浴の一括消失ガードが【まだ有効になっていません】。管理者に伝えてください'), L);
   t('職員: 受け口の直し方（Apps Script・デプロイ）を出さない', !L.some(x => ADMIN_ONLY.test(x)), L);
+  t('職員: サーバー版・防御の名前（bathwipe 等）を出さない', !L.some(x => /サーバー版|visitwipe|bathwipe/.test(x)), L);
   L = await runTc(true, { ok: true, role: 'sync', guards: ['visitwipe'] });
   t('管理者: 直し方を「管理者向け」として足す', L.some(x => x === '　（管理者向け：Apps Script で コードを保存しただけになっていないか確認してください（デプロイ → デプロイを管理 → 鉛筆 → バージョン「新バージョン」→ デプロイ））'), L);
+  t('管理者: サーバー版・防御の名前は出す', L.some(x => x === '　サーバー版：(不明)／防御：visitwipe'), L);
   L = await runTc(false, null, true);
   t('職員: 接続の失敗は「直らない時は、管理者に伝えてください」・デプロイの話は出さない', L.some(x => x === '❌ 接続失敗: つながりません\n直らない時は、管理者に伝えてください') && !L.some(x => ADMIN_ONLY.test(x)), L);
   L = await runTc(true, null, true);

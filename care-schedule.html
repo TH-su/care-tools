@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-ZyO8II2+BTKwdbTjRZse6m333UlvD9lSePo2+Z8TwVA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-oNV5CcoNLGGRTPxjraOAQuHKX4uLJ0BAQ7gs9lAL/ks='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -4886,7 +4886,8 @@ const SYNC = {
          反映されず、デプロイを管理→新バージョン まで進めて初めて切り替わる。その取り違えを
          データを壊さずに見分けられるようにする（multi-device-sync 原則7 能力宣言）。 */
       const guards = Array.isArray(j.guards) ? j.guards : null;
-      if (j.codeVersion || guards) {
+      /* 版と防御の名前は管理者のログインの時だけ出す（職員には意味の無い技術の語のため・2026-11-13 第6段 反証レビュー） */
+      if ((j.codeVersion || guards) && await csIsAdmin_()) {
         this.log('　サーバー版：' + (j.codeVersion || '(不明)')
           + (guards ? '／防御：' + guards.join('・') : ''));
       }
