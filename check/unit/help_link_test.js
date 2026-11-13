@@ -8,7 +8,10 @@
      4. 保存していない入力がある5画面（入居者マスタ・職員マスタ・担当者会議・入居調整・消耗品管理）は、「使い方」を押した時も「← メニュー」と同じ判定で確かめ、
         「いいえ」なら移らない・「はい」なら直後の beforeunload で二重に聞かない印を立てる・変更が無ければ聞かない
      4.4 接続設定: 「‹ 戻る」の右隣に「使い方」を直接書く（行き先は表どおり・印刷では消す・保存していない入力は戻ると同じ beforeunload の判定で確かめる）
-     5. メニュー・ログイン・使い方の画面と、別の正本から配る3画面（ワークスケジュール・シフト作成・シフト分析）には置かない
+     5. メニュー・ログイン・使い方の画面には置かない
+     6. 別の正本から配る3画面（ワークスケジュール・シフト作成・シフト分析）は、正本で置く（代表者の決定 2026-11-13）。
+        配信の後の画面にある時は「← メニュー」の右隣・行き先は help.html?sec=<画面>・印刷で消す。配信の前の画面（まだ無い）は「配信待ち」と出して通す
+        （配信の後に「必ずある」へ締め直す）
    画面のコードは書き換えず、ソースを読んで切り出して動かすだけ。 */
 'use strict';
 const fs = require('fs');
@@ -80,7 +83,7 @@ let SEC = null;
   t('表の値ごとに help.html に節の見出しがある', want.every((k) => help.indexOf('id="' + SEC[k] + '"') >= 0), want);
   const H = shellRun.win.SUShell.helpHref;
   t('節のある画面は help.html?sec=<画面>', H('care-schedule.html') === 'help.html?sec=care-schedule' && H('weight-record.html') === 'help.html?sec=weight-record');
-  t('節の無い画面・壊れた値は help.html', H('shift-app.html') === 'help.html' && H('index.html') === 'help.html' && H('') === 'help.html' && H('__proto__') === 'help.html' && H('constructor') === 'help.html');
+  t('節の無い画面・壊れた値は help.html', H('perf-report.html') === 'help.html' && H('index.html') === 'help.html' && H('') === 'help.html' && H('__proto__') === 'help.html' && H('constructor') === 'help.html');
 }
 const expHref = (f) => (Object.prototype.hasOwnProperty.call(HELP_SEC || {}, f) ? 'help.html?sec=' + HELP_SEC[f] : 'help.html');
 
@@ -263,8 +266,26 @@ for (const f of DIRECT.concat(SHELL, ['connection-settings.html'])) {
 }
 
 console.log('5 置かない画面');
-for (const f of ['index.html', 'login.html', 'help.html', 'work-schedule.html', 'shift-app.html', 'shift-analyzer.html']) {
+for (const f of ['index.html', 'login.html', 'help.html']) {
   t(f + ': 「使い方」を置かない', raw(f).indexOf('su-help-link') < 0 && raw(f).indexOf('su-shell.js') < 0);
+}
+
+console.log('6 別の正本から配る3画面（正本で置く・代表者の決定 2026-11-13）');
+for (const f of ['work-schedule.html', 'shift-app.html', 'shift-analyzer.html']) {
+  const sec = f.replace(/\.html$/, '');
+  t(f + ': 行き先の表にあり、help.html?sec=' + sec + ' へ飛ぶ', expHref(f) === 'help.html?sec=' + sec, expHref(f));
+  t(f + ': su-shell.js は読まない（見出しは正本が書く）', raw(f).indexOf('su-shell.js') < 0);
+  const s = raw(f).replace(/<!--[\s\S]*?-->/g, '');
+  if (s.indexOf('su-help-link') < 0) { console.log('  … ' + f + ': 「使い方」はまだ無い（配信待ち）'); continue; }
+  const helps = [...s.matchAll(/<a class="([^"]*\bsu-help-link\b[^"]*)" href="([^"]*)">([^<]*)<\/a>/g)];
+  t(f + ': 「使い方」が1本', helps.length === 1, helps.length);
+  if (!helps.length) continue;
+  t(f + ': 文言は「使い方」', helps[0][3] === '使い方', helps[0][3]);
+  t(f + ': 行き先は help.html?sec=' + sec, helps[0][2] === 'help.html?sec=' + sec, helps[0][2]);
+  const m = /<a class="([^"]*)" href="index\.html">← メニュー<\/a>(\s*)<a class="([^"]*\bsu-help-link\b[^"]*)"/.exec(s);
+  t(f + ': 「← メニュー」の右隣にある', !!m, '');
+  if (m) t(f + ': メニューのリンクと同じ型の名前（su-menu-back は付けない）', m[3] === m[1].split(/\s+/).filter((c) => c && c !== 'su-menu-back').concat('su-help-link').join(' '), { got: m[3], menu: m[1] });
+  t(f + ': 印刷では消す', /@media print\{\.su-help-link\{display:none !important\}\}/.test(s), '');
 }
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');

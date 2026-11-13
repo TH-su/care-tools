@@ -131,7 +131,7 @@ const ST = (x) => Object.assign({ ok: true, ver: 1, keys: { months: { rev: 42, m
     await env.loadSaMode({ rpc: async (n) => { rpcs.push(n); return { data: { ok: true, mode: o.mode } }; } });
     t('G ' + label + ' → 切り替えボタン' + (cut ? '隠す' : '出す') + '・戻すボタン' + (back ? '隠す' : '出す'), nodes['b-sa-cut'].hidden === cut && nodes['b-sa-back'].hidden === back, [nodes['b-sa-cut'].hidden, nodes['b-sa-back'].hidden]);
     if (label === '管理者でない') t('G 管理者でなければ印も読まない', rpcs.length === 0);
-    if (label === '合言葉を記憶していない') t('G 接続先が無い時は「トークンを記憶する」を案内', /トークンを記憶する/.test(nodes['sa-mode'].textContent));
+    if (label === '合言葉を記憶していない') t('G 接続先が無い時は「合言葉を記憶する」を案内', /この端末に合言葉を記憶する/.test(nodes['sa-mode'].textContent));
   }
   {
     const nodes = {};
