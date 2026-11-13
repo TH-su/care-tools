@@ -11,8 +11,9 @@
      F 画面のつなぎ（shadow-check.js の本物の関数）: 表はボタンが出ている時だけ出し、そろわない時はボタンを押せなくする。
        読めない時（gateIn が無い）は押せない側に倒す。押した時は読み直して確かめる。5つのボタンだけに付き、戻すボタン・備品・シフト分析には付けない
      G 差の記録: 入居者マスタ・計画書・入居調整の写し（run）は、読み直した差の件数を shadow_diff_note へ残す。残せなくても写しの結果は返す
-     I 排泄ケア記録（hb・2026-11-13 代表者の指示 cross 6）: 表を出し、そろった時だけ押せる。差の記録（0055）が hb を受け付けないので、
-       差0の行が3日分あっても1項目めは「確かめられません」で満たさない。端末の数は答えの hb の欄（0062）で数え、欄が無ければ分からない
+     I 排泄ケア記録（hb・2026-11-13 代表者の指示 cross 6）: 表を出し、そろった時だけ押せる。差の記録は統合 0086・0087 で hb を受け付ける
+       （2026-11-13 代表者の決定「#534 を入れて、SQL も作る」）ので、ほかの種類と同じく差0の日が3日で満たし、2日・今日の差・行が無い時は満たさない。
+       知らない種類（差の記録の一覧に無い種類）は今までどおり「確かめられません」。端末の数は答えの hb の欄（0062）で数え、欄が無ければ分からない
    架空データのみ。 */
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
@@ -59,8 +60,21 @@ console.log('I 排泄ケア記録（hb）');
   const hb = (o) => base(Object.assign({ kind: 'hb', diff: { rows: rows('hb', [[0, 0], [1, 0], [2, 0]]) }, dev: { data: HBDEV } }, o || {}));
   const v = G.judge(hb());
   t('種類の一覧に排泄ケア記録がある', G.KINDS.hb === '排泄ケア記録');
-  t('差の記録が受け付けない種類なので、差0の行が3日分あっても満たさず「確かめられません」', !item(v, 'diff').ok && item(v, 'diff').value === '確かめられません' && /確かめられません/.test(item(v, 'diff').why) && G.DIFF_KINDS.indexOf('hb') < 0, item(v, 'diff'));
-  t('ほかの3項目がそろっても ok にならない', !v.ok && item(v, 'device').ok && item(v, 'flow').ok && item(v, 'oneday').ok, v);
+  t('差の記録が hb を受け付ける（統合 0086・0087）ので、差0の行が3日分で満たす', item(v, 'diff').ok && item(v, 'diff').value === '3日' && G.DIFF_KINDS.indexOf('hb') >= 0, item(v, 'diff'));
+  t('4項目がそろえば ok', v.ok && item(v, 'device').ok && item(v, 'flow').ok && item(v, 'oneday').ok, v);
+  t('差0が2日では満たさない', !item(G.judge(hb({ diff: { rows: rows('hb', [[0, 0], [1, 0]]) } })), 'diff').ok && !G.judge(hb({ diff: { rows: rows('hb', [[0, 0], [1, 0]]) } })).ok);
+  t('今日の見比べで差があれば0日で満たさない', item(G.judge(hb({ diff: { rows: rows('hb', [[0, 2], [1, 0], [2, 0], [3, 0]]) } })), 'diff').value === '0日'
+    && !item(G.judge(hb({ diff: { rows: rows('hb', [[0, 2], [1, 0], [2, 0], [3, 0]]) } })), 'diff').ok);
+  t('hb の行が無い（0086・0087 の前・残せていない）時は満たさない', !item(G.judge(hb({ diff: { rows: rows('tp', [[0, 0], [1, 0], [2, 0]]) } })), 'diff').ok
+    && !item(G.judge(hb({ diff: { rows: [] } })), 'diff').ok);
+  t('ほかの種類の差0の行では満たさない（種類を混ぜない）', !item(G.judge(hb({ diff: { rows: rows('weight', [[0, 0], [1, 0], [2, 0]]) } })), 'diff').ok);
+  {
+    const K = Object.assign({}, G.KINDS);
+    G.KINDS.zz = '架空の正本';
+    const vz = G.judge(hb({ kind: 'zz', diff: { rows: rows('zz', [[0, 0], [1, 0], [2, 0]]) } }));
+    delete G.KINDS.zz;
+    t('差の記録の一覧に無い種類は今までどおり「確かめられません」で満たさない', !item(vz, 'diff').ok && item(vz, 'diff').value === '確かめられません' && JSON.stringify(G.KINDS) === JSON.stringify(K), item(vz, 'diff'));
+  }
   t('端末の数は hb の欄で数える（入居者マスタ側の rows ではない）', G.unlogged(HBDEV, 'hb') === 0 && G.unlogged({ rows: DEV0.rows, hb: [{ login: false, d7: 2 }, { login: true, d7: 1 }] }, 'hb') === 2
     && G.unlogged({ rows: [{ login: false, d7: 3 }], hb: [{ login: true, d7: 1 }] }, 'hb') === 0);
   const one = G.judge(hb({ dev: { data: { rows: DEV0.rows, hb: [{ role: 'field', login: false, d1: 0, d7: 1, d30: 1 }] } } }));
@@ -242,9 +256,13 @@ const texts = (n) => [n.textContent].concat((n.kids || []).flatMap(texts));
     const g = glue({ rpc: HBRPC });
     await g.ctx.loadGate(g.sb);
     const all = texts(g.nodes['gate-hb']).join('|');
-    t('排泄ケア記録: ボタンが出ている時は表を出し、差の日数を確かめられないので押せない', !g.nodes['gate-hb'].hidden && g.nodes['b-hb-cut'].disabled && /確かめられません/.test(all), all.slice(0, 300));
+    t('排泄ケア記録: ボタンが出ている時は表を出し、差の記録に hb の行が無いので押せない（0日）', !g.nodes['gate-hb'].hidden && g.nodes['b-hb-cut'].disabled && /写しと正本の差が0件の連続日数/.test(all) && /0日/.test(all), all.slice(0, 300));
     t('排泄ケア記録: 押した時も false', (await g.ctx.gatePass('hb')) === false);
     t('排泄ケア記録: ほかの5つは今までどおり押せる', ['b-res-cut', 'b-tp-cut', 'b-adm-cut', 'b-stf-cut', 'b-live-weight'].every((id) => !g.nodes[id].disabled));
+    const HBRPC3 = { shadow_diff_days: () => ({ data: { ok: true, today: TODAY, rows: ['res', 'tp', 'adm', 'stf', 'weight', 'hb'].flatMap((k) => rows(k, [[0, 0], [1, 0], [2, 0]])) }, error: null }), device_seen_summary: HBRPC.device_seen_summary };
+    const g3 = glue({ rpc: HBRPC3 });
+    await g3.ctx.loadGate(g3.sb);
+    t('排泄ケア記録: hb の差0が3日あり4項目がそろえば押せる', !g3.nodes['gate-hb'].hidden && !g3.nodes['b-hb-cut'].disabled && (await g3.ctx.gatePass('hb')) === true);
     const g2 = glue({ rpc: HBRPC, hidden: { 'b-hb-cut': true } });
     await g2.ctx.loadGate(g2.sb);
     t('排泄ケア記録: ボタンが出ていない時は表も出さない', g2.nodes['gate-hb'].hidden);
