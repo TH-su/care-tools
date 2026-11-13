@@ -10,8 +10,9 @@
      4.4 接続設定: 「‹ 戻る」の右隣に「使い方」を直接書く（行き先は表どおり・印刷では消す・保存していない入力は戻ると同じ beforeunload の判定で確かめる）
      5. メニュー・ログイン・使い方の画面には置かない
      6. 別の正本から配る3画面（ワークスケジュール・シフト作成・シフト分析）は、正本で置く（代表者の決定 2026-11-13）。
-        配信の後の画面にある時は「← メニュー」の右隣・行き先は help.html?sec=<画面>・印刷で消す。配信の前の画面（まだ無い）は「配信待ち」と出して通す
-        （配信の後に「必ずある」へ締め直す）
+        配信の後の画面にある時は「← メニュー」の右隣・行き先は help.html?sec=<画面>・印刷で消す。配信の前の画面（まだ無い）は「配信待ち」と出して通す。
+        「配信待ち」で通すのは期限 PENDING_UNTIL（日本時間の日付・2026-11-20）の日まで。過ぎてもまだ無ければ失敗にする。
+        配信の後に、この抜け道を外して「必ずある」へ締め直す PR を出す
    画面のコードは書き換えず、ソースを読んで切り出して動かすだけ。 */
 'use strict';
 const fs = require('fs');
@@ -271,12 +272,19 @@ for (const f of ['index.html', 'login.html', 'help.html']) {
 }
 
 console.log('6 別の正本から配る3画面（正本で置く・代表者の決定 2026-11-13）');
+/* 「配信待ち」で通す期限（日本時間の日付）。今日は日本時間で数える（msk_excretion_test と同じ作り方） */
+const PENDING_UNTIL = '2026-11-20';
+const TODAY_JST = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
 for (const f of ['work-schedule.html', 'shift-app.html', 'shift-analyzer.html']) {
   const sec = f.replace(/\.html$/, '');
   t(f + ': 行き先の表にあり、help.html?sec=' + sec + ' へ飛ぶ', expHref(f) === 'help.html?sec=' + sec, expHref(f));
   t(f + ': su-shell.js は読まない（見出しは正本が書く）', raw(f).indexOf('su-shell.js') < 0);
   const s = raw(f).replace(/<!--[\s\S]*?-->/g, '');
-  if (s.indexOf('su-help-link') < 0) { console.log('  … ' + f + ': 「使い方」はまだ無い（配信待ち）'); continue; }
+  if (s.indexOf('su-help-link') < 0) {
+    if (TODAY_JST <= PENDING_UNTIL) console.log('  … ' + f + ': 「使い方」はまだ無い（配信待ち・' + PENDING_UNTIL + ' まで）');
+    else t(f + ': 「使い方」がある（配信待ちの期限 ' + PENDING_UNTIL + ' を過ぎた）', false, TODAY_JST);
+    continue;
+  }
   const helps = [...s.matchAll(/<a class="([^"]*\bsu-help-link\b[^"]*)" href="([^"]*)">([^<]*)<\/a>/g)];
   t(f + ': 「使い方」が1本', helps.length === 1, helps.length);
   if (!helps.length) continue;
