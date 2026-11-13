@@ -189,7 +189,7 @@ console.log('\n— 2. 施設情報が読めない時 —');
     const gate = {
       'care-schedule.html': /data-on-click="printWeeklySheetGated_"[\s\S]*function printWeeklySheetGated_\(\) \{\s*if \(window\.SUPrint && SUPrint\.facGate\) SUPrint\.facGate\(\(\) => printWeeklySheet\(\), \(msg\) => showToast\(msg\)\);/,
       'weight-record.html': /SUPrint\.facGate\(\(\)=>\{ window\.print\(\); \}, \(msg\)=>SUDialog\.alert\(msg\)\)/,
-      'patch-calendar.html': /SUPrint\.facGate\(function \(\) \{ window\.print\(\); \}/,
+      'patch-calendar.html': /suFacReady_\(\)\.then\(function \(ok\) \{\s*pcPrintWaiting = false;\s*if \(!ok\) \{ window\.alert\(PC_FAC_NG_MSG\); return; \}/,
       'support-overview.html': /function printNow\(\) \{\s*if \(window\.SUPrint && SUPrint\.facGate\) SUPrint\.facGate\(function \(\) \{ window\.print\(\); \}/,
       'visit-overview.html': /function printNow\(\) \{\s*if \(window\.SUPrint && SUPrint\.facGate\) SUPrint\.facGate\(function \(\) \{ window\.print\(\); \}/,
       'moushiokuri-viewer.html': /if\(SUPrint\.facGate\) SUPrint\.facGate\(function\(\)\{ SUPrint\.print\(view\); \}/,
