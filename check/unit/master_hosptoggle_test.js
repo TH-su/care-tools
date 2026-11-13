@@ -23,6 +23,8 @@
    ★出力に console を使わない（gas/tests にあった頃からの決まり。個人情報を出力に流さないため）。 */
 'use strict';
 const fs = require('fs');
+/* 入居者マスタの画面のスクリプトは 2026-11-13 に resident-master.js へ移した（判定の区間 MC-JUDGE だけ HTML に残す）。移す前と同じ文字に戻して確かめる */
+const { readMaster } = require('../master-page.cjs');
 const path = require('path');
 const vm = require('vm');
 
@@ -501,10 +503,10 @@ async function old(src){
 
 (async function(){
   say('対象: ' + HTML_PATH);
-  await main(fs.readFileSync(HTML_PATH, 'utf8'));
+  await main(readMaster(HTML_PATH));
   if(OLD_PATH){
     say('\n直す前の版: ' + OLD_PATH);
-    await old(fs.readFileSync(OLD_PATH, 'utf8'));
+    await old(readMaster(OLD_PATH));
   }else{
     say('\n（MASTER_HTML_OLD 未指定のため「直す前は再現する」群は実行していない）');
   }

@@ -9,6 +9,8 @@
    4. 置き換えた catch は、捕まえた例外をそのまま渡す（別の変数名を渡して未定義にしない） */
 'use strict';
 const fs = require('fs');
+/* 入居者マスタの画面のスクリプトは 2026-11-13 に resident-master.js へ移した（判定の区間 MC-JUDGE だけ HTML に残す）。移す前と同じ文字に戻して確かめる */
+const { readMaster } = require('../master-page.cjs');
 const path = require('path');
 const vm = require('vm');
 
@@ -200,7 +202,7 @@ const PAGES = [
   ['facesheet.html', 'fsNote_', 'facesheet', 1]   // 2026-10-10 入居者マスタの接続設定の読込（デイ利用日の部品は入居者マスタと逐語同一の約束で触らない）
 ];
 for (const [file, fn, tag, want] of PAGES) {
-  const html = fs.readFileSync(path.join(ROOT, file), 'utf8');
+  const html = readMaster(path.join(ROOT, file));
   const tagAt = html.indexOf('<script src="su-errors.js?v=2026-11-12"></script>');
   const defAt = html.indexOf('function ' + fn + '(');
   const firstOther = (() => {

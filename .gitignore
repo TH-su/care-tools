@@ -72,6 +72,8 @@
 # 画面ごとの商用の点を出す物差し（2026-11-12・代表者の決定 案1）。score-calc.mjs は採点の純関数、score.mjs は入口
 !/check/score-calc.mjs
 !/check/score.mjs
+# 入居者マスタの画面の文字を、スクリプトを分ける前の形に戻して読む道具（2026-11-13・HTML の文字を確かめる試験が使う）
+!/check/master-page.cjs
 # 体重管理の推移図：点の詳しい情報がグラフの外を押すと閉じるか（2026-11-04・iPhone の押し方を再現）
 !/check/weight_tooltip_outside_e2e.mjs
 # 画面・共通部品の純関数の試験（2026-10-08・CI の「試験」で回す）。*.js は試験、run-all.mjs は全部を回す道具
@@ -101,6 +103,7 @@
 !/facesheet.html
 !/genogram.html
 !/resident-master.html
+!/resident-master.js
 !/shift-app.html
 !/weight-record.html
 !/work-schedule.html
@@ -197,6 +200,8 @@
 !/pdfjs-4.10.38/
 !/perf-report.html
 !/help.html
+# 使い方の「画面ごとの使い方」へ ?sec=<画面> で飛ぶ部品（2026-11-13）
+!/help-sec.js
 !/perf-report.js
 !/perf-report.css
 !/training-plan.html

@@ -11,11 +11,13 @@
      （読む HTML は環境変数 MASTER_HTML・FACESHEET_HTML で差し替えられる） */
 'use strict';
 const fs = require('fs');
+/* 入居者マスタの画面のスクリプトは 2026-11-13 に resident-master.js へ移した（判定の区間 MC-JUDGE だけ HTML に残す）。移す前と同じ文字に戻して確かめる */
+const { readMaster } = require('../master-page.cjs');
 const path = require('path');
 const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..', '..');
-const MASTER = fs.readFileSync(process.env.MASTER_HTML || path.join(ROOT, 'resident-master.html'), 'utf8');
+const MASTER = readMaster(process.env.MASTER_HTML || path.join(ROOT, 'resident-master.html'));
 const FX = fs.readFileSync(process.env.FACESHEET_HTML || path.join(ROOT, 'facesheet.html'), 'utf8');
 
 let pass = 0, fail = 0;

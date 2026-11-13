@@ -11,12 +11,14 @@
    ★このファイルは公開リポジトリの check/unit にある。氏名・接続先・合言葉は架空。 */
 'use strict';
 const fs = require('fs');
+/* 入居者マスタの画面のスクリプトは 2026-11-13 に resident-master.js へ移した（判定の区間 MC-JUDGE だけ HTML に残す）。移す前と同じ文字に戻して確かめる */
+const { readMaster } = require('../master-page.cjs');
 const path = require('path');
 const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..', '..');
 const SRC = fs.readFileSync(process.env.MSK_HTML || path.join(ROOT, 'moushiokuri-viewer.html'), 'utf8');
-const MASTER = fs.readFileSync(path.join(ROOT, 'resident-master.html'), 'utf8');
+const MASTER = readMaster(path.join(ROOT, 'resident-master.html'));
 
 let pass = 0, fail = 0;
 function t(name, ok, info) {
@@ -86,21 +88,21 @@ function box(old, show) {
   vm.createContext(sb);
   vm.runInContext([grabVar('API_GET_RETRY'), grabShow(show), grabFn(SRC, 'ledgerRows'), grabFn(SRC, 'evParams'),
     grabNorm(),
-    grabFn(SRC, 'fetchTO'), grabFn(SRC, 'parseJson'), grabFn(SRC, 'apiGet'), grabFn(SRC, 'apiGetOnce')].join('\n'), sb);
+    grabFn(SRC, 'fetchTO'), grabFn(SRC, 'parseJson'), grabFn(SRC, 'apiRead'), grabFn(SRC, 'apiReadOnce')].join('\n'), sb);
   return { sb, sent };
 }
 /* 画面が応答を受け取った後の扱い（load と日付別の両方が normRows(res.events)・ledgerRows(res.ledger) を使う） */
 const take = (b, res) => ({ events: JSON.stringify(b.sb.normRows(res.events)), ledger: JSON.stringify(b.sb.ledgerRows(res.ledger)) });
 /* 画面の2か所と同じ呼び方。呼び方の文が変わったら下の 1 の照合で落ちる */
-const CALL_RANGE = "apiGet('events', evParams({ from:r.from, to:r.to }))";
-const CALL_DAY = "apiGet('events', evParams({ from:d, to:d }))";
-const callRange = (b) => b.sb.apiGet('events', b.sb.evParams({ from: '2026-10-01', to: '2026-10-14' }));
-const callDay = (b) => b.sb.apiGet('events', b.sb.evParams({ from: '2026-10-12', to: '2026-10-12' }));
+const CALL_RANGE = "apiRead('events', evParams({ from:r.from, to:r.to }))";
+const CALL_DAY = "apiRead('events', evParams({ from:d, to:d }))";
+const callRange = (b) => b.sb.apiRead('events', b.sb.evParams({ from: '2026-10-01', to: '2026-10-14' }));
+const callDay = (b) => b.sb.apiRead('events', b.sb.evParams({ from: '2026-10-12', to: '2026-10-12' }));
 
 (async () => {
   console.log('— 1. 出来事を読む所は全部 evParams を通す');
   {
-    const all = SRC.match(/apiGet\('events'[^;\n]*/g) || [];
+    const all = SRC.match(/apiRead\('events'[^;\n]*/g) || [];
     t('出来事を読む所は2か所', all.length === 2, all);
     t('期間の読み込みは evParams を通す', SRC.indexOf(CALL_RANGE) >= 0);
     t('日付別は evParams を通す', SRC.indexOf(CALL_DAY) >= 0);
@@ -120,7 +122,7 @@ const callDay = (b) => b.sb.apiGet('events', b.sb.evParams({ from: '2026-10-12',
   }
   {
     const b = box(false);
-    await b.sb.apiGet('measures', { from: '2026-10-01', to: '2026-10-14' });
+    await b.sb.apiRead('measures', { from: '2026-10-01', to: '2026-10-14' });
     t('バイタル（measures）には noLedger を付けない', !('noLedger' in b.sent[0].body), b.sent[0].body);
   }
 

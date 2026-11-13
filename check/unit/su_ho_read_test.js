@@ -9,7 +9,7 @@
      D 失敗（通信・データベースの断り・42501）・ok:false（写しが古い）・形の違いは Google へ戻す
      E ping・ほかの読み取りは、スイッチが入でも常に Google
      F 要約を出す時（events に noLedger が付かない）・知らない引数が付いた時は Google
-     G 画面（moushiokuri-viewer.html の apiGet）: 入口を通っても通らなくても、GAS へ送る形（POST・text/plain・redirect follow・本文）は同じ
+     G 画面（moushiokuri-viewer.html の apiRead）: 入口を通っても通らなくても、GAS へ送る形（POST・text/plain・redirect follow・本文）は同じ
        ／送り直しは今までどおり／入口から戻った呼び出しは入口を2回通らない
      H 端末に保存しない（localStorage へ書かない）・例外を外に出さない
      J ケアログの道（スイッチ moushi_carelog・2026-11-07 段2の準備）: 入（事務所PC・事務所/管理者）なら ho_events_cl / ho_measures_cl を読む
@@ -230,7 +230,7 @@ const MSP = { from: '2026-10-01', to: '2026-10-03' };
     t('画面の evParams は要約を出さない時だけ noLedger を付ける', /function evParams\(o\)\{ if\(!SHOW_AI_SUMMARY\) o\.noLedger = 1; return o; \}/.test(HTML));
   }
 
-  console.log('— G. 画面（apiGet）: GAS へ送る形は入口を通っても同じ');
+  console.log('— G. 画面（apiRead）: GAS へ送る形は入口を通っても同じ');
   {
     function scanBlock(src, from) {
       let depth = 0, seen = false, q = null;
@@ -245,7 +245,7 @@ const MSP = { from: '2026-10-01', to: '2026-10-03' };
       return -1;
     }
     const grab = (name) => { const s = HTML.indexOf('\nfunction ' + name + '('); return HTML.slice(s, scanBlock(HTML, s) + 1); };
-    const code = [HTML.match(/\nvar API_GET_RETRY = [^;]+;/)[0], grab('fetchTO'), grab('parseJson'), grab('apiGet'), grab('apiGetOnce'), grab('mskCfgOk_')].join('\n');
+    const code = [HTML.match(/\nvar API_GET_RETRY = [^;]+;/)[0], grab('fetchTO'), grab('parseJson'), grab('apiRead'), grab('apiReadOnce'), grab('mskCfgOk_')].join('\n');
     function box(withHo, answers, flags) {
       const sent = [];
       const sb = {
@@ -265,22 +265,22 @@ const MSP = { from: '2026-10-01', to: '2026-10-03' };
       return { sb, sent, L };
     }
     const A = box(false, [{ ok: true, events: [] }, { ok: true, vitals: [] }, { ok: true, pong: 1 }]);
-    await A.sb.apiGet('events', { from: '2026-10-01', to: '2026-10-03', noLedger: 1 });
-    await A.sb.apiGet('measures', { from: '2026-10-01', to: '2026-10-03' });
-    await A.sb.apiGet('ping', {});
+    await A.sb.apiRead('events', { from: '2026-10-01', to: '2026-10-03', noLedger: 1 });
+    await A.sb.apiRead('measures', { from: '2026-10-01', to: '2026-10-03' });
+    await A.sb.apiRead('ping', {});
     const B = box(true, [{ ok: true, events: [] }, { ok: true, vitals: [] }, { ok: true, pong: 1 }], OFF);
-    await B.sb.apiGet('events', { from: '2026-10-01', to: '2026-10-03', noLedger: 1 });
-    await B.sb.apiGet('measures', { from: '2026-10-01', to: '2026-10-03' });
-    await B.sb.apiGet('ping', {});
+    await B.sb.apiRead('events', { from: '2026-10-01', to: '2026-10-03', noLedger: 1 });
+    await B.sb.apiRead('measures', { from: '2026-10-01', to: '2026-10-03' });
+    await B.sb.apiRead('ping', {});
     t('入口が無い時と、入口あり（スイッチ切）で GAS へ送った物が1バイトも同じ', A.sent.length === 3 && JSON.stringify(A.sent) === JSON.stringify(B.sent), { a: A.sent, b: B.sent });
     const s0 = A.sent[0];
     t('送り方は POST・text/plain・redirect follow', s0.method === 'POST' && s0.headers === '{"Content-Type":"text/plain;charset=utf-8"}' && s0.redirect === 'follow', s0);
     t('本文は action・期間・noLedger・合言葉（文字）', s0.body === JSON.stringify({ action: 'events', from: '2026-10-01', to: '2026-10-03', noLedger: '1', token: 'tok-example' }), s0.body);
 
     const C = box(true, [{ ok: true, pong: 1 }], ON);
-    const ce = await C.sb.apiGet('events', { from: '2026-10-01', to: '2026-10-03', noLedger: 1 });
+    const ce = await C.sb.apiRead('events', { from: '2026-10-01', to: '2026-10-03', noLedger: 1 });
     t('スイッチ入（事務所）: events は写しの答え・GAS へ送らない', C.sent.length === 0 && ce.events && ce.events[0].key === 'k1', { sent: C.sent, ce });
-    await C.sb.apiGet('ping', {});
+    await C.sb.apiRead('ping', {});
     t('スイッチ入でも ping は GAS へ同じ形で送る', C.sent.length === 1 && C.sent[0].body === A.sent[2].body && C.sent[0].headers === A.sent[2].headers, C.sent);
 
     // 写しが古い（ok:false）→ Google へ戻した時の送り方も同じ
@@ -288,7 +288,7 @@ const MSP = { from: '2026-10-01', to: '2026-10-03' };
     D.L.H._reset();
     const Lstale = load({ flags: ON, rpc: () => Promise.resolve({ data: STALE, error: null }) });
     D.sb.SUHoRead = Lstale.H;
-    await D.sb.apiGet('events', { from: '2026-10-01', to: '2026-10-03', noLedger: 1 });
+    await D.sb.apiRead('events', { from: '2026-10-01', to: '2026-10-03', noLedger: 1 });
     t('写しが古い時は GAS へ今までと同じ本文・送り方で1回送る', D.sent.length === 1 && JSON.stringify(D.sent[0]) === JSON.stringify(A.sent[0]), D.sent);
 
     // 送り直し（POST でだけ の断り）は入口を2回通らず、今までどおり最大2回
@@ -296,7 +296,7 @@ const MSP = { from: '2026-10-01', to: '2026-10-03' };
     let hoCalls = 0;
     const E = box(false, [REFUSE, REFUSE, { ok: true, events: [] }]);
     E.sb.SUHoRead = { call: (a, p, fn) => { hoCalls++; return fn(); } };
-    const er = await E.sb.apiGet('events', { from: '2026-10-01', to: '2026-10-03', noLedger: 1 });
+    const er = await E.sb.apiRead('events', { from: '2026-10-01', to: '2026-10-03', noLedger: 1 });
     t('送り直しは今までどおり（3回目で読める）', E.sent.length === 3 && er.ok === true, E.sent.length);
     t('送り直しは入口を通らない（入口は1回だけ）', hoCalls === 1, hoCalls);
     t('送り直しの本文は1回目と同じ', E.sent.every(s => s.body === E.sent[0].body), E.sent);
@@ -534,7 +534,7 @@ const MSP = { from: '2026-10-01', to: '2026-10-03' };
       t('noGas でも localStorage へ書かない', L8.writes.length === 0, L8.writes);
     }
 
-    // 画面: 接続先の無い端末の apiGet は noGas を付け、新しい保存先だけへ届く
+    // 画面: 接続先の無い端末の apiRead は noGas を付け、新しい保存先だけへ届く
     {
       function scanBlock(src, from) {
         let depth = 0, seen = false, q = null;
@@ -549,7 +549,7 @@ const MSP = { from: '2026-10-01', to: '2026-10-03' };
         return -1;
       }
       const grab = (name) => { const s = HTML.indexOf('\nfunction ' + name + '('); return HTML.slice(s, scanBlock(HTML, s) + 1); };
-      const code = [HTML.match(/\nvar API_GET_RETRY = [^;]+;/)[0], 'var MSK_LIVE = false;', grab('fetchTO'), grab('parseJson'), grab('apiGet'), grab('apiGetOnce'),
+      const code = [HTML.match(/\nvar API_GET_RETRY = [^;]+;/)[0], 'var MSK_LIVE = false;', grab('fetchTO'), grab('parseJson'), grab('apiRead'), grab('apiReadOnce'),
         grab('mskCfgOk_'), grab('mskOn_'), grab('ensureBaseData'), grab('ensureVmData'), grab('pfSteps'), grab('apiErrMsg')].join('\n');
       function box(cfg, flagsJson) {
         const sent = [], calls = [];
@@ -570,25 +570,25 @@ const MSP = { from: '2026-10-01', to: '2026-10-03' };
       }
       const NOC = { url: '', token: '' };
       const A = box(NOC, ON);
-      const ev = await A.sb.apiGet('events', EVP);
-      const ms = await A.sb.apiGet('measures', MSP);
+      const ev = await A.sb.apiRead('events', EVP);
+      const ms = await A.sb.apiRead('measures', MSP);
       t('画面・接続先なし: 出来事・バイタル食事は新しい保存先だけへ届き Google へ0件', A.sent.length === 0 && A.L.rpcs.length === 2 && !!ev.events && !!ms.vitals, { s: A.sent.length, r: A.L.rpcs });
-      const e1 = await A.sb.apiGet('ping', {}).then(() => null, e => e);
+      const e1 = await A.sb.apiRead('ping', {}).then(() => null, e => e);
       t('画面・接続先なし: ping は今までどおり「接続先と合言葉が入っていません」', !!e1 && A.sb.apiErrMsg(e1).indexOf('接続先と合言葉が入っていません') === 0 && A.sent.length === 0);
       const B = box(NOC, ON);
       const origB = B.L.H.call;
       B.L.H.call = (a, p, f, x) => { B.seen = x; return origB(a, p, f, x); };
-      await B.sb.apiGet('events', EVP);
+      await B.sb.apiRead('events', EVP);
       t('画面・接続先なし: 入口へ noGas を渡す', !!B.seen && B.seen.noGas === true, B.seen);
       const C = box({ url: 'https://script.google.com/macros/s/EXAMPLE/exec', token: 'tok-example' }, OFF);
       const origC = C.L.H.call;
       C.L.H.call = (a, p, f, x) => { C.seen = x; return origC(a, p, f, x); };
-      await C.sb.apiGet('events', EVP);
+      await C.sb.apiRead('events', EVP);
       t('画面・接続先あり: noGas は偽（今までどおり）・Google へ今までの本文で1回', !!C.seen && C.seen.noGas === false && C.sent.length === 1
         && C.sent[0] === JSON.stringify({ action: 'events', from: '2026-10-01', to: '2026-10-03', noLedger: '1', token: 'tok-example' }), { seen: C.seen, sent: C.sent });
       const D = box(NOC, ON);
       D.L.H.call = (a, p, f) => f();   // 新しい保存先で読めず画面の関数へ戻った時
-      const e2 = await D.sb.apiGet('events', EVP).then(() => null, e => e);
+      const e2 = await D.sb.apiRead('events', EVP).then(() => null, e => e);
       t('画面・接続先なし・読めずに戻った時: 今までの断り（NO_CFG）で Google へ0件', !!e2 && e2.message === 'NO_CFG' && D.sent.length === 0);
 
       // 読み始めの門（ensureBaseData・ensureVmData・pfSteps）

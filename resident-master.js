@@ -1,0 +1,13727 @@
+/* ═══════════════════════════════════════════════════════════════
+   入居者マスタ / 管理アプリ
+   - 保存先: Google スプレッドシート + GAS Web App（トークン認証）
+   - 機微情報（医療・家族連絡先等）は localStorage に保存しない
+   - 一覧/検索用の roster（id/氏名/ふりがな/居室/介護度）のみ端末キャッシュ
+   - 描画は全て esc() でエスケープ（XSS防止）。保存はホワイトリスト方式
+   ─ 他アプリ連携用 API（GAS）─
+     POST {action:'getRoster', token[, since]}       → 軽量リスト
+     POST {action:'getResident', token, id}          → 個人フル
+     POST {action:'getSection', token, id, section:'medical'}
+       ↑読み取り3つは POST 本文で受ける（合言葉を URL に載せない。GET の読み取りは閉じた・2026-10-17 コメントを実態に合わせた）
+     POST {action:'saveResident', token, record}    → upsert
+     POST {action:'setState', token, id, hospitalized, src} → 入院中フラグだけを部分更新
+     GET  ?action=stateRev（トークン不要）           → {ok:true,rev:N,srev:M} 版数のみ（追い読み用・個人情報ゼロ）
+                                                       rev=自GASの状態版数／srev=排泄記録GASが書いた時刻(meta!A1)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── 設定（端末ローカル。機微情報ではない） ── */
+var CFG_KEY='rmaster_cfg';
+var ROSTER_KEY='rmaster_roster'; // 一覧・検索用のキャッシュ（氏名・居室・介護度・生年月日・身長）。
+                                 // 病名・処方・家族連絡先などは保存しない。事務所端末専用。
+var CFG={url:'', token:'', vmaUrl:''};
+(function loadCfg(){try{var s=localStorage.getItem(CFG_KEY);if(s){var o=JSON.parse(s);CFG.url=o.url||'';CFG.token=o.token||'';CFG.vmaUrl=o.vmaUrl||''}}catch(e){}})();
+/* 使う接続先: 管理者が全端末へ配った値（su-devcfg.js・統合 0080）が先、配っていない時だけこの端末の値。
+   設定の窓の入力欄に出すのは端末の値だけ（配った合言葉は画面に出さない）。訪問診療の URL（vmaUrl）は配らない */
+function rmLocalCfg_(){try{var o=JSON.parse(localStorage.getItem(CFG_KEY)||'{}');return{url:String((o&&o.url)||''),token:String((o&&o.token)||'')}}catch(e){return{url:'',token:''}}}
+function rmDistCfg_(){try{var d=window.SUDevCfg&&window.SUDevCfg.get('master');if(d)return{url:d.url,token:d.token}}catch(e){ /* 部品が無い・壊れている時は端末の値で動く */ }return null}
+(function(){var d=rmDistCfg_();if(d){CFG.url=d.url;CFG.token=d.token}})();
+/* 配った値が後から届いた・変わった時は使う接続先を作り直す（設定の窓を開いている間は触らない＝試しの値を上書きしない） */
+try{if(window.SUDevCfg)window.SUDevCfg.onChange(function(){var m=document.getElementById('mSync');if(m&&m.classList.contains('on'))return;var o=rmDistCfg_()||rmLocalCfg_();CFG.url=o.url;CFG.token=o.token})}catch(e){ /* 部品が無い・壊れている時は端末の値で動く */ }
+
+/* ── 端末の用途（事務所PC専用ガード。全管理系アプリ共通の同一オリジンキー） ──
+   'field'（現場タブレット）の端末では入居者マスタを表示しない（誤操作防止・機微情報の非表示）。
+   未設定/'office' は従来どおり全機能。あくまで運用上の誤操作防止であり厳密な認証ではない。 */
+var DEVICE_KEY='su_device_role';
+function getDeviceRole(){try{return localStorage.getItem(DEVICE_KEY)||'office'}catch(e){return'office'}}
+/* ── 最後に直した人（2026-10-10・監査10月版 第2版 入居者マスタ 第2手）──
+   保存（saveResident）のたびに updatedBy（誰が）と updatedByAt（その保存の updatedAt）を記録に載せる。GAS は記録を丸ごと
+   dataJson に残すので GAS の変更は要らない。★GAS 側の別経路（薬の変更候補の反映など）も updatedAt を進めるため、
+   updatedByAt と updatedAt がずれていたら「その後に別の経路で更新された」と出す（直した人を取り違えない）。
+   ★誰が＝ログイン中（su-auth で ok）ならメール全体、確かめられない時は「未確認」（2026-10-13）。正本は GAS が証明を確かめた値（master.gs の stampMasterEditor_）。
+   起動時・別タブでのログイン/ログアウト・画面に戻った時に取り直し、世代番号で遅れた結果を捨てる。 */
+var rmWhoAcct_='', rmWhoGen_=0;
+function rmWho_(){ return rmWhoAcct_ || '未確認'; }   // 2026-10-13: ログイン中はメール全体・それ以外は「未確認」（正本は GAS が確かめた値）
+function rmWhoLabel_(st){
+  if(!st || ['ok','mfa_verify','mfa_enroll'].indexOf(st.status)<0 || !st.email) return '';
+  return String(st.email).trim().toLowerCase().slice(0,120);   // 表示名（画面側の名前）は使わない
+}
+/* ログインの証明（Supabase の access_token）を取り出す（2026-10-13・代表者の依頼）。GAS（master.gs の stampMasterEditor_）が
+   Supabase の my_account で確かめ、詳細画面の保存の「最後に直した人」を決める（画面が送った名前は使わない）。
+   ログインしていない・取り出せない・3秒で返らない時は ''（GAS は「未確認」と記録する）。証明は端末に控えない */
+function rmAccessToken_(){
+  if(typeof mcHasLogin_!=='function' || !mcHasLogin_()) return Promise.resolve('');
+  var get=msAuthLoad_().then(function(){ return (window.SUAuth && typeof window.SUAuth.client==='function') ? window.SUAuth.client().auth.getSession() : null; })
+    .then(function(r){ return (r && r.data && r.data.session && r.data.session.access_token) || ''; })['catch'](function(){ return ''; });
+  return Promise.race([get, new Promise(function(ok){ setTimeout(function(){ ok(''); }, 3000); })]);
+}
+function rmResolveWho_(){
+  var gen=++rmWhoGen_;
+  if(typeof mcHasLogin_!=='function' || !mcHasLogin_()){ rmWhoAcct_=''; return; }
+  msAuthLoad_().then(function(){ return window.SUAuth ? window.SUAuth.check() : null; }).then(function(st){
+    if(gen!==rmWhoGen_) return;
+    if(!st || st.status==='error') return;   // 確かめられなかった＝前の値のまま
+    rmWhoAcct_=rmWhoLabel_(st);
+  }).catch(function(){});
+}
+function rmEditedFmt_(iso){
+  var d=new Date(iso); if(isNaN(d.getTime())) return '';
+  function p2(n){ return ('0'+n).slice(-2); }
+  return d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate()+' '+p2(d.getHours())+':'+p2(d.getMinutes());
+}
+function rmEditedHtml_(r){
+  if(!r) return '';
+  var at=rmEditedFmt_(r.updatedAt), byAt=rmEditedFmt_(r.updatedByAt), by=String(r.updatedBy==null?'':r.updatedBy).trim().slice(0,60);
+  if(by && byAt){
+    /* ★対象は詳細画面の「保存」だけ。薬の変更候補の反映・一括編集・食形態一覧・訪問診療からの定期薬の更新は
+       updatedAt だけを進める（直した人の印は触らない・2026-11-11 から一括編集・食形態一覧・定期薬も進める）ので、
+       ここには「その後…」として出る。入院・退院の切り替え（setState）・排泄記録GAS・医療支援経過への転記（setMedLog）は
+       updatedAt を進めないので注記で断る（審査の指摘・言い切らない。支援経過の取り込み・介護度の履歴の初期作成も 2026-11-11 から進める）。updatedAt の方が1秒以上新しい時だけ「その後…」を添える */
+    var t='詳細画面の「保存」で最後に直した人：'+esc(by)+'（'+esc(byAt)+'）';
+    var a=new Date(r.updatedAt).getTime(), b=new Date(r.updatedByAt).getTime();
+    if(at && isFinite(a) && isFinite(b) && a-b>=1000) t+='。その後 '+esc(at)+' に、薬の変更候補の反映・一括編集など別の経路で更新されています';
+    return '<p class="rm-edited">'+t+'<span class="rm-edited-note">（入院・退院の切り替えや、経過記録の転記など一部の更新は含みません）</span></p>';
+  }
+  if(at) return '<p class="rm-edited">最後の更新：'+esc(at)+'（誰が直したかの記録はありません）</p>';
+  return '';
+}
+function setDeviceRole(v){
+  try{
+    localStorage.setItem(DEVICE_KEY,v);
+    /* ★現場端末に切り替えたら一覧キャッシュを消す。
+       画面は applyDeviceGuard でブロックされるが、キャッシュを残すと
+       端末内に氏名・生年月日が残り続けるため。
+       ★「開いていた方」の番号も同じ場所で消す（消す責務を2箇所に割らない）。 */
+    if(v==='field'){ localStorage.removeItem(ROSTER_KEY); saveOpenId(null); roster=[]; }
+  }catch(e){ rmNote_('端末の役割', e); }
+}
+/* devGen は「現場用へ切り替わった回数」。applyDeviceGuard がブロックした時にだけ進む
+   （事務所PCのままなら進まない＝これを見る判定は全部いままでどおりに倒れる）。
+   通信を出した時の値を控え、応答が届いた時に違っていたら「切り替えより前に出した通信」として捨てる。
+   devBlocked_ は、いまブロック中か（別タブ経由の切り替えを二重に処理しないため）。
+   rosterPurged_ は、ブロックで名簿（roster）を空にした後、まだサーバーから取り直していない印。
+   立っている間は、空・欠けた名簿から一覧キャッシュと共有名簿を書かない（事務所PCへ戻した直後に、
+   切り替え前の応答が届いて共有名簿が0名・1名に縮むのを止める）。事務所PCのまま使っている間は立たない。 */
+var devGen=0, devBlocked_=false, rosterPurged_=false;
+
+/* ── 家族構成図（ジェノグラム）連携 ──
+   ジェノグラムアプリが保存したサムネイルを、同一オリジンの共有キー su_genograms から読んで
+   「家族構成図」欄に出す（画面・印刷とも）。欄クリックでアプリへ遷移し作成/編集。
+   キーは2種類: [masterId]（マスタから開いた時）と 'name:'+空白除去した氏名（常に書かれる）。
+   ★書き手はジェノグラムアプリのみ。ここは読み取り専用（data-contracts §2）。 */
+var SU_GENO_KEY='su_genograms';
+var GENOGRAM_APP='genogram.html'; // 家系図アプリのパス（用意でき次第ここを合わせる）
+/* 家族構成図のサムネイルを探す。masterId → 氏名 の順に見る（2026-08-12）。
+   ★氏名で探す経路が無いと、ジェノグラムアプリを直接開いて作った図が一切出ない
+     （書き出しが ?resident= 付きの時しか走らなかったため）。
+   ★正規化は空白除去のみ（他アプリの名寄せと同じ作法）。同姓同名は同じ図を指す。
+
+   ★2026-08-13（実害）: masterId のキーに入っている図は、記録側の氏名(rec.name)と必ず突き合わせる。
+     ジェノグラムアプリを ?resident=<この方> 付きで開いたまま【別の方の文書】を保存すると、
+     その masterId のキーに別人の図が入り、この方の欄に他人の家族構成図が出ていた。
+     氏名が食い違う記録・誰のものか確かめられない記録は使わず、氏名キーへ回す。
+     ＝「出さない側」へ倒す。別人の家族を出すより、未作成として出す方が安全。 */
+function getGenogramRec(id,name){
+  try{
+    var raw=localStorage.getItem(SU_GENO_KEY); if(!raw)return null;
+    var m=JSON.parse(raw); if(!m||typeof m!=='object')return null;
+    var nm=String(name==null?'':name).replace(/\s+/g,'');
+    var g=m[String(id)];
+    if(g&&g.image){
+      var rn=String(g.name==null?'':g.name).replace(/\s+/g,'');
+      if(!nm||!rn||rn!==nm) g=null;   // 誰の図か確かめられない／別人の図 → 使わない
+    }
+    if(!(g&&g.image)&&nm) g=m['name:'+nm];
+    return (g&&typeof g.image==='string'&&g.image)?{image:g.image,at:String(g.updatedAt==null?'':g.updatedAt)}:null;
+  }catch(e){return null}
+}
+function getGenogram(id,name){
+  var g=getGenogramRec(id,name);
+  return g?g.image:null;
+}
+/* ── ほかの端末で描いた家族構成図を出す（統合 0056・代表者の決定 2026-11-03）──
+   ★ここから genoPaintBoxes までは入居者マスタ・フェイスシートで【逐語同一】（check/unit/genogram_cloud_test.js が照合する）。
+   ログインの控えがある時だけ geno_thumb_get（その方の masterId）を読み、届いた絵の日時が端末の控えより新しい（または端末に無い）時だけ、
+   その方の画面の家族構成図の枠の中身を差し替える。読んだ絵は端末に保存しない（メモリだけ）。
+   関数が無い（準備前）・ログインなし・断られた時は今までどおり端末の控えだけで出す。 */
+/* geno_thumb_get の応答 {data, error} を分ける（純関数）。絵は JPEG の data URL・100万字以下（共通 DB と同じ上限）・日時が読める時だけ ok */
+function genoCloudKind(r){
+  var e=r&&r.error;
+  if(e){
+    var c=String(e.code==null?'':e.code);
+    if(c==='PGRST202'||c==='42883'||/Could not find the function/.test(String(e.message||''))) return {kind:'nofunc'};
+    if(c==='42501'||/^PGRST30[123]$/.test(c)) return {kind:'denied'};   // 権限が無い・ログインの証明が古い
+    if(!c) return {kind:'line'};                                       // 届かない（番号の無い失敗）
+    return {kind:'fail',code:c.slice(0,20)};
+  }
+  var d=r?r.data:null;
+  if(!d||typeof d!=='object'||d.ok!==true) return (d&&d.error==='badid')?{kind:'empty'}:{kind:'fail',code:(d&&typeof d.error==='string')?d.error.slice(0,20):'shape'};
+  if(d.row==null) return {kind:'empty'};
+  var w=d.row;
+  if(typeof w!=='object'||typeof w.image!=='string'||w.image.indexOf('data:image/jpeg;base64,')!==0||w.image.length>1000000||
+     typeof w.at!=='string'||!isFinite(Date.parse(w.at))) return {kind:'fail',code:'shape'};
+  return {kind:'ok',row:{image:w.image,at:w.at}};
+}
+/* 届いた絵で差し替えるか（純関数）。日時は文字列でなく時刻で比べる（端末は +09:00・データベースは +00:00 で返る）。同じ日時・同じ絵は差し替えない */
+function genoRemoteWins(local,row){
+  if(!row||typeof row.image!=='string'||!row.image) return false;
+  var rt=Date.parse(row.at); if(!isFinite(rt)) return false;
+  if(!local||!local.image) return true;
+  if(local.image===row.image) return false;
+  var lt=Date.parse(local.at);
+  return !isFinite(lt)||rt>lt;
+}
+/* geno_thumb_get を1回読む。例外は外に出さない。authLoad はその画面のログインの部品の読み込み */
+function genoCloudGet(id,authLoad){
+  var has=false;
+  try{ for(var i=0;i<localStorage.length;i++) if(/^sb-[a-z0-9]+-auth-token$/.test(localStorage.key(i)||'')){ has=true; break; } }catch(e){ has=false; }
+  if(!has||id==null||id==='') return Promise.resolve({kind:'nologin'});
+  return Promise.resolve().then(authLoad).then(function(){
+    if(!window.SUAuth||typeof window.SUAuth.client!=='function') return {kind:'line'};
+    return Promise.resolve(window.SUAuth.client().rpc('geno_thumb_get',{p_resident_id:String(id)})).then(genoCloudKind);
+  }).catch(function(){ return {kind:'line'}; });   // 部品を読み込めない（圏外など）＝回線の失敗と同じ扱い
+}
+/* その方の画面の家族構成図の枠（.geno-box・data-geno がその方）の中身だけを、届いた絵に差し替える。差し替えた枠の数を返す */
+function genoPaintBoxes(root,id,name,row){
+  if(!root||!genoRemoteWins(getGenogramRec(id,name),row)) return 0;
+  var n=0, html='<img class="geno-img" src="'+esc(row.image)+'" alt="家族構成図">';
+  Array.prototype.forEach.call(root.querySelectorAll('.geno-box'),function(gb){
+    if(gb.getAttribute('data-geno')!==String(id)) return;
+    gb.innerHTML=html; n++;
+  });
+  return n;
+}
+/* 開いている方の、ほかの端末から届いた家族構成図（{id, row}・メモリだけ。端末には保存しない）。
+   同じ方の描き直しでは取り直さずにこれを使う。別の方を開いた時・現場用へ変わった時に捨てる（統合 0056） */
+var rmGenoMem_=null;
+function rmGenoCloud_(r){
+  if(getDeviceRole()==='field'||!r||r.id==null||r.id==='') return;
+  var id=String(r.id);
+  if(rmGenoMem_&&rmGenoMem_.id===id){ if(rmGenoMem_.row) genoPaintBoxes($('viewBox'),id,r.name,rmGenoMem_.row); return; }
+  var mem={id:id,row:null}; rmGenoMem_=mem;
+  var dg=devGen;
+  genoCloudGet(id,msAuthLoad_).then(function(x){
+    /* 出した時と違う方・現場用へ変わった後に届いた応答は捨てる */
+    if(dg!==devGen||getDeviceRole()==='field'||rmGenoMem_!==mem||!curResident||String(curResident.id)!==id) return;
+    if(x.kind==='fail') rmNote_('geno_thumb_get', x.code);
+    if(x.kind!=='ok') return;
+    mem.row=x.row;
+    genoPaintBoxes($('viewBox'),id,curResident.name,x.row);
+  });
+}
+function openGenogram(id,name){
+  if(id==null)return;
+  location.href=GENOGRAM_APP+'?resident='+encodeURIComponent(id)+(name?'&name='+encodeURIComponent(name):'');
+}
+
+/* ── ユーティリティ ── */
+function $(id){return document.getElementById(id)}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+function toast(m){var t=$('toast');t.textContent=m;t.classList.add('on');clearTimeout(toast._t);toast._t=setTimeout(function(){t.classList.remove('on')},2600)}
+function setSync(txt,cls){var e=$('syncStatus');e.textContent=txt;e.className='sync'+(cls?(' '+cls):'')}
+
+function todayISO(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function fmtJDate(iso){if(!iso)return'';var p=String(iso).slice(0,10).split('-');if(p.length<3)return iso;return p[0]+'年'+parseInt(p[1],10)+'月'+parseInt(p[2],10)+'日'}
+function calcAge(birthISO){if(!birthISO)return'';var b=new Date(birthISO);if(isNaN(b))return'';var n=new Date();var a=n.getFullYear()-b.getFullYear();var m=n.getMonth()-b.getMonth();if(m<0||(m===0&&n.getDate()<b.getDate()))a--;return a>=0&&a<140?a:''}
+function calcBMI(h,w){h=parseFloat(h);w=parseFloat(w);if(!h||!w)return'';var b=w/Math.pow(h/100,2);return isFinite(b)?b.toFixed(1):''}
+/* ISO(YYYY-MM-DD) を【ローカルの0時】の Date にする。不正なら null。
+   new Date('2020-04-01') は UTC 0時になるため、ローカルの「今」と引き算すると時差ぶんずれる */
+function csvLocalDate(iso){
+  var p=parseIsoDate(iso);
+  if(p) return new Date(p.y,p.m-1,p.d);
+  var d=new Date(iso);            // 非ISO（旧データの表記ゆれ）は従来どおり解釈する
+  return isNaN(d)?null:d;
+}
+/* 入居期間（日数）。★2026-08-15 修正: 開始日を new Date('YYYY-MM-DD') で作ると UTC 0時になり、
+   「今」はローカル時刻なので日本時間の 0〜9時だけ結果が1日少なくなっていた（フェイスシートと
+   食い違う）。両方ともローカルの0時基準に揃える。 */
+function calcStayDays(adm,dis){if(!adm)return'';var a=csvLocalDate(adm);if(!a)return'';var end=dis?csvLocalDate(dis):new Date();if(!end)return'';var d=Math.floor((end-a)/86400000);return d>=0?d:''}
+function copayLabel(v){return v?(String(v).replace(/[^0-9]/g,'')+'割'):''}
+
+/* ── マスタ項目スキーマ（編集フォーム生成・連携の単一定義） ──
+   フェイスシート拡張（2026）：施設運用スコープの項目を追加。新項目は全て GAS dataJson に
+   自動収容されるためスプレッドシートの列変更は不要。su_residents_common には一切載せない。 */
+var SECTIONS={
+  /* hospitalized / hospitalizedAt は編集フォームには出さない。詳細画面の「入院/復帰」トグルと
+     GAS の setState だけが書き手（多端末で同時に触るため部分更新の専用経路に固定する）。 */
+  basic:['gender','birthDate','phone','careLevel','careCertStart','careCertEnd','certDate','copayRate','welfare',
+         'insuredNo','insurer','medicalInsurance','disabilityCert','guardianship',
+         'admissionDate','dischargeDate','deathDate','height','weight','adl','dementia',
+         'hospitalized','hospitalizedAt'],
+  careHistory:['careLevelHistory'],
+  note:['preAdmission','postDischarge','dischargeTo'],
+  family:['family'],
+  consents:['consents'],
+  office:['careOffice','careManager','careOfficeTel','careOfficeFax','welfareEquip','welfareEquipStaff','welfareEquipTel',
+          'serviceManager','prevCareOffice','prevCareManager','dayUse','rhythm'],
+  medical:['hospital','doctor','hospitalTel','hospitalFax','emergencyHospital','emergencyHospitalTel','visitDay',
+           'pharmacy','pharmacyTel','pharmacyFax',
+           'allergy','infections','bloodType','medicalCare','vaccinations','disclosure',
+           'currentDiseases','sideEffects','pastHistory','medsRegular','medsNotes','problemBehavior'],
+  meds:['medMgmt','medAssist','highRiskMeds','formAdjust','medRefusal','medsPrn','medsPastLog'],
+  adl_detail:['swallow','water','excretion','bath','dress','mobility','transfer','bedriddenRank','pressureUlcer','vision','hearing'],
+  cognitive:['dementiaType','cogScore','careHints','psychHistory'],
+  comm:['preferredName','commMethod','commNotes'],
+  meal:['mealStaple','mealSide','mealForm','thickener','denture','mealNote'],
+  person:['personality','hobby','foodPref','lifePrefs','smoking','drinking'],
+  history:['lifeHistory','values'],
+  wishes:['complaint','wishSelf','wishFamily','goal','acp','dnar','strengths'],
+  support:['supportLog'],
+  medSupport:['medicalSupportLog']
+  /* ★入居者基本情報（外部様式）の18項目は、ここにも GAS の SECTIONS にも載せない。
+     載せる必要が無い＝どの getSection からも読まれないため（呼ばれているのは
+     facesheet_safe と meds_view の2つだけ・2026-08-12 実測）。
+     保存は saveResident が dataJson を丸ごと書き、事務所PCの表示は getResident が
+     丸ごと返すので、GAS を1行も変えずに新項目が往復する。
+     現場タブレット（facesheet_safe の20項目）へは意図的に出さない
+     ＝要配慮情報を現場端末のキャッシュに増やさない（personal-info.md）。 */
+};
+// 現場タブレット（field）で閲覧してよい「安全情報のみ」の正準リスト。
+// GAS getSection 'facesheet_safe' と facesheet.html の field 限定ビューが共有する契約。
+// 家族連絡先・経済・詳細病歴・服薬詳細は含めない。
+// 服薬管理3項目（管理方法・介助度・拒否）は現場ケアに直結するため安全情報に含める（2026-07 決定）。
+// hospitalized（入院中の真偽のみ・病名等は含めない）は現場の見落とし防止のため追加（2026-08）。
+// この20項目は resident-master.html / facesheet.html / gas master.gs の facesheet_safe の3箇所で一致必須。
+// 2026-08-12: 様式化した8項目（要配慮でなく現場のケアに直結するもの）を追加。28項目。
+// 2026-10-22（代表者の決定）: 選んだアレルゲン・禁食の符号（allergenTags・forbiddenTags）を追加。30項目。
+// ★病名・サービス事業所・備考・同意は含めない（要配慮情報を現場端末に増やさない）。
+var SAFE_FIELDS=['name','kana','room','gender','preferredName','allergy','infections','medicalCare',
+  'formAdjust','careHints','mealForm','thickener','swallow','denture','mobility','problemBehavior',
+  'medMgmt','medAssist','medRefusal','hospitalized',
+  'adlGrid','moveAid','excreteWay','bathPlace','medLevel','medExists','bpsd','night',
+  'allergenTags','forbiddenTags'];
+/* ALG-TAGS-BEGIN ══ アレルゲン・禁食の選択（2026-10-22 代表者の決定）══
+   ★この印の間は resident-master.html と facesheet.html で【逐語同一】（check/unit/allergen_tags_test.js が照合）。
+   保存は dataJson の allergenTags・forbiddenTags（符号の文字列の配列）。名前は保存しない（符号→名前はここで引く）。
+   アレルゲンは表示義務の8品目だけ。符号・名前・まとまりは決定どおり。変える時は2画面を同時に直す。 */
+var ALG_ALLERGENS=[['ebi','えび'],['kani','かに'],['kurumi','くるみ'],['komugi','小麦'],['soba','そば'],
+  ['tamago','卵'],['nyu','乳'],['rakkasei','落花生']];
+var ALG_FORBIDDEN_GROUPS=[
+  ['薬との飲み合わせ',[['grapefruit','グレープフルーツ'],['vitk','納豆・青汁など（ビタミンK）'],['dairy','牛乳などの乳製品'],
+    ['alcohol','アルコール'],['caffeine','カフェイン']]],
+  ['食事の制限',[['salt','塩分'],['sugar','糖分'],['potassium','カリウム'],['protein','たんぱく質'],['water','水分']]],
+  ['その他',[['raw','生もの'],['religion','宗教・信条']]]];
+/* 禁食の符号を1列に並べた一覧（まとまりの順） */
+function algForbiddenList_(){
+  var out=[]; ALG_FORBIDDEN_GROUPS.forEach(function(g){ g[1].forEach(function(p){ out.push(p); }); }); return out;
+}
+/* 既知の符号だけを一覧の順に残す（未知の符号・重複・文字列でないものは捨てる）。配列でなければ [] */
+function algPick_(codes,list){
+  var on={}; if(Array.isArray(codes)) codes.forEach(function(c){ if(typeof c==='string') on[c]=1; });
+  return list.filter(function(p){ return on[p[0]]===1; }).map(function(p){ return p[0]; });
+}
+/* 符号→名前（一覧の順）。未知の符号は出さない */
+function algNames_(codes,list){
+  var nm={}; list.forEach(function(p){ nm[p[0]]=p[1]; });
+  return algPick_(codes,list).map(function(c){ return nm[c]; });
+}
+/* 画面に出す行（選んだ品目が無ければ []）。例: ['アレルゲン：えび・卵','禁食：塩分'] */
+function algTagLines_(r){
+  r=r||{};
+  var a=algNames_(r.allergenTags,ALG_ALLERGENS), f=algNames_(r.forbiddenTags,algForbiddenList_());
+  return (a.length?['アレルゲン：'+a.join('・')]:[]).concat(f.length?['禁食：'+f.join('・')]:[]);
+}
+/* ALG-TAGS-END */
+/* 画面が知らない既存の符号を、選んだ符号の後ろに残す（形の崩れた値・重複は捨てる） */
+function algKeepUnknown_(picked,prev,list){
+  var known={}; list.forEach(function(p){ known[p[0]]=1; });
+  var out=picked.slice(), seen={}; out.forEach(function(c){ seen[c]=1; });
+  if(Array.isArray(prev)) prev.forEach(function(c){
+    if(typeof c==='string' && /^[a-z0-9_-]{1,30}$/.test(c) && !known[c] && !seen[c]){ out.push(c); seen[c]=1; }
+  });
+  return out;
+}
+// 対象アプリ（各ケアアプリに表示・記録する対象者かのフラグ）
+// 既定は全てON（介護現場では対象者の取りこぼしを避けるため。対象外を明示的に外す運用）
+var APP_TARGETS=[['excretion','排泄記録'],['weight','体重記録'],['schedule','週間計画']];
+function defaultTargetApps(){return APP_TARGETS.map(function(p){return p[0]})}
+// 保存時に許可するキー（ホワイトリスト）
+var ALLOWED_KEYS=['id','name','kana','room','gender','careLevel','active','updatedAt','targetApps',
+  'birthDate','phone','careCertStart','careCertEnd','certDate','copayRate','welfare',
+  'insuredNo','insurer','medicalInsurance','disabilityCert','guardianship','careLevelHistory',
+  'admissionDate','dischargeDate','deathDate','height','weight','adl','dementia',
+  'preAdmission','postDischarge','dischargeTo','family','consents',
+  'careOffice','careManager','careOfficeTel','careOfficeFax',
+  'welfareEquip','welfareEquipStaff','welfareEquipTel','serviceManager','prevCareOffice','prevCareManager','dayUse','rhythm',
+  'hospital','doctor','hospitalTel','hospitalFax','emergencyHospital','emergencyHospitalTel','visitDay',
+  'pharmacy','pharmacyTel','pharmacyFax',
+  'allergy','infections','bloodType','medicalCare','vaccinations','disclosure',
+  'currentDiseases','sideEffects','pastHistory','medsRegular','medsNotes','problemBehavior',
+  'medMgmt','medAssist','highRiskMeds','formAdjust','medRefusal','medsPrn','medsPastLog',
+  'swallow','water','excretion','bath','dress','mobility','transfer','bedriddenRank','pressureUlcer','vision','hearing',
+  'dementiaType','cogScore','careHints','psychHistory',
+  'preferredName','commMethod','commNotes',
+  'mealStaple','mealSide','mealForm','thickener','denture','mealNote',
+  'personality','hobby','foodPref','lifePrefs','smoking','drinking',
+  'lifeHistory','values',
+  'complaint','wishSelf','wishFamily','goal','acp','dnar','strengths',
+  'supportLog','medicalSupportLog','xref',
+  // 状態（入院中）。書き手は setState だけだが、GAS から戻った record を素通しできるよう許可する。
+  // ★編集画面の保存では collectForm がこの直前で3キーを外すので、ここに載っていても送られない（GAS が保存時点の値を残す・2026-10-02）。
+  //   一覧から消していないのは、外す処理（collectForm の delete）を消した時に入院の値ごと消えないための保険
+  'hospitalized','hospitalizedAt','stateLog',
+  /* 入居者基本情報（外部様式）の18項目（2026-08-12 追加）。既存キーと併存させ、置き換えない */
+  'diseases','services','adlGrid','moveAid','bathPlace','excreteWay',
+  'medLevel','medExists','medContent','commLevel',
+  'dementiaExists','shortMemory','decisionAbility','communicateAbility','bpsd','night',
+  'nightSleepMed','formNote','infoConsent','bfSaved',
+  // 移行元スプレッドシートにあったがマスタに対応項目が無い値の原文退避。
+  // 2026-08-08 から詳細画面の「移行時の退避」欄に読み取り専用で表示する（印刷には出さない）。
+  // 入力欄は作らないため、保存時はここを通して引き継ぐ（下の collectForm）。
+  // （介護保険証の有効期限・寝具リース・享年など）
+  'unmappedRaw',
+  /* 印刷しない欄（2026-08-17 追加）。{secs:[欄のキー,…]}。
+     ★ここに載せないと、編集画面でチェックしても保存の最後のホワイトリストで落ちる（無言で効かない） */
+  'printHide',
+  /* 選んだアレルゲン・禁食の符号の配列（2026-10-22 代表者の決定）。上の ALG-TAGS の一覧で照合して送る */
+  'allergenTags','forbiddenTags'];
+var RHYTHM_KEYS=[['wake','起床'],['breakfast','朝食'],['lunch','昼食'],['snack','おやつ'],['dinner','夕食'],['sleep','就寝']];
+/* 食事の時刻は施設共通（2026-08-12 指示）。起床・就寝はその方ごとなので既定を置かない。
+   ★これは「その方の記録が無いときに施設の標準を出す」重ね合わせ。保存済みの値があれば必ずそちらが勝つ。 */
+var RHYTHM_DEFAULTS={breakfast:'08:00', lunch:'12:00', snack:'15:00', dinner:'17:30'};
+/* MEAL-TIMES-BEGIN ══ 食事の時刻の施設の既定（2026-11-02・品質改善 第3期 便8）══
+   入居者マスタとフェイスシートで一字一句同じ（試験 meal_times_facility が確かめる）。
+   ・既定は上の RHYTHM_DEFAULTS（今の値のまま）。施設情報（facility-profile.json の mealTimes）に
+     breakfast・lunch・snack・dinner の4つが全部「00:00〜23:59 の HH:MM」で書いてあり、ほかの項目が無い時だけ差し替える
+   ・1つでも崩れていれば（欠け・知らない項目・文字でない・形の違い）丸ごと捨てて既定を使う
+   ・描くたびに読む（施設情報が後から届いた時に、届く前の既定を握ったままにしない）
+   ・入居者ごとに保存した時刻が勝つ重ね合わせは呼ぶ側のまま（変えていない） */
+var MEAL_TIME_KEYS=['breakfast','lunch','snack','dinner'];
+function mealTimeDefaults_(){
+  var d={}, s=null, out={}, n=0, ok=true, k;
+  MEAL_TIME_KEYS.forEach(function(x){ d[x]=RHYTHM_DEFAULTS[x]; });
+  try{ s=(window.SUFacility&&typeof SUFacility.section==='function')?SUFacility.section('mealTimes'):null; }catch(e){ s=null; /* 捨ててよい: 読めなければ今の既定で描く */ }
+  if(!s||typeof s!=='object'||Array.isArray(s)) return d;
+  for(k in s){
+    if(!Object.prototype.hasOwnProperty.call(s,k)) continue;
+    n++;
+    if(MEAL_TIME_KEYS.indexOf(k)<0){ ok=false; break; }
+    var v=s[k];
+    if(typeof v!=='string'||!/^\d{2}:\d{2}$/.test(v)||Number(v.slice(0,2))>23||Number(v.slice(3))>59){ ok=false; break; }
+    out[k]=v;
+  }
+  if(!ok||n!==MEAL_TIME_KEYS.length) return d;
+  return out;
+}
+/* MEAL-TIMES-END */
+/* 施設情報が後から届いた時に、開いている方の詳細画面を1回だけ描き直す（2026-11-02・便8）。
+   ★端末に施設情報の控えが無く応答が遅いと、詳細画面の生活リズムは届く前の既定（画面の既定）で描き終わり、
+     「🖨️ 全項目を印刷」はその画面をそのまま刷る。1枚にまとめた印刷・その方らしさの紙は刷る直前に組むので、ここでは触らない。
+   ★描いた時と既定が違う時だけ描き直す（施設情報に mealTimes が無ければ印は同じ＝何もしない＝画面・紙は変わらない）。
+   ★詳細画面を開いている時だけ（編集画面は入力中の値を消さないため描き直さない）。現場端末では何もしない。
+   ★印刷の準備中（body.su-printing）は描き直さず、終わるのを待ってから1回だけ（居室一覧の rmRoomOnFacility_ と同じ65秒まで） */
+var rmMealSig_=null;
+function rmMealOnFacility_(tries){
+  if(getDeviceRole()==='field'||!curResident||rmMealSig_===null) return;
+  var sc=$('sc-view'); if(!sc||!sc.classList.contains('on')) return;
+  if(document.body&&document.body.classList.contains('su-printing')){
+    if((tries||0)<130) setTimeout(function(){ rmMealOnFacility_((tries||0)+1); },500);
+    return;
+  }
+  var sig=null; try{ sig=JSON.stringify(mealTimeDefaults_()); }catch(e){ sig=null; }
+  if(sig===null||sig===rmMealSig_) return;
+  try{ renderView(curResident); }catch(e){ try{ if(window.SUErrors&&typeof window.SUErrors.note==='function') window.SUErrors.note('描き直しの失敗', String((e&&e.name)||'Error').slice(0,40), 'master:meal.rerender'); }catch(_){ /* 捨ててよい: 記録できなくても続きの動きは変えない */ } }
+}
+document.addEventListener('DOMContentLoaded',function(){
+  try{ if(window.SUFacility&&typeof SUFacility.onReady==='function') SUFacility.onReady(function(){ setTimeout(rmMealOnFacility_,0); }); }catch(e){ /* 捨ててよい: 読み口が無ければ既定のまま描く（描き直す相手が無い） */ }
+});
+function rhythmOf(r){
+  var src=(r&&r.rhythm&&typeof r.rhythm==='object')?r.rhythm:{}, out={}, md=mealTimeDefaults_();
+  RHYTHM_KEYS.forEach(function(p){
+    var v=String(src[p[0]]==null?'':src[p[0]]).trim();
+    out[p[0]] = v || md[p[0]] || '';
+  });
+  return out;
+}
+// デイ利用日（曜日ごとの利用時間帯）。rhythm{} と同型のオブジェクトで保持する。
+var DAYUSE_KEYS=[['mon','月'],['tue','火'],['wed','水'],['thu','木'],['fri','金'],['sat','土']];
+// 同意・確認書。郵便物開封／主治医・薬管理は「有無」でなく取扱方法の文言が入るため全て文字列で受ける。
+var CONSENT_KEYS=[['photo','写真使用'],['supplies','消耗品提供'],['moneyMgmt','金銭管理'],['mailOpen','郵便物開封'],
+  ['visitPolicy','面会'],['doctorMed','主治医・薬管理'],['healthFood','健康管理・差し入れ'],['nightCheck','夜間安否']];
+
+/* ═══════════ 入居者基本情報（外部様式）の選択肢 ═══════════
+   2026-08-12 管理者の指示で、外部からいただく「入居者基本情報」の様式に合わせて
+   チェック式へ差し替えた。転記の手間を減らし、画面と紙をコンパクトにするのが目的。
+   ★既存キー（mobility・excretion・medMgmt 等）は1つも消していない。
+     入力欄を新様式へ移しただけで、値は「移行前の記載」として読み取り専用で残る。
+     消すと訪問診療アプリ・現場タブレットの安全情報20項目・一括編集が壊れる。 */
+var BF_LEVELS=[['self','自立'],['watch','見守り'],['part','一部介助'],['full','全介助']];
+var BF_ADL_ROWS=[['move','移動方法'],['oral','口腔清潔'],['meal','食　事'],['bath','入　浴'],['excrete','排　泄']];
+/* 様式の並び順（左列→中列→右列）をそのまま保つ。印刷が原本と同じ見た目になる */
+var BF_SERVICES=[['homeCare','訪問介護'],['homeBath','訪問入浴'],['shortStay','短期入所'],
+  ['homeNurse','訪問看護'],['dayCare','通所介護'],['dayRehab','通所リハ'],
+  ['homeRehab','訪問リハ'],['smallMulti','小規模多機能'],['groupHome','グループホーム'],
+  ['tokuyo','特養'],['roken','老健'],['svcOther','その他'],
+  ['welfareRent','福祉用具貸与']];
+var BF_MOVE_AID=[['walker','歩行器'],['wheelchair','車いす']];
+var BF_BATH_PLACE=[['home','自宅（浴室）'],['visitBath','訪問入浴'],['dayBath','通所系'],['wipe','清拭のみ']];
+var BF_EXCRETE_WAY=[['toilet','トイレ'],['pwc','PWC'],['catheter','膀胱留置カテーテル'],['selfCath','自己導尿'],['diaper','オムツ']];
+var BF_BPSD=[['hallu','幻視・幻聴'],['unrest','不穏'],['delusion','妄想'],['violence','暴言・暴力'],
+  ['dayNight','昼夜逆転'],['unclean','不潔行為'],['wander','徘徊'],['resist','介護への抵抗'],['bpsdOther','その他']];
+var BF_NIGHT=[['good','良眠'],['bad','不眠'],['nightOther','その他']];
+var BF_DEMENTIA_RANKS=['','自立','Ⅰ','Ⅱa','Ⅱb','Ⅲa','Ⅲb','Ⅳ','M'];
+var BF_SHORT_MEMORY=['','問題なし','問題あり'];
+var BF_DECISION=['','自立','いくらか困難','見守りが必要','判断できない'];
+var BF_TRANSMIT=['','伝えられる','いくらか困難','具体的要求に限られる','伝えられない'];
+var BF_MED_CONTENT=['','別紙参照','薬局へ確認してください'];
+var BF_YESNO=['','有','無'];
+var BF_COMM_LEVEL=['','自立','配慮が必要'];
+var BF_MAX_DISEASES=8;   // 病名表の行数上限（誤操作で無限に増やさない）
+
+/* ═══════════ API（トークン付き・タイムアウト・エラー処理） ═══════════ */
+/* ★通信の待ち時間（2026-08-18 見直し）。
+   従来 apiGet=12秒 / apiPost=15秒だったが、入居者マスタのGASは書き込み（保存・入院切替・
+   一括編集・定期薬連携）で LockService のロックを【最大20秒】待つ設計。つまり誰かが保存中だと
+   クライアント側が先に切れる＝混み合う朝ほど「取得に失敗しました: タイムアウト」が必ず出ていた。
+   ロック待ち20秒＋処理時間を吸収できる長さにする。GAS の実行上限は6分なので、この程度は許容。
+   ★これは症状の緩和であって、GAS の同時実行が詰まること自体は解消しない。
+     読み取りだけ自動で1回やり直す（apiGetRetry）と、失敗画面に再試行ボタンを併せて置く。 */
+/* ★2026-09-23: 合言葉を URL に載せないため POST 本文へ。GAS の doPost は読み取り action を受ける（gas/README.md）。
+   値は GET の時と同じく文字列にして送る。関数名・待ち時間・判定は従来どおり。 */
+function apiGet(params,timeoutMs){
+  if(!CFG.url)return Promise.reject(new Error('NO_URL'));
+  var body={};
+  Object.keys(params).forEach(function(k){body[k]=String(params[k])});
+  body.token=CFG.token;
+  /* ログインしている時だけ証明を添える（su-gas-auth.js・GAS が READ_ROLE_CHECK の時に役割を確かめる・代表者の決定 2026-10-29） */
+  return (window.SUGasAuth?window.SUGasAuth.addTo(body):Promise.resolve(body)).then(function(b){
+    return fetchWithTimeout(CFG.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(b)},timeoutMs||25000);
+  }).then(parseJson);
+}
+/* ★投げない版。`{ok:false, error, detail}` を throw せずそのまま返す。
+   既存の apiPost は error があれば必ず throw するため、savePartial の
+   「誰が・なぜ弾かれたか」（detail）と「1文字も書いていない」という確定情報が届かない。
+   既存の呼び出し（saveResident / setState）の挙動は変えないため、別関数にする。 */
+function apiPostRaw(body,timeoutMs){
+  if(!CFG.url)return Promise.reject(new Error('NO_URL'));
+  body.token=CFG.token;
+  /* 薬の変更候補（medCand）だけ、ログインしている時に証明を添える（su-gas-auth.js・代表者の決定 2026-10-29）。
+     ほかの書き込み（savePartial・saveMealList）の本文は今までどおり */
+  var sendP=(body.action==='medCand'&&window.SUGasAuth)?window.SUGasAuth.addTo(body):Promise.resolve(body);
+  return sendP.then(function(b){
+    return fetchWithTimeout(CFG.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(b)},timeoutMs||35000);
+  })
+    .then(function(r){ return r.text().then(function(t){
+      var d; try{ d=JSON.parse(t); }catch(e){ throw new Error('応答が不正です'); }
+      if(d && d.ok===undefined && d.error) throw new Error(d.error);   // ok を持たない応答は従来どおり
+      return d;
+    })});
+}
+function apiPost(body,timeoutMs){
+  if(!CFG.url)return Promise.reject(new Error('NO_URL'));
+  body.token=CFG.token;
+  // text/plain で送信（GAS の CORS プリフライト回避）
+  return fetchWithTimeout(CFG.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)},timeoutMs||35000).then(parseJson);
+}
+/* 入居者マスタの正本を Supabase へ切り替えた後は、保存を切り替えの口（su-res-read.js の write）がサーバーの小さなプログラム（res-write）へ送る
+   （正本の切り替えの手順5・2026-10-29 代表者の決定 案1）。スイッチ master_live が切の間・部品が無い時は、今までの apiPost をそのまま呼ぶ（本文・送り方は1バイトも変えない） */
+var apiPostGas_=apiPost;
+apiPost=function(body,timeoutMs){return window.SUResRead?window.SUResRead.write(body,function(){return apiPostGas_(body,timeoutMs)},{screen:'resident-master',parse:'throw'}):apiPostGas_(body,timeoutMs)};
+/* 入居者マスタの正本を Supabase へ切り替えた後は、保存を切り替えの口（su-res-read.js の write）がサーバーの小さなプログラム（res-write）へ送る
+   （正本の切り替えの手順5・2026-10-29 代表者の決定 案1）。スイッチ master_live が切の間・部品が無い時は、今までの apiPostRaw をそのまま呼ぶ（本文・送り方は1バイトも変えない） */
+var apiPostRawGas_=apiPostRaw;
+apiPostRaw=function(body,timeoutMs){return window.SUResRead?window.SUResRead.write(body,function(){return apiPostRawGas_(body,timeoutMs)},{screen:'resident-master',parse:'raw'}):apiPostRawGas_(body,timeoutMs)};
+/* 入居者マスタの正本を Supabase へ切り替えた後は、読み取りを切り替えの口（su-res-read.js）が Supabase から読む（正本の切り替えの手順4・2026-10-29）。
+   スイッチ master_live が切の間・部品が無い時は、今までの apiGet をそのまま呼ぶ（本文・送り方は1バイトも変えない）。読み取り以外の本文はそのまま通す */
+var apiGetGas_=apiGet;
+apiGet=function(params,timeoutMs){return window.SUResRead?window.SUResRead.call(params,function(){return apiGetGas_(params,timeoutMs)},{screen:'resident-master'}):apiGetGas_(params,timeoutMs)};
+/* 接続先・合言葉の無い端末でも、ログインして新しい保存先で使える時（2026-11-08 代表者「端末ごとの設定を極限までなくす」）。
+   起動の時に SUResRead.liveReady で1回だけ確かめる（端末には何も書かない）。使える時（RM_LIVE）は、上の読み取り・保存の口（SUResRead を通る）へ
+   接続先なしで送る＝Google へは送らない。部品が無い・分からない・時間切れの時は今までどおり（接続先の設定を求める）。
+   Google へ直接行く処理（全項目の写し・薬効辞書・薬の変更候補・薬情の取り込み）は、今までどおり接続先がある時だけ */
+var RM_LIVE=false, rmLiveTried_=false, rmLiveP_=null;
+function rmOn_(){ return !!CFG.url||RM_LIVE; }
+function rmProbeLive_(){
+  if(rmLiveP_) return rmLiveP_;   /* 確かめている間に呼び直されても、確かめは1本だけ */
+  var p=(window.SUResRead&&typeof window.SUResRead.liveReady==='function')?Promise.resolve().then(function(){ return window.SUResRead.liveReady(); }):Promise.resolve(false);
+  rmLiveP_=p.then(function(v){ return v===true; },function(){ return false; }).then(function(v){
+    RM_LIVE=v; rmLiveTried_=true;
+    if(v&&!CFG.url){ try{ if(window.SUCfgHint&&typeof window.SUCfgHint.quiet==='function') window.SUCfgHint.quiet(); }catch(e){ /* 案内の帯の失敗は止めない */ } }
+    return v;
+  });
+  return rmLiveP_;
+}
+/* 接続先の無い事務所PCは、確かめ終わってから fn を進める（確かめている間は一覧の「読み込み中…」のまま。現場の端末は確かめない） */
+function rmLiveGate_(fn){
+  if(CFG.url||rmLiveTried_||getDeviceRole()==='field'){ fn(); return; }
+  setSync('同期中…');
+  rmProbeLive_().then(function(){ if(getDeviceRole()==='field') return; fn(); });
+}
+/* 読み取りだけ1回やり直す。★書き込みは絶対に再試行しない（同じ保存が2回通り、
+   他端末の変更を巻き戻す・支援経過が二重になる等の実害が出る）。
+   間隔を1.2秒空けるのは、GAS の同時実行が詰まっている瞬間を外すため。 */
+function apiGetRetry(params,timeoutMs,tries){
+  tries=tries||2;
+  return apiGet(params,timeoutMs).catch(function(e){
+    if(tries<=1)throw e;
+    return new Promise(function(r){setTimeout(r,1200)}).then(function(){
+      return apiGetRetry(params,timeoutMs,tries-1);
+    });
+  });
+}
+function fetchWithTimeout(url,opt,ms){
+  return new Promise(function(res,rej){
+    var ctl=('AbortController'in window)?new AbortController():null;
+    if(ctl)opt.signal=ctl.signal;
+    var t=setTimeout(function(){if(ctl)ctl.abort();rej(new Error('タイムアウト'))},ms);
+    fetch(url,opt).then(function(r){clearTimeout(t);res(r)}).catch(function(e){clearTimeout(t);rej(e)});
+  });
+}
+/* 入居者マスタの全項目の写し（統合 0034・代表者の決定 2026-10-29「自動で写す」）: 管理者が事務所PCで開いて一覧を読めた時、
+   その日まだ写していなければ、20秒後に裏で全員分を写す（su-res-full.js・1ページで1回だけ・同時に3本まで読む）。
+   全項目一致なら何も出さず、違い・止まった時だけ見出しの下に帯で知らせる（画面だけ・印刷しない）。
+   管理者以外・ログインしていない・現場端末では何もしない。用途が変わった後（devGen）・画面が隠れている時は始めない。
+   Google へは読むだけで、送り方は apiGet と同じ形（POST・text/plain・合言葉は本文・ログイン中は証明を添える）。
+   断りの応答（ok:false）も写しの部品が見分けるので、apiGet の parseJson（error で投げる）は通さない */
+var rmResFullDone_=false;
+function rmResFullAuto_(){
+  if(rmResFullDone_||!window.SUResFull||getDeviceRole()==='field'||!CFG.url)return;
+  rmResFullDone_=true;
+  var dg=devGen;
+  setTimeout(function(){
+    if(dg!==devGen||getDeviceRole()==='field'||document.hidden)return;
+    SUResFull.auto({gas:function(b){
+      var body=Object.assign({},b,{token:CFG.token});
+      return (window.SUGasAuth?window.SUGasAuth.addTo(body):Promise.resolve(body)).then(function(x){
+        return fetchWithTimeout(CFG.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(x)},60000);
+      }).then(function(r){return r.json()});
+    }}).then(function(res){
+      if(dg!==devGen||getDeviceRole()==='field')return;
+      var t=SUResFull.autoNote(res), el=document.getElementById('rfBand');
+      if(!el||!t)return;
+      el.textContent=t; el.hidden=false;
+    }).catch(function(e){ rmNote_('全項目の写し（自動）', e); });
+  },20000);
+}
+function parseJson(r){return r.text().then(function(t){var d;try{d=JSON.parse(t)}catch(e){throw new Error('応答が不正です')}if(d&&d.error)throw new Error(d.error);return d})}
+/* 職員に見せる断りの文（2026-11-02 品質改善 便4）: 技術の言葉（GAS・トークン・英語の例外文）を画面に出さない。
+   ・接続先が無い時の文 … 「何が足りないか」と「次にすること」を出す（入居調整の案内と同じ形）。一部の試験が関数だけを切り出して
+     動かすため、定数にせず各所に同じ文を書く（文は一字一句同じにする）
+   ・RM_SRV_OLD    … Google の受け口（入居者マスタの GAS）が古い時。職員がすること（管理者に連絡）と管理者がすることを分ける
+   ・rmErrWords_   … 例外の文を職員向けの短い言葉にする。元の文は動作記録（rmNote_）へ残す。
+     ラテン文字（Google・URL を除く）を含む文は英語の例外文・内部の印とみなして出さない。日本語だけの文（サーバーの断り）はそのまま。
+     ★通信の失敗（Failed to fetch・Load failed・時間切れ・中断など）は記録に流さない（圏外・現場の端末で自動の不具合報告を増やさない） */
+var RM_SRV_OLD='管理者に連絡してください（入居者マスタの Google の受け口の更新が必要です）';
+function rmErrWords_(e, where){
+  var m=String((e&&e.message)||e||'');
+  if(!/Failed to fetch|Load failed|NetworkError|network|timeout|timed out|abort|タイムアウト|時間切れ|届きませんでした|オフライン|^NO_URL$/i.test(m)) rmNote_(where||'断りの文', e);
+  if(m==='NO_URL') return '接続先が入っていません';
+  if(/不明なaction/.test(m)) return 'Google の受け口が古い版です';
+  if(/認証エラー/.test(m)) return '合言葉が通りませんでした';
+  if(!m||/[A-Za-z]/.test(m.replace(/Google|URL/g,''))) return '通信がうまくいきませんでした';
+  return m;
+}
+/* 保存の失敗でサーバーが返した文を職員向けにする（2026-11-12 商用化の見直し）。日本語の文はそのまま、英語の項目名や例外文が混ざる時は決まった文にする。
+   空の時は「理由が分かりませんでした」（以前は「原因不明」だけで次にすることが無かった） */
+function rmSaveErrWords_(d, where){
+  var m=String((d&&d.error)||'');
+  if(!m) return '理由が分かりませんでした。もう一度保存を押してください';
+  if(/[A-Za-z]/.test(m.replace(/Google|URL/g,''))) return '通信がうまくいきませんでした（'+where+'）。もう一度保存を押してください';
+  return m;
+}
+/* 接続先が無い時の案内（接続設定へのリンクつき）。外からの値は入れない（固定の文と textContent だけ） */
+function rmNoUrlGuide_(){
+  var d=document.createElement('div'); d.className='rm-nourl'; d.style.marginTop='10px';
+  d.appendChild(document.createTextNode('入居者マスタの接続先が入っていません。'));
+  var a=document.createElement('a'); a.href='connection-settings.html'; a.textContent='接続設定';
+  d.appendChild(a);
+  d.appendChild(document.createTextNode('の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）。'));
+  return d;
+}
+
+/* ═══════════ roster（軽量一覧） ═══════════ */
+var roster=[]; // [{id,name,kana,room,gender,careLevel,active,updatedAt,birthDate,height,hospitalized,dischargeDate}]（後4つは normRosterRow 参照）
+function loadRosterCache(){try{var s=localStorage.getItem(ROSTER_KEY);if(s)roster=JSON.parse(s)||[]}catch(e){roster=[]}}
+/* ★現場端末には氏名・生年月日入りの一覧を書かない（2026-10-01）。切り替えた後に遅れて届いた応答
+   （入院トグル・保存の後処理など）からの書き戻しを、呼び出し元ごとではなく出口で止める。
+   ★名簿を捨てた後、取り直すまで（rosterPurged_）も書かない（欠けた名簿でキャッシュを縮めない） */
+function saveRosterCache(){if(getDeviceRole()==='field'||rosterPurged_)return;try{localStorage.setItem(ROSTER_KEY,JSON.stringify(roster))}catch(e){ rmNote_('名簿の控え', e); }}
+function refreshRoster(){
+  /* ★現場端末では取りに行かない（追い読み srevTick や一括保存の後始末から呼ばれうる）（2026-10-01） */
+  if(getDeviceRole()==='field')return Promise.resolve(false);
+  if(!rmOn_()){setSync('未接続');renderRoster();return Promise.resolve(false)}
+  setSync('同期中…');
+  var dg=devGen;   // 出した時の世代。現場へ切り替わると applyDeviceGuard が進める
+  return apiGet({action:'getRoster'}).then(function(d){
+    /* ★出した後に現場へ切り替わった応答は、版数の更新も含めて何もしない（一覧キャッシュ・共有名簿を書き戻さない） */
+    if(dg!==devGen||getDeviceRole()==='field')return false;
+    if(d)srevSeen(d.stateRev,srevPickMeta(d));               // 同梱の版数2つで追い読みの基準を更新（1往復で最新化）
+    var list=(d&&d.roster)||d||[];
+    var emptyGuarded=false;
+    if(Array.isArray(list)){
+      if(!list.length&&roster.length){
+        // サーバ空応答×ローカル非空＝シート初期化ミス等の疑い。唯一の書き手が共有名簿(su_residents_common)を
+        // 空配信すると全消費アプリの名簿供給が止まるため、ローカルを温存して警告のみ（空上書き保護）
+        emptyGuarded=true;
+        toast('⚠️ サーバーから空の一覧が返されたため、ローカルの一覧を保持しました');
+      }else{
+        roster=list.map(normRosterRow);rosterPurged_=false;saveRosterCache();writeCommonRoster();   // サーバーから取り直せたので「名簿を捨てた印」を下ろす（emptyGuarded 側では下ろさない）
+        /* 統合 0004（2026-09-26・段階移行の①）: 基本項目の写しを Supabase へ。事務所・管理者として Google で
+           ログインしている時だけ書く（それ以外・現場端末では何もしない）。失敗しても一覧の動きは変えない */
+        /* 写しの記録には、この一覧と一緒に届いた版数（stateRev・srev）も残す（移行 0019・2026-10-22・反証レビューの指摘）。
+           名簿を写しから読む画面は、Google の今の版数と同じ時だけ写しを使う */
+        /* 訪問日・かかりつけ病院の写し（移行 0022・代表者の決定 2026-10-24）: 正規化する前の名簿（list）を渡し、部品が利用者No と2項目だけを拾う。
+           一覧（roster）・端末の控え・共有名簿には2項目を入れない（normRosterRow は変えない） */
+        if(window.SUMasterShadow&&getDeviceRole()!=='field')SUMasterShadow.push(roster,{stateRev:d&&d.stateRev,srev:srevPickMeta(d),care:list});
+        if(typeof rmResFullAuto_==='function')rmResFullAuto_();   // 全項目の写し（自動・1日1回）。一覧の動きには関わらない
+      }
+    }
+    if(emptyGuarded){setSync('要確認（サーバー応答が空）','err');}else{setSync('同期OK','ok');}
+    renderRoster();return true;
+  }).catch(function(e){
+    if(dg!==devGen||getDeviceRole()==='field')return false;   // 同上（切り替え後の失敗は知らせない）
+    setSync('オフライン','err');renderRoster();
+    if(e.message!=='NO_URL')toast('⚠️ 一覧の取得に失敗しました（'+(typeof rmErrWords_==='function'?rmErrWords_(e,'一覧の取得'):'通信がうまくいきませんでした')+'）。少し待ってから、もう一度お試しください');
+    return false;
+  });
+}
+function _toTargetArr(v){
+  if(Array.isArray(v))return v.slice();
+  if(typeof v==='string'&&v)return v.split(',').map(function(s){return s.trim()}).filter(Boolean);
+  return null; // 未設定（フラグ無し）は null のまま＝消費側で「従来どおり表示」の no-op 扱い
+}
+/* 受け取った日付は YYYY-MM-DD 以外を '' として扱う（受信を信じない。書式違いを消費側へ流さない） */
+function _ymd(v){ return /^\d{4}-\d{2}-\d{2}$/.test(String(v==null?'':v)) ? String(v) : ''; }
+function normRosterRow(r){
+  var t=_toTargetArr(r.targetApps);
+  /* ★getRoster(master.gs) に項目を足したら、ここにも足さないと黙って捨てられる。
+     birthDate / height は一覧カード表示用（GAS 側 ROSTER_EXTRA と対応）。
+     ★height はさらに共有名簿 su_residents_common へも配信する（writeCommonRoster）。
+       ここで拾い損ねると体重アプリの身長が空になり手入力へ戻るため落とさないこと。
+     ★hospitalized（入院中）・dischargeDate（退去者のみ）も共有名簿へ配信する。
+       退去日は退去者の行にしか入らない（在籍者は ''）。 */
+  var o={id:r.id,name:r.name||'',kana:r.kana||'',room:r.room||'',gender:r.gender||'',careLevel:r.careLevel||'',active:r.active!==false,updatedAt:r.updatedAt||'',
+         birthDate:r.birthDate||'',height:r.height||'',dischargeDate:_ymd(r.dischargeDate)};
+  /* hospitalized は GAS が配信してきた時だけ具現化する（能力宣言・multi-device-sync 原則7）。
+     旧GAS・旧キャッシュには項目自体が無く、ここで !!r.hospitalized と書くと「全員 false の明示配信」に
+     化けて、消費側の master常勝が現場の入院フラグを一括で倒す（デプロイ順の事故）。無い時は無い、を保つ。 */
+  if('hospitalized' in r)o.hospitalized=!!r.hospitalized;
+  if(t)o.targetApps=t;
+  return o;
+}
+
+/* ═══════════ stateRev 追い読み（状態伝播の高速化・自GASの版数照会） ═══════════
+   自分のGASの ?action=stateRev（トークン不要・応答は {ok:true,rev:整数,srev:整数} のみ＝個人情報ゼロ）を
+   表示中だけ60秒間隔で照会し、版数が前回と変わった時（＝他端末の入院/復帰・入退去）だけ
+   refreshRoster() を実行する。rev＝自GASの状態版数／srev＝排泄記録GASがマスタへ直接書いた時刻
+   （排泄記録発の入院・退院は rev を動かせないため、どちらか一方でも動いたら再取得する。
+   srev を返さない旧GASでは rev のみで判定＝従来動作のまま）。成功すれば writeCommonRoster が既存フローで発火し、
+   同一オリジンの各アプリ（排泄・体重・週間計画・薬学）の共有名簿へ伝播する。
+   URL未設定の端末は tick が無動作＝現状動作のまま。照会失敗・未対応GASは無音で
+   現状動作へフォールバックし5分ごとに再プローブする（work-schedule のヘッドポーリングと同型）。 */
+var SREV_POLL_MS=60000;      // 表示中の照会間隔（60秒）
+var SREV_MIN_GAP_MS=10000;   // 直近照会から10秒未満はskip（interval と visible 復帰の重複防止）
+var SREV_REPROBE_MS=300000;  // 失敗・未対応時の再プローブ間隔（5分）
+var srevLast=null;           // 前回観測した rev（null=未観測。初回は基準の記録のみで再取得しない）
+var srevMetaLast=null;       // 前回観測した srev（null=未観測 or 旧GAS＝srev を返さない）
+var srevFailAt=0;            // 直近失敗時刻（0=正常。失敗中は5分休止→自動再プローブ）
+var srevBusy=false;          // 照会〜名簿再取得の直列化（多重発火防止）
+var srevAt=0;                // 直近照会の開始時刻（スロットル用）
+var srevBound=false;         // タイマー・リスナーの二重登録防止
+/* マスタGAS URL（https 以外・未設定は ''＝無効。壊れた保存値では通信しない） */
+function srevMasterUrl(){var u=String(CFG.url||'');return /^https:\/\//.test(u)?u:''}
+function srevRefresh(){return refreshRoster()}   // 版数変化時: 既存関数（成功時 writeCommonRoster が既存フローで発火）
+/* 応答から srev（排泄記録GAS発の更新時刻）を取り出す。数値でなければ null＝旧GAS互換で rev のみ判定 */
+function srevPickMeta(d){return (d&&typeof d.srev==='number'&&isFinite(d.srev)&&d.srev>=0)?d.srev:null}
+/* getRoster / stateRev 応答に同梱される版数で基準を更新（1往復で最新化・取得済みの変化を再照会で拾い直さない） */
+function srevSeen(rev,sv){
+  if(typeof rev==='number'&&isFinite(rev))srevLast=rev;
+  if(typeof sv==='number'&&isFinite(sv)&&sv>=0)srevMetaLast=sv;
+}
+function srevTick(){
+  if(document.hidden)return;                       // hidden 中はスキップ（visible 復帰時に即時1回）
+  if(getDeviceRole()==='field')return;             // 現場端末では動かさない（init 前段ガードの防御的二重化）
+  if(srevBusy)return;
+  if(window.SUDialog&&typeof SUDialog.busy==='function'&&SUDialog.busy())return;   // 画面の中の窓が出ている間は名簿を取り直さない（次の回に任せる）（画面の中の窓・2026-11-13・仮置き）
+  var mu=srevMasterUrl();if(!mu&&!RM_LIVE)return;  // URL未設定の端末は現状動作のまま（ログインだけで使える端末は新しい保存先の版数だけを読む・2026-11-08）
+  var gap=Date.now()-srevAt;
+  if(gap>=0&&gap<SREV_MIN_GAP_MS)return;           // 負値（端末時計の巻き戻し）では締め出さない
+  if(srevFailAt){
+    var fg=Date.now()-srevFailAt;
+    if(fg>=0&&fg<SREV_REPROBE_MS)return;           // 失敗後は5分休止してから再プローブ
+  }
+  srevBusy=true;srevAt=Date.now();
+  var url=mu+(mu.indexOf('?')>=0?'&':'?')+'action=stateRev';   // トークンを付けない（版数のみ・シートも開かない）
+  /* ★待ち時間 10秒（2026-08-19 に 5秒から延長）。実行ログの実測でサーバー側の処理が
+     最大3.5秒かかっており、通信を足すと5秒を超えて空振りしていた。空振りすると
+     srevFailAt により【5分間まるごと休止】するため、他端末の変更が最大6分遅れて届く
+     （実行ログに6分間隔の穴として現れていた）。 */
+  /* 2026-11-08（写し返しを止める計画・代表者の決定 2026-11-07 問い6=A）: 入居者マスタを新しい保存先へ切り替えた後は、事務所PCで
+     事務所・管理者としてログインしている時だけ、新しい保存先の版数を読む（su-res-read.js の stateRev・応答の形は同じ）。
+     それ以外・部品が無い時は下の Google への照会をそのまま送る（送り方は変えない） */
+  var gasRev=function(){if(!mu)return Promise.reject(new Error('NO_URL'));return fetchWithTimeout(url,{method:'GET',cache:'no-store',redirect:'follow'},10000)};   // 接続先の無い端末は Google へ聞かない
+  var revP;try{revP=(window.SUResRead&&window.SUResRead.stateRev)?window.SUResRead.stateRev(gasRev,{key:'srev'}):gasRev()}catch(eR){revP=gasRev()}
+  return Promise.resolve(revP)
+    .then(function(r){return r.text()})
+    .then(function(t){
+      var d=null;try{d=JSON.parse(t)}catch(e){}
+      if(!d||d.ok!==true||typeof d.rev!=='number'||!isFinite(d.rev)){srevFailAt=Date.now();return}   // 未対応GAS（{error:..}/HTML）
+      srevFailAt=0;
+      var sv=srevPickMeta(d);
+      if(sv!==null&&srevMetaLast===null)srevMetaLast=sv;   // srev の初回基準（旧GAS応答では触らない）
+      if(srevLast===null){srevLast=d.rev;return}   // 初回は基準の記録のみ（名簿は起動時に取得済み）
+      var revCh=(d.rev!==srevLast),metaCh=(sv!==null&&sv!==srevMetaLast);
+      if(!revCh&&!metaCh)return;                   // rev も srev も動いていない＝本体取得ゼロ
+      var prev=srevLast,seen=d.rev,prevM=srevMetaLast,seenM=sv;
+      return Promise.resolve(srevRefresh()).then(function(ok){
+        /* 成功時のみ前進（失敗時は据え置き＝次tickで自動再試行）。getRoster 応答の版数
+           （srevSeen）が先に前進させていたら上書きしない（新しい観測を古い値へ戻さない） */
+        if(ok===false)return;
+        if(srevLast===prev)srevLast=seen;
+        if(seenM!==null&&srevMetaLast===prevM)srevMetaLast=seenM;
+      });
+    })
+    .catch(function(e){srevFailAt=Date.now()})     // 通信失敗も無音フォールバック（現状動作のまま）
+    .then(function(){srevBusy=false});
+}
+function srevStart(){
+  if(srevBound)return;
+  srevBound=true;
+  setInterval(function(){try{srevTick()}catch(e){ rmNote_('版の確認', e); }},SREV_POLL_MS);
+  document.addEventListener('visibilitychange',function(){
+    if(!document.hidden){try{srevTick()}catch(e){ rmNote_('版の確認', e); }}   // 復帰時に即時1回（10秒スロットルは tick 内蔵）
+  });
+}
+
+/* ═══════════ アプリ横断リンク（ハブ＆スポーク） ═══════════
+   入居者マスタをハブに各アプリへ飛ぶ。遷移は別タブ＝作業中の画面を失わない。
+   ★care-tools 配下は相対パス。排便ケアだけは別パス配信のため ../haiben-record/ を使う。
+   ★訪問診療は別オリジン（別WordPress・要ログイン・URLが端末依存）。
+     設定されている時だけ出す＝壊れたリンクを踏ませない。 */
+var APP_LINKS=[
+  {href:'care-schedule.html',                     ic:'📅', name:'週間計画',       desc:'週間ケア計画・単位の管理'},
+  {href:'daycare-roster.html',                    ic:'🍵', name:'{{通所}}利用表', desc:'通所の利用予定と帳票'},
+  {href:'facesheet.html',                         ic:'📄', name:'フェイスシート', desc:'入居者の基本情報を1枚に'},
+  {href:'weight-record.html',                     ic:'⚖️', name:'体重管理',       desc:'体重の記録と推移'},
+  {href:'../haiben-record/haiben-record.html',    ic:'🚽', name:'排便ケア記録',   desc:'排泄の記録'},
+  {href:'genogram.html',                          ic:'🌳', name:'ジェノグラム',   desc:'家系図の作成'},
+  {href:'moushiokuri-viewer.html',                ic:'📝', name:'申送ビューア',   desc:'申し送り・バイタル・食事量'},
+  {href:'training-plan.html',                     ic:'🏃', name:'機能訓練計画書', desc:'{{通所}} 個別機能訓練計画書'}
+];
+/* ── 入居者単位リンク（この方を各アプリで開く） ──
+   ★載せてよいのは「?masterId= を実際に解釈する受け側が実装済みのアプリ」だけ。
+     未実装のアプリを載せると、パラメータが無視されて【前回開いていた別人が選択済みの画面】が開く。
+     職員はその方の画面だと信じて入力するため、別人への誤記録に直結する（2026-08-01 レビュー指摘）。
+     受け側を実装したら、ここに1行足す（data-contracts.md §9 の手順に従う）。
+   ★氏名はURLに載せない。共用端末のアドレスバー補完・履歴に氏名が並ぶうえ、
+     受け側が未検証の氏名を「本人確認」として表示すると、かえって取り違えの根拠になる。
+     受け側はサーバから引いた正本の氏名を表示する。
+   ★訪問診療は別オリジン（別サイト）なので対象外＝素のURLのまま開く。 */
+var PER_RESIDENT_APPS={
+  'facesheet.html':1,
+  'genogram.html':1,
+  'weight-record.html':1,                    /* 2026-08-01 受信実装（該当なしは一覧へ逃がす） */
+  'care-schedule.html':1,                    /* 2026-08-01 受信実装（該当なしは選択を変えない） */
+  '../haiben-record/haiben-record.html':1,   /* 2026-08-01 受信実装（該当なしは選択を空にする） */
+  'moushiokuri-viewer.html':1,               /* 2026-08-07 受信実装検証済み（該当なしは通知のみ・?masterId= を解釈） */
+  'training-plan.html':1                     /* 2026-09-03 受信実装（?masterId= を形式検証・該当なしは一覧のまま通知） */
+};
+function residentLink(href,id,name){
+  if(id==null||id==='')return href;
+  if(!Object.prototype.hasOwnProperty.call(PER_RESIDENT_APPS,href))return href;
+  /* ジェノグラムだけは既存の受け口（?resident=&name=）に合わせる。
+     あちらは氏名が文書の保存キーそのものなので name が必須。勝手に変えると既存導線が壊れる。 */
+  if(href==='genogram.html'){
+    return href+'?resident='+encodeURIComponent(id)+(name?'&name='+encodeURIComponent(name):'');
+  }
+  return href+'?masterId='+encodeURIComponent(id);
+}
+/* 外部URLは http/https 以外を弾く（javascript: 等を踏ませない）。 */
+function safeHttpUrl(u){
+  var t=String(u==null?'':u).trim();
+  if(!t) return '';
+  return /^https?:\/\//i.test(t) ? t : '';
+}
+/* 表示名の {{施設}}{{訪問}}{{通所}} を事業所の呼び名に（施設情報・su-facility.js）。読めない時は一般名 */
+function facFill(t){
+  if(window.SUFacility && typeof SUFacility.fill==='function') return SUFacility.fill(t);
+  return String(t==null?'':t).replace(/\{\{(施設|訪問|通所)\}\}/g,function(a,k){return {'施設':'施設','訪問':'訪問介護','通所':'通所介護'}[k];});
+}
+function renderAppList(){
+  var box=$('appList'); if(!box) return;
+  var items=APP_LINKS.slice();
+  var vma=safeHttpUrl(CFG.vmaUrl);
+  if(vma) items.push({href:vma, ic:'🩺', name:'訪問診療', desc:'訪問診療の予定・記録（別サイト）'});
+  box.innerHTML=items.map(function(a){
+    return '<a href="'+esc(a.href)+'" target="_blank" rel="noopener">'+
+      '<span class="ai" aria-hidden="true">'+esc(a.ic)+'</span>'+
+      '<span class="at"><span>'+esc(facFill(a.name))+'</span><span class="ad">'+esc(facFill(a.desc))+'</span></span></a>';
+  }).join('');
+  /* 訪問診療URLが未設定のときだけ、設定場所を案内する（毎回は出さない） */
+  if(!vma) box.innerHTML+='<p class="applead" style="margin:4px 0 0">訪問診療アプリは「☁️同期設定」でURLを登録すると表示されます。</p>';
+}
+function openApps(){ renderAppList(); $('mApps').classList.add('on'); navEnter(); }
+function closeApps(){ $('mApps').classList.remove('on'); if($('sc-list').classList.contains('on'))navLeave(); }
+
+/* ═══════════ 最新体重（体重管理アプリのデータを読むだけ・向こうは一切変更しない） ═══════════
+   同一オリジン（th-su.github.io）なので localStorage を直接読める。
+   ★体重の正本は体重管理アプリ。マスタ側の weight は移行時の静的値で古いため使わない。
+   ★rec.weight は車椅子控除済みの正味体重（weight-record.html で保存時に計算済み）。補正しない。 */
+var WTMGR_KEY='wtmgr_v1';
+/* 氏名の正規化は weight-record.html:2248 の suNormName と同一仕様にする。
+   ここがズレると名寄せが外れて別人の体重が付く。 */
+function wtNormName(s){ return String(s==null?'':s).replace(/\s+/g,'').trim(); }
+/* 最新判定のソートキーも weight-record.html:2072-2075 の recDateKey と同一仕様。 */
+function wtRecKey(r){ return (r.measuredOn||(r.yearMonth?r.yearMonth+'-01':''))+'#'+(r.createdAt||''); }
+
+/* 体重アプリの localStorage から「uidごとの最新1件」と名寄せ索引を作る。
+   体重アプリ未使用の端末・壊れたJSONでは空を返す（一覧は従来どおり表示される）。 */
+var _wtRaw=null,_wtCache=null;
+function loadWeightSource(){
+  var empty={latest:{},midByUid:{},uidByName:{}};
+  var db,raw;
+  try{
+    raw=localStorage.getItem(WTMGR_KEY);
+    if(!raw){ _wtRaw=null;_wtCache=null; return empty; }
+    /* ★検索は1打鍵ごとに renderRoster を呼ぶ。体重DBはMB級になりうるため
+       生文字列が同じ間は再parseしない（打鍵ごとの遅延を出さない）。 */
+    if(raw===_wtRaw && _wtCache) return _wtCache;
+    db=JSON.parse(raw);
+  }catch(e){ return empty; }
+  if(!db||!Array.isArray(db.residents)||!Array.isArray(db.records)) return empty;
+
+  var midByUid={}, nameCount={}, uidOfName={};
+  db.residents.forEach(function(p){
+    if(!p||p.id==null) return;
+    if(p.masterId!=null&&p.masterId!=='') midByUid[String(p.id)]=String(p.masterId);
+    var n=wtNormName(p.name);
+    if(n){ nameCount[n]=(nameCount[n]||0)+1; uidOfName[n]=String(p.id); }
+  });
+  var latest={};
+  db.records.forEach(function(rec){
+    if(!rec||rec.residentId==null) return;
+    /* ★体重アプリは数値化に失敗した体重を 0 に丸めて保存する（normalizeRecord）。
+       0 を最新値として拾うと「0kg」がカードに出るため、入力バリデーションと同じ
+       20〜150kg の範囲外は最新判定から除外する。 */
+    var wv=Number(rec.weight);
+    if(!isFinite(wv)||wv<20||wv>150) return;
+    var uid=String(rec.residentId), k=wtRecKey(rec);
+    if(!latest[uid]||k>latest[uid].k) latest[uid]={k:k,weight:wv,on:rec.measuredOn||rec.yearMonth||''};
+  });
+  /* ★同姓同名が複数いる氏名は名寄せに使わない（別人の体重が付くのを防ぐ）。 */
+  var uidByName={};
+  Object.keys(nameCount).forEach(function(n){ if(nameCount[n]===1) uidByName[n]=uidOfName[n]; });
+  _wtRaw=raw; _wtCache={latest:latest, midByUid:midByUid, uidByName:uidByName};
+  return _wtCache;
+}
+
+/* 表示中の一覧に対して {masterId: {weight,on}} を作る。 */
+function buildWeightIndex(list){
+  var idx={}, src=loadWeightSource(), used={};
+  // ① masterId 一致（確実な紐付けを優先）
+  Object.keys(src.midByUid).forEach(function(uid){
+    var w=src.latest[uid], mid=src.midByUid[uid];
+    if(!w) return;
+    /* 同じ masterId の体重アプリ側レコードが2件ある場合は新しい方を採る
+       （列挙順に依存して古い方が勝つのを防ぐ） */
+    if(!idx[mid]||w.k>idx[mid].k) idx[mid]=w;
+    used[uid]=true;
+  });
+  /* ★マスタ側の同姓同名も除外する。ここを list（検索・在籍で絞った後）で数えると
+     検索文字列によって紐づく相手が変わるため、必ず roster 全体で数える。 */
+  var dup={};
+  roster.forEach(function(r){ var n=wtNormName(r.name); if(n) dup[n]=(dup[n]||0)+1; });
+  // ② 氏名の正規化一致（体重アプリ側に masterId が無い人向け）
+  list.forEach(function(r){
+    if(idx[String(r.id)]) return;
+    var n=wtNormName(r.name);
+    if(!n||dup[n]!==1) return;          // マスタ側に同名が複数 → 紐づけない
+    var uid=src.uidByName[n];
+    if(!uid||used[uid]) return;
+    var w=src.latest[uid];
+    if(w){ idx[String(r.id)]=w; used[uid]=true; }
+  });
+  return idx;
+}
+/* 詳細画面用に1名分だけ取り出す（2026-08-11 追加）。
+   ★一覧の weightIdx は renderRoster が作るもので、詳細画面（openResident→renderView）は
+     その経路を通らない。ここで roster 全体から作り直す（loadWeightSource が生文字列を
+     キャッシュしているので、体重DBが同じ間は再parseされない）。
+   ★該当が無ければ null を返し、呼び出し側はマスタの静的値へフォールバックする。
+   ★フェイスシートの latestWeightOf と同じ契約。あちらを直したらこちらも直す。 */
+function latestWeightOf(masterId){
+  if(masterId==null||masterId==='') return null;
+  try{
+    var idx=buildWeightIndex(roster), k=String(masterId);
+    if(!Object.prototype.hasOwnProperty.call(idx,k)) return null;   /* 'constructor' 等を拾わない */
+    var w=idx[k];
+    return (w&&typeof w.weight==='number')?w:null;
+  }catch(e){ return null; }
+}
+/* 測定日を短く出す。同じ年なら「8/11」、違う年は「2025/8/11」。
+   ★セル幅が狭い（A4で約65px）ため、長い文字列を入れると折り返して印刷の高さが増える。
+     実測（A4本文幅718px・セル幅1.8倍）: 括弧の中を【4文字まで】に収めれば
+     「8/11」「25/12/3」「旧記録」のいずれでも印刷の高さは1pxも増えない。
+     5文字（例「移行時点」＋括弧）にすると折り返して +23px(6mm) 増える。 */
+function wtShortDate(on){
+  var s=String(on||'').slice(0,10), y=String(new Date().getFullYear());
+  var m=s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  /* ★括弧内の文字数には印刷の予算がある（実測: これを超えると1行増えて +6mm）。
+     今年 → 「8/11」／昨年以前 → 「25/12」（日は落とす。正確な日付はツールチップにある） */
+  if(m) return (y===m[1]) ? (+m[2])+'/'+(+m[3]) : m[1].slice(2)+'/'+(+m[2]);
+  /* 体重アプリは measuredOn を空で保存できる。その時は対象月（yearMonth）しか無い */
+  var m2=s.match(/^(\d{4})-(\d{2})$/);
+  if(m2) return (y===m2[1]) ? (+m2[2])+'月' : m2[1].slice(2)+'/'+(+m2[2]);
+  return '';
+}
+/* 詳細画面の「体重」「BMI」に出す値を作る。
+   体重の正本は体重管理アプリ。記録があればそれを使い、測定日を添える。
+   記録が無い端末・未登録の方は、マスタの静的値に「移行時点」と明示して出す。
+   ★BMI に注記は付けない（セルが狭く折り返すため）。体重セルの日付から出所が分かる。 */
+function weightView(r){
+  var lw=latestWeightOf(r&&r.id), out={};
+  if(lw){
+    out.val   = lw.weight+' kg';
+    out.note  = wtShortDate(lw.on) || '最新';     /* 日付が読めない記録でも出所は示す */
+    out.bmi   = calcBMI(r.height, lw.weight);
+    out.title = '体重管理アプリの最新値'+(lw.on?('（'+String(lw.on).slice(0,10)+' 測定）'):'')
+              + '／同期状況により古い場合があります';
+    out.bmiTitle = out.bmi ? ('身長（入居者マスタ）と最新体重で計算'
+              +(lw.on?('（'+String(lw.on).slice(0,10)+' 測定）'):'')) : '';
+  }else{
+    out.val   = r.weight ? (r.weight+' kg') : '';
+    /* ★注記を出さない。体重アプリに記録が無い方は【改修前とまったく同じ表示】にして、
+       印刷の高さが1pxも変わらないことを構造的に保証する（実測で「旧記録」は+6mm）。
+       出所はツールチップで示す。日付が付いていない＝体重アプリの記録ではない、と読める */
+    out.note  = '';
+    out.bmi   = calcBMI(r.height, r.weight);
+    out.title = r.weight ? 'この端末の体重管理アプリに記録が見つかりません。移行時点の値です' : '';
+    out.bmiTitle = out.bmi ? '移行時点の体重で計算' : '';
+  }
+  return out;
+}
+var weightIdx={};   // renderRoster が毎回作り直す（体重アプリで記録したら再読込で反映）
+
+/* ═══════════ 共通情報の自動コピー（全アプリ連携） ═══════════
+   同一オリジンの全ツールが共有する localStorage キーに、識別/表示用の共通項目だけを
+   書き出す。各アプリはこれを読み込んで自分の入居者リストへ自動反映する（ネットワーク不要・
+   即時・オフライン可）。機微情報（医療・家族連絡先等）は一切含めない。
+   ─ 連携契約 ─
+     key: 'su_residents_common'
+     value: { v:1, updatedAt:ISO, residents:[{masterId,name,kana,room,gender,careLevel,active,height,hospitalized[,dischargeDate]}] }
+     ★height（cm・未入力は ''）は 2026-07-31 追加。体重管理アプリの BMI 計算から
+       二重入力をなくすために配信する。消費側の作法は「非空ならマスタ常勝で上書き／
+       空なら消費側の手入力を温存」。身長は月単位でしか変わらないためマスタを正にできる。
+     ★hospitalized（true/false）は 2026-08 追加。入院中の真偽だけで病名等は含めない。
+       消費側の作法は「マスタ常勝で自アプリの入院フラグへ反映」。記録は一切消さない。
+     ★dischargeDate（YYYY-MM-DD）は active===false の行にだけ載せる（在籍者には載せない）。
+       消費側は active=false を退去の「正」として扱い、退去日はこの値を使う（無ければ当日）。
+     ★ここに機微情報（病名・処方・家族連絡先・体重の実測値など）は足さない。
+       この値は全アプリの端末 localStorage に残るため、増やすほど回収できなくなる。 */
+var COMMON_KEY='su_residents_common';
+var COMMON_FIELDS=['name','kana','room','gender','careLevel','height','hospitalized'];
+function writeCommonRoster(){
+  /* ★現場端末では書かない（2026-10-01）。切り替えで roster を空にした後に届いた応答（入院トグル・保存の後処理）が、
+     共有名簿を0名・1名で上書きするのを止める。ここは共有名簿の唯一の書き手なので、
+     空配信・縮小配信は全消費アプリの名簿を壊す。
+     ★名簿を捨てた後、取り直すまで（rosterPurged_）も書かない（事務所PCへ戻した直後に届いた古い応答で縮めない） */
+  if(getDeviceRole()==='field'||rosterPurged_)return;
+  try{
+    var residents=roster.map(function(r){
+      var e={masterId:r.id,name:r.name||'',kana:r.kana||'',room:r.room||'',gender:r.gender||'',careLevel:r.careLevel||'',active:r.active!==false,
+             height:r.height||''};       // 空文字＝マスタ未登録（消費側は手入力を温存する合図）
+      // hospitalized はキーが実在する時だけ配信（無い＝旧GAS/旧キャッシュ。false 捏造で現場フラグを倒さない）
+      if('hospitalized' in r)e.hospitalized=!!r.hospitalized;
+      // 退去日は退去者の行にだけ載せる（在籍者に退去日を配らない）
+      if(e.active===false)e.dischargeDate=_ymd(r.dischargeDate);
+      if(Array.isArray(r.targetApps))e.targetApps=r.targetApps.slice(); // 対象アプリのフラグも配信
+      return e;
+    });
+    localStorage.setItem(COMMON_KEY,JSON.stringify({v:1,updatedAt:new Date().toISOString(),residents:residents}));
+  }catch(e){/* 共有キャッシュは失敗しても本体運用に影響させない */}
+}
+
+/* ═══ 開いていた方も再読み込みで失わない（2026-08-13 管理者の指示・原則11の適用） ═══
+   ★このキーだけは「選択中の入居者」＝業務データに紐づく状態なので、通常のUI状態保存
+     （タブid・ビューid）とは扱いを分ける。守ること:
+     ・保存するのは【利用者Noだけ】。氏名・生年月日・記録は1文字も残さない
+     ・**sessionStorage を使う（localStorage ではない）**。理由は下記
+     ・復元は openResident(id) 経由＝サーバーから取り直して描く（キャッシュを表示しない）
+     ・名簿に居ない番号なら一覧へ倒す（前回の別人を開かない・未知値は既定へ）
+     ・URLで画面を指定して開かれた時（?view=bday 等）は復元しない（明示指定が勝つ）
+     ・接続先が未設定なら復元しない（詳細は取得できず、エラー画面に固定されるため）
+     ・編集画面からの再読み込みは【詳細画面】へ戻す（未保存の入力を復元しない＝
+       半端な入力が残ったフォームで保存されるより、開き直してもらう方が安全）
+     ・現場端末（su_device_role==='field'）では保存も復元もしない
+
+   ★localStorage にしない理由（2026-08-13 レビュー指摘・2件とも実害の側）:
+     ①**タブをまたいで混線する**。別のアプリから新しいタブでこの画面を開いて別の方を見ると、
+       先に開いていたタブを再読み込みした時に【その別の方】が出る
+     ②**日をまたいで残る**。夕方に詳細を開いたまま閉じた事務所PCが、翌朝いちばんに
+       他人の病名・処方・家族連絡先の画面で起動する。CLAUDE.md 介護現場要件9
+       「肩越しの覗き見を想定し、詳細は明示操作で開く」と正面から衝突する
+     sessionStorage ならタブ単位・タブを閉じたら消えるので、再読み込みでは残りつつ
+     ①②が同時に消える（原則11 が求めているのは「リロード」であって「翌日の起動」ではない）。 */
+var OPEN_KEY='rmaster_open_id';
+function saveOpenId(id){
+  try{
+    if(id==null||id==='')sessionStorage.removeItem(OPEN_KEY);
+    else sessionStorage.setItem(OPEN_KEY,String(id));
+  }catch(e){/* 保存できなくても本体の操作は続ける */}
+}
+function readOpenId(){
+  try{var v=sessionStorage.getItem(OPEN_KEY);return(v==null||v==='')?null:v}catch(e){return null}
+}
+
+/* 絞り込みも再読み込みで失わない（dev-principles 原則11）。保存するのは種別idのみ。
+   VIEW_KEY と同じく配列＋indexOf で照合する（オブジェクトだと 'toString' 等が truthy になる） */
+var FILTER_KEY='rmaster_filter';
+var FILTERS=['active','out','all'];
+var curFilter=(function(){try{var v=localStorage.getItem(FILTER_KEY);return FILTERS.indexOf(v)>=0?v:'active'}catch(e){return'active'}})();
+/* ═══════════ 表示パターン（タブ） ═══════════
+   タブは「並べ方」だけを変える。検索窓・在籍/退去フィルタは全タブで同じに効く。 */
+var VIEW_KEY='rmaster_view';
+/* 配列＋indexOf にする。オブジェクトだと VIEWS['toString'] 等が truthy になり
+   不正値がそのまま採用されて「どのタブも点灯しないのに標準表示」になる */
+var VIEWS=['std','fl2','fl4','kana','adm','bday','meal','mf','cm','lvl','room','fam','hist','md','cert','miss','rev'];
+/* ★介護ツールメニューの「誕生日一覧」は ?view=bday でこの画面のタブを直接ひらく。
+   アプリを増やさず表示だけを指定する（名簿の取得・端末ガード・同期設定を二重に持たない）。
+   ・値は VIEWS のホワイトリスト照合
+   ・★URL指定は保存しない（在メモリのみ）。保存すると「入居者マスタ」タイルから開いた時まで
+     誕生日ビューになり、名簿を見たい職員が毎回タブを押し直すことになる（2つの導線を独立させる）
+   ・URLに view を残すのは、この指定のまま再読込しても留まるため（原則11）。
+     職員が自分でタブを選んだ時点で setView が URL から view を外し、以後は保存値が普通に効く
+   ・未知の値はURLから外して無視する（この値を作る導線は存在しない。IIFEはDOM構築前に走るので
+     ここでトーストは出せない＝出そうとすると例外になる） */
+function csvStripViewParam(){
+  try{
+    var p=new URLSearchParams(location.search);
+    if(p.get('view')===null) return;
+    p.delete('view');
+    var q=p.toString();
+    history.replaceState(null,'',location.pathname+(q?'?'+q:'')+location.hash);
+  }catch(e){}
+}
+var curView=(function(){
+  var fromUrl=null;
+  try{
+    var v=new URLSearchParams(location.search).get('view');
+    if(v&&VIEWS.indexOf(v)>=0) fromUrl=v;
+    else if(v!==null) csvStripViewParam();   // 未知の値は残さない
+  }catch(e){/* URLSearchParams 非対応の旧ブラウザ等は保存値で続行 */}
+  if(fromUrl) return fromUrl;
+  try{var s=localStorage.getItem(VIEW_KEY);return VIEWS.indexOf(s)>=0?s:'std'}catch(e){return'std'}
+})();
+function paintTabs(){
+  Array.prototype.forEach.call($('viewTabs').querySelectorAll('.vtab'),function(b){
+    /* 食形態のタブは「配膳・編集用（meal）」と「配布用（mf）」の両方で点灯する（2026-10-16 第1弾） */
+    var dv=b.getAttribute('data-v');
+    var on=dv===curView||(dv==='meal'&&curView==='mf');
+    b.classList.toggle('on',on); b.setAttribute('aria-selected',on?'true':'false');
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.mfseg button'),function(b){
+    b.setAttribute('aria-pressed', b.getAttribute('data-mfv')===curView?'true':'false');
+  });
+}
+async function setView(v){
+  var next=VIEWS.indexOf(v)>=0?v:'std';
+  var dg0=devGen, cv0=curView;   /* 窓の答えを待つ間に端末の用途・表示が変わったら切り替えない（画面の中の窓・2026-11-13・仮置き） */
+  /* ★食形態一覧に未保存の変更があるまま離れさせない（変更はメモリにしか無い）。
+     止めた時はタブの点灯も元へ戻す（押した見た目だけ変わって中身が変わらないのを防ぐ） */
+  if(curView==='meal'&&next!=='meal'){ var mok=mealLeaveOk('ほかの表示に切り替える'); if(mok!==true&&!(await mok)){ paintTabs(); return } }
+  /* 薬効辞書の未保存も同じ（メモリにしか無い） */
+  if(curView==='md'&&next!=='md'&&mdDirty&&
+     !(await SUDialog.confirm('薬効辞書に未保存の変更があります。\n切り替えると失われます。よろしいですか？'))){ paintTabs(); return }
+  if(dg0!==devGen||curView!==cv0){ paintTabs(); return }
+  /* ★「失われます」に同意したのだから、本当に捨てる。残すと、破棄したはずの改名（＝旧行の削除）や
+     非表示が、あとから別の保存に紛れてサーバーの行を消す（2026-09-08 レビュー M-3）。 */
+  if(curView==='md') mdClearPending_();
+  curView=next;
+  try{localStorage.setItem(VIEW_KEY,curView)}catch(e){}
+  /* 職員が自分でタブを選んだ時点で、メニュー由来の ?view= 指定を手放す。
+     残したままだと、選び直したあとに再読込するたびメニューの指定へ引き戻される */
+  csvStripViewParam();
+  paintTabs(); paintAdmBar(); paintBdayBar(); paintMealBar(); paintShBars(); renderRoster();
+  rmSyncPrintTarget_();   /* ★印刷対象の付け替え。移していない画面では対象なしにする */
+  if(curView==='meal') mealLoad(false);   /* 表を出してから取りに行く（進捗を画面に出すため） */
+  if(curView==='mf')   mealLoad(false);   /* 配布用も食形態一覧と同じデータ（getMealList）で作る */
+  if(curView==='miss'){ bkEnsure(false); mealLoad(false); }   /* 未入力は getBulk＋副食（getMealList）で作る（2026-10-17） */
+  if(curView==='adm')  admEnsure();       /* 入居日は名簿に無いので、このタブで1回だけ取る */
+  if(curView==='cm'||curView==='lvl'||curView==='cert') bkEnsure(false);  /* CM表・介護度別・認定期限も名簿に無い項目を使う */
+  if(curView==='cert') certEnsureFresh_();   /* 保存の後に入った時だけ取り直す（印が無ければ何もしない） */
+  if(curView==='fam'||curView==='hist'){ bkEnsure(false); fullEnsure(false); mdEnsure(false); }
+  /* ★「最新に取り直す」ボタンは廃止したが、他端末（薬剤師）の更新が永久に見えないのは困る。
+     このビューへ入るたびに取り直す。★未保存の変更がある時は取り直さない（入力を捨てないため）。 */
+  if(curView==='md'){ bkEnsure(false); fullEnsure(false); mdEnsure(!mdDirty); }
+  if(curView==='rev') revEnsure(false);   /* 収支の見通し: 入居日（getBulk）・週間計画の限度額・入院の記録を読む（2026-11-07） */
+}
+
+/* ═══════════ 入居日順（2026-09-02 指示） ═══════════
+   左に入居年月日・右に既存のカード（押すと詳細へ）。
+   ★並び順は保存する UI 状態のみ（原則11）。氏名・記録は1文字も保存しない。 */
+/* 入居日は【共有名簿には無い】項目。名簿(getRoster)に足すとGASの貼り替えが要るうえ、
+   1つのタブのためだけに全アプリへ配る構造物が太る。食形態一覧が getMealList で
+   自前に取るのと同じ作法で、このタブを開いた時に getBulk から1回だけ取る。
+   ★メモリのみ（localStorage に業務データを置かない）。★取れなくても一覧は必ず描く。 */
+var admMap=null, admLoading=false, admErr='';
+function admOf(r){
+  if(admMap){ var v=admMap[String(r.id)]; if(v) return v; }
+  return _ymd(r.admissionDate);   /* 将来 GAS 側が名簿に載せた時は、そちらも使える */
+}
+/* 入居日は帳票の控え（bkRows・同じ getBulk）から作る（2026-10-29）。
+   以前はこのタブだけで getBulk をもう1回取っていた（起動で bkEnsure が同じものを取り済み）。
+   ★控えが取れていればその場で作る。取れていなければ bkEnsure に任せ、終わった所（bkEnsure の終端）で作る。 */
+function admFromBk_(){
+  if(!bkRows) return false;
+  var m={};
+  for(var i=0;i<bkRows.length;i++){
+    var x=bkRows[i]; if(!x||x.id==null) continue;
+    var v=_ymd(x.admissionDate); if(v) m[String(x.id)]=v;
+  }
+  admMap=m; admErr='';
+  return true;
+}
+/* bkEnsure の終端から呼ぶ。入居日を待っている時・作り済みの時だけ控えから作り直す */
+function admAfterBk_(){
+  if(!admLoading&&!admMap) return;
+  if(admLoading){
+    /* ★届いた控えが保存より前のもの（取得中に保存が通った）なら、取り直してから作る。
+       取り直しが始まらない時（取得中など）は下で今の控えから作る＝待ちを残さない */
+    if(bkStale_&&!bkErr&&!bkLoading){ bkEnsure(true); if(bkLoading) return; }
+    if(bkErr||!admFromBk_()){
+      /* ★空応答・通信の失敗を成功として扱わない（全員「未登録」の画面を正しい結果として見せない） */
+      admErr=/通信/.test(bkErr)?'入居日を取得できませんでした（通信）':'入居日を取得できませんでした';
+    }
+  } else admFromBk_();
+  admLoading=false; paintAdmBar();
+  if(curView==='adm') renderRoster();
+}
+function admEnsure(){
+  if(getDeviceRole()==='field') return;   /* ★現場端末では取りに行かない（2026-10-01） */
+  if(admMap||admLoading) return;
+  if(!rmOn_()){ admErr='入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）'; paintAdmBar(); return; }
+  /* ★保存の後で控えが古い時（bkStale_）は使わずに取り直す（保存した入居日を出すため） */
+  if(!bkStale_&&admFromBk_()){ paintAdmBar(); if(curView==='adm') renderRoster(); return; }   // 控えから作れた（呼び出し元は先に描いているので描き直す）
+  admLoading=true; admErr=''; paintAdmBar();
+  bkEnsure(bkStale_);   /* 取得中なら相乗り・終われば admAfterBk_ が作る */
+  if(!bkLoading) admAfterBk_();   // bkEnsure が取りに行けなかった時（URL なし等）に待ちを残さない
+}
+var ADM_ORDER_KEY='rmaster_adm_order';
+var ADM_ORDERS=['desc','asc'];
+var admOrder=(function(){
+  try{var v=localStorage.getItem(ADM_ORDER_KEY);return ADM_ORDERS.indexOf(v)>=0?v:'desc'}catch(e){return'desc'}
+})();
+function setAdmOrder(o){
+  admOrder=ADM_ORDERS.indexOf(o)>=0?o:'desc';
+  try{localStorage.setItem(ADM_ORDER_KEY,admOrder)}catch(e){}
+  paintAdmBar(); renderRoster();
+}
+function paintAdmBar(){
+  var bar=$('admBar'); if(!bar) return;
+  bar.style.display=(curView==='adm')?'flex':'none';
+  Array.prototype.forEach.call(bar.querySelectorAll('.achip'),function(b){
+    var on=b.getAttribute('data-o')===admOrder;
+    b.classList.toggle('on',on); b.setAttribute('aria-pressed',on?'true':'false');
+  });
+}
+/* 入居日で並べる。同じ日は居室→ヨミで安定させる（日付だけだと描画のたびに順が揺れる）。 */
+function byAdmission(a,b){
+  var x=admOf(a), y=admOf(b);
+  if(x!==y) return (admOrder==='asc') ? (x<y?-1:1) : (x<y?1:-1);
+  return byRoom(a,b);
+}
+function admHtml(list){
+  /* ★入居日が無い方を落とさない（居室未登録を「階未設定」に出すのと同じ方針）。
+     落とすと画面から消え、入力漏れに誰も気づけない。
+     ★旧GAS（ROSTER_EXTRA に admissionDate が無い版）では全員ここに入る＝
+       「機能が壊れた」ではなく「サーバー側の貼り替えがまだ」だと分かる文言にする。 */
+  var dated=[], none=[];
+  list.forEach(function(r){ (admOf(r)?dated:none).push(r); });
+  dated.sort(byAdmission); none.sort(byRoom);
+  var note=$('admNote');
+  if(note) note.textContent=admLoading ? '入居日を取得中…'
+    : admErr ? ('⚠ '+admErr+'（下の一覧は入居日なしで出しています）')
+    : dated.length ? ('入居日あり '+dated.length+'名'+(none.length?(' ／ 未登録 '+none.length+'名'):''))
+    : (list.length?'入居日が登録されている方がいません':'');
+  var rows=dated.map(function(r){
+    var d=String(admOf(r)).split('-');
+    return '<div class="adm-row">'+
+      '<div class="adm-d"><span class="yr">'+esc(d[0])+'年</span>'+
+        esc(parseInt(d[1],10)+'月'+parseInt(d[2],10)+'日')+'</div>'+
+      rcardHtml(r)+'</div>';
+  }).join('');
+  var noneRows=none.map(function(r){
+    return '<div class="adm-row"><div class="adm-d none">入居日<br>未登録</div>'+rcardHtml(r)+'</div>';
+  }).join('');
+  var h='<div class="admlist">'+rows+'</div>';
+  if(none.length) h+='<div class="rsec nofloor" style="margin-top:14px"><h3>入居日が未登録'+
+    '<span class="cnt">'+none.length+'名</span></h3><div class="admlist">'+noneRows+'</div></div>';
+  return h;
+}
+
+/* ═══════════ 誕生日一覧（年度単位） ═══════════
+   ★年齢は「年度末＝翌年3月31日時点」。その年度に誕生日を迎えた後の年齢になる。
+     例）2026年度: 4/24生まれ→2027-03-31時点で82歳／3/21生まれ→同79歳。
+     この定義は管理者の現行の手作り表と一致することを実物で照合済み（2026-08-04）。 */
+/* 年度: 4月始まり。1〜3月は前年度に属する。 */
+function fyOfDate(d){ return d.getMonth()+1>=4 ? d.getFullYear() : d.getFullYear()-1; }
+var bdayFY=fyOfDate(new Date());
+/* 年度末（翌年3/31）時点の満年齢。誕生月が1〜3月なら年度末は誕生日の後なので +1 年で数える。 */
+function ageAtFyEnd(iso,fy){
+  var p=parseIsoDate(iso); if(!p) return '';
+  var endYear = (p.m<=3) ? fy+1 : fy;          // その誕生日が属する暦年
+  var a=endYear-p.y;
+  return (a>=0&&a<140)?a:'';
+}
+/* ISO(YYYY-MM-DD)を分解。不正・非ISOは null（表示側で素通しさせる） */
+function parseIsoDate(iso){
+  var s=String(iso==null?'':iso).slice(0,10);
+  var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s); if(!m) return null;
+  var y=+m[1],mo=+m[2],d=+m[3];
+  /* 存在しない日付（2/31 等）を弾く。うるう年もこれで正しく判定される */
+  var t=new Date(y,mo-1,d);
+  if(t.getFullYear()!==y||t.getMonth()!==mo-1||t.getDate()!==d) return null;
+  return {y:y,m:mo,d:d};
+}
+/* 和暦（写真の表記に合わせる: S19.04.24）。改元日は境界を含めて厳密に判定する。 */
+var ERAS=[
+  {c:'R', name:'令和', y:2019, m:5,  d:1},
+  {c:'H', name:'平成', y:1989, m:1,  d:8},
+  {c:'S', name:'昭和', y:1926, m:12, d:25},
+  {c:'T', name:'大正', y:1912, m:7,  d:30},
+  {c:'M', name:'明治', y:1868, m:1,  d:25}
+];
+function fmtWareki(iso){
+  var p=parseIsoDate(iso);
+  if(!p) return String(iso==null?'':iso);          // 非ISOは原文のまま（勝手に消さない）
+  var key=p.y*10000+p.m*100+p.d;
+  for(var i=0;i<ERAS.length;i++){
+    var e=ERAS[i];
+    if(key>=e.y*10000+e.m*100+e.d){
+      var n=p.y-e.y+1;
+      return e.c+(n<10?'0':'')+n+'.'+(p.m<10?'0':'')+p.m+'.'+(p.d<10?'0':'')+p.d;
+    }
+  }
+  return p.y+'.'+(p.m<10?'0':'')+p.m+'.'+(p.d<10?'0':'')+p.d;   // 明治より前は西暦で出す
+}
+/* 読み下し形の和暦（例「昭和15年1月1日」）。誕生日一覧の詰めた表記（S15.01.01）とは別用途で、
+   詳細画面・印刷・フェイスシートに西暦と並べて出す（2026-08-12 指示）。
+   ★明治より前は和暦にしない（元号表を持っていないので、当てずっぽうを出さない）。 */
+function fmtWarekiJp(iso){
+  var p=parseIsoDate(iso);
+  if(!p) return '';
+  var key=p.y*10000+p.m*100+p.d;
+  for(var i=0;i<ERAS.length;i++){
+    var e=ERAS[i];
+    if(key>=e.y*10000+e.m*100+e.d){
+      var n=p.y-e.y+1;
+      return e.name+(n===1?'元':n)+'年'+p.m+'月'+p.d+'日';
+    }
+  }
+  return '';
+}
+/* 和暦・西暦のどちらで打たれても ISO(YYYY-MM-DD) に直す（2026-08-12 指示）。
+   受ける形の例:
+     昭和15年1月1日 ／ 昭和15.1.1 ／ 昭和15/1/1 ／ S15.1.1 ／ s15-1-1 ／ 昭和元年12月25日
+     1940-01-01 ／ 1940/1/1 ／ 1940年1月1日
+   ★読み取れなければ空を返す。**呼び出し側は空のとき元の値を書き換えないこと**
+     （読めなかった入力で既存の生年月日を消さない）。
+   ★存在しない日付（昭和64年2月30日 等）は parseIsoDate が弾く。 */
+function parseAnyDate(input){
+  /* 全角の数字・英字（Ｓ１５）も受ける。現場は変換のまま打つことがある */
+  var s=String(input==null?'':input).trim()
+        .replace(/[０-９Ａ-Ｚａ-ｚ]/g,function(c){return String.fromCharCode(c.charCodeAt(0)-0xFEE0)})
+        .replace(/[．。・]/g,'.').replace(/[／]/g,'/').replace(/[－ー―‐]/g,'-')
+        .replace(/\s+/g,'');
+  if(!s) return '';
+  var pad=function(n){ n=+n; return (n<10?'0':'')+n; };
+  /* 西暦（4桁始まり） */
+  var m=/^(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?$/.exec(s);
+  if(m) return parseIsoDate(m[1]+'-'+pad(m[2])+'-'+pad(m[3])) ? m[1]+'-'+pad(m[2])+'-'+pad(m[3]) : '';
+  /* 和暦 */
+  m=/^(明治|大正|昭和|平成|令和|[MTSHRmtshr])(元|\d{1,2})[-/.年](\d{1,2})[-/.月](\d{1,2})日?$/.exec(s);
+  if(!m) return '';
+  var head=m[1].toUpperCase(), era=null;
+  for(var i=0;i<ERAS.length;i++){
+    if(ERAS[i].name===m[1] || ERAS[i].c===head){ era=ERAS[i]; break; }
+  }
+  if(!era) return '';
+  var n=(m[2]==='元')?1:+m[2];
+  if(!(n>=1)) return '';
+  var y=era.y+n-1, mo=+m[3], d=+m[4];
+  var iso=y+'-'+pad(mo)+'-'+pad(d);
+  if(!parseIsoDate(iso)) return '';
+  /* その元号の開始日より前は受け付けない（昭和1年1月1日のような実在しない日付を作らない）。
+     終わりは次の元号の開始日で判定する（元号最終年の途中までは有効） */
+  var key=y*10000+mo*100+d, start=era.y*10000+era.m*100+era.d;
+  if(key<start) return '';
+  var idx=ERAS.indexOf(era);
+  if(idx>0){ var nx=ERAS[idx-1]; if(key>=nx.y*10000+nx.m*100+nx.d) return ''; }
+  return iso;
+}
+/* 生年月日のセル。西暦を主にして、和暦は小さい文字で添える。
+   ★同じ大きさで括弧書きにしてはいけない。セルの幅は行で取り合いなので、
+     広げると隣のセルが折り返して印刷が伸びる（体重欄で実測した失敗と同型）。 */
+function birthCell(lab,iso){
+  var w=fmtWarekiJp(iso);
+  return '<div class="cell w-birth"><span class="lab">'+esc(lab)+'</span><span class="val">'+
+         esc(fmtJDate(iso)||'　')+(w?'<span class="bd-w">'+esc(w)+'</span>':'')+'</span></div>';
+}
+function paintBdayBar(){
+  var bar=$('bdayBar'); if(!bar) return;
+  var on=(curView==='bday');
+  bar.style.display=on?'flex':'none';
+  document.body.classList.toggle('bday-on',on);   // 印刷CSSをこのビュー限定にするため
+  var lab=$('bdayFY'); if(lab) lab.textContent=bdayFY+'年度';
+  /* 年度は現在年度の前後5年まで。無制限に押すと全員の年齢が空欄になり、
+     「年齢が高い順」の表も意味のない並びのまま印刷されてしまう */
+  var base=fyOfDate(new Date());
+  if($('bdayPrev'))$('bdayPrev').disabled=(bdayFY<=base-5);
+  if($('bdayNext'))$('bdayNext').disabled=(bdayFY>=base+5);
+}
+/* 誕生日順（4月始まり）と年齢順の2表をA4縦1枚に並べる。
+   ★このビューは帳票専用。他の4タブと違い、行をタップしても詳細へは遷移させない
+     （紙に起こすための一覧であり、行が押せると印刷前に画面が切り替わって邪魔になる）。 */
+function bdayHtml(list){
+  /* ★対象は【在籍者のみ】に固定する（2026-09-04 管理者承認）。
+     絞り込みチップ（在籍／退去／在籍＋退去）には従わない。従っていた頃は、
+     チップが端末ごとに localStorage へ保存されるせいで【同じ表なのに端末で人数が変わり】、
+     「在籍＋退去」のままの端末では143名が並んでA4縦1枚に物理的に入らなかった
+     （Macは1枚・PCは6枚に割れる、という報告の原因）。
+     誕生日を祝うための帳票なので、退去された方を載せる用途がない。 */
+  list = (list || []).filter(function(r){ return r && r.active !== false; });
+  /* 除外は「未登録」と「書式が不正」を必ず分ける。
+     一覧カードには生年月日が出ているのに、この表からだけ消えて「未登録」と説明されると
+     現場が欠落に気づけない（編集フォームは非ISOの既存値を温存する設計のため実在しうる）。 */
+  var rows=[],noBd=0,badBd=[];
+  list.forEach(function(r){
+    if(parseIsoDate(r.birthDate)) rows.push(r);
+    else if(!String(r.birthDate||'').trim()) noBd++;
+    else badBd.push(r);
+  });
+  /* 表1: 4月始まりの誕生日順（月→日→ふりがな） */
+  var byDate=rows.slice().sort(function(a,b){
+    var A=parseIsoDate(a.birthDate),B=parseIsoDate(b.birthDate);
+    var am=(A.m+8)%12, bm=(B.m+8)%12;              // 4月=0 …… 3月=11
+    return am-bm || A.d-B.d || String(a.kana||'').localeCompare(String(b.kana||''),'ja');
+  });
+  /* 表2: 年齢が高い順（同年齢は誕生日が早い順） */
+  var byAge=rows.slice().sort(function(a,b){
+    var aa=ageAtFyEnd(a.birthDate,bdayFY), ba=ageAtFyEnd(b.birthDate,bdayFY);
+    if(ba!==aa) return (ba||0)-(aa||0);
+    var A=parseIsoDate(a.birthDate),B=parseIsoDate(b.birthDate);
+    return A.y-B.y || A.m-B.m || A.d-B.d;
+  });
+  /* 誕生月は同じ月をまとめて縦結合する（写真どおり） */
+  var mrow=[],prev=null;
+  byDate.forEach(function(r,i){
+    var m=parseIsoDate(r.birthDate).m;
+    if(m!==prev){ mrow.push({i:i,m:m,n:1}); prev=m; } else { mrow[mrow.length-1].n++; }
+  });
+  var spanAt={},monAt={};
+  mrow.forEach(function(g){ spanAt[g.i]=g.n; monAt[g.i]=g.m; });
+  var t1=byDate.map(function(r,i){
+    /* 月の変わり目の行に mstart を付け、その行の上辺を太線にする（月の区切りを見やすく） */
+    return '<tr'+(spanAt[i]?' class="mstart"':'')+'>'+
+      '<td class="bno">'+(i+1)+'</td>'+
+      (spanAt[i]?('<td class="bm" rowspan="'+spanAt[i]+'">'+monAt[i]+'</td>'):'')+
+      '<td class="bn">'+esc(r.name)+'</td>'+
+      '<td class="bd">'+esc(fmtWareki(r.birthDate))+'</td>'+
+      '<td class="ba">'+esc(ageAtFyEnd(r.birthDate,bdayFY))+'</td></tr>';
+  }).join('');
+  var t2=byAge.map(function(r,i){
+    return '<tr>'+
+      '<td class="bno">'+(i+1)+'</td>'+
+      '<td class="bn">'+esc(r.name)+'</td>'+
+      '<td class="bd">'+esc(fmtWareki(r.birthDate))+'</td>'+
+      '<td class="ba">'+esc(ageAtFyEnd(r.birthDate,bdayFY))+'</td></tr>';
+  }).join('');
+  var today=new Date();
+  var stamp=today.getFullYear()+'.'+(today.getMonth()+1)+'.'+today.getDate();
+  /* 書式が不正な方は紙から消さず、氏名だけ末尾に出して確認を促す */
+  var badLine = badBd.length
+    ? '<div class="bday-bad">生年月日の書式が不正で表に載せられませんでした（要確認）：'+
+        badBd.map(function(r){return esc(r.name)}).join('・')+'</div>'
+    : '';
+  var notes=[];
+  if(noBd) notes.push('生年月日が未登録の'+noBd+'名は除く');
+  if(badBd.length) notes.push('書式が不正な'+badBd.length+'名は下記');
+  var base=fyOfDate(today);
+  var fyNote = (bdayFY!==base) ? '　※'+bdayFY+'年度の表示（年齢は'+(bdayFY+1)+'年3月31日時点）' : '';
+  /* ★どの絞り込みで出した紙かを必ず残す。
+     この画面は検索欄と在籍/退去チップが効くが、印刷ではどちらも紙に写らない。
+     残さないと「一部だけの表」が完全な一覧に見え、誕生会の対象者が漏れる。
+     在籍フィルタは端末に保存されるため、前回「退去」のままの端末もありうる。 */
+  /* ★この表は絞り込みに関係なく在籍者のみ（上の filter）。紙にもそう書く。
+     「一部だけの表」が完全な一覧に見えると誕生会の対象者が漏れるため、範囲は必ず紙に残す。 */
+  var scope='在籍のみ';
+  var qNow=(($('q')&&$('q').value)||'').trim();
+  var scopeNote='　／　対象 '+scope+(qNow?'　／　検索「'+esc(qNow)+'」で絞り込み中':'');
+  return '<div class="bday-sheet" id="bdaySheet">'+
+    '<div class="bday-hd"><div class="bt1">☆誕生日一覧☆</div>'+
+      '<div class="bt2">'+bdayFY+'年度　誕生日後の年齢</div></div>'+
+    '<div class="bday-2col">'+
+      '<div class="bcol"><div class="bcol-t">誕生日順</div>'+
+        '<table class="btbl bt-date"><thead><tr><th>No.</th><th>誕生月</th><th>利用者名</th><th>生年月日</th><th>年齢</th></tr></thead><tbody>'+t1+'</tbody></table></div>'+
+      '<div class="bcol"><div class="bcol-t">年齢順</div>'+
+        '<table class="btbl bt-age"><thead><tr><th>No.</th><th>利用者名</th><th>生年月日</th><th>年齢</th></tr></thead><tbody>'+t2+'</tbody></table></div>'+
+    '</div>'+
+    badLine+
+    '<div class="bday-ft">'+rows.length+'名'+
+      (notes.length?'（'+notes.join('／')+'）':'')+fyNote+scopeNote+
+      '　／　印刷日 '+stamp+'</div>'+
+  '</div>';
+}
+/* 居室 → 階。daycare-roster.html の roomToFloor と同一仕様（判定を2箇所でずらさない）。
+   全角数字は半角へ寄せる（自由テキスト欄のため "２０１" の混入がありうる）。
+   0 = 階を判定できない（居室未登録・1/2以外で始まる） */
+function roomToFloor(room){
+  /* ★2026-09-24: 階の決め方は施設情報（facility-profile.json の floors・su-facility.js）に従う。
+     既定は１階・２階＝これまでと同じ「居室番号の先頭が 1 か 2」。読めない時もこの既定で判定する */
+  if(window.SUFacility && typeof SUFacility.floorOf==='function') return SUFacility.floorOf(room);
+  var s=String(room==null?'':room).trim()
+    .replace(/[０-９]/g,function(c){return String.fromCharCode(c.charCodeAt(0)-0xFEE0)});
+  var m=s.match(/^([12])/);
+  return m?parseInt(m[1],10):0;
+}
+/* 階の見出し（１階 など）。施設情報の floors から引く */
+function floorLbl(no){
+  return (window.SUFacility && typeof SUFacility.floorLabel==='function') ? SUFacility.floorLabel(no) : (no===1?'１階':no===2?'２階':no+'階');
+}
+/* 居室番号の数値順（"99" より "101" が後ろ。文字列比較だと逆になる） */
+function roomNo(room){
+  var s=String(room==null?'':room).replace(/[０-９]/g,function(c){return String.fromCharCode(c.charCodeAt(0)-0xFEE0)});
+  var m=s.match(/\d+/); return m?parseInt(m[0],10):9e15;   // 居室番号なし＝末尾へ（ES5 のため MAX_SAFE_INTEGER は使わない）
+}
+function byRoom(a,b){ return roomNo(a.room)-roomNo(b.room)
+  || String(a.kana||'').localeCompare(String(b.kana||''),'ja'); }
+function byKana(a,b){ return String(a.kana||a.name||'').localeCompare(String(b.kana||b.name||''),'ja'); }
+
+/* 五十音の行分け。ヨミの先頭文字を清音・大書き・ひらがなに正規化してから分類する。
+   （ヤマダ/やまだ→や行、が→か行、ぱ→は行、ぁ→あ行） */
+var KANA_BASE={'が':'か','ぎ':'き','ぐ':'く','げ':'け','ご':'こ','ざ':'さ','じ':'し','ず':'す','ぜ':'せ','ぞ':'そ',
+  'だ':'た','ぢ':'ち','づ':'つ','で':'て','ど':'と','ば':'は','び':'ひ','ぶ':'ふ','べ':'へ','ぼ':'ほ',
+  'ぱ':'は','ぴ':'ひ','ぷ':'ふ','ぺ':'へ','ぽ':'ほ','ゔ':'う',
+  /* 旧かな・小書き。ヰ/ヱ/ヵ/ヶ もカタカナ→ひらがな変換後にここへ落ちる。
+     現代仮名遣いの読みに合わせる（ゐ→い・ゑ→え）。高齢入居者の名簿では実際に起こりうる */
+  'ゐ':'い','ゑ':'え','ゕ':'か','ゖ':'け',
+  'ぁ':'あ','ぃ':'い','ぅ':'う','ぇ':'え','ぉ':'お','っ':'つ','ゃ':'や','ゅ':'ゆ','ょ':'よ','ゎ':'わ'};
+var KANA_ROWS=[['あ行','あいうえお'],['か行','かきくけこ'],['さ行','さしすせそ'],['た行','たちつてと'],
+  ['な行','なにぬねの'],['は行','はひふへほ'],['ま行','まみむめも'],['や行','やゆよ'],
+  ['ら行','らりるれろ'],['わ行','わをん']];
+/* 半角カタカナ → ひらがな（0xFF66「ｦ」起点の並び順そのまま）。
+   長年運用のスプレッドシートは半角カナが混ざりうる。寄せないと「その他」に落ちる。 */
+var KANA_HALF='をぁぃぅぇぉゃゅょっーあいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわん';
+function kanaRowOf(r){
+  var s=String(r.kana||'').trim();
+  if(!s) return '';                                  // ヨミが無い人は「その他」へ（落とさない）
+  var c=s.charAt(0);
+  var cd=c.charCodeAt(0);
+  if(cd>=0x30A1&&cd<=0x30F6) c=String.fromCharCode(cd-0x60);      // 全角カタカナ→ひらがな
+  else if(cd>=0xFF66&&cd<=0xFF9D) c=KANA_HALF.charAt(cd-0xFF66);  // 半角カタカナ→ひらがな
+  c=KANA_BASE[c]||c;
+  for(var i=0;i<KANA_ROWS.length;i++){ if(KANA_ROWS[i][1].indexOf(c)>=0) return KANA_ROWS[i][0]; }
+  return '';                                         // ひらがな以外（英字等）も「その他」へ
+}
+/* 1人分のカード。全タブで同じ見た目にする（一貫性） */
+function rcardHtml(r){
+  /* ★既存の居室・介護度・退去タグの並びは動かさない（現場の見慣れた順序を壊さない）。
+     生年月日・身長・体重はその後ろに足し、値が無い項目はタグごと出さない。 */
+  var w=weightIdx[String(r.id)];
+  return '<div class="rcard" data-id="'+esc(r.id)+'">'+
+    '<div class="nm">'+esc(r.name)+'</div>'+
+    (r.kana?'<div class="kn">'+esc(r.kana)+'</div>':'')+
+    '<div class="meta">'+
+      (r.room?'<span class="tag room">'+esc(r.room)+'号室</span>':'')+
+      (r.careLevel?'<span class="tag care">'+esc(r.careLevel)+'</span>':'')+
+      (r.active===false?'<span class="tag out">退去</span>':'')+
+      (r.hospitalized?'<span class="tag hosp">🏥 入院中</span>':'')+
+      (r.birthDate?'<span class="tag bd">'+esc(fmtJDate(r.birthDate))+'生</span>':'')+
+      (r.height?'<span class="tag ht">'+esc(r.height)+'cm</span>':'')+
+      (w?'<span class="tag wt" title="この端末の体重管理アプリにある最新値（同期状況により古い場合があります）">'+esc(w.weight)+'kg'+(w.on?'（'+esc(String(w.on).slice(0,10))+'）':'')+'</span>':'')+
+    '</div></div>';
+}
+function secHtml(title,people,extraClass){
+  if(!people.length) return '';                      // 該当者ゼロの区画は見出しごと出さない
+  return '<div class="rsec'+(extraClass?' '+extraClass:'')+'"><h3>'+esc(title)+
+    '<span class="cnt">'+people.length+'名</span></h3><div class="rlist">'+
+    people.map(rcardHtml).join('')+'</div></div>';
+}
+
+/* 一覧の並べ替えの比べ方（2026-10-28）。localeCompare(…,'ja') は呼ぶたびに比べ方の表を作り直して遅い
+   （起動のたび・検索の1打鍵ごとに通る）。同じ 'ja' の Intl.Collator を1つ作って使い回す＝並び順は同じ。
+   作れない古いブラウザでは今までの localeCompare に戻す */
+var rmJaCmp_=(function(){
+  try{ var c=new Intl.Collator('ja'); return function(a,b){ return c.compare(a,b); }; }
+  catch(e){ return function(a,b){ return a.localeCompare(b,'ja'); }; }
+})();
+function renderRoster(){
+  var q=($('q').value||'').trim().toLowerCase();
+  var box=$('rosterBox');
+  var list=roster.filter(function(r){
+    if(curFilter==='active'&&r.active===false)return false;
+    if(curFilter==='out'&&r.active!==false)return false;
+    if(q){var hay=((r.name||'')+' '+(r.kana||'')+' '+(r.room||'')).toLowerCase();if(hay.indexOf(q)<0)return false}
+    return true;
+  }).sort(function(a,b){return rmJaCmp_(String(a.room||''),String(b.room||''))||rmJaCmp_(String(a.kana||''),String(b.kana||''))});
+  /* 体重の索引は描画のたびに作り直す。体重アプリで記録した後、再読込すれば反映される。
+     体重アプリ未使用の端末では空になり、体重タグが出ないだけで一覧は従来どおり出る。 */
+  try{ weightIdx=buildWeightIndex(list); }catch(e){ weightIdx={}; }   // 体重が出ないだけで一覧は必ず描画する
+  var cntEl=$('rosterCount');
+  if(cntEl) cntEl.textContent=list.length?(list.length+'名'):'';
+  /* ★食形態一覧は【自前のデータ】（getMealList）で描く。共有名簿が空でも表は出せるので、
+     下の「入居者がいません」より手前で片付ける。件数はビュー専用バーに出す。 */
+  /* ★帳票ビューは母集団が roster（絞り込み前）なので、絞り込み後の件数を出すと
+     シート脚注の人数と食い違う。meal と同じく空にする */
+  if(cntEl && (curView==='cm'||curView==='lvl'||curView==='fam'||curView==='hist'||curView==='md'))
+    cntEl.textContent='';
+  if(cntEl && curView==='cert') cntEl.textContent='';   /* 認定期限も同じ（母集団は shBase＝絞り込み前） */
+  if(cntEl && curView==='miss') cntEl.textContent='';   /* 未入力も同じ（2026-10-17） */
+  if(curView==='rev'){
+    /* 収支の見通し（2026-11-07）。母集団は名簿の絞り込み前なので、検索語・絞り込みで0名でも「該当なし」にしない。
+       ★1分ごとの読み直し・裏の読み込みの終わりは、数字の部分（#revMain）だけを差し替える＝入力欄・予定の欄・押そうとした部品を消さない。
+       画面全体を作り直すのは、初めて開いた時と本人の操作（REV.force）の時だけ */
+    if(cntEl) cntEl.textContent='';
+    if(!REV.force&&getDeviceRole()!=='field'&&$('revRoot')&&box.contains($('revRoot'))){ revRedrawMain_(); return; }
+    REV.force=false;
+    box.innerHTML=revHtml();
+    revPaintForm_();
+    return;
+  }
+  if(curView==='meal'){
+    if(cntEl) cntEl.textContent='';
+    box.innerHTML=mealHtml(q);
+    mealBindCells(box);
+    /* ★ここでは用紙フィット（fitMealSheet）を掛けない。検索は1打鍵ごとにこの関数を通るので、
+       毎回かけると二分探索＋充填で数十回の強制レイアウトが走り、入力が引っかかる
+       （2026-08-24 レビュー指摘 M-4）。画面に要るのは氏名列の幅だけなので軽い方だけ掛ける。
+       用紙に収まるかの判定と警告は「取得のあと」と「印刷の直前」に行う。 */
+    mealScreenReset_();
+    paintMealBar();
+    return;
+  }
+  /* 食形態一覧表（配布用）も自前のデータ（getMealList）で描く。★検索窓は効かせない
+     （配る紙が一部の方だけになるのを防ぐ。母集団は在籍の全員） */
+  if(curView==='mf'){
+    if(cntEl) cntEl.textContent='';
+    box.innerHTML=mfHtml();
+    fitMfSheet();
+    paintShBars();
+    return;
+  }
+  if(!list.length){box.innerHTML='<div class="empty">'+(roster.length?'該当する入居者がいません':'入居者がいません。「同期設定」でURLを設定するか「新規」で登録してください')+'</div>';
+    /* 接続先が無い時は、何が足りないかと接続設定へのリンクを添える（2026-11-02 便4・現場端末は接続設定を使わないので出さない） */
+    if(!roster.length&&!rmOn_()&&getDeviceRole()!=='field'){ if(box.firstChild) box.firstChild.appendChild(rmNoUrlGuide_()); }
+    return}
+  var html;
+  if(curView==='fl2'||curView==='fl4'){
+    /* ★階が判定できない人（居室未登録等）を必ず「階未設定」として出す。
+       落とすと画面から消え、誰も気づけない（daycare-roster と同じ方針）。 */
+    var f1=[],f2=[],f0=[];
+    list.forEach(function(r){var f=roomToFloor(r.room);(f===1?f1:f===2?f2:f0).push(r)});
+    f1.sort(byRoom); f2.sort(byRoom); f0.sort(byKana);
+    var s1=secHtml(floorLbl(1)+'入居者',f1), s2=secHtml(floorLbl(2)+'入居者',f2),
+        s0=secHtml('階未設定（居室が未登録・1/2以外で始まる）',f0,'nofloor');
+    html=(curView==='fl2')
+      // 左右に1列ずつ。階未設定はその下に全幅で。
+      // ★片側が0名でも空の div を置く。置かないと残った側が左列に寄り「左=1階」が崩れる
+      ? '<div class="fl-2col">'+(s1||'<div></div>')+(s2||'<div></div>')+'</div>'+s0
+      : '<div class="fl-4col">'+s1+s2+s0+'</div>';    // 上に1階4列・下に2階4列
+  }else if(curView==='kana'){
+    var bucket={},other=[];
+    list.forEach(function(r){var k=kanaRowOf(r); if(!k){other.push(r);return} (bucket[k]=bucket[k]||[]).push(r)});
+    html=KANA_ROWS.map(function(p){
+      var a=bucket[p[0]]; if(!a) return '';
+      return secHtml(p[0],a.sort(byKana));
+    }).join('')+secHtml('その他',other.sort(byKana),'nofloor');   // ヨミ未登録・五十音で分類できないヨミ
+  }else if(curView==='adm'){
+    html=admHtml(list);
+  }else if(curView==='bday'){
+    html=bdayHtml(list);
+  }else if(curView==='cm'){
+    html=cmHtml();
+  }else if(curView==='lvl'){
+    html=lvlHtml();
+  }else if(curView==='room'){
+    html=roomHtml();
+  }else if(curView==='fam'){
+    html=famHtml();
+  }else if(curView==='hist'){
+    html=histHtml();
+  }else if(curView==='md'){
+    html=mdHtml();
+  }else if(curView==='miss'){
+    html=missHtml();
+  }else if(curView==='cert'){
+    html=certHtml();
+  }else{
+    html='<div class="rlist">'+list.map(rcardHtml).join('')+'</div>';
+  }
+  box.innerHTML=html;
+  Array.prototype.forEach.call(box.querySelectorAll('.rcard'),function(el){
+    el.addEventListener('click',function(){openResident(this.getAttribute('data-id'))});
+  });
+  if(curView==='bday') fitBdaySheet();
+  try{ certBadgePaint_(); }catch(e){}   /* 名簿が変わったら数え直す（2026-10-16 第2弾） */
+  if(curView==='cm')   fitCmSheet();
+  if(curView==='lvl')  fitLvlSheet();
+  if(curView==='room') fitRoomScreen_();   /* 文字の大きさを当てる（計算で決める・2026-10-23） */
+  /* ★ここでは fitHistSheet を掛けない。検索は1打鍵ごとにこの関数を通るので、毎回かけると
+     248行×最大6サイズ＝1488回の文字幅計測に加え、表全体の強制レイアウトが6往復走って
+     入力が引っかかる（食形態一覧で 2026-08-24 に同じ判断をしている）。
+     しかも hist の母集団は検索を見ないので出力は1pxも変わらない＝丸ごと無駄仕事。
+     採寸は「取得のあと」と「印刷の直前」に行う。 */
+}
+/* A4縦1枚に収める。行数で決め打ちせず、実際の高さを測って収まるまで縮める。
+   ★高さは「見出し＋（左右の表のうち高い方）＋脚注」で計算する。
+     .bday-2col はスマホ幅だと1列になるが、印刷は必ず2列なので
+     シート全体の高さを測ると縦積み分を二重に数えてしまう。
+   ★行は nowrap なので、行の高さは列幅ではなく文字サイズだけで決まる。
+     つまり画面幅が印刷幅と違っても、この見積りは印刷とずれない。 */
+/* ═══ 誕生日一覧を刷る（2026-09-04 追加）═══
+   ★刷る直前に必ず採寸し直す。描画時の1回だけだと、窓の幅を変えた後・別のタブを見ている間に
+     再描画された後などに【未調整のまま】刷られる（食形態一覧は既に同じ備えをしている）。
+   ★ボタンと ⌘/Ctrl+P の両方を通す。PCでは⌘/Ctrl+Pで刷る人が多い。 */
+function bdayViewActive_(){
+  var s=document.getElementById('bdaySheet');
+  return !!(typeof curView!=='undefined' && curView==='bday' && s && s.offsetParent);
+}
+function bdayPrintGo_(){
+  try{ if(bdayViewActive_()) fitBdaySheet(); }catch(e){}
+  window.print();
+}
+window.addEventListener('beforeprint',function(){
+  if(!bdayViewActive_()) return;
+  try{ fitBdaySheet(); }catch(e){}
+});
+var BDAY_PRINT_H_PX = 277 * 96 / 25.4;   // A4縦297mm − 上下マージン10mm
+var BDAY_PRINT_W_PX = 190 * 96 / 25.4;   // A4縦210mm − 左右マージン10mm
+function fitBdaySheet(){
+  var sheet=$('bdaySheet'); if(!sheet) return;
+  /* ★一覧が非表示のときは測らない。非表示要素の offsetHeight は 0 になり、
+     「収まった」と誤判定して12pxのまま固定され、警告も出なくなる。
+     （詳細画面を開いている間に60秒ポーリングで再描画される経路が実在する） */
+  if(!sheet.offsetParent) return;
+  var tbls=sheet.querySelectorAll('.btbl');
+  var cols=sheet.querySelectorAll('.bcol');       // 表タイトル＋表。高さはこちらで測る
+  var hd=sheet.querySelector('.bday-hd'), ft=sheet.querySelector('.bday-ft');
+  /* 計測対象（.bcol）が無いのに走ると tall=0 で「収まった」と誤判定するため、両方を要求する */
+  if(!tbls.length||!cols.length) return;
+  function measure(){
+    var tall=0;
+    for(var i=0;i<cols.length;i++) tall=Math.max(tall,cols[i].offsetHeight);
+    /* ★書式不正の氏名行(.bday-bad)も印刷に出るので必ず数える。
+       数え落とすと、縮小が上限ぎりぎりで止まったときにこの行だけ2枚目へ落ちる
+       （しかも over=false なので警告も出ない）。.bday-warn は印刷に出ないので数えない。 */
+    var bad=sheet.querySelector('.bday-bad');
+    return (hd?hd.offsetHeight:0)+tall+(ft?ft.offsetHeight:0)+(bad?bad.offsetHeight+4:0)+16;
+  }
+  /* 表は内容ぴったりの幅なので、文字を大きくすると縦にも横にも育つ。
+     幅（190mm）と高さ（277mm）の両方に収まる範囲で【いちばん大きい文字】を選び、
+     用紙を使い切る。上限22pxは、少人数のときに文字が巨大になりすぎないための歯止め。
+     下限7pxはこれ以下だと紙で読めないため、無理に縮めず警告に倒す。 */
+  function width(){
+    var w=0;
+    for(var i=0;i<tbls.length;i++) w+=tbls[i].offsetWidth;
+    /* gap は CSS 側と二重管理にしない（片方だけ変えると幅判定が無言でズレる） */
+    var gapPx=0;
+    try{ gapPx=parseFloat(getComputedStyle(sheet.querySelector('.bday-2col')).columnGap)||0; }catch(e){ gapPx=10; }
+    return w+gapPx;
+  }
+  function apply(s){
+    var p = s>=11 ? 3 : s>=9 ? 2 : s>=8 ? 1 : 0;   // 文字が大きいほど余白も広げて紙を埋める
+    for(var i=0;i<tbls.length;i++){ tbls[i].style.fontSize=s+'px'; }
+    sheet.style.setProperty('--bpad', p+'px');
+    /* 見出しの大小は必ず「☆誕生日一覧☆ ＞ 誕生日順/年齢順 ＞ 本文」の順にする。
+       表タイトルだけを本文比で拡大すると、人数が少ない時に表題より大きくなり、
+       紙を見た人が主題を取り違える。全部を本文比で連動させて順序を保証する。 */
+    sheet.style.setProperty('--btitle', Math.round(s*1.7)+'px');
+    sheet.style.setProperty('--bhd1',   Math.round(s*2.1)+'px');
+    sheet.style.setProperty('--bhd2',   Math.round(s*1.4)+'px');
+  }
+  /* ★幅は 6px の安全余裕を引く。offsetWidth は整数丸めで、罫線の外周分も
+     完全には含まれない。1pxでも超えると紙では左右が切れ、しかも縦の溢れと違って
+     2枚目に出ないため情報が失われる（気づけない）。 */
+  /* 高さにも安全余裕を置く（幅と同じ考え方）。境目ぴったりだと、端末の行の丸め方が
+     1px違うだけで最終行が2枚目へ落ちる。8px＝約2mm。 */
+  function tooTall(){ return measure()>BDAY_PRINT_H_PX-8; }
+  function tooWide(){ return width()>BDAY_PRINT_W_PX-6; }
+  function fits(){ return !tooTall() && !tooWide(); }
+  /* --bpad は s に対し単調非増加、--btitle は単調非減少なので fits() は s について単調。
+     よって二分探索でよい（0.25刻みの線形走査だと1打鍵あたり最大61回の強制レイアウトになる）。 */
+  var MAX=22, MIN=7, STEP=0.25;
+  var lo=0, hi=Math.round((MAX-MIN)/STEP);      // 0=MIN … hi=MAX
+  var sizeOf=function(k){ return Math.round((MIN+k*STEP)*100)/100; };
+  apply(sizeOf(lo));
+  if(fits()){
+    while(lo<hi){
+      var mid=Math.ceil((lo+hi)/2);
+      apply(sizeOf(mid));
+      if(fits()) lo=mid; else hi=mid-1;
+    }
+  }
+  var size=sizeOf(lo);
+  apply(size);
+  /* それでも収まらない時は黙って溢れさせない。画面にだけ理由を出す（印刷物には出さない）。 */
+  var over=!fits(), wide=tooWide();
+  var warn=sheet.querySelector('.bday-warn');
+  if(over&&!warn){
+    warn=document.createElement('div'); warn.className='bday-warn';
+    /* 原因（縦＝人数が多い／横＝氏名が長い）で対処が違うので文言を分ける */
+    warn.textContent = wide
+      ? '⚠️ お名前の長い方がいるため、A4縦1枚の幅に収まりません。この方の氏名表記をご確認ください（紙では左右が切れます）。'
+      : '⚠️ 人数が多く、この文字サイズではA4縦1枚に収まりません。上の「在籍／退去」で絞り込むか、2枚に分けて印刷してください。';
+    sheet.insertBefore(warn,sheet.firstChild);
+  }else if(!over&&warn){ warn.parentNode.removeChild(warn); }
+}
+
+/* ═══════════ 個人フル取得・表示（都度取得・キャッシュしない） ═══════════ */
+/* ═══════════ 帳票ビュー（CM表・介護度別）2026-09-04 指示 ═══════════
+   Googleスプレッドシート「入居者情報」の【現入居者家族CM表】【介護度別表】と同じ見た目にする。
+   ★どちらも【在籍者のみ・五十音順】（管理者指示）。絞り込みチップには従わない。
+     従うと端末ごとに保存された設定で人数が変わり、同じ帳票なのに紙が変わる（誕生日一覧と同じ轍）。
+   ★書かない。この2ビューはマスタを1バイトも更新しない（読み取り専用）。
+   ★居宅・CM・電話・入居日は【共有名簿(getRoster)には無い】項目なので getBulk から取る。
+     入居日順タブ(admEnsure)と同じ出どころだが、あちらは入居日しか持たないため別に持つ。 */
+var bkRows=null, bkLoading=false, bkErr='';
+/* 控えが古くなった印（2026-09-26 認定期限タブ用）。1人ずつ・一括編集の保存が通るたびに立てる。
+   ★控え（bkRows）そのものは捨てない＝CM表・介護度別など既存タブの取得回数は変えない。
+   bkStaleSeq_ は印を立てた回数。取得を始めた時の値と比べ、保存【より後】に取れた控えの時だけ印を下ろす。 */
+var bkStale_=false, bkStaleSeq_=0;
+function bkEnsure(force){
+  if(getDeviceRole()==='field') return;   /* ★現場端末では取りに行かない（2026-10-01） */
+  if(bkLoading) return;
+  if(bkRows&&!force) return;
+  if(!rmOn_()){ bkErr='入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）'; paintShBars(); return; }
+  var seq=bkStaleSeq_;
+  /* ★出した時の世代。応答を待つ間に現場用へ切り替わったら（devGen が進む）、届いた応答は捨てる（2026-10-01） */
+  var dg=devGen;
+  bkLoading=true; bkErr=''; paintShBars();
+  apiGet({action:'getBulk'},30000).then(function(d){
+    if(dg!==devGen) return;   // 切り替え後に届いた応答（控えに入れない）
+    var rows=(d&&d.rows)||[];
+    /* ★空応答を成功として扱わない（全員が空欄の帳票を正しい結果として刷らせない） */
+    if(!rows.length){ bkErr='取得できませんでした（0件）'; return; }
+    bkRows=rows;
+    if(seq===bkStaleSeq_) bkStale_=false;   /* 保存より後に取れた控え＝最新 */
+  }).catch(function(){ if(dg!==devGen) return; bkErr='取得できませんでした（通信）'; })
+    .then(function(){ if(dg!==devGen) return;   // 取得中の印は applyDeviceGuard が下ろし済み（新しい取得の印を消さない）
+      bkLoading=false; paintShBars();
+      if(curView==='cm'||curView==='lvl'||curView==='cert'||curView==='miss'||curView==='rev') renderRoster();
+      admAfterBk_();   /* 入居日順タブは同じ控えから作る（2026-10-29） */
+      /* 取得中に保存が通った時は、いま届いた控えは保存前のもの。認定期限を表示中なら1回だけ取り直す
+         （失敗しただけの時は seq が同じなので取り直さない＝失敗の繰り返しで往復が止まらなくならない） */
+      if(seq!==bkStaleSeq_) certEnsureFresh_(); });
+}
+/* 名簿の1件に、getBulk 側の項目を重ねた読み取り用の写しを返す（マスタは書き換えない） */
+function bkOf(r){
+  var o={id:r.id, name:r.name, kana:r.kana, room:r.room, careLevel:r.careLevel, active:r.active};
+  if(bkRows){
+    for(var i=0;i<bkRows.length;i++){
+      var x=bkRows[i];
+      if(x&&String(x.id)===String(r.id)){
+        for(var k in x){ if(Object.prototype.hasOwnProperty.call(x,k)) o[k]=x[k]; }
+        break;
+      }
+    }
+  }
+  return o;
+}
+/* ═══ 家族の見せ方（2026-09-07 管理者指示）═══
+   ★この3つは resident-master.html と facesheet.html で【逐語同一】にすること。
+     食い違うと、同じ方の詳細画面とフェイスシートで別の家族表示になる。
+   ・2名以上いる時だけ番号を振る（1名の時に「①」だけ出ても意味がない）
+   ・KP（キーパーソン）は氏名の直後に :KP。続柄より前に置く＝氏名とひと続きで読める
+   ・番号は【家族の並び順】で固定する。緊急連絡先の列でも同じ番号を使うので、
+     どの番号が誰かが2つの列をまたいで一致する（ここを別々に振ると誰の電話か分からなくなる） */
+var FAM_MARKS='①②③④⑤⑥⑦⑧⑨⑩';
+function famNo(i, n){
+  if(n<2) return '';
+  return (i<FAM_MARKS.length? FAM_MARKS.charAt(i) : ('('+(i+1)+')'))+' ';
+}
+function famWho(f){
+  if(!f) return '';
+  var nm=String(f.name==null?'':f.name).trim();
+  var rel=String(f.relation==null?'':f.relation).trim();
+  /* ★氏名が空でも空文字を返さない。返すと家族列だけ欠番になり、電話・住所に残った
+     同じ番号が【誰のものか分からなくなる】（番号を2列で一致させるのが今回の要点）。
+     移行データには氏名が空で電話・住所だけある家族が実在しうる（migrate.gs が警告つきで残す）。
+     A4様式の緊急連絡先セルも空欄になり「緊急連絡先なし」と読まれる。 */
+  if(!nm) return rel?('（'+rel+'）'):'（氏名未記載）';
+  return nm+(f.kp?':KP':'')+(rel?('（'+rel+'）'):'');
+}
+/* 在籍者だけを五十音順で返す（帳票5種の共通の母集団）。
+   ★引数は取らない。renderRoster が渡す list は【検索語と絞り込みチップで既に削られた後】なので、
+     それを母集団にすると「検索したまま切り替えて刷った紙」が一部だけの表になるのに、
+     脚注は『対象 在籍のみ』と断言してしまう（受け取った側は完全な一覧だと読む）。
+     介護度別に至っては平均介護度・介護4以上割合が誤った母集団の値になる＝経営数値の紙。
+     退去チップのままだと0名の紙が出る。帳票は必ず roster（絞り込み前）から作る。 */
+function shBase(){
+  return (roster||[]).filter(function(r){ return r && r.active!==false; }).slice().sort(byKana);
+}
+function paintShBars(){
+  var c=$('cmBar'), l=$('lvlBar'), f=$('famBar'), h=$('histBar');
+  if(c) c.style.display=(curView==='cm')?'flex':'none';
+  try{ cmPinchBind_(curView==='cm'); }catch(e){}   /* CM表のピンチのリスナーは CM表の間だけ（2026-10-23） */
+  if(l) l.style.display=(curView==='lvl')?'flex':'none';
+  var rm=$('roomBar'); if(rm) rm.style.display=(curView==='room')?'flex':'none';
+  if($('roomStatus')) $('roomStatus').textContent=(curView==='room')
+    ? (roster&&roster.length?'':'名簿を取得しています…') : '';
+  if(f) f.style.display=(curView==='fam')?'flex':'none';
+  if(h) h.style.display=(curView==='hist')?'flex':'none';
+  var msg = bkLoading ? '取得しています…' : (bkErr || (bkRows?'':'未取得'));
+  if($('cmStatus'))  $('cmStatus').textContent  = (curView==='cm')  ? msg : '';
+  /* 見た目は aria-pressed のCSS（.sh-bar button[aria-pressed="true"]）で出す。
+     .on は .achip 用のクラスで、このバーでは詳細度で負けて効かない（同じバーの mdchip と揃える） */
+  if($('cmBar')) Array.prototype.forEach.call($('cmBar').querySelectorAll('.cmchip'),function(b){
+    b.setAttribute('aria-pressed', (b.getAttribute('data-m')===cmMode)?'true':'false');
+  });
+  if($('lvlStatus')) $('lvlStatus').textContent = (curView==='lvl') ? msg : '';
+  /* 認定期限（2026-09-26 追加）。CM表・介護度別と同じ getBulk の控えを使うので状態も同じ文言 */
+  var ce=$('certBar'); if(ce) ce.style.display=(curView==='cert')?'flex':'none';
+  /* 未入力の一覧（2026-10-17 第3弾） */
+  var msb=$('missBar'); if(msb) msb.style.display=(curView==='miss')?'flex':'none';
+  if($('missStatus')) $('missStatus').textContent=(curView==='miss')
+    ? ((bkLoading||mealLoading)?'取得しています…':(bkErr||(bkRows?'':'未取得'))) : '';
+  /* 食形態一覧表（配布用・2026-10-15）。状態は食形態一覧と同じ取得（mealLoad）のもの */
+  var mfb=$('mfBar'); if(mfb) mfb.style.display=(curView==='mf')?'flex':'none';
+  if($('mfStatus')) $('mfStatus').textContent=(curView==='mf')
+    ? (mealLoading?'取得しています…':(mealMsg||(mealRows?'':'未取得'))) : '';
+  if($('mfReload')) $('mfReload').disabled=mealLoading||mealSaving;
+  if($('mfPrint'))  $('mfPrint').disabled=mealLoading||!mealRows||!mealRows.length;
+  if($('mfDate')&&$('mfDate').value!==mfDate) $('mfDate').value=mfDate;
+  /* 控えがある状態での取り直し中は、表は前回のまま・状態欄だけで知らせる */
+  if($('certStatus')) $('certStatus').textContent = (curView==='cert')
+    ? ((bkLoading&&bkRows)?'最新を取得しています…':msg) : '';
+  /* 家族・病歴は1名ずつ取るので、進み具合まで出す（無言で30秒待たせない） */
+  var wmsg = (typeof shLoadNote==='function') ? shLoadNote() : '';
+  if($('famStatus'))  $('famStatus').textContent  = (curView==='fam')  ? wmsg : '';
+  if($('histStatus')) $('histStatus').textContent = (curView==='hist') ? wmsg : '';
+  var m=$('mdBar'); if(m) m.style.display=(curView==='md')?'flex':'none';
+  if($('mdStatus')) $('mdStatus').textContent=(curView==='md')
+    ? (mdBusy || (mdLoading?'薬効辞書を取得しています…':(mdErr||wmsg))) : '';
+  if($('mdProg')) $('mdProg').textContent=(curView==='md'&&mdDict)
+    ? ('辞書 '+mdDict.length+'件'+(mdDirty?'　※未保存の変更があります':'')) : '';
+  if($('mdSave')) $('mdSave').disabled=!mdDirty;
+  if($('mdBar')) Array.prototype.forEach.call($('mdBar').querySelectorAll('.mdchip'),function(b){
+    var on=b.getAttribute('data-o')===mdOrder;
+    b.classList.toggle('on',on); b.setAttribute('aria-pressed',on?'true':'false');
+  });
+  /* 非表示の切替。件数も出す（0件なら押しても何も増えないことが分かる） */
+  var hb=$('mdHidden');
+  if(hb&&curView==='md'){
+    var hn=mdHiddenTotal_();
+    hb.textContent=(mdShowHidden?'👁 非表示を隠す':'👁 非表示も表示')+(hn?('（'+hn+'）'):'');
+    /* 見た目は aria-pressed のCSSで出す（.on は .mdchip 用で、このボタンには効かない） */
+    hb.setAttribute('aria-pressed',mdShowHidden?'true':'false');
+  }
+  try{ certBadgePaint_(); }catch(e){}   /* 認定期限タブの人数（2026-10-16 第2弾） */
+}
+/* 認定期限タブの人数（期限切れ＋60日以内・2026-10-16 第2弾）。在籍者だけを数える（認定期限一覧と同じ母集団） */
+function certBadgePaint_(){
+  var b=document.querySelector('.vtab[data-v="cert"]'); if(!b) return;
+  var n=0;
+  if(bkRows){
+    var today=certToday_();
+    shBase().forEach(function(r){
+      var c=certExpiryClass(bkOf(r).careCertEnd, today);
+      if(c.days!=null&&c.days<=CERT_NEAR_DAYS) n++;
+    });
+  }
+  var sp=b.querySelector('.vt-badge');
+  if(n>0){
+    if(!sp){ sp=document.createElement('span'); sp.className='vt-badge'; sp.setAttribute('aria-hidden','true'); b.appendChild(sp); }
+    sp.textContent=String(n);
+    b.setAttribute('aria-label','認定期限（期限切れと'+CERT_NEAR_DAYS+'日以内 '+n+'名）');
+  }else{
+    if(sp&&sp.parentNode) sp.parentNode.removeChild(sp);
+    b.removeAttribute('aria-label');
+  }
+}
+/* 介護度の数値化。「要介護3」→3。要支援・空は null（1〜5の列に入れない） */
+function lvNum(v){
+  var m=/要介護\s*([1-5１-５])/.exec(String(v==null?'':v));
+  if(!m) return null;
+  return '12345'.indexOf(String(m[1]).replace(/[１-５]/g,function(c){
+    return String.fromCharCode(c.charCodeAt(0)-0xFEE0); }))+1;
+}
+function shStamp(){
+  var t=new Date();
+  return t.getFullYear()+'.'+(t.getMonth()+1)+'.'+t.getDate();
+}
+/* 今日時点の満年齢 */
+function ageNow(iso){
+  var p=parseIsoDate(iso); if(!p) return null;
+  var t=new Date(), a=t.getFullYear()-p.y;
+  var m=t.getMonth()+1, d=t.getDate();
+  if(m<p.m||(m===p.m&&d<p.d)) a--;
+  return (a>=0&&a<140)?a:null;
+}
+/* 入居からの日数 */
+function daysSince(iso){
+  var p=parseIsoDate(iso); if(!p) return null;
+  var a=new Date(p.y,p.m-1,p.d), t=new Date();
+  var n=Math.floor((new Date(t.getFullYear(),t.getMonth(),t.getDate())-a)/86400000);
+  return (n>=0&&n<40000)?n:null;
+}
+
+/* ═══ 現入居者家族CM表（A4横1枚）═══ */
+/* 見せ方の切替（2026-09-17 管理者指示）。kana＝従来どおり在籍者を五十音順に1本の表、
+   office＝担当居宅ごとにまとめる。
+   ★端末に保存するのは【表示モードという文字ひとつ】だけ（原則11）。氏名・記録は1文字も入れない。
+   ★母集団・列の構成・A4横1枚に収める仕組みは2つの表示で同じ（切替で人数も紙の形も変わらない）。 */
+var CM_MODES=['kana','office'];
+var CM_MODE_KEY='rmaster_cm_mode';
+var cmMode=(function(){
+  try{ var v=localStorage.getItem(CM_MODE_KEY); return CM_MODES.indexOf(v)>=0?v:'kana'; }
+  catch(e){ return 'kana'; }
+})();
+function setCmMode(v){
+  cmMode=CM_MODES.indexOf(v)>=0?v:'kana';
+  try{ localStorage.setItem(CM_MODE_KEY,cmMode); }catch(e){}
+  paintShBars(); renderRoster();
+}
+/* ═══ CM表の大きさ（画面だけ・2026-10-23 本人指示「パソコンで見ると文字が小さすぎる」）═══
+   採寸（shFit_）は A4横1枚に収まる文字の大きさを決めるもの。画面ではその px に倍率を掛けて見せる。
+   ★紙には倍率を掛けない（fitCmSheet(m)＝su-print の採寸では掛けない）＝紙は1画素も変わらない。
+   ★倍率を変えた時は採寸をやり直さない。覚えておいた採寸の px に掛け直すだけ（ピンチ中に重くしない）。
+   ★端末に残すのは倍率の数ひとつだけ（rmaster_cm_zoom・原則11）。読む時は数で範囲内の時だけ使う。 */
+var CM_ZOOM_KEY='rmaster_cm_zoom', CM_ZOOM_MIN=0.5, CM_ZOOM_MAX=3, CM_ZOOM_STEP=0.1;
+function cmZoomRead_(){
+  try{
+    var s=localStorage.getItem(CM_ZOOM_KEY);
+    if(typeof s!=='string'||!/^\d+(\.\d+)?$/.test(s)) return 1;
+    var n=Number(s);
+    return (isFinite(n)&&n>=CM_ZOOM_MIN&&n<=CM_ZOOM_MAX)?n:1;
+  }catch(e){ return 1; }
+}
+var cmZoom=cmZoomRead_();
+var cmFitPx=null;      /* 画面の採寸で決まった px（倍率を掛ける前）。測れなかった時は null */
+var cmZoomRaf=0;
+/* 倍率を決める。描き直しは requestAnimationFrame で1コマに1回へ間引く（ピンチは1秒に何十回も来る） */
+function cmZoomSet_(z){
+  var n=Number(z); if(!isFinite(n)) return;
+  cmZoom=Math.min(CM_ZOOM_MAX, Math.max(CM_ZOOM_MIN, n));
+  if(cmZoomRaf) return;
+  var raf=window.requestAnimationFrame||function(f){ return setTimeout(f,16); };
+  cmZoomRaf=raf(function(){
+    cmZoomRaf=0;
+    try{ localStorage.setItem(CM_ZOOM_KEY, String(Math.round(cmZoom*1000)/1000)); }catch(e){}
+    cmZoomApply_(); cmZoomPaint_(); cmZoomAnnounce_();
+  });
+}
+/* 倍率の読み上げは、操作が止まってから（最後の変化から500ms 後に1回）だけ届ける。
+   見えている倍率の文字（#cmZoomVal）は cmZoomPaint_ が1コマごとに書く。読み上げは #cmZoomSr（画面には出ない）。 */
+var cmZoomSrT=0;
+function cmZoomAnnounce_(){
+  if(cmZoomSrT) clearTimeout(cmZoomSrT);
+  cmZoomSrT=setTimeout(function(){
+    cmZoomSrT=0;
+    var s=$('cmZoomSr'); if(s) s.textContent=Math.round(cmZoom*100)+'%';
+  }, 500);
+}
+/* 「−」「＋」は1回で1割。端数（ピンチの後の 1.23 など）はそのまま1割ずつ動かす */
+function cmZoomStep_(d){ cmZoomSet_(Math.round((cmZoom+d)*100)/100); }
+/* 文字の大きさ px から、表・余白・合計欄・見出しの大きさを決める（採寸と倍率の両方がここを通る＝式は1つ） */
+function cmApplyPx_(sh, px){
+  sh.style.setProperty('--cmpad', (px>=16?3:px>=14?2:1)+'px');
+  sh.style.setProperty('--cmpx',  (px>=14?8:6)+'px');
+  sh.style.setProperty('--cmsum', Math.round(px*1.05)+'px');
+  sh.style.setProperty('--shd1',  Math.round(px*1.5)+'px');
+  var t=sh.querySelector('.cmtbl'); if(t) t.style.fontSize=px+'px';
+}
+/* 覚えておいた採寸の px × 倍率を画面のCM表へ当てる。
+   ★印刷の準備中（su-printing / cm-on）は触らない（紙の採寸が当てた大きさを上書きしない）。
+   ★採寸の値が無い時（非表示の間に描き直された）だけ、表示されていれば1回測る。 */
+function cmZoomApply_(){
+  var b=document.body;
+  if(b&&(b.classList.contains('su-printing')||b.classList.contains('cm-on'))) return;
+  var sh=$('cmSheet'); if(!sh) return;
+  if(cmFitPx==null){ if(sh.offsetParent) fitCmSheet(); return; }
+  cmApplyPx_(sh, cmFitPx*cmZoom);
+}
+/* バーの表示（今の倍率・端で押せない） */
+function cmZoomPaint_(){
+  var v=$('cmZoomVal'), o=$('cmZoomOut'), i=$('cmZoomIn');
+  if(v) v.textContent=Math.round(cmZoom*100)+'%';
+  if(o) o.disabled=cmZoom<=CM_ZOOM_MIN+1e-9;
+  if(i) i.disabled=cmZoom>=CM_ZOOM_MAX-1e-9;
+}
+/* ピンチを扱ってよいか: CM表を開いていて、指・ポインタがCM表の上にある時だけ。
+   ★ほかの画面・CM表の外ではページ全体の拡大を奪わない（preventDefault しない）。 */
+function cmPinchOk_(target){
+  if(curView!=='cm'||!shViewActive_('cm')) return false;
+  var sh=$('cmSheet');
+  return !!(sh&&target&&sh.contains(target));
+}
+var cmGesture=null, cmTouch=null;
+/* トラックパッドのピンチ（Chrome・Edge・Firefox は ctrlKey 付きの wheel）と Ctrl＋マウスホイール。
+   1回の量は ±10 で頭打ち＝ホイール1目盛りで約1割、トラックパッドは細かく無段階に動く。 */
+function cmOnWheel_(e){
+  if(!e||!e.ctrlKey||!cmPinchOk_(e.target)) return;
+  e.preventDefault();
+  if(cmGesture) return;   /* Safari のピンチ中は gesture の方で動かす（二重に掛けない） */
+  var dy=Number(e.deltaY)||0;
+  if(e.deltaMode===1) dy*=33; else if(e.deltaMode===2) dy*=800;   /* 行・ページ単位の端末を px 相当へ */
+  dy=Math.max(-10, Math.min(10, dy));
+  if(dy) cmZoomSet_(cmZoom*Math.exp(-dy/100));
+}
+/* Safari のピンチ（gesturestart／gesturechange の scale は始めた時からの倍率）。
+   ★始まりで前の状態を必ず捨てる（描き直し・画面の切り替えで gestureend が届かなかった時の残りを使わない）。
+   ★途中でも CM表の上かを確かめ直す（ほかのビューへ移った後のピンチを奪わない）。 */
+function cmOnGestureStart_(e){
+  cmGesture=null;
+  if(!e||!cmPinchOk_(e.target)) return;
+  e.preventDefault();
+  cmGesture={z:cmZoom};
+}
+function cmOnGestureChange_(e){
+  if(!cmGesture||!e) return;
+  if(!cmPinchOk_(e.target)){ cmGesture=null; return; }
+  e.preventDefault();
+  if(cmTouch) return;     /* タッチ画面では2本指の処理が動かす（iPad は touch と gesture が両方来る） */
+  var s=Number(e.scale);
+  if(isFinite(s)&&s>0) cmZoomSet_(cmGesture.z*s);
+}
+function cmOnGestureEnd_(e){
+  if(!cmGesture) return;
+  if(e) e.preventDefault();
+  cmGesture=null;
+}
+/* タッチ画面の2本指。2本の指がどちらもCM表の上にある間だけ扱う（1本指のスクロールには触らない） */
+function cmTouchDist_(ts){
+  var dx=ts[0].clientX-ts[1].clientX, dy=ts[0].clientY-ts[1].clientY;
+  return Math.sqrt(dx*dx+dy*dy);
+}
+function cmOnTouchStart_(e){
+  cmTouch=null;            /* 前の2本指の状態を必ず捨ててから判定する（ジェスチャーと同じ） */
+  var ts=e&&e.touches;
+  if(!ts||ts.length!==2) return;
+  if(!cmPinchOk_(ts[0].target)||!cmPinchOk_(ts[1].target)) return;
+  var d=cmTouchDist_(ts); if(!(d>0)) return;
+  cmTouch={d:d, z:cmZoom};
+}
+function cmOnTouchMove_(e){
+  var ts=e&&e.touches;
+  if(!cmTouch||!ts||ts.length!==2) return;
+  if(!cmPinchOk_(ts[0].target)||!cmPinchOk_(ts[1].target)){ cmTouch=null; return; }
+  e.preventDefault();
+  var d=cmTouchDist_(ts);
+  if(d>0) cmZoomSet_(cmTouch.z*d/cmTouch.d);
+}
+function cmOnTouchEnd_(e){
+  var ts=e&&e.touches;
+  if(cmTouch&&(!ts||ts.length<2)) cmTouch=null;
+}
+/* 印刷・設定画面の試算の後に、紙の採寸が表へ当てた大きさを画面の大きさ（採寸 px × 倍率）へ戻す。
+   ★su-print の後始末の中（su-printing がまだ付いている）で呼ばれるので、cmZoomApply_ の門は通さない。
+   ★例外を外へ出さない。出すと後始末の続き（putSnap＝画面の style・警告の復元）が飛ぶ。
+     画面の大きさが戻らないだけで、次の描き直し（renderRoster）で採寸し直される。
+     ★rmNote_ は使わない（あちらは「保存・同期の失敗」の記録の口。これは保存・同期ではない）。 */
+function cmZoomRestore_(){
+  try{
+    var sh=$('cmSheet'); if(!sh||cmFitPx==null) return;
+    cmApplyPx_(sh, cmFitPx*cmZoom);
+  }catch(e){}
+}
+/* ピンチのリスナーは CM表を表示している間だけ一覧の箱に付ける（paintShBars から呼ぶ）。
+   ★wheel・touchmove・gesture は preventDefault を使うので passive:false＝付いている間はブラウザがスクロールの前に
+     この処理を待つ。ほかのビュー（現場の iPhone など）のスクロールを重くしないため、CM表以外では外す。 */
+var cmPinchBound=false;
+/* [イベント, 受け手, passive]。touchstart/end は止めないので passive（スクロールを待たせない） */
+var CM_PINCH_EVS=[['wheel',cmOnWheel_,false],['gesturestart',cmOnGestureStart_,false],
+  ['gesturechange',cmOnGestureChange_,false],['gestureend',cmOnGestureEnd_,false],
+  ['touchstart',cmOnTouchStart_,true],['touchmove',cmOnTouchMove_,false],
+  ['touchend',cmOnTouchEnd_,true],['touchcancel',cmOnTouchEnd_,true]];
+function cmPinchBind_(on){
+  on=!!on;
+  var box=$('rosterBox');
+  if(!box||on===cmPinchBound) return;
+  CM_PINCH_EVS.forEach(function(x){
+    if(on) box.addEventListener(x[0], x[1], {passive:x[2]});
+    else box.removeEventListener(x[0], x[1]);
+  });
+  cmPinchBound=on;
+  if(!on){ cmGesture=null; cmTouch=null; }   /* 外す時は途中の状態も捨てる */
+}
+var CM_COLS=[['no','No',''],['room','居室',''],['name','入居者','cnm'],['adm','入居日',''],
+  ['days','日数','cnum'],['age','年齢','cnum'],['lv','介護度',''],
+  ['office','居宅','cof'],['cm','CM','ccm'],['tel','CM TEL',''],['fax','CM FAX','']];
+function cmHtml(){
+  var base=shBase();
+  if(!bkRows) return '<div class="sh-sheet" id="cmSheet"><div class="loading">'+
+    esc(bkLoading?'居宅・担当ケアマネを取得しています…':(bkErr||'取得していません'))+'</div></div>';
+  var rows=base.map(bkOf);
+  /* 平均は【全員】から出す。表示の切替で数字が動かないよう、行を組むのとは別に1回だけ数える */
+  var ages=[], lvs=[];
+  rows.forEach(function(r){
+    var ag=ageNow(r.birthDate), lv=lvNum(r.careLevel);
+    if(ag!=null) ages.push(ag);
+    if(lv!=null) lvs.push(lv);
+  });
+  var groups=(cmMode==='office')?cmGroups_(rows):null;
+  var body='', no=0;
+  if(groups){
+    groups.forEach(function(g){
+      body+='<tr class="cmgrp"><th colspan="'+CM_COLS.length+'" scope="colgroup">'+
+        esc(g.key===CM_NO_OFFICE?'（居宅の登録なし）':g.name)+
+        (g.cms.length?('　'+esc(g.cms.join('・'))):'')+'　'+g.list.length+'名</th></tr>';
+      g.list.forEach(function(r){ body+=cmRowHtml_(r,++no); });
+    });
+  }else{
+    rows.forEach(function(r){ body+=cmRowHtml_(r,++no); });
+  }
+  var avgAge=ages.length?(ages.reduce(function(a,b){return a+b},0)/ages.length):null;
+  var avgLv =lvs.length ?(lvs.reduce(function(a,b){return a+b},0)/lvs.length) :null;
+  return '<div class="sh-sheet" id="cmSheet">'+
+    '<div class="sh-hd"><div class="st1">現入居者家族CM表'+(groups?'（居宅別）':'')+'</div></div>'+
+    '<div class="cm-sum">'+
+      '<span>平均年齢 <b>'+(avgAge==null?'—':avgAge.toFixed(2))+'</b></span>'+
+      '<span>平均介護度 <b>'+(avgLv==null?'—':avgLv.toFixed(2))+'</b></span>'+
+      '<span>'+esc(shStamp())+'</span>'+
+    '</div>'+
+    '<table class="cmtbl"><thead><tr>'+
+      CM_COLS.map(function(c){ return '<th>'+esc(c[1])+'</th>'; }).join('')+
+    '</tr></thead><tbody>'+body+'</tbody></table>'+
+    '<div class="sh-ft">'+rows.length+'名　／　対象 在籍のみ・'+
+      (groups?cmFootNote_(groups):'五十音順')+
+      '　／　印刷日 '+esc(shStamp())+'</div>'+
+  '</div>';
+}
+/* 脚注の「N事業所」。★居宅が未登録の組は事業所として数えない（実在の居宅と混ぜると
+   「うちは何か所と付き合っているか」を読み違える）。未登録が居る時は人数を別に添える。 */
+function cmFootNote_(groups){
+  var real=0, none=0;
+  groups.forEach(function(g){ if(g.key===CM_NO_OFFICE) none=g.list.length; else real++; });
+  return '居宅別 '+real+'事業所（各居宅の中は五十音順）'+(none?('・居宅の登録なし '+none+'名'):'');
+}
+/* 1人ぶんの行。No は【表全体の通し番号】＝並べ方を変えても「全員載っている」ことを数で確かめられる */
+function cmRowHtml_(r, no){
+  var ag=ageNow(r.birthDate), dy=daysSince(r.admissionDate), lv=lvNum(r.careLevel);
+  var v={no:no, room:r.room||'', name:r.name||'',
+         adm:(_ymd(r.admissionDate)?_ymd(r.admissionDate).replace(/-/g,'/'):''),
+         days:(dy==null?'':dy), age:(ag==null?'':ag), lv:(lv==null?(r.careLevel||''):lv),
+         office:r.careOffice||'', cm:r.careManager||'',
+         tel:r.careOfficeTel||'', fax:r.careOfficeFax||''};
+  return '<tr>'+CM_COLS.map(function(c){
+    return '<td class="'+(c[2]||(c[0]==='no'?'cno':''))+'">'+esc(v[c[0]])+'</td>';
+  }).join('')+'</tr>';
+}
+/* 担当居宅ごとのまとまり（2026-09-17 管理者指示）。
+   ★並びは担当人数の多い順、同数は【居宅名順】（localeCompare の ja）。
+     ★「五十音順」とは呼ばない。漢字で始まる居宅名は読みではなく部首・画数で並ぶ
+       （careOffice に読み仮名の列が無いため、読み順には並べられない）。
+       決まった順で安定しているので探す用途には足りる。居宅の【中】は shBase() の
+       byKana なので本当に五十音順（脚注の文言もそちら）。
+   ★居宅が未登録の方は【落とさず】最後にまとめる。落とすと合計が合わず、しかも誰が漏れたのか
+     分からなくなる（介護度別表で同じ判断をしている）。
+   ★束ねるキーは空白を除いた居宅名＝表記ゆれ（全角空白の有無）で同じ居宅が2つに割れない。
+     見出しに出すのは最初に出てきた表記のまま（固有名詞を勝手に直さない＝原則6）。
+   ★渡す rows は五十音順なので、各居宅の中も五十音順のまま並ぶ。 */
+var CM_NO_OFFICE='\u0000';   /* 居宅未登録の置き場。居宅名として実在しない文字なので衝突しない */
+function cmGroups_(rows){
+  var map=Object.create(null), keys=[];
+  rows.forEach(function(r){
+    var nm=String(r.careOffice==null?'':r.careOffice).trim();
+    var k=nm.replace(/[\s\u3000]+/g,'') || CM_NO_OFFICE;
+    if(!map[k]){ map[k]={key:k, name:nm, list:[], cms:[]}; keys.push(k); }
+    map[k].list.push(r);
+    var cm=String(r.careManager==null?'':r.careManager).trim();
+    if(cm&&map[k].cms.indexOf(cm)<0) map[k].cms.push(cm);
+  });
+  return keys.map(function(k){ return map[k]; }).sort(function(a,b){
+    if(a.key===CM_NO_OFFICE) return 1;          /* 未登録はいつでも最後 */
+    if(b.key===CM_NO_OFFICE) return -1;
+    if(a.list.length!==b.list.length) return b.list.length-a.list.length;
+    return String(a.name).localeCompare(String(b.name),'ja');
+  });
+}
+
+/* ═══ 食形態一覧表（配布用・A4縦1枚・2026-10-15 管理者指示）═══
+   紙の原本「[食形態一覧表]」（スキャン 2026/10/15）を、入居者マスタの【副食】から作り直したもの。
+   ・区分は 常食／1口大／刻み／ミキサー の4つ（原本の順）。副食の文字に含まれる語で決める
+     （「刻み ハーフ食」→刻み、「軟菜 一口大」→1口大）。見る順はミキサー→刻み→一口大→常食
+     ＝形態の強い方を先に当てる（両方の語を含む書き方でも、手のかかる方へ寄せる）
+   ・副食が空欄の方は「未設定」として最後に出す（2026-10-15 本人決定。配る紙から黙って抜けないように）
+   ・4区分のどれの語も含まない方（現在0名）は「その他」とし、副食の文字を添えて出す（同じ理由）
+   ・各区分の中は ２階→１階→階未設定 の順、階の中は五十音順（原本と同じ）
+   ・入院中の方も載せる（2026-10-15 本人決定）。退去の方は getMealList が返さない
+   ・更新日は画面の欄で決める（既定は今日・2026-10-15 本人決定）。端末には保存しない
+   ★読み取り専用。マスタを1バイトも書かない。データは食形態一覧と同じ mealRows（getMealList）を使い、
+     未保存の変更（mealDirty）は使わない＝紙に載るのは保存済みの内容だけ。 */
+var MF_CATS=[['jo','常食'],['hito','1口大'],['kizami','刻み'],['mix','ミキサー']];
+var mfDate=todayISO();
+function mfViewActive_(){ return shViewActive_('mf'); }
+function mfCat_(side){
+  var s=String(side==null?'':side).replace(/[\s　]+/g,'')
+    .replace(/[０-９]/g,function(c){return String.fromCharCode(c.charCodeAt(0)-0xFEE0)});
+  if(!s) return 'none';
+  if(/ミキサー|ﾐｷｻｰ/.test(s)) return 'mix';
+  if(/刻|きざみ|キザミ/.test(s)) return 'kizami';
+  if(/一口|1口|ひと口|ひとくち/.test(s)) return 'hito';
+  if(/常食/.test(s)) return 'jo';
+  return 'other';
+}
+/* 令和の略記（R8.9.15）。令和より前の日付は西暦のまま（2018.4.1）出す */
+function mfWareki_(iso){
+  var p=parseIsoDate(iso); if(!p) return '';
+  var y=p.y, m=p.m, d=p.d;
+  var reiwa=(y>2019)||(y===2019&&m>=5);
+  return (reiwa?('R'+(y-2018)):String(y))+'.'+m+'.'+d;
+}
+function mfHtml(){
+  if(!mealRows){
+    return '<div class="sh-sheet" id="mfSheet">'+((mealLoading||!mealMsg)
+      ? '<div class="loading">'+esc(mealMsg||'読み込み中…')+'</div>'
+      : '<div class="empty">'+esc(mealMsg)+'<br>上の「🔄 最新に取り直す」を押すか、「同期設定」で接続をご確認ください</div>')+'</div>';
+  }
+  var buckets={jo:[],hito:[],kizami:[],mix:[],none:[],other:[]};
+  var nBroken=0;
+  mealRows.forEach(function(r){
+    if(r.broken===true) nBroken++;
+    buckets[mfCat_(r.mealSide)].push(r);
+  });
+  var cats=MF_CATS.slice();
+  if(buckets.other.length) cats.push(['other','その他']);
+  if(buckets.none.length)  cats.push(['none','未設定']);
+  var fl2=floorLbl(2), fl1=floorLbl(1);
+  var secs=cats.map(function(c){
+    var a=buckets[c[0]];
+    var by={2:[],1:[],0:[]};
+    a.forEach(function(r){ var f=roomToFloor(r.room); (f===2?by[2]:f===1?by[1]:by[0]).push(r); });
+    var rows=[[2,'［'+fl2+'］'],[1,'［'+fl1+'］'],[0,'［階未設定］']].map(function(fp){
+      var list=by[fp[0]].sort(byKana);
+      if(!list.length) return '';
+      return '<div class="mf-row"><span class="mf-fl">'+esc(fp[1])+'</span><span class="mf-nms">'+
+        list.map(function(r,i){
+          var raw=(c[0]==='other')?'<span class="mf-raw">（'+esc(r.mealSide)+'）</span>':'';
+          return '<span class="mf-nm">'+esc(r.name)+raw+(i<list.length-1?'／':'')+'</span>';
+        }).join('')+'</span></div>';
+    }).join('');
+    return '<div class="mf-sec"><div class="mf-cat">'+esc(c[1])+'（'+a.length+'名）</div>'+rows+'</div>';
+  }).join('');
+  var notes=[];
+  if(buckets.none.length) notes.push('副食が空欄の方 '+buckets.none.length+'名は「未設定」に出しています');
+  if(buckets.other.length) notes.push('副食が4区分のどれにも当たらない方 '+buckets.other.length+'名は「その他」に出しています');
+  if(mealDirtyCells()) notes.push('食形態一覧に未保存の変更があります（この表は保存済みの内容で作っています）');
+  notes.push('区分は副食の欄から決めています。入院中の方も載せています');
+  return '<div class="sh-sheet" id="mfSheet">'+
+    '<div class="mf-page">'+
+      '<div class="mf-title">[食形態一覧表]</div>'+secs+
+      '<div class="mf-ft"><span class="mf-upd">'+esc(mfWareki_(mfDate))+' 更新</span>'+
+        '<span class="mf-tot">計 '+mealRows.length+' 名</span></div>'+
+    '</div>'+
+    (nBroken?'<div class="mf-note mf-bad">⚠ '+nBroken+'名は保存データが壊れていて、副食を読めませんでした（「未設定」に出ています）</div>':'')+
+    '<div class="mf-note">'+esc(notes.join('　／　'))+'</div>'+
+  '</div>';
+}
+/* A4縦1枚に収まる最大の文字にする。★紙の幅でページを組んでから測る（画面の窓の広さで紙の文字が変わらない）。
+   収まったかの見方: (1) ページの中身が紙の高さに入る (2) どの行も横にはみ出さない。
+   ★測る間はページの最小の高さ（下端に「計」を寄せる指定）を外す。外さないと常に紙の高さ以上と測られる。 */
+function fitMfSheet(m){
+  var sh=$('mfSheet'); if(!sh) return null;
+  var pg=sh.querySelector('.mf-page'); if(!pg||!sh.offsetParent) return null;
+  var W=m?Math.round(m.wPx):Math.round((210-20)*96/25.4), H=m?m.hPx:(297-20)*96/25.4;
+  pg.style.setProperty('--mfw', W+'px');
+  pg.style.minHeight='';
+  function fits(){
+    if(pg.scrollHeight>H-8) return false;
+    var ns=pg.querySelectorAll('.mf-row');
+    for(var i=0;i<ns.length;i++) if(ns[i].scrollWidth>ns[i].clientWidth+1) return false;
+    return true;
+  }
+  var MIN=8, MAX=40, STEP=0.25, lo=0, hi=Math.round((MAX-MIN)/STEP);
+  var sizeOf=function(k){ return Math.round((MIN+k*STEP)*100)/100; };
+  var apply=function(px){ pg.style.setProperty('--mffs', px+'px'); };
+  apply(sizeOf(lo));
+  var ok=fits();
+  if(ok){
+    while(lo<hi){
+      var mid=Math.ceil((lo+hi)/2);
+      apply(sizeOf(mid));
+      if(fits()) lo=mid; else hi=mid-1;
+    }
+  }
+  apply(sizeOf(lo));
+  var h=pg.scrollHeight;
+  ok=fits();
+  /* 「計」をページの下端へ寄せる（原本の配置）。紙の高さを超えない値にする */
+  pg.style.minHeight=Math.floor(H-8)+'px';
+  var r={size:sizeOf(lo), fits:ok, h:h, w:W, H:Math.round(H), W:W};
+  shWarn_(sh, r); return r;
+}
+
+/* ═══ 介護度別表（A4縦1枚）═══
+   ★スクリーンショットの様式どおり: 介護度1〜5の列に氏名を積み、右に平均介護度と介護4以上割合、
+     最下段に人数と合計。空欄の行も枠を出す（原本と同じ）。
+   ★1〜5に当てはまらない方（要支援・未登録）は【落とさず】表の下に別記する。
+     落とすと合計が合わず、しかも誰が漏れたのか分からなくなる。 */
+var LVL_MIN_ROWS=18;   /* 原本と同じ行数。人数が多い時はその分だけ伸ばす */
+function lvlHtml(){
+  var base=shBase();
+  var cols=[[],[],[],[],[]], other=[];
+  base.forEach(function(r){
+    var n=lvNum(r.careLevel);
+    if(n) cols[n-1].push(r); else other.push(r);
+  });
+  var cnt=cols.map(function(a){ return a.length; });
+  var total=cnt.reduce(function(a,b){ return a+b; },0);
+  var sum=0; cols.forEach(function(a,i){ sum+=a.length*(i+1); });
+  var avg=total?(sum/total):null;
+  var hi=total?((cnt[3]+cnt[4])/total*100):null;
+  var nrow=Math.max(LVL_MIN_ROWS, cnt.reduce(function(a,b){ return Math.max(a,b); },0));
+  var head='<tr><td class="lvlbl">介護度</td>'+
+    [1,2,3,4,5].map(function(n){ return '<td class="lvh">'+n+'</td>'; }).join('')+'</tr>';
+  var body='';
+  for(var i=0;i<nrow;i++){
+    body+='<tr><td class="lvrow">'+(i+1)+'</td>'+
+      cols.map(function(a){ return '<td class="lvn">'+esc(a[i]?a[i].name:'')+'</td>'; }).join('')+
+    '</tr>';
+  }
+  var foot='<tr><td class="lvlbl">人数</td>'+
+    cnt.map(function(n){ return '<td class="lvcnt">'+n+'</td>'; }).join('')+'</tr>';
+  var otherLine = other.length
+    ? '<div class="lvl-other">※ 介護度1〜5に当てはまらない方 '+other.length+'名（要支援・未登録）は上の表と平均に含めていません</div>'
+    : '';
+  return '<div class="sh-sheet" id="lvlSheet">'+
+    '<div class="sh-hd"><div class="st1">介護度別表</div></div>'+
+    '<div class="lvlwrap">'+
+      '<table class="lvltbl"><tbody>'+head+body+foot+'</tbody></table>'+
+      '<div class="lvl-side">'+
+        '<div><div class="k">合計</div><div class="v">'+total+'</div></div>'+
+        '<div><div class="k">平均介護度</div><div class="v">'+(avg==null?'—':avg.toFixed(2))+'</div></div>'+
+        '<div><div class="k">介護4以上割合</div><div class="v">'+(hi==null?'—':hi.toFixed(1)+'%')+'</div></div>'+
+      '</div>'+
+    '</div>'+otherLine+
+    '<div class="sh-ft">在籍 '+base.length+'名（表に載せた '+total+'名'+
+      (other.length?('・該当外 '+other.length+'名'):'')+'）　／　五十音順　／　印刷日 '+
+      esc(shStamp())+'</div>'+
+  '</div>';
+}
+
+/* ═══ 要介護認定 期限一覧（2026-09-26 管理者指示・A4縦）═══
+   在籍者を認定の満了日が近い順に並べ、期限の近さを色＋文字で示す。
+   ★読み取り専用（マスタを1バイトも書かない）。careCertStart/careCertEnd は共有名簿に無いので
+     CM表・介護度別と同じ getBulk の控え（bkRows）から取る。
+   ★母集団は shBase()（在籍者のみ）。絞り込みチップ・検索語には従わない（帳票5種と同じ理由）。 */
+/* 'YYYY-MM-DD' だけを日付として読む（前後の空白は許す）。存在しない日付は null。
+   ★和暦・スラッシュ区切り・時刻付きは推測で読まない。時刻付きの ISO はタイムゾーンで日付が
+     1日ずれうるので、読めるものとして扱わない。 */
+function certYmd_(s){
+  var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s==null?'':s).trim());
+  if(!m) return null;
+  var y=+m[1], mo=+m[2], d=+m[3], t=new Date(y,mo-1,d);
+  if(t.getFullYear()!==y||t.getMonth()!==mo-1||t.getDate()!==d) return null;
+  return {y:y, m:mo, d:d};
+}
+/* 満了日から区分を決める。DOM に触れない純関数。
+   endStr … careCertEnd の値／todayStr … 基準日 'YYYY-MM-DD'（端末のローカル日付。読めない時は今日）
+   戻り値 {key, label, days}
+     key: none＝空／bad＝YYYY-MM-DD として読めない／over＝満了日＜今日／
+          m0＝今月／m1＝来月／m2＝再来月／later＝それ以降（区分表示なし）
+     days: 満了日−今日 の日数（負＝超過）。none・bad は null
+   ★区分は【年月】で比べる（残り日数では比べない）。9/30 満了は 9/1 に見ても 9/29 に見ても「今月満了」。
+   ★満了日の当日は期限内（その日まで有効）＝「今月満了」・days=0。 */
+function certExpiryClass(endStr, todayStr){
+  if(String(endStr==null?'':endStr).trim()==='') return {key:'none', label:'未登録', days:null};
+  var e=certYmd_(endStr);
+  if(!e) return {key:'bad', label:'形式不明', days:null};
+  var t=certYmd_(todayStr);
+  if(!t){ var n=new Date(); t={y:n.getFullYear(), m:n.getMonth()+1, d:n.getDate()}; }
+  var days=Math.round((Date.UTC(e.y,e.m-1,e.d)-Date.UTC(t.y,t.m-1,t.d))/86400000);
+  if(days<0) return {key:'over', label:'期限切れ', days:days};
+  var mm=(e.y*12+e.m)-(t.y*12+t.m);
+  if(mm===0) return {key:'m0', label:'今月満了', days:days};
+  if(mm===1) return {key:'m1', label:'来月満了', days:days};
+  if(mm===2) return {key:'m2', label:'2か月後', days:days};
+  return {key:'later', label:'', days:days};
+}
+/* 並び: 期限切れ（超過の長い順）→ 満了日の近い順（今月・来月・2か月後・それ以降）→ 形式不明 → 未登録。
+   同じ満了日はかな順。a/b は {r:入居者, c:certExpiryClass の結果}。
+   ★区分の順位は配列＋indexOf で引く（オブジェクトだと 'toString' 等が truthy になる＝VIEWS と同じ理由） */
+var CERT_RANK=['over','near','bad','none'];
+function certOrder_(a, b){
+  function rk(k){ return CERT_RANK.indexOf(k==='m0'||k==='m1'||k==='m2'||k==='later'?'near':k); }
+  var ga=rk(a.c.key), gb=rk(b.c.key);
+  if(ga!==gb) return ga-gb;
+  if(a.c.days!=null&&b.c.days!=null&&a.c.days!==b.c.days) return a.c.days-b.c.days;
+  return byKana(a.r,b.r);
+}
+/* 基準日（端末のローカル日付）。作成日の表示と区分の判定で同じ値を使う */
+function certToday_(){
+  var t=new Date();
+  return t.getFullYear()+'-'+('0'+(t.getMonth()+1)).slice(-2)+'-'+('0'+t.getDate()).slice(-2);
+}
+function certHtml(){
+  var base=shBase();
+  if(!bkRows) return '<div class="sh-sheet" id="certSheet"><div class="loading">'+
+    esc(bkLoading?'認定期間を取得しています…':(bkErr||'取得していません'))+'</div></div>';
+  var today=certToday_();
+  var items=base.map(function(r){ var o=bkOf(r); return {r:o, c:certExpiryClass(o.careCertEnd, today)}; });
+  items.sort(certOrder_);
+  var cnt={over:0, m0:0, m1:0, m2:0, later:0, bad:0, none:0};
+  items.forEach(function(it){ cnt[it.c.key]++; });
+  function n(k){ return '<b>'+cnt[k]+'</b>'; }
+  var body=items.map(function(it, i){ return certRowHtml_(it, i+1); }).join('');
+  return '<div class="sh-sheet" id="certSheet">'+
+    '<div class="sh-hd"><div class="st1">要介護認定 期限一覧</div>'+
+      '<div class="cert-sub">作成日 '+esc(fmtJDate(today))+'</div></div>'+
+    '<div class="cert-sum">期限切れ '+n('over')+'・今月満了 '+n('m0')+'・来月満了 '+n('m1')+
+      '・2か月後 '+n('m2')+'・未登録 '+n('none')+'（形式不明 '+n('bad')+'）</div>'+
+    '<table class="certtbl"><thead><tr>'+
+      ['No','居室','入居者','介護度','認定期間','満了まで','区分'].map(function(h){
+        return '<th scope="col">'+esc(h)+'</th>'; }).join('')+
+    '</tr></thead><tbody>'+body+'</tbody></table>'+
+    '<div class="sh-ft">在籍 '+items.length+'名　／　対象 在籍のみ・満了日の近い順　／　区分は作成日の月を基準に判定</div>'+
+  '</div>';
+}
+/* 1人ぶんの行。★形式不明の満了日は生の値を出さない（区分の列で「形式不明」と示す）。
+   開始日も YYYY-MM-DD で読めない時は出さない（読めない値を日付のように見せない）。 */
+function certRowHtml_(it, no){
+  var r=it.r, c=it.c;
+  var sTxt=certYmd_(r.careCertStart)?fmtJDate(String(r.careCertStart).trim()):'';
+  var eOk=(c.key!=='none'&&c.key!=='bad');
+  var pd=eOk
+    ? ((sTxt?'<span>'+esc(sTxt)+'</span>':'')+'<span>〜'+esc(fmtJDate(String(r.careCertEnd).trim()))+'</span>')
+    : (sTxt?'<span>'+esc(sTxt)+'〜</span>':'—');
+  /* 満了日の当日は「あと 0日」だと切れたように読めるので「本日満了」と書く（区分の札は今月満了のまま） */
+  var dy=(c.days==null)?'—':(c.days<0?((-c.days)+'日超過'):c.days===0?'本日満了':('あと '+c.days+'日'));
+  var tag=c.label?('<span class="cert-tag k-'+c.key+'">'+esc(c.label)+'</span>'):'';
+  return '<tr>'+
+    '<td class="cert-no">'+no+'</td>'+
+    '<td>'+esc(r.room||'')+'</td>'+
+    '<td class="cert-nm">'+esc(r.name||'')+'</td>'+
+    '<td>'+esc(r.careLevel||'')+'</td>'+
+    '<td class="cert-pd">'+pd+'</td>'+
+    '<td class="cert-dy'+(c.key==='over'?' cert-ov':'')+'">'+esc(dy)+'</td>'+
+    '<td>'+tag+'</td>'+
+  '</tr>';
+}
+/* 保存が通った時に呼ぶ（詳細画面の保存・一括編集の保存）。印を立てるだけで控えは捨てない。
+   認定期限を表示中ならその場で1回取り直す＝「作成日 今日」の紙に保存前の満了日・介護度を載せない。 */
+function bkMarkStale_(){
+  bkStale_=true; bkStaleSeq_++;
+  certEnsureFresh_();
+}
+/* 認定期限を表示している時だけ、印が立っていれば取り直す。★印が無ければ何もしない
+   （初回の取得は従来どおり setView・loadData の bkEnsure(false) が受け持つ。
+   現場端末では保存できず印も立たないので、ここから要配慮情報を取りに行くことはない） */
+function certEnsureFresh_(){
+  if(curView!=='cert'||!bkStale_) return;
+  bkEnsure(true);
+}
+
+/* ═══ 用紙いっぱいに大きく刷る（誕生日一覧の fitBdaySheet と同じ考え方）═══
+   実際の高さ・幅を測り、収まる範囲でいちばん大きい文字を二分探索で選ぶ。
+   ★行数で決め打ちしない。人数も氏名の長さも変わるため、決め打ちは必ずどこかで破れる。 */
+function shFit_(sheet, wMM, hMM, apply, minPx, maxPx, widthSel, m, wSlack){
+  if(!sheet||!sheet.offsetParent) return null;   /* 非表示では測らない（高さ0で「収まった」と誤判定） */
+  /* 用紙の印字面。★m（su-print が確定した実際の用紙）が渡された時はそれを使う＝職員が
+     用紙を変えたら採寸も追従する。渡されない時は従来どおり mm の直書き（既定と同値）。 */
+  var H=m?m.hPx:(hMM-20)*96/25.4, W=m?m.wPx:(wMM-20)*96/25.4;
+  function tall(){ return sheet.scrollHeight; }
+  /* ★測るのは「紙に並ぶもの全部」。表だけを測ると、横に並ぶパネル（介護度別の
+     合計・平均介護度・介護4以上割合）の幅が抜け、収まったと誤判定して紙で表が圧縮される
+     （2026-09-04 実測: 表711px＝上限ぴったりでも、実際に並ぶ幅は832px＞718px）。 */
+  function wide(){
+    var t=widthSel?sheet.querySelector(widthSel):sheet.querySelector('table');
+    if(!t) t=sheet.querySelector('table');
+    return t?Math.max(t.offsetWidth, t.scrollWidth):sheet.scrollWidth;
+  }
+  /* 幅の安全余裕。既定は6px（端末ごとの丸めで最終列が欠けるのを防ぐ）。
+     ★CM表のように【紙で表を width:100% にしている】帳票は、紙幅ぴったりになるのが正常なので
+       余裕を引くと常に不合格になり、文字が下限まで潰れる（2026-09-12 実測: 全用紙で6px）。
+       そういう帳票は 0（ぴったりを許す）を渡す。高さの余裕(8px)は共通で引く。 */
+  var WS=(wSlack==null)?6:wSlack;
+  /* 丸めの許容は【安全余裕を捨てた帳票にだけ】足す。既定（余裕6px）の閾値を動かすと、
+     用紙によっては文字が1段階変わる＝既定経路の挙動を黙って変えることになる。 */
+  var WTOL=(WS===0)?0.5:0;
+  function fits(){ return tall()<=H-8 && wide()<=W-WS+WTOL; }
+  var STEP=0.25, lo=0, hi=Math.round((maxPx-minPx)/STEP);
+  var sizeOf=function(k){ return Math.round((minPx+k*STEP)*100)/100; };
+  apply(sizeOf(lo));
+  if(fits()){
+    while(lo<hi){
+      var mid=Math.ceil((lo+hi)/2);
+      apply(sizeOf(mid));
+      if(fits()) lo=mid; else hi=mid-1;
+    }
+  }
+  apply(sizeOf(lo));
+  return {size:sizeOf(lo), fits:fits(), h:tall(), w:wide(), H:Math.round(H), W:Math.round(W)};
+}
+function fitCmSheet(m){
+  var sh=$('cmSheet'); if(!sh) return null;
+  /* ★余白は文字が十分大きくなってから広げる。先に余白を取ると、その高さのぶんだけ
+     文字を小さくすることになる（1行あたり2pxの余白は33行で66px＝文字1.5px分）。 */
+  var r=shFit_(sh, 297, 210, function(px){       /* A4横 */
+    cmApplyPx_(sh, px);
+  }, 6, 22, null, m, 0);   /* ★紙では .cmtbl{width:100%}＝紙幅ぴったりが正常。幅の余裕は引かない */
+  /* 画面の時だけ、採寸の px を覚えて倍率を掛ける（2026-10-23）。★m 付き＝紙の採寸では掛けない・覚えない。
+     返す値（r）は採寸の結果のまま＝「1枚に収まりません」の判定も紙の見込みのまま。 */
+  if(!m){ cmFitPx=r?r.size:null; if(r) cmZoomApply_(); }
+  shWarn_(sh, r); return r;
+}
+/* 1階・2階をA4横1枚ずつに、全体を1つの文字の大きさで収める（2026-09-08 管理者指示・2026-10-23 本人指示で決め方を改めた）。
+   ★図の形（列幅・行高・縦横比）は原本の実測値で固定してある。ここで決めるのは【文字の大きさ】だけ。
+   ★★文字の大きさは、文字の幅を【測らずに】、間取りの比と氏名の文字数から計算で決める（roomFontPx_）。
+     以前は端末で文字の幅を実際に測って「いちばん長い氏名が1行に入る最大」を探し、画面ではさらにあふれを測って下げていた。
+     Windows では拡大縮小のたびに文字の描き方（画素への丸め）が変わり、測るたびに結果が揺れて、画面では氏名が大きすぎる・
+     小さすぎる、紙では大きすぎる（測った時より刷った時の文字が広い）になった（2026-10-23 本人の実機での確認）。
+     計算で決めれば、Mac でも Windows でも、拡大縮小しても、画面と紙で同じ割合（--rpk＝紙の幅に対する割合・画面は cqw）になる。
+   ★2枚（1階・2階）は【同じ文字サイズ】。原本も1階・2階で同じ大きさ。
+   ★紙の高さに入るかだけは、表題の高さがあるので紙の幅で実際に確かめる（入らなければ 0.25px ずつ下げる）。 */
+/* 日本語の文字（漢字・かな・全角の記号・全角の空白）はどの書体でも1字＝1字分（1em）の幅で作られている。
+   半角の文字（英数字・半角の空白・半角カナ）は書体で幅が違うので、0.62字分と多めに見る（半角の大文字は 0.7字分）。
+   見た目に幅の無い文字（異体字の印・結合の濁点・幅の無い空白）は0字と数える（異体字つきの氏名で全体を小さくしない）。
+   RP_SAFE はマスの中の幅のうち氏名に使ってよい割合（字と字の間の丸め・書体の差のゆとり） */
+var RP_EM_HALF=0.62, RP_SAFE=0.95, RP_PX_MIN=5, RP_PX_MAX=26;
+function rpEmLen_(s){
+  var t=String(s==null?'':s), n=0;
+  for(var i=0;i<t.length;i++){
+    var c=t.charCodeAt(i);
+    if(c>=0xD800&&c<=0xDBFF){
+      var lo=t.charCodeAt(i+1);
+      i++;
+      if(c===0xDB40&&lo>=0xDD00&&lo<=0xDDEF) continue;   /* 異体字の印（IVS）は0字 */
+      n+=1; continue;                                     /* 「𠮷」のような2つで1文字の漢字は1字 */
+    }
+    if((c>=0xFE00&&c<=0xFE0F)||c===0x3099||c===0x309A||(c>=0x200B&&c<=0x200D)) continue;   /* 異体字の印・結合の濁点・幅の無い空白 */
+    if(c>=0x41&&c<=0x5A){ n+=0.7; continue; }              /* 半角の大文字は少し広い */
+    n+=(c>=0x1100&&!(c>=0xFF61&&c<=0xFF9F))?1:RP_EM_HALF;
+  }
+  return n;
+}
+/* 間取り（plans: {階:{cols,rows,ar,cells}}）・在籍（occ: 居室番号→[{name}]）・図の幅 W（px）から、
+   全体で1つの文字の大きさ（px・0.25px 刻みに切り下げ）を出す。文字の幅は測らない（計算だけ）。見るもの:
+   ・居室の氏名（2名なら1行ずつ）と空室の用途: 1行の字数 × 大きさ が「マスの中の幅 × RP_SAFE」に収まる
+   ・居室の高さ: 上の番号（上から0.30字・行の高さ1.25字）と、真ん中の氏名（1行1.25字×行数）が重ならない（氏名か用途がある時だけ）
+   ・固定の名前の箱（厨房など）: 折り返してよい（今までどおり）が、行数×1.25字 がマスの中の高さに収まる
+   マスの中＝マスの広さから罫線（1px×2）と余白（居室は1px×2・ほかは横1px×2・縦2px×2）を引いた広さ */
+function roomFontPx_(plans, occ, W){
+  var best=RP_PX_MAX;
+  function sum(a,from,n){ var s=0; for(var i=from;i<from+n&&i<a.length;i++) s+=a[i]; return s; }
+  Object.keys(plans||{}).forEach(function(key){
+    var p=plans[key];
+    if(!p||!Array.isArray(p.cells)||!Array.isArray(p.cols)||!Array.isArray(p.rows)) return;
+    var cols=p.cols.map(function(x){ return rpNum_(x,1); }), rows=p.rows.map(function(x){ return rpNum_(x,1); });
+    var cw=sum(cols,0,cols.length), rw=sum(rows,0,rows.length);
+    var ar=Array.isArray(p.ar)?p.ar:[], gH=W*rpNum_(ar[1],1)/rpNum_(ar[0],1);
+    if(!cw||!rw) return;
+    p.cells.forEach(function(cl){
+      if(!cl) return;
+      var w=sum(cols,rpNum_(cl.c,1)-1,rpNum_(cl.cs,1))/cw*W, h=sum(rows,rpNum_(cl.r,1)-1,rpNum_(cl.rs,1))/rw*gH;
+      if(cl.room){
+        var inW=w-4, inH=h-4, who=(occ&&occ[cl.room])||[];
+        var lines=who.length ? who.map(function(x){ return String(x&&x.name||'').trim(); }) : (cl.note?[String(cl.note)]:[]);
+        lines.forEach(function(s){ var e=rpEmLen_(s); if(e>0) best=Math.min(best, inW*RP_SAFE/e); });
+        if(lines.length) best=Math.min(best, inH/(3.1+1.25*lines.length));   /* 番号だけの空室は重なる氏名が無い */
+      }else if(cl.t){
+        var e2=rpEmLen_(cl.t), inW2=w-4, inH2=h-6;
+        /* 折り返す行数は「1行に入る全角の字数」で数える（多めに見る）。1字も入らない大きさは使わない */
+        for(var f=Math.floor(best*4)/4; f>RP_PX_MIN; f=Math.round((f-0.25)*100)/100){
+          var per=Math.floor(inW2*RP_SAFE/f);
+          if(per>=1 && Math.ceil(e2/per)*1.25*f<=inH2) break;
+          best=Math.min(best, Math.round((f-0.25)*100)/100);
+        }
+      }
+    });
+  });
+  return Math.max(RP_PX_MIN, Math.min(RP_PX_MAX, Math.floor(best*4)/4));
+}
+function fitRoomSheets(m){
+  var shs=[$('roomSheet_f1'),$('roomSheet_f2')].filter(Boolean);
+  if(!shs.length) return null;
+  /* ★m（su-print が確定した実際の用紙）があればそれを使う。無ければ従来どおり A4横10mm */
+  var PW=m?Math.round(m.wPx):Math.round((297-20)*96/25.4), PH=m?m.hPx:(210-20)*96/25.4;
+  /* 紙幅に対する割合で当てる（画面でも同じ比率になる）。
+     ★--rpfs は当てない。当てると CSS 側の calc(var(--rpk)*1cqw) を上書きしてしまい、画面でも紙の px がそのまま使われる。 */
+  function apply(px){
+    var k=Math.round(px*100/PW*1000)/1000;
+    shs.forEach(function(sh){ sh.style.setProperty('--rpk', k); });
+  }
+  var best=roomFontPx_(roomPlanData(), roomOccupants(), PW);
+  apply(best);                                  /* 割合は見えていなくても決まる（非表示の間も同じ大きさにしておく） */
+  if(!shs[0].offsetParent) return null;         /* 紙の高さは見えている時だけ確かめる（showScreen で測り直す） */
+  /* ★確かめる間は【紙と同じ幅】に固定する（画面のままだと器の幅を測るので、窓の広さで紙の大きさが変わる・契約 §17）。
+     ★脚注（.sh-ft）は紙では印刷の CSS で消えているので、確かめる間は外す（画面と紙で同じ大きさにするため） */
+  var saved=shs.map(function(sh){ var ft=sh.querySelector('.sh-ft'); return [sh.style.width, sh.style.padding, ft, ft?ft.style.display:'']; });
+  try{
+    shs.forEach(function(sh,i){ sh.style.padding='0'; sh.style.width=PW+'px'; if(saved[i][2]) saved[i][2].style.display='none'; });
+    while(best>RP_PX_MIN && shs.some(function(sh){ return sh.scrollHeight>PH-8; })){
+      best=Math.round((best-0.25)*100)/100;
+      apply(best);
+    }
+  }finally{
+    shs.forEach(function(sh,i){ sh.style.width=saved[i][0]; sh.style.padding=saved[i][1]; if(saved[i][2]) saved[i][2].style.display=saved[i][3]; });
+  }
+  apply(best);                                  /* 元の幅に戻してからもう一度当てる */
+  return shs.map(function(sh){
+    var g=sh.querySelector('.rp-grid');
+    return {size:best, fits:true, h:sh.scrollHeight, w:g?g.offsetWidth:0, H:Math.round(PH), W:PW};
+  });
+}
+/* 画面で居室一覧の大きさを当てる入口（描画・一覧へ戻った時）。
+   ★割合は窓の幅・拡大縮小・書体に関係なく1つに決まるので、窓の大きさが変わっても測り直さない。
+   ★非表示で紙の高さを確かめられなかった時（null）は印を立て、一覧が表示されたら確かめ直す（showScreen）。 */
+var roomFitWait_=false;
+function fitRoomScreen_(){
+  var rs=fitRoomSheets();
+  var shs=[$('roomSheet_f1'),$('roomSheet_f2')].filter(Boolean);
+  roomFitWait_=(rs==null&&shs.length>0);
+  return rs;
+}
+function fitLvlSheet(m){
+  var sh=$('lvlSheet'); if(!sh) return null;
+  var r=shFit_(sh, 210, 297, function(px){       /* A4縦 */
+    sh.style.setProperty('--lvfs', px+'px');
+    sh.style.setProperty('--lvpad', (px>=13?4:px>=10?3:2)+'px');
+    sh.style.setProperty('--lvcw', Math.round(px*7.6)+'px');
+    sh.style.setProperty('--shd1', Math.round(px*1.8)+'px');
+  }, 6, 20, '.lvlwrap', m);
+  shWarn_(sh, r); return r;
+}
+/* 収まらない時は黙って溢れさせない。画面にだけ理由を出す（紙には出さない） */
+function shWarn_(sheet, r){
+  var w=sheet.querySelector('.sh-warn');
+  if(r&&!r.fits){
+    if(!w){ w=document.createElement('div'); w.className='sh-warn'; sheet.insertBefore(w, sheet.firstChild); }
+    w.textContent='1枚に収まりません（人数か氏名が長すぎます）。紙が複数枚になります。';
+  }else if(w&&w.parentNode){ w.parentNode.removeChild(w); }
+}
+/* ═══════════ 印刷 — 共通モジュール su-print へ委譲（2026-09-12 M2-a）═══════════
+   CM表・居室一覧・介護度別・家族情報・病歴薬・薬効辞書の6帳票を SUPrint.define で宣言する。
+   @page の注入・採寸窓・後始末・用紙/余白/収め方の設定画面はモジュールが受け持つ。
+   ★このファイルには【まだ移していない印刷】が同居している（誕生日一覧・食形態一覧・個票・A4様式）。
+     それらは facesheet.html と逐語同一の資産で、facesheet と同時に移すまで旧方式のまま。
+     同居のあいだ、移していない画面で印刷した時に「最後に見ていた帳票」の用紙が乗らないよう、
+     各ビューに when（＝その帳票を画面に出している時だけ準備する）を必ず付ける。
+   ★採寸そのものは既存の fit 関数をそのまま使う（fit.measure）。用紙1枚に収める考え方・
+     安全余裕・警告の出し方は移行前と同じものを使い続ける（原則1・原則2）。 */
+/* いま帳票を「画面に出している」か。ビューidだけ見ると、詳細画面（個票・A4様式）を刷る時にも
+   用紙がA4横／A3横へ化ける（既存の mealViewActive_ が同じ穴を塞いでいる）。 */
+function shViewActive_(kind){
+  var sc=$('sc-list');
+  return curView===kind && !!sc && sc.classList.contains('on');
+}
+/* su-print へ登録する7帳票。並びは画面のタブ順。 */
+var RM_PRINT_VIEWS=['cm','room','lvl','fam','hist','md','cert','mf'];
+function definePrintViews_(){
+  if(!window.SUPrint){
+    toast('印刷モジュール（su-print.js）を読み込めていません。ページを再読み込みしてください');
+    return;
+  }
+  function def(kind, spec){
+    /* ★設定画面は開いた時と用紙を変えるたびに試算する（＝before を通って採寸が走り、
+       画面に生きているシートの style と警告文を書き換える）。印刷せずキャンセルしても
+       戻らないと、試算した用紙の文字サイズと「1枚に収まりません」がそのまま画面に残る。
+       採寸を委譲しているビューは su-print 側の復元（apply/cssVar）に乗らないので、
+       ここで style 属性と警告DOMを丸ごと退避・復元する（fitRoomSheets の saved と同じ作法）。 */
+    var snap=null;
+    function takeSnap(){
+      snap=(spec.restoreSel||[]).map(function(sel){
+        var e=$(sel); if(!e) return null;
+        var w=e.querySelector('.sh-warn');
+        return [e, e.getAttribute('style'), w?w.textContent:null];
+      });
+    }
+    function putSnap(){
+      (snap||[]).forEach(function(t){
+        if(!t) return;
+        if(t[1]==null) t[0].removeAttribute('style'); else t[0].setAttribute('style', t[1]);
+        var w=t[0].querySelector('.sh-warn');
+        if(t[2]==null){ if(w&&w.parentNode) w.parentNode.removeChild(w); }
+        else { if(!w){ w=document.createElement('div'); w.className='sh-warn'; t[0].insertBefore(w, t[0].firstChild); }
+               w.textContent=t[2]; }
+      });
+      snap=null;
+    }
+    var base={
+      root:'body', stamp:false, margin:10,
+      /* ★後始末の保険は旧実装と同じ60秒のまま（3秒へ短くしない）。このツールは body 全体へ
+         印刷CSSを当てる作りなので、プレビューを開いている最中に外れると紙面が別物になる。 */
+      clearDelay:60000,
+      when: function(){ return shViewActive_(kind); },
+      /* 紙に何を出すかは既存の @media print（body.<kind>-on）が決める。
+         before/after はそのクラスの付け外しだけを受け持つ（紙面の設計は移行前のまま）。
+         ★ビュー固有の前後処理は onBefore/onAfter で足す（before/after を丸ごと差し替えると
+           クラスの付け外しが抜ける）。 */
+      before: function(){ takeSnap(); document.body.classList.add(kind+'-on'); if(spec.onBefore) spec.onBefore(); },
+      after:  function(){
+        document.body.classList.remove(kind+'-on');
+        if(spec.onAfter) spec.onAfter();
+        putSnap();                 /* ★試算・印刷でいじった画面側を元へ戻す */
+        rmPaintPrintLabels_();     /* 保存した用紙を読み上げラベルへ即反映 */
+      }
+    };
+    for(var k in spec) if(Object.prototype.hasOwnProperty.call(spec,k)
+        &&k!=='onBefore'&&k!=='onAfter'&&k!=='restoreSel') base[k]=spec[k];
+    SUPrint.define(kind, base);
+  }
+  /* 採寸は既存関数へ委ねる（su-print の採寸窓＝@media print を画面へ一時適用し、
+     html/body を紙幅に固定した状態で呼ばれる）。
+     ★need（必要寸法）は必ず数で埋める。fitHistSheet のように w/h を返さない関数があり、
+       空のまま渡すと見込み枚数の計算が NaN になって「常に1枚」と表示される。
+       返り値に無い時はシートの実寸を測って補う。 */
+  function measureWith(fn, sel){
+    return function(st){
+      var r=fn(st.metrics);
+      if(!r) return {};
+      var w=r.w, h=r.h;
+      if(!(w>0)||!(h>0)){
+        var el=sel?$(sel):null;
+        if(el){ w=Math.max(el.scrollWidth, Math.ceil(el.getBoundingClientRect().width));
+                h=Math.max(el.scrollHeight, Math.ceil(el.getBoundingClientRect().height)); }
+      }
+      return {fontPx:r.size, need:{w:w||0, h:h||0}, diag:r};
+    };
+  }
+  def('cm', { label:'現入居者家族CM表', paper:'A4 landscape', restoreSel:['cmSheet'],
+    fit:{ mode:'height', measure: measureWith(fitCmSheet, 'cmSheet') },
+    /* 画面の大きさ（倍率）へ戻す（2026-10-23）。紙の採寸は表の文字の大きさを直接書くため、
+       シートの style を戻す putSnap だけでは表が紙の大きさのまま残る */
+    onAfter: function(){ cmZoomRestore_(); } });
+  def('lvl', { label:'介護度別一覧', paper:'A4 portrait', restoreSel:['lvlSheet'],
+    fit:{ mode:'height', measure: measureWith(fitLvlSheet, 'lvlSheet') } });
+  /* 居室一覧は1回の印刷で1階・2階の2枚。図の縦横比は原本どおりで動かさないので用紙と余白だけ。 */
+  def('room', { label:'入居者居室一覧（1階・2階）', paper:'A4 landscape',
+    allowUser:['paper','margin'], restoreSel:['roomSheet_f1','roomSheet_f2'],
+    fit:{ mode:'height', measure: function(st){
+      var rs=fitRoomSheets(st.metrics);
+      if(!rs||!rs.length) return {};
+      var h=0, w=0;
+      for(var i=0;i<rs.length;i++){ h+=rs[i].h; if(rs[i].w>w) w=rs[i].w; }
+      return {fontPx:rs[0].size, need:{w:w, h:h}, diag:rs};
+    } },
+    pagesOf: function(st, dflt){
+      var n=document.querySelectorAll('#roomSheet_f1,#roomSheet_f2').length;
+      return n||dflt;   /* 1階・2階で必ず2枚（各シートが1枚に収まることは採寸で保証） */
+    } });
+  /* 家族情報は文字サイズ固定（12px）＝収め方の対象外。縮めず複数ページに流すのが設計。 */
+  def('fam', { label:'家族情報一覧', paper:'A3 portrait', margin:10, allowUser:['paper','margin'],
+    restoreSel:['famSheet'],
+    fit:{ mode:'none' },
+    onBefore: function(){ wApplyFs($('famSheet'), 12); },
+    /* ★印刷用に当てた文字サイズは必ず画面から外す。設定画面は用紙を変えるたびに
+       見込み枚数を測り直す＝印刷しなくても before を通るので、戻さないと画面に残る。 */
+    onAfter: function(){
+      var sh=$('famSheet'); if(!sh) return;
+      sh.style.removeProperty('--wfs'); sh.style.removeProperty('--wpad'); sh.style.removeProperty('--shd1');
+    } });
+  /* 病歴・薬は「1行に収まる率が基準以上で、かつページ数が最小の中でいちばん大きい文字」。
+     高さ・幅の単純比較では書けないので、探索ごと既存関数へ委ねる。 */
+  /* ★余白は HIST_PAGE_MM から渡す＝@page と採寸（HIST_PAGE_W/H）の出どころを1つに保つ。
+     別々に書くと、余白を変えた時に紙と採寸が黙ってずれる（data-contracts の不変条件）。 */
+  /* ★余白は職員に開放しない（allowUser に margin を入れない）。理由は2つ:
+       ①@page と採寸（HIST_PAGE_W/H）の出どころを HIST_PAGE_MM の1つに保てる
+       ②実測で A3縦・余白15mm の1条件だけ、見込み枚数が実枚数より1枚少なく出る。原因が
+         特定できていないので、未解明の条件を職員に選ばせない（他11条件は一致・下の pagesOf 参照）。
+     用紙は開放する（A3縦→A4縦・A3横は実測で見込み＝実枚数）。 */
+  def('hist', { label:'病歴・薬一覧', paper:'A3 portrait', margin:HIST_PAGE_MM, allowUser:['paper'],
+    restoreSel:['histSheet'],
+    fit:{ mode:'height', measure: measureWith(fitHistSheet, 'histSheet') },
+    /* 見込み枚数。採寸が数えた枚数（紙の割り方を模したもの）と、必要高さ÷紙高の単純計算の
+       【多い方】を採る＝少なく見せない側へ倒す。
+       ★既知の限界（2026-09-12 実測）: A3縦・余白15mm の1条件だけ、両方の見積りが2枚と出るのに
+         実際は3枚になる（他11条件は一致）。原因は未特定（塊単位の改ページの模写が、この境界でだけ
+         実際と1つずれる）。採寸の模写は【文字サイズの決定にも使っている】ので推測で触らない。
+         代わりに上の allowUser から margin を外し、この条件に到達できないようにしてある。 */
+    pagesOf: function(st, dflt){
+      var d=st.fitted&&st.fitted.diag;
+      var modeled=(d&&d.pages>0)?d.pages:0;
+      return Math.max(modeled, dflt||1) || 1;
+    } });
+  /* 薬効辞書は採寸なし（複数ページにそのまま流す） */
+  def('md', { label:'薬効辞書', paper:'A4 portrait' });
+  /* 認定期限一覧（2026-09-26 追加）も採寸なし（人数が多い時は複数ページにそのまま流す。
+     列見出しは各ページの先頭に繰り返す＝印刷CSSの .certtbl thead） */
+  def('cert', { label:'要介護認定 期限一覧', paper:'A4 portrait' });
+  /* 食形態一覧表（配布用・2026-10-15）。A4縦1枚に、文字をできるだけ大きく収める */
+  def('mf', { label:'食形態一覧表（配布用）', paper:'A4 portrait', restoreSel:['mfSheet'],
+    fit:{ mode:'height', measure: measureWith(fitMfSheet, 'mfSheet') } });
+  rmSyncPrintTarget_();
+}
+/* いま開いているタブを su-print の印刷対象にする。
+   ★移していない画面（標準・階別・五十音・入居日・誕生日・食形態・詳細）では null を渡す。
+     渡さないと、それらの画面で ⌘/Ctrl+P を押した時に最後の帳票の用紙・幅固定が乗る。 */
+function rmSyncPrintTarget_(){
+  if(!window.SUPrint) return;
+  /* ★画面を移る時点で印刷の状態を落とす。afterprint も pagehide も matchMedia も来ない環境では
+     保険タイマー（60秒）まで用紙指定と印刷用クラスが残り、その間に未移行の画面（誕生日一覧など）で
+     印刷すると前の帳票の用紙が乗る。clear は冪等なので毎回呼んでよい。 */
+  try{ SUPrint.clear(); }catch(e){}
+  SUPrint.setActive(RM_PRINT_VIEWS.indexOf(curView)>=0?curView:null);
+  rmPaintPrintLabels_();
+}
+/* 印刷ボタンの読み上げラベル。★可視テキスト（「A4横で印刷」等）を必ず含める
+   （音声操作は画面に見えている文字で呼ぶため・WCAG 2.5.3）。7本まとめて付ける。 */
+var RM_PRINT_BTN={cm:'cmPrint',room:'roomPrint',lvl:'lvlPrint',fam:'famPrint',hist:'histPrint',md:'mdPrint',cert:'certPrint',mf:'mfPrint'};
+/* 各帳票の既定の用紙（definePrintViews_ の paper と同じ値。片方だけ変えない） */
+var RM_PRINT_PAPER={cm:'A4 landscape',room:'A4 landscape',lvl:'A4 portrait',fam:'A3 portrait',
+  hist:'A3 portrait',md:'A4 portrait',cert:'A4 portrait',mf:'A4 portrait'};
+/* ★ボタンの文字は「🖨️ 印刷（A4横）」の形にそろえ、かっこの中はその帳票で【いま使う用紙】を出す
+   （2026-10-16 代表者の決定）。設定画面で用紙を変えたら、ボタンの文字も変わる＝文字と紙がずれない */
+function rmPaintPrintLabels_(){
+  if(!window.SUPrint) return;
+  Object.keys(RM_PRINT_BTN).forEach(function(kind){
+    var btn=$(RM_PRINT_BTN[kind]); if(!btn) return;
+    var paper=RM_PRINT_PAPER[kind]||null;
+    try{ var pf=SUPrint.prefs(kind).get(); if(pf&&pf.paper) paper=pf.paper; }catch(e){}
+    if(paper&&SUPrint.paperLabel){
+      var pl=String(SUPrint.paperLabel(paper)).replace(/\s+/g,'');
+      btn.textContent='🖨️ 印刷（'+pl+(kind==='room'?'・1階と2階の2枚':'')+'）';
+    }
+    var txt=(btn.textContent||'').replace(/^\s*🖨️\s*/,'').trim();
+    btn.setAttribute('aria-haspopup','dialog');
+    btn.setAttribute('aria-label', txt+' — 用紙と余白の設定を開く');
+  });
+}
+/* 印刷ボタン: 用紙・余白・収め方を選ぶ設定画面を開く */
+function rmPrint_(kind){
+  if(!window.SUPrint){ toast('印刷モジュール（su-print.js）を読み込めていません'); return; }
+  if(!shViewActive_(kind)) return;
+  /* ★病歴・薬一覧は効能列を持つので、薬効辞書（med_dict）が届くまで待ってから設定画面を開く
+     （2026-09-24 本人決定 Q2。詳細画面の印刷と同じ待ち方） */
+  if(kind==='hist'){
+    mdPrintGate_(function(){ return medsFxOk_()&&!mdMap&&getDeviceRole()!=='field'; },
+      function(){ return shViewActive_('hist'); },
+      function(){ SUPrint.openDialog(kind); });
+    return;
+  }
+  SUPrint.openDialog(kind);
+}
+/* ═══════════ 家族情報一覧・病歴薬一覧（2026-09-04 指示）═══════════
+   スプレッドシート「入居者情報」の【家族情報一覧】【病歴・薬】と同じ列で一覧にする。
+   ★在籍者のみ・五十音順（CM表・介護度別と同じ母集団 shBase）。
+   ★家族・病名・処方は【共有名簿にも getBulk にも無い】。1名ずつ getResident で取る。
+     在籍32名で32回。同時に5本までにして、進み具合を画面に出す（無言で30秒待たせない）。
+   ★取れなかった方は【空欄にせず「取得できず」と出す】。空欄だと「家族なし」「薬なし」に読める。
+   ★読み取り専用。この2ビューはマスタを1バイトも更新しない。
+   ★2026-10-28（本人指示）: まず GAS の getListFull で在籍者の5項目（家族・病名・病名の旧自由文・既往歴・定期薬）を1回で読む。
+     1人ずつだと在籍40名ほどで40往復・約3.5MB を受け取り、使うのは約30KB だけだった。
+     読み取り口の無い古い GAS（不明なaction）・通信の失敗の時は全員を、rows に居ない方（名簿とシートのずれ）だけは、今までどおり1人ずつ取る。
+     rows の行は「オブジェクトで id が null でない」ものだけを使う（受け取った値を信じない）。 */
+var fullMap=null, fullLoading=false, fullErr='', fullDone=0, fullTotal=0, fullBad=null, fullGen=0;
+function fullEnsure(force){
+  /* ★現場端末では取りに行かない（薬効辞書の mdLoad_ と同じ。fullMap は処方を持つ） */
+  if(getDeviceRole()==='field') return;
+  if(fullLoading) return;
+  if(fullMap&&!force) return;
+  if(!rmOn_()){ fullErr='入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）'; paintShBars(); return; }
+  var ids=shBase().map(function(r){ return r.id; });
+  if(!ids.length){ fullErr='在籍者が居ません'; paintShBars(); return; }
+  var gen=++fullGen;
+  fullLoading=true; fullErr=''; fullDone=0; fullTotal=ids.length;
+  var got={}, bad=[], LANES=5;
+  paintShBars();
+  /* 1人ずつ取る道（同時5本）。list に渡した方だけを取る */
+  function oneByOne(list){
+    var i=0;
+    function next(){
+      if(gen!==fullGen) return Promise.resolve();          /* 取り直しに追い越されたら捨てる */
+      if(i>=list.length) return Promise.resolve();
+      var id=list[i++];
+      return apiGet({action:'getResident',id:id},30000).then(function(d){
+        if(gen!==fullGen) return;                            /* 世代が変わった後に届いた応答は控えにも入れない */
+        var rec=(d&&d.record)||null;
+        if(rec&&rec.id!=null) got[String(id)]=rec; else bad.push(id);
+      }).catch(function(){ bad.push(id); })
+        .then(function(){ if(gen!==fullGen) return; fullDone++; paintShBars(); return next(); });
+    }
+    var lanes=[]; for(var k=0;k<LANES;k++) lanes.push(next());
+    return Promise.all(lanes);
+  }
+  /* まとめて読む道。戻り値は「1人ずつ取る方の id の並び」（世代が変わっていたら null＝何もしない） */
+  apiGet({action:'getListFull'},60000).then(function(d){
+    if(gen!==fullGen) return null;                          /* 世代が変わった後に届いた応答は控えにも入れない */
+    if(!d||!Array.isArray(d.rows)) return ids;              /* rows が無い応答は古い GAS とみなして全員を1人ずつ */
+    var byId=Object.create(null);
+    d.rows.forEach(function(row){
+      if(!row||typeof row!=='object'||Array.isArray(row)||row.id==null) return;
+      var k=String(row.id);
+      if(!(k in byId)) byId[k]=row;                         /* 同じ id が2つ来たら先の行（GAS と同じ先勝ち） */
+    });
+    var rest=[];
+    ids.forEach(function(id){ var k=String(id); if(k in byId) got[k]=byId[k]; else rest.push(id); });
+    fullDone=ids.length-rest.length; paintShBars();
+    return rest;
+  }, function(e){
+    if(gen!==fullGen) return null;
+    /* ★古い GAS の「不明なaction」以外で断られた時だけ記録に残す。黙って1人ずつに戻ると、
+       新しい GAS を配った後も遅いままなのに誰も気づけない（記録するのは失敗の種類だけ） */
+    var em=String((e&&e.message)||'');
+    if(em.indexOf('不明なaction')<0){
+      try{ if(window.SUErrors&&typeof window.SUErrors.note==='function') window.SUErrors.note('まとめ読みの失敗', em==='タイムアウト'?'タイムアウト':String((e&&e.name)||'Error').slice(0,40), 'master:listFull'); }catch(_){}
+    }
+    return ids;                                             /* 古い GAS（不明なaction）・通信の失敗は全員を1人ずつ */
+  }).then(function(rest){
+    if(rest===null||gen!==fullGen) return;
+    if(rest.length) return oneByOne(rest);
+  }).then(function(){
+    if(gen!==fullGen) return;
+    /* ★1件も取れなければ成功として扱わない（全員空欄の帳票を正しい結果として刷らせない） */
+    if(!Object.keys(got).length){ fullErr='取得できませんでした'; return; }
+    fullMap=got; fullBad=bad;
+  }).catch(function(){ if(gen===fullGen) fullErr='取得できませんでした（通信）'; })
+    .then(function(){
+      if(gen!==fullGen) return;
+      fullLoading=false; paintShBars();
+      /* 薬効辞書の一覧（md）も描き直す（2026-11-03）。辞書の方が先に届くと、辞書の側の描き直しは済んだ後なので、
+         ここで描き直さないと表が「取得しています… 0 / N名」のまま止まっていた。
+         書きかけ（mdEdits 等）は入力の度にメモリへ控えてあるので描き直しで消えない。表の中で入力している最中だけは
+         入力の場所を動かさないよう描き直さない（その時は上の paintShBars で帯の数だけ直す） */
+      var mdTyping=curView==='md'&&document.activeElement&&document.activeElement.closest&&document.activeElement.closest('#rosterBox');
+      if(curView==='fam'||curView==='hist'||(curView==='md'&&!mdTyping)){ renderRoster(); if(curView==='hist') fitHistSheet(); }
+    });
+}
+function fullOf(r){ return (fullMap&&fullMap[String(r.id)])||null; }
+/* ★取得できなかった理由は【全部】出す。1つでも欠けると、その列が全員空欄の紙になり
+   「無い」と読まれる（getBulk が落ちれば負担割合が、辞書が落ちれば効能が空欄になる）。
+   この画面自身が wCell と §12 で「空欄で刷らない」を明文化しているので、その例外を作らない。 */
+function shLoadNote(){
+  var a=[];
+  if(fullLoading) a.push('取得しています… '+fullDone+' / '+fullTotal+'名');
+  else if(fullErr) a.push(fullErr);
+  else if(!fullMap) a.push('未取得');
+  else if(fullBad&&fullBad.length) a.push('取得できなかった方が '+fullBad.length+'名います');
+  if(bkErr) a.push('介護度・負担割合を取得できませんでした（'+bkErr+'）');
+  else if(!bkRows&&!bkLoading) a.push('介護度・負担割合が未取得です');
+  if(mdErr) a.push(mdErr);
+  else if(!mdDict&&!mdLoading) a.push('薬効辞書が未取得です（効能の列は空欄になります）');
+  return a.join('　／　');
+}
+/* 値が無い時に空欄で出さない（空欄は「無い」と読まれる）。取れていない時は「取得できず」と書く */
+function wCell(rec, v){
+  if(!rec) return '<span class="w-empty">取得できず</span>';
+  var t=String(v==null?'':v).trim();
+  return t?esc(t):'';
+}
+/* ownBody=true の時、body は <tbody> を自前で含む（1人＝1 tbody の帳票用）。
+   ftNote は脚注の末尾に足す凡例（省略時は従来と完全に同じ出力） */
+function wSheet(id, title, cols, body, n, note, ownBody, ftNote){
+  return '<div class="sh-sheet" id="'+id+'">'+
+    '<div class="sh-hd"><div class="st1">'+esc(title)+'</div></div>'+
+    (note?('<div class="lvl-other">'+esc(note)+'</div>'):'')+
+    '<table class="wtbl"><colgroup>'+cols.map(function(c){
+      return '<col style="width:'+c[2]+'%">'; }).join('')+'</colgroup>'+
+    '<thead><tr>'+cols.map(function(c){ return '<th>'+esc(c[1])+'</th>'; }).join('')+'</tr></thead>'+
+    (ownBody?body:('<tbody>'+body+'</tbody>'))+'</table>'+
+    '<div class="sh-ft">'+n+'名　／　対象 在籍のみ・五十音順　／　印刷日 '+esc(shStamp())+
+      (ftNote?('　／　'+esc(ftNote)):'')+'</div>'+
+  '</div>';
+}
+
+/* ═══ 家族情報一覧（A3横・複数ページ）═══
+   原本の列のうち、各種証の期限・寝具リース・同意確認書は【作らない】（管理者指示・2026-09-04。
+   マスタに該当欄が無く、空欄の列を並べても意味がないため）。 */
+/* ★家族は全員入るので、家族・電話・住所を広めに取る（2026-09-07 指示） */
+/* ★介護度は数字だけとは限らない。histLv は「要支援1」「自立」等をそのまま返し、
+   .wct は nowrap なので狭いと隣の列へ重なる。負担割合の「保護」も同様（2026-09-07 レビュー M-2）。 */
+var FAM_COLS=[['no','No',3],['name','入居者',10],['lv','介護度',6],['pay','負担割合',6],
+  ['em','緊急連絡先',13],['emtel','電話',11],['fam','家族',15],['famtel','電話',11],['addr','住所',25]];
+function famPay(v){
+  var t=String(v==null?'':v).trim();
+  if(!t) return '';
+  return /^[123]$/.test(t) ? (t+'割') : t;   /* 「保護」等はそのまま出す */
+}
+function famHtml(){
+  var base=shBase();
+  /* ★取得前に「全員 取得できず」の表を刷らせない（病歴薬と同じ作法） */
+  if(!fullMap) return '<div class="sh-sheet" id="famSheet"><div class="loading">'+
+    esc(shLoadNote()||'家族情報を取得しています…')+'</div></div>';
+  var body=base.map(function(r0,i){
+    var b=bkOf(r0), rec=fullOf(r0);
+    var fam=(rec&&Array.isArray(rec.family))?rec.family:[];
+    var n=fam.length;
+    /* ★「家族」は登録している方を【全員】出す（緊急連絡先の方も含む）。
+       「緊急連絡先」は緊急の印が付いた方【だけ】。2026-09-07 管理者指示。
+       ★番号は家族の並び順で1回だけ振り、電話・住所・緊急連絡先にも同じ番号を使う。
+       列ごとに数え直すと「①の電話」が別人のものになる。
+       ★電話や住所が空の方はその列に出さない（番号が同じなので誰のものかは分かる）。 */
+    function pick(get, only){
+      return fam.map(function(f,k){
+        if(!f) return '';
+        if(only && !f.emergency) return '';
+        var t=String(get(f)==null?'':get(f)).trim();
+        return t?(famNo(k,n)+t):'';
+      }).filter(Boolean).join('\n');
+    }
+    var v={no:(i+1), name:b.name||'', lv:histLv(b.careLevel), pay:famPay(b.copayRate),
+           em:    pick(famWho, true),
+           emtel: pick(function(f){ return f.phone; }, true),
+           fam:   pick(famWho, false),
+           famtel:pick(function(f){ return f.phone; }, false),
+           addr:  pick(function(f){ return f.address; }, false)};
+    return '<tr>'+FAM_COLS.map(function(c){
+      if(c[0]==='no') return '<td class="wno">'+v.no+'</td>';
+      if(c[0]==='name'||c[0]==='lv'||c[0]==='pay') return '<td class="wct">'+esc(v[c[0]])+'</td>';
+      /* 電話は1つずつ1行に収める（折り返すと市外局番と番号が分かれて読みにくい） */
+      var cls=(c[0]==='emtel'||c[0]==='famtel')?' class="ftel"':'';
+      return '<td'+cls+'>'+wCell(rec, v[c[0]])+'</td>';
+    }).join('')+'</tr>';
+  }).join('');
+  return wSheet('famSheet','家族情報一覧',FAM_COLS,body,base.length, shLoadNote());
+}
+
+/* ═══ 病歴・薬一覧（A3縦・複数ページ）═══
+   原本の列どおり（過去の臨時薬だけは 2026-09-04 の指示で外した）。
+   効能は薬効辞書（med_dict）から引き、薬剤師未確認のものには ＊ を付ける。
+   ★2026-09-24 本人決定（案A・Q4）: 詳細画面・フェイスシートと同じ MedsEffect.resolveLines を通す。
+     med_dict に無い薬は予備辞書（meds-effect-dict.js）で埋めて ＊（未確認）を付ける。
+     med_dict が取れていない時は予備辞書だけで埋めない（効能列は空のまま・理由は注記に出る）。 */
+/* ★過去の臨時薬は載せない（2026-09-04 管理者指示）。そのぶんの幅を内服へ回す。
+   ★内服は「服薬時点まで含めて1行」に収まる幅を最優先で取る（32%）。 */
+/* ★過去の臨時薬は載せない（2026-09-04 管理者指示）。そのぶんの幅を内服へ回す。
+   ★内服は「服薬時点まで含めて1行」を最優先にするので、紙幅の46%を割り当てる。
+     実測（2026-09-04・248行）: 中央値35桁・48桁以内が95%・最長81桁。
+     A3縦の印字幅1047px×46% ＝ 約481px＝全角48桁（文字10px時）。 */
+/* ★過去の臨時薬（2026-09-04）と頓服・外用等（同日の追加指示）は載せない。
+   空いた幅は病名・既往歴へ多めに回す。この2列は rowspan で1人ぶんの高さを決めるため、
+   狭いと行数が増えて【薬剤の行数より tbody が高くなり】紙が増える。 */
+/* ★2026-09-08 管理者指示: 内服列が幅を取りすぎていたので狭め、効能との間に「服薬時点」を足した。
+   幅は実データの桁数で決めた（在籍32名・内服248行の実測）:
+     薬剤名＋用量 … 中央12桁／95%17桁／最大26桁
+     服薬時点     … 中央 8桁／95%13桁／最大21桁
+   17:13 の比で 26%:20% とし、病名・既往歴の幅（rowspan で1人ぶんの高さを決める）は変えない。 */
+var HIST_COLS=[['no','No',3],['name','入居者',8],['lv','介護度',3],['dis','治療中の病気',16],
+  ['past','既往歴',16],['med','内服（定期薬）',26],['time','服薬時点',20],['eff','効能',8]];
+/* ★手で二重に持たない（片方だけ直すと採寸が黙ってずれる）。列の定義から引く */
+function histColPct_(id, dflt){
+  for(var i=0;i<HIST_COLS.length;i++) if(HIST_COLS[i][0]===id) return HIST_COLS[i][2];
+  return dflt;
+}
+var HIST_MED_PCT=histColPct_('med',26);
+var HIST_TIME_PCT=histColPct_('time',20);
+var HIST_FIT_RATIO=0.95;    /* この割合が1行に収まる最大の文字サイズを選ぶ */
+var HIST_FS_MAX=13;         /* 文字サイズの上限 */
+var HIST_FS_MIN=8;          /* 下限。これより小さいと紙で読めない */
+/* ★用紙の寸法は1箇所で持つ。余白を変えた時に採寸と @page が黙ってずれないようにする
+   （HIST_MED_PCT を列定義から引いているのと同じ理由）。 */
+var HIST_PAGE_MM=10;                                   /* @page の margin と必ず同じ値 */
+/* ★@page の指定は su-print が spec.paper / spec.margin から作る（HIST_PAGE_CSS は廃止）。
+   ここに残る HIST_PAGE_MM / _W / _H は「用紙が渡されなかった時の既定」＝画面描画時の採寸専用。 */
+var HIST_PAGE_W=(297-HIST_PAGE_MM*2)*96/25.4;          /* A3縦の印字幅 */
+var HIST_PAGE_H=(420-HIST_PAGE_MM*2)*96/25.4;          /* A3縦の印字高さ */
+function histDiseases(rec){
+  if(!rec) return '';
+  /* 様式の病名表（diseases）があればそれを使い、無ければ旧自由文（currentDiseases）に落とす */
+  if(Array.isArray(rec.diseases)&&rec.diseases.length){
+    return rec.diseases.map(function(d){
+      if(!d) return '';
+      var t=String(d.name||'').trim();
+      if(!t) return '';
+      var sub=[String(d.onset||'').trim(), String(d.hospital||'').trim()].filter(String).join('・');
+      return sub?(t+'（'+sub+'）'):t;
+    }).filter(String).join('\n');
+  }
+  return String(rec.currentDiseases||'').trim();
+}
+/* 介護度は数字だけ出す（2026-09-04 管理者指示）。要支援・未登録は元の文字のまま
+   （勝手に落とすと「介護度が無い方」と「要支援の方」が紙で同じに見える）。 */
+function histLv(v){
+  var n=lvNum(v);
+  return n ? String(n) : String(v==null?'':v).trim();
+}
+/* ★1人ぶんを【薬剤1つ＝1行】に割る（2026-09-04 管理者指示）。
+   内服と効能を別セルの改行で並べていた時は、内服のどれかが折り返すと以後の効能が
+   1行ずつ下へずれて【別の薬の効能】が並んだ。行そのものを分ければ構造的にずれない。
+   氏名・病名・既往歴・頓服は rowspan でまとめる（原本と同じ見え方）。 */
+function histHtml(){
+  var base=shBase();
+  if(!fullMap) return '<div class="sh-sheet" id="histSheet"><div class="loading">'+
+    esc(shLoadNote()||'病歴・薬を取得しています…')+'</div></div>';
+  /* ★部品が古い・読めない時は表そのものを出さない（medSplit_ も照合キーも部品の中にある） */
+  var fxOk=medsFxOk_();
+  if(!fxOk) return '<div class="sh-sheet" id="histSheet"><div class="loading">'+esc(MEDS_FX_NG)+'</div></div>';
+  var anyMark=false;
+  var body=base.map(function(r0,i){
+    var b=bkOf(r0), rec=fullOf(r0);
+    var med=rec?String(rec.medsRegular||''):'';
+    var lines=med.split(/\r?\n/).map(function(x){ return x.trim(); }).filter(String);
+    if(!lines.length) lines=[''];
+    /* ★効能は1本の規則（resolveLines）で引く。行数は入力と必ず同じ＝内服の行と揃う */
+    var effs=(mdMap&&fxOk)?MedsEffect.resolveLines(lines, mdMap):null;
+    if(effs&&effs.length!==lines.length) effs=null;   /* 行数がずれたら効能を出さない（別の薬の効能を並べない） */
+    if(effs) for(var q=0;q<effs.length;q++) if(effs[q].mark) anyMark=true;
+    var span=lines.length;
+    var head=[
+      '<td class="wno" rowspan="'+span+'">'+(i+1)+'</td>',
+      '<td class="wct hnm" rowspan="'+span+'">'+esc(b.name||'')+'</td>',
+      '<td class="wct" rowspan="'+span+'">'+esc(histLv(b.careLevel))+'</td>',
+      '<td rowspan="'+span+'">'+wCell(rec, histDiseases(rec))+'</td>',
+      '<td rowspan="'+span+'">'+wCell(rec, rec?String(rec.pastHistory||''):'')+'</td>'
+    ].join('');
+    var rows='';
+    for(var k=0;k<lines.length;k++){
+      var eff=effs?esc(effs[k].text+effs[k].mark):'';
+      /* ★内服列は「薬剤名＋用量」、服薬時点列は「1錠分1 夕食後」等（2026-09-08 管理者指示）。
+         効能は従来どおり mdDrugName で引く（resolveLines の中で。この分け方とは別経路。上のコメント参照）。 */
+      var pt=medSplit_(lines[k]);
+      rows+='<tr>'+(k===0?head:'')+
+        '<td class="hmed">'+(lines[k]?esc(pt.name):(rec?'':'<span class="w-empty">取得できず</span>'))+'</td>'+
+        '<td class="htime">'+esc(pt.use)+'</td>'+
+        '<td class="heff">'+eff+'</td></tr>';
+    }
+    return '<tbody class="hgrp">'+rows+'</tbody>';
+  }).join('');
+  /* ＊の凡例は列見出しでなく脚注に置く（2026-09-24 本人決定）。＊が1つも無い紙には出さない */
+  return wSheet('histSheet','病歴・薬一覧',HIST_COLS,body,base.length, shLoadNote(), true,
+    anyMark?MEDS_MARK_NOTE:'');
+}
+
+/* この2つは1枚に収まらない（原本も521行/656行）。文字を無理に縮めず、読める大きさを保ったまま
+   複数ページで刷る。見出しは印刷CSSで各ページの先頭に繰り返す。 */
+function wApplyFs(sheet, px){
+  if(!sheet) return;
+  sheet.style.setProperty('--wfs', px+'px');
+  sheet.style.setProperty('--wpad', (px>=12?3:2)+'px');
+  sheet.style.setProperty('--shd1', Math.round(px*1.8)+'px');
+}
+/* 病歴・薬の文字サイズを【紙の幅】を基準に決める（2026-09-04 管理者指示）。
+   ★画面の幅で決めてはいけない。窓の広さで紙の中身が変わってしまう。
+   ★狙いは「他より極端に長い記載でなければ1行に収まる」。全部を1行にしようとすると
+     最長81桁に引きずられて全体が読めない大きさになるので、95%を基準にする。
+   ★測るのは実データの文字幅（span を作って実測）。桁数の決め打ちだと、半角と全角、
+     メーカー名のかっこ書きで簡単に外れる。 */
+function fitHistSheet(m){
+  var sh=$('histSheet'); if(!sh||!sh.offsetParent) return null;
+  /* ★用紙。m があれば su-print が確定した実際の用紙、無ければ従来どおり A3縦10mm（同値） */
+  var PGW=m?m.wPx:HIST_PAGE_W, PGH=m?m.hPx:HIST_PAGE_H;
+  /* ★2026-09-08 追加: 内服だけでなく【服薬時点も】測る。片方しか測らないと、
+     測らなかった列が折り返して行が高くなり、紙が増えたまま「1行に収まっている」と判定する。
+     測るのは列ごとに違う幅なので、文字列と幅を組にして持つ。 */
+  var cells=sh.querySelectorAll('td.hmed'), tcells=sh.querySelectorAll('td.htime');
+  if(!cells.length){ wApplyFs(sh,11); return null; }
+  var texts=[], i;
+  var colPx=PGW*HIST_MED_PCT/100 - 14;    /* 左右の余白ぶんを引く */
+  var colPxT=PGW*HIST_TIME_PCT/100 - 14;
+  for(i=0;i<cells.length;i++){ var t=cells[i].textContent.trim(); if(t) texts.push([t,colPx]); }
+  for(i=0;i<tcells.length;i++){ var t2=tcells[i].textContent.trim(); if(t2) texts.push([t2,colPxT]); }
+  if(!texts.length){ wApplyFs(sh,11); return null; }
+  var probe=document.createElement('span');
+  probe.style.cssText='position:absolute;visibility:hidden;white-space:nowrap;left:-9999px;top:0';
+  probe.style.fontFamily=getComputedStyle(sh).fontFamily;
+  document.body.appendChild(probe);
+  function okRatio(px){
+    probe.style.fontSize=px+'px';
+    var n=0;
+    for(var k=0;k<texts.length;k++){
+      probe.textContent=texts[k][0];
+      if(probe.offsetWidth<=texts[k][1]) n++;      /* ★各セルを【その列の幅】で見る */
+    }
+    return n/texts.length;
+  }
+  /* ★選び方（2026-09-04 追加指示「なるべくA3縦1枚に」）:
+       ①内服が1行に収まる割合が HIST_FIT_RATIO 以上 かつ
+       ②【ページ数がいちばん少ない】中で、いちばん大きい文字。
+     32名・248薬剤なので1枚には物理的に入らない。小さくすればページは減るが、
+     ある所から先は行数が下限に達して【小さくしても減らない】。その手前で止めるのが最良点。
+     実測（2026-09-04・頓服列を外した後）: 11px＝4ページ／10px＝4／9px＝3／8px＝3／7px＝3。
+     ＝9px が「3ページを出す最大の文字」。
+     ★★採寸のあいだは【紙と同じ幅・余白】に固定する。画面のままだと表の幅が 948px（.scr の
+       max-width 980px − padding）で、紙の 1047px より約1割狭い。1行率は紙基準で数えているのに
+       高さだけ画面基準で測ると、同じセルについて2つの条件が食い違う。しかも窓を狭めた端末では
+       さらに縮んで【同じデータ・同じ紙なのに、押した端末の窓幅で紙の文字サイズが変わる】。
+       この関数の冒頭に書いたとおり、それは避けなければならない。 */
+  var tblEl=sh.querySelector('table');
+  var best=HIST_FS_MIN, ratio=0, bestPages=Infinity, over=0;
+  var savedW=sh.style.width, savedP=sh.style.padding;
+  /* ★紙のページ割りを模す。ceil(全体の高さ÷ページ高) では次の4つを数え落とす:
+       ①各ページ先頭で繰り返す thead ②見出し・注記・脚注 ③break-inside:avoid による
+       ページ下端の余白（1人ぶんの塊が丸ごと次ページへ送られる）。いずれもページを増やす側。 */
+  function pagesFor(){
+    if(!tblEl) return 1;
+    var headH=tblEl.tHead?tblEl.tHead.offsetHeight:0;
+    var extra=Math.max(0, sh.offsetHeight-tblEl.offsetHeight);   /* 見出し＋注記＋脚注 */
+    var gs=tblEl.querySelectorAll('tbody.hgrp');
+    var avail=PGH-extra-headH, pages=1, y=0;
+    for(var gi=0;gi<gs.length;gi++){
+      var h=gs[gi].offsetHeight;
+      if(y && y+h>avail){ pages++; y=0; avail=PGH-headH; }
+      y+=h;
+    }
+    return pages;
+  }
+  try{
+    sh.style.padding='0'; sh.style.width=Math.round(PGW)+'px';   /* 印刷CSSと同条件 */
+    for(var px=HIST_FS_MAX;px>=HIST_FS_MIN;px--){
+      var rr=okRatio(px);
+      if(rr<HIST_FIT_RATIO) continue;               /* 1行に収まらない大きさは採らない */
+      wApplyFs(sh, px);
+      var pages=pagesFor();
+      /* 同じページ数なら大きい方を残す（先に見た方＝大きい方が勝つ） */
+      if(pages<bestPages){ bestPages=pages; best=px; ratio=rr; }
+    }
+    if(!isFinite(bestPages)) ratio=okRatio(HIST_FS_MIN);   /* どの大きさでも1行にならない時 */
+    wApplyFs(sh, best);
+    /* ★M-2: 1人ぶんに使える高さは【2ページ目以降＝ページ高 − 繰り返す thead】。
+       ページ高そのままで見ると、その差の帯域で警告が出ないまま紙が割れる。 */
+    var headH2=tblEl&&tblEl.tHead?tblEl.tHead.offsetHeight:0;
+    var limit=PGH-headH2;
+    over=0;
+    var gs2=sh.querySelectorAll('tbody.hgrp');
+    for(var gj=0;gj<gs2.length;gj++) if(gs2[gj].offsetHeight>limit) over++;
+    bestPages=pagesFor();
+  }finally{
+    /* ★例外が出ても、画面のフォントと幅を必ず元に戻す（途中で試したサイズのまま残さない） */
+    try{ wApplyFs(sh, best); }catch(e2){}
+    sh.style.width=savedW; sh.style.padding=savedP;
+    if(probe.parentNode) probe.parentNode.removeChild(probe);
+  }
+  /* ★1人ぶん（tbody）が1ページに収まらないと break-inside:avoid は無視され、rowspan が
+     ページ境界で割れる。割れた続きのページには氏名も介護度も出ないので【誰の処方か分からない紙】になる。
+     黙って出さず、画面にだけ知らせる（印刷CSSで .sh-warn は消える）。判定は上の try の中で済ませた。 */
+  var w2=sh.querySelector('.sh-warn');
+  if(over||ratio<1){
+    if(!w2){ w2=document.createElement('div'); w2.className='sh-warn'; sh.insertBefore(w2, sh.firstChild); }
+    w2.textContent=(over?('1ページに収まらない方が '+over+'名います（紙が途中で割れ、続きのページに氏名が出ません）。'):'')+
+      (ratio<1?('内服が1行に収まらない記載が '+Math.round((1-ratio)*texts.length)+'件あります。'):'');
+  }else if(w2&&w2.parentNode){ w2.parentNode.removeChild(w2); }
+  return {size:best, ratio:Math.round(ratio*100)/100, lines:texts.length,
+          colPx:Math.round(colPx), overPage:over, pages:bestPages};
+}
+/* ★shHistFitted_（ボタン経路と beforeprint の二度打ち防止）は不要になった。
+   su-print は準備済みかを state で見るので、1回の印刷で採寸が2度走ることが構造的に起きない。 */
+/* ═══════════ 入居者居室一覧（部屋番号割当表）2026-09-08 管理者指示 ═══════════
+   紙の原本（1階・2階の2枚）を模して、間取りの箱をそのまま並べる。
+   ★氏名は【マスタの居室番号から引く】。図に氏名を書き込まない（書くと入退去のたびに
+     コードを直すことになり、必ず現実とずれる。実際、原本の写真では 220 に氏名があるが
+     いまは空室）。
+   ★間取り（どの箱がどこにあるか・厨房や機能訓練室などの名前）は建物の形なので定数に持つ。
+   ★居室に固定の用途がある場合（101〜105 の倉庫・102 応接室・201 洗濯場）は note に書く。
+     その部屋に入居者が登録されたら【氏名が勝つ】（用途が変わった時に黙って古い表示を出さない）。
+
+   ── セルの書き方 ──
+   {r:行, c:列, rs:縦の連結, cs:横の連結, room:'116'}            … 居室（番号＋氏名）
+   {r:…, c:…, t:'厨房'}                                          … 固定の名前の箱
+   {r:…, c:…, t:'', sides:'lt'}                                  … 罫線を一部だけ引く箱
+        sides は l/t/r/b の組み合わせ。省略＝四方すべて。
+        原本には「厨房の左下がリネンに切り取られている」ようなL字の箱があり、
+        4辺すべてを引くと箱が割れて見えるので、辺を選べるようにしてある。 */
+/* ★2026-09-24: 間取り図のデータは施設情報（facility-profile.json の roomPlan・su-facility.js）へ移した。
+   形（上の説明どおり）は変えていない。無ければ居室一覧は「設定されていません」と出す */
+function roomPlanData(){
+  return (window.SUFacility && typeof SUFacility.roomPlan==='function' && SUFacility.roomPlan()) || {};
+}
+/* 施設情報が後から届いた時に、居室一覧を描き直す（2026-10-23 代表者の指示）。
+   ★端末に施設情報の控え（su_facility_json_v1）が無く、facility-profile.json の応答が遅いと、居室一覧は届く前に
+     「間取り図が設定されていません」で描き終わり、届いた後も描き直さなかった（架空データ・2.5秒の遅れで再現）。
+   ★SUFacility.onReady は読めた時（読めないと分かった時も）に1回だけ呼ぶ。居室一覧を開いていて、描いた時と
+     間取りが違う時だけ描き直す（控えのある端末では、控えとサーバーの間取りが同じなら何もしない＝描画を増やさない）。
+   ★onReady は読み込み済みならその場で呼ぶので、init（DOMContentLoaded の現場端末の守り・印刷の登録）が済んだ後へ回す。
+   ★印刷の準備中（body.su-printing）は描き直さない（刷っている紙面を作り直さない）。終わるのを待ってから1回だけ。
+     この画面は印刷の後始末の保険を60秒にしている（definePrintViews_ の clearDelay）ので、待つのはそれより長い65秒まで。
+     待つ間も毎回、居室一覧・事務所PCのままかを確かめ直す。現場端末では何もしない */
+var rmRoomPlanSig_=null;
+function rmRoomOnFacility_(tries){
+  if(curView!=='room'||getDeviceRole()==='field') return;
+  if(document.body&&document.body.classList.contains('su-printing')){
+    if((tries||0)<130) setTimeout(function(){ rmRoomOnFacility_((tries||0)+1); },500);
+    return;
+  }
+  var sig=null; try{ sig=JSON.stringify(roomPlanData()); }catch(e){ sig=null; }
+  if(sig!==null&&sig===rmRoomPlanSig_) return;
+  /* 描き直しの例外は外に出さないまま、記録だけ残す（2026-10-27・改善プロンプト第6弾の2）。
+     ★種類は保存・同期の失敗と分ける。渡すのは例外の名前（TypeError 等）だけ＝例外の文・名簿の中身は送らない
+     ★記録できなくても続きの動きは変えない（note の呼び出しも try で包む） */
+  try{ renderRoster(); }catch(e){ try{ if(window.SUErrors&&typeof window.SUErrors.note==='function') window.SUErrors.note('描き直しの失敗', String((e&&e.name)||'Error').slice(0,40), 'master:roster.render'); }catch(_){} }
+}
+document.addEventListener('DOMContentLoaded',function(){
+  try{ if(window.SUFacility&&typeof SUFacility.onReady==='function') SUFacility.onReady(function(){ setTimeout(rmRoomOnFacility_,0); }); }catch(e){}
+});
+/* 居室番号 → 在籍者。★同じ番号に2名いることが実際にある（実測 2026-09-08: 208 が2名）ので、
+   先に見つけた1名で切り捨てず【配列で持つ】。捨てると片方の方が紙から消える。 */
+function roomOccupants(){
+  var m=Object.create(null);
+  (roster||[]).forEach(function(r){
+    if(!r||r.active===false) return;
+    var k=String(r.room==null?'':r.room).trim();
+    if(!k) return;
+    (m[k]=m[k]||[]).push(r);
+  });
+  for(var k2 in m) if(Object.prototype.hasOwnProperty.call(m,k2)) m[k2].sort(byKana);
+  return m;
+}
+function roomSideCls(sides){
+  if(sides==null) return '';
+  var out=' rp-nb';
+  ['l','t','r','b'].forEach(function(x){ if(String(sides).indexOf(x)>=0) out+=' rp-'+x; });
+  return out;
+}
+/* 間取り図の数（列幅・行高・縦横比・マスの位置）は数に直してから style に入れる（2026-10-16・設定の値が属性を抜けないように）。
+   正しい設定では今までと同じ文字列になる（1.5→'1.5'・'12'→'12'） */
+function rpNum_(x, d){ var n=Number(x); return (isFinite(n) && n>0) ? n : d; }
+function roomCellHtml(cl, occ){
+  var st='grid-row:'+rpNum_(cl.r,1)+' / span '+rpNum_(cl.rs,1)+';grid-column:'+rpNum_(cl.c,1)+' / span '+rpNum_(cl.cs,1)+';';
+  if(cl.room){
+    var who=occ[cl.room]||[];
+    /* ★氏名の後ろに「様」を付けない（画面・紙とも・代表者の決定 2026-10-23）。氏名の文字は1文字も直さない */
+    var body = who.length
+      ? who.map(function(x){ return esc(String(x.name||'').trim()); }).join('<br>')
+      : (cl.note?esc(cl.note):'');
+    /* ★2名以上は「同じ番号に2名」と分かる形で両方出す（黙って1名にしない） */
+    return '<div class="rp-cell rp-room'+(who.length>1?' rp-dup':'')+'" style="'+st+'">'+
+      '<div class="rp-no">'+esc(cl.room)+'</div>'+
+      '<div class="rp-nm">'+body+'</div></div>';
+  }
+  return '<div class="rp-cell'+roomSideCls(cl.sides)+'" style="'+st+'">'+
+    (cl.t?('<div class="rp-lb">'+esc(cl.t)+'</div>'):'')+'</div>';
+}
+function roomFloorHtml(key){
+  var p=roomPlanData()[key], occ=roomOccupants();
+  /* ★列幅・行高・縦横比はすべて原本の実測値。図の形を計算で作らない
+     （2026-09-08 管理者指示「居室のサイズや罫線の位置など、全て全く同じように」）。 */
+  var st='grid-template-columns:'+p.cols.map(function(x){return rpNum_(x,1)+'fr'}).join(' ')+';'+
+         'grid-template-rows:'+p.rows.map(function(x){return rpNum_(x,1)+'fr'}).join(' ')+';'+
+         'aspect-ratio:'+rpNum_(p.ar[0],1)+' / '+rpNum_(p.ar[1],1)+';';
+  return '<div class="sh-sheet rp-sheet" id="roomSheet_'+esc(key)+'">'+
+    '<div class="rp-hd'+(p.align==='left'?' rp-hd-l':'')+'">'+esc(p.title)+'</div>'+
+    '<div class="rp-body">'+
+      '<div class="rp-grid" style="'+st+'">'+p.cells.map(function(c){return roomCellHtml(c,occ)}).join('')+'</div>'+
+    '</div>'+
+    '<div class="sh-ft">'+roomFtNote(key,occ)+'　／　印刷日 '+esc(shStamp())+'</div>'+
+  '</div>';
+}
+/* 脚注。★人数は【この紙に出た方】で数える。名簿の在籍数を出すと、居室番号が図に無い方が
+   いた時に「32名」と書いてあるのに紙には31名しか出ていない紙になる。 */
+function roomFtNote(key,occ){
+  var RP=roomPlanData(), p=RP[key], n=0, dup=0, rooms=Object.create(null), all=Object.create(null), fk;
+  /* ★「図に無い居室番号」は【全階ぶんの図】と突き合わせる。この階だけで見ると、
+     もう一方の階の番号が全部「図に無い」と並ぶ（実測で1階の脚注に2階の21室が出た）。 */
+  for(fk in RP) if(Object.prototype.hasOwnProperty.call(RP,fk))
+    RP[fk].cells.forEach(function(c){ if(c.room) all[c.room]=1; });
+  p.cells.forEach(function(c){ if(c.room){ rooms[c.room]=1; var w=occ[c.room]||[]; n+=w.length; if(w.length>1) dup++; } });
+  var out=[], k;
+  for(k in occ) if(Object.prototype.hasOwnProperty.call(occ,k) && !all[k]) out.push(k);
+  return n+'名'+(dup?('　／　★同じ居室に2名以上 '+dup+'室'):'')+
+         (out.length?('　／　★図に無い居室番号 '+out.map(esc).join('・')):'')+   /* 居室番号は名簿の入力＝esc を通す（2026-10-16 全数点検） */
+         '　／　対象 在籍のみ';
+}
+function roomHtml(){
+  if(!roster||!roster.length) return '<div class="sh-sheet"><div class="loading">名簿を取得しています…</div></div>';
+  var plan=roomPlanData(), keys=Object.keys(plan);
+  try{ rmRoomPlanSig_=JSON.stringify(plan); }catch(e){ rmRoomPlanSig_=null; }   /* 描いた時の間取り（施設情報が届いた時に、変わった時だけ描き直す） */
+  if(!keys.length) return '<div class="sh-sheet"><div class="loading">間取り図が設定されていません（施設情報 facility-profile.json の roomPlan）</div></div>';
+  return keys.map(function(k){ return roomFloorHtml(k); }).join('');
+}
+
+/* ═══════════ 薬効辞書（薬剤名→効能）2026-09-04 管理者指示 ═══════════
+   「病歴・薬一覧」の効能列を出すための辞書。入居者ごとではなく【薬剤名をキーにした共有辞書】。
+   ★薬効はAIの下書き。薬剤師（管理者）が確認して初めて「確認済み」に上げる。
+     未確認のものは画面でも紙でも ＊ を付けて、確認済みと見分けられるようにする。
+   ★辞書に個人情報は入れない（薬剤名と効能だけ）。誰が飲んでいるかは保存しない。
+   ★保存先は入居者情報ブックの med_dict タブ（gas/med-dict.gs）。master シートには触れない。 */
+var mdDict=null, mdMap=null, mdLoading=false, mdErr='', mdDirty=false, mdBusy='';
+/* ★編集中の値は【メモリに持つ】。DOMだけに置くと、背景の取り直し（fullEnsure/mdEnsure）が
+   終わった時の再描画で入力が黙って消える（2026-09-04 実測。AIの下書き155件が丸ごと消えた）。
+   キーは薬剤名。保存に成功したら捨てる。 */
+var mdEdits=Object.create(null);
+/* 削除は保存を押すまで確定しない（誤って押しても取り消せるように、印だけ付けて残す） */
+var mdDels=Object.create(null);
+/* 手で足した薬（まだ辞書に無いもの）。処方に出てこない薬もここから入る */
+var mdNew=[];
+/* ★一覧から外す印（2026-09-08 管理者指示）。処方欄から拾っただけの行は辞書に実体が無く、
+   行を消しても次に開くと処方から拾い直されて【戻ってくる】。消えたままにするには
+   「この名前は一覧に出さない」という印をサーバーに残すしかない。
+   ★非表示は消去ではない。効能と『確認済み』は残し、「非表示も表示」で戻せる。
+   値は true=これから隠す / false=これから戻す（どちらも保存で確定する）。 */
+var mdHides=Object.create(null);
+var mdShowHidden=false;
+/* ★薬剤名の付け替え（2026-09-08 管理者指示）。辞書のキーは薬剤名そのものなので、
+   改名は【旧行を消して新行を作る】操作になる。保存を押すまで確定しない。
+   キーは元の名前、値は新しい名前。 */
+var mdRenames=Object.create(null);
+/* いま画面に出す名前（改名が入力中ならそちら）。表示と判定は必ずこの1本を通す
+   ——別々に書くと、改名した行の効能や確認済みが元の名前で拾われて食い違う */
+function mdShownName(name){
+  return Object.prototype.hasOwnProperty.call(mdRenames,name)?mdRenames[name]:name;
+}
+/* その名前が「いま一覧から外れている」か。保存前の印を、保存済みの状態より優先する */
+function mdIsHidden(name, ent){
+  if(Object.prototype.hasOwnProperty.call(mdHides,name)) return !!mdHides[name];
+  return !!(ent&&ent.hidden);
+}
+var MD_ORDERS=['kana','count'];
+var MD_ORDER_KEY='rmaster_md_order';
+var mdOrder=(function(){
+  try{ var v=localStorage.getItem(MD_ORDER_KEY); return MD_ORDERS.indexOf(v)>=0?v:'kana'; }
+  catch(e){ return 'kana'; }
+})();
+function setMdOrder(o){
+  mdOrder=MD_ORDERS.indexOf(o)>=0?o:'kana';
+  try{ localStorage.setItem(MD_ORDER_KEY,mdOrder); }catch(e){}
+  paintShBars(); renderRoster();
+}
+
+/* 辞書のキー。★サーバーの _mdKey（gas/med-dict.gs）と【同じ規則】にすること。
+   食い違うと、画面で引けているのに保存だけ別のキーで入り、次に開くと空に見える。
+   ★2026-09-24: 規則の本体は meds-effect-dict.js（MedsEffect.key）へ移した。
+     詳細画面・フェイスシート・A3・この辞書タブの保存キーが【同じ1本】を通るようにするため
+     （ここに写しを残すと、表示のキーと保存のキーがいつか割れる）。 */
+/* 部品が読み込めているか（古い版がキャッシュに残っていると resolveLines が無い）。
+   ★無い時は薬効辞書を使う機能を止める（キーの規則を推測で補わない）。 */
+function medsFxOk_(){
+  return typeof MedsEffect!=='undefined' && typeof MedsEffect.resolveLines==='function'
+    && typeof MedsEffect.key==='function' && typeof MedsEffect.drugName==='function';
+}
+var MEDS_FX_NG='薬効辞書の部品（meds-effect-dict.js）が古いか読み込めていません。ページを再読み込みしてください';
+var MEDS_FX_STALE_NOTE='薬効辞書の部品が古いため効能欄を省略しています（再読み込みしてください）';
+/* ＊の凡例。詳細画面・A3・フェイスシートで同じ文言にする（＊の意味は「未確認」の1つだけ・2026-09-24 本人了承） */
+var MEDS_MARK_NOTE='＊＝薬剤師が未確認の効能';
+function mdKey(s){ return MedsEffect.key(s); }
+
+/* 内服の1行から薬剤名を取り出す。「エゼミチブ錠10mg 1錠分1 朝食後」→「エゼミチブ錠」
+   ★用量は落として同じ薬をまとめる（12mg と 24mg で辞書が2行に割れるのを防ぐ）。
+     落とすのは【末尾の数字＋単位】だけ。先頭や途中の数字は薬の名前の一部（例: FK配合散）。
+   ★区切りは半角スペースだけでなく【：（コロン）】でも切る（2026-09-08 管理者指示）。
+     処方欄には「〇〇錠60mg：1日2回」のようにスペースを入れず用法を続ける書き方が実在し、
+     スペースだけで切っていた頃は【行全体が薬剤名】になって効能が永久に引けなかった。
+     本番実測（在籍32名・内服248行）: この変更で切り出しが変わる行は7種類。
+     引けていたのに引けなくなる行は【0】で、効能の出る行は 233→236 に増える。
+     ★半角コロンも入れるのは、全角と半角が混在して打たれるため（どちらか一方だと取りこぼす）。
+   ★メーカー名の「」『』は落とす（2026-09-08 管理者指示「メーカー名は不要」）。
+     本番実測: 効能が引ける行は 236/248 のまま変わらず、辞書側の
+     「〇〇錠10mg「YD」」形の行12件が0名になって整理できるようになる。
+   ★★用量は【落としたまま】にする。残すと辞書のキーが用量ごとに割れ、本番実測で
+     効能が引ける行が 236→42 に激減した（辞書150件がほぼ用量なしで作られているため）。
+     同じ薬の効能は用量が違っても同じなので、割ると薬剤師の確認対象だけが増える
+     （148→173種類・22件が用量ちがいで2行以上に分裂）。
+     用量は【内服列の表示】に残す（medSplit_ が薬剤名＋用量を出す）。
+   ★規則の本体は meds-effect-dict.js の MedsEffect.drugName（2026-09-24 移設・中身は1文字も変えていない）。 */
+function mdDrugName(line){ return MedsEffect.drugName(line); }   /* 本体は meds-effect-dict.js（2026-09-24 移設） */
+/* 用法・服薬時点の始まりを見分ける形。「1錠分1 朝食後」「1日2回」「週に一回」など。
+   ★ここに挙げるのは【実データに出てくる形】だけにする。広げすぎると薬剤名の途中で切れる。
+     本番実測（在籍32名・内服248行）で 237行が分けられ、残り11行は用法の記載が無いもの
+     （医療機関名・「なし」・用量だけの行）。 */
+var MED_USE_RE=/(?:[0-9０-９]+(?:[.．][0-9０-９]+)?\s*(?:錠|包|カプセル|cap|ｇ|g|mL|ml|枚|袋|吸入)?\s*分\s*[0-9０-９]|[0-9０-９]+\s*日\s*[0-9０-９]+\s*(?:回|吸入)|[0-9０-９]+\s*回\s*[0-9０-９]|週に|隔日|朝昼夕食後|朝夕食後|朝昼食後|朝食後|夕食後|昼食後|毎食後|就寝前|起床時|食間|食前|頓用|痛い時|発熱時|不眠時|便秘時)/;
+/* 内服の1行を「薬剤名＋用量」と「服薬時点」に分ける（2026-09-08 管理者指示）。
+   ★効能を引くキー（mdDrugName）とは【別物】。あちらは薬の同一性、こちらは紙の見せ方。
+     一本化しようとすると、どちらかが必ず壊れる——用法の形で切ると効能が引ける行が
+     236→222 に減る（実測）ので、キーは従来どおり最初の空白／コロンで切る。
+   ★用法の形が見つからない行は【分けない】。無理に切ると薬剤名の途中で切れる。 */
+function medSplit_(line){
+  var t=mdKey(String(line==null?'':line).replace(/[「『][^」』]*[」』]/g,''));
+  if(!t) return {name:'', use:''};
+  var m=MED_USE_RE.exec(t);
+  if(!m) return {name:t, use:''};
+  return {name:mdKey(t.slice(0,m.index).replace(/[ ：:]+$/,'')), use:mdKey(t.slice(m.index))};
+}
+/* 内服欄（複数行）から薬剤名の配列を返す。順番は原文のまま＝効能列が内服の行と揃う */
+function mdNamesOf(medText){
+  return String(medText==null?'':medText).split(/\r?\n/).map(mdDrugName);
+}
+
+/* ═══════════ 与薬チェック（care-log）へ服薬の時間帯を送る（2026-09-27 代表指示）═══════════
+   服薬の時間帯（朝・昼・夕・眠前）は定期薬（medsRegular・1行1剤の自由記述）の用法に書いてある。
+   看護師が care-log で手で設定する代わりに、ここで読み取って care-log の med_slots へ送る。
+   ★読み取るのは【時間帯だけ】。処方の文面は1文字も書き換えない・構造化して保存しない
+     （マスタの定期薬は自由文のまま。care-log へ送るのは slots と、新しく作る時だけ定型の note）。
+   ★薬剤名は返さない・送らない・端末に残さない・console に出さない。
+   ★判定できない行は推測で埋めない。人が小窓で確かめ、「確認済み」を付けた人だけ送る。
+   ★★care-log は med_slots の時間帯に毎日自動で「済」を入れる（0015）。誤って時間帯を【付ける】方向が最も重い。
+     そのため【許可リスト方式】にする（2026-09-27 チーフのレビュー3巡目）: 用法の部分から既知の部品
+     （用量・分N・1日N回・N回・服薬時点の語・区切り）だけを取り除き、残りが空の時だけ 'ok'。
+     1文字でも残れば 'review'（否定・注記・条件・曜日・期間など、禁止語を並べる方式では必ず抜けが出るため）。
+     頓用の語が行のどこかにあれば 'prn'（数えない）。時間帯の語が1つも無ければ 'unknown'。
+   ★メーカー名の「」『』は判定の前に除かない。用法の部分に「」や記号が残れば review になる。 */
+var MED_SLOT_KEYS=['morning','noon','evening','bedtime'];
+var MED_SLOT_LBL={morning:'朝',noon:'昼',evening:'夕',bedtime:'眠前'};
+/* 頓用の印（行のどこかにあれば時間帯に数えない）。prn は英字の語としてだけ見る（大文字小文字・全角は問わない） */
+var MED_PRN_RE=/頓|屯|とんぷく|適宜|必要時|痛時|痛い時|痛む時|発熱時|熱発時|便秘時|不眠時|不穏時|発作時|嘔気時|吐き気時|掻痒時|かゆい時|かゆみ時|咳嗽時|咳の時|めまい時|下痢時|興奮時|(?:^|[^A-Za-z])prn(?![A-Za-z])/i;
+/* 「なし」等だけの行は薬の行として数えない（読み取れない行にしない） */
+var MED_NONE_RE=/^(?:なし|無し|ナシ|特になし|特に無し|[-－ー―—・])$/;
+/* 既知の部品。服薬時点の語は長い順（前から最長一致）。朝・昼・夕の1字は、次が区切り・既知の部品・行末の時だけ */
+var MED_SLOT_TOK=[
+  ['朝昼夕食後',['morning','noon','evening']], ['朝夕食後',['morning','evening']], ['朝昼食後',['morning','noon']],
+  ['昼夕食後',['noon','evening']], ['毎食後',['morning','noon','evening']], ['毎食前',['morning','noon','evening']],
+  ['朝食直後',['morning']], ['朝食後',['morning']], ['朝食前',['morning']], ['昼食後',['noon']], ['昼食前',['noon']],
+  ['夕食後',['evening']], ['夕食前',['evening']], ['就寝前',['bedtime']], ['就眠前',['bedtime']], ['寝る前',['bedtime']],
+  ['眠前',['bedtime']], ['起床時',['morning']]
+];
+var MED_SLOT_ONE={'朝':'morning','昼':'noon','夕':'evening'};
+var MED_DOSE_RE=/^(?:\d+(?:\.\d+)?|\.\d+) ?(?:錠|包|カプセル|cap|mg|μg|µg|mcg|g|mL|ml|滴|枚|本|単位|袋)/i;
+var MED_FREQ_RE=/^(?:分 ?\d+|\d+ ?日 ?\d+ ?回|\d+ ?回)/;
+var MED_SEP_RE=/^[ 、,，\/／・]+/;
+/* 全角の英数字と小数点だけを半角へ（カタカナ等には触れない＝半角カナの「ﾀ」は残り review になる） */
+function medAlnumHalf_(s){
+  return String(s==null?'':s).replace(/[０-９Ａ-Ｚａ-ｚ．]/g,function(c){ return String.fromCharCode(c.charCodeAt(0)-0xFEE0); });
+}
+/* 「時」「とき」で終わる条件（眠れない時・便秘の時・イライラ時・〜のとき）は頓用。
+   数字の直後の「時」（20時・八時）と、服薬時点の語（起床時・就寝時・食時・食事時・同時）・臨時（臨時の定期薬は頓用ではない
+   → 残りの文字で review になり、人が確かめる）は除く */
+function medPrnWhen_(t){
+  var re=/(時|とき)(?=$|[\s、，,。・\/／)）\]］】])/g, m;
+  while((m=re.exec(t))){
+    var pre=t.slice(0,m.index);
+    if(!pre) continue;
+    if(m[1]==='時'&&/[0-9０-９一二三四五六七八九十〇零]\s*$/.test(pre)) continue;   /* 20時・八時は時刻 */
+    if(/(?:起床|就寝|就眠|食|食事|同|臨)$/.test(pre)) continue;
+    return true;
+  }
+  return false;
+}
+/* 先頭が既知の部品か（区切りを含む）。朝・昼・夕の1字の「次」の判定に使う */
+function medTokHead_(s){
+  if(!s||MED_SEP_RE.test(s)||MED_DOSE_RE.test(s)||MED_FREQ_RE.test(s)||MED_SLOT_ONE[s.charAt(0)]) return true;
+  for(var k=0;k<MED_SLOT_TOK.length;k++) if(s.indexOf(MED_SLOT_TOK[k][0])===0) return true;
+  return false;
+}
+/* 用法の部分 → {slots, rest}。rest=true は既知の部品で説明できない文字が残った（＝review） */
+function medUseParse_(u){
+  var s=medAlnumHalf_(u), got={}, m;
+  while(s.length){
+    if((m=MED_SEP_RE.exec(s))||(m=MED_DOSE_RE.exec(s))||(m=MED_FREQ_RE.exec(s))){ s=s.slice(m[0].length); continue; }
+    var hit=null;
+    for(var k=0;k<MED_SLOT_TOK.length;k++) if(s.indexOf(MED_SLOT_TOK[k][0])===0){ hit=MED_SLOT_TOK[k]; break; }
+    if(hit){ hit[1].forEach(function(x){ got[x]=true; }); s=s.slice(hit[0].length); continue; }
+    var c=s.charAt(0);
+    if(MED_SLOT_ONE[c]&&medTokHead_(s.slice(1))){ got[MED_SLOT_ONE[c]]=true; s=s.slice(1); continue; }
+    return {slots:[], rest:true};
+  }
+  return {slots:MED_SLOT_KEYS.filter(function(k){ return !!got[k]; }), rest:false};
+}
+/* 1行ずつの判定。use は【用法の部分】で、判定と、画面で要確認の行を見せる時に使う（薬剤名は持たない）。
+   用法の部分の始まり＝ MED_USE_RE（medSplit_ と同じ形・ただし「」を除かずに探す）の位置と、
+   補助の「最初の空白／コロンの後ろ」の位置の【早い方】。用法の前に書かれた注記（「〇〇錠 夕は中止 1錠分1 朝食後」）
+   も判定に入れるため。MED_USE_RE が語の途中（「朝食前」の「食前」）から始まった時は、直前の朝・昼・夕・毎を含める。 */
+function medSlotRows_(medsRegular){
+  var out=[];
+  String(medsRegular==null?'':medsRegular).split(/\r\n|\r|\n/).forEach(function(raw){
+    var t=mdKey(raw);
+    if(!t||MED_NONE_RE.test(t)) return;
+    var st=-1, m=MED_USE_RE.exec(t);
+    if(m){ st=m.index; while(st>0&&/[朝昼夕毎]/.test(t.charAt(st-1))) st--; }
+    var sp=/[ ：:]/.exec(t);
+    if(sp&&(st<0||sp.index+1<st)) st=sp.index+1;
+    var use=st>=0?mdKey(t.slice(st)):'';
+    var sl=[], stt;
+    if(MED_PRN_RE.test(medAlnumHalf_(t))||medPrnWhen_(t)) stt='prn';
+    else {
+      var p=medUseParse_(use);
+      if(p.rest) stt='review';
+      else { sl=p.slots; stt=sl.length?'ok':'unknown'; }
+    }
+    out.push({slots:sl, status:stt, use:use});
+  });
+  return out;
+}
+/* 定期薬の全文 → {slots:[…], lines:[{slots,status}], unknownCount, reviewCount}。DOM に触れない純関数。
+   slots は 'ok' の行の和集合（MED_SLOT_KEYS の順）。lines は空行と「なし」行を除いた行ごと・薬剤名は含めない。
+   status: 'ok'／'prn'（頓用・数えない）／'unknown'（時間帯の語が無い）／'review'（既知の部品以外が残った） */
+function medSlotsFromText(medsRegular){
+  var rows=medSlotRows_(medsRegular), u={}, unk=0, rev=0;
+  var lines=rows.map(function(r){
+    if(r.status==='unknown') unk++;
+    if(r.status==='review') rev++;
+    r.slots.forEach(function(k){ u[k]=true; });
+    return {slots:r.slots.slice(), status:r.status};
+  });
+  return {slots:MED_SLOT_KEYS.filter(function(k){ return !!u[k]; }), lines:lines, unknownCount:unk, reviewCount:rev};
+}
+
+/* ── 小窓 ──
+   msRows: 在籍者ごとの {sid, room, name, bad, auto, sel, unk, rev}（メモリだけ。localStorage に置かない）
+     unk＝読み取れない行・rev＝要確認の行の【用法の部分】だけ（薬剤名は持たない）
+   msRemote: care-log の現在 {source_id: {rid, cur:{id,rev,slots}|null}}（null＝未取得）
+   msGen: 取り直しの世代。閉じた・取り直した後に遅れて届いた応答は捨てる */
+var msRows=null, msRemote=null, msAuthSt=null, msGen=0, msBusy=false, msMsg='';
+function msToday_(){
+  var d=new Date();
+  return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+}
+function msSelArr_(row){ return MED_SLOT_KEYS.filter(function(k){ return !!row.sel[k]; }); }
+function msCanon_(a){ a=Array.isArray(a)?a:[]; return MED_SLOT_KEYS.filter(function(k){ return a.indexOf(k)>=0; }); }
+function msSlotsLbl_(a){ var x=msCanon_(a); return x.length?x.map(function(k){ return MED_SLOT_LBL[k]; }).join('・'):'なし'; }
+/* 'bad'＝マスタを読めなかった／'na'＝care-log 未取得／'unreg'＝care-log に居ない／'same'／'diff' */
+function msDiff_(row){
+  if(row.bad) return 'bad';
+  if(!msRemote) return 'na';
+  var c=msRemote[row.sid];
+  if(!c||c.rid==null) return 'unreg';
+  var want=msSelArr_(row).join(','), have=c.cur?msCanon_(c.cur.slots).join(','):'';
+  return want===have?'same':'diff';
+}
+/* care-log の今の設定から【減る】時間帯（誤って消すと与薬チェックの対象から黙って外れる）。未取得・未設定なら空 */
+function msDrop_(row){
+  if(row.bad||!msRemote) return [];
+  var c=msRemote[row.sid];
+  if(!c||!c.cur) return [];
+  return msCanon_(c.cur.slots).filter(function(k){ return !row.sel[k]; });
+}
+function msWarnN_(row){ return row.unk.length+row.rev.length; }
+/* ★人の確認の強制（2026-09-27 レビュー3巡目）: 要確認・読み取れない行が1つでもある方は、
+   職員がその行の時間帯を見て「確認済み」を付けない限り送らない（okd はメモリだけ・閉じたら消える） */
+function msHold_(row){ return msWarnN_(row)>0&&!row.okd; }
+function msSendable_(row){ return msDiff_(row)==='diff'&&!msHold_(row); }
+/* supabase-js と su-auth.js は押された時に初めて読み込む（入居者マスタの起動を重くしない）。
+   写しの部品（su-master-shadow.js）が読み込み中なら、その完了を待つ（2重に読み込まない） */
+function msAuthLoad_(){
+  if(window.SUAuth) return Promise.resolve();
+  function has(re){ return Array.prototype.some.call(document.scripts,function(s){ return re.test(s.getAttribute('src')||''); }); }
+  function load(src){
+    return new Promise(function(ok,ng){
+      var s=document.createElement('script'); s.src=src; s.async=true;
+      s.onload=function(){ ok(); }; s.onerror=function(){ ng(new Error('load')); };
+      document.head.appendChild(s);
+    });
+  }
+  function wait(ready){
+    return new Promise(function(ok,ng){
+      var n=0; (function tick(){ if(ready()) return ok(); if(++n>100) return ng(new Error('timeout')); setTimeout(tick,100); })();
+    });
+  }
+  var p=window.supabase ? Promise.resolve()
+    : (has(/^supabase-js-/) ? wait(function(){ return !!window.supabase; }) : load('supabase-js-2.112.4.js'));
+  return p.then(function(){
+    if(window.SUAuth) return null;
+    return has(/^su-auth\.js/) ? wait(function(){ return !!window.SUAuth; }) : load('su-auth.js?v=2026-10-28');
+  });
+}
+function msOpen_(){
+  if(getDeviceRole()==='field') return;
+  if(!fullMap){ toast('病歴・薬を取得し終えてから押してください'); return; }
+  if(!medsFxOk_()){ toast(MEDS_FX_NG); return; }
+  msRows=shBase().map(function(r){
+    var rec=fullOf(r), sid=String(r.id==null?'':r.id).trim();
+    var row={sid:sid, room:String(r.room||''), name:String(r.name||''), bad:!rec||!sid, auto:[], sel:{}, unk:[], rev:[], okd:false};
+    if(row.bad) return row;
+    var p=medSlotsFromText(rec.medsRegular);
+    row.auto=p.slots;
+    p.slots.forEach(function(k){ row.sel[k]=true; });
+    var lr=medSlotRows_(rec.medsRegular);
+    row.unk=lr.filter(function(x){ return x.status==='unknown'; }).map(function(x){ return x.use; });
+    row.rev=lr.filter(function(x){ return x.status==='review'; }).map(function(x){ return x.use; });
+    return row;
+  });
+  msMsg=''; msBusy=false;
+  $('mMedSlots').classList.add('on'); navEnter();
+  msPaint_();
+  try{ $('mMedSlotsH').focus(); }catch(e){}
+  msLoadRemote_();
+}
+function msClose_(){
+  if(msBusy) return false;
+  msGen++; msRows=null; msRemote=null; msAuthSt=null; msMsg='';
+  $('mMedSlots').classList.remove('on');
+  if($('sc-list').classList.contains('on')) navLeave();
+  try{ if($('histMedSlots')&&$('histMedSlots').offsetParent) $('histMedSlots').focus(); }catch(e){}
+  return true;
+}
+/* care-log の今の設定を読む。ログインしていない・事務所/管理者でない時は読まない・送らない */
+function msLoadRemote_(){
+  var gen=++msGen;
+  msRemote=null; msAuthSt={loading:true, ok:false, msg:'care-log の今の設定を確かめています…'};
+  msPaint_();
+  var st0=null;
+  msAuthLoad_().then(function(){ return window.SUAuth.check(); }).then(function(st){
+    if(gen!==msGen) return null;
+    st0=st;
+    var S=window.SUAuth.STATUS;
+    if(!st||st.status!==S.OK){ msAuthSt={ok:false, login:true, msg:msAuthMsg_(st)}; return null; }
+    if(st.role!=='office'&&st.role!=='admin'){
+      msAuthSt={ok:false, login:true, msg:'いまのアカウント（'+(st.roleLabel||st.role||'')+'）では送れません。事務所・管理者の Google アカウントでログインし直してください。'};
+      return null;
+    }
+    var sb=window.SUAuth.client(), ids=[];
+    msRows.forEach(function(r){ if(!r.bad&&ids.indexOf(r.sid)<0) ids.push(r.sid); });
+    if(!ids.length) return {};
+    return sb.from('residents').select('id,source_id').in('source_id', ids).then(function(r){
+      if(r.error) throw r.error;
+      var map={}, byRid={}, rids=[];
+      (r.data||[]).forEach(function(x){
+        var o={rid:x.id, cur:null}; map[String(x.source_id)]=o; byRid[x.id]=o; rids.push(x.id);
+      });
+      if(!rids.length) return map;
+      return sb.from('med_slots').select('id,resident_id,slots,rev').in('resident_id', rids).is('deleted_at', null)
+        .then(function(r2){
+          if(r2.error) throw r2.error;
+          (r2.data||[]).forEach(function(x){
+            var o=byRid[x.resident_id]; if(o) o.cur={id:x.id, rev:x.rev, slots:Array.isArray(x.slots)?x.slots:[]};
+          });
+          return map;
+        });
+    });
+  }).then(function(map){
+    if(gen!==msGen||!map) return;
+    msRemote=map;
+    msAuthSt={ok:true, msg:'care-log に'+((st0&&st0.roleLabel)||'')+'としてログインしています。'};
+  }).catch(function(){
+    if(gen!==msGen) return;
+    msAuthSt={ok:false, msg:'care-log の今の設定を読めませんでした（通信・権限）。「もう一度確かめる」を押してください。'};
+  }).then(function(){ if(gen===msGen) msPaint_(); });
+}
+function msAuthMsg_(st){
+  var S=window.SUAuth.STATUS, s=st&&st.status;
+  if(s===S.SIGNED_OUT) return 'care-log へ送るには、事務所・管理者の Google アカウントでログインしてください。';
+  if(s===S.DENIED) return 'このアカウントは「使える人」に登録されていないか、止められています。管理者に確かめてください。';
+  if(s===S.MFA_ENROLL||s===S.MFA_VERIFY) return '管理者の2段階認証（6桁）がまだです。ログイン画面で済ませてください。';
+  return 'ログインの状態を確かめられませんでした'+(st&&st.message?'（'+st.message+'）':'')+'。';
+}
+function msRowHtml_(row,i){
+  var d=msDiff_(row), c=msRemote?msRemote[row.sid]:null, cur, df;
+  var ck=row.bad ? '<span class="w-empty">取得できず</span>'
+    : MED_SLOT_KEYS.map(function(k){
+        return '<label class="ms-ck"><input type="checkbox" data-k="'+k+'"'+(row.sel[k]?' checked':'')+
+          ' aria-label="'+esc(row.name+' '+MED_SLOT_LBL[k])+'">'+MED_SLOT_LBL[k]+'</label>';
+      }).join('');
+  /* 用法の部分だけを並べる（薬剤名は出さない）。用法の部分が取れない行は「読み取れません」と書く
+     （「記載なし」と書くと、処方欄に用法が無いと誤って案内する） */
+  function lst(a){ return '<ul class="ms-unkl">'+a.map(function(u){
+    return '<li>'+(u?esc(u):'（用法を読み取れません）')+'</li>'; }).join('')+'</ul>'; }
+  var unk=(row.rev.length?'<span class="ms-unkmark">⚠ 確認が必要な行 '+row.rev.length+'</span>'+lst(row.rev):'')+
+    (row.unk.length?'<span class="ms-unkmark">⚠ 読み取れない行 '+row.unk.length+'</span>'+lst(row.unk):'')+
+    (msWarnN_(row)?'<label class="ms-ck ms-okd"><input type="checkbox" data-k="okd"'+(row.okd?' checked':'')+
+      ' aria-label="'+esc(row.name+' 時間帯を確認済み')+'">確認済み</label>':'');
+  if(row.bad) cur='—';
+  else if(!msRemote) cur=(msAuthSt&&msAuthSt.loading)?'確かめています…':'—';
+  else if(!c||c.rid==null) cur='care-log に未登録';
+  else if(!c.cur) cur='未設定';
+  else cur=esc(msSlotsLbl_(c.cur.slots));
+  df=msDfHtml_(row, d);
+  return '<tr data-i="'+i+'"'+(msWarnN_(row)?' class="ms-unk"':'')+'>'+
+    '<td>'+esc(row.room)+'</td><td class="ms-nm">'+esc(row.name)+'</td>'+
+    '<td>'+ck+'</td><td>'+unk+'</td><td class="ms-cur">'+cur+'</td>'+
+    '<td class="ms-df'+(d==='diff'?' diff':'')+'">'+df+'</td></tr>';
+}
+/* 差分の欄。care-log の今から減る時間帯は赤字の「▲ 減る: 夕」で必ず出す（色だけにしない） */
+function msDfHtml_(row, d){
+  var h = d==='diff' ? '● 変更あり' : d==='same' ? '変更なし' : d==='unreg' ? '送れません' : '—';
+  var dr=d==='diff'?msDrop_(row):[];
+  if(dr.length) h+='<br><span class="ms-drop">▲ 減る: '+esc(dr.map(function(k){ return MED_SLOT_LBL[k]; }).join('・'))+'</span>';
+  if(d==='diff'&&msHold_(row)) h+='<br><span class="ms-hold">□ 確認済みにするまで送りません</span>';
+  return h;
+}
+function msSumText_(){
+  if(!msRows) return '';
+  var n=0, diff=0, unk=0, unreg=0, bad=0, hold=0;
+  msRows.forEach(function(r){
+    var d=msDiff_(r); n++;
+    if(d==='diff') diff++; if(d==='unreg') unreg++; if(d==='bad') bad++;
+    if(msWarnN_(r)) unk++;
+    if(msHold_(r)&&!r.bad) hold++;
+  });
+  return '在籍 '+n+'名　／　変更あり '+(msRemote?diff+'名':'—')+'　／　要確認の方 '+unk+'名（うち確認済みでない方 '+hold+'名）'+
+    (unreg?'　／　care-log に未登録 '+unreg+'名（送れません）':'')+
+    (bad?'　／　定期薬を取得できなかった方 '+bad+'名（送りません）':'');
+}
+function msPaintFoot_(){
+  var diff=msRows&&msRemote ? msRows.filter(msSendable_).length : 0;
+  $('msSum').textContent=msSumText_();
+  $('msMsg').textContent=msMsg;
+  $('msSend').disabled=msBusy||!(msAuthSt&&msAuthSt.ok)||!diff;
+  $('msSend').textContent='📤 送る'+(diff?'（'+diff+'名）':'');
+  $('msClose').disabled=msBusy;
+  $('msRecheck').disabled=msBusy||!!(msAuthSt&&msAuthSt.loading);
+}
+function msPaint_(){
+  if(!msRows) return;
+  var a=$('msAuth'), st=msAuthSt||{};
+  a.className='ms-auth'+(st.ok||st.loading?'':' ng');
+  a.innerHTML=esc(st.msg||'')+(st.login
+    ? '　<a href="login.html?next=resident-master.html" target="_blank" rel="noopener">ログイン画面を開く（別のタブ）</a>'+
+      '<br>ログインしたら、この小窓の「🔄 もう一度確かめる」を押してください。'
+    : '');
+  $('msScroll').innerHTML='<table class="ms-tbl"><thead><tr><th>居室</th><th>氏名</th><th>時間帯（定期薬から）</th>'+
+    '<th>確認が必要な行・読み取れない行</th><th>care-log の今</th><th>差分</th></tr></thead><tbody id="msBody">'+
+    msRows.map(msRowHtml_).join('')+'</tbody></table>';
+  msPaintFoot_();
+}
+/* チェックを直した時は、その行の差分だけ描き直す（表ごと描き直すとフォーカスが外れる） */
+function msOnCheck_(ev){
+  var el=ev.target;
+  if(!el||el.type!=='checkbox'||!msRows) return;
+  var tr=el.closest('tr'), i=tr?+tr.getAttribute('data-i'):-1, row=msRows[i];
+  if(!row||row.bad) return;
+  var k=el.getAttribute('data-k');
+  if(k==='okd') row.okd=!!el.checked;
+  else if(MED_SLOT_LBL[k]) row.sel[k]=!!el.checked;
+  var d=msDiff_(row), cell=tr.querySelector('.ms-df');
+  if(cell){
+    cell.innerHTML=msDfHtml_(row, d);
+    cell.classList.toggle('diff', d==='diff');
+  }
+  msPaintFoot_();
+}
+/* 送る。差分のある人だけ。無ければ insert（client_key・定型 note 付き）、あれば読んだ rev と一致する時だけ update。
+   ★update は slots だけ（note は看護師・事務所のメモなので上書きしない）。edited_by は null を明示
+     （前にこの行を触った職員が、今回の変更の記入者として残らないように）。
+   ★rev が合わない・権限が無い（0行）・23505（他の端末が先に作った）は上書きせず、取り直して見せる */
+async function msSend_(){
+  if(msBusy||!msRows||!msRemote||!msAuthSt||!msAuthSt.ok) return;
+  var tg=msRows.filter(msSendable_);
+  var held=msRows.filter(function(r){ return msDiff_(r)==='diff'&&msHold_(r); }).length;
+  if(!tg.length){ msMsg='送る変更はありません。'+(held?'（確認済みでない要確認の方 '+held+'名は送りません）':''); msPaintFoot_(); return; }
+  var sameN=msRows.filter(function(r){ return msDiff_(r)==='same'; }).length;
+  var drop=tg.filter(function(r){ return msDrop_(r).length; });
+  var clr=drop.filter(function(r){ return !msSelArr_(r).length; }).length;
+  var q=tg.length+'名の服薬の時間帯を care-log へ送ります。';
+  if(held) q+='\n・確認済みでない要確認の方 '+held+'名は送りません。';
+  if(drop.length) q+='\n・時間帯が減る方が '+drop.length+'名います（そのうち全部なしになる方 '+clr+'名）。';
+  var g0=msGen, rm0=msRemote, dg0=devGen;
+  if(!(await SUDialog.confirm(q+'\n送りますか？'))) return;
+  if(g0!==msGen||rm0!==msRemote||msBusy||dg0!==devGen) return;   /* 窓の間に閉じた・読み直した・端末の用途が変わった時は送らない（画面の中の窓・2026-11-13・仮置き） */
+  var sb=window.SUAuth.client(), stamp=String(Date.now()), note='入居者マスタの定期薬から（'+msToday_()+'）';
+  var sent=0, fail=0, conflict=0, done=0, remote=msRemote;
+  msBusy=true; msMsg='送っています… 0 / '+tg.length; msPaintFoot_();
+  var seq=Promise.resolve();
+  tg.forEach(function(row){
+    seq=seq.then(function(){
+      var c=remote[row.sid], slots=msSelArr_(row), p;
+      if(c.cur){
+        p=sb.from('med_slots').update({slots:slots, edited_by:null})
+          .eq('id', c.cur.id).eq('rev', c.cur.rev).is('deleted_at', null).select('id,rev');
+      }else{
+        p=sb.from('med_slots').insert({resident_id:c.rid, slots:slots, note:note,
+          client_key:'rmaster:'+row.sid+':'+stamp, edited_by:null}).select('id,rev');
+      }
+      return Promise.resolve(p).then(function(r){
+        if(r&&r.error){ if(r.error.code==='23505') conflict++; else fail++; return; }
+        if(!r||!r.data||!r.data.length){ conflict++; return; }   /* 0行＝rev 不一致か権限なし */
+        sent++;
+      }, function(){ fail++; }).then(function(){
+        done++; msMsg='送っています… '+done+' / '+tg.length; msPaintFoot_();
+      });
+    });
+  });
+  seq.then(function(){
+    msBusy=false;
+    msMsg='送った '+sent+'名・変更なし '+sameN+'名・失敗 '+(fail+conflict)+'名'+
+      (held?'・確認待ち '+held+'名（送っていません）':'')+
+      (conflict?'\n※うち '+conflict+'名は反映できませんでした（他の端末で先に変更されたか、権限がありません）。最新を取り直して表示しています。確かめてから、もう一度送ってください。':'')+
+      (fail?'\n※送れなかった方は、通信を確かめてからもう一度送ってください。':'');
+    toast('送った '+sent+'名・失敗 '+(fail+conflict)+'名');
+    msLoadRemote_();
+  });
+}
+/* ★2026-09-24: 取得の本体を Promise を返す mdLoad_ に分けた。詳細画面の印刷は辞書の到着を
+   【待ってから】刷る（本人決定 Q2）ので、進行中の取得に相乗りして結果を待てる形が要る。
+   retry=true は読み取りの通常のやり直し（apiGetRetry）を使う＝印刷の待ちから呼ぶ時。
+   ★進行中の取得がやり直し無しで失敗した時、retry=true の呼び出し側はやり直し付きで取り直す
+     （背景の取得が1回落ちただけで「読み込めませんでした」を出さない）。 */
+/* ★mdGen は取得の世代。端末が現場用に切り替わった時（applyDeviceGuard）に進め、それより前に出した
+   取得の応答は【捨てる】。捨てないと、控えを消した後に遅れて届いた応答が mdMap を埋め直す（2026-09-24 レビュー指摘）。 */
+var mdPromise=null, mdPromiseRetry=false, mdGen=0;
+function mdLoad_(force, retry){
+  if(mdPromise){
+    if(!retry||mdPromiseRetry) return mdPromise;
+    return mdPromise.catch(function(){ return mdLoad_(false,true); });
+  }
+  if(mdDict&&!force) return Promise.resolve(mdDict);
+  /* ★現場端末では取りに行かない。薬剤情報は現場に出さない（SAFE_FIELDS に medsRegular が無い） */
+  if(getDeviceRole()==='field') return Promise.reject(new Error('FIELD'));
+  if(!medsFxOk_()){ mdErr=MEDS_FX_NG; paintShBars(); return Promise.reject(new Error(MEDS_FX_NG)); }
+  if(!CFG.url){ mdErr='入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）'; paintShBars(); return Promise.reject(new Error('NO_URL')); }
+  mdLoading=true; mdErr=''; paintShBars();
+  mdPromiseRetry=!!retry;
+  var gen=mdGen;
+  var p=(retry?apiGetRetry:apiGet)({action:'getMedDict'},30000).then(function(d){
+    if(gen!==mdGen) return;          /* 世代が変わった後の応答は使わない */
+    /* ★0件は正常（まだ1件も登録していない）。空とエラーを混同しない */
+    var rows=(d&&d.rows)||[];
+    mdDict=rows; mdMap=Object.create(null);
+    for(var i=0;i<rows.length;i++){ var k=mdKey(rows[i].name); if(k) mdMap[k]=rows[i]; }
+  }).catch(function(e){
+    /* ★parseJson は応答の error を【例外】に変える（.then には来ない）。ここで見分ける。
+       ★GASが古い版だと「不明なaction」。何度押しても直らないので、原因が分かる文言にする。
+         この画面以外は従来どおり動く＝先に画面を配っても壊れない（multi-device-sync 原則7）。 */
+    if(gen!==mdGen) return;
+    var m=String((e&&e.message)||e||'');
+    mdErr = /不明なaction/.test(m)
+      ? ('薬効辞書はまだ使えません。'+RM_SRV_OLD)
+      : ('薬効辞書を取得できませんでした'+(m?('：'+rmErrWords_(e,'薬効辞書の取得')):''));
+  })
+    .then(function(){
+      /* 世代が変わっていたら状態には一切触れない（mdLoading/mdPromise は applyDeviceGuard が戻し済み） */
+      if(gen!==mdGen) throw new Error('STALE');
+      mdLoading=false; mdPromise=null; paintShBars();
+      if(curView==='md'||curView==='hist'){ renderRoster(); if(curView==='hist') fitHistSheet(); }
+      mdPatchView_();
+      if(!mdMap) throw new Error(mdErr||'薬効辞書を取得できませんでした');
+      return mdDict;
+    });
+  mdPromise=p;
+  return p;
+}
+function mdEnsure(force){
+  if(mdLoading) return;
+  if(mdDict&&!force) return;
+  mdLoad_(force,false).catch(function(){ /* 理由は mdErr に入っている（画面に出す） */ });
+}
+/* 一覧に出す薬剤名を集める。
+   ★母集団は【辞書の全行】∪【いまの処方に出てくる薬】∪【この画面で手で足した薬】。
+     処方だけを見ていた頃は、管理者が手で足した薬や、処方から消えた薬が一覧から消え、
+     編集も削除もできなかった（＝薬でないものを消す手段が無かった）。
+   ★人数は処方から数える。辞書にしか無い薬は0名（それ自体は正常）。 */
+/* withHidden=true なら非表示のものも含めて返す（重複判定・改名の衝突判定はこちらを使う。
+   見えている行だけで判定すると、隠れている同名の行と衝突して保存が落ちる） */
+function mdCollect(withHidden){
+  var base=shBase(), cnt=Object.create(null), all=Object.create(null);
+  base.forEach(function(r){
+    var rec=fullOf(r); if(!rec) return;
+    var seen=Object.create(null);
+    mdNamesOf(rec.medsRegular).forEach(function(n){
+      if(!n||seen[n]) return; seen[n]=1;
+      cnt[n]=(cnt[n]||0)+1; all[n]=1;
+    });
+  });
+  if(mdDict) for(var i=0;i<mdDict.length;i++){ var k0=mdKey(mdDict[i].name); if(k0) all[k0]=1; }
+  for(var j=0;j<mdNew.length;j++){ var k1=mdKey(mdNew[j]); if(k1) all[k1]=1; }
+  var out=[];
+  for(var k in all) if(Object.prototype.hasOwnProperty.call(all,k)){
+    /* ★非表示の行は既定では出さない。「非表示も表示」を押した時だけ出す（戻せる形を残す） */
+    /* ★一覧から外すのは【もう保存されている非表示】だけ。押したばかりの印で行を消すと、
+       打ち消し線も「戻す」ボタンも見えないまま消え、押し間違いをその場で直せない
+       （削除の印は打ち消し線で残るのに、非表示だけ挙動が違った・2026-09-08 レビュー M-6）。 */
+    var ent0=(mdMap&&mdMap[k])||null;
+    if(!withHidden && !mdShowHidden && ent0 && ent0.hidden && mdIsHidden(k,ent0)) continue;
+    out.push({name:k, n:cnt[k]||0});
+  }
+  if(mdOrder==='count')
+    out.sort(function(a,b){ return (b.n-a.n) || String(a.name).localeCompare(String(b.name),'ja'); });
+  else
+    out.sort(function(a,b){ return String(a.name).localeCompare(String(b.name),'ja'); });
+  return out;
+}
+function mdHtml(){
+  if(!fullMap) return '<div class="sh-sheet" id="mdSheet"><div class="loading">'+
+    esc(shLoadNote()||'処方を取得しています…')+'</div></div>';
+  /* ★照合キーの規則は部品（meds-effect-dict.js）にある。古い版・読めない時は編集させない
+     （キーを推測で作って保存すると、辞書の行が割れる） */
+  if(!medsFxOk_()) return '<div class="sh-sheet" id="mdSheet"><div class="loading">'+esc(MEDS_FX_NG)+'</div></div>';
+  var drugs=mdCollect();
+  var known=0, ai=0, shown=0;
+  /* ★通し番号は【紙に出る行】で数える。配列の添字を使うと、非表示や削除予定を
+     印刷CSSで消した紙が 1,2,5,6… と欠番になる（2026-09-08 レビュー M-7）。 */
+  var no=0;
+  var body=drugs.map(function(d){
+    var e=(mdMap&&mdMap[d.name])||null;
+    var eff=e?String(e.effect||''):'';
+    var ok=!!(e&&e.ok);
+    /* ★編集中の値があれば必ずそちらを出す（再描画で入力を捨てない） */
+    if(Object.prototype.hasOwnProperty.call(mdEdits,d.name)){
+      eff=String(mdEdits[d.name].effect||''); ok=!!mdEdits[d.name].ok;
+    }
+    /* ★脚注の件数は【紙に出る行】で数える。削除予定は紙に出ないので数えない
+       （数えると「153種類」と書いてあるのに150行しか無い紙になる） */
+    var hid=mdIsHidden(d.name,e);
+    var gone=!!mdDels[d.name] || hid;
+    if(!gone){ shown++; no++; if(eff){ known++; if(!ok) ai++; } }
+    /* ★消す／隠すと決めた行では、改名の入力も元の名前に戻して見せる。
+       入力欄は disabled で触れないのに新しい名前が出ていると、保存で
+       「名前も変わる」と読めてしまう（保存では送らない＝表示と一致させる）。 */
+    var nm=gone?d.name:mdShownName(d.name);
+    var renamed=(!gone && nm!==d.name);
+    /* 状態欄。消す・隠すが決まっている行は、効能の状態より【そちらを先に】見せる */
+    var unhide=(Object.prototype.hasOwnProperty.call(mdHides,d.name)&&!mdHides[d.name]);
+    /* ★色だけで意味を伝えない（介護現場要件4）。入力欄の色と title は
+       タッチ端末では読めないので、状態の欄に文字で「旧 → 新」を出す。 */
+    var badge = mdDels[d.name] ? '<span class="mdbadge ai">削除予定</span>'
+              : hid ? ('<span class="mdbadge ai">'+
+                       (Object.prototype.hasOwnProperty.call(mdHides,d.name)?'非表示にする':'非表示')+'</span>')
+              : unhide ? '<span class="mdbadge ai">一覧に戻す</span>'
+              : renamed ? ('<span class="mdbadge ai">名前を直す</span><span class="mdren-note">'+
+                           esc(d.name)+' → '+esc(nm)+'</span>')
+              : (eff?('<span class="mdbadge '+(ok?'ok':'ai')+'">'+(ok?'確認済み':'AI下書き')+'</span>'):'');
+    return '<tr data-md="'+esc(d.name)+'"'+(gone?' class="mdgone"':'')+'>'+
+      '<td class="mdc">'+(gone?'':String(no))+'</td>'+
+      /* ★薬剤名も直せる（2026-09-08 管理者指示）。辞書のキーそのものなので、
+         保存時に「旧を消して新を作る」に変換する。人数>0 の行は保存前に確認を出す。 */
+      '<td><input class="mdn'+(renamed?' mdren':'')+'" type="text" value="'+esc(nm)+'" maxlength="60" '+
+        (gone?'disabled ':'')+'aria-label="薬剤名（'+esc(d.name)+'）"'+
+        (renamed?(' title="'+esc(d.name)+' → '+esc(nm)+'（保存で確定）"'):'')+'></td>'+
+      '<td class="mdc">'+d.n+'</td>'+
+      '<td><input class="mde" type="text" value="'+esc(eff)+'" maxlength="40" '+
+        (gone?'disabled ':'')+'aria-label="'+esc(d.name)+' の効能"></td>'+
+      '<td class="mdok mdd"><label><input type="checkbox" '+(ok?'checked':'')+(gone?' disabled':'')+
+        ' aria-label="'+esc(d.name)+' を確認済みにする"></label></td>'+
+      '<td class="mdc">'+badge+'</td>'+
+      '<td class="mdc">'+esc(e?(e.at||''):'')+'</td>'+
+      '<td class="mdc mdd"><button type="button" class="mddel" data-del="'+esc(d.name)+'">'+
+        (gone?'戻す':'削除')+'</button></td>'+
+    '</tr>';
+  }).join('');
+  return '<div class="sh-sheet" id="mdSheet">'+
+    '<div class="sh-hd"><div class="st1">薬効辞書</div></div>'+
+    '<div class="md-lead">薬剤名と効能の辞書です。効能は「病歴・薬一覧」の効能列に出ます。'+
+    '<br><b>「AIで下書き」で入る効能は薬剤師の確認を経ていません。</b>確認したら「確認済み」に印を付けてください。'+
+    '未確認のものは一覧と紙で末尾に ＊ が付きます。'+
+    '<br><b>薬剤名も効能も、この画面で直せます。</b>直したら「保存」を押してください。'+
+    '<br>薬でないものは「削除」を押して保存すると一覧から消えます（押した時点では消えず、保存で確定します）。'+
+    'いまの処方に出ている名前は処方欄から拾っているので、辞書の行を消しても戻ってきます。'+
+    'そのため<b>「一覧に出さない」印を付けて隠します</b>（効能と「確認済み」は消えません）。'+
+    '隠したものは上の「非表示も表示」で見えるようになり、「戻す」で戻せます。'+
+    '新しい薬は「＋ 薬を足す」から追加できます。'+
+    '<br>人数はいまの処方に出てくる方の数です（0名＝手で足した薬・処方から外れた薬）。'+
+    '用量は落として同じ薬をまとめています（例: 12mg と 24mg は同じ1行）。</div>'+
+    '<table class="mdtbl"><colgroup>'+
+      '<col style="width:4%"><col style="width:28%"><col style="width:6%"><col style="width:24%">'+
+      '<col class="mdd" style="width:7%"><col style="width:10%"><col style="width:11%">'+
+      '<col class="mdd" style="width:10%"></colgroup>'+
+    '<thead><tr><th>No</th><th>薬剤名</th><th>人数</th><th>効能</th><th class="mdd">確認済み</th>'+
+      '<th>状態</th><th>更新日</th><th class="mdd">削除</th></tr></thead>'+
+    '<tbody>'+body+'</tbody></table>'+
+    '<div class="sh-ft">'+shown+'種類　／　効能あり '+known+'　／　うちAI下書き '+ai+
+      (Object.keys(mdDels).length?('　／　削除予定 '+Object.keys(mdDels).length):'')+
+      (mdPendCount_('hide')?('　／　非表示にする '+mdPendCount_('hide')):'')+
+      (mdPendCount_('show')?('　／　戻す '+mdPendCount_('show')):'')+
+      (mdPendCount_('ren')?('　／　名前を直す '+mdPendCount_('ren')):'')+
+      (mdHiddenTotal_()?('　／　非表示 '+mdHiddenTotal_()+'件'):'')+
+      '　／　'+(mdOrder==='count'?'使用人数順':'五十音順')+'　／　印刷日 '+esc(shStamp())+'</div>'+
+  '</div>';
+}
+/* 保存待ちの件数。★脚注と塗り分けで同じ関数を通す（別々に数えると表示だけずれる） */
+function mdPendCount_(kind){
+  var n=0, k;
+  if(kind==='ren'){ for(k in mdRenames) if(Object.prototype.hasOwnProperty.call(mdRenames,k)) n++; return n; }
+  for(k in mdHides) if(Object.prototype.hasOwnProperty.call(mdHides,k)){
+    if(kind==='hide'? mdHides[k] : !mdHides[k]) n++;
+  }
+  return n;
+}
+/* いま実際に隠れている件数（保存済み＋保存待ちの印を織り込む） */
+function mdHiddenTotal_(){
+  if(!mdDict) return 0;
+  var seen=Object.create(null), n=0, i, k;
+  for(i=0;i<mdDict.length;i++){
+    k=mdKey(mdDict[i].name); if(!k||seen[k]) continue; seen[k]=1;
+    if(mdIsHidden(k,mdDict[i])) n++;
+  }
+  /* 辞書にまだ無い名前を隠した場合（処方から拾った行）もここで数える */
+  for(k in mdHides) if(Object.prototype.hasOwnProperty.call(mdHides,k) && mdHides[k] && !seen[k]) n++;
+  return n;
+}
+/* 画面の入力を拾う（保存とAIの両方で使う） */
+function mdRead(){
+  var out=[], box=$('mdSheet'); if(!box) return out;
+  Array.prototype.forEach.call(box.querySelectorAll('tr[data-md]'),function(tr){
+    var name=tr.getAttribute('data-md');
+    var inp=tr.querySelector('input.mde'), ck=tr.querySelector('.mdok input');
+    var v={name:name, effect:inp?inp.value.trim():'', ok:!!(ck&&ck.checked)};
+    /* ★メモリの編集を優先。描き直しの直後は DOM が古い値に戻っていることがある */
+    if(Object.prototype.hasOwnProperty.call(mdEdits,name)){
+      v.effect=String(mdEdits[name].effect||''); v.ok=!!mdEdits[name].ok;
+    }
+    /* 改名も同じ理由でメモリを正とする（DOM だけ見ると再描画で消える） */
+    v.newName=mdShownName(name);
+    out.push(v);
+  });
+  return out;
+}
+/* 1行ぶんの編集をメモリへ写す（再描画に耐えるように） */
+function mdRemember(tr){
+  if(!tr) return;
+  var name=tr.getAttribute('data-md'); if(!name) return;
+  var inp=tr.querySelector('input.mde'), ck=tr.querySelector('.mdok input');
+  mdEdits[name]={effect:inp?inp.value.trim():'', ok:!!(ck&&ck.checked)};
+  /* ★薬剤名の付け替え。元と同じ（空白のゆれを含む）なら「変更なし」に戻す
+     ——戻さないと、触っただけの行が保存対象に残り、旧行の削除と新行の作成が空振りする */
+  var nin=tr.querySelector('input.mdn');
+  if(nin){
+    var nv=mdKey(nin.value);
+    if(nv===''||nv===name) delete mdRenames[name];
+    else mdRenames[name]=nv;
+  }
+}
+/* ★数え直して決める。「名前を直して元に戻した」だけの行で未保存が立ち続けると、
+   保存しても「変更がありません」なのに離脱確認だけ出る（2026-09-08 レビュー L-3）。 */
+function mdMarkDirty(tr){ mdRemember(tr); mdRecalcDirty_(); }
+/* 薬を手で足す。★辞書に既にある名前は足さない（同じ行が2つできると、どちらが正か分からなくなる） */
+function mdAddDrug(){
+  if(curView!=='md') return;
+  /* ★辞書が取れていない間は足さない。mdMap が null だと重複判定が必ず素通りし、
+     サーバーに既にある薬を「無い」と見なして上書きする＝他端末の効能と『確認済み』を
+     黙って潰す（原則4・multi-device-sync 原則3）。 */
+  if(!mdDict){ toast('薬効辞書を取得できていないため、追加できません',false); return; }
+  var raw=prompt('足す薬剤名を入れてください（用量は付けても構いません。末尾の用量は自動で外します）');
+  if(raw==null) return;
+  var name=mdDrugName(raw);
+  if(!name){ toast('薬剤名が読み取れませんでした',false); return; }
+  /* ★重複判定は【いま一覧に出ている集合】で行う。辞書だけを見ていると、処方から拾って
+     一覧に並んでいる薬を「無い」と見なして足し、入力途中の値ごと上書きする */
+  /* ★隠れているものも含めて見る。見えている行だけで判定すると、非表示にした薬を
+     足し直せてしまい、足したのに一覧へ出てこない（非表示の印が効いたまま） */
+  var cur=mdCollect(true), dup=false;
+  for(var ci=0;ci<cur.length;ci++) if(cur[ci].name===name){ dup=true; break; }
+  if(dup){
+    var ent0=(mdMap&&mdMap[name])||null;
+    toast(mdIsHidden(name,ent0)
+      ? ('「'+name+'」は既にありますが、いまは非表示です。「👁 非表示も表示」から戻せます')
+      : ('「'+name+'」は既に一覧にあります'), !mdIsHidden(name,ent0));
+    return;
+  }
+  var eff=prompt('「'+name+'」の効能（8文字以内が目安・後から直せます）','');
+  if(eff==null) return;
+  mdNew.push(name);
+  mdEdits[name]={effect:String(eff||'').trim().slice(0,40), ok:false};   /* 入力欄と同じ上限 */
+  mdDirty=true; if($('mdSave')) $('mdSave').disabled=false;
+  renderRoster();
+  toast('「'+name+'」を足しました。内容を確かめてから「保存」を押してください');
+}
+/* 「削除」を押した時の動き（2026-09-08 管理者指示で意味を1つに揃えた）。
+   ★押した時点では何も消さない（保存で確定する＝押し間違いを戻せる）。
+   ★意味は【この名前を一覧から消す】。実現の仕方だけが行の出どころで変わる:
+       ①この画面で足したばかり     → 足したこと自体を取り消す（サーバーには何も無い）
+       ②処方に出ている名前         → 辞書の行を消しても処方から拾い直されて戻るので、
+                                     「一覧に出さない」印を付ける（効能と確認済みは残す）
+       ③辞書にしか無い（人数0）    → 辞書の行を消す
+     以前は②で「まだ辞書に入っていないので消すものがありません」と断って【消せなかった】。
+     一覧から消したいのに消せない＝道具として使えないので、②を非表示で実現する。 */
+function mdToggleDel(name){
+  if(!name) return;
+  /* ★辞書が取れていないと「辞書にあるか」を判定できず、行を消すべき所を非表示にするなど
+     取り違える。追加・保存と同じく、取れていない間は触らせない（レビュー L-9） */
+  if(!mdDict){ toast('薬効辞書を取得できていないため、いま消せません',false); return; }
+  /* 既に印が付いていれば外す（削除・非表示のどちらでも「戻す」で戻る） */
+  if(mdDels[name]){ delete mdDels[name]; mdRecalcDirty_(); renderRoster(); return; }
+  var ent=(mdMap&&mdMap[name])||null;
+  if(Object.prototype.hasOwnProperty.call(mdHides,name)){
+    delete mdHides[name]; mdRecalcDirty_(); renderRoster(); return;
+  }
+  if(ent&&ent.hidden){                       /* 保存済みの非表示を戻す */
+    mdHides[name]=false; mdRecalcDirty_(); renderRoster();
+    toast('「'+name+'」を一覧に戻します。「保存」を押すと確定します');
+    return;
+  }
+  /* ① 足したばかりの薬 */
+  var ni=mdNew.indexOf(name);
+  if(ni>=0){
+    mdNew.splice(ni,1); delete mdEdits[name]; delete mdRenames[name];
+    mdRecalcDirty_(); renderRoster();
+    toast('「'+name+'」の追加を取り消しました');
+    return;
+  }
+  /* ② 処方に出ている名前は、辞書の行を消しても戻ってくる → 非表示にする */
+  if(mdInRx_(name)){
+    mdHides[name]=true; mdRecalcDirty_(); renderRoster();
+    toast('「'+name+'」を一覧から外します（処方欄には残ります）。「保存」を押すと確定します');
+    return;
+  }
+  /* ③ 辞書にしか無い行は、行そのものを消す */
+  if(ent){ mdDels[name]=1; mdRecalcDirty_(); renderRoster(); return; }
+  /* ここに来るのは辞書にも処方にも無い名前＝起こらないはずだが、黙って何もしない画面にしない */
+  toast('「'+name+'」は辞書にも処方にも見つかりませんでした',false);
+}
+/* いまの処方にその薬剤名が出てくるか（＝辞書から消しても一覧に戻ってくるか） */
+function mdInRx_(name){
+  var list=mdCollect(true);
+  for(var i=0;i<list.length;i++) if(list[i].name===name) return list[i].n>0;
+  return false;
+}
+/* 保存できた後の後片づけ。★1本にまとめておく。3箇所に散らしていると、
+   保存待ちの種類を1つ足すたびにどれかで消し忘れ、次の保存に古い指示が混ざる。 */
+function mdClearPending_(){
+  mdDirty=false;
+  mdEdits=Object.create(null); mdDels=Object.create(null);
+  mdHides=Object.create(null); mdRenames=Object.create(null);
+  mdNew=[];
+}
+/* L-9: 印や編集を全部取り消したら未保存ではなくなる。数え直さないと離脱確認が出続ける */
+function mdRecalcDirty_(){
+  mdDirty = Object.keys(mdDels).length>0 || Object.keys(mdEdits).length>0
+         || Object.keys(mdHides).length>0 || Object.keys(mdRenames).length>0;
+  if($('mdSave')) $('mdSave').disabled=!mdDirty;
+  paintShBars();
+}
+/* 改名を送れる形に整える。送ってよければ [{from,to,rowIndexOfMdRead}]、
+   送ってはいけない理由があれば {error:'…'} を返す。
+   ★止める理由を【保存を押した後】にまとめて見るのは、途中まで書いてから落ちるのを避けるため。
+     1件でも駄目なら1文字も送らない（一括編集の savePartial と同じ作法）。 */
+function mdRenamePlan_(rows){
+  var plan=[], i, k;
+  var skip=Object.create(null);          /* 消す・隠す行の改名は送らない（画面でも元に戻して見せている） */
+  for(k in mdDels) if(Object.prototype.hasOwnProperty.call(mdDels,k)) skip[k]=1;
+  for(k in mdHides) if(Object.prototype.hasOwnProperty.call(mdHides,k) && mdHides[k]) skip[k]=1;
+  /* 最終的な名前の集合を作る。★非表示の行も含める（見えていない同名と衝突すると
+     旧行を消して新行を作った瞬間に、隠れていた行が別の効能で復活する） */
+  var all=mdCollect(true), fin=Object.create(null), src=Object.create(null);
+  for(i=0;i<all.length;i++){
+    var nm=all[i].name;
+    var to=(Object.prototype.hasOwnProperty.call(mdRenames,nm)&&!skip[nm])?mdRenames[nm]:nm;
+    if(fin[to]) return {error:'「'+to+'」が2つになります（'+src[to]+' と '+nm+'）。'+
+                              '別の名前にするか、どちらかを削除してください'};
+    fin[to]=1; src[to]=nm;
+  }
+  for(k in mdRenames) if(Object.prototype.hasOwnProperty.call(mdRenames,k)){
+    if(skip[k]) continue;
+    var v=mdKey(mdRenames[k]);
+    if(v===''||v===k) continue;
+    var row=null;
+    for(i=0;i<rows.length;i++) if(rows[i].name===k){ row=rows[i]; break; }
+    plan.push({from:k, to:v, effect:row?row.effect:'', ok:row?row.ok:false});
+  }
+  return {plan:plan};
+}
+/* ★改名は【旧行を消して新行を作る】＝丸ごと置き換えなので、「変わった行だけ送る」保護が効かない。
+   表を開いている間に薬剤師が別端末でその薬の効能や『確認済み』を直していると、それを消す。
+   送る直前に1回だけ取り直し、対象の行が開いた時と違っていたら【1文字も書かずに】人へ見せる
+   （一括編集の家族欄 bulkFamGuard_ と同じ作法・2026-09-08 レビュー M-4）。
+   ★取り直せない時は止めない（現場を止めない）。 */
+function mdRenameGuard_(ren){
+  if(!ren||!ren.length) return Promise.resolve(null);
+  return apiGet({action:'getMedDict'},30000).then(function(d){
+    var rows=(d&&d.rows)||[];
+    if(!rows.length) return null;
+    var sv=Object.create(null), i;
+    for(i=0;i<rows.length;i++){ var k=mdKey(rows[i].name); if(k) sv[k]=rows[i]; }
+    var moved=[];
+    for(i=0;i<ren.length;i++){
+      var mine=(mdMap&&mdMap[ren[i].from])||null, now=sv[ren[i].from]||null;
+      if(!mine&&!now) continue;
+      if(!mine||!now){ moved.push(ren[i].from); continue; }
+      if(String(mine.effect||'')!==String(now.effect||'') || !!mine.ok!==!!now.ok ||
+         !!mine.hidden!==!!now.hidden) moved.push(ren[i].from);
+    }
+    return moved.length?{moved:moved, rows:rows}:null;
+  }).catch(function(){ return null; });
+}
+/* 保存。★効能が空の行は送らない（サーバー側でも弾くが、二重の歯止め）。
+   空を送って既存の効能を潰さない＝原則4の空上書き保護。 */
+async function mdSave(){
+  /* ★保存の応答も取得と同じ世代（mdGen）で捨てる。保存の途中で端末が現場用に切り替わると
+     （applyDeviceGuard が mdDict・mdMap を消して世代を進める）、遅れて届いた応答が mdDict・mdMap を
+     埋め直し、表を描き直していた。世代が変わった後の応答では【何もしない】（ボタンも戻さない・案内も出さない。
+     現場用には薬効辞書のタブが無い）。取り直しによる突き合わせも現場では取りに行かない（2026-10-06） */
+  var gen=mdGen;
+  /* ★同上。取れていない状態で保存すると、サーバー側の効能と『確認済み』を空の表示で潰す */
+  if(!mdDict){ toast('薬効辞書を取得できていないため、保存できません',false); return; }
+  /* ★送るのは【実際に変えた行】だけ。表示中の全行を送ると、他端末（薬剤師）が付けた
+     「確認済み」と直した文言を、こちらの古い表示で黙って上書きする（原則4・
+     multi-device-sync 原則3「独立フィールドを丸ごと上書きに同居させない」）。
+     変更していない行の更新日まで今日に書き換わり、いつ何が戻ったのか追えなくなる。 */
+  var all=mdRead();
+  var rp=mdRenamePlan_(all);
+  if(rp.error){ toast(rp.error,false); return; }
+  var ren=rp.plan, renFrom=Object.create(null), ri;
+  for(ri=0;ri<ren.length;ri++) renFrom[ren[ri].from]=ren[ri].to;
+  /* ★処方に出ている薬の名前を変えると、その方たちの効能が引けなくなる（引くキーは処方欄の
+     薬剤名なので、辞書だけ名前を変えても対応が切れる）。黙って切らずに、影響を数えて確認する。 */
+  var warn=[], cntAll=mdCollect(true);
+  for(ri=0;ri<ren.length;ri++){
+    for(var ci=0;ci<cntAll.length;ci++)
+      if(cntAll[ci].name===ren[ri].from && cntAll[ci].n>0){
+        warn.push('・'+ren[ri].from+' → '+ren[ri].to+'（'+cntAll[ci].n+'名の処方に出ています）');
+        break;
+      }
+  }
+  /* ★用量が付いたままの名前は、処方欄からは【永久に引けない】辞書行になる
+     （引く時に末尾の用量を落としてから突き合わせるため）。保存前に知らせる（レビュー L-7）。 */
+  var dz=[];
+  for(ri=0;ri<ren.length;ri++)
+    if(mdDrugName(ren[ri].to)!==ren[ri].to)
+      dz.push('・'+ren[ri].to+' →（引く時は「'+mdDrugName(ren[ri].to)+'」になります）');
+  if(dz.length && !(await SUDialog.confirm('次の名前には用量が付いています。\n\n'+dz.join('\n')+
+      '\n\n効能は【末尾の用量を落とした名前】で引くので、このままだと処方欄と結び付きません。\n'+
+      '用量を外した名前にすることをおすすめします。\n\nこのまま進めますか？'))) return;
+  if(warn.length && !(await SUDialog.confirm('次の薬は、いまの処方に出ている名前です。\n\n'+warn.join('\n')+
+      '\n\n名前を変えると、次の2つが起きます。\n'+
+      '① この方たちの「病歴・薬一覧」の効能列が【空になります】\n'+
+      '　（効能は処方欄の薬剤名で引いているためです）\n'+
+      '② 元の名前の行は【一覧に残ります】\n'+
+      '　（処方欄から拾っているので、辞書の行を消しても戻ってきます）\n'+
+      '　消したい場合は、保存したあと元の名前の行で「削除」も押してください\n\n'+
+      '処方欄の書き方そのものを直したい場合は、その方の詳細画面で内服の行を直してください。\n\n'+
+      'このまま名前を変えますか？'))) return;
+  if(gen!==mdGen||!mdDict) return;   /* 窓の間に端末の用途が変わった（世代が進んだ）時は送らない（画面の中の窓・2026-11-13・仮置き） */
+
+  var items=all.filter(function(x){
+    if(mdDels[x.name]) return false;                      /* 消す行は下で del として送る */
+    if(renFrom[x.name]) return false;                     /* 改名する行は下で「旧を消して新を作る」 */
+    if(x.effect==='') return false;                       /* 空は送らない（空上書き保護） */
+    var cur=(mdMap&&mdMap[x.name])||null;
+    if(!cur) return true;                                  /* 新しい薬は送る */
+    return String(cur.effect||'')!==x.effect || !!cur.ok!==x.ok;   /* 変わった行だけ */
+  });
+  /* 削除の印が付いた行は del:true で送る（サーバーはその行だけを消す） */
+  var dels=[];
+  for(var dn in mdDels) if(Object.prototype.hasOwnProperty.call(mdDels,dn)){
+    if(mdMap&&mdMap[dn]) dels.push({name:dn, del:true});   /* 辞書に無い行は送る必要がない */
+  }
+  /* 一覧から外す／戻す印。★辞書に行が無い名前でもサーバーは印だけの行を作る（それが要点） */
+  var hides=[];
+  for(var hn in mdHides) if(Object.prototype.hasOwnProperty.call(mdHides,hn)){
+    var was=!!((mdMap&&mdMap[hn])||{}).hidden;
+    if(was===!!mdHides[hn]) continue;                      /* 既にその状態なら送らない */
+    hides.push({name:hn, hide:!!mdHides[hn]});
+  }
+  /* 改名は【旧を消す→新を作る】の2件に開く。★効能が空でも新しい行は作りたいので、
+     効能が空の時は del だけを送る（サーバーは効能が空の set を書かない＝空上書き保護） */
+  /* ★順番が命。旧の削除と新の作成を1組ずつ交互に積むと、名前が数珠つなぎ（A→B・B→C）や
+     入れ替え（A↔B）になった時に【書いた直後の行を次の削除が殺す】。実測で2行が1行になり、
+     薬剤師が付けた『確認済み』が失われた（2026-09-08 レビュー H-1）。
+     必ず【消す指示を全部先に、書く指示を全部あとに】積む。サーバー側にも
+     「この保存で書いた行は消さない」歯止めを置いてあるが、順番で直すのが本筋。 */
+  var renItems=[];
+  for(ri=0;ri<ren.length;ri++)
+    if(mdMap&&mdMap[ren[ri].from]) renItems.push({name:ren[ri].from, del:true});
+  for(ri=0;ri<ren.length;ri++)
+    if(ren[ri].effect!=='') renItems.push({name:ren[ri].to, effect:ren[ri].effect, ok:ren[ri].ok});
+  items=items.concat(dels).concat(hides).concat(renItems);
+  if(!items.length){ toast('変更がありません（変えた行・消す行・隠す行だけを保存します）'); return; }
+  if(!CFG.url){ toast('入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）',false); return; }
+  if($('mdSave')) $('mdSave').disabled=true;
+  mdBusy='保存しています…'; paintShBars();
+  mdRenameGuard_(ren).then(function(gd){
+  if(gen!==mdGen) return;   /* ★世代が変わった後の応答は使わない（送りもしない） */
+  if(gd){
+    mdBusy=''; if($('mdSave')) $('mdSave').disabled=false;
+    /* 取り直した内容を画面へ反映して、人が見比べてから送り直せるようにする（未保存の変更は残す） */
+    mdDict=gd.rows; mdMap=Object.create(null);
+    for(var qi=0;qi<gd.rows.length;qi++){ var qk=mdKey(gd.rows[qi].name); if(qk) mdMap[qk]=gd.rows[qi]; }
+    renderRoster(); paintShBars();
+    SUDialog.alert('保存を中止しました（1文字も書いていません）。\n\n'+
+      '表を開いてから、他の端末で次の薬が変わっています（'+gd.moved.length+'件）。\n'+
+      gd.moved.map(function(x){ return '・'+x; }).join('\n')+'\n\n'+
+      '名前を変える操作は、その行を【丸ごと置き換えます】。このまま送ると相手の変更が消えます。\n'+
+      '最新の内容を表に反映しました。見比べてから、もう一度「保存」を押してください。');
+    return;
+  }
+  /* src は送らない。★サーバー側が「指定が無ければ既存の由来を保つ」ようにしてある
+     （2026-09-08 レビュー L-6 まで 'ai' で埋めていて、人が直した行も ai に戻っていた）。 */
+  apiPost({action:'setMedDict', items:items.map(function(x){
+    if(x.del) return {name:x.name, del:true};
+    if(typeof x.hide==='boolean') return {name:x.name, hide:x.hide};
+    return {name:x.name, effect:x.effect, ok:x.ok};
+  })},60000).then(function(d){
+    if(gen!==mdGen) return;   /* ★世代が変わった後の応答は使わない（控えの破棄・取り直しもしない） */
+    if(d&&d.error) throw new Error(d.error);
+    /* ★古い版のGASは hide を知らない。知らないキーは「効能が空」の枝に落ちて【何も書かず】
+       {ok:true, added:0, updated:0, deleted:0} を返す。そのまま成功にすると、消えたと信じた行が
+       次に開いた時に戻ってくる（無言の取りこぼし・multi-device-sync 原則7）。
+       送ったのに件数が返らない時は【失敗として扱い、印を残す】（2026-09-08 レビュー H-2）。 */
+    if(hides.length && !((d&&d.hidden)||(d&&d.shown)))
+      throw new Error('一覧から外す指示が反映されませんでした。'+
+                      '管理者に連絡してください（薬効辞書の Google の受け口の更新が必要です）');
+    /* 保存できたので編集メモリ・削除の印・手入力の控えは捨てる */
+    mdClearPending_();
+    toast('保存しました（追加'+((d&&d.added)||0)+'・更新'+((d&&d.updated)||0)+
+          '・削除'+((d&&d.deleted)||0)+
+          ((d&&d.hidden)?('・非表示'+d.hidden):'')+((d&&d.shown)?('・戻し'+d.shown):'')+'）');
+    /* 保存できた後も辞書を取り直す（更新日・他端末の変更を画面へ反映するため）。
+       ★§13（失敗表示でも書かれていることがある）への備えは下の catch 側。 */
+    mdBusy=''; mdEnsure(true);
+  }).catch(function(e){
+    if(gen!==mdGen) return;   /* ★世代が変わった後は取り直さない（現場端末で辞書を取りに行かない） */
+    mdBusy='';
+    /* ★失敗しても「1文字も書かれていない」と決めつけない（契約 §13）。必ず取り直してから
+       文言を決める。辞書は同じ内容を送っても同じ結果になる（冪等）ので、取り直して
+       入っていれば成功として扱う。 */
+    /* ★削除も数える。数えないと【削除だけの保存】が want===0 になり、実際は消えていても
+       「保存できませんでした」と出る（契約 §13 の取り直し確認が削除にだけ効かない状態だった）。 */
+    var sent={}, gone={}, hid={};
+    items.forEach(function(x){
+      if(x.del) gone[x.name]=1;
+      else if(typeof x.hide==='boolean') hid[x.name]=x.hide;
+      else sent[x.name]=x.effect;
+    });
+    var want=Object.keys(sent).length+Object.keys(gone).length+Object.keys(hid).length;
+    apiGet({action:'getMedDict'},30000).then(function(d){
+      if(gen!==mdGen) return;   /* ★取り直しの間に世代が変わったら、mdDict・mdMap を埋め直さない */
+      var rows=(d&&d.rows)||[], n=0, have=Object.create(null), hv=Object.create(null);
+      for(var i=0;i<rows.length;i++){
+        var k=mdKey(rows[i].name); have[k]=1; hv[k]=!!rows[i].hidden;
+        if(Object.prototype.hasOwnProperty.call(sent,k) &&
+           String(rows[i].effect||'')===sent[k]) n++;
+      }
+      for(var gk in gone) if(Object.prototype.hasOwnProperty.call(gone,gk) && !have[gk]) n++;
+      /* ★非表示も数える。数えないと【隠すだけの保存】が want と合わず、実際は入っていても
+         「保存できませんでした」と出る（削除で同じことが起きて 2026-09-04 に直した形と同じ） */
+      for(var hk in hid) if(Object.prototype.hasOwnProperty.call(hid,hk)){
+        if(!!(hv[hk])===!!hid[hk]) n++;
+      }
+      if(n===want && want>0){
+        mdClearPending_();
+        toast('保存できていました（応答は失敗でしたが、取り直して確認しました）');
+        mdDict=rows; mdMap=Object.create(null);
+        for(var j=0;j<rows.length;j++){ var kk=mdKey(rows[j].name); if(kk) mdMap[kk]=rows[j]; }
+        renderRoster();
+      }else{
+        if($('mdSave')) $('mdSave').disabled=false;
+        toast('保存できませんでした：'+rmErrWords_(e,'薬効辞書の保存')+
+              '（'+want+'件中 '+n+'件は入っていました）',false);
+      }
+    }).catch(function(){
+      if(gen!==mdGen) return;
+      if($('mdSave')) $('mdSave').disabled=false;
+      toast('保存できたか確認できませんでした：'+rmErrWords_(e,'薬効辞書の保存'),false);
+    }).then(function(){ if(gen!==mdGen) return; paintShBars(); });
+  });
+  });   /* mdRenameGuard_ の then を閉じる */
+}
+
+/* ═══════════ 薬の変更候補（2026-10-06 代表者の決定・案B）═══════════
+   申送の原文の薬の行（直近14日・2026-10-10 から。それまでは AI 要約の「服薬関連」）から「薬剤情報（定期）」を直す候補を出し、管理者が見比べて
+   「反映する／反映しない」を決める。判断と反映はサーバー（入居者マスタGAS の med-cand.gs・action 'medCand'）が受ける。
+   ★管理者（Google＋2段階認証でログイン中・role 'admin'）にだけ出す。現場端末では何もしない（取りにも行かない）。
+     これは「出すかどうか」の判定で、権限の境目ではない。定期薬の書き換えは従来どおり事務所の合言葉で守られ、
+     反映できる中身は編集画面で直せる範囲と同じ。
+   ★申送の本文・定期薬は端末に保存しない（メモリだけ。閉じたら捨てる）。
+   ★判断の材料は申送の【原文】。AI 要約（ledger）は見出しとして並べるだけで、原文が見つからない候補は反映させない（反証レビュー指摘3）。
+   ★定期薬と記録は外部の AI へ送らない（代表者の決定 2026-10-27。AI の直し案は止めた）。直し案は人が手で書く。
+   ★差分（追加・中止・変更）を画面が自分で数えて見せ、人が「反映する」を押した時だけ書く。
+     同じ薬の二重・「（不明）」は ⚠ で知らせ、二重と（不明）は反映させない。
+   ★反映はサーバーが「見比べた時の定期薬（before）」と今の値が同じ時だけ書き、同じ候補の二度目の反映は断る。
+   ★候補の印は「利用者No・記録の日付・本文の指紋」（台帳の並び順は使わない＝台帳が作り直されても判断がずれない）。
+   ★世代は2本: 一覧の読み込み（mcGen）と、開いている候補の作業（mcWorkGen）。閉じても一覧の読み直しは捨てない（2回目の指摘D）。
+     書き込みの応答は devGen だけで捨てる（読み直しで成功が消えないように）。
+   ★同じ方・同じ日に既に反映した記録があれば、⛔ で示し「別の変更だと確かめた」印を付けた時だけ反映できる
+     （申送の要約が作り直されると本文が変わり、候補の印も変わるため・2回目の指摘A）。
+   ★「医師・薬局に確認してから」は「保留」として残し、一覧に出し続ける（2回目の指摘B）。 */
+/* 開ける候補すべて（変更らしい候補＋畳んだ候補） */
+function mcAll_(){ return mcSt?mcSt.cands.concat(mcSt.others||[]):[]; }
+function mcCountFor_(id){
+  if(!mcSt) return 0;
+  return mcSt.cands.filter(function(c){ return c.id===String(id); }).length;
+}
+/* 一覧の上の帯と、開いている詳細画面の印を描き直す */
+function mcPaint_(){
+  var bar=$('mcBar');
+  if(bar){
+    var n=mcSt?mcSt.cands.length:0, note='';
+    if(mcSt&&!mcSt.loading){
+      if(mcSt.server==='old') note='まだ使えません。'+RM_SRV_OLD;
+      else if(mcSt.server==='ng') note='判断の記録を読めませんでした（通信）。少し待って開き直してください';
+      else if(mcSt.msk==='none') note='申送ビューアの接続が未設定のため、候補を作れません';
+      else if(mcSt.msk==='ng') note='申送を読めませんでした（通信）';
+      else if(mcSt.lag) note=mcSt.lag;
+    }
+    var show=!!(mcSt&&!mcSt.loading&&(n>0||note));
+    bar.style.display=show?'':'none';
+    bar.innerHTML=show?('<button type="button" class="mc-open" id="mcOpen"'+(n?'':' disabled')+'>💊 薬の変更候補（'+n+'件）</button>'+
+      (note?'<span class="mc-note">'+esc(note)+'</span>':'')):'';
+  }
+  var dm=$('mcDMark');
+  if(dm){
+    var id=dm.getAttribute('data-id'), k=mcCountFor_(id);
+    var want=k?'<span>💊 薬の変更候補があります（'+k+'件）</span> <button type="button" class="btn btn-sec mc-dbtn" data-id="'+esc(id)+'">見比べる</button>':'';
+    if(dm.innerHTML!==want) dm.innerHTML=want;
+  }
+  if($('mMedCand')&&$('mMedCand').classList.contains('on')) mcPaintModal_();
+}
+/* 詳細画面の印（renderView が置く。中身は mcPaint_ が入れる。管理者でない・候補が無い時は空＝高さ0） */
+function mcDetailSlot_(r){
+  if(mcSt) setTimeout(function(){ var dm=$('mcDMark'); if(dm&&mcSt) mcPaint_(); },0);   /* 描画の後で印を入れる */
+  return '<div class="mc-dmark" id="mcDMark" data-id="'+esc(String(r&&r.id!=null?r.id:''))+'"></div>';
+}
+/* 現場用へ切り替わった時に、画面に残る中身も消す（applyDeviceGuard から呼ぶ・指摘5） */
+function mcPurge_(){
+  mcSt=null; mcCur=null; mcBulk=null; mcGen++; mcWorkGen++;
+  try{
+    $('mMedCand').classList.remove('on'); $('mcListBox').innerHTML=''; $('mcWork').innerHTML='';
+    $('mcBar').innerHTML=''; $('mcBar').style.display='none';
+    if($('mcDMark')) $('mcDMark').innerHTML='';
+  }catch(e){}
+}
+
+/* ── 確認画面 ── */
+var mcFilterId='';
+function mcOpen_(id){
+  if(!mcSt||getDeviceRole()==='field') return;
+  if($('mMedCand').classList.contains('on')&&mcCur&&mcCur.busy) return;   /* 送信・読み込み中は開き直さない（2回目の指摘L） */
+  if(mcBulk&&mcBulk.busy) return;
+  mcOpener=document.activeElement;
+  mcFilterId=id?String(id):''; mcCur=null; mcBulk=null;
+  $('mMedCand').classList.add('on'); navEnter();
+  mcPaintModal_();
+  try{ $('mMedCandH').focus(); }catch(e){}
+}
+/* ★閉じられないのは書き込みの送信中だけ（AI・読み込みの待ちでは閉じられる・指摘14）。
+   手で直した直し案は、確かめてから捨てる */
+async function mcClose_(fromPop){   /* fromPop: ブラウザの「戻る」（popstate）から呼ばれた時（fromPop）は、ブラウザの窓のまま聞く。画面の中の窓だと、窓が出ている間にもう一度「戻る」を押せてしまい、保存していない変更が確かめなしでページごと消える（実測・2026-11-13） */
+  if(mcCur&&mcCur.writing) return false;
+  if(mcBulk&&mcBulk.busy) return false;
+  mcBulk=null;
+  var cur0=mcCur;
+  if(mcCur&&mcCur.loaded&&mcCur.edited&&!(fromPop===true?confirm('直し案の変更は保存されていません。閉じてよいですか？'):(await SUDialog.confirm('直し案の変更は保存されていません。閉じてよいですか？')))) return false;
+  if(mcCur!==cur0||(mcCur&&mcCur.writing)) return false;   /* 窓の間に作業が変わった・反映が始まった時は閉じない（画面の中の窓・2026-11-13・仮置き） */
+  mcCur=null; mcFilterId=''; mcWorkGen++;   /* ★一覧の読み直し（mcGen）は捨てない（2回目の指摘D） */
+  $('mMedCand').classList.remove('on');
+  $('mcListBox').innerHTML=''; $('mcWork').innerHTML='';   /* 閉じたら本文・定期薬を画面に残さない */
+  if($('sc-list').classList.contains('on')) navLeave();
+  try{ if(mcOpener&&mcOpener.focus&&document.contains(mcOpener)) mcOpener.focus(); else if($('mcOpen')) $('mcOpen').focus(); }catch(e){}
+  return true;
+}
+function mcList_(){
+  if(!mcSt) return [];
+  return mcSt.cands.filter(function(c){ return !mcFilterId||c.id===mcFilterId; });
+}
+function mcItemHtml_(c){
+  var on=mcCur&&mcCur.c.srcKey===c.srcKey;
+  return '<button type="button" class="mc-item'+(on?' on':'')+'" data-src="'+esc(c.srcKey)+'" aria-pressed="'+(on?'true':'false')+'">'+
+    '<span class="mc-ih">'+esc(fmtJDate(c.srcDate)||c.srcDate)+(c.time?' '+esc(c.time):'')+'　'+esc(c.room?c.room+' ':'')+esc(c.name)+'</span>'+
+    (c.hold?'<span class="mc-redo">保留中（'+esc(c.hold)+'）</span>':'')+
+    (c.sameDay?'<span class="mc-redo">⛔ この日の記録から反映済みあり</span>':'')+
+    (c.daySkip?'<span class="mc-redo">この日のこの方の記録は、以前「反映しない」と判断済み（'+esc(c.daySkip)+'）</span>':'')+
+    (c.dayHold?'<span class="mc-redo">この日のこの方の記録に、保留中の判断あり（'+esc(c.dayHold)+'）</span>':'')+
+    (mcSt&&mcSt.unsure&&mcSt.unsure[c.srcKey]?'<span class="mc-redo">反映できたか確かめ中</span>':'')+
+    '<span class="mc-it">'+esc(c.text)+'</span></button>';
+}
+function mcPaintModal_(){
+  /* 描き直しで「反映しない」の理由が消えないように控える */
+  if(mcCur){ var s0=$('mcNoteSel'), t0=$('mcNote'); if(s0) mcCur.noteSel=s0.value; if(t0) mcCur.noteTxt=t0.value; }
+  var L=mcList_(), lh='';
+  if(mcFilterId) lh+='<p class="mc-filter">この方の候補だけを出しています <button type="button" class="btn btn-gray mc-all">全員の候補を出す</button></p>';
+  if(mcSt&&mcSt.loading) lh+='<p class="mc-empty">読み込んでいます…</p>';
+  else if(!L.length) lh+='<p class="mc-empty">反映を待っている候補はありません。</p>';
+  lh+=L.map(mcItemHtml_).join('');
+  /* 変更らしくない記録も消さずに畳んで出す（その日だけの見合わせ・頓服・下剤の追加・塗布など）。開けば反映もできる */
+  var LO=(mcSt&&mcSt.others||[]).filter(function(c){ return !mcFilterId||c.id===mcFilterId; });
+  if(LO.length) lh+='<details class="mc-low"'+(mcCur&&mcCur.c.low?' open':'')+'><summary>定期薬の変更ではなさそうな記録 '+LO.length+'件（その日だけの見合わせ・頓服・下剤・塗布など）</summary>'+
+    LO.map(mcItemHtml_).join('')+'</details>';
+  if(mcSt&&mcSt.unmatched) lh+='<p class="mc-sub">名簿の在籍者1名に名前が合わない記録 '+mcSt.unmatched+'件は出していません（氏名は出しません）。</p>';
+  if(mcSt&&mcSt.noName) lh+='<p class="mc-sub">名前の欄が空の薬の行 '+mcSt.noName+'件は出していません（本文の先頭に名前がある書き方などで名前を読めなかった行です。申送の原文で確かめてください）。</p>';
+  if(mcSt&&mcSt.sumOnly) lh+='<p class="mc-sub">AI 要約に服薬関連があるのに、その方のその日の原文に定期薬の変更らしい行が見つからない記録 '+mcSt.sumOnly+'件は候補にしていません（要約には他の方の内容が混ざることがあるため）。申送の原文を確かめてください。</p>';
+  $('mcListBox').innerHTML=lh;
+  $('mcWork').innerHTML=mcBulk?mcBulkHtml_():(mcCur?mcWorkHtml_():'<p class="mc-empty">左の一覧から候補を選んでください。</p>');
+  var bb=$('mcBulkBtn'); if(bb) bb.disabled=!!(mcBulk||!mcList_().length||(mcCur&&mcCur.busy));
+  var ta=$('mcAfter'); if(ta&&mcCur&&ta.value!==mcCur.after) ta.value=mcCur.after;
+  if(mcCur){ var s1=$('mcNoteSel'), t1=$('mcNote'); if(s1&&mcCur.noteSel) s1.value=mcCur.noteSel; if(t1&&mcCur.noteTxt) t1.value=mcCur.noteTxt; }
+}
+/* ── まとめて片付ける（2026-10-07 代表者の決定）。選んだ候補を「反映しない」として残す。定期薬には触らない ──
+   ★1件ずつ順に送り、失敗したらそこで止める（送れた分は残る）。書き込みは再試行しない。既に反映済みの候補は飛ばす */
+var mcBulk=null;   /* {sel:{srcKey:1}, why, busy, msg} */
+/* まとめて選べる候補（保留中・反映できたか確かめ中は選ばせない＝医師・薬局の確認待ちを閉じない） */
+function mcBulkable_(c){ return !c.hold&&!c.dayHold&&!(mcSt&&mcSt.unsure&&mcSt.unsure[c.srcKey]); }
+async function mcBulkOpen_(){
+  if(!mcSt||mcSt.server!=='ok'||(mcCur&&mcCur.busy)) return;
+  var cur0=mcCur, st0=mcSt;
+  if(mcCur&&mcCur.edited&&!(await SUDialog.confirm('直し案の変更は保存されていません。まとめて片付ける画面へ移ってよいですか？'))) return;
+  if(mcCur!==cur0||mcSt!==st0||(mcCur&&mcCur.busy)) return;   /* 窓の間に作業・一覧が変わった時は移らない（画面の中の窓・2026-11-13・仮置き） */
+  mcCur=null; mcWorkGen++;
+  mcBulk={sel:{}, why:'', busy:false, msg:''};
+  mcPaintModal_();
+}
+function mcBulkHtml_(){
+  var L=mcList_(), n=L.filter(function(c){ return mcBulk.sel[c.srcKey]&&mcBulkable_(c); }).length, dis=mcBulk.busy?' disabled':'';
+  var h='<p class="ms-lead">選んだ候補を<b>「反映しない」</b>として残します。定期薬は書き換えません。一覧から消え、朝回診でも数えなくなります。'+
+    '処方の変更が本当にあった記録は選ばず、1件ずつ見比べて反映してください。</p>'+
+    '<div class="mc-bulkbar"><button type="button" class="btn btn-gray" id="mcBulkAll"'+dis+'>すべて選ぶ</button>'+
+    '<button type="button" class="btn btn-gray" id="mcBulkNone"'+dis+'>すべて外す</button></div><div class="mc-bulkls">';
+  h+=L.map(function(c){
+    var can=mcBulkable_(c);
+    return '<label class="ms-ck mc-bulkit"><input type="checkbox" data-bsrc="'+esc(c.srcKey)+'"'+(can&&mcBulk.sel[c.srcKey]?' checked':'')+(can?dis:' disabled')+'>'+
+      '<span><b>'+esc(fmtJDate(c.srcDate)||c.srcDate)+'　'+esc(c.room?c.room+' ':'')+esc(c.name)+'</b>'+
+      (c.hold||c.dayHold?'（保留中のため、ここでは選べません）':'')+(can||c.hold||c.dayHold?'':'（確かめ中のため選べません）')+
+      (c.sameDay?'<br>⛔ この日の記録から反映済みあり':'')+(c.daySkip?'<br>以前「反映しない」と判断済みの日（'+esc(c.daySkip)+'）':'')+'<br>'+esc(c.text)+'</span></label>';
+  }).join('');
+  h+='</div><div class="mc-dec"><label class="mc-lbl" for="mcBulkWhy">反映しない理由（まとめて同じ理由で残します）</label>'+
+    '<select id="mcBulkWhy"'+dis+'><option value="">選んでください</option><option>既に反映済み</option><option>定期薬の変更ではない</option><option>その他</option></select>'+
+    '<input id="mcBulkNote" type="text" maxlength="100" placeholder="補足（「その他」の時は必須）" aria-label="反映しない理由の補足" autocomplete="off"'+dis+'></div>'+
+    '<div class="mc-foot"><span class="grow" id="mcMsg" role="status" aria-live="polite">'+esc(mcBulk.msg||'')+'</span>'+
+    '<button class="btn btn-gray" type="button" id="mcBulkBack"'+dis+'>戻る</button>'+
+    '<button class="btn btn-ok" type="button" id="mcBulkRun"'+(n&&!mcBulk.busy?'':' disabled')+'>選んだ '+n+'件を「反映しない」にする</button></div>';
+  return h;
+}
+async function mcBulkRun_(){
+  if(!mcBulk||mcBulk.busy||!mcSt) return;
+  var why=$('mcBulkWhy')?$('mcBulkWhy').value:'', more=$('mcBulkNote')?String($('mcBulkNote').value||'').trim():'';
+  var L=mcList_().filter(function(c){ return mcBulk.sel[c.srcKey]&&mcBulkable_(c); });
+  if(!L.length) return;
+  var setMsg=function(m){ mcBulk.msg=m; var e0=$('mcMsg'); if(e0) e0.textContent=m; };
+  if(!why){ setMsg('反映しない理由を選んでください'); try{ $('mcBulkWhy').focus(); }catch(e){} return; }
+  if(why==='その他'&&!more){ setMsg('「その他」の時は補足を書いてください'); try{ $('mcBulkNote').focus(); }catch(e){} return; }
+  if(more) why=(why+'：'+more).slice(0,200);
+  var dg0=devGen, b0=mcBulk, st0=mcSt;
+  if(!(await SUDialog.confirm(L.length+'件を「反映しない」として残します（理由: '+why+'）。定期薬は書き換えません。よろしいですか？'))) return;
+  if(dg0!==devGen||mcBulk!==b0||b0.busy||mcSt!==st0) return;   /* 窓の間に端末の用途・作業が変わった時は送らない（二重に残さない）（画面の中の窓・2026-11-13・仮置き） */
+  var dg=devGen, b=mcBulk, i=0, ok=0, skip=0;
+  b.busy=true; b.why=why; mcPaintModal_();
+  function step(){
+    if(dg!==devGen||mcBulk!==b) return;
+    if(i>=L.length){ b.busy=false; mcBulk=null; toast('「反映しない」を '+ok+'件 残しました'+(skip?'（ほかで判断済みの '+skip+'件は飛ばしました）':'')); mcLoad_();
+      try{ $('mMedCandH').focus(); }catch(e){} return; }
+    var c=L[i++]; b.msg='残しています… '+i+' / '+L.length; var m0=$('mcMsg'); if(m0) m0.textContent=b.msg;
+    apiPostRaw(mcBody_({c:c},'decide',{status:'見送り', note:why}),30000).then(function(r){
+      if(dg!==devGen) return;
+      if(r&&r.ok===true){ ok++; return step(); }
+      if(r&&r.already){ skip++; return step(); }
+      throw new Error(String((r&&r.error)||'不明な応答'));
+    }).catch(function(e){
+      if(dg!==devGen||mcBulk!==b) return;
+      var m=String(e&&e.message||e);
+      /* ★確実に書いていない失敗と、届いたか分からない失敗を分けて知らせる（1件ずつの「反映しない」と同じ） */
+      b.busy=false; b.msg='途中で止めました（'+ok+'件は残しました）。'+
+        (mcNoWrite_(m)?'最後の1件は何も書いていません（'+rmErrWords_(m,'変更候補のまとめ')+'）':'最後の1件は残せたか確かめられませんでした（'+rmErrWords_(m,'変更候補のまとめ')+'）。一覧を取り直して確かめてください');
+      mcLoad_(); mcPaintModal_();
+    });
+  }
+  step();
+}
+async function mcPick_(key){
+  if(mcCur&&mcCur.busy) return;
+  if(mcBulk&&mcBulk.busy) return;
+  var st0=mcSt, cur0=mcCur;   /* 窓の答えを待つ間に一覧・作業が変わったら開かない（画面の中の窓・2026-11-13・仮置き） */
+  /* 「反映できたか確かめ中」の候補は、人が確かめたと答えた時だけ開く（2026-10-07 審査の指摘）。
+     黙って止めると画面の中に出口が無かった。反映済みだった場合は、サーバーの二重反映止め（already）が止める。
+     ★まとめて片付けるの取りやめの確認より前に聞く（取りやめた後に止めると、動かない画面が残る） */
+  if(mcSt&&mcSt.unsure&&mcSt.unsure[key]){
+    if(!(await SUDialog.confirm('この候補は前回「反映できたか分からない」で止まっています。\n\n'+
+                'この方の定期薬と変更履歴を確かめて、まだ反映されていないと分かった時だけ「OK」を押してください。\n'+
+                '（反映されていた時は「キャンセル」を押し、ページを読み込み直してください）'))) return;
+    if(mcSt!==st0||mcCur!==cur0||(mcBulk&&mcBulk.busy)) return;
+    delete mcSt.unsure[key];
+    mcPaint_();
+  }
+  if(mcBulk&&Object.keys(mcBulk.sel).length&&!(await SUDialog.confirm('まとめて片付けるの選択を取りやめて、この候補を開きますか？'))) return;
+  if(mcSt!==st0||mcCur!==cur0||(mcBulk&&mcBulk.busy)) return;
+  mcBulk=null;
+  if(mcCur&&mcCur.edited&&!(await SUDialog.confirm('直し案の変更は保存されていません。開き直してよいですか？'))) return;
+  if(mcSt!==st0||mcCur!==cur0||(mcCur&&mcCur.busy)) return;
+  var c=null; mcAll_().forEach(function(x){ if(x.srcKey===key&&(!mcFilterId||x.id===mcFilterId)) c=x; });
+  if(!c) return;
+  mcCur={c:c, before:null, after:'', ai:null, busy:true, writing:false, msg:'今の定期薬を読み込んでいます…', loaded:false, edited:false};
+  mcPaintModal_();
+  mcFetchRec_(mcCur,'');
+}
+/* その方の記録（今の定期薬・変更履歴）を読み直して作業を作り直す。候補を選んだ時と、競合の後（2回目の指摘F） */
+function mcFetchRec_(cur,msgAfter){
+  var gen=mcWorkGen, dg=devGen, c=cur.c;
+  cur.busy=true; cur.loaded=false;
+  apiGetRetry({action:'getResident',id:c.id},25000).then(function(d){
+    if(gen!==mcWorkGen||dg!==devGen||mcCur!==cur) return;
+    var rec=(d&&d.record)||d;
+    if(!rec||String(rec.id)!==c.id||mcNorm_(rec.name)!==mcNorm_(c.name)) throw new Error('この方の記録を読めませんでした');
+    cur.rec=rec; cur.before=String(rec.medsRegular==null?'':rec.medsRegular).replace(/\r\n?/g,'\n');
+    cur.after=cur.before; cur.ai=null; cur.edited=false; cur.ack=false; cur.loaded=true; cur.msg=msgAfter||'';
+  }).catch(function(e){
+    if(gen!==mcWorkGen||dg!==devGen||mcCur!==cur) return;
+    cur.msg='読み込めませんでした: '+rmErrWords_(e,'定期薬の読み込み');
+  }).then(function(){ if(mcCur===cur){ cur.busy=false; mcPaintModal_(); } });
+}
+/* 差分（追加・中止・変更）。サーバーの変更履歴（_mhDiff）と同じ数え方 */
+function mcLines_(t){ return String(t==null?'':t).split(/\r\n|\r|\n/).map(function(s){return s.trim()}).filter(function(s){return s!==''}); }
+function mcCmp_(s){ return String(s).replace(/\s+/g,' '); }
+function mcName_(s){
+  var n=String(s).split(/[\s：:]/)[0].replace(/「[^」]*」/g,'').replace(/^【[^】]*】/,'');
+  if(/朝|昼|夕|食|就寝|眠前|寝る前|起床|頓/.test(n)||!/錠|カプセル|散|顆粒|細粒|末|液|シロップ|ゼリー|DS/.test(n)) return '';
+  n=n.replace(/[0-9０-９]+(?:[.．][0-9０-９]+)?(?:mg|ｍｇ|μg|µg|mL|ml|ｍＬ|g|ｇ|%|％)/gi,'');
+  return n.length>=3?n:'';
+}
+/* 薬の名前の目安（二重・記録との突き合わせ用）。剤形の語の手前までをそろえて返す。取れなければ '' */
+function mcStem_(s){
+  var t=mcNfkc_(s).replace(/^【[^】]*】/,'').trim().split(/\s/)[0];
+  var m=t.match(/^(.+?)(?:OD)?(?:錠|カプセル|散|顆粒|細粒|末|液|シロップ|ゼリー|DS|テープ|貼付)/);
+  var n=(m?m[1]:t).replace(/[0-9.]+(?:mg|μg|µg|mL|ml|g|%)?$/i,'');
+  return n.length>=2?n:'';
+}
+function mcDiff_(before,after){
+  var b=mcLines_(before), a=mcLines_(after), left={}, del=[], add=[], i;
+  for(i=0;i<a.length;i++){ var ka=mcCmp_(a[i]); left[ka]=(left[ka]||0)+1; }
+  for(i=0;i<b.length;i++){ var kb=mcCmp_(b[i]); if(left[kb]) left[kb]--; else del.push(b[i]); }
+  var right={};
+  for(i=0;i<b.length;i++){ var kc=mcCmp_(b[i]); right[kc]=(right[kc]||0)+1; }
+  for(i=0;i<a.length;i++){ var kd=mcCmp_(a[i]); if(right[kd]) right[kd]--; else add.push(a[i]); }
+  if(!del.length&&!add.length) return null;
+  var cnt=function(arr){ var m={}; arr.forEach(function(s){ var k=mcName_(s); if(k) m[k]=(m[k]||0)+1; }); return m; };
+  var cd=cnt(del), ca=cnt(add), used={}, chg=[], del2=[];
+  del.forEach(function(s){
+    var k=mcName_(s);
+    if(k&&cd[k]===1&&ca[k]===1){
+      for(var j=0;j<add.length;j++){ if(!used[j]&&mcName_(add[j])===k){ used[j]=true; chg.push({from:s,to:add[j]}); return; } }
+    }
+    del2.push(s);
+  });
+  return {add:add.filter(function(s,j){return !used[j]}), del:del2, chg:chg};
+}
+/* 反映できない理由（あれば文字列）と、知らせるだけの注意。差分の欄と「反映する」の押せる・押せないを1か所で決める */
+function mcCheck_(){
+  var cur=mcCur, d=mcDiff_(cur.before,cur.after), stop='', warn=[];
+  if(!d) return {d:null, stop:'直し案は今の定期薬と同じです（反映する変更はありません）', warn:warn};
+  if(!mcLines_(cur.after).length) stop='直し案が空です。全部の薬を止める時は編集画面で直してください';
+  else if(cur.after.length>5000) stop='直し案が長すぎます（5000字まで）';
+  else if(/[（(]不明[）)]/.test(cur.after)) stop='直し案に「（不明）」が残っています。用量・用法を確かめて書き直してください（指摘12）';
+  else if(!(mcRaw_(cur.c).length)) stop='この候補は申送の原文が見つからないため、反映できません（反映しないは選べます）';
+  else if(mcSameDay_(cur)&&!cur.ack) stop='この日のこの方の記録から、既に反映しています。同じ変更でないかを変更履歴と見比べ、別の変更なら下の「確かめました」に印を付けてください';
+  /* 同じ行が2つになる（二重反映・AI の重ね書き）は止める。規格違いの同じ薬（例 1mg と 0.5mg の併用）はあり得るので
+     知らせるだけにする（指摘1） */
+  var seenL={}, dupL=0, stems={}, addSt={}, dupS=0;
+  mcLines_(cur.after).forEach(function(l){ var k=mcCmp_(l); if(seenL[k]) dupL++; seenL[k]=1; });
+  (d.add.concat(d.chg.map(function(x){return x.to}))).forEach(function(l){ var k=mcStem_(l); if(k) addSt[k]=1; });
+  mcLines_(cur.after).forEach(function(l){ var k=mcStem_(l); if(!k) return; if(stems[k]&&addSt[k]) dupS++; stems[k]=1; });
+  if(!stop&&dupL) stop='同じ行が2つあります（'+dupL+'行）。既に反映済みでないか、変更履歴と見比べてください';
+  if(dupS) warn.push('足す・変える薬と同じ名前の薬が、ほかの行にもあります。二重になっていないか確かめてください');
+  /* AI の説明に無い変更（追加・変更・中止のすべて）と、記録の本文に名前が出てこない薬の変更（指摘4） */
+  var told={}, src=mcNfkc_(cur.c.text+'\n'+mcRawMed_(cur.c).map(function(e){return e.body}).join('\n'));
+  if(cur.ai&&cur.ai.ok) cur.ai.changes.forEach(function(x){ told[mcCmp_(x.from)]=1; told[mcCmp_(x.to)]=1; });
+  var nAi=0, nSrc=0;
+  d.add.forEach(function(x){ if(cur.ai&&cur.ai.ok&&!told[mcCmp_(x)]) nAi++; var k=mcStem_(x); if(k&&src.indexOf(k)<0) nSrc++; });
+  d.del.forEach(function(x){ if(cur.ai&&cur.ai.ok&&!told[mcCmp_(x)]) nAi++; var k=mcStem_(x); if(k&&src.indexOf(k)<0) nSrc++; });
+  d.chg.forEach(function(x){ if(cur.ai&&cur.ai.ok&&!(told[mcCmp_(x.from)]&&told[mcCmp_(x.to)])) nAi++; var k=mcStem_(x.to); if(k&&src.indexOf(k)<0) nSrc++; });
+  if(nAi) warn.push('AI の説明に無い変更が '+nAi+'か所あります。取りこぼし・書き換えでないか確かめてください');
+  if(nSrc) warn.push('記録の本文に名前が出てこない薬の変更が '+nSrc+'か所あります');
+  if(cur.c.many>1) warn.push('この方のこの日の薬の行が '+cur.c.many+'件あります。1件ずつ反映すると重なることがあります');
+  if(d.del.length) warn.push('「中止」が '+d.del.length+'行あります。記録どおりの中止か確かめてください（取りこぼすと飲んでいる薬がマスタから消えます）');
+  return {d:d, stop:stop, warn:warn};
+}
+function mcRaw_(c){ return (mcSt&&mcSt.raw&&mcSt.raw[c.rawKey])||[]; }
+/* 原文のうち薬に関わる行だけ（AI に送る・薬名の突き合わせに使う。要配慮情報を必要以上に送らない・2回目の指摘E） */
+function mcRawMed_(c){ return mcRaw_(c).filter(function(e){ return mcIsMedRow_(e.body,!!c.hinted); }); }   /* 候補と同じ規則（2026-10-10） */
+/* 同じ方・同じ日に既に反映した記録があるか（判断の記録・変更履歴の経路のどちらか） */
+function mcSameDay_(cur){
+  if(cur.c.sameDay) return cur.c.sameDay;
+  var md=cur.c.srcDate.slice(5).replace('-','/'), hit='';
+  (cur.rec&&Array.isArray(cur.rec.medsHistory)?cur.rec.medsHistory:[]).forEach(function(e){
+    if(!hit&&e&&typeof e==='object'&&String(e.via||'').indexOf('変更候補（申送 '+md+'）')>=0) hit=String(e.at||'反映済み');
+  });
+  return hit;
+}
+function mcWorkHtml_(){
+  var c=mcCur.c, h='', raw=mcRaw_(c);
+  var sums=Array.isArray(c.sums)?c.sums:[];
+  h+='<div class="mc-src"><div class="mc-lbl">この候補の原文（'+esc(fmtJDate(c.srcDate)||c.srcDate)+'・'+esc(c.name)+' 様の行）</div>'+
+     '<div class="mc-txt"><b>'+(c.shift?esc(c.shift)+' ':'')+(c.time?esc(c.time)+' ':'')+'</b>'+esc(c.text)+'</div>'+
+     '<div class="mc-lbl" style="margin-top:6px">同じ日のこの方の原文（全部）</div>'+
+     (raw.length?raw.map(function(e){ return '<div class="mc-txt">'+(e.shift?'<b>'+esc(e.shift)+'</b> ':'')+(e.time?esc(e.time)+' ':'')+esc(e.body)+'</div>'; }).join('')
+       :'<p class="mc-warn">⚠ 同じ日のこの方の原文が見つかりません（反映はできません）</p>')+
+     '<div class="mc-lbl" style="margin-top:6px">AI 要約（参考・他の方の内容が混ざることがあります）</div>'+
+     (sums.length?sums.map(function(t){ return '<div class="mc-txt mc-sum">'+esc(t)+'</div>'; }).join('')
+       :'<div class="mc-txt mc-sum">（この日のこの方の服薬関連の要約はありません）</div>')+'</div>';
+  if(!mcCur.loaded) return h+(mcCur.msg?'<p class="mc-msg" role="status">'+esc(mcCur.msg)+'</p>':'');
+  /* この記録の日付より後の変更履歴（先に手で直してあった・既に反映済みに気づけるように・指摘1） */
+  var mh=(mcCur.rec&&Array.isArray(mcCur.rec.medsHistory)?mcCur.rec.medsHistory:[]).filter(function(e){
+    return e&&typeof e==='object'&&String(e.at||'').slice(0,10)>=c.srcDate; });
+  if(mh.length) h+='<div class="mc-warn">⚠ この記録の日付より後に、定期薬の変更が'+mh.length+'件あります: '+
+    mh.slice(0,5).map(function(e){ return esc(mhAt_(e.at))+(e.via?'（'+esc(String(e.via))+'）':''); }).join('／')+'</div>';
+  h+='<div class="mc-cols"><div class="mc-col"><div class="mc-lbl">今の定期薬（'+esc(c.name)+'）</div>'+
+     '<pre class="mc-pre">'+esc(mcCur.before||'（記載なし）')+'</pre></div>'+
+     '<div class="mc-col"><label class="mc-lbl" for="mcAfter">直し案（全文・この欄を直せます）</label>'+
+     '<textarea id="mcAfter" class="mc-ta" spellcheck="false"'+(mcCur.busy?' disabled':'')+'></textarea></div></div>';
+  var sd=mcSameDay_(mcCur);
+  if(sd) h+='<p class="mc-warn">⛔ この日のこの方の記録から、既に反映しています（'+esc(mhAt_(sd))+'）。</p>'+
+    '<label class="ms-ck mc-ack"><input type="checkbox" id="mcAck"'+(mcCur.ack?' checked':'')+(mcCur.busy?' disabled':'')+'>同じ変更ではないことを、変更履歴と見比べて確かめました</label>';
+  h+='<div class="mc-diff" id="mcDiff">'+mcDiffHtml_()+'</div>';
+  h+='<div class="mc-dec"><label class="mc-lbl" for="mcNoteSel">反映しない時の理由</label>'+
+     '<select id="mcNoteSel"><option value="">選んでください</option><option>既に反映済み</option><option>頓服・外用・臨時の薬</option>'+
+     '<option>定期薬の変更ではない</option><option value="保留">医師・薬局に確認してから（保留・一覧に残す）</option><option>その他</option></select>'+
+     '<input id="mcNote" type="text" maxlength="100" placeholder="補足（任意）" aria-label="反映しない理由の補足（任意）" autocomplete="off"></div>';
+  var can=mcCanApply_();
+  h+='<div class="mc-foot"><span class="grow" id="mcMsg" role="status" aria-live="polite">'+esc(mcCur.msg||'')+'</span>'+
+     '<button class="btn btn-gray" type="button" id="mcSkip"'+(mcCur.busy?' disabled':'')+'>反映しない</button>'+
+     '<button class="btn btn-ok" type="button" id="mcApply"'+(can?'':' disabled')+'>✅ 反映する</button></div>';
+  return h;
+}
+function mcCanApply_(){
+  var k=mcCheck_();
+  return !!(k.d&&!k.stop&&!mcCur.busy&&mcSt&&mcSt.server==='ok'&&!mcSt.loading&&
+    mcAll_().some(function(x){ return x.srcKey===mcCur.c.srcKey; })&&!(mcSt.unsure&&mcSt.unsure[mcCur.c.srcKey]));
+}
+function mcDiffHtml_(){
+  var k=mcCheck_(), d=k.d, h='';
+  if(d){
+    var li=[];
+    d.add.forEach(function(x){ li.push('<li><span class="mh-tag add">追加</span><span>'+esc(x)+'</span></li>'); });
+    d.chg.forEach(function(x){ li.push('<li><span class="mh-tag chg">変更</span><span><span class="mh-from">'+esc(x.from)+'</span> → '+esc(x.to)+'</span></li>'); });
+    d.del.forEach(function(x){ li.push('<li><span class="mh-tag del">中止</span><span>'+esc(x)+'</span></li>'); });
+    h+='<div class="mc-lbl">反映すると、次のように変わります（変更履歴にもこのとおり残ります）</div><ul class="mh-ls">'+li.join('')+'</ul>';
+  }
+  if(k.stop) h+='<p class="'+(d?'mc-warn':'mc-sub')+'">'+(d?'⛔ ':'')+esc(k.stop)+'</p>';
+  k.warn.forEach(function(w){ h+='<p class="mc-warn">⚠ '+esc(w)+'</p>'; });
+  return h;
+}
+
+/* ── AI の直し案は止めた（代表者の決定 2026-10-27）──
+   今の定期薬（処方）を外部の AI へ送らないため、直し案を AI に頼む処理（旧 mcAiRun_・mcAiAsk_）と伏せ字（旧 mcMask_）を外した。
+   直し案は人が手で書く。薬効の下書き（mdAiAsk・薬剤名だけを送る）はこの決定の外で、残している。 */
+
+/* ── 反映する／反映しない ── */
+function mcBody_(cur,op,extra){
+  var c=cur.c, b={action:'medCand', op:op, id:c.id, name:c.name, srcKey:c.srcKey, srcKind:MC_KIND, srcDate:c.srcDate,
+    srcText:c.text, by:(mcSt&&mcSt.by)||''};
+  if(op==='apply'&&cur.ack) b.ackSameDay=true;
+  for(var k in extra) if(Object.prototype.hasOwnProperty.call(extra,k)) b[k]=extra[k];
+  return b;
+}
+function mcDone_(cur){
+  if(mcSt) mcSt.cands=mcSt.cands.filter(function(x){ return x.srcKey!==cur.c.srcKey; });
+  if(mcCur===cur) mcCur=null;
+  mcPaint_();
+}
+/* 結果が分からない・既に反映済み・競合の時は、判断の一覧を取り直す（二重反映を避ける・指摘1） */
+function mcRecheck_(cur,msg,unsure){
+  if(mcCur===cur){ cur.msg=msg; }
+  if(unsure&&mcSt){ mcSt.unsure=mcSt.unsure||{}; mcSt.unsure[cur.c.srcKey]=1; }
+  mcLoad_();
+}
+/* 読み直しの後も「反映できたか確かめ中」の印を残す（2026-10-07・審査の指摘）。
+   以前は読み直しのたびに印を全部消していたため、結果が分からなかった候補が数秒で「未判断」に見え、
+   開く・反映するの止め（mcPick_・mcCanApply_）も外れていた。
+   サーバーの判断の記録で「反映」か「見送り」と確定した候補の印だけを外す（保留・記録なしは残す）。
+   印はこの画面を開いている間だけのもの（端末には保存しない） */
+function mcKeepUnsure_(prev,dec){
+  var out={}, k;
+  if(!prev||typeof prev!=='object') return out;
+  for(k in prev){
+    if(!Object.prototype.hasOwnProperty.call(prev,k)||!prev[k]) continue;
+    var d=dec&&Object.prototype.hasOwnProperty.call(dec,k)?dec[k]:null;
+    if(d&&(d.status==='反映'||d.status==='見送り')) continue;
+    out[k]=1;
+  }
+  return out;
+}
+/* 確実に書いていない失敗（合言葉・権限・貼り替え前）かどうか（2回目の指摘J） */
+function mcNoWrite_(m){ return /不明なaction|認証エラー|保存できません|参照専用|NO_URL/.test(String(m||'')); }
+async function mcApply_(){
+  if(!mcCur||mcCur.busy||!mcCur.loaded||!mcCanApply_()) return;
+  var cur=mcCur, d=mcDiff_(cur.before,cur.after);
+  /* ★この端末で編集画面・一括編集が開いていたら止める（保存すると反映が巻き戻るため・指摘8） */
+  if(($('sc-edit')&&$('sc-edit').classList.contains('on'))||($('mBulk')&&$('mBulk').classList.contains('on'))){
+    cur.msg='編集画面・一括編集を閉じてから反映してください'; mcPaintModal_(); return; }
+  var k=mcCheck_();
+  var lines=['追加 '+d.add.length+'行・変更 '+d.chg.length+'行・中止 '+d.del.length+'行'];
+  k.warn.forEach(function(w){ lines.push('⚠ '+w); });
+  var dg0=devGen;
+  if(!(await SUDialog.confirm(cur.c.name+' 様の「薬剤情報（定期）」を直し案のとおりに書き換えます。\n'+lines.join('\n')+'\n\n'+
+    'ほかの端末でこの方の編集画面・一括編集を開いている場合は、先に閉じてください。\nよろしいですか？'))) return;
+  if(d.del.length&&!(await SUDialog.confirm('「中止」が '+d.del.length+'行あります。記録どおりの中止で、飲んでいる薬を消していないことを確かめましたか？'))) return;
+  if(dg0!==devGen||mcCur!==cur||cur.busy||!cur.loaded) return;   /* 窓の間に端末の用途・作業が変わった時は書かない（二重の反映にしない）（画面の中の窓・2026-11-13・仮置き） */
+  var dg=devGen, sent=cur.after, before=cur.before;    /* ★送る値を固定する（送信中に欄が変わっても控えを間違えない・指摘9） */
+  cur.busy=true; cur.writing=true; cur.msg='反映しています…'; mcPaintModal_();
+  apiPostRaw(mcBody_(cur,'apply',{before:before, after:sent, note:''}),40000).then(function(r){
+    if(dg!==devGen) return;
+    if(r&&r.ok===true){
+      if(fullMap&&fullMap[cur.c.id]) fullMap[cur.c.id].medsRegular=sent;
+      toast('✅ 定期薬を書き換えました（変更履歴にも残りました）');
+      cur.edited=false; mcDone_(cur);
+      if(curResident&&String(curResident.id)===cur.c.id&&$('sc-view')&&$('sc-view').classList.contains('on')) openResident(cur.c.id);
+      refreshRoster();
+      return;
+    }
+    if(r&&r.already){ cur.edited=false; mcDone_(cur); toast(r.already==='見送り'?'この候補は「反映しない」と判断済みです':'この候補は既に反映されています'); mcLoad_(); return; }
+    if(r&&r.sameDay){ cur.c.sameDay=String(r.sameDay); cur.msg='同じ日のこの方の記録から既に反映しています（何も書いていません）。変更履歴と見比べてください'; return; }
+    if(r&&r.conflict){
+      /* 競合の後は記録ごと読み直す（変更履歴の ⚠ も新しくする・2回目の指摘F） */
+      mcFetchRec_(cur,'見比べている間に定期薬が変わりました（何も書いていません）。今の定期薬と変更履歴を読み直したので、もう一度見比べてください');
+      mcLoad_();
+      return;
+    }
+    if(r&&r.unknown){ cur.loaded=false; mcRecheck_(cur,'反映できたか確かめられませんでした。閉じて、この方の定期薬と変更履歴を確かめてください（もう一度押さないでください）',true); return; }
+    cur.msg='反映できませんでした: '+String((r&&r.error)||'不明な応答');
+  }).catch(function(e){
+    if(dg!==devGen) return;
+    var m=String(e&&e.message||e);
+    /* ★書き込みは再試行しない（同じ反映が2回通らないように）。届いたか分からない時は読み直しを促す */
+    if(mcNoWrite_(m)){ cur.msg=(/不明なaction/.test(m)?('まだ反映できません。'+RM_SRV_OLD):'反映できませんでした（'+rmErrWords_(m,'定期薬の反映')+'）')+'（何も書いていません）'; return; }
+    cur.loaded=false;
+    mcRecheck_(cur,'反映できたか確かめられませんでした（'+rmErrWords_(m,'定期薬の反映')+'）。閉じて、この方の定期薬と変更履歴を確かめてください（もう一度押さないでください）',true);
+  }).then(function(){ cur.busy=false; cur.writing=false; if(mcCur===cur) mcPaintModal_(); });
+}
+function mcSkip_(){
+  if(!mcCur||mcCur.busy) return;
+  var cur=mcCur, sel=$('mcNoteSel'), inp=$('mcNote');
+  var why=sel?sel.value:'', more=inp?String(inp.value||'').trim():'';
+  if(!(mcSt&&mcSt.server==='ok')){ cur.msg='判断の記録を読めていないため、残せません'; mcPaintModal_(); return; }
+  if(!why){ cur.msg='反映しない理由を選んでください'; mcPaintModal_(); try{ $('mcNoteSel').focus(); }catch(e){} return; }
+  var dg=devGen;
+  cur.busy=true; cur.writing=true; cur.msg='残しています…'; mcPaintModal_();
+  var hold=(why==='保留');
+  apiPostRaw(mcBody_(cur,'decide',{status:hold?'保留':'見送り', note:((hold?'医師・薬局に確認してから':why)+(more?'：'+more:'')).slice(0,200)}),30000).then(function(r){
+    if(dg!==devGen) return;
+    if(r&&r.ok===true){
+      cur.edited=false;
+      if(hold){ toast('保留にしました（一覧に残ります）'); if(mcCur===cur) mcCur=null; mcLoad_(); return; }
+      toast('「反映しない」を残しました'); mcDone_(cur); return;
+    }
+    if(r&&r.already){ cur.edited=false; mcDone_(cur); toast('この候補は既に反映されています'); return; }
+    cur.msg='残せませんでした: '+String((r&&r.error)||'不明な応答');
+  }).catch(function(e){
+    if(dg!==devGen) return;
+    var m=String(e&&e.message||e);
+    cur.msg=mcNoWrite_(m)?((/不明なaction/.test(m)?('まだ残せません。'+RM_SRV_OLD):'残せませんでした（'+rmErrWords_(m,'変更候補の判断')+'）')+'（何も書いていません）'):'残せたか確かめられませんでした（'+rmErrWords_(m,'変更候補の判断')+'）';
+  }).then(function(){ cur.busy=false; cur.writing=false; if(mcCur===cur) mcPaintModal_(); });
+}
+function mcWire_(){
+  var bar=$('mcBar'), m=$('mMedCand');
+  if(bar) bar.addEventListener('click',function(e){ if(e.target&&e.target.id==='mcOpen') mcOpen_(''); });
+  if($('viewBox')) $('viewBox').addEventListener('click',function(e){
+    var b=e.target&&e.target.closest?e.target.closest('.mc-dbtn'):null;
+    if(b) mcOpen_(b.getAttribute('data-id'));
+  });
+  if(!m) return;
+  m.addEventListener('keydown',function(e){
+    if(e.key==='Escape'){ mcClose_(); return; }
+    /* 確認画面の外（裏の一覧・帯）へ Tab で出ない（2回目の指摘L） */
+    if(e.key==='Tab'){
+      var f=Array.prototype.filter.call(m.querySelectorAll('button,select,input,textarea,[tabindex]'),function(x){ return !x.disabled&&x.offsetParent!==null&&x.tabIndex>=0; });
+      if(!f.length) return;
+      if(e.shiftKey&&document.activeElement===f[0]){ e.preventDefault(); f[f.length-1].focus(); }
+      else if(!e.shiftKey&&document.activeElement===f[f.length-1]){ e.preventDefault(); f[0].focus(); }
+    }
+  });
+  m.addEventListener('change',function(e){
+    var bs=e.target&&e.target.getAttribute&&e.target.getAttribute('data-bsrc');
+    if(bs&&mcBulk&&!mcBulk.busy){
+      if(e.target.checked) mcBulk.sel[bs]=1; else delete mcBulk.sel[bs];
+      var n=mcList_().filter(function(c){ return mcBulk.sel[c.srcKey]; }).length, rb=$('mcBulkRun');
+      if(rb){ rb.disabled=!n; rb.textContent='選んだ '+n+'件を「反映しない」にする'; }
+      return;
+    }
+    if(e.target&&e.target.id==='mcAck'&&mcCur&&!mcCur.busy){
+      mcCur.ack=!!e.target.checked;
+      var dv=$('mcDiff'); if(dv) dv.innerHTML=mcDiffHtml_();
+      var ab=$('mcApply'); if(ab) ab.disabled=!mcCanApply_();
+    }
+  });
+  m.addEventListener('click',async function(e){
+    var t=e.target; if(!t||!t.closest) return;
+    var it=t.closest('.mc-item'); if(it){ mcPick_(it.getAttribute('data-src')); return; }
+    if(t.closest('.mc-all')){ mcFilterId=''; mcPaintModal_(); return; }
+    if(t.id==='mcApply') mcApply_();
+    else if(t.id==='mcSkip') mcSkip_();
+    else if(t.id==='mcClose') mcClose_();
+    else if(t.id==='mcReload'&&!(mcCur&&mcCur.writing)&&!(mcBulk&&mcBulk.busy)){ var rc0=mcCur; if(mcCur&&mcCur.edited&&!(await SUDialog.confirm('直し案の変更は保存されていません。取り直してよいですか？'))) return; if(mcCur!==rc0||(mcCur&&mcCur.writing)||(mcBulk&&mcBulk.busy)) return; mcCur=null; mcBulk=null; mcLoad_(); }
+    else if(t.id==='mcBulkBtn') mcBulkOpen_();
+    else if(mcBulk&&!mcBulk.busy&&(t.id==='mcBulkAll'||t.id==='mcBulkNone')){
+      mcBulk.sel={}; if(t.id==='mcBulkAll') mcList_().forEach(function(c){ if(mcBulkable_(c)) mcBulk.sel[c.srcKey]=1; });
+      var w=$('mcBulkWhy'); if(w) mcBulk.why=w.value;
+      mcPaintModal_(); var w2=$('mcBulkWhy'); if(w2&&mcBulk.why) w2.value=mcBulk.why;
+    }
+    else if(t.id==='mcBulkBack'&&mcBulk&&!mcBulk.busy){ mcBulk=null; mcPaintModal_(); }
+    else if(t.id==='mcBulkRun') mcBulkRun_();
+  });
+  m.addEventListener('input',function(e){
+    if(!mcCur||mcCur.busy) return;
+    if(e.target&&e.target.id==='mcAfter'){
+      mcCur.after=String(e.target.value).replace(/\r\n?/g,'\n'); mcCur.edited=(mcCur.after!==mcCur.before);
+      var dv=$('mcDiff'); if(dv) dv.innerHTML=mcDiffHtml_();
+      var ab=$('mcApply'); if(ab) ab.disabled=!mcCanApply_();
+    }
+  });
+}
+
+/* ═══════════ 薬情の取り込み（2026-10-22 代表者の決定）═══════════
+   事務所の Mac の道具「薬情よみとり」（yakujo-reader/）が作った結果のファイルを開き、
+     1. 誰の書類かを振り分け（名簿の1人にだけ一字一致した時だけ決める・あいまいな一致では決めない）
+     2. 1人ずつ、原本の画像・今の定期薬・読んだ行を並べた確認表で人が確かめ
+     3. 「薬の変更候補」と同じ反映（入居者マスタGAS の medCand 'apply'・srcKind '薬情'）で書く
+   ★管理者だけ・事務所PCだけ・画面だけ（印刷しない）。判定・組み立ては yakujo-calc.js（純関数・check/unit で試験）
+   ★結果のファイル・画像・読んだ文字・振り分けはメモリにだけ置く。localStorage・console・不具合報告に出さない。閉じたら捨てる
+   ★書くのは「反映」だけ。「反映しない」「保留」は残さない（GAS も断る）。判断の印は S|利用者No|調剤日|指紋
+   ★薬の変更候補の判定部（MC-JUDGE）には触らない。世代は2本: 窓の作業（yjGen）と端末の用途（devGen） */
+var yjSt=null, yjGen=0, yjBy='', yjOpener=null, yjYakkaP=null;
+function yjCalcOk_(){ return typeof YakujoCalc!=='undefined'&&typeof YakujoCalc.judge==='function'; }
+/* 入口のボタンは、管理者（Google＋2段階認証）が事務所PCでログインしている時だけ出す */
+function yjGate_(){
+  var b=$('yjOpen'); if(!b) return;
+  b.hidden=true; yjBy=''; yjpPaint_();
+  try{ var rb0=$('yrOpen'); if(rb0) rb0.hidden=true; }catch(e){}
+  if(getDeviceRole()==='field'||!CFG.url||!mcHasLogin_()||!yjCalcOk_()||typeof Promise==='undefined'){ yjpPurge_(); return; }
+  var dg=devGen;
+  msAuthLoad_().then(function(){ return window.SUAuth.check(); }).then(function(st){
+    if(dg!==devGen||getDeviceRole()==='field') return;
+    if(!(st&&st.status===window.SUAuth.STATUS.OK&&st.role==='admin')){ yjpPurge_(); return; }
+    yjBy=String(st.email||''); b.hidden=false;
+    yjpRefresh_();   /* 写真を入れる帯（2026-10-23） */
+    var rb=$('yrOpen'); if(rb) rb.hidden=false;
+    yrCountLoad_();   /* メニューの札の数だけ（記録の中身は読まない・一覧は開いた時だけ読む・2026-11-11） */
+  }).catch(function(){ /* 聞けない時は出さない */ });
+}
+/* 薬価基準の品目（定期薬の入力パネルと同じファイル）。読めなくても取り込みは止めない（名前の確かめが弱くなるだけ） */
+function yjYakka_(){
+  if(window.MedsYakka&&Array.isArray(window.MedsYakka.items)&&window.MedsYakkaYJ) return Promise.resolve(window.MedsYakka.items);
+  if(yjYakkaP) return yjYakkaP;
+  /* 薬価基準の品目と、同じ成分・剤形・規格のまとまり（meds-yakka-yj.js・2026-11-05）を一緒に読む。どちらかが読めなくても取り込みは止めない */
+  var load=function(src, ready){
+    return new Promise(function(ok){
+      if(ready()) { ok(); return; }
+      var s=document.createElement('script'); s.src=src; s.async=true;
+      s.onload=function(){ ok(); };
+      s.onerror=function(){ if(s.parentNode) s.parentNode.removeChild(s); ok(); };
+      document.head.appendChild(s);
+    });
+  };
+  yjYakkaP=Promise.all([
+    load(MPK_YAKKA_SRC, function(){ return window.MedsYakka&&Array.isArray(window.MedsYakka.items); }),
+    load(YJ_YAKKA_YJ_SRC, function(){ return !!window.MedsYakkaYJ; })
+  ]).then(function(){
+    var items=window.MedsYakka&&Array.isArray(window.MedsYakka.items)?window.MedsYakka.items:[];
+    if(!items.length||!window.MedsYakkaYJ) yjYakkaP=null;   /* 読めなかった方は次に開いた時に読み直す */
+    return items;
+  });
+  return yjYakkaP;
+}
+var YJ_YAKKA_YJ_SRC='meds-yakka-yj.js?v=2026-11-01';
+function yjActive_(){ return roster.filter(function(r){ return r&&r.active!==false; }); }
+function yjWho_(id){ for(var i=0;i<roster.length;i++) if(String(roster[i].id)===String(id)) return roster[i]; return null; }
+/* 施設で使っている名前（全件データの在籍者の定期薬の行だけ。氏名は渡さない） */
+function yjUsed_(exceptId){
+  var out=[];
+  if(!fullMap) return out;
+  Object.keys(fullMap).forEach(function(k){
+    if(String(k)===String(exceptId)) return;
+    var f=fullMap[k], r=yjWho_(k);
+    if(!f||!r||r.active===false) return;
+    String(f.medsRegular==null?'':f.medsRegular).split(/\r\n|\r|\n/).forEach(function(l){ if(l.trim()) out.push(l.trim()); });
+  });
+  return out;
+}
+
+/* ── 開く・閉じる ── */
+function yjOpen_(){
+  if(getDeviceRole()==='field'||!yjCalcOk_()) return;
+  if(yjSt&&yjSt.cur&&yjSt.cur.writing) return;
+  yjOpener=document.activeElement;
+  yjGen++;
+  yjSt={phase:'open', res:null, docs:[], cur:null, server:'', msg:'', bulkGen:0, preTotal:0, preDone:0, bulkBusy:false, bulkMsg:''};
+  $('mYakujo').classList.add('on'); navEnter();
+  yjMetPaint_();
+  yjPaint_();
+  try{ $('mYakujoH').focus(); }catch(e){}
+  yjPing_();
+}
+/* 入居者マスタGASが「薬情」を受け付け、変更記録（反映記録）を残す版か（貼り替えの前は反映できない・2026-10-24） */
+function yjPing_(){
+  var st=yjSt, dg=devGen;   /* ★世代（yjGen）ではなく開いた時の窓で判定する（確認表を開いて世代が進んでも、版の答えを捨てない） */
+  apiPostRaw({action:'medCand', op:'ping'},20000).then(function(r){
+    if(yjSt!==st||dg!==devGen) return;
+    st.server=(r&&r.ok!==false&&/反映記録/.test(String(r.build||'')))?'ok':'old';
+  }).catch(function(e){
+    if(yjSt!==st||dg!==devGen) return;
+    st.server=/不明なaction/.test(String(e&&e.message||e))?'old':'ng';
+  }).then(function(){ if(yjSt===st) yjPaint_(); });
+}
+function yjDirty_(){ return !!(yjSt&&yjSt.cur&&yjSt.cur.loaded&&yjSt.cur.touched); }
+async function yjClose_(fromPop){   /* fromPop: mcClose_ と同じ（「戻る」から呼ばれた時はブラウザの窓のまま聞く） */
+  if(yjSt&&yjSt.cur&&yjSt.cur.writing) return false;
+  if(yjSt&&yjSt.bulkBusy) return false;   /* まとめて反映の途中は閉じない（2026-11-04） */
+  var S0=yjSt, c0=yjSt&&yjSt.cur;   /* 窓の答えを待つ間に作業が変わった・反映が始まった時は閉じない（画面の中の窓・2026-11-13・仮置き） */
+  var stale=function(){ return yjSt!==S0||(yjSt&&(yjSt.cur!==c0||yjSt.bulkBusy||(yjSt.cur&&yjSt.cur.writing))); };
+  if(yjSt&&yjSt.docs.some(function(x){ return x.status==='unsure'; })&&!(fromPop===true?confirm('反映できたか確かめられなかった書類があります。閉じた後、その方の定期薬と変更履歴を確かめてください。閉じてよいですか？'):(await SUDialog.confirm('反映できたか確かめられなかった書類があります。閉じた後、その方の定期薬と変更履歴を確かめてください。閉じてよいですか？')))) return false;
+  if(stale()) return false;
+  if(yjDirty_()&&!(fromPop===true?confirm('確認表の印・直した行は保存されていません。閉じてよいですか？'):(await SUDialog.confirm('確認表の印・直した行は保存されていません。閉じてよいですか？')))) return false;
+  if(stale()) return false;
+  yjSt=null; yjGen++;
+  $('mYakujo').classList.remove('on');
+  $('yjBody').innerHTML='';   /* 画像・読んだ文字・定期薬を画面に残さない */
+  try{ var fi=$('yjFile'); if(fi) fi.value=''; }catch(e){}
+  if($('sc-list').classList.contains('on')) navLeave();
+  try{ if(yjOpener&&yjOpener.focus&&document.contains(yjOpener)) yjOpener.focus(); }catch(e){}
+  return true;
+}
+/* 現場用へ切り替わった時は、中身ごと捨てる（applyDeviceGuard から呼ぶ） */
+function yjPurge_(){
+  yjSt=null; yjGen++; yjBy='';
+  if(typeof yjlReset_==='function') yjlReset_();   /* 薬情の反映記録（定期薬を持つ）も捨てる（2026-10-24） */
+  yjpPurge_();   /* 写真を入れる帯（2026-10-23） */
+  try{ $('mYakujo').classList.remove('on'); $('yjBody').innerHTML=''; var b=$('yjOpen'); if(b) b.hidden=true; }catch(e){}
+  if(typeof yrPurge_==='function') yrPurge_();   /* 薬情の見直しの一覧（全員の記録をメモリに持つ）も捨てる（2026-11-11） */
+  try{ var mt=$('yjMetric'); if(mt) mt.textContent=''; }catch(e){}   /* 一致率の欄も消す（端末の記録は消さない） */
+}
+
+/* ── 取り込みの一致率（2026-10-26 代表者の決定）──
+   書類ごとに、日時・薬名の行数・名簿の一致・人が直した行数と種類だけを、この端末（localStorage 'yj_metrics'・形の版 v）に直近30件置き、
+   取り込み画面の欄に集計を出す。形を作る・確かめる・数えるのは YakujoCalc（metricOf・metricsLoad・metricsSave・summarize・metricText）。
+   ★氏名・薬名・入居者の番号・行の文字は置かない。★読めない・壊れている時は空として扱い、画面を止めない。
+   ★記録するのは反映できた時（応答 ok）だけ。★現場端末では記録も表示もしない。★欄は textContent で入れる・印刷しない（#mYakujo ごと） */
+var YJ_MET_KEY='yj_metrics';
+function yjMetOk_(){ return yjCalcOk_()&&typeof YakujoCalc.metricsLoad==='function'; }
+function yjMetRead_(){
+  if(getDeviceRole()==='field'||!yjMetOk_()) return [];
+  try{ return YakujoCalc.metricsLoad(localStorage.getItem(YJ_MET_KEY)); }catch(e){ return []; }
+}
+function yjMetAdd_(rec){
+  if(getDeviceRole()==='field'||!yjMetOk_()||!rec) return;
+  try{ rec.at=new Date().toISOString(); localStorage.setItem(YJ_MET_KEY, YakujoCalc.metricsSave(yjMetRead_(), rec)); }catch(e){}
+  yjMetPaint_();
+}
+function yjMetPaint_(){
+  var el=$('yjMetric'); if(!el) return;
+  if(getDeviceRole()==='field'||!yjMetOk_()){ el.textContent=''; return; }
+  el.textContent=YakujoCalc.metricText(YakujoCalc.summarize(yjMetRead_()));
+}
+
+/* ── 1. 結果のファイルを読む ── */
+function yjReadFile_(file){
+  if(!yjSt||!file) return;
+  if(file.size>200*1024*1024){ yjSt.msg='ファイルが大きすぎます（薬情よみとりの結果のファイルを選んでください）'; yjPaint_(); return; }
+  var gen=yjGen, fr=new FileReader();
+  yjSt.msg='読み込んでいます…'; yjPaint_();
+  fr.onload=function(){ if(gen===yjGen) yjLoadText_(String(fr.result||'')); };
+  fr.onerror=function(){ if(gen===yjGen&&yjSt){ yjSt.msg='ファイルを読み込めませんでした'; yjPaint_(); } };
+  fr.readAsText(file);
+}
+function yjLoadText_(text){
+  if(!yjSt) return;
+  var gen=yjGen, res=YakujoCalc.parseResult(text);
+  if(!res.ok){ yjSt.msg=res.why; yjPaint_(); return; }
+  var act=yjActive_().map(function(r){ return {id:String(r.id), name:r.name, kana:r.kana, active:true}; });
+  yjSt.res=res;
+  yjSt.docs=res.docs.map(function(d){
+    var a=d.error||!d.pages.length?{id:'', why:'読めなかった書類です', cands:[]}:YakujoCalc.assign(d, act);
+    /* 自動で決まらなかった書類でも、候補の氏名を出す時は、その方（候補が2名以上なら最初の方）をプルダウンの既定にする（本人指示 2026-11-12）。
+       ★人が選んだのと同じ扱い（guess の印）で、まとめて反映には入らない（bulkCheck は自動の一字一致だけを通す）。1人ずつの確認で本人確認を求める */
+    var gid='';
+    if(!a.id&&!d.error&&d.pages.length){
+      /* 候補が2名以上の時は、書類の上の方（前のページ・上の行）に名前がある方を既定にする（番号順にしない・反証レビューの指摘 2026-11-12） */
+      var gs=(a.cands||[]).map(function(c){ return String(c.id); }).filter(function(id){ return !!yjWho_(id); }).map(function(id,k){
+        var w=yjWho_(id), z=typeof YakujoCalc.nameZoom==='function'?YakujoCalc.nameZoom(d,{name:w.name, kana:w.kana}):null;
+        return {id:id, k:k, pos:z&&z.box?[z.page, z.box.y, z.box.x]:[1e9,0,0]};
+      });
+      gs.sort(function(p,q){ for(var j=0;j<3;j++) if(p.pos[j]!==q.pos[j]) return p.pos[j]-q.pos[j]; return p.k-q.k; });
+      gid=gs.length?gs[0].id:'';
+    }
+    return {d:d, a:a, pick:a.id||gid, guess:!!gid, out:!!(d.error||!d.pages.length), status:''};
+  });
+  yjSt.phase='assign'; yjSt.msg='';
+  yjPaint_();
+  yjYakka_().then(function(){ if(gen===yjGen&&yjSt) yjPaint_(); });
+}
+
+/* ── 2. 振り分けの確認 ── */
+function yjAssignHtml_(){
+  var S=yjSt, h='', act=yjActive_().slice().sort(function(a,b){ return String(a.room).localeCompare(String(b.room),'ja',{numeric:true}); });
+  var opt=function(sel){ return '<option value="">（選ぶ）</option>'+act.map(function(r){ return '<option value="'+esc(r.id)+'"'+(String(sel)===String(r.id)?' selected':'')+'>'+esc((r.room?r.room+' ':'')+r.name)+'</option>'; }).join(''); };
+  h+='<p class="yj-lead">書類ごとに「誰の書類か」を確かめてください。決まっていない書類は、原本を見て方を選ぶか、外してください。</p>';
+  /* 結果のファイルを作った時刻（薬情よみとりが書く createdAt）。1日より前なら知らせる（古い結果を最新と思って取り込まない・2026-11-05） */
+  var made=S.res&&S.res.createdAt?new Date(S.res.createdAt):null;
+  if(made&&!isNaN(made.getTime())){
+    var age=(Date.now()-made.getTime())/3600000;
+    h+='<p class="'+(age>24?'yj-warn':'yj-sub')+'">'+(age>24?'⚠ ':'')+'この結果のファイルは '+esc(fmtJDate(made.getFullYear()+'-'+('0'+(made.getMonth()+1)).slice(-2)+'-'+('0'+made.getDate()).slice(-2)))+' '+esc(('0'+made.getHours()).slice(-2)+':'+('0'+made.getMinutes()).slice(-2))+' に作ったものです'+(age>24?'（1日より前です。新しい薬情があれば、薬情よみとりで作り直してください）':'')+'</p>';
+  }
+  h+='<div class="yj-alist">';
+  S.docs.forEach(function(x,i){
+    var d=x.d, p0=d.pages[0], who=x.a.id?yjWho_(x.a.id):null;
+    h+='<div class="yj-arow'+(x.out?' out':'')+'">'+(x.out?'<span class="yj-outtag">取り込まない</span>':'')+
+      '<div class="yj-thumb">'+(p0&&p0.img?'<img alt="書類'+d.no+'の1ページ目" src="'+p0.img+'">':'<span>画像なし</span>')+'</div>'+
+      '<div class="yj-ainfo"><b>書類'+d.no+'</b>（'+(d.type==='pdf'?'PDF '+d.pages.length+'ページ':'写真')+'）'+
+      (d.error?'<div class="yj-warn">⚠ '+esc(d.error)+'</div>':'')+
+      (d.note?'<div class="yj-warn">⚠ '+esc(d.note)+'</div>':'')+
+      (x.a.id?'<div class="yj-ok">✓ '+esc(x.a.how)+'：'+esc(who?((who.room?who.room+' ':'')+who.name):'')+'</div>'
+             :(!d.error?'<div class="yj-warn">⚠ 振り分けていません：'+esc(x.a.why||'')+'</div>':''))+
+      ((x.a.cands||[]).filter(function(c){ return c.id!==x.a.id; }).length?'<div class="yj-sub">候補：'+x.a.cands.filter(function(c){ return c.id!==x.a.id; }).map(function(c){ var w=yjWho_(c.id); return esc((w?w.name:'')+'（'+c.how+'）'); }).join('・')+'</div>':'')+
+      yjZoomHtml_(x)+
+      (x.guess&&x.pick&&!x.status?'<div class="yj-sub">候補の方を仮に選んでいます。上の拡大した氏名と見比べてください</div>':'')+
+      '<label class="yj-lbl">この書類の方 <select data-yjpick="'+i+'"'+(x.out||x.status?' disabled':'')+'>'+opt(x.pick)+'</select></label>'+
+      '<label class="yj-chk"><input type="checkbox" data-yjout="'+i+'"'+(x.out?' checked':'')+(d.error||x.status?' disabled':'')+'> この書類は取り込まない</label>'+
+      '</div></div>';
+  });
+  h+='</div>';
+  if(S.res&&S.res.skipped.length) h+='<details class="yj-skip"><summary>読まなかったファイル '+S.res.skipped.length+'件</summary><ul>'+
+    S.res.skipped.map(function(s){ return '<li>'+esc(s.file)+'：'+esc(s.why)+'</li>'; }).join('')+'</ul></details>';
+  var left=S.docs.filter(function(x){ return !x.out&&!x.pick; }).length, n=S.docs.filter(function(x){ return !x.out&&x.pick; }).length;
+  h+='<div class="yj-actions"><button type="button" class="btn btn-pri" id="yjGo"'+(left||!n?' disabled':'')+'>この振り分けで進める（'+n+'件）</button>'+
+    (left?'<span class="yj-sub">決まっていない書類が '+left+'件あります（方を選ぶか、外してください）</span>':'')+'</div>';
+  return h;
+}
+
+/* 振り分けの画面で、書類の氏名の所を拡大して見せる（本人指示 2026-11-12）。
+   範囲は YakujoCalc.nameZoom（選んでいる方の氏名の行→カナ→1字違い→「様」「氏名」の行→ページの上の方）。
+   ★画像は読んだ書類の中身（メモリだけ）を同じ SVG の viewBox で切り出すだけで、端末に保存しない・印刷しない（#mYakujo ごと） */
+function yjZoomHtml_(x){
+  var d=x.d; if(!d||!d.pages||!d.pages.length||typeof YakujoCalc.nameZoom!=='function') return '';
+  var w=x.pick?yjWho_(x.pick):null, z=YakujoCalc.nameZoom(d, w?{name:w.name, kana:w.kana}:null); if(!z) return '';
+  var p=null; d.pages.forEach(function(q){ if(!p&&q.no===z.page) p=q; }); if(!p) p=d.pages[0];
+  if(!p.img) return '';
+  var W=p.w>0?p.w:1000, H=p.h>0?p.h:1400, f=function(v){ return (+v).toFixed(1); };
+  var cap=z.hit==='name'?'氏名の所を拡大しています':z.hit==='kana'?'カナの所を拡大しています':z.hit==='near'?'氏名に似た所を拡大しています':z.hit==='label'?'氏名らしい所を拡大しています':'氏名の行が見つからないため、ページの上の方を拡大しています';
+  return '<div class="yj-zoomw"><svg class="yj-zoom" viewBox="'+f(z.x*W)+' '+f(z.y*H)+' '+f(z.w*W)+' '+f(z.h*H)+'" preserveAspectRatio="xMinYMin meet" role="img" aria-label="書類'+d.no+'の氏名の所の拡大">'+
+    '<image href="'+p.img+'" x="0" y="0" width="'+W+'" height="'+H+'"/>'+
+    (z.box?'<rect class="yj-box" x="'+f(z.box.x*W)+'" y="'+f(z.box.y*H)+'" width="'+f(z.box.w*W)+'" height="'+f(z.box.h*H)+'"/>':'')+
+    '</svg><div class="yj-sub">'+cap+(d.pages.length>1?'（'+esc(p.no)+'ページ）':'')+'</div></div>';
+}
+
+/* ── 3. 1人ずつ確かめる ── */
+function yjQueueHtml_(){
+  var S=yjSt, h=yjBulkHtml_()+'<p class="yj-lead">1件ずつ開いて、原本と見比べてから反映してください。反映した書類は、もう開けません。</p><div class="yj-queue">';
+  S.docs.forEach(function(x,i){
+    if(x.out) return;
+    var w=yjWho_(x.pick);
+    var st=x.status==='done'?'<span class="yj-ok">✓ 反映しました</span>':x.status==='unsure'?'<span class="yj-warn">⚠ 反映できたか確かめ中（その方の定期薬と変更履歴を確かめてください）</span>':x.status==='none'?'<span class="yj-sub">反映する変更はありませんでした</span>':'';
+    /* まとめて反映の調べの結果（2026-11-04）: 1人ずつにする理由・まとめての対象か */
+    var pr=x.status||!x.pre?'':x.pre.st==='busy'?'<span class="yj-sub">調べています…</span>':x.pre.st==='ok'?'<span class="yj-sub">まとめて反映の対象（上の一覧）</span>'
+      :x.pre.st==='none'?'<span class="yj-sub">変更なし（上の一覧）</span>':'<span class="yj-sub">1人ずつ確かめる理由：'+esc((x.pre.why||[]).join('・'))+'</span>';
+    h+='<div class="yj-qrow"><span><b>書類'+x.d.no+'</b>　'+esc(w?((w.room?w.room+' ':'')+w.name):'')+'</span>'+st+pr+
+      (x.status?'':'<button type="button" class="btn btn-sec" data-yjdoc="'+i+'"'+(S.bulkBusy?' disabled':'')+'>確かめる</button>')+'</div>';
+  });
+  return h+'</div><div class="yj-actions"><button type="button" class="btn btn-gray" id="yjBack"'+(S.bulkBusy?' disabled':'')+'>振り分けに戻る</button></div>';
+}
+function yjStartDoc_(i, msgAfter){
+  var S=yjSt; if(!S||S.bulkBusy) return;
+  var x=S.docs[i]; if(!x||x.out||x.status==='done'||x.status==='unsure') return;
+  var w=yjWho_(x.pick); if(!w) return;
+  /* 1人ずつで開いた書類は、まとめて反映の一覧から外す（開いた後の定期薬と古い違いを並べない・2026-11-04） */
+  if(x.pre&&x.pre.st!=='busy') x.pre=null;
+  var gen=++yjGen, dg=devGen;
+  var dates=YakujoCalc.findDates(x.d);
+  var keep=S.cur&&S.cur.di===i?S.cur:null, sd=YakujoCalc.startDate(dates);
+  S.cur={di:i, id:String(w.id), name:w.name, room:w.room||'', rec:null, before:'', rows:[], dates:dates,
+    date:keep?keep.date:sd.date, importDay:keep?!!keep.importDay:sd.importDay, identity:keep?keep.identity:false, dateChecked:keep?keep.dateChecked:false,
+    oldChecked:false, sameDay:'', ack:false, dupChecked:false, busy:true, writing:false, loaded:false, touched:false, msg:msgAfter||'読み込んでいます…'};
+  S.phase='work'; yjPaint_();
+  var cur=S.cur;
+  Promise.all([apiGetRetry({action:'getResident',id:cur.id},25000), yjYakka_()]).then(function(r){
+    if(gen!==yjGen||dg!==devGen||!yjSt||yjSt.cur!==cur) return;
+    var rec=(r[0]&&r[0].record)||r[0];
+    if(!rec||String(rec.id)!==cur.id||mcNorm_(rec.name)!==mcNorm_(cur.name)) throw new Error('この方の記録を読めませんでした');
+    cur.rec=rec; cur.before=String(rec.medsRegular==null?'':rec.medsRegular).replace(/\r\n?/g,'\n');
+    yjBuild_(cur, x.d, r[1]);
+    cur.loaded=true; cur.msg=msgAfter||'';
+  }).catch(function(e){
+    if(gen!==yjGen||dg!==devGen||!yjSt||yjSt.cur!==cur) return;
+    cur.msg='読み込めませんでした: '+rmErrWords_(e,'定期薬の読み込み');
+  }).then(function(){ if(yjSt&&yjSt.cur===cur){ cur.busy=false; yjPaint_(); } });
+}
+/* 与薬チェックの時間帯の読み取りで「確認なしで読める」形か（読めない時は印） */
+function yjSlotWarn_(line){
+  if(!line) return '';
+  try{ if(!medsFxOk_()) return ''; var s=medSlotRows_(line); return s.length&&s[0].status!=='ok'&&s[0].status!=='prn'?'与薬チェックで時間帯を読めない書き方です（行を確かめてください）':''; }
+  catch(e){ return ''; }
+}
+function yjBuild_(cur, d, items){
+  var Y=YakujoCalc, current=cur.before.split('\n').filter(function(l){ return l.trim(); });
+  var prs=Y.parseRows(d,{prnRe:MED_PRN_RE}), shorts=Y.shortDays(prs), used=yjUsed_(cur.id);
+  var yjText=window.MedsYakkaYJ&&typeof window.MedsYakkaYJ.text==='string'?window.MedsYakkaYJ.text:'';
+  var specs=prs.map(function(r){ return Y.lineSpec(r, Y.snap(r.raw,{current:current, used:used, items:items||[], yj:yjText})); });
+  var lines=specs.map(function(sp){
+    var s=sp.spec, l=s.free?'':mpkLine({name:s.name, maker:s.maker, slots:s.slots, dose:s.dose, unit:s.unit, meal:s.meal});
+    return l||((s.name||'')+(s.maker?'「'+s.maker+'」':'')+(s.free?' '+s.free:'')).trim();
+  });
+  var m=Y.matchCurrent(prs.map(function(r,i){ return {line:lines[i], spec:specs[i].spec, raw:r.raw+(r.rest?'　'+r.rest:''), page:r.page, box:r.box}; }), cur.before);
+  var slotWarn=lines.map(function(l,i){ return specs[i].spec.free?'':yjSlotWarn_(l); });
+  cur.yjOf=yjText?Y.yjLookup(yjText):null;   /* 名前の違う同じ薬（コード9桁）を、知らせと重なりの確かめにも使う（2026-11-05） */
+  cur.rows=Y.buildRows(m.pairs, m.left, specs, {short:shorts, slotWarn:slotWarn, yjOf:cur.yjOf});
+  /* かかりつけ病院の新しい薬情かどうかは、知らせに使うだけ（本人指示 2026-11-10）。書類に無い今の行を自動で「中止」にしない。
+     全部を書類どおりにする時は、人が「すべて入れ替え」を押す（YakujoCalc.replaceAll） */
+  cur.plan=typeof Y.clinicPlan==='function'?Y.clinicPlan({hospital:cur.rec&&cur.rec.hospital, doc:d, rows:cur.rows, current:cur.before}):null;
+  /* 定期薬の最後の変更の日（変更履歴）と、同じ調剤日の薬情からの反映（変更履歴のラベル） */
+  var mh=cur.rec&&Array.isArray(cur.rec.medsHistory)?cur.rec.medsHistory:[], last='';
+  mh.forEach(function(e){ var at=e&&typeof e==='object'?String(e.at||'').slice(0,10):''; if(/^\d{4}-\d{2}-\d{2}$/.test(at)&&at>last) last=at; });
+  cur.lastChange=last;
+  cur.oldChecked=false; cur.ack=false; cur.dupChecked=false; cur.touched=false;
+  yjSameDay_(cur);
+}
+function yjSameDay_(cur, today){
+  var d=YakujoCalc.useDate(cur, today||todayISO());
+  cur.sameDay=''; cur.sameDayFor=d;
+  if(!d) return;
+  var md=d.slice(5).replace('-','/'), mh=cur.rec&&Array.isArray(cur.rec.medsHistory)?cur.rec.medsHistory:[];
+  mh.forEach(function(e){ if(!cur.sameDay&&e&&typeof e==='object'&&String(e.via||'').indexOf('変更候補（薬情 '+md+'）')>=0) cur.sameDay=String(e.at||'反映済み'); });
+}
+/* today を渡すと、その日で調剤日（取り込んだ日）と「同じ日に反映済み」を決める。
+   取り込んだ日を選んだまま0時を過ぎたら、同じ日の確かめも新しい日で作り直し、前の日の「確かめた」は外す */
+function yjJudge_(today){
+  var c=yjSt.cur, td=today||todayISO(), d=YakujoCalc.useDate(c, td);
+  if(c.sameDayFor!==d){ yjSameDay_(c, td); c.ack=false; }
+  return YakujoCalc.judge({id:c.id, dates:c.dates, date:d, today:td, identity:c.identity, server:yjSt.server, rows:c.rows, current:c.before,
+    lastChange:c.lastChange, oldChecked:c.oldChecked, sameDay:c.sameDay, ack:c.ack, dupChecked:c.dupChecked, dateChecked:c.dateChecked, yjOf:c.yjOf||null});
+}
+var YJ_KIND={same:'そのまま', change:'変える', add:'足す', left:'書類に無い'};
+function yjRowHtml_(r,k){
+  /* 書類に無い今の行は、その場で「直す」（先発の行を後発の名前に直す等）こともできる（本人指示 2026-11-10） */
+  var acts=r.kind==='same'?[['keep','変えない']]:r.kind==='change'?[['change','書類の行に変える'],['keep','今の行のまま']]
+    :r.kind==='add'?[['add','足す'],['skip','足さない']]:[['','（選ぶ）'],['keep','残す'],['edit','直す'],['stop','中止']];
+  var need=r.warns.length&&!(r.action==='skip'||r.kind==='same');
+  var editable=(r.kind==='change'&&r.action==='change')||(r.kind==='add'&&r.action==='add')||(r.kind==='left'&&r.action==='edit');
+  /* 同じ成分の今の行（先発品など）と置き換えるボタン（足す行だけ・押した時だけ今の行を中止にする） */
+  var tw=r.kind==='add'&&r.action==='add'&&r.twin!=null&&yjSt&&yjSt.cur&&yjSt.cur.rows[r.twin]&&yjSt.cur.rows[r.twin].kind==='left'?yjSt.cur.rows[r.twin]:null;
+  var twBtn=tw?(tw.action==='stop'?'<div class="yj-sub">今の「'+esc(YakujoCalc.lineName(tw.cur))+'」を中止にして置き換えます</div>'
+    :'<button type="button" class="btn btn-sec yj-twin" data-yjtwin="'+k+'">今の「'+esc(YakujoCalc.lineName(tw.cur))+'」と置き換える</button>'):'';
+  return '<tr class="yj-r'+(need&&!r.checked?' need':'')+'">'+
+    '<td><span class="mh-tag">'+YJ_KIND[r.kind]+'</span></td>'+
+    '<td class="yj-src">'+(r.raw?esc(r.raw):'<span class="yj-sub">（書類に無い）</span>')+(r.page&&yjSt.res&&yjSt.cur&&yjSt.docs[yjSt.cur.di].d.pages.length>1?'<span class="yj-sub">（'+r.page+'ページ）</span>':'')+'</td>'+
+    '<td class="yj-cur">'+(r.cur?esc(r.cur):'<span class="yj-sub">（今は無い）</span>')+'</td>'+
+    '<td>'+(editable?'<textarea class="yj-line" rows="3" spellcheck="false" data-yjline="'+k+'" aria-label="反映する行（'+(k+1)+'行目）">'+esc(r.line)+'</textarea>':'<span class="yj-fix">'+esc(r.kind==='left'&&r.action==='stop'?'（中止）':(r.action==='skip'?'（入れない）':(r.kind==='change'||r.kind==='add'?r.line:r.cur)))+'</span>')+'</td>'+
+    '<td><select data-yjact="'+k+'" aria-label="この行をどうするか（'+(k+1)+'行目）">'+acts.map(function(a){ return '<option value="'+a[0]+'"'+(r.action===a[0]?' selected':'')+'>'+a[1]+'</option>'; }).join('')+'</select>'+twBtn+
+    (need?'<div class="yj-w">'+r.warns.map(function(w){ return '<div>⚠ '+esc(w)+'</div>'; }).join('')+
+      '<label class="yj-chk"><input type="checkbox" data-yjchk="'+k+'"'+(r.checked?' checked':'')+'> 原本と見比べて確かめた</label></div>':'')+
+    '</td></tr>';
+}
+function yjWorkHtml_(){
+  var S=yjSt, c=S.cur, x=S.docs[c.di], d=x.d, h='';
+  h+='<div class="yj-work"><div class="yj-pages" role="region" aria-label="原本の画像">';
+  if(d.note) h+='<p class="yj-warn">⚠ '+esc(d.note)+'</p>';
+  d.pages.forEach(function(p){
+    var W=p.w>0?p.w:1000, H=p.h>0?p.h:1400;
+    h+='<div class="yj-page"><div class="yj-pno">'+(d.pages.length>1?p.no+'ページ':'原本')+'</div>'+
+      (p.img?'<svg class="yj-psvg" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="書類'+d.no+'の'+p.no+'ページ目の画像（読んだ薬の行に枠）">'+
+        '<image href="'+p.img+'" x="0" y="0" width="'+W+'" height="'+H+'"/>'+
+        (c.loaded?c.rows.filter(function(r){ return r.box&&r.page===p.no; }).map(function(r){
+          return '<rect class="yj-box" x="'+(r.box.x*W).toFixed(1)+'" y="'+(r.box.y*H).toFixed(1)+'" width="'+(r.box.w*W).toFixed(1)+'" height="'+(r.box.h*H).toFixed(1)+'"/>'; }).join(''):'')+
+        '</svg>':'<p class="yj-warn">⚠ このページの画像がありません'+(p.error?'（'+esc(p.error)+'）':'')+'</p>')+
+      (p.img&&p.error?'<p class="yj-warn">⚠ '+esc(p.error)+'</p>':'')+'</div>';
+  });
+  h+='</div><div class="yj-side">';
+  h+='<h3 class="yj-h3">書類'+d.no+'　'+esc((c.room?c.room+' ':'')+c.name)+' 様</h3>';
+  if(c.msg) h+='<p class="mc-msg" role="status">'+esc(c.msg)+'</p>';
+  if(!c.loaded) return h+(c.busy?'':'<div class="yj-actions"><button type="button" class="btn btn-sec" id="yjRetry">読み直す</button>'+
+    '<button type="button" class="btn btn-gray" id="yjQueue">一覧に戻る</button></div>')+'</div></div>';
+  var today=todayISO(), j=yjJudge_(today), d=YakujoCalc.useDate(c, today);
+  /* 「調剤日」の語の付いた日付が無い時は、取り込んだ日を選べるようにして既定にする（代表者の決定 2026-10-22）。
+     取り込んだ日は日付の値でなく印（importDay・選ぶ欄の値 __import__）で持つ＝0時を過ぎても選んだままになる */
+  var opts=c.dates.labeled.concat(c.dates.other);
+  h+='<div class="yj-meta"><label class="yj-lbl">調剤日 <select id="yjDate"><option value="">（選ぶ）</option>'+
+    (c.dates.labeled.length?'':'<option value="__import__"'+(c.importDay?' selected':'')+'>'+esc(fmtJDate(today))+'（取り込んだ日）</option>')+
+    opts.map(function(dt){ return '<option value="'+dt+'"'+(!c.importDay&&c.date===dt?' selected':'')+'>'+esc(fmtJDate(dt))+(c.dates.labeled.indexOf(dt)>=0?'':'（調剤日の語の無い日付）')+'</option>'; }).join('')+'</select></label>'+
+    '<label class="yj-chk"><input type="checkbox" id="yjId"'+(c.identity?' checked':'')+'> 原本の氏名を見て、'+esc(c.name)+' 様の書類だと確かめた</label>';
+  if(c.lastChange&&d&&d<c.lastChange) h+='<label class="yj-chk yj-warn"><input type="checkbox" id="yjOld"'+(c.oldChecked?' checked':'')+'> ⚠ この書類の調剤日（'+esc(fmtJDate(d))+'）は、定期薬の最後の変更（'+esc(fmtJDate(c.lastChange))+'）より前です。古い書類で戻さないことを確かめた</label>';
+  if(d&&c.dates.labeled.indexOf(d)<0&&!j.importDay) h+='<label class="yj-chk yj-warn"><input type="checkbox" id="yjDateOk"'+(c.dateChecked?' checked':'')+'> ⚠ 選んだ日付には「調剤日」などの語がありません。原本でこの日付が調剤日だと確かめた</label>';
+  if(c.sameDay) h+='<label class="yj-chk yj-warn"><input type="checkbox" id="yjAck"'+(c.ack?' checked':'')+'> ⚠ 同じ日付のこの方の記録（申送・薬情）から、既に反映しています（'+esc(mhAt_(c.sameDay))+'）。変更履歴と見比べ、別の変更だと確かめた</label>';
+  h+='</div>';
+  if(c.plan&&c.plan.mode==='replace') h+='<p class="yj-sub">かかりつけ病院（'+esc(c.plan.clinic)+'）の書類です。新しく入居した方・先発品から後発品へまとめて切り替わった時など、全部を書類どおりにする時は「すべて入れ替え」を押してください（書類に無い今の薬は、押すまで消しません）</p>';
+  /* すべて入れ替え（本人指示 2026-11-10）。書類に無い今の行が1行でもある時だけ出す。押すと確認の窓のあと、書類に無い今の行を全部「中止」にする */
+  var lefts=c.rows.filter(function(r){ return r.kind==='left'; });
+  if(lefts.length){
+    var allOn=lefts.every(function(r){ return r.action==='stop'; });
+    h+='<div class="yj-actions"><button type="button" class="btn btn-sec" id="yjAll"'+(c.busy?' disabled':'')+'>'+(allOn&&lefts.some(function(r){ return r.byAll; })?'すべて入れ替えを取り消す':'すべて入れ替え（書類に無い今の薬 '+lefts.length+' 行を中止）')+'</button></div>';
+  }
+  h+='<div class="yj-tblw"><table class="yj-tbl"><thead><tr><th>区分</th><th>書類（読んだ文字）</th><th>今の定期薬</th><th>反映する行</th><th>どうするか</th></tr></thead><tbody>'+
+    c.rows.map(yjRowHtml_).join('')+'</tbody></table></div>';
+  h+='<div class="yj-after"><div class="mc-lbl">反映すると、定期薬はこうなります（変える '+j.counts.change+'・足す '+j.counts.add+'・中止 '+j.counts.stop+'）</div><pre class="mc-pre">'+esc(j.after||'（記載なし）')+'</pre></div>';
+  j.notes.forEach(function(n){ h+='<p class="yj-warn">⚠ '+esc(n)+'</p>'; });
+  if(j.dupStems&&j.dupStems.length) h+='<label class="yj-chk yj-warn"><input type="checkbox" id="yjDup"'+(c.dupChecked?' checked':'')+'> ⚠ 同じ名前の薬が2行になります（'+esc(j.dupStems.join('・'))+'）。量・時点が重ならないことを確かめた</label>';
+  if(j.stop) h+='<p class="yj-stop" role="status">反映できません：'+esc(j.stop)+'</p>';
+  var noChange=!j.counts.change&&!j.counts.add&&!j.counts.stop;
+  h+='<div class="yj-actions"><button type="button" class="btn btn-pri" id="yjApply"'+(j.stop||c.busy?' disabled':'')+'>この内容で反映する</button>'+
+    (noChange&&!c.writing?'<button type="button" class="btn btn-sec" id="yjNone">変更なし（この書類は終わり）</button>':'')+
+    '<button type="button" class="btn btn-gray" id="yjQueue"'+(c.writing?' disabled':'')+'>一覧に戻る（反映しない）</button></div>';
+  return h+'</div></div>';
+}
+/* 反映で送る本文（1人ずつの反映と、まとめて反映で同じ形・同じ受け口 medCand 'apply'）。how は記録の文に足す言葉（まとめて反映の時だけ） */
+function yjBody_(c, x, j, date, rows, how){
+  var body={action:'medCand', op:'apply', id:c.id, name:c.name, srcKey:YakujoCalc.srcKey(c.id,date,j.after), srcKind:'薬情', srcDate:date,
+    srcText:('薬情の取り込み・調剤日 '+date+(j.importDay?'（書類から読めず取り込んだ日）':'')+'・書類'+x.d.no+'（'+(x.d.type==='pdf'?'PDF '+x.d.pages.length+'ページ':'写真')+'）・薬の行 '+rows.filter(function(r){ return r.kind!=='left'; }).length+'・文字読み取り（薬情よみとり）'+(how?'・'+how:'')),
+    before:c.before, after:j.after, note:'', by:yjBy};
+  if(c.ack) body.ackSameDay=true;
+  /* 変更記録に残す「書類の行と扱い」（確認表の行・人が選んだ扱い・2026-10-24 代表者の決定） */
+  body.docRows=YakujoCalc.logRows(rows);
+  return body;
+}
+/* 送る値を固定して反映する（薬の変更候補の反映と同じ守り・同じ受け口） */
+async function yjApply_(){
+  var S=yjSt; if(!S||!S.cur||S.cur.busy||!S.cur.loaded) return;
+  /* 判定と送る調剤日は同じ「今日」で決める（取り込んだ日を選んでいる時に0時をまたいでも食い違わない） */
+  var c=S.cur, x=S.docs[c.di], today=todayISO(), j=yjJudge_(today);
+  if(j.stop){ c.msg='反映できません：'+j.stop; yjPaint_(); return; }
+  if(($('sc-edit')&&$('sc-edit').classList.contains('on'))||($('mBulk')&&$('mBulk').classList.contains('on'))){
+    c.msg='編集画面・一括編集を閉じてから反映してください'; yjPaint_(); return; }
+  var lines=['変える '+j.counts.change+'行・足す '+j.counts.add+'行・中止 '+j.counts.stop+'行'];
+  j.notes.forEach(function(n){ lines.push('⚠ '+n); });
+  var dg0=devGen, g0=yjGen;
+  if(!(await SUDialog.confirm(c.name+' 様の「薬剤情報（定期）」を、確認表のとおりに書き換えます。\n'+lines.join('\n')+'\n\nほかの端末でこの方の編集画面・一括編集を開いている場合は、先に閉じてください。\nよろしいですか？'))) return;
+  if(j.counts.stop&&!(await SUDialog.confirm('「中止」が '+j.counts.stop+'行あります。書類どおりの中止で、飲んでいる薬を消していないことを確かめましたか？'))) return;
+  if(dg0!==devGen||g0!==yjGen||yjSt!==S||S.cur!==c||c.busy||!c.loaded) return;   /* 窓の間に端末の用途・作業が変わった時は書かない（二重の反映にしない）（画面の中の窓・2026-11-13・仮置き） */
+  var dg=devGen, gen=yjGen, sent=j.after, date=YakujoCalc.useDate(c, today);
+  var body=yjBody_(c, x, j, date, c.rows, '');
+  /* 取り込みの一致率の記録（数だけ）。送る時点の確認表で作り、反映できた時だけ端末に置く */
+  var met=yjMetOk_()?YakujoCalc.metricOf({autoId:x.a&&x.a.id, pickId:x.pick, rows:c.rows}):null;
+  c.busy=true; c.writing=true; c.msg='反映しています…'; yjPaint_();
+  /* ログインの証明を添える（保存と同じ取り方・GAS が確かめて変更記録に確かめたメールを残す）。取れない時は送らない */
+  rmAccessToken_()['catch'](function(){ return ''; }).then(function(at){
+  if(dg!==devGen) return;
+  if(!at){ c.msg='ログインし直してから反映してください（何も書いていません）'; return; }
+  body.accessToken=at;
+  return apiPostRaw(body,40000).then(function(r){
+    if(dg!==devGen) return;
+    if(r&&r.unverified){ c.msg='ログインを確かめられませんでした。ログインし直してから反映してください（何も書いていません）'; return; }
+    if(r&&r.ok===true){
+      if(fullMap&&fullMap[c.id]) fullMap[c.id].medsRegular=sent;
+      x.status='done'; c.touched=false;
+      yjMetAdd_(met);
+      toast('✅ 定期薬を書き換えました（変更履歴にも残りました）');
+      if(yjSt&&yjSt.cur===c){ yjSt.cur=null; yjSt.phase='queue'; }
+      if(curResident&&String(curResident.id)===c.id&&$('sc-view')&&$('sc-view').classList.contains('on')) openResident(c.id);
+      refreshRoster();
+      yrAfterApply_();   /* すべて入れ替えの後の見直し待ちの数を読み直す（2026-11-11） */
+      return;
+    }
+    if(r&&r.already){ x.status='done'; if(yjSt&&yjSt.cur===c){ yjSt.cur=null; yjSt.phase='queue'; } toast('この内容は既に反映されています'); return; }
+    if(r&&r.sameDay){ c.sameDay=String(r.sameDay); c.ack=false; c.msg='同じ調剤日の薬情から既に反映しています（何も書いていません）。変更履歴と見比べてください'; return; }
+    if(r&&r.conflict){
+      /* 見比べている間に定期薬が変わった: 今の定期薬で確認表を作り直す（古い確認表では送らない） */
+      if(yjSt&&gen===yjGen&&yjSt.cur===c){ c.writing=false; c.busy=false; yjStartDoc_(c.di,'見比べている間に定期薬が変わりました（何も書いていません）。今の定期薬で確認表を作り直したので、もう一度見比べてください'); }
+      return;
+    }
+    if(r&&r.unknown){ x.status='unsure'; if(yjSt&&yjSt.cur===c){ yjSt.cur=null; yjSt.phase='queue'; } return; }
+    c.msg='反映できませんでした: '+String((r&&r.error)||'不明な応答');
+  }).catch(function(e){
+    if(dg!==devGen) return;
+    var m=String(e&&e.message||e);
+    /* ★書き込みは再試行しない。届いたか分からない時は確かめ中にする */
+    if(mcNoWrite_(m)){ c.msg=(/不明なaction/.test(m)?('まだ反映できません。'+RM_SRV_OLD):'反映できませんでした（'+rmErrWords_(m,'定期薬の反映')+'）')+'（何も書いていません）'; return; }
+    x.status='unsure'; if(yjSt&&yjSt.cur===c){ yjSt.cur=null; yjSt.phase='queue'; }
+  });
+  }).then(function(){ c.busy=false; c.writing=false; if(yjSt) yjPaint_(); });
+}
+
+/* ═══════════ まとめて反映（半自動・2026-11-04 代表者の決定）═══════════
+   振り分けで進めた時に、裏で1人ずつ定期薬を読み、確認表と同じ組み立て（yjBuild_）で行を作る。YakujoCalc.bulkCheck が
+   「人が確かめる所が何も無い」とした方だけを一覧の上にまとめ、違い（変える・足す・残す）を見て、1回の確認で順に反映する。
+   それ以外の方は、今までどおり1人ずつの確認表で確かめる（理由を一覧に出す）。
+   ★送る形・受け口・守りは1人ずつの反映と同じ（yjBody_・medCand 'apply'・ログインの証明・書き込みは再試行しない・届いたか分からない時は確かめ中）
+   ★見比べた後に定期薬が変わっていた・同じ調剤日から反映済みだった方は、何も書かずに1人ずつへ回す
+   ★読んだ定期薬・行はメモリ（yjSt.docs[i].pre）にだけ置き、閉じたら捨てる。振り分けに戻ったら読み直す（yjSt.bulkGen）。現場用に変わったら devGen で捨てる */
+function yjPreload_(){
+  var S=yjSt; if(!S) return;
+  var bg=++S.bulkGen, dg=devGen, list=[];
+  S.bulkMsg='';
+  S.docs.forEach(function(x,i){ x.pre=null; if(!x.out&&!x.status&&x.pick) list.push(i); });
+  var dupPick={};
+  S.docs.forEach(function(x){ if(!x.out&&x.pick) dupPick[String(x.pick)]=(dupPick[String(x.pick)]||0)+1; });
+  S.preTotal=list.length; S.preDone=0;
+  var alive=function(){ return yjSt===S&&S.bulkGen===bg&&dg===devGen; };
+  /* ★描き直すのは一覧を見ている時だけ（1人ずつの確認表で打っている途中の行を消さない・反証レビューの指摘 2026-11-04） */
+  if(S.phase==='queue') yjPaint_();
+  var next=function(){
+    if(!alive()) return;
+    if(!list.length){ if(S.phase==='queue') yjPaint_(); return; }
+    var i=list.shift(), x=S.docs[i], w=yjWho_(x.pick);
+    var done=function(){ if(!alive()) return; S.preDone++; if(S.phase==='queue') yjPaint_(); next(); };
+    if(!w||x.status){ x.pre={st:'ng', why:['名簿の方を確かめられません']}; done(); return; }
+    var dates=YakujoCalc.findDates(x.d), lab=(dates&&dates.labeled)||[];
+    var cur={di:i, id:String(w.id), name:w.name, room:w.room||'', rec:null, before:'', rows:[], dates:dates,
+      date:lab.length===1?String(lab[0]):'', importDay:false};
+    x.pre={st:'busy'};
+    Promise.all([apiGetRetry({action:'getResident',id:cur.id},25000), yjYakka_()]).then(function(r){
+      if(!alive()) return;
+      var rec=(r[0]&&r[0].record)||r[0];
+      if(!rec||String(rec.id)!==cur.id||mcNorm_(rec.name)!==mcNorm_(cur.name)) throw new Error('この方の記録を読めませんでした');
+      cur.rec=rec; cur.before=String(rec.medsRegular==null?'':rec.medsRegular).replace(/\r\n?/g,'\n');
+      yjBuild_(cur, x.d, r[1]);
+      /* 入居者マスタGASの版（server）は反映する時に確かめる（ここでは判定に入れない） */
+      var arg={autoId:x.a&&x.a.id, pickId:x.pick, id:cur.id, dates:dates, today:todayISO(), rows:cur.rows,
+        current:cur.before, server:'ok', lastChange:cur.lastChange, sameDay:cur.sameDay, doc:x.d, yjOf:cur.yjOf||null, plan:cur.plan||null};
+      var bc=YakujoCalc.bulkCheck(arg);
+      /* 同じ方の書類が2枚以上ある時は、どちらが新しいかを人が決める（古い方を先に書かない・反証レビュー 2026-11-05 指摘2） */
+      if(dupPick[String(x.pick)]>1&&(bc.ok||bc.none)){ bc.ok=false; bc.none=false; bc.why=['同じ方の書類が '+dupPick[String(x.pick)]+' 枚あります（新しい方を1人ずつで確かめてください）']; }
+      x.pre={st:bc.ok?'ok':(bc.none?'none':'ng'), cur:cur, bc:bc, on:true, why:bc.why, arg:arg, leftAct:{}};
+    }).catch(function(e){
+      if(!alive()) return;
+      x.pre={st:'ng', why:['定期薬を読めませんでした（'+rmErrWords_(e,'定期薬の読み込み')+'）']};
+    }).then(done);
+  };
+  next();
+}
+function yjBulkLists_(){
+  var S=yjSt, ok=[], none=[];
+  if(S) S.docs.forEach(function(x,i){ if(x.out||x.status||!x.pre) return; if(x.pre.st==='ok') ok.push(i); else if(x.pre.st==='none') none.push(i); });
+  return {ok:ok, none:none};
+}
+function yjBulkHtml_(){
+  var S=yjSt, L=yjBulkLists_(), busy=S.preDone<S.preTotal, h='';
+  if(!L.ok.length&&!L.none.length&&!busy&&!S.bulkMsg) return '';
+  h+='<section class="yj-bulk" aria-labelledby="yjBulkH"><h3 class="yj-h3" id="yjBulkH">まとめて反映できる方</h3>'+
+    '<p class="yj-sub">名簿の1人に氏名が一字一致し、調剤日が1つに決まり、⚠ の行が無い書類です。'+
+    '下の違いを見て、まとめて反映できます（書類に無い今の薬は残します。消す薬はチェックを付けてください。全部を書類どおりにする方は、チェックを外して1人ずつ開き「すべて入れ替え」を押してください）。違いを原本と見比べたい方は、チェックを外して下の一覧から1人ずつ確かめてください。</p>';
+  if(busy) h+='<p class="yj-sub" role="status">まとめて反映できるかを調べています…（'+S.preDone+' / '+S.preTotal+'件）</p>';
+  L.ok.forEach(function(i){
+    var x=S.docs[i], p=x.pre, c=p.cur;
+    h+='<div class="yj-brow"><label class="yj-chk"><input type="checkbox" data-yjbulk="'+i+'"'+(p.on?' checked':'')+(S.bulkBusy?' disabled':'')+'> '+
+      '<span><b>書類'+x.d.no+'</b>　'+esc((c.room?c.room+' ':'')+c.name)+' 様（調剤日 '+esc(fmtJDate(p.bc.date))+'）</span></label><ul class="yj-blist">';
+    p.bc.rows.forEach(function(r){
+      if(r.kind==='change'&&r.action==='change'&&r.line&&r.line!==r.cur) h+='<li><span class="mh-tag">変える</span> '+esc(r.cur)+' → <b>'+esc(r.line)+'</b></li>';
+      else if(r.kind==='add'&&r.action==='add'&&r.line) h+='<li><span class="mh-tag">足す</span> <b>'+esc(r.line)+'</b></li>';
+    });
+    (p.bc.lefts||[]).forEach(function(l){
+      var on=l.action==='stop';
+      h+='<li><label class="yj-chk'+(on?' yj-warn':'')+'"><input type="checkbox" data-yjbleft="'+i+':'+l.k+'"'+(on?' checked':'')+(S.bulkBusy||(p.bc.older&&!on)?' disabled':'')+'> '+
+        '<span class="mh-tag">'+(on?'消す':'残す')+'</span> '+(on?'<s>'+esc(l.cur)+'</s>':esc(l.cur))+'</label></li>';
+    });
+    if(p.bc.plan&&p.bc.plan.mode==='replace') h+='<li class="yj-sub">かかりつけ病院（'+esc(p.bc.plan.clinic)+'）の書類です。書類に無い今の薬は残します（消す薬はチェックを付けてください）</li>';
+    if(p.bc.kept) h+='<li class="yj-sub">書類に無い今の薬 '+p.bc.kept+' 行は残します</li>';
+    if(p.bc.older) h+='<li class="yj-warn">⚠ 調剤日は、定期薬の最後の変更（'+esc(fmtJDate(p.bc.older))+'）より前です'+(p.bc.lefts&&p.bc.lefts.length?'（古い書類のため、ここでは消せません。消す時は1人ずつで確かめてください）':'')+'</li>';
+    if(p.bc.skipped&&p.bc.skipped.length) h+='<li class="yj-sub">書類にあって定期薬に入れない薬（外用・頓服など）：'+p.bc.skipped.map(esc).join('・')+'</li>';
+    h+='</ul></div>';
+  });
+  if(L.none.length) h+='<div class="yj-brow yj-sub">変更なし（書かずに終わりにします）：'+L.none.map(function(i){ var x=S.docs[i], sk=x.pre.bc&&x.pre.bc.skipped||[]; return '書類'+x.d.no+' '+esc(x.pre.cur.name)+' 様'+(sk.length?'（定期薬に入れない薬：'+sk.map(esc).join('・')+'）':''); }).join('・')+'</div>';
+  /* 変更なしの書類でも、書類に無い今の薬（先発と後発の重なりなど）を一覧で消せる（チェックを付けると「まとめて反映できる方」へ移る・反証レビュー 2026-11-10 指摘3） */
+  L.none.forEach(function(i){
+    var x=S.docs[i], p=x.pre, ls=p.bc&&p.bc.lefts||[];
+    if(!ls.length) return;
+    h+='<div class="yj-brow"><span class="yj-sub">書類'+x.d.no+'　'+esc(x.pre.cur.name)+' 様の、書類に無い今の薬（消す薬にチェック）</span><ul class="yj-blist">'+
+      ls.map(function(l){ return '<li><label class="yj-chk"><input type="checkbox" data-yjbleft="'+i+':'+l.k+'"'+(S.bulkBusy||p.bc.older?' disabled':'')+'> <span class="mh-tag">残す</span> '+esc(l.cur)+'</label></li>'; }).join('')+'</ul></div>';
+  });
+  var n=L.ok.filter(function(i){ return S.docs[i].pre.on; }).length, can=(n||L.none.length)&&!busy&&!S.bulkBusy&&S.server==='ok';
+  if(S.bulkMsg) h+='<p class="mc-msg" role="status">'+esc(S.bulkMsg)+'</p>';
+  if(L.ok.length||L.none.length){
+    h+='<div class="yj-actions"><button type="button" class="btn btn-pri" id="yjBulkGo"'+(can?'':' disabled')+'>'+
+      (n?'チェックした '+n+' 人をまとめて反映':'変更なしの書類を終わりにする')+(n&&L.none.length?'（変更なし '+L.none.length+' 件も終わりにします）':'')+'</button>'+
+      (S.server!=='ok'&&!S.bulkBusy?'<span class="yj-sub">入居者マスタGASの版を確かめられないため、まだ反映できません</span>':'')+'</div>';
+  }
+  return h+'</section>';
+}
+async function yjBulkApply_(){
+  var S=yjSt; if(!S||S.bulkBusy||S.cur||S.phase!=='queue') return;
+  if(S.preDone<S.preTotal) return;
+  if(S.server!=='ok'){ S.bulkMsg='入居者マスタGASの版を確かめられないため、まとめて反映できません（何も書いていません）'; yjPaint_(); return; }
+  if(($('sc-edit')&&$('sc-edit').classList.contains('on'))||($('mBulk')&&$('mBulk').classList.contains('on'))){
+    S.bulkMsg='編集画面・一括編集を閉じてから反映してください'; yjPaint_(); return; }
+  var L=yjBulkLists_(), ok=L.ok.filter(function(i){ return S.docs[i].pre.on; }), none=L.none;
+  if(!ok.length&&!none.length) return;
+  var lines=ok.map(function(i){ var p=S.docs[i].pre, j=p.bc.judged; return '・'+p.cur.name+' 様　変える '+j.counts.change+'行・足す '+j.counts.add+'行'+(j.counts.stop?'・消す '+j.counts.stop+'行（'+p.bc.rows.filter(function(r){ return r.kind==='left'&&r.action==='stop'; }).map(function(r){ return YakujoCalc.lineName(r.cur); }).join('・')+'）':'')+(p.bc.kept?'・残す '+p.bc.kept+'行':'')+(p.bc.older?'・⚠ 調剤日が定期薬の最後の変更（'+fmtJDate(p.bc.older)+'）より前':''); });
+  var nStop=ok.reduce(function(a,i){ return a+S.docs[i].pre.bc.judged.counts.stop; },0);
+  var dg0=devGen, bg0=S.bulkGen, pre0=ok.concat(none).map(function(i){ return S.docs[i].pre; });
+  if(!(await SUDialog.confirm((ok.length?'次の '+ok.length+' 人の「薬剤情報（定期）」を、一覧のとおりに書き換えます。\n'+lines.join('\n')+'\n\n':'')+
+    (nStop?'消す薬が '+nStop+' 行あります。書類どおりで、飲んでいる薬を消していないことを確かめてください（取りこぼすと飲んでいる薬がマスタから消えます）。\n\n':'')+
+    (none.length?'変更なしの '+none.length+' 件は、書かずに終わりにします。\n\n':'')+
+    (ok.length?'ほかの端末でこの方々の編集画面・一括編集を開いている場合は、先に閉じてください。\n':'')+'よろしいですか？'))) return;
+  /* 窓の間に端末の用途・調べ直し・一覧が変わった時は書かない（調べた時の判定のまま送らない・二重の反映にしない）（画面の中の窓・2026-11-13・仮置き） */
+  if(dg0!==devGen||yjSt!==S||S.bulkBusy||S.cur||S.phase!=='queue'||S.bulkGen!==bg0||ok.concat(none).some(function(i,k){ return S.docs[i].pre!==pre0[k]; })) return;
+  none.forEach(function(i){ S.docs[i].status='none'; });
+  if(!ok.length){ S.bulkMsg='変更なしの '+none.length+' 件を終わりにしました'; yjPaint_(); return; }
+  var dg=devGen, res={done:0, already:0, back:0, unsure:0}, stopAll='', ids={};
+  S.bulkBusy=true; S.bulkMsg='まとめて反映しています…（0 / '+ok.length+'人）'; yjPaint_();
+  var live=function(){ return dg===devGen&&yjSt===S; };
+  var step=function(k){
+    if(!live()||k>=ok.length||stopAll) return Promise.resolve();
+    var i=ok[k], x=S.docs[i], p=x.pre, c=p.cur, j=p.bc.judged;
+    var body=yjBody_(c, x, j, p.bc.date, p.bc.rows, 'まとめて反映');
+    var met=yjMetOk_()?YakujoCalc.metricOf({autoId:x.a&&x.a.id, pickId:x.pick, rows:p.bc.rows}):null;
+    var back=function(why){ x.pre={st:'ng', why:[why]}; res.back++; };
+    return rmAccessToken_()['catch'](function(){ return ''; }).then(function(at){
+      if(!live()) return;
+      if(!at){ stopAll='ログインし直してから反映してください'; return; }
+      body.accessToken=at;
+      return apiPostRaw(body,40000).then(function(r){
+        if(!live()) return;
+        if(r&&r.unverified){ stopAll='ログインを確かめられませんでした。ログインし直してください'; return; }
+        if(r&&r.ok===true){ if(fullMap&&fullMap[c.id]) fullMap[c.id].medsRegular=j.after; x.status='done'; res.done++; ids[c.id]=1; yjMetAdd_(met); return; }
+        if(r&&r.already){ x.status='done'; res.already++; return; }
+        if(r&&r.sameDay){ back('同じ調剤日の薬情から既に反映していました（何も書いていません）。1人ずつ確かめてください'); return; }
+        if(r&&r.conflict){ back('調べた後に定期薬が変わっていました（何も書いていません）。1人ずつ確かめてください'); return; }
+        /* ★届いたか分からない時は確かめ中にし、残りの方へは送らない（全体の不調なら確かめる件数を増やさない・2026-11-04） */
+        if(r&&r.unknown){ x.status='unsure'; res.unsure++; stopAll='反映できたか確かめられない方がいます'; return; }
+        back('反映できませんでした（'+String((r&&r.error)||'不明な応答')+'）。1人ずつ確かめてください');
+      }).catch(function(e){
+        if(!live()) return;
+        var m=String(e&&e.message||e);
+        /* ★書き込みは再試行しない。書いていないと分かる時は止める（残りも同じ理由で書けないため）。届いたか分からない時は確かめ中 */
+        if(mcNoWrite_(m)){ stopAll=/不明なaction/.test(m)?('まだ反映できません。'+RM_SRV_OLD):'反映できませんでした（'+rmErrWords_(m,'定期薬の反映')+'）'; return; }
+        x.status='unsure'; res.unsure++; stopAll='反映できたか確かめられない方がいます';
+      });
+    }).then(function(){
+      if(!live()) return;
+      S.bulkMsg='まとめて反映しています…（'+(k+1)+' / '+ok.length+'人）'; yjPaint_();
+      return step(k+1);
+    });
+  };
+  step(0).then(function(){
+    if(!live()) return;
+    S.bulkBusy=false;
+    S.bulkMsg='まとめて反映：反映 '+res.done+'人'+(res.already?'・既に反映されていた方 '+res.already+'人':'')+(res.back?'・1人ずつに回した方 '+res.back+'人':'')+(res.unsure?'・反映できたか確かめ中 '+res.unsure+'人（その方の定期薬と変更履歴を確かめてください）':'')+
+      (none.length?'・変更なし '+none.length+'件':'')+(stopAll?'。途中で止めました：'+stopAll+'（残りの方は何も書いていません）':'');
+    if(res.done){
+      toast('✅ '+res.done+' 人の定期薬を書き換えました（変更履歴にも残りました）');
+      if(curResident&&ids[String(curResident.id)]&&$('sc-view')&&$('sc-view').classList.contains('on')) openResident(String(curResident.id));
+      refreshRoster();
+      yrAfterApply_();   /* 見直し待ちの一覧とメニューの札の数を読み直す（2026-11-11 反証レビューの指摘1） */
+    }
+    yjPaint_();
+  });
+}
+
+/* ── 描く ── */
+function yjPaint_(){
+  var S=yjSt, box=$('yjBody'); if(!box) return;
+  if(!S){ box.innerHTML=''; return; }
+  /* ★描き直しの前後で、焦点（id か data-yj* の印で探し直す）とスクロールの位置を戻す（印1つごとに先頭へ飛ばない） */
+  var ae=document.activeElement, fsel='';
+  if(ae&&box.contains(ae)){
+    if(ae.id) fsel='#'+ae.id;
+    else ['data-yjline','data-yjact','data-yjchk','data-yjpick','data-yjout','data-yjdoc','data-yjbulk','data-yjbleft'].some(function(a){ var v=ae.getAttribute(a); if(v!=null){ fsel='['+a+'="'+v+'"]'; return true; } return false; });
+  }
+  var pg=box.querySelector('.yj-pages'), keepPg=pg?pg.scrollTop:0, keepBody=box.scrollTop;
+  var h='';
+  if(S.server==='old') h+='<p class="yj-stop">まだ反映はできません（読み込み・振り分け・確認表は見られます）。'+RM_SRV_OLD+'。</p>';
+  else if(S.server==='ng') h+='<p class="yj-warn">⚠ 入居者マスタの Google の受け口に届きません。少し待って開き直してください。</p>';
+  if(S.phase==='open'){
+    h+='<p class="yj-lead">事務所の Mac の「薬情よみとり」で作った結果のファイル（薬情よみとり_日付.json）を選んでください。'+
+      'ファイルはこの画面の中だけで読み、端末にもサーバーにも保存しません（閉じると消えます）。</p>'+
+      '<label class="yj-file">📂 結果のファイルを選ぶ <input type="file" id="yjFile" accept=".json,application/json"></label>';
+    if(S.msg) h+='<p class="mc-msg" role="status">'+esc(S.msg)+'</p>';
+  }
+  else if(S.phase==='assign') h+=yjAssignHtml_();
+  else if(S.phase==='queue') h+=yjQueueHtml_();
+  else if(S.phase==='work'&&S.cur) h+=yjWorkHtml_();
+  box.innerHTML=h;
+  var pg2=box.querySelector('.yj-pages'); if(pg2) pg2.scrollTop=keepPg;
+  box.scrollTop=keepBody;
+  if(fsel){ try{ var f=box.querySelector(fsel); if(f&&!f.disabled) f.focus({preventScroll:true}); }catch(e){} }
+}
+function yjWire_(){
+  var ob=$('yjOpen'), m=$('mYakujo');
+  if(ob) ob.addEventListener('click', yjOpen_);
+  if(!m) return;
+  m.addEventListener('keydown',function(e){
+    if(e.isComposing||e.keyCode===229) return;   /* 変換中の Esc は変換の取り消し（窓は閉じない） */
+    if(e.key==='Escape'){ yjClose_(); return; }
+    if(e.key==='Tab'){
+      var f=Array.prototype.filter.call(m.querySelectorAll('button,select,input,textarea,[tabindex]'),function(x){ return !x.disabled&&x.offsetParent!==null&&x.tabIndex>=0; });
+      if(!f.length) return;
+      if(e.shiftKey&&document.activeElement===f[0]){ e.preventDefault(); f[f.length-1].focus(); }
+      else if(!e.shiftKey&&document.activeElement===f[f.length-1]){ e.preventDefault(); f[0].focus(); }
+    }
+  });
+  m.addEventListener('click',async function(e){
+    var t=e.target; if(!t||!t.closest||!yjSt) return;
+    if(t.id==='yjClose'){ yjClose_(); return; }
+    if(t.id==='yjGo'){ yjSt.phase='queue'; yjPaint_(); yjPreload_(); return; }
+    if(t.id==='yjBack'){ if(yjSt.bulkBusy) return; yjSt.bulkGen++; yjSt.docs.forEach(function(x){ x.pre=null; }); yjSt.preTotal=0; yjSt.preDone=0; yjSt.bulkMsg=''; yjSt.phase='assign'; yjPaint_(); return; }
+    if(t.id==='yjBulkGo'){ yjBulkApply_(); return; }
+    if(t.id==='yjApply'){ yjApply_(); return; }
+    if(t.id==='yjAll'&&yjSt.cur&&yjSt.cur.loaded&&!yjSt.cur.busy){
+      var ca=yjSt.cur, la=ca.rows.filter(function(r){ return r.kind==='left'; });
+      var undo=la.length&&la.every(function(r){ return r.action==='stop'; })&&la.some(function(r){ return r.byAll; });
+      if(!undo&&!(await SUDialog.confirm(ca.name+' 様の今の定期薬のうち、書類に無い次の '+la.length+' 行を、すべて「中止」にします。\n'+la.map(function(r){ return '・'+YakujoCalc.lineName(r.cur); }).join('\n')+'\n\nほかの医療機関の薬・頓服の扱いの薬が入っていないか確かめてください。残す薬は、この後に「残す」へ選び直せます。よろしいですか？'))) return;
+      if(!yjSt||yjSt.cur!==ca||!ca.loaded||ca.busy) return;   /* 窓の間に確認表が変わった時は当てない（画面の中の窓・2026-11-13・仮置き） */
+      ca.rows=YakujoCalc.replaceAll(ca.rows, !undo); ca.dupChecked=false; ca.touched=true; yjPaint_(); return; }
+    var twb=t.closest('[data-yjtwin]'); if(twb&&yjSt.cur&&yjSt.cur.loaded&&!yjSt.cur.busy){
+      var cw=yjSt.cur, ra=cw.rows[+twb.getAttribute('data-yjtwin')], rl=ra&&ra.twin!=null?cw.rows[ra.twin]:null;
+      if(ra&&rl&&rl.kind==='left'){
+        /* 今の行を中止にし、足す行の知らせを「置き換えます」に替えて、もう一度確かめを求める（知らせは消さない・反証レビュー 2026-11-10 指摘1） */
+        rl.action='stop'; rl.line=rl.cur; delete rl.byAll; rl.byTwin=+twb.getAttribute('data-yjtwin'); rl.checked=false;
+        ra.warns=ra.warns.map(function(w){ return w===ra.twinWarn?'今の定期薬の「'+YakujoCalc.lineName(rl.cur)+'」を中止にして、この行に置き換えます。原本と見比べてください':w; });
+        ra.checked=false; cw.dupChecked=false; cw.touched=true; }
+      yjPaint_(); return; }
+    if(t.id==='yjRetry'&&yjSt.cur&&!yjSt.cur.busy){ yjStartDoc_(yjSt.cur.di); return; }
+    if(t.id==='yjNone'&&yjSt.cur&&!yjSt.cur.writing){ yjSt.docs[yjSt.cur.di].status='none'; yjSt.cur=null; yjGen++; yjSt.phase='queue'; yjPaint_(); return; }
+    if(t.id==='yjQueue'&&yjSt.cur&&!yjSt.cur.writing){
+      var qc0=yjSt.cur;
+      if(yjDirty_()&&!(await SUDialog.confirm('確認表の印・直した行は保存されていません。一覧に戻ってよいですか？'))) return;
+      if(!yjSt||yjSt.cur!==qc0||qc0.writing) return;   /* 窓の間に確認表が変わった・反映が始まった時は戻らない（画面の中の窓・2026-11-13・仮置き） */
+      yjSt.cur=null; yjGen++; yjSt.phase='queue'; yjPaint_(); return; }
+    var dbn=t.closest('[data-yjdoc]'); if(dbn){ yjStartDoc_(+dbn.getAttribute('data-yjdoc')); return; }
+  });
+  /* 行を打っている間は描き直さない（打っている欄が消えないように）。打ち始めたら「反映する」はすぐ止める */
+  m.addEventListener('input',function(e){
+    var t=e.target, c=yjSt&&yjSt.cur; if(!t||!c||!c.loaded||c.busy) return;
+    if(t.getAttribute('data-yjline')!=null){ c.touched=true; var ab=$('yjApply'); if(ab) ab.disabled=true; }
+  });
+  m.addEventListener('change',function(e){
+    var t=e.target; if(!t||!yjSt) return;
+    if(t.id==='yjFile'){ yjReadFile_(t.files&&t.files[0]); return; }
+    var pk=t.getAttribute('data-yjpick'); if(pk!=null){ var dx=yjSt.docs[+pk]; if(dx&&!dx.status){ dx.pick=t.value; dx.guess=false; } yjPaint_(); return; }
+    var bl=t.getAttribute('data-yjbleft'); if(bl!=null){ var bp=bl.split(':'), dl=yjSt.docs[+bp[0]], pl=dl&&dl.pre;
+      if(pl&&pl.arg&&(pl.st==='ok'||pl.st==='none')&&!yjSt.bulkBusy&&!dl.status){
+        pl.leftAct[+bp[1]]=t.checked?'stop':'keep';
+        var nb=YakujoCalc.bulkCheck(Object.assign({}, pl.arg, {leftAct:pl.leftAct}));
+        pl.bc=nb; pl.why=nb.why; pl.st=nb.ok?'ok':(nb.none?'none':'ng');
+      }
+      yjPaint_(); return; }
+    var bk=t.getAttribute('data-yjbulk'); if(bk!=null){ var db=yjSt.docs[+bk]; if(db&&db.pre&&db.pre.st==='ok'&&!yjSt.bulkBusy) db.pre.on=!!t.checked; yjPaint_(); return; }
+    var ou=t.getAttribute('data-yjout'); if(ou!=null){ var dy=yjSt.docs[+ou]; if(dy&&!dy.status&&!dy.d.error) dy.out=!!t.checked; yjPaint_(); return; }
+    var c=yjSt.cur; if(!c||!c.loaded||c.busy) return;
+    if(t.id==='yjDate'){ c.importDay=(t.value==='__import__'); c.date=c.importDay?'':t.value; yjSameDay_(c); c.oldChecked=false; c.ack=false; c.dateChecked=false; c.touched=true; yjPaint_(); return; }
+    if(t.id==='yjId'){ c.identity=!!t.checked; c.touched=true; yjPaint_(); return; }
+    if(t.id==='yjOld'){ c.oldChecked=!!t.checked; yjPaint_(); return; }
+    if(t.id==='yjAck'){ c.ack=!!t.checked; yjPaint_(); return; }
+    if(t.id==='yjDup'){ c.dupChecked=!!t.checked; yjPaint_(); return; }
+    if(t.id==='yjDateOk'){ c.dateChecked=!!t.checked; c.touched=true; yjPaint_(); return; }
+    var ak=t.getAttribute('data-yjact'); if(ak!=null){ var r=c.rows[+ak]; if(r){ r.action=t.value; r.checked=false; c.dupChecked=false; c.touched=true;
+      /* 書類に無い今の行は、選び直したら直した行を今の行に戻す（「直す」は今の行から書き始める）。すべて入れ替えの印も外す */
+      if(r.kind==='left'){ r.line=r.cur; delete r.byAll; r.warns=r.warns.filter(function(w){ return w.indexOf('手で直した行')<0&&w.indexOf('与薬チェック')<0; });
+        /* 置き換えで中止にした今の行を選び直したら、結んだ足す行の知らせを元に戻し、確かめを外す（両方残るのを黙って通さない・指摘1） */
+        if(r.byTwin!=null){ var ta=c.rows[r.byTwin]; if(ta&&ta.twinWarn){ ta.warns=ta.warns.filter(function(w){ return w.indexOf('この行に置き換えます')<0; }); if(ta.warns.indexOf(ta.twinWarn)<0) ta.warns.push(ta.twinWarn); ta.checked=false; } delete r.byTwin; } }
+      /* 置き換えた足す行を「足さない」にしたら、結んだ今の行の中止を外して選ぶ前に戻す（両方とも消えるのを防ぐ・指摘2） */
+      if(r.kind==='add'){ var tk=+ak; c.rows.forEach(function(x){ if(x.kind==='left'&&x.byTwin===tk&&r.action!=='add'){ x.action=''; x.line=x.cur; delete x.byTwin; x.checked=false; } });
+        if(r.action==='add'&&r.twinWarn){ r.warns=r.warns.filter(function(w){ return w.indexOf('この行に置き換えます')<0; }); if(!c.rows.some(function(x){ return x.byTwin===tk; })&&r.warns.indexOf(r.twinWarn)<0) r.warns.push(r.twinWarn); } } } yjPaint_(); return; }
+    var ck=t.getAttribute('data-yjchk'); if(ck!=null){ var r2=c.rows[+ck]; if(r2){ r2.checked=!!t.checked; c.touched=true; } yjPaint_(); return; }
+    var ln=t.getAttribute('data-yjline'); if(ln!=null){
+      /* 行を直したら、同じ規則で判定し直す（与薬チェックで読める形か）。確かめた印は外す */
+      var r3=c.rows[+ln]; if(!r3) return;
+      r3.line=String(t.value).replace(/[\r\n]+/g,' ').trim(); r3.checked=false; c.dupChecked=false; c.touched=true;
+      r3.warns=r3.warns.filter(function(w){ return w.indexOf('与薬チェック')<0&&w.indexOf('手で直した行')<0; });
+      var sw=yjSlotWarn_(r3.line); if(sw) r3.warns.push(sw);
+      r3.warns.push('手で直した行です（原本と見比べてください）');
+      setTimeout(function(){ if(yjSt&&yjSt.cur===c) yjPaint_(); },0); return;
+    }
+  });
+}
+
+/* ═══════════ 薬情・お薬シールの写真を入れる（2026-10-23 代表者の決定）═══════════
+   詳細画面の「薬剤情報」の欄の上に帯を出し、選んだ写真・ドラッグした写真を、事務所の Mac の
+   「薬情よみとり／入れる」フォルダ（yakujo-reader/ の道具が読む場所）へ直接書き込む。
+   Web の画面のリンクでは Mac の中のフォルダを開けない（ブラウザの決まり）ので、画面から入れる形にした。
+   ★出すのは、管理者（yjGate_ が確かめた yjBy）が事務所の Mac の Chrome で開いている時だけ
+     （フォルダへ書く仕組み showDirectoryPicker がある時）。iPhone・iPad・Windows・Safari・現場端末では出さない。画面だけ（印刷しない）
+   ★端末に覚えるのは、選んだフォルダの印（ブラウザの IndexedDB・rmaster_yakujo_in）だけ。写真・ファイル名・氏名は覚えない。console にも出さない
+   ★形式と大きさは薬情よみとりの決まり（HEIC・HEIF・JPEG・PNG・PDF・1つ10MBまで）に合わせる。
+     同じ名前があれば上書きせず「名前 (2).拡張子」にする（前からあるファイルを消さない・書き換えない）。
+     名前が「.」で始まると道具が読まないので、先頭の「.」は外す
+   ★選べるフォルダは名前が「入れる」のものだけ（別のフォルダへ写真を撒かない）
+   ★書き込みの許可は、ボタンを押した時にだけ求める。ドラッグでは求めない（許可が無ければ先に「許可する」を押してもらう）
+   ★書けなかった時は、この帯が作った空のファイルだけを消す（消す前に大きさ0を確かめる＝前からあるファイル・ほかの経路が書いたファイルには触らない）
+   ★空いている名前を確かめてから作るまでの間に、ほかのタブ・Finder が同じ名前を置いた時は、作った直後に大きさで気づいて次の名前へ進む
+   ★帯が出ている間は、帯の外へ落とした写真でページが写真の表示へ切り替わらないようにする（受け取りはしない）
+   ★書いている間は、再読み込み・タブを閉じる前に確かめる（beforeunload）。知らせは別の方の詳細へ移ったら消す（写真と入居者は結び付いていない） */
+var YJP_EXT=['heic','heif','jpg','jpeg','png','pdf'], YJP_MAX=10*1024*1024, YJP_DB='rmaster_yakujo_in';
+var YJP_ACCEPT='image/heic,image/heif,image/jpeg,image/png,application/pdf,.heic,.heif,.jpg,.jpeg,.png,.pdf';
+var yjpDir=null, yjpPerm='', yjpLoaded=false, yjpBusy=false, yjpMsg='', yjpGen=0, yjpRt=0, yjpLastId=null;
+/* Mac か（iPad は Mac と名乗るので、指で触れる数で外す）。nav は navigator（試験で差し替える） */
+function yjpIsMac_(nav){
+  nav=nav||{};
+  var p=String((nav.userAgentData&&nav.userAgentData.platform)||nav.platform||'');
+  return /mac/i.test(p)&&!(Number(nav.maxTouchPoints)>1);
+}
+function yjpCan_(){
+  return !!yjBy&&getDeviceRole()!=='field'&&yjpIsMac_(window.navigator)&&
+    typeof window.showDirectoryPicker==='function'&&typeof window.indexedDB!=='undefined';
+}
+function yjpExt_(name){ var m=/\.([A-Za-z0-9]+)$/.exec(String(name==null?'':name)); return m?m[1].toLowerCase():''; }
+/* 1つのファイルを入れてよいか。'ok'・'empty'（中身が無い）・'type'（写真か PDF ではない）・'size'（10MB を超える） */
+function yjpKind_(name,size){
+  if(!(Number(size)>0)) return 'empty';
+  if(YJP_EXT.indexOf(yjpExt_(name))<0) return 'type';
+  if(Number(size)>YJP_MAX) return 'size';
+  return 'ok';
+}
+/* 書き込む名前。名前に使えない「/」「\」「:」と制御文字は「_」に、先頭の「.」と空白は外す（道具が隠しファイルとして読まないため） */
+function yjpSafeName_(name){
+  return String(name==null?'':name).replace(/[\/\\:\u0000-\u001f\u007f]/g,'_').replace(/^[.\s]+/,'').trim();
+}
+/* i 番目の名前の候補（1 は元の名前、2 からは「名前 (2).拡張子」） */
+function yjpNameAt_(name,i){
+  if(!(i>1)) return name;
+  var m=/^(.*?)(\.[A-Za-z0-9]+)?$/.exec(name), base=m[1], ext=m[2]||'';
+  return base+' ('+i+')'+ext;
+}
+/* 入れた後の知らせ。n＝入れた数・bad＝{empty,type,size,fail} の数 */
+function yjpMsgOf_(n,bad){
+  bad=bad||{};
+  var s=n>0?(n+'件を「入れる」に入れました。Mac の「薬情よみとり」→「読む」をダブルクリックしてください。'):'入れたものはありません。';
+  var x=[];
+  if(bad.type) x.push('写真か PDF ではない '+bad.type+'件');
+  if(bad.size) x.push('10MB を超える '+bad.size+'件');
+  if(bad.empty) x.push('中身が無い '+bad.empty+'件');
+  if(bad.fail) x.push('書き込めなかった '+bad.fail+'件');
+  if(x.length) s+=' 入れなかったもの: '+x.join('・')+'。';
+  return s;
+}
+/* フォルダの印を覚えておく所（ブラウザの IndexedDB）。読めない・書けない時は覚えていない扱い */
+function yjpDb_(fn){
+  return new Promise(function(ok,ng){
+    var q;
+    try{ q=window.indexedDB.open(YJP_DB,1); }catch(e){ ng(e); return; }
+    q.onupgradeneeded=function(){ try{ q.result.createObjectStore('kv'); }catch(e){} };
+    q.onerror=function(){ ng(q.error); };
+    q.onblocked=function(){ ng(new Error('blocked')); };
+    q.onsuccess=function(){
+      var db=q.result;
+      try{ fn(db,function(v){ db.close(); ok(v); },function(e){ db.close(); ng(e); }); }catch(e){ try{ db.close(); }catch(_){} ng(e); }
+    };
+  });
+}
+function yjpLoad_(){
+  return yjpDb_(function(db,ok,ng){
+    var q=db.transaction('kv','readonly').objectStore('kv').get('dir');
+    q.onsuccess=function(){ ok(q.result||null); }; q.onerror=function(){ ng(q.error); };
+  }).catch(function(){ return null; });
+}
+function yjpSave_(h){
+  return yjpDb_(function(db,ok,ng){
+    var tx=db.transaction('kv','readwrite'); tx.objectStore('kv').put(h,'dir');
+    tx.oncomplete=function(){ ok(true); }; tx.onerror=function(){ ng(tx.error); }; tx.onabort=function(){ ng(tx.error); };
+  });
+}
+/* フォルダの印と許可を確かめて描き直す（許可は求めない＝押されていない時に呼べる） */
+function yjpRefresh_(){
+  var rt=++yjpRt, g=yjpGen;
+  if(!yjpCan_()){ yjpPaint_(); return; }
+  yjpLoad_().then(function(h){
+    if(rt!==yjpRt||g!==yjpGen) return;
+    var d=(h&&h.kind==='directory'&&typeof h.queryPermission==='function')?h:null;
+    if(!d){ yjpDir=null; yjpPerm=''; yjpLoaded=true; yjpPaint_(); return; }
+    return d.queryPermission({mode:'readwrite'}).then(function(perm){
+      if(rt!==yjpRt||g!==yjpGen) return;
+      yjpDir=d; yjpPerm=perm; yjpLoaded=true; yjpPaint_();
+    });
+  }).catch(function(){ if(rt!==yjpRt||g!==yjpGen) return; yjpDir=null; yjpPerm=''; yjpLoaded=true; yjpPaint_(); });
+}
+/* 詳細画面に置く場所。中身は描いた後で入れる（管理者・Mac の Chrome でなければ空のまま＝出ない） */
+function yjpSlot_(r){
+  var id=String(r&&r.id!=null?r.id:'');
+  if(id!==yjpLastId){ yjpLastId=id; if(!yjpBusy) yjpMsg=''; }
+  setTimeout(function(){ if(yjpLoaded) yjpPaint_(); else yjpRefresh_(); },0);
+  return '<div class="yjp-bar" id="yjpBar"></div>';
+}
+function yjpPaint_(){
+  var b=$('yjpBar'); if(!b) return;
+  if(!yjpCan_()||!yjpLoaded){ b.innerHTML=''; b.classList.remove('yjp-over'); return; }
+  var dis=yjpBusy?' disabled':'', h='<span class="yjp-t">📷 薬情・お薬シールの写真を入れる</span>';
+  if(!yjpDir){
+    h+='<button class="btn btn-sec" type="button" data-yjp="dir"'+dis+'>「入れる」フォルダを選ぶ（初回だけ）</button>'+
+       '<span class="yjp-hint">ホーム →「薬情よみとり」→「入れる」を選んでください</span>';
+  }else if(yjpPerm!=='granted'){
+    h+='<button class="btn btn-sec" type="button" data-yjp="perm"'+dis+'>「入れる」への書き込みを許可する</button>';
+  }else{
+    h+='<label class="yj-file">写真を選ぶ <input type="file" id="yjpFile" multiple accept="'+YJP_ACCEPT+'"'+dis+'></label>'+
+       '<span class="yjp-hint">ここに写真をドラッグしても入れられます</span>'+
+       '<button class="yjp-again" type="button" data-yjp="dir"'+dis+'>フォルダを選び直す</button>';
+  }
+  h+='<span class="yjp-msg" role="status">'+esc(yjpMsg)+'</span>';
+  b.innerHTML=h;
+}
+/* 初回・選び直し: フォルダを選ぶ窓を開く（名前が「入れる」のフォルダだけ受け取る） */
+function yjpPickDir_(){
+  if(yjpBusy||!yjpCan_()) return;
+  var g=yjpGen, pk;
+  try{ pk=window.showDirectoryPicker({id:'yakujo-in', mode:'readwrite'}); }catch(e){ pk=Promise.reject(e); }
+  Promise.resolve(pk).then(function(h){
+    if(g!==yjpGen||!h) return;
+    if(String(h.name||'')!=='入れる'){
+      yjpMsg='選んだフォルダは「入れる」ではありません。ホーム →「薬情よみとり」→「入れる」を選んでください。'; yjpPaint_(); return;
+    }
+    return h.queryPermission({mode:'readwrite'}).then(function(perm){
+      if(g!==yjpGen) return;
+      yjpRt++; yjpDir=h; yjpPerm=perm; yjpLoaded=true; yjpMsg=''; yjpPaint_();
+      return yjpSave_(h).catch(function(){
+        if(g!==yjpGen) return;
+        yjpMsg='フォルダは選べましたが、この端末に覚えられませんでした（次に開いた時に、もう一度選んでください）。'; yjpPaint_();
+      });
+    });
+  }).catch(function(e){
+    if(g!==yjpGen||(e&&e.name==='AbortError')) return;
+    yjpMsg='フォルダを選べませんでした。'; yjpPaint_();
+  });
+}
+/* 覚えたフォルダへの書き込みの許可を求める（押した時だけ） */
+function yjpAskPerm_(){
+  if(yjpBusy||!yjpDir||!yjpCan_()) return;
+  var g=yjpGen, d=yjpDir;
+  Promise.resolve().then(function(){ return d.requestPermission({mode:'readwrite'}); }).then(function(perm){
+    if(g!==yjpGen) return;
+    yjpPerm=perm; yjpMsg=(perm==='granted')?'':'書き込みが許可されませんでした。'; yjpPaint_();
+  }).catch(function(){
+    if(g!==yjpGen) return;
+    yjpDir=null; yjpPerm=''; yjpMsg='許可を求められませんでした。「入れる」フォルダを選び直してください。'; yjpPaint_();
+  });
+}
+/* 空いている名前を探す（前からあるファイル・フォルダと同じ名前は使わない） */
+function yjpFree_(dir,name){
+  var i=1;
+  function next(){
+    if(i>99) return Promise.reject(new Error('name'));
+    var nm=yjpNameAt_(name,i++);
+    return dir.getFileHandle(nm).then(function(){ return next(); },function(e){
+      if(e&&e.name==='NotFoundError') return nm;
+      if(e&&e.name==='TypeMismatchError') return next();   /* 同じ名前のフォルダがある */
+      throw e;
+    });
+  }
+  return next();
+}
+/* 空いている名前でファイルを作る。作った直後に大きさを確かめ、0でなければ（確かめた後にほかの経路が同じ名前を置いた）
+   次の名前を探し直す（3回まで）。返すのは {name, fh}（中身はまだ空） */
+function yjpMake_(dir,name){
+  var tries=0;
+  function go(){
+    if(++tries>3) return Promise.reject(new Error('busy'));
+    return yjpFree_(dir,name).then(function(free){
+      return dir.getFileHandle(free,{create:true}).then(function(fh){
+        return fh.getFile().then(function(f){ return (f&&f.size===0)?{name:free, fh:fh}:go(); });
+      });
+    });
+  }
+  return go();
+}
+/* この帯が作ったファイルを、まだ空の時だけ消す（ほかの経路が書いた中身は消さない） */
+function yjpDropEmpty_(dir,name){
+  return dir.getFileHandle(name).then(function(fh){ return fh.getFile(); }).then(function(f){
+    if(f&&f.size===0) return dir.removeEntry(name);
+  }).catch(function(){});
+}
+/* 写真を「入れる」へ書く（1件ずつ順に）。fromDrop＝帯へのドラッグ */
+function yjpPut_(list,fromDrop){
+  var files=Array.prototype.slice.call(list||[]);
+  if(!yjpCan_()) return;
+  if(yjpBusy){ if(files.length||fromDrop){ yjpMsg='入れている途中です。終わってから、もう一度入れてください。'; yjpPaint_(); } return; }
+  if(!files.length){ if(fromDrop){ yjpMsg='写真を受け取れませんでした。Finder から入れるか、「写真を選ぶ」を使ってください。'; yjpPaint_(); } return; }
+  if(!yjpDir||yjpPerm!=='granted'){
+    yjpMsg=!yjpDir?'先に「入れる」フォルダを選んでください。':'先に「「入れる」への書き込みを許可する」を押してください。'; yjpPaint_(); return;
+  }
+  var g=yjpGen, dir=yjpDir, n=0, bad={empty:0,type:0,size:0,fail:0}, stop='', chain=Promise.resolve();
+  yjpBusy=true; yjpMsg='入れています…（'+files.length+'件）'; yjpPaint_();
+  files.forEach(function(f){
+    chain=chain.then(function(){
+      if(g!==yjpGen) return;
+      if(stop){ bad.fail++; return; }
+      var nm=yjpSafeName_(f&&f.name), k=yjpKind_(nm,f&&f.size), made='';
+      if(k!=='ok'){ bad[k]++; return; }
+      return yjpMake_(dir,nm).then(function(mk){ made=mk.name; return mk.fh.createWritable(); }).then(function(w){
+        return w.write(f).then(function(){ return w.close(); },function(e){ try{ w.abort(); }catch(_){} throw e; });
+      }).then(function(){ n++; },function(e){
+        bad.fail++;
+        var en=e&&e.name;
+        if(en==='NotAllowedError'||en==='SecurityError') stop='perm';
+        else if(en==='NotFoundError'&&!made) stop='gone';
+        if(made) return yjpDropEmpty_(dir,made);   /* この帯が作ったファイルを、まだ空の時だけ消す */
+      });
+    });
+  });
+  chain.then(function(){
+    if(g!==yjpGen) return;
+    yjpBusy=false;
+    var s=yjpMsgOf_(n,bad);
+    if(stop==='perm'){ yjpPerm='prompt'; s+=' 書き込みの許可が切れました。「「入れる」への書き込みを許可する」を押してから、もう一度入れてください。'; }
+    if(stop==='gone'){ yjpDir=null; yjpPerm=''; s+=' 「入れる」フォルダが見つかりません。フォルダを選び直してください。'; }
+    yjpMsg=s; yjpPaint_();
+  });
+}
+/* 現場用へ切り替わった時など: 覚えている状態を捨てて帯を消す（フォルダの印は端末に残る） */
+function yjpPurge_(){
+  yjpGen++; yjpRt++; yjpBusy=false; yjpMsg=''; yjpDir=null; yjpPerm=''; yjpLoaded=false;
+  try{ var b=$('yjpBar'); if(b) b.innerHTML=''; }catch(e){}
+}
+function yjpWire_(){
+  function shown(){ var b=$('yjpBar'); return (b&&b.firstChild&&yjpCan_())?b:null; }
+  function bar(e){ var b=shown(); return (b&&e.target&&e.target.nodeType&&b.contains(e.target))?b:null; }
+  /* ファイルの入力欄（薬情の取り込みの窓の「結果のファイルを選ぶ」など）へのドロップは、ふだんどおりブラウザに任せる */
+  function toInput(e){ var t=e.target; return !!(t&&t.closest&&t.closest('input[type="file"]')); }
+  function hasFiles(e){ var d=e.dataTransfer; return !!(d&&d.types&&Array.prototype.indexOf.call(d.types,'Files')>=0); }
+  document.addEventListener('click',function(e){
+    var t=e.target&&e.target.closest?e.target.closest('[data-yjp]'):null; if(!t||t.disabled) return;
+    var a=t.getAttribute('data-yjp');
+    if(a==='dir') yjpPickDir_(); else if(a==='perm') yjpAskPerm_();
+  });
+  document.addEventListener('change',function(e){
+    var t=e.target; if(!t||t.id!=='yjpFile') return;
+    yjpPut_(t.files);
+    try{ t.value=''; }catch(_){}
+  });
+  function over(e){
+    if(!hasFiles(e)||toInput(e)) return;
+    var b=bar(e);
+    if(!b){ if(shown()){ e.preventDefault(); try{ e.dataTransfer.dropEffect='none'; }catch(_){} } return; }   /* 帯の外: 受け取らない・ページも切り替えない */
+    e.preventDefault();
+    try{ e.dataTransfer.dropEffect='copy'; }catch(_){}
+    b.classList.add('yjp-over');
+  }
+  document.addEventListener('dragenter',over);
+  document.addEventListener('dragover',over);
+  document.addEventListener('dragleave',function(e){ var b=bar(e); if(b&&!(e.relatedTarget&&b.contains(e.relatedTarget))) b.classList.remove('yjp-over'); });
+  document.addEventListener('drop',function(e){
+    if(!hasFiles(e)||toInput(e)) return;
+    var b=bar(e);
+    if(!b){ var sb=shown(); if(sb){ e.preventDefault(); sb.classList.remove('yjp-over'); } return; }   /* 帯の外: 受け取らない・ページも切り替えない */
+    e.preventDefault(); b.classList.remove('yjp-over');
+    yjpPut_(e.dataTransfer.files,true);
+  });
+}
+
+/* ═══ AIで効能の下書きを作る ═══
+   ★2026-09-24〜 訓練計画アプリと同じく、個別機能訓練計画書の専用GASに中継を頼む（キーはGASにだけある）。
+     接続先は同一オリジンの localStorage 'tp_cfg'（訓練計画の接続設定）を読むだけ。書かない。
+     以前は 'tp_ai_key' を共用してブラウザから直接呼んでいた（訓練計画が起動時にそのキーを消す）。
+   ★薬効は【下書き】。確認済みには自動で上げない。分からない薬は空のまま返させる（推測で埋めない）。
+   ★送るのは薬剤名だけ。入居者の氏名・人数・処方の並びは1文字も送らない。 */
+var MD_AI_MODEL='claude-sonnet-5';
+var MD_AI_CHUNK=25;      /* 1回に尋ねる薬剤名の数。★大きくしすぎると応答が上限で切れて丸ごと捨てる
+                            （2026-09-04 実測: 40件×max_tokens 2000 で2つ目の塊から AI_BAD_JSON） */
+var MD_AI_MAXTOK=8000;   /* 応答の上限。薬剤名が長い塊でも切れない大きさにする */
+var MD_AI_TIMEOUT=150000;   /* 中継の分だけ長め（GASは画面が諦めても呼び終える＝早く諦めると二重に払う） */
+/* 訓練計画の接続設定（URL と合言葉）を読むだけ。形が違えば空＝使えない */
+function mdAiCfg(){
+  try{
+    var a=JSON.parse(localStorage.getItem('tp_cfg')||'{}');
+    var u=String((a&&a.url)||'').trim(), t=String((a&&a.token)||'').trim();
+    if(!/^https:\/\/script\.google\.com\/.*\/exec(\?|#|$)/.test(u)||!t) return null;
+    return {url:u, token:t};
+  }catch(e){ return null; }
+}
+function mdAiAsk(names){
+  var body={ model:MD_AI_MODEL, max_tokens:MD_AI_MAXTOK, messages:[{role:'user', content:
+    '次の日本の医薬品それぞれについて、主な効能を日本語の短い語（8文字以内）で答えてください。\n'+
+    '・一般名でも商品名でも、その薬の代表的な用途を1つだけ書く（例: 高血圧／胃酸抑制／便秘／解熱鎮痛／抗血栓）\n'+
+    '・特定できない、または自信が無いものは必ず空文字 "" にする。推測で埋めないこと\n'+
+    '・出力はJSON配列のみ。説明文は書かない。形式: [{"name":"（入力そのまま）","effect":"（8文字以内 or 空）"}]\n\n'+
+    names.join('\n') }] };
+  return mdAiProxy_(body).then(function(j){ return mdAiParse(j, names); });
+}
+/* 個別機能訓練計画書の専用GASへ AI を頼む（効能の下書きだけが使う出口・2026-10-10 で切り出し。薬の変更候補の下書きは 2026-10-27 に止めた）。
+   返すのは Anthropic の応答（content を持つ JSON）。★時間切れは再送しない（GAS は画面が諦めても呼び終える） */
+/* 薬効の下書きを AI の中継の新しい受け口（su-ai・統合 0028・用途 med_effect）から送るか。
+   スイッチ su-backend.json の master_ai が入の時だけ（2026-11-01 代表者「今作り、切で置く」）。切の間は今までどおり計画書の GAS を通る。
+   終わりの時刻 master_ai_until があれば、過ぎた・読めない時は切（2026-11-02 本人指示）。この画面は su-data.js を読み込まないので、
+   判定は su-data.js の flagOn の写し（mdFlagOn_）。食い違わないことは check/unit/master_ai_supa_test.js の F で比べる */
+function mdFlagOn_(f, flag, now){
+  if(!f||typeof f!=='object'||f[flag]!==true) return false;
+  if(!Object.prototype.hasOwnProperty.call(f, flag+'_until')) return true;
+  var u=f[flag+'_until'];
+  if(typeof u!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/.test(u)) return false;
+  var end=Date.parse(u);
+  return typeof now==='number'&&isFinite(end)&&now<end;
+}
+function mdAiViaSupa_(){
+  try{
+    var f=(window.SUKv&&typeof SUKv._flags==='function')?SUKv._flags():JSON.parse(localStorage.getItem('su_backend_flags')||'null');
+    return !!(f&&mdFlagOn_(f.supabase,'master_ai',Date.now()));
+  }catch(e){ return false; }
+}
+/* su-ai へ送る。応答は計画書の GAS と同じ形（{ok, status, data|detail} か {ok:false, error}）。
+   受け口に届く前に通信が切れた時だけ、2秒待って1回だけ送り直す（計画書の AI の下書きと同じ・届いていれば回数を二重に使うので、それ以外は送り直さない） */
+function mdAiSupa_(body){
+  return msAuthLoad_().then(function(){
+    if(!window.SUAuth) throw new Error('AI_NO_PROXY');
+    return SUAuth.check();
+  }).then(function(st){
+    if(!st||st.status!==SUAuth.STATUS.OK) throw new Error('AI_LOGIN');
+    function once(){
+      return Promise.resolve(SUAuth.client().functions.invoke('su-ai',{body:{purpose:'med_effect', body:body}})).then(function(r){
+        if(r&&r.error){
+          var ctx=r.error.context, nm=String(r.error.name||'');
+          return Promise.resolve(ctx&&typeof ctx.json==='function'?ctx.json().catch(function(){ return null; }):null).then(function(d){
+            if(d&&typeof d==='object'&&d.ok===false&&typeof d.error==='string') return d;
+            var e=new Error('AI_NETWORK'); e.retry=!(ctx&&typeof ctx.status==='number')&&nm!=='FunctionsRelayError'; throw e;
+          });
+        }
+        return r?r.data:null;
+      });
+    }
+    return once().catch(function(e){
+      if(!e||e.retry!==true) throw e;
+      return new Promise(function(ok){ setTimeout(ok,2000); }).then(once);
+    });
+  });
+}
+function mdAiProxy_(body){
+  if(mdAiViaSupa_()) return mdAiSupaRun_(body);
+  var cfg=mdAiCfg();
+  if(!cfg) return Promise.reject(new Error('AI_NO_PROXY'));
+  /* text/plain で送る（CORS の事前確認を起こさない・su-data-gas.js と同じ作法）。合言葉は本文にだけ載せる */
+  /* ログインしている時だけ証明を添える（su-gas-auth.js・計画書の GAS が READ_ROLE_CHECK の時に役割を確かめる・代表者の決定 2026-10-29） */
+  var req={action:'ai', token:cfg.token, body:body};
+  var to=null;
+  var pr=new Promise(function(res,rej){
+    /* 時間切れの時計は証明を取った後に始める（待ち時間を減らさない・2026-10-29） */
+    (window.SUGasAuth?window.SUGasAuth.addTo(req):Promise.resolve(req)).then(function(b){
+      to=setTimeout(function(){ rej(new Error('AI_TIMEOUT')); }, MD_AI_TIMEOUT);
+      var opt={method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, redirect:'follow',
+               body:JSON.stringify(b)};
+      return fetch(cfg.url,opt);
+    }).then(function(r){
+      if(!r.ok) throw new Error('AI_NETWORK');
+      return r.json().then(function(j){
+        if(!j||typeof j!=='object') throw new Error('AI_BAD_JSON');
+        if(j.ok!==true){
+          var map={ai_no_key:'AI_NO_KEY', ai_limit:'AI_LIMIT', ai_bad_request:'AI_BAD_REQUEST', ai_fetch:'AI_FETCH',
+                   ai_busy:'AI_BUSY', unauthorized:'AI_PROXY_AUTH', 'unknown action':'AI_PROXY_OLD'};
+          throw new Error(map[String(j.error||'')]||'AI_PROXY');
+        }
+        var st=Number(j.status)||0;
+        if(st<200||st>=300){ var err=new Error('AI_HTTP_'+st); err.detail=String(j.detail||'').slice(0,200); throw err; }
+        if(!j.data||typeof j.data!=='object') throw new Error('AI_BAD_JSON');
+        return j.data;
+      });
+    }).then(res, rej);
+  });
+  return pr.then(function(j){ clearTimeout(to); return j; },
+                 function(e){ clearTimeout(to); throw e; });
+}
+/* su-ai の応答を、計画書の GAS の時と同じ断り（AI_…）に読み替える。時間切れは同じ長さ（MD_AI_TIMEOUT） */
+function mdAiSupaRun_(body){
+  var to=null;
+  var tm=new Promise(function(res,rej){ to=setTimeout(function(){ rej(new Error('AI_TIMEOUT')); }, MD_AI_TIMEOUT); });
+  return Promise.race([mdAiSupa_(body), tm]).then(function(j){
+    clearTimeout(to);
+    if(!j||typeof j!=='object') throw new Error('AI_BAD_JSON');
+    if(j.ok!==true){
+      var map={ai_no_key:'AI_NO_KEY', ai_limit:'AI_LIMIT', ai_bad_request:'AI_BAD_REQUEST', ai_fetch:'AI_FETCH',
+               ai_bad_json:'AI_BAD_JSON', ai_server:'AI_PROXY', ai_forbidden:'AI_FORBIDDEN', ai_name_found:'AI_NAME_FOUND', login:'AI_LOGIN'};
+      throw new Error(map[String(j.error||'')]||'AI_PROXY');
+    }
+    var st=Number(j.status)||0;
+    if(st<200||st>=300){ var err=new Error('AI_HTTP_'+st); err.detail=String(j.detail||'').slice(0,200); throw err; }
+    if(!j.data||typeof j.data!=='object') throw new Error('AI_BAD_JSON');
+    return j.data;
+  }, function(e){ clearTimeout(to); throw e; });
+}
+function mdAiParse(j, names){
+  var txt='';
+  var c=(j&&Object.prototype.toString.call(j.content)==='[object Array]')?j.content:[];
+  for(var i=0;i<c.length;i++) if(c[i]&&c[i].type==='text') txt+=String(c[i].text||'');
+  var arr=null;
+  var m=txt.match(/\[[\s\S]*\]/);
+  if(m){ try{ var p=JSON.parse(m[0]);
+    if(Object.prototype.toString.call(p)==='[object Array]') arr=p; }catch(e){} }
+  /* ★丸ごとパースできなくても、完成している要素だけは拾う。
+     応答が上限で切れた時に「全部捨てる」と、答えは出ているのに1件も入らない
+     （2026-09-04 実測。上限は上げたが、長い塊でまた起きうるので拾えるようにしておく）。 */
+  if(!arr){
+    arr=[];
+    var re=/\{[^{}]*"name"\s*:\s*"((?:[^"\\]|\\.)*)"[^{}]*"effect"\s*:\s*"((?:[^"\\]|\\.)*)"[^{}]*\}/g, mm;
+    while((mm=re.exec(txt))){
+      try{ arr.push({name:JSON.parse('"'+mm[1]+'"'), effect:JSON.parse('"'+mm[2]+'"')}); }catch(e2){}
+    }
+  }
+  if(!arr.length) throw new Error('AI_BAD_JSON');
+  /* ★返ってきた名前が送ったものと違えば捨てる（別の薬の効能を入れない） */
+  var want=Object.create(null); names.forEach(function(n){ want[n]=1; });
+  var out={};
+  arr.forEach(function(x){
+    if(!x) return;
+    var n=mdKey(x.name); if(!n||!want[n]) return;
+    var e=String(x.effect==null?'':x.effect).trim();
+    if(e.length>20) e=e.slice(0,20);     /* 長文が返っても表を壊さない */
+    if(e) out[n]=e;
+  });
+  return out;
+}
+async function mdAiFill(){
+  /* ★AIの下書きも保存（mdSave）と同じ世代（mdGen）で捨てる。尋ねている途中で端末が現場用に切り替わると
+     （applyDeviceGuard が世代を進め、「AIに尋ねています…」の印も下ろす）、残りの塊を尋ね続けて印を出し直し、
+     届いた下書きを表の入力欄と編集の控え（mdEdits）へ書き込んで案内を出していた。
+     世代が変わった後は【次の塊を尋ねない・何も書かない】（ボタンも戻さない・案内も出さない。
+     現場用には薬効辞書のタブが無い）（2026-10-06） */
+  var gen=mdGen;
+  /* 尋ねる直前に世代を見る。変わっていたら送らずに止める（STALE は下の catch で黙って捨てる） */
+  function ask(names){
+    if(gen!==mdGen) return Promise.reject(new Error('STALE'));
+    return mdAiAsk(names);
+  }
+  if(curView!=='md') return;
+  var rows=mdRead();
+  /* 削除予定の行は保存で捨てられるので、AIにも尋ねない（件数の表示が嘘になる） */
+  /* 隠す行・消す行は保存で捨てられるので、AIにも尋ねない（件数の表示が嘘になる）。
+     ★尋ねるのは【新しい名前】。改名の途中なら、直した後の名前で引く方が当たる。 */
+  var todo=rows.filter(function(x){
+    return x.effect==='' && !mdDels[x.name] && !mdIsHidden(x.name,(mdMap&&mdMap[x.name])||null);
+  }).map(function(x){ return x.newName||x.name; });
+  if(!todo.length){ toast('未登録の薬はありません'); return; }
+  if(!mdAiViaSupa_()&&!mdAiCfg()){
+    toast('この端末には個別機能訓練計画書の接続先が無いため、AIを使えません（訓練計画アプリの設定画面で接続先を入れた端末で使えます）',false);
+    return;
+  }
+  if(!(await SUDialog.confirm('未登録の '+todo.length+' 種類の効能をAIに下書きさせます。\n\n'+
+              '・薬剤名だけを送ります（入居者の情報は送りません）\n'+
+              '・入った効能は【薬剤師の確認前】です。確認したら「確認済み」に印を付けてください\n'+
+              '・そのままでは保存されません。内容を見てから「保存」を押してください\n\n'+
+              '進めますか？'))) return;
+  if(gen!==mdGen||curView!=='md') return;   /* 窓の間に端末の用途・表示が変わった時は尋ねない（画面の中の窓・2026-11-13・仮置き） */
+  var chunks=[], i;
+  for(i=0;i<todo.length;i+=MD_AI_CHUNK) chunks.push(todo.slice(i,i+MD_AI_CHUNK));
+  var got={}, done=0, ng=0;
+  if($('mdAi')) $('mdAi').disabled=true;
+  function step(k){
+    if(gen!==mdGen) return Promise.reject(new Error('STALE'));
+    if(k>=chunks.length) return Promise.resolve();
+    mdBusy='AIに尋ねています… '+done+' / '+todo.length+'種類';
+    paintShBars();
+    return ask(chunks[k]).then(function(o){
+      for(var n in o) if(Object.prototype.hasOwnProperty.call(o,n)) got[n]=o[n];
+      done+=chunks[k].length;
+    }).catch(function(e){
+      var em=String((e&&e.message)||'');
+      /* 設定や版の問題（直すまで何度尋ねても同じ）は、割って尋ね直さずに止める＝回数と料金を無駄にしない */
+      /* ★時間切れ（AI_TIMEOUT）も割り直さない。中継の GAS は画面が諦めた後も Anthropic を呼び終えるため、
+         割ってやり直すと同じ薬剤を2〜3回分払うことになる */
+      /* ★世代が変わった時（STALE）は半分に割って尋ね直さない */
+      if(/^(AI_NO_KEY|AI_NO_PROXY|AI_LIMIT|AI_PROXY_OLD|AI_PROXY_AUTH|AI_BAD_REQUEST|AI_TIMEOUT|AI_FETCH|AI_LOGIN|AI_FORBIDDEN|STALE)$/.test(em)) throw e;   /* AI_FETCH＝GAS が回数を数えた後の通信失敗（時間切れの可能性） */
+      /* ★1回の失敗で全部を捨てない。応答が長すぎて壊れた時は【半分に割って】もう一度だけ試す。
+         それでも駄目なら、その塊だけ諦めて先へ進む（失敗した数は人に伝える）。 */
+      var half=Math.ceil(chunks[k].length/2);
+      if(chunks[k].length<=2) { ng++; done+=chunks[k].length; return; }
+      var a=chunks[k].slice(0,half), b=chunks[k].slice(half);
+      return ask(a).then(function(o){
+        for(var n in o) if(Object.prototype.hasOwnProperty.call(o,n)) got[n]=o[n];
+      }).catch(function(){ ng++; }).then(function(){
+        return ask(b).then(function(o){
+          for(var n in o) if(Object.prototype.hasOwnProperty.call(o,n)) got[n]=o[n];
+        }).catch(function(){ ng++; });
+      }).then(function(){ done+=chunks[k].length; });
+    }).then(function(){ return step(k+1); });
+  }
+  /* 取れた分を入力欄へ入れる（全部取れた時も、途中で止めた時も同じ・2026-10-10 審査の指摘）。入れた件数を返す */
+  function writeGot(){
+    var box=$('mdSheet'), n=0;
+    if(box) Array.prototype.forEach.call(box.querySelectorAll('tr[data-md]'),function(tr){
+      var name=tr.getAttribute('data-md'), inp=tr.querySelector('input.mde');
+      if(!inp||inp.value.trim()!=='') return;
+      /* ★尋ねたのは【新しい名前】なので、受け取りも同じ名前で引く。
+         元の名前で引くと、改名した行にだけ下書きが入らない（黙って空のまま残る） */
+      var ask=mdShownName(name);
+      if(Object.prototype.hasOwnProperty.call(got,ask)){
+        inp.value=got[ask];
+        mdRemember(tr);          /* ★メモリにも入れる（再描画で消えないように） */
+        n++;
+      }
+    });
+    if(n) mdMarkDirty();
+    return n;
+  }
+  step(0).then(function(){
+    if(gen!==mdGen) return;   /* ★世代が変わった後は入力欄にも控えにも書かない */
+    var n=writeGot();
+    mdBusy='';
+    if($('mdAi')) $('mdAi').disabled=false;
+    paintShBars();
+    toast(n+'件に下書きを入れました'+(ng?('（'+ng+'回ぶん取得できませんでした）'):'')+
+          '。内容を確かめてから「保存」を押してください');
+  }).catch(function(e){
+    if(gen!==mdGen) return;   /* ★STALE を含め、世代が変わった後は印・ボタン・案内に触れない */
+    /* ★止めた時も、料金を払って取れた分は捨てずに入れる（入れた件数を案内に書く） */
+    var n=0; try{ n=writeGot(); }catch(e2){ n=0; }
+    mdBusy=''; if($('mdAi')) $('mdAi').disabled=false; paintShBars();
+    var code=String((e&&e.message)||e);
+    toast('AIに尋ねられませんでした：'+mdAiWhy_(code)+
+          (n?('（それまでに取れた '+n+'件は入力欄に入れました。内容を確かめてから「保存」を押してください）'):''),false);
+  });
+}
+/* 中継の断り・時間切れを、画面の言葉に（効能の下書きと薬の変更候補の下書きで共通） */
+function mdAiWhy_(code){
+    var why={AI_NO_KEY:'サーバー（個別機能訓練計画書の Google の受け口）にAIのキーが入っていません。管理者に連絡してください',
+             AI_LIMIT:'今日のAIの利用回数の上限に達しました。明日もう一度お試しください',
+             AI_PROXY_OLD:'サーバーが古い版で、AIの中継が入っていません。管理者に連絡してください',
+             AI_PROXY_AUTH:'訓練計画の接続設定の合言葉が通りませんでした',
+             AI_NO_PROXY:'この端末には個別機能訓練計画書の接続先がありません',
+             AI_BAD_REQUEST:'AIへの依頼の形がサーバーで断られました。管理者に連絡してください',
+             AI_TIMEOUT:'AIの返事が時間内に届きませんでした。少し待ってから、もう一度お試しください',
+             AI_FETCH:'サーバーからAIへの通信に失敗しました（時間切れの可能性）。少し待ってから、もう一度お試しください',
+             AI_BUSY:'サーバーが混み合っています。少し待ってから、もう一度お試しください',
+             AI_PROXY:'個別機能訓練計画書の Google の受け口から正しい応答がありませんでした。もう一度お試しください',
+             AI_BAD_JSON:'AIの返事を読み取れませんでした。もう一度お試しください',
+             AI_NETWORK:'AIに接続できませんでした。通信を確かめてから、もう一度お試しください',
+             /* 新しい受け口（su-ai・スイッチ master_ai）だけが返す断り（2026-11-01） */
+             AI_LOGIN:'この端末はログインしていないため、AIを使えません。ログインしてから、もう一度お試しください',
+             AI_FORBIDDEN:'このアカウントではAIを使えません。事務所・管理者のアカウントでログインし直してください',
+             AI_NAME_FOUND:'送る文に入居者のお名前が入っていたため、AIへ送りませんでした（何も送っていません）'}[code];
+    if(why) return why;
+    if(/^AI_HTTP_\d+$/.test(code)) return 'AIから正しい応答がありませんでした（応答の番号 '+code.slice(8)+'）。少し待ってから、もう一度お試しください';
+    if(/^AI_[A-Z0-9_]+$/.test(code)) return 'AIに尋ねられませんでした（'+code+'）';
+    return 'AIに接続できませんでした。通信を確かめてから、もう一度お試しください';   /* fetch の英語の例外文などはそのまま出さない */
+}
+/* ═══════════ 食形態一覧（A3縦1枚の配膳表・一覧から直接編集できる・2026-08-24 追加）═══════════
+   Googleスプレッドシート「入居者情報」の【食事形態】タブを、このマスタのデータから作り直したもの。
+   ★表の作り（列幅・罫線・中央揃え）とA3縦フィット・用紙指定は facesheet.html の同名ブロックの
+     【逐語コピー】。同じ紙が出ることが要件なので、片方を直したらもう片方も必ず直すこと。
+   ★このファイルだけの追加＝「一覧のセルを直接直してマスタへ書き戻す」こと（2026-08-24 指示）。
+     ・直せるのは食事5項目だけ（主食・副食・食事備考・アレルギー・副作用/禁忌）。
+       氏名は全アプリの名寄せキー、居室・介護度は週間計画／体重管理／排泄ケア記録へそのまま伝わる、
+       年齢は生年月日からの計算値。どれもこの配膳表の画面からは触らせない
+       （従来どおり1人ずつの編集画面か「📊 一括編集」で直す）。
+     ・書き戻しは専用の口 action=saveMealList。savePartial（一括編集）には相乗りしない
+       （あちらの許可リストは要配慮情報を載せない約束。理由は gas/master.gs のコメント）。
+   ★端末に保存しない（localStorage には書かない）。未保存の変更もメモリだけに置く。 */
+/* ★フェイスシート側の MEAL_KEYS にある 'err' はここには無い。あちらは1人ずつ取得へ落ちる逃げ道を
+   持ち、その失敗を err で表すため。こちらは getMealList だけ（編集が目的で、保存の口も同じ
+   貼り替えで入る）なので err は発生しない。この1項目だけが意図的な差。 */
+var MEAL_KEYS=['id','name','kana','room','careLevel','copayRate','birthDate',
+               'mealStaple','mealSide','mealNote','allergy','sideEffects','broken'];
+/* 原本の列幅の比（facesheet.html と同じ値。片方だけ変えない）。
+   ★氏名列は【下限】。実データの最長氏名が1行に収まらない時は fitMealSheet() がここから広げ、
+     増やしたぶんを MEAL_FLEX の5列から比のまま差し引く。 */
+var MEAL_COLS=[
+  ['',      2.600,'mno'],  ['居室',    3.600,''],   ['入居者',  9.650,'mnm'],
+  ['年齢',   3.600,'mnum'],['介護度',   4.500,'mnum'],['負担|割合',4.006,'mnum'],
+  ['主食',  15.177,''],    ['副食',    14.869,''],  ['食事備考',17.268,''],
+  ['アレルギー',12.327,''],['禁忌等',  12.404,'']
+];
+var MEAL_NAME_COL=2, MEAL_FLEX=[6,7,8,9,10], MEAL_NAME_PCT_MAX=16;
+/* 一覧から直せる項目と、その日本語名（確認ダイアログとエラー文で使う。GAS の MEAL_LABEL と揃える） */
+var MEAL_EDIT=['mealStaple','mealSide','mealNote','allergy','sideEffects'];
+var MEAL_EDIT_LABEL={mealStaple:'主食',mealSide:'副食',mealNote:'食事備考',
+                     allergy:'アレルギー',sideEffects:'副作用・禁忌 等'};
+var MEAL_MAX_LEN=2000;                /* GAS 側 MEAL_MAX_LEN と同じ。送る前に画面でも止める */
+var mealRows=null;      /* 取得できた行（メモリのみ・端末には残さない） */
+var mealLoading=false;  /* 取得中（連打防止） */
+var mealSaving=false;   /* 保存中（連打防止） */
+var mealMsg='';         /* 画面に出す状態（進捗・失敗の理由） */
+var mealSeq=0;          /* 応答の追い越し対策。古い応答で新しい表を潰さない */
+var mealDirty={};       /* {id:{項目:新しい値}} 未保存の変更 */
+
+function mealPick_(o){
+  var r={};
+  for(var i=0;i<MEAL_KEYS.length;i++){ var k=MEAL_KEYS[i]; if(o[k]!==undefined&&o[k]!==null) r[k]=o[k]; }
+  return r;
+}
+function mealSetMsg_(m){ mealMsg=m; var e=$('mealStatus'); if(e) e.textContent=m; }
+/* 改行・空白の揺れをそろえる。<td contenteditable> は編集すると &nbsp; や末尾の改行が入るので、
+   「見た目が同じなら変更なし」と扱えるようにここで正規化する（触っただけで未保存にしない） */
+function mealNorm_(s){
+  return String(s==null?'':s).replace(/\r\n/g,'\n').replace(/ /g,' ').replace(/\n+$/,'');
+}
+function mealCellText_(el){ return mealNorm_(el.innerText); }
+/* 表示する値。未保存の変更があればそれを、無ければ取得時の値を返す（一括編集 bulkVal と同じ考え方） */
+function mealVal(r,k){
+  var d=mealDirty[r.id];
+  if(d&&Object.prototype.hasOwnProperty.call(d,k)) return d[k];
+  return (r[k]==null)?'':r[k];
+}
+function mealDirtyCells(){ var n=0,k; for(k in mealDirty) n+=Object.keys(mealDirty[k]).length; return n; }
+function mealDirtyPeople(){ var n=0,k; for(k in mealDirty) if(Object.keys(mealDirty[k]).length) n++; return n; }
+function mealRowOf(id){
+  if(mealRows) for(var i=0;i<mealRows.length;i++) if(String(mealRows[i].id)===String(id)) return mealRows[i];
+  return null;
+}
+function mealWho(id){
+  var r=mealRowOf(id);
+  return r ? (r.name + (r.room?('（'+r.room+'）'):'')) : ('No'+id);
+}
+/* サーバーからの「No12: …」を氏名（居室）へ置き換える（表に利用者No列が無いため。bulkNamed と同じ） */
+function mealNamed(msg){ return String(msg).replace(/No(\d+)/g,function(m,n){ return mealWho(n) }); }
+
+/* いま食形態一覧を「画面に出している」か。詳細画面へ移った時に用紙指定が効かないようにするため、
+   ビューidだけでなく一覧画面が表示中かも見る（見ないと個票の印刷までA3になる） */
+function mealViewActive_(){
+  var sc=$('sc-list');
+  return curView==='meal' && !!sc && sc.classList.contains('on');
+}
+function paintMealBar(){
+  var bar=$('mealBar'); if(!bar) return;
+  var on=mealViewActive_();
+  bar.style.display=on?'flex':'none';
+  document.body.classList.toggle('meal-on',on);   // 印刷CSSをこのビュー限定にするため
+  /* ★この表は在籍固定（配膳表のため）。押しても表が変わらない在籍/退去チップは画面から外す。
+     他のビューへ戻ったら必ず出し直す（既存の絞り込みは1つも変えていない） */
+  /* 配布用（mf）も在籍固定なので同じく外す（2026-10-15） */
+  var fr=$('filterRow'); if(fr) fr.style.display=(on||mfViewActive_())?'none':'';
+  var st=$('mealStatus');
+  if(st) st.textContent = on ? (mealMsg || (mealRows?(mealRows.length+'名'):'')) : '';
+  var dm=$('mealDirtyMsg');
+  if(dm) dm.textContent = (on&&mealDirtyCells()) ? ('未保存: '+mealDirtyPeople()+'名 / '+mealDirtyCells()+'項目') : '';
+  var rl=$('mealReload'), sv=$('mealSave'), pr=$('mealPrint');
+  if(rl) rl.disabled=mealLoading||mealSaving;
+  if(sv) sv.disabled=mealSaving||!mealDirtyCells();
+  if(pr) pr.disabled=mealLoading||mealSaving||!mealRows||!mealRows.length;
+}
+function mealLoad(force){
+  /* ★現場端末では取りに行かない（2026-10-01）。切り替え前に出した応答は世代 devGen で捨てる（applyDeviceGuard が進める） */
+  if(getDeviceRole()==='field') return;
+  if(mealLoading||mealSaving) return;
+  if(mealRows&&!force) return;
+  if(!rmOn_()){ mealRows=null; mealSetMsg_('入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）'); paintMealBar(); renderRoster(); return }
+  var seq=++mealSeq;
+  var dg=devGen;   // 出した時の世代。現場用へ切り替わった後に届いた応答は捨てる（mealSeq は保存の確認と共用なので進めない）（2026-10-01）
+  mealLoading=true; mealSetMsg_('取得中…'); paintMealBar(); renderRoster();
+  apiGetRetry({action:'getMealList'},30000).then(function(d){
+    if(seq!==mealSeq||dg!==devGen) return;          // 追い越された応答・切り替え後に届いた応答は捨てる
+    var rows=(d&&d.rows)||[];
+    if(!Array.isArray(rows)) throw new Error('応答が不正です');
+    /* ★職員マーカー行（居室 STAFF）は配膳表に載せない（他の一覧と同じ扱い） */
+    mealRows=rows.filter(function(r){ return String(r.room==null?'':r.room).trim().toUpperCase()!=='STAFF' })
+                 .map(mealPick_);
+    mealLoading=false; mealSetMsg_(''); paintMealBar(); renderRoster();
+    /* 取得のあとに1回だけ用紙フィットを掛け、A3縦1枚に収まらない時の警告を先に出す
+       （収まるかは人数と備考の長さで決まるので、取得のたびに測り直せば足りる）。
+       画面はそのあと読める大きさへ戻す（紙に合わせるのは印刷の直前）。 */
+    try{ fitMealSheet(); mealScreenReset_(); }catch(e2){}
+  }).catch(function(e){
+    if(seq!==mealSeq||dg!==devGen) return;
+    mealLoading=false;
+    /* ★未保存の変更がある時は表を消さない（消すと直した内容の行き先が無くなる・原則4） */
+    if(!mealDirtyCells()) mealRows=null;
+    /* ★GASがまだ古い時は、原因と次の手をそのまま出す（「取得に失敗」だけだと現場が動けない）。
+       フェイスシートには1人ずつ取得の逃げ道があるが、こちらは【編集】が目的で、
+       保存の口（saveMealList）も同じ貼り替えで入るため、逃げ道を作らず貼り替えを促す。 */
+    mealSetMsg_(/不明なaction/.test(String((e&&e.message)||''))
+      ? '食形態一覧を読めません。'+RM_SRV_OLD+'（管理者向け：手順書「DEPLOY-食形態一覧.md」のとおり貼り替えて公開し直してください）'
+      : '取得に失敗しました: '+((e&&e.message)||e));
+    paintMealBar(); renderRoster();
+  });
+}
+/* 介護度は原本と同じく数字だけにする（要介護4 → 4）。要支援は「支1」。
+   それ以外（事業対象者・空欄など）は原文のまま出す（勝手に丸めない・原則6） */
+function mealCareLv_(v){
+  var s=String(v==null?'':v).trim().replace(/[０-９]/g,function(c){return String.fromCharCode(c.charCodeAt(0)-0xFEE0)});
+  var m=/要介護\s*([1-5])/.exec(s); if(m) return m[1];
+  m=/要支援\s*([1-2])/.exec(s); if(m) return '支'+m[1];
+  return s;
+}
+/* 介護度の数値（平均に使う）。要支援・事業対象者は平均に入れない */
+function mealCareNum_(v){ var s=mealCareLv_(v); return /^[1-5]$/.test(s)?parseInt(s,10):null }
+/* 負担割合は原本と同じ表記（1／2／3／保護）。数字以外を落とすと「保護」が消えるので加工しない */
+function mealCopay_(v){ return String(v==null?'':v).trim() }
+
+function mealHtml(q){
+  if(!mealRows){
+    return (mealLoading||!mealMsg)
+      ? '<div class="loading">'+esc(mealMsg||'読み込み中…')+'</div>'
+      : '<div class="empty">'+esc(mealMsg)+
+        '<br>上の「🔄 最新に取り直す」を押すか、「同期設定」で接続をご確認ください</div>';
+  }
+  var rows=mealRows.slice();
+  if(q) rows=rows.filter(function(r){
+    var hay=((r.name||'')+' '+(r.kana||'')+' '+(r.room||'')).toLowerCase();
+    return hay.indexOf(q)>=0;
+  });
+  rows.sort(byKana);                                   /* 原本と同じ五十音順 */
+  if(!rows.length) return '<div class="empty">該当する入居者がいません</div>';
+
+  var nMiss=0, ageSum=0, ageN=0, careSum=0, careN=0;
+  var body=rows.map(function(r,i){
+    var miss=(r.broken===true);
+    if(miss) nMiss++;
+    var age=calcAge(r.birthDate);
+    if(age!=='') { ageSum+=age; ageN++; }
+    var cn=mealCareNum_(r.careLevel);
+    if(cn!==null){ careSum+=cn; careN++; }
+    /* 読み取り専用の欄。取得できなかった行では「⚠取得できず」を出す
+       （空欄のままだと「特に指示なし」と読めてしまい、配膳の事故につながる） */
+    var v=function(s){
+      s=String(s==null?'':s);
+      if(s!=='') return esc(s);
+      return miss?'<span class="mbad">⚠取得できず</span>':'';
+    };
+    /* 直せる欄。★保存データが壊れている行は編集させない（空で上書きして本体を壊さないため） */
+    var ed=function(k){
+      var val=String(mealVal(r,k)||'');
+      if(miss) return '<td class="med mlock">'+(val?esc(val):'<span class="mbad">⚠取得できず</span>')+'</td>';
+      var d=mealDirty[r.id];
+      var dirty=!!(d&&Object.prototype.hasOwnProperty.call(d,k));
+      /* ★role は付けない。<td> の暗黙ロール(cell)を上書きすると行と列の対応が崩れ、
+         スクリーンリーダーが表として読めなくなる。contenteditable だけで編集欄として伝わる
+         （2026-08-24 レビュー指摘 M-5）。 */
+      return '<td class="med'+(dirty?' dirty':'')+'" contenteditable="true"'+
+        ' aria-label="'+esc(r.name)+' の'+MEAL_EDIT_LABEL[k]+'（直接編集できます）"'+
+        ' data-id="'+esc(r.id)+'" data-k="'+k+'">'+esc(val)+'</td>';
+    };
+    return '<tr'+(miss?' class="mrow-locked"':'')+'>'+
+      '<td class="mno mnum">'+(i+1)+'</td>'+
+      '<td class="mnum">'+esc(r.room)+'</td>'+
+      '<td class="mnm">'+esc(r.name)+'</td>'+
+      '<td class="mnum">'+v(age)+'</td>'+
+      '<td class="mnum">'+esc(mealCareLv_(r.careLevel))+'</td>'+
+      '<td class="mnum">'+v(mealCopay_(r.copayRate))+'</td>'+
+      ed('mealStaple')+ed('mealSide')+ed('mealNote')+ed('allergy')+ed('sideEffects')+'</tr>';
+  }).join('');
+
+  var today=new Date();
+  var stamp=today.getFullYear()+'/'+(today.getMonth()+1)+'/'+today.getDate();
+  var avg=[];
+  if(ageN) avg.push('平均年齢 '+(Math.round(ageSum/ageN*10)/10));
+  if(careN) avg.push('平均介護度 '+(Math.round(careSum/careN*100)/100));
+  var notes=['在籍'+rows.length+'名'];
+  if(q) notes.push('検索「'+q+'」で絞り込み中');
+  if(nMiss) notes.push('⚠ '+nMiss+'名は保存データが壊れています（この行は直せません・1人ずつの編集画面でご確認ください）');
+  notes.push('退去の方は載せていません');
+  notes.push('この表は「🚫 印刷しない」の指定を反映していません（施設内の配膳用）');
+  notes.push('主食〜禁忌等はこの表から直接直せます（直したら「💾 保存」）');
+
+  return '<div class="meal-sheet" id="mealSheet">'+
+    '<div class="meal-hd"><span class="mt1">食形態一覧</span>'+
+      '<span class="mt2">'+esc(avg.join('　'))+'</span>'+
+      '<span class="mt3">印刷日 '+stamp+'</span></div>'+
+    '<table class="mtbl"><colgroup>'+
+      MEAL_COLS.map(function(c){return '<col style="width:'+c[1]+'%">'}).join('')+
+    '</colgroup><thead><tr>'+
+      /* 見出しの「|」は改行位置の指定（原本と同じ「負担／割合」の切れ方にする）。
+         見出し文字はこちらで持つ固定値なので、esc したあとに置き換えても入力は混ざらない */
+      MEAL_COLS.map(function(c){return '<th'+(c[2]?' class="'+c[2]+'"':'')+'>'+esc(c[0]).replace(/\|/g,'<br>')+'</th>'}).join('')+
+    '</tr></thead><tbody>'+body+'</tbody></table>'+
+    '<div class="meal-ft">'+esc(notes.join('　／　'))+'</div>'+
+  '</div>';
+}
+
+/* 編集（直せる欄だけ・平文だけ）。描画のたびに貼り直す */
+function mealBindCells(box){
+  Array.prototype.forEach.call(box.querySelectorAll('.med[contenteditable]'),function(el){
+    el.addEventListener('input',mealOnInput_);
+    /* ★貼り付けは平文だけ入れる。書式つきで貼るとHTMLが混ざり、見た目と保存値が食い違う */
+    el.addEventListener('paste',function(e){
+      var cb=e.clipboardData||window.clipboardData; if(!cb) return;
+      var s=String(cb.getData('text/plain')||'');
+      e.preventDefault();
+      try{ document.execCommand('insertText',false,s); }
+      catch(err){ this.textContent=this.textContent+s; }
+      mealOnInput_({target:this});
+    });
+    /* 画像・リンクのドロップも同じ理由で断る */
+    el.addEventListener('drop',function(e){ e.preventDefault(); });
+  });
+}
+function mealOnInput_(e){
+  var el=e.target; if(!el||!el.getAttribute) return;
+  var id=el.getAttribute('data-id'), k=el.getAttribute('data-k');
+  if(!id||!k) return;
+  var r=mealRowOf(id); if(!r) return;
+  var nv=mealCellText_(el), ov=mealNorm_(r[k]);
+  mealDirty[id]=mealDirty[id]||{};
+  if(nv===ov) delete mealDirty[id][k]; else mealDirty[id][k]=nv;
+  if(!Object.keys(mealDirty[id]).length) delete mealDirty[id];
+  el.classList.toggle('dirty',nv!==ov);
+  paintMealBar();
+}
+/* 未保存のまま離れようとした時の確認。離れてよければ true */
+function mealLeaveOk(what){
+  if(!mealDirtyCells()) return true;
+  /* 変更が無い時は true をすぐ返し、ある時は画面の中の窓の答え（約束）を返す（呼ぶ側が待つ・2026-11-13） */
+  return SUDialog.confirm('食形態一覧に未保存の変更が '+mealDirtyPeople()+'名 / '+mealDirtyCells()+'項目あります。\n'+
+    what+'と、この変更は失われます。よろしいですか？');
+}
+async function mealSaveGo(){
+  if(mealSaving) return;
+  /* ★送る直前に、画面のセルの【いまの文字】をもう一度拾う。入力途中（IMEの変換確定前など）で
+     input が飛んでいないセルがあると、画面に見えている文字と送る値がずれる。
+     ここで拾い直せば「見えているとおりに保存される」（2026-08-24 レビュー指摘 L-1）。 */
+  var live=document.querySelectorAll('#rosterBox .med[contenteditable]');
+  for(var li=0;li<live.length;li++) mealOnInput_({target:live[li]});
+  if(!mealDirtyCells()) return;
+  var ids=Object.keys(mealDirty), changes=[], cells=0, blanks=[], toolong=[];
+  for(var i=0;i<ids.length;i++){
+    var id=ids[i], f=mealDirty[id], r=mealRowOf(id);
+    if(!r) continue;                                   /* 取り直しで消えた方は送らない */
+    var send={}, k;
+    for(k in f){
+      if(!Object.prototype.hasOwnProperty.call(f,k)) continue;
+      if(MEAL_EDIT.indexOf(k)<0) continue;             /* 画面側でも許可した項目だけに絞る */
+      send[k]=f[k]; cells++;
+      if(String(f[k])==='') blanks.push(mealWho(id)+' の'+MEAL_EDIT_LABEL[k]);
+      if(String(f[k]).length>MEAL_MAX_LEN) toolong.push(mealWho(id)+' の'+MEAL_EDIT_LABEL[k]);
+    }
+    if(!Object.keys(send).length) continue;
+    /* 氏名を一緒に送る。サーバーが照合して、開いてから別の方に変わっていたら中止する */
+    changes.push({id:r.id,name:r.name,fields:send});
+  }
+  if(!changes.length){ toast('変更がありません'); return; }
+  if(toolong.length){
+    SUDialog.alert('長すぎる項目があるため保存しませんでした（'+MEAL_MAX_LEN+'文字まで）。\n\n'+toolong.slice(0,10).join('\n'));
+    return;
+  }
+  var msg=changes.length+'名 / '+cells+'項目を入居者マスタへ保存します。\n\n'+
+    (blanks.length?('⚠ 次の '+blanks.length+'項目は【空欄になります】。消してよろしければ続けてください。\n　'+
+      blanks.slice(0,10).join('\n　')+(blanks.length>10?('\n　…ほか'+(blanks.length-10)+'項目'):'')+'\n\n'):'')+
+    '直した項目だけが書き換わり、他の項目には触れません。\n'+
+    'この5項目はフェイスシートにもそのまま出ます。\n\nよろしいですか？';
+  var dg0=devGen;
+  if(!(await SUDialog.confirm(msg))) return;
+  if(mealSaving||dg0!==devGen) return;   /* 窓の間に保存が始まった・端末の用途が変わった時は送らない（画面の中の窓・2026-11-13・仮置き） */
+  mealSaving=true; mealSetMsg_('保存中…'); paintMealBar(); setSync('保存中…');
+  apiPostRaw({action:'saveMealList',changes:changes},60000).then(async function(d){
+    mealSaving=false;
+    if(!d||d.ok!==true){
+      setSync('保存失敗','err'); mealSetMsg_('');
+      var det=(d&&d.detail&&d.detail.length)?('\n\n'+d.detail.map(mealNamed).join('\n')):'';
+      /* ★flush を確かめられなかった時（2026-09-23）は書き込めている方がいることがある。
+         一括編集の保存と同じ判定・同じ見出しにする。見出し以外は他の失敗と同じ。 */
+      var failHead=/確定できたか確かめられませんでした/.test(String((d&&d.error)||''))
+        ? '保存できたか確かめられませんでした（書き込めている方もいます）。'
+        : '保存できませんでした。1文字も書き込んでいません。';
+      await SUDialog.alert(failHead+'\n\n'+rmSaveErrWords_(d,'食形態一覧の保存')+det);
+      paintMealBar(); return;
+    }
+    if(d.saved>0){ setSync('保存OK','ok'); toast('✅ '+d.saved+'名を保存しました'); }
+    else setSync('保存できず','err');
+    /* ★書けなかった方の変更は【残す】。手元へ焼き付けて未保存の印を消すと、
+       画面は新しい値・サーバーは旧値のまま、しかも比較対象が新値になるので二度と送れなくなる */
+    var failed={};
+    if(d.warnIds&&d.warnIds.length) for(var w=0;w<d.warnIds.length;w++) failed[String(d.warnIds[w])]=1;
+    /* ★失敗の一覧(warn)はあるのに id(warnIds)が無い応答＝どれが失敗したか分からない。
+       その時は【全員ぶん未保存のまま残す】（消してしまうと二度と送れない・原則4）。
+       現行GASは必ず両方返すので通らない道だが、古い版・改造版に当たった時の安全側 */
+    if(d.warn&&d.warn.length&&!(d.warnIds&&d.warnIds.length))
+      for(var w2=0;w2<changes.length;w2++) failed[String(changes[w2].id)]=1;
+    var kept=0;
+    for(var i2=0;i2<changes.length;i2++){
+      var c=changes[i2];
+      if(failed[String(c.id)]){ kept++; continue; }
+      var r2=mealRowOf(c.id);
+      if(r2){ var kk; for(kk in c.fields) r2[kk]=c.fields[kk]; }
+      delete mealDirty[String(c.id)];
+    }
+    if(d.warn&&d.warn.length)
+      await SUDialog.alert('一部が保存できませんでした（'+kept+'名）。その方の変更は黄色のまま残してあります。\n\n'+
+        d.warn.map(mealNamed).join('\n'));
+    mealSetMsg_(''); paintMealBar(); renderRoster();
+  }).catch(async function(e){
+    /* ★mealSaving はここでは戻さない。戻すと確認の往復中に「保存」「取り直し」が復活し、
+       追い越した応答で未保存の印を消しかねない（paintMealBar が両ボタンを mealSaving で止めている）。
+       戻すのは下の3つの終端それぞれで行う（戻し漏れ＝保存ボタンが二度と押せない）。 */
+    var seq0=mealSeq;
+    var m=String((e&&e.message)||e);
+    if(/不明なaction/.test(m)){
+      setSync('保存失敗','err'); mealSetMsg_('');
+      await SUDialog.alert('保存できませんでした。1文字も書き込んでいません。\n'+
+        RM_SRV_OLD+'。\n（管理者向け：手順書「DEPLOY-食形態一覧.md」のとおり貼り替えて公開し直してください）');
+      mealSaving=false; paintMealBar(); return;
+    }
+    /* ★§13: 失敗表示でも書けていることがある。getMealList で実物を突き合わせる（H2と同じ方針） */
+    setSync('確認中…'); mealSetMsg_('保存の確認中…');
+    apiGet({action:'getMealList'},30000).then(async function(d){
+      /* ★この間に取り直しが走っていたら焼き付けない（mealRows が別物に差し替わっている。saveBulk の if(bulkRows) と同じ考え方） */
+      if(seq0!==mealSeq){ mealSaving=false; paintMealBar(); return; }
+      var v=verifyAppliedRows_(changes,(d&&d.rows)||[]);
+      var aN=v.applied.length,kN=v.kept.length,ap={},x;
+      for(x=0;x<v.applied.length;x++)ap[v.applied[x]]=1;
+      for(var i2=0;i2<changes.length;i2++){
+        var c=changes[i2]; if(!ap[String(c.id)]) continue;
+        var r2=mealRowOf(c.id);
+        if(r2){ var kk; for(kk in c.fields) r2[kk]=c.fields[kk]; }
+        delete mealDirty[String(c.id)];
+      }
+      if(kN===0){ setSync('保存OK','ok'); toast('✅ 保存しました（応答は届きませんでしたが、全'+aN+'名分の保存を確認しました）'); }
+      else{
+        setSync('保存失敗','err');
+        await SUDialog.alert('通信の応答が届かなかったため、保存の実物を確認しました。\n\n✅ 保存済み: '+aN+'名\n⚠️ 未保存: '+kN+'名（黄色のまま残しています）\n\n未保存の方は、もう一度「保存」を押してください。同じ値の上書きなので二重には反映されません。');
+      }
+      mealSetMsg_(''); mealSaving=false; paintMealBar(); renderRoster();
+    }).catch(async function(){
+      setSync('確認できず','err'); mealSetMsg_('');
+      await SUDialog.alert('保存できたか確認できませんでした（通信が不安定です）。\n変更は黄色のまま残しています。\n\n電波の良い場所で、もう一度「保存」を押してください。同じ値の上書きなので二重には反映されません。');
+      mealSaving=false; paintMealBar();
+    });
+  });
+}
+
+/* ── A3縦1枚を「いっぱいまで」使う（facesheet.html の同名関数の逐語コピー）──
+   ①文字サイズ ②氏名列の幅（最長氏名が1行で収まる幅） ③余った高さを全行の上下余白へ配る
+   ★このファイルでは【印刷の直前だけ】掛ける。画面はそのまま読める大きさ（--mfs 既定16px）で
+     編集させる（小さい文字で入力させない・介護現場要件1）。 */
+var MEAL_PAGE_MM = 8;
+var MEAL_PRINT_W_PX = (297-MEAL_PAGE_MM*2) * 96 / 25.4;   // A3縦の印字可能幅 ≈1062px
+var MEAL_PRINT_H_PX = (420-MEAL_PAGE_MM*2) * 96 / 25.4;   // 同 高さ ≈1527px
+var MEAL_FS_MIN=7, MEAL_FS_MAX=22, MEAL_FS_STEP=0.25;
+var MEAL_PV_BASE=0.3;
+function mealNameRatio_(tbl){
+  var cell=tbl.querySelector('tbody .mnm'); if(!cell) return 0;
+  var cs=getComputedStyle(cell), probe=document.createElement('span');
+  probe.style.cssText='position:absolute;left:-9999px;top:-9999px;visibility:hidden;white-space:nowrap;'+
+    'font-family:'+cs.fontFamily+';font-weight:'+cs.fontWeight+';letter-spacing:'+cs.letterSpacing+';font-size:100px';
+  document.body.appendChild(probe);
+  var max=0, cells=tbl.querySelectorAll('tbody .mnm');
+  for(var i=0;i<cells.length;i++){
+    probe.textContent=cells[i].textContent||'';
+    if(probe.offsetWidth>max) max=probe.offsetWidth;
+  }
+  probe.parentNode.removeChild(probe);
+  return max/100;
+}
+/* 氏名列を「最長氏名が1行で収まる幅」へ広げ、増えたぶんを MEAL_FLEX の5列から比のまま差し引く。
+   1行に収まらない（上限16%を超える）時は false を返す。
+   ★画面へ戻す時にも同じ計算を通す。基準値（9.65%）へ戻すだけだと、画面の16pxでは
+     長いお名前が隣の列へはみ出して重なって描かれる（2026-08-24 レビュー指摘 M-3）。 */
+function mealLayoutCols_(tbl,fs,nameRatio){
+  var cols=tbl.querySelectorAll('col');
+  if(cols.length!==MEAL_COLS.length) return true;
+  if(nameRatio==null) nameRatio=mealNameRatio_(tbl);
+  var innerW=tbl.clientWidth||MEAL_PRINT_W_PX;
+  var needPx=nameRatio*fs + fs*0.5 + 3;        /* 文字幅＋左右padding(.25em×2)＋罫線と安全代 */
+  var base=MEAL_COLS[MEAL_NAME_COL][1];
+  var want=Math.max(base, needPx/innerW*100);
+  var pct=Math.min(want, MEAL_NAME_PCT_MAX);
+  var delta=pct-base, sum=0, i;
+  for(i=0;i<MEAL_FLEX.length;i++) sum+=MEAL_COLS[MEAL_FLEX[i]][1];
+  for(i=0;i<MEAL_COLS.length;i++){
+    var w=MEAL_COLS[i][1];
+    if(i===MEAL_NAME_COL) w=pct;
+    else if(MEAL_FLEX.indexOf(i)>=0) w=w-delta*(w/sum);
+    cols[i].style.width=(Math.round(w*1000)/1000)+'%';
+  }
+  return want<=MEAL_NAME_PCT_MAX;
+}
+function fitMealSheet(){
+  var sheet=$('mealSheet'); if(!sheet) return;
+  if(!sheet.offsetParent) return;     /* 非表示のときは測らない（0px で「収まった」と誤判定する） */
+  var tbl=sheet.querySelector('.mtbl'); if(!tbl) return;
+  var cols=tbl.querySelectorAll('col');
+  if(cols.length!==MEAL_COLS.length) return;
+  var st=document.createElement('style');
+  st.textContent='#mealSheet{width:'+Math.round(MEAL_PRINT_W_PX)+'px !important;max-width:none !important;'+
+    'overflow:visible !important;padding:0 !important}'+
+    '#mealSheet .mtbl{min-width:0 !important}'+
+    '#mealSheet .meal-warn{display:none !important}';
+  document.head.appendChild(st);
+
+  var nameRatio=mealNameRatio_(tbl);
+  var rowCnt=tbl.rows.length||1;
+  var setFs=function(s){ sheet.style.setProperty('--mfs',s+'px') };
+  var setPv=function(v){ sheet.style.setProperty('--mpv',(Math.round(v*1000)/1000)+'em') };
+  var layout=function(fs){ return mealLayoutCols_(tbl,fs,nameRatio) };
+  /* ★収まりの判定にも詰め方にも、印字可能高さの1%（約15px＝4mm）を安全代として残す。
+     ぎりぎりまで使うと、測定時と実印刷のわずかな差で最終行が2枚目へ落ちる。
+     「紙いっぱい」より「必ず1枚」を優先する（2026-08-24 レビュー指摘 M-1）。 */
+  var fitH=MEAL_PRINT_H_PX*0.99;
+  var nameOk=true, heightOk=true;
+  var test=function(fs){
+    setFs(fs); setPv(MEAL_PV_BASE);
+    nameOk=layout(fs);
+    heightOk=(sheet.offsetHeight<=fitH);
+    return nameOk&&heightOk;
+  };
+  var sizeOf=function(k){ return Math.round((MEAL_FS_MIN+k*MEAL_FS_STEP)*100)/100 };
+  var lo=0, hi=Math.round((MEAL_FS_MAX-MEAL_FS_MIN)/MEAL_FS_STEP);
+  if(test(sizeOf(lo))){
+    while(lo<hi){
+      var mid=Math.ceil((lo+hi)/2);
+      if(test(sizeOf(mid))) lo=mid; else hi=mid-1;
+    }
+  }
+  var fs=sizeOf(lo);
+  test(fs);
+  tbl.classList.toggle('namewrap',!nameOk);
+  var fillTo=fitH;
+  var pv=MEAL_PV_BASE;
+  if(heightOk){
+    for(var t=0;t<8;t++){
+      var gap=fillTo-sheet.offsetHeight;
+      if(gap<2) break;
+      pv+=(gap/(2*rowCnt))/fs;
+      setPv(pv);
+    }
+    var guard=0;
+    while(sheet.offsetHeight>fillTo && pv>MEAL_PV_BASE && guard++<60){
+      var over=sheet.offsetHeight-fillTo;
+      pv=Math.max(MEAL_PV_BASE, pv-Math.max(0.02,(over/(2*rowCnt))/fs));
+      setPv(pv);
+    }
+  }
+  var usedPct=Math.round(sheet.offsetHeight/MEAL_PRINT_H_PX*100);
+  st.remove();
+  var warn=sheet.querySelector('.meal-warn'), msg='';
+  if(!heightOk) msg='⚠️ 人数が多い（または備考が長い）ため、いちばん小さい文字でもA3縦1枚に収まりません。'+
+      '検索で絞り込むか、2枚に分けて印刷してください。';
+  else if(!nameOk) msg='⚠️ お名前が長い方がいるため、1行に収めきれませんでした（その方だけ2行になります）。'+
+      'お名前の表記をご確認ください。';
+  if(msg){
+    if(!warn){ warn=document.createElement('div'); warn.className='meal-warn'; sheet.insertBefore(warn,sheet.firstChild); }
+    warn.textContent=msg;
+  }else if(warn){ warn.parentNode.removeChild(warn); }
+  return {fs:fs, pv:pv, usedPct:usedPct, nameOk:nameOk, heightOk:heightOk};
+}
+/* 画面用の大きさへ戻す（印刷用に縮めたままだと、編集する文字が小さすぎる）。
+   ★収まらない旨の警告(.meal-warn)は消さない。印刷する前に気づけるように画面へ残す。
+   ★氏名列は基準値へ戻さず【画面の文字サイズで測り直す】。戻すだけだと長いお名前が
+     隣の列へはみ出して重なる（nowrap＋table-layout:fixed のため）。 */
+function mealScreenReset_(){
+  var sheet=$('mealSheet'); if(!sheet) return;
+  sheet.style.removeProperty('--mfs'); sheet.style.removeProperty('--mpv');
+  var tbl=sheet.querySelector('.mtbl'); if(!tbl) return;
+  if(!tbl.offsetParent) return;              /* 非表示なら測れない（0px で誤った幅を入れない） */
+  var fs=parseFloat(getComputedStyle(tbl).fontSize)||16;
+  tbl.classList.toggle('namewrap', !mealLayoutCols_(tbl,fs));
+}
+/* 「🖨️ A3縦で印刷」。用紙の指定は静的CSSに書かず、印刷の直前だけ注入して必ず外す
+   （静的に書くと従来のA4印刷＝個票・誕生日一覧・A4様式まで用紙が変わる）。 */
+function msMealPageOn(){
+  if($('msMealPage')) return;
+  var st=document.createElement('style');
+  st.id='msMealPage';
+  st.textContent='@media print{@page{size:A3 portrait;margin:'+MEAL_PAGE_MM+'mm}}';
+  document.head.appendChild(st);   /* ページ冒頭の静的 @page より後ろへ足す＝後勝ち */
+}
+function msMealPageOff(){ var st=$('msMealPage'); if(st&&st.parentNode) st.parentNode.removeChild(st) }
+function msPrintMeal(){
+  if(!mealViewActive_()) return;
+  fitMealSheet();                  /* 直前に測り直す（窓の幅・取得内容が変わっていることがある） */
+  msMealPageOn();
+  var off=function(){ msMealPageOff(); mealScreenReset_(); };
+  try{ window.addEventListener('afterprint',off,{once:true}); }catch(e){ window.addEventListener('afterprint',off); }
+  try{
+    if(window.matchMedia){
+      var mq=window.matchMedia('print');
+      var h=function(ev){ if(!ev.matches){ off();
+        if(mq.removeEventListener)mq.removeEventListener('change',h); else if(mq.removeListener)mq.removeListener(h); } };
+      if(mq.addEventListener)mq.addEventListener('change',h); else if(mq.addListener)mq.addListener(h);
+    }
+  }catch(e){}
+  setTimeout(off,60000);           /* 保険: afterprint が来ないブラウザでも必ず戻す */
+  window.print();
+}
+/* OSの印刷ショートカット（Cmd/Ctrl+P）とPDF出力は上の関数を通らない。
+   ★食形態一覧を画面に出している時だけ同じ用紙指定を通す（他のビュー・詳細画面では何もしない）。 */
+function msMealAfterPrint_(){ msMealPageOff(); if(mealViewActive_()) mealScreenReset_(); }
+window.addEventListener('beforeprint',function(){
+  if(!mealViewActive_()) return;
+  fitMealSheet();
+  msMealPageOn();
+  setTimeout(msMealAfterPrint_,60000);   /* 保険その3: afterprint も matchMedia も来ない環境向け */
+});
+window.addEventListener('afterprint',msMealAfterPrint_);
+/* 保険その2: afterprint が発火しない環境（一部のiPad等）向け。印刷メディアを抜けたら必ず外す。
+   ★ボタン経路(msPrintMeal)は3経路で外すが、Cmd/Ctrl+P・PDF出力は上の beforeprint 経由なので、
+     ここで同じ保険を張らないと A3 の用紙指定が残り、次に個票やA4様式を刷るとA3で出る
+     （原則2・2026-08-24 レビュー指摘 H-2。既存の A4様式 _a4mq と同じ作法）。 */
+(function(){
+  try{
+    if(!window.matchMedia) return;
+    var mq=window.matchMedia('print');
+    var h=function(ev){ if(!ev.matches) msMealAfterPrint_(); };
+    if(mq.addEventListener) mq.addEventListener('change',h); else if(mq.addListener) mq.addListener(h);
+  }catch(e){}
+})();
+/* ── 編集画面の未保存の変更（2026-10-16 管理者指示・使いやすさ改善の第1弾）──
+   従来は、入力の途中で「← 取消」・下のメニュー・ブラウザの戻る・再読み込みをすると、確かめずに消えていた。
+   判定は「開いた時点の入力欄の中身」と「いまの中身」の比較だけ（保存の仕組み・collectForm には触れない）。
+   ★行を足した・消した（家族・既往歴など）も、入力欄の数が変わるので変更として拾う。 */
+var editSnap_=null;
+function editSerial_(){
+  var box=$('editBox'); if(!box) return '';
+  return Array.prototype.map.call(box.querySelectorAll('input,select,textarea'),function(e){
+    var v=(e.type==='checkbox'||e.type==='radio')?(e.checked?'1':'0'):String(e.value==null?'':e.value);
+    return (e.getAttribute('data-k')||e.name||e.id||'')+'='+v;
+  }).join('\u0001');
+}
+function editSnapTake_(){ try{ editSnap_=editSerial_(); }catch(e){ editSnap_=null; } }
+function editDirty_(){
+  var sc=$('sc-edit');
+  if(!sc||!sc.classList.contains('on')||editSnap_===null) return false;
+  try{ return editSerial_()!==editSnap_; }catch(e){ return false; }
+}
+/* 離れてよければ true。変更が無ければ何も聞かない（true をすぐ返す）。変更がある時は画面の中の窓の答え（約束）を返す（呼ぶ側が待つ・2026-11-13） */
+function editLeaveOk_(fromPop){   /* fromPop: mcClose_ と同じ（「戻る」から呼ばれた時はブラウザの窓のまま聞き、true／false をすぐ返す） */
+  if(!editDirty_()) return true;
+  if(fromPop===true) return confirm('編集中の内容が保存されていません。\n移動すると、入力した内容は消えます。よろしいですか？');
+  return SUDialog.confirm('編集中の内容が保存されていません。\n移動すると、入力した内容は消えます。よろしいですか？');
+}
+/* 見出しの「← メニュー」で離れる時の確かめ（2026-11-12 反証レビュー）。iOS Safari は beforeunload の確かめを出さないため、
+   押した時に下の beforeunload と同じ条件（＋覆いの確かめと同じ rmGateDirty_）で聞く。「はい」の時は直後の beforeunload で二重に聞かない。
+   ★条件は beforeunload の中と同じ。片方を変えたら両方を同じにする */
+var rmMenuLeaveOk_=false;
+function rmMenuLeaveDirty_(){
+  try{
+    var yjBusy=!!(yjSt&&((yjSt.cur&&yjSt.cur.writing)||yjDirty_()||yjSt.docs.some(function(x){ return x.status==='unsure'; })));
+    if(typeof yjpBusy!=='undefined' && yjpBusy) yjBusy=true;
+    if(mealDirtyCells() || (typeof mdDirty!=='undefined' && mdDirty) || editDirty_() || yjBusy) return true;
+    return rmGateDirty_();
+  }catch(e){ return false; }
+}
+document.addEventListener('click',function(e){
+  var a=e.target&&e.target.closest?e.target.closest('a.su-menu-back'):null;
+  if(!a||!rmMenuLeaveDirty_()) return;
+  if(!confirm('保存していない変更があります。メニューへ移ると消えます。移りますか？')){ e.preventDefault(); return; }
+  rmMenuLeaveOk_=true; setTimeout(function(){ rmMenuLeaveOk_=false; },3000);
+});
+/* 未保存のまま閉じる・再読込するのを止める（メモリにしか無いため。原則4） */
+window.addEventListener('beforeunload',function(e){
+  if(rmMenuLeaveOk_) return;   /* 「← メニュー」の確かめで「はい」を押した直後は二重に聞かない（2026-11-12） */
+  /* ★薬効辞書の未保存も対象。AIの下書きはメモリにしか無く、再読込・タブを閉じると消える
+     （2026-09-04 に再描画で155件消えた件と同じ損失がリロード経路に残っていた） */
+  /* ★編集画面の未保存も対象（2026-10-16） */
+  /* ★薬情の取り込みの送信中・反映できたか確かめ中・確認表の印も対象（2026-10-22） */
+  var yjBusy=!!(yjSt&&((yjSt.cur&&yjSt.cur.writing)||yjDirty_()||yjSt.docs.some(function(x){ return x.status==='unsure'; })));
+  /* ★写真を「入れる」へ書いている間も対象（2026-10-23・途中で閉じると残りが書かれない） */
+  if(typeof yjpBusy!=='undefined' && yjpBusy) yjBusy=true;
+  if(!mealDirtyCells() && !(typeof mdDirty!=='undefined' && mdDirty) && !editDirty_() && !yjBusy) return;
+  e.preventDefault(); e.returnValue='';
+});
+
+var curResident=null;
+/* 詳細画面の編集・印刷ボタンの可否。取得できた本人がいる時だけ押せる。
+   curResident に前の方が残ったままだと、読み込み中や取得失敗の画面から
+   ✏️編集を押して【別人の編集フォーム】が開く（＝別人への上書き事故）。 */
+function setViewActions(on){
+  var e=$('editBtn'), p=$('printBtn'), a=$('a4Btn'), w=$('wiBtn');
+  if(e)e.disabled=!on;
+  if(p)p.disabled=!on;   // 印刷も同様。読み込み中・失敗の画面を帳票として出さない
+  if(a)a.disabled=!on;   // A4様式も同様（前の方の様式を刷らせない）
+  if(w)w.disabled=!on;   // その方らしさの紙も同様（2026-10-17）
+}
+function openResident(id){
+  showScreen('view');
+  saveOpenId(id);   // 再読み込みでこの方の画面に戻れるようにする（番号のみ保存）
+  /* 前の方の情報を先に捨てる。取得成功時にだけ入れ直す */
+  curResident=null; setViewActions(false); rmGenoMem_=null;   // 家族構成図の届いた絵も捨てる（開き直したら取り直す・統合 0056）
+  hospPend_={}; hospOpening_=String(id);   // 入院/退院の結果の控えは、この開き直しの間に届いた分だけを使う（2026-10-02）
+  if(typeof yjlReset_==='function') yjlReset_();   // 薬情の反映記録は開き直すたびに取り直す（反映の直後も新しい記録が出る）（2026-10-24）
+  $('viewBox').innerHTML='<div class="loading">読み込み中…</div>';
+  if($('viewToc'))$('viewToc').hidden=true;   /* 前の方の目次を残さない（2026-10-16 第2弾） */
+  paintHospBtn(null);   // 取得できるまでは入院トグルを出さない（前の人の状態で押させない）
+  if(!rmOn_()){$('viewBox').innerHTML='<div class="empty">同期設定のURLが未設定です</div>';if(typeof rmNoUrlGuide_==='function'&&getDeviceRole()!=='field'&&$('viewBox').firstChild)$('viewBox').firstChild.appendChild(rmNoUrlGuide_());return}
+  /* ★現場端末では取りに行かない（保険・2026-10-01）。ブロック表示の下で取りに行かない。この画面は現場端末では使えない */
+  if(getDeviceRole()==='field') return;
+  /* 薬効辞書（med_dict）も同時に取りに行く（2026-09-24 本人決定・案A）。
+     ★先に呼ぶ＝本人の描画時点で「読み込み中」と分かる。届いたら mdPatchView_ が薬剤情報の欄だけ差し替える。
+     ★現場端末では取らない（薬剤情報は現場に出さない。そもそもこの画面は現場端末では開けない） */
+  if(getDeviceRole()!=='field') mdEnsure(false);
+  /* ★出した時の世代。応答を待つ間に現場用へ切り替わったら、記録を入れない・画面を描かない・失敗表示もしない（2026-10-01） */
+  var dg=devGen;
+  apiGetRetry({action:'getResident',id:id}).then(function(d){
+    if(dg!==devGen) return;
+    var rec=(d&&d.record)||d;
+    if(!rec||rec.id==null){var _ng=new Error('該当データなし');_ng.gone=true;throw _ng}
+    hospApplyPend_(rec);   // 開き直す間に届いた入院/退院の結果が、この記録より新しければ当て直す（2026-10-02）
+    curResident=rec; setViewActions(true); renderView(rec);
+    /* デイ利用日（週間計画）を取り、届いたら画面のその欄だけ差し替える。
+       ★A4様式もこの取得結果を使うので、ボタンを押した時には取得済み＝待ち時間が出ず、
+         印刷ダイアログもクリック直後に開く（iPad 等でユーザー操作から離れた print() を避ける）。
+       ★差し替える前に「いま開いている方」と一致するか確かめる（別人の値を出さない）。 */
+    try{
+      a4EnsureDayMap().then(function(){ patchDayUse(rec); }).catch(function(){});
+    }catch(e2){}
+  }).catch(function(e){
+    if(dg!==devGen) return;   // 同上（切り替え後の失敗は画面に出さない）
+    /* ★「その方がもう居ない」時だけ復元先を忘れる。通信失敗では忘れない（原則4・安全側）。
+       忘れないと、圏外や同期停止のたびに次の再読み込みが一覧へ落ちて現在地を失う。 */
+    if(e&&e.gone)saveOpenId(null);
+    /* ★やり直す手段を必ず画面に置く。従来はこの文言だけで、ページを再読み込みするしか
+       手が無かった（そして混み合う時間帯は再読み込みも同じ理由で失敗する） */
+    $('viewBox').innerHTML='<div class="empty">取得に失敗しました: '+esc(e&&e.gone?String(e.message||''):rmErrWords_(e,'この方の取得'))+
+      (e&&e.gone?'':'<div style="margin-top:12px"><button class="btn btn-sec" id="viewRetry" type="button">🔄 もう一度読み込む</button></div>'+
+        '<div style="margin-top:8px;font-size:0.8125rem;color:var(--g6)">混み合う時間帯は、どなたかの保存が終わるまで数十秒かかることがあります。</div>')+
+      '</div>';
+    var rb=$('viewRetry'); if(rb)rb.addEventListener('click',function(){ openResident(id) });
+  });
+}
+
+/* 詳細画面の「この方を各アプリで開く」行。
+   同一オリジンで入居者単位に対応するアプリだけを出す（デイ利用表は一覧専用なので出さない）。
+   別タブで開くので、マスタで見ていた内容を失わない。 */
+/* リンクを出すアプリ → その入居者が「対象アプリ」に含まれている必要があるものの対応。
+   同じ画面に「– 体重記録（対象外）」と出しながら体重管理へのリンクを出すのは矛盾で、
+   受け側でも対象外は開けない。フェイスシート・ジェノグラムは全員が対象なので条件なし。 */
+var PER_RESIDENT_TARGET={'weight-record.html':'weight','care-schedule.html':'schedule','../haiben-record/haiben-record.html':'excretion'};
+function perResidentLinksHtml(r){
+  if(!r||r.id==null||r.id==='')return '';
+  var tg=Array.isArray(r.targetApps)?r.targetApps:defaultTargetApps();
+  var items=[];
+  for(var i=0;i<APP_LINKS.length;i++){
+    var href=APP_LINKS[i].href;
+    if(!Object.prototype.hasOwnProperty.call(PER_RESIDENT_APPS,href))continue;
+    var need=PER_RESIDENT_TARGET[href];
+    if(need&&tg.indexOf(need)<0)continue;   // 対象外のアプリへは導線を出さない
+    items.push(APP_LINKS[i]);
+  }
+  if(!items.length)return '';
+  var nm=r.name||'';
+  var body=items.map(function(a){
+    return '<a class="rlink" target="_blank" rel="noopener" href="'+esc(residentLink(a.href,r.id,nm))+'">'+
+           esc(a.ic)+' '+esc(facFill(a.name))+'</a>';
+  }).join('');
+  /* 印刷ではセクションごと消す。リンクだけ消すと、罫線付きの見出しと空箱が全員分の帳票に残る。 */
+  /* 2026-08-14 指示: 縦書き見出し（約170pxの高さの原因）をやめ、ボタン高さに圧縮した横並びの帯にする。
+     リンクのタップ領域44px（HIG）は維持する */
+  return '<div class="sec sec-applinks"><div class="sec-body" style="display:flex;gap:8px;flex-wrap:wrap;padding:4px 8px;align-items:center">'+
+         '<span style="font-size: 0.8125rem;color:var(--g7);font-weight:700">この方を各アプリで開く</span>'+body+'</div></div>';
+}
+/* cls は任意。印刷で消す欄に 'noprint-cell' を付ける（既存の呼び出しは第4引数なし＝従来どおり） */
+function cell(lab,val,big,cls){return'<div class="cell'+(cls?(' '+cls):'')+'"><span class="lab">'+esc(lab)+'</span><span class="val'+(big?' big':'')+'">'+esc(val||'　')+'</span></div>'}
+
+/* ═══════════ 入居者基本情報（外部様式）── 正規化と旧データからの変換 ═══════════
+   方針（2026-08-12）:
+   ・保存済みの新項目があれば【必ずそれを優先】する。旧値からの推定と混ぜない
+     （混ぜると、人が外したチェックが次の表示で復活する＝消したのに戻る）
+   ・旧値からの変換は「機械的に確実な分だけ」。曖昧なものは空のままにする
+     （例: 入浴の「一般浴」から入浴場所は決められない。誤ったチェックは記録の誤り）
+   ・変換は【表示のためだけ】。ここで保存はしない。編集画面を開いて保存した時に確定する
+   ・置き換えた元の値は bfLegacy() が「移行前の記載」として返す（画面のみ・データは消さない） */
+function bfObj(v){ return (v && typeof v==='object' && !Array.isArray(v)) ? v : {}; }
+function bfArr(v){ return Array.isArray(v) ? v : []; }
+function bfHas(s,re){ return re.test(String(s==null?'':s)); }
+function bfStr(v){ return String(v==null?'':v).trim(); }
+function bfCount(o){ return Object.keys(bfObj(o)).length; }
+/* 自立／見守り／一部介助／全介助 のどれかへ寄せる。判定できなければ '' を返す */
+function bfLevelOf(s){
+  var t=bfStr(s);
+  if(!t) return '';
+  if(/全介助|寝たきり/.test(t))            return 'full';
+  if(/一部介助|部分介助/.test(t))          return 'part';
+  if(/見守り|声かけ|手渡し/.test(t))       return 'watch';
+  if(/自立|独歩|自己管理|問題なし/.test(t)) return 'self';
+  return '';
+}
+/* 認知症自立度の表記ゆれを正す。「Ⅲa」と「IIIa」が混在すると選択肢に一致せず、
+   選択式に切り替わらない（＝様式化した意味が無い）。
+   ★文字列【全体】が変換形と一致する時だけ直す。「Ⅲa（H30判定）」のような
+     補足つきの記載は1文字も触らず、そのまま文字入力として残す（勝手に削らない・原則6）。 */
+var BF_RANK_ALIAS={'I':'Ⅰ','II':'Ⅱ','III':'Ⅲ','IV':'Ⅳ','Ⅰ':'Ⅰ','Ⅱ':'Ⅱ','Ⅲ':'Ⅲ','Ⅳ':'Ⅳ'};
+function bfNormRank(s){
+  var t=bfStr(s);
+  if(t==='' || BF_DEMENTIA_RANKS.indexOf(t)>0) return t;
+  var m=/^([IVⅠⅡⅢⅣ]+)\s*([ab]?)$/i.exec(t);
+  if(!m) return t;
+  var head=BF_RANK_ALIAS[m[1].toUpperCase()] || BF_RANK_ALIAS[m[1]];
+  if(!head) return t;
+  var cand=head+(m[2]||'').toLowerCase();
+  return BF_DEMENTIA_RANKS.indexOf(cand)>0 ? cand : t;
+}
+/* 表示用に正規化した1名分を返す（純関数・引数を書き換えない） */
+function bfView(r){
+  r=r||{};
+  var v={};
+  v.diseases  = bfArr(r.diseases).filter(function(d){ return d && (bfStr(d.name)||bfStr(d.onset)||bfStr(d.hospital)); });
+  v.services  = bfObj(r.services);
+  v.bpsd      = bfObj(r.bpsd);
+  v.night     = bfObj(r.night);
+  /* ★様式を一度でも保存したら、旧データからの推定を【全部止める】。
+       止めないと「—（未選択）」に戻した項目が旧自由文から毎回復活し、選び直せない。
+       未入力（まだ様式を触っていない）と、明示的に空（人が空にした）を区別する
+       ＝multi-device-sync 原則4。 */
+  var derive = !r.bfSaved;
+  var g = bfObj(r.adlGrid);
+  v.adlGrid = { move:    g.move    || (derive ? bfLevelOf(r.mobility)  : ''),
+                oral:    g.oral    || '',
+                meal:    g.meal    || '',
+                bath:    g.bath    || '',
+                excrete: g.excrete || (derive ? bfLevelOf(r.excretion) : '') };
+  /* 補助チェックは「保存済みが1つでもあれば、それが人の意思」＝推定を足さない */
+  v.moveAid = bfObj(r.moveAid);
+  if(derive && !bfCount(v.moveAid)){
+    v.moveAid={};
+    if(bfHas(r.mobility,/歩行器/))        v.moveAid.walker=true;
+    if(bfHas(r.mobility,/車椅子|車いす/)) v.moveAid.wheelchair=true;
+  }
+  v.excreteWay = bfObj(r.excreteWay);
+  if(derive && !bfCount(v.excreteWay)){
+    v.excreteWay={};
+    if(bfHas(r.excretion,/おむつ|オムツ/))  v.excreteWay.diaper=true;
+    if(bfHas(r.excretion,/ポータブル|PWC/)) v.excreteWay.pwc=true;
+    if(bfHas(r.excretion,/カテーテル/))     v.excreteWay.catheter=true;
+  }
+  v.bathPlace = bfObj(r.bathPlace);
+  if(derive && !bfCount(v.bathPlace)){
+    v.bathPlace={};
+    if(bfHas(r.bath,/清拭/)) v.bathPlace.wipe=true;   /* 一般浴・機械浴からは場所を決めない */
+  }
+  v.medLevel   = bfStr(r.medLevel)   || (derive ? (bfLevelOf(r.medAssist)||bfLevelOf(r.medMgmt)) : '');
+  /* 薬の有無だけは確実に決まる（定期薬が入っていれば「有」）。ただし保存後は人の入力を尊重する */
+  v.medExists  = bfStr(r.medExists)  || (derive && bfStr(r.medsRegular) ? '有' : '');
+  v.medContent = bfStr(r.medContent);
+  v.commLevel  = bfStr(r.commLevel);            /* 自由文からは推定しない */
+  v.dementia   = bfNormRank(r.dementia);        /* 既存キーをそのまま使う（自立度） */
+  v.dementiaKnown  = BF_DEMENTIA_RANKS.indexOf(v.dementia) > 0;
+  v.dementiaExists = bfStr(r.dementiaExists) || (derive && (v.dementia||bfStr(r.dementiaType)) ? '有' : '');
+  v.bedriddenRank      = bfStr(r.bedriddenRank);
+  v.shortMemory        = bfStr(r.shortMemory);
+  v.decisionAbility    = bfStr(r.decisionAbility);
+  v.communicateAbility = bfStr(r.communicateAbility);
+  /* ★睡眠薬の【薬剤名】は night の中に入れない。night は現場タブレットの安全情報に
+       含める（夜勤の判断に要る）が、getSection はオブジェクトを丸ごと返すため、
+       中に薬剤名を置くと現場端末へ実処方が渡ってしまう（安全情報は「服薬の薬剤名は含めない」契約）。
+       トップレベルの別キーにして、SAFE_FIELDS に入れないことで確実に止める。 */
+  v.nightSleepMed = bfStr(r.nightSleepMed);
+  v.formNote    = bfStr(r.formNote);
+  v.infoConsent = !!r.infoConsent;
+  return v;
+}
+/* 新様式に置き換えた「元の記載」。空のものは出さない。画面だけに出し、印刷には載せない */
+/* 様式で新設した18キー。入力欄が描画されていない時の温存に使う */
+var BF_FORM_KEYS=['diseases','services','adlGrid','moveAid','bathPlace','excreteWay',
+  'medLevel','medExists','medContent','commLevel',
+  'dementiaExists','shortMemory','decisionAbility','communicateAbility','bpsd','night',
+  'nightSleepMed','formNote','infoConsent',
+  /* 「様式を一度でも保存したか」。旧データからの推定を止めるための印。
+     これが無いと、利用者が「—（未選択）」に戻しても次の表示で旧自由文から復活する
+     ＝選び直せない（multi-device-sync 原則4「未入力」と「明示的に空」を区別する）。 */
+  'bfSaved'];
+var BF_LEGACY_KEYS=[['currentDiseases','治療中の病気'],['mobility','移動'],['excretion','排泄'],
+  ['bath','入浴'],['medMgmt','服薬 管理方法'],['medAssist','服薬介助'],['problemBehavior','問題行動 等']];
+/* デイ利用日（旧 dayUse）を1行に畳む。2026-08-19 に入力欄を廃止した（表示は3枚の紙とも
+   週間計画から出すようになったため・管理者の裁定＝案②）。
+   ★曜日→時間帯のオブジェクトなので BF_LEGACY_KEYS（文字列キーの表）には入れられない。
+   ★元の値は書き換えない。移行前の記載は「人が元の記載を確かめるためのもの」なので、
+     見た目のために改行を「/」へ潰す以外は1文字も触らない。 */
+function bfLegacyDayUse(d){
+  d=(d&&typeof d==='object'&&!Array.isArray(d))?d:{};
+  return DAYUSE_KEYS.map(function(p){
+    /* 元データは「9-」で改行して「16」と続く【縦書き】（旧スプレッドシート由来・実測）。
+       ハイフンで切れている改行は詰めて 9-16 に戻し、それ以外の改行は「/」で区切る
+       （2つの時間帯が並んでいる時に 9-1315-17 のような読めない文字列にしないため）。 */
+    var v=bfStr(d[p[0]]).split(/\s*\n\s*/).reduce(function(a,x){
+      if(!a)return x;
+      return a+((/-$/.test(a)||/^-/.test(x))?'':'/')+x;
+    },'');
+    return v?(p[1]+' '+v):'';
+  }).filter(String).join('　');
+}
+function bfLegacy(r){
+  r=r||{};
+  var out=BF_LEGACY_KEYS.map(function(p){ return {label:p[1], value:bfStr(r[p[0]])}; })
+                        .filter(function(x){ return x.value!==''; });
+  var du=bfLegacyDayUse(r.dayUse);
+  if(du)out.push({label:'デイ利用日', value:du});
+  return out;
+}
+/* ── 描画部品（詳細画面＝印刷面で共用） ── */
+/* ★□は固定寸法（12px）なので、✓を入れても入れなくても幅は動かない。
+     そのため未チェック時は✓を【出さない】。透明の✓を置くと、画面読み上げと
+     コピー＆ペーストで全項目が「✓」になり、チェック済みと区別できなくなる。
+   ★これは【表示専用】でクリックできない。role="checkbox" にすると読み上げが
+     「操作できるチェックボックス」と案内してしまうので img＋aria-label で状態を読ませる
+     （太字＝色以外の手がかりも併用・介護現場要件4） */
+function bfCk(on,label){
+  return '<span class="bfck'+(on?' on':'')+'" role="img" aria-label="'+esc(label)+(on?'（該当）':'（該当なし）')+'">'+
+         '<i aria-hidden="true">'+(on?'✓':'')+'</i>'+esc(label)+'</span>';
+}
+/* 4段階のセルを1行ぶん。選ばれていない段階も枠だけ出す（様式と同じ見え方にする） */
+function bfLevelCells(cur){
+  return BF_LEVELS.map(function(p){
+    return '<td class="bfc">'+(cur===p[0]?'<i class="bfmark">✓</i>':'')+'</td>';
+  }).join('');
+}
+function bfChkList(defs,obj){
+  obj=bfObj(obj);
+  return defs.map(function(p){ return bfCk(!!obj[p[0]], p[1]); }).join('');
+}
+/* 補足の自由文（様式の「（　　）」に相当）。空なら1文字も出さない＝行の高さを増やさない */
+function bfNote(o){
+  var n=bfStr(bfObj(o).note);
+  return n ? '<span style="margin-left:2px;font-size:0.875rem">（'+esc(n)+'）</span>' : '';
+}
+/* ── 編集フォームの部品 ──
+   data-bfck / data-bftx / data-bfsel / data-bfradio に「ドット区切りのパス」を持たせ、
+   collectForm が bfSet() で組み立てる。項目ごとに回収コードを書かない（増やす時の抜けを防ぐ）。 */
+function bfSet(root,path,val){
+  var parts=String(path).split('.'), cur=root, i, k;
+  for(i=0;i<parts.length-1;i++){
+    k=parts[i];
+    if(cur[k]==null || typeof cur[k]!=='object') cur[k] = /^\d+$/.test(parts[i+1]) ? [] : {};
+    cur=cur[k];
+  }
+  cur[parts[parts.length-1]]=val;
+}
+/* チェックが外れた項目・空文字は持たない（保存を小さく保ち、false の山を作らない） */
+function bfPrune(o){
+  o=bfObj(o); var out={};
+  Object.keys(o).forEach(function(k){
+    var v=o[k];
+    if(v===true) out[k]=true;
+    else if(typeof v==='string' && v.trim()!=='') out[k]=v.trim();
+  });
+  return out;
+}
+function bfEditCk(path,label,on){
+  return '<label class="bfe"><input type="checkbox" data-bfck="'+esc(path)+'"'+(on?' checked':'')+'>'+esc(label)+'</label>';
+}
+/* ★placeholder だけに頼らない。見出しの無い入力欄なので aria-label を必ず付ける（HIG フォーム） */
+function bfEditTx(path,val,ph,w){
+  return '<input class="bfet" type="text" data-bftx="'+esc(path)+'" value="'+esc(bfStr(val))+'"'+
+         ' placeholder="'+esc(ph||'')+'" aria-label="'+esc(ph||path)+'"'+(w?(' style="width:'+w+'"'):'')+'>';
+}
+function bfEditSel(path,val,opts){
+  return '<select class="bfes" data-bfsel="'+esc(path)+'">'+opts.map(function(o){
+    return '<option value="'+esc(o)+'"'+(bfStr(val)===o?' selected':'')+'>'+esc(o===''?'—':o)+'</option>';
+  }).join('')+'</select>';
+}
+/* 4段階のラジオ。「—」で未選択に戻せるようにする（選び直せないと誤入力が直せない） */
+function bfEditLevel(path,cur){
+  var nm='bfr_'+String(path).replace(/[^A-Za-z0-9]/g,'_');
+  return '<label class="bfe"><input type="radio" name="'+nm+'" data-bfradio="'+esc(path)+'" value=""'+(!cur?' checked':'')+'>—</label>'+
+    BF_LEVELS.map(function(p){
+      return '<label class="bfe"><input type="radio" name="'+nm+'" data-bfradio="'+esc(path)+'" value="'+p[0]+'"'+(cur===p[0]?' checked':'')+'>'+esc(p[1])+'</label>';
+    }).join('');
+}
+function bfEditRow(label,body){
+  return '<div class="bfe-row"><span class="bfe-lab">'+esc(label)+'</span><span class="bfe-body">'+body+'</span></div>';
+}
+function bfDisRowsEdit(list,startIdx){
+  var base=startIdx||0;
+  return list.map(function(d,n){
+    d=d||{}; var i=base+n;
+    return '<div class="bfe-row"><span class="bfe-lab">'+(i+1)+'</span><span class="bfe-body">'+
+      bfEditTx('diseases.'+i+'.name',d.name,'既往歴','30%')+
+      bfEditTx('diseases.'+i+'.onset',d.onset,'発症時期','22%')+
+      bfEditTx('diseases.'+i+'.hospital',d.hospital,'医療機関','38%')+
+    '</span></div>';
+  }).join('');
+}
+function bfEditTa(path,val,ph){
+  return '<textarea class="bfet" data-bftx="'+esc(path)+'" rows="2" placeholder="'+esc(ph||'')+'" style="width:100%">'+esc(bfStr(val))+'</textarea>';
+}
+/* 義歯は既存キー denture（無/有/部分義歯/総義歯）をそのまま使う。新しいキーを増やさない */
+function bfDenture(v){
+  var t=bfStr(v), has=(t!=='' && t!=='無');
+  return '<span style="font-size:0.875rem;margin-right:6px">義歯:</span>'+bfCk(has,'有')+bfCk(t==='無','無')+
+         ((t==='部分義歯'||t==='総義歯') ? '<span style="font-size:0.875rem">（'+esc(t)+'）</span>' : '');
+}
+/* 様式ぶんの編集UIをまとめて返す（openEdit から1回だけ呼ぶ）。
+   ★既存キー（denture・dementia・bedriddenRank・commNotes）は従来の data-k のまま使う。
+     新しいキーを作って二重管理にしない。 */
+function bfEditHtml(r){
+  var v=bfView(r);
+  var dis=v.diseases.slice(); while(dis.length<3) dis.push({});
+  var H='<div class="cd"><div class="fgroup"><h3>入居者基本情報（様式）</h3>'+
+    '<p class="muted" style="margin:-4px 0 10px">外部からいただく「入居者基本情報」と同じ並び・同じチェックです。'+
+    '空欄のままでも保存できます。</p>';
+  H+='<h4 class="bfe-h">既往歴・発症時期・医療機関</h4>'+
+     '<div id="bfDisList">'+bfDisRowsEdit(dis)+'</div>'+
+     '<button class="btn btn-sec" id="bfDisAdd" type="button">＋ 既往歴を追加</button>'+
+     '<p class="muted" style="margin-top:4px">要らない行は3つとも空にしてください（空の行は保存されません）。</p>';
+  H+='<h4 class="bfe-h">介護保険等サービス利用状況（利用頻度等）</h4><div class="bfe-svc">'+
+    BF_SERVICES.map(function(p){
+      var s=bfObj(v.services[p[0]]);
+      return '<div class="bfe-svc1">'+bfEditCk('services.'+p[0]+'.on',p[1],!!s.on)+
+             bfEditTx('services.'+p[0]+'.name',s.name,'事業所名')+'</div>';
+    }).join('')+'</div>';
+  H+='<h4 class="bfe-h">ADL</h4>';
+  H+=bfEditRow('移動方法', bfEditLevel('adlGrid.move',v.adlGrid.move)+'<br>'+
+      bfEditCk('moveAid.walker','歩行器',!!v.moveAid.walker)+
+      bfEditCk('moveAid.wheelchair','車いす',!!v.moveAid.wheelchair)+
+      bfEditTx('moveAid.note',v.moveAid.note,'補足'));
+  H+=bfEditRow('口腔清潔', bfEditLevel('adlGrid.oral',v.adlGrid.oral)+'<br>'+
+      /* 選択肢は移動前（食事欄）と同じまま。空欄を足すと、これまで自動的に「無」が入っていた
+         方が未記入になる＝依頼外の挙動変更になるため足さない */
+      '<span class="bfe-inline">'+fld('denture','義歯',r.denture,'select',['無','有','部分義歯','総義歯'])+'</span>');
+  H+=bfEditRow('食事', bfEditLevel('adlGrid.meal',v.adlGrid.meal)+
+      '<br><span class="muted">食事形態（主食・副食・形態・とろみ）は下の「食事」欄で入力します。</span>');
+  H+=bfEditRow('入浴', bfEditLevel('adlGrid.bath',v.adlGrid.bath)+'<br>'+
+      BF_BATH_PLACE.map(function(p){return bfEditCk('bathPlace.'+p[0],p[1],!!v.bathPlace[p[0]])}).join('')+
+      bfEditTx('bathPlace.note',v.bathPlace.note,'補足'));
+  H+=bfEditRow('排泄', bfEditLevel('adlGrid.excrete',v.adlGrid.excrete)+'<br>'+
+      BF_EXCRETE_WAY.map(function(p){return bfEditCk('excreteWay.'+p[0],p[1],!!v.excreteWay[p[0]])}).join('')+
+      bfEditTx('excreteWay.note',v.excreteWay.note,'補足'));
+  H+='<h4 class="bfe-h">服薬管理</h4>';
+  H+=bfEditRow('服薬管理', bfEditLevel('medLevel',v.medLevel)+'<br>'+
+      '<span class="bfe-inline">薬の有無 '+bfEditSel('medExists',v.medExists,BF_YESNO)+
+      '　内容 '+bfEditSel('medContent',v.medContent,BF_MED_CONTENT)+'</span>');
+  H+='<h4 class="bfe-h">コミュニケーション</h4>';
+  H+=bfEditRow('コミュニケーション', '<span class="bfe-inline">'+bfEditSel('commLevel',v.commLevel,BF_COMM_LEVEL)+'</span>')+
+     fld('commNotes','配慮の内容',r.commNotes,'textarea');
+  H+='<h4 class="bfe-h">認知症状等</h4><div class="fgrid">'+
+      /* 認知症自立度は選択式にした。既存の記載が選択肢に無い場合だけ文字入力のまま出す
+         （選択式に強制すると、選べない記載が保存で消える） */
+      (( !bfStr(r.dementia) || v.dementiaKnown )
+        ? fld('dementia','認知症自立度',v.dementia,'select',BF_DEMENTIA_RANKS)   /* 表記ゆれを正した値で選ぶ */
+        : fld('dementia','認知症自立度（元の記載のまま）',r.dementia))+          /* 選択肢に無い記載は触らない */
+      fld('bedriddenRank','障害高齢者の日常生活自立度',r.bedriddenRank,'select',['','J1','J2','A1','A2','B1','B2','C1','C2'])+
+    '</div>'+
+    '<div class="fgrid">'+
+      '<div class="fld"><label>認知症状</label>'+bfEditSel('dementiaExists',v.dementiaExists,BF_YESNO)+'</div>'+
+      '<div class="fld"><label>短期記憶</label>'+bfEditSel('shortMemory',v.shortMemory,BF_SHORT_MEMORY)+'</div>'+
+      '<div class="fld"><label>意思決定</label>'+bfEditSel('decisionAbility',v.decisionAbility,BF_DECISION)+'</div>'+
+      '<div class="fld"><label>伝達能力</label>'+bfEditSel('communicateAbility',v.communicateAbility,BF_TRANSMIT)+'</div>'+
+    '</div>';
+  H+=bfEditRow('行動・心理症状',
+      BF_BPSD.map(function(p){return bfEditCk('bpsd.'+p[0],p[1],!!v.bpsd[p[0]])}).join('')+
+      bfEditTx('bpsd.note',v.bpsd.note,'その他の内容'));
+  H+='<h4 class="bfe-h">夜間の状態</h4>';
+  H+=bfEditRow('夜間の状態',
+      bfEditCk('night.sleepMed','睡眠薬使用有',!!v.night.sleepMed)+
+      /* 薬剤名は night の外（現場タブレットへ渡さないため。bfView のコメント参照） */
+      bfEditTx('nightSleepMed',v.nightSleepMed,'薬剤名（睡眠薬）')+'<br>'+
+      BF_NIGHT.map(function(p){return bfEditCk('night.'+p[0],p[1],!!v.night[p[0]])}).join('')+
+      bfEditTx('night.note',v.night.note,'補足'));
+  H+='<h4 class="bfe-h">備考・同意</h4>'+
+     bfEditTa('formNote',v.formNote,'様式の備考欄')+
+     '<div style="margin-top:6px">'+bfEditCk('infoConsent','この情報を提供することについて、ご本人またはご家族から同意を頂いています。',v.infoConsent)+'</div>';
+  return H+'</div></div>';
+}
+/* ── 薬剤情報（定期）を「薬剤｜効果・効能」の2列で描く（2026-08-11 追加）──
+   効能は表示のたびに引き直す【参考表示】で、保存はしない。
+   ★2026-09-24 本人決定（案A）: 効能の正本を med_dict（薬剤師確認）へ一本化した。
+     引き方は MedsEffect.resolveLines の1本だけ（A3・フェイスシートと同じ）。
+     med_dict に無い薬だけ予備辞書（meds-effect-dict.js）で埋め、＊（未確認）を付ける。
+   ★保存データは1文字も増えない。表示のたびに引き直すので、辞書を直せば全員に即反映される。
+   ★次のどれかに当たる時は、従来どおり1列のまま出す:
+     ①部品が古い・読めない ②薬剤情報が空 ③1行も引けなかった ④行数がずれた
+     ⑤med_dict を取れていない（本人決定 Q1: 予備辞書だけで埋めない。画面にだけ理由を出す）
+     — 全行が「—」に見えると「効能の無い薬ばかり」と誤読されるため、列そのものを作らない。 */
+/* 1行を「薬剤名＝お薬110番へのリンク」＋残り（用量・用法）に分けて組み立てる。
+   薬剤名を取り出せない行（注記・空行）はそのまま文字として出す。 */
+function medsLineHtml(line){
+  var raw = String(line == null ? '' : line);
+  if(!raw.trim()) return '　';
+  var w = medsDrugRun(raw), q = medsDrugQuery(raw);
+  if(!w || !q) return esc(raw);
+  var idx = raw.indexOf(w);
+  if(idx < 0) return esc(raw);
+  return esc(raw.slice(0, idx))
+    + '<a class="mlink" href="'+esc(okusuriKeggUrl(q))+'" target="_blank" rel="noopener noreferrer"'
+    + ' data-q="'+esc(q)+'" title="お薬110番で「'+esc(q)+'」を調べる">'+esc(w)+'</a>'
+    + esc(raw.slice(idx + w.length));
+}
+/* map は省略時に画面の mdMap を使う。null（未取得・取得失敗）なら1列（上の⑤）。 */
+function medsRegularCell(text, map){
+  if(arguments.length<2) map=mdMap;
+  var raw = String(text == null ? '' : text);
+  var plain = '<span class="lab">■薬剤情報（定期）■</span><div class="fulltext">'+esc(raw||'　')+'</div>';
+  if(!raw.trim()) return plain;
+  /* ① 部品が古い。★1列で出し、理由は画面だけ（紙には足さない） */
+  if(!medsFxOk_()) return plain+(getDeviceRole()==='field'?'':'<div class="meds-note" role="status">'+esc(MEDS_FX_STALE_NOTE)+'</div>');
+  /* ⑤ 取れていない。★紙には何も足さない（理由は画面だけ・meds-note は印刷で消える）。
+     取得中は「読み込み中」、失敗なら「省略しています」。届いたら mdPatchView_ が差し替える。 */
+  if(!map){
+    var why = mdLoading ? '薬効辞書を読み込み中…'
+      : (getDeviceRole()==='field' ? '' : '薬効辞書を読み込めないため効能欄を省略しています'+(mdErr?('（'+mdErr+'）'):''));
+    return plain+(why?('<div class="meds-note" role="status">'+esc(why)+'</div>'):'');
+  }
+  var lines, effs;
+  try{
+    lines = raw.replace(/\r\n/g,'\n').split('\n');
+    effs  = MedsEffect.resolveLines(raw, map);
+  }catch(e){ return plain; }
+  /* 行数がずれたら【別の薬の効能が並ぶ】ので、その時は必ず1列へ戻す */
+  if(!Array.isArray(effs) || effs.length !== lines.length) return plain;
+  var hit = false, mark = false;
+  for(var k=0;k<effs.length;k++){
+    if(effs[k].src==='dict'||effs[k].src==='static') hit = true;
+    if(effs[k].mark) mark = true;
+  }
+  if(!hit) return plain;
+  var h = '<div class="meds2">'+
+    '<div class="meds2-h">■薬剤情報（定期）■</div>'+
+    '<div class="meds2-h">効果・効能</div>';
+  for(var i=0;i<lines.length;i++){
+    var t = effs[i].text;
+    h += '<div class="meds2-d">'+medsLineHtml(lines[i])+'</div>'+
+         '<div class="meds2-e">'+((t && t!=='—') ? esc(t+effs[i].mark) : '<span class="meds2-na">—</span>')+'</div>';
+  }
+  /* ＊の凡例は列見出しに書かず、表の下の脚注に置く（2026-09-24 本人決定）。＊が無ければ出さない */
+  return h+'</div>'+(mark?('<div class="meds2-ft">'+esc(MEDS_MARK_NOTE)+'</div>'):'');
+}
+/* med_dict が届いた後に、詳細画面の薬剤情報セルの【中身だけ】を差し替える。
+   ★画面全体を描き直さない。描き直しは入力中の値を消しうる（mdEdits の教訓・2026-09-04）。
+   ★詳細画面を開いている時・いま開いている方の欄だけ（data-meds-id で持ち主を確かめる。
+     patchDayUse と同じ守り＝待っているあいだに別の方へ移っていても別人の欄へ書かない）。
+     編集画面（sc-edit）を開いている時は何もしない。 */
+function mdPatchView_(){
+  if(!curResident||curResident.id==null) return;
+  var sc=$('sc-view'); if(!sc||!sc.classList.contains('on')) return;
+  var key=String(curResident.id);
+  Array.prototype.forEach.call(document.querySelectorAll('#viewBox .meds-reg'),function(c){
+    if(c.getAttribute('data-meds-id')===key) c.innerHTML=medsRegularCell(curResident.medsRegular);
+  });
+}
+/* ═══════════ 効能辞書の点検（2026-08-11 追加）═══════════
+ * 実データに対して次の3つを数える。**読み取りだけで1文字も書かない。**
+ *   ① 何行に効能を当てられたか（辞書の的中率）
+ *      ★2026-09-24: 画面・紙と同じ MedsEffect.resolveLines（med_dict ＋予備辞書）で数える。
+ *        予備辞書だけで数えると、画面に出ている効能と点検の数字が食い違う。
+ *   ② 辞書に無かった薬剤名（そのまま渡せば次回の辞書に足せる）
+ *   ③ A4印刷で【2列にしたせいで折り返す】行がどれだけあるか（原則2 の実測）
+ * ★氏名は画面にもログにも出さない。件数と薬剤名だけを扱う。
+ * ★薬の項目だけを返す meds_view セクションで取る（medical は病名まで返すので使わない）。 */
+var medsAuditBusy=false, medsAuditStop=false;
+/* ── お薬110番（ハイパー薬事典）で薬剤名を引く（2026-08-11 追加・2026-11-03 サーバーで先に調べる形へ）──
+   ★飛ぶのは【薬剤名だけ】。入居者の氏名・居室・その他の情報は1文字も送らない。
+   ★2026-11-03 本人指示「サーバー側で先に検索する仕組みも作って」・実測で分かったこと:
+     今までの「クリック時に Shift_JIS のフォームを組んでお薬110番へ POST する」形は、
+     画面の CSP（form-action 'self'・2026-10-15 #121）で送信が止まり、空白のタブだけが開いていた。
+     CSP を緩めても、https の画面から http のサイトへのフォームは Chrome が「安全でないフォーム」の警告画面を出す。
+     そこでフォームはやめ、care-backend の受け口 okusuri-search（お薬110番を代わりに検索する）に薬名の幹を送り、
+       ・薬のページが1つ（同じ成分の製品はみな同じページ）→ そのページを直接開く
+       ・2つ以上（例「ロキソ」→ 飲み薬と貼り薬）→ 開いたタブに候補（品名）を並べる
+       ・0品目（新しい薬・先発品だけの薬の一般名）・受け口に届かない・6秒で返らない → KEGG の医薬品の検索を開く
+     ページへ直接移すのはフォームではないので、CSP にも Chrome の警告にもかからない（実測）。
+   ★待つ間に新しいタブを開くのはクリックの直後（後から開くとポップアップとして塞がれる）。
+     ポップアップを塞いでいる端末では、リンクそのもの（KEGG の検索・target=_blank）が開く。JS が動かない時も同じ。 */
+var OKUSURI_FIND = 'https://jhbernqawjrzqwrmqrih.supabase.co/functions/v1/okusuri-search';
+var OKUSURI_KEY  = 'sb_publishable_D8mWQenb7E8q7q6On45HaQ_GKxAE_zI';   /* su-auth.js と同じ公開用の鍵（これだけでは何も読めない） */
+var OKUSURI_WAIT_MS = 6000;
+var OKUSURI_PAGE_RE = /^http:\/\/www\.okusuri110\.jp\/pc\/dwm\/[a-z0-9\/]+\.html$/;
+function okusuriKeggUrl(q){
+  return 'https://www.kegg.jp/medicus-bin/search_drug?display=med&search_keyword=' + encodeURIComponent(String(q || ''));
+}
+/* サイトの仕様: 全角カタカナ・漢字で3字以上、先頭一致。
+   行の先頭から続くカタカナ・長音・漢字だけを取る（英字・数字・空白が来たら止める）。
+   「（院外）…」のような注記や「1錠 朝」はここで空になり、リンクを作らない。
+   ★2026-11-03 本人指示（リンクが切れている）: 取った語をそのまま送ると「該当がありません」になる行があった。
+     サイトの品名は「アムロジピンOD錠」「ドネペジル塩酸塩OD錠」の形で、一般名処方の
+     「口腔内崩壊錠」「腸溶性口腔内崩壊錠」は品名に無い（実測で0件）。
+     そこで【送る語】は末尾の剤形（錠・カプセル・口腔内崩壊錠…）と塩（塩酸塩・ナトリウム…）を落とした
+     薬の名前の幹にする（先頭一致なので幹で引けば、その薬の全規格が並ぶ）。落とすのは3字以上残る時だけ。
+     「散」だけは落とさない（抑肝散・五苓散が別の語になる）。
+     行頭の「・」「1)」のような箇条の印は飛ばす（印があるだけでリンクが出なかった）。印の後はカタカナを含む語だけ（注記を送らない）。
+     塩の Ca・Na は落とす（サイトは「ポリスチレンスルホン酸Ca」の形で、残すと0件）。結果の一覧に両方が品名で並ぶ。
+     薬価リストから無作為に選んだ品名と一般名処方の137行で、引ける行が 107 → 118。別に選んだ品名だけの100行は 77 → 77（減った行なし）。
+     引けない残りはサイトに載っていない薬（デエビゴ・エンレストなど新しい薬、先発しか無い薬の一般名）で、語の工夫では引けない。
+   ★画面に下線で出す範囲（medsDrugRun）は今までどおり行頭の語のまま。変えたのは送る語だけ。 */
+var OKUSURI_FORMS = ['腸溶性口腔内崩壊錠','口腔内崩壊フィルム','口腔内崩壊錠','チュアブル錠','腸溶錠','徐放錠','配合錠',
+  '腸溶カプセル','徐放カプセル','カプセル','配合顆粒','配合散','配合内用液','エキス顆粒','エキス細粒','エキス錠',
+  'ドライシロップ','シロップ','内用液','内服液','内用ゼリー','ゼリー','フィルム','細粒','顆粒','分包','錠',
+  '軟膏','クリーム','ローション','テープ','パップ','点眼液','点鼻液','坐剤','外用液','吸入液','液'];
+var OKUSURI_SALTS = ['臭化水素酸塩','マレイン酸塩','メシル酸塩','ベシル酸塩','トシル酸塩','酒石酸塩','フマル酸塩',
+  'コハク酸塩','クエン酸塩','硫酸塩','リン酸塩','塩酸塩','水和物','メドキソミル','ナトリウム','カリウム','カルシウム'];
+function medsDrugRun(line){
+  var t = String(line == null ? '' : line).trim();
+  var s = t.replace(/^(?:[・･●○◆◇■□＊*\-－]|[0-9０-９]{1,2}[.．)）、])\s*/, '');
+  var marked = s !== t;
+  s = s.replace(/^【般】/, '');
+  var m = s.match(/^[\u30A1-\u30FA\u30FC\u4E00-\u9FFF]{3,40}/);
+  if(!m) return '';
+  /* 印を飛ばした行は、カタカナを含む語だけをリンクにする。
+     「・長男様管理」「＊残薬調整中」「1、朝食後」のような注記を外部サイトへ送らない（レビュー指摘 2026-11-03） */
+  if(marked && !/[\u30A1-\u30FA]/.test(m[0])) return '';
+  return m[0];
+}
+function okusuriCut_(s, list){
+  for(var i=0;i<list.length;i++){
+    var w = list[i];
+    if(s.length - w.length >= 3 && s.slice(-w.length) === w) return s.slice(0, -w.length);
+  }
+  return s;
+}
+function medsDrugQuery(line){
+  var s = medsDrugRun(line), prev;
+  if(!s) return '';
+  do{ prev = s; s = okusuriCut_(okusuriCut_(s, OKUSURI_FORMS), OKUSURI_SALTS); }while(s !== prev);
+  return s.slice(0, 20);
+}
+/* 受け口の答えから行き先を決める（画面を触らない・試験で確かめる）。
+   返すのは {go:url}（そのページへ）か {list:[{url,name}]}（候補を並べる）。形の合わない住所は使わない */
+function okusuriPlan(q, res){
+  var kegg = { go: okusuriKeggUrl(q) };
+  if(!res || res.ok !== true) return kegg;
+  if(res.hit === 1 && typeof res.url === 'string' && OKUSURI_PAGE_RE.test(res.url)) return { go: res.url };
+  if(res.hit >= 2 && Array.isArray(res.pages)){
+    var list = res.pages.filter(function(p){ return p && typeof p.url === 'string' && OKUSURI_PAGE_RE.test(p.url); })
+      .slice(0, 8).map(function(p){ return { url: p.url, name: String(p.name || '').slice(0, 80) || p.url }; });
+    if(list.length === 1) return { go: list[0].url };
+    if(list.length) return { list: list };
+  }
+  return kegg;
+}
+/* 開いたタブ（中身は空）に文を出す・候補を並べる。スクリプトは入れない（文字は textContent・住所は形を確かめた物だけ） */
+function okusuriPaint(w, q, list){
+  try{
+    var d = w.document;
+    d.title = list ? 'お薬110番：「' + q + '」の候補' : 'お薬110番を調べています';
+    var b = d.body || d.documentElement.appendChild(d.createElement('body'));
+    b.textContent = '';
+    b.style.cssText = 'font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;font-size:17px;line-height:1.6;margin:24px 16px;color:#1d1d1f;background:#fff';
+    var h = d.createElement('p');
+    h.style.cssText = 'font-weight:700;margin:0 0 12px';
+    h.textContent = list ? 'お薬110番で「' + q + '」に当たる薬が ' + list.length + ' つあります。開く薬を選んでください' : 'お薬110番で「' + q + '」を調べています…';
+    b.appendChild(h);
+    /* 待ちの画面にも KEGG への逃げ道を置く（元のタブを閉じた・再読み込みした・後ろのタブの時計が止まった時に
+       「調べています…」のまま残らないため・レビュー指摘 2026-11-03） */
+    (list || []).forEach(function(p){
+      var a = d.createElement('a');
+      a.href = p.url; a.rel = 'noreferrer'; a.textContent = p.name;
+      a.style.cssText = 'display:flex;align-items:center;min-height:44px;padding:4px 12px;margin:0 0 8px;border:1px solid #c7c7cc;border-radius:8px;color:#0040dd;text-decoration:none';
+      b.appendChild(a);
+    });
+    var k = d.createElement('a');
+    k.href = okusuriKeggUrl(q); k.rel = 'noreferrer'; k.textContent = list ? '見つからない時は KEGG で調べる' : '待たずに KEGG で調べる';
+    k.style.cssText = 'display:inline-flex;align-items:center;min-height:44px;color:#0040dd';
+    b.appendChild(k);
+  }catch(e){}
+}
+/* クリックの直後に呼ぶ。新しいタブを開けた時は true（リンクの既定の動きを止める）、塞がれた時は false（リンクのまま KEGG を開く） */
+function openOkusuri(q){
+  q = String(q || '').trim();
+  if(!q) return false;
+  var w = null;
+  try{ w = window.open('', '_blank'); }catch(e){}
+  if(!w) return false;
+  try{ w.opener = null; }catch(e){}   /* 開いた先から元のタブを操作されないため */
+  okusuriPaint(w, q, null);
+  var done = false;
+  function finish(res){
+    if(done) return;
+    done = true;
+    var plan = okusuriPlan(q, res);
+    try{
+      if(w.closed) return;
+      if(plan.go) w.location.replace(plan.go);
+      else okusuriPaint(w, q, plan.list);
+    }catch(e){}
+  }
+  var ac = (typeof AbortController === 'function') ? new AbortController() : null;
+  var t = setTimeout(function(){ if(ac) try{ ac.abort(); }catch(e){} finish(null); }, OKUSURI_WAIT_MS);
+  try{
+    fetch(OKUSURI_FIND, {
+      method: 'POST', credentials: 'omit', signal: ac ? ac.signal : undefined,
+      headers: { 'Content-Type': 'application/json', apikey: OKUSURI_KEY },
+      body: JSON.stringify({ q: q })
+    }).then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(j){ clearTimeout(t); finish(j); }, function(){ clearTimeout(t); finish(null); });
+  }catch(e){ clearTimeout(t); finish(null); }
+  return true;
+}
+/* A4に印刷した時、2列にしたせいで折り返す行が何行あるかを【実測】する。
+   ★幅・余白・列間を定数で持たない。本物の DOM（.sheet > .sec > .sec-body > .row-cells > .cell）を
+     A4本文幅で組み、1行に必ず収まるプローブ行で「1行ぶんの高さ」を実測し、
+     それを大きく超える行を折返しに数える。CSS を直しても自動で追従する。
+   ★2026-08-15(2): 1行高さは【プローブ行】を上限として取る（unit=min(観測最小, プローブ)）。
+     観測最小だけを1行とみなすと、全行が折り返す方では最小自体が2行以上の高さになり、
+     折返しを1件も数えず「0 行 ✅」と誤っていた（レビュー指摘・合成データの実測で再現確認）。
+     ※効能列は「—」で必ず1行あるため、現CSSでは観測最小がプローブを下回らず実質 unit=プローブ。
+       min は万一プローブより低い行が現れた時に、折返しを多め（保守側）に数える方へ倒すための保険。
+     ※2026-09-24: 効能列は 7em を超えるとセルの中で折り返す（本人決定 Q3）。.meds2-d は行の高さまで
+       伸びるので、効能の折返しで伸びた行も「印刷が伸びる行」として数えに入る（それで正しい）。
+   ★2026-08-15: 測定箱は詳細印刷（renderView）の「薬剤情報」sec と同じ
+     【sec-lbl＋65:35 の2セル】で組む。以前は1セル（枠 実測714px）で測っており、実物の薬剤セル
+     （同構成・718px幅での画面実測 約441px・紙は print CSS 算術で約448px。いずれも border-box）より
+     広い条件＝折返しを過少計上していた（2026-08-14 レビュー指摘）。
+     ★下の sec-lbl 文字列と flex:65/35 は renderView 側と必ず一致させること（比を変えたらここも変える）。
+   ★画面には出さない（左端の外に置き、測ったら必ず捨てる）。
+   ※2026-08-14: 紙は .cell padding が 5px（画面7px）・sec-lbl min-width が 24px（画面30px）で
+     セルが数px広く、効能列 .meds2-e の文字も紙では小さく左列が広がるため、本測定は紙より狭い条件
+     ＝折返しを多めに数える保守側。実害はないが「CSSを直しても自動追従」は紙には厳密に成立しない */
+var MEDS_A4_CONTENT_PX = 718;   // A4縦・余白10mm の本文幅 190mm ≒ 718px（用紙設定そのもの）
+/* 戻り値: 0以上=折り返す行数／-1=測定できず（例外・高さ不取得）。
+   呼び出し側は -1 を件数へ混ぜず「測定できず」として人に見せること（0へ潰すと「0 行 ✅」の誤報になる）。 */
+function medsAuditCountWrap(raw, map){
+  var box=document.createElement('div');
+  box.style.cssText='position:absolute;left:-99999px;top:0;width:'+MEDS_A4_CONTENT_PX+'px';
+  box.innerHTML='<div class="sheet"><div class="sec"><div class="sec-lbl">薬剤情報</div><div class="sec-body"><div class="row-cells">'+
+    '<div class="cell" style="flex:65" data-two></div>'+
+    '<div class="cell" style="flex:35;border-right:none"></div>'+
+    '</div></div></div></div>';
+  var cellTwo=box.querySelector('[data-two]');
+  cellTwo.innerHTML=medsRegularCell(raw, map||null);   /* 画面・紙と同じ辞書で組む（点検の開始時に取得済み） */
+  document.body.appendChild(box);
+  var n=0;
+  try{
+    var ds=cellTwo.querySelectorAll('.meds2-d');
+    if(ds.length){
+      /* 「1行ぶんの高さ」は、同じグリッドへ一時追加する1文字のプローブ行を上限として実測する（フォント設定に依存しない）。
+         ★観測最小だけを1行とみなしてはいけない: 全行が折り返す方では最小自体が2行以上になり、
+           折返しを1件も数えず「0 行 ✅」と誤る（プローブを外すとこの退化が再発する。2026-08-15 レビュー指摘）。
+         列幅は minmax(0,max-content)＝最長行由来なので、1文字の行を足しても他行の幅・高さは変わらない。 */
+      var probe=document.createElement('div');
+      probe.className='meds2-d'; probe.textContent='あ';
+      ds[0].parentNode.appendChild(probe);
+      var ph=probe.getBoundingClientRect().height;
+      probe.parentNode.removeChild(probe);   /* 測ったら捨てる（ds は静的リストなので計数にも混ざらない） */
+      var unit=Infinity, i;
+      for(i=0;i<ds.length;i++){ var h=ds[i].getBoundingClientRect().height; if(h>0&&h<unit) unit=h; }
+      if(ph>0&&ph<unit) unit=ph;   /* min(観測最小, プローブ)。ph が取れない異常時は従来どおり観測最小のまま */
+      if(isFinite(unit)&&unit>0){
+        for(i=0;i<ds.length;i++){ if(ds[i].getBoundingClientRect().height>unit*1.5) n++; }
+      }else{ n=-1; }   /* 2列はあるのに高さが1つも取れない（実質 unit===Infinity の時だけ）＝測定不能。0件と区別する */
+    }
+  }catch(e){ n=-1; }   /* 測定失敗を 0 件に潰さない（潰すと「0 行 ✅」の誤報＝2026-08-15 中指摘） */
+  box.parentNode.removeChild(box);
+  return n;
+}
+/* 未収録の一覧へ出す文字列を作る。この一覧は【施設の外へコピーして渡す】前提なので、
+   薬剤名らしき先頭語だけを取り出し、注記行は最初から出さない。
+   薬剤情報の自由文には「（院外）…」「訪問診療 ○○先生 処方」のような行が混ざり、
+   氏名・医師名・薬局名が入りうる（行をそのまま出していたのを 2026-08-11 に修正）。 */
+function medsAuditKey(line){
+  var s=String(line==null?'':line).trim().replace(/^【般】/,'');
+  if(!s) return '';
+  if(/^[（(\[■※＜<【〈]/.test(s)) return '';                                  // 注記・見出しで始まる行
+  if(/(先生|様|殿|訪問|薬局|病院|クリニック|医院|センター|担当)/.test(s)) return '';  // 人・施設が入りうる行
+  var head=s.split(/[\s　]/)[0];                                              // 用量・用法の手前まで
+  if(!head || /^[0-9０-９]/.test(head)) return '';                              // 「1錠 朝」のような用法だけの行
+  if(!/[ァ-ヶー一-龥A-Za-z]/.test(head)) return '';                              // 記号だけの行
+  return head.slice(0,24);
+}
+/* 薬備考に退避されている手書きの効能ブロックを取り出す（移行時に付いた見出しで始まる部分） */
+function medsAuditHandwritten(notes){
+  var s=String(notes==null?'':notes);
+  var i=s.indexOf('【内服(定期薬)欄の2列目');
+  if(i<0) return null;
+  var rest=s.slice(i);
+  var nl=rest.indexOf('\n');
+  if(nl<0) return null;
+  var body=rest.slice(nl+1);
+  var stop=body.indexOf('\n【');            // 次の退避見出しが来たらそこまで
+  if(stop>=0) body=body.slice(0,stop);
+  return body.replace(/\r\n/g,'\n').split('\n');
+}
+async function runMedsAudit(){
+  if(medsAuditBusy) return;
+  var out=$('medsAuditOut'); if(!out) return;
+  if(!medsFxOk_()){ out.innerHTML='<p class="muted" style="color:var(--ng)">'+esc(MEDS_FX_NG)+'</p>'; return; }
+  if(!rmOn_()){ out.innerHTML='<p class="muted" style="color:var(--ng)">先に同期設定のURLと合言葉を保存してください。</p>'; return; }
+  var targets=roster.filter(function(r){ return r && r.active!==false && r.id!=null; });
+  if(!targets.length){ out.innerHTML='<p class="muted">名簿が空です。先に一覧を読み込んでください。</p>'; return; }
+  var dg0=devGen;
+  if(!(await SUDialog.confirm(targets.length+' 名を1人ずつ読み取ります（書き込みはしません）。\n'
+      +'数分かかることがあります。始めますか？'))) return;
+  if(medsAuditBusy||dg0!==devGen||getDeviceRole()==='field') return;   /* 窓の間に点検が始まった・端末の用途が変わった時は始めない（画面の中の窓・2026-11-13・仮置き） */
+  /* ★先に薬効辞書（med_dict）を取る。取れないまま数えると、画面と違う規則（予備辞書だけ）で数えることになり、
+     A4の折返しの実測も1列のまま測って「0 行 ✅」の誤報になる（本人決定 Q1 と同じく、取れない時は点検しない） */
+  medsAuditBusy=true;
+  out.innerHTML='<p class="muted">薬効辞書を読み込み中…</p>';
+  mdLoad_(false,true).then(function(){
+    medsAuditBusy=false;
+    runMedsAuditGo_(out,targets);
+  },function(e){
+    medsAuditBusy=false;
+    out.innerHTML='<p class="muted" style="color:var(--ng)">薬効辞書（med_dict）を読み込めないため点検できません'+
+      esc((mdErr||(e&&e.message))?('（'+(mdErr||e.message)+'）'):'')+'。時間をおいてもう一度お試しください。</p>';
+  });
+}
+function runMedsAuditGo_(out,targets){
+  if(medsAuditBusy) return;
+  medsAuditBusy=true; medsAuditStop=false;
+  var map=mdMap;   /* 点検の間は同じ辞書で数える（途中の取り直しで数え方が変わらないように） */
+  var st={people:0,withMeds:0,lines:0,hit:0,okN:0,markN:0,fbN:0,emptyN:0,unknown:{},hw:{people:0,cmp:0,same:0,lenNG:0},wrap:{people:0,lines:0,err:0},err:0};
+  var i=0;
+  function step(){
+    /* 中止ボタン・モーダルを閉じた時はここで止める（閉じても走り続けないこと） */
+    if(medsAuditStop || !$('mSync').classList.contains('on')){
+      medsAuditBusy=false;
+      out.innerHTML='<p class="muted">点検を中止しました（'+i+' / '+targets.length+' 名まで読み取り。1文字も書いていません）。</p>';
+      return;
+    }
+    if(i>=targets.length){ medsAuditBusy=false; medsAuditRender(out,st,targets.length); return; }
+    var r=targets[i++];
+    out.innerHTML='<p class="muted">点検中… '+i+' / '+targets.length+' 名</p>'
+      +'<button class="btn btn-gray" type="button" id="medsAuditStopBtn">中止</button>';
+    var sb=$('medsAuditStopBtn');
+    if(sb) sb.addEventListener('click',function(){ medsAuditStop=true; });
+    apiGet({action:'getSection',id:r.id,section:'meds_view'},15000).then(function(res){
+      var sec=res&&res.section;
+      if(!sec) { st.err++; return; }
+      st.people++;
+      var raw=String(sec.medsRegular==null?'':sec.medsRegular);
+      if(!raw.trim()) return;
+      st.withMeds++;
+      var lines=raw.replace(/\r\n/g,'\n').split('\n');
+      var effs=MedsEffect.resolveLines(raw, map);
+      for(var k=0;k<lines.length;k++){
+        if(!lines[k].trim()) continue;
+        st.lines++;
+        var ef=effs[k]||{src:'none'};
+        if(ef.src==='dict'||ef.src==='static'){
+          st.hit++;
+          if(!ef.mark) st.okN++; else st.markN++;
+          if(ef.src==='static') st.fbN++;
+        }else if(ef.src==='dict-empty'){ st.emptyN++; }   /* 辞書で「効能なし」と決めてある行＝未収録ではない */
+        else{
+          var key=medsAuditKey(lines[k]);
+          if(key) st.unknown[key]=(st.unknown[key]||0)+1;
+        }
+      }
+      /* ③ 印刷で折り返す行を数える。
+         ★幅や余白を定数で持たない。CSS を変えるたびに数字がずれ、
+           「折り返し 0 行 ✅」が嘘になる（column-gap を 8→20 に変えた時に実際そうなった）。
+           A4の本文幅で【本物の2列ブロックを組んで測る】ので、CSS を変えても自動で追従する。 */
+      var wrapped=medsAuditCountWrap(raw, map);
+      if(wrapped<0){ st.wrap.err++; }   /* -1=測定失敗。0行と混ぜない（✅の誤報防止） */
+      else if(wrapped){ st.wrap.people++; st.wrap.lines+=wrapped; }
+      /* ② 手書きの効能との突き合わせ（行数が一致した方だけ） */
+      var hw=medsAuditHandwritten(sec.medsNotes);
+      if(hw){
+        st.hw.people++;
+        var drug=lines.filter(function(x){return x.trim()!==''});
+        var hand=hw.filter(function(x){return x.trim()!==''});
+        if(drug.length!==hand.length){ st.hw.lenNG++; }
+        else{
+          var dEff=MedsEffect.resolveLines(drug, map);   /* 画面に出る効能（＊を除いた文言）と比べる */
+          for(var n=0;n<drug.length;n++){
+            st.hw.cmp++;
+            var auto=(dEff[n]&&dEff[n].text!=='—')?dEff[n].text:'';
+            if(auto && hand[n].trim() && auto===hand[n].trim()) st.hw.same++;
+          }
+        }
+      }
+    })['catch'](function(){ st.err++; }).then(function(){ setTimeout(step,60); });
+  }
+  step();
+}
+function medsAuditRender(out,st,total){
+  var pct=st.lines?Math.round(st.hit/st.lines*1000)/10:0;
+  var hwPct=st.hw.cmp?Math.round(st.hw.same/st.hw.cmp*1000)/10:null;
+  var keys=Object.keys(st.unknown).sort(function(a,b){return st.unknown[b]-st.unknown[a]});
+  var h='<div style="font-size:0.8125rem;line-height:1.8">'+
+    '<div class="muted">薬効辞書 med_dict: '+(mdDict?mdDict.length:0)+' 件 ／ 予備辞書の版: '+esc(MedsEffect.version||'不明')+' / 収録 '+MedsEffect.size()+' 語</div>'+
+    '<div><b>薬剤情報のある方</b>: '+st.withMeds+' 名 / 調べた '+st.people+' 名'+(st.err?'（取得できず '+st.err+' 名）':'')+'</div>'+
+    '<div><b>効能を当てられた行</b>: '+st.hit+' / '+st.lines+' 行（<b>'+pct+'%</b>）'+
+      '<br><span class="muted">うち 確認済み '+st.okN+' 行・未確認（＊）'+st.markN+' 行（予備辞書から '+st.fbN+' 行）'+
+      (st.emptyN?('／辞書で効能なし・非表示 '+st.emptyN+' 行'):'')+'</span></div>'+
+    '<div><b>手書きの効能との一致</b>: '+
+      (hwPct===null?'比較できる方がいません':(hwPct+'%（'+st.hw.same+' / '+st.hw.cmp+' 行・対象 '+st.hw.people+' 名'+(st.hw.lenNG?'／行数が合わず比較できず '+st.hw.lenNG+' 名':'')+'）'))+'</div>'+
+    '<div><b>A4印刷で折り返す行</b>: '+st.wrap.lines+' 行 / '+st.wrap.people+' 名'+
+      /* ✅は「全員ぶん測れて0行」の時だけ。取得できず（st.err）の方も測れていないので✅を出さない（同型の誤報防止） */
+      (st.wrap.lines?' <span style="color:var(--warn-tx)">（その方は印刷が1行分ずつ伸びます）</span>':((st.wrap.err||st.err)?'':' ✅'))+
+      (st.wrap.err?' <span style="color:var(--ng)">⚠ ほかに '+st.wrap.err+' 名は折返しを測定できませんでした＝0行とは数えていません。再読み込み後にもう一度点検してください</span>':'')+'</div>';
+  if(keys.length){
+    var txt=keys.map(function(k){return k+'\t'+st.unknown[k]}).join('\n');
+    h+='<div style="margin-top:8px"><b>どちらの辞書にも無かった薬剤（'+keys.length+' 種）</b>'+
+       '<p class="muted" style="margin:2px 0">下の枠をコピーして渡してください。薬剤名と件数だけになるよう絞っていますが、<b>渡す前に一度目を通してください</b>。</p>'+
+       '<textarea readonly style="width:100%;min-height:120px;font-size:12px;font-family:monospace">'+esc(txt)+'</textarea></div>';
+  }else{
+    h+='<div style="margin-top:8px">どちらの辞書にも無かった薬剤: <b>なし</b> ✅</div>';
+  }
+  out.innerHTML=h+'</div>';
+}
+/* ══ 印刷しない欄（2026-08-17 指示）══
+   ご家族へお渡しする紙で伏せたい欄を、入居者ごとに選べるようにした。
+   保存先は dataJson の printHide（{secs:[キー,…]}）。GAS は dataJson を丸ごと保存するので
+   サーバー側の変更は要らない。支援経過の「1件ごと」の除外は supportLog の要素に hide:true を
+   持たせる（別キーに日付＋本文で覚えさせると、本文を直した瞬間に対応が切れて除外が外れる）。
+   ★支援経過の同期（入居者マスタの GAS・support-log-sync.gs の _slsMerge）は既存要素を
+     オブジェクトのまま残すので、hide は取り込みで消えない（2026-08-17 実測）。
+
+   ★キーは「欄の見出し文字列」から引く後処理方式にした。renderView / renderFaceSheet の
+     組み立て（20欄・数百行）へ data 属性を足して回るのはデグレの危険が高く、見出しは
+     画面にも紙にも出ている＝人の目でも照合できるため。**見出しを変えたらこの表も直す**。
+   ★facesheet.html の PRINT_SECS / printHideSet / applyPrintHide と逐語同一にすること
+     （食い違うと、同じ設定でマスタは伏せてフェイスシートは出す＝伏せたつもりの情報が紙に載る）。 */
+var PRINT_SECS=[
+  ['basic','基本情報'],['insurance','保険・制度／連絡先'],['careHist','介護度の変更履歴'],
+  ['basicItems','基本事項'],['family','家族情報'],['biz','事業所'],['geno','家族構成図'],
+  ['disease','既往歴・サービス'],['meal','食事'],['mind','認知・意思疎通'],
+  ['medical','医療情報'],['meds','薬剤情報'],['pastMeds','過去の臨時薬'],['adl','ADL・状態'],
+  ['person','嗜好・本人らしさ'],['history','生活歴'],['wishes','意向・人生会議（ACP）'],
+  ['support','支援経過'],['medSupport','医療支援経過'],['targetApps','対象']
+];
+/* 除外指定を {キー:true} に正規化する。壊れた値・知らないキーは無視する（原則10 受信データを信じない）。
+   ★分からない時は「印刷する」側へ倒す。伏せ漏れは人が気づけるが、黙って消えた欄は気づけない。 */
+function printHideSet(r){
+  var v=r&&r.printHide, out={};
+  var arr=(v&&Array.isArray(v.secs))?v.secs:[];
+  var known={}; PRINT_SECS.forEach(function(p){known[p[0]]=1});
+  arr.forEach(function(k){ if(known[String(k)]) out[String(k)]=true });
+  return out;
+}
+/* 描画後の DOM へ除外を反映する。見出し（.sec-lbl）を持つ枠を1欄とみなすので、
+   .sec だけでなく事業所／家族構成図の2枠（.biz-geno-row の中）も拾える。 */
+/* ── 定期薬の変更履歴の表示（2026-10-02 管理者指示）──
+   記録はサーバー（gas/master.gs の _mhPush）が、編集画面・一括編集・訪問診療アプリのどこで定期薬を変えても
+   同じ規則で残す。この画面は【表示だけ】（この画面から履歴を書き換える経路は作らない）。
+   1件 = { at:'yyyy-MM-dd HH:mm', via:経路, add:[行], del:[行], chg:[{from,to}], prev?:[行] }（新しい順）
+   ★受信データとして扱う: 配列でない・文字列でない要素は飛ばし、文字は必ず esc する。
+   ★見出し「定期薬の変更履歴」は PRINT_SECS に入れない（印刷しない欄なので、伏せる設定の対象にもしない）。 */
+function mhAt_(s){
+  var t=String(s==null?'':s), m=/^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}))?/.exec(t);
+  return m?(fmtJDate(m[1])+(m[2]?' '+m[2]:'')):t;
+}
+function medsHistHtml_(arr){
+  var strs=function(a){return Array.isArray(a)?a.filter(function(x){return typeof x==='string'&&x!==''}):[]};
+  var list=Array.isArray(arr)?arr.filter(function(e){return e&&typeof e==='object'&&!Array.isArray(e)}):[];
+  /* 記録が無い方には欄を出さない（「過去の臨時薬」と同じ）。サーバーの反映前に「自動で残ります」と
+     誤った案内を出さないためでもある（反証レビュー 2026-10-02） */
+  if(!list.length) return '';
+  var body=list.map(function(e){
+      var li=[];
+      strs(e.add).forEach(function(x){li.push('<li><span class="mh-tag add">追加</span><span>'+esc(x)+'</span></li>')});
+      (Array.isArray(e.chg)?e.chg:[]).forEach(function(c){
+        if(!c||typeof c.from!=='string'||typeof c.to!=='string')return;
+        li.push('<li><span class="mh-tag chg">変更</span><span><span class="mh-from">'+esc(c.from)+'</span> → '+esc(c.to)+'</span></li>');
+      });
+      strs(e.del).forEach(function(x){li.push('<li><span class="mh-tag del">中止</span><span>'+esc(x)+'</span></li>')});
+      var pv=strs(e.prev);
+      return '<div class="mh-e"><div class="mh-hd"><span class="mh-at">'+esc(mhAt_(e.at))+'</span>'+
+          (e.via?'<span class="mh-via">'+esc(String(e.via))+'で変更</span>':'')+'</div>'+
+        (li.length?'<ul class="mh-ls">'+li.join('')+'</ul>':'')+
+        (pv.length?'<details class="mh-prev"><summary>この変更の前の処方（'+pv.length+'行）</summary><ul class="mh-ls">'+
+          pv.map(function(x){return '<li><span>'+esc(x)+'</span></li>'}).join('')+'</ul></details>':'')+
+      '</div>';
+    }).join('');
+  return '<div class="sec sec-medshist"><div class="sec-lbl">定期薬の変更履歴</div><div class="sec-body">'+
+    '<div class="cell" style="border-right:none;border-bottom:none">'+body+'</div></div></div>';
+}
+/* ── 薬情の反映記録（30日）（2026-10-24 代表者の決定）──
+   入居者マスタGAS（med-cand.gs の op 'yjLog'）から、その方の薬情の取り込みの反映記録（30日以内・新しい順）を読み、
+   詳細画面の「定期薬の変更履歴」の下に出す。★事務所PCだけ（現場端末では取りに行かない・出さない）。管理者に限らない
+   ★記録はメモリにだけ置く（localStorage に書かない）。開き直すと取り直す。0件・読めない時は欄ごと出さない
+   ★応答は、開いている方（curResident.id）と世代（yjlGen・devGen）が出した時と同じ時だけ使う
+   ★印刷しない（@media print で消す・PRINT_SECS に入れない） */
+var yjlGen=0, yjlMem={id:'', rows:null};
+/* 控えを捨てて世代を進める（開き直し・現場用への切り替えで呼ぶ。届いた応答は世代で捨てる） */
+function yjlReset_(){ yjlMem={id:'', rows:null}; yjlGen++; }
+/* at（ISO）を日本時間の yyyy-MM-dd HH:mm にする */
+function yjlAt_(s){
+  var t=String(s==null?'':s), d=new Date(t); if(!t||isNaN(d.getTime())) return t;
+  var j=new Date(d.getTime()+9*3600000); function p2(n){ return ('0'+n).slice(-2); }
+  return j.getUTCFullYear()+'-'+p2(j.getUTCMonth()+1)+'-'+p2(j.getUTCDate())+' '+p2(j.getUTCHours())+':'+p2(j.getUTCMinutes());
+}
+function yjlHtml_(rows){
+  var str=function(v){ return typeof v==='string'?v:''; };
+  var list=Array.isArray(rows)?rows.filter(function(e){ return e&&typeof e==='object'&&!Array.isArray(e); }):[];
+  if(!list.length) return '';
+  var body=list.map(function(e){
+    return '<details class="yjl-e"><summary><span class="mh-at">'+esc(yjlAt_(e.at))+'</span>'+
+      '<span class="mh-via">調剤日 '+esc(str(e.srcDate))+'</span><span class="mh-via">確かめた人 '+esc(str(e.by))+'</span></summary>'+
+      '<div class="yjl-lbl">書類の行と扱い</div><pre class="yjl-pre">'+esc(str(e.docRows))+'</pre>'+
+      '<div class="yjl-lbl">反映前</div><pre class="yjl-pre">'+esc(str(e.before)||'（記載なし）')+'</pre>'+
+      '<div class="yjl-lbl">反映後</div><pre class="yjl-pre">'+esc(str(e.after))+'</pre></details>';
+  }).join('');
+  return '<div class="sec sec-yjlog"><div class="sec-lbl">薬情の反映記録（30日）</div><div class="sec-body">'+
+    '<div class="cell" style="border-right:none;border-bottom:none">'+body+'</div></div></div>';
+}
+/* 詳細画面の枠（renderView が置く）。この方の記録をまだ取っていなければ取りに行く。届いたら枠の中身だけ入れる */
+function yjlSlot_(r){
+  if(getDeviceRole()==='field'||!r||r.id==null||r.id==='') return '';
+  var id=String(r.id);
+  if(yjlMem.id!==id){ yjlMem={id:id, rows:null}; yjlLoad_(id); }
+  return '<div class="yjl-slot" id="yjlSlot" data-id="'+esc(id)+'">'+(yjlMem.rows?yjlHtml_(yjlMem.rows):'')+'</div>';
+}
+/* 詳細画面の「担当者会議」の欄（2026-10-25 本人指示）。担当者会議のページへのリンクだけを出す。
+   ★渡すのは利用者No（resident=）だけ。氏名・居室は URL に載せない（あちらがサーバーから読む）
+   ★現場端末では欄ごと出さない（担当者会議のページも現場端末では使えないため）。印刷しない（.sec-cmeet を @media print で消す）
+   ★他の画面へのリンク（この方を各アプリで開く）と同じく別タブで開く＝マスタで見ていた内容を失わない */
+function meetingLinkHtml_(r){
+  if(getDeviceRole()==='field'||!r||r.id==null||r.id==='') return '';
+  return '<div class="sec sec-cmeet"><div class="sec-lbl">担当者会議</div><div class="sec-body">'+
+    '<div class="cell" style="border-right:none;border-bottom:none">'+
+    '<a class="rlink" target="_blank" rel="noopener" href="'+esc('care-meeting.html?resident='+encodeURIComponent(String(r.id)))+'">📋 担当者会議の記録を開く</a>'+
+    '</div></div></div>';
+}
+function yjlLoad_(id){
+  if(getDeviceRole()==='field'||!CFG.url) return;
+  var gen=++yjlGen, dg=devGen;
+  apiPostRaw({action:'medCand', op:'yjLog', id:id},25000).then(function(r){
+    if(gen!==yjlGen||dg!==devGen||getDeviceRole()==='field') return;
+    if(!curResident||String(curResident.id)!==id||yjlMem.id!==id) return;   /* 開いている方が違えば捨てる */
+    if(!r||r.ok!==true||!Array.isArray(r.rows)) return;                    /* 古いGAS・読めない時は欄を出さない */
+    yjlMem.rows=r.rows;
+    var el=$('yjlSlot'); if(el&&el.getAttribute('data-id')===id) el.innerHTML=yjlHtml_(r.rows);
+    yrPaintSlot_();   /* 見直しの印（薬剤情報の欄の頭・2026-11-11） */
+  })['catch'](function(){ /* 読めない時は欄を出さない（画面は止めない） */ });
+}
+/* ── 薬情の反映の見直し（2026-11-11 代表者の決定）──
+   まとめて反映・完全入れ替え（すべて入れ替え・11/10 夜の自動の中止）で定期薬を消した・変えた方に、詳細画面の「薬剤情報」の欄の頭へ
+   「まとめて反映（日時・確かめた人）」の印を7日間出し、看護職・薬剤師が「見直した」を押すと消す。管理者には一覧（🔎 薬情の見直し）と、
+   メニューの札の数（rm_yjrev_due・件数と日付だけ）を出す。
+   ★印を出すかは YakujoCalc.reviewMark（純関数・check/unit/yakujo_review_test.js）。記録は反映記録（yjLog・yjAudit）を使う
+   ★「見直した」を押せるかはサーバー（入居者マスタの GAS／res-write の yjReview）が、ログインと「アプリの使える人」の「薬の見直し」
+     （yj-review）で決める。管理者は常に可・事務所は許された人だけ・現場は不可。画面は押せる人を決めない
+   ★事務所PCだけ・画面だけ（印刷しない）。記録はメモリにだけ置き、localStorage にはメニューの札の件数と日付だけを書く
+   ★応答は、出した時の世代（yrGen・devGen）と開いている方が同じ時だけ使う */
+var yrGen=0, yrCountGen=0, yrAudit=null, yrBusy=false, yrMsg={}, yrOpener=null, yrShown={id:'', marks:[]};
+var YR_MENU_KEY='rm_yjrev_due';
+var YR_SRV_OLD='まだ使えません（入居者マスタの受け口の更新が必要です。管理者に連絡してください）';
+function yrCalcOk_(){ return typeof YakujoCalc!=='undefined'&&typeof YakujoCalc.reviewMark==='function'; }
+function yrKey_(m){ return m.id+'\n'+m.srcKey+'\n'+m.at; }
+function yrMarksOf_(rows, id){
+  if(!yrCalcOk_()||!Array.isArray(rows)) return [];
+  var now=Date.now();
+  return rows.map(function(e){
+    var m=YakujoCalc.reviewMark(e, now);
+    if(m&&!m.id) m.id=String(id==null?'':id);
+    return m;
+  }).filter(function(m){ return m&&m.srcKey&&m.at; });
+}
+function yrGoneText_(m){
+  if(!m.gone.length) return m.stop?('中止 '+m.stop+'行（消えた行は記録から読めませんでした）'):'';
+  return '定期薬から無くなった行'+(m.change?'（中止の行と、変える前の行）':'')+'：'+m.gone.join('、');
+}
+/* 詳細画面の「薬剤情報」の欄の頭の枠（renderView が置く）。中身は反映記録が届いた時に入る */
+function yrSlot_(r){
+  if(getDeviceRole()==='field'||!r||r.id==null||r.id==='') return '';
+  var id=String(r.id);
+  return '<div class="yr-slot" id="yrSlot" data-id="'+esc(id)+'">'+(yjlMem.id===id&&yjlMem.rows?yrMarkHtml_(id, yjlMem.rows):'')+'</div>';
+}
+function yrMarkHtml_(id, rows){
+  var ms=yrMarksOf_(rows, id);
+  yrShown={id:String(id), marks:ms};   /* 押したボタンは、描いた時の印を指す（描いた後に7日を過ぎた印で並びがずれないように・反証レビューの指摘4） */
+  if(!ms.length) return '';
+  var login=mcHasLogin_();
+  return '<div class="yr-box" role="note">'+ms.map(function(m, i){
+    var g=yrGoneText_(m), msg=yrMsg[yrKey_(m)]||'';
+    return '<div class="yr-mark"><div class="yr-t">⚠ 見直してください：'+esc(m.text)+'</div>'+
+      (g?'<div class="yr-g">'+esc(g)+(m.truncated?'（記録が長く、途中までです）':'')+'</div>':'')+
+      '<div class="yr-u">'+esc(m.until)+' まで出します。看護職・薬剤師が今の定期薬を見直したら「見直した」を押してください。</div>'+
+      '<div class="yr-acts">'+(login?'<button type="button" class="btn btn-ok yr-done" data-i="'+i+'"'+(yrBusy?' disabled':'')+'>✔ 見直した</button>':'<span class="yr-msg">「見直した」はログインしてから押せます</span>')+
+      (msg?'<span class="yr-msg" role="status">'+esc(msg)+'</span>':'')+'</div></div>';
+  }).join('')+'</div>';
+}
+function yrPaintSlot_(){
+  try{
+    var el=$('yrSlot'); if(!el) return;
+    var id=el.getAttribute('data-id');
+    if(getDeviceRole()==='field'||yjlMem.id!==id||!yjlMem.rows){ el.innerHTML=''; return; }
+    el.innerHTML=yrMarkHtml_(id, yjlMem.rows);
+  }catch(e){ rmNote_('見直しの印', e); }
+}
+/* 「見直した」を押した（i は印の並びの番号） */
+async function yrReview_(i){
+  if(yrBusy||getDeviceRole()==='field') return;
+  var el=$('yrSlot'); if(!el) return;
+  var id=el.getAttribute('data-id');
+  if(yjlMem.id!==id||!yjlMem.rows||yrShown.id!==id) return;
+  var m=yrShown.marks[i]; if(!m) return;
+  var dg0=devGen;
+  if(!(await SUDialog.confirm('「'+m.text+'」の反映を見直しましたか？\n今の定期薬が処方どおりかを確かめてから押してください。\n押すとこの印は消え、反映記録に見直した時刻とあなたのログインが残ります。'))) return;
+  /* 窓の間に端末の用途・開いている方・印が変わった・送り始めた時は送らない（画面の中の窓・2026-11-13・仮置き） */
+  var el1=$('yrSlot');   /* 描き直しで印の物は作り直されるので、同じ印か（番号・印・時刻）で比べる */
+  if(yrBusy||dg0!==devGen||getDeviceRole()==='field'||!el1||el1.getAttribute('data-id')!==id||yjlMem.id!==id||yrShown.id!==id||!yrShown.marks.some(function(x){ return yrKey_(x)===yrKey_(m); })) return;
+  var key=yrKey_(m), dg=devGen, gen=yrGen;
+  yrBusy=true; yrMsg[key]='残しています…'; yrPaintSlot_();
+  function done(msg){ yrMsg[key]=msg||''; }
+  rmAccessToken_()['catch'](function(){ return ''; }).then(function(at){
+    if(dg!==devGen) return;
+    if(!at){ done('ログインし直してから押してください（何も書いていません）'); return; }
+    return apiPostRaw({action:'medCand', op:'yjReview', id:m.id, srcKey:m.srcKey, at:m.at, accessToken:at},30000).then(function(r){
+      if(dg!==devGen) return;
+      if(r&&r.ok===true){
+        var ra=String(r.reviewedAt||new Date().toISOString()), rb=String(r.reviewedBy||'');
+        [yjlMem.rows, yrAudit&&yrAudit.rows].forEach(function(list){
+          (Array.isArray(list)?list:[]).forEach(function(e){
+            if(e&&String(e.id||id)===m.id&&e.srcKey===m.srcKey&&e.at===m.at){ e.reviewedAt=ra; e.reviewedBy=rb; }
+          });
+        });
+        done(''); toast(r.already?'この反映は既に見直されています（'+(rb||'記録あり')+'）':'✅ 見直した印を残しました');
+        if(yrAudit&&Array.isArray(yrAudit.rows)) yrSaveDue_(); else yrCountLoad_();
+        if(gen===yrGen) yrPaint_();
+        return;
+      }
+      if(r&&r.denied) done('「見直した」は、管理者が「アプリの使える人」の「薬の見直し」で許した方だけが押せます。管理者は2段階認証を済ませてから押してください（何も書いていません）');
+      else if(r&&r.unverified) done('ログインを確かめられませんでした。ログインし直してから押してください（何も書いていません）');
+      else if(r&&r.missing) done('反映記録が見つかりませんでした（30日を過ぎて消えた可能性があります）');
+      else if(r&&/不明な操作/.test(String(r.error||''))) done(YR_SRV_OLD);
+      else done('残せませんでした：'+rmErrWords_(String((r&&r.error)||'不明な応答'),'見直しの印'));
+    }).catch(function(e){
+      if(dg!==devGen) return;
+      var s=String(e&&e.message||e);
+      if(/受け付けていません|不明なaction|不明な操作/.test(s)) done(YR_SRV_OLD);
+      else done('残せたか分かりません（'+rmErrWords_(s,'見直しの印')+'）。画面を開き直して、印が消えているか確かめてください');
+    });
+  }).then(function(){ yrBusy=false; if(dg===devGen) yrPaintSlot_(); });
+}
+/* 管理者の一覧（全員の反映記録・30日）を読む。メニューの札の数もここで書く */
+function yrAuditLoad_(){
+  if(getDeviceRole()==='field'||!CFG.url||!yrCalcOk_()) return;
+  var gen=++yrGen, dg=devGen;
+  if(yrAudit) yrAudit.loading=true; else yrAudit={loading:true};
+  yrPaint_();
+  rmAccessToken_()['catch'](function(){ return ''; }).then(function(at){
+    if(!at) return {ok:false, error:'ログインし直してから開いてください'};
+    return apiPostRaw({action:'medCand', op:'yjAudit', accessToken:at, screen:'resident-master'},40000);
+  }).then(function(r){
+    if(gen!==yrGen||dg!==devGen||getDeviceRole()==='field') return;
+    if(!r||r.ok!==true||!Array.isArray(r.rows)){
+      var er=String((r&&r.error)||'不明な応答');
+      yrAudit={err:/不明な操作/.test(er)?YR_SRV_OLD:rmErrWords_(er,'見直しの一覧')}; return;
+    }
+    yrAudit={rows:r.rows, more:!!r.more, at:Date.now()};
+    yrSaveDue_();
+  })['catch'](function(e){
+    if(gen!==yrGen||dg!==devGen) return;
+    var s=String(e&&e.message||e);
+    yrAudit={err:/受け付けていません|不明なaction|不明な操作/.test(s)?YR_SRV_OLD:rmErrWords_(s,'見直しの一覧')};
+  }).then(function(){ if(gen===yrGen) yrPaint_(); });
+}
+/* 札の数だけを読む（countOnly: サーバーは時刻・まとめて反映か・扱いの語・見直したかだけを返し、薬の名前・番号を返さない＝開いた記録も残らない）。
+   ページを開いた時と反映の後に呼ぶ。全員分の中身は「🔎 薬情の見直し」を開いた時だけ読む（審査の指摘・必要最小限の取得） */
+function yrCountLoad_(){
+  if(getDeviceRole()==='field'||!CFG.url||!yrCalcOk_()) return;
+  var gen=++yrCountGen, dg=devGen;
+  rmAccessToken_()['catch'](function(){ return ''; }).then(function(at){
+    if(!at) return null;
+    return apiPostRaw({action:'medCand', op:'yjAudit', countOnly:true, accessToken:at},40000);
+  }).then(function(r){
+    if(gen!==yrCountGen||dg!==devGen||getDeviceRole()==='field') return;
+    if(r&&r.ok===true&&Array.isArray(r.rows)) yrSaveDueRows_(r.rows);
+  })['catch'](function(){ /* 数えられない時は札を前のままにする（画面は止めない） */ });
+}
+/* 反映の後: 一覧を開いていれば読み直し、開いていなければ次に開いた時に読み直す。札の数も読み直す */
+function yrAfterApply_(){
+  var m=$('mYjRev');
+  if(m&&m.classList.contains('on')) yrAuditLoad_(); else { yrGen++; yrAudit=null; }
+  yrCountLoad_();
+}
+function yrSaveDueRows_(rows){
+  try{
+    if(getDeviceRole()==='field'||!Array.isArray(rows)||!yrCalcOk_()) return;
+    var d=YakujoCalc.reviewMenuDue(rows, Date.now(), todayISO());
+    if(d) localStorage.setItem(YR_MENU_KEY, JSON.stringify(d));
+  }catch(e){ /* 残せなくても画面は動く */ }
+}
+/* メニューの札（管理者にだけ出る・件数と日付だけ）。全員の記録を読めた時だけ書く */
+function yrSaveDue_(){ if(yrAudit&&Array.isArray(yrAudit.rows)) yrSaveDueRows_(yrAudit.rows); }
+function yrPaint_(){
+  var box=$('yrBody'), m=$('mYjRev'); if(!box||!m||!m.classList.contains('on')) return;
+  var A=yrAudit, h='';
+  if(!A||A.loading&&!A.rows){ box.innerHTML='<p class="yr-note" role="status">読み込んでいます…</p>'; return; }
+  if(A.err){ box.innerHTML='<p class="yr-note" role="alert">読み込めませんでした：'+esc(A.err)+'</p>'; return; }
+  var now=Date.now(), pend=[];
+  A.rows.forEach(function(e){ var k=YakujoCalc.reviewMark(e, now); if(k) pend.push(k); });
+  var open=function(id){ return '<button type="button" class="btn btn-gray yr-go" data-id="'+esc(id)+'">開く</button>'; };
+  h+='<h3 class="yr-sec">見直し待ち '+pend.length+' 件</h3>';
+  h+='<p class="yr-note">まとめて反映・すべて入れ替えで定期薬を消した・変えた方です。反映から7日間、詳細画面の「薬剤情報」の欄に印が出ます。</p>';
+  if(pend.length){
+    h+='<div class="yr-wrap"><table class="yr-tbl"><thead><tr><th scope="col">番号</th><th scope="col">印</th><th scope="col">無くなった行</th><th scope="col">印が出る期限</th><th scope="col"></th></tr></thead><tbody>'+
+      pend.map(function(k){ return '<tr><td>'+esc(k.id)+'</td><td>'+esc(k.text)+'</td><td>'+esc(yrGoneText_(k)||'なし（変えただけ）')+'</td><td>'+esc(k.until)+'</td><td>'+open(k.id)+'</td></tr>'; }).join('')+
+      '</tbody></table></div>';
+  }
+  var au=YakujoCalc.replaceAudit(A.rows);
+  h+='<h3 class="yr-sec">完全入れ替えで定期薬を消した反映 '+au.length+' 件</h3>';
+  h+='<p class="yr-note">11/10 夜の公開（21:51ごろ）から自動の中止をやめた公開（23:19ごろ）までは、かかりつけ病院の名前が書類にある方の「書類に無い今の薬」を自動で中止にしていました。'+
+     'その間の中止は、自動か人が選んだかを記録から見分けられないため全部出しています（古い画面を開いたままの端末を見込み、11/10 の終わりまでを含めます）。それ以後は「すべて入れ替え」を押した反映だけです。'+
+     '「無くなった行」は反映の前後の差で、変える前の行も含みます。反映記録は30日で消えます。</p>';
+  if(au.length){
+    h+='<div class="yr-wrap"><table class="yr-tbl"><thead><tr><th scope="col">番号</th><th scope="col">日時</th><th scope="col">種類</th><th scope="col">無くなった行</th><th scope="col">確かめた人</th><th scope="col">見直し</th><th scope="col"></th></tr></thead><tbody>'+
+      au.map(function(x){
+        var kind=(x.type==='all'?'すべて入れ替え':'自動の中止の期間（中止 '+x.stop+'行）')+(x.bulk?'・まとめて反映':'');
+        var gone=x.gone.length?x.gone.join('、')+(x.truncated?'（記録は途中まで）':''):'（読めませんでした）';
+        return '<tr><td>'+esc(x.id)+'</td><td>'+esc(x.at)+'</td><td>'+esc(kind)+'</td><td>'+esc(gone)+'</td><td>'+esc(x.by||'不明')+'</td><td>'+
+          esc(x.reviewedAt?(x.reviewedAt+' '+x.reviewedBy):'まだ')+'</td><td>'+open(x.id)+'</td></tr>';
+      }).join('')+'</tbody></table></div>';
+  } else h+='<p class="yr-note">ありません。</p>';
+  if(A.more) h+='<p class="yr-note">記録が500件を超えたため、古い分は出していません。</p>';
+  box.innerHTML=h;
+}
+function yrOpen_(){
+  if(getDeviceRole()==='field') return;
+  var m=$('mYjRev'); if(!m) return;
+  yrOpener=document.activeElement;
+  m.classList.add('on'); navEnter();
+  try{ $('mYjRevH').focus(); }catch(e){}
+  if(!yrAudit||yrAudit.err) yrAuditLoad_(); else yrPaint_();
+}
+function yrClose_(){
+  var m=$('mYjRev'); if(!m||!m.classList.contains('on')) return;
+  m.classList.remove('on'); $('yrBody').innerHTML='';
+  if($('sc-list').classList.contains('on')) navLeave();
+  try{ if(yrOpener&&yrOpener.focus&&document.contains(yrOpener)) yrOpener.focus(); }catch(e){}
+}
+function yrPurge_(){
+  yrGen++; yrCountGen++; yrAudit=null; yrMsg={}; yrBusy=false;
+  try{ var m=$('mYjRev'); if(m) m.classList.remove('on'); var b=$('yrBody'); if(b) b.innerHTML=''; var o=$('yrOpen'); if(o) o.hidden=true; var sl=$('yrSlot'); if(sl) sl.innerHTML=''; }catch(e){}
+}
+function yrWire_(){
+  var ob=$('yrOpen'), m=$('mYjRev');
+  if(ob) ob.addEventListener('click', yrOpen_);
+  document.addEventListener('click', function(e){
+    var t=e.target&&e.target.closest?e.target.closest('.yr-done'):null;
+    if(t&&!t.disabled) yrReview_(Number(t.getAttribute('data-i')));
+  });
+  if(!m) return;
+  m.addEventListener('keydown', function(e){
+    if(e.isComposing||e.keyCode===229) return;
+    if(e.key==='Escape'){ yrClose_(); return; }
+    if(e.key==='Tab'){
+      var f=Array.prototype.filter.call(m.querySelectorAll('button,[tabindex]'),function(x){ return !x.disabled&&x.offsetParent!==null&&x.tabIndex>=0; });
+      if(!f.length) return;
+      if(e.shiftKey&&document.activeElement===f[0]){ e.preventDefault(); f[f.length-1].focus(); }
+      else if(!e.shiftKey&&document.activeElement===f[f.length-1]){ e.preventDefault(); f[0].focus(); }
+    }
+  });
+  m.addEventListener('click', function(e){
+    var t=e.target; if(!t||!t.closest) return;
+    if(t.id==='yrClose'||t===m){ yrClose_(); return; }
+    if(t.id==='yrReload'){ yrAuditLoad_(); return; }
+    var g=t.closest('.yr-go');
+    if(g){ var id=g.getAttribute('data-id'); yrClose_(); if(id) openResident(id); }
+  });
+}
+function applyPrintHide(box,r){
+  if(!box)return;
+  var hid=printHideSet(r), lab2key={};
+  PRINT_SECS.forEach(function(p){lab2key[p[1]]=p[0]});
+  Array.prototype.forEach.call(box.querySelectorAll('.sec-lbl'),function(lbl){
+    var key=lab2key[(lbl.textContent||'').trim()];
+    if(!key||!hid[key])return;
+    var frame=lbl.parentElement; if(!frame)return;
+    frame.setAttribute('data-nop','1');
+    var body=frame.querySelector('.sec-body');
+    if(body&&!body.querySelector('.nop-tag')){
+      var tag=document.createElement('div');
+      tag.className='nop-tag';
+      tag.textContent='🚫 この欄は印刷しません（画面には出ます）';
+      body.insertBefore(tag,body.firstChild);
+    }
+  });
+  /* 事業所と家族構成図は1つの行（.biz-geno-row）に横並びで入っている。
+     ・両方を伏せる → 中身が空のまま行の上罫線（border-top）だけが紙に1本残る（実測1px）→ 行ごと外す
+     ・事業所だけ伏せる → 右隣（家族構成図）の枠の左罫線が【紙の左内縁】に来て、シート枠のすぐ内側に
+       余分な縦線が1本走る（行の高さぶん・実測150px超）→ 見えている先頭の枠の左罫線を紙でだけ消す */
+  Array.prototype.forEach.call(box.querySelectorAll('.biz-geno-row'),function(row){
+    var lbls=row.querySelectorAll('.sec-lbl');
+    if(!lbls.length)return;
+    var frames=Array.prototype.map.call(lbls,function(l){return l.parentElement});
+    var vis=frames.filter(function(f){return f&&f.getAttribute('data-nop')!=='1'});
+    if(!vis.length){ row.setAttribute('data-nop','1'); return }
+    /* ★先頭が伏せられた時だけ付ける。伏せていない時に付けると、指定ゼロの方の帳票にも
+       クラスが載る（今は見た目が変わらないが、将来の CSS 変更で効きはじめる） */
+    if(vis[0]!==frames[0]) vis[0].classList.add('nop-first');
+  });
+  /* ★再掲の始末。安全情報の帯（詳細画面の先頭）とフェイスシートの「サマリ」は、他の欄の値を
+     抜き出して**もう一度**出している。元の欄を伏せてもここに残ると伏せ漏れになる
+     （アレルギー・感染症・医療処置は、まさに家族向けの紙から外したい類の情報）。
+     由来を data-nop-of に書いておき、その欄が伏せられていれば一緒に紙から外す。 */
+  Array.prototype.forEach.call(box.querySelectorAll('[data-nop-of]'),function(el){
+    if(hid[el.getAttribute('data-nop-of')]) el.setAttribute('data-nop-row','1');
+  });
+  /* ★中身が全部伏せられた入れ物は、入れ物ごと外す。
+     残すと紙に「空の帯」「空の行」＝罫線と余白だけが出る（安全情報の帯は実測17px）。
+     見出し（.sec-lbl）を持たない枠＝安全情報の帯なので、枠そのものも外す。
+     見出しを持つ枠（＝欄）は外さない＝欄の存在は残す（伏せたのは中身の再掲だけ）。 */
+  var conts=[];
+  Array.prototype.forEach.call(box.querySelectorAll('[data-nop-row]'),function(el){
+    if(el.parentElement&&conts.indexOf(el.parentElement)<0)conts.push(el.parentElement);
+  });
+  conts.forEach(function(p){
+    if(!p.children.length)return;
+    var allHid=Array.prototype.every.call(p.children,function(c){return c.hasAttribute('data-nop-row')});
+    if(!allHid)return;
+    p.setAttribute('data-nop-row','1');
+    var sec=p.closest?p.closest('.sec'):null;
+    if(sec&&!sec.querySelector('.sec-lbl'))sec.setAttribute('data-nop','1');
+  });
+  /* ★行の最後のセルを伏せると、その手前のセルの右罫線が【紙の右端】に縦線として残る（実測）。
+     見えている最後のセルの右罫線を紙でだけ消して、従来と同じ見え方に戻す。
+     クラスで付けること（style に直接書くと、伏せたセルが見えている画面側の罫線まで変わる）。 */
+  /* ★紙で消えるのは printHide だけではない。退去日・ご逝去日・在籍状態・入居期間・退去先には
+     元から .noprint-cell が付いている。どちらの理由で消えても同じ穴（右端に罫線が残る）なので
+     両方を「紙で消える」とみなす */
+  function nopHidden_(c){ return c.hasAttribute('data-nop-row')||c.classList.contains('noprint-cell') }
+  Array.prototype.forEach.call(box.querySelectorAll('.row-cells'),function(row){
+    var cells=row.querySelectorAll('.cell');
+    if(!cells.length||!nopHidden_(cells[cells.length-1]))return;
+    for(var i=cells.length-1;i>=0;i--){
+      if(!nopHidden_(cells[i])){ cells[i].classList.add('nop-last'); break }
+    }
+  });
+}
+/* ═══ 詳細画面のひと目カード・目次・欄をたたむ（2026-10-16 管理者指示・使いやすさ改善の第2弾）═══
+   ★どれも画面だけ。紙の様式（.sheet）の中身・並び・寸法には触れない（原則2）。
+   ★値は詳細画面と同じ記録（r）から出すだけ。新しく取りに行かない・書き込まない。
+   ★たたんだ欄は「欄の見出しの文字」だけを端末に覚える（rmaster_fold）。氏名・記録は保存しない（原則11）。 */
+var FOLD_KEY='rmaster_fold';
+/* 医療支援経過の本文を、見出しごとに組み立てる（2026-10-20 代表者の決定・表示だけ）。
+   記録の形（訪問診療アプリが入れる）: 「【Dr.へ伝えた内容】」の下に数行 →「【診察の結果】」の下に数行。
+   ・【Dr.へ伝えた内容】の中身が「特変なし。」（句点なしも）の1行だけなら、見出しごと出さない
+   ・【診察の結果】は【診察結果】と出す
+   ・見出しの下の文は2文字下げる（折り返した行も同じ位置から始まるよう、行ごとに左の余白で下げる）
+   ・空の行は詰める。下に何も無い見出しは出さない。見出しより前の文はそのまま。何も残らなければ '' を返す（その記録は出さない） */
+var MEDLOG_HEAD_RE=/^[\s　]*(【[^】]{1,20}】)[\s　]*$/;
+var MEDLOG_HEAD_RENAME={'【診察の結果】':'【診察結果】'};
+var MEDLOG_DR_HEAD='【Dr.へ伝えた内容】', MEDLOG_DR_NOCHANGE=/^[\s　]*特変なし。?[\s　]*$/;
+function medlogBodyHtml_(text){
+  var secs=[], cur={head:null, lines:[]};
+  String(text==null?'':text).split('\n').forEach(function(ln){
+    var m=MEDLOG_HEAD_RE.exec(ln);
+    if(m){ secs.push(cur); cur={head:m[1], lines:[]}; return; }
+    if(String(ln).replace(/[\s　]/g,'')!=='') cur.lines.push(ln);
+  });
+  secs.push(cur);
+  var out=[];
+  secs.forEach(function(sec){
+    if(sec.head===null){
+      sec.lines.forEach(function(ln){ out.push('<div class="ml-l">'+esc(ln)+'</div>'); });
+      return;
+    }
+    if(sec.head===MEDLOG_DR_HEAD && sec.lines.length===1 && MEDLOG_DR_NOCHANGE.test(sec.lines[0])) return;
+    if(!sec.lines.length) return;   /* 下に何も書かれていない見出しは出さない（見出しだけの行を作らない） */
+    out.push('<div class="ml-l ml-h">'+esc(MEDLOG_HEAD_RENAME[sec.head]||sec.head)+'</div>');
+    sec.lines.forEach(function(ln){ out.push('<div class="ml-l ml-ind">'+esc(String(ln).replace(/^[\s　]+/,''))+'</div>'); });
+  });
+  return out.join('');
+}
+/* 医療支援経過で出さない行（2026-10-20 代表者の決定）。「■処方歴■」（記録の実際の書き方）と、指示の言い方「■処方■」、「■残なし■」を含む行、
+   それに「処方:」「処方：」で始まる行（見出しの付かない処方の行も含め、全部出さない＝同日の追加指示）。
+   ★行の途中に「処方」の字があるだけの行（所見の文など）は出す */
+var MEDLOG_HIDE_RE=/■処方歴?■|■残なし■|^[\s　]*処方[\s　]*[:：]/;
+/* 処方の変更の印（2026-10-25 本人指示）。医療支援経過で出さない処方の行（MEDLOG_HIDE_RE）の中身を比べ、変わった記録に印を立てる。
+   ★複数の病院・クリニックから処方がある方に対応（同日の追加指示）: 比べる相手は【同じ医療機関（clinic）】の、
+     処方の行がある直前の記録（日付が前で、処方の行を持ついちばん新しい記録）。医療機関が交互に並んでも、入れ替わりだけでは立てない。
+   ★その医療機関の最初の処方でも、ほかの医療機関の処方が前にある時は立てる（処方元が増えた＝薬剤情報に足す必要がある）。
+     いちばん古い処方（どの医療機関の処方も前に無い）には立てない（比べる相手が無い）。
+   ★医療機関名は全角半角・空白をそろえて比べる。空欄の記録（手入力）は空欄どうしで比べる。
+   ★比べるのは処方の行だけ（■残なし■ は除く）。行の頭の印・空白（全角・半角・連続）・行の並びの違いは同じとみなす。処方の行が無い記録には立てない。
+   ★同じ日付の中は保存の並びで先の方を新しいとみなす。医療機関名は片方がもう片方を含む名前（4文字以上）を同じとみなし、
+     空欄（手入力）の後に医療機関名つきが初めて来た時は空欄の前回と比べる。
+   list は保存の並びのまま（日付の新旧は問わない）。戻り値 {changed:[真偽…], clinics:医療機関の数（処方の行がある記録の、空欄を除く）}。
+   表示だけで記録は変えない */
+function medlogClinicKey_(c){
+  var t=String(c==null?'':c); try{ t=t.normalize('NFKC'); }catch(e){}
+  return t.replace(/[\s　]+/g,'');
+}
+function medlogRxChanged_(list){
+  var arr=Array.isArray(list)?list:[], out=arr.map(function(){ return false; });
+  /* 比べる中身: 処方の行（■残なし■ は残薬の知らせで処方の中身ではないので外す）。行の頭の印（■処方歴■・■処方■・処方:）を外し、
+     空白をそろえ、並びを問わない（10/25 反証レビュー指摘2・3） */
+  var keyOf=function(s){
+    var ls=String((s&&s.text)||'').split('\n').filter(function(ln){ return MEDLOG_HIDE_RE.test(ln) && !/■残なし■/.test(ln); })
+      .map(function(ln){ return ln.replace(/■処方歴?■/g,' ').replace(/^[\s　]*処方[\s　]*[:：]/,' ').replace(/[\s　]+/g,' ').trim(); }).filter(String);
+    return ls.length?ls.sort().join('\n'):null;
+  };
+  /* 同じ日付の中は、保存の並びで先の方を新しいとみなす（手入力は先頭に足す・画面の上が新しい・指摘1） */
+  var idx=arr.map(function(s,i){ return {i:i, d:String((s&&s.date)||''), c:medlogClinicKey_(s&&s.clinic), k:keyOf(s)}; })
+    .sort(function(a,b){ return a.d<b.d?-1:a.d>b.d?1:b.i-a.i; });
+  /* 医療機関名は、片方がもう片方を含む名前（4文字以上）を同じ医療機関とみなす（「医療法人…」の有無など・指摘4） */
+  var known=[], canon=function(c){
+    if(!c) return '';
+    for(var j=0;j<known.length;j++){ var q=known[j]; if(q===c || (Math.min(q.length,c.length)>=4 && (q.indexOf(c)>=0 || c.indexOf(q)>=0))) return q; }
+    known.push(c); return c;
+  };
+  var prev={}, any=false, names={}, n=0;
+  idx.forEach(function(x){
+    if(x.k===null) return;
+    var c=canon(x.c);
+    if(c&&!names[c]){ names[c]=1; n++; }
+    var has=Object.prototype.hasOwnProperty;
+    if(has.call(prev,c)){ if(x.k!==prev[c]) out[x.i]=true; }
+    else if(c && has.call(prev,'')){ if(x.k!==prev['']) out[x.i]=true; }   /* 空欄（手入力）の後に医療機関名つきが初めて来た時は、空欄の前回と比べる（指摘3） */
+    else if(any) out[x.i]=true;   /* この医療機関の最初の処方で、ほかの医療機関の処方が前にある＝処方元が増えた */
+    prev[c]=x.k; any=true;
+  });
+  return {changed:out, clinics:n};
+}
+var MEDLOG_RX_NOTE='処方の変更あり（薬剤情報を確認）';
+var CERT_NEAR_DAYS=60;   /* 認定期限の「近い」の範囲（2026-10-16 代表者の決定）。タブの人数とひと目カードで共用 */
+function glanceVal_(v, cls){
+  var t=String(v==null?'':v).trim();
+  return t ? '<span class="gv'+(cls?' '+cls:'')+'">'+esc(t)+'</span>' : '<span class="gv gnone">未登録</span>';
+}
+function glanceItem_(k, valHtml){ return '<div><span class="gk">'+esc(k)+'</span>'+valHtml+'</div>'; }
+/* 認定の残り。期限切れ・60日以内は赤字にする。読めない日付は推測しない（certExpiryClass と同じ判定） */
+function glanceCert_(r){
+  var lv=String(r.careLevel||'').trim();
+  var c=certExpiryClass(r.careCertEnd, certToday_());
+  var end=certYmd_(r.careCertEnd);
+  var endTx=end?(end.y+'/'+end.m+'/'+end.d):'';
+  var tail, warn=false;
+  if(c.key==='none'){ tail='認定期間は未登録'; }
+  else if(c.key==='bad'){ tail='認定期間の書き方を確認してください'; warn=true; }
+  else if(c.days<0){ tail='認定期限切れ（'+(-c.days)+'日超過・'+endTx+'まで）'; warn=true; }
+  else { tail=endTx+'まで（あと'+c.days+'日）'; warn=(c.days<=CERT_NEAR_DAYS); }
+  /* 赤字にするのは期限の行だけ（介護度そのものは注意の対象ではない） */
+  return '<span class="gv'+(lv?'':' gnone')+'">'+esc(lv||'介護度 未登録')+'</span>'+
+         '<span class="gv'+(warn?' warn':(c.key==='none'?' gnone':''))+'">'+esc(tail)+'</span>';
+}
+/* ── 未入力の判定（2026-10-17 第3弾）──
+   新しく入居した方の押さえ漏れを見つけるための目安。保存・印刷には使わない。
+   mealSide は getBulk に無いので、一覧では食形態一覧の取得（mealRows）から渡す。渡せない時（undefined）は判定しない。
+   ★「自立」の方は認定・居宅を求めない */
+function missingOf_(r, mealSide){
+  var out=[], fam=Array.isArray(r.family)?r.family:[], lv=String(r.careLevel||'').trim();
+  var has=function(v){ return String(v==null?'':v).trim()!==''; };
+  if(!has(r.birthDate)) out.push('生年月日');
+  if(!lv) out.push('介護度');
+  if(lv!=='自立'&&!has(r.careCertEnd)) out.push('認定期間');
+  if(!fam.some(function(f){ return f&&f.kp; })) out.push('キーパーソン');
+  if(!fam.some(function(f){ return f&&f.emergency; })) out.push('緊急連絡先');
+  if(!has(r.hospital)) out.push('主治医');
+  if(mealSide!==undefined&&!has(mealSide)) out.push('副食');
+  if(lv!=='自立'&&(!has(r.careOffice)||!has(r.careManager))) out.push('居宅・ケアマネ');
+  return out;
+}
+function missHtml(){
+  var base=shBase();
+  if(!bkRows) return '<div class="sh-sheet" id="missSheet"><div class="loading">'+
+    esc(bkLoading?'記録を取得しています…':(bkErr||'取得していません'))+'</div></div>';
+  var sideOf={};
+  if(mealRows) mealRows.forEach(function(m){ if(m&&m.id!=null) sideOf[String(m.id)]=(m.mealSide==null?'':m.mealSide); });
+  var items=base.map(function(r){
+    var o=bkOf(r), side=mealRows?(Object.prototype.hasOwnProperty.call(sideOf,String(r.id))?sideOf[String(r.id)]:''):undefined;
+    return {r:o, miss:missingOf_(o, side)};
+  }).filter(function(it){ return it.miss.length; });
+  items.sort(function(a,b){ return (b.miss.length-a.miss.length) || byKana(a.r,b.r); });
+  var body=items.map(function(it,i){
+    return '<tr><td class="mno">'+(i+1)+'</td><td class="mroom">'+esc(it.r.room||'')+'</td>'+
+      '<td><button type="button" class="mname" data-miss-id="'+esc(it.r.id)+'">'+esc(it.r.name||'')+'</button></td>'+
+      '<td class="mlist">'+esc(it.miss.join('・'))+'</td></tr>';
+  }).join('');
+  return '<div class="sh-sheet" id="missSheet">'+
+    '<div class="sh-hd"><div class="st1">未入力の一覧</div></div>'+
+    '<div class="miss-sum">在籍 <b>'+base.length+'</b>名のうち、未入力のある方 <b>'+items.length+'</b>名'+
+      (mealRows?'':'（副食はまだ取得していないので、数えていません）')+'</div>'+
+    (items.length
+      ? '<table class="misstbl"><thead><tr><th class="mno" scope="col">No</th><th class="mroom" scope="col">居室</th>'+
+        '<th scope="col">入居者（押すと詳細を開く）</th><th scope="col">未入力の欄</th></tr></thead><tbody>'+body+'</tbody></table>'
+      : '<div class="empty">未入力の欄がある方はいません</div>')+
+    '<div class="sh-ft">調べる欄：生年月日・介護度・認定期間・キーパーソン・緊急連絡先・主治医・副食・居宅とケアマネ（自立の方は認定と居宅を除く）</div>'+
+  '</div>';
+}
+/* ── 体重の減り（2026-10-17 第3弾）──
+   体重管理アプリの記録（この端末の localStorage・読むだけ）から、最新と 1・3・6か月前を比べる。
+   赤字の基準は低栄養の高リスクの目安（1か月5%・3か月7.5%・6か月10%以上の減少・2026-10-17 代表者の決定）。
+   ★名寄せは一覧の最新体重（buildWeightIndex）と同じ順序：masterId の一致 → マスタで1人だけの氏名の一致 */
+var WT_LOSS_RULE=[[1,5],[3,7.5],[6,10]];
+var _wtHistRaw=null,_wtHistDb=null;
+function wtRecDate_(rec){ var s=String(rec.measuredOn||(rec.yearMonth?rec.yearMonth+'-01':'')); return certYmd_(s.slice(0,10)); }
+function weightTrendOf(masterId, name){
+  var raw=null;
+  try{ raw=localStorage.getItem(WTMGR_KEY); }catch(e){ return null; }
+  if(!raw) return null;
+  if(raw!==_wtHistRaw){ _wtHistRaw=raw; try{ _wtHistDb=JSON.parse(raw); }catch(e){ _wtHistDb=null; } }
+  var db=_wtHistDb;
+  if(!db||!Array.isArray(db.residents)||!Array.isArray(db.records)) return null;
+  var uids=db.residents.filter(function(p){ return p&&p.id!=null&&p.masterId!=null&&String(p.masterId)===String(masterId); })
+    .map(function(p){ return String(p.id); });
+  if(!uids.length){
+    var n=wtNormName(name), dup=0;
+    roster.forEach(function(r){ if(wtNormName(r.name)===n) dup++; });
+    var hit=db.residents.filter(function(p){ return p&&p.id!=null&&n&&wtNormName(p.name)===n; });
+    if(n&&dup<=1&&hit.length===1) uids=[String(hit[0].id)];
+  }
+  if(!uids.length) return null;
+  var recs=db.records.filter(function(rec){
+    if(!rec||uids.indexOf(String(rec.residentId))<0) return false;
+    var w=Number(rec.weight); return isFinite(w)&&w>=20&&w<=150&&!!wtRecDate_(rec);
+  }).sort(function(a,b){ return wtRecKey(a)<wtRecKey(b)?-1:wtRecKey(a)>wtRecKey(b)?1:0; });
+  if(!recs.length) return null;
+  var last=recs[recs.length-1], ld=wtRecDate_(last), lw=Number(last.weight);
+  var out={weight:lw, on:ld, diffs:[], high:false};
+  WT_LOSS_RULE.forEach(function(rule){
+    var t=new Date(ld.y, ld.m-1-rule[0], ld.d), past=null;
+    recs.forEach(function(rec){
+      var d=wtRecDate_(rec); if(!d) return;
+      if(new Date(d.y,d.m-1,d.d)<=t) past=rec;   /* その日より前で一番新しい記録 */
+    });
+    if(!past) return;
+    var pw=Number(past.weight), kg=Math.round((lw-pw)*10)/10, pct=Math.round((pw-lw)/pw*1000)/10;
+    var hi=pct>=rule[1];
+    if(hi) out.high=true;
+    out.diffs.push({months:rule[0], kg:kg, pct:pct, high:hi});
+  });
+  return out;
+}
+function glanceWeight_(r){
+  var t=null; try{ t=weightTrendOf(r.id, r.name); }catch(e){ t=null; }
+  if(!t) return '';
+  var lines=[t.weight.toFixed(1)+'kg（'+t.on.y+'/'+t.on.m+'/'+t.on.d+'）'];
+  t.diffs.forEach(function(d){
+    lines.push(d.months+'か月で '+(d.kg>0?'+':(d.kg<0?'−':'±'))+Math.abs(d.kg).toFixed(1)+'kg'+
+      (d.pct>0?'（−'+d.pct.toFixed(1)+'%）':'')+(d.high?'　⚠ 低栄養の目安を超える減り':''));
+  });
+  if(!t.diffs.length) lines.push('比べる前の記録がありません');
+  return glanceItem_('体重の変化', '<span class="gv'+(t.high?' warn':'')+'">'+esc(lines.join('\n'))+'</span>');
+}
+/* ── その方らしさの紙（A4縦1枚・2026-10-17 第3弾・管理者指示）──
+   人柄と関わり方だけを載せる（病名・処方・連絡先は載せない＝代表者の決定 2026-10-17）。
+   ★「印刷しない」に指定された欄は、枠を残して中身を空にする（A4様式と同じ作法）。
+   ★文字は紙1枚に収まる最大（9〜20px）。収まらない時は小さい側で刷り、画面に知らせる */
+function wiOff(){
+  document.body.classList.remove('wi-on');
+  var b=$('wisheet'); if(b){ b.innerHTML=''; b.classList.remove('wi-measure'); }
+}
+function wiHtml_(r){
+  var nop=printHideSet(r);
+  var v=function(sec, val){ return nop[sec]?'':String(val==null?'':val); };
+  var rh=nop.biz?{}:rhythmOf(r);
+  var rhy=RHYTHM_KEYS.map(function(p){ return rh[p[0]]?(p[1]+' '+String(rh[p[0]]).replace(/^0(\d:)/,'$1')):''; }).filter(Boolean).join('　');
+  var B=function(k, val, full){
+    return '<div class="wis-b'+(full?' full':'')+'"><span class="wis-k">'+esc(k)+'</span><span class="wis-v">'+esc(String(val||'').trim())+'</span></div>';
+  };
+  var t=new Date();
+  return '<div class="wis">'+
+    '<div class="wis-hd"><div class="wis-t">その方らしさ（人柄と関わり方）</div>'+
+      '<div class="wis-who">'+esc(r.name||'')+(r.room?'<span class="wr">居室 '+esc(r.room)+'</span>':'')+'</div></div>'+
+    '<div class="wis-g">'+
+      B('呼ばれたい呼び名', v('mind',r.preferredName))+B('意思疎通の方法', v('mind',r.commMethod))+
+      B('対応のコツ・なだめ方', v('mind',r.careHints), true)+
+      B('性格・気質', v('person',r.personality))+B('趣味・特技', v('person',r.hobby))+
+      B('好きな／嫌いな食べ物', v('person',r.foodPref))+B('こだわり・大切な習慣', v('person',r.lifePrefs))+
+      B('生育歴・職歴・暮らしぶり', v('history',r.lifeHistory), true)+
+      B('価値観・大切にしてきたこと・誇り', v('history',r.values), true)+
+      B('本人の希望', v('wishes',r.wishSelf))+B('家族の希望', v('wishes',r.wishFamily))+
+      B('本人の強み', v('wishes',r.strengths), true)+
+      B('生活リズム', rhy, true)+
+    '</div>'+
+    '<div class="wis-ft">新しく関わる職員向け　／　作成日 '+t.getFullYear()+'年'+(t.getMonth()+1)+'月'+t.getDate()+'日</div>'+
+  '</div>';
+}
+function wiFit_(){
+  var box=$('wisheet'), sh=box&&box.querySelector('.wis'); if(!sh) return true;
+  var H=276*96/25.4, fit=false;
+  box.classList.add('wi-measure');
+  try{
+    var lo=0, hi=Math.round((20-9)/0.5), sizeOf=function(k){ return 9+k*0.5; };
+    var fits=function(px){ sh.style.setProperty('--wifs',px+'px'); sh.style.height='auto'; return sh.scrollHeight<=H-4; };
+    if(fits(sizeOf(lo))){
+      fit=true;
+      while(lo<hi){ var mid=Math.ceil((lo+hi)/2); if(fits(sizeOf(mid))) lo=mid; else hi=mid-1; }
+    }
+    sh.style.setProperty('--wifs',sizeOf(lo)+'px');
+  }finally{ sh.style.height=''; box.classList.remove('wi-measure'); }
+  return fit;
+}
+function wiPrint(){
+  if(!curResident) return;
+  wiOff();
+  try{
+    $('wisheet').innerHTML=wiHtml_(curResident);
+    if(!wiFit_()) toast('記載量が多く、1枚に入りきらない部分があります');
+  }catch(e){ wiOff(); toast('⚠️ その方らしさの紙を組み立てられませんでした'); return; }
+  document.body.classList.add('wi-on');
+  var undo=function(){ wiOff(); window.removeEventListener('afterprint',undo); };
+  window.addEventListener('afterprint',undo);
+  try{ window.print(); }catch(e){ wiOff(); }
+}
+/* afterprint が来ない環境向け（印刷メディアの離脱を合図に戻す。A4様式と同じ保険） */
+try{
+  var _wimq=matchMedia('print');
+  var _wimqFn=function(e){ if(!e.matches) wiOff(); };
+  if(_wimq.addEventListener)_wimq.addEventListener('change',_wimqFn);
+  else if(_wimq.addListener)_wimq.addListener(_wimqFn);
+}catch(e){}
+function glanceHtml_(r){
+  var fam=Array.isArray(r.family)?r.family:[];
+  var kp=fam.filter(function(f){ return f&&f.kp; });
+  var kpTx=kp.map(function(f){
+    var nm=String(f.name==null?'':f.name).trim()||'（氏名未記載）';
+    var rel=String(f.relation==null?'':f.relation).trim();
+    var ph=String(f.phone==null?'':f.phone).trim();
+    return nm+(rel?'（'+rel+'）':'')+(ph?'\n'+ph:'');
+  }).join('\n');
+  var doc=[String(r.hospital||'').trim().replace(/\n+/g,'・'), String(r.doctor||'').trim().replace(/\n+/g,'・')]
+    .filter(Boolean).join('　');
+  var tel=String(r.hospitalTel||'').trim().replace(/\n+/g,'・');
+  var docTx=doc+(tel?'\n'+tel:'');
+  /* 選んだアレルゲン・禁食の名前を自由文より前に出す（2026-10-22 代表者の決定）。選んでいなければ今までどおり */
+  var alg=algTagLines_(r).concat([r.allergy?('アレルギー：'+String(r.allergy).trim()):'', r.sideEffects?('禁忌等：'+String(r.sideEffects).trim()):''])
+    .filter(Boolean).join('\n');
+  var meal=[r.mealSide?('副食：'+String(r.mealSide).trim()):'', r.mealStaple?('主食：'+String(r.mealStaple).trim()):'',
+            r.thickener?('とろみ：'+String(r.thickener).trim()):''].filter(Boolean).join('\n');
+  return '<div class="glance" aria-label="ひと目で確認">'+
+    '<div class="glance-hd"><span class="gname">'+esc(r.name||'')+'</span>'+
+      (r.room?'<span class="groom">居室 '+esc(r.room)+'</span>':'')+
+      (r.hospitalized?'<span class="ghosp">🏥 入院中</span>':'')+'</div>'+
+    '<div class="glance-g">'+
+      glanceItem_('介護度・認定', glanceCert_(r))+
+      glanceItem_('キーパーソン', glanceVal_(kpTx))+
+      glanceItem_('主治医', glanceVal_(docTx))+
+      glanceItem_('アレルギー・禁忌', alg?glanceVal_(alg,'warn'):'<span class="gv gnone">記載なし</span>')+
+      glanceItem_('食形態', glanceVal_(meal))+
+      glanceWeight_(r)+   /* 体重の変化（体重管理アプリの記録がある端末だけ・2026-10-17） */
+      (function(){ var m=missingOf_(r, r.mealSide);   /* 未入力の欄（2026-10-17） */
+        return m.length?glanceItem_('未入力', '<span class="gv warn">'+esc(m.join('・'))+'</span>'):''; })()+
+    '</div></div>';
+}
+function foldLoad_(){
+  try{
+    var a=JSON.parse(localStorage.getItem(FOLD_KEY)||'[]');
+    return Array.isArray(a) ? a.filter(function(x){ return typeof x==='string'&&x.length>0&&x.length<=40; }).slice(0,80) : [];
+  }catch(e){ return []; }
+}
+function foldSave_(a){ try{ localStorage.setItem(FOLD_KEY, JSON.stringify(a)); }catch(e){} }
+/* 見出し（縦書きの欄名）を持つ欄だけを返す。見出しの無い帯（安全ハイライト等）は対象外 */
+function viewSecs_(){
+  return Array.prototype.filter.call(document.querySelectorAll('#viewBox .sec'),function(s){
+    var l=s.firstElementChild; return !!(l&&l.classList.contains('sec-lbl'));
+  });
+}
+function viewSecName_(s){ return String(s.firstElementChild.textContent||'').trim(); }
+function viewFoldSet_(s, folded){
+  s.classList.toggle('folded', !!folded);
+  s.firstElementChild.setAttribute('aria-expanded', folded?'false':'true');
+}
+function viewFoldToggle_(s){
+  var name=viewSecName_(s), list=foldLoad_(), on=!s.classList.contains('folded');
+  viewFoldSet_(s, on);
+  if(FOLD_DEFAULT.indexOf(name)>=0) return;   /* 最初からたたむ欄は、開閉を端末に覚えない（次に開いた時もたたんで始まる） */
+  list=list.filter(function(x){ return x!==name; });
+  if(on) list.push(name);
+  foldSave_(list);
+}
+/* 開いた時に最初からたたんでおく欄（2026-10-20 代表者の決定）。縦に長くなる2欄。
+   ★開いた時は毎回たたむ（開いたことは覚えない）。ほかの欄は従来どおり、たたんだ欄だけを覚える */
+var FOLD_DEFAULT=['支援経過','医療支援経過'];
+var FOLD_NOTE='　▸ 押すと開きます';
+function viewNavPaint_(){
+  var nav=$('viewToc'); if(!nav) return;
+  var secs=viewSecs_(), folded=foldLoad_();
+  if(!secs.length){ nav.hidden=true; nav.innerHTML=''; return; }
+  secs.forEach(function(s,i){
+    var l=s.firstElementChild, nm=viewSecName_(s);
+    l.setAttribute('role','button'); l.setAttribute('tabindex','0');
+    l.setAttribute('title','押すと、この欄をたたむ／開く');
+    /* たたんだ時のタイトル行に件数を添える（支援経過・医療支援経過）。見出しの文字は変えない
+       （「印刷しない」の設定と目次は見出しの文字で欄を見分けるため） */
+    var cnt=s.getAttribute('data-cnt');
+    l.setAttribute('data-fold-note', (cnt!=null?'（全'+cnt+'件）':'')+FOLD_NOTE);
+    s.setAttribute('data-vsec', String(i));
+    viewFoldSet_(s, folded.indexOf(nm)>=0 || FOLD_DEFAULT.indexOf(nm)>=0);
+  });
+  nav.innerHTML=secs.map(function(s,i){
+    return '<button type="button" data-vgo="'+i+'">'+esc(viewSecName_(s))+'</button>';
+  }).join('')+
+    '<button type="button" class="all" data-vall="open">すべて開く</button>'+
+    '<button type="button" class="all" data-vall="fold">すべてたたむ</button>';
+  nav.hidden=false;
+}
+function renderView(r){
+  var fam=Array.isArray(r.family)?r.family:[];
+  var famName=fam.map(function(f,i){return famNo(i,fam.length)+famWho(f)+(f.role?' '+f.role:'')}).join('\n');
+  /* ★番号は famNo で振る（2名以上の時だけ・家族欄と同じ番号）。列ごとに数え直さない */
+  var famAddr=fam.map(function(f,i){return f.address?(famNo(i,fam.length)+f.address):''}).filter(Boolean).join('\n');
+  var famTel=fam.map(function(f,i){return f.phone?(famNo(i,fam.length)+f.phone):''}).filter(Boolean).join('\n');
+  /* ★番号は家族の並び順で振る（緊急だけ数え直すと、家族欄の番号と食い違う） */
+  var emg=fam.map(function(f,i){ return f&&f.emergency?(famNo(i,fam.length)+famWho(f)):''; })
+    .filter(Boolean).join('\n');
+  var rhythm=rhythmOf(r);   /* 食事の時刻は施設共通の既定を重ねる（保存済みがあればそちらが勝つ） */
+  rmMealSig_=JSON.stringify(mealTimeDefaults_());   /* 描いた時の既定の印（施設情報が後から届いた時に描き直すかを決める・rmMealOnFacility_） */
+  var rh=RHYTHM_KEYS.map(function(p){return rhythm[p[0]]?('<span>'+esc(p[1])+' <b>'+esc(rhythm[p[0]])+'</b></span>'):''}).filter(Boolean).join('');
+  /* デイ利用日は【週間計画】から出す（2026-08-19 指示・A4様式と同じ正本に揃えた）。
+     マスタの r.dayUse は移行時の手書き値で実測で食い違うため使わない（編集画面には残っている） */
+  var du=dayUseHtml(r);
+  var consents=r.consents||{};
+  var cs=CONSENT_KEYS.map(function(p){return consents[p[0]]?('<span>'+esc(p[1])+' <b>'+esc(consents[p[0]])+'</b></span>'):''}).filter(Boolean).join('');
+
+  var h='<div class="sheet">';
+  // 安全ハイライト帯（現場で即確認すべき項目）
+  var hl=[];
+  // 入院中は在不在そのものが変わるため先頭に出す（配薬・記録・食事の手配に直結）
+  if(r.hospitalized)hl.push('<span style="background:var(--warn-bg);color:var(--warn-tx);border-radius:999px;padding:3px 10px;font-weight:700">🏥 入院中</span>');
+  /* ★data-nop-of は「この値がどの欄から来たか」。その欄を『印刷しない』にした時、
+     ここに再掲されたぶんも一緒に紙から外すために要る（伏せ漏れの防止・2026-08-17）。
+     入院中だけは欄に属さない状態表示なので付けない＝伏せ指定では消えない。 */
+  if(r.preferredName)hl.push('<span data-nop-of="mind" style="background:var(--pri-l);color:var(--pri-d);border-radius:999px;padding:3px 10px;font-weight:700">🙂 '+esc(r.preferredName)+'</span>');
+  if(r.allergy)hl.push('<span data-nop-of="medical" style="background:var(--ng-l);color:var(--ng);border-radius:999px;padding:3px 10px;font-weight:700">⚠ アレルギー: '+esc(r.allergy)+'</span>');
+  if(r.infections)hl.push('<span data-nop-of="medical" style="background:var(--ng-l);color:var(--ng);border-radius:999px;padding:3px 10px;font-weight:700">⚠ 感染症: '+esc(r.infections)+'</span>');
+  if(r.medicalCare)hl.push('<span data-nop-of="medical" style="background:var(--warn-bg);color:var(--warn-tx);border-radius:999px;padding:3px 10px;font-weight:700">＋ 医療処置: '+esc(r.medicalCare)+'</span>');
+  if(r.mealForm||r.thickener)hl.push('<span data-nop-of="meal" style="background:var(--u-bg);color:var(--u);border-radius:999px;padding:3px 10px;font-weight:700">🍚 '+esc([r.mealForm,r.thickener?('とろみ'+r.thickener):''].filter(Boolean).join(' / '))+'</span>');
+  if(r.careHints)hl.push('<span data-nop-of="mind" style="background:var(--warn-bg);color:var(--warn-tx);border-radius:999px;padding:3px 10px;font-weight:700">💡 対応のコツあり</span>');
+  if(hl.length)h+='<div class="sec"><div class="sec-body" style="display:flex;gap:8px;flex-wrap:wrap;padding:8px">'+hl.join('')+'</div></div>';
+  // この方を各アプリで開く（入居者単位リンク・別タブなので今の画面を失わない）
+  h+=perResidentLinksHtml(r);
+  h+=rmEditedHtml_(r);   // 最後に直した人（画面だけ・紙には出さない）
+  // 利用者基本情報
+  h+='<div class="sec"><div class="sec-lbl">基本情報</div><div class="sec-body">'+
+    '<div class="row-cells">'+
+      cell('氏名',r.name,true,'w-name')+cell('性別',r.gender,false,'w-sm')+birthCell('生年月日',r.birthDate)+
+      cell('年齢',calcAge(r.birthDate)?calcAge(r.birthDate)+'歳':'',false,'w-sm')+cell('介護度',r.careLevel)+
+      cell('認定期間',(r.careCertStart||'')+(r.careCertEnd?(' 〜 '+r.careCertEnd):''),false,'w-cert')+
+      cell('負担割合',copayLabel(r.copayRate))+cell('生保',r.welfare?'有':'',false,'w-sm')+
+    '</div>'+
+    '<div class="row-cells">'+
+      /* 居室は 2026-08-15 に追加（帳票に部屋番号が無いのは実務上の欠落・フェイスシートと揃える）。
+         ★1行目には入れない。入れると認定期間と生年月日が折り返して紙が伸びる（実測） */
+      cell('居室',r.room,false,'w-sm')+cell('入居日',r.admissionDate,false,'w-adm')+
+      /* 在籍状態は詳細画面に出ていなかったため「どこで変えるのか分からない」の原因になっていた（2026-08-09 追加）。
+         退去の方は赤字で目立たせる。★退去日・ご逝去日は印刷では出さない（管理者指示）。
+         ★2026-08-17 追加: 在籍状態と入居期間も紙には出さない。退去済みの方は
+           入居日＋入居期間から退去日を引き算で復元できてしまい、「退去」の赤字も紙に載っていた。
+           A4様式（renderA4）と同じ扱いに揃えた＝3種類の紙とも退去の事実を残さない。
+           画面では従来どおり全部見える（隠すのは紙だけ） */
+      '<div class="cell noprint-cell"><span class="lab">在籍状態</span><span class="val"'+
+        (r.active===false?' style="color:var(--ng);font-weight:700"':'')+'>'+(r.active===false?'退去':'在籍')+'</span></div>'+
+      cell('退去日',r.dischargeDate,false,'noprint-cell')+cell('ご逝去日',r.deathDate,false,'noprint-cell')+
+      cell('入居期間',calcStayDays(r.admissionDate,r.dischargeDate)?calcStayDays(r.admissionDate,r.dischargeDate)+'日':'',false,'noprint-cell')+
+      /* 体重の正本は体重管理アプリ（同一オリジンの localStorage を読むだけ）。
+         記録が無い端末では従来どおりマスタの静的値を「移行時点」と明示して出す。
+         ★体重セルは広げない。widthは行で取り合いのため、広げると隣のセル（生活自立度・
+           認知症自立度）が折り返して印刷が +6mm 伸びる。測定日は小さい文字で添える。 */
+      (function(){var wv=weightView(r);
+        return '<div class="cell w-sm"'+(wv.bmiTitle?' title="'+esc(wv.bmiTitle)+'"':'')+'>'+
+            '<span class="lab">BMI</span><span class="val">'+esc(wv.bmi||'　')+'</span></div>'+
+          cell('身長',r.height?r.height+' cm':'')+
+          '<div class="cell"'+(wv.title?' title="'+esc(wv.title)+'"':'')+'>'+
+            '<span class="lab">体重</span><span class="val">'+esc(wv.val||'　')+
+            (wv.note?'<span class="wt-on">'+esc(wv.note)+'</span>':'')+'</span></div>';})()+
+      cell('生活自立度',r.adl)+cell('認知症自立度',r.dementia)+
+    '</div></div></div>';
+  // 保険・制度／連絡先
+  h+='<div class="sec"><div class="sec-lbl">保険・制度／連絡先</div><div class="sec-body">'+
+    /* ★1行目も固定%にする。flex比（grow）と固定%が混ざると行どうしで0.3〜0.5pxずれる（実測） */
+    '<div class="row-cells">'+cell('電話（本人/居室）',r.phone,false,'w-q')+cell('被保険者番号',r.insuredNo,false,'w-q')+cell('保険者',r.insurer,false,'w-q')+cell('認定日',fmtJDate(r.certDate),false,'w-q')+'</div>'+
+    /* 呼ばれたい呼称はこの行から外した（2026-08-15 指示。認知・意思疎通欄の方に残す＝1枚目で2回出さない）。
+       ★3セルになっても縦罫線が上の行（4等分）と揃うよう、25%/25%/50% で固定する */
+    '<div class="row-cells">'+cell('医療保険',r.medicalInsurance,false,'w-q')+cell('障害者手帳',r.disabilityCert,false,'w-q')+cell('成年後見',r.guardianship,false,'w-h')+'</div>'+
+  '</div></div>';
+  // 介護度の変更履歴（新しい順）
+  /* ★認定期間の新しい順に並べ、期間を先頭に置く（2026-09-19 指示）。
+     「いつからいつまでが要介護いくつだったか」を縦に読めるようにするため。
+     ★いまの認定内容を必ず【先頭に】出す（表示だけ・1文字も保存しない）。
+       出さないと、更新したことがある方は一覧が過去だけ・まだの方は先頭が現在、と
+       同じ見出しなのに一番上の意味が人によって変わる（2026-09-19 レビュー M-6）。
+       いまと同じ期間の行は現在の行にまとめる（同じ期間が2行に見えるのを防ぐ）。
+     ★期間の記載が無い行（手入力・古い自動記録）は【末尾へ】。落とさないが、
+       期間順の中に混ぜると、どこに出るか読めない（レビュー L-3）。 */
+  var chist=Array.isArray(r.careLevelHistory)?r.careLevelHistory.slice():[];
+  if(chist.length){
+    var chCur=clhOf_(r);
+    if(!clhEmpty_(chCur)) chist=chist.filter(function(s){ return !clhSame_(s,chCur); });
+    chist.sort(function(a,b){
+      var ax=clhNorm_(a&&a.certStart), bx=clhNorm_(b&&b.certStart);
+      if(!ax!==!bx) return ax?-1:1;                 /* 期間のある行が先、無い行は末尾 */
+      if(ax!==bx) return bx.localeCompare(ax);
+      return clhNorm_(b&&b.changedAt).localeCompare(clhNorm_(a&&a.changedAt));
+    });
+    if(!clhEmpty_(chCur)) chist.unshift({value:chCur.value, certStart:chCur.certStart,
+      certEnd:chCur.certEnd, certDate:chCur.certDate, __cur:true});
+    var chHtml=chist.map(function(s){
+      var period=(fmtJDate(s.certStart)||s.certStart||'')+
+                 (s.certEnd?(' 〜 '+(fmtJDate(s.certEnd)||s.certEnd)):'');
+      var tail=s.__cur ? '現在'
+        : [s.changedAt?('記録 '+(fmtJDate(s.changedAt)||s.changedAt)):'', s.note].filter(Boolean).join(' / ');
+      return'<div style="display:flex;gap:10px;padding:5px 0;border-bottom:1px dotted var(--g3)"><span style="flex:1 1 150px;min-width:120px;font-weight:700;color:var(--pri-d)">'+esc(period||'（認定期間の記載なし）')+'</span><span style="flex-shrink:0;min-width:80px;font-weight:700">'+esc(s.value||'')+'</span><span style="flex:1 1 auto;color:'+(s.__cur?'var(--pri-d);font-weight:700':'var(--g7)')+'">'+esc(tail)+((!s.__cur&&s.changedBy)?'<span class="clh-by"> / 記録した人 '+esc(String(s.changedBy).slice(0,60))+'</span>':'')+'</span></div>';
+    }).join('');
+    h+='<div class="sec"><div class="sec-lbl">介護度の変更履歴</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none">'+chHtml+'</div></div></div>';
+  }
+  // 基本事項
+  h+='<div class="sec"><div class="sec-lbl">基本事項</div><div class="sec-body">'+
+    '<div class="row-cells">'+cell('退去先',r.dischargeTo,false,'noprint-cell')+'<div class="cell" style="flex:3;border-right:none"><span class="lab">同意・確認書</span><div class="rhythm">'+(cs||'　')+'</div></div></div>'+
+    '<div class="cell" style="border-right:none"><span class="lab">入居前状況</span><div class="fulltext">'+esc(r.preAdmission||'　')+'</div></div>'+
+    '<div class="cell noprint-cell" style="border-right:none;border-bottom:none"><span class="lab">退去後状況（行き先等）</span><div class="fulltext">'+esc(r.postDischarge||'　')+'</div></div></div></div>';
+  // 家族情報（2026-08-14 指示: A4幅いっぱいに広げる。家族構成図は下の事業所の横にのみ置く）
+  var genoImg=getGenogram(r.id,r.name);
+  var genoInner=genoImg
+    ? '<img class="geno-img" src="'+esc(genoImg)+'" alt="家族構成図">'
+    : '<div class="geno-hint" style="text-align:center;color:var(--g6);font-size: 0.8125rem;padding:10px"><div style="font-size: 2.5rem;line-height:1.1">🧬</div>クリックして<br>家族構成図を作成<br><span style="font-size: 0.6875rem">（ジェノグラムアプリへ）</span></div>';
+  h+='<div class="sec"><div class="sec-lbl">家族情報</div><div class="sec-body"><div class="row-cells">'+
+    '<div class="cell" style="flex:1.2"><span class="lab">ご家族氏名</span><div class="fulltext">'+esc(famName||'　')+'</div></div>'+
+    '<div class="cell" style="flex:1.5"><span class="lab">住所</span><div class="fulltext">'+esc(famAddr||'　')+'</div></div>'+
+    '<div class="cell"><span class="lab">電話番号</span><div class="fulltext">'+esc(famTel||'　')+'</div></div>'+
+    '<div class="cell" style="border-right:none"><span class="lab">緊急連絡先</span><div class="fulltext">'+esc(emg||'　')+'</div></div>'+
+  '</div></div></div>';
+  // 事業所（左）＋ 家族構成図（右）。印刷では行ごと分割しない（.biz-geno-row＝break-inside:avoid）。
+  // 家族構成図の高さは「事業所の4行」と min-height の大きい方（紙は 200px を下限に確保＝図の可読性を落とさない）
+  h+='<div class="biz-geno-row" style="display:flex;align-items:stretch;border-top:1px solid var(--g9)">'+
+    '<div style="flex:2;min-width:0;display:flex"><div class="sec-lbl">事業所</div><div class="sec-body">'+
+      '<div class="row-cells">'+cell('居宅介護支援事業所',r.careOffice)+cell('介護支援専門員',r.careManager,false,'w-b2')+cell('電話番号',r.careOfficeTel,false,'w-tel')+cell('FAX番号',r.careOfficeFax,false,'w-b4 w-num')+'</div>'+
+      '<div class="row-cells">'+cell('福祉用具',r.welfareEquip)+cell('担当者',r.welfareEquipStaff,false,'w-b2')+cell('電話番号',r.welfareEquipTel,false,'w-tel')+cell('サ責',r.serviceManager,false,'w-b4')+'</div>'+
+      '<div class="row-cells">'+cell('前の居宅',r.prevCareOffice)+cell('前の担当',r.prevCareManager,false,'w-b2')+'<div class="cell w-day"><span class="lab">デイ利用日</span><div class="rhythm du-cell" data-du-id="'+esc(r.id)+'" aria-live="polite">'+(du||'　')+'</div></div></div>'+
+      '<div class="row-cells"><div class="cell" style="flex:1;border-right:none"><span class="lab">生活リズム</span><div class="rhythm">'+(rh||'　')+'</div></div></div>'+
+    '</div></div>'+
+    '<div style="flex:1.25;min-width:0;display:flex;border-left:1px solid var(--g9)"><div class="sec-lbl">家族構成図</div><div class="sec-body" style="display:flex;padding:4px">'+
+      '<div class="geno-box" data-geno="'+esc(r.id)+'" data-name="'+esc(r.name||'')+'" title="クリックで家族構成図の作成／編集" style="flex:1;min-height:150px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--g0);border:1px dashed var(--g3);border-radius:8px;overflow:hidden">'+genoInner+'</div>'+
+    '</div></div>'+
+  '</div>';
+  /* ══ 入居者基本情報（外部様式）ここから ══
+     2026-08-12 管理者の指示で、外部からいただく様式と同じ並び・同じチェック表示にした。
+     ★詳細画面と印刷は同じDOM。ここを変えると紙も変わる（今回はそれが指示） */
+  var bf=bfView(r);
+  /* 既往歴・発症時期・医療機関（様式の1段目）。
+     2026-08-15 指示: 縦3×横2列＝6件を出す。番号は左列が上から 1..N、右列が N+1..2N（縦読みのまま）。
+     7件以上の方は行が増える（BF_MAX_DISEASES=8 なので最大4行）。★最低は必ず3行 */
+  var bfDisN=Math.max(3, Math.ceil(bf.diseases.length/2));
+  var bfDisRows='';
+  for(var bdi=0; bdi<bfDisN; bdi++){
+    var bdL=bf.diseases[bdi]||{}, bdR=bf.diseases[bdi+bfDisN]||{};
+    bfDisRows+='<tr><td class="bfno">'+(bdi+1)+'</td><td>'+esc(bdL.name||'')+'</td>'+
+               '<td class="bfonset">'+esc(bdL.onset||'')+'</td><td class="bfhosp">'+esc(bdL.hospital||'')+'</td>'+
+               '<td class="bfno bfmid">'+(bdi+1+bfDisN)+'</td><td>'+esc(bdR.name||'')+'</td>'+
+               '<td class="bfonset">'+esc(bdR.onset||'')+'</td><td class="bfhosp">'+esc(bdR.hospital||'')+'</td></tr>';
+  }
+  /* 病名とサービス利用状況は1つのセクションにまとめる。
+     縦書きの見出し（.sec-lbl）が最低の高さを作るので、小さな枠を分けるとそれだけで紙が伸びる（実測） */
+  h+='<div class="sec"><div class="sec-lbl">既往歴・サービス</div><div class="sec-body">'+
+    '<div class="cell" style="border-right:none">'+
+      /* 見出しは「既往歴」（2026-08-15 指示。データのキーは diseases のまま＝保存内容は不変）。
+         横2組なので見出しも2組出す（.bfmid が組の境目の太い縦罫線） */
+      '<table class="bfdis"><thead><tr><th class="bfno"></th><th>既往歴</th>'+
+      '<th class="bfonset">発症時期</th><th class="bfhosp">医療機関</th>'+
+      '<th class="bfno bfmid"></th><th>既往歴</th>'+
+      '<th class="bfonset">発症時期</th><th class="bfhosp">医療機関</th></tr></thead>'+
+      '<tbody>'+bfDisRows+'</tbody></table>'+
+    '</div>'+
+    '<div class="cell" style="border-right:none;border-bottom:none">'+
+      '<span class="lab">介護保険等サービス利用状況（利用頻度等）</span>'+
+      /* ★事業所名はチェックの有無にかかわらず出す。チェックを付け忘れただけで
+           入力した事業所名が画面からも紙からも消えると、入力が無かったように見える */
+      '<div class="bfwrap">'+BF_SERVICES.map(function(p){
+        var s=bfObj(bf.services[p[0]]);
+        return bfCk(!!s.on, p[1]+(bfStr(s.name)?('（'+bfStr(s.name)+'）'):''));
+      }).join('')+'</div>'+
+    '</div></div></div>';
+  /* 食事 →（2026-08-15 指示: この2欄を病名・サービスの直下＝1枚目へ移動。順は 食事 → 認知・意思疎通）
+     ★備考だけを2行目の横長欄へ（2026-08-14 指示・1行目の各項目の下の無駄をなくす） */
+  h+='<div class="sec"><div class="sec-lbl">食事</div><div class="sec-body">'+
+    '<div class="row-cells">'+cell('主食',r.mealStaple)+cell('副食',r.mealSide)+cell('食形態',r.mealForm)+cell('とろみ',r.thickener)+cell('義歯',r.denture)+'</div>'+
+    '<div class="row-cells"><div class="cell" style="flex:1;border-right:none"><span class="lab">備考</span><div class="fulltext">'+esc(r.mealNote||'　')+'</div></div></div>'+
+  '</div></div>';
+  /* 認知・精神とコミュニケーションを1つにまとめた（2026-08-12）。
+     様式化で「留意点」が上の大表へ移り、コミュニケーションの枠が1行だけになったため、
+     縦書き見出しの最低の高さぶん（実測 約120px）が丸ごと無駄になっていた。 */
+  h+='<div class="sec"><div class="sec-lbl">認知・意思疎通</div><div class="sec-body">'+
+    '<div class="row-cells">'+cell('認知症の種類',r.dementiaType)+cell('HDS-R/MMSE',r.cogScore)+
+      cell('呼ばれたい呼称',r.preferredName)+cell('意思疎通手段',r.commMethod)+'</div>'+
+    '<div class="cell" style="border-right:none"><span class="lab">対応のコツ・なだめ方</span><div class="fulltext">'+esc(r.careHints||'　')+'</div></div>'+
+    '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">精神疾患の既往／通院</span><div class="fulltext">'+esc(r.psychHistory||'　')+'</div></div>'+
+  '</div></div>';
+  // 医療情報
+  /* 医療機関が2件ぶん1つの欄に入っている方は、表示だけ行に分ける（2026-08-19 指示・A4様式と同じ） */
+  var mvH=mpSplit(r.hospital,r.doctor,r.hospitalTel,r.hospitalFax);
+  var mvP=mpSplit(r.pharmacy,'',r.pharmacyTel,r.pharmacyFax);
+  h+='<div class="sec"><div class="sec-lbl">医療情報</div><div class="sec-body">'+
+    /* 2件ぶんが1つの欄に入っている方は表示だけ行に分ける（A4様式・フェイスシートと同じ扱い） */
+    '<div class="row-cells">'+cell('かかりつけ病院',mpVal(r.hospital,mvH&&mvH.org))+cell('主治医',mpVal(r.doctor,mvH&&mvH.person))+cell('電話番号',mpVal(r.hospitalTel,mvH&&mvH.tel))+cell('FAX番号',mpVal(r.hospitalFax,mvH&&mvH.fax))+'</div>'+
+    '<div class="row-cells">'+cell('救急搬送先（希望）',r.emergencyHospital)+cell('急変時TEL',r.emergencyHospitalTel)+cell('診療曜日',r.visitDay)+'</div>'+
+    '<div class="row-cells">'+cell('かかりつけ薬局',mpVal(r.pharmacy,mvP&&mvP.org))+cell('電話番号',mpVal(r.pharmacyTel,mvP&&mvP.tel))+cell('FAX番号',mpVal(r.pharmacyFax,mvP&&mvP.fax))+'</div>'+
+    /* 「治療中の病気」の自由文は、上の病名表へ差し替えた（2026-08-12）。
+       ★データ（currentDiseases）は消していない。「移行前の記載」に読み取り専用で出す */
+    '<div class="row-cells">'+
+      '<div class="cell"><span class="lab">副作用・禁忌 等</span><div class="fulltext">'+esc(r.sideEffects||'　')+'</div></div>'+
+      /* 上の「既往歴」表（diseases）と区別するため（自由記載）を付ける（2026-08-15 指示）。キーは pastHistory のまま */
+      '<div class="cell" style="border-right:none"><span class="lab">既往歴（自由記載）</span><div class="fulltext">'+esc(r.pastHistory||'　')+'</div></div>'+
+    '</div>'+
+    /* ■薬剤情報（定期）■＋効果・効能は「薬剤情報」欄の先頭へ移した（2026-08-12 指示）。
+       医療情報からは外す＝同じ内容を2箇所に出さない */
+    /* ■薬備考■ の表示は 2026-08-11 に外した。■問題行動 等■ は 2026-08-12 に
+       様式の「行動・心理症状」チェックへ差し替えたため、この行ごと無くした。
+       ★medsNotes も problemBehavior もデータは消していない。medsNotes は編集画面の入力欄が
+         残っており、problemBehavior は collectForm が既存値を引き継ぐ（下の BF_LEGACY_KEYS）。
+         引き継ぎを外すと、保存しただけで dataJson から消える（GAS が丸ごと置き換えるため）。 */
+    /* アレルギーは感染症の左隣（2026-08-15 指示。全幅の独立行から移動＝独立行1本ぶんの縦短縮） */
+    '<div class="row-cells">'+
+      '<div class="cell"><span class="lab">アレルギー</span><div class="fulltext">'+esc(r.allergy||'　')+'</div></div>'+
+      '<div class="cell"><span class="lab">感染症</span><div class="fulltext">'+esc(r.infections||'　')+'</div></div>'+
+      cell('血液型',r.bloodType)+
+      '<div class="cell" style="border-right:none"><span class="lab">医療処置</span><div class="fulltext">'+esc(r.medicalCare||'　')+'</div></div>'+
+    '</div>'+
+    '<div class="row-cells">'+
+      '<div class="cell"><span class="lab">予防接種歴</span><div class="fulltext">'+esc(r.vaccinations||'　')+'</div></div>'+
+      '<div class="cell" style="border-right:none"><span class="lab">告知の状況／病識</span><div class="fulltext">'+esc(r.disclosure||'　')+'</div></div>'+
+    '</div>'+
+  '</div></div>';
+  /* 薬剤情報（2026-08-12 指示で「服薬管理」から改名）。
+     先頭に ■薬剤情報（定期）■＋効果・効能、その右に頓服・外用等を並べる。
+     管理方法・服薬介助は様式の4段階（上の大表）へ移した。 */
+  h+=yjpSlot_(r);   // 薬情・お薬シールの写真を入れる帯（管理者・事務所の Mac の Chrome だけ・印刷しない）（2026-10-23）
+  h+='<div class="sec"><div class="sec-lbl">薬剤情報</div><div class="sec-body">'+yrSlot_(r)+
+    '<div class="row-cells">'+
+      /* 左右の境目は 65:35（2026-08-12 指示で 75:25 から10%ぶん左へ寄せた）。
+         ★元は 3:1（=75:25）。2:1 まで狭めると薬剤名の長い方で3行折り返したので、
+           これ以上は狭めないこと（実測値は data-contracts の印刷欄に記載）。
+         ★この比や sec-lbl を変えたら medsAuditCountWrap の測定箱も同じ構成に変えること
+           （揃えないと「効能辞書の点検」の折返し実測が実物とずれる。2026-08-15） */
+      /* meds-reg / data-meds-id は med_dict の到着後に中身だけ差し替える目印（mdPatchView_） */
+      '<div class="cell meds-reg" style="flex:65" data-meds-id="'+esc(String(r.id==null?'':r.id))+'">'+medsRegularCell(r.medsRegular)+'</div>'+
+      '<div class="cell" style="flex:35;border-right:none"><span class="lab">頓服・外用等</span><div class="fulltext">'+esc(r.medsPrn||'　')+'</div></div>'+
+    '</div>'+
+    '<div class="row-cells">'+cell('剤形配慮',r.formAdjust)+cell('服薬拒否',r.medRefusal)+'</div>'+
+    '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">注意を要する薬剤</span><div class="fulltext">'+esc(r.highRiskMeds||'　')+'</div></div>'+
+  '</div></div>';
+  // 過去の臨時薬（新しい順）
+  var plog=Array.isArray(r.medsPastLog)?r.medsPastLog.slice():[];
+  plog.sort(function(a,b){return String((b&&b.date)||'').localeCompare(String((a&&a.date)||''))});
+  if(plog.length){
+    var plogHtml=plog.map(function(s){
+      return'<div style="display:flex;gap:10px;padding:5px 0;border-bottom:1px dotted var(--g3)"><span style="flex-shrink:0;font-weight:700;color:var(--pri-d);min-width:92px">'+esc(fmtJDate(s.date)||s.date||'')+'</span><span style="flex:1;white-space:pre-wrap;word-break:break-word">'+esc(s.text||'')+'</span></div>';
+    }).join('');
+    h+='<div class="sec"><div class="sec-lbl">過去の臨時薬</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none">'+plogHtml+'</div></div></div>';
+  }
+  // 定期薬の変更履歴（自動記録・新しい順・画面だけ）（2026-10-02 管理者指示）
+  h+=mcDetailSlot_(r);   // 薬の変更候補の印（管理者に候補がある時だけ中身が入る・印刷しない）（2026-10-06）
+  h+=medsHistHtml_(r.medsHistory);
+  h+=yjlSlot_(r);   // 薬情の反映記録（30日）（事務所PCだけ・記録がある時だけ中身が入る・印刷しない）（2026-10-24）
+  /* ADL・状態（外部様式の大表）。様式と同じく1つの表にまとめる＝紙が原本と同じ見え方になる。
+     ★移乗・更衣・嚥下・水分・視力・聴力・褥瘡は様式に無い項目なので、従来どおり下に残す
+       （様式に無い＝消してよい、ではない。原則1） */
+  var bfMealTxt=[bfStr(r.mealStaple)?('主食:'+bfStr(r.mealStaple)):'',
+                 bfStr(r.mealSide)?('副食:'+bfStr(r.mealSide)):'',
+                 bfStr(r.mealForm),
+                 (bfStr(r.thickener)&&bfStr(r.thickener)!=='なし')?('とろみ'+bfStr(r.thickener)):''
+                ].filter(Boolean).join('　');
+  var bfSub={
+    move:    bfChkList(BF_MOVE_AID,bf.moveAid)+bfNote(bf.moveAid),
+    oral:    bfDenture(r.denture),
+    meal:    bfMealTxt?('<span style="font-size:0.875rem">食事形態（'+esc(bfMealTxt)+'）</span>'):'',
+    bath:    bfChkList(BF_BATH_PLACE,bf.bathPlace)+bfNote(bf.bathPlace),
+    excrete: bfChkList(BF_EXCRETE_WAY,bf.excreteWay)+bfNote(bf.excreteWay)
+  };
+  var bfRows=BF_ADL_ROWS.map(function(p){
+    return '<tr><th class="bfrow">'+esc(p[1])+'</th>'+bfLevelCells(bf.adlGrid[p[0]])+
+           '<td class="bfsub">'+(bfSub[p[0]]||'')+'</td></tr>';
+  }).join('');
+  bfRows+='<tr><th class="bfrow">服薬管理</th>'+bfLevelCells(bf.medLevel)+
+    '<td class="bfsub"><span style="font-size:0.875rem;margin-right:6px">薬の有無:</span>'+
+      bfCk(bf.medExists==='有','有')+bfCk(bf.medExists==='無','無')+
+      '<span style="font-size:0.875rem;margin:0 6px 0 8px">内容:</span>'+
+      bfCk(bf.medContent==='別紙参照','別紙参照')+
+      bfCk(bf.medContent==='薬局へ確認してください','薬局へ確認してください')+
+    '</td></tr>';
+  bfRows+='<tr><th class="bfrow">コミュニケーション</th><td class="bfsub" colspan="5">'+
+      bfCk(bf.commLevel==='自立','自立')+bfCk(bf.commLevel==='配慮が必要','配慮が必要')+
+      '<span style="font-size:0.875rem">（配慮の内容: '+esc(bfStr(r.commNotes)||'　')+'）</span></td></tr>';
+  bfRows+='<tr><th class="bfrow">認知症状等</th><td class="bfsub" colspan="5">'+
+      bfCk(bf.dementiaExists==='無','無')+bfCk(bf.dementiaExists==='有','有')+
+      '<span style="font-size:0.875rem;margin-right:14px">認知症自立度: <b>'+esc(bf.dementia||'　')+'</b></span>'+
+      '<span style="font-size:0.875rem">・障害高齢者の日常生活自立度: <b>'+esc(bf.bedriddenRank||'　')+'</b></span></td></tr>';
+  bfRows+='<tr><th class="bfrow">　</th><td class="bfsub" colspan="5" style="font-size:0.875rem">'+
+      '短期記憶 <b>'+esc(bf.shortMemory||'　')+'</b>　／　意思決定 <b>'+esc(bf.decisionAbility||'　')+'</b>'+
+      '　／　伝達能力 <b>'+esc(bf.communicateAbility||'　')+'</b></td></tr>';
+  bfRows+='<tr><th class="bfrow">行動・心理症状</th><td class="bfsub" colspan="5">'+
+      '<div class="bfwrap">'+bfChkList(BF_BPSD,bf.bpsd)+'</div>'+bfNote(bf.bpsd)+'</td></tr>';
+  bfRows+='<tr><th class="bfrow">夜間の状態</th><td class="bfsub" colspan="5">'+
+      bfCk(!!bf.night.sleepMed,'睡眠薬使用有')+
+      ((bf.night.sleepMed&&bf.nightSleepMed)?'<span style="font-size:0.875rem;margin-right:14px">（'+esc(bf.nightSleepMed)+'）</span>':'')+
+      bfChkList(BF_NIGHT,bf.night)+bfNote(bf.night)+'</td></tr>';
+  bfRows+='<tr><th class="bfrow">備考</th><td class="bfsub" colspan="5">'+
+      '<div class="fulltext">'+esc(bf.formNote||'　')+'</div></td></tr>';
+  h+='<div class="sec"><div class="sec-lbl">ADL・状態</div><div class="sec-body">'+
+    '<div class="cell" style="border-right:none">'+
+      '<table class="bfadl"><thead><tr><th class="bfrow">ADL</th>'+
+        BF_LEVELS.map(function(p){return '<th>'+esc(p[1])+'</th>'}).join('')+
+        '<th>要支援者は必要事項のみ記入</th></tr></thead><tbody>'+bfRows+'</tbody></table>'+
+      '<div style="margin-top:4px;font-size:0.875rem">'+
+        bfCk(bf.infoConsent,'この情報を提供することについて、ご本人またはご家族から同意を頂いています。')+
+      '</div>'+
+    '</div>'+
+    '<div class="row-cells">'+cell('移乗',r.transfer)+cell('更衣・整容',r.dress,false,'w-q')+cell('嚥下',r.swallow,false,'w-q')+cell('水分',r.water,false,'w-q')+'</div>'+
+    '<div class="row-cells">'+cell('視力',r.vision)+cell('聴力',r.hearing,false,'w-q')+'<div class="cell w-h"><span class="lab">褥瘡</span><div class="fulltext">'+esc(r.pressureUlcer||'　')+'</div></div></div>'+
+  '</div></div>';
+  /* ★食事・認知・意思疎通の2欄は、2026-08-15 指示で【病名・サービスの直下】へ移した（上を参照）。
+     ここには置かない（同じ欄を2箇所に出さない） */
+  /* 嗜好・本人らしさ／生活歴／意向・ACP の3欄は【支援経過の上】に置く（2026-08-15 指示で移動）。
+     支援経過は件数で高さが伸びるので、その下に固定の欄を置くと紙のどこに出るか毎回変わっていた */
+  // 嗜好・本人らしさ
+  h+='<div class="sec"><div class="sec-lbl">嗜好・本人らしさ</div><div class="sec-body">'+
+    '<div class="row-cells">'+cell('性格・気質',r.personality)+cell('趣味・特技',r.hobby)+cell('喫煙',r.smoking)+cell('飲酒',r.drinking)+'</div>'+
+    '<div class="cell" style="border-right:none"><span class="lab">好きな／嫌いな食べ物</span><div class="fulltext">'+esc(r.foodPref||'　')+'</div></div>'+
+    '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">こだわり・大切な習慣</span><div class="fulltext">'+esc(r.lifePrefs||'　')+'</div></div>'+
+  '</div></div>';
+  // 生活歴
+  h+='<div class="sec"><div class="sec-lbl">生活歴</div><div class="sec-body">'+
+    '<div class="cell" style="border-right:none"><span class="lab">生育歴・職歴・暮らしぶり</span><div class="fulltext">'+esc(r.lifeHistory||'　')+'</div></div>'+
+    '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">価値観・大切にしてきたこと・誇り</span><div class="fulltext">'+esc(r.values||'　')+'</div></div>'+
+  '</div></div>';
+  // 意向・ACP
+  h+='<div class="sec"><div class="sec-lbl">意向・人生会議（ACP）</div><div class="sec-body">'+
+    '<div class="row-cells">'+cell('DNAR',r.dnar)+'<div class="cell" style="flex:3;border-right:none"><span class="lab">主訴</span><div class="fulltext">'+esc(r.complaint||'　')+'</div></div></div>'+
+    '<div class="row-cells">'+
+      '<div class="cell"><span class="lab">本人の意向</span><div class="fulltext">'+esc(r.wishSelf||'　')+'</div></div>'+
+      '<div class="cell" style="border-right:none"><span class="lab">家族の意向</span><div class="fulltext">'+esc(r.wishFamily||'　')+'</div></div>'+
+    '</div>'+
+    '<div class="cell"><span class="lab">生活目標・ニーズ</span><div class="fulltext">'+esc(r.goal||'　')+'</div></div>'+
+    '<div class="cell"><span class="lab">看取り・終末期の意向（ACP）</span><div class="fulltext">'+esc(r.acp||'　')+'</div></div>'+
+    '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">本人の強み（ストレングス）</span><div class="fulltext">'+esc(r.strengths||'　')+'</div></div>'+
+  '</div></div>';
+  h+=meetingLinkHtml_(r);   // 担当者会議（事務所PCだけ・リンクだけ・印刷しない）（2026-10-25 本人指示）
+  // 支援経過（新しい順）
+  var slog=Array.isArray(r.supportLog)?r.supportLog.slice():[];
+  slog.sort(function(a,b){return String((b&&b.date)||'').localeCompare(String((a&&a.date)||''))});
+  /* 2026-08-15 指示: 記録ごとの点線と上下余白を削除して縦圧縮（日付の太字で行の区切りは読める） */
+  /* 2026-08-17 指示: 1件ごとに「印刷しない」を選べる。画面には薄く残して印を付ける
+     （消してしまうと、伏せたのか記録が無いのかを画面で判別できない） */
+  var slogHtml=slog.length?slog.map(function(s){
+    var np=!!(s&&s.hide);
+    return'<div'+(np?' data-nop-row="1" class="nop-row"':'')+' style="display:flex;gap:10px;padding:1px 0"><span style="flex-shrink:0;font-weight:700;color:var(--pri-d);min-width:92px">'+esc(fmtJDate(s.date)||s.date||'')+'</span><span style="flex:1;white-space:pre-wrap;word-break:break-word">'+(np?'<span class="nop-mark">🚫 印刷しない</span>':'')+esc(s.text||'')+'</span></div>';
+  }).join(''):'<span style="color:var(--g5)">　</span>';
+  h+='<div class="sec" data-cnt="'+slog.length+'"><div class="sec-lbl">支援経過</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none">'+slogHtml+'</div></div></div>';
+  // 医療支援経過（訪問診療。新しい順）
+  var mlog=Array.isArray(r.medicalSupportLog)?r.medicalSupportLog.slice():[];
+  mlog.sort(function(a,b){return String((b&&b.date)||'').localeCompare(String((a&&a.date)||''))});
+  if(mlog.length){
+    /* ★訪問診療アプリから毎回入る「■処方歴■」の行と「■残なし■」の行は、画面と紙に出さない（2026-10-20 代表者の決定・行ごと）。
+       定期薬は薬剤情報の欄で見られるため。★記録（保存の中身）は1文字も変えない＝編集画面では全部見える。
+       行を除いて何も残らない記録は、日付だけの行になるので出さない。 */
+    /* 処方の行を消す前に、前回と比べて処方の中身が変わった記録に印を付ける（2026-10-25 本人指示・medlogRxChanged_） */
+    var rxRes=medlogRxChanged_(mlog), rxCh=rxRes.changed, rxMulti=rxRes.clinics>=2;
+    mlog=mlog.map(function(s,i){
+      var t=String((s&&s.text)||'').split('\n').filter(function(ln){ return !MEDLOG_HIDE_RE.test(ln); }).join('\n').replace(/^\n+|\n+$/g,'');
+      var o={}; for(var k in s) if(Object.prototype.hasOwnProperty.call(s,k)) o[k]=s[k];
+      o.text=t; o.rxChanged=!!rxCh[i]; o.rxClinic=rxMulti?String((s&&s.clinic)||'').trim():''; return o;
+    }).filter(function(s){ return String(s.text||'').trim()!=='' || s.rxChanged; });   /* 処方の行しか無くても、変わった記録は印だけで出す */
+    /* ★医師名・医療機関名の行と「[訪問診療]」の印も出さない（2026-10-20 代表者の決定。毎回同じで、縦に長くなるだけのため）。
+       かかりつけ・主治医は医療情報の欄で見られる。★記録（doctor・clinic・source）は変えない＝編集画面では見える。
+       本文が無く医師名だけの記録は、日付だけの行になるので出さない */
+    /* ★見出しの整え（2026-10-20 代表者の決定）: 「【Dr.へ伝えた内容】」が「特変なし。」だけの時は見出しごと出さない／
+       「【診察の結果】」は「【診察結果】」と出す／2つの見出しの下の文は2文字下げて出す（medlogBodyHtml_）。表示だけで記録は変えない */
+    var mlogHtml=mlog.map(function(s){
+      var body=medlogBodyHtml_(s.text);
+      /* 処方の変更の印は記録の先頭に1行（画面と紙の両方・2026-10-25 本人指示） */
+      /* 医療機関が2つ以上の方は、どの医療機関の処方かを後ろに添える（指定の文言は変えない・同日の追加指示） */
+      if(s.rxChanged) body='<div class="ml-l ml-rx">'+esc(MEDLOG_RX_NOTE)+(s.rxClinic?'〔'+esc(s.rxClinic)+'〕':'')+'</div>'+body;
+      if(!body) return '';
+      /* 日付の欄は「2026年12月31日」が入る幅にそろえる（日付の長さで見出しの左端がずれないように・2026-10-20） */
+      return'<div style="display:flex;gap:10px;padding:1px 0"><span style="flex-shrink:0;font-weight:700;color:var(--pri-d);width:8.2em;white-space:nowrap">'+esc(fmtJDate(s.date)||s.date||'')+'</span><div style="flex:1;min-width:0">'+body+'</div></div>';
+    }).filter(String);
+    var mlogCnt=mlogHtml.length;
+    mlogHtml=mlogHtml.join('');
+    h+='<div class="sec" data-cnt="'+mlogCnt+'"><div class="sec-lbl">医療支援経過</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none">'+mlogHtml+'</div></div></div>';
+  }
+  /* ★嗜好・本人らしさ／生活歴／意向・ACP の3欄は、2026-08-15 指示で【支援経過の上】へ移した（上を参照）。
+     ここには置かない（同じ欄を2箇所に出さない） */
+  // 対象アプリ
+  var tApps=Array.isArray(r.targetApps)?r.targetApps:null;
+  var tBadges=APP_TARGETS.map(function(p){
+    var on=tApps?tApps.indexOf(p[0])>=0:true;
+    return'<span class="tag" style="background:'+(on?'var(--ok-l);color:var(--ok)':'var(--g1);color:var(--g5)')+'">'+(on?'✓ ':'– ')+esc(p[1])+'</span>';
+  }).join(' ');
+  h+='<div class="sec"><div class="sec-lbl">対象</div><div class="sec-body"><div class="cell" style="border-right:none;border-bottom:none"><span class="lab">対象アプリ</span><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:2px">'+tBadges+'</div></div></div></div>';
+  /* 移行前の記載（読み取り専用・画面のみ・印刷には出さない）。
+     2026-08-12 に様式化した項目の「元の値」。自動変換できなかったぶんが残っているので、
+     人が新様式へ写すまで見えるようにしておく。★データは消していない（原則4）。 */
+  var bfOld=bfLegacy(r);
+  if(bfOld.length){
+    h+='<div class="sec sec-bflegacy"><div class="sec-lbl">移行前の記載</div><div class="sec-body">'+
+      '<div class="cell" style="border-right:none;background:var(--g0)"><span class="lab">この欄について</span>'+
+      '<div class="fulltext">上の様式へ差し替える前の記載です。表示のみで編集できません（印刷には出ません）。'+
+      '内容を様式へ写し終えたら、この欄は無視して構いません。</div></div>'+
+      bfOld.map(function(o,i){
+        var last=(i===bfOld.length-1);
+        return '<div class="cell" style="border-right:none'+(last?';border-bottom:none':'')+'">'+
+               '<span class="lab">'+esc(o.label)+'</span>'+
+               '<div class="fulltext bflegacy">'+esc(o.value)+'</div></div>';
+      }).join('')+
+    '</div></div>';
+  }
+  /* 移行時の退避データ（読み取り専用・画面のみ）。
+     元スプレッドシートにあってマスタに対応欄が無い値（保険証の有効期限・寝具リース・享年など）は
+     unmappedRaw に保存されているが、これまでどの画面にも表示されず死蔵していた（2026-08-08 監査）。
+     ★入力欄は作らない。編集できるようにすると collectForm の引き継ぎと二重管理になる。 */
+  var uraw=Array.isArray(r.unmappedRaw)?r.unmappedRaw.filter(function(o){return o&&String(o.value==null?'':o.value).replace(/[\s　]/g,'')}):[];
+  if(uraw.length){
+    h+='<div class="sec sec-unmapped"><div class="sec-lbl">移行時の退避</div><div class="sec-body">'+
+      '<div class="cell" style="border-right:none;background:var(--g0)"><span class="lab">この欄について</span>'+
+      '<div class="fulltext">元の入居者情報スプレッドシートにあった項目のうち、マスタに対応欄が無いものです。表示のみで編集できません（印刷には出ません）。</div></div>'+
+      uraw.map(function(o,i){
+        var last=(i===uraw.length-1);
+        var lab=String(o.label||'（項目名なし）')+(o.col?('（元シート 列'+o.col+'）'):'');
+        return '<div class="cell" style="border-right:none'+(last?';border-bottom:none':'')+'">'+
+               '<span class="lab">'+esc(lab)+'</span>'+
+               '<div class="fulltext">'+esc(o.value)+'</div></div>';
+      }).join('')+
+    '</div></div>';
+  }
+  h+='</div>';
+  /* ひと目カード（画面だけ・2026-10-16 第2弾）。紙の様式（.sheet）の外、先頭に置く */
+  $('viewBox').innerHTML=glanceHtml_(r)+h;
+  /* 「印刷しない」に指定された欄を紙から外す（画面には帯を付けて残す）。
+     ★描画のいちばん最後に掛ける。renderView 本体には手を入れない（既存レイアウトの保護） */
+  applyPrintHide($('viewBox'),r);
+  paintHospBtn(r);
+  // ジェノグラム欄クリック → 家系図アプリで作成/編集
+  var gb=$('viewBox').querySelector('.geno-box');
+  if(gb)gb.addEventListener('click',function(){openGenogram(this.getAttribute('data-geno'),this.getAttribute('data-name'))});
+  /* ほかの端末で描いた家族構成図が新しければ、枠の中身だけ差し替える（統合 0056） */
+  rmGenoCloud_(r);
+  viewNavPaint_();   /* 目次と、欄をたたむ見出し（画面だけ・2026-10-16 第2弾） */
+}
+
+/* ═══════════ 入院/復帰トグル（状態だけの部分更新） ═══════════
+   氏名や医療情報は触らず、GAS の setState で hospitalized だけを書き換える。
+   排泄記録・週間計画も同じ状態を見る（共有名簿 su_residents_common 経由）ので、
+   ここでの変更は保存成功後に共有名簿へも即反映する。記録・履歴は一切消さない。 */
+function paintHospBtn(r){
+  var b=$('hospBtn'); if(!b)return;
+  if(!r||r.id==null){b.hidden=true;return}
+  var on=!!r.hospitalized;
+  b.hidden=false; b.disabled=false;
+  b.textContent=on?'🏠 退院（在籍へ戻す）':'🏥 入院にする';
+  b.setAttribute('aria-pressed',on?'true':'false');
+}
+/* 入院/退院の案内に添える「どなたの」（例「101号室 ○○ 様」）。居室・氏名とも無ければ ''（＝添えない）。
+   氏名は記録の表記のまま使う（前後の空白だけ落とす。中の空白・異体字は直さない）。画面に出すだけで、どこにも保存しない */
+function hospWho_(r){
+  if(!r)return '';
+  var room=String(r.room==null?'':r.room).trim(), name=String(r.name==null?'':r.name).trim();
+  if(!room&&!name)return '';
+  return (room?room+'号室':'')+(room&&name?' ':'')+(name?name+' 様':'の方');
+}
+/* 入院/退院の成功の案内。who が '' の時は従来どおりの文言 */
+function hospDoneMsg_(on,who){
+  return on?('🏥 '+(who?who+'を':'')+'入院中にしました'):('🏠 '+(who?who+'の':'')+'入院を解除しました');
+}
+/* 一覧を見ている時は、詳細で開いていた方の案内でも「どなたの」を添える（一覧では誰の変更か見えないため） */
+function hospOnList_(){ var l=$('sc-list'); return !!(l&&l.classList&&l.classList.contains('on')); }
+/* 入院/退院の結果の控え（番号→{hz:入院か, at:サーバーが付けた時刻}）。2026-10-02
+   結果が届いた時にその方を開き直している最中だと、開き直しの読み取りが書き込みより先に済んでいて、
+   古い入院の状態で詳細が描かれることがある。開き直しの記録が届いた時（openResident）にここを見て、
+   記録の hospitalizedAt が控えより古ければ控えの値を当て直す。同じか新しければ記録のまま（他端末の変更を潰さない）。
+   ★控えるのは「その方をまさに開き直している最中」（curResident が空で、最後に openResident に渡した番号が同じ）の時だけ。
+     openResident は呼ぶたびに古い控えを捨てるので、控えの寿命は開き直しの数秒に限られる。期限なしに残すと、
+     他端末が古い編集画面から保存して hospitalizedAt が過去へ戻った時に、後日開いた時の正しい記録を控えで隠してしまう。
+   持つのは番号・真偽・時刻だけ（氏名は持たない）。どこにも保存しない */
+var hospPend_={}, hospOpening_=null;
+function hospNote_(sid,hz,at){
+  if(sid==null||!at||curResident||hospOpening_!==String(sid))return;
+  hospPend_[String(sid)]={hz:!!hz,at:String(at)};
+}
+function hospApplyPend_(rec){
+  if(!rec||rec.id==null)return;
+  var k=String(rec.id), p=hospPend_[k]; if(!p)return;
+  delete hospPend_[k];
+  if(String(rec.hospitalizedAt||'')>=p.at)return;   // 記録の方が新しいか同じ（ISO 形式どうしの文字列比較）
+  rec.hospitalized=p.hz; rec.hospitalizedAt=p.at;
+}
+function toggleHosp(){
+  if(!curResident||curResident.id==null)return;
+  if(!rmOn_()){toast('⚠️ 入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）');return}
+  var next=!curResident.hospitalized, b=$('hospBtn');
+  /* ★取り直しで照合する時のために「誰の・どちらへの変更か」を控える。
+     応答を待つ間に別の方を開かれても、控えた id で判定すれば取り違えない。 */
+  var sid=curResident.id, want=next;
+  var dg=devGen;   // 出した時の世代（現場用へ切り替わると applyDeviceGuard が進める）（2026-10-01）
+  /* 案内に添える「どなたの変更か」（押した時点の居室・氏名）。応答までに別の方を開いた時だけ添える（2026-10-02 本人指示） */
+  var who=hospWho_(curResident);
+  if(b)b.disabled=true;
+  setSync('保存中…');
+  apiPost({action:'setState',id:sid,hospitalized:next,src:'master'}).then(function(d){
+    if(!d||d.ok!==true)throw new Error('更新できませんでした');
+    /* ★応答を待つ間に端末が現場用へ切り替わった。開いていた方の記録は捨ててある（applyDeviceGuard）ので、
+       画面・名簿には触れずに終える（サーバーへの保存は済んでいる。名簿は次の取り直しで最新になる）。
+       これが無いと curResident が null で例外になり、現場端末から取り直しの通信が出て
+       「反映を確認しました」と案内してしまう */
+    if(dg!==devGen){ if(b)b.disabled=false; return; }
+    /* ★結果は控えた番号（sid）の方にだけ書く。応答を待つ間に別の方を開かれていたら、その方の記録・画面には
+       触らない（失敗側の取り直しと同じ考え方）。直す前は応答が届いた時点の curResident に書いていたため、
+       押していない方に入院の印が付き（退院なら印が消え）、共有名簿にもそのまま配っていた（2026-10-02）。
+       別の方の読み込み中（curResident が null）に届いた時も、例外から取り直しへ回さずここで終える */
+    var hz=!!d.hospitalized;
+    var same=!!(curResident&&String(curResident.id)===String(sid));
+    // 一覧キャッシュと共有名簿へも即反映（他アプリはネット無しでも共有名簿を読む）
+    for(var i=0;i<roster.length;i++){
+      if(String(roster[i].id)===String(sid)){roster[i].hospitalized=hz;break}
+    }
+    saveRosterCache();writeCommonRoster();
+    setSync('保存OK','ok');
+    toast(hospDoneMsg_(hz,same&&!hospOnList_()?'':who));
+    if(same){
+      curResident.hospitalized=hz;
+      curResident.hospitalizedAt=d.hospitalizedAt||'';
+      renderView(curResident);
+    }else{
+      hospNote_(sid,hz,d.hospitalizedAt);   // その方を開き直している最中なら、届いた記録が古い時に当て直す
+    }
+    renderRoster();
+  }).catch(function(e){
+    if(dg!==devGen){ if(b)b.disabled=false; return; }   // 同上（切り替え後は取り直しの確認をしない）
+    /* ★§13: 失敗表示でも書けていることがある。値の上書きなので取り直して現物で判定する */
+    setSync('確認中…');
+    apiGet({action:'getResident',id:sid},25000).then(function(d){
+      /* ★確認を待つ間に現場用へ切り替わった（未保存があってブロックだけの場面）。案内には氏名が載りうるので出さない（2026-10-02） */
+      if(dg!==devGen) return;
+      var got=(d&&d.record)||null;
+      var same=!!(curResident&&String(curResident.id)===String(sid));
+      /* ★成否は現物だけで決める。確認を待つ間に別の方を開かれても「反映できているのに失敗」と
+         誤報しない。画面の書き換え（curResident・renderView）だけを、いま開いている方が
+         同じ id の時に限る。 */
+      if(got&&got.hospitalized===want){
+        for(var i=0;i<roster.length;i++){
+          if(String(roster[i].id)===String(sid)){roster[i].hospitalized=want;break}
+        }
+        saveRosterCache();writeCommonRoster();
+        setSync('保存OK','ok');
+        toast(hospDoneMsg_(want,same&&!hospOnList_()?'':who)+'（応答は届きませんでしたが、反映を確認しました）');
+        if(same){
+          curResident.hospitalized=want;
+          curResident.hospitalizedAt=got.hospitalizedAt||'';
+          renderView(curResident);
+        }else{
+          hospNote_(sid,want,got.hospitalizedAt);   // 同上
+        }
+        renderRoster();
+        return;
+      }
+      setSync('保存失敗','err');toast('⚠️ '+((same&&!hospOnList_())||!who?'':who+'の入院・退院を')+'変更できていません: '+rmErrWords_(e,'入院・退院の切り替え')+'。もう一度お試しください');
+    }).catch(function(){
+      if(dg!==devGen) return;   // 同上
+      var same=!!(curResident&&String(curResident.id)===String(sid));
+      setSync('確認できず','err');toast('⚠️ '+((same&&!hospOnList_())||!who?'':who+'の入院・退院を')+'変更できたか確認できませんでした。画面を再読み込みして、入院の表示を確かめてください');
+    }).then(function(){ if(b)b.disabled=false; });
+  });
+}
+
+/* ═══════════ 編集フォーム ═══════════ */
+var editing=null, editBaseUpdatedAt='';
+/* 未知値の救済（データ消失防止）:
+   select の選択肢に無い既存値は、どの option にも selected が付かず先頭の空 option が選ばれ、
+   編集画面を開いて保存しただけで値が空になって消える。同様に type=date は ISO 形式でない値を
+   受け付けず空表示になり保存で消える。いずれも警告が出ない無言の消失なので、
+   未知値は「（既存値）」付きの option として足す／date は text にフォールバックして必ず保持する。 */
+/* ═══ 介護度・認定期間の履歴（2026-09-19 管理者指示）═══
+   従来は【介護度の値が変わった時だけ】変更前を残していた。介護度が同じまま期間だけ延びる
+   更新認定（要介護3のまま R8.4.1〜R10.3.31 → R10.4.1〜R12.3.31）では前の期間が上書きされ、
+   「いつからいつまでが要介護いくつだったか」が追えなかった。
+   実測（2026-09-22・在籍33名を1人ずつ照会）: 履歴があるのは【3名・3件】だけで、
+   3件とも介護度の変更によるもの（＝期間だけの更新は1件も残っていない）。
+   ★入居者マスタの GAS（ファイル「コード.gs」＝ gas/master.gs）の _clh* と【同じ規則】にすること。
+     片方だけ直すと、同じ操作でも1人ずつ保存したか一括編集したかで履歴が残ったり残らなかったりする。
+   ★中身が同じかは【介護度・認定期間(開始/終了)・認定日の4つだけ】で見る。記録日・備考は見ない。
+     見てしまうと、同じ内容の行が記録日違いでいくつも積み上がる。 */
+var CLH_KEYS=['value','certStart','certEnd','certDate'];
+function clhNorm_(v){ return String(v==null?'':v).trim(); }
+function clhSame_(a,b){
+  if(!a||!b) return false;
+  for(var i=0;i<CLH_KEYS.length;i++) if(clhNorm_(a[CLH_KEYS[i]])!==clhNorm_(b[CLH_KEYS[i]])) return false;
+  return true;
+}
+function clhOf_(src){
+  if(!src) return {value:'',certStart:'',certEnd:'',certDate:''};
+  return {value:clhNorm_(src.careLevel), certStart:clhNorm_(src.careCertStart),
+          certEnd:clhNorm_(src.careCertEnd), certDate:clhNorm_(src.certDate)};
+}
+function clhEmpty_(s){
+  for(var i=0;i<CLH_KEYS.length;i++) if(clhNorm_(s[CLH_KEYS[i]])) return false;
+  return true;
+}
+/* 変更前の一式を1件返す（積む必要が無ければ null）。
+   ★editing.careLevelHistory は【書き換えない】。書き換えると、画面に出ている履歴の行と
+     配列の位置が1つずれ、保存に失敗してもう一度押した時に collectCareHist が
+     別の行の値を書き込む＝自動記録が別の内容に化けて、さらに二重に積まれる
+     （2026-09-19 レビュー M-4。入力欄の取り違え＝M-046 と同型）。
+     保存するものだけに足せば、何度押しても結果は常に1件で同じになる。
+   返さないのは3つの時だけ: 1 何も変わっていない 2 変更前が丸ごと空（残す中身が無い）
+   3 同じ中身が既に履歴の先頭にある（＝1件目を作ってあっても二重にならない）。 */
+function clhEntryFor_(rec){
+  var before=clhOf_(editing), after=clhOf_(rec);
+  if(clhSame_(before,after)) return null;
+  if(clhEmpty_(before)) return null;
+  var hist=Array.isArray(editing.careLevelHistory)?editing.careLevelHistory:[];
+  if(hist.length&&clhSame_(hist[0],before)) return null;
+  return {value:before.value, certStart:before.certStart, certEnd:before.certEnd,
+          certDate:before.certDate, changedAt:todayISO(),
+          changedBy:(typeof rmWho_==='function')?rmWho_():'',   /* 記録した人（2026-10-10・画面だけに出す） */
+          note:(before.value!==after.value)?'区分変更（自動記録）':'更新認定（自動記録）'};
+}
+function isISODate(s){return /^\d{4}-\d{2}-\d{2}$/.test(String(s||''))}
+function dtype(v){return (v&&!isISODate(v))?'text':'date'}
+/* アレルゲン・禁食を選ぶ欄（2026-10-22 代表者の決定）。見た目は様式のチェック（.bfe）に寄せる。
+   ★data-k を付けない（collectForm の汎用の回収が 'on' を拾うため）。回収は collectForm の data-algtag / data-forbtag */
+function algEditHtml_(r){
+  var a=algPick_(r&&r.allergenTags,ALG_ALLERGENS), f=algPick_(r&&r.forbiddenTags,algForbiddenList_());
+  var ck=function(attr,p,sel){
+    return '<label class="bfe"><input type="checkbox" '+attr+'="'+esc(p[0])+'"'+(sel.indexOf(p[0])>=0?' checked':'')+'>'+esc(p[1])+'</label>';
+  };
+  return '<div class="algtags">'+
+    '<div class="bfe-h">アレルゲン</div>'+
+    '<div class="bfe-body" role="group" aria-label="アレルゲン">'+
+      ALG_ALLERGENS.map(function(p){ return ck('data-algtag',p,a); }).join('')+'</div>'+
+    '<div class="bfe-h">禁食</div>'+
+    ALG_FORBIDDEN_GROUPS.map(function(g){
+      return '<div class="bfe-row"><span class="bfe-lab">'+esc(g[0])+'</span>'+
+        '<span class="bfe-body" role="group" aria-label="'+esc('禁食 '+g[0])+'">'+
+        g[1].map(function(p){ return ck('data-forbtag',p,f); }).join('')+'</span></div>';
+    }).join('')+
+    /* 画面だけの案内（2026-10-22 代表者の決定・文言は指定どおり）。紙・食形態一覧・注意の帯は自由文だけを出すため */
+    '<p class="algtags-note">紙・食形態一覧・注意の帯には上の自由文だけが出ます。自由文は消さずに残してください</p>'+
+  '</div>';
+}
+function fld(k,label,val,type,opts){
+  var v=esc(val==null?'':val);
+  var wide=(type==='textarea');
+  if(type==='select'){
+    var sv=(val==null?'':String(val));
+    var known=opts.map(String).indexOf(sv)>=0;
+    var extra=(sv&&!known)?'<option value="'+esc(sv)+'" selected>'+esc(sv)+'（既存値）</option>':'';
+    var o='<option value=""></option>'+extra+opts.map(function(x){return'<option value="'+esc(x)+'"'+(String(val)===String(x)?' selected':'')+'>'+esc(x)+'</option>'}).join('');
+    return'<div class="fld"><label>'+esc(label)+'</label><select data-k="'+k+'">'+o+'</select></div>';
+  }
+  if(type==='textarea')return'<div class="fld wide"><label>'+esc(label)+'</label><textarea data-k="'+k+'">'+v+'</textarea></div>';
+  /* 'lines' … 1行入力（input）では改行を入れられないが、2つの医院・2人の医師を
+     「1行に1件」で入れたい欄に使う（2026-08-19 指示）。保存の経路は input と同じ
+     （collectForm は data-k の value を読むだけ）ので、既存データは1バイトも変わらない。
+     ★入力欄を広げる（.wide）と編集画面の並びが変わるので付けない。高さだけ2行ぶん。 */
+  if(type==='lines')return'<div class="fld"><label>'+esc(label)+'</label><textarea data-k="'+k+'" class="lines" rows="2">'+v+'</textarea></div>';
+  if(type==='checkbox')return'<div class="fld"><label>'+esc(label)+'</label><select data-k="'+k+'"><option value=""'+(!val?' selected':'')+'>無</option><option value="1"'+(val?' selected':'')+'>有</option></select></div>';
+  // ISO でない日付は text で表示（空にして消さない）
+  var t=(type||'text');
+  if(t==='date'&&val&&!isISODate(val))t='text';
+  return'<div class="fld"><label>'+esc(label)+'</label><input data-k="'+k+'" type="'+t+'" value="'+v+'"></div>';
+}
+/* 2行入力の欄（.lines）を中身の行数に合わせる。入力中も追随させる。
+   ★44px を下回らせない（タップ領域）。★高さを一度 auto に戻してから測る
+     （前回の高さが残っていると縮まない）。 */
+function fitLines(){
+  var box=$('editBox'); if(!box)return;
+  Array.prototype.forEach.call(box.querySelectorAll('textarea.lines'),function(t){
+    if(t._lfit)return;
+    t._lfit=true;
+    var fit=function(){
+      t.style.height='auto';
+      /* ★+2 は上下の枠線ぶん（*{box-sizing:border-box} なので高さに枠線が含まれる）。
+         足さないと overflow:hidden で最終行の下が2px 欠ける＝まさに見せたかった2行目が切れる。
+         既存の autoGrow（支援経過）も同じ +2 を入れている。 */
+      t.style.height=Math.max(t.scrollHeight + 2, 44)+'px';
+    };
+    t.addEventListener('input',fit);
+    fit();
+    /* ★画面がまだ表示されていない時に測ると scrollHeight が 0 に近く、最小の44pxで止まる。
+       表示された後にもう一度測る（実測で2件目が隠れた）。 */
+    setTimeout(fit,0);
+  });
+}
+function openEdit(rec){
+  editing=rec?JSON.parse(JSON.stringify(rec)):{id:null,active:true,family:[],rhythm:{}};
+  /* ★楽観ロックの基準（GAS §14）。この画面を開いた時点の updatedAt を控え、保存時に同送する。
+     編集中に他端末が保存していれば GAS が 'conflict' で止める（後勝ちの丸ごと上書き防止）。 */
+  editBaseUpdatedAt=(rec&&rec.updatedAt)?String(rec.updatedAt):'';
+  supportShowAll=false;      // 別の方を開いたら「直近1年」に戻す（前の方の展開状態を持ち越さない）
+  supKeep=[];                // 同上（前の方で日付を直した記録を持ち越さない）
+  if(!Array.isArray(editing.family))editing.family=[];
+  if(!editing.rhythm)editing.rhythm={};
+  if(!Array.isArray(editing.supportLog))editing.supportLog=[];
+  if(!Array.isArray(editing.careLevelHistory))editing.careLevelHistory=[];
+  if(!Array.isArray(editing.medicalSupportLog))editing.medicalSupportLog=[];
+  if(!Array.isArray(editing.medsPastLog))editing.medsPastLog=[];
+  if(!editing.dayUse||typeof editing.dayUse!=='object')editing.dayUse={};
+  if(!editing.consents||typeof editing.consents!=='object')editing.consents={};
+  if(!editing.xref||typeof editing.xref!=='object')editing.xref={};
+  if(!editing.xref.vma||typeof editing.xref.vma!=='object')editing.xref.vma={};
+  var r=editing;
+  var levels=['','要支援1','要支援2','要介護1','要介護2','要介護3','要介護4','要介護5','自立'];
+  var h='';
+  h+='<div class="cd"><div class="fgroup"><h3>基本情報</h3><div class="fgrid">'+
+    fld('name','氏名',r.name)+fld('kana','ふりがな',r.kana)+fld('room','居室',r.room)+
+    fld('gender','性別',r.gender,'select',['女','男'])+
+    /* 生年月日は和暦でも打てる（2026-08-12 指示）。下の入力欄に「昭和15.1.1」等を入れると
+       上の日付欄が自動で埋まる。★読み取れない文字を打っても既存の日付は消さない */
+    '<div class="fld"><label for="f-birthDate">生年月日</label>'+
+      '<input id="f-birthDate" data-k="birthDate" type="'+(r.birthDate&&!isISODate(r.birthDate)?'text':'date')+'" value="'+esc(r.birthDate||'')+'">'+
+      '<input id="f-birthWareki" type="text" class="wareki-in" autocomplete="off" spellcheck="false"'+
+        ' placeholder="和暦でも可（例 昭和15.1.1）" aria-label="生年月日を和暦で入力">'+
+      '<span id="f-birthEcho" class="wareki-echo"></span>'+
+    '</div>'+
+    fld('careLevel','介護度',r.careLevel,'select',levels)+
+    fld('careCertStart','認定期間(開始)',r.careCertStart,'date')+fld('careCertEnd','認定期間(終了)',r.careCertEnd,'date')+
+    fld('copayRate','負担割合',r.copayRate,'select',['1','2','3'])+fld('welfare','生保',r.welfare,'checkbox')+
+    fld('admissionDate','入居日',r.admissionDate,'date')+
+    /* ★在籍状態は入居日のすぐ隣に置く（2026-08-09 管理者指示）。
+       以前は「認知症自立度」の右＝18項目の最後尾にあり、探しても見つからなかった */
+    fld('active','在籍状態',r.active===false?'退去':'在籍','select',['在籍','退去'])+
+    fld('dischargeDate','退去日',r.dischargeDate,'date')+
+    fld('deathDate','ご逝去日',r.deathDate,'date')+
+    fld('height','身長(cm)',r.height,'number')+fld('weight','体重(kg)',r.weight,'number')+
+    '<p class="muted" style="grid-column:1/-1;margin:-4px 0 4px;font-size:0.8125rem">体重の最新値は<b>体重管理アプリ</b>が正です。ここは移行時点の記録で、詳細画面には体重管理アプリの最新値が出ます。</p>'+
+    /* 認知症自立度（dementia）は「入居者基本情報（様式）」へ移した（2026-08-12）。
+       ここに残すと同じ項目の入力欄が2つになり、後から開いた方が勝つ */
+    fld('adl','生活自立度',r.adl)+
+  '</div></div></div>';
+
+  // 保険・制度／連絡先
+  h+='<div class="cd"><div class="fgroup"><h3>保険・制度／連絡先</h3><div class="fgrid">'+
+    fld('phone','電話番号（本人/居室）',r.phone)+
+    fld('insuredNo','被保険者番号',r.insuredNo)+fld('insurer','保険者（市区町村）',r.insurer)+
+    fld('certDate','認定日',r.certDate,'date')+
+    fld('medicalInsurance','医療保険種別',r.medicalInsurance,'select',['','後期高齢者','国保','社保','その他'])+
+    fld('disabilityCert','障害者手帳（種別・等級）',r.disabilityCert)+
+    fld('guardianship','成年後見（類型・後見人）',r.guardianship)+
+  '</div></div></div>';
+
+  // 介護度の変更履歴（時系列・後編集可）
+  h+='<div class="cd"><div class="fgroup"><h3>介護度の変更履歴</h3><div id="careHistList"></div>'+
+    '<button class="btn btn-sec" id="careHistAdd" type="button">＋ 履歴を追加</button>'+
+    '<p class="muted" style="margin-top:6px">介護度を変更して保存すると、変更前の値が自動で履歴に残ります（後から日付・内容の編集可）。</p></div></div>';
+
+  // 対象アプリ（各ケアアプリに表示・記録するか）
+  var curTargets=Array.isArray(r.targetApps)?r.targetApps:defaultTargetApps();
+  h+='<div class="cd"><div class="fgroup"><h3>対象アプリ（チェックした人だけ各アプリに表示・記録されます）</h3><div class="fgrid">'+
+    APP_TARGETS.map(function(p){
+      var on=curTargets.indexOf(p[0])>=0;
+      return'<label class="fld" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;border:1px solid var(--g2);border-radius:8px;padding:10px"><input type="checkbox" data-target="'+p[0]+'"'+(on?' checked':'')+' style="width:auto">'+esc(p[1])+'</label>';
+    }).join('')+
+  '</div><p class="muted" style="margin-top:6px">既定は全てON。対象外の人だけチェックを外してください（既存記録は削除されません）。</p></div></div>';
+
+  /* 印刷しない欄（2026-08-17 指示）。ご家族へお渡しする紙で伏せたい欄を、この方について選ぶ。
+     ★データは消さない・画面にも従来どおり出る。効くのは紙だけ
+       （入居者マスタの「🖨️ 印刷」「🖨️ A4様式」／フェイスシートの印刷）。
+     ★現場タブレットには届かない（安全情報しか送っていないため。設定の有無に関係なく従来どおり） */
+  var curHide=printHideSet(r);
+  h+='<div class="cd"><div class="fgroup"><h3>印刷しない欄（ご家族へお渡しする紙で伏せる）</h3><div class="fgrid">'+
+    PRINT_SECS.map(function(p){
+      var on=!!curHide[p[0]];
+      return'<label class="fld" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;border:1px solid var(--g2);border-radius:8px;padding:10px;min-height:44px"><input type="checkbox" data-psec="'+p[0]+'"'+(on?' checked':'')+' style="width:auto">'+esc(p[1])+'</label>';
+    }).join('')+
+  '</div><p class="muted" style="margin-top:6px">チェックした欄は<b>紙に出ません</b>（画面には「🚫 この欄は印刷しません」と出ます）。支援経過は1件ごとにも選べます（下の「支援経過」欄）。</p></div></div>';
+
+  h+='<div class="cd"><div class="fgroup"><h3>基本事項</h3><div class="fgrid">'+
+    fld('dischargeTo','退去先（自宅/病院/他施設 等）',r.dischargeTo)+
+  '</div>'+
+    fld('preAdmission','入居前状況',r.preAdmission,'textarea')+
+    fld('postDischarge','退去後状況（行き先等）',r.postDischarge,'textarea')+'</div></div>';
+
+  h+='<div class="cd"><div class="fgroup"><h3>家族情報</h3><div id="famList"></div>'+
+    '<button class="btn btn-sec" id="famAdd" type="button">＋ 家族を追加</button></div></div>';
+
+  // 同意・確認書（有無だけでなく取扱方法の文言も入るため全て文字列）
+  h+='<div class="cd"><div class="fgroup"><h3>同意・確認書</h3><div class="fgrid">'+
+    CONSENT_KEYS.map(function(p){
+      return'<div class="fld"><label>'+esc(p[1])+'</label><input data-consent="'+p[0]+'" value="'+esc((r.consents&&r.consents[p[0]])||'')+'"></div>';
+    }).join('')+
+  '</div><p class="muted" style="margin-top:6px">「有」等の記号のほか、郵便物開封・主治医薬管理は取扱方法をそのまま記入できます。</p></div></div>';
+
+  h+='<div class="cd"><div class="fgroup"><h3>事業所</h3><div class="fgrid">'+
+    fld('careOffice','居宅介護支援事業所',r.careOffice)+fld('careManager','介護支援専門員',r.careManager)+
+    fld('careOfficeTel','電話番号',r.careOfficeTel)+fld('careOfficeFax','FAX番号',r.careOfficeFax)+
+    fld('welfareEquip','福祉用具',r.welfareEquip)+fld('welfareEquipStaff','担当者',r.welfareEquipStaff)+fld('welfareEquipTel','電話番号',r.welfareEquipTel)+
+    fld('serviceManager','サービス提供責任者',r.serviceManager)+
+    fld('prevCareOffice','前の居宅介護支援事業所',r.prevCareOffice)+fld('prevCareManager','前の担当ケアマネ',r.prevCareManager)+
+    /* 「デイ利用日」の入力欄は 2026-08-19 に廃止した（管理者の裁定＝案②）。
+       表示は3枚の紙（A4様式・詳細画面の印刷・フェイスシート）とも週間計画から出すので、
+       ここで入力しても何も変わらない＝直そうとした職員の時間を黙って溶かす欄だった。
+       ★データ（dayUse）は消していない。詳細画面の「移行前の記載」に読み取り専用で出る
+         （bfLegacyDayUse）。保存時の引き継ぎは collectForm を参照（外すと保存だけで消える）。
+       ★利用日を直すのは【週間計画アプリ】。ここではない。 */
+  '</div><h3 style="margin-top:14px">生活リズム</h3><div class="fgrid">'+
+    /* 食事の時刻は施設共通の既定を最初から入れておく（2026-08-12 指示）。
+       ★入っている値は上書きしない。空欄の方にだけ既定を出す */
+    RHYTHM_KEYS.map(function(p){var rv=rhythmOf(r);return'<div class="fld"><label>'+esc(p[1])+'</label><input data-rhythm="'+p[0]+'" type="time" value="'+esc(rv[p[0]]||'')+'"></div>'}).join('')+
+  '</div></div></div>';
+
+  h+='<div class="cd"><div class="fgroup"><h3>医療情報</h3><div class="fgrid">'+
+    /* ★この4つだけ2行入力（2026-08-19 指示）。移行時に2つの医院の情報が区切りなしで
+       1つの欄に入った方がおり（例: 病院名が2つ続けて入っている）、紙の上で読み分けられない。
+       機械的に分ける規則は無い（医院名のどこで切れるか判定できない）ので、
+       人が改行で分けられるようにした。改行は3枚の紙とも pre-wrap でそのまま出る。 */
+    fld('hospital','かかりつけ病院',r.hospital,'lines')+fld('doctor','主治医',r.doctor,'lines')+
+    fld('hospitalTel','電話番号',r.hospitalTel,'lines')+fld('hospitalFax','FAX番号',r.hospitalFax,'lines')+
+    fld('emergencyHospital','救急搬送先（希望）',r.emergencyHospital)+fld('emergencyHospitalTel','急変時 連絡先TEL',r.emergencyHospitalTel,'tel')+
+    fld('visitDay','診療曜日',r.visitDay)+
+    fld('pharmacy','かかりつけ薬局',r.pharmacy)+fld('pharmacyTel','電話番号',r.pharmacyTel)+fld('pharmacyFax','FAX番号',r.pharmacyFax)+
+    fld('bloodType','血液型',r.bloodType,'select',['','A','B','O','AB','不明'])+
+  '</div>'+
+    fld('allergy','アレルギー',r.allergy,'textarea')+
+    algEditHtml_(r)+   /* アレルゲン・禁食を選ぶ欄（2026-10-22 代表者の決定）。自由文の欄は残す */
+    fld('infections','感染症（B/C肝炎・結核・MRSA・疥癬 等）',r.infections,'textarea')+
+    fld('medicalCare','医療処置（経管栄養/吸引/在宅酸素/ストーマ/カテーテル/インスリン/褥瘡処置 等）',r.medicalCare,'textarea')+
+    /* 「治療中の病気」は様式の病名表へ、「問題行動 等」は様式の行動・心理症状へ移した（2026-08-12）。
+       入力欄は無くしたが、既存の値は collectForm が引き継ぐので消えない（BF_LEGACY_KEYS） */
+    fld('sideEffects','副作用・禁忌 等',r.sideEffects,'textarea')+
+    fld('pastHistory','既往歴（自由記載）',r.pastHistory,'textarea')+
+    fld('vaccinations','予防接種歴',r.vaccinations,'textarea')+
+    fld('disclosure','告知の状況／病識',r.disclosure,'textarea')+
+    /* 薬剤情報（定期）と薬備考の入力欄は「薬剤情報」欄（頓服・外用等の上）へ移した
+       （2026-08-12 指示）。★入力欄は必ずどこかに1つ残す。無くすと collectForm が拾わなくなり、
+         保存しただけで dataJson から消える（GAS が丸ごと置き換えるため）。 */
+  '</div></div>';
+
+  // 入居者基本情報（外部様式）
+  h+=bfEditHtml(r);
+
+  /* 薬剤情報（2026-08-12 指示で「服薬管理」から改名）。
+     管理方法・服薬介助度は様式の4段階へ移し、薬剤情報（定期）・薬備考をここへ移した。 */
+  h+='<div class="cd"><div class="fgroup"><h3>薬剤情報</h3><div class="fgrid">'+
+    fld('formAdjust','剤形配慮',r.formAdjust,'select',['','なし','粉砕','簡易懸濁','OD錠','脱カプセル'])+
+    fld('medRefusal','服薬拒否',r.medRefusal,'select',['','なし','時々あり','あり'])+
+  '</div>'+
+    /* 医療情報から移設（2026-08-12 指示）。頓服・外用等のすぐ上に置く */
+    /* 定期薬の入力パネル（2026-10-01）。欄のすぐ上に置く。欄そのもの（ラベル・data-k・並び）は変えない */
+    mpkPanelHtml_()+
+    fld('medsRegular','薬剤情報（定期）',r.medsRegular,'textarea')+
+    fld('medsNotes','薬備考',r.medsNotes,'textarea')+
+    fld('medsPrn','頓服・外用等（使用条件を含めて記入）',r.medsPrn,'textarea')+
+    fld('highRiskMeds','注意を要する薬剤（向精神薬/抗凝固薬/麻薬 等）',r.highRiskMeds,'textarea')+'</div></div>';
+
+  // 過去の臨時薬（日付付きの時系列記録）
+  h+='<div class="cd"><div class="fgroup"><h3>過去の臨時薬</h3><div id="medsPastList"></div>'+
+    '<button class="btn btn-sec" id="medsPastAdd" type="button">＋ 臨時薬を追加</button></div></div>';
+
+  /* ADL（様式に無い項目だけ残す）。移動・排泄・入浴・障害高齢者自立度は様式へ移した（2026-08-12） */
+  h+='<div class="cd"><div class="fgroup"><h3>ADL（様式に無い項目）</h3><div class="fgrid">'+
+    fld('transfer','移乗',r.transfer,'select',['','自立','見守り','一部介助','全介助'])+
+    fld('dress','更衣・整容',r.dress,'select',['','自立','一部介助','全介助'])+
+    fld('swallow','嚥下',r.swallow,'select',['','問題なし','むせあり','要注意','嚥下障害'])+
+    fld('water','水分摂取／制限',r.water)+
+    fld('vision','視力（眼鏡）',r.vision)+fld('hearing','聴力（補聴器）',r.hearing)+
+  '</div>'+fld('pressureUlcer','褥瘡（有無・部位）',r.pressureUlcer,'textarea')+'</div></div>';
+
+  // 認知・精神
+  h+='<div class="cd"><div class="fgroup"><h3>認知・精神</h3><div class="fgrid">'+
+    fld('dementiaType','認知症の種類',r.dementiaType,'select',['','アルツハイマー型','レビー小体型','脳血管性','前頭側頭型','混合型','その他'])+
+    fld('cogScore','HDS-R／MMSE 等',r.cogScore)+
+  '</div>'+
+    fld('careHints','対応のコツ・なだめ方（最重要）',r.careHints,'textarea')+
+    fld('psychHistory','精神疾患の既往／通院',r.psychHistory,'textarea')+
+  '</div></div>';
+
+  // コミュニケーション
+  h+='<div class="cd"><div class="fgroup"><h3>コミュニケーション</h3><div class="fgrid">'+
+    fld('preferredName','呼ばれたい呼称・愛称',r.preferredName)+
+    fld('commMethod','主な意思疎通手段',r.commMethod,'select',['','言語','筆談','ジェスチャー','視線','その他'])+
+  /* 留意点（commNotes）は様式の「配慮の内容」へ移した（2026-08-12）。ここには置かない */
+  '</div></div></div>';
+
+  // 食事（食事形態・義歯）
+  h+='<div class="cd"><div class="fgroup"><h3>食事</h3><div class="fgrid">'+
+    fld('mealStaple','主食',r.mealStaple)+fld('mealSide','副食',r.mealSide)+
+    /* 副食の入力の手助け（2026-10-17 第3弾）。押すと先頭の形態の語だけを入れ替える＝後ろの備考はそのまま。
+       保存の形（自由文1つ）は変えない。4区分のどれにも当たらない時・空欄の時は、配布用の一覧でどう出るかを知らせる */
+    '<div class="fld full mside-aid"><span class="msa-l">副食の形態：</span>'+
+      ['常食','一口大','刻み','ミキサー'].map(function(w){ return '<button type="button" class="msa-b" data-mside="'+w+'">'+w+'</button>'; }).join('')+
+      '<span class="msa-warn" id="msaWarn" role="status" aria-live="polite"></span></div>'+
+    fld('mealForm','食形態',r.mealForm,'select',['','常食','軟菜','きざみ','極きざみ','ミキサー','ペースト','ゼリー'])+
+    fld('thickener','とろみ',r.thickener,'select',['','なし','薄め','中間','濃いめ'])+
+  /* 義歯（denture）は様式の「口腔清潔」へ移した（2026-08-12）。同じキーの入力欄を2つ作らない */
+  '</div>'+fld('mealNote','備考',r.mealNote,'textarea')+'</div></div>';
+
+  // 嗜好・本人らしさ
+  h+='<div class="cd"><div class="fgroup"><h3>嗜好・本人らしさ</h3><div class="fgrid">'+
+    fld('personality','性格・気質',r.personality)+fld('hobby','趣味・特技',r.hobby)+
+    fld('smoking','喫煙',r.smoking,'select',['','なし','あり','過去喫煙'])+
+    fld('drinking','飲酒',r.drinking,'select',['','なし','あり','時々'])+
+  '</div>'+
+    fld('foodPref','好きな／嫌いな食べ物',r.foodPref,'textarea')+
+    fld('lifePrefs','こだわり・大切な習慣',r.lifePrefs,'textarea')+
+  '</div></div>';
+
+  // 生活歴
+  h+='<div class="cd"><div class="fgroup"><h3>生活歴</h3>'+
+    fld('lifeHistory','生育歴・職歴・暮らしぶり',r.lifeHistory,'textarea')+
+    fld('values','価値観・人生で大切にしてきたこと・誇り',r.values,'textarea')+'</div></div>';
+
+  // 意向・ACP
+  h+='<div class="cd"><div class="fgroup"><h3>意向・人生会議（ACP）</h3>'+
+    fld('complaint','主訴（困りごと）',r.complaint,'textarea')+
+    fld('wishSelf','本人の意向・希望',r.wishSelf,'textarea')+
+    fld('wishFamily','家族の意向・希望',r.wishFamily,'textarea')+
+    fld('goal','生活目標・ニーズ',r.goal,'textarea')+
+    '<div class="fgrid">'+fld('dnar','DNAR',r.dnar,'select',['','未確認','DNAR（蘇生不要）','フルコード（蘇生希望）'])+'</div>'+
+    fld('acp','看取り・終末期の意向（ACP／事前指示）',r.acp,'textarea')+
+    fld('strengths','本人の強み（ストレングス）',r.strengths,'textarea')+'</div></div>';
+
+  // 支援経過（日付付きの時系列記録）
+  //   2026-08-17 指示: ①これまでの記録を全部読める一覧を上に置く ②入力行は既定で直近1年ぶん
+  //   （それ以前は下のボタンで展開）③入力欄は中身の長さに合わせて伸びる
+  h+='<div class="cd"><div class="fgroup"><h3 class="h3-inline">支援経過</h3>'+
+    /* 見出しの右にも同じボタンを置く（2026-08-19 指示）。記録が多い方だと入力行が
+       画面の下まで続くため、上からでも足せるようにする */
+    '<button class="btn btn-sec h3-btn" id="supportAddTop" type="button">＋ 経過を追加</button>'+
+    '<div id="supportRO"></div><div id="supportList"></div>'+
+    '<div class="row-btns"><div id="supportMore"></div>'+
+    '<button class="btn btn-sec" id="supportAdd" type="button">＋ 経過を追加</button></div></div></div>';
+
+  // 医療支援経過（訪問診療の受け皿）。2026-10-19 から訪問診療アプリが保存のたびに自動で入れる（代表者の判断: 医療支援経過に全文）。
+  //   入れるのは入居者マスタGASの setMedLog（med-log-link.gs）。source='vma' の記録は読み取り専用で、直すのは訪問診療アプリ側。
+  //   この画面を開いたまま保存しても、GAS の saveResident が source='vma' の記録はシートにある方を残す（_medLogKeepVma_）。
+  h+='<div class="cd"><div class="fgroup"><h3>医療支援経過（訪問診療）</h3><div id="medLogList"></div>'+
+    '<button class="btn btn-sec" id="medLogAdd" type="button">＋ 診察記録を追加</button>'+
+    '<p class="muted" style="margin-top:6px">訪問診療アプリで診察記録を保存すると、診察日の日付でここに自動で入ります（「訪問診療より取込」の印）。その記録はここでは直せません。直す時は訪問診療アプリで直して保存し直してください。</p></div></div>';
+
+  // 訪問診療連携キー（2026-08-02 改訂）
+  //   実際の突合キーは「入居者ID（このレコードの id）」に一本化されている。訪問診療アプリは
+  //   getRoster の masterId（＝この id）を patients.master_id に入れて突合しており（index.php の
+  //   vmMapMasterRecord / api.php の import_patients・import_daycare は master_id しか見ない）、
+  //   下段の xref.vma.patientId を読むコードは care-tools・訪問診療アプリの双方に1つも無い。
+  //   旧文言は「ここに入れると自動連携の鍵になります」と書いており、事実と食い違っていた。
+  //   ★入力欄と保存済みの値はそのまま残す（原則1・原則4）。消さずに、効かない旨だけを明示する。
+  h+='<div class="cd"><div class="fgroup"><h3>訪問診療連携キー</h3><div class="fgrid">'+
+    '<div class="fld"><label>入居者ID（実際に使われる鍵・自動）</label><input type="text" value="'+esc(r.id)+'" readonly aria-readonly="true" style="background:var(--g0)"></div>'+
+    '<div class="fld"><label>訪問診療 患者ID（xref.vma・現在は未使用）</label><input data-xref-vma-pid type="text" value="'+esc((r.xref&&r.xref.vma&&r.xref.vma.patientId)||'')+'"></div>'+
+  '</div><p class="muted" style="margin-top:6px">訪問診療アプリは上段の<b>入居者ID</b>で自動的に突合します（手入力は不要です）。下段の「訪問診療 患者ID」は<b>現在どのアプリからも参照されていません</b>。入力済みの値はそのまま保存し続けますが、入れても連携先は変わりません。</p></div></div>';
+
+  $('editBox').innerHTML=h;
+  renderFamRows();
+  renderSupportRows();
+  renderCareHistRows();
+  renderMedLogRows();
+  renderMedsPastRows();
+  mpkInit_();
+  $('medsPastAdd').addEventListener('click',function(){collectMedsPast();editing.medsPastLog.unshift({date:todayISO(),text:''});renderMedsPastRows()});
+  $('famAdd').addEventListener('click',function(){editing.family.push({name:'',relation:'',role:'',address:'',phone:'',emergency:false,kp:false});collectFam();renderFamRows()});
+  /* 上下2つの「＋ 経過を追加」は同じ動き。★足した行へ移動する＝上のボタンから押した時に
+     「何も起きなかった」と見えるのを防ぐ（入力行は画面のずっと下にある） */
+  var supAdd=function(){
+    collectSupport();
+    editing.supportLog.unshift({date:todayISO(),text:''});
+    renderSupportRows();
+    /* ★足した行は日付順に並べ直した位置へ入る（いちばん上とは限らない）。
+       unshift した直後なので元の位置は 0＝data-si="0" の行を名指しで探す。
+       画面の先頭の行を掴むと、別の日の記録へカーソルが載る。 */
+    var nrow=$('supportList')?$('supportList').querySelector('.fam-row[data-si="0"]'):null;
+    var t=nrow?nrow.querySelector('textarea,input'):null;
+    if(t){ try{ t.scrollIntoView({block:'center',behavior:'auto'}); t.focus(); }catch(e){} }
+  };
+  $('supportAdd').addEventListener('click',supAdd);
+  $('supportAddTop').addEventListener('click',supAdd);
+  $('careHistAdd').addEventListener('click',function(){collectCareHist();editing.careLevelHistory.unshift({value:r.careLevel||'',certStart:'',certEnd:'',certDate:'',changedAt:todayISO(),changedBy:(typeof rmWho_==='function')?rmWho_():'',note:''});renderCareHistRows()});
+  $('medLogAdd').addEventListener('click',function(){collectMedLog();editing.medicalSupportLog.unshift({date:todayISO(),text:'',source:'manual',srcId:'',doctor:'',clinic:''});renderMedLogRows()});
+  /* 病名の行を1行足す。既に入力された行は触らない（作り直すと入力中の文字が消える）。
+     行を消すボタンは作らない＝3つとも空にすれば保存時に落ちる（誤削除の入口を作らない） */
+  /* 生年月日：和暦入力欄 ⇄ 日付欄。読めた時だけ日付欄を書き換える（読めない入力で既存値を消さない） */
+  (function(){
+    var d=$('f-birthDate'), w=$('f-birthWareki'), echo=$('f-birthEcho');
+    if(!d||!w||!echo) return;
+    function paint(){
+      var jp=fmtWarekiJp(d.value);
+      echo.textContent = jp ? ('＝ '+jp) : '';
+    }
+    w.addEventListener('input',function(){
+      var raw=w.value.trim();
+      if(!raw){ echo.textContent=''; paint(); return; }
+      var iso=parseAnyDate(raw);
+      if(iso){
+        if(d.type!=='date') d.type='date';
+        d.value=iso; w.setCustomValidity(''); paint();
+      }else{
+        echo.textContent='（まだ読み取れません）';
+      }
+    });
+    d.addEventListener('change',paint);
+    paint();
+  })();
+  (function(){   /* 副食の入力の手助け（2026-10-17 第3弾） */
+    var inp=$('editBox').querySelector('[data-k="mealSide"]'), warn=$('msaWarn');
+    if(!inp) return;
+    var paint=function(){
+      if(!warn) return;
+      var c=mfCat_(inp.value);
+      warn.textContent = c==='none' ? '空欄です（配布用の食形態一覧では「未設定」に出ます）'
+        : c==='other' ? '常食・一口大・刻み・ミキサーのどれの語も入っていません（配布用の一覧では「その他」に出ます）' : '';
+    };
+    Array.prototype.forEach.call($('editBox').querySelectorAll('.msa-b'),function(b){
+      b.addEventListener('click',function(){
+        var rest=String(inp.value||'').replace(/^[\s　]*(常食|一口大|1口大|１口大|刻み食|刻み|きざみ|ミキサー食|ミキサー)[\s　、,，]*/,'');
+        inp.value=this.getAttribute('data-mside')+(rest?'　'+rest:'');
+        try{ inp.dispatchEvent(new Event('input',{bubbles:true})); }catch(e){}
+        paint();
+      });
+    });
+    inp.addEventListener('input',paint);
+    paint();
+  })();
+  $('bfDisAdd').addEventListener('click',function(){
+    var box=$('bfDisList'), n=box.querySelectorAll('.bfe-row').length;
+    if(n>=BF_MAX_DISEASES){ toast('既往歴は'+BF_MAX_DISEASES+'行までです'); return; }
+    box.insertAdjacentHTML('beforeend',bfDisRowsEdit([{}],n));
+  });
+  showScreen('edit');
+  /* ★画面に出してから組み立てる。非表示のうちは高さ（scrollHeight）が0になり、
+     支援経過の入力欄を中身に合わせて伸ばせない（見た目は56pxのままになる） */
+  buildEditTabs();
+  growAllSupport();
+  editSnapTake_();   /* 開いた時点の入力欄の中身を控える（未保存の変更の判定に使う・2026-10-16） */
+  /* ★fitLines も画面に出してから呼ぶ（growAllSupport と同じ理由・2026-08-20 レビュー指摘で移動）。
+     非表示のうちは scrollHeight が 0 に近く、最小の44pxで止まって2件目が隠れる。
+     関数の中に setTimeout の保険も残してあるが、作法をこちらへ揃える。 */
+  fitLines();
+}
+/* ══ 編集画面の見出しタブ（2026-08-17 指示）══
+   フォームの見出し（.fgroup > h3）からタブを作り、押すとその欄へジャンプする。
+   ★openEdit 本体（23枚のカード）には一切手を入れない後処理方式。カードを増減しても
+     タブは自動で追従する（＝見出しとタブが食い違わない）。
+   ★表示の切替ではないので、入力中の値は失われない。 */
+function hdrH(){ var e=document.querySelector('.hdr'); return e?e.offsetHeight:52 }
+/* 編集画面のボタン帯の高さ（タブ帯を貼り付ける位置に使う）。
+   ★ボタンが折り返して2行になる端末があるので実測する。取れない時は1行ぶんの60px */
+function editBarH(){
+  var e=document.querySelector('#sc-edit .detail-actions');
+  var v=e?Math.round(e.getBoundingClientRect().height):0;
+  return v>0?v:60;
+}
+function buildEditTabs(){
+  var bar=$('editTabs'), box=$('editBox');
+  if(!bar||!box)return;
+  /* タブ帯はヘッダーの直下に貼り付ける。ヘッダーの高さは端末幅で変わるので実測して渡す */
+  document.documentElement.style.setProperty('--hdr-h',hdrH()+'px');
+  document.documentElement.style.setProperty('--eact-h',editBarH()+'px');
+  var hs=box.querySelectorAll('.fgroup>h3');
+  if(!hs.length){bar.hidden=true;bar.innerHTML='';return}
+  var html='';
+  Array.prototype.forEach.call(hs,function(h3,i){
+    /* ★行き先は「その見出しが始める区画」。カードに見出しが1つならカード、
+         2つ以上あるならその見出しそのものにする。
+       ★以前はいつでもカードに id を付けていたため、【1枚のカードに見出しが2つある場合に
+         後の見出しが id を上書きし、前のタブが行き先を失って押しても何も起きなかった】。
+         実際「事業所」タブがそうなっていた（同じカードに「生活リズム」がある）。
+         行き先が消えるとタブの現在地表示（markEditTab）も光らなくなる。
+         2026-09-08 管理者指摘。 */
+    var card=h3.closest?h3.closest('.cd'):null;
+    var only=!!(card&&card.querySelectorAll('.fgroup>h3').length===1);
+    var target=(card&&only)?card:h3;
+    target.id='ecd-'+i;
+    /* タブの文字は見出しの先頭部分だけにする（「対象アプリ（チェックした人だけ…）」のような
+       長い見出しがそのまま並ぶと、タブ帯が本文より高くなる）。全文は title で読める */
+    var full=(h3.textContent||'').trim();
+    var short=full.split(/[（(]/)[0].trim()||full;
+    html+='<button type="button" class="etab" data-go="ecd-'+i+'" title="'+esc(full)+'">'+esc(short)+'</button>';
+  });
+  bar.innerHTML=html;
+  bar.hidden=false;
+  Array.prototype.forEach.call(bar.querySelectorAll('.etab'),function(b){
+    b.addEventListener('click',function(){ gotoEditSec(this.getAttribute('data-go')) });
+  });
+  markEditTab();
+}
+/* ヘッダーとタブ帯のぶんだけ上に余白を取ってスクロールする（見出しが帯の下に隠れないように）。
+   ★編集画面は縦に1万px を超えることがある（実測）。遠い欄へ滑らかに動かすと、長く流れ続けて
+     「どこへ行くのか分からない」ので、離れている時は瞬時に飛ぶ。
+   ★動きを減らす設定（prefers-reduced-motion）を尊重する（規約）。 */
+function gotoEditSec(id){
+  var el=$(id), bar=$('editTabs');
+  if(!el)return;
+  var off=hdrH()+(bar?bar.offsetHeight:0)+8;
+  var y=el.getBoundingClientRect().top+window.pageYOffset-off;
+  if(y<0)y=0;
+  var reduce=!!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  var far=Math.abs(y-window.pageYOffset)>1200;
+  window.scrollTo({top:y,behavior:(reduce||far)?'auto':'smooth'});
+  markEditTab();
+}
+/* いま画面のどの欄にいるかをタブに反映する（現在地の明示・HIG「深さ」） */
+function markEditTab(){
+  var bar=$('editTabs'); if(!bar||bar.hidden)return;
+  var tabs=bar.querySelectorAll('.etab'), cur=null;
+  var line=hdrH()+bar.offsetHeight+16;
+  Array.prototype.forEach.call(tabs,function(b){
+    var el=$(b.getAttribute('data-go'));
+    if(el&&el.getBoundingClientRect().top<=line) cur=b;
+  });
+  /* いちばん上（まだどの見出しも越えていない）なら先頭の欄を現在地にする。
+     ★これが無いと、編集画面を開いた直後はどのタブも光らず「現在地が分からない」 */
+  if(!cur&&tabs.length) cur=tabs[0];
+  /* 現在地は色だけで伝えない（読み上げにも渡す。色覚特性への配慮＝介護現場要件4） */
+  Array.prototype.forEach.call(tabs,function(b){
+    b.classList.toggle('on',b===cur);
+    if(b===cur)b.setAttribute('aria-current','true'); else b.removeAttribute('aria-current');
+  });
+  if(cur&&cur.offsetTop!=null){
+    /* タブ帯が2行を超えて隠れている時は、選択中のタブを見える位置へ寄せる */
+    var top=cur.offsetTop, bot=top+cur.offsetHeight;
+    if(top<bar.scrollTop||bot>bar.scrollTop+bar.clientHeight) bar.scrollTop=top-4;
+  }
+}
+/* ══ 支援経過（編集画面）══ 2026-08-17 指示で3点を変更した
+   ①入力行は既定で直近1年ぶんだけ（それ以前はボタンで展開）
+   ②入力欄は中身の長さに合わせて伸ばす（全文が見える）
+   ③これまでの記録を読むだけの一覧を上に出す（折りたたみ・新しい順・全件）
+   ★畳んだ行も editing.supportLog にそのまま残る。collectSupport は【画面に出ている行だけ】を
+     書き戻す方式なので、出していない行は元の値のまま保存される（原則4・消さない）。
+   ★行の data-si には【元の配列の位置】を入れること。絞り込み後の連番を入れると、
+     保存・削除・印刷除外が別の日の記録に当たる（表示と書き込み対象のずれ＝§6-⑨ と同型）。 */
+var supportShowAll=false;
+var SUP_RECENT_DAYS=366;        // 「直近1年」。うるう年ぶん1日多く見る
+function supIsRecent(s){
+  var p=parseIsoDate(String((s&&s.date)||'').slice(0,10));
+  if(!p)return true;            // 日付が無い・読めない記録は常に出す（隠れて編集できなくなるのを防ぐ）
+  var now=new Date();
+  var today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  return (today-new Date(p.y,p.m-1,p.d))/86400000 <= SUP_RECENT_DAYS;   // 未来日付も「直近」に含める
+}
+function autoGrow(ta){
+  if(!ta)return;
+  ta.style.height='auto';
+  var need=ta.scrollHeight;
+  ta.style.height=Math.max(56,need?need+2:56)+'px';
+}
+function growAllSupport(){
+  var box=$('supportList'); if(!box)return;
+  Array.prototype.forEach.call(box.querySelectorAll('.slog-ta'),autoGrow);
+}
+/* ── 日付の順に並べて描く（2026-09-17 管理者指示）──
+   過去の日付をあとから足すと、追加した順のまま離れた場所に残り、前後の日付とつながらない。
+   ★並べ替えるのは【描く順】だけ。editing.supportLog の並びは1件も動かさない
+     （行の data-si は元の位置のまま＝保存・削除・印刷除外の当たり先がずれない。上の★印と同じ理由）。
+   ★新しい順（上が最新）。同じ日付は元の並びを保つ＝描き直すたびに順が揺れない。
+   ★比べ方は【詳細画面・印刷・A4様式と逐語同一】にする（localeCompare の降順）。
+     ここだけ自前の数値化にすると、ISO でない日付（「平成30年4月1日」等）で上下が逆になり、
+     同じ記録が直す画面と刷る紙で別の場所に出る（2026-09-17 レビュー指摘）。
+     ISO と空文字ではどちらの規則でも結果は同じ＝日付が空・読めない記録は末尾に来る
+     （移行時に日付を確定できなかった記録。migrate.gs の _splitLog は date:'' のまま残す）。 */
+function supOrder_(all){
+  var idx=[]; for(var i=0;i<all.length;i++) idx.push(i);
+  idx.sort(function(a,b){
+    var x=String((all[a]&&all[a].date)||''), y=String((all[b]&&all[b].date)||'');
+    if(x!==y) return y.localeCompare(x);   /* 新しい順（詳細画面・印刷と同じ式） */
+    return a-b;                            /* 同じ日付は元の並び（安定）*/
+  });
+  return idx;
+}
+/* この編集画面で日付を直した記録。1年より前の日付に直しても画面から消さない
+   （消えると「直したら記録が無くなった」と見え、打ち直しを招く）。
+   ★覚えるのは配列の要素そのもの＝参照で見分ける。位置（添字）で覚えると、
+     行の追加・削除でずれて【別の記録】を指す（§6-⑨ と同型）。 */
+var supKeep=[];
+function supShownIdx_(){
+  var all=editing.supportLog, out=[];
+  supOrder_(all).forEach(function(i){
+    var s=all[i];
+    if(supportShowAll||supIsRecent(s)||supKeep.indexOf(s)>=0) out.push(i);
+  });
+  return out;
+}
+function renderSupportRows(){
+  var box=$('supportList');if(!box)return;
+  var all=editing.supportLog, h='', order=supShownIdx_();
+  order.forEach(function(i){
+    var s=all[i];
+    h+='<div class="fam-row" data-si="'+i+'" style="grid-template-columns:160px 1fr">'+
+      '<div class="fld"><label>日付</label><input data-sk="date" type="'+dtype(s.date)+'" value="'+esc(s.date||'')+'"></div>'+
+      '<div class="fld"><label>内容</label><textarea data-sk="text" class="slog-ta" style="min-height:56px">'+esc(s.text||'')+'</textarea></div>'+
+      '<label class="rowchk" style="grid-column:1/-1"><input type="checkbox" data-shide="1"'+(s.hide?' checked':'')+'>🚫 この記録は印刷しない</label>'+
+      '<button class="fam-del" type="button" data-sdel="'+i+'" style="grid-column:1/-1">削除</button>'+
+    '</div>';
+  });
+  box.innerHTML=h;
+  Array.prototype.forEach.call(box.querySelectorAll('.slog-ta'),function(ta){
+    autoGrow(ta);
+    ta.addEventListener('input',function(){autoGrow(this)});
+  });
+  Array.prototype.forEach.call(box.querySelectorAll('[data-sdel]'),function(b){b.addEventListener('click',function(){collectSupport();editing.supportLog.splice(parseInt(this.getAttribute('data-sdel')),1);renderSupportRows()})});
+  /* 日付を入れ直したら、その場で正しい位置へ移す（＝次に開いた時に順が崩れていない）。
+     ★引き金は focusout（日付欄から離れた時）。★change は使えない。
+       <input type="date"> は【打鍵1つごとに】change を出し、途中の値に空文字や別の日付が混じる。
+       実測（2026-09-17・Chrome 実機／月の欄から 2,0,2,4 と打鍵）:
+         change 4回 → "2026-02-17" → "" → "2026-02-02" → "2026-02-24"／focusout は1回だけ。
+       change で描き直すと、入力欄が打鍵の途中で消えて残りの打鍵が本文欄へ流れ込み、
+       壊れた日付（0002-09-17 等）と混ざった本文がそのまま保存される（M-046 と同型）。
+     ★描き直すのは【並びか顔ぶれが実際に変わる時だけ】。
+     ★描き直したら、職員が向かおうとしていた欄（relatedTarget）へ戻す。戻さないと、
+       別の行を押した指が「押した瞬間に消えた欄」を押したことになる。 */
+  Array.prototype.forEach.call(box.querySelectorAll('[data-sk="date"]'),function(inp){
+    var was=null;
+    inp.addEventListener('focusin',function(){ was=this.value; });
+    inp.addEventListener('focusout',function(e){
+      if(was!==null&&was===this.value) return;            /* 通り過ぎただけ（値は変わっていない） */
+      var row=this.closest?this.closest('.fam-row'):(this.parentNode&&this.parentNode.parentNode);
+      var si=row?row.getAttribute('data-si'):null;
+      /* 次に向かった欄。描き直した後、同じ記録の同じ欄へ戻すために控える */
+      var rt=e&&e.relatedTarget, rtRow=(rt&&rt.closest)?rt.closest('.fam-row'):null;
+      var rtSi=rtRow?rtRow.getAttribute('data-si'):null, rtSk=rt?rt.getAttribute('data-sk'):null;
+      collectSupport();
+      var rec=(si==null)?null:all[parseInt(si,10)];
+      if(rec&&supKeep.indexOf(rec)<0) supKeep.push(rec);   /* 1年より前に直しても消さない */
+      if(supShownIdx_().join(',')===order.join(',')) return;
+      renderSupportRows();
+      var back=(rtSi!=null&&rtSk)?box.querySelector('.fam-row[data-si="'+rtSi+'"] [data-sk="'+rtSk+'"]'):null;
+      if(back){ try{ back.focus(); }catch(e2){} return; }
+      /* 行き先が分からない時は、動いた行を見える位置に出すだけ（勝手にカーソルを奪わない） */
+      var moved=(si==null)?null:box.querySelector('.fam-row[data-si="'+si+'"]');
+      if(moved){ try{ moved.scrollIntoView({block:'center',behavior:'auto'}); }catch(e2){} }
+    });
+  });
+  renderSupportMore(all.length-order.length);
+  renderSupportRO();
+}
+/* 「以前の記録も編集する」／「直近1年だけに戻す」。★切り替える前に必ず collectSupport()
+   （入力中の内容を editing へ戻してから描き直す＝打ちかけの文字を捨てない） */
+function renderSupportMore(hiddenCount){
+  var box=$('supportMore'); if(!box)return;
+  if(supportShowAll){
+    box.innerHTML='<button class="btn btn-sec" id="supportLess" type="button">直近1年だけ表示に戻す</button>';
+    $('supportLess').addEventListener('click',function(){collectSupport();supportShowAll=false;renderSupportRows()});
+  }else if(hiddenCount>0){
+    box.innerHTML='<button class="btn btn-sec" id="supportMoreBtn" type="button">以前の記録も編集する（'+hiddenCount+'件）</button>';
+    $('supportMoreBtn').addEventListener('click',function(){collectSupport();supportShowAll=true;renderSupportRows()});
+  }else box.innerHTML='';
+}
+/* これまでの記録を通しで読むための一覧（読むだけ・編集は下の入力行で行う）
+   ★器（<details>）は一度作ったら【作り直さない】。中身だけを入れ替える。理由は2つ:
+     ①作り直して open を戻すと toggle がまた出る。toggle は非同期に飛ぶので、中で描き直す
+       この作りでは【開いた瞬間から描き直しが止まらない輪】になる。
+       2026-08-17 の実装がこれで、開くと 1秒あたり約4.4万回まわっていた（2026-09-17 実測で発見・修正）。
+       止まらないあいだ collectSupport も同じ回数走るため、iPad では入力が重くなる。
+     ②器を残すと、開いたまま日付を直して並べ替えても畳まれない（読みながら直せる）。 */
+function renderSupportRO(){
+  var box=$('supportRO'); if(!box)return;
+  var all=editing.supportLog.slice();
+  if(!all.length){box.innerHTML='';return}
+  all.sort(function(a,b){return String((b&&b.date)||'').localeCompare(String((a&&a.date)||''))});
+  var body=all.map(function(s){
+      return '<div class="l"><span class="d">'+esc(fmtJDate(s.date)||s.date||'')+'</span>'+
+        '<span class="t">'+(s&&s.hide?'<span class="nop-mark">🚫 印刷しない</span>':'')+esc(s.text||'')+'</span></div>';
+    }).join('');
+  var cap='これまでの記録をまとめて読む（'+all.length+'件・新しい順）';
+  var det=box.querySelector('details');
+  if(det){
+    var sm=det.querySelector('summary'), ls=det.querySelector('.slog-ro');
+    if(sm) sm.textContent=cap;
+    if(ls) ls.innerHTML=body;
+    return;                                   /* ★器はそのまま＝toggle を出さない */
+  }
+  box.innerHTML='<details class="slog-past"><summary>'+esc(cap)+'</summary>'+
+    '<div class="slog-ro">'+body+'</div></details>';
+  /* ★開いた時に中身を作り直す。下の入力欄で直した内容を取り込んでから出す
+     （取り込まないと「直したのに一覧が古い」と見える） */
+  det=box.querySelector('details');
+  if(det)det.addEventListener('toggle',function(){
+    if(!this.open)return;
+    collectSupport(); renderSupportRO();
+  });
+}
+function collectSupport(){
+  var box=$('supportList');if(!box)return;
+  Array.prototype.forEach.call(box.querySelectorAll('.fam-row'),function(row){
+    var i=parseInt(row.getAttribute('data-si'));if(isNaN(i)||!editing.supportLog[i])return;
+    Array.prototype.forEach.call(row.querySelectorAll('[data-sk]'),function(inp){
+      editing.supportLog[i][inp.getAttribute('data-sk')]=inp.value.trim?inp.value.trim():inp.value;
+    });
+    /* 「印刷しない」は true の時だけ持たせる（false を書くと、使っていない方のデータに
+       意味のないキーが増える）。★画面に出ている行だけを見る＝畳んだ行の指定は元のまま残る */
+    var ck=row.querySelector('[data-shide]');
+    if(ck){ if(ck.checked) editing.supportLog[i].hide=true; else delete editing.supportLog[i].hide }
+  });
+}
+/* ── 過去の臨時薬（日付付きの時系列記録・supportLog と同型） ── */
+function renderMedsPastRows(){
+  var box=$('medsPastList');if(!box)return;var h='';
+  editing.medsPastLog.forEach(function(s,i){
+    h+='<div class="fam-row" data-pi="'+i+'" style="grid-template-columns:160px 1fr">'+
+      '<div class="fld"><label>日付</label><input data-pk="date" type="'+dtype(s.date)+'" value="'+esc(s.date||'')+'"></div>'+
+      '<div class="fld"><label>薬剤・内容</label><textarea data-pk="text" style="min-height:56px">'+esc(s.text||'')+'</textarea></div>'+
+      '<button class="fam-del" type="button" data-pdel="'+i+'" style="grid-column:1/-1">削除</button>'+
+    '</div>';
+  });
+  box.innerHTML=h;
+  Array.prototype.forEach.call(box.querySelectorAll('[data-pdel]'),function(b){b.addEventListener('click',function(){collectMedsPast();editing.medsPastLog.splice(parseInt(this.getAttribute('data-pdel')),1);renderMedsPastRows()})});
+}
+function collectMedsPast(){
+  var box=$('medsPastList');if(!box)return;
+  Array.prototype.forEach.call(box.querySelectorAll('.fam-row'),function(row){
+    var i=parseInt(row.getAttribute('data-pi'));if(isNaN(i)||!editing.medsPastLog[i])return;
+    Array.prototype.forEach.call(row.querySelectorAll('[data-pk]'),function(inp){
+      editing.medsPastLog[i][inp.getAttribute('data-pk')]=inp.value.trim?inp.value.trim():inp.value;
+    });
+  });
+}
+/* ══════════ 定期薬の入力パネル（2026-10-01 代表承認・凍結仕様）══════════
+   「薬剤情報（定期）」（medsRegular・1行1剤の自由文）を手打ちせず、候補とボタンで1行を組み立てて足す。
+   ★保存の形は変えない。パネルは textarea の値を書き換えて input イベントを出すだけで、保存は従来どおり
+     collectForm が textarea（data-k="medsRegular"）から拾う。パネルの部品には data-k を付けない。
+   ★用法の読み取り（medSlotRows_ / medSlotsFromText）は変えない。こちらが作る1行は、時間帯15通り×食後/食前の
+     全30通りで medSlotsFromText が 'ok' と読み、選んだ時間帯と一致する形にしてある（check/unit/meds_picker_test.js）。
+   ★薬の候補（meds-yakka-naiyo.js・厚労省の薬価基準収載品目リストを加工）は薬剤名欄に初めて触れた時に読み込む。
+   ★薬のデータ・入力途中の値は localStorage に置かない・console に出さない。
+   純関数（mpkNorm〜mpkSearchAll）は DOM に触れない（テストが下の印から印までを抜き出して確かめる）。
+   ★2026-10-01 追加（検収指示）: 施設で実際に使っている書き方（全件データ fullMap の定期薬）を候補の先頭に出す。
+     厚労省リストは後発品の多くが統一名（「◯◯ベシル酸塩5mg口腔内崩壊錠」等）で、現場の書き方と合わないため。
+     候補に持つのは【薬剤名＋規格と人数だけ】。氏名は受け取らない・持たない（mpkUsedNames は行の配列だけを受け取る）。 */
+/* ══ mpk-pure-begin ══ */
+/* 検索用の正規化: 全角英数→半角・半角カナ→全角カナ（NFKC）／ひらがな→カタカナ／英字は小文字／空白と中黒を除く */
+function mpkNorm(s){
+  var t=String(s==null?'':s);
+  try{ if(t.normalize) t=t.normalize('NFKC'); }catch(e){}
+  t=t.replace(/[ぁ-ゖ]/g,function(c){ return String.fromCharCode(c.charCodeAt(0)+0x60); });
+  return t.toLowerCase().replace(/[\s　・･]/g,'');
+}
+/* 品目ごとの正規化済みの名前（同じ配列なら作り直さない。配列が捨てられれば控えも消える＝WeakMap） */
+var mpkNormMemo_=(typeof WeakMap==='function')?new WeakMap():null;
+function mpkKeys_(arr, nameOf){
+  var k=mpkNormMemo_&&mpkNormMemo_.get(arr);
+  if(!k){ k=arr.map(function(x){ return mpkNorm(nameOf(x)); }); if(mpkNormMemo_) mpkNormMemo_.set(arr,k); }
+  return k;
+}
+/* q を正規化して2文字以上の時だけ探す。前方一致→部分一致の順、それぞれの中で isUsed(品名) が真のものが先。
+   items は [品名, 既定の単位, [メーカー…]] の配列。戻り値は items の要素そのもの（最大 limit 件・既定8） */
+function mpkSearch(q, items, isUsed, limit){
+  var n=mpkNorm(q), lim=(limit>0)?Math.floor(limit):8;
+  if(n.length<2||!Array.isArray(items)) return [];
+  var keys=mpkKeys_(items, function(it){ return it&&it[0]; }), b=[[],[],[],[]];
+  for(var i=0;i<items.length;i++){
+    var p=keys[i].indexOf(n);
+    if(p<0) continue;
+    var used=false;
+    if(typeof isUsed==='function'){ try{ used=!!isUsed(items[i][0]); }catch(e){ used=false; } }
+    b[(p===0?0:2)+(used?0:1)].push(items[i]);
+  }
+  return b[0].concat(b[1],b[2],b[3]).slice(0,lim);
+}
+/* 1行に改行を混ぜない（textarea の1行＝1剤の約束を壊さない） */
+function mpkOneLine_(s){ return String(s==null?'':s).replace(/[\r\n]+/g,' ').trim(); }
+/* 1行を作る。作れない時は ''。
+   free（手で書く用法）があれば「薬剤名「メーカー」 free」。無ければ時間帯が1つ以上要る:
+   「薬剤名 合計量単位分N いつ」（例 アムロジピンOD錠5mg 1錠分1 朝食後／酸化マグネシウム錠330mg 2錠分2 朝夕食後）。
+   合計量＝1回量×N（小数1桁に丸め・整数なら小数点なし）。N＝朝昼夕のうち選んだ数＋（眠前なら1）。
+   いつ＝朝昼夕が3つ→「毎食後」、1〜2つ→「朝夕食後」の形、眠前→「就寝前」。両方なら「・」でつなぐ。 */
+function mpkLine(o){
+  o=o||{};
+  var name=mpkOneLine_(o.name);
+  if(!name) return '';
+  var maker=mpkOneLine_(o.maker);
+  var head=name+(maker?'「'+maker+'」':'');
+  var free=mpkOneLine_(o.free);
+  if(free) return head+' '+free;
+  var sl=Array.isArray(o.slots)?o.slots:[];
+  var m=['朝','昼','夕'].filter(function(k){ return sl.indexOf(k)>=0; });
+  var bed=sl.indexOf('眠前')>=0;
+  var n=m.length+(bed?1:0);
+  if(!n) return '';
+  var dose=Number(o.dose);
+  if(!(isFinite(dose)&&dose>0)) return '';
+  var unit=mpkOneLine_(o.unit);
+  if(!unit) return '';
+  var meal=o.meal;
+  if(m.length&&meal!=='食後'&&meal!=='食前') return '';
+  var when=[];
+  if(m.length===3) when.push('毎'+meal);
+  else if(m.length) when.push(m.join('')+meal);
+  if(bed) when.push('就寝前');
+  var total=Math.round(dose*n*10)/10;
+  return head+' '+String(total)+unit+'分'+n+' '+when.join('・');
+}
+/* textarea の文字列を「行の中身＋行末の改行」の並びに分ける（改行の種類も含めて元へ戻せる形） */
+function mpkSeg_(text){
+  var s=String(text==null?'':text), out=[], re=/([^\r\n]*)(\r\n|\r|\n|$)/g, m;
+  while((m=re.exec(s))){ out.push({b:m[1], e:m[2]}); if(!m[2]) break; }
+  return out;
+}
+function mpkJoin_(segs){ return segs.map(function(x){ return x.b+x.e; }).join(''); }
+/* 空行を除いた idx 番目の行が mpkSeg_ の何番目か（無ければ -1） */
+function mpkPos_(segs, idx){
+  var k=-1;
+  for(var i=0;i<segs.length;i++){ if(segs[i].b.trim()){ k++; if(k===idx) return i; } }
+  return -1;
+}
+/* 空行を除いた行の配列（idx はこの配列の位置） */
+function mpkLines(text){
+  return mpkSeg_(text).filter(function(x){ return !!x.b.trim(); }).map(function(x){ return x.b; });
+}
+/* 末尾に1行足す。text が空、または「なし」等（MED_NONE_RE）だけの時は line で置き換える。他の行は1文字も変えない */
+function mpkAppend(text, line){
+  var s=String(text==null?'':text), l=mpkOneLine_(line);
+  if(!l) return s;
+  var t=s.trim();
+  if(!t||MED_NONE_RE.test(t)) return l;
+  return /(?:\r\n|\r|\n)$/.test(s)?(s+l):(s+'\n'+l);
+}
+/* idx 番目の行を消す（その行の改行ごと）。最後の行を消した時は、前の行の改行も外す（末尾に空行を残さない） */
+function mpkRemoveAt(text, idx){
+  var segs=mpkSeg_(text), k=mpkPos_(segs, idx);
+  if(k<0) return String(text==null?'':text);
+  var last=(segs[k].e==='');
+  segs.splice(k,1);
+  if(last&&k>0) segs[k-1].e='';
+  return mpkJoin_(segs);
+}
+/* idx 番目の行の中身だけを line に置き換える（改行はそのまま） */
+function mpkReplaceAt(text, idx, line){
+  var segs=mpkSeg_(text), k=mpkPos_(segs, idx), l=mpkOneLine_(line);
+  if(k<0||!l) return String(text==null?'':text);
+  segs[k].b=l;
+  return mpkJoin_(segs);
+}
+/* 施設で使っている書き方を1行から取り出す。medSplit_ の左側（薬剤名＋規格）で、「メーカー」付きならそのまま残す。
+   用法の無い行（medSplit_ で分けられない行）・「なし」等は候補にしない（''）。
+   ★左側に空白を含む名前（「◯◯錠5mg 1錠 朝食後」の「1錠」まで入った形・注記つき等）も候補にしない。
+     空白を含む名前で1行を作ると、用法の読み取り（medSlotRows_）が最初の空白から先を用法とみなして 'review' になるため。 */
+/* 薬剤名の先頭が括弧・記号（病名・注記の前置き）なら薬剤名として扱わない */
+var MPK_NAME_HEAD_NG=/^[（(【\[［〔〈《＜<「『※★☆●○◎■□◆◇・･*＊#＃\-－―—]/;
+/* 薬剤名として安全か（2026-10-01 反証レビュー high）。名前に「朝」「夕」や「：」など用法として読まれる文字が
+   混ざっていると、作った行が【誤った時間帯のまま 'ok'】で読まれる（例「◯◯錠50mg：朝」＋「1錠分1 夕食前」→朝・夕）。
+   判定は既存の読み取り（medSlotRows_）を正解として使う: 名前＋「1錠分1 就寝前」がちょうど眠前だけ、
+   名前＋「1錠分1 朝食後」がちょうど朝だけ、の両方で 'ok' になる時だけ true。 */
+function mpkNameSafe(name){
+  var n=mpkOneLine_(name);
+  if(!n||MPK_NAME_HEAD_NG.test(n)) return false;
+  function one(use, want){
+    var r=medSlotRows_(n+' '+use);
+    return r.length===1&&r[0].status==='ok'&&r[0].slots.join(',')===want;
+  }
+  return one('1錠分1 就寝前','bedtime')&&one('1錠分1 朝食後','morning');
+}
+/* 作った1行の最終確認。slots は選んだ時間帯（'朝','昼','夕','眠前'）。
+   'ok'＝読み取りが 'ok' で選んだ時間帯と一致／'mismatch'＝'ok' なのに違う（追加を止める）／
+   'review'＝'ok' 以外（要確認・時間帯の語なし・頓用。追加は許し、要確認になると知らせる） */
+function mpkLineCheck(line, slots){
+  var r=medSlotRows_(line);
+  if(r.length!==1||r[0].status!=='ok') return 'review';
+  var map={'朝':'morning','昼':'noon','夕':'evening','眠前':'bedtime'};
+  var want=MED_SLOT_KEYS.filter(function(k){ return (Array.isArray(slots)?slots:[]).some(function(x){ return map[x]===k; }); });
+  return r[0].slots.join(',')===want.join(',')?'ok':'mismatch';
+}
+/* 手書きの用法（free）を使う時の確認（2026-10-01 再点検 medium）。'ok'|'mismatch'。
+   名前＋free が 'ok' で読めるのに、名前を無害な X に替えた「X＋free」と読み方が違う（'ok' でない・時間帯が違う）時は、
+   名前の中の語（「：朝」「 朝」など）が用法として読まれている＝ 'mismatch'。それ以外は 'ok'（止めない） */
+function mpkFreeCheck(name, free){
+  var n=mpkOneLine_(name), f=mpkOneLine_(free);
+  var a=medSlotRows_(n+' '+f);
+  if(a.length!==1||a[0].status!=='ok') return 'ok';
+  var b=medSlotRows_('X '+f);
+  if(b.length!==1||b[0].status!=='ok'||b[0].slots.join(',')!==a[0].slots.join(',')) return 'mismatch';
+  return 'ok';
+}
+/* 「直す」で薬剤名欄に入れる名前。施設の候補と同じ切り出し（「メーカー」を残す）で、安全な名前だけ。
+   取り出せない行（用法と分けられない・空白やコロンが残る等）は ''＝組み立てに入らず欄で直接直してもらう */
+function mpkEditName(line){ return mpkUsedName_(line); }
+/* 空行を除いた idx 番目の行が、文字列の何文字目から何文字目か（textarea で選択して見せる用）。無ければ null */
+function mpkLineRange(text, idx){
+  var segs=mpkSeg_(text), k=mpkPos_(segs, idx), at=0;
+  if(k<0) return null;
+  for(var i=0;i<k;i++) at+=segs[i].b.length+segs[i].e.length;
+  return [at, at+segs[k].b.length];
+}
+function mpkUsedName_(line){
+  var t=mdKey(line);
+  if(!t||MED_NONE_RE.test(t)) return '';
+  var sp=medSplit_(line);
+  if(!sp.use||!sp.name) return '';
+  var name=sp.name, m=MED_USE_RE.exec(t);
+  if(m){
+    var full=mdKey(t.slice(0,m.index).replace(/[ ：:]+$/,''));
+    if(full&&mdKey(full.replace(/[「『][^」』]*[」』]/g,''))===sp.name) name=full;   /* 「メーカー」付きの形を残す */
+  }
+  return (/\s/.test(name)||!mpkNameSafe(name))?'':name;
+}
+/* 施設で使っている書き方の一覧。引数は【1人ぶんの定期薬の行の配列】の配列（氏名・id は受け取らない）。
+   同じ書き方は1件にまとめ、使っている人数（1人の中の重複は1と数える）を n に持つ。人数の多い順・同数は初出順 */
+function mpkUsedNames(perPerson){
+  var cnt=Object.create(null), order=[];
+  (Array.isArray(perPerson)?perPerson:[]).forEach(function(lines){
+    if(!Array.isArray(lines)) return;
+    var seen=Object.create(null);
+    lines.forEach(function(l){
+      if(typeof l!=='string') return;
+      var nm=mpkUsedName_(l);
+      if(!nm||seen[nm]) return;
+      seen[nm]=1;
+      if(!cnt[nm]){ cnt[nm]=0; order.push(nm); }
+      cnt[nm]++;
+    });
+  });
+  return order.map(function(nm,i){ return {name:nm, n:cnt[nm], i:i}; })
+    .sort(function(a,b){ return (b.n-a.n)||(a.i-b.i); })
+    .map(function(x){ return {name:x.name, n:x.n}; });
+}
+/* 名前から既定の単位を決める（施設で使っている書き方を選んだ時） */
+function mpkUnitOf(name){
+  var s=String(name==null?'':name);
+  if(s.indexOf('カプセル')>=0) return 'カプセル';
+  if(/顆粒|細粒|散/.test(s)) return 'g';
+  if(/シロップ|液/.test(s)) return 'mL';
+  return '錠';
+}
+/* 候補をまとめて返す: ①施設で使用中（前方一致→部分一致、その中は人数の多い順）②厚労省リスト（mpkSearch のまま）。
+   合計の上限は limit（既定8）。同じ文字列が両方にあれば①だけ。
+   戻り値 [{src:'used'|'yakka', name, unit, makers:[…], n}]（n は①の人数・②は0） */
+function mpkSearchAll(q, used, items, limit){
+  var n=mpkNorm(q), lim=(limit>0)?Math.floor(limit):8;
+  if(n.length<2) return [];
+  var u=Array.isArray(used)?used.filter(function(x){ return x&&x.name; }):[];
+  var keys=mpkKeys_(u, function(x){ return x.name; }), pre=[], mid=[], names=Object.create(null);
+  for(var i=0;i<u.length;i++){
+    names[u[i].name]=1;
+    var p=keys[i].indexOf(n);
+    if(p<0) continue;
+    (p===0?pre:mid).push({i:i, x:u[i]});
+  }
+  function byN(a,b){ return ((b.x.n||0)-(a.x.n||0))||(a.i-b.i); }
+  var out=pre.sort(byN).concat(mid.sort(byN)).map(function(o){
+    return {src:'used', name:o.x.name, unit:mpkUnitOf(o.x.name), makers:[], n:o.x.n||0};
+  }).slice(0,lim);
+  if(out.length<lim&&Array.isArray(items)){
+    var y=mpkSearch(q, items, null, items.length);
+    for(var k=0;k<y.length&&out.length<lim;k++){
+      if(names[y[k][0]]) continue;
+      out.push({src:'yakka', name:y[k][0], unit:y[k][1], makers:Array.isArray(y[k][2])?y[k][2]:[], n:0});
+    }
+  }
+  return out;
+}
+/* ══ mpk-pure-end ══ */
+
+/* 候補データの置き場所。?v= はデータの適用日（作り直したら一緒に上げる） */
+var MPK_YAKKA_SRC='meds-yakka-naiyo.js?v=2026-10-01';
+var MPK_DOSES=['0.5','1','2','3'], MPK_UNITS=['錠','包','カプセル','g','mL'], MPK_SLOTS=['朝','昼','夕','眠前'], MPK_MEALS=['食後','食前'];
+/* 画面の状態（メモリだけ。編集画面を開くたびに作り直す）
+   ld: 候補データ ''=未読込／'loading'／'ok'／'ng'（読み込めなかった・次に触れた時にもう一度） */
+/* fl: 施設で使っている薬（全件データ fullMap）''=未着手／'loading'／'ok'／'ng'。flTimer は読み込み完了の見張り */
+var mpk={ld:'', fl:'', flTimer:0, candSig:'', pick:null, cands:[], dose:null, unit:'錠', slots:{}, meal:'食後', editIdx:-1, editOrig:'', undo:null};
+function mpkTa_(){ var b=$('editBox'); return b?b.querySelector('textarea[data-k="medsRegular"]'):null; }
+function mpkChips_(attr, vals, lbl, desc){
+  return vals.map(function(v){
+    return '<button type="button" class="chip" '+attr+'="'+esc(v)+'" aria-pressed="false"'+
+      (desc?' aria-describedby="'+desc+'"':'')+'>'+esc(lbl?lbl(v):v)+'</button>';
+  }).join('');
+}
+/* 「毎」ボタン＝朝・昼・夕の3つをまとめて切り替える。状態は持たず slots から毎回求める
+   （MPK_SLOTS には足さない＝保存する行の組み立ては変えない）。眠前・食後/食前には触らない */
+function mpkAllOn_(slots){ return !!(slots['朝']&&slots['昼']&&slots['夕']); }
+function mpkAllToggle_(slots){
+  var v=!mpkAllOn_(slots);
+  ['朝','昼','夕'].forEach(function(k){ slots[k]=v; });
+  return slots;
+}
+/* 編集画面のパネル（openEdit が「薬剤情報（定期）」の欄のすぐ上に入れる）。中身は固定の文言だけ */
+function mpkPanelHtml_(){
+  return '<div class="mpk" id="mpkBox" role="group" aria-labelledby="mpkTitle">'+
+    '<h4 class="mpk-h" id="mpkTitle">候補から足す</h4>'+
+    '<div class="mpk-editing" id="mpkEditing" hidden></div>'+
+    '<div class="mpk-f">'+
+      '<label class="mpk-lb" for="mpkName">薬剤名（2文字以上で候補が出ます）</label>'+
+      '<input type="text" id="mpkName" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done"'+
+        ' placeholder="例 アムロジピン" aria-describedby="mpkCandMsg mpkErrName">'+
+      '<div class="mpk-msg" id="mpkUsedMsg" role="status" aria-live="polite"></div>'+
+      '<div class="mpk-msg" id="mpkCandMsg" role="status" aria-live="polite"></div>'+
+      '<div class="mpk-cand" id="mpkCand" aria-label="薬剤名の候補"></div>'+
+      '<div class="mpk-err" id="mpkErrName" role="alert"></div>'+
+    '</div>'+
+    '<div class="mpk-f" id="mpkMakerF" hidden>'+
+      '<label class="mpk-lb" for="mpkMaker">メーカー（任意）</label><select id="mpkMaker"></select>'+
+    '</div>'+
+    '<div class="mpk-f mpk-inline" role="group" aria-labelledby="mpkDoseLb">'+
+      '<span class="mpk-lb" id="mpkDoseLb">1回量</span>'+
+      '<div class="mpk-row">'+mpkChips_('data-mpk-dose',MPK_DOSES,null,'mpkErrDose')+
+        '<label class="mpk-other">その他<input type="number" id="mpkDoseOther" min="0.5" step="0.5" inputmode="decimal" aria-describedby="mpkErrDose"></label>'+
+      '</div>'+
+      '<div class="mpk-err" id="mpkErrDose" role="alert"></div>'+
+    '</div>'+
+    '<div class="mpk-f mpk-inline" role="group" aria-labelledby="mpkUnitLb">'+
+      '<span class="mpk-lb" id="mpkUnitLb">単位</span>'+
+      '<div class="mpk-row">'+mpkChips_('data-mpk-unit',MPK_UNITS)+'</div>'+
+    '</div>'+
+    '<div class="mpk-f" role="group" aria-labelledby="mpkWhenLb">'+
+      '<span class="mpk-lb" id="mpkWhenLb">いつ飲むか（時間帯は複数選べます。「毎」は朝・昼・夕）</span>'+
+      '<div class="mpk-row">'+
+        '<button type="button" class="chip" data-mpk-all="1" aria-pressed="false" aria-label="毎（朝・昼・夕の3回）" aria-describedby="mpkErrWhen">毎</button>'+
+        mpkChips_('data-mpk-slot',MPK_SLOTS,null,'mpkErrWhen')+'<span class="mpk-sep" aria-hidden="true"></span>'+mpkChips_('data-mpk-meal',MPK_MEALS)+'</div>'+
+      '<div class="mpk-err" id="mpkErrWhen" role="alert"></div>'+
+    '</div>'+
+    '<div class="mpk-f">'+
+      '<label class="mpk-lb" for="mpkFree">用法を手で書く（週1回・隔日・食間など）</label>'+
+      '<input type="text" id="mpkFree" autocomplete="off" spellcheck="false" aria-describedby="mpkErrWhen" placeholder="入れた時はこちらを使います（例 1錠 週1回 起床時）">'+
+    '</div>'+
+    '<div class="mpk-f">'+
+      '<span class="mpk-lb" id="mpkPvLb">できあがる1行</span>'+
+      '<div class="mpk-pv none" id="mpkPreview" aria-live="polite" aria-labelledby="mpkPvLb"></div>'+
+      '<div class="mpk-pvnote" id="mpkPvNote" aria-live="polite"></div>'+
+    '</div>'+
+    '<div class="mpk-row">'+
+      '<button type="button" class="btn btn-pri" id="mpkAdd" aria-describedby="mpkErrAdd">この行を追加</button>'+
+      '<button type="button" class="btn btn-gray" id="mpkCancel" hidden>やめる</button>'+
+    '</div>'+
+    '<div class="mpk-err" id="mpkErrAdd" role="alert"></div>'+
+    '<div class="mpk-st"><span class="mpk-msg" id="mpkMsg" role="status" aria-live="polite"></span>'+
+      '<button type="button" class="btn btn-sec" id="mpkUndo" hidden>元に戻す</button></div>'+
+    '<h4 class="mpk-h" style="margin-top:14px">いまの定期薬</h4>'+
+    '<div id="mpkList"></div>'+
+    '<p class="muted" style="margin:8px 0 0">この下の「薬剤情報（定期）」の欄を手で直すこともできます。</p>'+
+  '</div>';
+}
+/* 候補データを読み込む（薬剤名欄に初めて触れた時だけ）。読み込めなくても入力は止めない */
+function mpkLoad_(){
+  if(window.MedsYakka&&Array.isArray(window.MedsYakka.items)){ mpk.ld='ok'; return; }
+  if(mpk.ld==='loading') return;
+  mpk.ld='loading';
+  var s=document.createElement('script');
+  s.src=MPK_YAKKA_SRC; s.async=true;
+  s.onload=function(){ mpk.ld=(window.MedsYakka&&Array.isArray(window.MedsYakka.items))?'ok':'ng'; mpkRenderCand_(); };
+  s.onerror=function(){ mpk.ld='ng'; if(s.parentNode) s.parentNode.removeChild(s); mpkRenderCand_(); };
+  document.head.appendChild(s);
+  mpkRenderCand_();
+}
+/* 施設で使っている薬の一覧（候補の①）。全件データ（fullMap）の在籍者の定期薬から、行の文字だけを渡して作る。
+   ★氏名・id は渡さない。結果（薬剤名＋規格と人数）も控えに残さず、描くたびに作り直す
+     （fullMap への参照を持ち続けると、現場端末へ切り替えた時に fullMap を捨てても要配慮情報がメモリに残る）。 */
+/* 薬効辞書の部品（MedsEffect）が読めているか。読めていない時は施設の候補・「直す」の組み立て・行の確認を使わない
+   （照合キー mdKey が例外を投げる。厚労省の候補と追加はそのまま動かす） */
+function mpkFxOk_(){ try{ return medsFxOk_(); }catch(e){ return false; } }
+/* 行の確認（mpkLineCheck）を例外で止めない形で呼ぶ。部品が読めていない時は 'nofx' */
+function mpkCheck_(line, slots){
+  if(!mpkFxOk_()) return 'nofx';
+  try{ return mpkLineCheck(line, slots); }catch(e){ return 'nofx'; }
+}
+/* mpkFreeCheck を例外で止めない形で呼ぶ。部品が読めていない時は 'nofx' */
+function mpkFreeCk_(name, free){
+  if(!mpkFxOk_()) return 'nofx';
+  try{ return mpkFreeCheck(name, free); }catch(e){ return 'nofx'; }
+}
+/* 薬剤名＋「メーカー」（mpkLine が行の先頭に置く形） */
+function mpkHead_(c){ return c.name+(c.maker?'「'+c.maker+'」':''); }
+function mpkUsedList_(){
+  if(typeof fullMap==='undefined'||!fullMap||getDeviceRole()==='field'||!mpkFxOk_()) return [];
+  try{
+    return mpkUsedNames(shBase().map(function(r){
+      var rec=fullOf(r);
+      return rec?String(rec.medsRegular==null?'':rec.medsRegular).split(/\r\n|\r|\n/):null;
+    }).filter(Boolean));
+  }catch(e){ return []; }
+}
+/* 全件データの読み込み（薬剤名欄に初めて触れた時）。既存の fullEnsure を呼ぶだけ。
+   ★fullEnsure の完了時の処理は一覧画面の状態バーの描き直しと、病歴・家族一覧を開いていた時の一覧の描き直しだけで、
+     画面の切り替え・トースト・編集画面（editBox）への書き込みは無い（2026-10-01 確認）。だから自動で呼ぶ。
+   完了の知らせは無いので、fullLoading が下りるのを見張る（編集画面を閉じたら見張りをやめる） */
+function mpkFullWatch_(){
+  if(mpk.flTimer) return;
+  mpk.flTimer=setInterval(function(){
+    if(!$('mpkBox')){ clearInterval(mpk.flTimer); mpk.flTimer=0; return; }
+    if(typeof fullLoading!=='undefined'&&fullLoading) return;
+    clearInterval(mpk.flTimer); mpk.flTimer=0;
+    mpk.fl=fullMap?'ok':'ng';
+    mpkRenderCand_();
+  },400);
+}
+function mpkFullLoad_(){
+  if(typeof fullMap==='undefined'||typeof fullEnsure!=='function'){ mpk.fl='ng'; mpkRenderCand_(); return; }
+  if(fullMap){ mpk.fl='ok'; mpkRenderCand_(); return; }
+  if(getDeviceRole()==='field'){ mpk.fl='ng'; mpkRenderCand_(); return; }   /* 現場端末では薬剤情報を取りに行かない */
+  if(!fullLoading){ try{ fullEnsure(false); }catch(e){} }
+  if(fullMap) mpk.fl='ok';
+  else if(fullLoading){ mpk.fl='loading'; mpkFullWatch_(); }
+  else mpk.fl='ng';                                                           /* 接続先が無い等ですぐ失敗した */
+  mpkRenderCand_();
+}
+function mpkRenderCand_(){
+  var box=$('mpkCand'), msg=$('mpkCandMsg'), inp=$('mpkName');
+  if(!box||!msg||!inp) return;
+  var um=$('mpkUsedMsg');
+  var umText=(mpk.fl==='loading')?'施設で使っている薬を読み込み中…'
+    :(mpk.fl==='ng')?'施設で使っている薬を読み込めませんでした（厚労省の一覧から選べます）':'';
+  var q=inp.value, cands=[], text='';
+  if(!(mpk.pick&&q===mpk.pick.name)&&mpkNorm(q).length>=2){   /* 候補から選んだ直後・2文字未満は出さない */
+    var yk=(mpk.ld==='ok'&&window.MedsYakka&&Array.isArray(window.MedsYakka.items))?window.MedsYakka.items:null;
+    cands=mpkSearchAll(q, mpkUsedList_(), yk, 8);
+    /* 厚労省の一覧が読み込み中・失敗の時。候補が1件も無ければ従来の文言、施設の候補だけ出ている時は一言添える */
+    var ykBusy=(mpk.ld==='loading'||mpk.ld===''), ykNg=(mpk.ld==='ng');
+    text=!cands.length
+      ? (ykBusy?'候補を読み込み中…（このまま入力できます）':ykNg?'候補を読み込めませんでした（手で書けます）':'候補なし（このまま使えます）')
+      : '候補 '+cands.length+'件（押すと薬剤名に入ります）'+(ykBusy?'。厚労省の一覧は読み込み中です':ykNg?'。厚労省の一覧は読み込めませんでした':'');
+  }
+  mpk.cands=cands;
+  /* ★前回と同じ内容なら DOM を作り直さない（2026-10-01 反証レビュー low）。日本語入力の確定などで input が
+     重なって来ると、押しかけたボタンが作り直されて消え、1回目のクリックが空振りする */
+  var sig=umText+'\u0001'+text+'\u0001'+cands.map(function(c){ return c.src+':'+c.name+':'+c.n; }).join('\u0002');
+  if(sig===mpk.candSig&&box.childNodes.length===cands.length) return;
+  mpk.candSig=sig;
+  if(um) um.textContent=umText;
+  msg.textContent=text;
+  box.textContent='';
+  cands.forEach(function(c,i){
+    var b=document.createElement('button');
+    b.type='button'; b.setAttribute('data-mpk-cand',String(i));
+    var nm=document.createElement('span'); nm.textContent=c.name; b.appendChild(nm);
+    if(c.src==='used'){ var u=document.createElement('span'); u.className='mpk-used'; u.textContent='施設で使用中（'+c.n+'名）'; b.appendChild(u); }
+    box.appendChild(b);
+  });
+}
+/* 候補を選ぶ: 薬剤名を確定し、既定の単位を選ぶ。メーカーがある品（厚労省リスト）だけメーカー欄を出す。
+   施設で使っている書き方は名前をそのまま使う（メーカー欄は出さない・単位は名前から） */
+function mpkPick_(c){
+  var inp=$('mpkName'); if(!inp||!c) return;
+  mpk.pick=c; inp.value=c.name;
+  if(MPK_UNITS.indexOf(c.unit)>=0) mpk.unit=c.unit;
+  mpkRenderMaker_();
+  mpkRenderCand_();
+  mpkPaint_();
+  try{ inp.focus(); }catch(e){}
+}
+function mpkRenderMaker_(){
+  var f=$('mpkMakerF'), sel=$('mpkMaker');
+  if(!f||!sel) return;
+  sel.textContent='';
+  var mk=(mpk.pick&&mpk.pick.src==='yakka'&&Array.isArray(mpk.pick.makers))?mpk.pick.makers:[];
+  f.hidden=!mk.length;
+  if(!mk.length) return;
+  [''].concat(mk).forEach(function(v){
+    var o=document.createElement('option'); o.value=v; o.textContent=v||'付けない'; sel.appendChild(o);
+  });
+  sel.value='';
+}
+function mpkCur_(){
+  var sel=$('mpkMaker'), f=$('mpkMakerF');
+  return {
+    name:($('mpkName')?$('mpkName').value:'').trim(),
+    maker:(f&&!f.hidden&&sel)?sel.value:'',
+    dose:mpk.dose, unit:mpk.unit,
+    slots:MPK_SLOTS.filter(function(k){ return !!mpk.slots[k]; }),
+    meal:mpk.meal,
+    free:($('mpkFree')?$('mpkFree').value:'').trim()
+  };
+}
+/* チップの選択表示とプレビューを描き直す */
+function mpkPaint_(){
+  var box=$('mpkBox'); if(!box) return;
+  function set(attr, on){
+    Array.prototype.forEach.call(box.querySelectorAll('['+attr+']'),function(b){
+      var v=on(b.getAttribute(attr));
+      b.classList.toggle('on',v); b.setAttribute('aria-pressed',v?'true':'false');
+    });
+  }
+  var other=$('mpkDoseOther'), otherOn=!!(other&&other.value!=='');
+  set('data-mpk-dose',function(v){ return !otherOn&&mpk.dose!==null&&Number(v)===mpk.dose; });
+  set('data-mpk-unit',function(v){ return v===mpk.unit; });
+  set('data-mpk-slot',function(v){ return !!mpk.slots[v]; });
+  set('data-mpk-all',function(){ return mpkAllOn_(mpk.slots); });
+  set('data-mpk-meal',function(v){ return v===mpk.meal; });
+  var pv=$('mpkPreview'), nt=$('mpkPvNote');
+  if(pv){
+    var c=mpkCur_(), line=c.name.length>=2?mpkLine(c):'';
+    pv.textContent=line||'（薬剤名・1回量・いつ飲むか を選ぶと、ここに1行ができます）';
+    pv.classList.toggle('none',!line);
+    /* 手書きの用法が空の時だけ、読み取りで要確認になる行を先に知らせる（'mismatch' は追加の時に止める） */
+    /* 追加の時と同じ判定で先に知らせる（mismatch は追加の時に止める・部品が無い時は追加できない） */
+    var note='';
+    if(line){
+      var ck=c.free?mpkFreeCk_(mpkHead_(c), c.free):mpkCheck_(line, c.slots);
+      if(ck==='nofx') note='部品を読み込めていないため、ここからは追加できません。画面を再読み込みするか、下の欄に直接書いてください';
+      else if(ck==='mismatch') note='薬剤名に『朝』『夕』などの言葉や『：』が入っているため、時間帯を正しく読み取れません。薬剤名を直してください';
+      else if(ck==='review') note='この行は、与薬チェックへ送る時に『要確認』になります';
+    }
+    if(nt&&nt.textContent!==note) nt.textContent=note;
+  }
+}
+function mpkErr_(id, text){ var e=$(id); if(e) e.textContent=text||''; }
+function mpkClearErr_(){ ['mpkErrName','mpkErrDose','mpkErrWhen','mpkErrAdd'].forEach(function(id){ mpkErr_(id,''); }); }
+function mpkMsg_(text, undo){
+  var m=$('mpkMsg'), u=$('mpkUndo');
+  if(m) m.textContent=text||'';
+  if(u) u.hidden=!undo;
+}
+/* 「いまの定期薬」の行一覧（textarea から作る。中身は textContent で入れる） */
+function mpkRenderList_(){
+  var box=$('mpkList'), ta=mpkTa_();
+  if(!box||!ta) return;
+  var ls=mpkLines(ta.value);
+  box.textContent='';
+  if(!ls.length){
+    var p=document.createElement('p'); p.className='mpk-empty'; p.textContent='まだ入っていません。上で1行ずつ足せます。';
+    box.appendChild(p); return;
+  }
+  var ol=document.createElement('ol'); ol.className='mpk-ls';
+  ls.forEach(function(l,i){
+    var li=document.createElement('li'); if(i===mpk.editIdx) li.className='on';
+    var tx=document.createElement('span'); tx.className='tx'; tx.textContent=l; li.appendChild(tx);
+    if(i===mpk.editIdx){ var tg=document.createElement('span'); tg.className='tag-ed'; tg.textContent='✎ 直しています'; li.appendChild(tg); }
+    var bt=document.createElement('span'); bt.className='bt';
+    var e=document.createElement('button'); e.type='button'; e.className='btn btn-sec'; e.textContent='直す';
+    e.setAttribute('data-mpk-edit',String(i)); e.setAttribute('aria-label',(i+1)+'行目を直す');
+    var s=document.createElement('button'); s.type='button'; s.className='btn btn-ng'; s.textContent='中止';
+    s.setAttribute('data-mpk-stop',String(i)); s.setAttribute('aria-label',(i+1)+'行目を中止（行を消す）');
+    bt.appendChild(e); bt.appendChild(s); li.appendChild(bt);
+    ol.appendChild(li);
+  });
+  box.appendChild(ol);
+}
+/* textarea を書き換えて input を出す（手で書き換えた時と同じ経路に乗せる） */
+function mpkSetTa_(ta, v){
+  ta.value=v;
+  var ev;
+  try{ ev=new Event('input',{bubbles:true}); }catch(e){ ev=document.createEvent('Event'); ev.initEvent('input',true,true); }
+  ta.dispatchEvent(ev);
+}
+/* 薬剤名とメーカーだけ空に戻す（1回量・時間帯は続けて使えるよう残す） */
+function mpkResetName_(){
+  var inp=$('mpkName'); if(inp) inp.value='';
+  mpk.pick=null; mpkRenderMaker_(); mpkRenderCand_(); mpkPaint_();
+}
+function mpkEditEnd_(){
+  mpk.editIdx=-1; mpk.editOrig='';
+  var a=$('mpkAdd'), c=$('mpkCancel'), n=$('mpkEditing');
+  if(a) a.textContent='この行を追加';
+  if(c) c.hidden=true;
+  if(n){ n.hidden=true; n.textContent=''; }
+  mpkRenderList_();
+}
+/* 「直す」: その行の薬剤名部分（medSplit_ の左側。分けられない行は行全体）を薬剤名欄へ入れる。
+   ★置き換えるまで元の行は変えない */
+function mpkEditStart_(i){
+  var ta=mpkTa_(); if(!ta) return;
+  var ls=mpkLines(ta.value);
+  if(!(i>=0&&i<ls.length)) return;
+  mpkClearErr_(); mpkMsg_('');
+  /* 薬剤名欄に入れる名前は施設の候補と同じ切り出し（「メーカー」を残す）。安全な名前を取り出せない行は
+     組み立てに入らず、行は変えずに下の欄へ案内する（2026-10-01 反証レビュー high:
+     「◯◯錠5mg 1錠 眠前」の左側を名前にすると「眠前」が名前に残り、時間帯を変えても眠前が残ったまま 'ok' になる） */
+  var nm='';
+  if(mpkFxOk_()){ try{ nm=mpkEditName(ls[i]); }catch(e){ nm=''; } }
+  if(!nm){
+    /* 直し中の状態を終え、薬剤名・メーカーも空に戻す（前に直していた行の名前が残って二重に足されるのを防ぐ） */
+    mpkEditEnd_(); mpkResetName_();
+    mpkMsg_('この行は書き方が特殊なため、下の欄で直接直してください');
+    var rg=mpkLineRange(ta.value, i);
+    try{ ta.focus(); if(rg) ta.setSelectionRange(rg[0], rg[1]); }catch(e){}
+    return;
+  }
+  mpk.editIdx=i; mpk.editOrig=ls[i];
+  var inp=$('mpkName');
+  if(inp) inp.value=nm;
+  mpk.pick=null; mpkRenderMaker_();
+  var a=$('mpkAdd'), c=$('mpkCancel'), n=$('mpkEditing');
+  if(a) a.textContent='この行を置き換える';
+  if(c) c.hidden=false;
+  if(n){ n.hidden=false; n.textContent='直している行（'+(i+1)+'行目）：'+ls[i]; }
+  mpkRenderList_(); mpkRenderCand_(); mpkPaint_();
+  if(inp){ try{ inp.focus(); inp.scrollIntoView({block:'center',behavior:'auto'}); }catch(e){} }
+}
+/* 「この行を追加」／「この行を置き換える」。足りない物は欄のそばに理由を出して止める */
+function mpkCommit_(){
+  var ta=mpkTa_(); if(!ta) return;
+  mpkClearErr_();
+  /* 薬効辞書の部品（MedsEffect）が読めていない時は、作った行の時間帯を確かめられないので追加・置き換えを止める
+     （2026-10-01 再点検で安全側へ変更。下の欄への手入力は従来どおりできる） */
+  if(!mpkFxOk_()){
+    mpkErr_('mpkErrAdd','部品を読み込めていないため、ここからは追加できません。画面を再読み込みするか、下の欄に直接書いてください');
+    try{ $('mpkAdd').focus(); }catch(e){}
+    return;
+  }
+  var c=mpkCur_();
+  if(c.name.length<2){ mpkErr_('mpkErrName','薬剤名を2文字以上入れてください（候補に無い薬もそのまま使えます）。'); try{ $('mpkName').focus(); }catch(e){} return; }
+  /* 「用法を手で書く」を使う時は1回量を必須にしない（行には手書きの用法だけが入る＝mpkLine のとおり） */
+  if(!c.free&&!(c.dose>0)){
+    mpkErr_('mpkErrDose','1回量を選んでください（「その他」は0.5刻みの数）。「用法を手で書く」に入れた時は不要です。');
+    var d=$('mpkBox').querySelector('[data-mpk-dose]'); if(d) try{ d.focus(); }catch(e){}
+    return;
+  }
+  if(!c.free&&!c.slots.length){
+    mpkErr_('mpkErrWhen','飲む時間帯（朝・昼・夕・眠前）を選ぶか、「用法を手で書く」に入れてください。');
+    var w=$('mpkBox').querySelector('[data-mpk-slot]'); if(w) try{ w.focus(); }catch(e){}
+    return;
+  }
+  var line=mpkLine(c);
+  if(!line){
+    mpkErr_('mpkErrWhen','この組み合わせでは1行を作れません。食後か食前を選んでください。');
+    var w2=$('mpkBox').querySelector('[data-mpk-slot]'); if(w2) try{ w2.focus(); }catch(e){}
+    return;
+  }
+  /* ★最終ゲート（2026-10-01 反証レビュー high）: 時間帯をボタンで選んだ行は、既存の読み取りで確かめる。
+     'ok' なのに選んだ時間帯と違う＝薬剤名の中の語が用法として読まれている。誤った時間帯のまま保存させない */
+  /* 手書きの用法の時も、名前の中の語が用法として読まれていないかを確かめる（2026-10-01 再点検 medium） */
+  if(c.free?(mpkFreeCk_(mpkHead_(c), c.free)==='mismatch'):(mpkCheck_(line, c.slots)==='mismatch')){
+    mpkErr_('mpkErrName','薬剤名に『朝』『夕』などの言葉や『：』が入っているため、時間帯を正しく読み取れません。薬剤名を直してください');
+    try{ $('mpkName').focus(); }catch(e){}
+    return;
+  }
+  var msg;
+  if(mpk.editIdx>=0){
+    if(mpkLines(ta.value)[mpk.editIdx]!==mpk.editOrig){
+      mpkEditEnd_(); mpkMsg_('直していた行が書き換わったため、置き換えをやめました。もう一度「直す」を押してください。');
+      return;
+    }
+    var idx=mpk.editIdx;
+    mpk.editIdx=-1; mpk.undo=null;
+    mpkSetTa_(ta, mpkReplaceAt(ta.value, idx, line));
+    msg=(idx+1)+'行目を置き換えました。';
+  }else{
+    mpk.undo=null;
+    mpkSetTa_(ta, mpkAppend(ta.value, line));
+    msg='1行追加しました。';
+  }
+  mpkEditEnd_();
+  mpkResetName_();
+  mpkMsg_(msg);
+  try{ $('mpkName').focus(); }catch(e){}
+}
+/* 「中止」: その行を消す。confirm() は使わず、直後に「元に戻す」を1回分だけ出す */
+function mpkStop_(i){
+  var ta=mpkTa_(); if(!ta) return;
+  var ls=mpkLines(ta.value);
+  if(!(i>=0&&i<ls.length)) return;
+  var before=ta.value, after=mpkRemoveAt(before, i);
+  if(after===before) return;
+  if(mpk.editIdx>=0){ mpkEditEnd_(); mpkResetName_(); }
+  mpk.undo={before:before, after:after};
+  mpkSetTa_(ta, after);
+  mpkMsg_((i+1)+'行目を消しました：'+ls[i], true);
+  var u=$('mpkUndo'); if(u) try{ u.focus(); }catch(e){}
+}
+function mpkUndo_(){
+  var ta=mpkTa_(), u=mpk.undo;
+  mpk.undo=null;
+  if(!ta||!u){ mpkMsg_(''); return; }
+  if(ta.value!==u.after){ mpkMsg_('その後に欄が書き換わったため、元に戻せませんでした。下の欄で直してください。'); return; }
+  mpkSetTa_(ta, u.before);
+  mpkMsg_('元に戻しました。');
+}
+/* textarea を（手でも・パネルからでも）書き換えた時。行一覧を描き直し、古くなった「元に戻す」「直す」を外す */
+function mpkOnTa_(){
+  var ta=mpkTa_(); if(!ta) return;
+  if(mpk.undo&&ta.value!==mpk.undo.after){ mpk.undo=null; mpkMsg_(''); }
+  if(mpk.editIdx>=0&&mpkLines(ta.value)[mpk.editIdx]!==mpk.editOrig){
+    mpkEditEnd_(); mpkResetName_();
+    mpkMsg_('直していた行が書き換わったため、直すのをやめました。');
+  }
+  mpkRenderList_();
+}
+/* openEdit から呼ぶ。編集画面を開くたびに状態を作り直す（前の方の入力途中の値を持ち越さない） */
+function mpkInit_(){
+  var box=$('mpkBox'), ta=mpkTa_();
+  if(!box||!ta) return;
+  mpk.pick=null; mpk.cands=[]; mpk.candSig=''; mpk.dose=null; mpk.unit='錠'; mpk.slots={}; mpk.meal='食後';
+  mpk.editIdx=-1; mpk.editOrig=''; mpk.undo=null;
+  if(window.MedsYakka&&Array.isArray(window.MedsYakka.items)) mpk.ld='ok';
+  else if(mpk.ld!=='loading') mpk.ld='';
+  if(mpk.flTimer){ clearInterval(mpk.flTimer); mpk.flTimer=0; }
+  mpk.fl=(typeof fullMap!=='undefined'&&fullMap)?'ok':((typeof fullLoading!=='undefined'&&fullLoading)?'loading':'');
+  if(mpk.fl==='loading') mpkFullWatch_();
+  var inp=$('mpkName');
+  inp.addEventListener('focus',function(){
+    if(mpk.ld!=='ok') mpkLoad_();
+    if(mpk.fl===''||mpk.fl==='ng') mpkFullLoad_();
+  });
+  /* 変換中（isComposing）も描く（ひらがな→カタカナの正規化で変換中から候補を出す元の設計）。押しかけたボタンが
+     消えないよう、候補が前回と同じなら mpkRenderCand_ が DOM を作り直さない。確定（compositionend）でも描く */
+  var onName=function(){
+    if(mpk.pick&&inp.value!==mpk.pick.name){ mpk.pick=null; mpkRenderMaker_(); }
+    mpkErr_('mpkErrName','');
+    mpkRenderCand_(); mpkPaint_();
+  };
+  inp.addEventListener('input',onName);
+  inp.addEventListener('compositionend',onName);
+  $('mpkMaker').addEventListener('change',mpkPaint_);
+  $('mpkFree').addEventListener('input',function(){ mpkErr_('mpkErrWhen',''); mpkPaint_(); });
+  $('mpkDoseOther').addEventListener('input',function(){
+    var v=this.value===''?NaN:Number(this.value);
+    mpk.dose=(isFinite(v)&&v>0&&Math.abs(v*2-Math.round(v*2))<1e-9)?v:null;
+    mpkErr_('mpkErrDose',''); mpkPaint_();
+  });
+  box.addEventListener('click',function(e){
+    var t=e.target&&e.target.closest?e.target.closest('button'):null;
+    if(!t||!box.contains(t)) return;
+    var v;
+    if((v=t.getAttribute('data-mpk-cand'))!==null){ mpkPick_(mpk.cands[parseInt(v,10)]); return; }
+    if((v=t.getAttribute('data-mpk-dose'))!==null){ mpk.dose=Number(v); $('mpkDoseOther').value=''; mpkErr_('mpkErrDose',''); mpkPaint_(); return; }
+    if((v=t.getAttribute('data-mpk-unit'))!==null){ mpk.unit=v; mpkPaint_(); return; }
+    if(t.getAttribute('data-mpk-all')!==null){ mpkAllToggle_(mpk.slots); mpkErr_('mpkErrWhen',''); mpkPaint_(); return; }
+    if((v=t.getAttribute('data-mpk-slot'))!==null){ mpk.slots[v]=!mpk.slots[v]; mpkErr_('mpkErrWhen',''); mpkPaint_(); return; }
+    if((v=t.getAttribute('data-mpk-meal'))!==null){ mpk.meal=v; mpkPaint_(); return; }
+    if((v=t.getAttribute('data-mpk-edit'))!==null){ mpkEditStart_(parseInt(v,10)); return; }
+    if((v=t.getAttribute('data-mpk-stop'))!==null){ mpkStop_(parseInt(v,10)); return; }
+    if(t.id==='mpkAdd'){ mpkCommit_(); return; }
+    if(t.id==='mpkCancel'){ mpkEditEnd_(); mpkResetName_(); mpkMsg_(''); try{ $('mpkName').focus(); }catch(e2){} return; }
+    if(t.id==='mpkUndo'){ mpkUndo_(); return; }
+  });
+  ta.addEventListener('input',mpkOnTa_);
+  mpkMsg_('');
+  mpkRenderMaker_(); mpkRenderCand_(); mpkRenderList_(); mpkPaint_();
+}
+/* ── 介護度の変更履歴（時系列・後編集可） ── */
+function renderCareHistRows(){
+  var box=$('careHistList');if(!box)return;var h='';
+  var levels=['','要支援1','要支援2','要介護1','要介護2','要介護3','要介護4','要介護5','自立'];
+  editing.careLevelHistory.forEach(function(s,i){
+    h+='<div class="fam-row" data-ci="'+i+'" style="grid-template-columns:repeat(2,1fr)">'+
+      '<div class="fld"><label>介護度</label><select data-ck="value">'+
+        ((s.value&&levels.indexOf(String(s.value))<0)?'<option value="'+esc(s.value)+'" selected>'+esc(s.value)+'（既存値）</option>':'')+
+        levels.map(function(x){return'<option value="'+esc(x)+'"'+(String(s.value||'')===String(x)?' selected':'')+'>'+esc(x)+'</option>'}).join('')+'</select></div>'+
+      '<div class="fld"><label>変更日</label><input data-ck="changedAt" type="'+dtype(s.changedAt)+'" value="'+esc(s.changedAt||'')+'"></div>'+
+      '<div class="fld"><label>認定日</label><input data-ck="certDate" type="'+dtype(s.certDate)+'" value="'+esc(s.certDate||'')+'"></div>'+
+      '<div class="fld"><label>認定期間(開始)</label><input data-ck="certStart" type="'+dtype(s.certStart)+'" value="'+esc(s.certStart||'')+'"></div>'+
+      '<div class="fld"><label>認定期間(終了)</label><input data-ck="certEnd" type="'+dtype(s.certEnd)+'" value="'+esc(s.certEnd||'')+'"></div>'+
+      '<div class="fld full"><label>備考</label><input data-ck="note" value="'+esc(s.note||'')+'"></div>'+
+      '<button class="fam-del" type="button" data-chdel="'+i+'" style="grid-column:1/-1">削除</button>'+
+    '</div>';
+  });
+  box.innerHTML=h;
+  Array.prototype.forEach.call(box.querySelectorAll('[data-chdel]'),function(b){b.addEventListener('click',function(){collectCareHist();editing.careLevelHistory.splice(parseInt(this.getAttribute('data-chdel')),1);renderCareHistRows()})});
+}
+function collectCareHist(){
+  var box=$('careHistList');if(!box)return;
+  Array.prototype.forEach.call(box.querySelectorAll('.fam-row'),function(row){
+    var i=parseInt(row.getAttribute('data-ci'));if(isNaN(i)||!editing.careLevelHistory[i])return;
+    Array.prototype.forEach.call(row.querySelectorAll('[data-ck]'),function(inp){
+      editing.careLevelHistory[i][inp.getAttribute('data-ck')]=inp.value.trim?inp.value.trim():inp.value;
+    });
+  });
+}
+/* ── 医療支援経過（訪問診療の受け皿。source='vma' は読み取り専用表示） ── */
+function renderMedLogRows(){
+  var box=$('medLogList');if(!box)return;var h='';
+  editing.medicalSupportLog.forEach(function(s,i){
+    var isVma=(s.source==='vma');
+    h+='<div class="fam-row" data-mi="'+i+'" style="grid-template-columns:160px 1fr 1fr">'+
+      '<div class="fld"><label>診察日</label><input data-mk="date" type="'+dtype(s.date)+'" value="'+esc(s.date||'')+'"'+(isVma?' readonly':'')+'></div>'+
+      '<div class="fld"><label>担当医</label><input data-mk="doctor" value="'+esc(s.doctor||'')+'"'+(isVma?' readonly':'')+'></div>'+
+      '<div class="fld"><label>医療機関</label><input data-mk="clinic" value="'+esc(s.clinic||'')+'"'+(isVma?' readonly':'')+'></div>'+
+      '<div class="fld full"><label>内容'+(isVma?' <span style="color:var(--pri-d);font-size: 0.6875rem">（訪問診療より取込）</span>':'')+'</label><textarea data-mk="text" style="min-height:56px"'+(isVma?' readonly':'')+'>'+esc(s.text||'')+'</textarea></div>'+
+      (isVma?'':'<button class="fam-del" type="button" data-mdel="'+i+'" style="grid-column:1/-1">削除</button>')+
+    '</div>';
+  });
+  box.innerHTML=h;
+  Array.prototype.forEach.call(box.querySelectorAll('[data-mdel]'),function(b){b.addEventListener('click',function(){collectMedLog();editing.medicalSupportLog.splice(parseInt(this.getAttribute('data-mdel')),1);renderMedLogRows()})});
+}
+function collectMedLog(){
+  var box=$('medLogList');if(!box)return;
+  Array.prototype.forEach.call(box.querySelectorAll('.fam-row'),function(row){
+    var i=parseInt(row.getAttribute('data-mi'));if(isNaN(i)||!editing.medicalSupportLog[i])return;
+    Array.prototype.forEach.call(row.querySelectorAll('[data-mk]'),function(inp){
+      editing.medicalSupportLog[i][inp.getAttribute('data-mk')]=inp.value.trim?inp.value.trim():inp.value;
+    });
+    if(!editing.medicalSupportLog[i].source)editing.medicalSupportLog[i].source='manual';
+  });
+}
+function renderFamRows(){
+  var box=$('famList');var h='';
+  editing.family.forEach(function(f,i){
+    h+='<div class="fam-row" data-i="'+i+'">'+
+      '<div class="fld"><label>氏名</label><input data-fk="name" value="'+esc(f.name)+'"></div>'+
+      '<div class="fld"><label>続柄</label><input data-fk="relation" value="'+esc(f.relation)+'"></div>'+
+      '<div class="fld"><label>役割（KP/金銭管理等）</label><input data-fk="role" value="'+esc(f.role)+'"></div>'+
+      '<div class="fld"><label>電話番号</label><input data-fk="phone" value="'+esc(f.phone)+'"></div>'+
+      // 住所は郵便番号・番地・建物名で複数行になることがある。input だと改行が除去され、
+      // 開いて保存しただけで行構成が失われるため textarea にする。
+      '<div class="fld full"><label>住所</label><textarea data-fk="address" rows="2">'+esc(f.address)+'</textarea></div>'+
+      /* ★プルダウンからチェックボックスへ（2026-09-07 指示）。押す回数が減り、
+         入っているかどうかが一目で分かる。押せる範囲は44pxを確保する（介護現場要件2） */
+      /* ★外側は label にしない（for も包含も無い label は、読み上げに宛先の無いラベルとして出る）。
+         押せる範囲44pxは .fchk 側で確保している。 */
+      '<div class="fld"><span class="lb">連絡先の区分</span>'+
+        '<label class="fchk"><input type="checkbox" data-fk="emergency"'+(f.emergency?' checked':'')+'><span>緊急連絡先</span></label>'+
+        '<label class="fchk"><input type="checkbox" data-fk="kp"'+(f.kp?' checked':'')+'><span>KP（キーパーソン）</span></label>'+
+      '</div>'+
+      '<button class="fam-del" type="button" data-del="'+i+'">削除</button>'+
+    '</div>';
+  });
+  box.innerHTML=h;
+  Array.prototype.forEach.call(box.querySelectorAll('[data-del]'),function(b){b.addEventListener('click',function(){collectFam();editing.family.splice(parseInt(this.getAttribute('data-del')),1);renderFamRows()})});
+}
+function collectFam(){
+  Array.prototype.forEach.call($('famList').querySelectorAll('.fam-row'),function(row){
+    var i=parseInt(row.getAttribute('data-i'));if(isNaN(i)||!editing.family[i])return;
+    Array.prototype.forEach.call(row.querySelectorAll('[data-fk]'),function(inp){
+      var k=inp.getAttribute('data-fk');
+      /* チェックボックスは checked を見る（value は 'on' 固定なので value で見ると必ず true になる） */
+      editing.family[i][k]=(k==='emergency'||k==='kp')?!!inp.checked:inp.value.trim();
+    });
+  });
+}
+function collectForm(){
+  var rec={};
+  Array.prototype.forEach.call($('editBox').querySelectorAll('[data-k]'),function(inp){
+    var k=inp.getAttribute('data-k');var v=inp.value;
+    if(k==='active'){rec.active=(v!=='退去');return}
+    if(k==='welfare'){rec.welfare=!!v;return}
+    rec[k]=(typeof v==='string')?v.trim():v;
+  });
+  rec.rhythm={};
+  Array.prototype.forEach.call($('editBox').querySelectorAll('[data-rhythm]'),function(inp){if(inp.value)rec.rhythm[inp.getAttribute('data-rhythm')]=inp.value});
+  // 入力欄が描画されていない場合は既存値を温存する（部分フォームでの全消しを防ぐ安全側フォールバック）
+  /* デイ利用日は 2026-08-19 に入力欄を廃止した（案②）。★既存の値は必ず引き継ぐ。
+     引き継がないと、編集画面で保存しただけで dataJson から消える（GAS は丸ごと置き換えるため）。
+     BF_LEGACY_KEYS の7項目とまったく同じ作法。 */
+  if(editing.dayUse)rec.dayUse=editing.dayUse;
+  var csEls=$('editBox').querySelectorAll('[data-consent]');
+  if(csEls.length){rec.consents={};Array.prototype.forEach.call(csEls,function(inp){var v=(inp.value||'').trim();if(v)rec.consents[inp.getAttribute('data-consent')]=v})}
+  else if(editing.consents)rec.consents=editing.consents;
+  /* アレルゲン・禁食（2026-10-22 代表者の決定）。欄が描かれている時は必ず配列で送る（何も選ばなければ []）。
+     描かれていない時は既存値を引き継ぐ（dayUse と同じ作法）。★画面で選べる符号は既知の一覧で照合する。
+     画面が知らない既存の符号（後で品目を増やした時に、古い画面で保存した場合など）は消さずに残す（2026-10-22・印刷しない欄 printHide と同じ作法） */
+  var algAt=$('editBox').querySelectorAll('[data-algtag]'), algFt=$('editBox').querySelectorAll('[data-forbtag]');
+  if(algAt.length||algFt.length){
+    var algOn=function(els,attr){ var o=[]; Array.prototype.forEach.call(els,function(el){ if(el.checked)o.push(el.getAttribute(attr)); }); return o; };
+    var algBoth=ALG_ALLERGENS.concat(algForbiddenList_());   /* 反対側の一覧の符号は「知らない符号」として残さない */
+    rec.allergenTags=algKeepUnknown_(algPick_(algOn(algAt,'data-algtag'),ALG_ALLERGENS),editing.allergenTags,algBoth);
+    rec.forbiddenTags=algKeepUnknown_(algPick_(algOn(algFt,'data-forbtag'),algForbiddenList_()),editing.forbiddenTags,algBoth);
+  }else{
+    if(editing.allergenTags!==undefined)rec.allergenTags=editing.allergenTags;
+    if(editing.forbiddenTags!==undefined)rec.forbiddenTags=editing.forbiddenTags;
+  }
+  /* ── 入居者基本情報（様式）の回収（2026-08-12）──
+     入力欄が描画されていない時は既存値を温存する（部分フォームでの全消し防止・dayUse と同じ作法） */
+  var bfEls=$('editBox').querySelectorAll('[data-bfck],[data-bftx],[data-bfsel],[data-bfradio]');
+  if(bfEls.length){
+    var bfTmp={};
+    Array.prototype.forEach.call($('editBox').querySelectorAll('[data-bfck]'),function(el){
+      bfSet(bfTmp,el.getAttribute('data-bfck'),!!el.checked);
+    });
+    Array.prototype.forEach.call($('editBox').querySelectorAll('[data-bftx],[data-bfsel]'),function(el){
+      bfSet(bfTmp,el.getAttribute('data-bftx')||el.getAttribute('data-bfsel'),bfStr(el.value));
+    });
+    Array.prototype.forEach.call($('editBox').querySelectorAll('[data-bfradio]'),function(el){
+      if(el.checked) bfSet(bfTmp,el.getAttribute('data-bfradio'),bfStr(el.value));
+    });
+    /* 病名は3つとも空の行を落とす（＝行を消す唯一の手段。誤削除のボタンを作らない） */
+    rec.diseases=bfArr(bfTmp.diseases).map(function(d){
+      d=bfObj(d);
+      return {name:bfStr(d.name),onset:bfStr(d.onset),hospital:bfStr(d.hospital)};
+    }).filter(function(d){ return d.name||d.onset||d.hospital; });
+    rec.services={};
+    BF_SERVICES.forEach(function(p){
+      var s=bfObj(bfTmp.services && bfTmp.services[p[0]]);
+      if(s.on||bfStr(s.name)) rec.services[p[0]]={on:!!s.on,name:bfStr(s.name)};
+    });
+    rec.adlGrid   = bfPrune(bfTmp.adlGrid);
+    rec.moveAid   = bfPrune(bfTmp.moveAid);
+    rec.bathPlace = bfPrune(bfTmp.bathPlace);
+    rec.excreteWay= bfPrune(bfTmp.excreteWay);
+    rec.bpsd      = bfPrune(bfTmp.bpsd);
+    rec.night     = bfPrune(bfTmp.night);
+    rec.medLevel  = bfStr(bfTmp.medLevel);
+    rec.medExists = bfStr(bfTmp.medExists);
+    rec.medContent= bfStr(bfTmp.medContent);
+    rec.commLevel = bfStr(bfTmp.commLevel);
+    rec.dementiaExists     = bfStr(bfTmp.dementiaExists);
+    rec.shortMemory        = bfStr(bfTmp.shortMemory);
+    rec.decisionAbility    = bfStr(bfTmp.decisionAbility);
+    rec.communicateAbility = bfStr(bfTmp.communicateAbility);
+    rec.nightSleepMed = bfStr(bfTmp.nightSleepMed);   /* 薬剤名は night の外（現場へ渡さない） */
+    rec.formNote    = bfStr(bfTmp.formNote);
+    rec.infoConsent = !!bfTmp.infoConsent;
+    /* 以後この方は「様式で入力済み」として扱い、旧自由文からの推定を止める。
+       これを立てないと「—」に戻した項目が次の表示で復活する */
+    rec.bfSaved = true;
+  }else{
+    BF_FORM_KEYS.forEach(function(k){ if(editing[k]!==undefined) rec[k]=editing[k]; });
+  }
+  /* 様式へ置き換えた旧項目には入力欄が無い。引き継がないと保存のたびに消える
+     （GAS は dataJson を丸ごと置き換えるため）。現場タブレットの安全情報にも使われている値なので、
+     消すと現場のフェイスシートから移動・服薬管理・問題行動が空になる。 */
+  BF_LEGACY_KEYS.forEach(function(p){ if(editing[p[0]]!==undefined) rec[p[0]]=editing[p[0]]; });
+  /* 対象アプリ。チェック欄が描かれている時だけ欄から集める。欄が無い時は開いた時の値をそのまま引き継ぐ
+     （空の配列で送ると名簿の対象アプリの列が空になり、「未設定＝全アプリに表示」に戻るため・2026-11-11） */
+  var tgEls=$('editBox').querySelectorAll('[data-target]');
+  if(tgEls.length){
+    rec.targetApps=[];
+    Array.prototype.forEach.call(tgEls,function(inp){if(inp.checked)rec.targetApps.push(inp.getAttribute('data-target'))});
+  }else if(Array.isArray(editing.targetApps))rec.targetApps=editing.targetApps.slice();
+  /* 印刷しない欄（2026-08-17）。入力欄が描画されていない時は既存値を温存する
+     （部分フォームでの全消し防止・dayUse / consents と同じ作法）。
+     ★1つもチェックが無ければキー自体を持たせない＝「全部印刷する」に戻る。
+     ★★画面にチェック欄が無いキー（＝この版の PRINT_SECS に無い欄）は必ず温存する。
+       将来 欄を増やした後、GitHub Pages のキャッシュで旧版のまま動いている端末がその方を
+       保存すると、丸ごと作り直しでは新しい欄の伏せ指定が消え、次の印刷から紙に載る。
+       倒れる向きが情報漏えい側なので、知らないものは触らない（multi-device-sync 原則3・4）。 */
+  var psEls=$('editBox').querySelectorAll('[data-psec]');
+  if(psEls.length){
+    var psOn=[], psKnown={};
+    Array.prototype.forEach.call(psEls,function(inp){
+      var k=inp.getAttribute('data-psec'); psKnown[k]=1;
+      if(inp.checked)psOn.push(k);
+    });
+    var psOld=(editing.printHide&&Array.isArray(editing.printHide.secs))?editing.printHide.secs:[];
+    psOld.forEach(function(k){ if(!psKnown[k]&&psOn.indexOf(k)<0)psOn.push(k) });
+    if(psOn.length)rec.printHide={secs:psOn};
+  }else if(editing.printHide)rec.printHide=editing.printHide;
+  collectMedsPast();
+  rec.medsPastLog=editing.medsPastLog.filter(function(s){return s&&(s.date||s.text)});
+  collectFam();
+  rec.family=editing.family.filter(function(f){return f.name||f.phone||f.address});
+  collectSupport();
+  rec.supportLog=editing.supportLog.filter(function(s){return s&&(s.date||s.text)});
+  // 介護度の変更履歴：手動編集を回収し、介護度か認定期間が変わっていれば変更前を自動で残す
+  //   ★足すのは【保存する側】だけ（画面の行と配列をずらさない。上の clhEntryFor_ を参照）
+  //   ★認定日だけを入れた手入力行を落とさないよう certDate も残す条件に入れる（2026-09-19 レビュー L-1）
+  collectCareHist();
+  var clhNew=clhEntryFor_(rec);
+  rec.careLevelHistory=(clhNew?[clhNew]:[]).concat(editing.careLevelHistory)
+    .filter(function(s){return s&&(s.value||s.changedAt||s.note||s.certStart||s.certEnd||s.certDate)});
+  // 医療支援経過（訪問診療の受け皿）
+  collectMedLog();
+  rec.medicalSupportLog=editing.medicalSupportLog.filter(function(s){return s&&(s.date||s.text)});
+  rec.id=editing.id;
+  // 訪問診療連携キー（xref.vma.patientId）
+  var vmaInp=$('editBox').querySelector('[data-xref-vma-pid]');
+  if(vmaInp){var pid=(vmaInp.value||'').trim();editing.xref=editing.xref||{};editing.xref.vma=editing.xref.vma||{};if(pid)editing.xref.vma.patientId=pid;else delete editing.xref.vma.patientId;if(editing.xref.vma&&!Object.keys(editing.xref.vma).length)delete editing.xref.vma;}
+  if(editing.xref&&Object.keys(editing.xref).length)rec.xref=editing.xref;
+  // 移行時の退避データは画面に入力欄が無いため、rec に引き継がないと保存のたびに消える
+  if(editing.unmappedRaw&&editing.unmappedRaw.length)rec.unmappedRaw=editing.unmappedRaw;
+  /* ★入院の状態（hospitalized / hospitalizedAt / stateLog）は【送らない】（2026-10-02 本人指示）。
+     書き手は setState だけ（入院/退院ボタン・週間計画・排泄記録）。入居者マスタGASの saveResident は、
+     送られてこなかったこの3キーを保存の時点の値で残す（SAVE_PRESERVE・2026-08-08〜。本番と正本の一致は 2026-10-02 に照合済み）。
+     直す前は編集画面を開いた時点の値を引き継いで送っていたため、
+       ・入院/退院ボタンの応答を待つ間に「✏️編集」を押して保存すると、押した入院/退院が取り消される
+       ・編集画面を開いている間に他の端末・他のアプリで入院/退院が切り替わると、保存で元に戻る
+     が起きていた。入居者マスタGASの setState（この画面の入院/退院ボタン・週間計画）は保存と同じロックで順に処理されるので、
+     どちらが先に届いても入院の値は残る。★排泄記録GASはマスタの表へ直接書く別のスクリプトで、このロックを通らない。
+     保存がサーバーで読んでから書くまでの1秒未満に排泄記録が入院を書くと、その分は消えうる（直す前は編集画面を開いている間ずっとだった）。
+     ★新規登録は元から3キーを持たない（従来どおり）。保存後に GAS が返す記録には残した値が入る（afterSaveOk_ はそれで描く）。
+     ★入力欄から同じ名前が紛れ込んでも送らないよう、ここで必ず外す */
+  delete rec.hospitalized; delete rec.hospitalizedAt; delete rec.stateLog;
+  // ホワイトリスト適用
+  var clean={};ALLOWED_KEYS.forEach(function(k){if(rec[k]!==undefined)clean[k]=rec[k]});
+  return clean;
+}
+function saveResident(){
+  var rec=collectForm();
+  if(!rec.name){toast('⚠️ 氏名は必須です');return}
+  /* 対象アプリを3つ全部外した保存は止める（全部外すと名簿の対象アプリの列が空になり、すべてのアプリに表示される扱いに戻るため。
+     一括編集と同じ決まり・2026-11-11 本人指示） */
+  if(Array.isArray(rec.targetApps)&&!rec.targetApps.length){
+    SUDialog.alert('チェックを1つ以上入れてください。\n全部外すと、すべてのアプリに表示されてしまいます。');
+    return;
+  }
+  if(!rmOn_()){toast('⚠️ 入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）');return}
+  rec.updatedAt=new Date().toISOString();
+  if(typeof rmWho_==='function'){ rec.updatedBy=rmWho_(); rec.updatedByAt=rec.updatedAt; }   /* 最後に直した人（GAS は dataJson に丸ごと残す） */
+  /* ★baseUpdatedAt は record の外に添える（旧GASは未知の項目を無視＝後方互換。
+     record 内に入れると旧GASが dataJson へ焼き込んでしまう）。新規(idなし)や
+     解釈できない値は送らない＝GAS側も従来動作。 */
+  var body={action:'saveResident',record:rec};
+  if(isFinite(Date.parse(editBaseUpdatedAt))) body.baseUpdatedAt=editBaseUpdatedAt;
+  var dg=devGen;   // 出した時の世代（後処理 afterSaveOk_ が、切り替え後に届いた応答か見分ける）（2026-10-01）
+  var ed=editing;  // 保存を出した時の編集対象（切り替え後に届いた時、この編集画面だけを閉じる）（2026-10-01）
+  $('saveBtn').disabled=true;setSync('保存中…');
+  rmAccessToken_().then(function(at){ if(at) body.accessToken=at; return apiPost(body); }).then(function(d){   /* 証明を添える（2026-10-13） */
+    var saved=(d&&d.record)||d;
+    setSync('保存OK','ok');toast('✅ 保存しました');
+    /* ★切り替えをはさんで届いた応答が、その後に開いた別の方の編集画面の照合用の時刻を書き換えないように。
+       事務所PCのままなら常に dg===devGen なので従来どおり（2026-10-01） */
+    if(dg===devGen||editing===ed) editBaseUpdatedAt=String((saved&&saved.updatedAt)||rec.updatedAt||'');
+    afterSaveOk_(rec,saved,dg,ed);
+  }).catch(function(e){
+    /* ★楽観ロックの競合（GAS §14）。サーバーは1文字も書いていないと確定しているので、
+       §13の「実は書けているかも」の取り直し確認はしない（取り直すと他端末の版で
+       「サーバー側にも入っていない」と誤案内してしまう）。入力は画面に残す。 */
+    var m0=String((e&&e.message)||e);
+    /* ★サーバーが中身を見て断った保存（2026-10-17・GAS の入口の守り：氏名が空・項目が少なすぎる・控えを残せない）。
+       1文字も書いていないと確定しているので、取り直しの確認には進まず、断った理由をそのまま見せる。入力は画面に残す */
+    var rf=m0.indexOf('refused:');
+    if(rf>=0){
+      setSync('保存を止めました','err');
+      SUDialog.alert('⚠️ 保存を止めました（1文字も書き込んでいません。この画面の内容は残っています）。\n\n'+m0.slice(rf+8).trim());
+      return;
+    }
+    if(m0.indexOf('conflict')>=0){
+      setSync('競合','err');
+      SUDialog.alert('⚠️ 他の端末がこの方を先に保存しています。\nこの画面の内容は保存されていません（1文字も書き込んでいません）。\n\n次の手順で直し直してください：\n1) いま直した箇所を控える（メモ・スクリーンショット）\n2) 一覧に戻って開き直し、最新の内容を確かめる\n3) 必要な箇所をもう一度直して保存する\n\n※開き直さずにもう一度保存しても、同じ理由で保存できません。');
+      return;
+    }
+    /* ★新規登録（番号がまだ無い方）は、下の取り直しで確かめられない（2026-09-23）。
+       番号はサーバーが保存の時に振るので、画面はまだ知らない。番号なしで getResident を引くと
+       必ず「無い」と返り、「サーバー側にも入っていない」と誤って断定してしまう。
+       それを信じて入れ直すと、1回目が実は入っていた時に別の番号で二重登録になる
+       （タイムアウト・302 の後でも起きていた穴。ロック解放前の flush を確かめられなかった時も同じ形）。
+       どちらとも言えないので「確認できず」に回す。新規の判定は gas/master.gs の saveResident が
+       新しい番号を振る条件（null・未定義・空文字）と同じにする。 */
+    if(rec.id==null||rec.id===''){
+      setSync('確認できず','err');
+      toast('⚠️ 保存できたか確認できませんでした。画面を再読み込みして、内容が入っているか確かめてください（もう一度保存する前に必ず確認）');
+      return;
+    }
+    /* ★保存が「失敗」と返っても、サーバーには書かれていることがある（data-contracts §13・2026-08-19 実測）。
+       GAS の /exec は 302 を返し、fetch がそれを GET で追うと doGet が合言葉なしで走って
+       「認証エラー」を返す。doPost の実行そのものは完了している。タイムアウトでも同じ形になる。
+       ここで「失敗しました」とだけ出すと、職員は同じ保存をやり直す＝二重反映と混雑の悪化を招く。
+       **必ず取り直して、実際に入っているかを確かめてから表示を決める。** */
+    setSync('確認中…');
+    return apiGet({action:'getResident',id:rec.id},25000).then(function(d){
+      var got=(d&&d.record)||null;
+      if(got&&saveStampSame_(got.updatedAt,rec.updatedAt)){
+        setSync('保存OK','ok');
+        toast('✅ 保存しました（通信の応答は届きませんでしたが、保存されていることを確認しました）');
+        if(dg===devGen||editing===ed) editBaseUpdatedAt=String(got.updatedAt||'');   // 同上（別の方の編集画面へ書き込まない）
+        afterSaveOk_(rec,got,dg,ed);
+        return;
+      }
+      /* ★取り直した更新時刻が送った時刻より1秒以上新しい時は、この保存の後に一括編集・食形態一覧・訪問診療の
+         定期薬などの部分更新が書いた（2026-11-11 からこれらも更新時刻を進める）かもしれない＝今回の保存が入ったかは
+         どちらとも言えない。「入っていない」と断定せず「確認できず」に回す（断定するとやり直しで二重反映になる） */
+      var pg=got?Date.parse(got.updatedAt):NaN, ps=Date.parse(rec.updatedAt);
+      if(isFinite(pg)&&isFinite(ps)&&pg-ps>=1000){
+        setSync('確認できず','err');
+        toast('⚠️ 保存できたか確認できませんでした。画面を再読み込みして、内容が入っているか確かめてください（もう一度保存する前に必ず確認）');
+        return;
+      }
+      setSync('保存失敗','err');
+      toast('⚠️ 保存できませんでした（サーバー側にも入っていないことを確認しました）。もう一度お試しください');
+    }).catch(function(){
+      /* 確認そのものができなかった＝どちらとも言えない。「失敗した」と断定しない。
+         断定すると、実際には保存できている時にやり直して二重反映になる */
+      setSync('確認できず','err');
+      toast('⚠️ 保存できたか確認できませんでした。画面を再読み込みして、内容が入っているか確かめてください（もう一度保存する前に必ず確認）');
+    });
+  }).then(function(){$('saveBtn').disabled=false});
+}
+/* 保存の目印の照合。updatedAt はクライアントが決めた値をGASがそのまま書くので、
+   これが一致すれば「今回の保存が入った」と言い切れる。
+   ★スプレッドシートは ISO 文字列を日付セルへ自動変換することがあるので、
+     文字列一致ではなく【時刻として】比べる（1秒未満の差は同一とみなす）。 */
+function saveStampSame_(a,b){
+  var pa=Date.parse(a), pb=Date.parse(b);
+  return isFinite(pa)&&isFinite(pb)&&Math.abs(pa-pb)<1000;
+}
+/* 一括保存の「実物確認」。送った変更(changes)とサーバーの現物(rows)を突き合わせ、
+   全項目一致した方だけを「保存済み」と判定する。判定を純関数に切り出すのは
+   check/unit/master_confirm_test.js で機械検証するため（画面の配線はここを呼ぶだけにする）。
+   ★真偽値はサーバーが boolean、送信側が文字列のことがあるため String() で寄せて比べる。 */
+/* 家族の配列を、比較できる形に揃える。★サーバーの _famNorm（gas/master.gs）と同じ規則。
+   食い違うと「送ったのに一致しない」＝いつまでも未保存の色が残る。 */
+function famCmp_(v){
+  if(Object.prototype.toString.call(v)!=='[object Array]') return [];
+  var K=['name','relation','role','phone','address','emergency','kp'], out=[];
+  for(var i=0;i<v.length;i++){
+    var f=v[i]; if(!f||typeof f!=='object') continue;
+    var o={};
+    for(var j=0;j<K.length;j++){
+      var k=K[j];
+      o[k]=(k==='emergency'||k==='kp')?!!bulkTruthy(f[k]):String(f[k]==null?'':f[k]).trim();
+    }
+    if(o.name===''&&o.phone===''&&o.address==='') continue;
+    out.push(o);
+  }
+  return out;
+}
+/* 対象アプリの配列を比べる形にそろえる（APP_TARGETS の順・知らない値と重複は落とす）。配列でなければ空 */
+function appsCmp_(v){
+  var a=(Object.prototype.toString.call(v)==='[object Array]')?v:[], out=[];
+  for(var j=0;j<APP_TARGETS.length;j++) if(a.indexOf(APP_TARGETS[j][0])>=0) out.push(APP_TARGETS[j][0]);
+  return out;
+}
+function verifyAppliedRows_(changes,rows){
+  var byId={},i;
+  for(i=0;i<(rows||[]).length;i++){ var r=rows[i]; if(r&&r.id!=null) byId[String(r.id)]=r; }
+  var applied=[],kept=[];
+  for(i=0;i<(changes||[]).length;i++){
+    var c=changes[i]; if(!c||c.id==null){ continue; }
+    var sv=byId[String(c.id)], ok=!!sv;
+    /* ★保存データが壊れている行(broken)は全項目を空で返してくるため、「空にする指定」と一致してしまう。保存済みと認めない */
+    if(ok&&sv.broken===true) ok=false;
+    if(ok){ for(var k in c.fields){ if(!Object.prototype.hasOwnProperty.call(c.fields,k)) continue;
+      /* ★家族は配列。String() で比べると両方 "[object Object]" になり、
+         【入っていなくても「保存済み」と判定する】。中身で比べる（2026-09-07）。 */
+      if(k==='family'){
+        if(JSON.stringify(famCmp_(sv[k]))!==JSON.stringify(famCmp_(c.fields[k]))){ ok=false; break; }
+        continue;
+      }
+      /* ★対象アプリも配列。並びをそろえて中身で比べる。サーバーに無い（未設定）時は「3つ全部」とみなさず未保存に残す */
+      if(k==='targetApps'){
+        if(Object.prototype.toString.call(sv[k])!=='[object Array]'||
+           JSON.stringify(appsCmp_(sv[k]))!==JSON.stringify(appsCmp_(c.fields[k]))){ ok=false; break; }
+        continue;
+      }
+      if(String(sv[k]==null?'':sv[k])!==String(c.fields[k]==null?'':c.fields[k])){ ok=false; break; } } }
+    (ok?applied:kept).push(String(c.id));
+  }
+  return {applied:applied,kept:kept};
+}
+/* 保存が通った後の共通処理（正常応答でも、取り直しで確認できた時でも同じことをする）。
+   ★2026-08-19: ここで openResident() を呼んで【同じ内容をもう一度サーバーから取り直していた】。
+     GAS 1往復は実測 1〜3.5秒かかるので、保存のたびに丸ごと1往復ぶん待たされていた
+     （実行ログでもサーバー側は健全＝遅さの実体はクライアントの往復回数だった）。
+     GAS が返す record は「保全キーを引き継いだ後の確定値」＝取り直したものと同じなので、
+     それで画面を組み立てる。
+   ★ただし応答に record が無い／id が取れない時は、従来どおり取り直す（安全側）。 */
+function afterSaveOk_(rec,saved,dg,ed){
+  /* dg を渡さない呼び出し・dg が今の devGen と同じ時は従来どおり */
+  if(dg!==undefined&&dg!==devGen){
+    /* ★保存の応答を待つ間に端末が現場用へ切り替わった（2026-10-01）。保存そのものは済んでいて知らせ（トースト）も出ている。
+       名簿の書き換えと詳細画面への切り替え（開いていた方の記録を入れ直して描く）はしない。名簿は次の取り直しで最新になる。
+       ★ただし編集画面は閉じる。開いたままだと、事務所PCへ戻した後にもう一度保存でき、新規登録は別の番号で二重に登録される。
+         閉じるのは「この保存を出した編集画面がまだ開いている時」だけ（その後に開いた別の方の編集画面は閉じない） */
+    bkMarkStale_();   /* 帳票の控えが古くなった印は立てる（事務所PCへ戻した後、認定期限が保存前のまま「最新」に見えないように） */
+    /* ★現場用のまま／ダイアログを開いている時は、閉じる時に「戻る」（history.back）を出さない。出すと、管理者がブロック画面から
+       開いた同期設定を popstate が勝手に閉じ、直後の読み込み直しとも競り合う（saveSyncCfg が closeSync を通さないのと同じ理由）。
+       その時に積んだままの履歴の段は、popstate と起動時の処理が消費する */
+    if(ed&&editing===ed&&$('sc-edit')&&$('sc-edit').classList.contains('on')){
+      /* ★「戻る」を出さないのは、現場用のままの時と、何かのダイアログ（同期設定・一括編集など）を開いている最中だけ。
+         事務所PCへ戻った後なら、従来どおり「戻る」で積んだ段を消費する（消費しないと、一覧で「戻る」を
+         1回押しても何も起きない状態が残る）（2026-10-02） */
+      if(getDeviceRole()==='field'||navTopModal()){
+        _navInPop=true;
+        try{ showScreen('list'); }finally{ _navInPop=false; }
+      }else showScreen('list');
+    }
+    /* ブロックだけにしていた理由（未保存）がもう無ければ、読み込み直して起動時のガードに任せる。
+       ★管理者が同期設定を開いている最中は読み込み直さない（事務所PCへ戻す操作の途中で画面を失わせない） */
+    if(getDeviceRole()==='field'&&devBlocked_&&!devDirty_().length&&!($('mSync')&&$('mSync').classList.contains('on'))) devReload_();
+    return;
+  }
+  var full=(saved&&saved.id!=null&&saved.name!=null)?saved:null;
+  var row=normRosterRow(full||rec);
+  var idx=-1;for(var i=0;i<roster.length;i++){if(String(roster[i].id)===String(row.id)){idx=i;break}}
+  /* ★応答が不十分で送った内容（rec）から行を作った時は、入院の印を名簿の今の値から引き継ぐ。
+     編集画面は入院の3キーを送らない（collectForm・2026-10-02）ので、rec から作ると入院の印が抜け、
+     一覧と共有名簿でその方の入院が一時的に消える */
+  if(!full&&idx>=0&&!('hospitalized' in row)&&('hospitalized' in roster[idx])) row.hospitalized=roster[idx].hospitalized;
+  if(idx>=0)roster[idx]=row;else roster.push(row);
+  saveRosterCache();writeCommonRoster();
+  bkMarkStale_();   /* 帳票の控え（getBulk）が古くなった印。認定期限は次に描く時に取り直す */
+  if(!full){ openResident(row.id); return; }        // 応答が不十分な時だけ取り直す
+  /* 取り直さずに詳細画面を出す（openResident の描画部分と同じ手順） */
+  showScreen('view');
+  saveOpenId(full.id);
+  curResident=full; setViewActions(true); renderView(full);
+  try{ paintHospBtn(full); }catch(e){}
+  try{ a4EnsureDayMap().then(function(){ patchDayUse(full); }).catch(function(){}); }catch(e){}
+}
+
+/* ═══════════ 画面遷移 ═══════════ */
+function showScreen(name){
+  try{a4Off();}catch(e){}   // 画面が動いたらA4様式モードは無効（a4-on 残留の保険）
+  try{wiOff();}catch(e){}   // その方らしさの紙も同じ（2026-10-17）
+  if(name!=='edit') editSnap_=null;   /* 編集画面を離れたら控えを捨てる（保存後・取消後に聞かない） */
+  ['list','view','edit'].forEach(function(s){var el=$('sc-'+s);if(el)el.classList.toggle('on',s===name)});
+  Array.prototype.forEach.call(document.querySelectorAll('.bnav button'),function(b){b.classList.toggle('on',b.getAttribute('data-sc')===name)});
+  /* 見出しタブは編集画面のものなので、他の画面へ移ったら隠す（sticky が一覧に貼り付いて残らないように） */
+  if($('editTabs')&&name!=='edit')$('editTabs').hidden=true;
+  if($('viewToc')&&name!=='view')$('viewToc').hidden=true;   /* 詳細の目次も同じ（2026-10-16 第2弾） */
+  if(name==='list'){
+    window.scrollTo(0,0);
+    saveOpenId(null);   // 一覧へ戻ったら「開いていた方」を忘れる（次の再読み込みは一覧で開く）
+    /* 非表示中に再描画された誕生日表は縮小できていない。一覧へ戻った時に測り直す */
+    if(curView==='bday'){ try{ fitBdaySheet(); }catch(e){} }
+    /* 居室一覧も同じ（非表示で測れなかった時だけ・2026-10-23） */
+    if(curView==='room'&&roomFitWait_){ try{ fitRoomScreen_(); }catch(e){} }
+    /* ケアマネ一覧も同じ（詳細・編集画面の間に描き直されて採寸できていない時だけ）。
+       測らないと倍率も掛からず、印刷の後に紙の大きさが画面に残る（cmZoomRestore_ は採寸の値が要る） */
+    if(curView==='cm'&&cmFitPx==null){ try{ fitCmSheet(); }catch(e){} }
+    /* 保存の後に認定期限へ戻った時（保存直後の取り直しが失敗していた時の再挑戦を含む） */
+    if(curView==='cert') certEnsureFresh_();
+    navLeave();
+  }
+  /* 画面を移ったら body.meal-on を付け直す/外す。mealViewActive_() は一覧が表示中かも見るので、
+     詳細・編集画面へ移れば必ず外れる（A4様式の a4Off と同じく、印から取り残しを作らない） */
+  try{ paintMealBar(); }catch(e){}
+  if(name!=='list'){
+    navEnter();
+  }
+}
+
+/* ── ブラウザの「戻る」・左スワイプで一覧へ戻す（2026-08-13 管理者の指示） ──
+   従来は画面切替が履歴に乗らず、個人画面で「戻る」を押すと介護ツールメニューまで出てしまった。
+   個人画面・編集画面に入る時に履歴を【1段だけ】積み、戻る1回＝一覧・もう1回＝メニューにする。
+   ・積むのは常に1段だけ（詳細→編集で重ねない。編集からの戻るも一覧＝現状の導線と同じ深さ）
+   ・UI操作（←一覧・下タブ・保存後の遷移など）で一覧へ戻る時は、積んだ1段を history.back() で
+     消費する。消費しないと「一覧に見えるのに、ページを出るのに戻るが2回要る」状態になる
+   ・popstate 経由の一覧表示では back() を呼ばない（呼ぶと往復が止まらない）
+   ・モーダル（同期設定・アプリ一覧・一括編集）が開いている時の「戻る」は【モーダルを閉じるだけ】。
+     一括編集は closeBulk の未保存確認に従い、取り消されたら段を積み直して何も変えない
+   ・判定は JS 変数（_navPushed）で持つ。csvStripViewParam の replaceState が
+     履歴エントリの state を消しても壊れないようにするため */
+var _navPushed=false,_navInPop=false;
+function navEnter(){
+  if(_navPushed)return;
+  try{history.pushState({rmScr:1},'');_navPushed=true;}catch(e){}
+}
+function navLeave(){
+  if(!_navPushed||_navInPop)return;
+  _navPushed=false;
+  try{history.back();}catch(e){}
+}
+/* 開いている操作モーダルがあれば「閉じる関数」を返す（閉じたら true を返す関数）。
+   一括編集は closeBulk 内の未保存確認に従う（取り消しなら開いたまま false） */
+function navTopModal(){
+  /* 印刷前の薬効辞書待ち（2026-09-24）。戻る＝「キャンセル」と同じ（待っている印刷を取り消す） */
+  if($('mMedWait')&&$('mMedWait').classList.contains('on'))return function(){mdPrintCancel_();return true};
+  /* 与薬チェックへ時間帯を送る小窓（2026-09-27）。送っている間は閉じない（false＝開いたまま） */
+  if($('mMedSlots')&&$('mMedSlots').classList.contains('on'))return function(){return msClose_()};
+  /* 薬の変更候補（2026-10-06）。反映・記録の送信中は閉じない（false＝開いたまま） */
+  if($('mMedCand')&&$('mMedCand').classList.contains('on'))return function(){return mcClose_(true)};
+  /* 薬情の取り込み（2026-10-22）。反映の送信中は閉じない（false＝開いたまま） */
+  if($('mYakujo')&&$('mYakujo').classList.contains('on'))return function(){return yjClose_(true)};
+  /* 薬情の見直し（2026-11-11）。読むだけの一覧なので、いつでも閉じる */
+  if($('mYjRev')&&$('mYjRev').classList.contains('on'))return function(){yrClose_();return true};
+  if($('mBulk')&&$('mBulk').classList.contains('on'))return function(){var p=closeBulk(true);if(p&&typeof p.then==='function')return p.then(function(){return !$('mBulk').classList.contains('on')});return !$('mBulk').classList.contains('on')};
+  if($('mSync')&&$('mSync').classList.contains('on'))return function(){closeSync();return true};
+  if($('mApps')&&$('mApps').classList.contains('on'))return function(){closeApps();return true};
+  return null;
+}
+window.addEventListener('popstate',function(ev){
+  /* 進む/戻るの両対応: いま居るエントリが「積んだ段」かどうかで旗を合わせる */
+  _navPushed=!!(ev&&ev.state&&ev.state.rmScr);
+  /* ★積んだ段へ「着地」した popstate（進むボタン・一部ブラウザの読み込み直後の発火）では
+     画面を変えない。ここで一覧へ落とすと、復元した個人画面が勝手に閉じる */
+  if(_navPushed)return;
+  /* ★画面の中の窓（su-dialog.js）が出ている間の「戻る」は、段を積み直して何もしない（ブラウザの窓の間は戻るを押せなかったのと同じ）（画面の中の窓・2026-11-13・仮置き） */
+  if(window.SUDialog&&typeof SUDialog.busy==='function'&&SUDialog.busy()){ try{history.pushState({rmScr:1},'');_navPushed=true;}catch(e){} return; }
+  /* ★モーダルが開いていれば、戻る1回ぶんは「閉じる」に充てる（画面は変えない） */
+  var m=navTopModal();
+  if(m){
+    var closed;
+    _navInPop=true;
+    try{closed=m();}finally{_navInPop=false;}
+    /* 閉じる前の確かめを画面の中の窓で聞いた時は、答えを待ってから同じ順で段を積み直す（2026-11-13） */
+    if(closed&&typeof closed.then==='function'){
+      closed.then(function(c){ if(!c||!$('sc-list').classList.contains('on')){ try{history.pushState({rmScr:1},'');_navPushed=true;}catch(e){} } });
+      return;
+    }
+    /* 取り消された（開いたまま）か、個人画面の上のモーダルだった場合は段を積み直す */
+    if(!closed||!$('sc-list').classList.contains('on')){
+      try{history.pushState({rmScr:1},'');_navPushed=true;}catch(e){}
+    }
+    return;
+  }
+  if($('sc-list').classList.contains('on'))return;   // UI操作の消費分・一覧での戻る＝何もしない
+  /* ★編集画面で未保存の変更がある時は確かめる。やめたら段を積み直して画面は変えない（2026-10-16） */
+  var lok=editLeaveOk_(true);
+  if(lok!==true){
+    /* 確かめを画面の中の窓で聞いた時は答えを待つ（やめたら段を積み直す・離れるなら一覧へ）（2026-11-13） */
+    if(lok&&typeof lok.then==='function'){
+      lok.then(function(ok){
+        if(!ok){ try{history.pushState({rmScr:1},'');_navPushed=true;}catch(e){} return; }
+        if($('sc-list').classList.contains('on'))return;
+        _navInPop=true;
+        try{showScreen('list');}finally{_navInPop=false;}
+      });
+      return;
+    }
+    try{history.pushState({rmScr:1},'');_navPushed=true;}catch(e){}
+    return;
+  }
+  _navInPop=true;
+  try{showScreen('list');}finally{_navInPop=false;}
+});
+
+/* ═══════════ A4様式印刷（旧「利用者基本情報」1枚様式・2026-08-13 管理者の指示）═══════════
+   旧スプレッドシートで使っていたA4たて1枚の様式を模倣して出力する。
+   ・既存の詳細印刷（🖨️ 印刷）には一切触れない。A4様式ボタンを押した印刷だけがこの見た目になる
+   ・生年月日は和暦＋（西暦）で出す（旧様式の「生年月日|西暦」2列に対応）
+   ・体重は weightView（正本＝体重管理アプリの最新値）を使う
+   ・支援経過は新しい順に「紙に入るだけ」出す（1枚固定の様式のため。全件は従来の詳細印刷で出る）
+   ・文字は --a4fs 基準で、長文の方は a4Fit() が 12.0→7.5px の範囲で自動的に縮めて1枚に収める */
+/* A4様式のヘッダに刷る施設表記。番号が変わったらここ1箇所だけ直す（公開している代表番号） */
+/* ★2026-09-24: 帳票右上の施設名・電話は施設情報（facility-profile.json の 施設・su-facility.js）から引く */
+/* ── 印刷の前に施設情報を待つ（2026-10-14 代表者の依頼）──
+   帳票に刷る施設名・電話・事業所名・階の分け方は施設情報（facility-profile.json・su-facility.js）から引く。
+   読む前に刷ると、施設名が空欄・階が既定（１階・２階）のままの紙が黙って出る。
+   ・読めていれば（端末の控えでも）すぐ true
+   ・まだなら SUFacility.onReady を最大 SU_FAC_WAIT_MS（3秒）待ち、読めたかどうかを返す（読めないと分かればその時点で false）
+   ・su-facility.js が無い・応答しない時は false
+   入居者マスタ・デイ利用表・フェイスシートで同じ中身（試験 facility_print_gate が一字一句同じかを見る） */
+var SU_FAC_WAIT_MS = 3000;
+var SU_FAC_NG_MSG = '⚠️ 施設情報が読めません。施設名や階を正しく刷れないため、印刷を中止しました。通信を確かめて画面を再読み込みしてから、もう一度押してください';
+function suFacReady_(ms) {
+  return new Promise(function (ok) {
+    var F = window.SUFacility, done = false, tm = null;
+    function fin() {
+      if (done) return;
+      done = true;
+      if (tm) clearTimeout(tm);
+      var r = false;
+      try { r = !!F.ready(); } catch (e) { r = false; }
+      ok(r);
+    }
+    if (!F || typeof F.ready !== 'function') { ok(false); return; }
+    try { if (F.ready()) { ok(true); return; } } catch (e) { ok(false); return; }
+    tm = setTimeout(fin, ms == null ? SU_FAC_WAIT_MS : ms);
+    try { if (typeof F.onReady === 'function') F.onReady(fin); } catch (e) { /* 呼べなくても、上でかけた時計で必ず終わる */ }
+  });
+}
+function a4Facility(){
+  var o=(window.SUFacility && SUFacility.ready()) ? SUFacility.office('施設') : null;
+  return { name: o ? (o.formalName||o.name) : '', tel: o ? o.tel : '' };
+}
+function a4Cell(h,v,flex,cls){
+  return '<div class="a4-c"'+(flex?' style="flex:'+flex+'"':'')+'>'+
+    '<span class="a4-h">'+esc(h)+'</span><span class="a4-v'+(cls?' '+cls:'')+'">'+esc(String(v==null?'':v).trim()||'　')+'</span></div>';
+}
+/* 薬備考から、移行時の確認用の注記を落として紙に出す（2026-08-18 指示）。
+   実物: 【内服(定期薬)欄の2列目・分類未確認（定期薬の続き／効能／中止のいずれか要確認）】
+   これは migrate.gs（MEDS_EXTRA_TAG）が付ける【作業上の印】で、元の薬タブの2列目を
+   分類できないまま薬備考へ退避したことを示す。外部へ渡す様式に載せる内容ではない。
+   ★データからは消さない。消すと「まだ分類を確かめていない」方が分からなくなり、
+     migrate.gs の verifyImport がこの文言で数えている件数も合わなくなる。
+     編集画面の「薬備考」欄では従来どおり見える（人が確かめて消すまで残す）。
+   ★行の中に含まれていれば落とす（行頭一致にしない）。退避の実装は注記の直後に改行を入れるが、
+     元データ側で行が結合されている方がいても取りこぼさないため。 */
+function a4MedsNotes(v){
+  return String(v==null?'':v).split('\n')
+    .filter(function(ln){ return ln.indexOf('【内服(定期薬)欄の2列目')<0 })
+    .join('\n').replace(/^\n+/,'');
+}
+/* 入居期間（日数）。★2026-08-17 から【呼び出し無し】（A4様式から入居期間の欄を外したため）。
+   消さずに残す: 消すと復活させる時に parseIsoDate を引き算する同じ不具合を作り直すことになる。
+   ★2026-08-17 修正: parseIsoDate は {y,m,d} のオブジェクトを返すので、
+   そのまま引き算すると必ず NaN になり、A4様式の「入居期間」は【常に空欄】だった（実測）。
+   詳細画面と同じ csvLocalDate（ローカル0時の Date）に揃える。
+   ★new Date('YYYY-MM-DD') は UTC 0時になるため使わない。JST 0〜9時に1日ずれる */
+function a4Days(from,to){
+  var a=csvLocalDate(from); if(!a)return'';
+  /* ★退去日が日付として読めない時は【空を返す】。移行では退去日欄の「未定」「-」等の
+     自由記述がそのまま入りうる（migrate.gs が利用者No単位で警告を出す設計）。
+     ここで今日まで数えると、同じ方の同じ日の紙で A4 だけ日数が出て詳細画面は空欄になる。
+     ★詳細画面 calcStayDays・フェイスシート fsStayDays と3本とも同じ向き（空欄）に揃えること */
+  var b=to?csvLocalDate(to):new Date();
+  if(!b)return'';
+  var d=Math.floor((b-a)/86400000);
+  return (isFinite(d)&&d>=0)?String(d):'';
+}
+/* ═════════ 💴 収支の見通し（2026-11-07 本人指示「ゴール：」）═════════
+   施設の利用料（介護度ごとの月額・前払い）と介護報酬（週間計画の限度額−2000単位・2か月後の月末に入金）を、
+   月ごとのグラフと表で見る。計算の規則は revenue-calc.js（純関数・check/unit/revenue_calc_test.js）。
+   ★読むだけ。入居者マスタ・週間計画には1バイトも書かない。
+   ★端末に残すのは表示の選び（期間・入金/発生）と施設の利用料の表（金額だけ）だけ。氏名・介護度・入院の記録・見通しに足した予定は残さない（メモリだけ）。
+   ★現場端末では取りに行かない・出さない。
+   ★入院の期間は入居者マスタの入院/復帰の記録（stateLog）から作る。stateLog は getBulk に無いので、対象の方の分を getResident で1人ずつ読む（同時3本）。 */
+var REV_UI_KEY='rmaster_rev_ui', REV_FEES_KEY='rmaster_rev_fees';
+var REV_DEFAULT_LIMITS={'要支援1':5032,'要支援2':10531,'要介護1':16765,'要介護2':19705,'要介護3':27048,'要介護4':30938,'要介護5':36217};   /* 週間計画の報酬マスタの既定と同じ（読めなかった時だけ使い、画面に出す） */
+var csRateMaster_=null;   /* 週間計画の報酬マスタ（a4EnsureDayMap が読んだ時に一緒に持つ・メモリだけ） */
+var csShare_=null;        /* 週間計画の予定から数えた訪問の割合 {byMid, byName}（同じ応答から作る・氏名は突き合わせにだけ使う・メモリだけ） */
+/* 収支の見通しが使う報酬マスタ（限度額・1単位の円）も同じ応答から持つ（2回取らない・メモリだけ・2026-11-07）。
+   a4EnsureDayMap はフェイスシートと一字一句同じ共有の処理なので、入居者マスタだけの後処理はここに置く（2026-11-11） */
+function a4OnDayData_(data){
+  csRateMaster_=(data.rateMaster&&typeof data.rateMaster==='object')?data.rateMaster:null;
+  try{ csShare_=revBuildShare_(data); }catch(eS){ csShare_=null; }
+}
+var REV={ force:false, ptrDown:false, mainPending:false, form:{}, st:null, stTried:{}, stLoading:false, stDone:0, stTotal:0, stBad:0, stGen:0, plan:[], planSeq:0, sel:'', csMsg:'', csAsked:false, bound:false,
+          params:{deduct:2000, cutoff:5, lag:2}, ui:{months:12, basis:'cash', openHosp:'eom', startBack:5, split:false} };
+var REV_START_BACKS=[0,3,5,11];   /* 表示の始まり: 今月・3か月前・半年前（5か月前＝11月なら6月）・1年前（11か月前）。既定は半年前（2026-11-07 本人指示） */
+(function(){
+  try{ var u=JSON.parse(localStorage.getItem(REV_UI_KEY)||'{}');
+       if(u&&[6,12,18,24].indexOf(u.months)>=0) REV.ui.months=u.months;
+       if(u&&(u.basis==='cash'||u.basis==='accrual')) REV.ui.basis=u.basis;
+       if(u&&(u.openHosp==='eom'||u.openHosp==='open')) REV.ui.openHosp=u.openHosp;
+       if(u&&REV_START_BACKS.indexOf(u.startBack)>=0) REV.ui.startBack=u.startBack;
+       if(u&&typeof u.split==='boolean') REV.ui.split=u.split; }catch(e){}
+})();
+/* 本人が押した・選んだ操作の描き直し（入力中の守りを通さない。守りは1分ごとの読み直しにだけ当てる） */
+function revRedraw_(){ REV.force=true; renderRoster(); }
+function revSaveUi_(){ try{ localStorage.setItem(REV_UI_KEY, JSON.stringify(REV.ui)); }catch(e){} }
+/* 施設の利用料の表: 端末で直した表 → 施設情報（residenceFees.monthly）→ 空 の順 */
+function revFees_(){
+  var C=window.RevenueCalc; if(!C) return {fees:{}, src:''};
+  try{ var s=localStorage.getItem(REV_FEES_KEY); if(s){ var f=C.normFees(JSON.parse(s)); if(Object.keys(f).length) return {fees:f, src:'device'}; } }catch(e){}
+  try{ var sec=window.SUFacility&&SUFacility.section&&SUFacility.section('residenceFees');
+       var f2=C.normFees(sec&&sec.monthly); if(Object.keys(f2).length) return {fees:f2, src:'facility'}; }catch(e){}
+  return {fees:{}, src:''};
+}
+function revLimits_(){
+  var m=csRateMaster_, lim={}, ok=false;
+  if(m&&m.careLimits&&typeof m.careLimits==='object'){
+    RevenueCalc.LEVELS.forEach(function(lv){ var v=Number(m.careLimits[lv]); if(isFinite(v)&&v>0){ lim[lv]=v; ok=true; } });
+  }
+  var fpu=Number(m&&m.feePerUnit);
+  return { limits: ok?lim:REV_DEFAULT_LIMITS, fromSchedule: ok, feePerUnit:(isFinite(fpu)&&fpu>0)?fpu:10, fpuFromSchedule:(isFinite(fpu)&&fpu>0) };
+}
+function revToday_(){ var d=new Date(); return d.getFullYear()+'-'+(d.getMonth()<9?'0':'')+(d.getMonth()+1)+'-'+(d.getDate()<10?'0':'')+d.getDate(); }
+/* 見通しに入れる方: 在籍の方＋退去日が「入金がまだ残る月」以降の方 */
+function revScope_(){
+  var C=RevenueCalc, from=C.addMonths(revStart_(), -(REV.params.lag+1))+'-01';
+  return (roster||[]).filter(function(r){
+    if(!r) return false;
+    if(r.active!==false) return true;
+    var b=bkOf(r), lv=_ymd(b.dischargeDate)||_ymd(r.dischargeDate);
+    return !!(lv&&lv>=from);
+  });
+}
+/* 週間計画の利用者ごとに、予定の基本単位から訪問の割合を数える（RevenueCalc.serviceShare）。
+   引くのは利用者No（氏名も一致する時だけ）→ 利用者No の無い記録は氏名（同姓同名は引かない）。デイ利用欄（a4DaysFor）と同じ作法 */
+function revBuildShare_(db){
+  if(!window.RevenueCalc) return null;
+  var out={byMid:Object.create(null), byName:Object.create(null), dupMid:Object.create(null), dupName:Object.create(null)};
+  var rm=(db&&db.rateMaster)||{};
+  ((db&&Array.isArray(db.residents))?db.residents:[]).forEach(function(r){
+    if(!r) return;
+    var sh=RevenueCalc.serviceShare(r.events, r.careLevel, rm), nk=a4NmKey(r.name);
+    var mid=(r.masterId==null||r.masterId==='')?null:String(r.masterId), rec={s:sh, nk:nk, mid:mid};
+    if(mid){ if(out.byMid[mid]) out.dupMid[mid]=true; else out.byMid[mid]=rec; }
+    if(nk){ if(out.byName[nk]) out.dupName[nk]=true; else out.byName[nk]=rec; }
+  });
+  return out;
+}
+/* 分けられない理由（画面の内訳の理由の欄に出す） */
+function revNoShareWhy_(r){
+  if(r.planned) return '入居予定で使う予定が分からない';
+  if(!csShare_) return '週間計画を読めなかった';
+  return '週間計画の予定から分けられない（予定が無い・利用者No と氏名で結べない）';
+}
+function revShareOf_(r){
+  var m=csShare_; if(!m||!r) return null;
+  var nk=a4NmKey(r.name), id=String(r.id);
+  if(m.dupMid[id]) return null;
+  var a=m.byMid[id]; if(a) return (nk&&a.nk===nk)?a.s:null;
+  if(!nk||m.dupName[nk]) return null;
+  var b=m.byName[nk]; return (b&&b.mid==null)?b.s:null;
+}
+function revStart_(){ return RevenueCalc.addMonths(revToday_().slice(0,7), -REV.ui.startBack); }
+function revEnsure(force){
+  if(getDeviceRole()==='field') return;
+  if(!window.RevenueCalc) return;
+  bkEnsure(!!force);
+  if(force||!REV.csAsked){
+    REV.csAsked=true;
+    if(force){ a4DayMap=null; a4DayFailAt=0; }
+    a4EnsureDayMap().then(function(msg){ REV.csMsg=msg||''; if(curView==='rev') renderRoster(); });
+  }
+  if(force){ REV.st=null; REV.stTried={}; REV.stBad=0; REV.stGen++; REV.stLoading=false; }
+  revLoadStates_();
+}
+/* 入院/復帰の記録を読む（同時3本・世代で古い応答を捨てる）。
+   ★まだ読んでいない方だけを読む（入居日・退去日が後から届いた・入金のずれを変えた時に、対象に入った方を足して読む）。
+   読めなかった方は REV.stTried に入れ、この画面の中では繰り返し取りに行かない（「最新に取り直す」で読み直す） */
+function revLoadStates_(){
+  if(REV.stLoading) return;
+  if(!roster||!roster.length) return;
+  if(!REV.st) REV.st={};
+  var ids=revScope_().map(function(r){ return String(r.id); }).filter(function(id){ return !REV.st[id]&&!REV.stTried[id]; });
+  if(!ids.length) return;
+  var gen=++REV.stGen, dg=devGen, i=0;
+  REV.stLoading=true; REV.stDone=0; REV.stTotal=ids.length;
+  function next(){
+    if(gen!==REV.stGen||dg!==devGen||i>=ids.length) return Promise.resolve();
+    var id=ids[i++];
+    return revApiGet_({action:'getResident',id:id}).then(function(d){
+      if(gen!==REV.stGen||dg!==devGen) return;
+      var rec=d&&d.record;
+      if(!rec){ REV.stTried[id]=1; REV.stBad++; return; }
+      /* 残すのは入院の期間と今の状態だけ（記録の他の項目はここで捨てる） */
+      var ab=RevenueCalc.absencesFromStateLog(rec.stateLog);
+      if(rec.hospitalized===true&&!ab.some(function(a){ return !a.to; })){
+        var f=RevenueCalc.jstDate(rec.hospitalizedAt)||revToday_();
+        ab.push({from:f, to:''});
+      }
+      REV.st[id]={ab:ab, hz:rec.hospitalized===true};
+    }).catch(function(){ if(gen===REV.stGen&&dg===devGen){ REV.stTried[id]=1; REV.stBad++; } })
+      .then(function(){ if(gen!==REV.stGen||dg!==devGen) return; REV.stDone++; revPaintStatus_(); return next(); });
+  }
+  var lanes=[]; for(var k=0;k<3;k++) lanes.push(next());
+  Promise.all(lanes).then(function(){
+    if(gen!==REV.stGen||dg!==devGen) return;
+    REV.stLoading=false;
+    if(curView==='rev') renderRoster();
+  });
+}
+/* 入院の記録の読み取り。入居者マスタの他の読み取りと同じ道（SUResRead）を通し、開いた記録の画面名だけを分ける
+   （収支の見通しから開いたと見分けられるように・2026-11-07）。SUResRead が無い時は Google へ */
+function revApiGet_(params){
+  return window.SUResRead ? window.SUResRead.call(params, function(){ return apiGetGas_(params,30000); }, {screen:'resident-master-rev'}) : apiGetGas_(params,30000);
+}
+function revPurge_(){ csShare_=null; REV.form={}; REV.st=null; REV.stTried={}; REV.stBad=0; REV.stGen++; REV.stLoading=false; REV.plan=[]; REV.sel=''; REV.csAsked=false; csRateMaster_=null; }
+function revPaintStatus_(){
+  var el=$('revStatus'); if(!el) return;
+  el.textContent=revStatusText_();
+}
+function revStatusText_(){
+  var a=[];
+  if(bkLoading) a.push('入居日・退去日を取得しています…');
+  else if(bkErr) a.push('入居日・退去日を取得できませんでした（'+bkErr+'）');
+  if(REV.stLoading) a.push('入院の記録を読んでいます（'+REV.stDone+'／'+REV.stTotal+'名）…');
+  else if(REV.stBad) a.push('入院の記録を読めなかった方が'+REV.stBad+'名います（入院なしとして数えています）');
+  return a.join('　');
+}
+/* 計算に渡す入居者の並び（予定を重ねる） */
+function revResidents_(){
+  var C=RevenueCalc, today=revToday_(), nextM1=C.addMonths(today.slice(0,7),1)+'-01';
+  var list=revScope_().map(function(r){
+    var b=bkOf(r), id=String(r.id), s=REV.st&&REV.st[id];
+    var ab=s?s.ab.map(function(a){ return {from:a.from, to:a.to, open:!a.to}; }):[];
+    return {key:id, name:r.name||'', careLevel:r.careLevel||b.careLevel||'', admit:_ymd(b.admissionDate), leave:_ymd(b.dischargeDate)||(r.active===false?_ymd(r.dischargeDate):''),
+            absences:ab, hz:!!(s?s.hz:r.hospitalized), visitShare:revShareOf_(r)};
+  });
+  var byKey={}; list.forEach(function(x){ byKey[x.key]=x; });
+  REV.plan.forEach(function(p){
+    if(p.type==='in') list.push({key:'plan-'+p.seq, name:'入居予定（'+p.label+'）', careLevel:p.level, admit:p.date, planned:true, absences:[], visitShare:(typeof p.share==='number'?p.share:null)});
+    var t=byKey[p.id]; if(!t) return;
+    if(p.type==='out') t.leave=p.date;
+    if(p.type==='hosp') t.absences.push({from:p.date, to:p.to||'', open:!p.to});
+    /* 戻る見込み: 戻る日が分からない入院（いちばん新しいもの）に戻る日を入れる */
+    if(p.type==='ret'){ var o=t.absences.filter(function(a){ return a.open&&a.from<p.date; }).pop(); if(o){ o.to=p.date; o.open=false; } }
+  });
+  /* 戻る日が分からない入院: 既定は「今月末に戻る」（選べる・仮置き） */
+  if(REV.ui.openHosp==='eom') list.forEach(function(x){ (x.absences||[]).forEach(function(a){ if(a.open) a.to=(nextM1>a.from?nextM1:C.addMonths(a.from.slice(0,7),1)+'-01'); }); });
+  return list;
+}
+function revCompute_(){
+  var C=RevenueCalc, L=revLimits_(), F=revFees_();
+  /* 期間＝今月を含めた先の月数。表示の始まり（今月より前の月）はその前に足す＝先の月はいつも見える */
+  var out=C.compute({ residents:revResidents_(), start:revStart_(), months:REV.ui.startBack+REV.ui.months,
+                      limits:L.limits, fees:F.fees, feePerUnit:L.feePerUnit,
+                      deductUnits:REV.params.deduct, cutoffDay:REV.params.cutoff, lagMonths:REV.params.lag });
+  out.L=L; out.F=F; return out;
+}
+/* ── 描く ── */
+function revHtml(mainOnly){
+  if(getDeviceRole()==='field'){ revPurge_(); if(mainOnly) return null; return '<div class="empty">現場端末では収支の見通しを表示しません</div>'; }
+  if(!window.RevenueCalc){ if(mainOnly) return null; return '<div class="empty">収支の計算の部品（revenue-calc.js）を読み込めませんでした。ページを読み込み直してください</div>'; }
+  revBind_();
+  revLoadStates_();   /* まだ読んでいない方だけ（読み終えていれば何もしない） */
+  var C=RevenueCalc, o=revCompute_(), b=REV.ui.basis, P=REV.params;
+  if(!o.ok){ if(mainOnly) return null; return '<div class="empty">'+esc(o.error)+'</div>'; }
+  var ms=o.months, val=function(M){ return b==='cash'?M.total:M.totalAccrual; };
+  var fv=function(M){ return b==='cash'?M.facility:M.facilityAccrual; }, cv=function(M){ return b==='cash'?M.care:M.careAccrual; };
+  var vv=function(M){ return b==='cash'?M.careVisit:M.careVisitAccrual; }, dv=function(M){ return b==='cash'?M.careDay:M.careDayAccrual; }, ov=function(M){ return b==='cash'?M.careOther:M.careOtherAccrual; };
+  if(!REV.sel||!ms.some(function(M){ return M.ym===REV.sel; })){ var cy=revToday_().slice(0,7); REV.sel=ms.some(function(M){ return M.ym===cy; })?cy:ms[0].ym; }
+  var h='<div class="rev-hd"><h2>💴 収支の見通し</h2><span class="rev-st" id="revStatus" role="status" aria-live="polite">'+esc(revStatusText_())+'</span>'+
+     '<button type="button" class="rev-btn" data-rev="reload">🔄 最新に取り直す</button></div>';
+  var hd=h; h='';
+  /* 知らせる帯（前提が欠けている時） */
+  var warn=[];
+  if(!Object.keys(o.F.fees).length) warn.push('施設の利用料の表が入っていません。下の「施設の利用料（月額）」に介護度ごとの月額を入れてください（施設の利用料は0円で数えています）');
+  if(!o.L.fromSchedule) warn.push('週間計画の限度額を読めなかったため、全国の既定の限度額で数えています'+(REV.csMsg?'（'+esc(REV.csMsg.replace(/、デイ利用欄は「未確認」で印刷します/,''))+'）':''));
+  if(!bkRows&&!bkLoading) warn.push('入居日・退去日がまだ読めていないため、入居した月の日割り・退去を数えていません');
+  if(Object.keys(o.F.fees).length){
+    var nofee={}; o.months[0].rows.concat(o.months[o.months.length-1].rows).forEach(function(r){ if(r.level&&o.F.fees[r.level]==null) nofee[r.level]=1; });
+    var nf=Object.keys(nofee); if(nf.length) warn.push('施設の利用料の表に '+esc(nf.join('・'))+' の額が無いため、その方の施設の利用料は0円で数えています');
+  }
+  if(o.warnings.length) warn.push('入居日・介護度の分からない方が'+o.warnings.length+'名います（'+o.warnings.slice(0,5).map(function(w){ return esc(w.name||'予定')+'：'+esc(w.notes[0]); }).join('／')+(o.warnings.length>5?' ほか':'')+'）');
+  if(warn.length) h+='<div class="rev-warn" role="note"><b>⚠ 確かめてください</b><ul>'+warn.map(function(w){ return '<li>'+w+'</li>'; }).join('')+'</ul></div>';
+  /* 大きな数字（今月・来月は表示の始まりに関わらず今月を基準にする） */
+  var cur=revToday_().slice(0,7), ci=0; ms.forEach(function(M,i){ if(M.ym===cur) ci=i; });
+  var m0=ms[ci], m1=ms[ci+1]||ms[ci], sumF=0, nF=0, lost=0;
+  ms.forEach(function(M,i){ if(i>=ci){ sumF+=val(M); nF++; } lost+=(i>=ci?M.careLostAbsent:0); });
+  var bl=(b==='cash'?'入金':'発生'), sp=REV.ui.split;
+  var subOf=function(M){ return sp ? ('施設 '+C.yen(fv(M))+'円・訪問 '+C.yen(vv(M))+'円・通所 '+C.yen(dv(M))+'円'+(ov(M)?'・分けられない '+C.yen(ov(M))+'円':''))
+                                   : ('施設 '+C.yen(fv(M))+'円・介護報酬 '+C.yen(cv(M))+'円'); };
+  h+='<div class="rev-kpi">'+
+     revTile_('今月（'+(+m0.ym.slice(5))+'月）の'+bl+'の見込み', val(m0), subOf(m0))+
+     revTile_('来月（'+(+m1.ym.slice(5))+'月）の'+bl+'の見込み', val(m1), '前の月との差 '+revDiff_(val(m1)-val(m0)))+
+     revTile_('今月から'+nF+'か月の'+bl+'の合計', sumF, '1か月あたり '+C.yen(nF?sumF/nF:0)+'円')+
+     revTile_('入院で減る介護報酬（今月から'+nF+'か月の入金）', -lost, '入院の日数ぶん日割りで減った分')+
+     '</div>';
+  /* 選び */
+  var sb=REV.ui.startBack, sbLab=function(k){ var ym=C.addMonths(cur,-k); return (k===0?'今月':(k===5?'半年前':(k===11?'1年前':k+'か月前')))+'（'+(+ym.slice(5))+'月）から'; };
+  h+='<div class="rev-ctl">'+
+     '<span class="rev-seg" role="group" aria-label="グラフと表の数え方">'+
+       '<button type="button" data-rev="basis" data-val="cash" aria-pressed="'+(b==='cash')+'">お金が入る月で見る</button>'+
+       '<button type="button" data-rev="basis" data-val="accrual" aria-pressed="'+(b==='accrual')+'">利用した月で見る</button></span>'+
+     '<label class="rev-lb">表示の始まり <select data-rev="startBack">'+REV_START_BACKS.map(function(k){ return '<option value="'+k+'"'+(k===sb?' selected':'')+'>'+esc(sbLab(k))+'</option>'; }).join('')+'</select></label>'+
+     '<label class="rev-lb">今月から先 <select data-rev="months">'+[6,12,18,24].map(function(n){ return '<option value="'+n+'"'+(n===REV.ui.months?' selected':'')+'>'+n+'か月（今月を含む）</option>'; }).join('')+'</select></label>'+
+     '<label class="rev-chk"><input type="checkbox" data-rev="split"'+(sp?' checked':'')+'> 介護報酬を訪問と通所に分ける</label>'+
+     '</div>';
+  h+=revChart_(ms, b, fv, cv, vv, dv, ov, sp, cur);
+  /* 月ごとの表 */
+  h+='<div class="rev-tw"><table class="rev-tbl"><caption>月ごとの'+(b==='cash'?'入金（お金が入る月）':'発生（利用した月）')+'の見込み（円）・行を押すとその月の内訳。今月より前の月も記録から数えた見込みです（実際の入金の記録ではありません。過去の月も今の介護度・今の料金表で数えています）</caption>'+
+     '<thead><tr><th scope="col">月</th><th scope="col">人数</th><th scope="col">施設の利用料</th>'+
+     (sp?'<th scope="col">訪問</th><th scope="col">通所</th><th scope="col">分けられない分</th>':'')+
+     '<th scope="col">介護報酬'+(sp?'（計）':'')+'</th><th scope="col">合計</th><th scope="col">前の月との差</th><th scope="col">入院で減る分</th></tr></thead><tbody>';
+  ms.forEach(function(M,i){
+    var d=i?val(M)-val(ms[i-1]):null, on=M.ym===REV.sel, tag=M.ym===cur?'（今月）':(M.ym<cur?'（前）':'');
+    h+='<tr class="'+(on?'on':'')+(M.ym<cur?' past':'')+'" data-rev="sel" data-ym="'+esc(M.ym)+'" tabindex="0" aria-selected="'+on+'">'+
+       '<th scope="row">'+esc(C.ymLabel(M.ym))+tag+'</th><td>'+M.people+'名</td><td>'+C.yen(fv(M))+'</td>'+
+       (sp?'<td>'+C.yen(vv(M))+'</td><td>'+C.yen(dv(M))+'</td><td>'+(ov(M)?C.yen(ov(M)):'—')+'</td>':'')+
+       '<td>'+C.yen(cv(M))+'</td><td class="tot">'+C.yen(val(M))+'</td><td>'+(d==null?'—':revDiff_(d))+'</td><td>'+(b==='cash'&&M.careLostAbsent?'−'+C.yen(M.careLostAbsent):'—')+'</td></tr>';
+  });
+  h+='</tbody></table></div>';
+  if(sp) h+='<p class="rev-note">訪問と通所の分け方：その方の週間計画の予定の単位（週間計画が数えた加算込みの単位。無い予定は基本単位）の割合で、介護報酬の見込みを按分しています。週間計画に予定の無い方・結べない方・使う予定の分からない入居予定の方は「分けられない分」です。'+(csShare_?'':'<b>いまは週間計画を読めていないため、全員が「分けられない分」です。</b>')+'</p>';
+  h+=revDetail_(ms.filter(function(M){ return M.ym===REV.sel; })[0], b);
+  if(mainOnly) return {main:h, o:o};
+  return '<div class="rev" id="revRoot">'+hd+'<div id="revMain">'+h+'</div>'+revPlanHtml_()+revPremiseHtml_(o)+'</div>';
+}
+/* 数字の部分（大きな数字・グラフ・表・内訳・知らせ）だけを差し替える。入力欄はそのまま。
+   ★マウスを押している間（押した部品が消えると1回目のクリックが効かない）は、離した後に差し替える */
+function revRedrawMain_(){
+  if(curView!=='rev'||!$('revMain')) return;
+  if(REV.ptrDown){ REV.mainPending=true; return; }
+  REV.mainPending=false;
+  var r=revHtml(true); if(!r||typeof r!=='object') return;
+  var ae=document.activeElement, keep=(ae&&$('revMain').contains(ae))?revFocusKey_(ae):null;
+  $('revMain').innerHTML=r.main;
+  revPaintStatus_();
+  var fs=$('revFeeSrc'); if(fs) fs.textContent=revFeeSrcText_(r.o.F.src);
+  var fr=$('revFeeReset'); if(fr) fr.hidden=(r.o.F.src!=='device');
+  /* 前提の欄の文も、週間計画を読み終えた後の値に合わせる（入力欄は作り直さない） */
+  var ls=$('revLimSrc'); if(ls) ls.textContent=revLimSrcText_(r.o.L);
+  var fp=$('revFpu'); if(fp) fp.textContent=String(r.o.L.feePerUnit);
+  var ll=$('revLimLine'); if(ll) ll.innerHTML=revLimLineText_(r.o.L);
+  if(keep){ var el=$('revMain').querySelector(keep); if(el) el.focus(); }
+}
+/* 描き直した後に同じ部品へ戻るための目印（属性だけ・中身の値は使わない） */
+function revFocusKey_(el){
+  if(!el||!el.getAttribute) return null;
+  if(el.id) return '#'+el.id;
+  var a=el.getAttribute('data-rev'); if(!a) return null;
+  var k='[data-rev="'+a+'"]';
+  ['data-ym','data-val','data-k','data-lv','data-seq'].forEach(function(n){ var v=el.getAttribute(n); if(v!=null) k+='['+n+'="'+String(v).replace(/["\\]/g,'')+'"]'; });
+  return k;
+}
+function revLimSrcText_(L){ return L.fromSchedule?'週間計画の報酬マスタ':'全国の既定（週間計画を読めなかったため）'; }
+function revLimLineText_(L){ var C=RevenueCalc; return '限度額（単位/月）：'+C.LEVELS.map(function(lv){ return esc(lv.replace('要介護','介護').replace('要支援','支援'))+' '+C.yen(L.limits[lv]||0); }).join('・'); }
+function revFeeSrcText_(src){ return src==='device'?'この端末で入れた表':(src==='facility'?'施設情報の表':'まだ入っていません'); }
+function revDiff_(d){ var C=RevenueCalc; return d>0?'＋'+C.yen(d)+'円':(d<0?C.yen(d)+'円':'±0円'); }
+function revTile_(lb, v, sub){
+  return '<div class="rev-tile"><div class="k">'+esc(lb)+'</div><div class="v">'+esc(RevenueCalc.yen(v))+'<small>円</small></div><div class="s">'+esc(sub)+'</div></div>';
+}
+/* 介護報酬＝棒（訪問と通所に分ける時は積み上げ）・施設の利用料＝折れ線。同じ円の目盛り1本（2026-11-07 本人指示）。
+   数字は表にもある（色だけに頼らない・線と棒で形も違う） */
+function revChart_(ms, b, fv, cv, vv, dv, ov, sp, cur){
+  var C=RevenueCalc, W=760, H=320, L=64, R=16, T=34, B=44, n=ms.length;
+  var max=0; ms.forEach(function(M){ max=Math.max(max, cv(M), fv(M)); });
+  var step=revNiceStep_(max/4||1), top=Math.max(step, Math.ceil(max/step)*step);
+  var y=function(v){ return T+(H-T-B)*(1-v/top); }, gx=(W-L-R)/n, bw=Math.min(36,gx*0.56);
+  var leg=sp
+    ? '<span class="rev-leg"><i class="sw v" aria-hidden="true"></i>訪問の介護報酬</span><span class="rev-leg"><i class="sw d" aria-hidden="true"></i>通所の介護報酬</span><span class="rev-leg"><i class="sw o" aria-hidden="true"></i>分けられない分</span>'
+    : '<span class="rev-leg"><i class="sw c" aria-hidden="true"></i>介護報酬</span>';
+  leg+='<span class="rev-leg"><i class="ln" aria-hidden="true"></i>施設の利用料（折れ線）</span>';
+  var s='<figure class="rev-fig"><figcaption>'+leg+'<span class="rev-cap">'+(b==='cash'?'お金が入る月':'利用した月')+'ごと・棒の上は介護報酬（万円）</span></figcaption>'+
+        '<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="月ごとの介護報酬（棒）と施設の利用料（折れ線）のグラフ（数字は下の表と同じ）" class="rev-svg">';
+  for(var g=0; g<=top+0.5; g+=step){
+    s+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+y(g).toFixed(1)+'" y2="'+y(g).toFixed(1)+'" class="grid"/>'+
+       '<text x="'+(L-6)+'" y="'+(y(g)+4).toFixed(1)+'" text-anchor="end" class="ax">'+esc(revMan_(g))+'</text>';
+  }
+  /* 今月の位置（今月より前は記録から数えた見込み） */
+  ms.forEach(function(M,i){ if(M.ym===cur&&i>0){ var x=L+gx*i; s+='<line x1="'+x.toFixed(1)+'" x2="'+x.toFixed(1)+'" y1="'+(T-18)+'" y2="'+(H-B)+'" class="now"/><text x="'+(x+4).toFixed(1)+'" y="'+(T-8)+'" class="ax nowl">今月→</text>'; } });
+  var pts=[], thin=n>24;   /* 25本以上は月の名前と数を1本おき（今月と選んだ月は必ず出す）＝隣と重ならない */
+  ms.forEach(function(M,i){
+    var cx=L+gx*i+gx/2, x=cx-bw/2, base=y(0), on=M.ym===REV.sel, c=cv(M), f=fv(M);
+    var parts=sp?[['v',vv(M)],['d',dv(M)],['o',ov(M)]]:[['c',c]];
+    var tip=C.ymLabel(M.ym)+'：介護報酬 '+C.yen(c)+'円'+(sp?'（訪問 '+C.yen(vv(M))+'円・通所 '+C.yen(dv(M))+'円'+(ov(M)?'・分けられない '+C.yen(ov(M))+'円':'')+'）':'')+'・施設の利用料 '+C.yen(f)+'円・合計 '+C.yen(c+f)+'円';
+    s+='<g class="bar'+(on?' on':'')+(M.ym<cur?' past':'')+'" data-rev="sel" data-ym="'+esc(M.ym)+'" tabindex="0" role="button" aria-label="'+esc(tip)+'"><title>'+esc(tip)+'</title>'+
+       '<rect class="hit" x="'+(cx-gx/2).toFixed(1)+'" y="'+T+'" width="'+gx.toFixed(1)+'" height="'+(H-T-B)+'"/>';
+    var acc=0, live=parts.filter(function(p){ return p[1]>0; });
+    live.forEach(function(p,k){
+      var y0=y(acc), y1=y(acc+p[1]); acc+=p[1];
+      var gap=(k>0)?2:0, hgt=Math.max(0,(y0-gap)-y1);
+      s+=(k===live.length-1)?revTopBar_(x, y1, bw, hgt, p[0]):'<rect class="'+p[0]+'" x="'+x.toFixed(1)+'" y="'+y1.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+hgt.toFixed(1)+'"/>';
+    });
+    var showLb=!thin||i%2===0||on||M.ym===cur;
+    s+=(showLb?'<text x="'+cx.toFixed(1)+'" y="'+(y(c)-6).toFixed(1)+'" text-anchor="middle" class="lbl">'+esc(revMan_(c,1))+'</text>'+
+       '<text x="'+cx.toFixed(1)+'" y="'+(H-B+16)+'" text-anchor="middle" class="ax'+(on?' on':'')+'">'+(+M.ym.slice(5))+'月</text>':'')+
+       ((i===0||M.ym.slice(5)==='01')?'<text x="'+cx.toFixed(1)+'" y="'+(H-B+32)+'" text-anchor="middle" class="ax yr">'+M.ym.slice(0,4)+'年</text>':'')+
+       '</g>';
+    pts.push([cx, y(f), f]);
+  });
+  /* 施設の利用料の折れ線（2px・点は8px）。最後の点の横に名前を直接書く */
+  if(pts.length){
+    s+='<polyline class="fline" points="'+pts.map(function(p){ return p[0].toFixed(1)+','+p[1].toFixed(1); }).join(' ')+'"/>';
+    pts.forEach(function(p){ s+='<circle class="fdot" cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="4"/>'; });
+  }
+  s+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+y(0)+'" y2="'+y(0)+'" class="base"/></svg></figure>';
+  return s;
+}
+function revTopBar_(x, y, w, h, cls){
+  if(h<=0) return '';
+  var r=Math.min(4, h, w/2);
+  return '<path class="'+cls+'" d="M'+x.toFixed(1)+' '+(y+h).toFixed(1)+'V'+(y+r).toFixed(1)+'Q'+x.toFixed(1)+' '+y.toFixed(1)+' '+(x+r).toFixed(1)+' '+y.toFixed(1)+
+         'H'+(x+w-r).toFixed(1)+'Q'+(x+w).toFixed(1)+' '+y.toFixed(1)+' '+(x+w).toFixed(1)+' '+(y+r).toFixed(1)+'V'+(y+h).toFixed(1)+'Z"/>';
+}
+function revNiceStep_(v){ var p=Math.pow(10, Math.floor(Math.log(v)/Math.LN10)), q=v/p; return (q<=1?1:q<=2?2:q<=5?5:10)*p; }
+function revMan_(v, d){ var m=v/10000; return (d?(Math.round(m*10)/10):Math.round(m))+(d?'':'万'); }
+/* 選んだ月の人ごとの内訳 */
+function revDetail_(M, b){
+  if(!M) return '';
+  var C=RevenueCalc, P=REV.params;
+  var rows=M.rows.slice().sort(function(x,y){ return (b==='cash'?(y.facility+y.care)-(x.facility+x.care):(y.facilityAccrual+y.careAccrual)-(x.facilityAccrual+x.careAccrual)); });
+  var h='<section class="rev-det" aria-labelledby="revDetH"><h3 id="revDetH">'+esc(C.ymLabel(M.ym))+'の内訳（'+(b==='cash'?'この月に入るお金':'この月に利用した分')+'）</h3>';
+  if(!rows.length) return h+'<p class="rev-note">この月に数える方はいません</p></section>';
+  var sp=REV.ui.split;
+  h+='<div class="rev-tw"><table class="rev-tbl det"><thead><tr><th scope="col">入居者</th><th scope="col">介護度</th><th scope="col">施設の利用料</th>'+(sp?'<th scope="col">訪問</th><th scope="col">通所</th><th scope="col">分けられない</th>':'')+'<th scope="col">介護報酬</th><th scope="col">合計</th><th scope="col">内訳の理由</th></tr></thead><tbody>';
+  var sf=0, sc=0, sv=0, sd=0, so=0;
+  rows.forEach(function(r){
+    var f=b==='cash'?r.facility:r.facilityAccrual, c=b==='cash'?r.care:r.careAccrual, why=[];
+    var rv=b==='cash'?r.careVisit:r.careVisitAccrual, rd=b==='cash'?r.careDay:r.careDayAccrual, ro=b==='cash'?r.careOther:r.careOtherAccrual;
+    sf+=f; sc+=c; sv+=rv; sd+=rd; so+=ro;
+    if(b==='cash'){
+      if(r.admitHere) why.push('入居した月：この月の日割り（'+r.stay+'日）＋翌月分');
+      else if(r.facility) why.push('施設の利用料は翌月分');
+      if(r.care){
+        var w=(+r.careFor.slice(5))+'月分の介護報酬';
+        if(r.svcAdmit) w+='（入居した月の日割り '+r.svcStay+'／'+r.svcMd+'日'+(r.svcDeducted?'・−'+P.deduct+'単位':'・'+P.cutoff+'日以降の入居なので差し引かない')+'）';
+        else if(r.svcStay<r.svcMd) w+='（退去まで '+r.svcStay+'／'+r.svcMd+'日）';
+        if(r.svcAbsent) w+='・入院 '+r.svcAbsent+'日で −'+C.yen(r.careLostAbsent)+'円';
+        why.push(w);
+      }
+    }else{
+      if(r.admitHere) why.push('入居した月（'+r.stay+'／'+r.md+'日）');
+      if(r.leaveHere) why.push('退去した月（'+r.stay+'／'+r.md+'日）');
+      if(r.absent) why.push('入院 '+r.absent+'日');
+    }
+    if(sp&&c&&r.visitShare==null) why.push('訪問・通所に分けられない：'+revNoShareWhy_(r));
+    if(r.planned) why.push('見通しに足した予定');
+    if(r.notes.length) why.push('⚠ '+r.notes[0]);
+    h+='<tr'+(r.planned?' class="plan"':'')+'><th scope="row">'+esc(r.name||'（名前なし）')+'</th><td>'+esc((r.level||'—').replace('要介護','介護'))+'</td><td>'+C.yen(f)+'</td>'+(sp?'<td>'+(r.visitShare==null?'—':C.yen(rv))+'</td><td>'+(r.visitShare==null?'—':C.yen(rd))+'</td><td>'+(ro?C.yen(ro):'—')+'</td>':'')+'<td>'+C.yen(c)+'</td><td class="tot">'+C.yen(f+c)+'</td><td class="why">'+esc(why.join('　'))+'</td></tr>';
+  });
+  h+='</tbody><tfoot><tr><th scope="row">合計</th><td></td><td>'+C.yen(sf)+'</td>'+(sp?'<td>'+C.yen(sv)+'</td><td>'+C.yen(sd)+'</td><td>'+C.yen(so)+'</td>':'')+'<td>'+C.yen(sc)+'</td><td class="tot">'+C.yen(sf+sc)+'</td><td></td></tr></tfoot></table></div></section>';
+  return h;
+}
+/* 見通しに足す予定（メモリだけ・保存しない） */
+function revPlanHtml_(){
+  var C=RevenueCalc, opts=revScope_().filter(function(r){ return r.active!==false; }).slice().sort(byKana)
+        .map(function(r){ return '<option value="'+esc(r.id)+'">'+esc(r.name||'')+'</option>'; }).join('');
+  var h='<section class="rev-plan" aria-labelledby="revPlanH"><h3 id="revPlanH">見通しに予定を足す（この画面の中だけ・保存しません）</h3>'+
+    '<div class="rev-form">'+
+    '<label class="rev-lb">種類 <select id="revPType"><option value="in">入居予定</option><option value="out">退去予定</option><option value="hosp">入院予定</option><option value="ret">入院中の方が戻る見込み</option></select></label>'+
+    '<label class="rev-lb" id="revPWhoL">入居者 <select id="revPWho">'+opts+'</select></label>'+
+    '<label class="rev-lb" id="revPShL">使う予定 <select id="revPSh"><option value="">分からない</option><option value="1">訪問だけ</option><option value="0">通所だけ</option><option value="0.5">半々</option></select></label>'+
+    '<label class="rev-lb" id="revPLvL">介護度 <select id="revPLv">'+['要介護1','要介護2','要介護3','要介護4','要介護5','要支援1','要支援2'].map(function(l){ return '<option>'+l+'</option>'; }).join('')+'</select></label>'+
+    '<label class="rev-lb"><span id="revPDateLb">入居日</span> <input type="date" id="revPDate"></label>'+
+    '<label class="rev-lb" id="revPToL">戻る日（空＝未定） <input type="date" id="revPTo"></label>'+
+    '<button type="button" class="rev-btn pri" data-rev="addplan">＋ 足す</button></div>'+
+    '<p class="rev-note" id="revPMsg" role="status" aria-live="polite"></p>';
+  if(REV.plan.length){
+    h+='<ul class="rev-plist">'+REV.plan.map(function(p){
+      var who=p.type==='in'?('介護度 '+p.level.replace('要介護','')):(p.name||'');
+      var lb={in:'入居予定',out:'退去予定',hosp:'入院予定',ret:'戻る見込み'}[p.type];
+      return '<li><span>'+esc(lb)+'：'+esc(who)+'　'+esc(p.date.replace(/-/g,'/'))+(p.type==='hosp'?'〜'+esc(p.to?p.to.replace(/-/g,'/'):'未定'):'')+'</span>'+
+             '<button type="button" class="rev-btn" data-rev="delplan" data-seq="'+p.seq+'" aria-label="'+esc(lb+' '+who+' を外す')+'">外す</button></li>';
+    }).join('')+'</ul>';
+  }
+  return h+'</section>';
+}
+/* 計算の前提（いつも見える所に出す）と、変えられる数字 */
+function revPremiseHtml_(o){
+  var C=RevenueCalc, P=REV.params, L=o.L, F=o.F;
+  var h='<details class="rev-prem" open><summary>計算の前提（数字を変えると、すぐに計算し直します・この画面の中だけ）</summary><ul>'+
+    '<li>介護報酬（1か月まるごと居た月）＝（介護度の限度額 − <input type="number" inputmode="numeric" min="0" max="10000" step="100" data-rev="p" data-k="deduct" value="'+P.deduct+'" aria-label="差し引く単位"> 単位）× <span id="revFpu">'+esc(String(L.feePerUnit))+'</span>円'+
+      '（限度額と1単位の円は<span id="revLimSrc">'+revLimSrcText_(L)+'</span>）</li>'+
+    '<li>入居した月は日割り。入居日が <input type="number" inputmode="numeric" min="1" max="31" data-rev="p" data-k="cutoff" value="'+P.cutoff+'" aria-label="差し引きをやめる日"> 日以降なら、その月は差し引かない</li>'+
+    '<li>介護報酬は利用した月の <input type="number" inputmode="numeric" min="0" max="6" data-rev="p" data-k="lag" value="'+P.lag+'" aria-label="入金までの月数"> か月後の月末に入る（入院の日・退去の後の日は日割りで減る）</li>'+
+    '<li>施設の利用料は前払い：入居した月に「その月の日割り＋翌月分」、以後は毎月「翌月分」。退去した月は退去日までの日割り（返金の時期のずれは見ない）。入院中も施設の利用料は変えない</li>'+
+    '<li>戻る日が分からない入院は <select data-rev="openHosp" aria-label="戻る日が分からない入院の数え方"><option value="eom"'+(REV.ui.openHosp==='eom'?' selected':'')+'>今月末に戻るとみなす</option><option value="open"'+(REV.ui.openHosp==='open'?' selected':'')+'>戻らない（ずっと入院）とみなす</option></select></li>'+
+    '<li>入院の期間は、入居者マスタの「🏥 入院／復帰」を押した日から作る（押した日が実際の入院の日と違う時は、上の「見通しに予定を足す」で直す）</li>'+
+    '</ul>';
+  h+='<div class="rev-fees"><b>施設の利用料（月額・円）</b>　<span id="revFeeSrc">'+revFeeSrcText_(F.src)+'</span>'+
+     '<div class="rev-fgrid">'+['要介護1','要介護2','要介護3','要介護4','要介護5','要支援1','要支援2'].map(function(lv){
+       var v=F.fees[lv]; return '<label class="rev-lb">'+esc(lv)+' <input type="number" inputmode="numeric" min="0" max="1000000" step="10" data-rev="fee" data-lv="'+esc(lv)+'" value="'+(v==null?'':v)+'"></label>';
+     }).join('')+'</div>'+
+     '<button type="button" class="rev-btn" id="revFeeReset" data-rev="feereset"'+(F.src==='device'?'':' hidden')+'>この端末の表を消して施設情報の表に戻す</button>'+
+     '<p class="rev-note">入れた表（金額だけ）はこの端末に残します。氏名・介護度・入院の記録・足した予定は残しません。</p></div>';
+  h+='<p class="rev-note" id="revLimLine">'+revLimLineText_(L)+'</p>';
+  return h+'</details>';
+}
+/* 押す・選ぶ（1回だけ付ける・CSP のため直書きの onclick は使わない） */
+function revBind_(){
+  if(REV.bound) return; REV.bound=true;
+  var box=$('rosterBox'); if(!box) return;
+  function pick(e){ var t=e.target; while(t&&t!==box){ if(t.getAttribute&&t.getAttribute('data-rev')) return t; t=t.parentNode; } return null; }
+  box.addEventListener('click',async function(e){
+    if(curView!=='rev') return; var t=pick(e); if(!t) return; var a=t.getAttribute('data-rev');
+    if(a==='reload'){ revEnsure(true); revRedraw_(); }
+    else if(a==='basis'){ REV.ui.basis=t.getAttribute('data-val')==='accrual'?'accrual':'cash'; revSaveUi_(); revRedrawMain_(); }
+    else if(a==='sel'){ REV.sel=t.getAttribute('data-ym')||''; revRedrawMain_(); var d=$('revDetH'); if(d&&d.scrollIntoView) d.scrollIntoView({block:'nearest'}); }
+    else if(a==='addplan') revAddPlan_();
+    else if(a==='delplan'){ var sq=+t.getAttribute('data-seq'); REV.plan=REV.plan.filter(function(p){ return p.seq!==sq; }); revRedraw_(); }
+    else if(a==='feereset'){ if(!(await SUDialog.confirm('この端末で入れた施設の利用料の表を消して、施設情報の表に戻します。よろしいですか？'))) return; if(curView!=='rev') return; try{ localStorage.removeItem(REV_FEES_KEY); }catch(e2){} revRedraw_(); }
+  });
+  /* マウス・指を押している間は数字の部分を差し替えない（押した部品を消さない） */
+  box.addEventListener('pointerdown',function(){ if(curView==='rev') REV.ptrDown=true; });
+  window.addEventListener('pointerup',function(){ if(!REV.ptrDown) return; REV.ptrDown=false; if(REV.mainPending) setTimeout(revRedrawMain_,0); });
+  window.addEventListener('pointercancel',function(){ REV.ptrDown=false; if(REV.mainPending) setTimeout(revRedrawMain_,0); });
+  /* 予定の欄の入れかけの値はメモリに控え、画面を作り直しても戻す（端末には残さない） */
+  box.addEventListener('input',function(e){ if(curView==='rev') revFormKeep_(e.target); });
+  box.addEventListener('keydown',function(e){
+    if(curView!=='rev'||(e.key!=='Enter'&&e.key!==' ')) return; var t=pick(e); if(!t||t.getAttribute('data-rev')!=='sel') return;
+    e.preventDefault(); REV.sel=t.getAttribute('data-ym')||''; revRedrawMain_();
+    var again=box.querySelector('[data-rev="sel"][data-ym="'+REV.sel+'"]'); if(again) again.focus();
+  });
+  box.addEventListener('change',function(e){
+    if(curView!=='rev') return; var t=e.target, a=t&&t.getAttribute&&t.getAttribute('data-rev');
+    revFormKeep_(t);
+    if(t&&t.id==='revPType'){ revPaintForm_(); return; }
+    if(!a) return;
+    if(a==='months'){ var n=+t.value; if([6,12,18,24].indexOf(n)>=0){ REV.ui.months=n; revSaveUi_(); } revRedrawMain_(); }
+    else if(a==='startBack'){ var sbk=+t.value; if(REV_START_BACKS.indexOf(sbk)>=0){ REV.ui.startBack=sbk; revSaveUi_(); } revRedrawMain_(); revLoadStates_(); }
+    else if(a==='split'){ REV.ui.split=!!t.checked; revSaveUi_(); revRedrawMain_(); }
+    else if(a==='openHosp'){ REV.ui.openHosp=t.value==='open'?'open':'eom'; revSaveUi_(); revRedrawMain_(); }
+    else if(a==='p'){
+      var k=t.getAttribute('data-k'), v=Math.floor(Number(t.value)), rg={deduct:[0,10000],cutoff:[1,31],lag:[0,6]}[k];
+      if(rg&&isFinite(v)&&v>=rg[0]&&v<=rg[1]){ REV.params[k]=v; }
+      else { toast('入れられる数は '+(rg?rg[0]+'〜'+rg[1]:'')+' です'); t.value=REV.params[k]; }
+      revRedrawMain_();
+    }
+    else if(a==='fee'){
+      var cur=revFees_().fees, nx={}; RevenueCalc.LEVELS.forEach(function(lv){ if(cur[lv]!=null) nx[lv]=cur[lv]; });
+      var lv=t.getAttribute('data-lv'), s=String(t.value).trim();
+      if(s===''){ delete nx[lv]; }
+      else { var f=RevenueCalc.normFees((function(){ var o={}; o[lv]=s; return o; })()); if(f[lv]==null){ toast('金額は0〜1,000,000円の整数で入れてください'); t.value=(cur[lv]==null?'':cur[lv]); return; } nx[lv]=f[lv]; }
+      try{ localStorage.setItem(REV_FEES_KEY, JSON.stringify(nx)); }catch(e3){ toast('この端末に表を残せませんでした（読み込み直すと消えます）'); }
+      revRedrawMain_();
+    }
+  });
+}
+var REV_FORM_IDS=['revPType','revPWho','revPLv','revPSh','revPDate','revPTo'];
+function revFormKeep_(t){ if(t&&t.id&&REV_FORM_IDS.indexOf(t.id)>=0) REV.form[t.id]=String(t.value||''); }
+function revPaintForm_(){
+  REV_FORM_IDS.forEach(function(id){ var el=$(id), v=REV.form[id]; if(el&&v!=null&&el.value!==v){ el.value=v; if(el.value!==v) delete REV.form[id]; } });
+  var ty=($('revPType')||{}).value||'in';
+  var show=function(id,on){ var el=$(id); if(el) el.hidden=!on; };
+  show('revPWhoL', ty!=='in'); show('revPLvL', ty==='in'); show('revPShL', ty==='in'); show('revPToL', ty==='hosp');
+  var lb=$('revPDateLb'); if(lb) lb.textContent={in:'入居日',out:'退去日',hosp:'入院日',ret:'戻る日'}[ty]||'日付';
+}
+function revAddPlan_(){
+  var ty=($('revPType')||{}).value||'in', d=($('revPDate')||{}).value||'', to=($('revPTo')||{}).value||'', msg=$('revPMsg');
+  var say=function(s){ if(msg) msg.textContent=s; };
+  if(!RevenueCalc.isYmd(d)){ say('日付を入れてください'); return; }
+  var p={seq:++REV.planSeq, type:ty, date:d};
+  if(ty==='in'){ p.level=($('revPLv')||{}).value||'要介護1'; p.label=d.slice(5).replace('-','/')+'・'+p.level.replace('要介護','介護');
+    var shv=($('revPSh')||{}).value; if(shv==='1'||shv==='0'||shv==='0.5') p.share=Number(shv); }
+  else {
+    var id=($('revPWho')||{}).value||'', r=(roster||[]).filter(function(x){ return String(x.id)===String(id); })[0];
+    if(!r){ say('入居者を選んでください'); return; }
+    p.id=String(r.id); p.name=r.name||'';
+    if(ty==='hosp'){ if(to&&!(RevenueCalc.isYmd(to)&&to>d)){ say('戻る日は入院日より後の日にしてください'); return; } p.to=to; }
+  }
+  REV.plan.push(p); REV.form={revPType:ty}; revRedraw_();
+}
+/* ═════════ デイ利用（週間計画 care_schedule_v2 の読み取り専用参照）2026-08-19 指示 ═════════
+   A4様式の右上に「月〜土 × 利用時間帯」を出すため、入居者マスタが【統合GAS】
+   （週間計画・ワースケ・シフト共通のGAS）の読み手として新しく加わる。
+   ★書き込みは一切しない。localStorage にも書かない（su_sync_common は読むだけ）。
+     データ契約は .claude/rules/data-contracts.md §2 に追記済み。
+   ★通所（デイ）の予定の正本は care_schedule_v2 のみ（§5・§6-⑧）。マスタ側の dayUse は
+     移行時の旧スプレッドシート由来の手書き値で、実測で現在値と食い違う。ここでは使わない。
+   ★取得できない時は【空欄のまま刷る】。古い値で埋めない。空欄になったことは画面に出して知らせる。 */
+var A4_DOW_JA=['月','火','水','木','金','土'];       // dayOfWeek 0..5（週間計画・デイ利用表と同じ並び）
+/* 取得結果を使い回す時間。★2026-08-19 に 120秒→10分へ延ばした。週間計画（通所の予定）は
+   週単位の予定表で頻繁には変わらないのに、詳細画面を開くたびに取りに行くと
+   通信が積み上がる（同じ script.google.com へマスタGASと並ぶため、ブラウザの
+   同時接続数も食い合う）。紙に載せる用途では10分の鮮度で十分。 */
+var A4_DAY_TTL=600000;
+var A4_DAY_FAIL_TTL=30000;                          // 失敗を覚えておく時間（押すたびに待たせない）
+var a4DayMap=null;                                  // {at, byMid, byName, dupMid, dupName} ／ null=未取得
+var a4DayPromise=null;                              // 取得中の重複起動を防ぐ
+var a4DayFailAt=0, a4DayFailMsg='';                 // 直近の失敗（短時間だけ覚える）
+function a4NmKey(s){ return String(s==null?'':s).replace(/\s+/g,''); }
+/* 統合GASの接続先。デイ利用表・全支援俯瞰と同じ解決順（su_sync_common → ws_settings）。
+   ★読む側でもURLの形を確かめる（デイ利用表等には無い上乗せ）。ワースケ・シフトが【書く時】に
+     使っている門番と同じ正規表現。この関数は接続先へ合言葉を送るので、localStorage が壊れた・
+     別の値が入った時に見ず知らずの URL へ合言葉を渡さないため（所有アプリの門番を迂回しない）。 */
+var A4_GAS_RE=/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec/;
+function a4SyncTarget(){
+  /* 管理者が全端末へ配った接続先（su-devcfg.js・統合 0080）があればそれを先に使う（形の確かめは同じ式） */
+  try{ var d=window.SUDevCfg&&window.SUDevCfg.get('ws');
+       if(d&&A4_GAS_RE.test(d.url)) return {endpoint:d.url, token:d.token}; }catch(e){ /* 部品が無い・壊れている時は端末の値で動く */ }
+  try{ var c=JSON.parse(localStorage.getItem('su_sync_common')||'{}');
+       if(c&&A4_GAS_RE.test(String(c.endpoint||'').trim()))
+         return {endpoint:String(c.endpoint).trim(), token:String(c.token||'').trim()}; }catch(e){}
+  try{ var w=JSON.parse(localStorage.getItem('ws_settings')||'{}');
+       if(w&&A4_GAS_RE.test(String(w.endpoint||'').trim()))
+         return {endpoint:String(w.endpoint).trim(), token:String(w.token||'').trim()}; }catch(e){}
+  return {endpoint:'', token:''};
+}
+/* 「09:00」→「9」／「13:30」→「13.5」。★端数は嘘をつかず時刻のまま出す（例 9:10）。
+   .25/.5/.75 以外を無理に小数へ丸めると、紙の上で実際と違う終了時刻になる。
+   ★時・分とも範囲を見る。壊れた値（'30:00' 等）をそのまま紙に出さない唯一の関所。 */
+function a4HM(t){
+  var p=String(t==null?'':t).split(':');
+  if(p.length<2)return'';
+  var h=parseInt(p[0],10), m=parseInt(p[1],10);
+  if(!isFinite(h)||!isFinite(m)||h<0||h>23||m<0||m>59)return'';
+  if(m===0)return String(h);
+  if(m===15)return h+'.25';
+  if(m===30)return h+'.5';
+  if(m===45)return h+'.75';
+  return h+':'+(m<10?'0'+m:m);
+}
+/* 週間計画のDBから「その方の月〜土の通所時間帯」を引ける形に畳む。氏名は突合にのみ使う。
+   ★継承キー（toString 等）に当たらないよう素のオブジェクトにしない。 */
+function a4BuildDayMap(db){
+  /* ★allMid/allName は「週間計画にその方の記録が在るか」だけを見るための索引（2026-09-04 追加）。
+     通所の有無を問わず【全員】を入れる。これが無いと
+       「週間計画にその方の記録が無い」＝確かめられない  と
+       「記録はあるが通所を使っていない」＝本当に利用なし  を区別できず、
+     前者まで空欄で刷ってしまう（§12 が明文で禁じた『デイ利用なし』と読まれる状態）。
+     ★上の byMid/byName（通所索引）には一切足さない・触らない。あちらへ通所の無い行まで入れると
+       重複判定(dupMid/dupName)の対象が広がり、いま ok で引けている方まで unknown へ倒れる。 */
+  var out={at:Date.now(), byMid:Object.create(null), byName:Object.create(null),
+           dupMid:Object.create(null), dupName:Object.create(null),
+           allMid:Object.create(null), allName:Object.create(null),
+           dupAllMid:Object.create(null), dupAllName:Object.create(null)};
+  var res=(db&&Array.isArray(db.residents))?db.residents:[];
+  res.forEach(function(r){
+    if(!r)return;
+    /* 在籍確認用の索引は、通所を1件も持たない方も含めて先に作る（下の early return より前） */
+    var mid0=(r.masterId==null||r.masterId==='')?null:String(r.masterId);
+    var nk0=a4NmKey(r.name);
+    var all={name:String(r.name||''), mid:mid0};
+    if(mid0){ if(out.allMid[mid0])out.dupAllMid[mid0]=true; else out.allMid[mid0]=all; }
+    if(nk0){ if(out.allName[nk0])out.dupAllName[nk0]=true; else out.allName[nk0]=all; }
+    var days=['','','','','',''], any=false;
+    (Array.isArray(r.events)?r.events:[]).forEach(function(ev){
+      if(!ev||ev.serviceType!=='daycare')return;
+      var d=Number(ev.dayOfWeek);
+      if(!(d>=0&&d<6))return;                       // 日曜（6）は様式に欄が無いので出さない
+      var a=a4HM(ev.startTime), b=a4HM(ev.endTime);
+      if(!a||!b)return;
+      /* 同じ曜日に複数の通所予定がある方は【両方出す】。1枠しか持たない形にして後勝ちで
+         落とすと、紙だけが実際より少ない利用日数に見える（デイ利用表は件数を数えて警告している） */
+      var lab=a+'-'+b;
+      days[d]=days[d]?(days[d]+'／'+lab):lab;
+      any=true;
+    });
+    if(!any)return;
+    var mid=(r.masterId==null||r.masterId==='')?null:String(r.masterId);
+    var rec={name:String(r.name||''), mid:mid, days:days};
+    /* ★同じ利用者Noの行が2つある時は【黙って後勝ちにしない】。旧表記の重複行は
+       実在しうる（data-contracts §6-⑧）。どちらが正か分からないので「未確認」に倒す */
+    if(mid){ if(out.byMid[mid])out.dupMid[mid]=true; else out.byMid[mid]=rec; }
+    var nk=a4NmKey(r.name);
+    if(nk){ if(out.byName[nk])out.dupName[nk]=true; else out.byName[nk]=rec; }
+  });
+  return out;
+}
+/* 取得（必要な時だけ・失敗しても投げない）。返すのは画面に出す注意文（不要なら空文字）。
+   ★待ち時間は 25秒＝このアプリの apiGet と同じ。統合GAS も書き込みで LockService を待つので、
+     短くすると朝の混雑時に必ず切れて「未確認」の紙になる（2026-08-18 に入居者マスタ側で直した件と同型）。 */
+function a4EnsureDayMap(){
+  /* ★現場端末では取りに行かない・持っているものも使わない。全利用者の氏名を含む一覧を
+     現場のタブレットへ降ろさないため（安全情報に載せていない項目と同じ扱い）。
+     ★a4DayFail_ を通す。通さないと a4DayMap も a4DayFailAt も立たないままなので、
+       現場画面に欄を出した瞬間に【永久に「取得中…」】になる（3値の unknown にすら倒れない）。 */
+  if(getDeviceRole()==='field')return Promise.resolve(a4DayFail_('現場端末ではデイ利用日を表示しません'));
+  var now=Date.now(), age;
+  if(a4DayMap){ age=now-a4DayMap.at; if(age>=0&&age<A4_DAY_TTL)return Promise.resolve(''); }
+  if(a4DayPromise)return a4DayPromise;
+  /* 直近に失敗したばかりなら押すたびに25秒待たせない（現場を止めない）。覚えるのは30秒だけ＝
+     統合GASが復旧すれば自動的に取りに行く */
+  if(a4DayFailAt){ age=now-a4DayFailAt; if(age>=0&&age<A4_DAY_FAIL_TTL)return Promise.resolve(a4DayFailMsg); }
+  /* ★出した時の世代。応答を待つ間に現場用へ切り替わったら、届いた応答は控えにも失敗の印にも入れない（2026-10-01） */
+  var dg=devGen;
+  var t=a4SyncTarget();
+  /* 週間計画の接続先の無い端末は、新しい保存先から読めた時だけ使う（2026-11-08 代表者「端末ごとの設定を極限までなくす」）。
+     読めない時は今までと同じ「接続先が未設定」で、Google へは送らない */
+  if(!t.endpoint&&!(window.SUKv&&SUKv.readRouted))return Promise.resolve(a4DayFail_('週間計画の接続先が未設定のため、デイ利用欄は「未確認」で印刷します'));
+  /* 統合（2026-09-27）: 週間計画の保存先を Supabase に切り替えた後は、ログインしている端末だけ Supabase から読む。
+     スイッチが切・未ログイン・失敗の時は null＝今までどおり Google（写し返しで最新）。読むだけ。 */
+  var viaKv=(window.SUKv&&SUKv.readRouted)?SUKv.readRouted({action:'get', key:'care_schedule_v2'}):Promise.resolve(null);
+  a4DayPromise=viaKv.then(function(v){
+      if(v) return JSON.stringify(v);
+      if(!t.endpoint) throw new Error('A4_NO_EP');
+      return fetchWithTimeout(t.endpoint,{method:'POST',
+        headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body:JSON.stringify({action:'get', key:'care_schedule_v2', token:t.token})},25000)
+        .then(function(r){ return r.text(); });
+    })
+    .then(function(txt){
+      if(dg!==devGen) return '';   // 切り替え後に届いた応答（a4DayMap に入れない）
+      var j=JSON.parse(txt);
+      /* ★空の名簿は成功として扱わない。全員ぶん空欄の紙は「誰もデイを使っていない」と読まれる
+         （名簿取得の emptyGuarded と同じ作法・multi-device-sync 原則4） */
+      if(!j||!j.ok||!j.data||!Array.isArray(j.data.residents)||!j.data.residents.length)
+        throw new Error(String((j&&j.error)||'応答が不正です'));
+      a4DayMap=a4BuildDayMap(j.data); a4DayFailAt=0; a4DayFailMsg='';
+      /* 画面ごとの後処理（入居者マスタは収支の見通しの報酬マスタを同じ応答から持つ・無い画面は何もしない・2026-11-11） */
+      if(typeof a4OnDayData_==='function') a4OnDayData_(j.data);
+      return '';
+    })
+    .catch(function(e){ if(dg!==devGen) return ''; if(e&&e.message==='A4_NO_EP') return a4DayFail_('週間計画の接続先が未設定のため、デイ利用欄は「未確認」で印刷します'); return a4DayFail_('週間計画を取得できなかったため、デイ利用欄は「未確認」で印刷します'); })
+    /* ★切り替え後に始まった新しい取得の印（a4DayPromise）を、古い応答が消さないように世代を見る */
+    .then(function(msg){ if(dg===devGen) a4DayPromise=null; return msg; });
+  return a4DayPromise;
+}
+function a4DayFail_(msg){ a4DayFailAt=Date.now(); a4DayFailMsg=msg; return msg; }
+/* その方の月〜土を返す。★戻り値は必ず3値の state を持つ:
+     'ok'      … 通所予定が引けた（days に入る）
+     'none'    … 週間計画は取れていて、その方に通所予定が無い＝【本当に利用なし】
+     'unknown' … 確かめられなかった（未取得／氏名が食い違う／絞り込めない／重複行）
+   ★'none' と 'unknown' を必ず分ける。どちらも空欄で刷ると、週3回通っている方の紙が
+     「デイ利用なし」と読まれる。この様式は救急搬送先・処方と同じ紙で外部へ渡すので、
+     printHide の「伏せたセルは空欄にせず、セルごと外す（空欄は誤った安心に変わる）」と同じ考え方。
+   ★利用者Noで引いた後も氏名を突き合わせる（data-contracts §6-⑨ の不変条件2）。 */
+function a4DaysFor(r){
+  /* ★why は「なぜ確かめられなかったか」。人が次に取るべき行動が違うので画面で出し分ける
+     （取得し直す／週間計画にその方を作る／氏名を揃える）。 */
+  var UNK=function(why){ return {state:'unknown', days:null, why:why}; };
+  if(!a4DayMap||!r)return UNK('fetch');
+  var nk=a4NmKey(r.name);
+  if(r.id!=null&&r.id!==''){
+    var key=String(r.id);
+    if(a4DayMap.dupMid[key])return UNK('name');     // 同じ利用者Noの行が2つ＝どちらか分からない
+    var rec=a4DayMap.byMid[key];
+    if(rec)return (nk&&a4NmKey(rec.name)===nk)?{state:'ok', days:rec.days}:UNK('name');
+  }
+  if(!nk)return UNK('name');                         // 氏名が無ければ確かめようがない
+  if(a4DayMap.dupName[nk])return UNK('name');        // 同姓同名は引かない
+  var byNm=a4DayMap.byName[nk];
+  /* ★利用者Noを持つ記録は氏名では拾わない。その記録は【別の方】に束縛済みで、拾うと
+     利用者Noの違う方の紙に他人の通所日が載る（§6-⑨ の「食い違いが確定した」状態）。 */
+  if(byNm)return (byNm.mid==null)?{state:'ok', days:byNm.days}:UNK('name');
+  /* ═══ ここから下は「通所索引で引けなかった」だけ（2026-09-04 追加）═══
+     空欄（＝デイ利用なし）で刷ってよいのは、週間計画にその方の記録が【確かに在る】と
+     言い切れる時だけ。言い切れないまま空欄にすると、氏名を直した方や利用者Noを持たない
+     記録の方の紙が「デイ利用なし」と読まれる。§15 で氏名の一括編集を解禁したため、
+     これは机上の話ではなくなった（週間計画には masterId を持たない記録が実在する）。
+     ★判定の作法は上の通所索引とまったく同じ＝利用者Noで引いた後も氏名を突き合わせ、
+       重複・食い違い・絞り込めない時は【出さない側】へ倒す（§6-⑨ の不変条件2）。 */
+  if(r.id!=null&&r.id!==''){
+    var akey=String(r.id);
+    if(a4DayMap.dupAllMid[akey])return UNK('name');
+    var arec=a4DayMap.allMid[akey];
+    if(arec)return (a4NmKey(arec.name)===nk)?{state:'none', days:null}:UNK('name');
+  }
+  if(a4DayMap.dupAllName[nk])return UNK('name');
+  var aNm=a4DayMap.allName[nk];
+  if(aNm)return (aNm.mid==null)?{state:'none', days:null}:UNK('name');
+  return UNK('absent');                              // 週間計画にこの方の記録が無い＝確かめられない
+}
+/* 「未確認」の理由の文言。★空欄で刷る誤りを塞いだ以上、なぜ確かめられなかったのかまで
+   人に見せないと、直しようがないまま「未確認」の紙が出続ける。 */
+var A4_UNK_WHY={fetch:'週間計画を取得できませんでした',
+                absent:'週間計画にこの方の記録がありません',
+                name:'週間計画の氏名と一致しません'};
+/* ═══ デイ利用日の表示（詳細画面・フェイスシート・それぞれの印刷で共用）═══
+   2026-08-19 の指示で【3枚の紙をすべて週間計画に揃えた】。入居者マスタの dayUse
+   （移行時の旧スプレッドシート由来の手書き値）はここでは使わない。
+   ★A4様式と同じ3値。「利用なし（空欄）」と「確かめられなかった（未確認）」を必ず区別する。
+     空欄で出すと『デイを使っていない方』と読まれるため。
+   ★この関数と patchDayUse は resident-master.html と facesheet.html で【逐語同一】にすること。
+     食い違うと、同じ方の詳細画面とフェイスシートで別の利用日が出る。 */
+function dayUseHtml(r){
+  /* まだ取りに行っている最中。終わり次第 patchDayUse が差し替える */
+  if(!a4DayMap&&!a4DayFailAt)return '<span class="du-note">取得中…</span>';
+  var info=a4DaysFor(r);
+  /* ★記号と文字を併記する（色だけで意味を伝えない・介護現場要件4） */
+  if(info.state==='unknown')
+    return '<span class="du-unk">▲ 未確認</span><span class="du-note">'+
+           esc(A4_UNK_WHY[info.why]||A4_UNK_WHY.fetch)+'</span>';
+  if(!info.days)return '';
+  return A4_DOW_JA.map(function(lb,i){
+    return info.days[i]?('<span>'+esc(lb)+' <b>'+esc(info.days[i])+'</b></span>'):'';
+  }).filter(Boolean).join('');
+}
+/* 取得が終わった後に画面のデイ利用日を差し替える。
+   ★フェイスシートは同じ欄を【カテゴリタブと「全体」タブの2箇所】に出すので、必ず全部を書き換える
+     （片方だけだと、そのタブから印刷した時だけ古い表示が載る）。
+   ★★書き換えるのは data-du-id が一致する欄だけ。呼び出し側の「いま開いている方」の記憶だけに
+     頼ると、25秒待っているあいだに別の方が描画された欄へ上書きしてしまう（＝別人のデイ利用日が
+     画面と紙に出る）。欄そのものに持ち主を書いておけば、呼び出しを増やしても構造的に起きない。 */
+function patchDayUse(r){
+  if(!r||r.id==null||r.id==='')return;
+  var key=String(r.id);
+  var els=document.querySelectorAll('.du-cell');
+  if(!els.length)return;
+  var html=dayUseHtml(r)||'　';
+  Array.prototype.forEach.call(els,function(e){
+    if(e.getAttribute('data-du-id')===key)e.innerHTML=html;
+  });
+}
+/* 取得済みで、まだ有効期限内か（＝押しても待たずに済むか）。
+   ★「取得しています…」を出すかどうかの判定に使う。a4DayMap の有無だけで見ると、
+     期限切れ（120秒）の再取得で【無言のまま最大25秒】待たせることになる。 */
+function duFresh(){
+  if(!a4DayMap)return false;
+  var age=Date.now()-a4DayMap.at;
+  return age>=0&&age<A4_DAY_TTL;
+}
+/* ═══ 印刷の前に薬効辞書（med_dict）を待つ（2026-09-24 本人決定 Q2）═══
+   ★時間切れで黙って1列へ落として刷らない。待っている間は「読み込み中…」とキャンセルを必ず見せる。
+   ★取得が確定的に失敗したら（通常のやり直し apiGetRetry の後）自動では刷らない。
+     「再試行」「効能欄なしで印刷」（人が明示的に選ぶ）「やめる」を出す。
+   ★待っているあいだに別の方・別の画面へ移っていたら刷らない（printWithDayUse と同じ守り）。
+   need()  … 待つ必要があるか（辞書が未取得で、効能欄を出しうる時だけ true）
+   stillOk() … 刷ってよいか（いま開いている方・画面が押した時と同じか）
+   go()    … 実際に刷る（従来の印刷経路をそのまま呼ぶ） */
+var mdPrintSeq=0;
+function mdWaitUi_(msg, acts){
+  var m=$('mMedWait'); if(!m) return;
+  if(msg===null){ m.classList.remove('on'); return; }
+  $('mMedWaitMsg').textContent=msg;
+  var box=$('mMedWaitAct'); box.innerHTML='';
+  acts.forEach(function(a){
+    var b=document.createElement('button');
+    b.type='button'; b.className='btn '+a[1]; b.textContent=a[0];
+    b.addEventListener('click',a[2]);
+    box.appendChild(b);
+  });
+  m.classList.add('on');
+  var f=box.querySelector('button'); if(f){ try{ f.focus(); }catch(e){} }
+}
+/* ⌘/Ctrl+P（OSの印刷）は上の待ちを通らない（2026-09-24 レビュー指摘）。紙は変えない
+   （画面どおり＝効能欄なしの1列で刷られる）が、刷った後に画面へ理由を必ず出す。
+   ★対象は詳細画面の通常印刷だけ。A4様式（body.a4-on）は薬剤情報の欄を刷らないので対象外。
+   ★ボタン経路（mdPrintViaBtn_）は、辞書を待った後か「効能欄なしで印刷」を人が選んだ後なので出さない。 */
+var mdPrintViaBtn_=false, mdPrintWarnPending_=false;
+var MEDS_KEYPRINT_NOTE='薬効辞書の読み込み前に印刷されたため、効能欄なしで印刷されました。画面の印刷ボタンをお使いください';
+window.addEventListener('beforeprint',function(){
+  if(mdPrintViaBtn_) return;
+  var sc=$('sc-view');
+  if(!sc||!sc.classList.contains('on')||document.body.classList.contains('a4-on')) return;
+  if(!curResident||!String(curResident.medsRegular||'').trim()) return;
+  if(document.querySelector('#viewBox .meds-reg .meds-note')) mdPrintWarnPending_=true;
+});
+function mdPrintWarnFlush_(){
+  if(!mdPrintWarnPending_) return;
+  mdPrintWarnPending_=false;
+  toast(MEDS_KEYPRINT_NOTE);
+}
+window.addEventListener('afterprint',mdPrintWarnFlush_);
+/* afterprint が来ない環境向け（印刷メディアを抜けたのを合図にする。他の保険と同じ作法） */
+try{
+  var _mdmq=matchMedia('print');
+  var _mdmqFn=function(e){ if(!e.matches) mdPrintWarnFlush_(); };
+  if(_mdmq.addEventListener)_mdmq.addEventListener('change',_mdmqFn);
+  else if(_mdmq.addListener)_mdmq.addListener(_mdmqFn);
+}catch(e){}
+/* 待っている印刷を取り消す（キャンセル・やめる・ブラウザの「戻る」の3経路で共通） */
+function mdPrintCancel_(){ mdPrintSeq++; mdWaitUi_(null); }
+function mdPrintGate_(need, stillOk, go){
+  if(!need()){ go(); return; }
+  var seq=++mdPrintSeq;
+  function stop(){ mdPrintCancel_(); }
+  function goIfOk(){
+    if(!stillOk()){ toast('別の方の画面へ移ったため、印刷を中止しました。もう一度押してください'); return; }
+    go();
+  }
+  function wait(){
+    mdWaitUi_('薬効辞書を読み込み中…\n効能欄を付けて印刷するため、届くまでお待ちください。',
+      [['キャンセル','btn-gray',stop]]);
+    mdLoad_(false,true).then(function(){
+      if(seq!==mdPrintSeq) return;          /* キャンセル済み＝何もしない */
+      mdWaitUi_(null);
+      goIfOk();
+    },function(e){
+      if(seq!==mdPrintSeq) return;
+      var why=mdErr||String((e&&e.message)||'');
+      mdWaitUi_('薬効辞書を読み込めませんでした'+(why?('（'+why+'）'):'')+'。\n'+
+        '効能欄を付けて印刷するには「再試行」を押してください。',
+        [['再試行','btn-sec',wait],
+         ['効能欄なしで印刷','btn-gray',function(){ mdPrintSeq++; mdWaitUi_(null); goIfOk(); }],
+         ['やめる','btn-gray',stop]]);
+    });
+  }
+  wait();
+}
+/* 印刷の直前に、デイ利用日が「取得中…」のまま紙に載るのを防ぐ。取得を待って画面を
+   差し替えてから刷る。★取れなくても必ず刷る（欄が「未確認」になるだけ）。
+   ★★待っているあいだに別の方の画面へ移っていたら刷らない。A4様式（a4Print）と同じ守りで、
+     片方にだけ入れない。curId は「いまこの瞬間に開いている方の利用者No」を返す関数
+     （その変数名がアプリごとに違うので関数で受け取る）。
+   ★取得できなかった理由（接続先が未設定 等）は必ず画面にも出す。紙の「未確認」だけでは
+     直せる原因が操作者に伝わらない。
+   ★連打は無言で捨てない（押したのに何も起きないと壊れたと判断される）。 */
+var duPrinting=false;
+function printWithDayUse(rec,curId,doPrint){
+  if(duPrinting){ toast('デイ利用（週間計画）を取得しています。少しお待ちください'); return; }
+  duPrinting=true;
+  var who=(rec&&rec.id!=null)?String(rec.id):null;
+  if(!duFresh())toast('デイ利用（週間計画）を取得しています…');
+  a4EnsureDayMap().then(function(warn){
+    duPrinting=false;
+    if(who!==curId()){
+      toast('別の方の画面へ移ったため、印刷を中止しました。もう一度押してください');
+      return;
+    }
+    if(warn)toast(warn);
+    patchDayUse(rec);
+    doPrint();
+  }).catch(function(){ duPrinting=false; });
+}
+/* ══ 1つの欄に2件ぶんが区切りなしで入っている時、表示だけ行に分ける（2026-08-19 指示）══
+   移行元のスプレッドシートで、2つの医院の情報が1つのセルに続けて入力されていた方がいる
+   （病院名が2つ続く／電話番号が続けて12桁 等）。紙の上で読み分けられず、救急搬送先や
+   処方と同じ紙で外部へ渡すため、誤読の危険がそのまま残る。
+   ★データには一切触らない。紙と画面の【見え方】だけを変える。元の文字は1つも足さない・消さない。
+   ★件数は【電話番号】だけで決める。形が決まっていて確実に数えられる唯一の項目だから。
+     電話が1件しか無い方には何もしない＝取り違えの余地を作らない。
+   ★分けられない項目は元のまま出す（1つでも分けられなければ全部やめる、にはしない）。
+   ★この4本は resident-master.html と facesheet.html で【逐語同一】にすること。
+     食い違うと、同じ方の詳細画面とフェイスシートで別の分かれ方をする。 */
+var MP_TEL_RE=/0\d{1,3}-\d{2,4}-\d{3,4}/g;
+var MP_ORG_RE=/(クリニック|病院|医院|診療所|センター|歯科|薬局|薬店)/g;
+function mpStr(v){ return String(v==null?'':v).trim(); }
+/* 電話・FAX: 「番号だけが2つ以上つながっている」時だけ分ける。
+   「096-000-0000（内線2）」のように番号以外の文字が1つでも混ざるなら触らない。 */
+function mpTel(v){
+  var s=mpStr(v);
+  if(!s||/[\n\r]/.test(s))return null;          // 既に分かれているなら触らない
+  var m=s.match(MP_TEL_RE);
+  if(!m||m.length<2)return null;
+  if(m.join('')!==s.replace(/[\s　]+/g,''))return null;
+  return m;
+}
+/* 医院名: 医療機関を表す語で切る。歯止めは4つ。1つでも欠けると【実在しない機関名】を紙に作る。
+   ①最後がその語で終わっていない時は切り方が分からないので触らない
+   ②切った先が「附属」「分院」等で始まる時は、そこは1つの名前の途中なので切らない
+   ③★切った先が医療機関の語そのもので始まる時も切らない。
+     これが無いと「◯◯歯科クリニック」が「◯◯歯科」「クリニック」に割れる。
+     歯科のいちばん普通の名乗り方なので実害が大きい（2026-08-20 のレビュー指摘）
+   ④★切り出した1件の「固有の部分」が2文字未満なら分割そのものをやめる。
+     「◯◯病院前薬局」を「◯◯病院」「前薬局」と割らない（固有部分が「前」の1文字＝不自然）。
+     ★1文字の固有名（「森クリニック」等）も分けない側へ倒れるが、外部へ渡る紙に
+       実在しない機関名を出すよりは「分けずに1行のまま出す」方が安全。 */
+var MP_ORG_NG=/^(附属|付属|分院|別院|本院|新館|別館|東館|西館|南館|北館|前|裏|横|第[0-9０-９一二三四五六七八九十]|クリニック|病院|医院|診療所|センター|歯科|薬局|薬店)/;
+function mpOrgOk(part){
+  var s=String(part).replace(new RegExp(MP_ORG_RE.source,'g'),'').replace(/[\s　・]/g,'');
+  return s.length>=2;
+}
+function mpOrg(v,n){
+  var s=mpStr(v);
+  if(!s||!(n>=2)||/[\n\r]/.test(s))return null;
+  var re=new RegExp(MP_ORG_RE.source,'g'), out=[], last=0, m;
+  while((m=re.exec(s))){
+    var e=m.index+m[0].length;
+    if(MP_ORG_NG.test(s.slice(e)))continue;     // ここで切ると1つの名前を割ってしまう
+    out.push(s.slice(last,e)); last=e;
+  }
+  if(last!==s.length)return null;
+  if(out.length!==n)return null;
+  for(var i=0;i<out.length;i++) if(!mpOrgOk(out[i])) return null;
+  return out;
+}
+/* 氏名: 「姓 名」が n 組つながっている形の時だけ分ける。
+   ★あいだのかたまりが【4文字ちょうど】の時だけ分ける（名2文字＋姓2文字）。
+     5文字以上は「名3＋姓2」とも「名2＋姓3」とも読めて決められない。
+     例「太郎長谷川」は「太郎長／谷川」とも「太郎／長谷川」とも読めるので、
+     実在しない氏名を紙に出さないよう【分けない】側へ倒す（元のまま1行で出る）。
+     ★この制限を外すと3文字姓の方の氏名が1文字ずれて紙に載る。版面は整って見えるので
+       読み手が誤りに気づけない（2026-08-20 のレビュー指摘）。緩めないこと。 */
+var MP_NAME_NG=/^[々ゝゞヽヾー・]/;
+function mpPerson(v,n){
+  var s=mpStr(v);
+  if(!s||!(n>=2)||/[\n\r]/.test(s))return null;
+  var sp=[], re=/[ 　]/g, m;
+  while((m=re.exec(s)))sp.push(m.index);
+  if(sp.length!==n)return null;                 // 「姓 名」が n 組の形でなければ触らない
+  var out=[], start=0;
+  for(var i=1;i<n;i++){
+    if(sp[i]-(sp[i-1]+1)!==4)return null;       // ★4文字ちょうど以外は決められないので分けない
+    var cut=sp[i]-2;
+    if(cut<=sp[i-1]+1)return null;              // 前の方の名が空になる＝仮定が成り立たない
+    if(MP_NAME_NG.test(s.slice(cut)))return null;  // 姓の先頭になり得ない字＝仮定が外れている
+    out.push(s.slice(start,cut)); start=cut;
+  }
+  out.push(s.slice(start));
+  return out;
+}
+/* 1つの医療機関グループ（機関名・担当者・電話・FAX）をまとめて判定する */
+function mpSplit(org,person,tel,fax){
+  var t=mpTel(tel), f=mpTel(fax), n=t?t.length:0;
+  if(!n)return null;
+  return {n:n, org:mpOrg(org,n), person:mpPerson(person,n), tel:t,
+          fax:(f&&f.length===n)?f:null};
+}
+/* 表示値。分けられなかった項目は元の値をそのまま返す */
+function mpVal(v,arr){ return (arr&&arr.length)?arr.join('\n'):v; }
+function renderA4(r){
+  /* デイ利用（週間計画）は【伏せる処理より先に】引く。基本情報を伏せると描画用コピーから
+     氏名が消え、§6-⑨ の「利用者Noで引いた後に氏名を突き合わせる」が通らなくなるため
+     （関係の無い欄を伏せただけでデイ利用が空欄になってしまう）。 */
+  var dayInfo=a4DaysFor(r);
+  /* ══ 印刷しない欄（2026-08-17 指示）══
+     A4様式は欄の構成が固定なので「枠は残して中身を空にする」。枠ごと消すと外部様式の体裁
+     （原本との対応）が崩れ、受け取った側がどの欄が抜けたのか分からなくなる。
+     ★描画用のコピーだけを空にする。元の r には一切触らない（画面・保存に影響させない）。
+     ★詳細画面の欄名とA4の欄名は1対1ではない。A4の「基本事項」は詳細の【基本情報＋基本事項】、
+       A4の「治療中の病気」は詳細の【既往歴・サービス】由来、「問題行動 等」は【ADL・状態】由来、
+       生活リズムは詳細の【事業所】欄の中にある。値がどの欄から来ているかで振り分ける。
+     ★A4に出ない欄（認知・意思疎通／嗜好／生活歴／意向・ACP 等）はここに書かない＝指定しても
+       A4の見た目は変わらない（通常の「🖨️ 印刷」では効く）。 */
+  var nop=printHideSet(r), nopW=false;
+  if(Object.keys(nop).length){
+    var A4_CLR={
+      basic:['name','kana','gender','birthDate','careLevel','careCertStart','careCertEnd','certDate',
+             'copayRate','welfare','admissionDate','dischargeDate','height','weight','adl','bedriddenRank','dementia'],
+      /* ★dischargeDate と postDischarge は 2026-08-17 に A4 から描画ごと外したので、
+         ここで消しても見た目は変わらない。詳細画面との対応表として残置する */
+      basicItems:['preAdmission','postDischarge'],
+      family:['family'],
+      biz:['careOffice','careManager','careOfficeTel','careOfficeFax',
+           'welfareEquip','welfareEquipStaff','welfareEquipTel','rhythm'],
+      medical:['hospital','doctor','hospitalTel','hospitalFax','emergencyHospital',
+               'pharmacy','pharmacyTel','pharmacyFax','allergy','sideEffects','pastHistory'],
+      meds:['medsRegular','medsNotes'],
+      meal:['mealStaple','mealSide','mealNote'],
+      disease:['diseases','currentDiseases'],
+      adl:['bpsd','problemBehavior'],
+      support:['supportLog']
+    };
+    var cp=JSON.parse(JSON.stringify(r));
+    Object.keys(A4_CLR).forEach(function(k){
+      if(!nop[k])return;
+      A4_CLR[k].forEach(function(f){ delete cp[f] });
+    });
+    nopW=!!nop.basic;   // 体重・BMIは体重管理アプリ（localStorage）から引くので別途止める
+    r=cp;
+  }
+  var w=nopW?null:weightView(r);
+  var wkg=(w&&w.val)?w.val:(r.weight?r.weight+' kg':'');
+  var bmi=nopW?'':((w&&w.bmi)?w.bmi:calcBMI(r.height,r.weight));
+  /* 生活リズムは「保存が無い方にも施設共通の既定時刻を重ねて出す」仕様（2026-08-12 裁定）なので、
+     rhythm を消すだけでは既定が出てしまう。事業所欄を伏せた時はここで止める */
+  var rh=nop.biz?{}:rhythmOf(r);
+  /* デイ利用は詳細画面では【事業所】欄の中（dayUse が rhythm の隣）なので、生活リズムと同じ扱いにする。
+     ★確かめられなかった時（未取得・氏名の食い違い等）は空欄にせず「?」と「（未確認）」を紙に出す。
+       空欄のままだと『デイを使っていない方』と区別が付かず、週3回通っている方の紙が
+       「利用なし」と読まれる（伏せた欄を空欄にしないのと同じ理由）。
+     ★事業所欄を伏せた時は【意図して空にしている】ので「未確認」とは書かない。 */
+  var dayUnk=!nop.biz&&dayInfo.state==='unknown';
+  /* 縦書きの中でハイフンだけを縦棒に見せる（縦組みの「9 から 13.5 まで」の読み）。
+     ★文字は1つも変えない。包むだけ＝コピーすれば「9-13.5」のまま、データにも触れない。
+     ★esc() の後に包む。esc はハイフンを変換しないので、この順で安全。 */
+  var a4DayTxt=function(s){ return esc(s).replace(/-/g,'<i class="hy">-</i>'); };
+
+  var dayArr=nop.biz?null:dayInfo.days;
+  var dayCells=A4_DOW_JA.map(function(lb,i){
+    return '<div class="a4-day-c"><span class="a4-day-h">'+esc(lb)+'</span>'+
+           '<span class="a4-day-v">'+a4DayTxt(dayUnk?'?':((dayArr&&dayArr[i])||''))+'</span></div>';
+  }).join('');
+  /* ★「治療中の病気」「問題行動」は様式化後の正データ（diseases[]・bpsd）から組み立てる。
+     旧キー（currentDiseases / problemBehavior）は2026-08-12に入力欄が廃止された凍結値で、
+     新規登録の方は恒久的に空・移行済みの方は古い病名のまま。旧キーは【様式が空の時の控え】に回す。
+     この帳票は救急搬送先・処方と同じ紙に載る＝外部への申し送り想定なので、ここが最重要（H1）。 */
+  /* 医療機関が2件ぶん1つの欄に入っている方は、表示だけ行に分ける（2026-08-19 指示）。
+     ★伏せる処理（printHide）の後の r を渡す＝伏せた欄は元から空なので何も起きない。 */
+  var mpH=mpSplit(r.hospital,r.doctor,r.hospitalTel,r.hospitalFax);
+  var mpP=mpSplit(r.pharmacy,'',r.pharmacyTel,r.pharmacyFax);
+  var bf=bfView(r);
+  var disTxt=bf.diseases.length
+    ? bf.diseases.map(function(d){
+        return bfStr(d.name)+(bfStr(d.onset)?'（'+bfStr(d.onset)+'）':'');
+      }).filter(String).join('、')
+    /* 旧キー（自由文）は1病名1行で入っている方がいる。紙では「、」で区切って同じ行に続ける
+       （2026-10-08 管理者の指示）。行末の読点は落として「、、」にしない。データは変えない */
+    : String(r.currentDiseases||'').split(/\r?\n/).map(function(x){
+        return x.replace(/[、,，\s　]+$/,'').trim();
+      }).filter(String).join('、');
+  var bpsdTxt=BF_BPSD.filter(function(p){return bf.bpsd[p[0]]}).map(function(p){return p[1]}).join('、');
+  if(bfStr(bf.bpsd.note))bpsdTxt+=(bpsdTxt?'／':'')+bfStr(bf.bpsd.note);
+  if(!bpsdTxt)bpsdTxt=String(r.problemBehavior||'');
+  /* 生活リズム: 旧様式と同じ縦タイムライン。起床・就寝は記録がある方だけ出す */
+  var rhyRows=RHYTHM_KEYS.map(function(p){
+    var v=rh[p[0]]; if(!v)return'';
+    /* 旧様式は「8:00」表記。既定値（08:00）の先頭0だけ落とし、記録値の中身は変えない */
+    var tv=String(v).replace(/^0(\d:)/,'$1');
+    /* 「20:00〜21:00」のような幅の広い時刻は「〜」の【前】で折り返す。文字は1つも変えず、
+       改行位置だけ決める。
+       ★2026-08-20 実測（--a4fs:12px 固定・記録1件で a4Fit が縮めない条件）:
+         「〜21:00」は12pxで約42px あり時刻列(30px)に入りきらないので、さらに「〜」の後で
+         折り返して【3行】になる（6:00 / 〜 / 07:00）。読みにくいが枠からはみ出しはしない
+         （11条件で `scrollWidth>clientWidth` と枠外への突き抜けを機械照合し、いずれも0件）。
+         ★実データにこの表記は現在1件も無い（2026-08-17 実測）。
+         入るようになって3行が気になる場合は、この行だけ時刻を小さくするか、
+         時刻列を広げてラベル側（余裕7px）から取る。どちらも実測してから決めること。 */
+    var tmHtml=(tv.length>6&&tv.indexOf('〜')>=0)
+      ? tv.split('〜').map(function(x){return esc(x)}).join('<br>〜')
+      : esc(tv);
+    return '<div class="a4-rhy-i"><span class="tm">'+tmHtml+'</span><b>'+esc(p[1])+'</b></div>';
+  }).filter(String).join('');
+  /* 家族: 1行1名。緊急連絡先列にはその方が緊急連絡先なら氏名を出す（旧様式の列構成） */
+  var fam=Array.isArray(r.family)?r.family.filter(function(f){return f&&(f.name||f.phone||f.address)}):[];
+  var famRows=fam.length?fam.map(function(f){
+    var nm=famWho(f);   /* KP は氏名の後に :KP（他の画面と同じ見せ方に揃える） */
+    return '<div class="a4-row">'+
+      a4Cell('',nm,'1.1')+a4Cell('',f.address||'','1.5')+a4Cell('',f.phone||'','1')+
+      a4Cell('',f.emergency?nm:'','1')+'</div>';
+  }).join(''):'<div class="a4-row">'+a4Cell('','','1.1')+a4Cell('','','1.5')+a4Cell('','','1')+a4Cell('','','1')+'</div>';
+  /* 支援経過: 新しい順（詳細画面と同じ並び）。1枚固定の様式なので入るだけ出す。
+     ★1件ごとに「印刷しない」が付いた記録はここで落とす（2026-08-17） */
+  var slog=Array.isArray(r.supportLog)?r.supportLog.filter(function(s){return s&&!s.hide}):[];
+  slog.sort(function(a,b){return String((b&&b.date)||'').localeCompare(String((a&&a.date)||''))});
+  var slogRows=slog.map(function(s){
+    return '<div class="a4-slog-r"><span class="d">'+esc(fmtJDate(s.date)||s.date||'')+'</span>'+
+      '<span class="t">'+esc(s.text||'')+'</span></div>';
+  }).join('');
+  var certTerm=[r.careCertStart,r.careCertEnd].filter(Boolean).map(function(d){return String(d).slice(0,10)}).join(' 〜 ');
+  var h=
+  '<div class="a4s">'+
+    '<div class="a4-head"><div class="a4-title">■利用者基本情報■</div>'+
+      '<div class="a4-fac">'+esc(a4Facility().name)+'<br>TEL：'+esc(a4Facility().tel)+'</div></div>'+
+    /* ── 基本事項 ── */
+    '<div class="a4-sec"><div class="a4-lbl">基本事項</div><div class="a4-bd">'+
+      '<div class="a4-row">'+
+        a4Cell('氏名',r.name,'1.6')+a4Cell('性別',r.gender,'0.55','ctr')+
+        a4Cell('生年月日',fmtWarekiJp(r.birthDate)||r.birthDate,'1.35')+
+        a4Cell('西暦',parseIsoDate(r.birthDate)?('（'+String(r.birthDate).slice(0,10).replace(/-/g,'/')+'）'):'','1.1','ctr nowrap')+
+        a4Cell('年齢',calcAge(r.birthDate),'0.5','ctr')+a4Cell('介護度',r.careLevel,'0.7','ctr')+
+        a4Cell('認定期間',certTerm,'1.3')+a4Cell('負担割合',r.copayRate,'0.7','ctr')+
+        /* 生保の有無（2026-08-17 指示）: 受給なし＝「無」・受給あり＝「有」と出す。
+           ★welfare は真偽値。そのまま渡すと紙に「true」「false」と英字が出ていた（実測）。
+           ★真偽の判定は bulkTruthy を通す。素の truthy で見ると、旧形式の '無'・'なし'・'0' が
+             入っていた時に一括編集画面は「無」・この紙は「有」と食い違う（請求・公費に直結する）。
+           ★基本情報を「印刷しない」にした時だけは空欄にする。伏せた欄に「無」と断定を出すと、
+             伏せたことが「受給なし」という誤った事実として紙に残る（未入力の方は従来どおり「無」）。 */
+        a4Cell('生保の有無',(nop.basic?'':(bulkTruthy(r.welfare)?'有':'無')),'0.8','ctr')+
+      '</div>'+
+      '<div class="a4-row">'+
+        /* 退去日はこの様式に出さない（2026-08-17 指示）。詳細画面の「🖨️ 印刷」でも
+           2026-08-09 の指示で出していない（.noprint-cell）ので、これで紙は3種類とも揃う。
+           ★かつてここに「入居期間は残す」と書いていたが、同日の指示で撤回した（下を参照） */
+        a4Cell('入居日',fmtJDate(r.admissionDate)||r.admissionDate,'1.2')+
+        /* 入居期間もこの様式に出さない（2026-08-17 指示）。退去日を紙から外しても、
+           入居日＋入居期間から退去日を引き算で復元できてしまうため。
+           ★退去済みの方だけ空欄にする形は採らない。その方だけ空欄だと「退去済み」と分かり、
+             退去の事実を紙に残さないという目的を部分的に損なう。
+           ★ただし目的を達しているのは【この様式だけ】。詳細画面の「🖨️ 印刷」と
+             フェイスシートの紙には、在籍中の方も【退去済みの方も】入居期間が今も出る
+             （cell('入居期間',…) に .noprint-cell が付いていない）。さらに在籍状態「退去」も
+             両方の紙に出るため、そちらからは退去日が引き算で復元できる。
+             3枚を揃えるかは未裁定（2026-08-17 時点）。揃える時は2ファイル各1行の追加で済む。
+           ★a4Days は残す。消すと復活時に同じ不具合（常に空欄）を作り直すことになる */
+        a4Cell('BMI',bmi,'0.6','ctr')+a4Cell('身長',r.height?r.height+' cm':'','0.8','ctr')+
+        a4Cell('体重',wkg,'0.9','ctr')+
+        a4Cell('生活自立度',r.bedriddenRank,'0.9','ctr')+a4Cell('認知症自立度',bfNormRank(r.dementia),'1','ctr')+
+      '</div>'+
+      '<div class="a4-row" style="flex:1;min-height:0"><div class="a4-c" style="flex:0 0 58px"><span class="a4-h">入居前状況</span></div>'+
+        '<div class="a4-c a4-free" style="flex:1">'+esc(r.preAdmission||'')+'</div></div>'+
+      /* 退去後状況の欄は 2026-08-17 の指示で様式から外した。
+         ★データ（postDischarge）は消していない。編集画面の入力欄も詳細画面の表示も従来どおり残る
+           （詳細画面では .noprint-cell が付いており、元から紙には出ていない）。
+         副作用（意図的）: この行が無くなったぶん、上の「入居前状況」（flex:1）が縦に広がる */
+    '</div></div>'+
+    /* ── 家族情報 ── */
+    '<div class="a4-sec"><div class="a4-lbl">家族情報</div><div class="a4-bd">'+
+      /* 列名だけの行。a4-hd で値行（全角スペース1文字）を消し、上下を最大限詰める（2026-08-19 指示） */
+      '<div class="a4-row a4-hd">'+a4Cell('ご家族氏名','','1.1')+a4Cell('住所','','1.5')+a4Cell('電話番号','','1')+a4Cell('緊急連絡先','','1')+'</div>'+
+      famRows+
+    '</div></div>'+
+    /* ── 事業所＋医療情報（右にデイ利用＋生活リズム）── */
+    '<div class="a4-mid"><div class="a4-mid-l">'+
+      '<div class="a4-sec"><div class="a4-lbl">事業所</div><div class="a4-bd">'+
+        '<div class="a4-row">'+a4Cell('居宅介護支援事業所',r.careOffice,'1.3')+a4Cell('介護支援専門員',r.careManager,'1')+
+          a4Cell('電話番号',r.careOfficeTel,'1')+a4Cell('FAX番号',r.careOfficeFax,'1')+'</div>'+
+        '<div class="a4-row">'+a4Cell('福祉用具',r.welfareEquip,'1.3')+a4Cell('担当者',r.welfareEquipStaff,'1')+
+          a4Cell('電話番号',r.welfareEquipTel,'1')+a4Cell('',' ','1')+'</div>'+
+      '</div></div>'+
+      '<div class="a4-sec" style="flex:1;min-height:0"><div class="a4-lbl">医療情報</div><div class="a4-bd">'+
+        '<div class="a4-row">'+a4Cell('かかりつけ病院',mpVal(r.hospital,mpH&&mpH.org),'1.3')+a4Cell('主治医',mpVal(r.doctor,mpH&&mpH.person),'1')+
+          a4Cell('電話番号',mpVal(r.hospitalTel,mpH&&mpH.tel),'1')+a4Cell('FAX番号',mpVal(r.hospitalFax,mpH&&mpH.fax),'1')+'</div>'+
+        '<div class="a4-row">'+a4Cell('救急搬送先（希望）',r.emergencyHospital,'1.3')+a4Cell('かかりつけ薬局',mpVal(r.pharmacy,mpP&&mpP.org),'1')+
+          a4Cell('電話番号',mpVal(r.pharmacyTel,mpP&&mpP.tel),'1')+a4Cell('FAX番号',mpVal(r.pharmacyFax,mpP&&mpP.fax),'1')+'</div>'+
+        /* アレルギー・副作用 等は従来の7割の幅（2026-10-08 管理者の指示）。合計2.6は変えず、
+           減らしたぶん（0.3）を治療中の病気・既往歴へ回す＝1.0:1.6 → 0.7:1.9 */
+        '<div class="a4-row">'+a4Cell('アレルギー',r.allergy,'0.7')+a4Cell('治療中の病気',disTxt,'1.9')+'</div>'+
+        '<div class="a4-row">'+a4Cell('副作用・禁忌 等',r.sideEffects,'0.7')+a4Cell('既往歴',r.pastHistory,'1.9')+'</div>'+
+        '<div class="a4-meds">'+
+          '<div><span class="a4-bh">■薬剤情報（定期）■</span><div class="a4-free" style="padding:0">'+esc(r.medsRegular||'')+'</div></div>'+
+          '<div><span class="a4-bh">■薬備考■</span><div class="a4-free" style="padding:0">'+esc(a4MedsNotes(r.medsNotes))+'</div></div>'+
+          '<div><span class="a4-bh">■問題行動 等■</span><div class="a4-free" style="padding:0">'+esc(bpsdTxt)+'</div></div>'+
+        '</div>'+
+      '</div></div>'+
+    '</div>'+
+    /* 右列＝デイ利用（上）＋生活リズム（下）。2026-08-19 指示 */
+    '<div class="a4-rt">'+
+      '<div class="a4-day"><div class="a4-day-t">'+(dayUnk?'デイ利用（未確認）':'デイ利用')+'</div>'+
+        '<div class="a4-day-g">'+dayCells+'</div></div>'+
+      /* ★時刻が1件も無い時は矢印線を出さない（2026-08-19）。線は絶対配置で下端に▼を
+         はみ出させる作りなので、中身が空だと枠から6px 飛び出す（事業所欄を伏せた時に実測）。
+         枠そのものは残す＝A4様式は「枠を残して中身を空にする」（printHide の作法）。 */
+      '<div class="a4-rhy"><div class="a4-rhy-t">生活リズム</div><div class="a4-rhy-list">'+
+        (rhyRows?'<i class="a4-rhy-ln" aria-hidden="true"></i>':'')+rhyRows+'</div></div>'+
+    '</div></div>'+
+    /* ── 食事 ── */
+    '<div class="a4-sec"><div class="a4-lbl">食事</div><div class="a4-bd"><div class="a4-row">'+
+      '<div class="a4-c" style="flex:1.3"><span class="a4-bh">■主食■</span><span class="a4-v">'+esc(r.mealStaple||'　')+'</span></div>'+
+      '<div class="a4-c" style="flex:1"><span class="a4-bh">■副食■</span><span class="a4-v">'+esc(r.mealSide||'　')+'</span></div>'+
+      '<div class="a4-c" style="flex:1.6"><span class="a4-bh">■備考■</span><span class="a4-v">'+esc(r.mealNote||'　')+'</span></div>'+
+    '</div></div></div>'+
+    /* ── 支援経過（残りの紙面を全部使う）── */
+    /* ★件数を必ずタイトル側に出す（枠の末尾に置くと、切れた時に注記ごと消える） */
+    '<div class="a4-slog"><div class="a4-slog-t">【支援経過】'+
+      (slog.length?('（全'+slog.length+'件・入りきらない分は「🖨️ 全項目を印刷」で出力できます）'):'')+
+    '</div><div class="a4-slog-bx">'+slogRows+'</div></div>'+
+  '</div>';
+  $('a4sheet').innerHTML=h;
+}
+/* 長文の方でも1枚に収まるよう、固定部（支援経過を除く）の高さを見て文字を縮める。
+   ★276mm≒1043px（190mm=718px 基準）。支援経過に最低 90px 残す。
+   ★90px の中身は 12px 時: 見出し16.2＋枠3＋余白2＝21.2px、本文に残るのは約69px＝4行
+     （10.5px の頃は5行だった）。上限を変えたらこの行数も測り直す。 */
+function a4Fit(){
+  var box=$('a4sheet'), sheet=box.querySelector('.a4s');
+  if(!sheet)return true;
+  var slog=sheet.querySelector('.a4-slog');
+  box.classList.add('a4-measure');
+  var fit=false;
+  try{
+    var budget=1043-90;
+    /* ★上限は 12.0px（2026-08-17 指示「余白を縮めて文字を大きく」。従来は 10.5px 固定で頭打ち）。
+       ★これ以上上げない理由: 固定部は 13.5px でも 559px（上限953px）で収まるが、
+         支援経過の枠は【紙の残り全部】なので、文字を大きくするほど載る件数が減る。
+         実測（記録60件）: 10.5px=47件 / 12.0px=37件 / 13.5px=28件。
+         12.0px は「1割強 大きくなったと分かる」と「40件前後は載る」の折り合い。
+         変える時はこの数字を測り直してから決めること。
+       ★★上限を上げられない第2の理由（高さとは別の制約）:
+         ・縦書き見出し .a4-lbl は幅 17px 固定。行ボックスの幅は --a4fs×0.95×1.35 なので
+           12.0px で 15.4px（内寸16px に対し余裕0.6px）。12.5px で超え、縦罫線を越えて本文に重なる
+         ・デイ利用 .a4-day-c の内寸は約13.5px（右列88px÷6列・2026-08-19 に 100px から細くした）。
+           縦書き1文字の幅は --a4fs×0.85 なので 12.0px では 10.2px＝余裕は3.3px しかない。
+           【上限を上げる時はこの3つ目も一緒に見る】こと（15.8px 相当で列からはみ出す）
+         ・生活リズム .a4-rhy は 88px 固定・時刻列 .tm は 30px 固定。「20:00〜21:00」のような
+           範囲表記は 12px で約39px となり時刻列を超えるので「〜」の前で折り返す
+           （実データには現在1件も無い＝2026-08-17 実測。折り返せば 12px でも枠に収まることは
+             2026-08-19 に実測済み＝紙は縦に伸びるが、はみ出しは起きない）
+         高さ（budget）だけを測って上げると、この2つが先に壊れる。上げるなら固定幅も
+         calc(var(--a4fs)*…) へ連動させること（見た目が変わるので要承認）
+       ★下限 7.5px は変えない。ここを下げると読めない紙になる */
+    for(var fs=12.0; fs>=7.5; fs-=0.5){
+      sheet.style.setProperty('--a4fs',fs+'px');
+      sheet.style.height='auto';
+      if(slog)slog.style.display='none';
+      var hFixed=sheet.getBoundingClientRect().height;
+      if(slog)slog.style.display='';
+      if(hFixed<=budget){fit=true;break;}
+    }
+  }finally{
+    /* ★高さの一時指定は例外時も必ず戻す。残ると 276mm 固定が効かず用紙をまたぐ */
+    sheet.style.height='';
+    box.classList.remove('a4-measure');
+  }
+  return fit;
+}
+/* A4様式モードの解除。★冪等にして複数の経路から呼ぶ。
+   afterprint が来ない環境（一部のiPad等）で body.a4-on が残ると、
+   次に押した通常の🖨️印刷が【前に開いていた別の方のA4様式】になる（＝別人の帳票事故）。
+   内容も消す＝前の方の氏名・処方をDOMに残さない。 */
+function a4Off(){
+  document.body.classList.remove('a4-on');
+  var b=$('a4sheet'); if(b)b.innerHTML='';
+}
+function a4Print(){
+  if(!curResident)return;
+  /* デイ利用は別のGAS（統合GAS＝週間計画・ワースケ・シフト共通）から取るので、
+     取得を待ってから組み立てる。★取れなくても紙は必ず出す（デイ利用欄が空欄になるだけ）。
+     空欄になったことは画面に出して知らせる（古い値で埋めない）。
+     ★2回目以降は取得済みを使い回すので待ち時間は出ない（A4_DAY_TTL）。 */
+  /* ★取得を待つあいだの連打を無視する。待たせている間にもう一度押されると、
+     取得は1本にまとまる（a4DayPromise）が then が2回走り、印刷ダイアログが2枚開く */
+  if(a4Printing)return;
+  a4Printing=true;
+  /* ★比較は利用者No。curResident は開き直すたびに別のオブジェクトになるので、
+     同一性で見ると「同じ方を開き直しただけ」でも中止になる */
+  var whoId=a4CurId_();
+  /* ★取得中は必ず知らせる。TTL切れの再取得でも無言で待たせない（判定は duFresh に一本化） */
+  if(!duFresh())toast('デイ利用（週間計画）を取得しています…');
+  /* ★帳票右上の施設名・電話（a4Facility）は施設情報から引く。読めていなければ最大3秒待ち、読めなければ刷らない（2026-10-14） */
+  Promise.all([suFacReady_(), a4EnsureDayMap()]).then(function(rs){
+    var facOk=rs[0], warn=rs[1];
+    a4Printing=false;
+    if(!facOk){ toast(SU_FAC_NG_MSG); return; }
+    /* 待っているあいだに別の方の画面へ移っていたら刷らない（別人の帳票を出さない）。
+       ★黙って終わらせない。押したのに何も起きないと、操作者は壊れたと判断する */
+    if(whoId!==a4CurId_()){
+      toast('別の方の画面へ移ったため、1枚にまとめた印刷を中止しました。もう一度押してください');
+      return;
+    }
+    if(warn)toast(warn);
+    a4PrintNow();
+  });
+}
+function a4CurId_(){ return (curResident&&curResident.id!=null)?String(curResident.id):null; }
+var a4Printing=false;
+function a4PrintNow(){
+  if(!curResident)return;
+  a4Off();   // 前回分が残っていても必ず作り直す
+  try{
+    renderA4(curResident);
+    if(!a4Fit())toast('記載量が多く、1枚には一部が入りません。全件は「🖨️ 全項目を印刷」をお使いください');
+  }catch(e){ a4Off(); toast('⚠️ 1枚にまとめた印刷を組み立てられませんでした'); return; }
+  document.body.classList.add('a4-on');
+  var undo=function(){a4Off();window.removeEventListener('afterprint',undo)};
+  window.addEventListener('afterprint',undo);
+  try{ window.print(); }catch(e){ a4Off(); }
+}
+/* 保険その2: afterprint が発火しない環境向け（印刷メディアの離脱を合図に戻す） */
+try{
+  var _a4mq=matchMedia('print');
+  var _a4mqFn=function(e){ if(!e.matches)a4Off(); };
+  if(_a4mq.addEventListener)_a4mq.addEventListener('change',_a4mqFn);
+  else if(_a4mq.addListener)_a4mq.addListener(_a4mqFn);
+}catch(e){}
+
+/* ═══════════ 端末用途ガード ═══════════ */
+function applyDeviceGuard(){
+  var blocked=(getDeviceRole()==='field');
+  /* 現場端末と判明した時点で一覧キャッシュを消す。setDeviceRole でも消しているが、
+     他アプリの設定画面から 'field' へ切り替えられた端末はこの経路を通らないため、
+     次回起動のガード時に自己回復させる（端末内に氏名・生年月日を残さない）。 */
+  /* 現場端末と判った時点で「開いていた方」の番号も消す（他アプリの設定画面から
+     'field' へ切り替えられた端末は setDeviceRole を通らないので、ここでも保険をかける） */
+  if(blocked){ try{ localStorage.removeItem(ROSTER_KEY); saveOpenId(null); }catch(e){ rmNote_('名簿の消去（現場端末）', e); } roster=[]; rosterPurged_=true;
+    /* 週間計画から取ったデイ利用の一覧（氏名を含む）も端末に残さない。localStorage には
+       元から書いていないが、メモリ上の控えもここで捨てる */
+    a4DayMap=null; a4DayPromise=null; a4DayFailAt=0; a4DayFailMsg='';
+    if(typeof revPurge_==='function') revPurge_();   /* 収支の見通しの控え（入院の期間・足した予定・報酬マスタ）も捨てる（2026-11-07） */
+    /* 帳票5種の控えも捨てる。fullMap は病名・処方・家族連絡先を持つ（要配慮情報） */
+    bkRows=null; fullMap=null; fullBad=null; mdDict=null; mdMap=null;
+    /* 取得中の全件データも捨てる。世代を進めないと、切り替えた後に届いた応答で fullMap（処方を含む）が
+       メモリに戻る。取得中の印も下ろす（下ろさないと、事務所PCへ戻した時に「取得中」のまま
+       二度と取りに行かない）（2026-10-01） */
+    fullGen++; fullLoading=false; fullErr=''; fullDone=0; fullTotal=0;
+    /* 世代を進める。切り替えより前に出した名簿の取得（refreshRoster）は、応答が届いても捨てる（2026-10-01） */
+    devGen++;
+    /* 捨てていなかった控えも捨てる: 入居日・食形態一覧（アレルギーを含む）・開いていた方の記録（病名・処方を含む）。
+       ★未保存の入力（mealDirty）は捨てない（原則4）。開いていた方を捨てたら、編集・印刷も押せない状態へ戻す */
+    admMap=null; mealRows=null;
+    rmGenoMem_=null;   /* ほかの端末から届いた家族構成図の絵（メモリだけ）も捨てる（統合 0056） */
+    mcPurge_();   /* 薬の変更候補（申送の本文・定期薬を持つ）も、確認画面・帯の中身ごと捨てる（2026-10-06） */
+    yjPurge_();   /* 薬情の取り込み（書類の画像・読んだ文字・定期薬を持つ）も、中身ごと捨てる（2026-10-22） */
+    /* 取得中の印も下ろす。応答側は世代（devGen）で捨てるので、ここで下ろさないと
+       事務所PCへ戻した時に「取得中」のまま二度と取りに行かない（fullLoading と同じ）（2026-10-01）。
+       ★mealSeq は進めない。食形態一覧の保存の確認（取り直しで突き合わせる所）が mealSeq を見ているので、
+         進めると確認が捨てられ、保存できた方も未保存の色のまま残る */
+    bkLoading=false; bkErr=''; admLoading=false; admErr='';
+    mealLoading=false; mealMsg='';
+    curResident=null; setViewActions(false); paintHospBtn(null);
+    if($('viewBox')) $('viewBox').textContent='';
+    /* 表示中・表示し終えた案内も消す。入院/退院の案内には居室・氏名が載ることがあり、案内はブロック表示より上に出る（2026-10-02）。
+       残ったタイマーは表示を下ろすだけなので止めなくてよい */
+    if($('toast')){ $('toast').textContent=''; $('toast').classList.remove('on'); }
+    /* 取得中の薬効辞書も捨てる（世代を進めて、遅れて届く応答を無視させる） */
+    mdGen++; mdPromise=null; mdPromiseRetry=false; mdLoading=false; mdErr='';
+    /* ★保存中・AIに尋ねている間の印も下ろす。どちらの応答も世代で捨てる（mdSave・mdAiFill）ので、
+       ここで下ろさないと事務所PCへ戻した時に「保存しています…」「AIに尋ねています…」が残り続ける（2026-10-06）。
+       ★AIのボタンも戻す。保存のボタンは paintShBars が未保存の有無で戻すが、AIのボタンは戻す所が尋ね終わりにしか無い。
+         未保存があって読み込み直さずに事務所PCへ戻した時（loadData）に、押せないまま残らないようにする */
+    mdBusy=''; if($('mdAi')) $('mdAi').disabled=false;
+    /* ★薬効辞書に保存していない編集がある時は、その編集だけは捨てない（2026-10-01）。別のタブで現場用へ
+       変わった時は、未保存があると読み込み直さずブロックだけにする（onDeviceRoleStorage_）。ここで捨てると、
+       事務所PCへ戻しても編集が戻らない。同期設定からの切り替えは未保存があると先に止めるので、ここへは来ない */
+    if(!(typeof mdDirty!=='undefined'&&mdDirty)) mdClearPending_();
+    mdShowHidden=false;
+    /* 与薬チェックへ送る小窓の控え（氏名・居室）も捨てる（2026-09-27） */
+    msGen++; msRows=null; msRemote=null; msAuthSt=null; msBusy=false;
+    if($('mMedSlots')) $('mMedSlots').classList.remove('on'); }
+  $('deviceBlock').classList.toggle('on',blocked);
+  devBlocked_=blocked;
+  return blocked;
+}
+/* 開いたまま別のタブ（フェイスシート等）で端末の用途が現場用に変わった時も、すぐ従う
+   （体重管理 weight-record.html と同じ作法・2026-10-01 本人決定）。storage イベントは別タブの書き込みでだけ届く
+   （このタブの saveSyncCfg は自分で読み込み直す）。key が null は別タブでの localStorage.clear()。
+   ★未保存の入力がある時は読み込み直さない（入力を捨てない）。ブロック表示だけにする。
+   ★事務所PCへ戻された時は何もしない（ブロック画面の「管理者の方」から戻す従来の手順のまま） */
+function onDeviceRoleStorage_(e){
+  if(!e||(e.key!==DEVICE_KEY&&e.key!==null))return;
+  if(getDeviceRole()!=='field'||devBlocked_)return;
+  var dirty=devDirty_();
+  applyDeviceGuard();
+  if(!dirty.length)devReload_();
+}
+window.addEventListener('storage',function(e){ try{ onDeviceRoleStorage_(e); }catch(err){} });
+/* 同じタブで別のアプリへ移り、そこで用途が現場用に変わってから「戻る」で戻ると、ページがそのまま復元されて
+   storage イベントは届かない。復元された時にも同じ判定を通す（2026-10-01） */
+window.addEventListener('pageshow',function(e){ try{ if(e&&e.persisted) onDeviceRoleStorage_({key:DEVICE_KEY}); }catch(err){} });
+/* キャッシュ即時表示＋（URLがあれば）ネット同期。init と端末解除後で共用 */
+function loadData(){
+  paintAdmBar();loadRosterCache();renderRoster();
+  try { if (window.SUPerf) SUPerf.ready(); } catch (e) {}
+  /* 認定期限タブの人数のため、認定期間（getBulk）を裏で1回取る（2026-10-16 第2弾）。
+     ★現場端末では取りに行かない（bkEnsure 側でも止める）。取れなければ人数を出さないだけ */
+  if(getDeviceRole()!=='field') bkEnsure(false);
+  if(curView==='adm') admEnsure();   /* 再読込でこのタブに戻った時も取りに行く（原則11） */
+  if(roster.length)writeCommonRoster(); // 共有キーを最新化（他アプリが即参照可）
+  /* 食形態一覧のタブを開いたまま再読み込みした時は、この表のデータも取りに行く
+     （名簿とは別のAPIで作るため、renderRoster だけでは空のままになる） */
+  if(curView==='meal'||curView==='mf'||curView==='miss') mealLoad(false);
+  /* 帳票5種も同じ（名簿とは別のAPIで作るので renderRoster だけでは空のまま。
+     バーも出さないと🔄・💾・🖨️のボタンが1つも出ない画面になる） */
+  paintShBars();
+  if(curView==='cm'||curView==='lvl'||curView==='cert') bkEnsure(false);
+  if(curView==='fam'||curView==='hist'||curView==='md'){ bkEnsure(false); fullEnsure(false); mdEnsure(false); }
+  if(rmOn_())refreshRoster();else setSync('未接続');
+  srevStart(); // stateRev 追い読み開始（URL未設定中は tick が無動作・二重呼びは内部ガード）
+  mcStart();   // 薬の変更候補（管理者だけ・現場端末では何もしない）（2026-10-06）
+  yjGate_();   // 薬情の取り込みの入口（管理者だけ・現場端末では出さない）（2026-10-22）
+}
+
+/* ═══════════ 同期設定 ═══════════ */
+/* ★合言葉は欄に入れない（2026-11-12 商用化の見直し・フェイスシート・接続設定と同じ形）。保存した合言葉を欄に入れて開くと、
+   ☁️設定を押した人なら誰でも読めた。空欄のまま保存・テストした時は、保存してある合言葉をそのまま使う（saveSyncCfg・testSync） */
+function openSync(){var _lc=rmLocalCfg_();$('cfgUrl').value=_lc.url;$('cfgToken').value='';if($('cfgVmaUrl'))$('cfgVmaUrl').value=CFG.vmaUrl||'';if($('cfgDeviceRole'))$('cfgDeviceRole').value=getDeviceRole();$('mSync').classList.add('on');navEnter()}
+function closeSync(){$('mSync').classList.remove('on');if($('sc-list').classList.contains('on'))navLeave()}
+/* 現場用へ切り替えると消えてしまう「メモリにしか無い入力」が残っている場所の名前を返す（無ければ空配列） */
+function devDirty_(){
+  var a=[];
+  try{ if(mealDirtyCells()) a.push('食形態一覧'); }catch(e){ rmNote_('未保存の確認', e); }
+  try{ if(typeof mdDirty!=='undefined'&&mdDirty) a.push('薬効辞書'); }catch(e){ rmNote_('未保存の確認', e); }
+  try{ if(bulkCellCount()) a.push('一括編集'); }catch(e){ rmNote_('未保存の確認', e); }
+  try{ if($('sc-edit')&&$('sc-edit').classList.contains('on')) a.push('編集画面（開いたまま）'); }catch(e){}
+  return a;
+}
+/* 現場用へ切り替わった時はページごと読み込み直す（根治・2026-10-01 本人決定）。
+   進行中の通信・メモリの控え・ブロック表示の下に透けて残る画面を1つずつ捨てる代わりに、
+   毎回通っている「起動時のガード」に任せる。読み込みを足すたびに同じ穴が開いていた
+   （薬効辞書・与薬の小窓・全件データ・今回で4回目）。 */
+function devReload_(){ try{ location.reload(); }catch(e){} }
+/* ═══ 入居者マスタのGASかを確かめる（2026-10-10）═══
+   別アプリのGAS（薬学管理・申送ビューア等）の URL と合言葉を組で入れても、今までは保存でき、
+   ［接続テスト］も「接続OK」と出た（その GAS の ping が通るため）。保存後は訓練計画書などが
+   「名簿を取得できませんでした（不明なaction）」になった（2026-10-10 実発生）。
+   合言葉なしの {action:'stateRev'} に {ok:true, rev:数値} を返すのは入居者マスタだけ（本番で実測）。
+   ★判定（masterTargetVerdict）は接続設定・フェイスシートと一字一句同じにする（gas/tests で突き合わせる）。 */
+function masterTargetVerdict(j){
+  if(!j || typeof j!=='object') return 'offline';
+  if(j.ok===true && j.rev!=null && j.rev!=='' && isFinite(Number(j.rev))) return 'ok';
+  /* 別アプリと断定するのは、他のGASの決まった断り文句（合言葉なしへの拒否・知らない action）と、版数を持たない ok だけ。
+     入居者マスタ自身が一時的な不調でエラーを返すこともある（転送の揺れ・内部の例外）ので、それ以外は「確かめられない」に倒す
+     （正しい入居者マスタの保存を、誤った理由で止めない） */
+  if(j.ok===true) return 'wrong';
+  if(/unauthorized|認証エラー|不明なaction|unknown action/i.test(String(j.error||''))) return 'wrong';
+  return 'offline';
+}
+var MASTER_WRONG_MSG='このURLは入居者マスタのGASではありません（薬学管理・申送など別のアプリのGASの可能性があります）';
+function verifyMasterUrl(url){
+  var ac=(typeof AbortController==='function') ? new AbortController() : null;
+  return new Promise(function(resolve){
+    var done=false;
+    function fin(v){ if(done) return; done=true; clearTimeout(timer); resolve(v); }
+    var timer=setTimeout(function(){ if(ac) ac.abort(); fin('offline'); }, 30000);
+    try{
+      fetch(url, {
+        method:'POST',
+        headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action:'stateRev' }),
+        signal: ac ? ac.signal : undefined
+      }).then(function(r){ return r.json(); })
+        .then(function(j){ fin(masterTargetVerdict(j)); }, function(){ fin('offline'); });
+    }catch(e){ fin('offline'); }
+  });
+}
+function saveSyncCfg(){
+  /* ★URL を変える保存は、書き込む前に入居者マスタのGASかを確かめる（2026-10-10）。
+     別アプリのGASと分かった時だけ止め、今の接続先を残す。通信できず確かめられない時は止めない。
+     確かめ終わったら、以下の従来の保存をそのまま通す（_checked の間だけ確かめを飛ばす）。 */
+  var _nu=($('cfgUrl').value||'').trim(), _cu='';
+  /* 比べる相手は保存済みの値（CFG はテストの間だけ試しの値に置き換わっていることがある） */
+  try{ var _sc=JSON.parse(localStorage.getItem(CFG_KEY)||'{}'); _cu=String((_sc&&_sc.url)||'').trim(); }catch(e){ _cu=''; }
+  if(!saveSyncCfg._checked && _nu && _nu!==_cu){
+    /* 確かめている間はボタンを押せなくし、ボタンの文字で知らせる（通知を増やさない＝現場用への切り替えで読み込み直す前に余計な表示を出さない） */
+    /* 確かめている間は入力欄も触れなくする（確かめた URL と、あとで書く URL を食い違わせない） */
+    var _sb=$('syncSave'), _st=_sb?_sb.textContent:'';
+    var _ins=['cfgUrl','cfgToken','cfgDeviceRole'].map(function(id){ return $(id); }).filter(Boolean);
+    var _wasOpen=!!($('mSync') && $('mSync').classList.contains('on'));
+    if(_sb){ _sb.disabled=true; _sb.textContent='確かめています…'; }
+    _ins.forEach(function(e){ e.disabled=true; });
+    verifyMasterUrl(_nu).then(function(v){
+      if(_sb){ _sb.disabled=false; _sb.textContent=_st; }
+      _ins.forEach(function(e){ e.disabled=false; });
+      /* 確かめている間に設定の窓を閉じた・入力が変わった時は書かない（遅れて届いた答えで、取りやめた保存を走らせない） */
+      if((_wasOpen && !$('mSync').classList.contains('on')) || ($('cfgUrl').value||'').trim()!==_nu) return;
+      if(v==='wrong'){ SUDialog.alert('保存していません：'+MASTER_WRONG_MSG+'。\n今の接続先のままです。'); return; }
+      saveSyncCfg._checked=true;
+      var _r; try{ _r=saveSyncCfg(); }finally{ saveSyncCfg._checked=false; }
+      /* 確かめられなかった知らせは、保存の知らせの後に出す（先に出すと上書きされて見えない）。画面の中の窓で止めた時は、窓を閉じた後に出す（2026-11-13） */
+      if(v==='offline') Promise.resolve(_r).then(function(){ toast('保存しました。ただし通信できず、入居者マスタのGASかは確かめられませんでした'); });
+    });
+    return;
+  }
+  /* ★現場用への切り替えは読み込み直すので、メモリにしか無い入力が消える。残っていたら止めて、
+     設定も保存しない（半端な状態を作らない） */
+  var _toField=!!($('cfgDeviceRole')&&$('cfgDeviceRole').value==='field'&&getDeviceRole()!=='field');
+  if(_toField){
+    var _dirty=devDirty_();
+    if(_dirty.length){
+      return SUDialog.alert('保存していない変更があります（'+_dirty.join('・')+'）。\n先に保存するか取り消してから、現場用に切り替えてください。\n\n設定は保存していません。');
+    }
+  }
+  var _oldLc=rmLocalCfg_(), _tkIn=$('cfgToken').value.trim();
+  CFG.url=$('cfgUrl').value.trim();CFG.token=_tkIn||(CFG.url?_oldLc.token.trim():'');   /* 空欄なら今の合言葉のまま（URL も空にした時は合言葉も消す） */
+  var _tkKept=!_tkIn&&!!CFG.url&&!!_oldLc.token&&CFG.url!==_oldLc.url.trim();   /* 接続先を変えて、合言葉は前のままにした */
+  if($('cfgVmaUrl'))CFG.vmaUrl=$('cfgVmaUrl').value.trim();
+  /* ★このキーはフェイスシートと共用。起動時に読んだ CFG をそのまま書くと、
+     起動後に相手側が入れた項目を古い値で潰しうる。保存の直前に読み直し、
+     自分が扱う項目だけを差し替えて書き戻す（.claude/rules/data-contracts.md §1-2）。 */
+  try{
+    var _c={};
+    try{var _s=localStorage.getItem(CFG_KEY);if(_s)_c=JSON.parse(_s)}catch(e){_c={}}
+    if(!_c||typeof _c!=='object'||Object.prototype.toString.call(_c)!=='[object Object]')_c={};
+    _c.url=CFG.url;_c.token=CFG.token;
+    /* vmaUrl は入力欄がある時だけ書く。CFG.vmaUrl は起動時のスナップショットなので、
+       欄が無い状態で書くと、別タブが後から設定した値を古い値で潰してしまう。 */
+    if($('cfgVmaUrl'))_c.vmaUrl=CFG.vmaUrl||'';
+    localStorage.setItem(CFG_KEY,JSON.stringify(_c));
+  }catch(e){ rmNote_('接続先の控え', e); }
+  try{ var _dc=window.SUDevCfg&&window.SUDevCfg.get('master'); if(_dc){CFG.url=_dc.url;CFG.token=_dc.token} }catch(e){ /* 部品が無い・壊れている時は端末の値で動く */ }   /* 配った値がある間は、それを使い続ける */
+  if($('cfgDeviceRole'))setDeviceRole($('cfgDeviceRole').value);
+  /* ★closeSync は通さない。一覧画面だと history.back() が走り、読み込み直しと競り合う。
+     残った履歴の段は、起動時の現場端末の処理（init）が消費する */
+  if(_toField){ applyDeviceGuard(); devReload_(); return; }
+  closeSync();
+  if(_tkKept) toast('合言葉は前の接続先のものを使っています。違う時は合言葉も入れて保存し直してください');
+  // 現場タブレットに設定された場合は即ブロック。事務所PCなら解除して読み込み。
+  if(applyDeviceGuard())return;
+  /* ★ログインの役割の確かめ（su-app-gate.js）をまだ通っていない時（現場端末の止めの画面から事務所PCへ戻した時）は、
+     ここで読まずに確かめに任せる（2026-10-29 反証レビューの指摘・確かめを通らずに名簿を読む経路を閉じる） */
+  if(!rmGateOk_){ rmGate_(); return; }
+  rmLiveGate_(loadData);
+}
+function testSync(){
+  if(!$('cfgUrl').value.trim()){toast('URLを入力してください');return}
+  var saved={url:CFG.url,token:CFG.token};CFG.url=$('cfgUrl').value.trim();CFG.token=$('cfgToken').value.trim()||rmLocalCfg_().token.trim();   /* 空欄なら、この端末に保存してある合言葉で試す（管理者が配った合言葉は、入れた住所へ送らない） */
+  var _tu=CFG.url;
+  apiGet({action:'ping'},8000).then(function(){
+    /* ★ping が通っても入居者マスタとは限らない（別アプリのGASも自分の合言葉なら通る）。名乗りまで確かめる（2026-10-10）。
+       確かめは合言葉も CFG も使わないので、試しの接続先はここで戻す（メモリに残る時間を延ばさない） */
+    CFG.url=saved.url;CFG.token=saved.token;
+    return verifyMasterUrl(_tu).then(function(v){
+      if(v==='wrong') return SUDialog.alert('⚠️ '+MASTER_WRONG_MSG+'。');
+      else toast(v==='ok'?'✅ 接続OK（入居者マスタのGASと確認）':'✅ 接続OK');
+    });
+  }).catch(function(e){toast('⚠️ つながりませんでした（'+rmErrWords_(e,'接続テスト')+'）。URLと合言葉を確かめてください')}).then(function(){CFG.url=saved.url;CFG.token=saved.token});
+}
+
+/* ═══════════ 一括編集 ═══════════ 2026-08-08 追加
+ * 一覧の上にモーダルで表を重ね、複数の方をまとめて直す。
+ *
+ * ── 守っていること ──
+ *   1. **既存の関数を1つも変更しない**（追加だけ）。`renderRoster` を呼ばないので、
+ *      一覧の検索・タブ・印刷・誕生日一覧のフィット処理に一切影響しない
+ *   2. 保存は GAS の `savePartial`。**直した項目だけ**を書き、他の約100項目には触れない
+ *      （`saveResident` は dataJson を丸ごと置換するので使わない）
+ *   3. **氏名は 2026-09-02 に解禁した**（照合用＝旧氏名 / 書き込み＝新氏名 を分ける・§15）。
+ *      在籍・支援経過・家族・入院フラグ・退避データは**列に出さない**。
+ *      サーバー側 `BULK_FIELDS` でも拒否する（二重の歯止め）
+ *   4. 絞り込みは**行の表示/非表示だけ**。再描画しないので、入力中の値とフォーカスが消えない
+ *      （一覧の `renderRoster` は 1打鍵ごとに innerHTML を作り直すため、その経路は使わない）。
+ *      ※`refreshBulkNames_`（保存が氏名不一致で失敗した時だけ）は例外的に再描画する。
+ *        値は `bulkDirty` から復元されるが、フォーカスとスクロール位置は飛ぶ
+ *   5. セルごとにイベントを付けず、`tbody` に1つだけ付ける（138行×12列でも重くならない）
+ *   6. 変更は `bulkDirty` に持ち、DOM を正本にしない。列グループを切り替えても消えない
+ *   7. 保存前に「対象人数・項目・他アプリへ波及する項目」を出して確認を取る
+ */
+var BULK_LEVELS=['','要支援1','要支援2','要介護1','要介護2','要介護3','要介護4','要介護5','自立'];
+/* 列の定義。★GAS の BULK_FIELDS に無いキーを足してもサーバーが拒否する（先に GAS を直すこと） */
+/* 家族の一括編集の枠。実データの最大が3名なので3枠。増やす時はここだけ直す
+   （列の生成も保存も、この数から導いている＝二重管理しない）。 */
+var BULK_FAM_SLOTS=3;
+var BULK_FAM_ITEMS=[['name','氏名','text'],['relation','続柄','text'],
+                    ['phone','電話','text'],['address','住所','text'],
+                    ['emergency','緊急','check'],['kp','KP','check']];
+var BULK_FAM_COLS=(function(){
+  var out=[], i, j;
+  for(i=0;i<BULK_FAM_SLOTS;i++)
+    for(j=0;j<BULK_FAM_ITEMS.length;j++)
+      out.push(['fam'+i+'_'+BULK_FAM_ITEMS[j][0], (i+1)+'.'+BULK_FAM_ITEMS[j][1],
+                BULK_FAM_ITEMS[j][2]]);
+  /* ★枠に入りきらない家族が居ることを見せる（実測 2026-09-07: 退去者6名が4名登録。
+     一括編集は退去者も含む143名を出すので、この画面に必ず現れる）。
+     保存では触らず残しているが、【居ることが画面に出ない】と「3名だけ」と誤解する。
+     読み取り専用の列（'note'）にして、直すのは詳細画面へ誘導する。 */
+  out.push(['famMore','枠外','note']);
+  return out;
+})();
+/* 'fam0_name' → {i:0, key:'name'}。合わない文字列には null を返す（他の項目と取り違えない） */
+function bulkFamKey(k){
+  var m=/^fam(\d+)_([A-Za-z]+)$/.exec(String(k==null?'':k));
+  if(!m) return null;
+  var i=parseInt(m[1],10);
+  if(!(i>=0&&i<BULK_FAM_SLOTS)) return null;
+  for(var j=0;j<BULK_FAM_ITEMS.length;j++) if(BULK_FAM_ITEMS[j][0]===m[2]) return {i:i, key:m[2]};
+  return null;
+}
+/* 対象アプリの一括編集（2026-11-11）。サーバーが受けるのは targetApps の配列1つだけ（家族と同じ作法）。
+   画面は APP_TARGETS の3つをチェックの列に開き、送る時に配列1つへ組み直す。
+   ★未設定（targetApps が無い）の方は「全部に表示」なので3つともチェック済みで見せるだけ。触っていない方は送らない（既定を書き込まない）。 */
+var BULK_APP_COLS=APP_TARGETS.map(function(p){ return ['tgt_'+p[0], p[1], 'check']; });
+/* 'tgt_weight' → 'weight'。合わない文字列には null */
+function bulkAppKey(k){
+  var m=/^tgt_([a-z]+)$/.exec(String(k==null?'':k));
+  if(!m) return null;
+  for(var j=0;j<APP_TARGETS.length;j++) if(APP_TARGETS[j][0]===m[1]) return m[1];
+  return null;
+}
+/* サーバーから取った時の対象アプリ（配列）。無い・形が違う時は未設定＝全部 */
+function bulkAppsOrig_(r){
+  var t=(r&&Object.prototype.toString.call(r.targetApps)==='[object Array]')?r.targetApps:null;
+  return t?t.slice():defaultTargetApps();
+}
+/* 変更のあったチェックから、その方の対象アプリを APP_TARGETS の順で組み直す */
+function bulkAppsBuild(r, dirty){
+  var orig=bulkAppsOrig_(r), out=[];
+  for(var j=0;j<APP_TARGETS.length;j++){
+    var a=APP_TARGETS[j][0], dk='tgt_'+a;
+    var on=Object.prototype.hasOwnProperty.call(dirty,dk)?bulkTruthy(dirty[dk]):(orig.indexOf(a)>=0);
+    if(on) out.push(a);
+  }
+  return out;
+}
+var BULK_GROUPS=[
+  ['basic','基本',[
+    ['kana','ふりがな','text'],['gender','性別','select',['','女','男']],
+    ['careLevel','介護度','select',BULK_LEVELS],
+    ['birthDate','生年月日','date'],['admissionDate','入居日','date'],
+    ['dischargeDate','退去日','date'],['dischargeTo','退去先','text'],
+    /* 体重は一括編集から外した（2026-08-11 管理者の指示）。正本は体重管理アプリで、
+       ここから138名分をまとめて入れると古い値を作り続けることになる。
+       1名ずつの編集画面には残してある（消すと保存済みの体重が次の保存で消えるため）。 */
+    ['height','身長cm','number'],
+    ['adl','生活自立度','text'],['dementia','認知症自立度','text']]],
+  ['system','保険・制度',[
+    ['careCertStart','認定開始','date'],['careCertEnd','認定満了','date'],['certDate','認定日','date'],
+    ['copayRate','負担割合','select',['','1','2','3']],['welfare','生保','check'],
+    ['insuredNo','被保険者番号','text'],['insurer','保険者','text'],
+    ['medicalInsurance','医療保険','select',['','後期高齢者','国保','社保','その他']],
+    ['disabilityCert','障害者手帳','text'],['guardianship','成年後見','text'],
+    ['phone','電話（本人/居室）','text']]],
+  ['office','事業所',[
+    ['careOffice','居宅介護支援事業所','text'],['careManager','介護支援専門員','text'],
+    ['careOfficeTel','居宅TEL','text'],['careOfficeFax','居宅FAX','text'],
+    ['welfareEquip','福祉用具','text'],['welfareEquipStaff','福祉用具 担当','text'],['welfareEquipTel','福祉用具TEL','text'],
+    ['serviceManager','サービス提供責任者','text'],
+    ['prevCareOffice','前の居宅','text'],['prevCareManager','前の担当ケアマネ','text']]],
+  ['medical','医療機関',[
+    /* ★この4つは 'lines'（1行の textarea）。医院が2件ある方は値に改行が入っており、
+       <input type="text"> では往復で改行が落ちて【2行に分けた医院名が1行へ戻る】
+       （2026-08-20 レビュー指摘。textarea なら値をそのまま持ち帰れる）。 */
+    ['hospital','かかりつけ病院','lines'],['doctor','主治医','lines'],
+    ['hospitalTel','病院TEL','lines'],['hospitalFax','病院FAX','lines'],
+    ['emergencyHospital','救急搬送先','text'],['emergencyHospitalTel','急変時TEL','text'],
+    ['visitDay','診療曜日','text'],
+    ['pharmacy','かかりつけ薬局','text'],['pharmacyTel','薬局TEL','text'],['pharmacyFax','薬局FAX','text'],
+    ['bloodType','血液型','select',['','A','B','O','AB','不明']]]],
+  /* ★薬剤情報（2026-09-07 管理者指示）。複数行の項目は 'lines'（1行の textarea）にする。
+     <input type="text"> だと往復で改行が落ち、【何剤も並んだ処方が1行に潰れる】
+     （医院名で同じことが起きたので 2026-08-20 に 'lines' を用意した）。
+     ★medsRegular は訪問診療アプリの setMeds と同じ項目。契約 §2 を読んでから触ること。 */
+  ['meds','薬剤',[
+    ['medsRegular','薬剤情報（定期）','lines'],
+    ['medsPrn','頓服・外用等','lines'],
+    ['medsNotes','薬備考','lines'],
+    ['highRiskMeds','注意を要する薬剤','lines'],
+    ['formAdjust','剤形配慮','select',['','なし','粉砕','簡易懸濁','OD錠','脱カプセル']],
+    ['medRefusal','服薬拒否','select',['','なし','時々あり','あり']]]],
+  /* ★家族情報（2026-09-07 管理者指示）。家族は【配列】なので、1人あたり
+     BULK_FAM_SLOTS 人ぶんの枠に開いて1セルずつ編集する。
+     実測（2026-09-07・在籍32名）: 0名1人・1名6人・2名14人・3名11人＝【最大3名】。
+     ★4人目以降が居る方は、この画面の枠に出ない。保存の時も【触らずそのまま残す】
+       （枠に無いものを消してしまうと、画面に一度も出なかった家族が黙って消える）。 */
+  ['family','家族',BULK_FAM_COLS],
+  /* ★対象アプリ（2026-11-11）。3つ全部は外せない（保存の前に止める・サーバーでも断る） */
+  ['apps','対象アプリ',BULK_APP_COLS]
+];
+/* 直すと現場アプリ側の値まで置き換わる項目（data-contracts §5「マスタ非空常勝」）。保存前に必ず知らせる */
+var BULK_DOWNSTREAM={room:'居室',careLevel:'介護度',height:'身長',kana:'ふりがな',gender:'性別',
+  dischargeDate:'退去日',doctor:'主治医',visitDay:'診療曜日',hospital:'かかりつけ病院'};
+var bulkRows=null, bulkDirty={}, bulkGroup='basic', bulkLoading=false;
+/* ★氏名の取り直し（refreshBulkNames_）が飛んでいる間に保存が成功したり表を閉じたりすると、
+   遅れて届いた古い応答が bulkRows[].name を旧値へ書き戻す。書き戻すと以後サーバーの照合が
+   永久に通らなくなる（M-5 で潰した袋小路が別経路で復活する）。世代が変わった応答は捨てる。 */
+var bulkGen=0;
+
+/* ★真偽の解釈は必ずここ1箇所。表示側と差分判定側で解釈が違うと、
+   旧形式（'有'・'1'）の行でチェックを外しても「変更なし」と判定され、
+   生活保護の終了が無言で反映されない（請求・公費に直結する） */
+function bulkTruthy(v){
+  return (v===true||v==='true'||v==='1'||v===1||v==='有'||v==='○'||v==='●'||v==='あり');
+}
+function bulkGroupDef(id){ for(var i=0;i<BULK_GROUPS.length;i++) if(BULK_GROUPS[i][0]===id) return BULK_GROUPS[i][2]; return BULK_GROUPS[0][2]; }
+function bulkDirtyCount(){ var n=0,k; for(k in bulkDirty) if(Object.keys(bulkDirty[k]).length) n++; return n; }
+function bulkCellCount(){ var n=0,k; for(k in bulkDirty) n+=Object.keys(bulkDirty[k]).length; return n; }
+/* 表示中の値。未保存の変更があればそれを、無ければ取得時の値を返す */
+/* サーバーから取った時の値（未保存の変更は見ない）。
+   ★表示（bulkVal）と差分判定（onBulkInput）は【必ずこの1本】を通す。
+     別々に書くと、家族の枠のように r[k] に存在しないキーで
+     「表示は配列から・判定は r[k]（常に空）」となり、
+     値を空にする／チェックを外す操作が【変更なし】と見なされて黙って捨てられる
+     （2026-09-07 レビュー H-1。KPと緊急連絡先が付けられるのに外せなかった）。 */
+function bulkOrig_(r,k){
+  var fk=bulkFamKey(k);
+  if(fk){
+    var arr=(r&&Object.prototype.toString.call(r.family)==='[object Array]')?r.family:[];
+    var f=arr[fk.i];
+    if(!f) return (fk.key==='emergency'||fk.key==='kp')?false:'';
+    return (f[fk.key]==null)?((fk.key==='emergency'||fk.key==='kp')?false:''):f[fk.key];
+  }
+  /* 対象アプリのチェックも r[k] には無い。配列から引く（未設定は全部チェック済み） */
+  var ak=bulkAppKey(k);
+  if(ak) return bulkAppsOrig_(r).indexOf(ak)>=0;
+  return (r&&r[k]==null)?'':(r?r[k]:'');
+}
+function bulkVal(r,k){
+  var d=bulkDirty[r.id];
+  if(d&&Object.prototype.hasOwnProperty.call(d,k)) return d[k];
+  return bulkOrig_(r,k);
+}
+/* 変更のあった枠から、その方の家族の配列を組み立て直す。
+   ★4人目以降（枠に出ていない家族）は元のまま残す。枠の数だけで作り直すと、
+     画面に一度も出なかった家族が黙って消える（原則4）。
+   ★氏名・電話・住所がすべて空の枠は落とす（空の行を増やさない）。サーバー側の
+     _famNorm と同じ規則にすること（片方だけ緩いと、画面と保存結果が食い違う）。 */
+function bulkFamBuild(r, dirty){
+  var orig=(r&&Object.prototype.toString.call(r.family)==='[object Array]')?r.family:[];
+  var out=[], i, j;
+  for(i=0;i<BULK_FAM_SLOTS;i++){
+    var src=orig[i]||{}, o={};
+    for(j=0;j<BULK_FAM_ITEMS.length;j++){
+      var key=BULK_FAM_ITEMS[j][0], dk='fam'+i+'_'+key;
+      var v=Object.prototype.hasOwnProperty.call(dirty,dk)?dirty[dk]:src[key];
+      o[key]=(key==='emergency'||key==='kp')?bulkTruthy(v):String(v==null?'':v).trim();
+    }
+    /* 枠に出ない項目（role など）は元の値を引き継ぐ */
+    o.role=String((src&&src.role)==null?'':src.role).trim();
+    if(o.name===''&&o.phone===''&&o.address==='') continue;
+    out.push(o);
+  }
+  for(i=BULK_FAM_SLOTS;i<orig.length;i++) if(orig[i]) out.push(orig[i]);   /* 4人目以降はそのまま */
+  return out;
+}
+
+function openBulk(){
+  if(!rmOn_()){ toast('⚠️ 入居者マスタの接続先が入っていません。接続設定の「入居者マスタ・フェイスシート」にURLと合言葉を入れてください（画面下の「☁️ 同期設定」からも入れられます）'); return; }
+  $('mBulk').classList.add('on');
+  navEnter();   // 戻る（スワイプ）1回で、ページを出ずにこのモーダルを閉じられるようにする
+  if(bulkRows){ renderBulk(); return; }
+  if(bulkLoading) return;
+  bulkLoading=true;
+  $('bulkScroll').innerHTML='<div class="loading">読み込み中…</div>';
+  /* 138名×40項目を1往復で取る。1人ずつ取ると2分以上かかるため専用アクションを使う */
+  var dg=devGen;   // 出した時の世代。現場用へ切り替わった後に届いた応答は、表に入れず描かない（2026-10-01）
+  /* 切り替えをはさんで届いた応答の後始末（成功側・失敗側で共通）。true＝古い世代の応答なので以降は何もしない */
+  var staleGen=function(){
+    if(dg===devGen) return false;
+    bulkLoading=false;
+    /* 一括編集を開いたまま切り替えをはさんだ時: 事務所PCへ戻っていれば取り直す。現場用のままなら中断を知らせる
+      （「読み込み中…」のまま無言で止めない） */
+    if(!bulkRows&&$('mBulk')&&$('mBulk').classList.contains('on')){
+      if(getDeviceRole()!=='field') openBulk();
+      else $('bulkScroll').textContent='読み込みを中断しました。閉じて開き直してください';
+    }
+    return true;
+  };
+  apiGet({action:'getBulk'},30000).then(function(d){
+    if(staleGen()) return;
+    bulkLoading=false;
+    var rows=(d&&d.rows)||[];
+    if(!rows.length){ $('bulkScroll').innerHTML='<div class="empty">対象の方がいません</div>'; return; }
+    /* 一覧と同じ並び（居室→ふりがな） */
+    rows.sort(function(a,b){
+      var ra=String(a.room||''),rb=String(b.room||'');
+      if(ra!==rb) return ra<rb?-1:1;
+      return String(a.kana||a.name||'').localeCompare(String(b.kana||b.name||''),'ja');
+    });
+    bulkRows=rows; renderBulk();
+  }).catch(function(e){
+    if(staleGen()) return;   // 同上（切り替え後の失敗は画面に出さない）
+    bulkLoading=false;
+    $('bulkScroll').innerHTML='<div class="empty">取得に失敗しました: '+esc(rmErrWords_(e,'一括編集の読み込み'))+'</div>';   /* 英語の例外文を職員に出さない（2026-11-12 商用化の見直し） */
+  });
+}
+async function closeBulk(fromPop){   /* fromPop: mcClose_ と同じ（「戻る」から呼ばれた時はブラウザの窓のまま聞く）。ボタンの出来事（Event）が渡っても true だけを見る */
+  var g0=bulkGen;
+  if(bulkCellCount() && !(fromPop===true?confirm('保存していない変更が '+bulkCellCount()+'件あります。破棄して閉じますか？'):(await SUDialog.confirm('保存していない変更が '+bulkCellCount()+'件あります。破棄して閉じますか？')))) return;
+  if(g0!==bulkGen) return;   /* 窓の間に保存が始まった・閉じた時は何もしない（画面の中の窓・2026-11-13・仮置き） */
+  bulkGen++;                     // 実行中の氏名取り直しの応答を無効にする
+  bulkDirty={}; bulkRows=null;   // ★次に開いた時は必ず取り直す（古い表を現在値として出さない）
+  paintBulkDirty(); $('mBulk').classList.remove('on');
+  if($('sc-list').classList.contains('on'))navLeave();
+}
+
+function renderBulk(){
+  /* タブ（列グループ） */
+  $('bulkTabs').innerHTML=BULK_GROUPS.map(function(g){
+    return '<button class="chip'+(g[0]===bulkGroup?' on':'')+'" type="button" data-bg="'+esc(g[0])+'">'+esc(g[1])+'</button>';
+  }).join('');
+  var cols=bulkGroupDef(bulkGroup);
+  var h='<table class="bulk-tbl"><thead><tr>'+
+    '<th class="bk-name">氏名</th><th class="bk-room">居室</th>'+
+    cols.map(function(c){ return '<th>'+esc(c[1])+'</th>'; }).join('')+
+    '</tr></thead><tbody id="bulkBody">';
+  for(var i=0;i<bulkRows.length;i++){
+    var r=bulkRows[i], cls=[];
+    if(r.active===false) cls.push('bulk-out');
+    if(r.broken) cls.push('bulk-broken');
+    /* ★列グループを切り替えると作り直すので、未保存の印もここで復元する。
+       復元しないと「値は残っているのに色が消える」＝直したことを見失う */
+    var dj=bulkDirty[r.id]||{};
+    var mark=function(k){ return Object.prototype.hasOwnProperty.call(dj,k)?' dirty':''; };
+    h+='<tr data-id="'+esc(r.id)+'" class="'+cls.join(' ')+'">'+
+       /* ★氏名も直せる（2026-09-02 指示）。title は【開いた時の氏名】＝サーバーが
+          「別の方に変わっていないか」の照合に使う値。直している最中でも元が誰か分かる */
+       '<td class="bk-name'+mark('name')+'" title="'+esc(r.name)+(r.broken?' ／ 保存データの形式が不正です':'')+'">'+
+         bulkCell(r,['name','氏名','text'])+'</td>'+
+       '<td class="bk-room'+mark('room')+'">'+bulkCell(r,['room','居室','text'])+'</td>';
+    for(var c=0;c<cols.length;c++) h+='<td class="'+mark(cols[c][0]).replace(/^ /,'')+'">'+bulkCell(r,cols[c])+'</td>';
+    h+='</tr>';
+  }
+  h+='</tbody></table>';
+  $('bulkScroll').innerHTML=h;
+  paintBulkDirty(); applyBulkFilter();
+}
+/* 1セル分のHTML。★属性値に入れるものは必ず esc() を通す（5文字版） */
+function bulkCell(r,c){
+  var k=c[0], type=c[2];
+  /* 枠に入りきらない家族の人数。読み取り専用なので bulkVal を通さない（未保存の変更を持たない） */
+  if(type==='note'&&k==='famMore'){
+    var fa=(r&&Object.prototype.toString.call(r.family)==='[object Array]')?r.family:[];
+    var ex=fa.length-BULK_FAM_SLOTS;
+    if(ex<=0) return '<span class="bk-note bk-note-0">—</span>';
+    return '<span class="bk-note" title="この画面の枠は'+BULK_FAM_SLOTS+'名ぶんです。'+ex+
+           '名は枠に出ていませんが、保存しても消えません。直すにはその方を開いて「家族」タブへ">+'+
+           ex+'名</span>';
+  }
+  var v=bulkVal(r,k);
+  /* ★家族の形が壊れていて読めなかった行（getBulk が familyBad を立てる）は、家族の枠を
+     【入力欄にしない】。空欄の入力欄を出すと、1つ触った時点で bulkFamBuild が
+     「家族なし」から組み直し、読めなかった元の家族を空で上書きする（原則4）。
+     直すのは詳細画面（その方を開いて「家族」タブ）。2026-09-07 レビュー M-4。 */
+  if(r&&r.familyBad&&bulkFamKey(k))
+    return '<span class="bk-lock" title="家族の情報を読み取れませんでした。ここでは直せません（触ると元の情報が消えます）。その方を開いて「家族」タブで入れ直してください">読取不可</span>';
+  var base='data-id="'+esc(r.id)+'" data-k="'+esc(k)+'"';
+  if(type==='select'){
+    var opts=c[3]||[''], sv=String(v==null?'':v);
+    var has=false, s='';
+    for(var i=0;i<opts.length;i++){
+      var o=String(opts[i]);
+      if(o===sv) has=true;
+      s+='<option value="'+esc(o)+'"'+(o===sv?' selected':'')+'>'+esc(o||'—')+'</option>';
+    }
+    /* 想定外の値は選択肢に足して残す（勝手に空へ倒さない） */
+    if(!has&&sv) s='<option value="'+esc(sv)+'" selected>'+esc(sv)+'</option>'+s;
+    return '<select '+base+'>'+s+'</select>';
+  }
+  if(type==='check'){
+    /* ★真偽の表現ゆれに広く対応する。移行データに '1'・'有' が入っていると
+       生保の方が OFF に見える（要配慮情報かつ請求に直結するので誤認の代償が大きい） */
+    return '<input type="checkbox" '+base+' data-type="check"'+(bulkTruthy(v)?' checked':'')+' style="min-width:0;width:auto">';
+  }
+  /* ★type=date は ISO 形式でない値を表示できない。number も同様。
+     既存の fld() と同じく text へ落として値を必ず見せる（空欄に見えると
+     「入っていない」と誤解し、上書きの判断を誤る） */
+  var tp=type;
+  var ph='';
+  if(type==='date'&&v&&!/^\d{4}-\d{2}-\d{2}$/.test(String(v))){ tp='text'; ph=' placeholder="YYYY-MM-DD"'; }
+  if(type==='number'&&v&&!/^-?\d+(\.\d+)?$/.test(String(v))) tp='text';
+  /* ★改行入りの値は1行では潰れて見える。全文をマウスでも読めるようにする */
+  var ttl=/[\r\n]/.test(String(v==null?'':v)) ? (' title="'+esc(String(v))+'"') : '';
+  /* 'lines' … 値に改行が入りうる列。textarea にして往復で改行を保つ。
+     ★input のままだと、そのセルを1文字直しただけで改行が消えた1行が保存される。
+     ★行の高さは1行ぶん（rows=1）。表の見た目は input とほぼ変わらない。 */
+  if(type==='lines')
+    return '<textarea '+base+' rows="1" class="bk-lines"'+ttl+'>'+esc(v)+'</textarea>';
+  return '<input type="'+esc(tp)+'" '+base+ph+ttl+' value="'+esc(v)+'">';
+}
+
+/* 変更の記録。取得時の値に戻したら「変更なし」に戻す */
+function onBulkInput(e){
+  var el=e.target; if(!el||!el.getAttribute) return;
+  var id=el.getAttribute('data-id'), k=el.getAttribute('data-k');
+  if(!id||!k) return;
+  var r=null; for(var i=0;i<bulkRows.length;i++) if(String(bulkRows[i].id)===String(id)){ r=bulkRows[i]; break; }
+  if(!r) return;
+  var nv=(el.getAttribute('data-type')==='check')?el.checked:el.value;
+  var ov=bulkOrig_(r,k);   /* ★表示と同じ経路で引く（家族の枠は r[k] に存在しない） */
+  /* ★<input type="text"> は値に改行を保持できない（HTMLの value sanitization が \r\n を消す）。
+     2026-08-19 に「かかりつけ病院」等を2行入力にしたので、医院が2件ある方の値には改行が入る。
+     この表でそのセルに触れると、ブラウザが落とした改行のせいで【変更あり】と誤認し、
+     保存すると2行に分けた医院名が1行へ戻ってしまう。
+     改行を取り除いただけの値は「変更なし」として扱う（実際に文字を直した時だけ変更とする）。 */
+  /* ★この救済は textarea には当てない。textarea は改行を保持できるので、
+     「2行を1行にまとめた」という【本当の編集】まで変更なしとして捨ててしまう
+     （2026-09-07 に処方4項目を lines にしたので、複数行が常態＝踏む確率が高い）。 */
+  var isTa=(el.tagName==='TEXTAREA');
+  var same=(el.getAttribute('data-type')==='check')?(nv===bulkTruthy(ov))
+          :(String(nv)===String(ov) || (!isTa && String(nv)===String(ov).replace(/[\r\n]/g,'')));
+  bulkDirty[id]=bulkDirty[id]||{};
+  if(same) delete bulkDirty[id][k]; else bulkDirty[id][k]=nv;
+  if(!Object.keys(bulkDirty[id]).length) delete bulkDirty[id];
+  var td=el.parentElement; if(td&&td.classList) td.classList.toggle('dirty',!same);
+  paintBulkDirty();
+}
+function paintBulkDirty(){
+  var people=bulkDirtyCount(), cells=bulkCellCount();
+  var msg=$('bulkDirtyMsg'); if(msg) msg.textContent=cells?('未保存の変更: '+people+'名 / '+cells+'項目'):'変更はありません';
+  var b=$('bulkSave'); if(b) b.disabled=!cells;
+}
+/* 絞り込みは行の表示/非表示だけ。★再描画しないこと（入力中の値とフォーカスが消える） */
+function applyBulkFilter(){
+  if(!bulkRows) return;
+  var q=($('bulkQ').value||'').trim().toLowerCase();
+  var showOut=$('bulkOut').checked;
+  var body=$('bulkBody'); if(!body) return;
+  var n=0;
+  for(var i=0;i<body.rows.length;i++){
+    var tr=body.rows[i], r=bulkRows[i];
+    var hide=(!showOut&&r.active===false);
+    if(!hide&&q){
+      /* ★氏名は「開いた時の値」と「直している途中の値」の両方で当てる。
+         片方だけだと、直した氏名で探しても出てこない（L-10） */
+      var hay=(String(r.name||'')+' '+String(bulkVal(r,'name')||'')+' '+
+               String(r.kana||'')+' '+String(r.room||'')).toLowerCase();
+      hide=hay.indexOf(q)<0;
+    }
+    tr.classList.toggle('bulk-hide',hide);
+    if(!hide) n++;
+  }
+  $('bulkCount').textContent=n+'名を表示';
+}
+
+/* 利用者Noを氏名へ。表に No 列が無いため、No だけ出しても誰のことか辿れない */
+function bulkWho(id){
+  if(bulkRows) for(var i=0;i<bulkRows.length;i++)
+    if(String(bulkRows[i].id)===String(id))
+      return bulkRows[i].name + (bulkRows[i].room ? ('（'+bulkRows[i].room+'）') : '');
+  return 'No'+id;
+}
+/* サーバーからの「No12: …」を氏名（居室）へ置き換える。表に利用者No列が無いため */
+function bulkNamed(msg){
+  return String(msg).replace(/No(\d+)/g, function(m,n){ return bulkWho(n); });
+}
+/* 氏名の正規化。★サーバーの _bulkNorm（gas/master.gs）と【同じ規則】にすること。
+   食い違うと、画面が「表記だけの調整」と判定した変更をサーバーが別人と見なして止める。
+   他アプリの名寄せ（a4NmKey・wtNormName・ジェノグラムのキー）も同じ空白除去のみ。 */
+function bulkNormName(s){ return String(s==null?'':s).replace(/\s+/g,''); }
+
+/* 氏名を直す方を「表記だけ（スペース）」と「文字そのものが変わる」に分ける。
+   ★名寄せが空白除去のみなので、前者は他アプリに1バイトも影響しない。
+     後者だけが、家族構成図・デイ利用日・体重の最新値・支援経過の取込を静かに欠けさせる。
+   ★この2つを同じ重さで警告しないこと。安全な変更に重い警告を出すと読み飛ばされ、
+     危険な変更が同じ重さで並ぶと軽く見える＝両方向に効く劣化になる。
+   引数の changes は saveBulk が組み立てたもの（c.name＝旧氏名／c.fields.name＝新氏名）。 */
+function bulkNameReview(changes){
+  var out={bad:[],spaceOnly:[],keyChanged:[],dup:[]}, i;
+  for(i=0;i<changes.length;i++){
+    var c=changes[i];
+    if(!Object.prototype.hasOwnProperty.call(c.fields,'name')) continue;
+    var nv=String(c.fields.name==null?'':c.fields.name), ov=String(c.name==null?'':c.name);
+    if(bulkNormName(nv)===''){ out.bad.push(bulkWho(c.id)+'：氏名が空です'); continue; }
+    if(/[\r\n\t]/.test(nv)){ out.bad.push(bulkWho(c.id)+'：氏名に改行・タブが入っています'); continue; }
+    (bulkNormName(nv)===bulkNormName(ov)?out.spaceOnly:out.keyChanged).push({id:c.id,old:ov,now:nv});
+  }
+  /* 直した【後】の氏名で同姓同名になる方を見つける。名寄せが空白除去のみなので、
+     同姓同名は家族構成図・体重の最新値などで同じ方として扱われる（契約書 §5・§6-⑨）。
+     ★bulkVal を使う＝まだ保存していない変更も織り込んだ「保存後の姿」で数える */
+  var map={}, j;
+  for(j=0;j<bulkRows.length;j++){
+    var rr=bulkRows[j];
+    if(rr.active===false) continue;                    /* 退去者との衝突までは追わない */
+    var kk=bulkNormName(bulkVal(rr,'name'));
+    if(kk) (map[kk]=map[kk]||[]).push(rr);
+  }
+  var seen={};
+  for(i=0;i<out.keyChanged.length;i++){
+    var key=bulkNormName(out.keyChanged[i].now);
+    if(seen[key]||!map[key]||map[key].length<2) continue;
+    seen[key]=1;
+    out.dup.push(out.keyChanged[i].now+'（'+map[key].length+'名）');
+  }
+  return out;
+}
+
+/* サーバーの現在の氏名だけを取り直して表に反映する（2026-09-02 レビュー M-5）。
+   ★未保存の変更は1つも捨てない。捨てると「閉じて開き直す」しか手が無くなり、
+     同じ表で直していた【他の方の変更まで道連れ】になる（原則4）。
+   ★自分も氏名を直していた方は、相手の変更を黙って上書きしない。氏名の変更だけ取り下げ、
+     何が起きたかを見せて人に決めさせる（他の項目の未保存はそのまま残す）。 */
+function refreshBulkNames_(){
+  var gen=bulkGen;                                   /* 追い越された応答を捨てるための世代 */
+  var back=function(){ if($('bulkSave')) $('bulkSave').disabled=!bulkCellCount(); };
+  if($('bulkSave')) $('bulkSave').disabled=true;     /* 取り直し中は押させない（M-1） */
+  setSync('氏名を確認中…');
+  apiGet({action:'getBulk'},30000).then(function(d){
+    /* ★閉じられた／その間に保存が走った＝この応答は古い。1バイトも触らない */
+    if(!bulkRows||gen!==bulkGen){ setSync(''); return; }
+    var rows=(d&&d.rows)||[], byId={}, i, moved=[], both=[];
+    if(!rows.length){ setSync('確認できず','err'); back(); return; }   // 空応答を成功として扱わない
+    for(i=0;i<rows.length;i++) if(rows[i]&&rows[i].id!=null) byId[String(rows[i].id)]=rows[i];
+    for(i=0;i<bulkRows.length;i++){
+      var r=bulkRows[i], key=String(r.id), sv=byId[key];
+      /* ★型を確かめてから使う。旧版・改造版のサーバーが name を返さないと
+         文字列 'undefined' を照合キーに焼き付けてしまう（multi-device-sync 原則10） */
+      if(!sv||typeof sv.name!=='string') continue;
+      if(sv.name===String(r.name==null?'':r.name)) continue;
+      var dd=bulkDirty[key];
+      if(dd&&Object.prototype.hasOwnProperty.call(dd,'name')){
+        both.push(String(r.name)+' → '+sv.name);
+        delete dd.name;
+        if(!Object.keys(dd).length) delete bulkDirty[key];
+      }else{
+        moved.push(String(r.name)+' → '+sv.name);
+      }
+      r.name=sv.name;                            // 照合に使う「開いた時の氏名」を現物へ合わせる
+    }
+    renderBulk(); paintBulkDirty(); back();
+    if(!moved.length&&!both.length){
+      setSync('変わっていません','err');
+      SUDialog.alert('サーバー側の氏名は、表と同じでした。\n\nもう一度「保存」を押してください。'+
+        '\nそれでも同じ理由で止まる場合は、表を閉じて開き直してください'+
+        '（未保存の変更は失われます。先に控えを取ってください）。');
+      return;
+    }
+    setSync('氏名を最新にしました','ok');
+    /* ★「相手」を断定しない。同じ分岐は【この表からの直前の保存】が
+       B列まで通って dataJson で失敗した時にも起きる（§15 の不変条件9） */
+    SUDialog.alert('この方の氏名が、いま保存しようとした内容と食い違っていました。\n'+
+      '（他の端末で直された場合と、この表からの直前の保存が途中で止まった場合があります）\n\n'+
+      '表の氏名をサーバーの現在の値にしました。'+
+      '未保存の変更（黄色いセル）はそのまま残っています。もう一度「保存」を押してください。\n\n'+
+      (moved.length?('・氏名が変わっていた方: '+moved.slice(0,10).join('／')+
+        (moved.length>10?(' ほか'+(moved.length-10)+'名'):'')+'\n'):'')+
+      (both.length?('・あなたも氏名を直していた方: '+both.slice(0,10).join('／')+'\n'+
+        '　→ この方の【氏名の変更だけ】取り下げました（他の項目の変更は残っています）。\n'+
+        '　　現在の氏名を上書きしてよいか確かめてから、入れ直してください。\n'):''));
+  }).catch(function(){ setSync('確認できず','err'); back(); });
+}
+
+async function saveBulk(){
+  /* ★氏名の前後の空白は落とす（1人ずつの編集画面 collectForm が .trim() しているのと同じ作法）。
+     名寄せは空白除去なので突合には影響しないが、共有名簿に配られて【全アプリの表示】に残る。
+     落とした結果が元と同じなら「変更なし」に戻す（空白だけ足して消しても未保存が残らない）。 */
+  Object.keys(bulkDirty).forEach(function(id){
+    var d0=bulkDirty[id];
+    if(!d0||typeof d0.name!=='string') return;
+    d0.name=d0.name.trim();
+    var r0=null; for(var i0=0;i0<bulkRows.length;i0++) if(String(bulkRows[i0].id)===String(id)) r0=bulkRows[i0];
+    if(r0&&d0.name===String(r0.name==null?'':r0.name)){
+      delete d0.name;
+      if(!Object.keys(d0).length) delete bulkDirty[id];
+    }
+  });
+  var changes=[], ids=Object.keys(bulkDirty), hitDown={}, famIds=[], appsNone=[];
+  for(var i=0;i<ids.length;i++){
+    var id=ids[i], f=bulkDirty[id], r=null;
+    for(var j=0;j<bulkRows.length;j++) if(String(bulkRows[j].id)===String(id)){ r=bulkRows[j]; break; }
+    if(!r) continue;
+    var k; for(k in f) if(BULK_DOWNSTREAM[k]) hitDown[k]=1;
+    /* ★家族の枠（fam0_name 等）は、そのままでは送らない。サーバーが受けるのは family の
+       配列1つだけ。枠を1つでも直していたら、その方の家族を組み立て直して差し替える。
+       ★枠のキーは必ず取り除く（残すと「一括編集できません」でその方の保存が丸ごと落ちる）。 */
+    var famHit=false, appHit=false, snd={};
+    for(k in f){
+      if(!Object.prototype.hasOwnProperty.call(f,k)) continue;
+      /* ★読めなかった行は家族を組み立て直さない（画面でも触れないが、二重の歯止め） */
+      if(bulkFamKey(k)){ if(!r.familyBad) famHit=true; continue; }
+      /* ★対象アプリのチェック（tgt_*）もそのままでは送らない。targetApps の配列1つに組み直す */
+      if(bulkAppKey(k)){ appHit=true; continue; }
+      snd[k]=f[k];
+    }
+    if(famHit){ snd.family=bulkFamBuild(r,f); famIds.push(String(r.id)); }
+    if(appHit){
+      var apps=bulkAppsBuild(r,f);
+      /* 開いた時と同じ組み合わせ（未設定の方は3つ全部）に戻っていれば送らない＝既定を書き込まない */
+      if(JSON.stringify(apps)!==JSON.stringify(appsCmp_(bulkAppsOrig_(r)))){
+        snd.targetApps=apps;
+        if(!apps.length) appsNone.push(bulkWho(r.id));
+      }
+    }
+    if(!Object.keys(snd).length) continue;
+    /* 氏名を一緒に送る。サーバーが照合して、開いてから別の方に変わっていたら中止する */
+    changes.push({id:r.id,name:r.name,fields:snd});
+  }
+  /* ★trim で dirty が空になった時、ここで戻ると黄色いセルと「未保存 1名」が残る（L-1） */
+  if(!changes.length){ paintBulkDirty(); if(bulkRows) renderBulk(); toast('変更がありません'); return; }
+  /* ★対象アプリを3つ全部外した方は送らない。J 列が空になると、読む側は「未設定＝全部に表示」と読み、全部に表示へ戻ってしまう
+     （サーバーでも断るが、ここで止めた方が氏名で示せる） */
+  if(appsNone.length){
+    SUDialog.alert(appsNone.slice(0,10).join('\n')+
+      (appsNone.length>10?('\nほか '+(appsNone.length-10)+'名'):'')+
+      '\n\nチェックを1つ以上入れてください。\n全部外すと、すべてのアプリに表示されてしまいます。');
+    return;
+  }
+  var appsHit=false;
+  for(var q1=0;q1<changes.length;q1++) if(Object.prototype.hasOwnProperty.call(changes[q1].fields,'targetApps')) appsHit=true;
+  /* 退去日を入れても在籍は自動で変わらない。共有名簿には active===false の方の退去日しか
+     載らないため、「入れたのに他アプリに出ない」になる。保存前に必ず知らせる */
+  var leftOpen=[];
+  for(var q2=0;q2<changes.length;q2++){
+    var cc=changes[q2];
+    if(!Object.prototype.hasOwnProperty.call(cc.fields,'dischargeDate')) continue;
+    if(!String(cc.fields.dischargeDate||'').trim()) continue;
+    for(var q3=0;q3<bulkRows.length;q3++)
+      if(String(bulkRows[q3].id)===String(cc.id)&&bulkRows[q3].active!==false){ leftOpen.push(bulkWho(cc.id)); break; }
+  }
+  /* ── 氏名の点検。空・改行は【送る前に】止める。サーバーでも止まるが、ここで止めた方が
+     「どの方か」を氏名で示せる（サーバーは利用者Noしか知らない） ── */
+  var nmv=bulkNameReview(changes);
+  if(nmv.bad.length){
+    SUDialog.alert('保存できません。氏名を直してから、もう一度「保存」を押してください。\n\n'+nmv.bad.join('\n')+
+      '\n\n氏名を空にすると、この方を全てのアプリで探せなくなります。');
+    return;
+  }
+  /* 1段階目は件数だけ。危険な方（文字が変わる）は2段階目で1件ずつ出す */
+  var nmMsg='';
+  if(nmv.spaceOnly.length||nmv.keyChanged.length)
+    nmMsg='✏️ 氏名を直す方: '+(nmv.spaceOnly.length+nmv.keyChanged.length)+'名\n'+
+      (nmv.spaceOnly.length?('　・表記だけの調整（スペース）: '+nmv.spaceOnly.length+'名 … 他のアプリへの影響はありません\n'):'')+
+      (nmv.keyChanged.length?('　・文字そのものが変わる: '+nmv.keyChanged.length+'名 … このあと、もう一度確認します\n'):'')+'\n';
+  /* ★BULK_DOWNSTREAM に name は入れていない。あちらは「直すと現場アプリ側の値まで
+     置き換わる」項目の一覧だが、週間計画・ワースケは氏名を更新しない（masterId で
+     紐づけるだけ）ため、同じ文言に混ぜると事実と違う案内になる。氏名は専用の警告で扱う */
+  var down=Object.keys(hitDown).map(function(k){return BULK_DOWNSTREAM[k]}).join('・');
+  var msg=changes.length+'名 / '+bulkCellCount()+'項目を保存します。\n\n'+nmMsg+
+    (leftOpen.length?('⚠ 在籍のまま退去日を入れた方が '+leftOpen.length+'名います（'+leftOpen.slice(0,10).join(',')+'）。\n'+
+      '　在籍状態は自動で変わりません。1人ずつの編集画面で「退去」に変えるまで、他アプリには退去日が伝わりません。\n\n'):'')+
+    '直した項目だけが書き換わり、他の項目には触れません。\n'+
+    (down?('\n⚠ '+down+' は週間計画・体重管理・排泄ケア記録にもそのまま伝わります。\n'):'')+
+    (appsHit?'\n⚠ 対象アプリ: チェックを外したアプリには、その方が表示されなくなります（記録は消えません）。\n':'')+
+    '\nよろしいですか？';
+  var g0=bulkGen, dg0=devGen;
+  if(!(await SUDialog.confirm(msg))) return;
+  if(!bulkRows||g0!==bulkGen||dg0!==devGen) return;   /* 窓の間に表を閉じた・取り直した・端末の用途が変わった時は送らない（画面の中の窓・2026-11-13・仮置き） */
+  /* ── 2段階目（2026-09-02 管理者の裁定＝案B）。文字そのものが変わる氏名だけ、もう一度確認する。
+     氏名は他の項目と違い、直した瞬間に別のアプリの表示が【エラーを出さずに】欠ける。
+     「無い」ように見えるだけなので、後から誰も気づけない。だから件数ではなく1件ずつ出す。
+     ★スペースだけの調整はここへ来ない（1段階のまま）。
+     ★自前のモーダルで出す。native の confirm を2枚続けると Chrome のダイアログ抑止を招く
+       （openNameWarn_ の見出しコメント参照・2026-09-02 レビュー M-2）。 */
+  if(nmv.keyChanged.length){ openNameWarn_(nmv,function(){ saveBulkGo_(changes,nmv); }); return; }
+  saveBulkGo_(changes,nmv);
+}
+
+/* 氏名を直す時の2段階目。危険度の高い順に並べる（いちばん上が「紙が誤って読まれる」＝
+   取り返しがつかないもの）。★native の confirm は使わない。1クリックで confirm を2枚
+   続けて出すと Chrome が2枚目に「このページでこれ以上ダイアログを表示しない」を出し、
+   チェックされると以後 confirm は無条件 false・alert は無音＝【保存ボタンが無反応になる】。
+   ★本文に入れる氏名は必ず esc() を通す（5文字版）。 */
+function openNameWarn_(nmv,onOk){
+  var names=nmv.keyChanged.slice(0,10).map(function(o){
+      return '<div>「'+esc(o.old)+'」 → <b>「'+esc(o.now)+'」</b></div>'; }).join('')+
+    (nmv.keyChanged.length>10?('<div class="muted">ほか '+(nmv.keyChanged.length-10)+'名</div>'):'');
+  $('nameWarnBody').innerHTML=
+    '<p>次の <b>'+nmv.keyChanged.length+'名</b> の氏名を、スペースではなく<b>文字そのもの</b>を変えます。</p>'+
+    '<div class="nw-names">'+names+'</div>'+
+    (nmv.dup.length?('<p class="nw-danger"><b>⚠️ 直した後に同姓同名になります: '+esc(nmv.dup.join('・'))+'</b><br>'+
+      '同姓同名の方は、家族構成図や体重の最新値が同じ方のものとして扱われます。</p>'):'')+
+    '<p class="nw-danger"><b>① デイ利用日が、紙の上で誤って読まれることがあります（いちばん重い）</b><br>'+
+      'A4様式・詳細画面の印刷・フェイスシートで「▲ 未確認」になります。'+
+      '<b>週間計画側の記録が利用者Noで紐づいていない方は「未確認」ではなく【空欄】</b>になり、'+
+      '紙の上で「デイ利用なし」と読まれます。この様式は救急搬送先や処方と同じ紙で'+
+      '<b>外部（居宅・病院）へ渡ります</b>。<br>'+
+      '→ <b>印刷の前に、週間計画アプリでも同じ氏名に直してください。</b></p>'+
+    '<p>スペースの調整と違い、文字が変わると次のことも起きます（<b>エラーは出ません。「無い」ように見えるだけです</b>）。</p>'+
+    '<ol>'+
+      '<li><b>排泄ケア記録のマスタ連携が止まります。</b>以後この方をマスタで入院・退去にしても届かず、'+
+        '居室・ふりがな・介護度も更新されません。<b>自然には戻りません</b>'+
+        '（排泄ケア記録で氏名を揃えるか「表記ゆれ確認済み」にすると戻ります）</li>'+
+      '<li><b>家族構成図</b>が「未作成」になります（図そのものは消えていません。'+
+        'ジェノグラムで新しい氏名で保存し直すと戻ります）</li>'+
+      '<li><b>支援経過の取込</b>が見送られます（元のスプレッドシートの氏名も直してください）</li>'+
+      '<li><b>申送ビューア</b>で居室が出ず、五十音の並びが変わります</li>'+
+      '<li><b>体重の最新値</b>が古い値に戻ります（体重管理アプリ側が利用者Noで紐づいていない方だけ）</li>'+
+    '</ol>'+
+    '<p class="muted">週間計画・ワークスケジュールの表示は自動では変わりません（旧表記のまま残ります）。'+
+      '週間計画側に利用者Noで紐づいていない行があると、予定ゼロの行が新しく作られることがあります。</p>';
+  var ok=$('nameWarnOk'), no=$('nameWarnCancel');
+  function shut(){ $('mNameWarn').classList.remove('on');
+    ok.removeEventListener('click',go); no.removeEventListener('click',shut); }
+  function go(){ shut(); onOk(); }
+  ok.addEventListener('click',go); no.addEventListener('click',shut);
+  $('mNameWarn').classList.add('on');
+  ok.focus();
+}
+
+/* 送信本体。1段階目（＋氏名を直した時は2段階目）を通った後だけ呼ばれる。 */
+/* ★家族は【丸ごと置き換え】で送る。表を開いた時のスナップショットから作るので、
+   開いている間に他端末・他タブがその方に家族を足していると、それを消してしまう
+   （savePartial は書く直前に行を読み直すが、family だけはその意味が消える）。
+   送る直前に取り直し、対象の方の家族が開いた時と違っていたら【1文字も書かずに】人へ見せる
+   （氏名の refreshBulkNames_ と同じ作法・2026-09-07 レビュー H-2）。
+   ★対象アプリ（targetApps・2026-11-11）も3つ丸ごと置き換わるので同じ守りを通す（反証レビューの指摘）。
+     取り直しは家族と合わせて1回の getBulk。未設定（配列が無い）と設定済みは別のものとして比べる。 */
+function bulkAppsSame_(a,b){
+  var aa=Object.prototype.toString.call(a)==='[object Array]', ba=Object.prototype.toString.call(b)==='[object Array]';
+  if(!aa||!ba) return aa===ba;
+  return JSON.stringify(appsCmp_(a))===JSON.stringify(appsCmp_(b));
+}
+function bulkFamGuard_(famIds,appIds){
+  famIds=famIds||[]; appIds=appIds||[];
+  if(!famIds.length&&!appIds.length) return Promise.resolve(null);
+  return apiGet({action:'getBulk'},30000).then(function(d){
+    var rows=(d&&d.rows)||[];
+    if(!rows.length) return null;              /* 取れなければ従来どおり進む（保存を止めない） */
+    var byId={}, i;
+    for(i=0;i<rows.length;i++) if(rows[i]&&rows[i].id!=null) byId[String(rows[i].id)]=rows[i];
+    var moved=[];
+    for(i=0;i<famIds.length;i++){
+      var id=famIds[i], sv=byId[id], mine=null;
+      for(var j=0;j<bulkRows.length;j++) if(String(bulkRows[j].id)===id){ mine=bulkRows[j]; break; }
+      if(!sv||!mine) continue;
+      if(JSON.stringify(famCmp_(sv.family))!==JSON.stringify(famCmp_(mine.family))) moved.push(id);
+    }
+    var appMoved=[];
+    for(i=0;i<appIds.length;i++){
+      var aid=appIds[i], asv=byId[aid], amine=null;
+      for(var aj=0;aj<bulkRows.length;aj++) if(String(bulkRows[aj].id)===aid){ amine=bulkRows[aj]; break; }
+      if(!asv||!amine) continue;
+      if(!bulkAppsSame_(asv.targetApps,amine.targetApps)) appMoved.push(aid);
+    }
+    return (moved.length||appMoved.length)?{moved:moved, appMoved:appMoved, rows:rows}:null;
+  }).catch(function(){ return null; });        /* 通信できない時は止めない（現場を止めない） */
+}
+function saveBulkGo_(changes,nmv){
+  bulkGen++;                     /* 実行中の氏名取り直しがあれば、その応答を無効にする */
+  var btn=$('bulkSave'); btn.disabled=true;
+  if($('bulkClose')) $('bulkClose').disabled=true;
+  /* ★終わったら全ての終端で「保存」と「閉じる」を両方戻す。閉じるが死ぬと、未保存の確認を挟むこのモーダルから出られなくなる */
+  setSync('保存中…');
+  /* ★家族・対象アプリを含む保存だけ、送る直前に割り込みを確かめる（他は従来どおり素通し＝往復を増やさない） */
+  var famIds2=[], appIds2=[]; for(var ci=0;ci<changes.length;ci++){
+    if(changes[ci].fields&&Object.prototype.hasOwnProperty.call(changes[ci].fields,'family'))
+      famIds2.push(String(changes[ci].id));
+    if(changes[ci].fields&&Object.prototype.hasOwnProperty.call(changes[ci].fields,'targetApps'))
+      appIds2.push(String(changes[ci].id));
+  }
+  bulkFamGuard_(famIds2,appIds2).then(function(g){
+  if(g){
+    btn.disabled=false; if($('bulkClose')) $('bulkClose').disabled=false;
+    setSync('中止しました','err');
+    /* 取り直した家族・対象アプリを表に反映して、人が見比べてから送り直せるようにする（未保存の変更は残す）。
+       対象アプリは未設定（配列が無い）なら控えからも消す＝「全部に表示」として見せる */
+    var gApps=g.appMoved||[];
+    for(var gi=0;gi<g.rows.length;gi++){
+      var sv=g.rows[gi]; if(!sv||sv.id==null) continue;
+      for(var gj=0;gj<bulkRows.length;gj++)
+        if(String(bulkRows[gj].id)===String(sv.id)){
+          if(g.moved.length) bulkRows[gj].family=sv.family;
+          if(gApps.length){
+            if(Object.prototype.toString.call(sv.targetApps)==='[object Array]') bulkRows[gj].targetApps=sv.targetApps.slice();
+            else delete bulkRows[gj].targetApps;
+          }
+        }
+    }
+    renderBulk();
+    SUDialog.alert('保存を中止しました（1文字も書いていません）。\n\n'+
+      (g.moved.length?('表を開いてから、他の端末で家族情報が変わった方がいます（'+g.moved.length+'名）。\n'+
+        '家族は枠の内容で【丸ごと置き換わる】ので、このまま送ると相手の変更が消えます。\n\n'):'')+
+      (gApps.length?('表を開いてから、他の端末で対象アプリが変わった方がいます（'+gApps.length+'名）。\n'+
+        '対象アプリは3つの組み合わせで【丸ごと置き換わる】ので、このまま送ると相手の変更が消えます。\n\n'):'')+
+      '最新の内容を表に反映しました。見比べてから、もう一度「保存」を押してください。');
+    return;
+  }
+  apiPostRaw({action:'savePartial',changes:changes},60000).then(async function(d){
+    /* ★保存中に「閉じる」が押されると bulkRows が null になる。
+       サーバー側は保存済みなので、失敗として報告しない（一覧の更新だけ行う） */
+    if(!bulkRows){ setSync(d&&d.ok?'保存OK':'保存失敗',d&&d.ok?'ok':'err'); refreshRoster();
+      if(d&&d.ok) bkMarkStale_();   /* 帳票の控えが古くなった印（認定期限は次に描く時に取り直す） */
+      if($('bulkClose')) $('bulkClose').disabled=false; return; }
+    if(!d||d.ok!==true){
+      setSync('保存失敗','err');
+      var det=(d&&d.detail&&d.detail.length)?('\n\n'+d.detail.map(bulkNamed).join('\n')):'';
+      /* ★氏名の一括編集は 2026-09-02 に足した。入居者マスタのGAS（Apps Script「入居者マスタAPI」）を
+         貼り替えるまでの間、氏名だけがサーバーに弾かれる。その時の文言は
+         「「name」は一括編集できません」で、現場には何のことか分からない。理由を添える。
+         ★データは1文字も変わらない（安全側に落ちる）ので、氏名以外はそのまま使ってよい。 */
+      /* ★判定はサーバーが返す【固定文言】だけに合わせる。「氏名」で広く見ると
+         「氏名が変わっています（別の方の可能性）」＝他端末との競合にも当たり、
+         関係の無いGASの貼り替えへ現場を誘導する（2026-09-02 レビュー指摘 M-4）。 */
+      /* 家族・薬剤も 2026-09-07 に足した項目。古いGASのままだと同じ形で弾かれる */
+      var hint2=/「(家族情報|薬剤情報（定期）|頓服・外用等|薬備考|注意を要する薬剤|剤形配慮|服薬拒否)」は一括編集できません/.test(det)
+        ? '\n\n※ 家族情報と薬剤情報の一括編集は、まだ使えません。データは1文字も変わっていません。'
+          +'\n'+RM_SRV_OLD+'。'
+        : '';
+      /* 対象アプリは 2026-11-11 に足した項目。古いGASのままだと「targetApps」の名前で弾かれる */
+      var hintApps=/「(対象アプリ|targetApps)」は一括編集できません/.test(det)
+        ? '\n\n※ 対象アプリの一括編集は、まだ使えません。データは1文字も変わっていません。'
+          +'\n'+RM_SRV_OLD+'。'
+        : '';
+      var hint=((nmv.spaceOnly.length||nmv.keyChanged.length)&&/「name」は一括編集できません/.test(det))
+        ? '\n\n※ 氏名の一括編集は、まだ使えません。氏名以外の項目は従来どおり保存できます。'
+          +'\n'+RM_SRV_OLD+'。'
+        : '';
+      /* ★サーバーがロックを外す前の確定（flush）を確かめられなかった時（2026-09-23）は、
+         書き込めている方がいることがある。「1文字も書き込んでいません」と断定しない。
+         判定はサーバーの固定文言（gas/master.gs の FLUSH_FAIL_MSG）の一部だけに合わせる。
+         見出し以外（未保存の印・ボタンの戻し方）は他の失敗と同じ。 */
+      var failHead=/確定できたか確かめられませんでした/.test(String((d&&d.error)||''))
+        ? '保存できたか確かめられませんでした（書き込めている方もいます）。'
+        : '保存できませんでした。1文字も書き込んでいません。';
+      await SUDialog.alert(failHead+'\n\n'+rmSaveErrWords_(d,'一括保存')+det+hint+hint2+hintApps);
+      /* ★「氏名が変わっています」＝サーバー側の氏名が動いた（他端末の編集、または
+         直前の書き込みが B列まで通って dataJson で失敗した行）。この状態は照合が
+         二度と通らず、表を閉じる以外に手が無かった＝【他の方の未保存も道連れ】になる。
+         閉じさせずに、氏名だけ取り直して照合をやり直せるようにする（原則4・2026-09-02 レビュー M-5）。 */
+      if($('bulkClose')) $('bulkClose').disabled=false;
+      /* ★保存ボタンは取り直しの終端で戻す。ここで戻すと、getBulk が飛んでいる間に
+         押し直せてしまい、成功した保存を古い応答が旧氏名へ巻き戻す（M-1） */
+      if(/氏名が変わっています/.test(det)){ refreshBulkNames_(); return; }
+      btn.disabled=false; return;
+    }
+    if(d.saved>0){ setSync('保存OK','ok'); toast('✅ '+d.saved+'名を保存しました'); }
+    else setSync('保存できず','err');
+    if(d.saved>0) bkMarkStale_();   /* 帳票の控えが古くなった印（認定期限は次に描く時に取り直す） */
+    /* ★書けなかった方の変更は【残す】。ローカルへ焼き付けて未保存マークを消すと、
+       画面は新しい値・サーバーは旧値のまま、しかも比較対象が新値になるので
+       二度と送れなくなる（無言の消失）。サーバーは失敗した id を warnIds で返す。 */
+    var failed = {};
+    if(d.warnIds&&d.warnIds.length) for(var w=0;w<d.warnIds.length;w++) failed[String(d.warnIds[w])]=1;
+    /* ★失敗の一覧(warn)はあるのに id(warnIds)が無い応答＝どれが失敗したか分からない。
+       その時は【全員ぶん未保存のまま残す】（消してしまうと二度と送れない・原則4）。
+       現行GASは必ず両方返すので通らない道だが、古い版・改造版に当たった時の安全側 */
+    if(d.warn&&d.warn.length&&!(d.warnIds&&d.warnIds.length))
+      for(var w2=0;w2<changes.length;w2++) failed[String(changes[w2].id)]=1;
+    var kept=0;
+    for(var i2=0;i2<changes.length;i2++){
+      var c=changes[i2];
+      if(failed[String(c.id)]){ kept++; continue; }        // 失敗した方は dirty のまま残す
+      var r2=null;
+      for(var j2=0;j2<bulkRows.length;j2++) if(String(bulkRows[j2].id)===String(c.id)){ r2=bulkRows[j2]; break; }
+      if(r2){ var kk; for(kk in c.fields) r2[kk]=c.fields[kk]; }
+      delete bulkDirty[String(c.id)];
+    }
+    if(d.warn&&d.warn.length)
+      await SUDialog.alert('一部が保存できませんでした（'+kept+'名）。その方の変更は黄色のまま残してあります。\n\n'+d.warn.map(bulkNamed).join('\n'));
+    paintBulkDirty();  // 未保存が残る方がいれば「保存」を押せる状態に戻す（全件成功なら無効のまま）
+    renderBulk();
+    refreshRoster();   // 一覧と共有名簿を最新化（他アプリへも伝わる）
+    if($('bulkClose')) $('bulkClose').disabled=false;
+  }).catch(function(e){
+    /* ★保存が「失敗」と返っても、サーバーには書かれていることがある（契約書 §13）。
+       1人保存と同じく、必ず取り直して実物を確かめてから表示を決める。
+       一括の updatedAt はサーバーが決めた時刻（2026-11-11 から書いた方だけ進む）で画面は知らない＝目印に使えないため、
+       送った項目の【値そのもの】を getBulk で突き合わせる。 */
+    setSync('確認中…');
+    apiGet({action:'getBulk'},30000).then(async function(d){
+      var v=verifyAppliedRows_(changes,(d&&d.rows)||[]);
+      var aN=v.applied.length,kN=v.kept.length,ap={},x;
+      if(aN>0) bkMarkStale_();   /* 実物で保存を確認できた方がいる＝帳票の控えが古くなった印 */
+      for(x=0;x<v.applied.length;x++)ap[v.applied[x]]=1;
+      if(bulkRows){
+        for(var i2=0;i2<changes.length;i2++){
+          var c=changes[i2]; if(!ap[String(c.id)]) continue;      // 未確認の方は黄色のまま残す（原則4）
+          var r2=null;
+          for(var j2=0;j2<bulkRows.length;j2++) if(String(bulkRows[j2].id)===String(c.id)){ r2=bulkRows[j2]; break; }
+          if(r2){ var kk; for(kk in c.fields) r2[kk]=c.fields[kk]; }
+          delete bulkDirty[String(c.id)];
+        }
+        paintBulkDirty(); renderBulk();
+      }
+      if(kN===0){
+        setSync('保存OK','ok');
+        toast('✅ 保存しました（応答は届きませんでしたが、全'+aN+'名分の保存を確認しました）');
+      }else{
+        setSync('保存失敗','err');
+        await SUDialog.alert('通信の応答が届かなかったため、保存の実物を確認しました。\n\n✅ 保存済み: '+aN+'名（表の色を戻しました）\n⚠️ 未保存: '+kN+'名（黄色のまま残しています）\n\n未保存の方は、もう一度「保存」を押してください。同じ値の上書きなので二重には反映されません。');
+      }
+      refreshRoster();
+    }).catch(async function(){
+      setSync('確認できず','err');
+      await SUDialog.alert('保存できたか確認できませんでした（通信が不安定です）。\n変更は黄色のまま残しています。\n\n電波の良い場所で、もう一度「保存」を押してください。同じ値の上書きなので二重には反映されません。');
+    }).then(function(){ if($('bulkSave')) $('bulkSave').disabled=false;
+      if($('bulkClose')) $('bulkClose').disabled=false; });
+  });
+  });   /* bulkFamGuard_ の then を閉じる */
+}
+
+/* ═══════════ 初期化 ═══════════ */
+function init(){
+  definePrintViews_();   /* ★最初の描画より前に登録する（setView → rmSyncPrintTarget_ が使うため） */
+  // ── 先に全イベントを登録（ブロック中でも「端末設定変更」が機能するように） ──
+  $('deviceUnlock').addEventListener('click',function(){$('deviceBlock').classList.remove('on');openSync()});
+  $('q').addEventListener('input',renderRoster);
+  // 表示パターンのタブ（リロードしても選んだタブが維持される）
+  var vtabs=Array.prototype.slice.call($('viewTabs').querySelectorAll('.vtab'));
+  vtabs.forEach(function(b,i){
+    b.addEventListener('click',function(){
+      var v=this.getAttribute('data-v');
+      if(v==='meal'&&curView==='mf') return;   /* 食形態の中で配布用を見ている時は、そのまま */
+      setView(v);
+    });
+    /* role="tab" を名乗る以上、←→で移動できないと支援技術の期待と食い違う */
+    b.addEventListener('keydown',function(e){
+      var d=(e.key==='ArrowRight'||e.key==='ArrowDown')?1:(e.key==='ArrowLeft'||e.key==='ArrowUp')?-1:0;
+      if(!d)return;
+      e.preventDefault();
+      var n=vtabs[(i+d+vtabs.length)%vtabs.length];
+      n.focus(); setView(n.getAttribute('data-v'));
+    });
+  });
+  // 保存された表示パターンのタブ状態だけ先に反映する。
+  // ここで描画すると (a) 名簿読込前なので「入居者がいません」が一瞬出る
+  // (b) 現場端末ガードで return する経路でも描画してしまう。描画は loadData に任せる。
+  paintTabs(); paintBdayBar(); paintMealBar(); paintShBars();
+  /* 誕生日ビューの年度切替・印刷。年度は端末に保存しない（毎回その日の年度で開く＝
+     去年の年度のまま印刷してしまう事故を防ぐ） */
+  if($('admBar'))Array.prototype.forEach.call($('admBar').querySelectorAll('.achip'),function(b){
+    b.addEventListener('click',function(){setAdmOrder(this.getAttribute('data-o'))});
+  });
+  if($('bdayPrev'))$('bdayPrev').addEventListener('click',function(){bdayFY--;paintBdayBar();renderRoster()});
+  if($('bdayNext'))$('bdayNext').addEventListener('click',function(){bdayFY++;paintBdayBar();renderRoster()});
+  if($('bdayPrint'))$('bdayPrint').addEventListener('click',function(){bdayPrintGo_()});
+  /* CM表・介護度別（2026-09-04 追加） */
+  if($('cmPrint'))  $('cmPrint').addEventListener('click',function(){rmPrint_('cm')});
+  if($('lvlPrint')) $('lvlPrint').addEventListener('click',function(){rmPrint_('lvl')});
+  if($('roomPrint')) $('roomPrint').addEventListener('click',function(){rmPrint_('room')});
+  if($('cmReload')) $('cmReload').addEventListener('click',function(){bkEnsure(true)});
+  /* CM表の見せ方（五十音順／居宅別）2026-09-17 追加 */
+  if($('cmBar')) Array.prototype.forEach.call($('cmBar').querySelectorAll('.cmchip'),function(b){
+    b.addEventListener('click',function(){ setCmMode(this.getAttribute('data-m')) });
+  });
+  /* CM表の大きさ（2026-10-23 本人指示）: ボタンとピンチの両方。ピンチは CM表の上でだけ扱う（cmPinchOk_） */
+  if($('cmZoomOut'))   $('cmZoomOut').addEventListener('click',function(){ cmZoomStep_(-CM_ZOOM_STEP) });
+  if($('cmZoomIn'))    $('cmZoomIn').addEventListener('click',function(){ cmZoomStep_(CM_ZOOM_STEP) });
+  if($('cmZoomReset')) $('cmZoomReset').addEventListener('click',function(){ cmZoomSet_(1) });
+  cmZoomPaint_();
+  /* ピンチのリスナーは CM表を表示している間だけ付ける（cmPinchBind_・paintShBars から）。ここでも今のビューで1回そろえる */
+  cmPinchBind_(curView==='cm');
+  if($('lvlReload'))$('lvlReload').addEventListener('click',function(){bkEnsure(true)});
+  if($('famPrint')) $('famPrint').addEventListener('click',function(){rmPrint_('fam')});
+  if($('histPrint'))$('histPrint').addEventListener('click',function(){rmPrint_('hist')});
+  if($('famReload'))$('famReload').addEventListener('click',function(){bkEnsure(true); fullEnsure(true)});
+  if($('histReload'))$('histReload').addEventListener('click',function(){bkEnsure(true); fullEnsure(true); mdEnsure(true)});
+  /* 与薬チェックへ時間帯を送る（2026-09-27 追加） */
+  if($('histMedSlots'))$('histMedSlots').addEventListener('click',msOpen_);
+  if($('msClose'))  $('msClose').addEventListener('click',function(){msClose_()});
+  if($('msRecheck'))$('msRecheck').addEventListener('click',function(){ if(!msBusy) msLoadRemote_(); });
+  if($('msSend'))   $('msSend').addEventListener('click',msSend_);
+  if($('msScroll')) $('msScroll').addEventListener('change',msOnCheck_);
+  if($('mMedSlots'))$('mMedSlots').addEventListener('keydown',function(e){ if(e.key==='Escape') msClose_(); });
+  mcWire_();   /* 薬の変更候補（2026-10-06 追加） */
+  yjWire_();   /* 薬情の取り込み（2026-10-22 追加） */
+  yrWire_();   /* 薬情の反映の見直し（2026-11-11 追加） */
+  yjpWire_();   /* 薬情・お薬シールの写真を入れる帯（2026-10-23 追加） */
+  /* 薬効辞書（2026-09-04 追加） */
+  if($('mdAdd'))   $('mdAdd').addEventListener('click',mdAddDrug);
+  if($('mdBar'))   Array.prototype.forEach.call($('mdBar').querySelectorAll('.mdchip'),function(b){
+    b.addEventListener('click',function(){ setMdOrder(this.getAttribute('data-o')) });
+  });
+  if($('mdHidden')) $('mdHidden').addEventListener('click',function(){
+    mdShowHidden=!mdShowHidden; paintShBars(); renderRoster();
+  });
+  if($('mdAi'))    $('mdAi').addEventListener('click',mdAiFill);
+  if($('mdSave'))  $('mdSave').addEventListener('click',mdSave);
+  if($('mdPrint')) $('mdPrint').addEventListener('click',function(){rmPrint_('md')});
+  /* 認定期限（2026-09-26 追加） */
+  if($('certPrint')) $('certPrint').addEventListener('click',function(){rmPrint_('cert')});
+  if($('certReload'))$('certReload').addEventListener('click',function(){bkEnsure(true)});
+  /* 食形態の「配膳・編集用（A3）／配布用（A4）」の切り替え（2026-10-16 第1弾） */
+  Array.prototype.forEach.call(document.querySelectorAll('.mfseg button'),function(b){
+    b.addEventListener('click',function(){ setView(this.getAttribute('data-mfv')); });
+  });
+  /* 未入力の一覧（2026-10-17 第3弾）。氏名を押すとその方の詳細を開く */
+  if($('missReload')) $('missReload').addEventListener('click',function(){
+    bkEnsure(true);
+    if(!mealDirtyCells()) mealLoad(true);   /* 食形態一覧の未保存の変更がある時は取り直さない（消さない） */
+  });
+  if($('rosterBox')) $('rosterBox').addEventListener('click',function(e){
+    if(curView!=='miss') return;
+    var b=e.target&&e.target.closest?e.target.closest('[data-miss-id]'):null;
+    if(b) openResident(b.getAttribute('data-miss-id'));
+  });
+  /* 食形態一覧表（配布用・2026-10-15） */
+  if($('mfPrint'))  $('mfPrint').addEventListener('click',function(){rmPrint_('mf')});
+  if($('mfReload')) $('mfReload').addEventListener('click',async function(){
+    /* 食形態一覧の未保存の変更は、取り直すと消える（同じデータを共有しているため） */
+    var mok=mealLeaveOk('サーバーから取り直す'); if(mok!==true){ if(!(await mok)) return; if(mealSaving) return; }   /* 窓の間に保存が始まった時は取り直さない（画面の中の窓・2026-11-13・仮置き） */
+    mealDirty={}; mealLoad(true);
+  });
+  if($('mfDate')) $('mfDate').addEventListener('change',function(){
+    var v=String(this.value||'');
+    mfDate=/^\d{4}-\d{2}-\d{2}$/.test(v)?v:todayISO();   /* 空・不正は今日へ戻す */
+    if(curView==='mf') renderRoster();
+  });
+  /* 入力・チェックの変更を拾う（行は描き直されるので親で受ける） */
+  if($('rosterBox')) $('rosterBox').addEventListener('click',function(e){
+    if(curView!=='md') return;
+    var b=e.target&&e.target.closest?e.target.closest('.mddel'):null;
+    if(b) mdToggleDel(b.getAttribute('data-del'));
+  });
+  if($('rosterBox')) $('rosterBox').addEventListener('input',function(e){
+    if(curView==='md'&&e.target&&e.target.classList&&
+       (e.target.classList.contains('mde')||e.target.classList.contains('mdn')))
+      mdMarkDirty(e.target.closest('tr[data-md]'));
+  });
+  if($('rosterBox')) $('rosterBox').addEventListener('change',function(e){
+    if(curView==='md'&&e.target&&e.target.type==='checkbox')
+      mdMarkDirty(e.target.closest('tr[data-md]'));
+  });
+  /* 食形態一覧: 取り直し・保存・A3縦印刷 */
+  if($('mealReload'))$('mealReload').addEventListener('click',async function(){
+    var mok=mealLeaveOk('サーバーから取り直す'); if(mok!==true){ if(!(await mok)) return; if(mealSaving) return; }   /* 窓の間に保存が始まった時は取り直さない（画面の中の窓・2026-11-13・仮置き） */
+    mealDirty={}; mealLoad(true);
+  });
+  if($('mealSave'))$('mealSave').addEventListener('click',mealSaveGo);
+  if($('mealPrint'))$('mealPrint').addEventListener('click',msPrintMeal);
+  Array.prototype.forEach.call($('filterRow').querySelectorAll('.chip'),function(c){
+    c.addEventListener('click',function(){curFilter=this.getAttribute('data-f');
+      try{localStorage.setItem(FILTER_KEY,curFilter)}catch(e){}
+      Array.prototype.forEach.call($('filterRow').querySelectorAll('.chip'),function(x){x.classList.toggle('on',x===c)});renderRoster()});
+  });
+  /* 保存済みの絞り込みをチップの点灯へ反映（HTMLは「在籍」固定のため） */
+  Array.prototype.forEach.call($('filterRow').querySelectorAll('.chip'),function(x){
+    x.classList.toggle('on',x.getAttribute('data-f')===curFilter)});
+  Array.prototype.forEach.call(document.querySelectorAll('.bnav button'),function(b){
+    b.addEventListener('click',async function(){var sc=this.getAttribute('data-sc');
+      /* ★編集画面から一覧・新規へ移る時は、未保存の変更を確かめる（同期設定・アプリは上に重なるだけなので聞かない） */
+      if(sc==='new'||sc==='list'){ var lok=editLeaveOk_(); if(lok!==true&&!(await lok)) return; }
+      if(sc==='new'){openEdit(null)}else if(sc==='sync'){openSync()}else if(sc==='apps'){openApps()}else{showScreen('list')}});
+  });
+  $('backBtn').addEventListener('click',function(){showScreen('list')});
+  /* 詳細の目次・欄をたたむ（2026-10-16 第2弾）。描き直しても効くよう、親でまとめて受ける */
+  if($('viewToc')) $('viewToc').addEventListener('click',function(e){
+    var b=e.target&&e.target.closest?e.target.closest('button'):null; if(!b) return;
+    var all=b.getAttribute('data-vall');
+    if(all){
+      var secs=viewSecs_(), names=[];
+      secs.forEach(function(s){ viewFoldSet_(s, all==='fold'); if(all==='fold') names.push(viewSecName_(s)); });
+      foldSave_(names);
+      return;
+    }
+    var s=document.querySelector('#viewBox .sec[data-vsec="'+b.getAttribute('data-vgo')+'"]'); if(!s) return;
+    if(s.classList.contains('folded')) viewFoldToggle_(s);   /* たたんだ欄へ飛んだ時は開く */
+    try{ s.scrollIntoView({behavior:'smooth', block:'start'}); }catch(err){ s.scrollIntoView(); }
+  });
+  if($('viewBox')){
+    var vlbl=function(e){ var l=e.target&&e.target.closest?e.target.closest('.sec-lbl[role="button"]'):null;
+      return (l&&l.parentNode&&$('viewBox').contains(l))?l.parentNode:null; };
+    $('viewBox').addEventListener('click',function(e){ var s=vlbl(e); if(s) viewFoldToggle_(s); });
+    $('viewBox').addEventListener('keydown',function(e){
+      if(e.key!=='Enter'&&e.key!==' ') return;
+      var s=vlbl(e); if(!s) return;
+      e.preventDefault(); viewFoldToggle_(s);
+    });
+  }
+  $('editBtn').addEventListener('click',function(){if(curResident)openEdit(curResident)});
+  /* ★通常の印刷は必ず通常の見た目で刷る（a4-on の残留を構造的に封じる） */
+  /* ★a4Off は【刷る直前】に呼ぶ。クリック時に呼ぶだけだと、取得を待っているあいだに
+     「A4様式」を押された場合に body.a4-on が付いたままとなり、通常の印刷がA4様式の紙を出す
+     （「通常の印刷は必ず通常の見た目で刷る」という既存の不変条件を壊さない）。a4Off は冪等 */
+  /* ★薬効辞書（med_dict）が届くまで待ってから刷る（2026-09-24 本人決定 Q2）。待ちの後は従来どおり
+     デイ利用日を待つ printWithDayUse へ渡す（待ちを2段に重ねるだけで、どちらの守りも外さない） */
+  $('printBtn').addEventListener('click',function(){
+    var who=a4CurId_();
+    /* ★ボタン経路の印刷は mdPrintViaBtn_ を立てて刷る（⌘/Ctrl+P の見張りと見分けるため） */
+    mdPrintGate_(function(){
+      var r=curResident;
+      return !!(r&&String(r.medsRegular||'').trim()&&medsFxOk_()&&!mdMap&&getDeviceRole()!=='field');
+    },function(){
+      var sc=$('sc-view');
+      return who!==null&&who===a4CurId_()&&!!sc&&sc.classList.contains('on');
+    },function(){
+      printWithDayUse(curResident,a4CurId_,function(){
+        a4Off(); mdPrintViaBtn_=true;
+        try{ window.print(); } finally { mdPrintViaBtn_=false; }
+      });
+    });
+  });
+  $('a4Btn').addEventListener('click',a4Print);
+  if($('wiBtn')) $('wiBtn').addEventListener('click',wiPrint);   /* その方らしさの紙（2026-10-17 第3弾） */
+  /* 編集画面のスクロールに合わせて「今いる欄」のタブを光らせる（現在地の明示・HIG）。
+     passive でスクロール性能を落とさず、1フレーム1回に間引く。
+     タブが無い画面では markEditTab が即座に戻るので他画面には影響しない */
+  var tabTick=false;
+  window.addEventListener('scroll',function(){
+    if(tabTick)return; tabTick=true;
+    requestAnimationFrame(function(){ tabTick=false; try{markEditTab()}catch(e){} });
+  },{passive:true});
+  $('hospBtn').addEventListener('click',toggleHosp);
+  $('editCancel').addEventListener('click',async function(){
+    var lok=editLeaveOk_(); if(lok!==true){ if(!(await lok)) return; if(!$('sc-edit').classList.contains('on')) return; }   /* 未保存の変更があれば確かめる（2026-10-16）。画面の中の窓の答えを待ち、窓の間に編集画面を離れていた時は何もしない（画面の中の窓・2026-11-13・仮置き） */
+    if(curResident)openResident(curResident.id);else showScreen('list')});
+  $('saveBtn').addEventListener('click',saveResident);
+  /* ── 一括編集（2026-08-08 追加）。既存のリスナーには一切触れない ── */
+  $('bulkOpen').addEventListener('click',openBulk);
+  $('bulkClose').addEventListener('click',closeBulk);
+  $('bulkSave').addEventListener('click',saveBulk);
+  $('bulkQ').addEventListener('input',applyBulkFilter);
+  $('bulkOut').addEventListener('change',applyBulkFilter);
+  /* セルごとではなく表全体に1つだけ付ける（138行×12列でも重くならない） */
+  $('bulkScroll').addEventListener('input',onBulkInput);
+  $('bulkScroll').addEventListener('change',onBulkInput);
+  $('bulkTabs').addEventListener('click',function(e){
+    var b=e.target.closest?e.target.closest('[data-bg]'):null;
+    if(!b) return;
+    bulkGroup=b.getAttribute('data-bg');
+    renderBulk();          // 未保存の変更は bulkDirty に残っているので消えない
+  });
+  /* 背景のうす暗い部分を押したら閉じる（中身のクリックでは閉じない） */
+  $('mBulk').addEventListener('click',function(e){ if(e.target===$('mBulk')) closeBulk(); });
+  $('syncClose').addEventListener('click',closeSync);
+  if($('medsAuditRun')) $('medsAuditRun').addEventListener('click',runMedsAudit);
+  /* 薬剤名リンクは1箇所でまとめて受ける（行ごとに登録しない） */
+  document.addEventListener('click',function(ev){
+    var a = ev.target && ev.target.closest ? ev.target.closest('a.mlink') : null;
+    if(!a) return;
+    /* 新しいタブを開けた時だけリンクの既定の動きを止める（塞がれた時はリンクのまま KEGG の検索が開く） */
+    if(openOkusuri(a.getAttribute('data-q'))) ev.preventDefault();
+  });
+  $('appsClose').addEventListener('click',closeApps);
+  $('mApps').addEventListener('click',function(e){if(e.target===this)closeApps()});
+  $('syncTest').addEventListener('click',testSync);
+  $('syncSave').addEventListener('click',saveSyncCfg);
+  $('mSync').addEventListener('click',function(e){if(e.target===this)closeSync()});
+  // ── 端末用途ガード：現場タブレットはデータを一切読み込まずブロック表示 ──
+  if(applyDeviceGuard()){
+    setSync('現場端末','err');
+    /* 現場端末は入居者マスタを読まないので接続先が要らない。「接続先が入っていません」の帯を出さない（2026-11-10 本人指示） */
+    try{ if(window.SUCfgHint&&typeof window.SUCfgHint.quiet==='function') window.SUCfgHint.quiet(); }catch(e){ /* 案内の帯の失敗は止めない */ }
+    /* 現場端末でも、前回残った履歴の段は消費しておく（残すと「戻る」が1回空振りする） */
+    try{ if(history.state&&history.state.rmScr)history.back(); }catch(e){}
+    return;
+  }
+  /* ログインの役割の確かめ（2026-10-29 代表者の決定・su-app-gate.js）。端末の用途の止めの後・名簿の控え（loadData）を読む前に確かめる。
+     誕生日（?view=bday）を含む画面全体が対象。開けない時（現場のアカウント・ログインなし・確かめられない）は何も読まず、
+     覆いの画面だけを出す。名簿の控えは消さない（事務所PCの控え）。部品が読めない時も開かない */
+  rmGate_();
+}
+/* 確かめが通ったか（通るまでは名簿を読まない）。保存していない入力の判定は、ページを閉じる時の確かめ（beforeunload）と同じものに
+   薬の変更候補の直し案を足したもの（反証レビューの指摘・読み込み直しで黙って捨てない） */
+var rmGateOk_=false;
+function rmGateDirty_(){
+  if(devDirty_().length) return true;
+  if(typeof yjSt!=='undefined'&&yjSt&&((yjSt.cur&&yjSt.cur.writing)||yjDirty_()||yjSt.docs.some(function(x){ return x.status==='unsure'; }))) return true;
+  if(typeof yjpBusy!=='undefined'&&yjpBusy) return true;
+  if(typeof mcCur!=='undefined'&&mcCur&&mcCur.edited) return true;
+  return false;
+}
+function rmGate_(){
+  if(!window.SUAppGate){
+    document.body.textContent='';
+    var gp=document.createElement('p'); gp.textContent='ログインを確かめる部品を読み込めませんでした。ページを読み込み直してください。';
+    document.body.appendChild(gp);
+    return;
+  }
+  window.SUAppGate.run('resident-master',{dirty:rmGateDirty_}).then(function(ok){ if(ok) rmStart_(); });
+}
+function rmStart_(){
+  rmGateOk_=true;
+  /* 接続先の無い事務所PCは、ログインだけで使えるかを確かめてから読み始める（2026-11-08・確かめは1回だけ） */
+  rmLiveGate_(rmStartBody_);
+}
+function rmStartBody_(){
+  loadData();
+  /* ★前回開いていた方の詳細画面へ戻す（原則11）。復元順は「保存済みタブ・絞り込みの後」。
+     次のどれかに当たれば開かない＝迷ったら一覧のままにする（開かない側へ倒す）:
+     ・URLで画面が指定されている（?view=bday 等）… メニューの「🎂 誕生日一覧」を押したのに
+       詳細画面が覆いかぶさると、誕生日表を出したつもりで入居者の詳細に着地する
+     ・接続先が未設定 … 詳細は取得できないのでエラー画面に固定される（一覧はキャッシュで動く）
+     ・名簿にその番号が居ない … 前回の別人・退去済みを開かない */
+  /* ★再読み込み時、前回積んだ履歴段が残っていることがある（pushState の state は再読込後も残る）。
+     二重に積まないよう、復元より【先】に旗を立てる（個人画面を復元するなら残った段をそのまま使う） */
+  var _hadNavState=false;
+  try{ if(history.state&&history.state.rmScr){ _hadNavState=true; _navPushed=true; } }catch(e){}
+  var _urlView=(function(){try{return new URLSearchParams(location.search).get('view')}catch(e){return null}})();
+  /* ★?id=番号 で、その方の詳細画面を直接開く（2026-10-17 第3弾・管理者指示）。他のアプリやメモから1回で開くための口。
+     ・受けるのは数字だけ。開いたら URL から id を外す（次の再読み込みは下の sessionStorage の控えで戻る＝従来どおり）
+     ・名簿の控えに居なくても開く（初めての端末でも開けるように）。番号の確かめはサーバーが行い、無ければ詳細画面に失敗が出る
+     ・現場端末はこの手前で止まっている（上の applyDeviceGuard）＝ここまで来ない */
+  var _urlId=(function(){try{var v=new URLSearchParams(location.search).get('id');return (v&&/^\d{1,9}$/.test(v))?v:null}catch(e){return null}})();
+  if(_urlId!==null){
+    try{ var _p=new URLSearchParams(location.search); _p.delete('id'); var _q=_p.toString();
+         history.replaceState(history.state,'',location.pathname+(_q?'?'+_q:'')+location.hash); }catch(e){}
+  }
+  var _openId=readOpenId();
+  if(_urlId!==null && !_urlView && rmOn_()) openResident(_urlId);
+  else if(!_urlView && rmOn_() && _openId!=null &&
+     roster.some(function(r){return String(r.id)===String(_openId)})) openResident(_openId);
+  /* 個人画面を復元しなかったのに段が残っている場合は消費する（一覧からの戻るを1回で出られるように） */
+  if(_hadNavState&&$('sc-list').classList.contains('on')){ _navPushed=false; try{history.back();}catch(e){} }
+}
+document.addEventListener('DOMContentLoaded',init);
+document.addEventListener('DOMContentLoaded',function(){ try{ rmResolveWho_(); }catch(e){} });
+window.addEventListener('storage',function(e){ if(e.key===null || /^sb-[a-z0-9]+-auth-token$/.test(e.key||'')){ try{ rmResolveWho_(); }catch(e2){} } });
+document.addEventListener('visibilitychange',function(){ if(!document.hidden){ try{ rmResolveWho_(); }catch(e){} } });
