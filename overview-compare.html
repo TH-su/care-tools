@@ -87,6 +87,9 @@ body {
   .panes { flex-direction: column; }
   .pane.left { border-right: none; border-bottom: 2px solid var(--g7); }
 }
+/* 上下2段の時、各段が札＋iframe の既定の高さ（約180px）より縮まず、iPhone の横向きなど低い画面で全支援が下へ押し出されていた。
+   段の最低の高さを外し、入れ物の高さを2つで分け合う（画面だけ・印刷は変えない・代表者の決定 2026-11-13） */
+@media screen and (max-width: 860px) { .pane { min-height: 0; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 /* 字と地の差を 7:1 以上にそろえる（画面だけ・色合いはそのまま濃くする・印刷の紙は元の色のまま・代表者「推奨どおり色も7:1にそろえて」2026-11-03） */
 @media screen { :root[data-su-theme] { --orange: #904207; } }   /* 全支援の橙（白地・白い字とも 7.1:1） */
