@@ -66,6 +66,7 @@ function load(F, els, timers) {
   vm.runInContext(read('su-print.js'), ctx, { filename: 'su-print.js' });
   return ctx.SUPrint || ctx.window.SUPrint;
 }
+const settle = async () => { for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r)); };
 const d = new Date(), TODAY = d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日';
 
 console.log('\n— 1. 文の作り方（施設名・印刷日） —');
@@ -138,6 +139,28 @@ console.log('\n— 2. 施設情報が読めない時 —');
     let went = 0, ng = [];
     const ok = await P.facGate(() => { went++; }, (m) => ng.push(m));
     t('施設情報の部品が無ければ刷らずに知らせる', ok === false && went === 0 && ng.length === 1);
+  }
+
+  console.log('\n— 3b. 待つ間の二重押し（facility_print_gate_test の F 節と同じ形）—');
+  {
+    const F = fakeFacility(false, { '施設名': '見本ホーム' });
+    const timers = [];
+    const P = load(F, [], timers);
+    let went = 0; const ng = [];
+    const go = () => { went++; }, no = (m) => ng.push(m);
+    P.facGate(go, no); P.facGate(go, no); P.facGate(go, no);
+    t('待っている間に3回押しても、待ちは1本だけ', timers.filter((x) => x.ms === 3000).length === 1, timers.map((x) => x.ms));
+    F.settle(true); await settle();
+    t('待ちが終わると1回だけ刷る', went === 1 && ng.length === 0, { went, ng });
+    F._ready = false;
+    P.facGate(go, no); P.facGate(go, no);
+    t('刷った後は止めを外す（次の押下でまた待ちを始める・待ち中の2回目は無視）', timers.filter((x) => x.ms === 3000).length === 2);
+    timers.filter((x) => x.ms === 3000)[1].fn(); await settle();
+    t('読めなかった時は知らせは1回だけで刷らない', went === 1 && ng.length === 1, { went, ng });
+    P.facGate(go, no);
+    t('断った後も止めを外す（その次は押せる）', timers.filter((x) => x.ms === 3000).length === 3);
+    F.settle(true); await settle();
+    t('止めを外した後の押下は、もう一度刷る', went === 2);
   }
 
   console.log('\n— 4. 画面では出さない・CSS の型 —');

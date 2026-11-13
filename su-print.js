@@ -191,15 +191,20 @@
   }
   /* ボタンからの印刷の門。読めていればその場で go() を呼ぶ（待たない＝今までと同じ順で刷る）。
      まだなら待ち、読めれば go()、読めなければ ng(知らせの文) を呼んで刷らない。返り値は go を呼べば true の Promise */
+  /* ★待っている間の二重押しは何もしない（待ちは1本・読めた時に2回刷らない・知らせも1回）。刷っても断っても印を外す */
+  var facWaiting = false;
   function facGate(go, ng) {
+    if (facWaiting) return Promise.resolve(false);
     var F = global.SUFacility, now = false;
     try { now = !!(F && typeof F.ready === 'function' && F.ready()); } catch (e) { now = false; }
     if (now) { go(); return Promise.resolve(true); }
+    facWaiting = true;
     return facReady().then(function (r) {
+      facWaiting = false;
       if (r) { go(); return true; }
       if (typeof ng === 'function') ng(FAC_NG_MSG);
       return false;
-    });
+    }, function () { facWaiting = false; return false; });
   }
 
   /* ───────── 設定の保存（個人情報なし） ───────── */

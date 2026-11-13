@@ -190,8 +190,12 @@ body {
   .wrap { padding: 0; display: block; }
   .sheet { box-shadow: none; width: 100%; height: 279mm; }
   .cell.today { box-shadow: none; }
-  /* 施設名・印刷日（2026-11-13 代表者の決定）。年月の左に小さく1行。見出しの段の高さは年月が決めるので変わらない */
-  .sh-ttl .su-print-head.pc-fac { flex: 0 1 auto; min-width: 0; font-size: 2.6mm; font-weight: 400; padding-bottom: .6mm; }
+  /* 施設名・印刷日（2026-11-13 代表者の決定）。年月の左の空き（.sp の所）にだけ、施設名と印刷日の2行で小さく置く。
+     ★幅の元を 0（flex-basis:0・min-width:0）にして空きだけを使う＝表題・薬名・年月を縮めない・折り返させない・重ならない。
+       長い施設名は … で切り、印刷日は切らない。2行の高さ（約6.2mm）は年月の行より低いので、見出しの段の高さは変わらない（反証レビュー 高1） */
+  .sh-ttl .su-print-head.pc-fac { flex: 1000 1 0; min-width: 0; flex-direction: column; align-items: flex-end;
+    font-size: 2.6mm; line-height: 1.2; font-weight: 400; padding-bottom: .6mm; }
+  .sh-ttl .su-print-head.pc-fac > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   @page { size: A4 portrait; margin: 8mm; }
 }
 @media (prefers-reduced-motion: reduce) { .btn { transition: none; } }
