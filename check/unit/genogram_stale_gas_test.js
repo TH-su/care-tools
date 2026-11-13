@@ -9,6 +9,7 @@
      5. 1時間ごとの確かめは画面が隠れている間は休み、1時間たつまでは打たない。起動の時は打つ
      6. 記録（note）は古いと分かった時に1回だけ。URL・合言葉を書かない
      7. 一覧・読込・保存・削除の入口が全部 syncCall を通る（ping は通さない＝止めても確かめ直せる）
+     8. 接続先を変える前に出した確かめの答えが遅れて届いても捨てる（世代の印）。確かめ直しを強いた時は途中でも打ち直す（2026-11-13 反証レビュー）
    ★通信は全部偽物。氏名は「テスト 一郎」などの架空。 */
 'use strict';
 const fs = require('fs');
@@ -60,15 +61,16 @@ function box(opt) {
     },
     genoNote_: (where, e) => { notes.push([where, (e && e.message) || String(e)]); },
     isConfigured: () => o.configured !== false,
+    localStorage: { setItem() {} }, LS_CLOUD_CFG: 'genogram:cloudCfg',
     Promise, Date, String, Math, Array, Object, JSON, Number, Error
   };
   vm.createContext(b);
   vm.runInContext([
     cutLine('const GENO_WRITE_ACTIONS = '), cutLine('const GENO_STALE_MSG = '), cutLine('const GENO_PING_EVERY_MS = '),
-    cutLine('let genoStale = false'),
+    cutLine('let genoStale = false'), (SRC.indexOf('var genoPingGen') >= 0 ? cutLine('var genoPingGen') : ''), cutF('setCfg'),
     cutF('genoStaleErr_'), cutF('genoStaleBar_'), cutF('genoSetStale_'), cutF('ping', 'async '), cutF('syncCall', 'async '),
     cutF('authCheck'), cutF('authWatch'),
-    'this.api = { ping, syncCall, authCheck, authWatch, stale: () => genoStale, setAt: (v) => { genoPingAt = v; }, MSG: GENO_STALE_MSG };'
+    'this.api = { ping, syncCall, authCheck, authWatch, setCfg, stale: () => genoStale, setAt: (v) => { genoPingAt = v; }, MSG: GENO_STALE_MSG };'
   ].join('\n'), b);
   return { b, api: b.api, calls, notes, bar, intervals, listeners, doc, resizes: () => resizes };
 }
@@ -165,6 +167,33 @@ const run = async (p) => { try { await p; return null; } catch (e) { return e; }
     const sp = run(x.api.syncCall('save', { doc: {} }));
     await pp;
     t('★確かめが届かない → 保存は止めずに送る（分からない時は止めない）', (await sp) === null && x.calls.join() === 'ping,save', x.calls);
+  }
+  /* 8: 遅れて届く確かめの答え（世代の印） */
+  {
+    const rel = [];
+    const ans = { ping: () => new Promise(ok => rel.push(ok)) };
+    const x = box({ ans });
+    const pa = run(x.api.ping());                 // 古い接続先へ出した確かめ（答えが遅れる）
+    x.api.setCfg({ gasUrl: 'https://script.google.com/macros/s/EXAMPLE2/exec' });
+    const pb = run(x.api.ping());                 // 接続先を変えた後の確かめ
+    rel[1]({ ok: true, time: 'T', auth: 'ok' }); await pb;
+    rel[0]({ ok: true, time: 'T' }); await pa;   // 古い答え（auth 無し）が後から届く
+    t('★接続先を変える前の確かめの答えが遅れて届いても、今の状態を上書きしない', x.api.stale() === false && x.bar.hidden === true, x.bar);
+  }
+  {
+    const rel = [];
+    const ans = { ping: () => new Promise(ok => rel.push(ok)) };
+    const x = box({ ans });
+    const pa = run(x.api.ping());
+    x.api.authCheck(true);                        // 確かめの途中でも打ち直す
+    await tick();
+    t('★確かめ直しを強いた時は、途中の確かめがあっても打ち直す', rel.length === 2, rel.length);
+    if (rel.length === 2) {
+      rel[0]({ ok: true, time: 'T' });           // 前の確かめの答え（古い）は捨てる
+      await pa;
+      t('★  └ 前の確かめの答えは捨てる', x.api.stale() === false, x.api.stale());
+      rel[1]({ ok: true, time: 'T', auth: 'ok' }); await tick(); await tick();
+    }
   }
   /* 5: 起動の時・1時間ごと・隠れている間は休む */
   {

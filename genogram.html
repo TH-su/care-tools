@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-font">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tSDkFHNDw6jjQoernaCsowtW7PdMhn4bxFlJHwkzp/Q='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ZNxG1eL2PUPeZ0MgyuEi8du++zYtrsobX3ncdBBue2Q='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 入居者情報を表示する画面のため、ブラウザ・中継キャッシュに残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -2673,6 +2673,7 @@ const CloudSync = (function() {
   }
   function setCfg(cfg) {
     localStorage.setItem(LS_CLOUD_CFG, JSON.stringify(cfg || {}));
+    genoPingGen++;   // 接続先が変わった＝前に出した確かめの答えは捨てる（受け口の版の確かめ・2026-11-13 反証レビュー）
   }
   function isConfigured() {
     const c = getCfg();
@@ -2886,6 +2887,9 @@ const CloudSync = (function() {
   const GENO_STALE_MSG = '家族構成図の保存先の仕組みが古いままです。ほかの端末へ保存できません。管理者に知らせてください。';
   const GENO_PING_EVERY_MS = 60 * 60 * 1000;
   let genoStale = false, genoPingP = null, genoPingAt = 0, genoWatchOn = false;
+  /* 確かめの世代（接続先を変えた時・確かめ直しを強いた時に進める）。答えが届いた時に世代が違えば捨てる
+     （前の接続先へ出した確かめの答えが遅れて届き、今の状態を上書きしないため・2026-11-13 反証レビュー） */
+  var genoPingGen = 0;
   function genoStaleErr_() { const e = new Error(GENO_STALE_MSG); e.stale = true; return e; }
   function genoStaleBar_(on) {
     const bar = document.getElementById('genoStaleBar');
@@ -2902,12 +2906,13 @@ const CloudSync = (function() {
     try { genoStaleBar_(v); } catch (e) { genoNote_('古い受け口の帯', e); }
   }
   async function ping() {
+    const gen = genoPingGen;
     const p = gasCall('ping', {});
     genoPingP = p;
     genoPingAt = Date.now();
     try {
       const r = await p;
-      genoSetStale_(!!(r && r.ok === true) && r.auth !== 'ok', r);
+      if (gen === genoPingGen) genoSetStale_(!!(r && r.ok === true) && r.auth !== 'ok', r);   // 世代が違う答えは捨てる
       return r;
     } finally {
       if (genoPingP === p) genoPingP = null;
@@ -2926,7 +2931,9 @@ const CloudSync = (function() {
   }
   function authCheck(force) {
     try {
-      if (genoPingP || !isConfigured()) return;
+      if (!isConfigured()) return;
+      if (force) genoPingGen++;   // 確かめ直しを強いた時は、途中の確かめの答えを捨てて打ち直す
+      else if (genoPingP) return;
       if (!force && (document.hidden || (genoPingAt && Date.now() - genoPingAt < GENO_PING_EVERY_MS))) return;
       ping().then(null, () => null);   // 記録は gasCall の中（回線の失敗は記録しない決まり）。分からない時は今の状態のまま
     } catch (e) { genoNote_('受け口の確かめ', e); }
