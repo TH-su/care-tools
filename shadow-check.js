@@ -1188,6 +1188,7 @@ if (!window.SUDialog) window.SUDialog = {
     try { await loadGeno(sb); } catch (e) { $('geno-verdict').className = 'msg warn'; $('geno-verdict').textContent = '家族構成図の写しの記録を読めませんでした。'; }
     try { await loadGenoMode(sb); } catch (e) { genoNote('印の欄', e); }   // 読めない時はボタンを出さない
     try { await loadHb(sb); } catch (e) { $('hb-verdict').className = 'msg warn'; $('hb-verdict').textContent = '排泄ケア記録の写しの記録を読めませんでした。'; }
+    try { await noteHb(sb); } catch (e) { genoNote('排泄の差の記録', e); }   // 残せなくても見比べの表示は続ける（表は押せない側）
     try { await loadHbMode(sb); } catch (e) { genoNote('排泄の印の欄', e); }   // 0064 の前・読めない時はボタンを出さない
     try { await loadDoc(sb); } catch (e) { $('doc-verdict').className = 'msg warn'; $('doc-verdict').textContent = '添付書類の写しの記録を読めませんでした。'; }
     try { await loadDocMode(sb); } catch (e) { genoNote('書類の印の欄', e); }   // 0065 の前・読めない時はボタンを出さない
@@ -1858,6 +1859,31 @@ if (!window.SUDialog) window.SUDialog = {
     stale: '前に読んだ写し', shrink: '急に減った', badrow: '形の違い', dup: '同じ日に同じ記録が2行', toomany: '一度に多すぎる',
     toolarge: '大きすぎる', future: '時刻が先'
   };
+  /* 排泄ケア記録の差の日ごとの記録（統合 0055・0086・0087・2026-11-13 代表者の決定「#534 を入れて、SQL も作る」）。
+   * 差の件数は、この画面が「Google と同じです」と出す時だけ0件で、警告・知らせが出る時は1件以上にする（仮置き）:
+   *   最後の写しを断った（1）＋この24時間に断った回数（refused24h）＋この14日の食い違いの日（mismatch14）＋
+   *   最後の回のまだ写していない日（left）・空にしなかった日（emptyHeld）・使えない番号（badId）・大きすぎる記録（badRow）・日付の無い記録（nodate）。
+   * 最後の回の「違った日」（stat.diff）は数えない（1時間の間に Google で記録が増えた日を写した数で、差ではないため）。
+   * 写していない・しばらく写っていない（75分を超える）・その回の数（stat）が無い・読めない時は残さない（職員マスタと同じ・0件とみなさない） */
+  var hbSeen = null;
+  function hbDiffCount(d, now) {
+    if (!d || !d.lastAt) return null;
+    var last = Date.parse(d.lastAt || '');
+    if (isNaN(last) || !(now - last <= SA_FRESH_MS)) return null;
+    var s = (d.stat && typeof d.stat === 'object') ? d.stat : null;
+    if (!s || s.days == null) return null;
+    var n = d.lastStatus === 'refused' ? 1 : 0;
+    [d.refused24h, d.mismatch14, s.left, s.emptyHeld, s.badId, s.badRow, s.nodate].forEach(function (x) {
+      var v = Number(x);
+      if (x != null && !(v >= 0)) n += 1;   // 形の違う数は差に数える（0件とみなさない）
+      else if (v > 0) n += Math.floor(v);
+    });
+    return Math.min(n, 100000);
+  }
+  async function noteHb(sb) {
+    var n = hbSeen ? hbDiffCount(hbSeen.st, hbSeen.at) : null;
+    if (n != null) await noteDiff(sb, 'hb', n);
+  }
   /* 排泄ケア記録の切り替え（統合 0064）。ボタンは、切り替えスイッチ haiben が入で、この端末に排泄ケア記録の接続先（URL と合言葉）がある時だけ出す */
   function hbOn() { var sw = window.SUKv ? SUKv._flags() : null; return !!(sw && sw.supabase && sw.supabase.haiben === true); }
   function hbTarget() {
@@ -2034,6 +2060,7 @@ if (!window.SUDialog) window.SUDialog = {
     var kk = $('hb-kpis'), v = $('hb-verdict'), dt = $('hb-detail');
     function say(t, kind) { v.className = 'msg' + (kind ? ' ' + kind : ''); v.textContent = t; }
     kk.replaceChildren(); dt.className = 'msg'; dt.textContent = '';
+    hbSeen = null;
     var st = await sb.rpc('hb_shadow_status');
     if (st.error) { say(dbErrText(st.error, 'hb_shadow_status', '排泄ケア記録の写しの準備（データベース 0062）はまだです。')); return; }
     var d = st.data || {}, s = (d.stat && typeof d.stat === 'object') ? d.stat : {};
@@ -2063,6 +2090,7 @@ if (!window.SUDialog) window.SUDialog = {
     else if (Number(s.left) > 0) say('写しが届いています（初めの写しの途中です）。' + tail, 'ok');
     else if (notes.length) say('写しは1時間ごとに届いていますが、下の知らせがあります（このままでは切り替えられません）。' + tail, 'warn');
     else say('写しが1時間ごとに届き、Google と同じです。写し始めてから ' + sinceDays + '日（2週間以上続けてから切り替えを決めます）。' + tail, 'ok');
+    hbSeen = { st: d, at: now };   // 差の日ごとの記録に使う（noteHb）
   }
   /* 申し送りの写し（統合 0067・2026-11-05 代表者の決定: 案C の最初の段＝まず写しを作る・AI 要約は写さない）: ho_shadow_status（事務所・管理者）。
    * 出すのは種類（出来事・バイタル・食事量）ごとの日数・件数・照らし合わせの数・最後に写した時刻と、その回の数だけ（氏名・本文は返らない・出さない）。
@@ -2704,7 +2732,7 @@ if (!window.SUDialog) window.SUDialog = {
    * 管理者だけ。6つの「切り替える／本番にする」ボタン（入居者マスタ・計画書・入居調整・職員マスタ・体重・排泄ケア記録）の前に4項目の表を出し、
    * 全部そろった時だけ押せる。押した時も読み直して確かめる（表を出した後に別の画面で切り替えた時のため）。最後に決めるのは今までどおりデータベース。
    * 戻すボタンと、備品・シフト分析・家族構成図・添付書類・週間計画・勤務表のボタンには付けない（依頼の外）。
-   * 排泄ケア記録は 2026-11-13 に足した（代表者の指示・cross 6）。差の記録（0055）が排泄ケア記録を受け付けないので、今は1項目めが「確かめられません」で押せない。
+   * 排泄ケア記録は 2026-11-13 に足した（代表者の指示・cross 6）。差の件数は noteHb が残す（統合 0086・0087 が流れるまでは残せず、1項目めは満たさない）。
    * 切り替えのボタンを足す時は、ここ（GATE）に足すか、check/unit/cutover_gate_registry_test.js の「付けない種類」に理由つきで足す（どちらも無いと試験で落ちる）
    * 読むもの: 差の日ごとの記録（shadow_diff_days・0055）・端末の数（device_seen_summary・0048）・毎晩の通し試験の結果（GitHub・公開リポジトリなので読むだけ）・
    *   今日の操作の記録（audit_log の *_mode と kv_families の「本番にした」記録）。どれかを読めない時は、その項目を満たさない扱いにする（押せない側に倒す） */
