@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ga2it6U3ae9Onp4Ew10wNtbbbNdZfy5I7zKvlomL9OY=' 'sha256-svrXZNjF/VgqEkVx3p5zGXGlQvV0fhqk4VYT97SyvZM=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-eFotfed2pQRF/+GH0x3UCpRzvOOxSC3myAz0G5hP/dQ=' 'sha256-FaUkPoaLDPyYr22WYg1/efe9oXM7eff3NczDPn0wG8s=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
@@ -675,6 +675,8 @@ button.geno-box{width:100%; margin:0; padding:0; font:inherit; color:inherit; li
 <script src="su-devcfg.js?v=2026-11-08"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
 <script src="su-res-read.js?v=2026-11-11"></script>
+<!-- 止めて知らせる窓（alert）の代わりに画面の中の窓を出す共通部品（2026-11-12 代表者の決定）。画面のスクリプトより前に置く -->
+<script src="su-dialog.js?v=2026-11-13.2"></script>
 <script>
 /* 黙ると困る失敗（接続先の設定・取得の補助）を、画面には出さずに記録へ残す（2026-10-10・監査10月版 第2版 フェイスシート 第1手）。
    行き先は su-errors.js の note＝コンソールと記録先（不具合報告の控えと自動報告）。トーストは出さない。
@@ -688,6 +690,13 @@ function fsNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
    ★空の catch のまま残すのは、失敗しても業務に響かないものだけ（表示の状態の保存・カーソル・履歴の書き換え・
      古いブラウザ向けの印刷の保険の登録・トーストの失敗）。同じ失敗の連続は su-errors が間引く */
 function fsNoteAs_(kind, where, e){ try{ if(window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note(kind, e, 'facesheet:' + where); }catch(_){} }
+/* 画面の中の窓（su-dialog.js）が読めなかった時の受け口（入居者マスタと同じ形・2026-11-13）。ブラウザの窓に落とし、呼ぶ側と同じ約束（Promise）で答える */
+if(!window.SUDialog) window.SUDialog = {
+  alert: function(m){ try{ window.alert(m); }catch(_){} return Promise.resolve(); },
+  confirm: function(m){ var r = false; try{ r = !!window.confirm(m); }catch(_){} return Promise.resolve(r); },
+  busy: function(){ return false; },
+  idle: function(){ return Promise.resolve(); }
+};
 </script>
 <script src="su-cfg-hint.js?v=2026-11-10"></script>
 <!-- 同期データの保存先の切り替え（統合 0005/0007）。見るだけの画面は切り替え後に Supabase から読む（未ログインは Google） -->
@@ -3598,6 +3607,8 @@ function masterTargetVerdict(j){
   return 'offline';
 }
 var MASTER_WRONG_MSG='このURLは入居者マスタのGASではありません（薬学管理・申送など別のアプリのGASの可能性があります）';
+/* 職員に見える断りの文（2026-11-13 第6段 FS-02・文は仮置き）。上の MASTER_WRONG_MSG は入居者マスタ・接続設定と3画面で一字一句同じ文のまま残し（非公開の試験が確かめる）、画面にはこちらを出す */
+var MASTER_WRONG_SAY='この接続先は入居者マスタのものではありません（薬学管理・申送など別のアプリの接続先の可能性があります）';
 function verifyMasterUrl(url){
   var ac=(typeof AbortController==='function') ? new AbortController() : null;
   return new Promise(function(resolve){
@@ -3634,7 +3645,7 @@ function saveSync(){
       _ins.forEach(function(e){ e.disabled=false; });
       /* 確かめている間に設定の窓を閉じた・入力が変わった時は書かない（遅れて届いた答えで、取りやめた保存を走らせない） */
       if((_wasOpen && !$('mSync').classList.contains('on')) || ($('cfgUrl').value||'').trim()!==_nu) return;
-      if(v==='wrong'){ alert('保存していません：'+MASTER_WRONG_MSG+'。\n今の接続先のままです。'); return; }
+      if(v==='wrong'){ SUDialog.alert('保存していません：'+MASTER_WRONG_SAY+'。\n今の接続先のままです。'); return; }
       saveSync._checked=true;
       try{ saveSync(); }finally{ saveSync._checked=false; }
       /* 確かめられなかった知らせは、保存の知らせの後に出す（先に出すと上書きされて見えない） */
@@ -3672,7 +3683,9 @@ function saveSync(){
   if(toField&&isField()){
     applyRoleBadge(); closeSync();
     /* ★接続先を書けなかった時は、読み込み直すとトーストが消えるので先に知らせる（文言は下のトーストと同じ） */
-    if(!saved) alert('⚠️ 保存できませんでした（プライベートモード等）');
+    /* 画面の中の窓は止まらないので、OK を押してから読み込み直す（先に読み込み直すと文が見えない）。
+       事務所の画面は上の applyRoleBadge が捨てて一覧へ戻し、世代も進めてある（窓の間に届いた応答は捨てる） */
+    if(!saved){ SUDialog.alert('⚠️ 保存できませんでした（プライベートモード等）').then(fsReload_, fsReload_); return; }
     fsReload_(); return;
   }
   applyRoleBadge();closeSync();boot();
@@ -3694,7 +3707,8 @@ function testSync(){
   apiGet({action:'ping'}).then(function(){
       /* ★ping が通っても入居者マスタとは限らない（別アプリのGASも自分の合言葉なら通る）。名乗りまで確かめる（2026-10-10） */
       return verifyMasterUrl(tried.url).then(function(v){
-        if(v==='wrong'){ setSync('別アプリの接続先','err'); alert('⚠️ '+MASTER_WRONG_MSG+'。'); return; }
+        /* 窓の答えは待たない（待つと、試しの接続先が窓を閉じるまで CFG に残る） */
+        if(v==='wrong'){ setSync('別アプリの接続先','err'); SUDialog.alert('⚠️ '+MASTER_WRONG_SAY+'。'); return; }
         setSync('接続OK','ok'); toast(v==='ok'?'✅ 接続できました（入居者マスタの接続先と確認）':'✅ 接続できました');
       });
     })

@@ -99,6 +99,9 @@ function load(src, old, opt){
     closeSync(){ cnt.closeSync++; },
     toast(m){ cnt.toast.push(String(m)); },
     alert(m){ cnt.alert.push(String(m)); cnt.order.push('alert'); },
+    /* 画面の中の窓（su-dialog.js・2026-11-13 から）。読めない時の受け口と同じくブラウザの窓（上の alert）で知らせ、閉じた後に続きを呼ぶ。
+       verifyMasterUrl の代役と同じく、その場で続きを呼ぶ形にする（知らせ→読み込み直しの順はこのまま確かめる） */
+    SUDialog: { alert(m){ box.alert(m); return { then(f){ f(); return this; } }; } },
     setSync(m, c){ cnt.setSync.push([m, c || '']); },
     location: {},
     /* applyRoleBadge が触る他機能の控え（このテストでは箱で足りる） */
