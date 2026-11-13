@@ -37,8 +37,10 @@ body { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-s
 #toolbar h1 { font-size: 0.9375rem; margin: 0 8px 0 0; font-weight: 600; }
 #toolbar .ymnav { display: flex; align-items: center; gap: 2px; background: rgba(255,255,255,.12);
   border-radius: 6px; padding: 2px; }
+/* ボタンの地の白の重ねは .14（2026-11-13・代表者の決定「直す（推奨）」）。.15 では白文字との差が 4.46:1 で 4.5:1 に届かなかったため、
+ * 届く所まで少しだけ濃くした（青帯 #2563a8 の上で 4.53:1・8ビットの丸め込みで計算）。編集モードの帯は下の body.edit-mode の指定のまま */
 #toolbar button { border: none; border-radius: 5px; padding: 5px 10px; cursor: pointer;
-  background: rgba(255,255,255,.15); color: #fff; font-size: 0.78125rem; }
+  background: rgba(255,255,255,.14); color: #fff; font-size: 0.78125rem; }
 #toolbar button:hover { background: rgba(255,255,255,.3); }
 #toolbar button.primary { background: #fff; color: var(--blue-d); font-weight: 600; }
 #toolbar button.savebtn { background: #2e7d32; color: #fff; font-weight: 700; }
@@ -48,7 +50,7 @@ body { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-s
  * 編集モードの帯の色にも合わせる。#toolbar ごと印刷・印刷の計測（printsim）では隠れる。
  * 狭い幅（899px 以下）では押す所を 44px にする */
 #toolbar a.su-menu-back { display: inline-flex; align-items: center; white-space: nowrap; text-decoration: none;
-  border-radius: 5px; padding: 5px 10px; background: rgba(255,255,255,.15); color: #fff; font-size: 0.78125rem; }
+  border-radius: 5px; padding: 5px 10px; background: rgba(255,255,255,.14); color: #fff; font-size: 0.78125rem; }
 #toolbar a.su-menu-back:hover { background: rgba(255,255,255,.3); }
 body.edit-mode #toolbar a.su-menu-back { background: rgba(255,255,255,.35); color: var(--edit-ink); }
 body.edit-mode #toolbar a.su-menu-back:hover { background: rgba(255,255,255,.5); }
