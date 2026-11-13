@@ -106,6 +106,10 @@ vm.runInNewContext([RMJS.slice(pra, RMJS.indexOf('};', pra) + 2), grabFn(RMJS, '
 const gl = rbox.link('genogram.html', '12', '見本 一郎');
 t('6f residentLink の家族構成図は genogram.html?resident=12 だけ', gl === 'genogram.html?resident=12', gl);
 
+console.log('8 現場の端末のフェイスシートには家族構成図の入口が無い');
+t('8a 現場の端末は安全情報だけの表示（renderFieldView）で描き、事務所の表示へ進まない', /if\(isField\(\)\)\{renderFieldView\(r\);return\}\s*renderOfficeView\(r\);/.test(FACE));
+t('8b 現場の表示（renderFieldView）は家族構成図の枠・家族構成図への移動を持たない', !/geno-box|GENOGRAM_APP|genogram\.html|data-geno/.test(grabFn(FACE, 'renderFieldView')));
+
 console.log('7 記録・コンソールに氏名を書かない');
 const added = init.slice(0, init.indexOf('bindUIEvents();'));
 t('7a URL を消す所の記録は場所の名前だけ（氏名・文書名を渡さない）', /SUErrors\.note\('起動の失敗', e, 'genogram:URL の名前を消す'\)/.test(added) && !/note\([^)]*(suOldName|suName|suParams)/.test(added));

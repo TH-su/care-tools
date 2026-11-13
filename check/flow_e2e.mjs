@@ -328,6 +328,8 @@ async function flow1() {
     t('フェイスシート: 介護度が 要介護3', cells && cells['介護度'] && cells['介護度'].includes('要介護3') && !cells['介護度'].includes('要介護1'), cells && cells['介護度']);
     t('フェイスシート: 居室が 209', cells && cells['居室'] && cells['居室'].includes('209'), cells && cells['居室']);
     t('フェイスシート: 身長が 172 cm', cells && cells['身長'] && cells['身長'].includes('172 cm'), cells && cells['身長']);
+    const gbo = await page.evaluate(() => Array.from(document.querySelectorAll('#viewBox .geno-box')).map((g) => ({ dis: g.disabled, geno: g.getAttribute('data-geno'), cur: getComputedStyle(g).cursor })));
+    t('フェイスシート（事務所PC）: 家族構成図の枠は今のまま押せる（番号つき・指の形）', gbo.length > 0 && gbo.every((g) => g.dis === false && g.geno === String(ME.id) && g.cur === 'pointer'), gbo);
     await shot(page, 'flow1-facesheet');
     await page.close();
 
@@ -626,6 +628,9 @@ async function flow4() {
       const rs = reqOf(env, 'facesheet.html').filter((r) => r.to === 'master');
       const secs = rs.filter((r) => r.action === 'getSection');
       t('フェイスシート（現場）: この方の中身は getSection（facesheet_safe）で読む', secs.length > 0 && secs.every((r) => r.section === 'facesheet_safe' && String(r.id) === ME.id), secs);
+      /* 現場の端末のフェイスシート（安全情報だけの表示）には家族構成図の枠を出さない＝現場から家族構成図へは移れない（代表者の決定 2026-11-03 とそろう） */
+      const gbs = await page.evaluate(() => document.querySelectorAll('.geno-box, [data-geno]').length);
+      t('フェイスシート（現場）: 家族構成図の枠（家族構成図へ移る入口）を出さない', gbs === 0, gbs);
       const other = rs.filter((r) => r.action !== 'getSection' && r.action !== 'getRoster');
       t('フェイスシート（現場）: getResident・getBulk・getListFull などの全項目・全件の読み取りを送らない', other.length === 0, other);
       const rosters = rs.filter((r) => r.action === 'getRoster');
