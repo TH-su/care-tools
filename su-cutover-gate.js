@@ -1,11 +1,14 @@
 /* su-cutover-gate.js — 正本を切り替える前の確かめの表（2026-11-03 代表者の依頼）
  *
- * 写しの見比べ（shadow-check）の5つの「切り替える／本番にする」ボタン（入居者マスタ・入居調整・訓練計画書・体重・職員マスタ）の前に出す4項目を判定する。
+ * 写しの見比べ（shadow-check）の6つの「切り替える／本番にする」ボタン（入居者マスタ・入居調整・訓練計画書・体重・職員マスタ・排泄ケア記録）の前に出す4項目を判定する。
+ * 排泄ケア記録（hb）は 2026-11-13 に足した（代表者の指示・cross 6）。
  * 4項目が全部そろった時だけボタンを押せる。そろわない項目には理由を出す。最後に決めるのは今までどおりデータベース（各 *_set_mode）。
  *   1 写しと正本の差が0件の日が3日以上続いている（統合 0055 の shadow_diff_days。見比べた日だけを数える。
  *     今日まだ見比べていなければ昨日までで数え、今日の見比べで差があれば0日）
+ *     差の記録（0055・0058）が受け付ける種類は DIFF_KINDS だけ。それ以外の種類（今は排泄ケア記録）は「確かめられません」で満たさない（甘くしない）
  *   2 ログインしていない端末が0台（統合 0048 の device_seen_summary。この7日に開いた端末。数が分からない時は満たさない扱い＝代表者の決定 2026-11-03。
- *     この7日に1台も届いていない時も「分からない」（送るのが止まっても古い行は90日残り、7日の数が全部0になるため・反証レビュー指摘2）
+ *     この7日に1台も届いていない時も「分からない」（送るのが止まっても古い行は90日残り、7日の数が全部0になるため・反証レビュー指摘2）。
+ *     排泄ケア記録は、同じ答えの hb の欄（統合 0062・排泄ケア記録を開いた端末）で数える。欄が無い時も「分からない」
  *   3 毎晩の業務の流れの通し試験（.github/workflows/flow-check.yml）の最後の回が合格で、26時間以内（公開リポジトリなので GitHub から読むだけ）
  *   4 今日（日本時間）すでに別の正本を切り替えていない（1日1つまで。操作の記録 audit_log の「本番にした」記録で数える＝entity が *_mode で値に live、
  *     または kv_families で項目に mode:live（週間計画・ワークスケジュール・勤務表）。後から足した正本（家族構成図など）も *_mode なら数える。
@@ -24,7 +27,9 @@
 
   var NEED_DAYS = 3;
   var FLOW_MAX_MS = 26 * 3600 * 1000;
-  var KINDS = { res: '入居者マスタ', tp: '個別機能訓練計画書', adm: '入居調整', stf: '職員マスタ', weight: '体重' };
+  var KINDS = { res: '入居者マスタ', tp: '個別機能訓練計画書', adm: '入居調整', stf: '職員マスタ', weight: '体重', hb: '排泄ケア記録' };
+  /* 差の記録（shadow_diff_note・統合 0055／0058）が受け付ける種類。ここに無い種類は差の日数を確かめられないので押せない */
+  var DIFF_KINDS = ['res', 'tp', 'adm', 'stf', 'weight'];
   /* 操作の記録（audit_log）の entity → [種類, 正本の名前]。値の配列（entity_ids）に 'live' がある行が「本番にした」記録。
    * ここに無い *_mode も「本番にした」記録として数える（名前は entity のまま。正本を足した時に数え漏れないように・反証レビュー指摘3） */
   var CUT_ENTITY = {
@@ -107,9 +112,11 @@
   }
 
   /* 2 ログインしていない端末（この7日）。sum = device_seen_summary の data。返す: 台数 か null（分からない）。
-   * この7日に1台も届いていなければ（ログイン中の端末も0台）、送るのが止まっている＝分からない */
-  function unlogged(sum) {
-    var rows = sum && Array.isArray(sum.rows) ? sum.rows : null;
+   * この7日に1台も届いていなければ（ログイン中の端末も0台）、送るのが止まっている＝分からない。
+   * kind が 'hb'（排泄ケア記録）の時は hb の欄（統合 0062）を数える */
+  function unlogged(sum, kind) {
+    var key = kind === 'hb' ? 'hb' : 'rows';
+    var rows = sum && Array.isArray(sum[key]) ? sum[key] : null;
     if (!rows || !rows.length) return null;
     var seen = rows.reduce(function (n, x) { return n + (Number(x && x.d7) || 0); }, 0);
     if (!(seen > 0)) return null;
@@ -145,7 +152,7 @@
   }
 
   /* 判定。o = {
-   *   kind: 'res'|'tp'|'adm'|'stf'|'weight', now: ミリ秒, today?: 'YYYY-MM-DD'（データベースの日付・無ければ now から）,
+   *   kind: 'res'|'tp'|'adm'|'stf'|'weight'|'hb', now: ミリ秒, today?: 'YYYY-MM-DD'（データベースの日付・無ければ now から）,
    *   diff: { rows } | { error: 'missing'|'denied'|'other' },
    *   dev:  { data } | { error },
    *   flow: { runs } | { error },
@@ -159,6 +166,7 @@
     var it1 = { key: 'diff', label: '写しと正本の差が0件の連続日数（3日以上）', ok: false, value: '—', why: '' };
     var d = o.diff || {};
     if (!KINDS[kind]) it1.why = '正本の種類が分かりません。';
+    else if (DIFF_KINDS.indexOf(kind) < 0) { it1.value = '確かめられません'; it1.why = KINDS[kind] + 'の差の記録はまだ残していないので、差が0件の日数を確かめられません。確かめられるようになるまで押せません。'; }
     else if (d.error === 'missing') it1.why = '差の記録の準備（データベース 0055）がまだです。';
     else if (d.error === 'denied') it1.why = '差の記録を見られるのは管理者（2段階認証まで済んだ状態）だけです。';
     else if (d.error || !Array.isArray(d.rows)) it1.why = '差の記録を読めませんでした（少し待って読み込み直してください）。';
@@ -177,11 +185,12 @@
     else if (v.error === 'denied') it2.why = '端末の数を見られるのは管理者（2段階認証まで済んだ状態）だけです。';
     else if (v.error) it2.why = '端末の数を読めませんでした（少し待って読み込み直してください）。';
     else {
-      var n = unlogged(v.data);
-      if (n == null) it2.why = 'この7日に端末の数が届いていません（端末の数を送るスイッチ device_seen が入ると、端末が画面を開いた日に届きます）。分からない時は0台とみなしません。';
+      var n = unlogged(v.data, kind), isHb = kind === 'hb';
+      if (n == null) it2.why = isHb ? 'この7日に、排泄ケア記録を開いた端末の数が届いていません（排泄ケア記録の画面が新しい版になると、開いた日に届きます）。分からない時は0台とみなしません。'
+        : 'この7日に端末の数が届いていません（端末の数を送るスイッチ device_seen が入ると、端末が画面を開いた日に届きます）。分からない時は0台とみなしません。';
       else {
         it2.value = n + '台';
-        if (n > 0) it2.why = 'この7日に、ログインしていない端末が ' + n + '台 入居者マスタを読む画面を開いています。その端末でログインしてください。';
+        if (n > 0) it2.why = 'この7日に、ログインしていない端末が ' + n + '台 ' + (isHb ? '排泄ケア記録' : '入居者マスタを読む画面') + 'を開いています。その端末でログインしてください。';
         else it2.ok = true;
       }
     }
@@ -219,7 +228,7 @@
   }
 
   var api = {
-    NEED_DAYS: NEED_DAYS, FLOW_MAX_MS: FLOW_MAX_MS, KINDS: KINDS,
+    NEED_DAYS: NEED_DAYS, FLOW_MAX_MS: FLOW_MAX_MS, KINDS: KINDS, DIFF_KINDS: DIFF_KINDS,
     judge: judge, streak: streak, unlogged: unlogged, lastNightly: lastNightly, cutsToday: cutsToday,
     jstDay: jstDay, jstDayStartIso: jstDayStartIso,
     FN_OF: FN_OF, FN_BASE: FN_BASE, fnFor: fnFor, fnState: fnState, fnReady: fnReady
