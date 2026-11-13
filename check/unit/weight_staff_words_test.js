@@ -204,11 +204,14 @@ console.log('— 9. 設定の接続状態欄も、失敗の時は職員向けの
     sb.apiSetStatus('er', m, true);
     t('9-6 職員が直せる理由（' + nm + '）はそのまま出し、「管理者に伝えて」に替えない', si.textContent === m && si.children.length === 0, si.textContent);
   }
-  t('9-7 呼ぶ3か所は職員向けの文の時に印を付ける（同期＝e.wrStaff・書き込みの断り＝合言葉の案内に言い換えた時か職員向けの文・書き込みの例外＝e.wrStaff か職員向けの文）',
-    has("apiSetStatus('er', '接続エラー: '+ e.message, !!(e && e.wrStaff));")
+  t('9-7 呼ぶ3か所は職員向けの文の時に印を付ける（同期＝e.wrStaff か職員向けの文・書き込みの断り＝合言葉の案内に言い換えた時か職員向けの文・書き込みの例外＝e.wrStaff か職員向けの文）',
+    has("apiSetStatus('er', '接続エラー: '+ e.message, !!(e && e.wrStaff) || wrStaffText_(e && e.message));")
     && has("apiSetStatus('er', why || '書き込みエラー', !!why && (why !== String(r && r.error) || wrStaffText_(why)));")
     && has("apiSetStatus('er', e.message, !!(e && e.wrStaff) || wrStaffText_(e && e.message));"));
   t('9-8 部品の断り（ログインしていない）の実物の文は職員向けと判定される', sb.wrStaffText_('ログインしていないため、体重をサーバーへ送れません（記録はこの端末に残っています）。ログインの画面でログインしてから、体重管理を開き直してください') === true);
+  t('9-10 通信の時間切れの文は職員向け（技術の語・秒数を出さない）', has("reject(new Error('通信が時間内に終わりませんでした。通信を確かめてください'))") && !has("new Error('タイムアウト(")
+    && sb.wrStaffText_('通信が時間内に終わりませんでした。通信を確かめてください') === true);
+  t('9-11 診断は新しい時間切れの文でも切り分けの手順を出す', has("if(/タイムアウト|時間内に終わりませんでした/.test(errMsg)){"));
   sb.apiSetStatus('er', 'Failed to fetch', false);
   t('9-9 英字の例外文は印が無ければ畳む', (si.children[0] || {}).textContent === 'うまくつながりませんでした。管理者に伝えてください。', si.textContent);
   sb.apiSetStatus('ok', '最終同期: 10:00:00');

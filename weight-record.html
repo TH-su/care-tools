@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-+a6M7AUchzQy68UCJfqAQyAw8RagRoLRqMJUjx7EXXo=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-DhjuOP0RdEif7GGKejHbUCBuVJyaTSWbkOjfV4BLO4Q='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-+a6M7AUchzQy68UCJfqAQyAw8RagRoLRqMJUjx7EXXo=' 'sha256-/xee9X631qv8LnKgWrL6XIRbivsrrpIDuVEQ1jILCCQ=' 'sha256-/8NMJXJIuWHznlbsxYUg9uRqyBbxX3KF07YIkjWyTbA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -2137,7 +2137,8 @@ function ldHide(){
 function fetchTO(url, opts, ms){
   ms = ms || 12000;
   return new Promise((resolve, reject)=>{
-    const timer = setTimeout(()=> reject(new Error('タイムアウト('+Math.round(ms/1000)+'秒)')), ms);
+    /* 職員にも出る文なので、技術の語（タイムアウト・秒数）を出さない（2026-11-13 第6段 反証レビュー・文は仮置き） */
+    const timer = setTimeout(()=> reject(new Error('通信が時間内に終わりませんでした。通信を確かめてください')), ms);
     fetch(url, opts || {})
       .then(r=>{ clearTimeout(timer); resolve(r); })
       .catch(e=>{ clearTimeout(timer); reject(e); });
@@ -2489,7 +2490,7 @@ async function apiDiagnose(url){
   }
   if(errMsg){
     lines.push(`❌ 通信エラー: ${errMsg}`);
-    if(/タイムアウト/.test(errMsg)){
+    if(/タイムアウト|時間内に終わりませんでした/.test(errMsg)){
       lines.push('  → Google の受け口の起動に時間がかかっている可能性。数秒後に再試行してください');
       lines.push('  → 続けて失敗する時は、次の順で切り分けてください：');
       lines.push('     ① 上のURLをブラウザのアドレス欄に貼って開く');
@@ -2717,7 +2718,7 @@ async function _syncFromAPIImpl(showLoader){
     flushPendingQueue();
     return true;
   }catch(e){
-    apiSetStatus('er', '接続エラー: '+ e.message, !!(e && e.wrStaff));   /* 合言葉の案内・部品の断りなど職員向けの文は畳まない */
+    apiSetStatus('er', '接続エラー: '+ e.message, !!(e && e.wrStaff) || wrStaffText_(e && e.message));   /* 合言葉の案内・部品の断り（時間切れ等）など職員向けの文は畳まない */
     /* 職員向けの文だけを出す。元の文は設定の接続状態欄（上）に残す（圏外の端末で開くたびに不具合報告の種を増やさないため、記録には流さない） */
     toast((e && e.wrStaff) ? '⚠️ 同期できませんでした：' + e.message : '⚠️ 同期できませんでした。この端末の記録は残っています。しばらくしてから、もう一度お試しください', 'err');
     /* サーバーと合わせられない時も、新しく入居した人は記録できるようにする（2026-09-28）。
