@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-eFotfed2pQRF/+GH0x3UCpRzvOOxSC3myAz0G5hP/dQ=' 'sha256-FaUkPoaLDPyYr22WYg1/efe9oXM7eff3NczDPn0wG8s=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-i9qt5D2d72ViilON7Fp21zSGEddzjKrBeQbOlip9jNA=' 'sha256-FaUkPoaLDPyYr22WYg1/efe9oXM7eff3NczDPn0wG8s=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
@@ -692,8 +692,8 @@ function fsNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
 function fsNoteAs_(kind, where, e){ try{ if(window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note(kind, e, 'facesheet:' + where); }catch(_){} }
 /* 画面の中の窓（su-dialog.js）が読めなかった時の受け口（入居者マスタと同じ形・2026-11-13）。ブラウザの窓に落とし、呼ぶ側と同じ約束（Promise）で答える */
 if(!window.SUDialog) window.SUDialog = {
-  alert: function(m){ try{ window.alert(m); }catch(_){} return Promise.resolve(); },
-  confirm: function(m){ var r = false; try{ r = !!window.confirm(m); }catch(_){} return Promise.resolve(r); },
+  alert: function(m){ try{ window.alert(m); }catch(_){ /* ブラウザの窓も出せない時は何もしない */ } return Promise.resolve(); },
+  confirm: function(m){ var r = false; try{ r = !!window.confirm(m); }catch(_){ /* 出せない時はキャンセル扱い */ } return Promise.resolve(r); },
   busy: function(){ return false; },
   idle: function(){ return Promise.resolve(); }
 };

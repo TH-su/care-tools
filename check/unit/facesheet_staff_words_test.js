@@ -193,7 +193,7 @@ function runMd(err){
   t('G2 画面の中の窓の部品を、画面のスクリプトより前に読む（版はほかの画面と同じ）',
     /<script src="su-dialog\.js\?v=2026-11-13\.2"><\/script>/.test(SRC) && SRC.indexOf('su-dialog.js?v=') < SRC.indexOf('function saveSync('));
   t('G3 部品が読めない時の受け口がある（ブラウザの窓に落とす・入居者マスタと同じ形）',
-    /if\(!window\.SUDialog\) window\.SUDialog = \{\n  alert: function\(m\)\{ try\{ window\.alert\(m\); \}catch\(_\)\{\} return Promise\.resolve\(\); \},/.test(SRC));
+    /if\(!window\.SUDialog\) window\.SUDialog = \{\n  alert: function\(m\)\{ try\{ window\.alert\(m\); \}catch\(_\)\{[^}]*\} return Promise\.resolve\(\); \},/.test(SRC));
   t('G4 取り違えの断りの文（3画面で同じ文）はそのまま残す', SRC.indexOf("var MASTER_WRONG_MSG='このURLは入居者マスタのGASではありません（薬学管理・申送など別のアプリのGASの可能性があります）';") >= 0);
   const say2 = (SRC.match(/var MASTER_WRONG_SAY='([^']+)';/) || [])[1] || '';
   t('G5 画面に出す取り違えの断りは「GAS」を含まない職員向けの文', say2 && !/GAS|URL/.test(say2) && /入居者マスタのものではありません/.test(say2), say2);
