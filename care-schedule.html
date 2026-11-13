@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-+I8h9mNKLh6Ww0hUNgM+rnlhr4luSE0ApTAQlU3KI80='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-ZyO8II2+BTKwdbTjRZse6m333UlvD9lSePo2+Z8TwVA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -3354,6 +3354,12 @@ function csWhoLabel_(st) {
   if (!st || ['ok', 'mfa_verify', 'mfa_enroll'].indexOf(st.status) < 0 || !st.email) return '';
   return String(st.email).trim().toLowerCase().slice(0, 120);   // 表示名（画面側の名前）は使わない
 }
+/* 管理者としてログインしているか（表示の出し分けだけに使う・守りではない。確かめられない時は「管理者ではない」に倒す・2026-11-13） */
+function csIsAdmin_() {
+  if (!csHasSession_()) return Promise.resolve(false);
+  return csAuthLoad_().then(() => (window.SUAuth ? SUAuth.check() : null))
+    .then(st => !!(st && st.status === 'ok' && st.role === 'admin'), () => false);
+}
 function csAuthLoad_() {
   if (window.SUAuth) return Promise.resolve();
   function has(re) { return Array.prototype.some.call(document.scripts, s => re.test(s.getAttribute('src') || '')); }
@@ -4005,7 +4011,7 @@ function saveDB() {
     if (verify === json) { csRememberLocalFp_(json); try { csEditBaseline_(); } catch(e){ csNote_('直した人の基準', e); } }
     if (verify !== json) {
       console.error('saveDB: 書込検証に失敗（localStorage に正しく保存されていません）');
-      showToast('保存に失敗しました。ブラウザのストレージ容量を確認してください');
+      showToast('保存に失敗しました。この端末の空き容量を確認してください');
       return false;
     }
   } catch(e) {
@@ -4091,7 +4097,7 @@ const SYNC = {
       return true;
     } catch(e) {
       console.warn('同期設定保存エラー:', e);
-      showToast('同期設定の保存に失敗しました（ブラウザのストレージ制限の可能性）');
+      showToast('同期設定の保存に失敗しました（この端末の空きが足りない可能性があります）');
       return false;
     }
   },
@@ -4547,7 +4553,7 @@ const SYNC = {
       if (!j.ok) throw new Error(this.friendlyErr(j.error));
       if (!j.data) { this.log('ℹ️ クラウドにデータがありません'); this.updateStatusUI('同期'); this._busy = false; return true; }
       this.adopt(j.data, j.rev);
-      this.log(`✅ 取得完了（${DB.residents.length}名・rev ${j.rev || 0}）`);
+      this.log(`✅ 取得完了（${DB.residents.length}名）`);
       this.updateStatusUI('同期OK');
       this._busy = false;
       return true;
@@ -4608,7 +4614,7 @@ const SYNC = {
         this.config.lastSync = Date.now();
         this.save();
         if (mineOnDisk) {
-          this.log(`✅ 前回の未送信はクラウドへ反映済みでした（rev ${Number(j.rev) || 0}）`);
+          this.log('✅ 前回の未送信はクラウドへ反映済みでした');
           this.updateStatusUI('同期OK');
         } else {
           /* 未送信だった編集は、この端末の世代バックアップにしか残っていない。黙って続けない。 */
@@ -4690,7 +4696,7 @@ const SYNC = {
         try { csFieldBaseSet_(sentBase); } catch(e){ csNote_('土台の控え', e); }
         this.clearDirty();
         this.save();
-        this.log(`✅ 保存完了（rev ${j.rev}）`);
+        this.log('✅ 保存完了');
         this.updateStatusUI('同期OK');
         this._busy = false;
         if (viaSb && !j.unchanged && unconfSent.length) csSettleUnconfirmed_(unconfSent);
@@ -4854,7 +4860,7 @@ const SYNC = {
               || (mkE && mkE.classList.contains('open'))     // 予定の追加中（編集と違い editingEventId は null）
               || (mkR && mkR.classList.contains('open'))) return;
           this.adopt(j.data, j.rev);
-          this.log(`🔄 自動取得完了（${DB.residents.length}名・rev ${j.rev}）`);
+          this.log(`🔄 自動取得完了（${DB.residents.length}名）`);
           this.updateStatusUI('同期OK');
         }
       }
@@ -4888,12 +4894,16 @@ const SYNC = {
         this.log('　✅ 通所の入浴（加算）の一括消失ガードは有効です'
           + (j.bathDropMax ? '（1回で ' + j.bathDropMax + ' 件以上減る保存を拒否）' : ''));
       } else {
-        this.log('　⚠ 入浴の一括消失ガードが【まだ有効になっていません】。'
-          + 'Apps Script で コードを保存しただけになっていないか確認してください'
-          + '（デプロイ → デプロイを管理 → 鉛筆 → バージョン「新バージョン」→ デプロイ）');
+        /* 職員には次にすることだけを出し、受け口の直し方は管理者のログインの時だけ出す（2026-11-13・文は仮置き） */
+        this.log('　⚠ 入浴の一括消失ガードが【まだ有効になっていません】。管理者に伝えてください');
+        if (await csIsAdmin_()) {
+          this.log('　（管理者向け：Apps Script で コードを保存しただけになっていないか確認してください'
+            + '（デプロイ → デプロイを管理 → 鉛筆 → バージョン「新バージョン」→ デプロイ））');
+        }
       }
     } catch(e) {
-      this.log('❌ 接続失敗: ' + this.friendlyErr(e && e.message) + '\nヒント: デプロイ時に「アクセスできるユーザー: 全員」を選択しているか確認してください');
+      this.log('❌ 接続失敗: ' + this.friendlyErr(e && e.message) + '\n直らない時は、管理者に伝えてください');
+      if (await csIsAdmin_()) this.log('　（管理者向け：デプロイ時に「アクセスできるユーザー: 全員」を選択しているか確認してください）');
     }
   }
 };
@@ -9032,7 +9042,7 @@ function undoRemoveResident_(entry) {
   populateResidentSelect(); renderResidentList(); renderAll();
   showToast(ok
     ? `「${res.name || ''}」を元に戻しました（予定 ${(res.events || []).length}件）`
-    : '端末に保存できませんでした。ブラウザのストレージ容量を確認してもう一度お試しください');
+    : '端末に保存できませんでした。この端末の空き容量を確認してもう一度お試しください');
 }
 function undo() {
   if (!undoStack.length) { showToast('これ以上元に戻せません'); return; }

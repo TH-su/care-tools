@@ -217,6 +217,43 @@ console.log('— 7. 利用者一覧の使用単位%の色の凡例（画面だ�
   t('凡例は一覧の説明（#rl-desc）の中に入れない＝A3印刷の説明文は今のまま', !/rl-pct-legend/.test(grabFn('renderResidentListTable')), '');
 }
 
-console.log('\n合格 ' + pass + ' / 不合格 ' + fail);
-if (fail) { console.log('✗ 合格 ' + pass + ' / 不合格 ' + fail); process.exit(1); }
-console.log('✓ 合格 ' + pass + ' / 不合格 0');
+console.log('— 8. 同期の記録に版数（rev）を出さない・受け口の直し方は管理者だけ・「この端末の空き」（2026-11-13 第6段 CS-01）—');
+const sec8 = (async () => {
+  t('同期の記録の文に「rev」を出さない', !/this\.log\([^\n]*rev \$\{/.test(SRC), (SRC.match(/this\.log\([^\n]*rev \$\{[^\n]*/g) || []).slice(0, 3));
+  t('取得・保存の記録は件数だけ', SRC.indexOf("this.log(`✅ 取得完了（${DB.residents.length}名）`);") >= 0 && SRC.indexOf("this.log('✅ 保存完了');") >= 0
+    && SRC.indexOf("this.log(`🔄 自動取得完了（${DB.residents.length}名）`);") >= 0 && SRC.indexOf("this.log('✅ 前回の未送信はクラウドへ反映済みでした');") >= 0, '');
+  t('「ブラウザのストレージ」が無い', SRC.indexOf('ブラウザのストレージ') < 0, '');
+  t('端末の保存の失敗は「この端末の空き」で言う', SRC.indexOf("showToast('保存に失敗しました。この端末の空き容量を確認してください');") >= 0
+    && SRC.indexOf("showToast('同期設定の保存に失敗しました（この端末の空きが足りない可能性があります）');") >= 0
+    && SRC.indexOf("'端末に保存できませんでした。この端末の空き容量を確認してもう一度お試しください'") >= 0, '');
+  const m = grabMethod('testConnection');
+  t('接続テストを切り出せた', /async testConnection\(\)/.test(m), m.length);
+  async function runTc(admin, j, thrown) {
+    const logs = [];
+    const ctx = { CS_NO_TARGET_MSG: '同期先なし', csSyncTargetVerdict: () => 'ok', csSyncTargetMessage: () => '', csIsAdmin_: async () => admin, Error };
+    vm.createContext(ctx);
+    const S = vm.runInContext('({' + m + '})', ctx);
+    Object.assign(S, { hasTarget: () => true, log: (x) => logs.push(String(x)), friendlyErr: (x) => String(x || ''),
+      gas: async () => { if (thrown) throw new Error('つながりません'); return j; } });
+    await S.testConnection();
+    return logs;
+  }
+  const ADMIN_ONLY = /Apps Script|デプロイ|アクセスできるユーザー/;
+  let L = await runTc(false, { ok: true, role: 'sync', guards: ['visitwipe'] });
+  t('職員: ガードが無い時は「管理者に伝えてください」の1文', L.some(x => x === '　⚠ 入浴の一括消失ガードが【まだ有効になっていません】。管理者に伝えてください'), L);
+  t('職員: 受け口の直し方（Apps Script・デプロイ）を出さない', !L.some(x => ADMIN_ONLY.test(x)), L);
+  L = await runTc(true, { ok: true, role: 'sync', guards: ['visitwipe'] });
+  t('管理者: 直し方を「管理者向け」として足す', L.some(x => x === '　（管理者向け：Apps Script で コードを保存しただけになっていないか確認してください（デプロイ → デプロイを管理 → 鉛筆 → バージョン「新バージョン」→ デプロイ））'), L);
+  L = await runTc(false, null, true);
+  t('職員: 接続の失敗は「直らない時は、管理者に伝えてください」・デプロイの話は出さない', L.some(x => x === '❌ 接続失敗: つながりません\n直らない時は、管理者に伝えてください') && !L.some(x => ADMIN_ONLY.test(x)), L);
+  L = await runTc(true, null, true);
+  t('管理者: 接続の失敗にデプロイの確かめを足す', L.some(x => x === '　（管理者向け：デプロイ時に「アクセスできるユーザー: 全員」を選択しているか確認してください）'), L);
+  const ia = grabFn('csIsAdmin_');
+  t('管理者の見分けは、ログインの控えが無い・確かめられない時は「管理者ではない」に倒す', /if \(!csHasSession_\(\)\) return Promise\.resolve\(false\);/.test(ia) && /st\.status === 'ok' && st\.role === 'admin'\), \(\) => false\)/.test(ia), ia);
+})().catch((e) => t('第8節が最後まで動く', false, String(e && e.stack)));
+
+sec8.then(() => {
+  console.log('\n合格 ' + pass + ' / 不合格 ' + fail);
+  if (fail) { console.log('✗ 合格 ' + pass + ' / 不合格 ' + fail); process.exit(1); }
+  console.log('✓ 合格 ' + pass + ' / 不合格 0');
+});
