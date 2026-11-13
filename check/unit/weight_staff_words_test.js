@@ -142,6 +142,39 @@ let sec6 = Promise.resolve();
   })().catch(e => { t('6-x 同期の関数を動かせる', false, e && e.message); });
 }
 
+console.log('— 8. 接続の診断の結果は職員向けの1文＋「管理者向けの詳しい内容」に畳む（2026-11-13 第6段 WR-01・実物の showDiagPanel を動かす） —');
+{
+  const fn = cut('showDiagPanel');
+  t('8-1 showDiagPanel を切り出せた', !!fn);
+  t('8-2 診断の枠は pre ではなく div（中に details を入れるため）', has('<div id="apiDiagOut" class="api-diag" style="display:none"></div>') && !has('<pre id="apiDiagOut"'));
+  t('8-3 診断の結果を出す3か所はすべて畳む形で出す', (src.match(/showDiagPanel\(diag\.lines, diag\.ok, true\);/g) || []).length === 3 && !/showDiagPanel\(diag\.lines, diag\.ok\);/.test(src));
+  function mk(tag) {
+    const el = { tag, children: [], className: '', style: {}, _txt: '',
+      classList: { _s: new Set(), add(c) { this._s.add(c); }, remove(...c) { c.forEach(x => this._s.delete(x)); }, has(c) { return this._s.has(c); } },
+      appendChild(c) { this.children.push(c); return c; } };
+    Object.defineProperty(el, 'textContent', { get() { return this._txt + this.children.map(c => c.textContent).join(''); }, set(v) { this._txt = String(v); this.children = []; } });
+    return el;
+  }
+  function run(lines, ok, asDiag) {
+    const panel = mk('div'); panel.style.display = 'none';
+    const sb = { $: (q) => (q === '#apiDiagOut' ? panel : null), document: { createElement: mk } };
+    vm.createContext(sb);
+    vm.runInContext(fn + '\nthis.showDiagPanel = showDiagPanel;', sb);
+    sb.showDiagPanel(lines, ok, asDiag);
+    return panel;
+  }
+  const DIAG = ['❌ Google の受け口のエラー: 架空のエラー', '  → 体重管理用の Google の受け口の URL か確かめてください'];
+  let P = run(DIAG, false, true);
+  const lead = P.children[0], more = P.children[1];
+  t('8-4 失敗: 先頭は職員向けの1文', P.style.display === '' && lead && lead.tag === 'p' && lead.textContent === 'うまくつながりませんでした。管理者に伝えてください。', lead && lead.textContent);
+  t('8-5 失敗: 診断の行は「管理者向けの詳しい内容」の中に、文を変えずに畳む', more && more.tag === 'details' && more.children[0].tag === 'summary' && more.children[0].textContent === '管理者向けの詳しい内容'
+    && more.children[1].tag === 'pre' && more.children[1].textContent === DIAG.join('\n') && P.classList.has('is-err'), more && more.textContent);
+  P = run(['✓ 応答取得 OK（residents:0件 / records:0件）'], true, true);
+  t('8-6 成功: 先頭は「✅ つながりました。」・行は畳む', (P.children[0] || {}).textContent === '✅ つながりました。' && (P.children[1] || {}).tag === 'details' && P.classList.has('is-ok'), P.textContent);
+  P = run(['🔍 診断中…'], true);
+  t('8-7 診断の結果でない知らせ（診断中・未保存の合言葉）は今までどおり行をそのまま出す', P.children.length === 1 && (P.children[0] || {}).tag === 'pre' && (P.children[0] || {}).textContent === '🔍 診断中…', P.textContent);
+}
+
 sec6.then(() => {
   console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
   process.exit(fail ? 1 : 0);
