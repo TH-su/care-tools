@@ -121,8 +121,11 @@ console.log('9 画面の書体で測って紙の列幅を決める画面（keep-
    家族構成図と同じく keep-font で書体を残す */
 {
   const dr = fs.readFileSync(path.join(ROOT, 'daycare-roster.html'), 'utf8');
-  t('9a デイ利用表は時刻の列を画面の書体で測っている（前提）', /function rosterTimeColW_[\s\S]*?'font-family:' \+ cs\.fontFamily/.test(dr), '');
+  const fnAt = dr.indexOf('function rosterTimeColW_(');
+  const fnBody = fnAt < 0 ? '' : dr.slice(fnAt, dr.indexOf('\n}', fnAt) + 2);   // 関数の中だけを見る（後ろの関数の同じ字面に当てない）
+  t('9a デイ利用表は時刻の列を画面の書体で測っている（前提）', /'font-family:' \+ cs\.fontFamily/.test(fnBody), '');
   t('9b デイ利用表は keep-font で書体を残す', /<html\b[^>]*data-su-theme="[^"]*\bkeep-font\b/.test(dr), '');
+  t('9c 型の書体の置き換えは keep-font の画面を外す（CSS の側）', /:root\[data-su-theme\]:not\(\[data-su-theme~="keep-font"\]\) body \{ font-family: var\(--su-font\); \}/.test(css), '');
 }
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
