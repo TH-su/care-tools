@@ -24,7 +24,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-11-06.2';
+  var VERSION = '2026-11-14';
 
   /* ── 日付の下ごしらえ（すべて整数演算） ───────────────────────── */
 
@@ -420,6 +420,55 @@
   var SITE_COL    = { facility: 'siteFacility', visit: 'siteVisit', day: 'siteDay', cm: 'siteCm' };
   var SITE_LABEL  = { facility: '施設', visit: '訪問', day: '通所', cm: '居宅' };
   var KITCHEN_SITES = { facility: 50, day: 50 };                /* 厨房は施設:通所 = 1:1 の兼務（本人裁定） */
+
+  /* ── 事業所の区分の名前（施設情報の corpSettings.siteLabels・第6段 SM-02・代表者の決定 2026-11-14）──
+     差し替えるのは名前だけ。コード（SITE_CODES の4つ）・保存の列（真偽の4列）・保存済みの値は変えない。
+     4つ全部が 1〜6 字の文字・互いに別の名前・CSV の見出しの語（SITE_LABEL_RESERVED・「厨房」を含む）とほかの区分の今の名前に重ならない時だけ当て、
+     1つでも崩れていれば丸ごと今の名前に戻す。
+     SITE_LABEL・LABELS・ENUMS.primarySite は公開API が同じ実体を指しているので、中身だけを入れ替える */
+  var SITE_LABEL_DEF = { facility: '施設', visit: '訪問', day: '通所', cm: '居宅' };
+  var SITE_LABEL_KEY = '';
+  /* 名前に使えない語（反証レビュー 2026-11-14）。CSV の取り込みは見出しの語で列を決めるので、区分の名前が別の列の見出しと
+     同じだと、書き出した CSV を読み戻した時に所属の印が落ちる・主たる事業所を取り違える。並べるのは画面の取り込みの別名
+     （staff-master.js の HEADER_ALIAS の区分以外の語）・書き出しの見出し・旧い表の取り込み（mapLegacyRow）が読む語。
+     画面の別名が増えたらここにも足す（check/unit/staff_site_labels_test.js が突き合わせる） */
+  var SITE_LABEL_RESERVED = ['no', 'no.', '職員no', '旧no', '職員id', 'id', '氏名', '名前', '姓名', 'フリガナ', 'ふりがな', 'カナ',
+    '性別', '生年月日', '入職日', '入社日', '退職日', '退職', '職種', '役職', '雇用', '雇用形態', '雇用区分', '形態', '勤務形態',
+    '主たる事業所', '事業所', '連絡先', '電話', '電話番号', '携帯', '住所', '緊急連絡先', '介護就職', '資格', '資格取得日',
+    '雇用保険番号', '備考', '兼務比率', '休職', '休職中', '所属委員会', '年齢', '勤続年数', '介護福祉士', '厨房'];
+  function normSiteLabels(o) {
+    if (!o || typeof o !== 'object' || Object.prototype.toString.call(o) === '[object Array]') return null;
+    var ks = Object.keys(o), out = {}, seen = {}, i;
+    if (ks.length !== SITE_CODES.length) return null;
+    for (i = 0; i < SITE_CODES.length; i++) {
+      var v = o[SITE_CODES[i]];
+      if (typeof v !== 'string') return null;
+      v = v.trim();
+      /* 1〜6 字・記号や制御文字・空白を含まない（見出し・CSV の列名・紙の欄に入るため） */
+      if (!v || v.length > 6 || /[\s<>&"'`=,;:\/\\\u0000-\u001f\u007f]/.test(v)) return null;
+      var nv = normName(v);
+      if (seen[nv] || SITE_LABEL_RESERVED.indexOf(nv) >= 0) return null;
+      /* ほかの区分の今の名前（旧い CSV・旧い表の見出し）は使えない（旧い名前の列が別の区分に結ばれるため）。自分の区分の今の名前は使える */
+      for (var j = 0; j < SITE_CODES.length; j++) if (j !== i && normName(SITE_LABEL_DEF[SITE_CODES[j]]) === nv) return null;
+      seen[nv] = true;
+      out[SITE_CODES[i]] = v;
+    }
+    return out;
+  }
+  /* 当てる。名前が変わった時だけ true（画面は true の時だけ描き直す） */
+  function setSiteLabels(o) {
+    var n = normSiteLabels(o) || SITE_LABEL_DEF;
+    var key = (n === SITE_LABEL_DEF) ? '' : JSON.stringify(n);
+    if (key === SITE_LABEL_KEY) return false;
+    SITE_LABEL_KEY = key;
+    for (var i = 0; i < SITE_CODES.length; i++) {
+      var c = SITE_CODES[i];
+      SITE_LABEL[c] = n[c];
+      LABELS[SITE_COL[c]] = n[c];
+      ENUMS.primarySite[c] = n[c];
+    }
+    return true;
+  }
 
   /* ── 法人設定（2026-10-11・監査10月版 第2版 職員マスタ）────────────────
      使う事業所（SITE_ACTIVE）と厨房の兼務先・比率（KITCHEN_SITES）を、サーバー（staff-api.gs の meta.corpJson）から
@@ -2231,6 +2280,9 @@
     SITE_ACTIVE: SITE_ACTIVE,
     SITE_COL: SITE_COL,
     SITE_LABEL: SITE_LABEL,
+    normSiteLabels: normSiteLabels,
+    SITE_LABEL_RESERVED: SITE_LABEL_RESERVED,
+    setSiteLabels: setSiteLabels,
     KITCHEN_SITES: KITCHEN_SITES,
     normCorp: normCorp,
     setCorp: setCorp,
