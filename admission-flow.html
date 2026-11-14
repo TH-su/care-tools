@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-VqFm3XB+T/REumN+wUq3GLtv+WMACwJk3A1ibOEG+JI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-DWWZamBKXwpcSk1V+de9IqKxH+NBKbgM5J4BnxoiuSo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
@@ -736,6 +736,8 @@ details.dcd > .dbody > .cd > h3 { display: none; }   /* 見出しは summary に
 <script src="su-doc-live.js?v=2026-11-05.2"></script>
 <!-- 日付の和暦⇔西暦変換。職員マスタと同じものを使う（規則を2か所に書かない） -->
 <script src="staff-master-calc.js?v=2026-11-06.2" defer></script>
+<!-- 止めて知らせる窓（alert・confirm）の代わりに画面の中の窓を出す共通部品（2026-11-12 代表者の決定）。画面のスクリプトより前に置く -->
+<script src="su-dialog.js?v=2026-11-13.2"></script>
 <script>
 /* ═══════════════════════════════════════════════════════════════
    入居調整 / 申込から入居までの多機関連携ボード
@@ -756,6 +758,17 @@ details.dcd > .dbody > .cd > h3 { display: none; }   /* 見出しは summary に
    ═══════════════════════════════════════════════════════════════ */
 (function () {
 'use strict';
+
+/* 画面の中の窓（su-dialog.js）が読めなかった時の受け口（消耗品管理と同じ形・2026-11-13 第6段 AF-02）。ブラウザの窓に落とし、呼ぶ側と同じ約束（Promise）で答える */
+if (!window.SUDialog) window.SUDialog = {
+  alert: function (m) { try { window.alert(m); } catch (_) { /* 出せなくても止めない */ } return Promise.resolve(); },
+  confirm: function (m) { var r = false; try { r = !!window.confirm(m); } catch (_) { /* 出せない時はキャンセル扱い */ } return Promise.resolve(r); },
+  busy: function () { return false; },
+  idle: function () { return Promise.resolve(); }
+};
+var SUDialog = window.SUDialog;
+/* 画面の中の窓の答えの後の続きで起きた例外を、黙って捨てずに記録へ残す（2026-11-13） */
+function afDlgNote_(where, e) { try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('画面の中のエラー', e, 'admission:' + where); } catch (_) { /* 記録できなくても止めない */ } }
 
 function $(id) { return document.getElementById(id); }
 function esc(s) {
@@ -778,6 +791,16 @@ function nowIso() { return new Date().toISOString(); }
      起動時・別タブでのログイン/ログアウト・画面に戻った時に取り直し、世代番号で遅れた結果を捨てる（体重管理と同じ作り）。 */
 var AF_SESSION_RE = /^sb-[a-z0-9]+-auth-token$/;
 var afWhoAcct_ = '', afWhoGen_ = 0;
+/* 管理者としてログインしているか（2026-11-13 第6段 AF-02）。同期の設定の窓に受け口の直し方（Apps Script・デプロイ）を出すかを選ぶだけで、守りには使わない。
+   確かめが遅れた・確かめられない時は管理者ではない側（職員向けの文） */
+var afIsAdmin_ = false;
+function afSetAdmin_(v) {
+  v = !!v;
+  if (v === afIsAdmin_) return;
+  afIsAdmin_ = v;
+  /* 同期の設定の窓が開いていれば、今の見分けで描き直す（描き直しの失敗は運用を止めない） */
+  try { var mk = document.getElementById('mk-sync'); if (mk && mk.classList.contains('on')) renderSyncModal(); } catch (e) { afNote_('同期の設定の描き直し', e); }
+}
 function afWho_() { return afWhoAcct_ || '未確認'; }
 function afWhoLabel_(st) {
   if (!st || ['ok', 'mfa_verify', 'mfa_enroll'].indexOf(st.status) < 0 || !st.email) return '';
@@ -817,12 +840,13 @@ function afAuthLoad_() {
 }
 function afResolveWho_() {
   var gen = ++afWhoGen_;
-  if (!afHasLogin_()) { afWhoAcct_ = ''; return; }
+  if (!afHasLogin_()) { afWhoAcct_ = ''; afSetAdmin_(false); return; }
   afAuthLoad_().then(function () { return window.SUAuth ? window.SUAuth.check() : null; }).then(function (st) {
     if (gen !== afWhoGen_) return;
+    afSetAdmin_(st && st.status === 'ok' && st.role === 'admin');   // 確かめられない時は管理者ではない側（2026-11-13）
     if (!st || st.status === 'error') return;   // 確かめられなかった＝前の値のまま
     afWhoAcct_ = afWhoLabel_(st);
-  }).catch(function () {});
+  }).catch(function () { if (gen === afWhoGen_) afSetAdmin_(false); });
 }
 /* updatedAt を進めた直後に呼ぶ。o を返す（式の中でも使えるように） */
 function afStamp_(o) { if (o && typeof o === 'object') { o.updatedBy = afWho_(); o.updatedByAt = o.updatedAt || ''; } return o; }
@@ -1253,6 +1277,9 @@ var kvRev = 0;          // 直近に観測したサーバ版（次回 put の楽
 var dirty = false;      // 未送信の変更があるか
 var pushTimer = null;
 var pushing = false;
+/* 一括消失の守りの確かめで「キャンセル」と答えた印（2026-11-13 第6段 AF-02・PR #566 の反証）。立っている間は、予約から来た送信で同じ確かめを聞き直さない（送らない）。
+   人が編集した時（markDirty）・⟳ を押した時・バックアップから戻した時に下ろす */
+var afWipeHold_ = false;
 var lastPullAt = 0;
 var retryWait = 0;      // 指数バックオフの現在待ち時間(ms)
 var serverCaps = null;  // ping で観測したサーバーの能力宣言
@@ -1463,15 +1490,19 @@ function restoreFromBackup(slot) {
   var o = readCacheSlot(slot);
   if (!o) { toast('そのバックアップは見つかりませんでした'); return; }
   var n = normalizeDb(o.db);
-  if (!confirm('バックアップ（' + (slot === CACHE_BAK ? '1世代前' : '2世代前') + '・案件' + n.candidates.length + '件）を読み込みます。\n\n' +
-    '今この端末にある内容（' + DB.candidates.length + '件）は消えません（統合します）。よろしいですか？')) return;
-  /* ★置き換えではなく統合。置き換えにすると、バックアップ以降に増えた案件と、
-     他端末がサーバーへ入れた新しい内容を、この端末の古い版で潰すことになる。 */
-  /* 人が意図して古い値を戻す操作なので、消した印を効かせない（keepFilled） */
-  DB = mergeDb(DB, n, { keepFilled: true });
-  DB.updatedAt = nowIso();
-  dirty = true; saveCache(); renderAll(); schedulePush();
-  toast('バックアップから復元しました');
+  /* 統合するのは窓を出した時に読んだバックアップ（n）。窓の間に控えが回っても、聞いた件数の物を入れる（2026-11-13） */
+  SUDialog.confirm('バックアップ（' + (slot === CACHE_BAK ? '1世代前' : '2世代前') + '・案件' + n.candidates.length + '件）を読み込みます。\n\n' +
+    '今この端末にある内容（' + DB.candidates.length + '件）は消えません（統合します）。よろしいですか？').then(function (ok) {
+    if (!ok) return;
+    /* ★置き換えではなく統合。置き換えにすると、バックアップ以降に増えた案件と、
+       他端末がサーバーへ入れた新しい内容を、この端末の古い版で潰すことになる。 */
+    /* 人が意図して古い値を戻す操作なので、消した印を効かせない（keepFilled） */
+    DB = mergeDb(DB, n, { keepFilled: true });
+    DB.updatedAt = nowIso();
+    afWipeHold_ = false;   // 人が戻した＝送信で断られたらもう一度聞く
+    dirty = true; saveCache(); renderAll(); schedulePush();
+    toast('バックアップから復元しました');
+  }).catch(function (e) { afDlgNote_('restoreFromBackup', e); });
 }
 
 /* ── 同期（入居調整【専用】GAS） ──
@@ -1760,7 +1791,7 @@ function pull(showToast) {
       if (serverLooksLost(remote)) {
         if (rejectedRev !== rev) {
           rejectedRev = rev;
-          alert('⚠️ サーバー側の台帳が大きく減っています。\n\n' +
+          SUDialog.alert('⚠️ サーバー側の台帳が大きく減っています。\n\n' +
             'この端末: ' + liveCount(DB) + '件 ／ サーバー: ' + liveCount(remote) + '件\n\n' +
             'この端末の内容を消さないため、取り込みを中止しました。\n' +
             '心当たりが無ければ、別の端末で誤った操作が無かったかを確かめてください。');
@@ -1848,6 +1879,7 @@ function startupPull() {
 }
 
 function markDirty() {
+  afWipeHold_ = false;   // 人が編集した＝次の送信で断られたらもう一度聞く
   DB.updatedAt = nowIso();
   dirty = true; saveCache();
   setSync('未送信あり');
@@ -1865,6 +1897,11 @@ function schedulePushRetry() {
 }
 function push(force) {
   if (!dirty || pushing || !SU_DATA_READY) return;
+  /* 画面の中の窓が出ている間は送り始めない（窓の答えを待つ間に、聞いている中身と違う物を送らない）。窓が閉じた後に送る（2026-11-13 第6段 AF-02）。
+     上書きの確かめで「OK」と答えた送信（force）は待たない */
+  if (!force && SUDialog.busy()) { SUDialog.idle().then(schedulePush); return; }
+  /* 上書きの確かめを「キャンセル」した後は、人が編集するか ⟳ を押すまで送らない（同じ確かめを続けて出さない） */
+  if (!force && afWipeHold_) { setSync('未送信あり', 'err'); return; }
   var t = syncTarget();
   if (!t.endpoint && !AF_LIVE) { setSync('未接続'); return; }
   pushing = true; setSync('保存中…');
@@ -1883,17 +1920,21 @@ function push(force) {
     /* サーバーの一括消失ガード。件数を見せて人に決めてもらう（自動では絶対に通さない） */
     if (j && j.error === 'admwipe') {
       setSync('保存が拒否されました', 'err');
-      var ok = confirm('⚠ 案件が大きく減るため、サーバーが保存を拒否しました。\n\n' +
+      SUDialog.confirm('⚠ 案件が大きく減るため、サーバーが保存を拒否しました。\n\n' +
         'サーバー: ' + j.was + ' 件 ／ この端末: ' + j.now + ' 件\n\n' +
         '【この端末の画面が正しい場合】「OK」で上書きします。\n' +
-        '【身に覚えがない場合】「キャンセル」を押し、⟳ で最新を取り直してください。');
-      if (ok) { pushing = false; return push(true); }
-      setSync('未送信あり', 'err');
+        '【身に覚えがない場合】「キャンセル」を押し、⟳ で最新を取り直してください。').then(function (ok) {
+        /* 窓の間に台帳が変わった（取り込み・統合）時は、聞いた件数と違う物で上書きしない。いつもの送信に戻す（サーバーがまた断れば件数を出し直して聞く・2026-11-13） */
+        if (ok && DB.updatedAt === sentAt) { pushing = false; push(true); return; }
+        if (!ok) afWipeHold_ = true;
+        setSync('未送信あり', 'err');
+        if (ok) schedulePush();
+      }).catch(function (e) { afDlgNote_('admwipe', e); setSync('未送信あり', 'err'); });
       return;
     }
     if (j && (j.error === 'toolarge' || j.error === 'nodata')) {
       setSync('保存できません', 'err');
-      alert(j.error === 'toolarge'
+      SUDialog.alert(j.error === 'toolarge'
         ? '台帳が大きくなりすぎて保存できません。\n\n右上のバッジ →「⬇️ 控えのファイルに書き出す」でファイルに残したうえで、'
           + '入居済み・見送りの古い案件を削除してください（削除しても「削除済みも表示」から戻せます）。'
         : '送るデータが空のため、サーバーが保存を拒否しました。\n\n画面を再読み込みしてから、もう一度お試しください。');
@@ -2005,21 +2046,32 @@ var afGateOk_ = false;
 document.addEventListener('visibilitychange', function () {
   if (!afGateOk_ || document.hidden) return;
   if (busyEditing()) return;
+  if (SUDialog.busy()) return;   // 画面の中の窓の答えを待つ間は取り直さない（窓の前に掴んだ案件を差し替えない・2026-11-13）
   if (Date.now() - lastPullAt > 5 * 60000) pull(false);
 });
 /* つながった時: 未送信があれば送り、無ければ取り直す。編集中は取り直さない
    （取り直して版を進めると、編集の保存が統合を通らずに他の端末の変更を上書きする・PR #550 の反証レビュー） */
 window.addEventListener('online', function () {
   if (!afGateOk_) return;
-  if (dirty) { retryWait = 0; push(); } else if (!busyEditing() && Date.now() - lastPullAt > 60000) pull(false);
+  if (dirty) { retryWait = 0; push(); return; }   // 送る方は、窓が出ていれば push が窓の後へ回す
+  afOnlinePull_();
 });
+/* つながった時の取り直し。編集中・1分以内に取り直した時はしない。画面の中の窓の答えを待つ間は、窓が閉じた後に回す
+   （窓の前に掴んだ案件を差し替えない・2026-11-13 第6段 AF-02・PR #566 の反証） */
+function afOnlinePull_() {
+  if (!afGateOk_ || dirty) return;
+  if (SUDialog.busy()) { SUDialog.idle().then(afOnlinePull_); return; }
+  if (!busyEditing() && Date.now() - lastPullAt > 60000) pull(false);
+}
 /* 同じ端末の別タブが書いた時に取り込む。編集中・未送信中は取り込まない */
 window.addEventListener('storage', function (ev) {
   if (!afGateOk_ || !ev || ev.key !== CACHE_KEY) return;
   if (dirty || busyEditing()) return;
   clearTimeout(window.__admStorageTm);
-  window.__admStorageTm = setTimeout(function () {
+  window.__admStorageTm = setTimeout(function apply() {
     if (dirty || busyEditing()) return;
+    /* 画面の中の窓の答えを待つ間は取り込まず、閉じた後に取り込む（2026-11-13） */
+    if (SUDialog.busy()) { SUDialog.idle().then(apply); return; }
     var o = readCacheSlot(CACHE_KEY);
     if (!o) return;
     DB = normalizeDb(o.db); kvRev = Number(o.rev) || kvRev;
@@ -2946,10 +2998,16 @@ function bindViewEvents(c) {
     b.addEventListener('click', function () {
       var t = (c.tasks || []).filter(function (x) { return x.id === b.getAttribute('data-tkdel'); })[0];
       if (!t) return;
-      if (!confirm('タスク「' + t.title + '」を削除しますか？\n（「↩ 元に戻す」で戻せます）')) return;
-      pushUndoCand(c, 'タスクの削除');
-      c.tasks = c.tasks.filter(function (x) { return x.id !== t.id; });
-      touch(c); renderView(c);
+      var cid = c.id, tid = t.id;
+      SUDialog.confirm('タスク「' + t.title + '」を削除しますか？\n（「↩ 元に戻す」で戻せます）').then(function (ok) {
+        if (!ok) return;
+        /* 窓の間に台帳を読み直した時は今の案件で消す。案件・タスクが無くなった・別の案件を開いた時は何もしない（2026-11-13） */
+        var c2 = findCand(cid);
+        if (!c2 || curId !== cid || !$('sc-view').classList.contains('on') || !asArr(c2.tasks).some(function (x) { return x && x.id === tid; })) return;
+        pushUndoCand(c2, 'タスクの削除');
+        c2.tasks = c2.tasks.filter(function (x) { return x.id !== tid; });
+        touch(c2); renderView(c2);
+      }).catch(function (e) { afDlgNote_('タスクの削除', e); });
     });
   });
   Array.prototype.forEach.call($('viewBox').querySelectorAll('[data-copyfax]'), function (b) {
@@ -3013,10 +3071,16 @@ function bindViewEvents(c) {
   if ($('msOpenBtn')) $('msOpenBtn').addEventListener('click', function () { openMasterModal(c); });
   if ($('msVerifyBtn')) $('msVerifyBtn').addEventListener('click', function () { verifyMaster(c); });
   if ($('vDel')) $('vDel').addEventListener('click', function () {
-    if (!confirm('「' + (c.name || 'この案件') + '」を削除しますか？\n\n内容は消えません。一覧の「削除済みも表示」から元に戻せます。\n（見送りの場合は削除ではなく「見送りにする」を使ってください）')) return;
-    pushUndoCand(c, '案件の削除');
-    c.deleted = true; c.deletedAt = nowIso(); touch(c);
-    showScreen('list'); renderList(); toast('削除しました（元に戻せます）');
+    var cid = c.id;
+    SUDialog.confirm('「' + (c.name || 'この案件') + '」を削除しますか？\n\n内容は消えません。一覧の「削除済みも表示」から元に戻せます。\n（見送りの場合は削除ではなく「見送りにする」を使ってください）').then(function (ok) {
+      if (!ok) return;
+      /* 窓の間に台帳を読み直した時は今の案件で消す。案件が無くなった・別の案件を開いた・もう消えていた時は何もしない（2026-11-13） */
+      var c2 = findCand(cid);
+      if (!c2 || curId !== cid || !$('sc-view').classList.contains('on') || c2.deleted) return;
+      pushUndoCand(c2, '案件の削除');
+      c2.deleted = true; c2.deletedAt = nowIso(); touch(c2);
+      showScreen('list'); renderList(); toast('削除しました（元に戻せます）');
+    }).catch(function (e) { afDlgNote_('案件の削除', e); });
   });
 }
 /* クリップボードは権限で失敗しうる。失敗したら選択してコピーできる形で見せる（黙って諦めない） */
@@ -3579,7 +3643,18 @@ function removeFileEntry(c, fid) {
   if (filesBusy) { toast('ほかの書類の処理中です。少し待ってからお試しください'); return; }
   var f = candFiles(c.id).filter(function (x) { return asStr(x && x.fid) === asStr(fid); })[0];
   var nm = f ? (asStr(f.title) || asStr(f.name) || 'この書類') : 'この書類';
-  if (!confirm('書類「' + nm + '」を一覧から外しますか？\n\nGoogle ドライブの「削除済み」フォルダへ移すだけで、実体は消えません。')) return;
+  var cid = c.id;
+  SUDialog.confirm('書類「' + nm + '」を一覧から外しますか？\n\nGoogle ドライブの「削除済み」フォルダへ移すだけで、実体は消えません。').then(function (ok) {
+    if (!ok) return;
+    /* 窓の間にほかの書類の処理が始まった時は、最初と同じ断りで止める。案件・書類が無くなった・別の案件を開いた時は何もしない（2026-11-13） */
+    if (filesBusy) { toast('ほかの書類の処理中です。少し待ってからお試しください'); return; }
+    var c2 = findCand(cid);
+    if (!c2 || curId !== cid || !candFiles(cid).some(function (x) { return asStr(x && x.fid) === asStr(fid); })) return;
+    removeFileEntryGo_(c2, fid);
+  }).catch(function (e) { afDlgNote_('書類を外す', e); });
+}
+/* 書類を一覧から外す送信（窓で「OK」と答えた後）。中身は前のまま（2026-11-13 に窓の後へ分けただけ） */
+function removeFileEntryGo_(c, fid) {
   filesBusy = true;
   apiFiles({ action: 'removeFile', cid: c.id, fid: fid }).then(function (r) {
     filesBusy = false;
@@ -4028,20 +4103,34 @@ function bindEditEvents() {
   });
   Array.prototype.forEach.call($('editBox').querySelectorAll('[data-famrm]'), function (b) {
     b.addEventListener('click', function () {
-      if (!confirm('この行を削除しますか？')) return;
-      collectEditInputs();
-      var fi = Number(b.getAttribute('data-famrm')), fr = editing.family[fi];
+      var ed = editing, fi = Number(b.getAttribute('data-famrm'));
+      var fid0 = (ed && ed.family[fi] && ed.family[fi].id) || '';
+      SUDialog.confirm('この行を削除しますか？').then(function (ok) {
+        /* 窓の間に編集を閉じた・別の編集になった時は何もしない。その番目が別の家族になった時も消さない（家族の番号で確かめる・2026-11-13） */
+        if (!ok || !editing || editing !== ed) return;
+        collectEditInputs();
+        var fr = editing.family[fi];
+        if (!fr || (fr.id || '') !== fid0) return;
       /* 保存済みの行は墓標にする（消すと他の端末の控えとの統合で戻る）。この編集で足しただけの行は今までどおり外す */
       var saved = fr && fr.id && asArr(asObj(editBase).family).some(function (x) { return x && x.id === fr.id; });
       if (saved) { fr.deleted = true; fr.deletedAt = nowIso(); }
       else editing.family.splice(fi, 1);
       editDirty = true; renderEdit();
+      }).catch(function (e) { afDlgNote_('家族の行の削除', e); });
     });
   });
   Array.prototype.forEach.call($('editBox').querySelectorAll('[data-ctrm]'), function (b) {
     b.addEventListener('click', function () {
-      if (!confirm('この連携先を削除しますか？')) return;
-      collectEditInputs(); editing.contacts.splice(Number(b.getAttribute('data-ctrm')), 1); editDirty = true; renderEdit();
+      var ed = editing, ci = Number(b.getAttribute('data-ctrm'));
+      var cid0 = (ed && ed.contacts[ci] && ed.contacts[ci].id) || '';
+      SUDialog.confirm('この連携先を削除しますか？').then(function (ok) {
+        /* 窓の間に編集を閉じた・別の編集になった・その番目が別の連携先になった時は何もしない（2026-11-13） */
+        if (!ok || !editing || editing !== ed) return;
+        collectEditInputs();
+        var ct = editing.contacts[ci];
+        if (!ct || (ct.id || '') !== cid0) return;
+        editing.contacts.splice(ci, 1); editDirty = true; renderEdit();
+      }).catch(function (e) { afDlgNote_('連携先の削除', e); });
     });
   });
   $('famAdd').addEventListener('click', function () {
@@ -4060,9 +4149,17 @@ function bindEditEvents() {
     editDirty = true; renderEdit();
   });
   $('eCancel').addEventListener('click', function () {
-    if (editDirty && !confirm('保存していない入力があります。破棄してよろしいですか？')) return;
-    editing = null; editBase = null; editDirty = false;
-    if (curId && findCand(curId)) { openView(curId); } else { showScreen('list'); renderList(); }
+    function leave() {
+      editing = null; editBase = null; editDirty = false;
+      if (curId && findCand(curId)) { openView(curId); } else { showScreen('list'); renderList(); }
+    }
+    if (!editDirty) { leave(); return; }
+    var ed = editing;
+    SUDialog.confirm('保存していない入力があります。破棄してよろしいですか？').then(function (ok) {
+      /* 窓の間に編集が閉じた・別の編集になった時は何もしない（2026-11-13） */
+      if (!ok || editing !== ed) return;
+      leave();
+    }).catch(function (e) { afDlgNote_('編集の取り消し', e); });
   });
   $('eSave').addEventListener('click', saveEdit);
 }
@@ -4949,24 +5046,31 @@ $('msSendBtn').addEventListener('click', function () {
   toast('確認中…');
   /* ★送信前に同姓同名を確かめる。マスタGASには重複チェックが無く、2回送れば2行できる。
      照会できない時は止めない（通信不良で登録そのものができなくなる方が困る）。 */
+  var cid = c.id;
   preflightDuplicate(c).then(function (go) {
     if (!go) { $('msSendBtn').disabled = false; toast('登録を中止しました'); return; }
-    return sendMasterRecord(c, adm);
+    /* 確かめの間に台帳を読み直した時は今の案件で送る。案件が無くなった・別の案件を開いた・もう登録が済んでいた時は送らない（2026-11-13） */
+    var c2 = findCand(cid);
+    if (!c2 || curId !== cid || (c2.masterId != null && c2.masterId !== '')) { $('msSendBtn').disabled = false; return; }
+    return sendMasterRecord(c2, adm);
   });
 });
 function preflightDuplicate(c) {
   return masterGet({ action: 'getRoster' }, 20000).then(function (d) {
     var list = (d && d.roster) || d || [];
     var same = asArr(list).filter(function (r) { return normName(r.name) === normName(c.name); });
-    if (!same.length) return true;
-    return confirm('入居者マスタに同じお名前の方が ' + same.length + '名 登録されています（利用者No: ' +
+    return same.length ? same : null;
+  }).catch(function () { return null; }).then(function (same) {
+    /* 照会できない時は止めない（上の考え方のまま）。窓が出せない・窓の答えの後に失敗した時は登録しない側に倒す（2026-11-13） */
+    if (!same) return true;
+    return SUDialog.confirm('入居者マスタに同じお名前の方が ' + same.length + '名 登録されています（利用者No: ' +
       same.map(function (r) { return r.id; }).join('・') + '）。\n\n' +
-      '別人であれば「OK」で登録を続けます。同じ方であれば「キャンセル」を押し、マスタ側で確認してください。');
-  }).catch(function () { return true; });
+      '別人であれば「OK」で登録を続けます。同じ方であれば「キャンセル」を押し、マスタ側で確認してください。').then(function (ok) { return !!ok; }, function (e) { afDlgNote_('同姓同名の確かめ', e); return false; });
+  });
 }
 function sendMasterRecord(c, adm) {
   /* 氏名が無いままでは送らない（2026-10-17・入居者マスタの GAS は氏名が空の登録を断る。送ってから「登録確認待ち」で止まらないよう、ここで止める） */
-  if (!String((c && c.name) || '').trim()) { alert('お名前が入っていないため、入居者マスタへは登録できません。案件にお名前を入れてから、もう一度押してください。'); return Promise.resolve(); }
+  if (!String((c && c.name) || '').trim()) { SUDialog.alert('お名前が入っていないため、入居者マスタへは登録できません。案件にお名前を入れてから、もう一度押してください。'); return Promise.resolve(); }
   msRec = buildMasterRecord(c, adm);
   /* ★送る【前】に保留を刻む（端末とサーバーに残る）。送信中にダイアログを閉じる・再読込する・
      別の端末で開く、のどれでも「登録ボタン」ではなく「登録確認」が出る＝処理中の再登録を防ぐ。
@@ -5273,14 +5377,18 @@ function renderSyncModal() {
     '<dt>状態</dt><dd>' + esc($('syncChip').textContent) + (dirty ? '（未送信の変更あり）' : '') + '</dd>' +
     '<dt>案件</dt><dd>' + DB.candidates.filter(function (c) { return !c.deleted; }).length + '件（削除済み ' +
       DB.candidates.filter(function (c) { return c.deleted; }).length + '件）</dd>' +
-    '<dt>サーバー版</dt><dd>' + (caps ? esc(asStr(caps.codeVersion) || '不明') : '<span style="color:var(--g6)">未確認</span>') +
-      ' <button class="btn sm" id="syPing" type="button">確認する</button></dd>' +
-    '<dt>サーバーの防御</dt><dd>' + (caps ? esc(asArr(caps.guards).join('・') || 'なし') : '—') + '</dd>' +
+    (afIsAdmin_
+      ? '<dt>サーバー版</dt><dd>' + (caps ? esc(asStr(caps.codeVersion) || '不明') : '<span style="color:var(--g6)">未確認</span>') +
+        ' <button class="btn sm" id="syPing" type="button">確認する</button></dd>' +
+        '<dt>サーバーの防御</dt><dd>' + (caps ? esc(asArr(caps.guards).join('・') || 'なし') : '—') + '</dd>'
+      : '<dt>サーバー</dt><dd>' + (caps ? '確認済み' : '<span style="color:var(--g6)">未確認</span>') +
+        ' <button class="btn sm" id="syPing" type="button">確認する</button></dd>') +
     '</dl>' +
     (caps && !serverOk ? '<p class="note err">🛑 <b>接続先が入居調整の専用サーバーではありません</b>（応答した名札: ' +
       esc(asStr(caps.server) || '不明') + '）。<a href="connection-settings.html">接続設定</a>の「入居調整」に、'
       + '入居調整用に作った Google の受け口の URL が入っているか確認してください。このまま保存すると、相談者の情報が別の置き場へ書き込まれます。</p>' : '') +
-    (caps && serverOk && !guardOk ? '<p class="note err">⚠️ サーバー側の消失ガード（admwipe）が有効になっていません。Apps Script でコードを保存しただけになっていないか確認してください（デプロイ → デプロイを管理 → 鉛筆 → バージョン「新バージョン」→ デプロイ）。</p>' : '') +
+    (caps && serverOk && !guardOk ? (afIsAdmin_ ? '<p class="note err">⚠️ サーバー側の消失ガード（admwipe）が有効になっていません。Apps Script でコードを保存しただけになっていないか確認してください（デプロイ → デプロイを管理 → 鉛筆 → バージョン「新バージョン」→ デプロイ）。</p>'
+      : '<p class="note err">⚠️ サーバーの守りの設定が済んでいません。管理者に伝えてください。</p>') : '') +
     '<p class="note">接続先の設定は <a href="connection-settings.html">接続設定</a> で行います（このアプリはそこで入れた値を読むだけです）。</p>' +
     '<h2 style="font-size:0.9375rem;margin:12px 0 6px">端末のバックアップ</h2>' +
     '<dl class="kv">' +
@@ -5307,7 +5415,7 @@ function pingServer() {
     if (!j || !j.ok) throw new Error((j && j.error) || '応答エラー');
     serverCaps = j;
     renderSyncModal();
-    toast('サーバー版 ' + asStr(j.codeVersion));
+    toast(afIsAdmin_ ? 'サーバー版 ' + asStr(j.codeVersion) : 'サーバーを確認しました');   // 版の番号は管理者のログインの時だけ（2026-11-13 PR #566 の反証・文は仮置き）
   }).catch(function (e) {
     toast('確認できませんでした: ' + afErrWords_(e, 'サーバー版の確認'));
   });
@@ -5334,11 +5442,14 @@ $('importFile').addEventListener('change', function () {
     try { o = JSON.parse(String(rd.result)); } catch (e) { toast('読み込めませんでした（控えのファイルの形ではありません）'); return; }
     var incoming = normalizeDb(asObj(o).db || o);
     if (!incoming.candidates.length) { toast('案件が入っていないファイルです'); return; }
-    if (!confirm('ファイルの ' + incoming.candidates.length + '件 を取り込みます。\n\n' +
-      '置き換えではなく統合します（いまの ' + DB.candidates.length + '件 は消えません）。よろしいですか？')) return;
-    DB = mergeDb(DB, incoming, { keepFilled: true });   /* 取り込みも人の意図＝消した印を効かせない */
-    markDirty(); renderAll(); closeModal('mk-sync');
-    toast('取り込みました（' + DB.candidates.length + '件）');
+    SUDialog.confirm('ファイルの ' + incoming.candidates.length + '件 を取り込みます。\n\n' +
+      '置き換えではなく統合します（いまの ' + DB.candidates.length + '件 は消えません）。よろしいですか？').then(function (ok) {
+      if (!ok) return;
+      /* 統合は答えた時の台帳に対して行う（窓の間に読み直した分も消さない・2026-11-13） */
+      DB = mergeDb(DB, incoming, { keepFilled: true });   /* 取り込みも人の意図＝消した印を効かせない */
+      markDirty(); renderAll(); closeModal('mk-sync');
+      toast('取り込みました（' + DB.candidates.length + '件）');
+    }).catch(function (e) { afDlgNote_('控えのファイルの取り込み', e); });
   };
   rd.readAsText(f);
 });
@@ -5358,23 +5469,39 @@ function renderAll() {
 Array.prototype.forEach.call(document.querySelectorAll('.bnav button'), function (b) {
   b.addEventListener('click', function () {
     var k = b.getAttribute('data-nav');
-    if (editing && editDirty && k !== 'help') {
-      if (!confirm('保存していない入力があります。破棄して移動しますか？')) return;
-      editing = null; editBase = null; editDirty = false;
+    function go() {
+      if (k === 'list') { showScreen('list'); renderList(); }
+      else if (k === 'today') { renderToday(); showScreen('today'); }
+      else if (k === 'kpi') { renderKpi(); showScreen('kpi'); }
+      else if (k === 'help') { openModal('mk-help'); }
     }
-    if (k === 'list') { showScreen('list'); renderList(); }
-    else if (k === 'today') { renderToday(); showScreen('today'); }
-    else if (k === 'kpi') { renderKpi(); showScreen('kpi'); }
-    else if (k === 'help') { openModal('mk-help'); }
+    if (editing && editDirty && k !== 'help') {
+      var ed = editing;
+      SUDialog.confirm('保存していない入力があります。破棄して移動しますか？').then(function (ok) {
+        /* 窓の間に編集が閉じた・別の編集になった時は何もしない（2026-11-13） */
+        if (!ok || editing !== ed) return;
+        editing = null; editBase = null; editDirty = false;
+        go();
+      }).catch(function (e) { afDlgNote_('下の切り替え', e); });
+      return;
+    }
+    go();
   });
 });
 /* 新規は下のナビから丸ボタンへ移した（よく見る画面を1つ増やすため） */
 $('fabNew').addEventListener('click', function () {
+  function go() { curId = null; openEdit(null); }
   if (editing && editDirty) {
-    if (!confirm('保存していない入力があります。破棄して移動しますか？')) return;
-    editing = null; editBase = null; editDirty = false;
+    var ed = editing;
+    SUDialog.confirm('保存していない入力があります。破棄して移動しますか？').then(function (ok) {
+      /* 窓の間に編集が閉じた・別の編集になった時は何もしない（2026-11-13） */
+      if (!ok || editing !== ed) return;
+      editing = null; editBase = null; editDirty = false;
+      go();
+    }).catch(function (e) { afDlgNote_('新規', e); });
+    return;
   }
-  curId = null; openEdit(null);
+  go();
 });
 /* 検索・並べ替え・表示の切替。入力欄は描き直さない場所に置いてあるので文字を打っても焦点が飛ばない */
 $('listQ').addEventListener('input', function () { listQ = this.value; renderList(); });
@@ -5401,6 +5528,7 @@ bindFileDrop();
 $('syncChip').addEventListener('click', renderSyncModal);
 $('reloadBtn').addEventListener('click', function () {
   if (busyEditing()) { toast('編集中は取り込みません。保存してから押してください'); return; }
+  afWipeHold_ = false;   // ⟳ を押した＝取り直した後の送信で断られたらもう一度聞く
   pull(true).then(function () { return refreshFiles(); }).then(function () { renderAll(); });
 });
 
@@ -5437,7 +5565,7 @@ function afStart_() {
   try { if (window.SUPerf) SUPerf.ready(); } catch (e) {}
   if (cacheRecovered) {
     setTimeout(function () {
-      alert('⚠️ この端末の保存データが読めなかったため、バックアップ（' + cacheRecovered + '）から復旧しました。\n\n' +
+      SUDialog.alert('⚠️ この端末の保存データが読めなかったため、バックアップ（' + cacheRecovered + '）から復旧しました。\n\n' +
         '案件 ' + DB.candidates.length + '件を表示しています。内容に不足があれば、⟳ でサーバーから最新を取り直してください。');
     }, 300);
   }
