@@ -55,7 +55,7 @@
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 <!-- 見出しの右のログイン中の役割の札の見た目（画面だけ・印刷しない・2026-11-12） -->
 <link rel="stylesheet" href="su-shell.css?v=2026-11-13">
-<link rel="stylesheet" href="su-cutover-gate.css?v=2026-11-03.4">
+<link rel="stylesheet" href="su-cutover-gate.css?v=2026-11-14">
 </head>
 <body>
 <header class="hdr su-shell-hdr">
@@ -82,6 +82,15 @@
     <p id="msg-near" class="msg" aria-hidden="true"></p>
     <!-- データベースの準備（統合の SQL）が足りない時だけ、管理者に足りない番号を出す（画面だけ・印刷しない・shadow-check.js の renderPrep） -->
     <p id="db-prep" class="msg warn" hidden></p>
+    <!-- 本番の健康（2026-11-14 代表者の依頼・管理者だけ・統合 0088 の save_health）: 切り替え済みの正本ごとの直近24時間の保存の成功・失敗と、
+         Google への写し返しの最後の時刻と遅れ。出すのは種類・数・時刻だけ（判定は su-health-calc.js・画面だけ・印刷しない） -->
+    <section class="cd hl" id="hl-box" hidden>
+      <h2>本番の健康（直近24時間）</h2>
+      <p class="muted">切り替え済みの正本ごとに、新しい保存先への保存の成功・失敗の数と、Google への写し返しを出します。失敗が5件以上か、写し返しが2時間以上遅れている種類は「要確認」になり、管理者のメニューにも札が出ます。</p>
+      <p id="hl-verdict" class="msg" role="status"></p>
+      <div class="hl-wrap" id="hl-table"></div>
+      <div class="acts"><button type="button" class="btn" id="b-hl-reload">本番の健康を読み直す</button></div>
+    </section>
     <section class="cd">
       <h2>入居者マスタの写し</h2>
       <p class="muted" id="cmp-src"></p>
@@ -359,6 +368,7 @@
 <script src="su-sup-full.js?v=2026-11-02.2"></script>
 <script src="su-sa-full.js?v=2026-11-03.2"></script>
 <script src="su-geno-full.js?v=2026-11-03"></script>
+<script src="su-health-calc.js?v=2026-11-14"></script>
 <script src="su-hb-full.js?v=2026-11-05"></script>
 <script src="su-doc-full.js?v=2026-11-05.2"></script>
 <script src="su-cutover-gate.js?v=2026-11-13.2"></script>

@@ -325,3 +325,7 @@ mailer/.DS_Store
 !/su-patch-sync.js
 !/hig-doctor.config.json
 !/.higauditignore
+# 本番の健康（2026-11-14・統合 0088）: 判定の純関数・保存の失敗を種類と理由だけ数えて送る部品・メニューの札
+!/su-health-calc.js
+!/su-health.js
+!/su-health-badge.js
