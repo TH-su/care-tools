@@ -119,6 +119,8 @@ function makeBox(fac) {
     grabDecl('DAYS_JA'), grabDecl('NDAY'), 'var ROSTER_SUB = "";', 'var DB = null;',
     grabDecl('FLOOR_ORDER'), grabDecl('FLOOR_LABEL'), grabDecl('DCR_FLOOR_NAME_MAX'), grabDecl('WK_FLR_LABEL'),
     grabDecl('dcrFloorSigUsed'),
+    grabDecl('DCR_DAYS_DEFAULT'), grabDecl('DCR_COLS'), grabDecl('DCR_W7'), grabFn('dcrDays_'), grabFn('dcrLastDay_'), grabFn('dcrSheetW_'),
+    grabFn('dcrFloorExtra_'), grabFn('dcrFloorNos_'), grabFn('dcrFloorOrder_'), grabFn('dcrFloorKey_'),   // 曜日の列と3階以上の階の部品（2026-11-14 第6段 K5）
     grabFn('dcrFloorNames_'), grabFn('dcrFloorLabel_'), grabFn('dcrFloorSecLabel_'), grabFn('dcrFloorSig_'), grabFn('dcrRefreshFloorsIfStale_'),
     grabDecl('DCR_NOTES_KEYS'), grabDecl('DCR_NOTES_WORD_MAX'), grabFn('dcrDaycareNotes_'), grabFn('dcrNotesWord_'),   // 昼食場所の呼び名（便10・施設情報に daycareNotes が無ければ既定）
     grabDecl('byKana'), grabDecl('onDay'), grabDecl('offDay'), grabDecl('countOn'), grabDecl('countOff'), 'var TBL_W = { daylist: 1000, allweek: 1000, day: 1000 };', grabDecl('DAYLIST_NOTES'),
@@ -206,7 +208,8 @@ console.log('— 2. 正しい floors だと替わる —');
   const ttl = textsOf(box.els.tblDaylist, 'cut-title');
   t('「デイ休み（２階で昼食）」は替えない', J(ttl) === J(['デイ休み（２階で昼食）']), ttl);
   const box10 = makeBox(facility(withFloors([{ no: 2, label: '東棟２階' }, { no: 1, label: 'Ａ' }, { no: 3, label: '三の階' }])));
-  t('4字ちょうど・1字は使う・並びの順は問わない・3階は見出しを作らない', J(box10.dcrFloorNames_()) === J({ 0: '階未設定', 1: 'Ａ', 2: '東棟２階' }), box10.dcrFloorNames_());
+  t('4字ちょうど・1字は使う・並びの順は問わない・１階と２階の名前はこの関数で決める（3階は dcrFloorExtra_ で扱う）', J(box10.dcrFloorNames_()) === J({ 0: '階未設定', 1: 'Ａ', 2: '東棟２階' }), box10.dcrFloorNames_());
+  t('3階が正しく書いてあれば区画は ３階→２階→１階→階未設定（K5）', J(box10.dcrFloorOrder_()) === J([3, 2, 1, 0]) && box10.dcrFloorLabel_(3) === '三の階', box10.dcrFloorOrder_());
   const boxEvil = makeBox(facility(withFloors([{ no: 1, label: '<b>壱' }, { no: 2, label: '"弐"&' }])));
   const he = headings(boxEvil);
   t('記号の入った名前も文字のまま入る（要素にならない）', J(he.roster.slice(0, 2)) === J(['"弐"&', '<b>壱']) && boxEvil.els.roster.children.every(function chk(n) { return n.tag !== 'b' && (n.children || []).every(chk); }), he.roster);
