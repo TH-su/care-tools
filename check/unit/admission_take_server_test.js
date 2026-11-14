@@ -107,7 +107,7 @@ function mk(opt) {
     'var DB = ' + JSON.stringify(opt.db || LOCAL) + ';',
     'var kvRev = 3, dirty = true, pushing = false, afWipeHold_ = false, SU_DATA_READY = true, AF_LIVE = true, retryWait = 0, pushTimer = null;',
     grabVar('CACHE_KEY'), grabVar('CACHE_BAK'), grabVar('CACHE_BAK2'), grabVar('CACHE_DISCARD'),
-    grabFn('serverLooksLost'), grabFn('cachePayload'), grabFn('saveCache'), grabFn('push'), grabFn('afTakeServer_'),
+    grabVar('DEVICE_KEY'), grabFn('afFieldNow_'), grabFn('serverLooksLost'), grabFn('cachePayload'), grabFn('saveCache'), grabFn('push'), grabFn('afTakeServer_'),
     'function schedulePush() { __log.scheduled++; }',
     'this.st = function () { return { DB: DB, dirty: dirty, kvRev: kvRev, hold: afWipeHold_ }; };',
     'this.setDB = function (u) { DB.updatedAt = u; };',
@@ -225,25 +225,121 @@ async function run() {
     b.applyDeviceGuard();
     t('5-1 現場端末へ切り替わったら、合わせる前の控えも消す', b.k !== '__無い__' && ls.getItem(b.k) === null, b.k);
   }
-  {
-    const log = { merged: null, dirtied: 0, asked: [] };
+  /* 戻す・消す・片づけ・容量不足の書き直しを動かす箱（#579 の反証レビュー） */
+  const mkR = (opt) => {
+    opt = opt || {};
+    const log = { merged: null, asked: [], toasts: [], scheduled: 0, notes: [] };
     const ls = makeStorage();
-    const b = { localStorage: ls, JSON, Promise, String, Array,
-      SUDialog: { confirm(m) { log.asked.push(m); return Promise.resolve(true); } },
-      toast() {}, afDlgNote_() {}, afNote_() {}, renderAll() {}, fmtDt: (s) => s, asStr: (v) => (v == null ? '' : String(v)),
+    const answers = (opt.answers || [true]).slice();
+    const b = { localStorage: ls, JSON, Promise, String, Array, Number, Date: opt.Date || Date,
+      SUDialog: { confirm(m) { log.asked.push(m); const a = answers.length ? answers.shift() : false; return new Promise((r) => setTimeout(() => { if (opt.before) opt.before(b); r(a); }, 0)); } },
+      toast: (m) => log.toasts.push(m), afDlgNote_() {}, afNote_: (w) => log.notes.push(w), renderAll() {}, setSync() {}, fmtDt: (x) => x,
+      asStr: (v) => (v == null ? '' : String(v)), asArr: (a) => (Array.isArray(a) ? a : []),
+      nowIso: () => '2026-11-14T00:00:20.000Z',
       normalizeDb: (d) => JSON.parse(JSON.stringify(d)),
       mergeDb: (a, x, o) => { log.merged = { a: a.candidates.length, x: x.candidates.length, keep: !!(o && o.keepFilled) }; return { candidates: a.candidates.concat(x.candidates) }; },
-      markDirty: () => { log.dirtied++; } };
+      __log: log };
     vm.createContext(b);
-    vm.runInContext(['var DB = ' + JSON.stringify(SERVER) + ';', grabVar('CACHE_DISCARD'), grabFn('readCacheSlot'), grabFn('restoreDiscarded_'), 'this.k = CACHE_DISCARD;'].join('\n'), b);
-    ls.setItem(b.k, JSON.stringify({ db: LOCAL, rev: 3, dirty: true, at: '2026-11-14T00:00:09.000Z', n: 2 }));
-    b.restoreDiscarded_(); await settle();
+    vm.runInContext(['var DB = ' + JSON.stringify(SERVER) + ';', 'var kvRev = 7, dirty = false, afWipeHold_ = true;',
+      grabVar('CACHE_KEY'), grabVar('CACHE_BAK'), grabVar('CACHE_BAK2'), grabVar('CACHE_DISCARD'),
+      (src.match(/\nvar DISCARD_KEEP_MS = [^;]*;/) || ['var DISCARD_KEEP_MS = 0;'])[0].trim(),
+      grabFn('readCacheSlot'), grabFn('cachePayload'), grabFn('saveCache'), grabFn('restoreDiscarded_'), grabFn('deleteDiscarded_'), grabFn('afDiscardSweep_'),
+      'function schedulePush() { __log.scheduled++; }',
+      'this.k = CACHE_DISCARD; this.ck = CACHE_KEY; this.st = function () { return { DB: DB, dirty: dirty, hold: afWipeHold_ }; };'].join('\n'), b);
+    return { b, log, ls };
+  };
+  const BAK = JSON.stringify({ db: LOCAL, rev: 3, dirty: true, at: '2026-11-14T00:00:09.000Z', n: 2 });
+  {
+    const p = mkR();
+    p.ls.setItem(p.b.k, BAK);
+    p.b.restoreDiscarded_(); await settle();
+    const s = p.b.st();
     t('5-2 合わせる前の控えは、件数を聞いてから今の台帳へ統合で戻す（消した印を効かせない・送信待ちにする）',
-      log.asked.length === 1 && /合わせる前の控え（2026-11-14T00:00:09\.000Z・案件2件）/.test(log.asked[0]) && log.merged && log.merged.a === 4 && log.merged.x === 2 && log.merged.keep && log.dirtied === 1, log);
+      p.log.asked.length === 1 && /合わせる前の控え（2026-11-14T00:00:09\.000Z・案件2件）/.test(p.log.asked[0]) && p.log.merged && p.log.merged.a === 4 && p.log.merged.x === 2 && p.log.merged.keep
+      && s.dirty === true && s.hold === false && p.log.scheduled === 1, [p.log, s]);
+    t('5-2b 戻す確かめの窓に「控えの日時より後にほかの端末で消した内容が戻ることがあります」と出す', /控えの日時より後にほかの端末で消した内容が戻ることがあります。/.test(p.log.asked[0] || ''), p.log.asked);
+    t('5-2c 戻して端末の控えへ書けた後は、合わせる前の控えを消す', p.ls.getItem(p.b.k) === null && !!p.ls.getItem(p.b.ck), p.ls.getItem(p.b.k));
   }
-  t('5-3 同期とバックアップの窓に、控えがある時だけ「合わせる前の控え」の行と復元のボタンを出す',
-    src.indexOf("(bd ? '<dt>合わせる前の控え</dt><dd>' + bd.n + '件（' + esc(fmtDt(bd.at)) + '）<button class=\"btn sm\" id=\"syRD\" type=\"button\" style=\"margin-left:6px\">復元</button></dd>' : '')") >= 0
-    && src.indexOf("if ($('syRD')) $('syRD').addEventListener('click', function () { restoreDiscarded_(); closeModal('mk-sync'); });") >= 0);
+  {
+    const p = mkR();
+    p.ls.setItem(p.b.k, BAK);
+    const orig = p.ls.setItem;
+    p.b.localStorage.setItem = function (k, v) { if (k === p.b.ck) throw new Error('容量不足'); orig(k, v); };
+    p.b.restoreDiscarded_(); await settle();
+    t('5-2d 戻した後に端末の控えへ書けなかった時は、合わせる前の控えを消さない', p.ls.getItem(p.b.k) === BAK, p.log.toasts);
+  }
+  {
+    const p = mkR({ answers: [false] });
+    p.ls.setItem(p.b.k, BAK);
+    p.b.restoreDiscarded_(); await settle();
+    t('5-2e 戻す確かめで「キャンセル」なら何も変えない', p.log.merged === null && p.ls.getItem(p.b.k) === BAK && p.b.st().dirty === false);
+  }
+  t('5-3 同期とバックアップの窓に、控えがある時だけ「合わせる前の控え」の行と復元・消すのボタンを出す',
+    src.indexOf("(bd ? '<dt>合わせる前の控え</dt><dd>' + bd.n + '件（' + esc(fmtDt(bd.at)) + '）<button class=\"btn sm\" id=\"syRD\" type=\"button\" style=\"margin-left:6px\">復元</button><button class=\"btn sm\" id=\"syRDdel\" type=\"button\" style=\"margin-left:6px\">消す</button></dd>' : '')") >= 0
+    && src.indexOf("if ($('syRD')) $('syRD').addEventListener('click', function () { restoreDiscarded_(); closeModal('mk-sync'); });") >= 0
+    && src.indexOf("if ($('syRDdel')) $('syRDdel').addEventListener('click', function () { deleteDiscarded_(); closeModal('mk-sync'); });") >= 0);
+
+  console.log('— 6. 控えの期限・消す・容量不足（#579 の反証） —');
+  {
+    const now = Date.parse('2026-11-21T00:00:10.000Z');
+    const FakeDate = { now: () => now, parse: Date.parse };
+    let p = mkR({ Date: FakeDate });
+    p.ls.setItem(p.b.k, JSON.stringify({ db: LOCAL, at: '2026-11-14T00:00:09.000Z', n: 2 }));   // 7日と1秒前
+    p.b.afDiscardSweep_();
+    t('6-1 7日を過ぎた合わせる前の控えは、起動時の片づけで消す', p.ls.getItem(p.b.k) === null);
+    p = mkR({ Date: FakeDate });
+    p.ls.setItem(p.b.k, JSON.stringify({ db: LOCAL, at: '2026-11-15T00:00:00.000Z', n: 2 }));
+    p.b.afDiscardSweep_();
+    t('6-2 7日の内の控えは残す', p.ls.getItem(p.b.k) !== null);
+    p = mkR({ Date: FakeDate });
+    p.ls.setItem(p.b.k, '{壊れた');
+    p.b.afDiscardSweep_();
+    t('6-3 読めない控え（日時が分からない）は消す', p.ls.getItem(p.b.k) === null);
+    t('6-4 起動の時に、端末の控えを読んだすぐ後で片づける', /\n  loadCache\(\);\n  afDiscardSweep_\(\);\n/.test(src));
+  }
+  {
+    let p = mkR({ answers: [true] });
+    p.ls.setItem(p.b.k, BAK);
+    p.b.deleteDiscarded_(); await settle();
+    t('6-5 ［消す］は確かめの窓の後に消す', p.log.asked.length === 1 && /^合わせる前の控え（2026-11-14T00:00:09\.000Z・案件2件）を消しますか？/.test(p.log.asked[0]) && p.ls.getItem(p.b.k) === null, p.log.asked);
+    p = mkR({ answers: [false] });
+    p.ls.setItem(p.b.k, BAK);
+    p.b.deleteDiscarded_(); await settle();
+    t('6-6 ［消す］の確かめで「キャンセル」なら消さない', p.ls.getItem(p.b.k) === BAK);
+    p = mkR({ answers: [true], before: (b) => b.localStorage.setItem(b.k, JSON.stringify({ db: SERVER, at: '2026-11-14T00:00:30.000Z', n: 4 })) });
+    p.ls.setItem(p.b.k, BAK);
+    p.b.deleteDiscarded_(); await settle();
+    t('6-7 窓の間に控えが変わっていたら（新しく合わせた）消さない', p.ls.getItem(p.b.k) !== null && JSON.parse(p.ls.getItem(p.b.k)).n === 4, p.log.toasts);
+  }
+  {
+    /* 端末の控え（いまの保存）が1回だけ容量不足で落ちる */
+    const once = (p) => { let n = 0; const orig = p.ls.setItem; p.b.localStorage.setItem = function (k, v) { if (k === p.b.ck && n++ === 0) throw new Error('容量不足'); orig(k, v); }; };
+    let p = mkR();
+    p.ls.setItem(p.b.k, BAK); once(p);
+    let r = vm.runInContext('saveCache()', p.b);
+    t('6-8 容量不足で落ちた時は、合わせる前の控えを先に消して1回だけ書き直す', r === true && p.ls.getItem(p.b.k) === null && !!p.ls.getItem(p.b.ck), [r, p.log.toasts]);
+    p = mkR();
+    p.ls.setItem(p.b.k, BAK); once(p);
+    r = vm.runInContext('saveCache(true)', p.b);
+    t('6-9 合わせた直後・戻した時（keepDiscard）は控えを消さず、今の知らせのまま失敗にする', r === false && p.ls.getItem(p.b.k) === BAK && p.log.toasts.some((m) => /端末に保存できませんでした/.test(m)), [r, p.log.toasts]);
+    p = mkR();
+    p.b.localStorage.setItem = function (k) { if (k === p.b.ck) throw new Error('容量不足'); };
+    p.ls.m.set(p.b.k, BAK);
+    r = vm.runInContext('saveCache()', p.b);
+    t('6-10 控えを消して書き直しても落ちたら、今の知らせのまま失敗にする', r === false && p.log.toasts.some((m) => /端末に保存できませんでした/.test(m)), [r, p.log.toasts]);
+  }
+  {
+    const p = mk({ answers: [false, true], getBefore: (b) => b.localStorage.setItem('su_device_role', 'field') });
+    p.b.push(); await settle();
+    const s = p.b.st();
+    t('6-11 取り直しの応答を待つ間に端末の用途が現場へ変わったら、台帳も控えも書かずに捨てる', p.log.gets === 1 && s.DB.candidates.length === 2 && s.dirty === true
+      && p.ls.getItem(p.b.keys.discard) === null && p.ls.getItem(p.b.keys.cache) === null, [s, p.log.toasts]);
+  }
+  {
+    const p = mk({ answers: [false, true], before: [null, (b) => b.localStorage.setItem('su_device_role', 'field')] });
+    p.b.push(); await settle();
+    t('6-12 2段目の答えの時に現場の端末なら、取り直さない', p.log.gets === 0 && p.ls.getItem(p.b.keys.discard) === null, p.log);
+  }
   {
     const at = help.indexOf('id="sec-admission-flow"');
     const sec = at >= 0 ? help.slice(at, help.indexOf('</section>', at)) : '';

@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-1dL3dEgEX31nYVzP+4yYcV4gBJBSO7jFmYByGOgyZU4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-DEUVu50YMie6fBunIzQUBWRyT+QfFAChoFSKBXV5OCo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
@@ -891,6 +891,7 @@ var CACHE_BAK = 'admf_cache_bak';
 var CACHE_BAK2 = 'admf_cache_bak2';
 /* サーバーの内容に合わせる前の、この端末の台帳の控え（1世代だけ・代表者の決定 2026-11-14）。同期とバックアップの窓の「合わせる前の控え」から統合で戻す */
 var CACHE_DISCARD = 'admf_cache_discard';
+var DISCARD_KEEP_MS = 7 * 86400000;   // 合わせる前の控えを残す期間（7日・仮置き・#579 の反証）。過ぎたら起動時に消す
 function applyDeviceGuard() {
   var blocked = false;
   try { blocked = localStorage.getItem(DEVICE_KEY) === 'field'; } catch (e) {}
@@ -1449,7 +1450,7 @@ function afErrWords_(e, where) {
   return '通信がうまくいきませんでした';
 }
 function cachePayload() { return JSON.stringify({ db: DB, rev: kvRev, dirty: dirty, at: nowIso() }); }
-function saveCache() {
+function saveCache(keepDiscard) {
   var body;
   try { body = cachePayload(); } catch (e) { afNote_('端末の保存（形）', e); toast('⚠️ 端末への保存に失敗しました（データの形が壊れています）'); return false; }
   try { JSON.parse(body); } catch (e) { afNote_('端末の保存（検証）', e); toast('⚠️ 端末への保存に失敗しました（検証に失敗）'); return false; }
@@ -1466,6 +1467,18 @@ function saveCache() {
     if (localStorage.getItem(CACHE_KEY) !== body) throw new Error('verify');
     return true;
   } catch (e) {
+    /* 容量不足の時は、合わせる前の控えを先に消して1回だけ書き直す（#579 の反証）。合わせた直後（keepDiscard）は控えが変更の唯一の写しなので消さない */
+    var hadDiscard = false;
+    if (!keepDiscard) {
+      try { hadDiscard = localStorage.getItem(CACHE_DISCARD) !== null; } catch (e4) { hadDiscard = false; }   // 控えを読めない時は書き直さず、下で元の失敗を記録する
+    }
+    if (hadDiscard) {
+      try {
+        localStorage.removeItem(CACHE_DISCARD);
+        localStorage.setItem(CACHE_KEY, body);
+        if (localStorage.getItem(CACHE_KEY) === body) { toast('端末の容量が足りないため、合わせる前の控えを消して保存しました'); return true; }
+      } catch (e3) { e = e3; }   // 書き直しも落ちた時は、下の afNote_ で1回だけ記録する（二重に記録しない）
+    }
     afNote_('端末の保存', e);
     toast('⚠️ 端末に保存できませんでした（容量不足の可能性）。同期はできています。不要なタブを閉じて再度お試しください');
     return false;
@@ -1486,6 +1499,16 @@ function loadCache() {
   if (!o) { o = readCacheSlot(CACHE_BAK2); if (o) cacheRecovered = '2世代前'; }
   if (!o) return;
   DB = normalizeDb(o.db); kvRev = Number(o.rev) || 0; dirty = !!o.dirty;
+}
+/* 合わせる前の控えが7日を過ぎた・読めない時は消す（起動時に1回・#579 の反証。古い控えで後から空にした欄を埋め戻さないため） */
+function afDiscardSweep_() {
+  try {
+    var s = localStorage.getItem(CACHE_DISCARD);
+    if (s === null) return;
+    var t = NaN;
+    try { t = Date.parse(asStr(JSON.parse(s).at)); } catch (e) { t = NaN; }
+    if (!(t > 0) || Date.now() - t > DISCARD_KEEP_MS) localStorage.removeItem(CACHE_DISCARD);
+  } catch (e) { afNote_('合わせる前の控えの片づけ', e); }
 }
 /* 設定画面から呼ぶ手動復元。現状も saveCache のローテーションで退避されるので往復できる */
 function restoreFromBackup(slot) {
@@ -1991,7 +2014,12 @@ function push(force) {
    ・サーバーの台帳が読めない・無い・この端末より大きく減っている時も捨てない
    ・捨てる前に、この端末の台帳を別の鍵（CACHE_DISCARD）に1世代だけ控え、読み戻して確かめる。控えられなければ捨てない
    ・合わせた後は送信待ちの印（dirty）を外し、上書きの確かめを「キャンセル」した印も下ろす（次に断られたらまた聞く） */
+/* 端末の用途が現場か（読めない時は現場とみなす＝書かない側） */
+function afFieldNow_() {
+  try { return localStorage.getItem(DEVICE_KEY) === 'field'; } catch (e) { return true; }
+}
 function afTakeServer_(sentAt) {
+  if (afFieldNow_()) return Promise.resolve(false);
   if (DB.updatedAt !== sentAt || busyEditing() || pushing) {
     toast('この端末の内容が変わったため、サーバーの内容に合わせるのをやめました');
     return Promise.resolve(false);
@@ -1999,6 +2027,8 @@ function afTakeServer_(sentAt) {
   setSync('同期中…');
   return SU.data.admission.get(KV_KEY).then(function (g) {
     if (!g || !g.ok) throw new Error((g && g.error) || '応答エラー');
+    /* 応答を待つ間に端末の用途が現場へ変わった時は、台帳も控えも書かずに捨てる（§2.5・読み込み直しは起動時のガードに任せる） */
+    if (afFieldNow_()) return false;
     if (DB.updatedAt !== sentAt || busyEditing() || pushing) {
       setSync('未送信あり', 'err');
       toast('この端末の内容が変わったため、サーバーの内容に合わせるのをやめました');
@@ -2024,7 +2054,7 @@ function afTakeServer_(sentAt) {
     DB = remote; kvRev = Number(g.rev) || 0;
     dirty = false; afWipeHold_ = false; retryWait = 0;
     /* 端末の控えへ書けなかった時は saveCache が「端末に保存できませんでした」を出す。合わせた知らせは書けた時だけ出す */
-    var saved = saveCache(); renderAll(); setSync('同期OK');
+    var saved = saveCache(true); renderAll(); setSync('同期OK');
     if (saved) toast('サーバーの内容に合わせました（この端末の変更は「合わせる前の控え」に残しています）');
     return true;
   }).catch(function (e) {
@@ -2039,12 +2069,34 @@ function restoreDiscarded_() {
   if (!o) { toast('そのバックアップは見つかりませんでした'); return; }
   var n = normalizeDb(o.db);
   SUDialog.confirm('合わせる前の控え（' + fmtDt(asStr(o.at)) + '・案件' + n.candidates.length + '件）を読み込みます。\n\n' +
-    '今この端末にある内容（' + DB.candidates.length + '件）は消えません（統合します）。よろしいですか？').then(function (ok) {
+    '今この端末にある内容（' + DB.candidates.length + '件）は消えません（統合します）。\n' +
+    '控えの日時より後にほかの端末で消した内容が戻ることがあります。よろしいですか？').then(function (ok) {
     if (!ok) return;
     DB = mergeDb(DB, n, { keepFilled: true });
-    markDirty(); renderAll();   // markDirty が上書きの確かめの印も下ろす（送信で断られたらもう一度聞く）
+    /* markDirty と同じ手順。端末の控えへ書けた時だけ、役目を終えた合わせる前の控えを消す（#579 の反証） */
+    afWipeHold_ = false;   // 送信で断られたらもう一度聞く
+    DB.updatedAt = nowIso();
+    dirty = true;
+    var saved = saveCache(true);
+    setSync('未送信あり'); schedulePush(); renderAll();
+    if (saved) { try { localStorage.removeItem(CACHE_DISCARD); } catch (e) { afNote_('合わせる前の控えを消す', e); } }
     toast('合わせる前の控えから戻しました');
   }).catch(function (e) { afDlgNote_('restoreDiscarded_', e); });
+}
+/* 同期とバックアップの窓の［消す］。確かめの後に、聞いた時と同じ控えだけを消す */
+function deleteDiscarded_() {
+  var raw = null;
+  try { raw = localStorage.getItem(CACHE_DISCARD); } catch (e) { raw = null; }
+  var o = readCacheSlot(CACHE_DISCARD);
+  if (!o || raw === null) { toast('そのバックアップは見つかりませんでした'); return; }
+  SUDialog.confirm('合わせる前の控え（' + fmtDt(asStr(o.at)) + '・案件' + asArr(o.db.candidates).length + '件）を消しますか？\n\n消した控えは戻せません。').then(function (ok) {
+    if (!ok) return;
+    try {
+      if (localStorage.getItem(CACHE_DISCARD) !== raw) { toast('控えが変わったため、消すのをやめました'); return; }
+      localStorage.removeItem(CACHE_DISCARD);
+      toast('合わせる前の控えを消しました');
+    } catch (e) { afNote_('合わせる前の控えを消す', e); toast('⚠️ 控えを消せませんでした'); }
+  }).catch(function (e) { afDlgNote_('deleteDiscarded_', e); });
 }
 /* su-data の kvPut は opts を素通しする。force はサーバーのガードを人の承認で越えるためだけに使う */
 function kvPutWithOpts(data, rev, opts) {
@@ -5466,7 +5518,7 @@ function renderSyncModal() {
     '<dt>いまの保存</dt><dd>' + (cu ? cu.n + '件（' + esc(fmtDt(cu.at)) + '）' : 'なし') + '</dd>' +
     '<dt>1世代前</dt><dd>' + (b1 ? b1.n + '件（' + esc(fmtDt(b1.at)) + '）<button class="btn sm" id="syR1" type="button" style="margin-left:6px">復元</button>' : 'なし') + '</dd>' +
     '<dt>2世代前</dt><dd>' + (b2 ? b2.n + '件（' + esc(fmtDt(b2.at)) + '）<button class="btn sm" id="syR2" type="button" style="margin-left:6px">復元</button>' : 'なし') + '</dd>' +
-    (bd ? '<dt>合わせる前の控え</dt><dd>' + bd.n + '件（' + esc(fmtDt(bd.at)) + '）<button class="btn sm" id="syRD" type="button" style="margin-left:6px">復元</button></dd>' : '') +
+    (bd ? '<dt>合わせる前の控え</dt><dd>' + bd.n + '件（' + esc(fmtDt(bd.at)) + '）<button class="btn sm" id="syRD" type="button" style="margin-left:6px">復元</button><button class="btn sm" id="syRDdel" type="button" style="margin-left:6px">消す</button></dd>' : '') +
     '</dl>' +
     '<div class="btn-row" style="justify-content:flex-start">' +
     '<button class="btn sm" id="syExport" type="button">⬇️ 控えのファイルに書き出す</button>' +
@@ -5476,6 +5528,7 @@ function renderSyncModal() {
   if ($('syR1')) $('syR1').addEventListener('click', function () { restoreFromBackup(CACHE_BAK); closeModal('mk-sync'); });
   if ($('syR2')) $('syR2').addEventListener('click', function () { restoreFromBackup(CACHE_BAK2); closeModal('mk-sync'); });
   if ($('syRD')) $('syRD').addEventListener('click', function () { restoreDiscarded_(); closeModal('mk-sync'); });
+  if ($('syRDdel')) $('syRDdel').addEventListener('click', function () { deleteDiscarded_(); closeModal('mk-sync'); });
   $('syExport').addEventListener('click', exportJson);
   $('syImport').addEventListener('click', function () { $('importFile').click(); });
   openModal('mk-sync');
@@ -5628,6 +5681,7 @@ function afStart_() {
     toast('共通の部品を読み込めませんでした。同期はできませんが、この端末内では使えます');
   }
   loadCache();
+  afDiscardSweep_();
   loadListPref();
   syncListTool();
   renderList();

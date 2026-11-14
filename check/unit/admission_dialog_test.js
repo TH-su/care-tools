@@ -74,8 +74,9 @@ async function run() {
     && code.indexOf("if (!confirm('保存していない変更があります。メニューへ移ると消えます。移りますか？'))") >= 0
     && code.indexOf("if (!confirm('保存していない変更があります。使い方へ移ると消えます。移りますか？'))") >= 0, bareConfirm);
   t('2-2 ブラウザの知らせの窓を直接呼ばない（受け口の window.alert だけ）', bareAlert === 0 && (code.match(/window\.alert\(/g) || []).length === 1, bareAlert);
+  /* 2026-11-14（#579 の反証）: 合わせる前の控えの［消す］の確かめを足して15か所 */
   /* 2026-11-14: 上書きの確かめの「キャンセル」の後の「サーバーの内容に合わせますか」と、合わせる前の控えから戻す確かめの2か所を足した（代表者の決定 2026-11-14） */
-  t('2-3 画面の中の窓で聞く所は14か所・知らせる所は4か所', (code.match(/SUDialog\.confirm\(/g) || []).length === 14 && (code.match(/SUDialog\.alert\(/g) || []).length === 4,
+  t('2-3 画面の中の窓で聞く所は15か所・知らせる所は4か所', (code.match(/SUDialog\.confirm\(/g) || []).length === 15 && (code.match(/SUDialog\.alert\(/g) || []).length === 4,
     [(code.match(/SUDialog\.confirm\(/g) || []).length, (code.match(/SUDialog\.alert\(/g) || []).length]);
   const TEXTS = [
     "SUDialog.confirm('バックアップ（' + (slot === CACHE_BAK ? '1世代前' : '2世代前') + '・案件' + n.candidates.length + '件）を読み込みます。\\n\\n' +\n    '今この端末にある内容（' + DB.candidates.length + '件）は消えません（統合します）。よろしいですか？')",
@@ -91,7 +92,8 @@ async function run() {
     "SUDialog.confirm('入居者マスタに同じお名前の方が ' + same.length + '名 登録されています（利用者No: ' +\n      same.map(function (r) { return r.id; }).join('・') + '）。\\n\\n' +\n      '別人であれば「OK」で登録を続けます。同じ方であれば「キャンセル」を押し、マスタ側で確認してください。')",
     "SUDialog.alert('お名前が入っていないため、入居者マスタへは登録できません。案件にお名前を入れてから、もう一度押してください。')",
     "SUDialog.confirm('この端末の変更を捨てて、サーバーの内容に合わせますか？\\n\\n' +\n          'この端末の内容（' + DB.candidates.length + '件）は、捨てる前に端末のバックアップ「合わせる前の控え」に残します（右上のバッジから戻せます）。\\n\\n' +\n          '【サーバーの内容に合わせる場合】「OK」\\n' +\n          '【このままにする場合】「キャンセル」（この端末の変更は送らずに残します）')",
-    "SUDialog.confirm('合わせる前の控え（' + fmtDt(asStr(o.at)) + '・案件' + n.candidates.length + '件）を読み込みます。\\n\\n' +\n    '今この端末にある内容（' + DB.candidates.length + '件）は消えません（統合します）。よろしいですか？')",
+    "SUDialog.confirm('合わせる前の控え（' + fmtDt(asStr(o.at)) + '・案件' + n.candidates.length + '件）を読み込みます。\\n\\n' +\n    '今この端末にある内容（' + DB.candidates.length + '件）は消えません（統合します）。\\n' +\n    '控えの日時より後にほかの端末で消した内容が戻ることがあります。よろしいですか？')",
+    "SUDialog.confirm('合わせる前の控え（' + fmtDt(asStr(o.at)) + '・案件' + asArr(o.db.candidates).length + '件）を消しますか？\\n\\n消した控えは戻せません。')",
     "SUDialog.confirm('ファイルの ' + incoming.candidates.length + '件 を取り込みます。\\n\\n' +\n      '置き換えではなく統合します（いまの ' + DB.candidates.length + '件 は消えません）。よろしいですか？')",
     "SUDialog.alert('⚠️ この端末の保存データが読めなかったため、バックアップ（' + cacheRecovered + '）から復旧しました。\\n\\n' +\n        '案件 ' + DB.candidates.length + '件を表示しています。内容に不足があれば、⟳ でサーバーから最新を取り直してください。');"
   ];
