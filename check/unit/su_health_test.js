@@ -128,10 +128,10 @@ console.log('7. つなぎ');
     .forEach((p) => t(p + '.html が su-health.js を読む', /<script src="su-health\.js\?v=2026-11-14"><\/script>/.test(read(p + '.html'))));
   const idx = read('index.html');
   t('メニューが判定と札の部品を読み、組み立て直した後に付け直す',
-    idx.includes('<script src="su-health-calc.js?v=2026-11-14"></script>') && idx.includes('<script src="su-health-badge.js?v=2026-11-14"></script>') && /staleApply\(\);\s*hlApply\(\);/.test(idx));
+    idx.includes('<script src="su-health-calc.js?v=2026-11-14.2"></script>') && idx.includes('<script src="su-health-badge.js?v=2026-11-14"></script>') && /staleApply\(\);\s*hlApply\(\);/.test(idx));
   const sc = read('shadow-check.html'), sj = read('shadow-check.js');
   t('写しの見比べが判定の部品を読み、管理者だけに表を出す',
-    sc.includes('<script src="su-health-calc.js?v=2026-11-14"></script>') && sc.includes('id="hl-box" hidden') && /box\.hidden = !\(me && me\.role === 'admin'\)/.test(sj));
+    sc.includes('<script src="su-health-calc.js?v=2026-11-14.2"></script>') && sc.includes('id="hl-box" hidden') && /box\.hidden = !\(me && me\.role === 'admin'\)/.test(sj));
   const badge = read('su-health-badge.js');
   t('札は管理者だけ・現場端末では読まない・端末に書かない',
     /st\.role === 'admin'/.test(badge) && /deviceRole\(\) === 'field'/.test(badge) && !/localStorage\.setItem/.test(badge));

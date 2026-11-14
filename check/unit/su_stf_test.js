@@ -211,7 +211,7 @@ const BODY = () => ({ action: 'bulkSave', token: 'tok-staff', accessToken: 'h.p.
     const stfmPage_ = (h) => h.replace(/<script src="staff-master\.js\?v=[^"]*"><\/script>/, () => '<script>\n' + fs.readFileSync(path.join(__dirname, '..', '..', 'staff-master.js'), 'utf8') + '</script>');
     const PAGE = stfmPage_(fs.readFileSync(path.join(__dirname, '..', '..', 'staff-master.html'), 'utf8'));
     const ATS = fs.readFileSync(path.join(__dirname, '..', '..', 'ats.html'), 'utf8');
-    t('L 職員マスタ: 部品の版は2画面でそろう', /su-stf\.js\?v=2026-11-08"/.test(PAGE) && /su-stf\.js\?v=2026-11-08"/.test(ATS));
+    t('L 職員マスタ: 部品の版は2画面でそろう', /su-stf\.js\?v=2026-11-14"/.test(PAGE) && /su-stf\.js\?v=2026-11-14"/.test(ATS));
     t('L 職員マスタ: 接続先・合言葉が無くても ST.live の時だけ受け口へ送る（それ以外は今までと同じ断り）',
       /if \(noCfg && !\(ST\.live === true && window\.SUStf\)\) return Promise\.reject\(noCfg\);/.test(PAGE)
       && /if \(noCfg\) return window\.SUStf\.send\(p, function \(\) \{ return Promise\.reject\(noCfg\); \}, \{ screen: 'staff-master', url: ''/.test(PAGE));

@@ -56,7 +56,7 @@ try {
   cmpStatus = run('画素比較', [cmpJs, ...cmp]);
   /* ③' 揺れの確かめ: 違いの出た画面だけ 5 回ずつ撮り直して比べ直す */
   const first = readJson(path.join(out, 'compare', 'compare.json'), null);
-  const diffPages = first ? [...new Set(first.results.filter((r) => r.status === '違いあり' || r.status === '大きさが違う').map((r) => r.name.split('__')[0] + '.html'))] : [];   // 帳票（<画面>__<帳票>）に違いが出た時は、その画面ごと撮り直す
+  const diffPages = first ? [...new Set([...first.results, ...(first.pageRows || [])].filter((r) => r.status === '違いあり' || r.status === '大きさが違う').map((r) => r.name.split('__')[0] + '.html'))] : [];   // PDF のページごとの違い（pageRows）も同じく撮り直す   // 帳票（<画面>__<帳票>）に違いが出た時は、その画面ごと撮り直す
   if (diffPages.length && args.recheck !== '0' && wt) {
     const N = '5';
     const hide = args['hide-report'] === 'true' ? ['--hide-report'] : [];
@@ -65,7 +65,8 @@ try {
     if (a !== 0 || b !== 0) { dropWorktree(); fail('揺れの確かめの撮影が失敗'); }
     fs.rmSync(path.join(out, 'compare'), { recursive: true, force: true });
     cmpStatus = run('画素比較（撮り直した後）', [cmpJs, ...cmp]);
-    recheckNote = `揺れの確かめ: 1回目に違いが出た ${diffPages.length}画面（${diffPages.join('、')}）を直す前・後とも${N}回ずつ撮り直し、多数派の絵で比べた`;
+    recheckNote = `揺れの確かめ: 1回目に違いが出た ${diffPages.length}画面（${diffPages.join('、')}）を直す前・後とも${N}回ずつ撮り直し、多数派の絵で比べた` +
+      ((first.pageRows || []).length ? '（帳票の PDF は撮り直しの1回目の分で比べた・PDF は多数決していない）' : '');
   }
 } finally { dropWorktree(); }
 /* ④⑤ */
