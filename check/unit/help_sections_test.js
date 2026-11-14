@@ -22,6 +22,8 @@ function t(name, cond, info) { if (cond) { ok++; console.log('  ✓ ' + name); }
 const SCREENS = [
   ['care-schedule', 'h-care-schedule', '週間計画'],
   ['work-schedule', 'h-work-schedule', 'ワークスケジュール'],
+  ['shift-app', 'h-shift-app', 'シフト作成'],
+  ['shift-analyzer', 'h-shift-analyzer', '過去シフト分析'],
   ['resident-master', 'h-resident-master', '入居者マスタ'],
   ['weight-record', 'h-weight-record', '体重管理'],
   ['facesheet', 'h-facesheet', 'フェイスシート'],
