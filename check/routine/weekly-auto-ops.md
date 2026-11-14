@@ -17,7 +17,7 @@
 - GitHub: `gh`（この Mac の所有者の資格。**読むだけ**。push・PR・Issue・ラベルの操作はしない）
 - Supabase: コネクタの `execute_sql`（プロジェクト `jhbernqawjrzqwrmqrih`）。**流してよいのはこの文章に書いた SELECT の SQL だけ**。結果が0件でも、確かめるために表の中身を出す SQL を足さない（`rows->0` のような行の中身を出す読み方・`select *` は禁止）。
 - Google Drive: コネクタの `search_files`・`create_file`
-- care-backend の手元の写し: `/Users/Takeshi/Claude/Repos/care-backend`（`git fetch origin main` してから `git show origin/main:…` で読む。作業ツリーは変えない）
+- care-backend の手元の写し: `/Users/Takeshi/Claude/Repos/care-backend`、care-log の手元の写し: `/Users/Takeshi/Claude/Projects/care-log`（どちらも `git fetch origin main` してから `git show origin/main:…` で読む。作業ツリーは変えない）
 
 ## 最初に確かめること（数1つずつ）
 
@@ -58,13 +58,39 @@ done
       and version <  to_char(timestamptz '<T>' at time zone 'UTC', 'YYYYMMDDHH24MISS')
     order by version;
    ```
-   version は UTC の時刻（YYYYMMDDHHMMSS）。報告には jst（日本時間）を書く。name の頭の4桁が統合の番号。
-2. 番号ごとに care-backend の main で確かめる:
-   - **戻す SQL**: `git ls-tree --name-only origin/main supabase/rollback/` に `NNNN_back.sql` か `NNNN_<名前>_back.sql` があれば「あり（ファイル名）」、無ければ「**なし**」。
-   - **前後の照合の結果**: `git log origin/main --format='%h %s%n%b' --grep='統合 NNNN'` と `--grep='NNNN'` の本文から、「流した後の確かめ」「前後の形」「確かめ … ok」に当たる行を探し、ok か ok でないかを、出どころのコミットの短い ID を添えて1行で書く。`supabase/checks/` に番号の付いた確かめのファイルがあれば名前を添える。**見つからなければ「記録なし」と書き、ok と推測しない**。
-   - 移行の名前に `drop` を含む・本文に「消す」がある番号は「消す処理（本人の一度だけ許可の対象）」と印を付ける。
-3. main に無い番号（流したが移行ファイルが main に入っていない）は「**main に移行ファイルなし**」と目立たせる。
-4. name の頭が4桁の数と `_` でない行（`^[0-9]{4}_` に合わない）は、「統合の番号が分からない（照合できず）」と目立たせる。
+   version は UTC の時刻（YYYYMMDDHHMMSS）。報告には jst（日本時間）を書く。どのリポジトリの何番かは次の 2 で決める。
+2. 移行の名前から、どのリポジトリのどのファイルかを決める（共通 DB はケアログと同じなので、ケアログの移行も同じ一覧に出る）。**次の順で**決める:
+   1. 名前の頭で表のどの行かを決める。どの行にも当たらない名前は「統合の番号が分からない（照合できず）」にして終わる。
+
+      | 名前の頭 | リポジトリ（手元の写し） | 番号・名前の取り方 |
+      |---|---|---|
+      | `NNNN_<名前>`（4桁の数と `_`） | care-backend（`/Users/Takeshi/Claude/Repos/care-backend`） | 番号 NNNN |
+      | `ops_NNNN_<名前>` | care-backend（同じ） | `ops_` を外して番号 NNNN |
+      | `carelog_NNNN_<名前>` | care-log（`/Users/Takeshi/Claude/Projects/care-log`） | 番号 NNNN |
+      | `hotfix_YYYY_MM_DD_<名前>` | care-log（同じ） | 応急の直し（番号なし）。下の 4 へ |
+
+   2. `<名前>` の語尾の `_phase1`・`_phase2` などを先に外す（同じ番号の移行を2段に分けて流したもの。表では「NNNN（2段に分けて流した 1段目／2段目）」と書く）。
+   3. 番号のある名前は、そのリポジトリの `supabase/migrations/NNNN_*.sql` のファイル名と `<名前>` を比べる。
+      - 合えば、移行ファイル＝それ、戻す SQL＝`supabase/rollback/NNNN_back.sql`（care-backend は `NNNN_<名前>_back.sql` も）。
+      - 合わない時（同じ番号の別の移行がある・番号の移行が無い）は、番号の移行・戻す SQL は**使わず**、下の 4 と同じやり方で `supabase/hotfix/` から `<名前>` のファイルを探す。当たれば「移行の名前と番号が食い違う（hotfix のファイルを当てた）」と印を付ける。
+   4. 応急の直し（hotfix）のファイルの決め方（care-log の `supabase/hotfix/`）:
+      - `<名前>` の語尾が `_back` なら「応急の直しを**戻した**」記録、`_again` なら「流し直した」記録。語尾を外した名前を元の名前とする。
+      - 元の名前で `YYYY-MM-DD_<元の名前>.sql`（`_back.sql` で終わらない方）を探す。まず名前の日付（`_` を `-` に直す）で、無ければ hotfix/ の全部の日付から探す。日付が違うファイルに当たった時は「流した日とファイルの日付が違う（同じ応急の直しを流し直した／戻した）」と印を付ける。
+      - 移行ファイル＝そのファイル、戻す SQL＝同じ日付の `<元の名前>_back.sql`。戻した記録（`_back`）の行は、戻す SQL の欄を「—（これが戻し）」にする。
+      - 1つに決まらない・無い時は「main に移行ファイルなし」。
+   - どちらの写しも `git -C <写し> fetch -q origin main` してから `git show origin/main:…`・`git ls-tree -r --name-only origin/main` で読む（作業ツリーは変えない）。写しが無い・fetch できない時は `gh api repos/TH-su/<リポジトリ>/git/trees/main?recursive=1 --jq '.tree[].path'` で一覧を読む。
+
+3. 決めたファイルごとに、そのリポジトリの main で確かめる:
+   - **戻す SQL**: 2 で決めた場所にあれば「あり（ファイル名）」、無ければ「**なし**」。
+   - **前後の照合の結果**（材料のコミットの選び方と読み方）:
+     - 材料にするコミットは、`git log origin/main --format='%h %s%n%b' -- <2 で決めた移行ファイル>`（そのファイルを足した・直したコミット）だけにする。番号の数だけで `--grep` しない（別の移行のコミットの本文に番号が出てくるため）。
+     - そのコミットの本文に「本番には（まだ）流していない」「本番には何もしていない」があれば、そのコミットは材料から外す。
+     - ok と書いてよいのは、**同じ行（か同じ段落）に「本番」と「流した」「流し済み」の語が両方あり**、そこに確かめの結果（ok・一致・変わらない など）が書いてある時だけ。例: 「本番へは流し済み（流した後の確かめ ok）」「本番には 0069 を流した（確かめ ok）」。
+     - 「手元の土台」「使い捨ての」「素の PostgreSQL」「土台」「run.sh」「架空データ」の確かめは本番の照合ではない。それしか無ければ「記録なし（手元の確かめだけ）」。
+     - 書く形は「ok（リポジトリ 短いID）」「ok でない（リポジトリ 短いID・何が）」「記録なし」「記録なし（手元の確かめだけ）」のどれか。**見つからなければ「記録なし」と書き、ok と推測しない**。care-backend の `supabase/checks/` に番号の付いた確かめのファイルがあれば名前を添える。
+   - **消す処理の印**: 移行ファイルに `drop table`・`drop column`・`drop schema`・`delete from`・`truncate` がある時、または `drop function`・`drop index`・`drop view` で同じ移行の中に同じ名前の `create` が無い時だけ「消す処理（本人の一度だけ許可の対象）」と印を付ける。作り直しの前置き（`drop policy … if exists`・`drop trigger … if exists`・`drop constraint if exists` の後に同じ名前を作るもの）と、`attisdropped` などの語の一部は数えない。
+4. 流したのに移行ファイルが main に入っていない時は「**main に移行ファイルなし**」と目立たせる。
+5. 表の「統合」の欄には、移行の名前に加えてリポジトリ（care-backend／care-log）を書く。
 
 ## 3. 切ったスイッチ（su-backend.json）
 
@@ -177,9 +203,11 @@ from k, p;
 - care-backend …
 （仮置き: 署名のある PR を Claude が取り込んだ分として数えている）
 
-## 2. 流した本番 SQL（N件）
+## 2. 流した本番 SQL（N件・移行の道具で流した分だけ）
+（下の表の2行は書き方の見本。値はその週に確かめたものだけを書く）
 | 日時 | 統合 | 前後の照合 | 戻す SQL | 印 |
-| 11-10 16:58 | 0085_device_enroll_idle | ok（4b5d7e0） | あり（0085_back.sql） | |
+| 11-10 16:58 | care-backend 0085_device_enroll_idle | ok（care-backend 1234567） | あり（0085_back.sql） | |
+| 11-05 20:19 | care-log 0055（2段に分けて流した 1段目） | 記録なし | あり（0055_back.sql） | |
 
 ## 3. 切ったスイッチ（N件）／入れたスイッチ（M件）
 ## 4. 切り替えた正本（N件）
