@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-kH7CDNl9vlrcYtfDZpMlJT8h5IvgFJB6FcUT/iclsgg=' 'sha256-B5yUStU673HXikibiGm/X37ztyvNPGYRLH3i3dpXoF8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-kH7CDNl9vlrcYtfDZpMlJT8h5IvgFJB6FcUT/iclsgg=' 'sha256-3Im3OC+6cfw6Nk4BgxpXnD9YyO32gEm4NaPsP01MbAQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- 要配慮情報（疾患・訓練内容）を表示する画面。ブラウザキャッシュ・検索索引に残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -6554,7 +6554,9 @@ function aiErrText(e) {
   if (m === 'AI_NO_PROXY') return '計画書の接続先が未設定のため、AIを使えません（設定画面の「接続」を確かめてください）';
   if (m === 'AI_LIMIT' && !TP_IS_ADMIN) return '今日のAIの利用回数の上限に達しました。明日もう一度お試しください';   /* 括弧の中（上限の設定の名前）は管理者のログインの時だけ（2026-11-13 第6段 TP-03） */
   if (m === 'AI_LIMIT') return '今日のAIの利用回数の上限に達しました。明日もう一度お試しください（管理者向け：上限はサーバーの AI_DAILY_LIMIT で変えられます）';
+  if (m === 'AI_PROXY_OLD' && !TP_IS_ADMIN) return 'いまはAIを使えません。管理者に伝えてください';   /* 括弧の中（サーバーの版）は管理者のログインの時だけ（2026-11-13 第6段 TP-03・PR #566 の反証） */
   if (m === 'AI_PROXY_OLD') return 'いまはAIを使えません。管理者に伝えてください（管理者向け：サーバーが古い版で、AIの中継が入っていません）';
+  if (m === 'AI_PROXY_AUTH' && !TP_IS_ADMIN) return 'サーバーの合言葉が通りませんでした。管理者に伝えてください';   /* 括弧の中は管理者のログインの時だけ（同上） */
   if (m === 'AI_PROXY_AUTH') return 'サーバーの合言葉が通りませんでした。管理者に伝えてください（管理者向け：設定画面の「接続」を確かめる）';
   if (m === 'AI_BAD_REQUEST') return 'AIへの依頼の形がサーバーで断られました（アプリとサーバーの版が合っていない可能性）。管理者に連絡してください';
   if (m === 'AI_FETCH') return 'サーバーからAIへの通信に失敗しました（時間切れの可能性）。少し待ってから、もう一度お試しください';
@@ -6563,6 +6565,8 @@ function aiErrText(e) {
   if (m === 'AI_NO_FETCH') return 'このブラウザではAIを呼び出せません';
   if (m === 'AI_NO_SUBJECT') return 'ご本人の氏名が分からないため、氏名を伏せられず送れません（入居者マスタの名簿を読み込んでから、もう一度お試しください）';
   if (m === 'AI_DECLINED') return '外部AIへの送信を取りやめました（何も送っていません）。使う時はもう一度押して「OK」を選んでください';
+  /* 括弧の中（キーが受け付けられなかった・番号）と AI の返答（英語のことがある）は管理者のログインの時だけ（同上） */
+  if ((m === 'AI_HTTP_401' || m === 'AI_HTTP_403') && !TP_IS_ADMIN) return 'いまはAIを使えません。管理者に伝えてください';
   if (m === 'AI_HTTP_401' || m === 'AI_HTTP_403') return 'いまはAIを使えません。管理者に伝えてください（管理者向け：サーバーのAIのキーが受け付けられませんでした・' + m.slice(8) + '）' + why;
   if (m === 'AI_HTTP_429') return 'AIの利用が混み合っています（429）。少し待ってから「もう一度試す」を押してください';
   if (m === 'AI_HTTP_529' || m === 'AI_HTTP_503') return 'AI側が一時的に混み合っています（' + m.slice(8) + '）。少し待ってからもう一度お試しください';
