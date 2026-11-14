@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="topbar">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-q7oFJSR0d3maA4mul0F5c6jhLO0t5SdhKW1d29TzN4E='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-7rtcUYe15y7yAYWMz9bPw9Afn1jD7TM2rRqZkxerHLg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -116,16 +116,21 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
 @media print{.su-help-link{display:none !important}}
 </style>
 <script src="su-errors.js?v=2026-11-12"></script>
-<script src="su-dialog.js?v=2026-11-13.2"></script>
+<script src="su-dialog.js?v=2026-11-14.2"></script>
 <script src="su-devcfg.js?v=2026-11-08"></script>
 <script src="su-cfg-hint.js?v=2026-11-10"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
-<script src="su-facility.js?v=2026-11-13.2"></script>
+<script src="su-facility.js?v=2026-11-14"></script>
+<script src="su-print.js?v=2026-11-13"></script>
+<link rel="stylesheet" href="su-print.css?v=2026-11-13">
 <script src="su-sa.js?v=2026-11-14"></script>
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 </head>
 <body>
 <header class="topbar">
+  <!-- 紙の見出しの右上の「施設名・印刷日」（care-tools の su-print.js が文を入れる・画面では出さない・第6段の監査 AN-05・2026-11-14）。
+       見出しは紙の頭にあるので、箱に位置の基準（su-print-head-host）を付けずに紙の右上へ重ねる（見出しの線の描き方を変えない） -->
+  <span class="su-print-head su-print-head-abs" data-su-print-head="name date"></span>
   <span class="su-menu-row"><a class="su-menu-back" href="index.html">← メニュー</a> <a class="su-help-link" href="help.html?sec=shift-analyzer">使い方</a></span>
   <h1>過去シフト・アナライザ</h1>
   <span class="sub">訪問介護員の勤務時間・介護福祉士割合・常勤換算（ライブのシフトとは独立）</span>
@@ -164,18 +169,18 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
       <label class="opt">月ラベル <input id="monthLabel" type="text" placeholder="2026-04" size="10"></label>
       <button id="saveMonthBtn" class="primary">この月を保存</button>
       <span class="spacer"></span>
-      <button id="exportBtn" aria-label="書き出し（ファイルに保存）">⬇ 書き出し(.json)</button>
+      <button id="exportBtn" aria-label="控えのファイルに書き出す">⬇ 控えのファイルに書き出す</button>
       <button id="importBtn" aria-label="読み込み（書き出したファイルから）">⬆ 読み込み</button>
       <input id="importInput" type="file" accept=".json,application/json" aria-label="読み込むファイル" hidden>
     </div>
-    <p class="note">「保存」＝この月を貼付原本ごとローカルに保存し、下の一覧の「表示」でいつでも見返せます。「書き出し」＝全保存月を1ファイルにしてバックアップ・別PCへ移行・共有（ローカルファイルのみ・外部へ送信しません）。個人情報を含むため保存先の端末・ファイルの取り扱いにご注意ください。</p>
+    <p class="note">「保存」＝この月を貼付原本ごとローカルに保存し、下の一覧の「表示」でいつでも見返せます。「控えのファイルに書き出す」＝全保存月を1ファイルにしてバックアップ・別PCへ移行・共有（ローカルファイルのみ・外部へ送信しません）。個人情報を含むため保存先の端末・ファイルの取り扱いにご注意ください。</p>
     <div id="savedMonths"></div>
   </section>
 
   <section class="card noprint">
     <h2>3. クラウド同期（合言葉で共有）<span class="opt2">任意</span></h2>
     <p class="note">保存した月を、<b>合言葉を知っている人だけ</b>で共有します（公開のリンクは作りません）。接続先のURLと合言葉は管理者から受け取り、下に入れて「取得」を押してください。</p>
-    <details class="note"><summary>管理者向け：接続先の作り方</summary>自分の Google ドライブに置く受け口（GAS）に保存月を同期します（URLに合言葉は載せません）。手順は <code>docs/analyzer-gas-setup.md</code>。見る人には、アプリのURLと閲覧専用の合言葉を安全な経路で渡してください。</details>
+    <details class="note"><summary>管理者向け：接続先の作り方</summary>自分の Google ドライブに置く接続先（Google の受け口）に保存月を同期します（URLに合言葉は載せません）。手順は <code>docs/analyzer-gas-setup.md</code>。見る人には、アプリのURLと閲覧専用の合言葉を安全な経路で渡してください。</details>
     <div class="controls">
       <label class="opt">接続先のURL <input id="cloudUrl" type="text" placeholder="https://script.google.com/macros/s/.../exec" size="34"></label>
       <label class="opt">合言葉 <input id="cloudToken" type="password" placeholder="編集用か閲覧専用の合言葉" size="20"></label>
@@ -2057,6 +2062,20 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function pct(v) { return (Math.round(v * 10) / 10).toFixed(1); }
   /* 止めて知らせる窓は、画面の中の窓（care-tools の su-dialog.js）で出す。読めない時はブラウザの窓に落とす（文はそのまま・代表者の決定 2026-11-13）。
    * 画面の中の窓は待たずに先へ進むので、確かめは OK の後に onOk を呼ぶ形にする（窓が出ている間は自動同期を始めない＝autoSync） */
+  /* 職員に見せない詳細（通信の番号・応答の印・ブラウザの例外文）は、画面に出さず su-errors.js の記録に残す（第6段の監査 AN-03・2026-11-14）。
+   * 記録の部品が無い時は何もしない（画面の動きには触れない） */
+  function saNote_(where, detail) {
+    try {
+      if (window.SUErrors && typeof window.SUErrors.note === 'function') {
+        window.SUErrors.note('過去シフト・アナライザ', (detail && detail.message) ? detail.message : String(detail), where);
+      }
+    } catch (e) { /* 記録できなくても画面の動きは変えない */ }
+  }
+  /* クラウド同期で職員に出す文（通信の番号や応答の印は出さない・AN-03） */
+  var MSG_NET_ = 'インターネットにつながっていないか、接続先に届きませんでした';
+  var MSG_HTTP_ = '接続先から正しい答えが返りませんでした（時間をおいて、もう一度試してください）';
+  var MSG_BADREPLY_ = '接続先の答えを読めませんでした（接続先のURLが正しいか、管理者に確かめてください）';
+  var MSG_OLDSERVER_ = '接続先が古い版のため、この操作に答えられません';
   function saAlert_(msg) {
     try { if (window.SUDialog) { window.SUDialog.alert(msg); return; } } catch (e) { /* ブラウザの窓へ */ }
     alert(msg);
@@ -2080,7 +2099,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     } catch (e) {
       saAlert_('⚠ 保存に失敗しました。データは保存されていません。\n' +
         '原因の可能性: ブラウザの保存容量不足、プライベートブラウズ、ストレージ無効。\n' +
-        '大切なデータは「書き出し(.json)」でファイル保存してください。\n（詳細: ' + (e && e.message ? e.message : String(e)) + '）');
+        '大切なデータは「控えのファイルに書き出す」でファイルに保存してください。');
+      saNote_('端末への保存', e);
       return false;
     }
   }
@@ -2112,7 +2132,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* textContent＝氏名等をHTMLへ展開しない */
     el.textContent = '⚠ この端末の保存データを読めませんでした（破損の可能性）。'
       + 'クラウドへの自動保存を停止しています（空データで上書きしないため）。'
-      + '「書き出し(.json)」で今の内容を退避してから、バックアップの「読み込み」で復旧してください。';
+      + '「控えのファイルに書き出す」で今の内容を退避してから、バックアップの「読み込み」で復旧してください。';
   }
 
   var lastAnalysis = null;   /* 直近の解析結果(保存用) */
@@ -2483,6 +2503,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
   function printResults() {
     if (!lastAnalysis) { saAlert_('先に「集計」を実行してください。'); return; }
+    /* 紙の見出しに施設名を出すので、施設情報を最大3秒待ち、読めなければ知らせて刷らない（care-tools の SUPrint.facGate・AN-05） */
+    if (window.SUPrint && typeof window.SUPrint.facGate === 'function') window.SUPrint.facGate(function () { printResultsNow_(); }, function (msg) { saAlert_(msg); });
+    else printResultsNow_();
+  }
+  function printResultsNow_() {
+    if (!lastAnalysis) return;   /* 待つ間に「クリア」された */
     /* シフト表(details.gridsec)が畳まれていても印刷時は必ず開き、印刷後に元へ戻す */
     var g = document.querySelector('#results details.gridsec');
     if (g) {
@@ -2493,6 +2519,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       fitSheetForPrint(g);   /* A4横1枚に縦も収める（超過時のみ縮小） */
     }
+    /* 紙の見出しの「施設名・印刷日」を埋める（Cmd+P の時は su-print.js が beforeprint で埋める・AN-05） */
+    try { if (window.SUPrint && typeof window.SUPrint.fillHeads === 'function') window.SUPrint.fillHeads(document); } catch (e) { saNote_('紙の見出し', e); }
     window.print();
   }
 
@@ -2644,7 +2672,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, /* CORSプリフライト回避 */
         body: JSON.stringify(payload),
         redirect: 'follow'
-      }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+      }).then(function (r) {
+        if (!r.ok) { saNote_('クラウド同期の通信', 'HTTP ' + r.status); throw new Error(MSG_HTTP_); }
+        return r.json().then(null, function (pe) { saNote_('クラウド同期の答え', pe); throw new Error(MSG_BADREPLY_); });
+      }, function () { throw new Error(MSG_NET_); });   /* 通信切れは記録しない（オフラインの間の自動同期で毎回積まないため・今までどおり警告にしない） */
     }
     return Promise.resolve(window.SUSa ? window.SUSa.call(payload, viaGas) : viaGas())
       .then(function (j) { if (j && j.error) throw new Error(cloudErrMsg(j.error)); return j; });
@@ -2652,7 +2683,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function cloudErrMsg(code) {
     if (code === 'unauthorized') return '合言葉が違います';
     if (code === 'server-not-configured') return '接続先に合言葉がまだ設定されていません（管理者に知らせてください）';
-    return code;
+    /* 職員向けの日本語の文（切り替えの部品 su-sa.js・cutover.gs・保存先の例外の固定文言）はそのまま出す */
+    if (/[^\x00-\x7F]/.test(String(code))) return String(code);
+    /* 古い接続先（head を知らない）は印で見分ける（autoPull が全量の取得へ切り替える合図） */
+    if (/unknown action/i.test(String(code))) return MSG_OLDSERVER_;
+    /* それ以外の応答の印は画面に出さず記録へ（AN-03） */
+    saNote_('クラウド同期の答え', String(code).slice(0, 80));
+    return '接続先が断りました（管理者に知らせてください）';
   }
   function getRev() { var n = parseInt(localStorage.getItem(CLOUD_REV) || '0', 10); return isNaN(n) ? 0 : n; }
   function setRev(n) { try { localStorage.setItem(CLOUD_REV, String(n)); } catch (e) {} }
@@ -2683,7 +2720,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var master = loadMaster();
     if (anyCorrupt()) {
       showCorruptWarning();
-      cloudStatus('この端末の保存データを読めないため保存を中止しました（先に「書き出し(.json)」で退避を）', 'err');
+      cloudStatus('この端末の保存データを読めないため保存を中止しました（先に「控えのファイルに書き出す」で退避を）', 'err');
       return;
     }
     hideCorruptWarning();
@@ -2769,7 +2806,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (serverRev > 0 && serverRev === getRev()) return h.role;   /* 変化なし＝全量取得を省略 */
       return fullPull();
     }, function (headErr) {
-      if (headErr && /unknown action/i.test(headErr.message || '')) return fullPull();   /* 古いGAS互換 */
+      if (headErr && (headErr.message === MSG_OLDSERVER_ || /unknown action/i.test(headErr.message || ''))) return fullPull();   /* 古いGAS互換（cloudErrMsg が職員向けの文に替えた印も見る） */
       throw headErr;   /* 通信断など本当のエラーは伝播（次周期で再試行） */
     });
   }
