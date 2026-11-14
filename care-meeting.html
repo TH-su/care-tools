@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-x2bDgsvwLdzO3jzhqK6xRn61j4n1WxHlRB3m2RCLlEQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-eI+ITjQgr1lTNdxDbDwHbhwN2Poqr1BdNe/yr7bsTWY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 会議の記録（要配慮の情報）を扱うためキャッシュ無効 -->
@@ -22,7 +22,7 @@
 <script src="su-app-gate.js?v=2026-11-11"></script>
 <script src="su-facility.js?v=2026-11-13.2"></script>
 <script src="su-print.js?v=2026-09-12"></script>
-<script src="care-meeting-calc.js?v=2026-11-13.2"></script>
+<script src="care-meeting-calc.js?v=2026-11-13.3"></script>
 <script src="su-resident-hop.js?v=2026-11-13"></script>
 <style>
 /* サービス担当者会議の記録（2026-10-23 代表者の決定・段階2）。
@@ -343,6 +343,7 @@ var CFG_KEY='rmaster_cfg';            // 入居者マスタと共通の接続設
 var COMMON_KEY='su_residents_common'; // 共有名簿（入居者マスタが書く。ここは読むだけ）
 var DEVICE_KEY='su_device_role';
 var OPEN_KEY='cm_open_meeting';       // 選んでいた会議の番号だけ（sessionStorage・原則11）
+var MENU_DUE_KEY='cm_menu_due';       // メニューの札の件数と数えた日だけ（localStorage・氏名・番号は入れない・2026-11-13 代表者の決定）
 var ID_RE=/^[0-9A-Za-z_-]{1,32}$/;    // 利用者No
 var MID_RE=/^[0-9A-Za-z_-]{1,40}$/;   // 会議の番号（GAS の _mtIdOk と同じ形）
 var NOTE_MAX=200;                     // 直す理由の上限（GAS の MEETING_NOTE_MAX と同じ）
@@ -533,7 +534,7 @@ function readRoster_(){
     var o=JSON.parse(s), rs=(o&&Array.isArray(o.residents))?o.residents:null;
     if(!rs||!rs.length) return {ok:false,residents:[]};
     return {ok:true,residents:rs.filter(function(r){return r&&r.masterId!=null&&ID_RE.test(String(r.masterId))}).map(function(r){
-      return {masterId:String(r.masterId),name:String(r.name||''),room:String(r.room||''),active:r.active!==false};
+      return {masterId:String(r.masterId),name:String(r.name||''),room:String(r.room||''),active:r.active!==false,hospitalized:r.hospitalized===true};
     })};
   }catch(e){ return {ok:false,residents:[]}; }
 }
@@ -1165,11 +1166,24 @@ function showPicker_(){
     if(r.e){ summaryState='error'; summaryErr='最終開催日を読めませんでした（'+String(r.e&&r.e.message||r.e)+'）'; }
     else{
       var k=classify_(r.d);
-      if(k==='ok'){ summary=(r.d.residents&&typeof r.d.residents==='object')?r.d.residents:{}; summaryState='ok'; }
+      if(k==='ok'){ summary=(r.d.residents&&typeof r.d.residents==='object')?r.d.residents:{}; summaryState='ok'; saveMenuDue_(); }
       else{ summaryState='error'; summaryErr=codeMsg_(k,r.d); }
     }
     paintPicker_();
   });
+}
+/* メニューの担当者会議のタイルの札に出す件数を端末に残す（2026-11-13 代表者の決定・台帳 CM-02・仮置き）。
+   ★数えるのは「前回から6か月」の期限切れと30日以内だけ（CareMeetingCalc.menuDueSummary・選ぶ画面の共有名簿と最終開催日の要約から）。
+   ★残すのは件数と数えた日だけ（cm_menu_due）。氏名・利用者No・開催日は残さない。
+   ★書くのは事務所PCで、共有名簿と要約の両方が読めた時だけ。読めない時・現場端末では書かない（前の件数を0件で上書きしない）。読めた時の0件は書く */
+function saveMenuDue_(){
+  try{
+    if(isField()||summaryState!=='ok'||!summary||!roster||!roster.ok) return;
+    var sum=CareMeetingCalc.menuDueSummary(roster.residents,summary,CareMeetingCalc.todayJST());
+    if(!sum) return;
+    var v=JSON.stringify(sum);
+    if(localStorage.getItem(MENU_DUE_KEY)!==v) localStorage.setItem(MENU_DUE_KEY,v);
+  }catch(e){ cmNote_('メニューの札の件数の保存',e); }
 }
 /* 保存していない入力があれば、移る前に確かめる */
 function confirmLeave_(){

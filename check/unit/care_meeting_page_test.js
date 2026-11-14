@@ -213,7 +213,7 @@ async function opened(opt) {
     const head = HTML.slice(0, HTML.indexOf('</head>'));
     const srcs = [...head.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]);
     t('head の部品は su-errors → su-devcfg → su-gas-auth → su-res-read → su-cfg-hint → su-perf → su-login-band → su-app-gate → su-facility → su-print → care-meeting-calc → su-resident-hop の順（su-cfg-hint は改善プロンプト第6弾の2・su-gas-auth と su-res-read は 2026-10-29・su-devcfg は統合 0080）', JSON.stringify(srcs) === JSON.stringify(
-      ['su-errors.js?v=2026-11-12', 'su-devcfg.js?v=2026-11-08', 'su-gas-auth.js?v=2026-10-29', 'su-res-read.js?v=2026-11-11', 'su-cfg-hint.js?v=2026-11-10', 'su-perf.js?v=2026-11-02', 'su-login-band.js?v=2026-11-02', 'su-app-gate.js?v=2026-11-11', 'su-facility.js?v=2026-11-13.2', 'su-print.js?v=2026-09-12', 'care-meeting-calc.js?v=2026-11-13.2', 'su-resident-hop.js?v=2026-11-13']), srcs);
+      ['su-errors.js?v=2026-11-12', 'su-devcfg.js?v=2026-11-08', 'su-gas-auth.js?v=2026-10-29', 'su-res-read.js?v=2026-11-11', 'su-cfg-hint.js?v=2026-11-10', 'su-perf.js?v=2026-11-02', 'su-login-band.js?v=2026-11-02', 'su-app-gate.js?v=2026-11-11', 'su-facility.js?v=2026-11-13.2', 'su-print.js?v=2026-09-12', 'care-meeting-calc.js?v=2026-11-13.3', 'su-resident-hop.js?v=2026-11-13']), srcs);
     t('su-print.css を読み、su-errors.js より前にスクリプトが無い', /<link rel="stylesheet" href="su-print\.css\?v=2026-09-12">/.test(head) && head.indexOf('<script') === head.indexOf('<script src="su-errors.js'));
     t('CSP・拡大を禁止しない viewport・no-store・noindex・題', /data-su-csp/.test(head) && /<meta name="viewport" content="width=device-width,initial-scale=1">/.test(head) && !/user-scalable=no|maximum-scale=1[^.0-9]/.test(head) &&
       /Cache-Control" content="no-store"/.test(head) && /robots" content="noindex/.test(head) && /<title>担当者会議の記録<\/title>/.test(head));
@@ -325,12 +325,43 @@ async function opened(opt) {
 
   group('3. 端末に書くのは UI の状態だけ');
   {
-    t('localStorage に書く・消す所が無い', !/localStorage\.(setItem|removeItem|clear)\(/.test(S) && !/localStorage\[/.test(S));
+    /* 2026-11-13 代表者の決定（台帳 CM-02）: メニューの札の件数（cm_menu_due・件数と数えた日だけ）を書く1か所だけを許す（前例 bdb47f3 の設備の札と同じ） */
+    const lsW = [...S.matchAll(/localStorage\.(setItem|removeItem|clear)\(([^,)]*)/g)].map((m) => m[1] + ':' + m[2]);
+    t('localStorage に書くのはメニューの札の件数（MENU_DUE_KEY）だけ・消す所は無い', lsW.length === 1 && lsW[0] === 'setItem:MENU_DUE_KEY' && !/localStorage\[/.test(S), lsW);
+    t("MENU_DUE_KEY は 'cm_menu_due'", /\nvar MENU_DUE_KEY='cm_menu_due';/.test(S));
     const ss = [...S.matchAll(/sessionStorage\.(setItem|removeItem)\(([^,)]+)/g)].map((m) => m[2]);
     t('sessionStorage に書くのは OPEN_KEY だけ', ss.length === 2 && ss.every((k) => k === 'OPEN_KEY'), ss);
     t("OPEN_KEY は 'cm_open_meeting'", /\nvar OPEN_KEY='cm_open_meeting';/.test(S));
     t('ほかの保存先（indexedDB・cookie）を使わない', !/indexedDB|document\.cookie/.test(S));
-    t('setItem はこの1か所だけ', (S.match(/\.setItem\(/g) || []).length === 1);
+    t('setItem は sessionStorage の OPEN_KEY と札の件数の2か所だけ', (S.match(/\.setItem\(/g) || []).length === 2);
+  }
+  group('3b. メニューの札の件数（前回から6か月・2026-11-13 代表者の決定・台帳 CM-02）');
+  {
+    const RS = { v: 1, residents: [
+      { masterId: '901', name: '架空 一郎', room: '101', active: true },
+      { masterId: '902', name: '架空 二郎', room: '102', active: true },
+      { masterId: '903', name: '架空 三郎', room: '103', active: false },
+      { masterId: '904', name: '架空 四郎', room: '104', active: true, hospitalized: true },
+      { masterId: '905', name: '架空 五郎', room: '105', active: true } ] };
+    const SUM = { 901: { lastHeld: daysAgo(240), drafts: 0 }, 902: { lastHeld: daysAgo(170), drafts: 1 }, 903: { lastHeld: daysAgo(400) },
+      904: { lastHeld: daysAgo(400) }, 905: { lastHeld: daysAgo(10) } };
+    const pick = async (opt) => { const T = load(Object.assign({ roster: RS, handler: gas({ summary: () => ({ ok: true, residents: SUM }) }) }, opt || {}));
+      T.ctx.showPicker_(); await settle(); return T; };
+    const T = await pick();
+    const raw = T.ls.m.get('cm_menu_due'), d = raw ? JSON.parse(raw) : null;
+    t('選ぶ画面で要約を読めたら、前回から6か月の期限切れと30日以内を数えて残す（在籍・入院していない方だけ）',
+      d && d.v === 1 && d.cm === true && d.at === TODAY && d.overdue === 1 && d.soon === 1, d);
+    t('残すのは v・at・cm・overdue・soon だけ（氏名・番号・開催日は残さない）', d && Object.keys(d).sort().join(',') === 'at,cm,overdue,soon,v' && !/架空|90[1-5]/.test(raw), raw);
+    const T2 = await pick({ role: 'field' });
+    t('現場端末では書かない', !T2.ls.m.has('cm_menu_due') && !T2.writes.some((w) => w[2] === 'cm_menu_due'), T2.writes);
+    const T3 = load({ roster: RS, handler: gas({ summary: () => NET }) }); T3.ctx.showPicker_(); await settle();
+    t('要約を読めない時は書かない（前の件数を0件で上書きしない）', !T3.writes.some((w) => w[2] === 'cm_menu_due'), T3.writes);
+    const T4 = load({ handler: gas({ summary: () => ({ ok: true, residents: SUM }) }) }); T4.ctx.showPicker_(); await settle();
+    t('共有名簿が無い時は書かない', !T4.writes.some((w) => w[2] === 'cm_menu_due'), T4.writes);
+    const T5 = await pick({ handler: gas({ summary: () => ({ ok: true, residents: {} }) }) });
+    const d5 = JSON.parse(T5.ls.m.get('cm_menu_due') || 'null');
+    t('読めた時の0件は書く（直した後に札が消えるように）', d5 && d5.overdue === 0 && d5.soon === 0, d5);
+    t('同じ中身なら書き直さない', (() => { const n = T.writes.filter((w) => w[2] === 'cm_menu_due').length; T.ctx.saveMenuDue_(); return T.writes.filter((w) => w[2] === 'cm_menu_due').length === n; })());
   }
   {
     const R1 = row({ meetingId: 'M20260401100000' + '1111', status: 'draft' }), R2 = row({ meetingId: 'M20251001100000' + '2222', heldDate: '2025-10-01' });
@@ -1156,7 +1187,9 @@ async function opened(opt) {
     await G.ctx.impScan_(); await settle(); await G.ctx.impApply_(); await settle();
     t('取り込みの間に名簿が変わって入れなかった数を知らせる', /名簿が変わった 1 件は入れていません/.test(G.el('cm-pick').innerHTML));
     t('受け口: 選ぶ一覧の変更で data-impg を見る', /\$\('cm-pick'\)\.addEventListener\('change',onPickChange_\)/.test(cutF(S, 'bindEvents_')));
-    t('取り込みの間も localStorage・sessionStorage に書かない（選ぶ一覧へ戻る時に「開いていた会議の番号」を消すだけ）', A.writes.every((w) => w[1] === 'remove' && w[2] === 'cm_open_meeting'), A.writes);
+    /* 許すのは、要約を読み直した時のメニューの札の件数（cm_menu_due・件数と日付だけ・2026-11-13 代表者の決定・台帳 CM-02）の1件だけ */
+    const cmDueOnly = (w) => w[0] === 'local' && w[1] === 'set' && w[2] === 'cm_menu_due' && Object.keys(JSON.parse(w[3])).sort().join(',') === 'at,cm,overdue,soon,v';
+    t('取り込みの間も localStorage・sessionStorage に書かない（選ぶ一覧へ戻る時に「開いていた会議の番号」を消すのと、メニューの札の件数だけ）', A.writes.every((w) => (w[1] === 'remove' && w[2] === 'cm_open_meeting') || cmDueOnly(w)), A.writes);
     const Q = await mk('admin', { importScan: () => scanRes }, { answer: false });
     await Q.ctx.impScan_(); await settle(); await Q.ctx.impApply_(); await settle();
     t('確かめの窓で「やめる」を押したら送らない', Q.ops().indexOf('importApply') < 0);
