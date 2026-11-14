@@ -97,7 +97,9 @@
       $('unknownBox').hidden = !nUnk;
       $('noneBox').hidden = !nNone;
       $('when').textContent = U.fmt(now, now) + ' に読みました';
-      if (!isField) writeMenuDue(rows, now);
+      /* 事務所PCでは、ログインの確かめの答え（使える・使えない・確かめられない）が出てから書く。答えの前の件数は入居調整を
+         含まないので、書くと札の数が一度だけ少なく出る（反証レビュー 2026-11-14 低2） */
+      if (!isField && authDone) writeMenuDue(rows, now);
     } catch (e) {
       note('draw', e);
       try { $('list').textContent = '確かめられませんでした。読み込み直してください。'; } catch (x) { /* 何もしない */ }
@@ -105,22 +107,29 @@
   }
   /* 入居調整の控えは、事務所PCで事務所・管理者としてログインしていると確かめられた時だけ読む（§2.7・反証レビュー 2026-11-14）。
      確かめは su-auth.js の強制でない確かめ（SUAuth.check）。ログインしていない・確かめられない・現場のアカウント・2段階認証の前は読まない */
-  var authOk = false, authGen = 0;
+  /* authDone: 確かめの答えが出たか（出るまで件数の鍵を書かない）。確かめ直す時は authOk も authDone も下ろしてから描く */
+  var authOk = false, authDone = false, authGen = 0;
   function askAuth() {
     var my = ++authGen;
-    authOk = false;
+    authOk = false; authDone = false;
     try {
-      if (field() || !window.SUAuth || typeof SUAuth.check !== 'function') return;
+      if (field() || !window.SUAuth || typeof SUAuth.check !== 'function') { authDone = true; return; }   // 確かめられない＝答えが出た
       Promise.resolve(SUAuth.check()).then(function (r) {
-        if (my !== authGen || field()) return;
-        var ok = !!(r && SUAuth.STATUS && r.status === SUAuth.STATUS.OK && (r.role === 'office' || r.role === 'admin'));
-        if (ok) { authOk = true; draw(); }
-      }, function (e) { note('ログインの確かめ', e); });
-    } catch (e) { note('ログインの確かめ', e); }
+        if (my !== authGen) return;
+        authOk = !field() && !!(r && SUAuth.STATUS && r.status === SUAuth.STATUS.OK && (r.role === 'office' || r.role === 'admin'));
+        authDone = true;
+        draw();
+      }, function (e) {
+        if (my !== authGen) return;
+        note('ログインの確かめ', e);
+        authOk = false; authDone = true;
+        draw();
+      });
+    } catch (e) { note('ログインの確かめ', e); authOk = false; authDone = true; }
   }
   function start() {
+    askAuth();   // 先に確かめを始めて前の答えを下ろしてから描く
     draw();
-    askAuth();
     try { $('reload').addEventListener('click', draw); } catch (e) { note('reload', e); }
     /* ほかのタブで送れた・積まれた時、「戻る」で戻った時は読み直す（書かないので何度読んでもよい） */
     window.addEventListener('storage', function (ev) {
@@ -128,7 +137,8 @@
       if (ev && (ev.key === null || ev.key === 'su_device_role' || /^sb-[a-z0-9]+-auth-token$/.test(String(ev.key)))) askAuth();
       draw();
     });
-    window.addEventListener('pageshow', function (ev) { if (ev && ev.persisted) { draw(); askAuth(); } });
+    /* 「戻る」で前の表示のまま戻った時は、前の確かめの答えを使わない（先に下ろしてから描く・反証レビュー 2026-11-14 低1） */
+    window.addEventListener('pageshow', function (ev) { if (ev && ev.persisted) { askAuth(); draw(); } });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();

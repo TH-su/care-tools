@@ -201,15 +201,17 @@ function runPage(localObj, auth) {
   const els = {};
   const mk = () => ({ textContent: '', hidden: false, className: '', kids: [], attrs: {}, appendChild(c) { this.kids.push(c); return c; }, setAttribute(k, v) { this.attrs[k] = v; }, addEventListener() {} });
   const doc = { readyState: 'complete', getElementById: (id) => (els[id] = els[id] || mk()), createElement: () => mk(), addEventListener() {} };
-  const win = { localStorage: ls, sessionStorage: store({}), addEventListener() {} };
-  if (auth) win.SUAuth = { STATUS: { OK: 'ok' }, check: () => Promise.resolve(auth) };
+  const handlers = {};
+  const win = { localStorage: ls, sessionStorage: store({}), addEventListener(k, fn) { (handlers[k] = handlers[k] || []).push(fn); } };
+  /* auth は答え（オブジェクト）か、答えを返す関数（確かめの答えが返る時を試験で決めるため） */
+  if (auth) win.SUAuth = { STATUS: { OK: 'ok' }, check: typeof auth === 'function' ? auth : () => Promise.resolve(auth) };
   const ctx = { window: win, document: doc, localStorage: ls, Date, JSON, Object, Array, String, Number, isFinite, SyntaxError, Error, Promise };
   vm.createContext(ctx);
   vm.runInContext(raw('unsent-calc.js'), ctx);
   ctx.SUUnsent = win.SUUnsent;
   if (auth) ctx.SUAuth = win.SUAuth;
   vm.runInContext(raw('unsent.js'), ctx);
-  return { writes, ls, els };
+  return { writes, ls, els, handlers, win };
 }
 {
   const today = (() => { const d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); })();
@@ -233,6 +235,41 @@ function runPage(localObj, auth) {
       const read = q.ls.reads.indexOf('admf_cache') >= 0;
       t('入居調整: ' + nm + 'の時は' + (want ? '読んで数える（鍵は16）' : '読まない（鍵は15）'), read === want && JSON.parse(q.writes[q.writes.length - 1][1]).n === (want ? 16 : 15), [read, q.writes]);
     }
+  })());
+  pending.push((async () => {
+    /* 反証レビュー 2026-11-14（低1）: 「戻る」で前の表示のまま戻った時（pageshow の persisted）は、役割を確かめ直す前に
+       入居調整の控えを読まない（前の確かめの答えを使い回さない） */
+    let ans = { status: 'ok', role: 'office' };
+    const q = runPage(Object.assign({}, LOCAL), () => Promise.resolve(ans));
+    await tick(); await tick();
+    const before = q.ls.reads.filter((k) => k === 'admf_cache').length;
+    ans = { status: 'signed_out' };   // 離れている間にログアウトした
+    (q.handlers.pageshow || []).forEach((fn) => fn({ persisted: true }));
+    const syncRead = q.ls.reads.filter((k) => k === 'admf_cache').length - before;
+    await tick(); await tick();
+    const afterRead = q.ls.reads.filter((k) => k === 'admf_cache').length - before;
+    t('「戻る」で戻った時は、確かめ直す前に入居調整の控えを読まない（ログアウトした後も読まない）', before >= 1 && syncRead === 0 && afterRead === 0, [before, syncRead, afterRead]);
+    t('「戻る」で戻ってログアウトしていた時の件数の鍵は入居調整を数えない（15）', JSON.parse(q.writes[q.writes.length - 1][1]).n === 15, q.writes);
+  })());
+  pending.push((async () => {
+    /* 反証レビュー 2026-11-14（低2）: 事務所PCでは、ログインの確かめの答えが出る前に件数の鍵を書かない（答えの後に1回書く） */
+    let resolve;
+    const q = runPage(Object.assign({}, LOCAL), () => new Promise((r) => { resolve = r; }));
+    await tick(); await tick();
+    t('確かめの答えが出る前は件数の鍵を書かない', q.writes.length === 0, q.writes);
+    resolve({ status: 'ok', role: 'office' });
+    await tick(); await tick();
+    t('答えが出た後に1回だけ書く（入居調整を数えた16）', q.writes.length === 1 && JSON.parse(q.writes[0][1]).n === 16, q.writes);
+    let resolve2;
+    const q2 = runPage(Object.assign({}, LOCAL), () => new Promise((r) => { resolve2 = r; }));
+    await tick();
+    t('使えない答えの前も書かない', q2.writes.length === 0, q2.writes);
+    resolve2({ status: 'signed_out' });
+    await tick(); await tick();
+    t('使えない答えの後に1回だけ書く（入居調整を除いた15）', q2.writes.length === 1 && JSON.parse(q2.writes[0][1]).n === 15, q2.writes);
+    const q3 = runPage(Object.assign({}, LOCAL), () => Promise.reject(new Error('通信の失敗')));
+    await tick(); await tick();
+    t('確かめられない（失敗）の答えの後に1回だけ書く（15）', q3.writes.length === 1 && JSON.parse(q3.writes[0][1]).n === 15, q3.writes);
   })());
   t('一覧の画面に氏名が出ない', JSON.stringify(Object.values(p.els).map((e) => e.textContent)).indexOf(NAME) < 0);
 }
