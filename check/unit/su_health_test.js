@@ -70,8 +70,9 @@ console.log('3. 切り替え前・確かめられない時');
   t('体重の端末の写し返しは遅れを確かめられない（知らせない）', get(v, 'weight').lagKnown === false && get(v, 'weight').lagAlert === false);
   t('体重の行は「一部確かめられない」（問題なしと言わない・反証レビュー指摘5）', get(v, 'weight').partial === true);
   t('全部確かめられた切り替え済みの行は partial でない', get(v, 'res').partial === false);
-  t('シフト分析（切り替え済み）は失敗を数えていない＝失敗9件でも知らせず、一部確かめられない',
-    (() => { const x = get(C.judge(resp({ sa: { fails: { other: 9 } } }), NOW), 'sa'); return x.failKnown === false && x.failAlert === false && x.partial === true; })());
+  t('シフト分析も失敗を数える（2026-11-14 本人指示で画面が su-health.js を読む）＝失敗9件で知らせる',
+    (() => { const x = get(C.judge(resp({ sa: { fails: { other: 9 } } }), NOW), 'sa'); return x.failKnown === true && x.failAlert === true && x.partial === false; })());
+  t('数えていない種類の一覧は空', Object.keys(C.NO_FAIL_COUNT).length === 0);
   t('答えが null なら全部「確かめられません」・知らせない',
     (() => { const x = C.judge(null, NOW); return x.ok === false && x.rows.length === 10 && x.rows.every((r) => r.state === 'unknown') && x.alerts.length === 0; })());
   t('ok が true でない答えは確かめられない', C.judge({ ok: false, rows: [] }, NOW).ok === false);
@@ -123,7 +124,7 @@ console.log('7. つなぎ');
                   'su-sup.js': "SUHealth.fail('sup'", 'su-sa.js': "SUHealth.fail('sa'", 'su-geno.js': "SUHealth.fail('geno'",
                   'su-doc-live.js': "SUHealth.fail('doc_' + kind", 'su-weight-live.js': "SUHealth.fail('weight'" };
   Object.keys(hooks).forEach((f) => t(f + ' が失敗を数える', read(f).includes(hooks[f])));
-  ['resident-master', 'admission-flow', 'care-meeting', 'care-schedule', 'training-plan', 'staff-master', 'ats', 'supplies', 'genogram', 'weight-record']
+  ['resident-master', 'admission-flow', 'care-meeting', 'care-schedule', 'training-plan', 'staff-master', 'ats', 'supplies', 'genogram', 'weight-record', 'shift-analyzer']
     .forEach((p) => t(p + '.html が su-health.js を読む', /<script src="su-health\.js\?v=2026-11-14"><\/script>/.test(read(p + '.html'))));
   const idx = read('index.html');
   t('メニューが判定と札の部品を読み、組み立て直した後に付け直す',
