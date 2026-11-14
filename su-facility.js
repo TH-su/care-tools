@@ -46,6 +46,7 @@
   var SECTIONS = {
     scheduleColors: function (p) { return p.scheduleColors; },                                         /* 週間計画の A3 週間予定表の色 */
     committeeDefaults: function (p) { return p.corpSettings && p.corpSettings.committeeDefaults; },     /* 職員マスタの委員会の出荷時の既定（法人設定） */
+    siteLabels: function (p) { return p.corpSettings && p.corpSettings.siteLabels; },                   /* 職員マスタの事業所の区分の名前（法人設定・2026-11-14 第6段 SM-02） */
     mealTimes: function (p) { return p.mealTimes; },                                                   /* 入居者マスタ・フェイスシートの食事の時刻の施設の既定 */
     mealForms: function (p) { return p.mealForms; },                                                   /* 体重管理の食事形態の表示名 */
     daycareNotes: function (p) { return p.daycareNotes; },                                             /* デイ利用表の昼食場所・備考の文（2026-11-02 便10） */

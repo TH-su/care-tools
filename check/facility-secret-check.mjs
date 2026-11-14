@@ -19,6 +19,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const KINDS = ['施設', '訪問', '通所'];
@@ -113,6 +114,12 @@ export function checkFacilityProfile(text, sampleText) {
       const u = p.corpSettings.homeGuidelineUrl;
       if (u !== undefined && !isStr(u)) ng('corpSettings.homeGuidelineUrl', '文字ではありません');
       else if (filled(u) && !/^https:\/\/[^\s"<>]+$/.test(u.trim())) ng('corpSettings.homeGuidelineUrl', 'https:// で始まる URL ではありません（画面には出ません）');
+      /* 職員マスタの事業所の区分の名前（第6段 SM-02）。読む部品（staff-master-calc.js の normSiteLabels）と同じ判定で、崩れていれば止める（画面は黙って今の名前に戻るため） */
+      if ('siteLabels' in p.corpSettings) {
+        let okSl = false;
+        try { okSl = !!createRequire(import.meta.url)(path.join(ROOT, 'staff-master-calc.js')).normSiteLabels(p.corpSettings.siteLabels); } catch (e) { okSl = false; }
+        if (!okSl) ng('corpSettings.siteLabels', 'facility・visit・day・cm の4つ全部を、1〜6字の互いに別の名前（空白・記号・CSV の見出しの語（事業所・備考・厨房など）・ほかの区分の今の名前は使えない）で書いてください（崩れていると職員マスタは今の名前のまま出します）');
+      }
     }
   }
   if ('floors' in p) {
