@@ -32,10 +32,10 @@ function box(extra) {
     window: {}, Promise, Date, String, Math, Array, Object, JSON, setTimeout };
   vm.createContext(b);
   vm.runInContext([line(/var DB_V = [^\n]*/), line(/var CLEAR_META = \{[\s\S]*?\};/), line(/var CLEAR_MARK_RE = [^\n]*/),
-    line(/var AF_SESSION_RE = [^\n]*/), "var afWhoAcct_ = '', afWhoGen_ = 0;",
+    line(/var AF_SESSION_RE = [^\n]*/), "var afWhoAcct_ = '', afWhoGen_ = 0;", line(/var afIsAdmin_ = false;/),   // 管理者の見分け（2026-11-13 第6段 AF-02）も実物を使う
     ...['nowIso', 'isObj', 'asObj', 'asArr', 'asStr', 'isBlankVal', 'clearHash', 'parseClearMark', 'pickClearMark', 'reviveMark', 'applyCleared',
         'mergeById', 'mergeShallowPreferFilled', 'mergeAssess', 'afPairFrom_', 'mergeCand', 'mergeDb',
-        'afWho_', 'afWhoLabel_', 'afHasLogin_', 'afResolveWho_', 'afStamp_', 'afEditedBy_'].map(cutF)].join('\n'), b);
+        'afWho_', 'afWhoLabel_', 'afHasLogin_', 'afSetAdmin_', 'afResolveWho_', 'afStamp_', 'afEditedBy_'].map(cutF)].join('\n'), b);
   return b;
 }
 const T0 = '2026-10-10T01:00:00.000Z', T1 = '2026-10-10T02:00:00.000Z', T2 = '2026-10-10T03:00:00.000Z';

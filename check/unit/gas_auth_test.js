@@ -415,7 +415,7 @@ const settle = (ms) => new Promise((r) => setTimeout(r, ms || 10));
   }
   {
     const TPs = read('training-plan.html');
-    const c = { String, RegExp };
+    const c = { String, RegExp, TP_IS_ADMIN: false };   /* 断りの文の「（管理者向け：…）」は管理者のログインの時だけ（2026-11-13 第6段 TP-03）。ここは職員の端末として動かす */
     vm.createContext(c);
     vm.runInContext('function s_(v) { return String(v == null ? \'\' : v); }\n' + cutFn(TPs, 'aiErrText') + cutFn(TPs, 'aiErrFatal'), c);
     const e = new Error('AI_READROLE'); e.detail = '架空の断りの文（事務所のアカウントでログインしてください）';
