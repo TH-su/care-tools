@@ -17,7 +17,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-11-13b';
+  var VERSION = '2026-11-13c';
   /* 様式の欄（並びは様式どおり）。max は1欄の上限の文字数（GAS の meeting.gs と同じ値）。optional は無くても知らせない欄 */
   var FIELDS = [
     { key: 'sourceName', label: '利用者名', max: 40 },
@@ -372,6 +372,30 @@
       .map(function (a) { delete a._i; return a; });
   }
 
+  /* ── メニューの札の件数（2026-11-13 代表者の決定・台帳 CM-02・仮置き） ──
+     入居者を選ぶ画面の材料（共有名簿＋最終開催日の要約）だけで数える。数えるのは「前回から6か月」の知らせ（dueAlerts の interval）だけで、
+     認定の更新・区分変更・退院の後・記録なしは数えない（1人ずつの記録を読まないため）。
+     in: residents [{masterId, active, hospitalized}]（在籍している方だけ数える）・summary {masterId:{lastHeld}}・today 'YYYY-MM-DD'
+     戻り値 {v:1, at:today, cm:true, overdue:n, soon:n}（overdue＝過ぎた・今日で6か月、soon＝30日以内）。件数と日付だけで、氏名・番号は入れない。
+     today が日付でない・名簿や要約の形が違う時は null（書かない） */
+  function menuDueSummary(residents, summary, today) {
+    if (!ymdOk(today) || !Array.isArray(residents) || !summary || typeof summary !== 'object') return null;
+    var overdue = 0, soon = 0;
+    residents.forEach(function (r) {
+      if (!r || r.active === false || r.masterId == null) return;
+      var id = String(r.masterId), s = Object.prototype.hasOwnProperty.call(summary, id) ? summary[id] : null;
+      var last = s && ymdOk(String(s.lastHeld || '').slice(0, 10)) ? String(s.lastHeld).slice(0, 10) : '';
+      if (!last) return;
+      dueAlerts({ today: today, meetings: [{ heldDate: last, status: 'final' }], hospitalized: r.hospitalized === true })
+        .forEach(function (a) {
+          if (a.kind !== 'interval') return;
+          if (a.level === 'high') overdue++;
+          else if (a.level === 'mid') soon++;
+        });
+    });
+    return { v: 1, at: today, cm: true, overdue: overdue, soon: soon };
+  }
+
   /* 出席者の✔︎の候補（2026-10-25 代表者の決定「この方の前回までの出席者」）。
      この方の記録の一覧（取り消し済み・開いている記録を除く）を開催日の新しい順に見て、出席者を「所属と氏名の組」で
      重ねずに並べる（新しい会議に出た人ほど前）。所属・氏名の比べ方は互換の文字をそろえ、空白を除く。max 名まで（既定 30） */
@@ -524,7 +548,7 @@
 
   var api = { VERSION: VERSION, FIELDS: FIELDS, KINDS: KINDS, ATTENDEE_MAX: ATTENDEE_MAX, ATTENDEE_LEN: ATTENDEE_LEN, ATTENDEE_PRINT: ATTENDEE_PRINT, INPUT_MAX: INPUT_MAX,
     parse: parse, guess: guess, guessApply: guessApply, guessHead: guessHead, normDate: normDate, normTime: normTime, normCount: normCount, normKind: normKind, parseAttendees: parseAttendees,
-    residentMatch: residentMatch, checkSave: checkSave, checkFinal: checkFinal, dueAlerts: dueAlerts, lastHeld: lastHeld,
+    residentMatch: residentMatch, checkSave: checkSave, checkFinal: checkFinal, dueAlerts: dueAlerts, lastHeld: lastHeld, menuDueSummary: menuDueSummary,
     addMonths: addMonths, todayJST: todayJST, hospitalState: hospitalState, lastCareChange: lastCareChange,
     attKey: attKey, attendeeCandidates: attendeeCandidates };
   if (typeof module === 'object' && module.exports) module.exports = api;

@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-8P5NFDkZcxSYr38E8gIbG2Gt5YZGXOR7ig9J+BUV4Yo=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-T5sps68JTSAqPAEx6HswG4VsptD3q6T+EHH1xpyIbzA=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 検索エンジンにこのページと配下ツールを辿らせない。
@@ -17,6 +17,7 @@
        ほかに、事務所の端末でだけ、個別機能訓練計画書が数えて端末に残した期限の件数（tp_menu_due・件数と数えた日だけ・氏名なし）を
        読み、そのタイルに札として出す（2026-10-24 代表者の決定 案A）。メニューから書かない・送らない。
        設備・修繕の記録が数えて残した期限の件数（eql_menu_due・件数と数えた日だけ・設備名と場所なし）も同じ作りで読む（2026-11-13）。
+       担当者会議の記録が数えて残した前回から6か月の件数（cm_menu_due・件数と数えた日だけ・氏名なし）も同じ作りで読む（2026-11-13）。
        管理者（Google＋2段階認証）でログイン中の事務所の端末でだけ、写しの記録（master_sync_runs の at・failed だけ）を読み、
        最後の成功が24時間より前なら入居者マスタのタイルに札を出す（su-sync-stale.js・2026-10-26 本人指示）。札に出すのは時刻だけ。
      ★端末に書くのは、見出しの毬を押した時の毬の柄（su_menu_ball・値は 'fuji'・'kiku'・'asanoha' だけ）だけで、
@@ -74,7 +75,7 @@
 <style>
 /* care-tools 共通の CSS 変数体系（各アプリと同じ見た目に揃える）。
    このページは氏名・記録を持たない。localStorage は読み取りのみ（端末用途 su_device_role・メニューの設定の控え su_menu_v1・
-   期限の件数の控え tp_menu_due・eql_menu_due・毬の柄 su_menu_ball）。毬の柄だけは、毬を押した時に su-menu.js の SUMenu.setBall が書く。 */
+   期限の件数の控え tp_menu_due・eql_menu_due・cm_menu_due・毬の柄 su_menu_ball）。毬の柄だけは、毬を押した時に su-menu.js の SUMenu.setBall が書く。 */
 /* 現場端末では事務所専用のタイルを出さない（押してもブロック画面になるだけの行き止まりを作らない）。
    ★data-office-only を付ける条件＝リンク先が su_device_role==='field' で起動をブロックするタイル。
    ★現在この属性が付いているのは誕生日一覧・入居調整・接続設定の3つ
@@ -428,7 +429,8 @@ main {
      "nm": "担当者会議の記録",
      "note": "サービス担当者会議の要点",
      "officeOnly": true,
-     "_why": "担当者会議の記録（2026-10-25 本人指示）。区分の末尾（デイの次）に足す。途中へ挿すと、管理者が「メニューの設定」を保存済みの時に su-menu.js が設定に無いボタンを末尾へ回して既定の並びとずれ、フェイスシートの newrow が外れてケアログ・デイの行割りも崩れるため（2026-10-25 審査の指摘）。officeOnly: 会議記録は要配慮の情報で、使えるのは事務所PCだけという代表者の決定（2026-10-23）のため現場端末では出さない（アプリ側も現場端末ではブロックする＝二重）"
+     "due": "cm_menu_due",
+     "_why": "due: 前回から6か月の期限切れと30日以内の数の札（2026-11-13 代表者の決定・仮置き・担当者会議の記録が事務所PCで数えて端末に残すのは件数と日付だけ）。担当者会議の記録（2026-10-25 本人指示）。区分の末尾（デイの次）に足す。途中へ挿すと、管理者が「メニューの設定」を保存済みの時に su-menu.js が設定に無いボタンを末尾へ回して既定の並びとずれ、フェイスシートの newrow が外れてケアログ・デイの行割りも崩れるため（2026-10-25 審査の指摘）。officeOnly: 会議記録は要配慮の情報で、使えるのは事務所PCだけという代表者の決定（2026-10-23）のため現場端末では出さない（アプリ側も現場端末ではブロックする＝二重）"
     },
     {
      "href": "equip-log.html",
@@ -564,7 +566,9 @@ main {
        v:2（2026-11-13 代表者の決定）: {"v":2,"at":…,"admin":true,"review":n,"overdue":n} の overdue は見直しの期限切れの数（review の内数）で、
        dueLegal が別の赤の札「期限切れn」にする。overdue が review より多い・形が違う時は出さない。v:1（overdue なし）の控えも今までどおり読む
      eq（2026-11-13 代表者の指示・設備・修繕の記録）: {"v":1,"at":…,"eq":true,"overdue":n,"soon":n,"legal":n} は点検・清掃の期限で、
-     「期限切れn・30日以内n」と書く。legal（法定の期限切れ・overdue の内数）は dueLegal が別の赤の札にする。legal が overdue より多い時は出さない */
+     「期限切れn・30日以内n」と書く。legal（法定の期限切れ・overdue の内数）は dueLegal が別の赤の札にする。legal が overdue より多い時は出さない
+     cm（2026-11-13 代表者の決定・担当者会議の記録・仮置き）: {"v":1,"at":…,"cm":true,"overdue":n,"soon":n} は前回から6か月の期限で、
+     「期限切れn・30日以内n（6か月の分だけ・m/d時点）」と書く（認定の更新・区分変更・退院の後は数えていないため、注記で分かるようにする） */
   function dueText(raw, today, role) {
     var d;
     try { d = JSON.parse(raw); } catch (e) { return ''; }
@@ -579,6 +583,13 @@ main {
       if (d.admin !== true || role !== 'admin' || typeof rv !== 'number' || !isFinite(rv) || rv < 0 || rv > 9999 || Math.floor(rv) !== rv) return '';
       if (d.v === 2 && !(dueNum(d.overdue) && d.overdue <= rv)) return '';
       return rv > 0 ? '見直し待ち' + rv + when : '';
+    }
+    if (d.cm != null) {
+      if (d.cm !== true || !dueNum(d.overdue) || !dueNum(d.soon)) return '';
+      var cmp = [];
+      if (d.overdue > 0) cmp.push('期限切れ' + d.overdue);
+      if (d.soon > 0) cmp.push('30日以内' + d.soon);
+      return cmp.length ? cmp.join('・') + '（6か月の分だけ・' + when.slice(1) : '';
     }
     if (d.eq != null) {
       if (!dueEq(d)) return '';

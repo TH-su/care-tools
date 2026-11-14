@@ -379,5 +379,24 @@ console.log('\n— 8. 印の無い議事録の見出しから欄の候補を出�
   t('見出しの語の言い換えは parse の区切りにしない（「◆課題：」は今も知らない印）', C.parse('◆結論：続ける\n◆課題：なし').unknown.length === 1 && C.parse('◆結論：続ける\n◆課題：なし').fields.conclusion === '続ける\n◆課題：なし');
 }
 
+console.log('\n— メニューの札の件数（前回から6か月だけ・2026-11-13 代表者の決定・台帳 CM-02） —');
+{
+  const D = '2026-11-13';
+  const rs = [{ masterId: '1', active: true }, { masterId: '2', active: true }, { masterId: '3', active: true }, { masterId: '4', active: false },
+    { masterId: '5', active: true, hospitalized: true }, { masterId: '6', active: true }, { masterId: '7', active: true }];
+  const sum = { 1: { lastHeld: '2026-04-01' }, 2: { lastHeld: '2026-05-13' }, 3: { lastHeld: '2026-06-01' }, 4: { lastHeld: '2025-01-01' },
+    5: { lastHeld: '2025-01-01' }, 6: { lastHeld: '2026-10-01' }, 7: { lastHeld: '壊れ' } };
+  const r = C.menuDueSummary(rs, sum, D);
+  t('過ぎた・今日で6か月は期限切れ、30日以内は30日以内（在籍・入院していない方・確定の日付がある方だけ）', r && r.overdue === 2 && r.soon === 1 && r.v === 1 && r.cm === true && r.at === D, r);
+  t('戻り値は件数と日付だけ', r && Object.keys(r).sort().join(',') === 'at,cm,overdue,soon,v', r);
+  t('1人ずつの知らせ（dueAlerts の interval）と同じ数え方', ['1', '2', '3', '6'].every((id) => {
+    const a = C.dueAlerts({ today: D, meetings: [{ heldDate: sum[id].lastHeld, status: 'final' }], hospitalized: false }).filter((x) => x.kind === 'interval');
+    const lv = a.length ? a[0].level : '';
+    return (lv === 'high') === ['1', '2'].includes(id) && (lv === 'mid') === (id === '3');
+  }));
+  t('記録の無い方・認定の期限は数えない', C.menuDueSummary([{ masterId: '1', active: true }], {}, D).overdue === 0 && C.menuDueSummary([{ masterId: '1', active: true }], {}, D).soon === 0);
+  t('今日が日付でない・名簿や要約の形が違う時は null', C.menuDueSummary(rs, sum, '2026/11/13') === null && C.menuDueSummary(null, sum, D) === null && C.menuDueSummary(rs, null, D) === null);
+}
+
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);
