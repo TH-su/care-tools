@@ -6,6 +6,8 @@
      D 出すのは日数・件数・照らし合わせ・時刻・写し始めてからの日数だけ（氏名・記録の中身は出さない）。Google・端末の控えには触らない
      E 端末の数: 排泄ケア記録を開いた端末のログインしていない数・ログイン中の数を出す（0062 の前の答え＝hb が無い時は出さない）
      H 画面: 欄・準備の帯の番号（0062）・版
+     I 差の日ごとの記録（統合 0086・0087・2026-11-13）: 画面が「Google と同じです」と出す時だけ0件を残し、警告・知らせの時は1件以上。
+       写していない・古い・その回の数が無い・読めない時は残さない。最後の回の「違った日」（Google で増えた日を写した数）は差に数えない
    ★画面の本物の関数を切り出して、データベースの応答だけ偽物にして動かす。
    実行: node check/unit/shadow_check_haiben_test.js
    架空データのみ。 */
@@ -42,13 +44,14 @@ function box(o) {
     fmtTime: (x) => (x ? 'T' : '-'),
     fetch: (url) => { sent.push(url); return Promise.reject(new Error('no')); },
     localStorage: { getItem: () => { sent.push('ls'); return null; }, setItem: () => { sent.push('ls-set'); } },
-    me: { role: 'admin' }, notes: [],
+    me: { role: 'admin' }, notes: [], noted: [],
     JSON, String, Object, Promise, Error, Date, isNaN, Number, Math, RegExp, Array
   };
   env.window = { SUErrors: { note: (k, m) => env.notes.push([k, m]) } };
   vm.createContext(env);
   vm.runInContext([PREP_SRC, 'var SA_FRESH_MS = ' + /var SA_FRESH_MS = ([^;]*);/.exec(SRC)[1] + ';',
     'var HB_REFUSED = ' + /var HB_REFUSED = (\{[^;]*\});/.exec(SRC)[1] + ';', 'var DS_ROLE = ' + /var DS_ROLE = (\{[^;]*\});/.exec(SRC)[1] + ';',
+    'var hbSeen = null;', fn('hbDiffCount'), fn('noteHb'), 'async function noteDiff(sb, kind, n) { noted.push([kind, n]); }',
     fn('loadHb'), fn('loadDeviceSeen')].join('\n'), env);
   const sb = {
     rpc: (n) => {
@@ -58,7 +61,7 @@ function box(o) {
     },
     from: (tbl) => { rpcs.push('from:' + tbl); return {}; }
   };
-  return { env, nodes, sent, rpcs, run: () => env.loadHb(sb, NOW), runDs: () => env.loadDeviceSeen(sb) };
+  return { env, nodes, sent, rpcs, run: () => env.loadHb(sb, NOW), runDs: () => env.loadDeviceSeen(sb), note: () => env.noteHb(sb) };
 }
 const V = (b) => b.nodes['hb-verdict'], D = (b) => b.nodes['hb-detail'];
 const ago = (min) => new Date(NOW - min * 60000).toISOString();
@@ -139,6 +142,62 @@ const ST = (x, s) => Object.assign({ ok: true, days: 400, rows: 21000, firstDay:
       && /sw\.supabase\.haiben === true/.test(SRC));
     t('H 接続先は排泄ケア記録の画面の控え（hbcr_api_url・hbcr_api_token）を読むだけ（書かない）', /localStorage\.getItem\('hbcr_api_url'\)/.test(SRC) && !/localStorage\.setItem\('hbcr_api/.test(SRC));
     t('H 実行は現場の端末では断り、2回確かめる', /function runHbOp[\s\S]*?role === 'field'[\s\S]*?confirm\('本当に実行しますか？/.test(SRC));
+  }
+  console.log('— I 差の日ごとの記録 —');
+  {
+    const run = async (o) => { const b = box(o); await b.run(); await b.note(); return b; };
+    const b = await run({ status: ST() });
+    t('I Google と同じ（ok）の時は0件を残す・最後の回の「違った日」は数えない', JSON.stringify(b.env.noted) === '[["hb",0]]' && /Google と同じ/.test(V(b).textContent), b.env.noted);
+    t('I 残すのは様子の口を読んだ後で、Google・端末の控えに触らない', b.sent.length === 0 && JSON.stringify(b.rpcs) === '["hb_shadow_status"]', [b.sent, b.rpcs]);
+    const warn = [
+      ['最後の写しを断った', ST({ lastStatus: 'refused', lastRefused: 'shrink', refused24h: 1 }), 2],
+      ['この24時間に断った回がある（最後は受け付けた）', ST({ refused24h: 3 }), 3],
+      ['この14日に食い違い', ST({ mismatch14: 2 }), 2],
+      ['初めの写しの途中', ST({}, { left: 120 }), 120],
+      ['空にしなかった日・使えない番号・日付の無い記録', ST({}, { emptyHeld: 15, badId: 1, nodate: 2 }), 18],
+      ['大きすぎる記録', ST({}, { badRow: 1 }), 1],
+      ['Google と写しの日数が違う（印は全部0）', ST({ days: 399 }), 1],
+      ['Google と写しの記録の数が違う（印は全部0）', ST({ rows: 20990 }), 10],
+      ['最後の回の食い違い（stat.mismatched）', ST({}, { mismatched: 2 }), 2]
+    ];
+    for (const [name, st, n] of warn) {
+      const w = await run({ status: st });
+      t('I ' + name + ' → 差 ' + n + '件（画面は「Google と同じ」と言わない）', JSON.stringify(w.env.noted) === JSON.stringify([['hb', n]]) && !/Google と同じ/.test(V(w).textContent), [w.env.noted, V(w).textContent]);
+    }
+    {
+      const w = await run({ status: ST({ mismatch14: 'x' }) });
+      t('I 形の違う数は差1件に数える（0件とみなさない）', JSON.stringify(w.env.noted) === '[["hb",1]]', w.env.noted);
+    }
+    const none = [
+      ['しばらく写っていない（75分を超える）', { status: ST({ lastAt: ago(120) }) }],
+      ['まだ写していない', { status: { ok: true, days: 0, rows: 0, lastAt: null } }],
+      ['0062 の前', { statusErr: true }],
+      ['権限で断られた', { statusErr: true, errCode: '42501' }],
+      ['その回の数（stat）が無い', { status: ST({ stat: {} }) }],
+      ['最後の時刻が読めない', { status: ST({ lastAt: 'x' }) }]
+    ];
+    const noneStrict = [
+      ['この14日に中身の照らし合わせが無い（verified14 が0）', { status: ST({ verified14: 0 }) }],
+      ['最後の回に中身の照らし合わせが無い（stat.verify が0）', { status: ST({}, { verify: 0 }) }],
+      ['写しの記録の数が無い', { status: ST({ rows: null }) }],
+      ['Google の記録の数が無い', { status: ST({}, { rows: undefined }) }]
+    ];
+    for (const [name, o] of none) {
+      const w = await run(o);
+      t('I ' + name + ' → 残さない（0件とみなさない）', w.env.noted.length === 0, w.env.noted);
+    }
+    for (const [name, o] of noneStrict) {
+      const w = await run(o);
+      t('I ' + name + ' → 残さない（0件とみなさない）・画面も「Google と同じ」と言わない', w.env.noted.length === 0 && !/Google と同じ/.test(V(w).textContent) && /warn/.test(V(w).className), [w.env.noted, V(w).textContent]);
+    }
+    // 画面が「Google と同じです」と出さない組み合わせで0件を残さない（警告の間に表が通らない）
+    const combos = [{ lastStatus: 'refused' }, { refused24h: 1 }, { mismatch14: 1 }, { days: 399 }, { rows: 20999 }, { verified14: 0 }].map((x) => ST(x))
+      .concat(['left', 'emptyHeld', 'badId', 'badRow', 'nodate', 'mismatched'].map((k) => ST({}, { [k]: 1 })), [ST({}, { verify: 0 }), ST({}, { days: 401 })]);
+    let bad = 0;
+    for (const st of combos) { const w = await run({ status: st }); if (!/Google と同じ/.test(V(w).textContent) && w.env.noted.some(([, n]) => n === 0)) bad++; }
+    t('I 警告・知らせが出る組み合わせで0件を残さない', bad === 0, bad);
+    t('I 起動の時は写しの欄を読んだ直後に残す（表を読む前）', /try \{ await loadHb\(sb\); \}[^\n]*\n\s*try \{ await noteHb\(sb\); \}/.test(SRC) && SRC.indexOf('await noteHb(sb)') < SRC.indexOf('try { await loadGate(sb); }'));
+    t('I 残すのは管理者だけ（noteDiff の守りを通る）', /async function noteHb\(sb\)[\s\S]*?await noteDiff\(sb, 'hb', n\)/.test(SRC) && /async function noteDiff\(sb, kind, n\) \{\n\s*if \(!\(me && me\.role === 'admin'\)\) return;/.test(SRC));
   }
   console.log('\n合格 ' + pass + ' / 不合格 ' + fail);
   process.exit(fail ? 1 : 0);

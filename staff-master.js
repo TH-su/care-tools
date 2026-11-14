@@ -1271,6 +1271,14 @@ var SITE_UI = [
 var SITE_CHK_BY_COL = {};
 SITE_UI.forEach(function (s) { SITE_CHK_BY_COL[s.col] = s.chk; });
 var SITE_ACTIVE_DEF = ['facility', 'visit', 'day'];   /* 居宅は休止中のため入力欄の既定から外す */
+/* 区分の名前。施設情報（corpSettings.siteLabels）で calc.js が差し替えた名前を読む。古い calc.js なら上の表の名前（第6段 SM-02） */
+function siteLabelOf(code) {
+  var L = SC() ? SC().SITE_LABEL : null;
+  if (L && typeof L[code] === 'string' && L[code]) return L[code];
+  var lab = code;
+  SITE_UI.forEach(function (s) { if (s.code === code) lab = s.label; });
+  return lab;
+}
 
 /* 既定で欄を出す事業所か（calc.js が新しければそちらの指定に従う） */
 function siteIsActive(code) {
@@ -2811,12 +2819,19 @@ var HEADER_ALIAS = {
   '居宅': 'siteCm', '資格': 'quals', '資格取得日': 'qualDate', '雇用保険番号': 'empInsNo', '備考': 'note'
 };
 
+/* 取り込む項目の名前。事業所の区分は今の名前で出す */
+function importKeyLabel(p) { return SITE_CHK_BY_COL[p[0]] ? fieldLabel(p[0]) : p[1]; }
 function guessKey(header) {
   var s = SC().normName(header);
   if (!s) return '';
+  /* 事業所の区分は、施設情報で名前を変えた時も今の名前で読む（書き出した CSV の見出し）。今の名前を先に見て、旧い名前は後で見る（第6段 SM-02） */
+  if (HEADER_ALIAS[s] && !SITE_CHK_BY_COL[HEADER_ALIAS[s]]) return HEADER_ALIAS[s];
+  var site = '';
+  SITE_UI.forEach(function (u) { if (!site && SC().normName(siteLabelOf(u.code)) === s) site = u.col; });
+  if (site) return site;
   if (HEADER_ALIAS[s]) return HEADER_ALIAS[s];
   var hit = '';
-  IMPORT_KEYS.forEach(function (p) { if (!hit && SC().normName(p[1]) === s) hit = p[0]; });
+  IMPORT_KEYS.forEach(function (p) { if (!hit && SC().normName(importKeyLabel(p)) === s) hit = p[0]; });
   return hit;
 }
 
@@ -2875,7 +2890,7 @@ function renderMapTable() {
     var sel = h('select', { id: selId, 'aria-label': '「' + (hd || '（見出しなし）') + '」列の取り込み先' });
     sel.appendChild(h('option', { value: '__auto' }, '自動判定（見出しのまま）'));
     sel.appendChild(h('option', { value: '' }, '取り込まない'));
-    IMPORT_KEYS.forEach(function (p) { sel.appendChild(h('option', { value: p[0] }, p[1])); });
+    IMPORT_KEYS.forEach(function (p) { sel.appendChild(h('option', { value: p[0] }, importKeyLabel(p))); });
     sel.value = ST.imp.sel[i] ? ST.imp.sel[i] : '__auto';
     sel.addEventListener('change', function () {
       ST.imp.sel[i] = (sel.value === '__auto') ? guessKey(ST.imp.header[i]) : sel.value;
@@ -2898,7 +2913,11 @@ function mappedHeader() {
   return ST.imp.header.map(function (hd, i) {
     var selEl = $('map_' + i);
     var raw = selEl ? selEl.value : (ST.imp.sel[i] || '__auto');
-    if (raw === '__auto') return hd;
+    if (raw === '__auto') {
+      /* 名前を変えた事業所の区分の見出しは、取り込みの規則（mapLegacyRow）が読む旧い見出しへ置き換える（今の名前のままなら同じ語） */
+      var g = guessKey(hd);
+      return (g && SITE_CHK_BY_COL[g]) ? LEGACY_HEADER[g] : hd;
+    }
     if (raw === '') return '';
     return LEGACY_HEADER[raw] || hd;
   });
@@ -3152,7 +3171,7 @@ function exportCell(row, k) {
   if (k === 'siteRatiosJson') {
     var r = siteRatiosOf(row), out = [];
     SITE_UI.forEach(function (s) {
-      if (Object.prototype.hasOwnProperty.call(r, s.code)) out.push(s.label + String(r[s.code]));
+      if (Object.prototype.hasOwnProperty.call(r, s.code)) out.push(siteLabelOf(s.code) + String(r[s.code]));
     });
     return out.join('/');
   }
@@ -3912,7 +3931,7 @@ var CMT_SITE_STARTED_MAX = 40;    /* 当事業所が始めた月。サーバー�
 var CMT_SITE_STARTED_LONG_MSG = '当事業所が始めた月が長すぎます（上限 ' + CMT_SITE_STARTED_MAX + '字）';
 var CMT_ALIAS_MAX = 40;           /* 通称（2026-11-06.2）。入力欄の maxlength と同じ */
 var CMT_ALIAS_LONG_MSG = '通称が長すぎます（上限 ' + CMT_ALIAS_MAX + '字）';
-var CMT_ALIAS_NO_CAPS_MSG = '受け口（職員マスタAPI）が古い版のため、通称はまだ変えられません。配備の後に使えます';
+var CMT_ALIAS_NO_CAPS_MSG = 'まだ準備ができていません。管理者に伝えてください。';   // 職員に見える文（受け口の版・配備の話は出さない・2026-11-13・文は仮置き）
 var CMT_SITE_STARTED_LABEL = '当事業所: ';   /* 表と紙の2段目の頭に付ける言い方 */
 var CMT_EXT_CODE = 'kondan';      /* 外部の方を足せるのは運営懇談会だけ（本人裁定 2026-09-22） */
 /* 要件を確認できるページ（2026-09-22.5）。サーバー（COMMITTEE_URL_RE / COMMITTEE_URL_MAX）・
@@ -4131,7 +4150,7 @@ function cmtSitesText(v) {
   if (Array.isArray(v)) {
     return v.map(function (c) {
       var lab = '';
-      SITE_UI.forEach(function (s) { if (s.code === txt(c)) lab = s.label; });
+      SITE_UI.forEach(function (s) { if (s.code === txt(c)) lab = siteLabelOf(s.code); });
       return lab || txt(c);
     }).filter(Boolean).join('・') || '—';   /* ★対象の事業所が無い委員会（2026-09-23.4 生産性向上）は空白でなく「—」 */
   }
@@ -4371,6 +4390,7 @@ function applyLocalityNow() {
      形は計算部品（setLocality）が確かめ、崩れていれば丸ごと捨てる */
   var cd = null;
   try { cd = typeof window.SUFacility.section === 'function' ? window.SUFacility.section('committeeDefaults') : null; } catch (e) { cd = null; /* 捨ててよい: 読めなければ今の既定で動く */ }
+  applySiteLabelsNow();
   var changed = false;
   try {
     changed = SC().setLocality({ municipality: window.SUFacility.municipality(),
@@ -4381,6 +4401,29 @@ function applyLocalityNow() {
   if (ST.detail) fillCmtPicker(mergedDetailRow());
   if (ST.screen === 'cmt') renderCmt();
   if (ST.loaded && ST.cmtCol) renderList();
+}
+/* 事業所の区分の名前を施設情報（corpSettings.siteLabels）から当てる（第6段 SM-02・代表者の決定 2026-11-14）。
+   書いていない・崩れている時は setSiteLabels が今の名前のまま false を返し、画面に1つも触らない。
+   差し替えるのは文字だけで、コード・保存の列・保存済みの値・入力中の値は変えない */
+function applySiteLabelsNow() {
+  if (!SC() || typeof SC().setSiteLabels !== 'function') return;
+  var sl = null;
+  try { sl = typeof window.SUFacility.section === 'function' ? window.SUFacility.section('siteLabels') : null; } catch (e) { sl = null; /* 捨ててよい: 読めなければ今の名前で動く */ }
+  var changed = false;
+  try { changed = SC().setSiteLabels(sl); } catch (e) { changed = false; }
+  if (!changed) return;
+  SITE_UI.forEach(function (u) {
+    var lab = siteLabelOf(u.code), el;
+    el = document.querySelector('label[for="' + u.chk + '"]'); if (el) el.textContent = lab;
+    el = document.querySelector('label[for="' + u.ratio + '"]'); if (el) el.textContent = lab + 'の兼務比率（パーセント）';
+    el = document.querySelector('label[for="corpA_' + u.code + '"]'); if (el) el.textContent = lab;
+    el = document.querySelector('label[for="corpK_' + u.code + '"]'); if (el) el.textContent = lab + '（%）';
+    var sel = $('f_primarySite'), i;
+    if (sel) for (i = 0; i < sel.options.length; i++) { if (sel.options[i].value === u.code) sel.options[i].textContent = lab; }
+  });
+  if (ST.loaded) renderList();
+  if (ST.screen === 'dash') renderDash();
+  if (ST.screen === 'cmt') renderCmt();
 }
 function loadCommittees() {
   if (!cfgReady()) { failCommittees(); return Promise.resolve(false); }
@@ -5795,6 +5838,13 @@ function bindEvents() {
     var a = e.target && e.target.closest ? e.target.closest('a.su-menu-back') : null;
     if (!a || !hasUnsaved()) return;
     if (!confirm('保存していない変更があります。メニューへ移ると消えます。移りますか？')) { e.preventDefault(); return; }
+    smMenuLeaveOk_ = true; setTimeout(function () { smMenuLeaveOk_ = false; }, 3000);
+  });
+  /* 見出しの「使い方」で離れる時も、「← メニュー」と同じ判定（hasUnsaved）で確かめる（代表者の決定 2026-11-13） */
+  document.addEventListener('click', function (e) {
+    var a = e.target && e.target.closest ? e.target.closest('a.su-help-link') : null;
+    if (!a || !hasUnsaved()) return;
+    if (!confirm('保存していない変更があります。使い方へ移ると消えます。移りますか？')) { e.preventDefault(); return; }
     smMenuLeaveOk_ = true; setTimeout(function () { smMenuLeaveOk_ = false; }, 3000);
   });
   window.addEventListener('beforeunload', function (e) {

@@ -48,6 +48,7 @@
       } catch (e) { draw(''); }
     }
     function start() {
+      addHelp();
       if (inFrame || !slots().length) return;
       ask();
       if (asked) return;
@@ -58,7 +59,39 @@
         if (asked || n >= 60) clearInterval(timer);
       }, 500);
     }
-    window.SUShell = { TEXT: TEXT, _draw: draw, _ask: ask };
+    /* 見出しの「← メニュー」の右隣の「使い方」（代表者の決定 2026-11-13・文言「使い方」も代表者の決定）。
+       使い方（help.html）に節のある画面は help.html?sec=<画面>、無い画面は help.html の先頭へ。受ける値は help-sec.js の対応表と同じ（試験 help_link_test で確かめる）。
+       直接見出しに書いた画面も、この表と同じ行き先にする（同じ試験で確かめる）。同じタブで開く（「← メニュー」と同じ） */
+    var HELP_SEC = { 'care-schedule.html': 'care-schedule', 'work-schedule.html': 'work-schedule', 'shift-app.html': 'shift-app', 'shift-analyzer.html': 'shift-analyzer', 'resident-master.html': 'resident-master', 'weight-record.html': 'weight-record', 'facesheet.html': 'facesheet', 'genogram.html': 'genogram', 'patch-calendar.html': 'patch-calendar', 'moushiokuri-viewer.html': 'moushiokuri-viewer', 'admission-flow.html': 'admission-flow', 'care-meeting.html': 'care-meeting', 'supplies.html': 'supplies', 'equip-log.html': 'equip-log', 'visit-overview.html': 'visit-overview', 'support-overview.html': 'support-overview', 'overview-compare.html': 'overview-compare', 'daycare-roster.html': 'daycare-roster', 'training-plan.html': 'training-plan', 'staff-master.html': 'staff-master', 'ats.html': 'ats', 'connection-settings.html': 'connection-settings', 'accounts.html': 'accounts', 'app-access.html': 'app-access', 'menu-settings.html': 'menu-settings', 'shadow-check.html': 'shadow-check', 'unsent.html': 'unsent' };
+    function helpHref(file) {
+      var f = String(file || '');
+      return Object.prototype.hasOwnProperty.call(HELP_SEC, f) ? 'help.html?sec=' + HELP_SEC[f] : 'help.html';
+    }
+    function pageFile() {
+      try { var m = /([^\/]*)$/.exec(String(window.location.pathname || '')); return (m && m[1]) || 'index.html'; } catch (e) { return ''; }
+    }
+    /* 見出し（.su-shell-hdr）の中のメニューへのリンクの右隣に置く。見た目はメニューのリンクと同じ型の名前を写し（su-menu-back は写さない）、
+       文字は固定の「使い方」を textContent で入れる。メニュー・ログイン・使い方の画面と、枠（iframe）の中では置かない。二重には置かない */
+    function addHelp() {
+      if (inFrame) return;
+      var file = pageFile();
+      if (file === 'index.html' || file === 'login.html' || file === 'help.html') return;
+      var hdrs = [];
+      try { hdrs = Array.prototype.slice.call(document.querySelectorAll('.su-shell-hdr')); } catch (e) { return; }
+      hdrs.forEach(function (h) {
+        try {
+          if (h.querySelector('.su-help-link')) return;
+          var back = h.querySelector('a[href="index.html"]');
+          if (!back || !back.parentNode) return;
+          var a = document.createElement('a');
+          a.className = String(back.className || '').split(/\s+/).filter(function (c) { return c && c !== 'su-menu-back'; }).concat('su-help-link').join(' ');
+          a.setAttribute('href', helpHref(file));
+          a.textContent = '使い方';
+          back.parentNode.insertBefore(a, back.nextSibling);
+        } catch (e) { /* 置けなくても画面は動く */ }
+      });
+    }
+    window.SUShell = { TEXT: TEXT, HELP_SEC: HELP_SEC, helpHref: helpHref, _draw: draw, _ask: ask, _addHelp: addHelp };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
     else start();
     /* 「戻る」で前の表示のまま戻った時（pageshow の persisted）は、その間にログアウト・アカウントの入れ替えがあり得るので聞き直す */

@@ -200,7 +200,8 @@ t('9u 作った区分はボタンが無くても配置（layout）に残る（�
   M.layout(DEF, M.clean({ ver: 1, sdef: { 'c-z': { mk: '', title: '空' } } })).some(s => s.id === 'c-z' && s.tiles.length === 0));
 t('9w 「使い方・困った時」は事務所専用の区分（設定）へ移さない（現場端末から消えないように・反証レビューの指摘）', (function () {
   const v = M.arrange(DEF, { ver: 1, mv: { 'help.html': 'sec-setup' }, gone: ['sec-help'] }, 'field');
-  return hrefs(v, 'sec-help').join() === 'help.html' && hrefs(v, 'sec-setup').indexOf('help.html') < 0;
+  /* 困った時の区分は既定のまま（help.html と、2026-11-14 に足した未送信の一覧） */
+  return hrefs(v, 'sec-help').join() === 'help.html,unsent.html' && hrefs(v, 'sec-setup').indexOf('help.html') < 0;
 })());
 t('9x 「使い方・困った時」はふつうの区分へは移せる', hrefs(M.arrange(DEF, { ver: 1, mv: { 'help.html': 'sec-staff' } }, 'field'), 'sec-staff').indexOf('help.html') >= 0);
 t('9v 0023 のキーだけの設定でも、区分の並びは既定のまま', ids(M.arrange(DEF, { ver: 1, sdef: { 'sec-staff': { mk: '', title: 'x' } } }, 'admin')).join() === ids(DEF).join());
@@ -249,6 +250,19 @@ t('11p 設定で採用管理を隠さなくても、管理者以外には出な�
 t('11q autoHidden: 区分の事務所専用も見る', M.autoHidden({ href: 'x.html' }, true, 'field') === true && M.autoHidden({ href: 'x.html' }, true, 'office') === false);
 t('11r autoHidden: 使い方・困った時は出す', M.autoHidden({ href: 'help.html', adminOnly: true, officeOnly: true }, true, 'field') === false);
 t('11s 壊れた定義（区分の一覧が無い）はそのまま返す', M.view({ x: 1 }, null, 'field').x === 1);
+
+// 12. 「動作の速さの記録」のリンク（2026-11-14 代表者の決定）: 事務所の端末で事務所・管理者としてログインしている時だけ出す
+t('12a 事務所の端末の事務所・管理者には出す', M.perfLinkShown('office', false) === true && M.perfLinkShown('admin', false) === true);
+t('12b 現場端末では役割に関わらず出さない（管理者でも）', ['admin', 'office', 'field', 'pending', null].every((r) => M.perfLinkShown(r, true) === false));
+t('12c 現場のアカウント・ログインしていない・役割がまだ分からない・知らない役割には出さない', ['field', null, undefined, 'pending', 'guest', ''].every((r) => M.perfLinkShown(r, false) === false));
+{
+  const IDX = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'index.html'), 'utf8');
+  t('12d メニューのリンクは初めは隠しておき（hidden）、前の改行ごとまとめて隠す', /<span id="perfLink" hidden><a href="perf-report\.html">動作の速さの記録（遅さの調査用）<\/a><br><\/span>/.test(IDX) && (IDX.match(/href="perf-report\.html"/g) || []).length === 1);
+  t('12e 読み込みが終わった時（リンクは script より後ろ）と、ログインの確かめの2つの知らせの後に出し分け直し、部品が無い時は出さない', (IDX.match(/drawRole\(.*\);\n\s*perfApply\(\);/g) || []).length === 2 &&
+    /document\.addEventListener\('DOMContentLoaded', function \(\) \{ perfApply\(\); \}\);/.test(IDX) && IDX.indexOf('id="perfLink"') > IDX.indexOf('function perfApply()') && /var on = !!\(window\.SUMenu && typeof SUMenu\.perfLinkShown === 'function' &&/.test(IDX) && /p\.hidden = !on;/.test(IDX));
+  t('12f 「戻る」で戻った時も出し分け直す（端末の用途は is-field で見る）', /if \(e && e\.persisted\) perfApply\(\);/.test(IDX) && /SUMenu\.perfLinkShown\(role, document\.documentElement\.classList\.contains\('is-field'\)\)/.test(IDX));
+  t('12g 記録そのもの（su-perf.js）は今までどおり読む', /<script src="su-perf\.js\?v=[0-9.-]+"><\/script>/.test(IDX));
+}
 
 console.log(`\n合格 ${pass} / 不合格 ${fail}`);
 process.exit(fail ? 1 : 0);

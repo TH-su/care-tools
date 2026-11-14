@@ -714,7 +714,7 @@ const allPanels = (L) => { const out = []; for (const tb of CALC.TABS) { L.ctx.t
   {
     const srcs = [...HTML.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]);
     t('su-errors.js が最初の script', srcs[0] === 'su-errors.js?v=2026-11-12', srcs);
-    t('su-app-gate.js・su-facility.js・equip-calc.js を読む', srcs.includes('su-app-gate.js?v=2026-11-11') && srcs.includes('su-facility.js?v=2026-11-07') && srcs.some((s) => /^equip-calc\.js\?v=/.test(s)), srcs);
+    t('su-app-gate.js・su-facility.js・equip-calc.js を読む', srcs.includes('su-app-gate.js?v=2026-11-11') && srcs.includes('su-facility.js?v=2026-11-14.2') && srcs.some((s) => /^equip-calc\.js\?v=/.test(s)), srcs);
     t('su-report.js（data-tool="設備・修繕の記録"）が </body> の直前', /<script src="su-report\.js\?v=2026-10-28" data-tool="設備・修繕の記録"><\/script>\n<\/body>/.test(HTML));
     t('<html lang="ja" data-su-theme> と su-theme.css', /<html lang="ja" data-su-theme>/.test(HTML) && /<link rel="stylesheet" href="su-theme\.css\?v=/.test(HTML));
     t('Content-Security-Policy の meta が <meta charset> の直後', /<meta charset="UTF-8">\n<meta http-equiv="Content-Security-Policy" data-su-csp content="/.test(HTML));
@@ -804,6 +804,42 @@ const allPanels = (L) => { const out = []; for (const tb of CALC.TABS) { L.ctx.t
     t('印に使える項目がもうある時は、案内だけでボタンは出さない', /法定点検のある設備は/.test(h) && !/data-act="field-legal"/.test(h));
     L.ctx.act_('ftarget', { getAttribute: (k) => (k === 'data-target' ? 'event' : null) });
     t('対応の記録に付ける項目では案内を出さない', !/field-legal|法定点検のある設備/.test(L.els['p-fields'].innerHTML));
+  }
+
+  group('16. 点検・修繕の記録の紙（A4 横・SUPrint の evlist・2026-11-14 代表者の決定）');
+  {
+    const d = baseData();
+    d.assets.push({ id: 'a2', kind: 'facility', place_key: 'room:102', category: 'furniture', name: BAD, status: 'active', rev: 1, extra: {} });
+    d.events.push(
+      { id: 'e2', asset_id: 'a1', place_key: 'room:101', etype: 'inspection', handled_on: '2026-06-01', amount: 2200, vendor_id: 'v1', body: BAD, rev: 1, extra: { fd2: BAD } },
+      { id: 'e3', asset_id: 'a2', place_key: 'room:102', etype: 'repair', handled_on: '2026-07-01', amount: 5500, vendor_id: null, body: '架空の2件目の修理', rev: 1, extra: {} },
+      { id: 'e4', asset_id: 'a1', place_key: 'room:101', etype: 'repair', handled_on: '2026-04-20', amount: 9999, vendor_id: 'v1', body: '架空の取り消した記録', cancelled_at: '2026-04-21T00:00:00Z', rev: 1, extra: {} });
+    const L = await opened({ rpc: { eq_list: () => d } });
+    let spec = null, printed = 0;
+    L.ctx.window.SUPrint = { define(n, s) { if (n === 'evlist') spec = s; }, print(n) { if (n === 'evlist') printed++; }, facGate(go) { go(); return Promise.resolve(true); } };
+    L.ctx.document.body.classList = { contains: () => false };
+    L.ctx.definePrint_();
+    t('A4 横・紙の根は #e-print・文字の大きさで収める（--ep-fs・zoom を使わない）', !!spec && spec.paper === 'A4 landscape' && spec.root === '#e-print' && spec.fit && spec.fit.cssVar === '--ep-fs' && !/zoom|transform\s*:\s*scale/.test(spec.fit.cssVar), spec && spec.fit);
+    t('★Cmd/Ctrl+P では準備しない（押す前は when が偽＝今の画面の印刷は変えない）', spec && spec.when() === false);
+    L.ctx.onAppInput_({ target: { id: 'e-q', value: '' } });
+    const h = L.ctx.evPrintHtml_();
+    t('記録を設備ごとにまとめ、取り消した記録は載せずに件数だけを書く', (h.match(/<tr class="ep-g">/g) || []).length === 2 && !/架空の取り消した記録/.test(h) && /取り消した記録 1件は載せていません/.test(h), h.slice(0, 900));
+    t('見出しに表題・施設名と印刷日の印（data-su-print-head="name date"）・期間（全期間と基準日の幅）・条件を書く', /点検・修繕の記録/.test(h) && /data-su-print-head="name date"/.test(h) && /期間：全期間（2026-05-03〜2026-07-01）/.test(h) && /条件：絞り込みなし/.test(h), h.slice(0, 600));
+    t('★記録・設備名・増やした項目に <img onerror> が入っても要素が生まれない', !/<img|<script/i.test(h) && (h.match(/&lt;img src=x onerror=alert\(1\)&gt;/g) || []).length >= 3, (h.match(/<(img|script)[^>]*/gi) || []).slice(0, 3));
+    L.ctx.filter.etype = 'repair'; L.ctx.filter.fy = '2026';
+    const h2 = L.ctx.evPrintHtml_();
+    t('★今の画面の絞り込み（種類・年度）が紙にも効き、条件と期間を書く', !/>点検</.test(h2) && /架空の2件目の修理/.test(h2) && /条件：種類：修理/.test(h2) && /期間：2026年度（2026年4月1日〜2027年3月31日）/.test(h2), h2.slice(0, 700));
+    L.ctx.filter.etype = ''; L.ctx.filter.fy = '';
+    t('増やした項目が3つまでは1列 8%（紙の材料と同じ型）', (h.match(/<col class="c-x">/g) || []).length === 2 && !/<col style=/.test(h));
+    for (let i = 3; i <= 6; i++) L.ctx.data.fields.push({ id: 'fx' + i, target: 'event', name: '架空の項目' + i, ftype: 'text', sort: 20 + i, disabled: false, rev: 1 });
+    const h3 = L.ctx.evPrintHtml_();
+    t('増やした項目が4つ以上の時は合わせて 30% に収め、内容の列の幅を残す（6つ＝1列 5%）', (h3.match(/<col style="width:5%">/g) || []).length === 6 && !/<col class="c-x">/.test(h3), (h3.match(/<col[^>]*>/g) || []).join(''));
+    L.ctx.data.fields.splice(L.ctx.data.fields.length - 4, 4);
+    L.ctx.setTab_('events');
+    t('ボタン「一覧を印刷（A4 横）」は対応の記録の絞り込みの段に置く（画面だけ）', /<button type="button" class="btn" data-act="ev-print">一覧を印刷（A4 横）<\/button>/.test(L.els['p-events'].innerHTML));
+    L.ctx.act_('ev-print', { getAttribute: () => null }); await settle();
+    t('押すと施設情報を確かめてから紙を作る（facGate → SUPrint.print）・準備できなければ印を残さない', printed === 1 && L.ctx.evPrintOn_ === false, { printed, on: L.ctx.evPrintOn_ });
+    t('紙の CSS は印刷の時だけ紙の根を出す（ふだんは出さない）', /#e-print\{display:none\}/.test(HTML) && /@media print\{ body\.su-print-evlist\{background:#fff !important; padding:0 !important\} body\.su-print-evlist #e-print\{display:block; font-size:var\(--ep-fs,12px\)\} \}/.test(HTML));
   }
 
   say('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');

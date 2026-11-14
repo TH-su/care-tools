@@ -57,6 +57,22 @@ console.log('\n— 1. 発行者の行 —');
   t('施設情報も担当も無ければ欄ごと出さない（紙面は以前のまま）', b3.issuerLines().length === 0 && b3.els.sheetIssuer.hidden === true, b3.els.sheetIssuer);
 }
 
+console.log('\n— 1b. 登録番号（2026-11-13 第6段 SP-03）—');
+{
+  const OFF = { name: '架空', formalName: '有料老人ホーム 架空', address: '架空市1-2-3', tel: '000-000-0000' };
+  const b = makeBox(OFF, { facilityName: '架空' }, { spl_issuer: JSON.stringify({ staff: '架空 花子' }) });
+  b.window.SUFacility.invoiceNo = () => 'T0000000000001';
+  t('施設情報に登録番号がある時だけ、TEL の後・担当の前に1行足す', b.issuerLines().join('|') === '有料老人ホーム 架空|架空市1-2-3|TEL 000-000-0000|登録番号 T0000000000001|担当：架空 花子', b.issuerLines());
+  b.renderIssuer('billIssuer');
+  t('明細の欄に5行（文字は textContent）', b.els.billIssuer.children.length === 5 && b.els.billIssuer.children[3].textContent === '登録番号 T0000000000001', b.els.billIssuer.children);
+  const b2 = makeBox(OFF, { facilityName: '架空' }, {});
+  b2.window.SUFacility.invoiceNo = () => '';
+  t('登録番号が空なら行を作らない（今の紙のまま）', b2.issuerLines().join('|') === '有料老人ホーム 架空|架空市1-2-3|TEL 000-000-0000', b2.issuerLines());
+  const b3 = makeBox(OFF, { facilityName: '架空' }, {});
+  t('読み口の無い古い部品でも止まらず、行を作らない', b3.issuerLines().join('|') === '有料老人ホーム 架空|架空市1-2-3|TEL 000-000-0000', b3.issuerLines());
+  t('振込先は発行者の欄に入れない', !/振込|口座/.test(cut('issuerLines')));
+}
+
 console.log('\n— 2. 担当者の保存 —');
 {
   const b = makeBox({ name: '', formalName: '', address: '', tel: '' }, {}, {});

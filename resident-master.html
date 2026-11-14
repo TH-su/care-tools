@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-TeGaaWhcxr6anMyA4wsF4SL35Eo3mYj9bUezoSTuiSk=' 'sha256-1IzpfNXU8f+rxbEenGxuRcxv10QBqogAOfaMkV7W9ok='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-b44r1x52kjyRcC/VKdZrkQb5DCq2hgVqk4qvCzFawT0=' 'sha256-1IzpfNXU8f+rxbEenGxuRcxv10QBqogAOfaMkV7W9ok='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -550,6 +550,11 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 .yr-sec{margin:12px 0 4px; font-size:1rem}
 .yr-note{font-size:0.875rem; color:var(--g9); margin:4px 0 8px}
 .yr-wrap{overflow-x:auto}
+/* 期限切れ（反映から7日を過ぎて見直されていない・2026-11-13 代表者の決定）。札は白地に --ng（約 5.6:1）・色だけに頼らず「期限切れ」の語で書く */
+.yr-mark.yr-over{border-left:4px solid var(--ng); padding-left:8px}
+.yr-tag{display:inline-block; background:var(--ng); color:#fff; border-radius:4px; padding:0 6px; font-weight:700}
+.yr-tbl tr.yr-over td{background:var(--ng-l)}
+.yr-over-n{color:var(--ng)}
 @media print{.yr-slot,#mYjRev{display:none !important}}
 /* ── 担当者会議（2026-10-25 本人指示）。詳細画面の「意向・人生会議（ACP）」の直後に、担当者会議のページへのリンクだけを置く。
    ★事務所PCだけ・画面だけ＝印刷しない（PRINT_SECS に入れない・data-k を付けない） ── */
@@ -1632,12 +1637,17 @@ body.meal-on #sc-list{max-width:none}
 .su-menu-back{display:inline-flex;align-items:center;padding:2px 10px;border:1px solid currentColor;border-radius:8px;color:inherit;font-size:0.8125rem;font-weight:700;line-height:1.2}
 @media screen and (max-width:899px){.su-menu-back{min-height:44px}}
 @media print{.su-menu-back{display:none !important}}
+/* 見出しの「使い方」（「← メニュー」の右隣・同じ大きさと色・使い方の画面のこの画面の節へ・画面だけ・印刷しない・代表者の決定 2026-11-13） */
+.su-help-link{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+.su-help-link{display:inline-flex;align-items:center;padding:2px 10px;border:1px solid currentColor;border-radius:8px;color:inherit;font-size:0.8125rem;font-weight:700;line-height:1.2}
+@media screen and (max-width:899px){.su-help-link{min-height:44px}}
+@media print{.su-help-link{display:none !important}}
 </style>
 <!-- 印刷共通モジュール（用紙・余白・収め方の設定画面と、紙1枚に収める採寸の器）。
      ★link で読む＝JS が document.styleSheets からこのファイルの @media print も読めるようにする。
      ★?v= は必須（HTMLの no-store はサブリソースに効かないため、付けないと
        「新しいHTML × 古いCSS/JS」の組合せが現場端末に残る）。 -->
-<link rel="stylesheet" href="su-print.css?v=2026-09-12">
+<link rel="stylesheet" href="su-print.css?v=2026-11-13">
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 </head>
@@ -1645,6 +1655,7 @@ body.meal-on #sc-list{max-width:none}
 
 <div class="hdr">
   <a class="su-menu-back" href="index.html">← メニュー</a>
+  <a class="su-help-link" href="help.html?sec=resident-master">使い方</a>
   <h1>🗂️ 入居者マスタ</h1>
   <span class="sync" id="syncStatus">未接続</span>
 </div>
@@ -2049,9 +2060,9 @@ body.meal-on #sc-list{max-width:none}
 <script src="su-errors.js?v=2026-11-12"></script>
 <script src="su-devcfg.js?v=2026-11-08"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
-<script src="su-res-read.js?v=2026-11-11"></script>
+<script src="su-res-read.js?v=2026-11-14"></script>
 <!-- 止めて知らせる窓（alert・confirm）の代わりに画面の中の窓を出す共通部品（2026-11-12 代表者の決定）。画面のスクリプトより前に置く -->
-<script src="su-dialog.js?v=2026-11-13.2"></script>
+<script src="su-dialog.js?v=2026-11-14.2"></script>
 <script>
 /* 黙ると困る失敗（保存・同期の補助）を、画面には出さずに記録へ残す（2026-10-08・監査10月版 #8）。
    行き先は su-errors.js の note＝コンソールと記録先（同期ログ・不具合報告の控えと自動報告）。トーストは出さない。
@@ -2061,6 +2072,7 @@ function rmNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
 if(!window.SUDialog) window.SUDialog = {
   alert: function(m){ try{ window.alert(m); }catch(_){} return Promise.resolve(); },
   confirm: function(m){ var r = false; try{ r = !!window.confirm(m); }catch(_){} return Promise.resolve(r); },
+  prompt: function(m, d){ var r = null; try{ r = window.prompt(m, d == null ? '' : String(d)); }catch(_){} return Promise.resolve(r == null ? null : String(r)); },
   busy: function(){ return false; },
   idle: function(){ return Promise.resolve(); }
 };
@@ -2071,12 +2083,12 @@ if(!window.SUDialog) window.SUDialog = {
 <script src="su-perf.js?v=2026-11-02"></script>
 <script src="su-login-band.js?v=2026-11-02"></script>
 <script src="su-app-gate.js?v=2026-11-11"></script>
-<script src="su-facility.js?v=2026-11-07"></script>
+<script src="su-facility.js?v=2026-11-14.2"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>
 <!-- 薬情の取り込みの判定・組み立て（純関数・2026-10-22）。読めない時は入口のボタンを出さない（yjCalcOk_） -->
-<script src="yakujo-calc.js?v=2026-11-12"></script>
+<script src="yakujo-calc.js?v=2026-11-13"></script>
 <script src="revenue-calc.js?v=2026-11-07"></script>
-<script src="su-print.js?v=2026-09-12"></script>
+<script src="su-print.js?v=2026-11-13"></script>
 <!-- 入居者マスタの写し（統合 0004）。supabase-js と su-auth.js は写す時にだけ読み込む -->
 <script src="su-master-shadow.js?v=2026-10-28"></script>
 <script src="su-res-full.js?v=2026-11-03.5"></script>
@@ -2334,11 +2346,13 @@ function mcBuild_(d){
 }
 /* ==== 薬の変更候補の判定ここまで（MC-JUDGE-END） ==== */
 </script>
-<script src="resident-master.js?v=2026-11-13"></script>
+<script src="resident-master.js?v=2026-11-14.2"></script>
 <!-- 見出しの下の初回の案内の帯（2026-11-02 本人の決定）。×で閉じた端末では出さない。画面の動き・保存・印刷には触れない -->
-<script src="su-intro.js?v=2026-11-02.3"></script>
+<script src="su-intro.js?v=2026-11-13"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
+<!-- 本番の健康（2026-11-14・統合 0088）: 新しい保存先への保存の失敗を種類と理由だけ数えて送る。保存の動きには触れない・読めなくても動く -->
+<script src="su-health.js?v=2026-11-14"></script>
 <script src="su-report.js?v=2026-10-28" data-tool="入居者マスタ"></script>
 </body>
 </html>

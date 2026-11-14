@@ -100,6 +100,7 @@ function page(opt) {
     cutLine('const LS_DRAFT = '), cutLine('const DRAFT_DELAY_MS = '), cutLine('let unsavedBase = '), cutLine('let draftTimer = '),
     cutF('docPrint'), cutF('viewNow'), cutF('hasUnsavedChanges'), cutF('clearDraft'), cutF('markClean'), cutF('writeDraftNow'),
     cutF('scheduleDraft'), cutF('readDraft'), cutF('offerDraftRestore', 'async '), cutF('onDocListChange', 'async '), cutF('onBeforeUnload'),
+    cutF('genoStaffText_'), cutF('genoBandWhy_'),   // 同期の帯に足す理由（2026-11-13 第6段 GN-03）は実物を使う
     cutF('saveDoc', 'async '), cutF('loadDoc', 'async '), cutF('newDoc', 'async '), cutF('deleteCurrentDoc', 'async '),
     // 一覧の選択から呼ばれた読込を記録する（本物の loadDoc は api.realLoad で呼ぶ）
     'const realLoad = loadDoc; loadDoc = function (n, op) { __log.loads.push(n); return realLoad(n, op); };',

@@ -11,6 +11,9 @@
      F 画面のつなぎ（shadow-check.js の本物の関数）: 表はボタンが出ている時だけ出し、そろわない時はボタンを押せなくする。
        読めない時（gateIn が無い）は押せない側に倒す。押した時は読み直して確かめる。5つのボタンだけに付き、戻すボタン・備品・シフト分析には付けない
      G 差の記録: 入居者マスタ・計画書・入居調整の写し（run）は、読み直した差の件数を shadow_diff_note へ残す。残せなくても写しの結果は返す
+     I 排泄ケア記録（hb・2026-11-13 代表者の指示 cross 6）: 表を出し、そろった時だけ押せる。差の記録は統合 0086・0087 で hb を受け付ける
+       （2026-11-13 代表者の決定「#534 を入れて、SQL も作る」）ので、ほかの種類と同じく差0の日が3日で満たし、2日・今日の差・行が無い時は満たさない。
+       知らない種類（差の記録の一覧に無い種類）は今までどおり「確かめられません」。端末の数は答えの hb の欄（0062）で数え、欄が無ければ分からない
    架空データのみ。 */
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
@@ -49,6 +52,39 @@ console.log('A 差が0件の連続日数');
   t('0055 がまだなら満たさない（準備の番号を出す）', !item(G.judge(base({ diff: { error: 'missing' } })), 'diff').ok && /0055/.test(item(G.judge(base({ diff: { error: 'missing' } })), 'diff').why));
   t('読めない時は満たさない', !item(G.judge(base({ diff: { error: 'other' } })), 'diff').ok && !item(G.judge(base({ diff: {} })), 'diff').ok);
   t('知らない種類は満たさない', !item(G.judge(base({ kind: 'sup' })), 'diff').ok);
+}
+
+console.log('I 排泄ケア記録（hb）');
+{
+  const HBDEV = { rows: DEV0.rows, hb: [{ role: 'office', login: true, d1: 1, d7: 2, d30: 2 }] };
+  const hb = (o) => base(Object.assign({ kind: 'hb', diff: { rows: rows('hb', [[0, 0], [1, 0], [2, 0]]) }, dev: { data: HBDEV } }, o || {}));
+  const v = G.judge(hb());
+  t('種類の一覧に排泄ケア記録がある', G.KINDS.hb === '排泄ケア記録');
+  t('差の記録が hb を受け付ける（統合 0086・0087）ので、差0の行が3日分で満たす', item(v, 'diff').ok && item(v, 'diff').value === '3日' && G.DIFF_KINDS.indexOf('hb') >= 0, item(v, 'diff'));
+  t('4項目がそろえば ok', v.ok && item(v, 'device').ok && item(v, 'flow').ok && item(v, 'oneday').ok, v);
+  t('差0が2日では満たさない', !item(G.judge(hb({ diff: { rows: rows('hb', [[0, 0], [1, 0]]) } })), 'diff').ok && !G.judge(hb({ diff: { rows: rows('hb', [[0, 0], [1, 0]]) } })).ok);
+  t('今日の見比べで差があれば0日で満たさない', item(G.judge(hb({ diff: { rows: rows('hb', [[0, 2], [1, 0], [2, 0], [3, 0]]) } })), 'diff').value === '0日'
+    && !item(G.judge(hb({ diff: { rows: rows('hb', [[0, 2], [1, 0], [2, 0], [3, 0]]) } })), 'diff').ok);
+  t('hb の行が無い（0086・0087 の前・残せていない）時は満たさない', !item(G.judge(hb({ diff: { rows: rows('tp', [[0, 0], [1, 0], [2, 0]]) } })), 'diff').ok
+    && !item(G.judge(hb({ diff: { rows: [] } })), 'diff').ok);
+  t('ほかの種類の差0の行では満たさない（種類を混ぜない）', !item(G.judge(hb({ diff: { rows: rows('weight', [[0, 0], [1, 0], [2, 0]]) } })), 'diff').ok);
+  {
+    const K = Object.assign({}, G.KINDS);
+    G.KINDS.zz = '架空の正本';
+    const vz = G.judge(hb({ kind: 'zz', diff: { rows: rows('zz', [[0, 0], [1, 0], [2, 0]]) } }));
+    delete G.KINDS.zz;
+    t('差の記録の一覧に無い種類は今までどおり「確かめられません」で満たさない', !item(vz, 'diff').ok && item(vz, 'diff').value === '確かめられません' && JSON.stringify(G.KINDS) === JSON.stringify(K), item(vz, 'diff'));
+  }
+  t('端末の数は hb の欄で数える（入居者マスタ側の rows ではない）', G.unlogged(HBDEV, 'hb') === 0 && G.unlogged({ rows: DEV0.rows, hb: [{ login: false, d7: 2 }, { login: true, d7: 1 }] }, 'hb') === 2
+    && G.unlogged({ rows: [{ login: false, d7: 3 }], hb: [{ login: true, d7: 1 }] }, 'hb') === 0);
+  const one = G.judge(hb({ dev: { data: { rows: DEV0.rows, hb: [{ role: 'field', login: false, d1: 0, d7: 1, d30: 1 }] } } }));
+  t('排泄ケア記録を開いたログインしていない端末が1台あれば満たさず、排泄ケア記録の文で出す', !item(one, 'device').ok && item(one, 'device').value === '1台' && /排泄ケア記録/.test(item(one, 'device').why), item(one, 'device'));
+  const nohb = G.judge(hb({ dev: { data: { rows: DEV0.rows } } }));
+  t('hb の欄が無い（0062 の前）時は分からないので満たさない', !item(nohb, 'device').ok && item(nohb, 'device').value === '—' && /排泄ケア記録を開いた端末/.test(item(nohb, 'device').why), item(nohb, 'device'));
+  t('hb の欄がこの7日0件の時も分からない', G.unlogged({ rows: DEV0.rows, hb: [{ login: false, d7: 0, d30: 3 }] }, 'hb') === null);
+  t('今日ほかの正本を切り替えていれば満たさず、排泄ケア記録の切り替え直しは数えない', !item(G.judge(hb({ cut: { audit: [{ at: '2026-11-03T01:00:00Z', entity: 'res_mode', entity_ids: ['live'] }] } })), 'oneday').ok
+    && item(G.judge(hb({ cut: { audit: [{ at: '2026-11-03T01:00:00Z', entity: 'hb_mode', entity_ids: ['live'] }] } })), 'oneday').ok);
+  t('入居者マスタの種類は今までどおり rows で数える（hb の欄を見ない）', G.unlogged({ rows: DEV0.rows, hb: [{ login: false, d7: 5 }] }, 'res') === 0 && G.unlogged({ rows: DEV0.rows, hb: [{ login: false, d7: 5 }] }) === 0);
 }
 
 console.log('B ログインしていない端末');
@@ -147,7 +183,7 @@ function glue(o) {
   const nodes = {};
   const node = (id) => (nodes[id] = nodes[id] || { id, hidden: false, disabled: false, kids: [], className: '', textContent: '',
     replaceChildren() { this.kids = []; }, appendChild(c) { this.kids.push(c); return c; } });
-  ['b-res-cut', 'b-tp-cut', 'b-adm-cut', 'b-stf-cut', 'b-live-weight', 'wt-admin', 'gate-res', 'gate-tp', 'gate-adm', 'gate-stf', 'gate-weight', 'db-prep'].forEach(node);
+  ['b-res-cut', 'b-tp-cut', 'b-adm-cut', 'b-stf-cut', 'b-live-weight', 'b-hb-cut', 'wt-admin', 'gate-res', 'gate-tp', 'gate-adm', 'gate-stf', 'gate-weight', 'gate-hb', 'db-prep'].forEach(node);
   Object.keys(o.hidden || {}).forEach((k) => { nodes[k].hidden = o.hidden[k]; });
   const calls = [];
   const sb = {
@@ -213,6 +249,23 @@ const texts = (n) => [n.textContent].concat((n.kids || []).flatMap(texts));
     const g = glue({ rpc: OKRPC, role: 'office' });
     await g.ctx.loadGate(g.sb);
     t('事務所のアカウントには表を出さず、何も読まない', ['res', 'tp', 'adm', 'stf', 'weight'].every((k) => g.nodes['gate-' + k].hidden) && g.calls.length === 0);
+    t('事務所のアカウントには排泄ケア記録の表も出さない', g.nodes['gate-hb'].hidden);
+  }
+  {
+    const HBRPC = { shadow_diff_days: OKRPC.shadow_diff_days, device_seen_summary: () => ({ data: Object.assign({}, DEV0, { hb: [{ role: 'office', login: true, d1: 1, d7: 1, d30: 1 }] }), error: null }) };
+    const g = glue({ rpc: HBRPC });
+    await g.ctx.loadGate(g.sb);
+    const all = texts(g.nodes['gate-hb']).join('|');
+    t('排泄ケア記録: ボタンが出ている時は表を出し、差の記録に hb の行が無いので押せない（0日）', !g.nodes['gate-hb'].hidden && g.nodes['b-hb-cut'].disabled && /写しと正本の差が0件の連続日数/.test(all) && /0日/.test(all), all.slice(0, 300));
+    t('排泄ケア記録: 押した時も false', (await g.ctx.gatePass('hb')) === false);
+    t('排泄ケア記録: ほかの5つは今までどおり押せる', ['b-res-cut', 'b-tp-cut', 'b-adm-cut', 'b-stf-cut', 'b-live-weight'].every((id) => !g.nodes[id].disabled));
+    const HBRPC3 = { shadow_diff_days: () => ({ data: { ok: true, today: TODAY, rows: ['res', 'tp', 'adm', 'stf', 'weight', 'hb'].flatMap((k) => rows(k, [[0, 0], [1, 0], [2, 0]])) }, error: null }), device_seen_summary: HBRPC.device_seen_summary };
+    const g3 = glue({ rpc: HBRPC3 });
+    await g3.ctx.loadGate(g3.sb);
+    t('排泄ケア記録: hb の差0が3日あり4項目がそろえば押せる', !g3.nodes['gate-hb'].hidden && !g3.nodes['b-hb-cut'].disabled && (await g3.ctx.gatePass('hb')) === true);
+    const g2 = glue({ rpc: HBRPC, hidden: { 'b-hb-cut': true } });
+    await g2.ctx.loadGate(g2.sb);
+    t('排泄ケア記録: ボタンが出ていない時は表も出さない', g2.nodes['gate-hb'].hidden);
   }
   {
     const g = glue({ rpc: OKRPC, fetchFail: true });
@@ -228,6 +281,7 @@ const texts = (n) => [n.textContent].concat((n.kids || []).flatMap(texts));
   {
     const g = glue({ rpc: OKRPC, from: { audit_log: { data: [{ at: '2026-11-03T01:00:00Z', entity: 'adm_mode', entity_ids: ['live'] }], error: null } } });
     await g.ctx.loadGate(g.sb);
+    t('今日入居調整を切り替えた後は排泄ケア記録も押せない', g.nodes['b-hb-cut'].disabled);
     t('今日入居調整を切り替えた後は、ほかの4つは押せず、入居調整は押せる', g.nodes['b-tp-cut'].disabled && g.nodes['b-res-cut'].disabled && g.nodes['b-stf-cut'].disabled && g.nodes['b-live-weight'].disabled && !g.nodes['b-adm-cut'].disabled);
   }
   {
@@ -244,12 +298,16 @@ const texts = (n) => [n.textContent].concat((n.kids || []).flatMap(texts));
     t('入居調整（runAdmOp）', at('runAdmOp', "gatePass('adm')"));
     t('職員マスタ（runStfOp）', at('runStfOp', "gatePass('stf')"));
     t('体重（setWeightMode・本番にする時だけ）', at('setWeightMode', "mode === 'live' && !(await gatePass('weight'))"));
+    t('排泄ケア記録（runHbOp・切り替える時だけ）', at('runHbOp', "gatePass('hb')") && fn('runHbOp').indexOf("gatePass('hb')") > fn('runHbOp').indexOf("if (kind === 'cut') {"));
+    t('排泄ケア記録: 表の確かめはスイッチ・1日1つの確かめより前（今ある確かめは残す）', (() => { const b = fn('runHbOp'), g = b.indexOf("gatePass('hb')"); return g > 0 && g < b.indexOf('hbOn()', b.indexOf("if (kind === 'cut') {")) && g < b.indexOf("oneDayOk('hb', say)"); })());
+    t('排泄ケア記録: 操作の後は表とボタンを読み直す', /finally \{[\s\S]*await gateRefresh\(sb\);[\s\S]*\}\s*\}$/.test(fn('runHbOp')));
     t('備品・シフト分析には付けない（依頼の外）', fn('runSupOp').indexOf('gatePass') < 0 && fn('runSaOp').indexOf('gatePass') < 0);
     t('操作の後は、読み直しが途中で止まっても表とボタンを新しくする（後始末で gateRefresh を別に呼ぶ）', ['runResOp', 'runTpOp', 'runAdmOp', 'runStfOp'].every((n) => /\} catch \(e\) \{[^\n]*\}\n\s*await gateRefresh\(sb\);/.test(fn(n))));
     t('押した時はまずボタンを押せなくしてから読み直す（二度押し防止）', /b\.disabled = true;\s*await gateRefresh/.test(fn('gatePass')));
     t('戻す時は確かめない（切り替える時だけ）', ['runResOp', 'runTpOp', 'runAdmOp', 'runStfOp'].every((n) => { const b = fn(n); return b.indexOf('gatePass') > b.indexOf("if (kind === 'cut') {"); }));
     t('表の置き場所が5つのボタンの前にある', ['res', 'tp', 'adm', 'stf'].every((k) => HTML.indexOf('id="gate-' + k + '"') > 0 && HTML.indexOf('id="gate-' + k + '"') < HTML.indexOf('id="b-' + k + '-cut"'))
       && HTML.indexOf('id="gate-weight"') > 0 && HTML.indexOf('id="gate-weight"') < HTML.indexOf('id="b-live-weight"'));
+    t('排泄ケア記録の表の置き場所がボタンの前にある', HTML.indexOf('id="gate-hb"') > 0 && HTML.indexOf('id="gate-hb"') < HTML.indexOf('id="b-hb-cut"'));
     t('判定の部品を写しの見比べより先に読み込む', HTML.indexOf('src="su-cutover-gate.js') > 0 && HTML.indexOf('src="su-cutover-gate.js') < HTML.indexOf('src="shadow-check.js'));
     t('CSP の通信先に GitHub の API を足した', /connect-src [^;]*https:\/\/api\.github\.com/.test(HTML));
   }

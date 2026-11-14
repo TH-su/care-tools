@@ -209,9 +209,10 @@ function rmGenoCloud_(r){
     genoPaintBoxes($('viewBox'),id,curResident.name,x.row);
   });
 }
-function openGenogram(id,name){
+/* 渡すのは番号だけ。氏名は URL に載せない（家族構成図が共有名簿で引く・代表者の決定 2026-11-13） */
+function openGenogram(id){
   if(id==null)return;
-  location.href=GENOGRAM_APP+'?resident='+encodeURIComponent(id)+(name?'&name='+encodeURIComponent(name):'');
+  location.href=GENOGRAM_APP+'?resident='+encodeURIComponent(id);
 }
 
 /* ── ユーティリティ ── */
@@ -819,10 +820,9 @@ var PER_RESIDENT_APPS={
 function residentLink(href,id,name){
   if(id==null||id==='')return href;
   if(!Object.prototype.hasOwnProperty.call(PER_RESIDENT_APPS,href))return href;
-  /* ジェノグラムだけは既存の受け口（?resident=&name=）に合わせる。
-     あちらは氏名が文書の保存キーそのものなので name が必須。勝手に変えると既存導線が壊れる。 */
+  /* ジェノグラムだけは受け口の名前が ?resident=。氏名は渡さない（家族構成図が共有名簿で番号から引く・代表者の決定 2026-11-13） */
   if(href==='genogram.html'){
-    return href+'?resident='+encodeURIComponent(id)+(name?'&name='+encodeURIComponent(name):'');
+    return href+'?resident='+encodeURIComponent(id);
   }
   return href+'?masterId='+encodeURIComponent(id);
 }
@@ -1607,16 +1607,18 @@ function renderRoster(){
   if(curView==='fl2'||curView==='fl4'){
     /* ★階が判定できない人（居室未登録等）を必ず「階未設定」として出す。
        落とすと画面から消え、誰も気づけない（daycare-roster と同じ方針）。 */
-    var f1=[],f2=[],f0=[];
-    list.forEach(function(r){var f=roomToFloor(r.room);(f===1?f1:f===2?f2:f0).push(r)});
-    f1.sort(byRoom); f2.sort(byRoom); f0.sort(byKana);
-    var s1=secHtml(floorLbl(1)+'入居者',f1), s2=secHtml(floorLbl(2)+'入居者',f2),
-        s0=secHtml('階未設定（居室が未登録・1/2以外で始まる）',f0,'nofloor');
+    /* 区画は １階・２階 と、施設情報の floors にある3階以上（下の階から・2026-11-14 第6段 K5）。3階以上が無ければ今と同じ並び */
+    var fNos=[1,2]; ((window.SUFacility&&typeof SUFacility.floors==='function')?SUFacility.floors():[]).forEach(function(x){ if(x&&x.no>2&&fNos.indexOf(x.no)<0) fNos.push(x.no); }); fNos.sort(function(a,b){return a-b});
+    var fb={0:[]}; fNos.forEach(function(n){fb[n]=[]});
+    list.forEach(function(r){var f=roomToFloor(r.room);(fb[f]||fb[0]).push(r)});
+    fNos.forEach(function(n){fb[n].sort(byRoom)}); fb[0].sort(byKana);
+    var secs=fNos.map(function(n){return secHtml(floorLbl(n)+'入居者',fb[n])}),
+        s0=secHtml('階未設定（居室が未登録・'+fNos.join('/')+'以外で始まる）',fb[0],'nofloor');
     html=(curView==='fl2')
       // 左右に1列ずつ。階未設定はその下に全幅で。
       // ★片側が0名でも空の div を置く。置かないと残った側が左列に寄り「左=1階」が崩れる
-      ? '<div class="fl-2col">'+(s1||'<div></div>')+(s2||'<div></div>')+'</div>'+s0
-      : '<div class="fl-4col">'+s1+s2+s0+'</div>';    // 上に1階4列・下に2階4列
+      ? '<div class="fl-2col">'+secs.map(function(x){return x||'<div></div>'}).join('')+'</div>'+s0
+      : '<div class="fl-4col">'+secs.join('')+s0+'</div>';    // 上に1階4列・下に2階4列（3階以上はその下・K5）
   }else if(curView==='kana'){
     var bucket={},other=[];
     list.forEach(function(r){var k=kanaRowOf(r); if(!k){other.push(r);return} (bucket[k]=bucket[k]||[]).push(r)});
@@ -2275,11 +2277,13 @@ function mfHtml(){
   if(buckets.other.length) cats.push(['other','その他']);
   if(buckets.none.length)  cats.push(['none','未設定']);
   var fl2=floorLbl(2), fl1=floorLbl(1);
+  /* 3階以上（施設情報の floors にある階・上の階から）は ２階 の上に並べる（2026-11-14 第6段 K5）。無ければ今と同じ */
+  var fUp=[]; ((window.SUFacility&&typeof SUFacility.floors==='function')?SUFacility.floors():[]).forEach(function(x){ if(x&&x.no>2&&fUp.indexOf(x.no)<0) fUp.push(x.no); }); fUp.sort(function(a,b){return b-a});
   var secs=cats.map(function(c){
     var a=buckets[c[0]];
-    var by={2:[],1:[],0:[]};
-    a.forEach(function(r){ var f=roomToFloor(r.room); (f===2?by[2]:f===1?by[1]:by[0]).push(r); });
-    var rows=[[2,'［'+fl2+'］'],[1,'［'+fl1+'］'],[0,'［階未設定］']].map(function(fp){
+    var by={2:[],1:[],0:[]}; fUp.forEach(function(n){by[n]=[]});
+    a.forEach(function(r){ var f=roomToFloor(r.room); (by[f]||by[0]).push(r); });
+    var rows=fUp.map(function(n){return [n,'［'+floorLbl(n)+'］']}).concat([[2,'［'+fl2+'］'],[1,'［'+fl1+'］'],[0,'［階未設定］']]).map(function(fp){
       var list=by[fp[0]].sort(byKana);
       if(!list.length) return '';
       return '<div class="mf-row"><span class="mf-fl">'+esc(fp[1])+'</span><span class="mf-nms">'+
@@ -4116,13 +4120,17 @@ function mdRemember(tr){
    保存しても「変更がありません」なのに離脱確認だけ出る（2026-09-08 レビュー L-3）。 */
 function mdMarkDirty(tr){ mdRemember(tr); mdRecalcDirty_(); }
 /* 薬を手で足す。★辞書に既にある名前は足さない（同じ行が2つできると、どちらが正か分からなくなる） */
-function mdAddDrug(){
+async function mdAddDrug(){
   if(curView!=='md') return;
   /* ★辞書が取れていない間は足さない。mdMap が null だと重複判定が必ず素通りし、
      サーバーに既にある薬を「無い」と見なして上書きする＝他端末の効能と『確認済み』を
      黙って潰す（原則4・multi-device-sync 原則3）。 */
   if(!mdDict){ toast('薬効辞書を取得できていないため、追加できません',false); return; }
-  var raw=prompt('足す薬剤名を入れてください（用量は付けても構いません。末尾の用量は自動で外します）');
+  /* 入力は画面の中の窓（SUDialog.prompt）で聞く。答えを待つ間に端末の用途（世代 mdGen）・表示・辞書が変わったら、何もしない（2026-11-14 第6段 RM-01） */
+  var gen=mdGen, d0=mdDict;
+  function same_(){ return gen===mdGen && curView==='md' && mdDict===d0 && !!mdDict; }
+  var raw=await SUDialog.prompt('足す薬剤名を入れてください（用量は付けても構いません。末尾の用量は自動で外します）');
+  if(!same_()) return;
   if(raw==null) return;
   var name=mdDrugName(raw);
   if(!name){ toast('薬剤名が読み取れませんでした',false); return; }
@@ -4139,7 +4147,8 @@ function mdAddDrug(){
       : ('「'+name+'」は既に一覧にあります'), !mdIsHidden(name,ent0));
     return;
   }
-  var eff=prompt('「'+name+'」の効能（8文字以内が目安・後から直せます）','');
+  var eff=await SUDialog.prompt('「'+name+'」の効能（8文字以内が目安・後から直せます）','');
+  if(!same_()) return;
   if(eff==null) return;
   mdNew.push(name);
   mdEdits[name]={effect:String(eff||'').trim().slice(0,40), ok:false};   /* 入力欄と同じ上限 */
@@ -5523,14 +5532,14 @@ function yjBulkHtml_(){
   if(L.ok.length||L.none.length){
     h+='<div class="yj-actions"><button type="button" class="btn btn-pri" id="yjBulkGo"'+(can?'':' disabled')+'>'+
       (n?'チェックした '+n+' 人をまとめて反映':'変更なしの書類を終わりにする')+(n&&L.none.length?'（変更なし '+L.none.length+' 件も終わりにします）':'')+'</button>'+
-      (S.server!=='ok'&&!S.bulkBusy?'<span class="yj-sub">入居者マスタGASの版を確かめられないため、まだ反映できません</span>':'')+'</div>';
+      (S.server!=='ok'&&!S.bulkBusy?'<span class="yj-sub">入居者マスタの受け口を確かめられないため、まだ反映できません</span>':'')+'</div>';
   }
   return h+'</section>';
 }
 async function yjBulkApply_(){
   var S=yjSt; if(!S||S.bulkBusy||S.cur||S.phase!=='queue') return;
   if(S.preDone<S.preTotal) return;
-  if(S.server!=='ok'){ S.bulkMsg='入居者マスタGASの版を確かめられないため、まとめて反映できません（何も書いていません）'; yjPaint_(); return; }
+  if(S.server!=='ok'){ S.bulkMsg='入居者マスタの受け口を確かめられないため、まとめて反映できません（何も書いていません）'; yjPaint_(); return; }
   if(($('sc-edit')&&$('sc-edit').classList.contains('on'))||($('mBulk')&&$('mBulk').classList.contains('on'))){
     S.bulkMsg='編集画面・一括編集を閉じてから反映してください'; yjPaint_(); return; }
   var L=yjBulkLists_(), ok=L.ok.filter(function(i){ return S.docs[i].pre.on; }), none=L.none;
@@ -6856,6 +6865,13 @@ document.addEventListener('click',function(e){
   if(!confirm('保存していない変更があります。メニューへ移ると消えます。移りますか？')){ e.preventDefault(); return; }
   rmMenuLeaveOk_=true; setTimeout(function(){ rmMenuLeaveOk_=false; },3000);
 });
+/* 見出しの「使い方」で離れる時も、「← メニュー」と同じ判定で確かめる（代表者の決定 2026-11-13・iOS Safari は beforeunload の確かめを出さないため） */
+document.addEventListener('click',function(e){
+  var a=e.target&&e.target.closest?e.target.closest('a.su-help-link'):null;
+  if(!a||!rmMenuLeaveDirty_()) return;
+  if(!confirm('保存していない変更があります。使い方へ移ると消えます。移りますか？')){ e.preventDefault(); return; }
+  rmMenuLeaveOk_=true; setTimeout(function(){ rmMenuLeaveOk_=false; },3000);
+});
 /* 未保存のまま閉じる・再読込するのを止める（メモリにしか無いため。原則4） */
 window.addEventListener('beforeunload',function(e){
   if(rmMenuLeaveOk_) return;   /* 「← メニュー」の確かめで「はい」を押した直後は二重に聞かない（2026-11-12） */
@@ -7814,7 +7830,8 @@ function yjlLoad_(id){
 }
 /* ── 薬情の反映の見直し（2026-11-11 代表者の決定）──
    まとめて反映・完全入れ替え（すべて入れ替え・11/10 夜の自動の中止）で定期薬を消した・変えた方に、詳細画面の「薬剤情報」の欄の頭へ
-   「まとめて反映（日時・確かめた人）」の印を7日間出し、看護職・薬剤師が「見直した」を押すと消す。管理者には一覧（🔎 薬情の見直し）と、
+   「まとめて反映（日時・確かめた人）」の印を7日間出し、看護職・薬剤師が「見直した」を押すと消す。
+   7日を過ぎて見直されていない方は赤い「期限切れ」の印にし、反映から14日まで残す（2026-11-13 代表者の決定・期限切れの語のほかの文は仮置き）。管理者には一覧（🔎 薬情の見直し）と、
    メニューの札の数（rm_yjrev_due・件数と日付だけ）を出す。
    ★印を出すかは YakujoCalc.reviewMark（純関数・check/unit/yakujo_review_test.js）。記録は反映記録（yjLog・yjAudit）を使う
    ★「見直した」を押せるかはサーバー（入居者マスタの GAS／res-write の yjReview）が、ログインと「アプリの使える人」の「薬の見直し」
@@ -7852,9 +7869,10 @@ function yrMarkHtml_(id, rows){
   var login=mcHasLogin_();
   return '<div class="yr-box" role="note">'+ms.map(function(m, i){
     var g=yrGoneText_(m), msg=yrMsg[yrKey_(m)]||'';
-    return '<div class="yr-mark"><div class="yr-t">⚠ 見直してください：'+esc(m.text)+'</div>'+
+    var over=m.overdue===true;
+    return '<div class="yr-mark'+(over?' yr-over':'')+'"><div class="yr-t">⚠ '+(over?'<span class="yr-tag">期限切れ</span> ':'')+'見直してください：'+esc(m.text)+'</div>'+
       (g?'<div class="yr-g">'+esc(g)+(m.truncated?'（記録が長く、途中までです）':'')+'</div>':'')+
-      '<div class="yr-u">'+esc(m.until)+' まで出します。看護職・薬剤師が今の定期薬を見直したら「見直した」を押してください。</div>'+
+      '<div class="yr-u">'+(over?'見直しの期限（'+esc(m.until)+'）を過ぎています。'+esc(m.end)+' まで出します。':esc(m.until)+' までに見直してください（過ぎると「期限切れ」になり、'+esc(m.end)+' まで出します）。')+'看護職・薬剤師が今の定期薬を見直したら「見直した」を押してください。</div>'+
       '<div class="yr-acts">'+(login?'<button type="button" class="btn btn-ok yr-done" data-i="'+i+'"'+(yrBusy?' disabled':'')+'>✔ 見直した</button>':'<span class="yr-msg">「見直した」はログインしてから押せます</span>')+
       (msg?'<span class="yr-msg" role="status">'+esc(msg)+'</span>':'')+'</div></div>';
   }).join('')+'</div>';
@@ -7968,14 +7986,18 @@ function yrPaint_(){
   var A=yrAudit, h='';
   if(!A||A.loading&&!A.rows){ box.innerHTML='<p class="yr-note" role="status">読み込んでいます…</p>'; return; }
   if(A.err){ box.innerHTML='<p class="yr-note" role="alert">読み込めませんでした：'+esc(A.err)+'</p>'; return; }
-  var now=Date.now(), pend=[];
-  A.rows.forEach(function(e){ var k=YakujoCalc.reviewMark(e, now); if(k) pend.push(k); });
+  var now=Date.now(), pend=[], nOver=0;
+  A.rows.forEach(function(e){ var k=YakujoCalc.reviewMark(e, now); if(k){ pend.push(k); if(k.overdue===true) nOver++; } });
   var open=function(id){ return '<button type="button" class="btn btn-gray yr-go" data-id="'+esc(id)+'">開く</button>'; };
-  h+='<h3 class="yr-sec">見直し待ち '+pend.length+' 件</h3>';
-  h+='<p class="yr-note">まとめて反映・すべて入れ替えで定期薬を消した・変えた方です。反映から7日間、詳細画面の「薬剤情報」の欄に印が出ます。</p>';
+  h+='<h3 class="yr-sec">見直し待ち '+pend.length+' 件'+(nOver?'（うち<span class="yr-over-n">期限切れ '+nOver+' 件</span>）':'')+'</h3>';
+  h+='<p class="yr-note">まとめて反映・すべて入れ替えで定期薬を消した・変えた方です。反映から7日間、詳細画面の「薬剤情報」の欄に印が出ます。7日を過ぎて見直されていない方は「期限切れ」（赤）にし、反映から14日まで印を出します。</p>';
   if(pend.length){
-    h+='<div class="yr-wrap"><table class="yr-tbl"><thead><tr><th scope="col">番号</th><th scope="col">印</th><th scope="col">無くなった行</th><th scope="col">印が出る期限</th><th scope="col"></th></tr></thead><tbody>'+
-      pend.map(function(k){ return '<tr><td>'+esc(k.id)+'</td><td>'+esc(k.text)+'</td><td>'+esc(yrGoneText_(k)||'なし（変えただけ）')+'</td><td>'+esc(k.until)+'</td><td>'+open(k.id)+'</td></tr>'; }).join('')+
+    h+='<div class="yr-wrap"><table class="yr-tbl"><thead><tr><th scope="col">番号</th><th scope="col">印</th><th scope="col">無くなった行</th><th scope="col">見直しの期限</th><th scope="col"></th></tr></thead><tbody>'+
+      pend.map(function(k){
+        var over=k.overdue===true;
+        return '<tr'+(over?' class="yr-over"':'')+'><td>'+esc(k.id)+'</td><td>'+(over?'<span class="yr-tag">期限切れ</span> ':'')+esc(k.text)+'</td><td>'+esc(yrGoneText_(k)||'なし（変えただけ）')+'</td><td>'+
+          (over?'期限切れ（'+esc(k.until)+'）・'+esc(k.end)+' まで出します':esc(k.until))+'</td><td>'+open(k.id)+'</td></tr>';
+      }).join('')+
       '</tbody></table></div>';
   }
   var au=YakujoCalc.replaceAudit(A.rows);
@@ -8602,7 +8624,7 @@ function renderView(r){
       '<div class="row-cells"><div class="cell" style="flex:1;border-right:none"><span class="lab">生活リズム</span><div class="rhythm">'+(rh||'　')+'</div></div></div>'+
     '</div></div>'+
     '<div style="flex:1.25;min-width:0;display:flex;border-left:1px solid var(--g9)"><div class="sec-lbl">家族構成図</div><div class="sec-body" style="display:flex;padding:4px">'+
-      '<div class="geno-box" data-geno="'+esc(r.id)+'" data-name="'+esc(r.name||'')+'" title="クリックで家族構成図の作成／編集" style="flex:1;min-height:150px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--g0);border:1px dashed var(--g3);border-radius:8px;overflow:hidden">'+genoInner+'</div>'+
+      '<div class="geno-box" data-geno="'+esc(r.id)+'" title="クリックで家族構成図の作成／編集" style="flex:1;min-height:150px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--g0);border:1px dashed var(--g3);border-radius:8px;overflow:hidden">'+genoInner+'</div>'+
     '</div></div>'+
   '</div>';
   /* ══ 入居者基本情報（外部様式）ここから ══
@@ -8902,7 +8924,7 @@ function renderView(r){
   paintHospBtn(r);
   // ジェノグラム欄クリック → 家系図アプリで作成/編集
   var gb=$('viewBox').querySelector('.geno-box');
-  if(gb)gb.addEventListener('click',function(){openGenogram(this.getAttribute('data-geno'),this.getAttribute('data-name'))});
+  if(gb)gb.addEventListener('click',function(){openGenogram(this.getAttribute('data-geno'))});
   /* ほかの端末で描いた家族構成図が新しければ、枠の中身だけ差し替える（統合 0056） */
   rmGenoCloud_(r);
   viewNavPaint_();   /* 目次と、欄をたたむ見出し（画面だけ・2026-10-16 第2弾） */
@@ -12503,6 +12525,9 @@ function verifyMasterUrl(url){
     }catch(e){ fin('offline'); }
   });
 }
+/* 職員に見える取り違えの断りの文（2026-11-13 第6段 RM-01 反証・文は仮置き）。MASTER_WRONG_MSG はフェイスシート・接続設定と3画面で一字一句同じ文のまま残し
+   （非公開の試験が確かめる・判定と verifyMasterUrl の並びも3画面と同じに保つ）、画面にはこちらを出す（フェイスシートと同じ文） */
+var MASTER_WRONG_SAY='この接続先は入居者マスタのものではありません（薬学管理・申送など別のアプリの接続先の可能性があります）';
 function saveSyncCfg(){
   /* ★URL を変える保存は、書き込む前に入居者マスタのGASかを確かめる（2026-10-10）。
      別アプリのGASと分かった時だけ止め、今の接続先を残す。通信できず確かめられない時は止めない。
@@ -12523,11 +12548,11 @@ function saveSyncCfg(){
       _ins.forEach(function(e){ e.disabled=false; });
       /* 確かめている間に設定の窓を閉じた・入力が変わった時は書かない（遅れて届いた答えで、取りやめた保存を走らせない） */
       if((_wasOpen && !$('mSync').classList.contains('on')) || ($('cfgUrl').value||'').trim()!==_nu) return;
-      if(v==='wrong'){ SUDialog.alert('保存していません：'+MASTER_WRONG_MSG+'。\n今の接続先のままです。'); return; }
+      if(v==='wrong'){ SUDialog.alert('保存していません：'+MASTER_WRONG_SAY+'。\n今の接続先のままです。'); return; }
       saveSyncCfg._checked=true;
       var _r; try{ _r=saveSyncCfg(); }finally{ saveSyncCfg._checked=false; }
       /* 確かめられなかった知らせは、保存の知らせの後に出す（先に出すと上書きされて見えない）。画面の中の窓で止めた時は、窓を閉じた後に出す（2026-11-13） */
-      if(v==='offline') Promise.resolve(_r).then(function(){ toast('保存しました。ただし通信できず、入居者マスタのGASかは確かめられませんでした'); });
+      if(v==='offline') Promise.resolve(_r).then(function(){ toast('保存しました。ただし通信できず、入居者マスタの接続先かは確かめられませんでした'); });
     });
     return;
   }
@@ -12580,8 +12605,8 @@ function testSync(){
        確かめは合言葉も CFG も使わないので、試しの接続先はここで戻す（メモリに残る時間を延ばさない） */
     CFG.url=saved.url;CFG.token=saved.token;
     return verifyMasterUrl(_tu).then(function(v){
-      if(v==='wrong') return SUDialog.alert('⚠️ '+MASTER_WRONG_MSG+'。');
-      else toast(v==='ok'?'✅ 接続OK（入居者マスタのGASと確認）':'✅ 接続OK');
+      if(v==='wrong') return SUDialog.alert('⚠️ '+MASTER_WRONG_SAY+'。');
+      else toast(v==='ok'?'✅ 接続OK（入居者マスタの接続先と確認）':'✅ 接続OK');
     });
   }).catch(function(e){toast('⚠️ つながりませんでした（'+rmErrWords_(e,'接続テスト')+'）。URLと合言葉を確かめてください')}).then(function(){CFG.url=saved.url;CFG.token=saved.token});
 }

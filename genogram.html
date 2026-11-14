@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-font">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ZNxG1eL2PUPeZ0MgyuEi8du++zYtrsobX3ncdBBue2Q='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-w0+QhxEGxs6rbJCKjy5qSGpLeJWW5EztXrLX7iu0DHk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 入居者情報を表示する画面のため、ブラウザ・中継キャッシュに残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -15,10 +15,10 @@
 <script src="su-errors.js?v=2026-11-12"></script>
 <script src="su-cfg-hint.js?v=2026-11-10"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
-<script src="su-resident-hop.js?v=2026-11-02"></script>
-<script src="su-geno.js?v=2026-11-08"></script>
+<script src="su-resident-hop.js?v=2026-11-13"></script>
+<script src="su-geno.js?v=2026-11-14"></script>
 <!-- 止めて知らせる窓（alert・confirm）の代わりに画面の中の窓を出す共通部品（2026-11-12 代表者の決定）。画面のスクリプトより前に置く -->
-<script src="su-dialog.js?v=2026-11-13.2"></script>
+<script src="su-dialog.js?v=2026-11-14.2"></script>
 <script src="konva-9.3.22.min.js"></script>
 <!-- PDF 出力の部品（jsPDF 2.5.1）は jspdf-2.5.1.umd.js に同梱し、開いた後の手すきか PDF 出力を最初に押した時に読み込む（2026-10-24・起動を軽くするため） -->
 <style>
@@ -260,6 +260,11 @@ textarea.fi{resize:vertical;min-height:60px}
 /* 幅900〜1099px は、見出しの右の入力群が「← メニュー」の分だけ早く2段目へ落ちないよう、副題を隠し（900px 以下と同じ）リンクを詰める（2026-11-12） */
 @media screen and (min-width:900px) and (max-width:1099px){.hdr-l .sub{display:none} .su-menu-back{padding:0 4px;font-size:0.75rem}}
 @media print{.su-menu-back{display:none !important}}
+/* 見出しの「使い方」（「← メニュー」の右隣・同じ大きさと色・使い方の画面のこの画面の節へ・画面だけ・印刷しない・代表者の決定 2026-11-13） */
+.su-help-link{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+@media screen and (max-width:899px){.su-help-link{min-height:44px}}
+@media screen and (min-width:900px) and (max-width:1099px){.su-help-link{padding:0 4px;font-size:0.75rem}}
+@media print{.su-help-link{display:none !important}}
 /* 家族構成図の保存先の仕組み（受け口）が古い時の消せない帯（代表者の指示 2026-11-13・画面だけ・印刷しない） */
 .geno-stale-bar{background:var(--warn-bg);color:var(--g9);border-bottom:2px solid var(--warn-tx);padding:6px 14px;font-size:0.875rem;font-weight:700;text-align:center}
 @media print{.geno-stale-bar{display:none !important}}
@@ -273,6 +278,7 @@ textarea.fi{resize:vertical;min-height:60px}
 <div class="topbar">
   <div class="hdr">
     <a class="hbtn su-menu-back" href="index.html">← メニュー</a>
+    <a class="hbtn su-help-link" href="help.html?sec=genogram">使い方</a>
     <div class="hdr-l">
       <h1>ジェノグラム作成</h1>
       <div class="sub">家族関係図を作成して PDF / JPG で出力</div>
@@ -325,10 +331,11 @@ textarea.fi{resize:vertical;min-height:60px}
           <li>「接続テスト」で成功と出たら「保存して閉じる」を押します。合言葉の誤りと出た時は、管理者に Google の受け口の側の合言葉（<code>GENOGRAM_TOKEN</code>）も確かめてもらいます。</li>
         </ol>
         <p class="setup-sub" id="cfgNoConnGuide">URL と合言葉が入っていない間は、図はこの端末にだけ保存され、ほかの端末からは見えません。<a href="connection-settings.html">接続設定</a>の画面の「ジェノグラム（家族構成図）」の欄に入れても、ここに入ったことになります。</p>
-        <p class="setup-sub">下の ① は、施設で最初に1回だけ管理者が行う準備です。職員の方は読み飛ばしてかまいません。</p>
+        <p class="setup-sub" id="cfgAdminNote" hidden>下の ① は、施設で最初に1回だけ管理者が行う準備です。職員の方は読み飛ばしてかまいません。</p>
       </div>
 
-      <details class="setup-step" id="cfgAdminSetup" open>
+      <!-- ① は管理者のログインと確かめられた時だけ出す（既定は隠す・openCloudModal・2026-11-13 第6段 GN-02・仮置き） -->
+      <details class="setup-step" id="cfgAdminSetup" open hidden>
         <summary><strong>① Googleスプレッドシート ＋ Apps Script の準備</strong>（管理者が施設で最初に1回だけ）</summary>
         <ol class="setup-list">
           <li>Googleアカウントにログイン → <a href="https://sheets.new" target="_blank" rel="noopener">https://sheets.new</a> で新規スプレッドシートを作成。シート名を「<code>genograms</code>」に変更。</li>
@@ -1244,18 +1251,24 @@ function applyZOrder() {
 }
 
 // ========== Render ==========
-/* 本人確認の帯（「〇〇さんを開いています」＋「この方の画面：」）。?resident=&name= で開いた方の図を開いている間だけ出す。
+/* 本人確認の帯（「〇〇さんを開いています」＋「この方の画面：」）。?resident= で開いた方（氏名は共有名簿で引く）の図を開いている間だけ出す。
    別の方の図に切り替えたら消す（帯が取り違えの元にならないように）。出し消しで作図の枠の高さが変わるので、その時だけ枠を合わせ直す */
 let suHopKey = '';
+/* 「入居者マスタを一度開いて」は現場の端末ではできない操作なので、事務所PCの時だけ添える（文は仮置き） */
+const SU_NAME_MISSING_MSG = '入居者マスタの名簿から、この方のお名前を読めませんでした。名前の欄は空のままです。入居者マスタを一度開いてから、もう一度この画面を開いてください。';
+const SU_NAME_MISSING_MSG_FIELD = 'お名前を読めませんでした。名前の欄は空のままです。';
 function suHopSync() {
   const bar = $('suHopBar'); if (!bar) return;
   const id = window._suMasterId, nm = window._suMasterName;
   const bd = window._suGenoBound;   /* 新しい保存先が「この方に結び付いた図」と答えた図（入居者マスタで名前を直した方・統合 0054）も、この方の図として帯を出す */
   const on = !!(id && nm && (state.clientName === nm || (bd && bd.id === String(id) && bd.name === state.clientName)) && typeof SUResHop === 'object' && SUResHop);
-  const key = on ? id + '\n' + nm : '';
+  /* 番号で開いたが名簿から氏名を引けなかった間（名前の欄が空のまま）は、同じ帯で知らせる（文は仮置き） */
+  const miss = !on && !!(window._suNameMissing && id && !state.clientName);
+  const key = on ? id + '\n' + nm : (miss ? 'miss' : '');
   if (key === suHopKey) return;
   suHopKey = key;
-  if (!on) { bar.hidden = true; bar.textContent = ''; }
+  if (miss) { bar.textContent = isFieldDevice() ? SU_NAME_MISSING_MSG_FIELD : SU_NAME_MISSING_MSG; bar.hidden = false; }
+  else if (!on) { bar.hidden = true; bar.textContent = ''; }
   else {
     const who = document.createElement('span');
     const b = document.createElement('b'); b.textContent = nm;
@@ -3343,7 +3356,7 @@ const CloudSync = (function() {
           if (e && e.refused) {
             /* 新しい保存先がこの中身を受け付けなかった（書いていない・送り直しても同じ）。保留から外し、文を出す（統合 0054） */
             done.push({ item, landed: null });
-            try { setSyncStatus('err', '「' + pendingName(item) + '」はクラウドに入っていません: ' + e.message); } catch (e2) { genoNote_('保留の断りの表示', e2); }
+            try { setSyncStatus('err', '「' + pendingName(item) + '」はクラウドに入っていません: ' + genoBandWhy_(e, '保留の断り')); } catch (e2) { genoNote_('保留の断りの表示', e2); }
             failed++;
             continue;
           }
@@ -3433,7 +3446,7 @@ function suGenoNameKey(name) {
 }
 /* この保存で masterId のキーを書いてよいか。書いてよければその masterId、駄目なら '' を返す。
 
-   ★2026-08-13（実害）: URL の ?resident=<masterId> は ?name=<氏名> の方のもの。
+   ★2026-08-13（実害）: URL の ?resident=<masterId> は、起動時に共有名簿で引いた氏名（_suMasterName）の方のもの（2026-11-13 まで URL の ?name= で受けていた）。
      この束縛を見ずに書いていたため、マスタのAさんの欄から開いたまま【Bさんの文書】を
      読み込んで保存すると su_genograms[AさんのID] にBさんの図が入り、
      入居者マスタ・フェイスシートのAさんの「家族構成図」欄にBさんの家族が出ていた。
@@ -3603,6 +3616,35 @@ function sweepSuGenoThumbs() {
       if (k === 'ok' || k === 'fail') next(i + 1);   // 1件の形の断りは次へ。関数が無い・断られた・回線は打ち切る
     });
   })(0);
+}
+/* ?resident= の番号から、その方の氏名を共有名簿（su_residents_common・入居者マスタが書く・ここは読むだけ）で引く（純関数）。
+   番号の一致がちょうど1名で、氏名が入っている時だけその氏名。ほかは ''（決められない時に別の方の名前を出さない）。
+   ★氏名は URL で受け取らない（代表者の決定 2026-11-13）。入口は番号だけを渡す */
+function suGenoNameFromRoster(mid, roster) {
+  var id = (mid == null) ? '' : String(mid);
+  if (!id || !Array.isArray(roster)) return '';
+  var hit = roster.filter(function (r) { return !!r && r.masterId != null && String(r.masterId) === id; });
+  if (hit.length !== 1) return '';
+  return String(hit[0].name == null ? '' : hit[0].name).trim();
+}
+/* 起動で使う氏名を決める（純関数）。名簿で1名にだけ一致して氏名があればそれ。名簿にその番号が1件も無い時だけ、古い URL の氏名（oldName）を使う（仮置き）。
+   名簿に2件以上ある・名簿の氏名が空の時は ''（古い URL の氏名に戻さない・名前の欄を空にして帯で知らせる側へ倒す） */
+function suGenoPickName(mid, roster, oldName) {
+  var nm = suGenoNameFromRoster(mid, roster);
+  if (nm) return nm;
+  var id = (mid == null) ? '' : String(mid);
+  var hits = (id && Array.isArray(roster)) ? roster.filter(function (r) { return !!r && r.masterId != null && String(r.masterId) === id; }).length : 0;
+  return hits ? '' : String(oldName == null ? '' : oldName).trim();
+}
+/* 起動の URL から氏名（name=・古い入口が付けていたもの）を消した後の住所（純関数）。name が無ければ null（書き換えない）。
+   ほかの値（resident= など）と # の後ろはそのまま残す（再読み込みで同じ方を開くため） */
+function suGenoUrlWithoutName(search, pathname, hash) {
+  var p;
+  try { p = new URLSearchParams(search || ''); } catch (e) { return null; }
+  if (!p.has('name')) return null;
+  p.delete('name');
+  var q = p.toString();
+  return String(pathname || '') + (q ? '?' + q : '') + String(hash || '');
 }
 /* 図を消した時、su_genograms でその文書名の記録を持つ masterId（純関数）。氏名キーは含めない */
 function suGenoMidsOfName(m, name) {
@@ -4097,16 +4139,17 @@ async function saveDoc() {
         /* 新しい保存先がこの保存を受け付けなかった（統合 0054・見るだけのアカウント・ほかの方の図・同姓同名・大きすぎる等）。
            書いていないので「保存しました」とは出さない。保留にも積まない（送り直しても同じ断りになる） */
         thumbGo(false);   // 断られた版の絵も、ほかの端末へ送らない（ほかの方・同姓同名の方の図のことがある・統合 0056）
-        setSyncStatus('err', 'この端末にだけ保存（クラウド未反映）: ' + err.message);
+        const why = genoStaffWhy_(err, '保存の断り');   // 英語・技術の文は出さずに記録へ（2026-11-13 第6段 GN-03）
+        setSyncStatus('err', 'この端末にだけ保存（クラウド未反映）: ' + why);
         flashStatus(`「${name}」はクラウドに入っていません（この端末にだけ保存しました）`);
-        await SUDialog.alert('クラウドへは保存されていません。\n' + err.message + '\n\nこの内容はこの端末にのみ保存されています。');
+        await SUDialog.alert('クラウドへは保存されていません。\n' + why + '\n\nこの内容はこの端末にのみ保存されています。');
       } else if (err && err.stale) {
         /* 古い受け口で止めた（代表者の指示 2026-11-13）: 合言葉で断られた時と同じく保留には積まない（止めている間はクラウドの図が見えず、
            貼り替えた後の自動の再送で同じ名前の他端末の図を確認なしに上書きし得るため・仮置き）。図は端末に保存済み。印を残し、次の保存で突き合わせる */
         cloudUnverified.add(name);
         authUnverified.add(name);
         CloudSync.markConfirm(name);
-        setSyncStatus('err', 'この端末にだけ保存（クラウド未反映）: ' + err.message);
+        setSyncStatus('err', 'この端末にだけ保存（クラウド未反映）: ' + genoBandWhy_(err, '保存'));
         flashStatus(`「${name}」はこの端末にだけ保存しました（ほかの端末へは保存されていません）`);
       } else if ((err && err.auth) || authUnverified.has(name)) {
         /* 合言葉で断られた（2026-09-23）: 保留には積まない。合言葉の不一致は直すまで続き、その間は
@@ -4116,11 +4159,11 @@ async function saveDoc() {
         cloudUnverified.add(name);
         authUnverified.add(name);
         CloudSync.markConfirm(name);
-        setSyncStatus('err', 'この端末にだけ保存（クラウド未反映）: ' + err.message);
+        setSyncStatus('err', 'この端末にだけ保存（クラウド未反映）: ' + genoBandWhy_(err, '保存'));
         flashStatus(`「${name}」はこの端末にだけ保存しました（合言葉・通信を確かめてから、もう一度保存してください）`);
       } else {
         CloudSync.queuePending({ kind: 'save', doc, needsConfirm: cloudUnverified.has(name) || authUnverified.has(name), dirtySeq });
-        setSyncStatus('err', '同期失敗（キューに保留）: ' + err.message);
+        setSyncStatus('err', '同期失敗（キューに保留）: ' + genoBandWhy_(err, '保存'));
       }
     }
   }
@@ -4274,7 +4317,7 @@ async function loadDoc(name, opts) {
     } catch (err) {
       cloudFetchFailed = true;
       // 端末データが無い時に「端末データを使用」は実態と違うため、状況で言い分ける
-      setSyncStatus('err', (localDoc ? '取得失敗（端末データを使用）: ' : '取得失敗（新規として開始）: ') + err.message);
+      setSyncStatus('err', (localDoc ? '取得失敗（端末データを使用）: ' : '取得失敗（新規として開始）: ') + genoBandWhy_(err, '読込'));
       doc = localDoc;
     }
   } else {
@@ -4397,14 +4440,14 @@ async function deleteCurrentDoc() {
     } catch (err) {
       if (err && err.refused) {
         /* 新しい保存先がこの削除を受け付けなかった（統合 0054）。クラウドの図は残っている。端末の図も残し、積まない */
-        setSyncStatus('err', 'クラウドからは削除できていません: ' + err.message);
+        setSyncStatus('err', 'クラウドからは削除できていません: ' + genoBandWhy_(err, '削除'));
         flashStatus(`「${name}」は削除できませんでした（端末の図も残しています）`);
         return;
       }
       if (err && (err.auth || err.stale)) {
         /* 合言葉で断られた削除・古い受け口で止めた削除（2026-11-13）は積まない（2026-09-23）。断られている間は一覧からクラウドの図が見えず、
            同じ名前の他端末の図を、合言葉を直した後の自動の再送で消し得るため。クラウド側は残る */
-        setSyncStatus('err', 'クラウドからは削除できていません: ' + err.message);
+        setSyncStatus('err', 'クラウドからは削除できていません: ' + genoBandWhy_(err, '削除'));
         flashStatus(`「${name}」は削除できませんでした（端末の図も残しています）`);
         return;
       } else if (err && err.conflict) {
@@ -4416,7 +4459,7 @@ async function deleteCurrentDoc() {
       } else {
         removeLocal();
         CloudSync.queuePending({ kind: 'delete', name });
-        setSyncStatus('err', '削除の同期失敗（キューに保留）: ' + err.message);
+        setSyncStatus('err', '削除の同期失敗（キューに保留）: ' + genoBandWhy_(err, '削除'));
       }
     }
   } else {
@@ -4832,6 +4875,37 @@ function openCloudModal() {
   try { $('cfgFirstGuide').hidden = !!(!cfg.gasUrl && window.SUGeno && window.SUGeno.liveHint()); } catch (e) { try { window.SUErrors && window.SUErrors.note('保存・同期の失敗', e, 'genogram:初回の案内'); } catch (_) { /* 記録できなくても止めない */ } }
   $('cloudModal').hidden = false;
   $('cfgResult').hidden = true;
+  /* 管理者向けの受け口の準備（①・Apps Script・デプロイの手順）は、管理者のログインと確かめられた時だけ出す（2026-11-13 第6段 GN-02・仮置き）。
+     開くたびにまず隠し、確かめが遅れた・確かめられない時は隠したまま（職員向けに倒す）。見せ方を決めるだけで、守りには使わない */
+  const showAdmin = (on) => { ['cfgAdminSetup', 'cfgAdminNote'].forEach((id) => { const el = $(id); if (el) el.hidden = !on; }); };
+  try {
+    showAdmin(false);
+    if (typeof CloudSync.thumbIsAdmin === 'function') {
+      Promise.resolve(CloudSync.thumbIsAdmin()).then((a) => { if (a === true && !$('cloudModal').hidden) showAdmin(true); }, () => {});
+    }
+  } catch (e) { try { window.SUErrors && window.SUErrors.note('保存・同期の失敗', e, 'genogram:管理者向けの準備'); } catch (_) { /* 記録できなくても止めない */ } }
+}
+/* 受け口が返した断りの文のうち、職員がそのまま読める文（日本語で英字を含まない）か（2026-11-13 第6段 GN-03・体重管理の wrStaffText_ と同じ判定） */
+function genoStaffText_(s) {
+  const t = String(s == null ? '' : s);
+  return /[\u3040-\u30ff\u4e00-\u9fff]/.test(t) && !/[A-Za-z]/.test(t.replace(/Google/g, ''));
+}
+/* 断りの理由を職員向けの文にする。英語・技術の文は出さず、記録（su-errors.js の note）に残す */
+function genoStaffWhy_(err, where) {
+  const m = err && err.message;
+  if (genoStaffText_(m)) return String(m);
+  try { window.SUErrors && window.SUErrors.note('保存・同期の失敗', err, 'genogram:' + where); } catch (_) { /* 記録できなくても止めない */ }
+  return 'クラウドが受け付けませんでした。管理者に伝えてください';
+}
+/* 同期の帯（見出しの下の状態の1行）に足す理由を職員向けの文にする（2026-11-13 第6段 GN-03・伏せた時の文は仮置き）。
+   画面が作った職員向けの文（合言葉の断り・古い受け口・版の食い違い・時間切れ）と、日本語で英字を含まない文（「URL」「Google」の語は可）は、その場で直せる理由なのでそのまま出す。
+   それ以外（英語の例外文・応答の番号など）は帯に出さず、元の文は記録（su-errors.js の note）に残す */
+function genoBandWhy_(err, where) {
+  const m = err && err.message;
+  if (err && (err.auth || err.stale || err.conflict || err.timeout) && m) return String(m);
+  if (genoStaffText_(String(m == null ? '' : m).replace(/URL/g, ''))) return String(m);
+  try { window.SUErrors && window.SUErrors.note('保存・同期の失敗', err, 'genogram:' + where); } catch (_) { /* 記録できなくても止めない */ }
+  return 'クラウドとうまくやり取りできませんでした';
 }
 function closeCloudModal() { $('cloudModal').hidden = true; }
 
@@ -4860,7 +4934,16 @@ async function testCloudConfig() {
     else results.push('✓ つながりました (' + p.time + ')\n⚠ この Google の受け口は合言葉に未対応の古い版です（管理者が新しいコードに貼り替えます）');
   } catch (e) {
     if (e.auth) { showCfgResult('err', '✗ ' + e.message); return; }
-    showCfgResult('err', '✗ つながりませんでした（' + e.message + '）。URL が正しいか確かめてください。\n→ 管理者の方へ：Apps Script のデプロイの「アクセスできるユーザー」が「全員」になっているかも確かめてください。');
+    /* 職員には英語の例外文と管理者向けの手順を出さない（2026-11-13 第6段 GN-02・文は仮置き）。日本語の理由（時間切れなど）はそのまま添える。
+       管理者のログインと確かめられた後に、今までの文（理由と Apps Script の手順）に差し替える。確かめが遅れた・確かめられない時は職員向けのまま */
+    const staffMsg = '✗ つながりませんでした' + (genoStaffText_(e && e.message) ? '（' + e.message + '）' : '') + '。URL が正しいか確かめてください。';
+    showCfgResult('err', staffMsg);
+    if (typeof CloudSync.thumbIsAdmin === 'function') {
+      Promise.resolve(CloudSync.thumbIsAdmin()).then((a) => {
+        if (a !== true || $('cfgResult').hidden || $('cfgResult').textContent !== staffMsg) return;
+        showCfgResult('err', '✗ つながりませんでした（' + e.message + '）。URL が正しいか確かめてください。\n→ 管理者の方へ：Apps Script のデプロイの「アクセスできるユーザー」が「全員」になっているかも確かめてください。');
+      }, () => {});
+    }
     return;
   }
   showCfgResult('ok', results.join('\n'));
@@ -4934,7 +5017,7 @@ async function forceSync() {
     }
     await refreshDocList();
   } catch (e) {
-    setSyncStatus('err', '同期できませんでした: ' + e.message);
+    setSyncStatus('err', '同期できませんでした: ' + genoBandWhy_(e, '手動の同期'));
   } finally {
     btn.disabled = false;
   }
@@ -4942,6 +5025,14 @@ async function forceSync() {
 
 // ========== Init ==========
 async function init() {
+  /* 入居者マスタ連携：?resident=<masterId> 付きで開かれたら、その入居者の家系図を開く（氏名は URL で受け取らない・代表者の決定 2026-11-13）。
+     古い入口の ?name=<氏名> は、何より先に読んで控え、すぐ URL から消す（アドレスバー・履歴・不具合の報告に氏名を残さない） */
+  var suParams = (function () { try { return new URLSearchParams(location.search); } catch (e) { return null; } })();
+  var suOldName = suParams ? (suParams.get('name') || '').trim() : '';
+  try {
+    var suClean = suGenoUrlWithoutName(location.search, location.pathname, location.hash);
+    if (suClean !== null) history.replaceState(history.state, '', suClean);
+  } catch (e) { try { window.SUErrors && window.SUErrors.note('起動の失敗', e, 'genogram:URL の名前を消す'); } catch (_) { /* 記録できなくても止めない */ } }
   bindUIEvents();
   attachDomTextFallback();
   CloudSync.purgeRetiredGithubCfg();
@@ -4949,10 +5040,16 @@ async function init() {
   CloudSync.authWatch();   // 受け口の版の確かめ（起動の時と1時間ごと・代表者の指示 2026-11-13）。一覧・読込より前に打つ
   refreshDocList();
   fitStageSize();
-  // 入居者マスタ連携：?resident=<masterId>&name=<氏名> 付きで開かれたら、その入居者の家系図を開く
-  var suParams = (function () { try { return new URLSearchParams(location.search); } catch (e) { return null; } })();
   window._suMasterId = suParams ? (suParams.get('resident') || null) : null;
-  var suName = suParams ? (suParams.get('name') || '').trim() : '';
+  /* 氏名は共有名簿（入居者マスタが書く）でその番号の方を引く。名簿に無い時だけ、古い URL で来た氏名を使う（仮置き）。
+     どちらも無い時は名前の欄を空にして帯で知らせる（suNameMissing・別の方の図や下書きを開かない） */
+  var suName = '';
+  try {
+    var suRr = JSON.parse(localStorage.getItem('su_residents_common') || 'null');
+    suName = suGenoPickName(window._suMasterId, suRr && suRr.residents, suOldName);
+  } catch (e) { suName = suGenoPickName(window._suMasterId, null, suOldName); }   // 名簿の控えが読めない＝名簿に無い
+  suOldName = '';
+  window._suNameMissing = !!(window._suMasterId && !suName);
   /* ★この masterId は「この氏名の方」のもの。別の方の文書を保存する時に masterId のキーを
      書かないための束縛（suGenoMasterIdFor）。文書を切り替えても _suMasterId は消えないため、
      これが無いと別人の欄に他人の家族構成図が出る（2026-08-13 実害） */
@@ -4961,7 +5058,7 @@ async function init() {
   /* 下書きが残っていれば、起動の自動読込より前に戻すかを確かめる。保存済みの基準（unsavedBase）は
      読込（loadDoc の最後）か、下の読込の無い分岐の markClean で控える。
      確かめは画面の中の窓（2026-11-12）なので、答えを待ってから起動の続き（自動の読込・まとめ反映の予約など）を同じ順で進める */
-  const draftAsk = offerDraftRestore(suName);
+  const draftAsk = window._suNameMissing ? Promise.resolve(false) : offerDraftRestore(suName);   // 誰か分からない時は下書きを尋ねない（下書きは残したまま）
   /* 確かめの窓を出して答えを待ったか（待っている間は下の online などの受け口がまだ無く、オンラインに戻ったことを取りこぼす） */
   const bootAsked = !!(window.SUDialog && typeof SUDialog.busy === 'function' && SUDialog.busy());
   if (await draftAsk) {
@@ -4980,6 +5077,10 @@ async function init() {
       render();          // 新規（氏名のみプリフィル済み）
       markClean();       // 氏名だけの新規が基準（まだ変更なし）
     }
+  } else if (window._suNameMissing) {
+    /* 番号で開いたが、名簿からこの方の氏名を引けなかった。前回の図（別の方の図かもしれない）は開かず、名前の欄を空にした新規で始める */
+    render();
+    markClean();
   } else {
     const last = localStorage.getItem(LS_LAST);
     if (last && localStorage.getItem(LS_DOC_PREFIX + last)) {
@@ -5078,6 +5179,8 @@ init();
 </script>
 
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
+<!-- 本番の健康（2026-11-14・統合 0088）: 新しい保存先への保存の失敗を種類と理由だけ数えて送る。保存の動きには触れない・読めなくても動く -->
+<script src="su-health.js?v=2026-11-14"></script>
 <script src="su-report.js?v=2026-10-28" data-tool="ジェノグラム作成"></script>
 </body>
 </html>

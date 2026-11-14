@@ -15,7 +15,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-10-27.2';
+  var VERSION = '2026-11-14';
 
   /* 職員マスタの算出モジュール（日付の正規化をそのまま使う）。node では同じフォルダから読む */
   var SC = null;
@@ -671,7 +671,7 @@
     if (job) { f.jobTitle = job.slice(0, 60); add('職種', f.jobTitle, '職種'); }
     var sites = (p.sites && typeof p.sites === 'object') ? p.sites : {}, on = [];
     SITE_KEYS.forEach(function (sk) { if (sites[sk[0]] === true) { f[sk[1]] = true; on.push(sk[0]); } });
-    if (on.length) add('所属事業所', on.map(function (x) { return SITE_LABEL[x]; }).join('・'), '施設・訪問・通所');
+    if (on.length) add('所属事業所', on.map(function (x) { return SITE_LABEL[x]; }).join('・'), SITE_KEYS.map(function (sk) { return SITE_LABEL[sk[0]]; }).join('・'));
     if (p.primarySite) {
       if (on.indexOf(p.primarySite) < 0) issues.push({ key: 'primarySite', reason: '主所属が所属事業所に入っていません' });
       else { f.primarySite = p.primarySite; add('主所属', SITE_LABEL[p.primarySite], '主たる事業所'); }
@@ -703,6 +703,21 @@
     return { fields: f, issues: issues, rows: rows, missing: missing, ready: !missing.length && !issues.length };
   }
   var SITE_LABEL = { facility: '施設', visit: '訪問', day: '通所' };
+  /* 事業所の区分の名前（施設情報の corpSettings.siteLabels・第6段 SM-02 の続き・代表者の決定 2026-11-14）。
+     職員マスタと同じ確かめ（staff-master-calc.js の normSiteLabels・4つ全部を書いた時だけ・1つでも崩れていれば丸ごと今の名前）を使い、
+     採用管理が使う3つ（施設・訪問・通所）の名前だけを差し替える。コード・職員マスタへ送る値（fields）・保存の形は変えない。
+     SITE_LABEL は公開API が同じ実体を指しているので、中身だけを入れ替える。名前が変わった時だけ true */
+  var SITE_LABEL_DEF = { facility: '施設', visit: '訪問', day: '通所' };
+  var SITE_LABEL_KEY = '';
+  function setSiteLabels(o) {
+    var sc = staffCalc(), n = null;
+    try { n = (sc && typeof sc.normSiteLabels === 'function') ? sc.normSiteLabels(o) : null; } catch (e) { n = null; }
+    var src = n || SITE_LABEL_DEF, key = n ? JSON.stringify(SITE_KEYS.map(function (sk) { return src[sk[0]]; })) : '';
+    if (key === SITE_LABEL_KEY) return false;
+    SITE_LABEL_KEY = key;
+    SITE_KEYS.forEach(function (sk) { SITE_LABEL[sk[0]] = src[sk[0]]; });
+    return true;
+  }
   var WORK_LABEL = { full_ded: '常勤・専従', full_con: '常勤・兼務', part_ded: '非常勤・専従', part_con: '非常勤・兼務' };
   function labelOf(list, code) {
     if (Array.isArray(list)) for (var i = 0; i < list.length; i++) if (list[i] && list[i].code === code) return str(list[i].label || code);
@@ -1299,7 +1314,7 @@
     VERSION: VERSION,
     STAGES: STAGES, END_STAGES: END_STAGES, OUTCOME_REASONS: OUTCOME_REASONS, CHANNELS: CHANNELS,
     DEFAULT_EVAL_ITEMS: DEFAULT_EVAL_ITEMS, DEFAULT_SETTINGS: DEFAULT_SETTINGS, REQUIRED: REQUIRED, IMPORT_MAX: IMPORT_MAX,
-    SITE_LABEL: SITE_LABEL, WORK_LABEL: WORK_LABEL, SETTLE_MS: SETTLE_MS, HEADERS: HEADERS,
+    SITE_LABEL: SITE_LABEL, setSiteLabels: setSiteLabels, WORK_LABEL: WORK_LABEL, SETTLE_MS: SETTLE_MS, HEADERS: HEADERS,
     stageOf: stageOf, endOf: endOf, isEnd: isEnd, isStage: isStage, stageLabel: stageLabel, stageRank: stageRank,
     nextStage: nextStage, canMove: canMove,
     normName: normName, importKey: importKey, normDate: normDate, completeYear: completeYear, splitDateNote: splitDateNote,

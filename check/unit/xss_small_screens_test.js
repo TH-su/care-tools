@@ -299,7 +299,10 @@ function section(title, fn) {
     vm.runInContext([
       'function $(id) { return document.getElementById(id); }',
       grabFn(CS, 'lsGetStr'), grabFn(CS, 'lsGetObj'), grabFn(CS, 'readCur'), grabFn(CS, 'el'), grabFn(CS, 'field'),
-      grabFn(CS, 'input'), grabFn(CS, 'setRes'), grabFn(CS, 'facText'), grabFn(CS, 'buildCard')
+      grabFn(CS, 'input'), grabFn(CS, 'setRes'), grabFn(CS, 'facText'), grabFn(CS, 'buildCard'),
+      /* setRes が通す言い換えの部品（2026-11-13 第6段 CN-02）。文字は textContent だけで入る */
+      (CS.match(/var MASTER_WRONG_MSG='[^']+';/) || [''])[0], (CS.match(/var MASTER_WRONG_SAY='[^']+';\nvar CS_STAFF_SAY=\[[\s\S]*?\n\];/) || [''])[0],
+      grabFn(CS, 'csSay_'), grabFn(CS, 'csFill_')
     ].join('\n'), box);
     /* 系統の名前・説明は画面の固定表だが、端末に保存された URL・追加の欄（端末の値）は外から来る */
     const c1 = box.buildCard({ id: 'a', title: EVIL, apps: BREAK, liveWriteback: ATTR, shape: 'str', key: 'cs_test_url' });

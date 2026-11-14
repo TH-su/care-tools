@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-GXvnb5Oivu2wxKWJ+TvhjvmkcY18pyR+XUMRyl48nwU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-8CyKTPGWFXH66/i1Lb3ogvun+homzA+hxMYb1SvgJr4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 書類（PDF）を左の枠に出すため、この画面だけ CSP の frame-src に blob: を足す（check/csp.mjs が読む印） -->
@@ -13,16 +13,16 @@
 <meta name="robots" content="noindex,nofollow">
 <meta name="referrer" content="no-referrer">
 <title>採用管理</title>
-<link rel="stylesheet" href="su-print.css?v=2026-09-12">
+<link rel="stylesheet" href="su-print.css?v=2026-11-13">
 <!-- 画面が黙って壊れないようにする共通部品（いちばん先に読む）→ 速さの記録 → 施設情報 → 印刷 → 職員マスタの日付の規則 → 採用管理の計算 -->
 <script src="su-errors.js?v=2026-11-12"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
-<script src="su-stf.js?v=2026-11-08"></script>
+<script src="su-stf.js?v=2026-11-14"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
-<script src="su-facility.js?v=2026-11-07"></script>
-<script src="su-print.js?v=2026-09-12"></script>
-<script src="staff-master-calc.js?v=2026-11-06.2"></script>
-<script src="ats-calc.js?v=2026-10-29.4"></script>
+<script src="su-facility.js?v=2026-11-14.2"></script>
+<script src="su-print.js?v=2026-11-13"></script>
+<script src="staff-master-calc.js?v=2026-11-14"></script>
+<script src="ats-calc.js?v=2026-11-14"></script>
 <style>
 /* 採用管理（2026-10-26 代表者承認の凍結仕様 v1）。
    色は担当者会議のページと同じ濃さ（コントラスト7:1目標）。ライト固定。段階は色でなく番号と名前で示す。
@@ -233,6 +233,7 @@ body.split .pane{width:50vw}
 #a-print{display:none}
 .pv{color:#000; line-height:1.4}
 .pv h1{font-size:1.5em; margin:0 0 .4em}
+@media print{ .pv h1 .su-print-head.at-fac{top:auto; bottom:.15em; max-width:40%; font-size:10px} }
 .pv h2{font-size:1.15em; margin:.8em 0 .3em}
 .pv-t{width:100%; border-collapse:collapse}
 .pv-t th,.pv-t td{border:1px solid #000; padding:.3em .4em; text-align:left; vertical-align:top; font-size:1em}
@@ -245,11 +246,13 @@ body.split .pane{width:50vw}
   .hdr,#a-main,#toast,.dlg,.pane,.undo{display:none !important}
   #a-print{display:block; font-size:var(--ap-fs,12px)}
 }
+/* 初回の案内の帯（su-intro.js）は、現場端末などの止めの案内を出している間は出さない（個別機能訓練計画書と同じ・代表者の決定 2026-11-13・仮置き） */
+body:has(#a-gate:not([hidden])) .sui-band{display:none}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 <!-- 見出しの右のログイン中の役割の札の見た目（画面だけ・印刷しない・2026-11-12） -->
-<link rel="stylesheet" href="su-shell.css?v=2026-11-12">
+<link rel="stylesheet" href="su-shell.css?v=2026-11-13">
 </head>
 <body>
 
@@ -1928,7 +1931,8 @@ function printSchedHtml_(){
   var tb=function(title,list){ return '<h2>'+esc(title)+'</h2><table class="pv-t"><thead><tr><th>時刻</th><th>氏名</th><th>職種</th><th>面接官</th><th>回</th><th>場所</th></tr></thead><tbody>'+
     (list.length?list.map(function(v){ var a=rowById_(v.applicant_id)||{}; return '<tr><td>'+esc(fmtDT_(v.held_at))+'</td><td>'+esc(a.name||'')+'</td><td>'+esc((a.jobs||[]).join('・'))+'</td><td>'+esc((v.interviewers||[]).join('・'))+'</td><td>'+esc(v.round)+'</td><td>'+esc(v.place||'')+'</td></tr>'; }).join('')
       :'<tr><td colspan="6">ありません</td></tr>')+'</tbody></table>'; };
-  return '<div class="pv"><h1>面接予定（'+esc(today_())+' 現在）</h1>'+tb('今日',b.today)+tb('明日',b.tomorrow)+'</div>';
+  /* 施設名は表題の行の右に位置を外して重ねる（「〜 現在」が印刷日なので施設名だけ・2026-11-13 代表者の決定） */
+  return '<div class="pv"><h1 class="su-print-head-host">面接予定（'+esc(today_())+' 現在）<span class="su-print-head su-print-head-abs at-fac" data-su-print-head="name"></span></h1>'+tb('今日',b.today)+tb('明日',b.tomorrow)+'</div>';
 }
 function printSheetHtml_(ivId){
   var v=null; ivs.forEach(function(x){ if(x.id===ivId) v=x; }); if(!v) return '';
@@ -2365,13 +2369,32 @@ function wire_(){
   var ev=$('a-evdlg'); if(ev) ev.addEventListener('cancel',onEvCancel_);
   definePrint_();
 }
+/* 事業所の区分の名前を施設情報（corpSettings.siteLabels）から当てる（職員マスタと同じ確かめ・代表者の決定 2026-11-14）。
+   書いていない・崩れている時は setSiteLabels が今の名前のまま false を返し、画面に1つも触らない。
+   開いている入職準備は描き直さず（打った入力を消さない）、チェックの名前と主所属の選択肢の文字だけを替える */
+function applySiteLabels_(){
+  if(typeof AtsCalc.setSiteLabels!=='function') return;
+  var sl=null, changed=false;
+  try{ sl=(window.SUFacility&&typeof window.SUFacility.section==='function')?window.SUFacility.section('siteLabels'):null; }catch(e){ sl=null; /* 捨ててよい: 読めなければ今の名前で動く */ }
+  try{ changed=AtsCalc.setSiteLabels(sl); }catch(e){ changed=false; atsNote_('区分の名前',e); }
+  if(!changed) return;
+  Object.keys(AtsCalc.SITE_LABEL).forEach(function(k){
+    var lab=AtsCalc.SITE_LABEL[k], c=$('p-site-'+k), sel=$('p-primary'), i;
+    if(c&&c.parentNode){ var n=c.nextSibling; if(n&&n.nodeType===3) n.nodeValue=lab; else c.parentNode.appendChild(document.createTextNode(lab)); }
+    if(sel) for(i=0;i<sel.options.length;i++){ if(sel.options[i].value===k) sel.options[i].textContent=lab; }
+  });
+}
 wire_();
+try{ if(window.SUFacility&&typeof window.SUFacility.onReady==='function') window.SUFacility.onReady(applySiteLabels_); }catch(e){ atsNote_('区分の名前',e); }
 boot_();
 </script>
 
 <!-- インターネットにつながっていない時の帯（2026-11-12 商用化の見直し・画面だけ・通信と保存には触れない） -->
-<script src="su-shell.js?v=2026-11-12.2"></script>
+<script src="su-shell.js?v=2026-11-14"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
+<script src="su-intro.js?v=2026-11-13"></script>
+<!-- 本番の健康（2026-11-14・統合 0088）: 新しい保存先への保存の失敗を種類と理由だけ数えて送る。保存の動きには触れない・読めなくても動く -->
+<script src="su-health.js?v=2026-11-14"></script>
 <script src="su-report.js?v=2026-10-28" data-tool="採用管理"></script>
 </body>
 </html>

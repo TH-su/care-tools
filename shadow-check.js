@@ -102,6 +102,84 @@ if (!window.SUDialog) window.SUDialog = {
     try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('写しの見比べ: ' + where + 'の断りの印', String(code)); } catch (e) { /* 記録できなくても止めない */ }
     return 'ほかの理由';
   }
+  /* ── 本番の健康（2026-11-14 代表者の依頼・管理者だけ・統合 0088）──
+   * save_health（管理者・2段階認証）の答えを SUHealthCalc.judge で判定し、種類ごとに1行で出す。出すのは種類・数・時刻だけ。
+   * 読めない・関数が無い・判定の部品が無い時は「確かめられません」とだけ出す（健康とは言わない）。端末には何も残さない */
+  var HL_STATE = { live: '切り替え済み', shadow: '写しの期間（Google が正本）', none: 'まだ切り替えていません', unknown: '確かめられません' };
+  var HL_REASON = [['login', 'ログイン'], ['perm', '権限'], ['timeout', '時間切れ'], ['other', 'そのほか']];
+  async function loadHealth(sb) {
+    var box = $('hl-box');
+    if (!box) return;
+    box.hidden = !(me && me.role === 'admin');
+    if (box.hidden) return;
+    var verdict = $('hl-verdict'), wrap = $('hl-table');
+    if (!window.SUHealthCalc) { verdict.className = 'msg warn'; verdict.textContent = '判定の部品を読み込めませんでした。ページを読み込み直してください。'; wrap.replaceChildren(); return; }
+    var resp = null, why = '';
+    try {
+      var r = await sb.rpc('save_health');
+      if (r && r.error) { var k = dbErrKind(r.error); if (k === 'missing') notePrep('save_health'); why = k; }
+      else resp = r ? r.data : null;
+    } catch (e) { why = 'other'; }
+    renderHealth(SUHealthCalc.judge(resp), why);   // 遅れはデータベースの時刻（答えの now）で測る（端末の時計のずれで札が出ない・反証レビュー指摘6）
+  }
+  function renderHealth(v, why) {
+    var verdict = $('hl-verdict'), wrap = $('hl-table');
+    wrap.replaceChildren();
+    if (!v.ok) {
+      verdict.className = 'msg warn';
+      verdict.textContent = why === 'missing' ? '本番の健康の記録の準備（データベースの 0088）がまだです。確かめられません。'
+        : why === 'denied' ? '本番の健康を読めませんでした（管理者が2段階認証でログインしている時だけ読めます）。確かめられません。'
+        : '本番の健康を読めませんでした。少し待ってから「本番の健康を読み直す」を押してください。確かめられません。';
+      return;
+    }
+    var bad = v.rows.filter(function (x) { return x.failAlert || x.lagAlert; });
+    var unk = v.rows.filter(function (x) { return x.state === 'unknown' || x.partial; });
+    verdict.className = bad.length ? 'msg ng' : unk.length ? 'msg warn' : 'msg ok';
+    verdict.textContent = bad.length ? '要確認の種類があります：' + bad.map(function (x) { return x.label; }).join('・') + '（管理者のメニューにも札が出ます）'
+      : unk.length ? '確かめられない所がある種類があります：' + unk.map(function (x) { return x.label; }).join('・')
+      : '切り替え済みの種類に、要確認はありません。';
+    var tb = el('table', 'hl-t');
+    tb.appendChild(el('caption', 'hl-cap', '種類ごとの保存と写し返し（数えた時刻 ' + fmtTime(new Date().toISOString()) + '）'));
+    var hd = el('tr');
+    ['種類', '状態', '成功', '失敗', '最後の写し返し', '写し返しの遅れ', '判定'].forEach(function (h) { var th = el('th', null, h); th.scope = 'col'; hd.appendChild(th); });
+    var thead = el('thead'), body = el('tbody');
+    thead.appendChild(hd);
+    v.rows.forEach(function (x) {
+      var alert = x.failAlert || x.lagAlert;
+      var tr = el('tr', alert ? 'ng' : x.state === 'live' ? 'ok' : null);
+      var th = el('th', null, x.label); th.scope = 'row'; tr.appendChild(th);
+      tr.appendChild(el('td', null, HL_STATE[x.state] || HL_STATE.unknown));
+      if (x.state === 'unknown') {
+        ['—', '—', '—', '—'].forEach(function (t) { tr.appendChild(el('td', null, t)); });
+        tr.appendChild(el('td', null, '確かめられません'));
+        body.appendChild(tr);
+        return;
+      }
+      tr.appendChild(el('td', 'num', x.ok + '件'));
+      var parts = HL_REASON.filter(function (p) { return x.fails[p[0]] > 0; }).map(function (p) { return p[1] + x.fails[p[0]]; });
+      tr.appendChild(el('td', null, !x.failKnown ? '数えていません（この画面は別の正本から配るため、失敗を数える部品をまだ読んでいません）'
+        : x.failTotal + '件' + (parts.length ? '（' + parts.join('・') + '）' : '')));
+      tr.appendChild(el('td', null, x.lastMirrorMs == null ? '記録なし'
+        : fmtTime(new Date(x.lastMirrorMs).toISOString()) + (x.lastKind === 'change' ? '（写し返し済みの保存の時刻）' : '')));
+      tr.appendChild(el('td', null, !x.lagKnown ? (x.kind === 'weight' && x.state !== 'none' ? '確かめられません（端末が写し返している間）' : x.state === 'none' ? '—' : '確かめられません')
+        : x.pending > 0 ? SUHealthCalc.lagText(x.lagMs) + '（残り' + x.pending + '件）' : 'なし（残り0件）'));
+      var tr2 = x.partial && !alert;
+      if (tr2) tr.className = '';
+      var jd = el('td', null, alert ? '要確認' : x.state !== 'live' ? '対象外（切り替え前）' : tr2 ? '一部確かめられません' : '問題なし');
+      if (tr2) jd.appendChild(el('div', 'em', !x.failKnown ? '失敗の数を数えていません' : '写し返しの遅れを確かめられません'));
+      if (alert) {
+        var why = [];
+        if (x.failAlert) why.push('失敗が' + SUHealthCalc.FAIL_N + '件以上');
+        if (x.lagAlert) why.push('写し返しが2時間以上遅れ');
+        jd.appendChild(el('div', 'em', why.join('・')));
+      }
+      tr.appendChild(jd);
+      body.appendChild(tr);
+    });
+    tb.appendChild(thead); tb.appendChild(body);
+    wrap.appendChild(tb);
+  }
+
   function view(name) {
     $('v-loading').hidden = name !== 'loading';
     $('v-gate').hidden = name !== 'gate';
@@ -1188,6 +1266,7 @@ if (!window.SUDialog) window.SUDialog = {
     try { await loadGeno(sb); } catch (e) { $('geno-verdict').className = 'msg warn'; $('geno-verdict').textContent = '家族構成図の写しの記録を読めませんでした。'; }
     try { await loadGenoMode(sb); } catch (e) { genoNote('印の欄', e); }   // 読めない時はボタンを出さない
     try { await loadHb(sb); } catch (e) { $('hb-verdict').className = 'msg warn'; $('hb-verdict').textContent = '排泄ケア記録の写しの記録を読めませんでした。'; }
+    try { await noteHb(sb); } catch (e) { genoNote('排泄の差の記録', e); }   // 残せなくても見比べの表示は続ける（表は押せない側）
     try { await loadHbMode(sb); } catch (e) { genoNote('排泄の印の欄', e); }   // 0064 の前・読めない時はボタンを出さない
     try { await loadDoc(sb); } catch (e) { $('doc-verdict').className = 'msg warn'; $('doc-verdict').textContent = '添付書類の写しの記録を読めませんでした。'; }
     try { await loadDocMode(sb); } catch (e) { genoNote('書類の印の欄', e); }   // 0065 の前・読めない時はボタンを出さない
@@ -1204,6 +1283,7 @@ if (!window.SUDialog) window.SUDialog = {
       $('kv-verdict').textContent = '週間計画の写しはまだ読めません（データベースの準備 0005 が未適用の可能性）。';
     }
     await gateRefresh(sb);   // 読めない時はボタンを押せないままにする
+    await loadHealth(sb);
   }
 
   /* 貼り薬の写し（段階2「送るだけ」・2026-10-17）: サーバーの行数と、この端末の控え（apc2_res）との差。
@@ -1516,7 +1596,7 @@ if (!window.SUDialog) window.SUDialog = {
     sup_shadow_status: '0046', sup_mode_get: '0047', mirror_bot_me: '0047',
     sa_shadow_status: '0050', sa_mode_get: '0051', device_seen_summary: '0048', shadow_diff_days: '0055', shadow_diff_note: '0055',
     geno_shadow_status: '0053', geno_mode_get: '0054', hb_shadow_status: '0062', hb_mode_get: '0064', doc_shadow_status: '0063', doc_mode_get: '0065',
-    ho_shadow_status: '0067'
+    ho_shadow_status: '0067', save_health: '0088'
   };
   var prepMissing = {};
   function dbErrKind(err) {
@@ -1741,7 +1821,7 @@ if (!window.SUDialog) window.SUDialog = {
     var live = r.data.mode === 'live', on = analyzerOn(), st = saTarget();
     if (live && !on) { line.className = 'msg warn'; line.textContent = 'シフト分析は新しい保存先へ切り替えた後ですが、切り替えスイッチ（analyzer）が切です。アナライザが古い Google の中身を読まないよう、スイッチを入れ直すか「シフト分析を写しの期間に戻す」を押してください。'; }
     else if (live) { line.className = 'msg ok'; line.textContent = 'シフト分析の正本は新しい保存先（Supabase）です。Google へは1時間ごとに写し返しています。'; }
-    else line.textContent = 'シフト分析の正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（analyzer）を入れる PR の取り込みが要ります。') + (st ? '' : '切り替える・戻すには、この端末のアナライザで URL と合言葉を入れ「この端末にトークンを記憶する」に✔︎を入れてください。') + (st ? '（前の「切り替える」「写しの期間に戻す」が途中で止まり、Google の保存が止まったままの時は「シフト分析を写しの期間に戻す」を押すと最後まで済ませます。途中でなければ押しても何も変わりません）' : '');
+    else line.textContent = 'シフト分析の正本は Google です（写しの期間）。' + (on ? '' : '切り替えるには、先に切り替えスイッチ（analyzer）を入れる PR の取り込みが要ります。') + (st ? '' : '切り替える・戻すには、この端末のアナライザで URL と合言葉を入れ「この端末に合言葉を記憶する」に✔︎を入れてください。') + (st ? '（前の「切り替える」「写しの期間に戻す」が途中で止まり、Google の保存が止まったままの時は「シフト分析を写しの期間に戻す」を押すと最後まで済ませます。途中でなければ押しても何も変わりません）' : '');
     bc.hidden = live || !on || !st;
     bb.hidden = !st;   // 戻すは接続先がある管理者にはいつも出す（途中で止まった時に押せるように・備品と同じ）
   }
@@ -1833,10 +1913,21 @@ if (!window.SUDialog) window.SUDialog = {
     if (st.error) { say(dbErrText(st.error, 'doc_shadow_status', '添付書類の写しの準備（データベース 0063）はまだです。')); return; }
     var d = st.data || {}, now = typeof nowMs === 'number' ? nowMs : Date.now();
     var warn = [], lines = [], none = true;
+    /* 切り替えた後の種類は写しを止めてあるので、写しが届かないことを知らせない（2026-11-14・切り替えた後も「写しがしばらく届いていません」と出ていた）。
+     * Google ドライブへの写し返しの残りは、版の差では分からない（写し返しは書類ごとに失敗しても版を進める）ので、この欄では言わない。
+     * 写し返しの残りと遅れは「本番の健康」の表（管理者・書類の行の状態で数える・統合 0089）で見る。印を読めない時は今までどおり写しで判断する */
+    var dm = null;
+    try { var mr = await sb.rpc('doc_mode_get'); dm = mr && !mr.error && mr.data && mr.data.ok === true ? mr.data : null; } catch (e) { genoNote('書類の印', e); dm = null; }
     ['stf', 'adm'].forEach(function (k) {
       var x = (d[k] && typeof d[k] === 'object') ? d[k] : {};
       var nm = DOC_KIND[k];
       kk.appendChild(kpi(nm + '・写した書類', Number(x.have) || 0, '件'));
+      var m = dm && dm[k] && typeof dm[k] === 'object' ? dm[k] : null;
+      if (m && m.mode === 'live') {
+        none = false;
+        lines.push(nm + ': 切り替え済みです（書類の正本は新しい保存先）。写しは切り替えの前で止めてあります' + (x.lastAt ? '（最後に写した時刻 ' + fmtTime(x.lastAt) + '）' : '') + '。');
+        return;
+      }
       if (!x.lastAt) { lines.push(nm + ': まだ写していません。'); warn.push(nm + 'はまだ写していません（' + nm + 'の GAS に docshadow.gs と新しい automirror.gs を貼ると、1時間以内に写り始めます）。'); return; }
       none = false;
       var last = Date.parse(x.lastAt || '');
@@ -1847,7 +1938,8 @@ if (!window.SUDialog) window.SUDialog = {
     });
     dt.textContent = lines.join(' ');
     if (warn.length) { say(warn.join(' '), 'warn'); return; }
-    var leftAll = ['stf', 'adm'].reduce(function (n, k) { return n + (Number(d[k] && d[k].left) || 0); }, 0);
+    var leftAll = ['stf', 'adm'].reduce(function (n, k) { return n + (dm && dm[k] && dm[k].mode === 'live' ? 0 : (Number(d[k] && d[k].left) || 0)); }, 0);
+    if (dm && ['stf', 'adm'].every(function (k) { return dm[k] && dm[k].mode === 'live'; })) { say('添付書類は職員マスタ・入居調整とも切り替え済みです（写しは止めてあります）。Google ドライブへの写し返しの残りと遅れは、管理者の「本番の健康」の表で確かめます。', 'ok'); return; }
     if (leftAll > 0) say('写しが届いています（初めの写しの途中です。残りは1時間ごとに少しずつ写します）。', 'ok');
     else if (!none) say('添付書類の写しが1時間ごとに届き、目録の書類は全部写してあります。', 'ok');
   }
@@ -1858,6 +1950,38 @@ if (!window.SUDialog) window.SUDialog = {
     stale: '前に読んだ写し', shrink: '急に減った', badrow: '形の違い', dup: '同じ日に同じ記録が2行', toomany: '一度に多すぎる',
     toolarge: '大きすぎる', future: '時刻が先'
   };
+  /* 排泄ケア記録の差の日ごとの記録（統合 0055・0086・0087・2026-11-13 代表者の決定「#534 を入れて、SQL も作る」）。
+   * 差の件数は、この画面が「Google と同じです」と出す時だけ0件で、警告・知らせが出る時は1件以上にする（仮置き）:
+   *   最後の写しを断った（1）＋この24時間に断った回数（refused24h）＋この14日の食い違いの日（mismatch14）＋
+   *   最後の回のまだ写していない日（left）・空にしなかった日（emptyHeld）・使えない番号（badId）・大きすぎる記録（badRow）・日付の無い記録（nodate）。
+   *   ＋最後の回の食い違いの日（stat.mismatched）＋Google と写しの日数の差と記録の数の差（|stat.days−days|＋|stat.rows−rows|）。
+   * 最後の回の「違った日」（stat.diff）は数えない（1時間の間に Google で記録が増えた日を写した数で、差ではないため）。
+   * 写していない・しばらく写っていない（75分を超える）・その回の数（stat）が無い・Google か写しの日数・記録の数が無い・
+   * 中身の照らし合わせが動いていない（この14日の照らし合わせ verified14 か最後の回の stat.verify が0）・読めない時は残さない
+   * （職員マスタと同じ・0件とみなさない。反証レビュー 2026-11-13 中1・中2） */
+  var hbSeen = null;
+  function hbDiffCount(d, now) {
+    if (!d || !d.lastAt) return null;
+    var last = Date.parse(d.lastAt || '');
+    if (isNaN(last) || !(now - last <= SA_FRESH_MS)) return null;
+    var s = (d.stat && typeof d.stat === 'object') ? d.stat : null;
+    if (!s || s.days == null) return null;
+    var cnt = [s.days, s.rows, d.days, d.rows].map(function (x) { return x == null || x === '' ? NaN : Number(x); });
+    if (!cnt.every(function (x) { return x >= 0; })) return null;   // 片方の数が無い・形が違う時は比べられない
+    if (!(Number(d.verified14) > 0) || !(Number(s.verify) > 0)) return null;   // 中身の照らし合わせが動いていない
+    var n = d.lastStatus === 'refused' ? 1 : 0;
+    n += Math.abs(cnt[0] - cnt[2]) + Math.abs(cnt[1] - cnt[3]);
+    [d.refused24h, d.mismatch14, s.mismatched, s.left, s.emptyHeld, s.badId, s.badRow, s.nodate].forEach(function (x) {
+      var v = Number(x);
+      if (x != null && !(v >= 0)) n += 1;   // 形の違う数は差に数える（0件とみなさない）
+      else if (v > 0) n += Math.floor(v);
+    });
+    return Math.min(n, 100000);
+  }
+  async function noteHb(sb) {
+    var n = hbSeen ? hbDiffCount(hbSeen.st, hbSeen.at) : null;
+    if (n != null) await noteDiff(sb, 'hb', n);
+  }
   /* 排泄ケア記録の切り替え（統合 0064）。ボタンは、切り替えスイッチ haiben が入で、この端末に排泄ケア記録の接続先（URL と合言葉）がある時だけ出す */
   function hbOn() { var sw = window.SUKv ? SUKv._flags() : null; return !!(sw && sw.supabase && sw.supabase.haiben === true); }
   function hbTarget() {
@@ -1900,6 +2024,7 @@ if (!window.SUDialog) window.SUDialog = {
     var st = hbTarget();
     if (!st) { say('この端末には排泄ケア記録の接続先（URL と合言葉）がありません。この端末で排泄ケア記録を開き、設定で入れてから、押し直してください。', 'warn'); return; }
     if (kind === 'cut') {
+      if (!(await gatePass('hb'))) { say(GATE_NG, 'warn'); return; }
       if (!hbOn()) { say('切り替えスイッチ（haiben）が入っていません。', 'warn'); return; }
       if (!(await oneDayOk('hb', say))) return;
       if (!(await window.SUDialog.confirm('排泄ケア記録の正本を新しい保存先（Supabase）へ切り替えますか？\n\n数分かかります。その間の保存は各端末に控えられ、後で送られます。終わるまでこの画面を閉じないでください。\n\n切り替えた後は、ログインしている端末だけが記録をサーバーへ送れます（ログインしていない端末は記録を端末に控え、帯で知らせます）。Google へは1時間ごとに写し返します。いつでも「排泄ケア記録を写しの期間に戻す」で戻せます。'))) return;
@@ -1927,6 +2052,7 @@ if (!window.SUDialog) window.SUDialog = {
       bc.disabled = false; bb.disabled = false;
       var keep = v.textContent, kc = v.className;
       try { await loadHbMode(sb); await loadHb(sb); } catch (e) { genoNote('排泄の読み直し', e); }   // 読み直せなくても結果の文は残す
+      await gateRefresh(sb);   // 読み直しが途中で止まっても、ボタンは表の判定どおりに戻す（ほかの4つと同じ）
       v.className = kc; v.textContent = keep;
     }
   }
@@ -2032,6 +2158,7 @@ if (!window.SUDialog) window.SUDialog = {
     var kk = $('hb-kpis'), v = $('hb-verdict'), dt = $('hb-detail');
     function say(t, kind) { v.className = 'msg' + (kind ? ' ' + kind : ''); v.textContent = t; }
     kk.replaceChildren(); dt.className = 'msg'; dt.textContent = '';
+    hbSeen = null;
     var st = await sb.rpc('hb_shadow_status');
     if (st.error) { say(dbErrText(st.error, 'hb_shadow_status', '排泄ケア記録の写しの準備（データベース 0062）はまだです。')); return; }
     var d = st.data || {}, s = (d.stat && typeof d.stat === 'object') ? d.stat : {};
@@ -2053,6 +2180,12 @@ if (!window.SUDialog) window.SUDialog = {
     if (Number(s.badRow) > 0) notes.push('項目が多すぎる・大きすぎる記録が ' + Number(s.badRow) + '件あり、写していません（開発の担当へ知らせてください）。');
     if (Number(s.nodate) > 0) notes.push('日付の入っていない記録が ' + Number(s.nodate) + '件あります（どの日にも入らないので写していません。切り替える前に開発の担当へ知らせてください）。');
     if (Number(d.refused24h) > 0) notes.push('この24時間に受け付けなかった写しが ' + Number(d.refused24h) + '回ありました。');
+    /* 「Google と同じです」と言う条件を差の数え方（hbDiffCount）とそろえる（反証レビュー 2026-11-13 中1・中2・知らせの文は仮置き） */
+    if (s.days != null && (Number(s.days) !== Number(d.days) || Number(s.rows) !== Number(d.rows)) && !(Number(s.left) > 0))
+      notes.push('Google と写しの日数・記録の数が合っていません（Google ' + Number(s.days) + '日・' + Number(s.rows) + '件／写し ' + Number(d.days) + '日・' + Number(d.rows) + '件）。開発の担当へ知らせてください。');
+    if (s.days != null && (!(Number(d.verified14) > 0) || !(Number(s.verify) > 0)))
+      notes.push('中身の照らし合わせが動いていません（この14日 ' + Number(d.verified14 || 0) + '日・最後の回 ' + Number(s.verify || 0) + '日）。開発の担当へ知らせてください。');
+    if (Number(s.mismatched) > 0 && !(Number(d.mismatch14) > 0)) notes.push('最後の回に、要約は同じなのに中身が違った日が ' + Number(s.mismatched) + '日ありました（写しは直してあります）。');
     dt.textContent = (s.days != null ? 'Google の日数 ' + Number(s.days) + '日・記録 ' + Number(s.rows) + '件／最後の回: 違った日 ' + Number(s.diff || 0) + '日・写した日 ' + Number(s.sent || 0) + '日・照らし合わせ ' + Number(s.verify || 0) + '日。' : '') + (notes.length ? ' ' + notes.join(' ') : '');
     if (notes.length) dt.className = 'msg warn';
     if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + refusedWord(HB_REFUSED, d.lastRefused, 'loadHb') + '）。開発の担当へ知らせてください。' + tail, 'warn');
@@ -2061,6 +2194,7 @@ if (!window.SUDialog) window.SUDialog = {
     else if (Number(s.left) > 0) say('写しが届いています（初めの写しの途中です）。' + tail, 'ok');
     else if (notes.length) say('写しは1時間ごとに届いていますが、下の知らせがあります（このままでは切り替えられません）。' + tail, 'warn');
     else say('写しが1時間ごとに届き、Google と同じです。写し始めてから ' + sinceDays + '日（2週間以上続けてから切り替えを決めます）。' + tail, 'ok');
+    hbSeen = { st: d, at: now };   // 差の日ごとの記録に使う（noteHb）
   }
   /* 申し送りの写し（統合 0067・2026-11-05 代表者の決定: 案C の最初の段＝まず写しを作る・AI 要約は写さない）: ho_shadow_status（事務所・管理者）。
    * 出すのは種類（出来事・バイタル・食事量）ごとの日数・件数・照らし合わせの数・最後に写した時刻と、その回の数だけ（氏名・本文は返らない・出さない）。
@@ -2699,12 +2833,14 @@ if (!window.SUDialog) window.SUDialog = {
   }
 
   /* ── 正本を切り替える前の確かめの表（2026-11-03 代表者の依頼・判定は su-cutover-gate.js）──
-   * 管理者だけ。5つの「切り替える／本番にする」ボタン（入居者マスタ・計画書・入居調整・職員マスタ・体重）の前に4項目の表を出し、
+   * 管理者だけ。6つの「切り替える／本番にする」ボタン（入居者マスタ・計画書・入居調整・職員マスタ・体重・排泄ケア記録）の前に4項目の表を出し、
    * 全部そろった時だけ押せる。押した時も読み直して確かめる（表を出した後に別の画面で切り替えた時のため）。最後に決めるのは今までどおりデータベース。
-   * 戻すボタンと、備品・シフト分析・週間計画・勤務表のボタンには付けない（依頼の外）。
+   * 戻すボタンと、備品・シフト分析・家族構成図・添付書類・週間計画・勤務表のボタンには付けない（依頼の外）。
+   * 排泄ケア記録は 2026-11-13 に足した（代表者の指示・cross 6）。差の件数は noteHb が残す（統合 0086・0087 が流れるまでは残せず、1項目めは満たさない）。
+   * 切り替えのボタンを足す時は、ここ（GATE）に足すか、check/unit/cutover_gate_registry_test.js の「付けない種類」に理由つきで足す（どちらも無いと試験で落ちる）
    * 読むもの: 差の日ごとの記録（shadow_diff_days・0055）・端末の数（device_seen_summary・0048）・毎晩の通し試験の結果（GitHub・公開リポジトリなので読むだけ）・
    *   今日の操作の記録（audit_log の *_mode と kv_families の「本番にした」記録）。どれかを読めない時は、その項目を満たさない扱いにする（押せない側に倒す） */
-  var GATE = { res: 'b-res-cut', tp: 'b-tp-cut', adm: 'b-adm-cut', stf: 'b-stf-cut', weight: 'b-live-weight' };
+  var GATE = { res: 'b-res-cut', tp: 'b-tp-cut', adm: 'b-adm-cut', stf: 'b-stf-cut', weight: 'b-live-weight', hb: 'b-hb-cut' };
   var GATE_NG = '切り替える前の確かめがそろっていません。ボタンの上の表の「満たさない」の理由を見てください。';
   var FLOW_RUNS = 'https://api.github.com/repos/TH-su/care-tools/actions/workflows/flow-check.yml/runs?branch=main&per_page=20';
   var gateIn = null;
@@ -2849,6 +2985,10 @@ if (!window.SUDialog) window.SUDialog = {
   $('b-live-weight').addEventListener('click', function () { setWeightMode('live').catch(function (e) { msg(jaWhy('体重の切り替え', e)); }); });
   $('b-shadow-weight').addEventListener('click', function () { setWeightMode('shadow').catch(function (e) { msg(jaWhy('体重を写しの期間に戻す', e)); }); });
   $('b-shadow-shift').addEventListener('click', function () { setShiftMode('shadow'); });
+  $('b-hl-reload').addEventListener('click', function () {
+    var b = $('b-hl-reload'); b.disabled = true;
+    loadHealth(SUAuth.client()).catch(function () { renderHealth({ ok: false }, 'other'); }).then(function () { b.disabled = false; });
+  });
   $('b-reload').addEventListener('click', function () { msg(''); load().catch(function (e) { msg(jaWhy('見比べ直す', e)); }); });
   $('b-care-check').addEventListener('click', function () { msg(''); runCareCheck(); });
   $('b-res-full').addEventListener('click', function () { msg(''); runResFull(); });

@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-FJkRN2DLy+PqGoyNrVNIZZYsATMgZP4OK75VJwmDfsQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-pO9bgOvclHZbaoWUDGE6RlS3zDJAjmqp8Rkd7SwNG7c='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -35,15 +35,40 @@ body { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-s
 #toolbar { position: sticky; top: 0; z-index: 50; background: var(--blue); color: #fff;
   padding: 6px 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 #toolbar h1 { font-size: 0.9375rem; margin: 0 8px 0 0; font-weight: 600; }
-#toolbar .ymnav { display: flex; align-items: center; gap: 2px; background: rgba(255,255,255,.12);
+/* 月の枠の地の白の重ねは .06、枠の中の前月・翌月のボタンは .08（2026-11-13・代表者「推奨どおり」）。枠 .12＋ボタン .14 では
+ * 白文字との差が 3.65:1 だったため、枠とボタンの見分けを残したまま少しだけ濃くした（ボタン 4.59:1（丸めない計算でも 4.58:1）・月の文字 5.41:1） */
+#toolbar .ymnav { display: flex; align-items: center; gap: 2px; background: rgba(255,255,255,.06);
   border-radius: 6px; padding: 2px; }
+/* ボタンの地の白の重ねは .14（2026-11-13・代表者の決定「直す（推奨）」）。.15 では白文字との差が 4.46:1 で 4.5:1 に届かなかったため、
+ * 届く所まで少しだけ濃くした（青帯 #2563a8 の上で 4.53:1・8ビットの丸め込みで計算）。編集モードの帯は下の body.edit-mode の指定のまま */
 #toolbar button { border: none; border-radius: 5px; padding: 5px 10px; cursor: pointer;
-  background: rgba(255,255,255,.15); color: #fff; font-size: 0.78125rem; }
-#toolbar button:hover { background: rgba(255,255,255,.3); }
+  background: rgba(255,255,255,.14); color: #fff; font-size: 0.78125rem; }
+/* 指を乗せた時は白を重ねず黒を .1 重ねて少しだけ濃くする（2026-11-13・代表者「推奨どおり」）。白の .3 では 3.25:1（月の枠の中は 2.76:1）で、
+ * ふだんのボタンが 4.5:1 の境目にあり白を足すと必ず下回るため。青帯の上 7.14:1・月の枠の中 6.36:1 */
+#toolbar button:hover { background: rgba(0,0,0,.1); }
+#toolbar .ymnav button { background: rgba(255,255,255,.08); }
+#toolbar .ymnav button:hover { background: rgba(0,0,0,.1); }
 #toolbar button.primary { background: #fff; color: var(--blue-d); font-weight: 600; }
 #toolbar button.savebtn { background: #2e7d32; color: #fff; font-weight: 700; }
 #toolbar button.savebtn:hover { background: #1b5e20; }
 #toolbar button.savebtn.saving { background: #66bb6a; color: #fff; }
+/* 見出しの左の「← メニュー」（care-tools のほかの画面と同じ .su-menu-back・2026-11-13）。ツールバーのボタンと同じ見た目にし、
+ * 編集モードの帯の色にも合わせる。#toolbar ごと印刷・印刷の計測（printsim）では隠れる。
+ * 狭い幅（899px 以下）では押す所を 44px にする */
+#toolbar a.su-menu-back { display: inline-flex; align-items: center; white-space: nowrap; text-decoration: none;
+  border-radius: 5px; padding: 5px 10px; background: rgba(255,255,255,.14); color: #fff; font-size: 0.78125rem; }
+#toolbar a.su-menu-back:hover { background: rgba(0,0,0,.1); }
+body.edit-mode #toolbar a.su-menu-back { background: rgba(255,255,255,.35); color: var(--edit-ink); }
+body.edit-mode #toolbar a.su-menu-back:hover { background: rgba(255,255,255,.5); }
+@media screen and (max-width: 899px) { #toolbar a.su-menu-back { min-height: 44px; box-sizing: border-box; } }
+/* 見出しの「使い方」（「← メニュー」の右隣・同じ大きさと色・画面だけ・印刷しない・代表者の決定 2026-11-13） */
+#toolbar a.su-help-link { display: inline-flex; align-items: center; white-space: nowrap; text-decoration: none;
+  border-radius: 5px; padding: 5px 10px; background: rgba(255,255,255,.14); color: #fff; font-size: 0.78125rem; }
+#toolbar a.su-help-link:hover { background: rgba(0,0,0,.1); }
+body.edit-mode #toolbar a.su-help-link { background: rgba(255,255,255,.35); color: var(--edit-ink); }
+body.edit-mode #toolbar a.su-help-link:hover { background: rgba(255,255,255,.5); }
+@media screen and (max-width: 899px) { #toolbar a.su-help-link { min-height: 44px; box-sizing: border-box; } }
+@media print{.su-help-link{display:none !important}}
 #toolbar #ymLabel { font-weight: 700; font-size: 0.9375rem; padding: 0 8px; min-width: 86px; text-align: center; }
 .tabs { display: flex; gap: 2px; }
 .tabs button.on { background: #fff; color: var(--blue-d); font-weight: 600; }
@@ -66,7 +91,7 @@ body { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-s
 #syncBadge.synced { background: #156736; }
 #syncBadge.dirty { background: #7a4f00; font-weight: 700; }
 #syncBadge.offline { background: #922b21; }
-#syncBadge.nosync { background: rgba(255,255,255,.15); }
+#syncBadge.nosync { background: rgba(255,255,255,.14); }   /* .15 では 4.46:1。少しだけ濃くして 4.53:1（2026-11-13・代表者「推奨どおり」） */
 #syncBadge.syncing { background: #6c5ce7; }
 /* 未定義だった状態（readonly/conflict/storeerror）。JSは以前からこのクラスを付けており、
    CSSが無いぶん既定の半透明白のまま＝「閲覧専用」「競合」「保存失敗」が視覚的に埋もれていた。
@@ -81,9 +106,10 @@ body { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-s
 /* ── 編集モード（サーバー発行の編集権を1台だけが持つ・2026-08-17） ──
    閲覧中は編集操作を受け付けない。状態は「帯の色」だけでなく必ず文字（✎/👁）でも示す。 */
 #toolbar #editToggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
-  white-space: nowrap; font-size: 0.78125rem; color: #fff; background: rgba(255,255,255,.15);
+  white-space: nowrap; font-size: 0.78125rem; color: #fff; background: rgba(255,255,255,.14);
   border-radius: 6px; padding: 0 12px; min-height: 44px; }
-#toolbar #editToggle:hover { background: rgba(255,255,255,.3); }
+/* 地 .15（4.46:1）→.14（4.53:1）、指を乗せた時は白 .3（3.25:1）→黒 .1（7.14:1）。ツールバーのボタンと同じ直し（2026-11-13・代表者「推奨どおり」） */
+#toolbar #editToggle:hover { background: rgba(0,0,0,.1); }
 #toolbar #editToggle input { cursor: pointer; margin: 0; width: 18px; height: 18px; }
 #toolbar #editToggle.disabled { opacity: .55; cursor: not-allowed; }
 #toolbar #modeBadge { font-size: 0.75rem; padding: 4px 10px; border-radius: 12px; white-space: nowrap;
@@ -176,6 +202,7 @@ body.fitscreen table.sheet thead th { position: static; }
 body.fitscreen table.sheet .sticky1, body.fitscreen table.sheet .sticky2 { position: static; }
 body.fitscreen table.sheet .noprint { display: none; }   /* 俯瞰時は連絡事項等の補助列を隠して縮小率を確保 */
 #btnFit.on { background: rgba(255,255,255,.38); }
+#toolbar #btnFit.on:hover { background: rgba(255,255,255,.38); }   /* 指を乗せても「全体表示」を選んでいる印を消さない（ほかのボタンの hover を黒 .1 にしたため・2026-11-13） */
 table.sheet { border-collapse: separate; border-spacing: 0; font-size: 0.75rem; table-layout: fixed; }
 table.sheet th, table.sheet td { border-right: 1px solid #000; border-bottom: 1px solid #000;
   padding: 2px 3px; text-align: center; white-space: nowrap; background: #fff; }
@@ -438,12 +465,18 @@ html.su-field #frCSV,
 html.su-field #frdCSV { display: none !important; }
 </style>
 <script src="su-errors.js?v=2026-11-12"></script>
+<script src="su-dialog.js?v=2026-11-14.2"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
+<script src="su-facility.js?v=2026-11-14"></script>
 <script src="su-kv.js?v=2026-11-08"></script>
 <script src="su-kv-shadow.js?v=2026-10-28"></script>
 </head>
 <body>
 <div id="toolbar">
+  <!-- メニュー（index.html）へ戻る（care-tools のほかの画面と同じ形・2026-11-13）。移る時の保存は pagehide の flushNow_ が確定し、
+       編集中で送っていない変更がある時は beforeunload の確認が出る。右隣の「使い方」も同じタブで移るので同じ確認になる（代表者の決定 2026-11-13） -->
+  <a class="su-menu-back" href="index.html">← メニュー</a>
+  <a class="su-help-link" href="help.html?sec=shift-app">使い方</a>
   <h1>シフト作成・管理</h1>
   <span class="ymnav">
     <button id="ymPrev" title="前月" aria-label="前月">◀</button>
@@ -564,7 +597,7 @@ html.su-field #frdCSV { display: none !important; }
     <div class="panel">
       <h2>希望休の取込（Googleフォーム回答のコピペ）</h2>
       <p class="muted">フォーム回答シートで全体（ヘッダ行含む）を選択してコピーし、下に貼り付けてください。設定の「取込で除外する姓」に登録した姓は自動除外されます。</p>
-      <textarea id="reqPaste" class="paste" placeholder="ここに貼り付け（Ctrl+V）"></textarea>
+      <textarea id="reqPaste" class="paste" aria-label="希望休のフォーム回答の貼り付け欄" placeholder="ここに貼り付け（Ctrl+V）"></textarea>
       <div class="flexrow" style="margin-top:8px">
         <button id="reqParse" class="act">解析する</button>
         <span id="reqParseMsg" class="muted"></span>
@@ -644,7 +677,7 @@ html.su-field #frdCSV { display: none !important; }
       <div class="muted" id="frPatternInfo" style="margin-top:4px"></div>
       <details id="frEmpDetails" style="margin-top:8px">
         <summary>従業員コードの取込・編集（freeeの従業員一覧を貼り付け）</summary>
-        <textarea id="frPaste" rows="4" style="width:100%;margin:6px 0"
+        <textarea id="frPaste" aria-label="freeeの従業員一覧の貼り付け欄" rows="4" style="width:100%;margin:6px 0"
           placeholder="freeeの従業員一覧の表（No. 所属 雇用区分 従業員コード 名前…）をコピーしてそのまま貼り付け"></textarea>
         <button id="frPasteApply" class="act">貼り付け内容を取込</button>
         <span class="muted" id="frPasteResult"></span>
@@ -690,7 +723,7 @@ html.su-field #frdCSV { display: none !important; }
       <div class="panel">
         <h2>職員一括取込（マスタシートのコピペ）</h2>
         <p class="muted">スプレッドシートのマスタで「特徴・連絡・氏名・区分・資格」列を含む範囲を選択コピーし、貼り付けてください。ヘッダ行があれば列を自動判定します。再取込は氏名照合で差分更新します（アプリ側で編集した許可パターン等は保持）。</p>
-        <textarea id="staffPaste" class="paste"></textarea>
+        <textarea id="staffPaste" class="paste" aria-label="職員マスタの貼り付け欄"></textarea>
         <div class="flexrow" style="margin-top:8px">
           <button id="staffParse" class="act">解析する</button>
           <span id="staffParseMsg" class="muted"></span>
@@ -705,22 +738,23 @@ html.su-field #frdCSV { display: none !important; }
       </div>
       <div class="panel">
         <h2>🏢 施設情報の設定</h2>
-        <p class="muted">施設名・事業所（施設／訪問／通所）の表示名・定休日・初期職員をまとめて設定します。work-scheduleアプリと共通の設定です（同じ端末なら一度の設定で両アプリに反映）。</p>
+        <p class="muted">施設名・事業所（施設／訪問／通所）の表示名・定休日・初期職員をまとめて設定します。ワークスケジュールアプリと共通の設定です（同じ端末なら一度の設定で両アプリに反映）。</p>
         <button id="setFacility" class="act" aria-label="施設情報の設定">🏢 施設情報の設定</button>
       </div>
       <div class="panel">
         <h2>freee勤務パターンマスタ</h2>
         <p class="muted">1行につき「コード,名称,開始HH:MM,終了HH:MM」。日をまたぐ夜勤は開始＞終了で記入します（例: 103,夜勤21-7,21:00,7:00）。空欄で保存すると初期パターンに戻ります。freee CSV出力の時刻自動一致・自動候補がこの表を参照します。</p>
-        <textarea id="setFreeePatterns" rows="10" style="width:100%;font-family:monospace" placeholder="101,早番7-16,07:00,16:00"></textarea>
+        <textarea id="setFreeePatterns" aria-label="freee勤務パターンの一覧" rows="10" style="width:100%;font-family:monospace" placeholder="101,早番7-16,07:00,16:00"></textarea>
         <div style="margin-top:8px"><button id="setFreeePatSave" class="act">保存</button> <span class="muted" id="setFreeePatMsg"></span></div>
       </div>
       <div class="panel">
         <h2>同期設定（複数端末共有）</h2>
-        <p class="muted">設定方法は docs/gas-setup.md 参照。URLとトークンは他人に共有しないでください。</p>
+        <p class="muted">接続先のURLと合言葉は、ほかの人に教えないでください。</p>
+        <details class="muted"><summary>管理者向け：接続先の作り方</summary>設定の手順は、シフト作成の正本の docs/gas-setup.md にあります。</details>
         <p class="muted field-only">📱 この端末は現場用のため、同期先は変えられません（事務所のパソコンで設定してください）。［今すぐ同期］は使えます。</p>
         <div class="formgrid" id="syncTargetForm">
-          <label>GAS WebアプリURL</label><input type="text" id="syncUrl" placeholder="https://script.google.com/macros/s/…/exec">
-          <label>トークン</label><input type="password" id="syncToken" placeholder="64桁の英数字">
+          <label for="syncUrl">接続先のURL</label><input type="text" id="syncUrl" placeholder="https://script.google.com/macros/s/…/exec">
+          <label for="syncToken">合言葉</label><input type="password" id="syncToken" placeholder="64桁の英数字">
         </div>
         <div class="flexrow" style="margin-top:8px">
           <button id="syncSave" class="act">保存</button>
@@ -742,12 +776,12 @@ html.su-field #frdCSV { display: none !important; }
       <div class="panel">
         <h2>バックアップ</h2>
         <div class="flexrow">
-          <button id="backupExport" class="act ghost">JSONエクスポート</button>
-          <label id="backupImportLabel" class="act ghost" style="display:inline-block">JSONインポート<input type="file" id="backupImport" accept=".json" style="display:none"></label>
+          <button id="backupExport" class="act ghost">控えのファイルに書き出す</button>
+          <label id="backupImportLabel" class="act ghost" style="display:inline-block">控えのファイルから読み込む<input type="file" id="backupImport" accept=".json" style="display:none"></label>
           <span id="backupMsg" class="muted"></span>
         </div>
         <!-- 退避データ一覧: 競合解決・取込で上書きされる前の版（local:conflictRescue / local:importRescue）。
-             JSONエクスポートは local: を含まないため、ここが唯一の救出導線になる。 -->
+             控えのファイルに書き出すは local: を含まないため、ここが唯一の救出導線になる。 -->
         <h2 style="margin-top:14px">退避データ一覧</h2>
         <p class="muted">同期の競合やバックアップ取込で置き換えられる前の内容を、この端末内に自動退避したものです（14日・3世代で自動削除）。必要な版をダウンロードして保管できます。</p>
         <div id="rescueList"></div>
@@ -773,12 +807,12 @@ html.su-field #frdCSV { display: none !important; }
 <dialog id="dlgFreee">
   <h3>freee勤怠 スケジュールCSV出力</h3>
   <div class="formgrid" style="max-width:420px">
-    <label>対象レイヤ</label>
+    <label for="frdLayer">対象レイヤ</label>
     <select id="frdLayer">
       <option value="plan">予定</option>
       <option value="actual">実績</option>
     </select>
-    <label>事業所</label>
+    <label for="frdDivision">事業所</label>
     <select id="frdDivision">
       <option value="全">全事業所（全職員を一括）</option>
       <option value="施設">施設</option>
@@ -2315,6 +2349,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     for (i = 0; i < staff.length; i++) {
       st = staff[i];
       if (st.active === false || st.countInHeadcount === false) continue;
+      if (typeof opts.isVisible === 'function' && !opts.isVisible(st)) continue;   /* 退職月より後の職員には勤務を入れない（2026-11-13） */
       active.push(st);
     }
 
@@ -3354,6 +3389,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     for (var i = 0; i < opts.staff.length; i++) {
       var st = opts.staff[i];
       if (st.active === false) continue;
+      if (typeof opts.isVisible === 'function' && !opts.isVisible(st)) continue;   /* 退職月より後の職員は出さない（シフト表に出ない行・2026-11-13） */
       if (division && division !== '全' && (st.mainDivision || '施設') !== division) continue;
       var cells = opts.cells[st.id] || {};
       var subDivs = subCellsAll[st.id] || {};
@@ -3943,6 +3979,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
  * 旧Safari互換: ?. / ?? / replaceAll / structuredClone は使用しない */
 (function () {
   'use strict';
+  /* 知らせの文が指す書き出しの場所（SA-02） */
+  var BACKUP_HINT_ = '［マスタ→設定→バックアップ→控えのファイルに書き出す］';
   var SC = (typeof window !== 'undefined') ? window.ShiftSyncCore : null;
   /* 編集リースの判断（editlock.js・純関数）。解決は呼び出し時＝結合ビルドの読み込み順に依存しない。
    * 未読込の環境（editlock.js を含まないビルド）では下の 2 ヘルパが従来動作へ倒れる＝新旧どちらでも壊れない。 */
@@ -3979,13 +4017,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
   /* 接続先が存在しない時の案内（2026-09-08）。この端末の設定が古い世代のデプロイを指している状態で、
    * 自動切替の当てが無い場合に出す。原因は端末ごとの保存値なので、他の端末は正常に見える。 */
-  var DEAD_ENDPOINT_MSG = 'この端末の同期先（GASのURL）が見つかりません。' +
-    '正常に同期できている端末の［マスタ→設定→クラウド同期］のURLをコピーして、この端末に貼り直してください。';
+  var DEAD_ENDPOINT_MSG = 'この端末の同期先が見つかりません。' +
+    '正常に同期できている端末の［マスタ→設定→同期設定］の接続先のURLをコピーして、この端末に貼り直してください。';
   /* 接続先が「シフトの同期先ではない」と答えた時の案内（2026-09-24）。応答は返っているので「見つかりません」は
    * 原因の説明として正しくない。相手は別アプリのGAS（入居者マスタ・薬・申送＝「不明なaction」）か、
    * 統合同期GASの古い版（'unknown action'）。直し方は同じ（正常な端末のURLを貼り直す）。 */
-  var WRONG_ENDPOINT_MSG = 'この端末の同期先（GASのURL）が、シフトの同期先ではありません（別のアプリのGASか古い版を指しています）。' +
-    '正常に同期できている端末の［マスタ→設定→クラウド同期］のURLをコピーして、この端末に貼り直してください。';
+  var WRONG_ENDPOINT_MSG = 'この端末の同期先が、シフトの同期先ではありません（別のアプリの接続先か、古い版を指しています）。' +
+    '正常に同期できている端末の［マスタ→設定→同期設定］の接続先のURLをコピーして、この端末に貼り直してください。';
   function endpointFailMsg_(msg) { return isWrongEndpointErr_(msg) ? WRONG_ENDPOINT_MSG : DEAD_ENDPOINT_MSG; }
   /* 保存（push）の応答を WRITE_NOTICE_MS 待っても返らない時に、同期の札の詳細へ出す文（代表者の決定 2026-11-01・文言は指定どおり） */
   var WRITE_WAIT_MSG = 'サーバーの応答を待っています。届いていることもあるので、同じ所を直し直さず、しばらく待ってからこの札を押して確かめてください';
@@ -4027,8 +4065,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
   function syncTargetMessage(v) {
     if (v === 'ok') return 'シフトの同期先を確認しました';
-    if (v === 'wrong') return 'このURLは週間計画・ワークスケジュール・シフトの同期先ではありません（別のアプリのGASです）';
-    if (v === 'auth') return '同期トークンが一致しないか、別のアプリのGASです';
+    if (v === 'wrong') return 'このURLは週間計画・ワークスケジュール・シフトの同期先ではありません（別のアプリの接続先です）';
+    if (v === 'auth') return '合言葉が違うか、別のアプリの接続先です';
     return '同期先に接続できず、確かめられませんでした。通信できる状態でもう一度保存してください';
   }
 
@@ -4214,7 +4252,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
   }
 
+  /* 止めて知らせる窓は、画面の中の窓（care-tools の su-dialog.js）で出す。読めない時はブラウザの窓に落とす（文はそのまま・代表者の決定 2026-11-13）。
+   * 画面の中の窓は待たずに先へ進む（同期は止めない）。窓を出せない環境では何もしない */
+  function suAlert_(msg) {
+    try { if (window.SUDialog) { window.SUDialog.alert(msg); return; } } catch (e) { /* ブラウザの窓へ */ }
+    try { alert(msg); } catch (e2) { /* 何もしない */ }
+  }
+
   var Store = {
+    alertBox: suAlert_,
     meta: null,
     queue: null,
     status: 'nosync',     // nosync | synced | dirty | syncing | offline | conflict | storeerror | readonly
@@ -4492,7 +4538,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       this.storeError = true;
       this.updateStatus('storeerror',
-        '端末への保存に失敗しました（保存容量の上限の可能性）。データが失われる前に［マスタ→設定→バックアップ→JSONエクスポート］で保全してください。');
+        '端末への保存に失敗しました（保存容量の上限の可能性）。データが失われる前に' + BACKUP_HINT_ + 'で保全してください。');
       return false;
     },
     /* 同期対象外のローカル設定（端末ごと） */
@@ -4805,7 +4851,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         this.status = 'nosync'; this.statusDetail = '';
       } else if (this.readOnly) {
         this.status = 'readonly';
-        this.statusDetail = '閲覧専用トークン：この端末の編集は共有されません';
+        this.statusDetail = '閲覧専用の合言葉：この端末の編集は共有されません';
       } else if (this.queue.size() > 0) {
         this.status = 'dirty'; this.statusDetail = this.pushWaitDetail_();
       } else if (this.dataFresh === false) {
@@ -5040,7 +5086,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (storeFailed.length) {
           self.storeError = true;
           self.updateStatus('storeerror',
-            '端末への保存に失敗しました（保存容量の上限の可能性）。サーバ版の取り込みを保留しています（' + storeFailed.join(', ') + '）。［マスタ→設定→バックアップ→JSONエクスポート］で保全してください。');
+            '端末への保存に失敗しました（保存容量の上限の可能性）。サーバ版の取り込みを保留しています（' + storeFailed.join(', ') + '）。' + BACKUP_HINT_ + 'で保全してください。');
         } else if (corrupt.length) {
           self.updateStatus('offline',
             'サーバ側に破損データがありました（' + corrupt.join(', ') + '）。ローカルを保持し、修復のため再送します。');
@@ -5123,7 +5169,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
            * revだけ進めると旧データでの正当上書き（lost-update）経路になる */
           self.storeError = true;
           self.updateStatus('storeerror',
-            '端末への保存に失敗しました（保存容量の上限の可能性）。サーバ版の取り込みを保留しました。［マスタ→設定→バックアップ→JSONエクスポート］で保全してください。');
+            '端末への保存に失敗しました（保存容量の上限の可能性）。サーバ版の取り込みを保留しました。' + BACKUP_HINT_ + 'で保全してください。');
           done();
           return;
         }
@@ -5198,7 +5244,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           /* alert はキーごとセッション1回だけ（1.5秒間隔での連続ポップアップを防ぐ） */
           if (!this._staleAlerted) this._staleAlerted = {};
           if (!this._staleAlerted[key]) {
-            try { alert('⚠ ' + staleMsg + '\n最新の内容を確認し、必要な編集はやり直してください。'); } catch (eA) {}
+            suAlert_('⚠ ' + staleMsg + '\n最新の内容を確認し、必要な編集はやり直してください。');
             this._staleAlerted[key] = true;
           }
           return;
@@ -5357,7 +5403,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }).catch(function (err) {
         self._pushInFlight = false;   /* 先にフラグ解除＝heal後の再送(self.pushQueued)が再入できるように */
         if (err && err.message === '__READONLY__') {
-          self.updateStatus('readonly', '閲覧専用トークンのため、この端末の編集はサーバへ送信されません');
+          self.updateStatus('readonly', '閲覧専用の合言葉のため、この端末の編集はサーバへ送信されません');
           return 'readonly';
         }
         var msg = String(err && err.message ? err.message : err);
@@ -5685,7 +5731,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         /* 退避できなかった: キューもローカルも触らずに中断する（何も失わない側へ倒す） */
         this.storeError = true;
         this.updateStatus('storeerror',
-          'サーバ側のデータを守るため、この端末の変更は保留しました。端末内への退避に失敗したため、サーバの最新版の取り込みを中止しています（' + key + '）。［マスタ→設定→バックアップ→JSONエクスポート］で保全してください。');
+          'サーバ側のデータを守るため、この端末の変更は保留しました。端末内への退避に失敗したため、サーバの最新版の取り込みを中止しています（' + key + '）。' + BACKUP_HINT_ + 'で保全してください。');
         return Promise.resolve('rescuefail');
       }
       this.queue.take(key);
@@ -5736,7 +5782,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         this._lockLostInFlight = false;
         this.storeError = true;
         this.updateStatus('storeerror',
-          '他の端末が編集モードになりました。この端末の未送信の編集を端末内へ退避できなかったため、サーバ版の取り込みを中止しました（' + failed.join(', ') + '）。［マスタ→設定→バックアップ→JSONエクスポート］で保全してから画面を再読み込みしてください。');
+          '他の端末が編集モードになりました。この端末の未送信の編集を端末内へ退避できなかったため、サーバ版の取り込みを中止しました（' + failed.join(', ') + '）。' + BACKUP_HINT_ + 'で保全してから画面を再読み込みしてください。');
         if (this.onLockLostFail) { try { this.onLockLostFail(failed); } catch (eF) {} }
         return Promise.resolve('rescuefail');
       }
@@ -5810,7 +5856,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           !this.rescueLocal_(key, lv, item ? item.baseRev : 0)) {
         this.storeError = true;
         this.updateStatus('storeerror',
-          'この端末の編集を退避できなかったため、サーバ版の取り込みを中止しました（' + key + '）。［マスタ→設定→バックアップ→JSONエクスポート］で保全してください。');
+          'この端末の編集を退避できなかったため、サーバ版の取り込みを中止しました（' + key + '）。' + BACKUP_HINT_ + 'で保全してください。');
         return Promise.resolve({ ok: false, error: 'rescuefail' });
       }
       return new Promise(function (resolve) {
@@ -5856,7 +5902,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (kept.length) {
         this.storeError = true;
         this.updateStatus('storeerror',
-          '未送信の編集を端末内へ退避できなかったため、一部のキーは取り直しを中止しました（' + kept.join(', ') + '）。［マスタ→設定→バックアップ→JSONエクスポート］で保全してください。');
+          '未送信の編集を端末内へ退避できなかったため、一部のキーは取り直しを中止しました（' + kept.join(', ') + '）。' + BACKUP_HINT_ + 'で保全してください。');
       }
       if (!targets.length) return Promise.resolve({ adopted: 0, kept: kept });
       return this.pullAll(targets).then(function () {
@@ -5871,7 +5917,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       for (var i = 0; i < localStorage.length; i++) {
         var k = localStorage.key(i);
         /* 他アプリのキー（旧版の全量pullが溜めた wsday_*・care_schedule_v2・months 等）は書き出さない（2026-09-23）。
-         * 保存容量が満杯の時の案内は「JSONエクスポートで保全」なので、残骸があると他アプリのデータ
+         * 保存容量が満杯の時の案内は「控えのファイルに書き出すで保全」なので、残骸があると他アプリのデータ
          * 約11MBを抱えたファイルになる。書き出すのはシフトの同期キーだけ（_meta・_sync・local:* は従来どおり対象外。
          * _healLog など _ 始まりの端末記録もシフトの同期キーではないので、これ以降は書き出さない）。 */
         if (k && k.indexOf(PREFIX) === 0 && k !== META_KEY && k !== SYNC_KEY && k.indexOf(PREFIX + 'local:') !== 0 &&
@@ -6947,12 +6993,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (lab) {
         lab.style.opacity = view ? '.55' : '';
         lab.title = view ? '閲覧モードでは取り込めません（右上の「✎ 編集」をオンにしてください）'
-                         : 'JSONバックアップを取り込みます（勤務表は取込前に1世代退避されます）';
+                         : '控えのファイルを取り込みます（勤務表は取込前に1世代退避されます）';
       }
     },
 
     /* 退避データ一覧（同期の競合解決・バックアップ取込で置き換えられる前の内容）。
-     * JSONエクスポートは local:* を含まないため、退避を取り出せる導線はここだけ。
+     * 控えのファイルに書き出すは local:* を含まないため、退避を取り出せる導線はここだけ。
      * 書き戻しボタンは置かない＝現在のデータへ誤って上書きする事故を作らない（中身はダウンロードで確認する）。 */
     renderRescueList: function () {
       var el = document.getElementById('rescueList');
@@ -6979,7 +7025,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         var label = (app && app.keyLabel_) ? app.keyLabel_(rows[i].srcKey) : rows[i].srcKey;
         h += '<tr><td>' + esc(fmtRescueTime_(rows[i].savedAt)) + '</td><td>' + esc(rows[i].kind) + '</td>' +
           '<td>' + esc(label) + '</td><td>' + esc(rows[i].hint) + '</td>' +
-          '<td><button class="act ghost rescueDl" data-k="' + esc(rows[i].local) + '">JSONダウンロード</button></td></tr>';
+          '<td><button class="act ghost rescueDl" data-k="' + esc(rows[i].local) + '">ファイルに保存</button></td></tr>';
       }
       el.innerHTML = h + '</table>';
       var self = this;
@@ -7216,7 +7262,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       document.getElementById('edSave').onclick = function () {
         if (app.leaseGuard()) return;
         var name = document.getElementById('edName').value.trim();
-        if (!name) { alert('氏名を入力してください'); return; }
+        if (!name) { window.ShiftStore.alertBox('氏名を入力してください'); return; }
         st.name = name;
         st.group = document.getElementById('edGroup').value;
         st.mainDivision = document.getElementById('edDiv').value;
@@ -7773,7 +7819,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           var obj;
           /* 先頭の見えない印（BOM）は外して読む（Windows のメモ帳などで開いて保存し直すと付く・2026-11-13） */
           try { obj = JSON.parse(String(reader.result).replace(/^\uFEFF/, '')); }
-          catch (err) { msgEl.textContent = '✗ ファイルを読めませんでした（' + err.message + '）'; e.target.value = ''; return; }
+          catch (err) { msgEl.textContent = '✗ ファイルを読めませんでした（壊れているか、バックアップのファイルではありません）'; e.target.value = ''; return; }
           /* 「📤 月を書き出す」で作ったファイルをここで選んだ時は、「📥 月を取り込む」と同じ処理へ回す
            * （全データのバックアップとは形が違うため、以前は「バックアップ形式が不正です」で止まっていた・2026-11-13 代表者の報告） */
           if (obj && obj.app === 'shiftapp-month') {
@@ -7786,7 +7832,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
             e.target.value = '';
             msgEl.textContent = '✗ シフト作成アプリのバックアップではありません（' +
               (obj && obj.app ? '種類: ' + String(obj.app).slice(0, 40) : '形が違います') +
-              '）。勤務表の［マスタ］→［設定］の「JSONエクスポート」で作ったファイル（shiftapp-backup-日付.json）を選んでください。';
+              '）。勤務表の［マスタ］→［設定］の「控えのファイルに書き出す」で作ったファイル（shiftapp-backup-日付.json）を選んでください。';
             return;
           }
           /* 取込は現在のデータを上書きするため、中身（書き出し日時・キー数）を示して明示確認を取る。
@@ -7959,10 +8005,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var hdr = '<tr class="reqhdr"><th>氏名</th>';
       for (var d = 1; d <= days; d++) hdr += '<th style="text-align:center">' + d + '</th>';
       hdr += '</tr>';
-      /* 当月の表示対象（active）職員のみ先に抽出して中間位置を確定する */
-      var staffAll = app.requestsSorted();
-      var staff = [];
-      for (var si = 0; si < staffAll.length; si++) { if (staffAll[si].active !== false) staff.push(staffAll[si]); }
+      /* 当月の表示対象の職員だけを先に抽出し、日付の見出しを挟む行を決める。
+       * 休職・非表示に加え、退職月より後の月は退職した職員を出さない（シフト表と同じ判定 isStaffVisible・本人指示 2026-11-13） */
+      var staff = visibleStaff(app, app.requestsSorted());
       var mid = staff.length >= 6 ? Math.floor(staff.length / 2) : -1;  /* 行数が少なければ中盤行は出さない */
       h += hdr;  /* 最上部 */
       for (var i = 0; i < staff.length; i++) {
@@ -8023,7 +8068,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var text = document.getElementById('reqPaste').value;
       var msg = document.getElementById('reqParseMsg');
       if (!text.trim()) { msg.textContent = 'データを貼り付けてください'; return; }
-      var r = IM.parseRequestTSV(text, app.staff);
+      var r = IM.parseRequestTSV(text, visibleStaff(app, app.staff));   /* 退職月より後の職員は名簿に入れない＝「不一致」に出る */
       this.parsed = r;
       msg.textContent = '';
       var names = [];
@@ -8044,13 +8089,22 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       document.getElementById('reqImportGo').onclick = function () {
         if (app.leaseGuard()) return;        /* 取込の登録も編集モードだけ（解析・プレビューは閲覧でも可） */
         var reqs = app.requests;
-        var n = 0;
+        var n = 0, hiddenN = 0;
+        /* この月に出ない職員（退職月より後・休職・非表示）の名前の行は登録しない（2026-11-13）。
+         * 名簿に無い名前（表記ゆれ等）はこれまでどおり登録する */
+        var hidden = {};
+        for (var hi = 0; hi < (app.staff || []).length; hi++) {
+          var hs = app.staff[hi];
+          if (hs && visibleStaff(app, [hs]).length === 0) hidden[IM.normalizeName(hs.name)] = true;
+        }
         for (var nm2 in r.entries) {
+          if (hidden[nm2]) { hiddenN++; continue; }
           reqs[nm2] = r.entries[nm2];
           n++;
         }
         app.saveRequests();
-        document.getElementById('reqPreview').innerHTML = '<p>✓ ' + n + '名分を登録しました</p>';
+        document.getElementById('reqPreview').innerHTML = '<p>✓ ' + n + '名分を登録しました' +
+          (hiddenN ? '（この月に表示しない職員（退職・休職・非表示） ' + hiddenN + '名分は登録していません）' : '') + '</p>';
         self.render();
         app.rerender();
       };
@@ -8062,8 +8116,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (app.lockGuard()) return;   /* ロック中の月は予定（確定版）へ反映しない */
       var sched = app.getSched('plan');
       var n = 0, skipped = 0;
-      for (var i = 0; i < app.staff.length; i++) {
-        var st = app.staff[i];
+      var staffList = visibleStaff(app, app.staff);   /* 退職月より後・休職・非表示の職員の行へは書かない */
+      for (var i = 0; i < staffList.length; i++) {
+        var st = staffList[i];
         var row = app.requests[IM.normalizeName(st.name)];
         if (!row) continue;
         if (!sched.cells[st.id]) sched.cells[st.id] = {};
@@ -8079,6 +8134,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       app.rerender();
     }
   };
+
+  /* 表示中の月に出る職員だけを返す（判定は app.isStaffVisible＝休職・非表示・退職月より後を除く） */
+  function visibleStaff(app, list) {
+    var out = [];
+    for (var i = 0; i < (list || []).length; i++) {
+      var st = list[i];
+      if (!st) continue;
+      if (typeof app.isStaffVisible === 'function' ? app.isStaffVisible(st) : st.active !== false) out.push(st);
+    }
+    return out;
+  }
 
   function esc(s) { return ShiftEsc.esc(s); }   /* 中身は src/logic/esc.js の1か所（2026-10-14） */
 
@@ -8611,14 +8677,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
   };
 
-  /* 事業所名・サービス種別（施設情報の事業所の表示名を使う。無ければ区分の名前） */
+  /* 事業所名・サービス種別（表示名は ShiftFacility.officeLabel・無ければ区分の名前） */
   function officeLabel(division) {
-    try {
-      if (window.ShiftFacility && ShiftFacility.loadFacilityProfile) {
-        var p = ShiftFacility.loadFacilityProfile();
-        for (var i = 0; i < (p.offices || []).length; i++) if (p.offices[i].key === division && p.offices[i].label) return p.offices[i].label;
-      }
-    } catch (e) {}
+    try { if (window.ShiftFacility && ShiftFacility.officeLabel) return ShiftFacility.officeLabel(division) || division; } catch (e) {}
     return division;
   }
   function officeName(division) {
@@ -8716,6 +8777,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       for (var i = 0; i < staff.length; i++) {
         var st = staff[i];
         if (st.active === false || !st.empCode) continue;
+        if (typeof this.app.isVisibleInMonth === 'function' && !this.app.isVisibleInMonth(st, this.app.ym)) continue;   /* CSV と同じ数え方（退職月より後は数えない） */
         if (division && division !== '全' && (st.mainDivision || '施設') !== division) continue;
         n++;
       }
@@ -8905,6 +8967,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var res = F.buildCsv({
         ym: app.ym,
         staff: this.exportRoster(),
+        isVisible: (typeof app.isVisibleInMonth === 'function') ? function (st) { return app.isVisibleInMonth(st, app.ym); } : null,
         cells: sched.cells || {},
         subCells: sched.subCells || {},
         symbols: app.symbols || [],
@@ -9073,11 +9136,24 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return null;
   }
 
+  /* 施設情報の名前（無ければ空）。表示だけに使い端末の設定へ混ぜない（SA-03） */
+  function facNameOf_(kind) {
+    try {
+      var F = window.SUFacility, n = (F && F.ready && F.ready() && F.nameOf) ? F.nameOf(kind) : '';
+      return (typeof n === 'string') ? n.replace(/^\s+|\s+$/g, '') : '';
+    } catch (e) { return ''; }
+  }
+  function officeLabel(key, profile) {
+    var o = officeByKey(key, profile);
+    return facNameOf_(key) || ((o && o.label) ? o.label : '');
+  }
+
   /* labelが空ならkeyのみ、あれば「key（label）」形式 */
   function officeDisplay(key, profile) {
     var o = officeByKey(key, profile);
     if (!o) return key;
-    return o.label ? (key + '（' + o.label + '）') : key;
+    var lb = officeLabel(key, profile);
+    return lb ? (key + '（' + lb + '）') : key;
   }
 
   /* 3セットのプルダウン（施設/訪問/通所のoption）の表示名を書き換え、
@@ -9109,8 +9185,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return dlg;
   }
 
+  /* 初期設定の1段目で欄を出さずに見せた施設情報の施設名（無ければ空） */
+  var wizFacShown = '';
   function openWizard() {
     ensureDialog();
+    wizFacShown = '';
     wiz = loadFacilityProfile();   /* 既存値を初期表示 */
     wiz._names = '';               /* 職員一括入力の一時保持（保存時に破棄） */
     wizStep = 1;
@@ -9152,11 +9231,23 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function renderWizard() {
     var h = '<h2>初期設定（' + wizStep + '/3）</h2>';
     if (wizStep === 1) {
-      h += '<p class="muted">施設名を設定します。work-scheduleアプリと共通の設定です（同じ端末なら一度の設定で両アプリに反映されます）。</p>';
-      h += '<div class="formgrid"><label>施設名</label>' +
-        '<input type="text" id="wizFacName" value="' + esc(wiz.facilityName) + '" placeholder="例: ○○ホーム"></div>';
+      /* 施設情報（facility-profile.json）に施設名がある時は聞かずにその名前を出す。端末の設定には書かない（SA-03）。
+       * 読めない・書いていない時だけ今までの欄を使う */
+      var facN = facNameOf_('施設名');
+      wizFacShown = facN;
+      if (facN) {
+        h += '<p class="muted">施設名は施設情報に書いてある名前を使います（ここで入れる必要はありません）。</p>';
+        h += '<div class="formgrid"><label>施設名</label><span id="wizFacNameFixed">' + esc(facN) + '</span></div>';
+      } else {
+        h += '<p class="muted">施設名を設定します。ワークスケジュールアプリと共通の設定です（同じ端末なら一度の設定で両アプリに反映されます）。</p>';
+        h += '<div class="formgrid"><label>施設名</label>' +
+          '<input type="text" id="wizFacName" value="' + esc(wiz.facilityName) + '" placeholder="例: ○○ホーム"></div>';
+      }
     } else if (wizStep === 2) {
       h += '<p class="muted">使用する事業所と、その表示名・定休日を設定します（表示名は空欄可＝区分名のみ表示）。</p>';
+      if (facNameOf_('施設') || facNameOf_('訪問') || facNameOf_('通所')) {
+        h += '<p class="muted">施設情報に名前が書いてある事業所は、その名前を表示に使います（ここの表示名は、施設情報を読めない時に使います）。</p>';
+      }
       h += '<table class="plain"><tr><th>使用</th><th>区分</th><th>表示名</th><th>定休日</th></tr>';
       for (var i = 0; i < wiz.offices.length; i++) {
         var o = wiz.offices[i];
@@ -9205,6 +9296,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
   function finishWizard() {
     wiz.setupDone = true;
+    /* 欄を出さなかった時も、端末の設定に施設名が無ければ見せた施設名を残す。ワークスケジュールは同じ鍵の施設名だけを見るため
+     * （空のままだと24時間配置表が開けない・反証レビュー 2026-11-14・仮置き）。前から入っている名前は変えない */
+    if (wizFacShown && !wiz.facilityName) wiz.facilityName = wizFacShown;
     saveFacilityProfile(wiz);
     /* 職員一括登録（既存マスタへ投入・氏名重複はスキップ）。
      * 施設情報そのものは端末ローカル（work-schedule と共有）なので閲覧モードでも保存できるが、
@@ -9233,9 +9327,29 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (app && typeof app.rerender === 'function') app.rerender();
   }
 
+  /* 施設情報が後から届き表示名が変わる時だけ描き直す */
+  function labelSig_() { return OFFICE_KEYS.map(function (k) { return officeLabel(k); }).join('|'); }
+  var lateHooked = false;
+  function hookLateFacility_() {
+    var F = window.SUFacility;
+    if (lateHooked || !F || typeof F.onReady !== 'function') return;
+    lateHooked = true;
+    var sig0 = labelSig_();
+    try {
+      F.onReady(function () {
+        var sig1 = labelSig_();
+        if (sig1 === sig0) return;
+        sig0 = sig1;
+        applyOfficeLabels();
+        if (app && app.rerender) { try { app.rerender(); } catch (e) {} }
+      });
+    } catch (e) {}
+  }
+
   function init(a) {
     app = a;
     applyOfficeLabels();
+    hookLateFacility_();
     var p = loadFacilityProfile();
     /* 初回ウィザードの自動起動は編集モードのみ。閲覧端末（他端末が編集中・共有ロック待ち）で
      * 毎回モーダルが開くのを防ぐ。手動では［マスタ→設定→施設情報の設定］から開ける。 */
@@ -9250,6 +9364,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     loadFacilityProfile: loadFacilityProfile,
     saveFacilityProfile: saveFacilityProfile,
     officeDisplay: officeDisplay,
+    officeLabel: officeLabel,
     applyOfficeLabels: applyOfficeLabels,
     openWizard: openWizard,
     init: init
@@ -9259,6 +9374,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 /* app.js — アプリ統括（状態・描画調停・イベント・同期UI） */
 (function () {
   'use strict';
+  /* 知らせの文が指す書き出しの場所（SA-02） */
+  var BACKUP_HINT_ = '［マスタ→設定→バックアップ→控えのファイルに書き出す］';
   var Store = window.ShiftStore;
   var Sym = window.ShiftSymbols;
   var TC = window.ShiftTimecalc;
@@ -9277,6 +9394,25 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * rules.break2h フラグで行う。ワースケ側の固定休憩枠(14:00-16:00)と整合。 */
   function isBreak2hStaff_(st) {
     return !!(st && st.rules && st.rules.break2h);
+  }
+
+  /* 入力の窓は、画面の中の窓（care-tools の su-dialog.js の SUDialog.prompt）で出す。文はそのまま（監査の台帳 SA-04）。
+   * 部品が読めない・prompt の無い古い部品の時はブラウザの窓に落とし、答えを同じ流れで渡す（OK＝入れた文字・キャンセル＝null）。
+   * 画面の中の窓は同期を止めないので、呼ぶ側は答えの後で守り（編集権・ロック）と対象を取り直す */
+  function suPrompt_(msg, def, cb) {
+    var D = null;
+    try { D = window.SUDialog || null; } catch (e) { D = null; }
+    if (D && typeof D.prompt === 'function') {
+      var p = null;
+      try { p = D.prompt(msg, def); } catch (e) { p = null; }
+      if (p && typeof p.then === 'function') {
+        p.then(function (v) { cb(v == null ? null : String(v)); }, function () { cb(null); });
+        return;
+      }
+    }
+    var r = null;
+    try { r = prompt(msg, def); } catch (e) { r = null; }
+    cb(r);
   }
 
   var App = {
@@ -9446,7 +9582,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           return;
         }
         this.confirmInfo('職員名簿を自動復元しました',
-          '同期で職員データが空になっていたため、この端末のバックアップから ' + n + ' 名を自動復元しました。\n念のため［マスタ→設定→バックアップ→JSONエクスポート］で保全することをおすすめします。');
+          '同期で職員データが空になっていたため、この端末のバックアップから ' + n + ' 名を自動復元しました。\n念のため' + BACKUP_HINT_ + 'で保全することをおすすめします。');
       }
     },
 
@@ -10057,19 +10193,29 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* スナップショットの氏名をその場（編集用タブ自身 or 月plan）だけ上書き（マスタ・他月/他タブに非波及） */
     editSnapName: function (sid) {
       if (this.leaseGuard()) return;
+      var self = this;
       var h = this.snapHost();
       var snap = h.sched.meta && h.sched.meta.staffSnap;
       if (!snap) return;
-      var cur = '', i;
+      var cur = '', i, ym0 = this.ym, layer0 = h.layer;
       for (i = 0; i < snap.length; i++) { if (snap[i].id === sid) { cur = snap[i].name; break; } }
-      var v = prompt('この月（このタブ）だけの氏名（マスタ・他には影響しません）', cur);
-      if (v === null) return;
-      v = (v || '').trim();
-      if (!v) return;
-      for (i = 0; i < snap.length; i++) { if (snap[i].id === sid) { snap[i].name = v; break; } }
-      this.saveSched(h.layer, h.sched);
-      this.refreshMonthMeta();
-      this.rerender();
+      suPrompt_('この月（このタブ）だけの氏名（マスタ・他には影響しません）', cur, function (v) {
+        if (v === null) return;
+        v = (v || '').trim();
+        if (!v) return;
+        /* 窓の間に編集権・表示中の月が変わっていることがある＝答えの後で取り直す */
+        if (self.leaseGuard()) return;
+        if (self.lockGuard()) return;
+        if (self.ym !== ym0) return;
+        var h2 = self.snapHost();
+        if (h2.layer !== layer0) return;
+        var snap2 = h2.sched.meta && h2.sched.meta.staffSnap;
+        if (!snap2) return;
+        for (var j = 0; j < snap2.length; j++) { if (snap2[j].id === sid) { snap2[j].name = v; break; } }
+        self.saveSched(h2.layer, h2.sched);
+        self.refreshMonthMeta();
+        self.rerender();
+      });
     },
     syncLockUI: function () {
       var locked = this.isLockedNow();
@@ -10220,9 +10366,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (this.leaseGuard()) return;
       var self = this;
       var n = this.getDrafts().filter(function (d) { return !d.auto; }).length + 1;
-      var label = prompt('編集用シフトの内容を入力（例: 職員追加、夜勤調整、希望休反映）', '編集用' + n);
-      if (label === null) return;
-      label = (label || '').trim() || ('編集用' + n);
+      var ym0 = this.ym;
+      suPrompt_('編集用シフトの内容を入力（例: 職員追加、夜勤調整、希望休反映）', '編集用' + n, function (label) {
+        if (label === null) return;
+        /* 窓の間に編集権・表示中の月が変わっていることがある＝答えの後で確かめ直す */
+        if (self.leaseGuard()) return;
+        if (self.ym !== ym0) return;
+        self.createDraftAs_((label || '').trim() || ('編集用' + n));
+      });
+    },
+    createDraftAs_: function (label) {
       var id = 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
       /* 現在の予定をコピーして開始（崩して別案を作るための土台） */
       var plan = this.getSched('plan');
@@ -10284,10 +10437,28 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var at = new Date(pkg.exportedAt), pad = function (n) { return (n < 10 ? '0' : '') + n; };
       var when = isNaN(at.getTime()) ? '' : (at.getMonth() + 1) + '/' + at.getDate() + ' ' + pad(at.getHours()) + ':' + pad(at.getMinutes());
       var label = '取込 ' + String(pkg.from || '').slice(0, 30) + (when ? '（' + when + '）' : '');
+      /* 名簿の突き合わせを先に数える（2026-11-13 代表者の報告: 名簿を入れていない作業用ファイルで取り込むと、
+       * 全員が「名簿にいない」になり、空の編集用タブだけができていた）。0人なら作らずに止め、名簿の入れ方を示す */
+      var preRoster = this.monthStaffIds_(this.staff, pkg.ym), preSet = {}, preHit = 0;
+      preRoster.forEach(function (sid) { preSet[sid] = 1; });
+      pkg.staffIds.forEach(function (sid) { if (preSet[sid]) preHit++; });
+      if (preHit === 0) {
+        this.confirmInfo('取り込めません（この画面に職員の名簿がありません）',
+          'このファイルの職員 ' + pkg.staffIds.length + '人が、この画面の名簿に1人もいません。\n' +
+          (this.staff.length ? 'この画面の名簿は別の施設・別の時点のもののようです。\n' : 'この画面にはまだ職員の名簿が入っていません（名簿は、開いたパソコンの Chrome ごとに別々に入ります）。\n') +
+          '\n先に名簿を入れてください:\n' +
+          '1. 本番の勤務表で［マスタ］→［設定］→ バックアップの「控えのファイルに書き出す」を押す（shiftapp-backup-日付.json ができます）\n' +
+          '2. この画面で［マスタ］→［設定］→「控えのファイルから読み込む」でそのファイルを選び、OK を押す\n' +
+          '3. もう一度「📥 月を取り込む」を押す\n\n何も作っていません。');
+        return;
+      }
+      var preWarn = (preHit < pkg.staffIds.length)
+        ? '\n\n※ ファイルの職員 ' + pkg.staffIds.length + '人のうち、この画面の名簿にいるのは ' + preHit + '人です。いない人の分は入りません。'
+        : '';
       this.confirm('この月を取り込みます',
         y + '年' + m + '月の「編集用」を新しく作り、ファイルの内容を入れます。\n' +
         '予定（確定版）は書き換えません。中身を確かめてから［✓ この編集用を確定］を押してください。\n' +
-        'ファイルの希望休は、この勤務表の希望休に足します（入っている希望休は消しません）。\n実行しますか？',
+        'ファイルの希望休は、この勤務表の希望休に足します（入っている希望休は消しません）。' + preWarn + '\n実行しますか？',
         function () {
           if (self.ym !== pkg.ym) self.setYM(y, m);
           var tries = 0;
@@ -10781,12 +10952,19 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           if (self.lockGuard()) return;
           var st = self.findStaff(sid);
           var cur = self.sched.notes[sid] || '';
-          var v = prompt((st ? st.name : '') + ' の今月の連絡事項', cur);
-          if (v === null) return;
-          self.capture('連絡事項 ' + (st ? st.name : ''));
-          self.sched.notes[sid] = v;
-          self.saveSched(self.layer, self.sched);
-          self.rerender();
+          var ym0 = self.ym, layer0 = self.layer;
+          suPrompt_((st ? st.name : '') + ' の今月の連絡事項', cur, function (v) {
+            if (v === null) return;
+            /* 窓の間に編集権・ロック・表示中の月が変わっていることがある＝答えの後で確かめ直し、今の月の表へ書く */
+            if (self.leaseGuard()) return;
+            if (self.lockGuard()) return;
+            if (self.ym !== ym0 || self.layer !== layer0) return;
+            self.capture('連絡事項 ' + (st ? st.name : ''));
+            if (!self.sched.notes) self.sched.notes = {};
+            self.sched.notes[sid] = v;
+            self.saveSched(self.layer, self.sched);
+            self.rerender();
+          });
         },
         onStaffEdit: function (sid) {
           if (self.leaseGuard()) return;
@@ -11503,6 +11681,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           var r = window.ShiftAutoAssign.autoAssign({
             year: self.year, month: self.month, days: self.days,
             staff: self.staff, symbols: self.symbols, settings: self.settings,
+            isVisible: function (st) { return self.isStaffVisible(st); },   /* 退職月より後の職員は自動作成の対象にしない */
             requests: self.requests, dailyNeeds: self.sched.dailyNeeds,
             monthNeeds: self.sched.monthNeeds,
             existingCells: self.sched.cells,
@@ -12118,7 +12297,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         self.confirmInfo('⚠ この端末の編集を保全できませんでした',
           '他の端末が編集モードになりましたが、この端末の未送信の編集を端末内へ退避できませんでした。\n' +
           'そのため何も変更していません（' + keys.join(', ') + '）。\n' +
-          '［マスタ→設定→バックアップ→JSONエクスポート］でこの端末の内容を保存してから、画面を再読み込みしてください。');
+          BACKUP_HINT_ + 'でこの端末の内容を保存してから、画面を再読み込みしてください。');
       };
       /* 失効後に同じ端末で取り直した時は、編集を続ける前に最新を取り込む。
        * 不在の間に他の端末が「取得→編集→解放」していた場合、古い表示のまま編集を続けると、
@@ -12287,7 +12466,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (Store.readOnly) {
         tog.disabled = true;
         tog.checked = false;
-        if (lab) { lab.classList.add('disabled'); lab.title = '閲覧専用トークンのため編集モードは使えません'; }
+        if (lab) { lab.classList.add('disabled'); lab.title = '閲覧専用の合言葉のため編集モードは使えません'; }
         return;
       }
       tog.disabled = false;
@@ -12378,7 +12557,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       function revert() { if (tog) { tog.disabled = false; tog.checked = !!Store.editMode; } }
       if (Store.readOnly) {
         revert();
-        this.confirmInfo('編集モードは使えません', '閲覧専用トークンで接続しているため、この端末からは編集できません。');
+        this.confirmInfo('編集モードは使えません', '閲覧専用の合言葉で接続しているため、この端末からは編集できません。');
         return;
       }
       /* 同期先が無い（この端末だけで使う写し・2026-11-05）: 確かめる相手のサーバーが無いので、断ってから端末だけで編集する。
@@ -12492,14 +12671,23 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         return;
       }
       /* ③ 端末名（他端末に「誰が編集中か」を出すための表示名。氏名ではなく端末の呼び名を入れる） */
-      var name = Store.getLocal('deviceName', '');
+      /* 端末に書けなかった時も、この画面で入れた名前で続ける（入り直しで同じ窓を出し続けない） */
+      var name = Store.getLocal('deviceName', '') || this._deviceNameTyped || '';
       if (!name) {
-        var input = null;
-        try { input = prompt('この端末の名前を入力してください（他の端末に「◯◯が編集中」と表示されます）', '事務所PC'); } catch (e) {}
-        if (input === null) { revert(); return; }
-        name = String(input).trim();
-        if (!name) { revert(); return; }
-        Store.setLocal('deviceName', name);
+        /* 窓を出している間に入り直されても2枚出さない */
+        if (this._askingDeviceName) return;
+        this._askingDeviceName = true;
+        suPrompt_('この端末の名前を入力してください（他の端末に「◯◯が編集中」と表示されます）', '事務所PC', function (input) {
+          self._askingDeviceName = false;
+          if (input === null) { revert(); return; }
+          var nm = String(input).trim();
+          if (!nm) { revert(); return; }
+          Store.setLocal('deviceName', nm);
+          self._deviceNameTyped = nm;
+          /* 窓の間に別タブ・サーバーの様子が変わっていることがある＝名前を控えた上で、最初の確かめから入り直す */
+          self.enableEdit_();
+        });
+        return;
       }
       /* ④ 取得前に最新を取り込む→編集権を取得→取得の隙に他端末が書いた分を rev で再確認。
        * pullAll は失敗しても reject せず 'offline' を resolve するため、必ず戻り値で分岐する。
@@ -12683,7 +12871,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
                 self.reloadFromStore();
                 self.confirmInfo('閲覧モードに切り替えました',
                   (res.kept && res.kept.length)
-                    ? '一部は退避できなかったため、この端末に残しています（' + res.kept.join(', ') + '）。［マスタ→設定→バックアップ→JSONエクスポート］で保全してください。'
+                    ? '一部は退避できなかったため、この端末に残しています（' + res.kept.join(', ') + '）。' + BACKUP_HINT_ + 'で保全してください。'
                     : '未送信の編集は端末内に退避しました（［マスタ→設定→バックアップ→退避データ一覧］から取り出せます）。');
               });
             });
@@ -12875,7 +13063,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
             self.updatePendingBanner_();
             self.confirmInfo('最新の内容を表示しました',
               (res.kept && res.kept.length)
-                ? '一部は退避できなかったため、この端末に残しています（' + res.kept.join(', ') + '）。［マスタ→設定→バックアップ→JSONエクスポート］で保全してください。'
+                ? '一部は退避できなかったため、この端末に残しています（' + res.kept.join(', ') + '）。' + BACKUP_HINT_ + 'で保全してください。'
                 : (res.adopted ? res.adopted + '件を取り直しました。' : '取り直す対象はありませんでした。'));
           });
         });
@@ -12945,7 +13133,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (status === 'storeerror' && !self._storeErrorShown) {
           self._storeErrorShown = true;
           self.confirmInfo('⚠ 端末への保存に失敗しました', detail ||
-            '端末の保存容量の上限に達した可能性があります。データが失われる前に［マスタ→設定→バックアップ→JSONエクスポート］で保全してください。');
+            '端末の保存容量の上限に達した可能性があります。データが失われる前に' + BACKUP_HINT_ + 'で保全してください。');
         }
         if (status !== 'storeerror') self._storeErrorShown = false;
         /* 閲覧専用トークンが判明したら編集トグルを無効化（理由は title に出す） */

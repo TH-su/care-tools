@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-+iztI+RXgS7aYsrR9r0M1nH80B8DvwMyCdACLScGlAk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-sV4AVxiaR/ZAsqTl4+NUDiSVcxPCmi9PdvKsjT8wsBs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -50,6 +50,9 @@ body {
   border: 1px solid rgba(255,255,255,.3); border-radius: 6px; padding: 4px 10px;
   cursor: pointer; white-space: nowrap;
 }
+/* 見出しの日付は押すとカレンダーが開くので、div から本物のボタンにした（キーボードの Enter・Space で開け、読み上げでもボタンと分かる・2026-11-13・代表者「推奨どおり」）。
+ * ボタンの既定の書体・色・行の高さ・余白は使わず、div の時と同じ見た目のままにする */
+button.hdr-date { font-family: inherit; color: inherit; line-height: inherit; margin: 0; text-align: inherit; letter-spacing: inherit; -webkit-appearance: none; appearance: none; }
 .hdr-btn {
   background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.3);
   color: #fff; border-radius: 6px; padding: 6px 10px; font-size: 0.875rem; cursor: pointer;
@@ -67,6 +70,10 @@ body {
  * 狭い幅（899px 以下）では押す所を 44px にする（見出しの高さ 50px の中に収まる） */
 .su-menu-back { display: inline-flex; align-items: center; white-space: nowrap; text-decoration: none; }
 @media screen and (max-width: 899px) { .su-menu-back { min-height: 44px; box-sizing: border-box; } }
+/* 見出しの「使い方」（「← メニュー」の右隣・同じ .hdr-btn の見た目・上と同じ値・印刷しない・代表者の決定 2026-11-13）。見出しの中＝印刷では .hdr ごと隠れるが、念のため自分でも消す */
+.su-help-link { display: inline-flex; align-items: center; white-space: nowrap; text-decoration: none; }
+@media screen and (max-width: 899px) { .su-help-link { min-height: 44px; box-sizing: border-box; } }
+@media print{.su-help-link{display:none !important}}
 /* 勤務表を写しから表示中の知らせは文言が長いので折り返す（狭い幅で見出しからあふれない・2026-10-17） */
 #shiftFallbackBanner { white-space: normal; }
 /* 日単位ロックのチェックボックス（ヘッダー内・.hdrごと@media printで非表示＝印刷非干渉・盤面レイアウト非接触） */
@@ -310,7 +317,8 @@ body.printing .b-head .h-absent { display: none; }
 /* グループ化固定マーカー(画面のみ): アウトライン色は groupId のハッシュで JS が inline 指定。
  * outline は枠寸法に影響しない＝D&D座標計算/レイアウトに非干渉。🔗 バッジは枠左下に絶対配置。 */
 .b-task .t-group { position: absolute; bottom: 0; left: 2px; font-size: 0.625rem; line-height: 1; opacity: .9; pointer-events: none; }
-body.printing .b-task.grouped { outline: none !important; }
+/* 印刷中は束ねの点線の目印を消す（目印は JS が inline で付けるので !important）。札は押す所ではなく選ぶ時の枠でもないので、線の種類だけを消す（2026-11-13） */
+body.printing .b-task.grouped { outline-style: none !important; }
 body.printing .b-task .t-group { display: none !important; }
 /* コメント: 固定ON=枠外フローティング吹き出し(b-cmt-layer)・未固定=📝バッジのみ */
 /* canvas直下のオーバーレイ層（枠のoverflow:hiddenに切られない）。線はpointer-events無し・吹き出しのみ操作可 */
@@ -376,7 +384,9 @@ body.printing .b-cmt-line { stroke: #000; stroke-width: 0.8px; stroke-dasharray:
 .note-ctx .nctx-bg.on { box-shadow: 0 0 0 2px var(--pri); }
 .note-ctx .nctx-del { color: #c62828; font-weight: 700; margin-left: auto; }
 body.printing .note-ctx { display: none !important; }
-.b-note-body { padding: 4px 6px; min-height: 22px; min-width: 60px; line-height: 1.3; outline: none; white-space: pre-wrap; word-break: break-word; }
+.b-note-body { padding: 4px 6px; min-height: 22px; min-width: 60px; line-height: 1.3; white-space: pre-wrap; word-break: break-word; }
+/* 付箋のメモを書いている間は、どこに書いているかが見える枠を出す（以前は枠を消していて、書いている所が分からなかった・画面だけ・2026-11-13・代表者「推奨どおり」） */
+.b-note-body:focus-visible { outline: 2px solid var(--pri); outline-offset: -2px; }
 .b-note-rs {
   position: absolute; right: 1px; bottom: 1px; width: 13px; height: 13px;
   cursor: nwse-resize; pointer-events: auto;
@@ -766,35 +776,39 @@ body.su-print-staff24 #rp-print, body.su-print-staff24range #rp-print { display:
 #mStaff24 .rp-range-list .ng { color: var(--ng); font-weight: 700; }
 </style>
 <script src="su-errors.js?v=2026-10-27"></script>
+<script src="su-dialog.js?v=2026-11-14.2"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
 <script src="su-kv.js?v=2026-11-08"></script>
 <script src="su-roster.js?v=2026-10-28"></script>
-<script src="su-res-read.js?v=2026-11-11"></script>
+<script src="su-res-read.js?v=2026-11-14"></script>
 <script src="su-kv-shadow.js?v=2026-10-28"></script>
-<link rel="stylesheet" href="su-print.css?v=2026-09-12">
-<script src="su-print.js?v=2026-09-12"></script>
+<link rel="stylesheet" href="su-print.css?v=2026-11-13">
+<script src="su-print.js?v=2026-11-13"></script>
 </head>
 <body>
 <div class="hdr">
-  <!-- メニュー（index.html）へ戻る（care-tools のほかの画面と同じ形・2026-11-13）。移る時の保存は pagehide の flushAll_ が確定する -->
+  <!-- メニュー（index.html）へ戻る（care-tools のほかの画面と同じ形・2026-11-13）。移る時の保存は pagehide の flushAll_ が確定する。
+       右隣の「使い方」も同じタブで移るので同じ扱い（離れる前の確かめは「← メニュー」と同じく無い・代表者の決定 2026-11-13） -->
   <a class="hdr-btn su-menu-back" href="index.html">← メニュー</a>
+  <a class="hdr-btn su-help-link" href="help.html?sec=work-schedule">使い方</a>
   <button class="hdr-btn" id="btnPrev" aria-label="前の日へ" title="前日(-1日)">◀</button>
-  <div class="hdr-date" id="hdrDate" role="button" title="クリックでカレンダー">----/--/--</div>
+  <button type="button" class="hdr-date" id="hdrDate" title="クリックでカレンダー">----/--/--</button>
   <button class="hdr-btn" id="btnNext" aria-label="次の日へ" title="翌日(+1日)">▶</button>
   <button class="hdr-btn wk" id="btnPrevWeek" title="先週(-7日)">先週</button>
   <button class="hdr-btn wk" id="btnToday" title="今日へ">今日</button>
   <button class="hdr-btn wk" id="btnNextWeek" title="来週(+7日)">来週</button>
   <label class="hdr-lock" id="lockLabel" title="この日の盤面を自動更新から保護（シフト反映・週間計画同期・自動配置を停止／手動編集は可能）"><input type="checkbox" id="chkLock">🔒ロック</label>
   <span class="hdr-title">ワークスケジュール</span>
-  <!-- 表示中の控えの案（2026-10-20）。本番の時は出さない。見出しの中なので印刷には出ない（印刷の見出しには「（案：名前）」が出る） -->
-  <button class="badge alt off" id="badgeAlt" title="控えの案を表示しています。押すと案の一覧"></button>
+  <!-- 表示中の控えの案（2026-10-20）。本番の時は出さない。見出しの中なので印刷には出ない（印刷の見出しには「（案：名前）」が出る）。
+       中の「控えの案」は読み上げの名前の控え（2026-11-13・hig-audit の空のボタン）。出ている間は paintAltBadge_ が「案：名前（本番ではありません）」に書き換え、出ない間は .off で隠れる -->
+  <button class="badge alt off" id="badgeAlt" title="控えの案を表示しています。押すと案の一覧">控えの案</button>
   <!-- 現場の端末の表示（2026-10-11）。盤面は見るだけ・印は付けられる。見出しの中なので印刷には出ない -->
   <span class="hdr-field" id="fieldBanner" role="note" hidden>📱 現場の端末：盤面は見るだけ（実施・チェック・コメントは付けられます）</span>
   <!-- 勤務表を Supabase から読めず Google の写しへ戻した間だけ出す（2026-10-17・改善プロンプト第2弾の8）。
        次に Supabase から読めたら消える。出し入れは app.js の shiftFallbackBanner_。見出しの中なので印刷には出ない -->
-  <span class="hdr-field" id="shiftFallbackBanner" role="status" aria-live="polite" hidden>勤務表を Supabase から読めず、Google の写しから表示しています（古い可能性があります）</span>
+  <span class="hdr-field" id="shiftFallbackBanner" role="status" aria-live="polite" hidden>勤務表を新しい保存先から読めず、Google の写しから表示しています（古い可能性があります）</span>
   <button class="hdr-btn app-link" id="btnOpenCare" title="利用者ごとの週間計画アプリを開く">📅 週間計画</button>
   <button class="hdr-btn app-link" id="btnOpenShift" title="シフト作成アプリを開く">👥 シフト</button>
   <!-- 24時間配置・食事対応表（A4縦・2026-10-27 本人指示）。事務所PCだけ出す（現場の端末では隠す）。見出しの中なので盤面の印刷には出ない -->
@@ -876,11 +890,11 @@ body.su-print-staff24 #rp-print, body.su-print-staff24range #rp-print { display:
 
 <!-- カレンダー（日付ジャンプ） -->
 <div class="modal" id="mCal">
-  <div class="cal-nav">
+  <nav class="cal-nav" aria-label="月の切り替え">
     <button class="hdr-btn cal-mbtn" id="calPrev" type="button" aria-label="前の月へ" title="前の月へ">◀</button>
     <h3 id="calTitle" class="cal-title">----年--月</h3>
     <button class="hdr-btn cal-mbtn" id="calNext" type="button" aria-label="次の月へ" title="次の月へ">▶</button>
-  </div>
+  </nav>
   <div class="cal-dow"><span>日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span></div>
   <div class="cal-grid" id="calGrid"></div>
   <div class="cal-foot"><button class="btn" id="calClose" type="button">閉じる</button></div>
@@ -899,20 +913,20 @@ body.su-print-staff24 #rp-print, body.su-print-staff24range #rp-print { display:
     </div>
   </div>
   <div class="fld" id="fResident">
-    <label>利用者名</label>
+    <label for="edResident">利用者名</label>
     <input class="inp" id="edResident" list="dlResidents" placeholder="利用者名">
     <datalist id="dlResidents"></datalist>
   </div>
   <div class="fld" id="fSvc">
-    <label>サービスコード</label>
+    <label for="edSvc">サービスコード</label>
     <select class="inp" id="edSvc"></select>
   </div>
   <div class="fld" id="fLabel" style="display:none">
-    <label>枠の名称（改行で2行表示可・画面/印刷に反映）</label>
+    <label for="edLabel">枠の名称（改行で2行表示可・画面/印刷に反映）</label>
     <textarea class="inp" id="edLabel" rows="2" style="min-height:44px" placeholder="例: 施設業務／委員会／研修（Enterで改行）"></textarea>
     <div class="chips" id="edLabelChips" style="margin-top:6px"></div>
     <datalist id="dlFacility"></datalist>
-    <select class="inp" id="edMeal" style="margin-top:6px;display:none">
+    <select class="inp" id="edMeal" aria-label="食事支援を選ぶ" style="margin-top:6px;display:none">
       <option value="">食事支援を選ぶ…（プルダウン）</option>
       <option value="1階食事支援">1階食事支援</option>
       <option value="2階食事支援">2階食事支援</option>
@@ -930,24 +944,24 @@ body.su-print-staff24 #rp-print, body.su-print-staff24range #rp-print { display:
     <label><input type="checkbox" id="edHideTime"> 時間非表示（画面・印刷とも時刻を隠す／氏名と支援内容は表示）</label>
   </div>
   <div class="fld row2">
-    <div><label>開始</label><input class="inp" id="edStart" type="time" step="60"></div>
-    <div><label>終了</label><input class="inp" id="edEnd" type="time" step="60"></div>
+    <div><label for="edStart">開始</label><input class="inp" id="edStart" type="time" step="60"></div>
+    <div><label for="edEnd">終了</label><input class="inp" id="edEnd" type="time" step="60"></div>
   </div>
   <div class="fld">
-    <label>担当職員</label>
+    <label for="edStaff">担当職員</label>
     <select class="inp" id="edStaff"></select>
   </div>
   <div class="fld" id="fContents">
     <label>ケア内容</label>
     <div class="chips" id="edContents"></div>
-    <input class="inp" id="edContentFree" placeholder="自由入力（Enterで追加）" style="margin-top:6px">
+    <input class="inp" id="edContentFree" aria-label="ケア内容の自由入力" placeholder="自由入力（Enterで追加）" style="margin-top:6px">
   </div>
   <div class="fld">
-    <label>内容メモ（自由記載）</label>
+    <label for="edMemo">内容メモ（自由記載）</label>
     <textarea class="inp" id="edMemo" style="min-height:56px" placeholder="枠の内容・引き継ぎ事項などを自由に記載"></textarea>
   </div>
   <div class="fld" id="fComment">
-    <label>コメント（付箋メモ・固定で枠に常時表示＋印刷）</label>
+    <label for="edComment">コメント（付箋メモ・固定で枠に常時表示＋印刷）</label>
     <textarea class="inp" id="edComment" style="min-height:46px" placeholder="例: ご家族へ連絡済み／要見守り"></textarea>
     <div class="cmt-style">
       <label class="cmt-sz">サイズ
@@ -1033,7 +1047,7 @@ body.su-print-staff24 #rp-print, body.su-print-staff24range #rp-print { display:
         手動で職員名・時間を直すには、ボード上部の<b>列見出しをタップ</b>（「氏名」または「氏名 9:00-18:00」）。</div>
     </div>
     <div class="fld">
-      <label>または、シフト表から直接コピペ（1行 = 名前 ＋ 記号 or 時間帯 ［＋ 施設/訪問/夜勤］）</label>
+      <label for="imShiftText">または、シフト表から直接コピペ（1行 = 名前 ＋ 記号 or 時間帯 ［＋ 施設/訪問/夜勤］）</label>
       <textarea class="inp" id="imShiftText" placeholder="例:&#10;甲野&#9;7:40-17:00&#10;乙野&#9;早&#10;丙野&#9;9:00-16:00&#9;施設&#10;丁野&#9;(21&#10;戊野&#9;8)"></textarea>
       <div class="hint">記号: 早(7-16) 日1(8-17) 日2(8:30-17:30) 日3(9-18) 遅(12-21) ／
         夜勤: (21 (22=入り・7) 8)=上がり ／ 休・希・有などはスキップ。<br>
@@ -1047,9 +1061,9 @@ body.su-print-staff24 #rp-print, body.su-print-staff24range #rp-print { display:
   </div>
   <div id="imWeekly" style="display:none">
     <div class="fld">
-      <label>週間ケア計画のエクスポートJSON（care_schedule_v2）</label>
+      <label for="imWeeklyText">週間計画から書き出したファイルの中身（貼り付けるか、下でファイルを選ぶ）</label>
       <textarea class="inp" id="imWeeklyText" placeholder='{"residents":[...]}'></textarea>
-      <input type="file" id="imWeeklyFile" accept=".json,application/json" style="margin-top:6px">
+      <input type="file" id="imWeeklyFile" aria-label="週間計画から書き出したファイルを選ぶ" accept=".json,application/json" style="margin-top:6px">
       <div class="hint">当日曜日の「訪問介護」予定だけをタスク化し、未配置トレイへ追加します。
         前回同曜日の保存データがあれば担当者を自動プリセットします（検証通過分のみ）。</div>
     </div>
@@ -1063,9 +1077,9 @@ body.su-print-staff24 #rp-print, body.su-print-staff24range #rp-print { display:
   </div>
   <div id="imMaster" style="display:none">
     <div class="fld">
-      <label>週次支援マスタ（master-202606.json）</label>
+      <label for="imMasterText">週次支援マスタ（master-202606.json）</label>
       <textarea class="inp" id="imMasterText" placeholder='{"version":1,"weekdays":{...}}'></textarea>
-      <input type="file" id="imMasterFile" accept=".json,application/json" style="margin-top:6px">
+      <input type="file" id="imMasterFile" aria-label="週次支援マスタのファイルを選ぶ" accept=".json,application/json" style="margin-top:6px">
       <div class="hint">曜日ごとの全支援（エクセルWSから抽出）を端末に保存します。
         以後、空の日付を開くと当日曜日の支援が自動生成されます。<br>
         現在のマスタ: <b id="imMasterState">未取込</b></div>
@@ -1129,14 +1143,14 @@ body.su-print-staff24 #rp-print, body.su-print-staff24range #rp-print { display:
 <div class="modal" id="mSettings">
   <h3>設定</h3>
   <div class="fld row2">
-    <div><label>休憩アラート閾値（時間）</label><input class="inp" id="stBreakH" type="number" min="1" max="12" step="0.5"></div>
-    <div><label>ローカル保持日数</label><input class="inp" id="stRetention" type="number" min="7" max="365"></div>
+    <div><label for="stBreakH">休憩アラート閾値（時間）</label><input class="inp" id="stBreakH" type="number" min="1" max="12" step="0.5"></div>
+    <div><label for="stRetention">ローカル保持日数</label><input class="inp" id="stRetention" type="number" min="7" max="365"></div>
   </div>
-  <div class="fld"><label>GAS エンドポイントURL（空欄=ローカルのみ）</label><input class="inp" id="stEndpoint" placeholder="https://script.google.com/macros/s/.../exec"></div>
-  <div class="fld"><label>同期トークン</label><input class="inp" id="stToken" type="password"></div>
+  <div class="fld"><label for="stEndpoint">接続先のURL（空欄＝この端末だけに保存）</label><input class="inp" id="stEndpoint" placeholder="https://script.google.com/macros/s/.../exec"></div>
+  <div class="fld"><label for="stToken">合言葉</label><input class="inp" id="stToken" type="password"></div>
   <div class="fld row2">
-    <div><label>週間計画アプリURL</label><input class="inp" id="stUrlCare" placeholder="care-schedule.html"></div>
-    <div><label>シフトアプリURL</label><input class="inp" id="stUrlShift" placeholder="shift-app.html"></div>
+    <div><label for="stUrlCare">週間計画アプリURL</label><input class="inp" id="stUrlCare" placeholder="care-schedule.html"></div>
+    <div><label for="stUrlShift">シフトアプリURL</label><input class="inp" id="stUrlShift" placeholder="shift-app.html"></div>
   </div>
   <div class="fld">
     <label><input type="checkbox" id="stShiftAuto"> 日付を開くたびにシフトの出勤者を自動反映する（手動編集枠は保護）</label>
@@ -1172,12 +1186,12 @@ body.su-print-staff24 #rp-print, body.su-print-staff24range #rp-print { display:
   </div>
   <div class="fld" style="margin-top:10px"><label>データ管理</label>
     <div class="btn-row" style="margin-top:0">
-      <button class="btn" id="stExport">この日をJSON書出</button>
+      <button class="btn" id="stExport">この日をファイルに書き出す</button>
       <button class="btn" id="stCopyDay">他の日から複製</button>
       <button class="btn ng" id="stClearDay">この日をクリア</button>
     </div>
   </div>
-  <div class="fld" style="margin-top:10px"><label>未送信の日（この端末だけに残っている変更）</label>
+  <div class="fld" style="margin-top:10px"><label for="stUnsentDiag">未送信の日（この端末だけに残っている変更）</label>
     <textarea class="inp" id="stUnsentDiag" rows="6" readonly style="font-size: 0.75rem;line-height:1.5"></textarea>
     <div class="btn-row" style="margin-top:6px">
       <button class="btn sm ok" id="stUnsentSend">今すぐ送信する</button>
@@ -1186,11 +1200,11 @@ body.su-print-staff24 #rp-print, body.su-print-staff24range #rp-print { display:
     </div>
     <div class="hint">「取り直す」を押すと、<b>この端末に残っている未送信の変更だけ</b>を捨て、クラウドの最新に揃えます。クラウド側のデータには一切書き込みません。捨てる前に各日の内容をこの端末へ退避し、何が失われるかを確認画面に出します。<br>通信できなかった日は<b>「取り直し待ち」</b>になります。その間この端末からは送らず、つながり次第クラウドの最新に入れ替わります（この端末で編集し直すか「今すぐ送信する」を押すと、待ちをやめて送ります）。</div>
   </div>
-  <div class="fld" style="margin-top:10px"><label>予約列「訪問1」（自由枠職員）の診断</label>
+  <div class="fld" style="margin-top:10px"><label for="stReserveDiag">予約列「訪問1」（自由枠職員）の診断</label>
     <textarea class="inp" id="stReserveDiag" rows="6" readonly style="font-size: 0.75rem;line-height:1.5"></textarea>
     <div class="btn-row" style="margin-top:6px"><button class="btn sm ok" id="stDiagFix">訪問1固定を今すぐ再適用</button><button class="btn sm" id="stDiagCopy">診断をコピー</button><span class="sp"></span><span class="hint" id="stDiagMsg"></span></div>
   </div>
-  <div class="fld" style="margin-top:10px"><label>通信診断（直近の失敗のみ・個人情報なし）</label>
+  <div class="fld" style="margin-top:10px"><label for="stNetDiag">通信診断（直近の失敗のみ・個人情報なし）</label>
     <textarea class="inp" id="stNetDiag" rows="6" readonly style="font-size: 0.75rem;line-height:1.5"></textarea>
     <div class="btn-row" style="margin-top:6px"><button class="btn sm" id="stNetPing">接続診断（20回）</button><button class="btn sm" id="stNetCopy">診断をコピー</button><span class="sp"></span><span class="hint" id="stNetMsg"></span></div>
   </div>
@@ -1202,10 +1216,10 @@ body.su-print-staff24 #rp-print, body.su-print-staff24range #rp-print { display:
 <div class="modal" id="mFacility">
   <h3 id="fcTitle">🏢 施設情報の設定</h3>
   <div class="hint" id="fcIntro" style="margin-bottom:12px">施設名と各事業所の表示名、通所の定休日を設定します。シフトアプリと共有され、同じ端末なら一度の設定で両アプリに反映されます。</div>
-  <div class="fld"><label>施設名（法人・施設の名称）</label><input class="inp" id="fcName" placeholder="例）〇〇ケアホーム"></div>
-  <div class="fld"><label>施設サービスの表示名（任意）</label><input class="inp" id="fcLabelFacility" placeholder="空欄可"></div>
-  <div class="fld"><label>訪問サービスの表示名（任意・印刷ヘッダに使用）</label><input class="inp" id="fcLabelVisit" placeholder="例）訪問介護〇〇"></div>
-  <div class="fld"><label>通所サービスの表示名（任意）</label><input class="inp" id="fcLabelDay" placeholder="例）デイサービス〇〇"></div>
+  <div class="fld"><label for="fcName">施設名（法人・施設の名称）</label><input class="inp" id="fcName" placeholder="例）〇〇ケアホーム"></div>
+  <div class="fld"><label for="fcLabelFacility">施設サービスの表示名（任意）</label><input class="inp" id="fcLabelFacility" placeholder="空欄可"></div>
+  <div class="fld"><label for="fcLabelVisit">訪問サービスの表示名（任意・印刷ヘッダに使用）</label><input class="inp" id="fcLabelVisit" placeholder="例）訪問介護〇〇"></div>
+  <div class="fld"><label for="fcLabelDay">通所サービスの表示名（任意）</label><input class="inp" id="fcLabelDay" placeholder="例）デイサービス〇〇"></div>
   <div class="fld"><label>通所の定休日</label>
     <div id="fcClosedDay" class="fc-dow"></div>
     <div class="hint">チェックした曜日はデイ週間予定表・利用者一覧に列を出しません（既定＝日曜）。</div>
@@ -1346,8 +1360,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* 判定を利用者向けの1文にする（保存を断った理由として出す）。 */
   function syncTargetMessage(v) {
     if (v === 'ok') return 'ワークスケジュールの同期先を確認しました';
-    if (v === 'wrong') return 'このURLは週間計画・ワークスケジュール・シフトの同期先ではありません（別のアプリのGASです）';
-    if (v === 'auth') return '同期トークンが一致しないか、別のアプリのGASです';
+    if (v === 'wrong') return 'このURLは週間計画・ワークスケジュール・シフトの同期先ではありません（別のアプリの接続先です）';
+    if (v === 'auth') return '合言葉が違うか、別のアプリの接続先です';
     return '同期先に接続できず、確かめられませんでした。通信できる状態でもう一度保存してください';
   }
 
@@ -10869,6 +10883,56 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     toastTimer = setTimeout(function () { t.className = ''; }, ms || 2600);
   }
 
+  /* ===== 止めて知らせる窓（代表者の決定 2026-11-13） =====
+   * ブラウザの窓（alert・confirm）の代わりに、画面の中の窓（care-tools の su-dialog.js）を出す。文はそのまま。
+   * 読めない時（部品が無い・古いブラウザ）はブラウザの窓に落とす。画面の中の窓は答えを待たずに先へ進むので、
+   * 確かめは OK を押した後に onOk を呼ぶ形にする（呼ぶ側は OK の後に、窓を出す前に確かめた条件を取り直す）。
+   * ブラウザの窓が出ている間はページが止まっていたのと同じく、窓が出ている間は自動の取り込み・読み込み直しを始めない（wsDialogBusy_） */
+  var WS_OK_ = {};   /* 「OK を押した後にもう一度呼んだ」印（押したボタンの出来事の値と取り違えないよう、ほかに無い値にする） */
+  function wsDlg_() {
+    try { var D = window.SUDialog; return (D && typeof D.confirm === 'function' && typeof D.alert === 'function') ? D : null; } catch (e) { return null; }
+  }
+  function wsAlert_(msg) {
+    var D = wsDlg_();
+    if (D) { try { D.alert(msg); return; } catch (e) { /* ブラウザの窓へ */ } }
+    window.alert(msg);
+  }
+  function wsConfirm_(msg, onOk, onNo) {
+    var D = wsDlg_(), p = null;
+    if (D) { try { p = D.confirm(msg); } catch (e) { p = null; } }
+    if (p && typeof p.then === 'function') {
+      p.then(function (ok) { if (ok) onOk(); else if (onNo) onNo(); });
+      return;
+    }
+    if (window.confirm(msg)) onOk(); else if (onNo) onNo();
+  }
+  /* 入力の窓（prompt・WS-04 2026-11-14）。画面の中の窓（SUDialog.prompt）があればそちら、無い・古い（prompt の無い版）・例外の時はブラウザの窓に落とす。
+     答え（入れた文字・キャンセルは null）は onAns に渡す。画面の中の窓は答えを待たずに先へ進むので、呼ぶ側は onAns の中で条件を取り直す */
+  function wsPrompt_(msg, def, onAns) {
+    var D = wsDlg_(), p = null;
+    if (D && typeof D.prompt === 'function') { try { p = D.prompt(msg, def); } catch (e) { p = null; } }
+    if (p && typeof p.then === 'function') {
+      p.then(function (v) { onAns(v == null ? null : String(v)); });
+      return;
+    }
+    onAns(window.prompt(msg, def));
+  }
+  /* 窓を出した時と OK を押した時で、見ている日と案が同じか（窓の間に日付や案が変わっていたら何もしない） */
+  function wsView_() { return String(ui.currentDate) + '|' + (ui.altId || ''); }
+  /* 今の盤面とロック（窓の間にほかの端末から配置やロックが届いたら、窓の答えで置き換えない・27e0083 の控えに戻すと同じ比べ方） */
+  function wsBoardSig_() { var c = store.get(); return daySig(c) + '|' + (c.meta && c.meta.locked === true ? 1 : 0); }
+  function wsDialogBusy_() {
+    var D = wsDlg_();
+    try { return !!(D && typeof D.busy === 'function' && D.busy()); } catch (e) { return false; }
+  }
+  /* 窓が出ている間に来た一度きりの合図（別のタブの更新など）は、窓が全部閉じた後に回す。窓が無ければ false（呼ぶ側がそのまま進む） */
+  function wsAfterDialog_(fn) {
+    if (!wsDialogBusy_()) return false;
+    var D = wsDlg_();
+    try { if (typeof D.idle === 'function') { D.idle().then(function () { try { fn(); } catch (e) { wsNote_('窓の後の処理', e); } }); return true; } } catch (e) { /* そのまま進む */ }
+    return false;
+  }
+
   /* ===== 設定 ===== */
   var SETTINGS_KEY = 'ws_settings';
   /* 同一オリジンの3アプリ（ワースケ/週間計画/シフト）共通の接続先。
@@ -11887,19 +11951,24 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function renameAlt_(id) {
     var a = findAlt_(id);
     if (!a) return;
-    var nm = window.prompt('案の名前', a.name);
-    if (nm === null) return;
-    nm = String(nm).trim().slice(0, 30);
-    if (!nm) return;
-    altWrite_(ui.currentDate, function (d) {
-      for (var i = 0; i < d.alts.length; i++) if (d.alts[i].id === id) { d.alts[i].name = nm; return true; }
-      return false;
-    }).then(function () { renderAltModal_(); renderAll(); }).catch(function () { toast('名前を変えられませんでした', true); });
+    /* 入力は画面の中の窓（WS-04 2026-11-14）。OK の後に日付と案を取り直し、窓の間に変わった・案が消えていたら書かない */
+    var v0_ = wsView_();
+    wsPrompt_('案の名前', a.name, function (nm) {
+      if (nm === null) return;
+      nm = String(nm).trim().slice(0, 30);
+      if (!nm) return;
+      if (wsView_() !== v0_ || !findAlt_(id)) return;
+      altWrite_(ui.currentDate, function (d) {
+        for (var i = 0; i < d.alts.length; i++) if (d.alts[i].id === id) { d.alts[i].name = nm; return true; }
+        return false;
+      }).then(function () { renderAltModal_(); renderAll(); }).catch(function () { toast('名前を変えられませんでした', true); });
+    });
   }
-  function deleteAlt_(id) {
+  function deleteAlt_(id, ok_) {
     var a = findAlt_(id);
     if (!a) return;
-    if (!window.confirm('案「' + a.name + '」を消しますか？（本番は変わりません）')) return;
+    /* 確かめは画面の中の窓（OK の後にもう一度呼び、案と日付を取り直す・代表者の決定 2026-11-13） */
+    if (ok_ !== WS_OK_) { var v0_ = wsView_(); wsConfirm_('案「' + a.name + '」を消しますか？（本番は変わりません）', function () { if (wsView_() === v0_) deleteAlt_(id, WS_OK_); }); return; }
     var date = ui.currentDate;
     altPendDel_(altPendKey_(date, id));
     if (ui.altId === id) leaveAlt_();
@@ -11949,13 +12018,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* 案を本番にする: 案と本番の最新を取り直してから、元の本番を案に残せたのを確かめて、盤面の中身（職員・列・枠）を入れ替える。
    * ロック・印・全体コメントは本番のまま（案の「本日のみ削除」と全体コメントは足す）。本番の実施・チェック・札のコメントは案の札へ移す。
    * 送るのは本番の通常の送信（版の門・ロックの守り・履歴が効く） */
-  function promoteAlt_(id) {
+  function promoteAlt_(id, ok_) {
     var a = findAlt_(id);
     if (!a) return;
     var date = ui.currentDate;
     var curMeta = (ui.altId ? (loadDayData(date) || { meta: {} }) : store.get()).meta || {};
     var lockNote = (curMeta.locked === true || dayLocked_()) ? '\n※この日はロック中（または過ぎた日）です。実績の盤面が入れ替わります。' : '';
-    if (!window.confirm('案「' + a.name + '」を本番にしますか？\n今の本番の盤面は「元の本番」の案として残します（案が' + ALT_MAX + 'つある時は残せないので、入れ替えません）。' + lockNote)) return;
+    /* 確かめは画面の中の窓（OK の後にもう一度呼び、案・日付・ロックを取り直してから入れ替える・代表者の決定 2026-11-13） */
+    if (ok_ !== WS_OK_) { var v0_ = wsView_(); wsConfirm_('案「' + a.name + '」を本番にしますか？\n今の本番の盤面は「元の本番」の案として残します（案が' + ALT_MAX + 'つある時は残せないので、入れ替えません）。' + lockNote, function () { if (wsView_() === v0_) promoteAlt_(id, WS_OK_); }); return; }
     if (ui.altId === id && saveTimer) { clearTimeout(saveTimer); saveTimer = null; doSave(); }
     var shown = (ui.altId === id) ? altSnapshot_(store.get()) : null;
     if (ui.altId) leaveAltCore_();
@@ -12669,6 +12739,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try {
       if (document.hidden) return;
       if (typeof printing_ === 'function' && printing_()) return;   /* 印刷中は通信も再描画もしない */
+      if (wsDialogBusy_()) return;   /* 止めて知らせる窓が出ている間は見張らない（次の回に回す・2026-11-13） */
       var pend = (lockedShiftChg_.date === ui.currentDate) ? lockedShiftChg_.n : 0;
       /* ★保留中（ロック解除の確認で「いいえ」を選んだ等）はバッジを消さない。
        * 消してしまうと「未反映のまま警告も無い」＝今回いちばん直したかった無言状態へ逆戻りする。
@@ -12879,6 +12950,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (careReconcileTimer) clearTimeout(careReconcileTimer);
     careReconcileTimer = setTimeout(function () {
       careReconcileTimer = null;
+      if (wsAfterDialog_(scheduleCareReconcile)) return;   /* 止めて知らせる窓が出ている間は盤面を組み直さず、閉じた後に回す（2026-11-13） */
       try { reconcileWeekly(); } catch (e) {}
       try { renderAll(); } catch (e2) {}
     }, 400);
@@ -12909,6 +12981,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (shiftApplyTimer) clearTimeout(shiftApplyTimer);
     shiftApplyTimer = setTimeout(function () {
       shiftApplyTimer = null;
+      if (wsAfterDialog_(function () { scheduleShiftApply_(); })) return;   /* 止めて知らせる窓が出ている間は反映せず、閉じた後に回す（表示中の月の印は残す・2026-11-13） */
       var planYm_ = shiftApplyPlanYm_; shiftApplyPlanYm_ = null;
       if (!settings.shiftAuto) return;   /* 「シフト自動反映」OFFの端末では自動で盤面を書き換えない（既存設定を尊重） */
       try {
@@ -14166,7 +14239,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (fieldBlock_()) return;   /* 現場の端末では週間計画を取り込まない（2026-10-11） */
     var db = null;
     try { db = JSON.parse(text); } catch (e) {
-      $('imResult').textContent = 'JSONを解釈できません'; return;
+      $('imResult').textContent = 'ファイルの中身を読み取れません（週間計画から書き出したファイルか確かめてください）'; return;
     }
     var day = store.get();
     /* 日単位ロック: 週間計画の手動取込＝ADD_TASKS＋直後の二重収束reconcileが走るため、
@@ -14999,7 +15072,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     setTimeout(function () {
       var st = staff24State_();
       if (st.err || !st.r || st.r.covered24 || !staff24Open_()) return;
-      window.alert('施設職員が誰もいない時間帯があります。\n' +
+      wsAlert_('施設職員が誰もいない時間帯があります。\n' +
         st.r.gaps.map(function (g) { return WSStaffing.minToHM(g.from) + '〜' + WSStaffing.minToHM(g.to); }).join('\n') +
         '\n\n盤面で職員を配置してから、もう一度開いてください。');
     }, 50);
@@ -15011,13 +15084,18 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var sl = $('rpSmList'); if (sl) sl.innerHTML = '';
     try { $('btnStaff24').focus(); } catch (e) {}
   }
-  function printStaff24_() {
+  function printStaff24_(ok_) {
     if (!window.SUPrint) { toast('印刷の部品（su-print.js）を読み込めていません。ページを読み込み直してください', true); return; }
     staff24Render_();
     if ($('rpPrint').disabled) return;
     var est = null;
     try { est = SUPrint.estimate('staff24'); } catch (e) { est = null; wsNote_('24時間配置表の見込み', e); }
-    if (est && est.pages > 1 && !window.confirm('1枚に収まりません（約' + est.pages + 'ページ）\n文字をいちばん小さくしても A4 縦1枚に入りません。そのまま2ページ目へ続けて印刷しますか？')) return;
+    /* 確かめは画面の中の窓（OK の後にもう一度呼び、表を作り直して見込みを取り直してから刷る・印刷の手順は今までと同じ・第6段の監査 WS-04 2026-11-14） */
+    if (ok_ !== WS_OK_ && est && est.pages > 1) {
+      var v0_ = wsView_();
+      wsConfirm_('1枚に収まりません（約' + est.pages + 'ページ）\n文字をいちばん小さくしても A4 縦1枚に入りません。そのまま2ページ目へ続けて印刷しますか？', function () { if (wsView_() === v0_) printStaff24_(WS_OK_); });
+      return;
+    }
     SUPrint.print('staff24');
   }
   var staff24Scroll_ = null;
@@ -15073,7 +15151,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (!window.WSStaffing) { staff24RangeLine_(msg, '表を作る部品を読み込めていません。ページを読み込み直してください', true); return; }
     var rg = WSStaffing.rangeDates($('rpFrom').value, $('rpTo').value);
     if (!rg.ok) { staff24RangeLine_(msg, rg.reason, true); return; }
-    if (!syncOn()) { staff24RangeLine_(msg, 'GAS エンドポイントURL が設定されていないため、ほかの日の盤面を読めません（設定で接続先を入れてください）', true); return; }
+    if (!syncOn()) { staff24RangeLine_(msg, '接続先が設定されていないため、ほかの日の盤面を読めません（設定で接続先を入れてください）', true); return; }
     var roster = null;
     try { roster = getRosterStaff_(); } catch (e) { roster = null; }
     if (!roster || !roster.length) { staff24RangeLine_(msg, 'サービス提供責任者を確かめるための職員名簿（シフト作成）が読めません。表は作れません', true); return; }
@@ -15154,7 +15232,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try { fac = (window.SUFacility && window.SUFacility.loadFacilityProfile().facilityName) || ''; } catch (eF) { fac = ''; }
     return { facility: fac, dateText: date.split('-').join('/') + '（' + WD_JA[dateObj(date).getDay()] + '）', madeText: staff24RangeMade_, altName: '' };
   }
-  function staff24RangePrint_() {
+  function staff24RangePrint_(ok_) {
     if (!window.SUPrint) { toast('印刷の部品（su-print.js）を読み込めていません。ページを読み込み直してください', true); return; }
     staff24RangeShow_();   /* 今のサ責の選択で作り直す */
     var st = staff24Range_;
@@ -15165,7 +15243,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try { est = SUPrint.estimate('staff24range', { pages: n }); } catch (e) { est = null; wsNote_('24時間配置表の期間の見込み', e); }
     var q = n + '日分（A4縦 ' + n + '枚）を印刷します。';
     if (est && est.pages > n) q = '1日1枚に収まらない日があります（全部で約' + est.pages + 'ページ）。文字をいちばん小さくしても入りません。\n' + q;
-    if (!window.confirm(q + '\nよろしいですか？')) { staff24RangeArm_ = false; return; }
+    /* 確かめは画面の中の窓（WS-04 2026-11-14）。待つ間は印を外しておき（窓の間の Cmd+P で期間の紙にしない）、
+       OK の後にもう一度呼んで、期間の表を作り直し・見込みを取り直してから、今までと同じ順で印を付けて刷る */
+    if (ok_ !== WS_OK_) {
+      staff24RangeArm_ = false;
+      var v0_ = wsView_();
+      wsConfirm_(q + '\nよろしいですか？', function () { if (wsView_() === v0_ && staff24Range_ === st) staff24RangePrint_(WS_OK_); });
+      return;
+    }
     staff24RangeArm_ = true;   /* 見込みの後始末（after）で外れるので、印刷の前にもう一度付ける */
     SUPrint.print('staff24range', { pages: n });
   }
@@ -16267,7 +16352,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       try { dead.reset(); } catch (eD) {}
       try { setSyncState('✓ 同期先を元に戻しました'); } catch (eS) {}
       try {
-        toast('同期先が別のアプリのGASに変わっていたため、前回正常に同期できていた同期先へ戻しました'
+        toast('同期先が別のアプリの接続先に変わっていたため、前回正常に同期できていた同期先へ戻しました'
             + '（週間計画・シフトも同じ同期先に戻ります）');
       } catch (eT) {}
       done(true);
@@ -16301,7 +16386,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         }
         try { setSyncState('⚠ 同期先が違います（設定の確認が必要）'); } catch (e1) {}
         try {
-          toast('この端末の同期先（GASのURL）が、ワークスケジュールの同期先ではありません。'
+          toast('この端末の同期先（接続先のURL）が、ワークスケジュールの同期先ではありません。'
               + 'このままでは送信できません。正常な端末の設定からURLをコピーして貼り直してください', true);
         } catch (e2) {}
       });
@@ -16353,7 +16438,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *                未送信に数えず title に添えるだけ（記録は消さない）。 */
   function syncBadgeState_(s) {
     if (!s.syncOn) {
-      return { cls: 'mute', text: '同期なし', title: 'GAS エンドポイント未設定＝この端末だけに保存' };
+      return { cls: 'mute', text: '同期なし', title: '接続先が未設定＝この端末だけに保存' };
     }
     /* ログイン・権限で断られている（2026-10-11）。待っても直らないので「未送信あり」「オフライン」より先に出す */
     if (s.authBlock === 'login' || s.authBlock === 'forbidden') {
@@ -16411,7 +16496,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var care = careSyncState_();
     return { dirtyDays: dirtyDayList_().length, carePending: care.pending, careKnown: care.known,
              careTabOnly: care.tabOnly, careOps: loadCareOps_().ops.length, masterPending: masterUnsent_(),
-             refetchDays: refetchList_().length };
+             refetchDays: refetchList_().length, carePushFailed: carePushFailed_ };
   }
   /* 未送信の内訳。週間計画アプリ側の未送信フラグ(care_schedule_dirty_v1)だけが立っていて、ワースケには
    * 送る物が無い場合(tabOnly)も未送信に数える（安全側・フラグは週間計画アプリの物なので降ろさない）。
@@ -16427,6 +16512,20 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
              careUnsent: careSend || opsUnsent || tabOnly, any: sendable || tabOnly };
   }
   function hasUnsent_(p) { return unsentKinds_(p).any; }
+  /* 閉じる前の確かめ（2026-11-14）: この端末からクラウドへ送れていない変更が残っている間だけ、閉じる・ほかの画面へ移る前にブラウザに止めさせる。
+   * 端末への保存は pagehide の flushAll_ で今までどおり。同期OFF・送る物が無い・週間計画側だけの印・新しい版での読み込み直し（reloadPending_）では何もしない */
+  function unsentLeaveGuard_(e) {
+    if (reloadPending_) return undefined;
+    var p;
+    try { if (!syncOn()) return undefined; p = syncPendingInfo_(); } catch (err) { return undefined; }
+    var k = unsentKinds_(p);
+    /* 週間計画の送信をまだ確かめていない間（careKnown が false）は、この起動で送ろうとして失敗した時だけ再適用の記録を理由に止める
+       （起動直後で何も送ろうとしていない時は止めない。送信待ち・送信中は carePending で止める） */
+    var real = p.dirtyDays > 0 || !!(p.carePending && !p.careTabOnly) || !!p.masterPending || (k.opsUnsent && (p.careKnown || !!p.carePushFailed));
+    if (!k.sendable || !real) return undefined;
+    if (e) { e.preventDefault(); e.returnValue = ''; }
+    return '';
+  }
   function updateSyncBadge_() {
     var el = $('badgeSync');
     if (!el) return;
@@ -16671,7 +16770,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * ★取り直し待ちの印を先に付けるのが要点（2026-09-24）。これが無いと、通信できなかった時に
    *   未送信の印だけが外れ、次の自動調整（マスタ反映・週間計画の照合・シフト反映）が即座に
    *   印を立て直して「未送信あり」が永久に消えなかった。印がある間はこの端末からは送らない。 */
-  function discardUnsentDays_() {
+  function discardUnsentDays_(ok_) {
     if (!syncOn()) { toast('同期先が未設定です', true); return; }
     var rows = unsentDayRows_();
     if (!rows.length) { toast('未送信の日はありません'); renderUnsentDiag_(); return; }
@@ -16688,7 +16787,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       ? ('\n\n⚠ うち ' + withWork + '日は職員名が入っています。この端末でしか編集していない内容があれば失われます。')
       : '\n\n（職員名の入った日はありません）';
     msg += '\n\n進めますか？';
-    if (!window.confirm(msg)) { if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '中止しました'; return; }
+    /* 確かめは画面の中の窓（OK の後にもう一度呼び、未送信の日を取り直してから進む・WS-04 2026-11-14） */
+    if (ok_ !== WS_OK_) {
+      /* OK の後の呼び直しにも、呼ぶ側（［取り直す］のボタン）と同じ失敗の知らせを付ける */
+      wsConfirm_(msg, function () { try { discardUnsentDays_(WS_OK_); } catch (e) { toast('取り直しに失敗しました', true); } }, function () { if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '中止しました'; });
+      return;
+    }
     var total = rows.length;
     /* ★退避 → 取り直し待ちの印 → 未送信の印を落とす、の順。
      * 取り直し待ちの印がある間は markDayDirty_ も push も入口で止まる＝取得を待つ間も、
@@ -16810,7 +16914,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var on = conflictRestoreOffer_({ has: !!st, ok: !!(st && st.ok), field: field, altId: ui.altId, same: !!(st && st.sig === daySig(store.get())) });
     if (b.hidden !== !on) b.hidden = !on;
   }
-  function restoreConflictStash_() {
+  function restoreConflictStash_(ok_, sig0_, cur0_) {
     var date = ui.currentDate;
     if (wsIsFieldDevice_()) { toast(FIELD_BOARD_MSG, true); return; }
     if (ui.altId) { toast('案を表示している間は控えから戻せません（本番に戻してから押してください）', true); return; }
@@ -16825,7 +16929,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       '退避した後にほかの端末で直した配置は、控えの配置に置き換わります。実施・チェック・札のコメントは、控えの同じ札へ移します。\n' +
       '今の盤面は控えの盤面に入れ替わり、ほかの端末へ送ります。\n入れ替えた後でも「元に戻す」（↩）で今の盤面に戻せます' +
       (sm.locked && !curLocked ? '（ロックは残ります。外す時は🔒ロックのチェックを外してください）' : '') + '。控えはこの端末に残ります。';
-    if (!window.confirm(msg)) return;
+    /* 確かめは画面の中の窓（OK の後にもう一度呼び、日付・案・控えを取り直してから戻す・WS-04 2026-11-14）。
+       窓の間に控えが入れ替わっていたら、確かめた控えと違うので戻さない */
+    /* 今の盤面とロックも、窓を出した時と違えば置き換えない（窓の文は出した時の盤面とロックで書いたため） */
+    var curNow_ = daySig(cur) + '|' + (curLocked ? 1 : 0);
+    if (ok_ !== WS_OK_) {
+      var v0_ = wsView_(), stSig_ = st.sig;
+      wsConfirm_(msg, function () { if (wsView_() === v0_) restoreConflictStash_(WS_OK_, stSig_, curNow_); });
+      return;
+    }
+    if (st.sig !== sig0_ || curNow_ !== cur0_) { toast('この日の控えが変わったため戻していません。もう一度押してください', true); paintConflictRestore_(); return; }
     if (ui.currentDate !== date || ui.altId) return;
     /* 退避の後にほかの端末で付いた実施・チェック・札のコメントを、控えの同じ札へ移す（案を本番にする時と同じ carryMarks_） */
     var now_ = store.get(), cInfo = {};
@@ -16900,10 +17013,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
   /* GASエラー文字列を利用者向けに翻訳（原因の切り分けを助ける） */
   function friendlyErr(e) {
-    if (e === 'unauthorized') return 'トークンが一致しません（同期トークンを確認）';
-    if (e === 'unknown action' || e === '不明なaction' || e === '認証エラー') return '同期先が違います（別のアプリのGASを指しています）';
+    if (e === 'unauthorized') return '合言葉が違います（設定の合言葉を確かめてください）';
+    if (e === 'unknown action' || e === '不明なaction' || e === '認証エラー') return '同期先が違います（別のアプリの接続先を指しています）';
     if (e === 'HTTP 404') return '一時的な応答エラー（自動で再試行します）';
-    if (e === 'switched') return 'この保存先は Supabase へ切り替え済みです。画面を読み込み直してください';   /* 統合 GAS の switchedrefuse（2026-10-17） */
+    if (e === 'switched') return 'この記録は新しい保存先へ移っています。画面を読み込み直してください';   /* 統合 GAS の switchedrefuse（2026-10-17） */
     return e || '通信失敗';
   }
   /* 接続先(su_sync_common)が古い死んだGAS(unknown action)のとき、ws_settings の稼働中URLへ自動切替する。
@@ -17175,12 +17288,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
                （「オフライン（自動再試行）」だけでは、待っても直らないことが伝わらない）。 */
             if (v.error === 'deadendpoint') {
               try { setSyncState('⚠ 同期先が見つかりません（設定の確認が必要）'); } catch (e2) {}
-              try { toast('この端末の同期先（GASのURL）が見つかりません。正常な端末の設定からURLをコピーして貼り直してください', true); } catch (e3) {}
+              try { toast('この端末の同期先（接続先のURL）が見つかりません。正常な端末の設定からURLをコピーして貼り直してください', true); } catch (e3) {}
             } else {
               /* 'unknown action'／'不明なaction'＝応答は返るが、相手がこのアプリの同期GASではない。
                * 待っても直らないので、待てば直ると誤解される「オフライン」表示にしない。 */
               try { setSyncState('⚠ 同期先が違います（設定の確認が必要）'); } catch (e4) {}
-              try { toast('この端末の同期先（GASのURL）が、ワークスケジュールの同期先ではありません。正常な端末の設定からURLをコピーして貼り直してください', true); } catch (e5) {}
+              try { toast('この端末の同期先（接続先のURL）が、ワークスケジュールの同期先ではありません。正常な端末の設定からURLをコピーして貼り直してください', true); } catch (e5) {}
             }
             try { cb(v); } catch (e) {}
           }
@@ -17406,7 +17519,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
   function pushDayNow(report) {
     if (typeof ui !== 'undefined' && ui.altId) return;   /* 盤面（store）は案＝本番として送らない（2026-10-20） */
-    if (!syncOn()) { if (report) $('stResult').textContent = 'エンドポイント未設定'; return; }
+    if (!syncOn()) { if (report) $('stResult').textContent = '接続先が未設定です'; return; }
     /* 公開中の版を確かめ終えるまで送らない（未送信の印は残る＝確かめた後に送る・2026-10-17）。
      * typeof で確かめる＝この関数だけを切り出して試す公開側の試験（care-tools check/unit/sukv_routed_test.js）でも落ちない */
     if (typeof versionHold_ !== 'undefined' && versionHold_) return;
@@ -17894,7 +18007,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   var dayPullOk_ = {};
   function pullDayNow(date, notify, report, done, deferred) {
     function fin() { if (done) { try { done(); } catch (e) {} } }
-    if (!syncOn()) { if (report) $('stResult').textContent = 'エンドポイント未設定'; fin(); return; }
+    if (!syncOn()) { if (report) $('stResult').textContent = '接続先が未設定です'; fin(); return; }
     if (versionHold_ && !report) { fin(); return; }   /* 古い版のまま取り込んで統合しない（確かめた後の取得に任せる・2026-10-17） */
     if (printing_()) { fin(); return; }   /* 印刷中は取込しない（§10保護・done は必ず呼ぶ） */
     if (dayPushBusy_) {
@@ -18357,8 +18470,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       lockedShiftChg_ = { date: '', n: 0 }; paintShiftChgBadge_();   /* 非ロック＝これから反映するのでバッジは消す */
       if (!data || !data.plan) {
         if (opts.report) $('imResult').textContent =
-          syncOn() ? 'シフトを取得できませんでした（サーバー応答なし、または当月 ' + ym + ' のシフト未登録）。通信・エンドポイントURL・トークンをご確認ください。'
-                   : 'エンドポイント未設定のためシフトを取得できません（設定でURL／トークンを入力してください）。';
+          syncOn() ? 'シフトを取得できませんでした（サーバー応答なし、または当月 ' + ym + ' のシフト未登録）。通信・接続先のURL・合言葉をご確認ください。'
+                   : '接続先が未設定のためシフトを取得できません（設定で接続先のURL・合言葉を入力してください）。';
         done(null); return;
       }
       var att = SH.extractAttendance(date, data.staff, data.symbols, data.plan, shiftPickOpts_());
@@ -18461,7 +18574,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * - 翌週の出勤シフトでスロットを埋め、各支援を元のスロット(列)が出勤者ありなら同列へ、無ければ未配置へ。
    * - 列(スロットID)が日付をまたいで安定しているため、前週の並び順がそのまま維持される。
    * - 翌週の既存「支援」は破棄して差し替え。施設業務/休憩/自由枠は翌週オープン時に自動再生成。 */
-  function copyCareToNextWeek() {
+  function copyCareToNextWeek(ok_) {
     if (fieldBlock_()) return;   /* 現場の端末では翌週の盤面を作らない（2026-10-11） */
     if (ui.altId) { toast('案を表示中は翌週へコピーできません（本番に戻してから押してください）', true); return; }   /* 案の盤面を翌週の本番へ入れない（2026-10-20） */
     var src = store.get();
@@ -18479,7 +18592,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         '件＋施設業務・休憩・自由枠・グループ化・配色＋コメント ' + noteCount +
         '件）をコピーします。\n翌週の既存の内容は上書きされます。';
     if (ndNoteCount) msg += '\n※翌週にある既存のコメント ' + ndNoteCount + '件も置き換わります。';
-    if (!window.confirm(msg + '\nよろしいですか？')) return;
+    /* 確かめは画面の中の窓（OK の後にもう一度呼び、案・日付・件数を取り直してから写す・代表者の決定 2026-11-13） */
+    if (ok_ !== WS_OK_) { var v0_ = wsView_(); wsConfirm_(msg + '\nよろしいですか？', function () { if (wsView_() === v0_) copyCareToNextWeek(WS_OK_); }); return; }
     var ym = shiftMonth(nd);
     toast('翌週のシフトを取得中…');
     fetchShiftData(ym, true, function (data) {
@@ -18779,16 +18893,21 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
     hideModals();
   }
-  function deleteColEdit_() {
+  function deleteColEdit_(ok_) {
     if (fieldBlock_()) return;   /* 現場の端末では列を消さない（2026-10-11） */
     var day = store.get();
     var colDef = colByIndex_(day, editingCol_);
     var chk_ = canDeleteColumn_(day, colDef);
     if (!colDef || !chk_.ok) { toast('この列は削除できません', true); return; }
     /* 手動由来の枠は自動再生成もUndo復元もされない＝黙って消さず、件数を示して本人確認を取る。 */
-    if (chk_.manualCount) {
-      if (!window.confirm('この列には手動で作成・移動した枠が ' + chk_.manualCount +
-          '件あります。\n列を削除するとこれらの枠も削除され、Undo（元に戻す）では戻せません。\n削除しますか？')) return;
+    if (chk_.manualCount && ok_ !== WS_OK_) {
+      /* 確かめは画面の中の窓（OK の後にもう一度呼び、列と枠を取り直してから消す・代表者の決定 2026-11-13） */
+      var ec_ = editingCol_, v0_ = wsView_();
+      wsConfirm_('この列には手動で作成・移動した枠が ' + chk_.manualCount +
+          '件あります。\n列を削除するとこれらの枠も削除され、Undo（元に戻す）では戻せません。\n削除しますか？', function () {
+        if (editingCol_ === ec_ && wsView_() === v0_) deleteColEdit_(WS_OK_);
+      });
+      return;
     }
     var ids = colDef.staffIds || [], i, m, idSet = {};
     for (i = 0; i < ids.length; i++) { idSet[ids[i]] = true; idSet[IM.baseSlotId(ids[i])] = true; }
@@ -19303,7 +19422,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     toast('この日は、前の日に固定した起床・就寝の並びに組み替え済みです', false, ROUTINE_TOAST_MS);
   }
   /* 「並びを固定」: 表示中の日の起床・就寝のグループを登録する（押し直すまで変わらない・決定 1A） */
-  function registerRoutines_() {
+  function registerRoutines_(ok_) {
     if (fieldBlock_()) return;
     /* 案の盤面の並びを支援マスタへ登録しない＝本番の翌日へ反映しない（2026-10-22 反証レビュー指摘・翌週へコピーと同じ扱い） */
     if (ui.altId) { toast('案を表示中は並びを固定できません（本番に戻してから押してください）', true); return; }
@@ -19315,10 +19434,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (nextD > todayKey()) R.next = { date: nextD, savedAt: R.savedAt, singles: res.singles || [] };   /* 並びの外の枠の列・トレイも写す */
     /* 押し間違いで登録が入れ替わらないよう、固定した並びがある時は確かめる（2026-10-15 本人指示・文言どおり） */
     var cur = routinesNow_();
-    if (cur) {
+    if (cur && ok_ !== WS_OK_) {
       var fp = String(cur.from || '').split('-');
       var fromTxt = fp.length === 3 ? (parseInt(fp[1], 10) + '/' + parseInt(fp[2], 10)) : '';
-      if (!window.confirm('今の並びで固定し直しますか？ これまでの並び（' + (fromTxt ? fromTxt + '・' : '') + cur.chains.length + '組）と入れ替わります')) return;
+      /* 確かめは画面の中の窓（OK の後にもう一度呼び、盤面の並びを取り直してから固定する・代表者の決定 2026-11-13） */
+      var v0_ = wsView_();
+      wsConfirm_('今の並びで固定し直しますか？ これまでの並び（' + (fromTxt ? fromTxt + '・' : '') + cur.chains.length + '組）と入れ替わります', function () {
+        if (wsView_() === v0_) registerRoutines_(WS_OK_);
+      });
+      return;
     }
     var okMsg = '起床（7:00〜8:40）と就寝（18:00〜21:00）の並びを固定しました（' + res.chains.length + '組）';
     /* 並びにできなかったグループも知らせる（2026-10-23: 落ちた組が黙って登録から外れていた） */
@@ -19557,6 +19681,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
   var carePushBusy_ = false, carePushAgain_ = false, careWipeNotified_ = false;
   var carePushQueued_ = false;   /* 同期状態バッジ用: 送信待ち(2秒)の間だけ true。pushCareNow に入った時点で降ろす */
+  var carePushFailed_ = false;   /* この起動で週間計画を送ろうとして失敗した（成功で降ろす）。閉じる前の確かめが、比べる基準の無い間も止める合図（2026-11-14） */
   /* 週間計画の内容が「最後に送信・取得した版(lastPushed.care)」と違う＝送る物がある。schedulePushCare の判定そのもの */
   function careRawPending_(raw) { return !!raw && raw !== lastPushed.care; }
   /* 週間計画の未送信（同期状態バッジ用・送信の挙動には関与しない）。
@@ -19585,6 +19710,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try { updateSyncBadge_(); } catch (eSb) {}
     gas({ action: 'put', key: CARE_KEY, rev: loadRevs().care || 0, data: data }, function (j) {
       carePushBusy_ = false;
+      carePushFailed_ = !(j && j.ok);   /* 断り・競合・通信失敗はどれも、まだ送れていない */
       if (j && j.ok) {
         saveRevsPatch({ care: j.rev });
         lastPushed.care = raw;
@@ -19653,6 +19779,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (carePendingTimer_) { clearInterval(carePendingTimer_); carePendingTimer_ = null; }
       return;
     }
+    if (wsDialogBusy_()) return;   /* 止めて知らせる窓が出ている間は取り込まない（2秒後にまた見る・2026-11-13） */
     if (careEditingElsewhere_()) {
       if (!carePendingWarned_ && (Date.now() - carePendingAdopt_.since) > 5 * 60 * 1000) {
         carePendingWarned_ = true;
@@ -19842,9 +19969,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     });
   }
 
+  var pullAllAfterDlg_ = false;
   function pullAll(notify) {
     if (!syncOn()) return;
     if (printing_()) return;   /* 印刷中はサーバー取込を停止（unfitPrint で取り戻す） */
+    /* 止めて知らせる窓が出ている間は取り込まず、閉じた後に1回だけ取る（何度呼ばれても1回にまとめる・2026-11-13） */
+    if (pullAllAfterDlg_ && wsDialogBusy_()) return;
+    if (wsAfterDialog_(function () { pullAllAfterDlg_ = false; pullAll(notify); })) { pullAllAfterDlg_ = true; return; }
     lastPullAt = Date.now();
     pullMasterNow();
     var d0 = ui.currentDate;
@@ -20020,7 +20151,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
     return parts.join('・');
   }
-  function deleteSelected() {
+  function deleteSelected(ok_) {
     if (!ui.selectedIds.length) { toast('ブロックを選択してください'); return; }
     var all = store.get().tasks, ids = [], tasks = [], i;
     for (i = 0; i < ui.selectedIds.length; i++) {
@@ -20029,7 +20160,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
     if (!ids.length) { ui.selectedIds = []; applySelectionClasses_(); toast('ブロックを選択してください'); return; }
     var n = ids.length;
-    if (!window.confirm(selBreakdown_(tasks) + 'を消去しますか？')) return;
+    /* 確かめは画面の中の窓（OK の後にもう一度呼び、選んだ枠を取り直してから消す・代表者の決定 2026-11-13） */
+    if (ok_ !== WS_OK_) { var v0_ = wsView_(); wsConfirm_(selBreakdown_(tasks) + 'を消去しますか？', function () { if (wsView_() === v0_) deleteSelected(WS_OK_); }); return; }
     ui.selectedIds = [];
     store.dispatch({ type: 'DELETE_TASKS', ids: ids });   /* 1操作＝Ctrl+Z 1回で全部戻る */
     toast(n + '件を消去しました');
@@ -20165,7 +20297,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     function sbNext_() {
       if (si >= sbChunks.length) { googleFill_(); return; }
       var ch = sbChunks[si++];
-      if (onProgress) onProgress('Supabase ' + si + '/' + sbChunks.length);
+      if (onProgress) onProgress('新しい保存先 ' + si + '/' + sbChunks.length);
       SUKv.readRouted({ action: 'pull', keys: ch }).then(function (r) {
         if (r && r.ok && r.entries) take_(r.entries);
         sbNext_();
@@ -20274,7 +20406,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     $('btnUndo').addEventListener('click', function () { store.undo(); });
     $('btnRedo').addEventListener('click', function () { store.redo(); });
     /* 日単位ロックの切替（通常dispatch=Undo可・daySigに含まれpushで全端末へ伝播）。 */
-    if ($('chkLock')) $('chkLock').addEventListener('change', function () {
+    /* ロックの切り替え（確かめは画面の中の窓・OK の後にもう一度呼ぶ・WS-04 2026-11-14） */
+    function onLockChange_(ok_) {
       if (ui.altId) { $('chkLock').checked = false; toast('案ではロックを使いません（本番に戻してから操作してください）', true); return; }
       /* 現場の端末ではロックも盤面の操作＝変えさせない（2026-10-11）。止めた時に「ロック中」と言わないよう先に返す */
       if (wsIsFieldDevice_()) {
@@ -20285,8 +20418,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var on = $('chkLock').checked;
       /* 外す時は必ず確かめる（代表者の決定 2026-10-13）。1回押すだけで全端末のロックが外れ、外れた日を開いた端末の
        * 自動処理（勤務表の反映・週間計画の同期・自動配置）が職員の列を組み直して、調整済みの支援が別の列へ移ったため */
-      if (!on && !window.confirm(LOCK_OFF_CONFIRM)) {
-        $('chkLock').checked = true;
+      /* 窓の間に日付・案が変わった・ほかの端末で外れた時は外さず、チェックは今の日のロックに合わせる。キャンセルはロックのまま */
+      if (!on && ok_ !== WS_OK_) {
+        var v0_ = wsView_();
+        wsConfirm_(LOCK_OFF_CONFIRM, function () {
+          if (wsView_() === v0_ && store.get().meta && store.get().meta.locked === true) { $('chkLock').checked = false; onLockChange_(WS_OK_); return; }
+          $('chkLock').checked = !!(store.get().meta && store.get().meta.locked);
+        }, function () { $('chkLock').checked = !!(store.get().meta && store.get().meta.locked); });
         return;
       }
       /* 解除時は「過去日の自動保護が残るか」を store へ渡す（reducer は patch しか読まない・2026-09-10） */
@@ -20311,15 +20449,24 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (pend_ <= 0) { lockedShiftChg_ = { date: '', n: 0 }; paintShiftChgBadge_(); }
         else if (!settings.shiftAuto) {
           toast('シフトの自動反映がOFFです。［取込］→［シフト］から反映してください（未反映 ' + pend_ + '件）', true);
-        } else if (window.confirm('シフトに未反映の変更が ' + pend_ + '件あります。\n今すぐ盤面へ反映しますか？\n\n' +
-            '※ 反映すると職員の列が作り直されます。手で動かした支援の位置が変わることがあります。\n' +
-            '※ 「いいえ」を選んでも、後から［取込］→［シフト］でいつでも反映できます。')) {
-          lockedShiftChg_ = { date: '', n: 0 }; paintShiftChgBadge_();
-          try { applyShiftForDate(ui.currentDate, { auto: true, ask: true }); } catch (eUL) {}   /* 本人が「はい」を選んだ反映＝一度ロックした日でも通す */
+        } else {
+          /* 続けて尋ねる窓も画面の中の窓（1つ目の OK の後に出す）。週間計画の未反映は、答えの後に数える（今までと同じ順） */
+          var v1_ = wsView_();
+          wsConfirm_('シフトに未反映の変更が ' + pend_ + '件あります。\n今すぐ盤面へ反映しますか？\n\n' +
+              '※ 反映すると職員の列が作り直されます。手で動かした支援の位置が変わることがあります。\n' +
+              '※ 「いいえ」を選んでも、後から［取込］→［シフト］でいつでも反映できます。', function () {
+            if (wsView_() === v1_ && !fieldBlock_() && !(store.get().meta && store.get().meta.locked === true)) {
+              lockedShiftChg_ = { date: '', n: 0 }; paintShiftChgBadge_();
+              try { applyShiftForDate(ui.currentDate, { auto: true, ask: true }); } catch (eUL) {}   /* 本人が「はい」を選んだ反映＝一度ロックした日でも通す */
+            }
+            try { countWeeklyPending_(); } catch (eWc) {}
+          }, function () { try { countWeeklyPending_(); } catch (eWc) {} });
+          return;
         }
         try { countWeeklyPending_(); } catch (eWc) {}   /* 外した直後に週間計画の未反映を数えて印に出す（反映はしない） */
       }
-    });
+    }
+    if ($('chkLock')) $('chkLock').addEventListener('change', function () { onLockChange_(); });
     document.addEventListener('keydown', function (e) {
       /* Ctrl/Cmd+S は入力欄・モーダル中でも「今すぐ保存」にする（ブラウザの保存ダイアログを抑止） */
       if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
@@ -20363,10 +20510,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         try { var lb = $('lockLabel'); if (lb && lb.scrollIntoView) lb.scrollIntoView({ block: 'nearest' }); } catch (e) {}
         return;
       }
-      /* 自動反映OFF: 反映すると職員の列が作り直され、手で動かした支援の位置が変わりうるため必ず尋ねる */
-      if (window.confirm('シフトに未反映の変更が ' + n + '件あります。\n今すぐ盤面へ反映しますか？\n\n' +
+      /* 自動反映OFF: 反映すると職員の列が作り直され、手で動かした支援の位置が変わりうるため必ず尋ねる。
+       * 確かめは画面の中の窓（OK の後に日付・端末の用途・ロックを取り直す・代表者の決定 2026-11-13） */
+      var v0_ = wsView_();
+      wsConfirm_('シフトに未反映の変更が ' + n + '件あります。\n今すぐ盤面へ反映しますか？\n\n' +
           '※ 反映すると職員の列が作り直されます。手で動かした支援の位置が変わることがあります。\n' +
-          '※ 「いいえ」を選んでも、後から［取込］→［シフト］でいつでも反映できます。')) {
+          '※ 「いいえ」を選んでも、後から［取込］→［シフト］でいつでも反映できます。', function () {
+        if (wsView_() !== v0_ || fieldBlock_() || shiftHeldReason_() === 'locked') return;
         lockedShiftChg_ = { date: '', n: 0 }; paintShiftChgBadge_();
         /* ★force は付けない。force は「空の出勤でも氏名入り盤面を上書き」と
          * 「手動編集済みスロットの保護解除」の2つの安全弁を同時に外す。
@@ -20374,7 +20524,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
          * （lockedShiftDiff_ は del 側で n>0 になるためバッジは点灯する）。
          * ロック解除時の同じ確認ダイアログも {auto:true} で反映している＝挙動を揃える。 */
         try { applyShiftForDate(ui.currentDate, { fresh: true }); } catch (eB) {}
-      }
+      });
     });
 
     /* 週間計画の未反映（2026-10-16）。ロック中は外す導線だけ示し、一度ロックした日は尋ねてから反映する */
@@ -20387,11 +20537,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         try { var lb2 = $('lockLabel'); if (lb2 && lb2.scrollIntoView) lb2.scrollIntoView({ block: 'nearest' }); } catch (e) {}
         return;
       }
-      if (!window.confirm('週間計画に未反映の変更が ' + n + '件あります。\n今すぐ盤面へ反映しますか？\n\n' +
+      /* 確かめは画面の中の窓（OK の後に日付・端末の用途・ロックを取り直す・WS-04 2026-11-14） */
+      var v0_ = wsView_();
+      wsConfirm_('週間計画に未反映の変更が ' + n + '件あります。\n今すぐ盤面へ反映しますか？\n\n' +
           '※ 反映すると、週間計画で増えた支援は空いている列へ自動で置かれ、なくなった支援は盤面から消えます。\n' +
-          '※ 「いいえ」を選んでも、後からこの印を押せばいつでも反映できます。')) return;
-      try { runManual_(reconcileWeekly); } catch (eRw) {}
-      try { renderAll(); } catch (eRa) {}
+          '※ 「いいえ」を選んでも、後からこの印を押せばいつでも反映できます。', function () {
+        if (wsView_() !== v0_ || fieldBlock_() || store.get().meta.locked) return;
+        try { runManual_(reconcileWeekly); } catch (eRw) {}
+        try { renderAll(); } catch (eRa) {}
+      });
     });
 
     $('trayToggle').addEventListener('click', function () {
@@ -20482,32 +20636,38 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var msg = isWeekly
         ? 'この支援を本日のみ削除しますか？\n（週間計画には残ります。毎週から外す場合は週間計画アプリ側で削除してください）'
         : 'このタスクを削除しますか？';
-      if (!window.confirm(msg)) return;
-      if (isWeekly) {
-        var day = store.get();
-        var skips = (day.meta.skipRefs || []).slice();
-        var ref = t.weeklyRef.evId || (t.residentName + '|' + t.weeklyRef.start);
-        /* 署名付き墓標: 現在の週間計画イベントの (開始/終了/内容) を署名として記録する。
-         * 週間計画側でこの予定の時刻/内容が後日変更されると署名不一致→isSkipped が非skip判定に倒れ
-         * ADDで復活する（削除の自癒＝根治）。イベント取得不能時は署名なし＝従来どおり恒久墓標。 */
-        var entry = { ref: ref, at: (typeof Date !== 'undefined' ? Date.now() : 0) };
-        var cev = null;
-        try { cev = findCareEventByRef_(loadCareDb(), t.weeklyRef); } catch (eSig) {}
-        if (cev) {
-          var cs = TS.timeToMin(cev.startTime), ce = TS.timeToMin(cev.endTime);
-          if (cs !== null && ce !== null) entry.sig = { s: cs, e: ce, d: cev.detail || '' };
+      /* 確かめは画面の中の窓（代表者の決定 2026-11-13）。OK の後に、開いている枠と中身を取り直してから消す */
+      var eid_ = ui.editingId;
+      wsConfirm_(msg, function () {
+        if (ui.editingId !== eid_) return;
+        t = M.findTask(store.get().tasks, eid_);
+        isWeekly = t && t.kind === 'care' && t.weeklyRef;
+        if (isWeekly) {
+          var day = store.get();
+          var skips = (day.meta.skipRefs || []).slice();
+          var ref = t.weeklyRef.evId || (t.residentName + '|' + t.weeklyRef.start);
+          /* 署名付き墓標: 現在の週間計画イベントの (開始/終了/内容) を署名として記録する。
+           * 週間計画側でこの予定の時刻/内容が後日変更されると署名不一致→isSkipped が非skip判定に倒れ
+           * ADDで復活する（削除の自癒＝根治）。イベント取得不能時は署名なし＝従来どおり恒久墓標。 */
+          var entry = { ref: ref, at: (typeof Date !== 'undefined' ? Date.now() : 0) };
+          var cev = null;
+          try { cev = findCareEventByRef_(loadCareDb(), t.weeklyRef); } catch (eSig) {}
+          if (cev) {
+            var cs = TS.timeToMin(cev.startTime), ce = TS.timeToMin(cev.endTime);
+            if (cs !== null && ce !== null) entry.sig = { s: cs, e: ce, d: cev.detail || '' };
+          }
+          /* 後方互換の二重書き: 署名付きobjectに加え旧形式stringも記録する。P3クライアントは isSkipped の
+           * object優先(同一refにobject有ならstring無視)で自癒するが、旧クライアント(object不読)は string を
+           * indexOf で拾って skip でき、削除済み予定の盤面再表示（stale配信混在時に恒久化しうる）を防ぐ。 */
+          if (skips.indexOf(ref) < 0) skips.push(ref);
+          skips.push(entry);
+          /* 墓標の記録と削除を1操作に（2026-10-07）＝Ctrl+Z 1回で支援も墓標も戻る */
+          store.dispatch({ type: 'DELETE_TASKS', ids: [ui.editingId], metaPatch: { skipRefs: skips } });
+        } else {
+          store.dispatch({ type: 'DELETE_TASK', id: ui.editingId });
         }
-        /* 後方互換の二重書き: 署名付きobjectに加え旧形式stringも記録する。P3クライアントは isSkipped の
-         * object優先(同一refにobject有ならstring無視)で自癒するが、旧クライアント(object不読)は string を
-         * indexOf で拾って skip でき、削除済み予定の盤面再表示（stale配信混在時に恒久化しうる）を防ぐ。 */
-        if (skips.indexOf(ref) < 0) skips.push(ref);
-        skips.push(entry);
-        /* 墓標の記録と削除を1操作に（2026-10-07）＝Ctrl+Z 1回で支援も墓標も戻る */
-        store.dispatch({ type: 'DELETE_TASKS', ids: [ui.editingId], metaPatch: { skipRefs: skips } });
-      } else {
-        store.dispatch({ type: 'DELETE_TASK', id: ui.editingId });
-      }
-      hideModals();
+        hideModals();
+      });
     });
     $('edConfirmOrigin').addEventListener('click', function () {
       if (!ui.editingId) return;
@@ -20553,9 +20713,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* 再取込（全上書き）: 手動編集も無視してシフトで埋め直す */
     $('imShiftRecloud').addEventListener('click', function () {
       if (fieldBlock_()) return;
-      if (!window.confirm('手動で編集した職員枠も含めて、シフトの内容で全て上書きします。よろしいですか？')) return;
-      $('imResult').textContent = 'シフトを取得中…';
-      applyShiftForDate(ui.currentDate, { fresh: true, force: true, report: true });
+      /* 確かめは画面の中の窓（OK の後に日付と端末の用途を取り直す・代表者の決定 2026-11-13） */
+      var v0_ = wsView_();
+      wsConfirm_('手動で編集した職員枠も含めて、シフトの内容で全て上書きします。よろしいですか？', function () {
+        if (wsView_() !== v0_ || fieldBlock_()) return;
+        $('imResult').textContent = 'シフトを取得中…';
+        applyShiftForDate(ui.currentDate, { fresh: true, force: true, report: true });
+      });
     });
     $('imWeeklyApply').addEventListener('click', function () { applyWeeklyJson($('imWeeklyText').value); });
     $('imWeeklyFile').addEventListener('change', function () {
@@ -20580,7 +20744,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var p = null;
       try { p = JSON.parse($('imMasterText').value); } catch (e) {}
       if (!p || !p.weekdays) {
-        $('imResult').textContent = 'マスタJSONを解釈できません';
+        $('imResult').textContent = 'マスタのファイルの中身を読み取れません';
         return;
       }
       IM.stripMasterDaycare_(p);   /* デイは週間計画が正本。落としてから保存＝他端末へも落ちた版が伝播する */
@@ -20610,33 +20774,43 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         $('imResult').textContent = '既定の列へ配置済みで生成しました';
         return;
       }
-      if (day.tasks.length &&
-          !window.confirm('この日には既にタスクがあります。マスタ由来の未配置タスクを置き換えて生成しますか？')) return;
-      /* マスタ由来の未配置タスクを除去してから再生成 */
-      var ts = store.get().tasks;
-      for (var i = 0; i < ts.length; i++) {
-        if (ts[i].src === 'weekly' && ts[i].staffId === null) {
-          store.dispatch({ type: 'DELETE_TASK', id: ts[i].id });
-        }
+      /* 確かめは画面の中の窓（OK の後に日付・ロック・端末の用途を取り直す・代表者の決定 2026-11-13） */
+      var v0_ = wsView_();
+      if (day.tasks.length) {
+        wsConfirm_('この日には既にタスクがあります。マスタ由来の未配置タスクを置き換えて生成しますか？', function () {
+          if (wsView_() !== v0_ || fieldBlock_() || dayLocked_()) return;
+          seedGo_();
+        });
+        return;
       }
-      var master = loadMaster();
-      if (!master) { $('imResult').textContent = '先にマスタを取込んでください'; return; }
-      var tasks = IM.masterDayTasks(master, careDow(ui.currentDate));
-      /* 既に配置済みの同一予定（weeklyRef一致）は生成しない */
-      var existing = store.get().tasks;
-      var fresh = [];
-      for (var j = 0; j < tasks.length; j++) {
-        var dupFound = false;
-        for (var e = 0; e < existing.length; e++) {
-          var ex = existing[e];
-          if (ex.kind === 'care' && ex.weeklyRef &&
-              ex.residentName === tasks[j].residentName &&
-              ex.weeklyRef.start === tasks[j].start) { dupFound = true; break; }
+      seedGo_();
+      function seedGo_() {
+        /* マスタ由来の未配置タスクを除去してから再生成 */
+        var ts = store.get().tasks;
+        for (var i = 0; i < ts.length; i++) {
+          if (ts[i].src === 'weekly' && ts[i].staffId === null) {
+            store.dispatch({ type: 'DELETE_TASK', id: ts[i].id });
+          }
         }
-        if (!dupFound) fresh.push(tasks[j]);
+        var master = loadMaster();
+        if (!master) { $('imResult').textContent = '先にマスタを取込んでください'; return; }
+        var tasks = IM.masterDayTasks(master, careDow(ui.currentDate));
+        /* 既に配置済みの同一予定（weeklyRef一致）は生成しない */
+        var existing = store.get().tasks;
+        var fresh = [];
+        for (var j = 0; j < tasks.length; j++) {
+          var dupFound = false;
+          for (var e = 0; e < existing.length; e++) {
+            var ex = existing[e];
+            if (ex.kind === 'care' && ex.weeklyRef &&
+                ex.residentName === tasks[j].residentName &&
+                ex.weeklyRef.start === tasks[j].start) { dupFound = true; break; }
+          }
+          if (!dupFound) fresh.push(tasks[j]);
+        }
+        if (fresh.length) store.dispatch({ type: 'ADD_TASKS', tasks: fresh });
+        $('imResult').textContent = 'マスタから ' + fresh.length + '件を生成しました';
       }
-      if (fresh.length) store.dispatch({ type: 'ADD_TASKS', tasks: fresh });
-      $('imResult').textContent = 'マスタから ' + fresh.length + '件を生成しました';
     });
 
     /* 出力タブ */
@@ -20752,20 +20926,26 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       /* 取り直し待ちの日がある＝「この端末からは送らない」状態。ここで送るのは本人の明示操作なので、
        * 何が起きるかを確認してから待ちを解除する（保護には必ず解除手段を用意する・2026-09-24）。 */
       var held_ = refetchList_();
-      if (held_.length) {
-        if (!window.confirm('クラウドから取り直す予定の ' + held_.length + '日があります。\n\n'
-          + '［OK］を押すと取り直しをやめ、【この端末に残っている内容をクラウドへ送信】します。\n'
-          + 'クラウド側の同じ日は、この端末の内容で置き換わります。\n\n進めますか？')) {
-          if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '中止しました';
-          return;
-        }
-        for (var h_ = 0; h_ < held_.length; h_++) { clearRefetch_(held_[h_]); markDayDirty_(held_[h_]); }
-        try { lastPushed.day = ''; } catch (eL2) {}   /* 表示中の日も確実に送信対象へ戻す */
+      function sendNow_() {
+        if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '送信しています…';
+        try { recoverNow_(); } catch (e) {}
+        setTimeout(function () { try { renderUnsentDiag_(); } catch (e2) {}
+          if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '送信を試みました（残りは一覧をご確認ください）'; }, 2500);
       }
-      if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '送信しています…';
-      try { recoverNow_(); } catch (e) {}
-      setTimeout(function () { try { renderUnsentDiag_(); } catch (e2) {}
-        if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '送信を試みました（残りは一覧をご確認ください）'; }, 2500);
+      if (held_.length) {
+        /* 確かめは画面の中の窓（OK の後に、その時の取り直し待ちの日を読み直して解除する・WS-04 2026-11-14） */
+        wsConfirm_('クラウドから取り直す予定の ' + held_.length + '日があります。\n\n'
+          + '［OK］を押すと取り直しをやめ、【この端末に残っている内容をクラウドへ送信】します。\n'
+          + 'クラウド側の同じ日は、この端末の内容で置き換わります。\n\n進めますか？', function () {
+          if (!syncOn()) { toast('同期先が未設定です', true); return; }
+          held_ = refetchList_();
+          for (var h_ = 0; h_ < held_.length; h_++) { clearRefetch_(held_[h_]); markDayDirty_(held_[h_]); }
+          try { lastPushed.day = ''; } catch (eL2) {}   /* 表示中の日も確実に送信対象へ戻す */
+          sendNow_();
+        }, function () { if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '中止しました'; });
+        return;
+      }
+      sendNow_();
     });
     if ($('stUnsentDiscard')) $('stUnsentDiscard').addEventListener('click', function () {
       try { discardUnsentDays_(); } catch (e) { toast('取り直しに失敗しました', true); }
@@ -20980,31 +21160,39 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (fieldBlock_()) return;   /* 現場の端末では盤面を置き換えない（2026-10-11） */
       var dates = listSavedDates().filter(function (d) { return d !== ui.currentDate; });
       if (!dates.length) { $('stResult').textContent = '複製元の保存データがありません'; return; }
-      var src = window.prompt('複製元の日付を入力してください:\n' + dates.join('  '), dates[dates.length - 1]);
-      if (!src) return;
-      var d = loadDayData(src);
-      if (!d) { $('stResult').textContent = 'その日付の保存データがありません'; return; }
-      d.meta.date = ui.currentDate;
-      d.meta.rev = 0;
-      /* 複製元が「一度ロックして外した日」でも、複製先へその印を持ち込まない（2026-10-16・反証レビュー指摘3）。
-       * 持ち込むと、人がロックしていない新しい日なのに自動の組み直しがずっと止まる。ロック中の元（true）の扱いは今までどおり */
-      if (d.meta.locked === false) { delete d.meta.locked; delete d.meta.lockedAt; }
-      keepOnceLocked_(d, store.get());   /* 複製先の日が一度ロックした日なら、その印は残す（2026-10-17） */
-      for (var i = 0; i < d.tasks.length; i++) {
-        d.tasks[i].done = false;
-        d.tasks[i].origin = M.captureOrigin(d.tasks[i]);
-      }
-      store.dispatch({ type: 'INIT_DAY', day: d, frozen: initFrozen_(d) });
-      scheduleSave();
-      hideModals();
-      toast(src + ' から複製しました（曜日テンプレート運用）');
+      /* 入力は画面の中の窓（WS-04 2026-11-14）。OK の後に日付・案・端末の用途と今の盤面・ロックを取り直し、窓の間に変わっていたら複製しない */
+      var v0_ = wsView_(), b0_ = wsBoardSig_();
+      wsPrompt_('複製元の日付を入力してください:\n' + dates.join('  '), dates[dates.length - 1], function (src) {
+        if (!src) return;
+        if (wsView_() !== v0_ || fieldBlock_()) return;
+        if (wsBoardSig_() !== b0_) { toast('この日の盤面が変わったため複製していません。もう一度押してください', true); return; }
+        var d = loadDayData(src);
+        if (!d) { $('stResult').textContent = 'その日付の保存データがありません'; return; }
+        d.meta.date = ui.currentDate;
+        d.meta.rev = 0;
+        /* 複製元が「一度ロックして外した日」でも、複製先へその印を持ち込まない（2026-10-16・反証レビュー指摘3）。
+         * 持ち込むと、人がロックしていない新しい日なのに自動の組み直しがずっと止まる。ロック中の元（true）の扱いは今までどおり */
+        if (d.meta.locked === false) { delete d.meta.locked; delete d.meta.lockedAt; }
+        keepOnceLocked_(d, store.get());   /* 複製先の日が一度ロックした日なら、その印は残す（2026-10-17） */
+        for (var i = 0; i < d.tasks.length; i++) {
+          d.tasks[i].done = false;
+          d.tasks[i].origin = M.captureOrigin(d.tasks[i]);
+        }
+        store.dispatch({ type: 'INIT_DAY', day: d, frozen: initFrozen_(d) });
+        scheduleSave();
+        hideModals();
+        toast(src + ' から複製しました（曜日テンプレート運用）');
+      });
     });
     $('stClearDay').addEventListener('click', function () {
       if (fieldBlock_()) return;   /* 現場の端末では盤面を消さない（2026-10-11） */
-      if (!window.confirm(ui.currentDate + ' のデータをクリアしますか？')) return;
-      store.dispatch({ type: 'INIT_DAY', day: keepOnceLocked_(S.emptyDay(ui.currentDate), store.get()) });   /* 一度ロックした日の印は残す（2026-10-17） */
-      scheduleSave();
-      hideModals();
+      var v0_ = wsView_();   /* 確かめは画面の中の窓（OK の後に日付と端末の用途を取り直す・代表者の決定 2026-11-13） */
+      wsConfirm_(ui.currentDate + ' のデータをクリアしますか？', function () {
+        if (wsView_() !== v0_ || fieldBlock_()) return;
+        store.dispatch({ type: 'INIT_DAY', day: keepOnceLocked_(S.emptyDay(ui.currentDate), store.get()) });   /* 一度ロックした日の印は残す（2026-10-17） */
+        scheduleSave();
+        hideModals();
+      });
     });
     $('modalBg').addEventListener('click', hideModals);
 
@@ -21312,7 +21500,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         store.dispatch({ type: 'ASSIGN', id: taskId, staffId: staffId, start: start, end: end });
         markFacTouched_(taskId);   /* 移動した施設業務/休憩は手動扱いに（自動再構成から保護） */
       },
-      onMultiAssign: function (moves, needConfirm) {
+      onMultiAssign: function (moves, needConfirm, ok_) {
         /* 複数選択ブロックの同時移動。相対時刻維持で同一職員へ。
          * 移動先に「縮小可能な施設業務/自由枠」があれば、それを残余区間へ縮小/分割しつつ同時配置する
          * （休憩は縮小対象外）。全件検証してから一括適用（1操作＝undo1回）。
@@ -21321,7 +21509,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (!pm.ok) { toast(pm.reason, true); return; }
         /* 勤務時間外の支援は確かめずに置く（2026-10-20 本人選択「出さない」）。外れた支援は赤く出て、上に「時間外 N」が出る。
          * 支援以外（休憩・施設業務など）を勤務時間外へ動かす時は今までどおり確かめる（赤くならず数にも入らないため） */
-        if (pm.ooh && nonCareOutOfHours_(moves) && !window.confirm('勤務時間外を含みますが配置しますか？')) return;
+        /* 確かめは画面の中の窓（OK の後に、盤面が変わっていなければもう一度呼んで検証し直してから置く・WS-04 2026-11-14） */
+        if (ok_ !== WS_OK_ && pm.ooh && nonCareOutOfHours_(moves)) {
+          var selfM_ = this, v0_ = wsView_(), sig0_ = daySig(store.get());
+          wsConfirm_('勤務時間外を含みますが配置しますか？', function () {
+            if (wsView_() !== v0_ || daySig(store.get()) !== sig0_) { toast('盤面が変わったため配置していません。もう一度動かしてください', true); return; }
+            selfM_.onMultiAssign(moves, needConfirm, WS_OK_);
+          });
+          return;
+        }
         var splits = pm.splits;
         clearSelAfterGroupMove_(moves);
         if (splits.length) {
@@ -21332,12 +21528,20 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           toast(moves.length + '件を移動しました');
         }
       },
-      onAssignConfirm: function (taskId, staffId, start, end, reason) {
+      onAssignConfirm: function (taskId, staffId, start, end, reason, ok_) {
         /* 勤務時間外への支援の移動: 確かめずに置く（2026-10-20 本人指示「一旦職員がいない枠に移して調整する方が効率が良い」・本人選択「出さない」）。
          * 外れた支援は枠全体が赤くなり、上に「時間外 N」が出る＝誰かの勤務時間へ動かす必要に気づける。
          * 支援以外（休憩・施設業務など）は赤くならず数にも入らないので、今までどおり確かめる */
         var tAc_ = M.findTask(store.get().tasks, taskId);
-        if (!(tAc_ && (tAc_.kind === 'care' || M.namedFree(tAc_))) && !window.confirm('勤務時間外ですが配置しますか？')) return;
+        if (ok_ !== WS_OK_ && !(tAc_ && (tAc_.kind === 'care' || M.namedFree(tAc_)))) {
+          /* 確かめは画面の中の窓（OK の後に、盤面が変わっていなければ置く・WS-04 2026-11-14） */
+          var selfA_ = this, v0_ = wsView_(), sig0_ = daySig(store.get());
+          wsConfirm_('勤務時間外ですが配置しますか？', function () {
+            if (wsView_() !== v0_ || daySig(store.get()) !== sig0_) { toast('盤面が変わったため配置していません。もう一度動かしてください', true); return; }
+            selfA_.onAssignConfirm(taskId, staffId, start, end, reason, WS_OK_);
+          });
+          return;
+        }
         store.dispatch({ type: 'ASSIGN', id: taskId, staffId: staffId, start: start, end: end });
         markFacTouched_(taskId);
       },
@@ -21354,9 +21558,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         store.dispatch({ type: 'SHRINK_PLACE', careId: careId, staffId: staffId, start: start, end: end, facId: facId });
         toast('施設業務を縮小して配置しました');
       },
-      onDuplicateTo: function (taskId, staffId, start, end, needConfirm) {
+      onDuplicateTo: function (taskId, staffId, start, end, needConfirm, ok_) {
         /* Alt(Option)＋休憩/施設業務のドロップ＝複製してその場へ配置（元枠は残す） */
-        if (needConfirm && !window.confirm('勤務時間外ですが配置しますか？')) return;
+        /* 確かめは画面の中の窓（OK の後に、盤面が変わっていなければもう一度呼んで重なりを確かめ直してから置く・WS-04 2026-11-14） */
+        if (needConfirm && ok_ !== WS_OK_) {
+          var selfD_ = this, v0_ = wsView_(), sig0_ = daySig(store.get());
+          wsConfirm_('勤務時間外ですが配置しますか？', function () {
+            if (wsView_() !== v0_ || daySig(store.get()) !== sig0_) { toast('盤面が変わったため配置していません。もう一度動かしてください', true); return; }
+            selfD_.onDuplicateTo(taskId, staffId, start, end, needConfirm, WS_OK_);
+          });
+          return;
+        }
         var src = M.findTask(store.get().tasks, taskId);
         if (!src) return;
         /* 複製は新規ブロックのため、元枠を含む全タスクと重複しないこと（在席位置への複製を防ぐ） */
@@ -21493,7 +21705,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261113100101';
+  var WS_BUILD = '20261114201635';
   var WS_APP_VER = 2026102701;   /* 2026-10-27 まだ届いていないロックを「外した」に変えて送り、版の進んでいない古い未送信を退避して捨てる前の版の画面が、仕上げたロックの盤面を前の版で上書きしないよう上げた（代表者承認 A・B）
                                   * （2026101706: 2026-10-23 トレイへ入った理由の印（parkedByHand・absentMoved・routineTray）を知らない前の版の画面が、手で戻した札・休みで移した札を印なしで残し、
                                   * 新しい版がそれを列へ戻してしまわないよう上げた）
@@ -21531,7 +21743,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try {
       if (ui.editingId) return true;
       var ae = document.activeElement;
-      return !!(ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) && ae.closest && ae.closest('.modal.on'));
+      /* 止めて知らせる窓の答えを待つ間も読み込み直さない（2026-11-13） */
+      return !!(ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) && ae.closest && ae.closest('.modal.on')) || wsDialogBusy_();
     } catch (e) { return false; }
   }
   function reloadForNewBuild_(pb) {
@@ -21717,6 +21930,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     });
     /* タブを閉じる/リロード/iOSの離脱(beforeunload不発)で確実にフラッシュ */
     window.addEventListener('pagehide', function () { try { flushAll_(); } catch (e) {} });
+    window.addEventListener('beforeunload', unsentLeaveGuard_);   /* 送れていない変更がある間だけ止める（unsentLeaveGuard_） */
     /* URLハッシュ日付ルーティング: ブラウザ戻る/進む（hashchange）で日付を移動。
      * 自己更新(switchDate内のlocation.hash代入)は hashNavigating_ フラグで消費し再帰を防ぐ。 */
     setTimeout(function () { try { restoreAltFromHash_(); } catch (eRa) {} }, 1500);   /* 再読み込みで見ていた案へ戻す（原則11・2026-10-20） */
@@ -21752,6 +21966,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         try {
           if (!syncOn() || document.hidden) return;
           if (printing_()) return;                       /* 印刷中は従来どおり同期しない（A3フィット保護） */
+          if (wsDialogBusy_()) return;                   /* 止めて知らせる窓が出ている間も始めない（ブラウザの窓の間は止まっていたのと同じ・2026-11-13） */
           if (Date.now() - lastPullAt < POLL_MIN_GAP_MS) return;
           if (Date.now() < pollNextAt_) return;          /* head の失敗が続く間は間隔を伸ばす（2026-09-25） */
           pollTick_();                                   /* head で変更の有無を確かめてから本体を取る */

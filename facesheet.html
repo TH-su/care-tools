@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Ga2it6U3ae9Onp4Ew10wNtbbbNdZfy5I7zKvlomL9OY=' 'sha256-7zmGtnQtxikFN0uGcSK1W3m4DsRXwBbTyXfwjRZ2epg=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-i9qt5D2d72ViilON7Fp21zSGEddzjKrBeQbOlip9jNA=' 'sha256-Jf23TfqVNm65Letqkw3cHCCIFchksXj/10gyqrPOl9Y=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
@@ -476,6 +476,9 @@ button.geno-box{width:100%; margin:0; padding:0; font:inherit; color:inherit; li
   .fam-biz:has(>.sec[data-nop="1"]):has(>.fb-row>.sec[data-nop="1"])+.sec{border-top-width:1px}
   /* 「全体を印刷」で、事業所と家族構成図の行がページの境目で片方だけ次のページへ送られないようにする */
   body.fs-all-on .fpanel[data-panel="all"] .fb-row{page-break-inside:avoid; break-inside:avoid}
+  /* その時、家族情報の4項目の行だけが前のページに残って家族構成図と離れないよう、家族情報と事業所の包みごと次のページへ送る
+     （1人分の印刷では欄ごと送られるのと同じ形。包みが1ページより高い時は従来どおり途中で分かれる・代表者の決定 2026-11-14） */
+  body.fs-all-on .fpanel[data-panel="all"] .fam-biz{page-break-inside:avoid; break-inside:avoid}
   /* 絵がある時は、枠も絵に合わせて低くする。絵が無い時の枠（手で書き足す所）は今の高さのまま */
   #viewBox button.geno-box:has(.geno-img){min-height:0 !important}
   .hlband{-webkit-print-color-adjust:exact; print-color-adjust:exact}
@@ -542,6 +545,10 @@ button.geno-box{width:100%; margin:0; padding:0; font:inherit; color:inherit; li
 .su-menu-row{display:contents}
 @media screen and (max-width:899px){.su-menu-back{min-height:44px} .su-menu-row{display:block;flex:0 0 100%}}
 @media print{.su-menu-back{display:none !important}}
+/* 見出しの「使い方」（「← メニュー」の右隣・同じ大きさと色・使い方の画面のこの画面の節へ・画面だけ・印刷しない・代表者の決定 2026-11-13） */
+.su-help-link{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+@media screen and (max-width:899px){.su-help-link{min-height:44px}}
+@media print{.su-help-link{display:none !important}}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
@@ -550,7 +557,7 @@ button.geno-box{width:100%; margin:0; padding:0; font:inherit; color:inherit; li
 <body>
 
 <div class="hdr">
-  <span class="su-menu-row"><a class="hdr-btn su-menu-back" href="index.html">← メニュー</a></span>
+  <span class="su-menu-row"><a class="hdr-btn su-menu-back" href="index.html">← メニュー</a> <a class="hdr-btn su-help-link" href="help.html?sec=facesheet">使い方</a></span>
   <h1>📄 フェイスシート</h1>
   <!-- アプリ間ジャンプ（daycare-roster.html と同形式）。h1 が flex:1 で伸びるため
        右側のバッジ群の【手前に足す】と既存の表示位置が動かない。.hdr は @media print で非表示。 -->
@@ -670,7 +677,9 @@ button.geno-box{width:100%; margin:0; padding:0; font:inherit; color:inherit; li
 <script src="su-errors.js?v=2026-11-12"></script>
 <script src="su-devcfg.js?v=2026-11-08"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
-<script src="su-res-read.js?v=2026-11-11"></script>
+<script src="su-res-read.js?v=2026-11-14"></script>
+<!-- 止めて知らせる窓（alert）の代わりに画面の中の窓を出す共通部品（2026-11-12 代表者の決定）。画面のスクリプトより前に置く -->
+<script src="su-dialog.js?v=2026-11-14.2"></script>
 <script>
 /* 黙ると困る失敗（接続先の設定・取得の補助）を、画面には出さずに記録へ残す（2026-10-10・監査10月版 第2版 フェイスシート 第1手）。
    行き先は su-errors.js の note＝コンソールと記録先（不具合報告の控えと自動報告）。トーストは出さない。
@@ -684,14 +693,21 @@ function fsNote_(where, e){ try{ if(window.SUErrors && typeof window.SUErrors.no
    ★空の catch のまま残すのは、失敗しても業務に響かないものだけ（表示の状態の保存・カーソル・履歴の書き換え・
      古いブラウザ向けの印刷の保険の登録・トーストの失敗）。同じ失敗の連続は su-errors が間引く */
 function fsNoteAs_(kind, where, e){ try{ if(window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note(kind, e, 'facesheet:' + where); }catch(_){} }
+/* 画面の中の窓（su-dialog.js）が読めなかった時の受け口（入居者マスタと同じ形・2026-11-13）。ブラウザの窓に落とし、呼ぶ側と同じ約束（Promise）で答える */
+if(!window.SUDialog) window.SUDialog = {
+  alert: function(m){ try{ window.alert(m); }catch(_){ /* ブラウザの窓も出せない時は何もしない */ } return Promise.resolve(); },
+  confirm: function(m){ var r = false; try{ r = !!window.confirm(m); }catch(_){ /* 出せない時はキャンセル扱い */ } return Promise.resolve(r); },
+  busy: function(){ return false; },
+  idle: function(){ return Promise.resolve(); }
+};
 </script>
 <script src="su-cfg-hint.js?v=2026-11-10"></script>
 <!-- 同期データの保存先の切り替え（統合 0005/0007）。見るだけの画面は切り替え後に Supabase から読む（未ログインは Google） -->
 <script src="su-kv.js?v=2026-11-08"></script>
 <script src="su-perf.js?v=2026-11-02"></script>
 <script src="su-login-band.js?v=2026-11-02"></script>
-<script src="su-facility.js?v=2026-11-07"></script>
-<script src="su-resident-hop.js?v=2026-11-02"></script>
+<script src="su-facility.js?v=2026-11-14.2"></script>
+<script src="su-resident-hop.js?v=2026-11-13"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>
 <script>
 /* ═══════════════════════════════════════════════════════════════
@@ -1360,15 +1376,17 @@ function renderRoster(){
   var html;
   if(curView==='fl2'||curView==='fl4'){
     /* ★階が判定できない人（居室未登録等）を必ず「階未設定」として出す。落とすと誰も気づけない */
-    var f1=[],f2=[],f0=[];
-    list.forEach(function(r){var f=roomToFloor(r.room);(f===1?f1:f===2?f2:f0).push(r)});
-    f1.sort(byRoom); f2.sort(byRoom); f0.sort(byKana);
-    var s1=secHtml(floorLbl(1)+'入居者',f1), s2=secHtml(floorLbl(2)+'入居者',f2),
-        s0=secHtml('階未設定（居室が未登録・1/2以外で始まる）',f0,'nofloor');
+    /* 区画は １階・２階 と、施設情報の floors にある3階以上（下の階から・2026-11-14 第6段 K5）。3階以上が無ければ今と同じ並び */
+    var fNos=[1,2]; ((window.SUFacility&&typeof SUFacility.floors==='function')?SUFacility.floors():[]).forEach(function(x){ if(x&&x.no>2&&fNos.indexOf(x.no)<0) fNos.push(x.no); }); fNos.sort(function(a,b){return a-b});
+    var fb={0:[]}; fNos.forEach(function(n){fb[n]=[]});
+    list.forEach(function(r){var f=roomToFloor(r.room);(fb[f]||fb[0]).push(r)});
+    fNos.forEach(function(n){fb[n].sort(byRoom)}); fb[0].sort(byKana);
+    var secs=fNos.map(function(n){return secHtml(floorLbl(n)+'入居者',fb[n])}),
+        s0=secHtml('階未設定（居室が未登録・'+fNos.join('/')+'以外で始まる）',fb[0],'nofloor');
     html=(curView==='fl2')
       /* ★片側が0名でも空の div を置く。置かないと残った側が左列に寄り「左=1階」が崩れる */
-      ? '<div class="fl-2col">'+(s1||'<div></div>')+(s2||'<div></div>')+'</div>'+s0
-      : '<div class="fl-4col">'+s1+s2+s0+'</div>';
+      ? '<div class="fl-2col">'+secs.map(function(x){return x||'<div></div>'}).join('')+'</div>'+s0
+      : '<div class="fl-4col">'+secs.join('')+s0+'</div>';
   }else if(curView==='kana'){
     var bucket={},other=[];
     list.forEach(function(r){var k=kanaRowOf(r); if(!k){other.push(r);return} (bucket[k]=bucket[k]||[]).push(r)});
@@ -3282,7 +3300,7 @@ function renderOfficeView(r){
      伏せ漏れの実害が大きい（2026-08-17）。
      ★家族構成図は家族情報の一部なので、包み（.fb-geno）に data-nop-of="family" を付け、
        「家族情報」を印刷しないにした時も一緒に紙から外す（2026-11-03）。 */
-  var genoCell='<div class="cell" data-nop-of="geno" style="border-right:none;border-bottom:none"><span class="lab">家族構成図</span><button type="button" class="geno-box" aria-label="家族構成図を作成・編集する" data-geno="'+esc(r.id)+'" data-name="'+esc(r.name||'')+'">'+genoInner+'</button></div>';
+  var genoCell='<div class="cell" data-nop-of="geno" style="border-right:none;border-bottom:none"><span class="lab">家族構成図</span><button type="button" class="geno-box" aria-label="家族構成図を作成・編集する" data-geno="'+esc(r.id)+'">'+genoInner+'</button></div>';
   S.biz=sec('事業所',
     '<div class="row-cells">'+cell('居宅介護支援事業所',r.careOffice)+cell('介護支援専門員',r.careManager)+cell('電話番号',r.careOfficeTel)+cell('FAX番号',r.careOfficeFax)+'</div>'+
     '<div class="row-cells">'+cell('福祉用具',r.welfareEquip)+cell('担当者',r.welfareEquipStaff)+cell('電話番号',r.welfareEquipTel)+cell('サ責',r.serviceManager)+'</div>'+
@@ -3365,8 +3383,9 @@ function renderOfficeView(r){
      querySelectorAll で【全部】に配線する（id で1つだけ拾うと片方が押せない）。 */
   Array.prototype.forEach.call($('viewBox').querySelectorAll('.geno-box'),function(gb){
     var go=function(){
-      var id=gb.getAttribute('data-geno'), nm=gb.getAttribute('data-name');
-      if(id!=null&&id!=='')location.href=GENOGRAM_APP+'?resident='+encodeURIComponent(id)+(nm?'&name='+encodeURIComponent(nm):'');
+      /* 渡すのは番号だけ。氏名は URL に載せない（家族構成図が共有名簿で引く・代表者の決定 2026-11-13） */
+      var id=gb.getAttribute('data-geno');
+      if(id!=null&&id!=='')location.href=GENOGRAM_APP+'?resident='+encodeURIComponent(id);
     };
     /* 枠は <button>。Enter・スペースはボタンの既定で click になる（前の div 用のキー操作は要らない） */
     gb.addEventListener('click',go);
@@ -3610,6 +3629,8 @@ function verifyMasterUrl(url){
     }catch(e){ fin('offline'); }
   });
 }
+/* 職員に見える断りの文（2026-11-13 第6段 FS-02・文は仮置き）。MASTER_WRONG_MSG は入居者マスタ・接続設定と3画面で一字一句同じ文のまま残し（非公開の試験が確かめる・判定と verifyMasterUrl の並びも3画面と同じに保つ）、画面にはこちらを出す */
+var MASTER_WRONG_SAY='この接続先は入居者マスタのものではありません（薬学管理・申送など別のアプリの接続先の可能性があります）';
 function saveSync(){
   /* ★URL を変える保存は、書き込む前に入居者マスタのGASかを確かめる（2026-10-10）。
      別アプリのGASと分かった時だけ止め、今の接続先を残す。通信できず確かめられない時は止めない。
@@ -3629,7 +3650,7 @@ function saveSync(){
       _ins.forEach(function(e){ e.disabled=false; });
       /* 確かめている間に設定の窓を閉じた・入力が変わった時は書かない（遅れて届いた答えで、取りやめた保存を走らせない） */
       if((_wasOpen && !$('mSync').classList.contains('on')) || ($('cfgUrl').value||'').trim()!==_nu) return;
-      if(v==='wrong'){ alert('保存していません：'+MASTER_WRONG_MSG+'。\n今の接続先のままです。'); return; }
+      if(v==='wrong'){ SUDialog.alert('保存していません：'+MASTER_WRONG_SAY+'。\n今の接続先のままです。'); return; }
       saveSync._checked=true;
       try{ saveSync(); }finally{ saveSync._checked=false; }
       /* 確かめられなかった知らせは、保存の知らせの後に出す（先に出すと上書きされて見えない） */
@@ -3667,7 +3688,9 @@ function saveSync(){
   if(toField&&isField()){
     applyRoleBadge(); closeSync();
     /* ★接続先を書けなかった時は、読み込み直すとトーストが消えるので先に知らせる（文言は下のトーストと同じ） */
-    if(!saved) alert('⚠️ 保存できませんでした（プライベートモード等）');
+    /* 画面の中の窓は止まらないので、OK を押してから読み込み直す（先に読み込み直すと文が見えない）。
+       事務所の画面は上の applyRoleBadge が捨てて一覧へ戻し、世代も進めてある（窓の間に届いた応答は捨てる） */
+    if(!saved){ SUDialog.alert('⚠️ 保存できませんでした（プライベートモード等）').then(fsReload_, fsReload_); return; }
     fsReload_(); return;
   }
   applyRoleBadge();closeSync();boot();
@@ -3689,7 +3712,8 @@ function testSync(){
   apiGet({action:'ping'}).then(function(){
       /* ★ping が通っても入居者マスタとは限らない（別アプリのGASも自分の合言葉なら通る）。名乗りまで確かめる（2026-10-10） */
       return verifyMasterUrl(tried.url).then(function(v){
-        if(v==='wrong'){ setSync('別アプリの接続先','err'); alert('⚠️ '+MASTER_WRONG_MSG+'。'); return; }
+        /* 窓の答えは待たない（待つと、試しの接続先が窓を閉じるまで CFG に残る） */
+        if(v==='wrong'){ setSync('別アプリの接続先','err'); SUDialog.alert('⚠️ '+MASTER_WRONG_SAY+'。'); return; }
         setSync('接続OK','ok'); toast(v==='ok'?'✅ 接続できました（入居者マスタの接続先と確認）':'✅ 接続できました');
       });
     })
@@ -3861,7 +3885,7 @@ document.addEventListener('DOMContentLoaded',function(){
 })();
 </script>
 <!-- 見出しの下の初回の案内の帯（2026-11-02 本人の決定）。×で閉じた端末では出さない。画面の動き・保存・印刷には触れない -->
-<script src="su-intro.js?v=2026-11-02.3"></script>
+<script src="su-intro.js?v=2026-11-13"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
 <script src="su-report.js?v=2026-10-28" data-tool="フェイスシート"></script>

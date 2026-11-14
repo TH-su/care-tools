@@ -187,6 +187,9 @@ const CENSUS = {
   "accounts-export.js": [],
   "accounts-enroll.js": [],   // 端末登録の QR（2026-11-08）: 代入なし（textContent と createElementNS だけ）
   "enroll.html": [],
+  "unsent.html": [],
+  "unsent.js": [],   // 未送信の一覧（2026-11-14）: 代入なし（textContent だけ）
+  "unsent-calc.js": [],
   "enroll.js": [],
   "su-qr.js": [],
   "accounts.js": [],
@@ -208,7 +211,7 @@ const CENSUS = {
     [E, "box.innerHTML = renderPrintSheet(c)"],
     [F, "box.innerHTML = ''"],
     [E, "$('kpiBox').innerHTML = h"],
-    [E, "$('syncBody').innerHTML = '<dl class=\"kv\">' + '<dt>台帳の同期先</dt><dd>' + (t.endpoint ? '設定済み（入居調整の専用サーバー）' : AF_LIVE ? '—' : '<span style=\"color:var(--err)\">未設定</span>') + '</dd>' + '<dt>入居者マスタ</dt><dd>' + (m.url ? '設定済み' : AF_MLIVE ? '—' : '<span style=\"color:var(--err)\">未設定</span>') + '</dd>' + '<dt>状態</dt><dd>' + esc($('syncChip').textContent) + (dirty ? '（未送信の変更あり）' : '') + '</dd>' + '<dt>案件</dt><dd>' + DB.candidates.filter(function (c) { return !c.deleted; }).length + '件（削除済み ' + DB.candidates.filter(function (c) { return c.deleted; }).length + '件）</dd>' + '<dt>サーバー版</dt><dd>' + (caps ? esc(asStr(caps.codeVersion) || '不明') : '<span style=\"color:var(--g6)\">未確認</span>') + ' <button class=\"btn sm\" id=\"syPing\" type=\"button\">確認する</button></dd>' + '<dt>サーバーの防御</dt><dd>' + (caps ? esc(asArr(caps.guards).join('・') || 'なし') : '—') + '</dd>' + '</dl>' + (caps && !serverOk ? '<p class=\"note err\">🛑 <b>接続先が入居調整の専用サーバーではありません</b>（応答した名札: ' + esc(asStr(caps.server) || '不明') + '）。<a href=\"connection-settings.html\">接続設定</a>の「入居調整」に、' + '入居調整用に作った Google の受け口の URL が入っているか確認してください。このまま保存すると、相談者の情報が別の置き場へ書き込まれます。</p>' : '') + (caps && serverOk && !guardOk ? '<p class=\"note err\">⚠️ サーバー側の消失ガード（admwipe）が有効になっていません。Apps Script でコードを保存しただけになっていないか確認してください（デプロイ → デプロイを管理 → 鉛筆 → バージョン「新バージョン」→ デプロイ）。</p>' : '') + '<p class=\"note\">接続先の設定は <a href=\"connection-settings.html\">接続設定</a> で行います（このアプリはそこで入れた値を読むだけです）。</p>' + '<h2 style=\"font-size:0.9375rem;margin:12px 0 6px\">端末のバックアップ</h2>' + '<dl class=\"kv\">' + '<dt>いまの保存</dt><dd>' + (cu ? cu.n + '件（' + esc(fmtDt(cu.at)) + '）' : 'なし') + '</dd>' + '<dt>1世代前</dt><dd>' + (b1 ? b1.n + '件（' + esc(fmtDt(b1.at)) + '）<button class=\"btn sm\" id=\"syR1\" type=\"button\" style=\"margin-left:6px\">復元</button>' : 'なし') + '</dd>' + '<dt>2世代前</dt><dd>' + (b2 ? b2.n + '件（' + esc(fmtDt(b2.at)) + '）<button class=\"btn sm\" id=\"syR2\" type=\"button\" style=\"margin-left:6px\">復元</button>' : 'なし') + '</dd>' + '</dl>' + '<div class=\"btn-row\" style=\"justify-content:flex-start\">' + '<button class=\"btn sm\" id=\"syExport\" type=\"button\">⬇️ 控えのファイルに書き出す</button>' + '<button class=\"btn sm\" id=\"syImport\" type=\"button\">⬆️ 控えのファイルから取り込む</button></div>' + '<p class=\"note\">書き出したファイルには合言葉は含まれません。取り込みは<b>置き換えではなく統合</b>です（今ある案件は消えません）。</p>'"]
+    [E, "$('syncBody').innerHTML = '<dl class=\"kv\">' + '<dt>台帳の同期先</dt><dd>' + (t.endpoint ? '設定済み（入居調整の専用サーバー）' : AF_LIVE ? '—' : '<span style=\"color:var(--err)\">未設定</span>') + '</dd>' + '<dt>入居者マスタ</dt><dd>' + (m.url ? '設定済み' : AF_MLIVE ? '—' : '<span style=\"color:var(--err)\">未設定</span>') + '</dd>' + '<dt>状態</dt><dd>' + esc($('syncChip').textContent) + (dirty ? '（未送信の変更あり・<a href=\"unsent.html\">未送信の一覧</a>）' : '') + '</dd>' + '<dt>案件</dt><dd>' + DB.candidates.filter(function (c) { return !c.deleted; }).length + '件（削除済み ' + DB.candidates.filter(function (c) { return c.deleted; }).length + '件）</dd>' + (afIsAdmin_ ? '<dt>サーバー版</dt><dd>' + (caps ? esc(asStr(caps.codeVersion) || '不明') : '<span style=\"color:var(--g6)\">未確認</span>') + ' <button class=\"btn sm\" id=\"syPing\" type=\"button\">確認する</button></dd>' + '<dt>サーバーの防御</dt><dd>' + (caps ? esc(asArr(caps.guards).join('・') || 'なし') : '—') + '</dd>' : '<dt>サーバー</dt><dd>' + (caps ? '確認済み' : '<span style=\"color:var(--g6)\">未確認</span>') + ' <button class=\"btn sm\" id=\"syPing\" type=\"button\">確認する</button></dd>') + '</dl>' + (caps && !serverOk ? '<p class=\"note err\">🛑 <b>接続先が入居調整の専用サーバーではありません</b>（応答した名札: ' + esc(asStr(caps.server) || '不明') + '）。<a href=\"connection-settings.html\">接続設定</a>の「入居調整」に、' + '入居調整用に作った Google の受け口の URL が入っているか確認してください。このまま保存すると、相談者の情報が別の置き場へ書き込まれます。</p>' : '') + (caps && serverOk && !guardOk ? (afIsAdmin_ ? '<p class=\"note err\">⚠️ サーバー側の消失ガード（admwipe）が有効になっていません。Apps Script でコードを保存しただけになっていないか確認してください（デプロイ → デプロイを管理 → 鉛筆 → バージョン「新バージョン」→ デプロイ）。</p>' : '<p class=\"note err\">⚠️ サーバーの守りの設定が済んでいません。管理者に伝えてください。</p>') : '') + '<p class=\"note\">接続先の設定は <a href=\"connection-settings.html\">接続設定</a> で行います（このアプリはそこで入れた値を読むだけです）。</p>' + '<h2 style=\"font-size:0.9375rem;margin:12px 0 6px\">端末のバックアップ</h2>' + '<dl class=\"kv\">' + '<dt>いまの保存</dt><dd>' + (cu ? cu.n + '件（' + esc(fmtDt(cu.at)) + '）' : 'なし') + '</dd>' + '<dt>1世代前</dt><dd>' + (b1 ? b1.n + '件（' + esc(fmtDt(b1.at)) + '）<button class=\"btn sm\" id=\"syR1\" type=\"button\" style=\"margin-left:6px\">復元</button>' : 'なし') + '</dd>' + '<dt>2世代前</dt><dd>' + (b2 ? b2.n + '件（' + esc(fmtDt(b2.at)) + '）<button class=\"btn sm\" id=\"syR2\" type=\"button\" style=\"margin-left:6px\">復元</button>' : 'なし') + '</dd>' + (bd ? '<dt>合わせる前の控え</dt><dd>' + bd.n + '件（' + esc(fmtDt(bd.at)) + '）<button class=\"btn sm\" id=\"syRD\" type=\"button\" style=\"margin-left:6px\">復元</button><button class=\"btn sm\" id=\"syRDdel\" type=\"button\" style=\"margin-left:6px\">消す</button></dd>' : '') + '</dl>' + '<div class=\"btn-row\" style=\"justify-content:flex-start\">' + '<button class=\"btn sm\" id=\"syExport\" type=\"button\">⬇️ 控えのファイルに書き出す</button>' + '<button class=\"btn sm\" id=\"syImport\" type=\"button\">⬆️ 控えのファイルから取り込む</button></div>' + '<p class=\"note\">書き出したファイルには合言葉は含まれません。取り込みは<b>置き換えではなく統合</b>です（今ある案件は消えません）。</p>'"]
   ],
   "ats-calc.js": [],
   "ats.html": [
@@ -278,6 +281,8 @@ const CENSUS = {
     [E, "d.innerHTML='<div class=\"dlg-in\">'+html+'</div>'"],
     [F, "d.innerHTML=''"],
     [E, "if(c&&form&&form.kind==='event'&&form.row) c.innerHTML=filesHtml_(form.row)"],
+    [E, "if(p) p.innerHTML=evPrintHtml_()"],   /* 点検・修繕の記録の紙（2026-11-14）。記録・業者・設備・場所・増やした項目・検索語は全部 esc を通る */
+    [F, "if(p) p.innerHTML=''"],
     [F, "a.innerHTML='<p>保存していない入力があります。保存せずに閉じますか？</p><div class=\"acts\"><button type=\"button\" class=\"btn\" data-act=\"ask-no\">入力に戻る</button><button type=\"button\" class=\"btn ng\" data-act=\"ask-ok\">保存せずに閉じる</button></div>'"]
   ],
   "care-schedule.html": [
@@ -520,7 +525,7 @@ const CENSUS = {
     [E, "document.getElementById('drawer').innerHTML = html"],
     [E, "el.innerHTML = h"],
     [E, "document.getElementById('reqPreview').innerHTML = h"],
-    [N, "document.getElementById('reqPreview').innerHTML = '<p>✓ ' + n + '名分を登録しました</p>'"],
+    [N, "document.getElementById('reqPreview').innerHTML = '<p>✓ ' + n + '名分を登録しました' + (hiddenN ? '（この月に表示しない職員（退職・休職・非表示） ' + hiddenN + '名分は登録していません）' : '') + '</p>'"],
     [N, "out.innerHTML = '<div class=\"panel\"><p class=\"muted\">勤務表を読んでいます（' + months.length + 'か月分）…</p></div>'"],
     [E, "out.innerHTML = self.tokuteiHtml_(ym, W, months, r)"],
     [E, "out.innerHTML = '<div class=\"panel\"><p class=\"muted\">数えられませんでした（' + esc(String(e && e.message || e)) + '）。</p></div>'"],
@@ -576,6 +581,9 @@ const CENSUS = {
   "su-roster.js": [],
   "su-staff-names.js": [],
   "su-sync-stale.js": [],
+  "su-health-calc.js": [],   /* 判定の純関数・画面に入れない（2026-11-14） */
+  "su-health.js": [],        /* 保存の失敗を数えて送るだけ・画面に入れない（2026-11-14） */
+  "su-health-badge.js": [],  /* 札の文は数と時間を textContent で入れる（2026-11-14） */
   "su-weight-shadow.js": [],
   "su-weight-live.js": [],
   "su-res-full.js": [],

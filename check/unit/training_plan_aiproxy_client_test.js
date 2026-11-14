@@ -91,7 +91,8 @@ function makeEnv() {
       if (r === 'hang') return new Promise(() => {});
       return Promise.resolve(r);
     }) },
-    Promise, JSON, Object, Number, String, Error, setTimeout, clearTimeout
+    Promise, JSON, Object, Number, String, Error, setTimeout, clearTimeout,
+    TP_IS_ADMIN: false   /* 断りの文の「（管理者向け：…）」は管理者のログインの時だけ（2026-11-13 第6段 TP-03）。ここは職員の端末として動かす */
   };
   vm.createContext(sb);
   vm.runInContext(cut('aiFetch') + '\n' + cut('aiErrText') + '\n' + cut('aiErrFatal'), sb);
@@ -157,8 +158,11 @@ async function msgOf(sb, body) {
     sb.resp = { ok: true, status: 401, detail: 'invalid x-api-key' };
     let e1 = null; try { await sb.aiFetch(BODY()); } catch (e) { e1 = e; }
     t('401 は AI_HTTP_401・理由を detail に持つ', e1 && e1.message === 'AI_HTTP_401' && e1.detail === 'invalid x-api-key', e1 && e1.detail);
+    /* 2026-11-13 PR #566 の反証: サーバーのキーを確かめる案内（括弧の中）は管理者のログインの時だけ。職員には「管理者に伝えて」だけ。どちらも端末で入れ直させない */
+    const staff401 = sb.aiErrText(e1);
+    sb.TP_IS_ADMIN = true; const admin401 = sb.aiErrText(e1); sb.TP_IS_ADMIN = false;
     t('★401 の文言はサーバーのキーを確かめるよう案内する（端末で入れ直させない）',
-      /サーバー/.test(sb.aiErrText(e1)) && !/設定画面でキーを入れ直/.test(sb.aiErrText(e1)), sb.aiErrText(e1));
+      /サーバー/.test(admin401) && !/設定画面でキーを入れ直/.test(admin401) && /管理者に伝えてください/.test(staff401) && !/設定画面でキーを入れ直/.test(staff401), [admin401, staff401]);
   }
   {
     const sb = makeEnv();

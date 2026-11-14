@@ -37,9 +37,11 @@ console.log('— A 入居者マスタ —');
 console.log('\n— B 入居調整 —');
 {
   const i = AF.indexOf('function sendMasterRecord(c, adm) {'), seg = AF.slice(i, i + 600);
-  t('★B お名前が空なら msRec を作る前・送る前に止める', /if \(!String\(\(c && c\.name\) \|\| ''\)\.trim\(\)\) \{ alert\([^)]*\); return Promise\.resolve\(\); \}\s*msRec = buildMasterRecord/.test(seg), seg.slice(0, 300));
+  /* 知らせは画面の中の窓（SUDialog.alert）で出す（2026-11-13 第6段 AF-02）。止める位置（msRec を作る前・送る前）は前のまま */
+  t('★B お名前が空なら msRec を作る前・送る前に止める', /if \(!String\(\(c && c\.name\) \|\| ''\)\.trim\(\)\) \{ SUDialog\.alert\([^)]*\); return Promise\.resolve\(\); \}\s*msRec = buildMasterRecord/.test(seg), seg.slice(0, 300));
   const box = { alerts: [], posted: 0 };
   box.alert = m => box.alerts.push(m);
+  box.SUDialog = { alert: m => { box.alerts.push(m); return Promise.resolve(); } };
   box.buildMasterRecord = () => ({ updatedAt: 'x' });
   box.masterPost = () => { box.posted++; return new Promise(() => {}); };
   box.touch = () => {}; box.renderView = () => {}; box.toast = () => {};

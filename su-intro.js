@@ -9,6 +9,7 @@
  *   ・枠（iframe）の中では出さない（左右比較の中の全支援俯瞰・訪問俯瞰で二重に出さないため）。
  *   ・文言は下の TEXT に画面 id（ファイル名から .html を除いたもの）ごとに持つ。知らない画面では何もしない。
  *     文言は本人の決定どおり一字一句変えない。施設名は書かない。
+ *     担当者会議・職員マスタ・採用管理・設備・修繕の記録の4画面の文は仮置き（代表者の決定 2026-11-13）。
  *   ・文字は textContent で入れる。
  *
  * 共通部品の決まり（CLAUDE.md §2 の6）: 読み込むだけで効く・読み込めなくても動く・例外を外に出さない。
@@ -21,7 +22,7 @@
  *   届かない・遅い時も CSS_WAIT_MS で置く。
  *
  * 使い方: 各画面の </body> の直前（su-report.js の前）で
- *   <script src="su-intro.js?v=2026-11-02.3"></script>
+ *   <script src="su-intro.js?v=2026-11-13"></script>
  */
 (function () {
   'use strict';
@@ -34,6 +35,10 @@
     if (inFrame) return;
 
     var HELP = '困った時：画面の「不具合を報告」ボタンから知らせてください。';
+    /* リンクを含む「困った時」の行。行き先は下の決まった画面 id から作る（location からは作らない） */
+    var helpLine = function (sec) {
+      return { pre: '困った時：', link: '「使い方」のこの画面の説明（別のタブで開きます）', href: 'help.html?sec=' + sec, post: 'を見るか、画面の「不具合を報告」ボタンから知らせてください。' };
+    };
     var TEXT = {
       'daycare-roster': [
         'この画面でできること：デイの利用日と時間を、帳票（利用表・利用者一覧・全員リスト・薬用・週間名簿）で見て印刷します。',
@@ -88,6 +93,28 @@
         'この画面でできること：入居者の情報の確かめと直し、帳票（食形態・ケアマネ一覧・居室一覧など）の印刷をします。',
         'はじめに：検索欄に氏名・ふりがな・居室を入れて選ぶか、上のタブで帳票を選びます。',
         HELP
+      ],
+      /* 第6段（代表者の決定 2026-11-13・文は Claude の仮置き）。「困った時」の行は使い方のその画面の節へのリンクを含む。
+         リンクは別のタブで開く（4画面の保存していない編集の確かめは見出しの中のリンクだけに効くため、同じタブで移ると書きかけを失う） */
+      'care-meeting': [
+        'この画面でできること：サービス担当者会議の要点を入居者お一人ずつ記録して確定し、次の会議の期限を確かめて印刷します。',
+        'はじめに：「入居者を選ぶ」から入居者を選び、「＋ 新しい記録」で書き始めます。',
+        helpLine('care-meeting')
+      ],
+      'staff-master': [
+        'この画面でできること：職員の情報・資格・委員会を管理し、一覧とダッシュボードで確かめます。',
+        'はじめに：上の「一覧」で職員を選んで直し、新しい方は「＋ 新規」で足します。',
+        helpLine('staff-master')
+      ],
+      'ats': [
+        'この画面でできること：応募から入職までの選考の進み具合と、面接の予定を管理します。',
+        'はじめに：「選考」のボードで応募者を確かめ、新しい応募は「＋ 応募者を足す」で足します。',
+        helpLine('ats')
+      ],
+      'equip-log': [
+        'この画面でできること：設備・備品と、その購入・修理・清掃・点検・交換の記録を残し、次の予定の期限を確かめます。',
+        'はじめに：「設備」の「＋ 設備を足す」で設備を登録し、修理や点検をしたら「＋ 記録を足す」で残します。',
+        helpLine('equip-log')
       ]
     };
 
@@ -100,7 +127,7 @@
     try { closed = window.localStorage.getItem(KEY) === '1'; } catch (e) { closed = false; }
     if (closed) return;
 
-    var CSS_HREF = 'su-intro.css?v=2026-11-02';
+    var CSS_HREF = 'su-intro.css?v=2026-11-13';
     var CSS_WAIT_MS = 3000;
     var placed = false;
 
@@ -115,7 +142,20 @@
       for (var i = 0; i < lines.length; i++) {
         var p = document.createElement('p');
         p.className = 'sui-ln';
-        p.textContent = lines[i];
+        var ln = lines[i];
+        if (typeof ln === 'string') p.textContent = ln;
+        else {
+          /* リンクを含む行も文字は textContent で入れる */
+          var s1 = document.createElement('span'); s1.textContent = ln.pre; p.appendChild(s1);
+          var a = document.createElement('a');
+          a.className = 'sui-a';
+          a.href = ln.href;
+          a.target = '_blank';
+          a.rel = 'noopener';
+          a.textContent = ln.link;
+          p.appendChild(a);
+          var s2 = document.createElement('span'); s2.textContent = ln.post; p.appendChild(s2);
+        }
         tx.appendChild(p);
       }
       var x = document.createElement('button');

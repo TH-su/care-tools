@@ -185,6 +185,25 @@ function runMd(err){
   const rr = tryGrab(() => grabFn(SRC, 'renderRoster')) || '';
   t('F6 自前の keydown で開かない（ボタンの Enter・Space と2回開かない）', rr && !/addEventListener\('keydown'/.test(rr));
 
+  /* ── G 止めて知らせる窓は画面の中の窓にし、取り違えの断りに「GAS」を出さない（2026-11-13 第6段 FS-02・文は仮置き） ── */
+  group('G 画面の中の窓と取り違えの断り');
+  const noComment = SRC.replace(/<!--[\s\S]*?-->/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  t('G1 素の alert・confirm・prompt を使わない（読めない時の受け口の window.alert・window.confirm だけ）',
+    !/(^|[^.\w$])(alert|confirm|prompt)\s*\(/m.test(noComment.replace(/window\.(alert|confirm)\(m\)/g, '')), (noComment.match(/(^|[^.\w$])(alert|confirm|prompt)\s*\([^)]{0,30}/gm) || []));
+  t('G2 画面の中の窓の部品を、画面のスクリプトより前に読む（版はほかの画面と同じ）',
+    /<script src="su-dialog\.js\?v=2026-11-14\.2"><\/script>/.test(SRC) && SRC.indexOf('su-dialog.js?v=') < SRC.indexOf('function saveSync('));
+  t('G3 部品が読めない時の受け口がある（ブラウザの窓に落とす・入居者マスタと同じ形）',
+    /if\(!window\.SUDialog\) window\.SUDialog = \{\n  alert: function\(m\)\{ try\{ window\.alert\(m\); \}catch\(_\)\{[^}]*\} return Promise\.resolve\(\); \},/.test(SRC));
+  t('G4 取り違えの断りの文（3画面で同じ文）はそのまま残す', SRC.indexOf("var MASTER_WRONG_MSG='このURLは入居者マスタのGASではありません（薬学管理・申送など別のアプリのGASの可能性があります）';") >= 0);
+  const say2 = (SRC.match(/var MASTER_WRONG_SAY='([^']+)';/) || [])[1] || '';
+  t('G5 画面に出す取り違えの断りは「GAS」を含まない職員向けの文', say2 && !/GAS|URL/.test(say2) && /入居者マスタのものではありません/.test(say2), say2);
+  t('G6 保存と接続テストの断りは職員向けの文を画面の中の窓で出す',
+    SRC.indexOf("SUDialog.alert('保存していません：'+MASTER_WRONG_SAY+'。\\n今の接続先のままです。')") >= 0
+    && SRC.indexOf("setSync('別アプリの接続先','err'); SUDialog.alert('⚠️ '+MASTER_WRONG_SAY+'。'); return;") >= 0
+    && !/alert\([^)]*MASTER_WRONG_MSG/.test(SRC));
+  t('G7 現場用へ切り替えた時の保存の失敗は、窓を閉じてから読み込み直す（閉じられなくても読み込み直す）',
+    SRC.indexOf("if(!saved){ SUDialog.alert('⚠️ 保存できませんでした（プライベートモード等）').then(fsReload_, fsReload_); return; }") >= 0);
+
   say('\n合格 ' + ok + ' / 不合格 ' + ng);
   process.exit(ng ? 1 : 0);
 })().catch(e => { say('例外: ' + (e && e.stack)); process.exit(1); });

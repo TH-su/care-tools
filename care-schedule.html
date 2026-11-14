@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-+I8h9mNKLh6Ww0hUNgM+rnlhr4luSE0ApTAQlU3KI80='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-yJ2jQPr7AhS2S9dHiaLHxWEAB6ZI+TYRtrpH9uRD+9E='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -837,6 +837,8 @@ select.inp { cursor: pointer; }
   font-size: 4.5mm; font-weight: 600; padding-inline-end: 2mm; padding-bottom: 1mm;
   white-space: nowrap;
 }
+/* 施設名（2026-11-13 代表者の決定）。見出しの段（15mm）の右上に位置を外して重ねる＝段の高さ・印刷日の箱と位置は変えない */
+.wk-head-row .su-print-head.wk-fac { top: 0; right: 0; max-width: 30%; padding-inline-end: 2mm; font-size: 3.6mm; font-weight: 600; line-height: 1.2; }
 /* 列幅は元様式の比率（帯 1.22+2.66 単位 ／ 時刻 2.66×5 単位 ／ 曜日 4×5 単位×7日）。 */
 .wk-grid { display: grid; grid-template-columns: 10mm 34mm repeat(7, 1fr); }
 .wk-cell { border: 0.25mm solid #000; }
@@ -916,10 +918,15 @@ select.inp { cursor: pointer; }
 .su-menu-back{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
 @media screen and (max-width:899px){.su-menu-back{min-height:44px}}
 @media print{.su-menu-back{display:none !important}}
+/* 見出しの「使い方」（「← メニュー」の右隣・同じ大きさと色・使い方の画面のこの画面の節へ・画面だけ・印刷しない・代表者の決定 2026-11-13） */
+.su-help-link{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+@media screen and (max-width:899px){.su-help-link{min-height:44px}}
+@media print{.su-help-link{display:none !important}}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 <link rel="stylesheet" href="su-resident-hop.css?v=2026-11-02">
+<link rel="stylesheet" href="su-print.css?v=2026-11-13">   <!-- 紙の見出しの施設名（.su-print-head・印刷だけ・2026-11-13） -->
 </head>
 <body>
 
@@ -938,6 +945,7 @@ select.inp { cursor: pointer; }
 
 <header class="hdr">
   <a class="hdr-btn su-menu-back" href="index.html">← メニュー</a>
+  <a class="hdr-btn su-help-link" href="help.html?sec=care-schedule">使い方</a>
   <h1>週間計画<span class="sim-tag">（試算・未確定）</span></h1>
   <!-- 週ボードA4印刷のときだけ紙に出る注記。ヘッダの中に置くので、盤面の高さ計算（yOf）にも
        行送りにも影響しない＝既存の印刷レイアウトを動かさない。画面では非表示（下の注記が出ている）。 -->
@@ -1021,7 +1029,7 @@ select.inp { cursor: pointer; }
     <span class="sum-tokutei-note" id="sum-tokutei-note" style="display:none"></span>
     <button class="sum-edit-btn sum-lock-btn" id="board-lock-btn" data-on-click="toggleBoardLock"
             aria-pressed="false" title="押すと盤面をロックします（枠の移動・時間の伸縮・空き枠からの追加・長押しメニューを止めます）">🔓 移動ロック</button>
-    <button class="sum-edit-btn" data-on-click="printWeeklySheet" title="この利用者の週間予定表をA3横1枚で印刷（ご家族・関係者へ渡す様式）">🖨 A3週間予定表</button>
+    <button class="sum-edit-btn" data-on-click="printWeeklySheetGated_" title="この利用者の週間予定表をA3横1枚で印刷（ご家族・関係者へ渡す様式）">🖨 A3週間予定表</button>
     <button class="sum-edit-btn" data-on-click="openEventListModal" title="予定一覧">📋 一覧</button>
     <button class="sum-edit-btn" id="sync-btn" data-on-click="openSyncModal" title="クラウド同期">☁️ <span id="sync-status">同期</span></button>
     <button class="sum-edit-btn" data-on-click="openOfficeInfoModal">🏢 事業所情報</button>
@@ -1718,9 +1726,9 @@ select.inp { cursor: pointer; }
 <script src="su-errors.js?v=2026-11-12"></script>
 <script src="su-devcfg.js?v=2026-11-08"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
-<script src="su-res-read.js?v=2026-11-11"></script>
+<script src="su-res-read.js?v=2026-11-14"></script>
 <!-- 止めて知らせる窓（alert・confirm）の代わりに画面の中の窓を出す共通部品（2026-11-12 代表者の決定）。画面のスクリプトより前に置く -->
-<script src="su-dialog.js?v=2026-11-13.2"></script>
+<script src="su-dialog.js?v=2026-11-14.2"></script>
 <script>
 /* 黙ると困る失敗（保存・同期の補助）を、画面には出さずに記録へ残す（2026-10-08・監査10月版 #8）。
    行き先は su-errors.js の note＝コンソールと記録先（同期ログ・不具合報告の控えと自動報告）。トーストは出さない。
@@ -1734,10 +1742,11 @@ if(!window.SUDialog) window.SUDialog = {
   idle: function(){ return Promise.resolve(); }
 };
 </script>
-<script src="su-facility.js?v=2026-11-07"></script>   <!-- 施設情報（報酬マスタの「自治体」の既定・監査10月版 #10） -->
+<script src="su-facility.js?v=2026-11-14.2"></script>   <!-- 施設情報（報酬マスタの「自治体」の既定・監査10月版 #10） -->
+<script src="su-print.js?v=2026-11-13"></script>   <!-- A3 週間予定表の見出しの施設名と、印刷の前に施設情報を待つ門だけに使う（2026-11-13） -->
 <script src="su-cfg-hint.js?v=2026-11-10"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
-<script src="su-resident-hop.js?v=2026-11-02"></script>
+<script src="su-resident-hop.js?v=2026-11-13"></script>
 <!-- 同期データの写し（統合 0005・写しの期間）。supabase-js と su-auth.js は写す時にだけ読み込む -->
 <script src="su-kv-shadow.js?v=2026-10-28"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
@@ -1819,7 +1828,7 @@ const RATE_MASTER_DEFAULT = {
   municipality: '',                        // 既定は施設情報（facility-profile.json の municipality）から入れる（csProfileMunicipality_・2026-10-08 監査10月版 #10）
   facilityType: 'jutaku',                  // jutaku=住宅型有料＋訪問介護併設 / tokutei=介護付(特定施設) / sakoju=サ高住
   feePerUnit: 10,                          // 利用者一覧の報酬額(10割)の単価（円/単位・地域加算は反映しない運用）
-  unitPrice: 10.27,                        // 事業所情報「単位単価」の初期値（円/単位）
+  unitPrice: 10.27,                        // 事業所情報「単位単価」の初期値（円/単位）。施設情報の rateDefaults.unitPrice があればそちらが既定（rmBaseUnitPrice_・2026-11-13）
   // 単位単価の説明文（地域区分による差の案内）。文言ごと差し替えられるようにマスタへ置く
   unitPriceHint: '地域加算により変わります。1級地(東京都特別区等)=11.40、2級地=11.12、3級地=10.84…標準=10.00',
 
@@ -2044,7 +2053,38 @@ function csProfileMunicipality_() {
 if (window.SUFacility && typeof SUFacility.onReady === 'function') {
   SUFacility.onReady(function () {
     try { if (typeof DB === 'object' && DB && DB.rateMaster && !DB.rateMaster.municipality) DB.rateMaster.municipality = csProfileMunicipality_(); } catch (e) {}
+    try { csApplyLateUnitPrice_(); } catch (e) { csNote_('単位単価の施設の既定（後から届いた時）', e); }
   });
+}
+/* 起動の時に施設情報がまだ届かず、単位単価をコードの既定（10.27）で埋めた時の印（2026-11-13 反証レビュー 中・メモリだけ）。
+   { office: 埋めた時の DB.office そのもの, master: 埋めた時の DB.rateMaster そのもの }。埋めなかった・施設情報が読めていた時は null。
+   ★「誰もまだ保存していない」は、同じ物のままかで見分ける（事業所情報の保存・報酬マスタの適用・共有からの取り込みは別の物に置き換えるので、印は効かなくなる） */
+var CS_UP_PENDING = null;
+/* 施設情報が届いた時、印が立っていて、埋めた物がそのまま・単価も既定のままの時だけ、施設の単価に差し替える（保存済みの値は変えない）。
+   端末の中だけ直し、次の保存で一緒に残る（自治体と同じ）。印は1回で下ろす */
+function csApplyLateUnitPrice_() {
+  const p = CS_UP_PENDING;
+  CS_UP_PENDING = null;
+  if (!p || typeof DB !== 'object' || !DB) return;
+  const up = csProfileUnitPrice_();
+  if (up === null) return;
+  const d = RATE_MASTER_DEFAULT.unitPrice;
+  if (p.office && DB.office === p.office && DB.office.unitPrice === d) DB.office.unitPrice = up;
+  if (p.master && DB.rateMaster === p.master && DB.rateMaster.unitPrice === d) DB.rateMaster.unitPrice = up;
+}
+/* 単位単価の施設の既定（2026-11-13 代表者の決定・台帳 CS-02）。施設情報（facility-profile.json）の rateDefaults.unitPrice が
+   報酬マスタと同じ範囲（1〜100 円）の数の時だけ使い、書いていない・崩れている・読めない時は null。
+   ★使うのは端末にも共有データにも単価の保存が無い時の既定だけ。保存済みの値は変えない。
+   ★施設情報が起動より後に届いた時は、起動の時に既定で埋めた物がそのまま（誰もまだ保存していない）時だけ差し替える（csApplyLateUnitPrice_） */
+function csProfileUnitPrice_() {
+  try {
+    const rd = (window.SUFacility && typeof SUFacility.section === 'function') ? SUFacility.section('rateDefaults') : null;
+    return (rd && typeof rd.unitPrice === 'number') ? rmNum_(rd.unitPrice, 1, 100) : null;
+  } catch (e) { return null; }
+}
+/* 単位単価の既定（施設情報が先・無ければコードの既定 10.27） */
+function rmBaseUnitPrice_() {
+  return csProfileUnitPrice_() || RATE_MASTER_DEFAULT.unitPrice;
 }
 function normalizeRateMaster_(raw) {
   const d = RATE_MASTER_DEFAULT;
@@ -2054,6 +2094,7 @@ function normalizeRateMaster_(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     const m0 = rmClone_(d);
     if (!m0.municipality) m0.municipality = csProfileMunicipality_();
+    m0.unitPrice = rmBaseUnitPrice_();
     return { master: m0, filled: [] };
   }
   const filled = [];
@@ -2067,7 +2108,7 @@ function normalizeRateMaster_(raw) {
     facilityType:  (src.facilityType === 'tokutei' || src.facilityType === 'sakoju' || src.facilityType === 'jutaku')
                      ? src.facilityType : 'jutaku',
     feePerUnit: rmNum_(src.feePerUnit, 0.01, 1000) || d.feePerUnit,
-    unitPrice:  rmNum_(src.unitPrice,  1,    100)  || d.unitPrice,
+    unitPrice:  rmNum_(src.unitPrice,  1,    100)  || rmBaseUnitPrice_(),
     unitPriceHint: typeof src.unitPriceHint === 'string' && src.unitPriceHint ? src.unitPriceHint : d.unitPriceHint,
   };
   if (src.facilityType && m.facilityType !== src.facilityType) filled.push('施設類型（未知の値のため住宅型を使用）');
@@ -2077,7 +2118,7 @@ function normalizeRateMaster_(raw) {
     filled.push('報酬額(10割)の単価（値が不正なため既定 ' + d.feePerUnit + ' 円を使用）');
   }
   if (src.unitPrice !== undefined && rmNum_(src.unitPrice, 1, 100) === null) {
-    filled.push('単位単価（値が不正なため既定 ' + d.unitPrice + ' 円を使用）');
+    filled.push('単位単価（値が不正なため既定 ' + rmBaseUnitPrice_() + ' 円を使用）');
   }
 
   m.visitBase      = rmNormUnitsTable_(src.visitBase,      d.visitBase,      '訪問介護 基本単位',   filled);
@@ -2211,7 +2252,7 @@ function normalizeRateMaster_(raw) {
 /* 単位単価の既定値。事業所情報が未設定・不正なときの落とし先を1箇所にまとめる
    （以前は 10.27 が4箇所に直書きされ、直すときに拾い漏れる形だった）。 */
 function rmDefaultUnitPrice_() {
-  return Number(DB.rateMaster && DB.rateMaster.unitPrice) || RATE_MASTER_DEFAULT.unitPrice;
+  return Number(DB.rateMaster && DB.rateMaster.unitPrice) || rmBaseUnitPrice_();
 }
 
 /* DB.rateMaster を正規化して各表へ展開する。起動時と、クラウドから採用した直後に呼ぶ。
@@ -3349,6 +3390,12 @@ function csWhoLabel_(st) {
   if (!st || ['ok', 'mfa_verify', 'mfa_enroll'].indexOf(st.status) < 0 || !st.email) return '';
   return String(st.email).trim().toLowerCase().slice(0, 120);   // 表示名（画面側の名前）は使わない
 }
+/* 管理者としてログインしているか（表示の出し分けだけに使う・守りではない。確かめられない時は「管理者ではない」に倒す・2026-11-13） */
+function csIsAdmin_() {
+  if (!csHasSession_()) return Promise.resolve(false);
+  return csAuthLoad_().then(() => (window.SUAuth ? SUAuth.check() : null))
+    .then(st => !!(st && st.status === 'ok' && st.role === 'admin'), () => false);
+}
 function csAuthLoad_() {
   if (window.SUAuth) return Promise.resolve();
   function has(re) { return Array.prototype.some.call(document.scripts, s => re.test(s.getAttribute('src') || '')); }
@@ -3922,26 +3969,36 @@ function loadDB() {
   }
   if (!Array.isArray(DB.residents)) DB.residents = [];
   // 事業所情報マイグレーション: 山田太郎の設定をデフォルトとして取り込む
+  /* 施設情報がまだ届いていない時に単価を既定で埋めたら、印を立てる（csApplyLateUnitPrice_・2026-11-13） */
+  const upLate = csProfileUnitPrice_() === null;
+  let upOfficeFilled = false;
   if (!DB.office) {
     const taro = DB.residents.find(r => r.name === '山田太郎')
               || DB.residents.find(r => r.unitPrice || r.visitAddons || r.daycareAddons);
     if (taro) {
+      if (!taro.unitPrice) upOfficeFilled = true;
       DB.office = {
-        unitPrice:     taro.unitPrice     || DEFAULT_OFFICE.unitPrice,
+        unitPrice:     taro.unitPrice     || rmBaseUnitPrice_(),
         visitAddons:   { ...DEFAULT_OFFICE.visitAddons,   ...(taro.visitAddons   || {}) },
         daycareAddons: { ...DEFAULT_OFFICE.daycareAddons, ...(taro.daycareAddons || {}) },
       };
     } else {
       DB.office = JSON.parse(JSON.stringify(DEFAULT_OFFICE));
+      DB.office.unitPrice = rmBaseUnitPrice_();
+      upOfficeFilled = true;
     }
   }
-  // 既存項目欠落補完
-  DB.office.unitPrice     = DB.office.unitPrice     || DEFAULT_OFFICE.unitPrice;
+  if (!DB.office.unitPrice) upOfficeFilled = true;
+  // 既存項目欠落補完（単位単価が無い時は施設の既定・2026-11-13）
+  DB.office.unitPrice     = DB.office.unitPrice     || rmBaseUnitPrice_();
   DB.office.visitAddons   = { ...DEFAULT_OFFICE.visitAddons,   ...(DB.office.visitAddons   || {}) };
   DB.office.daycareAddons = { ...DEFAULT_OFFICE.daycareAddons, ...(DB.office.daycareAddons || {}) };
   /* 報酬マスタを展開する（未設定の端末は既定＝改修前と同じ数値で動く）。
      単位数の表がここで確定してから recalcAllEventUnits を呼ぶ順序を守る。 */
+  const upMasterFilled = !(DB.rateMaster && rmNum_(DB.rateMaster.unitPrice, 1, 100));
   RM_FILLED_AT_LOAD = ensureRateMaster_();
+  CS_UP_PENDING = (upLate && (upOfficeFilled || upMasterFilled))
+    ? { office: upOfficeFilled ? DB.office : null, master: upMasterFilled ? DB.rateMaster : null } : null;
   // 全予定の単位数を最新の事業所設定で再計算（古い ev.units を更新）
   recalcAllEventUnits();
   ensureServiceDict_();   // 辞書をメモリに同期（ここでは saveDB/saveLocalOnly を呼ばない＝startupPull の生文字列一致判定に非干渉）
@@ -4000,7 +4057,7 @@ function saveDB() {
     if (verify === json) { csRememberLocalFp_(json); try { csEditBaseline_(); } catch(e){ csNote_('直した人の基準', e); } }
     if (verify !== json) {
       console.error('saveDB: 書込検証に失敗（localStorage に正しく保存されていません）');
-      showToast('保存に失敗しました。ブラウザのストレージ容量を確認してください');
+      showToast('保存に失敗しました。この端末の空き容量を確認してください');
       return false;
     }
   } catch(e) {
@@ -4086,7 +4143,7 @@ const SYNC = {
       return true;
     } catch(e) {
       console.warn('同期設定保存エラー:', e);
-      showToast('同期設定の保存に失敗しました（ブラウザのストレージ制限の可能性）');
+      showToast('同期設定の保存に失敗しました（この端末の空きが足りない可能性があります）');
       return false;
     }
   },
@@ -4542,7 +4599,7 @@ const SYNC = {
       if (!j.ok) throw new Error(this.friendlyErr(j.error));
       if (!j.data) { this.log('ℹ️ クラウドにデータがありません'); this.updateStatusUI('同期'); this._busy = false; return true; }
       this.adopt(j.data, j.rev);
-      this.log(`✅ 取得完了（${DB.residents.length}名・rev ${j.rev || 0}）`);
+      this.log(`✅ 取得完了（${DB.residents.length}名）`);
       this.updateStatusUI('同期OK');
       this._busy = false;
       return true;
@@ -4603,7 +4660,7 @@ const SYNC = {
         this.config.lastSync = Date.now();
         this.save();
         if (mineOnDisk) {
-          this.log(`✅ 前回の未送信はクラウドへ反映済みでした（rev ${Number(j.rev) || 0}）`);
+          this.log('✅ 前回の未送信はクラウドへ反映済みでした');
           this.updateStatusUI('同期OK');
         } else {
           /* 未送信だった編集は、この端末の世代バックアップにしか残っていない。黙って続けない。 */
@@ -4685,7 +4742,7 @@ const SYNC = {
         try { csFieldBaseSet_(sentBase); } catch(e){ csNote_('土台の控え', e); }
         this.clearDirty();
         this.save();
-        this.log(`✅ 保存完了（rev ${j.rev}）`);
+        this.log('✅ 保存完了');
         this.updateStatusUI('同期OK');
         this._busy = false;
         if (viaSb && !j.unchanged && unconfSent.length) csSettleUnconfirmed_(unconfSent);
@@ -4849,7 +4906,7 @@ const SYNC = {
               || (mkE && mkE.classList.contains('open'))     // 予定の追加中（編集と違い editingEventId は null）
               || (mkR && mkR.classList.contains('open'))) return;
           this.adopt(j.data, j.rev);
-          this.log(`🔄 自動取得完了（${DB.residents.length}名・rev ${j.rev}）`);
+          this.log(`🔄 自動取得完了（${DB.residents.length}名）`);
           this.updateStatusUI('同期OK');
         }
       }
@@ -4875,7 +4932,8 @@ const SYNC = {
          反映されず、デプロイを管理→新バージョン まで進めて初めて切り替わる。その取り違えを
          データを壊さずに見分けられるようにする（multi-device-sync 原則7 能力宣言）。 */
       const guards = Array.isArray(j.guards) ? j.guards : null;
-      if (j.codeVersion || guards) {
+      /* 版と防御の名前は管理者のログインの時だけ出す（職員には意味の無い技術の語のため・2026-11-13 第6段 反証レビュー） */
+      if ((j.codeVersion || guards) && await csIsAdmin_()) {
         this.log('　サーバー版：' + (j.codeVersion || '(不明)')
           + (guards ? '／防御：' + guards.join('・') : ''));
       }
@@ -4883,12 +4941,16 @@ const SYNC = {
         this.log('　✅ 通所の入浴（加算）の一括消失ガードは有効です'
           + (j.bathDropMax ? '（1回で ' + j.bathDropMax + ' 件以上減る保存を拒否）' : ''));
       } else {
-        this.log('　⚠ 入浴の一括消失ガードが【まだ有効になっていません】。'
-          + 'Apps Script で コードを保存しただけになっていないか確認してください'
-          + '（デプロイ → デプロイを管理 → 鉛筆 → バージョン「新バージョン」→ デプロイ）');
+        /* 職員には次にすることだけを出し、受け口の直し方は管理者のログインの時だけ出す（2026-11-13・文は仮置き） */
+        this.log('　⚠ 入浴の一括消失ガードが【まだ有効になっていません】。管理者に伝えてください');
+        if (await csIsAdmin_()) {
+          this.log('　（管理者向け：Apps Script で コードを保存しただけになっていないか確認してください'
+            + '（デプロイ → デプロイを管理 → 鉛筆 → バージョン「新バージョン」→ デプロイ））');
+        }
       }
     } catch(e) {
-      this.log('❌ 接続失敗: ' + this.friendlyErr(e && e.message) + '\nヒント: デプロイ時に「アクセスできるユーザー: 全員」を選択しているか確認してください');
+      this.log('❌ 接続失敗: ' + this.friendlyErr(e && e.message) + '\n直らない時は、管理者に伝えてください');
+      if (await csIsAdmin_()) this.log('　（管理者向け：デプロイ時に「アクセスできるユーザー: 全員」を選択しているか確認してください）');
     }
   }
 };
@@ -8832,10 +8894,11 @@ function buildWeeklySheetHtml_(res) {
   /* 印刷日＝この紙を作った日（ボタンを押した日）。年月日で出す。 */
   const now = new Date();
   const printed = now.getFullYear() + '年' + (now.getMonth() + 1) + '月' + now.getDate() + '日';
-  return '<div class="wk-head-row">'
+  return '<div class="wk-head-row su-print-head-host">'
        +   '<div class="wk-title">' + escHtml(name) + '様</div>'
        +   '<div class="wk-sheet-title">１週間のスケジュール</div>'
        +   '<div class="wk-printed">印刷日：' + escHtml(printed) + '</div>'
+       +   '<div class="su-print-head su-print-head-abs wk-fac" data-su-print-head="name"></div>'
        + '</div>'
        + '<div class="wk-grid">' + headHtml + '</div>'
        + '<div class="wk-grid">'
@@ -8843,6 +8906,13 @@ function buildWeeklySheetHtml_(res) {
        +   '<div class="wk-time-col" style="height:' + H + 'mm">' + timeLineHtml + timeHtml + '</div>'
        +   daysHtml
        + '</div>';
+}
+
+/* 「🖨 A3週間予定表」のボタンの入口。紙の見出しに施設名を刷るので、施設情報を最大3秒待ち、読めなければ刷らない
+   （su-print.js の facGate・2026-11-13 代表者の決定）。部品が無い時は今までどおりすぐ刷る */
+function printWeeklySheetGated_() {
+  if (window.SUPrint && SUPrint.facGate) SUPrint.facGate(() => printWeeklySheet(), (msg) => showToast(msg));
+  else printWeeklySheet();
 }
 
 /* 印刷の入口。既存の利用者一覧A3印刷と同じ作法（body クラス＋@page 動的注入＋afterprint で必ず後始末）。 */
@@ -8857,6 +8927,7 @@ function printWeeklySheet() {
      （実測で白紙になった）。 */
   clearRlPrintState_();
   box.innerHTML = buildWeeklySheetHtml_(res);
+  try { if (window.SUPrint && SUPrint.fillHeads) SUPrint.fillHeads(box); } catch (e) { csNote_('A3週間予定表の施設名', e); }
   document.body.classList.add('wk-print');
   const st = document.createElement('style');
   st.id = 'wk-a3-page';
@@ -9027,7 +9098,7 @@ function undoRemoveResident_(entry) {
   populateResidentSelect(); renderResidentList(); renderAll();
   showToast(ok
     ? `「${res.name || ''}」を元に戻しました（予定 ${(res.events || []).length}件）`
-    : '端末に保存できませんでした。ブラウザのストレージ容量を確認してもう一度お試しください');
+    : '端末に保存できませんでした。この端末の空き容量を確認してもう一度お試しください');
 }
 function undo() {
   if (!undoStack.length) { showToast('これ以上元に戻せません'); return; }
@@ -9833,6 +9904,7 @@ const CS_ACTIONS = {
   'printResidentList': (a) => printResidentList(...a),
   'printWeek': (a) => printWeek(...a),
   'printWeeklySheet': (a) => printWeeklySheet(...a),
+  'printWeeklySheetGated_': (a) => printWeeklySheetGated_(...a),
   'rbPreview_': (a) => rbPreview_(...a),
   'removeResident': (a) => removeResident(...a),
   'restoreFromCloud_': (a) => restoreFromCloud_(...a),
@@ -9883,6 +9955,8 @@ function csRunAction_(el, type, e) {
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
 <!-- 「この方の画面 ▾」の一覧（画面だけ・印刷しない） -->
 <div class="srh-pop" id="cs-hop-pop" role="group" aria-label="この方の画面" hidden></div>
+<!-- 本番の健康（2026-11-14・統合 0088）: 新しい保存先への保存の失敗を種類と理由だけ数えて送る。保存の動きには触れない・読めなくても動く -->
+<script src="su-health.js?v=2026-11-14"></script>
 <script src="su-report.js?v=2026-10-28" data-tool="週間計画"></script>
 </body>
 </html>

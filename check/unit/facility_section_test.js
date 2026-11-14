@@ -81,6 +81,17 @@ const flush = () => new Promise(r => setTimeout(r, 0));
   { const { F } = load(prof(p => { p.daycareNotes = { x: '見本の文' }; })); t('daycareNotes（便10）を最上位から読む', (F.section('daycareNotes') || {}).x === '見本の文'); }
   { const { F } = load(prof(() => {})); t('daycareNotes は書いていなければ null', F.section('daycareNotes') === null); }
   { const { F } = load(prof(p => { p.mealTimes = '08:00'; })); t('文字の mealTimes は null', F.section('mealTimes') === null); }
+  /* 貼り薬カレンダーの薬の名前と貼る場所（代表者の決定 2026-11-13）。形の確かめは画面（check/unit/patch_config_test.js） */
+  { const { F } = load(prof(p => { p.patchCalendar = { drug: '見本テープ', sites: [{ name: '見本の左' }, { name: '見本の右' }] }; }));
+    const v = F.section('patchCalendar');
+    t('patchCalendar を最上位から読む', v && v.drug === '見本テープ' && v.sites.length === 2 && v.sites[1].name === '見本の右', v); }
+  { const { F } = load(prof(() => {})); t('patchCalendar は書いていなければ null', F.section('patchCalendar') === null); }
+  { const raw = prof(p => { p.patchCalendar = { drug: '見本テープ' }; });
+    const first = load(undefined, raw); await flush(); await flush();
+    const second = load(JSON.parse(first.store.su_facility_json_v1));
+    t('控えから起動しても patchCalendar が残る', (second.F.section('patchCalendar') || {}).drug === '見本テープ'); }
+  { const s = JSON.parse(SAMPLE_SRC); t('見本には patchCalendar そのものは書かない（撮影で見本が配られても紙が変わらない）・書き方の説明はある',
+    !('patchCalendar' in s) && typeof s._notePatchCalendar === 'string' && /drug/.test(s._notePatchCalendar) && /sites/.test(s._notePatchCalendar)); }
   { const s = JSON.parse(SAMPLE_SRC); t('見本に mealTimes・mealForms の書き方がある', s.mealTimes && s.mealTimes.breakfast === '08:00' && s.mealForms && s.mealForms.main && s.mealForms.side); }
 
   console.log('\n' + pass + ' 件合格 / ' + fail + ' 件不合格');

@@ -101,6 +101,10 @@
     empty: '新しい保存先の応答が空でした。取得して、入っているか確かめてください'
   };
   function refusal(code) { return { error: MSG[code] }; }
+  /* 本番の健康（統合 0088）: 新しい保存先へ送る書く操作（WRITES）の失敗だけを、種類と理由で数える（su-health.js が無ければ何もしない） */
+  function health(body, info) {
+    try { if (body && WRITES[body.action] && root.SUHealth) root.SUHealth.fail('sa', info); } catch (e) { /* 数えられなくても止めない */ }
+  }
 
   /* データベースの印（sa_mode_get）。1分は覚える。関数が無い（0051 の前）時は 'shadow'。断り（現場・使える人に無い）は 'denied'、届かない時は例外 */
   var modeCache = null, modeAt = 0;
@@ -156,9 +160,10 @@
     var timer = new Promise(function (ok) { tm = setTimeout(function () { ok({ timeout: true }); }, ms); });
     return Promise.race([call, timer]).then(function (r) {
       clearTimeout(tm);
-      if (r && r.timeout) throw new Error(MSG.timeout);
+      if (r && r.timeout) { health(body, { timeout: true }); throw new Error(MSG.timeout); }
       if (r && r.error) {
         var c = String(r.error.code || '');
+        if (!/PGRST202|42883/.test(c)) health(body, c ? { pg: c } : { network: true });
         if (c === '42501') return refusal(mfa ? 'mfa' : 'role');
         if (/PGRST202|42883/.test(c)) { modeCache = null; return refusal('mode'); }
         note(q.fn, c || 'error');
@@ -166,11 +171,12 @@
         throw new Error(MSG.net);      // 番号の無い失敗（届かない）
       }
       var d = r ? r.data : null;
-      if (!d || typeof d !== 'object') return refusal('empty');
-      if (d.error === 'toolarge') return refusal('toolarge');
-      if (d.error === 'bad-request') return refusal('badreq');
+      if (!d || typeof d !== 'object') { health(body, {}); return refusal('empty'); }
+      if (d.error === 'toolarge') { health(body, {}); return refusal('toolarge'); }
+      if (d.error === 'bad-request') { health(body, {}); return refusal('badreq'); }
+      if (typeof d.error === 'string' && d.error !== 'sa_not_live') health(body, { code: d.error });
       return d;   // sa_badchar は職員向けの文が error に入っている・sa_not_live は呼び手が Google へ回す
-    }, function (e) { clearTimeout(tm); note(q.fn, e); throw new Error(MSG.net); });
+    }, function (e) { clearTimeout(tm); note(q.fn, e); if (!(e && e.message === MSG.timeout)) health(body, { network: true }); throw new Error(MSG.net); });
   }
 
   /* 送る前の確かめ（ログイン・印）。返すのは道: gas（Google）・outside（ログインしていない・現場のアカウントなど＝印だけの口で決める）・
@@ -208,13 +214,13 @@
       var late = new Promise(function (ok, ng) { tm = setTimeout(function () { ng(new Error(MSG.mode)); }, CALL_MS); });
       return Promise.race([plan(body), late]).then(function (p) {
         clearTimeout(tm);
-        if (p.kind === 'refuse') return refusal(p.code);
+        if (p.kind === 'refuse') { health(body, p.code === 'mode' ? { network: true } : { code: p.code === 'mfa' ? 'role' : p.code }); return refusal(p.code); }
         if (p.kind === 'outside') {
           return publicMode(p.A).then(function (pm) {
-            if (pm === 'live') return refusal(p.code);                          // 切り替えた後＝Google へ送らない（古いデプロイにも保存させない）
+            if (pm === 'live') { health(body, { code: p.code }); return refusal(p.code); }                         // 切り替えた後＝Google へ送らない（古いデプロイにも保存させない）
             if (pm === 'unknown' && WRITES[body.action]) return refusal('mode');   // 分からない時は保存を送らない（読み取りは Google が決める）
             return Promise.resolve(gasCall()).then(function (j) {
-              if (isSwitched(j)) return refusal(p.code);                        // 切り替えた後の Google の断り（読み取りも）＝中身は渡さない
+              if (isSwitched(j)) { health(body, { code: p.code }); return refusal(p.code); }                      // 切り替えた後の Google の断り（読み取りも）＝中身は渡さない
               return j;
             });
           });

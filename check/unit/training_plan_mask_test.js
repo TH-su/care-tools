@@ -51,7 +51,9 @@ t('ご本人の姓・名だけでも伏せる（2文字以上・戻す時に姓/
 t('ご本人のかな（空白あり・なし）も伏せる', byTerm['しけん いちろう'] === '〔ご本人・かな〕' && byTerm['しけんいちろう'] === '〔ご本人・かな〕');
 t('他の利用者のかなも伏せる', byTerm['みほんはなこ'] === '〔利用者1・かな〕', byTerm);
 t('他の利用者はフルネームを番号付きの記号にする', byTerm['見本花子'] === '〔利用者1〕' && byTerm['見本　花子'] === '〔利用者1〕', byTerm);
-t('★他の利用者の姓だけは伏せない（一般語を壊さないため）', byTerm['見本'] === undefined);
+/* 2026-11-13 代表者の指示で仕様が逆になった（旧: 他の利用者の姓だけは伏せない）。姓・名は2文字以上の漢字の書き方だけ・かなの姓/名だけは今までどおり伏せない */
+t('★他の利用者の姓だけ・名だけも伏せる（2文字以上・別の記号）', byTerm['見本'] === '〔利用者1・姓〕' && byTerm['花子'] === '〔利用者1・名〕', byTerm);
+t('他の利用者のかなの姓だけ・名だけは伏せない（ひらがな2〜3字は一般の語に多く当たるため）', byTerm['みほん'] === undefined && byTerm['はなこ'] === undefined, byTerm);
 t('1文字の語は伏せない（「次」など）', byTerm['次'] === undefined);
 t('空の名簿行は無視する', terms.every(function (x) { return x.term.length >= 2; }));
 t('長い語から先に並ぶ（部分一致で短い語が先に食わない）', terms.every(function (x, i) { return i === 0 || terms[i - 1].term.length >= x.term.length; }));
@@ -112,6 +114,101 @@ console.log('\n【4】名簿と違う書き方・名簿に無いご本人・地�
   const w3 = TP.aiMaskDeep({ a: '高橋一郎さんとタカハシイチロウさん' }, TP.aiMaskTerms(R3, 'S1')).a;
   t('★他の利用者も異体字（髙→高）で書いたフルネームを伏せる', w3.indexOf('高橋') < 0, w3);
   t('★他の利用者もかなのカタカナ書きを伏せる', w3.indexOf('タカハシ') < 0, w3);
+}
+
+console.log('\n【5】1文字の姓・他の利用者の姓だけ／名だけ（2026-11-13 代表者の指示）');
+{
+  /* 名簿はすべて記号的な架空の氏名 */
+  const R = [
+    { masterId: 'P1', name: '甲 一郎', kana: 'こ いちろう' },
+    { masterId: 'P2', name: '乙 二郎', kana: '' },
+    { masterId: 'P3', name: '丙野 三子', kana: 'へいの みつこ' },
+    { masterId: 'P4', name: '丁 四', kana: '' }
+  ];
+  const tk = TP.aiMaskTerms(R, 'P1');
+  const bt = {}; tk.forEach(function (x) { bt[x.term] = x; });
+  t('★ご本人の1文字の姓を、前後が漢字でない所だけ伏せる語として持つ', bt['甲'] && bt['甲'].token === '〔ご本人・姓〕' && bt['甲'].one === true, bt['甲']);
+  t('★他の利用者の1文字の姓も同じ扱い（〔利用者N・姓〕）', bt['乙'] && bt['乙'].token === '〔利用者1・姓〕' && bt['乙'].one === true, bt['乙']);
+  /* ご本人のかなの姓は1文字（こ）。かなの名（いちろう）は伏せる語に入るので、かなの姓・名の分け方を通った上で1文字を外していると分かる */
+  t('1文字の名・1文字のかなは今までどおり伏せない', bt['いちろう'] && bt['いちろう'].token === '〔ご本人・名かな〕' && bt['四'] === undefined && bt['こ'] === undefined && bt['コ'] === undefined, Object.keys(bt));
+  t('1文字の語は一覧の最後（長い語が先に置き換わる）', tk.every(function (x, i) { return i === 0 || tk[i - 1].term.length >= x.term.length; }));
+  const M = (x, u) => TP.aiMaskDeep({ a: x }, tk, u || {}).a;
+  /* 敬称の付いた1文字の姓は、今までどおり敬称の前の名前として〔人名N〕になる（名簿の語は敬称の処理の後に置き換えるため） */
+  t('★「甲さん」「甲、乙・丁」の1文字の姓を伏せる', M('甲さんは散歩') === '〔人名1〕さんは散歩' && M('甲、乙・丁') === '〔ご本人・姓〕、〔利用者1・姓〕・〔利用者3・姓〕', [M('甲さんは散歩'), M('甲、乙・丁')]);
+  t('★文の頭・終わり・記号の隣でも伏せる', M('甲。乙') === '〔ご本人・姓〕。〔利用者1・姓〕' && M('（丁）') === '（〔利用者3・姓〕）', [M('甲。乙'), M('（丁）')]);
+  t('★熟語の中の同じ字は伏せない（甲状腺・甲高い・乙女・丙午・包丁・丁寧）', M('甲状腺の検査。甲高い声。乙女。丙午。包丁で丁寧に') === '甲状腺の検査。甲高い声。乙女。丙午。包丁で丁寧に', M('甲状腺の検査。甲高い声。乙女。丙午。包丁で丁寧に'));
+  t('★他の利用者の姓だけ（丙野）・名だけ（三子）を伏せる', M('丙野と三子が') === '〔利用者2・姓〕と〔利用者2・名〕が' && M('丙野さんと三子さん') === '〔人名1〕さんと〔人名2〕さん', [M('丙野と三子が'), M('丙野さんと三子さん')]);
+  const bare = M('丙野と三子が体操。乙、丁。見学は甲');
+  t('★敬称の無い書き方でも、他の利用者の姓・名と1文字の姓を伏せる（直す前の版では漏れていた）', ['丙野', '三子', '乙', '丁', '甲'].every(function (w) { return bare.indexOf(w) < 0; }), bare);
+  t('他の利用者の姓も地名（丙野市）は壊さない', M('丙野市へ外出').indexOf('丙野市') === 0, M('丙野市へ外出'));
+  t('フルネームは今までどおりフルネームの記号（姓・名に分けない）', M('丙野三子さん・乙 二郎さん') === '〔利用者2〕さん・〔利用者1〕さん', M('丙野三子さん・乙 二郎さん'));
+  t('先に置いた記号〔…〕の中の字は1文字の姓でも触らない', TP.aiMaskDeep({ a: '〔ご本人・名〕' }, [{ term: '名', token: '〔X・姓〕', orig: '名', part: true, one: true, late: true }], {}).a === '〔ご本人・名〕');
+  t('★職員が書いた〔甲〕・閉じていない〔の後ろの1文字の姓は伏せる', M('〔甲〕さん') === '〔〔ご本人・姓〕〕さん' && M('〔メモ 乙、散歩') === '〔メモ 〔利用者1・姓〕、散歩', [M('〔甲〕さん'), M('〔メモ 乙、散歩')]);
+  const kh = M('甲様・乙氏・丁先生・甲君・乙殿');
+  t('★敬称が漢字（様・氏・先生・君・殿）の時も1文字の姓が漏れない（敬称の前の名前として伏せる）', ['甲', '乙', '丁'].every(function (w) { return kh.indexOf(w) < 0; }), kh);
+  {
+    const tk2 = TP.aiMaskTerms([{ masterId: 'Q1', name: '戊 己', kana: '' }, { masterId: 'Q2', name: '甲乙 丙', kana: '' }], 'Q1');
+    const u3 = {};
+    const m3 = TP.aiMaskDeep({ a: '甲乙つけがたい' }, tk2, u3);
+    t('（残る消し過ぎ）2文字以上の他の利用者の姓が一般の語に当たると伏せるが、戻すと元の文になる', m3.a === '〔利用者1・姓〕つけがたい' && TP.aiUnmaskDeep(m3, tk2, u3).a === '甲乙つけがたい', m3.a);
+  }
+  /* 消し過ぎの例: 規則どおり前後が漢字でない一般の語は伏せる（送る文では伏せ、返事では元に戻る） */
+  const u = {};
+  const over = TP.aiMaskDeep({ a: '足の甲。' }, tk, u);
+  t('（残る消し過ぎ）後ろが句読点などの一般の語の字は伏せるが、戻すと元の文になる', over.a === '足の〔ご本人・姓〕。' && TP.aiUnmaskDeep(over, tk, u).a === '足の甲。', over.a);
+  /* 2回目の反証レビュー（2026-11-13）: 送り仮名の付く語・ひらがなの続く所は伏せない */
+  {
+    const tg = TP.aiMaskTerms([{ masterId: 'G0', name: '試験 一郎', kana: '' }, { masterId: 'G1', name: '上 一', kana: '' }, { masterId: 'G2', name: '長 二', kana: '' },
+      { masterId: 'G3', name: '関 三', kana: '' }, { masterId: 'G4', name: '髙 四', kana: '' }, { masterId: 'G5', name: '一ノ瀬 五', kana: '' }], 'G0');
+    const g = '立ち上がりは安定。長い距離。関わりが増えた。意欲が高い。足の甲に湿布';
+    t('★1文字の姓のすぐ後ろがひらがな・漢字の時は伏せない（立ち上がり・長い・関わり・高い）', TP.aiMaskDeep({ a: g }, tg, {}).a === g, TP.aiMaskDeep({ a: g }, tg, {}).a);
+    t('後ろが空白・句読点・カタカナ・文の終わりなら伏せる', TP.aiMaskDeep({ a: '上。長 関ヘルパー 髙' }, tg, {}).a === '〔利用者1・姓〕。〔利用者2・姓〕 〔利用者3・姓〕ヘルパー 〔利用者4・姓〕', TP.aiMaskDeep({ a: '上。長 関ヘルパー 髙' }, tg, {}).a);
+    const ug = {};
+    const mg = TP.aiMaskDeep({ a: '髙。', b: '意欲が高い。' }, tg, ug);
+    const bg = TP.aiUnmaskDeep(mg, tg, ug);
+    t('★1文字の姓は異体字にそろえない（項目をまたいで控えを共有しても「高い」が「髙い」に化けない）', bg.a === '髙。' && bg.b === '意欲が高い。' && mg.b === '意欲が高い。', [mg, bg]);
+    /* 3回目の反証レビュー: 他の利用者の2文字以上の姓・名も、書いた字だけを伏せる（異体字にそろえない） */
+    const th = TP.aiMaskTerms([{ masterId: 'H0', name: '試験 一郎', kana: '' }, { masterId: 'H1', name: '髙原 一', kana: '' }, { masterId: 'H2', name: '髙橋 一', kana: '' }, { masterId: 'H3', name: '高橋 二', kana: '' }], 'H0');
+    const uh = {};
+    const mh = TP.aiMaskDeep({ a: '髙原の家族。', b: '高原へ旅行した。' }, th, uh);
+    const bh = TP.aiUnmaskDeep(mh, th, uh);
+    t('★項目をまたいで控えを共有しても、一般の語「高原」が「髙原」に化けない', mh.b === '高原へ旅行した。' && bh.a === '髙原の家族。' && bh.b === '高原へ旅行した。', [mh, bh]);
+    const m2h = TP.aiMaskDeep({ a: '髙橋と高橋が散歩' }, th, {}).a;
+    t('★名簿の別の2人（髙橋・高橋）を同じ記号にしない', m2h === '〔利用者2・姓〕と〔利用者3・姓〕が散歩', m2h);
+    t('★ノ・ヶの入る姓（一ノ瀬）も他の利用者の姓だけとして伏せる', TP.aiMaskDeep({ a: '一ノ瀬と散歩' }, tg, {}).a === '〔利用者5・姓〕と散歩', TP.aiMaskDeep({ a: '一ノ瀬と散歩' }, tg, {}).a);
+  }
+  /* 往復: 新しい記号すべてで、伏せて戻すと元の文・控えに書いた形 */
+  const src = { a: '甲さんは乙さん・丁さんと体操。甲、乙・丁で体操。丙野、三子、髙丙野ではない' };
+  const u2 = {};
+  const m2 = TP.aiMaskDeep(src, tk, u2);
+  const wire = JSON.stringify(m2);
+  t('★送る文に1文字の姓・他の利用者の姓・名が残らない', ['甲さん', '乙さん', '丁さん', '丙野', '三子'].every(function (w) { return wire.indexOf(w) < 0; }), wire);
+  t('★戻すと送った文と同じになる', TP.aiUnmaskDeep(m2, tk, u2).a === src.a, TP.aiUnmaskDeep(m2, tk, u2).a);
+  t('控え（used）に置き換えた形が入る', u2['〔ご本人・姓〕'] === '甲' && u2['〔利用者1・姓〕'] === '乙' && u2['〔利用者2・姓〕'] === '丙野' && u2['〔利用者2・名〕'] === '三子', u2);
+  /* 消し過ぎの例: 一般の語を大量に伏せない（2文字以上・名簿の語だけ） */
+  const plain = '本日は午前に歩行訓練、午後は体操に参加。食事は全量摂取。家族との面会あり。次回も継続する。';
+  t('★名簿の語を含まない一般の文は1字も変えない', M(plain) === plain, M(plain));
+  /* 直す前（origin/main・0d30224）の aiMaskTerms がこの名簿で作った語の一覧。後で足す語（late）を除くと1語も違わない */
+  const MAIN_TERMS = [["へいの みつこ","〔ご本人・かな〕",false],["へいの　みつこ","〔ご本人・かな〕",false],["ヘイノ ミツコ","〔ご本人・かな〕",false],["ヘイノ　ミツコ","〔ご本人・かな〕",false],["みほん はなこ","〔利用者1・かな〕",false],["みほん　はなこ","〔利用者1・かな〕",false],["ミホン ハナコ","〔利用者1・かな〕",false],["ミホン　ハナコ","〔利用者1・かな〕",false],["へいのみつこ","〔ご本人・かな〕",false],["ヘイノミツコ","〔ご本人・かな〕",false],["みほんはなこ","〔利用者1・かな〕",false],["ミホンハナコ","〔利用者1・かな〕",false],["丙野 三子","〔ご本人〕",false],["丙野　三子","〔ご本人〕",false],["見本 花子","〔利用者1〕",false],["見本　花子","〔利用者1〕",false],["丙野三子","〔ご本人〕",false],["見本花子","〔利用者1〕",false],["へいの","〔ご本人・姓かな〕",true],["ヘイノ","〔ご本人・姓かな〕",true],["みつこ","〔ご本人・名かな〕",true],["ミツコ","〔ご本人・名かな〕",true],["丙野","〔ご本人・姓〕",true],["三子","〔ご本人・名〕",true]];
+  const nowT = TP.aiMaskTerms([{ masterId: 'A', name: '丙野 三子', kana: 'へいの みつこ' }, { masterId: 'B', name: '見本 花子', kana: 'みほん はなこ' }], 'A');
+  const early = nowT.filter(function (x) { return !x.late; }).map(function (x) { return JSON.stringify([x.term, x.token, x.part]); }).sort();
+  const lateT = nowT.filter(function (x) { return x.late; }).map(function (x) { return x.term + '→' + x.token; }).sort();
+  t('★今までの語の一覧は直す前と1語も違わない（足したのは他の利用者の姓・名だけ）', JSON.stringify(early) === JSON.stringify(MAIN_TERMS.map(function (x) { return JSON.stringify(x); }).sort()) && JSON.stringify(lateT) === JSON.stringify(['花子→〔利用者1・名〕', '見本→〔利用者1・姓〕']), [early.length, lateT]);
+  /* 反証レビュー 2026-11-13 の指摘（直す前の枝 3c4aed2/216d198 で落ちる） */
+  {
+    const RR = [{ masterId: 'S', name: '試験 一郎', kana: '' }, { masterId: 'O1', name: '見本 花子', kana: '' }, { masterId: 'O2', name: '乙 二郎', kana: '' },
+      { masterId: 'O3', name: '見本 きく', kana: 'みほん きく' }, { masterId: 'O4', name: '架空 ハル', kana: '' }, { masterId: 'O5', name: '甲 とめ', kana: '' }, { masterId: 'O6', name: '架空 かな', kana: 'かくう かな' }];
+    const tr = TP.aiMaskTerms(RR, 'S');
+    const MM = (x) => TP.aiMaskDeep({ a: x }, tr, {}).a;
+    const leakCases = ['架山花子さんが面会', '架山 花子さんが面会', '架山花子様', '娘の架山花子さん', '架山二郎さん', '架山乙さん', '架山見本さん', 'カヤマ花子さん'];
+    const leaked = leakCases.filter(function (x) { const m = MM(x); return m.indexOf('架山') >= 0 || m.indexOf('カヤマ') >= 0; });
+    t('★名簿に無い姓が、後に続く名簿の名・姓の記号の前に取り残されない（敬称の前の名前として伏せる）', leaked.length === 0, leaked.map(function (x) { return [x, MM(x)]; }));
+    const plain2 = '声をきくと笑顔。ハルシオン服用。手をとめる。かなり元気';
+    t('★かな・カタカナの名（きく・ハル・とめ・かな）は名だけでは伏せない（一般の語を壊さない）', MM(plain2) === plain2, MM(plain2));
+    const u7 = {};
+    const m7 = TP.aiMaskDeep({ a: 'かくうかなさんと、もぎきく' }, tr, u7).a;
+    t('★先に置いた〔利用者N・かな〕の中の「かな」を食わず、戻すと元の文', m7.indexOf('〔利用者') >= 0 && TP.aiUnmaskDeep({ a: m7 }, tr, u7).a === 'かくうかなさんと、もぎきく', m7);
+  }
 }
 
 console.log('\n【敬称】名簿に無い名前も「〜さん・〜様・〜氏」の前で伏せる（2026-10-08・監査10月版 #12）');
@@ -187,7 +284,8 @@ console.log('\n【敬称・漏れの再現】2026-10-08 審査で漏れた書き
 }
 
 console.log('\n【確認画面・設定】送信の説明と、設定画面の確認・取り消し（2026-10-08・監査10月版 #12）');
-{
+/* 確かめの窓は画面の中の窓（SUDialog.confirm・答えは約束）になった（2026-11-13 第6段 TP-02）。偽物の窓は box.confirm の答えを約束で返す */
+const consentDone = (async () => {
   t('★説明に「〜さん・〜様・〜氏の直前の名前も置き換える」「機械的な目安で取りこぼしがある」がある', /〜さん・〜様・〜氏/.test(raw) && /機械的な目安なので取りこぼしがあります/.test(raw));
   t('★AIへの指示に〔人名1〕も記号として載っている（形を崩さない）', /〔利用者1〕〔人名1〕などは、氏名を伏せた記号。記号は〔 〕も数字もそのままの形で使い/.test(raw));
   t('設定画面に確認の状態と、確認・取り消しのボタンがある', /id="aiConsentState"/.test(raw) && /id="btnAiConsent"/.test(raw) && /id="btnAiConsentRevoke"/.test(raw));
@@ -199,18 +297,21 @@ console.log('\n【確認画面・設定】送信の説明と、設定画面の�
   const el = id => (els[id] = els[id] || { textContent: '', hidden: false });
   const box = { localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } },
     confirm: () => true, $: el, AI_NOTICE_KEY: 'tp_ai_notice_v1' };
+  box.SUDialog = { confirm: (m) => Promise.resolve(box.confirm(m)) };
   vm.createContext(box);
   vm.runInContext([cut('renderAiConsent'), cut('aiConsentRevoke')].join('\n'), box);
   box.renderAiConsent();
   t('確認済みの端末では「取り消す」だけが出る', els.btnAiConsent.hidden === true && els.btnAiConsentRevoke.hidden === false && /確認済み/.test(els.aiConsentState.textContent), els);
-  box.aiConsentRevoke();
+  await box.aiConsentRevoke();
   t('★取り消すと印が消え、次に送る時にもう一度説明が出る状態になる', !('tp_ai_notice_v1' in store) && els.btnAiConsent.hidden === false && /取り消しました/.test(els.aiState.textContent), [store, els.aiState.textContent]);
   box.confirm = () => false; store.tp_ai_notice_v1 = '1';
-  box.aiConsentRevoke();
+  await box.aiConsentRevoke();
   t('取り消しの確認で「キャンセル」なら何も変えない', store.tp_ai_notice_v1 === '1');
   t('★印に保存するのは「確認した」の1だけ（氏名・記録は保存しない）', /localStorage\.setItem\(AI_NOTICE_KEY, '1'\)/.test(raw));
-}
+})().catch((e) => t('【確認画面・設定】の試験が最後まで動く', false, String(e && e.stack)));
 
-console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
-console.log('対象: ' + HTML);
-process.exit(fail ? 1 : 0);
+consentDone.then(() => {
+  console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
+  console.log('対象: ' + HTML);
+  process.exit(fail ? 1 : 0);
+});

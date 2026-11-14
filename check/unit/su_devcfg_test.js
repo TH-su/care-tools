@@ -5,6 +5,7 @@
    3. 同じタブの控え: 同じアカウントなら呼ばずに使う・アカウントが違えば使わない・30分を過ぎたら読み直す
    4. 失敗: 関数が無い・断られた時は何も返さない／通信の失敗は前の値のまま／例外を外に出さない
    5. 画面の静的な確かめ: 各画面の接続先を読む所が先に SUDevCfg を見る・入力欄に配った値を出さない・su-errors.js の直後で読む・connection-settings の配る欄は管理者＋2段階認証だけ
+   6. 過去シフト分析の系統（analyzer）: 事務所の端末は受け取る・現場の端末は受け取らない・接続設定の配る系統と接続の案内にある（代表者の決定 2026-11-14）
    実行: node check/unit/su_devcfg_test.js
    ★出力に console を使わない（個人情報を出力に流さない作法をそろえる）。 */
 'use strict';
@@ -225,6 +226,24 @@ const items = (o) => () => ({ data: { ok: true, role: 'office', items: o, ver: '
   t('接続設定: 送る前に確かめる（統合同期・入居者マスタ・ほか）', /function distVerify_/.test(CON) && /verifySyncPair\(url, token\)/.test(CON) && /verifyMasterUrl\(url\)\.then/.test(CON));
   t('接続設定: 配る欄は innerHTML を使わない', !/innerHTML/.test(CON.slice(CON.indexOf('全端末へ配る（統合 0080'), CON.indexOf('設定の控え（2026-09-27）═'))));
   t('接続設定: 一覧・配る・やめるの口を使う', /device_config_list/.test(CON) && /device_config_set/.test(CON) && /device_config_del/.test(CON));
+
+  group('6. 過去シフト分析の系統（代表者の決定 2026-11-14）');
+  {
+    const x = load({ ls: { [SKEY]: sess('kakuu-sa1') }, answer: items({ analyzer: { url: U1, token: 'kakuu-token-sa' } }) });
+    await x.D.ready(50); await settle();
+    t('事務所の端末は get(analyzer) で配った接続先と合言葉を受け取る', JSON.stringify(x.D.get('analyzer')) === JSON.stringify({ url: U1, token: 'kakuu-token-sa' }));
+    t('過去シフト分析の値も localStorage に書かない', x.cnt.lsSet === 0, x.cnt);
+  }
+  {
+    const x = load({ ls: { [SKEY]: sess('kakuu-sa2'), su_device_role: 'field' }, answer: items({ analyzer: { url: U1, token: 'kakuu-token-sa' } }) });
+    await x.D.ready(50); await settle();
+    t('現場の端末では get(analyzer) は null（現場用の系統だけ）', x.D.get('analyzer') === null);
+    t('現場の端末では過去シフト分析の値を控えにも残さない', !String(x.ss.get('su_devcfg_v1') || '').includes('kakuu-token-sa'));
+  }
+  t('部品の受け取る系統に analyzer がある・現場用の系統には無い', /var KEYS = \[[^\]]*'analyzer'[^\]]*\];/.test(SRC) && !/var FIELD_KEYS = \[[^\]]*'analyzer'/.test(SRC));
+  t('接続設定: 配る系統に過去シフト分析（analyzer・端末の欄 analyzer・戻した時だけ）がある', /\{ key:'analyzer', sys:'analyzer', old:true \}/.test(CON));
+  t('接続設定: 過去シフト分析の端末の欄は shiftanalyzer:v1:cloud の url・token', /\{ id:'analyzer', title:'過去シフト分析',\s*apps:'過去シフト分析', shape:'obj', key:'shiftanalyzer:v1:cloud', urlF:'url', tokenF:'token',/.test(CON));
+  t('接続の案内: 過去シフト分析の端末の控えは配った analyzer を見る', /'shiftanalyzer:v1:cloud': 'analyzer'/.test(read('su-cfg-hint.js')));
 
   finished = true;
   say('\n成功 ' + ok + ' 件／失敗 ' + ng + ' 件');

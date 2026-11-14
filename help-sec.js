@@ -1,5 +1,5 @@
 /* 使い方・困った時（help.html）の「画面ごとの使い方」へ、住所の ?sec=<画面> から飛ぶ部品（2026-11-13 代表者の指示）
- *   help.html?sec=care-schedule のように、決まった4つの値の時だけ、その画面の節までスクロールして見出しに焦点を当てる。
+ *   help.html?sec=care-schedule のように、決まった値（対応表 SEC にある画面）の時だけ、その画面の節までスクロールして見出しに焦点を当てる。
  *   決まっていない値・壊れた値の時は何もしない（値を画面に書かない・記録にも残さない）。
  *   読み込めなくても、使い方の画面はそのまま読める（この部品は見出しへ移すだけ）。
  *   画面の中のスクリプトを増やさないよう、同じサイトの外のファイルにしている（help.html の CSP は script-src 'self' と指紋1つ）。
@@ -10,8 +10,31 @@
   var SEC = {
     'care-schedule': 'h-care-schedule',
     'work-schedule': 'h-work-schedule',
+    'shift-app': 'h-shift-app',
+    'shift-analyzer': 'h-shift-analyzer',
     'resident-master': 'h-resident-master',
-    'weight-record': 'h-weight-record'
+    'weight-record': 'h-weight-record',
+    'facesheet': 'h-facesheet',
+    'genogram': 'h-genogram',
+    'patch-calendar': 'h-patch-calendar',
+    'moushiokuri-viewer': 'h-moushiokuri-viewer',
+    'admission-flow': 'h-admission-flow',
+    'care-meeting': 'h-care-meeting',
+    'supplies': 'h-supplies',
+    'equip-log': 'h-equip-log',
+    'visit-overview': 'h-visit-overview',
+    'support-overview': 'h-support-overview',
+    'overview-compare': 'h-overview-compare',
+    'daycare-roster': 'h-daycare-roster',
+    'training-plan': 'h-training-plan',
+    'staff-master': 'h-staff-master',
+    'ats': 'h-ats',
+    'connection-settings': 'h-connection-settings',
+    'accounts': 'h-accounts',
+    'app-access': 'h-app-access',
+    'menu-settings': 'h-menu-settings',
+    'shadow-check': 'h-shadow-check',
+    'unsent': 'h-unsent'
   };
   function want() {
     var q = String(window.location.search || '');

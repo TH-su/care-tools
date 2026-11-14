@@ -1,11 +1,11 @@
 /* 見出しの下の初回の案内の帯（su-intro.js・2026-11-02 本人の決定「この文言で作る」）の試験。架空の画面だけを使う。
    守りたいこと:
-     A 8画面の文言が本人の決定と一字一句同じ（左右比較は2行だけ）
+     A 画面ごとの文言が本人の決定と一字一句同じ（左右比較は2行だけ・第6段の4画面は仮置きの文とリンク）
      B 見出しの入れ物（body 直下の .hdr）の直後に入れる・×（案内を閉じる）で閉じて印を残す
      C 枠（iframe）の中では出さない・閉じた印がある端末では出さない・知らない画面では何もしない
      D localStorage が投げても例外を外に出さず、帯は出す
      E 印刷で消える CSS がある・CSS を外から読む（<style> を差し込まない）・文字の入れ方・公開のホワイトリスト
-     F 8画面が同じ版の su-intro.js を読み込んでいる
+     F 15画面が同じ版の su-intro.js を読み込んでいる
    実行: node check/unit/su_intro_test.js */
 'use strict';
 const fs = require('fs');
@@ -23,6 +23,7 @@ function t(label, cond, info) { if (cond) { ok++; say('  ✓ ' + label); } else 
 const code = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
 
 const HELP = '困った時：画面の「不具合を報告」ボタンから知らせてください。';
+const HELP6 = '困った時：「使い方」のこの画面の説明（別のタブで開きます）を見るか、画面の「不具合を報告」ボタンから知らせてください。';
 const EXPECT = {
   'daycare-roster': ['この画面でできること：デイの利用日と時間を、帳票（利用表・利用者一覧・全員リスト・薬用・週間名簿）で見て印刷します。', 'はじめに：上のタブで帳票を選び、「印刷」で紙にします。', HELP],
   'facesheet': ['この画面でできること：入居者お一人ずつの基本情報を1枚で見て、印刷します。', 'はじめに：「入居者を検索」に氏名・ふりがな・居室を入れて、一覧から選びます。', HELP],
@@ -35,7 +36,13 @@ const EXPECT = {
   'training-plan': ['この画面でできること：デイ利用者の個別機能訓練計画書を作って直し、3か月ごとの期限を一覧で確かめて印刷します。', 'はじめに：一覧で期限を確かめ、利用者の「開く」で計画書を開きます。紙にする時は下の「印刷」へ。', HELP],
   'supplies': ['はじめに：下の「在庫」の「入出庫を記録する」で品目・入庫か出庫・数量を入れ、「記録する」を押します。', HELP],
   'resident-master': ['この画面でできること：入居者の情報の確かめと直し、帳票（食形態・ケアマネ一覧・居室一覧など）の印刷をします。', 'はじめに：検索欄に氏名・ふりがな・居室を入れて選ぶか、上のタブで帳票を選びます。', HELP],
+  /* 第6段（代表者の決定 2026-11-13・文は仮置き）。「困った時」の行は使い方のその画面の節へのリンクを含む */
+  'care-meeting': ['この画面でできること：サービス担当者会議の要点を入居者お一人ずつ記録して確定し、次の会議の期限を確かめて印刷します。', 'はじめに：「入居者を選ぶ」から入居者を選び、「＋ 新しい記録」で書き始めます。', HELP6],
+  'staff-master': ['この画面でできること：職員の情報・資格・委員会を管理し、一覧とダッシュボードで確かめます。', 'はじめに：上の「一覧」で職員を選んで直し、新しい方は「＋ 新規」で足します。', HELP6],
+  'ats': ['この画面でできること：応募から入職までの選考の進み具合と、面接の予定を管理します。', 'はじめに：「選考」のボードで応募者を確かめ、新しい応募は「＋ 応募者を足す」で足します。', HELP6],
+  'equip-log': ['この画面でできること：設備・備品と、その購入・修理・清掃・点検・交換の記録を残し、次の予定の期限を確かめます。', 'はじめに：「設備」の「＋ 設備を足す」で設備を登録し、修理や点検をしたら「＋ 記録を足す」で残します。', HELP6],
 };
+const LINKED = ['care-meeting', 'staff-master', 'ats', 'equip-log'];
 
 /* 偽物の DOM で su-intro.js を読み込む。CSS の link は読み込み成功（onload）として扱う */
 function load(opt) {
@@ -96,7 +103,7 @@ function load(opt) {
   };
 }
 const tick = () => new Promise((r) => setImmediate(r));
-function texts(band) { return band.children[0].children.map((p) => p.textContent); }
+function texts(band) { return band.children[0].children.map((p) => (p.children.length ? p.children.map((c) => c.textContent).join('') : p.textContent)); }
 function closeBtn(band) { return band.children[1]; }
 
 (async () => {
@@ -110,7 +117,7 @@ function closeBtn(band) { return band.children[1]; }
   { const html = read('supplies.html'); t('消耗品管理は「この画面でできること」の行に印がある', /<p class="purpose noprint" data-su-intro-after>/.test(html)); }
   { const r = load({ path: '/care-tools/resident-master.html', noHdr: true }); await tick();
     t('見出しも印も無い画面には置かない', !r.band() && !r.thrown); }
-  say('— A 11画面の文言が一字一句同じ —');
+  say('— A 15画面の文言が一字一句同じ —');
   for (const id of Object.keys(EXPECT)) {
     const r = load({ path: '/care-tools/' + id + '.html' });
     await tick();
@@ -118,6 +125,20 @@ function closeBtn(band) { return band.children[1]; }
     t(id + ': 帯が出る', !!b);
     if (b) t(id + ': 文言（' + EXPECT[id].length + '行）が一致', JSON.stringify(texts(b)) === JSON.stringify(EXPECT[id]), texts(b));
     t(id + ': 例外を外に出さない', !r.thrown);
+  }
+  say('— A2 第6段の4画面の「困った時」は使い方のその画面の節へのリンク（別のタブ）—');
+  for (const id of LINKED) {
+    const r = load({ path: '/care-tools/' + id + '.html' }); await tick();
+    const b = r.band(); const ln = b && b.children[0].children[2];
+    const a = ln && ln.children.find((c) => c.tag === 'a');
+    t(id + ': リンクは a・行き先 help.html?sec=' + id, !!a && a.href === 'help.html?sec=' + id, a && a.href);
+    t(id + ': 別のタブ（target=_blank・rel=noopener）', !!a && a.target === '_blank' && a.rel === 'noopener');
+    t(id + ': 行き先の節が help-sec.js の表にある', new RegExp("'" + id + "': 'h-").test(read('help-sec.js')));
+  }
+  { const r = load({ path: '/care-tools/facesheet.html' }); await tick();
+    t('今の11画面の行はリンクを持たない（文字だけ）', r.band().children[0].children.every((p) => p.children.length === 0)); }
+  for (const [f, g] of [['care-meeting.html', 'cm-gate'], ['ats.html', 'a-gate'], ['equip-log.html', 'e-gate']]) {
+    t(f + ': 止めの案内を出している間は帯を出さない', new RegExp('body:has\\(#' + g + ':not\\(\\[hidden\\]\\)\\) \\.sui-band\\{display:none\\}').test(read(f)));
   }
   t('左右比較は「この画面でできること」の行が無い', !EXPECT['overview-compare'].some((l) => l.indexOf('この画面でできること') === 0));
 
@@ -127,7 +148,7 @@ function closeBtn(band) { return band.children[1]; }
     await tick();
     const b = r.band();
     t('見出しの入れ物の直後に入る', r.body.children[0] === r.hdr && r.body.children[1] === b);
-    t('CSS の link を su-intro.css?v=2026-11-02 で読む', r.head.children.some((c) => c.rel === 'stylesheet' && c.href === 'su-intro.css?v=2026-11-02'));
+    t('CSS の link を su-intro.css?v=2026-11-13 で読む', r.head.children.some((c) => c.rel === 'stylesheet' && c.href === 'su-intro.css?v=2026-11-13'));
     const x = closeBtn(b);
     t('×は button・aria-label「案内を閉じる」', x.tag === 'button' && x.attrs['aria-label'] === '案内を閉じる' && x.type === 'button');
     t('帯は印刷に出さない印を持たない（data-k が無い）', !('data-k' in b.attrs));
@@ -224,17 +245,18 @@ function closeBtn(band) { return band.children[1]; }
   const xh = /\.sui-x:hover\{background:(#[0-9a-f]{6})\}/.exec(CSS) || [];
   t('帯の文字のコントラスト 7:1 以上', band[1] && ratio(band[1], band[2]) >= 7, band[1] && ratio(band[1], band[2]).toFixed(2));
   t('×の文字のコントラスト 7:1 以上（ふだん・押す前）', xb[1] && ratio(xb[1], xb[2]) >= 7 && xh[1] && ratio(xh[1], xb[2]) >= 7);
+  t('リンクは帯の文字と同じ色（color:inherit）に下線', /\.sui-a\{color:inherit;[^}]*text-decoration:underline/.test(CSS));
 
-  say('— F 11画面が読み込んでいる —');
+  say('— F 15画面が読み込んでいる —');
   for (const id of Object.keys(EXPECT)) {
     const html = read(id + '.html');
     const tags = html.match(/<script src="su-intro\.js\?v=[^"]+"><\/script>/g) || [];
-    t(id + '.html: su-intro.js?v=2026-11-02.3 を1回だけ読む', tags.length === 1 && tags[0] === '<script src="su-intro.js?v=2026-11-02.3"></script>', tags);
-    t(id + '.html: 見出しの入れ物（.hdr）が1つあるか、置き場の印 data-su-intro-after が1つある', (html.match(/<(?:header|div) class="hdr(?: noprint)?">/g) || []).length === 1 || (html.match(/ data-su-intro-after[ >]/g) || []).length === 1);
+    t(id + '.html: su-intro.js?v=2026-11-13 を1回だけ読む', tags.length === 1 && tags[0] === '<script src="su-intro.js?v=2026-11-13"></script>', tags);
+    t(id + '.html: 見出しの入れ物（.hdr）が1つあるか、置き場の印 data-su-intro-after が1つある', (html.match(/<(?:header|div) class="hdr(?: noprint| su-shell-hdr)?">/g) || []).length === 1 || (html.match(/ data-su-intro-after[ >]/g) || []).length === 1);
     t(id + '.html: 置き場の印は多くても1つ', (html.match(/ data-su-intro-after[ >]/g) || []).length <= 1);
   }
   const all = fs.readdirSync(ROOT).filter((f) => f.endsWith('.html') && /su-intro\.js/.test(read(f)));
-  t('su-intro.js を読む画面は11画面だけ', all.length === 11 && all.every((f) => EXPECT[f.replace(/\.html$/, '')]), all);
+  t('su-intro.js を読む画面は15画面だけ', all.length === 15 && all.every((f) => EXPECT[f.replace(/\.html$/, '')]), all);
 
   say('\n' + (ng ? '✗' : '✓') + ' su_intro: 成功 ' + ok + '／失敗 ' + ng);
   process.exit(ng ? 1 : 0);

@@ -150,7 +150,8 @@ function box(fetchImpl, json, withAbort) {
     && /端末への保存に失敗しました。端末に保存できる量がいっぱいの可能性があります。使わなくなった図を削除してから、もう一度保存してください。/.test(sd));
   t('  └ 元の失敗は記録に残す', /window\.SUErrors\.note\('保存・同期の失敗', e, 'genogram:saveLocal'\)/.test(sd));
   /* 「同期失敗（キューに保留）」の文は、テーマ側の試験（genogram_cloud_screen_test）が文字で確かめているため変えない */
-  t('保存・削除の失敗の状態は、職員向けに替えた理由の文を後ろに付ける（e.message の英語を出さない）', /'同期失敗（キューに保留）: ' \+ err\.message/.test(sd) && /'削除の同期失敗（キューに保留）: ' \+ err\.message/.test(cut('deleteCurrentDoc', 'async ')));
+  /* 2026-11-13 第6段 GN-03: 後ろに付ける理由は genoBandWhy_ を通す（英語の例外文が届く道があるため・帯の頭の文は変えない） */
+  t('保存・削除の失敗の状態は、職員向けに替えた理由の文を後ろに付ける（e.message の英語を出さない）', /'同期失敗（キューに保留）: ' \+ genoBandWhy_\(err, '保存'\)/.test(sd) && /'削除の同期失敗（キューに保留）: ' \+ genoBandWhy_\(err, '削除'\)/.test(cut('deleteCurrentDoc', 'async ')));
   /* 知らせを出す呼び出しの文字の中に技術用語が無い（写した受け口のコードは除く） */
   const gasStart = src.indexOf('const GAS_SCRIPT_CODE = `');
   const gasEnd = src.indexOf('\n`;', gasStart);
@@ -158,6 +159,99 @@ function box(fetchImpl, json, withAbort) {
   const calls = app.split('\n').filter(l => /(?:alert|confirm|setSyncStatus|showCfgResult|flashStatus)\(/.test(l) && !/^\s*(?:\/\/|\/\*|\*)/.test(l) && !/function (?:setSyncStatus|showCfgResult|flashStatus)\(/.test(l));
   const bad2 = calls.filter(l => /['`"][^'`"]*(?:GAS|Web ?App|localStorage|スプシ|JSON|HTTP|トークン)[^'`"]*['`"]/.test(l));
   t('★alert・confirm・状態の帯・設定の結果の文に技術用語が無い（' + calls.length + ' か所）', calls.length > 20 && bad2.length === 0, bad2.map(s => s.trim().slice(0, 80)));
+
+  console.log('\n— 8. 管理者向けの準備と接続テストの失敗・断りの文（2026-11-13 第6段 GN-02・GN-03・文は仮置き）—');
+  {
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+    t('★管理者向けの準備（①）と「① は管理者の準備」の一文は、HTML の既定で隠す（確かめが遅れても職員向け）',
+      /<details class="setup-step" id="cfgAdminSetup" open hidden>/.test(src) && /<p class="setup-sub" id="cfgAdminNote" hidden>下の ① は/.test(src));
+    /* 実物の openCloudModal を、管理者か（thumbIsAdmin）の答えを変えて動かす */
+    const runOpen = async (isAdmin) => {
+      const els = { cfgGasUrl: { value: '' }, cfgGasToken: { value: '' }, cloudModal: { hidden: true }, cfgResult: { hidden: false }, cfgAdminSetup: { open: true, hidden: true }, cfgAdminNote: { hidden: true }, btnCopyGas: { hidden: false }, cfgFirstGuide: { hidden: false } };
+      const cs = { getCfg: () => ({}), isConfigured: () => false };
+      if (isAdmin !== undefined) cs.thumbIsAdmin = () => (isAdmin === 'reject' ? Promise.reject(new Error('x')) : Promise.resolve(isAdmin));
+      const box = { $: (id) => els[id], window: {}, CloudSync: cs, Promise };
+      vm.createContext(box); vm.runInContext(cut('openCloudModal'), box); box.openCloudModal();
+      const before = [els.cfgAdminSetup.hidden, els.cfgAdminNote.hidden];
+      await tick(); await tick();
+      return { before, after: [els.cfgAdminSetup.hidden, els.cfgAdminNote.hidden], open: els.cfgAdminSetup.open };
+    };
+    const A = await runOpen(true), N = await runOpen(false), U = await runOpen(undefined), R = await runOpen('reject');
+    t('★管理者と確かめられた時だけ①を出す（確かめる前は隠したまま）', A.before.join() === 'true,true' && A.after.join() === 'false,false' && A.open === true, A);
+    t('★管理者でない・確かめられない・確かめが失敗した時は隠したまま', N.after.join() === 'true,true' && U.after.join() === 'true,true' && R.after.join() === 'true,true', [N, U, R]);
+
+    /* 実物の testCloudConfig を、届かない時（英語の例外文）で動かす */
+    const runTest = async (isAdmin, msg) => {
+      const els = { cfgGasUrl: { value: 'https://script.google.com/macros/s/X/exec' }, cfgGasToken: { value: 'kasou' }, cfgResult: { hidden: true, textContent: '', className: '' } };
+      const cs = { setCfg() {}, ping: () => Promise.reject(new Error(msg)) };
+      if (isAdmin !== undefined) cs.thumbIsAdmin = () => Promise.resolve(isAdmin);
+      const hist = [];
+      const box = { $: (id) => els[id], CloudSync: cs, Promise, hist };
+      vm.createContext(box);
+      vm.runInContext([cut('readCfgFromForm'), cut('showCfgResult'), cut('genoStaffText_'), cut('testCloudConfig', 'async ')].join('\n')
+        + '\nconst showCfgResult0 = showCfgResult; showCfgResult = function (k, m) { hist.push(m); return showCfgResult0(k, m); };', box);   // 出した順を控える
+      await box.testCloudConfig();
+      await tick(); await tick();
+      const shown = hist.filter((m) => m !== '接続テスト中…');
+      return { first: shown[0], last: els.cfgResult.textContent };
+    };
+    const S1 = await runTest(false, 'Failed to fetch');
+    t('★職員には英語の例外文と Apps Script の手順を出さない', S1.last === '✗ つながりませんでした。URL が正しいか確かめてください。' && !/Failed|Apps Script|デプロイ/.test(S1.last), S1);
+    const S2 = await runTest(true, 'Failed to fetch');
+    t('★管理者と確かめられた後は、今までの文（理由と Apps Script の手順）に差し替える', S2.first === S1.last && /^✗ つながりませんでした（Failed to fetch）。URL が正しいか確かめてください。\n→ 管理者の方へ：Apps Script のデプロイの/.test(S2.last), S2);
+    const S3 = await runTest(undefined, '時間内に応答がありませんでした');
+    t('日本語の理由（時間切れなど）は職員にもそのまま添える', S3.last === '✗ つながりませんでした（時間内に応答がありませんでした）。URL が正しいか確かめてください。', S3);
+
+    /* 新しい保存先の断り（refused）の理由の文 */
+    const notes = [];
+    const wb = { window: { SUErrors: { note: (k, e, w) => notes.push(w) } } };
+    vm.createContext(wb); vm.runInContext(cut('genoStaffText_') + '\n' + cut('genoStaffWhy_'), wb);
+    const jp = '図が大きすぎるため保存できません。古い部分を消してから、もう一度保存してください';
+    t('★断りの理由が職員の読める文ならそのまま出す（その場で直せる理由を畳まない）', wb.genoStaffWhy_(new Error(jp), 'x') === jp && notes.length === 0);
+    t('★英語の断りは出さず「管理者に伝えて」の文にし、記録へ残す', wb.genoStaffWhy_(new Error('permission denied for function geno_put'), '保存の断り') === 'クラウドが受け付けませんでした。管理者に伝えてください' && notes.join() === 'genogram:保存の断り', notes);
+    t('★保存の断りの窓と状態の帯は、同じ職員向けの理由を出す（err.message を直接出さない）',
+      /const why = genoStaffWhy_\(err, '保存の断り'\);[^\n]*\n\s*setSyncStatus\('err', 'この端末にだけ保存（クラウド未反映）: ' \+ why\);[\s\S]{0,200}await SUDialog\.alert\('クラウドへは保存されていません。\\n' \+ why \+ '\\n\\nこの内容はこの端末にのみ保存されています。'\);/.test(src));
+    t('画面の中に写した受け口のコード（GAS_SCRIPT_CODE）の中の文は変えない（非公開の正本と同じ）', /Logger\.log\(code === 200 \? '✅ Supabase へつながりました（200）。直した人の確かめが動きます'/.test(src));
+
+    /* 同期の帯に足す理由（2026-11-13 第6段 GN-03 の残り）: 英語の例外文・応答の番号は出さず記録へ。職員がその場で直せる文はそのまま */
+    const bn = [];
+    const bb = { window: { SUErrors: { note: (k, e, w) => bn.push(w) } } };
+    vm.createContext(bb); vm.runInContext(cut('genoStaffText_') + '\n' + cut('genoBandWhy_'), bb);
+    const cst = (name) => { const m = src.match(new RegExp('const ' + name + " = '([^']*)';")); return m ? m[1] : null; };
+    const BAND_FB = 'クラウドとうまくやり取りできませんでした';
+    for (const raw of ['GAS HTTP 500', 'timeout', 'Failed to fetch', 'unknown action: save', 'clientName required', 'permission denied for function geno_put']) {
+      bn.length = 0;
+      const got = bb.genoBandWhy_(new Error(raw), '保存');
+      t('★帯に英語の例外文を出さない（元の文は記録へ）: ' + raw, got === BAND_FB && bn.join() === 'genogram:保存', [got, bn]);
+    }
+    bn.length = 0;
+    const auth = new Error(cst('AUTH_ERR_MSG')); auth.auth = true;
+    t('★合言葉の断り（GENOGRAM_TOKEN の語を含む職員向けの文）はそのまま出す', !!cst('AUTH_ERR_MSG') && bb.genoBandWhy_(auth, '保存') === cst('AUTH_ERR_MSG') && bn.length === 0);
+    const stale = new Error(cst('GENO_STALE_MSG')); stale.stale = true;
+    t('★古い受け口の文はそのまま出す', !!cst('GENO_STALE_MSG') && bb.genoBandWhy_(stale, '保存') === cst('GENO_STALE_MSG'));
+    const to = new Error('クラウドの応答がありません（25秒で打ち切りました）'); to.timeout = true;
+    t('★時間切れの日本語の文はそのまま出す', bb.genoBandWhy_(to, '読込') === 'クラウドの応答がありません（25秒で打ち切りました）');
+    for (const k of ['GENO_NO_CFG_MSG', 'GENO_NET_MSG', 'GENO_SRV_MSG']) {
+      t('★画面の職員向けの文はそのまま出す（「URL」の語は可）: ' + k, !!cst(k) && bb.genoBandWhy_(new Error(cst(k)), '保存') === cst(k), cst(k));
+    }
+    const jpRef = '図が大きすぎるため保存できません。古い部分を消してから、もう一度保存してください';
+    t('★新しい保存先の日本語の断りはそのまま出す', bb.genoBandWhy_(new Error(jpRef), '保留の断り') === jpRef && bn.length === 0, bn);
+    /* 新しい保存先の部品（su-geno.js の MSG）の文と、データベースの断りの文（共通 DB 0054 の職員向けの文の写し）も、英字（例・数字は可）で伏せられずにそのまま出る */
+    const SG = fs.readFileSync(path.join(__dirname, '..', '..', 'su-geno.js'), 'utf8');
+    const mBlk = SG.match(/var MSG = \{([\s\S]*?)\n  \};/);
+    const sgMsgs = mBlk ? [...mBlk[1].matchAll(/^\s*\w+: '([^']*)'/gm)].map((m) => m[1]) : [];
+    t('★su-geno.js の文（10）を読めた', sgMsgs.length === 10, sgMsgs.length);
+    sgMsgs.forEach((m) => t('★新しい保存先の部品の文はそのまま出す: ' + m.slice(0, 16), bb.genoBandWhy_(new Error(m), '保存') === m, m));
+    ['図が大きすぎて保存できません（文字や人が多すぎます）。図を分けるか、管理者へ連絡してください',
+     '家族構成図の枚数が上限（2000枚）に達しています。管理者へ連絡してください',
+     '同じお名前の方が複数いるため、どの方の家族構成図か決められません。入居者マスタからは開かず、家族構成図の画面で、お名前に区別を付けて（例: 名前の後ろに居室）保存してください',
+     '利用者名が長すぎます（200字まで）。この保存は入っていません'
+    ].forEach((m) => t('★データベースの職員向けの断りはそのまま出す: ' + m.slice(0, 16), bb.genoBandWhy_(new Error(m), '保留の断り') === m, m));
+    ['busy', 'clientName required', 'badmode'].forEach((m) => t('★データベースの英字の断りの印は伏せる: ' + m, bb.genoBandWhy_(new Error(m), '保存') === BAND_FB));
+    t('★理由の無い例外でも帯は職員向けの文', bb.genoBandWhy_(null, '読込') === BAND_FB && bb.genoBandWhy_(new Error(''), '読込') === BAND_FB);
+    t('★同期の帯に e.message・err.message を直接足す所が無い', !/setSyncStatus\([^\n]*\b(e|err)\.message/.test(src), (src.match(/setSyncStatus\([^\n]*\b(e|err)\.message[^\n]*/g) || []).slice(0, 3));
+    t('★帯の9か所は genoBandWhy_ を通る（保存3・保留の断り・読込・削除3・手動の同期）', (src.match(/setSyncStatus\('err', [^\n]*genoBandWhy_\(/g) || []).length === 9, (src.match(/setSyncStatus\('err', [^\n]*genoBandWhy_\(/g) || []).length);
+  }
 
   console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
   process.exit(fail ? 1 : 0);

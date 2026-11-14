@@ -25,7 +25,7 @@
     この端末の共通接続先（su_sync_common）から読み、Google へだけ送る（Supabase へは送らない）。
     あわせて、各画面に切り替えの部品が入っているか（Mac 側の公開で消えていないか）も確かめる。
     connect-src に Google（script.google.com と、その転送先 script.googleusercontent.com）を足したのはこのため。
-  ★切り替える前の確かめの表（2026-11-03 代表者の依頼・su-cutover-gate.js）: 5つの「切り替える／本番にする」ボタンの前に、差が0件の連続日数・
+  ★切り替える前の確かめの表（2026-11-03 代表者の依頼・su-cutover-gate.js）: 6つの「切り替える／本番にする」ボタン（排泄ケア記録は 2026-11-13 に足した）の前に、差が0件の連続日数・
     ログインしていない端末の数・毎晩の通し試験の結果・今日の切り替えの4項目を出し、全部そろった時だけ押せる。通し試験の結果は
     公開リポジトリの GitHub から読むだけ（ログインも合言葉も送らない）。connect-src に api.github.com を足したのはこのため。
   ★貼り薬の写し（段階2「送るだけ」・2026-10-17）: サーバーの行数（patch_get）と、この端末の控え（apc2_res）との差を入居者IDだけで出す。
@@ -54,8 +54,8 @@
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 <!-- 見出しの右のログイン中の役割の札の見た目（画面だけ・印刷しない・2026-11-12） -->
-<link rel="stylesheet" href="su-shell.css?v=2026-11-12">
-<link rel="stylesheet" href="su-cutover-gate.css?v=2026-11-03.4">
+<link rel="stylesheet" href="su-shell.css?v=2026-11-13">
+<link rel="stylesheet" href="su-cutover-gate.css?v=2026-11-14">
 </head>
 <body>
 <header class="hdr su-shell-hdr">
@@ -82,6 +82,15 @@
     <p id="msg-near" class="msg" aria-hidden="true"></p>
     <!-- データベースの準備（統合の SQL）が足りない時だけ、管理者に足りない番号を出す（画面だけ・印刷しない・shadow-check.js の renderPrep） -->
     <p id="db-prep" class="msg warn" hidden></p>
+    <!-- 本番の健康（2026-11-14 代表者の依頼・管理者だけ・統合 0088 の save_health）: 切り替え済みの正本ごとの直近24時間の保存の成功・失敗と、
+         Google への写し返しの最後の時刻と遅れ。出すのは種類・数・時刻だけ（判定は su-health-calc.js・画面だけ・印刷しない） -->
+    <section class="cd hl" id="hl-box" hidden>
+      <h2>本番の健康（直近24時間）</h2>
+      <p class="muted">切り替え済みの正本ごとに、新しい保存先への保存の成功・失敗の数と、Google への写し返しを出します。失敗が5件以上か、写し返しが2時間以上遅れている種類は「要確認」になり、管理者のメニューにも札が出ます。</p>
+      <p id="hl-verdict" class="msg" role="status"></p>
+      <div class="hl-wrap" id="hl-table"></div>
+      <div class="acts"><button type="button" class="btn" id="b-hl-reload">本番の健康を読み直す</button></div>
+    </section>
     <section class="cd">
       <h2>入居者マスタの写し</h2>
       <p class="muted" id="cmp-src"></p>
@@ -196,13 +205,14 @@
       <p id="hb-verdict" class="msg"></p>
       <p id="hb-detail" class="msg"></p>
       <p id="hb-mode" class="msg"></p>
+      <div class="gate" id="gate-hb" hidden></div>
       <div class="acts"><button type="button" class="btn" id="b-hb-cut" hidden>排泄ケア記録を新しい保存先へ切り替える</button>
         <button type="button" class="btn" id="b-hb-back" hidden>排泄ケア記録を写しの期間に戻す</button></div>
     </section>
 
     <section class="cd">
       <h2>添付書類の写し（職員マスタ・入居調整）</h2>
-      <p class="muted">職員マスタと入居調整の Google（GAS）が1時間ごとに自動で、Google ドライブの添付書類を Supabase の置き場へ写します（統合 0063・2026-11-03）。まだ写していない書類だけを1回に少しずつ写し、中身の指紋も控えます。件数と最後に写した時刻だけを出し、書類の名前・氏名は出しません。正本は Google ドライブのままです。</p>
+      <p class="muted">職員マスタと入居調整の Google（GAS）が1時間ごとに自動で、Google ドライブの添付書類を Supabase の置き場へ写します（統合 0063・2026-11-03）。まだ写していない書類だけを1回に少しずつ写し、中身の指紋も控えます。件数と最後に写した時刻だけを出し、書類の名前・氏名は出しません。写しの期間の間は、正本は Google ドライブです。切り替えた後の種類は写しを止め、新しい保存先が正本になります（Google ドライブへの写し返しの様子は、上の「本番の健康」の表で確かめます）。</p>
       <div class="kpis" id="doc-kpis"></div>
       <p id="doc-verdict" class="msg"></p>
       <p id="doc-detail" class="msg"></p>
@@ -343,7 +353,7 @@
 
 <script src="su-errors.js?v=2026-11-12"></script>
 <!-- 止めて知らせる窓（confirm）の代わりに画面の中の窓を出す共通部品（2026-11-12 代表者の決定）。画面のスクリプトより前に置く -->
-<script src="su-dialog.js?v=2026-11-13.2"></script>
+<script src="su-dialog.js?v=2026-11-14.2"></script>
 <script src="supabase-js-2.112.4.js"></script>
 <script src="su-auth.js?v=2026-10-28"></script>
 <script src="su-master-shadow.js?v=2026-10-28"></script>
@@ -358,11 +368,12 @@
 <script src="su-sup-full.js?v=2026-11-02.2"></script>
 <script src="su-sa-full.js?v=2026-11-03.2"></script>
 <script src="su-geno-full.js?v=2026-11-03"></script>
+<script src="su-health-calc.js?v=2026-11-14.2"></script>
 <script src="su-hb-full.js?v=2026-11-05"></script>
 <script src="su-doc-full.js?v=2026-11-05.2"></script>
-<script src="su-cutover-gate.js?v=2026-11-07"></script>
-<script src="shadow-check.js?v=2026-11-13.2"></script>
-<script src="su-shell.js?v=2026-11-12.2"></script>
+<script src="su-cutover-gate.js?v=2026-11-13.2"></script>
+<script src="shadow-check.js?v=2026-11-14"></script>
+<script src="su-shell.js?v=2026-11-14"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 </body>
 </html>

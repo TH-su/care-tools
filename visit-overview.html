@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-NU13+Y+Z/bEeKsy9RYzY47lMGiaooj65RnBlTPrKxHw=' 'sha256-fiiCHD0MBlF2wV+NudqERX+mzEI9CHzGp+FncjfxYa4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-8RfBUpA+LvFbNsWGLI1oIvbZXiMQ6dmlyeyoPWuy38U=' 'sha256-fiiCHD0MBlF2wV+NudqERX+mzEI9CHzGp+FncjfxYa4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -189,6 +189,8 @@ body {
 }
 .print-title { display: none; font-size: 13px; font-weight: 700; padding: 2px 4px; }
 @media print { .print-title { display: block; } }
+/* 施設名・印刷日（2026-11-13 代表者の決定）。表題の行の右端に位置を外して重ねる＝表題の高さ・盤面の位置は変えない（紙だけ） */
+@media print { .print-title .su-print-head.ov-fac { top: auto; bottom: 3px; right: 4px; max-width: 40%; font-size: 11px; } }
 
 /* ===== 週間俯瞰リンクキット（切替スイッチ・ズーム・即時ツールチップ）=====
    既存の盤面・印刷・render には非干渉。追加UIはヘッダー内（印刷時 .hdr は非表示）。 */
@@ -229,14 +231,19 @@ body {
 .su-menu-row{display:contents}
 @media screen and (max-width:899px){.su-menu-back{min-height:44px} .su-menu-row{display:block;flex:0 0 100%}}
 @media print{.su-menu-back{display:none !important}}
+/* 見出しの「使い方」（「← メニュー」の右隣・同じ大きさと色・使い方の画面のこの画面の節へ・画面だけ・印刷しない・代表者の決定 2026-11-13） */
+.su-help-link{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+@media screen and (max-width:899px){.su-help-link{min-height:44px}}
+@media print{.su-help-link{display:none !important}}
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
+<link rel="stylesheet" href="su-print.css?v=2026-11-13">   <!-- 紙の見出しの施設名・印刷日（.su-print-head・印刷だけ・2026-11-13） -->
 </head>
 <body>
 
 <header class="hdr">
-  <span class="su-menu-row"><a class="hdr-btn su-menu-back" href="index.html">← メニュー</a></span>
+  <span class="su-menu-row"><a class="hdr-btn su-menu-back" href="index.html">← メニュー</a> <a class="hdr-btn su-help-link" href="help.html?sec=visit-overview">使い方</a></span>
   <span class="hdr-title">訪問 週間俯瞰</span>
   <span class="ovsw" role="group" aria-label="ビュー切替（訪問／全支援）">
     <a class="ovsw-btn is-visit" href="visit-overview.html" aria-current="page">訪問</a>
@@ -269,7 +276,7 @@ body {
   <span class="lg-note">各枠＝氏名＋支援コード／斜線＝入院中（現在空き）／「外部」＝週間計画で外部指定の利用者</span>
 </div>
 
-<div class="print-title" id="printTitle">訪問支援 週間俯瞰（月〜日）</div>
+<div class="print-title su-print-head-host" id="printTitle"><span id="printTitleTx">訪問支援 週間俯瞰（月〜日）</span><span class="su-print-head su-print-head-abs ov-fac" data-su-print-head="name date"></span></div>
 
 <main class="board-wrap" id="boardWrap">
   <div class="board" id="board" role="table" aria-label="訪問支援の週間俯瞰表">
@@ -295,8 +302,10 @@ body {
 <script src="su-kv.js?v=2026-11-08"></script>
 <!-- 入居者マスタの名簿の読み取り（getRoster）の入口。スイッチが入っている時だけ写しから読む（切の間は今までどおり Google・段階1・2026-10-22） -->
 <script src="su-roster.js?v=2026-10-28"></script>
-<script src="su-res-read.js?v=2026-11-11"></script>
+<script src="su-res-read.js?v=2026-11-14"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
+<script src="su-facility.js?v=2026-11-14.2"></script>   <!-- 紙の見出しの施設名（2026-11-13） -->
+<script src="su-print.js?v=2026-11-13"></script>   <!-- 紙の見出しの施設名・印刷日と、印刷の前に施設情報を待つ門だけに使う（2026-11-13） -->
 <script>
 'use strict';
 
@@ -789,7 +798,7 @@ function render(db) {
   /* 現場の端末では姓だけ（同じ姓は名の頭で見分ける）。この画面に出る全員で同じ表記にする */
   const ovLabel = ovNameLabeler_(visits.map(v => v.name), ovCutsFrom_(db && db.residents));
   const viewLabel = VIEW === 'ext' ? '外部利用者' : '施設利用者';
-  $('printTitle').textContent = '訪問支援 週間俯瞰（' + viewLabel + '・月〜日）';
+  $('printTitleTx').textContent = '訪問支援 週間俯瞰（' + viewLabel + '・月〜日）';
   const empty = $('boardEmpty');
   if (!visits.length) {
     $('bHeads').textContent = '';
@@ -901,7 +910,11 @@ function render(db) {
 // 盤面は grid の 1fr 列が @page の用紙幅へ自動リフローし、時間軸は固定px高（時間数×54px）で
 // A3縦の高さ(≈1527px@96dpi)に収まる。JS変形は使わない（画面幅を測って scale すると印刷リフローと
 // 二重になり誤縮小するため）。列数=7固定なので純CSSで1ページ収まりが保証される。
-function printNow() { window.print(); }
+/* 紙の見出しに施設名を刷るので、施設情報を最大3秒待ち、読めなければ刷らない（su-print.js の facGate・2026-11-13）。部品が無い時は今までどおり */
+function printNow() {
+  if (window.SUPrint && SUPrint.facGate) SUPrint.facGate(function () { window.print(); }, function (msg) { toast(msg, true); });
+  else window.print();
+}
 
 // ── UI ──
 let toastTimer = null;
@@ -1214,7 +1227,7 @@ init();
 })();
 </script>
 <!-- 見出しの下の初回の案内の帯（2026-11-02 本人の決定）。×で閉じた端末では出さない。画面の動き・保存・印刷には触れない -->
-<script src="su-intro.js?v=2026-11-02.3"></script>
+<script src="su-intro.js?v=2026-11-13"></script>
 <!-- インターネットにつながっていない時の帯（2026-11-12 商用化の見直し・画面だけ・通信と保存には触れない） -->
 <script src="su-net.js?v=2026-11-12.2"></script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->

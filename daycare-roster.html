@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-font">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-/sBda7wAdkj6PY/YtZVO5HJTf6wi/tRpWsSf6y3YxUo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-AKp97MmtMCCtjDvmZTf69mo2egoSiHpDDbwAlP4o5/Q='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -94,6 +94,9 @@ body {
 .scr { display: none; }
 .scr.on { display: block; }
 .sheet-title { font-size: 1rem; font-weight: 700; margin-bottom: 8px; text-align: center; }
+/* 事業所名（2026-11-13 代表者の決定）。一覧表・全員リスト・薬用の表題の行の右に位置を外して重ねる＝表題の高さ・表の位置は変えない。
+   印刷日は凡例の右端に既にあるので事業所名だけ。利用登録表は表題に事業所名が入っているので足さない（紙だけ・文は su-print.js が入れる） */
+@media print { .sheet-title .su-print-head.dc-fac { top: auto; bottom: 2px; max-width: 30%; } }
 table.roster {
   border-collapse: collapse; background: #fff; margin: 0 auto; box-shadow: var(--sh);
   table-layout: fixed;
@@ -487,6 +490,9 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
   body:not(.su-printing) table.roster .col-rn { font-size: var(--ro-fs); }
   body:not(.su-printing) table.roster .hosp-tag { font-size: var(--ro-fs); }
   body:not(.su-printing) table.sheet { --sh-fs: 0.8125rem; --sh-tm: 0.8125rem; }
+  /* 営業7日の時は時刻の欄が 39px に狭まる（dcrSheetW_）。13px の太字「13:00」の末尾が欠けないよう、字の大きさ（13px）は変えずに
+     左右の余白を外し字の間を少し詰める（K5）。紙は sheetFsMax_ で字を下げる */
+  body:not(.su-printing) table.sheet.d7 .c-tm { padding-left: 0; padding-right: 0; letter-spacing: -0.02em; }
   body:not(.su-printing) table.sheet .c-nm .hosp-tag { font-size: var(--sh-fs); }
   body:not(.su-printing) .legend { font-size: 0.8125rem; }
   body:not(.su-printing) .legend .hosp-tag,
@@ -516,7 +522,8 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
   .print-date { display: inline-block; margin-left: auto;
     font-size: 9px; line-height: 1.2; color: #000; white-space: nowrap; }
   body.pr-batch .pg-date { display: block; text-align: end; font-size: 9px; line-height: 1.2;
-    color: #000; padding: 0 2mm 1mm 0; }
+    color: #000; padding: 0 2mm 1mm 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }   /* 事業所名を足しても1行のまま（2026-11-13） */
   .hide-print-note { display: inline; color: #000; font-weight: 700; }   /* 非表示適用中のみ帳票へ小さく明示（.noprint の打消しは既存規則を使う） */
   .wrap { overflow: visible; padding: 0; }
   /* 印刷の列幅はA4縦の印刷可能幅(≈733px@96dpi)を使い切る値を JS が算出して渡す
@@ -598,19 +605,23 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
 .su-menu-row{display:contents}
 @media screen and (max-width:899px){.su-menu-back{min-height:44px} .su-menu-row{display:block;flex:0 0 100%}}
 @media print{.su-menu-back{display:none !important}}
+/* 見出しの「使い方」（「← メニュー」の右隣・同じ大きさと色・使い方の画面のこの画面の節へ・画面だけ・印刷しない・代表者の決定 2026-11-13） */
+.su-help-link{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+@media screen and (max-width:899px){.su-help-link{min-height:44px}}
+@media print{.su-help-link{display:none !important}}
 </style>
 <!-- 印刷共通モジュール（用紙・余白・収め方の設定画面と、1枚に収める採寸）。
      ★link で読む＝JS が document.styleSheets からこのファイルの @media print も読めるようにする。
      ★?v= は必須（HTMLの no-store はサブリソースに効かないため、付けないと
        「新しいHTML × 古いCSS/JS」の組合せが現場端末に残る）。 -->
-<link rel="stylesheet" href="su-print.css?v=2026-09-12">
+<link rel="stylesheet" href="su-print.css?v=2026-11-13">
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 </head>
 <body>
 
 <header class="hdr">
-  <span class="su-menu-row"><a class="hdr-btn su-menu-back" href="index.html">← メニュー</a></span>
+  <span class="su-menu-row"><a class="hdr-btn su-menu-back" href="index.html">← メニュー</a> <a class="hdr-btn su-help-link" href="help.html?sec=daycare-roster">使い方</a></span>
   <span class="hdr-title" id="dcrHdrTitle">通所</span>
   <span class="hdr-sub" id="hdrSub">読込中…</span>
   <span class="hdr-sp"></span>
@@ -647,19 +658,19 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
   </section>
 
   <section id="sc-daylist" class="scr" role="tabpanel">
-    <div class="sheet-title" id="dlTitle">デイ利用者一覧表</div>
+    <div class="sheet-title su-print-head-host" id="dlTitle"><span id="dlTitleTx">デイ利用者一覧表</span><span class="su-print-head su-print-head-abs dc-fac" data-su-print-head="name" data-su-print-kind="通所"></span></div>
     <table class="sheet" id="tblDaylist" aria-label="デイ利用者一覧表"></table>
     <div class="visit-note" id="visitNoteDaylist"><span class="star">☆</span>印の方は２週間に一度の訪問診療がありますので、２階ホールに居ていただいてください。</div>
     <aside class="note-below" id="noteDaylist" aria-label="備考"></aside>
   </section>
 
   <section id="sc-allweek" class="scr" role="tabpanel">
-    <div class="sheet-title">デイサービス利用一覧表（全員リスト）</div>
+    <div class="sheet-title su-print-head-host">デイサービス利用一覧表（全員リスト）<span class="su-print-head su-print-head-abs dc-fac" data-su-print-head="name" data-su-print-kind="通所"></span></div>
     <table class="sheet" id="tblAllweek" aria-label="全員リスト"></table>
   </section>
 
   <section id="sc-med" class="scr" role="tabpanel">
-    <div class="sheet-title" id="medTitle">デイ利用者一覧表（薬用）</div>
+    <div class="sheet-title su-print-head-host" id="medTitle"><span id="medTitleTx">デイ利用者一覧表（薬用）</span><span class="su-print-head su-print-head-abs dc-fac" data-su-print-head="name" data-su-print-kind="通所"></span></div>
     <div class="sheet-row">
       <table class="sheet" id="tblMed" aria-label="薬用一覧表"></table>
       <!-- 備考は【画面のみ】。noprint＝紙には出さない（2026-08-20 運用指示）。表の列幅は紙の幅を使い切ったまま -->
@@ -735,11 +746,11 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
 <script src="su-kv.js?v=2026-11-08"></script>
 <!-- 入居者マスタの名簿の読み取り（getRoster）の入口。スイッチ（master_roster_read と master_care_read）が入っている時だけ、訪問日・かかりつけ病院も含めて写しから読む（切の間は今までどおり Google・段2b・2026-10-24） -->
 <script src="su-roster.js?v=2026-10-28"></script>
-<script src="su-res-read.js?v=2026-11-11"></script>
-<script src="su-facility.js?v=2026-11-07"></script>
+<script src="su-res-read.js?v=2026-11-14"></script>
+<script src="su-facility.js?v=2026-11-14.2"></script>
 <script src="su-data.js?v=2026-11-08.2"></script>
 <script src="su-data-gas.js?v=2026-10-29"></script>
-<script src="su-print.js?v=2026-09-12"></script>
+<script src="su-print.js?v=2026-11-13"></script>
 
 <script>
 'use strict';
@@ -762,9 +773,31 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
 
 const LS_KEY  = 'care_schedule_v2';
 const DAYS_JA = ['月', '火', '水', '木', '金', '土', '日'];
-/* 曜日の列の数（月〜土の6日）。施設の値ではなく帳票の形＝A3/A4 に収める幅（W）・6枚の一括印刷・凡例の文言が6日で組んである
-   （2026-10-08・監査10月版 #10 で検討。5日・7日にするなら表の組み直しが要るので、施設情報へは移さない） */
+/* 曜日の列の数の基準（月〜土の6日）。帳票の形＝帳票の幅（W・TBL_W）はこの6日で組んである。
+   列にする曜日そのものは下の dcrDays_（施設情報の営業曜日）で決める（2026-11-14 第6段 K5。2026-10-08 の「施設情報へは移さない」は代表者の決定 2026-11-13 で改めた） */
 const NDAY    = 6;
+/* ── 曜日の列（2026-11-14 第6段 K5・代表者の決定 2026-11-13）──
+   列にする曜日は、施設情報の通所の事業所の営業曜日（offices の通所の days・SUFacility.section('daycareDays')）から作る。
+   ★days は「月」〜「日」の1文字の並び。1つでも崩れていれば（文字でない・知らない曜日・同じ曜日が2つ・空）全部を既定にする。
+     既定（書いていない・読めない時）は月〜土＝今の6列。番号は週間計画の dayOfWeek と同じ（0=月 … 5=土・6=日）。
+   ★6日の時は今と同じ表（列幅・6枚の一括印刷・凡例の文）。5日以下は列が減るだけ（表の幅が狭くなる）。
+     7日は A3縦・A4横の幅に入れるため曜日ごとの列幅を縮める（dcrSheetW_）。
+   ★営業曜日でない曜日の予定は、一覧表・全員リスト・薬用・週間名簿には出さない（今の日曜と同じ扱い）。利用表タブは予定のある曜日の列を足して出す（黙って落とさない）。 */
+const DCR_DAYS_DEFAULT = [0, 1, 2, 3, 4, 5];
+function dcrDays_() {
+  let v = null;
+  try { v = (window.SUFacility && typeof SUFacility.section === 'function') ? SUFacility.section('daycareDays') : null; } catch (e) { v = null; /* 捨ててよい: 読めない時は既定の曜日 */ }
+  if (!Array.isArray(v) || !v.length || v.length > 7) return DCR_DAYS_DEFAULT.slice();
+  const out = [];
+  for (let i = 0; i < v.length; i++) {
+    const d = (typeof v[i] === 'string') ? DAYS_JA.indexOf(v[i].trim()) : -1;
+    if (d < 0 || out.indexOf(d) >= 0) return DCR_DAYS_DEFAULT.slice();
+    out.push(d);
+  }
+  return out.sort((a, b) => a - b);
+}
+/* 最後の曜日（その列の右に太線 dend を引く） */
+function dcrLastDay_(days) { return days[days.length - 1]; }
 
 const $ = id => document.getElementById(id);
 
@@ -1293,12 +1326,12 @@ function dcrRefreshStarsIfStale_(tries) {
   }
   return dcrFetchMasterHosp(true).then(ok => { if (ok && typeof DB !== 'undefined' && DB) renderAll(DB); return ok; });
 }
-/* {{階順}}＝居室の階の並び（「２階→１階」。名前は施設情報の floors から・dcrFloorLabel_・2026-11-02 便8）。使う所でだけ呼ぶ（関数で置き換える） */
+/* {{曜日数}}＝列にする曜日の数（営業曜日・既定6・K5）。{{階順}}＝居室の階の並び（「２階→１階」。3階以上がある施設は「３階→２階→１階」の形・K5。名前は施設情報の floors から・dcrFloorLabel_・2026-11-02 便8）。使う所でだけ呼ぶ（関数で置き換える） */
 /* {{居室の1階:既定}}＝居室の１階の名前（施設情報の floors・dcrFloorNames_ の規則＝1〜4字・両方そろう時だけ・便8・代表者の決定 2026-11-02）。
    名前が既定（FLOOR_LABEL の「１階」）のままの時は「:」の後ろの既定（今の文字・半角の「1階」）を出す＝見本・既定の施設では一字一句今のまま。昼食場所の呼び名（daycareNotes）では替えない。 */
 /* {{昼食場所:既定}}・{{デイの場所:既定}}＝昼食場所・デイの場所の呼び名（施設情報の daycareNotes から・dcrNotesWord_・2026-11-02 便10）。
    ★最後に置き換える＝差し込んだ呼び名の中の {{…}} をもう一度置き換えない。塊が無い・崩れている時は「:」の後ろの既定（今の文字）をそのまま出す */
-function dcrFill(t) { const n = dcrOfficeName(); return String(t).replace(/\{\{通所名\}\}/g, n || 'デイ').replace(/\{\{訪問診療\}\}/g, dcrClinicLabel_()).replace(/\{\{階順\}\}/g, () => dcrFloorLabel_(2) + '→' + dcrFloorLabel_(1)).replace(/\{\{(昼食場所|デイの場所):([^{}]*)\}\}/g, (a, k, d) => dcrNotesWord_(k, d)).replace(/\{\{居室の1階:([^{}]*)\}\}/g, (a, d) => { const f1 = dcrFloorNames_()[1]; return f1 === FLOOR_LABEL[1] ? d : f1; }); }
+function dcrFill(t) { const n = dcrOfficeName(); return String(t).replace(/\{\{通所名\}\}/g, n || 'デイ').replace(/\{\{訪問診療\}\}/g, dcrClinicLabel_()).replace(/\{\{階順\}\}/g, () => dcrFloorNos_().map(dcrFloorLabel_).join('→')).replace(/\{\{曜日数\}\}/g, () => String(dcrDays_().length)).replace(/\{\{(昼食場所|デイの場所):([^{}]*)\}\}/g, (a, k, d) => dcrNotesWord_(k, d)).replace(/\{\{居室の1階:([^{}]*)\}\}/g, (a, d) => { const f1 = dcrFloorNames_()[1]; return f1 === FLOOR_LABEL[1] ? d : f1; }); }
 /* ── 昼食場所・デイの場所の呼び名（2026-11-02 品質改善 第3期 便10・代表者の決定 2026-11-02「全て進めて」）──
    この画面の「２階」には2つの意味がある。居室の階（階の見出し・施設情報の floors・便8）と、
    『その日デイに行かない方が昼食を摂る場所』（デイ休み（２階で昼食）・２階合計・週間名簿の右列の見出し・訪問診療の案内の２階ホール・備考の「それ以外は2階へ」・凡例）。
@@ -1618,14 +1651,15 @@ function buildModel(db) {
   const people = [];
   dupCount = 0;
   floorSrcCount = { room: 0, plan: 0, none: 0 };
+  const DD = dcrDays_();
   for (const r of residents) {
     if (!r || r.movedOut) continue;
-    const days = [null, null, null, null, null, null];
+    const days = (DD.indexOf(6) >= 0) ? [null, null, null, null, null, null, null] : [null, null, null, null, null, null];   // 日曜を営業する施設だけ7つ（K5）
     let hasDc = false;
     for (const ev of (Array.isArray(r.events) ? r.events : [])) {
       if (!ev || ev.serviceType !== 'daycare') continue;
       const dow = Number(ev.dayOfWeek);
-      if (!(dow >= 0 && dow < NDAY)) continue;
+      if (DD.indexOf(dow) < 0) continue;   // 営業曜日（既定は月〜土）だけ拾う（K5）
       const s = toMin(ev.startTime), e = toMin(ev.endTime);
       if (s == null || e == null || e <= s) continue;
       // 同一曜日に複数の通所予定がある場合、本モデルは1枠しか持てないため後勝ちで落ちる。
@@ -1638,7 +1672,7 @@ function buildModel(db) {
     // 階の決定: ①居室(room)由来＝入居者マスタが正 → ②週間計画の floor（旧経路・手書きマスタ由来）
     //           → ③0=階未設定（既存どおり⚠で可視化）。①が取れる人だけ②を上書きするので、
     //           居室未登録者の現行表示は一切変わらない（デグレ無しのフォールバック）。
-    const fRoom = roomToFloor(r.room);
+    const fRoom = dcrFloorKey_(roomToFloor(r.room));   // 区画を作らない階は居室からは決めない（K5）
     const fPlan = (r.floor === 1 || r.floor === 2) ? r.floor : 0;
     const floor = fRoom || fPlan;
     floorSrcCount[fRoom ? 'room' : (fPlan ? 'plan' : 'none')]++;
@@ -1784,7 +1818,7 @@ const FLOOR_LABEL = { 2: '２階', 1: '１階', 0: '階未設定' };     // 既�
 /* ── 階の見出し（2026-11-02 品質改善 第3期 便8）──
    １階・２階の見出しは施設情報（facility-profile.json の floors・su-facility.js）の名前から作る。
    ★使うのは floors に no 1 と no 2 の両方が1つずつあり、どちらの名前も1〜4字の文字列（改行などの制御文字なし・2つが別の名前）の時だけ。
-     1つでも外れれば、両方とも既定（FLOOR_LABEL）にする。並び（FLOOR_ORDER＝２階が上）と「階未設定」は施設情報で変えない。
+     1つでも外れれば、両方とも既定（FLOOR_LABEL）にする。並び（上の階が上）と「階未設定」は施設情報で変えない。3階以上は下の dcrFloorExtra_（K5）。
    ★施設情報が無い時の既定は １階・２階＝今の文字と同じ。名前は el（textContent）で入れる＝innerHTML に入れない。 */
 const DCR_FLOOR_NAME_MAX = 4;   // 縦書きの狭い欄（区画 24px・利用表の階 28px）に「名前＋入居者」が入る長さ（「東棟２階」程度）
 function dcrFloorNames_() {
@@ -1806,14 +1840,49 @@ function dcrFloorNames_() {
   if (!got[1] || !got[2] || got[1] === got[2]) return dflt;
   return { 2: got[2], 1: got[1], 0: FLOOR_LABEL[0] };
 }
+/* ── 3階以上の階（2026-11-14 第6段 K5・代表者の決定 2026-11-13）──
+   施設情報の floors に no 3〜9 の階があれば、その階の区画も作る（上の階から順に並べる＝今の「２階が上」と同じ向き）。
+   ★使うのは １階・２階 の名前が上の決まりで使える時（dcrFloorNames_ が既定に戻らない時）で、3階以上の名前もすべて同じ決まり
+     （1〜4字・制御文字なし・空白だけでない・ほかの階と別の名前・同じ階が2つない）を満たす時だけ。1つでも外れれば今の２階・１階だけ。
+   ★施設情報が無い・見本（１階・２階）の時は [2, 1]＝今と同じ。区画に入らない階の方は「階未設定」に出す（黙って落とさない）。 */
+function dcrFloorExtra_() {
+  const base = dcrFloorNames_();
+  let fs = null;
+  try { fs = (window.SUFacility && typeof SUFacility.floors === 'function') ? SUFacility.floors() : null; } catch (e) { fs = null; /* 捨ててよい: 読めない時は既定 */ }
+  if (!Array.isArray(fs)) return {};
+  /* １階・２階が1つずつあり、その名前を dcrFloorNames_ が使った時だけ（既定に戻った時は3階以上も作らない） */
+  const f1 = fs.filter(f => f && f.no === 1), f2 = fs.filter(f => f && f.no === 2);
+  if (f1.length !== 1 || f2.length !== 1 || f1[0].label !== base[1] || f2[0].label !== base[2]) return {};
+  const got = {}, used = [base[1], base[2]];
+  for (let i = 0; i < fs.length; i++) {
+    const f = fs[i];
+    if (!f || typeof f !== 'object' || typeof f.no !== 'number' || !(f.no >= 3 && f.no <= 9) || Math.floor(f.no) !== f.no) continue;
+    if (Object.prototype.hasOwnProperty.call(got, f.no)) return {};
+    const n = f.label;
+    if (typeof n !== 'string') return {};
+    const len = [...n].length;
+    if (len < 1 || len > DCR_FLOOR_NAME_MAX || /[\u0000-\u001f\u007f]/.test(n) || !n.trim() || used.indexOf(n) >= 0) return {};
+    got[f.no] = n; used.push(n);
+  }
+  return got;
+}
+/* 区画を作る階の番号（上の階から）。既定は [2, 1] */
+function dcrFloorNos_() {
+  const ex = Object.keys(dcrFloorExtra_()).map(Number).sort((a, b) => b - a);
+  return ex.concat([2, 1]);
+}
+/* 区画の並び（上の階 → … → １階 → 階未設定）。既定は FLOOR_ORDER と同じ [2, 1, 0] */
+function dcrFloorOrder_() { return dcrFloorNos_().concat([0]); }
+/* 区画を作らない階（施設情報に無い・名前が使えない3階以上）は 0＝階未設定にする */
+function dcrFloorKey_(f) { return (f && dcrFloorNos_().indexOf(f) >= 0) ? f : 0; }
 /* 階の見出し（利用表の階の欄）。0 は「階未設定」 */
-function dcrFloorLabel_(f) { const m = dcrFloorNames_(); return Object.prototype.hasOwnProperty.call(m, f) ? m[f] : FLOOR_LABEL[0]; }
+function dcrFloorLabel_(f) { const m = dcrFloorNames_(); if (Object.prototype.hasOwnProperty.call(m, f)) return m[f]; const ex = dcrFloorExtra_(); return Object.prototype.hasOwnProperty.call(ex, f) ? ex[f] : FLOOR_LABEL[0]; }
 /* 区画の見出し（一覧表・全員リスト・薬用・昼食薬チェック）。２階なら「（２階の名前）入居者」・0 は「階未設定」 */
-function dcrFloorSecLabel_(f) { return (f === 1 || f === 2) ? dcrFloorLabel_(f) + '入居者' : FLOOR_LABEL[0]; }
+function dcrFloorSecLabel_(f) { return (f && dcrFloorNos_().indexOf(f) >= 0) ? dcrFloorLabel_(f) + '入居者' : FLOOR_LABEL[0]; }
 /* 描いた時に使った階の名前（null＝まだ描いていない）。施設情報が後から届いて名前が変わった時だけ描き直す（dcrRefreshFloorsIfStale_） */
 var dcrFloorSigUsed = null;
 /* 昼食場所・デイの場所の呼び名（dcrDaycareNotes_・便10）も同じ控えに入れる＝どちらが後から届いて変わっても1回だけ描き直す */
-function dcrFloorSig_() { return JSON.stringify([dcrFloorNames_(), dcrDaycareNotes_()]); }
+function dcrFloorSig_() { return JSON.stringify([dcrFloorNames_(), dcrDaycareNotes_(), dcrFloorExtra_(), dcrDays_()]); }   /* 3階以上の階と曜日の列も同じ控えに入れる（K5） */
 function dcrRefreshFloorsIfStale_() {
   if (dcrFloorSigUsed == null || dcrFloorSig_() === dcrFloorSigUsed) return false;
   if (typeof DB === 'undefined' || !DB) return false;
@@ -1828,13 +1897,13 @@ function collectDaycare(db) {
   const hosp = new Set();
   const bath = [0, 0, 0, 0, 0, 0, 0];
   const use  = [0, 0, 0, 0, 0, 0, 0];
-  let maxDay = 5;                            // 既定 月〜土（土=5）。日にデータがあれば7列へ拡張
+  const colSet = dcrDays_();                 // 列にする曜日（既定 月〜土）。営業曜日でない曜日も予定があれば列を足す（K5）
   const residents = (db && Array.isArray(db.residents)) ? db.residents : [];
   for (const r of residents) {
     if (!r || r.movedOut) continue;
     const evs = Array.isArray(r.events) ? r.events : [];
     // 階: ①居室(入居者マスタ由来) → ②週間計画の旧設定 → ③0=未設定（buildModel と同じ判定）
-    const floor = roomToFloor(r.room) || ((r.floor === 1 || r.floor === 2) ? r.floor : 0);
+    const floor = dcrFloorKey_(roomToFloor(r.room)) || ((r.floor === 1 || r.floor === 2) ? r.floor : 0);
     const kana  = String(r.kana || '');
     for (const ev of evs) {
       if (!ev || ev.serviceType !== 'daycare') continue;
@@ -1854,13 +1923,13 @@ function collectDaycare(db) {
         use[dow]++;
         if (ev.bathing) bath[dow]++;
       }
-      if (dow > maxDay) maxDay = dow;
+      if (colSet.indexOf(dow) < 0) colSet.push(dow);
     }
   }
   // 時間帯ごとに階ブロックへ組み直す。該当者0名の階はブロックを作らない（空行を出さない）。
   const plans = Object.values(plansMap).sort((a, b) => a.s - b.s || a.e - b.e).map(p => {
     const blocks = [];
-    FLOOR_ORDER.forEach(f => {
+    dcrFloorOrder_().forEach(f => {
       const days = p.floors[f];
       if (!days) return;
       let rows = 0;
@@ -1869,7 +1938,8 @@ function collectDaycare(db) {
     });
     return { label: p.label, s: p.s, e: p.e, blocks: blocks };
   });
-  return { plans: plans, hosp: [...hosp], bath: bath, use: use, nCols: maxDay + 1 };
+  const cols = colSet.sort((a, b) => a - b);
+  return { plans: plans, hosp: [...hosp], bath: bath, use: use, nCols: cols.length, cols: cols };
 }
 
 /* 印刷の列幅を用紙幅いっぱいに配分する（2026-08-17 運用指示「左右の余白を余らせない」）。
@@ -1930,7 +2000,8 @@ function renderRoster(db) {
   htr.appendChild(el('th', 'col-time', '利用時間'));
   htr.appendChild(el('th', 'col-flr', '階'));
   htr.appendChild(el('th', 'col-rn', ''));
-  for (let d = 0; d < nCols; d++) {
+  const cols = data.cols;
+  for (const d of cols) {
     htr.appendChild(el('th', 'th-day col-day' + (d === 5 ? ' sat' : d === 6 ? ' sun' : ''), DAYS_JA[d]));
   }
   thead.appendChild(htr);
@@ -1952,12 +2023,12 @@ function renderRoster(db) {
           tr.appendChild(lbl);
         }
         if (i === 0) {
-          const fl = el('th', 'col-flr f' + blk.floor, dcrFloorLabel_(blk.floor));
+          const fl = el('th', 'col-flr f' + (blk.floor > 2 ? 2 : blk.floor), dcrFloorLabel_(blk.floor));   // 3階以上は２階と同じ地の色（K5）
           fl.rowSpan = blk.rows;
           tr.appendChild(fl);
         }
         tr.appendChild(el('td', 'col-rn', String(i + 1)));   // 連番は階ごとに1から（他タブと同じ作法）
-        for (let d = 0; d < nCols; d++) {
+        for (const d of cols) {
           const u = blk.days[d][i];
           if (u) {
             const td = el('td', 'user' + (u.bath ? ' bath' : ''));
@@ -1988,11 +2059,11 @@ function renderRoster(db) {
   const tfoot = el('tfoot');
   const bathTr = el('tr', 'tot bath-row');
   const bth = el('th', null, '入浴合計'); bth.colSpan = 3; bathTr.appendChild(bth);   // 利用時間+階+No.
-  for (let d = 0; d < nCols; d++) bathTr.appendChild(el('td', null, String(data.bath[d])));
+  for (const d of cols) bathTr.appendChild(el('td', null, String(data.bath[d])));
   tfoot.appendChild(bathTr);
   const useTr = el('tr', 'tot use');
   const uth = el('th', null, '利用合計'); uth.colSpan = 3; useTr.appendChild(uth);
-  for (let d = 0; d < nCols; d++) useTr.appendChild(el('td', null, String(data.use[d])));
+  for (const d of cols) useTr.appendChild(el('td', null, String(data.use[d])));
   tfoot.appendChild(useTr);
   table.appendChild(tfoot);
 
@@ -2024,6 +2095,22 @@ const TBL_W = {
   daylist: W.sec + W.rnDl + NDAY * (W.nmDl + W.tmDl * 2), // 1058 デイ利用者一覧表：24+26+6×(76+46+46)（≦A3縦 1062）
   allweek: W.rnAw + NDAY * (W.nmAw + W.tmAw * 2)          // 1052 全員リスト：44+6×(76+46+46)（≦A3縦 1062）
 };
+/* ── 帳票の曜日の列（2026-11-14 第6段 K5）──
+   DCR_COLS＝いま組んでいる帳票の曜日の並び（setupSheet・週間名簿の組み立てで dcrDays_() から取り直す）。
+   ★6日以下は曜日ごとの列幅を今のまま（氏名76・時刻46）にし、表の幅は曜日の数だけ（6日なら TBL_W と同じ値）。
+   ★7日は 6日の表の幅（1062px 以内）に収めるため、曜日ごとの幅を 144px（氏名66・時刻39×2）に縮める。
+     時刻の欄が狭くなる分、拡大の上限も同じ割合で下げる（sheetFsMax_）。 */
+let DCR_COLS = DCR_DAYS_DEFAULT.slice();
+const DCR_W7 = { nm: 66, tm: 39 };
+function dcrSheetW_(kind, n) {
+  const k = (n == null) ? DCR_COLS.length : n;
+  if (k === NDAY) return TBL_W[kind] || TBL_W.day;
+  const fixed = kind === 'allweek' ? W.rnAw : W.sec + (kind === 'daylist' ? W.rnDl : W.rn);
+  if (k > NDAY) return fixed + k * (DCR_W7.nm + DCR_W7.tm * 2);
+  const nm = kind === 'allweek' ? W.nmAw : kind === 'daylist' ? W.nmDl : W.nm;
+  const tm = kind === 'allweek' ? W.tmAw : kind === 'daylist' ? W.tmDl : W.tm;
+  return fixed + k * (nm + tm * 2);
+}
 function colgroupFor(kind) {
   const cg = el('colgroup');
   let nmCol, tmCol = 'w-tm';
@@ -2035,16 +2122,19 @@ function colgroupFor(kind) {
     if (kind === 'daylist') { nmCol = 'w-nm-dl'; tmCol = 'w-tm-dl'; }
     else { nmCol = 'w-nm'; }
   }
-  for (let d = 0; d < NDAY; d++) {
-    cg.appendChild(el('col', nmCol));
-    cg.appendChild(el('col', tmCol));
-    cg.appendChild(el('col', tmCol));
+  const narrow = DCR_COLS.length > NDAY;   // 7日の時だけ曜日の列幅を縮める（6日以下は CSS の幅のまま）
+  for (let i = 0; i < DCR_COLS.length; i++) {
+    const cn = el('col', nmCol), c1 = el('col', tmCol), c2 = el('col', tmCol);
+    if (narrow) { cn.style.width = DCR_W7.nm + 'px'; c1.style.width = DCR_W7.tm + 'px'; c2.style.width = DCR_W7.tm + 'px'; }
+    cg.appendChild(cn); cg.appendChild(c1); cg.appendChild(c2);
   }
   return cg;
 }
 function setupSheet(table, kind) {
+  DCR_COLS = dcrDays_();   // 曜日の列は描くたびに施設情報から取り直す（K5）
+  table.classList.toggle('d7', DCR_COLS.length > NDAY);   // 7日の時だけ画面の時刻の字を抑える（上の CSS）
   table.textContent = '';
-  table.style.width = (TBL_W[kind] || TBL_W.day) + 'px';   // ★明示幅（fixed成立の条件）
+  table.style.width = dcrSheetW_(kind) + 'px';   // ★明示幅（fixed成立の条件）。6日なら TBL_W[kind] と同じ値
   table.appendChild(colgroupFor(kind));
 }
 
@@ -2055,18 +2145,19 @@ function dayHeaderRows(rehead) {
   const tr = el('tr', cls);
   tr.appendChild(el('th', 'c-sec', ''));
   tr.appendChild(el('th', 'c-rn', ''));
-  for (let d = 0; d < NDAY; d++) {
-    const th = el('th', 'th-day dsep' + (d === 5 ? ' sat' : '') + (d === NDAY - 1 ? ' dend' : ''), DAYS_JA[d]);
+  const dl = dcrLastDay_(DCR_COLS);
+  for (const d of DCR_COLS) {
+    const th = el('th', 'th-day dsep' + (d === 5 ? ' sat' : '') + (d === dl ? ' dend' : ''), DAYS_JA[d]);
     th.colSpan = 3;
     tr.appendChild(th);
   }
   const tr2 = el('tr', cls);
   tr2.appendChild(el('th', 'c-sec', ''));
   tr2.appendChild(el('th', 'c-rn', ''));
-  for (let d = 0; d < NDAY; d++) {
+  for (const d of DCR_COLS) {
     tr2.appendChild(el('th', 'c-nm dsep', ''));
     tr2.appendChild(el('th', 'c-tm', '開始'));
-    tr2.appendChild(el('th', 'c-tm' + (d === NDAY - 1 ? ' dend' : ''), '終了'));
+    tr2.appendChild(el('th', 'c-tm' + (d === dl ? ' dend' : ''), '終了'));
   }
   return [tr, tr2];
 }
@@ -2078,7 +2169,7 @@ function dayHeader() {
 // デイ区画の1セル（氏名＋開始＋終了）。入浴は黄、入院は（入院）。
 // dsep=曜日の先頭列に左太線／dend=最終曜日の末尾列に右太線＝曜日ごとに縦の太罫線で囲む。
 function deiCells(tr, p, d, showBath) {
-  const endCls = (d === NDAY - 1) ? ' dend' : '';
+  const endCls = (d === dcrLastDay_(DCR_COLS)) ? ' dend' : '';
   if (!p) { tr.appendChild(el('td', 'c-nm dsep')); tr.appendChild(el('td', 'c-tm')); tr.appendChild(el('td', 'c-tm' + endCls)); return; }
   const s = p.days[d];
   const td = el('td', 'c-nm dsep nm' + (showBath && s && s.bath ? ' bath' : '') + (p.floor === 0 ? ' nofloor' : ''));
@@ -2116,7 +2207,8 @@ const DAYLIST_NOTES = [
 function sectionRows(tbody, ppl, label, isDei, showBath, showStar, floorKey) {
   // 曜日ごとに人が違うため、区画の行数＝各曜日の最大人数（元表は固定枠だが実データに追従させる）
   let n = 0;
-  for (let d = 0; d < NDAY; d++) n = Math.max(n, (isDei ? onDay(ppl, d) : offDay(ppl, d)).length);
+  const dl = dcrLastDay_(DCR_COLS);
+  for (const d of DCR_COLS) n = Math.max(n, (isDei ? onDay(ppl, d) : offDay(ppl, d)).length);
   if (!n) n = 1;
   // ラベル色: 1階＝薄い水色(flr1)／2階・階未設定＝緑(sese)。階ごとに別色で区切りを明確化。
   const labelColor = (floorKey === 1) ? 'flr1' : 'sese';
@@ -2125,7 +2217,7 @@ function sectionRows(tbody, ppl, label, isDei, showBath, showStar, floorKey) {
     // ラベルは rowSpan で区画の左列全体を占有＝左/上/下の外周罫線をここに集約
     if (i === 0) { const th = el('th', 'c-sec ' + labelColor + ' blk-left blk-top blk-bot', label); th.rowSpan = n; tr.appendChild(th); }
     tr.appendChild(el('td', 'c-rn', String(i + 1)));
-    for (let d = 0; d < NDAY; d++) {
+    for (const d of DCR_COLS) {
       const list = isDei ? onDay(ppl, d) : offDay(ppl, d);
       const p = list[i];
       if (isDei) { deiCells(tr, p, d, showBath); }
@@ -2141,7 +2233,7 @@ function sectionRows(tbody, ppl, label, isDei, showBath, showStar, floorKey) {
         // ☆＝その曜日に訪問診療の医療機関の往診がある方（2026-09-30 運用指示・班分けはしない）。名前は施設情報から（2026-10-14）
         if (p && showStar && p.visitingMed === DAYS_JA[d]) { st.appendChild(el('span', 'star', '☆')); st.title = dcrClinicLabel_() + ' 訪問診療'; }
         tr.appendChild(st);
-        tr.appendChild(el('td', 'c-tm' + (d === NDAY - 1 ? ' dend' : '')));
+        tr.appendChild(el('td', 'c-tm' + (d === dl ? ' dend' : '')));
       }
     }
     // 塊を太罫線で囲む: 1行目=上辺／最終行=下辺／各行の最終セル=右辺（ラベルが左辺を担当）
@@ -2158,9 +2250,10 @@ function sumRow(tbody, label, counts) {
   const tr = el('tr', 'sum');
   tr.appendChild(el('th', 'c-sec', ''));
   tr.appendChild(el('td', 'c-rn', ''));
-  for (let d = 0; d < NDAY; d++) {
+  const dl = dcrLastDay_(DCR_COLS);
+  for (const d of DCR_COLS) {
     tr.appendChild(el('td', 'c-nm dsep', label));  // ラベル/値の列配置は氏名列基準に統一（元表は区画で不統一）
-    const v = el('td', 'c-tm' + (d === NDAY - 1 ? ' dend' : ''), String(counts[d])); v.colSpan = 2;
+    const v = el('td', 'c-tm' + (d === dl ? ' dend' : ''), String(counts[d])); v.colSpan = 2;
     tr.appendChild(v);
   }
   tbody.appendChild(tr);
@@ -2202,36 +2295,40 @@ function frameDaylist_(table) {
 
 function renderDaylist(ppl) {
   const table = $('tblDaylist');
-  $('dlTitle').textContent = 'デイ利用者一覧表（全利用者 ' + ppl.length + ' 名）';
+  $('dlTitleTx').textContent = 'デイ利用者一覧表（全利用者 ' + ppl.length + ' 名）';
   setupSheet(table, 'daylist');
   table.appendChild(dayHeader());
   const tbody = el('tbody');
 
   const f2 = ppl.filter(p => p.floor === 2), f1 = ppl.filter(p => p.floor === 1), f0 = ppl.filter(p => p.floor === 0);
+  /* 3階以上（施設情報に階がある時だけ・上の階から）は ２階 の上に置く（K5）。既定は空＝今と同じ */
+  const fUp = dcrFloorNos_().filter(f => f > 2).map(f => [f, ppl.filter(p => p.floor === f)]);
   // ── デイ利用者（通所） ──
+  fUp.forEach(([f, list]) => sectionRows(tbody, list, dcrFloorSecLabel_(f), true, true, false, f));
   sectionRows(tbody, f2, dcrFloorSecLabel_(2), true, true, false, 2);
   sectionRows(tbody, f1, dcrFloorSecLabel_(1), true, true, false, 1);
   if (f0.length) sectionRows(tbody, f0, '階未設定', true, true, false, 0);
   // 合計は countOn/countOff＝入院者を除いた実稼働（厨房の食数に直結するため過大計上しない）
-  const sese = []; for (let d = 0; d < NDAY; d++) sese.push(countOn(ppl, d));
+  const sese = []; for (const d of DCR_COLS) sese[d] = countOn(ppl, d);   // 曜日の番号で引く（K5）
   const seseSum = sumRow(tbody, dcrName('合計'), sese);
   seseSum.classList.add('cut-above');   // ここで表を切る＝上側の締め（太線）
   /* ★2026-08-05 運用指示: 通所合計より下を切り離し、2行ぶんの空間と大見出しを置く。
      1つの table のままにするのは、列幅（table-layout:fixed + colgroup）を上下で揃えるため。
      表を2つに割ると列がずれる。 */
   const gap = el('tr', 'cut-gap');
-  const gapTd = el('td', null, ''); gapTd.colSpan = 2 + NDAY * 3; gap.appendChild(gapTd);
+  const gapTd = el('td', null, ''); gapTd.colSpan = 2 + DCR_COLS.length * 3; gap.appendChild(gapTd);
   tbody.appendChild(gap);
   const ttl = el('tr', 'cut-title');
-  const ttlTh = el('th', null, dcrFill('デイ休み（{{昼食場所:２階}}で昼食）')); ttlTh.colSpan = 2 + NDAY * 3; ttl.appendChild(ttlTh);   // 昼食場所の呼び名は施設情報から（便10）
+  const ttlTh = el('th', null, dcrFill('デイ休み（{{昼食場所:２階}}で昼食）')); ttlTh.colSpan = 2 + DCR_COLS.length * 3; ttl.appendChild(ttlTh);   // 昼食場所の呼び名は施設情報から（便10）
   tbody.appendChild(ttl);
   // 中盤（昼食区画の直前）に曜日見出しを再掲＝長い表でも下段でどの曜日の列か追える（2026-08-03 運用指示）
   dayHeaderRows(true).forEach(r => tbody.appendChild(r));
   // ── 昼食（2階食堂）＝その日デイに行かない人 ──
+  fUp.forEach(([f, list]) => sectionRows(tbody, list, dcrFloorSecLabel_(f), false, false, true, f));
   sectionRows(tbody, f2, dcrFloorSecLabel_(2), false, false, true, 2);
   sectionRows(tbody, f1, dcrFloorSecLabel_(1), false, false, true, 1);
   if (f0.length) sectionRows(tbody, f0, '階未設定', false, false, true, 0);
-  const lunch = []; for (let d = 0; d < NDAY; d++) lunch.push(countOff(ppl, d));
+  const lunch = []; for (const d of DCR_COLS) lunch[d] = countOff(ppl, d);
   sumRow(tbody, dcrFill('{{昼食場所:２階}}合計'), lunch);   // 昼食場所の合計（居室の階ではない・便10）
   sumRow(tbody, '昼食合計', sese.map((v, i) => v + lunch[i]));
   table.appendChild(tbody);
@@ -2240,7 +2337,7 @@ function renderDaylist(ppl) {
 
   // 訪問診療の案内（備考の上）。幅は表と同じにして中央で揃える。
   const vn = $('visitNoteDaylist');
-  if (vn) vn.style.width = TBL_W.daylist + 'px';
+  if (vn) vn.style.width = dcrSheetW_('daylist') + 'px';
   /* ２階ホールの「２階」は昼食場所の呼び名（便10）。文は HTML に書いたまま。呼び名が既定と違う時だけ、☆の後ろの文字を入れ替える（既定の時は触らない） */
   const vt = vn && vn.lastChild;
   if (vt && vt.nodeType === 3) { const want = dcrFill(DCR_VISIT_NOTE); if (vt.nodeValue !== want) vt.nodeValue = want; }
@@ -2248,7 +2345,7 @@ function renderDaylist(ppl) {
   // 備考（表の下・横並びでコンパクトに＝横幅を表に使い切る）。幅は表と同じにして中央で揃える。
   const note = $('noteDaylist');
   note.textContent = '';
-  note.style.width = TBL_W.daylist + 'px';
+  note.style.width = dcrSheetW_('daylist') + 'px';
   note.appendChild(el('span', 'nb-h', '備考'));
   DAYLIST_NOTES.forEach(t => note.appendChild(el('span', 'nb-item', dcrFill(t))));
 }
@@ -2263,9 +2360,10 @@ function renderDaylist(ppl) {
 function allweekHeaderRow(rehead) {
   const tr = el('tr', rehead ? 'rehead' : null);
   tr.appendChild(el('th', 'c-rn', 'No.'));
-  for (let d = 0; d < NDAY; d++) {
+  const dl = dcrLastDay_(DCR_COLS);
+  for (const d of DCR_COLS) {
     tr.appendChild(el('th', 'c-nm dsep', '氏名'));
-    const th = el('th', 'th-day' + (d === 5 ? ' sat' : '') + (d === NDAY - 1 ? ' dend' : ''), DAYS_JA[d]); th.colSpan = 2;
+    const th = el('th', 'th-day' + (d === 5 ? ' sat' : '') + (d === dl ? ' dend' : ''), DAYS_JA[d]); th.colSpan = 2;
     tr.appendChild(th);
   }
   return tr;
@@ -2278,8 +2376,7 @@ function renderAllweek(ppl) {
   table.appendChild(thead);
 
   const tbody = el('tbody');
-  const blocks = [{ floor: 2, label: dcrFloorSecLabel_(2), list: ppl.filter(p => p.floor === 2) },
-                  { floor: 1, label: dcrFloorSecLabel_(1), list: ppl.filter(p => p.floor === 1) }];
+  const blocks = dcrFloorNos_().map(f => ({ floor: f, label: dcrFloorSecLabel_(f), list: ppl.filter(p => p.floor === f) }));   // 上の階から（既定は ２階・１階・K5）
   const f0 = ppl.filter(p => p.floor === 0);
   if (f0.length) blocks.push({ label: '階未設定', list: f0 });
   let dataRowsBefore = 0;   // ここまでに描いたデータ行数（空ブロックの見出し行は数えない）
@@ -2287,10 +2384,10 @@ function renderAllweek(ppl) {
     // 「１階入居者」ブロックの上に曜日見出しを再掲＝長い表でも下段でどの曜日の列か追える（2026-08-03 運用指示）。
     // ★上にデータ行が1行も無い時（２階が0名等）は出さない。空ブロックでも見出し行は描かれるため、
     //   行数ではなくデータ行数で判定しないと、上端で曜日行が近接して二重に見える。
-    if (b.floor === 1 && dataRowsBefore > 0) tbody.appendChild(allweekHeaderRow(true));   // 名前は施設情報で変わるので階の番号で見る
+    if (b.floor && b !== blocks[0] && dataRowsBefore > 0) tbody.appendChild(allweekHeaderRow(true));   // 名前は施設情報で変わるので階の番号で見る（2階建てなら１階の区画の上だけ・3階以上の時は2つ目の階から各階の上・K5）
     // 各階ブロックを太枠で囲む: 見出し(全幅)=上辺＋左右上隅／各データ行=左右辺／最終行=下辺
     const hr = el('tr');
-    const h = el('th', 'sec-h blk-top blk-left blk-right', b.label); h.colSpan = 1 + NDAY * 3;   // No.列(1) ＋ 曜日×3
+    const h = el('th', 'sec-h blk-top blk-left blk-right', b.label); h.colSpan = 1 + DCR_COLS.length * 3;   // No.列(1) ＋ 曜日×3
     if (!b.list.length) h.classList.add('blk-bot');   // 空ブロックは見出しだけで箱を閉じる
     hr.appendChild(h);
     tbody.appendChild(hr);
@@ -2298,7 +2395,7 @@ function renderAllweek(ppl) {
     b.list.forEach((p, i) => {
       const r = el('tr');
       r.appendChild(el('td', 'c-rn', String(i + 1)));
-      for (let d = 0; d < NDAY; d++) deiCells(r, p, d, true);
+      for (const d of DCR_COLS) deiCells(r, p, d, true);
       const cells = r.children;
       cells[0].classList.add('blk-left');                 // 左辺（c-rn）
       cells[cells.length - 1].classList.add('blk-right');  // 右辺（最終セル）
@@ -2312,9 +2409,10 @@ function renderAllweek(ppl) {
   const tfoot = el('tfoot');
   const sr = el('tr', 'sum');
   sr.appendChild(el('td', 'c-rn c-sum-lb', '入居者'));   // 旧ふりがな列に置いていた行ラベルを No.列へ移設
-  for (let d = 0; d < NDAY; d++) {
+  const dl2 = dcrLastDay_(DCR_COLS);
+  for (const d of DCR_COLS) {
     sr.appendChild(el('td', 'c-nm dsep', String(ppl.length) + '名'));
-    const v = el('td', 'c-tm' + (d === NDAY - 1 ? ' dend' : ''), String(countOn(ppl, d))); v.colSpan = 2;   // 入院者を除いた実稼働
+    const v = el('td', 'c-tm' + (d === dl2 ? ' dend' : ''), String(countOn(ppl, d))); v.colSpan = 2;   // 入院者を除いた実稼働
     sr.appendChild(v);
   }
   tfoot.appendChild(sr);
@@ -2334,12 +2432,14 @@ const MED_NOTES = ['☆昼食後の薬', '・{{通所名}}利用者分は{{デ�
 
 function renderMed(ppl) {
   const table = $('tblMed');
-  $('medTitle').textContent = 'デイ利用者一覧表（薬用・全利用者 ' + ppl.length + ' 名）';
+  $('medTitleTx').textContent = 'デイ利用者一覧表（薬用・全利用者 ' + ppl.length + ' 名）';
   setupSheet(table, 'day');
   table.appendChild(dayHeader());
   const tbody = el('tbody');
 
   const f2 = ppl.filter(p => p.floor === 2), f1 = ppl.filter(p => p.floor === 1), f0 = ppl.filter(p => p.floor === 0);
+  const fUp = dcrFloorNos_().filter(f => f > 2).map(f => [f, ppl.filter(p => p.floor === f)]);   // 3階以上（上の階から・既定は空・K5）
+  fUp.forEach(([f, list]) => sectionRows(tbody, list, dcrFloorSecLabel_(f), true, false, false, f));
   sectionRows(tbody, f2, dcrFloorSecLabel_(2), true, false, false, 2);   // showBath=false（元表は塗りゼロ）
   sectionRows(tbody, f1, dcrFloorSecLabel_(1), true, false, false, 1);
   if (f0.length) sectionRows(tbody, f0, '階未設定', true, false, false, 0);
@@ -2376,6 +2476,7 @@ function renderMed(ppl) {
       chk.appendChild(lb);
     });
   };
+  fUp.forEach(([f, list]) => addGroup(list, dcrFloorSecLabel_(f)));
   addGroup(f2, dcrFloorSecLabel_(2));
   addGroup(f1, dcrFloorSecLabel_(1));
   if (f0.length) addGroup(f0, '階未設定');
@@ -2422,7 +2523,8 @@ function renderMed(ppl) {
 /* 週間名簿の階ラベル。他タブの FLOOR_LABEL（２階／１階／階未設定）と別に持つのは、
    氏名の左に置く枠が狭く、全角4文字の「階未設定」を読める大きさで入れられないため。
    2026-08-27 運用指示で「2F」表記を採用（右列の見出し「２階」＝2階食堂で昼食、と読み違えないように）。 */
-const WK_FLR_LABEL = { 2: '2F', 1: '1F', 0: '未' };
+const WK_FLR_LABEL = { 2: '2F', 1: '1F', 0: '未' };   // 3階以上は「3F」の形（wkFlrLabel_・K5）
+function wkFlrLabel_(f) { return Object.prototype.hasOwnProperty.call(WK_FLR_LABEL, f) ? WK_FLR_LABEL[f] : f + 'F'; }
 
 /* 氏名リストを居室の階ごとに ２階 → １階 → 階未設定（FLOOR_ORDER）の順へ組み直す。
    五十音順は buildModel が整列済み＝filter で保たれる（renderDaylist / renderAllweek と同じ作法）。
@@ -2430,8 +2532,9 @@ const WK_FLR_LABEL = { 2: '2F', 1: '1F', 0: '未' };
    階未設定の方は末尾ブロックに残す＝黙って落とさない（凡例の「⚠ 階未設定」と同じ方針）。 */
 function weeklyByFloor(list) {
   const out = [];
-  FLOOR_ORDER.forEach(f => {
-    const g = list.filter(p => ((p.floor === 1 || p.floor === 2) ? p.floor : 0) === f);
+  const nos = dcrFloorNos_();
+  dcrFloorOrder_().forEach(f => {
+    const g = list.filter(p => (nos.indexOf(p.floor) >= 0 ? p.floor : 0) === f);
     g.forEach((p, i) => out.push({ p: p, flr: (i === 0) ? f : null }));
   });
   return out;
@@ -2480,7 +2583,7 @@ function weeklyTable(ppl, d, lunchLabel) {
     const td = el('td', 'wk-nm');
     const box = el('span', 'wk-nmin');
     if (it) {
-      const fl = el('span', 'wk-flr', it.flr == null ? '' : WK_FLR_LABEL[it.flr]);
+      const fl = el('span', 'wk-flr', it.flr == null ? '' : wkFlrLabel_(it.flr));
       if (it.flr === 0) fl.title = '階未設定（居室が未登録）';
       box.appendChild(fl);
       const tx = el('span', 'wk-nmtx');
@@ -2515,7 +2618,8 @@ function weeklyTable(ppl, d, lunchLabel) {
 function renderWeekly(ppl) {
   const host = $('weeklyPages');
   host.textContent = '';
-  for (let d = 0; d < NDAY; d++) {
+  DCR_COLS = dcrDays_();   // 営業曜日の分だけ（既定は月〜土の6枚・K5）
+  for (const d of DCR_COLS) {
     const pg = el('div', 'wk-page');
     pg.appendChild(weeklyTable(ppl, d, dcrFill('{{昼食場所:２階}}')));
     host.appendChild(pg);
@@ -2542,7 +2646,8 @@ const PRINT_VIEWS = {
      印字可能幅は A3縦・A4横とも 1062px で同じ＝列幅の設計（時刻列の拡幅）はそのまま活きる。 */
   'sc-allweek': { label: '全員リスト',       paper: 'A4 landscape', margin: 8 },
   'sc-med':     { label: '薬用',             paper: 'A4 landscape', margin: 8 },
-  'sc-weekly':  { label: '週間名簿（6枚）',  paper: 'A4 portrait',  margin: '15 5 0 5' }
+  /* 枚数は営業曜日の数（既定6＝「週間名簿（6枚）」のまま・K5）。印刷の設定の窓の名前（dcrLiveWeeklyLabel_）と印刷ボタンの読み上げは、どちらも開くたびの値 */
+  'sc-weekly':  { get label() { return '週間名簿（' + dcrDays_().length + '枚）'; },  paper: 'A4 portrait',  margin: '15 5 0 5' }
 };
 /* ============================================================================
    印刷フィット（帳票3タブ）— 用紙1枚に収まる最大の文字サイズへ自動調整する。
@@ -2564,7 +2669,11 @@ const SHEET_FS_MIN  = 7;                        // 帳票の可読性の下限�
      末尾が欠け、長らく対象外にしていた。2026-08-17 に右の備考パネルを削除して時刻列を46pxへ広げた
      ＝daylist と同条件になったので解禁した。 */
 const SHEET_FS_MAX_BY_TAB = { 'sc-daylist': 15, 'sc-allweek': 15, 'sc-med': 15 };
-function sheetFsMax_(sc) { return SHEET_FS_MAX_BY_TAB[sc] || SHEET_FS_BASE; }
+function sheetFsMax_(sc) {
+  const m = SHEET_FS_MAX_BY_TAB[sc] || SHEET_FS_BASE;
+  /* 7日の時は時刻の欄が 46px → 39px に狭まるので、上限も同じ割合で下げる（既定の大きさより下げない・K5） */
+  return (DCR_COLS.length > NDAY && SHEET_FS_MAX_BY_TAB[sc]) ? Math.max(SHEET_FS_BASE, Math.floor(m * DCR_W7.tm / W.tm)) : m;
+}
 
 /* 氏名が2行に折り返さない最大の文字サイズ（2026-08-05 運用指示）。
  * 氏名列の幅は固定なので、上限は【いちばん長い氏名】だけで決まる。表示中の実データから測る＝
@@ -2722,6 +2831,12 @@ function printDateText_() {
   const d = new Date(), p2 = v => (v < 10 ? '0' + v : String(v));
   return '印刷日：' + d.getFullYear() + '/' + p2(d.getMonth() + 1) + '/' + p2(d.getDate());
 }
+/* 週間名簿の各ページの先頭の行：事業所名（施設情報から・読めなければ出さない）と印刷日を1行に（2026-11-13 代表者の決定） */
+function pgDateText_() {
+  let n = '';
+  try { n = (window.SUPrint && SUPrint.headText) ? SUPrint.headText('name', '通所') : ''; } catch (e) { n = ''; }
+  return (n ? n + '　' : '') + printDateText_();
+}
 /* 凡例の右端に印刷日を置く（無ければ作る）。renderLegend の最後と、印刷の直前の両方から呼ぶ。
    ★印刷経路は印刷ボタン（設定画面）と beforeprint（Cmd/Ctrl+P・PDF出力）の2つ。どちらも
      su-print の before フック（printBefore_）からここを通る。 */
@@ -2758,11 +2873,12 @@ function buildWeeklyBatch_() {
   const host = $('printBatch');
   host.textContent = '';
   const ppl = MODEL || [];
-  for (let d = 0; d < NDAY; d++) {
+  DCR_COLS = dcrDays_();   // 営業曜日の分だけ（既定は月〜土の6枚・K5）
+  for (const d of DCR_COLS) {
     const pg = el('div', 'pg');
-    pg.appendChild(el('div', 'pg-date', printDateText_()));   // 一括6枚は凡例が出ないので各ページ先頭へ
+    pg.appendChild(el('div', 'pg-date', pgDateText_()));      // 一括6枚は凡例が出ないので各ページ先頭へ（事業所名を同じ行の左に・2026-11-13）
     pg.appendChild(weeklyTable(ppl, d, dcrFill('{{昼食場所:２階}}')));
-    host.appendChild(pg);         // ★ちょうど6要素（末尾の空白ページ防止）
+    host.appendChild(pg);         // ★ちょうど曜日の数の要素（既定6・末尾の空白ページ防止）
   }
   document.body.classList.add('pr-batch');
 }
@@ -2777,6 +2893,12 @@ function printShrinkToast_(base) {
   return function (px) {
     if (px < base) toast('1枚に収めるため文字を ' + px.toFixed(1) + 'px に縮小しました（利用者が多いため）');
   };
+}
+/* 週間名簿の印刷の名前（「週間名簿（N枚）」）を、印刷の設定の窓を開くたびに営業曜日の数から読む（K5）。
+   su-print は登録した設定をそのまま持つので、名前を読み出しの関数にしておけば、施設情報が後から届いても古い枚数のまま残らない */
+function dcrLiveWeeklyLabel_(spec) {
+  try { Object.defineProperty(spec, 'label', { get: function () { return '週間名簿（' + dcrDays_().length + '枚）'; }, enumerable: true, configurable: true }); } catch (e) { /* 捨ててよい: 名前が登録した時の値のままになるだけ */ }
+  return spec;
 }
 function definePrintViews_() {
   if (!window.SUPrint) {
@@ -2815,7 +2937,7 @@ function definePrintViews_() {
     onShrink: printShrinkToast_(ROSTER_FS_BASE)
   }));
   // 週間名簿: 文字サイズは @media print 内で固定（26pt/28pt）＝収め方の対象外。6枚を組んで刷る
-  SUPrint.define('sc-weekly', Object.assign({}, PRINT_VIEWS['sc-weekly'], {
+  SUPrint.define('sc-weekly', dcrLiveWeeklyLabel_(Object.assign({}, PRINT_VIEWS['sc-weekly'], {
     root: 'body', stamp: false, fit: { mode: 'none' },
     before: printBefore_('sc-weekly'), after: clearWeeklyBatch_,
     /* 見込み枚数は「1日ぶん(.pg)が何枚に流れるか」の合計で数える。
@@ -2849,7 +2971,7 @@ function definePrintViews_() {
       }
       return total;
     }
-  }));
+  })));
   SUPrint.setActive(activeTab());
 }
 
@@ -2867,7 +2989,7 @@ const LEGENDS = {
      2026-08-17 に紙面の上部を空けるため消したが、画面には残す方針に決まった。
      紙には出ないので、印刷の表の大きさは 2026-08-17 の状態のまま変わらない。 */
   'sc-med':     [['tn', '右のチェック＝昼食薬あり。全端末に保存・同期され、枠が薄オレンジ（色は印刷にも出ます／チェック欄自体は印刷されません）']],
-  'sc-weekly':  [['t', '{{昼食場所:２階}}＝その日デイに行かない方（{{昼食場所:2階}}食堂で昼食）／☆＝同姓の方がいます（右上「同姓の目印」で設定）。印刷は6曜日を一括で6枚出します']]
+  'sc-weekly':  [['t', '{{昼食場所:２階}}＝その日デイに行かない方（{{昼食場所:2階}}食堂で昼食）／☆＝同姓の方がいます（右上「同姓の目印」で設定）。印刷は{{曜日数}}曜日を一括で{{曜日数}}枚出します']]   // 曜日の数は営業曜日から（既定6＝今の文・K5）
 };
 function activeTab() {
   const b = document.querySelector('.tnav button[aria-selected="true"]');
@@ -3024,7 +3146,7 @@ function renderAll(db) {
   safe(() => renderAllweek(MODEL), '全員リスト');
   safe(() => renderMed(MODEL), '薬用');
   safe(() => renderWeekly(MODEL), '週間名簿');
-  const dei = []; for (let d = 0; d < NDAY; d++) dei.push(countOn(MODEL, d));
+  const dei = []; for (const d of dcrDays_()) dei.push(countOn(MODEL, d));
   MODEL_SUB = 'デイ母集団 ' + MODEL.length + '名／デイ ' + dei.join('・');
   goto(activeTab());   // 凡例・指標を現在のタブに合わせて反映
 }
@@ -3285,7 +3407,7 @@ function init() {
 init();
 </script>
 <!-- 見出しの下の初回の案内の帯（2026-11-02 本人の決定）。×で閉じた端末では出さない。画面の動き・保存・印刷には触れない -->
-<script src="su-intro.js?v=2026-11-02.3"></script>
+<script src="su-intro.js?v=2026-11-13"></script>
 <!-- インターネットにつながっていない時の帯（2026-11-12 商用化の見直し・画面だけ・通信と保存には触れない） -->
 <script src="su-net.js?v=2026-11-12.2"></script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->

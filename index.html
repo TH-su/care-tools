@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-uWlDbrlbsQEsRphKlIDa93pfwOlPyVl4g0xM9/1/Ga8=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-AyAJCjB19DloRAPrv2a5oCJuKwNyEDNLqpkZskbqmMk=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 検索エンジンにこのページと配下ツールを辿らせない。
@@ -17,6 +17,8 @@
        ほかに、事務所の端末でだけ、個別機能訓練計画書が数えて端末に残した期限の件数（tp_menu_due・件数と数えた日だけ・氏名なし）を
        読み、そのタイルに札として出す（2026-10-24 代表者の決定 案A）。メニューから書かない・送らない。
        設備・修繕の記録が数えて残した期限の件数（eql_menu_due・件数と数えた日だけ・設備名と場所なし）も同じ作りで読む（2026-11-13）。
+       担当者会議の記録が数えて残した前回から6か月の件数（cm_menu_due・件数と数えた日だけ・氏名なし）も同じ作りで読む（2026-11-13）。
+       未送信の一覧が数えて残した送信待ちの件数（unsent_menu_due・件数と数えた日だけ・種類名と氏名なし）も同じ作りで読む（2026-11-14）。
        管理者（Google＋2段階認証）でログイン中の事務所の端末でだけ、写しの記録（master_sync_runs の at・failed だけ）を読み、
        最後の成功が24時間より前なら入居者マスタのタイルに札を出す（su-sync-stale.js・2026-10-26 本人指示）。札に出すのは時刻だけ。
      ★端末に書くのは、見出しの毬を押した時の毬の柄（su_menu_ball・値は 'fuji'・'kiku'・'asanoha' だけ）だけで、
@@ -34,23 +36,29 @@
 <link rel="preload" as="script" href="su-errors.js?v=2026-11-12">
 <link rel="preload" as="script" href="su-cfg-hint.js?v=2026-11-10">
 <link rel="preload" as="script" href="su-perf.js?v=2026-10-27">
-<link rel="preload" as="script" href="su-menu.js?v=2026-11-10">
+<link rel="preload" as="script" href="su-menu.js?v=2026-11-14">
 <link rel="preload" as="script" href="su-itomari.js?v=2026-11-10">
 <link rel="preload" as="script" href="su-sync-stale.js?v=2026-10-26">
+<link rel="preload" as="script" href="su-health-calc.js?v=2026-11-14.2">
+<link rel="preload" as="script" href="su-health-badge.js?v=2026-11-14">
 <link rel="preload" as="script" href="su-device-role.js?v=2026-11-08">
 <link rel="preload" as="script" href="su-net.js?v=2026-11-12.2">
 <link rel="preload" as="script" href="su-report.js?v=2026-10-28">
-<link rel="preload" as="script" href="su-facility.js?v=2026-11-07">
+<link rel="preload" as="script" href="su-facility.js?v=2026-11-14.2">
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-11-12"></script>
 <script src="su-cfg-hint.js?v=2026-11-10"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
-<script src="su-menu.js?v=2026-11-10"></script>
+<script src="su-menu.js?v=2026-11-14"></script>
 <!-- メニューの毬（藤の手毬・菊かがり・麻の葉）を描く部品（2026-10-26 代表者の決定・藤の手毬は 2026-11-10 本人指示）。読めなくてもメニューは動く（毬のボタンを出さないだけ） -->
 <script src="su-itomari.js?v=2026-11-10"></script>
 <!-- 写しが止まっている時の札（2026-10-26 本人指示）。現場端末では何も読まない・読めなくてもメニューは動く -->
 <script src="su-sync-stale.js?v=2026-10-26"></script>
+<!-- 本番の健康の札（2026-11-14 代表者の依頼・統合 0088）。管理者（2段階認証）の事務所の端末でだけ save_health（種類・数・時刻だけ）を読み、
+     失敗が5件以上か写し返しが2時間以上遅れた種類の画面のタイルに札を出す。現場端末では何も読まない・端末に残さない・読めなくてもメニューは動く -->
+<script src="su-health-calc.js?v=2026-11-14.2"></script>
+<script src="su-health-badge.js?v=2026-11-14"></script>
 <!-- 端末の用途を、管理者が「アプリの使える人」の「端末の用途」で決めたとおりに受け取る（2026-11-08 代表者の決定 段3 案A・統合 0081）。
      スイッチ device_role が入の時だけ動く。送るのは意味のない乱数の印・今の用途・ログインの有無だけ。届いた用途が違えば
      su_device_role を書き換えてページを読み込み直す（書くのはこの部品だけ・このページは直接書かない）。読めなくてもメニューは動く -->
@@ -68,7 +76,7 @@
 <style>
 /* care-tools 共通の CSS 変数体系（各アプリと同じ見た目に揃える）。
    このページは氏名・記録を持たない。localStorage は読み取りのみ（端末用途 su_device_role・メニューの設定の控え su_menu_v1・
-   期限の件数の控え tp_menu_due・eql_menu_due・毬の柄 su_menu_ball）。毬の柄だけは、毬を押した時に su-menu.js の SUMenu.setBall が書く。 */
+   期限の件数の控え tp_menu_due・eql_menu_due・cm_menu_due・未送信の件数の控え unsent_menu_due・毬の柄 su_menu_ball）。毬の柄だけは、毬を押した時に su-menu.js の SUMenu.setBall が書く。 */
 /* 現場端末では事務所専用のタイルを出さない（押してもブロック画面になるだけの行き止まりを作らない）。
    ★data-office-only を付ける条件＝リンク先が su_device_role==='field' で起動をブロックするタイル。
    ★現在この属性が付いているのは誕生日一覧・入居調整・接続設定の3つ
@@ -179,6 +187,8 @@ main {
 .tile .due.legal { color: #fff; background: var(--due-tx); border-radius: 4px; padding: 0 6px; justify-self: start; }
 /* 写しが止まっている時の札（2026-10-26 本人指示）。期限の件数の札と同じ見た目 */
 .tile .stale { font-size: 0.6875rem; color: var(--due-tx); font-weight: 700; line-height: 1.4; }
+/* 本番の健康の札（2026-11-14 代表者の依頼）。法定の期限切れの札と同じ地（--due-tx・文字は白・約 7.9:1）。色だけに頼らず「本番：保存の失敗n件」の語で書く */
+.tile .hlbad { font-size: 0.6875rem; font-weight: 700; line-height: 1.4; color: #fff; background: var(--due-tx); border-radius: 4px; padding: 0 6px; justify-self: start; }
 /* 定義の一部が壊れていた時の帯（2026-10-10）。#7a4200 on #fff4e5 で約 7.6:1 */
 /* 困った時の区分の問い合わせ先の1行（2026-10-26 本人指示）。選んで写せる文字（tel: のリンクにしない）。--g7 は白地・--g0 地で 5.9:1 以上 */
 .sec .sup { margin: 8px 2px 0; font-size: 0.8125rem; color: var(--g7); line-height: 1.6; -webkit-user-select: text; user-select: text; }
@@ -420,7 +430,8 @@ main {
      "nm": "担当者会議の記録",
      "note": "サービス担当者会議の要点",
      "officeOnly": true,
-     "_why": "担当者会議の記録（2026-10-25 本人指示）。区分の末尾（デイの次）に足す。途中へ挿すと、管理者が「メニューの設定」を保存済みの時に su-menu.js が設定に無いボタンを末尾へ回して既定の並びとずれ、フェイスシートの newrow が外れてケアログ・デイの行割りも崩れるため（2026-10-25 審査の指摘）。officeOnly: 会議記録は要配慮の情報で、使えるのは事務所PCだけという代表者の決定（2026-10-23）のため現場端末では出さない（アプリ側も現場端末ではブロックする＝二重）"
+     "due": "cm_menu_due",
+     "_why": "due: 前回から6か月の期限切れと30日以内の数の札（2026-11-13 代表者の決定・仮置き・担当者会議の記録が事務所PCで数えて端末に残すのは件数と日付だけ）。担当者会議の記録（2026-10-25 本人指示）。区分の末尾（デイの次）に足す。途中へ挿すと、管理者が「メニューの設定」を保存済みの時に su-menu.js が設定に無いボタンを末尾へ回して既定の並びとずれ、フェイスシートの newrow が外れてケアログ・デイの行割りも崩れるため（2026-10-25 審査の指摘）。officeOnly: 会議記録は要配慮の情報で、使えるのは事務所PCだけという代表者の決定（2026-10-23）のため現場端末では出さない（アプリ側も現場端末ではブロックする＝二重）"
     },
     {
      "href": "equip-log.html",
@@ -504,6 +515,14 @@ main {
      "ic": "❓",
      "nm": "使い方・困った時",
      "note": "不具合の報告のしかた"
+    },
+    {
+     "href": "unsent.html",
+     "ic": "📤",
+     "nm": "未送信の一覧",
+     "note": "この端末の送信待ち",
+     "due": "unsent_menu_due",
+     "_why": "未送信の一覧（代表者の決定 2026-11-14【訂正】・置き場所は仮置き）。現場端末でも出す。due: 一覧の画面が事務所の端末で数え終えた時に残した件数（unsent_menu_due・件数と数えた日だけ）の札「未送信n」（代表者の決定 2026-11-14・ほかの札と同じく現場端末では読まない）"
     }
    ]
   }
@@ -553,12 +572,16 @@ main {
      （日付で持つので、採用管理を開かない日が続いても期限を過ぎた日から出る）。形の違う日付が1つでもあれば出さない
      admin・review（2026-11-11 代表者の決定・入居者マスタ）: {"v":1,"at":…,"admin":true,"review":n} は薬情の見直し待ちの数で、
      role（今のログインの役割）が管理者の時だけ「見直し待ちn」と書く。admin の印の無い review・管理者でない時・0件は出さない
+       v:2（2026-11-13 代表者の決定）: {"v":2,"at":…,"admin":true,"review":n,"overdue":n} の overdue は見直しの期限切れの数（review の内数）で、
+       dueLegal が別の赤の札「期限切れn」にする。overdue が review より多い・形が違う時は出さない。v:1（overdue なし）の控えも今までどおり読む
      eq（2026-11-13 代表者の指示・設備・修繕の記録）: {"v":1,"at":…,"eq":true,"overdue":n,"soon":n,"legal":n} は点検・清掃の期限で、
-     「期限切れn・30日以内n」と書く。legal（法定の期限切れ・overdue の内数）は dueLegal が別の赤の札にする。legal が overdue より多い時は出さない */
+     「期限切れn・30日以内n」と書く。legal（法定の期限切れ・overdue の内数）は dueLegal が別の赤の札にする。legal が overdue より多い時は出さない
+     cm（2026-11-13 代表者の決定・担当者会議の記録・仮置き）: {"v":1,"at":…,"cm":true,"overdue":n,"soon":n} は前回から6か月の期限で、
+     「期限切れn・30日以内n（6か月の分だけ・m/d時点）」と書く（認定の更新・区分変更・退院の後は数えていないため、注記で分かるようにする） */
   function dueText(raw, today, role) {
     var d;
     try { d = JSON.parse(raw); } catch (e) { return ''; }
-    if (!d || typeof d !== 'object' || d.v !== 1) return '';
+    if (!d || typeof d !== 'object' || !(d.v === 1 || (d.v === 2 && d.admin === true))) return '';
     var ymd = /^(\d{4})-(\d{2})-(\d{2})$/, m = ymd.exec(String(d.at || '')), tm = ymd.exec(String(today || ''));
     if (!m || !tm || String(d.at) > String(today)) return '';
     var mo = Number(m[2]), dd = Number(m[3]);
@@ -567,7 +590,20 @@ main {
     if (d.admin === true || d.review != null) {
       var rv = d.review;
       if (d.admin !== true || role !== 'admin' || typeof rv !== 'number' || !isFinite(rv) || rv < 0 || rv > 9999 || Math.floor(rv) !== rv) return '';
+      if (d.v === 2 && !(dueNum(d.overdue) && d.overdue <= rv)) return '';
       return rv > 0 ? '見直し待ち' + rv + when : '';
+    }
+    if (d.cm != null) {
+      if (d.cm !== true || !dueNum(d.overdue) || !dueNum(d.soon)) return '';
+      var cmp = [];
+      if (d.overdue > 0) cmp.push('期限切れ' + d.overdue);
+      if (d.soon > 0) cmp.push('30日以内' + d.soon);
+      return cmp.length ? cmp.join('・') + '（6か月の分だけ・' + when.slice(1) : '';
+    }
+    if (d.unsent != null) {
+      /* 未送信の一覧（2026-11-14 代表者の決定）: {"v":1,"at":…,"unsent":true,"n":n} は、一覧の画面が数えた送信待ちの件数 */
+      if (d.unsent !== true || !dueNum(d.n)) return '';
+      return d.n > 0 ? '未送信' + d.n + when : '';
     }
     if (d.eq != null) {
       if (!dueEq(d)) return '';
@@ -598,9 +634,14 @@ main {
   }
   function dueNum(n) { return typeof n === 'number' && isFinite(n) && n >= 0 && n <= 9999 && Math.floor(n) === n; }
   function dueEq(d) { return d.eq === true && dueNum(d.overdue) && dueNum(d.soon) && dueNum(d.legal) && d.legal <= d.overdue; }
-  function dueLegal(raw, today) {
+  function dueLegal(raw, today, role) {
     var d;
     try { d = JSON.parse(raw); } catch (e) { return ''; }
+    /* 見直しの期限切れ（v:2・入居者マスタ・管理者だけ）。件数の札と同じ守り（dueText が出せる控えだけ） */
+    if (d && typeof d === 'object' && d.v === 2 && d.admin === true) {
+      if (!dueText(raw, today, role) || !(d.overdue >= 1)) return '';
+      return '期限切れ' + d.overdue;
+    }
     if (!d || typeof d !== 'object' || d.v !== 1 || d.eq !== true || !dueEq(d) || d.legal < 1) return '';
     if (!dueText(raw, today, '')) return '';
     return '法定の期限切れ' + d.legal;
@@ -621,14 +662,15 @@ main {
       return txt ? el('span', 'due', txt) : null;
     } catch (e) { return null; }
   }
-  /* 法定の期限切れの赤の札（2026-11-13 代表者の指示・設備・修繕の記録）。件数の札と同じ守りで読み、無い時は null */
+  /* 法定の期限切れの赤の札（2026-11-13 代表者の指示・設備・修繕の記録）と、薬情の見直しの期限切れの赤の札（2026-11-13 代表者の決定・入居者マスタ・管理者だけ）。
+     件数の札と同じ守りで読み、無い時は null */
   function dueLegalBadge(key) {
     try {
       if (document.documentElement.classList.contains('is-field')) return null;
       if (!/^[a-z0-9_]{1,40}$/.test(key)) return null;
       var raw = localStorage.getItem(key);
       if (raw == null) return null;
-      var txt = dueLegal(raw, todayYmd());
+      var txt = dueLegal(raw, todayYmd(), role);
       return txt ? el('span', 'due legal', txt) : null;
     } catch (e) { return null; }
   }
@@ -720,6 +762,16 @@ main {
   /* 今の役割の帯。'unsure' はログインの記録はあるが確かめられなかった時（既定のメニューに倒している） */
   var BAND = { admin: '管理者としてログイン中', office: '事務所としてログイン中', field: '現場としてログイン中',
     pending: 'ログインを確かめています…', unsure: 'ログインを確かめられませんでした（通信を確かめてください）', none: 'ログインしていません' };
+  /* 「動作の速さの記録」のリンクを今の役割と端末の用途で出し分ける（SUMenu.perfLinkShown・部品が無い時は出さない） */
+  function perfApply() {
+    try {
+      var p = document.getElementById('perfLink');
+      if (!p) return;
+      var on = !!(window.SUMenu && typeof SUMenu.perfLinkShown === 'function' &&
+        SUMenu.perfLinkShown(role, document.documentElement.classList.contains('is-field')));
+      p.hidden = !on;
+    } catch (e) { /* 出し分けられない時は隠したまま */ }
+  }
   function drawRole(state) {
     try {
       var b = document.getElementById('roleBand');
@@ -750,6 +802,11 @@ main {
   build(arranged(curCfg, role));
   drawBall();
   if (window.SUMenu) drawRole(role || 'none');
+  /* 「動作の速さの記録」のリンク（#perfLink）はこの script より後ろの footer にあるので、開いた時の出し分けは読み込みが終わってから
+     （端末の控えの役割で出す。確かめが通信の失敗で終わっても控えの役割のまま）。
+     「戻る」で前の表示のまま戻った時（bfcache）は、端末の用途が変わっていることがあるので出し分け直す */
+  try { document.addEventListener('DOMContentLoaded', function () { perfApply(); }); } catch (e) { /* 登録できなくても隠したまま（出さない側） */ }
+  try { window.addEventListener('pageshow', function (e) { if (e && e.persisted) perfApply(); }); } catch (e) { /* 登録できなくても開いた時の出し分けのまま */ }
   try { if (window.SUPerf) SUPerf.ready(); } catch (e) {}
   function rebuild(cfg, r) {
     curCfg = cfg;
@@ -759,12 +816,14 @@ main {
     fill();
     drawBall();
     staleApply();
+    hlApply();
   }
   try {
     if (window.SUMenu) SUMenu.startSync(function (cfg, r) {
       role = r;
       rebuild(cfg, r);
       drawRole(r || 'none');
+      perfApply();
     }, function (kind) {
       // 役割が分からないまま（控えが無く、ログインしていない・確かめられない）なら、ログインしていない時の既定に倒す
       if (role === 'pending' && kind !== 'ok') { role = null; rebuild(null, null); }
@@ -772,12 +831,16 @@ main {
       else if (kind === 'out' && role !== null) { role = null; rebuild(null, null); }
       if (kind === 'error' && role !== null) return;   // 確かめられない時は、出している控えの役割のまま
       drawRole(kind === 'error' ? 'unsure' : (role || 'none'));
+      perfApply();
     });
   } catch (e) { /* 設定を読めなくても既定のメニューで動く */ }
   /* 写しが止まっている時の札（2026-10-26 本人指示・su-sync-stale.js）。確かめるのは読み込みが終わってから裏で。
      組み立て直した後は、確かめた結果を付け直すだけ（通信しない） */
   function staleApply() { try { if (window.SUSyncStale) SUSyncStale.apply(main); } catch (e) { /* 付けられなくても動く */ } }
   try { if (window.SUSyncStale) SUSyncStale.start(main); } catch (e) { /* 確かめられなくても動く */ }
+  /* 本番の健康の札（2026-11-14 代表者の依頼・su-health-badge.js）。写しが止まっている時の札と同じ作り */
+  function hlApply() { try { if (window.SUHealthBadge) SUHealthBadge.apply(main); } catch (e) { /* 付けられなくても動く */ } }
+  try { if (window.SUHealthBadge) SUHealthBadge.start(main); } catch (e) { /* 確かめられなくても動く */ }
   function fill() {
     if (!window.SUFacility || !SUFacility.ready || !SUFacility.ready()) return;
     var els = document.querySelectorAll('[data-fac-name]');
@@ -879,9 +942,11 @@ main {
 })();
 </script>
 
-<!-- 動作の速さの記録（統合 Phase 0）: 氏名・記録を持たないので現場端末でも出す（共用タブレットの遅さこそ測りたい） -->
+<!-- 動作の速さの記録（統合 Phase 0）: 見る画面へのリンクは、事務所の端末で事務所・管理者としてログインしている時だけ出す
+     （現場端末・現場のアカウント・ログインしていない端末では出さない・SUMenu.perfLinkShown・代表者の決定 2026-11-14）。
+     記録そのもの（su-perf.js）は今までどおり全端末で取る。初めは隠しておき、役割が分かってから出す -->
 <footer class="foot">「↗」の付いたものは別サイトへ移動します（戻るボタンでこの画面へ戻れます）。<br>
-  <a href="perf-report.html">動作の速さの記録（遅さの調査用）</a><br>
+  <span id="perfLink" hidden><a href="perf-report.html">動作の速さの記録（遅さの調査用）</a><br></span>
   <!-- 共通ログイン（統合 Phase 1）: 氏名・記録を持たないので現場端末でも出す。2026-10-10「試験中」を外した（10/09 から事務所PCの保存に必須・代表者の決定） -->
   <a href="login.html">ログイン（Google）</a></footer>
 
@@ -889,7 +954,7 @@ main {
 <script src="su-net.js?v=2026-11-12.2"></script>
 <script src="su-report.js?v=2026-10-28" data-tool="介護ツール メニュー"></script>
 <!-- 事業所の呼び名は施設情報（facility-profile.json）から差し込む。読めない時は一般名のまま -->
-<script src="su-facility.js?v=2026-11-07"></script>
+<script src="su-facility.js?v=2026-11-14.2"></script>
 <script>
 (function () {
   function fill() {

@@ -3,11 +3,13 @@
  * ある方で開いている画面の本人確認の帯（「〇〇さんを開いています」）の中に、同じ方の別の画面へ移るボタンを並べる。
  * ・同じタブで移る（target を付けない）。保存していない編集の確かめは、各画面の「離れる前の確かめ」に任せる
  * ・行き先へ渡すのは入居者マスタの番号（利用者No）だけ。氏名は URL に載せない
- *   （家族構成図だけは既存の受け口が氏名を保存の鍵に使うため、入居者マスタと同じく ?resident=&name= で渡す）
- * ・現場の端末（su_device_role==='field'）では、事務所向けの画面（入居者マスタ・週間計画・申送ビューア・計画書・担当者会議）への行き先を出さない
+ *   （家族構成図も番号だけ。氏名は家族構成図が共有名簿で番号から引く・代表者の決定 2026-11-13）
+ * ・現場の端末（su_device_role==='field'）では、事務所向けの画面（入居者マスタ・週間計画・申送ビューア・計画書・担当者会議）と、
+ *   家族構成図（fieldHide）への行き先を出さない
  * ・今の画面は出さない。番号の形が正しくない時は何も出さない
  * ・画面だけ（.srh は @media print で消す）。外からの値は全部エスケープする。例外を外に出さない
  * 使い方: SUResHop.html('facesheet.html', 番号, 氏名) が帯に足す HTML を返す（出せない時は ''）。
+ *   氏名は行き先へ渡さない（2026-11-13）。氏名が分からない時に家族構成図のボタンを出さない決まりにだけ使う（今までの見た目のまま）
  */
 (function () {
   'use strict';
@@ -17,7 +19,7 @@
   var TARGETS = [
     { href: 'resident-master.html', ic: '🗂️', nm: '入居者マスタ', q: 'id', office: true },
     { href: 'facesheet.html', ic: '📄', nm: 'フェイスシート', q: 'masterId' },
-    { href: 'genogram.html', ic: '🌳', nm: '家族構成図', q: 'resident', withName: true },
+    { href: 'genogram.html', ic: '🌳', nm: '家族構成図', q: 'resident', fieldHide: true, needName: true },   // 現場の端末・氏名の分からない時は出さない（番号だけで渡すようにした後も今までどおり）
     { href: 'care-schedule.html', ic: '📅', nm: '週間計画', q: 'masterId', office: true },
     { href: 'weight-record.html', ic: '⚖️', nm: '体重管理', q: 'masterId' },
     { href: 'moushiokuri-viewer.html', ic: '📝', nm: '申送ビューア', q: 'masterId', office: true },   // 現場の端末では起動時に止まる画面
@@ -35,10 +37,8 @@
   function isField() {
     try { return localStorage.getItem('su_device_role') === 'field'; } catch (e) { return false; }
   }
-  function linkOf(t, id, name) {
-    var u = t.href + '?' + t.q + '=' + encodeURIComponent(id);
-    if (t.withName) u += '&name=' + encodeURIComponent(name || '');
-    return u;
+  function linkOf(t, id) {
+    return t.href + '?' + t.q + '=' + encodeURIComponent(id);
   }
   /* 帯に並べる行き先の一覧（試験からも使う） */
   function targets(current, id, name, field) {
@@ -50,8 +50,9 @@
       var t = TARGETS[i];
       if (t.href === current) continue;
       if (field && t.office) continue;
-      if (t.withName && (!name || field)) continue;   // 家族構成図は氏名が無いと開けない。現場の端末では氏名を URL に載せない
-      out.push({ href: linkOf(t, id, name), ic: t.ic, nm: t.nm });
+      if (field && t.fieldHide) continue;
+      if (t.needName && !name) continue;
+      out.push({ href: linkOf(t, id), ic: t.ic, nm: t.nm });
     }
     return out;
   }

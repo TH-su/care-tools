@@ -17,7 +17,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-11-13b';
+  var VERSION = '2026-11-13c';
   /* 様式の欄（並びは様式どおり）。max は1欄の上限の文字数（GAS の meeting.gs と同じ値）。optional は無くても知らせない欄 */
   var FIELDS = [
     { key: 'sourceName', label: '利用者名', max: 40 },
@@ -372,6 +372,30 @@
       .map(function (a) { delete a._i; return a; });
   }
 
+  /* ── メニューの札の件数（2026-11-13 代表者の決定・台帳 CM-02・仮置き） ──
+     入居者を選ぶ画面の材料（共有名簿＋最終開催日の要約）だけで数える。数えるのは「前回から6か月」の知らせ（dueAlerts の interval）だけで、
+     認定の更新・区分変更・退院の後・記録なしは数えない（1人ずつの記録を読まないため）。
+     in: residents [{masterId, active, hospitalized}]（在籍している方だけ数える）・summary {masterId:{lastHeld}}・today 'YYYY-MM-DD'
+     戻り値 {v:1, at:today, cm:true, overdue:n, soon:n}（overdue＝過ぎた・今日で6か月、soon＝30日以内）。件数と日付だけで、氏名・番号は入れない。
+     today が日付でない・名簿や要約の形が違う時は null（書かない） */
+  function menuDueSummary(residents, summary, today) {
+    if (!ymdOk(today) || !Array.isArray(residents) || !summary || typeof summary !== 'object') return null;
+    var overdue = 0, soon = 0;
+    residents.forEach(function (r) {
+      if (!r || r.active === false || r.masterId == null) return;
+      var id = String(r.masterId), s = Object.prototype.hasOwnProperty.call(summary, id) ? summary[id] : null;
+      var last = s && ymdOk(String(s.lastHeld || '').slice(0, 10)) ? String(s.lastHeld).slice(0, 10) : '';
+      if (!last) return;
+      dueAlerts({ today: today, meetings: [{ heldDate: last, status: 'final' }], hospitalized: r.hospitalized === true })
+        .forEach(function (a) {
+          if (a.kind !== 'interval') return;
+          if (a.level === 'high') overdue++;
+          else if (a.level === 'mid') soon++;
+        });
+    });
+    return { v: 1, at: today, cm: true, overdue: overdue, soon: soon };
+  }
+
   /* 出席者の✔︎の候補（2026-10-25 代表者の決定「この方の前回までの出席者」）。
      この方の記録の一覧（取り消し済み・開いている記録を除く）を開催日の新しい順に見て、出席者を「所属と氏名の組」で
      重ねずに並べる（新しい会議に出た人ほど前）。所属・氏名の比べ方は互換の文字をそろえ、空白を除く。max 名まで（既定 30） */
@@ -406,22 +430,25 @@
      どの欄へ入れるかは人が選ぶ（この関数は欄へ入れない）。
      ★この表は parse の区切りに使わない（ALIASES に入れると「◆課題：」などが欄の区切りになり、印のある議事録の振り分けが変わるため）
      見出しと認める形は2つだけ: (1) 飾り（【】■●・# 番号など）を外した残り全体が表の語 (2)「語：本文」の語が表の語。
-     本文の中の【CM】【施設】・「結論としては…」のような文は見出しにしない */
+     本文の中の【CM】【施設】・「結論としては…」のような文は見出しにしない
+     2026-11-14 代表者の決定: 一般の会議の言い方（議題・話し合い・今後の方針・決まったこと・次回まで・宿題 など）まで広げた。
+     入れる欄は今の表の並びにそろえる（話し合い＝検討内容、方針＝結論、次回まで・宿題・持ち帰り＝残された課題、次回の会議・日程＝次回の開催時期）。
+     ★「日時」は入れない（日付と時刻の1行は開催日の形で読めず、欄が空になるため） */
   var GUESS_WORDS = {
     sourceName: ['利用者名', '利用者', '利用者氏名', '対象者'],
     kind: ['開催の理由', '開催理由', '開催目的', '会議の目的'],
     author: ['作成担当者', '作成者', '記録者'],
     createdDate: ['作成年月日', '作成日'],
     heldDate: ['開催日', '開催年月日', '会議日', '実施日'],
-    place: ['開催場所', '場所', '会場'],
+    place: ['開催場所', '場所', '会場', '実施場所'],
     timeText: ['開催時間', '時間'],
     count: ['開催回数', '回数'],
-    attendees: ['出席者', '参加者', '会議出席者', '出席者一覧', '参加者一覧'],
-    items: ['検討した項目', '検討項目', '検討事項', '議題', '協議事項'],
-    content: ['検討内容', '検討の内容', '協議内容', '話し合いの内容', '主な意見'],
-    conclusion: ['結論', '決定事項', '決まったこと', 'まとめ'],
-    issues: ['残された課題', '今後の課題', '残った課題', '課題'],
-    nextText: ['次回の開催時期', '次回開催時期', '次回の開催予定', '次回開催予定', '次回の予定', '次回']
+    attendees: ['出席者', '参加者', '会議出席者', '出席者一覧', '参加者一覧', '出席', '参加', 'メンバー', '出席メンバー', '参加メンバー'],
+    items: ['検討した項目', '検討項目', '検討事項', '議題', '協議事項', '本日の議題', '議事', '話し合う項目', '話し合うこと'],
+    content: ['検討内容', '検討の内容', '協議内容', '話し合いの内容', '主な意見', '話し合い', '話し合ったこと', '話し合いの要点', '各職種の意見', '意見', '報告事項'],
+    conclusion: ['結論', '決定事項', '決まったこと', 'まとめ', '今後の方針', '方針', '支援の方針', '対応の方針', '決めたこと', '合意事項'],
+    issues: ['残された課題', '今後の課題', '残った課題', '課題', '次回まで', '次回までに', '次回までの課題', '次回までにすること', '宿題', '持ち帰り', '持ち帰り事項', '検討課題', '懸案事項'],
+    nextText: ['次回の開催時期', '次回開催時期', '次回の開催予定', '次回開催予定', '次回の予定', '次回', '次回の会議', '次回会議', '次回の日程', '次回日程']
   };
   var GUESS_BY = {};
   Object.keys(GUESS_WORDS).forEach(function (k) { GUESS_WORDS[k].forEach(function (w) { GUESS_BY[labelKey(w)] = k; }); });
@@ -524,7 +551,7 @@
 
   var api = { VERSION: VERSION, FIELDS: FIELDS, KINDS: KINDS, ATTENDEE_MAX: ATTENDEE_MAX, ATTENDEE_LEN: ATTENDEE_LEN, ATTENDEE_PRINT: ATTENDEE_PRINT, INPUT_MAX: INPUT_MAX,
     parse: parse, guess: guess, guessApply: guessApply, guessHead: guessHead, normDate: normDate, normTime: normTime, normCount: normCount, normKind: normKind, parseAttendees: parseAttendees,
-    residentMatch: residentMatch, checkSave: checkSave, checkFinal: checkFinal, dueAlerts: dueAlerts, lastHeld: lastHeld,
+    residentMatch: residentMatch, checkSave: checkSave, checkFinal: checkFinal, dueAlerts: dueAlerts, lastHeld: lastHeld, menuDueSummary: menuDueSummary,
     addMonths: addMonths, todayJST: todayJST, hospitalState: hospitalState, lastCareChange: lastCareChange,
     attKey: attKey, attendeeCandidates: attendeeCandidates };
   if (typeof module === 'object' && module.exports) module.exports = api;

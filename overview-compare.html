@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-FwD8nI4RxD0CSIT+iP837k8TeRR9yZ1t1P9k3VcDppI=' 'sha256-pKy1pQG69/QniCj7jYGkUYQkrI6SfKZ27jzp3QZQDJI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-GOOrnpr7BDYhHuecPRGxNGYMeFBY6X9AVBF7cEKk6Ss=' 'sha256-pKy1pQG69/QniCj7jYGkUYQkrI6SfKZ27jzp3QZQDJI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -62,7 +62,11 @@ body {
 .purpose-legend { color: var(--g7); }
 /* 連動の準備ができずにあきらめた時だけ凡例の後ろに出す知らせ（2026-11-08 商用化の点検）。画面だけ・印刷に出さない */
 .sync-warn { margin-left: 8px; color: #8f0c0c; font-weight: 700; }
+/* 知らせの後ろに並べる「片方だけで見る」リンク（2026-11-13 代表者の決定・同じタブで単独の画面を開く）。押しやすいよう 44px の高さ */
+.sync-alt { margin-left: 8px; min-height: 44px; display: inline-flex; align-items: center; color: var(--pri-d); font-weight: 700; text-decoration: underline; }
+.sync-alt:focus-visible { outline: 2px solid var(--pri-d); outline-offset: 1px; }
 @media print { .sync-warn { display: none; } }
+@media print { .sync-alt { display: none; } }
 
 .panes { flex: 1; display: flex; min-height: 0; }
 .pane { flex: 1 1 50%; min-width: 0; position: relative; }
@@ -87,6 +91,17 @@ body {
   .panes { flex-direction: column; }
   .pane.left { border-right: none; border-bottom: 2px solid var(--g7); }
 }
+/* 上下2段の時、各段が札＋iframe の既定の高さ（約180px）より縮まず、iPhone の横向きなど低い画面で全支援が下へ押し出されていた。
+   段の最低の高さを外し、入れ物の高さを2つで分け合う（画面だけ・印刷は変えない・代表者の決定 2026-11-13） */
+@media screen and (max-width: 860px) { .pane { min-height: 0; } }
+/* 高さ500px以下の横向き（iPhone の横など）は、見出し・案内だけで画面がほぼ埋まり盤面が残らない。
+   この時だけページ全体を縦に送れるようにし、盤面に画面の高さの8割を持たせる（送れば見出しは上へ隠れる）。
+   タブの形（700px以下）でも同じ。文言・表示の中身は変えない（画面だけ・印刷は変えない・代表者の決定 2026-11-13） */
+@media screen and (max-height: 500px) and (orientation: landscape) {
+  html, body { height: auto; }
+  body { overflow: visible; }
+  .panes { flex: 0 0 auto; height: 80vh; }
+}
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 /* 字と地の差を 7:1 以上にそろえる（画面だけ・色合いはそのまま濃くする・印刷の紙は元の色のまま・代表者「推奨どおり色も7:1にそろえて」2026-11-03） */
 @media screen { :root[data-su-theme] { --orange: #904207; } }   /* 全支援の橙（白地・白い字とも 7.1:1） */
@@ -96,6 +111,10 @@ body {
 .su-menu-row{display:contents}
 @media screen and (max-width:899px){.su-menu-back{min-height:44px} .su-menu-row{display:block;flex:0 0 100%}}
 @media print{.su-menu-back{display:none !important}}
+/* 見出しの「使い方」（「← メニュー」の右隣・同じ大きさと色・使い方の画面のこの画面の節へ・画面だけ・印刷しない・代表者の決定 2026-11-13） */
+.su-help-link{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+@media screen and (max-width:899px){.su-help-link{min-height:44px}}
+@media print{.su-help-link{display:none !important}}
 
 /* 見出しの使い方の1行（全幅・画面だけ・印刷しない・代表者の指示 2026-11-13）。見出しは左が青・右が薄橙なので、白い地を持たせて読めるようにする */
 .hdr-usage { display: none; }
@@ -132,7 +151,7 @@ body {
 <body>
 
 <header class="hdr">
-  <span class="su-menu-row"><a class="link-single su-menu-back" href="index.html">← メニュー</a></span>
+  <span class="su-menu-row"><a class="link-single su-menu-back" href="index.html">← メニュー</a> <a class="link-single su-help-link" href="help.html?sec=overview-compare">使い方</a></span>
   <span class="hdr-title">訪問／全支援 左右比較</span>
   <label class="sync-toggle" title="スクロール位置（時刻・曜日）と表示倍率を左右で連動させる">
     <input type="checkbox" id="syncOn" checked aria-label="左右の時刻・曜日・表示倍率を連動させる">時刻・曜日・倍率を連動
@@ -337,6 +356,7 @@ body {
   // 連動の準備ができずにあきらめた時の知らせ（連動が入の時だけ）。凡例の中に textContent で足す
   var warn = null;
   var GIVEUP = '連動の準備ができませんでした。ページを読み込み直してください';
+  var GIVEUP_ALT = [['visit-overview.html', '訪問だけで見る'], ['support-overview.html', '全支援だけで見る']];
   function showGiveUp() {
     if (!legend || !syncOn.checked || warn) return;
     showLegend();
@@ -344,6 +364,15 @@ body {
     el.className = 'sync-warn';
     el.textContent = GIVEUP;
     legend.appendChild(el);
+    /* 連動なしで片方だけを見る道（2026-11-13 代表者の決定・文は仮置き）。行き先は見出しの「訪問だけ」「全支援だけ」と同じ・同じタブで開く。
+       凡例の子に平らに足す（凡例を言い換えると一緒に消える）。文は textContent で入れる */
+    for (var gi = 0; gi < GIVEUP_ALT.length; gi++) {
+      var a = document.createElement('a');
+      a.className = 'sync-alt';
+      a.href = GIVEUP_ALT[gi][0];
+      a.textContent = GIVEUP_ALT[gi][1];
+      legend.appendChild(a);
+    }
     warn = el;
   }
   syncOn.addEventListener('change', showLegend);
@@ -416,7 +445,7 @@ body {
 })();
 </script>
 <!-- 見出しの下の初回の案内の帯（2026-11-02 本人の決定）。×で閉じた端末では出さない。画面の動き・保存・印刷には触れない -->
-<script src="su-intro.js?v=2026-11-02.3"></script>
+<script src="su-intro.js?v=2026-11-13"></script>
 <!-- インターネットにつながっていない時の帯（2026-11-12 商用化の見直し・画面だけ・通信と保存には触れない） -->
 <script src="su-net.js?v=2026-11-12.2"></script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->

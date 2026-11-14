@@ -19,6 +19,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const KINDS = ['施設', '訪問', '通所'];
@@ -98,12 +99,27 @@ export function checkFacilityProfile(text, sampleText) {
   // 型だけ確かめる項目（無くてもよい）
   if ('version' in p && typeof p.version !== 'number') ng('version', '数ではありません');
   if ('municipality' in p && !isStr(p.municipality)) ng('municipality', '文字ではありません');
+  // 適格請求書の登録番号（2026-11-13 第6段 SP-03）。読む部品（su-facility.js の norm）と同じ読み方: 空白・ハイフンを除き、全角の英数字を半角に直して T と13桁の数字か。
+  // 形が違うと紙に黙って出ないので、入っている時だけ確かめて止める（値は出さない）
+  if ('invoiceNo' in p) {
+    if (!isStr(p.invoiceNo)) ng('invoiceNo', '文字ではありません');
+    else if (filled(p.invoiceNo)) {
+      const inv = p.invoiceNo.replace(/[\s\-‐－−]/g, '').replace(/[Ａ-Ｚａ-ｚ０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+      if (!/^T[0-9]{13}$/.test(inv)) ng('invoiceNo', 'T と13桁の数字の形ではありません（空白・ハイフンは除いて読みます。このままでは明細・料金表に出ません）');
+    }
+  }
   if ('corpSettings' in p) {
     if (!isObj(p.corpSettings)) ng('corpSettings', '{ } のかたまりではありません');
     else {
       const u = p.corpSettings.homeGuidelineUrl;
       if (u !== undefined && !isStr(u)) ng('corpSettings.homeGuidelineUrl', '文字ではありません');
       else if (filled(u) && !/^https:\/\/[^\s"<>]+$/.test(u.trim())) ng('corpSettings.homeGuidelineUrl', 'https:// で始まる URL ではありません（画面には出ません）');
+      /* 職員マスタの事業所の区分の名前（第6段 SM-02）。読む部品（staff-master-calc.js の normSiteLabels）と同じ判定で、崩れていれば止める（画面は黙って今の名前に戻るため） */
+      if ('siteLabels' in p.corpSettings) {
+        let okSl = false;
+        try { okSl = !!createRequire(import.meta.url)(path.join(ROOT, 'staff-master-calc.js')).normSiteLabels(p.corpSettings.siteLabels); } catch (e) { okSl = false; }
+        if (!okSl) ng('corpSettings.siteLabels', 'facility・visit・day・cm の4つ全部を、1〜6字の互いに別の名前（空白・記号・CSV の見出しの語（事業所・備考・厨房など）・ほかの区分の今の名前は使えない）で書いてください（崩れていると職員マスタは今の名前のまま出します）');
+      }
     }
   }
   if ('floors' in p) {
