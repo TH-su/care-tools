@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-T5sps68JTSAqPAEx6HswG4VsptD3q6T+EHH1xpyIbzA=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-GRqOEjfjVPBsVF8FNPyVA/NlCB0C8+B1ciPyoat8ZiQ=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 検索エンジンにこのページと配下ツールを辿らせない。
@@ -35,7 +35,7 @@
 <link rel="preload" as="script" href="su-errors.js?v=2026-11-12">
 <link rel="preload" as="script" href="su-cfg-hint.js?v=2026-11-10">
 <link rel="preload" as="script" href="su-perf.js?v=2026-10-27">
-<link rel="preload" as="script" href="su-menu.js?v=2026-11-10">
+<link rel="preload" as="script" href="su-menu.js?v=2026-11-14">
 <link rel="preload" as="script" href="su-itomari.js?v=2026-11-10">
 <link rel="preload" as="script" href="su-sync-stale.js?v=2026-10-26">
 <link rel="preload" as="script" href="su-health-calc.js?v=2026-11-14.2">
@@ -49,7 +49,7 @@
 <script src="su-errors.js?v=2026-11-12"></script>
 <script src="su-cfg-hint.js?v=2026-11-10"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
-<script src="su-menu.js?v=2026-11-10"></script>
+<script src="su-menu.js?v=2026-11-14"></script>
 <!-- メニューの毬（藤の手毬・菊かがり・麻の葉）を描く部品（2026-10-26 代表者の決定・藤の手毬は 2026-11-10 本人指示）。読めなくてもメニューは動く（毬のボタンを出さないだけ） -->
 <script src="su-itomari.js?v=2026-11-10"></script>
 <!-- 写しが止まっている時の札（2026-10-26 本人指示）。現場端末では何も読まない・読めなくてもメニューは動く -->
@@ -748,6 +748,16 @@ main {
   /* 今の役割の帯。'unsure' はログインの記録はあるが確かめられなかった時（既定のメニューに倒している） */
   var BAND = { admin: '管理者としてログイン中', office: '事務所としてログイン中', field: '現場としてログイン中',
     pending: 'ログインを確かめています…', unsure: 'ログインを確かめられませんでした（通信を確かめてください）', none: 'ログインしていません' };
+  /* 「動作の速さの記録」のリンクを今の役割と端末の用途で出し分ける（SUMenu.perfLinkShown・部品が無い時は出さない） */
+  function perfApply() {
+    try {
+      var p = document.getElementById('perfLink');
+      if (!p) return;
+      var on = !!(window.SUMenu && typeof SUMenu.perfLinkShown === 'function' &&
+        SUMenu.perfLinkShown(role, document.documentElement.classList.contains('is-field')));
+      p.hidden = !on;
+    } catch (e) { /* 出し分けられない時は隠したまま */ }
+  }
   function drawRole(state) {
     try {
       var b = document.getElementById('roleBand');
@@ -778,6 +788,11 @@ main {
   build(arranged(curCfg, role));
   drawBall();
   if (window.SUMenu) drawRole(role || 'none');
+  /* 「動作の速さの記録」のリンク（#perfLink）はこの script より後ろの footer にあるので、開いた時の出し分けは読み込みが終わってから
+     （端末の控えの役割で出す。確かめが通信の失敗で終わっても控えの役割のまま）。
+     「戻る」で前の表示のまま戻った時（bfcache）は、端末の用途が変わっていることがあるので出し分け直す */
+  try { document.addEventListener('DOMContentLoaded', function () { perfApply(); }); } catch (e) { /* 登録できなくても隠したまま（出さない側） */ }
+  try { window.addEventListener('pageshow', function (e) { if (e && e.persisted) perfApply(); }); } catch (e) { /* 登録できなくても開いた時の出し分けのまま */ }
   try { if (window.SUPerf) SUPerf.ready(); } catch (e) {}
   function rebuild(cfg, r) {
     curCfg = cfg;
@@ -794,6 +809,7 @@ main {
       role = r;
       rebuild(cfg, r);
       drawRole(r || 'none');
+      perfApply();
     }, function (kind) {
       // 役割が分からないまま（控えが無く、ログインしていない・確かめられない）なら、ログインしていない時の既定に倒す
       if (role === 'pending' && kind !== 'ok') { role = null; rebuild(null, null); }
@@ -801,6 +817,7 @@ main {
       else if (kind === 'out' && role !== null) { role = null; rebuild(null, null); }
       if (kind === 'error' && role !== null) return;   // 確かめられない時は、出している控えの役割のまま
       drawRole(kind === 'error' ? 'unsure' : (role || 'none'));
+      perfApply();
     });
   } catch (e) { /* 設定を読めなくても既定のメニューで動く */ }
   /* 写しが止まっている時の札（2026-10-26 本人指示・su-sync-stale.js）。確かめるのは読み込みが終わってから裏で。
@@ -911,9 +928,11 @@ main {
 })();
 </script>
 
-<!-- 動作の速さの記録（統合 Phase 0）: 氏名・記録を持たないので現場端末でも出す（共用タブレットの遅さこそ測りたい） -->
+<!-- 動作の速さの記録（統合 Phase 0）: 見る画面へのリンクは、事務所の端末で事務所・管理者としてログインしている時だけ出す
+     （現場端末・現場のアカウント・ログインしていない端末では出さない・SUMenu.perfLinkShown・代表者の決定 2026-11-14）。
+     記録そのもの（su-perf.js）は今までどおり全端末で取る。初めは隠しておき、役割が分かってから出す -->
 <footer class="foot">「↗」の付いたものは別サイトへ移動します（戻るボタンでこの画面へ戻れます）。<br>
-  <a href="perf-report.html">動作の速さの記録（遅さの調査用）</a><br>
+  <span id="perfLink" hidden><a href="perf-report.html">動作の速さの記録（遅さの調査用）</a><br></span>
   <!-- 共通ログイン（統合 Phase 1）: 氏名・記録を持たないので現場端末でも出す。2026-10-10「試験中」を外した（10/09 から事務所PCの保存に必須・代表者の決定） -->
   <a href="login.html">ログイン（Google）</a></footer>
 

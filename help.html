@@ -44,6 +44,8 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
 /* 画面ごとの使い方の目次のリンクは、指で押せる高さ（44px）にする（画面だけ・2026-11-13） */
 @media screen { .toc li { margin: 0; } .toc a { display: inline-flex; align-items: center; min-height: 44px; } }
 .key { display: inline-block; padding: 0 8px; border: 1px solid var(--g3); border-radius: 999px; background: var(--pri-l); white-space: nowrap; }
+/* 書き方の見本（担当者会議の記録の節・2026-11-14） */
+.ex { margin: 0 0 8px; padding: 8px 12px; background: var(--g0); border: 1px solid var(--g3); border-radius: 8px; font: inherit; font-size: 0.9375rem; white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
@@ -384,9 +386,24 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
     <ul>
       <li>入居者ごとに、サービス担当者会議の要点を記録します。<span class="key">＋ 新しい記録</span> で書き始め、<span class="key">下書き保存</span> と <span class="key">確定</span> で残します。</li>
       <li>「◆欄名：」の印の付いた議事録を貼り付けて <span class="key">振り分ける</span> を押すと、各欄へ入ります（外部の AI へは送りません）。</li>
+      <li>印が無い議事録でも、見出しの行（「議題：」「話し合い：」「今後の方針：」「決まったこと：」「次回まで：」「宿題：」など）から欄の候補が並びます。✔︎ を付けた見出しだけが欄に入ります。</li>
       <li>記録は A4 横1枚に収めて印刷します。</li>
       <li>事務所PCで使う画面です。</li>
     </ul>
+    <p><strong>この形で書けば振り分けられます（見本・架空の文）</strong></p>
+    <p class="muted">1行に「◆欄名：」と書き、その後ろか次の行から中身を書きます。この形なら <span class="key">振り分ける</span> を押すだけで各欄へ入ります。</p>
+    <pre class="ex">◆開催日：2026/11/14
+◆開催場所：架空の相談室
+◆出席者：
+介護支援専門員／甲野 花子
+介護職員／乙野 一郎
+◆検討した項目：夜間の見守り
+◆検討内容：
+夜中に一人で起きることが増えたと報告があった。
+◆結論：夜2時と5時に様子を見に行く。
+◆残された課題：転ばないための用具を検討する。
+◆次回の開催時期：6か月後</pre>
+    <p class="muted">印を付けずに「議題：」「話し合い：」「今後の方針：」「次回まで：」のような見出しで書いた議事録は、見出しから欄の候補が並びます。入れる見出しに ✔︎ を付けて <span class="key">選んだ見出しを振り分ける</span> を押してください。</p>
     <p><strong>よくある困りごと</strong></p>
     <dl class="sup">
       <dt>「ほかの端末で直された記録です。「今の記録で開き直す」を押してから直してください」と出た</dt>
@@ -423,6 +440,7 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
     <ul>
       <li><span class="key">図面</span> で部屋を押すと、その場所の設備と最近の記録が出ます。<span class="key">設備</span> にエアコン・冷蔵庫・給湯器など、点検や修理を記録したい物を足します。</li>
       <li>修理・点検・清掃・購入をしたら <span class="key">対応の記録</span> に残します。<span class="key">予定</span> に次の点検・清掃の予定が、<span class="key">費用</span> に年度ごとの費用が並びます。</li>
+      <li><span class="key">対応の記録</span> の <span class="key">一覧を印刷（A4 横）</span> で、今の絞り込み（事業所・種類・場所・業者・年度・探す）に合う点検・修繕の記録を、設備ごとにまとめて印刷できます。</li>
       <li><span class="key">業者</span> に修理・点検を頼む会社を、<span class="key">項目の設定</span> で設備や記録に残したい項目を足せます。</li>
       <li>事務所PCで、事務所・管理者のアカウントで使う画面です。</li>
     </ul>
