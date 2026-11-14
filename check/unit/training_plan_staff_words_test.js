@@ -334,6 +334,14 @@ console.log('\n【9】AI のキー・上限・サーバーの版の（管理者�
   sb.TP_IS_ADMIN = true;
   t('9-16 管理者: 状態の番号の断りは今までの文のまま（番号と AI の返答つき）', sb.aiErrText(H500) === 'AIから正しい応答がありませんでした（状態 500）。　AIの返答: Internal server error'
     && sb.aiErrText(H400) === 'AIから正しい応答がありませんでした（状態 400）。', sb.aiErrText(H500));
+  /* 2026-11-14: 混み合いの3つ（429・503・529）も、職員には番号を出さない（文は仮置き） */
+  sb.TP_IS_ADMIN = false;
+  const BUSY = ['AI_HTTP_429', 'AI_HTTP_503', 'AI_HTTP_529'].map((c) => new Error(c));
+  t('9-17 職員: 混み合い（429・503・529）の知らせに番号を出さず、職員向けの1文', BUSY.every((e) => sb.aiErrText(e) === '混み合っています。少し待ってからもう一度押してください'), BUSY.map((e) => sb.aiErrText(e)));
+  sb.TP_IS_ADMIN = true;
+  t('9-18 管理者: 混み合いの知らせは今までの文のまま（番号つき）', sb.aiErrText(BUSY[0]) === 'AIの利用が混み合っています（429）。少し待ってから「もう一度試す」を押してください'
+    && sb.aiErrText(BUSY[1]) === 'AI側が一時的に混み合っています（503）。少し待ってからもう一度お試しください'
+    && sb.aiErrText(BUSY[2]) === 'AI側が一時的に混み合っています（529）。少し待ってからもう一度お試しください', BUSY.map((e) => sb.aiErrText(e)));
   sb.TP_IS_ADMIN = true;
   sb.AI_SRV = null; sb.TP_IS_ADMIN = false; sb.CFG = { url: '', token: '' };
   t('9-5 キーの無いことが分かっていない時の文は変えない', sb.aiUnreadyWhy() === '計画書の接続先が未設定のため、AIを使えません。', sb.aiUnreadyWhy());

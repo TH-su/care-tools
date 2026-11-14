@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-kH7CDNl9vlrcYtfDZpMlJT8h5IvgFJB6FcUT/iclsgg=' 'sha256-ruohptrZvtYYXJiXBA2iM6Y9M8e4E5w1CIFu/jYDxeA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-kH7CDNl9vlrcYtfDZpMlJT8h5IvgFJB6FcUT/iclsgg=' 'sha256-DKKweag9K7D/g+olrWG3urPz4rpphm25GA7NNtixJm0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- 要配慮情報（疾患・訓練内容）を表示する画面。ブラウザキャッシュ・検索索引に残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -6568,6 +6568,8 @@ function aiErrText(e) {
   /* 括弧の中（キーが受け付けられなかった・番号）と AI の返答（英語のことがある）は管理者のログインの時だけ（同上） */
   if ((m === 'AI_HTTP_401' || m === 'AI_HTTP_403') && !TP_IS_ADMIN) return 'いまはAIを使えません。管理者に伝えてください';
   if (m === 'AI_HTTP_401' || m === 'AI_HTTP_403') return 'いまはAIを使えません。管理者に伝えてください（管理者向け：サーバーのAIのキーが受け付けられませんでした・' + m.slice(8) + '）' + why;
+  /* 混み合いの番号（429・503・529）は管理者のログインの時だけ。職員には番号を出さない（2026-11-14 第6段・CLAUDE.md §5・文は仮置き） */
+  if ((m === 'AI_HTTP_429' || m === 'AI_HTTP_529' || m === 'AI_HTTP_503') && !TP_IS_ADMIN) return '混み合っています。少し待ってからもう一度押してください';
   if (m === 'AI_HTTP_429') return 'AIの利用が混み合っています（429）。少し待ってから「もう一度試す」を押してください';
   if (m === 'AI_HTTP_529' || m === 'AI_HTTP_503') return 'AI側が一時的に混み合っています（' + m.slice(8) + '）。少し待ってからもう一度お試しください';
   /* 括弧の中（状態の番号）と AI の返答（英語のことがある）は管理者のログインの時だけ（2026-11-14 第6段 TP-03 の残り・職員の文は仮置き） */
