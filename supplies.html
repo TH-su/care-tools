@@ -3,7 +3,7 @@
 <head>
 <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-5QiipBnEu8Qofm9PcLxt4k9uEeSUI3D4x9e+v+ARMM0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-y+kpAQv7zw+Adsd/ZhKW8EO48JVIOxeGn2Nplg26h5U='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="spl-build" content="2026-09-23.1">
@@ -798,6 +798,7 @@ body.staff .adm{display:none !important}
       <button type="button" class="btn pri" id="mvSubmit">記録する</button>
       <button type="button" class="btn adm" id="copyBtn">前月の月額出庫を複写</button>
       <span class="muted grow" id="mvPending"></span>
+      <a class="btn" id="mvPendingList" href="unsent.html" hidden>未送信の一覧を見る</a>
     </div>
     <div id="mvState" class="state" role="status" hidden></div>
   </div>
@@ -3157,6 +3158,8 @@ function updatePendingLabel() {
   $('mvPending').textContent = n
     ? ('未送信の出庫 ' + n + '件（この画面を開き直すと送り直します。送れない時は設定画面の「接続テスト」で原因を確かめてください）')
     : '';
+  /* 未送信がある時だけ「未送信の一覧」への入口を出す（同じタブで移る＝このタブの送信待ちを一覧が読める・2026-11-14 代表者「推奨どおり」・文は仮置き） */
+  $('mvPendingList').hidden = !n;
 }
 function flushPending() {
   var a = readPending();
@@ -5066,6 +5069,16 @@ document.addEventListener('click', function (e) {
   if (!a || e.defaultPrevented || e.button > 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;   // 新しいタブで開く押し方では今の画面は残る
   if (!supUnsaved()) return;
   if (!window.confirm('保存していない変更があります。使い方へ移ると消えます。移りますか？')) { e.preventDefault(); return; }
+  SUP_LEAVE_OK = true;
+  setTimeout(function () { SUP_LEAVE_OK = false; }, 3000);
+});
+/* 送信待ちの出庫の隣の「未送信の一覧を見る」で離れる時も、同じ判定（supUnsaved）で確かめる（iOS Safari は beforeunload の確かめを出さないため・反証レビュー 2026-11-14）。
+   「はい」の時は直後の beforeunload で二重に聞かない（同じ印 SUP_LEAVE_OK） */
+document.addEventListener('click', function (e) {
+  var a = e.target && e.target.closest ? e.target.closest('a#mvPendingList') : null;
+  if (!a || e.defaultPrevented || e.button > 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;   // 新しいタブで開く押し方では今の画面は残る
+  if (!supUnsaved()) return;
+  if (!window.confirm('保存していない変更があります。未送信の一覧へ移ると消えます。移りますか？')) { e.preventDefault(); return; }
   SUP_LEAVE_OK = true;
   setTimeout(function () { SUP_LEAVE_OK = false; }, 3000);
 });

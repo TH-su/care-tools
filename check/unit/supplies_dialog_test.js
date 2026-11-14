@@ -2,7 +2,8 @@
    守りたいこと:
      1. 画面の中の窓の部品を画面のスクリプトより前に読み、読めない時はブラウザの窓に落とす受け口がある
      2. 確かめの窓10か所は SUDialog.confirm で聞き、文は一字一句変えない
-     3. 残すブラウザの窓は4か所だけ（新しい品目の窓を Esc・閉じる時の2か所＝その場で答えが要る／メニュー・使い方へ移る時の2か所＝help_link_test が決めている）
+     3. 残すブラウザの窓は5か所だけ（新しい品目の窓を Esc・閉じる時の2か所＝その場で答えが要る／メニュー・使い方へ移る時の2か所＝help_link_test が決めている／
+        未送信の一覧へ移る時の1か所＝押した瞬間に移るのを止めるため答えをその場で要る・unsent_entry_test が決めている・2026-11-14）
      4. 窓の答えの後に、開いている物・状態が変わっていたら何もしない（品目の非表示・締めの保存・型をすべて消す・月の付け直し）
      5. キャンセルなら何も送らない・OK なら今までと同じ物を送る
    画面の実関数を名前で切り出して vm で動かす。外部ライブラリなし・実データなし（架空の品目だけ）。
@@ -62,11 +63,13 @@ async function run() {
   console.log('— 2・3. 窓の数と文 —');
   const noComment = src.replace(/<!--[\s\S]*?-->/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
   const raw = (noComment.match(/(?<![.\w$])(alert|confirm|prompt)\s*\(|\bwindow\.(alert|confirm|prompt)\s*\(/g) || []).length;
-  t('3-1 ブラウザの窓は受け口の2か所と、残す4か所だけ', raw === 6, raw);
+  t('3-1 ブラウザの窓は受け口の2か所と、残す5か所だけ', raw === 7, raw);
   t('3-2 残す4か所: 新しい品目の窓の Esc・閉じる時（その場で答えが要る）', (src.match(/!window\.confirm\(ND_UNSAVED_MSG\)/g) || []).length === 2);
   t('3-3 残す4か所: メニュー・使い方へ移る時（help_link_test が決めている）',
     src.indexOf("if (!window.confirm('保存していない変更があります。メニューへ移ると消えます。移りますか？')) { e.preventDefault(); return; }") >= 0
     && src.indexOf("if (!window.confirm('保存していない変更があります。使い方へ移ると消えます。移りますか？')) { e.preventDefault(); return; }") >= 0);
+  t('3-4 残す5か所: 未送信の一覧へ移る時（unsent_entry_test が決めている・2026-11-14）',
+    src.indexOf("if (!window.confirm('保存していない変更があります。未送信の一覧へ移ると消えます。移りますか？')) { e.preventDefault(); return; }") >= 0);
   [
     "SUDialog.confirm('「' + it.name + '」を非表示にします。新しく選べなくなりますが、過去の記録は残ります。よろしいですか？')",
     "SUDialog.confirm('この日付以降に ' + count + ' 件の出庫があります。新しい価格で計算し直しますか？\\n（' + jpDate(from) + '〜' + jpDate(to) + '・在庫は変わりません）')",
