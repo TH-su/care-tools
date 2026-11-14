@@ -76,7 +76,9 @@ console.log('\n— 1b. 適格請求書発行事業者の登録番号（2026-11-1
 console.log('\n— 2. デイ利用表の曜日の列 —');
 {
   const src = read('daycare-roster.html');
-  t('NDAY は帳票の形として 6 のまま（理由を注記）', /帳票の形[\s\S]{0,200}\nconst NDAY\s*=\s*6;/.test(src), '');
+  t('NDAY は帳票の幅の基準の 6 日のまま（理由を注記）', /帳票の形[\s\S]{0,200}\nconst NDAY\s*=\s*6;/.test(src), '');
+  /* 曜日の列は営業曜日（dcrDays_・K5）で回す。NDAY の数で曜日を回す処理が残っていれば、7日・5日の施設で列がずれる */
+  t('曜日の列を NDAY の数で回す処理は残っていない（営業曜日で回す）', !/for\s*\(\s*let\s+\w+\s*=\s*0\s*;\s*\w+\s*<\s*NDAY\b/.test(src) && /function dcrDays_\(/.test(src), (src.match(/for\s*\(\s*let\s+\w+\s*=\s*0\s*;\s*\w+\s*<\s*NDAY\b[^\n]*/g) || []));
 }
 
 console.log('\n— 3. 週間計画の報酬マスタの「自治体」—');

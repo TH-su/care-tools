@@ -27,8 +27,9 @@
     sa: 'shift-analyzer.html', geno: 'genogram.html', doc_stf: 'staff-master.html', doc_adm: 'admission-flow.html', weight: 'weight-record.html'
   };
   var REASONS = ['login', 'perm', 'timeout', 'other'];
-  /* 失敗をまだ数えていない種類（シフト分析の画面は別の正本から配るので、失敗の控えの部品を読み込んでいない）。表は「数えていません」と出す */
-  var NO_FAIL_COUNT = { sa: 1 };
+  /* 失敗をまだ数えていない種類（保存する画面が失敗の控えの部品 su-health.js を読み込んでいない種類）。表は「数えていません」と出す。
+     今は無い（シフト分析は 2026-11-14 に正本の build-analyzer.sh から読み込むようにした・本人指示） */
+  var NO_FAIL_COUNT = {};
   var FAIL_N = 5;
   var LAG_MS = 2 * 60 * 60 * 1000;
 
