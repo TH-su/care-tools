@@ -155,7 +155,30 @@ console.log('\n— 7. 週間計画の単位単価の既定（代表者の決定 
     /DB\.office = JSON\.parse\(JSON\.stringify\(DEFAULT_OFFICE\)\);\s*DB\.office\.unitPrice = rmBaseUnitPrice_\(\);/.test(src)
     && /DB\.office\.unitPrice\s*=\s*DB\.office\.unitPrice\s*\|\|\s*rmBaseUnitPrice_\(\);/.test(src)
     && /return Number\(DB\.rateMaster && DB\.rateMaster\.unitPrice\) \|\| rmBaseUnitPrice_\(\);/.test(src), '');
-  t('施設情報が後から届いた時に単価を差し替えない（保存済みの値と見分けられないため）', (src.match(/SUFacility\.onReady\(function \(\) \{[\s\S]*?\n  \}\);/g) || []).every(b => !/unitPrice/.test(b)), '');
+  /* 2026-11-13 反証レビュー 中: 施設情報の控えが無い端末の初回は、起動の時に既定で埋めた物に印を立て、届いた時にその物がそのまま・既定のままなら差し替える */
+  const late = () => {
+    let sec = null; const cbs = [];
+    const F = { section: (n) => (n === 'rateDefaults' ? sec : null), municipality: () => '', onReady: (fn) => cbs.push(fn) };
+    const c = { window: { SUFacility: F }, SUFacility: F };
+    vm.createContext(c);
+    vm.runInContext(chunk + '\nvar DB = { office: { unitPrice: 10.27 }, rateMaster: { unitPrice: 10.27, municipality: "架空市" } };'
+      + '\nthis.setPending = function (o, m) { CS_UP_PENDING = { office: o ? DB.office : null, master: m ? DB.rateMaster : null }; };'
+      + '\nthis.getDB = function () { return DB; }; this.pending = function () { return CS_UP_PENDING; };', c);
+    return { c, arrive: (v) => { sec = v === undefined ? null : { unitPrice: v }; cbs.forEach((f) => f()); } };
+  };
+  { const L = late(); L.c.setPending(true, true); L.arrive(10.84);
+    t('後から届いた時: 起動の時に既定で埋めた事業所情報・報酬マスタは施設の単価に差し替える', L.c.getDB().office.unitPrice === 10.84 && L.c.getDB().rateMaster.unitPrice === 10.84 && L.c.pending() === null, L.c.getDB()); }
+  { const L = late(); L.c.setPending(true, true); const D = L.c.getDB(); D.office = { unitPrice: 10.27 }; D.rateMaster = Object.assign({}, D.rateMaster); L.arrive(10.84);
+    t('後から届いた時: 保存・適用・共有の取り込みで別の物に替わっていれば差し替えない（10.27 で保存した値も残す）', D.office.unitPrice === 10.27 && D.rateMaster.unitPrice === 10.27, D); }
+  { const L = late(); L.c.setPending(true, true); const D = L.c.getDB(); D.office.unitPrice = 11.4; L.arrive(10.84);
+    t('後から届いた時: 単価が既定から変わっていれば差し替えない', D.office.unitPrice === 11.4 && D.rateMaster.unitPrice === 10.84, D); }
+  { const L = late(); L.arrive(10.84);
+    t('後から届いた時: 印が無ければ（既定で埋めていない・施設情報が先に読めていた）差し替えない', L.c.getDB().office.unitPrice === 10.27, ''); }
+  { const L = late(); L.c.setPending(true, false); L.arrive(undefined);
+    t('後から届いた時: 施設情報に単価が無ければ何もせず、印は下ろす', L.c.getDB().office.unitPrice === 10.27 && L.c.pending() === null, ''); }
+  t('起動（loadDB）は、施設情報がまだ読めず単価を既定で埋めた時だけ印を立てる',
+    /const upLate = csProfileUnitPrice_\(\) === null;/.test(src) && /CS_UP_PENDING = \(upLate && \(upOfficeFilled \|\| upMasterFilled\)\)/.test(src)
+    && /const upMasterFilled = !\(DB\.rateMaster && rmNum_\(DB\.rateMaster\.unitPrice, 1, 100\)\);\s*RM_FILLED_AT_LOAD = ensureRateMaster_\(\);/.test(src), '');
   t('単位単価の説明文（unitPriceHint）は変えない', /unitPriceHint: '地域加算により変わります。1級地\(東京都特別区等\)=11\.40、2級地=11\.12、3級地=10\.84…標準=10\.00',/.test(src), '');
 }
 

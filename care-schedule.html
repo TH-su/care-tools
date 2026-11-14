@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-pgTCuHpK146F74XiXXb5pcmATZuBasGUhjwUReQclTg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-8BIY1Z/oksKz3E7EUPdtb8CbhG265/wP0eusfgkqfw0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -2049,12 +2049,29 @@ function csProfileMunicipality_() {
 if (window.SUFacility && typeof SUFacility.onReady === 'function') {
   SUFacility.onReady(function () {
     try { if (typeof DB === 'object' && DB && DB.rateMaster && !DB.rateMaster.municipality) DB.rateMaster.municipality = csProfileMunicipality_(); } catch (e) {}
+    try { csApplyLateUnitPrice_(); } catch (e) { csNote_('単位単価の施設の既定（後から届いた時）', e); }
   });
+}
+/* 起動の時に施設情報がまだ届かず、単位単価をコードの既定（10.27）で埋めた時の印（2026-11-13 反証レビュー 中・メモリだけ）。
+   { office: 埋めた時の DB.office そのもの, master: 埋めた時の DB.rateMaster そのもの }。埋めなかった・施設情報が読めていた時は null。
+   ★「誰もまだ保存していない」は、同じ物のままかで見分ける（事業所情報の保存・報酬マスタの適用・共有からの取り込みは別の物に置き換えるので、印は効かなくなる） */
+var CS_UP_PENDING = null;
+/* 施設情報が届いた時、印が立っていて、埋めた物がそのまま・単価も既定のままの時だけ、施設の単価に差し替える（保存済みの値は変えない）。
+   端末の中だけ直し、次の保存で一緒に残る（自治体と同じ）。印は1回で下ろす */
+function csApplyLateUnitPrice_() {
+  const p = CS_UP_PENDING;
+  CS_UP_PENDING = null;
+  if (!p || typeof DB !== 'object' || !DB) return;
+  const up = csProfileUnitPrice_();
+  if (up === null) return;
+  const d = RATE_MASTER_DEFAULT.unitPrice;
+  if (p.office && DB.office === p.office && DB.office.unitPrice === d) DB.office.unitPrice = up;
+  if (p.master && DB.rateMaster === p.master && DB.rateMaster.unitPrice === d) DB.rateMaster.unitPrice = up;
 }
 /* 単位単価の施設の既定（2026-11-13 代表者の決定・台帳 CS-02）。施設情報（facility-profile.json）の rateDefaults.unitPrice が
    報酬マスタと同じ範囲（1〜100 円）の数の時だけ使い、書いていない・崩れている・読めない時は null。
    ★使うのは端末にも共有データにも単価の保存が無い時の既定だけ。保存済みの値は変えない。
-   ★施設情報が起動より後に届いた時の差し替えはしない（単価は空で見分けられず、保存済みの 10.27 と区別できないため） */
+   ★施設情報が起動より後に届いた時は、起動の時に既定で埋めた物がそのまま（誰もまだ保存していない）時だけ差し替える（csApplyLateUnitPrice_） */
 function csProfileUnitPrice_() {
   try {
     const rd = (window.SUFacility && typeof SUFacility.section === 'function') ? SUFacility.section('rateDefaults') : null;
@@ -3948,10 +3965,14 @@ function loadDB() {
   }
   if (!Array.isArray(DB.residents)) DB.residents = [];
   // 事業所情報マイグレーション: 山田太郎の設定をデフォルトとして取り込む
+  /* 施設情報がまだ届いていない時に単価を既定で埋めたら、印を立てる（csApplyLateUnitPrice_・2026-11-13） */
+  const upLate = csProfileUnitPrice_() === null;
+  let upOfficeFilled = false;
   if (!DB.office) {
     const taro = DB.residents.find(r => r.name === '山田太郎')
               || DB.residents.find(r => r.unitPrice || r.visitAddons || r.daycareAddons);
     if (taro) {
+      if (!taro.unitPrice) upOfficeFilled = true;
       DB.office = {
         unitPrice:     taro.unitPrice     || rmBaseUnitPrice_(),
         visitAddons:   { ...DEFAULT_OFFICE.visitAddons,   ...(taro.visitAddons   || {}) },
@@ -3960,15 +3981,20 @@ function loadDB() {
     } else {
       DB.office = JSON.parse(JSON.stringify(DEFAULT_OFFICE));
       DB.office.unitPrice = rmBaseUnitPrice_();
+      upOfficeFilled = true;
     }
   }
+  if (!DB.office.unitPrice) upOfficeFilled = true;
   // 既存項目欠落補完（単位単価が無い時は施設の既定・2026-11-13）
   DB.office.unitPrice     = DB.office.unitPrice     || rmBaseUnitPrice_();
   DB.office.visitAddons   = { ...DEFAULT_OFFICE.visitAddons,   ...(DB.office.visitAddons   || {}) };
   DB.office.daycareAddons = { ...DEFAULT_OFFICE.daycareAddons, ...(DB.office.daycareAddons || {}) };
   /* 報酬マスタを展開する（未設定の端末は既定＝改修前と同じ数値で動く）。
      単位数の表がここで確定してから recalcAllEventUnits を呼ぶ順序を守る。 */
+  const upMasterFilled = !(DB.rateMaster && rmNum_(DB.rateMaster.unitPrice, 1, 100));
   RM_FILLED_AT_LOAD = ensureRateMaster_();
+  CS_UP_PENDING = (upLate && (upOfficeFilled || upMasterFilled))
+    ? { office: upOfficeFilled ? DB.office : null, master: upMasterFilled ? DB.rateMaster : null } : null;
   // 全予定の単位数を最新の事業所設定で再計算（古い ev.units を更新）
   recalcAllEventUnits();
   ensureServiceDict_();   // 辞書をメモリに同期（ここでは saveDB/saveLocalOnly を呼ばない＝startupPull の生文字列一致判定に非干渉）
