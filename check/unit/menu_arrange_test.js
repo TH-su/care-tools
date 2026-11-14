@@ -250,5 +250,18 @@ t('11q autoHidden: 区分の事務所専用も見る', M.autoHidden({ href: 'x.h
 t('11r autoHidden: 使い方・困った時は出す', M.autoHidden({ href: 'help.html', adminOnly: true, officeOnly: true }, true, 'field') === false);
 t('11s 壊れた定義（区分の一覧が無い）はそのまま返す', M.view({ x: 1 }, null, 'field').x === 1);
 
+// 12. 「動作の速さの記録」のリンク（2026-11-14 代表者の決定）: 事務所の端末で事務所・管理者としてログインしている時だけ出す
+t('12a 事務所の端末の事務所・管理者には出す', M.perfLinkShown('office', false) === true && M.perfLinkShown('admin', false) === true);
+t('12b 現場端末では役割に関わらず出さない（管理者でも）', ['admin', 'office', 'field', 'pending', null].every((r) => M.perfLinkShown(r, true) === false));
+t('12c 現場のアカウント・ログインしていない・役割がまだ分からない・知らない役割には出さない', ['field', null, undefined, 'pending', 'guest', ''].every((r) => M.perfLinkShown(r, false) === false));
+{
+  const IDX = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'index.html'), 'utf8');
+  t('12d メニューのリンクは初めは隠しておき（hidden）、前の改行ごとまとめて隠す', /<span id="perfLink" hidden><a href="perf-report\.html">動作の速さの記録（遅さの調査用）<\/a><br><\/span>/.test(IDX) && (IDX.match(/href="perf-report\.html"/g) || []).length === 1);
+  t('12e 読み込みが終わった時（リンクは script より後ろ）と、ログインの確かめの2つの知らせの後に出し分け直し、部品が無い時は出さない', (IDX.match(/drawRole\(.*\);\n\s*perfApply\(\);/g) || []).length === 2 &&
+    /document\.addEventListener\('DOMContentLoaded', function \(\) \{ perfApply\(\); \}\);/.test(IDX) && IDX.indexOf('id="perfLink"') > IDX.indexOf('function perfApply()') && /var on = !!\(window\.SUMenu && typeof SUMenu\.perfLinkShown === 'function' &&/.test(IDX) && /p\.hidden = !on;/.test(IDX));
+  t('12f 「戻る」で戻った時も出し分け直す（端末の用途は is-field で見る）', /if \(e && e\.persisted\) perfApply\(\);/.test(IDX) && /SUMenu\.perfLinkShown\(role, document\.documentElement\.classList\.contains\('is-field'\)\)/.test(IDX));
+  t('12g 記録そのもの（su-perf.js）は今までどおり読む', /<script src="su-perf\.js\?v=[0-9.-]+"><\/script>/.test(IDX));
+}
+
 console.log(`\n合格 ${pass} / 不合格 ${fail}`);
 process.exit(fail ? 1 : 0);
