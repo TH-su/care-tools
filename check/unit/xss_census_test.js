@@ -576,6 +576,9 @@ const CENSUS = {
   "su-roster.js": [],
   "su-staff-names.js": [],
   "su-sync-stale.js": [],
+  "su-health-calc.js": [],   /* 判定の純関数・画面に入れない（2026-11-14） */
+  "su-health.js": [],        /* 保存の失敗を数えて送るだけ・画面に入れない（2026-11-14） */
+  "su-health-badge.js": [],  /* 札の文は数と時間を textContent で入れる（2026-11-14） */
   "su-weight-shadow.js": [],
   "su-weight-live.js": [],
   "su-res-full.js": [],

@@ -198,18 +198,37 @@
     try { return global.SU.data._entryRoute('training_ai') === 'supabase'; } catch (e) { return false; }
   }
 
+  /* 本番の健康（統合 0088）: 新しい保存先への保存（put）の失敗だけを、種類（tp・adm）と理由で数える（su-health.js が無ければ何もしない）。
+     断り（{ok:false, code}）は受け口の印、投げた失敗は fail() の印で振り分ける。答え・投げ方は変えない */
+  var HEALTH_KIND = { training: 'tp', admission: 'adm' };
+  function health(group, info) { try { if (HEALTH_KIND[group] && global.SUHealth) global.SUHealth.fail(HEALTH_KIND[group], info); } catch (e) { /* 数えられなくても止めない */ } }
+  function tracked(group, p, at) {
+    return p.then(function (res) {
+      if (at.gas) return res;   // 写しの期間で Google へ送った分は数えない
+      if (res && typeof res === 'object' && res.ok === false && typeof res.code === 'string') health(group, { code: res.code });
+      return res;
+    }, function (e) {
+      var c = String(e && e.code || '');
+      if (!at.gas && c !== 'supabase_not_ready') {
+        health(group, c === 'signed_out' ? { code: 'login' } : c === 'timeout' ? { timeout: true } : c === 'network' ? { network: true }
+          : c === '42501' ? { pg: c } : {});
+      }
+      throw e;
+    });
+  }
+
   var SUPA = {
     /* 名前付きの入口から呼ばれる。group＝入口のまとまり（training 等）・method＝関数の名前・args＝画面が渡した引数・gasFn＝gas の道 */
     entry: function (group, method, args, gasFn) {
       if (group === 'training' && method === 'ai') return aiEntry(args[0]);
       if (!Object.prototype.hasOwnProperty.call(GROUPS, group) || ['get', 'put', 'ping'].indexOf(method) < 0) return Promise.reject(fail(NOT_YET, 'supabase_not_ready'));
-      var S = st(group);
-      return loadAuth().then(function (A) {
+      var S = st(group), at = { gas: false };
+      var run = loadAuth().then(function (A) {
         if (!A) throw fail('ログインの部品を読み込めませんでした。ページを読み込み直してください。', 'noauth');
         return Promise.resolve(A.check()).then(function (st) {
           if (!st || st.status !== A.STATUS.OK) throw fail('この端末はログインしていません。ログインしてから開いてください。', 'signed_out');
           return readMode(group, A).then(function (m) {
-            if (m !== 'live') return typeof gasFn === 'function' ? gasFn() : Promise.reject(fail(NOT_YET, 'supabase_not_ready'));
+            if (m !== 'live') { at.gas = true; return typeof gasFn === 'function' ? gasFn() : Promise.reject(fail(NOT_YET, 'supabase_not_ready')); }
             var opts = method === 'put' ? args[4] : method === 'get' ? args[1] : args[0];
             if (method === 'get' && !S.caughtUp) { S.caughtUp = true; mirrorSoon(group, A, opts); }   // 開いた時に1回、写し返しの残りを追いつかせる
             return invoke(group, A, bodyOf(group, method, args)).then(function (res) {
@@ -228,6 +247,7 @@
           });
         });
       });
+      return method === 'put' ? tracked(group, run, at) : run;
     },
     /* 閉じる直前の送信を Google へ送ってよいか（印が「切り替える前」と1分以内に確かめてある時だけ）。group を省くと計画書 */
     liveReady: liveReady,
