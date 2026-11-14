@@ -97,12 +97,11 @@ const ST = (s, a) => ({ ok: true, stf: K(s), adm: K(a) });
   {
     const M = (s, a) => ({ ok: true, tenant: 'x', stf: Object.assign({ mode: 'live', version: 1, mirroredVer: 1, mirroredAt: null }, s || {}), adm: Object.assign({ mode: 'live', version: 1, mirroredVer: 1, mirroredAt: null }, a || {}) });
     const b = box({ status: ST({ lastAt: ago(60 * 24 * 8) }, { lastAt: ago(60 * 24 * 8) }), mode: M() }); await b.run();
-    t('L 両方とも切り替え済みで残り0なら、写しが8日前でも知らせない（ok）', V(b).className === 'msg ok' && !/しばらく届いていません/.test(V(b).textContent) && /切り替え済み/.test(V(b).textContent), V(b));
-    t('L 種類ごとに切り替え済みと写し返しの残りを出す', /職員マスタ: 切り替え済みです/.test(D(b).textContent) && /写し返しの残り 0件/.test(D(b).textContent), D(b).textContent);
+    t('L 両方とも切り替え済みなら、写しが8日前でも知らせない（ok）', V(b).className === 'msg ok' && !/しばらく届いていません/.test(V(b).textContent) && /切り替え済み/.test(V(b).textContent), V(b));
+    t('L 写し返しの残りと遅れは「本番の健康」の表に任せる（この欄では「遅れはありません」と言わない）', /本番の健康/.test(V(b).textContent) && !/遅れはありません/.test(V(b).textContent), V(b).textContent);
+    t('L 種類ごとに切り替え済みと出す', /職員マスタ: 切り替え済みです/.test(D(b).textContent) && /入居調整: 切り替え済みです/.test(D(b).textContent), D(b).textContent);
     const b2 = box({ status: ST({ lastAt: ago(60 * 24 * 8) }), mode: M({ version: 3, mirroredVer: 1, mirroredAt: ago(200) }) }); await b2.run();
-    t('L 写し返しの残りがあり75分を超えて遅れたら知らせる', /職員マスタの書類の Google ドライブへの写し返しが遅れています（残り 2件/.test(V(b2).textContent) && /warn/.test(V(b2).className), V(b2).textContent);
-    const b3 = box({ status: ST({ lastAt: ago(60 * 24 * 8) }), mode: M({ version: 2, mirroredVer: 1, mirroredAt: ago(30) }) }); await b3.run();
-    t('L 残りがあっても75分以内に写し返していれば知らせない', !/warn/.test(V(b3).className), V(b3));
+    t('L 版の差では遅れを知らせない（版の差は書類の残りではないため・反証レビュー指摘1〜3）', !/warn/.test(V(b2).className) && !/遅れています/.test(V(b2).textContent), V(b2));
     const b4 = box({ status: ST({}, { lastAt: ago(200) }), mode: M({}, { mode: 'shadow' }) }); await b4.run();
     t('L 写しの期間の種類（入居調整）は今までどおり写しの遅れを知らせる', /入居調整の写しがしばらく届いていません/.test(V(b4).textContent), V(b4).textContent);
   }

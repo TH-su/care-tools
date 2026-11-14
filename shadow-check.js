@@ -1914,7 +1914,8 @@ if (!window.SUDialog) window.SUDialog = {
     var d = st.data || {}, now = typeof nowMs === 'number' ? nowMs : Date.now();
     var warn = [], lines = [], none = true;
     /* 切り替えた後の種類は写しを止めてあるので、写しが届かないことを知らせない（2026-11-14・切り替えた後も「写しがしばらく届いていません」と出ていた）。
-     * 代わりに Google ドライブへの写し返しの残りと遅れを見る（家族構成図の欄と同じ・75分）。印を読めない時は今までどおり写しで判断する */
+     * Google ドライブへの写し返しの残りは、版の差では分からない（写し返しは書類ごとに失敗しても版を進める）ので、この欄では言わない。
+     * 写し返しの残りと遅れは「本番の健康」の表（管理者・書類の行の状態で数える・統合 0089）で見る。印を読めない時は今までどおり写しで判断する */
     var dm = null;
     try { var mr = await sb.rpc('doc_mode_get'); dm = mr && !mr.error && mr.data && mr.data.ok === true ? mr.data : null; } catch (e) { genoNote('書類の印', e); dm = null; }
     ['stf', 'adm'].forEach(function (k) {
@@ -1924,9 +1925,7 @@ if (!window.SUDialog) window.SUDialog = {
       var m = dm && dm[k] && typeof dm[k] === 'object' ? dm[k] : null;
       if (m && m.mode === 'live') {
         none = false;
-        var pend = Math.max(0, (Number(m.version) || 0) - (Number(m.mirroredVer) || 0)), mAt = Date.parse(m.mirroredAt || '');
-        lines.push(nm + ': 切り替え済みです（書類の正本は新しい保存先）。写しは切り替えの前で止めてあります' + (x.lastAt ? '（最後に写した時刻 ' + fmtTime(x.lastAt) + '）' : '') + '。Google ドライブへの写し返しの残り ' + pend + '件。');
-        if (pend > 0 && (isNaN(mAt) || now - mAt > SA_FRESH_MS)) warn.push(nm + 'の書類の Google ドライブへの写し返しが遅れています（残り ' + pend + '件' + (isNaN(mAt) ? '' : '・最後に写し返した時刻 ' + fmtTime(m.mirroredAt)) + '）。' + nm + 'の GAS の自動（autoMirror）が止まっていないか確かめてください。');
+        lines.push(nm + ': 切り替え済みです（書類の正本は新しい保存先）。写しは切り替えの前で止めてあります' + (x.lastAt ? '（最後に写した時刻 ' + fmtTime(x.lastAt) + '）' : '') + '。');
         return;
       }
       if (!x.lastAt) { lines.push(nm + ': まだ写していません。'); warn.push(nm + 'はまだ写していません（' + nm + 'の GAS に docshadow.gs と新しい automirror.gs を貼ると、1時間以内に写り始めます）。'); return; }
@@ -1940,7 +1939,7 @@ if (!window.SUDialog) window.SUDialog = {
     dt.textContent = lines.join(' ');
     if (warn.length) { say(warn.join(' '), 'warn'); return; }
     var leftAll = ['stf', 'adm'].reduce(function (n, k) { return n + (dm && dm[k] && dm[k].mode === 'live' ? 0 : (Number(d[k] && d[k].left) || 0)); }, 0);
-    if (dm && ['stf', 'adm'].every(function (k) { return dm[k] && dm[k].mode === 'live'; })) { say('添付書類は職員マスタ・入居調整とも切り替え済みです。Google ドライブへの写し返しに遅れはありません。', 'ok'); return; }
+    if (dm && ['stf', 'adm'].every(function (k) { return dm[k] && dm[k].mode === 'live'; })) { say('添付書類は職員マスタ・入居調整とも切り替え済みです（写しは止めてあります）。Google ドライブへの写し返しの残りと遅れは、管理者の「本番の健康」の表で確かめます。', 'ok'); return; }
     if (leftAll > 0) say('写しが届いています（初めの写しの途中です。残りは1時間ごとに少しずつ写します）。', 'ok');
     else if (!none) say('添付書類の写しが1時間ごとに届き、目録の書類は全部写してあります。', 'ok');
   }
