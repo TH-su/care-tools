@@ -164,9 +164,9 @@ async function run() {
       const d = makeDialog();
       const log = { puts: [], sync: [], scheduled: 0 };
       const b = { SUDialog: d.SUDialog, afDlgNote_: () => {}, Promise, String, Number, Object,
-        dirty: true, pushing: false, SU_DATA_READY: true, AF_LIVE: true, kvRev: 3, retryWait: 0, pushTimer: null,
+        dirty: true, pushing: false, afWipeHold_: false, SU_DATA_READY: true, AF_LIVE: true, kvRev: 3, retryWait: 0, pushTimer: null,
         DB: { updatedAt: '2026-11-13T00:00:00.000Z', candidates: [] },
-        syncTarget: () => ({ endpoint: 'x', token: '' }), setSync: (m, c) => log.sync.push([m, c || '']), saveCache() {},
+        nowIso: () => '2026-11-13T00:00:09.000Z', syncTarget: () => ({ endpoint: 'x', token: '' }), setSync: (m, c) => log.sync.push([m, c || '']), saveCache() {},
         schedulePushRetry() {}, setTimeout, clearTimeout,
         answers: [], kvPutWithOpts: (db, rev, opts) => { log.puts.push(opts); return Promise.resolve(b.answers.length ? b.answers.shift() : { ok: true, rev: 4 }); } };
       vm.createContext(b);
@@ -190,10 +190,49 @@ async function run() {
     p.d.before = () => { p.b.DB.updatedAt = '2026-11-13T00:00:05.000Z'; };
     p.b.push(); await settle();
     t('5-5 「OK」でも窓の間に台帳が変わっていたら上書きせず、いつもの送信に戻す', p.log.puts.length === 1 && p.log.scheduled === 1, p.log);
+    /* PR #566 の反証: キャンセルの後、予約から来た送信で同じ確かめを続けて出さない。人が編集・⟳ を押すまで */
+    p = mk(); p.b.answers = [WIPE, WIPE]; p.d.answer = false;
+    p.b.push(); await settle();
+    p.b.push(); await settle();   // 窓の後の予約（idle → schedulePush）から来た送信の代わり
+    t('5-6 キャンセルの後の予約の送信では送らず、確かめも聞き直さない', p.log.puts.length === 1 && p.d.asked.length === 1 && p.b.afWipeHold_ === true
+      && JSON.stringify(p.log.sync[p.log.sync.length - 1]) === '["未送信あり","err"]', [p.log.puts.length, p.d.asked.length, p.b.afWipeHold_]);
+    vm.runInContext(grabFn('markDirty'), p.b);
+    p.b.markDirty();
+    t('5-7 人が編集したら（markDirty）印を下ろす', p.b.afWipeHold_ === false);
+    p.b.push(); await settle();
+    t('5-8 編集の後の送信でまた断られたら、もう一度聞く', p.log.puts.length === 2 && p.d.asked.length === 2, [p.log.puts.length, p.d.asked.length]);
+    p = mk(); p.b.answers = [WIPE, { ok: true, rev: 9 }]; p.d.answer = false;
+    p.b.push(); await settle();
+    p.b.push(true); await settle();
+    t('5-9 印が立っていても、上書きと答えた送信（force）は止めない', p.log.puts.length === 2 && p.log.puts[1] && p.log.puts[1].force === true, p.log.puts);
+    t('5-10 ⟳ とバックアップから戻した時も印を下ろす', /afWipeHold_ = false;[^\n]*\n  pull\(true\)\.then\(/.test(src) && /afWipeHold_ = false;[^\n]*\n    dirty = true; saveCache\(\); renderAll\(\); schedulePush\(\);/.test(src));
   }
 
   console.log('— 6. 窓が出ている間は取り直さない・取り込まない —');
   t('6-1 画面に戻った時の取り直しは窓の間はしない', /if \(busyEditing\(\)\) return;\n  if \(SUDialog\.busy\(\)\) return;[^\n]*\n  if \(Date\.now\(\) - lastPullAt > 5 \* 60000\) pull\(false\);/.test(src));
+  {
+    /* つながった時（PR #566 の反証）: 実物の afOnlinePull_ を動かす */
+    const d = makeDialog();
+    const log = { pulls: 0 };
+    const b = { SUDialog: d.SUDialog, afGateOk_: true, dirty: false, lastPullAt: 0, Date, busy: false };
+    b.busyEditing = () => b.busy; b.pull = () => { log.pulls++; return Promise.resolve(true); };
+    vm.createContext(b);
+    vm.runInContext(grabFn('afOnlinePull_'), b);
+    let closeWin = null;
+    d.SUDialog.idle = () => { d.idled++; return new Promise((r) => { closeWin = () => { d.busy = false; r(); }; }); };   // 窓が閉じた時に解ける
+    d.busy = true;
+    b.afOnlinePull_(); await settle();
+    t('6-2 つながった時の取り直しは、窓の間はしない', d.idled === 1 && log.pulls === 0, [d.idled, log.pulls]);
+    closeWin(); await settle();
+    t('6-2b 窓が閉じた後に取り直す', log.pulls === 1 && d.idled === 1, [d.idled, log.pulls]);
+    b.busy = true; b.lastPullAt = 0;
+    b.afOnlinePull_(); await settle();
+    t('6-2c 編集中は取り直さない（前のまま）', log.pulls === 1, log);
+    b.busy = false; vm.runInContext('dirty = true;', b);
+    b.afOnlinePull_(); await settle();
+    t('6-2d 未送信がある時は取り直さない（送る方へ回る）', log.pulls === 1, log);
+    t('6-2e つながった時は、未送信があれば送り、無ければ afOnlinePull_ を呼ぶ', /if \(!afGateOk_\) return;\n  if \(dirty\) \{ retryWait = 0; push\(\); return; \}[^\n]*\n  afOnlinePull_\(\);/.test(src));
+  }
   t('6-3 別タブの控えの取り込みは窓が閉じた後に回す', /setTimeout\(function apply\(\) \{\n    if \(dirty \|\| busyEditing\(\)\) return;\n[^\n]*\n    if \(SUDialog\.busy\(\)\) \{ SUDialog\.idle\(\)\.then\(apply\); return; \}/.test(src));
 
   console.log('— 7. 窓の後に相手が変わっていたら何もしない（形の確かめ） —');
@@ -209,6 +248,11 @@ async function run() {
     const ADMIN_TXT = '⚠️ サーバー側の消失ガード（admwipe）が有効になっていません。Apps Script でコードを保存しただけになっていないか確認してください（デプロイ → デプロイを管理 → 鉛筆 → バージョン「新バージョン」→ デプロイ）。';
     const STAFF_TXT = '⚠️ サーバーの守りの設定が済んでいません。管理者に伝えてください。';
     t('8-1 管理者には今までの文・それ以外には職員向けの1文', src.indexOf("(caps && serverOk && !guardOk ? (afIsAdmin_ ? '<p class=\"note err\">" + ADMIN_TXT + "</p>'\n      : '<p class=\"note err\">" + STAFF_TXT + "</p>') : '')") >= 0);
+    /* PR #566 の反証: 「サーバー版」「サーバーの防御」（英字の守りの名前）の行も管理者の時だけ。職員には確かめのボタンだけの行 */
+    t('8-1b サーバー版・サーバーの防御の行は管理者の時だけ、職員には「サーバー」の行と確かめのボタン',
+      src.indexOf("(afIsAdmin_\n      ? '<dt>サーバー版</dt><dd>'") >= 0 && src.indexOf("'<dt>サーバーの防御</dt><dd>' + (caps ? esc(asArr(caps.guards).join('・') || 'なし') : '—') + '</dd>'\n      : '<dt>サーバー</dt><dd>' + (caps ? '確認済み' : '<span style=\"color:var(--g6)\">未確認</span>') +\n        ' <button class=\"btn sm\" id=\"syPing\" type=\"button\">確認する</button></dd>') +") >= 0
+      && (src.match(/id="syPing"/g) || []).length === 2);
+    t('8-1c 確かめた時の知らせの版の番号も管理者の時だけ', src.indexOf("toast(afIsAdmin_ ? 'サーバー版 ' + asStr(j.codeVersion) : 'サーバーを確認しました');") >= 0);
     t('8-2 既定は管理者ではない（確かめが遅れても職員向け）', /var afIsAdmin_ = false;/.test(src));
     /* 実物の afSetAdmin_・afResolveWho_ を動かす */
     const mk = (hasLogin, check) => {

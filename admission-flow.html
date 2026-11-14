@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-nJdplB5zaSZaQTkjc1b/Nf0RGnEZfJdkd9LZbf95P+k='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-DWWZamBKXwpcSk1V+de9IqKxH+NBKbgM5J4BnxoiuSo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
@@ -1277,6 +1277,9 @@ var kvRev = 0;          // 直近に観測したサーバ版（次回 put の楽
 var dirty = false;      // 未送信の変更があるか
 var pushTimer = null;
 var pushing = false;
+/* 一括消失の守りの確かめで「キャンセル」と答えた印（2026-11-13 第6段 AF-02・PR #566 の反証）。立っている間は、予約から来た送信で同じ確かめを聞き直さない（送らない）。
+   人が編集した時（markDirty）・⟳ を押した時・バックアップから戻した時に下ろす */
+var afWipeHold_ = false;
 var lastPullAt = 0;
 var retryWait = 0;      // 指数バックオフの現在待ち時間(ms)
 var serverCaps = null;  // ping で観測したサーバーの能力宣言
@@ -1496,6 +1499,7 @@ function restoreFromBackup(slot) {
     /* 人が意図して古い値を戻す操作なので、消した印を効かせない（keepFilled） */
     DB = mergeDb(DB, n, { keepFilled: true });
     DB.updatedAt = nowIso();
+    afWipeHold_ = false;   // 人が戻した＝送信で断られたらもう一度聞く
     dirty = true; saveCache(); renderAll(); schedulePush();
     toast('バックアップから復元しました');
   }).catch(function (e) { afDlgNote_('restoreFromBackup', e); });
@@ -1875,6 +1879,7 @@ function startupPull() {
 }
 
 function markDirty() {
+  afWipeHold_ = false;   // 人が編集した＝次の送信で断られたらもう一度聞く
   DB.updatedAt = nowIso();
   dirty = true; saveCache();
   setSync('未送信あり');
@@ -1895,6 +1900,8 @@ function push(force) {
   /* 画面の中の窓が出ている間は送り始めない（窓の答えを待つ間に、聞いている中身と違う物を送らない）。窓が閉じた後に送る（2026-11-13 第6段 AF-02）。
      上書きの確かめで「OK」と答えた送信（force）は待たない */
   if (!force && SUDialog.busy()) { SUDialog.idle().then(schedulePush); return; }
+  /* 上書きの確かめを「キャンセル」した後は、人が編集するか ⟳ を押すまで送らない（同じ確かめを続けて出さない） */
+  if (!force && afWipeHold_) { setSync('未送信あり', 'err'); return; }
   var t = syncTarget();
   if (!t.endpoint && !AF_LIVE) { setSync('未接続'); return; }
   pushing = true; setSync('保存中…');
@@ -1919,6 +1926,7 @@ function push(force) {
         '【身に覚えがない場合】「キャンセル」を押し、⟳ で最新を取り直してください。').then(function (ok) {
         /* 窓の間に台帳が変わった（取り込み・統合）時は、聞いた件数と違う物で上書きしない。いつもの送信に戻す（サーバーがまた断れば件数を出し直して聞く・2026-11-13） */
         if (ok && DB.updatedAt === sentAt) { pushing = false; push(true); return; }
+        if (!ok) afWipeHold_ = true;
         setSync('未送信あり', 'err');
         if (ok) schedulePush();
       }).catch(function (e) { afDlgNote_('admwipe', e); setSync('未送信あり', 'err'); });
@@ -2045,8 +2053,16 @@ document.addEventListener('visibilitychange', function () {
    （取り直して版を進めると、編集の保存が統合を通らずに他の端末の変更を上書きする・PR #550 の反証レビュー） */
 window.addEventListener('online', function () {
   if (!afGateOk_) return;
-  if (dirty) { retryWait = 0; push(); } else if (!busyEditing() && Date.now() - lastPullAt > 60000) pull(false);
+  if (dirty) { retryWait = 0; push(); return; }   // 送る方は、窓が出ていれば push が窓の後へ回す
+  afOnlinePull_();
 });
+/* つながった時の取り直し。編集中・1分以内に取り直した時はしない。画面の中の窓の答えを待つ間は、窓が閉じた後に回す
+   （窓の前に掴んだ案件を差し替えない・2026-11-13 第6段 AF-02・PR #566 の反証） */
+function afOnlinePull_() {
+  if (!afGateOk_ || dirty) return;
+  if (SUDialog.busy()) { SUDialog.idle().then(afOnlinePull_); return; }
+  if (!busyEditing() && Date.now() - lastPullAt > 60000) pull(false);
+}
 /* 同じ端末の別タブが書いた時に取り込む。編集中・未送信中は取り込まない */
 window.addEventListener('storage', function (ev) {
   if (!afGateOk_ || !ev || ev.key !== CACHE_KEY) return;
@@ -5361,9 +5377,12 @@ function renderSyncModal() {
     '<dt>状態</dt><dd>' + esc($('syncChip').textContent) + (dirty ? '（未送信の変更あり）' : '') + '</dd>' +
     '<dt>案件</dt><dd>' + DB.candidates.filter(function (c) { return !c.deleted; }).length + '件（削除済み ' +
       DB.candidates.filter(function (c) { return c.deleted; }).length + '件）</dd>' +
-    '<dt>サーバー版</dt><dd>' + (caps ? esc(asStr(caps.codeVersion) || '不明') : '<span style="color:var(--g6)">未確認</span>') +
-      ' <button class="btn sm" id="syPing" type="button">確認する</button></dd>' +
-    '<dt>サーバーの防御</dt><dd>' + (caps ? esc(asArr(caps.guards).join('・') || 'なし') : '—') + '</dd>' +
+    (afIsAdmin_
+      ? '<dt>サーバー版</dt><dd>' + (caps ? esc(asStr(caps.codeVersion) || '不明') : '<span style="color:var(--g6)">未確認</span>') +
+        ' <button class="btn sm" id="syPing" type="button">確認する</button></dd>' +
+        '<dt>サーバーの防御</dt><dd>' + (caps ? esc(asArr(caps.guards).join('・') || 'なし') : '—') + '</dd>'
+      : '<dt>サーバー</dt><dd>' + (caps ? '確認済み' : '<span style="color:var(--g6)">未確認</span>') +
+        ' <button class="btn sm" id="syPing" type="button">確認する</button></dd>') +
     '</dl>' +
     (caps && !serverOk ? '<p class="note err">🛑 <b>接続先が入居調整の専用サーバーではありません</b>（応答した名札: ' +
       esc(asStr(caps.server) || '不明') + '）。<a href="connection-settings.html">接続設定</a>の「入居調整」に、'
@@ -5396,7 +5415,7 @@ function pingServer() {
     if (!j || !j.ok) throw new Error((j && j.error) || '応答エラー');
     serverCaps = j;
     renderSyncModal();
-    toast('サーバー版 ' + asStr(j.codeVersion));
+    toast(afIsAdmin_ ? 'サーバー版 ' + asStr(j.codeVersion) : 'サーバーを確認しました');   // 版の番号は管理者のログインの時だけ（2026-11-13 PR #566 の反証・文は仮置き）
   }).catch(function (e) {
     toast('確認できませんでした: ' + afErrWords_(e, 'サーバー版の確認'));
   });
@@ -5509,6 +5528,7 @@ bindFileDrop();
 $('syncChip').addEventListener('click', renderSyncModal);
 $('reloadBtn').addEventListener('click', function () {
   if (busyEditing()) { toast('編集中は取り込みません。保存してから押してください'); return; }
+  afWipeHold_ = false;   // ⟳ を押した＝取り直した後の送信で断られたらもう一度聞く
   pull(true).then(function () { return refreshFiles(); }).then(function () { renderAll(); });
 });
 
