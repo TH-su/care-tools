@@ -56,7 +56,7 @@ export const PAGES = [
   { file: 'overview-compare.html', title: '左右比較', reads: false, shows: false, why: '施設情報を読まない' },
   { file: 'genogram.html', title: '家族構成図', reads: false, shows: false, why: '施設情報を読まない' },
   { file: 'patch-calendar.html', title: '貼り薬カレンダー', reads: true, shows: false, why: '読むのは貼り薬の名前と貼る場所（patchCalendar）と、紙の見出しの施設名（施設名は紙の見出しにだけ出し、画面では出さない・2026-11-13）' },
-  { file: 'shift-analyzer.html', title: 'シフト分析', reads: true, shows: false, why: '別の正本から配る画面。su-facility.js を読み込むが、施設名・事業所名は出さない' },
+  { file: 'shift-analyzer.html', title: 'シフト分析', reads: true, shows: false, why: '別の正本から配る画面。施設名は紙の見出しにだけ出す（画面では出さない・2026-11-14）' },
 ];
 /* 全アプリの20画面のほかに公開している画面（使い方・担当者会議・設備・修繕の記録・採用管理・管理者向けの画面・移転の案内）。
    施設の導入手順の「最初に確かめる画面」に使い方（help.html）があるので、20画面と同じ (a)(b)(c) で一緒に確かめる（2026-11-03 案3）。
