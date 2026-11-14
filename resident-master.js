@@ -1607,16 +1607,18 @@ function renderRoster(){
   if(curView==='fl2'||curView==='fl4'){
     /* ★階が判定できない人（居室未登録等）を必ず「階未設定」として出す。
        落とすと画面から消え、誰も気づけない（daycare-roster と同じ方針）。 */
-    var f1=[],f2=[],f0=[];
-    list.forEach(function(r){var f=roomToFloor(r.room);(f===1?f1:f===2?f2:f0).push(r)});
-    f1.sort(byRoom); f2.sort(byRoom); f0.sort(byKana);
-    var s1=secHtml(floorLbl(1)+'入居者',f1), s2=secHtml(floorLbl(2)+'入居者',f2),
-        s0=secHtml('階未設定（居室が未登録・1/2以外で始まる）',f0,'nofloor');
+    /* 区画は １階・２階 と、施設情報の floors にある3階以上（下の階から・2026-11-14 第6段 K5）。3階以上が無ければ今と同じ並び */
+    var fNos=[1,2]; ((window.SUFacility&&typeof SUFacility.floors==='function')?SUFacility.floors():[]).forEach(function(x){ if(x&&x.no>2&&fNos.indexOf(x.no)<0) fNos.push(x.no); }); fNos.sort(function(a,b){return a-b});
+    var fb={0:[]}; fNos.forEach(function(n){fb[n]=[]});
+    list.forEach(function(r){var f=roomToFloor(r.room);(fb[f]||fb[0]).push(r)});
+    fNos.forEach(function(n){fb[n].sort(byRoom)}); fb[0].sort(byKana);
+    var secs=fNos.map(function(n){return secHtml(floorLbl(n)+'入居者',fb[n])}),
+        s0=secHtml('階未設定（居室が未登録・'+fNos.join('/')+'以外で始まる）',fb[0],'nofloor');
     html=(curView==='fl2')
       // 左右に1列ずつ。階未設定はその下に全幅で。
       // ★片側が0名でも空の div を置く。置かないと残った側が左列に寄り「左=1階」が崩れる
-      ? '<div class="fl-2col">'+(s1||'<div></div>')+(s2||'<div></div>')+'</div>'+s0
-      : '<div class="fl-4col">'+s1+s2+s0+'</div>';    // 上に1階4列・下に2階4列
+      ? '<div class="fl-2col">'+secs.map(function(x){return x||'<div></div>'}).join('')+'</div>'+s0
+      : '<div class="fl-4col">'+secs.join('')+s0+'</div>';    // 上に1階4列・下に2階4列（3階以上はその下・K5）
   }else if(curView==='kana'){
     var bucket={},other=[];
     list.forEach(function(r){var k=kanaRowOf(r); if(!k){other.push(r);return} (bucket[k]=bucket[k]||[]).push(r)});
@@ -2275,11 +2277,13 @@ function mfHtml(){
   if(buckets.other.length) cats.push(['other','その他']);
   if(buckets.none.length)  cats.push(['none','未設定']);
   var fl2=floorLbl(2), fl1=floorLbl(1);
+  /* 3階以上（施設情報の floors にある階・上の階から）は ２階 の上に並べる（2026-11-14 第6段 K5）。無ければ今と同じ */
+  var fUp=[]; ((window.SUFacility&&typeof SUFacility.floors==='function')?SUFacility.floors():[]).forEach(function(x){ if(x&&x.no>2&&fUp.indexOf(x.no)<0) fUp.push(x.no); }); fUp.sort(function(a,b){return b-a});
   var secs=cats.map(function(c){
     var a=buckets[c[0]];
-    var by={2:[],1:[],0:[]};
-    a.forEach(function(r){ var f=roomToFloor(r.room); (f===2?by[2]:f===1?by[1]:by[0]).push(r); });
-    var rows=[[2,'［'+fl2+'］'],[1,'［'+fl1+'］'],[0,'［階未設定］']].map(function(fp){
+    var by={2:[],1:[],0:[]}; fUp.forEach(function(n){by[n]=[]});
+    a.forEach(function(r){ var f=roomToFloor(r.room); (by[f]||by[0]).push(r); });
+    var rows=fUp.map(function(n){return [n,'［'+floorLbl(n)+'］']}).concat([[2,'［'+fl2+'］'],[1,'［'+fl1+'］'],[0,'［階未設定］']]).map(function(fp){
       var list=by[fp[0]].sort(byKana);
       if(!list.length) return '';
       return '<div class="mf-row"><span class="mf-fl">'+esc(fp[1])+'</span><span class="mf-nms">'+

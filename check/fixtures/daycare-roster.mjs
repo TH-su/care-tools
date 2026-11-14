@@ -57,10 +57,41 @@ const prepare = async (sc) => {
   window.SUPrint.print(sc);
   return document.body.classList.contains('su-printing');
 };
+/* 営業7日（月〜日）の施設の紙（2026-11-14 第6段 K5）。施設情報の通所の営業曜日（SUFacility.section('daycareDays')）だけをこのページの中で7日に差し替えて描き直し、
+   画面で時刻の欄（.c-tm）の字が欠けていないか（文字の幅 > 欄の内側の幅が0件か）を確かめてから、同じ印刷部品で紙を準備する。欠けがあれば準備しない＝撮影の失敗として出る。
+   施設情報の見本・ほかの帳票は変えない（差し替えはこの帳票のページの中だけ）。曜日の列を施設情報から作る前の画面（dcrDays_ が無い）では今の6日のまま刷る */
+const prepare7 = async (sc) => {
+  for (let i = 0; i < 100 && !(typeof DB === 'object' && DB && Array.isArray(DB.residents) && DB.residents.length); i++) await new Promise((r) => setTimeout(r, 100));
+  if (typeof goto !== 'function' || !window.SUPrint || typeof DB !== 'object' || !DB || !DB.residents.length) return false;
+  if (typeof dcrDays_ === 'function' && window.SUFacility) {
+    const orig = window.SUFacility.section;
+    window.SUFacility.section = function (n) { return n === 'daycareDays' ? ['月', '火', '水', '木', '金', '土', '日'] : orig.call(window.SUFacility, n); };
+    renderAll(DB);
+    goto(sc);
+    await new Promise((r) => setTimeout(r, 200));
+    const tbl = document.querySelector('#' + sc + ' table.sheet');
+    if (!tbl || tbl.querySelectorAll('th.th-day').length < 7) return false;
+    /* 欄の内側の幅（余白を除く）より時刻の文字の幅が広ければ欠け（scrollWidth は表のマスでは広がらず拾えないので、文字の範囲を測る） */
+    let clip = 0;
+    tbl.querySelectorAll('td.c-tm').forEach((td) => {
+      if (!/\d:\d/.test(td.textContent)) return;
+      const rg = document.createRange(); rg.selectNodeContents(td);
+      const cs = getComputedStyle(td);
+      if (rg.getBoundingClientRect().width > td.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) + 0.5) clip++;
+    });
+    if (clip) return false;
+  } else goto(sc);
+  window.print = function () {};
+  window.SUPrint.print(sc);
+  return document.body.classList.contains('su-printing');
+};
 export const sheets = [
   { key: 'roster', arg: 'sc-roster', ready: '#roster tbody th.col-flr', prepare },      // 利用表（階の欄）
   { key: 'daylist', arg: 'sc-daylist', ready: '#tblDaylist th.c-sec', prepare },        // デイ利用者一覧表（区画の見出し・A3縦）
   { key: 'allweek', arg: 'sc-allweek', ready: '#tblAllweek th.sec-h', prepare },        // 全員リスト（区画の見出し）
   { key: 'med', arg: 'sc-med', ready: '#tblMed th.c-sec', prepare },                    // 薬用（備考は画面だけ・便10）
   { key: 'weekly', arg: 'sc-weekly', ready: '#printBatch table.wk', prepare },          // 週間名簿（6枚・右列の見出しは昼食場所・便10）
+  { key: 'daylist7', arg: 'sc-daylist', ready: '#tblDaylist th.c-sec', prepare: prepare7 },   // 営業7日のデイ利用者一覧表（画面の時刻の欠け0を確かめてから・K5）
+  { key: 'allweek7', arg: 'sc-allweek', ready: '#tblAllweek th.sec-h', prepare: prepare7 },   // 営業7日の全員リスト
+  { key: 'med7', arg: 'sc-med', ready: '#tblMed th.c-sec', prepare: prepare7 },               // 営業7日の薬用
 ];

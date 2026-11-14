@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-kH7CDNl9vlrcYtfDZpMlJT8h5IvgFJB6FcUT/iclsgg=' 'sha256-Kf8MZsO64xX5CL4ij769/dvSNgbU0EoFOAYLr/xd15Y='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-kH7CDNl9vlrcYtfDZpMlJT8h5IvgFJB6FcUT/iclsgg=' 'sha256-3Im3OC+6cfw6Nk4BgxpXnD9YyO32gEm4NaPsP01MbAQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- 要配慮情報（疾患・訓練内容）を表示する画面。ブラウザキャッシュ・検索索引に残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -979,7 +979,7 @@ body.blocked .sui-band{display:none}
 <script src="su-data-supabase.js?v=2026-11-08.2"></script>
 <!-- 週間計画の保存先の切り替え（統合 0005/0007）。デイ利用者の判定は、切り替え後は Supabase から読む（未ログインは Google） -->
 <script src="su-kv.js?v=2026-11-08"></script>
-<script src="su-facility.js?v=2026-11-13.2"></script>
+<script src="su-facility.js?v=2026-11-14"></script>
 <script src="training-plan-form.js?v=2026-09-24"></script>
 <script>
 /* ═══════════════════════════════════════════════════════════════
@@ -4831,7 +4831,8 @@ function deletePlan(idxStr) {
   var p = DOC.plans[idx];
   if (!p) return;
   if (!trashReady()) {
-    toast('サーバーが古い版のため、期の取り消しはできません。管理者に更新を頼んでください（管理者向け：版 2026-09-04.1 以降が必要）');
+    /* 括弧の中（必要な版）は管理者のログインの時だけ（2026-11-13 第6段 TP-03） */
+    toast('サーバーが古い版のため、期の取り消しはできません。管理者に更新を頼んでください' + (TP_IS_ADMIN ? '（管理者向け：版 2026-09-04.1 以降が必要）' : ''));
     return;
   }
   var stateLabel = TP.STATUS_LABEL[p.status] || '未作成';
@@ -6191,6 +6192,8 @@ var AI_SRV = null;      /* ping や中継の応答から分かったサーバー
 function aiReady() { return aiEnabled() && SU_READY && !!CFG.url && !!CFG.token && !(AI_SRV && AI_SRV.key === false); }
 /* AIを使えない理由（案内文に使う）。サーバーにキーが無いと分かっている時はそれを言う */
 function aiUnreadyWhy() {
+  /* 括弧の中（サーバーのキー・中継の版）は管理者のログインの時だけ。確かめが遅れた・確かめられない時は職員向けの文（2026-11-13 第6段 TP-03・仮置き） */
+  if (AI_SRV && AI_SRV.key === false && !TP_IS_ADMIN) return 'いまはAIを使えません。管理者に伝えてください。';
   if (AI_SRV && AI_SRV.key === false) return 'いまはAIを使えません。管理者に伝えてください（管理者向け：サーバーにAIのキーが無いか、中継の無い古い版です。設定の「AIの接続を確かめる」で詳しく分かります）。';
   if (!(CFG.url && CFG.token)) return '計画書の接続先が未設定のため、AIを使えません。';
   return 'この端末ではAIを使わない設定です（設定画面の「この端末でAI生成を使う」）。';
@@ -6549,8 +6552,11 @@ function aiErrText(e) {
   if (m === 'AI_NO_KEY' && !TP_IS_ADMIN) return 'いまはAIを使えません。管理者に伝えてください';   /* 括弧の中（設定の名前）は管理者のログインの時だけ（2026-11-13 第6段 TP-03） */
   if (m === 'AI_NO_KEY') return 'いまはAIを使えません。管理者に伝えてください（管理者向け：サーバーのスクリプトプロパティ ANTHROPIC_API_KEY が空です）';
   if (m === 'AI_NO_PROXY') return '計画書の接続先が未設定のため、AIを使えません（設定画面の「接続」を確かめてください）';
+  if (m === 'AI_LIMIT' && !TP_IS_ADMIN) return '今日のAIの利用回数の上限に達しました。明日もう一度お試しください';   /* 括弧の中（上限の設定の名前）は管理者のログインの時だけ（2026-11-13 第6段 TP-03） */
   if (m === 'AI_LIMIT') return '今日のAIの利用回数の上限に達しました。明日もう一度お試しください（管理者向け：上限はサーバーの AI_DAILY_LIMIT で変えられます）';
+  if (m === 'AI_PROXY_OLD' && !TP_IS_ADMIN) return 'いまはAIを使えません。管理者に伝えてください';   /* 括弧の中（サーバーの版）は管理者のログインの時だけ（2026-11-13 第6段 TP-03・PR #566 の反証） */
   if (m === 'AI_PROXY_OLD') return 'いまはAIを使えません。管理者に伝えてください（管理者向け：サーバーが古い版で、AIの中継が入っていません）';
+  if (m === 'AI_PROXY_AUTH' && !TP_IS_ADMIN) return 'サーバーの合言葉が通りませんでした。管理者に伝えてください';   /* 括弧の中は管理者のログインの時だけ（同上） */
   if (m === 'AI_PROXY_AUTH') return 'サーバーの合言葉が通りませんでした。管理者に伝えてください（管理者向け：設定画面の「接続」を確かめる）';
   if (m === 'AI_BAD_REQUEST') return 'AIへの依頼の形がサーバーで断られました（アプリとサーバーの版が合っていない可能性）。管理者に連絡してください';
   if (m === 'AI_FETCH') return 'サーバーからAIへの通信に失敗しました（時間切れの可能性）。少し待ってから、もう一度お試しください';
@@ -6559,6 +6565,8 @@ function aiErrText(e) {
   if (m === 'AI_NO_FETCH') return 'このブラウザではAIを呼び出せません';
   if (m === 'AI_NO_SUBJECT') return 'ご本人の氏名が分からないため、氏名を伏せられず送れません（入居者マスタの名簿を読み込んでから、もう一度お試しください）';
   if (m === 'AI_DECLINED') return '外部AIへの送信を取りやめました（何も送っていません）。使う時はもう一度押して「OK」を選んでください';
+  /* 括弧の中（キーが受け付けられなかった・番号）と AI の返答（英語のことがある）は管理者のログインの時だけ（同上） */
+  if ((m === 'AI_HTTP_401' || m === 'AI_HTTP_403') && !TP_IS_ADMIN) return 'いまはAIを使えません。管理者に伝えてください';
   if (m === 'AI_HTTP_401' || m === 'AI_HTTP_403') return 'いまはAIを使えません。管理者に伝えてください（管理者向け：サーバーのAIのキーが受け付けられませんでした・' + m.slice(8) + '）' + why;
   if (m === 'AI_HTTP_429') return 'AIの利用が混み合っています（429）。少し待ってから「もう一度試す」を押してください';
   if (m === 'AI_HTTP_529' || m === 'AI_HTTP_503') return 'AI側が一時的に混み合っています（' + m.slice(8) + '）。少し待ってからもう一度お試しください';
@@ -7455,7 +7463,7 @@ function runBatchAiAllResidents() {
   if (dirty) { toast('保存していない編集が残っています。保存してから実行してください'); return; }
   /* 中: 失敗した期を取り消し置き場へ戻せない版のGASでは始めない（保存が通らなくなる） */
   if (!trashReady()) {
-    toast('サーバーが古い版のため、一括では作れません。管理者に更新を頼んでください（管理者向け：版 2026-09-04.1 以降が必要）');
+    toast('サーバーが古い版のため、一括では作れません。管理者に更新を頼んでください' + (TP_IS_ADMIN ? '（管理者向け：版 2026-09-04.1 以降が必要）' : ''));   /* 括弧の中は管理者のログインの時だけ（2026-11-13 第6段 TP-03） */
     return;
   }
   /* D47（2026-09-04 変更）: 在籍デイ利用者だけでなく、未作成の期がある方すべてを対象にする */
@@ -8909,7 +8917,7 @@ function bindUI() {
     if (batchStartBlocked()) { toast('いまAIの処理を実行しています。終わるまでお待ちください'); return; }
     /* 中: 失敗した期を取り消し置き場へ戻せない版のGASでは始めない（保存が通らなくなる） */
     if (!trashReady()) {
-      toast('サーバーが古い版のため、一括では作れません。管理者に更新を頼んでください（管理者向け：版 2026-09-04.1 以降が必要）');
+      toast('サーバーが古い版のため、一括では作れません。管理者に更新を頼んでください' + (TP_IS_ADMIN ? '（管理者向け：版 2026-09-04.1 以降が必要）' : ''));   /* 括弧の中は管理者のログインの時だけ（2026-11-13 第6段 TP-03） */
       return;
     }
     /* 高1: 計画が1件も無い方は「前の期」が無いため一括では作れない（1期目は人が作る） */
@@ -9207,6 +9215,8 @@ else boot();
 <!-- インターネットにつながっていない時の帯（2026-11-12 商用化の見直し・画面だけ・通信と保存には触れない） -->
 <script src="su-net.js?v=2026-11-12.2"></script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
+<!-- 本番の健康（2026-11-14・統合 0088）: 新しい保存先への保存の失敗を種類と理由だけ数えて送る。保存の動きには触れない・読めなくても動く -->
+<script src="su-health.js?v=2026-11-14"></script>
 <script src="su-report.js?v=2026-10-28" data-tool="個別機能訓練計画書"></script>
 </body>
 </html>

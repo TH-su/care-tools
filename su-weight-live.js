@@ -126,6 +126,13 @@
     var limit = new Promise(function (ok, ng) { setTimeout(function () { ng(new Error(MSG.timeout)); }, ms || RPC_TIMEOUT_MS); });
     return Promise.race([call, limit]);
   }
+  /* 本番の健康（統合 0088）: 新しい保存先への体重の保存（post）の失敗だけを、理由で数える（su-health.js が無ければ何もしない）。
+     写しの期間（shadow）・送信待ちが一杯・接続先の無い端末の断りは決まった動きなので数えない */
+  function health(info) { try { if (window.SUHealth) window.SUHealth.fail('weight', info); } catch (e) { /* 数えられなくても止めない */ } }
+  function healthOfDb(r) {
+    var code = errCode(r), m = String((r && r.error && r.error.message) || '');
+    health(LOGIN_CODES[code] || /jwt/i.test(m) ? { code: 'login' } : code ? { pg: code } : {});
+  }
   function errCode(r) { return String((r && r.error && (r.error.code || r.error.message)) || ''); }
   /* データベースの断りを職員向けの文にする（権限・ログインの切れ・それ以外） */
   function errMsg(r) {
@@ -250,21 +257,23 @@
     if (postFn) gasPost = postFn;
     return ensureFlags().then(function () {
       if (!switchOn()) return drainMirror().then(function (done) { return done ? null : { ok: false, error: MSG.mirror }; });
-      if (!hasSession()) return { ok: false, error: MSG.login };
+      if (!hasSession()) { health({ code: 'login' }); return { ok: false, error: MSG.login }; }
       // 接続先の無い端末は、GAS が写し返している時だけ書く（Google へ写し返せないため・書く前に確かめる）
       var full = noGas === true ? mirrorBy() : (mirrorLoad().length >= MIRROR_MAX ? mirrorBy() : Promise.resolve(''));
       return full.then(function (by0) {
         if (noGas === true && by0 !== 'server') return { ok: false, error: MSG.nogas };
         if (by0 === 'server') mirrorDrop();
         else if (by0) { drainMirror(); return { ok: false, error: MSG.full }; }
-        return rpc('weight_write', { p_action: action, p_payload: payload || {} }).then(function (r) {
+        return rpc('weight_write', { p_action: action, p_payload: payload || {} }).then(null, function (e) {
+          health(e && e.message === MSG.timeout ? { timeout: true } : { network: true }); throw e;
+        }).then(function (r) {
           var code = errCode(r);
           if (NO_FUNC[code] || (!r.error && r.data && r.data.error === 'shadow')) {
             return drainMirror().then(function (done) { return done ? null : { ok: false, error: MSG.mirror }; });
           }
-          if (r.error) return { ok: false, error: errMsg(r) };
+          if (r.error) { healthOfDb(r); return { ok: false, error: errMsg(r) }; }
           var d = r.data || {};
-          if (!d.ok) return { ok: false, error: MSG[d.error] || String(d.error || '') || MSG.denied };
+          if (!d.ok) { health({ code: /^[a-z_]{1,40}$/.test(String(d.error || '')) ? String(d.error) : '' }); return { ok: false, error: MSG[d.error] || String(d.error || '') || MSG.denied }; }
           return mirrorBy().then(function (by) {
             // GAS が写し返している時は積まない（残りも外す）。それ以外は今までどおり積んで送る
             if (by === 'server') { mirrorDrop(); return { ok: true, ver: 2 }; }

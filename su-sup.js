@@ -30,6 +30,10 @@
   var CALL_MS = 45000;
   var MODE_MS = 60000;
 
+  /* 本番の健康（統合 0088）: 新しい保存先へ送る書く操作（読む操作 READS 以外）の失敗だけを、種類と理由で数える（su-health.js が無ければ何もしない） */
+  function health(body, info) {
+    try { if (body && !READS[body.action] && root.SUHealth) root.SUHealth.fail('sup', info); } catch (e) { /* 数えられなくても止めない */ }
+  }
   function note(where, e) {
     try { if (root.SUErrors && typeof root.SUErrors.note === 'function') root.SUErrors.note('保存・同期の失敗', e, 'sup:' + where); } catch (x) { /* 記録できなくても止めない */ }
   }
@@ -169,25 +173,27 @@
       var late = new Promise(function (ok, ng) { tm = setTimeout(function () { ng(new Error('送る前に時間切れ')); }, Math.max(0, total - (Date.now() - t0))); });
       return Promise.race([plan(body), late]).then(function (p) {
         clearTimeout(tm);
-        if (p.kind === 'refuse') return refusal(p.code);
-        if (p.kind === 'signedOut') return Promise.resolve(gasSend()).then(function (res) { return switchedToLogin(res); });
+        if (p.kind === 'refuse') { health(body, p.code === 'mode' ? { network: true } : { code: p.code === 'mfa' ? 'role' : p.code }); return refusal(p.code); }
+        if (p.kind === 'signedOut') return Promise.resolve(gasSend()).then(function (res) { return switchedToLogin(res, body); });
         if (p.kind === 'gas') return Promise.resolve(gasSend()).then(function (res) { return watchSwitched(res); });
         var left = Math.max(1000, total - (Date.now() - t0));
         return invoke(p.A, body, left).then(function (d) {
+          // 数えるのは受け口の断り（code がある）だけ。消耗品管理の GAS の業務の断り（conflict_item・not_latest・closed など）は code が無いので数えない（反証レビュー指摘2）
+          if (d && typeof d === 'object' && d.ok === false && typeof d.code === 'string' && d.code !== 'shadow') health(body, { code: d.code });
           if (d && d.code === 'shadow') { modeCache = null; return gasSend(); }   // 印が写しの期間へ戻った＝Google が正本（受け口は書く前に断る）
           if (d && d.ok !== true && p.mfa && (d.error === 'role' || d.error === 'login')) return refusal('mfa');
           if (d && d.ok !== true && d.error === 'forbidden') d = Object.assign({}, d, { hint: MSG.forbidden });   // 合言葉の話（管理者の合言葉で開き直す）を出さない・指摘7
           return asResponse(d && typeof d === 'object' ? d : { ok: false, error: 'db', hint: '新しい保存先の応答が空でした。一覧を取り直して、入っているか確かめてください。' });
-        });
-      }, function (e) { clearTimeout(tm); throw e; });
+        }, function (e) { health(body, { timeout: true }); throw e; });
+      }, function (e) { clearTimeout(tm); health(body, { timeout: true }); throw e; });
     });
   }
   /* ログインしていない端末で Google が「切り替えた後」と断った時は、ログインを頼む断りに置き換える。ほかの答えはそのまま返す */
-  function switchedToLogin(res) {
+  function switchedToLogin(res, body) {
     try {
       if (!res || typeof res.clone !== 'function') return res;
       return res.clone().text().then(function (t) {
-        if (/"error"\s*:\s*"sup_switched"/.test(t)) { modeCache = 'live'; modeAt = Date.now(); return refusal('login'); }
+        if (/"error"\s*:\s*"sup_switched"/.test(t)) { modeCache = 'live'; modeAt = Date.now(); health(body, { code: 'login' }); return refusal('login'); }
         return res;
       }, function () { return res; });
     } catch (e) { return res; }

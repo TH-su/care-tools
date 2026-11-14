@@ -97,6 +97,25 @@ export const sheets = [
 ];
 /* 2人目（朝食を保存した方）も同じ組み方で撮る */
 sheets.push({ ...sheets[0], key: 'office2', arg: 'F02' });
+/* 「🖨️ 全体を印刷」の紙（2026-11-14 追加）。ボタンの道（fsPrintAll）と同じく body に印 fs-all-on を付け、全体タブ1枚だけを刷る形にする。
+   ボタンは印を付けた後に window.print を呼び、印刷が終わると印を外すが、撮影では印刷のダイアログを開かず印を付けたまま撮る。
+   見比べるのは全体タブの紙の中身・見た目と印刷のページ数。撮る絵は改ページの無い1枚の絵なので、改ページの位置は比べない
+   （家族情報と事業所・家族構成図の包み .fam-biz を改ページで分けない決まり＝代表者の決定 2026-11-14 は、この材料では見えない。
+   今の2名ではページの境目が家族情報の行に掛からず、PDF をページごとに絵にしても直しの有無で同じ・2026-11-14 実測）。
+   絵のある1人目（F01）と絵の無い2人目（F02）の両方を撮る */
+const prepareAll = async (id) => {
+  if (typeof openResident !== 'function') return false;
+  openResident(id);
+  for (let i = 0; i < 100; i++) {
+    const all = document.querySelector('#viewBox .fpanel[data-panel="all"]');
+    const ok = all && all.querySelector('.fam-biz') && Array.prototype.some.call(all.querySelectorAll('.rhythm'), (el) => /朝食/.test(el.textContent || ''));
+    if (ok) { document.body.classList.add('fs-all-on'); return true; }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return false;
+};
+sheets.push({ key: 'all', arg: 'F01', ready: 'body.fs-all-on #viewBox .fpanel[data-panel="all"] .fam-biz', prepare: prepareAll });
+sheets.push({ key: 'all2', arg: 'F02', ready: 'body.fs-all-on #viewBox .fpanel[data-panel="all"] .fam-biz', prepare: prepareAll });
 
 /* 画面が送る要求（{action, token, ...}）に返す応答。紙に要らない要求には「中身なし」を返す（失敗にはしない） */
 export function respond(body) {

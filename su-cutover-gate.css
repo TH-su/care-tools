@@ -12,3 +12,14 @@
 .gate-t tr.ng td:last-child { color: var(--ng); font-weight: 700; }
 .gate-t td .em { font-weight: 400; color: var(--ink, inherit); margin-top: 4px; }
 @media print { .gate { display: none; } }
+/* 本番の健康の表（2026-11-14・判定は su-health-calc.js）。狭い画面では横に送る。画面だけ・印刷は変えない */
+.hl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.hl-t { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 0.9375rem; }
+.hl-t th, .hl-t td { text-align: left; vertical-align: top; padding: 8px 6px; border-top: 1px solid var(--line, #e3e3e3); overflow-wrap: anywhere; }
+.hl-t th { font-weight: 700; }
+.hl-t thead th { white-space: nowrap; }
+.hl-t td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hl-t tr.ng td:last-child { color: var(--ng); font-weight: 700; }
+.hl-t tr.ok td:last-child { color: var(--ok); font-weight: 700; }
+.hl-t td .em { font-weight: 400; color: var(--ink, inherit); margin-top: 4px; }
+@media print { .hl { display: none !important; } }

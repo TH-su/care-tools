@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-i9qt5D2d72ViilON7Fp21zSGEddzjKrBeQbOlip9jNA=' 'sha256-+2fA/ZBP54ZOZfbcz2CN1KPlaCCMw0UFmTC6Ko3tusQ=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-i9qt5D2d72ViilON7Fp21zSGEddzjKrBeQbOlip9jNA=' 'sha256-Jf23TfqVNm65Letqkw3cHCCIFchksXj/10gyqrPOl9Y=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
@@ -476,6 +476,9 @@ button.geno-box{width:100%; margin:0; padding:0; font:inherit; color:inherit; li
   .fam-biz:has(>.sec[data-nop="1"]):has(>.fb-row>.sec[data-nop="1"])+.sec{border-top-width:1px}
   /* 「全体を印刷」で、事業所と家族構成図の行がページの境目で片方だけ次のページへ送られないようにする */
   body.fs-all-on .fpanel[data-panel="all"] .fb-row{page-break-inside:avoid; break-inside:avoid}
+  /* その時、家族情報の4項目の行だけが前のページに残って家族構成図と離れないよう、家族情報と事業所の包みごと次のページへ送る
+     （1人分の印刷では欄ごと送られるのと同じ形。包みが1ページより高い時は従来どおり途中で分かれる・代表者の決定 2026-11-14） */
+  body.fs-all-on .fpanel[data-panel="all"] .fam-biz{page-break-inside:avoid; break-inside:avoid}
   /* 絵がある時は、枠も絵に合わせて低くする。絵が無い時の枠（手で書き足す所）は今の高さのまま */
   #viewBox button.geno-box:has(.geno-img){min-height:0 !important}
   .hlband{-webkit-print-color-adjust:exact; print-color-adjust:exact}
@@ -703,7 +706,7 @@ if(!window.SUDialog) window.SUDialog = {
 <script src="su-kv.js?v=2026-11-08"></script>
 <script src="su-perf.js?v=2026-11-02"></script>
 <script src="su-login-band.js?v=2026-11-02"></script>
-<script src="su-facility.js?v=2026-11-13.2"></script>
+<script src="su-facility.js?v=2026-11-14"></script>
 <script src="su-resident-hop.js?v=2026-11-13"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>
 <script>
@@ -1373,15 +1376,17 @@ function renderRoster(){
   var html;
   if(curView==='fl2'||curView==='fl4'){
     /* ★階が判定できない人（居室未登録等）を必ず「階未設定」として出す。落とすと誰も気づけない */
-    var f1=[],f2=[],f0=[];
-    list.forEach(function(r){var f=roomToFloor(r.room);(f===1?f1:f===2?f2:f0).push(r)});
-    f1.sort(byRoom); f2.sort(byRoom); f0.sort(byKana);
-    var s1=secHtml(floorLbl(1)+'入居者',f1), s2=secHtml(floorLbl(2)+'入居者',f2),
-        s0=secHtml('階未設定（居室が未登録・1/2以外で始まる）',f0,'nofloor');
+    /* 区画は １階・２階 と、施設情報の floors にある3階以上（下の階から・2026-11-14 第6段 K5）。3階以上が無ければ今と同じ並び */
+    var fNos=[1,2]; ((window.SUFacility&&typeof SUFacility.floors==='function')?SUFacility.floors():[]).forEach(function(x){ if(x&&x.no>2&&fNos.indexOf(x.no)<0) fNos.push(x.no); }); fNos.sort(function(a,b){return a-b});
+    var fb={0:[]}; fNos.forEach(function(n){fb[n]=[]});
+    list.forEach(function(r){var f=roomToFloor(r.room);(fb[f]||fb[0]).push(r)});
+    fNos.forEach(function(n){fb[n].sort(byRoom)}); fb[0].sort(byKana);
+    var secs=fNos.map(function(n){return secHtml(floorLbl(n)+'入居者',fb[n])}),
+        s0=secHtml('階未設定（居室が未登録・'+fNos.join('/')+'以外で始まる）',fb[0],'nofloor');
     html=(curView==='fl2')
       /* ★片側が0名でも空の div を置く。置かないと残った側が左列に寄り「左=1階」が崩れる */
-      ? '<div class="fl-2col">'+(s1||'<div></div>')+(s2||'<div></div>')+'</div>'+s0
-      : '<div class="fl-4col">'+s1+s2+s0+'</div>';
+      ? '<div class="fl-2col">'+secs.map(function(x){return x||'<div></div>'}).join('')+'</div>'+s0
+      : '<div class="fl-4col">'+secs.join('')+s0+'</div>';
   }else if(curView==='kana'){
     var bucket={},other=[];
     list.forEach(function(r){var k=kanaRowOf(r); if(!k){other.push(r);return} (bucket[k]=bucket[k]||[]).push(r)});

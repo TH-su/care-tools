@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-font">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-QdgIAJ2StjlL/xKRiiexh0bfUZst1LiaFyomP7mlDCs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-w0+QhxEGxs6rbJCKjy5qSGpLeJWW5EztXrLX7iu0DHk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 入居者情報を表示する画面のため、ブラウザ・中継キャッシュに残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -3356,7 +3356,7 @@ const CloudSync = (function() {
           if (e && e.refused) {
             /* 新しい保存先がこの中身を受け付けなかった（書いていない・送り直しても同じ）。保留から外し、文を出す（統合 0054） */
             done.push({ item, landed: null });
-            try { setSyncStatus('err', '「' + pendingName(item) + '」はクラウドに入っていません: ' + e.message); } catch (e2) { genoNote_('保留の断りの表示', e2); }
+            try { setSyncStatus('err', '「' + pendingName(item) + '」はクラウドに入っていません: ' + genoBandWhy_(e, '保留の断り')); } catch (e2) { genoNote_('保留の断りの表示', e2); }
             failed++;
             continue;
           }
@@ -4149,7 +4149,7 @@ async function saveDoc() {
         cloudUnverified.add(name);
         authUnverified.add(name);
         CloudSync.markConfirm(name);
-        setSyncStatus('err', 'この端末にだけ保存（クラウド未反映）: ' + err.message);
+        setSyncStatus('err', 'この端末にだけ保存（クラウド未反映）: ' + genoBandWhy_(err, '保存'));
         flashStatus(`「${name}」はこの端末にだけ保存しました（ほかの端末へは保存されていません）`);
       } else if ((err && err.auth) || authUnverified.has(name)) {
         /* 合言葉で断られた（2026-09-23）: 保留には積まない。合言葉の不一致は直すまで続き、その間は
@@ -4159,11 +4159,11 @@ async function saveDoc() {
         cloudUnverified.add(name);
         authUnverified.add(name);
         CloudSync.markConfirm(name);
-        setSyncStatus('err', 'この端末にだけ保存（クラウド未反映）: ' + err.message);
+        setSyncStatus('err', 'この端末にだけ保存（クラウド未反映）: ' + genoBandWhy_(err, '保存'));
         flashStatus(`「${name}」はこの端末にだけ保存しました（合言葉・通信を確かめてから、もう一度保存してください）`);
       } else {
         CloudSync.queuePending({ kind: 'save', doc, needsConfirm: cloudUnverified.has(name) || authUnverified.has(name), dirtySeq });
-        setSyncStatus('err', '同期失敗（キューに保留）: ' + err.message);
+        setSyncStatus('err', '同期失敗（キューに保留）: ' + genoBandWhy_(err, '保存'));
       }
     }
   }
@@ -4317,7 +4317,7 @@ async function loadDoc(name, opts) {
     } catch (err) {
       cloudFetchFailed = true;
       // 端末データが無い時に「端末データを使用」は実態と違うため、状況で言い分ける
-      setSyncStatus('err', (localDoc ? '取得失敗（端末データを使用）: ' : '取得失敗（新規として開始）: ') + err.message);
+      setSyncStatus('err', (localDoc ? '取得失敗（端末データを使用）: ' : '取得失敗（新規として開始）: ') + genoBandWhy_(err, '読込'));
       doc = localDoc;
     }
   } else {
@@ -4440,14 +4440,14 @@ async function deleteCurrentDoc() {
     } catch (err) {
       if (err && err.refused) {
         /* 新しい保存先がこの削除を受け付けなかった（統合 0054）。クラウドの図は残っている。端末の図も残し、積まない */
-        setSyncStatus('err', 'クラウドからは削除できていません: ' + err.message);
+        setSyncStatus('err', 'クラウドからは削除できていません: ' + genoBandWhy_(err, '削除'));
         flashStatus(`「${name}」は削除できませんでした（端末の図も残しています）`);
         return;
       }
       if (err && (err.auth || err.stale)) {
         /* 合言葉で断られた削除・古い受け口で止めた削除（2026-11-13）は積まない（2026-09-23）。断られている間は一覧からクラウドの図が見えず、
            同じ名前の他端末の図を、合言葉を直した後の自動の再送で消し得るため。クラウド側は残る */
-        setSyncStatus('err', 'クラウドからは削除できていません: ' + err.message);
+        setSyncStatus('err', 'クラウドからは削除できていません: ' + genoBandWhy_(err, '削除'));
         flashStatus(`「${name}」は削除できませんでした（端末の図も残しています）`);
         return;
       } else if (err && err.conflict) {
@@ -4459,7 +4459,7 @@ async function deleteCurrentDoc() {
       } else {
         removeLocal();
         CloudSync.queuePending({ kind: 'delete', name });
-        setSyncStatus('err', '削除の同期失敗（キューに保留）: ' + err.message);
+        setSyncStatus('err', '削除の同期失敗（キューに保留）: ' + genoBandWhy_(err, '削除'));
       }
     }
   } else {
@@ -4897,6 +4897,16 @@ function genoStaffWhy_(err, where) {
   try { window.SUErrors && window.SUErrors.note('保存・同期の失敗', err, 'genogram:' + where); } catch (_) { /* 記録できなくても止めない */ }
   return 'クラウドが受け付けませんでした。管理者に伝えてください';
 }
+/* 同期の帯（見出しの下の状態の1行）に足す理由を職員向けの文にする（2026-11-13 第6段 GN-03・伏せた時の文は仮置き）。
+   画面が作った職員向けの文（合言葉の断り・古い受け口・版の食い違い・時間切れ）と、日本語で英字を含まない文（「URL」「Google」の語は可）は、その場で直せる理由なのでそのまま出す。
+   それ以外（英語の例外文・応答の番号など）は帯に出さず、元の文は記録（su-errors.js の note）に残す */
+function genoBandWhy_(err, where) {
+  const m = err && err.message;
+  if (err && (err.auth || err.stale || err.conflict || err.timeout) && m) return String(m);
+  if (genoStaffText_(String(m == null ? '' : m).replace(/URL/g, ''))) return String(m);
+  try { window.SUErrors && window.SUErrors.note('保存・同期の失敗', err, 'genogram:' + where); } catch (_) { /* 記録できなくても止めない */ }
+  return 'クラウドとうまくやり取りできませんでした';
+}
 function closeCloudModal() { $('cloudModal').hidden = true; }
 
 function showCfgResult(kind, msg) {
@@ -5007,7 +5017,7 @@ async function forceSync() {
     }
     await refreshDocList();
   } catch (e) {
-    setSyncStatus('err', '同期できませんでした: ' + e.message);
+    setSyncStatus('err', '同期できませんでした: ' + genoBandWhy_(e, '手動の同期'));
   } finally {
     btn.disabled = false;
   }
@@ -5169,6 +5179,8 @@ init();
 </script>
 
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
+<!-- 本番の健康（2026-11-14・統合 0088）: 新しい保存先への保存の失敗を種類と理由だけ数えて送る。保存の動きには触れない・読めなくても動く -->
+<script src="su-health.js?v=2026-11-14"></script>
 <script src="su-report.js?v=2026-10-28" data-tool="ジェノグラム作成"></script>
 </body>
 </html>

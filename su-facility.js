@@ -51,7 +51,11 @@
     daycareNotes: function (p) { return p.daycareNotes; },                                             /* デイ利用表の昼食場所・備考の文（2026-11-02 便10） */
     residenceFees: function (p) { return p.residenceFees; },                                           /* 入居者マスタの収支の見通しの施設の利用料（介護度ごとの月額・2026-11-07） */
     patchCalendar: function (p) { return p.patchCalendar; },                                           /* 貼り薬カレンダーの薬の名前と貼る場所（2026-11-13） */
-    rateDefaults: function (p) { return p.rateDefaults; }                                              /* 週間計画の単位単価の既定（地域区分の単価・端末に保存の無い時だけ・2026-11-13） */
+    rateDefaults: function (p) { return p.rateDefaults; },                                             /* 週間計画の単位単価の既定（地域区分の単価・端末に保存の無い時だけ・2026-11-13） */
+    daycareDays: function (p) {                                                                        /* デイ利用表の曜日の列（通所の事業所の営業曜日 days・2026-11-14 第6段 K5） */
+      for (var i = 0; i < p.offices.length; i++) if (p.offices[i] && p.offices[i].kind === '通所') return p.offices[i].days;
+      return null;
+    }
   };
   var SECTION_MAX = 50000;   /* 職員マスタの委員会を上限いっぱいに書いても収まる大きさ（9件×各欄の上限で約3万字） */
 

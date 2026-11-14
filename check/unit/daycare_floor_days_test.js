@@ -115,6 +115,8 @@ function makeBox(fac) {
     grabVar('DAYS_JA'), grabVar('NDAY'), grabVar('dupCount'), grabVar('floorSrcCount'), grabVar('SU_FAC_WAIT_MS'),
     'var DCR_HOSP_TTL_MS = 60000, dcrHospMap = null, dcrVmedMap = null, dcrRoomMap = null, dcrNameCutMap = null, dcrHospAt = 0, dcrHospRev = null, dcrHospBusy = false, dcrClinicSigUsed = null;',
     grabVar('FLOOR_ORDER'), grabVar('FLOOR_LABEL'), grabVar('byKana'),
+    grabVar('DCR_DAYS_DEFAULT'), grabVar('DCR_COLS'), grabFn('dcrDays_'), grabFn('dcrLastDay_'), grabVar('DCR_FLOOR_NAME_MAX'),
+    grabFn('dcrFloorNames_'), grabFn('dcrFloorExtra_'), grabFn('dcrFloorNos_'), grabFn('dcrFloorOrder_'), grabFn('dcrFloorKey_'),   // 曜日の列と3階以上の階の部品（2026-11-14 第6段 K5）
     grabVar('onDay'), grabVar('offDay'), grabVar('countOn'), grabVar('countOff'),
     grabFn('toMin'), grabFn('minToLabel'), grabFn('el'), grabFn('roomToFloor'),
     grabFn('buildModel'), grabFn('isDaycareResident'), grabFn('collectDaycare'), grabFn('weeklyByFloor'),

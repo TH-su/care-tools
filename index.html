@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-cp5g3VkuczOrqy+Afuf95GbQl9+3wSfqfBk99Fe6x2c=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-GRqOEjfjVPBsVF8FNPyVA/NlCB0C8+B1ciPyoat8ZiQ=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 検索エンジンにこのページと配下ツールを辿らせない。
@@ -38,10 +38,12 @@
 <link rel="preload" as="script" href="su-menu.js?v=2026-11-14">
 <link rel="preload" as="script" href="su-itomari.js?v=2026-11-10">
 <link rel="preload" as="script" href="su-sync-stale.js?v=2026-10-26">
+<link rel="preload" as="script" href="su-health-calc.js?v=2026-11-14">
+<link rel="preload" as="script" href="su-health-badge.js?v=2026-11-14">
 <link rel="preload" as="script" href="su-device-role.js?v=2026-11-08">
 <link rel="preload" as="script" href="su-net.js?v=2026-11-12.2">
 <link rel="preload" as="script" href="su-report.js?v=2026-10-28">
-<link rel="preload" as="script" href="su-facility.js?v=2026-11-13.2">
+<link rel="preload" as="script" href="su-facility.js?v=2026-11-14">
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-11-12"></script>
@@ -52,6 +54,10 @@
 <script src="su-itomari.js?v=2026-11-10"></script>
 <!-- 写しが止まっている時の札（2026-10-26 本人指示）。現場端末では何も読まない・読めなくてもメニューは動く -->
 <script src="su-sync-stale.js?v=2026-10-26"></script>
+<!-- 本番の健康の札（2026-11-14 代表者の依頼・統合 0088）。管理者（2段階認証）の事務所の端末でだけ save_health（種類・数・時刻だけ）を読み、
+     失敗が5件以上か写し返しが2時間以上遅れた種類の画面のタイルに札を出す。現場端末では何も読まない・端末に残さない・読めなくてもメニューは動く -->
+<script src="su-health-calc.js?v=2026-11-14"></script>
+<script src="su-health-badge.js?v=2026-11-14"></script>
 <!-- 端末の用途を、管理者が「アプリの使える人」の「端末の用途」で決めたとおりに受け取る（2026-11-08 代表者の決定 段3 案A・統合 0081）。
      スイッチ device_role が入の時だけ動く。送るのは意味のない乱数の印・今の用途・ログインの有無だけ。届いた用途が違えば
      su_device_role を書き換えてページを読み込み直す（書くのはこの部品だけ・このページは直接書かない）。読めなくてもメニューは動く -->
@@ -180,6 +186,8 @@ main {
 .tile .due.legal { color: #fff; background: var(--due-tx); border-radius: 4px; padding: 0 6px; justify-self: start; }
 /* 写しが止まっている時の札（2026-10-26 本人指示）。期限の件数の札と同じ見た目 */
 .tile .stale { font-size: 0.6875rem; color: var(--due-tx); font-weight: 700; line-height: 1.4; }
+/* 本番の健康の札（2026-11-14 代表者の依頼）。法定の期限切れの札と同じ地（--due-tx・文字は白・約 7.9:1）。色だけに頼らず「本番：保存の失敗n件」の語で書く */
+.tile .hlbad { font-size: 0.6875rem; font-weight: 700; line-height: 1.4; color: #fff; background: var(--due-tx); border-radius: 4px; padding: 0 6px; justify-self: start; }
 /* 定義の一部が壊れていた時の帯（2026-10-10）。#7a4200 on #fff4e5 で約 7.6:1 */
 /* 困った時の区分の問い合わせ先の1行（2026-10-26 本人指示）。選んで写せる文字（tel: のリンクにしない）。--g7 は白地・--g0 地で 5.9:1 以上 */
 .sec .sup { margin: 8px 2px 0; font-size: 0.8125rem; color: var(--g7); line-height: 1.6; -webkit-user-select: text; user-select: text; }
@@ -794,6 +802,7 @@ main {
     fill();
     drawBall();
     staleApply();
+    hlApply();
   }
   try {
     if (window.SUMenu) SUMenu.startSync(function (cfg, r) {
@@ -815,6 +824,9 @@ main {
      組み立て直した後は、確かめた結果を付け直すだけ（通信しない） */
   function staleApply() { try { if (window.SUSyncStale) SUSyncStale.apply(main); } catch (e) { /* 付けられなくても動く */ } }
   try { if (window.SUSyncStale) SUSyncStale.start(main); } catch (e) { /* 確かめられなくても動く */ }
+  /* 本番の健康の札（2026-11-14 代表者の依頼・su-health-badge.js）。写しが止まっている時の札と同じ作り */
+  function hlApply() { try { if (window.SUHealthBadge) SUHealthBadge.apply(main); } catch (e) { /* 付けられなくても動く */ } }
+  try { if (window.SUHealthBadge) SUHealthBadge.start(main); } catch (e) { /* 確かめられなくても動く */ }
   function fill() {
     if (!window.SUFacility || !SUFacility.ready || !SUFacility.ready()) return;
     var els = document.querySelectorAll('[data-fac-name]');
@@ -928,7 +940,7 @@ main {
 <script src="su-net.js?v=2026-11-12.2"></script>
 <script src="su-report.js?v=2026-10-28" data-tool="介護ツール メニュー"></script>
 <!-- 事業所の呼び名は施設情報（facility-profile.json）から差し込む。読めない時は一般名のまま -->
-<script src="su-facility.js?v=2026-11-13.2"></script>
+<script src="su-facility.js?v=2026-11-14"></script>
 <script>
 (function () {
   function fill() {
