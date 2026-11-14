@@ -53,9 +53,10 @@ export const routes = [{
 }];
 
 /* 3人目の入居前状況の行数（下の F03 の説明）。架空の文だけ。
-   手元（Mac の字形）で行数を振ると、決まりの有無で紙が変わるのは 3〜15 行（0・18 行では同じ）。1行の高さは文字の大きさ×1.5 で決まり
-   字形にほぼ左右されないので、真ん中の 9 行にした */
-const PRE_ADMISSION_LINES = Array.from({ length: 9 }, (_, i) => `架空の経過の行${i + 1}`).join('\n');
+   手元（Mac の字形）で行数を振ると、決まりの有無で紙が変わるのは 3〜15 行（0・18 行では同じ）。CI の字形（fonts-noto-cjk）では
+   事業所の欄の名前が折り返して行が高くなり、9 行の時の CI の紙（PR #573 の確かめの実行）から数えると当たりは約 8〜21 行。
+   両方の真ん中寄りの 12 行にした（字形を変えた時は、決まりを外して all3 に違いが出るかを確かめ直す） */
+const PRE_ADMISSION_LINES = Array.from({ length: 12 }, (_, i) => `架空の経過の行${i + 1}`).join('\n');
 const residents = [
   {
     id: 'F01', masterId: 'F01', name: '見本 一郎', kana: 'ミホン イチロウ', room: '101', gender: '男', careLevel: '要介護2', active: true,
@@ -82,7 +83,7 @@ const residents = [
   /* 3人目（2026-11-14 追加）: 「全体を印刷」で、1ページ目と2ページ目の境目が家族情報と事業所の包み（.fam-biz）の中に掛かる方。
      入居前状況を決まった行数にして包みを1ページ目の下の方へ押し下げ、家族情報の4項目の行は1ページ目に収まり、事業所・家族構成図の行が
      はみ出す位置にしてある。包みを改ページで分けない決まり（代表者の決定 2026-11-14）があれば包みごと2ページ目へ送られ、
-     外すと家族情報だけが1ページ目に残る＝PDF のページごとの見比べで違いが出る。行数は CI の字形（fonts-noto-cjk）で確かめた */
+     外すと家族情報だけが1ページ目に残る＝PDF のページごとの見比べで違いが出る（facesheet.html を直す PR では〔許可〕になり緑のまま・違いは結果の行に出る） */
   {
     id: 'F03', masterId: 'F03', name: '見本 三郎', kana: 'ミホン サブロウ', room: '102', gender: '男', careLevel: '要介護1', active: true,
     updatedAt: '2026-01-01T09:00:00+09:00', birthDate: '1945-07-07', admissionDate: '2025-04-01', dischargeDate: '',
@@ -135,7 +136,7 @@ const prepareAll = async (id) => {
 sheets.push({ key: 'all', arg: 'F01', ready: 'body.fs-all-on #viewBox .fpanel[data-panel="all"] .fam-biz', prepare: prepareAll });
 sheets.push({ key: 'all2', arg: 'F02', ready: 'body.fs-all-on #viewBox .fpanel[data-panel="all"] .fam-biz', prepare: prepareAll });
 /* 改ページの位置を見るための3人目（F03・2026-11-14 追加）。境目が家族情報と事業所の包みの中に掛かる。
-   PDF をページごとに絵にして比べる（check/compare.mjs）ので、包みを分けない決まりを外すと「帳票の印刷（PDF のページごと）」が赤になる */
+   PDF をページごとに絵にして比べる（check/compare.mjs）ので、包みを分けない決まりを外すと「帳票の印刷（PDF のページごと）」に all3 の違いが出る */
 sheets.push({ key: 'all3', arg: 'F03', ready: 'body.fs-all-on #viewBox .fpanel[data-panel="all"] .fam-biz', prepare: prepareAll });
 
 /* 画面が送る要求（{action, token, ...}）に返す応答。紙に要らない要求には「中身なし」を返す（失敗にはしない） */

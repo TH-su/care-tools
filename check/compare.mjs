@@ -120,6 +120,7 @@ const hasPdftoppm = !spawnSync('pdftoppm', ['-v'], { stdio: 'ignore' }).error;
 const pageRows = [];
 const pageSheets = Object.keys(sh).filter((k) => fs.existsSync(path.join(baseDir, `${k}.pdf`)) && fs.existsSync(path.join(headDir, `${k}.pdf`))).sort();
 let pageError = '';
+const pageShort = [];   // ページの数が違い、先頭の分だけ比べた帳票（数の違いは「印刷ページ数」の行が別に失敗にする）
 function rasterize(pdf, dir) {
   fs.rmSync(dir, { recursive: true, force: true }); ensureDir(dir);
   const r = spawnSync('pdftoppm', ['-r', String(PDF_DPI), '-png', pdf, path.join(dir, 'p')], { stdio: ['ignore', 'ignore', 'pipe'] });
@@ -133,6 +134,7 @@ if (hasPdftoppm) {
     const pb = rasterize(path.join(headDir, `${key}.pdf`), path.join(outDir, 'pdfpages', 'head', key));
     if (!pa || !pb || !pa.length || !pb.length) { pageError += (pageError ? '、' : '') + key; continue; }
     const n = Math.min(pa.length, pb.length);
+    if (pa.length !== pb.length) pageShort.push(`${key} ${pa.length}→${pb.length}ページ・先頭${n}ページだけ`);
     for (let i = 0; i < n; i++) {
       const r = await diffPng(pa[i], pb[i]);
       const row = { name: key, page: i + 1, status: r.same ? '一致' : (r.size ? '大きさが違う' : '違いあり'), pixels: r.n || 0, box: r.box || null };
@@ -184,14 +186,16 @@ if (pageSheets.length) {
   } else {
     const changed = pageRows.filter((r) => r.status !== '一致');
     const tolNote = TOL ? '（色の揺れ±' + TOL + '以内は同じとみなす）' : '';
-    const errNote = pageError ? `（絵にできず比べていない: ${pageError}）` : '';
+    const errNote = (pageError ? `（絵にできず比べていない: ${pageError}）` : '') + (pageShort.length ? `（ページの数が違い比べたのは一部: ${pageShort.join('、')}）` : '');
     const nSheets = new Set(pageRows.map((r) => r.name)).size;
-    if (!changed.length) lines.push(`${label}: ${nSheets}枚・計${pageRows.length}ページすべて画素一致${tolNote}${errNote}`);
+    /* 比べていない分がある時は「すべて一致」と言わない */
+    if (!pageRows.length) lines.push(`${label}: 未実施（比べられたページが無い）${errNote}`);
+    else if (!changed.length) lines.push(pageError || pageShort.length ? `${label}: 比べた${nSheets}枚・計${pageRows.length}ページは画素一致${tolNote}${errNote}` : `${label}: ${nSheets}枚・計${pageRows.length}ページすべて画素一致${tolNote}`);
     else {
       lines.push(`${label}: ${pageRows.length - changed.length}ページは画素一致・${changed.length}ページに違い（${changed.map((r) => `${r.name}${allowed(r.name) ? '〔許可〕' : ''} ${r.page}ページ目${r.pixels ? ` ${r.pixels}px` : ''}`).join('、')}）${tolNote}${errNote}`);
       fail += changed.filter((r) => !allowed(r.name)).length;
     }
-    if (pageError && process.env.SU_REQUIRE_PDFTOPPM === '1') fail++;
+    if (pageError || !pageRows.length) fail++;   // 道具はあるのに絵にできない＝撮れていないのと同じ扱い（一致と言わない）
   }
 }
 const totalPages = printRows.reduce((s, r) => s + (r.head || 0), 0);
