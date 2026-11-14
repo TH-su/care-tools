@@ -106,6 +106,8 @@ function mk(opt) {
   vm.runInContext([
     'var DB = ' + JSON.stringify(opt.db || LOCAL) + ';',
     'var kvRev = 3, dirty = true, pushing = false, afWipeHold_ = false, SU_DATA_READY = true, AF_LIVE = true, retryWait = 0, pushTimer = null;',
+    (src.match(/\nvar afTaking_ = false;/) || ['var afTaking_ = false;'])[0].trim(),
+    'this.taking = function () { return afTaking_; };',
     grabVar('CACHE_KEY'), grabVar('CACHE_BAK'), grabVar('CACHE_BAK2'), grabVar('CACHE_DISCARD'),
     grabVar('DEVICE_KEY'), grabFn('afFieldNow_'), grabFn('serverLooksLost'), grabFn('cachePayload'), grabFn('saveCache'), grabFn('push'), grabFn('afTakeServer_'),
     'function schedulePush() { __log.scheduled++; }',
@@ -243,9 +245,11 @@ async function run() {
     vm.runInContext(['var DB = ' + JSON.stringify(SERVER) + ';', 'var kvRev = 7, dirty = false, afWipeHold_ = true;',
       grabVar('CACHE_KEY'), grabVar('CACHE_BAK'), grabVar('CACHE_BAK2'), grabVar('CACHE_DISCARD'),
       (src.match(/\nvar DISCARD_KEEP_MS = [^;]*;/) || ['var DISCARD_KEEP_MS = 0;'])[0].trim(),
+      (src.match(/\nvar afTaking_ = false;/) || ['var afTaking_ = false;'])[0].trim(), grabVar('AF_TAKING_MSG'),
       grabFn('readCacheSlot'), grabFn('cachePayload'), grabFn('saveCache'), grabFn('restoreDiscarded_'), grabFn('deleteDiscarded_'), grabFn('afDiscardSweep_'),
       'function schedulePush() { __log.scheduled++; }',
-      'this.k = CACHE_DISCARD; this.ck = CACHE_KEY; this.st = function () { return { DB: DB, dirty: dirty, hold: afWipeHold_ }; };'].join('\n'), b);
+      'this.k = CACHE_DISCARD; this.ck = CACHE_KEY; this.st = function () { return { DB: DB, dirty: dirty, hold: afWipeHold_ }; };',
+      'this.setTaking = function (v) { afTaking_ = v; };'].join('\n'), b);
     return { b, log, ls };
   };
   const BAK = JSON.stringify({ db: LOCAL, rev: 3, dirty: true, at: '2026-11-14T00:00:09.000Z', n: 2 });
@@ -257,8 +261,10 @@ async function run() {
     t('5-2 合わせる前の控えは、件数を聞いてから今の台帳へ統合で戻す（消した印を効かせない・送信待ちにする）',
       p.log.asked.length === 1 && /合わせる前の控え（2026-11-14T00:00:09\.000Z・案件2件）/.test(p.log.asked[0]) && p.log.merged && p.log.merged.a === 4 && p.log.merged.x === 2 && p.log.merged.keep
       && s.dirty === true && s.hold === false && p.log.scheduled === 1, [p.log, s]);
-    t('5-2b 戻す確かめの窓に「控えの日時より後にほかの端末で消した内容が戻ることがあります」と出す', /控えの日時より後にほかの端末で消した内容が戻ることがあります。/.test(p.log.asked[0] || ''), p.log.asked);
-    t('5-2c 戻して端末の控えへ書けた後は、合わせる前の控えを消す', p.ls.getItem(p.b.k) === null && !!p.ls.getItem(p.b.ck), p.ls.getItem(p.b.k));
+    t('5-2b 戻す確かめの窓に「控えの日時より後にほかの端末で消した内容が戻ることがあります」「控えより後に直された欄は、新しい方が残ります（控えは7日間残ります）」と出す',
+      /控えの日時より後にほかの端末で消した内容が戻ることがあります。\n控えより後に直された欄は、新しい方が残ります（控えは7日間残ります）。よろしいですか？$/.test(p.log.asked[0] || ''), p.log.asked);
+    /* #579 の2回目の反証: 統合なので新しい値に負けて戻らない欄がある。戻した後も控えは消さない（7日の期限か［消す］でだけ消える） */
+    t('5-2c 戻した後も、合わせる前の控えは消さない（端末の控えにも書く）', p.ls.getItem(p.b.k) === BAK && !!p.ls.getItem(p.b.ck), p.ls.getItem(p.b.k));
   }
   {
     const p = mkR();
@@ -273,6 +279,30 @@ async function run() {
     p.ls.setItem(p.b.k, BAK);
     p.b.restoreDiscarded_(); await settle();
     t('5-2e 戻す確かめで「キャンセル」なら何も変えない', p.log.merged === null && p.ls.getItem(p.b.k) === BAK && p.b.st().dirty === false);
+  }
+  {
+    const p = mkR({ answers: [true], before: (b) => b.localStorage.setItem(b.k, JSON.stringify({ db: SERVER, at: '2026-11-14T00:00:30.000Z', n: 4 })) });
+    p.ls.setItem(p.b.k, BAK);
+    p.b.restoreDiscarded_(); await settle();
+    t('5-2f 戻す窓の間に控えが変わっていたら（新しく合わせた）戻さない', p.log.merged === null && p.b.st().dirty === false && p.log.toasts.indexOf('控えが変わったため、戻すのをやめました') >= 0, p.log.toasts);
+  }
+  {
+    const p = mkR({ answers: [true], before: (b) => b.localStorage.removeItem(b.k) });
+    p.ls.setItem(p.b.k, BAK);
+    p.b.restoreDiscarded_(); await settle();
+    t('5-2g 戻す窓の間に控えが消されていたら戻さない', p.log.merged === null && p.log.toasts.indexOf('控えが変わったため、戻すのをやめました') >= 0, p.log.toasts);
+  }
+  {
+    let p = mkR({ answers: [true] });
+    p.ls.setItem(p.b.k, BAK); p.b.setTaking(true);
+    p.b.restoreDiscarded_(); p.b.deleteDiscarded_(); await settle();
+    t('5-2h サーバーの内容に合わせる取り直しを待つ間は、［復元］［消す］を始めない（窓も出さない）', p.log.asked.length === 0 && p.log.merged === null && p.ls.getItem(p.b.k) === BAK
+      && p.log.toasts.filter((m) => m === 'サーバーの内容に合わせている最中です。終わってからもう一度押してください').length === 2, p.log.toasts);
+    p = mkR({ answers: [true, true], before: (b) => b.setTaking(true) });
+    p.ls.setItem(p.b.k, BAK);
+    p.b.restoreDiscarded_(); await settle();
+    p.b.deleteDiscarded_(); await settle();
+    t('5-2i 窓の間に取り直しが始まっていたら、戻さない・消さない', p.log.merged === null && p.ls.getItem(p.b.k) === BAK, [p.log.asked.length, p.log.toasts]);
   }
   t('5-3 同期とバックアップの窓に、控えがある時だけ「合わせる前の控え」の行と復元・消すのボタンを出す',
     src.indexOf("(bd ? '<dt>合わせる前の控え</dt><dd>' + bd.n + '件（' + esc(fmtDt(bd.at)) + '）<button class=\"btn sm\" id=\"syRD\" type=\"button\" style=\"margin-left:6px\">復元</button><button class=\"btn sm\" id=\"syRDdel\" type=\"button\" style=\"margin-left:6px\">消す</button></dd>' : '')") >= 0
@@ -334,11 +364,24 @@ async function run() {
     const s = p.b.st();
     t('6-11 取り直しの応答を待つ間に端末の用途が現場へ変わったら、台帳も控えも書かずに捨てる', p.log.gets === 1 && s.DB.candidates.length === 2 && s.dirty === true
       && p.ls.getItem(p.b.keys.discard) === null && p.ls.getItem(p.b.keys.cache) === null, [s, p.log.toasts]);
+    t('6-11b その時は見出しの札を「未送信あり」に戻し、「この端末は現場の端末になったため、合わせるのをやめました」と出す',
+      JSON.stringify(p.log.sync[p.log.sync.length - 1]) === '["未送信あり","err"]' && p.log.toasts.indexOf('この端末は現場の端末になったため、合わせるのをやめました') >= 0, [p.log.sync, p.log.toasts]);
+    t('6-11c 取り直しが終われば、取り直し中の印は下りる', p.b.taking() === false);
   }
   {
     const p = mk({ answers: [false, true], before: [null, (b) => b.localStorage.setItem('su_device_role', 'field')] });
     p.b.push(); await settle();
-    t('6-12 2段目の答えの時に現場の端末なら、取り直さない', p.log.gets === 0 && p.ls.getItem(p.b.keys.discard) === null, p.log);
+    t('6-12 2段目の答えの時に現場の端末なら、取り直さず「この端末は現場の端末になったため、合わせるのをやめました」と出す', p.log.gets === 0 && p.ls.getItem(p.b.keys.discard) === null
+      && p.log.toasts.indexOf('この端末は現場の端末になったため、合わせるのをやめました') >= 0, p.log);
+  }
+  {
+    let seen = null;
+    const p = mk({ answers: [false, true], getBefore: (b) => { seen = vm.runInContext('afTaking_', b); } });
+    p.b.push(); await settle();
+    t('6-13 取り直しの応答を待つ間は取り直し中の印が立ち、終われば下りる', seen === true && p.b.taking() === false, [seen, p.b.taking()]);
+    const q = mk({ answers: [false, true], getFail: true });
+    q.b.push(); await settle();
+    t('6-14 取り直しが失敗しても、取り直し中の印は下りる', q.b.taking() === false);
   }
   {
     const at = help.indexOf('id="sec-admission-flow"');
