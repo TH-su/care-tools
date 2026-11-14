@@ -1466,6 +1466,14 @@ async function flow10() {
     const body = await page.evaluate(() => document.body.innerText);
     t(L + ': 一覧に氏名（' + ME.name + '・' + OTHER.name + '）が出ない', !body.includes(ME.name) && !body.includes(OTHER.name));
     await shot(page, 'flow10-unsent');
+    /* メニューの札: 一覧の画面が残した件数の鍵（件数と数えた日だけ）を、メニューはほかの札と同じ道で読む（代表者の決定 2026-11-14） */
+    const key = await page.evaluate(() => localStorage.getItem('unsent_menu_due'));
+    t(L + ': 一覧の画面が件数と数えた日だけの鍵を残す', !!key && /^\{"v":1,"at":"\d{4}-\d{2}-\d{2}","unsent":true,"n":[1-9]\d*\}$/.test(key), key);
+    const menu1 = await open(env, 'index.html');
+    const due1 = await waitFor(() => menu1.evaluate(() => { const a = document.querySelector('a.tile[href="unsent.html"] .due'); return a ? a.textContent : null; }));
+    t(L + ': メニューの「未送信の一覧」に札「未送信n」が出る', !!due1 && /^未送信[1-9]\d*（/.test(due1), due1);
+    await menu1.close();
+    env.st.tag = 'unsent.html';
     down = false;   // つながった
     env.st.tag = 'weight-record.html';
     await page.click('a[aria-label="体重管理を開いて送る"]');
@@ -1484,6 +1492,11 @@ async function flow10() {
     }));
     t(L + ': 開き直すと「体重管理」は送信待ちの無いアプリに移る', !!after && after.none.includes('体重管理') && !after.listed.includes('体重管理'), after);
     await page.close();
+    const menu2 = await open(env, 'index.html');
+    await menu2.waitForTimeout(800);
+    const due2 = await menu2.evaluate(() => { const a = document.querySelector('a.tile[href="unsent.html"]'); return a ? (a.querySelector('.due') ? a.querySelector('.due').textContent : '') : null; });
+    t(L + ': 一覧を開き直した後は、メニューの札が消える（0件）', due2 === '', due2);
+    await menu2.close();
   } finally {
     endChecks(env, L);
     await env.context.close();

@@ -6,19 +6,20 @@
 <meta name="color-scheme" content="light">
 <meta name="robots" content="noindex,nofollow">
 <meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>未送信の一覧</title>
 <!--
   未送信の一覧（代表者の決定 2026-11-14【訂正】）
   ════════════════════════════════════════════════════════════════
   目的: 各画面がこの端末に残している送信待ち・未送信の印を1つの画面で見て、送り直しはその画面を開いて行う。
-  ★読むだけ。控えを書き換えない・消さない（消す道は作らない）。この画面からサーバーへ送る通信は作らない
+  ★読むだけ。控えを書き換えない・消さない（消す道は作らない）。この画面から控えをサーバーへ送る通信は作らない（通信はログインの役割の確かめ（su-auth.js）だけ）
     （送り直しは各画面を開いた時の今ある道に任せる。「この画面を開いて送る」は同じタブでその画面へ移るだけ）。
   ★出すのは種類（アプリ名）・件数・いちばん古い時刻と、1件ずつの日付・決まった種類の名前だけ。
     控えに氏名・病名・記録の本文が入っていても出さない（読み取りは unsent-calc.js・試験 unsent_calc_test）。
+  ★入居調整の控えは、事務所PCで事務所・管理者としてログインしていると確かめられた時（su-auth.js の SUAuth.check）だけ読む（§2.7）。
   ★現場の端末（su_device_role が field）では、種類ごとの件数といちばん古い時刻だけを出し、1件ずつは出さない。
     事務所向けの画面（入居調整）の控えには触れない。
-  ★画面だけで印刷しない。端末に何も書かない（UI の状態も持たない＝開くたびに読み直す1枚だけの画面）。
+  ★画面だけで印刷しない。端末に書くのは、事務所の端末で数え終えた時のメニューの札の件数の鍵（unsent_menu_due・件数と数えた日だけ）1つだけ（UI の状態は持たない・代表者の決定 2026-11-14）。
 -->
 <link rel="stylesheet" href="unsent.css?v=2026-11-14">
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
@@ -70,6 +71,9 @@
 <p class="print-only">この画面は印刷しません。</p>
 
 <script src="su-errors.js?v=2026-11-12"></script>
+<!-- ログインの役割の確かめ（入居調整の控えを読む前・§2.7）と見出しの役割の札に使う。読めなくても一覧は動く（入居調整は確かめられませんになる） -->
+<script src="supabase-js-2.112.4.js"></script>
+<script src="su-auth.js?v=2026-10-28"></script>
 <script src="unsent-calc.js?v=2026-11-14"></script>
 <script src="unsent.js?v=2026-11-14"></script>
 <script src="su-shell.js?v=2026-11-14"></script>

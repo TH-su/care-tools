@@ -1,4 +1,6 @@
-/* unsent-calc.js — 未送信の一覧（unsent.html）とメニューの札が使う、端末の送信待ちの読み取り（代表者の決定 2026-11-14【訂正】）
+/* unsent-calc.js — 未送信の一覧（unsent.html）が使う、端末の送信待ちの読み取り（代表者の決定 2026-11-14【訂正】）
+ *   メニューはこの部品を読まない。メニューの札は、一覧の画面が数え終えた時に書く件数の鍵（unsent_menu_due・menuDue の形）を
+ *   ほかの札と同じ道で読むだけ（代表者の決定 2026-11-14・メニューは氏名の入った控えを読まない）
  *
  * 何をするか: 各画面が今すでに端末に残している送信待ち・未送信の印を読み、種類ごとに
  *   「件数・いちばん古い時刻・1件ずつの日付と種類」だけを返す。
@@ -7,7 +9,8 @@
  *   - 通信しない（送り直しは各画面を開いた時の今ある道に任せる）
  *   - 氏名・病名・記録の本文・入居者の番号を返さない（控えに入っていても、返すのは日付・時刻・決まった種類の名前だけ）
  *   - 新しい種類の送信待ちを作らない（2026-11-12 の決定「送信待ちを端末に残すのは今すでに残している種類だけ」）
- *   - 現場の端末（su_device_role が field）では、事務所向けの画面（入居調整）の控えを読まない
+ *   - 現場の端末（su_device_role が field）では、事務所向けの画面（入居調整）の控えを読まない。事務所PCでも、
+ *     事務所・管理者としてログインしていると確かめられた時（opts.admission が真）だけ読む（§2.7・反証レビュー 2026-11-14）
  *   - 例外を外に出さない（読めない・形が違う時は state: 'bad'＝「確かめられません」）
  * 返す形（collect）: [{ id, app, href, group: 'main'|'held'|'mirror', state: 'none'|'some'|'bad'|'unknown', n, oldest, items, why }]
  *   n: 件数（数えられない種類は null）・oldest: いちばん古い時刻（ミリ秒・無ければ null）
@@ -70,8 +73,9 @@
         });
         return { n: items.length, items: items };
       } },
-    { id: 'genogram', app: '家族構成図', href: 'genogram.html', group: 'main',
-      why: '家族構成図を開くと、つながっている時に自動で送り直します。「↻ 同期」でも送れます。',
+    /* 家族構成図は開いただけでは送り直さない（再送はつながった時・起動の下書きの窓の後・「↻ 同期」だけ）＝ボタンは「確かめる」（check） */
+    { id: 'genogram', app: '家族構成図', href: 'genogram.html', group: 'main', check: true,
+      why: '家族構成図を開いて［↻ 同期］を押すと送り直します。',
       read: function (st) {
         var raw = get(st, 'genogram:pendingSync');
         if (raw == null) return null;
@@ -79,7 +83,9 @@
         if (!Array.isArray(a)) throw new Error('shape');
         var items = a.map(function (it) {
           if (!isObj(it)) throw new Error('shape');
-          return { at: ms(it.queuedAt), day: '', label: it.kind === 'delete' ? '図の削除' : '図の保存' };
+          /* 食い違いの印（conflict）の付いた保留は、送り直しても通らない＝どちらを残すか人が選ぶ必要がある */
+          var lb = it.kind === 'delete' ? '図の削除' : '図の保存';
+          return { at: ms(it.queuedAt), day: '', label: it.conflict ? lb + '（食い違い・どちらを残すか人が選ぶ必要があります）' : lb, conflict: !!it.conflict };
         });
         return { n: items.length, items: items };
       } },
@@ -174,8 +180,10 @@
         }
         return items.length ? { n: items.length, items: items } : null;
       } },
-    { id: 'admission', app: '入居調整', href: 'admission-flow.html', group: 'main', officeOnly: true,
+    /* 入居調整は §2.7 にそろえ、事務所PCで事務所・管理者としてログインしていると確かめられた時（opts.admission が真）だけ読む */
+    { id: 'admission', app: '入居調整', href: 'admission-flow.html', group: 'main', officeOnly: true, needAuth: true,
       why: '入居調整を事務所PCで開くと自動で送ります（事務所・管理者のログインが要ります）。',
+      whyLocked: 'この画面では確かめられません（事務所PCで事務所・管理者としてログインしていると確かめられた時だけ確かめます）。入居調整を開くと、未送信がある時は画面に案内が出ます。',
       read: function (st) {
         var raw = get(st, 'admf_cache');
         if (raw == null) return null;
@@ -231,14 +239,18 @@
     var out = [];
     KINDS.forEach(function (k) {
       if (field && k.officeOnly) return;   // 現場の端末では事務所向けの画面の控えに触れない
-      var row = { id: k.id, app: k.app, href: k.href, group: k.group, state: 'none', n: 0, oldest: null, items: [], why: k.why, session: !!k.session };
+      var row = { id: k.id, app: k.app, href: k.href, group: k.group, state: 'none', n: 0, oldest: null, items: [], why: k.why, session: !!k.session, check: !!k.check, conflict: 0 };
+      if (k.needAuth && o.admission !== true) {   // 役割を確かめられていない時は読まない
+        row.state = 'unknown'; row.n = null; row.why = k.whyLocked; out.push(row); return;
+      }
       try {
         var r = k.read(st, ss);
         if (r && r.unknown) { row.state = 'unknown'; row.n = null; }
         else if (r) {
           row.n = r.n;
           row.state = r.n > 0 ? 'some' : 'none';
-          r.items.forEach(function (it) { if (it.at != null && (row.oldest == null || it.at < row.oldest)) row.oldest = it.at; });
+          r.items.forEach(function (it) { if (it.at != null && (row.oldest == null || it.at < row.oldest)) row.oldest = it.at; if (it.conflict) row.conflict++; });
+          r.items.forEach(function (it) { delete it.conflict; });
           if (o.detail && !field) row.items = r.items.slice().sort(function (a, b) { return (a.at == null ? 1 : 0) - (b.at == null ? 1 : 0) || (a.at || 0) - (b.at || 0) || (a.day < b.day ? -1 : a.day > b.day ? 1 : 0); });
         }
       } catch (e) {
@@ -255,11 +267,24 @@
       return collect(opts).reduce(function (s, r) { return s + (r.group === 'main' && typeof r.n === 'number' ? r.n : 0); }, 0);
     } catch (e) { return 0; }
   }
+  /* メニューの札の件数の鍵（unsent_menu_due）に書く中身。ほかの札（eql_menu_due など）と同じ形で、件数と数えた日だけ
+     {"v":1,"at":"YYYY-MM-DD","unsent":true,"n":件数}（種類名・氏名・番号は入れない）。数えるのは total と同じ
+     （写し返し・退避した編集・数えられない種類は数えない）。全部の種類が読めなかった時・日付の形が違う時は null（書かない） */
+  function menuDue(rows, today) {
+    try {
+      if (!Array.isArray(rows) || !rows.length || !YMD_RE.test(String(today || ''))) return null;
+      /* 数えられた種類が1つも無い時（全部が読めない・確かめられない）は書かない */
+      if (!rows.some(function (r) { return r && (r.state === 'some' || r.state === 'none'); })) return null;
+      var n = rows.reduce(function (s, r) { return s + (r && r.group === 'main' && typeof r.n === 'number' && isFinite(r.n) ? r.n : 0); }, 0);
+      if (!(n >= 0 && n <= 9999 && Math.floor(n) === n)) return null;
+      return JSON.stringify({ v: 1, at: String(today), unsent: true, n: n });
+    } catch (e) { return null; }
+  }
   /* 表示の時刻（11/14 9:05・年が違う時は 2025/11/14 9:05）。now は比べる年のため */
   function fmt(at, now) {
     if (typeof at !== 'number' || !isFinite(at)) return '';
     var d = new Date(at), y = new Date(typeof now === 'number' ? now : Date.now()).getFullYear();
     return (d.getFullYear() !== y ? d.getFullYear() + '/' : '') + (d.getMonth() + 1) + '/' + d.getDate() + ' ' + d.getHours() + ':' + ('0' + d.getMinutes()).slice(-2);
   }
-  root.SUUnsent = { collect: collect, total: total, fmt: fmt, KINDS: KINDS.map(function (k) { return k.id; }) };
+  root.SUUnsent = { collect: collect, total: total, menuDue: menuDue, MENU_DUE_KEY: 'unsent_menu_due', fmt: fmt, KINDS: KINDS.map(function (k) { return k.id; }) };
 })(typeof window !== 'undefined' ? window : this);

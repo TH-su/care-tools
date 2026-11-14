@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-O75vk4Qe5NqEJiB4zY/nvTcPOfKA7Me1FYHrlVxGLwk=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-AyAJCjB19DloRAPrv2a5oCJuKwNyEDNLqpkZskbqmMk=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 検索エンジンにこのページと配下ツールを辿らせない。
@@ -18,8 +18,7 @@
        読み、そのタイルに札として出す（2026-10-24 代表者の決定 案A）。メニューから書かない・送らない。
        設備・修繕の記録が数えて残した期限の件数（eql_menu_due・件数と数えた日だけ・設備名と場所なし）も同じ作りで読む（2026-11-13）。
        担当者会議の記録が数えて残した前回から6か月の件数（cm_menu_due・件数と数えた日だけ・氏名なし）も同じ作りで読む（2026-11-13）。
-       未送信の札（unsent-badge.js・代表者の決定 2026-11-14【訂正】）は、各画面が今すでに残している送信待ちを unsent-calc.js が読んで数え、
-       このページは合計の数だけを受け取る（氏名・中身・種類は受け取らない・書かない・送らない・現場端末でも数だけ出す）。
+       未送信の一覧が数えて残した送信待ちの件数（unsent_menu_due・件数と数えた日だけ・種類名と氏名なし）も同じ作りで読む（2026-11-14）。
        管理者（Google＋2段階認証）でログイン中の事務所の端末でだけ、写しの記録（master_sync_runs の at・failed だけ）を読み、
        最後の成功が24時間より前なら入居者マスタのタイルに札を出す（su-sync-stale.js・2026-10-26 本人指示）。札に出すのは時刻だけ。
      ★端末に書くのは、見出しの毬を押した時の毬の柄（su_menu_ball・値は 'fuji'・'kiku'・'asanoha' だけ）だけで、
@@ -42,8 +41,6 @@
 <link rel="preload" as="script" href="su-sync-stale.js?v=2026-10-26">
 <link rel="preload" as="script" href="su-health-calc.js?v=2026-11-14.2">
 <link rel="preload" as="script" href="su-health-badge.js?v=2026-11-14">
-<link rel="preload" as="script" href="unsent-calc.js?v=2026-11-14">
-<link rel="preload" as="script" href="unsent-badge.js?v=2026-11-14">
 <link rel="preload" as="script" href="su-device-role.js?v=2026-11-08">
 <link rel="preload" as="script" href="su-net.js?v=2026-11-12.2">
 <link rel="preload" as="script" href="su-report.js?v=2026-10-28">
@@ -62,10 +59,6 @@
      失敗が5件以上か写し返しが2時間以上遅れた種類の画面のタイルに札を出す。現場端末では何も読まない・端末に残さない・読めなくてもメニューは動く -->
 <script src="su-health-calc.js?v=2026-11-14.2"></script>
 <script src="su-health-badge.js?v=2026-11-14"></script>
-<!-- 未送信の札（代表者の決定 2026-11-14【訂正】）。この端末の送信待ちを unsent-calc.js が数え、メニューは合計の数だけを受け取って
-     「未送信の一覧」のタイルに「未送信n」と出す（氏名・中身・種類は持ち込まない・書かない・通信しない・0件や読めない時は出さない） -->
-<script src="unsent-calc.js?v=2026-11-14"></script>
-<script src="unsent-badge.js?v=2026-11-14"></script>
 <!-- 端末の用途を、管理者が「アプリの使える人」の「端末の用途」で決めたとおりに受け取る（2026-11-08 代表者の決定 段3 案A・統合 0081）。
      スイッチ device_role が入の時だけ動く。送るのは意味のない乱数の印・今の用途・ログインの有無だけ。届いた用途が違えば
      su_device_role を書き換えてページを読み込み直す（書くのはこの部品だけ・このページは直接書かない）。読めなくてもメニューは動く -->
@@ -83,7 +76,7 @@
 <style>
 /* care-tools 共通の CSS 変数体系（各アプリと同じ見た目に揃える）。
    このページは氏名・記録を持たない。localStorage は読み取りのみ（端末用途 su_device_role・メニューの設定の控え su_menu_v1・
-   期限の件数の控え tp_menu_due・eql_menu_due・cm_menu_due・毬の柄 su_menu_ball・未送信の札のために unsent-calc.js が数える各画面の送信待ち（このページは合計の数だけを受け取る））。毬の柄だけは、毬を押した時に su-menu.js の SUMenu.setBall が書く。 */
+   期限の件数の控え tp_menu_due・eql_menu_due・cm_menu_due・未送信の件数の控え unsent_menu_due・毬の柄 su_menu_ball）。毬の柄だけは、毬を押した時に su-menu.js の SUMenu.setBall が書く。 */
 /* 現場端末では事務所専用のタイルを出さない（押してもブロック画面になるだけの行き止まりを作らない）。
    ★data-office-only を付ける条件＝リンク先が su_device_role==='field' で起動をブロックするタイル。
    ★現在この属性が付いているのは誕生日一覧・入居調整・接続設定の3つ
@@ -195,7 +188,6 @@ main {
 /* 写しが止まっている時の札（2026-10-26 本人指示）。期限の件数の札と同じ見た目 */
 .tile .stale { font-size: 0.6875rem; color: var(--due-tx); font-weight: 700; line-height: 1.4; }
 /* 本番の健康の札（2026-11-14 代表者の依頼）。法定の期限切れの札と同じ地（--due-tx・文字は白・約 7.9:1）。色だけに頼らず「本番：保存の失敗n件」の語で書く */
-.tile .unsb { font-size: 0.6875rem; color: var(--due-tx); font-weight: 700; line-height: 1.4; }
 .tile .hlbad { font-size: 0.6875rem; font-weight: 700; line-height: 1.4; color: #fff; background: var(--due-tx); border-radius: 4px; padding: 0 6px; justify-self: start; }
 /* 定義の一部が壊れていた時の帯（2026-10-10）。#7a4200 on #fff4e5 で約 7.6:1 */
 /* 困った時の区分の問い合わせ先の1行（2026-10-26 本人指示）。選んで写せる文字（tel: のリンクにしない）。--g7 は白地・--g0 地で 5.9:1 以上 */
@@ -529,7 +521,8 @@ main {
      "ic": "📤",
      "nm": "未送信の一覧",
      "note": "この端末の送信待ち",
-     "_why": "未送信の一覧（代表者の決定 2026-11-14【訂正】・置き場所は仮置き）。現場端末でも出す（件数だけ）。札「未送信n」は unsent-badge.js が付ける"
+     "due": "unsent_menu_due",
+     "_why": "未送信の一覧（代表者の決定 2026-11-14【訂正】・置き場所は仮置き）。現場端末でも出す。due: 一覧の画面が事務所の端末で数え終えた時に残した件数（unsent_menu_due・件数と数えた日だけ）の札「未送信n」（代表者の決定 2026-11-14・ほかの札と同じく現場端末では読まない）"
     }
    ]
   }
@@ -606,6 +599,11 @@ main {
       if (d.overdue > 0) cmp.push('期限切れ' + d.overdue);
       if (d.soon > 0) cmp.push('30日以内' + d.soon);
       return cmp.length ? cmp.join('・') + '（6か月の分だけ・' + when.slice(1) : '';
+    }
+    if (d.unsent != null) {
+      /* 未送信の一覧（2026-11-14 代表者の決定）: {"v":1,"at":…,"unsent":true,"n":n} は、一覧の画面が数えた送信待ちの件数 */
+      if (d.unsent !== true || !dueNum(d.n)) return '';
+      return d.n > 0 ? '未送信' + d.n + when : '';
     }
     if (d.eq != null) {
       if (!dueEq(d)) return '';
@@ -819,7 +817,6 @@ main {
     drawBall();
     staleApply();
     hlApply();
-    unApply();
   }
   try {
     if (window.SUMenu) SUMenu.startSync(function (cfg, r) {
@@ -844,9 +841,6 @@ main {
   /* 本番の健康の札（2026-11-14 代表者の依頼・su-health-badge.js）。写しが止まっている時の札と同じ作り */
   function hlApply() { try { if (window.SUHealthBadge) SUHealthBadge.apply(main); } catch (e) { /* 付けられなくても動く */ } }
   try { if (window.SUHealthBadge) SUHealthBadge.start(main); } catch (e) { /* 確かめられなくても動く */ }
-  /* 未送信の札（代表者の決定 2026-11-14【訂正】・unsent-badge.js）。組み立て直した後も数え直して付け直す（読むだけ・通信しない） */
-  function unApply() { try { if (window.SUUnsentBadge) SUUnsentBadge.apply(main); } catch (e) { /* 付けられなくても動く */ } }
-  try { if (window.SUUnsentBadge) SUUnsentBadge.start(main); } catch (e) { /* 数えられなくても動く */ }
   function fill() {
     if (!window.SUFacility || !SUFacility.ready || !SUFacility.ready()) return;
     var els = document.querySelectorAll('[data-fac-name]');

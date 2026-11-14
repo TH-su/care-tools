@@ -107,9 +107,12 @@ const withDue = tiles.filter((x) => x.due);
 /* 2026-11-11: 入居者マスタのタイルに、薬情の見直し待ちの数の札（管理者だけ）を足した（代表者の決定）。入居者マスタのタイルは
    事務所専用の印を持たないが、札は現場端末では読まず（dueBadge）、控えの admin の印があり管理者のログインの時だけ出す（dueText）ので、
    「事務所専用のタイルだけ」の決まりを「事務所専用か、管理者だけに出す札か」に広げた */
-t('札を出すのは個別機能訓練計画書と採用管理（2026-10-29）と入居者マスタ（2026-11-11・管理者だけの札）と設備・修繕の記録と担当者会議の記録（2026-11-13）のタイルだけ',
-  withDue.length === 5 && withDue.some((x) => x.href === 'equip-log.html' && x.due === 'eql_menu_due')
-  && withDue.some((x) => x.href === 'care-meeting.html' && x.due === 'cm_menu_due') && withDue.filter((x) => x.href !== 'resident-master.html').every((x) => x.officeOnly === true)
+/* 2026-11-14: 未送信の一覧のタイルに、一覧の画面が残した件数の札を足した（代表者の決定）。未送信の一覧は現場端末でも出すタイルだが、
+   札は件数と数えた日だけの鍵で、ほかの札と同じく現場端末では読まない（dueBadge）ので、入居者マスタと同じく「事務所専用」の決まりの外に置く */
+t('札を出すのは個別機能訓練計画書と採用管理（2026-10-29）と入居者マスタ（2026-11-11・管理者だけの札）と設備・修繕の記録と担当者会議の記録（2026-11-13）と未送信の一覧（2026-11-14）のタイルだけ',
+  withDue.length === 6 && withDue.some((x) => x.href === 'equip-log.html' && x.due === 'eql_menu_due')
+  && withDue.some((x) => x.href === 'unsent.html' && x.due === 'unsent_menu_due')
+  && withDue.some((x) => x.href === 'care-meeting.html' && x.due === 'cm_menu_due') && withDue.filter((x) => x.href !== 'resident-master.html' && x.href !== 'unsent.html').every((x) => x.officeOnly === true)
   && withDue.some((x) => x.href === 'training-plan.html' && x.due === 'tp_menu_due')
   && withDue.some((x) => x.href === 'ats.html' && x.due === 'ats_menu_due' && x.adminOnly === true)
   && withDue.some((x) => x.href === 'resident-master.html' && x.due === 'rm_yjrev_due'), withDue);

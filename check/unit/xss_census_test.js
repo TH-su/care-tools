@@ -190,7 +190,6 @@ const CENSUS = {
   "unsent.html": [],
   "unsent.js": [],   // 未送信の一覧（2026-11-14）: 代入なし（textContent だけ）
   "unsent-calc.js": [],
-  "unsent-badge.js": [],
   "enroll.js": [],
   "su-qr.js": [],
   "accounts.js": [],

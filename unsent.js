@@ -1,5 +1,8 @@
 /* unsent.js — 未送信の一覧の画面（代表者の決定 2026-11-14【訂正】）
- * 読み取りは unsent-calc.js（SUUnsent.collect）だけ。この画面は端末に書かない・通信しない。
+ * 読み取りは unsent-calc.js（SUUnsent.collect）だけ。通信しない。各画面の控えは書き換えない・消さない。
+ * 端末に書くのは、メニューの札のための件数の鍵（unsent_menu_due・件数と数えた日だけ）1つだけ。事務所の端末で数え終えた時に書き、
+ * 読めない・壊れた時（SUUnsent.menuDue が null）は書かない。現場の端末では書かない（メニューの札はほかの札と同じく現場では読まない）
+ * （代表者の決定 2026-11-14）。
  * 文字はすべて textContent で入れる（控えの値をそのまま HTML にしない）。 */
 (function () {
   'use strict';
@@ -19,10 +22,25 @@
   function sess() { try { return window.sessionStorage; } catch (e) { return null; } }
   function loc() { try { return window.localStorage; } catch (e) { return null; } }
   var U = window.SUUnsent;
+  function ymd(ms) {
+    var d = new Date(ms);
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
+  /* メニューの札の件数の鍵を書く（同じ値なら書かない）。書けなくても画面は動く */
+  function writeMenuDue(rows, now) {
+    try {
+      var v = U.menuDue(rows, ymd(now));
+      if (v == null) return;
+      var st = loc();
+      if (!st) return;
+      if (st.getItem(U.MENU_DUE_KEY) !== v) st.setItem(U.MENU_DUE_KEY, v);
+    } catch (e) { note('メニューの札の件数', e); }
+  }
 
   function stateText(r) {
     if (r.state === 'bad') return '確かめられません';
     if (r.state === 'unknown') return '確かめられません（そのアプリを開くと分かります）';
+    if (r.conflict > 0) return r.n + '件（うち食い違い' + r.conflict + '件は、どちらを残すか人が選ぶ必要があります）';
     return r.n + '件';
   }
   function itemText(it, now) {
@@ -50,7 +68,7 @@
     }
     if (r.href) {
       /* 写し返しは保存がすんでいる分なので「開く」だけ。確かめられない種類・退避した編集（自動では送らない）は「確かめる」 */
-      var mir = r.group === 'mirror', chk = r.state === 'unknown' || r.group === 'held';
+      var mir = r.group === 'mirror', chk = r.state === 'unknown' || r.group === 'held' || r.check === true;
       var txt = mir ? 'この画面を開く' : chk ? 'この画面を開いて確かめる' : 'この画面を開いて送る';
       var a = el('a', mir ? 'btn' : 'btn pri', txt);
       a.setAttribute('href', r.href);
@@ -63,7 +81,7 @@
     try {
       if (!U) { $('list').textContent = '部品を読み込めませんでした。読み込み直してください。'; return; }
       var isField = field(), now = Date.now();
-      var rows = U.collect({ local: loc(), session: sess(), field: isField, detail: !isField });
+      var rows = U.collect({ local: loc(), session: sess(), field: isField, detail: !isField, admission: !isField && authOk });
       var list = $('list'), mir = $('mirror'), none = $('none'), unk = $('unknown');
       list.textContent = ''; mir.textContent = ''; none.textContent = ''; unk.textContent = '';
       var nMain = 0, nMir = 0, nNone = 0, nUnk = 0;
@@ -79,17 +97,38 @@
       $('unknownBox').hidden = !nUnk;
       $('noneBox').hidden = !nNone;
       $('when').textContent = U.fmt(now, now) + ' に読みました';
+      if (!isField) writeMenuDue(rows, now);
     } catch (e) {
       note('draw', e);
       try { $('list').textContent = '確かめられませんでした。読み込み直してください。'; } catch (x) { /* 何もしない */ }
     }
   }
+  /* 入居調整の控えは、事務所PCで事務所・管理者としてログインしていると確かめられた時だけ読む（§2.7・反証レビュー 2026-11-14）。
+     確かめは su-auth.js の強制でない確かめ（SUAuth.check）。ログインしていない・確かめられない・現場のアカウント・2段階認証の前は読まない */
+  var authOk = false, authGen = 0;
+  function askAuth() {
+    var my = ++authGen;
+    authOk = false;
+    try {
+      if (field() || !window.SUAuth || typeof SUAuth.check !== 'function') return;
+      Promise.resolve(SUAuth.check()).then(function (r) {
+        if (my !== authGen || field()) return;
+        var ok = !!(r && SUAuth.STATUS && r.status === SUAuth.STATUS.OK && (r.role === 'office' || r.role === 'admin'));
+        if (ok) { authOk = true; draw(); }
+      }, function (e) { note('ログインの確かめ', e); });
+    } catch (e) { note('ログインの確かめ', e); }
+  }
   function start() {
     draw();
+    askAuth();
     try { $('reload').addEventListener('click', draw); } catch (e) { note('reload', e); }
     /* ほかのタブで送れた・積まれた時、「戻る」で戻った時は読み直す（書かないので何度読んでもよい） */
-    window.addEventListener('storage', function () { draw(); });
-    window.addEventListener('pageshow', function (ev) { if (ev && ev.persisted) draw(); });
+    window.addEventListener('storage', function (ev) {
+      /* ログインの控え・端末の用途が変わった時は、役割を確かめ直す（確かめ直すまで入居調整は読まない） */
+      if (ev && (ev.key === null || ev.key === 'su_device_role' || /^sb-[a-z0-9]+-auth-token$/.test(String(ev.key)))) askAuth();
+      draw();
+    });
+    window.addEventListener('pageshow', function (ev) { if (ev && ev.persisted) { draw(); askAuth(); } });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();
