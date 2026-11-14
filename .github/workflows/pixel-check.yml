@@ -35,10 +35,10 @@ jobs:
         with:
           node-version: 22
 
-      - name: 日本語の字形を入れる（撮影した画面の文字が読めるように）
+      - name: 日本語の字形と、帳票の PDF をページごとに絵にする道具（poppler-utils の pdftoppm）を入れる
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq fonts-noto-cjk
+          sudo apt-get install -y -qq fonts-noto-cjk poppler-utils
 
       - name: 撮影の道具を入れる
         working-directory: check
@@ -70,6 +70,7 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           ALLOW: ${{ steps.allow.outputs.allow }}
           SU_NAME_GUARD_QUIET: '1'
+          SU_REQUIRE_PDFTOPPM: '1'   # PDF を絵にする道具が無い時に「未実施」で通さず失敗にする（改ページの位置を比べたと偽らない）
         run: |
           set +e
           node check/run.mjs --base "origin/$BASE_REF" --allow "$ALLOW"

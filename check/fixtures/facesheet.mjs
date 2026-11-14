@@ -52,6 +52,10 @@ export const routes = [{
   },
 }];
 
+/* 3人目の入居前状況の行数（下の F03 の説明）。架空の文だけ。
+   手元（Mac の字形）で行数を振ると、決まりの有無で紙が変わるのは 3〜15 行（0・18 行では同じ）。1行の高さは文字の大きさ×1.5 で決まり
+   字形にほぼ左右されないので、真ん中の 9 行にした */
+const PRE_ADMISSION_LINES = Array.from({ length: 9 }, (_, i) => `架空の経過の行${i + 1}`).join('\n');
 const residents = [
   {
     id: 'F01', masterId: 'F01', name: '見本 一郎', kana: 'ミホン イチロウ', room: '101', gender: '男', careLevel: '要介護2', active: true,
@@ -74,6 +78,21 @@ const residents = [
     /* 朝食だけ保存した時刻（保存した方が勝つ）・ほかは施設の既定 */
     rhythm: { wake: '07:00', breakfast: '08:30', sleep: '20:30' },
     family: [{ name: '架空 次郎', relation: '長男', phone: '000-0000-2001', address: '架空県試験町2-2', kp: true, emergency: true }],
+  },
+  /* 3人目（2026-11-14 追加）: 「全体を印刷」で、1ページ目と2ページ目の境目が家族情報と事業所の包み（.fam-biz）の中に掛かる方。
+     入居前状況を決まった行数にして包みを1ページ目の下の方へ押し下げ、家族情報の4項目の行は1ページ目に収まり、事業所・家族構成図の行が
+     はみ出す位置にしてある。包みを改ページで分けない決まり（代表者の決定 2026-11-14）があれば包みごと2ページ目へ送られ、
+     外すと家族情報だけが1ページ目に残る＝PDF のページごとの見比べで違いが出る。行数は CI の字形（fonts-noto-cjk）で確かめた */
+  {
+    id: 'F03', masterId: 'F03', name: '見本 三郎', kana: 'ミホン サブロウ', room: '102', gender: '男', careLevel: '要介護1', active: true,
+    updatedAt: '2026-01-01T09:00:00+09:00', birthDate: '1945-07-07', admissionDate: '2025-04-01', dischargeDate: '',
+    height: '165', weight: '60.0', bloodType: 'B',
+    careOffice: 'みほん居宅介護支援センターC', careManager: '見本 ケア三', careOfficeTel: '000-0000-0103', careOfficeFax: '000-0000-0104',
+    hospital: 'みほん内科医院', doctor: '見本 医師', hospitalTel: '000-0000-0301',
+    disease: '架空の病名C', history: '', medsRegular: '', allergy: 'なし',
+    preAdmission: PRE_ADMISSION_LINES,
+    rhythm: { wake: '06:00', sleep: '21:30' },
+    family: [{ name: '見本 夏子', relation: '次女', phone: '000-0000-3001', address: '架空県見本市3-3', kp: true, emergency: true }],
   },
 ];
 const ROSTER_KEYS = ['id', 'masterId', 'name', 'kana', 'room', 'gender', 'careLevel', 'active', 'updatedAt', 'birthDate', 'height', 'dischargeDate'];
@@ -99,10 +118,9 @@ export const sheets = [
 sheets.push({ ...sheets[0], key: 'office2', arg: 'F02' });
 /* 「🖨️ 全体を印刷」の紙（2026-11-14 追加）。ボタンの道（fsPrintAll）と同じく body に印 fs-all-on を付け、全体タブ1枚だけを刷る形にする。
    ボタンは印を付けた後に window.print を呼び、印刷が終わると印を外すが、撮影では印刷のダイアログを開かず印を付けたまま撮る。
-   見比べるのは全体タブの紙の中身・見た目と印刷のページ数。撮る絵は改ページの無い1枚の絵なので、改ページの位置は比べない
-   （家族情報と事業所・家族構成図の包み .fam-biz を改ページで分けない決まり＝代表者の決定 2026-11-14 は、この材料では見えない。
-   今の2名ではページの境目が家族情報の行に掛からず、PDF をページごとに絵にしても直しの有無で同じ・2026-11-14 実測）。
-   絵のある1人目（F01）と絵の無い2人目（F02）の両方を撮る */
+   見比べるのは全体タブの紙の中身・見た目と印刷のページ数、それに PDF のページごとの絵（改ページの位置・check/compare.mjs）。
+   絵のある1人目（F01）と絵の無い2人目（F02）は、ページの境目が家族情報と事業所・家族構成図の包み .fam-biz に掛からない。
+   包みを改ページで分けない決まり（代表者の決定 2026-11-14）は、下の3人目（F03・all3）で見る */
 const prepareAll = async (id) => {
   if (typeof openResident !== 'function') return false;
   openResident(id);
@@ -116,6 +134,9 @@ const prepareAll = async (id) => {
 };
 sheets.push({ key: 'all', arg: 'F01', ready: 'body.fs-all-on #viewBox .fpanel[data-panel="all"] .fam-biz', prepare: prepareAll });
 sheets.push({ key: 'all2', arg: 'F02', ready: 'body.fs-all-on #viewBox .fpanel[data-panel="all"] .fam-biz', prepare: prepareAll });
+/* 改ページの位置を見るための3人目（F03・2026-11-14 追加）。境目が家族情報と事業所の包みの中に掛かる。
+   PDF をページごとに絵にして比べる（check/compare.mjs）ので、包みを分けない決まりを外すと「帳票の印刷（PDF のページごと）」が赤になる */
+sheets.push({ key: 'all3', arg: 'F03', ready: 'body.fs-all-on #viewBox .fpanel[data-panel="all"] .fam-biz', prepare: prepareAll });
 
 /* 画面が送る要求（{action, token, ...}）に返す応答。紙に要らない要求には「中身なし」を返す（失敗にはしない） */
 export function respond(body) {

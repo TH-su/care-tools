@@ -14,6 +14,11 @@
  *   「帳票の印刷（架空データ）」の行に分けて出す。--allow に画面を挙げると、その画面の帳票も「変えてよい」。
  *   帳票の印刷ページ数も見比べる。直した後で撮れなくなった帳票は失敗にする（撮れないまま「一致」と言わない）。
  *
+ * 帳票の PDF をページごとに（2026-11-14 追加）: 上の帳票の絵は改ページの無い1枚の絵なので、改ページの位置（break-inside など）の直しが見えない。
+ *   そこで snap.mjs が残した <画面>__<帳票>.pdf を、直す前・後とも pdftoppm（poppler）で1ページずつ絵にして、同じ番号のページどうしを比べる。
+ *   「帳票の印刷（PDF のページごと）」の行に出す。--allow の扱いは帳票の絵と同じ。違ったページの差分画像は <帳票>.p<番号>.diff.png。
+ *   pdftoppm が無い時は「未実施」と出し、「一致」とは言わない（環境変数 SU_REQUIRE_PDFTOPPM=1 の時は失敗にする＝CI）。
+ *
  * ★色の揺れ（--tol・既定 2）: 1画素の赤・緑・青のどれもが 2 以内しか違わない時は「同じ」とみなす。
  *   角の丸み・文字のにじみの描き方が撮るたびに 1 だけずれることがある（2026-10-04 実測: 消耗品管理の角で ±1）。
  *   位置・形・文字が変わると差は数十〜二百になるので、この幅で本当の違いを見落とすことはない。
@@ -21,6 +26,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { loadPlaywright, parseArgs, ensureDir, readJson, writeJson } from './lib.mjs';
 
 const args = parseArgs(process.argv.slice(2));
@@ -37,13 +43,9 @@ const { chromium } = loadPlaywright();
 const browser = await chromium.launch();
 const page = await browser.newPage();
 
-const files = fs.readdirSync(headDir).filter((f) => f.endsWith('.png')).sort();
-const results = [];
-for (const f of files) {
-  const a = path.join(baseDir, f), b = path.join(headDir, f);
-  const [name, view] = [f.replace(/\.[a-z0-9]+\.png$/, ''), f.match(/\.([a-z0-9]+)\.png$/)[1]];
-  if (!fs.existsSync(a)) { results.push({ file: f, name, view, status: 'base無し' }); continue; }
-  const r = await page.evaluate(async ([da, db, tol]) => {
+/* 2枚の PNG を画素で比べる（違う画素の数・範囲・赤で塗った差分画像） */
+function diffPng(a, b) {
+  return page.evaluate(async ([da, db, tol]) => {
     function load(src) { return new Promise((ok, ng) => { const im = new Image(); im.onload = () => ok(im); im.onerror = ng; im.src = src; }); }
     const [ia, ib] = await Promise.all([load(da), load(db)]);
     if (ia.width !== ib.width || ia.height !== ib.height) return { same: false, size: true, a: [ia.width, ia.height], b: [ib.width, ib.height] };
@@ -65,6 +67,15 @@ for (const f of files) {
     xb.putImageData(diff, 0, 0);
     return { same: false, size: false, w, h, n, box: [minX, minY, maxX, maxY], png: cb.toDataURL('image/png') };
   }, [toDataUrl(a), toDataUrl(b), TOL]);
+}
+
+const files = fs.readdirSync(headDir).filter((f) => f.endsWith('.png')).sort();
+const results = [];
+for (const f of files) {
+  const a = path.join(baseDir, f), b = path.join(headDir, f);
+  const [name, view] = [f.replace(/\.[a-z0-9]+\.png$/, ''), f.match(/\.([a-z0-9]+)\.png$/)[1]];
+  if (!fs.existsSync(a)) { results.push({ file: f, name, view, status: 'base無し' }); continue; }
+  const r = await diffPng(a, b);
   const row = { file: f, name, view, status: r.same ? '一致' : (r.size ? '大きさが違う' : '違いあり'), pixels: r.n || 0, box: r.box || null, size: r.size ? { base: r.a, head: r.b } : null };
   if (r.png) { const p = path.join(outDir, f.replace(/\.png$/, '.diff.png')); fs.writeFileSync(p, Buffer.from(r.png.split(',')[1], 'base64')); row.diff = p; }
   if (!r.same) {   // 違った画面は、前・後の撮影も並べて置く（差分画像だけでは何が変わったか分かりにくいため）
@@ -102,6 +113,39 @@ for (const key of Object.keys(sh)) {
   if (added.length) errRows.push({ file: key, added });
 }
 
+/* 帳票の PDF をページごとに絵にして比べる（改ページの位置の直しを見るため・2026-11-14）。
+   直す前・後の両方に PDF がある帳票だけ。ページの数が違う時は、両方にある番号のページだけ比べ、数の違いは上の「印刷ページ数」の行で失敗にする */
+const PDF_DPI = 60;   // A4 縦で約 500×700 画素。改ページの位置が変われば数万画素の違いになり、この粗さで見落とさない
+const hasPdftoppm = !spawnSync('pdftoppm', ['-v'], { stdio: 'ignore' }).error;
+const pageRows = [];
+const pageSheets = Object.keys(sh).filter((k) => fs.existsSync(path.join(baseDir, `${k}.pdf`)) && fs.existsSync(path.join(headDir, `${k}.pdf`))).sort();
+let pageError = '';
+function rasterize(pdf, dir) {
+  fs.rmSync(dir, { recursive: true, force: true }); ensureDir(dir);
+  const r = spawnSync('pdftoppm', ['-r', String(PDF_DPI), '-png', pdf, path.join(dir, 'p')], { stdio: ['ignore', 'ignore', 'pipe'] });
+  if (r.status !== 0) return null;
+  /* 名前は p-1.png か p-01.png（ページ数の桁で変わる）。番号の順に並べる */
+  return fs.readdirSync(dir).filter((f) => /^p-\d+\.png$/.test(f)).sort((x, y) => Number(x.match(/\d+/)[0]) - Number(y.match(/\d+/)[0])).map((f) => path.join(dir, f));
+}
+if (hasPdftoppm) {
+  for (const key of pageSheets) {
+    const pa = rasterize(path.join(baseDir, `${key}.pdf`), path.join(outDir, 'pdfpages', 'base', key));
+    const pb = rasterize(path.join(headDir, `${key}.pdf`), path.join(outDir, 'pdfpages', 'head', key));
+    if (!pa || !pb || !pa.length || !pb.length) { pageError += (pageError ? '、' : '') + key; continue; }
+    const n = Math.min(pa.length, pb.length);
+    for (let i = 0; i < n; i++) {
+      const r = await diffPng(pa[i], pb[i]);
+      const row = { name: key, page: i + 1, status: r.same ? '一致' : (r.size ? '大きさが違う' : '違いあり'), pixels: r.n || 0, box: r.box || null };
+      if (!r.same) {
+        const stem = path.join(outDir, `${key}.p${i + 1}`);
+        if (r.png) { fs.writeFileSync(stem + '.diff.png', Buffer.from(r.png.split(',')[1], 'base64')); row.diff = stem + '.diff.png'; }
+        try { fs.copyFileSync(pa[i], stem + '.before.png'); fs.copyFileSync(pb[i], stem + '.after.png'); } catch (e) { /* 置けなくても比較は続ける */ }
+      }
+      pageRows.push(row);
+    }
+  }
+}
+
 /* 報告（CLAUDE.md §6 の言い方で） */
 let fail = 0;
 const lines = [];
@@ -131,6 +175,25 @@ for (const v of ['pc', 'print', 'sheet', 'ph100', 'ph200']) {
     if (v === 'pc' || v === 'print' || v === 'sheet') fail += changed.filter((r) => !allowed(r.name)).length;
   }
 }
+/* 帳票の PDF のページごと（帳票を撮っていない時は行を出さない） */
+if (pageSheets.length) {
+  const label = '帳票の印刷（PDF のページごと）';
+  if (!hasPdftoppm) {
+    lines.push(`${label}: 未実施（PDF を絵にする道具 pdftoppm が無い・改ページの位置は比べていない）`);
+    if (process.env.SU_REQUIRE_PDFTOPPM === '1') fail++;
+  } else {
+    const changed = pageRows.filter((r) => r.status !== '一致');
+    const tolNote = TOL ? '（色の揺れ±' + TOL + '以内は同じとみなす）' : '';
+    const errNote = pageError ? `（絵にできず比べていない: ${pageError}）` : '';
+    const nSheets = new Set(pageRows.map((r) => r.name)).size;
+    if (!changed.length) lines.push(`${label}: ${nSheets}枚・計${pageRows.length}ページすべて画素一致${tolNote}${errNote}`);
+    else {
+      lines.push(`${label}: ${pageRows.length - changed.length}ページは画素一致・${changed.length}ページに違い（${changed.map((r) => `${r.name}${allowed(r.name) ? '〔許可〕' : ''} ${r.page}ページ目${r.pixels ? ` ${r.pixels}px` : ''}`).join('、')}）${tolNote}${errNote}`);
+      fail += changed.filter((r) => !allowed(r.name)).length;
+    }
+    if (pageError && process.env.SU_REQUIRE_PDFTOPPM === '1') fail++;
+  }
+}
 const totalPages = printRows.reduce((s, r) => s + (r.head || 0), 0);
 const pageDiff = printRows.filter((r) => !r.same);
 lines.push(pageDiff.length ? `印刷ページ数: 違いあり（${pageDiff.map((r) => `${r.file} ${r.base}→${r.head}`).join('、')}）` : `印刷ページ数: 全${totalPages}ページ一致`);
@@ -139,7 +202,7 @@ if (errRows.length) { lines.push(`画面のエラー: 直した後で増えた�
 else lines.push('画面のエラー: 直す前から増えていない');
 
 console.log(lines.join('\n'));
-writeJson(path.join(outDir, 'compare.json'), { base: baseDir, head: headDir, allow: [...allow], results, printRows, lines, fail });
+writeJson(path.join(outDir, 'compare.json'), { base: baseDir, head: headDir, allow: [...allow], results, pageRows, printRows, lines, fail });
 fs.writeFileSync(path.join(outDir, 'summary.txt'), lines.join('\n') + '\n');
 await browser.close();
 process.exit(fail ? 1 : 0);
