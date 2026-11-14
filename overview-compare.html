@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-FwD8nI4RxD0CSIT+iP837k8TeRR9yZ1t1P9k3VcDppI=' 'sha256-pKy1pQG69/QniCj7jYGkUYQkrI6SfKZ27jzp3QZQDJI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-GOOrnpr7BDYhHuecPRGxNGYMeFBY6X9AVBF7cEKk6Ss=' 'sha256-pKy1pQG69/QniCj7jYGkUYQkrI6SfKZ27jzp3QZQDJI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -62,7 +62,11 @@ body {
 .purpose-legend { color: var(--g7); }
 /* 連動の準備ができずにあきらめた時だけ凡例の後ろに出す知らせ（2026-11-08 商用化の点検）。画面だけ・印刷に出さない */
 .sync-warn { margin-left: 8px; color: #8f0c0c; font-weight: 700; }
+/* 知らせの後ろに並べる「片方だけで見る」リンク（2026-11-13 代表者の決定・同じタブで単独の画面を開く）。押しやすいよう 44px の高さ */
+.sync-alt { margin-left: 8px; min-height: 44px; display: inline-flex; align-items: center; color: var(--pri-d); font-weight: 700; text-decoration: underline; }
+.sync-alt:focus-visible { outline: 2px solid var(--pri-d); outline-offset: 1px; }
 @media print { .sync-warn { display: none; } }
+@media print { .sync-alt { display: none; } }
 
 .panes { flex: 1; display: flex; min-height: 0; }
 .pane { flex: 1 1 50%; min-width: 0; position: relative; }
@@ -352,6 +356,7 @@ body {
   // 連動の準備ができずにあきらめた時の知らせ（連動が入の時だけ）。凡例の中に textContent で足す
   var warn = null;
   var GIVEUP = '連動の準備ができませんでした。ページを読み込み直してください';
+  var GIVEUP_ALT = [['visit-overview.html', '訪問だけで見る'], ['support-overview.html', '全支援だけで見る']];
   function showGiveUp() {
     if (!legend || !syncOn.checked || warn) return;
     showLegend();
@@ -359,6 +364,15 @@ body {
     el.className = 'sync-warn';
     el.textContent = GIVEUP;
     legend.appendChild(el);
+    /* 連動なしで片方だけを見る道（2026-11-13 代表者の決定・文は仮置き）。行き先は見出しの「訪問だけ」「全支援だけ」と同じ・同じタブで開く。
+       凡例の子に平らに足す（凡例を言い換えると一緒に消える）。文は textContent で入れる */
+    for (var gi = 0; gi < GIVEUP_ALT.length; gi++) {
+      var a = document.createElement('a');
+      a.className = 'sync-alt';
+      a.href = GIVEUP_ALT[gi][0];
+      a.textContent = GIVEUP_ALT[gi][1];
+      legend.appendChild(a);
+    }
     warn = el;
   }
   syncOn.addEventListener('change', showLegend);

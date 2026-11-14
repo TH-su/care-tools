@@ -92,6 +92,12 @@ const NET = Symbol('通信の失敗');
 const tick = () => new Promise((r) => setImmediate(r));
 async function settle(n) { for (let i = 0; i < (n || 30); i++) await tick(); }
 
+/* メニューの札の件数（cm_menu_due・2026-11-13 代表者の決定・台帳 CM-02）を書いた記録か（中身が件数と日付だけの時だけ真） */
+function cmDueW(w) {
+  if (!(w[0] === 'local' && w[2] === 'cm_menu_due')) return false;
+  if (w[1] === 'remove') return true;
+  try { return w[1] === 'set' && Object.keys(JSON.parse(w[3])).sort().join(',') === 'at,cm,overdue,soon,v'; } catch (e) { return false; }
+}
 function fakeStorage(log, kind) {
   const m = new Map();
   return {
@@ -213,7 +219,7 @@ async function opened(opt) {
     const head = HTML.slice(0, HTML.indexOf('</head>'));
     const srcs = [...head.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]);
     t('head の部品は su-errors → su-devcfg → su-gas-auth → su-res-read → su-cfg-hint → su-perf → su-login-band → su-app-gate → su-facility → su-print → care-meeting-calc → su-resident-hop の順（su-cfg-hint は改善プロンプト第6弾の2・su-gas-auth と su-res-read は 2026-10-29・su-devcfg は統合 0080）', JSON.stringify(srcs) === JSON.stringify(
-      ['su-errors.js?v=2026-11-12', 'su-devcfg.js?v=2026-11-08', 'su-gas-auth.js?v=2026-10-29', 'su-res-read.js?v=2026-11-11', 'su-cfg-hint.js?v=2026-11-10', 'su-perf.js?v=2026-11-02', 'su-login-band.js?v=2026-11-02', 'su-app-gate.js?v=2026-11-11', 'su-facility.js?v=2026-11-13.2', 'su-print.js?v=2026-11-13', 'care-meeting-calc.js?v=2026-11-13.2', 'su-resident-hop.js?v=2026-11-13']), srcs);
+      ['su-errors.js?v=2026-11-12', 'su-devcfg.js?v=2026-11-08', 'su-gas-auth.js?v=2026-10-29', 'su-res-read.js?v=2026-11-11', 'su-cfg-hint.js?v=2026-11-10', 'su-perf.js?v=2026-11-02', 'su-login-band.js?v=2026-11-02', 'su-app-gate.js?v=2026-11-11', 'su-facility.js?v=2026-11-13.2', 'su-print.js?v=2026-11-13', 'care-meeting-calc.js?v=2026-11-13.3', 'su-resident-hop.js?v=2026-11-13']), srcs);
     t('su-print.css を読み、su-errors.js より前にスクリプトが無い', /<link rel="stylesheet" href="su-print\.css\?v=2026-11-13">/.test(head) && head.indexOf('<script') === head.indexOf('<script src="su-errors.js'));
     t('CSP・拡大を禁止しない viewport・no-store・noindex・題', /data-su-csp/.test(head) && /<meta name="viewport" content="width=device-width,initial-scale=1">/.test(head) && !/user-scalable=no|maximum-scale=1[^.0-9]/.test(head) &&
       /Cache-Control" content="no-store"/.test(head) && /robots" content="noindex/.test(head) && /<title>担当者会議の記録<\/title>/.test(head));
@@ -325,12 +331,60 @@ async function opened(opt) {
 
   group('3. 端末に書くのは UI の状態だけ');
   {
-    t('localStorage に書く・消す所が無い', !/localStorage\.(setItem|removeItem|clear)\(/.test(S) && !/localStorage\[/.test(S));
+    /* 2026-11-13 代表者の決定（台帳 CM-02）: メニューの札の件数（cm_menu_due・件数と数えた日だけ）を書く1か所だけを許す（前例 bdb47f3 の設備の札と同じ） */
+    const lsW = [...S.matchAll(/localStorage\.(setItem|removeItem|clear)\(([^,)]*)/g)].map((m) => m[1] + ':' + m[2]);
+    t('localStorage に書く・消すのはメニューの札の件数（MENU_DUE_KEY）だけ（書くのも消すのも1か所）', lsW.length === 2 && lsW.indexOf('setItem:MENU_DUE_KEY') >= 0 && lsW.indexOf('removeItem:MENU_DUE_KEY') >= 0 && !/localStorage\[/.test(S), lsW);
+    t("MENU_DUE_KEY は 'cm_menu_due'", /\nvar MENU_DUE_KEY='cm_menu_due';/.test(S));
     const ss = [...S.matchAll(/sessionStorage\.(setItem|removeItem)\(([^,)]+)/g)].map((m) => m[2]);
     t('sessionStorage に書くのは OPEN_KEY だけ', ss.length === 2 && ss.every((k) => k === 'OPEN_KEY'), ss);
     t("OPEN_KEY は 'cm_open_meeting'", /\nvar OPEN_KEY='cm_open_meeting';/.test(S));
     t('ほかの保存先（indexedDB・cookie）を使わない', !/indexedDB|document\.cookie/.test(S));
-    t('setItem はこの1か所だけ', (S.match(/\.setItem\(/g) || []).length === 1);
+    t('setItem は sessionStorage の OPEN_KEY と札の件数の2か所だけ', (S.match(/\.setItem\(/g) || []).length === 2);
+  }
+  group('3b. メニューの札の件数（前回から6か月・2026-11-13 代表者の決定・台帳 CM-02）');
+  {
+    const RS = { v: 1, residents: [
+      { masterId: '901', name: '架空 一郎', room: '101', active: true },
+      { masterId: '902', name: '架空 二郎', room: '102', active: true },
+      { masterId: '903', name: '架空 三郎', room: '103', active: false },
+      { masterId: '904', name: '架空 四郎', room: '104', active: true, hospitalized: true },
+      { masterId: '905', name: '架空 五郎', room: '105', active: true } ] };
+    const SUM = { 901: { lastHeld: daysAgo(240), drafts: 0 }, 902: { lastHeld: daysAgo(170), drafts: 1 }, 903: { lastHeld: daysAgo(400) },
+      904: { lastHeld: daysAgo(400) }, 905: { lastHeld: daysAgo(10) } };
+    const pick = async (opt) => { const T = load(Object.assign({ roster: RS, handler: gas({ summary: () => ({ ok: true, residents: SUM }) }) }, opt || {}));
+      T.ctx.showPicker_(); await settle(); return T; };
+    const T = await pick();
+    const raw = T.ls.m.get('cm_menu_due'), d = raw ? JSON.parse(raw) : null;
+    t('選ぶ画面で要約を読めたら、前回から6か月の期限切れと30日以内を数えて残す（在籍・入院していない方だけ）',
+      d && d.v === 1 && d.cm === true && d.at === TODAY && d.overdue === 1 && d.soon === 1, d);
+    t('残すのは v・at・cm・overdue・soon だけ（氏名・番号・開催日は残さない）', d && Object.keys(d).sort().join(',') === 'at,cm,overdue,soon,v' && !/架空|90[1-5]/.test(raw), raw);
+    const T2 = await pick({ role: 'field' });
+    t('現場端末では書かない', !T2.ls.m.has('cm_menu_due') && !T2.writes.some((w) => w[2] === 'cm_menu_due'), T2.writes);
+    const T3 = load({ roster: RS, handler: gas({ summary: () => NET }) }); T3.ctx.showPicker_(); await settle();
+    t('要約を読めない時は書かない（前の件数を0件で上書きしない）', !T3.writes.some((w) => w[2] === 'cm_menu_due'), T3.writes);
+    const T4 = load({ handler: gas({ summary: () => ({ ok: true, residents: SUM }) }) }); T4.ctx.showPicker_(); await settle();
+    t('共有名簿が無い時は書かない', !T4.writes.some((w) => w[2] === 'cm_menu_due'), T4.writes);
+    const T5 = await pick({ handler: gas({ summary: () => ({ ok: true, residents: {} }) }) });
+    const d5 = JSON.parse(T5.ls.m.get('cm_menu_due') || 'null');
+    t('読めた時の0件は書く（直した後に札が消えるように）', d5 && d5.overdue === 0 && d5.soon === 0, d5);
+    /* 2026-11-13 反証レビュー 低: 入居者マスタから直接開いて確定した後も札が古いままにならない */
+    const fin = async (sumFn) => {
+      const U = load({ roster: RS, search: '?resident=901', handler: gas({ summary: sumFn }) });
+      U.ls.m.set('cm_menu_due', JSON.stringify({ v: 1, at: daysAgo(3), cm: true, overdue: 9, soon: 9 }));
+      U.ctx.applyRole_(); await U.ctx.openPerson_('901'); await settle();
+      await U.ctx.openNew_('区分変更'); U.ctx.ed.rec = fullRec(U.ctx); U.ctx.ed.touched = true;
+      await U.ctx.cmFinal_(); await settle(); return U;
+    };
+    const U1 = await fin(() => ({ ok: true, residents: SUM }));
+    const u1 = JSON.parse(U1.ls.m.get('cm_menu_due') || 'null');
+    t('直接開いて確定した後、要約を読み直して札の件数を数え直す', U1.ops().indexOf('summary') > U1.ops().indexOf('setStatus') && u1 && u1.at === TODAY && u1.overdue === 1 && u1.soon === 1, [U1.ops(), u1]);
+    const U2 = await fin(() => NET);
+    t('確定の後に要約を読めない時は控えを消す（古い数を出さない）', U2.ops().indexOf('setStatus') >= 0 && !U2.ls.m.has('cm_menu_due') && U2.writes.some((w) => w[1] === 'remove' && w[2] === 'cm_menu_due'), U2.writes);
+    const U3 = await fin(() => ({ ok: false, code: 'head_mismatch' }));
+    t('確定の後に要約が断られた時も控えを消す', !U3.ls.m.has('cm_menu_due'), U3.writes);
+    t('数え直すのは確定・下書きへ戻す・取り消しの後だけ（下書き保存では読まない）', /if\(what!=='save'\) refreshMenuDue_\(\);/.test(S) && /loadList_\(\); refreshMenuDue_\(\); return true; \}/.test(S), '');
+    t('数え直しは現場端末では何もしない', /function refreshMenuDue_\(\)\{\s*if\(isField\(\)/.test(S), '');
+    t('同じ中身なら書き直さない', (() => { const n = T.writes.filter((w) => w[2] === 'cm_menu_due').length; T.ctx.saveMenuDue_(); return T.writes.filter((w) => w[2] === 'cm_menu_due').length === n; })());
   }
   {
     const R1 = row({ meetingId: 'M20260401100000' + '1111', status: 'draft' }), R2 = row({ meetingId: 'M20251001100000' + '2222', heldDate: '2025-10-01' });
@@ -343,7 +397,7 @@ async function opened(opt) {
     T.ctx.ed.rec = fullRec(T.ctx); T.ctx.ed.touched = true;
     await T.ctx.cmFinal_(); await settle();
     const local = T.writes.filter((w) => w[0] === 'local'), sess = T.writes.filter((w) => w[0] === 'session');
-    t('入居者を開く・記録を開く・保存・確定の間に localStorage へ1回も書かない', local.length === 0, local);
+    t('入居者を開く・記録を開く・保存・確定の間に localStorage へ書くのは、確定の後のメニューの札の件数だけ（件数と日付だけ）', local.every(cmDueW), local);
     t('sessionStorage に書くのは cm_open_meeting だけ', sess.length > 0 && sess.every((w) => w[2] === 'cm_open_meeting'), sess.map((w) => w[2]));
     t('書く値は会議の番号の形だけ（氏名・本文を含まない）', sess.filter((w) => w[1] === 'set').every((w) => /^[0-9A-Za-z_-]{1,40}$/.test(w[3]) && w[3].indexOf('架空') < 0), sess);
     t('入院の記録・介護度の履歴は知らせの計算に要る項目だけをメモリに持つ（家族・処方は持たない）',
@@ -444,7 +498,8 @@ async function opened(opt) {
     t('赤い帯と「原本で確かめた」の印を出す', /nb-ng/.test(T.ctx.editorHtml_(T.ctx.ed, T.ctx.cur)) && /原本で、この方の会議の記録だと確かめた/.test(T.ctx.editorHtml_(T.ctx.ed, T.ctx.cur)));
     T.ctx.setField_('nameChecked', true);
     await T.ctx.cmFinal_(); await settle();
-    t('確かめの印を付けると確定できる（保存→確定の順に送る）', JSON.stringify(T.ops()) === JSON.stringify(['save', 'list', 'setStatus', 'list']) || JSON.stringify(T.ops().filter((o) => o !== 'list')) === JSON.stringify(['save', 'setStatus']), T.ops());
+    /* 確定の後の summary は札の件数の数え直しの読み取り（2026-11-13 反証レビュー 低）。書く操作の順は今までどおり */
+    t('確かめの印を付けると確定できる（保存→確定の順に送る）', JSON.stringify(T.ops().filter((o) => o !== 'summary')) === JSON.stringify(['save', 'list', 'setStatus', 'list']) || JSON.stringify(T.ops().filter((o) => o !== 'list' && o !== 'summary')) === JSON.stringify(['save', 'setStatus']), T.ops());
     const sv = T.meetCalls().find((c) => c.body.op === 'save'), st = T.meetCalls().find((c) => c.body.op === 'setStatus');
     t('確定は保存で返った番号と版で送る（status:final）', st && st.body.status === 'final' && st.body.meetingId === 'M20261023090000' + '0001' && st.body.baseRev === 1 && st.body.name === '架空 一郎', st && st.body);
     t('保存の本文の nameChecked は真偽の true', sv && sv.body.rec.nameChecked === true);
@@ -460,7 +515,7 @@ async function opened(opt) {
     t('同じ名前の方が2人：確かめの印が無ければ送らない', T.sent().length === 0 && /一致しません/.test(T.ctx.ed.msg));
     T.ctx.setField_('nameChecked', true);
     await T.ctx.cmFinal_(); await settle();
-    t('確かめの印を付けると送る', T.ops().filter((o) => o !== 'list').join() === 'save,setStatus', T.ops());
+    t('確かめの印を付けると送る', T.ops().filter((o) => o !== 'list' && o !== 'summary').join() === 'save,setStatus', T.ops());
   }
   {
     const T = await opened({ roster: null });
@@ -854,7 +909,7 @@ async function opened(opt) {
     W.ctx.ed.rec = fullRec(W.ctx); W.ctx.ed.touched = true;
     await W.ctx.cmSave_(); await settle();
     t('(7) 証明が3秒で返らなければ添えずに送る', W.sent().length === 1 && !('accessToken' in W.sent()[0].body));
-    t('(7) 証明は端末に控えない', [T, U, V, W].every((x) => x.writes.every((w) => w[2] === 'cm_open_meeting')));
+    t('(7) 証明は端末に控えない', [T, U, V, W].every((x) => x.writes.every((w) => w[2] === 'cm_open_meeting' || cmDueW(w))));
     t('(7) 画面に by・CM_BY が残っていない', !/CM_BY|\bby:/.test(S));
     t('(7) 3秒で諦める・ログインの印の形は入居者マスタと同じ', /setTimeout\(function\(\)\{ ok\(''\); \}, 3000\)/.test(cutF(S, 'cmAccessToken_')) && /\^sb-\[a-z0-9\]\+-auth-token\$/.test(cutF(S, 'cmHasLogin_')));
   }
@@ -1156,7 +1211,9 @@ async function opened(opt) {
     await G.ctx.impScan_(); await settle(); await G.ctx.impApply_(); await settle();
     t('取り込みの間に名簿が変わって入れなかった数を知らせる', /名簿が変わった 1 件は入れていません/.test(G.el('cm-pick').innerHTML));
     t('受け口: 選ぶ一覧の変更で data-impg を見る', /\$\('cm-pick'\)\.addEventListener\('change',onPickChange_\)/.test(cutF(S, 'bindEvents_')));
-    t('取り込みの間も localStorage・sessionStorage に書かない（選ぶ一覧へ戻る時に「開いていた会議の番号」を消すだけ）', A.writes.every((w) => w[1] === 'remove' && w[2] === 'cm_open_meeting'), A.writes);
+    /* 許すのは、要約を読み直した時のメニューの札の件数（cm_menu_due・件数と日付だけ・2026-11-13 代表者の決定・台帳 CM-02）の1件だけ */
+    const cmDueOnly = (w) => cmDueW(w) && w[1] === 'set';
+    t('取り込みの間も localStorage・sessionStorage に書かない（選ぶ一覧へ戻る時に「開いていた会議の番号」を消すのと、メニューの札の件数だけ）', A.writes.every((w) => (w[1] === 'remove' && w[2] === 'cm_open_meeting') || cmDueOnly(w)), A.writes);
     const Q = await mk('admin', { importScan: () => scanRes }, { answer: false });
     await Q.ctx.impScan_(); await settle(); await Q.ctx.impApply_(); await settle();
     t('確かめの窓で「やめる」を押したら送らない', Q.ops().indexOf('importApply') < 0);

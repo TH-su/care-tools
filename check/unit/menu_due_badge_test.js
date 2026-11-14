@@ -107,8 +107,9 @@ const withDue = tiles.filter((x) => x.due);
 /* 2026-11-11: 入居者マスタのタイルに、薬情の見直し待ちの数の札（管理者だけ）を足した（代表者の決定）。入居者マスタのタイルは
    事務所専用の印を持たないが、札は現場端末では読まず（dueBadge）、控えの admin の印があり管理者のログインの時だけ出す（dueText）ので、
    「事務所専用のタイルだけ」の決まりを「事務所専用か、管理者だけに出す札か」に広げた */
-t('札を出すのは個別機能訓練計画書と採用管理（2026-10-29）と入居者マスタ（2026-11-11・管理者だけの札）と設備・修繕の記録（2026-11-13）のタイルだけ',
-  withDue.length === 4 && withDue.some((x) => x.href === 'equip-log.html' && x.due === 'eql_menu_due') && withDue.filter((x) => x.href !== 'resident-master.html').every((x) => x.officeOnly === true)
+t('札を出すのは個別機能訓練計画書と採用管理（2026-10-29）と入居者マスタ（2026-11-11・管理者だけの札）と設備・修繕の記録と担当者会議の記録（2026-11-13）のタイルだけ',
+  withDue.length === 5 && withDue.some((x) => x.href === 'equip-log.html' && x.due === 'eql_menu_due')
+  && withDue.some((x) => x.href === 'care-meeting.html' && x.due === 'cm_menu_due') && withDue.filter((x) => x.href !== 'resident-master.html').every((x) => x.officeOnly === true)
   && withDue.some((x) => x.href === 'training-plan.html' && x.due === 'tp_menu_due')
   && withDue.some((x) => x.href === 'ats.html' && x.due === 'ats_menu_due' && x.adminOnly === true)
   && withDue.some((x) => x.href === 'resident-master.html' && x.due === 'rm_yjrev_due'), withDue);
@@ -171,6 +172,17 @@ t('設備: 壊れた控え・版の違う控えは出さない', dueText('{壊�
 t('設備: 赤の札は地が --due-tx・文字が白（白と #a50e0e で約 7.9:1）', /\.tile \.due\.legal \{[^}]*color: #fff;[^}]*background: var\(--due-tx\)/.test(INDEX), '');
 t('設備: 赤の札は件数の札と同じ守り（現場端末では読まない・鍵の形を確かめる）で付け、付け直しでも外す',
   /function dueLegalBadge\(key\) \{[\s\S]{0,200}is-field[\s\S]{0,120}\^\[a-z0-9_\]\{1,40\}\$/.test(INDEX) && /var oldL = tiles\[i\]\.querySelector\('\.due'\);\s*if \(oldL\) tiles\[i\]\.removeChild\(oldL\);/.test(INDEX), '');
+
+/* 担当者会議の記録（2026-11-13 代表者の決定・台帳 CM-02）: 前回から6か月の分だけ。注記「6か月の分だけ」を付ける */
+const cm = (o) => J(Object.assign({ v: 1, at: '2026-10-24', cm: true, overdue: 2, soon: 3 }, o));
+t('担当者会議: 「期限切れn・30日以内n（6か月の分だけ・日付時点）」と書く', dueText(cm({}), TODAY, 'office') === '期限切れ2・30日以内3（6か月の分だけ・10/24時点）', dueText(cm({}), TODAY, 'office'));
+t('担当者会議: 0件の項目は書かない・全部0件なら札を出さない（今と同じ見た目）',
+  dueText(cm({ overdue: 0 }), TODAY) === '30日以内3（6か月の分だけ・10/24時点）' && dueText(cm({ soon: 0 }), TODAY) === '期限切れ2（6か月の分だけ・10/24時点）'
+  && dueText(cm({ overdue: 0, soon: 0 }), TODAY) === '', '');
+t('担当者会議: 形の違う数・印の違う控え・数えた日が先の控えは出さない・赤の札は出さない',
+  [{ overdue: 1.5 }, { soon: '3' }, { overdue: -1 }, { cm: 'true' }, { soon: undefined }, { at: '2026-10-25' }, { v: 2 }].every((o) => dueText(cm(o), TODAY) === '')
+  && dueLegal(cm({}), TODAY) === '', '');
+t('担当者会議: 年が違う時は年も書く', dueText(cm({ at: '2025-12-30' }), TODAY) === '期限切れ2・30日以内3（6か月の分だけ・2025/12/30時点）', dueText(cm({ at: '2025-12-30' }), TODAY));
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);
