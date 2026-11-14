@@ -326,6 +326,14 @@ console.log('\n【9】AI のキー・上限・サーバーの版の（管理者�
   t('9-12 職員: 中継の版の断りに括弧を出さない', sb.aiErrText(new Error('AI_PROXY_OLD')) === 'いまはAIを使えません。管理者に伝えてください', sb.aiErrText(new Error('AI_PROXY_OLD')));
   t('9-13 職員: 合言葉の断りに括弧を出さない', sb.aiErrText(new Error('AI_PROXY_AUTH')) === 'サーバーの合言葉が通りませんでした。管理者に伝えてください', sb.aiErrText(new Error('AI_PROXY_AUTH')));
   t('9-14 職員: キーの断り（401・403）に括弧と AI の返答（英語）を出さない', sb.aiErrText(H401) === 'いまはAIを使えません。管理者に伝えてください' && sb.aiErrText(H403) === 'いまはAIを使えません。管理者に伝えてください', sb.aiErrText(H401));
+  /* 2026-11-14 第6段 TP-03 の残り: ほかの状態の番号（500 など）の断りも、番号と AI の返答（英語）は管理者の時だけ */
+  const H500 = new Error('AI_HTTP_500'); H500.detail = 'Internal server error';
+  const H400 = new Error('AI_HTTP_400');
+  t('9-15 職員: 状態の番号の断り（500）に番号と AI の返答（英語）を出さず、職員向けの1文', sb.aiErrText(H500) === 'AIから正しい応答がありませんでした。もう一度お試しください'
+    && sb.aiErrText(H400) === 'AIから正しい応答がありませんでした。もう一度お試しください', sb.aiErrText(H500));
+  sb.TP_IS_ADMIN = true;
+  t('9-16 管理者: 状態の番号の断りは今までの文のまま（番号と AI の返答つき）', sb.aiErrText(H500) === 'AIから正しい応答がありませんでした（状態 500）。　AIの返答: Internal server error'
+    && sb.aiErrText(H400) === 'AIから正しい応答がありませんでした（状態 400）。', sb.aiErrText(H500));
   sb.TP_IS_ADMIN = true;
   sb.AI_SRV = null; sb.TP_IS_ADMIN = false; sb.CFG = { url: '', token: '' };
   t('9-5 キーの無いことが分かっていない時の文は変えない', sb.aiUnreadyWhy() === '計画書の接続先が未設定のため、AIを使えません。', sb.aiUnreadyWhy());
