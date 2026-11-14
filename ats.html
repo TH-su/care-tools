@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-VGB/gMuVcFzt1rQzrPJby5+fh+MU6blibR+MDyW6Crk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-8CyKTPGWFXH66/i1Lb3ogvun+homzA+hxMYb1SvgJr4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 書類（PDF）を左の枠に出すため、この画面だけ CSP の frame-src に blob: を足す（check/csp.mjs が読む印） -->
@@ -22,7 +22,7 @@
 <script src="su-facility.js?v=2026-11-14.2"></script>
 <script src="su-print.js?v=2026-11-13"></script>
 <script src="staff-master-calc.js?v=2026-11-14"></script>
-<script src="ats-calc.js?v=2026-10-29.4"></script>
+<script src="ats-calc.js?v=2026-11-14"></script>
 <style>
 /* 採用管理（2026-10-26 代表者承認の凍結仕様 v1）。
    色は担当者会議のページと同じ濃さ（コントラスト7:1目標）。ライト固定。段階は色でなく番号と名前で示す。
@@ -2369,7 +2369,23 @@ function wire_(){
   var ev=$('a-evdlg'); if(ev) ev.addEventListener('cancel',onEvCancel_);
   definePrint_();
 }
+/* 事業所の区分の名前を施設情報（corpSettings.siteLabels）から当てる（職員マスタと同じ確かめ・代表者の決定 2026-11-14）。
+   書いていない・崩れている時は setSiteLabels が今の名前のまま false を返し、画面に1つも触らない。
+   開いている入職準備は描き直さず（打った入力を消さない）、チェックの名前と主所属の選択肢の文字だけを替える */
+function applySiteLabels_(){
+  if(typeof AtsCalc.setSiteLabels!=='function') return;
+  var sl=null, changed=false;
+  try{ sl=(window.SUFacility&&typeof window.SUFacility.section==='function')?window.SUFacility.section('siteLabels'):null; }catch(e){ sl=null; /* 捨ててよい: 読めなければ今の名前で動く */ }
+  try{ changed=AtsCalc.setSiteLabels(sl); }catch(e){ changed=false; atsNote_('区分の名前',e); }
+  if(!changed) return;
+  Object.keys(AtsCalc.SITE_LABEL).forEach(function(k){
+    var lab=AtsCalc.SITE_LABEL[k], c=$('p-site-'+k), sel=$('p-primary'), i;
+    if(c&&c.parentNode){ var n=c.nextSibling; if(n&&n.nodeType===3) n.nodeValue=lab; else c.parentNode.appendChild(document.createTextNode(lab)); }
+    if(sel) for(i=0;i<sel.options.length;i++){ if(sel.options[i].value===k) sel.options[i].textContent=lab; }
+  });
+}
 wire_();
+try{ if(window.SUFacility&&typeof window.SUFacility.onReady==='function') window.SUFacility.onReady(applySiteLabels_); }catch(e){ atsNote_('区分の名前',e); }
 boot_();
 </script>
 
