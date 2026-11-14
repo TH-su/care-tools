@@ -10,6 +10,8 @@
   var SEC = {
     'care-schedule': 'h-care-schedule',
     'work-schedule': 'h-work-schedule',
+    'shift-app': 'h-shift-app',
+    'shift-analyzer': 'h-shift-analyzer',
     'resident-master': 'h-resident-master',
     'weight-record': 'h-weight-record',
     'facesheet': 'h-facesheet',

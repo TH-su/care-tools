@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-8BIY1Z/oksKz3E7EUPdtb8CbhG265/wP0eusfgkqfw0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-yJ2jQPr7AhS2S9dHiaLHxWEAB6ZI+TYRtrpH9uRD+9E='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -837,6 +837,8 @@ select.inp { cursor: pointer; }
   font-size: 4.5mm; font-weight: 600; padding-inline-end: 2mm; padding-bottom: 1mm;
   white-space: nowrap;
 }
+/* 施設名（2026-11-13 代表者の決定）。見出しの段（15mm）の右上に位置を外して重ねる＝段の高さ・印刷日の箱と位置は変えない */
+.wk-head-row .su-print-head.wk-fac { top: 0; right: 0; max-width: 30%; padding-inline-end: 2mm; font-size: 3.6mm; font-weight: 600; line-height: 1.2; }
 /* 列幅は元様式の比率（帯 1.22+2.66 単位 ／ 時刻 2.66×5 単位 ／ 曜日 4×5 単位×7日）。 */
 .wk-grid { display: grid; grid-template-columns: 10mm 34mm repeat(7, 1fr); }
 .wk-cell { border: 0.25mm solid #000; }
@@ -924,6 +926,7 @@ select.inp { cursor: pointer; }
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 <link rel="stylesheet" href="su-resident-hop.css?v=2026-11-02">
+<link rel="stylesheet" href="su-print.css?v=2026-11-13">   <!-- 紙の見出しの施設名（.su-print-head・印刷だけ・2026-11-13） -->
 </head>
 <body>
 
@@ -1026,7 +1029,7 @@ select.inp { cursor: pointer; }
     <span class="sum-tokutei-note" id="sum-tokutei-note" style="display:none"></span>
     <button class="sum-edit-btn sum-lock-btn" id="board-lock-btn" data-on-click="toggleBoardLock"
             aria-pressed="false" title="押すと盤面をロックします（枠の移動・時間の伸縮・空き枠からの追加・長押しメニューを止めます）">🔓 移動ロック</button>
-    <button class="sum-edit-btn" data-on-click="printWeeklySheet" title="この利用者の週間予定表をA3横1枚で印刷（ご家族・関係者へ渡す様式）">🖨 A3週間予定表</button>
+    <button class="sum-edit-btn" data-on-click="printWeeklySheetGated_" title="この利用者の週間予定表をA3横1枚で印刷（ご家族・関係者へ渡す様式）">🖨 A3週間予定表</button>
     <button class="sum-edit-btn" data-on-click="openEventListModal" title="予定一覧">📋 一覧</button>
     <button class="sum-edit-btn" id="sync-btn" data-on-click="openSyncModal" title="クラウド同期">☁️ <span id="sync-status">同期</span></button>
     <button class="sum-edit-btn" data-on-click="openOfficeInfoModal">🏢 事業所情報</button>
@@ -1740,6 +1743,7 @@ if(!window.SUDialog) window.SUDialog = {
 };
 </script>
 <script src="su-facility.js?v=2026-11-13.2"></script>   <!-- 施設情報（報酬マスタの「自治体」の既定・監査10月版 #10） -->
+<script src="su-print.js?v=2026-11-13"></script>   <!-- A3 週間予定表の見出しの施設名と、印刷の前に施設情報を待つ門だけに使う（2026-11-13） -->
 <script src="su-cfg-hint.js?v=2026-11-10"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-resident-hop.js?v=2026-11-13"></script>
@@ -8890,10 +8894,11 @@ function buildWeeklySheetHtml_(res) {
   /* 印刷日＝この紙を作った日（ボタンを押した日）。年月日で出す。 */
   const now = new Date();
   const printed = now.getFullYear() + '年' + (now.getMonth() + 1) + '月' + now.getDate() + '日';
-  return '<div class="wk-head-row">'
+  return '<div class="wk-head-row su-print-head-host">'
        +   '<div class="wk-title">' + escHtml(name) + '様</div>'
        +   '<div class="wk-sheet-title">１週間のスケジュール</div>'
        +   '<div class="wk-printed">印刷日：' + escHtml(printed) + '</div>'
+       +   '<div class="su-print-head su-print-head-abs wk-fac" data-su-print-head="name"></div>'
        + '</div>'
        + '<div class="wk-grid">' + headHtml + '</div>'
        + '<div class="wk-grid">'
@@ -8901,6 +8906,13 @@ function buildWeeklySheetHtml_(res) {
        +   '<div class="wk-time-col" style="height:' + H + 'mm">' + timeLineHtml + timeHtml + '</div>'
        +   daysHtml
        + '</div>';
+}
+
+/* 「🖨 A3週間予定表」のボタンの入口。紙の見出しに施設名を刷るので、施設情報を最大3秒待ち、読めなければ刷らない
+   （su-print.js の facGate・2026-11-13 代表者の決定）。部品が無い時は今までどおりすぐ刷る */
+function printWeeklySheetGated_() {
+  if (window.SUPrint && SUPrint.facGate) SUPrint.facGate(() => printWeeklySheet(), (msg) => showToast(msg));
+  else printWeeklySheet();
 }
 
 /* 印刷の入口。既存の利用者一覧A3印刷と同じ作法（body クラス＋@page 動的注入＋afterprint で必ず後始末）。 */
@@ -8915,6 +8927,7 @@ function printWeeklySheet() {
      （実測で白紙になった）。 */
   clearRlPrintState_();
   box.innerHTML = buildWeeklySheetHtml_(res);
+  try { if (window.SUPrint && SUPrint.fillHeads) SUPrint.fillHeads(box); } catch (e) { csNote_('A3週間予定表の施設名', e); }
   document.body.classList.add('wk-print');
   const st = document.createElement('style');
   st.id = 'wk-a3-page';
@@ -9891,6 +9904,7 @@ const CS_ACTIONS = {
   'printResidentList': (a) => printResidentList(...a),
   'printWeek': (a) => printWeek(...a),
   'printWeeklySheet': (a) => printWeeklySheet(...a),
+  'printWeeklySheetGated_': (a) => printWeeklySheetGated_(...a),
   'rbPreview_': (a) => rbPreview_(...a),
   'removeResident': (a) => removeResident(...a),
   'restoreFromCloud_': (a) => restoreFromCloud_(...a),

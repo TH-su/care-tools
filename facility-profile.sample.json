@@ -5,6 +5,8 @@
   "facilityName": "見本ホーム",
   "municipality": "見本市",
   "_noteMunicipality": "施設のある市区町村。週間計画の報酬マスタの「自治体」の既定（未保存の端末・新しく入れた時）に使う",
+  "invoiceNo": "",
+  "_noteInvoiceNo": "invoiceNo: 適格請求書発行事業者の登録番号（T と13桁の数字。例 T0000000000000）。入れた時だけ消耗品管理の明細・料金表の発行者の欄に「登録番号 T…」の1行が出る。空・形が違う時は出さない。振込先は書かない",
   "scheduleColors": {
     "daycare": { "time": "#FFFF00", "body": "#FFFF00" },
     "shop":    { "time": "#92D050", "body": "#92D050" },

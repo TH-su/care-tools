@@ -56,6 +56,7 @@
 !/check/export-decrypt.mjs
 !/check/menu_sync_stale_e2e.mjs
 !/check/care_schedule_masterid_e2e.mjs
+!/check/print_head_patch_e2e.mjs
 # 端末登録の QR の通し試験（2026-11-08・受け取りページと使える人の管理の欄・通信は全部偽物）
 !/check/device_enroll_e2e.mjs
 # 業務の流れを通す試験（2026-11-02・入居者マスタ→各画面・行き来の帯・週間計画→ワースケ・俯瞰・現場の守り。材料は check/fixtures/flow.mjs）

@@ -1647,7 +1647,7 @@ body.meal-on #sc-list{max-width:none}
      ★link で読む＝JS が document.styleSheets からこのファイルの @media print も読めるようにする。
      ★?v= は必須（HTMLの no-store はサブリソースに効かないため、付けないと
        「新しいHTML × 古いCSS/JS」の組合せが現場端末に残る）。 -->
-<link rel="stylesheet" href="su-print.css?v=2026-09-12">
+<link rel="stylesheet" href="su-print.css?v=2026-11-13">
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 </head>
@@ -2087,7 +2087,7 @@ if(!window.SUDialog) window.SUDialog = {
 <!-- 薬情の取り込みの判定・組み立て（純関数・2026-10-22）。読めない時は入口のボタンを出さない（yjCalcOk_） -->
 <script src="yakujo-calc.js?v=2026-11-13"></script>
 <script src="revenue-calc.js?v=2026-11-07"></script>
-<script src="su-print.js?v=2026-09-12"></script>
+<script src="su-print.js?v=2026-11-13"></script>
 <!-- 入居者マスタの写し（統合 0004）。supabase-js と su-auth.js は写す時にだけ読み込む -->
 <script src="su-master-shadow.js?v=2026-10-28"></script>
 <script src="su-res-full.js?v=2026-11-03.5"></script>
@@ -2345,7 +2345,7 @@ function mcBuild_(d){
 }
 /* ==== 薬の変更候補の判定ここまで（MC-JUDGE-END） ==== */
 </script>
-<script src="resident-master.js?v=2026-11-13.4"></script>
+<script src="resident-master.js?v=2026-11-13.6"></script>
 <!-- 見出しの下の初回の案内の帯（2026-11-02 本人の決定）。×で閉じた端末では出さない。画面の動き・保存・印刷には触れない -->
 <script src="su-intro.js?v=2026-11-13"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>

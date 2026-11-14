@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-/sBda7wAdkj6PY/YtZVO5HJTf6wi/tRpWsSf6y3YxUo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-2LaixHhpngDFzDpR3scLQ2vT+R8fS7owUYja+8wrXwE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -94,6 +94,9 @@ body {
 .scr { display: none; }
 .scr.on { display: block; }
 .sheet-title { font-size: 1rem; font-weight: 700; margin-bottom: 8px; text-align: center; }
+/* 事業所名（2026-11-13 代表者の決定）。一覧表・全員リスト・薬用の表題の行の右に位置を外して重ねる＝表題の高さ・表の位置は変えない。
+   印刷日は凡例の右端に既にあるので事業所名だけ。利用登録表は表題に事業所名が入っているので足さない（紙だけ・文は su-print.js が入れる） */
+@media print { .sheet-title .su-print-head.dc-fac { top: auto; bottom: 2px; max-width: 30%; } }
 table.roster {
   border-collapse: collapse; background: #fff; margin: 0 auto; box-shadow: var(--sh);
   table-layout: fixed;
@@ -516,7 +519,8 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
   .print-date { display: inline-block; margin-left: auto;
     font-size: 9px; line-height: 1.2; color: #000; white-space: nowrap; }
   body.pr-batch .pg-date { display: block; text-align: end; font-size: 9px; line-height: 1.2;
-    color: #000; padding: 0 2mm 1mm 0; }
+    color: #000; padding: 0 2mm 1mm 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }   /* 事業所名を足しても1行のまま（2026-11-13） */
   .hide-print-note { display: inline; color: #000; font-weight: 700; }   /* 非表示適用中のみ帳票へ小さく明示（.noprint の打消しは既存規則を使う） */
   .wrap { overflow: visible; padding: 0; }
   /* 印刷の列幅はA4縦の印刷可能幅(≈733px@96dpi)を使い切る値を JS が算出して渡す
@@ -607,7 +611,7 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
      ★link で読む＝JS が document.styleSheets からこのファイルの @media print も読めるようにする。
      ★?v= は必須（HTMLの no-store はサブリソースに効かないため、付けないと
        「新しいHTML × 古いCSS/JS」の組合せが現場端末に残る）。 -->
-<link rel="stylesheet" href="su-print.css?v=2026-09-12">
+<link rel="stylesheet" href="su-print.css?v=2026-11-13">
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 </head>
@@ -651,19 +655,19 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
   </section>
 
   <section id="sc-daylist" class="scr" role="tabpanel">
-    <div class="sheet-title" id="dlTitle">デイ利用者一覧表</div>
+    <div class="sheet-title su-print-head-host" id="dlTitle"><span id="dlTitleTx">デイ利用者一覧表</span><span class="su-print-head su-print-head-abs dc-fac" data-su-print-head="name" data-su-print-kind="通所"></span></div>
     <table class="sheet" id="tblDaylist" aria-label="デイ利用者一覧表"></table>
     <div class="visit-note" id="visitNoteDaylist"><span class="star">☆</span>印の方は２週間に一度の訪問診療がありますので、２階ホールに居ていただいてください。</div>
     <aside class="note-below" id="noteDaylist" aria-label="備考"></aside>
   </section>
 
   <section id="sc-allweek" class="scr" role="tabpanel">
-    <div class="sheet-title">デイサービス利用一覧表（全員リスト）</div>
+    <div class="sheet-title su-print-head-host">デイサービス利用一覧表（全員リスト）<span class="su-print-head su-print-head-abs dc-fac" data-su-print-head="name" data-su-print-kind="通所"></span></div>
     <table class="sheet" id="tblAllweek" aria-label="全員リスト"></table>
   </section>
 
   <section id="sc-med" class="scr" role="tabpanel">
-    <div class="sheet-title" id="medTitle">デイ利用者一覧表（薬用）</div>
+    <div class="sheet-title su-print-head-host" id="medTitle"><span id="medTitleTx">デイ利用者一覧表（薬用）</span><span class="su-print-head su-print-head-abs dc-fac" data-su-print-head="name" data-su-print-kind="通所"></span></div>
     <div class="sheet-row">
       <table class="sheet" id="tblMed" aria-label="薬用一覧表"></table>
       <!-- 備考は【画面のみ】。noprint＝紙には出さない（2026-08-20 運用指示）。表の列幅は紙の幅を使い切ったまま -->
@@ -743,7 +747,7 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
 <script src="su-facility.js?v=2026-11-13.2"></script>
 <script src="su-data.js?v=2026-11-08.2"></script>
 <script src="su-data-gas.js?v=2026-10-29"></script>
-<script src="su-print.js?v=2026-09-12"></script>
+<script src="su-print.js?v=2026-11-13"></script>
 
 <script>
 'use strict';
@@ -2206,7 +2210,7 @@ function frameDaylist_(table) {
 
 function renderDaylist(ppl) {
   const table = $('tblDaylist');
-  $('dlTitle').textContent = 'デイ利用者一覧表（全利用者 ' + ppl.length + ' 名）';
+  $('dlTitleTx').textContent = 'デイ利用者一覧表（全利用者 ' + ppl.length + ' 名）';
   setupSheet(table, 'daylist');
   table.appendChild(dayHeader());
   const tbody = el('tbody');
@@ -2338,7 +2342,7 @@ const MED_NOTES = ['☆昼食後の薬', '・{{通所名}}利用者分は{{デ�
 
 function renderMed(ppl) {
   const table = $('tblMed');
-  $('medTitle').textContent = 'デイ利用者一覧表（薬用・全利用者 ' + ppl.length + ' 名）';
+  $('medTitleTx').textContent = 'デイ利用者一覧表（薬用・全利用者 ' + ppl.length + ' 名）';
   setupSheet(table, 'day');
   table.appendChild(dayHeader());
   const tbody = el('tbody');
@@ -2726,6 +2730,12 @@ function printDateText_() {
   const d = new Date(), p2 = v => (v < 10 ? '0' + v : String(v));
   return '印刷日：' + d.getFullYear() + '/' + p2(d.getMonth() + 1) + '/' + p2(d.getDate());
 }
+/* 週間名簿の各ページの先頭の行：事業所名（施設情報から・読めなければ出さない）と印刷日を1行に（2026-11-13 代表者の決定） */
+function pgDateText_() {
+  let n = '';
+  try { n = (window.SUPrint && SUPrint.headText) ? SUPrint.headText('name', '通所') : ''; } catch (e) { n = ''; }
+  return (n ? n + '　' : '') + printDateText_();
+}
 /* 凡例の右端に印刷日を置く（無ければ作る）。renderLegend の最後と、印刷の直前の両方から呼ぶ。
    ★印刷経路は印刷ボタン（設定画面）と beforeprint（Cmd/Ctrl+P・PDF出力）の2つ。どちらも
      su-print の before フック（printBefore_）からここを通る。 */
@@ -2764,7 +2774,7 @@ function buildWeeklyBatch_() {
   const ppl = MODEL || [];
   for (let d = 0; d < NDAY; d++) {
     const pg = el('div', 'pg');
-    pg.appendChild(el('div', 'pg-date', printDateText_()));   // 一括6枚は凡例が出ないので各ページ先頭へ
+    pg.appendChild(el('div', 'pg-date', pgDateText_()));      // 一括6枚は凡例が出ないので各ページ先頭へ（事業所名を同じ行の左に・2026-11-13）
     pg.appendChild(weeklyTable(ppl, d, dcrFill('{{昼食場所:２階}}')));
     host.appendChild(pg);         // ★ちょうど6要素（末尾の空白ページ防止）
   }

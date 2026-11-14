@@ -98,6 +98,15 @@ export function checkFacilityProfile(text, sampleText) {
   // 型だけ確かめる項目（無くてもよい）
   if ('version' in p && typeof p.version !== 'number') ng('version', '数ではありません');
   if ('municipality' in p && !isStr(p.municipality)) ng('municipality', '文字ではありません');
+  // 適格請求書の登録番号（2026-11-13 第6段 SP-03）。読む部品（su-facility.js の norm）と同じ読み方: 空白・ハイフンを除き、全角の英数字を半角に直して T と13桁の数字か。
+  // 形が違うと紙に黙って出ないので、入っている時だけ確かめて止める（値は出さない）
+  if ('invoiceNo' in p) {
+    if (!isStr(p.invoiceNo)) ng('invoiceNo', '文字ではありません');
+    else if (filled(p.invoiceNo)) {
+      const inv = p.invoiceNo.replace(/[\s\-‐－−]/g, '').replace(/[Ａ-Ｚａ-ｚ０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+      if (!/^T[0-9]{13}$/.test(inv)) ng('invoiceNo', 'T と13桁の数字の形ではありません（空白・ハイフンは除いて読みます。このままでは明細・料金表に出ません）');
+    }
+  }
   if ('corpSettings' in p) {
     if (!isObj(p.corpSettings)) ng('corpSettings', '{ } のかたまりではありません');
     else {

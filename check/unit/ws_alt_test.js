@@ -62,11 +62,15 @@ function extractFn(src, name) {
 const lineOf = (re) => { const m = re.exec(APP); if (!m) throw new Error(re + ' が見つかりません'); return m[0]; };
 /* 案の変数（本物の宣言をそのまま使う＝上限の数・端末の控えのキーを書き写さない） */
 const ALT_VARS = [/var ALT_MAX = [^;]+;/, /var ALT_PENDING_LS = [^;]+;/, /var altStates_ = [^;]+;/, /var altPushTimer_ = [^;]+;/,
-  /var altPendMem_ = [^;]+;/, /var ALT_NO_LS_MSG = [^;]+;/].map(lineOf).join('\n');
+  /var altPendMem_ = [^;]+;/, /var ALT_NO_LS_MSG = [^;]+;/].map(lineOf).join('\n') +
+  /* 画面の中の窓（確かめは OK の後にもう一度呼ぶ・正本の直し 2026-11-13）の印と関数。配信の前の画面には無いので、ある時だけ入れる。
+     ある画面では、promoteAlt_ が使う名前は全部入っていることを「0. 砂場」で確かめる */
+  (/var WS_OK_ = [^;]+;/.test(APP) ? '\n' + lineOf(/var WS_OK_ = [^;]+;/) : '');
+const DLG_FNS = ['wsDlg_', 'wsConfirm_', 'wsView_'].filter((n) => new RegExp('function\\s+' + n + '\\s*\\(').test(APP));
 const ALT_FNS = ['shownDay_', 'altKey_', 'altIdOk_', 'altNorm_', 'altList_', 'findAlt_', 'loadAlts_', 'altWrite_', 'altSnapshot_',
   'altPendKey_', 'altPendLs_', 'altPendAll_', 'altPendWrite_', 'altPendSave_', 'altPendHas_', 'altPendDel_', 'altPendNextKey_',
   'altSaveLocal_', 'altPushNow_', 'altPushRetry_', 'leaveAltCore_', 'altBoardFor_', 'enterAlt_', 'newAltId_', 'createAlt_',
-  'carryMarks_', 'promoteAlt_', 'daySig'];
+  'carryMarks_', 'promoteAlt_', 'daySig'].concat(DLG_FNS);
 
 /* 架空のサーバー（案のキー wsalt_<日付> の kv_get / kv_put。版が違えば conflict）。beforePut で「ほかの PC の書き込み」を差し込める */
 function fakeServer(init) {
@@ -162,6 +166,10 @@ const altObj = (id, name, tasks, meta) => ({ id, name, board: { meta: meta || {}
   {
     const E = makeEnv();
     t('本物の関数を ' + ALT_FNS.length + ' 本取り出せる', ALT_FNS.every((n) => typeof E.f[n] === 'function'));
+    const pr = extractFn(APP, 'promoteAlt_');
+    const need = ['WS_OK_', 'wsDlg_', 'wsConfirm_', 'wsView_'].filter((n) => new RegExp('\\b' + n + '\\b').test(pr) || (n === 'wsDlg_' && /\bwsConfirm_\b/.test(pr)));
+    t('本番にする（promoteAlt_）が使う窓の印と関数は全部砂場に入っている（' + (need.length ? need.join('・') : '使っていない＝配信の前の画面') + '）',
+      need.every((n) => (n === 'WS_OK_' ? /var WS_OK_ = /.test(ALT_VARS) : ALT_FNS.indexOf(n) >= 0)), need);
     t('部品（WSModel・WSStore）を本物のまま取り出せる', typeof M.newTask === 'function' && typeof S.createStore === 'function' && typeof M.absentNameKey === 'function');
   }
 

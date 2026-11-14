@@ -73,6 +73,8 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
     <ul class="toc">
       <li><a href="#h-care-schedule">週間計画</a></li>
       <li><a href="#h-work-schedule">ワークスケジュール</a></li>
+      <li><a href="#h-shift-app">シフト作成</a></li>
+      <li><a href="#h-shift-analyzer">過去シフト分析</a></li>
       <li><a href="#h-resident-master">入居者マスタ</a></li>
       <li><a href="#h-weight-record">体重管理</a></li>
       <li><a href="#h-facesheet">フェイスシート</a></li>
@@ -194,6 +196,50 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
       <dd>その日はロックされているので、自動では書き換わりません。反映したい時は、見出しの <span class="key">🔒ロック</span> のチェックを外してから、もう一度反映・取り込みをしてください。</dd>
       <dt>「サービス区分は週間計画アプリが正本です」「週間計画アプリ側に未送信があります」と出た</dt>
       <dd>サービス区分は週間計画で直します。週間計画にまだ送れていない変更がある時は、週間計画を開くと送られます。どちらも見出しの <span class="key">📅 週間計画</span> から開けます。</dd>
+      <dt>「合言葉が違います（設定の合言葉を確かめてください）」と出た</dt>
+      <dd>この端末の接続先の合言葉が通らず、変更を送れませんでした。入れた変更は端末に残っています。管理者に知らせて、接続先と合言葉を入れ直してもらってください（<a href="#h-connection-settings">接続設定の節</a>）。</dd>
+      <dt>設定で接続先を保存した時に「合言葉が違うか、別のアプリの接続先です」と出た</dt>
+      <dd>入れた接続先と合言葉の組が確かめられなかったので、保存していません（今までの接続先のままです）。管理者から受け取った接続先と合言葉を入れ直してから、もう一度保存してください。</dd>
+    </dl>
+  </section>
+
+  <section class="cd" id="sec-shift-app" aria-labelledby="h-shift-app">
+    <h2 id="h-shift-app" tabindex="-1">シフト作成</h2>
+    <p><strong>できること</strong></p>
+    <ul>
+      <li>月ごとの職員のシフト表を作り、直します。<span class="key">◀</span> <span class="key">▶</span> で月を移ります。</li>
+      <li><span class="key">⚡ 自動作成</span> でシフトの案を作ります。<span class="key">希望休</span> <span class="key">行政提出</span> <span class="key">マスタ</span> のタブで、希望休・提出用の表・職員の設定を見ます。</li>
+      <li><span class="key">📝 実績</span> で実際の勤務を記録し、<span class="key">🖨 印刷</span> で A3 横1枚か A3 縦2枚に印刷します。</li>
+      <li>同時に直せるのは1台だけです。見出しの <span class="key">✎ 編集</span> をオンにした端末だけが直せ、ほかの端末は閲覧モードのまま自動で新しくなります。</li>
+    </ul>
+    <p><strong>よくある困りごと</strong></p>
+    <dl class="sup">
+      <dt>「👁 閲覧モードです。編集するには右上の「✎ 編集」をオンにしてください」と出て、直せない</dt>
+      <dd>見出しの <span class="key">✎ 編集</span> にチェックを入れてから直してください。何も操作しない時間が30分続くと「無操作が30分続いたため編集モードを解除しました」と出て閲覧モードに戻ります。続ける時は、もう一度オンにします。</dd>
+      <dt>「他の端末が編集中です」の窓が出た</dt>
+      <dd>ほかの端末が編集モードです。見るだけなら <span class="key">閲覧モード維持</span> を押し、相手が終わるのを待ってください。<span class="key">強制引継</span> を押すと相手の画面は閲覧モードになります（相手がまだ送っていない編集は、相手の端末に退避されます）。相手に声をかけてから押してください。</dd>
+      <dt>「🔒 ロック中です。編集するにはロックを外してください」と出た</dt>
+      <dd>その月は確定してロックしてあります。直す時は、見出しの <span class="key">🔒 ロック</span> のチェックを外してください。直し終わったら、もう一度ロックします。</dd>
+    </dl>
+  </section>
+
+  <section class="cd" id="sec-shift-analyzer" aria-labelledby="h-shift-analyzer">
+    <h2 id="h-shift-analyzer" tabindex="-1">過去シフト分析</h2>
+    <p><strong>できること</strong></p>
+    <ul>
+      <li>過去の勤務表を貼り付けて <span class="key">集計</span> を押すと、訪問介護員の勤務時間・介護福祉士の割合・常勤換算を出します（今のシフト作成の表は変えません）。</li>
+      <li><span class="key">この月を保存</span> で月ごとに残し、あとから見返したり、前3月・前年度の平均を出したりします。</li>
+      <li>「資格マスタ」に職員の資格を一度登録すると、資格の列が無い勤務表でも氏名で判定します。</li>
+      <li>「クラウド同期」で、保存した月をほかの端末と共有できます（接続先と合言葉は管理者から受け取ります）。</li>
+    </ul>
+    <p><strong>よくある困りごと</strong></p>
+    <dl class="sup">
+      <dt>「日付ヘッダ行が見つかりません。7/1 7/2 … の日付行を含めて選択してコピーしてください。」と出た</dt>
+      <dd>貼り付けた範囲に日付の見出しの行が入っていません。勤務表で、日付の行から氏名・介護福祉士の列までを選び直してコピーし、貼り付け直してください。</dd>
+      <dt>「⚠ 資格が不明な訪問職員が …名います」と出た</dt>
+      <dd>資格の分からない職員は介護福祉士に数えていません。下の「資格マスタ」の <span class="key">この勤務表から取り込む</span> か、氏名を追加して資格を登録してから、もう一度 <span class="key">集計</span> を押してください。</dd>
+      <dt>「接続失敗: 合言葉が違います」「この合言葉は閲覧専用です（保存には編集用の合言葉が要ります）」と出た</dt>
+      <dd>クラウド同期の合言葉が違うか、見るだけの合言葉です。管理者から受け取った合言葉を入れ直してください。クラウドへ保存するには、編集用の合言葉が要ります。</dd>
     </dl>
   </section>
 
@@ -668,7 +714,7 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
 
 <!-- この端末の番号（端末の印の頭の8文字だけ・2026-11-08 代表者の決定 段3 案A）。この画面では送らない・印を作らない -->
 <!-- 住所の ?sec=<画面> から画面ごとの節へ飛ぶ（対応表 SEC にある値だけ・2026-11-13） -->
-<script src="help-sec.js?v=2026-11-13.2"></script>
+<script src="help-sec.js?v=2026-11-13.3"></script>
 <script src="su-device-role.js?v=2026-11-08" data-mode="show"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 <script src="su-report.js?v=2026-10-28" data-tool="使い方・困った時"></script>

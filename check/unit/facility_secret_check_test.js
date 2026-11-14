@@ -86,6 +86,25 @@ const leaks = (lines) => lines.filter(l => SECRET_WORDS.some(w => l.includes(w))
   const rp = good(); rp.roomPlan = { f1: { rows: 1 } };
   ng('間取り図に cells が無い', rp, /^roomPlan\.f1：/);
 
+  /* 適格請求書の登録番号（2026-11-13 第6段 SP-03 反証）: 書き損じは止める・読む部品と同じ読み方（空白・ハイフン・全角は直して読む） */
+  const inv = (v) => { const o = good(); o.invoiceNo = v; return o; };
+  const ngInv = ng('登録番号の桁が足りない', inv('T000000000001'), /^invoiceNo：T と13桁の数字の形ではありません/);
+  t('登録番号の NG の文に番号そのものを出さない', ngInv.errors.every(e => e.indexOf('T000000000001') < 0 && e.indexOf('000000000001') < 0), ngInv.errors);
+  ng('登録番号に T が無い', inv('0000000000001'), /^invoiceNo：T と13桁/);
+  ng('登録番号が文字でない', inv(1234567890123), /^invoiceNo：文字ではありません/);
+  t('登録番号は空白・ハイフン・全角の英数字を直して読めれば OK', run(inv('Ｔ０００-0000 00000１')).ok && run(inv('T0000000000001')).ok, run(inv('Ｔ０００-0000 00000１')).errors);
+  t('登録番号が空・項目が無い時は OK（紙に出さないだけ）', run(inv('')).ok && run(good()).ok);
+  /* 読む部品（su-facility.js）と同じ判定か: 同じ値を両方に通し、OK と「番号が出る」が一致する */
+  {
+    const vm = require('vm');
+    const read = (v) => { const store = { su_facility_json_v1: JSON.stringify(inv(v)) }; const win = {};
+      const ctx = { window: win, localStorage: { getItem: k => (k in store ? store[k] : null), setItem() {} }, JSON, Math, String, Array, Object, parseInt };
+      vm.createContext(ctx); vm.runInContext(fs.readFileSync(path.join(__dirname, '..', '..', 'su-facility.js'), 'utf8'), ctx); return win.SUFacility.invoiceNo(); };
+    const cases = ['T0000000000001', 'Ｔ０００-0000 00000１', 'T000000000001', 't0000000000001', 'T0000000000001X', ' T0000-0000-00001 '];
+    const bad = cases.filter(v => run(inv(v)).ok !== (read(v) !== ''));
+    t('確かめる道具と読む部品で同じ判定（6通り）', bad.length === 0, bad);
+  }
+
   console.log('— C. 値を出さない —');
   t('NG の文のどれにも、架空の施設名・電話・携帯の番号が出ない', leaks(all).length === 0, leaks(all));
 
