@@ -77,8 +77,12 @@ console.log('\n— 4. 知らせるだけの言葉は画面の知らせで出す 
     "alert('お名前が入っていないため、入居者マスタへは登録できません。",
     "alert('⚠️ この端末の保存データが読めなかったため、バックアップ（"
   ];
+  /* 2026-11-13 第6段 AF-02: 止めて見せる4件は画面の中の窓（SUDialog.alert）で出す。su-dialog.js が読めない時の受け口だけがブラウザの窓（window.alert）を1回呼ぶ。
+     数は前より厳しく見る（画面の中の窓が4件ちょうど・受け口が1件ちょうど・そのほかの alert( は0件） */
   const found = (src.match(/\balert\(/g) || []).length;
-  t('alert は止めて見せる4件だけ', found === KEEP.length, found);
+  const viaDlg = (src.match(/SUDialog\.alert\(/g) || []).length;
+  const viaNative = (src.match(/window\.alert\(/g) || []).length;
+  t('alert は止めて見せる4件だけ（画面の中の窓で4件・読めない時の受け口で1件・ほかは0件）', viaDlg === KEEP.length && viaNative === 1 && found === KEEP.length + 1, [found, viaDlg, viaNative]);
   for (const k of KEEP) t('残す alert: ' + k.slice(7, 30), src.indexOf(k) >= 0);
   for (const m of ['この案件は見つかりません', 'そのバックアップは見つかりませんでした', 'バックアップから復元しました', '元に戻せる操作はありません', '最新を読み込みました']) {
     t('知らせは toast: ' + m, src.indexOf("toast('" + m + "')") >= 0 && src.indexOf("alert('" + m) < 0);

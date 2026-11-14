@@ -302,6 +302,49 @@ console.log('\n【8】AI のキーが無い時の（管理者向け：…）は�
   }
 }
 
+console.log('\n【9】AI のキー・上限・サーバーの版の（管理者向け：…）も管理者のログインの時だけ出す（2026-11-13 第6段 TP-03 の残り）');
+{
+  const sb = { s_: (v) => String(v == null ? '' : v), TP_IS_ADMIN: false, AI_SRV: { key: false }, CFG: { url: 'u', token: 't' } };
+  vm.createContext(sb);
+  vm.runInContext(grabFn(S, 'aiErrText') + '\n' + grabFn(S, 'aiUnreadyWhy'), sb);
+  const lim = new Error('AI_LIMIT');
+  t('9-1 職員: AI を使えない理由に括弧（サーバーのキー・中継の版）を出さない', sb.aiUnreadyWhy() === 'いまはAIを使えません。管理者に伝えてください。', sb.aiUnreadyWhy());
+  t('9-2 職員: 回数の上限の文に設定の名前（AI_DAILY_LIMIT）を出さない', sb.aiErrText(lim) === '今日のAIの利用回数の上限に達しました。明日もう一度お試しください', sb.aiErrText(lim));
+  sb.TP_IS_ADMIN = true;
+  t('9-3 管理者: AI を使えない理由は今までの文のまま', sb.aiUnreadyWhy() === 'いまはAIを使えません。管理者に伝えてください（管理者向け：サーバーにAIのキーが無いか、中継の無い古い版です。設定の「AIの接続を確かめる」で詳しく分かります）。', sb.aiUnreadyWhy());
+  t('9-4 管理者: 回数の上限の文は今までの文のまま', sb.aiErrText(lim) === '今日のAIの利用回数の上限に達しました。明日もう一度お試しください（管理者向け：上限はサーバーの AI_DAILY_LIMIT で変えられます）', sb.aiErrText(lim));
+  /* PR #566 の反証: 中継の版・合言葉・キーの断り（401/403）も括弧は管理者の時だけ */
+  const H401 = new Error('AI_HTTP_401'); H401.detail = 'invalid x-api-key';
+  const H403 = new Error('AI_HTTP_403');
+  const ADM = {
+    AI_PROXY_OLD: 'いまはAIを使えません。管理者に伝えてください（管理者向け：サーバーが古い版で、AIの中継が入っていません）',
+    AI_PROXY_AUTH: 'サーバーの合言葉が通りませんでした。管理者に伝えてください（管理者向け：設定画面の「接続」を確かめる）'
+  };
+  t('9-10 管理者: 中継の版・合言葉の断りは今までの文のまま', sb.aiErrText(new Error('AI_PROXY_OLD')) === ADM.AI_PROXY_OLD && sb.aiErrText(new Error('AI_PROXY_AUTH')) === ADM.AI_PROXY_AUTH);
+  t('9-11 管理者: キーの断り（401）は今までの文のまま（番号と AI の返答つき）', sb.aiErrText(H401) === 'いまはAIを使えません。管理者に伝えてください（管理者向け：サーバーのAIのキーが受け付けられませんでした・401）　AIの返答: invalid x-api-key', sb.aiErrText(H401));
+  sb.TP_IS_ADMIN = false;
+  t('9-12 職員: 中継の版の断りに括弧を出さない', sb.aiErrText(new Error('AI_PROXY_OLD')) === 'いまはAIを使えません。管理者に伝えてください', sb.aiErrText(new Error('AI_PROXY_OLD')));
+  t('9-13 職員: 合言葉の断りに括弧を出さない', sb.aiErrText(new Error('AI_PROXY_AUTH')) === 'サーバーの合言葉が通りませんでした。管理者に伝えてください', sb.aiErrText(new Error('AI_PROXY_AUTH')));
+  t('9-14 職員: キーの断り（401・403）に括弧と AI の返答（英語）を出さない', sb.aiErrText(H401) === 'いまはAIを使えません。管理者に伝えてください' && sb.aiErrText(H403) === 'いまはAIを使えません。管理者に伝えてください', sb.aiErrText(H401));
+  sb.TP_IS_ADMIN = true;
+  sb.AI_SRV = null; sb.TP_IS_ADMIN = false; sb.CFG = { url: '', token: '' };
+  t('9-5 キーの無いことが分かっていない時の文は変えない', sb.aiUnreadyWhy() === '計画書の接続先が未設定のため、AIを使えません。', sb.aiUnreadyWhy());
+  /* サーバーの版が古い時の3か所（期の取り消し・一括で作る2つ）。括弧の中は TP_IS_ADMIN の時だけ足す */
+  const OLD = "'（管理者向け：版 2026-09-04.1 以降が必要）'";
+  t('9-6 版の括弧は3か所とも「TP_IS_ADMIN の時だけ」の形で残る', (S.split("(TP_IS_ADMIN ? " + OLD + " : '')").length - 1) === 3 && (S.split('（管理者向け：版 2026-09-04.1 以降が必要）').length - 1) === 3);
+  t('9-7 期の取り消しの断り（deletePlan）は職員向けの文＋管理者の時だけ括弧',
+    grabFn(S, 'deletePlan').indexOf("toast('サーバーが古い版のため、期の取り消しはできません。管理者に更新を頼んでください' + (TP_IS_ADMIN ? " + OLD + " : ''));") >= 0);
+  t('9-8 全員の一括（runBatchAiAllResidents）も同じ形',
+    grabFn(S, 'runBatchAiAllResidents').indexOf("toast('サーバーが古い版のため、一括では作れません。管理者に更新を頼んでください' + (TP_IS_ADMIN ? " + OLD + " : ''));") >= 0);
+  const tb = { TP_IS_ADMIN: false, out: [] };
+  vm.createContext(tb);
+  tb.toast = (m) => tb.out.push(m);
+  vm.runInContext("function f(){ toast('サーバーが古い版のため、一括では作れません。管理者に更新を頼んでください' + (TP_IS_ADMIN ? " + OLD + " : '')); }", tb);
+  tb.f(); tb.TP_IS_ADMIN = true; tb.f();
+  t('9-9 職員には括弧の前の文だけ・管理者には今までの文', tb.out[0] === 'サーバーが古い版のため、一括では作れません。管理者に更新を頼んでください'
+    && tb.out[1] === 'サーバーが古い版のため、一括では作れません。管理者に更新を頼んでください（管理者向け：版 2026-09-04.1 以降が必要）', tb.out);
+}
+
 Promise.resolve(sec7).catch((e) => t('【7】の動きの試験が最後まで動く', false, String(e && e.stack))).then(() => {
   console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' 件合格 / ' + fail + ' 件不合格');
   process.exit(fail ? 1 : 0);

@@ -220,6 +220,23 @@ console.log('— 9. 設定の接続状態欄も、失敗の時は職員向けの
   t('9-5 文の無い呼び出しは欄を変えない', si.textContent === '最終同期: 10:00:00');
 }
 
+console.log('— 10. うまく繋がらない時のチェック項目（受け口の側の確かめは「管理者向けの詳しい内容」に畳む・2026-11-13 第6段 WR-01） —');
+{
+  const mH = src.match(/<details class="api-help">([\s\S]*?)<\/details>\s*<\/details>/);
+  const help = mH ? mH[1] : '';
+  const iAdm = help.indexOf('<details class="api-diag-more" id="apiHelpAdmin">');
+  const outer = (iAdm >= 0 ? help.slice(0, iAdm) : help).replace(/<!--[\s\S]*?-->/g, '');   /* 注記（コメント）は画面に出ないので除く */
+  const inner = iAdm >= 0 ? help.slice(iAdm) : '';
+  t('10-1 チェック項目の中に「管理者向けの詳しい内容」の畳んだ欄がある（初めは閉じている）', iAdm > 0 && /<details class="api-diag-more" id="apiHelpAdmin">\s*<summary>管理者向けの詳しい内容<\/summary>/.test(inner) && !/id="apiHelpAdmin"[^>]*\bopen\b/.test(help), iAdm);
+  t('10-2 畳む前の項目に Apps Script・デプロイの管理・/dev・初回承認が無い', !!mH && !/Apps Script|デプロイ|\/dev|初回承認/.test(outer), outer);
+  t('10-3 職員が自分で確かめられる2項目（受け口の URL か・接続診断）は畳まずに出す', outer.indexOf('<li><b>体重管理用の Google の受け口の URL か</b>') >= 0 && outer.indexOf('<li>うまくいかない時は「🩺 接続診断」を押して具体的な原因を表示</li>') >= 0, outer);
+  t('10-4 畳んだ欄に元の3項目が文を変えずに入る', inner.indexOf('Apps Script → デプロイの管理 → 編集（鉛筆）→ 「アクセスできるユーザー = 全員」 → 更新</li>') >= 0
+    && inner.indexOf('<code>/dev</code>（テスト用）はオーナー本人しか叩けません</li>') >= 0
+    && inner.indexOf('「詳細」→「（プロジェクト名）に移動」→「許可」までやり切ったか確認</li>') >= 0, inner);
+  t('10-6 「URL は /exec で終わっているか」は職員がその場で直せるので外に出す（/dev の説明だけ畳む・PR #566 の反証）', outer.indexOf('<li><b>URL は <code>/exec</code> で終わっているか</b></li>') >= 0 && inner.indexOf('/exec') < 0, outer);
+  t('10-5 外の欄は閉じたまま（画面の見た目を変えない）', /<details class="api-help">\s*<summary>うまく繋がらない時のチェック項目<\/summary>/.test(src));
+}
+
 sec6.then(() => {
   console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
   process.exit(fail ? 1 : 0);
