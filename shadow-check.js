@@ -1271,6 +1271,7 @@ if (!window.SUDialog) window.SUDialog = {
     try { await loadDoc(sb); } catch (e) { $('doc-verdict').className = 'msg warn'; $('doc-verdict').textContent = '添付書類の写しの記録を読めませんでした。'; }
     try { await loadDocMode(sb); } catch (e) { genoNote('書類の印の欄', e); }   // 0065 の前・読めない時はボタンを出さない
     try { await loadHo(sb); } catch (e) { $('ho-verdict').className = 'msg warn'; $('ho-verdict').textContent = '申し送りの写しの記録を読めませんでした。'; }
+    try { await loadMed(sb); } catch (e) { $('med-verdict').className = 'msg warn'; $('med-verdict').textContent = '薬学管理の写しの記録を読めませんでした。'; }
     try { await loadPatch(sb); }
     catch (e) {
       $('pt-verdict').className = 'msg warn';
@@ -1596,7 +1597,7 @@ if (!window.SUDialog) window.SUDialog = {
     sup_shadow_status: '0046', sup_mode_get: '0047', mirror_bot_me: '0047',
     sa_shadow_status: '0050', sa_mode_get: '0051', device_seen_summary: '0048', shadow_diff_days: '0055', shadow_diff_note: '0055',
     geno_shadow_status: '0053', geno_mode_get: '0054', hb_shadow_status: '0062', hb_mode_get: '0064', doc_shadow_status: '0063', doc_mode_get: '0065',
-    ho_shadow_status: '0067', save_health: '0088'
+    ho_shadow_status: '0067', save_health: '0088', med_shadow_status: '0092'
   };
   var prepMissing = {};
   function dbErrKind(err) {
@@ -2240,6 +2241,56 @@ if (!window.SUDialog) window.SUDialog = {
     else if (left > 0) say('写しが届いています（初めの写しの途中です）。' + tail, 'ok');
     else if (notes.length) say('写しは1時間ごとに届いていますが、下の知らせがあります。' + tail, 'warn');
     else say('写しが1時間ごとに届き、Google と同じです。写し始めてから ' + sinceDays + '日（2週間以上続けてから、申送ビューアの読み先を移すかを決めます）。' + tail, 'ok');
+  }
+  /* 薬学管理の写し（統合 0092・2026-11-15・排泄ケア記録の写し 0062 と同じ型）: med_shadow_status（事務所・管理者）。
+   * 出すのは種類（薬の記録・変更の記録・タグの辞書）ごとの件数・照らし合わせで一致したか・食い違いの数・最後に写した時刻と、その回の数だけ
+   * （氏名・薬・変更の理由は返らない・出さない）。切り替えのボタン・切り替える前の確かめの表は無い（写しの期間だけ）。Google へは何も送らない */
+  var MED_KIND = [['meds', '薬の記録'], ['events', '変更の記録'], ['dict', 'タグの辞書']];
+  var MED_REFUSED = {
+    stale: '前に読んだ写し', shrink: '急に減った', badrow: '形の違い', badkind: '種類の違い', dup: '同じ記録が2行', toomany: '一度に多すぎる',
+    toolarge: '大きすぎる', future: '時刻が先'
+  };
+  async function loadMed(sb, nowMs) {
+    var kk = $('med-kpis'), v = $('med-verdict'), dt = $('med-detail');
+    function say(t, kind) { v.className = 'msg' + (kind ? ' ' + kind : ''); v.textContent = t; }
+    kk.replaceChildren(); dt.className = 'msg'; dt.textContent = '';
+    var st = await sb.rpc('med_shadow_status');
+    if (st.error) { say(dbErrText(st.error, 'med_shadow_status', '薬学管理の写しのデータベースの準備（0092）はまだです。')); return; }
+    var d = st.data || {}, ks = (d.kinds && typeof d.kinds === 'object') ? d.kinds : {}, s = (d.stat && typeof d.stat === 'object') ? d.stat : {};
+    if (!d.lastAt) { say('まだ写していません。薬学管理の GAS に写しの部品（shadow.gs）を貼り、自動（setupMedShadow）を入れると、1時間以内に写ります。'); return; }
+    var now = typeof nowMs === 'number' ? nowMs : Date.now();
+    var since = Date.parse(d.since || '');
+    var sinceDays = isNaN(since) ? 0 : Math.max(0, Math.floor((now - since) / 86400000));
+    var notes = [], parts = [];
+    MED_KIND.forEach(function (p) {
+      var k = (ks[p[0]] && typeof ks[p[0]] === 'object') ? ks[p[0]] : {}, x = (s[p[0]] && typeof s[p[0]] === 'object') ? s[p[0]] : null;
+      kk.appendChild(kpi(p[1], Number(k.rows) || 0, '件'));
+      if (x) parts.push(p[1] + ': Google ' + Number(x.rows || 0) + '件／写し ' + Number(k.rows || 0) + '件' + (k.match === true ? '・照らし合わせで一致' : k.match === false ? '・照らし合わせで食い違い（写しは直してあります）' : '・まだ照らし合わせていません'));
+      if (x && Number(x.rows || 0) !== Number(k.rows || 0)) notes.push(p[1] + 'の Google と写しの件数が合っていません（Google ' + Number(x.rows || 0) + '件／写し ' + Number(k.rows || 0) + '件）。開発の担当へ知らせてください。');
+      if (x && Number(x.bad) > 0) notes.push(p[1] + 'に新しい保存先で使えない形の記録が ' + Number(x.bad) + '件あり、写していません（開発の担当へ知らせてください）。');
+      if (x && Number(x.dup) > 0) notes.push(p[1] + 'に同じ番号の記録が ' + Number(x.dup) + '件重なっています（2件目からは写していません。開発の担当へ知らせてください）。');
+      if (x && x.shrink === true) notes.push(p[1] + 'が急に減ったので、最後の回は写していません（次の回も同じ件数なら、本当に減ったものとして写します。減らした覚えが無ければ開発の担当へ知らせてください）。');
+      else if (x && x.failed === true) notes.push(p[1] + 'は最後の回に、Google で読めなかったか送れなかったため、写していません（次の回にもう一度写します。続く時は開発の担当へ知らせてください）。');
+      else if (x && x.refused === true) notes.push(p[1] + 'は最後の回に受け付けられず、写していません（開発の担当へ知らせてください）。');
+    });
+    kk.appendChild(kpi('中身まで照らし合わせた種類（14日）', Number(d.verified14) || 0, '種類'));
+    kk.appendChild(kpi('食い違い（14日）', Number(d.mismatch14) || 0, '種類'));
+    kk.appendChild(kpi('写し始めてから', sinceDays, '日'));
+    if (Number(s.missing) > 0) notes.push('薬学管理のスプレッドシートに無いタブが ' + Number(s.missing) + 'つあり、写していません。タブ（meds・events・dict）が消えたり名前が変わったりしていないか確かめ、開発の担当へ知らせてください。');
+    if (Number(s.tooLarge) > 0) notes.push('大きすぎて写せない種類が ' + Number(s.tooLarge) + 'つあります（開発の担当へ知らせてください）。');
+    if (Number(s.afterDiff) > 0) notes.push('写した後に照らした要約が ' + Number(s.afterDiff) + '種類で合いませんでした（開発の担当へ知らせてください）。');
+    if (Number(d.refused24h) > 0) notes.push('この24時間に受け付けなかった写しが ' + Number(d.refused24h) + '回ありました。');
+    if (!(Number(d.verified14) > 0)) notes.push('中身の照らし合わせが動いていません（開発の担当へ知らせてください）。');
+    var tail = '（最後に写した時刻 ' + fmtTime(d.lastAt) + '）';
+    var last = Date.parse(d.lastAt || '');
+    var info = Number(d.shrinkOk14) > 0 ? ' この14日に、急に減った写しを（同じ件数が2回続いたので）本当に減ったものとして受け付けた回が ' + Number(d.shrinkOk14) + '回あります。' : '';
+    dt.textContent = parts.join('。') + (parts.length ? '。' : '') + (notes.length ? ' ' + notes.join(' ') : '') + info;
+    if (notes.length) dt.className = 'msg warn';
+    if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + refusedWord(MED_REFUSED, d.lastRefused, 'loadMed') + '）。開発の担当へ知らせてください。' + tail, 'warn');
+    else if (isNaN(last) || now - last > SA_FRESH_MS) say('しばらく写っていません。薬学管理の GAS の自動（medShadowTick）が止まっていないか確かめてください。' + tail, 'warn');
+    else if (Number(d.mismatch14) > 0) say('この14日に、要約は同じなのに中身が違った種類が ' + Number(d.mismatch14) + 'つありました（写しは直してあります）。開発の担当へ知らせてください。' + tail, 'warn');
+    else if (notes.length) say('写しは1時間ごとに届いていますが、下の知らせがあります。' + tail, 'warn');
+    else say('写しが1時間ごとに届き、Google と同じです。写し始めてから ' + sinceDays + '日。' + tail, 'ok');
   }
   /* 切り替えボタンは、切り替えスイッチ genogram が入で、この端末に家族構成図の接続先（URL と合言葉）がある時だけ出す */
   function genoOn() { var sw = window.SUKv ? SUKv._flags() : null; return !!(sw && sw.supabase && sw.supabase.genogram === true); }
