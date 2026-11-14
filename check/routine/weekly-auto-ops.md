@@ -71,6 +71,7 @@ done
 
    2. `<名前>` の語尾の `_phase1`・`_phase2` などを先に外す（同じ番号の移行を2段に分けて流したもの。表では「NNNN（2段に分けて流した 1段目／2段目）」と書く）。
    3. 番号のある名前は、そのリポジトリの `supabase/migrations/NNNN_*.sql` のファイル名と `<名前>` を比べる。
+      - ファイル名（`NNNN_` と `.sql` を外したもの）が `<名前>` と同じか、`<名前>` で始まる時（流す時に名前を縮めた。例 `carelog_roster` と `carelog_roster_read`）を「合う」とする。縮めて合った時は印に「流した時の名前が短い（ファイル名 …）」と書く。
       - 合えば、移行ファイル＝それ、戻す SQL＝`supabase/rollback/NNNN_back.sql`（care-backend は `NNNN_<名前>_back.sql` も）。
       - 合わない時（同じ番号の別の移行がある・番号の移行が無い）は、番号の移行・戻す SQL は**使わず**、下の 4 と同じやり方で `supabase/hotfix/` から `<名前>` のファイルを探す。当たれば「移行の名前と番号が食い違う（hotfix のファイルを当てた）」と印を付ける。
    4. 応急の直し（hotfix）のファイルの決め方（care-log の `supabase/hotfix/`）:
@@ -88,7 +89,7 @@ done
      - ok と書いてよいのは、**同じ行（か同じ段落）に「本番」と「流した」「流し済み」の語が両方あり**、そこに確かめの結果（ok・一致・変わらない など）が書いてある時だけ。例: 「本番へは流し済み（流した後の確かめ ok）」「本番には 0069 を流した（確かめ ok）」。
      - 「手元の土台」「使い捨ての」「素の PostgreSQL」「土台」「run.sh」「架空データ」の確かめは本番の照合ではない。それしか無ければ「記録なし（手元の確かめだけ）」。
      - 書く形は「ok（リポジトリ 短いID）」「ok でない（リポジトリ 短いID・何が）」「記録なし」「記録なし（手元の確かめだけ）」のどれか。**見つからなければ「記録なし」と書き、ok と推測しない**。care-backend の `supabase/checks/` に番号の付いた確かめのファイルがあれば名前を添える。
-   - **消す処理の印**: 移行ファイルに `drop table`・`drop column`・`drop schema`・`delete from`・`truncate` がある時、または `drop function`・`drop index`・`drop view` で同じ移行の中に同じ名前の `create` が無い時だけ「消す処理（本人の一度だけ許可の対象）」と印を付ける。作り直しの前置き（`drop policy … if exists`・`drop trigger … if exists`・`drop constraint if exists` の後に同じ名前を作るもの）と、`attisdropped` などの語の一部は数えない。
+   - **消す処理の印**: 関数の本文（`$$ … $$` や `$fn$ … $fn$` の中）は除いて、移行ファイルに `drop table`・`drop column`・`drop schema`・`delete from`・`truncate` がある時、または `drop function`・`drop index`・`drop view` で同じ移行の中に同じ名前の `create` が無い時だけ「消す処理（本人の一度だけ許可の対象）」と印を付ける。作り直しの前置き（`drop policy … if exists`・`drop trigger … if exists`・`drop constraint if exists` の後に同じ名前を作るもの）と、`attisdropped` などの語の一部は数えない。関数の本文の中の `delete from` などは、関数を呼んだ時に動くもので、流した時に行を消すものではないので数えない。
 4. 流したのに移行ファイルが main に入っていない時は「**main に移行ファイルなし**」と目立たせる。
 5. 表の「統合」の欄には、移行の名前に加えてリポジトリ（care-backend／care-log）を書く。
 
