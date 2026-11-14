@@ -328,7 +328,7 @@ console.log('\nG 画面・メニュー・公開');
   t('見出しは共通の型（← メニュー・役割の札・su-shell.js）', /class="hdr su-shell-hdr"/.test(H) && /class="back su-menu-back" href="index.html"/.test(H) && /su-shell\.js\?v=/.test(H));
   t('画面のコードは innerHTML・document.write・console・通信・消す操作を使わない', !/innerHTML|outerHTML|insertAdjacentHTML|document\.write|console\.|fetch\(|XMLHttpRequest|sendBeacon|removeItem|\.clear\(/.test(J));
   t('画面が書くのは件数の鍵（U.MENU_DUE_KEY）の1か所だけ', (J.match(/setItem\(/g) || []).length === 1 && /st\.setItem\(U\.MENU_DUE_KEY, v\)/.test(J));
-  t('ほかのタブの一覧が札の件数の鍵を書いた時は読み直さない（2つのタブで書き合いが止まらないため）', /if \(ev && ev\.key === U\.MENU_DUE_KEY\) return;\s*draw\(\);/.test(J));
+  t('ほかのタブの一覧が札の件数の鍵を書いた時は読み直さない（2つのタブで書き合いが止まらないため）', /if \(ev && U && ev\.key === U\.MENU_DUE_KEY\) return;\s*draw\(\);/.test(J));
   t('印刷では見出しと中身を消す', /@media print\s*\{[^}]*header, main \{ display: none !important; \}/.test(C));
   t('「この画面を開いて送る」は同じタブの移動だけ（target を付けない）', /'この画面を開いて送る'/.test(J) && !/target/.test(J));
   const G = raw('.gitignore');
