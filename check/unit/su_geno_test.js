@@ -346,7 +346,7 @@ const DOC = { clientName: '架空 一郎', nodes: [], lines: [], updatedAt: '202
 
   console.log('S 画面');
   {
-    t('S su-geno.js を読み込む', /<script src="su-geno\.js\?v=2026-11-08"><\/script>/.test(PAGE));
+    t('S su-geno.js を読み込む', /<script src="su-geno\.js\?v=2026-11-14"><\/script>/.test(PAGE));
     t('S gasCall は SUGeno に通し、Google へ送る関数（gasCallGoogle）は今までの fetchWithRetry のまま', /const rid = \(opts && 'rid' in opts\) \? \(opts\.rid \|\| null\) : ridFor\(action, params\);[\s\S]{0,120}window\.SUGeno\.call\(action, params \|\| \{\}, \(\) => gasCallGoogle\(action, params, opts\), \{ residentId: rid \}\)/.test(PAGE)
       && /async function gasCallGoogle\(action, params, opts\) \{[\s\S]*?headers: \{ 'Content-Type': 'text\/plain;charset=utf-8' \}, redirect: 'follow' \};[\s\S]*?return await fetchWithRetry\(url, init, undefined, async \(res\) => \{\s*if \(!res\.ok\) throw new Error\('GAS HTTP ' \+ res\.status\);\s*return await res\.json\(\);/.test(PAGE));
     t('S 利用者No は ?resident= の方の図（suGenoMasterIdFor）と保留に積んだ時の値だけ', /function ridFor\(action, params\) \{[\s\S]*?suGenoMasterIdFor\(name, mid, window\._suMasterName\) \? String\(mid\) : null;/.test(PAGE)

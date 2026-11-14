@@ -580,7 +580,7 @@ function sameShape(p) { return p && p.url === TP_URL && p.method === 'POST' && p
     t('L 画面: 接続先の案内は確かめ終わって使えない時だけ（一覧・設定）', (HTML.match(/if \(tpNoCfg_\(\)\) noCfgGuide\(/g) || []).length === 2 && !/if \(!CFG\.url\) noCfgGuide\(/.test(HTML));
     t('L 画面: 計画書の接続先で止まっていた12か所が tpOn_ を見る', (HTML.match(/!tpOn_\(\)/g) || []).length >= 13, (HTML.match(/!tpOn_\(\)/g) || []).length);
     t('L 部品の版は計画書・入居調整・デイ利用表でそろう',
-      ['training-plan.html', 'admission-flow.html'].every(f => /su-data\.js\?v=2026-11-08\.2"/.test(read(f)) && /su-data-supabase\.js\?v=2026-11-08\.2"/.test(read(f))) && /su-data\.js\?v=2026-11-08\.2"/.test(read('daycare-roster.html')));
+      ['training-plan.html', 'admission-flow.html'].every(f => /su-data\.js\?v=2026-11-08\.2"/.test(read(f)) && /su-data-supabase\.js\?v=2026-11-14"/.test(read(f))) && /su-data\.js\?v=2026-11-08\.2"/.test(read('daycare-roster.html')));
   }
 
   console.log('\n— 画面の置き換え —');
