@@ -218,6 +218,8 @@ vm.createContext(B);
 vm.runInContext(fs.readFileSync(path.join(ROOT, 'su-facility.js'), 'utf8'), B);
 vm.runInContext([
   dcr.grabDeclAsVar('NDAY'),
+  dcr.grabDeclAsVar('DAYS_JA'), dcr.grabDeclAsVar('DCR_DAYS_DEFAULT'), dcr.grabFn('dcrDays_'), dcr.grabDeclAsVar('FLOOR_LABEL'), dcr.grabDeclAsVar('DCR_FLOOR_NAME_MAX'),
+  dcr.grabFn('dcrFloorNames_'), dcr.grabFn('dcrFloorExtra_'), dcr.grabFn('dcrFloorNos_'), dcr.grabFn('dcrFloorKey_'),   // 曜日の列と3階以上の階の部品（2026-11-14 第6段 K5）
   dcr.grabDeclAsVar('dupCount'),
   dcr.grabDeclAsVar('floorSrcCount'),
   dcr.grabDeclAsVar('dcrNameCutMap'),

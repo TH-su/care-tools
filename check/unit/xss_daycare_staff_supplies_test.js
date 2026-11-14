@@ -184,6 +184,8 @@ try {
     'var HIDE_CANDIDATES = [];',
     grabConst(DC, 'DAYS_JA'), grabConst(DC, 'NDAY'), grabConst(DC, 'DCR_FIELD_MSG'), grabConst(DC, 'onDay'), grabConst(DC, 'offDay'),
     grabConst(DC, 'countOff'), grabConst(DC, 'FLOOR_ORDER'), grabConst(DC, 'WK_FLR_LABEL'),
+    grabConst(DC, 'DCR_DAYS_DEFAULT'), grabConst(DC, 'DCR_COLS'), grabFn(DC, 'dcrDays_'), grabFn(DC, 'dcrLastDay_'), grabConst(DC, 'FLOOR_LABEL'), grabConst(DC, 'DCR_FLOOR_NAME_MAX'),
+    grabFn(DC, 'dcrFloorNames_'), grabFn(DC, 'dcrFloorExtra_'), grabFn(DC, 'dcrFloorNos_'), grabFn(DC, 'dcrFloorOrder_'), grabFn(DC, 'wkFlrLabel_'),   // 曜日の列と3階以上の階の部品（2026-11-14 第6段 K5）
     grabFn(DC, 'el'), grabFn(DC, 'minToLabel'), grabFn(DC, 'deiCells'), grabFn(DC, 'sectionRows'),
     grabFn(DC, 'weeklyByFloor'), grabFn(DC, 'wkNameSpaced'), grabFn(DC, 'weeklyTable'),
     grabFn(DC, 'renderHideList'), grabFn(DC, 'renderStarList')
