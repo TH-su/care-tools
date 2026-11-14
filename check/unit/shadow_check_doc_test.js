@@ -4,6 +4,7 @@
      B 最後の写しを断っていたら種類を職員向けの言葉で・古ければ警告・読めなかった書類があれば警告・初めの写しの途中
      C 出すのは件数・時刻だけ（書類の名前・氏名・持ち主は出さない）。Google・端末の控えには触らない
      H 画面: 欄・準備の帯の番号（0063）・版
+     L 切り替えた後の種類（doc_mode_get の印が live）は、写しが止まっていても知らせない。写し返しの残りがあり75分を超えて遅れた時だけ知らせる（2026-11-14）
    実行: node check/unit/shadow_check_doc_test.js
    架空データのみ。 */
 'use strict';
@@ -39,7 +40,7 @@ function box(o) {
     fmtTime: (x) => (x ? 'T' : '-'),
     fetch: (url) => { sent.push(url); return Promise.reject(new Error('no')); },
     localStorage: { getItem: () => { sent.push('ls'); return null; }, setItem: () => { sent.push('ls-set'); } },
-    me: { role: 'admin' }, notes: [],
+    me: { role: 'admin' }, notes: [], genoNote: () => {},
     JSON, String, Object, Promise, Error, Date, isNaN, Number, Math, RegExp, Array
   };
   env.window = { SUErrors: { note: (k, m) => env.notes.push([k, m]) } };
@@ -50,6 +51,7 @@ function box(o) {
   const sb = {
     rpc: (n) => {
       rpcs.push(n);
+      if (n === 'doc_mode_get') return Promise.resolve(o.mode ? { data: o.mode } : { error: { code: 'PGRST202' } });
       return Promise.resolve(o.statusErr ? { error: { code: o.errCode || 'PGRST202' } } : { data: o.status });
     },
     from: (tbl) => { rpcs.push('from:' + tbl); return {}; }
@@ -87,8 +89,22 @@ const ST = (s, a) => ({ ok: true, stf: K(s), adm: K(a) });
   console.log('— C —');
   {
     const b = box({ status: ST() }); await b.run();
-    t('C Google・端末の控えに触らない・様子の口だけを呼ぶ', b.sent.length === 0 && JSON.stringify(b.rpcs) === '["doc_shadow_status"]', [b.sent, b.rpcs]);
+    // 2026-11-14: 切り替えた後かを見るため、印の口（doc_mode_get・読むだけ）も呼ぶようにした
+    t('C Google・端末の控えに触らない・様子の口と印の口だけを呼ぶ', b.sent.length === 0 && JSON.stringify(b.rpcs) === '["doc_shadow_status","doc_mode_get"]', [b.sent, b.rpcs]);
     t('C 本文の作り方に名前・持ち主を使わない', !/\.name\b|\.owner\b|\.fid\b|\.meta\b/.test(fn('loadDoc')));
+  }
+  console.log('— L —');
+  {
+    const M = (s, a) => ({ ok: true, tenant: 'x', stf: Object.assign({ mode: 'live', version: 1, mirroredVer: 1, mirroredAt: null }, s || {}), adm: Object.assign({ mode: 'live', version: 1, mirroredVer: 1, mirroredAt: null }, a || {}) });
+    const b = box({ status: ST({ lastAt: ago(60 * 24 * 8) }, { lastAt: ago(60 * 24 * 8) }), mode: M() }); await b.run();
+    t('L 両方とも切り替え済みで残り0なら、写しが8日前でも知らせない（ok）', V(b).className === 'msg ok' && !/しばらく届いていません/.test(V(b).textContent) && /切り替え済み/.test(V(b).textContent), V(b));
+    t('L 種類ごとに切り替え済みと写し返しの残りを出す', /職員マスタ: 切り替え済みです/.test(D(b).textContent) && /写し返しの残り 0件/.test(D(b).textContent), D(b).textContent);
+    const b2 = box({ status: ST({ lastAt: ago(60 * 24 * 8) }), mode: M({ version: 3, mirroredVer: 1, mirroredAt: ago(200) }) }); await b2.run();
+    t('L 写し返しの残りがあり75分を超えて遅れたら知らせる', /職員マスタの書類の Google ドライブへの写し返しが遅れています（残り 2件/.test(V(b2).textContent) && /warn/.test(V(b2).className), V(b2).textContent);
+    const b3 = box({ status: ST({ lastAt: ago(60 * 24 * 8) }), mode: M({ version: 2, mirroredVer: 1, mirroredAt: ago(30) }) }); await b3.run();
+    t('L 残りがあっても75分以内に写し返していれば知らせない', !/warn/.test(V(b3).className), V(b3));
+    const b4 = box({ status: ST({}, { lastAt: ago(200) }), mode: M({}, { mode: 'shadow' }) }); await b4.run();
+    t('L 写しの期間の種類（入居調整）は今までどおり写しの遅れを知らせる', /入居調整の写しがしばらく届いていません/.test(V(b4).textContent), V(b4).textContent);
   }
   console.log('— H —');
   {
