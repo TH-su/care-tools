@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-RoRCynfbdhMd38wjbB7NyA7jChB7U4Jwx8Z5bcCK5h0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-oTEBNosM5uEd9fbIQmBohcxOPXyZNH6vx/q8/3UYCi0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -2642,7 +2642,8 @@ const PRINT_VIEWS = {
      印字可能幅は A3縦・A4横とも 1062px で同じ＝列幅の設計（時刻列の拡幅）はそのまま活きる。 */
   'sc-allweek': { label: '全員リスト',       paper: 'A4 landscape', margin: 8 },
   'sc-med':     { label: '薬用',             paper: 'A4 landscape', margin: 8 },
-  'sc-weekly':  { label: '週間名簿（6枚）',  paper: 'A4 portrait',  margin: '15 5 0 5' }
+  /* 枚数は営業曜日の数（既定6＝「週間名簿（6枚）」のまま・K5）。印刷の設定の窓の名前は登録した時の値、印刷ボタンの読み上げは開くたびの値 */
+  'sc-weekly':  { get label() { return '週間名簿（' + dcrDays_().length + '枚）'; },  paper: 'A4 portrait',  margin: '15 5 0 5' }
 };
 /* ============================================================================
    印刷フィット（帳票3タブ）— 用紙1枚に収まる最大の文字サイズへ自動調整する。
@@ -3054,8 +3055,7 @@ function printSetActive_(sc) {
     try { const sv = SUPrint.prefs(sc).get(); if (sv && sv.paper) paper = sv.paper; } catch (e) {}
     if (SUPrint.paperLabel) paper = SUPrint.paperLabel(paper);   // 'A4 portrait' → 'A4 縦'
   }
-  const lb = (sc === 'sc-weekly') ? def.label.replace('6枚', dcrDays_().length + '枚') : def.label;   // 週間名簿の枚数は営業曜日の数（既定6＝今の文・K5）
-  $('btnPrint').setAttribute('aria-label', lb + 'の印刷設定を開く（現在 ' + paper + '）');
+  $('btnPrint').setAttribute('aria-label', def.label + 'の印刷設定を開く（現在 ' + paper + '）');
 }
 // 保存済みタブ（既知のタブのみ）。無効/未保存は利用表。
 function savedTab() {
