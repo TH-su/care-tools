@@ -491,8 +491,8 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
   body:not(.su-printing) table.roster .hosp-tag { font-size: var(--ro-fs); }
   body:not(.su-printing) table.sheet { --sh-fs: 0.8125rem; --sh-tm: 0.8125rem; }
   /* 営業7日の時は時刻の欄が 39px に狭まる（dcrSheetW_）。13px の太字「13:00」の末尾が欠けないよう、字の大きさ（13px）は変えずに
-     左右の余白を外し字の間を少し詰める（K5）。紙は sheetFsMax_ で字を下げる */
-  body:not(.su-printing) table.sheet.d7 .c-tm { padding-left: 0; padding-right: 0; letter-spacing: -0.02em; }
+     左右の余白を外し字の間を少し詰める（K5）。画面の書体を元に戻した（keep-font）ので -0.04em（-0.02em では 1.2px 欠けた）。紙は sheetFsMax_ で字を下げる */
+  body:not(.su-printing) table.sheet.d7 .c-tm { padding-left: 0; padding-right: 0; letter-spacing: -0.04em; }
   body:not(.su-printing) table.sheet .c-nm .hosp-tag { font-size: var(--sh-fs); }
   body:not(.su-printing) .legend { font-size: 0.8125rem; }
   body:not(.su-printing) .legend .hosp-tag,
