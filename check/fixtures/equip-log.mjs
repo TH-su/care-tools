@@ -1,6 +1,7 @@
 /* check/fixtures/equip-log.mjs — 設備・修繕の記録を、架空の設備・記録で開くための材料（2026-11-03 新設）
  *
- * snap.mjs の材料の形（URL・match・storage・routes・sheets・respond）。この画面は印刷しないので sheets は空（帳票は撮らない）。
+ * snap.mjs の材料の形（URL・match・storage・routes・sheets・respond）。
+ *   sheets … 「対応の記録」の「一覧を印刷（A4 横）」で組む点検・修繕の記録の紙（SUPrint の 'evlist'・2026-11-14 代表者の決定）を、架空の記録で撮る
  * 手元の確かめ（ブラウザで開いて押す）では storage を端末に入れ、routes で通信を横取りする:
  *   storage … 事務所PCとして開き、架空の事務所のアカウントでログインしている端末にする
  *   routes  … Supabase への通信を全部横取りし、ログインの確かめ・アプリの使える人・設備・修繕の記録の RPC（eq_*）に架空の応答を返す。
@@ -23,7 +24,17 @@ export const storage = {
   su_device_role: 'office',
   'sb-jhbernqawjrzqwrmqrih-auth-token': FAKE_SESSION,
 };
-export const sheets = [];
+/* 点検・修繕の記録の紙（A4 横）。ページの中で動く。記録を読み終えるのを待ち、押した時と同じ道（evPrint_）で紙を組む（印刷のダイアログは開かない） */
+export const sheets = [
+  { key: 'evlist', arg: null, ready: '#e-print .ep-t',
+    prepare: async () => {
+      const wait = async (fn) => { for (let i = 0; i < 150; i++) { let v = null; try { v = fn(); } catch (e) { v = null; } if (v) return v; await new Promise((r) => setTimeout(r, 100)); } return null; };
+      if (!(await wait(() => typeof evPrint_ === 'function' && window.SUPrint && typeof view !== 'undefined' && view === 'app' && typeof dbState !== 'undefined' && dbState === 'ok'))) return false;
+      window.print = function () {};
+      evPrint_();
+      return !!(await wait(() => document.body.classList.contains('su-printing')));
+    } },
+];
 
 const T = 'kakuu-tenant';
 /* 架空の一覧（eq_list の答え）。見本の間取り（facility-profile.sample.json の 101〜104・201〜204）に合わせる */
@@ -40,6 +51,12 @@ export function seed() {
       { id: 'e-1', tenant_id: T, asset_id: 'a-1', place_key: 'room:101', etype: 'cleaning', found_on: null, requested_on: '2025-11-20', handled_on: '2025-12-01', done_on: '2025-12-01',
         amount: 5500, vendor_id: 'v-1', staff_name: '', body: '見本のフィルター清掃', next_due: null, cancelled_at: null, extra: {}, rev: 1, created_at: '2025-12-01T10:00:00+09:00' },
       { id: 'e-2', tenant_id: T, asset_id: 'a-3', place_key: 'place:p-1', etype: 'inspection', handled_on: '2025-10-10', amount: 22000, vendor_id: 'v-2', body: '見本の法定点検', next_due: '2026-10-10', cancelled_at: null, extra: {}, rev: 1, created_at: '2025-10-10T10:00:00+09:00' },
+      /* 紙（点検・修繕の記録）の材料として足した架空の記録（2026-11-14）。同じ設備の2件目・場所だけの記録・取り消した記録（紙には載せない）・増やした項目の値 */
+      { id: 'e-3', tenant_id: T, asset_id: 'a-1', place_key: 'room:101', etype: 'repair', found_on: '2025-08-02', requested_on: '2025-08-03', handled_on: '2025-08-05', done_on: '2025-08-05',
+        amount: 16500, vendor_id: 'v-1', body: '見本の修理（冷えない）\n見本の部品を交換した', next_due: null, cancelled_at: null, extra: { 'f-1': 'MT-0001' }, rev: 1, created_at: '2025-08-05T10:00:00+09:00' },
+      { id: 'e-4', tenant_id: T, asset_id: 'a-2', place_key: 'room:201', etype: 'repair', found_on: '2025-09-12', handled_on: '2025-09-15', amount: 0, vendor_id: null, body: '見本の手すりのゆるみを締めた', next_due: null, cancelled_at: null, extra: {}, rev: 1, created_at: '2025-09-15T10:00:00+09:00' },
+      { id: 'e-5', tenant_id: T, asset_id: null, place_key: 'room:102', etype: 'cleaning', handled_on: '2025-11-05', amount: 3300, vendor_id: 'v-1', body: '見本の換気扇の清掃', next_due: null, cancelled_at: null, extra: {}, rev: 1, created_at: '2025-11-05T10:00:00+09:00' },
+      { id: 'e-6', tenant_id: T, asset_id: 'a-1', place_key: 'room:101', etype: 'inspection', handled_on: '2025-07-01', amount: 2200, vendor_id: 'v-1', body: '見本の取り消した点検', next_due: null, cancelled_at: '2025-07-02T10:00:00+09:00', extra: {}, rev: 1, created_at: '2025-07-01T10:00:00+09:00' },
     ],
     vendors: [
       { id: 'v-1', tenant_id: T, name: '見本設備サービス', field: '空調', phone: '000-0000-0001', contact: '見本 担当', note: '', disabled: false, rev: 1 },
