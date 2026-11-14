@@ -806,6 +806,37 @@ const allPanels = (L) => { const out = []; for (const tb of CALC.TABS) { L.ctx.t
     t('対応の記録に付ける項目では案内を出さない', !/field-legal|法定点検のある設備/.test(L.els['p-fields'].innerHTML));
   }
 
+  group('16. 点検・修繕の記録の紙（A4 横・SUPrint の evlist・2026-11-14 代表者の決定）');
+  {
+    const d = baseData();
+    d.assets.push({ id: 'a2', kind: 'facility', place_key: 'room:102', category: 'furniture', name: BAD, status: 'active', rev: 1, extra: {} });
+    d.events.push(
+      { id: 'e2', asset_id: 'a1', place_key: 'room:101', etype: 'inspection', handled_on: '2026-06-01', amount: 2200, vendor_id: 'v1', body: BAD, rev: 1, extra: { fd2: BAD } },
+      { id: 'e3', asset_id: 'a2', place_key: 'room:102', etype: 'repair', handled_on: '2026-07-01', amount: 5500, vendor_id: null, body: '架空の2件目の修理', rev: 1, extra: {} },
+      { id: 'e4', asset_id: 'a1', place_key: 'room:101', etype: 'repair', handled_on: '2026-04-20', amount: 9999, vendor_id: 'v1', body: '架空の取り消した記録', cancelled_at: '2026-04-21T00:00:00Z', rev: 1, extra: {} });
+    const L = await opened({ rpc: { eq_list: () => d } });
+    let spec = null, printed = 0;
+    L.ctx.window.SUPrint = { define(n, s) { if (n === 'evlist') spec = s; }, print(n) { if (n === 'evlist') printed++; }, facGate(go) { go(); return Promise.resolve(true); } };
+    L.ctx.document.body.classList = { contains: () => false };
+    L.ctx.definePrint_();
+    t('A4 横・紙の根は #e-print・文字の大きさで収める（--ep-fs・zoom を使わない）', !!spec && spec.paper === 'A4 landscape' && spec.root === '#e-print' && spec.fit && spec.fit.cssVar === '--ep-fs' && !/zoom|transform\s*:\s*scale/.test(spec.fit.cssVar), spec && spec.fit);
+    t('★Cmd/Ctrl+P では準備しない（押す前は when が偽＝今の画面の印刷は変えない）', spec && spec.when() === false);
+    L.ctx.onAppInput_({ target: { id: 'e-q', value: '' } });
+    const h = L.ctx.evPrintHtml_();
+    t('記録を設備ごとにまとめ、取り消した記録は載せずに件数だけを書く', (h.match(/<tr class="ep-g">/g) || []).length === 2 && !/架空の取り消した記録/.test(h) && /取り消した記録 1件は載せていません/.test(h), h.slice(0, 900));
+    t('見出しに表題・施設名と印刷日の印（data-su-print-head="name date"）・期間（全期間と基準日の幅）・条件を書く', /点検・修繕の記録/.test(h) && /data-su-print-head="name date"/.test(h) && /期間：全期間（2026-05-03〜2026-07-01）/.test(h) && /条件：絞り込みなし/.test(h), h.slice(0, 600));
+    t('★記録・設備名・増やした項目に <img onerror> が入っても要素が生まれない', !/<img|<script/i.test(h) && (h.match(/&lt;img src=x onerror=alert\(1\)&gt;/g) || []).length >= 3, (h.match(/<(img|script)[^>]*/gi) || []).slice(0, 3));
+    L.ctx.filter.etype = 'repair'; L.ctx.filter.fy = '2026';
+    const h2 = L.ctx.evPrintHtml_();
+    t('★今の画面の絞り込み（種類・年度）が紙にも効き、条件と期間を書く', !/>点検</.test(h2) && /架空の2件目の修理/.test(h2) && /条件：種類：修理/.test(h2) && /期間：2026年度（2026年4月1日〜2027年3月31日）/.test(h2), h2.slice(0, 700));
+    L.ctx.filter.etype = ''; L.ctx.filter.fy = '';
+    L.ctx.setTab_('events');
+    t('ボタン「一覧を印刷（A4 横）」は対応の記録の絞り込みの段に置く（画面だけ）', /<button type="button" class="btn" data-act="ev-print">一覧を印刷（A4 横）<\/button>/.test(L.els['p-events'].innerHTML));
+    L.ctx.act_('ev-print', { getAttribute: () => null }); await settle();
+    t('押すと施設情報を確かめてから紙を作る（facGate → SUPrint.print）・準備できなければ印を残さない', printed === 1 && L.ctx.evPrintOn_ === false, { printed, on: L.ctx.evPrintOn_ });
+    t('紙の CSS は印刷の時だけ紙の根を出す（ふだんは出さない）', /#e-print\{display:none\}/.test(HTML) && /@media print\{ body\.su-print-evlist\{background:#fff !important; padding:0 !important\} body\.su-print-evlist #e-print\{display:block; font-size:var\(--ep-fs,12px\)\} \}/.test(HTML));
+  }
+
   say('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
   process.exit(fail ? 1 : 0);
 })().catch((e) => { say('  ✗ 試験が途中で止まりました: ' + (e && e.stack || e)); process.exit(1); });

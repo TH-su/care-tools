@@ -278,6 +278,8 @@ const CENSUS = {
     [E, "d.innerHTML='<div class=\"dlg-in\">'+html+'</div>'"],
     [F, "d.innerHTML=''"],
     [E, "if(c&&form&&form.kind==='event'&&form.row) c.innerHTML=filesHtml_(form.row)"],
+    [E, "if(p) p.innerHTML=evPrintHtml_()"],   /* 点検・修繕の記録の紙（2026-11-14）。記録・業者・設備・場所・増やした項目・検索語は全部 esc を通る */
+    [F, "if(p) p.innerHTML=''"],
     [F, "a.innerHTML='<p>保存していない入力があります。保存せずに閉じますか？</p><div class=\"acts\"><button type=\"button\" class=\"btn\" data-act=\"ask-no\">入力に戻る</button><button type=\"button\" class=\"btn ng\" data-act=\"ask-ok\">保存せずに閉じる</button></div>'"]
   ],
   "care-schedule.html": [
