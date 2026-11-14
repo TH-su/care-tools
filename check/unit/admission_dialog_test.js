@@ -74,7 +74,8 @@ async function run() {
     && code.indexOf("if (!confirm('保存していない変更があります。メニューへ移ると消えます。移りますか？'))") >= 0
     && code.indexOf("if (!confirm('保存していない変更があります。使い方へ移ると消えます。移りますか？'))") >= 0, bareConfirm);
   t('2-2 ブラウザの知らせの窓を直接呼ばない（受け口の window.alert だけ）', bareAlert === 0 && (code.match(/window\.alert\(/g) || []).length === 1, bareAlert);
-  t('2-3 画面の中の窓で聞く所は12か所・知らせる所は4か所', (code.match(/SUDialog\.confirm\(/g) || []).length === 12 && (code.match(/SUDialog\.alert\(/g) || []).length === 4,
+  /* 2026-11-14: 上書きの確かめの「キャンセル」の後の「サーバーの内容に合わせますか」と、合わせる前の控えから戻す確かめの2か所を足した（代表者の決定 2026-11-14） */
+  t('2-3 画面の中の窓で聞く所は14か所・知らせる所は4か所', (code.match(/SUDialog\.confirm\(/g) || []).length === 14 && (code.match(/SUDialog\.alert\(/g) || []).length === 4,
     [(code.match(/SUDialog\.confirm\(/g) || []).length, (code.match(/SUDialog\.alert\(/g) || []).length]);
   const TEXTS = [
     "SUDialog.confirm('バックアップ（' + (slot === CACHE_BAK ? '1世代前' : '2世代前') + '・案件' + n.candidates.length + '件）を読み込みます。\\n\\n' +\n    '今この端末にある内容（' + DB.candidates.length + '件）は消えません（統合します）。よろしいですか？')",
@@ -89,6 +90,8 @@ async function run() {
     "SUDialog.confirm('保存していない入力があります。破棄してよろしいですか？')",
     "SUDialog.confirm('入居者マスタに同じお名前の方が ' + same.length + '名 登録されています（利用者No: ' +\n      same.map(function (r) { return r.id; }).join('・') + '）。\\n\\n' +\n      '別人であれば「OK」で登録を続けます。同じ方であれば「キャンセル」を押し、マスタ側で確認してください。')",
     "SUDialog.alert('お名前が入っていないため、入居者マスタへは登録できません。案件にお名前を入れてから、もう一度押してください。')",
+    "SUDialog.confirm('この端末の変更を捨てて、サーバーの内容に合わせますか？\\n\\n' +\n          'この端末の内容（' + DB.candidates.length + '件）は、捨てる前に端末のバックアップ「合わせる前の控え」に残します（右上のバッジから戻せます）。\\n\\n' +\n          '【サーバーの内容に合わせる場合】「OK」\\n' +\n          '【このままにする場合】「キャンセル」（この端末の変更は送らずに残します）')",
+    "SUDialog.confirm('合わせる前の控え（' + fmtDt(asStr(o.at)) + '・案件' + n.candidates.length + '件）を読み込みます。\\n\\n' +\n    '今この端末にある内容（' + DB.candidates.length + '件）は消えません（統合します）。よろしいですか？')",
     "SUDialog.confirm('ファイルの ' + incoming.candidates.length + '件 を取り込みます。\\n\\n' +\n      '置き換えではなく統合します（いまの ' + DB.candidates.length + '件 は消えません）。よろしいですか？')",
     "SUDialog.alert('⚠️ この端末の保存データが読めなかったため、バックアップ（' + cacheRecovered + '）から復旧しました。\\n\\n' +\n        '案件 ' + DB.candidates.length + '件を表示しています。内容に不足があれば、⟳ でサーバーから最新を取り直してください。');"
   ];
@@ -182,7 +185,8 @@ async function run() {
     const WIPE = { ok: false, error: 'admwipe', was: 12, now: 2 };
     p = mk(); p.b.answers = [WIPE]; p.d.answer = false;
     p.b.push(); await settle();
-    t('5-3 サーバーが断り「キャンセル」なら上書きしない（未送信のまま）', p.log.puts.length === 1 && p.d.asked.length === 1 && /サーバー: 12 件 ／ この端末: 2 件/.test(p.d.asked[0]) && JSON.stringify(p.log.sync[p.log.sync.length - 1]) === '["未送信あり","err"]', p.log);
+    /* 2026-11-14: キャンセルの後に2段目（サーバーの内容に合わせますか）を聞く。2段目もキャンセルなら今までどおり */
+    t('5-3 サーバーが断り「キャンセル」なら上書きしない（未送信のまま）', p.log.puts.length === 1 && p.d.asked.length === 2 && /サーバー: 12 件 ／ この端末: 2 件/.test(p.d.asked[0]) && /^この端末の変更を捨てて、サーバーの内容に合わせますか？/.test(p.d.asked[1]) && JSON.stringify(p.log.sync[p.log.sync.length - 1]) === '["未送信あり","err"]', p.log);
     p = mk(); p.b.answers = [WIPE, { ok: true, rev: 9 }]; p.d.answer = true;
     p.b.push(); await settle();
     t('5-4 「OK」で窓の間に台帳が変わっていなければ上書きする（force）', p.log.puts.length === 2 && p.log.puts[1] && p.log.puts[1].force === true, p.log.puts);
@@ -194,13 +198,13 @@ async function run() {
     p = mk(); p.b.answers = [WIPE, WIPE]; p.d.answer = false;
     p.b.push(); await settle();
     p.b.push(); await settle();   // 窓の後の予約（idle → schedulePush）から来た送信の代わり
-    t('5-6 キャンセルの後の予約の送信では送らず、確かめも聞き直さない', p.log.puts.length === 1 && p.d.asked.length === 1 && p.b.afWipeHold_ === true
+    t('5-6 キャンセルの後の予約の送信では送らず、確かめも聞き直さない', p.log.puts.length === 1 && p.d.asked.length === 2 && p.b.afWipeHold_ === true
       && JSON.stringify(p.log.sync[p.log.sync.length - 1]) === '["未送信あり","err"]', [p.log.puts.length, p.d.asked.length, p.b.afWipeHold_]);
     vm.runInContext(grabFn('markDirty'), p.b);
     p.b.markDirty();
     t('5-7 人が編集したら（markDirty）印を下ろす', p.b.afWipeHold_ === false);
     p.b.push(); await settle();
-    t('5-8 編集の後の送信でまた断られたら、もう一度聞く', p.log.puts.length === 2 && p.d.asked.length === 2, [p.log.puts.length, p.d.asked.length]);
+    t('5-8 編集の後の送信でまた断られたら、もう一度聞く', p.log.puts.length === 2 && p.d.asked.length === 4, [p.log.puts.length, p.d.asked.length]);
     p = mk(); p.b.answers = [WIPE, { ok: true, rev: 9 }]; p.d.answer = false;
     p.b.push(); await settle();
     p.b.push(true); await settle();

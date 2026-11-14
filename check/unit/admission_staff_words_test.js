@@ -153,7 +153,7 @@ console.log('\n【4】例外の文・サーバーの断りを出す所は全部 
   t('toast・err・alert・confirm に e.message・r.error をそのまま入れていない', bad.length === 0, bad.map(([n]) => n));
   const why = lines.filter(l => l.indexOf("why: '書類の一覧を取れませんでした（") >= 0);
   t('書類の一覧の断り（why）も afErrWords_ を通る', why.length === 2 && why.every(l => /afErrWords_\(/.test(l)), why);
-  t('afErrWords_ を使う所は12か所（定義を除く）', count(S, 'afErrWords_(') === 13, count(S, 'afErrWords_('));   /* 定義1＋呼び出し12 */
+  t('afErrWords_ を使う所は13か所（定義を除く）', count(S, 'afErrWords_(') === 14, count(S, 'afErrWords_('));   /* 定義1＋呼び出し13（2026-11-14: サーバーの内容に合わせる道の読めなかった知らせを足した） */
 }
 
 console.log('\n【5】接続先が無い時の案内（前からある）が残っている');
