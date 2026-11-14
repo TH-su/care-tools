@@ -331,5 +331,34 @@ console.log('\n— 8. 連動の準備をあきらめた時の知らせ —');
   t('知らせは画面だけ（印刷では隠す）', /@media print \{ \.sync-warn \{ display: none; \} \}/.test(HTML), '');
 }
 
+console.log('\n— 9. 連動できない時に片方だけで見る道（2026-11-13 代表者の決定・台帳 OC-03） —');
+{
+  const alt = r => r.legend.children.filter(c => c.className === 'sync-alt');
+  const r = boot({ A: { rendered: true }, B: { rendered: false } });
+  r.A.load(); r.B.load();
+  r.runTimers(5);
+  t('待っている間はリンクを出さない', alt(r).length === 0, r.legend.textContent);
+  let n = 0, k; while ((k = r.runTimers(1))) { n += k; if (n > 1000) break; }
+  const as = alt(r);
+  t('あきらめたら、知らせの後ろに左・右それぞれを開くリンクを2つ出す', as.length === 2 && as.every(a => a.tagName === 'A'), as);
+  t('左＝訪問 週間俯瞰・右＝全支援 週間俯瞰（見出しの「訪問だけ」「全支援だけ」と同じ行き先）',
+    as[0] && as[0].href === 'visit-overview.html' && as[1] && as[1].href === 'support-overview.html'
+    && /href="visit-overview\.html"[^>]*>訪問だけ</.test(HTML) && /href="support-overview\.html"[^>]*>全支援だけ</.test(HTML), as);
+  t('リンクの文は「訪問だけで見る」「全支援だけで見る」', as[0] && as[0].textContent === '訪問だけで見る' && as[1] && as[1].textContent === '全支援だけで見る', as);
+  t('知らせの文はそのまま（リンクは知らせの後ろ）', r.legend.children[0] && r.legend.children[0].className === 'sync-warn' && r.legend.children[0].textContent.indexOf('ページを読み込み直してください') >= 0, r.legend.textContent);
+  t('同じタブで開く（target を付けない）', !/target/.test(SRC.slice(SRC.indexOf('GIVEUP_ALT'), SRC.indexOf('warn = el;'))), '');
+  r.toggle(false);
+  t('連動を切るとリンクも消える', alt(r).length === 0, r.legend.textContent);
+}
+{
+  const r = boot({ A: { rendered: true }, B: { rendered: false } });
+  r.A.load(); r.B.load();
+  let n = 0, k; while ((k = r.runTimers(1))) { n += k; if (n > 1000) break; }
+  r.B.st.rendered = true; r.B.load(); r.runTimers();
+  t('後から準備が整ったらリンクも消える', r.legend.children.length === 0, r.legend.textContent);
+  t('リンクは画面だけ（印刷では隠す）', /@media print \{ \.sync-alt \{ display: none; \} \}/.test(HTML), '');
+  t('リンクの高さは 44px（押しやすさ）', /\.sync-alt \{[^}]*min-height: 44px/.test(HTML), '');
+}
+
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);
