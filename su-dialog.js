@@ -138,13 +138,22 @@
         dlg.addEventListener('cancel', function (e) {
           /* 画面の Esc の処理の中で窓を開いた時、同じ Esc が開いたばかりの窓をすぐ閉じないようにする（開いたのと同じ一続きの処理の中の cancel は受けない） */
           if (item.opening) { try { e.preventDefault(); } catch (err) { /* 何もしない */ } return; }
+          /* 入力の窓で、かな漢字の変換中の Esc は変換の取り消しなので、窓を閉じない（2026-11-14 PR #575 の反証） */
+          if (item.composing) { try { e.preventDefault(); } catch (err) { /* 何もしない */ } return; }
           finish(item, false);
         });
         dlg.addEventListener('close', function () { finish(item, false); });
         /* 入力欄の Enter で OK（form の無い入力欄は Enter で何も起きないため自前で受ける）。
            かな漢字の変換を決める Enter（isComposing・keyCode 229）と、押しっぱなしの Enter（前の窓を閉じた Enter の続き）では OK にしない */
+        /* 変換中の印（compositionstart〜compositionend）。変換を終えた Esc の後に届く cancel も受けないよう、外すのは次の出来事の番 */
+        if (parts.inp) {
+          parts.inp.addEventListener('compositionstart', function () { item.composing = true; });
+          parts.inp.addEventListener('compositionend', function () { setTimeout(function () { item.composing = false; }, 0); });
+        }
         if (parts.inp) parts.inp.addEventListener('keydown', function (e) {
           try {
+            /* 変換中の Esc は窓を閉じる既定の動き（cancel）を止める（変換の取り消しだけにする） */
+            if ((e.key === 'Escape' || e.key === 'Esc') && (item.composing || e.isComposing || e.keyCode === 229)) { e.preventDefault(); return; }
             if (e.key !== 'Enter') return;
             if (e.isComposing || e.keyCode === 229) return;
             e.preventDefault();
@@ -201,7 +210,7 @@
         if ((e.metaKey || e.ctrlKey) && (e.key === 'c' || e.key === 'C')) return;
         if (e.key === 'Tab') { e.preventDefault(); try { it.parts.first.focus(); } catch (er) { /* 何もしない */ } return; }
         e.preventDefault();
-        if ((e.key === 'Escape' || e.key === 'Esc') && !it.opening) { finish(it, false); return; }
+        if ((e.key === 'Escape' || e.key === 'Esc') && !it.opening && !it.composing) { finish(it, false); return; }
         try { it.parts.first.focus(); } catch (er) { /* 何もしない */ }
       } catch (err) { /* 何もしない */ }
     }

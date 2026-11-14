@@ -308,6 +308,28 @@ function partsOf(d){
     t('prompt: Enter 以外のキーでは何もしない（閉じた後も例外を出さない）', E.dialogs().length === 0);
   }
   {
+    /* かな漢字の変換中の Esc は変換の取り消しで、窓を閉じない。変換を終えた後の Esc は今までどおり閉じる（2026-11-14 PR #575 の反証） */
+    const E = makeEnv(); E.load();
+    let ans = 'まだ'; E.win.SUDialog.prompt('薬剤名', '').then((v) => { ans = v; });
+    await new Promise((r) => setTimeout(r, 5));
+    const d = E.dialogs()[0]; const P = promptParts(d);
+    P.inp.fire('compositionstart');
+    const ke = P.inp.fire('keydown', { key: 'Escape', isComposing: true });
+    t('prompt: 変換中の Esc の keydown は、窓を閉じる既定の動きを止める', ke.defaultPrevented === true);
+    const c1 = d.fire('cancel'); await tick();
+    t('prompt: 変換中の cancel は受けない（窓は出たまま・答えはまだ）', c1.defaultPrevented === true && ans === 'まだ' && E.dialogs().length === 1);
+    P.inp.fire('compositionend');
+    const c2 = d.fire('cancel'); await tick();
+    t('prompt: 変換を終えた直後（同じ一続きの処理）に届いた cancel も受けない', c2.defaultPrevented === true && ans === 'まだ');
+    const kg = E.winKey({ key: 'Escape', target: E.body });
+    await new Promise((r) => setTimeout(r, 5));
+    t('prompt: 変換中の印が残る間は、窓の外の Esc でも閉じない（画面へは渡さない）', ans === 'まだ' && kg.imm === true && E.dialogs().length === 1);
+    const k2 = P.inp.fire('keydown', { key: 'Escape' });
+    t('prompt: 変換を終えた後の Esc の keydown は止めない', k2.defaultPrevented === false);
+    const c3 = d.fire('cancel'); d.open = false; await tick();
+    t('prompt: 変換を終えた後の Esc（cancel）＝null で閉じる', c3.defaultPrevented === false && ans === null && E.dialogs().length === 0, ans);
+  }
+  {
     /* 1つ目を Enter で閉じ、続けて出た2つ目（RM-01 の効能）が、押しっぱなしの Enter ですぐ OK にならない */
     const E = makeEnv(); E.load();
     const order = [];
@@ -381,7 +403,7 @@ function partsOf(d){
   console.log('\n体重管理（weight-record.html）への当て方');
   {
     const WR = fs.readFileSync(path.join(ROOT, 'weight-record.html'), 'utf8');
-    const iErr = WR.indexOf('<script src="su-errors.js'), iDlg = WR.indexOf('<script src="su-dialog.js?v=2026-11-14"></script>'), iInline = WR.indexOf('<script>', iErr);
+    const iErr = WR.indexOf('<script src="su-errors.js'), iDlg = WR.indexOf('<script src="su-dialog.js?v=2026-11-14.2"></script>'), iInline = WR.indexOf('<script>', iErr);
     t('su-dialog.js を su-errors.js の後・画面のスクリプトより前に読む', iErr > 0 && iDlg > iErr && iDlg < iInline);
     /* 部品が読めない時の受け口：ブラウザの窓に落とし、同じ約束の形で答える */
     const shimM = /if\(!window\.SUDialog\) window\.SUDialog = \{[\s\S]*?\n\};/.exec(WR);
