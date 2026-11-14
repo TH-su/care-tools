@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-oTEBNosM5uEd9fbIQmBohcxOPXyZNH6vx/q8/3UYCi0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-AKp97MmtMCCtjDvmZTf69mo2egoSiHpDDbwAlP4o5/Q='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -490,6 +490,9 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
   body:not(.su-printing) table.roster .col-rn { font-size: var(--ro-fs); }
   body:not(.su-printing) table.roster .hosp-tag { font-size: var(--ro-fs); }
   body:not(.su-printing) table.sheet { --sh-fs: 0.8125rem; --sh-tm: 0.8125rem; }
+  /* 営業7日の時は時刻の欄が 39px に狭まる（dcrSheetW_）。13px の太字「13:00」の末尾が欠けないよう、字の大きさ（13px）は変えずに
+     左右の余白を外し字の間を少し詰める（K5）。紙は sheetFsMax_ で字を下げる */
+  body:not(.su-printing) table.sheet.d7 .c-tm { padding-left: 0; padding-right: 0; letter-spacing: -0.02em; }
   body:not(.su-printing) table.sheet .c-nm .hosp-tag { font-size: var(--sh-fs); }
   body:not(.su-printing) .legend { font-size: 0.8125rem; }
   body:not(.su-printing) .legend .hosp-tag,
@@ -2129,6 +2132,7 @@ function colgroupFor(kind) {
 }
 function setupSheet(table, kind) {
   DCR_COLS = dcrDays_();   // 曜日の列は描くたびに施設情報から取り直す（K5）
+  table.classList.toggle('d7', DCR_COLS.length > NDAY);   // 7日の時だけ画面の時刻の字を抑える（上の CSS）
   table.textContent = '';
   table.style.width = dcrSheetW_(kind) + 'px';   // ★明示幅（fixed成立の条件）。6日なら TBL_W[kind] と同じ値
   table.appendChild(colgroupFor(kind));
@@ -2642,7 +2646,7 @@ const PRINT_VIEWS = {
      印字可能幅は A3縦・A4横とも 1062px で同じ＝列幅の設計（時刻列の拡幅）はそのまま活きる。 */
   'sc-allweek': { label: '全員リスト',       paper: 'A4 landscape', margin: 8 },
   'sc-med':     { label: '薬用',             paper: 'A4 landscape', margin: 8 },
-  /* 枚数は営業曜日の数（既定6＝「週間名簿（6枚）」のまま・K5）。印刷の設定の窓の名前は登録した時の値、印刷ボタンの読み上げは開くたびの値 */
+  /* 枚数は営業曜日の数（既定6＝「週間名簿（6枚）」のまま・K5）。印刷の設定の窓の名前（dcrLiveWeeklyLabel_）と印刷ボタンの読み上げは、どちらも開くたびの値 */
   'sc-weekly':  { get label() { return '週間名簿（' + dcrDays_().length + '枚）'; },  paper: 'A4 portrait',  margin: '15 5 0 5' }
 };
 /* ============================================================================
@@ -2890,6 +2894,12 @@ function printShrinkToast_(base) {
     if (px < base) toast('1枚に収めるため文字を ' + px.toFixed(1) + 'px に縮小しました（利用者が多いため）');
   };
 }
+/* 週間名簿の印刷の名前（「週間名簿（N枚）」）を、印刷の設定の窓を開くたびに営業曜日の数から読む（K5）。
+   su-print は登録した設定をそのまま持つので、名前を読み出しの関数にしておけば、施設情報が後から届いても古い枚数のまま残らない */
+function dcrLiveWeeklyLabel_(spec) {
+  try { Object.defineProperty(spec, 'label', { get: function () { return '週間名簿（' + dcrDays_().length + '枚）'; }, enumerable: true, configurable: true }); } catch (e) { /* 捨ててよい: 名前が登録した時の値のままになるだけ */ }
+  return spec;
+}
 function definePrintViews_() {
   if (!window.SUPrint) {
     toast('印刷の部品を読み込めていません。ページを再読み込みしてください', true);
@@ -2927,7 +2937,7 @@ function definePrintViews_() {
     onShrink: printShrinkToast_(ROSTER_FS_BASE)
   }));
   // 週間名簿: 文字サイズは @media print 内で固定（26pt/28pt）＝収め方の対象外。6枚を組んで刷る
-  SUPrint.define('sc-weekly', Object.assign({}, PRINT_VIEWS['sc-weekly'], {
+  SUPrint.define('sc-weekly', dcrLiveWeeklyLabel_(Object.assign({}, PRINT_VIEWS['sc-weekly'], {
     root: 'body', stamp: false, fit: { mode: 'none' },
     before: printBefore_('sc-weekly'), after: clearWeeklyBatch_,
     /* 見込み枚数は「1日ぶん(.pg)が何枚に流れるか」の合計で数える。
@@ -2961,7 +2971,7 @@ function definePrintViews_() {
       }
       return total;
     }
-  }));
+  })));
   SUPrint.setActive(activeTab());
 }
 

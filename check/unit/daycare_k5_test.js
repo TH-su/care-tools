@@ -5,7 +5,9 @@
      2. floors に3階以上があり名前が使える時だけ、上の階から区画を作る（３階→２階→１階→階未設定）。名前が崩れていれば今の２階・１階だけで、その階の方は階未設定に出す
      3. 通所の事業所の days（「月」〜「日」）から曜日の列を作る（日曜営業・土曜休み など）。崩れていれば月〜土。最後の曜日に右の太線
      4. 7日の時は曜日ごとの列幅を縮めて、表の幅を A3縦・A4横の印字幅（1062px）に収める。6日以下は列幅を変えない
-     5. 凡例の枚数（週間名簿）と階の並び（利用表）は施設情報の曜日・階で組み、既定では今の文と一字一句同じ
+     5. 凡例の枚数（週間名簿）と階の並び（利用表）は施設情報の曜日・階で組み、既定では今の文と一字一句同じ。印刷の設定の窓の「週間名簿（N枚）」は開くたびの営業曜日の数
+     6. 営業曜日でない曜日（月〜金の施設の土）の予定は、利用表タブだけに列が出て、一覧表・全員リストには出ない
+     7. フェイスシート・入居者マスタの階の一覧（2列・4列）は、floors に 3階があれば 3階の区画を出す（2画面の同じ処理を画面から切り出して動かす）
    ★画面の本物の関数と本物の su-facility.js を vm で動かす。利用者・階の名前は架空。 */
 'use strict';
 const fs = require('fs');
@@ -119,7 +121,7 @@ function makeBox(fac) {
     grabFn('dcrFloorExtra_'), grabFn('dcrFloorNos_'), grabFn('dcrFloorOrder_'), grabFn('dcrFloorKey_'),   // 曜日の列と3階以上の階の部品（2026-11-14 第6段 K5）
     grabFn('dcrFloorNames_'), grabFn('dcrFloorLabel_'), grabFn('dcrFloorSecLabel_'), grabFn('dcrFloorSig_'), grabFn('dcrRefreshFloorsIfStale_'),
     grabDecl('DCR_NOTES_KEYS'), grabDecl('DCR_NOTES_WORD_MAX'), grabFn('dcrDaycareNotes_'), grabFn('dcrNotesWord_'),   // 昼食場所の呼び名（便10・施設情報に daycareNotes が無ければ既定）
-    grabDecl('byKana'), grabDecl('onDay'), grabDecl('offDay'), grabDecl('countOn'), grabDecl('countOff'), grabDecl('W'), grabDecl('TBL_W'), grabFn('colgroupFor'), grabDecl('DAYLIST_NOTES'), grabFn('wkFlrLabel_'), grabFn('weeklyByFloor'),
+    grabDecl('byKana'), grabDecl('onDay'), grabDecl('offDay'), grabDecl('countOn'), grabDecl('countOff'), grabDecl('W'), grabDecl('TBL_W'), grabFn('colgroupFor'), grabDecl('DAYLIST_NOTES'), grabFn('wkFlrLabel_'), grabFn('weeklyByFloor'), grabFn('dcrLiveWeeklyLabel_'),
     grabFn('toMin'), grabFn('minToLabel'), grabFn('el'), grabFn('roomToFloor'), grabFn('collectDaycare'),
     grabFn('setupSheet'),
     grabFn('dayHeaderRows'), grabFn('dayHeader'), grabFn('deiCells'), grabFn('sectionRows'), grabFn('sumRow'),
@@ -232,6 +234,68 @@ console.log('— 3. 営業曜日 —');
   for (const [label, d] of [['知らない曜日', ['月', '祝']], ['同じ曜日が2つ', ['月', '月']], ['空', []], ['文字でない', [1, 2]], ['配列でない', '月火水']]) {
     const box = makeBox(facility(prof(null, d)));
     t(label + ' → 月〜土', J(box.dcrDays_()) === J([0, 1, 2, 3, 4, 5]), box.dcrDays_());
+  }
+}
+
+console.log('— 4. 印刷の設定の窓の名前（週間名簿の枚数）—');
+{
+  let days = undefined;
+  const fac = facility(SAMPLE);
+  const fake = { section: (n) => (n === 'daycareDays' ? days : fac.section(n)), floors: fac.floors, floorOf: fac.floorOf, ready: fac.ready, onReady: fac.onReady };
+  const box = makeBox(fake);
+  const spec = box.dcrLiveWeeklyLabel_({ paper: 'A4 portrait' });
+  t('既定は「週間名簿（6枚）」', spec.label === '週間名簿（6枚）', spec.label);
+  days = ['月', '水', '金'];
+  t('施設情報が後から届いて3日になれば、登録し直さなくても「週間名簿（3枚）」', spec.label === '週間名簿（3枚）', spec.label);
+}
+
+console.log('— 5. 営業曜日でない曜日の予定（月〜金の施設の土）—');
+{
+  const box = makeBox(facility(prof(null, ['月', '火', '水', '木', '金'])));
+  const r = (id, room, dows) => ({ id: 'r' + id, name: '見本 ' + id, kana: String(id), room, events: dows.map(d => ({ serviceType: 'daycare', dayOfWeek: d, startTime: '09:00', endTime: '15:00' })) });
+  box.renderRoster({ residents: [r(1, '201', [0]), r(2, '101', [5])] });
+  const rh = textsOf(box.els.roster, 'th-day');
+  t('利用表タブには土の列が出る（予定を黙って落とさない）', J(rh) === J(['月', '火', '水', '木', '金', '土']), rh);
+  const p = (pid, floor, ds) => ({ pid, name: '見本 ' + pid, kana: String(pid), floor, hosp: false, days: ds, visitingMed: '' });
+  const m = [p(1, 2, [day, null, null, null, null, null]), p(2, 1, [null, null, null, null, null, day])];
+  box.renderDaylist(m); box.renderAllweek(m);
+  const dh = [...new Set(dayTexts(box.els.tblDaylist))], ah = [...new Set(dayTexts(box.els.tblAllweek))];
+  t('一覧表・全員リストは営業曜日（月〜金）の列だけ', J(dh) === J(['月', '火', '水', '木', '金']) && J(ah) === J(['月', '火', '水', '木', '金']), [dh, ah]);
+}
+
+console.log('— 6. フェイスシート・入居者マスタの階の一覧 —');
+{
+  /* 2画面の階の一覧の処理（「区画は １階・２階 と、施設情報…」から fl-4col の行まで）を画面から切り出して動かす */
+  function grabFloorList(file) {
+    const src = read(file);
+    const a = src.indexOf('    /* 区画は １階・２階 と、施設情報の floors にある3階以上');
+    if (a < 0) throw new Error('階の一覧の処理が見つかりません: ' + file);
+    const b = src.indexOf("'<div class=\"fl-4col\">'", a);
+    const e = src.indexOf('\n', b);
+    return src.slice(a, e);
+  }
+  const people = [{ room: '101', kana: 'あ' }, { room: '201', kana: 'い' }, { room: '301', kana: 'う' }, { room: '', kana: 'え' }];
+  for (const file of ['facesheet.html', 'resident-master.js']) {
+    const body = grabFloorList(file);
+    for (const [label, prof3, want] of [
+      ['3階建て', prof(F3), ['１階入居者:1', '２階入居者:1', '３階入居者:1', '階未設定（居室が未登録・1/2/3以外で始まる）:1']],
+      ['見本（2階建て）', SAMPLE, ['１階入居者:1', '２階入居者:1', '階未設定（居室が未登録・1/2以外で始まる）:2']]
+    ]) {
+      const fac = facility(prof3);
+      const box = { SUFacility: fac, JSON, Object, Array, String };
+      box.window = box;
+      vm.createContext(box);
+      const fn = vm.runInContext('(function (list, curView) { var html;\n' +
+        'function secHtml(t, p) { return p.length ? "[" + t + ":" + p.length + "]" : ""; }\n' +
+        'function floorLbl(n) { return SUFacility.floorLabel(n); }\n' +
+        'function roomToFloor(r) { return SUFacility.floorOf(r); }\n' +
+        'function byRoom(a, b) { return String(a.room).localeCompare(String(b.room)); } function byKana(a, b) { return String(a.kana).localeCompare(String(b.kana)); }\n' +
+        body + '\nreturn html; })', box);
+      for (const view of ['fl2', 'fl4']) {
+        const got = (fn(people, view).match(/\[[^\]]+\]/g) || []).map(x => x.slice(1, -1));
+        t(file + ' ' + view + ' ' + label + ': 区画は ' + want.length + ' つ', J(got) === J(want), got);
+      }
+    }
   }
 }
 
