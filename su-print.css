@@ -7,6 +7,20 @@
 .su-print-stamp { font-size: 9px; line-height: 1.2; text-align: end; color: #000; margin: 0 0 2mm; }
 @media screen { body:not(.su-printing) .su-print-stamp { display: none; } }
 
+/* 紙の見出しの「施設名・印刷日」（data-su-print-head・su-print.js が文を入れる・2026-11-13 代表者の決定）。
+   画面では出さない。紙では1行だけ（折り返さない・あふれは … で切る）。置き場所・大きさは各画面が決める。
+   .su-print-head-abs は見出しの箱の右上へ位置を外して重ねる型（箱に .su-print-head-host を付ける）＝本文を押し下げない。 */
+.su-print-head { display: none; }
+@media print {
+  .su-print-head { display: flex; justify-content: flex-end; color: #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .su-print-head:empty { display: none; }
+  .su-print-head > .su-print-head-n { min-width: 0; overflow: hidden; text-overflow: ellipsis; }   /* 長い施設名は … で切る */
+  .su-print-head > .su-print-head-d { flex: 0 0 auto; }                                             /* 印刷日は切らない */
+  .su-print-head-host { position: relative; }
+  .su-print-head.su-print-head-abs { position: absolute; top: 0; right: 0; max-width: 60%;
+    font-size: 9px; line-height: 1.2; font-weight: 400; text-align: end; letter-spacing: 0; }
+}
+
 @media print {
   /* 画面のズーム・変形を紙に持ち込まない（A3縦1枚収まり等の保護） */
   .su-print-root { zoom: 1 !important; transform: none !important; margin: 0 !important; box-shadow: none !important; }
