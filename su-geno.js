@@ -42,6 +42,12 @@
   var READS = { ping: 1, list: 1, get: 1 };
   function fieldDevice() { try { return root.localStorage.getItem('su_device_role') === 'field'; } catch (e) { note('端末の用途', e); return false; } }
 
+  /* 本番の健康（統合 0088）: 新しい保存先へ送る保存・削除（WRITES）の失敗だけを、種類と理由で数える（su-health.js が無ければ何もしない）。
+     現場の「見るだけ」の断りは決まった動きなので数えない */
+  function health(action, info) {
+    try { if (WRITES[action] && root.SUHealth) root.SUHealth.fail('geno', info); } catch (e) { /* 数えられなくても止めない */ }
+  }
+  function codeOf(d) { return typeof d.error === 'string' && /^[a-z_]{1,40}$/.test(d.error) ? d.error : String(d.code || ''); }
   function note(where, e) {
     try { if (root.SUErrors && typeof root.SUErrors.note === 'function') root.SUErrors.note('保存・同期の失敗', e, 'geno:' + where); } catch (x) { /* 記録できなくても止めない */ }
   }
@@ -167,9 +173,10 @@
     var timer = new Promise(function (ok) { tm = setTimeout(function () { ok({ timeout: true }); }, ms); });
     return Promise.race([call, timer]).then(function (r) {
       clearTimeout(tm);
-      if (r && r.timeout) throw new Error(MSG.timeout);
+      if (r && r.timeout) { health(action, { timeout: true }); throw new Error(MSG.timeout); }
       if (r && r.error) {
         var c = String(r.error.code || '');
+        if (!/PGRST202|42883/.test(c) && !(c === '42501' && view && !mfa)) health(action, c ? { pg: c } : { network: true });
         if (c === '42501') return refusal(mfa ? 'mfa' : (view ? 'view' : 'role'));   // 見るだけは現場のアカウントだけ（ほかは使えないアカウント・指摘8）
         if (/PGRST202|42883/.test(c)) { modeCache = null; return refusal('mode'); }
         note(q.fn, c || 'error');
@@ -177,9 +184,10 @@
         throw new Error(MSG.net);      // 番号の無い失敗（届かない）
       }
       var d = r ? r.data : null;
-      if (!d || typeof d !== 'object') return refusal('empty');
+      if (!d || typeof d !== 'object') { health(action, {}); return refusal('empty'); }
+      if (d.ok === false && d.error !== 'geno_not_live') health(action, { code: codeOf(d) });
       return d;   // geno_* の断りは職員向けの文が error・code に入っている・geno_not_live は呼び手が Google へ回す
-    }, function (e) { clearTimeout(tm); note(q.fn, e); throw new Error(MSG.net); });
+    }, function (e) { clearTimeout(tm); note(q.fn, e); if (!(e && e.message === MSG.timeout)) health(action, { network: true }); throw new Error(MSG.net); });
   }
 
   /* 送る前の確かめ（ログイン・印）。返すのは道: gas（Google）・outside（ログインしていない・使える人に無い＝印だけの口で決める）・
@@ -216,13 +224,13 @@
       var late = new Promise(function (ok, ng) { tm = setTimeout(function () { ng(new Error(MSG.mode)); }, CALL_MS); });
       return Promise.race([plan(action), late]).then(function (p) {
         clearTimeout(tm);
-        if (p.kind === 'refuse') return refusal(p.code);
+        if (p.kind === 'refuse') { health(action, p.code === 'mode' ? { network: true } : { code: p.code === 'mfa' ? 'role' : p.code }); return refusal(p.code); }
         if (p.kind === 'outside') {
           return publicMode(p.A).then(function (pm) {
-            if (pm === 'live') return refusal(p.code);                          // 切り替えた後＝Google へ送らない（古いデプロイにも読み書きさせない）
+            if (pm === 'live') { health(action, { code: p.code }); return refusal(p.code); }                         // 切り替えた後＝Google へ送らない（古いデプロイにも読み書きさせない）
             if (pm === 'unknown' && WRITES[action]) return refusal('mode');     // 分からない時は保存・削除を送らない（読み取りは Google が決める）
             return Promise.resolve(gasCall()).then(function (j) {
-              if (isSwitched(j)) return refusal(p.code);                        // 切り替えた後の Google の断り（読み取りも）＝中身は渡さない
+              if (isSwitched(j)) { health(action, { code: p.code }); return refusal(p.code); }                      // 切り替えた後の Google の断り（読み取りも）＝中身は渡さない
               return j;
             });
           });

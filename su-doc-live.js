@@ -38,6 +38,20 @@
   var OWNER_RE = /^[A-Za-z0-9_-]{1,64}$/;
   var TENANT_RE = /^[0-9a-f-]{36}$/;
 
+  /* 本番の健康（統合 0088）: 新しい保存先への書類の置く・消すの失敗だけを、種類（doc_stf・doc_adm）と理由で数える（su-health.js が無ければ何もしない）。
+     入力の誤り（形式・大きさ・名前の長さ）と、切り替え・戻しの途中の断り（doc_not_live・doc_frozen）は数えない */
+  function health(kind, info) {
+    try { if (root.SUHealth) root.SUHealth.fail('doc_' + kind, info); } catch (e) { /* 数えられなくても止めない */ }
+  }
+  function healthOf(kind, r) {
+    var c = String(r && r.error || '');
+    // 切り替え・戻しの途中と、別の端末が先に消した（notfound）・上限（toomany）は数えない（反証レビュー指摘3）
+    if (c === 'doc_not_live' || c === 'doc_frozen' || c === 'notfound' || c === 'toomany') return;
+    health(kind, { code: c === 'denied' ? 'denied' : (/^[a-z_]{1,40}$/.test(c) ? c : '') });
+  }
+  function healthThrown(kind) {
+    return function (e) { health(kind, e && e.name === 'AbortError' ? { timeout: true } : { network: true }); throw e; };
+  }
   function note(where, e) {
     try { if (root.SUErrors && typeof root.SUErrors.note === 'function') root.SUErrors.note('保存・同期の失敗', e, 'doc-live:' + where); } catch (x) { /* 記録できなくても止めない */ }
   }
@@ -235,22 +249,24 @@
     return Promise.resolve(root.crypto.subtle.digest('SHA-256', bytes)).then(function (d) {
       sha = hex(d);
       key = tenant + '/' + kind + '/' + owner + '/' + fid + '/' + sha.slice(0, 16);
-      return withTime(store.upload(key, new root.Blob([bytes], { type: mime }), { contentType: mime, upsert: false, cacheControl: '0' }), CALL_MS);
+      return withTime(store.upload(key, new root.Blob([bytes], { type: mime }), { contentType: mime, upsert: false, cacheControl: '0' }), CALL_MS).then(null, healthThrown(kind));
     }).then(function (u) {
       if (u && u.error) {
         // 置き場で断られた（戻した直後など）時は、覚えている印を捨てる（次の送信で読み直す・指摘8）
         if (/^40[13]$/.test(String(u.error.statusCode || ''))) forget();
         note('置く', new Error(String(u.error.statusCode || u.error.message || 'upload').slice(0, 40)));
+        health(kind, { status: Number(u.error.statusCode) || 0 });
         return { ok: false, error: MSG.put };
       }
       var meta = { name: String(b.name == null ? '' : b.name), kind: String(b.kind == null ? '' : b.kind).slice(0, 40),
                    title: String(b.title == null ? '' : b.title).slice(0, 200), size: bytes.length, mime: mime };
-      return rpc(A, 'doc_put', { p_kind: kind, p_owner: owner, p_fid: fid, p_meta: meta, p_sha256: sha }).then(function (r) {
+      return rpc(A, 'doc_put', { p_kind: kind, p_owner: owner, p_fid: fid, p_meta: meta, p_sha256: sha }).then(null, healthThrown(kind)).then(function (r) {
         if (r && r.ok === true && r.file) {
           keyOf[kind + '/' + owner + '/' + fid] = key;
           return { ok: true, file: elemOf(r.file) };
         }
         if (r && r.error === 'doc_not_live') forget();
+        healthOf(kind, r);
         // 台帳へ足せなかった（断られた）時は、置いた物を消す（自分で置いて台帳に無い物だけ消せる決まり）
         return Promise.resolve(store.remove([key])).catch(function (e) { note('置いた物を消す', e); }).then(function () { return { ok: false, error: why(r && r.error) }; });
       });
@@ -258,9 +274,10 @@
   }
   function del(A, kind, owner, fid) {
     if (!OWNER_RE.test(owner) || !fid) return Promise.resolve({ ok: false, error: MSG.notfound });
-    return rpc(A, 'doc_del', { p_kind: kind, p_owner: owner, p_fid: String(fid) }).then(function (r) {
+    return rpc(A, 'doc_del', { p_kind: kind, p_owner: owner, p_fid: String(fid) }).then(null, healthThrown(kind)).then(function (r) {
       if (r && r.ok === true) return { ok: true, warnings: [] };
       if (r && r.error === 'doc_not_live') forget();
+      healthOf(kind, r);
       return { ok: false, error: why(r && r.error) };
     });
   }
@@ -297,7 +314,7 @@
         if (!res || typeof res.clone !== 'function' || a === 'list' || rt.off) return res;
         return res.clone().text().then(function (t) {
           if (!switchedText(t)) return res;
-          if (tries++ > 0) return rt.why ? asResponse({ ok: false, error: MSG[rt.why] }) : res;   // 選び直しても Google: ログインの理由を伝える
+          if (tries++ > 0) { if (rt.why) health('stf', { code: rt.why }); return rt.why ? asResponse({ ok: false, error: MSG[rt.why] }) : res; }   // 選び直しても Google: ログインの理由を伝える
           forget();
           return go();   // Google は書いていない＝道を選び直して送ってよい
         }, function () { return res; });
@@ -305,7 +322,7 @@
     }
     function go() {
       return route('stf').then(function (rt) {
-        if (rt.err) return asResponse({ ok: false, error: rt.err });
+        if (rt.err) { if (a !== 'list') health('stf', { network: true }); return asResponse({ ok: false, error: rt.err }); }
         if (!rt.A) return viaGas(rt);
         var A = rt.A;
         if (a === 'list') {
@@ -346,14 +363,14 @@
     function viaGas(rt) {
       return Promise.resolve(gasCall()).then(function (r) {
         if (!(r && r.code === 'doc_switched') || rt.off) return r;
-        if (tries++ > 0) return rt.why ? { ok: false, error: MSG[rt.why] } : r;
+        if (tries++ > 0) { if (rt.why && a !== 'filesGet' && a !== 'downloadFile') health('adm', { code: rt.why }); return rt.why ? { ok: false, error: MSG[rt.why] } : r; }
         forget();
         return go();
       });
     }
     function go() {
       return route('adm').then(function (rt) {
-        if (rt.err) return { ok: false, error: rt.err };
+        if (rt.err) { if (a === 'uploadFile' || a === 'removeFile') health('adm', { network: true }); return { ok: false, error: rt.err }; }
         if (!rt.A) return viaGas(rt);
         var A = rt.A;
         var cid = String(p.cid == null ? '' : p.cid).trim();

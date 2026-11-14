@@ -479,17 +479,31 @@
     }
     return r ? r.data : null;
   }
+  /* 本番の健康（統合 0088）: 新しい保存先（res-write）への保存の失敗だけを、理由で数える（su-health.js が無ければ何もしない）。
+     受け口の断りは印（code）のあるものだけ数える（入居者マスタの GAS と同じ処理が返す競合などの断りは数えない）。答え・投げ方は変えない */
+  function health(info) { try { if (root.SUHealth) root.SUHealth.fail('res', info); } catch (e) { /* 数えられなくても止めない */ } }
   function write(body, gasFn, opts, io) {
     try {
       if (!body || typeof body.action !== 'string' || !switchOn()) return gasFn(body);
     } catch (e) { return gasFn(body); }
+    var viaDb = false;
     return mode(io).then(function (m) {
       if (m !== 'live') return gasFn(body);
+      viaDb = true;
       return postWrite(body, io).then(function (d) {
+        if (d && typeof d === 'object' && d.error && typeof d.code === 'string') health({ code: d.code });
         var out = parseAs(d, opts && opts.parse);
         mirrorSoon(io);   // 保存できたら、Google へ写し返す（待たない・失敗しても保存の結果は変えない）
         return out;
+      }, function (e) {
+        var c = String(e && e.code || '');
+        health(c === 'signed_out' ? { code: 'login' } : c === 'timeout' ? { timeout: true } : c === 'network' ? { network: true } : {});
+        throw e;
       });
+    }, function (e) {
+      // 印を確かめられず保存を送れなかった（スイッチが入の間は Google へ流さない）
+      if (!viaDb) { var c = String(e && e.code || ''); health(c === '42501' ? { pg: c } : c === 'signed_out' ? { code: 'login' } : { network: true }); }
+      throw e;
     });
   }
 
