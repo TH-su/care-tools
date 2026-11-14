@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="topbar">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-aPHfWsdfEx4qiQ1ETbWpPcj6ELi546/nnLoxUfQYf54='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tLuXvY35THOOEu+lLJHbdWJm8/l5iP4cmF9/5cSUk4M='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -108,17 +108,24 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
 .su-menu-row{display:contents}
 @media screen and (max-width:899px){.su-menu-back{min-height:44px} .su-menu-row{display:block;flex:0 0 100%}}
 @media print{.su-menu-back{display:none !important}}
+/* 見出しの「使い方」（「← メニュー」の右隣・同じ大きさと色・使い方の画面のこの画面の節へ・画面だけ・印刷しない・代表者の決定 2026-11-13）。
+   「← メニュー」に当てる決まりを同じ値・同じ順で当てる（care-tools の help_link_test が比べる） */
+.su-help-link{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;text-decoration:none}
+.su-help-link{display:inline-flex;align-items:center;padding:2px 10px;border:1px solid currentColor;border-radius:8px;color:inherit;font-size:0.8125rem;font-weight:700;line-height:1.2} .topbar .su-help-link{margin-right:12px;vertical-align:middle}
+@media screen and (max-width:899px){.su-help-link{min-height:44px}}
+@media print{.su-help-link{display:none !important}}
 </style>
-<script src="su-errors.js?v=2026-10-27"></script>
+<script src="su-errors.js?v=2026-11-12"></script>
+<script src="su-dialog.js?v=2026-11-13.2"></script>
 <script src="su-cfg-hint.js?v=2026-11-10"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
-<script src="su-facility.js?v=2026-11-13.2"></script>
+<script src="su-facility.js?v=2026-11-13"></script>
 <script src="su-sa.js?v=2026-11-03.2"></script>
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 </head>
 <body>
 <header class="topbar">
-  <span class="su-menu-row"><a class="su-menu-back" href="index.html">← メニュー</a></span>
+  <span class="su-menu-row"><a class="su-menu-back" href="index.html">← メニュー</a> <a class="su-help-link" href="help.html?sec=shift-analyzer">使い方</a></span>
   <h1>過去シフト・アナライザ</h1>
   <span class="sub">訪問介護員の勤務時間・介護福祉士割合・常勤換算（ライブのシフトとは独立）</span>
 </header>
@@ -156,20 +163,21 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
       <label class="opt">月ラベル <input id="monthLabel" type="text" placeholder="2026-04" size="10"></label>
       <button id="saveMonthBtn" class="primary">この月を保存</button>
       <span class="spacer"></span>
-      <button id="exportBtn" aria-label="書き出し（JSON ファイル）">⬇ 書き出し(.json)</button>
-      <button id="importBtn" aria-label="読み込み（JSON ファイル）">⬆ 読み込み</button>
-      <input id="importInput" type="file" accept=".json,application/json" hidden>
+      <button id="exportBtn" aria-label="書き出し（ファイルに保存）">⬇ 書き出し(.json)</button>
+      <button id="importBtn" aria-label="読み込み（書き出したファイルから）">⬆ 読み込み</button>
+      <input id="importInput" type="file" accept=".json,application/json" aria-label="読み込むファイル" hidden>
     </div>
     <p class="note">「保存」＝この月を貼付原本ごとローカルに保存し、下の一覧の「表示」でいつでも見返せます。「書き出し」＝全保存月を1ファイルにしてバックアップ・別PCへ移行・共有（ローカルファイルのみ・外部へ送信しません）。個人情報を含むため保存先の端末・ファイルの取り扱いにご注意ください。</p>
     <div id="savedMonths"></div>
   </section>
 
   <section class="card noprint">
-    <h2>3. クラウド同期（トークン制限・共有）<span class="opt2">任意</span></h2>
-    <p class="note">自分の Google ドライブ＋GAS に保存月を同期し、<b>トークンを知る人だけ</b>が閲覧できます（公開リンクは作りません・URLにトークンは載せません）。セットアップは <code>docs/analyzer-gas-setup.md</code>。閲覧者には <b>アプリのURL＋閲覧専用トークン</b>を安全な経路で渡し、相手は下に入力して「取得」します。</p>
+    <h2>3. クラウド同期（合言葉で共有）<span class="opt2">任意</span></h2>
+    <p class="note">保存した月を、<b>合言葉を知っている人だけ</b>で共有します（公開のリンクは作りません）。接続先のURLと合言葉は管理者から受け取り、下に入れて「取得」を押してください。</p>
+    <details class="note"><summary>管理者向け：接続先の作り方</summary>自分の Google ドライブに置く受け口（GAS）に保存月を同期します（URLに合言葉は載せません）。手順は <code>docs/analyzer-gas-setup.md</code>。見る人には、アプリのURLと閲覧専用の合言葉を安全な経路で渡してください。</details>
     <div class="controls">
-      <label class="opt">GAS URL <input id="cloudUrl" type="text" placeholder="https://script.google.com/macros/s/.../exec" size="34"></label>
-      <label class="opt">トークン <input id="cloudToken" type="password" placeholder="編集可 or 閲覧専用トークン" size="20"></label>
+      <label class="opt">接続先のURL <input id="cloudUrl" type="text" placeholder="https://script.google.com/macros/s/.../exec" size="34"></label>
+      <label class="opt">合言葉 <input id="cloudToken" type="password" placeholder="編集用か閲覧専用の合言葉" size="20"></label>
     </div>
     <div class="controls">
       <button id="cloudPingBtn">接続確認</button>
@@ -1950,7 +1958,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* 書き出しJSONテキスト → { ok, months, qualMaster, error }。他アプリ/壊れたファイルは弾く（安全側） */
   function parseImport(text) {
     var data;
-    try { data = JSON.parse(text); } catch (e) { return { ok: false, months: [], qualMaster: {}, error: 'JSONとして読み込めません（ファイルが壊れている可能性）。' }; }
+    try { data = JSON.parse(text); } catch (e) { return { ok: false, months: [], qualMaster: {}, error: 'ファイルを読み込めません（書き出したファイルではないか、壊れている可能性があります）。' }; }
     if (!data || data.app !== EXPORT_APP || Object.prototype.toString.call(data.months) !== '[object Array]') {
       return { ok: false, months: [], qualMaster: {}, error: 'このツールの書き出しファイルではありません。' };
     }
@@ -2046,6 +2054,18 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }); }
   function h1(min) { return (min / 60).toFixed(1); }
   function pct(v) { return (Math.round(v * 10) / 10).toFixed(1); }
+  /* 止めて知らせる窓は、画面の中の窓（care-tools の su-dialog.js）で出す。読めない時はブラウザの窓に落とす（文はそのまま・代表者の決定 2026-11-13）。
+   * 画面の中の窓は待たずに先へ進むので、確かめは OK の後に onOk を呼ぶ形にする（窓が出ている間は自動同期を始めない＝autoSync） */
+  function saAlert_(msg) {
+    try { if (window.SUDialog) { window.SUDialog.alert(msg); return; } } catch (e) { /* ブラウザの窓へ */ }
+    alert(msg);
+  }
+  function saConfirm_(msg, onOk, onNo) {
+    var D = null;
+    try { D = window.SUDialog || null; } catch (e) { D = null; }
+    if (!D) { if (confirm(msg)) onOk(); else if (onNo) onNo(); return; }
+    D.confirm(msg).then(function (ok) { if (ok) onOk(); else if (onNo) onNo(); });
+  }
 
   /* localStorage への書き込みは失敗を握り潰さない（容量超過・プライベートモード等）。
    * 書込→読戻し検証まで行い、失敗時は必ず警告して false を返す（呼出側は保存成功を偽装しない）。 */
@@ -2057,7 +2077,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (back !== str) throw new Error('保存後に読み戻せませんでした（保存されていません）');
       return true;
     } catch (e) {
-      alert('⚠ 保存に失敗しました。データは保存されていません。\n' +
+      saAlert_('⚠ 保存に失敗しました。データは保存されていません。\n' +
         '原因の可能性: ブラウザの保存容量不足、プライベートブラウズ、ストレージ無効。\n' +
         '大切なデータは「書き出し(.json)」でファイル保存してください。\n（詳細: ' + (e && e.message ? e.message : String(e)) + '）');
       return false;
@@ -2318,34 +2338,49 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     } catch (e) { markCorrupt('months'); return []; }
   }
   function saveMonths(a) { return lsWrite(LS_KEY, a || []); }
+  /* 集計したのに「この月を保存」していないか（2026-11-13 仮置き）。保存した月に同じ貼付原本があれば保存済み
+   * （保存した後・保存した月を「表示」し直した時は出さない）。集計していない・貼付が空の時も出さない */
+  function saUnsaved_() {
+    if (!lastAnalysis) return false;
+    var el = $('pasteArea'), raw = (el && el.value) || '';
+    if (!raw.trim()) return false;
+    var ms = loadMonths();
+    for (var i = 0; i < ms.length; i++) if (ms[i] && ms[i].rawText === raw) return false;
+    return true;
+  }
 
   function saveCurrent() {
-    if (!lastAnalysis) { alert('先に「集計」を実行してください。'); return; }
+    if (!lastAnalysis) { saAlert_('先に「集計」を実行してください。'); return; }
     var label = ($('monthLabel').value || '').trim();
-    if (!label) { alert('月ラベル（例: 2026-04）を入力してください。'); return; }
+    if (!label) { saAlert_('月ラベル（例: 2026-04）を入力してください。'); return; }
     var exists = loadMonths().some(function (x) { return x.label === label; });
-    if (exists && !confirm(label + ' は既に保存済みです。上書きしますか？')) return;
-    var m = lastAnalysis.metrics;
-    var months = loadMonths().filter(function (x) { return x.label !== label; });
-    months.push({
-      label: label,
-      savedAt: new Date().toISOString(),   /* クラウド同期の新旧判定用（最後の編集を残す） */
-      days: lastAnalysis.days,
-      rawText: $('pasteArea').value || '',   /* 見返し用に貼付原本を保存（このツール専用ストレージ内） */
-      settings: settings(),
-      visitTotalMin: m.visitTotalMin,
-      visitKaifukuMin: m.visitKaifukuMin,
-      visitKaifukuJitsumuMin: m.visitKaifukuJitsumuMin,
-      fteAll: lastAnalysis.fteVisit.all,
-      fteKaifuku: lastAnalysis.fteVisit.kaifuku,
-      base: lastAnalysis.fteVisit.base,
-      fteMethod: 'form1'   /* 常勤換算をシフト作成と同じ数え方で出した印（2026-10-18〜）。無い月は保存した時の数字のまま＝旧い数え方 */
-    });
-    months.sort(function (a, b) { return a.label < b.label ? -1 : (a.label > b.label ? 1 : 0); });
-    if (!saveMonths(months)) return;   /* 保存失敗時は alert 済み・成功を偽装しない */
-    renderMonths();
-    scheduleAutoSync(300);             /* 「この月を保存」時に自動でクラウドへ */
-    var box = $('savedMonths'); if (box && box.scrollIntoView) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    /* 確かめの窓を待つ間に変わらないよう、集計と貼付原本は押した時の値で保存する（ブラウザの窓の時と同じ） */
+    var la = lastAnalysis, raw = $('pasteArea').value || '';
+    function doSave() {
+      var m = la.metrics;
+      var months = loadMonths().filter(function (x) { return x.label !== label; });
+      months.push({
+        label: label,
+        savedAt: new Date().toISOString(),   /* クラウド同期の新旧判定用（最後の編集を残す） */
+        days: la.days,
+        rawText: raw,   /* 見返し用に貼付原本を保存（このツール専用ストレージ内） */
+        settings: settings(),
+        visitTotalMin: m.visitTotalMin,
+        visitKaifukuMin: m.visitKaifukuMin,
+        visitKaifukuJitsumuMin: m.visitKaifukuJitsumuMin,
+        fteAll: la.fteVisit.all,
+        fteKaifuku: la.fteVisit.kaifuku,
+        base: la.fteVisit.base,
+        fteMethod: 'form1'   /* 常勤換算をシフト作成と同じ数え方で出した印（2026-10-18〜）。無い月は保存した時の数字のまま＝旧い数え方 */
+      });
+      months.sort(function (a, b) { return a.label < b.label ? -1 : (a.label > b.label ? 1 : 0); });
+      if (!saveMonths(months)) return;   /* 保存失敗時は alert 済み・成功を偽装しない */
+      renderMonths();
+      scheduleAutoSync(300);             /* 「この月を保存」時に自動でクラウドへ */
+      var box = $('savedMonths'); if (box && box.scrollIntoView) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    if (exists) { saConfirm_(label + ' は既に保存済みです。上書きしますか？', doSave); return; }
+    doSave();
   }
 
   /* 保存月を呼び出して再表示（貼付原本＋設定を復元して再集計） */
@@ -2353,7 +2388,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var rec = null, months = loadMonths();
     for (var i = 0; i < months.length; i++) if (months[i].label === label) { rec = months[i]; break; }
     if (!rec) return;
-    if (!rec.rawText) { alert(label + ' には明細データが保存されていません（集計値のみ）。'); return; }
+    if (!rec.rawText) { saAlert_(label + ' には明細データが保存されていません（集計値のみ）。'); return; }
     $('pasteArea').value = rec.rawText;
     if (rec.settings) {
       if (typeof rec.settings.fteBaseHours === 'number') $('fteBase').value = rec.settings.fteBaseHours;
@@ -2393,7 +2428,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* 全保存月を .json ファイルへ書き出し（ローカルのみ・外部送信なし） */
   function exportAll() {
     var months = loadMonths();
-    if (!months.length) { alert('保存済みの月がありません。'); return; }
+    if (!months.length) { saAlert_('保存済みの月がありません。'); return; }
     var d = new Date();
     var pad = function (n) { return (n < 10 ? '0' : '') + n; };
     var stamp = d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes());
@@ -2412,15 +2447,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var reader = new FileReader();
     reader.onload = function (ev) {
       var res = AI.parseImport(String(ev.target.result || ''));
-      if (!res.ok) { alert('読み込めませんでした: ' + res.error); return; }
+      if (!res.ok) { saAlert_('読み込めませんでした: ' + res.error); return; }
       var merged = AI.mergeSaved(loadMonths(), res.months);
       var okM = saveMonths(merged);
       var okQ = saveMaster(AI.mergeMaster(loadMaster(), res.qualMaster));
       renderMonths(); renderMaster();
-      if (okM && okQ) { scheduleAutoSync(1200); alert(res.months.length + ' 件を読み込みました（現在の保存: ' + merged.length + ' 月・資格マスタも統合）。'); }
+      if (okM && okQ) { scheduleAutoSync(1200); saAlert_(res.months.length + ' 件を読み込みました（現在の保存: ' + merged.length + ' 月・資格マスタも統合）。'); }
       /* 失敗時は lsWrite が警告済み＝成功を偽装しない */
     };
-    reader.onerror = function () { alert('ファイルの読み込みに失敗しました。'); };
+    reader.onerror = function () { saAlert_('ファイルの読み込みに失敗しました。'); };
     reader.readAsText(file);
   }
 
@@ -2446,7 +2481,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
 
   function printResults() {
-    if (!lastAnalysis) { alert('先に「集計」を実行してください。'); return; }
+    if (!lastAnalysis) { saAlert_('先に「集計」を実行してください。'); return; }
     /* シフト表(details.gridsec)が畳まれていても印刷時は必ず開き、印刷後に元へ戻す */
     var g = document.querySelector('#results details.gridsec');
     if (g) {
@@ -2497,9 +2532,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var dels = box.querySelectorAll('[data-del]');
     for (var d = 0; d < dels.length; d++) dels[d].addEventListener('click', function () {
       var lbl = this.getAttribute('data-del');
-      if (!confirm(lbl + ' を削除しますか？')) return;
-      saveMonths(loadMonths().filter(function (y) { return y.label !== lbl; }));
-      renderMonths(); scheduleAutoSync(1200);
+      saConfirm_(lbl + ' を削除しますか？', function () {
+        saveMonths(loadMonths().filter(function (y) { return y.label !== lbl; }));
+        renderMonths(); scheduleAutoSync(1200);
+      });
     });
     renderCombined();
   }
@@ -2556,7 +2592,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       el.type = 'checkbox';
       el.id = 'cloudRemember';
       lab.appendChild(el);
-      lab.appendChild(document.createTextNode(' この端末にトークンを記憶する'));
+      lab.appendChild(document.createTextNode(' この端末に合言葉を記憶する'));
       host.parentNode.insertBefore(lab, host.nextSibling);
     }
     el.checked = !!initialOn;
@@ -2585,7 +2621,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        （その時は URL・トークンが無くても送れる）。スイッチが切・写しの期間は、su-sa.js がこの関数をそのまま呼ぶ（2026-11-03） */
     function viaGas() {
       var c = cloudCfg();
-      if (!c.url || !c.token) return Promise.reject(new Error('URLとトークンを入力してください'));
+      if (!c.url || !c.token) return Promise.reject(new Error('接続先のURLと合言葉を入れてください'));
       if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(c.url)) {
         return Promise.reject(new Error('URLは https://script.google.com/macros/s/.../exec の形式です'));
       }
@@ -2601,8 +2637,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       .then(function (j) { if (j && j.error) throw new Error(cloudErrMsg(j.error)); return j; });
   }
   function cloudErrMsg(code) {
-    if (code === 'unauthorized') return 'トークンが違います（unauthorized）';
-    if (code === 'server-not-configured') return 'サーバ側のトークン未設定（SHIFTANALYZER_TOKEN）';
+    if (code === 'unauthorized') return '合言葉が違います';
+    if (code === 'server-not-configured') return '接続先に合言葉がまだ設定されていません（管理者に知らせてください）';
     return code;
   }
   function getRev() { var n = parseInt(localStorage.getItem(CLOUD_REV) || '0', 10); return isNaN(n) ? 0 : n; }
@@ -2642,9 +2678,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     cloudStatus('クラウドへ保存中…');
     cloudApi({ action: 'push', key: CLOUD_KEY, data: { months: months, qualMaster: master }, baseRev: getRev(), force: !!force })
       .then(function (res) {
-        if (res.readOnly) { cloudStatus('このトークンは閲覧専用です（保存は編集可トークンで）', 'err'); return; }
+        if (res.readOnly) { cloudStatus('この合言葉は閲覧専用です（保存には編集用の合言葉が要ります）', 'err'); return; }
         if (res.conflict) {
-          if (confirm('クラウド側に新しいデータがあります。取得して統合してから保存し直しますか？（キャンセルで中止）')) {
+          saConfirm_('クラウド側に新しいデータがあります。取得して統合してから保存し直しますか？（キャンセルで中止）', function () {
             cloudApi({ action: 'pull', keys: [CLOUD_KEY] }).then(function (p) {
               var ent = p.entries && p.entries[CLOUD_KEY];
               var pulled = ent && ent.data && ent.data.months ? ent.data.months : [];
@@ -2654,7 +2690,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
               renderMonths(); renderMaster();
               cloudPush(false);   /* 統合後に再保存 */
             }).catch(function (e) { cloudStatus('取得失敗: ' + e.message, 'err'); });
-          } else { cloudStatus('保存を中止しました（競合）', 'err'); }
+          }, function () { cloudStatus('保存を中止しました（競合）', 'err'); });
           return;
         }
         setRev(res.rev || 0);
@@ -2725,7 +2761,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
   /* ローカルに未共有の変更がある時だけ保存。競合(他端末が先行)なら取得→統合→再送(最大2回) */
   function autoMaybePush(role, attempt) {
-    if (role === 'ro') return Promise.resolve('取得のみ ' + hhmm() + '（閲覧トークン）');
+    if (role === 'ro') return Promise.resolve('取得のみ ' + hhmm() + '（閲覧専用の合言葉）');
     /* 先に読み出して破損フラグを最新化してから判定する（破損中は送らない＝クラウドを空で潰さない） */
     var months = loadMonths();
     var master = loadMaster();
@@ -2740,7 +2776,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (!months.length) return Promise.resolve('保存月が無いため自動保存を見送りました ' + hhmm());
     return cloudApi({ action: 'push', key: CLOUD_KEY, data: { months: months, qualMaster: master }, baseRev: getRev() })
       .then(function (res) {
-        if (res.readOnly) return '閲覧専用トークン（保存不可）';
+        if (res.readOnly) return '閲覧専用の合言葉（保存できません）';
         if (res.conflict) {
           if (attempt >= 2) return '競合が続くため次回に再試行';
           return autoPull().then(function (role2) { return autoMaybePush(role2, attempt + 1); });
@@ -2751,6 +2787,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
   function autoSync() {
     if (syncInFlight || !autoEnabled() || !cloudConfigured()) return;
+    /* 画面の中の窓が出ている間は始めず、閉じた後に回す（ブラウザの窓は出ている間ページが止まっていたのと同じ扱い・2026-11-13） */
+    try { if (window.SUDialog && window.SUDialog.busy()) { window.SUDialog.idle().then(function () { scheduleAutoSync(500); }); return; } } catch (e) { /* そのまま同期する */ }
     syncInFlight = true; autoStat('同期中…');
     /* Promise.resolve().then で包み、autoPull が同期例外を投げても必ず旗を戻す（固着防止） */
     Promise.resolve().then(autoPull).then(function (role) { return autoMaybePush(role, 0); })
@@ -2805,9 +2843,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     });
     var dels = box.querySelectorAll('[data-mdel]');
     for (var d = 0; d < dels.length; d++) dels[d].addEventListener('click', function () {
-      var mm = loadMaster(), kk = this.getAttribute('data-mdel');
-      if (!confirm(((mm[kk] && mm[kk].name) || kk) + ' を資格マスタから削除しますか？')) return;
-      delete mm[kk]; if (!saveMaster(mm)) { renderMaster(); return; } renderMaster(); if (lastAnalysis) run();
+      var mm0 = loadMaster(), kk = this.getAttribute('data-mdel');
+      saConfirm_(((mm0[kk] && mm0[kk].name) || kk) + ' を資格マスタから削除しますか？', function () {
+        var mm = loadMaster();   /* 窓を閉じた時の今の値から消す */
+        delete mm[kk]; if (!saveMaster(mm)) { renderMaster(); return; } renderMaster(); if (lastAnalysis) run();
+      });
     });
   }
   function addMasterName() {
@@ -2821,20 +2861,20 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     $('masterName').value = ''; renderMaster();
   }
   function seedFromSheet() {
-    if (!lastParsed) { alert('先に勤務表を貼り付けて「集計」を実行してください。'); return; }
+    if (!lastParsed) { saAlert_('先に勤務表を貼り付けて「集計」を実行してください。'); return; }
     var res = AI.seedMaster(lastParsed, loadMaster());
     if (!saveMaster(res.master)) return;   /* 保存失敗時は alert 済み・成功を偽装しない */
     renderMaster();
     if (lastAnalysis) run();
     scheduleAutoSync(1200);
-    alert(res.added + ' 名を資格マスタへ取り込みました（既存の登録は保持しました）。');
+    saAlert_(res.added + ' 名を資格マスタへ取り込みました（既存の登録は保持しました）。');
   }
 
   /* 職員名簿(スプシ)の貼り付けから資格マスタへ一括取り込み */
   function importRoster() {
     var text = $('rosterPaste').value || '';
     var st = $('rosterStatus');
-    function fail(msg) { st.className = 'cloudstat err'; st.textContent = msg; alert('取り込みできませんでした。\n\n' + msg); }
+    function fail(msg) { st.className = 'cloudstat err'; st.textContent = msg; saAlert_('取り込みできませんでした。\n\n' + msg); }
     if (!text.trim()) { fail('職員名簿を貼り付けてください。'); return; }
     var res;
     try { res = AI.parseStaffRoster(text); } catch (e) { fail('取り込み中にエラー: ' + (e && e.message ? e.message : String(e))); return; }
@@ -2849,10 +2889,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (res.unmapped.length) msg += ' 取り込まなかった対象外資格: ' + res.unmapped.slice(0, 12).join('・') + (res.unmapped.length > 12 ? ' 他' : '');
     st.className = 'cloudstat ok'; st.textContent = msg;   /* textContent＝氏名/資格をHTMLに展開しない */
     scheduleAutoSync(1200);
-    alert(msg + '\n\nこの登録は保存され、今後シフトを貼って「集計」するたびに自動で反映されます。（検出した列が違う場合は、氏名列と資格列の2列だけをコピーして貼り直してください）');
+    saAlert_(msg + '\n\nこの登録は保存され、今後シフトを貼って「集計」するたびに自動で反映されます。（検出した列が違う場合は、氏名列と資格列の2列だけをコピーして貼り直してください）');
   }
 
   function init() {
+    /* ページを閉じる・「← メニュー」「使い方」へ移る時、集計して保存していない時だけブラウザの確認を出す（文言はブラウザ既定・2026-11-13 仮置き） */
+    window.addEventListener('beforeunload', function (e) {
+      try { if (!saUnsaved_()) return; } catch (eU) { return; }
+      e.preventDefault();
+      e.returnValue = '';
+      return '';
+    });
     $('runBtn').addEventListener('click', run);
     $('clearBtn').addEventListener('click', function () { $('pasteArea').value = ''; $('results').innerHTML = ''; lastAnalysis = null; lastRun = null; });
     $('printBtn').addEventListener('click', printResults);
@@ -2876,7 +2923,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     $('cloudAuto').addEventListener('change', function () {
       cloudCfg();
       if (autoEnabled() && cloudConfigured()) { startAutoSync(); scheduleAutoSync(300); autoStat('自動同期 ON'); }
-      else autoStat(autoEnabled() ? 'URLとトークンを入力すると自動同期します' : '自動同期 OFF');
+      else autoStat(autoEnabled() ? '接続先のURLと合言葉を入れると自動同期します' : '自動同期 OFF');
     });
     $('cloudUrl').addEventListener('change', function () { cloudCfg(); if (autoEnabled() && cloudConfigured()) { startAutoSync(); scheduleAutoSync(800); } });
     $('cloudToken').addEventListener('change', function () { cloudCfg(); if (autoEnabled() && cloudConfigured()) { startAutoSync(); scheduleAutoSync(800); } });
