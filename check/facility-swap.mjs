@@ -42,7 +42,7 @@ export const PAGES = [
   { file: 'weight-record.html', title: '体重管理', reads: true, shows: false, why: '食事形態の表示名と、測定用紙の紙の見出しの施設名だけを読む（画面では施設の名前を出さない）' },
   { file: 'training-plan.html', title: '個別機能訓練計画書', reads: true, shows: false, why: '事業所（office）は計画書の中で使う。ログインしていない時は覆いの画面だけ（SUAppGate）' },
   { file: 'supplies.html', title: '消耗品管理', reads: true, shows: false, hidden: true, why: '事業所（office・get）の名前は隠れた部品（帳票など）に入り、接続先の無い状態では見えない' },
-  { file: 'shift-app.html', title: 'シフト作成', reads: false, shows: false, why: '別の正本から配る画面。施設情報は画面の中の設定（su_facility_profile_v1）で持ち、facility-profile.json を読まない' },
+  { file: 'shift-app.html', title: 'シフト作成', reads: true, shows: false, why: '別の正本から配る画面。事業所の表示名は施設情報（nameOf）を先に使い、読めない時は画面の中の設定（su_facility_profile_v1）の値を使う（端末の設定には書かない）' },
   { file: 'work-schedule.html', title: 'ワークスケジュール', reads: false, shows: false, why: '別の正本から配る画面。施設情報は画面の中の設定（su_facility_profile_v1）で持ち、facility-profile.json を読まない' },
   { file: 'staff-master.html', title: '職員マスタ', reads: true, shows: false, why: '読むのは法人設定と市区町村だけ。ログインしていない時は覆いの画面だけ（SUAppGate）' },
   { file: 'connection-settings.html', title: '接続設定', reads: true, shows: false, why: '事業所の呼び名（officeName）は接続の欄に出すが、ログインしていない時は覆いの画面だけ（SUAppGate）' },
