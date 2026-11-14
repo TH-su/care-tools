@@ -319,9 +319,12 @@ function partsOf(d){
     const c1 = d.fire('cancel'); await tick();
     t('prompt: 変換中の cancel は受けない（窓は出たまま・答えはまだ）', c1.defaultPrevented === true && ans === 'まだ' && E.dialogs().length === 1);
     P.inp.fire('compositionend');
-    const c2 = d.fire('cancel'); await tick();
-    t('prompt: 変換を終えた直後（同じ一続きの処理）に届いた cancel も受けない', c2.defaultPrevented === true && ans === 'まだ');
+    /* 印は compositionend の次の出来事の番（setTimeout 0）で外れる。cancel と窓の外の Esc は、外れる前の同じ一続きの処理の中で
+       届けてから待つ（間に setImmediate を挟むと、混んだ CI では setTimeout 0 が先に走り、印が外れた後の Esc になって揺れていた・2026-11-14） */
+    const c2 = d.fire('cancel');
     const kg = E.winKey({ key: 'Escape', target: E.body });
+    await tick();
+    t('prompt: 変換を終えた直後（同じ一続きの処理）に届いた cancel も受けない', c2.defaultPrevented === true && ans === 'まだ');
     await new Promise((r) => setTimeout(r, 5));
     t('prompt: 変換中の印が残る間は、窓の外の Esc でも閉じない（画面へは渡さない）', ans === 'まだ' && kg.imm === true && E.dialogs().length === 1);
     const k2 = P.inp.fire('keydown', { key: 'Escape' });
