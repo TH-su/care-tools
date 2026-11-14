@@ -184,6 +184,7 @@ console.log('\n— 2. 施設情報が読めない時 —');
     'ats.html': { parts: ['name'], why: '面接予定は「〜 現在」が既にある' },
     'daycare-roster.html': { parts: ['name'], why: '凡例の右端に印刷日が既にある' },
     'support-overview.html': { parts: ['name date'], why: '' },
+    'shift-analyzer.html': { parts: ['name date'], why: '' },
     'visit-overview.html': { parts: ['name date'], why: '' }
   };
   for (const [f, exp] of Object.entries(PAGES)) {
@@ -213,6 +214,7 @@ console.log('\n— 2. 施設情報が読めない時 —');
       'care-schedule.html': /data-on-click="printWeeklySheetGated_"[\s\S]*function printWeeklySheetGated_\(\) \{\s*if \(window\.SUPrint && SUPrint\.facGate\) SUPrint\.facGate\(\(\) => printWeeklySheet\(\), \(msg\) => showToast\(msg\)\);/,
       'weight-record.html': /SUPrint\.facGate\(\(\)=>\{ window\.print\(\); \}, \(msg\)=>SUDialog\.alert\(msg\)\)/,
       'patch-calendar.html': /suFacReady_\(\)\.then\(function \(ok\) \{\s*pcPrintWaiting = false;\s*if \(!ok\) \{ window\.alert\(PC_FAC_NG_MSG\); return; \}/,
+      'shift-analyzer.html': /function printResults\(\) \{[\s\S]*?if \(window\.SUPrint && typeof window\.SUPrint\.facGate === 'function'\) window\.SUPrint\.facGate\(function \(\) \{ printResultsNow_\(\); \}, function \(msg\) \{ saAlert_\(msg\); \}\);/,
       'support-overview.html': /function printNow\(\) \{\s*if \(window\.SUPrint && SUPrint\.facGate\) SUPrint\.facGate\(function \(\) \{ window\.print\(\); \}/,
       'visit-overview.html': /function printNow\(\) \{\s*if \(window\.SUPrint && SUPrint\.facGate\) SUPrint\.facGate\(function \(\) \{ window\.print\(\); \}/,
       'moushiokuri-viewer.html': /if\(SUPrint\.facGate\) SUPrint\.facGate\(function\(\)\{ SUPrint\.print\(view\); \}/,
