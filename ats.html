@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-GXvnb5Oivu2wxKWJ+TvhjvmkcY18pyR+XUMRyl48nwU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-VGB/gMuVcFzt1rQzrPJby5+fh+MU6blibR+MDyW6Crk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 書類（PDF）を左の枠に出すため、この画面だけ CSP の frame-src に blob: を足す（check/csp.mjs が読む印） -->
@@ -13,14 +13,14 @@
 <meta name="robots" content="noindex,nofollow">
 <meta name="referrer" content="no-referrer">
 <title>採用管理</title>
-<link rel="stylesheet" href="su-print.css?v=2026-09-12">
+<link rel="stylesheet" href="su-print.css?v=2026-11-13">
 <!-- 画面が黙って壊れないようにする共通部品（いちばん先に読む）→ 速さの記録 → 施設情報 → 印刷 → 職員マスタの日付の規則 → 採用管理の計算 -->
 <script src="su-errors.js?v=2026-11-12"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
 <script src="su-stf.js?v=2026-11-08"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-facility.js?v=2026-11-13.2"></script>
-<script src="su-print.js?v=2026-09-12"></script>
+<script src="su-print.js?v=2026-11-13"></script>
 <script src="staff-master-calc.js?v=2026-11-06.2"></script>
 <script src="ats-calc.js?v=2026-10-29.4"></script>
 <style>
@@ -233,6 +233,7 @@ body.split .pane{width:50vw}
 #a-print{display:none}
 .pv{color:#000; line-height:1.4}
 .pv h1{font-size:1.5em; margin:0 0 .4em}
+@media print{ .pv h1 .su-print-head.at-fac{top:auto; bottom:.15em; max-width:40%; font-size:10px} }
 .pv h2{font-size:1.15em; margin:.8em 0 .3em}
 .pv-t{width:100%; border-collapse:collapse}
 .pv-t th,.pv-t td{border:1px solid #000; padding:.3em .4em; text-align:left; vertical-align:top; font-size:1em}
@@ -1930,7 +1931,8 @@ function printSchedHtml_(){
   var tb=function(title,list){ return '<h2>'+esc(title)+'</h2><table class="pv-t"><thead><tr><th>時刻</th><th>氏名</th><th>職種</th><th>面接官</th><th>回</th><th>場所</th></tr></thead><tbody>'+
     (list.length?list.map(function(v){ var a=rowById_(v.applicant_id)||{}; return '<tr><td>'+esc(fmtDT_(v.held_at))+'</td><td>'+esc(a.name||'')+'</td><td>'+esc((a.jobs||[]).join('・'))+'</td><td>'+esc((v.interviewers||[]).join('・'))+'</td><td>'+esc(v.round)+'</td><td>'+esc(v.place||'')+'</td></tr>'; }).join('')
       :'<tr><td colspan="6">ありません</td></tr>')+'</tbody></table>'; };
-  return '<div class="pv"><h1>面接予定（'+esc(today_())+' 現在）</h1>'+tb('今日',b.today)+tb('明日',b.tomorrow)+'</div>';
+  /* 施設名は表題の行の右に位置を外して重ねる（「〜 現在」が印刷日なので施設名だけ・2026-11-13 代表者の決定） */
+  return '<div class="pv"><h1 class="su-print-head-host">面接予定（'+esc(today_())+' 現在）<span class="su-print-head su-print-head-abs at-fac" data-su-print-head="name"></span></h1>'+tb('今日',b.today)+tb('明日',b.tomorrow)+'</div>';
 }
 function printSheetHtml_(ivId){
   var v=null; ivs.forEach(function(x){ if(x.id===ivId) v=x; }); if(!v) return '';
