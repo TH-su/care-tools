@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-XfouBJ4RVUCeobMN+8yLKMfVT2sqtj6wGqC0+U/Rc5o='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-akBCTOlG1VT24WCQEJRBNw8JaxGUEcC8DbMLKHB0cyc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
@@ -2016,6 +2016,8 @@ function push(force) {
    ・合わせた後は送信待ちの印（dirty）を外し、上書きの確かめを「キャンセル」した印も下ろす（次に断られたらまた聞く） */
 /* 端末の用途が現場か（読めない時は現場とみなす＝書かない側） */
 var afTaking_ = false;
+var afTakeGen_ = 0;          // 取り直しの世代。時間切れの後に届いた答えは世代で捨てる（台帳も控えも書かない・#579 の反証）
+var AF_TAKE_TIMEOUT_MS = 30000;   // 取り直しの時間切れ（30秒・仮置き）。GAS へ送る形は変えず、画面の側で待つのをやめる
 var AF_TAKING_MSG = 'サーバーの内容に合わせている最中です。終わってからもう一度押してください';   // サーバーの内容に合わせる取り直しを待っている間（その間は控えの［復元］［消す］を始めない・#579 の反証）
 function afFieldNow_() {
   try { return localStorage.getItem(DEVICE_KEY) === 'field'; } catch (e) { return true; }
@@ -2028,7 +2030,17 @@ function afTakeServer_(sentAt) {
   }
   setSync('同期中…');
   afTaking_ = true;
+  var gen = ++afTakeGen_;
+  var tm = setTimeout(function () {
+    if (gen !== afTakeGen_) return;
+    afTakeGen_++;   // 後から届いた答えを捨てる
+    afTaking_ = false;
+    setSync('未送信あり', 'err');
+    toast('サーバーの内容を読み込めませんでした');
+  }, AF_TAKE_TIMEOUT_MS);
   return SU.data.admission.get(KV_KEY).then(function (g) {
+    clearTimeout(tm);
+    if (gen !== afTakeGen_) return false;   // 時間切れの後に届いた答え（何も書かない）
     afTaking_ = false;
     if (!g || !g.ok) throw new Error((g && g.error) || '応答エラー');
     /* 応答を待つ間に端末の用途が現場へ変わった時は、台帳も控えも書かずに捨てる（§2.5・読み込み直しは起動時のガードに任せる）。見出しの札は始める前の「未送信あり」に戻す */
@@ -2062,6 +2074,8 @@ function afTakeServer_(sentAt) {
     if (saved) toast('サーバーの内容に合わせました（この端末の変更は「合わせる前の控え」に残しています）');
     return true;
   }).catch(function (e) {
+    clearTimeout(tm);
+    if (gen !== afTakeGen_) return false;   // 時間切れの後に届いた失敗（知らせは時間切れの時に出した）
     afTaking_ = false;
     setSync('未送信あり', 'err');
     toast('サーバーの内容を読み込めませんでした: ' + afErrWords_(e, 'サーバーの内容に合わせる'));
@@ -2092,9 +2106,11 @@ function restoreDiscarded_() {
     afWipeHold_ = false;   // 送信で断られたらもう一度聞く
     DB.updatedAt = nowIso();
     dirty = true;
-    saveCache(true);
+    var saved = saveCache(true);
     setSync('未送信あり'); schedulePush(); renderAll();
-    toast('合わせる前の控えから戻しました');
+    /* 端末の控えへ書けた時だけ「戻しました」（afTakeServer_ と同じ）。書けない時は保存できなかった警告に、控えが残っていることを添える */
+    if (saved) toast('合わせる前の控えから戻しました');
+    else toast('⚠️ 端末に保存できませんでした（容量不足の可能性）。控えは残っているので、容量をあけてからもう一度戻せます');
   }).catch(function (e) { afDlgNote_('restoreDiscarded_', e); });
 }
 /* 同期とバックアップの窓の［消す］。確かめの後に、聞いた時と同じ控えだけを消す */

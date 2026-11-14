@@ -63,12 +63,14 @@ const WIPE = { ok: false, error: 'admwipe', was: 4, now: 2 };
 /* answers: 窓ごとの答え（順に使う）。before: 窓ごとに答える前に起きること。getBefore: サーバーの取り直しが返る前に起きること */
 function mk(opt) {
   opt = opt || {};
-  const log = { puts: [], sync: [], toasts: [], gets: 0, scheduled: 0, renders: 0, notes: [], asked: [] };
+  const log = { puts: [], sync: [], toasts: [], gets: 0, scheduled: 0, renders: 0, notes: [], asked: [], timers: [] };
   const answers = (opt.answers || []).slice();
   const befores = (opt.before || []).slice();
   const ls = makeStorage(opt.failKey);
   const b = {
-    Promise, String, Number, Object, Array, JSON, setTimeout, clearTimeout,
+    Promise, String, Number, Object, Array, JSON,
+    setTimeout: opt.fakeTimers ? (fn, ms) => { if (ms >= 1000) { log.timers.push({ fn, ms }); return log.timers.length; } return setTimeout(fn, ms); } : setTimeout,
+    clearTimeout: opt.fakeTimers ? (id) => { if (log.timers[id - 1]) log.timers[id - 1].cleared = true; clearTimeout(id); } : clearTimeout,
     localStorage: ls,
     SUDialog: {
       confirm(m) {
@@ -82,6 +84,7 @@ function mk(opt) {
     },
     SU: { data: { admission: { get: () => {
       log.gets++;
+      if (opt.getHold) return new Promise((res) => { b.__resolveGet = () => res({ ok: true, rev: 7, data: JSON.parse(JSON.stringify(SERVER)) }); });
       return new Promise((res, rej) => setTimeout(() => {
         if (opt.getBefore) opt.getBefore(b);
         if (opt.getFail) rej(new Error('Failed to fetch')); else res(opt.getAns || { ok: true, rev: 7, data: JSON.parse(JSON.stringify(SERVER)) });
@@ -107,6 +110,8 @@ function mk(opt) {
     'var DB = ' + JSON.stringify(opt.db || LOCAL) + ';',
     'var kvRev = 3, dirty = true, pushing = false, afWipeHold_ = false, SU_DATA_READY = true, AF_LIVE = true, retryWait = 0, pushTimer = null;',
     (src.match(/\nvar afTaking_ = false;/) || ['var afTaking_ = false;'])[0].trim(),
+    (src.match(/\nvar afTakeGen_ = 0;/) || ['var afTakeGen_ = 0;'])[0].trim(),
+    (src.match(/\nvar AF_TAKE_TIMEOUT_MS = [^;]*;/) || ['var AF_TAKE_TIMEOUT_MS = 0;'])[0].trim(),
     'this.taking = function () { return afTaking_; };',
     grabVar('CACHE_KEY'), grabVar('CACHE_BAK'), grabVar('CACHE_BAK2'), grabVar('CACHE_DISCARD'),
     grabVar('DEVICE_KEY'), grabFn('afFieldNow_'), grabFn('serverLooksLost'), grabFn('cachePayload'), grabFn('saveCache'), grabFn('push'), grabFn('afTakeServer_'),
@@ -273,6 +278,8 @@ async function run() {
     p.b.localStorage.setItem = function (k, v) { if (k === p.b.ck) throw new Error('容量不足'); orig(k, v); };
     p.b.restoreDiscarded_(); await settle();
     t('5-2d 戻した後に端末の控えへ書けなかった時は、合わせる前の控えを消さない', p.ls.getItem(p.b.k) === BAK, p.log.toasts);
+    t('5-2j 書けなかった時は「戻しました」を出さず、保存できなかった警告に「控えは残っているので、容量をあけてからもう一度戻せます」を添える',
+      p.log.toasts.indexOf('合わせる前の控えから戻しました') < 0 && p.log.toasts[p.log.toasts.length - 1] === '⚠️ 端末に保存できませんでした（容量不足の可能性）。控えは残っているので、容量をあけてからもう一度戻せます', p.log.toasts);
   }
   {
     const p = mkR({ answers: [false] });
@@ -382,6 +389,29 @@ async function run() {
     const q = mk({ answers: [false, true], getFail: true });
     q.b.push(); await settle();
     t('6-14 取り直しが失敗しても、取り直し中の印は下りる', q.b.taking() === false);
+  }
+  {
+    /* 取り直しが返らない: 30秒の時間切れで印を下ろし、札を戻して知らせる。後から届いた答えでは何も書かない */
+    const p = mk({ answers: [false, true], getHold: true, fakeTimers: true });
+    p.b.push(); await settle();
+    const tmo = p.log.timers.find((x) => x.ms === 30000);
+    t('6-15 取り直しの時間切れは30秒', !!tmo, p.log.timers.map((x) => x.ms));
+    t('6-15b 答えが返るまでは取り直し中の印が立っている', p.b.taking() === true);
+    if (tmo) tmo.fn();
+    t('6-16 時間切れで印を下ろし、札を「未送信あり」に戻し、「サーバーの内容を読み込めませんでした」と出す', p.b.taking() === false
+      && JSON.stringify(p.log.sync[p.log.sync.length - 1]) === '["未送信あり","err"]' && p.log.toasts.indexOf('サーバーの内容を読み込めませんでした') >= 0, [p.log.sync, p.log.toasts]);
+    const syncN = p.log.sync.length;
+    if (p.b.__resolveGet) p.b.__resolveGet();
+    await settle();
+    const s = p.b.st();
+    t('6-17 時間切れの後に届いた答えは捨てる（台帳も控えも書かない・札も変えない）', s.DB.candidates.length === 2 && s.dirty === true
+      && p.ls.getItem(p.b.keys.discard) === null && p.ls.getItem(p.b.keys.cache) === null && p.log.sync.length === syncN, [s, p.log.sync.slice(syncN)]);
+  }
+  {
+    const p = mk({ answers: [false, true], fakeTimers: true });
+    p.b.push(); await settle();
+    const tmo = p.log.timers.find((x) => x.ms === 30000);
+    t('6-18 時間内に答えが届いたら、時間切れの見張りを止める', !!tmo && tmo.cleared === true && p.b.st().DB.candidates.length === 4, p.log.timers);
   }
   {
     const at = help.indexOf('id="sec-admission-flow"');
