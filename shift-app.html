@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4mbfVABkNi+g1gwDQ/6+01quiVtPLRm3Hn4JLzcccxE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-pO9bgOvclHZbaoWUDGE6RlS3zDJAjmqp8Rkd7SwNG7c='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -738,7 +738,7 @@ html.su-field #frdCSV { display: none !important; }
       </div>
       <div class="panel">
         <h2>🏢 施設情報の設定</h2>
-        <p class="muted">施設名・事業所（施設／訪問／通所）の表示名・定休日・初期職員をまとめて設定します。work-scheduleアプリと共通の設定です（同じ端末なら一度の設定で両アプリに反映）。</p>
+        <p class="muted">施設名・事業所（施設／訪問／通所）の表示名・定休日・初期職員をまとめて設定します。ワークスケジュールアプリと共通の設定です（同じ端末なら一度の設定で両アプリに反映）。</p>
         <button id="setFacility" class="act" aria-label="施設情報の設定">🏢 施設情報の設定</button>
       </div>
       <div class="panel">
@@ -9185,8 +9185,11 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return dlg;
   }
 
+  /* 初期設定の1段目で欄を出さずに見せた施設情報の施設名（無ければ空） */
+  var wizFacShown = '';
   function openWizard() {
     ensureDialog();
+    wizFacShown = '';
     wiz = loadFacilityProfile();   /* 既存値を初期表示 */
     wiz._names = '';               /* 職員一括入力の一時保持（保存時に破棄） */
     wizStep = 1;
@@ -9228,9 +9231,18 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function renderWizard() {
     var h = '<h2>初期設定（' + wizStep + '/3）</h2>';
     if (wizStep === 1) {
-      h += '<p class="muted">施設名を設定します。work-scheduleアプリと共通の設定です（同じ端末なら一度の設定で両アプリに反映されます）。</p>';
-      h += '<div class="formgrid"><label>施設名</label>' +
-        '<input type="text" id="wizFacName" value="' + esc(wiz.facilityName) + '" placeholder="例: ○○ホーム"></div>';
+      /* 施設情報（facility-profile.json）に施設名がある時は聞かずにその名前を出す。端末の設定には書かない（SA-03）。
+       * 読めない・書いていない時だけ今までの欄を使う */
+      var facN = facNameOf_('施設名');
+      wizFacShown = facN;
+      if (facN) {
+        h += '<p class="muted">施設名は施設情報に書いてある名前を使います（ここで入れる必要はありません）。</p>';
+        h += '<div class="formgrid"><label>施設名</label><span id="wizFacNameFixed">' + esc(facN) + '</span></div>';
+      } else {
+        h += '<p class="muted">施設名を設定します。ワークスケジュールアプリと共通の設定です（同じ端末なら一度の設定で両アプリに反映されます）。</p>';
+        h += '<div class="formgrid"><label>施設名</label>' +
+          '<input type="text" id="wizFacName" value="' + esc(wiz.facilityName) + '" placeholder="例: ○○ホーム"></div>';
+      }
     } else if (wizStep === 2) {
       h += '<p class="muted">使用する事業所と、その表示名・定休日を設定します（表示名は空欄可＝区分名のみ表示）。</p>';
       if (facNameOf_('施設') || facNameOf_('訪問') || facNameOf_('通所')) {
@@ -9284,6 +9296,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
   function finishWizard() {
     wiz.setupDone = true;
+    /* 欄を出さなかった時も、端末の設定に施設名が無ければ見せた施設名を残す。ワークスケジュールは同じ鍵の施設名だけを見るため
+     * （空のままだと24時間配置表が開けない・反証レビュー 2026-11-14・仮置き）。前から入っている名前は変えない */
+    if (wizFacShown && !wiz.facilityName) wiz.facilityName = wizFacShown;
     saveFacilityProfile(wiz);
     /* 職員一括登録（既存マスタへ投入・氏名重複はスキップ）。
      * 施設情報そのものは端末ローカル（work-schedule と共有）なので閲覧モードでも保存できるが、
@@ -9379,6 +9394,25 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * rules.break2h フラグで行う。ワースケ側の固定休憩枠(14:00-16:00)と整合。 */
   function isBreak2hStaff_(st) {
     return !!(st && st.rules && st.rules.break2h);
+  }
+
+  /* 入力の窓は、画面の中の窓（care-tools の su-dialog.js の SUDialog.prompt）で出す。文はそのまま（監査の台帳 SA-04）。
+   * 部品が読めない・prompt の無い古い部品の時はブラウザの窓に落とし、答えを同じ流れで渡す（OK＝入れた文字・キャンセル＝null）。
+   * 画面の中の窓は同期を止めないので、呼ぶ側は答えの後で守り（編集権・ロック）と対象を取り直す */
+  function suPrompt_(msg, def, cb) {
+    var D = null;
+    try { D = window.SUDialog || null; } catch (e) { D = null; }
+    if (D && typeof D.prompt === 'function') {
+      var p = null;
+      try { p = D.prompt(msg, def); } catch (e) { p = null; }
+      if (p && typeof p.then === 'function') {
+        p.then(function (v) { cb(v == null ? null : String(v)); }, function () { cb(null); });
+        return;
+      }
+    }
+    var r = null;
+    try { r = prompt(msg, def); } catch (e) { r = null; }
+    cb(r);
   }
 
   var App = {
@@ -10159,19 +10193,29 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* スナップショットの氏名をその場（編集用タブ自身 or 月plan）だけ上書き（マスタ・他月/他タブに非波及） */
     editSnapName: function (sid) {
       if (this.leaseGuard()) return;
+      var self = this;
       var h = this.snapHost();
       var snap = h.sched.meta && h.sched.meta.staffSnap;
       if (!snap) return;
-      var cur = '', i;
+      var cur = '', i, ym0 = this.ym, layer0 = h.layer;
       for (i = 0; i < snap.length; i++) { if (snap[i].id === sid) { cur = snap[i].name; break; } }
-      var v = prompt('この月（このタブ）だけの氏名（マスタ・他には影響しません）', cur);
-      if (v === null) return;
-      v = (v || '').trim();
-      if (!v) return;
-      for (i = 0; i < snap.length; i++) { if (snap[i].id === sid) { snap[i].name = v; break; } }
-      this.saveSched(h.layer, h.sched);
-      this.refreshMonthMeta();
-      this.rerender();
+      suPrompt_('この月（このタブ）だけの氏名（マスタ・他には影響しません）', cur, function (v) {
+        if (v === null) return;
+        v = (v || '').trim();
+        if (!v) return;
+        /* 窓の間に編集権・表示中の月が変わっていることがある＝答えの後で取り直す */
+        if (self.leaseGuard()) return;
+        if (self.lockGuard()) return;
+        if (self.ym !== ym0) return;
+        var h2 = self.snapHost();
+        if (h2.layer !== layer0) return;
+        var snap2 = h2.sched.meta && h2.sched.meta.staffSnap;
+        if (!snap2) return;
+        for (var j = 0; j < snap2.length; j++) { if (snap2[j].id === sid) { snap2[j].name = v; break; } }
+        self.saveSched(h2.layer, h2.sched);
+        self.refreshMonthMeta();
+        self.rerender();
+      });
     },
     syncLockUI: function () {
       var locked = this.isLockedNow();
@@ -10322,9 +10366,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (this.leaseGuard()) return;
       var self = this;
       var n = this.getDrafts().filter(function (d) { return !d.auto; }).length + 1;
-      var label = prompt('編集用シフトの内容を入力（例: 職員追加、夜勤調整、希望休反映）', '編集用' + n);
-      if (label === null) return;
-      label = (label || '').trim() || ('編集用' + n);
+      var ym0 = this.ym;
+      suPrompt_('編集用シフトの内容を入力（例: 職員追加、夜勤調整、希望休反映）', '編集用' + n, function (label) {
+        if (label === null) return;
+        /* 窓の間に編集権・表示中の月が変わっていることがある＝答えの後で確かめ直す */
+        if (self.leaseGuard()) return;
+        if (self.ym !== ym0) return;
+        self.createDraftAs_((label || '').trim() || ('編集用' + n));
+      });
+    },
+    createDraftAs_: function (label) {
       var id = 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
       /* 現在の予定をコピーして開始（崩して別案を作るための土台） */
       var plan = this.getSched('plan');
@@ -10901,12 +10952,19 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           if (self.lockGuard()) return;
           var st = self.findStaff(sid);
           var cur = self.sched.notes[sid] || '';
-          var v = prompt((st ? st.name : '') + ' の今月の連絡事項', cur);
-          if (v === null) return;
-          self.capture('連絡事項 ' + (st ? st.name : ''));
-          self.sched.notes[sid] = v;
-          self.saveSched(self.layer, self.sched);
-          self.rerender();
+          var ym0 = self.ym, layer0 = self.layer;
+          suPrompt_((st ? st.name : '') + ' の今月の連絡事項', cur, function (v) {
+            if (v === null) return;
+            /* 窓の間に編集権・ロック・表示中の月が変わっていることがある＝答えの後で確かめ直し、今の月の表へ書く */
+            if (self.leaseGuard()) return;
+            if (self.lockGuard()) return;
+            if (self.ym !== ym0 || self.layer !== layer0) return;
+            self.capture('連絡事項 ' + (st ? st.name : ''));
+            if (!self.sched.notes) self.sched.notes = {};
+            self.sched.notes[sid] = v;
+            self.saveSched(self.layer, self.sched);
+            self.rerender();
+          });
         },
         onStaffEdit: function (sid) {
           if (self.leaseGuard()) return;
@@ -12613,14 +12671,23 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         return;
       }
       /* ③ 端末名（他端末に「誰が編集中か」を出すための表示名。氏名ではなく端末の呼び名を入れる） */
-      var name = Store.getLocal('deviceName', '');
+      /* 端末に書けなかった時も、この画面で入れた名前で続ける（入り直しで同じ窓を出し続けない） */
+      var name = Store.getLocal('deviceName', '') || this._deviceNameTyped || '';
       if (!name) {
-        var input = null;
-        try { input = prompt('この端末の名前を入力してください（他の端末に「◯◯が編集中」と表示されます）', '事務所PC'); } catch (e) {}
-        if (input === null) { revert(); return; }
-        name = String(input).trim();
-        if (!name) { revert(); return; }
-        Store.setLocal('deviceName', name);
+        /* 窓を出している間に入り直されても2枚出さない */
+        if (this._askingDeviceName) return;
+        this._askingDeviceName = true;
+        suPrompt_('この端末の名前を入力してください（他の端末に「◯◯が編集中」と表示されます）', '事務所PC', function (input) {
+          self._askingDeviceName = false;
+          if (input === null) { revert(); return; }
+          var nm = String(input).trim();
+          if (!nm) { revert(); return; }
+          Store.setLocal('deviceName', nm);
+          self._deviceNameTyped = nm;
+          /* 窓の間に別タブ・サーバーの様子が変わっていることがある＝名前を控えた上で、最初の確かめから入り直す */
+          self.enableEdit_();
+        });
+        return;
       }
       /* ④ 取得前に最新を取り込む→編集権を取得→取得の隙に他端末が書いた分を rev で再確認。
        * pullAll は失敗しても reject せず 'offline' を resolve するため、必ず戻り値で分岐する。

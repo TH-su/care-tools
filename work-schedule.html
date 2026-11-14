@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ZvvBSfsB6qVRbgyH4YER8v47ky58uPUTzKDzov2844Y='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-sV4AVxiaR/ZAsqTl4+NUDiSVcxPCmi9PdvKsjT8wsBs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -10906,8 +10906,21 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
     if (window.confirm(msg)) onOk(); else if (onNo) onNo();
   }
+  /* 入力の窓（prompt・WS-04 2026-11-14）。画面の中の窓（SUDialog.prompt）があればそちら、無い・古い（prompt の無い版）・例外の時はブラウザの窓に落とす。
+     答え（入れた文字・キャンセルは null）は onAns に渡す。画面の中の窓は答えを待たずに先へ進むので、呼ぶ側は onAns の中で条件を取り直す */
+  function wsPrompt_(msg, def, onAns) {
+    var D = wsDlg_(), p = null;
+    if (D && typeof D.prompt === 'function') { try { p = D.prompt(msg, def); } catch (e) { p = null; } }
+    if (p && typeof p.then === 'function') {
+      p.then(function (v) { onAns(v == null ? null : String(v)); });
+      return;
+    }
+    onAns(window.prompt(msg, def));
+  }
   /* 窓を出した時と OK を押した時で、見ている日と案が同じか（窓の間に日付や案が変わっていたら何もしない） */
   function wsView_() { return String(ui.currentDate) + '|' + (ui.altId || ''); }
+  /* 今の盤面とロック（窓の間にほかの端末から配置やロックが届いたら、窓の答えで置き換えない・27e0083 の控えに戻すと同じ比べ方） */
+  function wsBoardSig_() { var c = store.get(); return daySig(c) + '|' + (c.meta && c.meta.locked === true ? 1 : 0); }
   function wsDialogBusy_() {
     var D = wsDlg_();
     try { return !!(D && typeof D.busy === 'function' && D.busy()); } catch (e) { return false; }
@@ -11938,14 +11951,18 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   function renameAlt_(id) {
     var a = findAlt_(id);
     if (!a) return;
-    var nm = window.prompt('案の名前', a.name);
-    if (nm === null) return;
-    nm = String(nm).trim().slice(0, 30);
-    if (!nm) return;
-    altWrite_(ui.currentDate, function (d) {
-      for (var i = 0; i < d.alts.length; i++) if (d.alts[i].id === id) { d.alts[i].name = nm; return true; }
-      return false;
-    }).then(function () { renderAltModal_(); renderAll(); }).catch(function () { toast('名前を変えられませんでした', true); });
+    /* 入力は画面の中の窓（WS-04 2026-11-14）。OK の後に日付と案を取り直し、窓の間に変わった・案が消えていたら書かない */
+    var v0_ = wsView_();
+    wsPrompt_('案の名前', a.name, function (nm) {
+      if (nm === null) return;
+      nm = String(nm).trim().slice(0, 30);
+      if (!nm) return;
+      if (wsView_() !== v0_ || !findAlt_(id)) return;
+      altWrite_(ui.currentDate, function (d) {
+        for (var i = 0; i < d.alts.length; i++) if (d.alts[i].id === id) { d.alts[i].name = nm; return true; }
+        return false;
+      }).then(function () { renderAltModal_(); renderAll(); }).catch(function () { toast('名前を変えられませんでした', true); });
+    });
   }
   function deleteAlt_(id, ok_) {
     var a = findAlt_(id);
@@ -21143,24 +21160,29 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (fieldBlock_()) return;   /* 現場の端末では盤面を置き換えない（2026-10-11） */
       var dates = listSavedDates().filter(function (d) { return d !== ui.currentDate; });
       if (!dates.length) { $('stResult').textContent = '複製元の保存データがありません'; return; }
-      var src = window.prompt('複製元の日付を入力してください:\n' + dates.join('  '), dates[dates.length - 1]);
-      if (!src) return;
-      var d = loadDayData(src);
-      if (!d) { $('stResult').textContent = 'その日付の保存データがありません'; return; }
-      d.meta.date = ui.currentDate;
-      d.meta.rev = 0;
-      /* 複製元が「一度ロックして外した日」でも、複製先へその印を持ち込まない（2026-10-16・反証レビュー指摘3）。
-       * 持ち込むと、人がロックしていない新しい日なのに自動の組み直しがずっと止まる。ロック中の元（true）の扱いは今までどおり */
-      if (d.meta.locked === false) { delete d.meta.locked; delete d.meta.lockedAt; }
-      keepOnceLocked_(d, store.get());   /* 複製先の日が一度ロックした日なら、その印は残す（2026-10-17） */
-      for (var i = 0; i < d.tasks.length; i++) {
-        d.tasks[i].done = false;
-        d.tasks[i].origin = M.captureOrigin(d.tasks[i]);
-      }
-      store.dispatch({ type: 'INIT_DAY', day: d, frozen: initFrozen_(d) });
-      scheduleSave();
-      hideModals();
-      toast(src + ' から複製しました（曜日テンプレート運用）');
+      /* 入力は画面の中の窓（WS-04 2026-11-14）。OK の後に日付・案・端末の用途と今の盤面・ロックを取り直し、窓の間に変わっていたら複製しない */
+      var v0_ = wsView_(), b0_ = wsBoardSig_();
+      wsPrompt_('複製元の日付を入力してください:\n' + dates.join('  '), dates[dates.length - 1], function (src) {
+        if (!src) return;
+        if (wsView_() !== v0_ || fieldBlock_()) return;
+        if (wsBoardSig_() !== b0_) { toast('この日の盤面が変わったため複製していません。もう一度押してください', true); return; }
+        var d = loadDayData(src);
+        if (!d) { $('stResult').textContent = 'その日付の保存データがありません'; return; }
+        d.meta.date = ui.currentDate;
+        d.meta.rev = 0;
+        /* 複製元が「一度ロックして外した日」でも、複製先へその印を持ち込まない（2026-10-16・反証レビュー指摘3）。
+         * 持ち込むと、人がロックしていない新しい日なのに自動の組み直しがずっと止まる。ロック中の元（true）の扱いは今までどおり */
+        if (d.meta.locked === false) { delete d.meta.locked; delete d.meta.lockedAt; }
+        keepOnceLocked_(d, store.get());   /* 複製先の日が一度ロックした日なら、その印は残す（2026-10-17） */
+        for (var i = 0; i < d.tasks.length; i++) {
+          d.tasks[i].done = false;
+          d.tasks[i].origin = M.captureOrigin(d.tasks[i]);
+        }
+        store.dispatch({ type: 'INIT_DAY', day: d, frozen: initFrozen_(d) });
+        scheduleSave();
+        hideModals();
+        toast(src + ' から複製しました（曜日テンプレート運用）');
+      });
     });
     $('stClearDay').addEventListener('click', function () {
       if (fieldBlock_()) return;   /* 現場の端末では盤面を消さない（2026-10-11） */
@@ -21683,7 +21705,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261114192453';
+  var WS_BUILD = '20261114201635';
   var WS_APP_VER = 2026102701;   /* 2026-10-27 まだ届いていないロックを「外した」に変えて送り、版の進んでいない古い未送信を退避して捨てる前の版の画面が、仕上げたロックの盤面を前の版で上書きしないよう上げた（代表者承認 A・B）
                                   * （2026101706: 2026-10-23 トレイへ入った理由の印（parkedByHand・absentMoved・routineTray）を知らない前の版の画面が、手で戻した札・休みで移した札を印なしで残し、
                                   * 新しい版がそれを列へ戻してしまわないよう上げた）

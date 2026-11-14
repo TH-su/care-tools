@@ -146,6 +146,8 @@
     window.addEventListener('storage', function (ev) {
       /* ログインの控え・端末の用途が変わった時は、役割を確かめ直す（確かめ直すまで入居調整は読まない） */
       if (ev && (ev.key === null || ev.key === 'su_device_role' || /^sb-[a-z0-9]+-auth-token$/.test(String(ev.key)))) askAuth();
+      /* 札の件数の鍵は一覧の画面が書く物なので、ほかのタブの一覧が書いた時は読み直さない（2つのタブで数が違うと書き合いが止まらないため・反証レビュー 2026-11-14 中1） */
+      if (ev && U && ev.key === U.MENU_DUE_KEY) return;
       draw();
     });
     /* 「戻る」で前の表示のまま戻った時は、前の確かめの答えを使わない（先に下ろしてから描く・反証レビュー 2026-11-14 低1） */
