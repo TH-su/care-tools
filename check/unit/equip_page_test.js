@@ -830,6 +830,11 @@ const allPanels = (L) => { const out = []; for (const tb of CALC.TABS) { L.ctx.t
     const h2 = L.ctx.evPrintHtml_();
     t('★今の画面の絞り込み（種類・年度）が紙にも効き、条件と期間を書く', !/>点検</.test(h2) && /架空の2件目の修理/.test(h2) && /条件：種類：修理/.test(h2) && /期間：2026年度（2026年4月1日〜2027年3月31日）/.test(h2), h2.slice(0, 700));
     L.ctx.filter.etype = ''; L.ctx.filter.fy = '';
+    t('増やした項目が3つまでは1列 8%（紙の材料と同じ型）', (h.match(/<col class="c-x">/g) || []).length === 2 && !/<col style=/.test(h));
+    for (let i = 3; i <= 6; i++) L.ctx.data.fields.push({ id: 'fx' + i, target: 'event', name: '架空の項目' + i, ftype: 'text', sort: 20 + i, disabled: false, rev: 1 });
+    const h3 = L.ctx.evPrintHtml_();
+    t('増やした項目が4つ以上の時は合わせて 30% に収め、内容の列の幅を残す（6つ＝1列 5%）', (h3.match(/<col style="width:5%">/g) || []).length === 6 && !/<col class="c-x">/.test(h3), (h3.match(/<col[^>]*>/g) || []).join(''));
+    L.ctx.data.fields.splice(L.ctx.data.fields.length - 4, 4);
     L.ctx.setTab_('events');
     t('ボタン「一覧を印刷（A4 横）」は対応の記録の絞り込みの段に置く（画面だけ）', /<button type="button" class="btn" data-act="ev-print">一覧を印刷（A4 横）<\/button>/.test(L.els['p-events'].innerHTML));
     L.ctx.act_('ev-print', { getAttribute: () => null }); await settle();

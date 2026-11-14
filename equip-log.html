@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-t6cl/Q+EVxukFNLx0x5WLNhnYeObfi03q4hRn0RAmm8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-hlQZR9FfBvWoOm+QYxcmCZmcIHgSz6/9kTGrs2eGSSU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
@@ -797,7 +797,8 @@ function evPrintHtml_(){
     (cxl?'（取り消した記録 '+esc(cxl)+'件は載せていません）':'')+'</p>';
   if(!rows.length) return h+'<p class="ep-none">条件に合う記録はありません。</p></div>';
   h+='<table class="ep-t'+(xs.length?' ep-x':'')+'"><colgroup><col class="c-d"><col class="c-t"><col class="c-v"><col class="c-a"><col class="c-s"><col>'+
-    xs.map(function(){ return '<col class="c-x">'; }).join('')+'</colgroup>'+
+    /* 増やした項目は1列 8%。4列以上の時は合わせて 30% に収め、内容の列の幅を残す（項目の数で列が細くなりすぎないように） */
+    xs.map(function(){ return xs.length>3?'<col style="width:'+esc(Math.floor(300/xs.length)/10)+'%">':'<col class="c-x">'; }).join('')+'</colgroup>'+
     '<thead><tr><th scope="col">基準日</th><th scope="col">種類</th><th scope="col">業者</th><th scope="col" class="num">金額</th><th scope="col">故障日・依頼日・対応日・完了日</th><th scope="col">内容</th>'+
     xs.map(function(f){ return '<th scope="col">'+esc(f.name)+'</th>'; }).join('')+'</tr></thead><tbody>';
   gs.forEach(function(g){
