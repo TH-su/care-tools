@@ -233,6 +233,7 @@ console.log('— 10. うまく繋がらない時のチェック項目（受け�
   t('10-4 畳んだ欄に元の3項目が文を変えずに入る', inner.indexOf('Apps Script → デプロイの管理 → 編集（鉛筆）→ 「アクセスできるユーザー = 全員」 → 更新</li>') >= 0
     && inner.indexOf('<code>/dev</code>（テスト用）はオーナー本人しか叩けません</li>') >= 0
     && inner.indexOf('「詳細」→「（プロジェクト名）に移動」→「許可」までやり切ったか確認</li>') >= 0, inner);
+  t('10-6 「URL は /exec で終わっているか」は職員がその場で直せるので外に出す（/dev の説明だけ畳む・PR #566 の反証）', outer.indexOf('<li><b>URL は <code>/exec</code> で終わっているか</b></li>') >= 0 && inner.indexOf('/exec') < 0, outer);
   t('10-5 外の欄は閉じたまま（画面の見た目を変えない）', /<details class="api-help">\s*<summary>うまく繋がらない時のチェック項目<\/summary>/.test(src));
 }
 
