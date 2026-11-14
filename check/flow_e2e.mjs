@@ -21,6 +21,8 @@
  *   (8) 画面の中の窓（su-dialog.js）: 入居者マスタの一括編集の保存・食形態一覧の保存・薬情の取り込みを閉じる、体重管理の記録の削除と保存、
  *       職員マスタの一括保存、家族構成図の読込と削除、写しの見比べの「勤務表を写しの期間に戻す」、計画書の同じ作成日の期を足す（2026-11-13 第6段 TP-02）で、OK で先へ進み・キャンセルで何も変わらず・
  *       素早い二度押し（守りの時間の後の2回押し・窓の外の2回押し）で二重にならないこと。落ちた時は画面の名前と操作の名前だけを出す（代表者の指示 2026-11-13）
+ *   (10) 未送信の一覧: 体重管理で送れなかった記録が未送信の一覧に件数で出て（氏名は出ない）、「この画面を開いて送る」で体重管理を開くと送られ、一覧から消える
+ *        （代表者の決定 2026-11-14【訂正】）
  * どの流れも、画面のエラー（pageerror）が出たら失敗にする。成功で exit 0、1つでも落ちたら exit 1。
  */
 import fs from 'node:fs';
@@ -1430,8 +1432,87 @@ async function flow9() {
   }
 }
 
+/* ═════════ (10) 未送信の一覧: 送れなかった記録が出て、その画面を開いて送ると消える（代表者の決定 2026-11-14【訂正】）═════════ */
+async function flow10() {
+  console.log('\n— (10) 未送信の一覧: 体重管理で送れなかった記録が出て、開いて送ると消える —');
+  const L = '(10) 未送信の一覧';
+  const seed = wtSeed();
+  const env = await makeEnv({ device: 'office', wtSeed: seed, extraStorage: {
+    wtmgr_v1: JSON.stringify(seed), wtmgr_api_url: WT_URL, wtmgr_api_token: 'check-flow',
+  } });
+  const real = env.st.wt.respond;
+  let down = true;   // 体重の GAS が保存を断っている間（送れない）
+  env.st.wt.respond = (b) => (down && b.action === 'saveRecord' ? { ok: false, error: '一時的に保存できません' } : real(b));
+  const pq = (page) => page.evaluate(() => { try { const a = JSON.parse(localStorage.getItem('wtmgr_pq_v1') || '[]'); return Array.isArray(a) ? a.length : -1; } catch (e) { return -1; } });
+  /* 共通のデータベースの答えを遅らせる（CI のように遅い端末でも、ログインの確かめの答えの後に件数の控えが書かれることを確かめる。
+     2026-11-14 の CI の失敗＝答えの前に一覧を閉じて札が古いまま残った場面を、手元でも起こすため） */
+  await env.context.route(F.SB + '/**', async (route) => { await new Promise((r) => setTimeout(r, 1500)); return route.fallback(); });
+  try {
+    let page = await open(env, 'weight-record.html?masterId=' + ME.id);
+    await waitFor(() => reqOf(env, 'weight-record.html').some((r) => r.to === 'wt' && r.action === 'getAll') && page.evaluate(() => !document.body.classList.contains('wr-sync-busy')));
+    await page.click('.tnav button[data-go="input"]');
+    await page.fill('#inMonth', ymJst());
+    await page.fill('#inDate', ymdJst(0));
+    await page.fill('#inWeight', '50.1');
+    await page.click('#inSave');
+    const queued = await waitFor(async () => ((await pq(page)) >= 1 ? true : null));
+    t(L + ': 送れなかった記録が体重管理の送信待ちに残る', !!queued && env.st.wt.saved.length === 0, await pq(page));
+    await page.close();
+
+    page = await open(env, 'unsent.html');
+    const box = await waitFor(() => page.evaluate(() => {
+      const ks = Array.from(document.querySelectorAll('#list .kind'));
+      const k = ks.find((x) => x.querySelector('.nm') && x.querySelector('.nm').textContent === '体重管理');
+      return k ? { st: k.querySelector('.st').textContent, items: k.querySelectorAll('ul.items li').length, btn: !!k.querySelector('a[href="weight-record.html"]') } : null;
+    }));
+    t(L + ': 一覧に「体重管理」が件数つきで出て、1件ずつと「この画面を開いて送る」がある', !!box && /^[1-9]\d*件$/.test(box.st) && box.items >= 1 && box.btn, box);
+    const body = await page.evaluate(() => document.body.innerText);
+    t(L + ': 一覧に氏名（' + ME.name + '・' + OTHER.name + '）が出ない', !body.includes(ME.name) && !body.includes(OTHER.name));
+    await shot(page, 'flow10-unsent');
+    /* メニューの札: 一覧の画面が残した件数の鍵（件数と数えた日だけ）を、メニューはほかの札と同じ道で読む（代表者の決定 2026-11-14） */
+    /* 一覧の画面が数え終える（ログインの確かめの答えの後に件数の控えを書く）まで待つ。待つのは画面の「数え終えた印」だけで、確かめる中身は変えない */
+    const done1 = await waitFor(() => page.evaluate(() => document.getElementById('when').getAttribute('data-done') === '1'));
+    t(L + ': 一覧の画面が数え終える（ログインの確かめの答えの後）', !!done1);
+    const key = await page.evaluate(() => localStorage.getItem('unsent_menu_due'));
+    t(L + ': 一覧の画面が件数と数えた日だけの鍵を残す', !!key && /^\{"v":1,"at":"\d{4}-\d{2}-\d{2}","unsent":true,"n":[1-9]\d*\}$/.test(key), key);
+    const menu1 = await open(env, 'index.html');
+    const due1 = await waitFor(() => menu1.evaluate(() => { const a = document.querySelector('a.tile[href="unsent.html"] .due'); return a ? a.textContent : null; }));
+    t(L + ': メニューの「未送信の一覧」に札「未送信n」が出る', !!due1 && /^未送信[1-9]\d*（/.test(due1), due1);
+    await menu1.close();
+    env.st.tag = 'unsent.html';
+    down = false;   // つながった
+    env.st.tag = 'weight-record.html';
+    await page.click('a[aria-label="体重管理を開いて送る"]');
+    await page.waitForURL(/weight-record\.html/, { timeout: 15000 });
+    const got = await waitFor(() => env.st.wt.saved.find((r) => r.residentId === 'w1' && Number(r.weight) === 50.1) || null);
+    t(L + ': 体重管理を開くと送り直され、体重の GAS に届く', !!got, env.st.wt.saved);
+    const empty = await waitFor(async () => ((await pq(page)) === 0 ? true : null));
+    t(L + ': 送れたら体重管理の送信待ちが空になる', !!empty, await pq(page));
+    await page.close();
+
+    page = await open(env, 'unsent.html');
+    const after = await waitFor(() => page.evaluate(() => {
+      const none = Array.from(document.querySelectorAll('#none li')).map((x) => x.textContent);
+      const listed = Array.from(document.querySelectorAll('#list .kind .nm')).map((x) => x.textContent);
+      return none.length ? { none, listed } : null;
+    }));
+    t(L + ': 開き直すと「体重管理」は送信待ちの無いアプリに移る', !!after && after.none.includes('体重管理') && !after.listed.includes('体重管理'), after);
+    const done2 = await waitFor(() => page.evaluate(() => document.getElementById('when').getAttribute('data-done') === '1'));
+    t(L + ': 開き直した一覧も数え終える', !!done2);
+    await page.close();
+    const menu2 = await open(env, 'index.html');
+    await menu2.waitForTimeout(800);
+    const due2 = await menu2.evaluate(() => { const a = document.querySelector('a.tile[href="unsent.html"]'); return a ? (a.querySelector('.due') ? a.querySelector('.due').textContent : '') : null; });
+    t(L + ': 一覧を開き直した後は、メニューの札が消える（0件）', due2 === '', due2);
+    await menu2.close();
+  } finally {
+    endChecks(env, L);
+    await env.context.close();
+  }
+}
+
 try {
-  const FLOWS = { 1: flow1, 2: flow2, 3: flow3, 4: flow4, 5: flow5, 6: flow6, 7: flow7, 8: flow8, 9: flow9 };
+  const FLOWS = { 1: flow1, 2: flow2, 3: flow3, 4: flow4, 5: flow5, 6: flow6, 7: flow7, 8: flow8, 9: flow9, 10: flow10 };
   for (const [k, fn] of Object.entries(FLOWS)) if (!ONLY || ONLY.includes(k)) await fn();
 } catch (e) {
   fail++;

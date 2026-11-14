@@ -33,7 +33,8 @@
     'accounts': 'h-accounts',
     'app-access': 'h-app-access',
     'menu-settings': 'h-menu-settings',
-    'shadow-check': 'h-shadow-check'
+    'shadow-check': 'h-shadow-check',
+    'unsent': 'h-unsent'
   };
   function want() {
     var q = String(window.location.search || '');

@@ -99,6 +99,7 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
       <li><a href="#h-app-access">アプリの使える人</a></li>
       <li><a href="#h-menu-settings">メニューの設定</a></li>
       <li><a href="#h-shadow-check">写しの見比べ</a></li>
+      <li><a href="#h-unsent">未送信の一覧</a></li>
     </ul>
     <p class="muted">ここに無い困りごとや、書いてあるとおりにしても直らない時は、<a href="#h-trouble">「不具合を報告」</a>から知らせるか、<a href="#h-contact">連絡先</a>へお問い合わせください。</p>
   </nav>
@@ -689,6 +690,28 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
     </dl>
   </section>
 
+  <section class="cd" id="sec-unsent" aria-labelledby="h-unsent">
+    <h2 id="h-unsent" tabindex="-1">未送信の一覧</h2>
+    <p><strong>できること</strong></p>
+    <ul>
+      <li>この端末に残っている、まだサーバーへ届いていない保存（送信待ち）を、アプリごとの件数といちばん古い時刻で確かめます。</li>
+      <li>事務所の端末では、1件ずつの時刻と種類（「体重の記録」「日ごとの予定」など）も確かめられます。氏名や記録の中身は出しません。</li>
+      <li>「この画面を開いて送る」を押すと、そのアプリが開き、そのアプリのいつもの仕組みで送り直します。この画面からは送らず、控えを消すこともできません。</li>
+      <li>事務所の端末では、この画面を開いた時に数えた件数が、メニューの「未送信の一覧」のボタンに出ます（送り直した後は、この画面を開き直すと件数が新しくなります）。</li>
+    </ul>
+    <p><strong>よくある困りごと</strong></p>
+    <dl class="sup">
+      <dt>そのアプリを開いても件数が減らない</dt>
+      <dd>インターネットにつながっているか、接続設定とログインを確かめてから、もう一度そのアプリを開いてください。それでも減らない時は「不具合を報告」から知らせてください。</dd>
+      <dt>「確かめられません」と出た</dt>
+      <dd>この画面では中身を読めない控えです（シフト作成の控えなど）。そのアプリを開くと、未送信がある時は画面の上に案内が出ます。</dd>
+      <dt>消耗品管理の出庫が出ない</dt>
+      <dd>消耗品管理の送信待ちは、そのタブの中だけに残ります。消耗品管理を開いていたタブでメニューからこの画面を開くと出ます。</dd>
+      <dt>「裏で写している分」が出ている</dt>
+      <dd>保存はすんでいて、Google へ写す分だけが残っています。そのアプリを開いている間に裏で写すので、そのままで大丈夫です。</dd>
+    </dl>
+  </section>
+
   <!-- 応募者向けの個人情報の取り扱い（2026-10-29 本人指示）。応募者へはこの欄へのリンク（help.html#privacy）を渡す。
        保管期間の「6か月」は採用管理の既定の月数（ats-calc.js）と ats.html の HELP_RETAIN_MONTHS に合わせる
        （check/unit/ats_page_test.js が一致を確かめる。設定で月数を変えた時は、採用管理の設定の画面に知らせが出る）。
@@ -734,7 +757,7 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
 
 <!-- この端末の番号（端末の印の頭の8文字だけ・2026-11-08 代表者の決定 段3 案A）。この画面では送らない・印を作らない -->
 <!-- 住所の ?sec=<画面> から画面ごとの節へ飛ぶ（対応表 SEC にある値だけ・2026-11-13） -->
-<script src="help-sec.js?v=2026-11-13.3"></script>
+<script src="help-sec.js?v=2026-11-14"></script>
 <script src="su-device-role.js?v=2026-11-08" data-mode="show"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 <script src="su-report.js?v=2026-10-28" data-tool="使い方・困った時"></script>

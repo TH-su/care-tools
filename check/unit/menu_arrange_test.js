@@ -200,7 +200,8 @@ t('9u 作った区分はボタンが無くても配置（layout）に残る（�
   M.layout(DEF, M.clean({ ver: 1, sdef: { 'c-z': { mk: '', title: '空' } } })).some(s => s.id === 'c-z' && s.tiles.length === 0));
 t('9w 「使い方・困った時」は事務所専用の区分（設定）へ移さない（現場端末から消えないように・反証レビューの指摘）', (function () {
   const v = M.arrange(DEF, { ver: 1, mv: { 'help.html': 'sec-setup' }, gone: ['sec-help'] }, 'field');
-  return hrefs(v, 'sec-help').join() === 'help.html' && hrefs(v, 'sec-setup').indexOf('help.html') < 0;
+  /* 困った時の区分は既定のまま（help.html と、2026-11-14 に足した未送信の一覧） */
+  return hrefs(v, 'sec-help').join() === 'help.html,unsent.html' && hrefs(v, 'sec-setup').indexOf('help.html') < 0;
 })());
 t('9x 「使い方・困った時」はふつうの区分へは移せる', hrefs(M.arrange(DEF, { ver: 1, mv: { 'help.html': 'sec-staff' } }, 'field'), 'sec-staff').indexOf('help.html') >= 0);
 t('9v 0023 のキーだけの設定でも、区分の並びは既定のまま', ids(M.arrange(DEF, { ver: 1, sdef: { 'sec-staff': { mk: '', title: 'x' } } }, 'admin')).join() === ids(DEF).join());
