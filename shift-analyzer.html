@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="topbar">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tLuXvY35THOOEu+lLJHbdWJm8/l5iP4cmF9/5cSUk4M='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-q7oFJSR0d3maA4mul0F5c6jhLO0t5SdhKW1d29TzN4E='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -117,9 +117,10 @@ code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px}
 </style>
 <script src="su-errors.js?v=2026-11-12"></script>
 <script src="su-dialog.js?v=2026-11-13.2"></script>
+<script src="su-devcfg.js?v=2026-11-08"></script>
 <script src="su-cfg-hint.js?v=2026-11-10"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
-<script src="su-facility.js?v=2026-11-13"></script>
+<script src="su-facility.js?v=2026-11-13.2"></script>
 <script src="su-sa.js?v=2026-11-03.2"></script>
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 </head>
@@ -2611,6 +2612,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try { localStorage.setItem(CLOUD_CFG, JSON.stringify(save)); } catch (e) {}
     return { url: url, token: token, auto: auto };
   }
+  /* 管理者が接続設定の「全端末へ配る」で配った接続先と合言葉（su-devcfg.js・統合 0080・代表者の決定 2026-11-14）。
+   * 配った値が先、配っていない時（部品が無い・まだ届いていない・null）は今までどおりこの端末の欄の値を使う。
+   * 配った値は入力欄にも localStorage にも入れない（合言葉を画面・端末に残さない）。形は su-devcfg.js が確かめ済み。
+   * 現場の端末では su-devcfg.js が null を返す（現場用の系統だけを渡す）。 */
+  function distCfg() {
+    try {
+      var d = window.SUDevCfg && typeof window.SUDevCfg.get === 'function' ? window.SUDevCfg.get('analyzer') : null;
+      if (d && typeof d.url === 'string' && typeof d.token === 'string' && d.url && d.token) return { url: d.url, token: d.token };
+    } catch (e) { /* 部品が使えない時は端末の値で動く */ }
+    return null;
+  }
   function cloudStatus(msg, kind) {
     var el = $('cloudStatus'); if (!el) return;
     el.className = 'cloudstat ' + (kind || '');
@@ -2620,9 +2632,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     /* Google へ送る関数（今までの中身のまま）。切り替えた後（統合 0051）は su-sa.js がデータベースの関数へ回し、この関数を呼ばない
        （その時は URL・トークンが無くても送れる）。スイッチが切・写しの期間は、su-sa.js がこの関数をそのまま呼ぶ（2026-11-03） */
     function viaGas() {
-      var c = cloudCfg();
+      var c = cloudCfg(), d = distCfg();
+      if (d) c = { url: d.url, token: d.token, auto: c.auto };   /* 配った値が先（送る形は変えない） */
       if (!c.url || !c.token) return Promise.reject(new Error('接続先のURLと合言葉を入れてください'));
-      if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(c.url)) {
+      if (!d && !/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(c.url)) {
         return Promise.reject(new Error('URLは https://script.google.com/macros/s/.../exec の形式です'));
       }
       payload.token = c.token;
@@ -2707,6 +2720,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var url = ($('cloudUrl').value || '').trim(), token = ($('cloudToken').value || '').trim();
     if (window.SUSa && window.SUSa.blocked()) return false;   /* 現場の端末はスイッチが入の間クラウド同期を使わない（自動同期もしない・CLAUDE.md §2-5） */
     if (window.SUSa && window.SUSa.liveHint()) return true;   /* 切り替えた後（統合 0051）は URL・トークンが無くても同期できる */
+    if (distCfg()) return true;                                /* 管理者が全端末へ配った接続先と合言葉がある（su-devcfg.js・2026-11-14） */
     return !!url && !!token && /^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(url);
   }
   function autoEnabled() { var el = $('cloudAuto'); return !!(el && el.checked); }
@@ -2928,6 +2942,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     $('cloudUrl').addEventListener('change', function () { cloudCfg(); if (autoEnabled() && cloudConfigured()) { startAutoSync(); scheduleAutoSync(800); } });
     $('cloudToken').addEventListener('change', function () { cloudCfg(); if (autoEnabled() && cloudConfigured()) { startAutoSync(); scheduleAutoSync(800); } });
     if (cloudConfigured() && autoEnabled()) startAutoSync();
+    /* 配った接続先と合言葉（su-devcfg.js）は起動の後に届くので、届いた時に自動同期を始め直す（2026-11-14） */
+    try {
+      if (window.SUDevCfg && typeof window.SUDevCfg.onChange === 'function') {
+        window.SUDevCfg.onChange(function () { if (distCfg() && autoEnabled() && cloudConfigured()) { startAutoSync(); scheduleAutoSync(500); } });
+      }
+    } catch (e) { /* 部品が使えない時は端末の値で動く */ }
     /* 切り替えた後（統合 0051）は、URL・トークンの無い端末でもログインしていれば自動同期を始める（2026-11-03） */
     if (window.SUSa) window.SUSa.probe().then(function (live) { if (live && autoEnabled()) { startAutoSync(); scheduleAutoSync(500); } }, function () {});
     $('masterSeedBtn').addEventListener('click', seedFromSheet);
@@ -2947,6 +2967,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
 </script>
+<!-- 本番の健康（2026-11-14・統合 0088）: 新しい保存先への保存の失敗を種類と理由だけ数えて送る。保存の動きには触れない・読めなくても動く -->
+<script src="su-health.js?v=2026-11-14"></script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
 <script src="su-report.js?v=2026-10-28" data-tool="過去シフト・アナライザ"></script>
 </body>
