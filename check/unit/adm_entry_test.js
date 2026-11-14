@@ -137,7 +137,7 @@ async function both(oldFn, newFn, o) {
   console.log('E 画面');
   {
     const H = read('admission-flow.html');
-    t('台帳の読み取りは入口（kvGet(KV_KEY) を直接呼ばない）', !/SU\.data\.kvGet\(KV_KEY\)/.test(H) && (H.match(/SU\.data\.admission\.get\(KV_KEY\)/g) || []).length === 4);
+    t('台帳の読み取りは入口（kvGet(KV_KEY) を直接呼ばない）', !/SU\.data\.kvGet\(KV_KEY\)/.test(H) && (H.match(/SU\.data\.admission\.get\(KV_KEY\)/g) || []).length === 5);   /* 2026-11-14: サーバーの内容に合わせる道（afTakeServer_）の取り直しを足して4→5 */
     t('台帳の保存は入口（force・証明は extra で渡す）', /return SU\.data\.admission\.put\(KV_KEY, snap, rev, ex\);/.test(H) && !/action: 'put', key: KV_KEY/.test(H));
     t('閉じる直前の送信・ping は入口', /SU\.data\.admission\.putBeacon\(KV_KEY, DB, kvRev\)/.test(H) && /SU\.data\.admission\.ping\(\)/.test(H) && !/SU\.data\.kvPutBeacon/.test(H));
     t('添付書類の操作は kvRaw（Google）・切り替えた後だけ su-doc-live.js が新しい保存先へ（統合 0065）', /function apiFiles\(payload\) \{[\s\S]{0,700}if \(window\.SUDocLive\) return window\.SUDocLive\.adm\(payload, function \(\) \{ return SU\.data\.kvRaw\(payload\); \}\);\s*return SU\.data\.kvRaw\(payload\);/.test(H)
