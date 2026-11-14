@@ -299,5 +299,16 @@ console.log('— 6. フェイスシート・入居者マスタの階の一覧 �
   }
 }
 
+/* 営業7日の画面の時刻の字の間（keep-font で画面の書体を元に戻した後・PR #528 反証レビュー）。
+   -0.02em では Mac の書体で最大 1.2px 欠け、-0.04em では余裕が 0.1px しかなかった。画面だけに効き、印刷へ漏れないこと */
+{
+  const m = SRC.match(/body:not\(\.su-printing\) table\.sheet\.d7 \.c-tm \{([^}]*)\}/);
+  t('営業7日の時刻の規則は画面だけ（印刷中は効かない）', !!m, m && m[0]);
+  const ls = m && /letter-spacing:\s*(-?[\d.]+)em/.exec(m[1]);
+  t('営業7日の時刻の字の間は -0.06em 以下（-0.04em では余裕が足りない）', !!ls && parseFloat(ls[1]) <= -0.06, ls && ls[1]);
+  t('営業7日の時刻の左右の余白は 0', !!m && /padding-left:\s*0/.test(m[1]) && /padding-right:\s*0/.test(m[1]), m && m[1]);
+  t('d7 は曜日が営業6日より多い時だけ付く', /classList\.toggle\('d7', DCR_COLS\.length > NDAY\)/.test(SRC));
+}
+
 console.log(`\n────────── 合計: ${pass} 件成功 / ${fail} 件失敗 ──────────`);
 process.exit(fail ? 1 : 0);
