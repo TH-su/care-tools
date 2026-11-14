@@ -211,6 +211,13 @@
     if ((t.officeOnly || secOfficeOnly) && (role === 'field' || role === 'pending')) return true;
     return false;
   }
+  /* 「動作の速さの記録」のリンク（メニューの下の欄・2026-11-14 代表者の決定）を出すか。
+     事務所の端末で、事務所・管理者としてログインしている時だけ出す。現場端末（is-field）・現場のアカウント・
+     ログインしていない・役割がまだ分からない（'pending'）時は出さない。記録そのもの（su-perf.js）は今までどおり全端末で取る */
+  function perfLinkShown(role, fieldDevice) {
+    if (fieldDevice) return false;
+    return role === 'admin' || role === 'office';
+  }
   function roleView(view, role) {
     if (!view || typeof view !== 'object' || !Array.isArray(view.sections)) return view;
     var cut = false;
@@ -411,7 +418,7 @@
     window.addEventListener('pageshow', function (e) { if (e.persisted) run(); });
   }
 
-  window.SUMenu = { arrange: arrange, view: view, roleView: roleView, autoHidden: autoHidden, appsView: appsView, appOf: appOf, layout: layout, clean: clean, readCache: readCache, clearCache: clearCache, startSync: startSync, ROLES: ROLES, KEEP: KEEP,
+  window.SUMenu = { arrange: arrange, view: view, roleView: roleView, autoHidden: autoHidden, perfLinkShown: perfLinkShown, appsView: appsView, appOf: appOf, layout: layout, clean: clean, readCache: readCache, clearCache: clearCache, startSync: startSync, ROLES: ROLES, KEEP: KEEP,
     ball: ball, getBall: getBall, setBall: setBall, chooseBall: chooseBall, BALLS: BALLS.slice(),
     // 写しが止まっている時の札（su-sync-stale.js・2026-10-26 本人指示）が、同じログインの部品を二重に読み込まないために使う
     hasLogin: hasLogin, loadAuth: loadAuth };
