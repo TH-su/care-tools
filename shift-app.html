@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-hROYEVhQbooXCb6VdOPzy+NhK9N2+qJckQ4InMkMG6s='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4mbfVABkNi+g1gwDQ/6+01quiVtPLRm3Hn4JLzcccxE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -465,8 +465,9 @@ html.su-field #frCSV,
 html.su-field #frdCSV { display: none !important; }
 </style>
 <script src="su-errors.js?v=2026-11-12"></script>
-<script src="su-dialog.js?v=2026-11-13.2"></script>
+<script src="su-dialog.js?v=2026-11-14.2"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
+<script src="su-facility.js?v=2026-11-14"></script>
 <script src="su-kv.js?v=2026-11-08"></script>
 <script src="su-kv-shadow.js?v=2026-10-28"></script>
 </head>
@@ -775,12 +776,12 @@ html.su-field #frdCSV { display: none !important; }
       <div class="panel">
         <h2>バックアップ</h2>
         <div class="flexrow">
-          <button id="backupExport" class="act ghost">JSONエクスポート</button>
-          <label id="backupImportLabel" class="act ghost" style="display:inline-block">JSONインポート<input type="file" id="backupImport" accept=".json" style="display:none"></label>
+          <button id="backupExport" class="act ghost">控えのファイルに書き出す</button>
+          <label id="backupImportLabel" class="act ghost" style="display:inline-block">控えのファイルから読み込む<input type="file" id="backupImport" accept=".json" style="display:none"></label>
           <span id="backupMsg" class="muted"></span>
         </div>
         <!-- 退避データ一覧: 競合解決・取込で上書きされる前の版（local:conflictRescue / local:importRescue）。
-             JSONエクスポートは local: を含まないため、ここが唯一の救出導線になる。 -->
+             控えのファイルに書き出すは local: を含まないため、ここが唯一の救出導線になる。 -->
         <h2 style="margin-top:14px">退避データ一覧</h2>
         <p class="muted">同期の競合やバックアップ取込で置き換えられる前の内容を、この端末内に自動退避したものです（14日・3世代で自動削除）。必要な版をダウンロードして保管できます。</p>
         <div id="rescueList"></div>
@@ -3978,6 +3979,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
  * 旧Safari互換: ?. / ?? / replaceAll / structuredClone は使用しない */
 (function () {
   'use strict';
+  /* 知らせの文が指す書き出しの場所（SA-02） */
+  var BACKUP_HINT_ = '［マスタ→設定→バックアップ→控えのファイルに書き出す］';
   var SC = (typeof window !== 'undefined') ? window.ShiftSyncCore : null;
   /* 編集リースの判断（editlock.js・純関数）。解決は呼び出し時＝結合ビルドの読み込み順に依存しない。
    * 未読込の環境（editlock.js を含まないビルド）では下の 2 ヘルパが従来動作へ倒れる＝新旧どちらでも壊れない。 */
@@ -4535,7 +4538,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       this.storeError = true;
       this.updateStatus('storeerror',
-        '端末への保存に失敗しました（保存容量の上限の可能性）。データが失われる前に［マスタ→設定→バックアップ→JSONエクスポート］で保全してください。');
+        '端末への保存に失敗しました（保存容量の上限の可能性）。データが失われる前に' + BACKUP_HINT_ + 'で保全してください。');
       return false;
     },
     /* 同期対象外のローカル設定（端末ごと） */
@@ -5083,7 +5086,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (storeFailed.length) {
           self.storeError = true;
           self.updateStatus('storeerror',
-            '端末への保存に失敗しました（保存容量の上限の可能性）。サーバ版の取り込みを保留しています（' + storeFailed.join(', ') + '）。［マスタ→設定→バックアップ→JSONエクスポート］で保全してください。');
+            '端末への保存に失敗しました（保存容量の上限の可能性）。サーバ版の取り込みを保留しています（' + storeFailed.join(', ') + '）。' + BACKUP_HINT_ + 'で保全してください。');
         } else if (corrupt.length) {
           self.updateStatus('offline',
             'サーバ側に破損データがありました（' + corrupt.join(', ') + '）。ローカルを保持し、修復のため再送します。');
@@ -5166,7 +5169,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
            * revだけ進めると旧データでの正当上書き（lost-update）経路になる */
           self.storeError = true;
           self.updateStatus('storeerror',
-            '端末への保存に失敗しました（保存容量の上限の可能性）。サーバ版の取り込みを保留しました。［マスタ→設定→バックアップ→JSONエクスポート］で保全してください。');
+            '端末への保存に失敗しました（保存容量の上限の可能性）。サーバ版の取り込みを保留しました。' + BACKUP_HINT_ + 'で保全してください。');
           done();
           return;
         }
@@ -5728,7 +5731,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         /* 退避できなかった: キューもローカルも触らずに中断する（何も失わない側へ倒す） */
         this.storeError = true;
         this.updateStatus('storeerror',
-          'サーバ側のデータを守るため、この端末の変更は保留しました。端末内への退避に失敗したため、サーバの最新版の取り込みを中止しています（' + key + '）。［マスタ→設定→バックアップ→JSONエクスポート］で保全してください。');
+          'サーバ側のデータを守るため、この端末の変更は保留しました。端末内への退避に失敗したため、サーバの最新版の取り込みを中止しています（' + key + '）。' + BACKUP_HINT_ + 'で保全してください。');
         return Promise.resolve('rescuefail');
       }
       this.queue.take(key);
@@ -5779,7 +5782,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         this._lockLostInFlight = false;
         this.storeError = true;
         this.updateStatus('storeerror',
-          '他の端末が編集モードになりました。この端末の未送信の編集を端末内へ退避できなかったため、サーバ版の取り込みを中止しました（' + failed.join(', ') + '）。［マスタ→設定→バックアップ→JSONエクスポート］で保全してから画面を再読み込みしてください。');
+          '他の端末が編集モードになりました。この端末の未送信の編集を端末内へ退避できなかったため、サーバ版の取り込みを中止しました（' + failed.join(', ') + '）。' + BACKUP_HINT_ + 'で保全してから画面を再読み込みしてください。');
         if (this.onLockLostFail) { try { this.onLockLostFail(failed); } catch (eF) {} }
         return Promise.resolve('rescuefail');
       }
@@ -5853,7 +5856,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           !this.rescueLocal_(key, lv, item ? item.baseRev : 0)) {
         this.storeError = true;
         this.updateStatus('storeerror',
-          'この端末の編集を退避できなかったため、サーバ版の取り込みを中止しました（' + key + '）。［マスタ→設定→バックアップ→JSONエクスポート］で保全してください。');
+          'この端末の編集を退避できなかったため、サーバ版の取り込みを中止しました（' + key + '）。' + BACKUP_HINT_ + 'で保全してください。');
         return Promise.resolve({ ok: false, error: 'rescuefail' });
       }
       return new Promise(function (resolve) {
@@ -5899,7 +5902,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (kept.length) {
         this.storeError = true;
         this.updateStatus('storeerror',
-          '未送信の編集を端末内へ退避できなかったため、一部のキーは取り直しを中止しました（' + kept.join(', ') + '）。［マスタ→設定→バックアップ→JSONエクスポート］で保全してください。');
+          '未送信の編集を端末内へ退避できなかったため、一部のキーは取り直しを中止しました（' + kept.join(', ') + '）。' + BACKUP_HINT_ + 'で保全してください。');
       }
       if (!targets.length) return Promise.resolve({ adopted: 0, kept: kept });
       return this.pullAll(targets).then(function () {
@@ -5914,7 +5917,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       for (var i = 0; i < localStorage.length; i++) {
         var k = localStorage.key(i);
         /* 他アプリのキー（旧版の全量pullが溜めた wsday_*・care_schedule_v2・months 等）は書き出さない（2026-09-23）。
-         * 保存容量が満杯の時の案内は「JSONエクスポートで保全」なので、残骸があると他アプリのデータ
+         * 保存容量が満杯の時の案内は「控えのファイルに書き出すで保全」なので、残骸があると他アプリのデータ
          * 約11MBを抱えたファイルになる。書き出すのはシフトの同期キーだけ（_meta・_sync・local:* は従来どおり対象外。
          * _healLog など _ 始まりの端末記録もシフトの同期キーではないので、これ以降は書き出さない）。 */
         if (k && k.indexOf(PREFIX) === 0 && k !== META_KEY && k !== SYNC_KEY && k.indexOf(PREFIX + 'local:') !== 0 &&
@@ -6990,12 +6993,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (lab) {
         lab.style.opacity = view ? '.55' : '';
         lab.title = view ? '閲覧モードでは取り込めません（右上の「✎ 編集」をオンにしてください）'
-                         : 'JSONバックアップを取り込みます（勤務表は取込前に1世代退避されます）';
+                         : '控えのファイルを取り込みます（勤務表は取込前に1世代退避されます）';
       }
     },
 
     /* 退避データ一覧（同期の競合解決・バックアップ取込で置き換えられる前の内容）。
-     * JSONエクスポートは local:* を含まないため、退避を取り出せる導線はここだけ。
+     * 控えのファイルに書き出すは local:* を含まないため、退避を取り出せる導線はここだけ。
      * 書き戻しボタンは置かない＝現在のデータへ誤って上書きする事故を作らない（中身はダウンロードで確認する）。 */
     renderRescueList: function () {
       var el = document.getElementById('rescueList');
@@ -7022,7 +7025,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         var label = (app && app.keyLabel_) ? app.keyLabel_(rows[i].srcKey) : rows[i].srcKey;
         h += '<tr><td>' + esc(fmtRescueTime_(rows[i].savedAt)) + '</td><td>' + esc(rows[i].kind) + '</td>' +
           '<td>' + esc(label) + '</td><td>' + esc(rows[i].hint) + '</td>' +
-          '<td><button class="act ghost rescueDl" data-k="' + esc(rows[i].local) + '">JSONダウンロード</button></td></tr>';
+          '<td><button class="act ghost rescueDl" data-k="' + esc(rows[i].local) + '">ファイルに保存</button></td></tr>';
       }
       el.innerHTML = h + '</table>';
       var self = this;
@@ -7829,7 +7832,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
             e.target.value = '';
             msgEl.textContent = '✗ シフト作成アプリのバックアップではありません（' +
               (obj && obj.app ? '種類: ' + String(obj.app).slice(0, 40) : '形が違います') +
-              '）。勤務表の［マスタ］→［設定］の「JSONエクスポート」で作ったファイル（shiftapp-backup-日付.json）を選んでください。';
+              '）。勤務表の［マスタ］→［設定］の「控えのファイルに書き出す」で作ったファイル（shiftapp-backup-日付.json）を選んでください。';
             return;
           }
           /* 取込は現在のデータを上書きするため、中身（書き出し日時・キー数）を示して明示確認を取る。
@@ -8674,14 +8677,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
   };
 
-  /* 事業所名・サービス種別（施設情報の事業所の表示名を使う。無ければ区分の名前） */
+  /* 事業所名・サービス種別（表示名は ShiftFacility.officeLabel・無ければ区分の名前） */
   function officeLabel(division) {
-    try {
-      if (window.ShiftFacility && ShiftFacility.loadFacilityProfile) {
-        var p = ShiftFacility.loadFacilityProfile();
-        for (var i = 0; i < (p.offices || []).length; i++) if (p.offices[i].key === division && p.offices[i].label) return p.offices[i].label;
-      }
-    } catch (e) {}
+    try { if (window.ShiftFacility && ShiftFacility.officeLabel) return ShiftFacility.officeLabel(division) || division; } catch (e) {}
     return division;
   }
   function officeName(division) {
@@ -9138,11 +9136,24 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return null;
   }
 
+  /* 施設情報の名前（無ければ空）。表示だけに使い端末の設定へ混ぜない（SA-03） */
+  function facNameOf_(kind) {
+    try {
+      var F = window.SUFacility, n = (F && F.ready && F.ready() && F.nameOf) ? F.nameOf(kind) : '';
+      return (typeof n === 'string') ? n.replace(/^\s+|\s+$/g, '') : '';
+    } catch (e) { return ''; }
+  }
+  function officeLabel(key, profile) {
+    var o = officeByKey(key, profile);
+    return facNameOf_(key) || ((o && o.label) ? o.label : '');
+  }
+
   /* labelが空ならkeyのみ、あれば「key（label）」形式 */
   function officeDisplay(key, profile) {
     var o = officeByKey(key, profile);
     if (!o) return key;
-    return o.label ? (key + '（' + o.label + '）') : key;
+    var lb = officeLabel(key, profile);
+    return lb ? (key + '（' + lb + '）') : key;
   }
 
   /* 3セットのプルダウン（施設/訪問/通所のoption）の表示名を書き換え、
@@ -9222,6 +9233,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         '<input type="text" id="wizFacName" value="' + esc(wiz.facilityName) + '" placeholder="例: ○○ホーム"></div>';
     } else if (wizStep === 2) {
       h += '<p class="muted">使用する事業所と、その表示名・定休日を設定します（表示名は空欄可＝区分名のみ表示）。</p>';
+      if (facNameOf_('施設') || facNameOf_('訪問') || facNameOf_('通所')) {
+        h += '<p class="muted">施設情報に名前が書いてある事業所は、その名前を表示に使います（ここの表示名は、施設情報を読めない時に使います）。</p>';
+      }
       h += '<table class="plain"><tr><th>使用</th><th>区分</th><th>表示名</th><th>定休日</th></tr>';
       for (var i = 0; i < wiz.offices.length; i++) {
         var o = wiz.offices[i];
@@ -9298,9 +9312,29 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (app && typeof app.rerender === 'function') app.rerender();
   }
 
+  /* 施設情報が後から届き表示名が変わる時だけ描き直す */
+  function labelSig_() { return OFFICE_KEYS.map(function (k) { return officeLabel(k); }).join('|'); }
+  var lateHooked = false;
+  function hookLateFacility_() {
+    var F = window.SUFacility;
+    if (lateHooked || !F || typeof F.onReady !== 'function') return;
+    lateHooked = true;
+    var sig0 = labelSig_();
+    try {
+      F.onReady(function () {
+        var sig1 = labelSig_();
+        if (sig1 === sig0) return;
+        sig0 = sig1;
+        applyOfficeLabels();
+        if (app && app.rerender) { try { app.rerender(); } catch (e) {} }
+      });
+    } catch (e) {}
+  }
+
   function init(a) {
     app = a;
     applyOfficeLabels();
+    hookLateFacility_();
     var p = loadFacilityProfile();
     /* 初回ウィザードの自動起動は編集モードのみ。閲覧端末（他端末が編集中・共有ロック待ち）で
      * 毎回モーダルが開くのを防ぐ。手動では［マスタ→設定→施設情報の設定］から開ける。 */
@@ -9315,6 +9349,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     loadFacilityProfile: loadFacilityProfile,
     saveFacilityProfile: saveFacilityProfile,
     officeDisplay: officeDisplay,
+    officeLabel: officeLabel,
     applyOfficeLabels: applyOfficeLabels,
     openWizard: openWizard,
     init: init
@@ -9324,6 +9359,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 /* app.js — アプリ統括（状態・描画調停・イベント・同期UI） */
 (function () {
   'use strict';
+  /* 知らせの文が指す書き出しの場所（SA-02） */
+  var BACKUP_HINT_ = '［マスタ→設定→バックアップ→控えのファイルに書き出す］';
   var Store = window.ShiftStore;
   var Sym = window.ShiftSymbols;
   var TC = window.ShiftTimecalc;
@@ -9511,7 +9548,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           return;
         }
         this.confirmInfo('職員名簿を自動復元しました',
-          '同期で職員データが空になっていたため、この端末のバックアップから ' + n + ' 名を自動復元しました。\n念のため［マスタ→設定→バックアップ→JSONエクスポート］で保全することをおすすめします。');
+          '同期で職員データが空になっていたため、この端末のバックアップから ' + n + ' 名を自動復元しました。\n念のため' + BACKUP_HINT_ + 'で保全することをおすすめします。');
       }
     },
 
@@ -10359,8 +10396,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           'このファイルの職員 ' + pkg.staffIds.length + '人が、この画面の名簿に1人もいません。\n' +
           (this.staff.length ? 'この画面の名簿は別の施設・別の時点のもののようです。\n' : 'この画面にはまだ職員の名簿が入っていません（名簿は、開いたパソコンの Chrome ごとに別々に入ります）。\n') +
           '\n先に名簿を入れてください:\n' +
-          '1. 本番の勤務表で［マスタ］→［設定］→ バックアップの「JSONエクスポート」を押す（shiftapp-backup-日付.json ができます）\n' +
-          '2. この画面で［マスタ］→［設定］→「JSONインポート」でそのファイルを選び、OK を押す\n' +
+          '1. 本番の勤務表で［マスタ］→［設定］→ バックアップの「控えのファイルに書き出す」を押す（shiftapp-backup-日付.json ができます）\n' +
+          '2. この画面で［マスタ］→［設定］→「控えのファイルから読み込む」でそのファイルを選び、OK を押す\n' +
           '3. もう一度「📥 月を取り込む」を押す\n\n何も作っていません。');
         return;
       }
@@ -12202,7 +12239,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         self.confirmInfo('⚠ この端末の編集を保全できませんでした',
           '他の端末が編集モードになりましたが、この端末の未送信の編集を端末内へ退避できませんでした。\n' +
           'そのため何も変更していません（' + keys.join(', ') + '）。\n' +
-          '［マスタ→設定→バックアップ→JSONエクスポート］でこの端末の内容を保存してから、画面を再読み込みしてください。');
+          BACKUP_HINT_ + 'でこの端末の内容を保存してから、画面を再読み込みしてください。');
       };
       /* 失効後に同じ端末で取り直した時は、編集を続ける前に最新を取り込む。
        * 不在の間に他の端末が「取得→編集→解放」していた場合、古い表示のまま編集を続けると、
@@ -12767,7 +12804,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
                 self.reloadFromStore();
                 self.confirmInfo('閲覧モードに切り替えました',
                   (res.kept && res.kept.length)
-                    ? '一部は退避できなかったため、この端末に残しています（' + res.kept.join(', ') + '）。［マスタ→設定→バックアップ→JSONエクスポート］で保全してください。'
+                    ? '一部は退避できなかったため、この端末に残しています（' + res.kept.join(', ') + '）。' + BACKUP_HINT_ + 'で保全してください。'
                     : '未送信の編集は端末内に退避しました（［マスタ→設定→バックアップ→退避データ一覧］から取り出せます）。');
               });
             });
@@ -12959,7 +12996,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
             self.updatePendingBanner_();
             self.confirmInfo('最新の内容を表示しました',
               (res.kept && res.kept.length)
-                ? '一部は退避できなかったため、この端末に残しています（' + res.kept.join(', ') + '）。［マスタ→設定→バックアップ→JSONエクスポート］で保全してください。'
+                ? '一部は退避できなかったため、この端末に残しています（' + res.kept.join(', ') + '）。' + BACKUP_HINT_ + 'で保全してください。'
                 : (res.adopted ? res.adopted + '件を取り直しました。' : '取り直す対象はありませんでした。'));
           });
         });
@@ -13029,7 +13066,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (status === 'storeerror' && !self._storeErrorShown) {
           self._storeErrorShown = true;
           self.confirmInfo('⚠ 端末への保存に失敗しました', detail ||
-            '端末の保存容量の上限に達した可能性があります。データが失われる前に［マスタ→設定→バックアップ→JSONエクスポート］で保全してください。');
+            '端末の保存容量の上限に達した可能性があります。データが失われる前に' + BACKUP_HINT_ + 'で保全してください。');
         }
         if (status !== 'storeerror') self._storeErrorShown = false;
         /* 閲覧専用トークンが判明したら編集トグルを無効化（理由は title に出す） */
