@@ -187,6 +187,10 @@ const CENSUS = {
   "accounts-export.js": [],
   "accounts-enroll.js": [],   // 端末登録の QR（2026-11-08）: 代入なし（textContent と createElementNS だけ）
   "enroll.html": [],
+  "unsent.html": [],
+  "unsent.js": [],   // 未送信の一覧（2026-11-14）: 代入なし（textContent だけ）
+  "unsent-calc.js": [],
+  "unsent-badge.js": [],
   "enroll.js": [],
   "su-qr.js": [],
   "accounts.js": [],
