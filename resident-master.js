@@ -4120,13 +4120,17 @@ function mdRemember(tr){
    保存しても「変更がありません」なのに離脱確認だけ出る（2026-09-08 レビュー L-3）。 */
 function mdMarkDirty(tr){ mdRemember(tr); mdRecalcDirty_(); }
 /* 薬を手で足す。★辞書に既にある名前は足さない（同じ行が2つできると、どちらが正か分からなくなる） */
-function mdAddDrug(){
+async function mdAddDrug(){
   if(curView!=='md') return;
   /* ★辞書が取れていない間は足さない。mdMap が null だと重複判定が必ず素通りし、
      サーバーに既にある薬を「無い」と見なして上書きする＝他端末の効能と『確認済み』を
      黙って潰す（原則4・multi-device-sync 原則3）。 */
   if(!mdDict){ toast('薬効辞書を取得できていないため、追加できません',false); return; }
-  var raw=prompt('足す薬剤名を入れてください（用量は付けても構いません。末尾の用量は自動で外します）');
+  /* 入力は画面の中の窓（SUDialog.prompt）で聞く。答えを待つ間に端末の用途（世代 mdGen）・表示・辞書が変わったら、何もしない（2026-11-14 第6段 RM-01） */
+  var gen=mdGen, d0=mdDict;
+  function same_(){ return gen===mdGen && curView==='md' && mdDict===d0 && !!mdDict; }
+  var raw=await SUDialog.prompt('足す薬剤名を入れてください（用量は付けても構いません。末尾の用量は自動で外します）');
+  if(!same_()) return;
   if(raw==null) return;
   var name=mdDrugName(raw);
   if(!name){ toast('薬剤名が読み取れませんでした',false); return; }
@@ -4143,7 +4147,8 @@ function mdAddDrug(){
       : ('「'+name+'」は既に一覧にあります'), !mdIsHidden(name,ent0));
     return;
   }
-  var eff=prompt('「'+name+'」の効能（8文字以内が目安・後から直せます）','');
+  var eff=await SUDialog.prompt('「'+name+'」の効能（8文字以内が目安・後から直せます）','');
+  if(!same_()) return;
   if(eff==null) return;
   mdNew.push(name);
   mdEdits[name]={effect:String(eff||'').trim().slice(0,40), ok:false};   /* 入力欄と同じ上限 */
