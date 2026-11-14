@@ -377,6 +377,45 @@ console.log('\n— 8. 印の無い議事録の見出しから欄の候補を出�
   const ch2 = C.guess('【結論】\n1行目\n2行目'), rc = C.guessApply(ch2, ['conclusion']);
   t('文の欄（結論など）は今までどおり続く行も全部入れる', rc.fields.conclusion === '1行目\n2行目' && rc.rest === '', rc);
   t('見出しの語の言い換えは parse の区切りにしない（「◆課題：」は今も知らない印）', C.parse('◆結論：続ける\n◆課題：なし').unknown.length === 1 && C.parse('◆結論：続ける\n◆課題：なし').fields.conclusion === '続ける\n◆課題：なし');
+
+  /* (4) 一般の会議の言い方（2026-11-14 代表者の決定）。入れる欄は今の表の並びにそろえる */
+  const G = [
+    '架空の会議のメモ（一般の書き方）',
+    '本日の議題：歩行の見守り',
+    '参加メンバー：',
+    '・介護支援専門員／乙野 花子',
+    '話し合い：',
+    '甲野：転ばないか心配です。',
+    '今後の方針：日中の見守りを続ける。',
+    '次回まで：',
+    '・夜間の様子を記録する',
+    '宿題：福祉用具の見積りを取る',
+    '次回の日程：6か月後'
+  ].join('\n');
+  const gg = C.guess(G);
+  t('★(4) 議題・メンバー・話し合い・方針・次回まで・宿題・日程を、今の表の欄の候補にする', keys(gg) === 'items,attendees,content,conclusion,issues,issues,nextText', keys(gg));
+  t('★(4) どの行も捨てない', keepsAll(G, gg) && gg.rest === '架空の会議のメモ（一般の書き方）', gg.rest);
+  const pg0 = C.guessApply(gg, []);
+  t('★(4) 一般の言い方でも、人が選ばない限りどの欄にも入れない', pg0.chosen === 0 && Object.keys(pg0.fields).length === 0, pg0.fields);
+  const pg = C.guessApply(gg, gg.cands.map((c) => c.key));
+  t('(4) 全部選ぶと、次回まで・宿題は残された課題に見出しの順でつなぐ', pg.fields.issues === '・夜間の様子を記録する\n福祉用具の見積りを取る' && pg.fields.conclusion === '日中の見守りを続ける。' &&
+    pg.fields.items === '歩行の見守り' && pg.fields.nextText === '6か月後' && pg.attendees.length === 1 && pg.fields.content === '甲野：転ばないか心配です。', pg.fields);
+  const g4 = C.guess(['【決めたこと】', '週2回の入浴を続ける。', '■持ち帰り事項', '主治医に相談する。', '1. 各職種の意見', '架空の意見。'].join('\n'));
+  t('(4) 【】・■・番号の見出しでも一般の言い方を候補にする', keys(g4) === 'conclusion,issues,content', keys(g4));
+  t('★(4) 一般の言い方は parse の区切りにしない（「◆宿題：」は今も知らない印・印のある議事録の振り分けは変えない）', C.parse('◆結論：続ける\n◆宿題：なし').unknown.length === 1 &&
+    C.parse('◆結論：続ける\n◆宿題：なし').fields.conclusion === '続ける\n◆宿題：なし' && C.guess(FULL).marked === true);
+  t('(4) 文の中の「話し合いの結果…」「次回までに…」は見出しにしない', C.guess('話し合いの結果、架空の支援を続けることになりました。今後もご家族と相談しながら進めます。\n次回までに架空の書類をそろえる予定ですが、まだ日程は決まっていません。').cands.length === 0);
+  t('(4) 「日時」は開催日の候補にしない（日付と時刻の1行を開催日の形で読めないため）', C.guess('日時：2026年11月1日 10:00〜10:30').cands.length === 0);
+  /* 使い方（help.html の担当者会議の節）の見本は、そのまま貼れば全部の欄に入る形であること */
+  {
+    const H = require('fs').readFileSync(path.join(ROOT, 'help.html'), 'utf8');
+    const at = H.indexOf('id="sec-care-meeting"'), end = H.indexOf('</section>', at);
+    const ex = /<pre class="ex">([\s\S]*?)<\/pre>/.exec(at >= 0 ? H.slice(at, end) : '');
+    const src = ex ? ex[1].replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&') : '';
+    const r = C.parse(src);
+    t('★使い方の見本はそのまま振り分けられる（知らない印・知らせが無く、開催日・出席者も読める）', !!ex && r.found.length >= 8 && r.unknown.length === 0 && r.warns.length === 0 &&
+      r.fields.heldDate === '2026-11-14' && r.attendees.length === 2, [r.found, r.unknown, r.warns]);
+  }
 }
 
 console.log('\n— メニューの札の件数（前回から6か月だけ・2026-11-13 代表者の決定・台帳 CM-02） —');
