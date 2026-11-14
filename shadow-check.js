@@ -120,7 +120,7 @@ if (!window.SUDialog) window.SUDialog = {
       if (r && r.error) { var k = dbErrKind(r.error); if (k === 'missing') notePrep('save_health'); why = k; }
       else resp = r ? r.data : null;
     } catch (e) { why = 'other'; }
-    renderHealth(SUHealthCalc.judge(resp, Date.now()), why);
+    renderHealth(SUHealthCalc.judge(resp), why);   // 遅れはデータベースの時刻（答えの now）で測る（端末の時計のずれで札が出ない・反証レビュー指摘6）
   }
   function renderHealth(v, why) {
     var verdict = $('hl-verdict'), wrap = $('hl-table');
@@ -133,10 +133,10 @@ if (!window.SUDialog) window.SUDialog = {
       return;
     }
     var bad = v.rows.filter(function (x) { return x.failAlert || x.lagAlert; });
-    var unk = v.rows.filter(function (x) { return x.state === 'unknown'; });
+    var unk = v.rows.filter(function (x) { return x.state === 'unknown' || x.partial; });
     verdict.className = bad.length ? 'msg ng' : unk.length ? 'msg warn' : 'msg ok';
     verdict.textContent = bad.length ? '要確認の種類があります：' + bad.map(function (x) { return x.label; }).join('・') + '（管理者のメニューにも札が出ます）'
-      : unk.length ? '確かめられない種類があります：' + unk.map(function (x) { return x.label; }).join('・')
+      : unk.length ? '確かめられない所がある種類があります：' + unk.map(function (x) { return x.label; }).join('・')
       : '切り替え済みの種類に、要確認はありません。';
     var tb = el('table', 'hl-t');
     tb.appendChild(el('caption', 'hl-cap', '種類ごとの保存と写し返し（数えた時刻 ' + fmtTime(new Date().toISOString()) + '）'));
@@ -157,12 +157,16 @@ if (!window.SUDialog) window.SUDialog = {
       }
       tr.appendChild(el('td', 'num', x.ok + '件'));
       var parts = HL_REASON.filter(function (p) { return x.fails[p[0]] > 0; }).map(function (p) { return p[1] + x.fails[p[0]]; });
-      tr.appendChild(el('td', null, x.failTotal + '件' + (parts.length ? '（' + parts.join('・') + '）' : '')));
+      tr.appendChild(el('td', null, !x.failKnown ? '数えていません（この画面は別の正本から配るため、失敗を数える部品をまだ読んでいません）'
+        : x.failTotal + '件' + (parts.length ? '（' + parts.join('・') + '）' : '')));
       tr.appendChild(el('td', null, x.lastMirrorMs == null ? '記録なし'
         : fmtTime(new Date(x.lastMirrorMs).toISOString()) + (x.lastKind === 'change' ? '（写し返し済みの保存の時刻）' : '')));
       tr.appendChild(el('td', null, !x.lagKnown ? (x.kind === 'weight' && x.state !== 'none' ? '確かめられません（端末が写し返している間）' : x.state === 'none' ? '—' : '確かめられません')
         : x.pending > 0 ? SUHealthCalc.lagText(x.lagMs) + '（残り' + x.pending + '件）' : 'なし（残り0件）'));
-      var jd = el('td', null, alert ? '要確認' : x.state === 'live' ? '問題なし' : '対象外（切り替え前）');
+      var tr2 = x.partial && !alert;
+      if (tr2) tr.className = '';
+      var jd = el('td', null, alert ? '要確認' : x.state !== 'live' ? '対象外（切り替え前）' : tr2 ? '一部確かめられません' : '問題なし');
+      if (tr2) jd.appendChild(el('div', 'em', !x.failKnown ? '失敗の数を数えていません' : '写し返しの遅れを確かめられません'));
       if (alert) {
         var why = [];
         if (x.failAlert) why.push('失敗が' + SUHealthCalc.FAIL_N + '件以上');

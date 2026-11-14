@@ -27,6 +27,8 @@
     sa: 'shift-analyzer.html', geno: 'genogram.html', doc_stf: 'staff-master.html', doc_adm: 'admission-flow.html', weight: 'weight-record.html'
   };
   var REASONS = ['login', 'perm', 'timeout', 'other'];
+  /* 失敗をまだ数えていない種類（シフト分析の画面は別の正本から配るので、失敗の控えの部品を読み込んでいない）。表は「数えていません」と出す */
+  var NO_FAIL_COUNT = { sa: 1 };
   var FAIL_N = 5;
   var LAG_MS = 2 * 60 * 60 * 1000;
 
@@ -38,7 +40,7 @@
     return isFinite(ms) ? ms : undefined;
   }
   function unknownRow(k) {
-    return { kind: k, label: LABEL[k], state: 'unknown', ok: null, fails: null, failTotal: null,
+    return { kind: k, label: LABEL[k], state: 'unknown', ok: null, fails: null, failTotal: null, failKnown: false, partial: false,
              pending: null, lagMs: null, lagKnown: false, lastMirrorMs: null, lastKind: null, failAlert: false, lagAlert: false };
   }
 
@@ -55,7 +57,7 @@
     for (var i = 0; i < REASONS.length; i++) { fails[REASONS[i]] = r.fails[REASONS[i]] || 0; total += fails[REASONS[i]]; }
     var last = when(r.last_mirror_at);
     if (last === undefined) return unknownRow(k);
-    var out = { kind: k, label: LABEL[k], state: state, ok: r.ok, fails: fails, failTotal: total,
+    var out = { kind: k, label: LABEL[k], state: state, ok: r.ok, fails: fails, failTotal: total, failKnown: !NO_FAIL_COUNT[k], partial: false,
                 pending: null, lagMs: null, lagKnown: false, lastMirrorMs: last,
                 lastKind: r.last_kind === 'ack' || r.last_kind === 'change' ? r.last_kind : null, failAlert: false, lagAlert: false };
     if (r.mirror_seen === true) {
@@ -67,8 +69,10 @@
       out.lagKnown = true;
     }
     if (state === 'live') {
-      out.failAlert = total >= FAIL_N;
+      out.failAlert = out.failKnown && total >= FAIL_N;
       out.lagAlert = out.lagKnown && out.pending > 0 && out.lagMs >= LAG_MS;
+      // 切り替え済みなのに失敗か写し返しを確かめられない行は「問題なし」と言わない（反証レビュー指摘5）
+      out.partial = !out.failKnown || !out.lagKnown;
     }
     return out;
   }
@@ -117,7 +121,7 @@
     return out;
   }
 
-  var api = { KINDS: KINDS, LABEL: LABEL, TILE: TILE, REASONS: REASONS, FAIL_N: FAIL_N, LAG_MS: LAG_MS,
+  var api = { KINDS: KINDS, LABEL: LABEL, TILE: TILE, REASONS: REASONS, FAIL_N: FAIL_N, LAG_MS: LAG_MS, NO_FAIL_COUNT: NO_FAIL_COUNT,
               judge: judge, tileBadges: tileBadges, lagText: lagText };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.SUHealthCalc = api;

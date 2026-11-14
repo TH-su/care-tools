@@ -38,6 +38,9 @@
   root.SUHealth = api;
 
   var QKEY = 'su_health_q', LKEY = 'su_health_lock', MAX = 100, LOCK_MS = 30000;
+  /* 同じ種類・理由の失敗は60秒に1回だけ数える（未送信の送り直しが、1回の保存の失敗を何度も数えないため・反証レビュー指摘1）。
+     控えの最後の同じ組の時刻で見るので、ページを開き直しても続けて数えない */
+  var SAME_MS = 60000;
   function readQ() {
     try {
       var a = JSON.parse(root.localStorage.getItem(QKEY) || '[]');
@@ -56,7 +59,7 @@
   }
   function note(e) { try { if (root.SUErrors && typeof root.SUErrors.note === 'function') root.SUErrors.note('su-health', e); } catch (x) { /* 何もしない */ } }
 
-  var sending = false, timer = null;
+  var sending = false, timer = null, sentAt = {};
   function flush() {
     try {
       if (sending) return;
@@ -96,8 +99,13 @@
       if (KINDS.indexOf(kind) < 0) return;
       var r = reasonOf(info);
       if (!r) return;
-      var q = readQ();
-      q.push([kind, r, Date.now()]);
+      var q = readQ(), now = Date.now();
+      for (var i = q.length - 1; i >= 0; i--) {
+        if (q[i][0] === kind && q[i][1] === r) { if (now - q[i][2] >= 0 && now - q[i][2] < SAME_MS) return; break; }
+      }
+      if (sentAt[kind + '|' + r] && now - sentAt[kind + '|' + r] < SAME_MS) return;
+      sentAt[kind + '|' + r] = now;
+      q.push([kind, r, now]);
       writeQ(q);
       soon(2000);
     } catch (e) { note(e); }

@@ -178,7 +178,8 @@
         if (p.kind === 'gas') return Promise.resolve(gasSend()).then(function (res) { return watchSwitched(res); });
         var left = Math.max(1000, total - (Date.now() - t0));
         return invoke(p.A, body, left).then(function (d) {
-          if (d && typeof d === 'object' && d.ok === false && d.code !== 'shadow') health(body, { code: String(d.code || d.error || '') });
+          // 数えるのは受け口の断り（code がある）だけ。消耗品管理の GAS の業務の断り（conflict_item・not_latest・closed など）は code が無いので数えない（反証レビュー指摘2）
+          if (d && typeof d === 'object' && d.ok === false && typeof d.code === 'string' && d.code !== 'shadow') health(body, { code: d.code });
           if (d && d.code === 'shadow') { modeCache = null; return gasSend(); }   // 印が写しの期間へ戻った＝Google が正本（受け口は書く前に断る）
           if (d && d.ok !== true && p.mfa && (d.error === 'role' || d.error === 'login')) return refusal('mfa');
           if (d && d.ok !== true && d.error === 'forbidden') d = Object.assign({}, d, { hint: MSG.forbidden });   // 合言葉の話（管理者の合言葉で開き直す）を出さない・指摘7

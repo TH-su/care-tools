@@ -176,7 +176,8 @@
             if (!sameRoute(body, 'stf')) return refusal(MSG_ROUTE);
             var ms = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : CALL_MS;
             return invoke(A, body, ms).then(function (d) {
-              if (d && typeof d === 'object' && d.ok === false && d.code !== 'shadow') health(body, { code: String(d.code || '') });
+              // 数えるのは受け口の断り（code がある）だけ。項目の確かめで中止した保存（入力の誤り）は code が無いので数えない（反証レビュー指摘3）
+              if (d && typeof d === 'object' && d.ok === false && typeof d.code === 'string' && d.code !== 'shadow') health(body, { code: d.code });
               if (d && d.code === 'shadow') { modeCache = null; if (body.reqId) delete routeOf[body.reqId]; return viaGas(body, gasSend); }   // 印が写しの期間へ戻った＝Google が正本（受け口は書く前に断るので、この番号はまだどこにも書いていない）
               if (d && (d.ok === true || d.partial === true) && WRITE_ACTIONS[body.action]) mirrorSoon(A, opts.url, body.token);
               return asResponse(d && typeof d === 'object' ? d : { ok: false, error: '新しい保存先の応答が空でした。' });

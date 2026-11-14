@@ -45,7 +45,8 @@
   }
   function healthOf(kind, r) {
     var c = String(r && r.error || '');
-    if (c === 'doc_not_live' || c === 'doc_frozen') return;
+    // 切り替え・戻しの途中と、別の端末が先に消した（notfound）・上限（toomany）は数えない（反証レビュー指摘3）
+    if (c === 'doc_not_live' || c === 'doc_frozen' || c === 'notfound' || c === 'toomany') return;
     health(kind, { code: c === 'denied' ? 'denied' : (/^[a-z_]{1,40}$/.test(c) ? c : '') });
   }
   function healthThrown(kind) {

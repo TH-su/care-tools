@@ -1387,15 +1387,15 @@ async function flow9() {
     const by = (lbl) => (cells || []).find((r) => r[0] === lbl) || [];
     tn(SCR, '写しの見比べ', '入居者マスタ: 失敗6件（ログイン4・時間切れ2）で要確認', /^6件（ログイン4・時間切れ2）$/.test(by('入居者マスタ')[3] || '') && /^要確認/.test(by('入居者マスタ')[6] || ''));
     tn(SCR, '写しの見比べ', '添付書類（職員マスタ）: 写し返しが3時間1分遅れ（残り2件）で要確認', by('添付書類（職員マスタ）')[5] === '3時間1分（残り2件）' && /^要確認/.test(by('添付書類（職員マスタ）')[6] || ''));
-    tn(SCR, '写しの見比べ', '体重: 端末の写し返しは「確かめられません」・問題なし', /^確かめられません/.test(by('体重管理')[5] || '') && by('体重管理')[6] === '問題なし');
+    tn(SCR, '写しの見比べ', '体重: 端末の写し返しは「確かめられません」・判定は「一部確かめられません」（問題なしと言わない）', /^確かめられません/.test(by('体重管理')[5] || '') && /^一部確かめられません/.test(by('体重管理')[6] || ''));
     tn(SCR, '写しの見比べ', '写しの期間の種類は対象外', by('過去シフト分析')[6] === '対象外（切り替え前）');
     tn(SCR, '写しの見比べ', '表に氏名が出ない', !(await ev(page, (n) => n.some((x) => document.getElementById('hl-box').textContent.includes(x)), NAMES)));
     await shot(page, 'health-table');
     // 保存の失敗の控え: 種類・理由・時刻だけを控え、ログインしている時に送り、送れたら消す
     await page.addScriptTag({ url: srv.url + '/su-health.js?v=2026-11-14' });
-    await ev(page, () => { window.SUHealth.fail('res', { code: 'login' }); window.SUHealth.fail('stf', { code: 'shadow' }); window.SUHealth.fail('sup', { timeout: true }); });
+    await ev(page, () => { for (let i = 0; i < 10; i++) window.SUHealth.fail('res', { code: 'login' }); window.SUHealth.fail('stf', { code: 'shadow' }); window.SUHealth.fail('sup', { timeout: true }); });
     const q0 = await ev(page, () => JSON.parse(localStorage.getItem('su_health_q') || '[]'));
-    tn(SCR, '失敗の控え', '控えは種類・理由・時刻の3つだけ（切り替え前の断りは控えない）',
+    tn(SCR, '失敗の控え', '控えは種類・理由・時刻の3つだけ（切り替え前の断りは控えない・同じ種類と理由の送り直し10回は1件）',
       Array.isArray(q0) && q0.length === 2 && q0.every((e) => e.length === 3 && typeof e[2] === 'number') && q0[0][0] === 'res' && q0[0][1] === 'login' && q0[1][1] === 'timeout');
     const sent = await waitFor(() => env.st.rpc.find((r) => r.fn === 'save_fail_note'), 10000);
     tn(SCR, '失敗の控え', '送ったのは {k, r, t} の2行だけ', !!sent && JSON.stringify(sent.body.p_items.map((x) => Object.keys(x).sort())) === JSON.stringify([['k', 'r', 't'], ['k', 'r', 't']]));

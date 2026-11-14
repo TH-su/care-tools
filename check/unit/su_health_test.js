@@ -68,6 +68,10 @@ console.log('3. 切り替え前・確かめられない時');
   t('写しの期間は失敗9件・遅れ9時間でも知らせない', get(v, 'sa').state === 'shadow' && !get(v, 'sa').failAlert && !get(v, 'sa').lagAlert);
   t('印の無い種類は none', get(v, 'geno').state === 'none' && !get(v, 'geno').lagKnown);
   t('体重の端末の写し返しは遅れを確かめられない（知らせない）', get(v, 'weight').lagKnown === false && get(v, 'weight').lagAlert === false);
+  t('体重の行は「一部確かめられない」（問題なしと言わない・反証レビュー指摘5）', get(v, 'weight').partial === true);
+  t('全部確かめられた切り替え済みの行は partial でない', get(v, 'res').partial === false);
+  t('シフト分析（切り替え済み）は失敗を数えていない＝失敗9件でも知らせず、一部確かめられない',
+    (() => { const x = get(C.judge(resp({ sa: { fails: { other: 9 } } }), NOW), 'sa'); return x.failKnown === false && x.failAlert === false && x.partial === true; })());
   t('答えが null なら全部「確かめられません」・知らせない',
     (() => { const x = C.judge(null, NOW); return x.ok === false && x.rows.length === 10 && x.rows.every((r) => r.state === 'unknown') && x.alerts.length === 0; })());
   t('ok が true でない答えは確かめられない', C.judge({ ok: false, rows: [] }, NOW).ok === false);
@@ -78,7 +82,7 @@ console.log('3. 切り替え前・確かめられない時');
   t('知らない理由の名前が入った行は確かめられない', get(C.judge(resp({ res: { fails: { name: 3 } } }), NOW), 'res').state === 'unknown');
   t('残りがあるのにいちばん古い時刻が無い行は確かめられない', get(C.judge(resp({ res: { pending: 2, oldest_pending_at: null } }), NOW), 'res').state === 'unknown');
   t('時刻が読めない行は確かめられない', get(C.judge(resp({ res: { last_mirror_at: 'きのう' } }), NOW), 'res').state === 'unknown');
-  t('今の時刻を渡さない時は答えの now を使う', C.judge(resp({ tp: { pending: 1, oldest_pending_at: iso(NOW - 3 * HOUR) } })).rows[1].lagAlert === true);
+  t('今の時刻を渡さない時は答えの now を使う（端末の時計がずれても遅れはデータベースの時刻で測る）', C.judge(resp({ tp: { pending: 1, oldest_pending_at: iso(NOW - 3 * HOUR) } })).rows[1].lagAlert === true);
 }
 
 console.log('4. 理由の振り分け');
@@ -108,7 +112,7 @@ console.log('6. 出す項目');
 {
   const r = resp({ res: { name: '見本 一郎', email: 'x@example.invalid' } });
   const v = C.judge(r, NOW);
-  const keys = new Set(['kind', 'label', 'state', 'ok', 'fails', 'failTotal', 'pending', 'lagMs', 'lagKnown', 'lastMirrorMs', 'lastKind', 'failAlert', 'lagAlert']);
+  const keys = new Set(['kind', 'label', 'state', 'ok', 'fails', 'failTotal', 'failKnown', 'partial', 'pending', 'lagMs', 'lagKnown', 'lastMirrorMs', 'lastKind', 'failAlert', 'lagAlert']);
   t('行の項目は決まった名前だけ', v.rows.every((x) => Object.keys(x).every((k) => keys.has(k))), Object.keys(get(v, 'res')));
   t('判定の結果に氏名・メールが出ない', !/見本|example/.test(JSON.stringify(v)));
 }
@@ -131,7 +135,7 @@ console.log('7. つなぎ');
   t('札は管理者だけ・現場端末では読まない・端末に書かない',
     /st\.role === 'admin'/.test(badge) && /deviceRole\(\) === 'field'/.test(badge) && !/localStorage\.setItem/.test(badge));
   const hj = read('su-health.js');
-  t('控えるのは種類・理由・時刻の3つだけ', /q\.push\(\[kind, r, Date\.now\(\)\]\)/.test(hj));
+  t('控えるのは種類・理由・時刻の3つだけ', /q\.push\(\[kind, r, now\]\)/.test(hj));
   t('.gitignore に3つの部品がある', ['su-health-calc.js', 'su-health.js', 'su-health-badge.js'].every((f) => read('.gitignore').includes('!/' + f)));
 }
 

@@ -52,7 +52,7 @@
         if (!(st && st.status === (A.STATUS && A.STATUS.OK) && st.role === 'admin')) return null;
         return A.client().rpc('save_health').then(function (res) {
           if (my !== gen || !res || res.error) return null;
-          return window.SUHealthCalc.tileBadges(window.SUHealthCalc.judge(res.data, Date.now()));
+          return window.SUHealthCalc.tileBadges(window.SUHealthCalc.judge(res.data));
         });
       });
     });
