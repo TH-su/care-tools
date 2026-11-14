@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-eI+ITjQgr1lTNdxDbDwHbhwN2Poqr1BdNe/yr7bsTWY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ET58sIL2PCPudKEysFmT/SBa8JlyQgfMEp2vTSw3bjk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 会議の記録（要配慮の情報）を扱うためキャッシュ無効 -->
@@ -1179,11 +1179,35 @@ function showPicker_(){
 function saveMenuDue_(){
   try{
     if(isField()||summaryState!=='ok'||!summary||!roster||!roster.ok) return;
-    var sum=CareMeetingCalc.menuDueSummary(roster.residents,summary,CareMeetingCalc.todayJST());
-    if(!sum) return;
-    var v=JSON.stringify(sum);
-    if(localStorage.getItem(MENU_DUE_KEY)!==v) localStorage.setItem(MENU_DUE_KEY,v);
+    writeMenuDue_(CareMeetingCalc.menuDueSummary(roster.residents,summary,CareMeetingCalc.todayJST()));
   }catch(e){ cmNote_('メニューの札の件数の保存',e); }
+}
+function writeMenuDue_(sum){
+  if(!sum) return;
+  var v=JSON.stringify(sum);
+  if(localStorage.getItem(MENU_DUE_KEY)!==v) localStorage.setItem(MENU_DUE_KEY,v);
+}
+/* 記録を確定した・下書きへ戻した・取り消した後に札の件数を数え直す（2026-11-13 反証レビュー 低）。
+   入居者マスタから直接開いた時は選ぶ画面の要約を読んでいないので、ここで要約を読み直す。
+   ★読めた時（共有名簿と要約の両方）は数え直して書き直し、読めない時は控えを消す（古い数を出すより出さない方へ）。現場端末では何もしない */
+function refreshMenuDue_(){
+  if(isField()||typeof Promise==='undefined') return null;
+  var rs=readRoster_();
+  if(!rs.ok){ dropMenuDue_(); return Promise.resolve(); }
+  return meetingRead_({action:'meeting',op:'summary'}).then(function(d){return{d:d}},function(e){return{e:e}}).then(function(r){
+    if(isField()) return;
+    try{
+      if(!r.e&&classify_(r.d)==='ok'){
+        var sm=(r.d.residents&&typeof r.d.residents==='object')?r.d.residents:{};
+        var sum=CareMeetingCalc.menuDueSummary(rs.residents,sm,CareMeetingCalc.todayJST());
+        if(sum){ writeMenuDue_(sum); return; }
+      }
+    }catch(e){ cmNote_('メニューの札の件数の数え直し',e); }
+    dropMenuDue_();
+  });
+}
+function dropMenuDue_(){
+  try{ localStorage.removeItem(MENU_DUE_KEY); }catch(e){ cmNote_('メニューの札の件数を消す',e); }
 }
 /* 保存していない入力があれば、移る前に確かめる */
 function confirmLeave_(){
@@ -1351,7 +1375,7 @@ function onResult_(what,e,body,flow,k,d){
   if(k==='ok'){
     var row=d.record;
     if(!row||!row.meetingId){ edMsg_('応答に記録がありませんでした。一覧を取り直します','ng'); paintEditor_(); loadList_(); return false; }
-    if(what==='remove'){ upsertRow_({meetingId:row.meetingId,deleted:true}); ed=null; saveOpenMeeting_(null); toast('取り消しました'); paintEditor_(); paintList_(); paintPrev_(); loadList_(); return true; }
+    if(what==='remove'){ upsertRow_({meetingId:row.meetingId,deleted:true}); ed=null; saveOpenMeeting_(null); toast('取り消しました'); paintEditor_(); paintList_(); paintPrev_(); loadList_(); refreshMenuDue_(); return true; }
     var existing=what==='save'&&e.mode==='new'&&d.existing===true;
     if(existing&&(Number(row.rev)||0)>1){ upsertRow_(row); toConflict_(e,row); paintEditor_(); paintList_(); paintPrev_(); loadList_(); return false; }
     adopt_(e,row,existing?e.rec:null);
@@ -1361,6 +1385,7 @@ function onResult_(what,e,body,flow,k,d){
       :existing?'前に送った分が保存されていました'
       :what==='final'?'確定しました':what==='draft'?'下書きへ戻しました':'保存しました','ok');
     paintEditor_(); paintList_(); paintPrev_(); loadList_();
+    if(what!=='save') refreshMenuDue_();   // 確定・下書きへ戻した後は札の件数を数え直す
     return !left;
   }
   if(k==='conflict'){
@@ -1416,6 +1441,7 @@ function savedAfter_(what,e,row,flow){
   adopt_(e,row,(what==='save'&&e.mode==='new')?e.rec:null);
   edMsg_(what==='save'?(flow==='final'?'保存されていました（確定はまだです）。もう一度「確定」を押してください':'保存されていました')
     :what==='final'?'確定されていました':'下書きへ戻されていました','ok');
+  if(what!=='save') refreshMenuDue_();
 }
 /* 届いたか分からない（通信の失敗・unknown）時は、一覧を取り直して決める。同じ保存を自動でやり直さない */
 function unsure_(what,e,body,flow,why){
