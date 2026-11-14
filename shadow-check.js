@@ -2269,6 +2269,8 @@ if (!window.SUDialog) window.SUDialog = {
       if (x && Number(x.rows || 0) !== Number(k.rows || 0)) notes.push(p[1] + 'の Google と写しの件数が合っていません（Google ' + Number(x.rows || 0) + '件／写し ' + Number(k.rows || 0) + '件）。開発の担当へ知らせてください。');
       if (x && Number(x.bad) > 0) notes.push(p[1] + 'に新しい保存先で使えない形の記録が ' + Number(x.bad) + '件あり、写していません（開発の担当へ知らせてください）。');
       if (x && Number(x.dup) > 0) notes.push(p[1] + 'に同じ番号の記録が ' + Number(x.dup) + '件重なっています（2件目からは写していません。開発の担当へ知らせてください）。');
+      if (x && x.shrink === true) notes.push(p[1] + 'が急に減ったので、最後の回は写していません（次の回も同じ件数なら、本当に減ったものとして写します。減らした覚えが無ければ開発の担当へ知らせてください）。');
+      else if (x && x.refused === true) notes.push(p[1] + 'は最後の回に受け付けられず、写していません（開発の担当へ知らせてください）。');
     });
     kk.appendChild(kpi('中身まで照らし合わせた種類（14日）', Number(d.verified14) || 0, '種類'));
     kk.appendChild(kpi('食い違い（14日）', Number(d.mismatch14) || 0, '種類'));
@@ -2280,7 +2282,8 @@ if (!window.SUDialog) window.SUDialog = {
     if (!(Number(d.verified14) > 0)) notes.push('中身の照らし合わせが動いていません（開発の担当へ知らせてください）。');
     var tail = '（最後に写した時刻 ' + fmtTime(d.lastAt) + '）';
     var last = Date.parse(d.lastAt || '');
-    dt.textContent = parts.join('。') + (parts.length ? '。' : '') + (notes.length ? ' ' + notes.join(' ') : '');
+    var info = Number(d.shrinkOk14) > 0 ? ' この14日に、急に減った写しを（同じ件数が2回続いたので）本当に減ったものとして受け付けた回が ' + Number(d.shrinkOk14) + '回あります。' : '';
+    dt.textContent = parts.join('。') + (parts.length ? '。' : '') + (notes.length ? ' ' + notes.join(' ') : '') + info;
     if (notes.length) dt.className = 'msg warn';
     if (d.lastStatus === 'refused') say('最後の写しは受け付けませんでした（' + refusedWord(MED_REFUSED, d.lastRefused, 'loadMed') + '）。開発の担当へ知らせてください。' + tail, 'warn');
     else if (isNaN(last) || now - last > SA_FRESH_MS) say('しばらく写っていません。薬学管理の GAS の自動（medShadowTick）が止まっていないか確かめてください。' + tail, 'warn');
