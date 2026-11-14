@@ -225,7 +225,7 @@ console.log('\n【7】止めて知らせる窓（confirm）は画面の中の窓
   t('7-1 ブラウザの確かめの窓（confirm(…)）を直接呼ばない（読めない時の受け口の window.confirm だけ）',
     (S.match(/(?<![\w.])confirm\(/g) || []).length === 0 && (S.match(/window\.confirm\(/g) || []).length === 1, (S.match(/.{30}(?<![\w.])confirm\(.{20}/g) || []).slice(0, 3));
   t('7-2 画面の中の窓で聞く所は23か所', (S.match(/SUDialog\.confirm\(/g) || []).length === 23, (S.match(/SUDialog\.confirm\(/g) || []).length);
-  const iDlg = S.indexOf('<script src="su-dialog.js?v=2026-11-13.2"></script>');
+  const iDlg = S.indexOf('<script src="su-dialog.js?v=2026-11-14"></script>');
   t('7-3 su-dialog.js を画面のスクリプトより前で読む（版は他画面と同じ）', iDlg > 0 && iDlg < S.indexOf('<script>\n/* ═══'), iDlg);
   t('7-4 読めない時はブラウザの窓に落とす受け口がある', /if \(!window\.SUDialog\) window\.SUDialog = \{\n  alert:[^\n]*\n  confirm: function \(m\) \{ var r = false; try \{ r = !!window\.confirm\(m\); \} catch \(_\) \{\} return Promise\.resolve\(r\); \},/.test(MAIN));
   const sn = grabFn(S, 'saveNow');
