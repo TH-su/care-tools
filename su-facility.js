@@ -25,6 +25,7 @@
  *   SUFacility.corpSettings()     … 法人設定 {homeGuidelineName, homeGuidelineUrl}（未設定なら空文字。URL は https:// だけ）（2026-10-11・#10）
  *   SUFacility.support()          … 困った時の問い合わせ先 {contactName, contactTel, hours, emergency, replyTarget}（文字列だけ・未設定なら空文字）（2026-10-26 本人指示）
  *   SUFacility.section(name)      … 画面ごとの設定の塊の写し（name は SECTIONS の名前だけ）。書いていなければ null。中身の形は読む画面が確かめる（2026-11-02）
+ *   SUFacility.invoiceNo()        … 適格請求書発行事業者の登録番号（T と13桁の数字・facility-profile.json の invoiceNo）。書いていない・形が違えば空（2026-11-13 第6段 SP-03）
  *
  * 端末の控え:
  *   読めた設定を localStorage（su_facility_json_v1）に控え、次の起動ではまず控えを使う（通信できなくても表示が崩れない）。
@@ -60,7 +61,7 @@
   /* 受け取った設定を信じない（形の崩れた値は捨て、足りない所は空で埋める） */
   function norm(p) {
     if (!p || typeof p !== 'object' || !Array.isArray(p.offices)) return null;
-    var out = { version: 1, corpName: str(p.corpName), facilityName: str(p.facilityName), municipality: str(p.municipality), offices: [], floors: [], roomPlan: null,
+    var out = { version: 1, corpName: str(p.corpName), facilityName: str(p.facilityName), municipality: str(p.municipality), invoiceNo: '', offices: [], floors: [], roomPlan: null,
                 corpSettings: { homeGuidelineName: '', homeGuidelineUrl: '' }, apps: null, visitingClinics: [],
                 support: { contactName: '', contactTel: '', hours: '', emergency: '', replyTarget: '' }, sections: {} };
     for (var sn in SECTIONS) {
@@ -73,6 +74,11 @@
       try { sj = JSON.stringify(sv); } catch (e) { sj = ''; }
       if (sj && sj.length <= SECTION_MAX) out.sections[sn] = JSON.parse(sj);
     }
+    /* 適格請求書発行事業者の登録番号（2026-11-13 第6段 SP-03）。明細・料金表の発行者の欄に出す。
+       空白・ハイフンを除き、全角の英数字を半角に直して「T と13桁の数字」の形だけを持ち、それ以外は空（書き損じを紙に出さない）。
+       ★貼る前の確かめ（check/facility-secret-check.mjs の invoiceNo）と同じ読み方。片方を変えたら両方を同じにする */
+    var inv = str(p.invoiceNo).replace(/[\s\-‐－−]/g, '').replace(/[Ａ-Ｚａ-ｚ０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); });
+    out.invoiceNo = /^T[0-9]{13}$/.test(inv) ? inv : '';
     /* 訪問診療の医療機関（2026-10-14）。name は1〜40字、aliases は1〜40字の文字列だけ（空の名前・空の別名は捨てる＝空文字は何にでも当たるため） */
     if (Array.isArray(p.visitingClinics)) {
       for (var vc = 0; vc < p.visitingClinics.length && out.visitingClinics.length < 20; vc++) {
@@ -208,6 +214,7 @@
     },
     roomPlan: function () { return (data && data.roomPlan) ? JSON.parse(JSON.stringify(data.roomPlan)) : null; },
     municipality: function () { return (data && data.municipality) || ''; },
+    invoiceNo: function () { return (data && data.invoiceNo) || ''; },
     apps: function () { return (data && data.apps) ? data.apps.slice() : null; },
     visitingClinics: function () {
       return (data && data.visitingClinics) ? data.visitingClinics.map(function (c) { return { name: c.name, aliases: c.aliases.slice() }; }) : [];

@@ -3,7 +3,7 @@
 <head>
 <meta name="robots" content="noindex,nofollow">
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-keOknDl1NeJ/UzLzdTAF/f3iruDz6ndkluAL+AIO38E='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-5QiipBnEu8Qofm9PcLxt4k9uEeSUI3D4x9e+v+ARMM0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="spl-build" content="2026-09-23.1">
@@ -1205,11 +1205,23 @@ body.staff .adm{display:none !important}
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-11-12"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
-<script src="su-facility.js?v=2026-11-13"></script>   <!-- 明細・料金表の発行者（施設名・住所・電話）・監査10月版 #14 -->
+<script src="su-facility.js?v=2026-11-13.2"></script>   <!-- 明細・料金表の発行者（施設名・住所・電話）・監査10月版 #14 -->
 <script src="supplies-calc.js?v=2026-09-23.1"></script>
 <script src="su-sup.js?v=2026-11-08"></script>   <!-- 新しい保存先への切り替え（統合 0047） -->
+<!-- 止めて知らせる窓（confirm）の代わりに画面の中の窓を出す共通部品（2026-11-12 代表者の決定）。画面のスクリプトより前に置く -->
+<script src="su-dialog.js?v=2026-11-13.2"></script>
 <script>
 'use strict';
+
+/* 画面の中の窓（su-dialog.js）が読めなかった時の受け口（入居者マスタと同じ形・2026-11-13）。ブラウザの窓に落とし、呼ぶ側と同じ約束（Promise）で答える */
+if (!window.SUDialog) window.SUDialog = {
+  alert: function (m) { try { window.alert(m); } catch (_) {} return Promise.resolve(); },
+  confirm: function (m) { var r = false; try { r = !!window.confirm(m); } catch (_) {} return Promise.resolve(r); },
+  busy: function () { return false; },
+  idle: function () { return Promise.resolve(); }
+};
+/* 画面の中の窓の答えの後の続きで起きた例外を、黙って捨てずに記録へ残す（2026-11-13） */
+function splDlgNote_(where, e) { try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('画面の中のエラー', e, 'supplies:' + where); } catch (_) { /* 記録できなくても止めない */ } }
 
 /* ════════════════════════════════════════════════════════════════
    消耗品管理 2026-09-18.1
@@ -1498,6 +1510,9 @@ function issuerLines() {
   if (name) lines.push(name);
   if (txt(o.address)) lines.push(txt(o.address));
   if (txt(o.tel)) lines.push('TEL ' + txt(o.tel));
+  /* 適格請求書発行事業者の登録番号は、施設情報に入っている時だけ1行足す（無い施設の紙は今のまま・2026-11-13 第6段 SP-03・言い方は仮置き） */
+  var inv = (window.SUFacility && typeof SUFacility.invoiceNo === 'function') ? txt(SUFacility.invoiceNo()) : '';
+  if (inv) lines.push('登録番号 ' + inv);
   var st = issuerStaff();
   if (st) lines.push('担当：' + st);
   return lines;
@@ -2413,8 +2428,14 @@ function replaceItem(ni) {
 }
 function toggleStatus(it) {
   var next = (it.status === 'active') ? 'hidden' : 'active';
-  if (next === 'hidden' && !window.confirm('「' + it.name + '」を非表示にします。新しく選べなくなりますが、過去の記録は残ります。よろしいですか？')) return;
-  saveItemFields(it, { status: next }, null);
+  if (next !== 'hidden') { saveItemFields(it, { status: next }, null); return; }
+  SUDialog.confirm('「' + it.name + '」を非表示にします。新しく選べなくなりますが、過去の記録は残ります。よろしいですか？').then(function (ok) {
+    if (!ok) return;
+    /* 窓の間に一覧を読み直した時は今の品目で送る。品目が無くなった・状態が変わっていた時は何もしない（2026-11-13） */
+    var cur = itemById(it.id);
+    if (!cur || cur.status !== it.status) return;
+    saveItemFields(cur, { status: next }, null);
+  }).catch(function (e) { splDlgNote_('toggleStatus', e); });
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -2797,12 +2818,14 @@ function reasonOf(E) {
 /* 遡及改定のあと始末。件数を見せてから「価格の付け直し」を実行する */
 function offerReprice(it, from, count) {
   var to = SPL().today();
-  if (!window.confirm('この日付以降に ' + count + ' 件の出庫があります。新しい価格で計算し直しますか？\n（' + jpDate(from) + '〜' + jpDate(to) + '・在庫は変わりません）')) return;
-  apiPost('repriceMoves', { itemId: it.id, from: from, to: to }).then(function (d) {
-    toast('付け直しました（' + (Number(d.changed) || 0) + '件）');
-  }).catch(function (e) {
-    toast('付け直せませんでした: ' + errText(e) + ' ' + errHint(e), 'err');
-  });
+  SUDialog.confirm('この日付以降に ' + count + ' 件の出庫があります。新しい価格で計算し直しますか？\n（' + jpDate(from) + '〜' + jpDate(to) + '・在庫は変わりません）').then(function (ok) {
+    if (!ok) return;
+    apiPost('repriceMoves', { itemId: it.id, from: from, to: to }).then(function (d) {
+      toast('付け直しました（' + (Number(d.changed) || 0) + '件）');
+    }).catch(function (e) {
+      toast('付け直せませんでした: ' + errText(e) + ' ' + errHint(e), 'err');
+    });
+  }).catch(function (e) { splDlgNote_('offerReprice', e); });
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -3090,18 +3113,20 @@ function submitMove() {
   }
   /* 在庫がマイナスになる記録は止めないが、必ず確認を挟む（設計 §3-6） */
   var neg = willGoNegative(it, type, delta) ? 'この記録で在庫がマイナスになります（登録はできます）。' : '';
-  if (type === 'adj') {
-    if (!window.confirm(neg + '在庫を' + (adjSign() < 0 ? '減らします' : '増やします') + '。よろしいですか？')) return;
-  } else if (neg) {
-    if (!window.confirm(neg + '登録してよろしいですか？')) return;
+  function go() {
+    /* 前に送れなかった記録と同じ中身なら、同じ番号で送る（サーバーは同じ番号を二重に登録しない）。
+       中身が違えば控えは捨てる */
+    if (ST.retryMove) {
+      if (ST.retryMove.fp === moveFingerprint(mv)) mv.id = ST.retryMove.id;
+      else ST.retryMove = null;
+    }
+    sendMoves([mv], type === 'out');
   }
-  /* 前に送れなかった記録と同じ中身なら、同じ番号で送る（サーバーは同じ番号を二重に登録しない）。
-     中身が違えば控えは捨てる */
-  if (ST.retryMove) {
-    if (ST.retryMove.fp === moveFingerprint(mv)) mv.id = ST.retryMove.id;
-    else ST.retryMove = null;
-  }
-  sendMoves([mv], type === 'out');
+  var ask = (type === 'adj') ? neg + '在庫を' + (adjSign() < 0 ? '減らします' : '増やします') + '。よろしいですか？'
+    : (neg ? neg + '登録してよろしいですか？' : '');
+  if (!ask) { go(); return; }
+  /* 窓の間に品目が無くなった時（一覧の読み直し）は送らない（2026-11-13） */
+  SUDialog.confirm(ask).then(function (ok) { if (ok && itemById(it.id)) go(); }).catch(function (e) { splDlgNote_('submitMove', e); });
 }
 /* 出庫だけは、応答を見るまで sessionStorage に控える（承認事項 F） */
 function readPending() {
@@ -3267,18 +3292,23 @@ function askRepriceAfterIn(moves, res) {
     /* 予定行があればその末尾が「これから使う仕入」。無ければ現在価格 */
     newest = p.scheduled.length ? p.scheduled[p.scheduled.length - 1] : p.current;
     if (!newest || Number(newest.cost) === Number(m.costEntered)) continue;
-    if (!window.confirm('「' + txt(it.name) + '」の今の仕入は ' + yen(newest.cost)
-      + ' ですが、入庫は ' + yen(m.costEntered) + ' でした。価格を改定しますか？')) return;
-    showScreen('list');
-    renderList();
-    openPriceRow(it.id);
-    if (ST.edit && ST.edit.itemId === it.id) {
-      ST.edit.cost = txt(m.costEntered);      /* 入庫で入れた仕入を先に埋めておく */
-      recalcEdit('cost');
-    }
-    if (!$('listBody').querySelector('tr[data-id="' + cssEsc(it.id) + '"]')) {
-      toast('絞り込みを外すと「' + txt(it.name) + '」の改定行が出ます');
-    }
+    (function (m, itemId, name) {
+      SUDialog.confirm('「' + name + '」の今の仕入は ' + yen(newest.cost)
+        + ' ですが、入庫は ' + yen(m.costEntered) + ' でした。価格を改定しますか？').then(function (ok) {
+        /* 窓の間に品目が無くなった時（一覧の読み直し）は開かない（2026-11-13） */
+        if (!ok || !itemById(itemId)) return;
+        showScreen('list');
+        renderList();
+        openPriceRow(itemId);
+        if (ST.edit && ST.edit.itemId === itemId) {
+          ST.edit.cost = txt(m.costEntered);      /* 入庫で入れた仕入を先に埋めておく */
+          recalcEdit('cost');
+        }
+        if (!$('listBody').querySelector('tr[data-id="' + cssEsc(itemId) + '"]')) {
+          toast('絞り込みを外すと「' + name + '」の改定行が出ます');
+        }
+      }).catch(function (e) { splDlgNote_('askRepriceAfterIn', e); });
+    })(m, it.id, txt(it.name));
     return;           /* 改定行は1つずつ開く */
   }
 }
@@ -3524,32 +3554,36 @@ function copyLastMonth() {
       setState('mvState', '', '複写するものがありません', prevYm + ' に月額の出庫がありませんでした。');
       return;
     }
-    if (!window.confirm(prevYm + ' の月額出庫 ' + src.length + '件を ' + thisYm + '-01 付けで複写します。日数はプロファイルの既定に戻ります。よろしいですか？')) return;
-    var moves = src.map(function (m) {
-      var it = itemById(m.itemId);
-      var prof = null, list = profilesOf(it.id), i;
-      for (i = 0; i < list.length; i++) { if (txt(list[i].id) === txt(m.profileId)) prof = list[i]; }
-      if (!prof) prof = SPL().defaultProfile(list);
-      return {
-        id: 'mv_copy_' + copyRootId(m.id) + '_' + thisYm,
-        date: thisYm + '-01', itemId: txt(m.itemId), type: 'out',
-        qtyEntered: 0, unitIdx: minIdxOf(it),
-        profileId: txt(m.profileId || (prof ? prof.id : '')),
-        dose10: Number(m.dose10),
-        timesPerDay: Number(m.timesPerDay),
-        days: prof && isFinite(Number(prof.daysPerMonth)) ? Number(prof.daysPerMonth) : daysDefault(),
-        residentId: txt(m.residentId),
-        note: ''          /* 勝手な文言を保存しない（原則6）。複写であることは id 'mv_copy_…' で判別できる */
-      };
-    });
-    var entries = moves.map(function (mv) { return { mv: mv, base: mv.id }; });
-    /* 1回に送れるのは MAX_MOVES 件まで。超えた分を切り捨てると、その人数ぶんが
-       黙って請求から落ちる。ここで分けて順に送る */
-    return sendCopyChunks(entries, 0, []).then(function (acc) {
-      reportMoveResults(acc);
-      renderList();
-      renderStock();
-      refreshStockAfterDup(acc);
+    return SUDialog.confirm(prevYm + ' の月額出庫 ' + src.length + '件を ' + thisYm + '-01 付けで複写します。日数はプロファイルの既定に戻ります。よろしいですか？').then(function (ok) {
+      if (!ok) return;
+      /* 窓の間に一覧を読み直して、複写する品目が無くなった・月額でなくなった時は何もしない（2026-11-13） */
+      if (src.some(function (m) { var it = itemById(m.itemId); return !(it && isProfile(it)); })) return;
+      var moves = src.map(function (m) {
+        var it = itemById(m.itemId);
+        var prof = null, list = profilesOf(it.id), i;
+        for (i = 0; i < list.length; i++) { if (txt(list[i].id) === txt(m.profileId)) prof = list[i]; }
+        if (!prof) prof = SPL().defaultProfile(list);
+        return {
+          id: 'mv_copy_' + copyRootId(m.id) + '_' + thisYm,
+          date: thisYm + '-01', itemId: txt(m.itemId), type: 'out',
+          qtyEntered: 0, unitIdx: minIdxOf(it),
+          profileId: txt(m.profileId || (prof ? prof.id : '')),
+          dose10: Number(m.dose10),
+          timesPerDay: Number(m.timesPerDay),
+          days: prof && isFinite(Number(prof.daysPerMonth)) ? Number(prof.daysPerMonth) : daysDefault(),
+          residentId: txt(m.residentId),
+          note: ''          /* 勝手な文言を保存しない（原則6）。複写であることは id 'mv_copy_…' で判別できる */
+        };
+      });
+      var entries = moves.map(function (mv) { return { mv: mv, base: mv.id }; });
+      /* 1回に送れるのは MAX_MOVES 件まで。超えた分を切り捨てると、その人数ぶんが
+         黙って請求から落ちる。ここで分けて順に送る */
+      return sendCopyChunks(entries, 0, []).then(function (acc) {
+        reportMoveResults(acc);
+        renderList();
+        renderStock();
+        refreshStockAfterDup(acc);
+      });
     });
   }).catch(function (e) {
     setState('mvState', 'err', '複写できませんでした（' + errText(e) + '）', errHint(e));
@@ -4289,17 +4323,21 @@ function repriceMonth() {
   }
   var itemId = txt($('repItem').value);
   var it = itemById(itemId);
-  if (!window.confirm(ym + ' の' + (it ? '「' + it.name + '」の' : 'すべての品目の') + '出庫を、その日付の価格で計算し直します。よろしいですか？')) return;
-  var r = SPL().monthRange(ym);
-  var body = { from: r.from, to: r.to };
-  if (itemId) body.itemId = itemId;
-  setState('repState', '', '付け直しています…', 'サーバーで計算し直しています。');
-  apiPost('repriceMoves', body).then(function (d) {
-    setState('repState', 'ok', '付け直しました（' + (Number(d.changed) || 0) + '件）', '集計を読み直すと新しい金額になります。');
-    if (ST.sumMonth === ym) loadSummary();
-  }).catch(function (e) {
-    setState('repState', 'err', '付け直せませんでした（' + errText(e) + '）', errHint(e));
-  });
+  SUDialog.confirm(ym + ' の' + (it ? '「' + it.name + '」の' : 'すべての品目の') + '出庫を、その日付の価格で計算し直します。よろしいですか？').then(function (ok) {
+    if (!ok) return;
+    /* 窓の間に月や品目の選びを変えた時は何もしない（2026-11-13） */
+    if (txt($('sumMonth').value) !== ym || txt($('repItem').value) !== itemId) return;
+    var r = SPL().monthRange(ym);
+    var body = { from: r.from, to: r.to };
+    if (itemId) body.itemId = itemId;
+    setState('repState', '', '付け直しています…', 'サーバーで計算し直しています。');
+    apiPost('repriceMoves', body).then(function (d) {
+      setState('repState', 'ok', '付け直しました（' + (Number(d.changed) || 0) + '件）', '集計を読み直すと新しい金額になります。');
+      if (ST.sumMonth === ym) loadSummary();
+    }).catch(function (e) {
+      setState('repState', 'err', '付け直せませんでした（' + errText(e) + '）', errHint(e));
+    });
+  }).catch(function (e) { splDlgNote_('repriceMonth', e); });
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -4522,10 +4560,9 @@ function voidPriceOnce(it, priceId, reason, confirmed, expectLatest) {
   }).catch(function (e) {
     if (e && e.code === 'referenced' && !confirmed) {
       var n = Number(e.raw && e.raw.count) || 0;
-      if (window.confirm('この価格を使った出庫が ' + n + '件あります。取り消しますか？\n（出庫は残ります。取り消したあとは「価格の付け直し」を行ってください）')) {
-        return voidPriceOnce(it, priceId, reason, true, exp);
-      }
-      return;
+      return SUDialog.confirm('この価格を使った出庫が ' + n + '件あります。取り消しますか？\n（出庫は残ります。取り消したあとは「価格の付け直し」を行ってください）').then(function (ok) {
+        if (ok) return voidPriceOnce(it, priceId, reason, true, exp);
+      });
     }
     throw e;
   });
@@ -4647,9 +4684,18 @@ function saveProfiles() {
   if (out.length && !out.some(function (o) { return o.isDefault; })) out[0].isDefault = true;
   var body = { itemId: it.id, rev: it.rev, profiles: out };
   if (!out.length) {
-    if (!window.confirm('型をすべて削除します。月額の出庫ができなくなります。よろしいですか？')) return;
-    body.clear = true;
+    var draft = ST.profDraft;
+    SUDialog.confirm('型をすべて削除します。月額の出庫ができなくなります。よろしいですか？').then(function (ok) {
+      /* 窓の間に別の品目を開いた・下書きが変わった時は何もしない（2026-11-13） */
+      if (!ok || ST.item !== it.id || ST.profDraft !== draft) return;
+      body.clear = true;
+      sendProfiles_(it, body);
+    }).catch(function (e) { splDlgNote_('saveProfiles', e); });
+    return;
   }
+  sendProfiles_(it, body);
+}
+function sendProfiles_(it, body) {
   if (!busyOn('prof')) return;
   setState('dtProfState', '', '保存中…', 'サーバーに送っています。');
   apiPost('setProfiles', body).then(function (d) {
@@ -4871,7 +4917,14 @@ function saveClosed() {
   var msg = [];
   if (added.length) msg.push('締める: ' + added.join('・'));
   if (removed.length) msg.push('解除する: ' + removed.join('・'));
-  if (!window.confirm(msg.join('\n') + '\nよろしいですか？')) return;
+  var snap = list.join(',');
+  SUDialog.confirm(msg.join('\n') + '\nよろしいですか？').then(function (ok) {
+    /* 窓の間に締める月の下書きが変わった時は何もしない（2026-11-13） */
+    if (!ok || (ST.closedDraft || ST.closed).slice().sort().join(',') !== snap) return;
+    sendClosed_(list, msg);
+  }).catch(function (e) { splDlgNote_('saveClosed', e); });
+}
+function sendClosed_(list, msg) {
   if (!busyOn('closed')) return;
   setState('closedState', '', '保存中…', 'サーバーに送っています。');
   apiPost('setClosedMonths', { closedMonths: list, expect: ST.settingsAt }).then(function (d) {

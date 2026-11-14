@@ -122,5 +122,47 @@ console.log('\n【5】管理者向けとして残す文・他の画面とそろ�
   ['目的の1行（見出しの下）', '<p class="lead">新しい端末を使い始める時に、各アプリの接続先をここでまとめて設定できます。</p>']
 ].forEach(([n, w]) => t(n, S.indexOf(w) >= 0, w));
 
+console.log('\n【6】画面に出す時の言い換え（2026-11-13 第6段 CN-02・文は仮置き）: デプロイの手順は畳み、取り違えの断りは GAS の語を出さない');
+{
+  /* 実物の el・setRes・csSay_・csFill_ を vm で動かす（文字は textContent だけ） */
+  function mk(tag) {
+    const e = { tag, children: [], className: '', _t: '',
+      appendChild(c) { this.children.push(c); return c; }, setAttribute() {} };
+    Object.defineProperty(e, 'textContent', { get() { return this._t + this.children.map((c) => c.textContent).join(''); }, set(v) { this._t = String(v); this.children = []; } });
+    return e;
+  }
+  const box = { document: { createElement: mk }, String };
+  vm.createContext(box);
+  const MW = (S.match(/var MASTER_WRONG_MSG='[^']+';/) || [''])[0];
+  vm.runInContext([MW, grabFn(S, 'el'), grabFn(S, 'setRes')].join('\n') + '\n' + (S.match(/var MASTER_WRONG_SAY='[^']+';\nvar CS_STAFF_SAY=\[[\s\S]*?\n\];/) || [''])[0] + '\n' + grabFn(S, 'csSay_') + '\n' + grabFn(S, 'csFill_'), box);
+  t('言い換えの部品を切り出せた', typeof box.setRes === 'function' && typeof box.csSay_ === 'function' && typeof box.csFill_ === 'function');
+  const ADMIN = [
+    '末尾が /dev のURLは本人しか使えません。デプロイの /exec で終わるURLを貼ってください。',
+    'ログイン画面かエラーのページが返りました。(1) URLが正しいか (2) デプロイの「アクセスできるユーザー」が「全員」か、の順にご確認ください。',
+    'つながりませんでした。(1) URLの打ち間違い (2) デプロイの「アクセスできるユーザー」が「全員」になっていない (3) ネットワーク、の順にご確認ください。'
+  ];
+  ADMIN.forEach((m, i) => {
+    const n = mk('p');
+    box.setRes(n, 'ng', m);
+    const lead = n._t, more = n.children[0] || {};
+    t('6-' + (i + 1) + ' デプロイの文は職員向けの1文を先に出し、元の文は「管理者向けの詳しい内容」に文を変えずに畳む',
+      /^⚠ /.test(lead) && !/デプロイ|GAS/.test(lead) && /管理者/.test(lead) && more.tag === 'details' && more.className === 'cs-more'
+      && (more.children[0] || {}).textContent === '管理者向けの詳しい内容' && (more.children[1] || {}).textContent === m, { lead, more: more.textContent });
+  });
+  const n2 = mk('p');
+  box.setRes(n2, 'ng', '配っていません：' + ADMIN[2]);
+  t('6-4 前に付いた文（配っていません：）は残して言い換える', /^⚠ 配っていません：つながりませんでした。/.test(n2._t) && n2.children.length === 1, n2._t);
+  const MWV = (MW.match(/'([^']+)'/) || [])[1];
+  const n3 = mk('p');
+  box.setRes(n3, 'ng', '保存していません：' + MWV + '。今の接続先のままです。');
+  t('6-5 取り違えの断りは GAS の語の無い文にし、畳まない', n3.textContent === '⚠ 保存していません：この接続先は入居者マスタのものではありません（薬学管理・申送など別のアプリの接続先の可能性があります）。今の接続先のままです。' && n3.children.length === 0, n3.textContent);
+  const n4 = mk('p');
+  box.setRes(n4, 'ok', 'つながりました（入居者マスタの接続先と確認しました）。');
+  t('6-6 ほかの文は今までどおりそのまま出す', n4.textContent === '✓ つながりました（入居者マスタの接続先と確認しました）。' && n4.children.length === 0);
+  t('6-7 初回の案内の段の結果も同じ言い換えを通す',
+    S.indexOf("var m=el('p','msg',st.msg); csFill_(m, '', st.msg);") >= 0 && S.indexOf("var tm=el('p','msg','合言葉：'+wizTokRes[step.id].msg); csFill_(tm, '合言葉：', wizTokRes[step.id].msg);") >= 0);
+  t('6-8 畳む欄の押す所は狭い幅で 44px 以上', /@media screen and \(max-width: 899px\) \{ \.cs-more summary \{ min-height: 44px;/.test(S));
+}
+
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 if (fail) process.exit(1);

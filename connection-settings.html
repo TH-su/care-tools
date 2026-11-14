@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Em3AuTwX6nyrotCcnK0Jwf4PJyn5AVwhn89VDqu0wuM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-LhBjHzU0zN8MC01HI/mdE1bM3F5AU6Clk9GHlj71fuo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <meta name="robots" content="noindex,nofollow">
@@ -135,6 +135,9 @@ main {
 .res.ok  { color: var(--ok); }
 .res.ng  { color: var(--ng); }
 .res.inf { color: var(--g7); }
+/* 管理者向けの詳しい内容（デプロイの手順など）を畳む欄（2026-11-13 第6段 CN-02）。押す所は狭い幅で 44px 以上 */
+.cs-more summary { cursor: pointer; padding: 6px 0; }
+@media screen and (max-width: 899px) { .cs-more summary { min-height: 44px; box-sizing: border-box; padding: 12px 0; } }
 /* ── 初回の案内（2026-10-09・監査10月版 #13）── 色だけに頼らず ✓／✕ と文で伝える（HIG） */
 .wiz h2 { margin: 0 0 6px; font-size: 1rem; }
 .wiz ol { margin: 8px 0 0; padding: 0; list-style: none; }
@@ -329,7 +332,7 @@ main {
 <script src="su-devcfg.js?v=2026-11-08"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-app-gate.js?v=2026-11-11"></script>
-<script src="su-facility.js?v=2026-11-13"></script>
+<script src="su-facility.js?v=2026-11-13.2"></script>
 <!-- 初回の案内で「ログインで使えます（設定不要）」を出すかの確かめだけに使う（2026-11-13）。持ち主の画面と同じ liveReady／probe を呼ぶだけで、
      この画面からはその系統の読み書きをしない（SU.data.init も呼ばない） -->
 <script src="su-data.js?v=2026-11-08.2"></script>
@@ -703,7 +706,33 @@ function toast(msg){
 
 function setRes(node, kind, msg){
   node.className='res on '+kind;
-  node.textContent=(kind==='ok'?'✓ ':kind==='ng'?'⚠ ':'')+msg;
+  csFill_(node, (kind==='ok'?'✓ ':kind==='ng'?'⚠ ':''), msg);
+}
+/* 職員にも見える文の言い換え（2026-11-13 第6段 CN-02・文は仮置き）。
+   デプロイの手順などの管理者向けの文は、職員向けの1文を先に出し、元の文は「管理者向けの詳しい内容」に文を変えずに畳む（fold）。
+   入居者マスタの取り違えの断り（MASTER_WRONG_MSG）は3画面で同じ文のまま残し、画面には GAS の語の無い文を出す（畳まない）。
+   元の文は呼ぶ側にそのまま残す（言い換えは出す所だけ・試験が元の文を確かめている） */
+var MASTER_WRONG_SAY='この接続先は入居者マスタのものではありません（薬学管理・申送など別のアプリの接続先の可能性があります）';
+var CS_STAFF_SAY=[
+  { from:'末尾が /dev のURLは本人しか使えません。デプロイの /exec で終わるURLを貼ってください。', to:'この URL は使えません。管理者から受け取った URL（終わりが /exec のもの）を貼ってください。', fold:true },
+  { from:'ログイン画面かエラーのページが返りました。(1) URLが正しいか (2) デプロイの「アクセスできるユーザー」が「全員」か、の順にご確認ください。', to:'つながりませんでした。URL が正しいか確かめてください。直らない時は管理者に伝えてください。', fold:true },
+  { from:'つながりませんでした。(1) URLの打ち間違い (2) デプロイの「アクセスできるユーザー」が「全員」になっていない (3) ネットワーク、の順にご確認ください。', to:'つながりませんでした。URL の打ち間違いと通信を確かめてください。直らない時は管理者に伝えてください。', fold:true },
+  { from:MASTER_WRONG_MSG, to:MASTER_WRONG_SAY, fold:false }
+];
+function csSay_(msg){
+  var s=String(msg==null?'':msg), fold=false;
+  CS_STAFF_SAY.forEach(function(r){ if(s.indexOf(r.from)>=0){ s=s.split(r.from).join(r.to); if(r.fold) fold=true; } });
+  return { text:s, fold:fold };
+}
+/* node に「頭の印＋職員向けの文」を入れ、管理者向けの文があれば畳んで添える（文字は textContent だけ） */
+function csFill_(node, head, msg){
+  var v=csSay_(msg);
+  node.textContent=head+v.text;
+  if(!v.fold) return;
+  var d=el('details','cs-more');
+  d.appendChild(el('summary',null,'管理者向けの詳しい内容'));
+  d.appendChild(el('div',null,String(msg)));
+  node.appendChild(d);
 }
 
 /* 説明文の {{施設}}{{訪問}}{{通所}} を事業所の呼び名に差し替える（facility-profile.json・su-facility.js）。
@@ -1163,9 +1192,9 @@ function wizRender(){
     head.appendChild(el('span','stp', (i+1)+'. '+step.title));
     li.appendChild(head);
     if(step.note) li.appendChild(el('p','msg',step.note));
-    var m=el('p','msg',st.msg); m.setAttribute('role','status'); li.appendChild(m);
+    var m=el('p','msg',st.msg); csFill_(m, '', st.msg); m.setAttribute('role','status'); li.appendChild(m);   /* 言い換え・畳みは csFill_（2026-11-13 第6段 CN-02） */
     if(step.sys && wizTokRes[step.id]){
-      var tm=el('p','msg','合言葉：'+wizTokRes[step.id].msg); tm.setAttribute('role','status'); li.appendChild(tm);
+      var tm=el('p','msg','合言葉：'+wizTokRes[step.id].msg); csFill_(tm, '合言葉：', wizTokRes[step.id].msg); tm.setAttribute('role','status'); li.appendChild(tm);
     }
     if(step.sys){
       var acts=el('div','acts');

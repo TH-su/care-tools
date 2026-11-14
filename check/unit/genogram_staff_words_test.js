@@ -159,6 +159,60 @@ function box(fetchImpl, json, withAbort) {
   const bad2 = calls.filter(l => /['`"][^'`"]*(?:GAS|Web ?App|localStorage|スプシ|JSON|HTTP|トークン)[^'`"]*['`"]/.test(l));
   t('★alert・confirm・状態の帯・設定の結果の文に技術用語が無い（' + calls.length + ' か所）', calls.length > 20 && bad2.length === 0, bad2.map(s => s.trim().slice(0, 80)));
 
+  console.log('\n— 8. 管理者向けの準備と接続テストの失敗・断りの文（2026-11-13 第6段 GN-02・GN-03・文は仮置き）—');
+  {
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+    t('★管理者向けの準備（①）と「① は管理者の準備」の一文は、HTML の既定で隠す（確かめが遅れても職員向け）',
+      /<details class="setup-step" id="cfgAdminSetup" open hidden>/.test(src) && /<p class="setup-sub" id="cfgAdminNote" hidden>下の ① は/.test(src));
+    /* 実物の openCloudModal を、管理者か（thumbIsAdmin）の答えを変えて動かす */
+    const runOpen = async (isAdmin) => {
+      const els = { cfgGasUrl: { value: '' }, cfgGasToken: { value: '' }, cloudModal: { hidden: true }, cfgResult: { hidden: false }, cfgAdminSetup: { open: true, hidden: true }, cfgAdminNote: { hidden: true }, btnCopyGas: { hidden: false }, cfgFirstGuide: { hidden: false } };
+      const cs = { getCfg: () => ({}), isConfigured: () => false };
+      if (isAdmin !== undefined) cs.thumbIsAdmin = () => (isAdmin === 'reject' ? Promise.reject(new Error('x')) : Promise.resolve(isAdmin));
+      const box = { $: (id) => els[id], window: {}, CloudSync: cs, Promise };
+      vm.createContext(box); vm.runInContext(cut('openCloudModal'), box); box.openCloudModal();
+      const before = [els.cfgAdminSetup.hidden, els.cfgAdminNote.hidden];
+      await tick(); await tick();
+      return { before, after: [els.cfgAdminSetup.hidden, els.cfgAdminNote.hidden], open: els.cfgAdminSetup.open };
+    };
+    const A = await runOpen(true), N = await runOpen(false), U = await runOpen(undefined), R = await runOpen('reject');
+    t('★管理者と確かめられた時だけ①を出す（確かめる前は隠したまま）', A.before.join() === 'true,true' && A.after.join() === 'false,false' && A.open === true, A);
+    t('★管理者でない・確かめられない・確かめが失敗した時は隠したまま', N.after.join() === 'true,true' && U.after.join() === 'true,true' && R.after.join() === 'true,true', [N, U, R]);
+
+    /* 実物の testCloudConfig を、届かない時（英語の例外文）で動かす */
+    const runTest = async (isAdmin, msg) => {
+      const els = { cfgGasUrl: { value: 'https://script.google.com/macros/s/X/exec' }, cfgGasToken: { value: 'kasou' }, cfgResult: { hidden: true, textContent: '', className: '' } };
+      const cs = { setCfg() {}, ping: () => Promise.reject(new Error(msg)) };
+      if (isAdmin !== undefined) cs.thumbIsAdmin = () => Promise.resolve(isAdmin);
+      const hist = [];
+      const box = { $: (id) => els[id], CloudSync: cs, Promise, hist };
+      vm.createContext(box);
+      vm.runInContext([cut('readCfgFromForm'), cut('showCfgResult'), cut('genoStaffText_'), cut('testCloudConfig', 'async ')].join('\n')
+        + '\nconst showCfgResult0 = showCfgResult; showCfgResult = function (k, m) { hist.push(m); return showCfgResult0(k, m); };', box);   // 出した順を控える
+      await box.testCloudConfig();
+      await tick(); await tick();
+      const shown = hist.filter((m) => m !== '接続テスト中…');
+      return { first: shown[0], last: els.cfgResult.textContent };
+    };
+    const S1 = await runTest(false, 'Failed to fetch');
+    t('★職員には英語の例外文と Apps Script の手順を出さない', S1.last === '✗ つながりませんでした。URL が正しいか確かめてください。' && !/Failed|Apps Script|デプロイ/.test(S1.last), S1);
+    const S2 = await runTest(true, 'Failed to fetch');
+    t('★管理者と確かめられた後は、今までの文（理由と Apps Script の手順）に差し替える', S2.first === S1.last && /^✗ つながりませんでした（Failed to fetch）。URL が正しいか確かめてください。\n→ 管理者の方へ：Apps Script のデプロイの/.test(S2.last), S2);
+    const S3 = await runTest(undefined, '時間内に応答がありませんでした');
+    t('日本語の理由（時間切れなど）は職員にもそのまま添える', S3.last === '✗ つながりませんでした（時間内に応答がありませんでした）。URL が正しいか確かめてください。', S3);
+
+    /* 新しい保存先の断り（refused）の理由の文 */
+    const notes = [];
+    const wb = { window: { SUErrors: { note: (k, e, w) => notes.push(w) } } };
+    vm.createContext(wb); vm.runInContext(cut('genoStaffText_') + '\n' + cut('genoStaffWhy_'), wb);
+    const jp = '図が大きすぎるため保存できません。古い部分を消してから、もう一度保存してください';
+    t('★断りの理由が職員の読める文ならそのまま出す（その場で直せる理由を畳まない）', wb.genoStaffWhy_(new Error(jp), 'x') === jp && notes.length === 0);
+    t('★英語の断りは出さず「管理者に伝えて」の文にし、記録へ残す', wb.genoStaffWhy_(new Error('permission denied for function geno_put'), '保存の断り') === 'クラウドが受け付けませんでした。管理者に伝えてください' && notes.join() === 'genogram:保存の断り', notes);
+    t('★保存の断りの窓と状態の帯は、同じ職員向けの理由を出す（err.message を直接出さない）',
+      /const why = genoStaffWhy_\(err, '保存の断り'\);[^\n]*\n\s*setSyncStatus\('err', 'この端末にだけ保存（クラウド未反映）: ' \+ why\);[\s\S]{0,200}await SUDialog\.alert\('クラウドへは保存されていません。\\n' \+ why \+ '\\n\\nこの内容はこの端末にのみ保存されています。'\);/.test(src));
+    t('画面の中に写した受け口のコード（GAS_SCRIPT_CODE）の中の文は変えない（非公開の正本と同じ）', /Logger\.log\(code === 200 \? '✅ Supabase へつながりました（200）。直した人の確かめが動きます'/.test(src));
+  }
+
   console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
   process.exit(fail ? 1 : 0);
 })();

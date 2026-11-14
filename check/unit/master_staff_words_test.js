@@ -194,5 +194,26 @@ console.log('\n【7】変えない文（既存の試験・他の画面とそろ�
   ['AI の未知の断り（master_ai_supa が形を見る）', "return 'AIに尋ねられませんでした（'+code+'）';"]
 ].forEach(([n, w]) => t(n, S.indexOf(w) >= 0, w));
 
+console.log('\n【8】薬情のまとめて反映の止めの文に「GASの版」を出さない（2026-11-13 第6段 RM-01・文は仮置き）');
+{
+  const shown = S.match(/'[^'\n]*入居者マスタGASの版[^'\n]*'/g) || [];   // 文の中（' で囲んだ所）だけを見る。コメントの説明は数えない
+  t('「入居者マスタGASの版」の言い方は職員に見える文に残っていない', shown.length === 0, shown);
+  t('まだ反映できない時の札は受け口の言い方', S.indexOf("'<span class=\"yj-sub\">入居者マスタの受け口を確かめられないため、まだ反映できません</span>'") >= 0);
+  t('まとめて反映を止める時の文は受け口の言い方（何も書いていないと言う）', S.indexOf("S.bulkMsg='入居者マスタの受け口を確かめられないため、まとめて反映できません（何も書いていません）'") >= 0);
+  /* 「戻る」から呼ばれた時だけブラウザの窓のまま聞く（d9d53a3・窓の間の2回目の「戻る」で保存していない変更が消えるため）。この形は変えない */
+  t('「戻る」の時だけブラウザの窓で聞く形は5か所そのまま（d9d53a3）', (S.match(/fromPop===true\?confirm\(/g) || []).length === 4 && /if\(fromPop===true\) return confirm\('編集中の内容が保存されていません。/.test(S));
+}
+
+console.log('\n【9】接続先の設定の窓の取り違えの断りと知らせに「GAS」を出さない（2026-11-13 第6段 RM-01 反証・文は仮置き）');
+{
+  const say = (S.match(/var MASTER_WRONG_SAY='([^']+)';/) || [])[1] || '';
+  t('職員向けの取り違えの断りは GAS・URL の語を含まない（フェイスシートと同じ文）', say === 'この接続先は入居者マスタのものではありません（薬学管理・申送など別のアプリの接続先の可能性があります）', say);
+  t('MASTER_WRONG_SAY は判定と verifyMasterUrl の並び（3画面で同じ区間）の外に置く', /var MASTER_WRONG_MSG='[^']+';\nfunction verifyMasterUrl\(/.test(S) && S.indexOf('var MASTER_WRONG_SAY=') > S.indexOf('function verifyMasterUrl('));
+  t('保存の断りは職員向けの文', S.indexOf("SUDialog.alert('保存していません：'+MASTER_WRONG_SAY+'。\\n今の接続先のままです。')") >= 0);
+  t('接続テストの断りは職員向けの文', S.indexOf("return SUDialog.alert('⚠️ '+MASTER_WRONG_SAY+'。');") >= 0 && !/alert\([^)]*MASTER_WRONG_MSG/.test(S));
+  t('保存の後の知らせは「入居者マスタの接続先」の言い方', S.indexOf("toast('保存しました。ただし通信できず、入居者マスタの接続先かは確かめられませんでした')") >= 0 && S.indexOf('入居者マスタのGASかは確かめられませんでした') < 0);
+  t('接続テストの知らせは「入居者マスタの接続先」の言い方', S.indexOf("'✅ 接続OK（入居者マスタの接続先と確認）'") >= 0 && S.indexOf('入居者マスタのGASと確認') < 0);
+}
+
 console.log('\n結果: 成功 ' + pass + ' / 失敗 ' + fail);
 process.exit(fail ? 1 : 0);
