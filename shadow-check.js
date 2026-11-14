@@ -2270,6 +2270,7 @@ if (!window.SUDialog) window.SUDialog = {
       if (x && Number(x.bad) > 0) notes.push(p[1] + 'に新しい保存先で使えない形の記録が ' + Number(x.bad) + '件あり、写していません（開発の担当へ知らせてください）。');
       if (x && Number(x.dup) > 0) notes.push(p[1] + 'に同じ番号の記録が ' + Number(x.dup) + '件重なっています（2件目からは写していません。開発の担当へ知らせてください）。');
       if (x && x.shrink === true) notes.push(p[1] + 'が急に減ったので、最後の回は写していません（次の回も同じ件数なら、本当に減ったものとして写します。減らした覚えが無ければ開発の担当へ知らせてください）。');
+      else if (x && x.failed === true) notes.push(p[1] + 'は最後の回に、Google で読めなかったか送れなかったため、写していません（次の回にもう一度写します。続く時は開発の担当へ知らせてください）。');
       else if (x && x.refused === true) notes.push(p[1] + 'は最後の回に受け付けられず、写していません（開発の担当へ知らせてください）。');
     });
     kk.appendChild(kpi('中身まで照らし合わせた種類（14日）', Number(d.verified14) || 0, '種類'));

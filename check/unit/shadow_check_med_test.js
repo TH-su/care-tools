@@ -111,6 +111,9 @@ const ST = (x, s, k) => Object.assign({ ok: true, kinds: JSON.parse(JSON.stringi
     t('C 急に減って断られた種類・ほかの理由で断られた種類を知らせる（最後の回の記録は数で受け付けていても「Google と同じ」と言わない）',
       /薬の記録が急に減ったので、最後の回は写していません（次の回も同じ件数なら/.test(D(wr).textContent) && /変更の記録は最後の回に受け付けられず/.test(D(wr).textContent)
       && !/Google と同じ/.test(V(wr).textContent) && /warn/.test(V(wr).className), [V(wr).textContent, D(wr).textContent]);
+    const wf = box({ status: ST({}, { dict: { rows: 7, bad: 0, dup: 0, failed: true }, refused: 1 }) }); await wf.run();
+    t('C 読めなかった・送れなかった種類を知らせる（「Google と同じ」と言わない）', /タグの辞書は最後の回に、Google で読めなかったか送れなかったため/.test(D(wf).textContent)
+      && !/Google と同じ/.test(V(wf).textContent) && /warn/.test(V(wf).className), [V(wf).textContent, D(wf).textContent]);
     const wk = box({ status: ST({ shrinkOk14: 2 }) }); await wk.run();
     t('C 減ったのを受け付けた回は件数だけ添える（それだけでは警告にしない）', /本当に減ったものとして受け付けた回が 2回/.test(D(wk).textContent) && /Google と同じ/.test(V(wk).textContent) && D(wk).className === 'msg', [V(wk).textContent, D(wk).textContent]);
     const w = box({ status: ST({}, {}, { dict: { rows: 7 } }) }); await w.run();
