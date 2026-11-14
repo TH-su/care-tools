@@ -102,6 +102,80 @@ if (!window.SUDialog) window.SUDialog = {
     try { if (window.SUErrors && typeof window.SUErrors.note === 'function') window.SUErrors.note('写しの見比べ: ' + where + 'の断りの印', String(code)); } catch (e) { /* 記録できなくても止めない */ }
     return 'ほかの理由';
   }
+  /* ── 本番の健康（2026-11-14 代表者の依頼・管理者だけ・統合 0088）──
+   * save_health（管理者・2段階認証）の答えを SUHealthCalc.judge で判定し、種類ごとに1行で出す。出すのは種類・数・時刻だけ。
+   * 読めない・関数が無い・判定の部品が無い時は「確かめられません」とだけ出す（健康とは言わない）。端末には何も残さない */
+  var HL_STATE = { live: '切り替え済み', shadow: '写しの期間（Google が正本）', none: 'まだ切り替えていません', unknown: '確かめられません' };
+  var HL_REASON = [['login', 'ログイン'], ['perm', '権限'], ['timeout', '時間切れ'], ['other', 'そのほか']];
+  async function loadHealth(sb) {
+    var box = $('hl-box');
+    if (!box) return;
+    box.hidden = !(me && me.role === 'admin');
+    if (box.hidden) return;
+    var verdict = $('hl-verdict'), wrap = $('hl-table');
+    if (!window.SUHealthCalc) { verdict.className = 'msg warn'; verdict.textContent = '判定の部品を読み込めませんでした。ページを読み込み直してください。'; wrap.replaceChildren(); return; }
+    var resp = null, why = '';
+    try {
+      var r = await sb.rpc('save_health');
+      if (r && r.error) { var k = dbErrKind(r.error); if (k === 'missing') notePrep('save_health'); why = k; }
+      else resp = r ? r.data : null;
+    } catch (e) { why = 'other'; }
+    renderHealth(SUHealthCalc.judge(resp, Date.now()), why);
+  }
+  function renderHealth(v, why) {
+    var verdict = $('hl-verdict'), wrap = $('hl-table');
+    wrap.replaceChildren();
+    if (!v.ok) {
+      verdict.className = 'msg warn';
+      verdict.textContent = why === 'missing' ? '本番の健康の記録の準備（データベースの 0088）がまだです。確かめられません。'
+        : why === 'denied' ? '本番の健康を読めませんでした（管理者が2段階認証でログインしている時だけ読めます）。確かめられません。'
+        : '本番の健康を読めませんでした。少し待ってから「本番の健康を読み直す」を押してください。確かめられません。';
+      return;
+    }
+    var bad = v.rows.filter(function (x) { return x.failAlert || x.lagAlert; });
+    var unk = v.rows.filter(function (x) { return x.state === 'unknown'; });
+    verdict.className = bad.length ? 'msg ng' : unk.length ? 'msg warn' : 'msg ok';
+    verdict.textContent = bad.length ? '要確認の種類があります：' + bad.map(function (x) { return x.label; }).join('・') + '（管理者のメニューにも札が出ます）'
+      : unk.length ? '確かめられない種類があります：' + unk.map(function (x) { return x.label; }).join('・')
+      : '切り替え済みの種類に、要確認はありません。';
+    var tb = el('table', 'hl-t');
+    tb.appendChild(el('caption', 'hl-cap', '種類ごとの保存と写し返し（数えた時刻 ' + fmtTime(new Date().toISOString()) + '）'));
+    var hd = el('tr');
+    ['種類', '状態', '成功', '失敗', '最後の写し返し', '写し返しの遅れ', '判定'].forEach(function (h) { var th = el('th', null, h); th.scope = 'col'; hd.appendChild(th); });
+    var thead = el('thead'), body = el('tbody');
+    thead.appendChild(hd);
+    v.rows.forEach(function (x) {
+      var alert = x.failAlert || x.lagAlert;
+      var tr = el('tr', alert ? 'ng' : x.state === 'live' ? 'ok' : null);
+      var th = el('th', null, x.label); th.scope = 'row'; tr.appendChild(th);
+      tr.appendChild(el('td', null, HL_STATE[x.state] || HL_STATE.unknown));
+      if (x.state === 'unknown') {
+        ['—', '—', '—', '—'].forEach(function (t) { tr.appendChild(el('td', null, t)); });
+        tr.appendChild(el('td', null, '確かめられません'));
+        body.appendChild(tr);
+        return;
+      }
+      tr.appendChild(el('td', 'num', x.ok + '件'));
+      var parts = HL_REASON.filter(function (p) { return x.fails[p[0]] > 0; }).map(function (p) { return p[1] + x.fails[p[0]]; });
+      tr.appendChild(el('td', null, x.failTotal + '件' + (parts.length ? '（' + parts.join('・') + '）' : '')));
+      tr.appendChild(el('td', null, x.lastMirrorMs == null ? '記録なし'
+        : fmtTime(new Date(x.lastMirrorMs).toISOString()) + (x.lastKind === 'change' ? '（写し返し済みの保存の時刻）' : '')));
+      tr.appendChild(el('td', null, !x.lagKnown ? (x.kind === 'weight' && x.state !== 'none' ? '確かめられません（端末が写し返している間）' : x.state === 'none' ? '—' : '確かめられません')
+        : x.pending > 0 ? SUHealthCalc.lagText(x.lagMs) + '（残り' + x.pending + '件）' : 'なし（残り0件）'));
+      var jd = el('td', null, alert ? '要確認' : x.state === 'live' ? '問題なし' : '対象外（切り替え前）');
+      if (alert) {
+        var why = [];
+        if (x.failAlert) why.push('失敗が' + SUHealthCalc.FAIL_N + '件以上');
+        if (x.lagAlert) why.push('写し返しが2時間以上遅れ');
+        jd.appendChild(el('div', 'em', why.join('・')));
+      }
+      tr.appendChild(jd);
+      body.appendChild(tr);
+    });
+    tb.appendChild(thead); tb.appendChild(body);
+    wrap.appendChild(tb);
+  }
+
   function view(name) {
     $('v-loading').hidden = name !== 'loading';
     $('v-gate').hidden = name !== 'gate';
@@ -1205,6 +1279,7 @@ if (!window.SUDialog) window.SUDialog = {
       $('kv-verdict').textContent = '週間計画の写しはまだ読めません（データベースの準備 0005 が未適用の可能性）。';
     }
     await gateRefresh(sb);   // 読めない時はボタンを押せないままにする
+    await loadHealth(sb);
   }
 
   /* 貼り薬の写し（段階2「送るだけ」・2026-10-17）: サーバーの行数と、この端末の控え（apc2_res）との差。
@@ -1517,7 +1592,7 @@ if (!window.SUDialog) window.SUDialog = {
     sup_shadow_status: '0046', sup_mode_get: '0047', mirror_bot_me: '0047',
     sa_shadow_status: '0050', sa_mode_get: '0051', device_seen_summary: '0048', shadow_diff_days: '0055', shadow_diff_note: '0055',
     geno_shadow_status: '0053', geno_mode_get: '0054', hb_shadow_status: '0062', hb_mode_get: '0064', doc_shadow_status: '0063', doc_mode_get: '0065',
-    ho_shadow_status: '0067'
+    ho_shadow_status: '0067', save_health: '0088'
   };
   var prepMissing = {};
   function dbErrKind(err) {
@@ -2894,6 +2969,10 @@ if (!window.SUDialog) window.SUDialog = {
   $('b-live-weight').addEventListener('click', function () { setWeightMode('live').catch(function (e) { msg(jaWhy('体重の切り替え', e)); }); });
   $('b-shadow-weight').addEventListener('click', function () { setWeightMode('shadow').catch(function (e) { msg(jaWhy('体重を写しの期間に戻す', e)); }); });
   $('b-shadow-shift').addEventListener('click', function () { setShiftMode('shadow'); });
+  $('b-hl-reload').addEventListener('click', function () {
+    var b = $('b-hl-reload'); b.disabled = true;
+    loadHealth(SUAuth.client()).catch(function () { renderHealth({ ok: false }, 'other'); }).then(function () { b.disabled = false; });
+  });
   $('b-reload').addEventListener('click', function () { msg(''); load().catch(function (e) { msg(jaWhy('見比べ直す', e)); }); });
   $('b-care-check').addEventListener('click', function () { msg(''); runCareCheck(); });
   $('b-res-full').addEventListener('click', function () { msg(''); runResFull(); });

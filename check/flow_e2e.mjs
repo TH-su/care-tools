@@ -1361,8 +1361,77 @@ async function flow8() {
   }
 }
 
+/* (9) 本番の健康（2026-11-14 代表者の依頼・統合 0088）: 写しの見比べの表・管理者のメニューの札・保存の失敗の控えと送り方。
+   データベースの偽物の save_health は架空の数と時刻だけを返す（入居者マスタ＝失敗6件・職員マスタの添付書類＝写し返しが3時間遅れ・体重＝端末の写し返し） */
+function healthResp() {
+  const now = Date.now(), iso = (ms) => new Date(ms).toISOString();
+  const kinds = ['res', 'tp', 'adm', 'stf', 'sup', 'sa', 'geno', 'doc_stf', 'doc_adm', 'weight'];
+  const rows = kinds.map((k) => ({ kind: k, mode: k === 'sa' ? 'shadow' : 'live', ok: 3, fails: {}, pending: 0, oldest_pending_at: null,
+    last_mirror_at: iso(now - 20 * 60000), last_kind: 'ack', mirror_seen: k !== 'weight' }));
+  rows[0].fails = { login: 4, timeout: 2 };
+  rows[7].pending = 2; rows[7].oldest_pending_at = iso(now - 3 * 3600000 - 60000);
+  rows[9].pending = null; rows[9].last_mirror_at = null; rows[9].last_kind = null;
+  return { ok: true, now: iso(now), rows };
+}
+async function flow9() {
+  console.log('\n— (9) 本番の健康: 写しの見比べの表・管理者のメニューの札・保存の失敗の控え —');
+  const SCR = '本番の健康';
+  const admin = { my_account: () => ({ role: 'admin', mfa: true }), save_health: () => healthResp(), save_fail_note: (b) => ({ ok: true, kept: (b.p_items || []).length, dropped: 0 }) };
+  let env = await makeEnv({ role: 'admin', rpc: admin, tables: { master_residents: [], master_sync_runs: [] },
+    gas: [['https://api.github.com/', () => ({ total_count: 0, workflow_runs: [] }), 'github']] });
+  try {
+    const page = await open(env, 'shadow-check.html');
+    const rows = await waitFor(() => ev(page, () => { const b = document.getElementById('hl-box'); return b && !b.hidden && document.querySelectorAll('#hl-table tbody tr').length; }), 20000);
+    tn(SCR, '写しの見比べ', '管理者には表が出て、10種類の行がある', rows === 10);
+    const cells = await ev(page, () => Array.from(document.querySelectorAll('#hl-table tbody tr')).map((tr) => Array.from(tr.children).map((c) => c.textContent)));
+    const by = (lbl) => (cells || []).find((r) => r[0] === lbl) || [];
+    tn(SCR, '写しの見比べ', '入居者マスタ: 失敗6件（ログイン4・時間切れ2）で要確認', /^6件（ログイン4・時間切れ2）$/.test(by('入居者マスタ')[3] || '') && /^要確認/.test(by('入居者マスタ')[6] || ''));
+    tn(SCR, '写しの見比べ', '添付書類（職員マスタ）: 写し返しが3時間1分遅れ（残り2件）で要確認', by('添付書類（職員マスタ）')[5] === '3時間1分（残り2件）' && /^要確認/.test(by('添付書類（職員マスタ）')[6] || ''));
+    tn(SCR, '写しの見比べ', '体重: 端末の写し返しは「確かめられません」・問題なし', /^確かめられません/.test(by('体重管理')[5] || '') && by('体重管理')[6] === '問題なし');
+    tn(SCR, '写しの見比べ', '写しの期間の種類は対象外', by('過去シフト分析')[6] === '対象外（切り替え前）');
+    tn(SCR, '写しの見比べ', '表に氏名が出ない', !(await ev(page, (n) => n.some((x) => document.getElementById('hl-box').textContent.includes(x)), NAMES)));
+    await shot(page, 'health-table');
+    // 保存の失敗の控え: 種類・理由・時刻だけを控え、ログインしている時に送り、送れたら消す
+    await page.addScriptTag({ url: srv.url + '/su-health.js?v=2026-11-14' });
+    await ev(page, () => { window.SUHealth.fail('res', { code: 'login' }); window.SUHealth.fail('stf', { code: 'shadow' }); window.SUHealth.fail('sup', { timeout: true }); });
+    const q0 = await ev(page, () => JSON.parse(localStorage.getItem('su_health_q') || '[]'));
+    tn(SCR, '失敗の控え', '控えは種類・理由・時刻の3つだけ（切り替え前の断りは控えない）',
+      Array.isArray(q0) && q0.length === 2 && q0.every((e) => e.length === 3 && typeof e[2] === 'number') && q0[0][0] === 'res' && q0[0][1] === 'login' && q0[1][1] === 'timeout');
+    const sent = await waitFor(() => env.st.rpc.find((r) => r.fn === 'save_fail_note'), 10000);
+    tn(SCR, '失敗の控え', '送ったのは {k, r, t} の2行だけ', !!sent && JSON.stringify(sent.body.p_items.map((x) => Object.keys(x).sort())) === JSON.stringify([['k', 'r', 't'], ['k', 'r', 't']]));
+    const left = await waitFor(() => ev(page, () => localStorage.getItem('su_health_q') === null), 5000);
+    tn(SCR, '失敗の控え', '送れた後は控えが消える', left === true);
+    await page.close();
+    const menu = await open(env, 'index.html');
+    const badges = await waitFor(() => ev(menu, () => {
+      const a = Array.from(document.querySelectorAll('a.tile .hlbad')).map((s) => [s.parentNode.getAttribute('href'), s.textContent]);
+      return a.length ? a : null;
+    }), 20000);
+    const bmap = Object.fromEntries(badges || []);
+    tn(SCR, 'メニュー', '管理者には、入居者マスタに失敗の札・職員マスタに遅れの札が出る（ほかのタイルには出ない）',
+      bmap['resident-master.html'] === '本番：保存の失敗6件（24時間）' && bmap['staff-master.html'] === '本番：写し返しが3時間1分遅れ' && (badges || []).length === 2, badges);
+    await shot(menu, 'health-menu');
+    await menu.close();
+  } finally {
+    endChecksQuiet(env, SCR);
+    await env.context.close();
+  }
+  // 事務所のアカウントでは、メニューは本番の健康を読まず、札も出さない
+  env = await makeEnv({ role: 'office', rpc: { save_health: () => healthResp() } });
+  try {
+    const menu = await open(env, 'index.html');
+    await menu.waitForTimeout(3000);
+    tn(SCR, 'メニュー', '事務所のアカウントでは本番の健康を読まず、札も出さない',
+      !env.st.rpc.some((r) => r.fn === 'save_health') && (await ev(menu, () => document.querySelectorAll('.hlbad').length)) === 0);
+    await menu.close();
+  } finally {
+    endChecksQuiet(env, SCR + '（事務所）');
+    await env.context.close();
+  }
+}
+
 try {
-  const FLOWS = { 1: flow1, 2: flow2, 3: flow3, 4: flow4, 5: flow5, 6: flow6, 7: flow7, 8: flow8 };
+  const FLOWS = { 1: flow1, 2: flow2, 3: flow3, 4: flow4, 5: flow5, 6: flow6, 7: flow7, 8: flow8, 9: flow9 };
   for (const [k, fn] of Object.entries(FLOWS)) if (!ONLY || ONLY.includes(k)) await fn();
 } catch (e) {
   fail++;

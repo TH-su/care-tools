@@ -26,6 +26,10 @@
   var CALL_MS = 90000;
   var MODE_MS = 60000;
 
+  /* 本番の健康（統合 0088）: 新しい保存先へ送った書く操作の失敗だけを、種類と理由で数える（su-health.js が無ければ何もしない） */
+  function health(body, info) {
+    try { if (WRITE_ACTIONS[body && body.action] && root.SUHealth) root.SUHealth.fail('stf', info); } catch (e) { /* 数えられなくても止めない */ }
+  }
   function note(where, e) {
     try { if (root.SUErrors && typeof root.SUErrors.note === 'function') root.SUErrors.note('保存・同期の失敗', e, 'stf:' + where); } catch (x) { /* 記録できなくても止めない */ }
   }
@@ -165,18 +169,19 @@
       return loadAuth().then(function (A) {
         if (!A) return refusal(MSG.noauth);
         return Promise.resolve(A.check()).then(function (st) {
-          if (!st || st.status !== A.STATUS.OK) return refusal(st && st.status === 'signed_out' ? MSG.login : MSG.denied);
+          if (!st || st.status !== A.STATUS.OK) { health(body, { code: st && st.status === 'signed_out' ? 'login' : 'denied' }); return refusal(st && st.status === 'signed_out' ? MSG.login : MSG.denied); }
           return mode(A).then(function (m) {
-            if (m === 'denied') return refusal(MSG.denied);
+            if (m === 'denied') { health(body, { code: 'denied' }); return refusal(MSG.denied); }
             if (m !== 'live') return Promise.resolve(viaGas(body, gasSend)).then(function (res) { return watchSwitched(res); });
             if (!sameRoute(body, 'stf')) return refusal(MSG_ROUTE);
             var ms = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : CALL_MS;
             return invoke(A, body, ms).then(function (d) {
+              if (d && typeof d === 'object' && d.ok === false && d.code !== 'shadow') health(body, { code: String(d.code || '') });
               if (d && d.code === 'shadow') { modeCache = null; if (body.reqId) delete routeOf[body.reqId]; return viaGas(body, gasSend); }   // 印が写しの期間へ戻った＝Google が正本（受け口は書く前に断るので、この番号はまだどこにも書いていない）
               if (d && (d.ok === true || d.partial === true) && WRITE_ACTIONS[body.action]) mirrorSoon(A, opts.url, body.token);
               return asResponse(d && typeof d === 'object' ? d : { ok: false, error: '新しい保存先の応答が空でした。' });
-            });
-          }, function (e) { note('印', e); return refusal(MSG.mode); });
+            }, function (e) { health(body, { timeout: true }); throw e; });
+          }, function (e) { note('印', e); health(body, { network: true }); return refusal(MSG.mode); });
         });
       }, function (e) { note('ログインの部品', e); return refusal(MSG.noauth); });
     });
