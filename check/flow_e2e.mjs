@@ -1444,6 +1444,9 @@ async function flow10() {
   let down = true;   // 体重の GAS が保存を断っている間（送れない）
   env.st.wt.respond = (b) => (down && b.action === 'saveRecord' ? { ok: false, error: '一時的に保存できません' } : real(b));
   const pq = (page) => page.evaluate(() => { try { const a = JSON.parse(localStorage.getItem('wtmgr_pq_v1') || '[]'); return Array.isArray(a) ? a.length : -1; } catch (e) { return -1; } });
+  /* 共通のデータベースの答えを遅らせる（CI のように遅い端末でも、ログインの確かめの答えの後に件数の控えが書かれることを確かめる。
+     2026-11-14 の CI の失敗＝答えの前に一覧を閉じて札が古いまま残った場面を、手元でも起こすため） */
+  await env.context.route(F.SB + '/**', async (route) => { await new Promise((r) => setTimeout(r, 1500)); return route.fallback(); });
   try {
     let page = await open(env, 'weight-record.html?masterId=' + ME.id);
     await waitFor(() => reqOf(env, 'weight-record.html').some((r) => r.to === 'wt' && r.action === 'getAll') && page.evaluate(() => !document.body.classList.contains('wr-sync-busy')));
@@ -1467,6 +1470,9 @@ async function flow10() {
     t(L + ': 一覧に氏名（' + ME.name + '・' + OTHER.name + '）が出ない', !body.includes(ME.name) && !body.includes(OTHER.name));
     await shot(page, 'flow10-unsent');
     /* メニューの札: 一覧の画面が残した件数の鍵（件数と数えた日だけ）を、メニューはほかの札と同じ道で読む（代表者の決定 2026-11-14） */
+    /* 一覧の画面が数え終える（ログインの確かめの答えの後に件数の控えを書く）まで待つ。待つのは画面の「数え終えた印」だけで、確かめる中身は変えない */
+    const done1 = await waitFor(() => page.evaluate(() => document.getElementById('when').getAttribute('data-done') === '1'));
+    t(L + ': 一覧の画面が数え終える（ログインの確かめの答えの後）', !!done1);
     const key = await page.evaluate(() => localStorage.getItem('unsent_menu_due'));
     t(L + ': 一覧の画面が件数と数えた日だけの鍵を残す', !!key && /^\{"v":1,"at":"\d{4}-\d{2}-\d{2}","unsent":true,"n":[1-9]\d*\}$/.test(key), key);
     const menu1 = await open(env, 'index.html');
@@ -1491,6 +1497,8 @@ async function flow10() {
       return none.length ? { none, listed } : null;
     }));
     t(L + ': 開き直すと「体重管理」は送信待ちの無いアプリに移る', !!after && after.none.includes('体重管理') && !after.listed.includes('体重管理'), after);
+    const done2 = await waitFor(() => page.evaluate(() => document.getElementById('when').getAttribute('data-done') === '1'));
+    t(L + ': 開き直した一覧も数え終える', !!done2);
     await page.close();
     const menu2 = await open(env, 'index.html');
     await menu2.waitForTimeout(800);

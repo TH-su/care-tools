@@ -194,18 +194,21 @@ t('何も無い端末は 0', U.total({ local: store({}), session: store({}) }) =
   t('日付の形が違う・一覧が無い時は書かない（null）', U.menuDue(rows, '11/14') === null && U.menuDue([], '2026-11-14') === null && U.menuDue(null, '2026-11-14') === null);
 }
 /* 画面（unsent.js）を偽の画面で動かす。書くのは件数の鍵だけ・現場の端末では書かない */
-function runPage(localObj, auth) {
+function runPage(localObj, auth, timers) {
   const writes = [];
   const ls = store(localObj);
   ls.setItem = (k, v) => { writes.push([k, v]); localObj[k] = String(v); };
   const els = {};
-  const mk = () => ({ textContent: '', hidden: false, className: '', kids: [], attrs: {}, appendChild(c) { this.kids.push(c); return c; }, setAttribute(k, v) { this.attrs[k] = v; }, addEventListener() {} });
+  const mk = () => ({ textContent: '', hidden: false, className: '', kids: [], attrs: {}, appendChild(c) { this.kids.push(c); return c; }, setAttribute(k, v) { this.attrs[k] = v; }, removeAttribute(k) { delete this.attrs[k]; }, addEventListener() {} });
   const doc = { readyState: 'complete', getElementById: (id) => (els[id] = els[id] || mk()), createElement: () => mk(), addEventListener() {} };
   const handlers = {};
   const win = { localStorage: ls, sessionStorage: store({}), addEventListener(k, fn) { (handlers[k] = handlers[k] || []).push(fn); } };
   /* auth は答え（オブジェクト）か、答えを返す関数（確かめの答えが返る時を試験で決めるため） */
   if (auth) win.SUAuth = { STATUS: { OK: 'ok' }, check: typeof auth === 'function' ? auth : () => Promise.resolve(auth) };
-  const ctx = { window: win, document: doc, localStorage: ls, Date, JSON, Object, Array, String, Number, isFinite, SyntaxError, Error, Promise };
+  /* timers を渡した時は時計を試験が進める（[{fn, ms}] に積む） */
+  const st = timers ? (fn, ms) => { timers.push({ fn, ms }); return timers.length; } : setTimeout;
+  const ct = timers ? () => {} : clearTimeout;
+  const ctx = { window: win, document: doc, localStorage: ls, Date, JSON, Object, Array, String, Number, isFinite, SyntaxError, Error, Promise, setTimeout: st, clearTimeout: ct };
   vm.createContext(ctx);
   vm.runInContext(raw('unsent-calc.js'), ctx);
   ctx.SUUnsent = win.SUUnsent;
@@ -270,6 +273,29 @@ function runPage(localObj, auth) {
     const q3 = runPage(Object.assign({}, LOCAL), () => Promise.reject(new Error('通信の失敗')));
     await tick(); await tick();
     t('確かめられない（失敗）の答えの後に1回だけ書く（15）', q3.writes.length === 1 && JSON.parse(q3.writes[0][1]).n === 15, q3.writes);
+  })());
+  pending.push((async () => {
+    /* CI の失敗 2026-11-14: ログインの確かめの答えが返らない・遅い端末では、上限（4秒・仮置き）を過ぎたら確かめられないとして
+       入居調整を除いた件数で1回書き、後で答えが出れば書き直す */
+    const timers = [];
+    let resolve;
+    const q = runPage(Object.assign({}, LOCAL, { unsent_menu_due: '{"v":1,"at":"2026-11-01","unsent":true,"n":9}' }), () => new Promise((r) => { resolve = r; }), timers);
+    await tick();
+    const w = timers.find((x) => x.ms === 4000);
+    t('確かめの答えを待つ上限は4秒', !!w, timers.map((x) => x.ms));
+    t('上限の前は書かない・数え終えた印も付けない', q.writes.length === 0 && q.els.when && q.els.when.attrs['data-done'] === undefined, [q.writes, q.els.when && q.els.when.attrs]);
+    if (w) w.fn();
+    t('上限を過ぎたら入居調整を除いた件数（15）で1回書き、数え終えた印を付ける', q.writes.length === 1 && JSON.parse(q.writes[0][1]).n === 15 && q.els.when.attrs['data-done'] === '1', q.writes);
+    resolve({ status: 'ok', role: 'office' });
+    await tick(); await tick();
+    t('後で使える答えが出たら入居調整を数えて書き直す（16）', q.writes.length === 2 && JSON.parse(q.writes[1][1]).n === 16, q.writes);
+    const timers2 = [];
+    const q2 = runPage(Object.assign({}, LOCAL), { status: 'ok', role: 'office' }, timers2);
+    await tick(); await tick();
+    const w2 = timers2.find((x) => x.ms === 4000);
+    const n2 = q2.writes.length;
+    if (w2) w2.fn();
+    t('答えが上限の前に出た時は、上限を過ぎても書き直さない（入居調整を外した数で上書きしない）', n2 === 1 && q2.writes.length === 1 && JSON.parse(q2.writes[0][1]).n === 16, q2.writes);
   })());
   t('一覧の画面に氏名が出ない', JSON.stringify(Object.values(p.els).map((e) => e.textContent)).indexOf(NAME) < 0);
 }
