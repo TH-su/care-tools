@@ -208,6 +208,10 @@
 !/help-sec.js
 !/perf-report.js
 !/perf-report.css
+!/unsent.html
+!/unsent.js
+!/unsent.css
+!/unsent-calc.js
 !/training-plan.html
 !/training-plan-form.js
 # 職員マスタ（2026-09-10・管理者承認のうえ公開）。コードのみ公開。

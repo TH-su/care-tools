@@ -45,7 +45,8 @@ const SCREENS = [
   ['accounts', 'h-accounts', '使える人の管理'],
   ['app-access', 'h-app-access', 'アプリの使える人'],
   ['menu-settings', 'h-menu-settings', 'メニューの設定'],
-  ['shadow-check', 'h-shadow-check', '写しの見比べ']
+  ['shadow-check', 'h-shadow-check', '写しの見比べ'],
+  ['unsent', 'h-unsent', '未送信の一覧']
 ];
 
 console.log('\n— A. 画面ごとの節 —');

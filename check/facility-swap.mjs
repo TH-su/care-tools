@@ -73,6 +73,7 @@ export const EXTRA_PAGES = [
   { file: 'app-access.html', title: 'アプリの使える人', reads: false, shows: false, why: '施設情報を読まない' },
   { file: 'perf-report.html', title: '動作の速さの記録', reads: false, shows: false, why: '施設情報を読まない' },
   { file: 'shadow-check.html', title: '写しの見比べ', reads: false, shows: false, why: '施設情報を読まない' },
+  { file: 'unsent.html', title: '未送信の一覧', reads: false, shows: false, why: '施設情報を読まない（2026-11-14 端末の送信待ちを読むだけ）' },
   { file: 'kotowaza-jiten.html', title: 'ことわざ辞典（移転の案内）', reads: false, shows: false, why: '移転の案内だけで、施設情報を読まない' },
 ];
 
