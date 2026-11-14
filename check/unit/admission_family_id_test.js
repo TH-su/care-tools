@@ -285,7 +285,9 @@ console.log('\n— 7. 番号の重なり・編集の保存 —');
   const cur5 = clone(base4); cur5[0].phone = '000-0000-0030'; cur5[0].updatedAt = '2026-11-13T05:00:00.000Z';
   t('保存: 編集の間に今の行も変わっていれば時刻の新しい方', b.famSaveMerge_(cur5, base4, ed4, T2)[0].phone === '000-0000-0030', '');
   t('saveEdit は家族を famSaveMerge_ で突き合わせる', /target\.family = famSaveMerge_\(target\.family, asObj\(editBase\)\.family, editing\.family, famAt\);/.test(cutF('saveEdit')), '');
-  t('online の出来事は編集中に取り直さない', /addEventListener\('online'[\s\S]{0,400}!busyEditing\(\) && Date\.now\(\) - lastPullAt > 60000\) pull\(false\)/.test(SRC), '');
+  /* 2026-11-13 PR #566 の反証: つながった時の取り直しは afOnlinePull_ へ分けた（窓の間は窓の後へ回す）。編集中に取り直さない確かめは同じ */
+  t('online の出来事は編集中に取り直さない', /addEventListener\('online'[\s\S]{0,400}afOnlinePull_\(\);/.test(SRC)
+    && /function afOnlinePull_\(\) \{[\s\S]{0,300}if \(!busyEditing\(\) && Date\.now\(\) - lastPullAt > 60000\) pull\(false\);/.test(SRC), '');
 }
 
 console.log('\n' + (fail ? '✗' : '✓') + ' ' + pass + ' 件成功 / ' + fail + ' 件失敗');

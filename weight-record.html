@@ -1393,17 +1393,24 @@ input[type="text"],input[type="number"],input[type="month"],input[type="date"],i
     <details class="api-help">
       <summary>うまく繋がらない時のチェック項目</summary>
       <ol>
-        <li><b>「アクセスできるユーザー」が「全員」になっているか</b><br>
-            Apps Script → デプロイの管理 → 編集（鉛筆）→ 「アクセスできるユーザー = 全員」 → 更新</li>
-        <li><b>URL は <code>/exec</code> で終わっているか</b><br>
-            <code>/dev</code>（テスト用）はオーナー本人しか叩けません</li>
-        <li><b>初回承認が完了しているか</b><br>
-            Apps Script で一度「実行」を押し、「アクセスを承認」→ アカウント選択 →
-            「詳細」→「（プロジェクト名）に移動」→「許可」までやり切ったか確認</li>
+        <li><b>URL は <code>/exec</code> で終わっているか</b></li>
         <li><b>体重管理用の Google の受け口の URL か</b><br>
             別のアプリの受け口の URL だと、答えの形が違って読み取れません。体重管理用に作った受け口の URL を貼ってください</li>
         <li>うまくいかない時は「🩺 接続診断」を押して具体的な原因を表示</li>
       </ol>
+      <!-- 受け口の側（Apps Script・デプロイの管理・/dev の説明・初回承認）の確かめは管理者の作業なので畳む（2026-11-13 第6段 WR-01・文はそのまま・仮置き）。URL が /exec で終わるかは職員がその場で直せるので外に出す（PR #566 の反証） -->
+      <details class="api-diag-more" id="apiHelpAdmin">
+        <summary>管理者向けの詳しい内容</summary>
+        <ol>
+          <li><b>「アクセスできるユーザー」が「全員」になっているか</b><br>
+              Apps Script → デプロイの管理 → 編集（鉛筆）→ 「アクセスできるユーザー = 全員」 → 更新</li>
+          <li><b><code>/dev</code> で終わる URL は使えない</b><br>
+              <code>/dev</code>（テスト用）はオーナー本人しか叩けません</li>
+          <li><b>初回承認が完了しているか</b><br>
+              Apps Script で一度「実行」を押し、「アクセスを承認」→ アカウント選択 →
+              「詳細」→「（プロジェクト名）に移動」→「許可」までやり切ったか確認</li>
+        </ol>
+      </details>
     </details>
   </div>
 
