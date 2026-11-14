@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-9RpN1zUfdHWoo1ZGePslTuJ5ega1P4H7wsJjwakReSk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ZvvBSfsB6qVRbgyH4YER8v47ky58uPUTzKDzov2844Y='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -776,13 +776,13 @@ body.su-print-staff24 #rp-print, body.su-print-staff24range #rp-print { display:
 #mStaff24 .rp-range-list .ng { color: var(--ng); font-weight: 700; }
 </style>
 <script src="su-errors.js?v=2026-10-27"></script>
-<script src="su-dialog.js?v=2026-11-13.2"></script>
+<script src="su-dialog.js?v=2026-11-14.2"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
 <script src="su-kv.js?v=2026-11-08"></script>
 <script src="su-roster.js?v=2026-10-28"></script>
-<script src="su-res-read.js?v=2026-11-11"></script>
+<script src="su-res-read.js?v=2026-11-14"></script>
 <script src="su-kv-shadow.js?v=2026-10-28"></script>
 <link rel="stylesheet" href="su-print.css?v=2026-11-13">
 <script src="su-print.js?v=2026-11-13"></script>
@@ -15067,13 +15067,18 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var sl = $('rpSmList'); if (sl) sl.innerHTML = '';
     try { $('btnStaff24').focus(); } catch (e) {}
   }
-  function printStaff24_() {
+  function printStaff24_(ok_) {
     if (!window.SUPrint) { toast('印刷の部品（su-print.js）を読み込めていません。ページを読み込み直してください', true); return; }
     staff24Render_();
     if ($('rpPrint').disabled) return;
     var est = null;
     try { est = SUPrint.estimate('staff24'); } catch (e) { est = null; wsNote_('24時間配置表の見込み', e); }
-    if (est && est.pages > 1 && !window.confirm('1枚に収まりません（約' + est.pages + 'ページ）\n文字をいちばん小さくしても A4 縦1枚に入りません。そのまま2ページ目へ続けて印刷しますか？')) return;
+    /* 確かめは画面の中の窓（OK の後にもう一度呼び、表を作り直して見込みを取り直してから刷る・印刷の手順は今までと同じ・第6段の監査 WS-04 2026-11-14） */
+    if (ok_ !== WS_OK_ && est && est.pages > 1) {
+      var v0_ = wsView_();
+      wsConfirm_('1枚に収まりません（約' + est.pages + 'ページ）\n文字をいちばん小さくしても A4 縦1枚に入りません。そのまま2ページ目へ続けて印刷しますか？', function () { if (wsView_() === v0_) printStaff24_(WS_OK_); });
+      return;
+    }
     SUPrint.print('staff24');
   }
   var staff24Scroll_ = null;
@@ -15210,7 +15215,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try { fac = (window.SUFacility && window.SUFacility.loadFacilityProfile().facilityName) || ''; } catch (eF) { fac = ''; }
     return { facility: fac, dateText: date.split('-').join('/') + '（' + WD_JA[dateObj(date).getDay()] + '）', madeText: staff24RangeMade_, altName: '' };
   }
-  function staff24RangePrint_() {
+  function staff24RangePrint_(ok_) {
     if (!window.SUPrint) { toast('印刷の部品（su-print.js）を読み込めていません。ページを読み込み直してください', true); return; }
     staff24RangeShow_();   /* 今のサ責の選択で作り直す */
     var st = staff24Range_;
@@ -15221,7 +15226,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try { est = SUPrint.estimate('staff24range', { pages: n }); } catch (e) { est = null; wsNote_('24時間配置表の期間の見込み', e); }
     var q = n + '日分（A4縦 ' + n + '枚）を印刷します。';
     if (est && est.pages > n) q = '1日1枚に収まらない日があります（全部で約' + est.pages + 'ページ）。文字をいちばん小さくしても入りません。\n' + q;
-    if (!window.confirm(q + '\nよろしいですか？')) { staff24RangeArm_ = false; return; }
+    /* 確かめは画面の中の窓（WS-04 2026-11-14）。待つ間は印を外しておき（窓の間の Cmd+P で期間の紙にしない）、
+       OK の後にもう一度呼んで、期間の表を作り直し・見込みを取り直してから、今までと同じ順で印を付けて刷る */
+    if (ok_ !== WS_OK_) {
+      staff24RangeArm_ = false;
+      var v0_ = wsView_();
+      wsConfirm_(q + '\nよろしいですか？', function () { if (wsView_() === v0_ && staff24Range_ === st) staff24RangePrint_(WS_OK_); });
+      return;
+    }
     staff24RangeArm_ = true;   /* 見込みの後始末（after）で外れるので、印刷の前にもう一度付ける */
     SUPrint.print('staff24range', { pages: n });
   }
@@ -16467,7 +16479,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var care = careSyncState_();
     return { dirtyDays: dirtyDayList_().length, carePending: care.pending, careKnown: care.known,
              careTabOnly: care.tabOnly, careOps: loadCareOps_().ops.length, masterPending: masterUnsent_(),
-             refetchDays: refetchList_().length };
+             refetchDays: refetchList_().length, carePushFailed: carePushFailed_ };
   }
   /* 未送信の内訳。週間計画アプリ側の未送信フラグ(care_schedule_dirty_v1)だけが立っていて、ワースケには
    * 送る物が無い場合(tabOnly)も未送信に数える（安全側・フラグは週間計画アプリの物なので降ろさない）。
@@ -16483,6 +16495,20 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
              careUnsent: careSend || opsUnsent || tabOnly, any: sendable || tabOnly };
   }
   function hasUnsent_(p) { return unsentKinds_(p).any; }
+  /* 閉じる前の確かめ（2026-11-14）: この端末からクラウドへ送れていない変更が残っている間だけ、閉じる・ほかの画面へ移る前にブラウザに止めさせる。
+   * 端末への保存は pagehide の flushAll_ で今までどおり。同期OFF・送る物が無い・週間計画側だけの印・新しい版での読み込み直し（reloadPending_）では何もしない */
+  function unsentLeaveGuard_(e) {
+    if (reloadPending_) return undefined;
+    var p;
+    try { if (!syncOn()) return undefined; p = syncPendingInfo_(); } catch (err) { return undefined; }
+    var k = unsentKinds_(p);
+    /* 週間計画の送信をまだ確かめていない間（careKnown が false）は、この起動で送ろうとして失敗した時だけ再適用の記録を理由に止める
+       （起動直後で何も送ろうとしていない時は止めない。送信待ち・送信中は carePending で止める） */
+    var real = p.dirtyDays > 0 || !!(p.carePending && !p.careTabOnly) || !!p.masterPending || (k.opsUnsent && (p.careKnown || !!p.carePushFailed));
+    if (!k.sendable || !real) return undefined;
+    if (e) { e.preventDefault(); e.returnValue = ''; }
+    return '';
+  }
   function updateSyncBadge_() {
     var el = $('badgeSync');
     if (!el) return;
@@ -16727,7 +16753,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * ★取り直し待ちの印を先に付けるのが要点（2026-09-24）。これが無いと、通信できなかった時に
    *   未送信の印だけが外れ、次の自動調整（マスタ反映・週間計画の照合・シフト反映）が即座に
    *   印を立て直して「未送信あり」が永久に消えなかった。印がある間はこの端末からは送らない。 */
-  function discardUnsentDays_() {
+  function discardUnsentDays_(ok_) {
     if (!syncOn()) { toast('同期先が未設定です', true); return; }
     var rows = unsentDayRows_();
     if (!rows.length) { toast('未送信の日はありません'); renderUnsentDiag_(); return; }
@@ -16744,7 +16770,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       ? ('\n\n⚠ うち ' + withWork + '日は職員名が入っています。この端末でしか編集していない内容があれば失われます。')
       : '\n\n（職員名の入った日はありません）';
     msg += '\n\n進めますか？';
-    if (!window.confirm(msg)) { if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '中止しました'; return; }
+    /* 確かめは画面の中の窓（OK の後にもう一度呼び、未送信の日を取り直してから進む・WS-04 2026-11-14） */
+    if (ok_ !== WS_OK_) {
+      /* OK の後の呼び直しにも、呼ぶ側（［取り直す］のボタン）と同じ失敗の知らせを付ける */
+      wsConfirm_(msg, function () { try { discardUnsentDays_(WS_OK_); } catch (e) { toast('取り直しに失敗しました', true); } }, function () { if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '中止しました'; });
+      return;
+    }
     var total = rows.length;
     /* ★退避 → 取り直し待ちの印 → 未送信の印を落とす、の順。
      * 取り直し待ちの印がある間は markDayDirty_ も push も入口で止まる＝取得を待つ間も、
@@ -16866,7 +16897,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var on = conflictRestoreOffer_({ has: !!st, ok: !!(st && st.ok), field: field, altId: ui.altId, same: !!(st && st.sig === daySig(store.get())) });
     if (b.hidden !== !on) b.hidden = !on;
   }
-  function restoreConflictStash_() {
+  function restoreConflictStash_(ok_, sig0_, cur0_) {
     var date = ui.currentDate;
     if (wsIsFieldDevice_()) { toast(FIELD_BOARD_MSG, true); return; }
     if (ui.altId) { toast('案を表示している間は控えから戻せません（本番に戻してから押してください）', true); return; }
@@ -16881,7 +16912,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       '退避した後にほかの端末で直した配置は、控えの配置に置き換わります。実施・チェック・札のコメントは、控えの同じ札へ移します。\n' +
       '今の盤面は控えの盤面に入れ替わり、ほかの端末へ送ります。\n入れ替えた後でも「元に戻す」（↩）で今の盤面に戻せます' +
       (sm.locked && !curLocked ? '（ロックは残ります。外す時は🔒ロックのチェックを外してください）' : '') + '。控えはこの端末に残ります。';
-    if (!window.confirm(msg)) return;
+    /* 確かめは画面の中の窓（OK の後にもう一度呼び、日付・案・控えを取り直してから戻す・WS-04 2026-11-14）。
+       窓の間に控えが入れ替わっていたら、確かめた控えと違うので戻さない */
+    /* 今の盤面とロックも、窓を出した時と違えば置き換えない（窓の文は出した時の盤面とロックで書いたため） */
+    var curNow_ = daySig(cur) + '|' + (curLocked ? 1 : 0);
+    if (ok_ !== WS_OK_) {
+      var v0_ = wsView_(), stSig_ = st.sig;
+      wsConfirm_(msg, function () { if (wsView_() === v0_) restoreConflictStash_(WS_OK_, stSig_, curNow_); });
+      return;
+    }
+    if (st.sig !== sig0_ || curNow_ !== cur0_) { toast('この日の控えが変わったため戻していません。もう一度押してください', true); paintConflictRestore_(); return; }
     if (ui.currentDate !== date || ui.altId) return;
     /* 退避の後にほかの端末で付いた実施・チェック・札のコメントを、控えの同じ札へ移す（案を本番にする時と同じ carryMarks_） */
     var now_ = store.get(), cInfo = {};
@@ -19624,6 +19664,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
   var carePushBusy_ = false, carePushAgain_ = false, careWipeNotified_ = false;
   var carePushQueued_ = false;   /* 同期状態バッジ用: 送信待ち(2秒)の間だけ true。pushCareNow に入った時点で降ろす */
+  var carePushFailed_ = false;   /* この起動で週間計画を送ろうとして失敗した（成功で降ろす）。閉じる前の確かめが、比べる基準の無い間も止める合図（2026-11-14） */
   /* 週間計画の内容が「最後に送信・取得した版(lastPushed.care)」と違う＝送る物がある。schedulePushCare の判定そのもの */
   function careRawPending_(raw) { return !!raw && raw !== lastPushed.care; }
   /* 週間計画の未送信（同期状態バッジ用・送信の挙動には関与しない）。
@@ -19652,6 +19693,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try { updateSyncBadge_(); } catch (eSb) {}
     gas({ action: 'put', key: CARE_KEY, rev: loadRevs().care || 0, data: data }, function (j) {
       carePushBusy_ = false;
+      carePushFailed_ = !(j && j.ok);   /* 断り・競合・通信失敗はどれも、まだ送れていない */
       if (j && j.ok) {
         saveRevsPatch({ care: j.rev });
         lastPushed.care = raw;
@@ -20347,7 +20389,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     $('btnUndo').addEventListener('click', function () { store.undo(); });
     $('btnRedo').addEventListener('click', function () { store.redo(); });
     /* 日単位ロックの切替（通常dispatch=Undo可・daySigに含まれpushで全端末へ伝播）。 */
-    if ($('chkLock')) $('chkLock').addEventListener('change', function () {
+    /* ロックの切り替え（確かめは画面の中の窓・OK の後にもう一度呼ぶ・WS-04 2026-11-14） */
+    function onLockChange_(ok_) {
       if (ui.altId) { $('chkLock').checked = false; toast('案ではロックを使いません（本番に戻してから操作してください）', true); return; }
       /* 現場の端末ではロックも盤面の操作＝変えさせない（2026-10-11）。止めた時に「ロック中」と言わないよう先に返す */
       if (wsIsFieldDevice_()) {
@@ -20358,8 +20401,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var on = $('chkLock').checked;
       /* 外す時は必ず確かめる（代表者の決定 2026-10-13）。1回押すだけで全端末のロックが外れ、外れた日を開いた端末の
        * 自動処理（勤務表の反映・週間計画の同期・自動配置）が職員の列を組み直して、調整済みの支援が別の列へ移ったため */
-      if (!on && !window.confirm(LOCK_OFF_CONFIRM)) {
-        $('chkLock').checked = true;
+      /* 窓の間に日付・案が変わった・ほかの端末で外れた時は外さず、チェックは今の日のロックに合わせる。キャンセルはロックのまま */
+      if (!on && ok_ !== WS_OK_) {
+        var v0_ = wsView_();
+        wsConfirm_(LOCK_OFF_CONFIRM, function () {
+          if (wsView_() === v0_ && store.get().meta && store.get().meta.locked === true) { $('chkLock').checked = false; onLockChange_(WS_OK_); return; }
+          $('chkLock').checked = !!(store.get().meta && store.get().meta.locked);
+        }, function () { $('chkLock').checked = !!(store.get().meta && store.get().meta.locked); });
         return;
       }
       /* 解除時は「過去日の自動保護が残るか」を store へ渡す（reducer は patch しか読まない・2026-09-10） */
@@ -20384,15 +20432,24 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (pend_ <= 0) { lockedShiftChg_ = { date: '', n: 0 }; paintShiftChgBadge_(); }
         else if (!settings.shiftAuto) {
           toast('シフトの自動反映がOFFです。［取込］→［シフト］から反映してください（未反映 ' + pend_ + '件）', true);
-        } else if (window.confirm('シフトに未反映の変更が ' + pend_ + '件あります。\n今すぐ盤面へ反映しますか？\n\n' +
-            '※ 反映すると職員の列が作り直されます。手で動かした支援の位置が変わることがあります。\n' +
-            '※ 「いいえ」を選んでも、後から［取込］→［シフト］でいつでも反映できます。')) {
-          lockedShiftChg_ = { date: '', n: 0 }; paintShiftChgBadge_();
-          try { applyShiftForDate(ui.currentDate, { auto: true, ask: true }); } catch (eUL) {}   /* 本人が「はい」を選んだ反映＝一度ロックした日でも通す */
+        } else {
+          /* 続けて尋ねる窓も画面の中の窓（1つ目の OK の後に出す）。週間計画の未反映は、答えの後に数える（今までと同じ順） */
+          var v1_ = wsView_();
+          wsConfirm_('シフトに未反映の変更が ' + pend_ + '件あります。\n今すぐ盤面へ反映しますか？\n\n' +
+              '※ 反映すると職員の列が作り直されます。手で動かした支援の位置が変わることがあります。\n' +
+              '※ 「いいえ」を選んでも、後から［取込］→［シフト］でいつでも反映できます。', function () {
+            if (wsView_() === v1_ && !fieldBlock_() && !(store.get().meta && store.get().meta.locked === true)) {
+              lockedShiftChg_ = { date: '', n: 0 }; paintShiftChgBadge_();
+              try { applyShiftForDate(ui.currentDate, { auto: true, ask: true }); } catch (eUL) {}   /* 本人が「はい」を選んだ反映＝一度ロックした日でも通す */
+            }
+            try { countWeeklyPending_(); } catch (eWc) {}
+          }, function () { try { countWeeklyPending_(); } catch (eWc) {} });
+          return;
         }
         try { countWeeklyPending_(); } catch (eWc) {}   /* 外した直後に週間計画の未反映を数えて印に出す（反映はしない） */
       }
-    });
+    }
+    if ($('chkLock')) $('chkLock').addEventListener('change', function () { onLockChange_(); });
     document.addEventListener('keydown', function (e) {
       /* Ctrl/Cmd+S は入力欄・モーダル中でも「今すぐ保存」にする（ブラウザの保存ダイアログを抑止） */
       if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
@@ -20463,11 +20520,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         try { var lb2 = $('lockLabel'); if (lb2 && lb2.scrollIntoView) lb2.scrollIntoView({ block: 'nearest' }); } catch (e) {}
         return;
       }
-      if (!window.confirm('週間計画に未反映の変更が ' + n + '件あります。\n今すぐ盤面へ反映しますか？\n\n' +
+      /* 確かめは画面の中の窓（OK の後に日付・端末の用途・ロックを取り直す・WS-04 2026-11-14） */
+      var v0_ = wsView_();
+      wsConfirm_('週間計画に未反映の変更が ' + n + '件あります。\n今すぐ盤面へ反映しますか？\n\n' +
           '※ 反映すると、週間計画で増えた支援は空いている列へ自動で置かれ、なくなった支援は盤面から消えます。\n' +
-          '※ 「いいえ」を選んでも、後からこの印を押せばいつでも反映できます。')) return;
-      try { runManual_(reconcileWeekly); } catch (eRw) {}
-      try { renderAll(); } catch (eRa) {}
+          '※ 「いいえ」を選んでも、後からこの印を押せばいつでも反映できます。', function () {
+        if (wsView_() !== v0_ || fieldBlock_() || store.get().meta.locked) return;
+        try { runManual_(reconcileWeekly); } catch (eRw) {}
+        try { renderAll(); } catch (eRa) {}
+      });
     });
 
     $('trayToggle').addEventListener('click', function () {
@@ -20848,20 +20909,26 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       /* 取り直し待ちの日がある＝「この端末からは送らない」状態。ここで送るのは本人の明示操作なので、
        * 何が起きるかを確認してから待ちを解除する（保護には必ず解除手段を用意する・2026-09-24）。 */
       var held_ = refetchList_();
-      if (held_.length) {
-        if (!window.confirm('クラウドから取り直す予定の ' + held_.length + '日があります。\n\n'
-          + '［OK］を押すと取り直しをやめ、【この端末に残っている内容をクラウドへ送信】します。\n'
-          + 'クラウド側の同じ日は、この端末の内容で置き換わります。\n\n進めますか？')) {
-          if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '中止しました';
-          return;
-        }
-        for (var h_ = 0; h_ < held_.length; h_++) { clearRefetch_(held_[h_]); markDayDirty_(held_[h_]); }
-        try { lastPushed.day = ''; } catch (eL2) {}   /* 表示中の日も確実に送信対象へ戻す */
+      function sendNow_() {
+        if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '送信しています…';
+        try { recoverNow_(); } catch (e) {}
+        setTimeout(function () { try { renderUnsentDiag_(); } catch (e2) {}
+          if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '送信を試みました（残りは一覧をご確認ください）'; }, 2500);
       }
-      if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '送信しています…';
-      try { recoverNow_(); } catch (e) {}
-      setTimeout(function () { try { renderUnsentDiag_(); } catch (e2) {}
-        if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '送信を試みました（残りは一覧をご確認ください）'; }, 2500);
+      if (held_.length) {
+        /* 確かめは画面の中の窓（OK の後に、その時の取り直し待ちの日を読み直して解除する・WS-04 2026-11-14） */
+        wsConfirm_('クラウドから取り直す予定の ' + held_.length + '日があります。\n\n'
+          + '［OK］を押すと取り直しをやめ、【この端末に残っている内容をクラウドへ送信】します。\n'
+          + 'クラウド側の同じ日は、この端末の内容で置き換わります。\n\n進めますか？', function () {
+          if (!syncOn()) { toast('同期先が未設定です', true); return; }
+          held_ = refetchList_();
+          for (var h_ = 0; h_ < held_.length; h_++) { clearRefetch_(held_[h_]); markDayDirty_(held_[h_]); }
+          try { lastPushed.day = ''; } catch (eL2) {}   /* 表示中の日も確実に送信対象へ戻す */
+          sendNow_();
+        }, function () { if ($('stUnsentMsg')) $('stUnsentMsg').textContent = '中止しました'; });
+        return;
+      }
+      sendNow_();
     });
     if ($('stUnsentDiscard')) $('stUnsentDiscard').addEventListener('click', function () {
       try { discardUnsentDays_(); } catch (e) { toast('取り直しに失敗しました', true); }
@@ -21411,7 +21478,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         store.dispatch({ type: 'ASSIGN', id: taskId, staffId: staffId, start: start, end: end });
         markFacTouched_(taskId);   /* 移動した施設業務/休憩は手動扱いに（自動再構成から保護） */
       },
-      onMultiAssign: function (moves, needConfirm) {
+      onMultiAssign: function (moves, needConfirm, ok_) {
         /* 複数選択ブロックの同時移動。相対時刻維持で同一職員へ。
          * 移動先に「縮小可能な施設業務/自由枠」があれば、それを残余区間へ縮小/分割しつつ同時配置する
          * （休憩は縮小対象外）。全件検証してから一括適用（1操作＝undo1回）。
@@ -21420,7 +21487,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         if (!pm.ok) { toast(pm.reason, true); return; }
         /* 勤務時間外の支援は確かめずに置く（2026-10-20 本人選択「出さない」）。外れた支援は赤く出て、上に「時間外 N」が出る。
          * 支援以外（休憩・施設業務など）を勤務時間外へ動かす時は今までどおり確かめる（赤くならず数にも入らないため） */
-        if (pm.ooh && nonCareOutOfHours_(moves) && !window.confirm('勤務時間外を含みますが配置しますか？')) return;
+        /* 確かめは画面の中の窓（OK の後に、盤面が変わっていなければもう一度呼んで検証し直してから置く・WS-04 2026-11-14） */
+        if (ok_ !== WS_OK_ && pm.ooh && nonCareOutOfHours_(moves)) {
+          var selfM_ = this, v0_ = wsView_(), sig0_ = daySig(store.get());
+          wsConfirm_('勤務時間外を含みますが配置しますか？', function () {
+            if (wsView_() !== v0_ || daySig(store.get()) !== sig0_) { toast('盤面が変わったため配置していません。もう一度動かしてください', true); return; }
+            selfM_.onMultiAssign(moves, needConfirm, WS_OK_);
+          });
+          return;
+        }
         var splits = pm.splits;
         clearSelAfterGroupMove_(moves);
         if (splits.length) {
@@ -21431,12 +21506,20 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           toast(moves.length + '件を移動しました');
         }
       },
-      onAssignConfirm: function (taskId, staffId, start, end, reason) {
+      onAssignConfirm: function (taskId, staffId, start, end, reason, ok_) {
         /* 勤務時間外への支援の移動: 確かめずに置く（2026-10-20 本人指示「一旦職員がいない枠に移して調整する方が効率が良い」・本人選択「出さない」）。
          * 外れた支援は枠全体が赤くなり、上に「時間外 N」が出る＝誰かの勤務時間へ動かす必要に気づける。
          * 支援以外（休憩・施設業務など）は赤くならず数にも入らないので、今までどおり確かめる */
         var tAc_ = M.findTask(store.get().tasks, taskId);
-        if (!(tAc_ && (tAc_.kind === 'care' || M.namedFree(tAc_))) && !window.confirm('勤務時間外ですが配置しますか？')) return;
+        if (ok_ !== WS_OK_ && !(tAc_ && (tAc_.kind === 'care' || M.namedFree(tAc_)))) {
+          /* 確かめは画面の中の窓（OK の後に、盤面が変わっていなければ置く・WS-04 2026-11-14） */
+          var selfA_ = this, v0_ = wsView_(), sig0_ = daySig(store.get());
+          wsConfirm_('勤務時間外ですが配置しますか？', function () {
+            if (wsView_() !== v0_ || daySig(store.get()) !== sig0_) { toast('盤面が変わったため配置していません。もう一度動かしてください', true); return; }
+            selfA_.onAssignConfirm(taskId, staffId, start, end, reason, WS_OK_);
+          });
+          return;
+        }
         store.dispatch({ type: 'ASSIGN', id: taskId, staffId: staffId, start: start, end: end });
         markFacTouched_(taskId);
       },
@@ -21453,9 +21536,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         store.dispatch({ type: 'SHRINK_PLACE', careId: careId, staffId: staffId, start: start, end: end, facId: facId });
         toast('施設業務を縮小して配置しました');
       },
-      onDuplicateTo: function (taskId, staffId, start, end, needConfirm) {
+      onDuplicateTo: function (taskId, staffId, start, end, needConfirm, ok_) {
         /* Alt(Option)＋休憩/施設業務のドロップ＝複製してその場へ配置（元枠は残す） */
-        if (needConfirm && !window.confirm('勤務時間外ですが配置しますか？')) return;
+        /* 確かめは画面の中の窓（OK の後に、盤面が変わっていなければもう一度呼んで重なりを確かめ直してから置く・WS-04 2026-11-14） */
+        if (needConfirm && ok_ !== WS_OK_) {
+          var selfD_ = this, v0_ = wsView_(), sig0_ = daySig(store.get());
+          wsConfirm_('勤務時間外ですが配置しますか？', function () {
+            if (wsView_() !== v0_ || daySig(store.get()) !== sig0_) { toast('盤面が変わったため配置していません。もう一度動かしてください', true); return; }
+            selfD_.onDuplicateTo(taskId, staffId, start, end, needConfirm, WS_OK_);
+          });
+          return;
+        }
         var src = M.findTask(store.get().tasks, taskId);
         if (!src) return;
         /* 複製は新規ブロックのため、元枠を含む全タスクと重複しないこと（在席位置への複製を防ぐ） */
@@ -21592,7 +21683,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261114110107';
+  var WS_BUILD = '20261114192453';
   var WS_APP_VER = 2026102701;   /* 2026-10-27 まだ届いていないロックを「外した」に変えて送り、版の進んでいない古い未送信を退避して捨てる前の版の画面が、仕上げたロックの盤面を前の版で上書きしないよう上げた（代表者承認 A・B）
                                   * （2026101706: 2026-10-23 トレイへ入った理由の印（parkedByHand・absentMoved・routineTray）を知らない前の版の画面が、手で戻した札・休みで移した札を印なしで残し、
                                   * 新しい版がそれを列へ戻してしまわないよう上げた）
@@ -21817,6 +21908,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     });
     /* タブを閉じる/リロード/iOSの離脱(beforeunload不発)で確実にフラッシュ */
     window.addEventListener('pagehide', function () { try { flushAll_(); } catch (e) {} });
+    window.addEventListener('beforeunload', unsentLeaveGuard_);   /* 送れていない変更がある間だけ止める（unsentLeaveGuard_） */
     /* URLハッシュ日付ルーティング: ブラウザ戻る/進む（hashchange）で日付を移動。
      * 自己更新(switchDate内のlocation.hash代入)は hashNavigating_ フラグで消費し再帰を防ぐ。 */
     setTimeout(function () { try { restoreAltFromHash_(); } catch (eRa) {} }, 1500);   /* 再読み込みで見ていた案へ戻す（原則11・2026-10-20） */
