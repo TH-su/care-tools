@@ -1,6 +1,6 @@
-/* 画面の中の窓（su-dialog.js・ブラウザの alert・confirm の代わり）の見た目（2026-11-12 代表者の決定・推奨どおり）
+/* 画面の中の窓（su-dialog.js・ブラウザの alert・confirm・prompt の代わり）の見た目（2026-11-12 代表者の決定・推奨どおり）
  * su-dialog.js が <link> で読む（CSP の style-src 'self' でも効く）。読めない時も、su-dialog.js が要素に直接付ける指定で
- * 文字の大きさ・ボタン・色は同じに出る（下の値と同じ）。ここで足すのは後ろの暗さ・押す所の印・印刷で隠すことだけ。
+ * 文字の大きさ・ボタン・色は同じに出る（下の値と同じ）。ここで足すのは後ろの暗さ・押す所の印・印刷で隠すことだけ（入力の窓の入力欄 .sud-inp も同じ値を両方に持つ・2026-11-14）。
  * 文字と地の差: 本文 #1b1b1b／#fff ≒ 17:1、OK の白／#0b3a7e ≒ 11:1、キャンセルの #1b1b1b／#fff ≒ 17:1（どれも 7:1 以上） */
 .sud-dlg{position:fixed;inset:0;margin:auto;height:fit-content;box-sizing:border-box;width:min(520px,calc(100vw - 24px));max-height:calc(100vh - 24px);padding:0;border:1px solid #5f6368;border-radius:12px;background:#fff;color:#1b1b1b;overflow:auto;box-shadow:0 8px 30px rgba(0,0,0,.3)}
 .sud-dlg::backdrop{background:rgba(0,0,0,.5)}
@@ -10,4 +10,6 @@
 .sud-btn{min-height:44px;min-width:96px;padding:10px 18px;border-radius:8px;border:1px solid #5f6368;background:#fff;color:#1b1b1b;font:600 17px/1.2 system-ui,-apple-system,"Hiragino Sans",sans-serif;cursor:pointer}
 .sud-btn.pri{background:#0b3a7e;border-color:#0b3a7e;color:#fff}
 .sud-btn:focus-visible{outline:3px solid #ffbf47;outline-offset:2px}
+.sud-inp{display:block;box-sizing:border-box;width:100%;min-height:44px;margin-top:12px;padding:8px 10px;border:1px solid #5f6368;border-radius:8px;background:#fff;color:#1b1b1b;font:17px/1.4 system-ui,-apple-system,"Hiragino Sans",sans-serif}
+.sud-inp:focus-visible{outline:3px solid #ffbf47;outline-offset:2px}
 @media print{.sud-dlg{display:none!important}}

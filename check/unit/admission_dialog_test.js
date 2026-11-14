@@ -60,7 +60,7 @@ function makeDialog() {
 async function run() {
   console.log('— 1. 部品と受け口 —');
   t('1-1 画面の中の窓の部品を、画面のスクリプトより前に読む（版はほかの画面と同じ）',
-    /<script src="su-dialog\.js\?v=2026-11-13\.2"><\/script>\n<script>\n\/\* ═══/.test(src));
+    /<script src="su-dialog\.js\?v=2026-11-14\.2"><\/script>\n<script>\n\/\* ═══/.test(src));
   t('1-2 読めない時の受け口がある（ブラウザの窓に落とし、約束で答える）',
     src.indexOf("if (!window.SUDialog) window.SUDialog = {\n  alert: function (m) { try { window.alert(m); }") >= 0
     && /confirm: function \(m\) \{ var r = false; try \{ r = !!window\.confirm\(m\); \}/.test(src)

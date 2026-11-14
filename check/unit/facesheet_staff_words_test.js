@@ -191,7 +191,7 @@ function runMd(err){
   t('G1 素の alert・confirm・prompt を使わない（読めない時の受け口の window.alert・window.confirm だけ）',
     !/(^|[^.\w$])(alert|confirm|prompt)\s*\(/m.test(noComment.replace(/window\.(alert|confirm)\(m\)/g, '')), (noComment.match(/(^|[^.\w$])(alert|confirm|prompt)\s*\([^)]{0,30}/gm) || []));
   t('G2 画面の中の窓の部品を、画面のスクリプトより前に読む（版はほかの画面と同じ）',
-    /<script src="su-dialog\.js\?v=2026-11-13\.2"><\/script>/.test(SRC) && SRC.indexOf('su-dialog.js?v=') < SRC.indexOf('function saveSync('));
+    /<script src="su-dialog\.js\?v=2026-11-14\.2"><\/script>/.test(SRC) && SRC.indexOf('su-dialog.js?v=') < SRC.indexOf('function saveSync('));
   t('G3 部品が読めない時の受け口がある（ブラウザの窓に落とす・入居者マスタと同じ形）',
     /if\(!window\.SUDialog\) window\.SUDialog = \{\n  alert: function\(m\)\{ try\{ window\.alert\(m\); \}catch\(_\)\{[^}]*\} return Promise\.resolve\(\); \},/.test(SRC));
   t('G4 取り違えの断りの文（3画面で同じ文）はそのまま残す', SRC.indexOf("var MASTER_WRONG_MSG='このURLは入居者マスタのGASではありません（薬学管理・申送など別のアプリのGASの可能性があります）';") >= 0);

@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-kH7CDNl9vlrcYtfDZpMlJT8h5IvgFJB6FcUT/iclsgg=' 'sha256-3Im3OC+6cfw6Nk4BgxpXnD9YyO32gEm4NaPsP01MbAQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-kH7CDNl9vlrcYtfDZpMlJT8h5IvgFJB6FcUT/iclsgg=' 'sha256-DKKweag9K7D/g+olrWG3urPz4rpphm25GA7NNtixJm0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- 要配慮情報（疾患・訓練内容）を表示する画面。ブラウザキャッシュ・検索索引に残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -967,7 +967,7 @@ body.blocked .sui-band{display:none}
 <script src="su-gas-auth.js?v=2026-10-29"></script>
 <script src="su-res-read.js?v=2026-11-14"></script>
 <!-- 止めて知らせる窓（confirm）の代わりに画面の中の窓を出す共通部品（2026-11-12 代表者の決定）。画面のスクリプトより前に置く -->
-<script src="su-dialog.js?v=2026-11-13.2"></script>
+<script src="su-dialog.js?v=2026-11-14.2"></script>
 <script src="su-tp-full.js?v=2026-11-03.5"></script>
 <script src="su-cfg-hint.js?v=2026-11-10"></script>
 <script src="su-perf.js?v=2026-11-02"></script>
@@ -6568,8 +6568,12 @@ function aiErrText(e) {
   /* 括弧の中（キーが受け付けられなかった・番号）と AI の返答（英語のことがある）は管理者のログインの時だけ（同上） */
   if ((m === 'AI_HTTP_401' || m === 'AI_HTTP_403') && !TP_IS_ADMIN) return 'いまはAIを使えません。管理者に伝えてください';
   if (m === 'AI_HTTP_401' || m === 'AI_HTTP_403') return 'いまはAIを使えません。管理者に伝えてください（管理者向け：サーバーのAIのキーが受け付けられませんでした・' + m.slice(8) + '）' + why;
+  /* 混み合いの番号（429・503・529）は管理者のログインの時だけ。職員には番号を出さない（2026-11-14 第6段・CLAUDE.md §5・文は仮置き） */
+  if ((m === 'AI_HTTP_429' || m === 'AI_HTTP_529' || m === 'AI_HTTP_503') && !TP_IS_ADMIN) return '混み合っています。少し待ってからもう一度押してください';
   if (m === 'AI_HTTP_429') return 'AIの利用が混み合っています（429）。少し待ってから「もう一度試す」を押してください';
   if (m === 'AI_HTTP_529' || m === 'AI_HTTP_503') return 'AI側が一時的に混み合っています（' + m.slice(8) + '）。少し待ってからもう一度お試しください';
+  /* 括弧の中（状態の番号）と AI の返答（英語のことがある）は管理者のログインの時だけ（2026-11-14 第6段 TP-03 の残り・職員の文は仮置き） */
+  if (m.indexOf('AI_HTTP_') === 0 && !TP_IS_ADMIN) return 'AIから正しい応答がありませんでした。もう一度お試しください';
   if (m.indexOf('AI_HTTP_') === 0) return 'AIから正しい応答がありませんでした（状態 ' + m.slice(8) + '）。' + why;
   if (m === 'AI_REFUSAL') return 'AIが文案の作成を控えました。「本人の様子」に書いた内容を見直して、もう一度お試しください';
   if (m === 'AI_BAD_JSON' || m === 'AI_NO_TEXT') return 'AIの返事を読み取れませんでした。もう一度お試しください';
