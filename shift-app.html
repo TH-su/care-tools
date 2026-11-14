@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-YJHbKKo4mEZrYQFHz2Yk0o/8BBGtdP0vGMOLxnMz9uM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-hROYEVhQbooXCb6VdOPzy+NhK9N2+qJckQ4InMkMG6s='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -61,6 +61,14 @@ body { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-s
 body.edit-mode #toolbar a.su-menu-back { background: rgba(255,255,255,.35); color: var(--edit-ink); }
 body.edit-mode #toolbar a.su-menu-back:hover { background: rgba(255,255,255,.5); }
 @media screen and (max-width: 899px) { #toolbar a.su-menu-back { min-height: 44px; box-sizing: border-box; } }
+/* 見出しの「使い方」（「← メニュー」の右隣・同じ大きさと色・画面だけ・印刷しない・代表者の決定 2026-11-13） */
+#toolbar a.su-help-link { display: inline-flex; align-items: center; white-space: nowrap; text-decoration: none;
+  border-radius: 5px; padding: 5px 10px; background: rgba(255,255,255,.14); color: #fff; font-size: 0.78125rem; }
+#toolbar a.su-help-link:hover { background: rgba(0,0,0,.1); }
+body.edit-mode #toolbar a.su-help-link { background: rgba(255,255,255,.35); color: var(--edit-ink); }
+body.edit-mode #toolbar a.su-help-link:hover { background: rgba(255,255,255,.5); }
+@media screen and (max-width: 899px) { #toolbar a.su-help-link { min-height: 44px; box-sizing: border-box; } }
+@media print{.su-help-link{display:none !important}}
 #toolbar #ymLabel { font-weight: 700; font-size: 0.9375rem; padding: 0 8px; min-width: 86px; text-align: center; }
 .tabs { display: flex; gap: 2px; }
 .tabs button.on { background: #fff; color: var(--blue-d); font-weight: 600; }
@@ -457,6 +465,7 @@ html.su-field #frCSV,
 html.su-field #frdCSV { display: none !important; }
 </style>
 <script src="su-errors.js?v=2026-11-12"></script>
+<script src="su-dialog.js?v=2026-11-13.2"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-kv.js?v=2026-11-08"></script>
 <script src="su-kv-shadow.js?v=2026-10-28"></script>
@@ -464,8 +473,9 @@ html.su-field #frdCSV { display: none !important; }
 <body>
 <div id="toolbar">
   <!-- メニュー（index.html）へ戻る（care-tools のほかの画面と同じ形・2026-11-13）。移る時の保存は pagehide の flushNow_ が確定し、
-       編集中で送っていない変更がある時は beforeunload の確認が出る -->
+       編集中で送っていない変更がある時は beforeunload の確認が出る。右隣の「使い方」も同じタブで移るので同じ確認になる（代表者の決定 2026-11-13） -->
   <a class="su-menu-back" href="index.html">← メニュー</a>
+  <a class="su-help-link" href="help.html?sec=shift-app">使い方</a>
   <h1>シフト作成・管理</h1>
   <span class="ymnav">
     <button id="ymPrev" title="前月" aria-label="前月">◀</button>
@@ -586,7 +596,7 @@ html.su-field #frdCSV { display: none !important; }
     <div class="panel">
       <h2>希望休の取込（Googleフォーム回答のコピペ）</h2>
       <p class="muted">フォーム回答シートで全体（ヘッダ行含む）を選択してコピーし、下に貼り付けてください。設定の「取込で除外する姓」に登録した姓は自動除外されます。</p>
-      <textarea id="reqPaste" class="paste" placeholder="ここに貼り付け（Ctrl+V）"></textarea>
+      <textarea id="reqPaste" class="paste" aria-label="希望休のフォーム回答の貼り付け欄" placeholder="ここに貼り付け（Ctrl+V）"></textarea>
       <div class="flexrow" style="margin-top:8px">
         <button id="reqParse" class="act">解析する</button>
         <span id="reqParseMsg" class="muted"></span>
@@ -666,7 +676,7 @@ html.su-field #frdCSV { display: none !important; }
       <div class="muted" id="frPatternInfo" style="margin-top:4px"></div>
       <details id="frEmpDetails" style="margin-top:8px">
         <summary>従業員コードの取込・編集（freeeの従業員一覧を貼り付け）</summary>
-        <textarea id="frPaste" rows="4" style="width:100%;margin:6px 0"
+        <textarea id="frPaste" aria-label="freeeの従業員一覧の貼り付け欄" rows="4" style="width:100%;margin:6px 0"
           placeholder="freeeの従業員一覧の表（No. 所属 雇用区分 従業員コード 名前…）をコピーしてそのまま貼り付け"></textarea>
         <button id="frPasteApply" class="act">貼り付け内容を取込</button>
         <span class="muted" id="frPasteResult"></span>
@@ -712,7 +722,7 @@ html.su-field #frdCSV { display: none !important; }
       <div class="panel">
         <h2>職員一括取込（マスタシートのコピペ）</h2>
         <p class="muted">スプレッドシートのマスタで「特徴・連絡・氏名・区分・資格」列を含む範囲を選択コピーし、貼り付けてください。ヘッダ行があれば列を自動判定します。再取込は氏名照合で差分更新します（アプリ側で編集した許可パターン等は保持）。</p>
-        <textarea id="staffPaste" class="paste"></textarea>
+        <textarea id="staffPaste" class="paste" aria-label="職員マスタの貼り付け欄"></textarea>
         <div class="flexrow" style="margin-top:8px">
           <button id="staffParse" class="act">解析する</button>
           <span id="staffParseMsg" class="muted"></span>
@@ -733,16 +743,17 @@ html.su-field #frdCSV { display: none !important; }
       <div class="panel">
         <h2>freee勤務パターンマスタ</h2>
         <p class="muted">1行につき「コード,名称,開始HH:MM,終了HH:MM」。日をまたぐ夜勤は開始＞終了で記入します（例: 103,夜勤21-7,21:00,7:00）。空欄で保存すると初期パターンに戻ります。freee CSV出力の時刻自動一致・自動候補がこの表を参照します。</p>
-        <textarea id="setFreeePatterns" rows="10" style="width:100%;font-family:monospace" placeholder="101,早番7-16,07:00,16:00"></textarea>
+        <textarea id="setFreeePatterns" aria-label="freee勤務パターンの一覧" rows="10" style="width:100%;font-family:monospace" placeholder="101,早番7-16,07:00,16:00"></textarea>
         <div style="margin-top:8px"><button id="setFreeePatSave" class="act">保存</button> <span class="muted" id="setFreeePatMsg"></span></div>
       </div>
       <div class="panel">
         <h2>同期設定（複数端末共有）</h2>
-        <p class="muted">設定方法は docs/gas-setup.md 参照。URLとトークンは他人に共有しないでください。</p>
+        <p class="muted">接続先のURLと合言葉は、ほかの人に教えないでください。</p>
+        <details class="muted"><summary>管理者向け：接続先の作り方</summary>設定の手順は、シフト作成の正本の docs/gas-setup.md にあります。</details>
         <p class="muted field-only">📱 この端末は現場用のため、同期先は変えられません（事務所のパソコンで設定してください）。［今すぐ同期］は使えます。</p>
         <div class="formgrid" id="syncTargetForm">
-          <label>GAS WebアプリURL</label><input type="text" id="syncUrl" placeholder="https://script.google.com/macros/s/…/exec">
-          <label>トークン</label><input type="password" id="syncToken" placeholder="64桁の英数字">
+          <label for="syncUrl">接続先のURL</label><input type="text" id="syncUrl" placeholder="https://script.google.com/macros/s/…/exec">
+          <label for="syncToken">合言葉</label><input type="password" id="syncToken" placeholder="64桁の英数字">
         </div>
         <div class="flexrow" style="margin-top:8px">
           <button id="syncSave" class="act">保存</button>
@@ -795,12 +806,12 @@ html.su-field #frdCSV { display: none !important; }
 <dialog id="dlgFreee">
   <h3>freee勤怠 スケジュールCSV出力</h3>
   <div class="formgrid" style="max-width:420px">
-    <label>対象レイヤ</label>
+    <label for="frdLayer">対象レイヤ</label>
     <select id="frdLayer">
       <option value="plan">予定</option>
       <option value="actual">実績</option>
     </select>
-    <label>事業所</label>
+    <label for="frdDivision">事業所</label>
     <select id="frdDivision">
       <option value="全">全事業所（全職員を一括）</option>
       <option value="施設">施設</option>
@@ -4003,13 +4014,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
   /* 接続先が存在しない時の案内（2026-09-08）。この端末の設定が古い世代のデプロイを指している状態で、
    * 自動切替の当てが無い場合に出す。原因は端末ごとの保存値なので、他の端末は正常に見える。 */
-  var DEAD_ENDPOINT_MSG = 'この端末の同期先（GASのURL）が見つかりません。' +
-    '正常に同期できている端末の［マスタ→設定→クラウド同期］のURLをコピーして、この端末に貼り直してください。';
+  var DEAD_ENDPOINT_MSG = 'この端末の同期先が見つかりません。' +
+    '正常に同期できている端末の［マスタ→設定→同期設定］の接続先のURLをコピーして、この端末に貼り直してください。';
   /* 接続先が「シフトの同期先ではない」と答えた時の案内（2026-09-24）。応答は返っているので「見つかりません」は
    * 原因の説明として正しくない。相手は別アプリのGAS（入居者マスタ・薬・申送＝「不明なaction」）か、
    * 統合同期GASの古い版（'unknown action'）。直し方は同じ（正常な端末のURLを貼り直す）。 */
-  var WRONG_ENDPOINT_MSG = 'この端末の同期先（GASのURL）が、シフトの同期先ではありません（別のアプリのGASか古い版を指しています）。' +
-    '正常に同期できている端末の［マスタ→設定→クラウド同期］のURLをコピーして、この端末に貼り直してください。';
+  var WRONG_ENDPOINT_MSG = 'この端末の同期先が、シフトの同期先ではありません（別のアプリの接続先か、古い版を指しています）。' +
+    '正常に同期できている端末の［マスタ→設定→同期設定］の接続先のURLをコピーして、この端末に貼り直してください。';
   function endpointFailMsg_(msg) { return isWrongEndpointErr_(msg) ? WRONG_ENDPOINT_MSG : DEAD_ENDPOINT_MSG; }
   /* 保存（push）の応答を WRITE_NOTICE_MS 待っても返らない時に、同期の札の詳細へ出す文（代表者の決定 2026-11-01・文言は指定どおり） */
   var WRITE_WAIT_MSG = 'サーバーの応答を待っています。届いていることもあるので、同じ所を直し直さず、しばらく待ってからこの札を押して確かめてください';
@@ -4051,8 +4062,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
   function syncTargetMessage(v) {
     if (v === 'ok') return 'シフトの同期先を確認しました';
-    if (v === 'wrong') return 'このURLは週間計画・ワークスケジュール・シフトの同期先ではありません（別のアプリのGASです）';
-    if (v === 'auth') return '同期トークンが一致しないか、別のアプリのGASです';
+    if (v === 'wrong') return 'このURLは週間計画・ワークスケジュール・シフトの同期先ではありません（別のアプリの接続先です）';
+    if (v === 'auth') return '合言葉が違うか、別のアプリの接続先です';
     return '同期先に接続できず、確かめられませんでした。通信できる状態でもう一度保存してください';
   }
 
@@ -4238,7 +4249,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     }
   }
 
+  /* 止めて知らせる窓は、画面の中の窓（care-tools の su-dialog.js）で出す。読めない時はブラウザの窓に落とす（文はそのまま・代表者の決定 2026-11-13）。
+   * 画面の中の窓は待たずに先へ進む（同期は止めない）。窓を出せない環境では何もしない */
+  function suAlert_(msg) {
+    try { if (window.SUDialog) { window.SUDialog.alert(msg); return; } } catch (e) { /* ブラウザの窓へ */ }
+    try { alert(msg); } catch (e2) { /* 何もしない */ }
+  }
+
   var Store = {
+    alertBox: suAlert_,
     meta: null,
     queue: null,
     status: 'nosync',     // nosync | synced | dirty | syncing | offline | conflict | storeerror | readonly
@@ -4829,7 +4848,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         this.status = 'nosync'; this.statusDetail = '';
       } else if (this.readOnly) {
         this.status = 'readonly';
-        this.statusDetail = '閲覧専用トークン：この端末の編集は共有されません';
+        this.statusDetail = '閲覧専用の合言葉：この端末の編集は共有されません';
       } else if (this.queue.size() > 0) {
         this.status = 'dirty'; this.statusDetail = this.pushWaitDetail_();
       } else if (this.dataFresh === false) {
@@ -5222,7 +5241,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           /* alert はキーごとセッション1回だけ（1.5秒間隔での連続ポップアップを防ぐ） */
           if (!this._staleAlerted) this._staleAlerted = {};
           if (!this._staleAlerted[key]) {
-            try { alert('⚠ ' + staleMsg + '\n最新の内容を確認し、必要な編集はやり直してください。'); } catch (eA) {}
+            suAlert_('⚠ ' + staleMsg + '\n最新の内容を確認し、必要な編集はやり直してください。');
             this._staleAlerted[key] = true;
           }
           return;
@@ -5381,7 +5400,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }).catch(function (err) {
         self._pushInFlight = false;   /* 先にフラグ解除＝heal後の再送(self.pushQueued)が再入できるように */
         if (err && err.message === '__READONLY__') {
-          self.updateStatus('readonly', '閲覧専用トークンのため、この端末の編集はサーバへ送信されません');
+          self.updateStatus('readonly', '閲覧専用の合言葉のため、この端末の編集はサーバへ送信されません');
           return 'readonly';
         }
         var msg = String(err && err.message ? err.message : err);
@@ -7240,7 +7259,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       document.getElementById('edSave').onclick = function () {
         if (app.leaseGuard()) return;
         var name = document.getElementById('edName').value.trim();
-        if (!name) { alert('氏名を入力してください'); return; }
+        if (!name) { window.ShiftStore.alertBox('氏名を入力してください'); return; }
         st.name = name;
         st.group = document.getElementById('edGroup').value;
         st.mainDivision = document.getElementById('edDiv').value;
@@ -7797,7 +7816,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           var obj;
           /* 先頭の見えない印（BOM）は外して読む（Windows のメモ帳などで開いて保存し直すと付く・2026-11-13） */
           try { obj = JSON.parse(String(reader.result).replace(/^\uFEFF/, '')); }
-          catch (err) { msgEl.textContent = '✗ ファイルを読めませんでした（' + err.message + '）'; e.target.value = ''; return; }
+          catch (err) { msgEl.textContent = '✗ ファイルを読めませんでした（壊れているか、バックアップのファイルではありません）'; e.target.value = ''; return; }
           /* 「📤 月を書き出す」で作ったファイルをここで選んだ時は、「📥 月を取り込む」と同じ処理へ回す
            * （全データのバックアップとは形が違うため、以前は「バックアップ形式が不正です」で止まっていた・2026-11-13 代表者の報告） */
           if (obj && obj.app === 'shiftapp-month') {
@@ -12352,7 +12371,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (Store.readOnly) {
         tog.disabled = true;
         tog.checked = false;
-        if (lab) { lab.classList.add('disabled'); lab.title = '閲覧専用トークンのため編集モードは使えません'; }
+        if (lab) { lab.classList.add('disabled'); lab.title = '閲覧専用の合言葉のため編集モードは使えません'; }
         return;
       }
       tog.disabled = false;
@@ -12443,7 +12462,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       function revert() { if (tog) { tog.disabled = false; tog.checked = !!Store.editMode; } }
       if (Store.readOnly) {
         revert();
-        this.confirmInfo('編集モードは使えません', '閲覧専用トークンで接続しているため、この端末からは編集できません。');
+        this.confirmInfo('編集モードは使えません', '閲覧専用の合言葉で接続しているため、この端末からは編集できません。');
         return;
       }
       /* 同期先が無い（この端末だけで使う写し・2026-11-05）: 確かめる相手のサーバーが無いので、断ってから端末だけで編集する。
