@@ -31,7 +31,7 @@ function makeEnv(opt){
         preventDefault(){ this.defaultPrevented = true; }, stopPropagation(){ this.stopped = true; } }, obj || {});
         (L[ev] || []).slice().forEach((f) => f.call(this, o)); return o; },
       contains(x){ for(let n = x; n; n = n.parentNode) if(n === this) return true; return false; },
-      focus(){ focused = this; } };
+      focus(){ focused = this; }, select(){ this.selected = true; } };
     if(e.tagName === 'DIALOG' && !opt.noShowModal){
       e.showModal = function(){ if(opt.throwShow) throw new Error('壊れた'); this.open = true; };
       e.close = function(){ if(!this.open) return; this.open = false; const self = this; setImmediate(() => self.fire('close')); };
@@ -44,6 +44,7 @@ function makeEnv(opt){
   const win = { document, setTimeout, clearTimeout, Promise,
     alert(m){ nativeLog.push(['alert', m]); },
     confirm(m){ nativeLog.push(['confirm', m]); return opt.nativeAnswer !== undefined ? opt.nativeAnswer : true; },
+    prompt(m, d){ nativeLog.push(['prompt', m, d]); return opt.promptAnswer !== undefined ? opt.promptAnswer : 'ブラウザで入れた文字'; },
     addEventListener(ev, fn, opt){ (winL[ev] = winL[ev] || []).push(fn); if(ev === 'keydown') winCap.push(opt === true || !!(opt && opt.capture)); } };
   win.window = win; win.self = win; win.top = opt.inFrame ? {} : win;
   const ctx = vm.createContext(win);
@@ -66,7 +67,7 @@ function partsOf(d){
   {
     const E = makeEnv(); E.load();
     t('window.SUDialog に alert・confirm・busy・idle', ['alert', 'confirm', 'busy', 'idle'].every((k) => typeof E.win.SUDialog[k] === 'function'));
-    t('見た目は su-dialog.css を <link> で読む（<style> を差し込まない）', E.links.length === 1 && /^su-dialog\.css\?v=2026-11-12$/.test(E.links[0].href) && E.styles.length === 0 && !/createElement\(\s*['"]style['"]\s*\)/.test(SRC));
+    t('見た目は su-dialog.css を <link> で読む（<style> を差し込まない）', E.links.length === 1 && /^su-dialog\.css\?v=2026-11-14$/.test(E.links[0].href) && E.styles.length === 0 && !/createElement\(\s*['"]style['"]\s*\)/.test(SRC));
     t('innerHTML を使わない', !/innerHTML/.test(SRC.replace(/\/\*[\s\S]*?\*\//g, '')));
 
     const MSG = '一行目\n<b>二行目</b> & "引用"\n\nOK＝保存する';
@@ -239,10 +240,170 @@ function partsOf(d){
     t('.gitignore に !/su-dialog.js と !/su-dialog.css', /^!\/su-dialog\.js$/m.test(GI) && /^!\/su-dialog\.css$/m.test(GI));
   }
 
+  console.log('\n入力の窓（SUDialog.prompt・2026-11-14 第6段 RM-01）');
+  /* prompt の窓の部品: 文・入力欄・ボタンの段（alert・confirm の partsOf と同じ並びの間に入力欄が入る） */
+  function promptParts(d){
+    const inner = d.children[0];
+    const msg = inner.children[0], inp = inner.children[1], row = inner.children[2];
+    const btns = row.children;
+    return { msg, inp, btns, ok: btns.find((b) => b.textContent === 'OK'), cancel: btns.find((b) => b.textContent === 'キャンセル') };
+  }
+  {
+    const E = makeEnv(); E.load();
+    t('window.SUDialog に prompt', typeof E.win.SUDialog.prompt === 'function');
+    const MSG = '足す薬剤名を入れてください\n<b>二行目</b>';
+    let ans = 'まだ'; E.win.SUDialog.prompt(MSG, '初めの<値>').then((v) => { ans = v; });
+    const ds = E.dialogs();
+    t('prompt: 呼んだその場で窓が1つ出る', ds.length === 1 && ds[0].open === true);
+    const P = promptParts(ds[0]);
+    t('prompt: 文がそのまま入る（textContent）', P.msg.textContent === MSG, P.msg.textContent);
+    t('prompt: 文の下に1行の入力欄（type=text）と「キャンセル」「OK」', P.inp && P.inp.tagName === 'INPUT' && P.inp.type === 'text' && P.btns.length === 2 && !!P.ok && !!P.cancel);
+    t('prompt: 入力欄に初めの値がそのまま入る', P.inp.value === '初めの<値>', P.inp.value);
+    t('prompt: OK ではなく入力欄に初めから合わせ、初めの値を選んだ状態にする', E.focused() === P.inp && P.inp.selected === true);
+    t('prompt: 入力欄の読み上げの名前は上の文（aria-labelledby）', !!P.msg.id && P.inp.attrs['aria-labelledby'] === P.msg.id);
+    t('prompt: 窓に読み上げ用の名前「入力」が付く', ds[0].attrs['aria-label'] === '入力', ds[0].attrs['aria-label']);
+    t('prompt: 入力欄の文字 17px・高さ 44px 以上（要素への直接の指定と CSS の両方・iPhone で拡大されない）',
+      /17px/.test(P.inp.style.font) && P.inp.style.minHeight === '44px' && /\.sud-inp\{[^}]*min-height:44px[^}]*font:17px/.test(CSS));
+    t('prompt: 窓が出ている間は busy', E.win.SUDialog.busy() === true);
+    P.inp.value = 'カタカナ錠';
+    P.ok.fire('click'); await tick();
+    t('prompt: OK＝入れた文字', ans === 'カタカナ錠', ans);
+    t('prompt: 閉じた後は窓を取り除き busy でない', E.dialogs().length === 0 && E.win.SUDialog.busy() === false);
+  }
+  {
+    const E = makeEnv(); E.load();
+    let ans = 'まだ'; E.win.SUDialog.prompt('効能', '').then((v) => { ans = v; });
+    const P = promptParts(E.dialogs()[0]);
+    P.ok.fire('click'); await tick();
+    t('prompt: 何も入れずに OK＝空の文字（null ではない）', ans === '', ans);
+    const E2 = makeEnv(); E2.load();
+    let a2 = 'まだ'; E2.win.SUDialog.prompt('効能').then((v) => { a2 = v; });
+    t('prompt: 初めの値が無い時は入力欄は空', promptParts(E2.dialogs()[0]).inp.value === '');
+    promptParts(E2.dialogs()[0]).cancel.fire('click'); await tick();
+    t('prompt: キャンセル＝null', a2 === null, a2);
+  }
+  {
+    const E = makeEnv(); E.load();
+    let ans = 'まだ'; E.win.SUDialog.prompt('薬剤名', 'あ').then((v) => { ans = v; });
+    const d = E.dialogs()[0];
+    await new Promise((r) => setTimeout(r, 5));
+    d.fire('cancel'); d.open = false; await tick();
+    t('prompt: Esc（cancel）＝null', ans === null, ans);
+  }
+  {
+    const E = makeEnv(); E.load();
+    let ans = 'まだ'; E.win.SUDialog.prompt('薬剤名', '').then((v) => { ans = v; });
+    const P = promptParts(E.dialogs()[0]);
+    P.inp.value = 'へんかんちゅう';
+    const k1 = P.inp.fire('keydown', { key: 'Enter', isComposing: true }); await tick();
+    t('prompt: かな漢字の変換を決める Enter（isComposing）では OK にしない', ans === 'まだ' && k1.defaultPrevented === false);
+    P.inp.fire('keydown', { key: 'Enter', keyCode: 229 }); await tick();
+    t('prompt: 変換中の Enter（keyCode 229）でも OK にしない', ans === 'まだ');
+    const k3 = P.inp.fire('keydown', { key: 'Enter', repeat: true }); await tick();
+    t('prompt: 押しっぱなしの Enter（前の窓を閉じた Enter の続き）では OK にしない', ans === 'まだ' && k3.defaultPrevented === true);
+    P.inp.value = '変換済み';
+    const k4 = P.inp.fire('keydown', { key: 'Enter' }); await tick();
+    t('prompt: 入力欄で Enter＝OK（入れた文字が返る）', ans === '変換済み' && k4.defaultPrevented === true, ans);
+    P.inp.fire('keydown', { key: 'a' });
+    t('prompt: Enter 以外のキーでは何もしない（閉じた後も例外を出さない）', E.dialogs().length === 0);
+  }
+  {
+    /* かな漢字の変換中の Esc は変換の取り消しで、窓を閉じない。変換を終えた後の Esc は今までどおり閉じる（2026-11-14 PR #575 の反証） */
+    const E = makeEnv(); E.load();
+    let ans = 'まだ'; E.win.SUDialog.prompt('薬剤名', '').then((v) => { ans = v; });
+    await new Promise((r) => setTimeout(r, 5));
+    const d = E.dialogs()[0]; const P = promptParts(d);
+    P.inp.fire('compositionstart');
+    const ke = P.inp.fire('keydown', { key: 'Escape', isComposing: true });
+    t('prompt: 変換中の Esc の keydown は、窓を閉じる既定の動きを止める', ke.defaultPrevented === true);
+    const c1 = d.fire('cancel'); await tick();
+    t('prompt: 変換中の cancel は受けない（窓は出たまま・答えはまだ）', c1.defaultPrevented === true && ans === 'まだ' && E.dialogs().length === 1);
+    P.inp.fire('compositionend');
+    const c2 = d.fire('cancel'); await tick();
+    t('prompt: 変換を終えた直後（同じ一続きの処理）に届いた cancel も受けない', c2.defaultPrevented === true && ans === 'まだ');
+    const kg = E.winKey({ key: 'Escape', target: E.body });
+    await new Promise((r) => setTimeout(r, 5));
+    t('prompt: 変換中の印が残る間は、窓の外の Esc でも閉じない（画面へは渡さない）', ans === 'まだ' && kg.imm === true && E.dialogs().length === 1);
+    const k2 = P.inp.fire('keydown', { key: 'Escape' });
+    t('prompt: 変換を終えた後の Esc の keydown は止めない', k2.defaultPrevented === false);
+    const c3 = d.fire('cancel'); d.open = false; await tick();
+    t('prompt: 変換を終えた後の Esc（cancel）＝null で閉じる', c3.defaultPrevented === false && ans === null && E.dialogs().length === 0, ans);
+  }
+  {
+    /* 1つ目を Enter で閉じ、続けて出た2つ目（RM-01 の効能）が、押しっぱなしの Enter ですぐ OK にならない */
+    const E = makeEnv(); E.load();
+    const order = [];
+    E.win.SUDialog.prompt('1つ目', '').then((v) => order.push('1:' + v));
+    E.win.SUDialog.prompt('2つ目', 'x').then((v) => order.push('2:' + v));
+    t('prompt: 2つ続けて呼んでも、出ている窓は1つ目だけ', E.dialogs().length === 1 && promptParts(E.dialogs()[0]).msg.textContent === '1つ目');
+    const P1 = promptParts(E.dialogs()[0]); P1.inp.value = '名前';
+    P1.inp.fire('keydown', { key: 'Enter' }); await tick();
+    const P2 = promptParts(E.dialogs()[0]);
+    t('prompt: 1つ目を閉じると2つ目が出て、入力欄に合わせる', E.dialogs().length === 1 && P2.msg.textContent === '2つ目' && E.focused() === P2.inp && order.join() === '1:名前');
+    P2.inp.fire('keydown', { key: 'Enter', repeat: true }); await tick();
+    t('prompt: 2つ目は押しっぱなしの Enter で OK にならない', order.length === 1 && E.dialogs().length === 1);
+    P2.ok.fire('click', { detail: 1 }); await tick();
+    t('prompt: 開いてすぐのマウスの押下（二度押しの2回目）でも OK にしない', order.length === 1);
+    await new Promise((r) => setTimeout(r, 400));
+    P2.ok.fire('click', { detail: 1 }); await tick();
+    t('prompt: 呼んだ順に答えが返る', order.join() === '1:名前,2:x', order);
+  }
+  {
+    /* 窓の外のキーの守り: 入力の窓では OK ではなく入力欄に戻す */
+    const E = makeEnv(); E.load();
+    let ans = 'まだ'; E.win.SUDialog.prompt('薬剤名', '').then((v) => { ans = v; });
+    await new Promise((r) => setTimeout(r, 5));
+    const P = promptParts(E.dialogs()[0]);
+    E.body.focus();
+    const k1 = E.winKey({ key: 'z', metaKey: true, target: E.body });
+    t('prompt: 窓の外のキーは画面へ渡さず、入力欄に入力の的を戻す', k1.imm === true && k1.defaultPrevented === true && E.focused() === P.inp && ans === 'まだ');
+    E.body.focus();
+    const kt = E.winKey({ key: 'Tab', target: E.body });
+    t('prompt: 窓の外の Tab も入力欄に戻す', kt.imm === true && E.focused() === P.inp);
+    const k2 = E.winKey({ key: 'Enter', target: E.body });
+    t('prompt: 窓の外の Enter では OK にしない', k2.imm === true && ans === 'まだ');
+    const kIn = E.winKey({ key: 'Enter', target: P.inp });
+    t('prompt: 窓の中（入力欄）のキーは守りが手を出さない', kIn.imm === false && kIn.defaultPrevented === false);
+    /* 窓の地や文を押した後（入力の的が窓そのもの）に打った文字は入力欄へ（本物の Chrome で打った文字が消えた・2026-11-14 実測） */
+    const d = E.dialogs()[0];
+    E.body.focus();
+    const kd = d.fire('keydown', { key: 'b', target: d });
+    t('prompt: 窓の地に入力の的がある時の文字のキーは入力欄に合わせ直す（画面へは伝えない）', E.focused() === P.inp && kd.stopped === true && kd.defaultPrevented === false);
+    E.body.focus();
+    d.fire('keydown', { key: 'Tab', target: d });
+    d.fire('keydown', { key: 'c', metaKey: true, target: d });
+    d.fire('keydown', { key: 'Enter', target: P.ok });
+    t('prompt: Tab・写す（Cmd+C）・ボタンの上のキーでは合わせ直さない', E.focused() === E.body);
+    E.winKey({ key: 'Escape', target: E.body }); await tick();
+    t('prompt: 窓の外の Esc は今の窓のキャンセル＝null', ans === null, ans);
+  }
+  {
+    /* Esc キーの押下の中で開いた入力の窓も、同じ Esc ですぐ閉じない（alert・confirm と同じ） */
+    const E = makeEnv(); E.load();
+    const esc = { type: 'keydown', key: 'Escape', defaultPrevented: false, preventDefault(){ this.defaultPrevented = true; } };
+    E.win.event = esc;
+    let ans = 'まだ'; E.win.SUDialog.prompt('薬剤名', '').then((v) => { ans = v; });
+    E.win.event = undefined;
+    const d = E.dialogs()[0];
+    const c1 = d.fire('cancel'); await tick();
+    t('prompt: 開いたのと同じ一続きの処理の中の cancel は受けない', c1.defaultPrevented === true && ans === 'まだ' && E.dialogs().length === 1);
+  }
+  {
+    const E = makeEnv({ noShowModal: true, promptAnswer: '古いブラウザの答え' }); E.load();
+    const a = await E.win.SUDialog.prompt('古いブラウザ', '初め');
+    t('prompt: showModal が無い時はブラウザの prompt に落ちる（文・初めの値・答えもそのまま）', a === '古いブラウザの答え' && E.nativeLog.length === 1
+      && E.nativeLog[0][0] === 'prompt' && E.nativeLog[0][1] === '古いブラウザ' && E.nativeLog[0][2] === '初め', E.nativeLog);
+    const E2 = makeEnv({ throwShow: true, promptAnswer: null }); E2.load();
+    let err = null, a2 = 'まだ';
+    try { a2 = await E2.win.SUDialog.prompt('例外'); } catch (e) { err = e; }
+    t('prompt: showModal で例外の時もブラウザの prompt に落ち（キャンセル＝null）、例外を外に出さない', err === null && a2 === null && E2.dialogs().length === 0
+      && E2.nativeLog[0][0] === 'prompt' && E2.nativeLog[0][2] === '', E2.nativeLog);
+  }
+
   console.log('\n体重管理（weight-record.html）への当て方');
   {
     const WR = fs.readFileSync(path.join(ROOT, 'weight-record.html'), 'utf8');
-    const iErr = WR.indexOf('<script src="su-errors.js'), iDlg = WR.indexOf('<script src="su-dialog.js?v=2026-11-13.2"></script>'), iInline = WR.indexOf('<script>', iErr);
+    const iErr = WR.indexOf('<script src="su-errors.js'), iDlg = WR.indexOf('<script src="su-dialog.js?v=2026-11-14.2"></script>'), iInline = WR.indexOf('<script>', iErr);
     t('su-dialog.js を su-errors.js の後・画面のスクリプトより前に読む', iErr > 0 && iDlg > iErr && iDlg < iInline);
     /* 部品が読めない時の受け口：ブラウザの窓に落とし、同じ約束の形で答える */
     const shimM = /if\(!window\.SUDialog\) window\.SUDialog = \{[\s\S]*?\n\};/.exec(WR);
