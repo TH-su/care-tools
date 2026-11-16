@@ -202,8 +202,8 @@ try {
   ({ context, page, st } = await enrollRun({ status: 429, body: { ok: false, code: 'limited' } }, '/enroll.html#c=k7mp-2xq9'));
   await page.waitForSelector('#v-ng:not([hidden])', { timeout: 10000 }).catch(() => {});
   const lm = await page.textContent('#ng-msg').catch(() => '');
-  t('「QR を読み取って登録してください」と出し、ログインしない・メニューへ移らない',
-    /QR を読み取って登録してください/.test(lm) && /\/enroll\.html$/.test(page.url()) && st.enrollBodies[0] === JSON.stringify({ code: SHORT })
+  t('「管理者にもう一度番号を出してもらってください」と出し、ログインしない・メニューへ移らない',
+    /管理者にもう一度番号を出してもらってください/.test(lm) && /\/enroll\.html$/.test(page.url()) && st.enrollBodies[0] === JSON.stringify({ code: SHORT })
     && !(await page.evaluate(() => Object.keys(localStorage))).some((k) => /auth-token|su_device_role/.test(k)), [lm, page.url()]);
   await context.close();
 } finally {

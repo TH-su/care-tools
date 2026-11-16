@@ -203,7 +203,7 @@ function loginShort(value) {
     && r.log.setSession.length === 0 && r.els['b-retry'].hidden);
   r = await runEnroll({ hash: '#c=' + SHORT, reply: { status: 429, body: { ok: false, code: 'limited' } } });
   t('登録の番号が回数で止められた時は、QR を読み取るよう案内する（QR の時の文ではない）',
-    !r.els['v-ng'].hidden && r.els['ng-msg'].textContent === '番号での登録が一時止まっています。QR を読み取って登録してください。'
+    !r.els['v-ng'].hidden && r.els['ng-msg'].textContent === '番号での登録が一時止まっています。15分ほど待ってから、管理者にもう一度番号を出してもらってください。'
     && r.log.setSession.length === 0 && r.els['b-retry'].hidden);
   r = await runEnroll({ reply: { status: 429, body: { ok: false, code: 'limited' } } });
   t('QR が回数で止められた時の文は今までどおり', r.els['ng-msg'].textContent.includes('しばらく登録できません'));

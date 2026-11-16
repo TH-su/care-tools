@@ -125,6 +125,7 @@
     $('en-qr-img').replaceChildren();
     $('en-qr-short').textContent = '';   // 登録の番号も画面から消す
     $('en-qr-short-box').hidden = true;
+    var noneEl0 = $('en-qr-short-none'); if (noneEl0) noneEl0.hidden = true;
     $('en-qr').hidden = true;
     $('b-enroll').disabled = false;
   }
@@ -185,12 +186,14 @@
     try { svg = SUQr.svg(url.href, { px: 280, label: '端末登録の QR（端末のカメラで読んでください）' }); } catch (e) { svg = null; }
     res.code = '';   // 番号は絵にしたら手放す
     url = null;
+    var shortCapable = Object.prototype.hasOwnProperty.call(res, 'short');   // 0095 の後（上限の間は short が null で届く）
     var short = typeof res.short === 'string' && SHORT_RE.test(res.short) ? res.short.slice(0, 4) + '-' + res.short.slice(4) : '';
     res.short = '';   // 登録の番号も画面の文字にしたら手放す
     if (!svg) { $('b-enroll').disabled = false; note('QR を描けませんでした。'); return; }
     $('en-qr-img').replaceChildren(svg);
     $('en-qr-short').textContent = short;
     $('en-qr-short-box').hidden = !short;
+    var noneEl = $('en-qr-short-none'); if (noneEl) noneEl.hidden = !!short || !shortCapable;
     short = '';
     var opt = $('en-acct').selectedOptions[0];
     $('en-qr-for').textContent = (opt ? opt.textContent.replace(/ … まだログインしていない$/, '') : email) + (role ? ' ・ ' + DEV[role] : '');
