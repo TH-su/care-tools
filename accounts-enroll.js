@@ -6,8 +6,12 @@
  * 3. 画面は「このサイトの enroll.html#c=番号」を QR の絵（su-qr.js・同じサイトの部品）にして出す。端末のカメラで読むと受け取りページが開く
  * 4. 出している間は数秒ごとに一覧を読み直し、使われたら QR を消して「登録できました」と出す。期限が来たら QR を消す
  * 5. 一覧の取り消していない行は「取り消す」（登録した端末はログインそのものが消える）。「このアカウントの端末を全部取り消す」もある
+ * 6. QR の下に8文字の「登録の番号」（ABCD-EFGH の形・2026-11-16 代表者の決定 案A・care-backend 統合 0095）を出す。iPhone のホーム画面に置いた
+ *    アプリは Safari と保存場所が別で、カメラで読んだ QR のログインが届かないため、そのアプリのログインの画面でこの8文字を打って登録する。
+ *    QR と同じ1回限り・10分（どちらで使っても、もう片方も使えなくなる）。データベースが short を返さない時（0095 の前）は QR だけを出す
  * ★できる人の判定はデータベース（管理者＋2段階認証＝aal2 でなければ 42501）。この画面は見せ方を整えるだけ。
  * ★番号はメモリにだけ持つ（localStorage・sessionStorage・記録・送信のどれにも入れない）。QR を消したら変数も手放す。画面だけで印刷しない。
+ *   登録の番号も同じ（画面の文字にだけ出し、QR を消す時に画面の文字も消す）。
  * ★QR に入れるのは受け取りページの住所と番号だけ（合言葉・メール・鍵は入れない）。番号は URL の # の後ろ＝サーバーへは送られない。
  * ★データベースの関数がまだ無い時は「まだ使えません」と出すだけ（ほかの欄は今までどおり動く）。表示はすべて textContent。
  */
@@ -18,6 +22,7 @@
   var DEV = { field: '現場の端末', office: '事務所PC' };
   var STATE = { open: '使われるのを待っています', expired: '期限切れ', active: '登録した端末', lapsed: '180日使っていない端末', failed: '登録できませんでした', revoked: '取り消した端末', canceled: '取り消した QR' };
   var POLL_MS = 4000;
+  var SHORT_RE = /^[2-9A-HJKMNP-Z]{8}$/;   // 登録の番号（0095）: 0・O・1・I・L を使わない31字の8字
   var live = null;   // 出している QR { id, expiresAt, timer } ※番号そのものは持ち続けない
 
   function el(tag, cls, text) {
@@ -117,6 +122,8 @@
     if (live && live.timer) clearInterval(live.timer);
     live = null;
     $('en-qr-img').replaceChildren();
+    $('en-qr-short').textContent = '';   // 登録の番号も画面から消す
+    $('en-qr-short-box').hidden = true;
     $('en-qr').hidden = true;
     $('b-enroll').disabled = false;
   }
@@ -177,8 +184,13 @@
     try { svg = SUQr.svg(url.href, { px: 280, label: '端末登録の QR（端末のカメラで読んでください）' }); } catch (e) { svg = null; }
     res.code = '';   // 番号は絵にしたら手放す
     url = null;
+    var short = typeof res.short === 'string' && SHORT_RE.test(res.short) ? res.short.slice(0, 4) + '-' + res.short.slice(4) : '';
+    res.short = '';   // 登録の番号も画面の文字にしたら手放す
     if (!svg) { $('b-enroll').disabled = false; note('QR を描けませんでした。'); return; }
     $('en-qr-img').replaceChildren(svg);
+    $('en-qr-short').textContent = short;
+    $('en-qr-short-box').hidden = !short;
+    short = '';
     var opt = $('en-acct').selectedOptions[0];
     $('en-qr-for').textContent = (opt ? opt.textContent.replace(/ … まだログインしていない$/, '') : email) + (role ? ' ・ ' + DEV[role] : '');
     $('en-qr').hidden = false;

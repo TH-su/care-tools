@@ -4,6 +4,9 @@
    2. 管理者の欄: 出した番号を受け取りページの住所の # の後ろに入れて QR にする・番号を端末に残さない・断りの文・関数の無い時は「まだ使えません」・
       使われたら QR を消す・取り消し
    3. ファイルの決まり: CSP・直書きのスクリプトなし・公開の許可・紙に出さない・読み込みの順番
+   4. 登録の番号（8文字・2026-11-16 代表者の決定 案A・統合 0095）: 管理者の欄は QR の下に ABCD-EFGH の形で出し、QR を消すと画面からも消す・
+      ログインの画面は入れた番号をそろえて enroll.html#c=番号 へ移る・受け取りページは登録の番号も受け口へ送る・
+      そろえ方（shortOf）は login.js と enroll.js で一字一句同じ
    実行: node check/unit/device_enroll_page_test.js
    ★出力に console を使わない。 */
 'use strict';
@@ -21,6 +24,7 @@ const tick = () => new Promise((r) => setImmediate(r));
 async function settle(n) { for (let i = 0; i < (n || 20); i++) await tick(); }
 
 const CODE = '0123456789abcdef0123456789abcdef01234567';
+const SHORT = 'K7MP2XQ9';   // 登録の番号の架空の例
 const ENDPOINT = 'https://jhbernqawjrzqwrmqrih.supabase.co/functions/v1/device-enroll';
 
 function mkEl(id) {
@@ -93,8 +97,8 @@ async function runEnroll(opt) {
 /* ── 2. 管理者の欄 ── */
 async function runAdmin(opt) {
   opt = opt || {};
-  const { els, document } = mkDom(['sec-enroll', 'en-msg', 'en-form', 'en-acct', 'en-role', 'en-label', 'b-enroll', 'en-qr', 'en-qr-img', 'en-qr-for', 'en-qr-exp', 'b-enroll-close', 'en-list', 'b-enroll-revoke-all']);
-  els['sec-enroll'].hidden = true; els['en-form'].hidden = true; els['en-qr'].hidden = true;
+  const { els, document } = mkDom(['sec-enroll', 'en-msg', 'en-form', 'en-acct', 'en-role', 'en-label', 'b-enroll', 'en-qr', 'en-qr-img', 'en-qr-for', 'en-qr-exp', 'b-enroll-close', 'en-list', 'b-enroll-revoke-all', 'en-qr-short', 'en-qr-short-box']);
+  els['sec-enroll'].hidden = true; els['en-form'].hidden = true; els['en-qr'].hidden = true; els['en-qr-short-box'].hidden = true;
   const ls = mkStorage(), ss = mkStorage();
   const calls = [];
   let listRows = opt.listRows || [];
@@ -103,7 +107,7 @@ async function runAdmin(opt) {
     if (opt.missing) return { data: null, error: { code: 'PGRST202', message: 'Could not find the function' } };
     if (name === 'device_enroll_candidates') return { data: { ok: true, rows: [{ email: 'inv-f@example.invalid', label: '現場の端末（見本）', role: 'field', ready: true }, { email: 'inv-n@example.invalid', label: '見本', role: 'field', ready: false }] }, error: null };
     if (name === 'device_enroll_list') return { data: { ok: true, rows: listRows }, error: null };
-    if (name === 'device_enroll_issue') return { data: opt.issue || { ok: true, id: 5, code: CODE, expiresAt: new Date(Date.now() + 600000).toISOString(), email: args.p_email, deviceRole: args.p_device_role }, error: null };
+    if (name === 'device_enroll_issue') return { data: opt.issue || { ok: true, id: 5, code: CODE, short: SHORT, expiresAt: new Date(Date.now() + 600000).toISOString(), email: args.p_email, deviceRole: args.p_device_role }, error: null };
     if (name === 'device_enroll_revoke') return { data: { ok: true, revoked: true }, error: null };
     if (name === 'device_enroll_revoke_account') return { data: { ok: true, revoked: 3 }, error: null };
     return { data: null, error: { message: 'x' } };
@@ -124,6 +128,26 @@ async function runAdmin(opt) {
   vm.runInNewContext(read('accounts-enroll.js'), ctx);
   await ctx.SUAccountsEnroll.show();
   return { els, ls, ss, calls, svgs, ctx, setList: (r) => { listRows = r; }, intervals };
+}
+
+/* ── 4. ログインの画面の「登録の番号」（login.js の shortOf・submitShort を切り出して動かす）── */
+function cutF(src, name) {
+  const h = src.indexOf('function ' + name + '(');
+  if (h < 0) throw new Error('関数が見つかりません: ' + name);
+  let i = src.indexOf('{', h), d = 0;
+  for (; i < src.length; i++) { if (src[i] === '{') d++; else if (src[i] === '}') { d--; if (d === 0) return src.slice(h, i + 1); } }
+  throw new Error('関数の終わりが見つかりません: ' + name);
+}
+function between(src, a, b) { const i = src.indexOf(a), j = src.indexOf(b); return i >= 0 && j > i ? src.slice(i, j + b.length) : null; }
+function loginShort(value) {
+  const LG = read('login.js');
+  const els = { 'short-code': { value, focused: 0, focus() { this.focused++; } } };
+  const log = { replace: [], msg: [], forget: 0 };
+  const box = { String, $: (i) => els[i], msg: (m) => log.msg.push(m), forgetMenu: () => { log.forget++; }, location: { replace: (u) => log.replace.push(u) } };
+  vm.createContext(box);
+  vm.runInContext(cutF(LG, 'shortOf') + '\n' + cutF(LG, 'submitShort') + '\nthis.shortOf = shortOf; this.submitShort = submitShort;', box);
+  box.submitShort();
+  return { els, log, box };
 }
 
 (async () => {
@@ -166,6 +190,22 @@ async function runAdmin(opt) {
     t('番号の形が違う・無い時（' + (h || '空') + '）は何も送らず案内だけ', r.log.fetch.length === 0 && !r.els['v-none'].hidden);
   }
 
+  for (const [h, want] of [['#c=' + SHORT, SHORT], ['#c=k7mp-2xq9', SHORT], ['#c=K7MP%202XQ9', SHORT], ['#c=%EF%BC%AB7MP%E3%83%BC2XQ9', SHORT]]) {
+    r = await runEnroll({ hash: h });
+    t('登録の番号（' + h + '）も受け取り、そろえた8字だけを受け口へ送る（住所から消してから）',
+      r.log.fetch.length === 1 && r.log.fetch[0].init.body === JSON.stringify({ code: want }) && r.log.fetch[0].hashAtSend === ''
+      && r.log.order[0] === 'clear' && !r.els['v-ok'].hidden && r.log.replace[0] === 'index.html'
+      && !JSON.stringify([...r.ls.writes, ...r.ss.writes]).includes(SHORT));
+  }
+  r = await runEnroll({ hash: '#c=' + SHORT, reply: { status: 403, body: { ok: false, code: 'invalid' } } });
+  t('登録の番号が断られた時は、番号の打ち間違いも含めた文を出す（QR の文ではない）',
+    !r.els['v-ng'].hidden && r.els['ng-msg'].textContent.includes('この登録の番号は使えません') && r.els['ng-msg'].textContent.includes('打ち間違い')
+    && r.log.setSession.length === 0 && r.els['b-retry'].hidden);
+  for (const h of ['#c=K7MP2XQO', '#c=K7MP2XQ0', '#c=K7MP2XQI', '#c=K7MP2XQL', '#c=K7MP2XQ', '#c=K7MP2XQ92', '#c=K7MP_2XQ9', '#c=' + 'K7MP2XQ9'.repeat(5)]) {
+    r = await runEnroll({ hash: h });
+    t('登録の番号の形が違う時（' + h.slice(0, 20) + '）は何も送らず案内だけ', r.log.fetch.length === 0 && !r.els['v-none'].hidden);
+  }
+
   group('2. 管理者の欄（accounts-enroll.js）');
   let a = await runAdmin();
   t('開くと欄を出し、選べるアカウントを並べる（まだログインしていない人は選べない）',
@@ -180,6 +220,10 @@ async function runAdmin(opt) {
   t('出す時に送るのはアカウント・用途・呼び名だけ', JSON.stringify(iss.args) === JSON.stringify({ p_email: 'inv-f@example.invalid', p_device_role: 'field', p_label: '見本の iPad' }));
   t('QR の中身は受け取りページの住所（?・# は付け替え）＋ #c=番号だけ',
     a.svgs.length === 1 && a.svgs[0].text === 'https://example.invalid/care-tools/enroll.html#c=' + CODE);
+  t('QR の下に登録の番号を ABCD-EFGH の形で出す（端末には残さない）',
+    !a.els['en-qr-short-box'].hidden && a.els['en-qr-short'].textContent === 'K7MP-2XQ9'
+    && !JSON.stringify([...a.ls.writes, ...a.ss.writes]).includes(SHORT) && !JSON.stringify([...a.ls.writes, ...a.ss.writes]).includes('K7MP-2XQ9')
+    && !a.els['en-msg'].textContent.includes('K7MP'));
   t('QR を出す・期限を出す・番号は画面の文字にも端末にも残さない',
     !a.els['en-qr'].hidden && /あと 9分|あと 10分/.test(a.els['en-qr-exp'].textContent)
     && !JSON.stringify([...a.ls.writes, ...a.ss.writes]).includes(CODE) && !a.els['en-qr-for'].textContent.includes(CODE)
@@ -191,8 +235,8 @@ async function runAdmin(opt) {
   Date.now = () => realNow() + 5000;
   await a.intervals[0](); await settle();
   Date.now = realNow;
-  t('使われたら QR を消して「登録できました」と出し、一覧に「この端末を取り消す」を出す',
-    a.els['en-qr'].hidden && a.els['en-qr-img'].children.length === 0 && a.els['en-msg'].textContent.includes('登録ができました')
+  t('使われたら QR を消して「登録できました」と出し、一覧に「この端末を取り消す」を出す（登録の番号も画面から消す）',
+    a.els['en-qr'].hidden && a.els['en-qr-img'].children.length === 0 && a.els['en-qr-short'].textContent === '' && a.els['en-qr-short-box'].hidden && a.els['en-msg'].textContent.includes('登録ができました')
     && a.els['en-list'].children[0].children[1].children[0].textContent === 'この端末を取り消す');
   await a.els['en-list'].children[0].children[1].children[0].listeners.click[0](); await settle();
   t('取り消しは行の番号だけを送る', JSON.stringify(a.calls.filter((c) => c.name === 'device_enroll_revoke').map((c) => c.args)) === JSON.stringify([{ p_id: 5 }]));
@@ -240,6 +284,29 @@ async function runAdmin(opt) {
     await a.els['b-enroll'].listeners.click[0](); await settle();
     t('断り（' + err + '）: QR を出さず職員向けの文', a.svgs.length === 0 && a.els['en-qr'].hidden && a.els['en-msg'].textContent.includes(want));
   }
+  {
+    let x = await runAdmin();
+    x.els['en-acct'].value = 'inv-f@example.invalid';
+    await x.els['b-enroll'].listeners.click[0](); await settle();
+    t('（準備）登録の番号が出ている', x.els['en-qr-short'].textContent === 'K7MP-2XQ9');
+    x.els['b-enroll-close'].listeners.click[0]();
+    t('「QR を消す」で登録の番号も画面から消す', x.els['en-qr'].hidden && x.els['en-qr-short'].textContent === '' && x.els['en-qr-short-box'].hidden);
+    x = await runAdmin();
+    x.els['en-acct'].value = 'inv-f@example.invalid';
+    await x.els['b-enroll'].listeners.click[0](); await settle();
+    const realNow2 = Date.now;
+    Date.now = () => realNow2() + 11 * 60000;
+    await x.intervals[0](); await settle();
+    Date.now = realNow2;
+    t('期限が来て QR を消す時も、登録の番号を画面から消す', x.els['en-qr'].hidden && x.els['en-qr-short'].textContent === '' && x.els['en-qr-short-box'].hidden);
+    for (const sh of [undefined, 'k7mp2xq9', 'K7MP2XQO', 'K7MP-2XQ9', 12345678]) {
+      x = await runAdmin({ issue: { ok: true, id: 6, code: CODE, short: sh, expiresAt: new Date(Date.now() + 600000).toISOString() } });
+      x.els['en-acct'].value = 'inv-f@example.invalid';
+      await x.els['b-enroll'].listeners.click[0](); await settle();
+      t('登録の番号が無い・形が違う時（' + String(sh) + '）は QR だけを出し、番号の欄は出さない',
+        x.svgs.length === 1 && !x.els['en-qr'].hidden && x.els['en-qr-short-box'].hidden && x.els['en-qr-short'].textContent === '');
+    }
+  }
   a = await runAdmin({ issue: { ok: true, id: 1, code: 'not-a-code', expiresAt: new Date().toISOString() } });
   a.els['en-acct'].value = 'inv-f@example.invalid';
   await a.els['b-enroll'].listeners.click[0](); await settle();
@@ -265,6 +332,33 @@ async function runAdmin(opt) {
   t('使える人の管理: QR の部品 → 欄 → 本体の順で読む', ah.indexOf('<script src="su-qr.js') > 0 && ah.indexOf('<script src="su-qr.js') < ah.indexOf('<script src="accounts-enroll.js') && ah.indexOf('<script src="accounts-enroll.js') < ah.indexOf('<script src="accounts.js'));
   t('紙には QR も欄も出さない', /@media print\s*\{\s*#sec-enroll, \.en-qr \{ display: none !important; \}/.test(css));
   t('公開の許可（.gitignore）に新しい5つのファイルがある', ['accounts-enroll.js', 'su-qr.js', 'su-enroll.css', 'enroll.html', 'enroll.js'].every((x) => gi.includes('\n!/' + x + '\n')));
+
+  group('4. ログインの画面の「登録の番号」（login.js）');
+  {
+    const LG = read('login.js'), lh = read('login.html');
+    const a1 = between(LG, '// SHORTOF-BEGIN', '// SHORTOF-END'), a2 = between(ej, '// SHORTOF-BEGIN', '// SHORTOF-END');
+    t('そろえ方（shortOf）は login.js と enroll.js で一字一句同じ', !!a1 && a1 === a2);
+    for (const [v, want] of [[SHORT, SHORT], ['k7mp-2xq9', SHORT], [' K7MP 2XQ9 ', SHORT], ['ｋ７ｍｐ－２ｘｑ９', SHORT], ['K7MP\u30fc2XQ9', SHORT], ['K7MP\u3000\u22122XQ9', SHORT]]) {
+      const x = loginShort(v);
+      t('入れた番号（' + JSON.stringify(v) + '）をそろえて enroll.html#c=' + want + ' へ移り、欄を空にする',
+        x.log.replace.length === 1 && x.log.replace[0] === 'enroll.html#c=' + want && x.els['short-code'].value === '' && x.log.forget === 1, x.log);
+    }
+    for (const v of ['', 'K7MP2XQ', 'K7MP2XQ92', 'K7MP2XQO', 'K7MP2XQ1', 'K7MP2XQL', 'K7MP2XQI', 'K7MP2XQ0', 'K7MP_2XQ9', CODE, 'K7MP'.repeat(9)]) {
+      const x = loginShort(v);
+      t('形の違う番号（' + JSON.stringify(v.slice(0, 16)) + '）は移らず、職員向けの文を出して欄に戻る',
+        x.log.replace.length === 0 && x.log.msg.length === 1 && x.log.msg[0].includes('8文字') && x.els['short-code'].focused === 1 && x.els['short-code'].value === v);
+    }
+    t('ログインの画面: 登録の番号の欄（見出し・16px 以上の入れる欄・44px 以上の押す所・読み上げの名前）がある',
+      lh.includes('<h2>登録の番号で登録（ホーム画面のアプリ）</h2>') && /<input id="short-code" class="inp en-short-inp"[^>]*aria-label="登録の番号（8文字）"/.test(lh)
+      && /<button type="button" class="btn pri wide" id="b-short">/.test(lh) && /\.en-short-inp \{[^}]*font-size: 16px;[^}]*min-height: 48px;/.test(css)
+      && /\.btn \{\s*min-height: 48px;/.test(read('su-auth.css')));
+    t('ログインの画面: 登録の番号の欄は、ログインしていない・使えない・確かめられない時だけ出す',
+      /\$\('v-short'\)\.hidden = !\(view === 'signedout' \|\| view === 'denied' \|\| view === 'error'\);/.test(LG));
+    t('ログインの画面: 番号を localStorage・sessionStorage に入れない・console を使わない',
+      !/(localStorage|sessionStorage)\.setItem\([^)]*(short|code)/i.test(LG) && !/console\./.test(LG));
+    t('使える人の管理: QR の下に登録の番号の欄と説明の1行がある',
+      /<div class="en-short" id="en-qr-short-box" hidden>[\s\S]*?id="en-qr-short"[\s\S]*?ログインの画面の『登録の番号』にこの8文字を入れてください。/.test(ah));
+  }
 
   say('\n────────── 合計: ' + ok + ' 件成功 / ' + ng + ' 件失敗 ──────────');
   process.exit(ng ? 1 : 0);
