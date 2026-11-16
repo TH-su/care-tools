@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-QkOQCaC3239lQ410xuT30T9Ob8I46MUzLa1I9tG3MJE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-+TtteIo78rwgQMmqHKFavj3zd8ba4ahazXO+xKB70e0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 会議の記録（要配慮の情報）を扱うためキャッシュ無効 -->
@@ -777,6 +777,8 @@ function impListHtml_(res){
   });
   return h;
 }
+/* 読めなかった理由の文。接続先が無い（NO_URL・ログインだけで開いた後に入居者マスタが Google に戻った時）だけ職員向けの語にし、ほかは今までどおり（2026-11-16） */
+function cmExMsg_(e){ var m=String(e&&e.message||e); return m==='NO_URL'?'接続先が入っていません。接続設定で入居者マスタの接続先を入れてください':m; }
 /* 通信の例外を職員向けの語にする（2026-11-12 商用化の見直し）。「Failed to fetch」「NO_URL」などの英語の文を括弧の中にそのまま出さない */
 function impExWords_(e){
   var m=String((e&&e.message)||e||'');
@@ -1108,7 +1110,7 @@ function pickResident_(rec,id){
     hospitalized:typeof rec.hospitalized==='boolean'?rec.hospitalized:undefined,stateLog:log,careLevelHistory:hist};
 }
 function applyList_(l){
-  if(l.e){ meetings=[]; listState='error'; listErr='記録の一覧を読めませんでした（'+String(l.e&&l.e.message||l.e)+'）'; return; }
+  if(l.e){ meetings=[]; listState='error'; listErr='記録の一覧を読めませんでした（'+cmExMsg_(l.e)+'）'; return; }
   var k=classify_(l.d);
   if(k==='ok'){ meetings=Array.isArray(l.d.rows)?l.d.rows.filter(function(x){return x&&x.meetingId&&!x.deleted}):[]; listState='ok'; listErr=''; return; }
   meetings=[];
@@ -1127,7 +1129,7 @@ function openPerson_(id){
     if(g!==gen||isField()) return;
     var r=rs[0];
     if(r.e||!r.d||!r.d.record||String(r.d.record.id)!==String(id)){
-      personErr=r.e?'入居者の記録を読めませんでした（'+String(r.e&&r.e.message||r.e)+'）':'入居者マスタにこの利用者Noの方がいません';
+      personErr=r.e?'入居者の記録を読めませんでした（'+cmExMsg_(r.e)+'）':'入居者マスタにこの利用者Noの方がいません';
       listState='idle'; paintPerson_(); setSync('読めません'); return;
     }
     cur=pickResident_(r.d.record,id);
@@ -1165,7 +1167,7 @@ function showPicker_(){
   if(!roster.ok) return Promise.resolve();
   return meetingRead_({action:'meeting',op:'summary'}).then(function(d){return{d:d}},function(e){return{e:e}}).then(function(r){
     if(g!==gen||isField()) return;
-    if(r.e){ summaryState='error'; summaryErr='最終開催日を読めませんでした（'+String(r.e&&r.e.message||r.e)+'）'; }
+    if(r.e){ summaryState='error'; summaryErr='最終開催日を読めませんでした（'+cmExMsg_(r.e)+'）'; }
     else{
       var k=classify_(r.d);
       if(k==='ok'){ summary=(r.d.residents&&typeof r.d.residents==='object')?r.d.residents:{}; summaryState='ok'; saveMenuDue_(); }
@@ -1330,6 +1332,8 @@ function writeOp_(what,body,flow){
     delete body.accessToken;
     if(r.skip||g!==gen||ed!==e||isField()) return false;
     e.busy=false; setSync('');
+    /* 接続先の無い端末で、使っている途中で入居者マスタが Google に戻った時は、Google へは一度も送っていない（届いたか分からない、ではない） */
+    if(r.err&&String(r.err&&r.err.message||r.err)==='NO_URL'){ edMsg_('送れませんでした（何も送っていません）。この端末は接続設定が要る状態に戻りました。入力は残っています。接続設定で入居者マスタの接続先を入れてから、もう一度押してください','ng'); paintEditor_(); return false; }
     if(r.err) return unsure_(what,e,body,flow,'通信が途中で切れました');
     var k=classify_(r.d);
     if(k==='unknown') return unsure_(what,e,body,flow,CODE_MSG.unknown);
@@ -1876,11 +1880,30 @@ function boot(){
   window.SUAppGate.run('care-meeting',{dirty:function(){ return isDirty_(ed)||!!(ed&&ed.busy)||!!(impSt&&impSt.phase==='applying'); }})
     .then(function(ok){ if(ok) startApp_(); });
 }
+/* 接続先・合言葉の無い端末でも、ログインして入居者マスタの新しい保存先で使える時は開く（2026-11-08 代表者「端末ごとの設定を極限までなくす」・
+   フェイスシートの fsProbeLive_ と同じ形）。起動の時に SUResRead.liveReady で1回だけ確かめる（端末には何も書かない）。使える時は、
+   読み取り・保存の口（SUResRead を通る）へ接続先なしで送る＝Google へは送らない（使っている途中で Google に戻った時は、送らずに接続設定が要ると知らせる）。部品が無い・分からない・時間切れ・現場の端末は今までどおり
+   接続先の設定を求める。過去の記録の取り込み（E表別紙を Google から読む）は、今までどおり接続先がある時だけ */
+function cmProbeLive_(){
+  var p=(window.SUResRead&&typeof window.SUResRead.liveReady==='function')?Promise.resolve().then(function(){ return window.SUResRead.liveReady(); }):Promise.resolve(false);
+  return p.then(function(v){ return v===true; },function(){ return false; }).then(function(v){
+    if(v){ try{ if(window.SUCfgHint&&typeof window.SUCfgHint.quiet==='function') window.SUCfgHint.quiet(); }catch(e){ /* 案内の帯の失敗は止めない */ } }
+    return v;
+  });
+}
 function startApp_(){
   var c=readCfg_(); CFG.url=c.url; CFG.token=c.token;
   definePrint_();
   bindEvents_();
-  if(!CFG.url){ showGate_('nocfg'); return; }
+  if(!CFG.url){
+    if(isField()){ showGate_('nocfg'); return; }
+    setSync('確かめています…');
+    cmProbeLive_().then(function(v){ setSync(''); if(isField()) return; if(v) openStart_(); else showGate_('nocfg'); });
+    return;
+  }
+  openStart_();
+}
+function openStart_(){
   var p=readMasterIdParam_();
   if(p.id) openPerson_(p.id);
   else{
