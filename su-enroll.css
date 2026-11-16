@@ -4,6 +4,14 @@
 .en-qr svg { width: min(280px, 80vw); height: auto; display: block; }
 .en-qr .en-for { font-weight: 700; text-align: center; word-break: break-all; margin: 0; }
 .en-qr .en-exp { margin: 0; font-variant-numeric: tabular-nums; }
+/* 登録の番号（8文字・2026-11-16 統合 0095）: QR の下に大きく出す・ログインの画面の入れる欄 */
+.en-short { display: grid; justify-items: center; gap: 2px; margin: 4px 0 0; }
+.en-short p { margin: 0; text-align: center; }
+.en-short-lb { font-weight: 700; color: var(--g7); font-size: 0.9375rem; }
+.en-short-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 2rem; font-weight: 700; letter-spacing: .12em; font-variant-numeric: tabular-nums; }
+.en-short-note { max-width: 30em; }
+.en-short-inp { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 16px; min-height: 48px; letter-spacing: .12em; text-transform: uppercase; }
+.en-short-inp::placeholder { text-transform: none; letter-spacing: normal; }
 .tag.st-active { background: var(--ok-l); color: var(--ok); }
 .tag.st-open { background: var(--pri-l); color: var(--pri); }
 .tag.st-revoked, .tag.st-canceled, .tag.st-failed, .tag.st-lapsed { background: var(--ng-l); color: var(--ng); }

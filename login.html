@@ -21,8 +21,12 @@
   ★使えるかどうかを決めるのはデータベース（許可リスト）。この画面の表示は結果を見せているだけ。
   ★?next=xxx.html を付けて開くと、使える状態になった後その画面へ戻る（このサイト内の .html だけ受け付ける）。
   ★?return=care-log を付けて開くと、使える状態になった時点で記録アプリ（care-log）へ自動で戻る（決め打ちの一覧だけ）。
+  ★「登録の番号で登録（ホーム画面のアプリ）」（2026-11-16 代表者の決定 案A・care-backend 統合 0095）: iPhone のホーム画面に置いたアプリは
+    Safari と保存場所が別で、カメラで読んだ QR のログインが届かない。管理者が QR の下に出す8文字を打つと、そろえてから
+    端末の登録（enroll.html）へ # の後ろに入れて移り、このアプリが登録される。番号は端末に保存しない（入れた欄も移る前に空にする）。
 -->
 <link rel="stylesheet" href="su-auth.css?v=2026-09-26">
+<link rel="stylesheet" href="su-enroll.css?v=2026-11-16">
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 </head>
@@ -123,6 +127,15 @@
     <div class="acts"><button type="button" class="btn pri" id="b-retry">もう一度</button></div>
   </section>
 
+  <!-- 登録の番号で登録（ホーム画面のアプリ・ログインしていない・使えない・確かめられない時に出す） -->
+  <section class="cd" id="v-short" hidden>
+    <h2>登録の番号で登録（ホーム画面のアプリ）</h2>
+    <p class="muted">ホーム画面に置いたアプリは、QR を読んでもログインが入りません。管理者が「使える人の管理」で出した QR の下の8文字（登録の番号）を入れてください。</p>
+    <label for="short-code" class="muted">登録の番号（8文字）</label>
+    <input id="short-code" class="inp en-short-inp" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" maxlength="20" placeholder="例: ABCD-EFGH" aria-label="登録の番号（8文字）">
+    <div class="acts"><button type="button" class="btn pri wide" id="b-short">この番号で登録する</button></div>
+  </section>
+
   <section class="cd" id="v-signout" hidden>
     <p class="muted">ログアウトは「この端末だけ」です。同じアカウントを使っている他の端末はそのまま使えます。</p>
     <div class="acts"><button type="button" class="btn" data-act="signout">この端末でログアウト</button></div>
@@ -134,7 +147,7 @@
 <script src="su-errors.js?v=2026-11-12"></script>
 <script src="supabase-js-2.112.4.js"></script>
 <script src="su-auth.js?v=2026-10-28"></script>
-<script src="login.js?v=2026-11-08"></script>
+<script src="login.js?v=2026-11-16"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 </body>
 </html>

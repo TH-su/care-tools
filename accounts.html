@@ -29,9 +29,10 @@
   ★「端末登録の QR」（2026-11-08 代表者の決定 段4・accounts-enroll.js・su-qr.js・care-backend 統合 0082）: 管理者が選んだ現場のアカウント
     （同じ施設の有効な現場だけ・事務所と管理者は選べない・登録したログインは180日使わないと切れる）でログインさせる1回限り・10分の QR を出す。端末はカメラで読むと enroll.html が開いてログインする。
     QR に入れるのは enroll.html の住所と番号（# の後ろ）だけ。番号は画面のメモリにだけ持ち、データベースにはハッシュだけを置く。画面だけで印刷しない。
+    QR の下に8文字の「登録の番号」（2026-11-16 代表者の決定 案A・統合 0095）を出す。ホーム画面に置いたアプリはログインの画面でこれを打って登録する（QR と同じ1回限り・10分・QR を消すと画面からも消える）。
 -->
 <link rel="stylesheet" href="su-auth.css?v=2026-09-26">
-<link rel="stylesheet" href="su-enroll.css?v=2026-11-08.2">
+<link rel="stylesheet" href="su-enroll.css?v=2026-11-16">
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 <!-- 見出しの「← メニュー」とログイン中の役割の札の見た目（画面だけ・印刷しない・2026-11-12） -->
@@ -133,6 +134,12 @@
         <div class="en-qr" id="en-qr" hidden>
           <div id="en-qr-img"></div>
           <p class="en-for" id="en-qr-for"></p>
+          <div class="en-short" id="en-qr-short-box" hidden>
+            <p class="en-short-lb">登録の番号</p>
+            <p class="en-short-code" id="en-qr-short"></p>
+            <p class="en-short-note muted">ホーム画面に置いたアプリで登録する時は、ログインの画面の『登録の番号』にこの8文字を入れてください。番号は口で伝えるか、この画面を見せて伝えてください（チャットやメールで送らないでください）。</p>
+          </div>
+          <p class="en-short-note muted" id="en-qr-short-none" hidden>今は登録の番号を出せません（QR だけ使えます）。少し時間をおいてから、もう一度 QR を出すと番号も出ます。</p>
           <p class="en-exp muted" id="en-qr-exp" aria-live="off"></p>
           <button type="button" class="btn" id="b-enroll-close">QR を消す</button>
         </div>
@@ -206,7 +213,7 @@
 <script src="su-gas-auth.js?v=2026-10-29"></script>
 <script src="accounts-export.js?v=2026-11-13"></script>
 <script src="su-qr.js?v=2026-11-08"></script>
-<script src="accounts-enroll.js?v=2026-11-13"></script>
+<script src="accounts-enroll.js?v=2026-11-16.3"></script>
 <script src="accounts.js?v=2026-11-13"></script>
 <script src="su-shell.js?v=2026-11-14"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>

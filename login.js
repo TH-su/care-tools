@@ -68,6 +68,8 @@
   function show(view, st) {
     VIEWS.forEach(function (v) { $('v-' + v).hidden = v !== view; });
     $('v-signout').hidden = !(st && st.email);
+    // 登録の番号の欄は、ログインしていない・使えない・確かめられない時だけ出す（2026-11-16 統合 0095・仮置き）
+    $('v-short').hidden = !(view === 'signedout' || view === 'denied' || view === 'error');
     if (st) fill(view, st);
     var h = $('v-' + view).querySelector('h2');
     if (h && view !== 'loading') { h.setAttribute('tabindex', '-1'); h.focus({ preventScroll: true }); }
@@ -197,6 +199,34 @@
     $(p[0]).addEventListener('keydown', function (ev) { if (ev.key === 'Enter') $(p[1]).click(); });
   });
   $('b-retry').addEventListener('click', refresh);
+
+  // 登録の番号（8文字）のそろえ方。enroll.js の shortOf と一字一句同じ（check/unit/device_enroll_page_test.js が確かめる）
+  // SHORTOF-BEGIN
+  function shortOf(v) {
+    var s = String(v == null ? '' : v);
+    if (s.length > 32) return '';
+    try { s = s.normalize('NFKC'); } catch (e) { /* 古い端末はそのまま */ }
+    s = s.toUpperCase().replace(/[\s\-\u2010-\u2015\u2212\u30fc\uff70]/g, '');
+    return /^[2-9A-HJKMNP-Z]{8}$/.test(s) ? s : '';
+  }
+  // SHORTOF-END
+  // 登録の番号で登録: そろえてから端末の登録（enroll.html）へ # の後ろに入れて移る（同じ道で受け口へ送る）。
+  // 移る前に欄を空にする（戻るボタンの控えに残さない）。location.replace なので、この画面の履歴に番号の住所は残らない
+  function submitShort() {
+    var inp = $('short-code');
+    var c = shortOf(inp.value);
+    if (!c) {
+      msg('登録の番号は、QR の下に出ている8文字です（数字の0・1と、英字のO・I・Lは使っていません）。確かめてもう一度入れてください。');
+      inp.focus();
+      return;
+    }
+    msg('');
+    inp.value = '';
+    forgetMenu();
+    location.replace('enroll.html#c=' + c);
+  }
+  $('b-short').addEventListener('click', submitShort);
+  $('short-code').addEventListener('keydown', function (ev) { if (ev.key === 'Enter') submitShort(); });
 
   refresh();
 })();
