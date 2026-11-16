@@ -177,3 +177,19 @@ SU_FI_SB_KEY=<試験用の公開鍵> node check/fail-inject/observe.mjs --ls-key
     保存の操作に当てる時は、画面を開いて「✓ 同期済み」になってから `curl -X POST --data '[{"entry":"put","nth":1,"kind":"deny"}]' <URL>/__fail-inject/script` で台本を入れ直す（回数が0に戻る）→ 保存の操作 → `curl <URL>/__fail-inject/report` で fired と times を見る
   - 公開リポジトリに無い ws-master.json は `{}` で返す（画面は「無い」時と同じ分岐に落ちる。読み込みのたびの 404 のエラーを出さない）
 - 本物の .gs と写した行の照合は、`SU_GAS_SRC`（統合KV の Code.gs）・`SU_GAS_SRC_MASTER`（入居者マスタの master.gs）を渡した時だけ試験が行う
+
+## 開いてから使えるまでの通信を数える（check/load-latency.mjs・2026-11-16〜）
+
+画面を開いた時に、外（GAS・Supabase）への通信が何本・何段の「前の答えを待ってから出る」鎖になっているかを数えます。
+通信は全部横取りして架空の答えを返し、外への1本ごとに既定 700ms 遅らせます（現場の回線のおおよそ）。画面のコードは変えません。
+
+```bash
+node check/load-latency.mjs --pages resident-master.html,support-overview.html          # 切り替えスイッチは全部切（Google の道）
+node check/load-latency.mjs --live --pages resident-master.html                         # su-backend.json のまま（本番と同じ道）
+node check/load-latency.mjs --root <直す前の写し> --live --json before.json             # 直す前と比べる（--root に main の写しのフォルダ）
+```
+
+- 出る数: `ready`（画面が SUPerf.ready を呼んだ時刻）・`idle`（最後の通信が終わった時刻）・`外`（本数）・`直列`（いちばん長い待ちの鎖）・`重複`（同じ相手・同じ中身が2回以上）
+- 見るのは外への通信の列だけにする。同じサイトのファイルが1本ずつ読まれて見えるのは手元の試験サーバー（HTTP/1.1）の癖で、本番（HTTP/2）の速さではない
+- `--live` の架空の答えは主な読み取り（res_mode_get・res_roster・res_get・kv_get・kv_head・kv_entries）だけ。ほかの関数は「無い」と答えるので、その先で止まる画面は材料の足りなさで、画面の不具合ではない
+- 配布物ではない。run-all・CI には入れていない（数字は目安で、合否を決めない）

@@ -612,7 +612,7 @@ async function seed(s, roster, opts) {
     t('H ' + f + ' は su-roster.js?v=2026-10-28 を読む', read(f).indexOf('<script src="su-roster.js?v=2026-10-28"></script>') >= 0);
   }
   for (const f of ['resident-master.html', 'shadow-check.html']) {
-    t('H ' + f + ' は su-master-shadow.js?v=2026-10-28 を読む', read(f).indexOf('<script src="su-master-shadow.js?v=2026-10-28"></script>') >= 0);
+    t('H ' + f + ' は su-master-shadow.js?v=2026-11-16 を読む', read(f).indexOf('<script src="su-master-shadow.js?v=2026-11-16"></script>') >= 0);
   }
   t('部品は console.log を使わない', !/console\.log/.test(ROSTER_SRC) && !/console\.log/.test(SHADOW_SRC) && !/console\.log/.test(SC));
 

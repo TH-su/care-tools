@@ -43,7 +43,7 @@
   ];
   var ROLE_LABEL = { admin: '管理者', office: '事務所', field: '現場' };
   var SESSION_RE = /^sb-[a-z0-9]+-auth-token$/;
-  var V_AUTH = 'su-auth.js?v=2026-10-28';
+  var V_AUTH = 'su-auth.js?v=2026-11-16';
   var V_SB = 'supabase-js-2.112.4.js';
   var V_CSS = 'su-app-gate.css?v=2026-10-29';
 

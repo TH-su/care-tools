@@ -78,7 +78,7 @@
     if (root.SUAuth) return Promise.resolve(root.SUAuth);
     if (authP) return authP;
     var p = root.supabase ? Promise.resolve() : loadScript('supabase-js-2.112.4.js');
-    authP = p.then(function () { return root.SUAuth ? null : loadScript('su-auth.js?v=2026-10-28'); }).then(function () { return root.SUAuth || null; });
+    authP = p.then(function () { return root.SUAuth ? null : loadScript('su-auth.js?v=2026-11-16'); }).then(function () { return root.SUAuth || null; });
     authP.then(function (A) { if (!A) authP = null; }, function () { authP = null; });
     return authP;
   }
