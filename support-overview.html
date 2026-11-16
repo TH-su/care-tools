@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-UonJg4R2Ox6py8DiGw/U+1aHf19bP6jdromvDhXrRGw=' 'sha256-kwAifQBfvhff32cF5SUk9JG2jvWgV6uclGEK+W7/Hfs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ALImVJN6YVk56LVAQG2AR8VlhwIlMyCljLc5ncA9NOM=' 'sha256-kwAifQBfvhff32cF5SUk9JG2jvWgV6uclGEK+W7/Hfs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -831,9 +831,26 @@ function loadMasksLocal() {
 // マスクは GAS 最新を優先（退去/入院状態）→ 失敗時ローカル→ どちらも無ければ空（＝除外なし・安全側）。
 // wsday を GAS 最新で取る一方でマスクだけ古い端末ローカルだと、他端末で退去登録された元利用者の
 // 過去枠が除外されず氏名露出しうるため、マスクも GAS 最新を優先する（読み取り専用 get）。
-async function loadMasks() {
+/* 開いた時の入院の印の受け取り（soFetchHosp の答え・失敗しても false で解決する）。
+   2026-11-17: 開いた時に入院の印を読み終えてから集計を始めていたのを、集計と同時に読み始め、予定の型に入院を重ねる直前（maskFrom の前）だけこれを待つ形にした。
+   初回だけ入院が抜けた表にならない守り（2026-08-08 監査O1）は、重ねる前に必ず待つことで保つ */
+let soHospFirstP = null;
+const SO_HOSP_WAIT_MS = 8000;   // 名簿が答えないまま止まっても、ここまで待ったら入院を重ねずに集計を進める（反証レビュー 2026-11-17・止まると「取り直し」でも盤面が出なかった）
+async function soHospWait_() {
+  if (!soHospFirstP) return;
+  let tm = null;
   try {
-    const j = await gasCall({ action: 'get', key: CARE_KEY, token: TARGET.token });
+    await Promise.race([soHospFirstP, new Promise((r) => { tm = setTimeout(() => { soHospTimedOut_ = true; r(); }, SO_HOSP_WAIT_MS); })]);
+  } catch (e) {}
+  if (tm) clearTimeout(tm);
+}
+let soHospTimedOut_ = false;   // 開いた時の名簿を待ちきれずに入院を重ねずに集計した印（遅れて届いたら1回だけ集計し直す・init）
+async function loadMasks() {
+  const jP = gasCall({ action: 'get', key: CARE_KEY, token: TARGET.token });
+  jP.catch(() => { /* 下の await で受ける */ });
+  await soHospWait_();                                      // 入院の印が届いてから重ねる（届かなければ重ねない＝今までどおり）
+  try {
+    const j = await jP;
     if (j && j.data && Array.isArray(j.data.residents)) { sogoLabelApply_(j.data.rateMaster); return maskFrom(j.data.residents); }   // 同じ応答の報酬マスタから総合事業の略称を決める（読むだけ）
   } catch (e) {}
   return loadMasksLocal();
@@ -1370,13 +1387,15 @@ function init() {
   }
 
   /* 入居者マスタの入院を重ねる（2026-08-02 追加）。
-     ★先に名簿を取ってから集計する。順序が逆だと初回だけ入院が抜けた表になる。
-     （2026-08-08 監査O1: 即時 refresh との並走をやめ、名簿取得の完了後に1回だけ自動集計する。
-       soFetchHosp は失敗時も false で解決するため、ここは必ず1回呼ばれる＝自動集計は従来どおり走る）
+     ★入院を重ねる前に名簿を受け取り終える。順序が逆だと初回だけ入院が抜けた表になる。
+     （2026-08-08 監査O1: 名簿の受け取りの後に1回だけ自動集計する。2026-11-17 から、名簿の受け取りと集計を同時に始め、
+       集計は予定の型に入院を重ねる直前（loadMasks の soHospWait_）で受け取りの答えを待つ。自動集計は1回だけ・失敗しても集計は走る。
+       名簿が8秒を過ぎて届いた時だけ、もう1回集計して入院を重ねる）
      接続設定が無い端末では何も起きない＝従来どおり。 */
-  soFetchHosp().then(function(){
-    if (syncTarget().endpoint || soHasSession_()) refresh();   // 接続先があれば自動集計（名簿反映後）。接続先が無くてもログインの控えがあれば、新しい保存先から読めるかを確かめる（2026-11-12）
-  });
+  soHospFirstP = soFetchHosp();
+  /* 名簿が待ちの上限（8秒）を過ぎて届いた時だけ、入院を重ねるためにもう1回集計する（反証レビュー 2026-11-17） */
+  soHospFirstP.then(function (ok) { if (ok && soHospTimedOut_) { soHospTimedOut_ = false; refresh(); } }, function () {});
+  if (syncTarget().endpoint || soHasSession_()) refresh();   // 接続先があれば自動集計。接続先が無くてもログインの控えがあれば、新しい保存先から読めるかを確かめる（2026-11-12）
   /* 別のタブ（接続設定・入居者マスタ）で端末の用途が変わったら、ページを読み込み直して起動の時の守りに任せる（CLAUDE.md §2-5・2026-11-08 商用化の点検）。
      描き直すまで待つと、現場用に変わった後もしばらくフルネームが出たままになっていた */
   window.addEventListener('storage', function (e) {

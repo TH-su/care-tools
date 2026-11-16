@@ -138,6 +138,7 @@ console.log('\n— 当てる所 —');
         localStorage: { getItem: k => (k in store ? store[k] : null) },
         CARE_KEY: 'care_schedule_v2', TARGET: { token: 'x' },
         maskFrom: () => ({ hosp: {}, moved: {}, ext: {}, cuts: {} }),
+        soHospWait_: async () => {},   // 入院の印の受け取りを待つ所（2026-11-17・この試験では待つものが無い）
         gasCall: async () => { if (gas instanceof Error) throw gas; return gas; } };
       vm.createContext(b);
       vm.runInContext(reg + '\n' + cutF(SRC, 'codeLabel') + '\n' + cutF(SRC, 'loadMasksLocal') + '\n'
