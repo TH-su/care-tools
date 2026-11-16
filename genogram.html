@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-font">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-w0+QhxEGxs6rbJCKjy5qSGpLeJWW5EztXrLX7iu0DHk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-XoKKO64fY2qstFN48zLckqCAgZPPRWPPTH6DXYzjl+g='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 入居者情報を表示する画面のため、ブラウザ・中継キャッシュに残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
@@ -16,7 +16,7 @@
 <script src="su-cfg-hint.js?v=2026-11-10"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-resident-hop.js?v=2026-11-13"></script>
-<script src="su-geno.js?v=2026-11-14"></script>
+<script src="su-geno.js?v=2026-11-16"></script>
 <!-- 止めて知らせる窓（alert・confirm）の代わりに画面の中の窓を出す共通部品（2026-11-12 代表者の決定）。画面のスクリプトより前に置く -->
 <script src="su-dialog.js?v=2026-11-14.2"></script>
 <script src="konva-9.3.22.min.js"></script>
@@ -2769,7 +2769,7 @@ const CloudSync = (function() {
       : (has(/^supabase-js-/) ? wait(function () { return !!window.supabase; }) : load('supabase-js-2.112.4.js'));
     return p.then(function () {
       if (window.SUAuth) return null;
-      return has(/^su-auth\.js/) ? wait(function () { return !!window.SUAuth; }) : load('su-auth.js?v=2026-10-28');
+      return has(/^su-auth\.js/) ? wait(function () { return !!window.SUAuth; }) : load('su-auth.js?v=2026-11-16');
     });
   }
   function genoAccessToken_() {
@@ -5181,6 +5181,6 @@ init();
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
 <!-- 本番の健康（2026-11-14・統合 0088）: 新しい保存先への保存の失敗を種類と理由だけ数えて送る。保存の動きには触れない・読めなくても動く -->
 <script src="su-health.js?v=2026-11-14"></script>
-<script src="su-report.js?v=2026-10-28" data-tool="ジェノグラム作成"></script>
+<script src="su-report.js?v=2026-11-16" data-tool="ジェノグラム作成"></script>
 </body>
 </html>

@@ -43,6 +43,7 @@
 !/check/README.md
 !/check/package.json
 !/check/lib.mjs
+!/check/load-latency.mjs
 !/check/snap.mjs
 !/check/compare.mjs
 !/check/jscheck.mjs

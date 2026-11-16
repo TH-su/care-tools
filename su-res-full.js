@@ -283,7 +283,7 @@
   function loadAuth() {   // supabase-js と su-auth.js を必要な時だけ読む（入居者マスタの写しの部品と同じ版）
     if (root.SUAuth) return Promise.resolve(root.SUAuth);
     var p = root.supabase ? Promise.resolve() : loadScript('supabase-js-2.112.4.js');
-    return p.then(function () { return root.SUAuth ? null : loadScript('su-auth.js?v=2026-10-28'); }).then(function () { return root.SUAuth || null; });
+    return p.then(function () { return root.SUAuth ? null : loadScript('su-auth.js?v=2026-11-16'); }).then(function () { return root.SUAuth || null; });
   }
   async function auto(io) {
     try {

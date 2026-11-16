@@ -221,11 +221,16 @@
 
   async function checkRemote(c, base, seen) {
     // 許可リストの判定はデータベースに聞く（ここで決めない）
-    var acc = await c.rpc('my_account');
+    // my_account と本人の行（allowed_accounts）は互いの答えを使わないので、同時に出して待つ（2026-11-16・往復を1回減らす）。
+    // 判定の順番・中身は今までと同じ（my_account が失敗なら本人の行の答えは使わずに確かめられないと返す）
+    var pAcc = Promise.resolve(c.rpc('my_account'));
+    // 管理者かどうか（6桁を通すまでは my_account が「事務所」として返すので、本人の行を見る）
+    var pRow = Promise.resolve(c.from('allowed_accounts').select('role,label').eq('email', base.email).maybeSingle());
+    pRow.then(null, function () { /* 使わなかった時の失敗を外に出さない（使う時は下の await で受ける） */ });
+    var acc = await pAcc;
     if (acc.error) return Object.assign(base, { status: STATUS.ERROR, message: friendly(acc.error.message) });
 
-    // 管理者かどうか（6桁を通すまでは my_account が「事務所」として返すので、本人の行を見る）
-    var row = await c.from('allowed_accounts').select('role,label').eq('email', base.email).maybeSingle();
+    var row = await pRow;
     var isAdminRow = !row.error && row.data && row.data.role === 'admin';
     seen.rowOk = !row.error;
 

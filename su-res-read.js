@@ -333,7 +333,7 @@
   function loadAuth() {
     if (root.SUAuth) return Promise.resolve(root.SUAuth);
     var p = root.supabase ? Promise.resolve() : loadScript('supabase-js-2.112.4.js');
-    return p.then(function () { return root.SUAuth ? null : loadScript('su-auth.js?v=2026-10-28'); }).then(function () { return root.SUAuth || null; });
+    return p.then(function () { return root.SUAuth ? null : loadScript('su-auth.js?v=2026-11-16'); }).then(function () { return root.SUAuth || null; });
   }
 
   function fail(text, code) { var e = new Error(text); e.code = code || 'res_read'; return e; }
@@ -341,6 +341,19 @@
     var c = String(err && (err.code || err.message) || '');
     if (c === '42501') return fail('入居者の記録を読む権限がありません。ログインし直してください。', c);
     return fail('入居者の記録を読めませんでした（新しい保存先）。少し待ってから、もう一度開いてください。', c || 'db');
+  }
+
+  /* 名簿の口（res_roster）への相乗り（2026-11-16）: 同じログインの部品（sb）で同時に走っている名簿の読み取りがあれば、その答えを使う
+     （開いた時の getRoster と getBulk が2本ずつ読んでいた）。走っている間だけ・終わったら外す。答えは読むだけで書き換えない。
+     現場の道（safe）は今までどおり1本ずつ（別の決まりの答えと混ぜない）。1人ずつの記録（res_get・開いた記録を残す）は相乗りさせない */
+  var rosterRun = null;
+  function rosterShared(sb) {
+    if (rosterRun && rosterRun.sb === sb) return rosterRun.p;
+    var run = { sb: sb, p: Promise.resolve(sb.rpc('res_roster')) };
+    rosterRun = run;
+    var clear = function () { if (rosterRun === run) rosterRun = null; };
+    run.p.then(clear, clear);
+    return run.p;
   }
 
   /* io（試験で差し替える）: { auth() → Promise<SUAuth> }
@@ -365,7 +378,7 @@
     else if (action === 'getMedsBulk') ids = String(body.ids == null ? '' : body.ids).split(',').map(function (x) { return x.trim(); }).filter(Boolean).slice(0, 100);
     else {
       // 名簿・一覧は、正本の全員の利用者No をまず読む（res_roster は名簿の項目だけを返す・開いた記録は残さない）
-      var rr = await sb.rpc('res_roster');
+      var rr = await rosterShared(sb);
       if (rr.error) throw dbErr(rr.error);
       if (!rr.data || rr.data.ok !== true) throw dbErr({ code: rr.data && rr.data.error });
       if (action === 'getRoster') return answer(action, body, rr.data.rows || []);
@@ -428,8 +441,20 @@
    * ・印が写しの期間・関数がまだ無い（0036 の前）時は 'shadow'（Google から読む）
    * ・ログインしていない・使えないアカウント・通信の失敗は、Google へ流さずに失敗にする（スイッチが入の間は Google を正としない） */
   var modeCache = null, modeAt = 0;
+  /* 走っている確かめへの相乗り（2026-11-16）: 開いた時に名簿と一覧を同時に読む画面（入居者マスタの getRoster と getBulk など）は、
+     印を2本ずつ聞いていた。同じ io で走っている間に呼ばれたら、その答え（失敗も同じ）を使う。終わったら外す＝失敗を貼り付けない */
+  var modeRun = null;
   function mode(io) {
     if (modeCache && Date.now() - modeAt < 60000) return Promise.resolve(modeCache);
+    if (modeRun && modeRun.io === io) return modeRun.p;
+    var run = { io: io, p: null };
+    run.p = modeAsk(io);
+    modeRun = run;
+    var clear = function () { if (modeRun === run) modeRun = null; };
+    run.p.then(clear, clear);
+    return run.p;
+  }
+  function modeAsk(io) {
     return Promise.resolve().then(function () { return io && io.auth ? io.auth() : loadAuth(); }).then(function (A) {
       if (!A) throw fail('ログインの部品を読み込めませんでした。ページを読み込み直してください。', 'noauth');
       return A.check().then(function (st) {
@@ -630,5 +655,5 @@
     } catch (e) { return Promise.resolve(false); }
   }
 
-  root.SUResRead = { call: call, write: write, mirror: mirrorSoon, stateRev: stateRev, liveReady: liveReady, refreshFlags: refreshFlags, _answer: answer, _toRow: toRow, _gas: GAS, _reset: function () { modeCache = null; modeAt = 0; ownFlags = null; mirroring = null; mirrorAgain = false; caughtUp = false; revSeq = {}; } };
+  root.SUResRead = { call: call, write: write, mirror: mirrorSoon, stateRev: stateRev, liveReady: liveReady, refreshFlags: refreshFlags, _answer: answer, _toRow: toRow, _gas: GAS, _reset: function () { modeCache = null; modeAt = 0; modeRun = null; rosterRun = null; ownFlags = null; mirroring = null; mirrorAgain = false; caughtUp = false; revSeq = {}; } };
 })(typeof window !== 'undefined' ? window : this);

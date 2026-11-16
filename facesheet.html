@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-i9qt5D2d72ViilON7Fp21zSGEddzjKrBeQbOlip9jNA=' 'sha256-Jf23TfqVNm65Letqkw3cHCCIFchksXj/10gyqrPOl9Y=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-i9qt5D2d72ViilON7Fp21zSGEddzjKrBeQbOlip9jNA=' 'sha256-pMwacDHeXhJ1dDfCFIn5uBqAFobzIexAx9Kmj1EaWRE=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
@@ -675,9 +675,9 @@ button.geno-box{width:100%; margin:0; padding:0; font:inherit; color:inherit; li
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
 <script src="su-errors.js?v=2026-11-12"></script>
-<script src="su-devcfg.js?v=2026-11-08"></script>
+<script src="su-devcfg.js?v=2026-11-16"></script>
 <script src="su-gas-auth.js?v=2026-10-29"></script>
-<script src="su-res-read.js?v=2026-11-14"></script>
+<script src="su-res-read.js?v=2026-11-16"></script>
 <!-- 止めて知らせる窓（alert）の代わりに画面の中の窓を出す共通部品（2026-11-12 代表者の決定）。画面のスクリプトより前に置く -->
 <script src="su-dialog.js?v=2026-11-14.2"></script>
 <script>
@@ -703,9 +703,9 @@ if(!window.SUDialog) window.SUDialog = {
 </script>
 <script src="su-cfg-hint.js?v=2026-11-10"></script>
 <!-- 同期データの保存先の切り替え（統合 0005/0007）。見るだけの画面は切り替え後に Supabase から読む（未ログインは Google） -->
-<script src="su-kv.js?v=2026-11-08"></script>
+<script src="su-kv.js?v=2026-11-16"></script>
 <script src="su-perf.js?v=2026-11-02"></script>
-<script src="su-login-band.js?v=2026-11-02"></script>
+<script src="su-login-band.js?v=2026-11-16"></script>
 <script src="su-facility.js?v=2026-11-14.2"></script>
 <script src="su-resident-hop.js?v=2026-11-13"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>
@@ -3431,7 +3431,7 @@ function fsAuthLoad_(){
     : (has(/^supabase-js-/) ? wait(function(){ return !!window.supabase; }) : load('supabase-js-2.112.4.js'));
   return p.then(function(){
     if(window.SUAuth) return null;
-    return has(/^su-auth\.js/) ? wait(function(){ return !!window.SUAuth; }) : load('su-auth.js?v=2026-10-28');
+    return has(/^su-auth\.js/) ? wait(function(){ return !!window.SUAuth; }) : load('su-auth.js?v=2026-11-16');
   });
 }
 
@@ -3888,6 +3888,6 @@ document.addEventListener('DOMContentLoaded',function(){
 <script src="su-intro.js?v=2026-11-13"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
-<script src="su-report.js?v=2026-10-28" data-tool="フェイスシート"></script>
+<script src="su-report.js?v=2026-11-16" data-tool="フェイスシート"></script>
 </body>
 </html>

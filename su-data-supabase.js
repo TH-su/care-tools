@@ -53,7 +53,7 @@
     if (global.SUAuth) return Promise.resolve(global.SUAuth);
     if (!global.document || !global.document.head) return Promise.resolve(null);
     var p = global.supabase ? Promise.resolve() : loadScript('supabase-js-2.112.4.js');
-    return p.then(function () { return global.SUAuth ? null : loadScript('su-auth.js?v=2026-10-28'); }).then(function () { return global.SUAuth || null; });
+    return p.then(function () { return global.SUAuth ? null : loadScript('su-auth.js?v=2026-11-16'); }).then(function () { return global.SUAuth || null; });
   }
 
   /* データベースの印（1分の控え）。0038・0042 の前（関数が無い）は 'shadow' */

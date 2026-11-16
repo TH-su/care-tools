@@ -153,6 +153,55 @@ const SHEET = [
     t('getBulk は名簿の全員を res_get で読んで作る', JSON.stringify(r3) === JSON.stringify(want.bulk));
     t('印は1分のあいだ読み直さない', a.calls.filter(c => c[0] === 'res_mode_get').length === 1);
   }
+  console.log('D2 同時に読む（走っている同じ読み取りに相乗り・2026-11-16）');
+  {
+    /* 本物の SUAuth.client() は同じ入れ物を返す。答えは少し遅らせて、2本目が走っている間に呼ばれるようにする */
+    const mk = (o) => {
+      const calls = [];
+      const later = (v) => new Promise((r) => setTimeout(() => r(v), 30));
+      const cli = { rpc: (n, a) => { calls.push([n, a]);
+        if (n === 'res_mode_get') return later(o.modeErr && calls.filter(c => c[0] === n).length === 1 ? { error: o.modeErr } : { data: { mode: 'live' } });
+        if (n === 'res_roster') return later(o.rosterErr && calls.filter(c => c[0] === n).length === 1 ? { error: o.rosterErr } : { data: { ok: true, rows: rosterRecs } });
+        if (n === 'res_get') return later({ data: { ok: true, rows: recs.filter(r => a.p_ids.indexOf(r.id) >= 0) } });
+        return later({ error: { code: 'PGRST202' } }); } };
+      const A = { STATUS: { OK: 'ok' }, check: async () => ({ status: 'ok', role: 'office' }), client: () => cli };
+      return { io: { auth: async () => A }, calls, n: (name) => calls.filter(c => c[0] === name).length };
+    };
+    {
+      const { R: R2 } = load({ flags: { supabase: { master_live: true } } });
+      const a = mk({});
+      gasCalls.length = 0;
+      const [r1, r2] = await Promise.all([
+        R2.call({ action: 'getRoster' }, gasFn, { screen: 'resident-master' }, a.io),
+        R2.call({ action: 'getBulk' }, gasFn, { screen: 'resident-master' }, a.io)]);
+      t('名簿と一覧を同時に読むと、印（res_mode_get）は1本だけ', a.n('res_mode_get') === 1, a.calls.map(c => c[0]));
+      t('名簿の口（res_roster）も1本だけ', a.n('res_roster') === 1, a.calls.map(c => c[0]));
+      t('答えは1本ずつ読んだ時と同じ（名簿・一覧）', JSON.stringify(r1) === JSON.stringify(want.roster) && JSON.stringify(r2) === JSON.stringify(want.bulk));
+      t('1人ずつの記録（res_get・開いた記録を残す）は相乗りさせない（一覧の1本だけ）', a.n('res_get') === 1 && gasCalls.length === 0);
+      await R2.call({ action: 'getRoster' }, gasFn, { screen: 'resident-master' }, a.io);
+      t('終わった後の読み取りは名簿の口を読み直す（相乗りは走っている間だけ）', a.n('res_roster') === 2);
+    }
+    {
+      const { R: R2 } = load({ flags: { supabase: { master_live: true } } });
+      const a = mk({ modeErr: { code: 'XX000', message: 'test' } });
+      const rs = await Promise.allSettled([
+        R2.call({ action: 'getRoster' }, gasFn, { screen: 'resident-master' }, a.io),
+        R2.call({ action: 'getBulk' }, gasFn, { screen: 'resident-master' }, a.io)]);
+      t('印を読めなかった時は、相乗りした両方とも失敗（Google へ流さない）', rs.every(x => x.status === 'rejected') && a.n('res_mode_get') === 1 && gasCalls.length === 0);
+      const r3 = await R2.call({ action: 'getRoster' }, gasFn, { screen: 'resident-master' }, a.io);
+      t('失敗は貼り付けない（次の読み取りは印を聞き直して読める）', a.n('res_mode_get') === 2 && JSON.stringify(r3) === JSON.stringify(want.roster));
+    }
+    {
+      const { R: R2 } = load({ flags: { supabase: { master_live: true } } });
+      const a = mk({ rosterErr: { code: '42501' } });
+      const rs = await Promise.allSettled([
+        R2.call({ action: 'getRoster' }, gasFn, { screen: 'resident-master' }, a.io),
+        R2.call({ action: 'getBulk' }, gasFn, { screen: 'resident-master' }, a.io)]);
+      t('名簿の口が断った時は、相乗りした両方とも職員向けの文で失敗', rs.every(x => x.status === 'rejected' && /権限/.test(x.reason.message)) && a.n('res_roster') === 1);
+      const r3 = await R2.call({ action: 'getRoster' }, gasFn, { screen: 'resident-master' }, a.io);
+      t('断りは貼り付けない（次は読み直して読める）', a.n('res_roster') === 2 && JSON.stringify(r3) === JSON.stringify(want.roster));
+    }
+  }
   {
     const { R: R2 } = load({ flags: { supabase: { master_live: true } } });
     const a = auth({ mode: 'live', getErr: { code: '42501' } });
