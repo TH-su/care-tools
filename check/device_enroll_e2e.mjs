@@ -197,6 +197,15 @@ try {
   t('番号は端末のどこにも残っていない（localStorage・sessionStorage）', !/K7MP/i.test(JSON.stringify(stor5)));
   t('外への通信なし・画面のエラーなし', st.outside.length === 0 && st.errors.length === 0, [st.outside, st.errors, hist]);
   await context.close();
+
+  say('— D2. 登録の番号が回数で止められた時 —');
+  ({ context, page, st } = await enrollRun({ status: 429, body: { ok: false, code: 'limited' } }, '/enroll.html#c=k7mp-2xq9'));
+  await page.waitForSelector('#v-ng:not([hidden])', { timeout: 10000 }).catch(() => {});
+  const lm = await page.textContent('#ng-msg').catch(() => '');
+  t('「QR を読み取って登録してください」と出し、ログインしない・メニューへ移らない',
+    /QR を読み取って登録してください/.test(lm) && /\/enroll\.html$/.test(page.url()) && st.enrollBodies[0] === JSON.stringify({ code: SHORT })
+    && !(await page.evaluate(() => Object.keys(localStorage))).some((k) => /auth-token|su_device_role/.test(k)), [lm, page.url()]);
+  await context.close();
 } finally {
   await browser.close();
   await srv.close();

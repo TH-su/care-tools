@@ -54,6 +54,7 @@
     invalid: 'この QR は使えません（使ったことのある QR・期限の10分を過ぎた QR・取り消した QR のどれかです）。管理者にもう一度 QR を出してもらってください。',
     invalidShort: 'この登録の番号は使えません（打ち間違い・使ったことのある番号・期限の10分を過ぎた番号・取り消した番号のどれかです）。番号を確かめるか、管理者にもう一度出してもらってください。',
     limited: '試した回数が多いため、しばらく登録できません。15分ほど待ってから、管理者に新しい QR を出してもらってください。',
+    limitedShort: '番号での登録が一時止まっています。QR を読み取って登録してください。',
     net: '通信できませんでした。電波・Wi-Fi を確かめてから「もう一度試す」を押してください。',
     server: '登録できませんでした。管理者にもう一度 QR を出してもらってください。',
     denied: 'ログインはできましたが、このアカウントは今は使えません。管理者に確かめてください。'
@@ -74,7 +75,7 @@
     if (!res.ok || !j || j.ok !== true) {
       var c = j && j.code;
       code = '';   // 受け口に届いた番号は使い終わり（もう一度は送らない）
-      fail(c === 'invalid' ? (isShort ? MSG.invalidShort : MSG.invalid) : c === 'limited' ? MSG.limited : MSG.server, false);
+      fail(c === 'invalid' ? (isShort ? MSG.invalidShort : MSG.invalid) : c === 'limited' ? (isShort ? MSG.limitedShort : MSG.limited) : MSG.server, false);
       return;
     }
     code = '';

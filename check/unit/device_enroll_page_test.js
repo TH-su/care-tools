@@ -201,6 +201,12 @@ function loginShort(value) {
   t('登録の番号が断られた時は、番号の打ち間違いも含めた文を出す（QR の文ではない）',
     !r.els['v-ng'].hidden && r.els['ng-msg'].textContent.includes('この登録の番号は使えません') && r.els['ng-msg'].textContent.includes('打ち間違い')
     && r.log.setSession.length === 0 && r.els['b-retry'].hidden);
+  r = await runEnroll({ hash: '#c=' + SHORT, reply: { status: 429, body: { ok: false, code: 'limited' } } });
+  t('登録の番号が回数で止められた時は、QR を読み取るよう案内する（QR の時の文ではない）',
+    !r.els['v-ng'].hidden && r.els['ng-msg'].textContent === '番号での登録が一時止まっています。QR を読み取って登録してください。'
+    && r.log.setSession.length === 0 && r.els['b-retry'].hidden);
+  r = await runEnroll({ reply: { status: 429, body: { ok: false, code: 'limited' } } });
+  t('QR が回数で止められた時の文は今までどおり', r.els['ng-msg'].textContent.includes('しばらく登録できません'));
   for (const h of ['#c=K7MP2XQO', '#c=K7MP2XQ0', '#c=K7MP2XQI', '#c=K7MP2XQL', '#c=K7MP2XQ', '#c=K7MP2XQ92', '#c=K7MP_2XQ9', '#c=' + 'K7MP2XQ9'.repeat(5)]) {
     r = await runEnroll({ hash: h });
     t('登録の番号の形が違う時（' + h.slice(0, 20) + '）は何も送らず案内だけ', r.log.fetch.length === 0 && !r.els['v-none'].hidden);
@@ -357,7 +363,7 @@ function loginShort(value) {
     t('ログインの画面: 番号を localStorage・sessionStorage に入れない・console を使わない',
       !/(localStorage|sessionStorage)\.setItem\([^)]*(short|code)/i.test(LG) && !/console\./.test(LG));
     t('使える人の管理: QR の下に登録の番号の欄と説明の1行がある',
-      /<div class="en-short" id="en-qr-short-box" hidden>[\s\S]*?id="en-qr-short"[\s\S]*?ログインの画面の『登録の番号』にこの8文字を入れてください。/.test(ah));
+      /<div class="en-short" id="en-qr-short-box" hidden>[\s\S]*?id="en-qr-short"[\s\S]*?ログインの画面の『登録の番号』にこの8文字を入れてください。番号は口で伝えるか、この画面を見せて伝えてください（チャットやメールで送らないでください）。/.test(ah));
   }
 
   say('\n────────── 合計: ' + ok + ' 件成功 / ' + ng + ' 件失敗 ──────────');
