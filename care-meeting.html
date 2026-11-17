@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-qBcbfrabgm3zy5hWKAcabfMcQTKl5TBnP3R0YMSe14w='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Hh5pH7+iYK/USVyz7kAI0l1GgjcpBY6omkyc17NUypE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 会議の記録（要配慮の情報）を扱うためキャッシュ無効 -->
@@ -998,8 +998,10 @@ function impcReadPaste_(){
   if(!impcOk||isField()||impcBusy_(impcSt)) return false;
   var el=$('cm-impc-paste'), v=el?String(el.value==null?'':el.value):'';
   if(!v.trim()){ impcSt=Object.assign({},impcSt||{phase:'idle'},{msg:'表を貼り付けてから押してください',err:true}); impPaint_(); return false; }
+  /* 描き直しが書きかけを新しい欄へ移すので、読む前に空にし、読めなかった時だけ新しい欄へ戻す */
+  if(el) el.value='';
   var ok=impcLoadText_(v,'');
-  if(ok&&el) el.value='';
+  if(!ok){ var el2=$('cm-impc-paste'); if(el2) el2.value=v; }
   return ok;
 }
 function impcLoadText_(text,enc){
@@ -1024,13 +1026,13 @@ function impcSetCol_(i,key){
   impPaint_();
   return true;
 }
-/* 送る1行（rec は保存の欄から開催の理由を除いた13欄・nameChecked は送らない） */
+/* 送る1行（rec は保存の欄から開催の理由を除いた13欄・nameChecked は送らない）。1行の欄（LINE_KEYS）は画面の入力と同じく改行を空白1つにする */
 function impcRec_(rec){
   var out={};
   impcKeys_().forEach(function(f){
     var v=rec?rec[f.key]:'';
     if(f.key==='attendees') out.attendees=Array.isArray(v)?v.map(function(a){ return {role:String(a&&a.role||''),name:String(a&&a.name||'')}; }):[];
-    else out[f.key]=String(v==null?'':v);
+    else out[f.key]=LINE_KEYS.indexOf(f.key)>=0?oneLine_(v):String(v==null?'':v);
   });
   return out;
 }

@@ -1362,6 +1362,11 @@ async function opened(opt) {
     P.el('cm-impc-paste').value = ['氏名\t会議の日\t結論', '架空 一郎\t' + ymd(3) + '\t架空'].join('\n');
     P.ctx.impcReadPaste_();
     t('15-3 貼り付けた表（タブ区切り）を読む', P.ctx.impcSt.phase === 'loaded' && P.ctx.impcSt.tbl.sep === '\t' && P.el('cm-impc-paste').value === '');
+    const P0 = await mk('admin', newRecv());
+    P0.el('cm-impc-paste').value = '利用者名,開催日\n"架空 一郎,' + ymd(3);
+    P0.ctx.impcReadPaste_();
+    t('15-3 読めなかった貼り付け（引用符が閉じない）は、書きかけを欄に戻して知らせる', !P0.ctx.impcSt.tbl && /引用符/.test(P0.el('cm-pick').innerHTML) && /^利用者名,開催日/.test(P0.el('cm-impc-paste').value));
+    t('15-3 読む前に貼り付けの欄を空にする（描き直しで新しい欄へ移さない）', /if\(el\) el\.value='';\n  var ok=impcLoadText_\(v,''\);/.test(cutF(S, 'impcReadPaste_')));
     t('15-3 開催日の列が決まらない時は「一覧を作る」を押せない', /data-act="impc-plan" disabled/.test(P.el('cm-pick').innerHTML) && /利用者名と開催日の列を、1つずつ選んでください（今は 利用者名 1 列・開催日 0 列）/.test(P.el('cm-pick').innerHTML));
     await P.ctx.impcPlan_(); await settle();
     t('15-3 押せない時に呼んでも送らない', rowsOf(P, true).length === 0);
@@ -1391,6 +1396,10 @@ async function opened(opt) {
     const recKeys = CALC.FIELDS.map((f) => f.key).filter((k) => k !== 'kind').sort().join(',');
     t('15-4 rec は開催の理由と nameChecked を除いた13欄（文字の欄は文字・出席者は {role,name} の配列）', r0.every((r) => Object.keys(r.rec).sort().join(',') === recKeys && Object.keys(r.rec).length === 13 &&
       Array.isArray(r.rec.attendees) && Object.keys(r.rec).every((k) => k === 'attendees' || typeof r.rec[k] === 'string')) && JSON.stringify(r0[0].rec.attendees) === JSON.stringify([{ role: '介護支援専門員', name: '架空 担当' }]), r0[0] && r0[0].rec);
+    const LN = await mk('admin', newRecv());
+    LN.ctx.impcLoadText_(['利用者名,開催日,開催場所,結論', '架空 一郎,' + ymd(4) + ',"架空の\n会議室","架空の\n結論"'].join('\n'), ''); await LN.ctx.impcPlan_(); await settle();
+    const lr0 = (rowsOf(LN, true)[0] || { body: { rows: [{ rec: {} }] } }).body.rows[0].rec;
+    t('15-4 1行の欄（開催場所など）は改行を空白1つにして送る・本文の欄は改行のまま', lr0.place === '架空の 会議室' && lr0.conclusion === '架空の\n結論', lr0);
     const dh = D.el('cm-pick').innerHTML;
     t('15-4 受け口の答えと画面の判定を合わせた組ごとの一覧（取り込める・照合できない・同じ日がもうある）と足りない欄', D.ctx.impcSt.phase === 'planned' &&
       /取り込める（名簿の1名に一致・まだ入っていない）：1 件/.test(dh) && /名簿と照合できない（取り込みません）：1 件/.test(dh) && /同じ方・同じ開催日の記録がもうある（取り込みません）：1 件/.test(dh) && /開催場所/.test(dh) &&
