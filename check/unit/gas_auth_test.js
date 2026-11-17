@@ -113,10 +113,10 @@ const settle = (ms) => new Promise((r) => setTimeout(r, ms || 10));
     const x = load({ storage: Object.assign({}, SESS), loadAuth: okSess });
     const v = await x.A.token();
     t('ログインの部品が無ければ supabase-js → su-auth.js の順に読み込んで証明を返す', v === TOKEN &&
-      JSON.stringify(x.added) === JSON.stringify(['supabase-js-2.112.4.js', 'su-auth.js?v=2026-10-28']), { v, added: x.added });
+      JSON.stringify(x.added) === JSON.stringify(['supabase-js-2.112.4.js', 'su-auth.js?v=2026-11-16']), { v, added: x.added });
   }
   {
-    const x = load({ storage: Object.assign({}, SESS), tags: ['supabase-js-2.112.4.js', 'su-auth.js?v=2026-10-28'] });
+    const x = load({ storage: Object.assign({}, SESS), tags: ['supabase-js-2.112.4.js', 'su-auth.js?v=2026-11-16'] });
     const p = x.A.token();
     setTimeout(() => { x.win.supabase = {}; x.win.SUAuth = { client() { return { auth: { getSession: okSess } }; } }; }, 5);
     const v = await p;
@@ -377,7 +377,7 @@ const settle = (ms) => new Promise((r) => setTimeout(r, ms || 10));
     t('su-roster.js は触らない（画面から渡された取り出し関数を呼ぶだけ）', !/SUGasAuth/.test(read('su-roster.js')));
   }
   {
-    const TAG = '<script src="su-gas-auth.js?v=2026-10-29"></script>';
+    const TAG = '<script src="su-gas-auth.js?v=2026-11-17"></script>';
     const PAGES = ['resident-master.html', 'facesheet.html', 'care-meeting.html', 'training-plan.html', 'admission-flow.html', 'staff-master.html', 'ats.html',
       'care-schedule.html', 'visit-overview.html', 'support-overview.html', 'daycare-roster.html', 'weight-record.html'];
     for (const f of PAGES) {
