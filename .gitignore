@@ -46,6 +46,7 @@
 !/check/load-latency.mjs
 !/check/snap.mjs
 !/check/compare.mjs
+!/check/compare-calc.mjs
 !/check/jscheck.mjs
 !/check/csp.mjs
 !/check/res-read-gas-sync.mjs

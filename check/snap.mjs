@@ -32,6 +32,7 @@
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { loadPlaywright, listPages, parseArgs, startServer, pdfPages, ensureDir, writeJson, FIXED_TIME } from './lib.mjs';
 
 const args = parseArgs(process.argv.slice(2));
@@ -199,10 +200,22 @@ async function loadFixture(name) {
   return import(f.href);
 }
 
+/* 撮っている木（--dir）の材料に、その帳票の key があるか。読めない時は null（compare.mjs は新しいとは言わない） */
+async function fixtureInDir(name, key) {
+  const f = path.join(repoDir, 'check', 'fixtures', `${name}.mjs`);
+  if (!fs.existsSync(f)) return false;
+  try {
+    const mod = await import(pathToFileURL(f).href);
+    return Array.isArray(mod.sheets) && mod.sheets.some((x) => x && x.key === key);
+  } catch (e) { return null; }
+}
+
 /* 架空データを読ませて帳票を出し、印刷部品で準備した状態の紙を撮る（PC 幅だけ） */
 async function shootSheet(file, name, fx, sh) {
   const key = `${name}__${sh.key}`;
-  const m = { file, sheet: sh.key, errors: [] };
+  /* inDir: 撮っている木（--dir）の check/fixtures にもこの帳票の材料があるか。材料は道具の側から読むので、
+     同じ PR で足した帳票は直す前にも「撮ろうとして撮れなかった」記録になる。compare.mjs はこれで「新しい帳票」と「直す前を撮れなかった」を分ける（2026-11-17） */
+  const m = { file, sheet: sh.key, errors: [], inDir: await fixtureInDir(name, sh.key) };
   const shots = [];
   for (let r = 0; r < REPEAT; r++) {
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 1, locale: 'ja-JP', timezoneId: 'Asia/Tokyo' });
