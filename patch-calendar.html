@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-aRU0YA0Z284HGmD8vF9So2CKR8Htx3mp7JpWnEEiPcE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-rBGGTzt1gPiOn54QGKKoMVM+BZbeZ3HVo1J9sbmjwJc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <!-- 他ツールと同じ指定を揃えている。氏名はこのHTMLには含まれず入力欄にしか存在しないため、
      この meta が効かないブラウザでもキャッシュ経由で氏名が残ることはない -->
@@ -373,7 +373,7 @@ var DEF_SITES = [
   { n: 8, full: '右・4段目', short: '右4段' }
 ];
 var SITES = DEF_SITES;                    /* いま使う場所の一覧（施設情報で書いた時だけ差し替える・下の pcApplyCfg） */
-var CYCLE = SITES.length;                 /* 8箇所を順に一巡（施設情報で書いた時はその数） */
+var CYCLE = SITES.length, PC_N1 = CYCLE;  /* 8箇所を順に一巡（施設情報で書いた時はその数）。PC_N1: 既定（1番）の種類の場所の数（表示中の種類が替わっても変えない・既定の行の確かめに使う） */
 
 /* 番号枠の位置。画像そのもののピクセル座標で持つ（画像から実測した値）。
    赤枠はこれより PAD だけ外側に描いて、番号枠を囲む形にする。 */
@@ -532,8 +532,17 @@ function backFig(no, isOff) {
    を書いた時だけ、薬の名前と貼る場所の一覧を差し替える。drug と sites はどちらか片方だけでもよい。
    書いていない・崩れている（1つでも形が違う）時は丸ごと捨てて既定（今の薬の名前・背中8箇所の図）のまま＝今の画面と紙は変わらない。
    ・場所は2〜8か所。保存（端末の控え・共通 DB の patch_settings）は番号を 1〜8 でしか持たないため、9か所以上は書いても使わない
-   ・種類は施設で1つ。入居者ごとに選ぶには、どの種類の番号かを保存に持たせる必要があり、保存の形を変えないと作れないため
-   ・場所を書いた時は背中の写真の図を使わない（写真に 1〜8 の番号が描いてあるため）。番号の枠と名前の図を描く
+   ・drug・sites が既定（1番）の種類。別の種類は kinds に [{ "no": 2〜8, "drug": "…", "sites": [ … ] }, …] で書く（代表者の決定 2026-11-17 案A・下の pcKindsOf）。
+     kinds を書いた施設だけ、入居者ごとに種類を選べる。kinds を書いていない施設は今のまま（選ぶ欄を作らない・控え・送る中身・紙は今と同じ）
+   ・★入居者ごとの種類は、保存の形（共通 DB の関数・表）を変えずに、同じ控え（apc2_res）と同じ patch_put の別の鍵の行に置く:
+       <入居者ID>      … 既定の種類の設定（今までどおり）
+       <入居者ID>:pkr  … 別の種類の設定（開始日・場所・前日の場所。形は既定の行と同じ）
+       <入居者ID>:pk   … 選びの行。★site_no（控えの no）は「種類の番号」、start と prev_no（控えの prev）は選んだ設定の開始日と貼る場所の番号（指紋）。
+                         列の意味を流用しているので、共通 DB や書き出しの中身を直接見る時は、:pk の行の番号を貼る場所と読まないこと
+     選びの行の無い方は既定の種類。選びの行の指紋が設定の行と合う時だけその種類の設定で表示し、合わない・種類が施設情報に無い時は
+     既定に倒さず未設定（仮の値）と警告にする（ほかの端末の書き込みが片方だけ届いた時・古い画面が既定の行を直した時に取り違えないため）。
+     行は消せない（共通 DB に消す口が無い）ので、既定の種類へ戻した方も選びの行（種類 1）を書く
+   ・名簿に入居者ID が :pk・:pkr で終わる方がいる時は、別の鍵と見分けられないので種類の機能を丸ごと止めて帯で知らせる
    ・外からの文字は textContent・createTextNode だけで入れる（innerHTML を使わない）
    ・あとから場所の並びを入れ替えると、保存してある番号が別の場所を指す（保存の形を変えずには見分けられない）。並びは変えないこと */
 var PC_SITE_MIN = 2, PC_SITE_MAX = 8, PC_DRUG_MAX = 20, PC_NAME_MAX = 12, PC_SHORT_MAX = 6;
@@ -566,6 +575,35 @@ function pcCfgOf(v) {
   if (!out.drug && !out.sites) return null;
   return out;
 }
+/* 別の種類（kinds）を確かめる（純関数）。no は 2〜8 で重ならない・drug は必ず・sites は書けば 2〜8か所（確かめ方は pcCfgOf と同じ）。
+   1つでも崩れていれば null（kinds だけを捨てる＝既定の種類の drug・sites はそのまま使う）。書いていない時も null。並びは番号順 */
+var PC_KIND_MAX = 8;                                  /* 種類は既定を含めて8つまで（番号は保存の 1〜8） */
+function pcKindsOf(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v) || !Array.isArray(v.kinds)) return null;
+  var ks = v.kinds;
+  if (!ks.length || ks.length > PC_KIND_MAX - 1) return null;
+  var seen = {}, out = [];
+  for (var i = 0; i < ks.length; i++) {
+    var x = ks[i];
+    if (!x || typeof x !== 'object' || Array.isArray(x)) return null;
+    if (typeof x.no !== 'number' || x.no % 1 !== 0 || x.no < 2 || x.no > PC_KIND_MAX || seen['n' + x.no]) return null;
+    if (pcStr(x.drug, PC_DRUG_MAX) === null) return null;    /* 種類は薬の名前で見分ける */
+    var c = pcCfgOf({ drug: x.drug, sites: x.sites });
+    if (!c) return null;
+    seen['n' + x.no] = true;
+    out.push({ no: x.no, drug: c.drug, sites: c.sites });
+  }
+  out.sort(function (a, b) { return a.no - b.no; });
+  return out;
+}
+/* 施設情報の kinds を読む。{ list: 確かめた一覧か null, bad: 書いてあるのに崩れている } */
+function pcReadKinds() {
+  var v = null;
+  try { v = (window.SUFacility && typeof SUFacility.section === 'function') ? SUFacility.section('patchCalendar') : null; }
+  catch (e) { v = null; /* 捨ててよい: 読めない時は種類を選ばない（既定の種類だけ） */ }
+  var list = pcKindsOf(v);
+  return { list: list, bad: !list && !!v && typeof v === 'object' && !Array.isArray(v) && v.kinds !== undefined };
+}
 function pcReadCfg() {
   var v = null;
   try { v = (window.SUFacility && typeof SUFacility.section === 'function') ? SUFacility.section('patchCalendar') : null; }
@@ -573,13 +611,18 @@ function pcReadCfg() {
   return pcCfgOf(v);
 }
 var PCFG = null, pcCfgSig = '';
-/* 確かめた設定を当てる。変わった時だけ true（描き直しは呼んだ側） */
+/* PCUR: 表示中の種類の { drug, sites }（既定の種類の時は PCFG）。PKINDS: 確かめた別の種類の一覧（無ければ null）。
+   pcKindsBad: kinds が崩れていた。pcKindCur: 表示中の種類の番号。pcKindStop: 名簿の入居者ID が別の鍵と重なるため種類の機能を止めている */
+var PCUR = null, PKINDS = null, pcKindsBad = false, pcKindCur = 1, pcKindStop = false;
+/* 確かめた設定を当てる。変わった時だけ true（描き直しは呼んだ側）。kinds は書いた時だけ印に足す（書いていない施設の印は今と同じ） */
 function pcApplyCfg(cfg) {
+  var kd = pcReadKinds();
   var sig = cfg ? JSON.stringify(cfg) : '';
+  if (kd.list || kd.bad) sig += '|kinds:' + JSON.stringify(kd);
   if (sig === pcCfgSig) return false;
-  pcCfgSig = sig; PCFG = cfg;
+  pcCfgSig = sig; PCFG = cfg; PCUR = cfg; PKINDS = kd.list; pcKindsBad = kd.bad; pcKindCur = 1;
   SITES = (cfg && cfg.sites) ? cfg.sites : DEF_SITES;
-  CYCLE = SITES.length;
+  CYCLE = SITES.length; PC_N1 = CYCLE;
   pcApplyTexts();
   return true;
 }
@@ -600,7 +643,7 @@ function pcFill(id, parts) {          /* parts を入れ直す。parts が null 
   });
 }
 function pcApplyTexts() {
-  var c = PCFG, N = SITES.length, own = !!(c && c.sites);
+  var c = PCUR, N = SITES.length, own = !!(c && c.sites);   /* 表示中の種類（既定の種類の時は PCFG と同じ） */
   if (!c) { PC_TX_IDS.forEach(function (id) { pcFill(id, null); }); }
   else {
     var plain = c.drug || 'アリドネパッチ';
@@ -673,6 +716,205 @@ function pcGenFig(no, isOff, withNames) {
 function pcDefNo() { return DEFAULT_NO <= CYCLE ? DEFAULT_NO : 1; }
 function pcDefPrev() { return DEFAULT_PREV <= CYCLE ? DEFAULT_PREV : 0; }
 
+/* ── 入居者ごとの貼り薬の種類（代表者の決定 2026-11-17 案A・文言と位置は仮置き）──
+   鍵の形と指紋の決まりは上の「施設ごとの貼り薬の名前と貼る場所」の注釈。手入力（名簿から選ばない）の時は
+   apc2_mkind（種類の番号・無い／'1' は既定の種類＝今までの apc2_start/no/prev）と apc2_m2（別の種類の設定と種類の番号）を使う。
+   端末に残すのは番号と日付と設定した人と時刻だけ（氏名は残さない） */
+var LS_MKIND = 'apc2_mkind', LS_M2 = 'apc2_m2';
+/* 1行分の設定を確かめる（純関数）。cap はその行の種類の場所の数。崩れていれば null */
+function pcRowOf(v, cap) {
+  if (!v || typeof v !== 'object') return null;
+  var d = parseISODate(v.start), n = parseNo(String(v.no), 1, cap), p = parseNo(String(v.prev), 0, cap);
+  if (!d || n === null) return null;
+  var sb = pcSetByOf(v);
+  return { start: d, no: n, prev: p !== null ? p : 0, by: sb.by, at: sb.at };
+}
+function pcKindIn(kinds, k) {
+  var a = Array.isArray(kinds) ? kinds : [];
+  for (var i = 0; i < a.length; i++) if (a[i] && a[i].no === k) return a[i];
+  return null;
+}
+/* 名簿から選んだ方の種類と設定を決める（純関数）。all は控えの r、kinds は確かめた別の種類、n1 は既定の種類の場所の数。
+   返すのは { kind, st, set }。st: ''＝決まった（set が null ならまだ設定が無い）／'bad'＝選びの行と設定の行が食い違う／'nokind'＝種類が施設情報に無い。
+   選びの行が無い方は既定の種類で、既定の行をそのまま使う（今までと同じ）。食い違う時・種類が無い時は set を null にする（既定に倒さない） */
+function pcResolve(all, rid, kinds, n1) {
+  all = (all && typeof all === 'object') ? all : {};
+  var has = function (k) { return Object.prototype.hasOwnProperty.call(all, k); };
+  var base = has(rid) ? pcRowOf(all[rid], n1) : null;
+  if (!has(rid + ':pk')) return { kind: 1, st: '', set: base };
+  var pk = pcRowOf(all[rid + ':pk'], PC_KIND_MAX);
+  if (!pk) return { kind: 1, st: 'bad', set: null };
+  var k = pk.no, sameFp = function (x) { return !!x && x.start.iso === pk.start.iso && x.no === pk.prev; };
+  if (k === 1) return sameFp(base) ? { kind: 1, st: '', set: base } : { kind: 1, st: 'bad', set: null };
+  var spec = pcKindIn(kinds, k);
+  if (!spec) return { kind: 1, st: 'nokind', set: null };
+  var s = has(rid + ':pkr') ? pcRowOf(all[rid + ':pkr'], spec.sites ? spec.sites.length : DEF_SITES.length) : null;
+  return sameFp(s) ? { kind: k, st: '', set: s } : { kind: k, st: 'bad', set: null };
+}
+/* 手入力の種類と設定を決める（純関数）。mk は apc2_mkind の文字（無ければ null）、m2 は apc2_m2 の中身、legacy は既定の種類の手入力の設定 */
+function pcResolveManual(mk, m2, kinds, legacy) {
+  if (mk === null || mk === undefined || mk === '1') return { kind: 1, st: '', set: legacy || null };
+  if (typeof mk !== 'string' || !/^[2-8]$/.test(mk)) return { kind: 1, st: 'bad', set: null };
+  var k = +mk, spec = pcKindIn(kinds, k);
+  if (!spec) return { kind: 1, st: 'nokind', set: null };
+  var s = (m2 && typeof m2 === 'object' && m2.kind === k) ? pcRowOf(m2, spec.sites ? spec.sites.length : DEF_SITES.length) : null;
+  return s ? { kind: k, st: '', set: s } : { kind: k, st: 'bad', set: null };
+}
+/* 今の方（rid＝'' は手入力）の種類と設定。種類の機能を止めている時は今までどおり（既定の種類・既定の行） */
+function pcKindFor(rid) {
+  if (pcKindStop) return { kind: 1, st: '', set: rid ? resSetting(rid) : legacySetting() };
+  if (rid) return pcResolve(readByRes(), rid, PKINDS, PC_N1);
+  var mk = null, m2 = null;
+  try { mk = localStorage.getItem(LS_MKIND); } catch (e) { mk = null; }
+  if (mk !== null && mk !== '1') { try { m2 = JSON.parse(localStorage.getItem(LS_M2) || 'null'); } catch (e) { m2 = null; } }
+  return pcResolveManual(mk, m2, PKINDS, legacySetting());
+}
+/* 選ぶ欄を出すか（kinds を書いた施設で、種類の機能を止めていない時だけ） */
+function pcKindUiOn() { return !!PKINDS && !pcKindStop; }
+function pcKindName(k) {
+  var c = k === 1 ? PCFG : pcKindIn(PKINDS, k);
+  var drug = (c && c.drug) ? c.drug : 'アリドネパッチ';
+  return drug + '（' + ((c && c.sites) ? c.sites.length + '箇所' : '背中8箇所') + '）';
+}
+/* 表示する種類を替える（葉の関数: 場所の一覧・文・選ぶ欄・順番図だけを作り直す。入居者の選び直し・描き直しは呼ばない）。
+   施設情報に無い番号は既定の種類にする */
+function pcSetKind(k) {
+  var spec = k === 1 ? null : pcKindIn(PKINDS, k);
+  if (!spec) k = 1;
+  if (k !== pcKindCur) {
+    pcKindCur = k;
+    PCUR = spec ? { drug: spec.drug, sites: spec.sites } : PCFG;
+    SITES = (PCUR && PCUR.sites) ? PCUR.sites : DEF_SITES;
+    CYCLE = SITES.length;
+    pcApplyTexts();
+    el.no.textContent = ''; el.pv.textContent = '';
+    fillSelects();
+    renderGuide();
+  }
+  var ks = document.getElementById('pcKind');
+  if (ks) ks.value = state.kindSt === 'nokind' ? '0' : String(pcKindCur);
+}
+/* 仮の値（今日を開始日・1番・前日なし）。確かめるまで警告を出す */
+function pcProvisional() {
+  var t = new Date();
+  state.start = parseISODate(t.getFullYear() + '-' + pad2(t.getMonth() + 1) + '-' + pad2(t.getDate()));
+  state.no = 1; state.prev = 0; state.confirmed = false;
+}
+/* 選ぶ欄で種類を選んだ時。まだ何も書かない（開始日・場所を入れ直した時に saveSettings→pcKindSave が書く）。
+   決まっている種類に戻した時は、その方の設定を表示し直す */
+function pcKindPick(v) {
+  var k = parseInt(v, 10);
+  if (!(k === 1 || pcKindIn(PKINDS, k)) || !pcKindUiOn()) { pcSetKind(pcKindCur); return; }
+  var kr = pcKindFor(state.rid);
+  if (kr.kind === k && !kr.st) { selectResident(state.rid); return; }
+  state.kindSt = 'pick';
+  pcSetKind(k);
+  pcProvisional();
+  state.setBy = ''; state.setAt = ''; state.canSave = true;
+  render();
+}
+/* 別の種類（または選びの行のある方・種類を選び直した方）の保存。扱った時は true。既定の種類で選びの行の無い方は false（今までの保存の道へ）。
+   書く順は 設定の行 → 選びの行（同じ日時）。控えが読めない時は今までの道（空で上書きしない守り）に任せる */
+function pcKindSave() {
+  if (pcKindStop) return false;
+  var rid = state.rid, k = pcKindCur, by, at;
+  if (rid) {
+    var all = readByRes();
+    if (all === null) return false;
+    var hasPk = Object.prototype.hasOwnProperty.call(all, rid + ':pk');
+    if (k === 1 && !hasPk && state.kindSt !== 'pick') return false;
+    /* 仮の値を表示していた間に別のタブでこの方の設定が保存されていたら、仮の値で上書きしない（今までの保存と同じ守り） */
+    if (!state.confirmed && state.kindSt === '' && pcResolve(all, rid, PKINDS, PC_N1).set) { selectResident(rid); return true; }
+    by = pcWho(); at = new Date().toISOString();
+    all[k === 1 ? rid : rid + ':pkr'] = { start: state.start.iso, no: state.no, prev: state.prev, by: by, at: at };
+    all[rid + ':pk'] = { start: state.start.iso, no: k, prev: state.no, by: by, at: at };
+    state.confirmed = true; state.canSave = true;
+    try { localStorage.setItem(LS_BYRES, JSON.stringify({ v: 1, r: all })); state.setBy = by; state.setAt = at; state.kindSt = ''; pcPushKind(rid, k); }
+    catch (e) { state.canSave = false; state.setBy = ''; state.setAt = ''; }
+    return true;
+  }
+  var mk = null;
+  try { mk = localStorage.getItem(LS_MKIND); } catch (e) { mk = null; }
+  if (k === 1 && (mk === null || mk === '1') && state.kindSt !== 'pick') return false;
+  by = pcWho(); at = new Date().toISOString();
+  state.confirmed = true; state.canSave = true; state.setBy = ''; state.setAt = '';
+  try {
+    if (k === 1) {
+      localStorage.removeItem(LS_SETBY);
+      localStorage.setItem(LS_START, state.start.iso);
+      localStorage.setItem(LS_NO, String(state.no));
+      localStorage.setItem(LS_PREV, String(state.prev));
+      localStorage.setItem(LS_SETBY, JSON.stringify({ by: by, at: at }));
+    } else {
+      localStorage.setItem(LS_M2, JSON.stringify({ kind: k, start: state.start.iso, no: state.no, prev: state.prev, by: by, at: at }));
+    }
+    localStorage.setItem(LS_MKIND, String(k));
+    state.setBy = by; state.setAt = at; state.kindSt = '';
+  } catch (e) { state.canSave = false; state.setBy = ''; state.setAt = ''; }
+  return true;
+}
+/* 設定の行 → 選びの行の順に送る（部品は1つずつ順に送る）。サーバーの方が新しかった時は今までどおり読み直す */
+function pcPushKind(rid, k) {
+  if (!rid || !window.SUPatchSync) return;
+  var a = k === 1 ? rid : rid + ':pkr', b = rid + ':pk';
+  try {
+    window.SUPatchSync.pushOne(a).then(function (x) { pcPushed(a, x); });
+    window.SUPatchSync.pushOne(b).then(function (x) { pcPushed(b, x); });
+  } catch (e) { /* 送れなくても保存と表示は続ける（送信待ちに残り、次の起動で送る） */ }
+}
+/* 手入力の設定を「この方の設定にする」で移せるか（既定の種類どうしの時だけ。別の種類・選びの行のある方には移さない） */
+function pcAdoptOk() {
+  if (pcKindCur !== 1 || state.kindSt) return false;
+  var mk = null;
+  try { mk = localStorage.getItem(LS_MKIND); } catch (e) { return false; }
+  if (mk !== null && mk !== '1') return false;
+  var all = state.rid ? readByRes() : null;
+  return !(all && Object.prototype.hasOwnProperty.call(all, state.rid + ':pk'));
+}
+/* 名簿の入居者ID が別の鍵（:pk・:pkr）で終わる方がいれば、種類の機能を止める */
+function pcKindStopOf(list) {
+  return (list || []).some(function (r) { return /:pkr?$/.test(r.id); });
+}
+/* 種類を選ぶ欄と帯（kinds を書いた施設・止めた時・崩れた時だけスクリプトで作る。書いていない施設では何も作らない＝今の画面のまま） */
+var PC_KIND_STOP_MSG = '名簿に、貼り薬の種類の控えと見分けられない番号の方がいるため、種類を選ぶ機能を止めています。既定の種類だけで表示しています。管理者に知らせてください。';
+var PC_KIND_BAD_MSG = '施設情報の貼り薬の種類の書き方が崩れているため、種類を選べません。既定の種類だけで表示しています。';
+function pcKindUi() {
+  var row = document.getElementById('pcKindRow');
+  if (!pcKindUiOn()) { if (row && row.parentNode) row.parentNode.removeChild(row); }
+  else {
+    if (!row) {
+      row = document.createElement('div'); row.className = 'row'; row.id = 'pcKindRow'; row.style.marginTop = '10px';
+      var f = document.createElement('div'); f.className = 'fld'; f.style.flex = '0 1 420px';
+      var lb = document.createElement('label'); lb.htmlFor = 'pcKind'; lb.textContent = '貼り薬の種類';
+      var sel = document.createElement('select'); sel.id = 'pcKind';
+      sel.addEventListener('change', function () { pcKindPick(sel.value); });
+      f.appendChild(lb); f.appendChild(sel); row.appendChild(f);
+      var rsRow = el.rs.parentNode.parentNode;          /* 入居者を選ぶ欄の行のすぐ下 */
+      rsRow.parentNode.insertBefore(row, rsRow.nextSibling);
+    }
+    var ks = document.getElementById('pcKind');
+    ks.textContent = '';
+    var ph = document.createElement('option');
+    ph.value = '0'; ph.textContent = '（選び直してください）'; ph.disabled = true;
+    ks.appendChild(ph);
+    [1].concat(PKINDS.map(function (x) { return x.no; })).forEach(function (k) {
+      var op = document.createElement('option');
+      op.value = String(k); op.textContent = pcKindName(k);   /* textContent なので名前がタグとして解釈されない */
+      ks.appendChild(op);
+    });
+    ks.value = state.kindSt === 'nokind' ? '0' : String(pcKindCur);
+  }
+  var msg = pcKindStop ? PC_KIND_STOP_MSG : (pcKindsBad ? PC_KIND_BAD_MSG : '');
+  var b = document.getElementById('pcKindBand');
+  if (!msg) { if (b && b.parentNode) b.parentNode.removeChild(b); return; }
+  if (!b) {
+    b = document.createElement('p'); b.id = 'pcKindBand'; b.className = 'hint warn svband noprint'; b.setAttribute('role', 'status');
+    var fb = document.getElementById('pcFacBand');
+    fb.parentNode.insertBefore(b, fb.nextSibling);
+  }
+  b.textContent = msg;
+}
+
 /* ── 日付ユーティリティ ──
    時差・夏時間で1日ずれないよう、日付はすべて「UTCの正午」で表す */
 function utcNoon(y, m, d) { return Date.UTC(y, m - 1, d, 12, 0, 0); }
@@ -702,8 +944,9 @@ function parseISOMonth(s) {
   if (y < 2000 || y > 2100 || m < 1 || m > 12) return null;
   return { y: y, m: m };
 }
-function parseNo(s, lo) {              /* lo=1: 貼る番号 / lo=0: 前日の場所（0=なし） */
+function parseNo(s, lo, max) {         /* lo=1: 貼る番号 / lo=0: 前日の場所（0=なし）。max: 行ごとの上限（省くと表示中の種類の場所の数 CYCLE） */
   var n = parseInt(s, 10);
+  if (max !== undefined) return (isFinite(n) && n >= lo && n <= max) ? n : null;
   if (!isFinite(n) || n < lo || n > CYCLE) return null;
   return n;
 }
@@ -713,10 +956,13 @@ function jpDate(o) { return o.y + '年' + o.m + '月' + o.d + '日'; }
 
 /* ── 状態（正本は1つ。表示はここから導出する） ── */
 var state = { start: null, no: DEFAULT_NO, prev: DEFAULT_PREV, y: 0, m: 0, confirmed: false, canSave: true,
-              rid: '', storeBad: false, setBy: '', setAt: '' };   /* setBy・setAt: いま表示中の設定を保存した人と時刻（無ければ空） */ /* rid: 名簿から選んだ入居者ID（''＝手入力）。storeBad: 入居者ごとの保存が読めない */
+              rid: '', storeBad: false, setBy: '', setAt: '', kindSt: '' };   /* kindSt: 種類の決まり（''＝決まった・'bad'＝選びの行と設定が食い違う・'nokind'＝種類が施設情報に無い・'pick'＝種類を選び直して未保存） */   /* setBy・setAt: いま表示中の設定を保存した人と時刻（無ければ空） */ /* rid: 名簿から選んだ入居者ID（''＝手入力）。storeBad: 入居者ごとの保存が読めない */
 var roster = [];                          /* [{ id, name, room }]（在籍の方だけ・居室順） */
 
 function loadState() {
+  /* 手入力の種類を先に当てる（別の種類なら下の今までの値の代わりにその設定を使う）。種類の無い施設では既定の種類のまま＝今までどおり */
+  var kr = state.rid ? null : pcKindFor('');
+  if (kr) { state.kindSt = kr.st; pcSetKind(kr.kind); }
   var sv = null, sn = null, sp = null;
   try {
     sv = localStorage.getItem(LS_START);
@@ -733,6 +979,10 @@ function loadState() {
   state.start = okD || parseISODate(DEFAULT_START);
   state.no    = okN !== null ? okN : pcDefNo();
   state.prev  = okP !== null ? okP : pcDefPrev();
+  if (kr && (kr.kind !== 1 || kr.st)) {
+    if (kr.set) { state.start = kr.set.start; state.no = kr.set.no; state.prev = kr.set.prev; state.confirmed = true; state.setBy = kr.set.by; state.setAt = kr.set.at; }
+    else { pcProvisional(); state.setBy = ''; state.setAt = ''; }
+  }
 
   /* 旧版（胸・上腕を含む8日サイクル）の設定は意味が変わったので端末から掃除する */
   try {
@@ -747,6 +997,7 @@ function loadState() {
   state.y = mo.y; state.m = mo.m;
 }
 function saveSettings() {
+  if (pcKindSave()) return;               /* 別の種類・選びの行のある方の保存は別の枝（pcKindSave）。既定の種類で選びの行の無い方は下の今までの道 */
   var wasConfirmed = state.confirmed;
   state.confirmed = true;                 /* 人が入力し直した時点で確定扱いにする */
   state.canSave = true;
@@ -825,7 +1076,8 @@ function pcPullApply(r, gen) {
   try { localStorage.setItem(LS_BYRES, JSON.stringify({ v: 1, r: m.merged })); }
   catch (e) { return; }                                   /* 書けない時は控えのまま表示を続ける（帯も消さない） */
   pcBand(false);
-  if (state.rid && m.changed.indexOf(state.rid) >= 0) selectResident(state.rid);
+  /* 今の方の3つの鍵（既定の行・別の種類の行・選びの行）のどれかが変われば取り直す */
+  if (state.rid && [state.rid, state.rid + ':pk', state.rid + ':pkr'].some(function (k) { return m.changed.indexOf(k) >= 0; })) selectResident(state.rid);
 }
 /* 帯が出ている間だけ、画面に戻った時・回線が戻った時・ログインし直した時・60秒ごとに読み直す（現場の端末では読まない） */
 function pcPullRetry() {
@@ -862,7 +1114,7 @@ function legacySetting() {
   try {
     sv = localStorage.getItem(LS_START); sn = localStorage.getItem(LS_NO); sp = localStorage.getItem(LS_PREV);
   } catch (e) { return null; }
-  var d = parseISODate(sv), n = parseNo(sn, 1), p = parseNo(sp, 0);
+  var d = parseISODate(sv), n = parseNo(sn, 1, PC_N1), p = parseNo(sp, 0, PC_N1);   /* 既定の種類の場所の数で確かめる（別の種類を表示中でも） */
   if (!d || n === null) return null;
   var sb = { by: '', at: '' };
   try { sb = pcSetByOf(JSON.parse(localStorage.getItem(LS_SETBY) || 'null')); } catch (e) { sb = { by: '', at: '' }; }
@@ -885,6 +1137,7 @@ function loadRoster() {
     roster.push({ id: id, name: name, room: r.room == null ? '' : String(r.room).trim(),
                   kana: r.kana == null ? '' : String(r.kana) });
   });
+  pcKindStop = pcKindStopOf(roster);     /* 入居者ID が別の鍵と重なる方がいれば種類の機能を止める */
   roster.sort(function (a, b) {
     var ra = parseInt(a.room, 10), rb = parseInt(b.room, 10);
     if (isFinite(ra) && isFinite(rb) && ra !== rb) return ra - rb;
@@ -938,16 +1191,18 @@ function selectResident(rid) {
   if (rid && !r) rid = '';                /* 名簿に無い値は手入力へ倒す */
   state.rid = rid;
   state.storeBad = !!rid && readByRes() === null;
-  var set = rid ? resSetting(rid) : legacySetting();
+  /* 種類と設定を決めて（選びの行の無い方は今までどおり既定の種類と resSetting・legacySetting と同じ値）、表示する種類を当てる */
+  var kr = pcKindFor(rid);
+  state.kindSt = kr.st;
+  pcSetKind(kr.kind);
+  var set = kr.set;
   state.setBy = set ? set.by : ''; state.setAt = set ? set.at : '';
   if (set) {
     state.start = set.start; state.no = set.no; state.prev = set.prev; state.confirmed = true;
-  } else if (rid) {
-    /* この方の設定がまだ無い。前の方の値を引き継がず、今日を開始日・1番・前日なしの仮の値にして、
+  } else if (rid || kr.kind !== 1 || kr.st) {
+    /* この方の設定がまだ無い（または種類と設定が食い違う）。前の方の値を引き継がず、今日を開始日・1番・前日なしの仮の値にして、
        確かめるまで警告を出す（前の方のローテーションのまま刷る取り違えを作らない） */
-    var t = new Date();
-    state.start = parseISODate(t.getFullYear() + '-' + pad2(t.getMonth() + 1) + '-' + pad2(t.getDate()));
-    state.no = 1; state.prev = 0; state.confirmed = false;
+    pcProvisional();
   } else {
     state.start = parseISODate(DEFAULT_START); state.no = pcDefNo(); state.prev = pcDefPrev();
     state.confirmed = false;
@@ -964,7 +1219,7 @@ function movedTo() {
   try { return localStorage.getItem(LS_MOVED) || ''; } catch (e) { return 'x'; }   /* 読めない時は移し済み扱い＝出さない */
 }
 function renderAdopt() {
-  var lg = state.rid && !state.storeBad && !movedTo() && !resSetting(state.rid) ? legacySetting() : null;
+  var lg = state.rid && !state.storeBad && !movedTo() && pcAdoptOk() && !resSetting(state.rid) ? legacySetting() : null;
   el.adopt.hidden = !lg;
   if (lg) {
     el.adopttx.textContent = 'この方の設定はまだありません。これまで手入力で使ってきた設定（開始 '
@@ -1011,6 +1266,7 @@ function pcRebuild() {
   fillSelects();
   renderGuide();
   printAck = null;
+  pcKindUi();
   if (state.rid) selectResident(state.rid);
   else { loadState(); render(); }
 }
@@ -1106,6 +1362,12 @@ function renderHeaderInfo() {
   var msg = '';
   if (state.rid && state.storeBad) {
     msg = '⚠ この端末の入居者ごとの設定が読めません（保存が壊れています）。表示は仮の値で、変えても記憶されません。印刷する前に実際の貼付予定と照らしてください。 ';
+  } else if (state.kindSt === 'bad') {
+    msg = '⚠ 貼り薬の種類と、開始日・場所の設定が食い違っています（ほかの端末で直している途中かもしれません）。表示は仮の値です。種類・開始日・場所を確かめて入れ直してください。 ';
+  } else if (state.kindSt === 'nokind') {
+    msg = '⚠ 選んであった貼り薬の種類が施設情報にありません。表示は仮の値です。種類を選び直し、開始日と場所を入れてください。 ';
+  } else if (state.kindSt === 'pick') {
+    msg = '⚠ 貼り薬の種類を替えました。開始日と場所を入れ直してください（入れるまでは仮の値です）。 ';
   } else if (!state.confirmed && state.rid) {
     msg = '⚠ この方の開始日と場所はまだ設定されていません（仮の値です）。実際の貼付予定に合わせて入力してください。 ';
   } else if (!state.confirmed) {
@@ -1135,9 +1397,11 @@ function shiftMonth(delta) {
      同じ方の設定が両方にある時は、設定した時刻（at）が新しい方を採る（この端末の方が新しい設定は上書きしない）。
      この端末の保存が読めない時は書かない（他の方の設定を空で消さない） */
 var IO_APP = 'patch-calendar', IO_VER = 1, IO_MAX_BYTES = 1024 * 1024;
-function ioEntry(v) {
+function ioEntry(v, k) {
   if (!v || typeof v !== 'object') return null;
-  var d = parseISODate(v.start), n = parseNo(String(v.no), 1), p = parseNo(String(v.prev), 0);
+  /* 行ごとの上限で確かめる（表示中の種類の数で落とさない）: 別の種類の行・選びの行（鍵が :pkr・:pk で終わる）は保存の上限 8、それ以外は既定の種類の場所の数 */
+  var cap = (typeof k === 'string' && /:pkr?$/.test(k)) ? 8 : PC_N1;
+  var d = parseISODate(v.start), n = parseNo(String(v.no), 1, cap), p = parseNo(String(v.prev), 0, cap);
   if (!d || n === null) return null;
   var sb = pcSetByOf(v), out = { start: d.iso, no: n, prev: p !== null ? p : 0 };
   if (sb.by && sb.at) { out.by = sb.by; out.at = sb.at; }
@@ -1145,7 +1409,7 @@ function ioEntry(v) {
 }
 function ioExportObj(all, legacy, moved) {
   var res = {};
-  Object.keys(all || {}).forEach(function (k) { var e = ioEntry(all[k]); if (e) res[k] = e; });
+  Object.keys(all || {}).forEach(function (k) { var e = ioEntry(all[k], k); if (e) res[k] = e; });
   var man = null;
   if (legacy) {
     man = { start: legacy.start.iso, no: legacy.no, prev: legacy.prev };
@@ -1163,7 +1427,7 @@ function ioParse(o) {
   var res = {}, bad = 0;
   Object.keys(o.res).forEach(function (k) {
     if (!/^[A-Za-z0-9_.:-]{1,80}$/.test(k)) { bad++; return; }
-    var e = ioEntry(o.res[k]);
+    var e = ioEntry(o.res[k], k);
     if (e) res[k] = e; else bad++;
   });
   var man = (o.manual === null || o.manual === undefined) ? null : ioEntry(o.manual);
@@ -1182,7 +1446,7 @@ function ioPlan(deviceAll, deviceLegacy, imp) {
   var merged = {}, add = 0, rep = 0, keep = 0, same = 0;
   Object.keys(deviceAll || {}).forEach(function (k) { merged[k] = deviceAll[k]; });
   Object.keys(imp.res).forEach(function (k) {
-    var cur = Object.prototype.hasOwnProperty.call(merged, k) ? ioEntry(merged[k]) : null, nw = imp.res[k];
+    var cur = Object.prototype.hasOwnProperty.call(merged, k) ? ioEntry(merged[k], k) : null, nw = imp.res[k];
     if (!cur) { merged[k] = nw; add++; return; }
     if (cur.start === nw.start && cur.no === nw.no && cur.prev === nw.prev) { same++; return; }
     if (ioNewer(nw, cur)) { merged[k] = nw; rep++; } else keep++;
@@ -1212,6 +1476,11 @@ function ioDoExport() {
   var obj = ioExportObj(all, legacySetting(), movedTo());
   var n = Object.keys(obj.res).length;
   if (!n && !obj.manual) { ioShow('書き出す設定がまだありません。', true); return; }
+  /* 黙って落とさない: 読めなかった行と、書き出さない手入力の別の種類の設定を知らせる（無ければ今と同じ文） */
+  var drop = Object.keys(all).length - n, mk2 = null;
+  try { mk2 = localStorage.getItem(LS_MKIND); } catch (e) { mk2 = null; }
+  var ioNote = (drop > 0 ? '読めなかった行 ' + drop + '件は書き出していません。' : '')
+    + (mk2 !== null && mk2 !== '1' ? '手入力の別の種類の設定は書き出しません（新しい端末で入れ直してください）。' : '');
   var t = new Date(), p2 = function (x) { return (x < 10 ? '0' : '') + x; };
   var name = '貼り薬カレンダー設定_' + t.getFullYear() + p2(t.getMonth() + 1) + p2(t.getDate()) + '.json';
   try {
@@ -1219,7 +1488,7 @@ function ioDoExport() {
     var a = document.createElement('a'); a.href = url; a.download = name;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
-    ioShow('「' + name + '」を書き出しました（入居者ごとの設定 ' + n + '件' + (obj.manual ? '・手入力の設定 1件' : '') + '）。新しい端末のこの欄で読み込んでください。');
+    ioShow('「' + name + '」を書き出しました（入居者ごとの設定 ' + n + '件' + (obj.manual ? '・手入力の設定 1件' : '') + '）。' + ioNote + '新しい端末のこの欄で読み込んでください。');
   } catch (e) { ioShow('書き出せませんでした。', true); }
 }
 function ioOnFile(file) {
@@ -1279,9 +1548,10 @@ function ioApply() {
 /* ── 起動 ── */
 pcApplyCfg(pcReadCfg());                  /* 施設情報（端末の控え）に貼り薬の名前・場所があれば先に当てる。無ければ何もしない */
 fillSelects();
+loadRoster();                             /* 種類の機能を止めるかを先に決める（名簿を読むだけ） */
 loadState();
-loadRoster();
 fillRoster();
+pcKindUi();                               /* 種類を選ぶ欄と帯（kinds を書いた施設・止めた時・崩れた時だけ作る） */
 renderGuide();
 render();
 try { if (window.SUPerf) SUPerf.ready(); } catch (e) {}
@@ -1327,11 +1597,13 @@ window.addEventListener('online', pcPullRetry);
 /* 別のタブでこの方の設定が変わったら、表示を取り直す（古いタブの値で上書きしない） */
 window.addEventListener('storage', function (e) {
   if (state.rid && (e.key === LS_BYRES || e.key === LS_MOVED || e.key === null)) selectResident(state.rid);
+  /* 手入力の種類が別のタブで変わったら取り直す（種類の機能を止めている時は今までどおり） */
+  else if (!state.rid && !pcKindStop && (e.key === LS_MKIND || e.key === LS_M2)) { loadState(); render(); }
 });
 el.adoptbtn.addEventListener('click', function () {
   var lg = legacySetting();
   /* 既に設定がある方には使わない（押した時点で取り直して、この方の設定を黙って上書きしない） */
-  if (!state.rid || !lg || state.storeBad || movedTo() || resSetting(state.rid)) { render(); return; }
+  if (!state.rid || !lg || state.storeBad || movedTo() || !pcAdoptOk() || resSetting(state.rid)) { render(); return; }
   state.start = lg.start; state.no = lg.no; state.prev = lg.prev;
   saveSettings();
   if (state.canSave) { try { localStorage.setItem(LS_MOVED, state.rid); } catch (e) { /* 次に出ても押した時に再判定する */ } }
@@ -1390,9 +1662,10 @@ document.getElementById('print').addEventListener('click', function () {
 function pcPrint() {
   var nm = el.nm.value.trim();
   var key = nm + '|' + isoMonth(state.y, state.m) + '|' + state.start.iso + '|' + state.no + '|' + state.prev
-    + '|' + (state.confirmed ? 1 : 0);
+    + '|' + (state.confirmed ? 1 : 0) + (pcKindCur !== 1 ? '|k' + pcKindCur : '');   /* 種類も確かめる（既定の種類の時は今の鍵のまま） */
   if (printAck !== key) {
     var who = nm ? '（' + nm + '）' : '（お名前は未入力）';
+    if (pcKindUiOn()) who += '・' + pcKindName(pcKindCur);   /* 種類を選べる施設では薬の名前も確かめる */
     /* 設定が済んでいない（仮の値・初期値）時は、それを確認の文面にも出す */
     var prov = state.confirmed ? '' : '\n\n⚠ 開始日と場所はまだ設定されていません（仮の値・初期値です）。';
     if (!window.confirm(state.y + '年' + state.m + '月分／開始 ' + jpDate(state.start)
