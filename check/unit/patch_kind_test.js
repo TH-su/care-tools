@@ -10,7 +10,9 @@
         別の種類は 設定の行（<ID>:pkr）→ 選びの行 の順に同じ日時で控えに書いて送る。手入力は apc2_m2 → apc2_mkind の順
      4. 共通 DB（統合 0016 の patch_put の判定どおりの偽物）を通して: A→B→A・2台・片方だけ載る・古い画面の書き込みで選びの行が消えない
      5. 書き出し・読み込み（版 v:1 のまま）: 行ごとの上限で確かめ（表示中の種類の数で黙って落とさない）
-     6. 名簿の入居者ID が :pk・:pkr で終わる方がいれば種類の機能を止める（今までどおりの道）
+     6. 名簿の入居者ID が :pk・:pkr・:pkb で終わる方がいれば種類の機能を止める（今までどおりの道。帯は kinds を書いた施設だけ。別の種類に替えてあった方は確定にしない）
+     8. 差分の審査 2026-11-17: 食い違い・無い種類の方は人が種類を選んだ時だけ保存する／既定の行の直しは写し（:pkb）と値で比べる
+        （時計のずれ・同じ値の送り直しが unchanged で日時を進めないことに左右されない）／入れ直せば2台目でも警告が消える
      7. 画面のつなぎ: 選ぶ欄はスクリプトで作る（HTML に無い）・印刷の確かめの鍵に種類（既定の種類の時は今の鍵）・取り直しは3つの鍵
    ★本物のファイルを砂場で動かす。架空データのみ（氏名は使わない・入居者ID は記号・薬の名前は架空）。 */
 'use strict';
@@ -54,7 +56,7 @@ const sites = (n) => Array.from({ length: n }, (_, i) => ({ name: '場所' + (i 
 const KINDS_RAW = [{ no: 3, drug: '架空パッチ' }, { no: 2, drug: '架空テープ', sites: sites(6) }];
 
 /* ── 純関数の砂場 ── */
-const PURE = ['pcStr', 'pcCfgOf', 'pcKindsOf', 'pcRowOf', 'pcKindIn', 'pcResolve', 'pcResolveManual', 'pcKindStopOf',
+const PURE = ['pcStr', 'pcCfgOf', 'pcKindsOf', 'pcRowOf', 'pcKindIn', 'pcResolve', 'pcSameRow', 'pcResolveManual', 'pcKindStopOf',
   'utcNoon', 'parseISODate', 'parseNo', 'pcSetByOf', 'ioEntry', 'ioExportObj', 'ioParse', 'ioNewer', 'ioPlan'];
 const pure = { Date, JSON, Object, String, Number, isNaN, isFinite, Math, Array, RegExp };
 vm.createContext(pure);
@@ -103,33 +105,37 @@ console.log('\n— 2. 表示の決まり（pcResolve・pcResolveManual）—');
   t('選びの行が1番で指紋（開始日・場所）が既定の行と合えば既定の種類で確定', x.kind === 1 && x.st === '' && x.set.no === 5);
   x = R({ r1: row('2026-11-03', 2), 'r1:pk': row('2026-11-01', 1, 5) });
   t('★選びの行が1番でも、既定の行が古い画面などで直されて指紋が合わなければ未設定＋警告（bad）', x.kind === 1 && x.st === 'bad' && x.set === null, x);
-  const pkr = row('2026-11-10', 3, 2);
-  x = R({ r1: base, 'r1:pkr': pkr, 'r1:pk': row('2026-11-10', 2, 3) });
+  const pkr = row('2026-11-10', 3, 2), pkb = row('2026-11-01', 5, 4);   /* pkb: 別の種類へ替えた時の既定の行の写し */
+  x = R({ r1: base, 'r1:pkb': pkb, 'r1:pkr': pkr, 'r1:pk': row('2026-11-10', 2, 3) });
   t('選びの行が2番で指紋が別の種類の行と合えば2番で確定（既定の行は使わない）', x.kind === 2 && x.st === '' && x.set.start.iso === '2026-11-10' && x.set.no === 3 && x.set.prev === 2, x);
-  /* 既定の行の日時と選びの行の日時（代表者の判断 2026-11-17・仮置き） */
+  /* 既定の行の直しは写し（:pkb）と値で比べる（差分の審査 2026-11-17・日時は使わない） */
   const at = (r, iso) => Object.assign({}, r, { at: iso });
   const pkAt = at(row('2026-11-10', 2, 3), '2026-11-10T00:00:00.000Z'), pkrAt = at(pkr, '2026-11-10T00:00:00.000Z');
-  x = R({ r1: at(base, '2026-11-09T00:00:00.000Z'), 'r1:pkr': pkrAt, 'r1:pk': pkAt });
-  t('★選びの行より古い日時の既定の行（種類を替える前の設定）は警告しない＝2番で確定', x.kind === 2 && x.st === '' && x.set.no === 3, x);
-  x = R({ r1: at(base, '2026-11-10T00:00:00.000Z'), 'r1:pkr': pkrAt, 'r1:pk': pkAt });
-  t('選びの行と同じ日時の既定の行も警告しない', x.kind === 2 && x.st === '', x);
-  x = R({ r1: at(base, '2026-11-11T00:00:00.000Z'), 'r1:pkr': pkrAt, 'r1:pk': pkAt });
-  t('★選びの行より新しい日時で既定の行が直されていれば、2番の方も未設定＋警告（黙って捨てない）', x.kind === 2 && x.st === 'bad' && x.set === null, x);
-  x = R({ r1: { start: '2026-11-01', no: 5, prev: 4 }, 'r1:pkr': pkrAt, 'r1:pk': pkAt });
-  t('日時の無い古い既定の行は比べない（警告しない）', x.kind === 2 && x.st === '', x);
-  x = R({ r1: at(base, '2026-11-11T00:00:00.000Z'), 'r1:pk': at(row('2026-11-01', 1, 5), '2026-11-10T00:00:00.000Z') });
-  t('1番の方は今のまま（指紋が合えば日時に関わらず確定）', x.kind === 1 && x.st === '' && x.set.no === 5, x);
+  x = R({ r1: at(base, '2026-11-30T00:00:00.000Z'), 'r1:pkb': at(pkb, '2026-11-10T00:00:00.000Z'), 'r1:pkr': pkrAt, 'r1:pk': pkAt });
+  t('★既定の行が写しと同じ値なら、日時が選びの行より新しくても警告しない（時計のずれに左右されない）', x.kind === 2 && x.st === '' && x.set.no === 3, x);
+  x = R({ r1: at(row('2026-11-05', 2, 1), '2026-11-01T00:00:00.000Z'), 'r1:pkb': at(pkb, '2026-11-10T00:00:00.000Z'), 'r1:pkr': pkrAt, 'r1:pk': pkAt });
+  t('★既定の行が写しと違う値なら、日時が古くても（時計の遅れた端末の直し）未設定＋警告', x.kind === 2 && x.st === 'bad' && x.set === null, x);
+  x = R({ r1: row('2026-11-01', 5, 2), 'r1:pkb': pkb, 'r1:pkr': pkr, 'r1:pk': row('2026-11-10', 2, 3) });
+  t('前日の場所だけ違っても値が違えば警告', x.st === 'bad');
+  x = R({ r1: base, 'r1:pkr': pkr, 'r1:pk': row('2026-11-10', 2, 3) });
+  t('★写しが無いのに既定の行がある（替えた後に既定の行ができた・写しが届いていない）時は警告', x.kind === 2 && x.st === 'bad', x);
+  x = R({ 'r1:pkr': pkr, 'r1:pk': row('2026-11-10', 2, 3) });
+  t('既定の行が無く写しも無い方は2番で確定', x.kind === 2 && x.st === '' && x.set.no === 3, x);
+  x = R({ r1: { start: 'こわれた', no: 5 }, 'r1:pkr': pkr, 'r1:pk': row('2026-11-10', 2, 3) });
+  t('読めない形の既定の行は比べない', x.kind === 2 && x.st === '', x);
+  x = R({ r1: at(row('2026-11-05', 2, 1), '2026-11-11T00:00:00.000Z'), 'r1:pk': at(row('2026-11-05', 1, 2), '2026-11-10T00:00:00.000Z') });
+  t('1番の方は今のまま（指紋が合えば写しも日時も見ない）', x.kind === 1 && x.st === '' && x.set.no === 2, x);
   x = R({ r1: at(base, '2026-11-11T00:00:00.000Z') });
   t('選びの行の無い方は今のまま（既定の行で確定）', x.kind === 1 && x.st === '' && x.set.no === 5, x);
   x = R({ r1: base, 'r1:pk': row('2026-11-10', 2, 3) });
   t('★別の種類の行がまだ届いていない時は既定に倒さず未設定＋警告', x.kind === 2 && x.st === 'bad' && x.set === null, x);
-  x = R({ r1: base, 'r1:pkr': row('2026-11-12', 3), 'r1:pk': row('2026-11-10', 2, 3) });
+  x = R({ r1: base, 'r1:pkb': pkb, 'r1:pkr': row('2026-11-12', 3), 'r1:pk': row('2026-11-10', 2, 3) });
   t('★別の種類の行の開始日が指紋と違えば未設定＋警告', x.st === 'bad' && x.set === null);
-  x = R({ r1: base, 'r1:pkr': row('2026-11-10', 4), 'r1:pk': row('2026-11-10', 2, 3) });
+  x = R({ r1: base, 'r1:pkb': pkb, 'r1:pkr': row('2026-11-10', 4), 'r1:pk': row('2026-11-10', 2, 3) });
   t('★別の種類の行の場所が指紋と違えば未設定＋警告', x.st === 'bad' && x.set === null);
-  x = R({ r1: base, 'r1:pkr': row('2026-11-10', 7), 'r1:pk': row('2026-11-10', 2, 7) });
+  x = R({ r1: base, 'r1:pkb': pkb, 'r1:pkr': row('2026-11-10', 7), 'r1:pk': row('2026-11-10', 2, 7) });
   t('★別の種類の行の番号はその種類の場所の数（6）で確かめる（7番は未設定）', x.kind === 2 && x.st === 'bad' && x.set === null, x);
-  x = R({ r1: base, 'r1:pkr': row('2026-11-10', 8), 'r1:pk': row('2026-11-10', 3, 8) });
+  x = R({ r1: base, 'r1:pkb': pkb, 'r1:pkr': row('2026-11-10', 8), 'r1:pk': row('2026-11-10', 3, 8) });
   t('場所を書かない種類（3番）は背中8箇所の数で確かめる（8番は使える）', x.kind === 3 && x.st === '' && x.set.no === 8, x);
   x = R({ r1: base, 'r1:pkr': pkr, 'r1:pk': row('2026-11-10', 5, 3) });
   t('★選びの行の種類が施設情報に無い時は既定に倒さず未設定（nokind）', x.kind === 1 && x.st === 'nokind' && x.set === null, x);
@@ -151,7 +157,7 @@ console.log('\n— 2. 表示の決まり（pcResolve・pcResolveManual）—');
   t('★手入力: 施設情報に無い種類は未設定（nokind）', M('5', { kind: 5, start: '2026-11-10', no: 1, prev: 0 }, lg).st === 'nokind');
   t('★手入力: 番号はその種類の場所の数で確かめる（6か所で7番は未設定）', M('2', { kind: 2, start: '2026-11-10', no: 7, prev: 0 }, lg).st === 'bad');
   /* 止める */
-  t('名簿の入居者ID が :pk・:pkr で終わる方がいれば止める', pure.pcKindStopOf([{ id: 'a1' }, { id: 'X:pk' }]) === true && pure.pcKindStopOf([{ id: 'X:pkr' }]) === true
+  t('名簿の入居者ID が :pk・:pkr・:pkb で終わる方がいれば止める', pure.pcKindStopOf([{ id: 'a1' }, { id: 'X:pk' }]) === true && pure.pcKindStopOf([{ id: 'X:pkr' }]) === true && pure.pcKindStopOf([{ id: 'X:pkb' }]) === true
     && pure.pcKindStopOf([{ id: 'a1' }, { id: 'pk' }, { id: 'X:pkx' }]) === false && pure.pcKindStopOf([]) === false);
 }
 
@@ -166,6 +172,7 @@ console.log('\n— 5. 書き出し・読み込み（行ごとの上限）—');
     'r1:pk': { start: '2026-11-10', no: 2, prev: 8, by: '職員甲', at: '2026-11-10T00:00:00.000Z' }
   };
   const o = pure.ioExportObj(all, null, '');
+  t('写しの行（:pkb）も保存の上限（8）で確かめる', pure.ioEntry({ start: '2026-11-01', no: 8, prev: 0 }, 'r1:pkb') !== null);
   t('★別の種類の行・選びの行は保存の上限（8）で確かめて書き出す（表示中の種類の数で落とさない）', !!o.res['r1:pkr'] && o.res['r1:pkr'].no === 8 && !!o.res['r1:pk'] && o.res['r1:pk'].prev === 8, o.res);
   t('既定の行は既定の種類の場所の数（4）で確かめる（6番は書き出さない）', !!o.res.r1 && !o.res.r2, Object.keys(o.res));
   t('版は v:1 のまま', o.v === 1 && o.app === 'patch-calendar');
@@ -176,7 +183,7 @@ console.log('\n— 5. 書き出し・読み込み（行ごとの上限）—');
   vm.runInContext('PC_N1 = 8; CYCLE = 8;', pure);
   t('番号の確かめ: 上限を渡した時はその上限（省くと表示中の種類の数 CYCLE）', pure.parseNo('8', 1, 8) === 8 && pure.parseNo('7', 1, 6) === null && pure.parseNo('0', 0, 6) === 0 && pure.parseNo('9', 1) === null && pure.parseNo('8', 1) === 8);
   const exp = grabFn('ioDoExport');
-  t('書き出しの知らせ: 読めなかった行と手入力の別の種類は知らせる（無ければ今の文）', /読めなかった行 ' \+ drop \+ '件は書き出していません。'/.test(exp) && /手入力の別の種類の設定は書き出しません/.test(exp)
+  t('書き出しの知らせ: 読めなかった行と手入力の別の種類は知らせる（無ければ今の文）', /読めなかった行 ' \+ drop \+ '件は書き出していません。'/.test(exp) && /手入力の設定は、既定でない種類のため書き出しません/.test(exp) && /if \(manOther\) obj\.manual = null;/.test(exp)
     && /'）。' \+ ioNote \+ '新しい端末のこの欄で読み込んでください。'/.test(exp));
 }
 
@@ -202,13 +209,16 @@ function makeServer() {
   }
   return { rows, log, put, setFail: (f) => { failKey = f; } };
 }
-const DEV_FNS = ['pcStr', 'pcCfgOf', 'pcKindsOf', 'pcRowOf', 'pcKindIn', 'pcResolve', 'pcResolveManual', 'pcKindFor', 'pcKindSave', 'pcPushKind', 'pcProvisional',
+const DEV_FNS = ['pcStr', 'pcCfgOf', 'pcKindsOf', 'pcRowOf', 'pcKindIn', 'pcResolve', 'pcSameRow', 'pcResolveManual', 'pcKindFor', 'pcKindSave', 'pcPushKind', 'pcProvisional',
   'utcNoon', 'parseISODate', 'parseNo', 'pcSetByOf', 'pad2', 'readByRes', 'resSetting', 'legacySetting', 'saveSettings', 'pcPush', 'pcPushed',
   'pcIsField', 'pcBand', 'pcPull', 'pcPullApply', 'pcPullRetry'];
 const clock = { now: Date.parse('2026-11-17T09:00:00+09:00') };
-class FakeDate extends Date {
-  constructor(...a) { if (a.length) super(...a); else super(clock.now); }
-  static now() { return clock.now; }
+function dateWith(skewMin) {   /* 端末ごとの時計のずれ（分） */
+  const off = (skewMin || 0) * 60000;
+  return class FakeDate extends Date {
+    constructor(...a) { if (a.length) super(...a); else super(clock.now + off); }
+    static now() { return clock.now + off; }
+  };
 }
 function device(srv, o) {
   o = o || {};
@@ -223,7 +233,7 @@ function device(srv, o) {
   Object.defineProperty(ls, 'length', { get: () => Object.keys(store).length });
   const rpcs = [];
   const sb = {
-    console, JSON, Math, Date: FakeDate, Number, String, Array, Object, Promise, Error, isFinite, isNaN, RegExp, setTimeout, clearTimeout,
+    console, JSON, Math, Date: dateWith(o.skew), Number, String, Array, Object, Promise, Error, isFinite, isNaN, RegExp, setTimeout, clearTimeout,
     setInterval: () => 1, clearInterval: () => {}, localStorage: ls,
     fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({ supabase: { patch_push: true, patch_read: true } }) }),
     document: { head: { appendChild() {} }, body: { appendChild() {} }, createElement: () => ({ style: {}, setAttribute() {}, appendChild() {}, addEventListener() {} }),
@@ -243,7 +253,7 @@ function device(srv, o) {
   const vars = [grabVar('PC_SITE_MIN'), grabVar('PC_BAD_CH'), grabVar('PC_KIND_MAX'), grabVar('LS_MKIND'), grabVar('pcPullGen'), grabVar('PC_RETRY_MS'),
     "var LS_BYRES = 'apc2_res', LS_START = 'apc2_start', LS_NO = 'apc2_no', LS_PREV = 'apc2_prev', LS_SETBY = 'apc2_setby';",
     'var DEF_SITES = new Array(8), SITES = DEF_SITES, CYCLE = 8, PC_N1 = 8;',
-    'var PKINDS = pcKindsOf(' + J({ kinds: o.kinds === undefined ? KINDS_RAW : o.kinds }) + '), pcKindCur = 1, pcKindStop = ' + J(!!o.stop) + ';',
+    'var PKINDS = pcKindsOf(' + J({ kinds: o.kinds === undefined ? KINDS_RAW : o.kinds }) + '), pcKindsBad = false, pcKindCur = 1, pcKindStop = ' + J(!!o.stop) + ';',
     "var state = { rid: '', start: null, no: 1, prev: 0, confirmed: false, canSave: true, storeBad: false, setBy: '', setAt: '', kindSt: '' };",
     "function pcWho() { return '職員甲'; }",
     'var __sel = [];',
@@ -256,8 +266,8 @@ function device(srv, o) {
     sb, store, writes, rpcs, sel: () => sb.__sel.slice(),
     res: () => { try { return JSON.parse(store.apc2_res || 'null').r; } catch (e) { return '壊れ'; } },
     /* 画面で「種類 kind を選び（pick）、開始日・場所を入れて保存した」のと同じ。pick を省くと表示中の種類のまま直した */
-    save: async (rid, kind, start, no, prev, pick) => {
-      vm.runInContext('state.rid = ' + J(rid) + '; pcKindCur = ' + kind + "; state.kindSt = " + J(pick ? 'pick' : '') + '; state.confirmed = true;'
+    save: async (rid, kind, start, no, prev, pick, st) => {
+      vm.runInContext('state.rid = ' + J(rid) + '; pcKindCur = ' + kind + "; state.kindSt = " + J(st !== undefined ? st : (pick ? 'pick' : '')) + '; state.confirmed = ' + J(st === undefined) + ';'
         + ' state.start = parseISODate(' + J(start) + '); state.no = ' + no + '; state.prev = ' + (prev || 0) + '; saveSettings();', sb);
       await settle();
     },
@@ -282,7 +292,8 @@ const tick = (min) => { clock.now += (min || 30) * 60000; };
     const r = d.res();
     t('★別の種類は、設定の行（:pkr）と選びの行（:pk）を同じ日時で書く・既定の行はそのまま', r['r1:pkr'] && r['r1:pk'] && r['r1:pkr'].at === r['r1:pk'].at && r.r1.start === '2026-11-01' && r.r1.no === 5, r);
     t('★選びの行の no は種類の番号・start と prev は選んだ設定の開始日と場所（指紋）', r['r1:pk'].no === 2 && r['r1:pk'].start === '2026-11-10' && r['r1:pk'].prev === 3 && r['r1:pkr'].no === 3 && r['r1:pkr'].prev === 2, r['r1:pk']);
-    t('★送る順は 設定の行 → 選びの行', J(srv.log.slice(1)) === J(['r1:pkr', 'r1:pk']), srv.log);
+    t('★送る順は 既定の行の写し → 設定の行 → 選びの行', J(srv.log.slice(1)) === J(['r1:pkb', 'r1:pkr', 'r1:pk']), srv.log);
+    t('★既定の行の写し（:pkb）は既定の行と同じ値・同じ日時で書く', J([r['r1:pkb'].start, r['r1:pkb'].no, r['r1:pkb'].prev]) === J(['2026-11-01', 5, 4]) && r['r1:pkb'].at === r['r1:pk'].at, r['r1:pkb']);
     t('保存の後は確定（警告の状態を外す）', d.run('state.confirmed && state.kindSt === "" && state.setBy === "職員甲"') === true);
     const rv = d.resolve('r1');
     t('保存した方は2番・その設定で確定', rv.kind === 2 && rv.st === '' && rv.set.start.iso === '2026-11-10' && rv.set.no === 3, rv);
@@ -366,7 +377,24 @@ const tick = (min) => { clock.now += (min || 30) * 60000; };
     t('★古い画面が既定の行を直しても、選びの行・別の種類の行は控えにもサーバーにも残る', !!old.res()['r1:pk'] && !!old.res()['r1:pkr'] && !!srv.rows['r1:pk'] && !!srv.rows['r1:pkr'] && srv.rows.r1.start === '2026-11-19');
     tick(); await d2.pull('r1');
     v = d2.resolve('r1');
-    t('★古い画面が選びの行より新しい日時で既定の行を直したら、2番の方は既定の行に倒れず、黙って捨てずに未設定＋警告', v.kind === 2 && v.st === 'bad' && v.set === null, v);
+    t('★古い画面が既定の行を直したら（写しと値が違う）、2番の方は既定の行に倒れず、黙って捨てずに未設定＋警告', v.kind === 2 && v.st === 'bad' && v.set === null, v);
+    /* 差分の審査 2026-11-17 の3: 2台目が同じ種類・同じ値で入れ直しても、ほかの端末で警告が消える（写しの値が変わるので unchanged にならない） */
+    tick(); vm.runInContext("state.rid = 'r1'; state.kindSt = 'bad';", d2.sb);
+    await d2.save('r1', 2, '2026-11-18', 2, 1, false, 'bad');
+    t('★警告の方は、人が種類を選ばずに入れ直しても保存しない（控えも送る中身も変えない）', d2.res()['r1:pkr'].start === '2026-11-18' && J(d2.res()['r1:pkb']) === J(d2.res()['r1:pkb']) && d2.rpcs.filter(n => n === 'patch_put').length === 0, d2.rpcs);
+    const before2 = J(srv.rows);
+    tick(); await d2.save('r1', 2, '2026-11-18', 2, 1, true);
+    t('★人が種類を選んで（同じ2番・同じ値で）入れ直すと、写しは今の既定の行の値になる', srv.rows['r1:pkb'] && srv.rows['r1:pkb'].start === '2026-11-19' && srv.rows['r1:pkb'].no === 8 && J(srv.rows) !== before2, srv.rows['r1:pkb']);
+    tick(); await d1.pull('r1');
+    v = d1.resolve('r1');
+    t('★入れ直した後は、ほかの端末（1台目）でも警告が消えて2番で確定', v.kind === 2 && v.st === '' && v.set.start.iso === '2026-11-18', v);
+    /* 時計の遅れた古い画面が直しても、値が違えば警告（日時に頼らない） */
+    const midAt = Date.parse(srv.rows.r1.at) + 15 * 60000;   // 今より大きく遅れた時計（前の既定の行の書き込みの15分後の日時で書く）
+    const slow = device(srv, { kinds: null, stop: true, skew: (midAt - (clock.now + 60 * 60000)) / 60000 });   // 既定の行の前の書き込みより後・選びの行より前の日時で書く端末（日時で比べると見逃す）
+    tick(); await slow.pull('r1'); tick(); await slow.save('r1', 1, '2026-11-21', 3, 2);
+    tick(); await d1.pull('r1');
+    v = d1.resolve('r1');
+    t('★時計の遅れた端末が既定の行を直しても、写しと値が違うので警告（日時に頼らない）', srv.rows.r1.start === '2026-11-21' && Date.parse(srv.rows.r1.at) < clock.now - 60 * 60000 && v.st === 'bad', { r: srv.rows.r1, v });
     /* 1番の方を古い画面が直すと指紋が合わず警告（安全側） */
     tick(); await d1.save('r2', 2, '2026-11-10', 3, 2, true);
     tick(); await d1.save('r2', 1, '2026-11-11', 4, 3, true);
@@ -375,6 +403,37 @@ const tick = (min) => { clock.now += (min || 30) * 60000; };
     v = d2.resolve('r2');
     t('★選びの行が1番の方を古い画面が直すと、指紋が合わず未設定＋警告（安全側）', v.kind === 1 && v.st === 'bad' && v.set === null, v);
     t('送る中身は今の6つのまま（部品は変えていない）', d1.rpcs.indexOf('patch_put') >= 0 && !/:pk/.test(SYNC));
+  }
+
+  console.log('\n— 8. 食い違い・無い種類・止めた方の保存（差分の審査 2026-11-17）—');
+  {
+    const at0 = '2026-11-10T00:00:00.000Z';
+    const seed = { r1: { start: '2026-11-01', no: 5, prev: 4, by: 'x', at: at0 }, 'r1:pk': { start: '2026-11-10', no: 5, prev: 3, by: 'x', at: at0 },
+      'r1:pkr': { start: '2026-11-10', no: 3, prev: 0, by: 'x', at: at0 } };
+    const store = () => ({ apc2_res: J({ v: 1, r: seed }) });
+    const srv = makeServer(), d = device(srv, { store: store() });
+    t('施設情報に無い種類（5番）の方は nokind', d.resolve('r1').st === 'nokind');
+    const w0 = d.writes.length;
+    await d.save('r1', 1, '2026-11-20', 2, 0, false, 'nokind');
+    t('★無い種類の方は、人が種類を選ばずに日付・場所を入れても保存しない（1番で確定して送らない）', d.writes.length === w0 && d.rpcs.indexOf('patch_put') < 0 && J(d.res()) === J(seed), d.writes.slice(w0));
+    t('保存しない時は警告の状態のまま（確定にしない）', d.run("state.kindSt === 'nokind' && state.confirmed === false") === true);
+    await d.save('r1', 1, '2026-11-20', 2, 0, true);
+    t('人が種類（1番）を選べば保存する', d.res().r1.start === '2026-11-20' && d.res()['r1:pk'].no === 1 && d.resolve('r1').st === '', d.res());
+    const b = device(makeServer(), { store: store() });
+    await b.save('r1', 2, '2026-11-20', 2, 0, false, 'bad');
+    t('★食い違いの方も、人が種類を選ばずに入れ直しても保存しない', J(b.res()) === J(seed) && b.rpcs.indexOf('patch_put') < 0);
+    const m = device(makeServer(), { store: { apc2_mkind: '5', apc2_no: '3', apc2_start: '2026-11-01' } });
+    await m.save('', 1, '2026-11-20', 2, 0, false, 'nokind');
+    t('手入力でも、無い種類の時は人が選ぶまで保存しない', m.store.apc2_mkind === '5' && m.store.apc2_no === '3');
+    /* 止めた時（kinds を書いた施設）: 別の種類に替えてあった方は確定にしない */
+    const st = device(makeServer(), { store: store(), stop: true });
+    t('★止めた時、別の種類に替えてあった方は確定にせず注意（stopk）', st.resolve('r1').st === 'stopk' && st.resolve('r1').set === null, st.resolve('r1'));
+    await st.save('r1', 1, '2026-11-20', 2, 0, false, 'stopk');
+    t('止めた時の別の種類の方は保存しない', J(st.res()) === J(seed));
+    const st1 = device(makeServer(), { store: { apc2_res: J({ v: 1, r: { r1: seed.r1, 'r1:pk': { start: '2026-11-01', no: 1, prev: 5, by: 'x', at: at0 } } }) }, stop: true });
+    t('止めた時、1番の方は今までどおり既定の行で確定', st1.resolve('r1').st === '' && st1.resolve('r1').set.no === 5);
+    const nk = device(makeServer(), { store: store(), stop: true, kinds: null });
+    t('★kinds を書いていない施設で止めた時は今までどおり（選びの行のような鍵があっても既定の行で確定）', nk.resolve('r1').st === '' && nk.resolve('r1').set.no === 5, nk.resolve('r1'));
   }
 
   console.log('\n— 7. 画面のつなぎ —');
@@ -388,12 +447,12 @@ const tick = (min) => { clock.now += (min || 30) * 60000; };
     const pr = PAGE.slice(PAGE.indexOf('\nfunction pcPrint('), scanBlock(PAGE, PAGE.indexOf('\nfunction pcPrint(')) + 1);
     t('★印刷の確かめの鍵に種類（既定の種類の時は今の鍵のまま）', /\+ \(pcKindCur !== 1 \? '\|k' \+ pcKindCur : ''\);/.test(pr) && /\+ '\|' \+ \(state\.confirmed \? 1 : 0\)/.test(pr));
     t('種類を選べる施設では印刷の確かめに薬の名前を出す（選べない施設は今の文）', /if \(pcKindUiOn\(\)\) who \+= '・' \+ pcKindName\(pcKindCur\);/.test(pr));
-    t('★取り直しは今の方の3つの鍵のどれかが変われば', /\[state\.rid, state\.rid \+ ':pk', state\.rid \+ ':pkr'\]\.some\(/.test(grabFn('pcPullApply')));
+    t('★取り直しは今の方の4つの鍵のどれかが変われば', /\[state\.rid, state\.rid \+ ':pk', state\.rid \+ ':pkr', state\.rid \+ ':pkb'\]\.some\(/.test(grabFn('pcPullApply')));
     t('★選ぶ欄は HTML に書かずスクリプトで作る（kinds を書いていない施設の画面は今のまま）', PAGE.indexOf('id="pcKind"') < 0 && PAGE.indexOf('id="pcKindRow"') < 0 && /sel\.id = 'pcKind';/.test(grabFn('pcKindUi')));
     t('選ぶ欄は kinds を書いて止めていない時だけ', /function pcKindUiOn\(\) \{ return !!PKINDS && !pcKindStop; \}/.test(PAGE) && /if \(!pcKindUiOn\(\)\)/.test(grabFn('pcKindUi')));
     const ui = ['pcKindUi', 'pcKindName', 'pcSetKind', 'pcKindPick'].map(grabFn).join('\n');
     t('外からの文字を innerHTML で入れない', !/innerHTML|insertAdjacentHTML|outerHTML/.test(ui) && /op\.textContent = pcKindName\(k\);/.test(ui));
-    t('帯は画面だけ（noprint・svband）・止めた時と崩れた時だけ作る', /b\.className = 'hint warn svband noprint';/.test(grabFn('pcKindUi')) && /var msg = pcKindStop \? PC_KIND_STOP_MSG : \(pcKindsBad \? PC_KIND_BAD_MSG : ''\);/.test(grabFn('pcKindUi')));
+    t('帯は画面だけ（noprint・svband）・止めた時と崩れた時だけ作る', /b\.className = 'hint warn svband noprint';/.test(grabFn('pcKindUi')) && /var msg = \(pcKindStop && \(PKINDS \|\| pcKindsBad\)\) \? PC_KIND_STOP_MSG : \(pcKindsBad \? PC_KIND_BAD_MSG : ''\);/.test(grabFn('pcKindUi')));
     t('★種類を当てる pcSetKind は葉（選び直し・描き直しを呼ばない＝作り直しとの循環を作らない）', !/selectResident|render\(\)|pcRebuild|loadState/.test(grabFn('pcSetKind')));
     t('選び直しで種類を当てる（selectResident → pcSetKind）', /var kr = pcKindFor\(rid\);\n\s*state\.kindSt = kr\.st;\n\s*pcSetKind\(kr\.kind\);/.test(grabFn('selectResident')));
     t('名簿を読んだ時に止めるかを決め、起動では名簿を状態より先に読む', /pcKindStop = pcKindStopOf\(roster\);/.test(grabFn('loadRoster')) && /\nloadRoster\(\);[^\n]*\nloadState\(\);/.test(PAGE));
@@ -401,6 +460,17 @@ const tick = (min) => { clock.now += (min || 30) * 60000; };
     t('警告の文（仮置き）が3つある', ['貼り薬の種類と、開始日・場所の設定が食い違っています', '選んであった貼り薬の種類が施設情報にありません', '貼り薬の種類を替えました。開始日と場所を入れ直してください'].every(s => grabFn('renderHeaderInfo').indexOf(s) > 0));
     t('★列の意味の流用（選びの行の no は種類の番号）を注釈に書いている', /<入居者ID>:pk   … 選びの行。★site_no（控えの no）は「種類の番号」/.test(PAGE));
     t('部品（su-patch-sync.js）は種類を知らない（:pk・:pkr の文字が無い）', !/:pkr?\b|pcKind/.test(SYNC));
+    t('★食い違い・無い種類・止めた方は、人が選んだ時（pick）だけ保存（保存の入口の最初で止める）', /function pcKindSave\(\) \{\n(?:\s*\/\*[\s\S]*?\*\/\n)?\s*if \(state\.kindSt === 'bad' \|\| state\.kindSt === 'nokind' \|\| state\.kindSt === 'stopk'\) return true;/.test(PAGE));
+    const hi = grabFn('renderHeaderInfo');
+    t('警告の文は、選ぶ欄がある時は「選び直してから」、無い時は「保存できません」', /pcKindUiOn\(\) \? '「貼り薬の種類」で種類を選び直してから/.test(hi) && /施設情報が読めるまで（または管理者が貼り薬の種類を直すまで）、この方の設定は保存できません。/.test(hi));
+    t('★食い違い・無い種類の時は選ぶ欄を「選び直してください」にする（同じ種類を選んでも選んだことになる）', /\(state\.kindSt === 'nokind' \|\| state\.kindSt === 'bad'\) \? '0'/.test(grabFn('pcSetKind')));
+    t('★kinds の施設で、事務所PCで方を選んだ時に1回読み直す', /el\.rs\.addEventListener\('change', function \(\) \{ selectResident\(el\.rs\.value\); pcKindRefresh\(\); \}\);/.test(PAGE) && /if \(state\.rid && pcKindUiOn\(\) && !pcIsField\(\)\) pcPull\(\);/.test(grabFn('pcKindRefresh')));
+    const pf = grabFn('pcPrintFresh');
+    t('★kinds の施設で、事務所PC・読むスイッチが入の時は刷る前に1回読み直す（それ以外はその場で刷る・失敗でも刷る）',
+      /if \(!state\.rid \|\| !pcKindUiOn\(\) \|\| pcIsField\(\) \|\| !sp \|\| !sp\.pull \|\| !sp\.readSwitchOn \|\| !sp\.readSwitchOn\(\)\) \{ pcPrint\(\); return; \}/.test(pf) && /\.then\(function \(\) \{ pcFreshWaiting = false; pcPrint\(\); \}\);/.test(pf)
+      && (PAGE.match(/pcPrintFresh\(\);/g) || []).length === 2);
+    const pr2 = PAGE.slice(PAGE.indexOf('\nfunction pcPrint('), scanBlock(PAGE, PAGE.indexOf('\nfunction pcPrint(')) + 1);
+    t('現場の端末で kinds の施設の方を刷る時は確かめに1行・止めた方には注意', /if \(pcKindUiOn\(\) && pcIsField\(\)\) prov \+= '\\n\\nこの端末はほかの端末の種類の変更を受け取りません。';/.test(pr2) && /if \(state\.kindSt === 'stopk'\) prov \+= /.test(pr2));
     t('★手入力の保存の鍵は apc2_mkind・apc2_m2', /var LS_MKIND = 'apc2_mkind', LS_M2 = 'apc2_m2';/.test(PAGE));
   }
 

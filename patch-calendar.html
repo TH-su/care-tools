@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-w+FOHGoKvAPsIS67ANzMm1z2UOKxb/cPXYdF+zHAG4g='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-8W4l4gXHBDNNama2b2K/MM/OqKfWnmR2KlaIjWHpFeE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <!-- 他ツールと同じ指定を揃えている。氏名はこのHTMLには含まれず入力欄にしか存在しないため、
      この meta が効かないブラウザでもキャッシュ経由で氏名が残ることはない -->
@@ -537,12 +537,15 @@ function backFig(no, isOff) {
    ・★入居者ごとの種類は、保存の形（共通 DB の関数・表）を変えずに、同じ控え（apc2_res）と同じ patch_put の別の鍵の行に置く:
        <入居者ID>      … 既定の種類の設定（今までどおり）
        <入居者ID>:pkr  … 別の種類の設定（開始日・場所・前日の場所。形は既定の行と同じ）
+       <入居者ID>:pkb  … 別の種類へ替えた時の既定の行の写し（形も中身も既定の行と同じ・意味の流用なし）。既定の行がこの写しと違えば、
+                         選びの行を知らない端末が後から既定の行を直したとして食い違いにする（日時でなく値で比べる＝時計のずれと、
+                         同じ値の送り直しが unchanged で日時を進めないことに左右されない・差分の審査 2026-11-17）
        <入居者ID>:pk   … 選びの行。★site_no（控えの no）は「種類の番号」、start と prev_no（控えの prev）は選んだ設定の開始日と貼る場所の番号（指紋）。
                          列の意味を流用しているので、共通 DB や書き出しの中身を直接見る時は、:pk の行の番号を貼る場所と読まないこと
      選びの行の無い方は既定の種類。選びの行の指紋が設定の行と合う時だけその種類の設定で表示し、合わない・種類が施設情報に無い時は
      既定に倒さず未設定（仮の値）と警告にする（ほかの端末の書き込みが片方だけ届いた時・古い画面が既定の行を直した時に取り違えないため）。
      行は消せない（共通 DB に消す口が無い）ので、既定の種類へ戻した方も選びの行（種類 1）を書く
-   ・名簿に入居者ID が :pk・:pkr で終わる方がいる時は、別の鍵と見分けられないので種類の機能を丸ごと止めて帯で知らせる
+   ・名簿に入居者ID が :pk・:pkr・:pkb で終わる方がいる時は、別の鍵と見分けられないので種類の機能を丸ごと止めて帯で知らせる（kinds を書いた施設だけ）
    ・外からの文字は textContent・createTextNode だけで入れる（innerHTML を使わない）
    ・あとから場所の並びを入れ替えると、保存してある番号が別の場所を指す（保存の形を変えずには見分けられない）。並びは変えないこと */
 var PC_SITE_MIN = 2, PC_SITE_MAX = 8, PC_DRUG_MAX = 20, PC_NAME_MAX = 12, PC_SHORT_MAX = 6;
@@ -749,11 +752,16 @@ function pcResolve(all, rid, kinds, n1) {
   var spec = pcKindIn(kinds, k);
   if (!spec) return { kind: 1, st: 'nokind', set: null };
   var s = has(rid + ':pkr') ? pcRowOf(all[rid + ':pkr'], spec.sites ? spec.sites.length : DEF_SITES.length) : null;
-  /* 既定の行が選びの行より新しい日時で直されていたら（選びの行を知らない端末・古い画面の直し）、黙って捨てずに食い違いとして知らせる */
-  var tb = (base && all[rid] && typeof all[rid].at === 'string') ? Date.parse(all[rid].at) : NaN;
-  var tk = (all[rid + ':pk'] && typeof all[rid + ':pk'].at === 'string') ? Date.parse(all[rid + ':pk'].at) : NaN;
-  if (isFinite(tb) && isFinite(tk) && tb > tk) return { kind: k, st: 'bad', set: null };
+  /* 既定の行が、別の種類へ替えた時の写し（:pkb）と違えば（選びの行を知らない端末・古い画面が後から直した）、黙って捨てずに食い違いとして知らせる。
+     値で比べる（日時は使わない）。替えた時に既定の行が無かった方は写しが無いので、後から既定の行ができた時も食い違い */
+  var b0 = has(rid) ? pcRowOf(all[rid], PC_KIND_MAX) : null;
+  if (b0 && !pcSameRow(all[rid], has(rid + ':pkb') ? all[rid + ':pkb'] : null)) return { kind: k, st: 'bad', set: null };
   return sameFp(s) ? { kind: k, st: '', set: s } : { kind: k, st: 'bad', set: null };
+}
+/* 2つの行の値（開始日・場所・前日の場所）が同じか（純関数・日時と設定した人は比べない） */
+function pcSameRow(a, b) {
+  if (!a || typeof a !== 'object' || !b || typeof b !== 'object') return false;
+  return String(a.start) === String(b.start) && Number(a.no) === Number(b.no) && Number(a.prev || 0) === Number(b.prev || 0);
 }
 /* 手入力の種類と設定を決める（純関数）。mk は apc2_mkind の文字（無ければ null）、m2 は apc2_m2 の中身、legacy は既定の種類の手入力の設定 */
 function pcResolveManual(mk, m2, kinds, legacy) {
@@ -766,7 +774,12 @@ function pcResolveManual(mk, m2, kinds, legacy) {
 }
 /* 今の方（rid＝'' は手入力）の種類と設定。種類の機能を止めている時は今までどおり（既定の種類・既定の行） */
 function pcKindFor(rid) {
-  if (pcKindStop) return { kind: 1, st: '', set: rid ? resSetting(rid) : legacySetting() };
+  if (pcKindStop) {
+    /* kinds を書いた施設で、別の種類に替えてあった方（選びの行が1番でない）は確定にせず注意を出す（既定の行に黙って倒さない） */
+    var a0 = rid && (PKINDS || pcKindsBad) ? readByRes() : null, pk0 = a0 && Object.prototype.hasOwnProperty.call(a0, rid + ':pk') ? a0[rid + ':pk'] : null;
+    if (pk0 && typeof pk0 === 'object' && Number(pk0.no) !== 1) return { kind: 1, st: 'stopk', set: null };
+    return { kind: 1, st: '', set: rid ? resSetting(rid) : legacySetting() };
+  }
   if (rid) return pcResolve(readByRes(), rid, PKINDS, PC_N1);
   var mk = null, m2 = null;
   try { mk = localStorage.getItem(LS_MKIND); } catch (e) { mk = null; }
@@ -796,7 +809,7 @@ function pcSetKind(k) {
     renderGuide();
   }
   var ks = document.getElementById('pcKind');
-  if (ks) ks.value = state.kindSt === 'nokind' ? '0' : String(pcKindCur);
+  if (ks) ks.value = (state.kindSt === 'nokind' || state.kindSt === 'bad') ? '0' : String(pcKindCur);
 }
 /* 仮の値（今日を開始日・1番・前日なし）。確かめるまで警告を出す */
 function pcProvisional() {
@@ -820,6 +833,9 @@ function pcKindPick(v) {
 /* 別の種類（または選びの行のある方・種類を選び直した方）の保存。扱った時は true。既定の種類で選びの行の無い方は false（今までの保存の道へ）。
    書く順は 設定の行 → 選びの行（同じ日時）。控えが読めない時は今までの道（空で上書きしない守り）に任せる */
 function pcKindSave() {
+  /* 食い違い・施設情報に無い種類・止めた時の別の種類の方は、人が「貼り薬の種類」で選んだ（'pick'）時だけ保存する。
+     それ以外は保存しない（扱ったことにして今までの保存の道へも進ませない）＝仮の値に日付を入れても、別の種類の方を黙って1番で確定して送らない */
+  if (state.kindSt === 'bad' || state.kindSt === 'nokind' || state.kindSt === 'stopk') return true;
   if (pcKindStop) return false;
   var rid = state.rid, k = pcKindCur, by, at;
   if (rid) {
@@ -830,10 +846,13 @@ function pcKindSave() {
     /* 仮の値を表示していた間に別のタブでこの方の設定が保存されていたら、仮の値で上書きしない（今までの保存と同じ守り） */
     if (!state.confirmed && state.kindSt === '' && pcResolve(all, rid, PKINDS, PC_N1).set) { selectResident(rid); return true; }
     by = pcWho(); at = new Date().toISOString();
+    /* 別の種類の時は、今の既定の行の写し（:pkb）も同じ日時で書く（既定の行が読める形の時だけ） */
+    var bw = k !== 1 && Object.prototype.hasOwnProperty.call(all, rid) ? pcRowOf(all[rid], PC_KIND_MAX) : null;
+    if (bw) all[rid + ':pkb'] = { start: bw.start.iso, no: bw.no, prev: bw.prev, by: by, at: at };
     all[k === 1 ? rid : rid + ':pkr'] = { start: state.start.iso, no: state.no, prev: state.prev, by: by, at: at };
     all[rid + ':pk'] = { start: state.start.iso, no: k, prev: state.no, by: by, at: at };
     state.confirmed = true; state.canSave = true;
-    try { localStorage.setItem(LS_BYRES, JSON.stringify({ v: 1, r: all })); state.setBy = by; state.setAt = at; state.kindSt = ''; pcPushKind(rid, k); }
+    try { localStorage.setItem(LS_BYRES, JSON.stringify({ v: 1, r: all })); state.setBy = by; state.setAt = at; state.kindSt = ''; pcPushKind(rid, k, !!bw); }
     catch (e) { state.canSave = false; state.setBy = ''; state.setAt = ''; }
     return true;
   }
@@ -857,11 +876,12 @@ function pcKindSave() {
   } catch (e) { state.canSave = false; state.setBy = ''; state.setAt = ''; }
   return true;
 }
-/* 設定の行 → 選びの行の順に送る（部品は1つずつ順に送る）。サーバーの方が新しかった時は今までどおり読み直す */
-function pcPushKind(rid, k) {
+/* （既定の行の写し →）設定の行 → 選びの行の順に送る（部品は1つずつ順に送る）。サーバーの方が新しかった時は今までどおり読み直す */
+function pcPushKind(rid, k, withCopy) {
   if (!rid || !window.SUPatchSync) return;
-  var a = k === 1 ? rid : rid + ':pkr', b = rid + ':pk';
+  var a = k === 1 ? rid : rid + ':pkr', b = rid + ':pk', c = rid + ':pkb';
   try {
+    if (withCopy) window.SUPatchSync.pushOne(c).then(function (x) { pcPushed(c, x); });
     window.SUPatchSync.pushOne(a).then(function (x) { pcPushed(a, x); });
     window.SUPatchSync.pushOne(b).then(function (x) { pcPushed(b, x); });
   } catch (e) { /* 送れなくても保存と表示は続ける（送信待ちに残り、次の起動で送る） */ }
@@ -875,12 +895,13 @@ function pcAdoptOk() {
   var all = state.rid ? readByRes() : null;
   return !(all && Object.prototype.hasOwnProperty.call(all, state.rid + ':pk'));
 }
-/* 名簿の入居者ID が別の鍵（:pk・:pkr）で終わる方がいれば、種類の機能を止める */
+/* 名簿の入居者ID が別の鍵（:pk・:pkr・:pkb）で終わる方がいれば、種類の機能を止める */
 function pcKindStopOf(list) {
-  return (list || []).some(function (r) { return /:pkr?$/.test(r.id); });
+  return (list || []).some(function (r) { return /:pk[rb]?$/.test(r.id); });
 }
 /* 種類を選ぶ欄と帯（kinds を書いた施設・止めた時・崩れた時だけスクリプトで作る。書いていない施設では何も作らない＝今の画面のまま） */
 var PC_KIND_STOP_MSG = '名簿に、貼り薬の種類の控えと見分けられない番号の方がいるため、種類を選ぶ機能を止めています。既定の種類だけで表示しています。管理者に知らせてください。';
+var PC_KIND_STOPK_MSG = '⚠ この方は貼り薬の種類を替えてありますが、種類を選ぶ機能を止めているため、その種類で表示できません。表示は仮の値です。管理者に知らせてください（この方の設定は保存できません）。';
 var PC_KIND_BAD_MSG = '施設情報の貼り薬の種類の書き方が崩れているため、種類を選べません。既定の種類だけで表示しています。';
 function pcKindUi() {
   var row = document.getElementById('pcKindRow');
@@ -906,9 +927,9 @@ function pcKindUi() {
       op.value = String(k); op.textContent = pcKindName(k);   /* textContent なので名前がタグとして解釈されない */
       ks.appendChild(op);
     });
-    ks.value = state.kindSt === 'nokind' ? '0' : String(pcKindCur);
+    ks.value = (state.kindSt === 'nokind' || state.kindSt === 'bad') ? '0' : String(pcKindCur);
   }
-  var msg = pcKindStop ? PC_KIND_STOP_MSG : (pcKindsBad ? PC_KIND_BAD_MSG : '');
+  var msg = (pcKindStop && (PKINDS || pcKindsBad)) ? PC_KIND_STOP_MSG : (pcKindsBad ? PC_KIND_BAD_MSG : '');   /* kinds を書いていない施設は止めた帯を出さない（今の画面のまま） */
   var b = document.getElementById('pcKindBand');
   if (!msg) { if (b && b.parentNode) b.parentNode.removeChild(b); return; }
   if (!b) {
@@ -1080,8 +1101,8 @@ function pcPullApply(r, gen) {
   try { localStorage.setItem(LS_BYRES, JSON.stringify({ v: 1, r: m.merged })); }
   catch (e) { return; }                                   /* 書けない時は控えのまま表示を続ける（帯も消さない） */
   pcBand(false);
-  /* 今の方の3つの鍵（既定の行・別の種類の行・選びの行）のどれかが変われば取り直す */
-  if (state.rid && [state.rid, state.rid + ':pk', state.rid + ':pkr'].some(function (k) { return m.changed.indexOf(k) >= 0; })) selectResident(state.rid);
+  /* 今の方の4つの鍵（既定の行・別の種類の行・選びの行・既定の行の写し）のどれかが変われば取り直す */
+  if (state.rid && [state.rid, state.rid + ':pk', state.rid + ':pkr', state.rid + ':pkb'].some(function (k) { return m.changed.indexOf(k) >= 0; })) selectResident(state.rid);
 }
 /* 帯が出ている間だけ、画面に戻った時・回線が戻った時・ログインし直した時・60秒ごとに読み直す（現場の端末では読まない） */
 function pcPullRetry() {
@@ -1366,10 +1387,15 @@ function renderHeaderInfo() {
   var msg = '';
   if (state.rid && state.storeBad) {
     msg = '⚠ この端末の入居者ごとの設定が読めません（保存が壊れています）。表示は仮の値で、変えても記憶されません。印刷する前に実際の貼付予定と照らしてください。 ';
-  } else if (state.kindSt === 'bad') {
-    msg = '⚠ 貼り薬の種類と、開始日・場所の設定が食い違っています（ほかの端末で直している途中かもしれません）。表示は仮の値です。種類・開始日・場所を確かめて入れ直してください。 ';
-  } else if (state.kindSt === 'nokind') {
-    msg = '⚠ 選んであった貼り薬の種類が施設情報にありません。表示は仮の値です。種類を選び直し、開始日と場所を入れてください。 ';
+  } else if (state.kindSt === 'bad' || state.kindSt === 'nokind') {
+    /* 選ぶ欄がある時は「選んでから入れ直す」、無い時（施設情報が読めない・kinds が崩れた・種類を消した）は「保存できない」と実際にできることを出す */
+    msg = (state.kindSt === 'bad'
+      ? '⚠ 貼り薬の種類と、開始日・場所の設定が食い違っています（ほかの端末で直している途中かもしれません）。表示は仮の値です。'
+      : '⚠ 選んであった貼り薬の種類が施設情報にありません。表示は仮の値です。')
+      + (pcKindUiOn() ? '「貼り薬の種類」で種類を選び直してから、開始日と場所を入れ直してください。 '
+        : '施設情報が読めるまで（または管理者が貼り薬の種類を直すまで）、この方の設定は保存できません。 ');
+  } else if (state.kindSt === 'stopk') {
+    msg = PC_KIND_STOPK_MSG + ' ';
   } else if (state.kindSt === 'pick') {
     msg = '⚠ 貼り薬の種類を替えました。開始日と場所を入れ直してください（入れるまでは仮の値です）。 ';
   } else if (!state.confirmed && state.rid) {
@@ -1403,8 +1429,8 @@ function shiftMonth(delta) {
 var IO_APP = 'patch-calendar', IO_VER = 1, IO_MAX_BYTES = 1024 * 1024;
 function ioEntry(v, k) {
   if (!v || typeof v !== 'object') return null;
-  /* 行ごとの上限で確かめる（表示中の種類の数で落とさない）: 別の種類の行・選びの行（鍵が :pkr・:pk で終わる）は保存の上限 8、それ以外は既定の種類の場所の数 */
-  var cap = (typeof k === 'string' && /:pkr?$/.test(k)) ? 8 : PC_N1;
+  /* 行ごとの上限で確かめる（表示中の種類の数で落とさない）: 別の種類の行・選びの行・既定の行の写し（鍵が :pkr・:pk・:pkb で終わる）は保存の上限 8、それ以外は既定の種類の場所の数 */
+  var cap = (typeof k === 'string' && /:pk[rb]?$/.test(k)) ? 8 : PC_N1;
   var d = parseISODate(v.start), n = parseNo(String(v.no), 1, cap), p = parseNo(String(v.prev), 0, cap);
   if (!d || n === null) return null;
   var sb = pcSetByOf(v), out = { start: d.iso, no: n, prev: p !== null ? p : 0 };
@@ -1478,13 +1504,17 @@ function ioDoExport() {
   var all = readByRes();
   if (all === null) { ioShow('この端末の入居者ごとの設定が読めないため、書き出せません。', true); return; }
   var obj = ioExportObj(all, legacySetting(), movedTo());
-  var n = Object.keys(obj.res).length;
-  if (!n && !obj.manual) { ioShow('書き出す設定がまだありません。', true); return; }
-  /* 黙って落とさない: 読めなかった行と、書き出さない手入力の別の種類の設定を知らせる（無ければ今と同じ文） */
-  var drop = Object.keys(all).length - n, mk2 = null;
+  /* 手入力の種類が1番でない時は、手入力の設定を書き出さない（新しい端末で既定の種類の設定として読まれないように） */
+  var mk2 = null;
   try { mk2 = localStorage.getItem(LS_MKIND); } catch (e) { mk2 = null; }
+  var manOther = mk2 !== null && mk2 !== '1';
+  if (manOther) obj.manual = null;
+  var n = Object.keys(obj.res).length;
+  if (!n && !obj.manual) { ioShow('書き出す設定がまだありません。' + (manOther ? '手入力の設定は、既定でない種類のため書き出しません（新しい端末で入れ直してください）。' : ''), true); return; }
+  /* 黙って落とさない: 読めなかった行と、書き出さない手入力の設定を知らせる（無ければ今と同じ文） */
+  var drop = Object.keys(all).length - n;
   var ioNote = (drop > 0 ? '読めなかった行 ' + drop + '件は書き出していません。' : '')
-    + (mk2 !== null && mk2 !== '1' ? '手入力の別の種類の設定は書き出しません（新しい端末で入れ直してください）。' : '');
+    + (manOther ? '手入力の設定は、既定でない種類のため書き出しません（新しい端末で入れ直してください）。' : '');
   var t = new Date(), p2 = function (x) { return (x < 10 ? '0' : '') + x; };
   var name = '貼り薬カレンダー設定_' + t.getFullYear() + p2(t.getMonth() + 1) + p2(t.getDate()) + '.json';
   try {
@@ -1576,7 +1606,11 @@ if (!window.SUFacility) pcFacBand();
 try { if (window.SUFacility && typeof SUFacility.onReady === 'function') SUFacility.onReady(function () { if (pcApplyCfg(pcReadCfg())) pcRebuild(); pcFacBand(); }); }
 catch (e) { try { if (window.SUErrors && SUErrors.note) SUErrors.note('貼り薬カレンダーの施設情報の読み直し', e && e.message, 'patch-calendar'); } catch (e2) { /* 記録できなくても既定で動く */ } }
 
-el.rs.addEventListener('change', function () { selectResident(el.rs.value); });
+el.rs.addEventListener('change', function () { selectResident(el.rs.value); pcKindRefresh(); });
+/* kinds を書いた施設では、事務所PCで方を選んだ時に1回読み直す（ほかの端末で替えた種類を拾う。読むスイッチが切・現場の端末では部品が読まない・失敗は今の表示のまま） */
+function pcKindRefresh() {
+  if (state.rid && pcKindUiOn() && !pcIsField()) pcPull();
+}
 document.getElementById('ioExport').addEventListener('click', ioDoExport);
 document.getElementById('ioPick').addEventListener('click', function () { document.getElementById('ioFile').click(); });
 document.getElementById('ioFile').addEventListener('change', function (e) { ioOnFile(e.target.files && e.target.files[0]); });
@@ -1653,16 +1687,31 @@ var pcPrintWaiting = false;
 document.getElementById('print').addEventListener('click', function () {
   var rdy = false;
   try { rdy = !!(window.SUFacility && SUFacility.ready()); } catch (e) { rdy = false; }
-  if (rdy) { if (pcApplyCfg(pcReadCfg())) pcRebuild(); pcPrint(); return; }
+  if (rdy) { if (pcApplyCfg(pcReadCfg())) pcRebuild(); pcPrintFresh(); return; }
   if (pcPrintWaiting) return;               /* 待つ間の二重押しは無視する */
   pcPrintWaiting = true;
   suFacReady_().then(function (ok) {
     pcPrintWaiting = false;
     if (!ok) { window.alert(PC_FAC_NG_MSG); return; }
     if (pcApplyCfg(pcReadCfg())) pcRebuild();
-    pcPrint();
+    pcPrintFresh();
   }, function () { pcPrintWaiting = false; });
 });
+/* kinds を書いた施設で、事務所PC・読むスイッチが入の時は、刷る前に1回だけ読み直す（最大5秒・届かない・失敗の時も止めず今の表示で刷る）。
+   それ以外（kinds を書いていない施設・現場の端末・スイッチ切）は今までどおりその場で刷る */
+var PC_FRESH_MS = 5000, pcFreshWaiting = false;
+function pcPrintFresh() {
+  var sp = window.SUPatchSync;
+  if (!state.rid || !pcKindUiOn() || pcIsField() || !sp || !sp.pull || !sp.readSwitchOn || !sp.readSwitchOn()) { pcPrint(); return; }
+  if (pcFreshWaiting) return;               /* 待つ間の二重押しは無視する */
+  pcFreshWaiting = true;
+  var gen = ++pcPullGen;
+  var late = new Promise(function (ok) { setTimeout(function () { ok({ status: 'late' }); }, PC_FRESH_MS); });
+  var call;
+  try { call = sp.pull(); } catch (e) { call = Promise.resolve({ status: 'unreachable' }); }
+  Promise.race([call, late]).then(function (r) { if (r && r.status !== 'late') pcPullApply(r, gen); }, function () {})
+    .then(function () { pcFreshWaiting = false; pcPrint(); });
+}
 function pcPrint() {
   var nm = el.nm.value.trim();
   var key = nm + '|' + isoMonth(state.y, state.m) + '|' + state.start.iso + '|' + state.no + '|' + state.prev
@@ -1672,6 +1721,8 @@ function pcPrint() {
     if (pcKindUiOn()) who += '・' + pcKindName(pcKindCur);   /* 種類を選べる施設では薬の名前も確かめる */
     /* 設定が済んでいない（仮の値・初期値）時は、それを確認の文面にも出す */
     var prov = state.confirmed ? '' : '\n\n⚠ 開始日と場所はまだ設定されていません（仮の値・初期値です）。';
+    if (state.kindSt === 'stopk') prov += '\n\n' + PC_KIND_STOPK_MSG;
+    if (pcKindUiOn() && pcIsField()) prov += '\n\nこの端末はほかの端末の種類の変更を受け取りません。';   /* 現場の端末は読み直さない（仮置き） */
     if (!window.confirm(state.y + '年' + state.m + '月分／開始 ' + jpDate(state.start)
         + ' ＝ ' + state.no + '番' + who + 'で印刷します。よろしいですか' + prov)) return;
     printAck = key;

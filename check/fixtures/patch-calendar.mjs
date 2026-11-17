@@ -8,22 +8,15 @@
  *
  * ★架空データだけ（CLAUDE.md §2-1）。氏名は架空の見本の語。
  * ★月は撮影の固定時刻（lib.FIXED_TIME＝2026-01-14）の月。開始日はその月の中に決め打ち（撮るたびに変わらない）。
- * ★施設情報は見本（facility-profile.sample.json）に貼り薬の別の種類（kinds・架空の薬の名前）だけを足して配る（2026-11-17 PC-02）。
- *   既定の種類（drug・sites）は書かないので、1枚目（month）の紙は見本だけの時と同じ（種類を選ぶ欄は画面だけで紙に出ない）。
- *   2枚目（kind2）は別の種類（6か所）を選んだ方の紙。
+ * ★施設情報は撮影の道具が配る見本のまま（1枚目 month は kinds を書かない施設の紙として、直す前と画素で比べ続ける・差分の審査 2026-11-17）。
+ *   2枚目（kind2）は別の種類（6か所）を選んだ方の紙。ページの中で施設情報の部品の section に kinds（架空の薬の名前）を足し、
+ *   印刷のボタン（印刷の窓は開かない）で画面に施設情報を読み直させてから、種類を選ぶ（2026-11-17 PC-02）。
  */
 export const URL = 'https://script.google.com/macros/s/CHECK-FIXTURE-DUMMY/exec';
 export const match = 'https://script.google.com/macros/s/CHECK-FIXTURE-DUMMY/**';
-const SAMPLE_PROFILE = new globalThis.URL('../../facility-profile.sample.json', import.meta.url);
-export const KINDS = [{ no: 2, drug: '架空テープ', sites: ['左の肩', '右の肩', '左の胸', '右の胸', '左の腰', '右の腰'].map((name, i) => ({ name, short: name.replace('の', '') })) }];
+export const KINDS = [{ no: 2, drug: '架空テープ', sites: ['左の肩', '右の肩', '左の胸', '右の胸', '左の腰', '右の腰'].map((name) => ({ name, short: name.replace('の', '') })) }];
 export const routes = [
   { match: '**/su-backend.json*', handle: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ supabase: {} }) }) },
-  { match: '**/facility-profile.json*', async handle(route) {
-    const fs = await import('node:fs');
-    const p = JSON.parse(fs.readFileSync(SAMPLE_PROFILE, 'utf8'));
-    p.patchCalendar = { kinds: KINDS };
-    return route.fulfill({ status: 200, contentType: 'application/json; charset=utf-8', body: JSON.stringify(p) });
-  } },
 ];
 export const storage = { su_device_role: 'office' };
 
@@ -41,8 +34,15 @@ export const sheets = [
       return !!(pnm && pnm.textContent.indexOf(a.name) >= 0 && document.querySelector('#weeks .cell'));
     } },
   /* 別の種類（6か所の架空テープ）を選んだ方の紙。種類を選ぶ欄は施設情報が届いてから作られるので、出るまで待つ */
-  { key: 'kind2', arg: { name: '架空 二郎', kind: '2', start: '2026-01-05', no: '4' }, ready: '#weeks .cell',
+  { key: 'kind2', arg: { name: '架空 二郎', kind: '2', start: '2026-01-05', no: '4', kinds: KINDS }, ready: '#weeks .cell',
     prepare: async (a) => {
+      /* 施設情報が届くのを待ってから、その方の施設情報に kinds だけを足す（見本そのものは変えない） */
+      for (let i = 0; i < 50 && !(window.SUFacility && window.SUFacility.ready()); i++) await new Promise((r) => setTimeout(r, 100));
+      if (!window.SUFacility || !window.SUFacility.ready()) return false;
+      const F = window.SUFacility, orig = F.section.bind(F);
+      F.section = (n) => (n === 'patchCalendar' ? Object.assign({}, orig(n) || {}, { kinds: a.kinds }) : orig(n));
+      window.print = function () {}; window.confirm = function () { return false; };   /* 印刷のボタンで読み直させるだけ（刷らない） */
+      document.getElementById('print').click();
       let ks = null;
       for (let i = 0; i < 50 && !(ks = document.getElementById('pcKind')); i++) await new Promise((r) => setTimeout(r, 100));
       const nm = document.getElementById('nm'), st = document.getElementById('st'), no = document.getElementById('no');

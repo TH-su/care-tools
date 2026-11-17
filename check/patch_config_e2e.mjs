@@ -295,7 +295,8 @@ try {
     await o.p.selectOption('#no', '3');
     const r1 = await o.p.evaluate(() => JSON.parse(localStorage.getItem('apc2_res')).r);
     t('種類: 保存すると別の種類の行と選びの行（種類の番号・開始日と場所の指紋）を書き、既定の行は残す',
-      r1['X1:pkr'] && r1['X1:pkr'].no === 3 && r1['X1:pk'] && r1['X1:pk'].no === 2 && r1['X1:pk'].start === '2026-01-05' && r1['X1:pk'].prev === 3 && r1.X1.no === 4, r1);
+      r1['X1:pkr'] && r1['X1:pkr'].no === 3 && r1['X1:pk'] && r1['X1:pk'].no === 2 && r1['X1:pk'].start === '2026-01-05' && r1['X1:pk'].prev === 3 && r1.X1.no === 4
+      && r1['X1:pkb'] && r1['X1:pkb'].no === 4 && r1['X1:pkb'].start === '2026-01-05', r1);
     const saved = await o.p.evaluate(() => localStorage.getItem('apc2_res'));
     t('種類: 画面の例外 0（選んで保存）', o.errs.length === 0, o.errs);
     await o.ctx.close();
@@ -322,12 +323,18 @@ try {
     const o = await open(withPc(KINDS), { storage: { su_residents_common: roster2(['X1', 'X2']), apc2_res: res } });
     await o.p.selectOption('#rs', 'X1');
     const K1 = await kindLook(o.p), L1 = await look(o.p);
-    t('種類: 指紋が合わない方は2番の場所で仮の値＋警告（既定の行の4番に倒さない）', K1.val === '2' && L1.noOpts.length === 6 && /食い違っています/.test(L1.hint) && /1番（場所1）/.test(L1.hint), { K1, h: L1.hint });
+    t('種類: 指紋が合わない方は2番の場所で仮の値＋警告（既定の行の4番に倒さない）・選ぶ欄は「選び直してください」', K1.val === '0' && L1.noOpts.length === 6 && /食い違っています/.test(L1.hint) && /1番（場所1）/.test(L1.hint), { K1, h: L1.hint });
     await o.p.selectOption('#rs', 'X2');
     const K2 = await kindLook(o.p), L2 = await look(o.p);
     t('種類: 施設情報に無い種類の方は仮の値＋警告・選ぶ欄は「選び直してください」', K2.val === '0' && /施設情報にありません/.test(L2.hint) && !/4番（右・2段目）/.test(L2.hint), { K2, h: L2.hint });
     const kept = await o.p.evaluate(() => JSON.parse(localStorage.getItem('apc2_res')).r);
     t('種類: 開いただけでは控えを書き換えない', kept['X1:pkr'].start === '2026-01-06' && kept['X2:pk'].no === 5 && kept.X1.no === 4);
+    /* 差分の審査 2026-11-17: 種類を選ばずに日付・場所を入れても保存しない（無い種類の方を黙って1番で確定しない） */
+    await o.p.evaluate(() => { const st = document.getElementById('st'); st.value = '2026-01-07'; st.dispatchEvent(new Event('change', { bubbles: true })); });
+    await o.p.selectOption('#no', '2');
+    const kept2 = await o.p.evaluate(() => localStorage.getItem('apc2_res'));
+    const L3 = await look(o.p);
+    t('種類: 無い種類の方は、種類を選ばずに入れても保存せず警告のまま', kept2 === res && /施設情報にありません/.test(L3.hint) && /選び直してから/.test(L3.hint), L3.hint);
     t('種類: 画面の例外 0（食い違い・無い種類）', o.errs.length === 0, o.errs);
     await o.ctx.close();
   }
