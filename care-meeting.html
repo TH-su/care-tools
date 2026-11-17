@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Hh5pH7+iYK/USVyz7kAI0l1GgjcpBY6omkyc17NUypE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ocxPTj29uMFW0U4/NUIfRvkUBcEaKp6H4QKme4YoB6c='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 会議の記録（要配慮の情報）を扱うためキャッシュ無効 -->
@@ -868,7 +868,8 @@ function impApply_(){
    ・断りの読み分けは ok と code だけ（古い受け口＝code action か、bad_input で importRowsVer が無い時は「まだ対応していません」） */
 var impcSt=null, impcGen=0, impcOk=false;
 var IMPC_CHUNK=50;   // 1回に送る行の数（受け口の上限と同じ）
-var IMPC_GROUPS=[['new','取り込める（名簿の1名に一致・まだ入っていない）',true],['unmatched','名簿と照合できない（取り込みません）',true],['ambiguous','名簿に同じ名前の方が2人以上（取り込みません）',true],['baddate','開催日を読めない（取り込みません）',true],['future','開催日が先の日付（取り込みません）',true],['toolong','欄が長すぎる（取り込みません）',true],['samedate','同じ方・同じ開催日の記録がもうある（取り込みません）',true],['exists','送信済み（前に取り込んだ）',false],['infile','表の中に同じ方・同じ開催日が2行以上（どれも取り込みません）',true]];
+var IMPC_GROUPS=[['new','取り込める（名簿の1名に一致・まだ入っていない）',true],['unmatched','名簿と照合できない（取り込みません）',true],['ambiguous','名簿に同じ名前の方が2人以上（取り込みません）',true],['baddate','開催日を読めない（取り込みません）',true],['future','開催日が先の日付（取り込みません）',true],['toolong','欄が長すぎる（取り込みません）',true],['samedate','同じ方・同じ開催日の記録がもうある（取り込みません）',true],['exists','送信済み（前に取り込んだ）',false],['infile','表の中に同じ方・同じ開催日が2行以上（どれも取り込みません）',true],['ragged','列の数が見出しと違う（取り込みません）',true]];
+var IMPC_SRV=['new','unmatched','ambiguous','baddate','future','toolong','samedate','exists','infile'];   // 受け口が返す状態（ragged は画面だけ）
 var IMPC_ADMIN_MSG='管理者（Google＋2段階認証）でログインしている時だけ使えます。ログインし直してから押してください';
 function impcGate_(){
   var g=impcGen;
@@ -912,7 +913,7 @@ function impcMapHtml_(s){
   var tb=s.tbl, keys=impcKeys_(), lock=impcBusy_(s);
   var h='<p class="impc-sum">読んだ表：'+esc(String(tb.header.length))+' 列・'+esc(String(tb.rows.length))+' 行'+(s.enc?'（文字コード '+esc(s.enc)+'）':'')+'</p>';
   var warns=(s.gwarns||[]).slice();
-  if(tb.ragged>0) warns.unshift('列の数が見出しと違う行が '+tb.ragged+' 行あります。列がずれていないか、見本で確かめてください');
+  if(tb.ragged>0) warns.unshift('列の数が見出しと違う行が '+tb.ragged+' 行あります（'+impcRaggedNos_(tb).join('・')+(tb.ragged>10?' ほか':'')+' 件目・見出しを除き、空の行は数えない）。この行は取り込みません（引用符で囲んでいないカンマなどで列がずれていないか確かめてください）');
   if(warns.length) h+='<div class="impc-w" role="note"><ul>'+warns.map(function(w){ return '<li>'+esc(w)+'</li>'; }).join('')+'</ul></div>';
   h+='<h3>列ごとに入れる欄を選ぶ</h3><div class="impc-tw"><table class="impc-t"><thead><tr><th scope="col">表の列の見出し</th><th scope="col">1件目の値</th><th scope="col">入れる欄</th></tr></thead><tbody>';
   tb.header.forEach(function(hd,i){
@@ -943,6 +944,18 @@ function impcMapHtml_(s){
   if(s.plan&&s.phase==='planned'&&n>0) h+='<button type="button" class="btn pri" data-act="impc-apply">取り込める '+n+' 件を取り込む（確定）</button>';
   return h+'</div>';
 }
+/* 列の数が見出しと違う行の番号（1から・先頭10件まで） */
+function impcRaggedNos_(tb){
+  var out=[];
+  for(var i=0;i<tb.rows.length&&out.length<10;i++) if(tb.rows[i].length!==tb.header.length) out.push(i+1);
+  return out;
+}
+/* 本文の欄の頭（当て違いに気づけるように・20字） */
+function impcHead_(rec){
+  var ks=['conclusion','content','items','issues'];
+  for(var i=0;i<ks.length;i++){ var v=String(rec&&rec[ks[i]]!=null?rec[ks[i]]:'').replace(/\s+/g,' ').trim(); if(v) return v.length>20?v.slice(0,20)+'…':v; }
+  return '';
+}
 /* 取り込める行のうち✔︎が付いている行（一覧の items） */
 function impcPicked_(s){
   if(!s||!s.plan||!Array.isArray(s.plan.items)) return [];
@@ -956,14 +969,14 @@ function impcListHtml_(s){
     var list=items.filter(function(x){ return x&&x.status===g[0]; }); if(!list.length) return;
     var pick=g[0]==='new';
     h+='<details class="impc-g"'+(g[2]?' open':'')+'><summary>'+esc(g[1])+'：'+list.length+' 件</summary><div class="impc-tw"><table class="impc-t"><thead><tr>'+
-      (pick?'<th scope="col">取り込む</th>':'')+'<th scope="col">表の行</th><th scope="col">開催日</th><th scope="col">名簿の方</th><th scope="col">表の利用者名</th><th scope="col">出席者</th><th scope="col">足りない欄</th><th scope="col">知らせ</th></tr></thead><tbody>';
+      (pick?'<th scope="col">取り込む</th>':'')+'<th scope="col">表の行</th><th scope="col">開催日</th><th scope="col">名簿の方</th><th scope="col">表の利用者名</th><th scope="col">出席者</th><th scope="col">本文の頭</th><th scope="col">足りない欄</th><th scope="col">知らせ</th></tr></thead><tbody>';
     list.forEach(function(x){
-      var key=String(x.i), on=!skip[key], rec=x.rec||{};
+      var key=String(x.i), on=!skip[key], rec=x.rec||{}, hd=impcHead_(rec);
       var miss=Array.isArray(x.missing)?x.missing.map(String).join('・'):'';
       var notes=(x.warns||[]).slice(); if(x.stop) notes.unshift(String(x.stop));
       h+='<tr>'+(pick?'<td><label class="chk impc-chk"><input type="checkbox" data-impck="'+esc(key)+'"'+(on?' checked':'')+(lock?' disabled':'')+' aria-label="'+esc('表の '+(x.i+1)+' 件目を取り込む')+'">'+(on?'✔︎':'外す')+'</label></td>':'')+
         '<td>'+esc(String(x.i+1))+' 件目</td><td>'+esc(x.heldDate?fmtDate_(String(x.heldDate)):'（読めない）')+'</td><td>'+esc(x.name||'—')+'</td><td>'+
-        esc(String(rec.sourceName||'')||'（空）')+'</td><td>'+esc(String(Array.isArray(rec.attendees)?rec.attendees.length:0))+' 名</td><td>'+esc(miss||(pick?'なし':'—'))+'</td><td>'+
+        esc(String(rec.sourceName||'')||'（空）')+'</td><td>'+esc(String(Array.isArray(rec.attendees)?rec.attendees.length:0))+' 名</td><td>'+(hd?esc(hd):'<span class="muted">（空）</span>')+'</td><td>'+esc(miss||(pick?'なし':'—'))+'</td><td>'+
         (notes.length?esc(notes.join('／')):'<span class="muted">なし</span>')+'</td></tr>';
     });
     h+='</tbody></table></div></details>';
@@ -1037,10 +1050,19 @@ function impcRec_(rec){
   return out;
 }
 function impcRow_(it){ return {n:it.i,id:String(it.id),name:String(it.name),key:String(it.key),rec:impcRec_(it.rec)}; }
-/* 古い受け口（知らない op として断った）か。code だけで見る */
+/* 一覧を作る（dry）の断りの種類。code だけで見る（error の文は読まない）
+   'unsupported' 知らない op（res-write の code action）／'badin' 入力の断りで importRowsVer が無い（Google の古い受け口の「不明な操作です」と、
+   新しい受け口の入力の断りを見分けられないので1つの文にする・仮置き）／'' ほか */
 function impcOld_(d){
   var c=(d&&typeof d.code==='string')?d.code:'';
-  return c==='action'||(c==='bad_input'&&!(d&&d.importRowsVer===1));
+  if(c==='action') return 'unsupported';
+  if(c==='bad_input'&&!(d&&d.importRowsVer===1)) return 'badin';
+  return '';
+}
+/* 確定（dry:false）の断りのうち、書いていないとはっきり分かるもの（入力の形・権限・知らない op）。ほかは書けたか分からない扱い（偽らない） */
+function impcSure_(d){
+  var c=(d&&typeof d.code==='string')?d.code:'';
+  return ['bad_input','role','mfa','not_admin','action'].indexOf(c)>=0;
 }
 function impcErr_(d){
   var c=(d&&typeof d.code==='string')?d.code:'';
@@ -1059,9 +1081,13 @@ function impcSend_(rows,dry,g){
       if(r.e) return {fail:'unknown',e:r.e,written:written};
       var d=r.d;
       if(!d||d.ok!==true){
-        if(dry&&impcOld_(d)) return {fail:'unsupported',d:d,written:written};
-        if(d&&(d.unknown||classify_(d)==='unknown')) return {fail:'unknown',d:d,written:written};
-        return {fail:'refused',d:d,written:written};
+        if(dry){
+          var od=impcOld_(d);
+          if(od) return {fail:od,d:d,written:written};
+          if(d&&(d.unknown||classify_(d)==='unknown')) return {fail:'unknown',d:d,written:written};
+          return {fail:'refused',d:d,written:written};
+        }
+        return {fail:impcSure_(d)?'refused':'unknown',d:d,written:written};
       }
       if(d.importRowsVer!==1) return {fail:dry?'unsupported':'unknown',d:d,written:written};
       if(!Array.isArray(d.items)) return {fail:dry?'shape':'unknown',d:d,written:written};
@@ -1081,6 +1107,11 @@ function impcPlan_(){
   var rows=s.tbl.rows.map(function(cells){ return CareMeetingCalc.impRow(cells,s.map); });
   var plan=CareMeetingCalc.impPlan(rows,rs.residents,CareMeetingCalc.todayJST());
   if(!plan){ s.plan=null; s.msg='一覧を作れませんでした（何も書いていません）'; s.err=true; impPaint_(); return Promise.resolve(false); }
+  /* 列の数が見出しと違う行は、どの判定より先に「列の数が見出しと違う」へ入れて送らない（✔︎も付けない・仮置き） */
+  plan.items.forEach(function(it){
+    var cells=s.tbl.rows[it.i];
+    if(cells&&cells.length!==s.tbl.header.length){ it.status='ragged'; it.key=''; it.warns=['列の数が見出しと違います（見出し '+s.tbl.header.length+' 列・この行 '+cells.length+' 列・'+(it.i+1)+' 件目）'].concat(it.warns||[]); }
+  });
   var news=plan.items.filter(function(x){ return x.status==='new'; });
   var g=++impcGen;
   s.phase='planning'; s.plan=null; s.skip={}; s.err=false;
@@ -1092,6 +1123,7 @@ function impcPlan_(){
     if(!r.ok){
       s.phase='loaded'; s.plan=null; s.err=true;
       if(r.fail==='unsupported') s.msg='この受け口はまだ対応していません（何も書いていません）';
+      else if(r.fail==='badin') s.msg='この受け口が表を受け付けませんでした（何も書いていません）。受け口がまだ対応していないか、表の中に送れない値があります';
       else if(r.fail==='unknown') s.msg='一覧を作れませんでした（'+(r.e?impExWords_(r.e):'受け口の答えを確かめられませんでした')+'）。少し待ってから、もう一度押してください（何も書いていません）';
       else if(r.fail==='shape') s.msg='受け口の答えの形が違います。もう一度押してください（何も書いていません）';
       else s.msg=impcErr_(r.d)+'（何も書いていません）';
@@ -1099,7 +1131,7 @@ function impcPlan_(){
     }
     /* 送った行の番号と、答えの番号が過不足なく合うか。知らない状態があれば一覧にしない */
     var want=Object.create(null), by=Object.create(null), okNames=Object.create(null), bad=false;
-    IMPC_GROUPS.forEach(function(gr){ okNames[gr[0]]=1; });
+    IMPC_SRV.forEach(function(st){ okNames[st]=1; });
     sent.forEach(function(x){ want[String(x.n)]=1; });
     r.items.forEach(function(x){
       var k=x&&x.n!=null?String(x.n):'';
@@ -1135,9 +1167,10 @@ function impcApply_(){
       var w=Number(r.written)||0;
       s.phase='done'; s.plan=null; s.skip={};
       if(r.ok){
-        var chg=Number(r.changed)||0;
+        var chg=Number(r.changed)||0, skipN=rows.length-w;
         s.err=false;
-        s.msg=w+' 件を取り込みました。'+(chg?'取り込みの間に名簿が変わった '+chg+' 件は入れていません（一覧を作り直して確かめてください）。':'')+'もう一度「一覧を作る」を押すと、送信済みとして出ます';
+        s.msg=w+' 件を取り込みました。'+(chg?'取り込みの間にほかの端末の記録や名簿が変わった '+chg+' 件は入れていません（一覧を作り直して確かめてください）。':'')+
+          (skipN>0?skipN+' 件は取り込みませんでした'+impcWhy_(r.items)+'。一覧を作り直すと理由が出ます。':'')+'もう一度「一覧を作る」を押すと、送信済みとして出ます';
       }else if(r.fail==='unknown'){
         s.err=true;
         s.msg='取り込めたか分かりません。一覧を作り直して確かめてください'+(w?'（それまでに '+w+' 件を取り込みました）':'');
@@ -1149,6 +1182,13 @@ function impcApply_(){
       return !!r.ok;
     });
   });
+}
+/* 確定の答えの items を状態ごとに数えた内訳（取り込めた new は除く）。例「（同じ方・同じ開催日の記録がもうある 1 件・送信済み 2 件）」 */
+function impcWhy_(items){
+  var c={}, parts=[];
+  (Array.isArray(items)?items:[]).forEach(function(x){ var st=x&&String(x.status); if(st&&st!=='new'&&IMPC_SRV.indexOf(st)>=0) c[st]=(c[st]||0)+1; });
+  IMPC_GROUPS.forEach(function(g){ if(c[g[0]]) parts.push(g[1].replace(/（.*$/,'')+' '+c[g[0]]+' 件'); });
+  return parts.length?'（'+parts.join('・')+'）':'';
 }
 /* 選ぶ一覧の変更のうち、この取り込みの分（ファイル・列の欄・✔︎）。扱った時は true */
 function impcChange_(t){
