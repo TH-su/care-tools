@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-rBGGTzt1gPiOn54QGKKoMVM+BZbeZ3HVo1J9sbmjwJc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-w+FOHGoKvAPsIS67ANzMm1z2UOKxb/cPXYdF+zHAG4g='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <!-- 他ツールと同じ指定を揃えている。氏名はこのHTMLには含まれず入力欄にしか存在しないため、
      この meta が効かないブラウザでもキャッシュ経由で氏名が残ることはない -->
@@ -749,6 +749,10 @@ function pcResolve(all, rid, kinds, n1) {
   var spec = pcKindIn(kinds, k);
   if (!spec) return { kind: 1, st: 'nokind', set: null };
   var s = has(rid + ':pkr') ? pcRowOf(all[rid + ':pkr'], spec.sites ? spec.sites.length : DEF_SITES.length) : null;
+  /* 既定の行が選びの行より新しい日時で直されていたら（選びの行を知らない端末・古い画面の直し）、黙って捨てずに食い違いとして知らせる */
+  var tb = (base && all[rid] && typeof all[rid].at === 'string') ? Date.parse(all[rid].at) : NaN;
+  var tk = (all[rid + ':pk'] && typeof all[rid + ':pk'].at === 'string') ? Date.parse(all[rid + ':pk'].at) : NaN;
+  if (isFinite(tb) && isFinite(tk) && tb > tk) return { kind: k, st: 'bad', set: null };
   return sameFp(s) ? { kind: k, st: '', set: s } : { kind: k, st: 'bad', set: null };
 }
 /* 手入力の種類と設定を決める（純関数）。mk は apc2_mkind の文字（無ければ null）、m2 は apc2_m2 の中身、legacy は既定の種類の手入力の設定 */
