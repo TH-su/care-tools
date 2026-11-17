@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-8W4l4gXHBDNNama2b2K/MM/OqKfWnmR2KlaIjWHpFeE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gcXRkXmyE3KgFviQtOUaBae5OLz9sIoAeMaeuQmzKdI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <!-- 他ツールと同じ指定を揃えている。氏名はこのHTMLには含まれず入力欄にしか存在しないため、
      この meta が効かないブラウザでもキャッシュ経由で氏名が残ることはない -->
@@ -1709,20 +1709,22 @@ function pcPrintFresh() {
   var late = new Promise(function (ok) { setTimeout(function () { ok({ status: 'late' }); }, PC_FRESH_MS); });
   var call;
   try { call = sp.pull(); } catch (e) { call = Promise.resolve({ status: 'unreachable' }); }
-  Promise.race([call, late]).then(function (r) { if (r && r.status !== 'late') pcPullApply(r, gen); }, function () {})
-    .then(function () { pcFreshWaiting = false; pcPrint(); });
+  var ng = true;                            /* 読み直せなかった（失敗・時間切れ）時は確かめの窓に1行足す */
+  Promise.race([call, late]).then(function (r) { if (r && r.status !== 'late') pcPullApply(r, gen); ng = !(r && r.status === 'ok'); }, function () { ng = true; })
+    .then(function () { pcFreshWaiting = false; pcPrint(ng); });
 }
-function pcPrint() {
+function pcPrint(freshNg) {   /* freshNg: kinds の施設で刷る前の読み直しができなかった（その時は確かめの窓を必ず出す） */
   var nm = el.nm.value.trim();
   var key = nm + '|' + isoMonth(state.y, state.m) + '|' + state.start.iso + '|' + state.no + '|' + state.prev
     + '|' + (state.confirmed ? 1 : 0) + (pcKindCur !== 1 ? '|k' + pcKindCur : '');   /* 種類も確かめる（既定の種類の時は今の鍵のまま） */
-  if (printAck !== key) {
+  if (printAck !== key || freshNg) {
     var who = nm ? '（' + nm + '）' : '（お名前は未入力）';
     if (pcKindUiOn()) who += '・' + pcKindName(pcKindCur);   /* 種類を選べる施設では薬の名前も確かめる */
     /* 設定が済んでいない（仮の値・初期値）時は、それを確認の文面にも出す */
     var prov = state.confirmed ? '' : '\n\n⚠ 開始日と場所はまだ設定されていません（仮の値・初期値です）。';
     if (state.kindSt === 'stopk') prov += '\n\n' + PC_KIND_STOPK_MSG;
     if (pcKindUiOn() && pcIsField()) prov += '\n\nこの端末はほかの端末の種類の変更を受け取りません。';   /* 現場の端末は読み直さない（仮置き） */
+    if (freshNg) prov += '\n\nほかの端末の種類の変更を読み直せませんでした。今の表示で印刷します。';   /* 事務所PCで読み直しの失敗・時間切れ（仮置き） */
     if (!window.confirm(state.y + '年' + state.m + '月分／開始 ' + jpDate(state.start)
         + ' ＝ ' + state.no + '番' + who + 'で印刷します。よろしいですか' + prov)) return;
     printAck = key;

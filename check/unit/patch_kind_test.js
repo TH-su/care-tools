@@ -380,8 +380,10 @@ const tick = (min) => { clock.now += (min || 30) * 60000; };
     t('★古い画面が既定の行を直したら（写しと値が違う）、2番の方は既定の行に倒れず、黙って捨てずに未設定＋警告', v.kind === 2 && v.st === 'bad' && v.set === null, v);
     /* 差分の審査 2026-11-17 の3: 2台目が同じ種類・同じ値で入れ直しても、ほかの端末で警告が消える（写しの値が変わるので unchanged にならない） */
     tick(); vm.runInContext("state.rid = 'r1'; state.kindSt = 'bad';", d2.sb);
-    await d2.save('r1', 2, '2026-11-18', 2, 1, false, 'bad');
-    t('★警告の方は、人が種類を選ばずに入れ直しても保存しない（控えも送る中身も変えない）', d2.res()['r1:pkr'].start === '2026-11-18' && J(d2.res()['r1:pkb']) === J(d2.res()['r1:pkb']) && d2.rpcs.filter(n => n === 'patch_put').length === 0, d2.rpcs);
+    const d2before = J(d2.res()), put0 = d2.rpcs.filter(n => n === 'patch_put').length;
+    await d2.save('r1', 2, '2026-11-25', 5, 4, false, 'bad');   /* 今の値（11-18・2番）と違う値を入れる */
+    t('★警告の方は、人が種類を選ばずに入れ直しても保存しない（控えを変えない・:pkr の開始日も変わらない・送らない）',
+      J(d2.res()) === d2before && d2.res()['r1:pkr'].start === '2026-11-18' && d2.rpcs.filter(n => n === 'patch_put').length === put0, { r: d2.res()['r1:pkr'], rpcs: d2.rpcs });
     const before2 = J(srv.rows);
     tick(); await d2.save('r1', 2, '2026-11-18', 2, 1, true);
     t('★人が種類を選んで（同じ2番・同じ値で）入れ直すと、写しは今の既定の行の値になる', srv.rows['r1:pkb'] && srv.rows['r1:pkb'].start === '2026-11-19' && srv.rows['r1:pkb'].no === 8 && J(srv.rows) !== before2, srv.rows['r1:pkb']);
@@ -436,6 +438,38 @@ const tick = (min) => { clock.now += (min || 30) * 60000; };
     t('★kinds を書いていない施設で止めた時は今までどおり（選びの行のような鍵があっても既定の行で確定）', nk.resolve('r1').st === '' && nk.resolve('r1').set.no === 5, nk.resolve('r1'));
   }
 
+  console.log('\n— 9. 印刷の前の読み直し（失敗・時間切れ・成功）—');
+  {
+    const runFresh = async (pullImpl, o) => {
+      o = o || {};
+      const conf = [], prints = [];
+      const c = { Promise, setTimeout, Error, String, window: {}, isoMonth: (y, m) => y + '-' + m, jpDate: (x) => x.iso, el: { nm: { value: '架空 一郎' } } };
+      c.window.confirm = (m) => { conf.push(String(m)); return true; };
+      c.window.print = () => { prints.push(1); };
+      c.window.SUPatchSync = { pull: pullImpl, readSwitchOn: () => true };
+      vm.createContext(c);
+      vm.runInContext("var PC_FRESH_MS = 30, pcFreshWaiting = false, pcPullGen = 0, printAck = null, pcKindCur = 2;"
+        + "var state = { rid: 'r1', y: 2026, m: 1, start: { iso: '2026-01-05' }, no: 3, prev: 0, confirmed: true, kindSt: '' };"
+        + "function pcKindUiOn() { return " + J(o.kinds !== false) + "; } function pcIsField() { return false; }"
+        + "function pcKindName() { return '架空テープ（6箇所）'; } var __ap = []; function pcPullApply(r, g) { __ap.push(r.status); }"
+        + "var PC_KIND_STOPK_MSG = 'x';\n" + grabFn('pcPrintFresh') + '\n' + grabFn('pcPrint'), c);
+      vm.runInContext('pcPrintFresh()', c);
+      await new Promise(r => setTimeout(r, 80)); await settle();
+      return { conf, prints, applied: c.__ap };
+    };
+    const LINE = 'ほかの端末の種類の変更を読み直せませんでした。今の表示で印刷します。';
+    const okR = await runFresh(() => Promise.resolve({ status: 'ok', rows: {} }));
+    t('★読み直せた時は窓に1行を足さずに刷る', okR.prints.length === 1 && okR.conf.length === 1 && okR.conf[0].indexOf(LINE) < 0 && J(okR.applied) === J(['ok']), okR);
+    const ngR = await runFresh(() => Promise.resolve({ status: 'unreachable' }));
+    t('★読み直しが失敗した時は窓に1行を足して、止めずに刷る', ngR.prints.length === 1 && ngR.conf.length === 1 && ngR.conf[0].indexOf(LINE) > 0, ngR);
+    const rjR = await runFresh(() => Promise.reject(new Error('x')));
+    t('読み直しが例外の時も1行を足して刷る', rjR.prints.length === 1 && rjR.conf.length === 1 && rjR.conf[0].indexOf(LINE) > 0, rjR);
+    const lateR = await runFresh(() => new Promise(() => {}));
+    t('★時間切れ（返ってこない）の時も1行を足して刷る', lateR.prints.length === 1 && lateR.conf.length === 1 && lateR.conf[0].indexOf(LINE) > 0 && lateR.applied.length === 0, lateR);
+    const noK = await runFresh(() => Promise.resolve({ status: 'unreachable' }), { kinds: false });
+    t('★kinds の無い施設は読み直さず、今の窓の文のまま刷る', noK.prints.length === 1 && noK.conf.length === 1 && noK.conf[0].indexOf(LINE) < 0 && noK.applied.length === 0, noK);
+  }
+
   console.log('\n— 7. 画面のつなぎ —');
   {
     const save = grabFn('saveSettings');
@@ -467,7 +501,7 @@ const tick = (min) => { clock.now += (min || 30) * 60000; };
     t('★kinds の施設で、事務所PCで方を選んだ時に1回読み直す', /el\.rs\.addEventListener\('change', function \(\) \{ selectResident\(el\.rs\.value\); pcKindRefresh\(\); \}\);/.test(PAGE) && /if \(state\.rid && pcKindUiOn\(\) && !pcIsField\(\)\) pcPull\(\);/.test(grabFn('pcKindRefresh')));
     const pf = grabFn('pcPrintFresh');
     t('★kinds の施設で、事務所PC・読むスイッチが入の時は刷る前に1回読み直す（それ以外はその場で刷る・失敗でも刷る）',
-      /if \(!state\.rid \|\| !pcKindUiOn\(\) \|\| pcIsField\(\) \|\| !sp \|\| !sp\.pull \|\| !sp\.readSwitchOn \|\| !sp\.readSwitchOn\(\)\) \{ pcPrint\(\); return; \}/.test(pf) && /\.then\(function \(\) \{ pcFreshWaiting = false; pcPrint\(\); \}\);/.test(pf)
+      /if \(!state\.rid \|\| !pcKindUiOn\(\) \|\| pcIsField\(\) \|\| !sp \|\| !sp\.pull \|\| !sp\.readSwitchOn \|\| !sp\.readSwitchOn\(\)\) \{ pcPrint\(\); return; \}/.test(pf) && /\.then\(function \(\) \{ pcFreshWaiting = false; pcPrint\(ng\); \}\);/.test(pf)
       && (PAGE.match(/pcPrintFresh\(\);/g) || []).length === 2);
     const pr2 = PAGE.slice(PAGE.indexOf('\nfunction pcPrint('), scanBlock(PAGE, PAGE.indexOf('\nfunction pcPrint(')) + 1);
     t('現場の端末で kinds の施設の方を刷る時は確かめに1行・止めた方には注意', /if \(pcKindUiOn\(\) && pcIsField\(\)\) prov \+= '\\n\\nこの端末はほかの端末の種類の変更を受け取りません。';/.test(pr2) && /if \(state\.kindSt === 'stopk'\) prov \+= /.test(pr2));
