@@ -261,9 +261,9 @@ for (const r of results) {
   if (r.status !== 'base無し' || baseMissingKind(r.name, isSheet(r.name), mbRaw) !== 'unshot') continue;
   r.status = '直す前を撮れなかった'; r.pixels = 0; r.reason = baseShotReason(r.name, isSheet(r.name), r.view, mbRaw);
 }
-const noBaseSheets = Object.keys(sh).filter((k) => !hasShot(baseDir, `${k}.print`) && baseMissingKind(k, true, mbRaw) === 'new');
-/* 帳票の材料があるのに、直す前・直した後のどちらでも撮れなかった帳票（比べていない） */
-const bothLostSheets = Object.keys(sh).filter((k) => !hasShot(baseDir, `${k}.print`) && !hasShot(headDir, `${k}.print`) && baseMissingKind(k, true, mbRaw) === 'unshot');
+const noBaseSheets = Object.keys(sh).filter((k) => !hasShot(baseDir, `${k}.print`) && hasShot(headDir, `${k}.print`) && baseMissingKind(k, true, mbRaw) === 'new');
+/* 直した後の材料にあるのに、直す前・直した後のどちらでも撮れなかった帳票（新しい帳票も含む・比べていない） */
+const bothLostSheets = Object.keys(sh).filter((k) => !hasShot(baseDir, `${k}.print`) && !hasShot(headDir, `${k}.print`));
 if (bothLostSheets.length) { lines.push(`帳票の印刷: 直す前も直した後も撮れず比べていない（${bothLostSheets.join('、')}）`); fail++; }
 const byView = (v) => results.filter((r) => r.view === v);
 /* 違いの中身の補足: 撮り方が違う・区切りのどこが違うか・読めなかった */

@@ -6,6 +6,7 @@
      D 直す前の metrics.json が読めない（null・形が違う）→ 'unshot'（新しいとは言えない）
      E 報告の理由は撮影の失敗の文（開けない・撮影・PDF・帳票）の頭だけ。印刷の失敗は pc の errors からも拾う
      F compare.mjs がこの判定を使い、撮れなかった分を pc・印刷・帳票で失敗に数える（文面の確かめ）
+     G compare.mjs を偽の記録と1画素の絵で通して回し、終了コードと結果の文を確かめる（playwright が無い環境では省略）
    実行: node check/unit/compare_base_missing_test.js */
 'use strict';
 const fs = require('fs'), path = require('path');
@@ -61,6 +62,54 @@ function t(n, c, e) { if (c) { pass++; console.log('  ✓ ' + n); } else { fail+
   t('snap.mjs が帳票ごとに inDir を残す', /inDir: await fixtureInDir\(name, sh\.key\)/.test(snap));
   const gi = fs.readFileSync(path.join(ROOT, '.gitignore'), 'utf8');
   t('compare-calc.mjs が公開の許可に載っている', /^!\/check\/compare-calc\.mjs$/m.test(gi));
+  console.log('G compare.mjs を偽の記録と1画素の絵で通して回す（playwright が無い環境では省略）');
+  let hasPw = false;
+  try { const { loadPlaywright } = await import(path.join(ROOT, 'check', 'lib.mjs')); loadPlaywright(); hasPw = true; } catch (e) { hasPw = false; }
+  if (!hasPw) console.log('  ⏸ 省略（playwright が無い）');
+  else {
+    const os = require('os'), { spawnSync } = require('child_process');
+    const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+    const V = ['pc', 'print', 'ph100', 'ph200'];
+    const all = (n) => V.map((v) => `${n}.${v}`);
+    const pg = (errs) => ({ printPages: 1, errors: errs || { pc: [], ph100: [], ph200: [] } });
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cmp-base-missing-'));
+    function mk(dir, shots, metrics) { fs.mkdirSync(dir, { recursive: true }); for (const f of shots) fs.writeFileSync(path.join(dir, f + '.png'), PNG); if (metrics !== undefined) fs.writeFileSync(path.join(dir, 'metrics.json'), JSON.stringify(metrics)); }
+    let n = 0;
+    function run(b, h, allow) {
+      const d = path.join(tmp, String(++n)); mk(path.join(d, 'base'), ...b); mk(path.join(d, 'head'), ...h);
+      const a = [path.join(ROOT, 'check', 'compare.mjs'), '--base', path.join(d, 'base'), '--head', path.join(d, 'head'), '--out', path.join(d, 'cmp')];
+      if (allow) a.push('--allow', allow);
+      const r = spawnSync(process.execPath, a, { encoding: 'utf8', timeout: 120000 });
+      return { code: r.status, out: (r.stdout || '') + (r.stderr || '') };
+    }
+    try {
+      const X = { pages: { 'x.html': pg() }, sheets: {} };
+      let r = run([all('x'), X], [all('x'), X]);
+      t('普通の場面は合格・「新しい」「撮れなかった」を出さない', r.code === 0 && !/新しい|撮れなかった|撮れず/.test(r.out), r.out);
+      r = run([all('x'), X], [[...all('x'), ...all('z')], { pages: { 'x.html': pg(), 'z.html': pg() }, sheets: {} }]);
+      t('新しい画面は合格・「新しい画面」と出す', r.code === 0 && /直す前に無い画面（新しい画面＝比べない）: z/.test(r.out), r.out);
+      const yFail = { pages: { 'x.html': pg(), 'y.html': pg({ pc: ['撮影: Target closed'], ph100: [], ph200: [] }) }, sheets: {} };
+      const yHead = [[...all('x'), ...all('y')], { pages: { 'x.html': pg(), 'y.html': pg() }, sheets: {} }];
+      r = run([[...all('x'), 'y.ph100', 'y.ph200'], yFail], yHead);
+      t('直す前だけ PC・印刷を撮れなかった画面は失敗', r.code === 1 && /PC の画面: .*y（直す前を撮れなかった＝比べていない: 撮影: Target closed）/.test(r.out) && !/新しい画面/.test(r.out), r.out);
+      r = run([[...all('x'), 'y.ph100', 'y.ph200'], yFail], yHead, 'y.html');
+      t('許可した画面は〔許可〕で合格', r.code === 0 && /y〔許可〕（直す前を撮れなかった/.test(r.out), r.out);
+      r = run([[...all('x'), 'y.pc', 'y.print'], { pages: { 'x.html': pg(), 'y.html': pg({ pc: [], ph100: ['撮影: a'], ph200: ['撮影: b'] }) }, sheets: {} }], yHead);
+      t('直す前だけ iPhone を撮れなかった画面は報告だけで合格', r.code === 0 && /iPhone 100%: .*y（直す前を撮れなかった/.test(r.out) && /iPhone 200%: .*y（直す前を撮れなかった/.test(r.out), r.out);
+      r = run([all('x'), undefined], [[...all('x'), ...all('z')], { pages: { 'x.html': pg(), 'z.html': pg() }, sheets: {} }]);
+      t('直す前の記録が無い時は「新しい」と言わず失敗', r.code === 1 && /直す前の記録が読めない/.test(r.out) && !/新しい画面/.test(r.out), r.out);
+      const sOk = { printPages: 1, errors: [], inDir: true };
+      r = run([all('x'), { pages: { 'x.html': pg() }, sheets: { 'x__s': { errors: ['帳票: setView is not a function'], inDir: false } } }], [[...all('x'), 'x__s.print'], { pages: { 'x.html': pg() }, sheets: { 'x__s': sOk } }]);
+      t('新しい帳票（直す前の木に材料なし）は合格・「新しい帳票」と出す', r.code === 0 && /新しい帳票＝直す前に材料が無く比べていない: x__s/.test(r.out), r.out);
+      r = run([all('x'), { pages: { 'x.html': pg() }, sheets: { 'x__s': { errors: ['帳票: 印刷の準備ができない'], inDir: true } } }], [[...all('x'), 'x__s.print'], { pages: { 'x.html': pg() }, sheets: { 'x__s': sOk } }]);
+      t('直す前だけ撮れなかった帳票は失敗', r.code === 1 && /帳票の印刷（架空データ）: .*x__s（直す前を撮れなかった＝比べていない: 帳票: 印刷の準備ができない）/.test(r.out), r.out);
+      for (const inDir of [true, false]) {
+        const e = { errors: ['帳票: 印刷の準備ができない（s）'], inDir };
+        r = run([all('x'), { pages: { 'x.html': pg() }, sheets: { 'x__s': e } }], [all('x'), { pages: { 'x.html': pg() }, sheets: { 'x__s': e } }]);
+        t(`直す前も直した後も撮れなかった帳票（inDir:${inDir}）は失敗・「一致」と言わない`, r.code === 1 && /直す前も直した後も撮れず比べていない（x__s）/.test(r.out) && !/帳票の印刷（架空データ）: 0枚すべて画素一致/.test(r.out), r.out);
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  }
   console.log(`\n${pass} 合格 / ${fail} 不合格`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.log('✗ 例外: ' + e.message); process.exit(1); });
