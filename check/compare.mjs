@@ -24,6 +24,11 @@
  *   直す前と後で撮り方が違う（1枚と区切り・区切りの数が違う）時は「撮り方が違う（高さが変わった）」として違いに数える（合否の決まりは今までどおり）。
  *   絵を読めない時は「一致」と言わず失敗にする。
  *
+ * 直す前を撮れなかった画面・帳票（2026-11-17 追加）: 直した後に絵があって直す前に無い時、今までは全部「新しい画面＝比べない」で通っていた。
+ *   直す前の metrics.json にその画面・帳票の記録がある（撮ろうとして絵が残らなかった）時は「直す前を撮れなかった（比べていない）」として、
+ *   pc・印刷・帳票では失敗にする（iPhone は今までどおり報告だけ・--allow の画面は〔許可〕で失敗に数えない）。
+ *   本当に新しく足した画面・帳票（直す前の記録に無い・帳票は直す前の木に材料が無い）だけを「新しい」と出す。分け方は compare-calc.mjs。
+ *
  * ★色の揺れ（--tol・既定 2）: 1画素の赤・緑・青のどれもが 2 以内しか違わない時は「同じ」とみなす。
  *   角の丸み・文字のにじみの描き方が撮るたびに 1 だけずれることがある（2026-10-04 実測: 消耗品管理の角で ±1）。
  *   位置・形・文字が変わると差は数十〜二百になるので、この幅で本当の違いを見落とすことはない。
@@ -33,6 +38,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { loadPlaywright, parseArgs, ensureDir, readJson, writeJson } from './lib.mjs';
+import { baseMissingKind, baseShotReason } from './compare-calc.mjs';
 
 const args = parseArgs(process.argv.slice(2));
 const baseDir = path.resolve(args.base || 'check/out/base');
@@ -173,7 +179,8 @@ for (const k of [...gHead.keys()].sort()) {
   results.push({ file: label, name, view, status: worst, pixels: tiles.reduce((s, t) => s + t.pixels, 0), tileCount: eh.tiles.length, tiles });
 }
 
-const mb = readJson(path.join(baseDir, 'metrics.json'), { pages: {} }), mh = readJson(path.join(headDir, 'metrics.json'), { pages: {} });
+const mbRaw = readJson(path.join(baseDir, 'metrics.json'), null);   // 読めない時は null（新しい画面とは言えない・compare-calc.mjs）
+const mb = mbRaw && mbRaw.pages ? mbRaw : { pages: {} }, mh = readJson(path.join(headDir, 'metrics.json'), { pages: {} });
 const printRows = [];
 for (const file of Object.keys(mh.pages)) {
   if (!mb.pages[file]) continue;   // 直す前に無い画面は比べない
@@ -249,10 +256,19 @@ if (missingPng.length) { lines.push(`撮れていない画面がある（${missi
 /* 帳票: 直す前に撮れていたのに、直した後で撮れなかったもの（直す前から撮れない帳票は比べられないと書くだけ） */
 const lostSheets = Object.keys(sb).filter((k) => hasShot(baseDir, `${k}.print`) && !hasShot(headDir, `${k}.print`));
 if (lostSheets.length) { lines.push(`帳票の印刷: 直した後で撮れなくなった（${lostSheets.join('、')}）`); fail++; }
-const noBaseSheets = Object.keys(sh).filter((k) => !hasShot(baseDir, `${k}.print`));
+/* 直す前に絵が無いのは、本当に新しいからか、直す前を撮れなかったからか（compare-calc.mjs）。撮れなかった分は比べずに違いとして数える */
+for (const r of results) {
+  if (r.status !== 'base無し' || baseMissingKind(r.name, isSheet(r.name), mbRaw) !== 'unshot') continue;
+  r.status = '直す前を撮れなかった'; r.pixels = 0; r.reason = baseShotReason(r.name, isSheet(r.name), r.view, mbRaw);
+}
+const noBaseSheets = Object.keys(sh).filter((k) => !hasShot(baseDir, `${k}.print`) && hasShot(headDir, `${k}.print`) && baseMissingKind(k, true, mbRaw) === 'new');
+/* 直した後の材料にあるのに、直す前・直した後のどちらでも撮れなかった帳票（新しい帳票も含む・比べていない） */
+const bothLostSheets = Object.keys(sh).filter((k) => !hasShot(baseDir, `${k}.print`) && !hasShot(headDir, `${k}.print`));
+if (bothLostSheets.length) { lines.push(`帳票の印刷: 直す前も直した後も撮れず比べていない（${bothLostSheets.join('、')}）`); fail++; }
 const byView = (v) => results.filter((r) => r.view === v);
 /* 違いの中身の補足: 撮り方が違う・区切りのどこが違うか・読めなかった */
 function detail(r) {
+  if (r.status === '直す前を撮れなかった') return `（直す前を撮れなかった＝比べていない: ${r.reason}）`;
   if (r.status === '撮り方が違う') return `（撮り方が違う＝高さが変わった: ${r.shape.base}→${r.shape.head}）`;
   if (r.tiles) return `（${r.tileCount}区切りのうち ${r.tiles.map((t) => `t${String(t.t).padStart(2, '0')}${t.status === '違いあり' ? (t.pixels ? ` ${t.pixels}px` : '') : ' ' + t.status}`).join('・')}）`;
   if (r.status === '読めない') return '（絵を読めない）';
@@ -266,7 +282,7 @@ for (const v of ['pc', 'print', 'sheet', 'ph100', 'ph200']) {
   const changed = rows.filter((r) => r.status !== '一致');
   const label = { pc: 'PC の画面', print: '印刷の見た目', sheet: '帳票の印刷（架空データ）', ph100: 'iPhone 100%', ph200: 'iPhone 200%' }[v];
   const unit = v === 'sheet' ? '枚' : '画面';
-  const extra = v === 'sheet' && noBaseSheets.length ? `（直す前に撮れず比べていない: ${noBaseSheets.join('、')}）` : '';
+  const extra = v === 'sheet' && noBaseSheets.length ? `（新しい帳票＝直す前に材料が無く比べていない: ${noBaseSheets.join('、')}）` : '';
   if (!changed.length) lines.push(`${label}: ${rows.length}${unit}すべて画素一致${TOL ? '（色の揺れ±' + TOL + '以内は同じとみなす）' : ''}${extra}`);
   else {
     lines.push(`${label}: ${rows.length - changed.length}${unit}は画素一致・${changed.length}${unit}に違い（${changed.map((r) => r.name + (allowed(r.name) ? '〔許可〕' : '') + (r.pixels ? ` ${r.pixels}px` : '') + detail(r)).join('、')}）${extra}`);
