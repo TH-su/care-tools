@@ -13,11 +13,14 @@
  *   6. 個人情報を外へ送らない・保存しない（この部品は計算だけ）
  *   7. 印が1つも無い議事録は、よくある見出しから欄の候補を出すだけ（guess）。欄へ入れるのは人が選んだ候補だけ（guessApply）。
  *      候補にならなかった文も捨てずに返す（2026-11-13 代表者の指示）
+ *   8. ほかの形の表（CSV・貼った表）からの取り込みは、読む・列の候補・1行の記録の形・行ごとの判定まで（imp*）。
+ *      列の当ては人が決める。名簿の1名にだけ一致・開催日が読めて先の日付でない・上限に収まる・表の中で重ならない行だけを送る候補にする
+ *      （2026-11-17 代表者の決定・細部は仮置き）
  */
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-11-13c';
+  var VERSION = '2026-11-17';
   /* 様式の欄（並びは様式どおり）。max は1欄の上限の文字数（GAS の meeting.gs と同じ値）。optional は無くても知らせない欄 */
   var FIELDS = [
     { key: 'sourceName', label: '利用者名', max: 40 },
@@ -549,11 +552,269 @@
     return res;
   }
 
+  /* ═══ ほかの形の表（CSV・Excel などから貼った表）から過去の会議を取り込む（2026-11-17 代表者の決定・細部は仮置き） ═══
+     1行が1会議の表だけを読む。AI は呼ばない・通信しない（読む → 列の当て → 1行ずつ記録の形 → 行ごとの判定 まで）。
+     ★ALIASES・GUESS_WORDS には足さない（parse・guess の区切りが変わるため）。見出しの語はこの節の表だけで引く
+     ★開催の理由は当てない・入れない（空欄で入れる。E表別紙からの取り込みと同じ）
+     ★表と判定はメモリだけで使う（この部品は保存しない） */
+  var IMP_ROWS_MAX = 2000;                // 見出しを除いた行の数の上限（仮置き）
+  var IMP_BYTES_MAX = 2 * 1024 * 1024;    // 表の大きさの上限（UTF-8 のバイト数・仮置き）
+  var IMP_ID_RE = /^[0-9A-Za-z_-]{1,32}$/; // 利用者No（担当者会議のページの ID_RE と同じ形）
+  function utf8Len(s) {
+    var n = 0;
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charCodeAt(i);
+      if (c < 0x80) n += 1; else if (c < 0x800) n += 2;
+      else if (c >= 0xD800 && c <= 0xDBFF && i + 1 < s.length && (s.charCodeAt(i + 1) & 0xFC00) === 0xDC00) { n += 4; i++; }
+      else n += 3;
+    }
+    return n;
+  }
+  /* ── 表を読む ── text → {ok:true, sep:'\t'|',', header:[…], rows:[[…]], ragged:列の数が見出しと違う行の数}／{ok:false, reason, message}
+     区切りは1行目にタブがあればタブ（Excel などから貼った表）、無ければカンマ（CSV）。
+     引用符（"）で始まるセルは、閉じる引用符まで改行・区切りもセルの中身とし、"" は " 1字にする。先頭の BOM を落とす。改行は CRLF・LF・CR。
+     中身が空の行は飛ばす。引用符が閉じないまま終わった時・上限を超えた時は読まない（例外を出さない）。
+     ★1文字ずつ読む（正規表現1本で読むと、引用符の多い表で時間がかかるため） */
+  function impSepOf(src) {
+    var inQ = false, start = true, any = false, tab = false;
+    for (var j = 0; j < src.length; j++) {
+      var ch = src.charAt(j);
+      if (inQ) { if (ch === '"') { if (src.charAt(j + 1) === '"') j++; else inQ = false; } continue; }
+      if (ch === '"' && start) { inQ = true; start = false; any = true; continue; }
+      if (ch === '\r' || ch === '\n') { if (any) break; start = true; continue; }
+      if (ch === '\t') { tab = true; start = true; continue; }
+      if (ch === ',') { start = true; continue; }
+      if (!/\s/.test(ch)) any = true;
+      start = false;
+    }
+    return tab ? '\t' : ',';
+  }
+  function impTable(text, limits) {
+    limits = limits || {};
+    var maxRows = typeof limits.rows === 'number' ? limits.rows : IMP_ROWS_MAX;
+    var maxBytes = typeof limits.bytes === 'number' ? limits.bytes : IMP_BYTES_MAX;
+    var src = String(text == null ? '' : text);
+    if (src.charCodeAt(0) === 0xFEFF) src = src.slice(1);
+    if (utf8Len(src) > maxBytes) return { ok: false, reason: 'tooBig', message: '表が大きすぎます（' + Math.round(maxBytes / 1024 / 1024) + 'MB まで）。年ごとなどに分けて読んでください' };
+    /* 区切りは、中身のある最初の1件（見出しになる行）で決める。引用符の中のタブ・改行は数えない
+       （見出しのセルの中に改行がある貼り付け・引用符の中にタブがある CSV で見誤らないため・審査 2026-11-17 低2） */
+    var sep = impSepOf(src);
+    var out = [], row = [], cell = '', inQ = false, quoted = false, i = 0, len = src.length, header = null, ragged = 0, over = false;
+    function endRow() {
+      row.push(cell); cell = ''; quoted = false;
+      var any = false;
+      for (var k = 0; k < row.length; k++) if (String(row[k]).trim()) { any = true; break; }
+      if (any) {
+        if (!header) header = row;
+        else {
+          if (out.length >= maxRows) { over = true; }
+          else { if (row.length !== header.length) ragged++; out.push(row); }
+        }
+      }
+      row = [];
+    }
+    while (i < len && !over) {
+      var ch = src.charAt(i);
+      if (inQ) {
+        if (ch === '"') {
+          if (src.charAt(i + 1) === '"') { cell += '"'; i += 2; continue; }
+          inQ = false; i++; continue;
+        }
+        if (ch === '\r') { cell += '\n'; i += src.charAt(i + 1) === '\n' ? 2 : 1; continue; }
+        cell += ch; i++; continue;
+      }
+      if (ch === '"' && cell === '' && !quoted) { inQ = true; quoted = true; i++; continue; }
+      if (ch === sep) { row.push(cell); cell = ''; quoted = false; i++; continue; }
+      if (ch === '\r' || ch === '\n') { endRow(); i += (ch === '\r' && src.charAt(i + 1) === '\n') ? 2 : 1; continue; }
+      cell += ch; i++;
+    }
+    if (over) return { ok: false, reason: 'tooMany', message: '行が ' + maxRows + ' 行を超えています。年ごとなどに分けて読んでください' };
+    if (inQ) return { ok: false, reason: 'quote', message: '引用符（"）が閉じていないセルがあります。表を書き出し直してください' };
+    if (cell !== '' || row.length) endRow();
+    if (over) return { ok: false, reason: 'tooMany', message: '行が ' + maxRows + ' 行を超えています。年ごとなどに分けて読んでください' };
+    if (!header) return { ok: false, reason: 'empty', message: '表が空です' };
+    return { ok: true, sep: sep, header: header, rows: out, ragged: ragged };
+  }
+  /* ── 文字コード ── 採用管理の decodeCsv（ats-calc.js）と同じ決まり: UTF-8 で読んで置き換え文字（U+FFFD）が出たら Shift_JIS で読み直す。
+     decoder(label) は TextDecoder を作る関数。戻り値 {text, enc:'UTF-8'|'Shift_JIS'} */
+  function impDecode(bytes, decoder) {
+    var u = '';
+    try { u = decoder('utf-8').decode(bytes); } catch (e) { u = ''; }
+    if (u && u.indexOf('�') < 0) return { text: u, enc: 'UTF-8' };
+    try { return { text: decoder('shift_jis').decode(bytes), enc: 'Shift_JIS' }; } catch (e) { return { text: u, enc: 'UTF-8' }; }
+  }
+  /* ── 見出しから欄の候補 ── 一般の語だけ（特定のソフトの名前・列名は書かない）。様式の欄の名前と ALIASES も引く（開催の理由は除く） */
+  var IMP_WORDS = {
+    sourceName: ['氏名', '利用者', '利用者氏名', '利用者名', '対象者', '名前', 'お名前', '入居者名', '入居者氏名'],
+    author: ['作成者', '記録者'],
+    createdDate: ['作成日'],
+    heldDate: ['開催日', '開催年月日', '会議日', '実施日', '開催日時', '会議開催日'],
+    place: ['場所', '会場', '実施場所'],
+    timeText: ['時間', '会議時間'],
+    count: ['回数'],
+    attendees: ['参加者', '出席者', '参加者一覧', '出席者氏名', '参加者氏名'],
+    items: ['検討事項', '議題'],
+    content: ['内容', '協議内容', '会議内容', '話し合いの内容'],
+    conclusion: ['決定事項', 'まとめ', '今後の方針'],
+    issues: ['課題', '今後の課題'],
+    nextText: ['次回', '次回の予定', '次回開催']
+  };
+  var IMP_KIND_WORDS = ['開催の理由', '開催理由', '開催目的', '会議の目的'];
+  var IMP_BY = Object.create(null), IMP_KIND = Object.create(null);
+  FIELDS.forEach(function (f) { if (f.key !== 'kind') IMP_BY[labelKey(f.label)] = f.key; });
+  Object.keys(ALIASES).forEach(function (a) { if (ALIASES[a] !== 'kind') IMP_BY[labelKey(a)] = ALIASES[a]; });
+  Object.keys(IMP_WORDS).forEach(function (k) { IMP_WORDS[k].forEach(function (w) { IMP_BY[labelKey(w)] = k; }); });
+  IMP_KIND_WORDS.forEach(function (w) { IMP_KIND[labelKey(w)] = 1; });
+  /* header → {map:[欄の key か ''（入れない）], cols:[{i, head, key, why:''|'none'|'dup'|'kind'|'empty'}], warns}
+     同じ欄に2列以上が当たった時は、その列をどれも「入れない」にして知らせる（どちらかは人が選ぶ）。候補は出すだけで、決めるのは人 */
+  function impGuessCols(header) {
+    var hs = Array.isArray(header) ? header : [], cols = [], warns = [], by = Object.create(null);
+    hs.forEach(function (h, i) {
+      var head = String(h == null ? '' : h).trim(), k = labelKey(head), key = '', why = '';
+      if (!k) why = 'empty';
+      else if (IMP_KIND[k]) why = 'kind';
+      else if (Object.prototype.hasOwnProperty.call(IMP_BY, k)) key = IMP_BY[k];
+      else why = 'none';
+      cols.push({ i: i, head: head, key: key, why: why });
+      if (key) (by[key] = by[key] || []).push(i);
+    });
+    Object.keys(by).forEach(function (key) {
+      if (by[key].length < 2) return;
+      by[key].forEach(function (i) { cols[i].key = ''; cols[i].why = 'dup'; });
+      warns.push('「' + fieldOf(key).label + '」に当たる列が ' + by[key].length + ' つあります（' + by[key].map(function (i) { return cols[i].head.slice(0, 20); }).join('・') + '）。どの列を入れるか選んでください');
+    });
+    cols.forEach(function (c) {
+      if (c.why === 'kind') warns.push('列「' + c.head.slice(0, 20) + '」は開催の理由です。開催の理由は取り込みません（空欄で入ります）');
+      else if (c.why === 'none') warns.push('列「' + c.head.slice(0, 20) + '」はどの欄にも当てていません（入れる時は欄を選んでください）');
+    });
+    return { map: cols.map(function (c) { return c.key; }), cols: cols, warns: warns };
+  }
+  /* ── 取り込みの日付 ── normDate の形に加えて 平成・H、後ろの時刻（2024/4/1 0:00・秒つき・T 区切り）、8桁の数字（20240401）を読む。
+     Excel の通し番号（45383 など）・月日の順が分からない形（1/2/2024）・「4月」だけ・空は読まない（''）。normDate は変えない */
+  var HEISEI_FROM = '1989-01-08', HEISEI_TO = '2019-04-30';
+  function impDate(s) {
+    var t = nfkc(s).replace(/[（(][^）)]*[）)]/g, '').trim(), d;
+    if (!t) return '';
+    /* 空白を消す前に後ろの時刻を外す（先に消すと「2024/4/1 0:00」が「2024/4/10:00」になる） */
+    t = t.replace(/(?:\s+|T)\d{1,2}[:：]\d{2}(?:[:：]\d{2})?$/, '');
+    /* 数字と数字の間に空白が残る形（「2024/4/1 2」など）は読まない（空白を消すと 4月12日 と読み違えるため） */
+    if (/\d\s+\d/.test(t)) return '';
+    t = t.replace(/\s+/g, '');
+    if (!t) return '';
+    d = normDate(t);
+    if (d) return d;
+    var mm;
+    if ((mm = /^(?:平成|H)(\d{1,2}|元)[\/\-.年](\d{1,2})[\/\-.月](\d{1,2})日?$/i.exec(t))) {
+      var n = mm[1] === '元' ? 1 : +mm[1];
+      if (n < 1 || n > 31) return '';
+      d = normDate((1988 + n) + '-' + mm[2] + '-' + mm[3]);
+      return d && d >= HEISEI_FROM && d <= HEISEI_TO ? d : '';
+    }
+    if ((mm = /^(\d{4})(\d{2})(\d{2})$/.exec(t))) {
+      if (+mm[1] < 1900) return '';
+      return normDate(mm[1] + '-' + mm[2] + '-' + mm[3]);
+    }
+    return '';
+  }
+  /* ── 1行を記録の形に ── cells（1行のセル）と map（列ごとの欄の key か ''）→ {rec, warns, raw}
+     rec は今の保存の欄の名前（FIELDS の key）。開催の理由は入れない（いつも ''）。同じ欄に当てた複数の列は改行でつなぐ。
+     日付・時間・回数は読めなければ空にして知らせる（元の文字は raw）。出席者は1セルを改行・「、」・「;」で分けて parseAttendees へ。
+     長すぎる欄は切り詰めない（impPlan が checkSave で止める） */
+  function impRow(cells, map) {
+    var cs = Array.isArray(cells) ? cells : [], mp = Array.isArray(map) ? map : [], vals = Object.create(null), warns = [], raw = {};
+    for (var i = 0; i < mp.length; i++) {
+      var key = mp[i];
+      if (!key || key === 'kind' || !fieldOf(key)) continue;
+      var v = String(cs[i] == null ? '' : cs[i]).replace(/\r\n?/g, '\n').trim();
+      if (v) (vals[key] = vals[key] || []).push(v);
+    }
+    var rec = {};
+    FIELDS.forEach(function (f) { rec[f.key] = f.key === 'attendees' ? [] : ''; });
+    FIELDS.forEach(function (f) {
+      var k = f.key;
+      if (k === 'kind' || !vals[k]) return;
+      var v = vals[k].join('\n');
+      if (k === 'attendees') {
+        var lines = [];
+        vals[k].forEach(function (c) { c.split(/\n|、|;|；|,|，/).forEach(function (x) { if (x.trim()) lines.push(x.trim()); }); });
+        var att = parseAttendees(lines.join('\n'));
+        rec.attendees = att.list; warns = warns.concat(att.warns);
+      } else if (f.type === 'date') {
+        raw[k] = v; rec[k] = impDate(v);
+        if (!rec[k]) warns.push('「' + f.label + '」の日付を読めません（' + v.slice(0, 20) + '）');
+      } else if (f.type === 'time') {
+        raw[k] = v; var tm = normTime(v); rec[k] = tm ? tm.text : '';
+        if (!tm) warns.push('「開催時間」を読めません（' + v.slice(0, 20) + '）');
+      } else if (f.type === 'count') {
+        raw[k] = v; rec[k] = normCount(v);
+        if (!rec[k]) warns.push('「開催回数」を読めません（' + v.slice(0, 20) + '）');
+      } else rec[k] = v;
+    });
+    /* 開催日の列に時刻があり、開催時間が空の時は知らせる（時刻は黙って捨てない・審査 2026-11-17 低3） */
+    if (raw.heldDate && rec.heldDate && !rec.timeText && /\d{1,2}[:：]\d{2}/.test(nfkc(raw.heldDate))) {
+      warns.push('「開催日」の列の時刻は入れていません。開催時間の列があれば選んでください');
+    }
+    return { rec: rec, warns: warns, raw: raw };
+  }
+  /* ── 送信の印 ── 'impc-<利用者No>-<YYYYMMDD>'。番号・開催日の形が違えば '' */
+  function impKey(id, heldDate) {
+    var s = String(id == null ? '' : id);
+    if (!IMP_ID_RE.test(s) || !ymdOk(heldDate)) return '';
+    return 'impc-' + s + '-' + String(heldDate).replace(/-/g, '');
+  }
+  /* ── 行ごとの判定 ── rows（impRow の戻り値か rec）・roster（名簿 [{masterId, name, active}]・退去した方も含めて渡す）・today（'YYYY-MM-DD'）
+     → {items:[{i, status, id, name, active, heldDate, key, stop, warns, rec}], counts:{状態: 件数}}／形が違えば null
+     status（決まる順）: unmatched 名簿の0名 → ambiguous 2名以上（退去した方も数える）→ baddate 開催日が読めない → future 先の日付
+       → toolong 上限超え（checkSave・切り詰めない）→ infile 同じ表に同じ方・同じ開催日がほかにもある（その行はどれも入れない）→ new 送る候補
+     infile は名簿の1名に一致して開催日が読めた行どうしで数える（先の日付・上限超えの行も数に入れる）＝行の順を変えても答えは同じ */
+  var IMP_STATUSES = ['new', 'unmatched', 'ambiguous', 'baddate', 'future', 'toolong', 'infile'];
+  function impPlan(rows, roster, today) {
+    if (!Array.isArray(rows) || !Array.isArray(roster) || !ymdOk(today)) return null;
+    var people = roster.filter(function (r) { return r && nameKey(r.name); });
+    var items = rows.map(function (row, i) {
+      var rec = (row && row.rec && typeof row.rec === 'object') ? row.rec : (row || {});
+      var warns = (row && Array.isArray(row.warns)) ? row.warns.slice() : [];
+      var nk = nameKey(rec.sourceName), hits = [], seenId = Object.create(null);
+      /* 同じ番号の方が名簿に2回あれば1名に数える（在籍と退去を別に読んでつないだ名簿で、入る行が同名2名扱いにならないように・審査 2026-11-17 低4） */
+      if (nk) people.forEach(function (r) {
+        if (nameKey(r.name) !== nk) return;
+        var rid = String(r.masterId != null ? r.masterId : (r.id != null ? r.id : ''));
+        if (rid && seenId[rid]) return;
+        if (rid) seenId[rid] = 1;
+        hits.push(r);
+      });
+      var it = { i: i, status: '', id: '', name: '', active: false, heldDate: ymdOk(rec.heldDate) ? rec.heldDate : '', key: '', stop: '', warns: warns, rec: rec };
+      if (hits.length === 1) {
+        var id = String(hits[0].masterId != null ? hits[0].masterId : (hits[0].id != null ? hits[0].id : ''));
+        if (IMP_ID_RE.test(id)) { it.id = id; it.name = String(hits[0].name); it.active = hits[0].active !== false; }
+      }
+      if (!hits.length || (hits.length === 1 && !it.id)) it.status = 'unmatched';
+      else if (hits.length > 1) it.status = 'ambiguous';
+      else if (!it.heldDate) it.status = 'baddate';
+      else if (it.heldDate > today) it.status = 'future';
+      else if ((it.stop = checkSave(rec).stop)) it.status = 'toolong';
+      return it;
+    });
+    var group = Object.create(null);
+    items.forEach(function (it) { if (it.id && it.heldDate) { var g = it.id + '|' + it.heldDate; group[g] = (group[g] || 0) + 1; } });
+    items.forEach(function (it) {
+      if (it.status) return;
+      if (group[it.id + '|' + it.heldDate] > 1) { it.status = 'infile'; return; }
+      it.status = 'new'; it.key = impKey(it.id, it.heldDate);
+    });
+    var counts = {};
+    IMP_STATUSES.forEach(function (s) { counts[s] = 0; });
+    items.forEach(function (it) { counts[it.status]++; });
+    return { items: items, counts: counts };
+  }
+
   var api = { VERSION: VERSION, FIELDS: FIELDS, KINDS: KINDS, ATTENDEE_MAX: ATTENDEE_MAX, ATTENDEE_LEN: ATTENDEE_LEN, ATTENDEE_PRINT: ATTENDEE_PRINT, INPUT_MAX: INPUT_MAX,
     parse: parse, guess: guess, guessApply: guessApply, guessHead: guessHead, normDate: normDate, normTime: normTime, normCount: normCount, normKind: normKind, parseAttendees: parseAttendees,
     residentMatch: residentMatch, checkSave: checkSave, checkFinal: checkFinal, dueAlerts: dueAlerts, lastHeld: lastHeld, menuDueSummary: menuDueSummary,
     addMonths: addMonths, todayJST: todayJST, hospitalState: hospitalState, lastCareChange: lastCareChange,
-    attKey: attKey, attendeeCandidates: attendeeCandidates };
+    attKey: attKey, attendeeCandidates: attendeeCandidates,
+    IMP_ROWS_MAX: IMP_ROWS_MAX, IMP_BYTES_MAX: IMP_BYTES_MAX, IMP_STATUSES: IMP_STATUSES,
+    impTable: impTable, impDecode: impDecode, impGuessCols: impGuessCols, impDate: impDate, impRow: impRow, impPlan: impPlan, impKey: impKey };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.CareMeetingCalc = api;
 })(typeof window !== 'undefined' ? window : this);
