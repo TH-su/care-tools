@@ -123,6 +123,7 @@ function makeBox(fac) {
     grabDecl('DCR_NOTES_KEYS'), grabDecl('DCR_NOTES_WORD_MAX'), grabFn('dcrDaycareNotes_'), grabFn('dcrNotesWord_'),   // 昼食場所の呼び名（便10・施設情報に daycareNotes が無ければ既定）
     grabDecl('byKana'), grabDecl('onDay'), grabDecl('offDay'), grabDecl('countOn'), grabDecl('countOff'), grabDecl('W'), grabDecl('TBL_W'), grabFn('colgroupFor'), grabDecl('DAYLIST_NOTES'), grabFn('wkFlrLabel_'), grabFn('weeklyByFloor'), grabFn('dcrLiveWeeklyLabel_'),
     grabFn('toMin'), grabFn('minToLabel'), grabFn('el'), grabFn('roomToFloor'), grabFn('collectDaycare'),
+    grabDecl('DCR_OUT_WORD_MAX'), grabFn('dcrOutside_'), grabFn('dcrFloorOf_'), grabFn('dcrSecLists_'),   // 外部の利用者の区画の部品（2026-11-17 D-02・印が無ければ今のまま）
     grabFn('setupSheet'),
     grabFn('dayHeaderRows'), grabFn('dayHeader'), grabFn('deiCells'), grabFn('sectionRows'), grabFn('sumRow'),
     grabFn('renderRoster'), grabFn('renderDaylist'), grabFn('allweekHeaderRow'), grabFn('renderAllweek'),

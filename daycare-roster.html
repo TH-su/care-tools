@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-font">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-riiTQjLzyot+ge8VOIA3RXuWxxtoOhl6dfkGnSL+sGU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-vxX+H34LOcDy5uN20PmrjGH9ITTMdrPwA7ODVAX7f6k='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -747,7 +747,7 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
 <!-- 入居者マスタの名簿の読み取り（getRoster）の入口。スイッチ（master_roster_read と master_care_read）が入っている時だけ、訪問日・かかりつけ病院も含めて写しから読む（切の間は今までどおり Google・段2b・2026-10-24） -->
 <script src="su-roster.js?v=2026-11-17"></script>
 <script src="su-res-read.js?v=2026-11-16"></script>
-<script src="su-facility.js?v=2026-11-14.2"></script>
+<script src="su-facility.js?v=2026-11-17"></script>
 <script src="su-data.js?v=2026-11-08.2"></script>
 <script src="su-data-gas.js?v=2026-10-29"></script>
 <script src="su-print.js?v=2026-11-13"></script>
@@ -1652,6 +1652,7 @@ function buildModel(db) {
   dupCount = 0;
   floorSrcCount = { room: 0, plan: 0, none: 0 };
   const DD = dcrDays_();
+  const outL = dcrOutside_();   // 外部の区画の印（施設情報に書いた施設だけ・D-02）。null なら誰も out にならない
   for (const r of residents) {
     if (!r || r.movedOut) continue;
     const days = (DD.indexOf(6) >= 0) ? [null, null, null, null, null, null, null] : [null, null, null, null, null, null];   // 日曜を営業する施設だけ7つ（K5）
@@ -1672,10 +1673,10 @@ function buildModel(db) {
     // 階の決定: ①居室(room)由来＝入居者マスタが正 → ②週間計画の floor（旧経路・手書きマスタ由来）
     //           → ③0=階未設定（既存どおり⚠で可視化）。①が取れる人だけ②を上書きするので、
     //           居室未登録者の現行表示は一切変わらない（デグレ無しのフォールバック）。
-    const fRoom = dcrFloorKey_(roomToFloor(r.room));   // 区画を作らない階は居室からは決めない（K5）
-    const fPlan = (r.floor === 1 || r.floor === 2) ? r.floor : 0;
-    const floor = fRoom || fPlan;
-    floorSrcCount[fRoom ? 'room' : (fPlan ? 'plan' : 'none')]++;
+    //           判定は利用表の系統（collectDaycare）と同じ dcrFloorOf_ に1つにまとめた（区画を作らない階は居室からは決めない・K5／外部の区画・D-02）。
+    const fo = dcrFloorOf_(r, outL);
+    const floor = fo.floor;
+    floorSrcCount[fo.src]++;
     /* マスタ由来の「姓と名の切れ目」。空白を除いた文字数が食い違う人（改名・別人紐づけ）には
        使わない＝間違った位置に空白を入れた氏名を紙に出さない（安全側は「空白なしで出す」）。 */
     let nameCut = 0;
@@ -1702,6 +1703,7 @@ function buildModel(db) {
       rid: (r.id != null ? r.id : null),                   // 昼食薬の書戻し時にサーバDBの当該入居者を引く安定キー
       masterId: (r.masterId != null ? r.masterId : null),  // 同上（マスタ由来の一意ID・氏名照合より優先）
       floor: floor,                                        // 0=階未設定（居室・週間計画とも不明）
+      out: fo.out,                                         // 外部の利用者（印のある施設で external かつ階 0 の方だけ true・floor は 0 のまま・D-02）
       lunchMed: !!r.lunchMed,
       star: !!r.dcrStar,                 // 同姓の目印（週間名簿だけで氏名の頭に☆を出す・2026-09-01）
       visitingMed: String(r.visitingMed == null ? '' : r.visitingMed),   // 訪問診療（☆）: 訪問診療の医療機関（visitingClinics）の往診曜日1文字（該当なし＝空）
@@ -1793,16 +1795,18 @@ function viewExcludingPreAdmitted(db) {
   if (!db.residents.some(r => r && r.preAdmitted)) return db;
   return Object.assign({}, db, { residents: db.residents.filter(r => r && !r.preAdmitted) });
 }
-/* 表示用: 指定曜日にデイを利用する人／しない人（＝2階食堂で昼食）。入院者も「登録」として表示に残す。 */
+/* 表示用: 指定曜日にデイを利用する人／しない人（＝2階食堂で昼食）。入院者も「登録」として表示に残す。
+   ★外部の利用者（p.out・施設情報に daycareOutside を書いた施設だけ・D-02）は、デイに行かない日は自宅にいるので
+     「しない人」（デイ休み・昼食場所の合計・週間名簿）に入れない。印が無い施設では out は必ず false＝今と同じ。 */
 const onDay  = (ppl, d) => ppl.filter(p => p.days[d]);
-const offDay = (ppl, d) => ppl.filter(p => !p.days[d]);
+const offDay = (ppl, d) => ppl.filter(p => !p.days[d] && !p.out);
 /* 計上用: 入院者は実稼働ではないので数えない（＝利用表タブと同じ契約。凡例にも明示している）。
    ★表示と計上を必ず使い分けること。onDay().length を合計に使うと入院者を数えてしまい、
      厨房の食数が過大になる。
-   なお hosp は利用者単位（曜日非依存）で onDay/offDay は排他・網羅なので、
-   「昼食合計」= countOn+countOff は除外の有無にかかわらず全曜日で定数になる。これはモデル上正しく
-   （デイ母集団の非入院者は必ずどこかで昼食を摂る）、除外はその定数を実食数に合わせるためのもの。
-   合計が動かないことをバグと見て「修正」しないこと。 */
+   なお hosp は利用者単位（曜日非依存）。外部の利用者がいない時（印の無い施設は必ず）は onDay/offDay が排他・網羅なので、
+   「昼食合計」= countOn+countOff は除外の有無にかかわらず全曜日で定数になる（デイ母集団の非入院者は必ずどこかで昼食を摂る）。
+   除外はその定数を実食数に合わせるためのもの。合計が動かないことをバグと見て「修正」しないこと。
+   外部の利用者がいる時（D-02）は、その方はデイに来る日だけ昼食を数える（来ない日は自宅）ので、昼食合計は曜日ごとに動く。これも正しい。 */
 const countOn  = (ppl, d) => onDay(ppl, d).filter(p => !p.hosp).length;
 const countOff = (ppl, d) => offDay(ppl, d).filter(p => !p.hosp).length;
 
@@ -1875,6 +1879,47 @@ function dcrFloorNos_() {
 function dcrFloorOrder_() { return dcrFloorNos_().concat([0]); }
 /* 区画を作らない階（施設情報に無い・名前が使えない3階以上）は 0＝階未設定にする */
 function dcrFloorKey_(f) { return (f && dcrFloorNos_().indexOf(f) >= 0) ? f : 0; }
+/* ── 外部の利用者の区画（2026-11-17 D-02・代表者の決定 2026-11-17・文言と位置は仮置き）──
+   併設でないデイ（施設の入居者でない方が通う）のため、施設情報（facility-profile.json の daycareOutside・su-facility.js）に
+   { label: "外部" } を書いた施設だけ、週間計画の利用者の印 external（外部）が true で階が決まらない（0）方を「（label）利用者」の区画に出す。
+   ★使うのは daycareOutside が label の1つだけを持ち、label が1〜4字の文字列（前後の空白・改行などの制御文字・{ } なし）の時だけ。
+     知らないキー・型や長さの違いが1つでもあれば丸ごと捨てて今のまま（外部の方も階未設定・橙・⚠）。印が無い施設では何も変わらない。
+   ★貼る前の確かめ（check/facility-secret-check.mjs の daycareOutside）と同じ決まり。片方を変えたら両方を同じにする。
+   ★内部の階は 0 のまま、out の真偽を足すだけ（別の番号にすると、階で絞る所から黙って消えるため）。
+     外部でも居室で階が決まる方は階の区画のまま。外部でない階 0 の方は今のまま階未設定。 */
+const DCR_OUT_WORD_MAX = 4;
+function dcrOutside_() {
+  let v = null;
+  try { v = (window.SUFacility && typeof SUFacility.section === 'function') ? SUFacility.section('daycareOutside') : null; } catch (e) { v = null; /* 捨ててよい: 読めない時は印が無いのと同じ（今のまま） */ }
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const ks = Object.keys(v);
+  if (ks.length !== 1 || ks[0] !== 'label') return null;
+  const w = v.label;
+  if (typeof w !== 'string') return null;
+  const len = [...w].length;
+  if (len < 1 || len > DCR_OUT_WORD_MAX || w.trim() !== w || /[\u0000-\u001f\u007f{}]/.test(w)) return null;
+  return w;
+}
+/* 1人の階と外部かどうか（一覧の系統 buildModel と利用表の系統 collectDaycare の両方がこれを呼ぶ＝判定は1つ）。
+   階: 居室（入居者マスタ由来・区画を作らない階は居室からは決めない） → 週間計画の旧い floor → 0（階未設定）。
+   src は階の出典（凡例の「階の出典」の数え方）。outLabel＝dcrOutside_() の値（null なら out は必ず false） */
+function dcrFloorOf_(r, outLabel) {
+  const fRoom = dcrFloorKey_(roomToFloor(r.room));
+  const fPlan = (r.floor === 1 || r.floor === 2) ? r.floor : 0;
+  const floor = fRoom || fPlan;
+  return { floor: floor, src: fRoom ? 'room' : (fPlan ? 'plan' : 'none'), out: !!(outLabel && floor === 0 && r.external === true) };
+}
+/* 帳票（一覧表・全員リスト・薬用）の区画に分ける（D-02）。fUp＝3階以上（上の階から [階, 利用者]・既定は空・K5）・f2・f1＝２階・１階の方・
+   out＝外部の利用者・none＝階未設定（外部でない階 0）・residents＝外部の利用者でない方の人数。
+   floorsOn＝階の区画を描くか。印のある施設で階の区画に1人もいない時だけ false（空の「２階入居者」「１階入居者」を描かない）。
+   印が無い時は今と同じ（空の階の区画も描く・out は空） */
+function dcrSecLists_(ppl) {
+  const outL = dcrOutside_();
+  const fUp = dcrFloorNos_().filter(f => f > 2).map(f => [f, ppl.filter(p => p.floor === f)]);
+  const f2 = ppl.filter(p => p.floor === 2), f1 = ppl.filter(p => p.floor === 1);
+  const any = f2.length || f1.length || fUp.some(x => x[1].length);
+  return { outL: outL, fUp: fUp, f2: f2, f1: f1, floorsOn: !(outL && !any), out: outL ? ppl.filter(p => p.out) : [], none: ppl.filter(p => p.floor === 0 && !p.out), residents: ppl.filter(p => !p.out).length };
+}
 /* 階の見出し（利用表の階の欄）。0 は「階未設定」 */
 function dcrFloorLabel_(f) { const m = dcrFloorNames_(); if (Object.prototype.hasOwnProperty.call(m, f)) return m[f]; const ex = dcrFloorExtra_(); return Object.prototype.hasOwnProperty.call(ex, f) ? ex[f] : FLOOR_LABEL[0]; }
 /* 区画の見出し（一覧表・全員リスト・薬用・昼食薬チェック）。２階なら「（２階の名前）入居者」・0 は「階未設定」 */
@@ -1882,7 +1927,7 @@ function dcrFloorSecLabel_(f) { return (f && dcrFloorNos_().indexOf(f) >= 0) ? d
 /* 描いた時に使った階の名前（null＝まだ描いていない）。施設情報が後から届いて名前が変わった時だけ描き直す（dcrRefreshFloorsIfStale_） */
 var dcrFloorSigUsed = null;
 /* 昼食場所・デイの場所の呼び名（dcrDaycareNotes_・便10）も同じ控えに入れる＝どちらが後から届いて変わっても1回だけ描き直す */
-function dcrFloorSig_() { return JSON.stringify([dcrFloorNames_(), dcrDaycareNotes_(), dcrFloorExtra_(), dcrDays_()]); }   /* 3階以上の階と曜日の列も同じ控えに入れる（K5） */
+function dcrFloorSig_() { return JSON.stringify([dcrFloorNames_(), dcrDaycareNotes_(), dcrFloorExtra_(), dcrDays_(), dcrOutside_()]); }   /* 3階以上の階と曜日の列も同じ控えに入れる（K5）。外部の区画の印も（D-02） */
 function dcrRefreshFloorsIfStale_() {
   if (dcrFloorSigUsed == null || dcrFloorSig_() === dcrFloorSigUsed) return false;
   if (typeof DB === 'undefined' || !DB) return false;
@@ -1899,11 +1944,14 @@ function collectDaycare(db) {
   const use  = [0, 0, 0, 0, 0, 0, 0];
   const colSet = dcrDays_();                 // 列にする曜日（既定 月〜土）。営業曜日でない曜日も予定があれば列を足す（K5）
   const residents = (db && Array.isArray(db.residents)) ? db.residents : [];
+  const outL = dcrOutside_();                // 外部の区画の印（D-02）。null なら今のまま
   for (const r of residents) {
     if (!r || r.movedOut) continue;
     const evs = Array.isArray(r.events) ? r.events : [];
-    // 階: ①居室(入居者マスタ由来) → ②週間計画の旧設定 → ③0=未設定（buildModel と同じ判定）
-    const floor = dcrFloorKey_(roomToFloor(r.room)) || ((r.floor === 1 || r.floor === 2) ? r.floor : 0);
+    // 階: ①居室(入居者マスタ由来) → ②週間計画の旧設定 → ③0=未設定（buildModel と同じ判定・dcrFloorOf_）。
+    // 外部の利用者は区画の鍵だけ 'out' にする（階の番号は 0 のまま・D-02）
+    const fo = dcrFloorOf_(r, outL);
+    const floor = fo.out ? 'out' : fo.floor;
     const kana  = String(r.kana || '');
     for (const ev of evs) {
       if (!ev || ev.serviceType !== 'daycare') continue;
@@ -1929,17 +1977,18 @@ function collectDaycare(db) {
   // 時間帯ごとに階ブロックへ組み直す。該当者0名の階はブロックを作らない（空行を出さない）。
   const plans = Object.values(plansMap).sort((a, b) => a.s - b.s || a.e - b.e).map(p => {
     const blocks = [];
-    dcrFloorOrder_().forEach(f => {
+    // 外部の利用者の区画は階の区画の後・階未設定の前（印のある施設だけ・D-02）
+    (outL ? dcrFloorNos_().concat(['out', 0]) : dcrFloorOrder_()).forEach(f => {
       const days = p.floors[f];
       if (!days) return;
       let rows = 0;
       for (let d = 0; d <= 6; d++) { days[d].sort(byKana); if (days[d].length > rows) rows = days[d].length; }
-      if (rows) blocks.push({ floor: f, days: days, rows: rows });
+      if (rows) blocks.push(f === 'out' ? { floor: 0, out: true, days: days, rows: rows } : { floor: f, days: days, rows: rows });
     });
     return { label: p.label, s: p.s, e: p.e, blocks: blocks };
   });
   const cols = colSet.sort((a, b) => a - b);
-  return { plans: plans, hosp: [...hosp], bath: bath, use: use, nCols: cols.length, cols: cols };
+  return { plans: plans, hosp: [...hosp], bath: bath, use: use, nCols: cols.length, cols: cols, outLabel: outL };
 }
 
 /* 印刷の列幅を用紙幅いっぱいに配分する（2026-08-17 運用指示「左右の余白を余らせない」）。
@@ -2023,7 +2072,8 @@ function renderRoster(db) {
           tr.appendChild(lbl);
         }
         if (i === 0) {
-          const fl = el('th', 'col-flr f' + (blk.floor > 2 ? 2 : blk.floor), dcrFloorLabel_(blk.floor));   // 3階以上は２階と同じ地の色（K5）
+          /* 3階以上は２階と同じ地の色（K5）。外部の利用者も２階と同じ緑で、階の欄は印の名前（「外部」・橙の f0 にしない・D-02） */
+          const fl = blk.out ? el('th', 'col-flr f2', data.outLabel) : el('th', 'col-flr f' + (blk.floor > 2 ? 2 : blk.floor), dcrFloorLabel_(blk.floor));
           fl.rowSpan = blk.rows;
           tr.appendChild(fl);
         }
@@ -2172,7 +2222,7 @@ function deiCells(tr, p, d, showBath) {
   const endCls = (d === dcrLastDay_(DCR_COLS)) ? ' dend' : '';
   if (!p) { tr.appendChild(el('td', 'c-nm dsep')); tr.appendChild(el('td', 'c-tm')); tr.appendChild(el('td', 'c-tm' + endCls)); return; }
   const s = p.days[d];
-  const td = el('td', 'c-nm dsep nm' + (showBath && s && s.bath ? ' bath' : '') + (p.floor === 0 ? ' nofloor' : ''));
+  const td = el('td', 'c-nm dsep nm' + (showBath && s && s.bath ? ' bath' : '') + (p.floor === 0 && !p.out ? ' nofloor' : ''));   // 外部の利用者は橙にしない（D-02）
   if (p.pid != null) td.dataset.pid = p.pid;   // 薬用チェックリストで該当利用者の枠を薄オレンジにするための紐付け
   td.appendChild(document.createTextNode(p.name));
   if (p.hosp) td.appendChild(el('span', 'hosp-tag', '（入院）'));
@@ -2210,7 +2260,7 @@ function sectionRows(tbody, ppl, label, isDei, showBath, showStar, floorKey) {
   const dl = dcrLastDay_(DCR_COLS);
   for (const d of DCR_COLS) n = Math.max(n, (isDei ? onDay(ppl, d) : offDay(ppl, d)).length);
   if (!n) n = 1;
-  // ラベル色: 1階＝薄い水色(flr1)／2階・階未設定＝緑(sese)。階ごとに別色で区切りを明確化。
+  // ラベル色: 1階＝薄い水色(flr1)／2階・階未設定・外部の利用者（floorKey 'out'・D-02）＝緑(sese)。階ごとに別色で区切りを明確化。
   const labelColor = (floorKey === 1) ? 'flr1' : 'sese';
   for (let i = 0; i < n; i++) {
     const tr = el('tr');
@@ -2300,37 +2350,47 @@ function renderDaylist(ppl) {
   table.appendChild(dayHeader());
   const tbody = el('tbody');
 
-  const f2 = ppl.filter(p => p.floor === 2), f1 = ppl.filter(p => p.floor === 1), f0 = ppl.filter(p => p.floor === 0);
-  /* 3階以上（施設情報に階がある時だけ・上の階から）は ２階 の上に置く（K5）。既定は空＝今と同じ */
-  const fUp = dcrFloorNos_().filter(f => f > 2).map(f => [f, ppl.filter(p => p.floor === f)]);
+  /* 区画（dcrSecLists_）: 3階以上（施設情報に階がある時だけ・上の階から）は ２階 の上に置く（K5）。既定は ２階・１階＝今と同じ。
+     外部の利用者（D-02・印のある施設だけ）は階の区画の後・階未設定の前。印のある施設で階の区画に1人もいない時は空の階の区画を描かない */
+  const sec = dcrSecLists_(ppl), f2 = sec.f2, f1 = sec.f1, f0 = sec.none, fUp = sec.fUp;
   // ── デイ利用者（通所） ──
-  fUp.forEach(([f, list]) => sectionRows(tbody, list, dcrFloorSecLabel_(f), true, true, false, f));
-  sectionRows(tbody, f2, dcrFloorSecLabel_(2), true, true, false, 2);
-  sectionRows(tbody, f1, dcrFloorSecLabel_(1), true, true, false, 1);
+  if (sec.floorsOn) {
+    fUp.forEach(([f, list]) => sectionRows(tbody, list, dcrFloorSecLabel_(f), true, true, false, f));
+    sectionRows(tbody, f2, dcrFloorSecLabel_(2), true, true, false, 2);
+    sectionRows(tbody, f1, dcrFloorSecLabel_(1), true, true, false, 1);
+  }
+  if (sec.out.length) sectionRows(tbody, sec.out, sec.outL + '利用者', true, true, false, 'out');
   if (f0.length) sectionRows(tbody, f0, '階未設定', true, true, false, 0);
   // 合計は countOn/countOff＝入院者を除いた実稼働（厨房の食数に直結するため過大計上しない）
   const sese = []; for (const d of DCR_COLS) sese[d] = countOn(ppl, d);   // 曜日の番号で引く（K5）
   const seseSum = sumRow(tbody, dcrName('合計'), sese);
   seseSum.classList.add('cut-above');   // ここで表を切る＝上側の締め（太線）
-  /* ★2026-08-05 運用指示: 通所合計より下を切り離し、2行ぶんの空間と大見出しを置く。
-     1つの table のままにするのは、列幅（table-layout:fixed + colgroup）を上下で揃えるため。
-     表を2つに割ると列がずれる。 */
-  const gap = el('tr', 'cut-gap');
-  const gapTd = el('td', null, ''); gapTd.colSpan = 2 + DCR_COLS.length * 3; gap.appendChild(gapTd);
-  tbody.appendChild(gap);
-  const ttl = el('tr', 'cut-title');
-  const ttlTh = el('th', null, dcrFill('デイ休み（{{昼食場所:２階}}で昼食）')); ttlTh.colSpan = 2 + DCR_COLS.length * 3; ttl.appendChild(ttlTh);   // 昼食場所の呼び名は施設情報から（便10）
-  tbody.appendChild(ttl);
-  // 中盤（昼食区画の直前）に曜日見出しを再掲＝長い表でも下段でどの曜日の列か追える（2026-08-03 運用指示）
-  dayHeaderRows(true).forEach(r => tbody.appendChild(r));
-  // ── 昼食（2階食堂）＝その日デイに行かない人 ──
-  fUp.forEach(([f, list]) => sectionRows(tbody, list, dcrFloorSecLabel_(f), false, false, true, f));
-  sectionRows(tbody, f2, dcrFloorSecLabel_(2), false, false, true, 2);
-  sectionRows(tbody, f1, dcrFloorSecLabel_(1), false, false, true, 1);
-  if (f0.length) sectionRows(tbody, f0, '階未設定', false, false, true, 0);
-  const lunch = []; for (const d of DCR_COLS) lunch[d] = countOff(ppl, d);
-  sumRow(tbody, dcrFill('{{昼食場所:２階}}合計'), lunch);   // 昼食場所の合計（居室の階ではない・便10）
-  sumRow(tbody, '昼食合計', sese.map((v, i) => v + lunch[i]));
+  /* 入居者（外部の利用者でない方）が0名の時は下半分（デイ休み・昼食場所の合計・昼食合計）を描かない（印のある施設だけ・D-02）。
+     外部の方はデイに行かない日は自宅で、昼食の区画に載る方がいないため */
+  if (!(sec.outL && !sec.residents)) {
+    /* ★2026-08-05 運用指示: 通所合計より下を切り離し、2行ぶんの空間と大見出しを置く。
+       1つの table のままにするのは、列幅（table-layout:fixed + colgroup）を上下で揃えるため。
+       表を2つに割ると列がずれる。 */
+    const gap = el('tr', 'cut-gap');
+    const gapTd = el('td', null, ''); gapTd.colSpan = 2 + DCR_COLS.length * 3; gap.appendChild(gapTd);
+    tbody.appendChild(gap);
+    const ttl = el('tr', 'cut-title');
+    const ttlTh = el('th', null, dcrFill('デイ休み（{{昼食場所:２階}}で昼食）')); ttlTh.colSpan = 2 + DCR_COLS.length * 3; ttl.appendChild(ttlTh);   // 昼食場所の呼び名は施設情報から（便10）
+    tbody.appendChild(ttl);
+    // 中盤（昼食区画の直前）に曜日見出しを再掲＝長い表でも下段でどの曜日の列か追える（2026-08-03 運用指示）
+    dayHeaderRows(true).forEach(r => tbody.appendChild(r));
+    // ── 昼食（2階食堂）＝その日デイに行かない人 ──
+    // 外部の利用者は載せない（offDay が外す・D-02）
+    if (sec.floorsOn) {
+      fUp.forEach(([f, list]) => sectionRows(tbody, list, dcrFloorSecLabel_(f), false, false, true, f));
+      sectionRows(tbody, f2, dcrFloorSecLabel_(2), false, false, true, 2);
+      sectionRows(tbody, f1, dcrFloorSecLabel_(1), false, false, true, 1);
+    }
+    if (f0.length) sectionRows(tbody, f0, '階未設定', false, false, true, 0);
+    const lunch = []; for (const d of DCR_COLS) lunch[d] = countOff(ppl, d);
+    sumRow(tbody, dcrFill('{{昼食場所:２階}}合計'), lunch);   // 昼食場所の合計（居室の階ではない・便10）
+    sumRow(tbody, '昼食合計', sese.map((v, i) => v + lunch[i]));
+  }
   table.appendChild(tbody);
 
   frameDaylist_(table);
@@ -2376,8 +2436,10 @@ function renderAllweek(ppl) {
   table.appendChild(thead);
 
   const tbody = el('tbody');
-  const blocks = dcrFloorNos_().map(f => ({ floor: f, label: dcrFloorSecLabel_(f), list: ppl.filter(p => p.floor === f) }));   // 上の階から（既定は ２階・１階・K5）
-  const f0 = ppl.filter(p => p.floor === 0);
+  const sec = dcrSecLists_(ppl);
+  const blocks = sec.floorsOn ? dcrFloorNos_().map(f => ({ floor: f, label: dcrFloorSecLabel_(f), list: ppl.filter(p => p.floor === f) })) : [];   // 上の階から（既定は ２階・１階・K5）
+  if (sec.out.length) blocks.push({ label: sec.outL + '利用者', list: sec.out });   // 外部の利用者（階の区画の後・階未設定の前・D-02）
+  const f0 = sec.none;
   if (f0.length) blocks.push({ label: '階未設定', list: f0 });
   let dataRowsBefore = 0;   // ここまでに描いたデータ行数（空ブロックの見出し行は数えない）
   for (const b of blocks) {
@@ -2408,7 +2470,7 @@ function renderAllweek(ppl) {
 
   const tfoot = el('tfoot');
   const sr = el('tr', 'sum');
-  sr.appendChild(el('td', 'c-rn c-sum-lb', '入居者'));   // 旧ふりがな列に置いていた行ラベルを No.列へ移設
+  sr.appendChild(el('td', 'c-rn c-sum-lb', (sec.outL && !sec.residents) ? '利用者' : '入居者'));   // 旧ふりがな列に置いていた行ラベルを No.列へ移設。入居者0名の時だけ「利用者」（印のある施設だけ・D-02）
   const dl2 = dcrLastDay_(DCR_COLS);
   for (const d of DCR_COLS) {
     sr.appendChild(el('td', 'c-nm dsep', String(ppl.length) + '名'));
@@ -2437,11 +2499,13 @@ function renderMed(ppl) {
   table.appendChild(dayHeader());
   const tbody = el('tbody');
 
-  const f2 = ppl.filter(p => p.floor === 2), f1 = ppl.filter(p => p.floor === 1), f0 = ppl.filter(p => p.floor === 0);
-  const fUp = dcrFloorNos_().filter(f => f > 2).map(f => [f, ppl.filter(p => p.floor === f)]);   // 3階以上（上の階から・既定は空・K5）
-  fUp.forEach(([f, list]) => sectionRows(tbody, list, dcrFloorSecLabel_(f), true, false, false, f));
-  sectionRows(tbody, f2, dcrFloorSecLabel_(2), true, false, false, 2);   // showBath=false（元表は塗りゼロ）
-  sectionRows(tbody, f1, dcrFloorSecLabel_(1), true, false, false, 1);
+  const sec = dcrSecLists_(ppl), f2 = sec.f2, f1 = sec.f1, f0 = sec.none, fUp = sec.fUp;   // 3階以上は上の階から（既定は空・K5）・外部の利用者は階の後（D-02）
+  if (sec.floorsOn) {
+    fUp.forEach(([f, list]) => sectionRows(tbody, list, dcrFloorSecLabel_(f), true, false, false, f));
+    sectionRows(tbody, f2, dcrFloorSecLabel_(2), true, false, false, 2);   // showBath=false（元表は塗りゼロ）
+    sectionRows(tbody, f1, dcrFloorSecLabel_(1), true, false, false, 1);
+  }
+  if (sec.out.length) sectionRows(tbody, sec.out, sec.outL + '利用者', true, false, false, 'out');
   if (f0.length) sectionRows(tbody, f0, '階未設定', true, false, false, 0);
   table.appendChild(tbody);
 
@@ -2479,6 +2543,7 @@ function renderMed(ppl) {
   fUp.forEach(([f, list]) => addGroup(list, dcrFloorSecLabel_(f)));
   addGroup(f2, dcrFloorSecLabel_(2));
   addGroup(f1, dcrFloorSecLabel_(1));
+  addGroup(sec.out, sec.outL + '利用者');   // 外部の利用者もチェック欄に出す（D-02）
   if (f0.length) addGroup(f0, '階未設定');
   // 変更は委譲（onchange の property 代入＝再描画で重複登録しない）。楽観的に色を反映し、
   // 保存は writeLunchMed→queueFlags が背景で実行（成否は runSaver の再描画で権威状態へ収束）。
@@ -3016,7 +3081,7 @@ function renderLegend(sc) {
     box.appendChild(el('span', 'noprint', t));
   }
   // 階未設定は黙って落とさず警告として可視化（マスタ未登録＝ビューから脱落する事故の防止）
-  const nf = (MODEL || []).filter(p => p.floor === 0).length;
+  const nf = (MODEL || []).filter(p => p.floor === 0 && !p.out).length;   // 外部の利用者は数えない（印のある施設だけ・D-02）
   if (nf && sc !== 'sc-roster') box.appendChild(el('span', 'warn-badge', '⚠ 階未設定 ' + nf + '名（マスタ未登録）'));
   /* 階未設定の方の氏名のマスの地の色（.nofloor・枠線は無い）の意味（画面だけ・2026-11-02 品質改善 第3期 便7）。色が付くのはデイ利用者一覧表・全員リスト・薬用の3タブ
      （週間名簿は色を付けず、利用表は階の欄に「階未設定」と字で出る）。入浴の日（td.nm.bath の黄）と薬用の昼食薬の色（.med-hl）が勝つので、その旨を添える */

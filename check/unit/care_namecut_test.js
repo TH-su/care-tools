@@ -225,6 +225,7 @@ vm.runInContext([
   dcr.grabDeclAsVar('dcrNameCutMap'),
   dcr.grabFn('toMin'),
   dcr.grabFn('roomToFloor'),
+  dcr.grabDeclAsVar('DCR_OUT_WORD_MAX'), dcr.grabFn('dcrOutside_'), dcr.grabFn('dcrFloorOf_'),   // 外部の利用者の区画の部品（2026-11-17 D-02・印が無ければ今のまま）
   dcr.grabFn('buildModel'),
   dcr.grabFn('wkNameSpaced')
 ].join('\n'), B);
