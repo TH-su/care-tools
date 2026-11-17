@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-NKoayvIuxCglPHC1gYlujcyJL6TA6jWKTcmR4MOSNW0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ocxPTj29uMFW0U4/NUIfRvkUBcEaKp6H4QKme4YoB6c='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 会議の記録（要配慮の情報）を扱うためキャッシュ無効 -->
@@ -213,6 +213,27 @@ h3{font-size:1.0625rem; margin:14px 0 6px}
 .imp-t th,.imp-t td{border:1px solid var(--g3); padding:6px 8px; text-align:left; vertical-align:top}
 .imp-t th{background:var(--g1)}
 .imp-chk{min-height:44px; font-weight:700; white-space:nowrap}
+/* 過去の記録の取り込み（ほかの形の表・管理者だけ・2026-11-17 代表者の決定・画面だけ。#cm-main の中なので紙には出ない） */
+.impc{margin-top:20px; padding-top:16px; border-top:1px solid var(--g3)}
+.impc h2{margin:0 0 8px}
+.impc h3{margin:14px 0 6px; font-size:1rem}
+.impc-in{display:flex; flex-direction:column; gap:4px; margin:8px 0}
+.impc-in label{font-weight:700; color:var(--g9)}
+.impc-in input[type="file"]{min-height:44px; max-width:100%}
+.impc-in textarea{width:100%; min-height:96px; padding:8px 10px; border:1px solid var(--g5); border-radius:8px; background:#fff; line-height:1.6; resize:vertical}
+.impc-btns{display:flex; flex-wrap:wrap; gap:8px; margin:10px 0}
+.impc-sum{font-weight:700; margin:8px 0}
+.impc-w{margin:6px 0; padding:6px 10px; border-radius:8px; background:var(--warn-bg); color:var(--warn-tx); border:1px solid var(--warn-tx)}
+.impc-w ul{margin:4px 0; padding-left:1.4em}
+.impc-tw{overflow-x:auto; margin:0 0 10px}
+.impc-t{border-collapse:collapse; width:100%; font-size:0.9375rem}
+.impc-t th,.impc-t td{border:1px solid var(--g3); padding:6px 8px; text-align:left; vertical-align:top; overflow-wrap:anywhere}
+.impc-t th{background:var(--g1)}
+.impc-t select{min-height:44px; padding:6px 8px; border:1px solid var(--g5); border-radius:8px; background:#fff; max-width:100%}
+.impc-pre{white-space:pre-wrap}
+.impc-g{margin:8px 0; border:1px solid var(--g3); border-radius:10px; padding:0 10px}
+.impc-g summary{min-height:44px; display:flex; align-items:center; font-weight:700; cursor:pointer}
+.impc-chk{min-height:44px; font-weight:700; white-space:nowrap}
 .att-n.ng{color:var(--ng); font-weight:700}
 .ed-act{position:sticky; bottom:0; background:#fff; border-top:1px solid var(--g3); margin:12px -14px -14px; padding:10px 14px;
   border-radius:0 0 var(--r) var(--r); z-index:5}
@@ -703,7 +724,7 @@ function prevHtml_(p){
 function pickerHtml_(rs,sum,state,err){
   var list=(rs&&rs.ok?rs.residents:[]).filter(function(r){return r.active});
   var h='<h2 id="cm-pick-h">入居者を選ぶ</h2>';
-  if(!list.length) return h+'<p class="hint">共有の名簿がまだありません。<a href="resident-master.html">入居者マスタ</a>を一度開いてから、この画面を開き直してください。</p>'+impHtml_();
+  if(!list.length) return h+'<p class="hint">共有の名簿がまだありません。<a href="resident-master.html">入居者マスタ</a>を一度開いてから、この画面を開き直してください。</p>'+impHtml_()+impcHtml_();
   h+='<p class="hint">在籍している方の一覧です（最終開催日は確定した記録の日付）。</p>';
   if(state==='loading') h+='<p class="hint" role="status">最終開催日を読み込み中…</p>';
   else if(state!=='ok') h+='<p class="msg ng" role="alert">⚠ '+esc(err||'最終開催日を読めませんでした')+'</p>';
@@ -714,7 +735,7 @@ function pickerHtml_(rs,sum,state,err){
     h+='<li><button type="button" class="pi" data-act="pick" data-id="'+esc(r.masterId)+'"><span class="pi-n">'+esc(r.name||'（名前なし）')+'</span>'+
       '<span class="pi-r">'+esc(roomText_(r.room))+'</span>'+(last?'<span class="pi-l">'+esc(last)+'</span>':'')+'</button></li>';
   });
-  return h+'</ul>'+impHtml_();
+  return h+'</ul>'+impHtml_()+impcHtml_();
 }
 /* ═══════════ 過去の記録の取り込み（E表別紙・管理者だけ・2026-10-25 代表者の決定） ═══════════
    スプレッドシート「E表別紙 サービス担当者会議の要点」の各タブを GAS（meeting.gs の importScan・importApply）が読み、
@@ -835,6 +856,364 @@ function impApply_(){
       return true;
     });
   });
+}
+/* ═══════════ 過去の記録の取り込み（ほかの形の表・管理者だけ・2026-11-17 代表者の決定・文と位置は仮置き） ═══════════
+   CSV のファイル（UTF-8・Shift_JIS）か、表計算からコピーして貼った表（タブ区切り）を読み、1行を1回の会議として、
+   名簿の1名にだけ一致した記録を「確定」・開催の理由は空欄で入れる（受け口 meeting の importRows・管理者＋2段階認証）。
+   ・入口の門（impcGate_）は E表の門（impGate_）と別: 管理者としてログインしていて、接続先があるか SUResRead.liveReady が true の時だけ。現場の端末では出さない
+   ・読む → 列ごとに入れる欄を人が選ぶ（初めは見出しからの候補・先頭3件の見本）→ 一覧を作る（画面の判定 impPlan → 送る候補だけを受け口の dry へ）→ ✔︎の行だけを確定で送る
+   ・利用者名と開催日の列が1つずつ決まらなければ一覧を作らない。表・列の当て方を変えたら作った一覧を捨てる（見せた一覧と違う当て方で送らない）
+   ・送るのは1回50行まで・順に送る。取り込みはやり直さない（分からない時は一覧を作り直して確かめる＝受け口が送信の印で2回入れない）
+   ・表・当て方・一覧はメモリだけ（端末に残さない・ログに出さない・外部の AI へ送らない）。現場へ変わったら捨てる。描画は選ぶ一覧（pickerHtml_）の中で esc を通す
+   ・断りの読み分けは ok と code だけ（古い受け口＝code action か、bad_input で importRowsVer が無い時は「まだ対応していません」） */
+var impcSt=null, impcGen=0, impcOk=false;
+var IMPC_CHUNK=50;   // 1回に送る行の数（受け口の上限と同じ）
+var IMPC_GROUPS=[['new','取り込める（名簿の1名に一致・まだ入っていない）',true],['unmatched','名簿と照合できない（取り込みません）',true],['ambiguous','名簿に同じ名前の方が2人以上（取り込みません）',true],['baddate','開催日を読めない（取り込みません）',true],['future','開催日が先の日付（取り込みません）',true],['toolong','欄が長すぎる（取り込みません）',true],['samedate','同じ方・同じ開催日の記録がもうある（取り込みません）',true],['exists','送信済み（前に取り込んだ）',false],['infile','表の中に同じ方・同じ開催日が2行以上（どれも取り込みません）',true],['ragged','列の数が見出しと違う（取り込みません）',true]];
+var IMPC_SRV=['new','unmatched','ambiguous','baddate','future','toolong','samedate','exists','infile'];   // 受け口が返す状態（ragged は画面だけ）
+var IMPC_ADMIN_MSG='管理者（Google＋2段階認証）でログインしている時だけ使えます。ログインし直してから押してください';
+function impcGate_(){
+  var g=impcGen;
+  impcOk=false;
+  if(isField()||!cmHasLogin_()||typeof Promise==='undefined') return Promise.resolve(false);
+  var hasUrl=!!CFG.url;
+  return cmAuthLoad_().then(function(){ return window.SUAuth.check(); }).then(function(st){
+    if(g!==impcGen||isField()) return false;
+    if(!(st&&st.status===window.SUAuth.STATUS.OK&&st.role==='admin')) return false;
+    if(hasUrl) return true;
+    var R=window.SUResRead;
+    if(!R||typeof R.liveReady!=='function') return false;
+    return Promise.resolve().then(function(){ return R.liveReady(); }).then(function(v){ return v===true; },function(){ return false; });
+  }).then(function(ok){
+    if(g!==impcGen||isField()) return false;
+    impcOk=!!ok;
+    if(impcOk) impPaint_();
+    return impcOk;
+  })['catch'](function(){ return false; });
+}
+function impcBusy_(s){ return !!(s&&(s.phase==='planning'||s.phase==='applying')); }
+/* 入れる欄の選択肢（開催の理由は当てない） */
+function impcKeys_(){ return CareMeetingCalc.FIELDS.filter(function(f){ return f.key!=='kind'; }); }
+function impcColCount_(map,key){ var n=0; (map||[]).forEach(function(k){ if(k===key) n++; }); return n; }
+function impcReady_(s){ return !!(s&&s.tbl&&impcColCount_(s.map,'sourceName')===1&&impcColCount_(s.map,'heldDate')===1); }
+function impcHtml_(){
+  if(!impcOk||isField()) return '';
+  var s=impcSt||{phase:'idle'}, busy=impcBusy_(s);
+  var h='<section class="impc" aria-labelledby="cm-impc-h"><h2 id="cm-impc-h">過去の記録の取り込み（ほかの形の表・管理者だけ）</h2>'+
+    '<p class="hint">ほかの記録の仕組みや表計算から書き出した表（1行が1回の会議）を読み、名簿の1名にだけ一致した記録を「確定」として入れます（開催の理由は空欄）。CSV のファイル（UTF-8・Shift_JIS）を選ぶか、表計算からコピーした表を貼り付けてください（.xlsx はそのまま読めません。CSV で書き出してください）。まず書かずに一覧を作り、確かめてから取り込みます。読んだ表はこの画面の中だけで使い、端末には残しません。</p>';
+  if(s.msg) h+='<p class="msg'+(s.err?' ng':'')+'" role="'+(s.err?'alert':'status')+'">'+(s.err?'⚠ ':'')+esc(s.msg)+'</p>';
+  h+='<div class="impc-in"><label for="cm-impc-file">CSV のファイルを選ぶ</label><input type="file" id="cm-impc-file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain"'+(busy?' disabled':'')+'></div>'+
+    '<div class="impc-in"><label for="cm-impc-paste">または、表計算からコピーした表（見出しの行も含めて）を貼り付ける</label><textarea id="cm-impc-paste" rows="4" autocomplete="off" spellcheck="false"'+(busy?' disabled':'')+'></textarea></div>'+
+    '<div class="impc-btns"><button type="button" class="btn" data-act="impc-paste"'+(busy?' disabled':'')+'>貼り付けた表を読む</button></div>';
+  if(s.tbl) h+=impcMapHtml_(s);
+  if(s.plan) h+=impcListHtml_(s);
+  return h+'</section>';
+}
+/* 読んだ表の要約・列ごとの欄の選択・先頭3件の見本・一覧を作るボタン */
+function impcMapHtml_(s){
+  var tb=s.tbl, keys=impcKeys_(), lock=impcBusy_(s);
+  var h='<p class="impc-sum">読んだ表：'+esc(String(tb.header.length))+' 列・'+esc(String(tb.rows.length))+' 行'+(s.enc?'（文字コード '+esc(s.enc)+'）':'')+'</p>';
+  var warns=(s.gwarns||[]).slice();
+  if(tb.ragged>0) warns.unshift('列の数が見出しと違う行が '+tb.ragged+' 行あります（'+impcRaggedNos_(tb).join('・')+(tb.ragged>10?' ほか':'')+' 件目・見出しを除き、空の行は数えない）。この行は取り込みません（引用符で囲んでいないカンマなどで列がずれていないか確かめてください）');
+  if(warns.length) h+='<div class="impc-w" role="note"><ul>'+warns.map(function(w){ return '<li>'+esc(w)+'</li>'; }).join('')+'</ul></div>';
+  h+='<h3>列ごとに入れる欄を選ぶ</h3><div class="impc-tw"><table class="impc-t"><thead><tr><th scope="col">表の列の見出し</th><th scope="col">1件目の値</th><th scope="col">入れる欄</th></tr></thead><tbody>';
+  tb.header.forEach(function(hd,i){
+    var cur=String(s.map[i]||''), first=tb.rows.length?String(tb.rows[0][i]==null?'':tb.rows[0][i]):'';
+    var head=String(hd==null?'':hd).trim();
+    h+='<tr><td>'+esc(head||'（見出しなし）')+'</td><td class="impc-pre">'+esc(first.length>60?first.slice(0,60)+'…':first)+'</td><td><select data-impc-col="'+i+'" aria-label="'+esc('列「'+(head||(i+1)+'列目')+'」を入れる欄')+'"'+(lock?' disabled':'')+'>'+
+      '<option value=""'+(cur?'':' selected')+'>入れない</option>'+keys.map(function(f){ return '<option value="'+esc(f.key)+'"'+(cur===f.key?' selected':'')+'>'+esc(f.label)+'</option>'; }).join('')+'</select></td></tr>';
+  });
+  h+='</tbody></table></div>';
+  /* 先頭3件の見本（当てた結果を様式の欄の並びで） */
+  var smp=tb.rows.slice(0,3).map(function(cells){ return CareMeetingCalc.impRow(cells,s.map); });
+  if(smp.length){
+    h+='<h3>当てた結果の見本（先頭 '+smp.length+' 件）</h3><div class="impc-tw"><table class="impc-t"><thead><tr><th scope="col">欄</th>'+
+      smp.map(function(x,i){ return '<th scope="col">'+(i+1)+' 件目</th>'; }).join('')+'</tr></thead><tbody>';
+    keys.forEach(function(f){
+      h+='<tr><th scope="row">'+esc(f.label)+'</th>'+smp.map(function(x){
+        var v=f.key==='attendees'?attText_(x.rec.attendees):String(x.rec[f.key]==null?'':x.rec[f.key]);
+        return '<td class="impc-pre">'+(v?esc(v.length>120?v.slice(0,120)+'…':v):'<span class="muted">（空）</span>')+'</td>';
+      }).join('')+'</tr>';
+    });
+    h+='<tr><th scope="row">知らせ</th>'+smp.map(function(x){ return '<td>'+(x.warns.length?esc(x.warns.join('／')):'<span class="muted">なし</span>')+'</td>'; }).join('')+'</tr>';
+    h+='</tbody></table></div>';
+  }
+  var ready=impcReady_(s);
+  if(!ready) h+='<p class="msg ng" role="alert">⚠ 利用者名と開催日の列を、1つずつ選んでください（今は 利用者名 '+impcColCount_(s.map,'sourceName')+' 列・開催日 '+impcColCount_(s.map,'heldDate')+' 列）</p>';
+  var n=impcPicked_(s).length;
+  h+='<div class="impc-btns"><button type="button" class="btn" data-act="impc-plan"'+(lock||!ready||!tb.rows.length?' disabled':'')+'>'+(s.plan?'一覧を作り直す（書かない）':'一覧を作る（書かない）')+'</button>';
+  if(s.plan&&s.phase==='planned'&&n>0) h+='<button type="button" class="btn pri" data-act="impc-apply">取り込める '+n+' 件を取り込む（確定）</button>';
+  return h+'</div>';
+}
+/* 列の数が見出しと違う行の番号（1から・先頭10件まで） */
+function impcRaggedNos_(tb){
+  var out=[];
+  for(var i=0;i<tb.rows.length&&out.length<10;i++) if(tb.rows[i].length!==tb.header.length) out.push(i+1);
+  return out;
+}
+/* 本文の欄の頭（当て違いに気づけるように・20字） */
+function impcHead_(rec){
+  var ks=['conclusion','content','items','issues'];
+  for(var i=0;i<ks.length;i++){ var v=String(rec&&rec[ks[i]]!=null?rec[ks[i]]:'').replace(/\s+/g,' ').trim(); if(v) return v.length>20?v.slice(0,20)+'…':v; }
+  return '';
+}
+/* 取り込める行のうち✔︎が付いている行（一覧の items） */
+function impcPicked_(s){
+  if(!s||!s.plan||!Array.isArray(s.plan.items)) return [];
+  var skip=s.skip||{};
+  return s.plan.items.filter(function(x){ return x&&x.status==='new'&&!skip[String(x.i)]; });
+}
+function impcListHtml_(s){
+  var items=s.plan.items, c=s.plan.counts||{}, skip=s.skip||{}, lock=s.phase!=='planned';
+  var h='<p class="impc-sum">表の '+esc(String(items.length))+' 件：'+IMPC_GROUPS.map(function(g){ return esc(g[1].replace(/（.*$/,''))+' '+esc(String(Number(c[g[0]])||0))+' 件'; }).join('／')+'</p>';
+  IMPC_GROUPS.forEach(function(g){
+    var list=items.filter(function(x){ return x&&x.status===g[0]; }); if(!list.length) return;
+    var pick=g[0]==='new';
+    h+='<details class="impc-g"'+(g[2]?' open':'')+'><summary>'+esc(g[1])+'：'+list.length+' 件</summary><div class="impc-tw"><table class="impc-t"><thead><tr>'+
+      (pick?'<th scope="col">取り込む</th>':'')+'<th scope="col">表の行</th><th scope="col">開催日</th><th scope="col">名簿の方</th><th scope="col">表の利用者名</th><th scope="col">出席者</th><th scope="col">本文の頭</th><th scope="col">足りない欄</th><th scope="col">知らせ</th></tr></thead><tbody>';
+    list.forEach(function(x){
+      var key=String(x.i), on=!skip[key], rec=x.rec||{}, hd=impcHead_(rec);
+      var miss=Array.isArray(x.missing)?x.missing.map(String).join('・'):'';
+      var notes=(x.warns||[]).slice(); if(x.stop) notes.unshift(String(x.stop));
+      h+='<tr>'+(pick?'<td><label class="chk impc-chk"><input type="checkbox" data-impck="'+esc(key)+'"'+(on?' checked':'')+(lock?' disabled':'')+' aria-label="'+esc('表の '+(x.i+1)+' 件目を取り込む')+'">'+(on?'✔︎':'外す')+'</label></td>':'')+
+        '<td>'+esc(String(x.i+1))+' 件目</td><td>'+esc(x.heldDate?fmtDate_(String(x.heldDate)):'（読めない）')+'</td><td>'+esc(x.name||'—')+'</td><td>'+
+        esc(String(rec.sourceName||'')||'（空）')+'</td><td>'+esc(String(Array.isArray(rec.attendees)?rec.attendees.length:0))+' 名</td><td>'+(hd?esc(hd):'<span class="muted">（空）</span>')+'</td><td>'+esc(miss||(pick?'なし':'—'))+'</td><td>'+
+        (notes.length?esc(notes.join('／')):'<span class="muted">なし</span>')+'</td></tr>';
+    });
+    h+='</tbody></table></div></details>';
+  });
+  return h;
+}
+/* ── 読む ── ファイル（バイト列から文字にする所は impcLoadBytes_）と、貼り付けた表 */
+function impcReadFile_(f){
+  if(!impcOk||isField()||impcBusy_(impcSt)||!f) return Promise.resolve(false);
+  if(Number(f.size)>CareMeetingCalc.IMP_BYTES_MAX){ impcSt={phase:'idle',msg:'表が大きすぎます（2MB まで）。年ごとなどに分けて読んでください',err:true}; impPaint_(); return Promise.resolve(false); }
+  var g=++impcGen;
+  var rd=typeof f.arrayBuffer==='function'?Promise.resolve().then(function(){ return f.arrayBuffer(); }):new Promise(function(ok,ng){
+    var FR=window.FileReader; if(!FR) return ng(new Error('nofr'));
+    var r=new FR(); r.onload=function(){ ok(r.result); }; r.onerror=function(){ ng(new Error('read')); }; r.readAsArrayBuffer(f);
+  });
+  return rd.then(function(buf){
+    if(g!==impcGen||isField()) return false;
+    return impcLoadBytes_(new Uint8Array(buf));
+  },function(e){
+    if(g!==impcGen||isField()) return false;
+    cmNote_('取り込みの表のファイル', e);
+    impcSt={phase:'idle',msg:'ファイルを読めませんでした。もう一度選んでください',err:true}; impPaint_(); return false;
+  });
+}
+function impcLoadBytes_(bytes){
+  var TD=window.TextDecoder;
+  if(typeof TD!=='function'){ impcSt={phase:'idle',msg:'このブラウザでは CSV のファイルを読めません。表をコピーして貼り付けてください',err:true}; impPaint_(); return false; }
+  var dec=CareMeetingCalc.impDecode(bytes,function(l){ return new TD(l,{fatal:false}); });
+  return impcLoadText_(dec.text,dec.enc);
+}
+function impcReadPaste_(){
+  if(!impcOk||isField()||impcBusy_(impcSt)) return false;
+  var el=$('cm-impc-paste'), v=el?String(el.value==null?'':el.value):'';
+  if(!v.trim()){ impcSt=Object.assign({},impcSt||{phase:'idle'},{msg:'表を貼り付けてから押してください',err:true}); impPaint_(); return false; }
+  /* 描き直しが書きかけを新しい欄へ移すので、読む前に空にし、読めなかった時だけ新しい欄へ戻す */
+  if(el) el.value='';
+  var ok=impcLoadText_(v,'');
+  if(!ok){ var el2=$('cm-impc-paste'); if(el2) el2.value=v; }
+  return ok;
+}
+function impcLoadText_(text,enc){
+  if(!impcOk||isField()||impcBusy_(impcSt)) return false;
+  impcGen++;
+  var r=CareMeetingCalc.impTable(text);
+  if(!r||!r.ok){ impcSt={phase:'idle',msg:(r&&r.message)||'表を読めませんでした',err:true}; impPaint_(); return false; }
+  if(!r.rows.length){ impcSt={phase:'idle',msg:'見出しの下に行がありません（1行目は見出しとして読みます）',err:true}; impPaint_(); return false; }
+  var gs=CareMeetingCalc.impGuessCols(r.header);
+  impcSt={phase:'loaded',tbl:r,enc:enc||'',map:gs.map.slice(),gwarns:gs.warns.slice(),plan:null,skip:{},msg:'表を読みました（まだ何も書いていません）。列ごとに入れる欄を確かめてから「一覧を作る」を押してください',err:false};
+  impPaint_();
+  return true;
+}
+/* 列の欄を選び直す（作った一覧は捨てる） */
+function impcSetCol_(i,key){
+  var s=impcSt;
+  if(!s||!s.tbl||impcBusy_(s)||!(i>=0&&i<s.tbl.header.length)) return false;
+  if(key&&!impcKeys_().some(function(f){ return f.key===key; })) return false;
+  s.map[i]=key||'';
+  s.plan=null; s.skip={}; s.phase='loaded'; s.msg=''; s.err=false;
+  impcGen++;
+  impPaint_();
+  return true;
+}
+/* 送る1行（rec は保存の欄から開催の理由を除いた13欄・nameChecked は送らない）。1行の欄（LINE_KEYS）は画面の入力と同じく改行を空白1つにする */
+function impcRec_(rec){
+  var out={};
+  impcKeys_().forEach(function(f){
+    var v=rec?rec[f.key]:'';
+    if(f.key==='attendees') out.attendees=Array.isArray(v)?v.map(function(a){ return {role:String(a&&a.role||''),name:String(a&&a.name||'')}; }):[];
+    else out[f.key]=LINE_KEYS.indexOf(f.key)>=0?oneLine_(v):String(v==null?'':v);
+  });
+  return out;
+}
+function impcRow_(it){ return {n:it.i,id:String(it.id),name:String(it.name),key:String(it.key),rec:impcRec_(it.rec)}; }
+/* 一覧を作る（dry）の断りの種類。code だけで見る（error の文は読まない）
+   'unsupported' 知らない op（res-write の code action）／'badin' 入力の断りで importRowsVer が無い（Google の古い受け口の「不明な操作です」と、
+   新しい受け口の入力の断りを見分けられないので1つの文にする・仮置き）／'' ほか */
+function impcOld_(d){
+  var c=(d&&typeof d.code==='string')?d.code:'';
+  if(c==='action') return 'unsupported';
+  if(c==='bad_input'&&!(d&&d.importRowsVer===1)) return 'badin';
+  return '';
+}
+/* 確定（dry:false）の断りのうち、書いていないとはっきり分かるもの（入力の形・権限・知らない op）。ほかは書けたか分からない扱い（偽らない） */
+function impcSure_(d){
+  var c=(d&&typeof d.code==='string')?d.code:'';
+  return ['bad_input','role','mfa','not_admin','action'].indexOf(c)>=0;
+}
+function impcErr_(d){
+  var c=(d&&typeof d.code==='string')?d.code:'';
+  if(c==='not_admin'||c==='role'||c==='mfa') return IMPC_ADMIN_MSG;
+  return codeMsg_(classify_(d),d);
+}
+/* rows を50行ずつ順に送る。答え {ok:true, items, written, changed}／{fail:'unknown'|'refused'|'unsupported'|'shape', d, e, written}／{skip:true} */
+function impcSend_(rows,dry,g){
+  var out=[], written=0, changed=0, i=0;
+  function next(){
+    if(g!==impcGen||isField()) return Promise.resolve({skip:true});
+    if(i>=rows.length) return Promise.resolve({ok:true,items:out,written:written,changed:changed});
+    var part=rows.slice(i,i+IMPC_CHUNK); i+=IMPC_CHUNK;
+    return impPost_({action:'meeting',op:'importRows',dry:dry,rows:part}).then(function(r){
+      if(!r||r.skip||g!==impcGen||isField()) return {skip:true};
+      if(r.e) return {fail:'unknown',e:r.e,written:written};
+      var d=r.d;
+      if(!d||d.ok!==true){
+        if(dry){
+          var od=impcOld_(d);
+          if(od) return {fail:od,d:d,written:written};
+          if(d&&(d.unknown||classify_(d)==='unknown')) return {fail:'unknown',d:d,written:written};
+          return {fail:'refused',d:d,written:written};
+        }
+        return {fail:impcSure_(d)?'refused':'unknown',d:d,written:written};
+      }
+      if(d.importRowsVer!==1) return {fail:dry?'unsupported':'unknown',d:d,written:written};
+      if(!Array.isArray(d.items)) return {fail:dry?'shape':'unknown',d:d,written:written};
+      out=out.concat(d.items); written+=Number(d.written)||0; changed+=Number(d.changed)||0;
+      return next();
+    });
+  }
+  return next();
+}
+/* 一覧を作る（書かない）。画面の判定 → 送る候補だけを受け口の dry へ → 受け口の答えと合わせる */
+function impcPlan_(){
+  var s=impcSt;
+  if(!impcOk||isField()||!s||!s.tbl||impcBusy_(s)) return Promise.resolve(false);
+  if(!impcReady_(s)){ s.msg='利用者名と開催日の列を、1つずつ選んでください'; s.err=true; impPaint_(); return Promise.resolve(false); }
+  var rs=readRoster_();
+  if(!rs.ok){ s.plan=null; s.msg='共有の名簿がまだありません。入居者マスタを一度開いてから、もう一度押してください（何も書いていません）'; s.err=true; impPaint_(); return Promise.resolve(false); }
+  var rows=s.tbl.rows.map(function(cells){ return CareMeetingCalc.impRow(cells,s.map); });
+  var plan=CareMeetingCalc.impPlan(rows,rs.residents,CareMeetingCalc.todayJST());
+  if(!plan){ s.plan=null; s.msg='一覧を作れませんでした（何も書いていません）'; s.err=true; impPaint_(); return Promise.resolve(false); }
+  /* 列の数が見出しと違う行は、どの判定より先に「列の数が見出しと違う」へ入れて送らない（✔︎も付けない・仮置き） */
+  plan.items.forEach(function(it){
+    var cells=s.tbl.rows[it.i];
+    if(cells&&cells.length!==s.tbl.header.length){ it.status='ragged'; it.key=''; it.warns=['列の数が見出しと違います（見出し '+s.tbl.header.length+' 列・この行 '+cells.length+' 列・'+(it.i+1)+' 件目）'].concat(it.warns||[]); }
+  });
+  var news=plan.items.filter(function(x){ return x.status==='new'; });
+  var g=++impcGen;
+  s.phase='planning'; s.plan=null; s.skip={}; s.err=false;
+  s.msg=news.length?'受け口に確かめています…（'+news.length+' 件・まだ何も書いていません。この画面を開いたままにしてください）':'';
+  impPaint_();
+  var sent=news.map(impcRow_);
+  return impcSend_(sent,true,g).then(function(r){
+    if(!r||r.skip||g!==impcGen||isField()||impcSt!==s) return false;
+    if(!r.ok){
+      s.phase='loaded'; s.plan=null; s.err=true;
+      if(r.fail==='unsupported') s.msg='この受け口はまだ対応していません（何も書いていません）';
+      else if(r.fail==='badin') s.msg='この受け口が表を受け付けませんでした（何も書いていません）。受け口がまだ対応していないか、表の中に送れない値があります';
+      else if(r.fail==='unknown') s.msg='一覧を作れませんでした（'+(r.e?impExWords_(r.e):'受け口の答えを確かめられませんでした')+'）。少し待ってから、もう一度押してください（何も書いていません）';
+      else if(r.fail==='shape') s.msg='受け口の答えの形が違います。もう一度押してください（何も書いていません）';
+      else s.msg=impcErr_(r.d)+'（何も書いていません）';
+      impPaint_(); return false;
+    }
+    /* 送った行の番号と、答えの番号が過不足なく合うか。知らない状態があれば一覧にしない */
+    var want=Object.create(null), by=Object.create(null), okNames=Object.create(null), bad=false;
+    IMPC_SRV.forEach(function(st){ okNames[st]=1; });
+    sent.forEach(function(x){ want[String(x.n)]=1; });
+    r.items.forEach(function(x){
+      var k=x&&x.n!=null?String(x.n):'';
+      if(!k||!want[k]||by[k]||!okNames[String(x.status)]){ bad=true; return; }
+      by[k]={status:String(x.status),missing:Array.isArray(x.missing)?x.missing.map(String):[]};
+    });
+    sent.forEach(function(x){ if(!by[String(x.n)]) bad=true; });
+    if(bad){ s.phase='loaded'; s.plan=null; s.err=true; s.msg='受け口の答えが送った行と合いませんでした。もう一度押してください（何も書いていません）'; impPaint_(); return false; }
+    plan.items.forEach(function(it){
+      if(it.status!=='new') return;
+      var a=by[String(it.i)]; it.status=a.status; it.missing=a.missing;
+    });
+    var counts={}; IMPC_GROUPS.forEach(function(gr){ counts[gr[0]]=0; });
+    plan.items.forEach(function(it){ if(Object.prototype.hasOwnProperty.call(counts,it.status)) counts[it.status]++; });
+    s.plan={items:plan.items,counts:counts}; s.skip={}; s.phase='planned'; s.err=false;
+    s.msg='一覧を作りました（まだ何も書いていません）';
+    impPaint_();
+    return true;
+  });
+}
+/* 取り込む（確定）。✔︎の行だけを50行ずつ順に送る。やり直さない */
+function impcApply_(){
+  var s=impcSt;
+  if(!impcOk||isField()||!s||s.phase!=='planned'||!s.plan) return Promise.resolve(false);
+  var picked=impcPicked_(s);
+  if(!picked.length) return Promise.resolve(false);
+  return askConfirm_('過去の記録を取り込みます',[picked.length+' 件を「確定」として取り込みます（開催の理由は空欄）。','読んだ表には書きません。同じ方・同じ開催日の記録がもうある時は入れません。'],'取り込む',false).then(function(ok){
+    if(!ok||impcSt!==s||s.phase!=='planned'||isField()) return false;
+    var g=++impcGen, rows=picked.map(impcRow_);
+    s.phase='applying'; s.err=false; s.msg='取り込んでいます…（'+rows.length+' 件。この画面を開いたままにしてください）'; impPaint_();
+    return impcSend_(rows,false,g).then(function(r){
+      if(!r||r.skip||g!==impcGen||isField()||impcSt!==s) return false;
+      var w=Number(r.written)||0;
+      s.phase='done'; s.plan=null; s.skip={};
+      if(r.ok){
+        var chg=Number(r.changed)||0, skipN=rows.length-w;
+        s.err=false;
+        s.msg=w+' 件を取り込みました。'+(chg?'取り込みの間にほかの端末の記録や名簿が変わった '+chg+' 件は入れていません（一覧を作り直して確かめてください）。':'')+
+          (skipN>0?skipN+' 件は取り込みませんでした'+impcWhy_(r.items)+'。一覧を作り直すと理由が出ます。':'')+'もう一度「一覧を作る」を押すと、送信済みとして出ます';
+      }else if(r.fail==='unknown'){
+        s.err=true;
+        s.msg='取り込めたか分かりません。一覧を作り直して確かめてください'+(w?'（それまでに '+w+' 件を取り込みました）':'');
+      }else{
+        s.err=true;
+        s.msg=impcErr_(r.d)+(w?'（それまでに '+w+' 件を取り込みました。一覧を作り直して確かめてください）':'（何も書いていません）');
+      }
+      if(cmView==='pick') showPicker_(); else impPaint_();
+      return !!r.ok;
+    });
+  });
+}
+/* 確定の答えの items を状態ごとに数えた内訳（取り込めた new は除く）。例「（同じ方・同じ開催日の記録がもうある 1 件・送信済み 2 件）」 */
+function impcWhy_(items){
+  var c={}, parts=[];
+  (Array.isArray(items)?items:[]).forEach(function(x){ var st=x&&String(x.status); if(st&&st!=='new'&&IMPC_SRV.indexOf(st)>=0) c[st]=(c[st]||0)+1; });
+  IMPC_GROUPS.forEach(function(g){ if(c[g[0]]) parts.push(g[1].replace(/（.*$/,'')+' '+c[g[0]]+' 件'); });
+  return parts.length?'（'+parts.join('・')+'）':'';
+}
+/* 選ぶ一覧の変更のうち、この取り込みの分（ファイル・列の欄・✔︎）。扱った時は true */
+function impcChange_(t){
+  if(!t||!t.getAttribute) return false;
+  if(t.id==='cm-impc-file'){
+    var f=t.files&&t.files[0];
+    try{ t.value=''; }catch(e){}
+    if(f) impcReadFile_(f);
+    return true;
+  }
+  var c=t.getAttribute('data-impc-col');
+  if(c!=null){ impcSetCol_(Number(c),String(t.value||'')); impcFocus_('data-impc-col',c); return true; }
+  var k=t.getAttribute('data-impck');
+  if(k!=null){
+    var s=impcSt; if(!s||s.phase!=='planned') return true;
+    s.skip=s.skip||{};
+    if(t.checked) delete s.skip[String(k)]; else s.skip[String(k)]=true;
+    impPaint_(); impcFocus_('data-impck',k);
+    return true;
+  }
+  return false;
+}
+function impcFocus_(attr,v){
+  var el=$('cm-pick'), xs=el&&el.querySelectorAll?el.querySelectorAll('['+attr+']'):[];
+  for(var i=0;i<xs.length;i++){ if(xs[i].getAttribute(attr)===String(v)){ try{ xs[i].focus(); }catch(e){} break; } }
 }
 function edTitle_(e){
   if(e.mode==='new') return '新しい記録（まだ保存していません）';
@@ -1044,6 +1423,7 @@ function showOnly_(which){
 function showFieldOnly_(){
   cmView='field'; cur=null; meetings=[]; ed=null; summary=null; roster=null;
   impSt=null; impAdmin=false; impGen++;   // 過去の記録の取り込みの一覧（タブ名・氏名を含む）も捨てる
+  impcSt=null; impcOk=false; impcGen++;   // ほかの形の表から読んだ表・当て方・一覧も捨てる
   ['cm-who','cm-alerts','cm-list','cm-detail','cm-prev','cm-pick'].forEach(function(id){ var el=$(id); if(el) el.innerHTML=''; });
   var g=$('cm-gate'); if(g) g.innerHTML='<p>担当者会議の記録は事務所PCだけで使えます</p>';
   showOnly_('cm-gate'); setSync('');
@@ -1058,9 +1438,13 @@ function paintPicker_(){
   var el=$('cm-pick'); if(!el) return;
   cmView='pick';
   var ae=document.activeElement, fa=(ae&&el.contains&&el.contains(ae)&&ae.getAttribute)?ae.getAttribute('data-act'):null;
+  /* 貼り付けの欄の書きかけ（ほかの形の表）は、描き直しで消さない（メモリの中で移すだけ） */
+  var pz=$('cm-impc-paste'), pzv=(pz&&typeof pz.value==='string')?pz.value:'';
   el.innerHTML=pickerHtml_(roster,summary,summaryState,summaryErr);
   showOnly_('cm-pick');
+  if(pzv){ var pz2=$('cm-impc-paste'); if(pz2&&pz2!==pz&&!pz2.disabled) pz2.value=pzv; }
   if(fa==='imp-scan'||fa==='imp-apply'){ var nb=el.querySelector('[data-act="'+fa+'"]')||el.querySelector('[data-act="imp-scan"]'); if(nb) try{ nb.focus(); }catch(e){} }
+  if(fa==='impc-paste'||fa==='impc-plan'||fa==='impc-apply'){ var nc=el.querySelector('[data-act="'+fa+'"]')||el.querySelector('[data-act="impc-plan"]'); if(nc) try{ nc.focus(); }catch(e){} }
 }
 function paintWho_(){ var el=$('cm-who'); if(el) el.innerHTML=whoHtml_(cur); }
 function paintAlerts_(){
@@ -1163,6 +1547,7 @@ function showPicker_(){
   roster=readRoster_(); summary=null; summaryState='loading'; summaryErr='';
   paintPicker_(); setSync('');
   if(!impAdmin) impGate_();   // 過去の記録の取り込み（管理者だけ）。入居者マスタから来て「ほかの方を選ぶ」で戻った時も
+  if(!impcOk) impcGate_();    // ほかの形の表からの取り込み（管理者だけ・接続先が無くても新しい保存先で使える時）
 
   if(!roster.ok) return Promise.resolve();
   return meetingRead_({action:'meeting',op:'summary'}).then(function(d){return{d:d}},function(e){return{e:e}}).then(function(r){
@@ -1696,6 +2081,7 @@ function onWhoClick_(ev){
 /* 取り込める行の✔︎（外した行は送らない）。描き直しの後も同じ✔︎へ焦点を戻す */
 function onPickChange_(ev){
   var t=ev.target; if(!t||!t.getAttribute) return;
+  if(impcChange_(t)) return;   // ほかの形の表からの取り込み（ファイル・列の欄・✔︎）
   var g=t.getAttribute('data-impg'); if(g==null) return;
   var s=impSt; if(!s||s.phase!=='scanned') return;
   s.skip=s.skip||{};
@@ -1709,6 +2095,9 @@ function onPickClick_(ev){
   var act=t.getAttribute('data-act');
   if(act==='imp-scan'){ impScan_(); return; }
   if(act==='imp-apply'){ impApply_(); return; }
+  if(act==='impc-paste'){ impcReadPaste_(); return; }
+  if(act==='impc-plan'){ impcPlan_(); return; }
+  if(act==='impc-apply'){ impcApply_(); return; }
   if(act==='pick') pickPerson_(t.getAttribute('data-id'));
 }
 
@@ -1826,7 +2215,7 @@ function onDeviceRoleChange_(e){
 /* 見出しの「← メニュー」「← 入居者マスタ」で離れる時の確かめ（2026-11-12 反証レビュー）。iOS Safari は beforeunload の確かめを出さないため、
    押した時に beforeunload と同じ判定で聞く。「はい」の時は直後の beforeunload で二重に聞かない */
 var cmLeaveOk_=false;
-function cmLeaveDirty_(){ return !!(isDirty_(ed)||(ed&&ed.busy)||(impSt&&impSt.phase==='applying')); }
+function cmLeaveDirty_(){ return !!(isDirty_(ed)||(ed&&ed.busy)||(impSt&&impSt.phase==='applying')||(typeof impcSt!=='undefined'&&impcSt&&impcSt.phase==='applying')); }
 function onHdrLeaveClick_(e){
   var a=e.target&&e.target.closest?e.target.closest('a.su-menu-back, a[href="resident-master.html"]'):null;
   if(!a||!cmLeaveDirty_()) return;
@@ -1843,7 +2232,7 @@ function onHdrHelpClick_(e){
 }
 function onBeforeUnload_(e){
   if(cmLeaveOk_) return;
-  if(isDirty_(ed)||(ed&&ed.busy)||(impSt&&impSt.phase==='applying')){ e.preventDefault(); e.returnValue=''; return ''; }
+  if(isDirty_(ed)||(ed&&ed.busy)||(impSt&&impSt.phase==='applying')||(typeof impcSt!=='undefined'&&impcSt&&impcSt.phase==='applying')){ e.preventDefault(); e.returnValue=''; return ''; }
 }
 function onCommonRoster_(e){
   if(!e||e.key!==COMMON_KEY||isField()) return;
@@ -1877,7 +2266,7 @@ function boot(){
     document.body.appendChild(gp);
     return;
   }
-  window.SUAppGate.run('care-meeting',{dirty:function(){ return isDirty_(ed)||!!(ed&&ed.busy)||!!(impSt&&impSt.phase==='applying'); }})
+  window.SUAppGate.run('care-meeting',{dirty:function(){ return isDirty_(ed)||!!(ed&&ed.busy)||!!(impSt&&impSt.phase==='applying')||!!(impcSt&&impcSt.phase==='applying'); }})
     .then(function(ok){ if(ok) startApp_(); });
 }
 /* 接続先・合言葉の無い端末でも、ログインして入居者マスタの新しい保存先で使える時は開く（2026-11-08 代表者「端末ごとの設定を極限までなくす」・
