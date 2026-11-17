@@ -50,6 +50,7 @@
     mealTimes: function (p) { return p.mealTimes; },                                                   /* 入居者マスタ・フェイスシートの食事の時刻の施設の既定 */
     mealForms: function (p) { return p.mealForms; },                                                   /* 体重管理の食事形態の表示名 */
     daycareNotes: function (p) { return p.daycareNotes; },                                             /* デイ利用表の昼食場所・備考の文（2026-11-02 便10） */
+    daycareOutside: function (p) { return p.daycareOutside; },                                         /* デイ利用表の外部の利用者の区画（併設でないデイ・2026-11-17 D-02） */
     residenceFees: function (p) { return p.residenceFees; },                                           /* 入居者マスタの収支の見通しの施設の利用料（介護度ごとの月額・2026-11-07） */
     patchCalendar: function (p) { return p.patchCalendar; },                                           /* 貼り薬カレンダーの薬の名前と貼る場所（2026-11-13） */
     rateDefaults: function (p) { return p.rateDefaults; },                                             /* 週間計画の単位単価の既定（地域区分の単価・端末に保存の無い時だけ・2026-11-13） */

@@ -119,6 +119,7 @@ function makeBox(fac) {
     grabFn('dcrFloorNames_'), grabFn('dcrFloorExtra_'), grabFn('dcrFloorNos_'), grabFn('dcrFloorOrder_'), grabFn('dcrFloorKey_'),   // 曜日の列と3階以上の階の部品（2026-11-14 第6段 K5）
     grabVar('onDay'), grabVar('offDay'), grabVar('countOn'), grabVar('countOff'),
     grabFn('toMin'), grabFn('minToLabel'), grabFn('el'), grabFn('roomToFloor'),
+    grabVar('DCR_OUT_WORD_MAX'), grabFn('dcrOutside_'), grabFn('dcrFloorOf_'), grabFn('dcrSecLists_'),   // 外部の利用者の区画の部品（2026-11-17 D-02・印が無ければ今のまま）
     grabFn('buildModel'), grabFn('isDaycareResident'), grabFn('collectDaycare'), grabFn('weeklyByFloor'),
     grabFn('viewExcludingHidden'), grabFn('viewExcludingPreAdmitted'), grabFn('countPreAdmitted'),
     grabFn('dcrClinicOf_'), grabFn('dcrClinicSig_'), grabFn('dcrClinicLabel_'), grabFn('suFacReady_'),

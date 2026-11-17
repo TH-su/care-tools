@@ -128,6 +128,16 @@ export function checkFacilityProfile(text, sampleText) {
       if (!isObj(f) || typeof f.no !== 'number' || !Number.isInteger(f.no) || f.no < 1 || f.no > 9) ng(`floors[${i}].no`, '1〜9 の整数ではありません');
     });
   }
+  /* デイ利用表の外部の利用者の区画（2026-11-17 D-02）。読む画面（daycare-roster.html の dcrOutside_）と同じ決まり:
+     { label } の1つだけ・label は1〜4字の文字（前後の空白・改行などの制御文字・{ } なし）。崩れていると画面は黙って今のまま（外部の方も階未設定）に戻るので、ここで止める。
+     ★片方を変えたら両方を同じにする（値は出さない） */
+  if ('daycareOutside' in p) {
+    const v = p.daycareOutside;
+    const w = isObj(v) ? v.label : undefined;
+    const ok = isObj(v) && Object.keys(v).length === 1 && Object.keys(v)[0] === 'label' && isStr(w)
+      && [...w].length >= 1 && [...w].length <= 4 && w.trim() === w && !/[\u0000-\u001f\u007f{}]/.test(w);
+    if (!ok) ng('daycareOutside', '{"label": "外部"} の形で、label だけを1〜4字（前後の空白・改行・{ } なし）で書いてください（崩れているとデイ利用表は外部の区画を作らず、今のまま出します）');
+  }
   if ('visitingClinics' in p) {
     if (!Array.isArray(p.visitingClinics)) ng('visitingClinics', '一覧（[ ]）ではありません');
     else p.visitingClinics.forEach((c, i) => { if (!isObj(c) || !filled(c.name)) ng(`visitingClinics[${i}].name`, '文字が入っていません'); });
