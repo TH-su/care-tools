@@ -18,6 +18,10 @@
  *   どの絵が何回出たかは metrics.json の wobble に残す。
  * --merge: 出力先の metrics.json を消さず、撮った画面の分だけ書き換える（一部の画面の撮り直し用）。
  *
+ * 縦に長すぎる画面（2026-11-17 追加）: 絵が1億画素を超える時と1枚で撮れない時（Unable to capture screenshot）は、上から CSS 1024px ずつ区切って
+ *   <画面>.<表示>.t01.png・t02.png… と区切りごとの別の絵で残す（下の fullShot）。区切りの数と高さは metrics.json の tiles に残す。
+ *   揺れの多数決は区切りごとに行う。比べ方は compare.mjs（区切りごとに比べ、画面・表示ごとに1行にまとめる）。
+ *
  * 帳票の紙（2026-10-26 追加）: check/fixtures/<画面名>.mjs がある画面は、架空の入居者を読ませて帳票の紙も撮る。
  *   <画面>__<帳票>.print.png … その帳票を印刷する時の見た目（印刷部品 SUPrint で準備した状態）
  *   metrics.json の sheets   … 帳票ごとの印刷ページ数・エラー
@@ -63,6 +67,63 @@ const VIEWS = [
   { key: 'ph200', viewport: { width: 195, height: 422 }, scale: 4, mobile: true },
 ];
 
+/* 画面全体を撮る。ふだんは1枚（{ one: 絵 }）。次のどちらかの時は、上から CSS で TILE_CSS ずつ区切って撮り、
+   区切りごとの別の絵（{ tiles: [絵…] }）として返す。区切りの位置は毎回同じ（直す前と後で同じ所を比べる）。つないで1枚にはしない（canvas に載らない大きさのため）。
+   (1) 撮る前に測った絵の画素の数（幅×高さ×倍率²）が MAX_SHOT_PX を超える時は、最初から区切る（直す前と後で同じ snap.mjs が同じ判定をする）。
+       上限の理由（2026-11-17 実測・手元の Chromium）: 使い方の画面の iPhone 200%（1512×340,932＝約5.2億画素）は断られずに撮れたが、
+       171,959 行目（約2.6億画素）から下が白紙で、深い所を変えても同じ絵になっていた。白紙の始まりより十分下の1億画素に置く。
+   (2) 1枚撮りが断られた時（Unable to capture screenshot・同じ画面の 87,308px で起きた）。ほかの例外はそのまま投げる＝今までどおり「撮影に失敗」 */
+const TILE_CSS = 1024;
+const MAX_SHOT_PX = 100e6;
+async function fullShot(p, scale) {
+  const opt = { animations: 'disabled', caret: 'hide' };
+  const sz = await p.evaluate(() => ({
+    w: Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0, window.innerWidth),
+    h: Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0, window.innerHeight),
+  }));
+  if (Math.round(sz.w * scale) * Math.round(sz.h * scale) <= MAX_SHOT_PX) {
+    try { return { one: await p.screenshot(Object.assign({ fullPage: true }, opt)) }; }
+    catch (e) { if (!/Unable to capture screenshot/.test(String(e && e.message))) throw e; }
+  }
+  const tiles = [];
+  for (let y = 0; y < sz.h; y += TILE_CSS) {
+    tiles.push(await p.screenshot(Object.assign({ fullPage: true, clip: { x: 0, y, width: sz.w, height: Math.min(TILE_CSS, sz.h - y) } }, opt)));
+  }
+  return { tiles };
+}
+/* 撮った絵（1枚か区切り）を、揺れの多数決をして書く。多数決は区切りごと（区切りの数が回によって違えば、多かった撮り方の回だけで決める）。
+   書く前に、同じ画面・表示の別の撮り方の絵（1枚・余った区切り）を消す（--merge で撮り直した時に古い絵が混ざらないように）。
+   返す値: { kinds, top, shape, tiles } … kinds>1 なら揺れあり。tiles は区切りの数（1枚なら 0） */
+const tileName = (stem, i) => `${stem}.t${String(i + 1).padStart(2, '0')}.png`;
+function writeShots(stem, list) {
+  const dir = path.dirname(stem), base = path.basename(stem);
+  for (const f of fs.readdirSync(dir)) {
+    if (f === base + '.png' || (f.startsWith(base + '.t') && /^\.t\d+\.png$/.test(f.slice(base.length)))) fs.unlinkSync(path.join(dir, f));
+  }
+  const shapeOf = (s) => (s.tiles ? 'tiles:' + s.tiles.length : 'one');
+  const byShape = new Map();
+  for (const s of list) { const k = shapeOf(s); if (!byShape.has(k)) byShape.set(k, []); byShape.get(k).push(s); }
+  let shape = null; for (const [k, a] of byShape) if (!shape || a.length > byShape.get(shape).length) shape = k;
+  const use = byShape.get(shape);
+  const note = [];
+  if (byShape.size > 1) note.push(`撮り方が${byShape.size}通り（多かった撮り方 ${use.length}回で決めた）`);
+  if (shape === 'one') {
+    const pick = majority(use.map((s) => s.one));
+    fs.writeFileSync(stem + '.png', pick.buf);
+    if (pick.kinds > 1) note.push(`${pick.kinds}通りの絵・多数派 ${pick.top}回`);
+    return { note, tiles: 0 };
+  }
+  const n = use[0].tiles.length;
+  const wob = [];
+  for (let i = 0; i < n; i++) {
+    const pick = majority(use.map((s) => s.tiles[i]));
+    fs.writeFileSync(tileName(stem, i), pick.buf);
+    if (pick.kinds > 1) wob.push(`t${String(i + 1).padStart(2, '0')} ${pick.kinds}通り・多数派 ${pick.top}回`);
+  }
+  if (wob.length) note.push('区切りごと: ' + wob.join('、'));
+  return { note, tiles: n };
+}
+
 async function open(context, page, file) {
   const p = await context.newPage();
   const errors = [];
@@ -99,11 +160,11 @@ for (const file of pages) {
           const w = await p.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth, bw: document.body ? document.body.scrollWidth : 0 }));
           m[v.key] = { overflowPx: Math.max(0, Math.max(w.sw, w.bw) - w.iw) };
         }
-        shots.main.push(await p.screenshot({ fullPage: true, animations: 'disabled', caret: 'hide' }));
+        shots.main.push(await fullShot(p, v.scale));
         if (v.key === 'pc') {
           await p.emulateMedia({ media: 'print' });
           await p.waitForTimeout(300);
-          shots.print.push(await p.screenshot({ fullPage: true, animations: 'disabled', caret: 'hide' }));
+          shots.print.push(await fullShot(p, v.scale));
           if (r === 0) {
             const pdf = path.join(outDir, `${name}.pdf`);
             try {
@@ -117,9 +178,9 @@ for (const file of pages) {
     }
     for (const [kind, key] of [['main', v.key], ['print', 'print']]) {
       if (!shots[kind].length) continue;
-      const pick = majority(shots[kind]);
-      fs.writeFileSync(path.join(outDir, `${name}.${key}.png`), pick.buf);
-      if (pick.kinds > 1) { m.wobble = m.wobble || {}; m.wobble[key] = `${REPEAT}回中 ${pick.kinds}通りの絵・多数派 ${pick.top}回`; }
+      const w = writeShots(path.join(outDir, `${name}.${key}`), shots[kind]);
+      if (w.note.length) { m.wobble = m.wobble || {}; m.wobble[key] = `${REPEAT}回中 ` + w.note.join('・'); }
+      if (w.tiles) { m.tiles = m.tiles || {}; m.tiles[key] = { count: w.tiles, cssHeight: TILE_CSS }; }
     }
     m.errors[v.key] = errors;
   }
@@ -175,7 +236,7 @@ async function shootSheet(file, name, fx, sh) {
       }
       await p.emulateMedia({ media: 'print' });
       await p.waitForTimeout(300);
-      shots.push(await p.screenshot({ fullPage: true, animations: 'disabled', caret: 'hide' }));
+      shots.push(await fullShot(p, 1));
       if (r === 0) {
         const pdf = path.join(outDir, `${key}.pdf`);
         await p.pdf({ path: pdf, preferCSSPageSize: true, printBackground: true });
@@ -186,9 +247,9 @@ async function shootSheet(file, name, fx, sh) {
     await context.close();
   }
   if (shots.length) {
-    const pick = majority(shots);
-    fs.writeFileSync(path.join(outDir, `${key}.print.png`), pick.buf);
-    if (pick.kinds > 1) m.wobble = `${REPEAT}回中 ${pick.kinds}通りの絵・多数派 ${pick.top}回`;
+    const w = writeShots(path.join(outDir, `${key}.print`), shots);
+    if (w.note.length) m.wobble = `${REPEAT}回中 ` + w.note.join('・');
+    if (w.tiles) m.tiles = { print: { count: w.tiles, cssHeight: TILE_CSS } };
   }
   sheetMetrics[key] = m;
   console.log(`${file} の帳票「${sh.key}」: 印刷 ${m.printPages == null ? '?' : m.printPages}ページ` + (m.errors.some((e) => e.startsWith('帳票: ')) ? ' / 撮れなかった' : ''));

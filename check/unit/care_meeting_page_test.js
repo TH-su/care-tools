@@ -18,6 +18,7 @@
     12. innerHTML の全数点検（2026-10-25 本人指示・xss_facesheet_admission_test.js と同じやり方）
     13. 出席者の✔︎（この方の前回までの出席者から選ぶ）・印刷を A4 横いっぱいに・過去の記録の取り込み（管理者だけ）（2026-10-25 代表者の決定）
     14. 印の無い議事録は見出しから欄の候補を出し、✔︎を付けて押した時だけ欄へ入れる（2026-11-13 代表者の指示）
+    15. ほかの形の表（CSV・貼り付け）から過去の会議を、まず書かずに一覧を作ってから確定で取り込む（管理者だけ・2026-11-17 代表者の決定）
 
    ── 12 の点検表（innerHTML への代入17か所。insertAdjacentHTML・outerHTML は0か所。行番号は 2026-10-25 時点の目安） ──
    画面のスクリプトの innerHTML への代入を全部洗い、入る値が記録・名簿・自由入力・サーバーの文に由来するものは
@@ -1302,6 +1303,236 @@ async function opened(opt) {
       /a==='guess-apply'/.test(cutF(S, 'onEdClick_')) && /a==='guess-close'/.test(cutF(S, 'onEdClick_')));
     t('記録を開き直す・受け取った時は候補も捨てる', /guess:null/.test(cutF(S, 'newEditor_')) && /guess:null/.test(cutF(S, 'editorFromRow_')) && /e\.guess=null/.test(cutF(S, 'adopt_')));
     t('候補は端末に書かない（localStorage・sessionStorage に書くのは今の UI の状態だけ）', T.writes.every((w) => !/guess|cand/i.test(w[2] || '')) && !/Storage\.setItem/.test(cutF(S, 'cmGuessApply_') + cutF(S, 'guessPick_')));
+  }
+
+  group('15. ほかの形の表（CSV・貼り付け）から過去の会議を取り込む（2026-11-17 代表者の決定・管理者だけ）');
+  {
+    const SU = (role) => ({ STATUS: { OK: 'ok' }, check: () => Promise.resolve({ status: 'ok', role }), client: () => ({ auth: { getSession: () => Promise.resolve({ data: { session: { access_token: 'at-kakuu' } } }) } }) });
+    const ymd = (n) => daysAgo(n).replace(/-/g, '/');
+    /* 受け口の偽物（新しい受け口）。dry の時は送った行を全部 new で返し、確定の時は書いた数を返す */
+    const newRecv = (o) => Object.assign({ importRows: (b) => ({ ok: true, importRowsVer: 1, items: b.rows.map((r) => ({ n: r.n, status: 'new', missing: [] })), counts: {}, written: b.dry ? 0 : b.rows.length, changed: 0 }) }, o || {});
+    const mk = async (role, gasOpt, extra) => {
+      extra = extra || {};
+      const T = load(Object.assign({ roster: ROSTER, handler: gas(gasOpt) }, extra, { window: Object.assign({ SUAuth: SU(role) }, extra.window || {}) }));
+      if (extra.login !== false) T.ls.m.set('sb-kakuu-auth-token', '{}');
+      if (extra.noUrl) T.ctx.CFG.url = '';
+      T.ctx.showPicker_(); await settle();
+      await T.ctx.impcGate_(); await settle();
+      return T;
+    };
+    const CSV = ['利用者名,開催日,出席者,結論', '架空 一郎,' + ymd(10) + ',介護支援専門員／架空 担当,架空の結論', '架空 太郎,' + ymd(11) + ',,架空', '架空 二郎,' + ymd(12) + ',家族／架空 家族,架空の結論2'].join('\n');
+    const rowsOf = (T, dry) => T.meetCalls().filter((c) => c.body.op === 'importRows' && c.body.dry === dry);
+    const sec = (T) => /過去の記録の取り込み（ほかの形の表・管理者だけ）/.test(T.el('cm-pick').innerHTML);
+
+    /* 15-1 出さない場面 */
+    const N1 = await mk('office', newRecv());
+    t('15-1 管理者でない時は、ほかの形の表の節を出さない', N1.ctx.impcOk === false && !sec(N1));
+    const N2 = await mk('admin', newRecv(), { login: false });
+    t('15-1 ログインの印が無ければ確かめに行かず、出さない', N2.ctx.impcOk === false && !sec(N2) && N2.cnt.created.length === 0);
+    const N3 = await mk('admin', newRecv(), { noUrl: true });
+    t('15-1 接続先が無く、新しい保存先の確かめの部品も無い時は出さない', N3.ctx.impcOk === false && !sec(N3));
+    const N4 = await mk('admin', newRecv(), { noUrl: true, window: { SUResRead: { liveReady: () => Promise.resolve(false), write() {}, call() {} } } });
+    t('15-1 接続先が無く liveReady が false の時は出さない', N4.ctx.impcOk === false && !sec(N4));
+    const N5 = load({ role: 'field', roster: ROSTER, handler: gas(newRecv()), window: { SUAuth: SU('admin') } });
+    N5.ls.m.set('sb-kakuu-auth-token', '{}');
+    await N5.ctx.impcGate_(); N5.ctx.showPicker_(); await settle();
+    t('15-1 現場の端末では管理者でも出さない（確かめにも行かない）', N5.ctx.impcOk === false && !sec(N5) && N5.calls.length === 0);
+    t('15-1 E表の節（impGate_）とは別の門（impcGate_）で、選ぶ一覧を出すたびに確かめる', /if\(!impcOk\) impcGate_\(\);/.test(cutF(S, 'showPicker_')) && cutF(S, 'impGate_').indexOf('impc') < 0);
+
+    /* 15-2 liveReady で出す */
+    let lr = 0;
+    const L = await mk('admin', newRecv(), { noUrl: true, window: { SUResRead: { liveReady: () => { lr++; return Promise.resolve(true); }, write() {}, call() {} } } });
+    t('15-2 接続先が無くても、管理者で liveReady が true なら節が出る（E表の節は出ない）', L.ctx.impcOk === true && sec(L) && lr >= 1 && !/過去の記録の取り込み（E表別紙/.test(L.el('cm-pick').innerHTML));
+    let lr2 = 0;
+    const L2 = await mk('admin', newRecv(), { window: { SUResRead: { liveReady: () => { lr2++; return Promise.resolve(false); }, write() {}, call() {} } } });
+    t('15-2 接続先がある時は liveReady を聞かずに出す', L2.ctx.impcOk === true && sec(L2) && lr2 === 0);
+    const A = await mk('admin', newRecv(), { window: { TextDecoder } });
+    t('15-2 節にはファイルの選択（CSV）と貼り付けの欄がある（.xlsx は受けない）', /id="cm-impc-file" accept="\.csv,[^"]*"/.test(A.el('cm-pick').innerHTML) && !/xlsx/.test((A.el('cm-pick').innerHTML.match(/accept="[^"]*"/) || [''])[0]) && /id="cm-impc-paste"/.test(A.el('cm-pick').innerHTML));
+    const bytes = new TextEncoder().encode(CSV);
+    await A.ctx.impcReadFile_({ size: bytes.length, arrayBuffer: () => Promise.resolve(bytes.buffer) }); await settle();
+    t('15-2 CSV のファイルを読むと、列の数・行の数・文字コードと、列ごとの欄の選択が出る', A.ctx.impcSt.phase === 'loaded' && /読んだ表：4 列・3 行（文字コード UTF-8）/.test(A.el('cm-pick').innerHTML) && (A.el('cm-pick').innerHTML.match(/data-impc-col="/g) || []).length === 4, A.ctx.impcSt && A.ctx.impcSt.msg);
+    t('15-2 初めの欄は見出しからの候補（利用者名・開催日・出席者・結論）・開催の理由は選択肢に無い', JSON.stringify(A.ctx.impcSt.map) === JSON.stringify(['sourceName', 'heldDate', 'attendees', 'conclusion']) && !/<option value="kind"/.test(A.el('cm-pick').innerHTML));
+    t('15-2 当てた結果の先頭3件の見本が出る', /当てた結果の見本（先頭 3 件）/.test(A.el('cm-pick').innerHTML));
+    const big = await mk('admin', newRecv(), { window: { TextDecoder } });
+    await big.ctx.impcReadFile_({ size: CALC.IMP_BYTES_MAX + 1, arrayBuffer: () => { throw new Error('読まないはず'); } });
+    t('15-2 大きすぎるファイルは読まずに知らせる', /表が大きすぎます/.test(big.el('cm-pick').innerHTML) && !big.ctx.impcSt.tbl);
+
+    /* 15-3 押せない */
+    const P = await mk('admin', newRecv());
+    P.el('cm-impc-paste').value = ['氏名\t会議の日\t結論', '架空 一郎\t' + ymd(3) + '\t架空'].join('\n');
+    P.ctx.impcReadPaste_();
+    t('15-3 貼り付けた表（タブ区切り）を読む', P.ctx.impcSt.phase === 'loaded' && P.ctx.impcSt.tbl.sep === '\t' && P.el('cm-impc-paste').value === '');
+    const P0 = await mk('admin', newRecv());
+    P0.el('cm-impc-paste').value = '利用者名,開催日\n"架空 一郎,' + ymd(3);
+    P0.ctx.impcReadPaste_();
+    t('15-3 読めなかった貼り付け（引用符が閉じない）は、書きかけを欄に戻して知らせる', !P0.ctx.impcSt.tbl && /引用符/.test(P0.el('cm-pick').innerHTML) && /^利用者名,開催日/.test(P0.el('cm-impc-paste').value));
+    t('15-3 読む前に貼り付けの欄を空にする（描き直しで新しい欄へ移さない）', /if\(el\) el\.value='';\n  var ok=impcLoadText_\(v,''\);/.test(cutF(S, 'impcReadPaste_')));
+    t('15-3 開催日の列が決まらない時は「一覧を作る」を押せない', /data-act="impc-plan" disabled/.test(P.el('cm-pick').innerHTML) && /利用者名と開催日の列を、1つずつ選んでください（今は 利用者名 1 列・開催日 0 列）/.test(P.el('cm-pick').innerHTML));
+    await P.ctx.impcPlan_(); await settle();
+    t('15-3 押せない時に呼んでも送らない', rowsOf(P, true).length === 0);
+    P.ctx.onPickChange_({ target: { getAttribute: (k) => (k === 'data-impc-col' ? '1' : null), value: 'heldDate' } });
+    t('15-3 列の欄を選ぶと押せるようになる', /data-act="impc-plan">一覧を作る（書かない）</.test(P.el('cm-pick').innerHTML));
+    P.ctx.onPickChange_({ target: { getAttribute: (k) => (k === 'data-impc-col' ? '2' : null), value: 'heldDate' } });
+    t('15-3 開催日の列が2つの時も押せない', /data-act="impc-plan" disabled/.test(P.el('cm-pick').innerHTML) && /開催日 2 列/.test(P.el('cm-pick').innerHTML));
+    P.ctx.onPickChange_({ target: { getAttribute: (k) => (k === 'data-impc-col' ? '2' : null), value: 'kind' } });
+    t('15-3 開催の理由・知らない欄は選ばせない', P.ctx.impcSt.map[2] === 'heldDate');
+    P.ctx.onPickChange_({ target: { getAttribute: (k) => (k === 'data-impc-col' ? '2' : null), value: 'conclusion' } });
+    await P.ctx.impcPlan_(); await settle();
+    const hadPlan = !!P.ctx.impcSt.plan;
+    P.ctx.onPickChange_({ target: { getAttribute: (k) => (k === 'data-impc-col' ? '2' : null), value: 'issues' } });
+    t('15-3 一覧を作った後に列を選び直すと、作った一覧を捨てる（見せた一覧と違う当て方で送らない）', hadPlan && P.ctx.impcSt.plan === null && !/data-act="impc-apply"/.test(P.el('cm-pick').innerHTML));
+
+    /* 15-4 dry の要求の形と証明 */
+    const D = await mk('admin', newRecv({ importRows: (b) => ({ ok: true, importRowsVer: 1, items: b.rows.map((r) => ({ n: r.n, status: b.dry && r.id === '902' ? 'samedate' : 'new', missing: r.id === '901' ? ['開催場所'] : [] })), counts: {}, written: b.dry ? 0 : b.rows.length, changed: 0 }) }));
+    D.ctx.impcLoadText_(CSV, '');
+    await D.ctx.impcPlan_(); await settle();
+    const dr = rowsOf(D, true);
+    const r0 = dr.length ? dr[0].body.rows : [];
+    t('15-4 「一覧を作る」は op importRows・dry:true を1回送り、ログインの証明を添える', dr.length === 1 && dr[0].body.action === 'meeting' && dr[0].body.dry === true && dr[0].body.accessToken === 'at-kakuu', dr.map((c) => c.body));
+    t('15-4 送るのは画面の判定で取り込める行だけ（名簿と照合できない行は送らない）', r0.length === 2 && r0.map((r) => r.id).join(',') === '901,902', r0.map((r) => r.id));
+    t('15-4 行の形は {n, id, name, key, rec}・n は表の行の番号・key は impKey と一字一句同じ・name は名簿の氏名',
+      r0.every((r) => Object.keys(r).sort().join(',') === 'id,key,n,name,rec' && typeof r.id === 'string' && Number.isInteger(r.n)) && r0[0].n === 0 && r0[1].n === 2 &&
+      r0[0].key === CALC.impKey('901', daysAgo(10)) && r0[0].name === '架空 一郎', r0);
+    const recKeys = CALC.FIELDS.map((f) => f.key).filter((k) => k !== 'kind').sort().join(',');
+    t('15-4 rec は開催の理由と nameChecked を除いた13欄（文字の欄は文字・出席者は {role,name} の配列）', r0.every((r) => Object.keys(r.rec).sort().join(',') === recKeys && Object.keys(r.rec).length === 13 &&
+      Array.isArray(r.rec.attendees) && Object.keys(r.rec).every((k) => k === 'attendees' || typeof r.rec[k] === 'string')) && JSON.stringify(r0[0].rec.attendees) === JSON.stringify([{ role: '介護支援専門員', name: '架空 担当' }]), r0[0] && r0[0].rec);
+    const LN = await mk('admin', newRecv());
+    LN.ctx.impcLoadText_(['利用者名,開催日,開催場所,結論', '架空 一郎,' + ymd(4) + ',"架空の\n会議室","架空の\n結論"'].join('\n'), ''); await LN.ctx.impcPlan_(); await settle();
+    const lr0 = (rowsOf(LN, true)[0] || { body: { rows: [{ rec: {} }] } }).body.rows[0].rec;
+    t('15-4 1行の欄（開催場所など）は改行を空白1つにして送る・本文の欄は改行のまま', lr0.place === '架空の 会議室' && lr0.conclusion === '架空の\n結論', lr0);
+    const dh = D.el('cm-pick').innerHTML;
+    t('15-4 受け口の答えと画面の判定を合わせた組ごとの一覧（取り込める・照合できない・同じ日がもうある）と足りない欄', D.ctx.impcSt.phase === 'planned' &&
+      /取り込める（名簿の1名に一致・まだ入っていない）：1 件/.test(dh) && /名簿と照合できない（取り込みません）：1 件/.test(dh) && /同じ方・同じ開催日の記録がもうある（取り込みません）：1 件/.test(dh) && /開催場所/.test(dh) &&
+      /data-act="impc-apply">取り込める 1 件を取り込む（確定）</.test(dh), dh.slice(0, 300));
+    t('15-4 送り終えたら証明を本文から外す（E表と同じ impPost_ を使う）', /impPost_\(\{action:'meeting',op:'importRows',dry:dry,rows:part\}\)/.test(cutF(S, 'impcSend_')));
+    const D2 = await mk('admin', newRecv({ importRows: (b) => ({ ok: true, importRowsVer: 1, items: b.rows.slice(1).map((r) => ({ n: r.n, status: 'new' })), counts: {} }) }));
+    D2.ctx.impcLoadText_(CSV, ''); await D2.ctx.impcPlan_(); await settle();
+    t('15-4 受け口の答えが送った行と合わない時は一覧にしない（取り込めない側に倒す）', D2.ctx.impcSt.plan === null && /送った行と合いませんでした/.test(D2.el('cm-pick').innerHTML) && !/impc-apply/.test(D2.el('cm-pick').innerHTML));
+    const D3 = await mk('admin', newRecv({ importRows: (b) => ({ ok: true, importRowsVer: 1, items: b.rows.map((r) => ({ n: r.n, status: 'written' })), counts: {} }) }));
+    D3.ctx.impcLoadText_(CSV, ''); await D3.ctx.impcPlan_(); await settle();
+    t('15-4 知らない状態が返った時も一覧にしない', D3.ctx.impcSt.plan === null && !/impc-apply/.test(D3.el('cm-pick').innerHTML));
+
+    /* 15-5 ✔︎の行だけ */
+    const C = await mk('admin', newRecv());
+    C.ctx.impcLoadText_(CSV, ''); await C.ctx.impcPlan_(); await settle();
+    t('15-5 取り込める行には初め✔︎が付く', (C.el('cm-pick').innerHTML.match(/data-impck="/g) || []).length === 2 && /data-impck="0" checked/.test(C.el('cm-pick').innerHTML));
+    C.ctx.onPickChange_({ target: { getAttribute: (k) => (k === 'data-impck' ? '0' : null), checked: false } });
+    t('★15-5 ✔︎を外すとボタンの件数が減る', /data-act="impc-apply">取り込める 1 件を取り込む（確定）</.test(C.el('cm-pick').innerHTML));
+    await C.ctx.impcApply_(); await settle();
+    const ap = rowsOf(C, false);
+    t('15-5 取り込む前に確かめの窓（件数）を出す', C.cnt.ask.some((x) => x.title === '過去の記録を取り込みます' && /^1 件を「確定」として/.test(x.lines[0])));
+    t('★15-5 確定は dry:false で✔︎の付いた行だけを送る（外した行・照合できない行は送らない）', ap.length === 1 && ap[0].body.rows.length === 1 && ap[0].body.rows[0].n === 2 && ap[0].body.accessToken === 'at-kakuu', ap.map((c) => c.body.rows));
+    t('15-5 取り込んだ件数を知らせ、最終開催日を読み直す', /1 件を取り込みました/.test(C.el('cm-pick').innerHTML) && C.ops().filter((o) => o === 'summary').length >= 2 && C.ctx.impcSt.plan === null);
+    const Q = await mk('admin', newRecv(), { answer: false });
+    Q.ctx.impcLoadText_(CSV, ''); await Q.ctx.impcPlan_(); await settle(); await Q.ctx.impcApply_(); await settle();
+    t('15-5 確かめの窓で「やめる」を押したら送らない', rowsOf(Q, false).length === 0 && Q.ctx.impcSt.phase === 'planned');
+
+    /* 15-6 50行で分けて送る */
+    const many = ['利用者名,開催日'].concat(Array.from({ length: 120 }, (_, i) => '架空 一郎,' + ymd(i + 1))).join('\n');
+    let live = 0, peak = 0;
+    const M = await mk('admin', newRecv({ importRows: (b) => { live++; peak = Math.max(peak, live); return new Promise((ok) => setImmediate(() => { live--; ok({ ok: true, importRowsVer: 1, items: b.rows.map((r) => ({ n: r.n, status: 'new' })), counts: {}, written: b.dry ? 0 : b.rows.length, changed: 0 }); })); } }));
+    M.ctx.impcLoadText_(many, ''); await M.ctx.impcPlan_(); await settle(60);
+    const md = rowsOf(M, true);
+    t('15-6 一覧を作る時は50行ずつ（50・50・20）順に送る', md.map((c) => c.body.rows.length).join(',') === '50,50,20' && peak === 1, md.map((c) => c.body.rows.length));
+    t('15-6 n は重ならない', new Set([].concat(...md.map((c) => c.body.rows.map((r) => r.n)))).size === 120);
+    await M.ctx.impcApply_(); await settle(60);
+    const ma = rowsOf(M, false);
+    t('15-6 確定も50行ずつ順に送り、書いた数を足して知らせる', ma.map((c) => c.body.rows.length).join(',') === '50,50,20' && peak === 1 && /120 件を取り込みました/.test(M.el('cm-pick').innerHTML), ma.map((c) => c.body.rows.length));
+
+    /* 15-7 古い受け口 */
+    const O1 = await mk('admin', { importRows: () => ({ ok: false, code: 'bad_input', error: '不明な操作です' }) });
+    O1.ctx.impcLoadText_(CSV, ''); await O1.ctx.impcPlan_(); await settle();
+    /* 差分の審査（2026-11-17）で文を変えた: 新しい受け口の入力の断り（bad_input）にも importRowsVer が付かず、error の文を読まない決まりでは
+       Google の古い受け口の「不明な操作です」と見分けられないため、2つをまとめた1文にした（取り込みのボタンを出さない・送らないは同じ） */
+    t('15-7 古い Google の受け口（bad_input・importRowsVer なし）は「この受け口が表を受け付けませんでした（何も書いていません）…」・取り込みのボタンを出さない',
+      /この受け口が表を受け付けませんでした（何も書いていません）。受け口がまだ対応していないか、表の中に送れない値があります/.test(O1.el('cm-pick').innerHTML) && !/impc-apply/.test(O1.el('cm-pick').innerHTML) && rowsOf(O1, false).length === 0);
+    const O2 = await mk('admin', { importRows: () => ({ error: 'unknown action', code: 'action' }) });
+    O2.ctx.impcLoadText_(CSV, ''); await O2.ctx.impcPlan_(); await settle();
+    t('15-7 古い res-write（code action）も同じ', /この受け口はまだ対応していません/.test(O2.el('cm-pick').innerHTML) && !/impc-apply/.test(O2.el('cm-pick').innerHTML));
+    const O3 = await mk('admin', { importRows: () => ({ ok: true, items: [] }) });
+    O3.ctx.impcLoadText_(CSV, ''); await O3.ctx.impcPlan_(); await settle();
+    t('15-7 ok でも importRowsVer が 1 でない受け口は対応していない扱い', /この受け口はまだ対応していません/.test(O3.el('cm-pick').innerHTML));
+    const O4 = await mk('admin', { importRows: () => ({ error: 'x', code: 'mfa' }) });
+    O4.ctx.impcLoadText_(CSV, ''); await O4.ctx.impcPlan_(); await settle();
+    t('15-7 2段階認証なし（code mfa）・管理者でない（role・not_admin）は分かる言葉で出す', /管理者（Google＋2段階認証）でログインしている時だけ使えます/.test(O4.el('cm-pick').innerHTML) && /何も書いていません/.test(O4.el('cm-pick').innerHTML));
+    t('15-7 断りは code だけで読み分ける（error の文を読まない）', !/\.error\b/.test(cutF(S, 'impcOld_') + cutF(S, 'impcErr_') + cutF(S, 'impcSend_') + cutF(S, 'impcPlan_') + cutF(S, 'impcApply_')));
+
+    /* 15-8 通信切れ */
+    const U0 = await mk('admin', { importRows: () => NET });
+    U0.ctx.impcLoadText_(CSV, ''); await U0.ctx.impcPlan_(); await settle();
+    t('15-8 一覧を作る時に通信が切れたら一覧を出さず、何も書いていないと知らせる', U0.ctx.impcSt.plan === null && /一覧を作れませんでした/.test(U0.el('cm-pick').innerHTML) && /何も書いていません/.test(U0.el('cm-pick').innerHTML));
+    const U = await mk('admin', newRecv({ importRows: (b) => (b.dry ? newRecv().importRows(b) : NET) }));
+    U.ctx.impcLoadText_(CSV, ''); await U.ctx.impcPlan_(); await settle(); await U.ctx.impcApply_(); await settle();
+    t('★15-8 確定で通信が切れたら「取り込めたか分かりません。一覧を作り直して確かめてください」と出し、やり直さない', /取り込めたか分かりません。一覧を作り直して確かめてください/.test(U.el('cm-pick').innerHTML) && rowsOf(U, false).length === 1);
+    let k2 = 0;
+    const U2 = await mk('admin', newRecv({ importRows: (b) => (b.dry ? newRecv().importRows(b) : (++k2 === 2 ? NET : newRecv().importRows(b))) }));
+    U2.ctx.impcLoadText_(many, ''); await U2.ctx.impcPlan_(); await settle(60); await U2.ctx.impcApply_(); await settle(60);
+    t('15-8 途中まで入った時は入った件数を出し、残りは送らない', /取り込めたか分かりません。一覧を作り直して確かめてください（それまでに 50 件を取り込みました）/.test(U2.el('cm-pick').innerHTML) && rowsOf(U2, false).length === 2);
+    const B = await mk('admin', newRecv({ importRows: (b) => (b.dry ? newRecv().importRows(b) : new Promise(() => {})) }));
+    B.ctx.impcLoadText_(CSV, ''); await B.ctx.impcPlan_(); await settle(); B.ctx.impcApply_(); await settle();
+    const ev = { prevented: false, preventDefault() { this.prevented = true; } };
+    B.ctx.onBeforeUnload_(ev);
+    t('15-8 取り込みの途中は閉じる・読み込み直す前に止め、ボタンを押せない', ev.prevented === true && B.ctx.cmLeaveDirty_() === true && B.ctx.impcSt.phase === 'applying' && !/data-act="impc-apply"/.test(B.el('cm-pick').innerHTML) && /data-act="impc-paste" disabled/.test(B.el('cm-pick').innerHTML));
+    B.ctx.showFieldOnly_();
+    t('15-8 現場用へ切り替わったら、読んだ表・当て方・一覧を捨てる', B.ctx.impcSt === null && B.ctx.impcOk === false);
+
+    /* 15-9 端末に書かない・esc */
+    const allowed = (w) => (w[1] === 'remove' && w[2] === 'cm_open_meeting') || (cmDueW(w) && w[1] === 'set');
+    t('15-9 読む・一覧を作る・取り込むの間も localStorage・sessionStorage に書かない', [A, P, D, C, M, U2].every((T) => T.writes.every(allowed)), [].concat(...[A, P, D, C, M, U2].map((T) => T.writes.filter((w) => !allowed(w)))));
+    t('15-9 取り込みの関数は保存の口を使わない', !/Storage|indexedDB|cookie/.test(['impcLoadText_', 'impcReadPaste_', 'impcReadFile_', 'impcLoadBytes_', 'impcPlan_', 'impcApply_', 'impcSend_', 'impcSetCol_', 'impcChange_'].map((n) => cutF(S, n)).join('\n')));
+    const EVIL = '<img src=x onerror=alert(1)>', BREAK = '"><script>alert(1)</script>';
+    const q = (v) => '"' + v.replace(/"/g, '""') + '"';
+    const X = await mk('admin', newRecv({ importRows: (b) => ({ ok: true, importRowsVer: 1, items: b.rows.map((r) => ({ n: r.n, status: 'new', missing: [EVIL] })), counts: {} }) }));
+    const evil = ['利用者名,開催日,開催時間,' + q(BREAK) + ',' + EVIL, '架空 一郎,' + ymd(5) + ',' + EVIL + ',' + EVIL + ',' + q(BREAK), q(BREAK) + ',' + EVIL + ',,,'].join('\n');
+    X.ctx.impcLoadText_(evil, '');
+    const xh1 = X.el('cm-pick').innerHTML;
+    await X.ctx.impcPlan_(); await settle();
+    const xh2 = X.el('cm-pick').innerHTML;
+    const bad = (h) => /<img/i.test(h) || /<script/i.test(h) || /["']\s*on[a-z]+\s*=/i.test(h);
+    t('15-9 見出し・セル・見本・知らせ（読めない日付・時間・当てていない列）に壊れた値を入れても、実行される形にならない', !!X.ctx.impcSt.plan && !bad(xh1) && !bad(xh2) &&
+      xh1.indexOf('&lt;img src=x onerror=alert(1)&gt;') >= 0 && xh1.indexOf('&quot;&gt;&lt;script&gt;') >= 0 && xh2.indexOf('&lt;img src=x onerror=alert(1)&gt;') >= 0, xh2.slice(0, 300));
+    /* 15-10 差分の審査（2026-11-17）の直し */
+    const RG = await mk('admin', newRecv());
+    const ragged = ['利用者名,開催日,結論', '架空 一郎,' + ymd(20) + ',架空の結論は二十字を超える長さの文で頭だけを出すかを確かめる', '架空 二郎,' + ymd(21) + ',架空,ずれた', '架空 一郎,' + ymd(22) + ',架空の結論3'].join('\n');
+    RG.ctx.impcLoadText_(ragged, '');
+    t('15-10 列の数が見出しと違う行は、読んだ時の知らせに行の番号を出す', /列の数が見出しと違う行が 1 行あります（2 件目/.test(RG.el('cm-pick').innerHTML));
+    await RG.ctx.impcPlan_(); await settle();
+    const rgh = RG.el('cm-pick').innerHTML, rgs = rowsOf(RG, true);
+    t('★15-10 列の数が見出しと違う行は「列の数が見出しと違う（取り込みません）」の組に入れ、送らない・✔︎を付けない',
+      /列の数が見出しと違う（取り込みません）：1 件/.test(rgh) && rgs.length === 1 && rgs[0].body.rows.map((r) => r.n).join(',') === '0,2' && rgh.indexOf('data-impck="1"') < 0 && /見出し 3 列・この行 4 列・2 件目/.test(rgh), rgs.map((c) => c.body.rows.map((r) => r.n)));
+    t('15-10 一覧の各行に本文の欄の頭（20字）を出す', /<th scope="col">本文の頭<\/th>/.test(rgh) && rgh.indexOf('架空の結論は二十字を超える長さの文で頭だけを出すかを確かめる'.slice(0, 20) + '…') >= 0 && rgh.indexOf('架空の結論3') >= 0);
+    const ST = await mk('admin', newRecv({ importRows: (b) => ({ ok: true, importRowsVer: 1, items: b.rows.map((r, i) => ({ n: r.n, status: ['exists', 'samedate', 'new'][i % 3], missing: [] })), counts: {} }) }));
+    const three = ['利用者名,開催日', '架空 一郎,' + ymd(30), '架空 一郎,' + ymd(31), '架空 一郎,' + ymd(32), '架空 二郎,' + ymd(33), '架空 二郎,' + ymd(33)].join('\n');
+    ST.ctx.impcLoadText_(three, ''); await ST.ctx.impcPlan_(); await settle();
+    const sth = ST.el('cm-pick').innerHTML;
+    t('15-10 受け口が返す送信済み・同じ日がもうある・表の中の重なりを組ごとに出す（取り込めるのは new だけ）',
+      /送信済み（前に取り込んだ）：1 件/.test(sth) && /同じ方・同じ開催日の記録がもうある（取り込みません）：1 件/.test(sth) && /表の中に同じ方・同じ開催日が2行以上（どれも取り込みません）：2 件/.test(sth) && /取り込める 1 件を取り込む/.test(sth), sth.slice(0, 300));
+    const BI = await mk('admin', { importRows: () => ({ ok: false, code: 'bad_input', error: 'x', importRowsVer: 1 }) });
+    BI.ctx.impcLoadText_(CSV, ''); await BI.ctx.impcPlan_(); await settle();
+    t('15-10 importRowsVer の付いた入力の断りは、受け口の断りの文で出す（何も書いていません）', /送った内容をサーバーが受け付けませんでした/.test(BI.el('cm-pick').innerHTML) && /何も書いていません/.test(BI.el('cm-pick').innerHTML) && !/まだ対応していません/.test(BI.el('cm-pick').innerHTML));
+    const applyWith = async (res) => {
+      const T = await mk('admin', newRecv({ importRows: (b) => (b.dry ? newRecv().importRows(b) : res(b)) }));
+      T.ctx.impcLoadText_(CSV, ''); await T.ctx.impcPlan_(); await settle(); await T.ctx.impcApply_(); await settle();
+      return T;
+    };
+    const unsureMsg = /取り込めたか分かりません。一覧を作り直して確かめてください/;
+    for (const [name, res] of [['res-write の code db（503）', () => ({ error: 'x', code: 'db' })], ['Google の code server', () => ({ ok: false, code: 'server', error: 'x' })], ['code の無い断り', () => ({ error: '認証エラー' })], ['ok でも形が違う答え', () => ({ ok: true })]]) {
+      const T = await applyWith(res);
+      t('★15-10 確定で ' + name + ' の時は「取り込めたか分かりません」（何も書いていませんと偽らない）', unsureMsg.test(T.el('cm-pick').innerHTML) && !/何も書いていません/.test(T.el('cm-pick').innerHTML) && rowsOf(T, false).length === 1, T.ctx.impcSt.msg);
+    }
+    for (const [name, res, re] of [['入力の断り（bad_input）', () => ({ ok: false, code: 'bad_input', error: 'x' }), /送った内容をサーバーが受け付けませんでした/], ['権限（role）', () => ({ error: 'x', code: 'role' }), /管理者（Google＋2段階認証）/], ['2段階認証（mfa）', () => ({ error: 'x', code: 'mfa' }), /管理者（Google＋2段階認証）/], ['管理者でない（not_admin）', () => ({ ok: false, code: 'not_admin', error: 'x' }), /管理者（Google＋2段階認証）/]]) {
+      const T = await applyWith(res);
+      t('15-10 確定で ' + name + ' の時だけ「何も書いていません」', re.test(T.el('cm-pick').innerHTML) && /（何も書いていません）/.test(T.el('cm-pick').innerHTML) && !unsureMsg.test(T.el('cm-pick').innerHTML), T.ctx.impcSt.msg);
+    }
+    const W = await applyWith((b) => ({ ok: true, importRowsVer: 1, items: b.rows.map((r, i) => ({ n: r.n, status: i === 0 ? 'samedate' : 'exists' })), written: 0, changed: 1 }));
+    t('15-10 ✔︎の数と書けた数が違う時は、取り込まなかった数と状態ごとの内訳を出す', /0 件を取り込みました。/.test(W.el('cm-pick').innerHTML) && /2 件は取り込みませんでした（同じ方・同じ開催日の記録がもうある 1 件・送信済み 1 件）。一覧を作り直すと理由が出ます/.test(W.el('cm-pick').innerHTML), W.ctx.impcSt.msg);
+    t('15-10 changed の文は「取り込みの間にほかの端末の記録や名簿が変わった」', /取り込みの間にほかの端末の記録や名簿が変わった 1 件は入れていません/.test(W.el('cm-pick').innerHTML));
+    const allowed2 = (w) => (w[1] === 'remove' && w[2] === 'cm_open_meeting') || (cmDueW(w) && w[1] === 'set');
+    t('15-10 この場面でも端末に書かない', [RG, ST, W].every((T) => T.writes.every(allowed2)));
+    const XH = await mk('admin', newRecv());
+    XH.ctx.impcLoadText_(['利用者名,開催日,結論', '架空 一郎,' + ymd(6) + ',' + EVIL, '架空 二郎,' + ymd(7) + ',' + EVIL + ',' + EVIL].join('\n'), ''); await XH.ctx.impcPlan_(); await settle();
+    t('15-10 本文の頭・列の数の知らせも esc を通す', !bad(XH.el('cm-pick').innerHTML) && XH.el('cm-pick').innerHTML.indexOf('&lt;img src=x onerr') >= 0 && /列の数が見出しと違う（取り込みません）：1 件/.test(XH.el('cm-pick').innerHTML));
+    t('15-9 innerHTML は増やしていない（選ぶ一覧 pickerHtml_ の中に描く）', /impHtml_\(\)\+impcHtml_\(\)/.test(cutF(S, 'pickerHtml_')));
   }
 
   say('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');

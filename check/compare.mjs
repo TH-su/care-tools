@@ -19,6 +19,11 @@
  *   「帳票の印刷（PDF のページごと）」の行に出す。--allow の扱いは帳票の絵と同じ。違ったページの差分画像は <帳票>.p<番号>.diff.png。
  *   pdftoppm が無い時は「未実施」と出し、「一致」とは言わない（環境変数 SU_REQUIRE_PDFTOPPM=1 の時は失敗にする＝CI）。
  *
+ * 縦に長い絵（2026-11-17 追加）: 絵は 2048 行ずつの帯に分けて比べる（1枚を丸ごと canvas に載せると、縦に長い絵は載らずに「一致」と出ていた）。
+ *   snap.mjs が区切って撮った絵（<画面>.<表示>.t01.png…）は区切りごとに比べ、画面・表示ごとに1行にまとめる（違った区切りの番号と画素数を書く）。
+ *   直す前と後で撮り方が違う（1枚と区切り・区切りの数が違う）時は「撮り方が違う（高さが変わった）」として違いに数える（合否の決まりは今までどおり）。
+ *   絵を読めない時は「一致」と言わず失敗にする。
+ *
  * ★色の揺れ（--tol・既定 2）: 1画素の赤・緑・青のどれもが 2 以内しか違わない時は「同じ」とみなす。
  *   角の丸み・文字のにじみの描き方が撮るたびに 1 だけずれることがある（2026-10-04 実測: 消耗品管理の角で ±1）。
  *   位置・形・文字が変わると差は数十〜二百になるので、この幅で本当の違いを見落とすことはない。
@@ -43,45 +48,129 @@ const { chromium } = loadPlaywright();
 const browser = await chromium.launch();
 const page = await browser.newPage();
 
-/* 2枚の PNG を画素で比べる（違う画素の数・範囲・赤で塗った差分画像） */
+/* 2枚の PNG を画素で比べる（違う画素の数・範囲・赤で塗った差分画像）。
+   絵は高さ BAND 行ずつの細い帯に分けて小さな canvas に描いて比べる（2026-11-17）。
+   1枚を丸ごと canvas に載せると、縦に長い絵（例: 780×約78,000 画素）は canvas に載らず、どの画素も 0 のまま読めて「一致」と出ていたため。
+   差分画像は、高さ DIFF_MAX_H 以下なら今までどおり絵と同じ大きさの1枚、それより高い絵（と1枚に描けなかった時）は違いの範囲の上から CROP_H 行だけを切り出す（crop に範囲）。
+   DIFF_MAX_H は実測（2026-11-17・手元の Chromium）: 高さ 65,535 までの canvas は読み書きでき、65,536 以上は何も描けずに 0 のまま読める
+   帯が読めない（幅・高さが 0、帯の全画素が透明）時は「一致」と言わず error を返す */
+const BAND = 2048, DIFF_MAX_H = 65535, CROP_H = 16384;
 function diffPng(a, b) {
-  return page.evaluate(async ([da, db, tol]) => {
+  return page.evaluate(async ([da, db, tol, BAND, MAXH, CROP_H]) => {
     function load(src) { return new Promise((ok, ng) => { const im = new Image(); im.onload = () => ok(im); im.onerror = ng; im.src = src; }); }
-    const [ia, ib] = await Promise.all([load(da), load(db)]);
+    let ia, ib;
+    try { [ia, ib] = await Promise.all([load(da), load(db)]); } catch (e) { return { same: false, size: false, error: '絵を読めない' }; }
     if (ia.width !== ib.width || ia.height !== ib.height) return { same: false, size: true, a: [ia.width, ia.height], b: [ib.width, ib.height] };
     const w = ia.width, h = ia.height;
-    const ca = document.createElement('canvas'); ca.width = w; ca.height = h;
-    const cb = document.createElement('canvas'); cb.width = w; cb.height = h;
+    if (!w || !h) return { same: false, size: false, error: '絵を読めない' };
+    const ca = document.createElement('canvas'); ca.width = w; ca.height = Math.min(BAND, h);
+    const cb = document.createElement('canvas'); cb.width = w; cb.height = Math.min(BAND, h);
     const xa = ca.getContext('2d', { willReadFrequently: true }), xb = cb.getContext('2d', { willReadFrequently: true });
-    xa.drawImage(ia, 0, 0); xb.drawImage(ib, 0, 0);
-    const pa = xa.getImageData(0, 0, w, h).data, pb = xb.getImageData(0, 0, w, h).data;
-    let n = 0, minY = h, maxY = -1, minX = w, maxX = -1;
-    const diff = xb.createImageData(w, h); const pd = diff.data;
-    for (let i = 0; i < pa.length; i += 4) {
-      const d = Math.max(Math.abs(pa[i] - pb[i]), Math.abs(pa[i + 1] - pb[i + 1]), Math.abs(pa[i + 2] - pb[i + 2]), Math.abs(pa[i + 3] - pb[i + 3]));
-      const px = (i / 4) % w, py = Math.floor((i / 4) / w);
-      if (d > tol) { n++; pd[i] = 255; pd[i + 1] = 0; pd[i + 2] = 0; pd[i + 3] = 255; if (py < minY) minY = py; if (py > maxY) maxY = py; if (px < minX) minX = px; if (px > maxX) maxX = px; }
-      else { const g = Math.round((pb[i] + pb[i + 1] + pb[i + 2]) / 3); pd[i] = g; pd[i + 1] = g; pd[i + 2] = g; pd[i + 3] = 60; }
+    if (!xa || !xb) return { same: false, size: false, error: '帯の canvas を作れない' };
+    /* y0〜y1 の行を帯ごとに比べる。out があれば差分の色を out の (行 − oy) に描く */
+    function scan(y0, y1, out, oy) {
+      let n = 0, minY = h, maxY = -1, minX = w, maxX = -1, bad = false;
+      for (let by = y0; by < y1; by += BAND) {
+        const bh = Math.min(BAND, y1 - by);
+        xa.clearRect(0, 0, w, BAND); xb.clearRect(0, 0, w, BAND);
+        xa.drawImage(ia, 0, by, w, bh, 0, 0, w, bh); xb.drawImage(ib, 0, by, w, bh, 0, 0, w, bh);
+        const pa = xa.getImageData(0, 0, w, bh).data, pb = xb.getImageData(0, 0, w, bh).data;
+        const diff = out ? out.ctx.createImageData(w, bh) : null; const pd = diff ? diff.data : null;
+        let seen = false;
+        for (let i = 0; i < pa.length; i += 4) {
+          if (pa[i + 3] || pb[i + 3]) seen = true;
+          const d = Math.max(Math.abs(pa[i] - pb[i]), Math.abs(pa[i + 1] - pb[i + 1]), Math.abs(pa[i + 2] - pb[i + 2]), Math.abs(pa[i + 3] - pb[i + 3]));
+          const px = (i / 4) % w, py = by + Math.floor((i / 4) / w);
+          if (d > tol) { n++; if (pd) { pd[i] = 255; pd[i + 1] = 0; pd[i + 2] = 0; pd[i + 3] = 255; } if (py < minY) minY = py; if (py > maxY) maxY = py; if (px < minX) minX = px; if (px > maxX) maxX = px; }
+          else if (pd) { const g = Math.round((pb[i] + pb[i + 1] + pb[i + 2]) / 3); pd[i] = g; pd[i + 1] = g; pd[i + 2] = g; pd[i + 3] = 60; }
+        }
+        if (!seen) bad = true;   // 帯の全画素が透明＝描けていない（撮った絵は不透明なので、本物の絵ではまず起きない）
+        if (diff) out.ctx.putImageData(diff, 0, by - oy);
+      }
+      return { n, box: [minX, minY, maxX, maxY], bad };
     }
-    if (!n) return { same: true, size: false, w, h };
-    xb.putImageData(diff, 0, 0);
-    return { same: false, size: false, w, h, n, box: [minX, minY, maxX, maxY], png: cb.toDataURL('image/png') };
-  }, [toDataUrl(a), toDataUrl(b), TOL]);
+    const full = h <= MAXH;
+    let out = null;
+    if (full) { const c = document.createElement('canvas'); c.width = w; c.height = h; out = { c, ctx: c.getContext('2d') }; }
+    const r = scan(0, h, out, 0);
+    if (r.bad) return { same: false, size: false, error: '帯を読めない（全画素が透明）', w, h };
+    if (!r.n) return { same: true, size: false, w, h };
+    let crop = null, png = full ? out.c.toDataURL('image/png') : '';
+    if (png.length <= 6) {   // 高すぎる絵・1枚に描けなかった時は、違いの範囲の上から CROP_H 行だけ
+      const y0 = Math.max(0, r.box[1] - 200), y1 = Math.min(h, y0 + CROP_H);
+      const c = document.createElement('canvas'); c.width = w; c.height = y1 - y0; out = { c, ctx: c.getContext('2d') };
+      scan(y0, y1, out, y0); crop = [y0, y1]; png = out.c.toDataURL('image/png');
+    }
+    return { same: false, size: false, w, h, n: r.n, box: r.box, crop, png: png.length > 6 ? png : null };
+  }, [toDataUrl(a), toDataUrl(b), TOL, BAND, DIFF_MAX_H, CROP_H]);
 }
+const statusOf = (r) => (r.error ? '読めない' : r.same ? '一致' : (r.size ? '大きさが違う' : '違いあり'));
 
-const files = fs.readdirSync(headDir).filter((f) => f.endsWith('.png')).sort();
-const results = [];
-for (const f of files) {
-  const a = path.join(baseDir, f), b = path.join(headDir, f);
-  const [name, view] = [f.replace(/\.[a-z0-9]+\.png$/, ''), f.match(/\.([a-z0-9]+)\.png$/)[1]];
-  if (!fs.existsSync(a)) { results.push({ file: f, name, view, status: 'base無し' }); continue; }
-  const r = await diffPng(a, b);
-  const row = { file: f, name, view, status: r.same ? '一致' : (r.size ? '大きさが違う' : '違いあり'), pixels: r.n || 0, box: r.box || null, size: r.size ? { base: r.a, head: r.b } : null };
-  if (r.png) { const p = path.join(outDir, f.replace(/\.png$/, '.diff.png')); fs.writeFileSync(p, Buffer.from(r.png.split(',')[1], 'base64')); row.diff = p; }
-  if (!r.same) {   // 違った画面は、前・後の撮影も並べて置く（差分画像だけでは何が変わったか分かりにくいため）
-    try { fs.copyFileSync(a, path.join(outDir, f.replace(/\.png$/, '.before.png'))); fs.copyFileSync(b, path.join(outDir, f.replace(/\.png$/, '.after.png'))); } catch (e) { /* 置けなくても比較は続ける */ }
+/* 撮った絵を、画面・表示ごとにまとめる。<名前>.<表示>.png（1枚）か <名前>.<表示>.t01.png…（縦に長すぎて区切って撮った絵・snap.mjs の fullShot） */
+const TILE_RE = /^(.+)\.([a-z0-9]+)\.t(\d+)\.png$/, ONE_RE = /^(.+)\.([a-z0-9]+)\.png$/;
+function shotGroups(dir) {
+  const g = new Map();
+  if (!fs.existsSync(dir)) return g;
+  for (const f of fs.readdirSync(dir)) {
+    const t = f.match(TILE_RE), o = t ? null : f.match(ONE_RE);
+    const m = t || o; if (!m) continue;
+    const k = `${m[1]}.${m[2]}`;
+    const e = g.get(k) || { name: m[1], view: m[2], one: null, tiles: [] };
+    if (t) e.tiles.push({ n: Number(t[3]), f }); else e.one = f;
+    g.set(k, e);
   }
-  results.push(row);
+  for (const e of g.values()) e.tiles.sort((x, y) => x.n - y.n);
+  return g;
+}
+/* 撮り方: 「1枚」か「N区切り」。番号の欠け・1枚との混在は撮り方が崩れている＝比べずに違いとして出す */
+function shapeOf(e) {
+  if (!e) return null;
+  if (e.one && e.tiles.length) return '1枚と区切りが混在';
+  if (e.one) return '1枚';
+  if (e.tiles.some((t, i) => t.n !== i + 1)) return '区切りの番号が欠けている';
+  return `${e.tiles.length}区切り`;
+}
+/* その画面・表示の絵があるか（1枚か区切りの1枚目） */
+const hasShot = (dir, stem) => fs.existsSync(path.join(dir, `${stem}.png`)) || fs.existsSync(path.join(dir, `${stem}.t01.png`));
+function keepPair(a, b, f) {   // 違った絵は、前・後の撮影も並べて置く（差分画像だけでは何が変わったか分かりにくいため）
+  try { fs.copyFileSync(a, path.join(outDir, f.replace(/\.png$/, '.before.png'))); fs.copyFileSync(b, path.join(outDir, f.replace(/\.png$/, '.after.png'))); } catch (e) { /* 置けなくても比較は続ける */ }
+}
+function saveDiff(r, f) { if (!r.png) return null; const p = path.join(outDir, f.replace(/\.png$/, '.diff.png')); fs.writeFileSync(p, Buffer.from(r.png.split(',')[1], 'base64')); return p; }
+
+const gBase = shotGroups(baseDir), gHead = shotGroups(headDir);
+const results = [];
+for (const k of [...gHead.keys()].sort()) {
+  const eh = gHead.get(k), eb = gBase.get(k);
+  const { name, view } = eh;
+  const sb0 = shapeOf(eb), sh0 = shapeOf(eh);
+  const label = eh.one && !eh.tiles.length ? eh.one : `${k}.t*.png`;
+  if (!eb) { results.push({ file: label, name, view, status: 'base無し' }); continue; }
+  /* 撮り方が違う（1枚と区切り・区切りの数が違う）＝画面の高さが変わった。比べずに違いとして数える */
+  if (sb0 !== sh0 || !/^(1枚|\d+区切り)$/.test(sh0)) {
+    results.push({ file: label, name, view, status: '撮り方が違う', pixels: 0, shape: { base: sb0, head: sh0 } });
+    continue;
+  }
+  if (eh.one) {
+    const f = eh.one, a = path.join(baseDir, f), b = path.join(headDir, f);
+    const r = await diffPng(a, b);
+    const row = { file: f, name, view, status: statusOf(r), pixels: r.n || 0, box: r.box || null, size: r.size ? { base: r.a, head: r.b } : null };
+    if (r.crop) row.diffCrop = r.crop;
+    const d = saveDiff(r, f); if (d) row.diff = d;
+    if (!r.same) keepPair(a, b, f);
+    results.push(row);
+    continue;
+  }
+  /* 区切りごとに比べ、画面・表示ごとに1行にまとめる */
+  const tiles = [];
+  for (const t of eh.tiles) {
+    const a = path.join(baseDir, t.f), b = path.join(headDir, t.f);
+    const r = await diffPng(a, b);
+    const tr = { t: t.n, status: statusOf(r), pixels: r.n || 0, box: r.box || null, size: r.size ? { base: r.a, head: r.b } : null };
+    const d = saveDiff(r, t.f); if (d) tr.diff = d;
+    if (!r.same) { keepPair(a, b, t.f); tiles.push(tr); }
+  }
+  const worst = ['読めない', '大きさが違う', '違いあり'].find((s) => tiles.some((t) => t.status === s)) || '一致';
+  results.push({ file: label, name, view, status: worst, pixels: tiles.reduce((s, t) => s + t.pixels, 0), tileCount: eh.tiles.length, tiles });
 }
 
 const mb = readJson(path.join(baseDir, 'metrics.json'), { pages: {} }), mh = readJson(path.join(headDir, 'metrics.json'), { pages: {} });
@@ -137,7 +226,7 @@ if (hasPdftoppm) {
     if (pa.length !== pb.length) pageShort.push(`${key} ${pa.length}→${pb.length}ページ・先頭${n}ページだけ`);
     for (let i = 0; i < n; i++) {
       const r = await diffPng(pa[i], pb[i]);
-      const row = { name: key, page: i + 1, status: r.same ? '一致' : (r.size ? '大きさが違う' : '違いあり'), pixels: r.n || 0, box: r.box || null };
+      const row = { name: key, page: i + 1, status: statusOf(r), pixels: r.n || 0, box: r.box || null };
       if (!r.same) {
         const stem = path.join(outDir, `${key}.p${i + 1}`);
         if (r.png) { fs.writeFileSync(stem + '.diff.png', Buffer.from(r.png.split(',')[1], 'base64')); row.diff = stem + '.diff.png'; }
@@ -155,13 +244,20 @@ if (!results.some((r) => r.status !== 'base無し')) { console.log('比べられ
 /* 撮れているはずの PNG（画面×4表示）が揃っているか。無い分を「一致」に数えない */
 const expected = [];
 for (const file of Object.keys(mh.pages)) for (const v of ['pc', 'print', 'ph100', 'ph200']) expected.push(`${file.replace(/\.html$/, '')}.${v}.png`);
-const missingPng = expected.filter((f) => !fs.existsSync(path.join(headDir, f)));
+const missingPng = expected.filter((f) => !hasShot(headDir, f.replace(/\.png$/, '')));   // 区切って撮った画面は t01 があれば撮れている
 if (missingPng.length) { lines.push(`撮れていない画面がある（${missingPng.join('、')}）`); fail++; }
 /* 帳票: 直す前に撮れていたのに、直した後で撮れなかったもの（直す前から撮れない帳票は比べられないと書くだけ） */
-const lostSheets = Object.keys(sb).filter((k) => fs.existsSync(path.join(baseDir, `${k}.print.png`)) && !fs.existsSync(path.join(headDir, `${k}.print.png`)));
+const lostSheets = Object.keys(sb).filter((k) => hasShot(baseDir, `${k}.print`) && !hasShot(headDir, `${k}.print`));
 if (lostSheets.length) { lines.push(`帳票の印刷: 直した後で撮れなくなった（${lostSheets.join('、')}）`); fail++; }
-const noBaseSheets = Object.keys(sh).filter((k) => !fs.existsSync(path.join(baseDir, `${k}.print.png`)));
+const noBaseSheets = Object.keys(sh).filter((k) => !hasShot(baseDir, `${k}.print`));
 const byView = (v) => results.filter((r) => r.view === v);
+/* 違いの中身の補足: 撮り方が違う・区切りのどこが違うか・読めなかった */
+function detail(r) {
+  if (r.status === '撮り方が違う') return `（撮り方が違う＝高さが変わった: ${r.shape.base}→${r.shape.head}）`;
+  if (r.tiles) return `（${r.tileCount}区切りのうち ${r.tiles.map((t) => `t${String(t.t).padStart(2, '0')}${t.status === '違いあり' ? (t.pixels ? ` ${t.pixels}px` : '') : ' ' + t.status}`).join('・')}）`;
+  if (r.status === '読めない') return '（絵を読めない）';
+  return '';
+}
 const missing = results.filter((r) => r.status === 'base無し' && !isSheet(r.name)).map((r) => r.name).filter((v, i, a) => a.indexOf(v) === i);
 if (missing.length) lines.push(`直す前に無い画面（新しい画面＝比べない）: ${missing.join('、')}`);
 for (const v of ['pc', 'print', 'sheet', 'ph100', 'ph200']) {
@@ -173,7 +269,7 @@ for (const v of ['pc', 'print', 'sheet', 'ph100', 'ph200']) {
   const extra = v === 'sheet' && noBaseSheets.length ? `（直す前に撮れず比べていない: ${noBaseSheets.join('、')}）` : '';
   if (!changed.length) lines.push(`${label}: ${rows.length}${unit}すべて画素一致${TOL ? '（色の揺れ±' + TOL + '以内は同じとみなす）' : ''}${extra}`);
   else {
-    lines.push(`${label}: ${rows.length - changed.length}${unit}は画素一致・${changed.length}${unit}に違い（${changed.map((r) => r.name + (allowed(r.name) ? '〔許可〕' : '') + (r.pixels ? ` ${r.pixels}px` : '')).join('、')}）${extra}`);
+    lines.push(`${label}: ${rows.length - changed.length}${unit}は画素一致・${changed.length}${unit}に違い（${changed.map((r) => r.name + (allowed(r.name) ? '〔許可〕' : '') + (r.pixels ? ` ${r.pixels}px` : '') + detail(r)).join('、')}）${extra}`);
     if (v === 'pc' || v === 'print' || v === 'sheet') fail += changed.filter((r) => !allowed(r.name)).length;
   }
 }
@@ -202,6 +298,8 @@ const totalPages = printRows.reduce((s, r) => s + (r.head || 0), 0);
 const pageDiff = printRows.filter((r) => !r.same);
 lines.push(pageDiff.length ? `印刷ページ数: 違いあり（${pageDiff.map((r) => `${r.file} ${r.base}→${r.head}`).join('、')}）` : `印刷ページ数: 全${totalPages}ページ一致`);
 if (pageDiff.some((r) => !allowed(r.file.replace(/\.html$/, '')))) fail++;
+/* 絵を読めなかった（帯が描けない等）は、どの表示でも道具の失敗＝「一致」と言わず失敗にする */
+if (results.some((r) => r.status === '読めない' || (r.tiles || []).some((t) => t.status === '読めない')) || pageRows.some((r) => r.status === '読めない')) fail++;
 if (errRows.length) { lines.push(`画面のエラー: 直した後で増えた（${errRows.map((r) => `${r.file}: ${r.added.join(' / ').slice(0, 120)}`).join('、')}）`); fail++; }
 else lines.push('画面のエラー: 直す前から増えていない');
 
