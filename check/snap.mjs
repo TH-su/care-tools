@@ -18,7 +18,7 @@
  *   どの絵が何回出たかは metrics.json の wobble に残す。
  * --merge: 出力先の metrics.json を消さず、撮った画面の分だけ書き換える（一部の画面の撮り直し用）。
  *
- * 縦に長すぎる画面（2026-11-17 追加）: 1枚で撮れない時（Unable to capture screenshot）だけ、上から CSS 1024px ずつ区切って
+ * 縦に長すぎる画面（2026-11-17 追加）: 絵が1億画素を超える時と1枚で撮れない時（Unable to capture screenshot）は、上から CSS 1024px ずつ区切って
  *   <画面>.<表示>.t01.png・t02.png… と区切りごとの別の絵で残す（下の fullShot）。区切りの数と高さは metrics.json の tiles に残す。
  *   揺れの多数決は区切りごとに行う。比べ方は compare.mjs（区切りごとに比べ、画面・表示ごとに1行にまとめる）。
  *
@@ -67,26 +67,29 @@ const VIEWS = [
   { key: 'ph200', viewport: { width: 195, height: 422 }, scale: 4, mobile: true },
 ];
 
-/* 画面全体を撮る。ふだんは1枚（{ one: 絵 }）。
-   縦に長すぎてブラウザが1回で撮れない時（Unable to capture screenshot・2026-11-17 に使い方の画面の iPhone 200%＝CSS 約87,000px で起きた）だけ、
-   上から CSS で TILE_CSS ずつ区切って撮り、区切りごとの別の絵（{ tiles: [絵…] }）として返す。区切りの位置は毎回同じ（直す前と後で同じ所を比べる）。
-   つないで1枚にはしない（ブラウザの canvas に載らない大きさのため）。ほかの例外はそのまま投げる＝今までどおり「撮影に失敗」 */
+/* 画面全体を撮る。ふだんは1枚（{ one: 絵 }）。次のどちらかの時は、上から CSS で TILE_CSS ずつ区切って撮り、
+   区切りごとの別の絵（{ tiles: [絵…] }）として返す。区切りの位置は毎回同じ（直す前と後で同じ所を比べる）。つないで1枚にはしない（canvas に載らない大きさのため）。
+   (1) 撮る前に測った絵の画素の数（幅×高さ×倍率²）が MAX_SHOT_PX を超える時は、最初から区切る（直す前と後で同じ snap.mjs が同じ判定をする）。
+       上限の理由（2026-11-17 実測・手元の Chromium）: 使い方の画面の iPhone 200%（1512×340,932＝約5.2億画素）は断られずに撮れたが、
+       171,959 行目（約2.6億画素）から下が白紙で、深い所を変えても同じ絵になっていた。白紙の始まりより十分下の1億画素に置く。
+   (2) 1枚撮りが断られた時（Unable to capture screenshot・同じ画面の 87,308px で起きた）。ほかの例外はそのまま投げる＝今までどおり「撮影に失敗」 */
 const TILE_CSS = 1024;
-async function fullShot(p) {
+const MAX_SHOT_PX = 100e6;
+async function fullShot(p, scale) {
   const opt = { animations: 'disabled', caret: 'hide' };
-  try { return { one: await p.screenshot(Object.assign({ fullPage: true }, opt)) }; }
-  catch (e) {
-    if (!/Unable to capture screenshot/.test(String(e && e.message))) throw e;
-    const sz = await p.evaluate(() => ({
-      w: Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0, window.innerWidth),
-      h: Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0, window.innerHeight),
-    }));
-    const tiles = [];
-    for (let y = 0; y < sz.h; y += TILE_CSS) {
-      tiles.push(await p.screenshot(Object.assign({ fullPage: true, clip: { x: 0, y, width: sz.w, height: Math.min(TILE_CSS, sz.h - y) } }, opt)));
-    }
-    return { tiles };
+  const sz = await p.evaluate(() => ({
+    w: Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0, window.innerWidth),
+    h: Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0, window.innerHeight),
+  }));
+  if (Math.round(sz.w * scale) * Math.round(sz.h * scale) <= MAX_SHOT_PX) {
+    try { return { one: await p.screenshot(Object.assign({ fullPage: true }, opt)) }; }
+    catch (e) { if (!/Unable to capture screenshot/.test(String(e && e.message))) throw e; }
   }
+  const tiles = [];
+  for (let y = 0; y < sz.h; y += TILE_CSS) {
+    tiles.push(await p.screenshot(Object.assign({ fullPage: true, clip: { x: 0, y, width: sz.w, height: Math.min(TILE_CSS, sz.h - y) } }, opt)));
+  }
+  return { tiles };
 }
 /* 撮った絵（1枚か区切り）を、揺れの多数決をして書く。多数決は区切りごと（区切りの数が回によって違えば、多かった撮り方の回だけで決める）。
    書く前に、同じ画面・表示の別の撮り方の絵（1枚・余った区切り）を消す（--merge で撮り直した時に古い絵が混ざらないように）。
@@ -157,11 +160,11 @@ for (const file of pages) {
           const w = await p.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth, bw: document.body ? document.body.scrollWidth : 0 }));
           m[v.key] = { overflowPx: Math.max(0, Math.max(w.sw, w.bw) - w.iw) };
         }
-        shots.main.push(await fullShot(p));
+        shots.main.push(await fullShot(p, v.scale));
         if (v.key === 'pc') {
           await p.emulateMedia({ media: 'print' });
           await p.waitForTimeout(300);
-          shots.print.push(await fullShot(p));
+          shots.print.push(await fullShot(p, v.scale));
           if (r === 0) {
             const pdf = path.join(outDir, `${name}.pdf`);
             try {
@@ -233,7 +236,7 @@ async function shootSheet(file, name, fx, sh) {
       }
       await p.emulateMedia({ media: 'print' });
       await p.waitForTimeout(300);
-      shots.push(await fullShot(p));
+      shots.push(await fullShot(p, 1));
       if (r === 0) {
         const pdf = path.join(outDir, `${key}.pdf`);
         await p.pdf({ path: pdf, preferCSSPageSize: true, printBackground: true });
