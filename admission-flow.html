@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-OHHF3VE0qD91Qlxa+y47Ys7EcDUzhrVZT/lMtISaKJw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-PPx346Hlfhjf4NfvI0hRM6bweQQbE51/xfkJ0L5unvo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
@@ -2186,6 +2186,15 @@ document.addEventListener('click', function (e) {
   var a = e.target && e.target.closest ? e.target.closest('a.su-help-link') : null;
   if (!a || !(editing && editDirty)) return;
   if (!confirm('保存していない変更があります。使い方へ移ると消えます。移りますか？')) { e.preventDefault(); return; }
+  afMenuLeaveOk_ = true; setTimeout(function () { afMenuLeaveOk_ = false; }, 3000);
+});
+/* 同期の窓・入居者マスタの窓の中のリンク（未送信の一覧・接続設定）で同じタブのまま離れる時も、同じ判定で確かめる
+   （iOS Safari は beforeunload の確かめを出さないため。消耗品管理の「未送信の一覧を見る」と同じ形・第7回の監査の気づき 2026-11-17） */
+document.addEventListener('click', function (e) {
+  var a = e.target && e.target.closest ? e.target.closest('#syncBody a[href], #msBody a[href]') : null;
+  if (!a || a.target || e.defaultPrevented || e.button > 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;   // 新しいタブで開く押し方では今の画面は残る
+  if (!(editing && editDirty)) return;
+  if (!confirm('保存していない変更があります。このページから移ると消えます。移りますか？')) { e.preventDefault(); return; }
   afMenuLeaveOk_ = true; setTimeout(function () { afMenuLeaveOk_ = false; }, 3000);
 });
 window.addEventListener('beforeunload', function (ev) {
