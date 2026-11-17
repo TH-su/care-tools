@@ -70,9 +70,14 @@ async function run() {
   console.log('— 2. 窓の数と文 —');
   const bareConfirm = (code.match(/(?<![\w.])confirm\(/g) || []).length;
   const bareAlert = (code.match(/(?<![\w.])alert\(/g) || []).length;
-  t('2-1 ブラウザの確かめの窓を直接呼ぶのは、メニュー・使い方へ移る時の2か所だけ', bareConfirm === 2
+  /* 2026-11-17: 同期の窓・入居者マスタの窓の中のリンクで離れる時の確かめを足して3か所（押した瞬間に移るのを止めるため、その場で答えが要る・消耗品管理 supplies.html の同じ形にそろえた） */
+  t('2-1 ブラウザの確かめの窓を直接呼ぶのは、メニュー・使い方・窓の中のリンクで移る時の3か所だけ', bareConfirm === 3
     && code.indexOf("if (!confirm('保存していない変更があります。メニューへ移ると消えます。移りますか？'))") >= 0
-    && code.indexOf("if (!confirm('保存していない変更があります。使い方へ移ると消えます。移りますか？'))") >= 0, bareConfirm);
+    && code.indexOf("if (!confirm('保存していない変更があります。使い方へ移ると消えます。移りますか？'))") >= 0
+    && code.indexOf("if (!confirm('保存していない変更があります。このページから移ると消えます。移りますか？'))") >= 0, bareConfirm);
+  t('2-1b 窓の中のリンクの確かめは、同期の窓・入居者マスタの窓のリンクで、編集中に保存していない変更がある時だけ・新しいタブの押し方では聞かない',
+    code.indexOf("closest('#syncBody a[href], #msBody a[href]')") >= 0
+    && /closest\('#syncBody a\[href\], #msBody a\[href\]'\) : null;\n  if \(!a \|\| a\.target \|\| e\.defaultPrevented \|\| e\.button > 0 \|\| e\.metaKey \|\| e\.ctrlKey \|\| e\.shiftKey \|\| e\.altKey\) return;[^\n]*\n  if \(!\(editing && editDirty\)\) return;/.test(code));
   t('2-2 ブラウザの知らせの窓を直接呼ばない（受け口の window.alert だけ）', bareAlert === 0 && (code.match(/window\.alert\(/g) || []).length === 1, bareAlert);
   /* 2026-11-14（#579 の反証）: 合わせる前の控えの［消す］の確かめを足して15か所 */
   /* 2026-11-14: 上書きの確かめの「キャンセル」の後の「サーバーの内容に合わせますか」と、合わせる前の控えから戻す確かめの2か所を足した（代表者の決定 2026-11-14） */
