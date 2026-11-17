@@ -48,6 +48,7 @@ done
 ## 2. 流した本番 SQL（前後の照合の結果と戻す SQL の有無）
 
 **数えられるのは移行の道具（apply_migration）で流した分だけ**。SQL の実行の道具（execute_sql）や SQL Editor で流した分はこの一覧に残らない。週報のこの節の見出しに必ず「移行の道具で流した分だけ」と書き添える。
+SQL Editor などで手で流した権限・ポリシー・表の形の変更は、care-backend の毎朝の点検が本番の形の指紋を基準と比べて見つける（`tools/schema-pin.mjs`・2026-11-17〜）。週報はその結果を下の 6 で数える。
 
 1. 流した移行の一覧（読むだけ）:
    ```sql
@@ -93,6 +94,14 @@ done
    - **消す処理の印**: 関数の本文（`$$ … $$` や `$fn$ … $fn$` の中）は除いて、移行ファイルに `drop table`・`drop column`・`drop schema`・`delete from`・`truncate` がある時、または `drop function`・`drop index`・`drop view` で同じ移行の中に同じ名前の `create` が無い時だけ「消す処理（本人の一度だけ許可の対象）」と印を付ける。作り直しの前置き（`drop policy … if exists`・`drop trigger … if exists`・`drop constraint if exists` の後に同じ名前を作るもの）と、`attisdropped` などの語の一部は数えない。関数の本文の中の `delete from` などは、関数を呼んだ時に動くもので、流した時に行を消すものではないので数えない。
 4. 流したのに移行ファイルが main に入っていない時は「**main に移行ファイルなし**」と目立たせる。
 5. 表の「統合」の欄には、移行の名前に加えてリポジトリ（care-backend／care-log）を書く。
+6. 手で流した変更（毎朝の点検の「本番の形」・読むだけ）:
+   ```
+   gh run list -R TH-su/care-backend --workflow ops-health.yml --created '<F>..<T>' --limit 50 --json databaseId,conclusion,createdAt,url
+   ```
+   `conclusion` が `failure` の回ごとに `gh run view <databaseId> -R TH-su/care-backend --log-failed` を読み、「本番の形が基準と」を含む行がある回を「違いで赤」、「本番の形の基準」「本番の形（権限・ポリシー・列など）を読めません」「本番の形の答えの形が違います」のどれかを含む行がある回を「読めない／基準なし」として数える。
+   - 節の下に「手で流した変更（毎朝の点検の本番の形）: 違いで赤 N回（最初 MM-DD・最後 MM-DD）・読めない／基準なし N回」の1行を書く。違いの行に出る物の名前（表・関数の名前とどこが違うか）は、最後の回の分だけ書き写す（15件まで）。
+   - その週の毎朝の点検が1回も無い時は「取得できず（毎朝の点検が回っていない）」と書く。0回と書かない。
+   - 違いで赤の回が1回でもあれば「目立たせること」に「手で流した変更のおそれ（照合の記録と基準の作り直しを確かめる）」と書く。
 
 ## 3. 切ったスイッチ（su-backend.json）
 
@@ -210,6 +219,7 @@ from k, p;
 | 日時 | 統合 | 前後の照合 | 戻す SQL | 印 |
 | 11-10 16:58 | care-backend 0085_device_enroll_idle | ok（care-backend 1234567） | あり（0085_back.sql） | |
 | 11-05 20:19 | care-log 0055（2段に分けて流した 1段目） | 記録なし | あり（0055_back.sql） | |
+- 手で流した変更（毎朝の点検の本番の形）: 違いで赤 N回（最初 MM-DD・最後 MM-DD）・読めない／基準なし N回
 
 ## 3. 切ったスイッチ（N件）／入れたスイッチ（M件）
 ## 4. 切り替えた正本（N件）
