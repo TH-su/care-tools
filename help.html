@@ -539,6 +539,7 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
       <li>週間計画のデイの予定から、<span class="key">利用表</span> <span class="key">デイ利用者一覧表</span> <span class="key">全員リスト</span> <span class="key">薬用</span> <span class="key">週間名簿</span> を作ります。タブで切り替え、<span class="key">印刷</span> で表示中のタブを印刷します。</li>
       <li><span class="key">クラウドから取得</span> で最新の週間計画を取り直します。</li>
       <li><span class="key">🙈 非表示設定</span> で一覧に出さない利用者を決めます（全端末に同じく効きます）。昼食薬のチェックも全端末に反映されます。</li>
+      <li>施設の入居者でない方も通うデイでは、施設情報に外部の利用者の印を書くと、週間計画で「外部」にした方（居室の無い方）を「外部利用者」の区画にまとめます。その方は、デイに行かない日の <span class="key">デイ休み</span> と週間名簿には入りません。</li>
     </ul>
     <p><strong>よくある困りごと</strong></p>
     <dl class="sup">
@@ -747,7 +748,7 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
 </main>
 
 <!-- 問い合わせ先は施設情報（facility-profile.json）の support から差し込む。読めない時・空の項目は決まりの文言のまま -->
-<script src="su-facility.js?v=2026-11-14.2"></script>
+<script src="su-facility.js?v=2026-11-17"></script>
 <script>
 /* HELP_SUPPORT（2026-10-26 本人指示）。文字は textContent で入れる（電話も tel: のリンクにせず、選んで写せる文字のまま） */
 (function () {

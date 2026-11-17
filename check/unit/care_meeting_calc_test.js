@@ -8,6 +8,8 @@
      5. 上限を超える欄・出席者は切り詰めない（保存の前に止める）
      6. 期限の知らせは確定した会議だけを数える。認定の始まりは30日前から数える。退院・区分変更・入院中も知らせる
      8. 印の無い議事録は見出しから欄の候補を出すだけで、人が選んだ候補だけを欄へ入れる。どの行も捨てない（2026-11-13）
+     9. ほかの形の表の取り込みは、表を読む・列の候補・1行の記録の形・行ごとの判定まで。名簿の1名にだけ一致し、開催日が読めて先の日付でなく、
+        上限に収まり、同じ表の中で重ならない行だけを送る候補にする。行の順で答えが変わらない。危ない値は文字のまま（2026-11-17）
    ★文章・氏名はすべて架空。 */
 'use strict';
 const path = require('path');
@@ -435,6 +437,170 @@ console.log('\n— メニューの札の件数（前回から6か月だけ・202
   }));
   t('記録の無い方・認定の期限は数えない', C.menuDueSummary([{ masterId: '1', active: true }], {}, D).overdue === 0 && C.menuDueSummary([{ masterId: '1', active: true }], {}, D).soon === 0);
   t('今日が日付でない・名簿や要約の形が違う時は null', C.menuDueSummary(rs, sum, '2026/11/13') === null && C.menuDueSummary(null, sum, D) === null && C.menuDueSummary(rs, null, D) === null);
+}
+
+console.log('\n— 9. ほかの形の表から取り込む（2026-11-17 代表者の決定・台帳 CM-03） —');
+{
+  /* 9-1 表を読む */
+  const tb = C.impTable('﻿氏名,開催日,内容\r\n甲野 一郎,2024/4/1,"1行目\r\n2行目、""引用"",と区切り"\r\n\r\n,,\r\n乙野 花子,2024/5/2,');
+  t('1-1 カンマの表を読む（BOM を落とす・CRLF・空の行は飛ばす）', tb.ok && tb.sep === ',' && tb.header.join('|') === '氏名|開催日|内容' && tb.rows.length === 2, tb);
+  t('1-2 引用符の中の改行・区切り・"" を読む', tb.ok && tb.rows[0][2] === '1行目\n2行目、"引用",と区切り', tb.ok && tb.rows[0][2]);
+  t('1-3 最後の空のセルも数える（列の数がそろう）', tb.ok && tb.rows[1].length === 3 && tb.rows[1][2] === '' && tb.ragged === 0, tb.ok && tb.rows[1]);
+  const tt = C.impTable('氏名\t開催日\t場所\n甲野 一郎\t2024/4/1\t相談室,1\r乙野 花子\t2024/5/2\t"居室\n前"');
+  t('1-4 1行目にタブがあればタブで分ける（カンマはセルの中身・CR だけの改行も行の終わり）', tt.ok && tt.sep === '\t' && tt.rows.length === 2 && tt.rows[0][2] === '相談室,1' && tt.rows[1][2] === '居室\n前', tt);
+  const tq = C.impTable('氏名,開催日\n甲野 a"b,2024/4/1');
+  t('1-5 引用符で始まらないセルの途中の " は文字のまま', tq.ok && tq.rows[0][0] === '甲野 a"b', tq);
+  const tr = C.impTable('a,b,c\n1,2\n1,2,3,4');
+  t('1-6 列の数が見出しと違う行は読み、数だけ知らせる', tr.ok && tr.rows.length === 2 && tr.ragged === 2, tr);
+  const uq = C.impTable('氏名,内容\n甲野 一郎,"閉じない\n乙野 花子,2024/5/2');
+  t('1-7 引用符が閉じないまま終われば読まない（残りを1セルに飲み込まない・例外を出さない）', uq.ok === false && uq.reason === 'quote' && !!uq.message, uq);
+  t('1-8 空・空白だけは読まない', C.impTable('').reason === 'empty' && C.impTable('\n , \n').reason === 'empty' && C.impTable(null).reason === 'empty');
+  const many = 'h\n' + Array.from({ length: 2001 }, (_, i) => 'r' + i).join('\n');
+  const fit = 'h\n' + Array.from({ length: 2000 }, (_, i) => 'r' + i).join('\n');
+  t('1-9 見出しを除いて 2,000 行までは読み、超えたら止める', C.impTable(fit).ok && C.impTable(fit).rows.length === 2000 && C.impTable(many).ok === false && C.impTable(many).reason === 'tooMany' && C.IMP_ROWS_MAX === 2000, C.impTable(many).reason);
+  const big = 'h\n' + 'あ'.repeat(Math.ceil(2 * 1024 * 1024 / 3) + 1);
+  t('1-10 2MB（UTF-8 のバイト数）を超えたら止める', C.impTable(big).ok === false && C.impTable(big).reason === 'tooBig' && C.IMP_BYTES_MAX === 2 * 1024 * 1024, C.impTable(big).reason);
+  t('1-11 上限は limits で変えられる', C.impTable('h\n1\n2\n3', { rows: 2 }).reason === 'tooMany' && C.impTable('h\n1', { bytes: 2 }).reason === 'tooBig');
+  const slow = Date.now(); C.impTable('"' + '""'.repeat(200000) + '"\n' + ',"'.repeat(50000) + '"');
+  t('1-12 引用符の多い表でも時間がかからない（1秒未満）', Date.now() - slow < 1000, Date.now() - slow);
+  const lead = C.impTable('\n \r\n氏名\t開催日\n甲野 一郎\t2024/4/1');
+  t('1-13 先頭に空の行がある貼り付けでも、見出しの行で区切りを決める', lead.ok && lead.sep === '\t' && lead.header.join('|') === '氏名|開催日' && lead.rows[0][1] === '2024/4/1', lead);
+
+  /* 9-2 文字コード（採用管理の decodeCsv と同じ答え） */
+  const A = require(path.join(ROOT, 'ats-calc.js'));
+  const dec = (l) => new TextDecoder(l);
+  const u8 = new TextEncoder().encode('氏名,開催日\n甲野 一郎,2024/4/1');
+  const bom = Uint8Array.from([0xEF, 0xBB, 0xBF, ...u8]);
+  const sj = Uint8Array.from([0x8E, 0x81, 0x96, 0xBC, 0x2C, 0x41]);  // 「氏名,A」の Shift_JIS
+  const same = (b) => JSON.stringify(C.impDecode(b, dec)) === JSON.stringify(A.decodeCsv(b, dec));
+  t('2-1 UTF-8 はそのまま読む', C.impDecode(u8, dec).enc === 'UTF-8' && C.impDecode(u8, dec).text.startsWith('氏名'));
+  t('2-2 Shift_JIS は読み直す', C.impDecode(sj, dec).enc === 'Shift_JIS' && C.impDecode(sj, dec).text === '氏名,A', C.impDecode(sj, dec));
+  t('2-3 UTF-8・BOM つき・Shift_JIS・空で decodeCsv と同じ答え', same(u8) && same(bom) && same(sj) && same(new Uint8Array(0)));
+  const bomT = C.impTable(C.impDecode(bom, dec).text);
+  t('2-4 BOM つきを読んでも見出しの1列目は「氏名」', bomT.ok && bomT.header[0] === '氏名', bomT.header);
+  const broken = (l) => { if (l === 'shift_jis') throw new Error('x'); return new TextDecoder(l); };
+  t('2-5 Shift_JIS を作れない時も decodeCsv と同じ', JSON.stringify(C.impDecode(sj, broken)) === JSON.stringify(A.decodeCsv(sj, broken)));
+
+  /* 9-3 見出しから欄の候補 */
+  const g = C.impGuessCols(['氏名', '開催年月日', '場所', '参加者', '検討項目', '内容', '結論', '課題', '次回', '開催時間', '回数', '作成者', '作成日']);
+  t('3-1 一般の語の見出しを欄に当てる', g.map.join(',') === 'sourceName,heldDate,place,attendees,items,content,conclusion,issues,nextText,timeText,count,author,createdDate', g.map);
+  t('3-2 様式の欄の名前・ALIASES も当たる（全角・空白・かっこは無視）', C.impGuessCols(['利用者名', '会議出席者', '次回開催予定', '（開催日）', 'ｹﾝﾄｳ']).map.slice(0, 4).join(',') === 'sourceName,attendees,nextText,heldDate');
+  const gd = C.impGuessCols(['氏名', '利用者氏名', '開催日', '備考']);
+  t('3-3 同じ欄に2列が当たれば両方「入れない」にして知らせる', gd.map.join(',') === ',,heldDate,' && gd.cols[0].why === 'dup' && gd.cols[1].why === 'dup' && gd.warns.some((w) => /2 つ/.test(w)), gd);
+  t('3-4 どれにも当たらない列は「入れない」にして知らせる', gd.cols[3].why === 'none' && gd.warns.some((w) => /備考/.test(w)), gd.cols[3]);
+  const gk = C.impGuessCols(['開催の理由', '開催理由', '会議の目的', '']);
+  t('3-5 開催の理由の列は当てない（知らせる）・空の見出しは入れない', gk.map.every((k) => k === '') && gk.cols.slice(0, 3).every((c) => c.why === 'kind') && gk.cols[3].why === 'empty' && gk.warns.filter((w) => /開催の理由/.test(w)).length === 3, gk);
+  t('3-6 一語の呼び方（場所）は parse の区切りにならないまま（ALIASES は今のまま）', C.parse('◆利用者名：甲野 一郎\n◆場所：相談室').unknown.length === 1 && C.parse('◆開催年月日：2026/10/1').fields.heldDate === '2026-10-01');
+
+  /* 9-4 取り込みの日付 */
+  t('4-1 normDate で読める形はそのまま', ['2024/4/1', '2024-04-01', '2024年4月1日', '令和6年4月1日', 'R6.4.1', '2024/4/1（月）'].every((s) => C.impDate(s) === '2024-04-01'));
+  t('4-2 平成・H を読む（元年も）', C.impDate('平成31年4月30日') === '2019-04-30' && C.impDate('H30.4.1') === '2018-04-01' && C.impDate('h30/4/1') === '2018-04-01' && C.impDate('平成元年1月8日') === '1989-01-08');
+  t('4-3 平成の外の日付は読まない', C.impDate('平成31年5月1日') === '' && C.impDate('平成元年1月7日') === '' && C.impDate('平成32年1月1日') === '');
+  t('4-4 後ろの時刻を外して読む（秒つき・T 区切りも）', C.impDate('2024/4/1 0:00') === '2024-04-01' && C.impDate('2024/04/01 14:30:00') === '2024-04-01' && C.impDate('2024-04-01T09:00') === '2024-04-01' && C.impDate('令和6年4月1日 14:00') === '2024-04-01');
+  t('4-5 8桁の数字を読む（ない日は読まない）', C.impDate('20240401') === '2024-04-01' && C.impDate('20240230') === '' && C.impDate('20241301') === '');
+  t('4-6 Excel の通し番号・月日の順が分からない形・「4月」・空は読まない', ['45383', '1/2/2024', '4/1', '4月', '2024年4月', '', null, '   ', '2024/4/1 25:00x'].every((s) => C.impDate(s) === ''));
+  t('4-7 normDate の答えは今のまま（平成・時刻つき・8桁は読まない）', C.normDate('平成30年4月1日') === '' && C.normDate('2024/4/1 0:00') === '' && C.normDate('20240401') === '' && C.normDate('2024/4/1') === '2024-04-01');
+  t('4-8 数字の間に空白が残る形は読まない（4月12日と読み違えない）・区切りの前後の空白は読む', C.impDate('2024/4/1 2') === '' && C.impDate('2024 4 1') === '' && C.impDate('2024 / 4 / 1') === '2024-04-01' && C.impDate('令和6年 4月 1日') === '2024-04-01');
+
+  /* 9-5 1行を記録の形に */
+  const map = ['sourceName', 'heldDate', 'place', 'timeText', 'count', 'attendees', 'attendees', 'content', 'content', 'kind', ''];
+  const r1 = C.impRow([' 甲野 一郎 ', '2024/4/1 0:00', '相談室', '14:00〜14:30', '第2回', '介護支援専門員／丙野 三郎、看護師／丁野 四郎', '家族／甲野 花子;介護職員／戊野 五郎', '前半', '後半', '新規', '捨てる列'], map);
+  t('5-1 欄の名前は今の保存の形（FIELDS の key）', Object.keys(r1.rec).sort().join(',') === C.FIELDS.map((f) => f.key).sort().join(','), Object.keys(r1.rec));
+  t('5-2 前後の空白を除き、日付・時間・回数をそろえる', r1.rec.sourceName === '甲野 一郎' && r1.rec.heldDate === '2024-04-01' && r1.rec.timeText === '14:00〜14:30' && r1.rec.count === '2' && r1.rec.place === '相談室', r1.rec);
+  t('5-3 出席者は「、」「;」で分け、複数の列もまとめる', r1.rec.attendees.length === 4 && r1.rec.attendees[0].role === '介護支援専門員' && r1.rec.attendees[3].name === '戊野 五郎', r1.rec.attendees);
+  t('5-4 同じ欄に当てた複数の列は改行でつなぐ', r1.rec.content === '前半\n後半', r1.rec.content);
+  t('5-5 開催の理由は入れない（列を当てても空）・「入れない」の列は捨てる', r1.rec.kind === '' && !JSON.stringify(r1.rec).includes('捨てる列'), r1.rec.kind);
+  t('5-6 全部読めれば知らせは無い', r1.warns.length === 0, r1.warns);
+  const r2 = C.impRow(['乙野 花子', '1/2/2024', '', '昼ごろ', '多数', '丙野 三郎', '', '', '', '', ''], map);
+  t('5-7 読めない日付・時間・回数は空にして知らせ、元の文字は raw に残す', r2.rec.heldDate === '' && r2.rec.timeText === '' && r2.rec.count === '' && r2.raw.heldDate === '1/2/2024' && r2.raw.timeText === '昼ごろ' &&
+    r2.warns.filter((w) => /開催日|開催時間|開催回数/.test(w)).length === 3, r2);
+  t('5-8 所属の無い出席者は知らせる（parseAttendees と同じ）', r2.rec.attendees.length === 1 && r2.warns.some((w) => /所属/.test(w)), r2.warns);
+  const r3 = C.impRow(['甲野 一郎', '2024/4/1', 'x'.repeat(150)], ['sourceName', 'heldDate', 'place']);
+  t('5-9 長い欄は切り詰めない', r3.rec.place.length === 150, r3.rec.place.length);
+  t('5-10 セルが足りない行・map が無い時も例外を出さない', C.impRow(['甲野 一郎'], map).rec.heldDate === '' && C.impRow(null, null).rec.sourceName === '');
+  t('5-11 セルの中の CRLF は LF にそろえる', C.impRow(['a\r\nb'], ['content']).rec.content === 'a\nb');
+
+  /* 9-6 行ごとの判定（名簿5名・同名2名・退去1名を含む・すべて架空） */
+  const roster = [
+    { masterId: '101', name: '甲野 一郎', active: true },
+    { masterId: '102', name: '乙野 花子', active: true },
+    { masterId: '103', name: '乙野 花子', active: true },
+    { masterId: '104', name: '丙野 三郎', active: false },
+    { masterId: '105', name: '丁野 四郎', active: true }
+  ];
+  const TODAY = '2026-11-17';
+  const rec = (name, held, extra) => Object.assign(C.impRow([name, held], ['sourceName', 'heldDate']).rec, extra || {});
+  const rows = [
+    C.impRow(['甲野　一郎 様', '2024/4/1'], ['sourceName', 'heldDate']),      // 0 new（全角空白・様は除く）
+    { rec: rec('丙野 三郎', '2023-01-10') },                                    // 1 new（退去した方も数える）
+    { rec: rec('乙野 花子', '2024-05-01') },                                    // 2 ambiguous（同名2名）
+    { rec: rec('戊野 五郎', '2024-05-01') },                                    // 3 unmatched
+    { rec: rec('', '2024-05-01') },                                             // 4 unmatched（空）
+    { rec: rec('丁野 四郎', '1/2/2024') },                                      // 5 baddate
+    { rec: rec('丁野 四郎', '2026-11-18') },                                    // 6 future
+    { rec: rec('丁野 四郎', '2026-11-17') },                                    // 7 new（今日は先の日付でない）
+    { rec: rec('甲野 一郎', '2024-06-01', { content: 'あ'.repeat(5001) }) },    // 8 toolong
+    { rec: rec('甲野 一郎', '2024-07-01') },                                    // 9 infile
+    { rec: rec('甲野 一郎', '2024-07-01', { place: '別の行' }) },               // 10 infile
+    { rec: rec('丁野 四郎', '2024-08-01') },                                    // 11 infile（12 が上限超えでも重なりは数える）
+    { rec: rec('丁野 四郎', '2024-08-01', { items: 'い'.repeat(2001) }) },      // 12 toolong
+    { rec: rec('甲野 一郎', '2024-04-02', { attendees: Array.from({ length: 21 }, () => ({ role: 'a', name: 'b' })) }) } // 13 toolong（出席者 21 名）
+  ];
+  const want = ['new', 'new', 'ambiguous', 'unmatched', 'unmatched', 'baddate', 'future', 'new', 'toolong', 'infile', 'infile', 'infile', 'toolong', 'toolong'];
+  const p = C.impPlan(rows, roster, TODAY);
+  t('6-1 行ごとの判定', p && p.items.map((x) => x.status).join(',') === want.join(','), p && p.items.map((x) => x.status));
+  t('6-2 送る候補には番号・名簿の氏名・送信の印が付く（退去した方は active:false）', p.items[0].id === '101' && p.items[0].name === '甲野 一郎' && p.items[0].key === 'impc-101-20240401' &&
+    p.items[1].id === '104' && p.items[1].active === false && p.items[1].key === 'impc-104-20230110', [p.items[0], p.items[1]]);
+  t('6-3 送る候補でない行には送信の印が無い', p.items.filter((x) => x.status !== 'new').every((x) => x.key === ''));
+  const roster2 = roster.map((r) => r.masterId === '103' ? Object.assign({}, r, { active: false }) : r);
+  t('6-4 同名2名は片方が退去でも入れない', p.items[2].status === 'ambiguous' && p.items[2].id === '' && C.impPlan([rows[2]], roster2, TODAY).items[0].status === 'ambiguous');
+  t('6-5 上限超えは checkSave の理由を返し、切り詰めない', /5000 字/.test(p.items[8].stop) && p.items[8].rec.content.length === 5001 && /20 名/.test(p.items[13].stop), [p.items[8].stop, p.items[13].stop]);
+  t('6-6 件数', JSON.stringify(p.counts) === JSON.stringify({ new: 3, unmatched: 2, ambiguous: 1, baddate: 1, future: 1, toolong: 3, infile: 3 }), p.counts);
+  const order = rows.map((_, i) => i).reverse();
+  const order2 = [5, 12, 0, 9, 3, 13, 1, 11, 7, 2, 10, 6, 4, 8];
+  const same2 = (ord) => { const q = C.impPlan(ord.map((i) => rows[i]), roster, TODAY); return ord.every((orig, j) => q.items[j].status === p.items[orig].status && q.items[j].key === p.items[orig].key); };
+  t('6-7 行の順を変えても、元の行ごとの判定は同じ', same2(order) && same2(order2));
+  t('6-8 名簿の順を変えても同じ', C.impPlan(rows, roster.slice().reverse(), TODAY).items.map((x) => x.status).join(',') === want.join(','));
+  t('6-9 rec をそのまま渡してもよい', C.impPlan([rec('甲野 一郎', '2024-04-01')], roster, TODAY).items[0].status === 'new');
+  t('6-10 今日が日付でない・形が違う時は null', C.impPlan(rows, roster, '2026/11/17') === null && C.impPlan(null, roster, TODAY) === null && C.impPlan(rows, null, TODAY) === null);
+  t('6-11 番号の形が違う方は送る候補にしない', C.impPlan([rec('甲野 一郎', '2024-04-01')], [{ masterId: 'a b<', name: '甲野 一郎' }], TODAY).items[0].status === 'unmatched');
+  t('6-12 名簿の氏名の無い行は数えない', C.impPlan([rec('甲野 一郎', '2024-04-01')], roster.concat([{ masterId: '106', name: '' }, null]), TODAY).items[0].status === 'new');
+  t('6-13 行の知らせ（impRow の warns）は引き継ぐ', C.impPlan([C.impRow(['甲野 一郎', '2024/4/1', '昼'], ['sourceName', 'heldDate', 'timeText'])], roster, TODAY).items[0].warns.length === 1);
+
+  /* 9-7 送信の印 */
+  t('7-1 impc-<利用者No>-<YYYYMMDD>', C.impKey('101', '2024-04-01') === 'impc-101-20240401' && C.impKey(7, '2026-01-31') === 'impc-7-20260131');
+  t('7-2 番号・日付の形が違えば空', C.impKey('', '2024-04-01') === '' && C.impKey('1 0', '2024-04-01') === '' && C.impKey('101', '2024/4/1') === '' && C.impKey('101', '2024-02-30') === '' && C.impKey(null, null) === '' && C.impKey('x'.repeat(33), '2024-04-01') === '');
+
+  /* 9-8 危ない値は文字のまま入る（実行しない・欄の引き当てで関数を返さない） */
+  const evil = '<img src=x onerror=alert(1)>';
+  const et = C.impTable('氏名,内容\n"' + evil + '","<script>alert(1)</script>"');
+  t('8-1 表の中の山かっこはそのまま文字', et.ok && et.rows[0][0] === evil && et.rows[0][1] === '<script>alert(1)</script>');
+  const er = C.impRow([evil, '2024/4/1', '=CMD()', evil], ['sourceName', 'heldDate', 'content', 'attendees']);
+  t('8-2 記録の形にしても文字のまま（式の印 = も変えない）', er.rec.sourceName === evil && er.rec.content === '=CMD()' && er.rec.attendees[0].name === evil, er.rec);
+  t('8-3 危ない氏名は名簿と照合できない', C.impPlan([er], roster, TODAY).items[0].status === 'unmatched');
+  const eg = C.impGuessCols(['constructor', 'toString', '__proto__', 'hasOwnProperty', 'valueOf']);
+  t('8-4 見出しが constructor・__proto__ などでも欄に当てない', eg.map.every((k) => k === '') && eg.cols.every((c) => c.why === 'none'), eg.map);
+  const ep = C.impRow(['甲野 一郎', '2024/4/1'], ['__proto__', 'constructor']);
+  t('8-5 map に変な名前があっても入れない', ep.rec.sourceName === '' && ep.rec.heldDate === '' && Object.getPrototypeOf(ep.rec) === Object.prototype);
+  t('8-6 番号に危ない値が入った名簿では送信の印を作らない', C.impKey('<x>', '2024-04-01') === '' && C.impKey('101-20240401"', '2024-04-01') === '');
+}
+
+console.log('— 9. 審査の指摘（2026-11-17）の直し —');
+{
+  const a1 = C.impRow(['家族:長女,ケアマネ:丙野 三郎'], ['attendees']).rec.attendees;
+  const a2 = C.impRow(['家族／甲野 花子，介護職員／戊野 五郎'], ['attendees']).rec.attendees;
+  t('9-1 出席者の1セルを半角・全角のカンマで並べた時も1名ずつに分ける', a1.length === 2 && a1[1].name === '丙野 三郎' && a2.length === 2 && a2[0].role === '家族' && a2[1].name === '戊野 五郎', [a1, a2]);
+  const s1 = C.impTable('"氏\n名"\t開催日\n甲野 一郎\t2024/4/1');
+  const s2 = C.impTable('"氏\t名",開催日\n甲野 一郎,2024/4/1');
+  t('9-2 区切りは引用符の中のタブ・改行を数えずに決める', s1.ok && s1.sep === '\t' && s1.header.length === 2 && s2.ok && s2.sep === ',' && s2.header.length === 2, [s1.sep, s1.header, s2.sep, s2.header]);
+  const w1 = C.impRow(['2024/4/1 10:00'], ['heldDate']), w2 = C.impRow(['2024/4/1 10:00', '10:00〜11:00'], ['heldDate', 'timeText']), w3 = C.impRow(['2024/4/1'], ['heldDate']);
+  const timeWarn = (r) => r.warns.some((w) => /開催日」の列の時刻/.test(w));
+  t('9-3 開催日の列に時刻があり開催時間が空の時だけ知らせる', w1.rec.heldDate === '2024-04-01' && timeWarn(w1) && !timeWarn(w2) && !timeWarn(w3), [w1.warns, w2.warns, w3.warns]);
+  const dupRoster = [{ masterId: '101', name: '甲野 一郎' }, { masterId: '101', name: '甲野 一郎', active: false }];
+  const twoRoster = [{ masterId: '101', name: '甲野 一郎' }, { masterId: '102', name: '甲野 一郎', active: false }];
+  const row = [{ rec: { sourceName: '甲野 一郎', heldDate: '2024-04-01' } }];
+  t('9-4 名簿に同じ番号の方が2回あっても1名に数え、番号の違う同名2名は今までどおり入れない',
+    C.impPlan(row, dupRoster, '2026-11-17').items[0].status === 'new' && C.impPlan(row, twoRoster, '2026-11-17').items[0].status === 'ambiguous');
 }
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');

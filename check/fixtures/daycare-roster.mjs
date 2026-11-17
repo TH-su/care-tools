@@ -9,6 +9,7 @@
  *
  * 規模: デイの利用者 15名（２階 7名・１階 6名・居室が未登録 2名）。月〜土に週1〜3回・入浴は一部。
  * 階は居室番号の先頭の数字で決まる（画面の roomToFloor）。施設情報は撮影の道具が見本（facility-profile.sample.json＝１階・２階）を配る。
+ * 外部の利用者の区画（D-02・2026-11-17）の紙は prepareOut がページの中で印と利用者を組み直して撮る（混在 18名・単独のデイ 30名）。上の15名と見本の施設情報は変えない。
  * 入居者マスタの接続先は入れない（入院・訪問診療・居室を重ねに行かない）。
  * ★架空データだけ（CLAUDE.md §2-1）。氏名は記号的な漢字の見本（架空・見本・試験…＋甲・乙・丙…）。
  * ★GAS との通信の形には触れない。画面が送る要求をそのまま受け、決まった応答を返すだけ。
@@ -85,6 +86,47 @@ const prepare7 = async (sc) => {
   window.SUPrint.print(sc);
   return document.body.classList.contains('su-printing');
 };
+/* 外部の利用者の区画の紙（2026-11-17 D-02・代表者の決定 2026-11-17）。施設情報の印（SUFacility.section('daycareOutside')）だけをこのページの中で { label: '外部' } に差し替え、
+   週間計画の利用者をページの中で組み直して描き直してから、同じ印刷部品で紙を準備する（保存はしない・施設情報の見本・ほかの帳票は変えない）。
+   arg.mode … 'mixed'＝混在（今の15名のうち居室の無い1名と、居室の無い架空の3名を外部にする。居室の無いもう1名は外部でない階未設定のまま）
+             'solo'＝単独のデイ（居室の無い架空の30名が全員外部・A3 1枚に収まるかを見る）
+   外部の区画を作る前の画面（dcrOutside_ が無い）では、差し替えずに今の紙を刷る（撮影の失敗にしない）。
+   ★架空データだけ。氏名は記号的な漢字の見本。ページの中で動く（snap.mjs が evaluate する）ので、外の変数を使わない */
+const prepareOut = async (arg) => {
+  const sc = arg.sc;
+  for (let i = 0; i < 100 && !(typeof DB === 'object' && DB && Array.isArray(DB.residents) && DB.residents.length); i++) await new Promise((r) => setTimeout(r, 100));
+  if (typeof goto !== 'function' || !window.SUPrint || typeof DB !== 'object' || !DB || !DB.residents.length) return false;
+  if (typeof dcrOutside_ === 'function' && window.SUFacility) {
+    const orig = window.SUFacility.section;
+    window.SUFacility.section = function (n) { return n === 'daycareOutside' ? { label: '外部' } : orig.call(window.SUFacility, n); };
+    const SEI = ['架空', '見本', '試験', '仮名', '模擬'], MEI = ['甲', '乙', '丙', '丁', '戊', '己'];
+    const mk = (i, sei, mei) => ({
+      id: 'dx' + String(i).padStart(3, '0'), name: sei + ' ' + mei, kana: 'ん' + String(i).padStart(3, '0'), room: '',
+      careLevel: '要介護' + (1 + (i % 5)), copayRate: 1, welfareEquipUnits: 0, external: true,
+      events: [i % 6, (i + 2) % 6, (i + 4) % 6].slice(0, 1 + (i % 3)).map((dow, k) => ({
+        id: `x${i}_${dow}`, dayOfWeek: dow, serviceType: 'daycare', category: '',
+        startTime: '09:30', endTime: i % 4 === 3 ? '12:30' : '16:00',
+        detail: '入浴・機能訓練', notes: '', units: 0, bathing: k === 0 && i % 3 !== 2,
+      })),
+    });
+    let rs;
+    if (arg.mode === 'solo') {
+      rs = [];
+      for (let i = 0; i < 30; i++) rs.push(mk(i, SEI[i % 5], MEI[Math.floor(i / 5) % 6]));
+    } else {
+      rs = JSON.parse(JSON.stringify(DB.residents));
+      for (const r of rs) if (!r.room) { r.external = true; break; }   // 居室の無い1人目だけ外部（2人目は外部でない階未設定のまま）
+      for (let i = 0; i < 3; i++) rs.push(mk(i, SEI[i], '丁'));
+    }
+    DB = Object.assign({}, DB, { residents: rs });
+    renderAll(DB);
+  }
+  goto(sc);
+  await new Promise((r) => setTimeout(r, 200));
+  window.print = function () {};
+  window.SUPrint.print(sc);
+  return document.body.classList.contains('su-printing');
+};
 export const sheets = [
   { key: 'roster', arg: 'sc-roster', ready: '#roster tbody th.col-flr', prepare },      // 利用表（階の欄）
   { key: 'daylist', arg: 'sc-daylist', ready: '#tblDaylist th.c-sec', prepare },        // デイ利用者一覧表（区画の見出し・A3縦）
@@ -94,4 +136,8 @@ export const sheets = [
   { key: 'daylist7', arg: 'sc-daylist', ready: '#tblDaylist th.c-sec', prepare: prepare7 },   // 営業7日のデイ利用者一覧表（画面の時刻の欠け0を確かめてから・K5）
   { key: 'allweek7', arg: 'sc-allweek', ready: '#tblAllweek th.sec-h', prepare: prepare7 },   // 営業7日の全員リスト
   { key: 'med7', arg: 'sc-med', ready: '#tblMed th.c-sec', prepare: prepare7 },               // 営業7日の薬用
+  { key: 'daylistOutMix', arg: { sc: 'sc-daylist', mode: 'mixed' }, ready: '#tblDaylist th.c-sec', prepare: prepareOut },     // 混在（入居者と外部の利用者）のデイ利用者一覧表（D-02）
+  { key: 'rosterOutMix', arg: { sc: 'sc-roster', mode: 'mixed' }, ready: '#roster tbody th.col-flr', prepare: prepareOut },   // 混在の利用表（階の欄に「外部」）
+  { key: 'daylistOutSolo', arg: { sc: 'sc-daylist', mode: 'solo' }, ready: '#tblDaylist th.c-sec', prepare: prepareOut },    // 単独のデイ（架空30名が全員外部・下半分なし）
+  { key: 'allweekOutSolo', arg: { sc: 'sc-allweek', mode: 'solo' }, ready: '#tblAllweek th.sec-h', prepare: prepareOut },    // 単独のデイの全員リスト（合計行は「利用者」）
 ];

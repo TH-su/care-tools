@@ -141,7 +141,8 @@ function makeBox(fac) {
     grabDecl('FLOOR_ORDER'), grabDecl('FLOOR_LABEL'), grabDecl('DCR_FLOOR_NAME_MAX'), grabDecl('WK_FLR_LABEL'),
     grabDecl('dcrFloorSigUsed'),
     grabDecl('DCR_DAYS_DEFAULT'), grabDecl('DCR_COLS'), grabDecl('DCR_W7'), grabFn('dcrDays_'), grabFn('dcrLastDay_'), grabFn('dcrSheetW_'),
-    grabFn('dcrFloorExtra_'), grabFn('dcrFloorNos_'), grabFn('dcrFloorOrder_'), grabFn('dcrFloorKey_'), grabFn('wkFlrLabel_'),   // 曜日の列と3階以上の階の部品（2026-11-14 第6段 K5）
+    grabFn('dcrFloorExtra_'), grabFn('dcrFloorNos_'), grabFn('dcrFloorOrder_'), grabFn('dcrFloorKey_'), grabFn('wkFlrLabel_'),
+    grabDecl('DCR_OUT_WORD_MAX'), grabFn('dcrOutside_'), grabFn('dcrFloorOf_'), grabFn('dcrSecLists_'),   // 外部の利用者の区画の部品（2026-11-17 D-02・印が無ければ今のまま）   // 曜日の列と3階以上の階の部品（2026-11-14 第6段 K5）
     grabFn('dcrFloorNames_'), grabFn('dcrFloorLabel_'), grabFn('dcrFloorSecLabel_'), grabFn('dcrFloorSig_'), grabFn('dcrRefreshFloorsIfStale_'),
     grabDecl('DCR_NOTES_KEYS'), grabDecl('DCR_NOTES_WORD_MAX'), grabFn('dcrDaycareNotes_'), grabFn('dcrNotesWord_'),
     grabDecl('onDay'), grabDecl('offDay'), grabDecl('countOn'), grabDecl('countOff'), 'var TBL_W = { daylist: 1000, allweek: 1000, day: 1000 };',

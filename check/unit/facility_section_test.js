@@ -92,6 +92,15 @@ const flush = () => new Promise(r => setTimeout(r, 0));
     t('控えから起動しても patchCalendar が残る', (second.F.section('patchCalendar') || {}).drug === '見本テープ'); }
   { const s = JSON.parse(SAMPLE_SRC); t('見本には patchCalendar そのものは書かない（撮影で見本が配られても紙が変わらない）・書き方の説明はある',
     !('patchCalendar' in s) && typeof s._notePatchCalendar === 'string' && /drug/.test(s._notePatchCalendar) && /sites/.test(s._notePatchCalendar)); }
+  /* デイ利用表の外部の利用者の区画（2026-11-17 D-02）。形の確かめは画面（check/unit/daycare_outside_test.js） */
+  { const { F } = load(prof(p => { p.daycareOutside = { label: '外部' }; })); t('daycareOutside を最上位から読む', (F.section('daycareOutside') || {}).label === '外部'); }
+  { const { F } = load(prof(() => {})); t('daycareOutside は書いていなければ null', F.section('daycareOutside') === null); }
+  { const raw = prof(p => { p.daycareOutside = { label: '外部' }; });
+    const first = load(undefined, raw); await flush(); await flush();
+    const second = load(JSON.parse(first.store.su_facility_json_v1));
+    t('控えから起動しても daycareOutside が残る', (second.F.section('daycareOutside') || {}).label === '外部'); }
+  { const s = JSON.parse(SAMPLE_SRC); t('見本には daycareOutside そのものは書かない（撮影で見本が配られても紙が変わらない）・書き方の説明はある',
+    !('daycareOutside' in s) && typeof s._noteDaycareOutside === 'string' && /label/.test(s._noteDaycareOutside)); }
   { const s = JSON.parse(SAMPLE_SRC); t('見本に mealTimes・mealForms の書き方がある', s.mealTimes && s.mealTimes.breakfast === '08:00' && s.mealForms && s.mealForms.main && s.mealForms.side); }
 
   console.log('\n' + pass + ' 件合格 / ' + fail + ' 件不合格');

@@ -125,6 +125,7 @@ function makeBox(fac) {
     grabDecl('DCR_NOTES_KEYS'), grabDecl('DCR_NOTES_WORD_MAX'), grabFn('dcrDaycareNotes_'), grabFn('dcrNotesWord_'),   // 昼食場所の呼び名（便10・施設情報に daycareNotes が無ければ既定）
     grabDecl('byKana'), grabDecl('onDay'), grabDecl('offDay'), grabDecl('countOn'), grabDecl('countOff'), 'var TBL_W = { daylist: 1000, allweek: 1000, day: 1000 };', grabDecl('DAYLIST_NOTES'),
     grabFn('toMin'), grabFn('minToLabel'), grabFn('el'), grabFn('roomToFloor'), grabFn('collectDaycare'),
+    grabDecl('DCR_OUT_WORD_MAX'), grabFn('dcrOutside_'), grabFn('dcrFloorOf_'), grabFn('dcrSecLists_'),   // 外部の利用者の区画の部品（2026-11-17 D-02・印が無ければ今のまま）
     grabFn('setupSheet').replace(/\n\s*table\.appendChild\(colgroupFor\(kind\)\);/, ''),   // 列幅の宣言（colgroup）はこの試験の外
     grabFn('dayHeaderRows'), grabFn('dayHeader'), grabFn('deiCells'), grabFn('sectionRows'), grabFn('sumRow'),
     grabFn('renderRoster'), grabFn('renderDaylist'), grabFn('allweekHeaderRow'), grabFn('renderAllweek'),
