@@ -585,5 +585,23 @@ console.log('\n— 9. ほかの形の表から取り込む（2026-11-17 代表�
   t('8-6 番号に危ない値が入った名簿では送信の印を作らない', C.impKey('<x>', '2024-04-01') === '' && C.impKey('101-20240401"', '2024-04-01') === '');
 }
 
+console.log('— 9. 審査の指摘（2026-11-17）の直し —');
+{
+  const a1 = C.impRow(['家族:長女,ケアマネ:丙野 三郎'], ['attendees']).rec.attendees;
+  const a2 = C.impRow(['家族／甲野 花子，介護職員／戊野 五郎'], ['attendees']).rec.attendees;
+  t('9-1 出席者の1セルを半角・全角のカンマで並べた時も1名ずつに分ける', a1.length === 2 && a1[1].name === '丙野 三郎' && a2.length === 2 && a2[0].role === '家族' && a2[1].name === '戊野 五郎', [a1, a2]);
+  const s1 = C.impTable('"氏\n名"\t開催日\n甲野 一郎\t2024/4/1');
+  const s2 = C.impTable('"氏\t名",開催日\n甲野 一郎,2024/4/1');
+  t('9-2 区切りは引用符の中のタブ・改行を数えずに決める', s1.ok && s1.sep === '\t' && s1.header.length === 2 && s2.ok && s2.sep === ',' && s2.header.length === 2, [s1.sep, s1.header, s2.sep, s2.header]);
+  const w1 = C.impRow(['2024/4/1 10:00'], ['heldDate']), w2 = C.impRow(['2024/4/1 10:00', '10:00〜11:00'], ['heldDate', 'timeText']), w3 = C.impRow(['2024/4/1'], ['heldDate']);
+  const timeWarn = (r) => r.warns.some((w) => /開催日」の列の時刻/.test(w));
+  t('9-3 開催日の列に時刻があり開催時間が空の時だけ知らせる', w1.rec.heldDate === '2024-04-01' && timeWarn(w1) && !timeWarn(w2) && !timeWarn(w3), [w1.warns, w2.warns, w3.warns]);
+  const dupRoster = [{ masterId: '101', name: '甲野 一郎' }, { masterId: '101', name: '甲野 一郎', active: false }];
+  const twoRoster = [{ masterId: '101', name: '甲野 一郎' }, { masterId: '102', name: '甲野 一郎', active: false }];
+  const row = [{ rec: { sourceName: '甲野 一郎', heldDate: '2024-04-01' } }];
+  t('9-4 名簿に同じ番号の方が2回あっても1名に数え、番号の違う同名2名は今までどおり入れない',
+    C.impPlan(row, dupRoster, '2026-11-17').items[0].status === 'new' && C.impPlan(row, twoRoster, '2026-11-17').items[0].status === 'ambiguous');
+}
+
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);

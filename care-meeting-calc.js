@@ -575,6 +575,20 @@
      引用符（"）で始まるセルは、閉じる引用符まで改行・区切りもセルの中身とし、"" は " 1字にする。先頭の BOM を落とす。改行は CRLF・LF・CR。
      中身が空の行は飛ばす。引用符が閉じないまま終わった時・上限を超えた時は読まない（例外を出さない）。
      ★1文字ずつ読む（正規表現1本で読むと、引用符の多い表で時間がかかるため） */
+  function impSepOf(src) {
+    var inQ = false, start = true, any = false, tab = false;
+    for (var j = 0; j < src.length; j++) {
+      var ch = src.charAt(j);
+      if (inQ) { if (ch === '"') { if (src.charAt(j + 1) === '"') j++; else inQ = false; } continue; }
+      if (ch === '"' && start) { inQ = true; start = false; any = true; continue; }
+      if (ch === '\r' || ch === '\n') { if (any) break; start = true; continue; }
+      if (ch === '\t') { tab = true; start = true; continue; }
+      if (ch === ',') { start = true; continue; }
+      if (!/\s/.test(ch)) any = true;
+      start = false;
+    }
+    return tab ? '\t' : ',';
+  }
   function impTable(text, limits) {
     limits = limits || {};
     var maxRows = typeof limits.rows === 'number' ? limits.rows : IMP_ROWS_MAX;
@@ -582,10 +596,9 @@
     var src = String(text == null ? '' : text);
     if (src.charCodeAt(0) === 0xFEFF) src = src.slice(1);
     if (utf8Len(src) > maxBytes) return { ok: false, reason: 'tooBig', message: '表が大きすぎます（' + Math.round(maxBytes / 1024 / 1024) + 'MB まで）。年ごとなどに分けて読んでください' };
-    /* 区切りは、中身のある最初の行（見出しになる行）で決める（先頭に空の行がある貼り付けでも見出しと同じ行で見る） */
-    var lines = src.split(/\r\n?|\n/), first = '';
-    for (var li = 0; li < lines.length; li++) if (/[^\s,]/.test(lines[li])) { first = lines[li]; break; }
-    var sep = first.indexOf('\t') >= 0 ? '\t' : ',';
+    /* 区切りは、中身のある最初の1件（見出しになる行）で決める。引用符の中のタブ・改行は数えない
+       （見出しのセルの中に改行がある貼り付け・引用符の中にタブがある CSV で見誤らないため・審査 2026-11-17 低2） */
+    var sep = impSepOf(src);
     var out = [], row = [], cell = '', inQ = false, quoted = false, i = 0, len = src.length, header = null, ragged = 0, over = false;
     function endRow() {
       row.push(cell); cell = ''; quoted = false;
@@ -723,7 +736,7 @@
       var v = vals[k].join('\n');
       if (k === 'attendees') {
         var lines = [];
-        vals[k].forEach(function (c) { c.split(/\n|、|;|；/).forEach(function (x) { if (x.trim()) lines.push(x.trim()); }); });
+        vals[k].forEach(function (c) { c.split(/\n|、|;|；|,|，/).forEach(function (x) { if (x.trim()) lines.push(x.trim()); }); });
         var att = parseAttendees(lines.join('\n'));
         rec.attendees = att.list; warns = warns.concat(att.warns);
       } else if (f.type === 'date') {
@@ -737,6 +750,10 @@
         if (!rec[k]) warns.push('「開催回数」を読めません（' + v.slice(0, 20) + '）');
       } else rec[k] = v;
     });
+    /* 開催日の列に時刻があり、開催時間が空の時は知らせる（時刻は黙って捨てない・審査 2026-11-17 低3） */
+    if (raw.heldDate && rec.heldDate && !rec.timeText && /\d{1,2}[:：]\d{2}/.test(nfkc(raw.heldDate))) {
+      warns.push('「開催日」の列の時刻は入れていません。開催時間の列があれば選んでください');
+    }
     return { rec: rec, warns: warns, raw: raw };
   }
   /* ── 送信の印 ── 'impc-<利用者No>-<YYYYMMDD>'。番号・開催日の形が違えば '' */
@@ -757,7 +774,15 @@
     var items = rows.map(function (row, i) {
       var rec = (row && row.rec && typeof row.rec === 'object') ? row.rec : (row || {});
       var warns = (row && Array.isArray(row.warns)) ? row.warns.slice() : [];
-      var nk = nameKey(rec.sourceName), hits = nk ? people.filter(function (r) { return nameKey(r.name) === nk; }) : [];
+      var nk = nameKey(rec.sourceName), hits = [], seenId = Object.create(null);
+      /* 同じ番号の方が名簿に2回あれば1名に数える（在籍と退去を別に読んでつないだ名簿で、入る行が同名2名扱いにならないように・審査 2026-11-17 低4） */
+      if (nk) people.forEach(function (r) {
+        if (nameKey(r.name) !== nk) return;
+        var rid = String(r.masterId != null ? r.masterId : (r.id != null ? r.id : ''));
+        if (rid && seenId[rid]) return;
+        if (rid) seenId[rid] = 1;
+        hits.push(r);
+      });
       var it = { i: i, status: '', id: '', name: '', active: false, heldDate: ymdOk(rec.heldDate) ? rec.heldDate : '', key: '', stop: '', warns: warns, rec: rec };
       if (hits.length === 1) {
         var id = String(hits[0].masterId != null ? hits[0].masterId : (hits[0].id != null ? hits[0].id : ''));
