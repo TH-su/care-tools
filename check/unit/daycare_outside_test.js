@@ -233,7 +233,9 @@ for (const [lab, word] of [['「外部」', '外部'], ['4字', '外来の方']]
   t(lab + ': 利用表の外部の欄は緑（f2・橙の f0 にしない）', rosterOutCls === 'col-flr f2', rosterOutCls);
   const aw = box.els.tblAllweek.children[2].children.filter(tr => tr.children[0] && hasCls(tr.children[0], 'sec-h')).map(tr => tr.children[0].textContent);
   t(lab + ': 全員リストの区画は ２階・１階・（印）利用者・階未設定', J(aw) === J(['２階入居者', '１階入居者', word + '利用者', '階未設定']), aw);
-  t(lab + ': 全員リストの合計行は「入居者」（入居者がいる）', textsOf(box.els.tblAllweek, 'c-sum-lb')[0] === '入居者');
+  /* 2026-11-17 差分の審査 低2: 合計の人数は外部の方も含むので、外部の方がいる時は「利用者」（前は入居者がいれば「入居者」と決めていた） */
+  t(lab + ': 全員リストの合計行は、外部の方を数に含むので「利用者」', textsOf(box.els.tblAllweek, 'c-sum-lb')[0] === '利用者', textsOf(box.els.tblAllweek, 'c-sum-lb'));
+  t(lab + ': 一覧表の凡例の「下段＝デイ休み」は残る（下半分を描く）', r.lg['sc-daylist'].indexOf('下段＝デイ休み') >= 0, r.lg['sc-daylist']);
   t(lab + ': 薬用の区画も同じ並び', J(secs(box.els.tblMed)) === J(['２階入居者', '１階入居者', word + '利用者', '階未設定']), secs(box.els.tblMed));
   t(lab + ': 昼食薬チェックに外部の方の組がある（チェック欄から消さない）', textsOf(box.els.chkMed, 'chk-flr').indexOf(word + '利用者') >= 0 && textsOf(box.els.chkMed, 'chk-item').indexOf('見本 4') >= 0, textsOf(box.els.chkMed, 'chk-flr'));
   t(lab + ': 一覧表の下半分（デイ休み）は描く', textsOf(box.els.tblDaylist, 'cut-title').length === 1);
@@ -253,6 +255,7 @@ console.log('— 4. 全員が外部（印あり・単独のデイ・架空30名�
   t('全員リストは「外部利用者」の区画だけ', J(aw) === J(['外部利用者']), aw);
   t('全員リストの合計行は「利用者」・人数は30名', textsOf(box.els.tblAllweek, 'c-sum-lb')[0] === '利用者' && textsOf(box.els.tblAllweek, 'sum')[0].indexOf('30名') >= 0, textsOf(box.els.tblAllweek, 'c-sum-lb'));
   t('薬用は「外部利用者」の区画だけ', J(secs(box.els.tblMed)) === J(['外部利用者']), secs(box.els.tblMed));
+  t('一覧表の凡例に、描いていない「下段＝デイ休み」を出さない（2026-11-17 差分の審査 低1）', r.lg['sc-daylist'].indexOf('下段') < 0 && r.lg['sc-daylist'].indexOf('黄＝入浴あり') >= 0, r.lg['sc-daylist']);
   t('橙・⚠・橙の説明が出ない', textsOf(box.els.tblDaylist, 'nofloor').length === 0 && Object.values(r.lg).every(s => s.indexOf('階未設定') < 0 && s.indexOf('淡い橙') < 0), r.lg);
   const wk = box.els.weeklyPages.children.map(pg => textsOf(pg, 'wk-sum')[0]);
   t('週間名簿は各曜日0名の今の形（6枚・氏名なし）', wk.length === 6 && wk.every(s => s === '0名') && textsOf(box.els.weeklyPages, 'wk-nmtx').length === 0, wk);
@@ -265,7 +268,8 @@ console.log('— 4. 全員が外部（印あり・単独のデイ・架空30名�
   const db = soloDb(3); db.residents.push(res(9, '', false, [[0]]));
   renderAllTabs(box, db);
   t('外部と階未設定だけ: 階の区画は描かず、下半分は階未設定だけ', J(secs(box.els.tblDaylist)) === J(['外部利用者', '階未設定', '階未設定']), secs(box.els.tblDaylist));
-  t('外部と階未設定だけ: 合計行は「入居者」', textsOf(box.els.tblAllweek, 'c-sum-lb')[0] === '入居者');
+  /* 2026-11-17 差分の審査 低2: 外部の方を数に含むので「利用者」 */
+  t('外部と階未設定だけ: 合計行は外部の方を数に含むので「利用者」', textsOf(box.els.tblAllweek, 'c-sum-lb')[0] === '利用者', textsOf(box.els.tblAllweek, 'c-sum-lb'));
 }
 {
   /* 印があり外部の方がいない（入居者だけ）時は、今の紙と同じ（空の階の区画も描く） */

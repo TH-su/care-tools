@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-font">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-vxX+H34LOcDy5uN20PmrjGH9ITTMdrPwA7ODVAX7f6k='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-BK1VFMuo4S2KzjZpoMEf5m5goM4bZdWR0FM0pRXBAZw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -2470,7 +2470,7 @@ function renderAllweek(ppl) {
 
   const tfoot = el('tfoot');
   const sr = el('tr', 'sum');
-  sr.appendChild(el('td', 'c-rn c-sum-lb', (sec.outL && !sec.residents) ? '利用者' : '入居者'));   // 旧ふりがな列に置いていた行ラベルを No.列へ移設。入居者0名の時だけ「利用者」（印のある施設だけ・D-02）
+  sr.appendChild(el('td', 'c-rn c-sum-lb', (sec.outL && (!sec.residents || sec.out.length)) ? '利用者' : '入居者'));   // 旧ふりがな列に置いていた行ラベルを No.列へ移設。外部の利用者を数に含む時は「利用者」（印のある施設だけ・D-02・審査 2026-11-17 低2）
   const dl2 = dcrLastDay_(DCR_COLS);
   for (const d of DCR_COLS) {
     sr.appendChild(el('td', 'c-nm dsep', String(ppl.length) + '名'));
@@ -3063,7 +3063,10 @@ function activeTab() {
 function renderLegend(sc) {
   const box = $('legend');
   box.textContent = '';
+  /* 入居者が0名で一覧表の下半分（デイ休み）を描かない時は、「下段＝デイ休み」の凡例も出さない（印のある施設だけ・D-02・審査 2026-11-17 低1） */
+  const noLower = sc === 'sc-daylist' && !!dcrOutside_() && Array.isArray(MODEL) && !dcrSecLists_(MODEL).residents;
   (LEGENDS[sc] || []).forEach(([k, t]) => {
+    if (noLower && k === 't') return;
     if (k === 'sw') { const s = el('span', 'lg'); s.appendChild(el('span', 'lg-sw')); s.appendChild(document.createTextNode(t)); box.appendChild(s); }
     else if (k === 'hosp') { const s = el('span', 'lg'); s.appendChild(el('span', 'hosp-tag', '（入院）')); s.appendChild(document.createTextNode(t.replace('（入院）', ''))); box.appendChild(s); }
     else if (k === 'star') { const s = el('span', 'lg'); s.appendChild(el('span', 'star', '☆')); s.appendChild(document.createTextNode(dcrFill(t).replace('☆', ''))); box.appendChild(s); }
