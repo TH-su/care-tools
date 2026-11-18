@@ -128,6 +128,61 @@ const leaks = (lines) => lines.filter(l => SECRET_WORDS.some(w => l.includes(w))
     t('ファイルが無い時は 2 で終わり、パスの中身を読まない', e.status === 2, [e.status, e.stderr]);
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 
+  console.log('— F. 貼り薬カレンダーの施設情報（patchCalendar）は画面と同じ決まりで止める —');
+  {
+    const { patchRules } = await import(TOOL);
+    const pc = patchRules();
+    t('画面（patch-calendar.html）から決まりの関数を切り出せる', !!pc && typeof pc.pcCfgOf === 'function' && typeof pc.pcKindsOf === 'function');
+    const withPc = (v) => { const p = good(); p.patchCalendar = v; return run(p); };
+    const S4 = [{ name: '貼甲' }, { name: '貼乙' }, { name: '貼丙' }, { name: '貼丁' }];
+    const okCases = [
+      ['薬の名前だけ', { drug: '試験テープ' }],
+      ['場所だけ（4か所）', { sites: S4 }],
+      ['名前・場所・別の種類2つ', { drug: '試験テープ', sites: S4, kinds: [{ no: 2, drug: '試験パッチ' }, { no: 3, drug: '試験シート', sites: [{ name: '貼戊', short: '戊' }, { name: '貼己', short: '己' }] }] }],
+      ['別の種類だけ', { kinds: [{ no: 8, drug: '試験パッチ' }] }],
+    ];
+    for (const [n, v] of okCases) { const r = withPc(v); t('OK: ' + n, r.ok, r.errors); }
+    const ngCases = [
+      ['かたまりでない', [1, 2], /^patchCalendar：/],
+      ['何も書いていない', {}, /^patchCalendar：.*どれも書いていません/],
+      ['薬の名前が21字', { drug: 'あ'.repeat(21) }, /^patchCalendar：/],
+      ['薬の名前に < がある', { drug: '試験<テープ' }, /^patchCalendar：/],
+      ['場所が1か所', { sites: [{ name: '貼甲' }] }, /^patchCalendar：/],
+      ['場所が9か所', { sites: Array.from({ length: 9 }, (_, i) => ({ name: '場所' + i })) }, /^patchCalendar：/],
+      ['場所の名前が重なる', { sites: [{ name: '貼甲' }, { name: '貼甲' }] }, /^patchCalendar：/],
+      ['7字の場所の名前に短い名前が無い', { sites: [{ name: 'ぬぬぬぬぬぬぬ' }, { name: '貼乙' }] }, /^patchCalendar：/],
+      ['種類の番号が1', { kinds: [{ no: 1, drug: '試験パッチ' }] }, /^patchCalendar\.kinds：/],
+      ['種類の番号が重なる', { kinds: [{ no: 2, drug: 'A剤' }, { no: 2, drug: 'B剤' }] }, /^patchCalendar\.kinds：/],
+      ['種類の番号が小数', { kinds: [{ no: 2.5, drug: 'A剤' }] }, /^patchCalendar\.kinds：/],
+      ['種類に薬の名前が無い', { kinds: [{ no: 2 }] }, /^patchCalendar\.kinds：/],
+      ['種類が8つ', { kinds: Array.from({ length: 8 }, (_, i) => ({ no: 2 + (i % 7), drug: '剤' + i })) }, /^patchCalendar\.kinds：/],
+      ['種類が空の一覧', { kinds: [] }, /^patchCalendar\.kinds：/],
+      ['種類の場所が崩れている', { kinds: [{ no: 2, drug: 'A剤', sites: [{ name: '貼戊' }] }] }, /^patchCalendar\.kinds：/],
+    ];
+    const pcErr = [];
+    for (const [n, v, re] of ngCases) { const r = withPc(v); pcErr.push(...r.errors); t('NG: ' + n, !r.ok && has(r, re), r.errors); }
+    t('既定の部分が正しく kinds だけ崩れている時は kinds だけを NG にする', (() => { const r = withPc({ drug: '試験テープ', kinds: [{ no: 1, drug: 'A剤' }] }); return !r.ok && r.errors.length === 1 && /^patchCalendar\.kinds：/.test(r.errors[0]); })());
+    /* 画面と同じ決まりか: 道具の OK／NG と、画面の関数が読めるか（読めなければ画面は既定に戻る）がそろう */
+    const all2 = okCases.map(c => [c[1], true]).concat(ngCases.slice(2).map(c => [c[1], false]));
+    t('道具の判定は画面の関数の判定とそろう', all2.every(([v, want]) => {
+      const scr = (v.drug === undefined && v.sites === undefined || !!pc.pcCfgOf({ drug: v.drug, sites: v.sites })) && (v.kinds === undefined || !!pc.pcKindsOf(v));
+      return scr === want && withPc(v).ok === want;
+    }));
+    t('NG の文に値（薬の名前・場所の名前）を出さない', !pcErr.some(e => /試験|貼甲|ぬぬぬ|A剤|あああ/.test(e)), pcErr);
+    t('5万字を超える塊は NG（su-facility.js の SECTION_MAX で塊ごと捨てられるため）', (() => { const r = withPc({ drug: '試験テープ', memo: 'x'.repeat(60000) }); return !r.ok && has(r, /^patchCalendar：大きすぎます/); })() && /SECTION_MAX = 50000/.test(read('su-facility.js')));
+    {
+      const { setPatchRulesForTest } = await import(TOOL);
+      setPatchRulesForTest(null);
+      const r = withPc({ drug: '試験テープ' });
+      const r0 = run(good());
+      setPatchRulesForTest(undefined);
+      t('決まりの関数を切り出せない時は、patchCalendar を書いた設定を止める（黙って通さない）', !r.ok && has(r, /^patchCalendar：確かめる決まり/), r.errors);
+      t('決まりの関数を切り出せない時も、patchCalendar を書いていない設定は今までどおり OK', r0.ok, r0.errors);
+      t('差し替えを戻すと元の決まりで動く', withPc({ drug: '試験テープ' }).ok);
+    }
+    t('見本（facility-profile.sample.json）に patchCalendar を書いていない時も今までどおり', !('patchCalendar' in JSON.parse(SAMPLE_SRC)) && run(good()).ok);
+  }
+
   console.log('— E. 公開の手順も同じ道具を呼ぶ —');
   const Y = read('.github/workflows/pages.yml');
   t('pages.yml は facility-secret-check.mjs を --github で呼び、別の判定を持たない', /node check\/facility-secret-check\.mjs --github facility-profile\.json/.test(Y) && !/json\.load\(open\('facility-profile\.json'/.test(Y));
