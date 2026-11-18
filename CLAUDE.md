@@ -297,7 +297,7 @@ PR を出すと同じ比較が GitHub Actions で自動で回り（チェック�
   最後の報告だけでなく、作業の合間の一言（今何をしているか・終わったことの知らせ）・確認のお願い（「許可を押してください」など）・自動の知らせ（試験の結果・push の催促など）へのお返事・道具の説明欄も、代表者に見える文はすべて日本語にする。道具の結果やシステムの知らせが英語でも、返す文は日本語にする。送る前に、英語の文で始まる行がないかを見直す（本人指示 2026-11-05）。
 - 返事が英語のまま出ないよう、`.claude/settings.json` の Stop フックが返事を出す直前に確かめ、英語の返事は止めて日本語で出し直させる（`.claude/hooks/check-reply-japanese.py`・正本は代表者の Mac の claude-config と同じ中身）。クラウドのセッションは Mac の設定を読まないので、この見張りを外さない・弱めない（本人指示 2026-11-07「確実に改善せよ」）。
 - 代表者にお願いする作業（押す・流す・確かめる）は、代表者が覚えなくて済むよう、毎回いちばん手間の少ない案（自動にする・まとめる・知らせる）を先に出す（本人指示 2026-10-29）。
-- 代表者に SQL を流していただく時は、毎回 Supabase の SQL Editor の URL（https://supabase.com/dashboard/project/jhbernqawjrzqwrmqrih/sql/new）と、貼る SQL のファイルの URL を一緒に出す（本人指示 2026-10-29）。
+- 本番の Supabase の形を変える SQL は、Claude が移行の道具（apply_migration）だけで流す。読むだけの確かめは SQL の実行の道具（execute_sql）。SQL Editor はコネクタが届かない時・時間切れの時の予備で、その時だけ代表者に SQL Editor の URL（https://supabase.com/dashboard/project/jhbernqawjrzqwrmqrih/sql/new）と、貼る SQL のファイルの URL を一緒に出す（本人指示 2026-10-29・代表者の決定 2026-11-17）。
 
 ## 9. PR と運用
 
