@@ -20,6 +20,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import vm from 'node:vm';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const KINDS = ['施設', '訪問', '通所'];
@@ -54,6 +55,28 @@ function posOf(text, err) {
  * @param {string} sampleText 見本 facility-profile.sample.json の文字列（見本のままかの判定に使う）
  * @returns {{ok: boolean, errors: string[], summary: string}}
  */
+/* 貼り薬カレンダーの画面から、施設情報を確かめる純関数（pcStr・pcCfgOf・pcKindsOf と決まりの数）だけを切り出して動かす。
+   切り出す範囲は「var PC_SITE_MIN」から「/* 施設情報の kinds を読む」の手前まで。外の物（window・document）には触れない範囲。
+   読めない・形が変わった時は null（呼んだ側が NG にする＝黙って通さない。切り出せることと、null の時に止まることを試験 facility_secret_check_test の F が確かめる） */
+let patchRulesMemo;
+export function patchRules() {
+  if (patchRulesMemo !== undefined) return patchRulesMemo;
+  patchRulesMemo = null;
+  try {
+    const src = fs.readFileSync(path.join(ROOT, 'patch-calendar.html'), 'utf8');
+    const a = src.indexOf('var PC_SITE_MIN');
+    const b = src.indexOf('/* 施設情報の kinds を読む', a);
+    if (a < 0 || b < 0) return null;
+    const box = vm.createContext({});
+    vm.runInContext(src.slice(a, b) + '\n;this.__pc = { pcCfgOf: pcCfgOf, pcKindsOf: pcKindsOf };', box, { timeout: 1000 });
+    const pc = box.__pc;
+    if (pc && typeof pc.pcCfgOf === 'function' && typeof pc.pcKindsOf === 'function') patchRulesMemo = pc;
+  } catch (e) { patchRulesMemo = null; }
+  return patchRulesMemo;
+}
+/* 試験だけが使う: 切り出しに失敗した時（null）に止まることを確かめるため、決まりを差し替える。undefined で元に戻す */
+export function setPatchRulesForTest(v) { patchRulesMemo = v; }
+
 export function checkFacilityProfile(text, sampleText) {
   const errors = [];
   const ng = (where, why) => errors.push(`${where}：${why}`);
@@ -137,6 +160,24 @@ export function checkFacilityProfile(text, sampleText) {
     const ok = isObj(v) && Object.keys(v).length === 1 && Object.keys(v)[0] === 'label' && isStr(w)
       && [...w].length >= 1 && [...w].length <= 4 && w.trim() === w && !/[\u0000-\u001f\u007f{}]/.test(w);
     if (!ok) ng('daycareOutside', '{"label": "外部"} の形で、label だけを1〜4字（前後の空白・改行・{ } なし）で書いてください（崩れているとデイ利用表は外部の区画を作らず、今のまま出します）');
+  }
+  /* 貼り薬カレンダーの薬の名前・貼る場所・別の種類（2026-11-18 第8回の監査の気づき2）。読む画面（patch-calendar.html の pcCfgOf・pcKindsOf）の
+     関数そのものを切り出して使う（同じ決まりを2か所に書かない）。崩れていると画面は黙って既定（今の1種類・背中8箇所）に戻る・kinds だけ捨てるので、ここで止める（値は出さない） */
+  if ('patchCalendar' in p) {
+    const v = p.patchCalendar;
+    const pc = patchRules();
+    if (!pc) ng('patchCalendar', '確かめる決まり（貼り薬カレンダーの画面の読み方）を読めませんでした。道具の不具合なので管理者に知らせてください');
+    else if (isObj(v) && JSON.stringify(v).length > 50000) ng('patchCalendar', '大きすぎます（JSON にして5万字まで。超えると貼り薬カレンダーは塊ごと読まず、既定の薬の名前と背中8箇所のまま出します）');
+    else if (!isObj(v)) ng('patchCalendar', '{ } のかたまりではありません（崩れていると貼り薬カレンダーは既定の薬の名前と背中8箇所のまま出します）');
+    else {
+      if (v.drug === undefined && v.sites === undefined && v.kinds === undefined) ng('patchCalendar', 'drug・sites・kinds のどれも書いていません（書かない時は patchCalendar ごと消してください）');
+      if ((v.drug !== undefined || v.sites !== undefined) && !pc.pcCfgOf({ drug: v.drug, sites: v.sites })) {
+        ng('patchCalendar', 'drug は1〜20字・sites は2〜8か所（name は1〜12字で互いに別・short は6字まで・name が7字以上なら short が要る・< > と改行は使えない）で書いてください（崩れていると貼り薬カレンダーは既定の薬の名前と背中8箇所のまま出します）');
+      }
+      if (v.kinds !== undefined && !pc.pcKindsOf(v)) {
+        ng('patchCalendar.kinds', '1〜7つの一覧で、1つずつ no（2〜8 の整数・重ならない）と drug（1〜20字）を書き、sites は書くなら drug・sites と同じ決まりで書いてください（崩れていると貼り薬カレンダーは種類を選ばせず、既定の種類だけで出します）');
+      }
+    }
   }
   if ('visitingClinics' in p) {
     if (!Array.isArray(p.visitingClinics)) ng('visitingClinics', '一覧（[ ]）ではありません');
