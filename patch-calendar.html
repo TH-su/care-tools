@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gcXRkXmyE3KgFviQtOUaBae5OLz9sIoAeMaeuQmzKdI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-05n4bURYbH9IAyC4JzPE194eYg0xDvbSPicW+idTyBM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <!-- 他ツールと同じ指定を揃えている。氏名はこのHTMLには含まれず入力欄にしか存在しないため、
      この meta が効かないブラウザでもキャッシュ経由で氏名が残ることはない -->
@@ -197,6 +197,9 @@ body {
     font-size: 2.6mm; line-height: 1.2; font-weight: 400; padding-bottom: .6mm; }
   .sh-ttl .su-print-head.pc-fac > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   @page { size: A4 portrait; margin: 8mm; }
+  /* 種類を書いた施設の現場の端末では Cmd/Ctrl+P でも紙を出さず、事務所PCで刷る知らせだけを出す（代表者の決定 2026-11-18） */
+  html.pc-fieldstop body > *:not(#pcFieldStop) { display: none !important; }
+  html.pc-fieldstop #pcFieldStop { display: block !important; font-size: 5mm; padding: 10mm; }
 }
 @media (prefers-reduced-motion: reduce) { .btn { transition: none; } }
 /* 用紙は固定寸法なので、狭い画面では横スクロールで全体を確認できるようにする */
@@ -214,6 +217,7 @@ body {
 <link rel="stylesheet" href="su-print.css?v=2026-11-13">   <!-- 紙の見出しの施設名・印刷日（.su-print-head・印刷だけ・2026-11-13） -->
 </head>
 <body>
+<p id="pcFieldStop" hidden></p>   <!-- 種類を書いた施設の現場の端末で印刷しようとした時だけ紙に出す（画面には出さない・代表者の決定 2026-11-18） -->
 
 <header class="hdr noprint">
   <a class="back" href="index.html">← メニュー</a>
@@ -1665,7 +1669,32 @@ var printAck = null;
    施設情報で貼り薬の名前・場所を書いた施設で、読む前に刷ると既定の背中8箇所の紙が黙って出る（貼る場所を取り違える）。
    読めていれば（端末の控えでも）その場で刷る＝今までどおり。まだなら最大3秒待ち、読めなければ刷らずに知らせる */
 var SU_FAC_WAIT_MS = 3000;
+/* 種類を書いた施設では、現場の端末で刷らない。現場の端末はほかの端末で替えた種類を受け取らず、古い種類の紙を刷りうるため（代表者の決定 2026-11-18・文は仮置き） */
+var PC_KIND_FIELD_PRINT_MSG = 'この施設では入居者ごとに貼り薬の種類を選べるため、現場の端末では印刷できません。事務所PCで印刷してください（現場の端末は、ほかの端末で替えた種類を受け取らないためです）。';
+function pcFieldPrintStop() { return pcKindUiOn() && pcIsField(); }
+/* Cmd/Ctrl+P・共有メニューの「プリント」の道: 現場の端末で、種類を書いた施設か、施設情報がまだ読めていない（種類を書いたか分からない）時は、紙に知らせだけを出す。
+   印刷の前の知らせ（beforeprint）が起きない端末もあるので、印は施設情報が届いた時・開いた時にも付け直して付けたままにする（指定は印刷の時だけ効く＝画面は変わらない）。
+   事務所PCと、施設情報を読めた種類なしの施設の現場の端末には印を付けない（今のまま） */
+function pcPrintStopMsg() {
+  if (!pcIsField()) return '';
+  var rdy = false;
+  try { rdy = !!(window.SUFacility && SUFacility.ready()); } catch (e) { rdy = false; }
+  if (!rdy) return PC_FAC_NG_MSG;
+  return pcFieldPrintStop() ? PC_KIND_FIELD_PRINT_MSG : '';
+}
+function pcFieldStopSync() {
+  var m = '';
+  try { m = pcPrintStopMsg() || ''; } catch (e) { m = ''; }
+  var n = document.getElementById('pcFieldStop');
+  if (n) n.textContent = m;
+  document.documentElement.classList.toggle('pc-fieldstop', !!m);
+}
+window.addEventListener('beforeprint', pcFieldStopSync);
+window.addEventListener('afterprint', pcFieldStopSync);
 var PC_FAC_NG_MSG = '⚠️ 施設情報が読めません。貼り薬の名前と貼る場所を正しく刷れないため、印刷を中止しました。通信を確かめて画面を再読み込みしてから、もう一度押してください';
+pcFieldStopSync();   /* 開いた時に1回。施設情報が届いた時も付け直す */
+try { if (window.SUFacility && typeof SUFacility.onReady === 'function') SUFacility.onReady(pcFieldStopSync); }
+catch (e) { /* 付け直せなくても印刷の前後（beforeprint・afterprint）で付け直す */ }
 function suFacReady_(ms) {
   return new Promise(function (ok) {
     var F = window.SUFacility, done = false, tm = null;
@@ -1714,6 +1743,7 @@ function pcPrintFresh() {
     .then(function () { pcFreshWaiting = false; pcPrint(ng); });
 }
 function pcPrint(freshNg) {   /* freshNg: kinds の施設で刷る前の読み直しができなかった（その時は確かめの窓を必ず出す） */
+  if (pcFieldPrintStop()) { window.alert(PC_KIND_FIELD_PRINT_MSG); return; }   /* 種類を書いた施設の現場の端末では刷らない（代表者の決定 2026-11-18） */
   var nm = el.nm.value.trim();
   var key = nm + '|' + isoMonth(state.y, state.m) + '|' + state.start.iso + '|' + state.no + '|' + state.prev
     + '|' + (state.confirmed ? 1 : 0) + (pcKindCur !== 1 ? '|k' + pcKindCur : '');   /* 種類も確かめる（既定の種類の時は今の鍵のまま） */
@@ -1723,7 +1753,6 @@ function pcPrint(freshNg) {   /* freshNg: kinds の施設で刷る前の読み�
     /* 設定が済んでいない（仮の値・初期値）時は、それを確認の文面にも出す */
     var prov = state.confirmed ? '' : '\n\n⚠ 開始日と場所はまだ設定されていません（仮の値・初期値です）。';
     if (state.kindSt === 'stopk') prov += '\n\n' + PC_KIND_STOPK_MSG;
-    if (pcKindUiOn() && pcIsField()) prov += '\n\nこの端末はほかの端末の種類の変更を受け取りません。';   /* 現場の端末は読み直さない（仮置き） */
     if (freshNg) prov += '\n\nほかの端末の種類の変更を読み直せませんでした。今の表示で印刷します。';   /* 事務所PCで読み直しの失敗・時間切れ（仮置き） */
     if (!window.confirm(state.y + '年' + state.m + '月分／開始 ' + jpDate(state.start)
         + ' ＝ ' + state.no + '番' + who + 'で印刷します。よろしいですか' + prov)) return;

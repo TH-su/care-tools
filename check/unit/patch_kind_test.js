@@ -442,20 +442,21 @@ const tick = (min) => { clock.now += (min || 30) * 60000; };
   {
     const runFresh = async (pullImpl, o) => {
       o = o || {};
-      const conf = [], prints = [];
+      const conf = [], prints = [], alerts = [];
       const c = { Promise, setTimeout, Error, String, window: {}, isoMonth: (y, m) => y + '-' + m, jpDate: (x) => x.iso, el: { nm: { value: '架空 一郎' } } };
       c.window.confirm = (m) => { conf.push(String(m)); return true; };
       c.window.print = () => { prints.push(1); };
+      c.window.alert = (m) => { alerts.push(String(m)); };
       c.window.SUPatchSync = { pull: pullImpl, readSwitchOn: () => true };
       vm.createContext(c);
       vm.runInContext("var PC_FRESH_MS = 30, pcFreshWaiting = false, pcPullGen = 0, printAck = null, pcKindCur = 2;"
         + "var state = { rid: 'r1', y: 2026, m: 1, start: { iso: '2026-01-05' }, no: 3, prev: 0, confirmed: true, kindSt: '' };"
-        + "function pcKindUiOn() { return " + J(o.kinds !== false) + "; } function pcIsField() { return false; }"
+        + "function pcKindUiOn() { return " + J(o.kinds !== false) + "; } function pcIsField() { return " + J(!!o.field) + "; }"
         + "function pcKindName() { return '架空テープ（6箇所）'; } var __ap = []; function pcPullApply(r, g) { __ap.push(r.status); }"
-        + "var PC_KIND_STOPK_MSG = 'x';\n" + grabFn('pcPrintFresh') + '\n' + grabFn('pcPrint'), c);
+        + "var PC_KIND_STOPK_MSG = 'x', PC_KIND_FIELD_PRINT_MSG = '現場では刷れません';\n" + grabFn('pcFieldPrintStop') + '\n' + grabFn('pcPrintFresh') + '\n' + grabFn('pcPrint'), c);
       vm.runInContext('pcPrintFresh()', c);
       await new Promise(r => setTimeout(r, 80)); await settle();
-      return { conf, prints, applied: c.__ap };
+      return { conf, prints, alerts, applied: c.__ap };
     };
     const LINE = 'ほかの端末の種類の変更を読み直せませんでした。今の表示で印刷します。';
     const okR = await runFresh(() => Promise.resolve({ status: 'ok', rows: {} }));
@@ -467,6 +468,10 @@ const tick = (min) => { clock.now += (min || 30) * 60000; };
     const lateR = await runFresh(() => new Promise(() => {}));
     t('★時間切れ（返ってこない）の時も1行を足して刷る', lateR.prints.length === 1 && lateR.conf.length === 1 && lateR.conf[0].indexOf(LINE) > 0 && lateR.applied.length === 0, lateR);
     const noK = await runFresh(() => Promise.resolve({ status: 'unreachable' }), { kinds: false });
+    const fdR = await runFresh(() => Promise.resolve({ status: 'ok', rows: {} }), { field: true });
+    t('★kinds の施設の現場の端末は刷らず、読み直しもせず、知らせだけを出す（代表者の決定 2026-11-18）', fdR.prints.length === 0 && fdR.conf.length === 0 && J(fdR.alerts) === J(['現場では刷れません']) && fdR.applied.length === 0, fdR);
+    const fdN = await runFresh(() => Promise.resolve({ status: 'ok', rows: {} }), { field: true, kinds: false });
+    t('★kinds の無い施設の現場の端末は今までどおり刷る', fdN.prints.length === 1 && fdN.alerts.length === 0, fdN);
     t('★kinds の無い施設は読み直さず、今の窓の文のまま刷る', noK.prints.length === 1 && noK.conf.length === 1 && noK.conf[0].indexOf(LINE) < 0 && noK.applied.length === 0, noK);
   }
 
@@ -504,7 +509,42 @@ const tick = (min) => { clock.now += (min || 30) * 60000; };
       /if \(!state\.rid \|\| !pcKindUiOn\(\) \|\| pcIsField\(\) \|\| !sp \|\| !sp\.pull \|\| !sp\.readSwitchOn \|\| !sp\.readSwitchOn\(\)\) \{ pcPrint\(\); return; \}/.test(pf) && /\.then\(function \(\) \{ pcFreshWaiting = false; pcPrint\(ng\); \}\);/.test(pf)
       && (PAGE.match(/pcPrintFresh\(\);/g) || []).length === 2);
     const pr2 = PAGE.slice(PAGE.indexOf('\nfunction pcPrint('), scanBlock(PAGE, PAGE.indexOf('\nfunction pcPrint(')) + 1);
-    t('現場の端末で kinds の施設の方を刷る時は確かめに1行・止めた方には注意', /if \(pcKindUiOn\(\) && pcIsField\(\)\) prov \+= '\\n\\nこの端末はほかの端末の種類の変更を受け取りません。';/.test(pr2) && /if \(state\.kindSt === 'stopk'\) prov \+= /.test(pr2));
+    t('止めた方には確かめの窓に注意', /if \(state\.kindSt === 'stopk'\) prov \+= /.test(pr2));
+    /* 種類を書いた施設の現場の端末では刷らない（代表者の決定 2026-11-18）: ボタンの道は pcPrint の最初で止め、Cmd/Ctrl+P は紙に知らせだけを出す */
+    t('★kinds の施設の現場の端末では pcPrint の最初で止めて知らせる（window.print に届かない）',
+      /^\nfunction pcPrint\(freshNg\) \{[^\n]*\n  if \(pcFieldPrintStop\(\)\) \{ window\.alert\(PC_KIND_FIELD_PRINT_MSG\); return; \}/.test(pr2)
+      && /function pcFieldPrintStop\(\) \{ return pcKindUiOn\(\) && pcIsField\(\); \}/.test(PAGE));
+    /* Cmd/Ctrl+P・共有メニューの道は、印（pc-fieldstop）を実際に動かして確かめる */
+    const syncRun = (o) => {
+      const cls = new Set(), node = { textContent: 'old' };
+      const c = { window: {}, document: { getElementById: (id) => (id === 'pcFieldStop' ? node : null),
+        documentElement: { classList: { toggle: (k, on) => { if (on) cls.add(k); else cls.delete(k); } } } },
+        localStorage: { getItem: (k) => (k === 'su_device_role' ? (o.field ? 'field' : 'office') : null) } };
+      if (o.fac !== 'none') c.window.SUFacility = { ready: () => { if (o.fac === 'throw') throw new Error('x'); return o.fac !== false; } };
+      c.SUFacility = c.window.SUFacility;
+      vm.createContext(c);
+      vm.runInContext("var PC_FAC_NG_MSG = '施設NG', PC_KIND_FIELD_PRINT_MSG = '現場NG';"
+        + "function pcKindUiOn() { return " + J(!!o.kinds) + "; }\n" + grabFn('pcIsField') + '\n' + grabFn('pcFieldPrintStop') + '\n'
+        + grabFn('pcPrintStopMsg') + '\n' + grabFn('pcFieldStopSync') + '\npcFieldStopSync();', c);
+      return { on: cls.has('pc-fieldstop'), text: node.textContent };
+    };
+    const sk = syncRun({ field: true, kinds: true, fac: true });
+    t('★kinds の施設の現場の端末は印を付け、紙に「現場NG」の知らせだけ', sk.on && sk.text === '現場NG', sk);
+    const sn = syncRun({ field: true, kinds: false, fac: true });
+    t('★施設情報を読めた kinds の無い施設の現場の端末は印を付けない（今のまま刷る）', !sn.on && sn.text === '', sn);
+    const so = syncRun({ field: false, kinds: true, fac: true });
+    t('★事務所PCは印を付けない（kinds の施設でも）', !so.on && so.text === '', so);
+    const su = syncRun({ field: true, kinds: false, fac: false });
+    t('★現場の端末で施設情報がまだ読めない時は印を付け、紙に施設情報の知らせだけ', su.on && su.text === '施設NG', su);
+    const sx = syncRun({ field: true, kinds: false, fac: 'none' });
+    t('現場の端末で施設情報の部品が無い時も刷らない', sx.on && sx.text === '施設NG', sx);
+    const sof = syncRun({ field: false, kinds: false, fac: false });
+    t('★事務所PCは施設情報がまだでも Cmd/Ctrl+P の紙を変えない（今のまま）', !sof.on, sof);
+    t('印は印刷の前後・施設情報が届いた時・開いた時に付け直す（印刷の前の知らせに頼らない）',
+      /window\.addEventListener\('beforeprint', pcFieldStopSync\);/.test(PAGE) && /window\.addEventListener\('afterprint', pcFieldStopSync\);/.test(PAGE)
+      && /SUFacility\.onReady\(pcFieldStopSync\);/.test(PAGE) && /\npcFieldStopSync\(\);   \/\*/.test(PAGE)
+      && /html\.pc-fieldstop body > \*:not\(#pcFieldStop\) \{ display: none !important; \}/.test(PAGE) && /<p id="pcFieldStop" hidden><\/p>/.test(PAGE));
+    t('もう出さない文（現場で刷らせないので、確かめの窓の「受け取りません」の1行は消した）', !/この端末はほかの端末の種類の変更を受け取りません。/.test(PAGE));
     t('★手入力の保存の鍵は apc2_mkind・apc2_m2', /var LS_MKIND = 'apc2_mkind', LS_M2 = 'apc2_m2';/.test(PAGE));
   }
 
