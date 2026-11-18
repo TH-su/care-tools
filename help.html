@@ -87,6 +87,7 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
       <li><a href="#h-care-meeting">担当者会議の記録</a></li>
       <li><a href="#h-supplies">消耗品管理</a></li>
       <li><a href="#h-equip-log">設備・修繕の記録</a></li>
+      <li><a href="#h-kintai">勤怠管理・出勤退勤の打刻</a></li>
       <li><a href="#h-visit-overview">訪問 週間俯瞰</a></li>
       <li><a href="#h-support-overview">全支援 週間俯瞰</a></li>
       <li><a href="#h-overview-compare">訪問／全支援 左右比較</a></li>
@@ -480,6 +481,30 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
     </dl>
   </section>
 
+  <section class="cd" id="sec-kintai" aria-labelledby="h-kintai">
+    <h2 id="h-kintai" tabindex="-1">勤怠管理・出勤退勤の打刻</h2>
+    <p><strong>できること</strong></p>
+    <ul>
+      <li><span class="key">出勤・退勤の打刻</span>（タブレット）: 自分の打刻の番号を入れて <span class="key">決定</span>、名前を確かめて <span class="key">出勤</span> か <span class="key">退勤</span> を押します。時刻はデータベースの時計で記録します。</li>
+      <li>通信できない時は、タブレットに番号と時刻を控え、つながったら自動で送ります（画面の隅に「送信待ち」の件数が出ます）。</li>
+      <li><span class="key">勤怠管理</span>（事務所PC）: 開いた月のシフトを自動で取り込み、打刻と突き合わせます。予定より早い出勤は予定の開始から、予定より遅い退勤は予定の終わりまで数えます。</li>
+      <li>ずれが大きい打刻・打刻の漏れは <span class="key">月の一覧</span> に黄色・赤で出ます。押すと、打刻を足す・取り消す・早出や残業を認める・休憩を直す、ができます（理由が必ず要り、直しの履歴に残ります）。</li>
+      <li><span class="key">締めと出力</span> で月を締め、給与計算へ渡す CSV（月の集計・日ごとの明細）を書き出します。</li>
+      <li>直しは事務所・管理者のアカウントだけ、締めの解除と設定の保存は管理者だけができます。</li>
+    </ul>
+    <p><strong>よくある困りごと</strong></p>
+    <dl class="sup">
+      <dt>番号を忘れた・番号を他の人に知られた</dt>
+      <dd>事務所PCの <span class="key">職員と番号</span> で番号を確かめるか、<span class="key">番号を振り直す</span> で新しい番号にします。</dd>
+      <dt>「番号の間違いが続いたため、少しの間打刻を止めています」と出た</dt>
+      <dd>番号の間違いが続くと、のぞき見で番号を当てられないよう10分ほど止まります。待ってから入れ直してください。</dd>
+      <dt>早く来て仕事をしたのに、予定の開始からしか数えられていない</dt>
+      <dd>事務所が、その日を開いて「早出を認める」を入れると打刻どおりに数えます。終業後の残業も同じく「残業を認める」です。</dd>
+      <dt>「送れなかった打刻」が出た</dt>
+      <dd>控えの時刻が古すぎるか、番号が見つからなかった打刻です。押すと番号と時刻が出るので、事務所が勤怠管理で打刻を足してから「消す」を押します。</dd>
+    </dl>
+  </section>
+
   <section class="cd" id="sec-visit-overview" aria-labelledby="h-visit-overview">
     <h2 id="h-visit-overview" tabindex="-1">訪問 週間俯瞰</h2>
     <p><strong>できること</strong></p>
@@ -780,7 +805,7 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
 
 <!-- この端末の番号（端末の印の頭の8文字だけ・2026-11-08 代表者の決定 段3 案A）。この画面では送らない・印を作らない -->
 <!-- 住所の ?sec=<画面> から画面ごとの節へ飛ぶ（対応表 SEC にある値だけ・2026-11-13） -->
-<script src="help-sec.js?v=2026-11-14"></script>
+<script src="help-sec.js?v=2026-11-18"></script>
 <script src="su-device-role.js?v=2026-11-08" data-mode="show"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 <script src="su-report.js?v=2026-11-16" data-tool="使い方・困った時"></script>

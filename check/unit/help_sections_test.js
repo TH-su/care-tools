@@ -34,6 +34,7 @@ const SCREENS = [
   ['care-meeting', 'h-care-meeting', '担当者会議の記録'],
   ['supplies', 'h-supplies', '消耗品管理'],
   ['equip-log', 'h-equip-log', '設備・修繕の記録'],
+  ['kintai', 'h-kintai', '勤怠管理・出勤退勤の打刻'],
   ['visit-overview', 'h-visit-overview', '訪問 週間俯瞰'],
   ['support-overview', 'h-support-overview', '全支援 週間俯瞰'],
   ['overview-compare', 'h-overview-compare', '訪問／全支援 左右比較'],

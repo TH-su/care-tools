@@ -37,7 +37,7 @@
 <link rel="preload" as="script" href="su-cfg-hint.js?v=2026-11-10">
 <link rel="preload" as="script" href="su-perf.js?v=2026-10-27">
 <link rel="preload" as="script" href="su-menu.js?v=2026-11-16">
-<link rel="preload" as="script" href="su-itomari.js?v=2026-11-10">
+<link rel="preload" as="script" href="su-itomari.js?v=2026-11-18">
 <link rel="preload" as="script" href="su-sync-stale.js?v=2026-10-26">
 <link rel="preload" as="script" href="su-health-calc.js?v=2026-11-14.2">
 <link rel="preload" as="script" href="su-health-badge.js?v=2026-11-14">
@@ -52,7 +52,7 @@
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-menu.js?v=2026-11-16"></script>
 <!-- メニューの毬（藤の手毬・菊かがり・麻の葉）を描く部品（2026-10-26 代表者の決定・藤の手毬は 2026-11-10 本人指示）。読めなくてもメニューは動く（毬のボタンを出さないだけ） -->
-<script src="su-itomari.js?v=2026-11-10"></script>
+<script src="su-itomari.js?v=2026-11-18"></script>
 <!-- 写しが止まっている時の札（2026-10-26 本人指示）。現場端末では何も読まない・読めなくてもメニューは動く -->
 <script src="su-sync-stale.js?v=2026-10-26"></script>
 <!-- 本番の健康の札（2026-11-14 代表者の依頼・統合 0088）。管理者（2段階認証）の事務所の端末でだけ save_health（種類・数・時刻だけ）を読み、
@@ -326,6 +326,21 @@ main {
      "adminOnly": true,
      "due": "ats_menu_due",
      "_why": "採用管理（2026-10-26 代表者承認）。due: 保管期限を過ぎた方の数の札（2026-10-29 本人指示・端末に残すのは期限の日付だけ）。officeOnly: 応募者の連絡先・評価を扱う事務所業務のため現場端末では出さない（アプリ側も現場端末では何も読まない＝二重）。使えるのは管理者＋2段階認証だけ。adminOnly: 管理者以外（ログインしていない端末も）には出さない（2026-10-29 本人承認・アプリ側も管理者＋2段階認証でなければ開かない＝二重）"
+    },
+    {
+     "href": "kintai-clock.html",
+     "ic": "⏱️",
+     "nm": "出勤・退勤の打刻",
+     "note": "タブレットで番号を入れて打刻",
+     "_why": "勤怠管理の打刻（2026-11-18 本人指示）。職員の区分の末尾に足す。officeOnly を付けない: 現場のタブレットで打刻するため（データベースが現場に許すのは番号で名前を引くことと打刻することだけ）"
+    },
+    {
+     "href": "kintai.html",
+     "ic": "🗓️",
+     "nm": "勤怠管理",
+     "note": "打刻の確かめ・直し・締め・給与への出力",
+     "officeOnly": true,
+     "_why": "勤怠管理（2026-11-18 本人指示）。打刻とシフトの突き合わせ・直し・月の締め・給与計算への CSV。officeOnly: 直しは事務所の権限だけ（アプリ側も現場端末では何も読まず、ログインの役割を su-app-gate.js で確かめる＝二重）"
     }
    ]
   },

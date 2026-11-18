@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ja" data-su-theme>
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta http-equiv="Cache-Control" content="no-store">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>出勤・退勤の打刻</title>
+<!-- 画面が黙って壊れないようにする共通部品（いちばん先に読む）→ 速さの記録 → ログインの役割の確かめ -->
+<script src="su-errors.js?v=2026-11-12"></script>
+<script src="su-perf.js?v=2026-10-27"></script>
+<script src="su-app-gate.js?v=2026-11-18"></script>
+<script src="kintai-calc.js?v=2026-11-18"></script>
+<link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
+<link rel="stylesheet" href="su-shell.css?v=2026-11-13">
+<style>
+:root{--ink:#14213d;--sub:#3d4a5c;--line:#c9d2de;--bg:#f4f6f9;--card:#fff;--in:#0b5d2a;--in-bg:#e3f4e8;--out:#7a2e00;--out-bg:#fdeee3;--warn:#6b4100;--warn-bg:#fff4d6;--ng:#8a1020;--ng-bg:#fde8eb;--focus:#1f4fbf}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif}
+body{min-height:100vh;display:flex;flex-direction:column}
+.hdr{display:flex;align-items:center;gap:12px;padding:10px 16px;background:#fff;border-bottom:1px solid var(--line)}
+.hdr h1{font-size:18px;margin:0;flex:1}
+.hdr-btn{display:inline-flex;align-items:center;min-height:44px;padding:0 14px;border:1px solid var(--line);border-radius:10px;color:var(--ink);text-decoration:none;background:#fff;font-size:15px}
+main{flex:1;display:flex;flex-direction:column;align-items:center;padding:16px;gap:16px}
+.gate{max-width:560px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px}
+.clock{text-align:center}
+.clock .date{font-size:clamp(18px,3.2vw,26px);color:var(--sub)}
+.clock .time{font-size:clamp(56px,12vw,104px);font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.02em;line-height:1.1}
+.panel{width:100%;max-width:520px;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px}
+.lbl{font-size:18px;margin:0 0 10px;text-align:center}
+.code{height:72px;border:2px solid var(--line);border-radius:12px;font-size:44px;text-align:center;letter-spacing:.35em;font-variant-numeric:tabular-nums;display:flex;align-items:center;justify-content:center;background:#fafbfc}
+.code.ph{color:var(--sub);font-size:22px;letter-spacing:0}
+.keys{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
+.keys button,.acts button,.big{min-height:72px;font-size:32px;border-radius:14px;border:1px solid var(--line);background:#fff;color:var(--ink);font-family:inherit;cursor:pointer;touch-action:manipulation}
+.keys button:active{background:#e9eef5}
+.keys .k-clr,.keys .k-ok{font-size:22px}
+.keys .k-ok{background:var(--focus);color:#fff;border-color:var(--focus)}
+.keys .k-ok:disabled{background:#9aa7b8;border-color:#9aa7b8}
+button:focus-visible,a:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.who{font-size:clamp(28px,5vw,40px);font-weight:700;text-align:center;margin:6px 0 4px}
+.state{text-align:center;color:var(--sub);font-size:18px;margin:0 0 14px}
+.acts{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.acts button{min-height:120px;font-size:36px;font-weight:700}
+.b-in{background:var(--in-bg)!important;color:var(--in)!important;border:2px solid var(--in)!important}
+.b-out{background:var(--out-bg)!important;color:var(--out)!important;border:2px solid var(--out)!important}
+.acts button.sug{box-shadow:0 0 0 5px rgba(31,79,191,.35)}
+.back{margin-top:14px;width:100%;min-height:56px;font-size:20px;border-radius:12px;border:1px solid var(--line);background:#fff;color:var(--ink);font-family:inherit}
+.done{text-align:center;padding:20px 8px}
+.done .big-msg{font-size:clamp(28px,5vw,40px);font-weight:700;margin:8px 0}
+.done.ok .big-msg{color:var(--in)}
+.done.out .big-msg{color:var(--out)}
+.done.save .big-msg{color:var(--warn)}
+.done p{font-size:18px;color:var(--sub);margin:4px 0}
+.msg{border-radius:12px;padding:12px 14px;font-size:17px;margin:0 0 12px}
+.msg.ng{background:var(--ng-bg);color:var(--ng)}
+.msg.warn{background:var(--warn-bg);color:var(--warn)}
+.foot{width:100%;max-width:520px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.chip{border-radius:999px;padding:8px 14px;font-size:15px;background:var(--warn-bg);color:var(--warn);border:1px solid #e5c98a}
+.chip.ng{background:var(--ng-bg);color:var(--ng);border-color:#e6a9b2}
+button.chip{min-height:44px;font-family:inherit;cursor:pointer}
+.qlist{width:100%;border-collapse:collapse;font-size:16px;margin:8px 0}
+.qlist td{border-bottom:1px solid var(--line);padding:6px 4px}
+.sr{position:absolute;left:-9999px}
+</style>
+</head>
+<body>
+<header class="hdr su-shell-hdr">
+  <a class="hdr-btn" href="index.html">← メニュー</a>
+  <h1>出勤・退勤の打刻</h1>
+  <span class="su-shell-role" hidden></span>
+</header>
+<main id="k-main">
+  <div class="gate" id="k-gate" hidden></div>
+  <div class="clock" id="k-clock" aria-hidden="true"><div class="date" id="k-date"></div><div class="time" id="k-time"></div></div>
+  <section class="panel" id="k-panel" hidden aria-live="polite"></section>
+  <div class="foot" id="k-foot"></div>
+  <p class="sr" id="k-sr" role="status" aria-live="assertive"></p>
+</main>
+<script src="kintai-clock.js?v=2026-11-18"></script>
+<script src="su-shell.js?v=2026-11-18"></script>
+<script src="su-net.js?v=2026-11-12.2"></script>
+<script src="su-report.js?v=2026-11-16" data-tool="出勤・退勤の打刻"></script>
+</body>
+</html>

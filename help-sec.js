@@ -22,6 +22,7 @@
     'care-meeting': 'h-care-meeting',
     'supplies': 'h-supplies',
     'equip-log': 'h-equip-log',
+    'kintai': 'h-kintai',
     'visit-overview': 'h-visit-overview',
     'support-overview': 'h-support-overview',
     'overview-compare': 'h-overview-compare',

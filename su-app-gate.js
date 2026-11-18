@@ -29,6 +29,10 @@
     { key: 'training-plan', href: 'training-plan.html', ic: '🏃', nm: '個別機能訓練計画書', def: { office: true, field: false } },
     { key: 'connection-settings', href: 'connection-settings.html', ic: '🔌', nm: '接続設定', def: { office: true, field: false } },
     { key: 'equip-log', href: 'equip-log.html', ic: '🔧', nm: '設備・修繕の記録', def: { office: true, field: false } },
+    /* 勤怠管理（2026-11-18 新設）。打刻の画面は現場のタブレットで使うので現場も既定で開ける（データベースが現場に許すのは
+       番号で名前を引くことと打刻することだけ）。管理画面（修正・承認・締め・出力）は事務所・管理者だけ */
+    { key: 'kintai-clock', href: 'kintai-clock.html', ic: '⏱️', nm: '出勤・退勤の打刻', def: { office: true, field: true } },
+    { key: 'kintai', href: 'kintai.html', ic: '🗓️', nm: '勤怠管理', def: { office: true, field: false } },
     /* 画面ではなく操作の許可（2026-11-11 代表者の決定「管理者が人ごとに許す」）。入居者マスタの詳細画面の「見直した」
        （薬情のまとめて反映・完全入れ替えの後の見直しの印を消す）を押せる人。看護職・薬剤師のアカウントにだけ許す。
        既定は押せない。管理者は常に押せる。現場は許しても押せない（入居者マスタの GAS／res-write が決める・この部品の run では使わない） */
