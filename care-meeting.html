@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ezl0NLizBRe1HY/oBC9SSKzn9gU77MYla53jrzL3CbY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-FnOjG7nq+FKgIPD+o6kLw/DmilZSXtZZd1hYr9+mgSc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 会議の記録（要配慮の情報）を扱うためキャッシュ無効 -->
@@ -2222,7 +2222,10 @@ function onDeviceRoleChange_(e){
 /* 見出しの「← メニュー」「← 入居者マスタ」で離れる時の確かめ（2026-11-12 反証レビュー）。iOS Safari は beforeunload の確かめを出さないため、
    押した時に beforeunload と同じ判定で聞く。「はい」の時は直後の beforeunload で二重に聞かない */
 var cmLeaveOk_=false;
-function cmLeaveDirty_(){ return !!(isDirty_(ed)||(ed&&ed.busy)||(impSt&&impSt.phase==='applying')||(typeof impcSt!=='undefined'&&impcSt&&impcSt.phase==='applying')); }
+/* ほかの形の表の取り込みは、表を読んでから取り込み終わるまで（列の当て方・一覧・✔︎を選んでいる間も）を保存していない変更として数える
+   （第8回の監査の気づき4・2026-11-18。前は送信中だけで、列を選んだ後に離れると確かめなしで消えていた） */
+function cmLeaveDirty_(){ return !!(isDirty_(ed)||(ed&&ed.busy)||(impSt&&impSt.phase==='applying')||
+  (typeof impcSt!=='undefined'&&impcSt&&impcSt.tbl&&(impcSt.phase==='loaded'||impcSt.phase==='planning'||impcSt.phase==='planned'||impcSt.phase==='applying'))); }
 function onHdrLeaveClick_(e){
   var a=e.target&&e.target.closest?e.target.closest('a.su-menu-back, a[href="resident-master.html"]'):null;
   if(!a||!cmLeaveDirty_()) return;
@@ -2239,7 +2242,7 @@ function onHdrHelpClick_(e){
 }
 function onBeforeUnload_(e){
   if(cmLeaveOk_) return;
-  if(isDirty_(ed)||(ed&&ed.busy)||(impSt&&impSt.phase==='applying')||(typeof impcSt!=='undefined'&&impcSt&&impcSt.phase==='applying')){ e.preventDefault(); e.returnValue=''; return ''; }
+  if(cmLeaveDirty_()){ e.preventDefault(); e.returnValue=''; return ''; }
 }
 function onCommonRoster_(e){
   if(!e||e.key!==COMMON_KEY||isField()) return;
@@ -2273,7 +2276,7 @@ function boot(){
     document.body.appendChild(gp);
     return;
   }
-  window.SUAppGate.run('care-meeting',{dirty:function(){ return isDirty_(ed)||!!(ed&&ed.busy)||!!(impSt&&impSt.phase==='applying')||!!(impcSt&&impcSt.phase==='applying'); }})
+  window.SUAppGate.run('care-meeting',{dirty:function(){ return cmLeaveDirty_(); }})
     .then(function(ok){ if(ok) startApp_(); });
 }
 /* 接続先・合言葉の無い端末でも、ログインして入居者マスタの新しい保存先で使える時は開く（2026-11-08 代表者「端末ごとの設定を極限までなくす」・

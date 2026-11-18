@@ -1479,6 +1479,22 @@ async function opened(opt) {
     t('15-8 取り込みの途中は閉じる・読み込み直す前に止め、ボタンを押せない', ev.prevented === true && B.ctx.cmLeaveDirty_() === true && B.ctx.impcSt.phase === 'applying' && !/data-act="impc-apply"/.test(B.el('cm-pick').innerHTML) && /data-act="impc-paste" disabled/.test(B.el('cm-pick').innerHTML));
     B.ctx.showFieldOnly_();
     t('15-8 現場用へ切り替わったら、読んだ表・当て方・一覧を捨てる', B.ctx.impcSt === null && B.ctx.impcOk === false);
+    /* 15-8b 表を読んでから取り込み終わるまでは、離れる前に確かめる（第8回の監査の気づき4・2026-11-18） */
+    const LV = await mk('admin', newRecv());
+    const lvEv = () => ({ prevented: false, preventDefault() { this.prevented = true; } });
+    const lv0 = lvEv(); LV.ctx.onBeforeUnload_(lv0);
+    t('15-8b 表を読む前は確かめない', LV.ctx.cmLeaveDirty_() === false && lv0.prevented === false);
+    LV.ctx.impcLoadText_(CSV, '');
+    LV.ctx.onPickChange_({ target: { getAttribute: (k) => (k === 'data-impc-col' ? '2' : null), value: 'conclusion' } });
+    const lv1 = lvEv(); LV.ctx.onBeforeUnload_(lv1);
+    t('★15-8b 表を読んで列を選んだ後に閉じる・読み込み直す時は止める', LV.ctx.impcSt.phase === 'loaded' && LV.ctx.cmLeaveDirty_() === true && lv1.prevented === true);
+    await LV.ctx.impcPlan_(); await settle();
+    const lv2 = lvEv(); LV.ctx.onBeforeUnload_(lv2);
+    t('15-8b 一覧を作った後（取り込む前）も止める', LV.ctx.impcSt.phase === 'planned' && LV.ctx.cmLeaveDirty_() === true && lv2.prevented === true);
+    await LV.ctx.impcApply_(); await settle();
+    const lv3 = lvEv(); LV.ctx.onBeforeUnload_(lv3);
+    t('15-8b 取り込み終えた後は止めない', LV.ctx.impcSt.phase === 'done' && LV.ctx.cmLeaveDirty_() === false && lv3.prevented === false);
+    t('15-8b 見出しのリンク・閉じる・ログインの覆いは同じ判定を使う', /if\(cmLeaveDirty_\(\)\)/.test(cutF(S, 'onBeforeUnload_')) && /dirty:function\(\)\{ return cmLeaveDirty_\(\); \}/.test(S));
 
     /* 15-9 端末に書かない・esc */
     const allowed = (w) => (w[1] === 'remove' && w[2] === 'cm_open_meeting') || (cmDueW(w) && w[1] === 'set');
