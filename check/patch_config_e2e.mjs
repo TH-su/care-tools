@@ -13,6 +13,9 @@
  *   8. 名簿から選んだ方の道でも、場所の数を超える番号は使わず、作り直しても選んだ方のまま
  *   9. 端末の控えに場所があり、届いた施設情報から外れていた時は、元の文と背中の写真の図に戻る
  *   7. 外からの文字は文字のまま出す（タグとして読まない）
+ *  11. kinds を書いた施設では入居者ごとに種類を選べ、保存して開き直しても同じ種類で出る・印刷の確かめに薬の名前（代表者の決定 2026-11-17）
+ *  12. 選びの行と設定が食い違う方・施設情報に無い種類の方は既定に倒さず警告
+ *  13. 書いていない施設は欄も帯も作らない・崩れた kinds と名簿の番号の重なりは帯で知らせて欄を出さない
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -264,6 +267,96 @@ try {
       L1.guideImg && L1.noOpts.length === 8 && L1.cellImgs === L1.cellFigs && L1.sub === B.sub && L1.drugHtml === B.drugHtml && L1.cap === B.cap && L1.use === B.use && L1.back === B.back && L1.viewShown && !L1.viewHidden, L1);
     t('戻した後も画面の例外 0', o.errs.length === 0, o.errs);
     await o.ctx.close();
+  }
+
+  /* 11〜13. 入居者ごとの種類（代表者の決定 2026-11-17・PC-02 案A）。架空の2名・架空の薬の名前 */
+  const KINDS = { kinds: [{ no: 2, drug: '架空テープ', sites: sites(6) }] };
+  const roster2 = (ids) => JSON.stringify({ residents: ids.map((id, i) => ({ masterId: id, name: '架空 ' + ['一郎', '二郎', '三郎'][i], room: String(101 + i), kana: 'かくう', active: true })) });
+  const at0 = '2026-01-10T01:00:00.000Z';
+  const kindLook = (p) => p.evaluate(() => {
+    const k = document.getElementById('pcKind'), row = document.getElementById('pcKindRow'), rsRow = document.getElementById('rs').closest('.row');
+    const band = document.getElementById('pcKindBand');
+    return { has: !!k, val: k ? k.value : null, opts: k ? Array.from(k.options).map((o) => o.textContent) : [], below: !!(row && rsRow && rsRow.nextElementSibling === row),
+      band: band ? band.textContent : null, bandShown: band ? getComputedStyle(band).display !== 'none' : false };
+  });
+  {
+    /* 11. 種類を選んで保存し、開き直しても同じ種類で出る・印刷の確かめに薬の名前 */
+    const res = JSON.stringify({ v: 1, r: { X1: { start: '2026-01-05', no: 4, prev: 3, by: '事務所PC', at: at0 } } });
+    const o = await open(withPc(KINDS), { storage: { su_residents_common: roster2(['X1']), apc2_res: res } });
+    await o.p.selectOption('#rs', 'X1');
+    const K0 = await kindLook(o.p), L0 = await look(o.p);
+    t('種類: kinds を書いた施設では、入居者を選ぶ欄のすぐ下に種類を選ぶ欄を出す（既定は1番）',
+      K0.has && K0.below && K0.val === '1' && K0.opts.indexOf('アリドネパッチ（背中8箇所）') >= 0 && K0.opts.indexOf('架空テープ（6箇所）') >= 0 && L0.noOpts.length === 8 && /4番（右・2段目）/.test(L0.hint), { K0, h: L0.hint });
+    await o.p.selectOption('#pcKind', '2');
+    const L1 = await look(o.p);
+    t('種類: 別の種類を選ぶと場所・図・文がその種類になり、入れ直すまで警告（仮の値）',
+      L1.noOpts.length === 6 && !L1.guideImg && L1.drug === '架空テープ／6箇所' && /貼り薬の種類を替えました/.test(L1.hint), { h: L1.hint, d: L1.drug });
+    await o.p.evaluate(() => { const st = document.getElementById('st'); st.value = '2026-01-05'; st.dispatchEvent(new Event('change', { bubbles: true })); });
+    await o.p.selectOption('#no', '3');
+    const r1 = await o.p.evaluate(() => JSON.parse(localStorage.getItem('apc2_res')).r);
+    t('種類: 保存すると別の種類の行と選びの行（種類の番号・開始日と場所の指紋）を書き、既定の行は残す',
+      r1['X1:pkr'] && r1['X1:pkr'].no === 3 && r1['X1:pk'] && r1['X1:pk'].no === 2 && r1['X1:pk'].start === '2026-01-05' && r1['X1:pk'].prev === 3 && r1.X1.no === 4
+      && r1['X1:pkb'] && r1['X1:pkb'].no === 4 && r1['X1:pkb'].start === '2026-01-05', r1);
+    const saved = await o.p.evaluate(() => localStorage.getItem('apc2_res'));
+    t('種類: 画面の例外 0（選んで保存）', o.errs.length === 0, o.errs);
+    await o.ctx.close();
+    /* 開き直す（保存した控えを入れた新しい端末の画面で開く。open の初めの値は読み込み直すたびに入れ直されるため） */
+    const o2 = await open(withPc(KINDS), { storage: { su_residents_common: roster2(['X1']), apc2_res: saved } });
+    await o2.p.selectOption('#rs', 'X1');
+    const K2 = await kindLook(o2.p), L2 = await look(o2.p);
+    t('種類: 開き直して選ぶと同じ種類・同じ設定で出る（警告なし）', K2.val === '2' && L2.noOpts.length === 6 && /3番（場所3）/.test(L2.hint) && !/⚠/.test(L2.hint), { K2, h: L2.hint });
+    await o2.p.evaluate(() => { window.__conf = ''; window.confirm = (m) => { window.__conf = String(m); return true; }; });
+    await o2.p.click('#print');
+    await o2.p.waitForTimeout(300);
+    const pr = await o2.p.evaluate(() => ({ c: window.__conf, n: window.__printed }));
+    t('種類: 印刷の確かめに薬の名前を出し、刷る', /架空テープ（6箇所）/.test(pr.c) && pr.n === 1, pr);
+    t('種類: 紙は A4 縦1ページ・はみ出さない', (await pdfPages(o2.p)) === 1 && !L2.sheetOver && !L2.ttlOver && L2.figOut === 0 && L2.lbOut === 0);
+    t('種類: 画面の例外 0（開き直し）', o2.errs.length === 0, o2.errs);
+    await o2.ctx.close();
+  }
+  {
+    /* 12. 選びの行と設定が食い違う方・施設情報に無い種類の方は既定に倒さず警告 */
+    const res = JSON.stringify({ v: 1, r: {
+      X1: { start: '2026-01-05', no: 4, prev: 3, by: '事務所PC', at: at0 },
+      'X1:pkr': { start: '2026-01-06', no: 3, prev: 0, by: '事務所PC', at: at0 }, 'X1:pk': { start: '2026-01-05', no: 2, prev: 3, by: '事務所PC', at: at0 },
+      X2: { start: '2026-01-05', no: 4, prev: 3, by: '事務所PC', at: at0 }, 'X2:pk': { start: '2026-01-05', no: 5, prev: 3, by: '事務所PC', at: at0 } } });
+    const o = await open(withPc(KINDS), { storage: { su_residents_common: roster2(['X1', 'X2']), apc2_res: res } });
+    await o.p.selectOption('#rs', 'X1');
+    const K1 = await kindLook(o.p), L1 = await look(o.p);
+    t('種類: 指紋が合わない方は2番の場所で仮の値＋警告（既定の行の4番に倒さない）・選ぶ欄は「選び直してください」', K1.val === '0' && L1.noOpts.length === 6 && /食い違っています/.test(L1.hint) && /1番（場所1）/.test(L1.hint), { K1, h: L1.hint });
+    await o.p.selectOption('#rs', 'X2');
+    const K2 = await kindLook(o.p), L2 = await look(o.p);
+    t('種類: 施設情報に無い種類の方は仮の値＋警告・選ぶ欄は「選び直してください」', K2.val === '0' && /施設情報にありません/.test(L2.hint) && !/4番（右・2段目）/.test(L2.hint), { K2, h: L2.hint });
+    const kept = await o.p.evaluate(() => JSON.parse(localStorage.getItem('apc2_res')).r);
+    t('種類: 開いただけでは控えを書き換えない', kept['X1:pkr'].start === '2026-01-06' && kept['X2:pk'].no === 5 && kept.X1.no === 4);
+    /* 差分の審査 2026-11-17: 種類を選ばずに日付・場所を入れても保存しない（無い種類の方を黙って1番で確定しない） */
+    await o.p.evaluate(() => { const st = document.getElementById('st'); st.value = '2026-01-07'; st.dispatchEvent(new Event('change', { bubbles: true })); });
+    await o.p.selectOption('#no', '2');
+    const kept2 = await o.p.evaluate(() => localStorage.getItem('apc2_res'));
+    const L3 = await look(o.p);
+    t('種類: 無い種類の方は、種類を選ばずに入れても保存せず警告のまま', kept2 === res && /施設情報にありません/.test(L3.hint) && /選び直してから/.test(L3.hint), L3.hint);
+    t('種類: 画面の例外 0（食い違い・無い種類）', o.errs.length === 0, o.errs);
+    await o.ctx.close();
+  }
+  {
+    /* 13. 書いていない施設は欄も帯も作らない・崩れた kinds と名簿の番号の重なりは帯で知らせて欄を出さない */
+    const s0 = await open(sample, { storage: { su_residents_common: roster2(['X1']) } });
+    const K0 = await kindLook(s0.p);
+    t('種類: 書いていない施設（見本）は種類の欄も帯も作らない（今の画面のまま）', !K0.has && K0.band === null, K0);
+    await s0.ctx.close();
+    const bad = await open(withPc({ drug: '架空ゲル', kinds: [{ no: 1, drug: '架空テープ' }] }));
+    const K1 = await kindLook(bad.p), L1 = await look(bad.p);
+    t('種類: kinds が崩れていれば欄を出さず帯で知らせる・既定の種類（drug）はそのまま使う',
+      !K1.has && /書き方が崩れているため、種類を選べません/.test(K1.band || '') && K1.bandShown && L1.drug === '架空ゲル／背中8箇所', { K1, d: L1.drug });
+    await bad.p.emulateMedia({ media: 'print' });
+    const pb = await bad.p.evaluate(() => getComputedStyle(document.getElementById('pcKindBand')).display);
+    t('種類: 帯は紙に出さない', pb === 'none', pb);
+    await bad.ctx.close();
+    const stop = await open(withPc(KINDS), { storage: { su_residents_common: roster2(['X1', 'Y:pk']) } });
+    const K2 = await kindLook(stop.p);
+    t('種類: 名簿に :pk で終わる番号の方がいれば種類の機能を止め、帯で知らせる', !K2.has && /種類を選ぶ機能を止めています/.test(K2.band || ''), K2);
+    t('種類: 画面の例外 0（書いていない・崩れた・止めた）', s0.errs.length === 0 && bad.errs.length === 0 && stop.errs.length === 0, [s0.errs, bad.errs, stop.errs]);
+    await stop.ctx.close();
   }
 
   /* 7. 外からの文字は文字のまま */
