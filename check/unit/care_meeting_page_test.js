@@ -1046,7 +1046,11 @@ async function opened(opt) {
     /* 5・9 読めない理由（サーバーの文・通信の失敗の文） */
     const R = load({ roster: ROS, handler: (b) => (b.action === 'getResident' ? Promise.reject(new Error(EVIL)) : { ok: false, code: 'bad_input', error: BREAK }) });
     await R.ctx.openPerson_('901'); await settle();
-    t('5 開いている方を読めない理由', okH(R.el('cm-who').innerHTML), R.el('cm-who').innerHTML);
+    /* 英字の入った例外の文は括弧に出さず固定の文にする（第7回の監査の気づき3・2026-11-18）。危ない文が出ないことと、英字の無い文は esc を通ることを分けて確かめる */
+    t('5 開いている方を読めない理由（英字の入った文は固定の文）', !unsafe(R.el('cm-who').innerHTML) && R.el('cm-who').innerHTML.indexOf('通信がうまくいきませんでした') >= 0 && R.el('cm-who').innerHTML.indexOf('onerror') < 0, R.el('cm-who').innerHTML);
+    const R3 = load({ roster: ROS, handler: (b) => (b.action === 'getResident' ? Promise.reject(new Error('<読めない>&"')) : { ok: false, code: 'bad_input', error: BREAK }) });
+    await R3.ctx.openPerson_('901'); await settle();
+    t('5 開いている方を読めない理由（英字の無い文は esc を通る）', R3.el('cm-who').innerHTML.indexOf('&lt;読めない&gt;&amp;&quot;') >= 0 && R3.el('cm-who').innerHTML.indexOf('<読めない>') < 0, R3.el('cm-who').innerHTML);
     const R2 = load({ roster: ROS, handler: gas({ list: () => ({ ok: false, code: 'bad_input', error: EVIL }) }) });
     await R2.ctx.openPerson_('901'); await settle();
     t('9 記録の一覧を読めない理由', okH(R2.el('cm-list').innerHTML), R2.el('cm-list').innerHTML);

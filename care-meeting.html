@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ocxPTj29uMFW0U4/NUIfRvkUBcEaKp6H4QKme4YoB6c='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ezl0NLizBRe1HY/oBC9SSKzn9gU77MYla53jrzL3CbY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 会議の記録（要配慮の情報）を扱うためキャッシュ無効 -->
@@ -798,8 +798,15 @@ function impListHtml_(res){
   });
   return h;
 }
-/* 読めなかった理由の文。接続先が無い（NO_URL・ログインだけで開いた後に入居者マスタが Google に戻った時）だけ職員向けの語にし、ほかは今までどおり（2026-11-16） */
-function cmExMsg_(e){ var m=String(e&&e.message||e); return m==='NO_URL'?'接続先が入っていません。接続設定で入居者マスタの接続先を入れてください':m; }
+/* 読めなかった理由の文。接続先が無い（NO_URL・ログインだけで開いた後に入居者マスタが Google に戻った時）は職員向けの語にし（2026-11-16）、
+ * 「Failed to fetch」や受け口の英語の断りなど英字の入った例外の文は括弧の中にそのまま出さない（第7回の監査の気づき3・2026-11-18）。日本語だけの文（タイムアウト・応答が不正です）は今までどおり */
+function cmExMsg_(e){
+  var m=String((e&&e.message)||e||'');
+  if(m==='NO_URL') return '接続先が入っていません。接続設定で入居者マスタの接続先を入れてください';
+  if(/timeout|timed out|abort/i.test(m)) return 'タイムアウト';
+  if(!m||/[A-Za-z]/.test(m.replace(/Google|URL/g,''))) return '通信がうまくいきませんでした';
+  return m;
+}
 /* 通信の例外を職員向けの語にする（2026-11-12 商用化の見直し）。「Failed to fetch」「NO_URL」などの英語の文を括弧の中にそのまま出さない */
 function impExWords_(e){
   var m=String((e&&e.message)||e||'');
