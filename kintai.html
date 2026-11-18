@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ja" data-su-theme>
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta http-equiv="Cache-Control" content="no-store">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>勤怠管理</title>
+<!-- 画面が黙って壊れないようにする共通部品（いちばん先に読む）→ 速さの記録 → ログインの役割の確かめ → 施設情報 → シフトの読み口 → 記号の解釈 → 勤怠の計算 -->
+<script src="su-errors.js?v=2026-11-12"></script>
+<script src="su-perf.js?v=2026-10-27"></script>
+<script src="su-app-gate.js?v=2026-11-18"></script>
+<script src="su-facility.js?v=2026-11-17"></script>
+<script src="su-kv.js?v=2026-11-16"></script>
+<script src="shift-symbols.js?v=2026-11-18"></script>
+<script src="kintai-calc.js?v=2026-11-18"></script>
+<link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
+<link rel="stylesheet" href="su-shell.css?v=2026-11-13">
+<style>
+:root{--ink:#14213d;--sub:#3d4a5c;--line:#c9d2de;--bg:#f4f6f9;--card:#fff;--ok:#0b5d2a;--ok-bg:#e3f4e8;--warn:#6b4100;--warn-bg:#fff4d6;--ng:#8a1020;--ng-bg:#fde8eb;--focus:#1f4fbf;--muted:#4a5565}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;font-size:15px}
+.hdr{display:flex;align-items:center;gap:12px;padding:10px 16px;background:#fff;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.hdr h1{font-size:19px;margin:0}
+.hdr-btn,.btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 14px;border:1px solid var(--line);border-radius:10px;color:var(--ink);text-decoration:none;background:#fff;font:inherit;cursor:pointer}
+.btn.pri{background:var(--focus);color:#fff;border-color:var(--focus)}
+.btn.ng{color:var(--ng);border-color:#e6a9b2}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.sm{min-height:36px;padding:0 10px;font-size:14px}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.sync{font-size:14px;color:var(--muted)}
+.bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 16px}
+.bar label{display:flex;align-items:center;gap:6px}
+input,select,textarea{font:inherit;min-height:40px;border:1px solid var(--line);border-radius:8px;padding:4px 8px;background:#fff;color:var(--ink)}
+.tabs{display:flex;gap:6px;padding:0 16px;flex-wrap:wrap;border-bottom:1px solid var(--line);background:#fff}
+.tabs button{min-height:44px;padding:0 14px;border:0;border-bottom:3px solid transparent;background:none;font:inherit;color:var(--sub);cursor:pointer}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--focus);font-weight:700}
+main{padding:12px 16px 40px}
+.cd{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+.gate{max-width:640px}
+.band{border-radius:10px;padding:10px 14px;margin:0 0 10px}
+.band.warn{background:var(--warn-bg);color:var(--warn)}
+.band.ng{background:var(--ng-bg);color:var(--ng)}
+.band.ok{background:var(--ok-bg);color:var(--ok)}
+.tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;width:100%;background:#fff}
+th,td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top;white-space:nowrap}
+th{background:#eef2f7;font-weight:600;position:sticky;top:0}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.grid td{padding:4px 5px;text-align:center;font-size:13px;min-width:46px}
+.grid td.nm,.grid th.nm{text-align:left;position:sticky;left:0;background:#fff;z-index:1}
+.grid td.rv{background:var(--warn-bg)}
+.grid td.np{background:var(--ng-bg)}
+.raw{color:var(--muted);font-size:13px}
+.tag{display:inline-block;border-radius:6px;padding:1px 6px;margin:1px 2px;font-size:12px;background:#eef2f7;color:var(--sub)}
+.tag.rv{background:var(--warn-bg);color:var(--warn)}
+.tag.ng{background:var(--ng-bg);color:var(--ng)}
+.void{text-decoration:line-through;color:#6b7686}
+.empty{color:var(--muted);padding:12px}
+dialog{border:1px solid var(--line);border-radius:14px;padding:0;max-width:680px;width:calc(100% - 32px)}
+dialog::backdrop{background:rgba(20,33,61,.35)}
+.dlg-h{padding:14px 16px;border-bottom:1px solid var(--line);font-weight:700;font-size:17px}
+.dlg-b{padding:14px 16px;max-height:65vh;overflow:auto}
+.dlg-f{padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0}
+.row > label{display:flex;gap:6px;align-items:center}
+fieldset{border:1px solid var(--line);border-radius:10px;margin:10px 0;padding:8px 12px}
+legend{font-weight:600;padding:0 6px}
+.help{color:var(--muted);font-size:13px;margin:4px 0}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:6px 12px;align-items:center}
+@media (max-width:640px){th,td{padding:5px 6px}.kv{grid-template-columns:1fr}}
+/* 止めの案内（現場端末・ログインの覆い）を出している間は初回案内の帯を出さない */
+body:has(#g-gate:not([hidden])) .sui-band{display:none}
+@media print{.hdr,.bar,.tabs,.no-print,.su-shell-role{display:none!important}body{background:#fff}.cd{border:0;padding:0}th{position:static}}
+</style>
+</head>
+<body>
+<header class="hdr su-shell-hdr">
+  <a class="hdr-btn" href="index.html">← メニュー</a>
+  <h1>勤怠管理</h1>
+  <span class="sync" id="g-sync" role="status" aria-live="polite"></span>
+  <span class="su-shell-role" hidden></span>
+</header>
+<div class="cd gate" id="g-gate" hidden></div>
+<div id="g-app" hidden>
+  <div class="bar no-print">
+    <label>月 <input type="month" id="g-ym" aria-label="表示する月"></label>
+    <button type="button" class="btn sm" id="g-prev" aria-label="前の月">◀ 前の月</button>
+    <button type="button" class="btn sm" id="g-next" aria-label="次の月">次の月 ▶</button>
+    <button type="button" class="btn sm" id="g-import">シフトを取り込み直す</button>
+    <button type="button" class="btn sm" id="g-reload">読み直す</button>
+  </div>
+  <nav class="tabs no-print" role="tablist" aria-label="画面の切り替え">
+    <button type="button" role="tab" data-tab="day">日ごと</button>
+    <button type="button" role="tab" data-tab="grid">月の一覧</button>
+    <button type="button" role="tab" data-tab="person">個人の月</button>
+    <button type="button" role="tab" data-tab="staff">職員と番号</button>
+    <button type="button" role="tab" data-tab="close">締めと出力</button>
+    <button type="button" role="tab" data-tab="settings">設定</button>
+  </nav>
+  <main id="g-main" role="tabpanel"></main>
+</div>
+<dialog id="g-dlg" aria-labelledby="g-dlg-h"><div class="dlg-h" id="g-dlg-h"></div><div class="dlg-b" id="g-dlg-b"></div><div class="dlg-f" id="g-dlg-f"></div></dialog>
+<script src="kintai.js?v=2026-11-18"></script>
+<script src="su-shell.js?v=2026-11-18"></script>
+<script src="su-net.js?v=2026-11-12.2"></script>
+<script src="su-intro.js?v=2026-11-18"></script>
+<script src="su-report.js?v=2026-11-16" data-tool="勤怠管理"></script>
+</body>
+</html>

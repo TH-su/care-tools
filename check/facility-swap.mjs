@@ -65,6 +65,8 @@ export const EXTRA_PAGES = [
   { file: 'help.html', title: '使い方・困った時', reads: true, shows: true, why: '問い合わせ先（support）の4項目を出す（問い合わせ先の名前に施設名が入る）' },
   { file: 'care-meeting.html', title: '担当者会議の記録', reads: true, shows: false, why: '事務所向けのアプリ。ログインしていない時は覆いの画面だけ（SUAppGate）' },
   { file: 'equip-log.html', title: '設備・修繕の記録', reads: true, shows: false, why: '事務所向けのアプリ。事業所の呼び名（officeName）は一覧・絞り込みに、間取り（roomPlan）は図面に使うが、ログインしていない時は覆いの画面だけ（SUAppGate）' },
+  { file: 'kintai.html', title: '勤怠管理', reads: true, shows: false, why: '事務所向けのアプリ。事業所の呼び名（officeName）は表と CSV に使うが、ログインしていない時は覆いの画面だけ（SUAppGate）' },
+  { file: 'kintai-clock.html', title: '出勤・退勤の打刻', reads: false, shows: false, why: '施設情報を読まない（打刻の画面は名前と時刻だけ）' },
   { file: 'ats.html', title: '採用管理', reads: true, shows: false, why: '管理者＋2段階認証だけ。ログインしていない時は覆いの画面だけ' },
   { file: 'menu-settings.html', title: 'メニューの設定', reads: true, shows: false, why: '管理者＋2段階認証だけ。ログインしていない時は中身を出さない' },
   { file: 'login.html', title: 'ログイン', reads: false, shows: false, why: '施設情報を読まない' },

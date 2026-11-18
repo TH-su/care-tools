@@ -265,6 +265,30 @@ const CENSUS = {
     [F, "if(p) p.innerHTML=''"]
   ],
   "equip-calc.js": [],
+  "kintai-calc.js": [],
+  "shift-symbols.js": [],
+  "kintai.html": [],
+  "kintai-clock.html": [],
+  "kintai.js": [
+    [E, "$('g-main').innerHTML = '<div class=\"band ng\" role=\"alert\">' + esc(msgOf(e)) + '</div>'"],
+    [F, "m.innerHTML = '<p class=\"empty\">読み込んでいます…</p>'"],
+    [E, "m.innerHTML = bands() + f()"],
+    [E, "$('g-dlg-b').innerHTML = b"],
+    [F, "$('g-dlg-f').innerHTML = '<button type=\"button\" class=\"btn\" data-act=\"dlg-close\">閉じる</button>' + (lk ? '' : '<button type=\"button\" class=\"btn pri\" data-act=\"dlg-save\">保存する</button>')"],
+    [F, "$('g-edits').innerHTML = '<p class=\"empty\">読み込んでいます…</p>'"],
+    [E, "if (tab === 'close') $('g-edits').innerHTML = editsHtml(editsCache)"],
+    [E, "$('g-edits').innerHTML = '<div class=\"band ng\">' + esc(msgOf(e)) + '</div>'"],
+    [F, "g.innerHTML = '<h2>この画面は事務所のパソコンで使います</h2><p>この端末は「現場」として設定されているため、勤怠管理は開きません。出勤・退勤の打刻は「出勤・退勤の打刻」の画面から行います。</p><p><a class=\"btn\" href=\"kintai-clock.html\">打刻の画面へ</a> <a class=\"btn\" href=\"index.html\">メニューへ戻る</a></p>'"]
+  ],
+  "kintai-clock.js": [
+    [E, "p.innerHTML = '<p class=\"lbl\" id=\"k-lbl\">打刻の番号を入れてください</p>' + (msg || '') + '<div class=\"code' + (code ? '' : ' ph') + '\" id=\"k-code\" aria-labelledby=\"k-lbl\">' + (code ? esc(code.replace(/./g, '●').slice(0, -1) + code.slice(-1)) : '4〜6桁の番号') + '</div>' + '<div class=\"keys\" role=\"group\" aria-label=\"番号のボタン\">' + [1, 2, 3, 4, 5, 6, 7, 8, 9].map(function (n) { return '<button type=\"button\" data-k=\"' + n + '\">' + n + '</button>'; }).join('') + '<button type=\"button\" class=\"k-clr\" data-k=\"clr\">消す</button><button type=\"button\" data-k=\"0\">0</button>' + '<button type=\"button\" class=\"k-ok\" data-k=\"ok\"' + (KintaiCalc.isCode(code) ? '' : ' disabled') + '>決定</button></div>'"],
+    [F, "$('k-panel').innerHTML = '<p class=\"lbl\">確かめています…</p>'"],
+    [E, "$('k-panel').innerHTML = (offline ? '<p class=\"msg warn\" role=\"alert\">通信できません。番号 ' + esc(who.code) + ' で打刻を端末に控え、つながったら送ります。</p>' : '<p class=\"who\">' + esc(who.name) + ' さん</p><p class=\"state\">' + esc(stTxt || 'どちらかを押してください') + '</p>') + '<div class=\"acts\"><button type=\"button\" class=\"b-in' + (sug === 'in' ? ' sug' : '') + '\" data-p=\"in\">出勤</button>' + '<button type=\"button\" class=\"b-out' + (sug === 'out' ? ' sug' : '') + '\" data-p=\"out\">退勤</button></div>' + '<button type=\"button\" class=\"back\" data-k=\"back\">番号を入れ直す</button>'"],
+    [F, "$('k-panel').innerHTML = '<p class=\"lbl\">記録しています…</p>'"],
+    [E, "$('k-panel').innerHTML = '<div class=\"done ' + kind + '\" role=\"alert\"><p class=\"big-msg\">' + esc(big) + '</p><p>' + esc(sub) + '</p></div>'"],
+    [N, "$('k-foot').innerHTML = h"],
+    [E, "$('k-panel').innerHTML = '<p class=\"lbl\">送れなかった打刻</p><p class=\"msg warn\">事務所の管理画面で、この番号・時刻の打刻を足してください。足したら「消す」を押します。</p>' + '<table class=\"qlist\"><tbody>' + f.map(function (x) { var d = new Date(x.at + 9 * 3600000); return '<tr><td>番号 ' + esc(x.code) + '</td><td>' + (x.kind === 'in' ? '出勤' : '退勤') + '</td><td>' + (d.getUTCMonth() + 1) + '/' + d.getUTCDate() + ' ' + hm(x.at) + '</td><td>' + esc(x.why || '') + '</td></tr>'; }).join('') + '</tbody></table>' + '<button type=\"button\" class=\"back\" data-k=\"clearfail\">事務所へ伝えたので消す</button><button type=\"button\" class=\"back\" data-k=\"back\">戻る</button>'"]
+  ],
   "revenue-calc.js": [],
   "equip-log.html": [
     [F, "g.innerHTML='<h2>この画面は事務所のパソコンで使います</h2><p>この端末は「現場」として設定されているため、設備・修繕の記録は開きません。</p><p><a class=\"btn\" href=\"index.html\">メニューへ戻る</a></p>'"],

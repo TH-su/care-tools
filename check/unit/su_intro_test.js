@@ -41,8 +41,10 @@ const EXPECT = {
   'staff-master': ['この画面でできること：職員の情報・資格・委員会を管理し、一覧とダッシュボードで確かめます。', 'はじめに：上の「一覧」で職員を選んで直し、新しい方は「＋ 新規」で足します。', HELP6],
   'ats': ['この画面でできること：応募から入職までの選考の進み具合と、面接の予定を管理します。', 'はじめに：「選考」のボードで応募者を確かめ、新しい応募は「＋ 応募者を足す」で足します。', HELP6],
   'equip-log': ['この画面でできること：設備・備品と、その購入・修理・清掃・点検・交換の記録を残し、次の予定の期限を確かめます。', 'はじめに：「設備」の「＋ 設備を足す」で設備を登録し、修理や点検をしたら「＋ 記録を足す」で残します。', HELP6],
+  /* 勤怠管理（2026-11-18 新設）。打刻の画面（kintai-clock）はタブレットの1画面なので帯を出さない */
+  'kintai': ['この画面でできること：打刻とシフトを突き合わせて確かめ、打刻の直し・早出や残業の承認・月の締め・給与計算への書き出しをします。', 'はじめに：開いた月のシフトは自動で取り込みます。「月の一覧」で黄色（要確認）と赤（打刻の漏れ）の日を押して直します。', HELP6],
 };
-const LINKED = ['care-meeting', 'staff-master', 'ats', 'equip-log'];
+const LINKED = ['care-meeting', 'staff-master', 'ats', 'equip-log', 'kintai'];
 
 /* 偽物の DOM で su-intro.js を読み込む。CSS の link は読み込み成功（onload）として扱う */
 function load(opt) {
@@ -137,7 +139,7 @@ function closeBtn(band) { return band.children[1]; }
   }
   { const r = load({ path: '/care-tools/facesheet.html' }); await tick();
     t('今の11画面の行はリンクを持たない（文字だけ）', r.band().children[0].children.every((p) => p.children.length === 0)); }
-  for (const [f, g] of [['care-meeting.html', 'cm-gate'], ['ats.html', 'a-gate'], ['equip-log.html', 'e-gate']]) {
+  for (const [f, g] of [['care-meeting.html', 'cm-gate'], ['ats.html', 'a-gate'], ['equip-log.html', 'e-gate'], ['kintai.html', 'g-gate']]) {
     t(f + ': 止めの案内を出している間は帯を出さない', new RegExp('body:has\\(#' + g + ':not\\(\\[hidden\\]\\)\\) \\.sui-band\\{display:none\\}').test(read(f)));
   }
   t('左右比較は「この画面でできること」の行が無い', !EXPECT['overview-compare'].some((l) => l.indexOf('この画面でできること') === 0));
@@ -251,12 +253,12 @@ function closeBtn(band) { return band.children[1]; }
   for (const id of Object.keys(EXPECT)) {
     const html = read(id + '.html');
     const tags = html.match(/<script src="su-intro\.js\?v=[^"]+"><\/script>/g) || [];
-    t(id + '.html: su-intro.js?v=2026-11-13 を1回だけ読む', tags.length === 1 && tags[0] === '<script src="su-intro.js?v=2026-11-13"></script>', tags);
+    t(id + '.html: su-intro.js?v=2026-11-18 を1回だけ読む', tags.length === 1 && tags[0] === '<script src="su-intro.js?v=2026-11-18"></script>', tags);
     t(id + '.html: 見出しの入れ物（.hdr）が1つあるか、置き場の印 data-su-intro-after が1つある', (html.match(/<(?:header|div) class="hdr(?: noprint| su-shell-hdr)?">/g) || []).length === 1 || (html.match(/ data-su-intro-after[ >]/g) || []).length === 1);
     t(id + '.html: 置き場の印は多くても1つ', (html.match(/ data-su-intro-after[ >]/g) || []).length <= 1);
   }
   const all = fs.readdirSync(ROOT).filter((f) => f.endsWith('.html') && /su-intro\.js/.test(read(f)));
-  t('su-intro.js を読む画面は15画面だけ', all.length === 15 && all.every((f) => EXPECT[f.replace(/\.html$/, '')]), all);
+  t('su-intro.js を読む画面は16画面だけ（勤怠管理 2026-11-18 で1画面増）', all.length === 16 && all.every((f) => EXPECT[f.replace(/\.html$/, '')]), all);
 
   say('\n' + (ng ? '✗' : '✓') + ' su_intro: 成功 ' + ok + '／失敗 ' + ng);
   process.exit(ng ? 1 : 0);

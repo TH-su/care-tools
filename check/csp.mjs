@@ -23,7 +23,7 @@ export const SUPABASE = 'https://jhbernqawjrzqwrmqrih.supabase.co';
    配信で作る3画面（work-schedule・shift-app・shift-analyzer）は、それぞれの組み立て（build）がこの道具を呼ぶ */
 export const PAGES = [
   'admission-flow.html', 'ats.html', 'care-meeting.html', 'care-schedule.html', 'connection-settings.html', 'daycare-roster.html', 'equip-log.html', 'facesheet.html',
-  'genogram.html', 'index.html', 'moushiokuri-viewer.html', 'overview-compare.html', 'patch-calendar.html',
+  'genogram.html', 'index.html', 'kintai-clock.html', 'kintai.html', 'moushiokuri-viewer.html', 'overview-compare.html', 'patch-calendar.html',
   'resident-master.html', 'staff-master.html', 'supplies.html', 'support-overview.html', 'training-plan.html',
   'visit-overview.html', 'weight-record.html',
 ];

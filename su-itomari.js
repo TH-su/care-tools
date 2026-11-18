@@ -69,7 +69,9 @@
     'work-schedule.html': 4,
     'shift-analyzer.html': 4,
     'staff-master.html': 4,
-    'ats.html': 4
+    'ats.html': 4,
+    'kintai-clock.html': 4,   // 勤怠（2026-11-18）
+    'kintai.html': 4
   };
   var SLOTS = 32;
   var R = 48, CX = 50, CY = 50;   // viewBox 0 0 100 100
