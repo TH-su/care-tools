@@ -44,6 +44,12 @@
       return r ? r.data : null;
     });
   }
+  /* 打刻の送信の打ち切り（電波の弱い所でタブレットが「記録しています…」のまま止まらないように・審査の指摘1）。
+     打ち切ったら通信の失敗と同じく控える（client_id があるので、遅れて届いても二重にはならない） */
+  var PUNCH_TIMEOUT_MS = 12000;
+  function withTimeout(p, ms) {
+    return Promise.race([p, new Promise(function (_, ng) { setTimeout(function () { ng(new Error('timeout')); }, ms); })]);
+  }
   function isNet(e) {
     var m = String((e && e.message) || e || '');
     return !navigator.onLine || /failed to fetch|network|load failed|timeout|fetch/i.test(m);
@@ -140,7 +146,7 @@
     if (!name) { save(); return; }
     view = 'sending'; clearTimeout(idleT);
     $('k-panel').innerHTML = '<p class="lbl">記録しています…</p>';
-    rpc('kintai_clock_punch', { p_code: item.code, p_kind: kind, p_client_id: item.id, p_client_at: new Date(item.at).toISOString(), p_offline: false, p_device: deviceKey() }).then(function (r) {
+    withTimeout(rpc('kintai_clock_punch', { p_code: item.code, p_kind: kind, p_client_id: item.id, p_client_at: new Date(item.at).toISOString(), p_offline: false, p_device: deviceKey() }), PUNCH_TIMEOUT_MS).then(function (r) {
       if (view === 'sending') view = 'who';
       if (my !== gen) return;
       if (r && r.ok === true) {

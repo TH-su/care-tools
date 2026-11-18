@@ -75,7 +75,12 @@ legend{font-weight:600;padding:0 6px}
 @media (max-width:640px){th,td{padding:5px 6px}.kv{grid-template-columns:1fr}}
 /* 止めの案内（現場端末・ログインの覆い）を出している間は初回案内の帯を出さない */
 body:has(#g-gate:not([hidden])) .sui-band{display:none}
-@media print{.hdr,.bar,.tabs,.no-print,.su-shell-role{display:none!important}body{background:#fff}.cd{border:0;padding:0}th{position:static}}
+/* 印刷（画面の切り替えのボタンは出さない・表を横に切らない・A4 横） */
+.print-only{display:none}
+@page{size:A4 landscape;margin:8mm}
+@media print{.hdr,.bar,.tabs,.no-print,.su-shell-role,.band{display:none!important}body{background:#fff;font-size:11px}.cd{border:0;padding:0}th{position:static}
+  .tw{overflow:visible}th,td{white-space:normal;padding:2px 3px}.grid td,.grid th{min-width:0;font-size:9px;padding:1px}.grid td.nm,.grid th.nm{position:static}
+  .grid td button{min-height:0!important;padding:0!important;font-size:9px}.print-only{display:block}.print-only table{width:auto}.print-only td{font-size:14px;padding:6px 12px}}
 </style>
 </head>
 <body>
