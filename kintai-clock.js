@@ -65,7 +65,10 @@
 
   /* ── 画面 ── */
   function armIdle() { clearTimeout(idleT); if (view !== 'code' || code) idleT = setTimeout(reset, IDLE_MS); }
-  function reset() { clearTimeout(doneT); clearTimeout(idleT); code = ''; who = null; busyPunch = false; paintCode(); }
+  function reset() {
+    if (view === 'sending') return;   /* 送信中は戻さない（打刻を落とさない・反証レビュー指摘1） */
+    gen++; clearTimeout(doneT); clearTimeout(idleT); code = ''; who = null; busyPunch = false; paintCode();
+  }
 
   function paintCode(msg) {
     view = 'code';
@@ -128,23 +131,29 @@
     var my = ++gen, item = { code: who.code, kind: kind, id: uuid(), at: Date.now() }, name = who.name;
     var label = kind === 'in' ? '出勤' : '退勤';
     var save = function () {
-      if (!enqueue(item)) { showDone('ng', '控えられませんでした', 'この端末に控えを残せませんでした。事務所に知らせてください。'); return; }
+      var okQ = enqueue(item);   /* 控えは画面の世代に関わらず必ず書く（client_id で二重にはならない） */
+      if (view === 'sending') view = 'who';
+      if (my !== gen) return;
+      if (!okQ) { showDone('ng', '控えられませんでした', 'この端末に控えを残せませんでした。事務所に知らせてください。'); return; }
       showDone('save', label + 'を控えました', '番号 ' + item.code + '・' + hm(item.at) + '（端末の時刻）。つながったら自動で送ります。');
     };
     if (!name) { save(); return; }
+    view = 'sending'; clearTimeout(idleT);
     $('k-panel').innerHTML = '<p class="lbl">記録しています…</p>';
     rpc('kintai_clock_punch', { p_code: item.code, p_kind: kind, p_client_id: item.id, p_client_at: new Date(item.at).toISOString(), p_offline: false, p_device: deviceKey() }).then(function (r) {
+      if (view === 'sending') view = 'who';
       if (my !== gen) return;
       if (r && r.ok === true) {
         var t = hm(Date.parse(r.at));
         showDone(kind === 'in' ? 'ok' : 'out', (r.name || name) + ' さん　' + label + ' ' + t, r.dup ? '少し前に同じ打刻があったので、その時刻のままにしました。' : (kind === 'in' ? 'おはようございます。今日もよろしくお願いします。' : 'おつかれさまでした。'));
         return;
       }
-      var why = r && r.error === 'notfound' ? 'その番号は見つかりませんでした。' : 'うまくいきませんでした。もう一度押してください。';
+      var why = r && r.error === 'notfound' ? 'その番号は見つかりませんでした。' : (r && r.error === 'busy' ? '番号の間違いが続いたため、少しの間打刻を止めています。10分ほど待ってから打刻してください。' : 'うまくいきませんでした。もう一度押してください。');
       busyPunch = false; code = ''; paintCode('<p class="msg ng" role="alert">' + esc(why) + '</p>');
     })['catch'](function (e) {
-      if (my !== gen) return;
       if (isNet(e)) { save(); return; }
+      if (view === 'sending') view = 'who';
+      if (my !== gen) return;
       note('打刻', e);
       busyPunch = false; code = ''; paintCode('<p class="msg ng" role="alert">' + esc(friendly(e)) + '</p>');
     });
@@ -167,6 +176,7 @@
     $('k-foot').innerHTML = h;
   }
   function paintFailed() {
+    clearTimeout(doneT);
     view = 'failed';
     var f = readList(F_KEY);
     $('k-panel').innerHTML = '<p class="lbl">送れなかった打刻</p><p class="msg warn">事務所の管理画面で、この番号・時刻の打刻を足してください。足したら「消す」を押します。</p>' +
@@ -188,10 +198,12 @@
       if (i >= q.length) return null;
       var it = q[i];
       return rpc('kintai_clock_punch', { p_code: it.code, p_kind: it.kind, p_client_id: it.id, p_client_at: new Date(it.at).toISOString(), p_offline: true, p_device: deviceKey() }).then(function (r) {
+        if (r && r.error === 'busy') return null;   /* 一時的な断り（番号の総当たりの止め）。送信待ちに残し、次の回に送り直す（指摘7） */
         var rest = readList(Q_KEY).filter(function (x) { return x.id !== it.id; });
         if (!(r && r.ok === true)) {
           var why = r && r.error === 'stale' ? '時刻が古すぎる' : (r && r.error === 'notfound' ? '番号が見つからない' : '受け付けられない');
-          var f = readList(F_KEY); f.push({ code: it.code, kind: it.kind, id: it.id, at: it.at, why: why }); writeList(F_KEY, f);
+          var f = readList(F_KEY); f.push({ code: it.code, kind: it.kind, id: it.id, at: it.at, why: why });
+          if (!writeList(F_KEY, f)) return null;   /* 送れなかった控えに書けない時は送信待ちから消さない（両方から消えないように・指摘10） */
         }
         writeList(Q_KEY, rest);
         i++;
@@ -213,7 +225,7 @@
       if (!k) return;
       if (k === 'back') { reset(); return; }
       if (k === 'failed') { paintFailed(); return; }
-      if (k === 'clearfail') { writeList(F_KEY, []); reset(); return; }
+      if (k === 'clearfail') { if (confirm('送れなかった打刻を全部消します。事務所の管理画面で足し終えましたか？')) { writeList(F_KEY, []); reset(); } return; }
       press(k);
     });
     document.addEventListener('keydown', function (e) {

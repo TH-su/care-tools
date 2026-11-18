@@ -276,8 +276,8 @@ const CENSUS = {
     [E, "$('g-dlg-b').innerHTML = b"],
     [F, "$('g-dlg-f').innerHTML = '<button type=\"button\" class=\"btn\" data-act=\"dlg-close\">閉じる</button>' + (lk ? '' : '<button type=\"button\" class=\"btn pri\" data-act=\"dlg-save\">保存する</button>')"],
     [F, "$('g-edits').innerHTML = '<p class=\"empty\">読み込んでいます…</p>'"],
-    [E, "if (tab === 'close') $('g-edits').innerHTML = editsHtml(editsCache)"],
-    [E, "$('g-edits').innerHTML = '<div class=\"band ng\">' + esc(msgOf(e)) + '</div>'"],
+    [E, "if (tab === 'close' && $('g-edits')) $('g-edits').innerHTML = editsHtml(editsCache)"],
+    [E, "if (el) el.innerHTML = '<div class=\"band ng\">' + esc(msgOf(e)) + '</div>'"],
     [F, "g.innerHTML = '<h2>この画面は事務所のパソコンで使います</h2><p>この端末は「現場」として設定されているため、勤怠管理は開きません。出勤・退勤の打刻は「出勤・退勤の打刻」の画面から行います。</p><p><a class=\"btn\" href=\"kintai-clock.html\">打刻の画面へ</a> <a class=\"btn\" href=\"index.html\">メニューへ戻る</a></p>'"]
   ],
   "kintai-clock.js": [

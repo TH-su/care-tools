@@ -45,7 +45,10 @@
   function noDb(e) { var c = e && e.code; return c === '42P01' || c === 'PGRST205' || c === 'PGRST202'; }
   var NG = { locked: 'この月は締めてあるため直せません。直す時は管理者が締めを解除してください。', conflict: '別の人が先に直しました。読み直してから、もう一度直してください。',
     reason: '理由を書いてください。', notfound: '見つかりませんでした。読み直してください。', already: 'もう取り消してあります。', badrow: 'シフトの行の形が違いました。',
-    toobig: '設定が大きすぎます。', stale: '時刻が古すぎます。' };
+    toobig: '設定が大きすぎます。', stale: '時刻が古すぎます。', notlocked: 'この月はもう締めが解除されています。読み直してください。',
+    badym: '月の形が違います。', badshape: '送った値の形が違いました。読み直してください。', badkind: '出勤か退勤を選んでください。',
+    badtime: '時刻の形が違います。', baddate: '日付の形が違います。', badkey: '直せない項目が入っていました。', badvalue: '入れた値を受け付けられませんでした（休憩は 0〜600 分・メモは 400 字まで）。',
+    clientid: '同じ打刻がもう記録されています。' };
   function friendly(e) {
     var code = e && e.code, m = String((e && e.message) || e || '');
     if (code === '42501' || /permission denied/i.test(m)) return 'この操作をする権限がありません（事務所・管理者のアカウントが要ります。締めの解除と設定の保存は管理者だけです）。';
@@ -62,7 +65,7 @@
     return window.SUKv.callShift({ action: 'pull', keys: keys }, function () { return Promise.resolve({ ok: false, error: 'google' }); });
   }
   function importShift(my) {
-    var nx = C.nextYm(ym);
+    var ym0 = ym, nx = C.nextYm(ym0);
     var keys = ['staff', 'symbols', 'settings', 'sched:' + ym + ':plan', 'sched:' + nx + ':plan'];
     return pullShift(keys).then(function (r) {
       if (my !== gen) return null;
@@ -71,15 +74,16 @@
         return null;
       }
       var E = r.entries, ent = function (k) { return E[k] && E[k].data; };
-      var plan = ent('sched:' + ym + ':plan');
+      var plan = ent('sched:' + ym0 + ':plan');
       if (!plan) { shiftInfo = { ok: false, why: 'この月のシフトがまだありません。' }; return null; }
-      var built = C.buildSchedule({ ym: ym, plan: plan, nextPlan: ent('sched:' + nx + ':plan') || {}, staff: ent('staff') || [], symbols: ent('symbols') || [], settings: ent('settings') || {} });
+      var built = C.buildSchedule({ ym: ym0, plan: plan, nextPlan: ent('sched:' + nx + ':plan') || {}, staff: ent('staff') || [], symbols: ent('symbols') || [], settings: ent('settings') || {} });
       var ss = ent('settings') || {};
       shiftInfo = { ok: true, confirmed: !!(plan.meta && plan.meta.confirmedAt), warnings: built.warnings, rows: built.rows.length,
         breaks: { breakThresholdH: ss.breakThresholdH, breakH: ss.breakH, nightBreakH: ss.nightBreakH } };
       return rpc('kintai_staff_sync', { p_rows: built.staff }).then(okOr).then(function () {
-        return rpc('kintai_schedule_put', { p_ym: ym, p_rows: built.rows });
-      }).then(okOr);
+        if (my !== gen) return null;   /* 待つ間に月を替えた時は、前の月の予定を送らない（指摘5） */
+        return rpc('kintai_schedule_put', { p_ym: ym0, p_rows: built.rows }).then(okOr);
+      });
     });
   }
 
@@ -119,8 +123,15 @@
     if (!data) { month = null; return; }
     var cfg = {}, k, sc = (data.settings && data.settings.config) || {};
     var br = (shiftInfo && shiftInfo.breaks) || {};
-    for (k in br) if (typeof br[k] === 'number') cfg[k] = br[k];
-    for (k in sc) cfg[k] = sc[k];
+    var snap = isLocked() && data.month.snapshot && data.month.snapshot.config;
+    if (snap) {
+      /* 締めた月は締めた時の設定（休憩の決まりを含む）で数える＝開き直しても・設定を変えても数字が変わらない（指摘2） */
+      for (k in snap) cfg[k] = snap[k];
+    } else {
+      for (k in sc) cfg[k] = sc[k];
+      /* 休憩の決まりはシフトアプリの設定を優先する（勤怠の設定に保存しない・指摘3） */
+      for (k in br) if (typeof br[k] === 'number') cfg[k] = br[k];
+    }
     month = C.computeMonth({ ym: ym, staff: data.staff || [], schedule: data.schedule || [], punches: data.punches || [], days: data.days || [], config: cfg, lockedAt: data.month && data.month.locked_at });
   }
 
@@ -237,7 +248,13 @@
   function paintClose() {
     var lk = isLocked(), afterLock = month.people.some(function (p) { return p.days.some(function (d) { return d.flags.indexOf('after_lock') >= 0; }); });
     var review = month.people.reduce(function (a, p) { return a + p.sum.reviewCount; }, 0);
+    var diff = [];
+    if (lk && data.month.snapshot && data.month.snapshot.rows) {
+      var byId = {}; data.month.snapshot.rows.forEach(function (r) { byId[r.staff_id] = r; });
+      month.people.forEach(function (p) { var r = byId[p.staff.staff_id]; if (r && (r.workMin !== p.sum.workMin || r.overtimeMin !== p.sum.overtimeMin || r.nightMin !== p.sum.nightMin)) diff.push(p.staff.name); });
+    }
     var h = '<div class="cd"><h2 style="font-size:16px;margin:0 0 8px">月の締め</h2>' +
+      (diff.length ? '<div class="band warn">締めた時の集計と、今の数字が違う職員がいます（' + diff.map(esc).join('・') + '）。締めた後の打刻が原因です。給与へ渡した数字は締めた時のものです。</div>' : '') +
       (lk ? '<p>締めた日時: ' + esc(new Date(data.month.locked_at).toLocaleString('ja-JP')) + '</p>' + (afterLock ? '<div class="band warn">締めた後に足された打刻があります（印「締めた後の打刻」）。給与へ渡した後なら、来月の調整を検討してください。</div>' : '') +
         '<button type="button" class="btn ng" data-act="unlock"' + (isAdmin() ? '' : ' disabled') + '>締めを解除する（管理者）</button>' :
         (review ? '<div class="band warn">要確認が ' + review + ' 件残っています。締める前に確かめてください（締めることはできます）。</div>' : '<div class="band ok">要確認はありません。</div>') +
@@ -260,7 +277,6 @@
 
   var SET_FIELDS = [
     ['earlyAlertMin', '予定より早い出勤をこの分以上で要確認にする', '分'], ['overtimeAlertMin', '予定より遅い退勤をこの分以上で要確認にする', '分'],
-    ['breakThresholdH', '予定の無い勤務・短くなった日の休憩: 拘束がこの時間を超えたら休憩を引く', '時間'], ['breakH', '上の時の休憩', '時間'],
     ['overtimeMonthWarnH', '月の法定外がこの時間以上で警告（36協定）', '時間'], ['weekStartDow', '週40時間を数える週の始まり（0＝日曜〜6＝土曜・変形を使わない時）', '']
   ];
   function paintSettings() {
@@ -271,7 +287,7 @@
     h += '<label for="s-monthRound30">月の残業・深夜の合計の端数</label><span><input type="checkbox" id="s-monthRound30"' + (c.monthRound30 ? ' checked' : '') + '> 1時間未満を30分で四捨五入する（就業規則に定めがある時だけ）</span>';
     h += '<label for="s-csvTime">CSV の時間の書き方</label><span><select id="s-csvTime"><option value="hmm"' + (c.csvTime === 'hmm' ? ' selected' : '') + '>8:30</option><option value="dec"' + (c.csvTime === 'dec' ? ' selected' : '') + '>8.50</option></select></span>';
     h += '</form><div class="row"><button type="button" class="btn pri" data-act="save-set"' + (isAdmin() ? '' : ' disabled') + '>設定を保存する</button></div>' +
-      '<p class="help">休憩の時間（日勤・夜勤）はシフトアプリの設定を取り込んで使います。丸めの決まり: 予定より早い出勤は予定の開始から、予定より遅い退勤は予定の終わりまで数えます。始業前・終業後に実際に働いた時は、その日を「直す」で早出・残業を認めてください（認めないまま切り捨てると賃金の未払いになります）。</p></div>';
+      '<p class="help">休憩の時間（日勤 ' + esc(c.breakH) + ' 時間・夜勤 ' + esc(c.nightBreakH) + ' 時間・拘束が ' + esc(c.breakThresholdH) + ' 時間を超えたら引く）はシフトアプリの設定を取り込んで使います（ここでは変えません）。丸めの決まり: 予定より早い出勤は予定の開始から、予定より遅い退勤は予定の終わりまで数えます。始業前・終業後に実際に働いた時は、その日を「直す」で早出・残業を認めてください（認めないまま切り捨てると賃金の未払いになります）。</p></div>';
     return h;
   }
 
@@ -313,7 +329,10 @@
   function dirty() {
     if (!dlgCtx) return false;
     var q = function (id) { var e = $(id); return e ? e.value : ''; };
-    return !!(q('e-kind') || q('e-kind2') || q('e-reason') || document.querySelector('[data-void]:checked'));
+    var dn = dlgCtx.dn || {}, ck = function (id) { var e = $(id); return !!(e && e.checked); };
+    var brv = q('e-break'), brOld = dn.break_min == null ? '' : String(dn.break_min);
+    return !!(q('e-kind') || q('e-kind2') || q('e-reason') || document.querySelector('[data-void]:checked') ||
+      ck('e-early') !== !!dn.early_ok || ck('e-ot') !== !!dn.overtime_ok || brv !== brOld || (q('e-note') || '').trim() !== (dn.note || ''));
   }
   function saveEdit() {
     if (!dlgCtx || busy) return;
@@ -353,8 +372,11 @@
     })['catch'](function (e) {
       busy = false;
       note('直しの保存', e);
-      msg.textContent = msgOf(e) + (done ? '（' + ops.length + ' 件のうち ' + done + ' 件は保存しました。読み直して確かめてください）' : '');
-      if (done) load(false);
+      if (done) {
+        /* 一部だけ保存できた時は窓を閉じて読み直す（もう一度押して同じ打刻を足さない・版を新しくする・指摘8） */
+        var m2 = msgOf(e) + '（' + ops.length + ' 件のうち ' + done + ' 件は保存しました。読み直したので、残りを直す時はもう一度開いてください）';
+        closeDlg(); load(false); alert(m2);
+      } else msg.textContent = msgOf(e);
     });
   }
   function openAddDay() {
@@ -389,7 +411,7 @@
     rpc('kintai_month_unlock', { p_ym: ym, p_reason: r.trim() }).then(okOr).then(function () { busy = false; return load(true); })['catch'](function (e) { busy = false; note('締めの解除', e); alert(msgOf(e)); });
   }
   function download(kind) {
-    if (!month) return;
+    if (!month || busy) { alert('読み込みが終わってから書き出してください。'); return; }
     var res = C.buildCsv(month, { nameOf: function (d) { try { return window.SUFacility ? window.SUFacility.officeName(d) : d; } catch (_) { return d; } } });
     var text = kind === 'sum' ? res.summary : res.daily, enc = ($('g-enc') || {}).value || 'utf8', blob, unknown = [];
     if (enc === 'sjis') {
@@ -411,8 +433,8 @@
     rpc('kintai_edits_get', { p_ym: ym }).then(okOr).then(function (r) {
       if (my !== gen) return;
       editsCache = r.edits || [];
-      if (tab === 'close') $('g-edits').innerHTML = editsHtml(editsCache);
-    })['catch'](function (e) { note('直しの履歴', e); $('g-edits').innerHTML = '<div class="band ng">' + esc(msgOf(e)) + '</div>'; });
+      if (tab === 'close' && $('g-edits')) $('g-edits').innerHTML = editsHtml(editsCache);
+    })['catch'](function (e) { if (my !== gen) return; note('直しの履歴', e); var el = $('g-edits'); if (el) el.innerHTML = '<div class="band ng">' + esc(msgOf(e)) + '</div>'; });
   }
   function saveSettings() {
     if (busy || !isAdmin()) return;
@@ -429,7 +451,7 @@
 
   /* ── 操作 ── */
   function setTab(t) { if (TABS.indexOf(t) < 0) t = 'day'; tab = t; lsSet(LS_TAB, t); paint(); }
-  function setYm(v) { if (!C.isYm(v) || v === ym) return; ym = v; lsSet(LS_YM, v); $('g-ym').value = v; shiftInfo = null; editsCache = null; load(true); }
+  function setYm(v) { if (!C.isYm(v) || v === ym) return; ym = v; lsSet(LS_YM, v); $('g-ym').value = v; shiftInfo = null; editsCache = null; data = null; month = null; load(true); }
   function bind() {
     document.addEventListener('click', function (e) {
       var b = e.target.closest ? e.target.closest('button') : null;
