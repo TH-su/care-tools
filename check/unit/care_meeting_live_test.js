@@ -75,7 +75,8 @@ function make(opt) {
   const w = vm.createContext({});
   vm.runInContext(cutF(HTML, 'cmExMsg_'), w);
   t('6 NO_URL は職員向けの語', /^接続先が入っていません/.test(w.cmExMsg_(new Error('NO_URL'))) && !/NO_URL/.test(w.cmExMsg_(new Error('NO_URL'))));
-  t('6 ほかの理由は今までどおり', w.cmExMsg_(new Error('タイムアウト')) === 'タイムアウト' && w.cmExMsg_('x') === 'x');
+  t('6 日本語だけの理由は今までどおり', w.cmExMsg_(new Error('タイムアウト')) === 'タイムアウト' && w.cmExMsg_(new Error('応答が不正です')) === '応答が不正です');
+  t('6 英字の入った理由は括弧に出さない（第7回の監査の気づき3）', ['x', new Error('Failed to fetch'), new Error('unauthorized'), new Error('TypeError: Load failed'), '', null].every(function (v) { return w.cmExMsg_(v) === '通信がうまくいきませんでした'; }) && w.cmExMsg_(new Error('The operation was aborted')) === 'タイムアウト');
   const wo = cutF(HTML, 'writeOp_');
   const iNo = wo.indexOf("==='NO_URL'"), iUn = wo.indexOf("if(r.err) return unsure_(");
   t('6 保存の NO_URL は確かめの道（unsure_）より先に止める', iNo > 0 && iUn > iNo && /何も送っていません/.test(wo));
