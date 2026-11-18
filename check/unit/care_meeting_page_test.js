@@ -1494,7 +1494,11 @@ async function opened(opt) {
     await LV.ctx.impcApply_(); await settle();
     const lv3 = lvEv(); LV.ctx.onBeforeUnload_(lv3);
     t('15-8b 取り込み終えた後は止めない', LV.ctx.impcSt.phase === 'done' && LV.ctx.cmLeaveDirty_() === false && lv3.prevented === false);
-    t('15-8b 見出しのリンク・閉じる・ログインの覆いは同じ判定を使う', /if\(cmLeaveDirty_\(\)\)/.test(cutF(S, 'onBeforeUnload_')) && /dirty:function\(\)\{ return cmLeaveDirty_\(\); \}/.test(S));
+    const LF = await mk('admin', newRecv({ importRows: (b) => (b.dry ? newRecv().importRows(b) : { ok: false, code: 'mfa' }) }));
+    LF.ctx.impcLoadText_(CSV, ''); await LF.ctx.impcPlan_(); await settle(); await LF.ctx.impcApply_(); await settle();
+    const lv4 = lvEv(); LF.ctx.onBeforeUnload_(lv4);
+    t('15-8b 取り込みが断られて終わった後は、やり直すまで止める', LF.ctx.impcSt.phase === 'done' && LF.ctx.impcSt.err === true && LF.ctx.cmLeaveDirty_() === true && lv4.prevented === true);
+    t('15-8b 閉じる時は同じ判定を使い、ログインの覆いは読んだ表では残さない（送信中だけ）', /if\(cmLeaveDirty_\(\)\)/.test(cutF(S, 'onBeforeUnload_')) && /impcSt&&impcSt\.phase==='applying'\); \}\}\)/.test(S));
 
     /* 15-9 端末に書かない・esc */
     const allowed = (w) => (w[1] === 'remove' && w[2] === 'cm_open_meeting') || (cmDueW(w) && w[1] === 'set');
