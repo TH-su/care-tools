@@ -490,7 +490,8 @@
 
   /* ── 4. 月の計算 ──
    * opts: { ym, period:{from,to}（月分の期間・省略はその月の1日〜末日）, staff:[kintai_staff], schedule:[kintai_schedule], punches:[kintai_punches], days:[kintai_days],
-   *         config, now(ミリ秒・省略は今), lockedAt(締めた時刻・省略可) }
+   *         config, now(ミリ秒・省略は今), lockedAt(締めた時刻・省略可),
+   *         leave_uses(手で入れた有休の使用 [{id, staff_id, use_date, days:0.5|1}]・省略可・v4 2026-11-20 の L8) }
    *   期間の初日の前の6日分の打刻・予定・日の行も渡すと、週40時間の週を期間をまたいで数える（前の6日分は日の一覧・合計・要確認に入れない）
    * 返す: { ym, period, config, people:[{ staff, days:[{date, blocks, paidMin, workMin, legalOverMin, flags}], sum }], totals }
    * sum の時間の区分（0101・給与の契約 CONTRACT-payroll-v1.md §2）:
@@ -521,6 +522,14 @@
     });
     (opts.punches || []).forEach(function (p) { (punchBy[p.staff_id] = punchBy[p.staff_id] || []).push(p); });
     (opts.days || []).forEach(function (d) { dayBy[d.staff_id + '|' + d.work_date] = d; });
+    /* v4（L8）: 手で入れた有休の使用（期間の中・取り消していない・0.5 か 1 日）。同じ人・同じ日は最初の1行（DB も1行だけ） */
+    var leaveBy = {}, leaveStaff = {};
+    (Array.isArray(opts.leave_uses) ? opts.leave_uses : []).forEach(function (u) {
+      if (!u || u.voided_at || typeof u.staff_id !== 'string' || !isDate(u.use_date) || u.use_date < first || u.use_date > lastD) return;
+      if (+u.days !== 0.5 && +u.days !== 1) return;
+      var lk0 = u.staff_id + '|' + u.use_date;
+      if (!leaveBy[lk0]) { leaveBy[lk0] = u; leaveStaff[u.staff_id] = 1; }
+    });
     var people = [];
     var known = {};
     for (i = 0; i < staff.length; i++) known[staff[i].staff_id] = 1;
@@ -528,6 +537,7 @@
     var extra = [];
     for (var sid in punchBy) if (!known[sid]) { known[sid] = 1; extra.push({ staff_id: sid, name: sid, office: null, emp_code: null, active: false, missingStaff: true }); }
     for (sid in schedBy) if (!known[sid]) { known[sid] = 1; extra.push({ staff_id: sid, name: sid, office: null, emp_code: null, active: false, missingStaff: true }); }
+    for (sid in leaveStaff) if (!known[sid]) { known[sid] = 1; extra.push({ staff_id: sid, name: sid, office: null, emp_code: null, active: false, missingStaff: true }); }
     var all = staff.concat(extra);
     for (i = 0; i < all.length; i++) {
       var st = all[i];
@@ -590,6 +600,7 @@
         (byDate[b.work_date] = byDate[b.work_date] || []).push(cb);
       }
       for (var pk in paidBy) if (pk.indexOf(st.staff_id + '|') === 0) { var pd = pk.split('|')[1]; byDate[pd] = byDate[pd] || []; }
+      for (var lk1 in leaveBy) if (lk1.indexOf(st.staff_id + '|') === 0) { var ld = lk1.split('|')[1]; byDate[ld] = byDate[ld] || []; }
       var dates = Object.keys(byDate).sort(), days = [];
       var sum = { workDays: 0, paidDays: 0, paidMin: 0, workMin: 0, schedInMin: 0, overtimeMin: 0, legalOverMin: 0, nightMin: 0,
         lateCount: 0, lateMin: 0, earlyLeaveCount: 0, earlyLeaveMin: 0, noPunchDays: 0, reviewCount: 0, byOffice: {}, warnings: [],
@@ -623,6 +634,10 @@
           for (var of in c.officeShare) sum.byOffice[of] = (sum.byOffice[of] || 0) + c.workMin * c.officeShare[of];
         }
         var paidMin = paidBy[st.staff_id + '|' + date] || 0;
+        /* v4（L8）: 手で入れた有休は、シフトの有休の行が無い日だけ有休に数える（ある日はシフトの方を数え、足さない）。
+           有休時間＝その日の予定の実働（無ければ480分）× 日数（半日は半分）。日数は入れた日数（0.5 か 1）のまま */
+        var lu = leaveBy[st.staff_id + '|' + date], luDays = 0;
+        if (lu && paidBy[st.staff_id + '|' + date] === undefined) { luDays = +lu.days === 0.5 ? 0.5 : 1; paidMin = Math.round((dsw > 0 ? dsw : 480) * luDays); }
         (paidSym[st.staff_id + '|' + date] || []).forEach(function (sy) { sum.counts[sy] = (sum.counts[sy] || 0) + 1; });
         if (dsw > 0 || paidMin > 0) sum.schedDays++;   /* 所定日数＝働く予定か有休のある日（仮置き） */
         if (dw > 0) (workSym[st.staff_id + '|' + date] || []).forEach(function (sy) { sum.counts[sy] = (sum.counts[sy] || 0) + 1; });   /* 働いた日の予定の記号ごと */
@@ -636,13 +651,16 @@
         if (dw > 0) sum.workDays++;
         /* 有休日数は 0.5 刻み: 有休分 ÷ その日の所定（働く予定もある日は 予定の実働＋有休分・無ければ 480）が 0.5 以下なら 0.5、超えれば 1（仮置き v2-6） */
         var pdays = 0;
-        if (paidMin > 0) { pdays = paidMin / (dsw > 0 ? dsw + paidMin : 480) <= 0.5 ? 0.5 : 1; sum.paidDays += pdays; sum.paidMin += paidMin; }
+        if (luDays) { pdays = luDays; sum.paidDays += pdays; sum.paidMin += paidMin; }
+        else if (paidMin > 0) { pdays = paidMin / (dsw > 0 ? dsw + paidMin : 480) <= 0.5 ? 0.5 : 1; sum.paidDays += pdays; sum.paidMin += paidMin; }
         if (noPunchAll && bl.length && paidMin === 0) sum.noPunchDays++;
         var absentDay = dabs && dw === 0 && paidMin === 0;
         if (absentDay) sum.absentDays++;
         sum.holidayMin += dhol; sum.uncountedMin += dunc;
-        days.push({ date: date, blocks: bl, paidMin: paidMin, workMin: dw, schedWorkMin: dsw, legalOverMin: legal, flags: dflags, note: dnote || null,
-          paidDays: pdays, holidayMin: dhol, uncountedMin: dunc, absent: absentDay, mark: (dnote && dnote.day_mark) || null });
+        var dayRow = { date: date, blocks: bl, paidMin: paidMin, workMin: dw, schedWorkMin: dsw, legalOverMin: legal, flags: dflags, note: dnote || null,
+          paidDays: pdays, holidayMin: dhol, uncountedMin: dunc, absent: absentDay, mark: (dnote && dnote.day_mark) || null };
+        if (luDays) dayRow.leaveUse = { id: lu.id || null, days: luDays };   /* 手入力の有休を数えた日だけの印（無い日の形は今までどおり） */
+        days.push(dayRow);
       }
       /* 週・期間の枠を超えた分も法定外（労基法32条・指摘11）。日の法定外として数えた分は二重に数えない。
          変形なし: 週（weekStartDow 始まり）の頭から日ごとに（実働−日の法定外−法定休日）を積み上げ、40時間を超えた分をその日の属する月分に付ける。
