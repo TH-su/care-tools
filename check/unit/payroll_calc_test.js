@@ -212,9 +212,11 @@ console.log('4. 60時間超・深夜・法定休日');
   eq('70時間: 上乗せ 1000×0.25×10h＝2500', L(c, 'ot_over60'), 2500);
   const d = run(base, { nightMin: 60 }, { settings: { night_premium: 'pay' } });
   eq('深夜を払う設定: 1000×0.25×1h＝250', L(d, 'ot_night'), 250);
+  /* 期待を変えた（反証レビュー 3・2026-11-19）: 前は「深夜の行なし＋不足の警告」だった。
+     深夜の割増を含む手当が無い人は含めようがないので、既定（included）でも上乗せを払う */
   const e = run(base, { nightMin: 60 });
-  eq('既定（夜勤手当に含む）: 深夜の行なし', L(e, 'ot_night'), undefined);
-  t('既定で夜勤手当が無い時は不足の警告', W(e, 'night_shortfall'));
+  eq('既定（夜勤手当に含む）でも、含む手当の無い人は深夜の上乗せを払う（250）', L(e, 'ot_night'), 250);
+  t('含む手当の無い人に不足の警告は出さない', !W(e, 'night_shortfall'));
   const f = run(base, { holidayMin: 90 });
   eq('法定休日 1000×1.35×1.5h＝2025', L(f, 'ot_holiday'), 2025);
   const g = run(base, { legalInOverMin: 30 });
@@ -500,6 +502,96 @@ console.log('12b. 固定残業代（含む分を時間外から先に引く）')
   const i = run({ pay_type: 'monthly', base: 172000, ins: {}, tax: { col: 'none' } }, { legalOverMin: 400 });
   eq('固定残業代の無い人は今の動き（時間外労働 8334）', L(i, 'ot_out'), 8334);
   eq('固定残業代の無い人の行の名前は今のまま', (i.lines.find((l) => l.code === 'ot_out') || {}).name, '時間外労働');
+}
+
+console.log('14. 反証レビューの直し（2026-11-19）');
+{ /* 1 割増の基礎: 種類を問わず overtime_base の手当を足す */
+  const CNT = { code: 'c', name: '早出手当', sec: 'pay', calc: 'count', order: 1 };
+  const HR = { code: 'h', name: '時間手当', sec: 'pay', calc: 'hour', order: 1 };
+  const DY = { code: 'd', name: '日額手当', sec: 'pay', calc: 'day', order: 1 };
+  const NS = { code: 'n', name: '夜勤手当', sec: 'pay', calc: 'night_shift', order: 1 };
+  const mo = (allow, def, att) => run({ pay_type: 'monthly', base: 172000, allowances: [allow], ins: {}, tax: { col: 'none' } }, Object.assign({ legalOverMin: 60 }, att), { allowanceDefs: [def] });
+  eq('回数の手当 4×500 を足す: 単価 1000＋2000÷172＝1011.6→1012 ×1.25', L(mo({ code: 'c', amount: 500, count_source: '早' }, CNT, { counts: { '早': 4 } }), 'ot_out'), 1265);
+  eq('時間の手当は時間あたりの額を直接足す: 1000＋50＝1050 ×1.25＝1312.5→1313', L(mo({ code: 'h', amount: 50 }, HR, { workMin: 600 }), 'ot_out'), 1313);
+  eq('日の手当 100×20日 を足す: 1012 ×1.25', L(mo({ code: 'd', amount: 100 }, DY, { workDays: 20 }), 'ot_out'), 1265);
+  eq('夜勤の手当 6000×3回 を足す: 1000＋18000÷172＝1104.7→1105 ×1.25＝1381.25→1382', L(mo({ code: 'n', amount: 6000 }, NS, { nightShiftCount: 3 }), 'ot_out'), 1382);
+  eq('割増の基礎に入れない回数の手当は足さない', L(mo({ code: 'c', amount: 500, count_source: '早' }, Object.assign({}, CNT, { attrs: { overtime_base: false } }), { counts: { '早': 4 } }), 'ot_out'), 1250);
+  const hh = run({ pay_type: 'hourly', base: 1000, allowances: [{ code: 'c', amount: 500, count_source: '早' }], ins: {}, tax: { col: 'none' } }, { schedInMin: 600, legalOverMin: 60, counts: { '早': 4 } }, { allowanceDefs: [CNT] });
+  eq('時給者: 1000＋2000÷172 を丸めずに ×1.25＝1264.5→1265', L(hh, 'ot_out'), 1265);
+  const add = C.otBaseAdd([{ calc: 'fixed', month: 17200 }, { calc: 'hour', perHour: 30 }], C._q.Q(172));
+  t('足し方の関数: 17200÷172＋30＝130', add.n === 130n * add.d);
+}
+{ /* 2 1日の所定時間が空 */
+  const a = run({ pay_type: 'monthly', base: 165000, avg_month_hours: 165, avg_month_days: 22, ins: {}, tax: { col: 'none' } }, { absentDays: 1 });
+  eq('空なら 165÷22＝7.5時間（単価1000×7.5）', L(a, 'absence'), -7500);
+  t('1日の所定時間が空の警告', W(a, 'day_hours_missing'));
+  const b = run({ pay_type: 'monthly', base: 172000, ins: {}, tax: { col: 'none' } }, { absentDays: 1 });
+  eq('月平均の時間・日数も明示していなければ8時間', L(b, 'absence'), -8000);
+  t('8時間の時も警告', W(b, 'day_hours_missing'));
+  const c = run({ pay_type: 'daily', base: 8000, ins: {}, tax: { col: 'none' } }, { workDays: 5, legalOverMin: 60 });
+  eq('日給の単価も 8000÷8 ×1.25', L(c, 'ot_out'), 1250);
+  t('日給で1日の所定時間が空の警告', W(c, 'day_hours_missing'));
+  t('1日の所定時間がある人は警告なし', !W(run({ pay_type: 'monthly', base: 172000, day_hours: 8, ins: {}, tax: { col: 'none' } }, { absentDays: 1 }), 'day_hours_missing'));
+}
+{ /* 3 深夜: 含む手当が0円の月は上乗せを払う */
+  const NS0 = { code: 'ns', name: '夜勤手当', sec: 'pay', calc: 'night_shift', order: 2, attrs: { includes_night_premium: true, overtime_base: false } };
+  const z = run({ pay_type: 'hourly', base: 1000, allowances: [{ code: 'ns', amount: 6000 }], ins: {}, tax: { col: 'none' } }, { schedInMin: 600, nightMin: 60, nightShiftCount: 0 }, { allowanceDefs: [NS0] });
+  eq('夜勤手当がその月0円なら深夜の上乗せ 1000×0.25×1h', L(z, 'ot_night'), 250);
+  const y = run({ pay_type: 'hourly', base: 1000, allowances: [{ code: 'ns', amount: 6000 }], ins: {}, tax: { col: 'none' } }, { schedInMin: 600, nightMin: 60, nightShiftCount: 1 }, { allowanceDefs: [NS0] });
+  eq('夜勤手当がある月は今のまま（深夜の行なし）', L(y, 'ot_night'), undefined);
+}
+{ /* 4 日給: 法定休日に働いた日を基本給の日数から除く */
+  const a = run({ pay_type: 'daily', base: 9000, day_hours: 8, ins: {}, tax: { col: 'none' } }, { workDays: 10, holidayWorkDays: 1, holidayMin: 480 });
+  eq('基本給は 9日分', L(a, 'basic'), 81000);
+  eq('法定休日 1125×1.35×8h', L(a, 'ot_holiday'), 12150);
+  const b = run({ pay_type: 'daily', base: 9000, day_hours: 8, ins: {}, tax: { col: 'none' } }, { workDays: 10, holidayMin: 480 });
+  t('法定休日の日数が無ければ警告（基本給は10日のまま）', W(b, 'holiday_days_unknown') && L(b, 'basic') === 90000);
+  t('法定休日の勤務が無ければ警告なし', !W(run({ pay_type: 'daily', base: 9000, day_hours: 8, ins: {}, tax: { col: 'none' } }, { workDays: 10 }), 'holiday_days_unknown'));
+}
+{ /* 5 当月徴収の資格を取った月の取りこぼし */
+  const mk = (from, si) => C.computeItem({ ym: '2026-12', period: PERIOD, payDate: '2026-12-25', settings: { si_month: si },
+    profile: { pay_type: 'monthly', base: 300000, birth_date: '1990-01-01', entry_date: from, ins: { health: { on: true, from, std: 300000 }, pension: { on: true, from, std: 300000 } }, tax: { col: 'none' } }, att: { schedDays: 15 } });
+  t('当月徴収で 11/20 取得（11月分を引く明細が無い）→ 警告', W(mk('2026-11-20', 'current'), 'si_first_month_missed'));
+  t('当月徴収で 12/1 取得 → 警告なし', !W(mk('2026-12-01', 'current'), 'si_first_month_missed'));
+  t('翌月徴収なら警告なし', !W(mk('2026-11-20', 'next'), 'si_first_month_missed'));
+  t('当月徴収で 11/10 取得（前の期間に入る）→ 警告なし', !W(mk('2026-11-10', 'current'), 'si_first_month_missed'));
+}
+{ /* 6 回数×単価を手当の round で円に */
+  const D1 = { code: 'c', name: '回数手当', sec: 'pay', calc: 'count', order: 1 };
+  const a = run({ pay_type: 'hourly', base: 1000, allowances: [{ code: 'c', amount: 333, count_source: 'manual', count: 1.5 }], ins: {}, tax: { col: 'none' } }, { schedInMin: 60 }, { allowanceDefs: [D1] });
+  eq('333×1.5＝499.5 → 既定は切上げ 500', L(a, 'fc'), 500);
+  const b = run({ pay_type: 'hourly', base: 1000, allowances: [{ code: 'c', amount: 333, count_source: 'manual', count: 1.5 }], ins: {}, tax: { col: 'none' } }, { schedInMin: 60 }, { allowanceDefs: [Object.assign({}, D1, { round: 'floor' })] });
+  eq('手当の round が floor なら 499', L(b, 'fc'), 499);
+  t('金額の行は整数', a.lines.filter((l) => l.sec !== 'employer').every((l) => Number.isInteger(l.amount)));
+}
+{ /* 8 有限でない値 */
+  const a = run({ pay_type: 'monthly', base: 'abc', ins: {}, tax: { col: 'none' } }, {});
+  t('数でない基本給は0にして警告', W(a, 'bad_number') && L(a, 'basic') === 0);
+  const b = run({ pay_type: 'monthly', base: 200000, ins: INS(Infinity, 200000), tax: { col: 'none' } }, {});
+  t('無限の標準報酬でも例外を出さず警告', W(b, 'bad_number'));
+  const c = run({ pay_type: 'monthly', base: 200000, avg_month_hours: 'x', ins: {}, tax: { col: 'none' } }, { legalOverMin: 60 });
+  t('数でない月平均所定労働時間は既定へ・警告', W(c, 'bad_number') && L(c, 'ot_out') === 1454);
+  t('空の値（undefined）は警告しない', !W(run({ pay_type: 'monthly', base: 200000, ins: {}, tax: { col: 'none' } }, {}), 'bad_number'));
+  let threw = false, r;
+  try { r = run({ pay_type: 'monthly', base: 200000, allowances: [{ code: 'q', get amount() { throw new Error('x'); } }], ins: {}, tax: { col: 'none' } }, {}, { allowanceDefs: [QUAL] }); } catch (e) { threw = true; }
+  t('中で例外が起きても外に出さず calc_error', !threw && W(r, 'calc_error'));
+}
+{ /* 9 雇用保険の資格の期間 */
+  const emp = (e) => L(run({ pay_type: 'monthly', base: 200000, ins: { emp: Object.assign({ on: true }, e) }, tax: { col: 'none' } }, {}), 'emp');
+  eq('期間の後（12/20）に取得 → 雇保なし', emp({ from: '2026-12-20' }), undefined);
+  eq('期間の中（12/1）に取得 → 雇保あり', emp({ from: '2026-12-01' }), 1000);
+  eq('喪失日が期間の初日（11/16）→ 雇保なし', emp({ to: '2026-11-16' }), undefined);
+  eq('喪失日が期間の中（12/1）→ 雇保あり', emp({ to: '2026-12-01' }), 1000);
+  t('empCovered 退職日の翌日を喪失日とする（期間の前日に退職→なし）', C.empCovered({}, { retire_date: '2026-11-15' }, PERIOD) === false);
+}
+{ /* 11 産休・育休の免除 */
+  const ex = (list) => run({ pay_type: 'monthly', base: 300000, birth_date: '1980-01-01', ins: Object.assign(INS(300000, 300000), { exempt: list }), tax: { col: 'none' } }, {});
+  const a = ex([{ from_ym: '2026-11', to_ym: '2027-03' }]);
+  t('免除の月（11月分）は健保・介護・支援金・厚年が0', ['health', 'care', 'support', 'pension'].every((k) => L(a, k) === undefined));
+  eq('免除の月も雇保は賃金で数える', L(a, 'emp'), 1500);
+  t('免除の月は会社負担も無い', !a.lines.some((l) => l.sec === 'employer' && l.code !== 'er_emp'));
+  eq('免除が10月までなら11月分は引く', L(ex([{ from_ym: '2026-08', to_ym: '2026-10' }]), 'health'), 15120);
+  eq('免除の終わりが空なら続いている', L(ex([{ from_ym: '2026-10' }]), 'health'), undefined);
 }
 
 console.log('13. 区分別の合計と指紋');

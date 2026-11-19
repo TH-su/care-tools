@@ -47,10 +47,20 @@
   function qFloor(a) { return floorDiv(a.n, a.d); }
   function qCeil(a) { return -floorDiv(-a.n, a.d); }
   /* 率（0.1008 など）→ 百万分率の有理数 */
-  function rateQ(x) { return Q(Math.round(Number(x) * 1e6), 1000000); }
+  /* 有限でない値（'abc'・Infinity・NaN）は0にして印を立てる（computeItem が警告に出す・例外を外に出さない）。
+     空（undefined・null・''）は「値なし」で印を立てない */
+  var badNum = 0;
+  function fin(x) {
+    if (x === undefined || x === null || x === '') return 0;
+    var n = Number(x);
+    if (!isFinite(n)) { badNum++; return 0; }
+    return n;
+  }
+  function int(x) { return Math.round(fin(x)); }
+  function rateQ(x) { return Q(Math.round(fin(x) * 1e6), 1000000); }
   /* 小数（172・21.75・7.5 など）→ 百分の一の有理数 */
-  function decQ(x) { return Q(Math.round(Number(x) * 100), 100); }
-  function intQ(x) { return Q(Math.round(Number(x) || 0)); }
+  function decQ(x) { return Q(Math.round(fin(x) * 100), 100); }
+  function intQ(x) { return Q(int(x)); }
   /* mode で円に丸める（none は丸めず有理数のまま返す） */
   function roundQ(a, mode) {
     if (mode === 'none') return a;
@@ -87,7 +97,11 @@
   function reachYm(birth, age) { return ymOf(reachDate(birth, age)); }
 
   /* ── 3. 設定 ── */
-  function num(v, lo, hi, def) { var n = Number(v); return (typeof v === 'number' || (typeof v === 'string' && v !== '')) && isFinite(n) && n >= lo && n <= hi ? n : def; }
+  function num(v, lo, hi, def) {
+    var n = Number(v), given = typeof v === 'number' || (typeof v === 'string' && v !== '');
+    if (given && !isFinite(n)) badNum++;
+    return given && isFinite(n) && n >= lo && n <= hi ? n : def;
+  }
   function fillSettings(s) {
     s = s && typeof s === 'object' ? s : {};
     var o = {}, k;
@@ -146,6 +160,26 @@
     return true;
   }
 
+  /* 雇用保険の資格（期間の日付で見る・取得日〜喪失日の前日と期間が重なれば数える） */
+  function empCovered(ins, profile, period) {
+    var from = ins && isDate(ins.from) ? ins.from : (isDate(profile.entry_date) ? profile.entry_date : null);
+    var loss = ins && isDate(ins.to) ? ins.to : (isDate(profile.retire_date) ? addDays(profile.retire_date, 1) : null);
+    if (from && from > period.to) return false;
+    if (loss && loss <= period.from) return false;
+    return true;
+  }
+
+  /* 割増の基礎に入る手当を時間あたりの額にする（1つにまとめた関数・freee の検算で確かめる所）
+     時間の手当は時間あたりの額をそのまま足し、ほか（定額・回数・日・夜勤）はその月の額を月平均所定労働時間で割る */
+  function otBaseAdd(list, avgH) {
+    var sum = Q(0);
+    for (var i = 0; i < list.length; i++) {
+      var x = list[i];
+      sum = qAdd(sum, x.calc === 'hour' ? intQ(x.perHour) : qDiv(intQ(x.month), avgH));
+    }
+    return sum;
+  }
+
   /* ── 4. 源泉 ── */
   function taxTable(T, A, dep, col) {
     var d = Math.max(0, Math.floor(Number(dep) || 0)), A_ = Math.max(0, Math.floor(A));
@@ -191,6 +225,14 @@
 
   /* ── 5. 計算の本体 ── */
   function computeItem(input) {
+    badNum = 0;
+    try { return computeItem_(input); } catch (e) {
+      return { lines: [], gross: 0, taxable: 0, si_total: 0, emp_ins_base: 0, tax_base: 0, deduct: 0, net: 0,
+        buckets: { taxable: 0, nontax: 0, emp_ins_base: 0, labor_ins_base: 0, fixed_wage: 0, si_by_kind: { health: 0, care: 0, support: 0, pension: 0, emp: 0 } },
+        warnings: [{ code: 'calc_error', msg: '計算できませんでした（入力の形を確かめてください）' }], fingerprint_inputs: { profile_rev: null, settings_rev: null, rates_ver: null, calc_ver: CALC_VER } };
+    }
+  }
+  function computeItem_(input) {
     input = input || {};
     var R = input.rates || Rates;
     var S = fillSettings(input.settings);
@@ -220,12 +262,23 @@
 
     var avgH = decQ(num(P.avg_month_hours, 1, 300, S.avg_month_hours_default));
     var avgD = decQ(num(P.avg_month_days, 1, 31, S.avg_month_days_default));
-    var base = Math.round(Number(P.base) || 0);
+    var base = int(P.base);
+    /* 1日の所定時間: 無い時は 月平均所定労働時間÷月平均所定労働日数（どちらかを明示した時）、それも無ければ8時間。どちらも警告 */
+    var dayH;
+    if (num(P.day_hours, 0.5, 24, null) !== null) dayH = decQ(P.day_hours);
+    else {
+      var setIn = input.settings && typeof input.settings === 'object' ? input.settings : {};
+      var hGiven = num(P.avg_month_hours, 1, 300, null) !== null || num(setIn.avg_month_hours_default, 1, 300, null) !== null;
+      var dGiven = num(P.avg_month_days, 1, 31, null) !== null || num(setIn.avg_month_days_default, 1, 31, null) !== null;
+      dayH = hGiven && dGiven ? qDiv(avgH, avgD) : Q(8);
+      dayH.missing = true;
+    }
+    function needDayH() { if (dayH.missing) warn('day_hours_missing', '1日の所定時間が空です（' + qNum(dayH) + '時間として数えました）'); return dayH; }
     if (!att && !P.no_attendance && !board) warn('no_att', '勤怠の集計がありません');
     if (att && att.locked === false) warn('kintai_unlocked', '勤怠の月がまだ締まっていません');
     if (att && Number(att.reviewCount) > 0) warn('review_left', '勤怠に要確認が残っています');
     var A = att || {};
-    function m(k) { return Math.max(0, Math.round(Number(A[k]) || 0)); }
+    function m(k) { return Math.max(0, int(A[k])); }
 
     /* 支給の集め（行ごとに属性を持つ） */
     var pays = [];   /* {amount:int, tax:bool, labor:bool, fixed:bool, nontax:int} */
@@ -259,27 +312,30 @@
       basePaid = yen(qDiv(qMul(intQ(base), intQ(hMin)), Q(60)), S.round.hourly_base);
       pay('basic', '基本給', hMin, base, basePaid, '時給×(所定内＋有休)' + hMin + '分÷60', { fixed: true });
     } else if (type === 'daily') {
-      basePaid = base * m('workDays');
-      pay('basic', '基本給', m('workDays'), base, basePaid, '日給×出勤日数', { fixed: true });
+      /* 法定休日に働いた日は法定休日労働（×1.35 の全額）で払うので、基本給の日数から除く */
+      var wd = m('workDays');
+      if (A.holidayWorkDays != null) wd = Math.max(0, wd - m('holidayWorkDays'));
+      else if (m('holidayMin') > 0) warn('holiday_days_unknown', '法定休日に働いた日数が分かりません（基本給の日数から除いていません）');
+      basePaid = base * wd;
+      pay('basic', '基本給', wd, base, basePaid, '日給×出勤日数（法定休日を除く）', { fixed: true });
       if (m('paidDays') > 0) pay('paid_leave', '有休（日給）', m('paidDays'), base, base * m('paidDays'), '日給×有休の日数', { fixed: true });
     }
     if (board || Number(P.board_pay) > 0) {
-      var bp = Math.round(Number(P.board_pay) || 0);
+      var bp = int(P.board_pay);
       pay('board', '役員報酬', null, bp, bp, '役員報酬', { fixed: true, labor: false });
     }
 
     /* 手当（定義の並び） */
     var pa = Array.isArray(P.allowances) ? P.allowances : [];
-    var otBaseFixed = 0, attBaseFixed = 0, minWageFixed = 0, nightIncluded = 0;
+    var otBaseAdds = [], attBaseFixed = 0, minWageFixed = 0, nightIncluded = 0, nightAllowCount = 0;
     order.forEach(function (def) {
       if (def.sec && def.sec !== 'pay') return;
       for (var i = 0; i < pa.length; i++) {
         var a = pa[i];
         if (!a || a.code !== def.code) continue;
-        var at = attrsOf(def), amt = Math.round(Number(a.amount) || 0), calc = def.calc || 'fixed', qty = null, v, basis;
+        var at = attrsOf(def), amt = int(a.amount), calc = def.calc || 'fixed', qty = null, v, basis;
         if (calc === 'fixed') {
           v = at.prorate ? prorated(amt) : amt; basis = at.prorate && prorate ? '日割り' : '定額';
-          if (at.overtime_base && !board) otBaseFixed += amt;
           if (at.attendance_base) attBaseFixed += v;
           if (at.min_wage) minWageFixed += amt;
         } else {
@@ -291,9 +347,11 @@
           else if (calc === 'day') { qty = m('workDays'); basis = '出勤日数×単価'; }
           else if (calc === 'hour') { qty = m('workMin'); basis = '労働時間×単価'; }
           else continue;
-          v = calc === 'hour' ? yen(qDiv(qMul(intQ(amt), intQ(qty)), Q(60)), def.round || 'ceil') : amt * qty;
+          var rmode = ROUND_MODES[def.round] && def.round !== 'none' ? def.round : 'ceil';
+          v = calc === 'hour' ? yen(qDiv(qMul(intQ(amt), intQ(qty)), Q(60)), rmode) : yen(qMul(intQ(amt), decQ(qty)), rmode);
         }
-        if (at.includes_night_premium) nightIncluded += v;
+        if (at.overtime_base && !board) otBaseAdds.push({ calc: calc, month: calc === 'fixed' ? amt : v, perHour: amt });
+        if (at.includes_night_premium) { nightIncluded += v; nightAllowCount++; }
         pay('f' + def.code, def.name || def.code, qty, amt, v, basis, { tax: at.income_tax, labor: at.labor_ins, fixed: at.fixed_wage, si: at.social_ins });
       }
     });
@@ -301,7 +359,7 @@
     /* 固定残業代（profile.fixed_ot: { allowance_code, covered_min }・無ければ今の動き） */
     var fixedOt = null;
     if (P.fixed_ot && typeof P.fixed_ot === 'object' && !board) {
-      var cov = Math.max(0, Math.round(Number(P.fixed_ot.covered_min) || 0));
+      var cov = Math.max(0, int(P.fixed_ot.covered_min));
       var fcode = P.fixed_ot.allowance_code;
       var hasAllow = fcode && defs[fcode] && pa.some(function (a) { return a && a.code === fcode; });
       if (!hasAllow) warn('fixed_ot_allowance', '固定残業代の手当が設定にありません（含む時間を引かずに数えました）');
@@ -311,12 +369,10 @@
     /* 割増の単価 */
     var R_ = S.ot_rates, unit = null;
     if (!board) {
-      if (type === 'monthly') unit = roundQ(qDiv(intQ(base + otBaseFixed), avgH), S.round.hour_unit);
-      else if (type === 'hourly') unit = roundQ(qAdd(intQ(base), qDiv(intQ(otBaseFixed), avgH)), S.round.hourly_unit);
-      else if (type === 'daily') {
-        var dh = decQ(num(P.day_hours, 0.5, 24, 8));
-        unit = roundQ(qAdd(qDiv(intQ(base), dh), qDiv(intQ(otBaseFixed), avgH)), S.round.hourly_unit);
-      }
+      var addH = otBaseAdd(otBaseAdds, avgH);
+      if (type === 'monthly') unit = roundQ(qAdd(qDiv(intQ(base), avgH), addH), S.round.hour_unit);
+      else if (type === 'hourly') unit = roundQ(qAdd(intQ(base), addH), S.round.hourly_unit);
+      else if (type === 'daily') unit = roundQ(qAdd(qDiv(intQ(base), needDayH()), addH), S.round.hourly_unit);
     }
     if (unit) {
       var unitTxt = qNum(unit);
@@ -332,7 +388,8 @@
         }
         if (x[0] === 'night') {
           var need = mins ? yen(qDiv(qMul(qMul(unit, rateQ(R_.night)), intQ(mins)), Q(60)), S.round.premium) : 0;
-          if (S.night_premium === 'included') {
+          /* 含む手当がその月に無い・0円の人は、含めようがないので上乗せを払う */
+          if (S.night_premium === 'included' && nightAllowCount > 0 && nightIncluded > 0) {
             if (need > nightIncluded) warn('night_shortfall', '深夜の割増（' + need + '円）が夜勤手当（' + nightIncluded + '円）を超えています');
             return;
           }
@@ -348,7 +405,7 @@
       var dBase = base + attBaseFixed, capLeft = basePaid + attBaseFixed;
       var hu = roundQ(qDiv(intQ(dBase), avgH), S.round.deduct_unit);
       if (S.absence_deduct && m('absentDays') > 0) {
-        var dhA = decQ(num(P.day_hours, 0.5, 24, 8));
+        var dhA = needDayH();
         var ab = Math.min(capLeft, yen(qMul(qMul(hu, dhA), intQ(m('absentDays'))), S.round.deduct));
         capLeft -= ab;
         pay('absence', '欠勤控除', m('absentDays'), qNum(hu), -ab, '時間単価' + qNum(hu) + '×1日の所定時間' + qNum(dhA) + '×日数', { fixed: false });
@@ -361,7 +418,7 @@
     }
 
     /* 通勤（非課税は限度まで） */
-    var cm = P.commute && typeof P.commute === 'object' ? Math.round(Number(P.commute.monthly) || 0) : 0;
+    var cm = P.commute && typeof P.commute === 'object' ? int(P.commute.monthly) : 0;
     if (cm > 0) {
       var lim = R.commuteLimit ? R.commuteLimit(payDate, P.commute.means, Number(P.commute.distance_km)) : null;
       var nt = cm;
@@ -375,9 +432,9 @@
     var adjDeduct = [], adjSi = 0, adjTax = 0;
     adj.forEach(function (x, i) {
       if (!x) return;
-      var v = Math.round(Number(x.amount) || 0), nm = x.name || '調整';
+      var v = int(x.amount), nm = x.name || '調整';
       if (x.kind === 'pay') pay('adj:' + i, nm, null, null, v, x.reason || '', {});
-      else if (x.kind === 'pay_nontax') pay('adj:' + i, nm, null, null, v, x.reason || '', { tax: false, labor: false, nontax: v, si: false });
+      else if (x.kind === 'pay_nontax') pay('adj_nontax:' + i, nm, null, null, v, x.reason || '', { tax: false, labor: false, nontax: v, si: false });
       else if (x.kind === 'deduct') adjDeduct.push({ code: 'adj:' + i, name: nm, amount: v, si: false, basis: x.reason || '' });
       else if (x.kind === 'deduct_si') { adjDeduct.push({ code: 'adj:' + i, name: nm, amount: v, si: true, basis: x.reason || '' }); adjSi += v; }
       else if (x.kind === 'tax_adjust') adjTax += v;
@@ -393,7 +450,7 @@
     });
     var taxable = gross - nontax;
     if (board) labor = 0;
-    var empOn = !board && P.ins && P.ins.emp && P.ins.emp.on;
+    var empOn = !!(!board && P.ins && P.ins.emp && P.ins.emp.on && empCovered(P.ins.emp, P, period));
     var empBase = empOn ? Math.max(0, labor) : 0;
 
     /* 社保（保険料の対象月） */
@@ -403,10 +460,18 @@
     var birth = isDate(P.birth_date) ? P.birth_date : null;
     var hOn = ins.health && ins.health.on, pOn = ins.pension && ins.pension.on;
     if ((hOn || pOn) && !birth) warn('birth_missing', '生年月日が空です（介護・年齢の判定ができません）');
+    /* 産休・育休の免除（対象月が免除の期間なら健保・介護・支援金・厚年は0・雇保は賃金で数える） */
+    var exempt = (Array.isArray(ins.exempt) ? ins.exempt : []).some(function (x) { return x && isYm(x.from_ym) && x.from_ym <= target && (!isYm(x.to_ym) || target <= x.to_ym); });
+    if (exempt) { hOn = false; pOn = false; }
+    /* 当月徴収: 資格を取った月が前の期間に入らず、この期間に入った時、その月の分を取りこぼす */
+    if (S.si_month === 'current' && (hOn || pOn)) {
+      var acqD = [ins.health, ins.pension].map(function (x) { return x && isDate(x.from) ? x.from : (isDate(P.entry_date) ? P.entry_date : null); }).filter(Boolean)[0];
+      if (acqD && ymOf(acqD) < target && acqD >= period.from) warn('si_first_month_missed', '資格を取った月（' + ymOf(acqD) + '）の社会保険料をどの明細でも引いていない見込みです（調整で引いてください）');
+    }
     var rt = (hOn || pOn) ? R.health(S.prefecture, target) : null;
     if ((hOn || pOn) && !rt) warn('rate_missing', target + ' 分の社会保険料率が率表にありません');
     if (rt && hOn && insCovered(ins.health, P, target) && !(birth && target >= ymOf(birthdayAt(birth, 75)))) {
-      var hs = Math.round(Number(ins.health.std) || 0);
+      var hs = int(ins.health.std);
       if (!hs) warn('std_missing', '健康保険の標準報酬月額が空です');
       else {
         if (R.isStd && !R.isStd('health', hs)) warn('std_bad', '健康保険の標準報酬月額が等級表にありません');
@@ -421,7 +486,7 @@
       }
     }
     if (rt && pOn && insCovered(ins.pension, P, target) && !(birth && target >= reachYm(birth, 70))) {
-      var ps = Math.round(Number(ins.pension.std) || 0);
+      var ps = int(ins.pension.std);
       if (!ps) warn('std_missing', '厚生年金の標準報酬月額が空です');
       else {
         if (R.isStd && !R.isStd('pension', ps)) warn('std_bad', '厚生年金の標準報酬月額が等級表にありません');
@@ -445,7 +510,7 @@
       if (def.sec !== 'deduct') return;
       pd.forEach(function (x) {
         if (!x || x.code !== def.code) return;
-        var v = Math.round(Number(x.amount) || 0), asSi = !!(def.attrs && def.attrs.social_ins === true);
+        var v = int(x.amount), asSi = !!(def.attrs && def.attrs.social_ins === true);
         if (asSi) fixedSi += v;
         fixedDed.push({ code: 'd:' + def.code, name: def.name || def.code, amount: v, basis: asSi ? '定額（社会保険料として扱う）' : '定額' });
       });
@@ -470,7 +535,7 @@
       }
     } else if (col !== 'none') warn('tax_col', '源泉の区分（甲・乙）が決まっていません');
     tax = Math.max(0, tax);
-    var resident = P.resident_tax && typeof P.resident_tax === 'object' ? Math.max(0, Math.round(Number(P.resident_tax[payDate.slice(0, 7)]) || 0)) : 0;
+    var resident = P.resident_tax && typeof P.resident_tax === 'object' ? Math.max(0, int(P.resident_tax[payDate.slice(0, 7)])) : 0;
 
     /* 控除の行 */
     var dsum = 0;
@@ -514,17 +579,18 @@
         var eq;
         if (type === 'monthly') eq = qDiv(intQ(base + minWageFixed), avgH);
         else if (type === 'hourly') eq = qAdd(intQ(base), qDiv(intQ(minWageFixed), avgH));
-        else eq = qAdd(qDiv(intQ(base), decQ(num(P.day_hours, 0.5, 24, 8))), qDiv(intQ(minWageFixed), avgH));
+        else eq = qAdd(qDiv(intQ(base), needDayH()), qDiv(intQ(minWageFixed), avgH));
         if (qCmp(eq, intQ(mw)) < 0) warn('min_wage', '時間あたり ' + qNum(eq) + '円が最低賃金 ' + mw + '円を下回っています');
       }
     }
+    if (badNum) warn('bad_number', '数でない値がありました（0として数えました）');
     return item;
   }
 
   var api = {
     CALC_VER: CALC_VER, DEFAULTS: DEFAULTS, computeItem: computeItem, fillSettings: fillSettings, attrsOf: attrsOf,
     reachDate: reachDate, reachYm: reachYm, birthdayAt: birthdayAt, insCovered: insCovered, ymAdd: ymAdd, addDays: addDays,
-    taxTable: taxTable, taxComputerR8: taxComputerR8, round50: round50, weekdaysBetween: weekdaysBetween,
+    empCovered: empCovered, otBaseAdd: otBaseAdd, taxTable: taxTable, taxComputerR8: taxComputerR8, round50: round50, weekdaysBetween: weekdaysBetween,
     _q: { Q: Q, rateQ: rateQ, roundQ: roundQ, yen: yen }
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

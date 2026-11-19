@@ -177,13 +177,16 @@
     rows = Array.isArray(rows) ? rows : [];
     var pc = columns(rows, 'pay'), dc = columns(rows, 'deduct');
     var head = ['従業員番号', '氏名', '性別', '賃金計算期間', '労働日数', '労働時間数', '時間外労働時間数', '法定内残業時間数', '休日労働時間数', '深夜労働時間数']
-      .concat(pc.map(function (c) { return c.name; }), ['総支給額'], dc.map(function (c) { return c.name; }), ['控除合計', '差引支給額']);
+      .concat(pc.map(function (c) { return c.name; }), ['総支給額'], dc.map(function (c) { return c.name; }), ['控除合計', '差引支給額', '備考']);
     var out = [head];
     rows.forEach(function (r) {
       var it = r.item, pa = amountsBy(it, 'pay'), da = amountsBy(it, 'deduct'), p = r.period || {};
-      out.push([r.emp_num || '', r.name || '', genderLabel(r.gender), (p.from || '') + '〜' + (p.to || ''), attOf(it, 'workDays'), hm(attOf(it, 'workMin')),
-        hm(attOf(it, 'legalOverMin')), hm(attOf(it, 'legalInOverMin')), hm(attOf(it, 'holidayMin')), hm(attOf(it, 'nightMin'))]
-        .concat(pc.map(function (c) { return pa[c.key] || 0; }), [it.gross], dc.map(function (c) { return da[c.key] || 0; }), [it.deduct, it.net]));
+      /* 勤怠の無い人（役員・固定給）は日数・時間の欄を空欄にする（0 と書かない） */
+      var hasAtt = (it.lines || []).some(function (l) { return l.sec === 'att'; });
+      var attCols = hasAtt ? [attOf(it, 'workDays'), hm(attOf(it, 'workMin')), hm(attOf(it, 'legalOverMin')), hm(attOf(it, 'legalInOverMin')), hm(attOf(it, 'holidayMin')), hm(attOf(it, 'nightMin'))]
+        : ['', '', '', '', '', ''];
+      out.push([r.emp_num || '', r.name || '', genderLabel(r.gender), (p.from || '') + '〜' + (p.to || '')].concat(attCols)
+        .concat(pc.map(function (c) { return pa[c.key] || 0; }), [it.gross], dc.map(function (c) { return da[c.key] || 0; }), [it.deduct, it.net, hasAtt ? '' : '勤怠なし（固定給）']));
     });
     return csvJoin(out);
   }
@@ -204,24 +207,25 @@
   }
 
   /* 仕訳。rows: [{ board:bool, item }]。会社負担は全員の小数の和を円未満切捨て（仮置き） */
-  var ACCOUNTS = { salary: '給与手当', board: '役員報酬', commute: '旅費交通費', welfare: '法定福利費', si: '預り金', emp: '預り金', tax: '預り金',
+  var ACCOUNTS = { salary: '給与手当', board: '役員報酬', commute: '旅費交通費', nontax: '立替金', welfare: '法定福利費', si: '預り金', emp: '預り金', tax: '預り金',
     resident: '預り金', other: '預り金', welfare_payable: '未払費用', bank: '普通預金' };
   function journalCsv(rows, opt) {
     rows = Array.isArray(rows) ? rows : []; opt = opt || {};
     var A = {}, k, acc = opt.accounts || {};
     for (k in ACCOUNTS) A[k] = typeof acc[k] === 'string' && acc[k] ? acc[k] : ACCOUNTS[k];
-    var s = { salary: 0, board: 0, commute: 0, si: 0, emp: 0, tax: 0, resident: 0, other: 0, net: 0 }, er = 0;
+    var s = { salary: 0, board: 0, commute: 0, nontax: 0, si: 0, emp: 0, tax: 0, resident: 0, other: 0, net: 0 }, er = 0;
     rows.forEach(function (r) {
       var it = r.item;
       (it.lines || []).forEach(function (l) {
         if (l.sec === 'pay') {
           if (l.code === 'commute') s.commute += l.amount;
+          else if (l.code.indexOf('adj_nontax:') === 0) s.nontax += l.amount;   /* 非課税の精算は給与・役員報酬に入れない */
           else if (r.board || l.code === 'board') s.board += l.amount;
           else s.salary += l.amount;
         } else if (l.sec === 'deduct') {
           if (['health', 'care', 'support', 'pension'].indexOf(l.code) >= 0) s.si += l.amount;
           else if (l.code === 'emp') s.emp += l.amount;
-          else if (l.code === 'income_tax') s.tax += l.amount;
+          else if (l.code === 'income_tax' || l.code === 'tax_adjust') s.tax += l.amount;   /* 税の精算も源泉の預り金 */
           else if (l.code === 'resident_tax') s.resident += l.amount;
           else s.other += l.amount;
         } else if (l.sec === 'employer') er += Math.round(Number(l.amount) * 10000);
@@ -230,12 +234,19 @@
     });
     var erYen = Math.floor(er / 10000);
     var date = opt.date || '', memo = opt.memo || '給与';
-    var D = [[A.salary, s.salary], [A.board, s.board], [A.commute, s.commute], [A.welfare, erYen]];
+    var D = [[A.salary, s.salary], [A.board, s.board], [A.commute, s.commute], [A.nontax, s.nontax], [A.welfare, erYen]];
     var C = [[A.si, s.si, '社会保険料'], [A.emp, s.emp, '雇用保険料'], [A.tax, s.tax, '源泉所得税'], [A.resident, s.resident, '住民税'],
       [A.other, s.other, 'その他控除'], [A.welfare_payable, erYen, '法定福利費（会社負担）'], [A.bank, s.net, '差引支給額']];
     var out = [['取引日', '借方勘定科目', '借方金額', '貸方勘定科目', '貸方金額', '摘要']], dt = 0, ct = 0;
-    D.forEach(function (d) { if (d[1]) { out.push([date, d[0], d[1], '', '', memo]); dt += d[1]; } });
-    C.forEach(function (c) { if (c[1]) { out.push([date, '', '', c[0], c[1], memo + ' ' + c[2]]); ct += c[1]; } });
+    /* マイナスの額は借方と貸方を入れ替えて正の額で書く */
+    D.forEach(function (d) {
+      if (d[1] > 0) { out.push([date, d[0], d[1], '', '', memo]); dt += d[1]; }
+      else if (d[1] < 0) { out.push([date, '', '', d[0], -d[1], memo]); ct += -d[1]; }
+    });
+    C.forEach(function (c) {
+      if (c[1] > 0) { out.push([date, '', '', c[0], c[1], memo + ' ' + c[2]]); ct += c[1]; }
+      else if (c[1] < 0) { out.push([date, c[0], -c[1], '', '', memo + ' ' + c[2]]); dt += -c[1]; }
+    });
     return { csv: csvJoin(out), debit: dt, credit: ct, balanced: dt === ct, employer: erYen, sums: s };
   }
 

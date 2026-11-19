@@ -120,7 +120,8 @@ console.log('3. 口座の分け方・合計の照合');
 
 console.log('4. 仕訳・賃金台帳・明細一覧');
 const PERIOD = { from: '2026-11-16', to: '2026-12-15' };
-function item(profile, att, extra) { return C.computeItem(Object.assign({ ym: '2026-12', period: PERIOD, payDate: '2026-12-25', settings: {}, profile, allowanceDefs: [], att: att || {} }, extra || {})); }
+const L5 = (it, code) => { const l = it.lines.find((x) => x.code === code); return l ? l.amount : 0; };
+function item(profile, att, extra) { return C.computeItem(Object.assign({ ym: '2026-12', period: PERIOD, payDate: '2026-12-25', settings: {}, profile, allowanceDefs: [], att: att === undefined ? {} : att }, extra || {})); }
 const I1 = item({ pay_type: 'monthly', base: 220000, birth_date: '1980-04-10', ins: { health: { on: true, std: 220000 }, pension: { on: true, std: 220000 }, emp: { on: true } }, tax: { col: 'kou', dependents: 0 }, commute: { monthly: 8000 }, resident_tax: { '2026-12': 9000 } }, { workDays: 20, workMin: 9900, legalOverMin: 300, nightMin: 0, holidayMin: 0 });
 const I2 = item({ pay_type: 'board', board_pay: 500000, birth_date: '1965-04-04', ins: { health: { on: true, std: 500000 }, pension: { on: true, std: 500000 } }, tax: { col: 'kou', dependents: 2 }, no_attendance: true }, null);
 {
@@ -160,6 +161,31 @@ const I2 = item({ pay_type: 'board', board_pay: 500000, birth_date: '1965-04-04'
   t('数のマイナスには \' を付けない', X.csvCell(-897) === '-897');
   t('文字のマイナス記号には \' を付ける', X.csvCell('-x') === "'-x");
   t('カンマを含む文字は引用', X.csvCell('a,b') === '"a,b"');
+}
+
+console.log('5. 反証レビューの直し（2026-11-19）');
+{ /* 7 仕訳: 役員の非課税の精算・税の精算・マイナス */
+  const B1 = item({ pay_type: 'board', board_pay: 500000, ins: {}, tax: { col: 'kou', dependents: 0 }, no_attendance: true }, null,
+    { adjustments: [{ kind: 'pay_nontax', name: '立替の精算', amount: 3000 }, { kind: 'tax_adjust', name: '年調の精算', amount: -2000 }] });
+  const j = X.journalCsv([{ item: B1, board: true }]);
+  eq('役員報酬に非課税の精算を入れない', j.sums.board, 500000);
+  eq('非課税の精算は別の科目（立替金）', j.sums.nontax, 3000);
+  eq('税の精算は源泉の預り金に入る（所得税−2000）', j.sums.tax, L5(B1, 'income_tax') - 2000);
+  eq('その他控除に税の精算を入れない', j.sums.other, 0);
+  t('借方と貸方が合う', j.balanced, [j.debit, j.credit]);
+  const B2 = item({ pay_type: 'monthly', base: 100000, ins: {}, tax: { col: 'none' } }, {}, { adjustments: [{ kind: 'tax_adjust', name: '年調の還付', amount: -10000 }] });
+  const j2 = X.journalCsv([{ item: B2 }], { date: '2026-12-25' });
+  t('マイナスの預り金（還付）は借方に正の額で書く', j2.csv.split('\r\n').some((r) => r === '2026-12-25,預り金,10000,,,給与 源泉所得税'), j2.csv);
+  t('マイナスでも借方と貸方が合う', j2.balanced, [j2.debit, j2.credit]);
+  t('マイナスの額を書かない', !/,-\d/.test(j2.csv));
+}
+{ /* 10 賃金台帳: 勤怠の無い人 */
+  const csv = X.wageLedgerCsv([{ emp_num: 'T02', name: '試験 乙', gender: 'male', period: PERIOD, item: I2 }, { emp_num: 'T01', name: '試験 甲', gender: 'female', period: PERIOD, item: I1 }]);
+  const rows = csv.trimEnd().split('\r\n'), head = rows[0].split(','), r = rows[1].split(','), r2 = rows[2].split(',');
+  t('勤怠なしの人は労働日数・時間の欄が空欄', ['労働日数', '労働時間数', '時間外労働時間数', '法定内残業時間数', '休日労働時間数', '深夜労働時間数'].every((k) => r[head.indexOf(k)] === ''));
+  eq('備考に「勤怠なし（固定給）」', r[head.indexOf('備考')], '勤怠なし（固定給）');
+  eq('勤怠のある人の備考は空', r2[head.indexOf('備考')], '');
+  eq('勤怠のある人の労働日数は数のまま', r2[head.indexOf('労働日数')], '20');
 }
 
 console.log('\n' + (fail ? '✗' : '✓') + ' payroll_export ' + pass + ' 件成功／' + fail + ' 件失敗');
