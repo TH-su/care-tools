@@ -83,6 +83,9 @@ console.log('\n— 1. 計算 → 下書き保存 → 確定 —');
   const dlg = await p.textContent('#p-dlg');
   t('確定の窓に人数・総額・警告・今月変わった設定と調整が出る', /10 人/.test(dlg) && /差引の合計/.test(dlg) && /残っている警告/.test(dlg) && /今月変わった設定と調整/.test(dlg) && /見本の立替/.test(dlg) && /見本 一郎：給与の設定/.test(dlg), dlg.slice(0, 300));
   await shot(p, 'payroll.confirm-dialog.pc', false);
+  await p.emulateMedia({ media: 'print' });
+  t('窓を開いたまま Cmd/Ctrl+P で刷っても、窓（総額）は紙に出ない', await p.evaluate(() => getComputedStyle(document.getElementById('p-dlg')).display === 'none' && getComputedStyle(document.getElementById('p-app')).display === 'none'));
+  await p.emulateMedia({ media: 'screen' });
   p.once('dialog', (d) => d.accept());
   await p.click('[data-act="confirm-go"]');
   t('警告に印を入れないと確定しない', await p.evaluate(() => document.getElementById('p-dlg').open) && o.routes.db.run.status === 'draft');
@@ -208,6 +211,27 @@ console.log('\n— 6. 覆い・その他 —');
   await o4.page.click('[data-tab="profile"]');
   await shot(o4.page, 'payroll.profile.pc');
   t('職員の給与設定で抜けを赤の札で出す（口座の無い人）', /抜け：口座/.test(await o4.page.textContent('#p-main')));
+  /* 給与設定の保存: 画面に無い項目を消さない・理由が要る */
+  await o4.page.click('[data-act="prof"][data-sid="s-02"]');
+  await o4.page.fill('#f-base', '1150');
+  await o4.page.fill('#f-reason', '見本の昇給');
+  await o4.page.click('[data-act="prof-go"]');
+  await o4.page.waitForFunction(() => !document.getElementById('p-dlg').open, null, { timeout: 10000 });
+  const pc = o4.routes.calls.filter((c) => c.name === 'payroll_profile_put').pop();
+  t('給与設定の保存: 変えた値・期間の初日・版・理由を送り、画面に無い項目（住民税・性別）は消さない', !!pc && pc.args.p_data.base === 1150 && pc.args.p_effective_from === '2025-12-16' && pc.args.p_rev === 1 && pc.args.p_reason === '見本の昇給'
+    && pc.args.p_data.resident_tax['2026-01'] === 9000 && pc.args.p_data.gender === 'female' && pc.args.p_data.ins.health.std === 150000, pc && pc.args);
+  /* freee の書き出しの取り込み: 画面の中だけで読み、違いの表は口座を下4桁だけ・送る時に全桁 */
+  const csv = '従業員番号,氏名,給与形態,基本給,時給,口座種別,銀行コード,支店コード,口座番号,口座名義\r\nF-1,見本 一郎,月給,245000,,普通,9999,001,7654321,ﾐﾎﾝ ｲﾁﾛｳ\r\nF-9,見本 不明,時給,,1000,,,,,\r\n';
+  await o4.page.setInputFiles('#i-file', { name: 'freee.csv', mimeType: 'text/csv', buffer: Buffer.from(csv, 'utf8') });
+  await o4.page.waitForSelector('[data-act="imp-go"]');
+  const it = await o4.page.textContent('#p-main');
+  t('取り込み: 違い（基本給）と口座の下4桁を見せ、全桁は出さない・名簿に無い人は送らない', /基本給・時給など：240,000円 → 245,000円/.test(it) && /口座：＊＊＊4321/.test(it) && !/7654321/.test(it) && /見つかりません（送りません）/.test(it) && /1人分を送る/.test(it));
+  await shot(o4.page, 'payroll.import.pc');
+  o4.page.once('dialog', (d) => d.accept());
+  await o4.page.click('[data-act="imp-go"]');
+  await o4.page.waitForFunction(() => !document.querySelector('[data-act="imp-go"]'), null, { timeout: 10000 });
+  const ic = o4.routes.calls.filter((c) => c.name === 'payroll_import_put').pop();
+  t('取り込み: 送るのは名簿に合った1人だけ・口座の全桁と違いの値', !!ic && ic.args.p_rows.length === 1 && ic.args.p_rows[0].staff_id === 's-01' && ic.args.p_rows[0].patch.base === 245000 && ic.args.p_rows[0].bank.number === '7654321' && !!ic.args.p_reason, ic && ic.args);
   await o4.page.click('[data-act="bank"][data-sid="s-01"]');
   await shot(o4.page, 'payroll.bank-dialog.pc', false);
   await o4.page.keyboard.press('Escape');

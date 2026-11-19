@@ -824,7 +824,8 @@
   var GATE = {
     mfa: ['二段階のログインを済ませてください', '給与の画面は、二段階のログイン（認証アプリの6桁）を済ませた時だけ開けます。ログインの画面で6桁を入れてから開き直してください。'],
     denied: ['給与の画面は開けません', 'このアカウントは給与の名簿に入っていません。給与の金額を見られるのは、管理者と、管理者が給与の名簿に入れた人だけです。必要な時は管理者に伝えてください。'],
-    nocalc: ['画面の部品を読み込めませんでした', 'ページを読み込み直してください。直らない時は管理者に知らせてください。']
+    nocalc: ['画面の部品を読み込めませんでした', 'ページを読み込み直してください。直らない時は管理者に知らせてください。'],
+    error: ['ログインを確かめられませんでした', '電波・Wi-Fi を確かめてから、ページを読み込み直してください。']
   };
   function showGate(why) {
     view = 'gate'; masked = false; closeDlg(); bs = null; calc = null; importRows = null;
@@ -937,7 +938,8 @@
       if (!ok) { view = 'gate'; return null; }
       return window.SUAuth.check().then(function (st) {
         var S = window.SUAuth.STATUS;
-        if (!st || st.status !== S.OK) { showGate('denied'); return null; }
+        if (!st || st.status === S.ERROR) { showGate('error'); return null; }
+        if (st.status !== S.OK) { showGate('denied'); return null; }
         if (st.aal !== 'aal2') { showGate('mfa'); return null; }
         role = st.role;
         view = 'app';
@@ -948,7 +950,7 @@
         try { if (window.SUPerf) window.SUPerf.ready(); } catch (_) {}
         return load(false);
       });
-    })['catch'](function (e) { note('起動', e); showGate('denied'); });
+    })['catch'](function (e) { note('起動', e); showGate('error'); });
   }
   var go = function () { try { boot(); } catch (e) { note('起動', e); } };
   if (window.SUFacility && typeof window.SUFacility.onReady === 'function') window.SUFacility.onReady(go); else go();
