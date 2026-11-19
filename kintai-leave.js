@@ -184,7 +184,12 @@
     var auto = hire ? autoGrants(hire, profile, asOf) : [];
     var lots = lotsOf(auto, o.grants, null);
     var bal = balance(lots, o.uses, asOf);
-    return { hire: hire, auto: auto, lots: lots, balance: bal, obligation: obligation5(lots, o.uses, asOf), next: hire ? nextGrant(hire, profile, asOf) : null, proportional: !!propRow(profile) };
+    /* 年5日の基準日は、移行日より前の自動の付与も使う（残りには数えないが、付与した日は本当にあった。付与しない日は除く・仮置き）。
+       移行日より前の使用は記録に無いので、その時は beforeOpening の印を付ける */
+    var obLots = lots.concat(auto.filter(function (g) { return g.status === 'opening'; }).map(function (g) { return { grant_date: g.grant_date, days: g.days, kind: 'auto', expires: g.expires }; }));
+    var ob = obligation5(obLots, o.uses, asOf), open = isDate(profile.opening_date) ? profile.opening_date : null;
+    if (ob.state !== 'none' && open && ob.grant_date < open) ob.beforeOpening = open;
+    return { hire: hire, auto: auto, lots: lots, balance: bal, obligation: ob, next: hire ? nextGrant(hire, profile, asOf) : null, proportional: !!propRow(profile) };
   }
   /* L2 の注意: 雇用形態がパート・臨時なのに週の所定日数が入っていない */
   function needsWeekly(employmentType, profile) {

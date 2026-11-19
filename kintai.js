@@ -104,10 +104,14 @@
     periodchanged: 'この月分の期間が、画面を開いた後に変わりました（締め日の変更など）。読み直してから、もう一度締めてください。',
     dup: 'その職員マスタの人は、もう別の職員と結んであります（同じ日の有休の使用も1つまでです）。読み直してから確かめてください。', baddays: '日数の形が違います（使用は 1日か半日・付与は 0.5〜40 日）。',
     nomaster: '職員マスタにその人が見つかりませんでした。職員マスタを読み直してください。', masterrow: '職員マスタから足した職員には、別の職員マスタの人を結べません。',
-    master: '職員マスタから足した人には、別の職員マスタの人を結べません。', badnote: 'メモが長すぎます（200字まで）。' };
+    master: '職員マスタから足した人には、別の職員マスタの人を結べません。', badnote: 'メモが長すぎます（200字まで）。',
+    linked: 'その職員マスタの人は、もう勤怠の職員と結んであります。読み直してください。', exists: 'その職員マスタの人は、もう勤怠の職員として足してあります。読み直してください。',
+    retired: '職員マスタで退職日を過ぎているため足せません。', retire_unknown: '職員マスタの退職日が読めないため足せません。職員マスタの退職日を確かめてください。',
+    badid: '職員マスタの番号の形が勤怠に入りません。管理者に知らせてください。', badname: '職員マスタの氏名が空か長すぎるため足せません。職員マスタを確かめてください。' };
   /* 有給の窓では、打刻向けの言い方の断り（badkind・badvalue）を有給の言葉に替える */
   var NG_LEAVE = { badkind: '付与の種類が違います（移行の残りか、手で足すかを選んでください）。', badvalue: '入れた値を受け付けられませんでした（日数・週の所定日数・時間・メモの長さを確かめてください）。',
-    locked: 'その日は締めた月分に入っているため、足すことも取り消すこともできません。直す時は管理者が締めを解除してください。' };
+    locked: 'その日は締めた月分に入っているため、足すことも取り消すこともできません。直す時は管理者が締めを解除してください。',
+    dup: 'その日の有休の使用はもう入っています（同じ人・同じ日は1つまで）。直す時は、今の使用を取り消してから足してください。' };
   function leaveMsg(e) { return e && e.kintai && NG_LEAVE[e.kintai] ? NG_LEAVE[e.kintai] : msgOf(e); }
   function friendly(e) {
     var code = e && e.code, m = String((e && e.message) || e || '');
@@ -448,8 +452,8 @@
   function staffById(sid) { return (data && data.staff || []).filter(function (s) { return s.staff_id === sid; })[0] || null; }
   function staffSorted() { return (data && data.staff || []).slice().sort(function (a, b) { return (a.office || '') < (b.office || '') ? -1 : (a.office || '') > (b.office || '') ? 1 : (a.code < b.code ? -1 : 1); }); }
   function srcOf(s) { return s && s.source === 'master' ? 'master' : 'shift'; }
-  /* 結んだ職員マスタの id（マスタから足した人は m_ の後ろ・K1） */
-  function masterIdOf(s) { if (!s) return null; if (s.master_id) return String(s.master_id); return srcOf(s) === 'master' && /^m_/.test(s.staff_id) ? s.staff_id.slice(2) : null; }
+  /* 結んだ職員マスタの id（DB の master_id だけを見る。m_ の名前から読まない） */
+  function masterIdOf(s) { return s && s.master_id ? String(s.master_id) : null; }   /* 外した m_ の行は master_id が空（休止）＝結んでいない */
   function masterOf(s) { var id = masterIdOf(s); return id && masterSt && masterSt.byId ? masterSt.byId[id] || null : null; }
   function inService(m) { return !!m && (!m.retire_date || m.retire_date >= today()); }
   function loadMaster() {
@@ -1028,7 +1032,7 @@
     if (!ctx.mid && v === ctx.cur) { msg.textContent = '変えた所がありません。'; return; }
     var reason = needReason(msg); if (!reason) return;
     var o = v ? linkedMap()[v] : null, ops = [];
-    if (o && o.staff_id !== sid && srcOf(o) === 'master') ops.push({ p_staff_id: o.staff_id, p_master_id: null, p_reason: reason });   /* 先に m_ の行を外す（休止になる） */
+    if (o && o.staff_id !== sid && srcOf(o) === 'master' && o.master_id === v) ops.push({ p_staff_id: o.staff_id, p_master_id: null, p_reason: reason });   /* 先に m_ の行を外す（休止になる） */
     ops.push({ p_staff_id: sid, p_master_id: v, p_reason: reason });
     busy = true; var restore = pressBusy(btn, '保存しています…', $('g-dlg-f')), done = 0;
     var run = function () { if (done >= ops.length) return null; return rpc('kintai_staff_link', ops[done]).then(okOr).then(function () { done++; return run(); }); };
@@ -1105,7 +1109,8 @@
     var b = '<div class="kv"><span>入職日</span><b>' + (sm.hire ? esc(ymdJa(sm.hire)) : '分かりません') + (x.m && x.m.hire_date ? '<span class="raw">（職員マスタ ' + esc(ymdJa(x.m.hire_date)) + '）</span>' : '') + '</b>' +
       '<span>残り</span><b>' + esc(String(bal.remain)) + ' 日' + (bal.soon ? '（期限の近い分 ' + esc(String(bal.soon.days)) + ' 日・' + esc(ymdJa(bal.soon.expires)) + ' まで）' : '') + (bal.over ? '<span class="tag ng">付与の無い使用 ' + esc(String(bal.over)) + ' 日</span>' : '') + '</b>' +
       '<span>次の付与</span><b>' + (sm.next ? esc(ymdJa(sm.next.grant_date)) + '　' + esc(String(sm.next.days)) + ' 日' : '—') + '</b>' +
-      '<span>年5日</span><b>' + (ob.state === 'none' ? '対象外（10日以上の付与がまだありません）' : esc(ymdJa(ob.grant_date)) + '〜' + esc(ymdJa(ob.end)) + ' に ' + esc(String(ob.used)) + ' 日' + (ob.planned ? '（この先の予定 ' + esc(String(ob.planned)) + ' 日）' : '') + ' ' + obTag(ob)) + '</b></div>' +
+      '<span>年5日</span><b>' + (ob.state === 'none' ? '対象外（10日以上の付与がまだありません）' : esc(ymdJa(ob.grant_date)) + '〜' + esc(ymdJa(ob.end)) + ' に ' + esc(String(ob.used)) + ' 日' + (ob.planned ? '（この先の予定 ' + esc(String(ob.planned)) + ' 日）' : '') + ' ' + obTag(ob) +
+        (ob.beforeOpening ? '<br><span class="help">移行日（' + esc(ymdJa(ob.beforeOpening)) + '）より前の使用は記録に無いため数えていません。その分は本人の記録で確かめてください。</span>' : '')) + '</b></div>' +
       (x.needWeekly ? '<div class="band warn" style="margin-top:8px">雇用形態がパート・臨時ですが、週の所定日数が入っていません。下の設定に入れると比例付与で数えます（入れないと通常の付与で数えます）。</div>' : '') +
       '<fieldset><legend>付与</legend><div class="tw"><table><thead><tr><th>付与日</th><th class="num">日数</th><th>種類</th><th>期限（この日まで）</th><th class="num">使った</th><th class="num">残り</th><th>状態</th><th></th></tr></thead><tbody>' + (grows || '<tr><td colspan="8" class="empty">付与はまだありません</td></tr>') + '</tbody></table></div>' +
       '<div class="row"><label>付与日 <input type="date" id="lv-g-date"></label><label>日数 <input type="number" id="lv-g-days" min="0.5" max="40" step="0.5" style="width:6em"></label>' +
@@ -1117,7 +1122,7 @@
       '<fieldset><legend>設定</legend><div class="kv">' +
       '<label for="lv-p-hire">入職日の上書き</label><span><input type="date" id="lv-p-hire" value="' + esc(p.hire_date || '') + '"> 空＝職員マスタの入職日</span>' +
       '<label for="lv-p-wd">週の所定日数</label><span><input type="number" id="lv-p-wd" min="0.5" max="7" step="0.5" style="width:6em" value="' + esc(p.weekly_days != null ? String(+p.weekly_days) : '') + '"> 日（比例付与を使う人だけ）</span>' +
-      '<label for="lv-p-wh">週の所定時間</label><span><input type="number" id="lv-p-wh" min="0" max="80" step="0.5" style="width:6em" value="' + esc(p.weekly_hours != null ? String(+p.weekly_hours) : '') + '"> 時間</span>' +
+      '<label for="lv-p-wh">週の所定時間</label><span><input type="number" id="lv-p-wh" min="0.5" max="168" step="0.5" style="width:6em" value="' + esc(p.weekly_hours != null ? String(+p.weekly_hours) : '') + '"> 時間</span>' +
       '<label for="lv-p-open">移行日</label><span><input type="date" id="lv-p-open" value="' + esc(p.opening_date || '') + '"> この日より前の自動の付与は数えません</span>' +
       '<span>付与しない日</span><span>' + (sm.auto.length ? sm.auto.filter(function (g) { return g.status !== 'opening'; }).map(function (g) { return '<label style="display:inline-flex;gap:4px;margin-right:12px"><input type="checkbox" data-skip="' + esc(g.grant_date) + '"' + (g.status === 'skip' ? ' checked' : '') + '> ' + esc(ymdJa(g.grant_date)) + '（' + esc(String(g.days)) + ' 日）</label>'; }).join('') : '<span class="raw">自動の付与はまだありません</span>') + '<br><span class="help">出勤率が8割に届かなかった年など、付与しない付与日に印を付けます</span></span>' +
       '</div><div class="row"><button type="button" class="btn sm pri" data-act="lv-prof-save">設定を保存する</button></div></fieldset>' +
@@ -1150,7 +1155,7 @@
       var hv = $('lv-p-hire').value || null, ov = $('lv-p-open').value || null, wd = numOrNull($('lv-p-wd').value), wh = numOrNull($('lv-p-wh').value);
       if ((hv && !L.isDate(hv)) || (ov && !L.isDate(ov))) { msg.textContent = '日付の形が違います。'; return; }
       if (wd != null && !(wd >= 0.5 && wd <= 7 && wd * 2 === Math.round(wd * 2))) { msg.textContent = '週の所定日数は 0.5〜7 日（0.5 日きざみ）で入れてください。'; return; }
-      if (wh != null && !(wh >= 0 && wh <= 80)) { msg.textContent = '週の所定時間は 0〜80 時間で入れてください。'; return; }
+      if (wh != null && !(wh > 0 && wh <= 168 && wh * 10 === Math.round(wh * 10))) { msg.textContent = '週の所定時間は 0 より大きく 168 時間までで入れてください（小数は1けたまで）。'; return; }
       var sk = [], cbs = document.querySelectorAll('#g-dlg-b [data-skip]'), shown = {};
       for (var i = 0; i < cbs.length; i++) { shown[cbs[i].getAttribute('data-skip')] = 1; if (cbs[i].checked) sk.push(cbs[i].getAttribute('data-skip')); }
       /* 画面に出していない付与しない日（移行日より前の分など）は、そのまま残す（黙って消さない） */
