@@ -163,32 +163,54 @@ t('シフトの取り込みは期間にかかるカレンダー月ごとに buil
 t('見出し・締めの窓・解除の確かめ・直しの履歴の印刷は「○月分（期間）」', /esc\(perLabel\(\)\)/.test(K) && /openDlg\(perLabel\(\) \+ 'を締めます'/.test(K) && /prompt\(perLabel\(\) \+ ' の締めを解除します。/.test(K) && /corpName\(\) \+ '　勤怠 ' \+ perLabel\(\)/.test(K));
 t('月の選びは「月分」・横に期間（textContent で入れる）', /<label>月分 <input type="month" id="g-ym"/.test(H) && /<span id="g-period" class="raw"><\/span>/.test(H) && /function paintPer\(\) \{ var el = \$\('g-period'\); if \(el\) el\.textContent = /.test(K));
 t('設定に締め日（月末・1〜28日）・保存で close_day を送る（落とさない）・欄は今の設定から（締めた月分の控えから出さない）・片方の月のシフトが無くてもある月は取り込む', /var cdNow = C\.fillConfig\(\(data && data\.settings && data\.settings\.config\) \|\| \{\}\)\.close_day;/.test(K) && /if \(!have\.length\) \{ shiftInfo = \{ ok: false/.test(impFn) && /id="s-closeDay"/.test(K) && /cfg\.close_day = \+\$\('s-closeDay'\)\.value;/.test(K) && /Array\(28\)/.test(K));
-t('前に開いた月分が無い時だけ、期間が今日を過ぎていれば次の月分へ（読み戻しの形は今までどおり）', /autoYm = !C\.isYm\(y\);/.test(K) && /if \(autoYm\) \{ autoYm = false; if \(C\.jstDate\(Date\.now\(\)\) > per\(\)\.to\)/.test(K));
+/* ★見直し2（2026-11-19）: autoYm を真偽から「向けた月」に変え、その月を読んだ時だけ使う形に直したので、この試験の形の期待を改めた */
+t('前に開いた月分が無い時だけ、期間が今日を過ぎていれば次の月分へ（読み戻しの形は今までどおり）・向けた月を読んだ時だけ使い、手で月を選んだら消す',
+  /autoYm = C\.isYm\(y\) \? null : ym;/.test(K) && /if \(autoYm && autoYm === ym\) \{ autoYm = null; if \(C\.jstDate\(Date\.now\(\)\) > per\(\)\.to\)/.test(K) &&
+  /function setYm\(v, keepAuto\) \{ if \(!C\.isYm\(v\) \|\| v === ym\) return; if \(!keepAuto\) autoYm = null;/.test(K));
 t('DB の新しい断り（badperiod・overlap・closeday・periodchanged）を職員の言葉で出す', /badperiod: '/.test(K) && /overlap: '/.test(K) && /closeday: '/.test(K) && /periodchanged: '/.test(K));
 const todayFn = K.slice(K.indexOf('function goToday('), K.indexOf('function moveDay('));
 t('反証レビューの指摘1:「今日」は今日のカレンダー月へ移り（ymFor を使わない）、期間に入っていなければ読んだ後に次の月分へ', /a === 'day-today'\) goToday\(\)/.test(K) &&
-  /ty = td\.slice\(0, 7\)/.test(todayFn) && !/ymFor/.test(todayFn) && /autoYm = true; setYm\(ty\);/.test(todayFn) && /if \(ty === ym\) \{ setYm\(C\.nextYm\(ym\)\); return; \}/.test(todayFn));
+  /ty = td\.slice\(0, 7\)/.test(todayFn) && !/ymFor/.test(todayFn) && /autoYm = ty; setYm\(ty, true\);/.test(todayFn) && /if \(ty === ym\) \{ setYm\(C\.nextYm\(ym\)\); return; \}/.test(todayFn));
 /* 動きの確かめ: 画面の goToday・per・inPer と、読み込みの後の autoYm の決め方を取り出して、偽の setYm と期間で動かす（2か月以上離れた月分から押す） */
 {
   const loadFn = K.slice(K.indexOf('function load('), K.indexOf('function recompute('));
-  const autoLine = /if \(autoYm\) \{[^\n]*\}/.exec(loadFn)[0];
+  const autoLine = /if \(autoYm && autoYm === ym\) \{[^\n]*\}/.exec(loadFn)[0];
+  const setYmFn = /function setYm\(v, keepAuto\) \{[^\n]*\}/.exec(K)[0];   /* 画面の setYm をそのまま使う（読み込みは偽物・順番に流す） */
   const C = require(path.join(ROOT, 'kintai-calc.js'));
-  const sim = (startYm, todayIso, close) => {
-    const periodFor = (y) => { if (!close) return null; const yy = +y.slice(0, 4), mm = +y.slice(5, 7); const f = (d) => d.toISOString().slice(0, 10);
-      return { from: f(new Date(Date.UTC(yy, mm - 2, close + 1))), to: f(new Date(Date.UTC(yy, mm - 1, close))) }; };
-    const st = { ym: startYm, data: { period: periodFor(startYm) }, autoYm: false, visits: [] };
-    const fake = new Function('C', 'st', 'periodFor', 'NOW', 'Date0', `
+  const periodFor = (close) => (y) => { if (!close) return null; const yy = +y.slice(0, 4), mm = +y.slice(5, 7); const f = (d) => d.toISOString().slice(0, 10);
+    return { from: f(new Date(Date.UTC(yy, mm - 2, close + 1))), to: f(new Date(Date.UTC(yy, mm - 1, close))) }; };
+  /* steps: 'today'（「今日」を押す）・'pick:YYYY-MM'（手で月を選ぶ）・'run'（待っている読み込みを1つ終える・追い越されたものは捨てる）・'fail'（1つ失敗させる） */
+  const play = (startYm, todayIso, close, steps) => {
+    const st = { visits: [] };
+    const fn = new Function('C', 'st', 'PF', 'NOW', 'Date0', 'STEPS', `
       var Date = function () { return new Date0(NOW); }; Date.now = function () { return NOW; }; Date.parse = Date0.parse; Date.UTC = Date0.UTC;
-      var selDate = null, busy = false, my = 0, ym = st.ym, data = st.data, autoYm = st.autoYm;
-      function paint() {}
+      var selDate = null, busy = false, ym = '${startYm}', data = { period: PF('${startYm}') }, autoYm = null, gen = 0, queue = [];
+      var shiftInfo, editsCache, month, LS_YM = 'kintai_ym';
+      function lsSet() {} function paintPer() {} function paint() {}
+      function $() { return {}; }
       function per() { return C.periodOf(ym, data && data.period); }
       function inPer(d) { var p = per(); return d >= p.from && d <= p.to; }
-      function load() { data = { period: periodFor(ym) }; (function () { ${autoLine} })(); }
-      function setYm(v) { if (!C.isYm(v) || v === ym) return; ym = v; st.visits.push(v); load(); }
+      function load() { var my = ++gen, want = ym; st.visits.push(want); queue.push(function (ok) {
+        if (my !== gen) return;
+        if (!ok) return;
+        data = { period: PF(want) };
+        (function () { ${autoLine} })();
+      }); }
+      ${setYmFn}
       ${todayFn}
-      goToday(); return ym;`);
-    return { end: fake(C, st, periodFor, Date.parse(todayIso), Date), visits: st.visits };
+      function drain() { while (queue.length) queue.shift()(true); }
+      STEPS.forEach(function (s) {
+        if (s === 'today') goToday();
+        else if (s === 'run') { if (queue.length) queue.shift()(true); }
+        else if (s === 'fail') { if (queue.length) queue.shift()(false); }
+        else if (s === 'drain') drain();
+        else if (s.indexOf('pick:') === 0) setYm(s.slice(5));
+      });
+      drain();
+      return ym;`);
+    return { end: fn(C, st, periodFor(close), Date.parse(todayIso), Date, steps), visits: st.visits };
   };
+  const sim = (startYm, todayIso, close) => play(startYm, todayIso, close, ['today']);
   const a1 = sim('2026-09', '2026-11-19T10:00:00+09:00', 15);
   t('15日締め・9月分から 11/19 に「今日」→ 11月を読んで期間（10/16〜11/15）の後なので12月分へ（1か月だけ進まない）', a1.end === '2026-12' && a1.visits.join() === '2026-11,2026-12', a1);
   const a2 = sim('2027-03', '2026-11-10T10:00:00+09:00', 15);
@@ -197,6 +219,12 @@ t('反証レビューの指摘1:「今日」は今日のカレンダー月へ移
   t('15日締め・今日の月の11月分を開いている時 11/19 に「今日」→ 次の12月分', a3.end === '2026-12', a3);
   const a4 = sim('2026-08', '2026-11-19T10:00:00+09:00', 0);
   t('月末締め・8月分から「今日」→ 11月分', a4.end === '2026-11' && a4.visits.join() === '2026-11', a4);
+  const b1 = play('2026-09', '2026-11-19T10:00:00+09:00', 15, ['today', 'pick:2026-05', 'drain']);
+  t('見直し2:「今日」の読み込みが終わる前に手で5月分を選ぶ → 追い越された読み込みは捨て、5月分から勝手に進まない', b1.end === '2026-05', b1);
+  const b2 = play('2026-09', '2026-11-19T10:00:00+09:00', 15, ['today', 'fail', 'pick:2026-05', 'drain']);
+  t('見直し2:「今日」の読み込みが失敗した後に手で5月分を選ぶ → 5月分のまま（向けた月の印は手で選んだ時に消える）', b2.end === '2026-05', b2);
+  const b3 = play('2026-09', '2026-11-19T10:00:00+09:00', 15, ['today', 'fail', 'today', 'drain']);
+  t('見直し2: 失敗の後にもう一度「今日」→ 今日の月分（12月分）へ', b3.end === '2026-12', b3);
 }
 t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-19.2（両画面でそろえる）', /kintai\.js\?v=2026-11-19\.2"/.test(H) && /kintai-calc\.js\?v=2026-11-19\.2"/.test(H) && /kintai-calc\.js\?v=2026-11-19\.2"/.test(HC));
 

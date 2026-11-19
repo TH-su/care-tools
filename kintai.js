@@ -50,7 +50,9 @@
   function perLabel() { return C.periodLabel(ym, data && data.period); }
   /* 締められるのは日本時間の今日がその月分の期間の末日より後の月分だけ（期間の途中・先の月分は DB も notyet で断る） */
   function notYet() { return !!ym && C.jstDate(Date.now()) <= per().to; }
-  var autoYm = false;   /* 前に開いた月分が無く「今月」で開いた時だけ、期間が今日を過ぎていれば次の月分へ移る */
+  /* 「今日」で向けた月（'YYYY-MM'）。前に開いた月分が無く今月で開いた時と「今日」を押した時だけ入れ、その月を読んだ時だけ使う
+     （期間が今日を過ぎていれば次の月分へ移る）。手で月を選んだら消す＝追い越された読み込み・失敗の後に、手で選んだ月から勝手に進まない（見直し2） */
+  var autoYm = null;
 
   /* 短い知らせ（画面の下・自動で消える・aria-live） */
   var toastT = null;
@@ -196,7 +198,7 @@
     return rpc('kintai_month_get', { p_ym: ym }).then(okOr).then(function (d) {
       if (my !== gen) return;
       data = d;
-      if (autoYm) { autoYm = false; if (C.jstDate(Date.now()) > per().to) { busy = false; my = -1; setYm(C.nextYm(ym)); return; } }
+      if (autoYm && autoYm === ym) { autoYm = null; if (C.jstDate(Date.now()) > per().to) { busy = false; my = -1; setYm(C.nextYm(ym)); return; } }
       if (withImport && !isLocked()) {
         sync('シフトを取り込んでいます…');
         return importShift(my)['catch'](function (e) {
@@ -927,15 +929,17 @@
 
   /* ── 操作 ── */
   function setTab(t) { if (TABS.indexOf(t) < 0) t = 'day'; tab = t; lsSet(LS_TAB, t); paint(); }
-  function setYm(v) { if (!C.isYm(v) || v === ym) return; ym = v; lsSet(LS_YM, v); $('g-ym').value = v; shiftInfo = null; editsCache = null; data = null; month = null; paintPer(); load(true); }
+  function setYm(v, keepAuto) { if (!C.isYm(v) || v === ym) return; if (!keepAuto) autoYm = null; ym = v; lsSet(LS_YM, v); $('g-ym').value = v; shiftInfo = null; editsCache = null; data = null; month = null; paintPer(); load(true); }
   /* 「今日」: 今日のカレンダー月へ移り、その月分の期間に今日が入っていなければ次の月分へ（読んだ後に autoYm と同じ形で決める）。
      ymFor は ±1日の移動向けなので使わない（2か月以上離れた月分から押しても今日の月分へ行く・反証レビューの指摘1） */
   function goToday() {
     var td = C.jstDate(Date.now()), ty = td.slice(0, 7);
     selDate = td;
+    /* 読み込みに失敗した後など期間が分からない時は、今日の月を（今開いている月なら読み直して）読んでから決める */
+    if (!data) { autoYm = ty; if (ty === ym) load(true); else setYm(ty, true); return; }
     if (inPer(td)) { paint(); return; }
     if (ty === ym) { setYm(C.nextYm(ym)); return; }   /* 今日の月で今日が期間の後＝次の月分 */
-    autoYm = true; setYm(ty);
+    autoYm = ty; setYm(ty, true);
   }
   function moveDay(n) {
     var d = C.addDays(selDate || C.jstDate(Date.now()), n);
@@ -1041,7 +1045,7 @@
       $('g-app').hidden = false;
       var t = lsGet(LS_TAB); tab = TABS.indexOf(t) >= 0 ? t : 'day';
       var y = lsGet(LS_YM); ym = C.isYm(y) ? y : todayYm();
-      autoYm = !C.isYm(y);
+      autoYm = C.isYm(y) ? null : ym;
       $('g-ym').value = ym;
       bind();
       try { if (window.SUPerf) window.SUPerf.ready(); } catch (_) {}

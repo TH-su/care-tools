@@ -432,6 +432,39 @@
     }
     return total / MIN;
   }
+  /* 1日の実働を時刻の順の並びにする（0101・反証レビュー）: 塊ごとに 早出（予定の開始より前・法定内残業の候補 li）→ 予定の中（si）→ 後ろの残業（li）、
+   * 予定の無い塊は全部 li。法定休日の分は li の後ろから（足りなければ si の後ろから）除き、日の法定外（8時間・予定の長い方を超えた分）は時刻の後ろから除く。
+   * 返す: 残った並び [[種類, 分], …]（週40時間の超過も、この並びの後ろから当てる） */
+  function daySeq(bl, dhol, legal) {
+    var seq = [], bs = bl.slice().sort(function (x, y) { return (x.countStart || x.schedStart || 0) - (y.countStart || y.schedStart || 0); });
+    for (var i = 0; i < bs.length; i++) {
+      var c = bs[i];
+      if (!(c.workMin > 0)) continue;
+      if (c.sched) {
+        var ot = Math.max(0, c.overtimeMin || 0), ea = 0;
+        if (c.countStart != null && c.schedStart != null && c.countStart < c.schedStart) ea = Math.min(ot, Math.round((c.schedStart - c.countStart) / MIN));
+        seq.push(['li', ea], ['si', c.workMin - ot], ['li', ot - ea]);
+      } else seq.push(['li', c.workMin]);
+    }
+    var cut = function (n, kind) {
+      for (var k = seq.length - 1; k >= 0 && n > 0; k--) {
+        if (kind && seq[k][0] !== kind) continue;
+        var m = Math.min(n, seq[k][1]); seq[k][1] -= m; n -= m;
+      }
+      return n;
+    };
+    cut(cut(dhol || 0, 'li'), 'si');
+    cut(legal || 0, null);
+    return seq;
+  }
+  function seqLi(seq) { var n = 0; for (var i = 0; i < seq.length; i++) if (seq[i][0] === 'li') n += seq[i][1]; return n; }
+  /* 並びの後ろから n 分を取った時、そのうちの li の分 */
+  function tailLi(seq, n) {
+    var li = 0;
+    for (var k = seq.length - 1; k >= 0 && n > 0; k--) { var m = Math.min(n, seq[k][1]); if (seq[k][0] === 'li') li += m; n -= m; }
+    return li;
+  }
+
   /* 要確認か（要確認の印があって、確認済みでない） */
   function needsReview(c) {
     if (c.checked) return false;
@@ -562,7 +595,7 @@
         lateCount: 0, lateMin: 0, earlyLeaveCount: 0, earlyLeaveMin: 0, noPunchDays: 0, reviewCount: 0, byOffice: {}, warnings: [],
         absentDays: 0, uncountedMin: 0, holidayMin: 0,
         legalInOverMin: 0, over60Min: 0, nightShiftCount: 0, schedDays: 0, counts: {}, weekOverMin: 0, frameOverMin: 0 };
-      var leadDays = [], liDay = 0, liOf = {};
+      var leadDays = [], liDay = 0, seqOf = {};
       for (j = 0; j < dates.length; j++) {
         var date = dates[j], bl = byDate[date].sort(function (x, y) { return (x.schedStart || x.countStart || 0) - (y.schedStart || y.countStart || 0); });
         var dw = 0, dsw = 0, dflags = [], noPunchAll = bl.length > 0, dnote = dayBy[st.staff_id + '|' + date];
@@ -571,7 +604,7 @@
           /* 前の6日分（前の月分の日）は週40時間の積み上げにだけ使う（日の一覧・合計・要確認に入れない） */
           for (var lx = 0; lx < bl.length; lx++) { dw += bl[lx].workMin; dsw += bl[lx].schedWork; dhol += bl[lx].holidayMin; dot += bl[lx].overtimeMin; }
           var lLegal = Math.max(0, dw - dhol - (cfg.variableMonth ? Math.max(480, dsw) : 480));
-          liOf[date] = Math.max(0, Math.max(0, dot - dhol) - lLegal);
+          seqOf[date] = daySeq(bl, dhol, lLegal);
           leadDays.push({ date: date, workMin: dw, holidayMin: dhol, legalOverMin: lLegal, lead: true });
           continue;
         }
@@ -596,9 +629,10 @@
         /* 法定休日の労働は法定外残業に重ねない（v2-9）。legal_holiday が null なら dhol は 0 で従来どおり */
         var legal = Math.max(0, dw - dhol - (cfg.variableMonth ? Math.max(480, dsw) : 480));
         sum.legalOverMin += legal; sum.workMin += dw;
-        /* 日の法定内残業＝予定を超えた実働（法定休日でない分）のうち、日の法定外でない分（週・総枠の超過は月の合計の後で引く） */
-        liOf[date] = Math.max(0, Math.max(0, dot - dhol) - legal);
-        liDay += liOf[date];
+        /* 日の法定内残業＝予定を超えた実働（早出・後ろの残業・予定の無い勤務。法定休日でない分）のうち、日の法定外（時刻の後ろ）に入らない分
+           （週・総枠の超過は月の合計の後で引く） */
+        seqOf[date] = daySeq(bl, dhol, legal);
+        liDay += seqLi(seqOf[date]);
         if (dw > 0) sum.workDays++;
         /* 有休日数は 0.5 刻み: 有休分 ÷ その日の所定（働く予定もある日は 予定の実働＋有休分・無ければ 480）が 0.5 以下なら 0.5、超えれば 1（仮置き v2-6） */
         var pdays = 0;
@@ -626,10 +660,10 @@
           dd = all2[wi]; wkey = weekOf(dd.date);
           var before = acc[wkey] || 0, after = before + dd.workMin - dd.legalOverMin - dd.holidayMin;
           acc[wkey] = after;
-          /* その日に40時間を超えた分。日の中では予定の時間が先・予定を超えた時間（法定内残業の候補）が後なので、超えた分は後ろの法定内残業から先に当たる
-             （週の予定が40時間を超える週の超過は予定の中から出る＝所定内から減る・反証レビューの指摘2） */
+          /* その日に40時間を超えた分は、その日の時刻の後ろから当たる（後ろの残業 → 予定の中 → 早出の順。分割勤務は後ろの塊から）。
+             当たった所が法定内残業の候補なら法定内残業から、予定の中なら所定内から減る（週の予定が40時間を超える週・反証レビューの指摘2） */
           var inc = Math.max(0, after - 2400) - Math.max(0, before - 2400);
-          if (!dd.lead) { weekLegal += inc; weekFromLi += Math.min(inc, liOf[dd.date] || 0); }
+          if (!dd.lead) { weekLegal += inc; weekFromLi += tailLi(seqOf[dd.date] || [], inc); }
         }
       } else {
         var wsum = {}, wsch = {};
