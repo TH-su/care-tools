@@ -80,7 +80,7 @@ export function profileOk(d, sid) {
         else return false;
       }
     } else if (k === 'fixed_ot') {
-      if (!nul(v)) { if (!isObj(v) || !reOk(v.allowance_code, /^[A-Za-z0-9_-]{1,40}$/) || !yenOk(v.covered_min, 0) || Object.keys(v).some((z) => !['allowance_code', 'covered_min'].includes(z))) return false; }
+      if (!nul(v)) { if (!isObj(v) || !reOk(v.allowance_code, /^[A-Za-z0-9_-]{1,40}$/) || !yenOk(v.covered_min, 0) || ('checked' in v && typeof v.checked !== 'boolean') || Object.keys(v).some((z) => !['allowance_code', 'covered_min', 'checked'].includes(z))) return false; }   /* checked は B の担当が足している */
     } else if (['birth_date', 'entry_date', 'retire_date'].includes(k)) { if (!(nul(v) || dateOk(v))) return false; }
     else if (k === 'gender') { if (!(nul(v) || ['M', 'F', ''].includes(v))) return false; }
     else if (k === 'ins') {

@@ -476,6 +476,10 @@ console.log('12b. 固定残業代（含む分を時間外から先に引く）')
   eq('時間外0分: 固定残業の手当は満額', L(a, 'ffot'), 30000);
   eq('時間外0分: 残業代の行なし', L(a, 'ot_out'), undefined);
   eq('時間外0分: 総支給 172000＋30000', a.gross, 202000);
+  t('含む時間を確かめていない（checked なし）→ fixed_ot_unchecked・金額は同じ', W(a, 'fixed_ot_unchecked'));
+  const ac = go({ legalOverMin: 0 }, { fixed_ot: { allowance_code: 'fot', covered_min: 330, checked: true } });
+  t('checked が true → fixed_ot_unchecked を出さない・金額は同じ', !W(ac, 'fixed_ot_unchecked') && ac.gross === a.gross);
+  t('checked が "true"（文字）は確かめたと見なさない', W(go({ legalOverMin: 0 }, { fixed_ot: { allowance_code: 'fot', covered_min: 330, checked: 'true' } }), 'fixed_ot_unchecked'));
   const b = go({ legalOverMin: 200 });
   eq('時間外200分（含む分330分より少ない）: 残業代の行なし', L(b, 'ot_out'), undefined);
   eq('時間外200分: 手当は満額', L(b, 'ffot'), 30000);
@@ -624,6 +628,15 @@ console.log('13. 区分別の合計と指紋');
   t('厚生年金の on だけ無い → ins_unset に厚生年金だけ・健保は引く', W(u2, 'ins_unset') && /（厚生年金・/.test(u2.warnings.find((w) => w.code === 'ins_unset').msg) && L(u2, 'health') === 10080 && L(u2, 'pension') === undefined);
   t('3つとも on が真偽で入っている（未加入の false を含む）→ ins_unset を出さない', !W(run(pr({ health: { on: false }, pension: { on: false }, emp: { on: false } })), 'ins_unset') && !W(run(pr(INS(200000, 200000))), 'ins_unset'));
   t('役員は雇用保険の on が無くても ins_unset にしない', !W(run(pr({ health: { on: true, std: 300000 }, pension: { on: true, std: 300000 } }, 'board')), 'ins_unset'));
+}
+
+/* 甲乙・扶養の数を確かめたか（代表者の決定 2026-11-19）: 源泉の対象（甲・乙）で dependents_checked が true でない人に dependents_unchecked */
+{
+  const pr = (tax) => ({ pay_type: 'monthly', base: 200000, birth_date: '1990-01-01', ins: { health: { on: false }, pension: { on: false }, emp: { on: false } }, tax });
+  t('甲で dependents_checked が無い → 警告', W(run(pr({ col: 'kou', dependents: 0 })), 'dependents_unchecked'));
+  t('乙で dependents_checked が false → 警告', W(run(pr({ col: 'otsu', dependents: 0, dependents_checked: false })), 'dependents_unchecked'));
+  t('甲で dependents_checked が true → 警告なし', !W(run(pr({ col: 'kou', dependents: 1, dependents_checked: true })), 'dependents_unchecked'));
+  t('源泉の対象外（none）は警告なし', !W(run(pr({ col: 'none' })), 'dependents_unchecked'));
 }
 
 /* 画面向けの口（2026-11-19 結びの段）。支給日の期待値は暦を手で確かめた値 */

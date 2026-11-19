@@ -746,7 +746,7 @@
     bs.profiles.forEach(function (p) {
       var d = p.data, ins = obj(d.ins), tx = obj(d.tax), miss = missingOf(p);
       h += '<tr><td class="nm">' + esc(p.name) + (d.exclude === true ? ' <span class="tag">計算から外す</span>' : '') + (p.none ? ' <span class="tag warn">給与の設定なし</span>' : '') + '</td><td>' + esc(PAY_TYPE[d.pay_type] || '—') + '</td><td class="num">' + esc(d.pay_type === 'board' ? yen(d.board_pay) : (d.base != null ? yen(d.base) : '—')) + '</td>' +
-        '<td>' + esc((obj(ins.health).std ? yen(ins.health.std) : '—') + '／' + (obj(ins.pension).std ? yen(ins.pension.std) : '—')) + '</td><td>' + esc(tx.col === 'kou' ? '甲・扶養' + num(tx.dependents) : tx.col === 'otsu' ? '乙' : tx.col === 'none' ? 'なし' : '—') + (tx.dependents_checked === false ? ' <span class="tag warn">⚠ 扶養が未確認</span>' : '') + '</td>' +
+        '<td>' + esc((obj(ins.health).std ? yen(ins.health.std) : '—') + '／' + (obj(ins.pension).std ? yen(ins.pension.std) : '—')) + '</td><td>' + esc(tx.col === 'kou' ? '甲・扶養' + num(tx.dependents) : tx.col === 'otsu' ? '乙' : tx.col === 'none' ? 'なし' : '—') + ((tx.col === 'kou' || tx.col === 'otsu') && tx.dependents_checked !== true ? ' <span class="tag warn">⚠ 扶養が未確認</span>' : '') + (d.fixed_ot && typeof d.fixed_ot === 'object' && d.fixed_ot.checked !== true ? ' <span class="tag warn">⚠ 固定残業の時間が未確認</span>' : '') + '</td>' +
         '<td>' + esc(bankText(p.bank_last4) || '—') + '</td><td>' + (miss.length ? '<span class="tag ng">⚠ 抜け：' + esc(miss.join('・')) + '</span>' : '<span class="tag ok">✓ なし</span>') + '</td>' +
         '<td class="nm"><button type="button" class="btn" data-act="prof" data-sid="' + esc(p.staff_id) + '">直す</button> <button type="button" class="btn" data-act="bank" data-sid="' + esc(p.staff_id) + '">口座</button></td></tr>';
     });
@@ -774,12 +774,17 @@
     function amtOf(list, code) { var x = arr(list).filter(function (a) { return a && a.code === code; })[0]; return x ? x.amount : ''; }
     if (pays.length) h += '<p class="help">手当（月の額・空欄は無し）</p><div class="kv">' + pays.map(function (a, i) { return inp('f-al' + i, a.name || a.code, amtOf(d.allowances, a.code), NUMA); }).join('') + '</div>';
     if (deds.length) h += '<p class="help">固定の控除（月の額・空欄は無し）</p><div class="kv">' + deds.map(function (a, i) { return inp('f-de' + i, a.name || a.code, amtOf(d.deductions, a.code), NUMA); }).join('') + '</div>';
-    h += '<div class="kv">' + inp('f-cm', '通勤手当（月の額・円）', cm.monthly, NUMA) + sel('f-cmm', '通勤の手段', cm.means, [['', '（選ぶ）'], ['public', '公共交通'], ['car', '車・自転車'], ['mixed', '併用']]) + inp('f-cmd', '片道の距離（km）', cm.distance_km, ' inputmode="decimal"') + '</div></fieldset>';
+    h += '<div class="kv">' + inp('f-cm', '通勤手当（月の額・円）', cm.monthly, NUMA) + sel('f-cmm', '通勤の手段', cm.means, [['', '（選ぶ）'], ['public', '公共交通'], ['car', '車・自転車'], ['mixed', '併用']]) + inp('f-cmd', '片道の距離（km）', cm.distance_km, ' inputmode="decimal"') + '</div>';
+    /* 固定残業代（手当・含む時間（分）・確かめた）。手当を選ばなければ固定残業代なし（代表者の決定 2026-11-19・欄の位置は仮置き） */
+    var fo = obj(d.fixed_ot);
+    h += '<p class="help">固定残業代（手当に含む時間外の分。含む分を時間外から先に引き、超えた分だけを残業代として払います）</p><div class="kv">' +
+      sel('f-fot', '固定残業代の手当', fo.allowance_code || '', [['', '（なし）']].concat(pays.map(function (a) { return [a.code, a.name || a.code]; }))) +
+      inp('f-fotmin', '含む時間（分）', fo.covered_min, NUMA) + '</div>' + chk('f-fotok', '含む時間を確かめた（freee の画面か雇用契約書で）', fo.checked === true) + '</fieldset>';
     h += '<fieldset><legend>本人</legend><div class="kv">' + inp('f-birth', '生年月日', d.birth_date, ' type="date"') + sel('f-gender', '性別（賃金台帳）', d.gender === 'male' ? 'M' : d.gender === 'female' ? 'F' : d.gender, [['', '（選ぶ）'], ['M', '男'], ['F', '女']]) +
       inp('f-entry', '入社日', d.entry_date, ' type="date"') + inp('f-retire', '退職日', d.retire_date, ' type="date"') + '</div></fieldset>';
     h += '<fieldset><legend>社会保険・雇用保険</legend><div class="row">' + chk('f-h-on', '健康保険に入る', obj(ins.health).on) + chk('f-p-on', '厚生年金に入る', obj(ins.pension).on) + chk('f-e-on', '雇用保険に入る', obj(ins.emp).on) + chk('f-care-ex', '介護保険の対象外', ins.care_exempt === true) + '</div>' +
       '<div class="kv">' + inp('f-h-std', '健保の標準報酬月額（円）', obj(ins.health).std, NUMA) + inp('f-p-std', '厚年の標準報酬月額（円）', obj(ins.pension).std, NUMA) + '</div></fieldset>';
-    h += '<fieldset><legend>税</legend><div class="kv">' + sel('f-col', '源泉の区分', tx.col, [['', '（選ぶ）'], ['kou', '甲欄'], ['otsu', '乙欄'], ['none', '対象外']]) + inp('f-deps', '扶養親族等の数', tx.dependents, NUMA) + '</div>' + chk('f-depok', '扶養の数を確かめた', tx.dependents_checked !== false) +
+    h += '<fieldset><legend>税</legend><div class="kv">' + sel('f-col', '源泉の区分', tx.col, [['', '（選ぶ）'], ['kou', '甲欄'], ['otsu', '乙欄'], ['none', '対象外']]) + inp('f-deps', '扶養親族等の数', tx.dependents, NUMA) + '</div>' + chk('f-depok', '甲乙・扶養の数を確かめた（freee の画面か本人の申告書で）', tx.dependents_checked === true) +
       '<p class="help">住民税（特別徴収・月の額）</p><div class="kv">' + fiscalMonths().map(function (m, i) { return inp('f-rt' + i, (+m.slice(5)) + '月（' + m.slice(0, 4) + '年）', rt[m], NUMA); }).join('') + '</div></fieldset>';
     h += '<fieldset><legend>そのほか</legend><div class="row">' + chk('f-noatt', '勤怠を使わない（役員・固定給）', d.no_attendance === true) + chk('f-excl', '計算から外す（休職・支給なし）', d.exclude === true) + '</div></fieldset>';
     h += '<div class="kv"><label for="f-reason">直す理由（必ず書く）</label><input id="f-reason" maxlength="200" autocomplete="off"></div>';
@@ -808,6 +813,10 @@
     c.deds.forEach(function (a, i) { var x = n('f-de' + i, a.name || a.code); if (x != null && x === x) keepD.push({ code: a.code, amount: x }); });
     d.deductions = keepD;
     d.commute = Object.assign({}, obj(d.commute), { monthly: n('f-cm', '通勤手当'), means: v('f-cmm') || null, distance_km: n('f-cmd', '片道の距離') });
+    var fot = v('f-fot'), fotMin = n('f-fotmin', '含む時間（分）');
+    if (!fot) delete d.fixed_ot;
+    else if (fotMin == null || fotMin !== fotMin || fotMin % 1 || fotMin < 0) bad.push('含む時間（分・0以上の整数）');
+    else d.fixed_ot = { allowance_code: fot, covered_min: fotMin, checked: on('f-fotok') };
     ['birth_date:f-birth', 'entry_date:f-entry', 'retire_date:f-retire'].forEach(function (s) { var k = s.split(':'); var x = v(k[1]); if (x && !isDate(x)) bad.push('日付'); d[k[0]] = x || null; });
     d.gender = v('f-gender') || null;   /* 'M'・'F'（統合 0102） */
     var ins = obj(d.ins);
@@ -935,6 +944,8 @@
       setv('ins.health.on', hon, '健康保険の加入', onTxt); setv('ins.pension.on', pon, '厚生年金の加入', onTxt); setv('ins.emp.on', eon, '雇用保険の加入', onTxt);
       setv('tax.col', { '甲': 'kou', '甲欄': 'kou', '乙': 'otsu', '乙欄': 'otsu' }[g('tax_col')] || null, '源泉の区分');
       setv('tax.dependents', toNum(g('deps')), '扶養親族等の数');
+      /* 扶養・甲乙の列が無い（空の）行は「未確認」で入れる（列から読めた時は今の印のまま・代表者の決定 2026-11-19） */
+      if (!g('tax_col') || toNum(g('deps')) == null) setv('tax.dependents_checked', false, '甲乙・扶養の確かめ', function (x) { return x === true ? '確かめた' : x === false ? '未確認' : '（空）'; });
       setv('commute.monthly', toNum(g('commute')), '通勤手当', money);
       var bank = null;
       if (g('bank') || g('acct_no')) {

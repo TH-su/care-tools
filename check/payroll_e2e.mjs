@@ -316,23 +316,35 @@ console.log('\n— 6. 覆い・その他 —');
   const pc = o4.routes.calls.filter((c) => c.name === 'payroll_profile_put').pop();
   t('給与設定の保存: 変えた値・期間の初日・新しい版（rev 0）・理由を送り、画面に無い項目（住民税・性別）は消さない', !!pc && pc.args.p_data.base === 1150 && pc.args.p_effective_from === '2026-10-16' && pc.args.p_rev === 0 && pc.args.p_reason === '見本の昇給'
     && pc.args.p_data.resident_tax['2026-11'] === 9000 && pc.args.p_data.gender === 'F' && pc.args.p_data.ins.health.std === 150000, pc && pc.args);
+  t('給与設定の保存: 甲乙・扶養を確かめた印（確かめた人は印が入って開く）をそのまま送る', !!pc && pc.args.p_data.tax.dependents_checked === true, pc && pc.args.p_data.tax);
   t('住民税: 前の年度より古い月（2024-06）は外し、前の年度（2025-06）と今の年度（2026-11）は残す', !!pc && !('2024-06' in pc.args.p_data.resident_tax) && pc.args.p_data.resident_tax['2025-06'] === 6000 && pc.args.p_data.resident_tax['2026-11'] === 9000, pc && pc.args.p_data.resident_tax);
   t('給与設定の保存は DB の形の確かめを通った（新しい版が足された）', o4.routes.db.profiles.some((q) => q.staff_id === 's-02' && q.effective_from === '2026-10-16' && q.data.base === 1150));
+  /* 固定残業代の欄（手当・含む時間（分）・確かめた）: s-09 の夜勤手当を固定残業代として 600分・確かめた */
+  await o4.page.click('[data-act="prof"][data-sid="s-09"]');
+  await o4.page.selectOption('#f-fot', 'night'); await o4.page.fill('#f-fotmin', '600'); await o4.page.check('#f-fotok');
+  await o4.page.fill('#f-reason', '見本の固定残業');
+  await o4.page.click('[data-act="prof-go"]');
+  await o4.page.waitForFunction(() => !document.getElementById('p-dlg').open, null, { timeout: 10000 });
+  const pf = o4.routes.calls.filter((c) => c.name === 'payroll_profile_put').pop();
+  t('固定残業代: 手当・含む時間（分）・確かめた を送り、DB の確かめを通る', !!pf && JSON.stringify(pf.args.p_data.fixed_ot) === JSON.stringify({ allowance_code: 'night', covered_min: 600, checked: true })
+    && o4.routes.db.profiles.some((q) => q.staff_id === 's-09' && q.effective_from === '2026-10-16' && q.data.fixed_ot && q.data.fixed_ot.checked === true), pf && pf.args.p_data.fixed_ot);
   t('給与の設定の無い人には印を出す', /給与の設定なし/.test(await o4.page.textContent('#p-main')));
   /* freee の書き出しの取り込み: 画面の中だけで読み、違いの表は口座を下4桁だけ・送る時に全桁 */
   const csv = '従業員番号,氏名,給与形態,基本給,時給,口座種別,銀行コード,支店コード,口座番号,口座名義\r\nF-1,見本 一郎,月給,245000,,普通,9999,001,7654321,ﾐﾎﾝ ｲﾁﾛｳ\r\nF-9,見本 不明,時給,,1000,,,,,\r\n,見本 二子,,,,普通,9999,001,1111111,\r\n';
   await o4.page.setInputFiles('#i-file', { name: 'freee.csv', mimeType: 'text/csv', buffer: Buffer.from(csv, 'utf8') });
   await o4.page.waitForSelector('[data-act="imp-go"]');
   const it = await o4.page.textContent('#p-main');
-  t('取り込み: 違い（基本給）と口座の下4桁を見せ、全桁は出さない・名簿に無い人は送らない', /基本給・時給など：240,000円 → 245,000円/.test(it) && /口座：＊＊＊4321/.test(it) && !/7654321/.test(it) && /見つかりません（送りません）/.test(it) && /1人分を送る/.test(it));
+  t('取り込み: 違い（基本給）と口座の下4桁を見せ、全桁は出さない・名簿に無い人は送らない', /基本給・時給など：240,000円 → 245,000円/.test(it) && /口座：＊＊＊4321/.test(it) && !/7654321/.test(it) && /見つかりません（送りません）/.test(it) && /2人分を送る/.test(it));   /* 見本 二子は口座を送らず、甲乙・扶養の「未確認」だけを送る（2026-11-19） */
   t('取り込み: 口座名義が空の行は口座を送らないと知らせる', /口座名義が無いので送りません/.test(it));
+  t('取り込み: 扶養・甲乙の列が無い人は「未確認」で入れると表に出す', /甲乙・扶養の確かめ：確かめた → 未確認|甲乙・扶養の確かめ：（空） → 未確認/.test(it));
   await shot(o4.page, 'payroll.import.pc');
   await o4.page.click('[data-act="imp-go"]');
   await sud(o4.page);
   await o4.page.waitForFunction(() => !document.querySelector('[data-act="imp-go"]'), null, { timeout: 10000 });
   const ic = o4.routes.calls.filter((c) => c.name === 'payroll_import_put').pop();
   const pl = ic && ic.args.p_payload;
-  t('取り込み: 送るのは名簿に合った1人だけ・今の設定に違いを当てた全体（期間の初日）と口座の全桁', !!pl && pl.profiles.length === 1 && pl.profiles[0].staff_id === 's-01' && pl.profiles[0].effective_from === '2026-10-16' && pl.profiles[0].data.base === 245000
+  t('取り込み: 扶養・甲乙の列が無い人は dependents_checked=false で送る', !!pl && pl.profiles.length === 2 && pl.profiles.every((x) => x.data.tax.dependents_checked === false));
+  t('取り込み: 送るのは名簿に合った人だけ・今の設定に違いを当てた全体（期間の初日）と口座の全桁（口座名義の無い人の口座は送らない）', !!pl && pl.profiles[0].staff_id === 's-01' && pl.profiles[1].staff_id === 's-02' && pl.profiles[0].effective_from === '2026-10-16' && pl.profiles[0].data.base === 245000
     && pl.profiles[0].data.ins.health.std === 260000 && pl.banks.length === 1 && pl.banks[0].accounts[0].number === '7654321', pl);
   t('取り込みは足すだけ（この月分の版・口座がもうある人は書き換えず、そう知らせる）', /この月分の版がもうあるので設定は書き換えません/.test(it) && /口座がもうあるので口座は書き換えません/.test(it) && o4.routes.db.profiles.filter((q) => q.staff_id === 's-01' && q.effective_from === '2026-10-16')[0].data.base === 240000);
   /* 加入の列から ins.*.on を作る（無ければ標準報酬の有無）・給与の設定が無い人（s-11）は新しい設定として足す */
@@ -355,6 +367,11 @@ console.log('\n— 6. 覆い・その他 —');
   await o4.page.waitForFunction(() => /設定を保存しました/.test(document.getElementById('p-toast').textContent), null, { timeout: 10000 });
   const sp = o4.routes.calls.filter((c) => c.name === 'payroll_settings_put').pop();
   t('設定の保存: 理由の引数なし・全銀を使う印（zengin_enabled・既定は使わない）を真偽で送る・DB の確かめを通って版が上がる', !!sp && sp.args.p_config.zengin_enabled === false && o4.routes.db.settings.rev === 4 && o4.routes.db.settings.config.bank_from.bank_kana === 'ﾐﾎﾝｷﾞﾝｺｳ', sp && sp.args);
+  /* 夜勤手当は深夜の割増を含む（代表者の答え）: 手当の定義の窓に「深夜の割増を含む（夜勤手当）」の欄があり、夜勤手当では印が入っている */
+  await o4.page.click('[data-act="alw"][data-code="night"]');
+  t('手当の定義に「深夜の割増を含む（夜勤手当）」の欄があり、夜勤手当は印が入っている', await o4.page.isChecked('#w-a-includes_night_premium'));
+  await o4.page.keyboard.press('Escape');
+  await o4.page.waitForFunction(() => !document.getElementById('p-dlg').open, null, { timeout: 5000 });
   await o4.page.click('[data-act="alw"][data-code="qual"]');
   await o4.page.fill('#w-name', '資格手当（見本）');
   await o4.page.click('[data-act="alw-go"]');

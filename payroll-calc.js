@@ -356,7 +356,7 @@
       }
     });
 
-    /* 固定残業代（profile.fixed_ot: { allowance_code, covered_min }・無ければ今の動き） */
+    /* 固定残業代（profile.fixed_ot: { allowance_code, covered_min, checked }・無ければ今の動き） */
     var fixedOt = null;
     if (P.fixed_ot && typeof P.fixed_ot === 'object' && !board) {
       var cov = Math.max(0, int(P.fixed_ot.covered_min));
@@ -364,6 +364,8 @@
       var hasAllow = fcode && defs[fcode] && pa.some(function (a) { return a && a.code === fcode; });
       if (!hasAllow) warn('fixed_ot_allowance', '固定残業代の手当が設定にありません（含む時間を引かずに数えました）');
       else fixedOt = { code: fcode, covered: cov };
+      /* 含む時間を確かめたか（checked が true でなければ知らせる・数え方は変えない・代表者の決定 2026-11-19・文は仮置き） */
+      if (P.fixed_ot.checked !== true) warn('fixed_ot_unchecked', '固定残業代の含む時間を freee の画面か雇用契約書で確かめてください');
     }
 
     /* 割増の単価 */
@@ -526,7 +528,8 @@
 
     /* 源泉 */
     var taxBase = taxable - siTotal, tax = 0, col = P.tax && P.tax.col, dep = P.tax ? P.tax.dependents : 0;
-    if (P.tax && P.tax.dependents_checked === false) warn('dependents_unchecked', '扶養の数が未確認です');
+    /* 甲乙・扶養の数を確かめたか（dependents_checked が true でない源泉の対象の人に知らせる・代表者の決定 2026-11-19） */
+    if ((col === 'kou' || col === 'otsu') && !(P.tax && P.tax.dependents_checked === true)) warn('dependents_unchecked', '扶養の数が未確認です');
     if (col === 'kou' || col === 'otsu') {
       var useComputer = S.tax_method === 'computer' && col === 'kou';
       if (useComputer && payDate.slice(0, 4) === '2026') tax = taxComputerR8(taxBase, dep);

@@ -182,5 +182,12 @@ const A = { workDays: 2, paidDays: 0, paidMin: 0, workMin: 960, schedInMin: 960,
 t('attSame: 同じなら真・1分でも違えば偽・回数の記号が違えば偽', P.attSame(P.attFromKintai(A), P.attFromKintai(Object.assign({}, A))) && !P.attSame(P.attFromKintai(A), P.attFromKintai(Object.assign({}, A, { workMin: 961 })))
   && !P.attSame(P.attFromKintai(A), P.attFromKintai(Object.assign({}, A, { counts: { '早': 2 } }))));
 
+console.log('\n— 11. 確かめの印（代表者の決定 2026-11-19） —');
+t('甲乙・扶養の「確かめた」は true の時だけ印が入って開く（空・false は印なし）', /chk\('f-depok', '[^']+', tx\.dependents_checked === true\)/.test(J));
+t('固定残業代の欄: 手当の選択・含む時間（分）・確かめた（true の時だけ印）', /sel\('f-fot', '固定残業代の手当'/.test(J) && /inp\('f-fotmin', '含む時間（分）'/.test(J) && /chk\('f-fotok', '[^']+', fo\.checked === true\)/.test(J)
+  && /d\.fixed_ot = \{ allowance_code: fot, covered_min: fotMin, checked: on\('f-fotok'\) \};/.test(J) && /if \(!fot\) delete d\.fixed_ot;/.test(J));
+t('取り込みで甲乙・扶養の列が無い（空の）行は dependents_checked=false', /if \(!g\('tax_col'\) \|\| toNum\(g\('deps'\)\) == null\) setv\('tax\.dependents_checked', false,/.test(J));
+t('手当の定義の窓に「深夜の割増を含む（夜勤手当）」（includes_night_premium）の欄', /\['includes_night_premium', '深夜の割増を含む（夜勤手当）'\]/.test(J));
+
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);
