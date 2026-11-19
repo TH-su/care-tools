@@ -93,7 +93,8 @@
     badvalue: '入れた値を受け付けられませんでした（休憩は 0〜600 分・メモは 400 字まで・認める時刻はその日の前日〜翌日の中）。',
     clientid: '同じ打刻がもう記録されています。', notyet: '月末を過ぎてから締められます。',
     badperiod: 'この月分の期間を決められませんでした。管理者に知らせてください。', overlap: 'ほかの締めた月分と期間が重なるため締められません。管理者に知らせてください。',
-    closeday: '締めた月分と期間が重なるため、締め日を変えられません。' };
+    closeday: '締めた月分と期間が重なるため、締め日を変えられません。',
+    periodchanged: 'この月分の期間が、画面を開いた後に変わりました（締め日の変更など）。読み直してから、もう一度締めてください。' };
   function friendly(e) {
     var code = e && e.code, m = String((e && e.message) || e || '');
     if (code === '42501' || /permission denied/i.test(m)) return 'この操作をする権限がありません（事務所・管理者のアカウントが要ります。締めの解除と設定の保存は管理者だけです）。';
@@ -927,6 +928,15 @@
   /* ── 操作 ── */
   function setTab(t) { if (TABS.indexOf(t) < 0) t = 'day'; tab = t; lsSet(LS_TAB, t); paint(); }
   function setYm(v) { if (!C.isYm(v) || v === ym) return; ym = v; lsSet(LS_YM, v); $('g-ym').value = v; shiftInfo = null; editsCache = null; data = null; month = null; paintPer(); load(true); }
+  /* 「今日」: 今日のカレンダー月へ移り、その月分の期間に今日が入っていなければ次の月分へ（読んだ後に autoYm と同じ形で決める）。
+     ymFor は ±1日の移動向けなので使わない（2か月以上離れた月分から押しても今日の月分へ行く・反証レビューの指摘1） */
+  function goToday() {
+    var td = C.jstDate(Date.now()), ty = td.slice(0, 7);
+    selDate = td;
+    if (inPer(td)) { paint(); return; }
+    if (ty === ym) { setYm(C.nextYm(ym)); return; }   /* 今日の月で今日が期間の後＝次の月分 */
+    autoYm = true; setYm(ty);
+  }
   function moveDay(n) {
     var d = C.addDays(selDate || C.jstDate(Date.now()), n);
     selDate = d;
@@ -973,7 +983,7 @@
       else if (a === 'print-edits') printEdits();
       else if (a === 'dayf') { var f = b.getAttribute('data-f') || null; dayFilter = dayFilter === f ? null : f; paint(); }
       else if (a === 'day-move') moveDay(+b.getAttribute('data-n'));
-      else if (a === 'day-today') { var td = C.jstDate(Date.now()); selDate = td; if (!inPer(td)) setYm(ymFor(td)); else paint(); }
+      else if (a === 'day-today') goToday();
     });
     document.addEventListener('change', function (e) {
       var id = e.target && e.target.id;

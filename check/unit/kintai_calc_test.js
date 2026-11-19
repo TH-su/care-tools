@@ -468,7 +468,15 @@ console.log('\n— 0101. 月を締め日で切る（期間・週の段・時間�
     S(k0).schedInMin === 780 && S(k0).legalInOverMin === 120 && S(k0).legalOverMin === 60 && parts(S(k0)), S(k0));
   const sp0 = C.computeMonth({ ym: '2026-12', staff: KS, schedule: sch('2026-12', { 4: '7-9 17-21' }), days: [], punches: [...Q('2026-12-04', '7:00', '9:00'), ...Q('2026-12-04', '17:00', '21:00')], config: {}, now: Date.parse('2027-02-01T00:00:00+09:00') });
   t('記号の回数: 分割勤務の1マス（7-9 17-21）を両方働いても、その記号は1回', S(sp0).counts[sch('2026-12', { 4: '7-9 17-21' })[0].symbol] === 1 && sch('2026-12', { 4: '7-9 17-21' }).length === 2 && Object.keys(S(sp0).counts).length === 1, S(sp0).counts);
-  const all = [k0, sp0, mb, cJan, cDec, lead42, d0, e0, e1, e2, fr, fr2, fr3, fr4, g0, h0, i0, f0, j0];
+  const wk7 = {}; for (let d = 6; d <= 11; d++) wk7[d] = '9-17';
+  const w7 = C.computeMonth({ ym: '2026-12', staff: KS, schedule: sch('2026-12', wk7), days: [{ staff_id: 'sT01', work_date: '2026-12-06', overtime_ok: true }],
+    punches: [...Q('2026-12-06', '9:00', '18:00'), ...range('2026-12-07', 5).flatMap((d) => Q(d, '9:00', '17:00'))], config: { variableMonth: false }, now: Date.parse('2027-02-01T00:00:00+09:00') });
+  t('反証レビューの指摘2: 変形なし・日〜金に7hの予定（週42h）で日曜に8h働いた週は、日曜の1hは法定内（週の頭）・金曜の予定の3hが週40hの超過＝所定内2340・法定内残業60・法定外180',
+    S(w7).workMin === 2580 && S(w7).schedInMin === 2340 && S(w7).legalInOverMin === 60 && S(w7).legalOverMin === 180 && parts(S(w7)), S(w7));
+  const w8 = C.computeMonth({ ym: '2026-12', staff: KS, schedule: sch('2026-12', wk7), days: [{ staff_id: 'sT01', work_date: '2026-12-11', overtime_ok: true }],
+    punches: [...range('2026-12-06', 5).flatMap((d) => Q(d, '9:00', '17:00')), ...Q('2026-12-11', '9:00', '18:00')], config: { variableMonth: false }, now: Date.parse('2027-02-01T00:00:00+09:00') });
+  t('同じ週で金曜の終わりに1h働いた時は、その1hも週40hの後ろ＝法定外（所定内2400・法定内残業0・法定外180）', S(w8).schedInMin === 2400 && S(w8).legalInOverMin === 0 && S(w8).legalOverMin === 180 && parts(S(w8)), S(w8));
+  const all = [w7, w8, k0, sp0, mb, cJan, cDec, lead42, d0, e0, e1, e2, fr, fr2, fr3, fr4, g0, h0, i0, f0, j0];
   t('どの場面でも 所定内＋法定内残業＋法定外＋法定休日＝総労働・どれも0以上・over60Min は法定外−60h', all.every((m) => { const s = S(m); return parts(s) && s.schedInMin >= 0 && s.legalInOverMin >= 0 && s.over60Min === Math.max(0, s.legalOverMin - 3600); }));
   const sn = C.snapshotOf(j0);
   t('締めの控えに期間と、給与の入力（法定内残業・60時間超・夜勤の回数・所定日数・記号ごとの回数）が入る', sn.period.from === '2026-12-01' && sn.rows[0].nightShiftCount === 1 && sn.rows[0].schedDays === 4 && sn.rows[0].counts['有'] === 1 && 'legalInOverMin' in sn.rows[0] && 'over60Min' in sn.rows[0]);

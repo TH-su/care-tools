@@ -562,15 +562,17 @@
         lateCount: 0, lateMin: 0, earlyLeaveCount: 0, earlyLeaveMin: 0, noPunchDays: 0, reviewCount: 0, byOffice: {}, warnings: [],
         absentDays: 0, uncountedMin: 0, holidayMin: 0,
         legalInOverMin: 0, over60Min: 0, nightShiftCount: 0, schedDays: 0, counts: {}, weekOverMin: 0, frameOverMin: 0 };
-      var leadDays = [], liDay = 0;
+      var leadDays = [], liDay = 0, liOf = {};
       for (j = 0; j < dates.length; j++) {
         var date = dates[j], bl = byDate[date].sort(function (x, y) { return (x.schedStart || x.countStart || 0) - (y.schedStart || y.countStart || 0); });
         var dw = 0, dsw = 0, dflags = [], noPunchAll = bl.length > 0, dnote = dayBy[st.staff_id + '|' + date];
         var dhol = 0, dunc = 0, dabs = false, dot = 0;
         if (date < first) {
           /* 前の6日分（前の月分の日）は週40時間の積み上げにだけ使う（日の一覧・合計・要確認に入れない） */
-          for (var lx = 0; lx < bl.length; lx++) { dw += bl[lx].workMin; dsw += bl[lx].schedWork; dhol += bl[lx].holidayMin; }
-          leadDays.push({ date: date, workMin: dw, holidayMin: dhol, legalOverMin: Math.max(0, dw - dhol - (cfg.variableMonth ? Math.max(480, dsw) : 480)), lead: true });
+          for (var lx = 0; lx < bl.length; lx++) { dw += bl[lx].workMin; dsw += bl[lx].schedWork; dhol += bl[lx].holidayMin; dot += bl[lx].overtimeMin; }
+          var lLegal = Math.max(0, dw - dhol - (cfg.variableMonth ? Math.max(480, dsw) : 480));
+          liOf[date] = Math.max(0, Math.max(0, dot - dhol) - lLegal);
+          leadDays.push({ date: date, workMin: dw, holidayMin: dhol, legalOverMin: lLegal, lead: true });
           continue;
         }
         for (var x = 0; x < bl.length; x++) {
@@ -595,7 +597,8 @@
         var legal = Math.max(0, dw - dhol - (cfg.variableMonth ? Math.max(480, dsw) : 480));
         sum.legalOverMin += legal; sum.workMin += dw;
         /* 日の法定内残業＝予定を超えた実働（法定休日でない分）のうち、日の法定外でない分（週・総枠の超過は月の合計の後で引く） */
-        liDay += Math.max(0, Math.max(0, dot - dhol) - legal);
+        liOf[date] = Math.max(0, Math.max(0, dot - dhol) - legal);
+        liDay += liOf[date];
         if (dw > 0) sum.workDays++;
         /* 有休日数は 0.5 刻み: 有休分 ÷ その日の所定（働く予定もある日は 予定の実働＋有休分・無ければ 480）が 0.5 以下なら 0.5、超えれば 1（仮置き v2-6） */
         var pdays = 0;
@@ -612,9 +615,10 @@
            期間の初日をまたぐ週は前の6日分も積み上げる（0101・期間をまたいで正しく数える。前の月分の日に付く分はこの月分に入れない）
          変形あり（1か月単位・起算日＝期間の初日・0101）: 日 → 週 → 総枠の順に、前の段の分を除いて数える
            週: 期間で切った週（weekStartDow 始まり）の（実働−日の法定外−法定休日）が、その週の予定の実働と40時間の長い方を超えた分。
-               期間の端の7日に満たない週の40時間は 40時間×その週の期間の日数÷7（切り捨て・仮置き）
+               期間の端の7日に満たない週の40時間は 40時間×その週の期間の日数÷7（切り捨て・仮置き。40時間のままより法定外が多くなる＝多く払う側。
+               端の週の扱いは社労士に確かめる・2026-11-19 反証レビューの指摘5）
            総枠: 期間の（実働−日−週の法定外−法定休日）が 40時間×期間の日数÷7（切り捨て）を超えた分 */
-      var dailyLegal = sum.legalOverMin, weekLegal = 0, wi, wk, dd, dow, wkey;
+      var dailyLegal = sum.legalOverMin, weekLegal = 0, weekFromLi = 0, wi, wk, dd, dow, wkey;
       var weekOf = function (date) { var dw0 = new Date(jstMs(date, 12 * 60)).getUTCDay(); return addDays(date, -((dw0 - cfg.weekStartDow + 7) % 7)); };
       if (!cfg.variableMonth) {
         var acc = {}, all2 = leadDays.concat(days);
@@ -622,7 +626,10 @@
           dd = all2[wi]; wkey = weekOf(dd.date);
           var before = acc[wkey] || 0, after = before + dd.workMin - dd.legalOverMin - dd.holidayMin;
           acc[wkey] = after;
-          if (!dd.lead) weekLegal += Math.max(0, after - 2400) - Math.max(0, before - 2400);
+          /* その日に40時間を超えた分。日の中では予定の時間が先・予定を超えた時間（法定内残業の候補）が後なので、超えた分は後ろの法定内残業から先に当たる
+             （週の予定が40時間を超える週の超過は予定の中から出る＝所定内から減る・反証レビューの指摘2） */
+          var inc = Math.max(0, after - 2400) - Math.max(0, before - 2400);
+          if (!dd.lead) { weekLegal += inc; weekFromLi += Math.min(inc, liOf[dd.date] || 0); }
         }
       } else {
         var wsum = {}, wsch = {};
@@ -637,6 +644,7 @@
           var cap = nd0 >= 7 ? 2400 : Math.floor(2400 * nd0 / 7);
           weekLegal += Math.max(0, wsum[wk] - Math.max(cap, wsch[wk]));
         }
+        weekFromLi = weekLegal;   /* 変形ありの週の超過は予定の週の実働を超えた所から出る＝法定内残業から引く */
         var frame = Math.floor(2400 * periodDays(per) / 7);
         sum.frameOverMin = Math.max(0, sum.workMin - dailyLegal - weekLegal - sum.holidayMin - frame);
       }
@@ -648,7 +656,7 @@
          法定内残業＝日ごとの（予定を超えた実働のうち日の法定外でない分）の合計から、週・総枠の超過を引いた分（週・総枠の超過が予定の中の時間から出た分は所定内から減る）。
          所定内＝残り（予定の中で法定外になった分は法定外に入る） */
       sum.legalOverMin = Math.min(sum.legalOverMin, Math.max(0, sum.workMin - sum.holidayMin));
-      sum.legalInOverMin = Math.max(0, Math.min(liDay - weekLegal - sum.frameOverMin, sum.overtimeMin, sum.workMin - sum.holidayMin - sum.legalOverMin));
+      sum.legalInOverMin = Math.max(0, Math.min(liDay - weekFromLi - sum.frameOverMin, sum.overtimeMin, sum.workMin - sum.holidayMin - sum.legalOverMin));
       sum.schedInMin = sum.workMin - sum.holidayMin - sum.legalOverMin - sum.legalInOverMin;
       sum.over60Min = Math.max(0, sum.legalOverMin - 3600);
       if (sum.legalOverMin >= cfg.overtimeMonthWarnH * 60 && cfg.overtimeMonthWarnH > 0) sum.warnings.push('法定外の時間が月' + cfg.overtimeMonthWarnH + '時間以上です（36協定の確認）');
