@@ -72,8 +72,20 @@ console.log('\n— 1. 計算 → 下書き保存 → 確定 —');
   t('行を開くと支給・控除・勤怠の根拠が出る', await p.locator('details.it[data-sid="s-01"] table').count() >= 3);
   const body1 = await p.textContent('details.it[data-sid="s-01"]');
   t('本物の部品の明細: 基本給・資格手当・健康保険料・厚生年金保険料・雇用保険料・所得税・住民税の行', ['基本給', '資格手当', '健康保険料', '厚生年金保険料', '雇用保険料', '所得税', '住民税'].every((k) => body1.includes(k)), body1.slice(0, 400));
-  t('勤怠の根拠は締めた時の控えから（総労働 151:00＝9060分）', /総労働（分）151:00/.test(body1.replace(/\s+/g, '')), body1.slice(0, 600));
+  t('勤怠の根拠は締めた時の控えから（総労働 151:00＝9060分・名前の「（分）」は見せない）', /総労働151:00/.test(body1.replace(/\s+/g, '')) && !/総労働（分）/.test(body1), body1.slice(0, 600));
+  /* 手で確かめた値（契約 §0 の決まりで電卓で出した・2026-11-19）: 見本 一郎＝月給 240,000・資格手当 10,000・通勤 8,000（非課税）・時間外 30分・
+     健保と厚年の標準報酬 260,000・令和8年4月分〜の熊本の率・翌月徴収（対象月 2026-10）
+       時間単価 ⌈(240,000＋10,000)÷172⌉＝1,454 → 時間外 ⌈1,454×1.25×30÷60⌉＝909
+       総支給 240,000＋10,000＋909＋8,000＝258,909
+       健保 260,000×10.08%÷2＝13,104・介護 260,000×1.62%÷2＝2,106・支援金 260,000×0.23%÷2＝299・厚年 260,000×18.3%÷2＝23,790
+       雇保 258,909×0.5%＝1,294.545 → 1,295（50銭1厘以上は切上げ）
+       課税対象 258,909−8,000−(13,104＋2,106＋299＋23,790＋1,295)＝210,315
+     所得税（税額表の引き）・住民税（設定の額）は手で確かめていない値なので比べない */
   await shot(p, 'payroll.run-open.pc');
+  const s01 = await p.evaluate(() => { const o = {}; document.querySelectorAll('details.it[data-sid="s-01"] tbody tr').forEach((tr) => { const td = tr.querySelectorAll('td'); if (td.length >= 3) o[td[0].textContent.trim()] = td[2].textContent.trim(); }); return o; });
+  const y = (k) => Number(String(s01[k] || '').replace(/[^\d]/g, ''));
+  t('手で確かめた値と一致（時間外 909・健保 13,104・介護 2,106・支援金 299・厚年 23,790・雇保 1,295）', y('時間外労働') === 909 && y('健康保険料') === 13104 && y('介護保険料') === 2106 && y('子ども・子育て支援金') === 299 && y('厚生年金保険料') === 23790 && y('雇用保険料') === 1295, s01);
+  t('手で確かめた値と一致（総支給 258,909・課税対象 210,315）', /258,909/.test(await p.textContent('details.it[data-sid="s-01"] > summary')) && /課税対象 210315/.test(body1), body1.slice(0, 200));
   /* その月だけの調整（理由が無いと足せない） */
   await p.click('details.it[data-sid="s-01"] [data-act="adj"]');
   await p.fill('#a-name', '見本の立替');
@@ -215,6 +227,19 @@ console.log('\n— 5. 振込と書き出し —');
   await p2.waitForSelector('text=振込する分と一致');
   t('全銀の合計を振込する分と照合して出す', true);
   t('全銀の時は口座の全桁を書き出し専用の口から受け取った', o2.routes.calls.some((c) => c.name === 'payroll_bank_export'));
+  /* 振込元の設定が足りない時は、口座の全桁を受け取る前に止める（月を書き出し済みにしない） */
+  {
+    const o3 = await open({ tab: 'export', start: 'confirmed', zengin: true });
+    await waitApp(o3.page);
+    delete o3.routes.db.settings.config.bank_from.consignor_code;
+    await o3.page.click('#p-reload'); await waitApp(o3.page);
+    let m3 = '';
+    o3.page.once('dialog', (d) => { m3 = d.message(); d.accept(); });
+    await o3.page.click('[data-k="zengin"]');
+    for (let i = 0; i < 50 && !m3; i++) await o3.page.waitForTimeout(100);
+    t('振込元の設定が足りない時は口座を受け取らず（bank_export・記録を呼ばない）、月も書き出し済みにしない', /振込元の設定に足りない所があるので/.test(m3) && !o3.routes.calls.some((c) => c.name === 'payroll_bank_export' || c.name === 'payroll_export_log') && run(o3).status === 'confirmed', m3);
+    await o3.ctx.close();
+  }
   /* 確定の後に口座が直された（統合 0102 は stale で断る）: 計算し直しの知らせではなく口座の知らせ */
   o2.routes.db.bank['s-02'].rev++;
   let msg2 = '';

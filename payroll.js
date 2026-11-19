@@ -432,7 +432,7 @@
   function linesTable(list, title) {
     if (!list.length) return '<p class="help">' + esc(title) + 'はありません。</p>';
     return '<table><caption class="help" style="text-align:left">' + esc(title) + '</caption><thead><tr><th>項目</th><th class="num">数量</th><th class="num">金額（円）</th><th>根拠</th></tr></thead><tbody>' +
-      list.map(function (l) { return '<tr><td>' + esc(l.name) + '</td><td class="num">' + esc(qtyText(l)) + '</td><td class="num">' + esc(l.sec === 'att' ? '' : yen(l.amount)) + '</td><td>' + esc(l.basis || '') + '</td></tr>'; }).join('') + '</tbody></table>';
+      list.map(function (l) { return '<tr><td>' + esc(lineName(l)) + '</td><td class="num">' + esc(qtyText(l)) + '</td><td class="num">' + esc(l.sec === 'att' ? '' : yen(l.amount)) + '</td><td>' + esc(l.basis || '') + '</td></tr>'; }).join('') + '</tbody></table>';
   }
   /* 数量の見せ方: 計算の部品の qty は、勤怠の行と「分÷60」の行は分、それ以外は日数・回数（unit は単価の数なので並べて書かない・単価は根拠に出る） */
   function hm(min) { min = Math.max(0, Math.round(num(min))); var m = min % 60; return Math.floor(min / 60) + ':' + (m < 10 ? '0' : '') + m; }
@@ -440,9 +440,11 @@
     if (!l || l.qty == null || l.qty === '') return '';
     var c = String(l.code || '');
     if (l.sec === 'att') return /Min$/.test(c) ? hm(l.qty) : String(num(l.qty)) + (/Count$/.test(c) ? '回' : '日');
-    if (/分÷60/.test(String(l.basis || ''))) return hm(l.qty);
+    if (/分÷60|労働時間×単価/.test(String(l.basis || ''))) return hm(l.qty);
     return String(num(l.qty));
   }
+  /* 勤怠の行の名前の「（分）」は、数量を時:分で出すので見せない（保存した名前は変えない） */
+  function lineName(l) { return l && l.sec === 'att' && /Min$/.test(String(l.code || '')) ? String(l.name || '').replace('（分）', '') : String((l && l.name) || ''); }
   function bySec(it, sec) { return arr(it.lines).filter(function (l) { return l && l.sec === sec; }); }
   function runHtml() {
     var c = C(), h = '<div class="cd"><h2>' + esc(periodText()) + '</h2><div class="row">';
@@ -488,7 +490,7 @@
     var p = profOf(it.staff_id), draft = !frozen();
     var att = bySec(it, 'att'), pay = bySec(it, 'pay'), ded = bySec(it, 'deduct');
     function tbl(list, cap, money) {
-      return '<table><thead><tr><th colspan="2">' + esc(cap) + '</th></tr></thead><tbody>' + (list.length ? list.map(function (l) { return '<tr><td>' + esc(l.name) + '</td><td class="num">' + esc(money ? yen(l.amount) : qtyText(l)) + '</td></tr>'; }).join('') : '<tr><td colspan="2">—</td></tr>') + '</tbody></table>';
+      return '<table><thead><tr><th colspan="2">' + esc(cap) + '</th></tr></thead><tbody>' + (list.length ? list.map(function (l) { return '<tr><td>' + esc(lineName(l)) + '</td><td class="num">' + esc(money ? yen(l.amount) : qtyText(l)) + '</td></tr>'; }).join('') : '<tr><td colspan="2">—</td></tr>') + '</tbody></table>';
     }
     var bank = bankText(it.bank_last4 != null ? it.bank_last4 : (p && p.bank_last4));
     return '<section class="slip"' + (paper ? '' : ' aria-label="給与明細の見本"') + '><div class="su-print-head-host"><h3>給与明細　' + esc(ymText(ym)) + (draft ? '<span class="sl-draft">下書き（確定前）</span>' : '') + '</h3>' +
@@ -581,7 +583,17 @@
     var x = X();
     if (busy || !frozen() || !x || !EXP[kind] || typeof x[kind] !== 'function') return;
     if (kind === 'zengin' && !zenginOn) return;
-    var done = hold(btn, '作っています…'), base = { ym: ym, period: period(), payDate: payDate(), settings: cfg(), items: items(), profiles: bs.profiles };
+    var base = { ym: ym, period: period(), payDate: payDate(), settings: cfg(), items: items(), profiles: bs.profiles };
+    /* 振込元の設定の不備は、口座の全桁を受け取る前（月が書き出し済みになる前）に止める */
+    if (kind === 'zengin') {
+      var pre = x.zengin(Object.assign({}, base, { rows: [] }));
+      if (!pre || pre.ok === false) {
+        var w0 = arr(pre && pre.errors).slice(0, 5).map(function (e) { return (e && e.msg) || ''; }).filter(Boolean);
+        alert('振込元の設定に足りない所があるので、振込データを作りません。' + (w0.length ? '\n' + w0.join('\n') : '') + '\n管理者が「設定」の振込元を直してください。');
+        return;
+      }
+    }
+    var done = hold(btn, '作っています…');
     rpc('payroll_export_log', { p_ym: ym, p_kind: EXP_LOG[kind] }).then(okOr).then(function () {
       if (kind !== 'zengin') return x[kind](base);
       return rpc('payroll_bank_export', { p_ym: ym }).then(function (r) {
@@ -591,7 +603,7 @@
       }).then(function (r) {
         var res = x.zengin(Object.assign({}, base, { rows: arr(r.rows) }));
         r.rows = null; r = null;
-        zcheck = { ym: ym, count: num(res.count), total: num(res.total) };
+        zcheck = res.ok ? { ym: ym, count: num(res.count), total: num(res.total) } : null;
         return res;
       });
     }).then(function (res) {
