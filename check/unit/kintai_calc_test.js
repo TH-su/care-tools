@@ -230,5 +230,168 @@ console.log('\n— 6. 記号パーサの写しが原本と同じ —');
   t('番号の形（4〜6桁の数字）', C.isCode('1234') && C.isCode('123456') && !C.isCode('123') && !C.isCode('12a4') && !C.isCode(1234));
 }
 
+console.log('\n— 7. v2（2026-11-19 凍結仕様 ROOT-v2-polish.md の B）—');
+{
+  const monthAt = (now, schedRows, punches, days, config) => C.computeMonth({ ym: YM, staff: K_STAFF, schedule: schedRows, punches, days: days || [], config: config || {}, now });
+  const blk = (m, date, i) => dayOf(m, 'sT01', date).blocks[i || 0];
+  const S15 = sched({ 15: '早' }).rows;
+  const in15 = [P('sT01', 'in', '2026-12-15', '7:00')];
+
+  /* B-1 勤務中 */
+  const w1 = monthAt(at('2026-12-15', '16:29'), S15, in15);
+  t('B1: 予定の終わり＋猶予30分より前（16:29）は勤務中・退勤漏れにしない・要確認0', blk(w1, '2026-12-15').working === true && blk(w1, '2026-12-15').flags.includes('working') && !blk(w1, '2026-12-15').flags.includes('missing_out') && sumOf(w1, 'sT01').reviewCount === 0, blk(w1, '2026-12-15').flags);
+  const w2 = monthAt(at('2026-12-15', '16:30'), S15, in15);
+  t('B1: 猶予ちょうど（16:30）は退勤漏れ・要確認1', blk(w2, '2026-12-15').working === false && blk(w2, '2026-12-15').flags.includes('missing_out') && sumOf(w2, 'sT01').reviewCount === 1, blk(w2, '2026-12-15').flags);
+  const w3 = monthAt(at('2026-12-15', '16:31'), S15, in15);
+  t('B1: 猶予を1分超（16:31）も退勤漏れ', blk(w3, '2026-12-15').flags.includes('missing_out') && !blk(w3, '2026-12-15').working);
+  const w4 = monthAt(at('2026-12-15', '16:40'), S15, in15, [], { overtimeAlertMin: 60 });
+  t('B1: 猶予は設定 overtimeAlertMin（60分なら 16:40 も勤務中）', blk(w4, '2026-12-15').working === true);
+  const ns = [P('sT01', 'in', '2026-12-16', '9:00')];
+  const w5 = monthAt(at('2026-12-17', '0:59'), [], ns);
+  t('B1: 予定の無い日は出勤から16時間より前（15:59後）は勤務中', blk(w5, '2026-12-16').working === true && !blk(w5, '2026-12-16').flags.includes('missing_out'), blk(w5, '2026-12-16').flags);
+  const w6 = monthAt(at('2026-12-17', '1:00'), [], ns);
+  t('B1: 予定の無い日は出勤からちょうど16時間で退勤漏れ', blk(w6, '2026-12-16').flags.includes('missing_out') && !blk(w6, '2026-12-16').working);
+  const w7 = monthAt(at('2026-12-15', '10:00'), S15, [P('sT01', 'in', '2026-12-15', '7:00'), P('sT01', 'in', '2026-12-15', '8:00')]);
+  t('B1: 前の離れた出勤は退勤漏れのまま・最後の出勤だけ勤務中', blk(w7, '2026-12-15').flags.includes('missing_out') && blk(w7, '2026-12-15').working === true, blk(w7, '2026-12-15').flags);
+  const w8 = monthAt(at('2026-12-15', '14:00'), S15, [P('sT01', 'in', '2026-12-15', '7:00'), P('sT01', 'out', '2026-12-15', '12:00'), P('sT01', 'in', '2026-12-15', '13:00')]);
+  t('B1: 昼休みを打刻して戻った後も勤務中（早退にしない・午前の5hは数える）', blk(w8, '2026-12-15').working && !blk(w8, '2026-12-15').flags.includes('early_leave') && blk(w8, '2026-12-15').earlyLeaveMin === 0 && blk(w8, '2026-12-15').workMin === 300, blk(w8, '2026-12-15'));
+  const NS = sched({ 20: '(22', 21: '8)' }).rows;
+  const w9 = monthAt(at('2026-12-21', '3:00'), NS, [P('sT01', 'in', '2026-12-20', '21:55')]);
+  t('B1: 夜勤の途中（翌3:00）は勤務中', blk(w9, '2026-12-20').working === true && !blk(w9, '2026-12-20').flags.includes('missing_out'));
+  const w10 = monthAt(at('2026-12-21', '8:30'), NS, [P('sT01', 'in', '2026-12-20', '21:55')]);
+  t('B1: 夜勤の上がり8:00＋猶予30分ちょうどで退勤漏れ', blk(w10, '2026-12-20').flags.includes('missing_out') && !blk(w10, '2026-12-20').working);
+
+  /* B-2 未出勤 */
+  const n1 = monthAt(at('2026-12-15', '7:15'), S15, []);
+  t('B2: 予定の開始＋15分ちょうど（7:15）はまだ印なし', blk(n1, '2026-12-15').flags.length === 0, blk(n1, '2026-12-15').flags);
+  const n2 = monthAt(at('2026-12-15', '7:16'), S15, []);
+  t('B2: 予定の開始＋15分を1分超（7:16）は not_in_yet・要確認に数えない', blk(n2, '2026-12-15').flags.join() === 'not_in_yet' && sumOf(n2, 'sT01').reviewCount === 0 && sumOf(n2, 'sT01').noPunchDays === 0);
+  const n3 = monthAt(at('2026-12-15', '16:00'), S15, []);
+  t('B2: 予定の終わりちょうど（16:00）はまだ not_in_yet', blk(n3, '2026-12-15').flags.join() === 'not_in_yet');
+  const n4 = monthAt(at('2026-12-15', '16:01'), S15, []);
+  t('B2: 予定の終わりを過ぎたら従来どおり no_punch（要確認）', blk(n4, '2026-12-15').flags.join() === 'no_punch' && sumOf(n4, 'sT01').reviewCount === 1);
+  t('B2: 猶予は固定15分（定数）', C.NOT_IN_GRACE_MIN === 15 && C.fillConfig({ NOT_IN_GRACE_MIN: 60 }).NOT_IN_GRACE_MIN === undefined);
+
+  /* B-3 day_mark */
+  const S16 = sched({ 16: '早', 17: '早', 18: '早' }).rows;
+  const dm = month(S16, [P('sT01', 'in', '2026-12-16', '6:20'), P('sT01', 'out', '2026-12-16', '16:00')],
+    [{ staff_id: 'sT01', work_date: '2026-12-16', day_mark: 'checked' }, { staff_id: 'sT01', work_date: '2026-12-17', day_mark: 'absent' }]);
+  const c16 = blk(dm, '2026-12-16');
+  t('B3: checked の日は印（早出）を残して checked:true・要確認に数えない', c16.checked === true && c16.flags.includes('early') && c16.flags.includes('checked'), c16.flags);
+  const a17 = blk(dm, '2026-12-17');
+  t('B3: absent の日は no_punch を absent に変える', a17.absent === true && a17.flags.join() === 'absent', a17.flags);
+  const sdm = sumOf(dm, 'sT01');
+  t('B3: 要確認は18日の打刻なしの1件だけ・欠勤1日・打刻なし1日', sdm.reviewCount === 1 && sdm.absentDays === 1 && sdm.noPunchDays === 1, sdm);
+  t('B3: 日に印の値（mark）と欠勤（absent）', dayOf(dm, 'sT01', '2026-12-17').mark === 'absent' && dayOf(dm, 'sT01', '2026-12-17').absent === true && dayOf(dm, 'sT01', '2026-12-16').mark === 'checked');
+  const dm2 = monthAt(at('2026-12-15', '9:00'), S15, [], [{ staff_id: 'sT01', work_date: '2026-12-15', day_mark: 'absent' }]);
+  t('B3: 当日の未出勤も absent の日は欠勤', blk(dm2, '2026-12-15').flags.join() === 'absent' && sumOf(dm2, 'sT01').absentDays === 1);
+  const dm3 = month(S16.slice(0, 1), [P('sT01', 'in', '2026-12-16', '7:00'), P('sT01', 'out', '2026-12-16', '16:00')], [{ staff_id: 'sT01', work_date: '2026-12-16', day_mark: 'absent' }]);
+  t('B3: 打刻のある日に absent が付いていても実働は消さない（欠勤に数えない）', blk(dm3, '2026-12-16').workMin === 480 && sumOf(dm3, 'sT01').absentDays === 0);
+  const dm4 = month(sched({ 13: '7-9 17-21' }).rows, [P('sT01', 'in', '2026-12-13', '17:00'), P('sT01', 'out', '2026-12-13', '21:00')], [{ staff_id: 'sT01', work_date: '2026-12-13', break_min: 30, day_mark: 'checked' }]);
+  t('B3: 休憩を直した分割勤務の日も、両方の塊に checked が届く', dayOf(dm4, 'sT01', '2026-12-13').blocks.every((b) => b.checked) && sumOf(dm4, 'sT01').reviewCount === 0, dayOf(dm4, 'sT01', '2026-12-13').blocks.map((b) => b.flags));
+
+  /* B-4 部分承認 */
+  const pa = (d, extra) => month(sched({ 15: '早' }).rows, [P('sT01', 'in', '2026-12-15', d[0]), P('sT01', 'out', '2026-12-15', d[1])], [Object.assign({ staff_id: 'sT01', work_date: '2026-12-15' }, extra)]);
+  const iso15 = (hm) => new Date(at('2026-12-15', hm)).toISOString();
+  const p1 = blk(pa(['6:20', '16:40'], { early_from: iso15('6:40'), ot_until: iso15('16:20') }), '2026-12-15');
+  t('B4: early_from 6:40・ot_until 16:20 → 6:40〜16:20 を数える・早出/残業の印は消える・残業40分', C.jstHM(p1.countStart) === '06:40' && C.jstHM(p1.countEnd) === '16:20' && !p1.flags.includes('early') && !p1.flags.includes('overtime') && p1.workMin === 520 && p1.overtimeMin === 40, p1);
+  const p2 = blk(pa(['6:20', '16:40'], { early_from: iso15('7:30'), ot_until: iso15('15:30') }), '2026-12-15');
+  t('B4: 予定の内側の時刻を入れても予定の開始・終わりより内に食い込まない（7:00〜16:00）', C.jstHM(p2.countStart) === '07:00' && C.jstHM(p2.countEnd) === '16:00' && p2.workMin === 480 && p2.lateMin === 0 && p2.earlyLeaveMin === 0, p2);
+  const p3 = blk(pa(['6:20', '16:40'], { early_from: iso15('6:00'), ot_until: iso15('17:00') }), '2026-12-15');
+  t('B4: 打刻より前の early_from・後の ot_until は打刻どおり（6:20〜16:40）', C.jstHM(p3.countStart) === '06:20' && C.jstHM(p3.countEnd) === '16:40', [C.jstHM(p3.countStart), C.jstHM(p3.countEnd)]);
+  const p4 = blk(pa(['7:20', '15:30'], { early_from: iso15('6:40'), ot_until: iso15('16:30') }), '2026-12-15');
+  t('B4: 遅刻・早退の日は打刻どおり（early_from・ot_until で予定へ引き戻さない）', C.jstHM(p4.countStart) === '07:20' && C.jstHM(p4.countEnd) === '15:30' && p4.lateMin === 20 && p4.earlyLeaveMin === 30, p4);
+  const spl = month(sched({ 13: '7-9 17-21' }).rows, [P('sT01', 'in', '2026-12-13', '6:20'), P('sT01', 'out', '2026-12-13', '9:40'), P('sT01', 'in', '2026-12-13', '16:20'), P('sT01', 'out', '2026-12-13', '21:40')],
+    [{ staff_id: 'sT01', work_date: '2026-12-13', early_from: new Date(at('2026-12-13', '6:30')).toISOString(), ot_until: new Date(at('2026-12-13', '21:30')).toISOString() }]);
+  const sb = dayOf(spl, 'sT01', '2026-12-13').blocks;
+  t('B4: 分割勤務の日は early_from を最初の塊・ot_until を最後の塊にだけ当てる', C.jstHM(sb[0].countStart) === '06:30' && C.jstHM(sb[0].countEnd) === '09:00' && sb[0].flags.includes('overtime') && C.jstHM(sb[1].countStart) === '17:00' && sb[1].flags.includes('early') && C.jstHM(sb[1].countEnd) === '21:30', sb.map((b) => [C.jstHM(b.countStart), C.jstHM(b.countEnd), b.flags]));
+
+  const iso13 = (hm) => new Date(at('2026-12-13', hm)).toISOString();
+  const S13 = sched({ 13: '7-9 17-21' }).rows;
+  const q1 = dayOf(month(S13, [P('sT01', 'in', '2026-12-13', '16:30'), P('sT01', 'out', '2026-12-13', '21:00')], [{ staff_id: 'sT01', work_date: '2026-12-13', early_from: iso13('16:40') }]), 'sT01', '2026-12-13').blocks;
+  t('B4: 分割勤務で打刻のある後ろの塊だけの日も early_from 16:40 が当たる（数える開始 16:40）', C.jstHM(q1[1].countStart) === '16:40' && !q1[1].flags.includes('early'), q1.map((b) => [C.jstHM(b.countStart), b.flags]));
+  const q2 = dayOf(month(S13, [P('sT01', 'in', '2026-12-13', '7:00'), P('sT01', 'out', '2026-12-13', '9:40')], [{ staff_id: 'sT01', work_date: '2026-12-13', ot_until: iso13('9:30') }]), 'sT01', '2026-12-13').blocks;
+  t('B4: 分割勤務で打刻のある前の塊だけの日も ot_until 9:30 が当たる（数える終わり 9:30）', C.jstHM(q2[0].countEnd) === '09:30' && !q2[0].flags.includes('overtime'), q2.map((b) => [C.jstHM(b.countEnd), b.flags]));
+
+  /* B-5 数えなかった分 */
+  const u = month(sched({ 15: '早', 16: '早', 17: '早' }).rows, [
+    P('sT01', 'in', '2026-12-15', '6:50'), P('sT01', 'out', '2026-12-15', '16:10'),
+    P('sT01', 'in', '2026-12-16', '6:50'), P('sT01', 'out', '2026-12-16', '16:10'),
+    P('sT01', 'in', '2026-12-17', '7:00'), P('sT01', 'out', '2026-12-17', '12:00'), P('sT01', 'in', '2026-12-17', '13:00'), P('sT01', 'out', '2026-12-17', '16:10')
+  ], [{ staff_id: 'sT01', work_date: '2026-12-16', early_ok: true, overtime_ok: true }]);
+  t('B5: 6:50〜16:10 を 7:00〜16:00 で数えた日は uncountedMin 20', blk(u, '2026-12-15').uncountedMin === 20, blk(u, '2026-12-15').uncountedMin);
+  t('B5: 早出・残業を認めた日は 0', blk(u, '2026-12-16').uncountedMin === 0);
+  t('B5: 昼休みを打刻した日は昼休みを入れない（退勤の10分だけ）', blk(u, '2026-12-17').uncountedMin === 10, blk(u, '2026-12-17').uncountedMin);
+  t('B5: 月の合計 30分・日にも出す', sumOf(u, 'sT01').uncountedMin === 30 && dayOf(u, 'sT01', '2026-12-15').uncountedMin === 20, sumOf(u, 'sT01').uncountedMin);
+
+  /* B-6 有休日数 */
+  const paidRow = (d, min) => ({ staff_id: 'sT01', work_date: '2026-12-' + d, seq: 9, kind: 'paid', start_at: null, end_at: null, break_min: 0, paid_min: min, office: 'facility', symbol: '有' });
+  const pdm = month(sched({ 22: '7-11' }).rows.concat([paidRow('19', 240), paidRow('20', 480), paidRow('21', 241), paidRow('22', 240), paidRow('23', 120)]), [P('sT01', 'in', '2026-12-22', '7:00'), P('sT01', 'out', '2026-12-22', '11:00')]);
+  t('B6: 予定の無い日の有休4h は 0.5 日', dayOf(pdm, 'sT01', '2026-12-19').paidDays === 0.5);
+  t('B6: 8h は 1 日・4h1分（0.5超）は 1 日・2h は 0.5 日', dayOf(pdm, 'sT01', '2026-12-20').paidDays === 1 && dayOf(pdm, 'sT01', '2026-12-21').paidDays === 1 && dayOf(pdm, 'sT01', '2026-12-23').paidDays === 0.5);
+  t('B6: 午前4h勤務＋有休4h の日は 0.5 日（所定＝予定の実働＋有休）', dayOf(pdm, 'sT01', '2026-12-22').paidDays === 0.5);
+  t('B6: 月の有休日数 3.5・有休時間 1321分', sumOf(pdm, 'sT01').paidDays === 3.5 && sumOf(pdm, 'sT01').paidMin === 1321, [sumOf(pdm, 'sT01').paidDays, sumOf(pdm, 'sT01').paidMin]);
+
+  /* B-7 日ごとの CSV は1人1日1行 */
+  const d7 = month(sched({ 4: '7-9 17-21' }).rows, [P('sT01', 'in', '2026-12-04', '6:58'), P('sT01', 'out', '2026-12-04', '9:01'), P('sT01', 'in', '2026-12-04', '16:59'), P('sT01', 'out', '2026-12-04', '21:20')]);
+  const c7 = C.buildCsv(d7, { nameOf: (d) => d + '事業所' }).daily.split('\r\n').filter((l) => l.startsWith('9001,2026-12-04'));
+  t('B7: 分割勤務の日は1行（出勤は最初・退勤は最後・実働は合計6h）', c7.length === 1 && c7[0] === '9001,2026-12-04,07:00,21:00,0,6:00,0:00,施設事業所,' + blk(d7, '2026-12-04').symbol + ',' && blk(d7, '2026-12-04', 1).symbol === blk(d7, '2026-12-04').symbol, c7);
+  const c7x = C.buildCsv(d7, { nameOf: (d) => d + '事業所', extraCols: true }).daily.split('\r\n').filter((l) => l.startsWith('9001,2026-12-04'));
+  t('B7: 拡張の列でも1行・生の打刻は最初の出勤 6:58〜最後の退勤 21:20・予定 7:00〜21:00', c7x.length === 1 && c7x[0].split(',').slice(10, 15).join(',') === '試験 甲,07:00,21:00,06:58,21:20', c7x);
+
+  /* B-8 CSV の列を末尾に足す */
+  const m8 = month(sched({ 1: '早', 2: '早', 5: '有' }).rows, [P('sT01', 'in', '2026-12-01', '6:50'), P('sT01', 'out', '2026-12-01', '16:10')], [{ staff_id: 'sT01', work_date: '2026-12-02', day_mark: 'absent' }]);
+  const plain = C.buildCsv(m8, { nameOf: (d) => d + '事業所' });
+  t('B8: extraCols を付けない時は v1 の見出しのまま', plain.summary.split('\r\n')[0] === C.SUMMARY_HEAD.join(',') && plain.daily.split('\r\n')[0] === C.DAILY_HEAD.join(','));
+  const x8 = C.buildCsv(m8, { nameOf: (d) => d + '事業所', extraCols: true });
+  const xs = x8.summary.split('\r\n'), xd = x8.daily.split('\r\n');
+  t('B8: 集計の見出し＝v1 の列のあとに 欠勤日数・有休時間・数えなかった時間・休日労働・実働_<事業所名>', xs[0] === C.SUMMARY_HEAD.concat(['欠勤日数', '有休時間', '数えなかった時間', '休日労働', '実働_施設事業所']).join(','), xs[0]);
+  t('B8: 集計の行の先頭は v1 と同じ・末尾は 欠勤1・有休8:00・数えなかった0:20・休日0:00・施設8:00', xs[1].startsWith(plain.summary.split('\r\n')[1]) && xs[1].endsWith(',1,8:00,0:20,0:00,8:00'), xs[1]);
+  t('B8: 日ごとの見出し＝v1 の列のあとに 氏名〜印', xd[0] === C.DAILY_HEAD.concat(['氏名', '予定の開始', '予定の終わり', '打刻の出勤（生）', '打刻の退勤（生）', '残業', '休日労働', '有休時間', '印']).join(','), xd[0]);
+  t('B8: 日ごとの行（先頭は v1 と同じ・生の打刻 06:50/16:10）', xd[1] === '9001,2026-12-01,07:00,16:00,60,8:00,0:00,施設事業所,早,,試験 甲,07:00,16:00,06:50,16:10,0:00,0:00,0:00,', xd[1]);
+  t('B8: 欠勤の日も行に出て、印は「欠勤」', xd[2] === '9001,2026-12-02,,,0,0:00,0:00,施設事業所,早,,試験 甲,07:00,16:00,,,0:00,0:00,0:00,欠勤', xd[2]);
+  t('B8: 有休の日の行の有休時間 8:00', /^9001,2026-12-05,,,0,0:00,0:00,,有,有休 8:00,試験 甲,,,,,0:00,0:00,8:00,$/.test(xd[3]), xd[3]);
+  const onlyAbs = C.buildCsv(month(sched({ 2: '早' }).rows, [], [{ staff_id: 'sT01', work_date: '2026-12-02', day_mark: 'absent' }]));
+  t('B8: 欠勤だけの人も集計に出る', onlyAbs.summary.split('\r\n')[1].startsWith('9001,'), onlyAbs.summary);
+
+  /* B-9 法定休日（2026-12-06 は日曜） */
+  t('B9: 設定の確かめ（null・"3"・6 は可／7・1.5・"x" は不可）', C.checkLegalHoliday(null).ok && C.checkLegalHoliday(null).value === null && C.checkLegalHoliday('3').value === 3 && C.checkLegalHoliday(6).value === 6 && !C.checkLegalHoliday(7).ok && !C.checkLegalHoliday(1.5).ok && !C.checkLegalHoliday('x').ok);
+  t('B9: 既定は null・壊れた値は null・0 は日曜で残る', C.fillConfig({}).legal_holiday === null && C.fillConfig({ legal_holiday: 9 }).legal_holiday === null && C.fillConfig({ legal_holiday: 0 }).legal_holiday === 0);
+  const H6 = sched({ 6: '7-18' }).rows, h6p = [P('sT01', 'in', '2026-12-06', '7:00'), P('sT01', 'out', '2026-12-06', '18:00')];
+  const hNone = month(H6, h6p, [], { variableMonth: false }), hSun = month(H6, h6p, [], { variableMonth: false, legal_holiday: 0 });
+  t('B9: 決めない時は休日労働0・法定外は従来どおり120分', sumOf(hNone, 'sT01').holidayMin === 0 && sumOf(hNone, 'sT01').legalOverMin === 120);
+  t('B9: 日曜を法定休日にすると10hが休日労働・法定外には重ねない（0）', sumOf(hSun, 'sT01').holidayMin === 600 && sumOf(hSun, 'sT01').legalOverMin === 0 && dayOf(hSun, 'sT01', '2026-12-06').holidayMin === 600, sumOf(hSun, 'sT01'));
+  t('B9: ほかの曜日（土曜）を決めた時は日曜の勤務は休日労働にならない', sumOf(month(H6, h6p, [], { variableMonth: false, legal_holiday: 6 }), 'sT01').holidayMin === 0);
+  const hn = month(sched({ 5: '(22', 6: '8)(22', 7: '8)' }).rows, [P('sT01', 'in', '2026-12-05', '22:00'), P('sT01', 'out', '2026-12-06', '8:00'), P('sT01', 'in', '2026-12-06', '22:00'), P('sT01', 'out', '2026-12-07', '8:00')], [], { legal_holiday: 0 });
+  t('B9: 夜勤は暦日で分ける（土22→日8 は 8/10 の 384分・日22→月8 は 2/10 の 96分）', blk(hn, '2026-12-05').holidayMin === 384 && blk(hn, '2026-12-06').holidayMin === 96, [blk(hn, '2026-12-05').holidayMin, dayOf(hn, 'sT01', '2026-12-06') && blk(hn, '2026-12-06').holidayMin]);
+  const wk = [];
+  for (let d = 6; d <= 12; d++) { const ds = '2026-12-' + String(d).padStart(2, '0'); wk.push(P('sT01', 'in', ds, '9:00'), P('sT01', 'out', ds, '17:00')); }
+  t('B9: 変形なしの週: 7日×7h は決めない時 9h・日曜を法定休日にすると残り6日の 2h が法定外', sumOf(month([], wk, [], { variableMonth: false }), 'sT01').legalOverMin === 540 && sumOf(month([], wk, [], { variableMonth: false, legal_holiday: 0 }), 'sT01').legalOverMin === 120);
+
+  /* B-10 事業所別 */
+  const o10 = month(sched({ 11: '9-18' }, { 11: '早' }, { sT01: { '通所': { 11: '7-9' } } }).rows, [P('sT01', 'in', '2026-12-11', '7:00'), P('sT01', 'out', '2026-12-11', '18:00'), P('sT02', 'in', '2026-12-11', '7:00'), P('sT02', 'out', '2026-12-11', '16:00')]);
+  const bo = sumOf(o10, 'sT01').byOffice;
+  t('B10: 個人の byOffice（施設＋通所＝実働）', bo.facility > 0 && bo.day > 0 && bo.facility + bo.day === sumOf(o10, 'sT01').workMin, bo);
+  t('B10: 月全体の totals.byOffice・totals.workMin', o10.totals && o10.totals.workMin === sumOf(o10, 'sT01').workMin + sumOf(o10, 'sT02').workMin && o10.totals.byOffice.visit === 480 && o10.totals.byOffice.facility === bo.facility, o10.totals);
+
+  const snapH = C.snapshotOf(hSun).rows.find((r) => r.staff_id === 'sT01');
+  const snapA = C.snapshotOf(dm).rows.find((r) => r.staff_id === 'sT01');
+  const snapU = C.snapshotOf(u).rows.find((r) => r.staff_id === 'sT01');
+  t('B9/B10: 締めの控えに休日労働・欠勤日数・有休時間・数えなかった時間・事業所別が入る', snapH.holidayMin === 600 && snapA.absentDays === 1 && snapU.uncountedMin === 30 && C.snapshotOf(pdm).rows.find((r) => r.staff_id === 'sT01').paidMin === 1321 && snapH.byOffice.facility === 600, [snapH, snapA.absentDays, snapU.uncountedMin]);
+
+  /* B-11 要確認の一覧 */
+  const r11 = month(sched({ 3: '早', 9: '7-9 17-21', 10: '早' }, { 2: '早' }).rows, [
+    P('sT01', 'in', '2026-12-03', '6:20'), P('sT01', 'out', '2026-12-03', '16:00'),
+    P('sT01', 'in', '2026-12-09', '7:00'), P('sT01', 'out', '2026-12-09', '9:00'), P('sT01', 'in', '2026-12-09', '17:00'),
+    P('sT01', 'in', '2026-12-10', '6:20'), P('sT01', 'out', '2026-12-10', '16:00')
+  ], [{ staff_id: 'sT01', work_date: '2026-12-10', day_mark: 'checked' }]);
+  const rl = C.reviewList(r11);
+  t('B11: 日付順（乙の2日→甲の3日→甲の9日）・確認済み（10日）は入れない', rl.map((x) => x.staffId + '@' + x.date).join() === 'sT02@2026-12-02,sT01@2026-12-03,sT01@2026-12-09', rl);
+  t('B11: 形は { staffId, date, marks, blockIndex }・marks は要確認の印だけ', JSON.stringify(rl[1]) === JSON.stringify({ staffId: 'sT01', date: '2026-12-03', marks: ['early'], blockIndex: 0 }) && rl[0].marks.join() === 'no_punch', rl);
+  t('B11: 分割勤務の後ろの塊は blockIndex 1', rl[2].blockIndex === 1 && rl[2].marks.join() === 'missing_out', rl[2]);
+  t('B11: 件数は reviewCount の合計と同じ', rl.length === sumOf(r11, 'sT01').reviewCount + sumOf(r11, 'sT02').reviewCount && rl.length === r11.totals.reviewCount);
+  t('B11: 空の結果でも配列', Array.isArray(C.reviewList({ people: [] })) && C.reviewList({ people: [] }).length === 0);
+}
+
 console.log(`\n${pass} 件合格 / ${fail} 件不合格`);
 process.exit(fail ? 1 : 0);

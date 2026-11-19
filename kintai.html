@@ -5,7 +5,7 @@
 <meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="light">
+<meta name="color-scheme" content="light dark">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
 <meta name="referrer" content="no-referrer">
@@ -17,17 +17,19 @@
 <script src="su-facility.js?v=2026-11-17"></script>
 <script src="su-kv.js?v=2026-11-16"></script>
 <script src="shift-symbols.js?v=2026-11-18"></script>
-<script src="kintai-calc.js?v=2026-11-18"></script>
+<script src="kintai-calc.js?v=2026-11-19"></script>
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 <link rel="stylesheet" href="su-shell.css?v=2026-11-13">
 <style>
-:root{--ink:#14213d;--sub:#3d4a5c;--line:#c9d2de;--bg:#f4f6f9;--card:#fff;--ok:#0b5d2a;--ok-bg:#e3f4e8;--warn:#6b4100;--warn-bg:#fff4d6;--ng:#8a1020;--ng-bg:#fde8eb;--focus:#1f4fbf;--muted:#414b5a}
+:root{--ink:#14213d;--sub:#3d4a5c;--line:#c9d2de;--bg:#f4f6f9;--card:#fff;--ok:#0b5d2a;--ok-bg:#e3f4e8;--warn:#6b4100;--warn-bg:#fff4d6;--ng:#8a1020;--ng-bg:#fde8eb;--focus:#1f4fbf;--muted:#414b5a;
+  --field:#fff;--th:#eef2f7;--tag:#eef2f7;--wk:#0b3d91;--wk-bg:#e3ecfb;--skel:#e3e8ef;--toast:#14213d;--toast-tx:#fff;--pri-tx:#fff}
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;font-size:15px}
-.hdr{display:flex;align-items:center;gap:12px;padding:10px 16px;background:#fff;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.hdr{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--line);flex-wrap:wrap}
 .hdr h1{font-size:19px;margin:0}
-.hdr-btn,.btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 14px;border:1px solid var(--line);border-radius:10px;color:var(--ink);text-decoration:none;background:#fff;font:inherit;cursor:pointer}
-.btn.pri{background:var(--focus);color:#fff;border-color:var(--focus)}
+.hdr-btn,.btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 14px;border:1px solid var(--line);border-radius:10px;color:var(--ink);text-decoration:none;background:var(--card);font:inherit;cursor:pointer}
+.btn.pri{background:var(--focus);color:var(--pri-tx);border-color:var(--focus)}
+.btn[aria-pressed="true"]{background:var(--wk-bg);border-color:var(--focus);font-weight:700}
 .btn.ng{color:var(--ng);border-color:#e6a9b2}
 .btn:disabled{opacity:.5;cursor:not-allowed}
 .btn.sm{min-height:36px;padding:0 10px;font-size:14px}
@@ -35,8 +37,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .sync{font-size:14px;color:var(--muted)}
 .bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 16px}
 .bar label{display:flex;align-items:center;gap:6px}
-input,select,textarea{font:inherit;min-height:40px;border:1px solid var(--line);border-radius:8px;padding:4px 8px;background:#fff;color:var(--ink)}
-.tabs{display:flex;gap:6px;padding:0 16px;flex-wrap:wrap;border-bottom:1px solid var(--line);background:#fff}
+input,select,textarea{font:inherit;min-height:40px;border:1px solid var(--line);border-radius:8px;padding:4px 8px;background:var(--field);color:var(--ink)}
+.tabs{display:flex;gap:6px;padding:0 16px;flex-wrap:wrap;border-bottom:1px solid var(--line);background:var(--card)}
 .tabs button{min-height:44px;padding:0 14px;border:0;border-bottom:3px solid transparent;background:none;font:inherit;color:var(--sub);cursor:pointer}
 .tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--focus);font-weight:700}
 main{padding:12px 16px 40px}
@@ -47,21 +49,29 @@ main{padding:12px 16px 40px}
 .band.ng{background:var(--ng-bg);color:var(--ng)}
 .band.ok{background:var(--ok-bg);color:var(--ok)}
 .tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
-table{border-collapse:collapse;width:100%;background:#fff}
+table{border-collapse:collapse;width:100%;background:var(--card)}
 th,td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top;white-space:nowrap}
-th{background:#eef2f7;font-weight:600;position:sticky;top:0}
+th{background:var(--th);font-weight:600;position:sticky;top:0}
 td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .grid td{padding:4px 5px;text-align:center;font-size:13px;min-width:46px}
-.grid td.nm,.grid th.nm{text-align:left;position:sticky;left:0;background:#fff;z-index:1}
+.grid td.nm,.grid th.nm{text-align:left;position:sticky;left:0;background:var(--card);z-index:1}
+/* 右端の合計（出勤・総労働・要確認）は横に送っても見えるよう固定する（列の並びは変えない＝固定するのは右から3つ） */
+.grid .sr{position:sticky;background:var(--card);z-index:1;box-sizing:border-box}
+.grid th.sr{background:var(--th)}
+.grid .sr1{right:0;min-width:56px;width:56px}.grid .sr2{right:56px;min-width:64px;width:64px}.grid .sr3{right:120px;min-width:52px;width:52px;box-shadow:-2px 0 0 var(--line)}
+.grid td.wk{background:var(--wk-bg)}
 .grid td.rv{background:var(--warn-bg)}
 .grid td.np{background:var(--ng-bg)}
 .raw{color:var(--muted);font-size:13px}
-.tag{display:inline-block;border-radius:6px;padding:1px 6px;margin:1px 2px;font-size:12px;background:#eef2f7;color:var(--sub)}
+.tag{display:inline-block;border-radius:6px;padding:1px 6px;margin:1px 2px;font-size:12px;background:var(--tag);color:var(--sub)}
+.tag.wk{background:var(--wk-bg);color:var(--wk);font-weight:600}
+.tag.ok{background:var(--ok-bg);color:var(--ok)}
+.tag.done{text-decoration:line-through}
 .tag.rv{background:var(--warn-bg);color:var(--warn)}
 .tag.ng{background:var(--ng-bg);color:var(--ng)}
 .void{text-decoration:line-through;color:#6b7686}
 .empty{color:var(--muted);padding:12px}
-dialog{border:1px solid var(--line);border-radius:14px;padding:0;max-width:680px;width:calc(100% - 32px)}
+dialog{border:1px solid var(--line);border-radius:14px;padding:0;max-width:680px;width:calc(100% - 32px);background:var(--card);color:var(--ink)}
 dialog::backdrop{background:rgba(20,33,61,.35)}
 .dlg-h{padding:14px 16px;border-bottom:1px solid var(--line);font-weight:700;font-size:17px}
 .dlg-b{padding:14px 16px;max-height:65vh;overflow:auto}
@@ -72,7 +82,44 @@ fieldset{border:1px solid var(--line);border-radius:10px;margin:10px 0;padding:8
 legend{font-weight:600;padding:0 6px}
 .help{color:var(--muted);font-size:13px;margin:4px 0}
 .kv{display:grid;grid-template-columns:max-content 1fr;gap:6px 12px;align-items:center}
-@media (max-width:640px){th,td{padding:5px 6px}.kv{grid-template-columns:1fr}}
+/* 日ごとのまとめの札（押すとその人だけに絞る） */
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.chip{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 14px;border:1px solid var(--line);border-radius:22px;background:var(--card);color:var(--ink);font:inherit;cursor:pointer}
+.chip b{font-size:18px;font-variant-numeric:tabular-nums}
+.chip.wk{border-color:var(--wk);color:var(--wk)}.chip.rv{border-color:var(--warn);color:var(--warn)}.chip.ng{border-color:var(--ng);color:var(--ng)}
+.chip[aria-pressed="true"]{outline:3px solid var(--focus);outline-offset:1px;font-weight:700}
+.tabs .tab-n{display:inline-block;min-width:1.6em;margin-left:4px;padding:0 6px;border-radius:10px;background:var(--warn-bg);color:var(--warn);font-size:13px;font-weight:700}
+.tabs .tab-n:empty{display:none}
+/* 直す窓の打刻の一覧: その日に数えた打刻は太字・前後の日の打刻は薄く */
+.plist td{white-space:normal;vertical-align:middle}.plist label{white-space:nowrap}
+.p-cnt td{font-weight:700}.p-oth td{color:var(--muted)}
+.presets{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0}
+.hist{font-size:13px}.hist td{white-space:normal}
+/* 読み込み中の骨組み（灰色の帯） */
+.skel{display:block;height:18px;margin:10px 0;border-radius:6px;background:var(--skel);animation:skel 1.2s ease-in-out infinite}
+.skel.w6{width:60%}.skel.w8{width:80%}.skel.w4{width:40%}
+@keyframes skel{50%{opacity:.45}}
+@media (prefers-reduced-motion:reduce){.skel{animation:none}}
+/* 保存の後の短い知らせ（画面の下・自動で消える） */
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);max-width:calc(100% - 32px);padding:12px 18px;border-radius:12px;background:var(--toast);color:var(--toast-tx);box-shadow:0 4px 16px rgba(0,0,0,.25);z-index:50;font-size:15px}
+.toast[hidden]{display:none}
+.ph{display:none}
+@media (max-width:640px){th,td{padding:5px 6px}.kv{grid-template-columns:1fr}
+  /* iPhone の幅では右端の合計を固定すると日の列が1つしか見えないため、固定しない（仮置き） */
+  .grid .sr{position:static;min-width:0;width:auto;box-shadow:none}}
+/* 暗い表示（端末の設定に合わせる）。su-theme.css が --ng・--focus・--warn-bg と見出しを上書きするので、同じ強さの指定で後から置く。紙は白地のまま（screen だけ） */
+@media screen and (prefers-color-scheme: dark){
+  :root,:root[data-su-theme]:not([data-ds="ops"]){--ink:#e8ecf3;--sub:#b8c2d0;--muted:#aab4c3;--line:#3a4556;--bg:#10151d;--card:#1a212c;--field:#141a23;--th:#222b38;--tag:#26303e;
+    --ok:#7fd69a;--ok-bg:#123222;--warn:#ffd27a;--warn-bg:#33270c;--ng:#ff9aa8;--ng-bg:#3a141a;--focus:#8fb0ff;--wk:#a9c4ff;--wk-bg:#16284a;--skel:#2a3442;--toast:#e8ecf3;--toast-tx:#10151d;--pri-tx:#10151d}
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr{background:var(--card);color:var(--ink);border-bottom-color:var(--line);box-shadow:inset 0 -2px 0 var(--line)}
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn{background:var(--card);color:var(--ink);border-color:var(--line)}
+  :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr .sync{background:var(--tag);color:var(--ink);border-color:var(--line)}
+  .btn.ng{border-color:#7a3a44}
+  .void{color:#8a94a4}
+  dialog::backdrop{background:rgba(0,0,0,.6)}
+  /* 共通の「不具合を報告」の窓は白地のままなので、入力欄とボタンも明るい表示で描かせる */
+  .sur-dlg{color-scheme:light}
+}
 /* 止めの案内（現場端末・ログインの覆い）を出している間は初回案内の帯を出さない */
 body:has(#g-gate:not([hidden])) .sui-band{display:none}
 /* 印刷（画面の切り替えのボタンは出さない・表を横に切らない・A4 横） */
@@ -80,7 +127,12 @@ body:has(#g-gate:not([hidden])) .sui-band{display:none}
 @page{size:A4 landscape;margin:8mm}
 @media print{.hdr,.bar,.tabs,.no-print,.su-shell-role,.band{display:none!important}body{background:#fff;font-size:11px}.cd{border:0;padding:0}th{position:static}
   .tw{overflow:visible}th,td{white-space:normal;padding:2px 3px}.grid td,.grid th{min-width:0;font-size:9px;padding:1px}.grid td.nm,.grid th.nm{position:static}
-  .grid td button{min-height:0!important;padding:0!important;font-size:9px}.print-only{display:block}.print-only table{width:auto}.print-only td{font-size:14px;padding:6px 12px}}
+  .grid td button{min-height:0!important;padding:0!important;font-size:9px}.print-only{display:block}.print-only table{width:auto}.print-only td{font-size:14px;padding:6px 12px}
+  /* 印刷の時だけの見出し（事業者・月・氏名または日付・印刷した日時）。全員分の印刷は1人1ページ */
+  .ph{display:block;font-size:12px;margin:0 0 4mm;border-bottom:1px solid #000;padding-bottom:1mm}.ph b{font-size:14px}
+  .grid .sr{position:static;min-width:0;width:auto;box-shadow:none}.chips,.toast,.skel{display:none!important}
+  .pg{break-after:page;page-break-after:always}.pg:last-child{break-after:auto;page-break-after:auto}
+  body.pr-edits #g-main > :not(.pr-edits-cd){display:none!important}body.pr-edits .pr-edits-cd .no-print{display:none!important}}
 </style>
 </head>
 <body>
@@ -101,6 +153,7 @@ body:has(#g-gate:not([hidden])) .sui-band{display:none}
   </div>
   <nav class="tabs no-print" role="tablist" aria-label="画面の切り替え">
     <button type="button" role="tab" data-tab="day">日ごと</button>
+    <button type="button" role="tab" data-tab="review">要確認<span class="tab-n" id="g-rv-n" aria-hidden="true"></span></button>
     <button type="button" role="tab" data-tab="grid">月の一覧</button>
     <button type="button" role="tab" data-tab="person">個人の月</button>
     <button type="button" role="tab" data-tab="staff">職員と番号</button>
@@ -109,8 +162,9 @@ body:has(#g-gate:not([hidden])) .sui-band{display:none}
   </nav>
   <main id="g-main" role="tabpanel"></main>
 </div>
+<div class="toast no-print" id="g-toast" role="status" aria-live="polite" hidden></div>
 <dialog id="g-dlg" aria-labelledby="g-dlg-h"><div class="dlg-h" id="g-dlg-h"></div><div class="dlg-b" id="g-dlg-b"></div><div class="dlg-f" id="g-dlg-f"></div></dialog>
-<script src="kintai.js?v=2026-11-18"></script>
+<script src="kintai.js?v=2026-11-19"></script>
 <script src="su-shell.js?v=2026-11-18"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 <script src="su-intro.js?v=2026-11-18"></script>

@@ -18,6 +18,9 @@
     ? require('./shift-symbols.js') : root.ShiftSymbols;
 
   var MIN = 60000, HOUR = 3600000, DAY = 86400000, JST = 9 * HOUR, DUP_MS = 10 * MIN, FIT_MS = 4 * HOUR;
+  /* v2: 予定の開始からこの分を過ぎて打刻が無ければ「まだ出勤していません」（設定にしない固定値）。
+     予定の無い勤務は出勤からこの時間までを「勤務中」とみなす */
+  var NOT_IN_GRACE_MIN = 15, WORKING_NO_SCHED_MS = 16 * HOUR;
 
   var DEFAULTS = {
     breakThresholdH: 6, breakH: 1, nightBreakH: 2,
@@ -27,7 +30,8 @@
     monthRound30: false,
     overtimeMonthWarnH: 45,
     weekStartDow: 0,        // 週40時間を数える週の始まり（0=日曜・就業規則に定めが無ければ日曜）
-    csvTime: 'hmm'
+    csvTime: 'hmm',
+    legal_holiday: null     // 法定休日の曜日（null＝決めない／0=日曜〜6=土曜・v2 2026-11-19。キーは凍結仕様どおりの名前）
   };
   /* noScheduleUnit は 1 に固定（15分などで丸めると1日ごとの切り捨てになり基発150号に反する・反証レビュー指摘10） */
   var NUM_KEYS = { breakThresholdH: [0, 24], breakH: [0, 8], nightBreakH: [0, 8], earlyAlertMin: [0, 600],
@@ -46,7 +50,17 @@
     if (typeof c.variableMonth === 'boolean') out.variableMonth = c.variableMonth;
     if (typeof c.monthRound30 === 'boolean') out.monthRound30 = c.monthRound30;
     if (c.csvTime === 'hmm' || c.csvTime === 'dec') out.csvTime = c.csvTime;
+    var lh = checkLegalHoliday(c.legal_holiday);
+    if (lh.ok) out.legal_holiday = lh.value;
     return out;
+  }
+  /* 法定休日の設定の確かめ（v2）: null・undefined・'' は「決めない」、0〜6 の整数（または '0'〜'6'）は曜日。
+   * 返す: { ok, value:null|0〜6 } （ok=false の時 value は null＝決めないに戻す） */
+  function checkLegalHoliday(v) {
+    if (v == null || v === '') return { ok: true, value: null };
+    if (typeof v === 'string' && /^[0-6]$/.test(v)) return { ok: true, value: +v };
+    if (typeof v === 'number' && v >= 0 && v <= 6 && Math.floor(v) === v) return { ok: true, value: v };
+    return { ok: false, value: null };
   }
 
   /* ── 日付と時刻 ── */
@@ -245,7 +259,7 @@
         pairs.push({ in: null, out: q });
       }
     }
-    if (open) pairs.push({ in: open, out: null });
+    if (open) pairs.push({ in: open, out: null, open: true });   /* 最後に開いたままの組＝まだ勤務中かもしれない（v2） */
     return pairs;
   }
 
@@ -293,47 +307,70 @@
     missing_out: '退勤の打刻がありません', missing_in: '出勤の打刻がありません',
     no_punch: '打刻がありません（欠勤か打刻漏れ）', no_schedule: '予定の無い勤務',
     offline: '通信できない時の打刻（端末の時刻）', office: '事務所が足した打刻',
-    late: '遅刻', early_leave: '早退', after_lock: '締めた後の打刻'
+    late: '遅刻', early_leave: '早退', after_lock: '締めた後の打刻',
+    working: '勤務中', not_in_yet: 'まだ出勤していません', checked: '確認済み', absent: '欠勤'
   };
   var REVIEW = { early: 1, overtime: 1, missing_out: 1, missing_in: 1, no_punch: 1, no_schedule: 1, offline: 1, after_lock: 1 };
 
 
-  /* 塊1つを数える */
+  /* 塊1つを数える
+   * day: kintai_days の行（早出・残業の承認・休憩の直し・v2 の day_mark / early_from / ot_until）
+   * v2 で足したキー: working・checked・absent（真偽）、uncountedMin（打刻のうち数えなかった分）、holidayMin（法定休日の暦日に入る実働）
+   * v2 で足した印（flags）: working・not_in_yet・checked・absent（どれも要確認ではない） */
   function countBlock(b, day, cfg, nowMs) {
     var r = { staff_id: b.staff_id, work_date: b.work_date, sched: b.start != null,
       schedStart: b.start, schedEnd: b.end, schedBreak: b.breakMin || 0, schedWork: b.schedWork || 0,
       symbol: b.symbol || '', office: b.office || null, officeShare: b.officeShare || {}, night: !!b.night,
       punches: [], countStart: null, countEnd: null, breakMin: 0, workMin: 0, nightMin: 0,
-      overtimeMin: 0, lateMin: 0, earlyLeaveMin: 0, flags: [] };
+      overtimeMin: 0, lateMin: 0, earlyLeaveMin: 0, flags: [],
+      working: false, checked: false, absent: false, uncountedMin: 0, holidayMin: 0 };
     var pairs = (b.pairs || []).slice().sort(function (x, y) { return ((x.in || x.out).at) - ((y.in || y.out).at); });
+    var lastPair = pairs.length ? pairs[pairs.length - 1] : null;
+    /* 勤務中: 最後の組が開いたまま（そのあとに打刻が無い）で、予定の終わり＋猶予（overtimeAlertMin）が今より後。
+       予定が無い時は出勤から16時間より前。退勤漏れにせず、要確認にも数えない（v2-1） */
+    if (lastPair && lastPair.open && lastPair.in && nowMs != null) {
+      var until = r.sched ? b.end + cfg.overtimeAlertMin * MIN : lastPair.in.at + WORKING_NO_SCHED_MS;
+      if (until > nowMs) r.working = true;
+    }
     for (var i = 0; i < pairs.length; i++) {
       if (pairs[i].in) r.punches.push(pairs[i].in);
       if (pairs[i].out) r.punches.push(pairs[i].out);
       if (!pairs[i].in) r.flags.push('missing_in');
-      if (!pairs[i].out) r.flags.push('missing_out');
+      if (!pairs[i].out && !(r.working && pairs[i] === lastPair)) r.flags.push('missing_out');
     }
+    if (r.working) r.flags.push('working');
     for (i = 0; i < r.punches.length; i++) {
       if (r.punches[i].source === 'offline' && r.flags.indexOf('offline') < 0) r.flags.push('offline');
       if (r.punches[i].source === 'office' && r.flags.indexOf('office') < 0) r.flags.push('office');
     }
     if (!pairs.length) {
       if (r.sched && b.end < nowMs) r.flags.push('no_punch');
-      return r;
+      else if (r.sched && b.start + NOT_IN_GRACE_MIN * MIN < nowMs) r.flags.push('not_in_yet');   /* 予定の開始＋15分を過ぎて終わりはまだ（v2-2） */
+      return markDay(r, day);
     }
     var full = [];
     for (i = 0; i < pairs.length; i++) if (pairs[i].in && pairs[i].out) full.push([pairs[i].in.at, pairs[i].out.at]);
-    if (!full.length) return r;
+    if (!full.length) return markDay(r, day);
     var first = full[0], last = full[full.length - 1];
     var cs = first[0], ce = last[1];
+    var earlyFrom = day ? toMs(day.early_from) : null, otUntil = day ? toMs(day.ot_until) : null;
     if (r.sched) {
       if (cs < b.start) {
-        if ((b.start - cs) / MIN >= cfg.earlyAlertMin && !(day && day.early_ok)) r.flags.push('early');
-        if (!(day && day.early_ok)) cs = b.start;
+        if (day && day.early_ok) { /* 早出を全部認めた日は打刻どおり */ }
+        else if (earlyFrom != null) cs = Math.max(cs, Math.min(earlyFrom, b.start));   /* この時刻から認める（予定の開始より後にはしない・v2-4） */
+        else {
+          if ((b.start - cs) / MIN >= cfg.earlyAlertMin) r.flags.push('early');
+          cs = b.start;
+        }
       } else if (cs > b.start) { r.lateMin = Math.round((cs - b.start) / MIN); r.flags.push('late'); }
       if (ce > b.end) {
-        if ((ce - b.end) / MIN >= cfg.overtimeAlertMin && !(day && day.overtime_ok)) r.flags.push('overtime');
-        if (!(day && day.overtime_ok)) ce = b.end;
-      } else if (ce < b.end) { r.earlyLeaveMin = Math.round((b.end - ce) / MIN); r.flags.push('early_leave'); }
+        if (day && day.overtime_ok) { /* 残業を全部認めた日は打刻どおり */ }
+        else if (otUntil != null) ce = Math.max(b.end, Math.min(ce, otUntil));   /* この時刻まで認める（予定の終わりより前にはしない・v2-4） */
+        else {
+          if ((ce - b.end) / MIN >= cfg.overtimeAlertMin) r.flags.push('overtime');
+          ce = b.end;
+        }
+      } else if (ce < b.end && !r.working) { r.earlyLeaveMin = Math.round((b.end - ce) / MIN); r.flags.push('early_leave'); }   /* 勤務中の途中の退勤は早退にしない */
     } else {
       r.flags.push('no_schedule');
     }
@@ -344,10 +381,12 @@
       if (full.length === 1) { s = cs; e = ce; }
       if (e > s) segs.push([s, e]);
     }
-    var bound = 0, night = 0, gap = 0;
+    var bound = 0, night = 0, gap = 0, raw = 0, hol = 0;
+    for (i = 0; i < full.length; i++) raw += (full[i][1] - full[i][0]) / MIN;
     for (i = 0; i < segs.length; i++) {
       bound += (segs[i][1] - segs[i][0]) / MIN; night += nightMinutes(segs[i][0], segs[i][1]);
       if (i > 0) gap += (segs[i][0] - segs[i - 1][1]) / MIN;
+      if (cfg.legal_holiday != null) hol += holidayMinutes(segs[i][0], segs[i][1], cfg.legal_holiday);
     }
     bound = Math.round(bound); gap = Math.round(gap);
     var span = bound + gap, br;   /* span＝最初の出勤から最後の退勤まで（打刻した昼休みを含む） */
@@ -363,7 +402,39 @@
     r.workMin = Math.max(0, bound - br);
     r.nightMin = b.night ? Math.max(0, night - br) : night;
     r.overtimeMin = r.sched ? Math.max(0, r.workMin - r.schedWork) : r.workMin;
+    /* 丸めで数えなかった分＝打刻の出勤〜退勤（組ごと）のうち数えた区間の外（休憩は数えた区間の内なので入れない・v2-5） */
+    r.uncountedMin = Math.max(0, Math.round(raw) - bound);
+    /* 法定休日は暦日（その曜日の 0:00〜24:00）。休憩は区間の長さの割合で按分（仮置き・v2-9） */
+    r.holidayMin = bound > 0 ? Math.round(r.workMin * Math.round(hol) / bound) : 0;
+    return markDay(r, day);
+  }
+  /* day_mark を当てる（v2-3）: checked＝印は残して要確認に数えない／absent＝打刻なし・未出勤を欠勤に変える */
+  function markDay(r, day) {
+    var mk = day && day.day_mark;
+    if (mk === 'checked') { r.checked = true; r.flags.push('checked'); }
+    else if (mk === 'absent') {
+      var ix = r.flags.indexOf('no_punch');
+      if (ix < 0) ix = r.flags.indexOf('not_in_yet');
+      if (ix >= 0) { r.flags.splice(ix, 1, 'absent'); r.absent = true; }
+    }
     return r;
+  }
+  /* その曜日（日本時間の暦日）と [s,e) の重なり（分） */
+  function holidayMinutes(s, e, dow) {
+    if (s == null || e == null || e <= s) return 0;
+    var total = 0, d = jstDate(s), last = jstDate(e - 1);
+    for (var i = 0; i < 4; i++) {
+      if (new Date(jstMs(d, 12 * 60)).getUTCDay() === dow) total += overlap(s, e, jstMs(d, 0), jstMs(d, 1440));
+      if (d === last) break;
+      d = addDays(d, 1);
+    }
+    return total / MIN;
+  }
+  /* 要確認か（要確認の印があって、確認済みでない） */
+  function needsReview(c) {
+    if (c.checked) return false;
+    for (var i = 0; i < c.flags.length; i++) if (REVIEW[c.flags[i]]) return true;
+    return false;
   }
 
   /* ── 4. 月の計算 ──
@@ -412,9 +483,24 @@
         (rawBy[blocks[j].work_date] = rawBy[blocks[j].work_date] || []).push(blocks[j]);
       }
       /* 休憩を直した日に塊が2つ以上ある時は、打刻のある最初の塊にだけ直した休憩を当てる（ほかは予定どおり・指摘13） */
-      var target = {};
+      var target = {}, firstOf = {}, lastOf = {};
+      var startOf = function (x) { return x.start || ((x.pairs[0].in || x.pairs[0].out).at); };
       for (var rd in rawBy) {
-        var dn0 = dayBy[st.staff_id + '|' + rd];
+        /* early_from・ot_until は1つの塊にだけ当てる（分割勤務の別の塊へ漏らさない・仮置き v2-4）。
+           候補は出勤と退勤のそろった打刻のある予定の塊（休憩の target と同じ選び方）。early_from は予定の開始が、
+           ot_until は予定の終わりがその時刻に最も近い塊（同じ近さなら早い方） */
+        var ord = rawBy[rd].slice().sort(function (x, y) { return startOf(x) - startOf(y); });
+        var dnA = dayBy[st.staff_id + '|' + rd];
+        var cands = ord.filter(function (x) { return x.start != null && x.pairs.some(function (pp) { return pp.in && pp.out; }); });
+        var nearest = function (v, key) {
+          var best = null, bd = Infinity;
+          for (var ni = 0; ni < cands.length; ni++) { var dd0 = Math.abs(cands[ni][key] - v); if (dd0 < bd) { bd = dd0; best = cands[ni]; } }
+          return best;
+        };
+        var efMs = dnA ? toMs(dnA.early_from) : null, otMs = dnA ? toMs(dnA.ot_until) : null;
+        firstOf[rd] = efMs != null ? nearest(efMs, 'start') : null;
+        lastOf[rd] = otMs != null ? nearest(otMs, 'end') : null;
+        var dn0 = dnA;
         if (!dn0 || typeof dn0.break_min !== 'number') continue;
         var cand = rawBy[rd].slice().sort(function (x, y) { return (x.start || ((x.pairs[0].in || x.pairs[0].out).at)) - (y.start || ((y.pairs[0].in || y.pairs[0].out).at)); });
         target[rd] = cand[0];
@@ -424,7 +510,13 @@
         var b = blocks[j];
         if (b.work_date < first || b.work_date > lastD) continue;
         var dnB = dayBy[st.staff_id + '|' + b.work_date];
-        if (dnB && typeof dnB.break_min === 'number' && target[b.work_date] !== b) dnB = { early_ok: dnB.early_ok, overtime_ok: dnB.overtime_ok };
+        if (dnB && typeof dnB.break_min === 'number' && target[b.work_date] !== b) dnB = { early_ok: dnB.early_ok, overtime_ok: dnB.overtime_ok, day_mark: dnB.day_mark, early_from: dnB.early_from, ot_until: dnB.ot_until };
+        if (dnB && ((dnB.early_from != null && firstOf[b.work_date] !== b) || (dnB.ot_until != null && lastOf[b.work_date] !== b))) {
+          var cp = {}; for (var dk in dnB) cp[dk] = dnB[dk];
+          if (firstOf[b.work_date] !== b) cp.early_from = null;
+          if (lastOf[b.work_date] !== b) cp.ot_until = null;
+          dnB = cp;
+        }
         var cb = countBlock(b, dnB, cfg, nowMs);
         if (!b.start && cb.office === null) cb.office = st.office || null;
         if (!b.start && cb.office) { cb.officeShare = {}; cb.officeShare[cb.office] = 1; }
@@ -437,10 +529,12 @@
       for (var pk in paidBy) if (pk.indexOf(st.staff_id + '|') === 0) { var pd = pk.split('|')[1]; byDate[pd] = byDate[pd] || []; }
       var dates = Object.keys(byDate).sort(), days = [];
       var sum = { workDays: 0, paidDays: 0, paidMin: 0, workMin: 0, schedInMin: 0, overtimeMin: 0, legalOverMin: 0, nightMin: 0,
-        lateCount: 0, lateMin: 0, earlyLeaveCount: 0, earlyLeaveMin: 0, noPunchDays: 0, reviewCount: 0, byOffice: {}, warnings: [] };
+        lateCount: 0, lateMin: 0, earlyLeaveCount: 0, earlyLeaveMin: 0, noPunchDays: 0, reviewCount: 0, byOffice: {}, warnings: [],
+        absentDays: 0, uncountedMin: 0, holidayMin: 0 };
       for (j = 0; j < dates.length; j++) {
         var date = dates[j], bl = byDate[date].sort(function (x, y) { return (x.schedStart || x.countStart || 0) - (y.schedStart || y.countStart || 0); });
         var dw = 0, dsw = 0, dflags = [], noPunchAll = bl.length > 0, dnote = dayBy[st.staff_id + '|' + date];
+        var dhol = 0, dunc = 0, dabs = false;
         for (var x = 0; x < bl.length; x++) {
           var c = bl[x];
           dw += c.workMin; dsw += c.schedWork;
@@ -448,21 +542,26 @@
           sum.nightMin += c.nightMin; sum.overtimeMin += c.overtimeMin;
           if (c.lateMin > 0) { sum.lateCount++; sum.lateMin += c.lateMin; }
           if (c.earlyLeaveMin > 0) { sum.earlyLeaveCount++; sum.earlyLeaveMin += c.earlyLeaveMin; }
-          var rv = false;
-          for (var fl = 0; fl < c.flags.length; fl++) {
-            if (dflags.indexOf(c.flags[fl]) < 0) dflags.push(c.flags[fl]);
-            if (REVIEW[c.flags[fl]]) rv = true;
-          }
-          if (rv) sum.reviewCount++;   /* 要確認は勤務（塊）ごとに1件（印の数で数えない・指摘15） */
+          for (var fl = 0; fl < c.flags.length; fl++) if (dflags.indexOf(c.flags[fl]) < 0) dflags.push(c.flags[fl]);
+          if (needsReview(c)) sum.reviewCount++;   /* 要確認は勤務（塊）ごとに1件（印の数で数えない・指摘15）。確認済みの塊は数えない（v2-3） */
+          dhol += c.holidayMin; dunc += c.uncountedMin;
+          if (c.absent) dabs = true;
           for (var of in c.officeShare) sum.byOffice[of] = (sum.byOffice[of] || 0) + c.workMin * c.officeShare[of];
         }
         var paidMin = paidBy[st.staff_id + '|' + date] || 0;
-        var legal = Math.max(0, dw - (cfg.variableMonth ? Math.max(480, dsw) : 480));
+        /* 法定休日の労働は法定外残業に重ねない（v2-9）。legal_holiday が null なら dhol は 0 で従来どおり */
+        var legal = Math.max(0, dw - dhol - (cfg.variableMonth ? Math.max(480, dsw) : 480));
         sum.legalOverMin += legal; sum.workMin += dw;
         if (dw > 0) sum.workDays++;
-        if (paidMin > 0) { sum.paidDays++; sum.paidMin += paidMin; }
+        /* 有休日数は 0.5 刻み: 有休分 ÷ その日の所定（働く予定もある日は 予定の実働＋有休分・無ければ 480）が 0.5 以下なら 0.5、超えれば 1（仮置き v2-6） */
+        var pdays = 0;
+        if (paidMin > 0) { pdays = paidMin / (dsw > 0 ? dsw + paidMin : 480) <= 0.5 ? 0.5 : 1; sum.paidDays += pdays; sum.paidMin += paidMin; }
         if (noPunchAll && bl.length && paidMin === 0) sum.noPunchDays++;
-        days.push({ date: date, blocks: bl, paidMin: paidMin, workMin: dw, schedWorkMin: dsw, legalOverMin: legal, flags: dflags, note: dnote || null });
+        var absentDay = dabs && dw === 0 && paidMin === 0;
+        if (absentDay) sum.absentDays++;
+        sum.holidayMin += dhol; sum.uncountedMin += dunc;
+        days.push({ date: date, blocks: bl, paidMin: paidMin, workMin: dw, schedWorkMin: dsw, legalOverMin: legal, flags: dflags, note: dnote || null,
+          paidDays: pdays, holidayMin: dhol, uncountedMin: dunc, absent: absentDay, mark: (dnote && dnote.day_mark) || null });
       }
       /* 週・月の枠を超えた分も法定外（労基法32条・指摘11）。日の法定外として数えた分は二重に数えない。
          変形なし: 週（weekStartDow 始まり）の実働−日の法定外 が40時間を超えた分。月をまたぐ週はこの月の日だけで数える（仮置き）
@@ -473,12 +572,12 @@
         for (var wi = 0; wi < days.length; wi++) {
           var dd = days[wi], dow = new Date(jstMs(dd.date, 12 * 60)).getUTCDay();
           var wkey = addDays(dd.date, -((dow - cfg.weekStartDow + 7) % 7));
-          weeks[wkey] = (weeks[wkey] || 0) + dd.workMin - dd.legalOverMin;
+          weeks[wkey] = (weeks[wkey] || 0) + dd.workMin - dd.legalOverMin - dd.holidayMin;
         }
         for (var wk in weeks) sum.legalOverMin += Math.max(0, weeks[wk] - 2400);
       } else {
         var frame = Math.floor(2400 * daysIn(ym) / 7);
-        sum.legalOverMin += Math.max(0, sum.workMin - dailyLegal - frame);
+        sum.legalOverMin += Math.max(0, sum.workMin - dailyLegal - sum.holidayMin - frame);
       }
       for (var ko in sum.byOffice) sum.byOffice[ko] = Math.round(sum.byOffice[ko]);
       if (cfg.monthRound30) { sum.overtimeMin = round30(sum.overtimeMin); sum.legalOverMin = round30(sum.legalOverMin); sum.nightMin = round30(sum.nightMin); }
@@ -487,8 +586,36 @@
       if (st.missingStaff) sum.warnings.push('職員の名簿に無い番号の記録です（シフトから外れた職員）');
       people.push({ staff: st, days: days, sum: sum });
     }
-    return { ym: ym, config: cfg, people: people };
+    /* 月全体の合計（v2-10・画面のまとめと CSV の事業所別の列に使う） */
+    var totals = { workMin: 0, reviewCount: 0, absentDays: 0, paidMin: 0, uncountedMin: 0, holidayMin: 0, byOffice: {} };
+    for (i = 0; i < people.length; i++) {
+      var ps = people[i].sum;
+      totals.workMin += ps.workMin; totals.reviewCount += ps.reviewCount; totals.absentDays += ps.absentDays;
+      totals.paidMin += ps.paidMin; totals.uncountedMin += ps.uncountedMin; totals.holidayMin += ps.holidayMin;
+      for (var tb in ps.byOffice) totals.byOffice[tb] = (totals.byOffice[tb] || 0) + ps.byOffice[tb];
+    }
+    return { ym: ym, config: cfg, people: people, totals: totals };
   }
+  /* 要確認の一覧（v2-11）: 月の結果 → [{ staffId, date, marks:[要確認の印], blockIndex }] を日付順（同じ日は名簿順・塊の順）。
+   * blockIndex は people[].days[].blocks の添字。確認済みの塊は入れない */
+  function reviewList(month) {
+    var out = [], n = 0;
+    var people = (month && month.people) || [];
+    for (var i = 0; i < people.length; i++) {
+      var days = people[i].days || [];
+      for (var j = 0; j < days.length; j++) {
+        var bl = days[j].blocks || [];
+        for (var k = 0; k < bl.length; k++) {
+          if (!needsReview(bl[k])) continue;
+          out.push({ staffId: people[i].staff.staff_id, date: days[j].date, marks: bl[k].flags.filter(function (f) { return REVIEW[f]; }), blockIndex: k, _n: n++ });
+        }
+      }
+    }
+    out.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : a._n - b._n; });
+    for (i = 0; i < out.length; i++) delete out[i]._n;
+    return out;
+  }
+
   /* 1か月の合計の1時間未満を 30分未満は切り捨て・30分以上は切り上げ（基発150号の範囲） */
   function round30(m) { var r = m % 60; return r >= 30 ? m - r + 60 : m - r; }
 
@@ -503,35 +630,75 @@
 
   var SUMMARY_HEAD = ['従業員コード', '氏名', '主事業所', '出勤日数', '有休日数', '総労働時間', '所定内', '残業', '法定外', '深夜', '遅刻回数', '遅刻時間', '早退回数', '早退時間', '打刻なし日数', '要確認件数'];
   var DAILY_HEAD = ['従業員コード', '勤務日', '出勤時刻', '退勤時刻', '休憩分', '実働', '深夜', '事業所', 'シフト記号', '備考'];
+  /* v2-8: 末尾に足す列（buildCsv の opts.extraCols が true の時だけ出す＝既定の出力は v1 と同じ）。
+     集計はこのあとに「実働_<事業所名>」を事業所ごと（施設・訪問・通所・その他の順）に足す */
+  var SUMMARY_EXTRA_HEAD = ['欠勤日数', '有休時間', '数えなかった時間', '休日労働'];
+  var DAILY_EXTRA_HEAD = ['氏名', '予定の開始', '予定の終わり', '打刻の出勤（生）', '打刻の退勤（生）', '残業', '休日労働', '有休時間', '印'];
+  var OFFICE_ORDER = ['facility', 'visit', 'day'];
 
-  /* opts: { month: computeMonth の結果, nameOf: 区分→事業所名（省略可） }
-   * 返す: { summary, daily, warnings:[文] } （どちらも CRLF・先頭に見出し） */
+  /* opts: { month: computeMonth の結果, nameOf: 区分→事業所名（省略可）, extraCols: true で v2 の列を末尾に足す（省略は v1 の列だけ） }
+   * 返す: { summary, daily, warnings:[文] } （どちらも CRLF・先頭に見出し）
+   * 日ごとは 1人1日1行（同じ日の塊をまとめる: 出勤は最初・退勤は最後・休憩と実働と各内訳は合計・v2-7） */
   function buildCsv(month, opts) {
     opts = opts || {};
-    var mode = month.config.csvTime, nameOf = opts.nameOf, warnings = [];
-    var S = [csvLine(SUMMARY_HEAD)], D = [csvLine(DAILY_HEAD)];
-    for (var i = 0; i < month.people.length; i++) {
+    var mode = month.config.csvTime, nameOf = opts.nameOf, warnings = [], ex = opts.extraCols === true;
+    var i, j, k, offs = [];
+    if (ex) {
+      var seen = {};
+      for (i = 0; i < month.people.length; i++) for (var oc in month.people[i].sum.byOffice) seen[oc] = 1;
+      for (i = 0; i < OFFICE_ORDER.length; i++) if (seen[OFFICE_ORDER[i]]) { offs.push(OFFICE_ORDER[i]); delete seen[OFFICE_ORDER[i]]; }
+      offs = offs.concat(Object.keys(seen).sort());
+    }
+    var sh = SUMMARY_HEAD.slice(), dh = DAILY_HEAD.slice();
+    if (ex) {
+      sh = sh.concat(SUMMARY_EXTRA_HEAD, offs.map(function (o) { return '実働_' + officeLabel(o, nameOf); }));
+      dh = dh.concat(DAILY_EXTRA_HEAD);
+    }
+    var S = [csvLine(sh)], D = [csvLine(dh)];
+    var uniq = function (arr) { var o = []; for (var u = 0; u < arr.length; u++) if (arr[u] !== '' && arr[u] != null && o.indexOf(arr[u]) < 0) o.push(arr[u]); return o; };
+    for (i = 0; i < month.people.length; i++) {
       var p = month.people[i], st = p.staff, s = p.sum;
-      var has = s.workMin > 0 || s.paidMin > 0 || s.noPunchDays > 0 || s.reviewCount > 0;   /* 欠けた打刻だけの人も落とさない（指摘4） */
+      var has = s.workMin > 0 || s.paidMin > 0 || s.noPunchDays > 0 || s.reviewCount > 0 || s.absentDays > 0;   /* 欠けた打刻だけ・欠勤だけの人も落とさない（指摘4） */
       if (!st.emp_code) { if (has) warnings.push((st.name || st.staff_id) + ' さんは従業員コードが無いので出していません'); continue; }
       if (!has) continue;
-      S.push(csvLine([st.emp_code, st.name, officeLabel(st.office, nameOf), s.workDays, s.paidDays, fmtMin(s.workMin, mode), fmtMin(s.schedInMin, mode),
+      var sr = [st.emp_code, st.name, officeLabel(st.office, nameOf), s.workDays, s.paidDays, fmtMin(s.workMin, mode), fmtMin(s.schedInMin, mode),
         fmtMin(s.overtimeMin, mode), fmtMin(s.legalOverMin, mode), fmtMin(s.nightMin, mode), s.lateCount, fmtMin(s.lateMin, mode),
-        s.earlyLeaveCount, fmtMin(s.earlyLeaveMin, mode), s.noPunchDays, s.reviewCount]));
-      for (var j = 0; j < p.days.length; j++) {
+        s.earlyLeaveCount, fmtMin(s.earlyLeaveMin, mode), s.noPunchDays, s.reviewCount];
+      if (ex) {
+        sr.push(s.absentDays || 0, fmtMin(s.paidMin, mode), fmtMin(s.uncountedMin, mode), fmtMin(s.holidayMin, mode));
+        for (k = 0; k < offs.length; k++) sr.push(fmtMin(s.byOffice[offs[k]] || 0, mode));
+      }
+      S.push(csvLine(sr));
+      for (j = 0; j < p.days.length; j++) {
         var d = p.days[j];
         if (d.paidMin > 0 && !d.blocks.some(function (b) { return b.workMin > 0; })) {
-          D.push(csvLine([st.emp_code, d.date, '', '', 0, fmtMin(0, mode), fmtMin(0, mode), '', '有', '有休 ' + fmtMin(d.paidMin, 'hmm')]));
+          var pr = [st.emp_code, d.date, '', '', 0, fmtMin(0, mode), fmtMin(0, mode), '', '有', '有休 ' + fmtMin(d.paidMin, 'hmm')];
+          if (ex) pr.push(st.name, '', '', '', '', fmtMin(0, mode), fmtMin(0, mode), fmtMin(d.paidMin, mode), '');
+          D.push(csvLine(pr));
           continue;
         }
-        for (var k = 0; k < d.blocks.length; k++) {
-          var b = d.blocks[k];
-          if (b.countStart == null && !b.flags.some(function (fx) { return REVIEW[fx]; })) continue;   /* 打刻の欠けた日も行に出す（指摘3） */
-          var notes = [];
-          for (var f = 0; f < b.flags.length; f++) if (REVIEW[b.flags[f]]) notes.push(FLAG_LABEL[b.flags[f]]);
-          D.push(csvLine([st.emp_code, d.date, jstHM(b.countStart), jstHM(b.countEnd), b.breakMin, fmtMin(b.workMin, mode), fmtMin(b.nightMin, mode),
-            officeLabel(b.office, nameOf), b.symbol, notes.join('・')]));
+        /* 打刻の欠けた日・欠勤の日も行に出す（指摘3）。勤務中・まだ出勤していない塊は出さない */
+        var use = d.blocks.filter(function (b) { return b.countStart != null || b.absent || b.flags.some(function (fx) { return REVIEW[fx]; }); });
+        if (!use.length) continue;
+        var cs = null, ce = null, br = 0, wm = 0, nm = 0, ot = 0, so = null, se = null, ri = null, ro = null, notes = [], marks = [], ofs = [], syms = [];
+        for (k = 0; k < use.length; k++) {
+          var b = use[k];
+          if (b.countStart != null && cs == null) cs = b.countStart;
+          if (b.countEnd != null) ce = b.countEnd;
+          if (b.schedStart != null && so == null) so = b.schedStart;
+          if (b.schedEnd != null) se = b.schedEnd;
+          br += b.breakMin; wm += b.workMin; nm += b.nightMin; ot += b.overtimeMin;
+          for (var q = 0; q < b.punches.length; q++) {
+            var pq = b.punches[q];
+            if (pq.kind === 'in' && (ri == null || pq.at < ri)) ri = pq.at;
+            if (pq.kind === 'out' && (ro == null || pq.at > ro)) ro = pq.at;
+          }
+          for (var f = 0; f < b.flags.length; f++) (REVIEW[b.flags[f]] ? notes : marks).push(FLAG_LABEL[b.flags[f]] || b.flags[f]);
+          ofs.push(officeLabel(b.office, nameOf)); syms.push(b.symbol);
         }
+        var dr = [st.emp_code, d.date, jstHM(cs), jstHM(ce), br, fmtMin(wm, mode), fmtMin(nm, mode), uniq(ofs).join('・'), uniq(syms).join(' '), uniq(notes).join('・')];
+        if (ex) dr.push(st.name, jstHM(so), jstHM(se), jstHM(ri), jstHM(ro), fmtMin(ot, mode), fmtMin(d.holidayMin || 0, mode), fmtMin(d.paidMin, mode), uniq(marks).join('・'));
+        D.push(csvLine(dr));
       }
     }
     return { summary: S.join('\r\n') + '\r\n', daily: D.join('\r\n') + '\r\n', warnings: warnings };
@@ -585,14 +752,16 @@
       rows.push({ staff_id: p.staff.staff_id, emp_code: p.staff.emp_code || null, workDays: s.workDays, paidDays: s.paidDays,
         workMin: s.workMin, schedInMin: s.schedInMin, overtimeMin: s.overtimeMin, legalOverMin: s.legalOverMin, nightMin: s.nightMin,
         lateCount: s.lateCount, lateMin: s.lateMin, earlyLeaveCount: s.earlyLeaveCount, earlyLeaveMin: s.earlyLeaveMin,
-        noPunchDays: s.noPunchDays, reviewCount: s.reviewCount, byOffice: s.byOffice });
+        noPunchDays: s.noPunchDays, reviewCount: s.reviewCount, byOffice: s.byOffice,
+        holidayMin: s.holidayMin || 0, absentDays: s.absentDays || 0, paidMin: s.paidMin || 0, uncountedMin: s.uncountedMin || 0 });   /* v2: 控えから締めた月の CSV を作れるように */
     }
     return { v: 1, ym: month.ym, config: month.config, rows: rows };
   }
 
   var api = {
     DEFAULTS: DEFAULTS, FLAG_LABEL: FLAG_LABEL, REVIEW: REVIEW, DIV_OFFICE: DIV_OFFICE, OFFICE_DIV: OFFICE_DIV,
-    SUMMARY_HEAD: SUMMARY_HEAD, DAILY_HEAD: DAILY_HEAD,
+    SUMMARY_HEAD: SUMMARY_HEAD, DAILY_HEAD: DAILY_HEAD, SUMMARY_EXTRA_HEAD: SUMMARY_EXTRA_HEAD, DAILY_EXTRA_HEAD: DAILY_EXTRA_HEAD,
+    NOT_IN_GRACE_MIN: NOT_IN_GRACE_MIN, checkLegalHoliday: checkLegalHoliday, reviewList: reviewList, needsReview: needsReview,
     fillConfig: fillConfig, isYm: isYm, daysIn: daysIn, nextYm: nextYm, prevYm: prevYm, jstMs: jstMs, jstDate: jstDate, jstHM: jstHM,
     addDays: addDays, iso: iso, fmtMin: fmtMin, nightMinutes: nightMinutes, staffVisible: staffVisible,
     buildSchedule: buildSchedule, blocksOf: blocksOf, pairsOf: pairsOf, computeMonth: computeMonth, round30: round30,
