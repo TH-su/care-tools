@@ -31,7 +31,8 @@
     overtimeMonthWarnH: 45,
     weekStartDow: 0,        // 週40時間を数える週の始まり（0=日曜・就業規則に定めが無ければ日曜）
     csvTime: 'hmm',
-    legal_holiday: null     // 法定休日の曜日（null＝決めない／0=日曜〜6=土曜・v2 2026-11-19。キーは凍結仕様どおりの名前）
+    legal_holiday: null,    // 法定休日の曜日（null＝決めない／0=日曜〜6=土曜・v2 2026-11-19。キーは凍結仕様どおりの名前）
+    close_day: 0            // 締め日（0＝月末・1〜28・0101）。期間そのものは DB が決める（計算は渡された期間を使う）。設定の保存でこの値を落とさないために持つ
   };
   /* noScheduleUnit は 1 に固定（15分などで丸めると1日ごとの切り捨てになり基発150号に反する・反証レビュー指摘10） */
   var NUM_KEYS = { breakThresholdH: [0, 24], breakH: [0, 8], nightBreakH: [0, 8], earlyAlertMin: [0, 600],
@@ -52,6 +53,7 @@
     if (c.csvTime === 'hmm' || c.csvTime === 'dec') out.csvTime = c.csvTime;
     var lh = checkLegalHoliday(c.legal_holiday);
     if (lh.ok) out.legal_holiday = lh.value;
+    if (typeof c.close_day === 'number' && c.close_day >= 0 && c.close_day <= 28 && Math.floor(c.close_day) === c.close_day) out.close_day = c.close_day;
     return out;
   }
   /* 法定休日の設定の確かめ（v2）: null・undefined・'' は「決めない」、0〜6 の整数（または '0'〜'6'）は曜日。
@@ -437,23 +439,51 @@
     return false;
   }
 
+  /* 月分の期間（0101・締め日で切る）: { from, to }（どちらも 'YYYY-MM-DD'・from ≦ to・長さ 1〜62日）。
+   * 形が違う・省いた時はその月の1日〜末日（＝締め日が月末の時と同じ）。期間は DB（kintai_month_get の period）が決めた値を渡す
+   * （切り替えの月の短い期間は DB しか知らない）。 */
+  function isDate(v) { return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && jstDate(jstMs(v, 12 * 60)) === v; }
+  function periodOf(ym, period) {
+    if (period && isDate(period.from) && isDate(period.to) && period.from <= period.to && (jstMs(period.to, 0) - jstMs(period.from, 0)) / DAY < 62) return { from: period.from, to: period.to };
+    return { from: dateOf(ym, 1), to: dateOf(ym, daysIn(ym)) };
+  }
+  function periodDays(p) { return Math.round((jstMs(p.to, 0) - jstMs(p.from, 0)) / DAY) + 1; }
+  function mdOf(date) { return (+date.slice(5, 7)) + '/' + (+date.slice(8, 10)); }
+  /* 表示の名前「2026年12月分（11/16〜12/15）」 */
+  function periodLabel(ym, period) {
+    var p = periodOf(ym, period);
+    return ym.slice(0, 4) + '年' + (+ym.slice(5, 7)) + '月分（' + mdOf(p.from) + '〜' + mdOf(p.to) + '）';
+  }
+
   /* ── 4. 月の計算 ──
-   * opts: { ym, staff:[kintai_staff], schedule:[kintai_schedule], punches:[kintai_punches], days:[kintai_days],
+   * opts: { ym, period:{from,to}（月分の期間・省略はその月の1日〜末日）, staff:[kintai_staff], schedule:[kintai_schedule], punches:[kintai_punches], days:[kintai_days],
    *         config, now(ミリ秒・省略は今), lockedAt(締めた時刻・省略可) }
-   * 返す: { ym, config, people:[{ staff, days:[{date, blocks, paidMin, workMin, legalOverMin, flags}], sum }], totals } */
+   *   期間の初日の前の6日分の打刻・予定・日の行も渡すと、週40時間の週を期間をまたいで数える（前の6日分は日の一覧・合計・要確認に入れない）
+   * 返す: { ym, period, config, people:[{ staff, days:[{date, blocks, paidMin, workMin, legalOverMin, flags}], sum }], totals }
+   * sum の時間の区分（0101・給与の契約 CONTRACT-payroll-v1.md §2）:
+   *   重ならない4つ（和が workMin）: schedInMin 所定内の実働（有休を含まない）／legalInOverMin 所定を超え法定内／
+   *     legalOverMin 法定外（60時間超を含み・法定休日を含まない）／holidayMin 法定休日の実働
+   *   重なる2つ: over60Min（legalOverMin のうち月60時間を超えた分）／nightMin（深夜）
+   *   ほかに overtimeMin（予定を超えた実働・今までどおり）・nightShiftCount（実際に働いた夜勤の塊の数）・schedDays（所定日数）・counts（シフトの記号ごとの回数） */
   function computeMonth(opts) {
     var ym = opts.ym;
     if (!isYm(ym)) throw new Error('月の形が違います');
     var cfg = fillConfig(opts.config);
     var nowMs = typeof opts.now === 'number' ? opts.now : Date.now();
     var lockedMs = toMs(opts.lockedAt);
-    var first = dateOf(ym, 1), lastD = dateOf(ym, daysIn(ym));
+    var per = periodOf(ym, opts.period);
+    var first = per.from, lastD = per.to, leadFirst = addDays(first, -6);
     var staff = opts.staff || [], i, j;
-    var schedBy = {}, punchBy = {}, dayBy = {}, paidBy = {};
+    var schedBy = {}, punchBy = {}, dayBy = {}, paidBy = {}, paidSym = {}, workSym = {};
     (opts.schedule || []).forEach(function (r) {
       (schedBy[r.staff_id] = schedBy[r.staff_id] || []).push(r);
+      if ((r.kind === 'work' || r.kind === 'night') && r.symbol && r.work_date >= first && r.work_date <= lastD) {
+        var kw = r.staff_id + '|' + r.work_date, ws0 = workSym[kw] = workSym[kw] || [];
+        if (ws0.indexOf(String(r.symbol)) < 0) ws0.push(String(r.symbol));   /* 1つのマスの記号は1日に1回（分割勤務の2行を2回にしない） */
+      }
       if (r.kind === 'paid' && r.work_date >= first && r.work_date <= lastD) {
         var k = r.staff_id + '|' + r.work_date; paidBy[k] = (paidBy[k] || 0) + (r.paid_min || 0);
+        if (r.symbol) (paidSym[k] = paidSym[k] || []).push(String(r.symbol));
       }
     });
     (opts.punches || []).forEach(function (p) { (punchBy[p.staff_id] = punchBy[p.staff_id] || []).push(p); });
@@ -479,7 +509,7 @@
       }
       var byDate = {}, rawBy = {};
       for (j = 0; j < blocks.length; j++) {
-        if (blocks[j].work_date < first || blocks[j].work_date > lastD) continue;
+        if (blocks[j].work_date < leadFirst || blocks[j].work_date > lastD) continue;
         (rawBy[blocks[j].work_date] = rawBy[blocks[j].work_date] || []).push(blocks[j]);
       }
       /* 休憩を直した日に塊が2つ以上ある時は、打刻のある最初の塊にだけ直した休憩を当てる（ほかは予定どおり・指摘13） */
@@ -508,7 +538,7 @@
       }
       for (j = 0; j < blocks.length; j++) {
         var b = blocks[j];
-        if (b.work_date < first || b.work_date > lastD) continue;
+        if (b.work_date < leadFirst || b.work_date > lastD) continue;
         var dnB = dayBy[st.staff_id + '|' + b.work_date];
         if (dnB && typeof dnB.break_min === 'number' && target[b.work_date] !== b) dnB = { early_ok: dnB.early_ok, overtime_ok: dnB.overtime_ok, day_mark: dnB.day_mark, early_from: dnB.early_from, ot_until: dnB.ot_until };
         if (dnB && ((dnB.early_from != null && firstOf[b.work_date] !== b) || (dnB.ot_until != null && lastOf[b.work_date] !== b))) {
@@ -530,14 +560,23 @@
       var dates = Object.keys(byDate).sort(), days = [];
       var sum = { workDays: 0, paidDays: 0, paidMin: 0, workMin: 0, schedInMin: 0, overtimeMin: 0, legalOverMin: 0, nightMin: 0,
         lateCount: 0, lateMin: 0, earlyLeaveCount: 0, earlyLeaveMin: 0, noPunchDays: 0, reviewCount: 0, byOffice: {}, warnings: [],
-        absentDays: 0, uncountedMin: 0, holidayMin: 0 };
+        absentDays: 0, uncountedMin: 0, holidayMin: 0,
+        legalInOverMin: 0, over60Min: 0, nightShiftCount: 0, schedDays: 0, counts: {}, weekOverMin: 0, frameOverMin: 0 };
+      var leadDays = [], liDay = 0;
       for (j = 0; j < dates.length; j++) {
         var date = dates[j], bl = byDate[date].sort(function (x, y) { return (x.schedStart || x.countStart || 0) - (y.schedStart || y.countStart || 0); });
         var dw = 0, dsw = 0, dflags = [], noPunchAll = bl.length > 0, dnote = dayBy[st.staff_id + '|' + date];
-        var dhol = 0, dunc = 0, dabs = false;
+        var dhol = 0, dunc = 0, dabs = false, dot = 0;
+        if (date < first) {
+          /* 前の6日分（前の月分の日）は週40時間の積み上げにだけ使う（日の一覧・合計・要確認に入れない） */
+          for (var lx = 0; lx < bl.length; lx++) { dw += bl[lx].workMin; dsw += bl[lx].schedWork; dhol += bl[lx].holidayMin; }
+          leadDays.push({ date: date, workMin: dw, holidayMin: dhol, legalOverMin: Math.max(0, dw - dhol - (cfg.variableMonth ? Math.max(480, dsw) : 480)), lead: true });
+          continue;
+        }
         for (var x = 0; x < bl.length; x++) {
           var c = bl[x];
-          dw += c.workMin; dsw += c.schedWork;
+          dw += c.workMin; dsw += c.schedWork; dot += c.overtimeMin;
+          if (c.night && c.workMin > 0) sum.nightShiftCount++;
           if (c.flags.indexOf('no_punch') < 0) noPunchAll = false;
           sum.nightMin += c.nightMin; sum.overtimeMin += c.overtimeMin;
           if (c.lateMin > 0) { sum.lateCount++; sum.lateMin += c.lateMin; }
@@ -549,9 +588,14 @@
           for (var of in c.officeShare) sum.byOffice[of] = (sum.byOffice[of] || 0) + c.workMin * c.officeShare[of];
         }
         var paidMin = paidBy[st.staff_id + '|' + date] || 0;
+        (paidSym[st.staff_id + '|' + date] || []).forEach(function (sy) { sum.counts[sy] = (sum.counts[sy] || 0) + 1; });
+        if (dsw > 0 || paidMin > 0) sum.schedDays++;   /* 所定日数＝働く予定か有休のある日（仮置き） */
+        if (dw > 0) (workSym[st.staff_id + '|' + date] || []).forEach(function (sy) { sum.counts[sy] = (sum.counts[sy] || 0) + 1; });   /* 働いた日の予定の記号ごと */
         /* 法定休日の労働は法定外残業に重ねない（v2-9）。legal_holiday が null なら dhol は 0 で従来どおり */
         var legal = Math.max(0, dw - dhol - (cfg.variableMonth ? Math.max(480, dsw) : 480));
         sum.legalOverMin += legal; sum.workMin += dw;
+        /* 日の法定内残業＝予定を超えた実働（法定休日でない分）のうち、日の法定外でない分（週・総枠の超過は月の合計の後で引く） */
+        liDay += Math.max(0, Math.max(0, dot - dhol) - legal);
         if (dw > 0) sum.workDays++;
         /* 有休日数は 0.5 刻み: 有休分 ÷ その日の所定（働く予定もある日は 予定の実働＋有休分・無ければ 480）が 0.5 以下なら 0.5、超えれば 1（仮置き v2-6） */
         var pdays = 0;
@@ -563,25 +607,50 @@
         days.push({ date: date, blocks: bl, paidMin: paidMin, workMin: dw, schedWorkMin: dsw, legalOverMin: legal, flags: dflags, note: dnote || null,
           paidDays: pdays, holidayMin: dhol, uncountedMin: dunc, absent: absentDay, mark: (dnote && dnote.day_mark) || null });
       }
-      /* 週・月の枠を超えた分も法定外（労基法32条・指摘11）。日の法定外として数えた分は二重に数えない。
-         変形なし: 週（weekStartDow 始まり）の実働−日の法定外 が40時間を超えた分。月をまたぐ週はこの月の日だけで数える（仮置き）
-         変形あり: 月の実働−日の法定外 が 40時間×月の日数÷7 を超えた分（週ごとの枠の判定は仮置きで行わない） */
-      var dailyLegal = sum.legalOverMin;
+      /* 週・期間の枠を超えた分も法定外（労基法32条・指摘11）。日の法定外として数えた分は二重に数えない。
+         変形なし: 週（weekStartDow 始まり）の頭から日ごとに（実働−日の法定外−法定休日）を積み上げ、40時間を超えた分をその日の属する月分に付ける。
+           期間の初日をまたぐ週は前の6日分も積み上げる（0101・期間をまたいで正しく数える。前の月分の日に付く分はこの月分に入れない）
+         変形あり（1か月単位・起算日＝期間の初日・0101）: 日 → 週 → 総枠の順に、前の段の分を除いて数える
+           週: 期間で切った週（weekStartDow 始まり）の（実働−日の法定外−法定休日）が、その週の予定の実働と40時間の長い方を超えた分。
+               期間の端の7日に満たない週の40時間は 40時間×その週の期間の日数÷7（切り捨て・仮置き）
+           総枠: 期間の（実働−日−週の法定外−法定休日）が 40時間×期間の日数÷7（切り捨て）を超えた分 */
+      var dailyLegal = sum.legalOverMin, weekLegal = 0, wi, wk, dd, dow, wkey;
+      var weekOf = function (date) { var dw0 = new Date(jstMs(date, 12 * 60)).getUTCDay(); return addDays(date, -((dw0 - cfg.weekStartDow + 7) % 7)); };
       if (!cfg.variableMonth) {
-        var weeks = {};
-        for (var wi = 0; wi < days.length; wi++) {
-          var dd = days[wi], dow = new Date(jstMs(dd.date, 12 * 60)).getUTCDay();
-          var wkey = addDays(dd.date, -((dow - cfg.weekStartDow + 7) % 7));
-          weeks[wkey] = (weeks[wkey] || 0) + dd.workMin - dd.legalOverMin - dd.holidayMin;
+        var acc = {}, all2 = leadDays.concat(days);
+        for (wi = 0; wi < all2.length; wi++) {
+          dd = all2[wi]; wkey = weekOf(dd.date);
+          var before = acc[wkey] || 0, after = before + dd.workMin - dd.legalOverMin - dd.holidayMin;
+          acc[wkey] = after;
+          if (!dd.lead) weekLegal += Math.max(0, after - 2400) - Math.max(0, before - 2400);
         }
-        for (var wk in weeks) sum.legalOverMin += Math.max(0, weeks[wk] - 2400);
       } else {
-        var frame = Math.floor(2400 * daysIn(ym) / 7);
-        sum.legalOverMin += Math.max(0, sum.workMin - dailyLegal - sum.holidayMin - frame);
+        var wsum = {}, wsch = {};
+        for (wi = 0; wi < days.length; wi++) {
+          dd = days[wi]; wkey = weekOf(dd.date);
+          wsum[wkey] = (wsum[wkey] || 0) + dd.workMin - dd.legalOverMin - dd.holidayMin;
+          wsch[wkey] = (wsch[wkey] || 0) + (dd.schedWorkMin || 0);
+        }
+        for (wk in wsum) {
+          var ws = wk < first ? first : wk, we = addDays(wk, 6); if (we > lastD) we = lastD;
+          var nd0 = periodDays({ from: ws, to: we });
+          var cap = nd0 >= 7 ? 2400 : Math.floor(2400 * nd0 / 7);
+          weekLegal += Math.max(0, wsum[wk] - Math.max(cap, wsch[wk]));
+        }
+        var frame = Math.floor(2400 * periodDays(per) / 7);
+        sum.frameOverMin = Math.max(0, sum.workMin - dailyLegal - weekLegal - sum.holidayMin - frame);
       }
+      sum.weekOverMin = weekLegal;
+      sum.legalOverMin += weekLegal + sum.frameOverMin;
       for (var ko in sum.byOffice) sum.byOffice[ko] = Math.round(sum.byOffice[ko]);
       if (cfg.monthRound30) { sum.overtimeMin = round30(sum.overtimeMin); sum.legalOverMin = round30(sum.legalOverMin); sum.nightMin = round30(sum.nightMin); }
-      sum.schedInMin = Math.max(0, sum.workMin - sum.overtimeMin);   /* 端数を丸めた後で出す＝所定内＋残業＝総労働（指摘12） */
+      /* 重ならない4つに分ける（0101・給与の契約 §2）: 法定休日 → 法定外 → 法定内残業 → 所定内。和は workMin。
+         法定内残業＝日ごとの（予定を超えた実働のうち日の法定外でない分）の合計から、週・総枠の超過を引いた分（週・総枠の超過が予定の中の時間から出た分は所定内から減る）。
+         所定内＝残り（予定の中で法定外になった分は法定外に入る） */
+      sum.legalOverMin = Math.min(sum.legalOverMin, Math.max(0, sum.workMin - sum.holidayMin));
+      sum.legalInOverMin = Math.max(0, Math.min(liDay - weekLegal - sum.frameOverMin, sum.overtimeMin, sum.workMin - sum.holidayMin - sum.legalOverMin));
+      sum.schedInMin = sum.workMin - sum.holidayMin - sum.legalOverMin - sum.legalInOverMin;
+      sum.over60Min = Math.max(0, sum.legalOverMin - 3600);
       if (sum.legalOverMin >= cfg.overtimeMonthWarnH * 60 && cfg.overtimeMonthWarnH > 0) sum.warnings.push('法定外の時間が月' + cfg.overtimeMonthWarnH + '時間以上です（36協定の確認）');
       if (st.missingStaff) sum.warnings.push('職員の名簿に無い番号の記録です（シフトから外れた職員）');
       people.push({ staff: st, days: days, sum: sum });
@@ -594,7 +663,7 @@
       totals.paidMin += ps.paidMin; totals.uncountedMin += ps.uncountedMin; totals.holidayMin += ps.holidayMin;
       for (var tb in ps.byOffice) totals.byOffice[tb] = (totals.byOffice[tb] || 0) + ps.byOffice[tb];
     }
-    return { ym: ym, config: cfg, people: people, totals: totals };
+    return { ym: ym, period: per, config: cfg, people: people, totals: totals };
   }
   /* 要確認の一覧（v2-11）: 月の結果 → [{ staffId, date, marks:[要確認の印], blockIndex }] を日付順（同じ日は名簿順・塊の順）。
    * blockIndex は people[].days[].blocks の添字。確認済みの塊は入れない */
@@ -661,7 +730,7 @@
       var has = s.workMin > 0 || s.paidMin > 0 || s.noPunchDays > 0 || s.reviewCount > 0 || s.absentDays > 0;   /* 欠けた打刻だけ・欠勤だけの人も落とさない（指摘4） */
       if (!st.emp_code) { if (has) warnings.push((st.name || st.staff_id) + ' さんは従業員コードが無いので出していません'); continue; }
       if (!has) continue;
-      var sr = [st.emp_code, st.name, officeLabel(st.office, nameOf), s.workDays, s.paidDays, fmtMin(s.workMin, mode), fmtMin(s.schedInMin, mode),
+      var sr = [st.emp_code, st.name, officeLabel(st.office, nameOf), s.workDays, s.paidDays, fmtMin(s.workMin, mode), fmtMin(Math.max(0, s.workMin - s.overtimeMin), mode),
         fmtMin(s.overtimeMin, mode), fmtMin(s.legalOverMin, mode), fmtMin(s.nightMin, mode), s.lateCount, fmtMin(s.lateMin, mode),
         s.earlyLeaveCount, fmtMin(s.earlyLeaveMin, mode), s.noPunchDays, s.reviewCount];
       if (ex) {
@@ -753,9 +822,10 @@
         workMin: s.workMin, schedInMin: s.schedInMin, overtimeMin: s.overtimeMin, legalOverMin: s.legalOverMin, nightMin: s.nightMin,
         lateCount: s.lateCount, lateMin: s.lateMin, earlyLeaveCount: s.earlyLeaveCount, earlyLeaveMin: s.earlyLeaveMin,
         noPunchDays: s.noPunchDays, reviewCount: s.reviewCount, byOffice: s.byOffice,
-        holidayMin: s.holidayMin || 0, absentDays: s.absentDays || 0, paidMin: s.paidMin || 0, uncountedMin: s.uncountedMin || 0 });   /* v2: 控えから締めた月の CSV を作れるように */
+        holidayMin: s.holidayMin || 0, absentDays: s.absentDays || 0, paidMin: s.paidMin || 0, uncountedMin: s.uncountedMin || 0,   /* v2: 控えから締めた月の CSV を作れるように */
+        legalInOverMin: s.legalInOverMin || 0, over60Min: s.over60Min || 0, nightShiftCount: s.nightShiftCount || 0, schedDays: s.schedDays || 0, counts: s.counts || {} });   /* 0101: 給与の入力 */
     }
-    return { v: 1, ym: month.ym, config: month.config, rows: rows };
+    return { v: 1, ym: month.ym, period: month.period, config: month.config, rows: rows };
   }
 
   var api = {
@@ -764,7 +834,7 @@
     NOT_IN_GRACE_MIN: NOT_IN_GRACE_MIN, checkLegalHoliday: checkLegalHoliday, reviewList: reviewList, needsReview: needsReview,
     fillConfig: fillConfig, isYm: isYm, daysIn: daysIn, nextYm: nextYm, prevYm: prevYm, jstMs: jstMs, jstDate: jstDate, jstHM: jstHM,
     addDays: addDays, iso: iso, fmtMin: fmtMin, nightMinutes: nightMinutes, staffVisible: staffVisible,
-    buildSchedule: buildSchedule, blocksOf: blocksOf, pairsOf: pairsOf, computeMonth: computeMonth, round30: round30,
+    buildSchedule: buildSchedule, periodOf: periodOf, periodLabel: periodLabel, periodDays: periodDays, isDate: isDate, blocksOf: blocksOf, pairsOf: pairsOf, computeMonth: computeMonth, round30: round30,
     buildCsv: buildCsv, csvCell: csvCell, encodeSjis: encodeSjis, isCode: isCode, snapshotOf: snapshotOf
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

@@ -13,7 +13,9 @@
    v3（2026-11-19・凍結仕様 ROOT-v3-clock-flow.md）で足したこと:
      8. 打刻画面の「出勤を押す → 氏名 → パスコード」の流れ（待受の特大ボタン・名簿の読み直し・照合 kintai_clock_check・
         パスコード違い3回・busy は控えない・通信できない時は同じ形で控える・選んだ事業所だけ端末に残す・重ね押しの守り・寸法）。
-        3 の「localStorage に書く鍵」は、仕様が許した kintai_clock_office（UI の状態・ホワイトリスト）を足して2か所ちょうどに締め直した */
+        3 の「localStorage に書く鍵」は、仕様が許した kintai_clock_office（UI の状態・ホワイトリスト）を足して2か所ちょうどに締め直した
+   0101（2026-11-19・凍結仕様 ROOT-payroll.md「A.」）で足したこと:
+     11. 月は「○月分」＝DB の期間・2つのカレンダー月の取り込み・締め日の設定・新しい断りの言葉・?v= */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -147,6 +149,23 @@ t('照合（kintai_clock_check）は打ち切りつき・打ち切りは通信�
 t('照合中・送信中は出勤/退勤を押せない見た目（disabled・aria-disabled）', /function busyView\(\) \{ return view === 'wait' \|\| view === 'sending'; \}/.test(KC) && /b\.disabled = busy; b\.setAttribute\('aria-disabled', busy \? 'true' : 'false'\);/.test(KC) && /#k-kinds \.kd:disabled,\.chip:disabled\{opacity:\.5;/.test(HC));
 t('照合中・送信中は「送れなかった打刻」を開かない（押せない見た目にもする）', /if \(k === 'failed'\) \{ if \(!busyView\(\)\) paintFailed\(\); return; \}/.test(KC) && /data-k="failed"' \+ \(busyView\(\) \? ' disabled aria-disabled="true"' : ''\)/.test(KC) && /if \(fb\) \{ fb\.disabled = busy;/.test(KC));
 t('休憩の打刻（休始・休終）は作らない', !/休始|休終|break_start|break_end/.test(KC + HC));
+
+console.log('\n— 11. 0101 月を締め日で切る（○月分・期間・2つのカレンダー月の取り込み・締め日の設定） —');
+const impFn = K.slice(K.indexOf('function importShift('), K.indexOf('/* ── 読み込みと計算 ── */'));
+t('期間は DB の period から（読む前・形が違う時はその月の1日〜末日）・日の一覧・締められるかも期間で決める',
+  /function per\(\) \{ return C\.periodOf\(ym, data && data\.period\); \}/.test(K) && /function dateList\(\) \{ var p = per\(\)/.test(K) &&
+  /function notYet\(\) \{ return !!ym && C\.jstDate\(Date\.now\(\)\) <= per\(\)\.to; \}/.test(K) && /C\.computeMonth\(\{ ym: ym, period: data\.period,/.test(K));
+t('カレンダー月で比べる所が残っていない（d.slice(0, 7) !== ym を使わない）', !/slice\(0, 7\) !== ym/.test(K));
+t('シフトの取り込みは期間にかかるカレンダー月ごとに buildSchedule と kintai_schedule_put（その月の ym）・職員は和集合・全部締めた月は locked を飛ばす',
+  /cms = \[p0\.from\.slice\(0, 7\)\]/.test(impFn) && /if \(p0\.to\.slice\(0, 7\) !== cms\[0\]\) cms\.push\(p0\.to\.slice\(0, 7\)\);/.test(impFn) &&
+  /C\.buildSchedule\(\{ ym: cm,/.test(impFn) && /rpc\('kintai_schedule_put', \{ p_ym: bt\.cm, p_rows: bt\.rows \}\)/.test(impFn) &&
+  /if \(!seen\[x\.staff_id\]\)/.test(impFn) && /res\.error === 'locked'\) return true;/.test(impFn) && /if \(!go \|\| my !== gen\) return false;/.test(impFn));
+t('見出し・締めの窓・解除の確かめ・直しの履歴の印刷は「○月分（期間）」', /esc\(perLabel\(\)\)/.test(K) && /openDlg\(perLabel\(\) \+ 'を締めます'/.test(K) && /prompt\(perLabel\(\) \+ ' の締めを解除します。/.test(K) && /corpName\(\) \+ '　勤怠 ' \+ perLabel\(\)/.test(K));
+t('月の選びは「月分」・横に期間（textContent で入れる）', /<label>月分 <input type="month" id="g-ym"/.test(H) && /<span id="g-period" class="raw"><\/span>/.test(H) && /function paintPer\(\) \{ var el = \$\('g-period'\); if \(el\) el\.textContent = /.test(K));
+t('設定に締め日（月末・1〜28日）・保存で close_day を送る（落とさない）・欄は今の設定から（締めた月分の控えから出さない）・片方の月のシフトが無くてもある月は取り込む', /var cdNow = C\.fillConfig\(\(data && data\.settings && data\.settings\.config\) \|\| \{\}\)\.close_day;/.test(K) && /if \(!have\.length\) \{ shiftInfo = \{ ok: false/.test(impFn) && /id="s-closeDay"/.test(K) && /cfg\.close_day = \+\$\('s-closeDay'\)\.value;/.test(K) && /Array\(28\)/.test(K));
+t('前に開いた月分が無い時だけ、期間が今日を過ぎていれば次の月分へ（読み戻しの形は今までどおり）', /autoYm = !C\.isYm\(y\);/.test(K) && /if \(autoYm\) \{ autoYm = false; if \(C\.jstDate\(Date\.now\(\)\) > per\(\)\.to\)/.test(K));
+t('DB の新しい断り（badperiod・overlap・closeday）を職員の言葉で出す', /badperiod: '/.test(K) && /overlap: '/.test(K) && /closeday: '/.test(K));
+t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-19.2（両画面でそろえる）', /kintai\.js\?v=2026-11-19\.2"/.test(H) && /kintai-calc\.js\?v=2026-11-19\.2"/.test(H) && /kintai-calc\.js\?v=2026-11-19\.2"/.test(HC));
 
 console.log(`\n${pass} 件合格 / ${fail} 件不合格`);
 process.exit(fail ? 1 : 0);
