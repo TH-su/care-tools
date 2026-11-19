@@ -107,7 +107,19 @@ legend{font-weight:600;padding:0 6px}
 .ph{display:none}
 @media (max-width:640px){th,td{padding:5px 6px}.kv{grid-template-columns:1fr}
   /* iPhone の幅では右端の合計を固定すると日の列が1つしか見えないため、固定しない（仮置き） */
-  .grid .sr{position:static;min-width:0;width:auto;box-shadow:none}}
+  .grid .sr{position:static;min-width:0;width:auto;box-shadow:none}
+  /* iPhone の幅: 窓の中の欄（見出し＋入力）は折り返して、見出しを1字ずつの縦にしない・選ぶ欄を窓の外へはみ出させない。
+     窓の中の表は枠（fieldset）ごと広がらず、表だけを横に送る。職員マスタの突き合わせの表は折り返してボタンを見える所に置く */
+  .row > label{flex-wrap:wrap;max-width:100%}
+  .row > label > input,.row > label > select{max-width:100%;min-width:0}
+  fieldset{min-width:0}
+  table.mt,table.mt thead,table.mt tbody,table.mt tr{display:block}
+  table.mt th,table.mt td{display:inline-block;white-space:normal;border:0}
+  table.mt thead th:not(:first-child){display:none}
+  table.mt thead th{display:block;border-bottom:1px solid var(--line)}
+  table.mt tbody tr{border-bottom:1px solid var(--line);padding:4px 0}
+  table.mt td:last-child{display:flex;gap:6px;flex-wrap:wrap}
+  table.mt td.empty{display:block}}
 /* 暗い表示（端末の設定に合わせる）。su-theme.css が --ng・--focus・--warn-bg と見出しを上書きするので、同じ強さの指定で後から置く。紙は白地のまま（screen だけ） */
 @media screen and (prefers-color-scheme: dark){
   :root,:root[data-su-theme]:not([data-ds="ops"]){--ink:#e8ecf3;--sub:#b8c2d0;--muted:#aab4c3;--line:#3a4556;--bg:#10151d;--card:#1a212c;--field:#141a23;--th:#222b38;--tag:#26303e;
@@ -166,7 +178,7 @@ body:has(#g-gate:not([hidden])) .sui-band{display:none}
 </div>
 <div class="toast no-print" id="g-toast" role="status" aria-live="polite" hidden></div>
 <dialog id="g-dlg" aria-labelledby="g-dlg-h"><div class="dlg-h" id="g-dlg-h"></div><div class="dlg-b" id="g-dlg-b"></div><div class="dlg-f" id="g-dlg-f"></div></dialog>
-<script src="kintai.js?v=2026-11-20.2"></script>
+<script src="kintai.js?v=2026-11-20.3"></script>
 <script src="su-shell.js?v=2026-11-19"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 <script src="su-intro.js?v=2026-11-18"></script>

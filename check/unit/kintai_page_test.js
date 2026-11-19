@@ -231,8 +231,8 @@ t('反証レビューの指摘1:「今日」は今日のカレンダー月へ移
   t('見直し2: 失敗の後にもう一度「今日」→ 今日の月分（12月分）へ', b3.end === '2026-12', b3);
 }
 /* ★v4（2026-11-20）: 版を上げたので期待を新しい版の完全一致に改め、kintai-calc.js を読む給与の画面（payroll.html）も同じ版かを足した */
-/* ★反証レビューの直し（2026-11-20 の2回目）で kintai.js を ?v=2026-11-20.2 に上げた（kintai-calc.js は変えていないので 2026-11-20 のまま） */
-t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-20.2・2026-11-20（両画面と給与の画面でそろえる）', /kintai\.js\?v=2026-11-20\.2"/.test(H) && /kintai-calc\.js\?v=2026-11-20"/.test(H) && /kintai-calc\.js\?v=2026-11-20"/.test(HC) && /kintai-calc\.js\?v=2026-11-20"/.test(read('payroll.html')));
+/* ★反証レビューの直し（2026-11-20 の2回目）で kintai.js を ?v=2026-11-20.2、iPhone の幅の見た目の直し（2026-11-20 の3回目）で ?v=2026-11-20.3 に上げた（kintai-calc.js は変えていないので 2026-11-20 のまま） */
+t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-20.3・2026-11-20（両画面と給与の画面でそろえる）', /kintai\.js\?v=2026-11-20\.3"/.test(H) && /kintai-calc\.js\?v=2026-11-20"/.test(H) && /kintai-calc\.js\?v=2026-11-20"/.test(HC) && /kintai-calc\.js\?v=2026-11-20"/.test(read('payroll.html')));
 
 const await_pending = [];   /* 動かして確かめる試験（Promise）を最後に待つ */
 console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（2026-11-20・凍結した仕様書 ROOT-v4-master-leave.md） —');
@@ -246,6 +246,12 @@ console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（
   const leaveMonthsFn = between('function loadLeaveMonths(', 'function loadLeave(');
   t('「有給」のタブは「職員と番号」の次（HTML の並び）・パネルの関数は paintLeave', /data-tab="staff">職員と番号<\/button>\s*<button type="button" role="tab" data-tab="leave">有給<\/button>/.test(H) && /leave: paintLeave/.test(K));
   t('kintai-leave.js は kintai-calc.js の後・kintai.js の前に読む（?v=2026-11-20.2・反証レビューの直しで上げた）', H.indexOf('<script src="kintai-calc.js?v=2026-11-20"></script>') >= 0 && H.indexOf('<script src="kintai-leave.js?v=2026-11-20.2"></script>') > H.indexOf('kintai-calc.js?v=') && H.indexOf('kintai-leave.js?v=') < H.indexOf('kintai.js?v='));
+  /* iPhone の幅（640px 以下）だけの見た目の直し（2026-11-20）: 窓の欄の見出しを縦1字にしない・枠（fieldset）を窓の外へ広げない・突き合わせの表は1人ずつの並び */
+  {
+    const mq = (H.match(/@media \(max-width:640px\)\{[\s\S]*?\n\s*table\.mt td\.empty\{display:block\}\}/) || [''])[0];
+    t('640px 以下だけ: .row > label を折り返し・入力と選ぶ欄は幅100%まで・fieldset{min-width:0}・table.mt を1人ずつの並びに', /\.row > label\{flex-wrap:wrap;max-width:100%\}/.test(mq) && /fieldset\{min-width:0\}/.test(mq) && /table\.mt thead th:not\(:first-child\)\{display:none\}/.test(mq));
+    t('突き合わせの2つの表に class="mt"・雇用区分は職員マスタの呼び名（パート・臨時など）', (K.match(/<table class="mt">/g) || []).length === 2 && /EMP_JA\[m\.employment_type\]/.test(K) && /part: 'パート'/.test(K));
+  }
   t('.gitignore に !/kintai-leave.js（公開の opt-in）', /^!\/kintai-leave\.js$/m.test(read('.gitignore')));
   t('月の計算に手で入れた有休（data.leave_uses）を渡す（L8）', /C\.computeMonth\(\{ ym: ym, period: data\.period, [^}]*leave_uses: data\.leave_uses, config: cfg,/.test(K));
   t('職員マスタ・有給の関数は読み込み（load）の鎖に入れない（0106 の前の DB でも月の画面は止まらない）', !/kintai_master_list|kintai_leave_get|kintai_master_import/.test(loadFn) && loadFn.length > 0);
