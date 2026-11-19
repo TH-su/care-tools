@@ -12,7 +12,9 @@
  * ・データベースの口の形は care-backend の統合 0102（payroll_*）が正。指紋は bootstrap が返す値に率と計算の版（rates_ver・calc_ver）を足すだけで、
  *   画面で作らない。明細は {staff_id, item, adjustments} の形で送る（item に氏名・口座を入れない）
  * ・勤怠は締めた時の控え（kintai_months.snapshot の rows）を attFromKintai で計算の入力（契約 §2 の att）にする
- * ・全銀の書き出しは su-backend.json の supabase.payroll_zengin が true の時だけ出す（無い・読めない時は出さない・仮置き 2026-11-19）
+ * ・全銀の書き出しは給与の設定 zengin_enabled が true の時だけ出す（既定は使わない・管理者が「設定」で変える・DB も payroll_bank_export で同じ印を見て zengin_off で断る）
+ * ・止めて知らせる窓は画面の中の窓（su-dialog.js の SUDialog）。窓が出ている間も10分で金額を隠し、隠した後の答えは「やめる」にする
+ * ・勤怠は締めの控えをそのまま正にせず、kintai_month_get の生の行を kintai-calc.js の computeMonth で数え直して控えと比べる（食い違えば止める）
  */
 (function () {
   'use strict';
@@ -21,7 +23,7 @@
   var IDLE_MS = 10 * 60 * 1000;
   var gen = 0, view = 'boot', tab = 'run', ym = null, bs = null, role = null, loadErr = null;
   var calc = null, adjEdits = {}, dirty = false, busy = false, masked = false, lastAct = Date.now();
-  var openSid = null, slipSid = null, importRows = null, importErr = null, members = null, zcheck = null, notice = null, audit = null, zenginOn = false;
+  var openSid = null, slipSid = null, importRows = null, importErr = null, members = null, zcheck = null, notice = null, audit = null;
   var printList = null, dlgCtx = null;
   var $ = function (id) { return document.getElementById(id); };
 
@@ -50,6 +52,8 @@
   function ratesVer() { var r = window.PayrollRates; return String((r && r.VERSION) || 'unknown').slice(0, 40); }
   function X() { return window.PayrollExport || null; }
   function cfg() { return (bs && bs.settings && bs.settings.config) || {}; }
+  /* 全銀の書き出しを使うか（給与の設定 zengin_enabled・既定は使わない・管理者だけが変える。DB も payroll_bank_export で同じ印を見て断る） */
+  function zenginOn() { return cfg().zengin_enabled === true; }
   /* 確定した月は、DB が明細に写した期間・設定（frozen）があればそれを使い、今の値から取らない（無い DB の版では今の値） */
   function frozenOf(k) { if (!frozen()) return null; var it = arr(bs.items).filter(function (x) { return x && x[k]; })[0]; return it ? it[k] : null; }
   function period() { return frozenOf('frozen_period') || (bs && (bs.period || (bs.kintai && bs.kintai.period))) || null; }
@@ -68,6 +72,15 @@
   }
   function periodText() { var p = period(); return p && isDate(p.from) && isDate(p.to) ? ymText(ym) + '（' + md(p.from) + '〜' + md(p.to) + '）' : ymText(ym); }
 
+  /* 止めて知らせる窓は画面の中の窓（su-dialog.js）。ブラウザの窓と違って画面の動きを止めないので、窓が出ている間も10分で金額を隠す処理が動く。
+     答えが来た時に金額を隠していた・覆いに変わっていた時は「やめる」として扱う（maskGen） */
+  var maskGen = 0;
+  function say(msg) { try { return window.SUDialog ? window.SUDialog.alert(msg) : Promise.resolve(window.alert(msg)); } catch (e) { note('知らせの窓', e); return Promise.resolve(); } }
+  function ask(msg) {
+    var mg = maskGen;
+    var pr; try { pr = window.SUDialog ? window.SUDialog.confirm(msg) : Promise.resolve(window.confirm(msg)); } catch (e) { note('確かめの窓', e); pr = Promise.resolve(false); }
+    return pr.then(function (ok) { return !!ok && mg === maskGen && !masked && view === 'app'; });
+  }
   var toastT = null;
   function toast(t) {
     var el = $('p-toast'); if (!el) return;
@@ -108,6 +121,7 @@
     badfrom: '設定を変える日は、月分の期間の初日だけ選べます。',
     notoffice: '給与の名簿に載せられるのは、同じ事業者の事務所のアカウントだけです（「使える人の管理」で役割を確かめてください）。',
     badrange: '期間の形が違います（400日まで）。',
+    zengin_off: '振込データ（全銀形式）の書き出しは、管理者が「設定」で使うようにするまで使えません。',
     bankstale: '確定した後に振込先の口座が直されました。振込データは作りません。管理者が確定を取り消して、確かめ直してから確定し直してください。'
   };
   function friendly(e) {
@@ -137,6 +151,47 @@
     if (locked === false) a.locked = false;
     return a;
   }
+  /* 締めの控えの確かめ（review 9 の最後の段）: 控え（snapshot）をそのまま正にせず、勤怠の生の行（kintai_month_get）を kintai-calc.js の computeMonth で
+     締めた時の設定のまま数え直し、計算する人（給与の設定があり、外さず、勤怠を使う人）で控えと食い違う人がいれば計算・保存・確定を止める。
+     返す形: { state: 'ok'|'ng'|'err'|'skip', names: [食い違う人の氏名] }。読めない・部品が無い時は 'err'（止める側に倒す） */
+  function attSame(a, b) {
+    for (var i = 0; i < ATT_KEYS.length; i++) if (a[ATT_KEYS[i]] !== b[ATT_KEYS[i]]) return false;
+    var ka = Object.keys(a.counts).sort(), kb = Object.keys(b.counts).sort();
+    if (ka.join('\u0001') !== kb.join('\u0001')) return false;
+    for (i = 0; i < ka.length; i++) if (a.counts[ka[i]] !== b.counts[ka[i]]) return false;
+    return true;
+  }
+  function verifyKintai(ymx, boot) {
+    var K = window.KintaiCalc;
+    if (!boot || !boot.kintai.locked) return Promise.resolve({ state: 'skip', names: [] });
+    if (!K || typeof K.computeMonth !== 'function' || typeof K.snapshotOf !== 'function') return Promise.resolve({ state: 'err', names: [] });
+    return rpc('kintai_month_get', { p_ym: ymx }).then(function (d) {
+      if (!d || d.ok === false) throw new Error('kintai_month_get: ' + ((d && d.error) || 'ng'));
+      var m = obj(d.month), snap = obj(m.snapshot);
+      if (!m.locked_at) return { state: 'ng', names: [], unlocked: true };
+      var month = K.computeMonth({ ym: ymx, period: d.period, staff: arr(d.staff), schedule: arr(d.schedule), punches: arr(d.punches), days: arr(d.days),
+        config: obj(snap.config), lockedAt: m.locked_at, now: Date.now() });
+      var fresh = {}, saved = {};
+      arr(K.snapshotOf(month).rows).forEach(function (r) { if (r && typeof r.staff_id === 'string') fresh[r.staff_id] = attFromKintai(r); });
+      arr(snap.rows).forEach(function (r) { if (r && typeof r.staff_id === 'string') saved[r.staff_id] = attFromKintai(r); });
+      var names = [];
+      boot.profiles.forEach(function (p) {
+        if (p.none || p.data.exclude === true || p.data.no_attendance === true) return;
+        var a = fresh[p.staff_id], b = saved[p.staff_id];
+        if (!a && !b) return;
+        if (!a || !b || !attSame(a, b)) names.push(p.name || p.staff_id);
+      });
+      return { state: names.length ? 'ng' : 'ok', names: names };
+    })['catch'](function (e) { note('勤怠の確かめ', e); return { state: 'err', names: [] }; });
+  }
+  function kintaiBlock() {
+    var k = bs && bs.kcheck;
+    if (!bs || !bs.kintai.locked) return null;
+    if (!k || k.state === 'checking') return '締めた勤怠を確かめています。少し待ってから、もう一度押してください。';
+    if (k.state === 'ng') return k.unlocked ? NG.notlocked : '締めた時の勤怠の控えと、今の勤怠の記録が合わない人がいます（' + k.names.join('、') + '）。勤怠管理で確かめて、締め直してから計算してください。';
+    if (k.state === 'err') return '締めた勤怠を確かめられませんでした（通信か勤怠の部品）。読み直してください。直らない時は管理者に知らせてください。';
+    return null;
+  }
   /* 締めた時の控え（snapshot）→ staff_id ごとの att */
   function attMap(snap, locked) {
     var out = {};
@@ -153,6 +208,8 @@
     var fr = obj(x.frozen), fp = obj(fr.period || x.period), fc = obj(obj(fr.settings).config);
     if (isDate(fp.from) && isDate(fp.to)) it.frozen_period = { from: fp.from, to: fp.to };
     if (Object.keys(fc).length) it.frozen_cfg = fc;
+    if (isDate(fr.pay_date)) it.pay_date = fr.pay_date;
+    if (Array.isArray(fr.bank_last4)) it.bank_last4 = fr.bank_last4.filter(function (b) { return b && typeof b === 'object'; });   /* 確定の時の口座（紙と振込の件数はこれ） */
     ['gross', 'deduct', 'net'].forEach(function (k) { if (x[k] != null) it[k] = num(x[k]); });
     return it;
   }
@@ -203,7 +260,11 @@
 
   /* ── 計算 ── */
   /* 指紋: DB が bootstrap で返した今の値（payroll_fp）に、率と計算の版だけを足す。DB は rates_ver・calc_ver を除いて今の値と比べる */
-  function fingerprint() { return Object.assign({}, bs ? bs.fingerprint : {}, { rates_ver: ratesVer(), calc_ver: calcVer() }); }
+  function fingerprint() {
+    var f = Object.assign({}, bs ? bs.fingerprint : {}, { rates_ver: ratesVer(), calc_ver: calcVer() }), pd = payDate();
+    if (isDate(pd)) f.pay_date = pd;   /* 支給日（DB は照合から外して月に控える・統合 0102） */
+    return f;
+  }
   function computeAll() {
     var c = C(); if (!c || !bs) return null;
     var p0 = period(), pd = payDate(), out = [];
@@ -224,6 +285,7 @@
   }
   function doCompute() {
     if (frozen()) return;
+    var kb = kintaiBlock(); if (kb) { say(kb); return; }
     if (!C()) { toast('計算の部品を読み込めませんでした。ページを読み込み直してください。'); return; }
     var list = computeAll();
     calc = { items: list || [], at: Date.now() };
@@ -256,9 +318,11 @@
       if (my !== gen) return null;
       if (r && r.ok === false) { var e = new Error(r.error || 'ng'); e.payroll = r.error; throw e; }
       bs = normBoot(r); loadErr = null;
+      bs.kcheck = { state: bs.kintai.locked ? 'checking' : 'skip', names: [] };
       if (!keepCalc) { calc = null; adjEdits = {}; dirty = false; }
       sync(''); paint();
-      return bs;
+      var b0 = bs;
+      return verifyKintai(ym, b0).then(function (k) { if (my === gen && bs === b0) { bs.kcheck = k; paint(); } return bs; });
     }, function (e) {
       if (my !== gen) return null;
       sync('');
@@ -280,16 +344,21 @@
   function fail(e, where) {
     if (e && e.payroll === 'stale') return handleStale();
     if (e && (e.code === '42501') && isAal(e)) { showGate('mfa'); return null; }
+    /* 名簿から外された・役割が変わった（42501）: 描いた物を消して覆いに倒す。管理者だけの操作を名簿の人が押した時は知らせだけ */
+    if (e && e.code === '42501') {
+      if (isAdmin() || !/管理者/.test(String(e.message || ''))) { showGate('denied'); return null; }
+    }
     if (!(e && e.payroll)) note(where, e);
-    alert(msgOf(e));
+    say(msgOf(e));
     return null;
   }
 
   /* ── 下書き保存・確定・取り消し ── */
   function saveDraft(btn) {
     if (!calc || busy || frozen()) return;
-    if (!bs.kintai.locked) { alert(NG.notlocked); return; }
-    if (!calc.items.length) { alert('計算した人がいません。「職員の給与設定」を確かめてください。'); return; }
+    if (!bs.kintai.locked) { say(NG.notlocked); return; }
+    if (!calc.items.length) { say('計算した人がいません。「職員の給与設定」を確かめてください。'); return; }
+    var kb = kintaiBlock(); if (kb) { say(kb); return; }
     var done = hold(btn, '保存しています…');
     rpc('payroll_run_save', { p_ym: ym, p_items: calc.items.map(toSave), p_fingerprint: calc.fp, p_rev: bs.run ? bs.run.rev : 0 }).then(okOr).then(function () {
       done(); toast('下書きを保存しました。'); return load(false);
@@ -315,13 +384,18 @@
   }
   function confirmGo(btn) {
     if (busy || !dlgCtx || dlgCtx.mode !== 'confirm') return;
-    if (dlgCtx.warn && !($('c-ack') && $('c-ack').checked)) { alert('警告を確かめたら「警告を確かめました」に印を入れてください。'); return; }
+    if (dlgCtx.warn && !($('c-ack') && $('c-ack').checked)) { say('警告を確かめたら「警告を確かめました」に印を入れてください。'); return; }
     var shown = dlgCtx.shown, done = hold(btn, '確かめています…'), my = gen;
     rpc('payroll_bootstrap', { p_ym: ym }).then(function (r) {
       if (my !== gen) { done(); return null; }
       if (r && r.ok === false) okOr(r);
       var fresh = normBoot(r), keep = bs;
+      return verifyKintai(ym, fresh).then(function (k) {
+      if (my !== gen) { done(); return null; }
+      fresh.kcheck = k;
       bs = fresh;
+      var kb = kintaiBlock();
+      if (kb) { done(); closeDlg(); calc = null; dirty = false; notice = { cls: 'ng', text: '確定していません。' + kb }; paint(); return null; }
       var now = C() ? computeAll() : null;
       if (!bs.run || bs.run.status !== 'draft') {
         /* 窓を開いている間に別の人が確定・取り消し・下書きの入れ替えをした。読み直した状態を見せるだけ */
@@ -339,6 +413,7 @@
       return rpc('payroll_run_confirm', { p_ym: ym, p_rev: bs.run.rev }).then(okOr).then(function () {
         done(); closeDlg(); toast('確定しました。'); return load(false);
       });
+      });
     })['catch'](function (e) { done(); closeDlg(); return fail(e, '確定'); });
   }
   function openUnconfirm() {
@@ -350,7 +425,7 @@
   }
   function unconfirmGo(btn) {
     var r = $('u-reason') ? $('u-reason').value.trim() : '';
-    if (!r) { alert(NG.reason); return; }
+    if (!r) { say(NG.reason); return; }
     var done = hold(btn, '取り消しています…');
     rpc('payroll_run_unconfirm', { p_ym: ym, p_reason: r }).then(okOr).then(function () { done(); closeDlg(); toast('確定を取り消しました。'); return load(false); })['catch'](function (e) { done(); closeDlg(); return fail(e, '確定の取り消し'); });
   }
@@ -371,17 +446,19 @@
   function adjGo() {
     var sid = dlgCtx && dlgCtx.sid; if (!sid) return;
     var kind = $('a-kind').value, name = $('a-name').value.trim(), amt = $('a-amt').value.replace(/[,，\s円]/g, '').replace(/[−ー－]/g, '-'), reason = $('a-reason').value.trim();
-    if (!name) { alert('名前を書いてください。'); return; }
-    if (!/^-?\d{1,8}$/.test(amt)) { alert('金額は円の整数で書いてください（例 5000・-3000）。'); return; }
-    if (!reason) { alert(NG.reason); return; }
+    if (!name) { say('名前を書いてください。'); return; }
+    if (!/^-?\d{1,8}$/.test(amt)) { say('金額は円の整数で書いてください（例 5000・-3000）。'); return; }
+    if (!reason) { say(NG.reason); return; }
     var list = adjOf(sid).slice(); list.push({ kind: kind, name: name, amount: parseInt(amt, 10), reason: reason });
     adjEdits[sid] = list; openSid = sid; closeDlg(); doCompute();
   }
   function adjDel(sid, i) {
     if (frozen()) return;
     var list = adjOf(sid).slice(); if (!list[i]) return;
-    if (!confirm('「' + list[i].name + '」の調整を外して計算し直しますか？（下書き保存するまでデータベースは変わりません）')) return;
-    list.splice(i, 1); adjEdits[sid] = list; openSid = sid; doCompute();
+    ask('「' + list[i].name + '」の調整を外して計算し直しますか？（下書き保存するまでデータベースは変わりません）').then(function (ok) {
+      if (!ok || frozen()) return;
+      list.splice(i, 1); adjEdits[sid] = list; openSid = sid; doCompute();
+    });
   }
 
   /* ── 窓 ── */
@@ -458,6 +535,8 @@
     h += bs.kintai.locked ? '<span class="tag ok">✓ 勤怠は締めてあります</span>' + esc(at(bs.kintai.locked_at)) : '<span class="tag ng">⚠ 勤怠が未締め</span><span class="help">勤怠管理で締めるまで、計算はできますが保存・確定はできません。</span><a class="btn" href="kintai.html">勤怠管理へ</a>';
     h += '</div><div class="row">状態: ' + statusText() + '</div>';
     if (bs.run && bs.run.stale && !frozen()) h += '<div class="band warn">⚠ 保存した後に勤怠・給与の設定が変わりました。「計算する」で計算し直してください。</div>';
+    var kb0 = !frozen() && bs.kcheck && bs.kcheck.state !== 'checking' ? kintaiBlock() : null;
+    if (kb0) h += '<div class="band ng" role="alert">⚠ ' + esc(kb0) + '</div>';
     if (!c) h += '<div class="band ng" role="alert">計算の部品を読み込めませんでした。ページを読み込み直してください。</div>';
     if (dirty && calc) h += '<div class="band warn">計算した結果はまだ保存していません。「下書き保存」を押すまで、ほかの人には見えません。</div>';
     h += '<div class="row">';
@@ -553,6 +632,9 @@
     if (!b.length || !(num(it.net) > 0)) return 0;
     try { return x && typeof x.splitAccounts === 'function' ? x.splitAccounts(num(it.net), b).parts.length : 1; } catch (e) { note('振込の件数', e); return 1; }
   }
+  var zcheck0 = { count: 0, total: 0 };
+  /* 画面の振込する分（差引が0より大きく口座がある人の差引の和と、口座ごとの件数） */
+  function transferWant() { var w = { total: 0, parts: 0 }; items().forEach(function (it) { var n = transferParts(it); if (n > 0) { w.total += num(it.net); w.parts += n; } }); return w; }
   function exportHtml() {
     var list = items(), x = X(), h = '<div class="cd"><h2>振込と書き出し（' + esc(periodText()) + '）</h2>';
     if (!frozen()) return h + '<div class="band warn">確定した月だけ書き出せます。「今月の給与」で確定してから開いてください。</div></div>';
@@ -566,11 +648,11 @@
     if (zcheck && zcheck.ym === ym) h += '<tr><th>全銀ファイルの合計（' + esc(zcheck.count) + '件）</th><td class="num">' + esc(yen(zcheck.total)) + ' 円 ' + (zcheck.total === tr && zcheck.count === trp ? '<span class="tag ok">✓ 振込する分と一致</span>' : '<span class="tag ng">⚠ 振込する分と合いません。ファイルを使わず管理者に知らせてください</span>') + '</td></tr>';
     h += '</tbody></table></div>';
     h += '<h3 style="font-size:16px">書き出す</h3><div class="row">';
-    if (zenginOn) h += '<button type="button" class="btn pri" data-act="exp" data-k="zengin"' + (x ? '' : ' disabled') + '>振込データ（全銀形式）</button>';
+    if (zenginOn()) h += '<button type="button" class="btn pri" data-act="exp" data-k="zengin"' + (x ? '' : ' disabled') + '>振込データ（全銀形式）</button>';
     h += '<button type="button" class="btn" data-act="exp" data-k="journal"' + (x ? '' : ' disabled') + '>仕訳の CSV</button>' +
       '<button type="button" class="btn" data-act="exp" data-k="ledger"' + (x ? '' : ' disabled') + '>賃金台帳の CSV</button>' +
       '<button type="button" class="btn" data-act="exp" data-k="list"' + (x ? '' : ' disabled') + '>明細一覧の CSV</button></div>';
-    if (!zenginOn) h += '<p class="help">振込データ（全銀形式）は、まだ使えるようにしていません（使い始める時に代表者が切り替えます）。</p>';
+    if (!zenginOn()) h += '<p class="help">振込データ（全銀形式）は、管理者が「設定」の「振込データ（全銀形式）の書き出しを使う」に印を入れるまで出しません。</p>';
     h += '<div class="band warn"><b>書き出したファイルの扱い</b><ul><li>ファイルはこのパソコンの「ダウンロード」フォルダに入ります。氏名と金額（振込データは口座の番号も）が入っています。</li>' +
       '<li>銀行・会計ソフトに取り込んだら、Finder の「ダウンロード」でそのファイルを選び、ごみ箱へ入れて「ごみ箱を空にする」まで行ってください。</li>' +
       '<li>メール・チャット・共有のフォルダには入れないでください。書き出したことは記録に残ります。</li></ul></div></div>';
@@ -589,14 +671,16 @@
   function exportGo(kind, btn) {
     var x = X();
     if (busy || !frozen() || !x || !EXP[kind] || typeof x[kind] !== 'function') return;
-    if (kind === 'zengin' && !zenginOn) return;
-    var base = { ym: ym, period: period(), payDate: payDate(), settings: paperCfg(), items: items(), profiles: bs.profiles };
+    if (kind === 'zengin' && !zenginOn()) return;
+    /* 書き出しの設定: 振込元（bank_from）・全銀の種別と文字コード（zengin）・仕訳の科目（journal）は今の設定（賃金の中身ではないため）。
+       明細の金額・期間・支給日・事業者名は確定の写しのまま（period()・payDate()・paperCfg()） */
+    var base = { ym: ym, period: period(), payDate: payDate(), settings: Object.assign({}, cfg(), { company_name: paperCfg().company_name }), items: items(), profiles: bs.profiles };
     /* 振込元の設定の不備は、口座の全桁を受け取る前（月が書き出し済みになる前）に止める */
     if (kind === 'zengin') {
       var pre = x.zengin(Object.assign({}, base, { rows: [] }));
       if (!pre || pre.ok === false) {
         var w0 = arr(pre && pre.errors).slice(0, 5).map(function (e) { return (e && e.msg) || ''; }).filter(Boolean);
-        alert('振込元の設定に足りない所があるので、振込データを作りません。' + (w0.length ? '\n' + w0.join('\n') : '') + '\n管理者が「設定」の振込元を直してください。');
+        say('振込元の設定に足りない所があるので、振込データを作りません。' + (w0.length ? '\n' + w0.join('\n') : '') + '\n管理者が「設定」の振込元を直してください。');
         return;
       }
     }
@@ -606,20 +690,30 @@
       return rpc('payroll_bank_export', { p_ym: ym }).then(function (r) {
         /* 確定の後に口座が直された（stale）は、計算し直しの stale と別の知らせにする */
         if (r && r.ok === false && r.error === 'stale') { var e = new Error('bankstale'); e.payroll = 'bankstale'; throw e; }
+        if (r && r.ok === false && r.error === 'zengin_off') { var e2 = new Error('zengin_off'); e2.payroll = 'zengin_off'; throw e2; }
         return okOr(r);
       }).then(function (r) {
         var res = x.zengin(Object.assign({}, base, { rows: arr(r.rows) }));
         r.rows = null; r = null;
         zcheck = res.ok ? { ym: ym, count: num(res.count), total: num(res.total) } : null;
+        zcheck0 = { count: num(res.count), total: num(res.total) };
         return res;
       });
     }).then(function (res) {
       done();
       if (!res) return;
+      if (res.ok !== false && kind === 'zengin') {
+        var want = transferWant();
+        if (num(res.total) !== want.total || num(res.count) !== want.parts) {
+          res = null; zcheck = null;
+          say('振込データの合計（' + yen(zcheck0.total) + '円・' + zcheck0.count + '件）が、画面の振込する分（' + yen(want.total) + '円・' + want.parts + '件）と合いません。ファイルは作っていません。管理者に知らせてください。');
+          return load(true);
+        }
+      }
       if (res.ok === false) {
         var why = arr(res.errors).slice(0, 5).map(function (e) { return (e && e.msg) || ''; }).filter(Boolean);
         res = null;
-        alert(EXP[kind] + 'を作れませんでした（ファイルは作っていません）。' + (why.length ? '\n' + why.join('\n') : '') + '\n設定（振込元・仕訳の科目）と口座を確かめてください。');
+        say(EXP[kind] + 'を作れませんでした（ファイルは作っていません）。' + (why.length ? '\n' + why.join('\n') : '') + '\n設定（振込元・仕訳の科目）と口座を確かめてください。');
         return load(true);
       }
       download(res); res = null;
@@ -698,13 +792,13 @@
   function nOr(id, keep) { var s = v(id).replace(/[,，\s円]/g, ''); if (s === '') return keep === undefined ? null : keep; return /^\d+(\.\d+)?$/.test(s) ? Number(s) : NaN; }
   function profGo(btn) {
     var c = dlgCtx, p = c && profOf(c.sid); if (!p) return;
-    var reason = v('f-reason'); if (!reason) { alert(NG.reason); return; }
+    var reason = v('f-reason'); if (!reason) { say(NG.reason); return; }
     var bad = [];
     function n(id, label) { var x = nOr(id); if (x !== x) bad.push(label); return x; }
     /* 今の data を写してから上書きする（画面に無い項目・知らない項目を消さない） */
     var d = JSON.parse(JSON.stringify(p.data));
     d.pay_type = v('f-type');
-    if (!d.pay_type) { alert('給与形態を選んでください。'); return; }
+    if (!d.pay_type) { say('給与形態を選んでください。'); return; }
     d.base = n('f-base', '基本給'); d.board_pay = n('f-board', '役員報酬');
     d.avg_month_hours = n('f-amh', '月平均所定労働時間'); d.avg_month_days = n('f-amd', '月平均所定労働日数'); d.day_hours = n('f-dh', '1日の所定時間');
     var keepA = arr(d.allowances).filter(function (a) { return !c.pays.some(function (x) { return x.code === a.code; }); });
@@ -726,10 +820,13 @@
     d.tax = tax;
     var rt = Object.assign({}, obj(d.resident_tax));
     c.months.forEach(function (m, i) { var x = n('f-rt' + i, '住民税'); if (x == null) delete rt[m]; else rt[m] = x; });
+    /* 今の年度（6月〜翌5月）と前の年度だけを残す（DB は24か月まで・古い月の鍵を外す） */
+    var rtMin = shiftYm(c.months[0], -12), rtMax = c.months[c.months.length - 1];
+    Object.keys(rt).forEach(function (m) { if (!isYm(m) || m < rtMin || m > rtMax) delete rt[m]; });
     d.resident_tax = rt;
     d.no_attendance = on('f-noatt'); d.exclude = on('f-excl');
     if (p.staff_id.indexOf('p:') === 0 && !d.name) d.name = p.name;
-    if (bad.length) { alert('数の形が違う欄があります：' + bad.filter(function (x, i) { return bad.indexOf(x) === i; }).join('・') + '（半角の数字で書いてください）'); return; }
+    if (bad.length) { say('数の形が違う欄があります：' + bad.filter(function (x, i) { return bad.indexOf(x) === i; }).join('・') + '（半角の数字で書いてください）'); return; }
     var done = hold(btn, '保存しています…');
     /* 同じ日付の版があれば今の版で上書き、無ければ新しい版（rev 0）で足す（統合 0102 の payroll_profile_put） */
     var from = v('f-from'), same = p.versions.filter(function (x) { return x.effective_from === from; })[0];
@@ -750,7 +847,7 @@
   }
   function bankGo(btn) {
     var p = dlgCtx && profOf(dlgCtx.sid); if (!p) return;
-    var reason = v('b-reason'); if (!reason) { alert(NG.reason); return; }
+    var reason = v('b-reason'); if (!reason) { say(NG.reason); return; }
     var acc = [], bad = false;
     for (var i = 0; i < 3; i++) {
       var bk = v('b-bk' + i), br = v('b-br' + i), no = v('b-no' + i), kn = v('b-kn' + i);
@@ -760,12 +857,16 @@
       if (i && !/^\d{1,8}$/.test(am)) { bad = true; break; }
       acc.push({ bank_code: bk, branch_code: br, type: v('b-ty' + i), number: ('0000000' + no).slice(-7), name_kana: kn, amount_or_rest: i ? parseInt(am, 10) : 'rest' });
     }
-    if (bad) { alert(NG.badbank + '（2つ目からは送る額も書きます）'); return; }
-    if (!acc.length) { alert('口座を1つ以上入れてください（口座を全部消すことは、この画面ではできません）。'); return; }
+    if (bad) { say(NG.badbank + '（2つ目からは送る額も書きます）'); return; }
+    if (!acc.length && !bankOf({ staff_id: p.staff_id }).length) { say('口座を1つ以上入れてください。'); return; }
+    var go = function () {
     var done = hold(btn, '保存しています…');
     rpc('payroll_bank_put', { p_staff_id: p.staff_id, p_accounts: acc, p_reason: reason }).then(okOr).then(function () {
-      acc = null; done(); closeDlg(); toast('口座を保存しました。'); return load(true);
+      var gone = !acc.length; acc = null; done(); closeDlg(); toast(gone ? '口座を消しました（振込しない人になりました）。' : '口座を保存しました。'); return load(true);
     })['catch'](function (e) { acc = null; done(); fail(e, '口座の保存'); });
+    };
+    if (acc.length) go();
+    else ask(p.name + ' さんの口座を全部消して「口座なし（振込しない）」にしますか？').then(function (ok) { if (ok && dlgCtx && dlgCtx.mode === 'bank') go(); });
   }
 
   /* ── freee の書き出しを取り込む（管理者・ファイルは保存しない・列は仮置き） ── */
@@ -840,6 +941,7 @@
         var no = g('acct_no').replace(/\D/g, '');
         bank = { bank_code: g('bank').replace(/\D/g, ''), branch_code: g('branch').replace(/\D/g, ''), type: { '普通': '1', '当座': '2', '貯蓄': '4' }[g('acct_type')] || '1', number: ('0000000' + no).slice(-7), name_kana: g('kana'), amount_or_rest: 'rest' };
         if (!/^\d{4}$/.test(bank.bank_code) || !/^\d{3}$/.test(bank.branch_code) || !/^\d{1,7}$/.test(no)) { ch.push('⚠ 口座の形が違うので送りません'); bank = null; }
+        else if (!bank.name_kana) { ch.push('⚠ 口座名義が無いので送りません'); bank = null; }
         else ch.push('口座：＊＊＊' + no.slice(-4));
       }
       var data = p ? applyPatch(p, patch) : null;
@@ -890,7 +992,7 @@
   function importable(r) { return !!r.staff_id && ((r.data && Object.keys(r.patch).length > 0) || !!r.bank); }
   function importGo(btn) {
     if (!importRows || !isAdmin()) return;
-    var p0 = period(); if (!p0) { alert('月分の期間が分かりません。読み直してください。'); return; }
+    var p0 = period(); if (!p0) { say('月分の期間が分かりません。読み直してください。'); return; }
     var rows = importRows.filter(importable);
     if (!rows.length) return;
     var payload = { profiles: [], banks: [] };
@@ -900,7 +1002,8 @@
     });
     if (!payload.profiles.length) delete payload.profiles;
     if (!payload.banks.length) delete payload.banks;
-    if (!confirm(rows.length + '人分の設定（口座を含む）を送ります。よろしいですか？')) return;
+    ask(rows.length + '人分の設定（口座を含む）を送ります。よろしいですか？').then(function (ok) {
+    if (!ok || !importRows) { payload = null; return; }
     var done = hold(btn, '送っています…');
     rpc('payroll_import_put', { p_payload: payload }).then(okOr).then(function (r) {
       payload = null; rows = null; importRows = null; done();
@@ -908,6 +1011,7 @@
       toast('取り込みました（設定 ' + num(pr.added) + '人・口座 ' + num(bk.added) + '人を足しました。もうあったので書き換えなかったのは 設定 ' + num(pr.skipped) + '人・口座 ' + num(bk.skipped) + '人）。計算し直してください。');
       return load(false);
     })['catch'](function (e) { payload = null; rows = null; done(); fail(e, '取り込み'); });
+    });
   }
 
   /* ── 設定（管理者だけ） ──
@@ -930,7 +1034,7 @@
       inp('s-bf-bk', '振込元の銀行コード（4桁）', bf.bank_code, NUMA) + inp('s-bf-bkk', '振込元の銀行名（カナ）', bf.bank_kana) + inp('s-bf-br', '支店コード（3桁）', bf.branch_code, NUMA) + inp('s-bf-brk', '支店名（カナ）', bf.branch_kana) +
       sel('s-bf-ty', '種目', String(bf.type || '1'), [['1', '普通'], ['2', '当座']]) + inp('s-bf-no', '口座番号（7桁まで）', bf.number, NUMA) +
       sel('s-zk', '振込の種別', zg.kind || '21', [['21', '総合振込'], ['11', '給与振込']]) + inp('s-co', '明細に刷る事業者名', c.company_name) + '</div>' +
-      '<p class="help">振込データ（全銀形式）を使えるようにするのは、この設定ではなく、使い始める時の切り替えです（代表者が決めます）。</p></fieldset>';
+      chk('s-zen', '振込データ（全銀形式）の書き出しを使う', c.zengin_enabled === true) + '</fieldset>';
     h += '<div class="row"><button type="button" class="btn pri" data-act="set-go">設定を保存する</button></div></div>';
     h += allowancesHtml();
     h += '<div class="cd"><h2>給与の名簿（給与の画面を使える人）</h2><p class="help">管理者のほかに使える人のメールを入れます。名簿の人は事務所のアカウントで、二段階のログインを済ませている時だけ使えます（データベースが確かめます）。加えて「アプリの使える人」でその人に「給与」を許してください。</p>';
@@ -949,7 +1053,7 @@
     function setNum(o, k, x) { if (x == null || x !== x) delete o[k]; else o[k] = x; }
     function setTxt(o, k, x) { if (x) o[k] = x; else delete o[k]; }
     var c = JSON.parse(JSON.stringify(cfg()));
-    delete c.zengin_enabled;   /* 前の画面が持っていた鍵（統合 0102 は知らない鍵を断る） */
+    c.zengin_enabled = on('s-zen');   /* 真偽・既定は使わない（DB の payroll_settings_ok が受ける） */
     var pd = n('s-payday', '支給日');
     if (pd == null || pd !== pd || pd % 1 || pd < 1 || pd > 31) bad.push('支給日（1〜31）'); else c.pay_day = pd;
     c.pay_day_shift = v('s-shift'); c.si_month = v('s-si'); c.tax_method = v('s-tax'); c.night_premium = v('s-night');
@@ -976,7 +1080,7 @@
     c.bank_from = bf;
     c.zengin = Object.assign({}, obj(c.zengin), { kind: v('s-zk') });
     setTxt(c, 'company_name', v('s-co'));
-    if (bad.length) { alert('形の違う欄があります：' + bad.filter(function (x, i) { return bad.indexOf(x) === i; }).join('・')); return; }
+    if (bad.length) { say('形の違う欄があります：' + bad.filter(function (x, i) { return bad.indexOf(x) === i; }).join('・')); return; }
     var done = hold(btn, '保存しています…');
     rpc('payroll_settings_put', { p_config: c, p_rev: bs.settings.rev }).then(okOr).then(function () { done(); toast('設定を保存しました。'); return load(false); })['catch'](function (e) { done(); fail(e, '設定の保存'); });
   }
@@ -999,7 +1103,7 @@
   function openAlw(code) {
     if (!isAdmin()) return;
     var a = code ? alwOf(code) : null, at = obj(a && a.attrs), C0 = window.PayrollCalc, def = C0 && C0.attrsOf ? C0.attrsOf(a || {}) : {};
-    var h = '<div class="kv">' + (a ? '<span>コード</span><b>' + esc(a.code) + '</b>' : inp('w-code', 'コード（英数字・「_」「-」・38字まで）', '', ' maxlength="38"')) +
+    var h = '<div class="kv">' + (a ? '<span>コード</span><b>' + esc(a.code) + '</b>' : inp('w-code', 'コード（英数字・「_」「-」・40字まで）', '', ' maxlength="40"')) +
       inp('w-name', '名前', a ? a.name : '', ' maxlength="40"') + sel('w-sec', '区分', a ? a.sec : 'pay', [['pay', '支給'], ['deduct', '控除']]) + sel('w-calc', '数え方', a ? a.calc : 'fixed', CALC_KIND) +
       inp('w-order', '並び（小さい順）', a ? num(a.order) : '', NUMA) + sel('w-round', '回数・時間で数える時の端数', a && a.round ? a.round : 'ceil', [['ceil', '切り上げ'], ['floor', '切り捨て'], ['round', '四捨五入']]) + '</div>';
     h += '<fieldset><legend>扱い（印の無い所は計算の既定）</legend><div class="row">' + ATTRS.map(function (x) { return chk('w-a-' + x[0], x[1], typeof at[x[0]] === 'boolean' ? at[x[0]] : !!def[x[0]]); }).join('') + '</div></fieldset>';
@@ -1009,11 +1113,10 @@
   function alwGo(btn) {
     if (!isAdmin() || !dlgCtx || dlgCtx.mode !== 'alw') return;
     var a = dlgCtx.code ? alwOf(dlgCtx.code) : null, code = a ? a.code : v('w-code'), name = v('w-name');
-    /* 38字まで: 計算の部品は明細の行のコードに頭の印（支給 'f'・控除 'd:'）を付け、DB は行のコードを40字までしか受けないため */
-    if (!a && !/^[A-Za-z0-9_-]{1,38}$/.test(code)) { alert('コードは英数字と「_」「-」で38字までにしてください。'); return; }
-    if (!a && alwOf(code)) { alert('同じコードがもうあります。'); return; }
-    if (!name) { alert('名前を書いてください。'); return; }
-    var ord = nOr('w-order'); if (ord !== ord || (ord != null && ord % 1)) { alert('並びは整数で書いてください。'); return; }
+    if (!a && !/^[A-Za-z0-9_-]{1,40}$/.test(code)) { say('コードは英数字と「_」「-」で40字までにしてください。'); return; }
+    if (!a && alwOf(code)) { say('同じコードがもうあります。'); return; }
+    if (!name) { say('名前を書いてください。'); return; }
+    var ord = nOr('w-order'); if (ord !== ord || (ord != null && ord % 1)) { say('並びは整数で書いてください。'); return; }
     /* 今の定義を写してから上書きする（画面に無い鍵 unit・freee_id などを消さない） */
     var d = a ? JSON.parse(JSON.stringify(a)) : {};
     delete d.rev;
@@ -1061,7 +1164,7 @@
   /* ── 10分操作が無ければ金額を消す ── */
   function mask() {
     if (masked || view !== 'app') return;
-    masked = true; closeDlg(); importRows = null; printList = null; audit = null; put($('p-print'), '');
+    masked = true; maskGen++; closeDlg(); importRows = null; printList = null; audit = null; put($('p-print'), '');
     paint();
   }
   function paintMasked() {
@@ -1072,7 +1175,9 @@
     Promise.resolve().then(function () { return window.SUAuth.check({ fresh: true }); }).then(function (st) {
       done();
       if (!st || st.status !== window.SUAuth.STATUS.OK || st.role !== role || st.aal !== 'aal2') { location.reload(); return; }
-      masked = false; lastAct = Date.now(); paint();
+      masked = false; lastAct = Date.now();
+      /* 隠している間に名簿から外された・権限が変わったかを DB に確かめ直す（42501 なら覆いに倒れる）。計算した物は読み直しで捨てない */
+      return load(true);
     }, function () { done(); toast('ログインを確かめられませんでした。通信を確かめてから、もう一度押してください。'); });
   }
   function idleCheck() { if (view === 'app' && !masked && Date.now() - lastAct > IDLE_MS) mask(); }
@@ -1104,7 +1209,11 @@
   }
   function setYm(nv) {
     if (!isYm(nv) || nv === ym) { $('p-ym').value = ym; return; }
-    if (isDirty() && !confirm('保存していない計算・調整があります。月分を変えると捨てます。よろしいですか？')) { $('p-ym').value = ym; return; }
+    if (isDirty()) {
+      $('p-ym').value = ym;
+      ask('保存していない計算・調整があります。月分を変えると捨てます。よろしいですか？').then(function (ok) { if (ok) { dirty = false; adjEdits = {}; importRows = null; calc = null; setYm(nv); } });
+      return;
+    }
     ym = nv; $('p-ym').value = nv; bs = null; calc = null; adjEdits = {}; dirty = false; openSid = null; slipSid = null; importRows = null; zcheck = null; notice = null; loadErr = null;
     load(false);
   }
@@ -1116,7 +1225,7 @@
       if (t) { setTab(t); return; }
       var a = b.getAttribute('data-act'), sid = b.getAttribute('data-sid');
       if (!a) return;
-      if (a === 'dlg-close') { if (busy) return; if (!dlgDirty() || confirm('入れた内容を捨てて閉じますか？')) closeDlg(); }
+      if (a === 'dlg-close') { if (busy) return; if (!dlgDirty()) closeDlg(); else { var c0 = dlgCtx; ask('入れた内容を捨てて閉じますか？').then(function (ok) { if (ok && dlgCtx === c0) closeDlg(); }); } }
       else if (a === 'reload') load(false);
       else if (a === 'compute') doCompute();
       else if (a === 'save') saveDraft(b);
@@ -1140,14 +1249,13 @@
       else if (a === 'mem-load') memLoad();
       else if (a === 'mem-add') {
         var em = v('m-add').toLowerCase();
-        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { alert('メールの形が違います。'); return; }
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { say('メールの形が違います。'); return; }
         if (members.some(function (m) { return m.email === em; })) return;
         memPut(em, true, b);
       }
       else if (a === 'mem-del') {
         var m0 = members[+b.getAttribute('data-i')]; if (!m0) return;
-        if (!confirm(m0.email + ' を給与の名簿から外しますか？')) return;
-        memPut(m0.email, false, b);
+        ask(m0.email + ' を給与の名簿から外しますか？').then(function (ok) { if (ok) memPut(m0.email, false, b); });
       }
       else if (a === 'alw') openAlw(b.getAttribute('data-code'));
       else if (a === 'alw-go') alwGo(b);
@@ -1180,8 +1288,13 @@
     });
     $('p-prev').addEventListener('click', function () { setYm(shiftYm(ym, -1)); });
     $('p-next').addEventListener('click', function () { setYm(shiftYm(ym, 1)); });
-    $('p-reload').addEventListener('click', function () { if (isDirty() && !confirm('保存していない計算・調整を捨てて読み直しますか？')) return; load(false); });
-    $('p-dlg').addEventListener('cancel', function (e) { if (busy || (dlgDirty() && !confirm('入れた内容を捨てて閉じますか？'))) { e.preventDefault(); return; } closeDlg(); });
+    $('p-reload').addEventListener('click', function () { if (!isDirty()) { load(false); return; } ask('保存していない計算・調整を捨てて読み直しますか？').then(function (ok) { if (ok) load(false); }); });
+    $('p-dlg').addEventListener('cancel', function (e) {
+      if (busy) { e.preventDefault(); return; }
+      if (!dlgDirty()) { closeDlg(); return; }
+      e.preventDefault();
+      var c0 = dlgCtx; ask('入れた内容を捨てて閉じますか？').then(function (ok) { if (ok && dlgCtx === c0) closeDlg(); });
+    });
     ['pointerdown', 'keydown', 'wheel', 'touchstart', 'input'].forEach(function (ev) { document.addEventListener(ev, function () { if (!masked) lastAct = Date.now(); }, { passive: true, capture: true }); });
     document.addEventListener('visibilitychange', function () { if (!document.hidden) idleCheck(); });
     window.addEventListener('focus', idleCheck);
@@ -1191,14 +1304,6 @@
     window.addEventListener('pageshow', function (e) { if (e && e.persisted && isField()) location.reload(); });
   }
 
-  /* 全銀の書き出しのスイッチ（su-backend.json の supabase.payroll_zengin が true の時だけ・読めない時は出さない・仮置き 2026-11-19） */
-  function readZengin() {
-    var my = gen;
-    Promise.resolve().then(function () { return fetch('su-backend.json?t=' + Date.now(), { cache: 'no-store' }); }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
-      var nv = !!(j && j.supabase && j.supabase.payroll_zengin === true);
-      if (nv !== zenginOn) { zenginOn = nv; if (my === gen || view === 'app') paint(); }
-    })['catch'](function () { zenginOn = false; });
-  }
   function boot() {
     if (isField()) { showField(); return; }
     if (!window.SUAppGate) { showGate('nocalc'); return; }
@@ -1214,7 +1319,7 @@
         $('p-app').hidden = false;
         var t = lsGet(LS_TAB); tab = TABS.indexOf(t) >= 0 && (t !== 'settings' || isAdmin()) ? t : 'run';
         ym = todayYm(); $('p-ym').value = ym;
-        bind(); definePrint(); readZengin();
+        bind(); definePrint();
         try { if (window.SUPerf) window.SUPerf.ready(); } catch (_) {}
         return load(false);
       });
@@ -1223,5 +1328,5 @@
   var go = function () { try { boot(); } catch (e) { note('起動', e); } };
   if (window.SUFacility && typeof window.SUFacility.onReady === 'function') window.SUFacility.onReady(go); else go();
   /* 試験だけが読む（画面の動きには使わない） */
-  window.__payrollTest = { normBoot: normBoot, figures: figures, totals: totals, parseCsv: parseCsv, missingOf: missingOf, attFromKintai: attFromKintai, toSave: toSave, qtyText: qtyText, TABS: TABS, IDLE_MS: IDLE_MS };
+  window.__payrollTest = { attSame: attSame, normBoot: normBoot, figures: figures, totals: totals, parseCsv: parseCsv, missingOf: missingOf, attFromKintai: attFromKintai, toSave: toSave, qtyText: qtyText, TABS: TABS, IDLE_MS: IDLE_MS };
 })();

@@ -11,8 +11,10 @@
  *             計算と書き出しの部品は本物（payroll-calc.js・payroll-rates.js・payroll-tax-table.js・payroll-export.js）をそのまま配る
  *   sheets  … 給与明細の「全員分を印刷」（A4 縦・1人1ページ・SUPrint の 'slips'）
  * routesFor(opt): role（'admin'|'office'）・aal（'aal2'|'aal1'）・deny（bootstrap が 42501）・start（'none'|'confirmed'）・zengin（真なら全銀のスイッチを入れる）・
- *                 frozenCopy（真なら bootstrap の明細に写した期間・設定 frozen を付ける＝B の担当が足している形の先取り）・
+ *                 kintaiDrift（真なら締めの控えの s-02 の総労働を60分ずらす＝今の勤怠の記録と控えが食い違う場面）・
  *                 ym（確定済みにする月分・既定は撮影の道具の固定の日の月分 2026-01）
+ * 勤怠は、生の行（予定・打刻）を作って本物の kintai-calc.js の computeMonth・snapshotOf で締めの控えを作る（画面が数え直して控えと比べるため）。
+ *   kintai_month_get（統合 0098・0101）にも同じ生の行を返す
  * ★撮影の道具の固定の日（2026-01）の月分は、率表（令和8年3月分〜）の外なので、確定済みの明細を前もって作る時だけ、率表の引きを令和8年4月分の率へ寄せる
  *   （材料の中だけ・画面の計算は本物の率表のまま）。通し試験（payroll_e2e.mjs）は 2026-11 の月分で本物の率表のまま計算する
  * ★架空データだけ（CLAUDE.md §2-1）。氏名は「見本」の記号的な名前、口座・金額は実在しない値。メールは example.invalid。本物の Supabase へは出ない。
@@ -27,6 +29,7 @@ const require = createRequire(import.meta.url);
 const ROOT = new globalThis.URL('../../', import.meta.url);
 const PC = require(new globalThis.URL('payroll-calc.js', ROOT).pathname);
 const PR = require(new globalThis.URL('payroll-rates.js', ROOT).pathname);
+const KC = require(new globalThis.URL('kintai-calc.js', ROOT).pathname);
 const b64u = (o) => Buffer.from(JSON.stringify(o)).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
 function session(aal, email) {
   const jwt = b64u({ alg: 'none', typ: 'JWT' }) + '.' + b64u({ sub: '00000000-0000-4000-8000-00000000a1a1', email, role: 'authenticated', aal, exp: 4102444800 }) + '.check';
@@ -64,6 +67,7 @@ export function profileOk(d, sid) {
           if (k2 === 'amount') { if (!(nul(v2) || yenOk(v2))) return false; }
           else if (k2 === 'name') { if (!txtOk(v2, 40)) return false; }
           else if (k2 === 'count_source' && k === 'allowances') { if (!(nul(v2) || txtOk(v2, 40))) return false; }
+          else if (k2 === 'count' && k === 'allowances') { if (!(nul(v2) || numOk(v2, 0, 9999))) return false; }
           else return false;
         }
       }
@@ -75,6 +79,8 @@ export function profileOk(d, sid) {
         else if (k2 === 'distance_km') { if (!(nul(v2) || numOk(v2, 0, 1000))) return false; }
         else return false;
       }
+    } else if (k === 'fixed_ot') {
+      if (!nul(v)) { if (!isObj(v) || !reOk(v.allowance_code, /^[A-Za-z0-9_-]{1,40}$/) || !yenOk(v.covered_min, 0) || Object.keys(v).some((z) => !['allowance_code', 'covered_min'].includes(z))) return false; }
     } else if (['birth_date', 'entry_date', 'retire_date'].includes(k)) { if (!(nul(v) || dateOk(v))) return false; }
     else if (k === 'gender') { if (!(nul(v) || ['M', 'F', ''].includes(v))) return false; }
     else if (k === 'ins') {
@@ -87,6 +93,7 @@ export function profileOk(d, sid) {
             if (k3 === 'on') { if (typeof v3 !== 'boolean') return false; }
             else if (k3 === 'from' || k3 === 'to') { if (!(nul(v3) || dateOk(v3))) return false; }
             else if (k3 === 'std' && k2 !== 'emp') { if (!(nul(v3) || yenOk(v3, 0))) return false; }
+            else if (k3 === 'exempt') { if (!Array.isArray(v3) || v3.length > 20 || !v3.every((e) => isObj(e) && reOk(e.from_ym, /^\d{4}-(0[1-9]|1[0-2])$/) && (e.to_ym == null || reOk(e.to_ym, /^\d{4}-(0[1-9]|1[0-2])$/)) && Object.keys(e).every((z) => z === 'from_ym' || z === 'to_ym'))) return false; }
             else return false;
           }
         } else return false;
@@ -123,7 +130,7 @@ export function settingsOk(c) {
     else if (k === 'avg_month_hours_default') { if (!numOk(v, 1, 400)) return false; }
     else if (k === 'avg_month_days_default') { if (!numOk(v, 1, 31)) return false; }
     else if (k === 'ot_rates') { if (!isObj(v)) return false; for (const [k2, v2] of Object.entries(v)) if (!['in', 'out', 'over60', 'night', 'holiday'].includes(k2) || !numOk(v2, 0, 3)) return false; }
-    else if (k === 'round') { if (!isObj(v)) return false; for (const [k2, v2] of Object.entries(v)) if (!/^[a-z_]{1,20}$/.test(k2) || !['ceil', 'floor', 'round', 'half_down', 'half_up'].includes(v2)) return false; }
+    else if (k === 'round') { if (!isObj(v)) return false; for (const [k2, v2] of Object.entries(v)) if (!/^[a-z_]{1,20}$/.test(k2) || !['ceil', 'floor', 'round', 'none'].includes(v2)) return false; }
     else if (k === 'absence_deduct' || k === 'late_deduct') { if (typeof v !== 'boolean') return false; }
     else if (k === 'holidays') { if (!Array.isArray(v) || v.length > 500 || !v.every(dateOk)) return false; }
     else if (k === 'bank_from') {
@@ -144,6 +151,7 @@ export function settingsOk(c) {
       }
     } else if (k === 'company_name') { if (!txtOk(v, 100)) return false; }
     else if (k === 'journal') { if (!isObj(v)) return false; }
+    else if (k === 'zengin_enabled') { if (typeof v !== 'boolean') return false; }   /* B の担当が足している（全銀の書き出しを使う印） */
     else return false;
   }
   return true;
@@ -155,7 +163,7 @@ export function allowanceOk(d) {
     if (['code', 'name', 'sec', 'calc'].includes(k)) continue;
     if (k === 'unit') { if (!(nul(v) || typeof v === 'number')) return false; }
     else if (k === 'attrs') { if (!isObj(v)) return false; for (const [k2, v2] of Object.entries(v)) if (!AT.includes(k2) || typeof v2 !== 'boolean') return false; }
-    else if (k === 'round') { if (!(nul(v) || txtOk(v, 20))) return false; }
+    else if (k === 'round') { if (!(nul(v) || ['ceil', 'floor', 'round', 'none'].includes(v))) return false; }
     else if (k === 'order') { if (!yenOk(v, 0)) return false; }
     else if (k === 'hidden') { if (typeof v !== 'boolean') return false; }
     else if (k === 'freee_id') { if (!(nul(v) || txtOk(v, 40) || yenOk(v, 0))) return false; }
@@ -197,7 +205,7 @@ export function itemErr(x) {
         if (!isObj(ln) || !['pay', 'deduct', 'att', 'employer'].includes(ln.sec)) return 'badshape';
         for (const [k2, v2] of Object.entries(ln)) {
           if (k2 === 'sec') continue;
-          if (k2 === 'code') { if (!txtOk(v2, 40)) return 'badshape'; }
+          if (k2 === 'code') { if (!txtOk(v2, 48)) return 'badshape'; }
           else if (k2 === 'name') { if (!txtOk(v2, 60)) return 'badshape'; }
           else if (k2 === 'qty' || k2 === 'unit') { if (!(nul(v2) || typeof v2 === 'number')) return 'badshape'; }
           else if (k2 === 'amount') { if (ln.sec === 'pay' || ln.sec === 'deduct' ? !yenOk(v2) : !(nul(v2) || typeof v2 === 'number')) return 'badshape'; }
@@ -253,13 +261,37 @@ function profileRows(ym) {
   ];
   return P.map(([staff_id, data], i) => ({ staff_id, effective_from: i === 0 ? P0.from : '2025-04-16', data, rev: 1 }));
 }
-/* 締めた時の控え（kintai-calc.js の snapshotOf の rows の形） */
-function attRow(sid) {
-  const n = +String(sid).replace(/\D/g, '') || 1;
-  return { staff_id: sid, emp_code: null, workDays: 18 + (n % 3), paidDays: n % 2, paidMin: (n % 2) * 480, workMin: 9000 + n * 60, schedInMin: 8400 + n * 30, overtimeMin: n * 30, legalInOverMin: 0,
-    legalOverMin: n === 9 ? 3900 : n * 30, over60Min: n === 9 ? 300 : 0, nightMin: n === 9 ? 960 : 0, holidayMin: 0, absentDays: 0, lateCount: 0, lateMin: 0, earlyLeaveCount: 0, earlyLeaveMin: 0,
-    noPunchDays: 0, reviewCount: 0, byOffice: {}, uncountedMin: 0, nightShiftCount: n === 9 ? 4 : 0, schedDays: 20, counts: {} };
+/* 勤怠の生の行（予定 9:00〜18:00・休憩60分・平日・休みの日を除く・打刻は予定どおり）と、本物の kintai-calc.js で作った締めの控え。
+   s-02・s-07 は最初の日を有休にする。s-04 は入社日から・s-05 は退職日まで。月ごとに1回だけ作る */
+function kintaiOf(db, ym) {
+  if (db.kraw[ym]) return db.kraw[ym];
+  const per = periodOf(ym), hol = (db.settings.config.holidays || []);
+  const staff = db.staff.map((x) => ({ staff_id: x.staff_id, name: x.name, office: x.office, emp_code: x.emp_code, active: x.active }));
+  const schedule = [], punches = [];
+  const at = (d, m) => new Date(KC.jstMs(d, m)).toISOString();
+  staff.forEach((st) => {
+    const pr = profileAt(db, st.staff_id, per.from), d0 = pr ? pr.data : {};
+    let first = true;
+    for (let d = per.from; d <= per.to; d = KC.addDays(d, 1)) {
+      const w = new Date(d + 'T00:00:00Z').getUTCDay();
+      if (w === 0 || w === 6 || hol.includes(d)) continue;
+      if (d0.entry_date && d < d0.entry_date) continue;
+      if (d0.retire_date && d > d0.retire_date) continue;
+      if (first && (st.staff_id === 's-02' || st.staff_id === 's-07')) { first = false; schedule.push({ staff_id: st.staff_id, work_date: d, seq: 1, kind: 'paid', start_at: null, end_at: null, break_min: 0, paid_min: 480, office: 'facility', symbol: '有' }); continue; }
+      first = false;
+      schedule.push({ staff_id: st.staff_id, work_date: d, seq: 1, kind: 'work', start_at: at(d, 540), end_at: at(d, 1080), break_min: 60, paid_min: 0, office: 'facility', symbol: '日' });
+      punches.push({ id: 'k-' + st.staff_id + d + 'i', staff_id: st.staff_id, kind: 'in', at: at(d, 540), source: 'tablet', created_at: at(d, 540) });
+      punches.push({ id: 'k-' + st.staff_id + d + 'o', staff_id: st.staff_id, kind: 'out', at: at(d, 1080), source: 'tablet', created_at: at(d, 1080) });
+    }
+  });
+  const lockedAt = db.kintai.locked_at;
+  const month = KC.computeMonth({ ym, period: per, staff, schedule, punches, days: [], config: {}, lockedAt, now: Date.parse(lockedAt) });
+  const snapshot = KC.snapshotOf(month);
+  if (db.drift) snapshot.rows.forEach((r) => { if (r.staff_id === 's-02') { r.workMin += 60; r.schedInMin += 60; } });
+  db.kraw[ym] = { raw: { period: per, staff, schedule, punches, days: [] }, snapshot };
+  return db.kraw[ym];
 }
+const attOfRow = (db, ym, sid) => (kintaiOf(db, ym).snapshot.rows.find((r) => r.staff_id === sid) || null);
 /* 前もって明細を作る時だけ使う率表（令和8年3月分より前の対象月を令和8年4月分の率へ寄せる・材料の中だけ） */
 const RATES_NEAR = Object.assign({}, PR, {
   health: (pref, ym) => PR.health(pref, ym) || PR.health(pref, '2026-04'),
@@ -268,11 +300,12 @@ const RATES_NEAR = Object.assign({}, PR, {
 const iso = (d) => new Date(d).toISOString();
 export function seed(opt = {}) {
   const ym0 = opt.ym || '2026-01';
+  const lock0 = KC.addDays(periodOf(ym0).to, 1) + 'T09:00:00+09:00';   /* 期間の終わりの翌朝に締めた */
   const config = { pay_day: 27, pay_day_shift: 'before', si_month: 'next', tax_method: 'table', prefecture: '43', avg_month_hours_default: 172, avg_month_days_default: 21.75,
     ot_rates: { in: 1, out: 1.25, over60: 0.25, night: 0.25, holiday: 1.35 }, round: { hour_unit: 'ceil', premium: 'ceil', prorate: 'floor', deduct_unit: 'floor', deduct: 'floor' },
     absence_deduct: true, late_deduct: true, holidays: ['2026-01-01', '2026-01-12', '2026-11-03', '2026-11-23'], night_premium: 'included',
     bank_from: { consignor_code: '0000000001', consignor_kana: 'ﾐﾎﾝ', bank_code: '9999', bank_kana: 'ﾐﾎﾝｷﾞﾝｺｳ', branch_code: '001', branch_kana: 'ﾎﾝﾃﾝ', type: '1', number: '0000001' },
-    zengin: { kind: '21' }, company_name: '見本の事業者' };
+    zengin: { kind: '21' }, company_name: '見本の事業者', zengin_enabled: !!opt.zengin };
   const db = {
     settings: { config, rev: 3 },
     allowances: [
@@ -283,7 +316,8 @@ export function seed(opt = {}) {
     staff: STAFF.map(([staff_id, name]) => ({ staff_id, name, office: 'facility', emp_code: null, active: true })),
     profiles: profileRows(ym0),
     bank: {},
-    kintai: { locked_at: '2026-01-16T09:00:00+09:00' },
+    kintai: { locked_at: lock0 },
+    kraw: {}, drift: !!opt.kintaiDrift,
     runs: {}, items: {}, prev: {}, audit: [], log: [],
     members: [{ email: 'check-clerk@example.invalid', added_by: 'check-admin@example.invalid', added_at: '2025-12-01T10:00:00+09:00' }],
     offices: ['check-clerk@example.invalid', 'check-office@example.invalid', 'check-new@example.invalid'],
@@ -300,15 +334,21 @@ export function seed(opt = {}) {
     db.profiles.forEach((p) => {
       if (p.data.exclude) return;
       const it = PC.computeItem({ ym: ym0, period: per, payDate: PC.payDate(ym0, config), settings: config, profile: p.data, allowanceDefs: db.allowances.map((a) => a.def),
-        att: p.data.no_attendance ? null : attRow(p.staff_id), adjustments: [], prevItem: null, profile_rev: p.rev, settings_rev: db.settings.rev, rates: RATES_NEAR });
+        att: p.data.no_attendance ? null : attOfRow(db, ym0, p.staff_id), adjustments: [], prevItem: null, profile_rev: p.rev, settings_rev: db.settings.rev, rates: RATES_NEAR });
       it.pay_date = PC.payDate(ym0, config);
       items.push({ staff_id: p.staff_id, item: it, adjustments: [] });
     });
     db.items[ym0] = items.map((x) => frozenRow(db, ym0, x));
-    db.runs[ym0] = { status: 'confirmed', rev: 2, fingerprint: Object.assign(fp(db, ym0), { rates_ver: PR.VERSION, calc_ver: PC.VERSION }), stale: false, totals: totalsOf(db, ym0),
+    db.items[ym0].forEach((x) => freezeConfirmed(db, ym0, x, PC.payDate(ym0, config)));
+    db.runs[ym0] = { status: 'confirmed', rev: 2, pay_date: PC.payDate(ym0, config), fingerprint: Object.assign(fp(db, ym0), { rates_ver: PR.VERSION, calc_ver: PC.VERSION }), stale: false, totals: totalsOf(db, ym0),
       bank_fp: bankFp(db, ym0), saved_at: '2026-01-17T10:00:00+09:00', saved_by: 'check-admin@example.invalid', confirmed_at: '2026-01-18T10:00:00+09:00', confirmed_by: 'check-admin@example.invalid', exported_at: null, history: [] };
   }
   return db;
+}
+/* 確定の時の写し（統合 0102 の payroll_run_confirm と同じ: 期間・支給日・事業者名・口座の下4桁） */
+function freezeConfirmed(db, ym, x, payDate) {
+  x.frozen.confirmed = { period: periodOf(ym), pay_date: payDate || null, company_name: db.settings.config.company_name || null,
+    bank_last4: db.bank[x.staff_id] ? summaryOf(db.bank[x.staff_id].accounts) : [], at: new Date().toISOString() };
 }
 function nameOf(db, sid) { const s = db.staff.find((x) => x.staff_id === sid); if (s) return s.name; const p = db.profiles.filter((x) => x.staff_id === sid).pop(); return p ? p.data.name || null : null; }
 function profileAt(db, sid, day) { return db.profiles.filter((p) => p.staff_id === sid && p.effective_from <= day).sort((a, b) => (a.effective_from < b.effective_from ? 1 : -1))[0] || null; }
@@ -324,11 +364,11 @@ function fp(db, ym) {
   return { kintai_locked_at: db.kintai.locked_at ? String(Date.parse(db.kintai.locked_at) / 1000) : null, settings_rev: db.settings ? db.settings.rev : 0,
     allowances: db.allowances.slice().sort((a, b) => (a.code < b.code ? -1 : 1)).map((a) => a.code + ':' + a.rev).join(','), profiles };
 }
-const fpCore = (f) => { const o = Object.assign({}, f); delete o.rates_ver; delete o.calc_ver; return JSON.stringify(o, Object.keys(o).sort()) + JSON.stringify(o.profiles || {}, Object.keys(o.profiles || {}).sort()); };
+const fpCore = (f) => { const o = Object.assign({}, f); delete o.rates_ver; delete o.calc_ver; delete o.pay_date; return JSON.stringify(o, Object.keys(o).sort()) + JSON.stringify(o.profiles || {}, Object.keys(o.profiles || {}).sort()); };
 function totalsOf(db, ym) { const it = db.items[ym] || []; return { count: it.length, gross: it.reduce((a, x) => a + x.gross, 0), deduct: it.reduce((a, x) => a + x.deduct, 0), net: it.reduce((a, x) => a + x.net, 0) }; }
 function bankFp(db, ym) { const o = {}; (db.items[ym] || []).forEach((x) => { o[x.staff_id] = db.bank[x.staff_id] ? db.bank[x.staff_id].rev : null; }); return o; }
 const summaryOf = (accounts) => accounts.map((e) => ({ bank_code: e.bank_code, bank_name: e.bank_name == null ? null : e.bank_name, last4: e.number.slice(-4), amount_or_rest: e.amount_or_rest }));
-function bootstrap(db, ym, opt) {
+function bootstrap(db, ym) {
   const per = periodOf(ym), r = db.runs[ym];
   const sids = [...new Set(db.profiles.map((p) => p.staff_id))].sort();
   return {
@@ -338,15 +378,15 @@ function bootstrap(db, ym, opt) {
     staff: db.staff.slice().sort((a, b) => (a.staff_id < b.staff_id ? -1 : 1)),
     profiles: sids.map((sid) => { const cur = profileAt(db, sid, per.from); if (!cur) return null;
       return { staff_id: sid, name: nameOf(db, sid), effective_from: cur.effective_from, rev: cur.rev, data: cur.data,
-        versions: db.profiles.filter((q) => q.staff_id === sid).sort((a, b) => (a.effective_from < b.effective_from ? -1 : 1)).map((q) => ({ effective_from: q.effective_from, rev: q.rev })),
+        versions: db.profiles.filter((q) => q.staff_id === sid).sort((a, b) => (a.effective_from < b.effective_from ? -1 : 1)).map((q) => ({ effective_from: q.effective_from, rev: q.rev, updated_by: q.updated_by || null, updated_at: q.updated_at || null, reason: q.reason || null })),
         bank_last4: db.bank[sid] ? summaryOf(db.bank[sid].accounts) : [] }; }).filter(Boolean),
     kintai: { locked: !!db.kintai.locked_at, locked_at: db.kintai.locked_at, period: per,
-      summary_by_staff: db.kintai.locked_at ? { v: 1, ym, period: per, config: {}, rows: db.staff.map((s) => attRow(s.staff_id)) } : null },
+      summary_by_staff: db.kintai.locked_at ? kintaiOf(db, ym).snapshot : null },
     run: r ? { status: r.status, rev: r.rev, fingerprint: r.fingerprint, totals: r.totals, stale: r.stale || (r.status === 'draft' && fpCore(r.fingerprint) !== fpCore(fp(db, ym))),
-      saved_at: r.saved_at, saved_by: r.saved_by, confirmed_at: r.confirmed_at, confirmed_by: r.confirmed_by, exported_at: r.exported_at, history: r.history } : null,
-    /* frozenCopy: B の担当が足している「明細に写した期間・設定も返す」形（payroll_items.frozen の period・settings）を先に写す（仮・B の版が入ったら突き合わせる） */
-    items: (db.items[ym] || []).map((i) => Object.assign({ staff_id: i.staff_id, name: i.frozen.name, item: i.item, adjustments: i.adjustments, gross: i.gross, deduct: i.deduct, net: i.net },
-      opt && opt.frozenCopy ? { frozen: { period: i.frozen.period, settings: i.frozen.settings } } : {})),
+      pay_date: r.pay_date || null, saved_at: r.saved_at, saved_by: r.saved_by, confirmed_at: r.confirmed_at, confirmed_by: r.confirmed_by, exported_at: r.exported_at, history: r.history } : null,
+    /* 確定の写し（統合 0102 の a54323a・8aa528f）: 確定した明細だけ frozen { period, pay_date, settings: { config }, bank_last4 }・下書きは null */
+    items: (db.items[ym] || []).map((i) => ({ staff_id: i.staff_id, name: i.frozen.name, item: i.item, adjustments: i.adjustments, gross: i.gross, deduct: i.deduct, net: i.net,
+      frozen: i.frozen.confirmed ? { period: i.frozen.confirmed.period, pay_date: i.frozen.confirmed.pay_date, settings: { config: (i.frozen.settings && i.frozen.settings.config) || {} }, bank_last4: i.frozen.confirmed.bank_last4 } : null })),
     prev_items: db.prev[ymAdd(ym, -1)] || (db.items[ymAdd(ym, -1)] || []).map((i) => ({ staff_id: i.staff_id, gross: i.gross, net: i.net })),
     fingerprint: fp(db, ym),
   };
@@ -366,11 +406,11 @@ export function routesFor(opt = {}) {
   const audit = (action, ym, staff_id, reason) => db.audit.push({ id: db.audit.length + 1, at: new Date().toISOString(), by: me, action, ym: ym || null, staff_id: staff_id || null, before: null, after: null, reason: reason || null });
   function rpc(name, p) {
     const ok = (o) => Object.assign({ ok: true }, o || {}), ng = (error, o) => Object.assign({ ok: false, error }, o || {});
-    if (name === 'payroll_bootstrap') return ymOk(p.p_ym) ? bootstrap(db, p.p_ym, opt) : ng('badym');
+    if (name === 'payroll_bootstrap') return ymOk(p.p_ym) ? bootstrap(db, p.p_ym) : ng('badym');
     if (name === 'payroll_run_save') {
       const ym = p.p_ym; if (!ymOk(ym)) return ng('badym');
       const items = p.p_items, f = p.p_fingerprint;
-      if (!Array.isArray(items) || items.length < 1 || items.length > 500 || !isObj(f) || !txtOk(f.rates_ver, 40, 1) || !txtOk(f.calc_ver, 40, 1)) return ng('badshape');
+      if (!Array.isArray(items) || items.length < 1 || items.length > 500 || !isObj(f) || !txtOk(f.rates_ver, 40, 1) || !txtOk(f.calc_ver, 40, 1) || ('pay_date' in f && !dateOk(f.pay_date))) return ng('badshape');
       for (const x of items) { const e = itemErr(x); if (e) return ng(e, { staff_id: x && x.staff_id }); }
       if (new Set(items.map((x) => x.staff_id)).size !== items.length) return ng('badshape', { detail: 'dup' });
       if (!db.kintai.locked_at) return ng('notlocked');
@@ -380,7 +420,7 @@ export function routesFor(opt = {}) {
       if (fpCore(f) !== fpCore(fp(db, ym))) return ng('stale', { fingerprint: fp(db, ym) });
       for (const x of items) if (!profileAt(db, x.staff_id, periodOf(ym).from)) return ng('noprofile', { staff_id: x.staff_id });
       db.runs[ym] = Object.assign({}, cur || { status: 'draft', history: [], confirmed_at: null, confirmed_by: null, exported_at: null, bank_fp: {} },
-        { fingerprint: f, stale: false, rev: (cur ? cur.rev : 0) + 1, saved_at: new Date().toISOString(), saved_by: me });
+        { fingerprint: f, stale: false, rev: (cur ? cur.rev : 0) + 1, pay_date: f.pay_date || null, saved_at: new Date().toISOString(), saved_by: me });
       db.items[ym] = items.map((x) => frozenRow(db, ym, x));
       db.runs[ym].totals = totalsOf(db, ym);
       audit('run_save', ym);
@@ -397,7 +437,8 @@ export function routesFor(opt = {}) {
       const t = totalsOf(db, ym);
       if (!t.count) return ng('empty');
       if (JSON.stringify(t) !== JSON.stringify(cur.totals)) return ng('badsum');
-      Object.assign(cur, { status: 'confirmed', confirmed_at: new Date().toISOString(), confirmed_by: me, rev: cur.rev + 1, totals: t, bank_fp: bankFp(db, ym) });
+      (db.items[ym] || []).forEach((x) => freezeConfirmed(db, ym, x, cur.pay_date));
+      Object.assign(cur, { status: 'confirmed', confirmed_at: new Date().toISOString(), confirmed_by: me, rev: cur.rev + 1, totals: t, stale: false, bank_fp: bankFp(db, ym) });
       audit('run_confirm', ym);
       return ok({ rev: cur.rev, totals: t });
     }
@@ -417,23 +458,27 @@ export function routesFor(opt = {}) {
       if (!isObj(d) || !Object.keys(d).length) return ng('empty');
       if (!profileOk(d, sid)) return ng('badshape');
       const cur = db.profiles.find((x) => x.staff_id === sid && x.effective_from === from);
-      if (cur) { if (p.p_rev !== cur.rev) return ng('conflict', { rev: cur.rev }); if (!reason || reason.length > 200) return ng('reason'); cur.data = d; cur.rev++; audit('profile_put', null, sid, reason); return ok({ rev: cur.rev }); }
+      if (cur) { if (p.p_rev !== cur.rev) return ng('conflict', { rev: cur.rev }); if (!reason || reason.length > 200) return ng('reason'); Object.assign(cur, { data: d, rev: cur.rev + 1, reason, updated_by: me, updated_at: new Date().toISOString() }); audit('profile_put', null, sid, reason); return ok({ rev: cur.rev }); }
       if ((p.p_rev || 0) !== 0) return ng('conflict', { rev: 0 });
-      db.profiles.push({ staff_id: sid, effective_from: from, data: d, rev: 1 }); audit('profile_put', null, sid, reason || null);
+      db.profiles.push({ staff_id: sid, effective_from: from, data: d, rev: 1, reason: reason || null, updated_by: me, updated_at: new Date().toISOString() }); audit('profile_put', null, sid, reason || null);
       return ok({ rev: 1 });
     }
     if (name === 'payroll_bank_put') {
       const sid = p.p_staff_id, reason = String(p.p_reason || '').trim();
       if (!(typeof sid === 'string' && SID.test(sid) && (sid.startsWith('p:') || db.staff.some((s) => s.staff_id === sid)))) return ng('nostaff');
-      if (p.p_accounts == null || (Array.isArray(p.p_accounts) && !p.p_accounts.length)) return ng('empty');
-      if (!bankOk(p.p_accounts)) return ng('badshape');
+      if (p.p_accounts == null) return ng('empty');
+      const gone = Array.isArray(p.p_accounts) && !p.p_accounts.length;
+      if (!gone && !bankOk(p.p_accounts)) return ng('badshape');
       if (!reason || reason.length > 200) return ng('reason');
-      db.bank[sid] = { rev: db.bank[sid] ? db.bank[sid].rev + 1 : 1, accounts: p.p_accounts }; audit('bank_put', null, sid, reason);
+      const markStale = () => Object.values(db.runs).forEach((r) => { if (r.status === 'confirmed' && sid in (r.bank_fp || {}) && r.bank_fp[sid] !== (db.bank[sid] ? db.bank[sid].rev : null)) r.stale = true; });
+      if (gone) { if (!db.bank[sid]) return ng('nobank'); delete db.bank[sid]; markStale(); audit('bank_remove', null, sid, reason); return ok({ accounts: [] }); }
+      db.bank[sid] = { rev: db.bank[sid] ? db.bank[sid].rev + 1 : 1, accounts: p.p_accounts }; markStale(); audit('bank_put', null, sid, reason);
       return ok({ accounts: summaryOf(p.p_accounts) });
     }
     if (name === 'payroll_bank_export') {
       const ym = p.p_ym, cur = db.runs[ym]; if (!ymOk(ym)) return ng('badym');
       if (!cur || cur.status === 'draft') return ng('notconfirmed');
+      if (!db.settings || db.settings.config.zengin_enabled !== true) return ng('zengin_off');   /* B の担当が足している印（全銀の書き出しを使う） */
       const its = db.items[ym] || [], diff = its.filter((i) => (cur.bank_fp[i.staff_id] === undefined ? null : cur.bank_fp[i.staff_id]) !== (db.bank[i.staff_id] ? db.bank[i.staff_id].rev : null)).length;
       if (diff) { audit('bank_export_stale', ym); return ng('stale', { changed: diff }); }
       const rows = its.filter((i) => i.net > 0 && db.bank[i.staff_id]).map((i) => ({ staff_id: i.staff_id, name: i.frozen.name, net: i.net, accounts: db.bank[i.staff_id].accounts }));
@@ -470,7 +515,7 @@ export function routesFor(opt = {}) {
     if (name === 'payroll_export_log') {
       const ym = p.p_ym; if (!ymOk(ym)) return ng('badym');
       if (!['zengin', 'journal', 'ledger', 'payslip', 'csv'].includes(p.p_kind)) return ng('badshape');
-      const cur = db.runs[ym]; if (!cur) return ng('norun');
+      const cur = db.runs[ym]; if (!cur && p.p_kind !== 'payslip') return ng('norun');   /* 明細の印刷は月が無くても記録する */
       if (p.p_kind === 'zengin' && cur.status === 'draft') return ng('notconfirmed');
       db.log.push(p.p_kind); audit('export_' + p.p_kind, ym);
       return ok();
@@ -498,7 +543,7 @@ export function routesFor(opt = {}) {
       P.forEach((e) => { if (db.profiles.some((x) => x.staff_id === e.staff_id && x.effective_from === e.effective_from)) res.profiles.skipped++; else { db.profiles.push({ staff_id: e.staff_id, effective_from: e.effective_from, data: e.data, rev: 1 }); res.profiles.added++; } });
       B.forEach((e) => { if (db.bank[e.staff_id]) res.banks.skipped++; else { db.bank[e.staff_id] = { rev: 1, accounts: e.accounts }; res.banks.added++; } });
       audit('import');
-      return ok(res);
+      return ok(Object.assign(res, { added: res.allowances.added + res.profiles.added + res.banks.added, unchanged: res.allowances.skipped + res.profiles.skipped + res.banks.skipped }));
     }
     return null;
   }
@@ -513,6 +558,15 @@ export function routesFor(opt = {}) {
       if (/\/rest\/v1\/allowed_accounts/.test(u)) return json({ role, label: '' });
       if (/\/auth\/v1\/factors|\/auth\/v1\/user/.test(u)) return json({ id: '00000000-0000-4000-8000-00000000a1a1', factors: [] });
       if (/\/rest\/v1\/rpc\/app_access_mine/.test(u)) return json({ ok: true, role, rules: null, mine: role === 'office' ? { payroll: true } : null, updatedAt: null });
+      if (/\/rest\/v1\/rpc\/kintai_month_get/.test(u)) {
+        let q = {}; try { q = JSON.parse(req.postData() || '{}'); } catch (e) { q = {}; }
+        calls.push({ name: 'kintai_month_get', args: q });
+        if (Object.keys(q).join() !== 'p_ym') return json({ code: 'PGRST202', message: 'Could not find the function public.kintai_month_get' }, 404);
+        if (aal !== 'aal2' || opt.deny) return json({ code: '42501', message: '事務所・管理者だけが使えます' }, 403);
+        if (!ymOk(q.p_ym)) return json({ ok: false, error: 'badym' });
+        const k = kintaiOf(db, q.p_ym);
+        return json(JSON.parse(JSON.stringify(Object.assign({ ok: true }, k.raw, { month: db.kintai.locked_at ? { ym: q.p_ym, locked_at: db.kintai.locked_at, snapshot: k.snapshot, history: [] } : null, settings: { config: {}, rev: 0 } }))));
+      }
       const m = /\/rest\/v1\/rpc\/(payroll_[a-z_]+)/.exec(u);
       if (!m) return json({ code: 'PGRST202', message: 'check fixture: not served' }, 404);
       let p = {};
@@ -530,9 +584,7 @@ export function routesFor(opt = {}) {
       return json(JSON.parse(JSON.stringify(r)));
     },
   }, PROFILE_ROUTE];
-  /* 全銀のスイッチ（su-backend.json の supabase.payroll_zengin）。材料の中だけで入・切を決める */
-  out.push({ match: '**/su-backend.json*', handle: (route) => route.fulfill({ status: 200, contentType: 'application/json; charset=utf-8', body: JSON.stringify({ supabase: opt.zengin ? { payroll_zengin: true } : {} }) }) });
-  out.db = db; out.calls = calls;
+  out.db = db; out.calls = calls; out.opt = opt;   /* 試験が途中で deny などを変えられるように */
   return out;
 }
 export const routes = routesFor({ start: 'confirmed' });

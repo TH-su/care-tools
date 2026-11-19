@@ -50,14 +50,15 @@ const sets = J.match(/lsSet\(([^,]+),/g) || [];
 t('lsSet で書くのは payroll_tab（LS_TAB）だけ', sets.length >= 1 && sets.filter((x) => x !== 'lsSet(k,').every((x) => /lsSet\(LS_TAB,/.test(x)) && /var LS_TAB = 'payroll_tab';/.test(J), sets);
 t('sessionStorage・indexedDB・Cache を使わない', !/sessionStorage|indexedDB|caches\./.test(J));
 t('console に出さない', !/console\./.test(J));
-t('10分（IDLE_MS）操作が無ければ mask で描いた金額・窓・紙・取り込みを捨てる', /var IDLE_MS = 10 \* 60 \* 1000;/.test(J) && /masked = true; closeDlg\(\); importRows = null; printList = null; audit = null; put\(\$\('p-print'\), ''\);/.test(J));
+t('10分（IDLE_MS）操作が無ければ mask で描いた金額・窓・紙・取り込みを捨て、窓の答えを無効にする（maskGen）', /var IDLE_MS = 10 \* 60 \* 1000;/.test(J) && /masked = true; maskGen\+\+; closeDlg\(\); importRows = null; printList = null; audit = null; put\(\$\('p-print'\), ''\);/.test(J));
 t('裏のタブから戻った時・窓に戻った時にも時間を確かめる', /visibilitychange', function \(\) \{ if \(!document\.hidden\) idleCheck\(\); \}/.test(J) && /addEventListener\('focus', idleCheck\)/.test(J));
 t('金額を戻す時はログインを確かめ直す（役割・aal2 が違えば読み込み直す）', /SUAuth\.check\(\{ fresh: true \}\)/.test(fnBody(J, 'unmask', 'function idleCheck')) && /st\.aal !== 'aal2'\) \{ location\.reload\(\)/.test(J));
 /* 統合 0102 に合わせた（2026-11-19 結びの段）: 全桁は payroll_bank_export の rows で受ける・全銀のスイッチは su-backend.json の payroll_zengin（設定の鍵 zengin_enabled は DB が断る）・
    記録の種類は zengin・journal・ledger・payslip・csv */
 t('口座の全桁は全銀の時だけ payroll_bank_export で受け、作ったら捨てる', (J.match(/rpc\('payroll_bank_export'/g) || []).length === 1 && /r\.rows = null; r = null;/.test(J) && /download\(res\); res = null;/.test(J));
-t('全銀のボタンはスイッチ（su-backend.json の supabase.payroll_zengin が true）の裏・読めない時は出さない', /if \(zenginOn\) h \+= '<button[^']*data-k="zengin"/.test(J) && /if \(kind === 'zengin' && !zenginOn\) return;/.test(J)
-  && /j\.supabase\.payroll_zengin === true/.test(J) && /\['catch'\]\(function \(\) \{ zenginOn = false; \}\)/.test(J) && !/zengin_enabled === true/.test(J));
+/* 全銀のスイッチは給与の設定 zengin_enabled（2026-11-19 反証レビュー 10・既定は使わない・DB も zengin_off で断る） */
+t('全銀のボタンは給与の設定 zengin_enabled が true の時だけ・DB の断り zengin_off は別の知らせ', /function zenginOn\(\) \{ return cfg\(\)\.zengin_enabled === true; \}/.test(J) && /if \(zenginOn\(\)\) h \+= '<button[^']*data-k="zengin"/.test(J) && /if \(kind === 'zengin' && !zenginOn\(\)\) return;/.test(J)
+  && /r\.error === 'zengin_off'/.test(J) && /c\.zengin_enabled = on\('s-zen'\);/.test(J) && !/su-backend\.json/.test(J));
 t('書き出し・印刷は記録（payroll_export_log）が通ってから・種類の名前は統合 0102 の5つ', /rpc\('payroll_export_log', \{ p_ym: ym, p_kind: EXP_LOG\[kind\] \}\)\.then\(okOr\)\.then/.test(J) && /rpc\('payroll_export_log', \{ p_ym: ym, p_kind: 'payslip' \}\)\.then\(okOr\)\.then/.test(J)
   && /var EXP_LOG = \{ zengin: 'zengin', journal: 'journal', ledger: 'ledger', list: 'csv' \};/.test(J));
 t('書き出しの部品が作れないと言った時（ok が false）はファイルを落とさない', /if \(res\.ok === false\) \{[\s\S]{0,400}?return load\(true\);\s*\}\s*download\(res\)/.test(J));
@@ -82,7 +83,7 @@ const cg = fnBody(J, 'confirmGo', 'function openUnconfirm');
 const iBoot = cg.indexOf("rpc('payroll_bootstrap'"), iCmp = cg.indexOf('figures(now) !== shown'), iConf = cg.indexOf("rpc('payroll_run_confirm'");
 t('「確定する」は 読み直し → 数え直し → 窓の数字と比べる → 同じ時だけ確定', iBoot >= 0 && iCmp > iBoot && iConf > iCmp, [iBoot, iCmp, iConf]);
 t('数字が違えば確定せずに描き直す（下書き保存からやり直す）', /読み直したら数字が変わっていました。確定していません。/.test(cg) && /dirty = true;/.test(cg));
-t('確定の取り消しは管理者だけ・理由が要る・書き出し後は強い知らせ', /if \(!isAdmin\(\) \|\| !frozen\(\)\) return;/.test(J) && /if \(!r\) \{ alert\(NG\.reason\); return; \}/.test(J) && /もう振込データを書き出しています/.test(J));
+t('確定の取り消しは管理者だけ・理由が要る・書き出し後は強い知らせ', /if \(!isAdmin\(\) \|\| !frozen\(\)\) return;/.test(J) && /if \(!r\) \{ say\(NG\.reason\); return; \}/.test(J) && /もう振込データを書き出しています/.test(J));
 t('確定済みの月は保存した（凍結した）明細を見せる', /function items\(\) \{ if \(frozen\(\)\) return bs\.items;/.test(J));
 
 console.log('\n— 6. stale の扱い —');
@@ -90,7 +91,7 @@ const hs = fnBody(J, 'handleStale', 'function fail');
 t('stale は読み直して計算し直す（payroll_run_confirm・payroll_run_save を呼ばない）', /load\(true\)/.test(hs) && /computeAll\(\)/.test(hs) && !/payroll_run_confirm|payroll_run_save/.test(hs));
 t('保存・確定・取り消しの失敗は fail に通し、stale はそこで handleStale', /if \(e && e\.payroll === 'stale'\) return handleStale\(\);/.test(J) && (J.match(/fail\(e, '/g) || []).length >= 8);
 t('下書き保存は指紋と run の版を送る', /rpc\('payroll_run_save', \{ p_ym: ym, p_items: calc\.items\.map\(toSave\), p_fingerprint: calc\.fp, p_rev: bs\.run \? bs\.run\.rev : 0 \}\)/.test(J));
-t('勤怠が未締めなら保存しない', /if \(!bs\.kintai\.locked\) \{ alert\(NG\.notlocked\); return; \}/.test(J));
+t('勤怠が未締めなら保存しない', /if \(!bs\.kintai\.locked\) \{ say\(NG\.notlocked\); return; \}/.test(J));
 
 console.log('\n— 7. 画面の頭 —');
 t('Cache-Control: no-store', /<meta http-equiv="Cache-Control" content="no-store">/.test(H));
@@ -161,9 +162,25 @@ t('attFromKintai: 0101 より前の控えで欠けた鍵は 0 にして名前を
 const H2 = read('payroll.html');
 const iT = H2.indexOf('payroll-tax-table.js'), iR = H2.indexOf('payroll-rates.js'), iC = H2.indexOf('payroll-calc.js'), iX = H2.indexOf('payroll-export.js'), iJ = H2.indexOf('payroll.js?');
 t('画面は本物の4つの部品を 税額表 → 率表 → 計算 → 書き出し → 画面 の順に読む', iT > 0 && iR > iT && iC > iR && iX > iC && iJ > iX, [iT, iR, iC, iX, iJ]);
-t('指紋は bootstrap の値に率と計算の版を足すだけ（画面で作らない）', /return Object\.assign\(\{\}, bs \? bs\.fingerprint : \{\}, \{ rates_ver: ratesVer\(\), calc_ver: calcVer\(\) \}\);/.test(J));
+t('指紋は bootstrap の値に率と計算の版（と日付の形の支給日）を足すだけ（画面で作らない）', /var f = Object\.assign\(\{\}, bs \? bs\.fingerprint : \{\}, \{ rates_ver: ratesVer\(\), calc_ver: calcVer\(\) \}\), pd = payDate\(\);\s*if \(isDate\(pd\)\) f\.pay_date = pd;/.test(J));
 t('呼ぶ口の引数は統合 0102 の名前（設定に理由なし・名簿は1人ずつ・取り込みは p_payload）', /rpc\('payroll_settings_put', \{ p_config: c, p_rev: bs\.settings\.rev \}\)/.test(J) && /rpc\('payroll_members_put', \{ p_email: email, p_on: onv \}\)/.test(J)
   && /rpc\('payroll_import_put', \{ p_payload: payload \}\)/.test(J) && /rpc\('payroll_allowance_put', \{ p_def: d, p_rev: a \? a\.rev : 0 \}\)/.test(J) && /rpc\('payroll_audit_get', \{ p_from: from\.toISOString\(\), p_to: to\.toISOString\(\) \}\)/.test(J));
+
+console.log('\n— 10. 反証レビュー（2026-11-19）の直し —');
+t('ブラウザの止める窓（alert・confirm・prompt）を使わず、画面の中の窓（SUDialog）へ（使えない時だけブラウザの窓）', !/(^|[^.\w])(alert|confirm|prompt)\(/m.test(J.replace(/window\.(alert|confirm)\(/g, '')) && /window\.SUDialog\.alert\(msg\)/.test(J) && /window\.SUDialog\.confirm\(msg\)/.test(J) && /su-dialog\.js\?v=/.test(H));
+t('確かめの窓の答えは、隠した・覆いに変わった後なら「やめる」', /return !!ok && mg === maskGen && !masked && view === 'app';/.test(J));
+t('42501（aal 以外）は覆いに倒す', /if \(e && e\.code === '42501'\) \{\s*if \(isAdmin\(\) \|\| !\/管理者\/\.test\(String\(e\.message \|\| ''\)\)\) \{ showGate\('denied'\); return null; \}/.test(J));
+t('金額を表示する時は DB に確かめ直す（読み直し）', /masked = false; lastAct = Date\.now\(\);[\s\S]{0,200}return load\(true\);/.test(fnBody(J, 'unmask', 'function idleCheck')));
+t('確定した月の口座の下4桁は確定の写し（frozen.bank_last4）を使う', /if \(Array\.isArray\(fr\.bank_last4\)\) it\.bank_last4 = /.test(J));
+t('書き出しの振込元・全銀の種別・仕訳の科目は今の設定、事業者名は写し', /settings: Object\.assign\(\{\}, cfg\(\), \{ company_name: paperCfg\(\)\.company_name \}\)/.test(J));
+t('住民税は今の年度と前の年度だけを送る', /var rtMin = shiftYm\(c\.months\[0\], -12\), rtMax = c\.months\[c\.months\.length - 1\];/.test(J));
+t('取り込みで口座名義が空なら口座を送らない', /else if \(!bank\.name_kana\) \{ ch\.push\('⚠ 口座名義が無いので送りません'\); bank = null; \}/.test(J));
+t('全銀の合計と件数を画面の振込する分と比べ、合わない時はファイルを作らない', /if \(num\(res\.total\) !== want\.total \|\| num\(res\.count\) !== want\.parts\) \{\s*res = null;/.test(J));
+t('締めの控えを数え直す: kintai_month_get → computeMonth → snapshotOf と比べ、食い違えば計算・保存・確定を止める', /rpc\('kintai_month_get', \{ p_ym: ymx \}\)/.test(J) && /K\.computeMonth\(/.test(J) && /K\.snapshotOf\(month\)/.test(J)
+  && /var kb = kintaiBlock\(\); if \(kb\) \{ say\(kb\); return; \}/.test(fnBody(J, 'doCompute', 'function figures')) && /var kb = kintaiBlock\(\); if \(kb\) \{ say\(kb\); return; \}/.test(fnBody(J, 'saveDraft', 'function changedList')) && /return verifyKintai\(ym, fresh\)/.test(fnBody(J, 'confirmGo', 'function openUnconfirm')) && /kintai-calc\.js\?v=/.test(H));
+const A = { workDays: 2, paidDays: 0, paidMin: 0, workMin: 960, schedInMin: 960, legalInOverMin: 0, legalOverMin: 0, over60Min: 0, nightMin: 0, holidayMin: 0, absentDays: 0, lateMin: 0, earlyLeaveMin: 0, nightShiftCount: 0, schedDays: 2, reviewCount: 0, counts: { '日': 2 } };
+t('attSame: 同じなら真・1分でも違えば偽・回数の記号が違えば偽', P.attSame(P.attFromKintai(A), P.attFromKintai(Object.assign({}, A))) && !P.attSame(P.attFromKintai(A), P.attFromKintai(Object.assign({}, A, { workMin: 961 })))
+  && !P.attSame(P.attFromKintai(A), P.attFromKintai(Object.assign({}, A, { counts: { '早': 2 } }))));
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);

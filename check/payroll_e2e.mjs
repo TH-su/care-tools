@@ -50,6 +50,15 @@ async function open(opt = {}) {
   await page.goto(srv.url + '/payroll.html');
   return { ctx, page, routes, errors, outside, logs };
 }
+/* 画面の中の窓（su-dialog.js）に答える。開いてすぐの押下は受けないので少し待ってから押す。出た文を返す（窓が出なければ ''） */
+async function sud(page, answer = 'ok', wait = 5000) {
+  try { await page.waitForSelector('dialog.sud-dlg[open]', { timeout: wait }); } catch (e) { return ''; }
+  const msg = await page.textContent('dialog.sud-dlg[open] .sud-msg');
+  await page.waitForTimeout(400);
+  await page.click(answer === 'ok' ? 'dialog.sud-dlg[open] .sud-btn.pri' : 'dialog.sud-dlg[open] .sud-btn:not(.pri)');
+  await page.waitForFunction(() => !document.querySelector('dialog.sud-dlg[open]'), null, { timeout: 5000 }).catch(() => {});
+  return msg;
+}
 const shot = async (page, name, full = true) => { if (SHOTS) await page.screenshot({ path: path.join(SHOTS, name + '.png'), fullPage: full }); };
 const waitApp = (page) => page.waitForFunction(() => !document.getElementById('p-app').hidden && !document.querySelector('#p-main .skel'), null, { timeout: 15000 });
 
@@ -72,27 +81,27 @@ console.log('\n— 1. 計算 → 下書き保存 → 確定 —');
   t('行を開くと支給・控除・勤怠の根拠が出る', await p.locator('details.it[data-sid="s-01"] table').count() >= 3);
   const body1 = await p.textContent('details.it[data-sid="s-01"]');
   t('本物の部品の明細: 基本給・資格手当・健康保険料・厚生年金保険料・雇用保険料・所得税・住民税の行', ['基本給', '資格手当', '健康保険料', '厚生年金保険料', '雇用保険料', '所得税', '住民税'].every((k) => body1.includes(k)), body1.slice(0, 400));
-  t('勤怠の根拠は締めた時の控えから（総労働 151:00＝9060分・名前の「（分）」は見せない）', /総労働151:00/.test(body1.replace(/\s+/g, '')) && !/総労働（分）/.test(body1), body1.slice(0, 600));
-  /* 手で確かめた値（契約 §0 の決まりで電卓で出した・2026-11-19）: 見本 一郎＝月給 240,000・資格手当 10,000・通勤 8,000（非課税）・時間外 30分・
+  t('勤怠の根拠は締めた勤怠（予定どおりの20日×8時間＝160:00）・名前の「（分）」は見せない', /総労働160:00/.test(body1.replace(/\s+/g, '')) && !/総労働（分）/.test(body1), body1.slice(0, 600));
+  t('締めた勤怠を数え直して控えと合うことを確かめた（kintai_month_get を読んだ）', o.routes.calls.some((c) => c.name === 'kintai_month_get' && c.args.p_ym === YM));
+  /* 手で確かめた値（契約 §0 の決まりで電卓で出した・2026-11-19）: 見本 一郎＝月給 240,000・資格手当 10,000・通勤 8,000（非課税）・時間外なし（予定どおりの勤怠）・
      健保と厚年の標準報酬 260,000・令和8年4月分〜の熊本の率・翌月徴収（対象月 2026-10）
-       時間単価 ⌈(240,000＋10,000)÷172⌉＝1,454 → 時間外 ⌈1,454×1.25×30÷60⌉＝909
-       総支給 240,000＋10,000＋909＋8,000＝258,909
+       総支給 240,000＋10,000＋8,000＝258,000
        健保 260,000×10.08%÷2＝13,104・介護 260,000×1.62%÷2＝2,106・支援金 260,000×0.23%÷2＝299・厚年 260,000×18.3%÷2＝23,790
-       雇保 258,909×0.5%＝1,294.545 → 1,295（50銭1厘以上は切上げ）
-       課税対象 258,909−8,000−(13,104＋2,106＋299＋23,790＋1,295)＝210,315
+       雇保 258,000×0.5%＝1,290
+       課税対象 258,000−8,000−(13,104＋2,106＋299＋23,790＋1,290)＝209,411
      所得税（税額表の引き）・住民税（設定の額）は手で確かめていない値なので比べない */
   await shot(p, 'payroll.run-open.pc');
   const s01 = await p.evaluate(() => { const o = {}; document.querySelectorAll('details.it[data-sid="s-01"] tbody tr').forEach((tr) => { const td = tr.querySelectorAll('td'); if (td.length >= 3) o[td[0].textContent.trim()] = td[2].textContent.trim(); }); return o; });
   const y = (k) => Number(String(s01[k] || '').replace(/[^\d]/g, ''));
-  t('手で確かめた値と一致（時間外 909・健保 13,104・介護 2,106・支援金 299・厚年 23,790・雇保 1,295）', y('時間外労働') === 909 && y('健康保険料') === 13104 && y('介護保険料') === 2106 && y('子ども・子育て支援金') === 299 && y('厚生年金保険料') === 23790 && y('雇用保険料') === 1295, s01);
-  t('手で確かめた値と一致（総支給 258,909・課税対象 210,315）', /258,909/.test(await p.textContent('details.it[data-sid="s-01"] > summary')) && /課税対象 210315/.test(body1), body1.slice(0, 200));
+  t('手で確かめた値と一致（時間外の行なし・健保 13,104・介護 2,106・支援金 299・厚年 23,790・雇保 1,290）', !('時間外労働' in s01) && y('健康保険料') === 13104 && y('介護保険料') === 2106 && y('子ども・子育て支援金') === 299 && y('厚生年金保険料') === 23790 && y('雇用保険料') === 1290, s01);
+  t('手で確かめた値と一致（総支給 258,000・課税対象 209,411）', /258,000/.test(await p.textContent('details.it[data-sid="s-01"] > summary')) && /課税対象 209411/.test(body1), body1.slice(0, 200));
   /* その月だけの調整（理由が無いと足せない） */
   await p.click('details.it[data-sid="s-01"] [data-act="adj"]');
   await p.fill('#a-name', '見本の立替');
   await p.fill('#a-amt', '3000');
-  p.once('dialog', (d) => d.accept());
   await p.click('[data-act="adj-go"]');
-  t('理由が無いと調整を足さない（窓が開いたまま）', await p.evaluate(() => document.getElementById('p-dlg').open));
+  const mAdj = await sud(p);
+  t('理由が無いと調整を足さない（画面の中の窓で知らせ・入力の窓は開いたまま）', /理由を書いてください/.test(mAdj) && await p.evaluate(() => document.getElementById('p-dlg').open), mAdj);
   await p.fill('#a-reason', '見本の理由');
   await p.click('[data-act="adj-go"]');
   t('調整を足すと計算し直し、その行に出る', /見本の立替/.test(await p.textContent('details.it[data-sid="s-01"]')));
@@ -106,8 +115,8 @@ console.log('\n— 1. 計算 → 下書き保存 → 確定 —');
   await p.emulateMedia({ media: 'print' });
   t('窓を開いたまま Cmd/Ctrl+P で刷っても、窓（総額）は紙に出ない', await p.evaluate(() => getComputedStyle(document.getElementById('p-dlg')).display === 'none' && getComputedStyle(document.getElementById('p-app')).display === 'none'));
   await p.emulateMedia({ media: 'screen' });
-  p.once('dialog', (d) => d.accept());
   await p.click('[data-act="confirm-go"]');
+  await sud(p);
   t('警告に印を入れないと確定しない', await p.evaluate(() => document.getElementById('p-dlg').open) && run(o).status === 'draft');
   await p.check('#c-ack');
   await p.click('[data-act="confirm-go"]');
@@ -116,8 +125,8 @@ console.log('\n— 1. 計算 → 下書き保存 → 確定 —');
   const sv = o.routes.calls.filter((c) => c.name === 'payroll_run_save').pop();
   t('下書き保存は {staff_id, item, adjustments} の形（item に氏名・口座を入れない）・指紋は bootstrap の値＋率と計算の版', !!sv && sv.args.p_items.every((x) => Object.keys(x).sort().join() === 'adjustments,item,staff_id' && !('name' in x.item) && !('bank_last4' in x.item) && /^\d{4}-\d{2}-\d{2}$/.test(x.item.pay_date))
     && sv.args.p_fingerprint.rates_ver === 'rates-2026-11-19' && sv.args.p_fingerprint.calc_ver === 'payroll-calc-1' && 'kintai_locked_at' in sv.args.p_fingerprint && 'allowances' in sv.args.p_fingerprint, sv && Object.keys(sv.args.p_fingerprint));
-  t('支給日は 2026-11-27（金曜・手で確かめた値）を明細に写した', !!sv && sv.args.p_items.every((x) => x.item.pay_date === '2026-11-27'));
-  t('確定を押した時にもう一度読み直した（bootstrap が確定の前にある）', (() => { const n = o.routes.calls.map((c) => c.name); const i = n.lastIndexOf('payroll_run_confirm'); return i > 0 && n[i - 1] === 'payroll_bootstrap'; })());
+  t('支給日は 2026-11-27（金曜・手で確かめた値）を明細に写し、指紋にも入れた', !!sv && sv.args.p_items.every((x) => x.item.pay_date === '2026-11-27') && sv.args.p_fingerprint.pay_date === '2026-11-27');
+  t('確定を押した時にもう一度読み直し、締めた勤怠も数え直した（bootstrap → kintai_month_get → 確定）', (() => { const n = o.routes.calls.map((c) => c.name); const i = n.lastIndexOf('payroll_run_confirm'); return i > 1 && n[i - 1] === 'kintai_month_get' && n[i - 2] === 'payroll_bootstrap'; })());
   t('端末に残したのは payroll_tab だけ（月分・金額・氏名なし・施設情報の共通の控えは除いて数える）', await p.evaluate(() => { const ks = []; for (let i = 0; i < localStorage.length; i++) ks.push(localStorage.key(i)); return ks.filter((k) => /payroll/.test(k)).join() === 'payroll_tab' && !ks.filter((k) => k !== 'su_facility_json_v1').some((k) => /見本 [一二三四五六七八九十]|見本銀行|\d{1,3},\d{3}/.test(localStorage.getItem(k) || '')); }));
   t('画面のエラー 0', o.errors.length === 0, o.errors);
   t('console.log に何も出さない', o.logs.length === 0, o.logs);
@@ -144,7 +153,7 @@ console.log('\n— 2. 確定の窓の後に入力が変わる —');
   t('新しい数字で計算し直し、もう一度保存を促す', !(await p.isDisabled('[data-act="save"]')) && await p.isDisabled('[data-act="confirm"]'));
   t('payroll_run_confirm を呼んでいない', !o.routes.calls.some((c) => c.name === 'payroll_run_confirm'));
   /* 3. 保存の時に stale（勤怠の締めが変わった） */
-  o.routes.db.kintai.locked_at = '2026-01-17T09:00:00+09:00';
+  o.routes.db.kintai.locked_at = '2026-11-17T09:00:00+09:00';   /* 締め直した（勤怠の中身は同じ） */
   await p.click('[data-act="save"]');
   await p.waitForFunction(() => /計算した後に変わりました/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
   t('stale と言われたら読み直して計算し直す（保存も確定もしない・保存のボタンはまた押せる）', run(o).status === 'draft' && !(await p.isDisabled('[data-act="save"]')));
@@ -179,13 +188,14 @@ console.log('\n— 4. 給与明細と印刷 —');
     t('印刷の PDF は10ページ（1人1ページ）', n === 10, n);
   }
   await p.emulateMedia({ media: 'screen' });
-  /* DB が写した期間・設定を返す版（frozenCopy）: 確定の後に設定の事業者名を変えても、明細は写した名前で出す */
+  /* 確定の写し（統合 0102 の frozen）: 確定の後に設定の事業者名・口座を変えても、明細は写した名前・口座の下4桁で出す */
   {
-    const o5 = await open({ tab: 'slip', start: 'confirmed', frozenCopy: true });
+    const o5 = await open({ tab: 'slip', start: 'confirmed' });
     o5.routes.db.settings.config.company_name = '見本の新しい名前';
+    o5.routes.db.bank['s-01'] = { rev: 2, accounts: [{ bank_code: '9997', branch_code: '003', type: '1', number: '0009999', name_kana: 'ﾐﾎﾝ', amount_or_rest: 'rest' }] };
     await waitApp(o5.page); await o5.page.waitForSelector('#p-main .slip');
     const tx = await o5.page.textContent('#p-main .slip');
-    t('確定した月は DB が写した設定（事業者名）と期間で明細を出し、今の設定から取らない', /見本の事業者/.test(tx) && !/見本の新しい名前/.test(tx) && /10\/16〜11\/15/.test(tx), tx.slice(0, 200));
+    t('確定した月は DB が写した設定（事業者名）・期間・口座の下4桁で明細を出し、今の値から取らない', /見本の事業者/.test(tx) && !/見本の新しい名前/.test(tx) && /10\/16〜11\/15/.test(tx) && /＊＊＊1000/.test(tx) && /＊＊＊2222/.test(tx) && !/9999/.test(tx), tx.slice(0, 300));
     await o5.ctx.close();
   }
   t('確定した月の明細は、明細に写した支給日（11/27）と DB が写した氏名で出す', /2026年11月27日/.test(await p.textContent('#p-main .slip')) && /見本 一郎/.test(await p.textContent('#p-main .slip')));
@@ -242,21 +252,29 @@ console.log('\n— 5. 振込と書き出し —');
     await waitApp(o3.page);
     delete o3.routes.db.settings.config.bank_from.consignor_code;
     await o3.page.click('#p-reload'); await waitApp(o3.page);
-    let m3 = '';
-    o3.page.once('dialog', (d) => { m3 = d.message(); d.accept(); });
     await o3.page.click('[data-k="zengin"]');
-    for (let i = 0; i < 50 && !m3; i++) await o3.page.waitForTimeout(100);
+    const m3 = await sud(o3.page);
     t('振込元の設定が足りない時は口座を受け取らず（bank_export・記録を呼ばない）、月も書き出し済みにしない', /振込元の設定に足りない所があるので/.test(m3) && !o3.routes.calls.some((c) => c.name === 'payroll_bank_export' || c.name === 'payroll_export_log') && run(o3).status === 'confirmed', m3);
     await o3.ctx.close();
   }
   /* 確定の後に口座が直された（統合 0102 は stale で断る）: 計算し直しの知らせではなく口座の知らせ */
-  o2.routes.db.bank['s-02'].rev++;
-  let msg2 = '';
-  p2.once('dialog', (d) => { msg2 = d.message(); d.accept(); });
+  /* 全銀の合計・件数が画面の振込する分と合わない（確定の後に口座の分け方が変わった・版は同じ）: ファイルを作らず知らせる */
+  o2.routes.db.bank['s-01'].accounts = [o2.routes.db.bank['s-01'].accounts[0]];
+  let dl9 = false; p2.once('download', () => { dl9 = true; });
   await p2.click('[data-k="zengin"]');
-  await p2.waitForFunction(() => true);
-  for (let i = 0; i < 50 && !msg2; i++) await p2.waitForTimeout(100);
+  const msg9 = await sud(p2);
+  t('全銀の件数が画面の振込する分と合わない時はファイルを作らず知らせる', /と合いません。ファイルは作っていません/.test(msg9) && !dl9, msg9);
+  /* 確定の後に口座が直された（統合 0102 は stale で断る）: 計算し直しの知らせではなく口座の知らせ */
+  o2.routes.db.bank['s-02'].rev++;
+  await p2.click('[data-k="zengin"]');
+  const msg2 = await sud(p2);
   t('確定の後に口座が直されていたら、振込データを作らず口座の知らせを出す', /確定した後に振込先の口座が直されました/.test(msg2), msg2);
+  /* 全銀を使わない設定（DB が zengin_off で断る）。ボタンは出ないが、DB の断りも口座の知らせと別の文にする */
+  o2.routes.db.bank['s-02'].rev--;
+  o2.routes.db.settings.config.zengin_enabled = false;
+  await p2.click('[data-k="zengin"]');
+  const msgOff = await sud(p2);
+  t('DB が全銀を使わない設定と断った（zengin_off）時は、その知らせを出す', /管理者が「設定」で使うようにするまで使えません/.test(msgOff), msgOff);
   fs.rmSync(zp, { force: true });
   t('画面のエラー 0', o.errors.length + o2.errors.length === 0, o.errors.concat(o2.errors));
   await o2.ctx.close();
@@ -286,7 +304,10 @@ console.log('\n— 6. 覆い・その他 —');
   await o4.page.click('[data-tab="profile"]');
   await shot(o4.page, 'payroll.profile.pc');
   t('職員の給与設定で抜けを赤の札で出す（口座の無い人）', /抜け：口座/.test(await o4.page.textContent('#p-main')));
-  /* 給与設定の保存: 画面に無い項目を消さない・理由が要る */
+  /* 給与設定の保存: 画面に無い項目を消さない・理由が要る。住民税は今の年度と前の年度より古い月を外して送る */
+  o4.routes.db.profiles.find((q) => q.staff_id === 's-02').data.resident_tax['2024-06'] = 5000;
+  o4.routes.db.profiles.find((q) => q.staff_id === 's-02').data.resident_tax['2025-06'] = 6000;
+  await o4.page.click('#p-reload'); await waitApp(o4.page);
   await o4.page.click('[data-act="prof"][data-sid="s-02"]');
   await o4.page.fill('#f-base', '1150');
   await o4.page.fill('#f-reason', '見本の昇給');
@@ -295,17 +316,19 @@ console.log('\n— 6. 覆い・その他 —');
   const pc = o4.routes.calls.filter((c) => c.name === 'payroll_profile_put').pop();
   t('給与設定の保存: 変えた値・期間の初日・新しい版（rev 0）・理由を送り、画面に無い項目（住民税・性別）は消さない', !!pc && pc.args.p_data.base === 1150 && pc.args.p_effective_from === '2026-10-16' && pc.args.p_rev === 0 && pc.args.p_reason === '見本の昇給'
     && pc.args.p_data.resident_tax['2026-11'] === 9000 && pc.args.p_data.gender === 'F' && pc.args.p_data.ins.health.std === 150000, pc && pc.args);
+  t('住民税: 前の年度より古い月（2024-06）は外し、前の年度（2025-06）と今の年度（2026-11）は残す', !!pc && !('2024-06' in pc.args.p_data.resident_tax) && pc.args.p_data.resident_tax['2025-06'] === 6000 && pc.args.p_data.resident_tax['2026-11'] === 9000, pc && pc.args.p_data.resident_tax);
   t('給与設定の保存は DB の形の確かめを通った（新しい版が足された）', o4.routes.db.profiles.some((q) => q.staff_id === 's-02' && q.effective_from === '2026-10-16' && q.data.base === 1150));
   t('給与の設定の無い人には印を出す', /給与の設定なし/.test(await o4.page.textContent('#p-main')));
   /* freee の書き出しの取り込み: 画面の中だけで読み、違いの表は口座を下4桁だけ・送る時に全桁 */
-  const csv = '従業員番号,氏名,給与形態,基本給,時給,口座種別,銀行コード,支店コード,口座番号,口座名義\r\nF-1,見本 一郎,月給,245000,,普通,9999,001,7654321,ﾐﾎﾝ ｲﾁﾛｳ\r\nF-9,見本 不明,時給,,1000,,,,,\r\n';
+  const csv = '従業員番号,氏名,給与形態,基本給,時給,口座種別,銀行コード,支店コード,口座番号,口座名義\r\nF-1,見本 一郎,月給,245000,,普通,9999,001,7654321,ﾐﾎﾝ ｲﾁﾛｳ\r\nF-9,見本 不明,時給,,1000,,,,,\r\n,見本 二子,,,,普通,9999,001,1111111,\r\n';
   await o4.page.setInputFiles('#i-file', { name: 'freee.csv', mimeType: 'text/csv', buffer: Buffer.from(csv, 'utf8') });
   await o4.page.waitForSelector('[data-act="imp-go"]');
   const it = await o4.page.textContent('#p-main');
   t('取り込み: 違い（基本給）と口座の下4桁を見せ、全桁は出さない・名簿に無い人は送らない', /基本給・時給など：240,000円 → 245,000円/.test(it) && /口座：＊＊＊4321/.test(it) && !/7654321/.test(it) && /見つかりません（送りません）/.test(it) && /1人分を送る/.test(it));
+  t('取り込み: 口座名義が空の行は口座を送らないと知らせる', /口座名義が無いので送りません/.test(it));
   await shot(o4.page, 'payroll.import.pc');
-  o4.page.once('dialog', (d) => d.accept());
   await o4.page.click('[data-act="imp-go"]');
+  await sud(o4.page);
   await o4.page.waitForFunction(() => !document.querySelector('[data-act="imp-go"]'), null, { timeout: 10000 });
   const ic = o4.routes.calls.filter((c) => c.name === 'payroll_import_put').pop();
   const pl = ic && ic.args.p_payload;
@@ -317,8 +340,8 @@ console.log('\n— 6. 覆い・その他 —');
   await o4.page.setInputFiles('#i-file', { name: 'freee2.csv', mimeType: 'text/csv', buffer: Buffer.from(csv2, 'utf8') });
   await o4.page.waitForSelector('[data-act="imp-go"]');
   t('取り込み: 加入の違いを表に出す', /健康保険の加入：（空） → 加入/.test(await o4.page.textContent('#p-main')) && /雇用保険の加入：（空） → 加入しない/.test(await o4.page.textContent('#p-main')));
-  o4.page.once('dialog', (d) => d.accept());
   await o4.page.click('[data-act="imp-go"]');
+  await sud(o4.page);
   await o4.page.waitForFunction(() => !document.querySelector('[data-act="imp-go"]'), null, { timeout: 10000 });
   const ic2 = o4.routes.calls.filter((c) => c.name === 'payroll_import_put').pop(), d11 = ic2 && ic2.args.p_payload.profiles && ic2.args.p_payload.profiles[0].data;
   t('取り込み: 健保は列で加入・厚年は列が無いので標準報酬ありで加入・雇保は列で加入しない（DB の確かめを通って足された）', !!d11 && d11.ins.health.on === true && d11.ins.pension.on === true && d11.ins.emp.on === false
@@ -331,7 +354,7 @@ console.log('\n— 6. 覆い・その他 —');
   await o4.page.click('[data-act="set-go"]');
   await o4.page.waitForFunction(() => /設定を保存しました/.test(document.getElementById('p-toast').textContent), null, { timeout: 10000 });
   const sp = o4.routes.calls.filter((c) => c.name === 'payroll_settings_put').pop();
-  t('設定の保存: 理由の引数なし・前の画面の鍵（zengin_enabled）を送らない・DB の確かめを通って版が上がる', !!sp && !('zengin_enabled' in sp.args.p_config) && o4.routes.db.settings.rev === 4 && o4.routes.db.settings.config.bank_from.bank_kana === 'ﾐﾎﾝｷﾞﾝｺｳ', sp && sp.args);
+  t('設定の保存: 理由の引数なし・全銀を使う印（zengin_enabled・既定は使わない）を真偽で送る・DB の確かめを通って版が上がる', !!sp && sp.args.p_config.zengin_enabled === false && o4.routes.db.settings.rev === 4 && o4.routes.db.settings.config.bank_from.bank_kana === 'ﾐﾎﾝｷﾞﾝｺｳ', sp && sp.args);
   await o4.page.click('[data-act="alw"][data-code="qual"]');
   await o4.page.fill('#w-name', '資格手当（見本）');
   await o4.page.click('[data-act="alw-go"]');
@@ -349,14 +372,58 @@ console.log('\n— 6. 覆い・その他 —');
   await o4.page.waitForFunction(() => /手当・控除の定義/.test((document.querySelector('#p-main .cd:last-child') || {}).textContent || ''), null, { timeout: 10000 });
   t('操作の記録を設定のタブの下の節に出す（何を・いつ・だれが）', /操作の記録/.test(await o4.page.textContent('#p-main')) && /給与の設定/.test(await o4.page.textContent('#p-main .cd:last-child')));
   await shot(o4.page, 'payroll.settings-full.pc');
-  /* 10分操作が無い（時計を進める代わりに最後の操作の時刻を戻す） */
-  await o4.page.click('[data-tab="run"]');
+  /* 口座を全部消す（統合 0102 は accounts=[] と理由で消す）: 確かめの窓が出ている間に10分たったら金額を隠し、後から OK を押しても消さない */
+  await o4.page.click('[data-tab="profile"]');
+  await o4.page.click('[data-act="bank"][data-sid="s-02"]');
+  await o4.page.fill('#b-reason', '見本の退職');
+  await o4.page.click('[data-act="bank-go"]');
+  await o4.page.waitForSelector('dialog.sud-dlg[open]');
+  t('口座を全部消す時は画面の中の窓で確かめる', /口座を全部消して「口座なし（振込しない）」にしますか/.test(await o4.page.textContent('dialog.sud-dlg[open] .sud-msg')));
+  /* 10分操作が無い（時計を進める代わりに最後の操作の時刻を戻す）。窓が出ていても隠す処理が動く */
   await o4.page.evaluate(() => { const ev = new Event('visibilitychange'); Date.now = ((n) => () => n + 11 * 60 * 1000)(Date.now()); document.dispatchEvent(ev); });
   await o4.page.waitForSelector('text=金額を隠しました');
-  t('10分操作が無ければ金額を画面から消す（数字が残らない）', !/\d{2,3},\d{3}/.test(await o4.page.textContent('#p-main')) && !/\d,\d{3}/.test(await o4.page.textContent('#p-print')));
+  t('10分操作が無ければ金額を画面から消す（確かめの窓が出ていても・数字が残らない）', !/\d{2,3},\d{3}/.test(await o4.page.textContent('#p-main')) && !/\d,\d{3}/.test(await o4.page.textContent('#p-print')));
+  await sud(o4.page);
+  t('隠した後に確かめの窓の OK を押しても口座は消さない', !o4.routes.calls.some((c) => c.name === 'payroll_bank_put' && c.args.p_staff_id === 's-02') && !!o4.routes.db.bank['s-02']);
   await shot(o4.page, 'payroll.masked.pc', false);
+  const nb = o4.routes.calls.filter((c) => c.name === 'payroll_bootstrap').length;
+  await o4.page.evaluate(() => { Date.now = (() => { const f = Date.now; return () => f(); })(); });
+  await o4.page.click('[data-act="unmask"]');
+  await o4.page.waitForFunction(() => !/金額を隠しました/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  t('「金額を表示する」の後は DB に確かめ直す（読み直しがある）', o4.routes.calls.filter((c) => c.name === 'payroll_bootstrap').length > nb);
+  /* 口座を全部消す（隠していない時） */
+  await o4.page.click('[data-tab="profile"]');
+  await o4.page.click('[data-act="bank"][data-sid="s-02"]');
+  await o4.page.fill('#b-reason', '見本の退職');
+  await o4.page.click('[data-act="bank-go"]');
+  await sud(o4.page);
+  await o4.page.waitForFunction(() => !document.getElementById('p-dlg').open, null, { timeout: 10000 });
+  const bp = o4.routes.calls.filter((c) => c.name === 'payroll_bank_put').pop();
+  t('口座を全部消す: accounts=[] と理由を送り、DB から消えた', !!bp && Array.isArray(bp.args.p_accounts) && bp.args.p_accounts.length === 0 && bp.args.p_reason === '見本の退職' && !o4.routes.db.bank['s-02'], bp && bp.args);
   t('画面のエラー 0', o4.errors.length === 0, o4.errors);
   await o4.ctx.close();
+  /* 締めの控えと今の勤怠の記録が食い違う（review 9）: 計算・保存を止めて、食い違う人の名前を出す */
+  {
+    const o6 = await open({ tab: 'run', start: 'none', kintaiDrift: true });
+    await waitApp(o6.page);
+    await o6.page.waitForSelector('text=控えと、今の勤怠の記録が合わない人がいます', { timeout: 10000 });
+    await o6.page.click('[data-act="compute"]');
+    const mk = await sud(o6.page);
+    t('締めの控えと今の勤怠が食い違う人がいれば計算しない（名前を出す）', /見本 二子/.test(mk) && (await o6.page.locator('details.it').count()) === 0, mk);
+    await shot(o6.page, 'payroll.kintai-drift.pc', false);
+    await o6.ctx.close();
+  }
+  /* 読んだ後に名簿から外された（42501）: 描いた物を消して覆いに倒す */
+  {
+    const o7 = await open({ tab: 'run', start: 'none' });
+    await waitApp(o7.page);
+    await o7.page.click('[data-act="compute"]');
+    o7.routes.opt.deny = true;
+    await o7.page.click('[data-act="save"]');
+    await o7.page.waitForFunction(() => !document.getElementById('p-gate').hidden, null, { timeout: 10000 });
+    t('保存の時に 42501 なら覆いに倒し、描いた金額を消す', /給与の名簿に入っていません/.test(await o7.page.textContent('#p-gate')) && await o7.page.evaluate(() => document.getElementById('p-app').hidden && !/\d{2,3},\d{3}/.test(document.getElementById('p-main').textContent)));
+    await o7.ctx.close();
+  }
   for (const [nm, vp, dark, tabn] of [['run.ph', { width: 390, height: 844 }, false, 'run'], ['slip.ph', { width: 390, height: 844 }, false, 'slip'], ['run.dark', { width: 1280, height: 900 }, true, 'run'], ['run.ph-dark', { width: 390, height: 844 }, true, 'run'], ['profile.ph', { width: 390, height: 844 }, false, 'profile']]) {
     const q = await open({ tab: tabn, start: 'confirmed', viewport: vp, dark });
     await waitApp(q.page);
