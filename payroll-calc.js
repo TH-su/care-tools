@@ -208,6 +208,9 @@
     };
     if (!isYm(ym) || !isDate(period.from) || !isDate(period.to) || !isDate(payDate)) { warn('badinput', '月分・期間・支給日の形が違います'); return item; }
     if (P.exclude) { warn('excluded', '計算から外す人です'); return item; }
+    if ((isDate(P.retire_date) && P.retire_date < period.from) || (isDate(P.entry_date) && P.entry_date > period.to)) {
+      warn('out_of_period', '期間の外に退職・入社している人です（満額で数えています・計算から外すか確かめてください）');
+    }
 
     var type = P.pay_type, board = type === 'board';
     if (['monthly', 'hourly', 'daily', 'board'].indexOf(type) < 0) { warn('pay_type', '給与形態が決まっていません'); return item; }
@@ -419,7 +422,22 @@
         er.push({ code: 'er_emp', name: '雇用保険料（会社）', amount: qNum(qMul(intQ(empBase), rateQ(re.employer))), basis: '賃金' + empBase + '×' + re.employer });
       }
     }
-    var siTotal = si.health + si.care + si.support + si.pension + si.emp + adjSi;
+    /* 定額の控除（定義の並び）。定義で social_ins が true のものは「社会保険料として扱う」＝税の基礎から引く */
+    var pd = Array.isArray(P.deductions) ? P.deductions : [], fixedDed = [], fixedSi = 0;
+    order.forEach(function (def) {
+      if (def.sec !== 'deduct') return;
+      pd.forEach(function (x) {
+        if (!x || x.code !== def.code) return;
+        var v = Math.round(Number(x.amount) || 0), asSi = !!(def.attrs && def.attrs.social_ins === true);
+        if (asSi) fixedSi += v;
+        fixedDed.push({ code: 'd:' + def.code, name: def.name || def.code, amount: v, basis: asSi ? '定額（社会保険料として扱う）' : '定額' });
+      });
+    });
+    /* 定義の無い code は黙って落とさず知らせる */
+    pa.concat(pd).forEach(function (x) {
+      if (x && x.code && !defs[x.code]) warn('def_missing', '手当・控除の定義が無い項目があります（' + x.code + '）・計算に入れていません');
+    });
+    var siTotal = si.health + si.care + si.support + si.pension + si.emp + adjSi + fixedSi;
 
     /* 源泉 */
     var taxBase = taxable - siTotal, tax = 0, col = P.tax && P.tax.col, dep = P.tax ? P.tax.dependents : 0;
@@ -434,7 +452,7 @@
         else tax = taxTable(T, taxBase, dep, col);
       }
     } else if (col !== 'none') warn('tax_col', '源泉の区分（甲・乙）が決まっていません');
-    tax = Math.max(0, tax + adjTax);
+    tax = Math.max(0, tax);
     var resident = P.resident_tax && typeof P.resident_tax === 'object' ? Math.max(0, Math.round(Number(P.resident_tax[payDate.slice(0, 7)]) || 0)) : 0;
 
     /* 控除の行 */
@@ -446,12 +464,10 @@
     if (si.pension) ded('pension', '厚生年金保険料', si.pension, '対象月 ' + target);
     if (empOn) ded('emp', '雇用保険料', si.emp, '賃金 ' + empBase);
     if (col === 'kou' || col === 'otsu') ded('income_tax', '所得税', tax, (col === 'otsu' ? '乙欄' : '甲欄') + ' 課税対象 ' + taxBase);
+    /* 税の精算（年調の過不足など）は所得税と別の行。負（還付）もそのまま通す */
+    if (adjTax) ded('tax_adjust', '所得税の精算', adjTax, '調整');
     if (resident) ded('resident_tax', '住民税', resident, payDate.slice(0, 7));
-    var pd = Array.isArray(P.deductions) ? P.deductions : [];
-    order.forEach(function (def) {
-      if (def.sec !== 'deduct') return;
-      pd.forEach(function (x) { if (x && x.code === def.code) ded('d:' + def.code, def.name || def.code, Math.round(Number(x.amount) || 0), '定額'); });
-    });
+    fixedDed.forEach(function (x) { ded(x.code, x.name, x.amount, x.basis); });
     adjDeduct.forEach(function (x) { ded(x.code, x.name, x.amount, x.basis); });
     er.forEach(function (x) { line('employer', x.code, x.name, null, null, x.amount, x.basis); });
 

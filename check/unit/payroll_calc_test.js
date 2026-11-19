@@ -318,7 +318,37 @@ console.log('8. マイナスの支給・調整・通勤');
 }
 {
   const it = run({ pay_type: 'monthly', base: 300000, ins: {}, tax: { col: 'kou', dependents: 0 } }, {}, { adjustments: [{ kind: 'tax_adjust', name: '年調の精算', amount: -2000 }] });
-  eq('税の精算は所得税に足す（税額表の 7930−2000）', L(it, 'income_tax'), 5930);
+  eq('税の精算は別の行（所得税は税額表の 7930 のまま）', L(it, 'income_tax'), 7930);
+  eq('税の精算の行 −2000', L(it, 'tax_adjust'), -2000);
+  eq('税の精算: 差引 300000−7930＋2000', it.net, 294070);
+  const it2 = run({ pay_type: 'monthly', base: 300000, ins: {}, tax: { col: 'kou', dependents: 0 } }, {}, { adjustments: [{ kind: 'tax_adjust', name: '年調の還付', amount: -10000 }] });
+  eq('還付がその月の税額を超えても消さない（−10000 のまま）', L(it2, 'tax_adjust'), -10000);
+  eq('還付が税額を超える: 差引 300000−7930＋10000', it2.net, 302070);
+  const it3 = run({ pay_type: 'monthly', base: 300000, ins: {}, tax: { col: 'none' } }, {}, { adjustments: [{ kind: 'tax_adjust', name: '年調の精算', amount: 1500 }] });
+  eq('源泉の区分 none でも精算の行を出す', L(it3, 'tax_adjust'), 1500);
+}
+{ /* 定額の控除: 社会保険料として扱う（定義の social_ins が true）は税の基礎から引く */
+  const DSI = { code: 'si2', name: '社会保険料の追加', sec: 'deduct', calc: 'fixed', order: 10, attrs: { social_ins: true } };
+  const DNO = { code: 'rent', name: '寮費', sec: 'deduct', calc: 'fixed', order: 11 };
+  const a = run({ pay_type: 'monthly', base: 300000, ins: {}, tax: { col: 'kou', dependents: 0 }, deductions: [{ code: 'si2', amount: 20000 }] }, {}, { allowanceDefs: [DSI] });
+  eq('社会保険料として扱う控除: 社保等 20000', a.si_total, 20000);
+  eq('社会保険料として扱う控除: 課税対象 280000', a.tax_base, 280000);
+  eq('社会保険料として扱う控除: 所得税（280,000円の行 7180）', L(a, 'income_tax'), 7180);
+  eq('社会保険料として扱う控除の行', L(a, 'd:si2'), 20000);
+  eq('差引 300000−20000−7180', a.net, 272820);
+  const b = run({ pay_type: 'monthly', base: 300000, ins: {}, tax: { col: 'kou', dependents: 0 }, deductions: [{ code: 'rent', amount: 20000 }] }, {}, { allowanceDefs: [DNO] });
+  eq('社会保険料として扱わない控除（既定）は税の基礎を変えない', b.tax_base, 300000);
+  eq('扱わない控除: 所得税 7930', L(b, 'income_tax'), 7930);
+}
+{ /* 定義の無い code */
+  const it = run({ pay_type: 'monthly', base: 200000, allowances: [{ code: 'nodef', amount: 5000 }], deductions: [{ code: 'nodef2', amount: 100 }], ins: {}, tax: { col: 'none' } }, {});
+  t('定義の無い手当・控除は警告（黙って落とさない）', W(it, 'def_missing'));
+  eq('定義の無い手当は総支給に入れない', it.gross, 200000);
+}
+{ /* 期間の外の退職・入社 */
+  t('期間の前に退職した人は警告', W(run({ pay_type: 'monthly', base: 200000, retire_date: '2026-11-10', ins: {}, tax: { col: 'none' } }, {}), 'out_of_period'));
+  t('期間の後に入社する人は警告', W(run({ pay_type: 'monthly', base: 200000, entry_date: '2026-12-20', ins: {}, tax: { col: 'none' } }, {}), 'out_of_period'));
+  t('期間の中の退職は警告なし', !W(run({ pay_type: 'monthly', base: 200000, retire_date: '2026-12-10', ins: {}, tax: { col: 'none' } }, { schedDays: 17 }), 'out_of_period'));
 }
 {
   const R1 = ratesWith({ commuteLimit: () => 4200 });
