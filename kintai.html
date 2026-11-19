@@ -17,7 +17,7 @@
 <script src="su-facility.js?v=2026-11-17"></script>
 <script src="su-kv.js?v=2026-11-16"></script>
 <script src="shift-symbols.js?v=2026-11-18"></script>
-<script src="kintai-calc.js?v=2026-11-19"></script>
+<script src="kintai-calc.js?v=2026-11-19.2"></script>
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 <link rel="stylesheet" href="su-shell.css?v=2026-11-13">
 <style>
@@ -145,7 +145,7 @@ body:has(#g-gate:not([hidden])) .sui-band{display:none}
 <div class="cd gate" id="g-gate" hidden></div>
 <div id="g-app" hidden>
   <div class="bar no-print">
-    <label>月 <input type="month" id="g-ym" aria-label="表示する月"></label>
+    <label>月分 <input type="month" id="g-ym" aria-label="表示する月分（締め日で切った期間）"></label> <span id="g-period" class="raw"></span>
     <button type="button" class="btn sm" id="g-prev" aria-label="前の月">◀ 前の月</button>
     <button type="button" class="btn sm" id="g-next" aria-label="次の月">次の月 ▶</button>
     <button type="button" class="btn sm" id="g-import">シフトを取り込み直す</button>
@@ -164,7 +164,7 @@ body:has(#g-gate:not([hidden])) .sui-band{display:none}
 </div>
 <div class="toast no-print" id="g-toast" role="status" aria-live="polite" hidden></div>
 <dialog id="g-dlg" aria-labelledby="g-dlg-h"><div class="dlg-h" id="g-dlg-h"></div><div class="dlg-b" id="g-dlg-b"></div><div class="dlg-f" id="g-dlg-f"></div></dialog>
-<script src="kintai.js?v=2026-11-19"></script>
+<script src="kintai.js?v=2026-11-19.2"></script>
 <script src="su-shell.js?v=2026-11-18"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 <script src="su-intro.js?v=2026-11-18"></script>
