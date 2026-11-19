@@ -130,6 +130,9 @@ main.sel .clock .time{font-size:28px;line-height:1.2}
   .k-body{flex:1 1 auto;min-height:0;grid-template-rows:minmax(0,1fr);align-items:stretch}
   .k-left,.hist{min-height:0;overflow-y:auto}
   .k-left{padding:2px}
+  /* 日付と時計（待受の大きい帯・氏名とパスコードの間の小さい帯とも）を、左の区画（出勤・退勤のボタン2つ）の中央の上にそろえる。
+     左の区画の幅＝（main の中身の幅 − 区画の間の 16px）× 7/10（.k-body の 7fr:3fr）。打刻の区画が出ていない時（ログインの止めなど）は今のまま画面の中央（本人指示 2026-11-19） */
+  main:has(> #k-body:not([hidden])) > .clock{align-self:flex-start;width:calc((100% - 16px) * .7)}
   /* パスコード・番号の画面は、左に名前と●の欄、右にテンキー（出勤/退勤のボタンの下に収める） */
   .panel.pad{max-width:none;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:24px;align-content:start}
   .panel.pad > *{grid-column:1}
