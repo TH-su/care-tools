@@ -298,8 +298,12 @@ console.log('\n— 3. 描いた SVG —');
   const strands = s => (serial(s).match(/stroke="#(DAD5F6|A9A0DE)"/g) || []).length;
   const bigS = strands(B.render({ kind: 'fuji', shown: BIZ, all: BIZ })), smallS = strands(B.render({ kind: 'fuji', small: true, shown: BIZ, all: BIZ }));
   t('3r 見出し用（small）は地の糸の本数を減らす（大 ' + bigS + '本・小 ' + smallS + '本）', smallS > 0 && smallS < bigS, [bigS, smallS]);
-  const growth = [0, 4, 8, 12, 16, 20, 24].map(n => serial(B.render({ kind: 'fuji', shown: BIZ.slice(0, n), all: BIZ })).replace(/su-itomari-\d+/g, 'ID').length);
-  t('3s 藤の手毬は数が増えるほど描く量が増える（育つ）', growth.every((v, i) => i === 0 || v >= growth[i - 1]) && growth[6] > growth[0], growth);
+  /* 描く量は「描く図形の要素の数」で測る（2026-11-19 直し）。前は SVG の文字数で測っていたが、文字数は座標の桁数・色の文字で揺れ、
+     少ない本数の間は糸の座標が短くなって 0本より短くなる（main の26本の時点でも1〜3本目が0本より短かった）＝育ったかどうかを表さない。
+     要素の数は星・帯・金糸を足した時だけ増えるので、0本から全部まで1本ずつ全部の数で、減らない・最後は最初より多い、を確かめる */
+  const elems = e => 1 + e.children.reduce((a, c) => a + elems(c), 0);
+  const growth = Array.from({ length: BIZ.length + 1 }, (_, n) => elems(B.render({ kind: 'fuji', shown: BIZ.slice(0, n), all: BIZ })));
+  t('3s 藤の手毬は数が増えるほど描く量（図形の要素の数）が増える（育つ・0本〜' + BIZ.length + '本の全部で減らない）', growth.every((v, i) => i === 0 || v >= growth[i - 1]) && growth[BIZ.length] > growth[0], growth);
   const f1s = serial(B.render({ kind: 'fuji', shown: BIZ.slice(0, 9), all: BIZ })).replace(/su-itomari-\d+/g, 'ID'), f2s = serial(B.render({ kind: 'fuji', shown: BIZ.slice(0, 9), all: BIZ })).replace(/su-itomari-\d+/g, 'ID');
   t('3t 藤の手毬も同じ数なら毎回同じ絵', f1s === f2s);
   let perf = 0;

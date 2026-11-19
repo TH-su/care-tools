@@ -188,5 +188,31 @@ console.log('5. 反証レビューの直し（2026-11-19）');
   eq('勤怠のある人の労働日数は数のまま', r2[head.indexOf('労働日数')], '20');
 }
 
+/* 画面向けの口（2026-11-19 結びの段）: 純関数を呼ぶだけ。口座を2つに分けた人は2件と数える */
+{
+  const settings = { bank_from: { consignor_code: '9000000001', consignor_kana: 'ｶ)ｼｹﾝ', bank_code: '9999', bank_kana: 'ｼｹﾝｷﾞﾝｺｳ', branch_code: '001', branch_kana: 'ﾎﾝﾃﾝ', type: '1', number: '1234567' }, zengin: { kind: '21' } };
+  const L = (code, sec, amount) => ({ sec, code, name: code, qty: null, unit: null, amount, basis: '' });
+  const items = [
+    { staff_id: 'a', name: '架空 一', gross: 200000, deduct: 30000, net: 170000, lines: [L('basic', 'pay', 200000), L('income_tax', 'deduct', 30000)] },
+    { staff_id: 'b', name: '架空 二', gross: 100000, deduct: 10000, net: 90000, lines: [L('basic', 'pay', 100000), L('income_tax', 'deduct', 10000)] },
+    { staff_id: 'c', name: '架空 三', gross: 0, deduct: 0, net: 0, lines: [] },
+  ];
+  const acc = (no, amt) => ({ bank_code: '0001', branch_code: '002', type: '1', number: no, name_kana: 'ｶｸｳ', amount_or_rest: amt });
+  const rows = [{ staff_id: 'a', net: 170000, accounts: [acc('1111111', 'rest'), acc('2222222', 50000)] }, { staff_id: 'b', net: 90000, accounts: [acc('3333333', 'rest')] }];
+  const z = X.zengin({ ym: '2026-12', payDate: '2026-12-25', settings, items, rows });
+  t('zengin: 口座を2つに分けた人は2件・合計は差引の和', z.ok && z.count === 3 && z.total === 260000, z);
+  t('zengin: 名前は月分つき・バイト列を返す', z.name === 'payroll-zengin-2026-12.txt' && z.bytes instanceof Uint8Array && z.bytes.length === 6 * 122);
+  const hdr = Buffer.from(z.bytes.slice(0, 120)).toString('latin1'), kanaB = Buffer.from(X.sjisBytes('ｼｹﾝｷﾞﾝｺｳ')).toString('latin1'), brB = Buffer.from(X.sjisBytes('ﾎﾝﾃﾝ')).toString('latin1');
+  t('zengin: 振込元の銀行・支店のカナは設定の bank_kana・branch_kana から（ヘッダの決まった位置）', hdr.slice(62, 62 + kanaB.length) === kanaB && hdr.slice(80, 80 + brB.length) === brB, hdr);
+  const zbad = X.zengin({ ym: '2026-12', payDate: '2026-12-25', settings, items, rows: [{ staff_id: 'a', net: 1, accounts: [acc('1111111', 'rest')] }] });
+  t('zengin: 確定した差引と振込の額が違えば止める（バイト列なし）', !zbad.ok && zbad.bytes === null && zbad.errors.some((e) => /差引/.test(e.msg)));
+  const j = X.journal({ ym: '2026-12', payDate: '2026-12-25', settings: {}, items, profiles: [] });
+  t('journal: 借方と貸方が合う・CSV の文字', j.ok && j.balanced && /^取引日,/.test(j.text) && j.name === 'payroll-journal-2026-12.csv');
+  const lg = X.ledger({ ym: '2026-12', period: { from: '2026-11-16', to: '2026-12-15' }, items, profiles: [{ staff_id: 'a', data: { freee_emp_num: 7, gender: 'F' } }] });
+  t('ledger: 賃金台帳の CSV（従業員番号・性別・期間）', /^従業員番号,氏名,性別,賃金計算期間/.test(lg.text) && /7,架空 一,女,2026-11-16〜2026-12-15/.test(lg.text) && lg.name === 'payroll-ledger-2026-12.csv');
+  const li = X.list({ ym: '2026-12', items, profiles: [] });
+  t('list: 明細一覧の CSV は人数分の行', li.text.trim().split('\r\n').length === 4 && li.name === 'payroll-list-2026-12.csv');
+}
+
 console.log('\n' + (fail ? '✗' : '✓') + ' payroll_export ' + pass + ' 件成功／' + fail + ' 件失敗');
 process.exit(fail ? 1 : 0);

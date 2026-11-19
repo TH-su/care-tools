@@ -615,5 +615,17 @@ console.log('13. 区分別の合計と指紋');
   t('欠勤・遅刻の単価の既定は切捨て', s.round.deduct_unit === 'floor' && s.round.deduct === 'floor');
 }
 
+/* 画面向けの口（2026-11-19 結びの段）。支給日の期待値は暦を手で確かめた値 */
+{
+  t('VERSION は計算の版と同じ', C.VERSION === C.CALC_VER && typeof C.VERSION === 'string' && C.VERSION.length > 0);
+  t('支給日: 2026年12月分・27日・土日は前へ → 12/25（12/27 は日曜・12/26 は土曜）', C.payDate('2026-12', { pay_day: 27, pay_day_shift: 'before' }) === '2026-12-25');
+  t('支給日: 既定（pay_day 無し）は27日・前へ（2026-11-27 は金曜）', C.payDate('2026-11', {}) === '2026-11-27');
+  t('支給日: 後へ寄せる（2026-12-27 日曜 → 12/28 月曜）', C.payDate('2026-12', { pay_day: 27, pay_day_shift: 'after' }) === '2026-12-28');
+  t('支給日: 休みの日も寄せる（12/25 を休みにすると 12/24）', C.payDate('2026-12', { pay_day: 27, holidays: ['2026-12-25'] }) === '2026-12-24');
+  t('支給日: 寄せない（none）は土日でもそのまま', C.payDate('2026-12', { pay_day: 27, pay_day_shift: 'none' }) === '2026-12-27');
+  t('支給日: 月の日数を超えた日は月末（2026年2月・31日・寄せない → 2/28）', C.payDate('2026-02', { pay_day: 31, pay_day_shift: 'none' }) === '2026-02-28');
+  t('支給日: 月分の形が違えば null', C.payDate('2026-13', {}) === null && C.payDate(null, {}) === null);
+}
+
 console.log('\n' + (fail ? '✗' : '✓') + ' payroll_calc ' + pass + ' 件成功／' + fail + ' 件失敗');
 process.exit(fail ? 1 : 0);

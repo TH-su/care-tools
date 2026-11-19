@@ -50,12 +50,18 @@ const sets = J.match(/lsSet\(([^,]+),/g) || [];
 t('lsSet で書くのは payroll_tab（LS_TAB）だけ', sets.length >= 1 && sets.filter((x) => x !== 'lsSet(k,').every((x) => /lsSet\(LS_TAB,/.test(x)) && /var LS_TAB = 'payroll_tab';/.test(J), sets);
 t('sessionStorage・indexedDB・Cache を使わない', !/sessionStorage|indexedDB|caches\./.test(J));
 t('console に出さない', !/console\./.test(J));
-t('10分（IDLE_MS）操作が無ければ mask で描いた金額・窓・紙・取り込みを捨てる', /var IDLE_MS = 10 \* 60 \* 1000;/.test(J) && /masked = true; closeDlg\(\); importRows = null; printList = null; put\(\$\('p-print'\), ''\);/.test(J));
+t('10分（IDLE_MS）操作が無ければ mask で描いた金額・窓・紙・取り込みを捨てる', /var IDLE_MS = 10 \* 60 \* 1000;/.test(J) && /masked = true; closeDlg\(\); importRows = null; printList = null; audit = null; put\(\$\('p-print'\), ''\);/.test(J));
 t('裏のタブから戻った時・窓に戻った時にも時間を確かめる', /visibilitychange', function \(\) \{ if \(!document\.hidden\) idleCheck\(\); \}/.test(J) && /addEventListener\('focus', idleCheck\)/.test(J));
 t('金額を戻す時はログインを確かめ直す（役割・aal2 が違えば読み込み直す）', /SUAuth\.check\(\{ fresh: true \}\)/.test(fnBody(J, 'unmask', 'function idleCheck')) && /st\.aal !== 'aal2'\) \{ location\.reload\(\)/.test(J));
-t('口座の全桁は全銀の時だけ payroll_bank_export で受け、作ったら捨てる', (J.match(/rpc\('payroll_bank_export'/g) || []).length === 1 && /accounts = null; r\.accounts = null;/.test(J));
-t('全銀のボタンは設定のスイッチ（zengin_enabled が true）の裏', /if \(cfg\(\)\.zengin_enabled === true\) h \+= '<button[^']*data-k="zengin"/.test(J) && /if \(kind === 'zengin' && cfg\(\)\.zengin_enabled !== true\) return;/.test(J));
-t('書き出し・印刷は記録（payroll_export_log）が通ってから', /rpc\('payroll_export_log', \{ p_ym: ym, p_kind: kind \}\)\.then\(okOr\)\.then/.test(J) && /rpc\('payroll_export_log', \{ p_ym: ym, p_kind: 'print' \}\)\.then\(okOr\)\.then/.test(J));
+/* 統合 0102 に合わせた（2026-11-19 結びの段）: 全桁は payroll_bank_export の rows で受ける・全銀のスイッチは su-backend.json の payroll_zengin（設定の鍵 zengin_enabled は DB が断る）・
+   記録の種類は zengin・journal・ledger・payslip・csv */
+t('口座の全桁は全銀の時だけ payroll_bank_export で受け、作ったら捨てる', (J.match(/rpc\('payroll_bank_export'/g) || []).length === 1 && /r\.rows = null; r = null;/.test(J) && /download\(res\); res = null;/.test(J));
+t('全銀のボタンはスイッチ（su-backend.json の supabase.payroll_zengin が true）の裏・読めない時は出さない', /if \(zenginOn\) h \+= '<button[^']*data-k="zengin"/.test(J) && /if \(kind === 'zengin' && !zenginOn\) return;/.test(J)
+  && /j\.supabase\.payroll_zengin === true/.test(J) && /\['catch'\]\(function \(\) \{ zenginOn = false; \}\)/.test(J) && !/zengin_enabled === true/.test(J));
+t('書き出し・印刷は記録（payroll_export_log）が通ってから・種類の名前は統合 0102 の5つ', /rpc\('payroll_export_log', \{ p_ym: ym, p_kind: EXP_LOG\[kind\] \}\)\.then\(okOr\)\.then/.test(J) && /rpc\('payroll_export_log', \{ p_ym: ym, p_kind: 'payslip' \}\)\.then\(okOr\)\.then/.test(J)
+  && /var EXP_LOG = \{ zengin: 'zengin', journal: 'journal', ledger: 'ledger', list: 'csv' \};/.test(J));
+t('書き出しの部品が作れないと言った時（ok が false）はファイルを落とさない', /if \(res\.ok === false\) \{[\s\S]{0,400}?return load\(true\);\s*\}\s*download\(res\)/.test(J));
+t('確定の後に口座が直された（bank_export の stale）は計算し直しの stale と別の知らせ', /r\.error === 'stale'\) \{ var e = new Error\('bankstale'\); e\.payroll = 'bankstale'; throw e; \}/.test(J) && /bankstale: '確定した後に振込先の口座が直されました/.test(J));
 t('取り込みの CSV はメモリだけ（読んだらファイルの選びを空にする）・違いの表は口座を下4桁だけ', /e\.target\.value = '';/.test(J) && /ch\.push\('口座：＊＊＊' \+ no\.slice\(-4\)\)/.test(J));
 t('HTML を入れるのは put の1か所だけ', (J.match(/\.innerHTML/g) || []).length === 1);
 
@@ -115,6 +121,49 @@ t('parseCsv: 引用符・中の読点・二重の引用符・CRLF・空行', row
 const miss = P.missingOf({ data: { pay_type: 'monthly', base: 0, ins: { health: { on: true } }, tax: {} }, bank_last4: null });
 t('missingOf: 基本給・生年月日・健保の標準報酬・源泉の区分・口座の抜けを出す', ['基本給', '生年月日', '健保の標準報酬', '源泉の区分', '口座'].every((x) => miss.indexOf(x) >= 0), miss);
 t('missingOf: 計算から外す人は抜けを出さない', P.missingOf({ data: { exclude: true }, bank_last4: null }).length === 0);
+
+console.log('\n— 9. データベース（統合 0102）の形との結び —');
+const nb2 = P.normBoot({ ok: true, ym: '2026-11', period: { from: '2026-10-16', to: '2026-11-15' }, fingerprint: { kintai_locked_at: '1', settings_rev: 3, allowances: 'x', profiles: {} },
+  settings: { config: { pay_day: 27 }, rev: 3 }, allowances: [{ code: 'qual', def: { code: 'qual', name: '見本の手当', sec: 'pay', calc: 'fixed', order: 1 }, rev: 2 }, { def: {} }],
+  staff: [{ staff_id: 's-1', name: '見本 一', active: true }, { staff_id: 's-2', name: '見本 二', active: true }, { staff_id: 's-3', name: '見本 三', active: false }],
+  profiles: [{ staff_id: 's-1', name: '見本 一', effective_from: '2026-10-16', rev: 1, data: { pay_type: 'monthly' }, versions: [{ effective_from: '2026-10-16', rev: 1 }], bank_last4: [{ bank_code: '9999', last4: '1234', amount_or_rest: 'rest' }] }],
+  kintai: { locked: true, locked_at: '2026-11-16T09:00:00+09:00', period: { from: '2026-10-16', to: '2026-11-15' }, summary_by_staff: { v: 1, rows: [{ staff_id: 's-1', workDays: 20, workMin: 9600, schedInMin: 9600, counts: { '早': 3 } }] } },
+  run: { status: 'draft', rev: 2, saved_at: '2026-11-17T10:00:00+09:00', stale: false, totals: { count: 1 } },
+  items: [{ staff_id: 's-1', name: '見本 一', item: { gross: 10, deduct: 1, net: 9, lines: [{ sec: 'pay', amount: 10 }], pay_date: '2026-11-27' }, adjustments: [], gross: 10, deduct: 1, net: 9 }] });
+t('bootstrap の手当は {code, def, rev} を平らにして計算の部品へ渡す形にする', nb2.allowances.length === 1 && nb2.allowances[0].name === '見本の手当' && nb2.allowances[0].rev === 2 && nb2.allowances[0].sec === 'pay', nb2.allowances);
+t('bootstrap の明細は item の中身＋staff_id・氏名（DB が写した氏名）・調整にする', nb2.items[0].lines.length === 1 && nb2.items[0].name === '見本 一' && nb2.items[0].pay_date === '2026-11-27' && nb2.items[0].net === 9);
+t('給与の設定が無い在籍の職員も「設定なし」で並べる（止めた人は出さない）', nb2.profiles.length === 2 && nb2.profiles[1].staff_id === 's-2' && nb2.profiles[1].none === true && nb2.profiles[1].rev === 0);
+t('勤怠の締めの控え（snapshot の rows）を staff_id ごとの att にする', nb2.kintai.summary_by_staff['s-1'].workMin === 9600 && nb2.kintai.summary_by_staff['s-1'].counts['早'] === 3);
+t('指紋は bootstrap の値を持つ・run は saved_at（calc_at ではない）', nb2.fingerprint.settings_rev === 3 && nb2.run.saved_at === '2026-11-17T10:00:00+09:00');
+const missOk = P.missingOf(nb2.profiles[1]);
+t('missingOf: 給与の設定が無い人は「給与の設定」の抜け', missOk.length === 1 && missOk[0] === '給与の設定');
+const sv = P.toSave({ staff_id: 's-1', name: '見本 一', bank_last4: [{ last4: '1234' }], adjustments: [{ kind: 'pay', name: '見本', amount: 1, reason: '見本' }], gross: 1, deduct: 0, net: 1, lines: [], warnings: [{ code: 'x', msg: 'y' }], pay_date: '2026-11-27', error: true, att: { a: 1 } });
+t('toSave: {staff_id, item, adjustments} だけ・item に氏名・口座・知らない鍵を入れない', Object.keys(sv).sort().join() === 'adjustments,item,staff_id' && !('name' in sv.item) && !('bank_last4' in sv.item) && !('error' in sv.item) && !('att' in sv.item) && sv.item.pay_date === '2026-11-27', sv);
+t('qtyText: 勤怠の分は時:分・日数は日・回数は回・「分÷60」の支給は時:分', P.qtyText({ sec: 'att', code: 'workMin', qty: 9060 }) === '151:00' && P.qtyText({ sec: 'att', code: 'workDays', qty: 20 }) === '20日'
+  && P.qtyText({ sec: 'att', code: 'nightShiftCount', qty: 4 }) === '4回' && P.qtyText({ sec: 'pay', code: 'ot_out', qty: 90, basis: '単価1×1.25×90分÷60' }) === '1:30' && P.qtyText({ sec: 'pay', code: 'board', qty: null }) === '');
+/* 勤怠の月の結果 → 締めの控え → att の通し（kintai-calc.js の computeMonth と snapshotOf を本物で動かす） */
+const KC = require(path.join(ROOT, 'kintai-calc.js'));
+const Sym = require(path.join(ROOT, 'shift-symbols.js'));
+const schedRows = KC.buildSchedule({ ym: '2026-12', plan: { cells: { 's-1': { 9: '早', 10: '早' } }, subCells: {} }, nextPlan: {}, staff: [{ id: 's-1', name: '見本 一', mainDivision: '施設', empCode: '', employment: '正社員', active: true }],
+  symbols: Sym.DEFAULT_SYMBOLS, settings: { breakThresholdH: 6, breakH: 1, nightBreakH: 2 } }).rows;
+const pin = (d, hm, kind) => ({ id: 'q' + d + kind, staff_id: 's-1', kind, at: new Date(KC.jstMs(d, +hm.split(':')[0] * 60 + +hm.split(':')[1])).toISOString(), source: 'tablet', created_at: new Date(KC.jstMs(d, +hm.split(':')[0] * 60 + +hm.split(':')[1])).toISOString() });
+const month = KC.computeMonth({ ym: '2026-12', staff: [{ staff_id: 's-1', name: '見本 一', office: 'facility', emp_code: null }], schedule: schedRows, days: [], config: {},
+  punches: [pin('2026-12-09', '7:00', 'in'), pin('2026-12-09', '18:00', 'out'), pin('2026-12-10', '7:00', 'in'), pin('2026-12-10', '16:00', 'out')], now: Date.parse('2027-01-10T12:00:00+09:00') });
+const per = month && month.people && month.people[0];
+if (per) {
+  const a1 = P.attFromKintai(per.sum), a2 = P.attFromKintai(KC.snapshotOf(month).rows[0]);
+  const keys = ['workDays', 'paidDays', 'paidMin', 'workMin', 'schedInMin', 'legalInOverMin', 'legalOverMin', 'over60Min', 'nightMin', 'holidayMin', 'absentDays', 'lateMin', 'earlyLeaveMin', 'nightShiftCount', 'schedDays'];
+  t('attFromKintai: computeMonth の1人ごとの集計と締めの控えから同じ att を作り、契約 §2 の鍵が全部ある', keys.every((k) => typeof a1[k] === 'number' && a1[k] === a2[k]) && a2.missing.length === 0, { a1, a2 });
+  t('attFromKintai: 2日働いた（出勤日数2・総労働は集計の値のまま・回数の記号「早」2回）', a2.workDays === 2 && a2.workMin === per.sum.workMin && a2.workMin > 0 && a2.counts['早'] === 2, a2);
+} else t('attFromKintai: computeMonth が1人ごとの集計を返す', false, Object.keys(month || {}));
+const old = P.attFromKintai({ workDays: 3, workMin: 600, schedInMin: 600 });
+t('attFromKintai: 0101 より前の控えで欠けた鍵は 0 にして名前を残す（黙って信じない）', old.legalInOverMin === 0 && old.missing.indexOf('legalInOverMin') >= 0 && old.missing.indexOf('workDays') < 0);
+const H2 = read('payroll.html');
+const iT = H2.indexOf('payroll-tax-table.js'), iR = H2.indexOf('payroll-rates.js'), iC = H2.indexOf('payroll-calc.js'), iX = H2.indexOf('payroll-export.js'), iJ = H2.indexOf('payroll.js?');
+t('画面は本物の4つの部品を 税額表 → 率表 → 計算 → 書き出し → 画面 の順に読む', iT > 0 && iR > iT && iC > iR && iX > iC && iJ > iX, [iT, iR, iC, iX, iJ]);
+t('指紋は bootstrap の値に率と計算の版を足すだけ（画面で作らない）', /return Object\.assign\(\{\}, bs \? bs\.fingerprint : \{\}, \{ rates_ver: ratesVer\(\), calc_ver: calcVer\(\) \}\);/.test(J));
+t('呼ぶ口の引数は統合 0102 の名前（設定に理由なし・名簿は1人ずつ・取り込みは p_payload）', /rpc\('payroll_settings_put', \{ p_config: c, p_rev: bs\.settings\.rev \}\)/.test(J) && /rpc\('payroll_members_put', \{ p_email: email, p_on: onv \}\)/.test(J)
+  && /rpc\('payroll_import_put', \{ p_payload: payload \}\)/.test(J) && /rpc\('payroll_allowance_put', \{ p_def: d, p_rev: a \? a\.rev : 0 \}\)/.test(J) && /rpc\('payroll_audit_get', \{ p_from: from\.toISOString\(\), p_to: to\.toISOString\(\) \}\)/.test(J));
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);

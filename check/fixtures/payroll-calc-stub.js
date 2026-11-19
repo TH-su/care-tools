@@ -1,7 +1,7 @@
 /* check/fixtures/payroll-calc-stub.js — 給与の画面（payroll.html）を確かめるための「契約どおりの形の偽の部品」（2026-11-19）
  * ════════════════════════════════════════════════════════════════
- * ★本物ではない。試験（check/unit/payroll_page_test.js）と確かめ用の撮影（check/payroll_e2e.mjs・check/fixtures/payroll.mjs）
- *   だけで使い、公開の画面は読まない（撮影の時は payroll-calc.js・payroll-export.js の要求をこのファイルで答える）。
+ * ★本物ではない。2026-11-19 に画面を本物の部品（payroll-calc.js・payroll-rates.js・payroll-tax-table.js・payroll-export.js）と結んだので、
+ *   今は撮影（check/payroll_e2e.mjs・check/fixtures/payroll.mjs）も本物を配り、このファイルはどこからも読まない（試験の材料の控えとして残す）。
  * ★金額の式はでたらめ（形だけ契約 CONTRACT-payroll-v1.md §2・§3 にそろえる）。法令の数え方・率は本物の payroll-calc.js が受け持つ。
  * 契約の形:
  *   PayrollCalc.computeItem(input) → { lines:[{sec,code,name,qty,unit,amount,basis}], gross, taxable, si_total, emp_ins_base, tax_base,

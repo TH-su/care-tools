@@ -250,7 +250,61 @@
     return { csv: csvJoin(out), debit: dt, credit: ct, balanced: dt === ct, employer: erYen, sums: s };
   }
 
+  /* ── 3. 画面向けの口（2026-11-19 結びの段・上の純関数を呼ぶだけで、書き出しの決まりは変えない） ──
+     o = { ym, period:{from,to}, payDate, settings（payroll_settings.config）, items:[明細（staff_id・name・lines・gross・deduct・net …）],
+           profiles:[{staff_id, data}], rows（zengin だけ・payroll_bank_export の rows [{staff_id, net, accounts}]） } */
+  function fileName(kind, ym, ext) { return 'payroll-' + kind + '-' + (/^\d{4}-\d{2}$/.test(String(ym)) ? ym : 'x') + '.' + ext; }
+  function profMap(o) { var m = {}; (Array.isArray(o.profiles) ? o.profiles : []).forEach(function (p) { if (p && p.staff_id) m[p.staff_id] = p.data || {}; }); return m; }
+  function itemsOf(o) { return (Array.isArray(o.items) ? o.items : []).filter(function (it) { return it && it.staff_id; }); }
+  /* 振込: 口座を2つ以上に分けた人は口座ごとに1件（count は全銀のデータの件数＝分けた後の数） */
+  function zengin(o) {
+    o = o || {};
+    var S = o.settings || {}, bf = S.bank_from || {}, z = S.zengin || {}, by = {}, records = [], skipped = [], extra = [];
+    itemsOf(o).forEach(function (it) { by[it.staff_id] = it; });
+    (Array.isArray(o.rows) ? o.rows : []).forEach(function (r, i) {
+      var it = r && by[r.staff_id];
+      if (!it) { skipped.push(r && r.staff_id); return; }
+      if (Number(r.net) !== Number(it.net)) { extra.push({ where: 'row' + (i + 1), msg: '確定した差引と振込の額が違います' }); return; }
+      var sp = splitAccounts(it.net, r.accounts);
+      if (sp.rest > 0) { extra.push({ where: 'row' + (i + 1), msg: '口座に振り分けられない残りがあります' }); return; }
+      sp.parts.forEach(function (p) {
+        var a = p.account || {};
+        records.push({ bank_code: a.bank_code, branch_code: a.branch_code, type: a.type, number: a.number, name_kana: a.name_kana, amount: p.amount });
+      });
+    });
+    var built = zenginBuild({ kind: z.kind, payDate: o.payDate, crlf: z.crlf !== false, records: records,
+      from: { consignor_code: bf.consignor_code, consignor_kana: bf.consignor_kana, bank_code: bf.bank_code, bank_name_kana: bf.bank_kana,
+        branch_code: bf.branch_code, branch_name_kana: bf.branch_kana, type: bf.type, number: bf.number } });
+    var errors = built.errors.concat(extra);
+    return { ok: errors.length === 0, name: fileName('zengin', o.ym, 'txt'), bytes: errors.length ? null : built.bytes, count: built.count, total: built.total,
+      errors: errors, warnings: built.warnings, skipped: skipped };
+  }
+  function journal(o) {
+    o = o || {};
+    var pm = profMap(o), S = o.settings || {}, J = S.journal && typeof S.journal === 'object' ? S.journal : {};
+    var r = journalCsv(itemsOf(o).map(function (it) { return { board: (pm[it.staff_id] || {}).pay_type === 'board', item: it }; }),
+      { date: o.payDate || '', accounts: J.accounts && typeof J.accounts === 'object' ? J.accounts : J });
+    return { ok: r.balanced, name: fileName('journal', o.ym, 'csv'), text: r.csv, balanced: r.balanced };
+  }
+  function ledger(o) {
+    o = o || {};
+    var pm = profMap(o);
+    return { ok: true, name: fileName('ledger', o.ym, 'csv'), text: wageLedgerCsv(itemsOf(o).map(function (it) {
+      var d = pm[it.staff_id] || {};
+      return { emp_num: d.freee_emp_num == null ? '' : String(d.freee_emp_num), name: it.name, gender: d.gender, period: o.period, item: it };
+    })) };
+  }
+  function list(o) {
+    o = o || {};
+    var pm = profMap(o);
+    return { ok: true, name: fileName('list', o.ym, 'csv'), text: payslipListCsv(itemsOf(o).map(function (it) {
+      var d = pm[it.staff_id] || {};
+      return { emp_num: d.freee_emp_num == null ? '' : String(d.freee_emp_num), name: it.name, item: it };
+    })) };
+  }
+
   var api = {
+    zengin: zengin, journal: journal, ledger: ledger, list: list,
     zenginText: zenginText, sjisBytes: sjisBytes, zenginBuild: zenginBuild, splitAccounts: splitAccounts, checkTotals: checkTotals,
     csvCell: csvCell, wageLedgerCsv: wageLedgerCsv, payslipListCsv: payslipListCsv, journalCsv: journalCsv, ACCOUNTS: ACCOUNTS
   };

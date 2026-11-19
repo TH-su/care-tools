@@ -587,7 +587,28 @@
     return item;
   }
 
+  /* ── 画面向けの口（2026-11-19 結びの段・計算の決まりは変えない） ──
+     支給日: 月分 ym の pay_day 日（月の日数を超えれば月末）。土日と settings.holidays の日は
+     pay_day_shift で寄せる（'before' 前の営業日・既定／'after' 後の営業日／'none' 寄せない）。国民の祝日は settings.holidays に入れた分だけ（仮置き） */
+  function payDate(ym, settings) {
+    if (!isYm(ym)) return null;
+    var s = settings && typeof settings === 'object' ? settings : {};
+    var day = Number(s.pay_day);
+    day = isFinite(day) && day >= 1 && day <= 31 ? Math.floor(day) : 27;
+    var last = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).getUTCDate();
+    var d = ym + '-' + (Math.min(day, last) < 10 ? '0' : '') + Math.min(day, last);
+    var step = s.pay_day_shift === 'after' ? 1 : (s.pay_day_shift === 'none' ? 0 : -1);
+    var hol = Array.isArray(s.holidays) ? s.holidays : [];
+    for (var i = 0; step && i < 31; i++) {
+      var w = new Date(d + 'T00:00:00Z').getUTCDay();
+      if (w !== 0 && w !== 6 && hol.indexOf(d) < 0) break;
+      d = addDays(d, step);
+    }
+    return d;
+  }
+
   var api = {
+    VERSION: CALC_VER, payDate: payDate,
     CALC_VER: CALC_VER, DEFAULTS: DEFAULTS, computeItem: computeItem, fillSettings: fillSettings, attrsOf: attrsOf,
     reachDate: reachDate, reachYm: reachYm, birthdayAt: birthdayAt, insCovered: insCovered, ymAdd: ymAdd, addDays: addDays,
     empCovered: empCovered, otBaseAdd: otBaseAdd, taxTable: taxTable, taxComputerR8: taxComputerR8, round50: round50, weekdaysBetween: weekdaysBetween,
