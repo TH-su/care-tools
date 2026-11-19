@@ -465,6 +465,43 @@ console.log('12. 源泉（令和8年と9年の切り替え・乙欄・扶養7人
   eq('電算機特例 B が0以下は0円', C.taxComputerR8(100000, 3), 0);
 }
 
+console.log('12b. 固定残業代（含む分を時間外から先に引く）');
+{
+  const FOT = { code: 'fot', name: '裁量手当', sec: 'pay', calc: 'fixed', order: 3, attrs: { overtime_base: false } };
+  const P0 = { pay_type: 'monthly', base: 172000, allowances: [{ code: 'fot', amount: 30000 }], fixed_ot: { allowance_code: 'fot', covered_min: 330 }, ins: {}, tax: { col: 'none' } };
+  const go = (att, prof) => run(Object.assign({}, P0, prof || {}), att, { allowanceDefs: [FOT] });
+  const a = go({ legalOverMin: 0 });
+  eq('時間外0分: 固定残業の手当は満額', L(a, 'ffot'), 30000);
+  eq('時間外0分: 残業代の行なし', L(a, 'ot_out'), undefined);
+  eq('時間外0分: 総支給 172000＋30000', a.gross, 202000);
+  const b = go({ legalOverMin: 200 });
+  eq('時間外200分（含む分330分より少ない）: 残業代の行なし', L(b, 'ot_out'), undefined);
+  eq('時間外200分: 手当は満額', L(b, 'ffot'), 30000);
+  const c = go({ legalOverMin: 330 });
+  eq('時間外330分ちょうど: 残業代の行なし（0円の行も出さない）', c.lines.filter((l) => l.code === 'ot_out').length, 0);
+  const d = go({ legalOverMin: 400 });
+  eq('時間外400分（多い）: 残業代＝1000×1.25×70分÷60＝1458.33→1459', L(d, 'ot_out'), 1459);
+  eq('時間外400分: 行の名前は「残業代」', (d.lines.find((l) => l.code === 'ot_out') || {}).name, '残業代');
+  eq('時間外400分: 行の数量は超えた70分', (d.lines.find((l) => l.code === 'ot_out') || {}).qty, 70);
+  eq('時間外400分: 総支給 172000＋30000＋1459', d.gross, 203459);
+  const e = go({ legalInOverMin: 60, legalOverMin: 100 });
+  eq('法定内残業からは引かない（1000×1.00×1h）', L(e, 'ot_in'), 1000);
+  eq('法定内残業があっても時間外100分は含む分の内', L(e, 'ot_out'), undefined);
+  const f = go({ legalOverMin: 3700, over60Min: 100, nightMin: 60 }, {});
+  eq('60時間超: 残業代は (3700−330)分 ×1000×1.25÷60＝70208.33→70209', L(f, 'ot_out'), 70209);
+  eq('60時間超の上乗せは今のまま（100分→417）', L(f, 'ot_over60'), 417);
+  const f2 = run(Object.assign({}, P0), { nightMin: 60 }, { allowanceDefs: [FOT], settings: { night_premium: 'pay' } });
+  eq('深夜の上乗せは今のまま（250）', L(f2, 'ot_night'), 250);
+  const g = run({ pay_type: 'hourly', base: 1200, allowances: [{ code: 'fot', amount: 10000 }], fixed_ot: { allowance_code: 'fot', covered_min: 330 }, ins: {}, tax: { col: 'none' } },
+    { schedInMin: 6000, legalOverMin: 400 }, { allowanceDefs: [FOT] });
+  eq('時給者: 1200×1.25×70分÷60＝1750', L(g, 'ot_out'), 1750);
+  const h = run(Object.assign({}, P0, { allowances: [] }), { legalOverMin: 400 }, { allowanceDefs: [FOT] });
+  t('固定残業の手当が設定に無い → 警告して含む分を引かない', W(h, 'fixed_ot_allowance') && L(h, 'ot_out') === 8334, L(h, 'ot_out'));
+  const i = run({ pay_type: 'monthly', base: 172000, ins: {}, tax: { col: 'none' } }, { legalOverMin: 400 });
+  eq('固定残業代の無い人は今の動き（時間外労働 8334）', L(i, 'ot_out'), 8334);
+  eq('固定残業代の無い人の行の名前は今のまま', (i.lines.find((l) => l.code === 'ot_out') || {}).name, '時間外労働');
+}
+
 console.log('13. 区分別の合計と指紋');
 {
   const it = run({ pay_type: 'monthly', base: 200000, birth_date: '1990-01-01', ins: INS(200000, 200000), tax: { col: 'kou', dependents: 0 }, commute: { monthly: 5000 } }, {}, { profile_rev: 3, settings_rev: 7 });

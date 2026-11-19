@@ -298,6 +298,16 @@
       }
     });
 
+    /* 固定残業代（profile.fixed_ot: { allowance_code, covered_min }・無ければ今の動き） */
+    var fixedOt = null;
+    if (P.fixed_ot && typeof P.fixed_ot === 'object' && !board) {
+      var cov = Math.max(0, Math.round(Number(P.fixed_ot.covered_min) || 0));
+      var fcode = P.fixed_ot.allowance_code;
+      var hasAllow = fcode && defs[fcode] && pa.some(function (a) { return a && a.code === fcode; });
+      if (!hasAllow) warn('fixed_ot_allowance', '固定残業代の手当が設定にありません（含む時間を引かずに数えました）');
+      else fixedOt = { code: fcode, covered: cov };
+    }
+
     /* 割増の単価 */
     var R_ = S.ot_rates, unit = null;
     if (!board) {
@@ -312,7 +322,14 @@
       var unitTxt = qNum(unit);
       [['in', 'legalInOverMin', 'ot_in', '法定内残業'], ['out', 'legalOverMin', 'ot_out', '時間外労働'], ['over60', 'over60Min', 'ot_over60', '60時間超の上乗せ'],
         ['night', 'nightMin', 'ot_night', '深夜の上乗せ'], ['holiday', 'holidayMin', 'ot_holiday', '法定休日労働']].forEach(function (x) {
-        var mins = m(x[1]);
+        var mins = m(x[1]), name = x[3], fx = '';
+        /* 固定残業代: 含む分（covered_min）は時間外の分から先に引き、超えた分だけを「残業代」として払う。
+           法定内残業・60時間超・深夜の上乗せは今のまま。固定残業の手当そのものは手当の行で満額 */
+        if (x[0] === 'out' && fixedOt) {
+          mins = Math.max(0, mins - fixedOt.covered);
+          name = '残業代';
+          fx = '（固定残業代に含む ' + fixedOt.covered + '分を引いた後）';
+        }
         if (x[0] === 'night') {
           var need = mins ? yen(qDiv(qMul(qMul(unit, rateQ(R_.night)), intQ(mins)), Q(60)), S.round.premium) : 0;
           if (S.night_premium === 'included') {
@@ -322,7 +339,7 @@
         }
         if (!mins) return;
         var v = yen(qDiv(qMul(qMul(unit, rateQ(R_[x[0]])), intQ(mins)), Q(60)), S.round.premium);
-        pay(x[2], x[3], mins, unitTxt, v, '単価' + unitTxt + '×' + R_[x[0]] + '×' + mins + '分÷60', {});
+        pay(x[2], name, mins, unitTxt, v, '単価' + unitTxt + '×' + R_[x[0]] + '×' + mins + '分÷60' + fx, {});
       });
     }
 
