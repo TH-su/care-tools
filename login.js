@@ -76,7 +76,45 @@
   }
 
   var current = null;
+  // 2段階認証の欄の文を、管理者向け（今まで）と事務所のアカウント向け（2026-11-19 本人指示）で切り替える
+  function mfaFor(office) {
+    $('enroll-admin-note').hidden = office;
+    $('enroll-office-note').hidden = !office;
+    $('enroll-skip-note').hidden = office;
+    $('verify-skip-note').hidden = office;
+    $('enroll-skip').textContent = office ? 'あとで登録する' : 'あとで登録する（事務所として進む）';
+    $('verify-skip').textContent = office ? 'あとで入れる' : '事務所として進む';
+    $('enroll-warn-admin').hidden = office;
+    $('enroll-warn-office').hidden = !office;
+    $('enroll-qr-skip').hidden = !office;      // 管理者の QR の段は今までどおり「あとで」を出さない
+  }
+  // 「あとで」で戻る先。事務所のアカウントが2段階認証の欄から来た時（確かめの答えが OK）はそのまま、
+  // 管理者が6桁を入れずに進む時は今までどおり「事務所（2段階認証なし）」として出す
+  function skipTo(st) {
+    if (st.status === S.OK) return st;
+    return Object.assign({}, st, { role: 'office', roleLabel: SUAuth.ROLE_LABEL.office + '（2段階認証なし）' });
+  }
+  // 事務所のアカウントの「2段階認証」の欄。確かめている間に画面が変わった時の答えは捨てる
+  var okGen = 0;
+  async function officeMfa(st) {
+    var gen = ++okGen;
+    var box = $('ok-mfa');
+    box.hidden = true;
+    if (!st || st.role !== 'office' || st.aal === 'aal2') return;
+    var id = null;
+    try {
+      var f = await SUAuth.client().auth.mfa.listFactors();
+      if (f.error) return;                       // 確かめられない時は欄を出さない（今までと同じ）
+      var v = (f.data.totp || []).filter(function (x) { return x.status === 'verified'; });
+      id = v.length ? v[0].id : null;
+    } catch (e) { return; }
+    if (gen !== okGen || current !== st) return;
+    box.dataset.factor = id || '';
+    $('b-ok-mfa').textContent = id ? '認証アプリの6桁を入れる' : '2段階認証を登録する';
+    box.hidden = false;
+  }
   async function refresh() {
+    okGen++;
     show('loading');
     var st;
     // ログイン画面の確かめ直しは、同じタブの控え（su-auth.js）を使わず必ずデータベースに確かめる（2026-10-24 代表者の決定5）
@@ -87,9 +125,10 @@
       case S.SIGNED_OUT: show('signedout', st); if (st.message) msg(st.message); break;
       case S.DENIED: show('denied', st); break;
       case S.MFA_ENROLL:
+        mfaFor(false);
         $('enroll-start').hidden = false; $('enroll-qr').hidden = true;
         show('enroll', st); break;
-      case S.MFA_VERIFY: show('verify', st); $('code-verify').value = ''; $('code-verify').focus(); break;
+      case S.MFA_VERIFY: mfaFor(false); show('verify', st); $('code-verify').value = ''; $('code-verify').focus(); break;
       case S.OK: showOk(st); break;
       default: show('error', st);
     }
@@ -108,6 +147,7 @@
     $('b-menu').hidden = st.role !== 'admin';
     $('b-access').hidden = st.role !== 'admin';
     $('b-shadow').hidden = st.role !== 'admin' && st.role !== 'office';
+    officeMfa(st);
     var n = nextPage();
     var b = $('b-next');
     if (n) {
@@ -151,7 +191,22 @@
     }
     if (act === 'skip' && current) {
       msg('');
-      showOk(Object.assign({}, current, { role: 'office', roleLabel: SUAuth.ROLE_LABEL.office + '（2段階認証なし）' }));
+      showOk(skipTo(current));
+    }
+  });
+
+  $('b-ok-mfa').addEventListener('click', function () {
+    if (!current || current.status !== S.OK || current.role !== 'office') return;
+    msg('');
+    okGen++;
+    mfaFor(true);
+    var id = $('ok-mfa').dataset.factor || '';
+    if (id) {
+      current.factorId = id;
+      show('verify', current); $('code-verify').value = ''; $('code-verify').focus();
+    } else {
+      $('enroll-start').hidden = false; $('enroll-qr').hidden = true;
+      show('enroll', current);
     }
   });
 
