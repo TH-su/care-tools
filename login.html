@@ -69,12 +69,13 @@
   <!-- 管理者: 2段階認証の登録（初回だけ） -->
   <section class="cd" id="v-enroll" hidden>
     <h2>2段階認証の登録（初回だけ）</h2>
-    <p>管理者は Google に加えて、スマートフォンの認証アプリの6桁を入れた時だけ管理者として使えます。</p>
+    <p id="enroll-admin-note">管理者は Google に加えて、スマートフォンの認証アプリの6桁を入れた時だけ管理者として使えます。</p>
+    <p id="enroll-office-note" hidden>給与の画面など、2段階認証が要る画面を使う人だけが登録します。登録した後は、その画面を開く前にこの画面で6桁を入れます。</p>
     <div id="enroll-start">
       <p class="muted">用意するもの: iPhone の「パスワード」アプリ、または「Google Authenticator」アプリ。</p>
       <div class="acts"><button type="button" class="btn pri" id="b-enroll">登録を始める</button></div>
-      <p class="muted mt">登録しないで進むと、管理者ではなく「事務所」として使えます。</p>
-      <div class="acts"><button type="button" class="btn" data-act="skip">あとで登録する（事務所として進む）</button></div>
+      <p class="muted mt" id="enroll-skip-note">登録しないで進むと、管理者ではなく「事務所」として使えます。</p>
+      <div class="acts"><button type="button" class="btn" data-act="skip" id="enroll-skip">あとで登録する（事務所として進む）</button></div>
     </div>
     <div id="enroll-qr" hidden>
       <ol class="steps">
@@ -84,10 +85,12 @@
       </ol>
       <div class="qr"><img id="qr" alt="認証アプリで読み取る QR コード"></div>
       <details class="secret"><summary>読み取れない時（手で入れる文字）</summary><code id="secret"></code></details>
-      <p class="msg warn">この QR コードと文字は、撮影・送信・印刷をしないでください（持っている人が管理者になりすませます）。</p>
+      <p class="msg warn" id="enroll-warn-admin">この QR コードと文字は、撮影・送信・印刷をしないでください（持っている人が管理者になりすませます）。</p>
+      <p class="msg warn" id="enroll-warn-office" hidden>この QR コードと文字は、撮影・送信・印刷をしないでください（持っている人が、このアカウントで給与の画面などを開けてしまいます）。</p>
       <label for="code-enroll" class="muted">認証アプリの6桁</label>
       <input id="code-enroll" class="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*">
       <div class="acts"><button type="button" class="btn pri wide" id="b-enroll-verify">確認</button></div>
+      <div class="acts" id="enroll-qr-skip" hidden><button type="button" class="btn" data-act="skip">あとで登録する</button></div>
     </div>
   </section>
 
@@ -99,8 +102,8 @@
     <label for="code-verify" class="muted">認証アプリの6桁</label>
     <input id="code-verify" class="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*">
     <div class="acts"><button type="button" class="btn pri wide" id="b-verify">確認</button></div>
-    <p class="muted mt">6桁を入れずに進むと、管理者ではなく「事務所」として使えます。</p>
-    <div class="acts"><button type="button" class="btn" data-act="skip">事務所として進む</button></div>
+    <p class="muted mt" id="verify-skip-note">6桁を入れずに進むと、管理者ではなく「事務所」として使えます。</p>
+    <div class="acts"><button type="button" class="btn" data-act="skip" id="verify-skip">事務所として進む</button></div>
   </section>
 
   <!-- 使える -->
@@ -117,6 +120,11 @@
       <a class="btn" id="b-shadow" href="shadow-check.html" hidden>写しの見比べ</a>
       <a class="btn" id="b-menu" href="menu-settings.html" hidden>メニューの設定</a>
       <a class="btn" id="b-access" href="app-access.html" hidden>アプリの使える人</a>
+    </div>
+    <!-- 事務所のアカウント: 2段階認証（給与の画面など、要る画面を使う人だけ・2026-11-19 本人指示） -->
+    <div id="ok-mfa" hidden>
+      <p class="muted mt">給与の画面など、2段階認証（認証アプリの6桁）が要る画面を使う時だけ、ここで登録・入力します。</p>
+      <div class="acts"><button type="button" class="btn" id="b-ok-mfa">2段階認証を登録する</button></div>
     </div>
   </section>
 
@@ -147,7 +155,7 @@
 <script src="su-errors.js?v=2026-11-12"></script>
 <script src="supabase-js-2.112.4.js"></script>
 <script src="su-auth.js?v=2026-11-16"></script>
-<script src="login.js?v=2026-11-16"></script>
+<script src="login.js?v=2026-11-19"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 </body>
 </html>
