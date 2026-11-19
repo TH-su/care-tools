@@ -459,6 +459,9 @@
     var si = { health: 0, care: 0, support: 0, pension: 0, emp: 0 }, er = [];
     var birth = isDate(P.birth_date) ? P.birth_date : null;
     var hOn = ins.health && ins.health.on, pOn = ins.pension && ins.pension.on;
+    /* 加入の印（on）が真偽で入っていない保険は、加入していないとして数え、黙らずに知らせる（取り込みで作った設定など・2026-11-19）。役員は雇用保険を見ない */
+    var unset = ['health', 'pension'].concat(board ? [] : ['emp']).filter(function (k) { return !(ins[k] && typeof ins[k] === 'object' && typeof ins[k].on === 'boolean'); });
+    if (unset.length) warn('ins_unset', '加入が決まっていない保険があります（' + unset.map(function (k) { return { health: '健康保険', pension: '厚生年金', emp: '雇用保険' }[k]; }).join('・') + '・加入していないとして数えました）');
     if ((hOn || pOn) && !birth) warn('birth_missing', '生年月日が空です（介護・年齢の判定ができません）');
     /* 産休・育休の免除（対象月が免除の期間なら健保・介護・支援金・厚年は0・雇保は賃金で数える） */
     var exempt = (Array.isArray(ins.exempt) ? ins.exempt : []).some(function (x) { return x && isYm(x.from_ym) && x.from_ym <= target && (!isYm(x.to_ym) || target <= x.to_ym); });

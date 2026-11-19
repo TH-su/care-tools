@@ -11,6 +11,7 @@
  *             計算と書き出しの部品は本物（payroll-calc.js・payroll-rates.js・payroll-tax-table.js・payroll-export.js）をそのまま配る
  *   sheets  … 給与明細の「全員分を印刷」（A4 縦・1人1ページ・SUPrint の 'slips'）
  * routesFor(opt): role（'admin'|'office'）・aal（'aal2'|'aal1'）・deny（bootstrap が 42501）・start（'none'|'confirmed'）・zengin（真なら全銀のスイッチを入れる）・
+ *                 frozenCopy（真なら bootstrap の明細に写した期間・設定 frozen を付ける＝B の担当が足している形の先取り）・
  *                 ym（確定済みにする月分・既定は撮影の道具の固定の日の月分 2026-01）
  * ★撮影の道具の固定の日（2026-01）の月分は、率表（令和8年3月分〜）の外なので、確定済みの明細を前もって作る時だけ、率表の引きを令和8年4月分の率へ寄せる
  *   （材料の中だけ・画面の計算は本物の率表のまま）。通し試験（payroll_e2e.mjs）は 2026-11 の月分で本物の率表のまま計算する
@@ -327,7 +328,7 @@ const fpCore = (f) => { const o = Object.assign({}, f); delete o.rates_ver; dele
 function totalsOf(db, ym) { const it = db.items[ym] || []; return { count: it.length, gross: it.reduce((a, x) => a + x.gross, 0), deduct: it.reduce((a, x) => a + x.deduct, 0), net: it.reduce((a, x) => a + x.net, 0) }; }
 function bankFp(db, ym) { const o = {}; (db.items[ym] || []).forEach((x) => { o[x.staff_id] = db.bank[x.staff_id] ? db.bank[x.staff_id].rev : null; }); return o; }
 const summaryOf = (accounts) => accounts.map((e) => ({ bank_code: e.bank_code, bank_name: e.bank_name == null ? null : e.bank_name, last4: e.number.slice(-4), amount_or_rest: e.amount_or_rest }));
-function bootstrap(db, ym) {
+function bootstrap(db, ym, opt) {
   const per = periodOf(ym), r = db.runs[ym];
   const sids = [...new Set(db.profiles.map((p) => p.staff_id))].sort();
   return {
@@ -343,7 +344,9 @@ function bootstrap(db, ym) {
       summary_by_staff: db.kintai.locked_at ? { v: 1, ym, period: per, config: {}, rows: db.staff.map((s) => attRow(s.staff_id)) } : null },
     run: r ? { status: r.status, rev: r.rev, fingerprint: r.fingerprint, totals: r.totals, stale: r.stale || (r.status === 'draft' && fpCore(r.fingerprint) !== fpCore(fp(db, ym))),
       saved_at: r.saved_at, saved_by: r.saved_by, confirmed_at: r.confirmed_at, confirmed_by: r.confirmed_by, exported_at: r.exported_at, history: r.history } : null,
-    items: (db.items[ym] || []).map((i) => ({ staff_id: i.staff_id, name: i.frozen.name, item: i.item, adjustments: i.adjustments, gross: i.gross, deduct: i.deduct, net: i.net })),
+    /* frozenCopy: B の担当が足している「明細に写した期間・設定も返す」形（payroll_items.frozen の period・settings）を先に写す（仮・B の版が入ったら突き合わせる） */
+    items: (db.items[ym] || []).map((i) => Object.assign({ staff_id: i.staff_id, name: i.frozen.name, item: i.item, adjustments: i.adjustments, gross: i.gross, deduct: i.deduct, net: i.net },
+      opt && opt.frozenCopy ? { frozen: { period: i.frozen.period, settings: i.frozen.settings } } : {})),
     prev_items: db.prev[ymAdd(ym, -1)] || (db.items[ymAdd(ym, -1)] || []).map((i) => ({ staff_id: i.staff_id, gross: i.gross, net: i.net })),
     fingerprint: fp(db, ym),
   };
@@ -363,7 +366,7 @@ export function routesFor(opt = {}) {
   const audit = (action, ym, staff_id, reason) => db.audit.push({ id: db.audit.length + 1, at: new Date().toISOString(), by: me, action, ym: ym || null, staff_id: staff_id || null, before: null, after: null, reason: reason || null });
   function rpc(name, p) {
     const ok = (o) => Object.assign({ ok: true }, o || {}), ng = (error, o) => Object.assign({ ok: false, error }, o || {});
-    if (name === 'payroll_bootstrap') return ymOk(p.p_ym) ? bootstrap(db, p.p_ym) : ng('badym');
+    if (name === 'payroll_bootstrap') return ymOk(p.p_ym) ? bootstrap(db, p.p_ym, opt) : ng('badym');
     if (name === 'payroll_run_save') {
       const ym = p.p_ym; if (!ymOk(ym)) return ng('badym');
       const items = p.p_items, f = p.p_fingerprint;

@@ -50,11 +50,14 @@
   function ratesVer() { var r = window.PayrollRates; return String((r && r.VERSION) || 'unknown').slice(0, 40); }
   function X() { return window.PayrollExport || null; }
   function cfg() { return (bs && bs.settings && bs.settings.config) || {}; }
-  function period() { return (bs && (bs.period || (bs.kintai && bs.kintai.period))) || null; }
+  /* 確定した月は、DB が明細に写した期間・設定（frozen）があればそれを使い、今の値から取らない（無い DB の版では今の値） */
+  function frozenOf(k) { if (!frozen()) return null; var it = arr(bs.items).filter(function (x) { return x && x[k]; })[0]; return it ? it[k] : null; }
+  function period() { return frozenOf('frozen_period') || (bs && (bs.period || (bs.kintai && bs.kintai.period))) || null; }
+  function paperCfg() { return frozenOf('frozen_cfg') || cfg(); }
   function status() { return (bs && bs.run && bs.run.status) || null; }
   function frozen() { var s = status(); return s === 'confirmed' || s === 'exported'; }
   function corpName() {
-    var c = cfg().company_name;
+    var c = paperCfg().company_name;
     if (c) return String(c);
     try { var f = window.SUFacility && window.SUFacility.get && window.SUFacility.get(); return (f && (f.corpName || f.facilityName)) || ''; } catch (_) { return ''; }
   }
@@ -146,6 +149,10 @@
     var it = Object.assign({}, obj(x.item));
     it.staff_id = x.staff_id; it.name = String(x.name || ''); it.adjustments = arr(x.adjustments);
     it.lines = arr(it.lines); it.warnings = arr(it.warnings);
+    /* DB が保存の時に写した期間・設定（返す版の DB だけ） */
+    var fr = obj(x.frozen), fp = obj(fr.period || x.period), fc = obj(obj(fr.settings).config);
+    if (isDate(fp.from) && isDate(fp.to)) it.frozen_period = { from: fp.from, to: fp.to };
+    if (Object.keys(fc).length) it.frozen_cfg = fc;
     ['gross', 'deduct', 'net'].forEach(function (k) { if (x[k] != null) it[k] = num(x[k]); });
     return it;
   }
@@ -158,7 +165,7 @@
     var profiles = arr(r.profiles).filter(function (p) { return p && typeof p.staff_id === 'string'; }).map(function (p) {
       return { staff_id: p.staff_id, name: String(p.name || ''), rev: num(p.rev), effective_from: isDate(p.effective_from) ? p.effective_from : null,
         data: obj(p.data), bank_last4: arr(p.bank_last4).filter(function (b) { return b && typeof b === 'object'; }),
-        versions: arr(p.versions).filter(function (v) { return v && isDate(v.effective_from); }).map(function (v) { return { effective_from: v.effective_from, rev: num(v.rev) }; }),
+        versions: arr(p.versions).filter(function (v) { return v && isDate(v.effective_from); }).map(function (v) { return { effective_from: v.effective_from, rev: num(v.rev), updated_at: v.updated_at || null, updated_by: v.updated_by || null, reason: v.reason || null }; }),
         none: false };
     });
     /* 給与の設定がまだ無いシフトの職員（在籍の人だけ）も並べる。計算・保存には入れない（DB が noprofile で断るため） */
@@ -583,7 +590,7 @@
     var x = X();
     if (busy || !frozen() || !x || !EXP[kind] || typeof x[kind] !== 'function') return;
     if (kind === 'zengin' && !zenginOn) return;
-    var base = { ym: ym, period: period(), payDate: payDate(), settings: cfg(), items: items(), profiles: bs.profiles };
+    var base = { ym: ym, period: period(), payDate: payDate(), settings: paperCfg(), items: items(), profiles: bs.profiles };
     /* 振込元の設定の不備は、口座の全桁を受け取る前（月が書き出し済みになる前）に止める */
     if (kind === 'zengin') {
       var pre = x.zengin(Object.assign({}, base, { rows: [] }));
@@ -683,7 +690,7 @@
     h += '<fieldset><legend>そのほか</legend><div class="row">' + chk('f-noatt', '勤怠を使わない（役員・固定給）', d.no_attendance === true) + chk('f-excl', '計算から外す（休職・支給なし）', d.exclude === true) + '</div></fieldset>';
     h += '<div class="kv"><label for="f-reason">直す理由（必ず書く）</label><input id="f-reason" maxlength="200" autocomplete="off"></div>';
     var hist = p.versions;
-    h += '<h3 style="font-size:16px">履歴（設定の版）</h3>' + (hist.length ? '<div class="tw"><table><thead><tr><th>いつから</th><th class="num">直した回数</th></tr></thead><tbody>' + hist.map(function (x) { return '<tr><td>' + esc(jdate(x.effective_from)) + '</td><td class="num">' + esc(x.rev) + '</td></tr>'; }).join('') + '</tbody></table></div><p class="help">だれがいつ・なぜ直したかは、管理者が「設定」のタブの「操作の記録」で見られます。</p>' : '<p class="help">履歴はまだありません。</p>');
+    h += '<h3 style="font-size:16px">履歴（設定の版）</h3>' + (hist.length ? '<div class="tw"><table><thead><tr><th>いつから</th><th class="num">直した回数</th><th>最後に直した日時</th><th>直した人</th><th>理由</th></tr></thead><tbody>' + hist.map(function (x) { return '<tr><td>' + esc(jdate(x.effective_from)) + '</td><td class="num">' + esc(x.rev) + '</td><td>' + esc(at(x.updated_at)) + '</td><td>' + esc(x.updated_by || '') + '</td><td>' + esc(x.reason || '') + '</td></tr>'; }).join('') + '</tbody></table></div><p class="help">だれがいつ・なぜ直したかは、管理者が「設定」のタブの「操作の記録」で見られます。</p>' : '<p class="help">履歴はまだありません。</p>');
     openDlg('職員の給与設定を直す', h, '<button type="button" class="btn" data-act="dlg-close">やめる</button><button type="button" class="btn pri" data-act="prof-go">保存する</button>', { mode: 'prof', sid: sid, pays: pays, deds: deds, months: fiscalMonths(), dirtyCheck: true });
   }
   function v(id) { var e = $(id); return e ? String(e.value || '').trim() : ''; }
@@ -763,7 +770,7 @@
 
   /* ── freee の書き出しを取り込む（管理者・ファイルは保存しない・列は仮置き） ── */
   var HEAD = { emp: '従業員番号', name: '氏名', pay_type: '給与形態', base: '基本給', hourly: '時給', daily: '日給', board: '役員報酬', birth: '生年月日', gender: '性別', entry: '入社日', retire: '退職日',
-    hstd: '健康保険の標準報酬月額', pstd: '厚生年金保険の標準報酬月額', emp_ins: '雇用保険', tax_col: '税額表の区分', deps: '扶養親族等の数', commute: '通勤手当',
+    hstd: '健康保険の標準報酬月額', pstd: '厚生年金保険の標準報酬月額', emp_ins: '雇用保険', hins: '健康保険', pins: '厚生年金保険', tax_col: '税額表の区分', deps: '扶養親族等の数', commute: '通勤手当',
     bank: '銀行コード', branch: '支店コード', acct_type: '口座種別', acct_no: '口座番号', kana: '口座名義' };
   function parseCsv(text) {
     var rows = [], row = [], f = '', q = false, i, ch;
@@ -783,6 +790,13 @@
   }
   function normName(s) { return String(s || '').replace(/[\s　]/g, ''); }
   function toDate(s) { s = String(s || '').trim().replace(/\//g, '-'); var m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s); return m ? m[1] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[3]).slice(-2) : null; }
+  /* 加入の列（加入・あり・○ など／未加入・なし・× など）。分からない値は null */
+  function yesNo(s) {
+    s = String(s == null ? '' : s).trim();
+    if (/^(加入|加入する|あり|有|有り|対象|○|〇|はい|する|1|true|TRUE)$/.test(s)) return true;
+    if (/^(未加入|加入しない|なし|無|無し|対象外|×|✕|いいえ|しない|0|false|FALSE)$/.test(s)) return false;
+    return null;
+  }
   function toNum(s) { s = String(s || '').replace(/[,，\s円]/g, ''); return /^\d+$/.test(s) ? parseInt(s, 10) : null; }
   function buildImport(rows) {
     if (rows.length < 2) throw new Error('行がありません');
@@ -812,6 +826,12 @@
       setv('gender', { '男': 'M', '男性': 'M', '女': 'F', '女性': 'F' }[g('gender')] || null, '性別');
       setv('entry_date', toDate(g('entry')), '入社日'); setv('retire_date', toDate(g('retire')), '退職日');
       setv('ins.health.std', toNum(g('hstd')), '健保の標準報酬', money); setv('ins.pension.std', toNum(g('pstd')), '厚年の標準報酬', money);
+      /* 加入の印（ins.*.on）: 加入の列があればそれ、無ければ標準報酬が入っていれば加入（仮置き 2026-11-19）。どちらも無ければ決めない（計算の部品が ins_unset で知らせる） */
+      var onTxt = function (x) { return x === true ? '加入' : x === false ? '加入しない' : '（空）'; };
+      var hon = yesNo(g('hins')), pon = yesNo(col.pins >= 0 ? g('pins') : (head.indexOf('厚生年金') >= 0 ? String(r[head.indexOf('厚生年金')] || '') : '')), eon = yesNo(g('emp_ins'));
+      if (hon === null && toNum(g('hstd')) > 0) hon = true;
+      if (pon === null && toNum(g('pstd')) > 0) pon = true;
+      setv('ins.health.on', hon, '健康保険の加入', onTxt); setv('ins.pension.on', pon, '厚生年金の加入', onTxt); setv('ins.emp.on', eon, '雇用保険の加入', onTxt);
       setv('tax.col', { '甲': 'kou', '甲欄': 'kou', '乙': 'otsu', '乙欄': 'otsu' }[g('tax_col')] || null, '源泉の区分');
       setv('tax.dependents', toNum(g('deps')), '扶養親族等の数');
       setv('commute.monthly', toNum(g('commute')), '通勤手当', money);

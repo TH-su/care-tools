@@ -179,6 +179,15 @@ console.log('\n— 4. 給与明細と印刷 —');
     t('印刷の PDF は10ページ（1人1ページ）', n === 10, n);
   }
   await p.emulateMedia({ media: 'screen' });
+  /* DB が写した期間・設定を返す版（frozenCopy）: 確定の後に設定の事業者名を変えても、明細は写した名前で出す */
+  {
+    const o5 = await open({ tab: 'slip', start: 'confirmed', frozenCopy: true });
+    o5.routes.db.settings.config.company_name = '見本の新しい名前';
+    await waitApp(o5.page); await o5.page.waitForSelector('#p-main .slip');
+    const tx = await o5.page.textContent('#p-main .slip');
+    t('確定した月は DB が写した設定（事業者名）と期間で明細を出し、今の設定から取らない', /見本の事業者/.test(tx) && !/見本の新しい名前/.test(tx) && /10\/16〜11\/15/.test(tx), tx.slice(0, 200));
+    await o5.ctx.close();
+  }
   t('確定した月の明細は、明細に写した支給日（11/27）と DB が写した氏名で出す', /2026年11月27日/.test(await p.textContent('#p-main .slip')) && /見本 一郎/.test(await p.textContent('#p-main .slip')));
   /* 確定の取り消し（管理者・理由が要る・統合 0102 の payroll_run_unconfirm(p_ym, p_reason)） */
   await p.evaluate(() => { window.print = function () {}; });
@@ -303,6 +312,17 @@ console.log('\n— 6. 覆い・その他 —');
   t('取り込み: 送るのは名簿に合った1人だけ・今の設定に違いを当てた全体（期間の初日）と口座の全桁', !!pl && pl.profiles.length === 1 && pl.profiles[0].staff_id === 's-01' && pl.profiles[0].effective_from === '2026-10-16' && pl.profiles[0].data.base === 245000
     && pl.profiles[0].data.ins.health.std === 260000 && pl.banks.length === 1 && pl.banks[0].accounts[0].number === '7654321', pl);
   t('取り込みは足すだけ（この月分の版・口座がもうある人は書き換えず、そう知らせる）', /この月分の版がもうあるので設定は書き換えません/.test(it) && /口座がもうあるので口座は書き換えません/.test(it) && o4.routes.db.profiles.filter((q) => q.staff_id === 's-01' && q.effective_from === '2026-10-16')[0].data.base === 240000);
+  /* 加入の列から ins.*.on を作る（無ければ標準報酬の有無）・給与の設定が無い人（s-11）は新しい設定として足す */
+  const csv2 = '従業員番号,氏名,給与形態,基本給,健康保険の標準報酬月額,厚生年金保険の標準報酬月額,健康保険,雇用保険\r\nF-11,見本 十一,月給,205000,200000,200000,加入,未加入\r\n';
+  await o4.page.setInputFiles('#i-file', { name: 'freee2.csv', mimeType: 'text/csv', buffer: Buffer.from(csv2, 'utf8') });
+  await o4.page.waitForSelector('[data-act="imp-go"]');
+  t('取り込み: 加入の違いを表に出す', /健康保険の加入：（空） → 加入/.test(await o4.page.textContent('#p-main')) && /雇用保険の加入：（空） → 加入しない/.test(await o4.page.textContent('#p-main')));
+  o4.page.once('dialog', (d) => d.accept());
+  await o4.page.click('[data-act="imp-go"]');
+  await o4.page.waitForFunction(() => !document.querySelector('[data-act="imp-go"]'), null, { timeout: 10000 });
+  const ic2 = o4.routes.calls.filter((c) => c.name === 'payroll_import_put').pop(), d11 = ic2 && ic2.args.p_payload.profiles && ic2.args.p_payload.profiles[0].data;
+  t('取り込み: 健保は列で加入・厚年は列が無いので標準報酬ありで加入・雇保は列で加入しない（DB の確かめを通って足された）', !!d11 && d11.ins.health.on === true && d11.ins.pension.on === true && d11.ins.emp.on === false
+    && o4.routes.db.profiles.some((q) => q.staff_id === 's-11' && q.effective_from === '2026-10-16'), d11 && d11.ins);
   await o4.page.click('[data-act="bank"][data-sid="s-01"]');
   await shot(o4.page, 'payroll.bank-dialog.pc', false);
   await o4.page.keyboard.press('Escape');

@@ -615,6 +615,17 @@ console.log('13. 区分別の合計と指紋');
   t('欠勤・遅刻の単価の既定は切捨て', s.round.deduct_unit === 'floor' && s.round.deduct === 'floor');
 }
 
+/* 保険の加入の印（ins.*.on）が真偽で入っていない人は ins_unset で知らせる（2026-11-19・取り込みで作った設定の守り） */
+{
+  const pr = (ins, type) => ({ pay_type: type || 'monthly', base: 200000, board_pay: type === 'board' ? 300000 : undefined, birth_date: '1990-01-01', ins, tax: { col: 'none' } });
+  const u1 = run(pr(undefined));
+  t('ins が無い → ins_unset（健康保険・厚生年金・雇用保険）・保険料は引かない', W(u1, 'ins_unset') && /健康保険・厚生年金・雇用保険/.test(u1.warnings.find((w) => w.code === 'ins_unset').msg) && L(u1, 'health') === undefined && L(u1, 'emp') === undefined);
+  const u2 = run(pr({ health: { on: true, std: 200000 }, pension: { std: 200000 }, emp: { on: false } }));
+  t('厚生年金の on だけ無い → ins_unset に厚生年金だけ・健保は引く', W(u2, 'ins_unset') && /（厚生年金・/.test(u2.warnings.find((w) => w.code === 'ins_unset').msg) && L(u2, 'health') === 10080 && L(u2, 'pension') === undefined);
+  t('3つとも on が真偽で入っている（未加入の false を含む）→ ins_unset を出さない', !W(run(pr({ health: { on: false }, pension: { on: false }, emp: { on: false } })), 'ins_unset') && !W(run(pr(INS(200000, 200000))), 'ins_unset'));
+  t('役員は雇用保険の on が無くても ins_unset にしない', !W(run(pr({ health: { on: true, std: 300000 }, pension: { on: true, std: 300000 } }, 'board')), 'ins_unset'));
+}
+
 /* 画面向けの口（2026-11-19 結びの段）。支給日の期待値は暦を手で確かめた値 */
 {
   t('VERSION は計算の版と同じ', C.VERSION === C.CALC_VER && typeof C.VERSION === 'string' && C.VERSION.length > 0);
