@@ -420,6 +420,18 @@ console.log('\n— 6. 覆い・その他 —');
   t('口座を全部消す: accounts=[] と理由を送り、DB から消えた', !!bp && Array.isArray(bp.args.p_accounts) && bp.args.p_accounts.length === 0 && bp.args.p_reason === '見本の退職' && !o4.routes.db.bank['s-02'], bp && bp.args);
   t('画面のエラー 0', o4.errors.length === 0, o4.errors);
   await o4.ctx.close();
+  /* v4（2026-11-20）: 手で入れた有休の使用がある月を締めた控えは、数え直し（leave_uses を渡す）と一致して止まらない */
+  {
+    const o7 = await open({ tab: 'run', start: 'none', kintaiLeave: true });
+    await waitApp(o7.page);
+    const k7 = o7.routes.db.kraw[YM], r3 = k7 && k7.snapshot.rows.find((r) => r.staff_id === 's-03');
+    t('材料: s-03 の締めの控えに手入力の有休 1日・480分が入っている（シフトの有休の行は無い）', !!r3 && r3.paidDays === 1 && r3.paidMin === 480 && k7.raw.leave_uses.length === 1 && !k7.raw.schedule.some((x) => x.staff_id === 's-03' && x.kind === 'paid'), r3);
+    await o7.page.click('[data-act="compute"]');
+    t('手入力の有休がある月でも、控えと数え直しが一致して計算できる（10人分・食い違いの知らせなし）', (await o7.page.locator('details.it').count()) === 10 && !/控えと、今の勤怠の記録が合わない人がいます/.test(await o7.page.textContent('#p-main')));
+    t('数え直しは kintai_month_get の leave_uses を受け取った', o7.routes.calls.some((c) => c.name === 'kintai_month_get'));
+    t('画面のエラー 0（手入力の有休）', o7.errors.length === 0, o7.errors);
+    await o7.ctx.close();
+  }
   /* 締めの控えと今の勤怠の記録が食い違う（review 9）: 計算・保存を止めて、食い違う人の名前を出す */
   {
     const o6 = await open({ tab: 'run', start: 'none', kintaiDrift: true });
