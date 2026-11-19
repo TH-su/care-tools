@@ -15,7 +15,9 @@
         パスコード違い3回・busy は控えない・通信できない時は同じ形で控える・選んだ事業所だけ端末に残す・重ね押しの守り・寸法）。
         3 の「localStorage に書く鍵」は、仕様が許した kintai_clock_office（UI の状態・ホワイトリスト）を足して2か所ちょうどに締め直した
    0101（2026-11-19・凍結仕様 ROOT-payroll.md「A.」）で足したこと:
-     11. 月は「○月分」＝DB の期間・2つのカレンダー月の取り込み・締め日の設定・新しい断りの言葉・?v= */
+     11. 月は「○月分」＝DB の期間・2つのカレンダー月の取り込み・締め日の設定・新しい断りの言葉・?v=
+   v4（2026-11-20・凍結した仕様書 ROOT-v4-master-leave.md）で足したこと:
+     12. 有給のタブ・職員マスタの関数（名前と引数）・勤務時間を手で入れる窓（今の関数を順に呼ぶ・理由必須・締めた月分）・読み込みの鎖に入れない・端末に残さない */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -69,7 +71,8 @@ for (const [n, h] of [['kintai.html', H], ['kintai-clock.html', HC]]) {
 }
 
 console.log('\n— 7. 管理画面の v2 の形 —');
-t('タブのホワイトリストに要確認（日ごとの次）', /var TABS = \['day', 'review', 'grid', 'person', 'staff', 'close', 'settings'\]/.test(K) && /data-tab="day">日ごと<\/button>\s*<button type="button" role="tab" data-tab="review">要確認/.test(H));
+/* ★v4（2026-11-20）: 依頼で「有給」のタブ（leave・職員と番号の次）を足したので、ホワイトリストの期待をその並びの完全一致に改めた（緩めていない） */
+t('タブのホワイトリストに要確認（日ごとの次）', /var TABS = \['day', 'review', 'grid', 'person', 'staff', 'leave', 'close', 'settings'\]/.test(K) && /data-tab="day">日ごと<\/button>\s*<button type="button" role="tab" data-tab="review">要確認/.test(H));
 t('要確認の色・件数は needsReview・reviewList・totals にそろえる（印と C.REVIEW で数えない）', /C\.needsReview\(/.test(K) && /C\.reviewList\(month\)/.test(K) && /month\.totals\.reviewCount/.test(K) && !/flags\.some\(function \(f\) \{ return C\.REVIEW\[f\]; \}\)/.test(K));
 t('CSV は新しい列つき（extraCols: true）', /C\.buildCsv\(src, \{ nameOf: nameOfOffice, extraCols: true \}\)/.test(K));
 t('月の計算に今の時刻を渡し、日ごと・要確認は1分ごとに手元で数え直す', /C\.computeMonth\(\{[^}]*now: Date\.now\(\) \}\)/.test(K) && /recompute\(\); paint\(\);\s*\}, 60000\)/.test(K));
@@ -95,7 +98,8 @@ t('予定の無い日の打刻は prompt でなく窓の日付の入力欄', !/p
 t('暗い表示に対応（画面だけ・紙は白地）', /<meta name="color-scheme" content="light dark">/.test(H) && /@media screen and \(prefers-color-scheme: dark\)\{/.test(H) && /@media print\{[^]*body\{background:#fff/.test(H) && !/@media print\{[^}]*prefers-color-scheme/.test(H));
 t('保存の後の短い知らせは aria-live', /<div class="toast no-print" id="g-toast" role="status" aria-live="polite" hidden><\/div>/.test(H));
 t('印刷の時だけの見出し（.ph は画面で出さない）', /\.ph\{display:none\}/.test(H) && /function printHead\(sub\)/.test(K));
-t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-19', /kintai\.js\?v=2026-11-19/.test(H) && /kintai-calc\.js\?v=2026-11-19/.test(H) && /kintai-calc\.js\?v=2026-11-19/.test(HC));
+/* ★v4（2026-11-20）: 中身を変えたので ?v= を 2026-11-20 に上げた（CLAUDE.md の決まり）。期待をその版に改めた */
+t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-20', /kintai\.js\?v=2026-11-20/.test(H) && /kintai-calc\.js\?v=2026-11-20/.test(H) && /kintai-calc\.js\?v=2026-11-20/.test(HC));
 
 console.log('\n— 8. 打刻画面の v3（出勤を押す → 氏名 → パスコード） —');
 const fn = (name, next) => KC.slice(KC.indexOf('function ' + name + '('), KC.indexOf('function ' + next + '('));
@@ -226,7 +230,83 @@ t('反証レビューの指摘1:「今日」は今日のカレンダー月へ移
   const b3 = play('2026-09', '2026-11-19T10:00:00+09:00', 15, ['today', 'fail', 'today', 'drain']);
   t('見直し2: 失敗の後にもう一度「今日」→ 今日の月分（12月分）へ', b3.end === '2026-12', b3);
 }
-t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-19.2（両画面でそろえる）', /kintai\.js\?v=2026-11-19\.2"/.test(H) && /kintai-calc\.js\?v=2026-11-19\.2"/.test(H) && /kintai-calc\.js\?v=2026-11-19\.2"/.test(HC));
+/* ★v4（2026-11-20）: 版を上げたので期待を新しい版の完全一致に改め、kintai-calc.js を読む給与の画面（payroll.html）も同じ版かを足した */
+/* ★反証レビューの直し（2026-11-20 の2回目）で kintai.js を ?v=2026-11-20.2 に上げた（kintai-calc.js は変えていないので 2026-11-20 のまま） */
+t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-20.2・2026-11-20（両画面と給与の画面でそろえる）', /kintai\.js\?v=2026-11-20\.2"/.test(H) && /kintai-calc\.js\?v=2026-11-20"/.test(H) && /kintai-calc\.js\?v=2026-11-20"/.test(HC) && /kintai-calc\.js\?v=2026-11-20"/.test(read('payroll.html')));
 
-console.log(`\n${pass} 件合格 / ${fail} 件不合格`);
-process.exit(fail ? 1 : 0);
+const await_pending = [];   /* 動かして確かめる試験（Promise）を最後に待つ */
+console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（2026-11-20・凍結した仕様書 ROOT-v4-master-leave.md） —');
+{
+  const between = (a, b) => { const i = K.indexOf(a), j = K.indexOf(b, i + 1); return i >= 0 && j > i ? K.slice(i, j) : ''; };
+  const loadFn = between('function load(', 'function recompute(');
+  const workFn = between('function saveWork(', '/* ── v4: 職員マスタの突き合わせ');
+  const openWorkFn = between('function openWork(', 'function saveWork(');
+  const leaveActFn = between('function leaveAct(', '/* ── 職員・締め・出力・設定 ── */');
+  const loadLeaveFn = between('function loadLeave(', 'function leaveOf(');
+  const leaveMonthsFn = between('function loadLeaveMonths(', 'function loadLeave(');
+  t('「有給」のタブは「職員と番号」の次（HTML の並び）・パネルの関数は paintLeave', /data-tab="staff">職員と番号<\/button>\s*<button type="button" role="tab" data-tab="leave">有給<\/button>/.test(H) && /leave: paintLeave/.test(K));
+  t('kintai-leave.js は kintai-calc.js の後・kintai.js の前に読む（?v=2026-11-20.2・反証レビューの直しで上げた）', H.indexOf('<script src="kintai-calc.js?v=2026-11-20"></script>') >= 0 && H.indexOf('<script src="kintai-leave.js?v=2026-11-20.2"></script>') > H.indexOf('kintai-calc.js?v=') && H.indexOf('kintai-leave.js?v=') < H.indexOf('kintai.js?v='));
+  t('.gitignore に !/kintai-leave.js（公開の opt-in）', /^!\/kintai-leave\.js$/m.test(read('.gitignore')));
+  t('月の計算に手で入れた有休（data.leave_uses）を渡す（L8）', /C\.computeMonth\(\{ ym: ym, period: data\.period, [^}]*leave_uses: data\.leave_uses, config: cfg,/.test(K));
+  t('職員マスタ・有給の関数は読み込み（load）の鎖に入れない（0106 の前の DB でも月の画面は止まらない）', !/kintai_master_list|kintai_leave_get|kintai_master_import/.test(loadFn) && loadFn.length > 0);
+  const linkFn = between('function saveLink(', 'function openAdd(');
+  t('職員マスタの関数名と引数: kintai_master_list・kintai_master_import(p_reason)・kintai_staff_link(p_staff_id, p_master_id, p_reason)・kintai_master_add(p_master_ids, p_reason)・kintai_staff_clock_visible(p_staff_id, p_visible, p_reason)',
+    /rpc\('kintai_master_list', \{\}\)/.test(K) && /rpc\('kintai_master_import', \{ p_reason: reason \}\)/.test(K) &&
+    /ops\.push\(\{ p_staff_id: sid, p_master_id: v, p_reason: reason \}\)/.test(linkFn) && /rpc\('kintai_staff_link', ops\[done\]\)/.test(linkFn) &&
+    /rpc\('kintai_master_add', \{ p_master_ids: \[ctx\.mid\], p_reason: reason \}\)/.test(K) && /rpc\('kintai_staff_clock_visible', \{ p_staff_id: ctx\.sid, p_visible: ctx\.to, p_reason: reason \}\)/.test(K));
+  t('突き合わせの結果は linked・deactivated・unmatched_staff・unmatched_master（足すのは別の kintai_master_add・足した人は打刻画面に出る旨を足す前に出す）', /r\.linked/.test(K) && /r\.deactivated/.test(K) && /r\.unmatched_staff/.test(K) && /r\.unmatched_master/.test(K) && !/r\.added \|\| 0/.test(K) && /足した人は打刻画面の名簿に出ます/.test(between('function openAdd(', 'function saveAdd(')));
+  t('結べていない職員マスタの人ごとに「シフトの職員に結ぶ」「新しい職員として足す」', /data-act="m-link-m" data-mid="/.test(K) && /data-act="m-add" data-mid="/.test(K));
+  t('結んであるかは DB の master_id だけで見る（外した m_ の行を結んであると数えない）', /function masterIdOf\(s\) \{ return s && s\.master_id \? String\(s\.master_id\) : null; \}/.test(K));
+  t('m_ の人をシフトの職員に寄せる時は、m_ の行を外して（null）からシフトの職員に結ぶ', /if \(o && o\.staff_id !== sid && srcOf\(o\) === 'master' && o\.master_id === v\) ops\.push\(\{ p_staff_id: o\.staff_id, p_master_id: null, p_reason: reason \}\);/.test(linkFn) && linkFn.indexOf('p_master_id: null') < linkFn.indexOf('p_master_id: v'));
+  t('有給の関数名と引数（kintai_leave_get・profile_put・grant_add/void・use_add/void）', /rpc\('kintai_leave_get', \{\}\)/.test(loadLeaveFn) &&
+    /'kintai_leave_use_add', \{ p_staff_id: ctx\.sid, p_use_date: ud, p_days: un === 0\.5 \? 0\.5 : 1, p_note: /.test(leaveActFn) && /'kintai_leave_use_void', \{ p_id: btn\.getAttribute\('data-id'\), p_reason: reason \}/.test(leaveActFn) &&
+    /'kintai_leave_grant_add', \{ p_staff_id: ctx\.sid, p_grant_date: gd, p_days: gn, p_kind: [^,]+, p_note: /.test(leaveActFn) && /'kintai_leave_grant_void', \{ p_id: btn\.getAttribute\('data-id'\), p_reason: reason \}/.test(leaveActFn) &&
+    /'kintai_leave_profile_put', \{ p_staff_id: ctx\.sid, p_patch: patch, p_rev: ctx\.rev, p_reason: reason \}/.test(leaveActFn));
+  t('設定で送るのは hire_date・weekly_days・weekly_hours・opening_date・skip_grants だけ', (leaveActFn.match(/patch\.(\w+) =/g) || []).map((x) => x.slice(6, -2)).sort().join() === 'hire_date,opening_date,skip_grants,weekly_days,weekly_hours');
+  t('取り消しと設定の保存は理由が要る（needR を通る）', /'lv-use-void'\) \{\s*if \(!needR\(\)\) return;/.test(leaveActFn) && /'lv-grant-void'\) \{\s*if \(!needR\(\)\) return;/.test(leaveActFn) && /if \(!needR\(\)\) return;\s*call = \['kintai_leave_profile_put'/.test(leaveActFn));
+  /* ★反証レビュー（2026-11-20）: 空の月分1つで止まっていたのを、入職日（分からなければ24か月前）まで・空が3つ続いたら止める形に直したので期待を改めた */
+  t('シフトの有休の日は月分ごとに kintai_month_get を読み、KintaiLeave.usesFromMonth で手入力と合わせる（下限は入職日か24か月前・最大24か月分・空の月分が3つ続いたら止める）', /rpc\('kintai_month_get', \{ p_ym: y \}\)/.test(leaveMonthsFn) && /if \(n < 24 && py >= floor && \(n < 1 \|\| run < 3\)\) return back\(py, n \+ 1, run\);/.test(leaveMonthsFn) && /L\.usesFromMonth\(x\.months, manual\)/.test(loadLeaveFn) && /mp\.then\(function \(\) \{ return loadLeaveMonths\(my, lg\); \}\)/.test(loadLeaveFn));
+  t('反証レビュー: 移行の残りを足す時に移行日が空なら、移行日（既定は今日）も設定に入れる（付与の後に profile_put）', /if \(call\[1\]\.p_kind === 'opening' && !\(ctx\.prof && ctx\.prof\.opening_date\)\)/.test(leaveActFn) && /then2 = \['kintai_leave_profile_put', \{ p_staff_id: ctx\.sid, p_patch: \{ opening_date: od \}, p_rev: ctx\.rev,/.test(leaveActFn) && /rpc\(call\[0\], call\[1\]\)\.then\(okOr\)\.then\(function \(\) \{ return then2 \? rpc\(then2\[0\], then2\[1\]\)\.then\(okOr\) : null; \}\)/.test(leaveActFn) && /id="lv-g-open" value="' \+ esc\(td\) \+ '"/.test(K));
+  t('反証レビュー: 移行日が未設定の人は一覧と窓に注意（移行の残りからみなした日を出す）', /if \(sm\.openingMissing\) hire \+= '<span class="tag rv">移行日が未設定<\/span>';/.test(K) && /sm\.openingMissing \? '<div class="band warn"[^>]*>移行日が未設定です。/.test(K));
+  t('反証レビュー: 打刻（実働）がある日に手入力の有休を足す時は確かめる（止めはしない）', /var wm = workedMin\(ctx\.sid, ud\);\s*if \(wm > 0 && !confirm\([^;]*この日を有休にしますか？'\)\) return;/.test(leaveActFn));
+  /* 下限の月と止め方を、画面の関数をそのまま取り出して偽の月分で動かす */
+  {
+    const floorFn = between('function leaveFloorYm(', 'function loadLeaveMonths(');
+    const sim = (hires, emptyFrom) => {
+      const asked = [];
+      const f = new Function('C', 'L', 'NOW', 'HIRES', 'EMPTY', 'ASKED', `
+        var leaveGen = 1, data = { staff: HIRES.map(function (h, i) { return { staff_id: 's' + i, active: true, master_id: h ? 'M' + i : null }; }) };
+        function masterOf(s) { var i = +s.staff_id.slice(1); return HIRES[i] ? { hire_date: HIRES[i] } : null; }
+        function todayYm() { return NOW; }
+        function okOr(r) { return r; }
+        function monthFor() { return {}; }
+        function rpc(n, a) { ASKED.push(a.p_ym); return Promise.resolve({ ok: true, schedule: a.p_ym < EMPTY ? [] : [{}], leave_uses: [] }); }
+        ${floorFn}
+        ${leaveMonthsFn}
+        return loadLeaveMonths(1, { profiles: [] });`);
+      return f(require(path.join(ROOT, 'kintai-calc.js')), require(path.join(ROOT, 'kintai-leave.js')), '2026-11', hires, emptyFrom, asked).then(() => asked);
+    };
+    const pend = [
+      sim(['2019-04-01'], '2026-10').then((a) => t('空の月分が3つ続いたら止める（9月分から空 → 9・8・7月分まで読んで止める）', a.join() === '2026-12,2026-11,2026-10,2026-09,2026-08,2026-07', a)),
+      sim(['2026-09-15'], '0000-00').then((a) => t('入職日の月より前は読まない（入職 2026/9 → 9月分まで）', a.join() === '2026-12,2026-11,2026-10,2026-09', a)),
+      sim(['2019-04-01', null], '0000-00').then((a) => t('入職日が分からない人がいれば24か月前の月分まで（来月分＋今月分＋前の24か月分＝26件・最後は 2024/11）', a.length === 26 && a[a.length - 1] === '2024-11', [a.length, a[a.length - 1]]))
+    ];
+    await_pending.push(...pend);
+  }
+  t('勤務時間を手で入れる窓: 職員は全員（data.staff）から・日付はこの月分の中・理由は必ず', /staffSorted\(\)/.test(openWorkFn) && /min="' \+ ds\[0\] \+ '" max="' \+ ds\[ds\.length - 1\] \+ '"/.test(openWorkFn) && /if \(!reason\) \{ msg\.textContent = '理由を書いてください/.test(workFn) && /!inPer\(d\)/.test(workFn));
+  t('勤務時間は今の関数で入れる（kintai_punch_add の出勤・退勤 → 休憩を入れた時だけ kintai_day_put）・終業が始業より前なら翌日', /\{ f: 'kintai_punch_add', a: \{ p_staff_id: sid, p_kind: 'in', p_at: inAt, p_reason: reason \} \}, \{ f: 'kintai_punch_add', a: \{ p_staff_id: sid, p_kind: 'out', p_at: outAt, p_reason: reason \} \}/.test(workFn) &&
+    /if \(br != null && [^)]*\)\) ops\.push\(\{ f: 'kintai_day_put', a: \{ p_staff_id: sid, p_date: d, p_patch: \{ break_min: br \}, p_rev: dn \? dn\.rev : 0, p_reason: reason \} \}\)/.test(workFn) && /var d1 = t1 < t0 \? C\.addDays\(d, 1\) : d;/.test(workFn));
+  t('勤務時間の途中で断られたら窓を閉じて読み直す（もう一度押して打刻を二重に足さない）', /if \(done\) \{ closeDlg\(\); load\(false\);/.test(workFn));
+  t('締めた月分は窓に出し、保存のボタンを出さない・締めた期間は断られる旨を書く', /openDlg\('勤務時間を手で入れる（' \+ perLabel\(\) \+ '）', b, lk, '入れる', 'work-save'\)/.test(openWorkFn) && /締めた月分の日は断られます/.test(openWorkFn));
+  t('「勤務時間を手で入れる」のボタン（日ごと・個人の月）', (K.match(/data-act="work-open">勤務時間を手で入れる</g) || []).length === 2 && /a === 'work-open'\) openWork\(\)/.test(K));
+  t('保存していない入力を確かめる窓に、手入力・有給・結び付けを足した', /var DIRTY_MODES = \{ edit: 1, work: 1, leave: 1, link: 1, mimport: 1, clockvis: 1, madd: 1 \}/.test(K) && /if \(!dlgCtx \|\| !DIRTY_MODES\[dlgCtx\.mode\] \|\| dlgCtx\.init == null\) return false;/.test(K));
+  t('職員マスタ・有給の記録を端末に残さない（v4 の関数の中に localStorage が無い）', !/localStorage/.test(between('/* ── v4: 職員マスタとの結び付け', '/* ── 締めた時の控え') + between('/* ── v4: 勤務時間を手で入れる', '/* ── 職員・締め・出力・設定 ── */')));
+  t('v4 で innerHTML の代入を増やしていない（描くのは paint と openDlg の2か所のまま）', !/innerHTML/.test(between('/* ── v4: 職員マスタとの結び付け', '/* ── 締めた時の控え') + between('/* ── v4: 勤務時間を手で入れる', '/* ── 職員・締め・出力・設定 ── */')));
+  t('入職日は職員マスタ（hire_date）から・有給の設定の hire_date があればそちら（KintaiLeave.summary の hireOf）', /L\.summary\(\{ hireDate: m && m\.hire_date, profile: prof,/.test(K) && /if \(profile && isDate\(profile\.hire_date\)\) return profile\.hire_date;/.test(read('kintai-leave.js')));
+  t('DB の断りの語（nomaster・masterrow・dup・locked・already・badkind・badvalue・baddate・badkey・badshape・reason・conflict・notfound）に文がある', ['nomaster', 'masterrow', 'dup', 'locked', 'already', 'badkind', 'badvalue', 'baddate', 'badkey', 'badshape', 'reason', 'conflict', 'notfound'].every((w) => new RegExp('[{ ]' + w + ": '").test(K)));
+}
+
+Promise.all(await_pending).catch((e) => { fail++; console.log('  ✗ 動かして確かめる試験が止まった  → ' + e.message); }).then(() => {
+  console.log(`\n${pass} 件合格 / ${fail} 件不合格`);
+  process.exit(fail ? 1 : 0);
+});

@@ -157,6 +157,17 @@ if (per) {
   t('attFromKintai: computeMonth の1人ごとの集計と締めの控えから同じ att を作り、契約 §2 の鍵が全部ある', keys.every((k) => typeof a1[k] === 'number' && a1[k] === a2[k]) && a2.missing.length === 0, { a1, a2 });
   t('attFromKintai: 2日働いた（出勤日数2・総労働は集計の値のまま・回数の記号「早」2回）', a2.workDays === 2 && a2.workMin === per.sum.workMin && a2.workMin > 0 && a2.counts['早'] === 2, a2);
 } else t('attFromKintai: computeMonth が1人ごとの集計を返す', false, Object.keys(month || {}));
+/* v4（2026-11-20）: 手で入れた有休（leave_uses）がある月の控えは、数え直しに leave_uses を渡した時だけ一致する（渡さないと食い違って給与が止まる） */
+{
+  const base = { ym: '2026-12', staff: [{ staff_id: 's-1', name: '見本 一', office: 'facility', emp_code: null }], schedule: schedRows, days: [], config: {},
+    punches: [pin('2026-12-09', '7:00', 'in'), pin('2026-12-09', '16:00', 'out'), pin('2026-12-10', '7:00', 'in'), pin('2026-12-10', '16:00', 'out')], now: Date.parse('2027-01-10T12:00:00+09:00') };
+  const lu = [{ id: 'lu1', staff_id: 's-1', use_date: '2026-12-14', days: 1 }, { id: 'lu2', staff_id: 's-1', use_date: '2026-12-15', days: 0.5 }];
+  const snapRow = KC.snapshotOf(KC.computeMonth(Object.assign({ leave_uses: lu }, base))).rows[0];
+  const withL = KC.snapshotOf(KC.computeMonth(Object.assign({ leave_uses: lu }, base))).rows[0], without = KC.snapshotOf(KC.computeMonth(base)).rows[0];
+  t('手入力の有休の月: 控えと、leave_uses を渡した数え直しの att が一致（有休 1.5日・720分）', JSON.stringify(P.attFromKintai(snapRow)) === JSON.stringify(P.attFromKintai(withL)) && snapRow.paidDays === 1.5 && snapRow.paidMin === 720, snapRow);
+  t('手入力の有休の月: leave_uses を渡さない数え直しは控えと食い違う（だから渡す）', JSON.stringify(P.attFromKintai(snapRow)) !== JSON.stringify(P.attFromKintai(without)));
+  t('給与の数え直し（verifyKintai）は kintai_month_get の leave_uses を computeMonth に渡す', /K\.computeMonth\(\{ ym: ymx, period: d\.period, [^}]*days: arr\(d\.days\),\s*leave_uses: arr\(d\.leave_uses\), config: obj\(snap\.config\)/.test(J));
+}
 const old = P.attFromKintai({ workDays: 3, workMin: 600, schedInMin: 600 });
 t('attFromKintai: 0101 より前の控えで欠けた鍵は 0 にして名前を残す（黙って信じない）', old.legalInOverMin === 0 && old.missing.indexOf('legalInOverMin') >= 0 && old.missing.indexOf('workDays') < 0);
 const H2 = read('payroll.html');

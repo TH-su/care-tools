@@ -170,7 +170,7 @@
       var m = obj(d.month), snap = obj(m.snapshot);
       if (!m.locked_at) return { state: 'ng', names: [], unlocked: true };
       var month = K.computeMonth({ ym: ymx, period: d.period, staff: arr(d.staff), schedule: arr(d.schedule), punches: arr(d.punches), days: arr(d.days),
-        config: obj(snap.config), lockedAt: m.locked_at, now: Date.now() });
+        leave_uses: arr(d.leave_uses), config: obj(snap.config), lockedAt: m.locked_at, now: Date.now() });
       var fresh = {}, saved = {};
       arr(K.snapshotOf(month).rows).forEach(function (r) { if (r && typeof r.staff_id === 'string') fresh[r.staff_id] = attFromKintai(r); });
       arr(snap.rows).forEach(function (r) { if (r && typeof r.staff_id === 'string') saved[r.staff_id] = attFromKintai(r); });

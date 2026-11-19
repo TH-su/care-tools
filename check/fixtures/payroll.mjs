@@ -262,12 +262,13 @@ function profileRows(ym) {
   return P.map(([staff_id, data], i) => ({ staff_id, effective_from: i === 0 ? P0.from : '2025-04-16', data, rev: 1 }));
 }
 /* 勤怠の生の行（予定 9:00〜18:00・休憩60分・平日・休みの日を除く・打刻は予定どおり）と、本物の kintai-calc.js で作った締めの控え。
-   s-02・s-07 は最初の日を有休にする。s-04 は入社日から・s-05 は退職日まで。月ごとに1回だけ作る */
+   s-02・s-07 は最初の日を有休にする。s-04 は入社日から・s-05 は退職日まで。月ごとに1回だけ作る。
+   kintaiLeave（v4 2026-11-20）が真なら、s-03 の最初の日はシフトに予定を置かず、手で入れた有休の使用（leave_uses・1日）にする＝締めの控えにその有休が入る */
 function kintaiOf(db, ym) {
   if (db.kraw[ym]) return db.kraw[ym];
   const per = periodOf(ym), hol = (db.settings.config.holidays || []);
   const staff = db.staff.map((x) => ({ staff_id: x.staff_id, name: x.name, office: x.office, emp_code: x.emp_code, active: x.active }));
-  const schedule = [], punches = [];
+  const schedule = [], punches = [], leave_uses = [];
   const at = (d, m) => new Date(KC.jstMs(d, m)).toISOString();
   staff.forEach((st) => {
     const pr = profileAt(db, st.staff_id, per.from), d0 = pr ? pr.data : {};
@@ -277,6 +278,7 @@ function kintaiOf(db, ym) {
       if (w === 0 || w === 6 || hol.includes(d)) continue;
       if (d0.entry_date && d < d0.entry_date) continue;
       if (d0.retire_date && d > d0.retire_date) continue;
+      if (first && db.leave && st.staff_id === 's-03') { first = false; leave_uses.push({ id: 'lu-' + st.staff_id + d, staff_id: st.staff_id, use_date: d, days: 1, note: '', voided_at: null }); continue; }
       if (first && (st.staff_id === 's-02' || st.staff_id === 's-07')) { first = false; schedule.push({ staff_id: st.staff_id, work_date: d, seq: 1, kind: 'paid', start_at: null, end_at: null, break_min: 0, paid_min: 480, office: 'facility', symbol: '有' }); continue; }
       first = false;
       schedule.push({ staff_id: st.staff_id, work_date: d, seq: 1, kind: 'work', start_at: at(d, 540), end_at: at(d, 1080), break_min: 60, paid_min: 0, office: 'facility', symbol: '日' });
@@ -285,10 +287,10 @@ function kintaiOf(db, ym) {
     }
   });
   const lockedAt = db.kintai.locked_at;
-  const month = KC.computeMonth({ ym, period: per, staff, schedule, punches, days: [], config: {}, lockedAt, now: Date.parse(lockedAt) });
+  const month = KC.computeMonth({ ym, period: per, staff, schedule, punches, days: [], leave_uses, config: {}, lockedAt, now: Date.parse(lockedAt) });
   const snapshot = KC.snapshotOf(month);
   if (db.drift) snapshot.rows.forEach((r) => { if (r.staff_id === 's-02') { r.workMin += 60; r.schedInMin += 60; } });
-  db.kraw[ym] = { raw: { period: per, staff, schedule, punches, days: [] }, snapshot };
+  db.kraw[ym] = { raw: Object.assign({ period: per, staff, schedule, punches, days: [] }, db.leave ? { leave_uses } : {}), snapshot };
   return db.kraw[ym];
 }
 const attOfRow = (db, ym, sid) => (kintaiOf(db, ym).snapshot.rows.find((r) => r.staff_id === sid) || null);
@@ -317,7 +319,7 @@ export function seed(opt = {}) {
     profiles: profileRows(ym0),
     bank: {},
     kintai: { locked_at: lock0 },
-    kraw: {}, drift: !!opt.kintaiDrift,
+    kraw: {}, drift: !!opt.kintaiDrift, leave: !!opt.kintaiLeave,
     runs: {}, items: {}, prev: {}, audit: [], log: [],
     members: [{ email: 'check-clerk@example.invalid', added_by: 'check-admin@example.invalid', added_at: '2025-12-01T10:00:00+09:00' }],
     offices: ['check-clerk@example.invalid', 'check-office@example.invalid', 'check-new@example.invalid'],

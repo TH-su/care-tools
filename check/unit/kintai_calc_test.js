@@ -10,6 +10,8 @@
      7. shift-symbols.js がシフトアプリの原本と1字も違わない（原本の無い環境は省略）
      8. 0101 月を締め日で切る: 期間の名前・期間の日だけ数える・週40時間を期間をまたいで数える・変形の日→週→総枠・
         時間の区分（重ならない4つの和が総労働・60時間超・夜勤の回数・所定日数・記号ごとの回数）。回帰の例外3つは節の頭に理由
+     9. v4（2026-11-20）手で入れた有休の使用（leave_uses）: シフトの有休の行がある日は足さない・所定（予定の実働か480分）×日数・
+        無い時は結果が1バイトも変わらない・締めの控え（paidDays・paidMin）に入る
    ★職員は架空（試験 甲・試験 乙）。 */
 'use strict';
 const fs = require('fs');
@@ -496,6 +498,36 @@ console.log('\n— 0101. 月を締め日で切る（期間・週の段・時間�
   const sn = C.snapshotOf(j0);
   t('締めの控えに期間と、給与の入力（法定内残業・60時間超・夜勤の回数・所定日数・記号ごとの回数）が入る', sn.period.from === '2026-12-01' && sn.rows[0].nightShiftCount === 1 && sn.rows[0].schedDays === 4 && sn.rows[0].counts['有'] === 1 && 'legalInOverMin' in sn.rows[0] && 'over60Min' in sn.rows[0]);
   t('CSV の見出しの列は変えない', C.buildCsv(j0, {}).summary.split('\r\n')[0] === C.SUMMARY_HEAD.join(','));
+}
+
+console.log('\n— 9. v4 手で入れた有休の使用（leave_uses・L8） —');
+{
+  const paidRow = (d, min) => ({ staff_id: 'sT01', work_date: '2026-12-' + d, seq: 9, kind: 'paid', start_at: null, end_at: null, break_min: 0, paid_min: min, office: 'facility', symbol: '有' });
+  const U = (sid, d, days, extra) => Object.assign({ id: 'u-' + sid + d, staff_id: sid, use_date: '2026-12-' + d, days }, extra || {});
+  const base = sched({ 2: '早', 9: '早' }).rows.concat([paidRow('05', 480)]);
+  const pun = [P('sT01', 'in', '2026-12-02', '7:00'), P('sT01', 'out', '2026-12-02', '16:00')];
+  const mk2 = (uses) => C.computeMonth({ ym: YM, staff: K_STAFF, schedule: base, punches: pun, days: [], config: {}, now: NOW, leave_uses: uses });
+  const m0 = month(base, pun);
+  t('leave_uses が無い・空の配列・形の違う値の時は、結果が1バイトも変わらない', JSON.stringify(mk2(undefined)) === JSON.stringify(m0) && JSON.stringify(mk2([])) === JSON.stringify(m0) && JSON.stringify(mk2('x')) === JSON.stringify(m0));
+  const m1 = mk2([U('sT01', '05', 1), U('sT01', '12', 1), U('sT01', '13', 0.5), U('sT01', '09', 1), U('sT01', '14', 1, { voided_at: '2026-12-15T00:00:00Z' }), U('sT01', '15', 2), { id: 'x', staff_id: 'sT01', use_date: '2027-01-02', days: 1 }]);
+  const s1 = sumOf(m1, 'sT01');
+  t('シフトの有休の行がある日（12/5）は手入力を足さない（1日・480分のまま・印なし）', dayOf(m1, 'sT01', '2026-12-05').paidDays === 1 && dayOf(m1, 'sT01', '2026-12-05').paidMin === 480 && !dayOf(m1, 'sT01', '2026-12-05').leaveUse);
+  t('予定の無い日の手入力の1日は480分・半日は240分（日数は入れたまま）', dayOf(m1, 'sT01', '2026-12-12').paidMin === 480 && dayOf(m1, 'sT01', '2026-12-12').paidDays === 1 && dayOf(m1, 'sT01', '2026-12-13').paidMin === 240 && dayOf(m1, 'sT01', '2026-12-13').paidDays === 0.5);
+  t('予定（早 7-16・実働480分）のある日の手入力の1日は、その日の所定480分・1日（比の式で0.5日にしない）', dayOf(m1, 'sT01', '2026-12-09').paidMin === 480 && dayOf(m1, 'sT01', '2026-12-09').paidDays === 1, dayOf(m1, 'sT01', '2026-12-09'));
+  t('手入力を数えた日にだけ leaveUse の印（id と日数）', dayOf(m1, 'sT01', '2026-12-12').leaveUse.id === 'u-sT0112' && dayOf(m1, 'sT01', '2026-12-13').leaveUse.days === 0.5 && !('leaveUse' in dayOf(m1, 'sT01', '2026-12-02')));
+  t('取り消した使用・日数の形の違う使用（2日）・期間の外の使用は数えない', !dayOf(m1, 'sT01', '2026-12-14') && !dayOf(m1, 'sT01', '2026-12-15') && !m1.people[0].days.some((d) => d.date > '2026-12-31'));
+  t('月の有休日数 1＋1＋0.5＋1＝3.5日・有休時間 480＋480＋240＋480＝1680分', s1.paidDays === 3.5 && s1.paidMin === 1680, [s1.paidDays, s1.paidMin]);
+  t('有休の日は所定日数に入り、予定のある日の手入力の有休は欠勤・打刻なしの日に数えない', s1.schedDays === sumOf(m0, 'sT01').schedDays + 2 && s1.noPunchDays === sumOf(m0, 'sT01').noPunchDays - 1 && s1.absentDays === 0, [s1.schedDays, s1.noPunchDays]);
+  const sn = C.snapshotOf(m1).rows.find((r) => r.staff_id === 'sT01');
+  t('締めの控え（給与の att）に有休日数・有休時間が入る', sn.paidDays === 3.5 && sn.paidMin === 1680, sn);
+  t('月の合計の有休時間にも入る', m1.totals.paidMin === m0.totals.paidMin + 1200);
+  const csv = C.buildCsv(m1, { extraCols: true });
+  t('CSV の見出しの列は変えない（手入力の有休が無い月と同じ見出し）', csv.summary.split('\r\n')[0] === C.buildCsv(m0, { extraCols: true }).summary.split('\r\n')[0] && csv.daily.split('\r\n')[0] === C.buildCsv(m0, { extraCols: true }).daily.split('\r\n')[0]);
+  t('日ごとの明細に手入力の有休の日の行（有）が出る', csv.daily.split('\r\n').some((l) => l.indexOf('9001,2026-12-12,') === 0 && /,有,/.test(l)));
+  const m2 = mk2([U('sT09', '12', 1)]);
+  t('名簿に無い職員の手入力の使用も落とさない（名簿に無い記録の印）', m2.people.some((p) => p.staff.staff_id === 'sT09' && p.staff.missingStaff && p.sum.paidDays === 1));
+  const m3 = mk2([U('sT01', '12', 1), U('sT01', '12', 0.5)]);
+  t('同じ人・同じ日の2行目は数えない（DB も1行だけ）', dayOf(m3, 'sT01', '2026-12-12').paidDays === 1);
 }
 
 console.log(`\n${pass} 件合格 / ${fail} 件不合格`);
