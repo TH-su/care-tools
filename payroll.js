@@ -951,6 +951,8 @@
   /* 給与方式の値（freee の 月給・時給・日給、「〜制」、日給月給は月給、前の仮置きの 役員） */
   var PAY_IN = { '月給': 'monthly', '月給制': 'monthly', '日給月給': 'monthly', '時給': 'hourly', '時給制': 'hourly', '日給': 'daily', '日給制': 'daily', '役員': 'board', '役員報酬': 'board' };
   /* 預金種類（全銀の種目: 普通1・当座2・貯蓄4） */
+  /* 納税者区分（甲欄・乙欄。丙欄は対象外） */
+  var TAX_IN = { '甲': 'kou', '甲欄': 'kou', '乙': 'otsu', '乙欄': 'otsu' };
   var ACCT_IN = { '普通': '1', '普通預金': '1', '当座': '2', '当座預金': '2', '貯蓄': '4', '貯蓄預金': '4' };
   /* 読んだ行 → 違いの表の行。profs は今の職員の設定（bs.profiles）、from は今の月分の始まり（DOM にも bs にも依らない・試験から呼ぶ） */
   function buildImport(rows, profs, from) {
@@ -970,10 +972,14 @@
       var emp = g('emp'), nm = g('name'), p = null;
       profs.forEach(function (x) { if (emp && String(x.data.freee_emp_num || '') === emp) p = x; });
       if (!p && nm) { var hit = profs.filter(function (x) { return normName(x.name) === normName(nm); }); if (hit.length === 1) p = hit[0]; }
+      /* 氏名で当たった人に別の従業員番号があり、CSV の番号と違えば当てない（同名の別人に上書きしない） */
+      var empNg = !!(p && emp && String(p.data.freee_emp_num || '') !== '' && String(p.data.freee_emp_num) !== emp);
+      if (empNg) p = null;
       var pt = PAY_IN[g('pay_type')] || null;
       /* 時給・日給の人は専用の列（前の仮置き）に値があればそれ、無ければ基本給の列（freee の書き出しには専用の列が無い） */
       var wage = function (k2) { var x = toNum(g(k2)); return x != null ? x : toNum(g('base')); };
       var patch = {}, ch = [];
+      if (empNg) ch.push('⚠ 従業員番号が違うので当てません');
       function setv(key, val, label, show) {
         if (val == null || val === '') return;
         var old = p ? key.split('.').reduce(function (o, k2) { return o == null ? null : o[k2]; }, p.data) : null;
@@ -996,9 +1002,13 @@
       if (hon === null && toNum(g('hstd')) > 0) hon = true;
       if (pon === null && toNum(g('pstd')) > 0) pon = true;
       setv('ins.health.on', hon, '健康保険の加入', onTxt); setv('ins.pension.on', pon, '厚生年金の加入', onTxt); setv('ins.emp.on', eon, '雇用保険の加入', onTxt);
-      setv('tax.col', { '甲': 'kou', '甲欄': 'kou', '乙': 'otsu', '乙欄': 'otsu' }[g('tax_col')] || null, '源泉の区分');
+      setv('tax.col', TAX_IN[g('tax_col')] || null, '源泉の区分');
       /* 丙欄（日雇い）は今の甲乙の計算の対象外なので設定しない（今の値のまま） */
       if (/^丙/.test(g('tax_col'))) ch.push('⚠ 丙欄は取り込みません');
+      /* 甲・乙・丙のどれでもない値は読めないと知らせ、甲乙・扶養は「未確認」にする（扶養の数が空の行は次の行で入る） */
+      var taxNg = !!g('tax_col') && !TAX_IN[g('tax_col')] && !/^丙/.test(g('tax_col'));
+      if (taxNg) ch.push('⚠ 納税者区分が読めません');
+      if (taxNg && toNum(g('deps')) != null) setv('tax.dependents_checked', false, '甲乙・扶養の確かめ', function (x) { return x === true ? '確かめた' : x === false ? '未確認' : '（空）'; });
       setv('tax.dependents', toNum(g('deps')), '扶養親族等の数');
       /* 扶養・甲乙の列が無い（空の）行は「未確認」で入れる（列から読めた時は今の印のまま・代表者の決定 2026-11-19） */
       if (!g('tax_col') || toNum(g('deps')) == null) setv('tax.dependents_checked', false, '甲乙・扶養の確かめ', function (x) { return x === true ? '確かめた' : x === false ? '未確認' : '（空）'; });
@@ -1009,6 +1019,8 @@
         bank = { bank_code: g('bank').replace(/\D/g, ''), branch_code: g('branch').replace(/\D/g, ''), type: ACCT_IN[g('acct_type')] || '1', number: ('0000000' + no).slice(-7), name_kana: g('kana'), amount_or_rest: 'rest' };
         if (!/^\d{4}$/.test(bank.bank_code) || !/^\d{3}$/.test(bank.branch_code) || !/^\d{1,7}$/.test(no)) { ch.push('⚠ 口座の形が違うので送りません'); bank = null; }
         else if (!bank.name_kana) { ch.push('⚠ 口座名義が無いので送りません'); bank = null; }
+        /* 預金種類の値があって分からない時は送らない（空・列なしは今のとおり普通） */
+        else if (g('acct_type') && !ACCT_IN[g('acct_type')]) { ch.push('⚠ 預金種類が分からないので送りません'); bank = null; }
         else ch.push('口座：＊＊＊' + no.slice(-4));
       }
       /* 口座は分かれた列（振込先口座1：…）だけ使う。書き出しの「振込先口座」1列は中の形が分からないので推測して分けない */
@@ -1019,6 +1031,10 @@
       out.push({ name: nm || emp, staff_id: p ? p.staff_id : null, pname: p ? p.name : '', patch: patch, data: data && data.pay_type ? data : null, bank: bank, changes: ch,
         hasNow: !!(p && from && p.versions.some(function (x) { return x.effective_from === from; })), hasBank: !!(p && p.bank_last4.length) });
     });
+    /* 同じ職員に2行以上当たったら、その全部の行を送らない（後の行が前の行を黙って上書きしない） */
+    var seen = {};
+    out.forEach(function (r) { if (r.staff_id) seen[r.staff_id] = (seen[r.staff_id] || 0) + 1; });
+    out.forEach(function (r) { if (r.staff_id && seen[r.staff_id] > 1) { r.data = null; r.bank = null; r.changes.push('⚠ 同じ職員に2行当たったので送りません'); } });
     /* 画面の上の1行に出す数（項目の名前だけ・値は持たない）。importRows と一緒に捨てる */
     out.cols = { found: cm.found, missing: cm.missing };
     return out;
