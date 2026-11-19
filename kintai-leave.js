@@ -6,7 +6,7 @@
  *   付与日は毎回「入職日から 6＋12×n か月」で出す（月末に丸めた日を次の起点にしない）
  *   比例付与は「週の所定日数」(4日以下) と「週の所定時間」(30時間未満) がそろった時だけ（労基則24条の3の表）
  * ・出勤率8割の判定はしない（L3）。付与しない年は profile.skip_grants に付与日を入れる
- * ・期限は付与日から2年（2年後の前日まで・L4）。使う時は、その使用の日に使える付与のうち古いものから減らす（FIFO）
+ * ・期限は付与日から2年（2年後の前日まで。その日が無い時はその月の末日・民法143条2項・L4）。使う時は、その使用の日に使える付与のうち古いものから減らす（FIFO）
  * ・移行（L6）: profile.opening_date より前の自動の付与は数えない（今の残りは手で入れた付与 kind='opening' で持つ）
  * ・使用（L5）: シフトの有休の日と手で入れた使用を合わせる。同じ人・同じ日に両方ある時は手入力を正にし、二重に数えない
  * ・氏名・日数などの業務データを端末に残さない（このファイルは計算だけ）。試験も架空の職員だけ
@@ -38,7 +38,15 @@
   }
   function diffDays(a, b) { return Math.round((ms(b) - ms(a)) / DAY); }
   /* 期限（使える最後の日）＝付与日の2年後の前日 */
-  function expiresOf(grantDate) { return addDays(addMonths(grantDate, 24), -1); }
+  /* n か月の期間の終わり（民法143条: 応当日の前日。応当日が無い月はその月の末日＝2/29 の付与の2年後は 2/28 で満了） */
+  function periodEnd(start, months) {
+    var y = +start.slice(0, 4), m = +start.slice(5, 7) - 1 + months, d = +start.slice(8, 10);
+    y += Math.floor(m / 12); m = ((m % 12) + 12) % 12 + 1;
+    if (d > dim(y, m)) return y + '-' + pad(m) + '-' + pad(dim(y, m));
+    return addDays(y + '-' + pad(m) + '-' + pad(d), -1);
+  }
+  /* 期限（使える最後の日）＝付与日から2年の終わり */
+  function expiresOf(grantDate) { return periodEnd(grantDate, 24); }
   function num(v) { return v == null || v === '' ? null : (isFinite(+v) ? +v : null); }
   function half(v) { return Math.round(v * 2) / 2; }
 
@@ -103,12 +111,15 @@
   /* 残り（L4）: asOf までの使用を、使用の日に使える付与（付与日〜期限）の古い方から減らす。
      返す: { remain 今使える残り, lots[{…, used, remain, state:'valid'|'expired'|'future'}], soon 期限のいちばん近い残り {days, expires} か null,
              used asOf までに使った日数, planned asOf より後の使用, over 使える付与が無かった使用の日数 } */
-  function balance(grants, uses, asOf) {
+  function balance(grants, uses, asOf, opts) {
+    var open = opts && isDate(opts.openingDate) ? opts.openingDate : null;
     var lots = (grants || []).filter(function (g) { return g && !g.voided_at && (g.status == null || g.status === 'ok') && isDate(g.grant_date) && num(g.days) > 0; })
       .map(function (g) { return { grant_date: g.grant_date, days: +g.days, kind: g.kind || 'manual', expires: g.expires || expiresOf(g.grant_date), id: g.id || null, note: g.note || '', used: 0 }; });
     lots.sort(function (a, b) { return a.grant_date < b.grant_date ? -1 : a.grant_date > b.grant_date ? 1 : (a.expires < b.expires ? -1 : a.expires > b.expires ? 1 : (KIND_ORDER[a.kind] || 0) - (KIND_ORDER[b.kind] || 0)); });
     var us = cleanUses(uses), used = 0, planned = 0, over = 0;
     us.forEach(function (u) {
+      /* L6: 移行の残り（opening）は移行日の時点の残りなので、移行日より前の使用はもう引いてある＝数えない（二重に減らさない） */
+      if (open && u.use_date < open) return;
       if (u.use_date > asOf) { planned += u.days; return; }
       used += u.days;
       var need = u.days;
@@ -137,7 +148,7 @@
     var cand = (grants || []).filter(function (g) { return g && !g.voided_at && (g.status == null || g.status === 'ok') && g.kind !== 'opening' && num(g.days) >= 10 && isDate(g.grant_date) && g.grant_date <= asOf; });
     if (!cand.length) return { state: 'none', used: 0, planned: 0, need: 5 };
     cand.sort(function (a, b) { return a.grant_date < b.grant_date ? -1 : a.grant_date > b.grant_date ? 1 : 0; });
-    var gd = cand[cand.length - 1].grant_date, end = addDays(addMonths(gd, 12), -1);
+    var gd = cand[cand.length - 1].grant_date, end = periodEnd(gd, 12);
     var used = 0, planned = 0;
     cleanUses(uses).forEach(function (u) {
       if (u.use_date < gd || u.use_date > end) return;
@@ -178,18 +189,28 @@
     out.sort(function (a, b) { return a.staff_id < b.staff_id ? -1 : a.staff_id > b.staff_id ? 1 : (a.use_date < b.use_date ? -1 : a.use_date > b.use_date ? 1 : 0); });
     return out;
   }
+  /* 数える移行日: 設定の移行日。空で、取り消していない移行の残り（opening）の付与がある時は、その付与日のうち最も遅い日の翌日を移行日とみなす（仮置き）。
+     移行の残りは前年分・今年分を本当の付与日で入れるので、最も早い日にすると今年分と同じ日の自動の付与を二重に数えるため。
+     返す: { date, missing（設定が空で付与日からみなした） } */
+  function openingOf(profile, grants) {
+    if (profile && isDate(profile.opening_date)) return { date: profile.opening_date, missing: false };
+    var ds = (grants || []).filter(function (g) { return g && !g.voided_at && g.kind === 'opening' && isDate(g.grant_date); }).map(function (g) { return g.grant_date; }).sort();
+    return ds.length ? { date: addDays(ds[ds.length - 1], 1), missing: true } : { date: null, missing: false };
+  }
   /* 1人分のまとめ（画面の1行と開いた窓に使う）。uses はその人の合成済みの使用（usesFromMonth の結果をその人で絞ったもの） */
   function summary(o) {
-    var asOf = o.asOf, profile = o.profile || {}, hire = hireOf(o.hireDate, profile);
+    var asOf = o.asOf, profile0 = o.profile || {}, op = openingOf(profile0, o.grants), profile = profile0, k;
+    if (op.missing) { profile = {}; for (k in profile0) profile[k] = profile0[k]; profile.opening_date = op.date; }
+    var hire = hireOf(o.hireDate, profile);
     var auto = hire ? autoGrants(hire, profile, asOf) : [];
     var lots = lotsOf(auto, o.grants, null);
-    var bal = balance(lots, o.uses, asOf);
+    var bal = balance(lots, o.uses, asOf, { openingDate: op.date });
     /* 年5日の基準日は、移行日より前の自動の付与も使う（残りには数えないが、付与した日は本当にあった。付与しない日は除く・仮置き）。
        移行日より前の使用は記録に無いので、その時は beforeOpening の印を付ける */
     var obLots = lots.concat(auto.filter(function (g) { return g.status === 'opening'; }).map(function (g) { return { grant_date: g.grant_date, days: g.days, kind: 'auto', expires: g.expires }; }));
     var ob = obligation5(obLots, o.uses, asOf), open = isDate(profile.opening_date) ? profile.opening_date : null;
     if (ob.state !== 'none' && open && ob.grant_date < open) ob.beforeOpening = open;
-    return { hire: hire, auto: auto, lots: lots, balance: bal, obligation: ob, next: hire ? nextGrant(hire, profile, asOf) : null, proportional: !!propRow(profile) };
+    return { hire: hire, auto: auto, lots: lots, balance: bal, obligation: ob, next: hire ? nextGrant(hire, profile, asOf) : null, proportional: !!propRow(profile), opening: op.date, openingMissing: op.missing };
   }
   /* L2 の注意: 雇用形態がパート・臨時なのに週の所定日数が入っていない */
   function needsWeekly(employmentType, profile) {
@@ -200,7 +221,7 @@
 
   var api = {
     NORMAL: NORMAL, PROP: PROP, isDate: isDate, addDays: addDays, addMonths: addMonths, diffDays: diffDays, expiresOf: expiresOf,
-    hireOf: hireOf, autoGrants: autoGrants, nextGrant: nextGrant, lotsOf: lotsOf, balance: balance, obligation5: obligation5,
+    hireOf: hireOf, openingOf: openingOf, periodEnd: periodEnd, autoGrants: autoGrants, nextGrant: nextGrant, lotsOf: lotsOf, balance: balance, obligation5: obligation5,
     usesFromMonth: usesFromMonth, summary: summary, needsWeekly: needsWeekly
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

@@ -4,7 +4,7 @@
      1. 付与の表（6か月で10日・以後1年ごと 11・12・14・16・18・20日・6年6か月以降20日）
      2. 比例付与（週4/3/2/1日・週30時間未満の時だけ。片方が空・30時間以上・週5日は通常の付与）
      3. 入職の6か月後は同じ日（無い日は月末）。付与日は毎回入職日から数える（月末に丸めた日を次の起点にしない）
-     4. 期限は付与日から2年（2年後の前日まで使える）・FIFO（使用の日に使える古い付与から）・半日・使える付与の無い使用
+     4. 期限は付与日から2年（2年後の前日まで使える・その日が無い時は月末＝民法143条2項）・FIFO（使用の日に使える古い付与から）・半日・使える付与の無い使用
      5. 年5日の色（届いた・黄・期限まで60日以内の赤・10日未満や移行の残りは対象外）
      6. 移行日（opening_date より前の自動の付与は数えない）・付与しない日（skip_grants）
      7. シフトの有休と手入力が同じ日にあれば手入力を正にし、二重に数えない（computeMonth の結果から作る）
@@ -58,7 +58,10 @@ console.log('\n— 3. 入職の6か月後の月末の扱い —');
   t('入職 3/31 → 9/30・次も 9/30', dates(L.autoGrants('2026-03-31', null, '2027-12-31')) === '2026-09-30,2027-09-30');
   t('入職 8/29 → 閏年の 2/29、翌年は 2/28', dates(L.autoGrants('2023-08-29', null, '2025-12-31')) === '2024-02-29,2025-02-28');
   t('入職 4/1 → 10/1（同じ日）', L.autoGrants('2026-04-01', null, '2026-12-31')[0].grant_date === '2026-10-01');
-  t('閏日の付与の期限は2年後の2月末の前日', L.expiresOf('2024-02-29') === '2026-02-27');
+  /* ★反証レビュー（2026-11-20）: 前の期待「2/27」は誤り。応当日（2/29）が無い年は、その月の末日（2/28）で満了する（民法143条2項）ので期待を直した */
+  t('閏日の付与の期限は、2年後に 2/29 が無いので 2月末日（民法143条2項）', L.expiresOf('2024-02-29') === '2026-02-28' && L.expiresOf('2028-02-29') === '2030-02-28', [L.expiresOf('2024-02-29'), L.expiresOf('2028-02-29')]);
+  t('応当日がある時は前日（10/1 → 2年後の 9/30・3/31 → 3/30）', L.expiresOf('2026-10-01') === '2028-09-30' && L.expiresOf('2026-03-31') === '2028-03-30');
+  t('閏日の付与の年5日の期間の終わりは翌年の 2/28', L.obligation5([{ grant_date: '2028-02-29', days: 10, kind: 'auto' }], [], '2028-03-01').end === '2029-02-28');
 }
 
 console.log('\n— 4. 期限2年・FIFO・半日 —');
@@ -118,6 +121,15 @@ console.log('\n— 6. 移行日・付与しない日 —');
   const so = L.summary({ hireDate: '2019-04-01', profile: { opening_date: '2026-11-01' }, grants: [{ id: 'g9', grant_date: '2026-10-01', days: 20, kind: 'opening' }], uses: [], asOf: '2026-11-20' });
   t('移行した人も年5日を出す（基準日は移行日より前の自動の付与 2026/10/1・残りには数えない）・移行日より前の使用が無い印', so.obligation.state === 'yellow' && so.obligation.grant_date === '2026-10-01' && so.obligation.beforeOpening === '2026-11-01' && so.balance.remain === 20, [so.obligation, so.balance.remain]);
   t('移行日より後の付与が基準日なら印を付けない', !L.summary({ hireDate: '2019-04-01', profile: { opening_date: '2026-04-01' }, asOf: '2026-11-20' }).obligation.beforeOpening);
+  /* 反証レビュー（2026-11-20）の high: 移行の残りは移行日の時点の残りなので、移行日より前の使用で二重に減らさない */
+  const sp = L.summary({ hireDate: '2025-10-01', profile: { opening_date: '2026-11-20' }, grants: [{ id: 'o1', grant_date: '2026-04-01', days: 5, kind: 'opening' }], uses: [{ use_date: '2026-10-10', days: 1, src: 'shift' }, { use_date: '2026-10-11', days: 1, src: 'shift' }], asOf: '2026-11-20' });
+  t('移行日より前の使用は移行の残りから引かない（入職 2025/10/1・移行日 2026/11/20・移行の残り5日・10/10〜11 の有休 → 残り5）', sp.balance.remain === 5 && sp.balance.used === 0, sp.balance);
+  t('移行日の当日からの使用は引く', L.summary({ hireDate: '2025-10-01', profile: { opening_date: '2026-11-20' }, grants: [{ id: 'o1', grant_date: '2026-04-01', days: 5, kind: 'opening' }], uses: [{ use_date: '2026-11-20', days: 1 }], asOf: '2026-11-21' }).balance.remain === 4);
+  t('balance の移行日（openingDate）を渡さない時は今までどおり', L.balance([{ grant_date: '2026-04-01', days: 5, kind: 'opening' }], [{ use_date: '2026-10-10', days: 1 }], '2026-11-20').remain === 4);
+  /* medium: 移行の残りがあるのに移行日が空 → 最も遅い移行の残りの付与日の翌日を移行日とみなし、自動の付与と二重に数えない（仮置き） */
+  const sm2 = L.summary({ hireDate: '2019-04-01', profile: {}, grants: [{ id: 'a', grant_date: '2024-10-01', days: 3, kind: 'opening' }, { id: 'b', grant_date: '2025-10-01', days: 18, kind: 'opening' }, { id: 'c', grant_date: '2025-12-01', days: 9, kind: 'opening', voided_at: '2026-01-01T00:00:00Z' }], uses: [], asOf: '2026-09-01' });
+  t('移行日が空でも、移行の残りの付与日（最も遅い 2025/10/1 の翌日）を移行日とみなし、同じ日の自動の付与を数えない（残り 3＋18＝21・取り消した行は見ない）', sm2.openingMissing === true && sm2.opening === '2025-10-02' && sm2.balance.remain === 21 && sm2.lots.every((l) => l.kind === 'opening'), [sm2.opening, sm2.balance.remain, sm2.lots.map((l) => l.kind)]);
+  t('移行日が空で移行の残りも無ければ、みなさない', !L.summary({ hireDate: '2019-04-01', profile: {}, asOf: '2026-09-01' }).openingMissing && L.openingOf({ opening_date: '2026-01-01' }, [{ grant_date: '2025-10-01', kind: 'opening' }]).date === '2026-01-01');
   t('付与しない日（skip_grants）は「付与しない」で数えない', sk.find((x) => x.grant_date === '2025-10-01').status === 'skip' && sk.filter((x) => x.status === 'skip').length === 1);
   const s2 = L.summary({ hireDate: '2019-04-01', profile: { skip_grants: ['2025-10-01'] }, asOf: '2025-12-01' });
   t('付与しない日の分は残りに入らない（2024/10/1 の18日だけ）', s2.balance.remain === 18, s2.balance.remain);

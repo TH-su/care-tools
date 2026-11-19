@@ -509,25 +509,38 @@
   function monthFor(y, d) {
     return C.computeMonth({ ym: y, period: d.period, staff: d.staff || [], schedule: d.schedule || [], punches: d.punches || [], days: d.days || [], leave_uses: d.leave_uses, config: monthCfg(d), lockedAt: d.month && d.month.locked_at, now: Date.now() });
   }
-  function loadLeaveMonths(my) {
-    var cur = todayYm(), out = [];
+  /* さかのぼる下限の月: 職員のいちばん早い入職日の月（入職日が分からない人がいれば24か月前）。24か月より前へは行かない */
+  function leaveFloorYm(lg) {
+    var cur = todayYm(), floor = cur, i, prof = {};
+    for (i = 0; i < 24; i++) floor = C.prevYm(floor);
+    (Array.isArray(lg && lg.profiles) ? lg.profiles : []).forEach(function (p) { if (p && p.staff_id) prof[p.staff_id] = p; });
+    var hires = (data && data.staff || []).filter(function (s) { return s.active !== false; }).map(function (s) { var m = masterOf(s); return L.hireOf(m && m.hire_date, prof[s.staff_id]); });
+    if (!hires.length || hires.some(function (h) { return !h; })) return floor;
+    var h0 = hires.sort()[0].slice(0, 7);
+    return h0 > floor ? h0 : floor;
+  }
+  function loadLeaveMonths(my, lg) {
+    var cur = todayYm(), out = [], floor = leaveFloorYm(lg);
     var one = function (y) { return rpc('kintai_month_get', { p_ym: y }).then(okOr).then(function (d) { out.push(monthFor(y, d)); return d; }); };
-    var back = function (y, n) {
+    /* 今月分と前の月分は必ず読み、その後は下限の月まで（最大24か月分）。予定も手入力の使用も無い月分が3つ続いたら止める（仮置き） */
+    var back = function (y, n, emptyRun) {
       if (my !== leaveGen) return null;
       return one(y).then(function (d) {
-        var empty = !(d.schedule || []).length && !(d.leave_uses || []).length;
-        if (n < 24 && (n < 1 || !empty)) return back(C.prevYm(y), n + 1);
+        var run = !(d.schedule || []).length && !(d.leave_uses || []).length ? emptyRun + 1 : 0;
+        var py = C.prevYm(y);
+        if (n < 24 && py >= floor && (n < 1 || run < 3)) return back(py, n + 1, run);
         return null;
       });
     };
-    return one(C.nextYm(cur)).then(function () { return back(cur, 0); }).then(function () { return out; });
+    return one(C.nextYm(cur)).then(function () { return back(cur, 0, 0); }).then(function () { return out; });
   }
   function loadLeave(force) {
     var my = ++leaveGen, keep = leaveSt && !leaveSt.err && !force ? leaveSt.months : null;
     leaveBusy = true;
     var mp = masterSt && !masterSt.err ? Promise.resolve() : loadMaster();
     return rpc('kintai_leave_get', {}).then(okOr).then(function (lg) {
-      return (keep ? Promise.resolve(keep) : loadLeaveMonths(my)).then(function (months) { return { lg: lg, months: months }; });
+      /* さかのぼる下限に入職日を使うので、職員マスタを読み終えてから月分を読む */
+      return (keep ? Promise.resolve(keep) : mp.then(function () { return loadLeaveMonths(my, lg); })).then(function (months) { return { lg: lg, months: months }; });
     }).then(function (x) {
       if (my !== leaveGen) return;
       var prof = {};
@@ -568,6 +581,7 @@
       var hire = sm.hire ? esc(ymdJa(sm.hire)) + (p.hire_date ? '<span class="tag">設定で上書き</span>' : '') : '<span class="tag rv">入職日が分かりません</span>';
       var wk = p.weekly_days != null ? esc(String(+p.weekly_days)) + ' 日' + (p.weekly_hours != null ? '・' + esc(String(+p.weekly_hours)) + ' 時間' : '') : (x.needWeekly ? '<span class="tag rv">週の所定日数が未設定</span>' : '<span class="raw">—</span>');
       if (sm.proportional) wk += '<span class="tag">比例付与</span>';
+      if (sm.openingMissing) hire += '<span class="tag rv">移行日が未設定</span>';
       var nx = sm.next ? esc(ymdJa(sm.next.grant_date)) + '　' + esc(String(sm.next.days)) + ' 日' + (sm.next.status === 'skip' ? '<span class="tag">付与しない</span>' : '') : '<span class="raw">—</span>';
       var rem = '<b>' + esc(String(b.remain)) + ' 日</b>' + (b.over ? '<span class="tag ng">付与の無い使用 ' + esc(String(b.over)) + ' 日</span>' : '') + (b.planned ? '<span class="raw">（この先の予定 ' + esc(String(b.planned)) + ' 日）</span>' : '');
       var soon = b.soon ? esc(String(b.soon.days)) + ' 日（' + esc(ymdJa(b.soon.expires)) + ' まで）' : '<span class="raw">—</span>';
@@ -1111,10 +1125,13 @@
       '<span>次の付与</span><b>' + (sm.next ? esc(ymdJa(sm.next.grant_date)) + '　' + esc(String(sm.next.days)) + ' 日' : '—') + '</b>' +
       '<span>年5日</span><b>' + (ob.state === 'none' ? '対象外（10日以上の付与がまだありません）' : esc(ymdJa(ob.grant_date)) + '〜' + esc(ymdJa(ob.end)) + ' に ' + esc(String(ob.used)) + ' 日' + (ob.planned ? '（この先の予定 ' + esc(String(ob.planned)) + ' 日）' : '') + ' ' + obTag(ob) +
         (ob.beforeOpening ? '<br><span class="help">移行日（' + esc(ymdJa(ob.beforeOpening)) + '）より前の使用は記録に無いため数えていません。その分は本人の記録で確かめてください。</span>' : '')) + '</b></div>' +
+      (sm.openingMissing ? '<div class="band warn" style="margin-top:8px">移行日が未設定です。移行の残りがあるので、今はその最も遅い付与日の翌日（' + esc(ymdJa(sm.opening)) + '）を移行日とみなして数えています（設定しないと、自動の付与と重なって残りが多く出ることがあります）。下の設定の「移行日」に、残りを数えた日を入れてください。</div>' : '') +
       (x.needWeekly ? '<div class="band warn" style="margin-top:8px">雇用形態がパート・臨時ですが、週の所定日数が入っていません。下の設定に入れると比例付与で数えます（入れないと通常の付与で数えます）。</div>' : '') +
       '<fieldset><legend>付与</legend><div class="tw"><table><thead><tr><th>付与日</th><th class="num">日数</th><th>種類</th><th>期限（この日まで）</th><th class="num">使った</th><th class="num">残り</th><th>状態</th><th></th></tr></thead><tbody>' + (grows || '<tr><td colspan="8" class="empty">付与はまだありません</td></tr>') + '</tbody></table></div>' +
       '<div class="row"><label>付与日 <input type="date" id="lv-g-date"></label><label>日数 <input type="number" id="lv-g-days" min="0.5" max="40" step="0.5" style="width:6em"></label>' +
-      '<label>種類 <select id="lv-g-kind"><option value="opening">移行の残り</option><option value="manual">手で足す</option></select></label><label>メモ <input type="text" id="lv-g-note" maxlength="200"></label><button type="button" class="btn sm" data-act="lv-grant-add">付与を足す</button></div>' +
+      '<label>種類 <select id="lv-g-kind"><option value="opening">移行の残り</option><option value="manual">手で足す</option></select></label><label>メモ <input type="text" id="lv-g-note" maxlength="200"></label>' +
+      (p.opening_date ? '' : '<label>移行日 <input type="date" id="lv-g-open" value="' + esc(td) + '"></label>') + '<button type="button" class="btn sm" data-act="lv-grant-add">付与を足す</button></div>' +
+      (p.opening_date ? '' : '<p class="help">移行の残りを足す時は、移行日（残りを数えた日・既定は今日）も一緒に設定に入れます。移行日より前の自動の付与と使用は数えません。</p>') +
       '<p class="help">今の残りを移す時は「移行の残り」で、前の年の分と今年の分を別の行で入れます（期限は付与日から2年）。下の設定の「移行日」より前の自動の付与は数えません。</p></fieldset>' +
       '<fieldset><legend>使用</legend><div class="row"><label>日付 <input type="date" id="lv-u-date"></label><label>日数 <select id="lv-u-days"><option value="1">1日</option><option value="0.5">半日</option></select></label><label>メモ <input type="text" id="lv-u-note" maxlength="200"></label><button type="button" class="btn sm" data-act="lv-use-add">使用を足す</button></div>' +
       '<p class="help">シフトに有休の記号が無い日の有休を入れます。勤怠の月の計算でも有休の日として数えます（シフトに有休の記号がある日は、勤怠の計算はシフトの方を数えます）。締めた月分の日は足せません。</p>' +
@@ -1130,14 +1147,28 @@
     openDlg(s.name + ' さんの有給', b, true);
     dlgCtx.init = formState();
   }
+  /* その日の実働（分）。開いている月分と、有給のために読んだ月分の計算から探す（無ければ 0） */
+  function workedMin(sid, d) {
+    var ms0 = (month ? [month] : []).concat(leaveSt && leaveSt.months || []), w = 0;
+    ms0.some(function (m) {
+      var p = (m.people || []).filter(function (x) { return x.staff.staff_id === sid; })[0];
+      var dd = p && p.days.filter(function (x) { return x.date === d; })[0];
+      if (dd) { w = dd.workMin || 0; return true; }
+      return false;
+    });
+    return w;
+  }
   function numOrNull(v) { return v === '' || v == null ? null : +v; }
   function leaveAct(act, btn) {
     if (!dlgCtx || dlgCtx.mode !== 'leave' || busy) return;
-    var ctx = dlgCtx, msg = $('e-msg'), reason = ($('lv-reason').value || '').trim(), call = null, at = null;
+    var ctx = dlgCtx, msg = $('e-msg'), reason = ($('lv-reason').value || '').trim(), call = null, at = null, then2 = null;
     var needR = function () { if (!reason) { msg.textContent = '理由を書いてください。'; $('lv-reason').focus(); return false; } return true; };
     if (act === 'lv-use-add') {
       var ud = $('lv-u-date').value, un = +$('lv-u-days').value;
       if (!L.isDate(ud)) { msg.textContent = '使用の日付を入れてください。'; return; }
+      /* 打刻（実働）がある日は確かめる（止めはしない・反証レビュー 2026-11-20） */
+      var wm = workedMin(ctx.sid, ud);
+      if (wm > 0 && !confirm(nameOf(ctx.sid) + ' さんは ' + md(ud) + ' に打刻があります（実働 ' + fm(wm) + '）。この日を有休にしますか？')) return;
       call = ['kintai_leave_use_add', { p_staff_id: ctx.sid, p_use_date: ud, p_days: un === 0.5 ? 0.5 : 1, p_note: ($('lv-u-note').value || '').trim() }]; at = ud;
     } else if (act === 'lv-use-void') {
       if (!needR()) return;
@@ -1147,6 +1178,13 @@
       if (!L.isDate(gd)) { msg.textContent = '付与日を入れてください。'; return; }
       if (!(gn >= 0.5 && gn <= 40) || gn * 2 !== Math.round(gn * 2)) { msg.textContent = '日数は 0.5〜40 日（0.5 日きざみ）で入れてください。'; return; }
       call = ['kintai_leave_grant_add', { p_staff_id: ctx.sid, p_grant_date: gd, p_days: gn, p_kind: $('lv-g-kind').value === 'manual' ? 'manual' : 'opening', p_note: ($('lv-g-note').value || '').trim() }];
+      /* 移行の残りを足す時に移行日が空なら、移行日も入れる（付与を先に保存し、続けて設定へ。設定で断られても計算は移行の残りの付与日からみなす） */
+      if (call[1].p_kind === 'opening' && !(ctx.prof && ctx.prof.opening_date)) {
+        var od = $('lv-g-open') ? $('lv-g-open').value : '';
+        if (!L.isDate(od)) { msg.textContent = '移行日（残りを数えた日）を入れてください。'; return; }
+        if (od < gd) { msg.textContent = '移行日は、移行の残りの付与日より後の日にしてください。'; return; }
+        then2 = ['kintai_leave_profile_put', { p_staff_id: ctx.sid, p_patch: { opening_date: od }, p_rev: ctx.rev, p_reason: reason || '移行の残りを入れたため、移行日も入れた' }];
+      }
     } else if (act === 'lv-grant-void') {
       if (!needR()) return;
       call = ['kintai_leave_grant_void', { p_id: btn.getAttribute('data-id'), p_reason: reason }];
@@ -1174,7 +1212,7 @@
     if (!call) return;
     busy = true; msg.textContent = '保存しています…';
     var restore = pressBusy(btn, '保存しています…', $('g-dlg-b'));
-    rpc(call[0], call[1]).then(okOr).then(function () {
+    rpc(call[0], call[1]).then(okOr).then(function () { return then2 ? rpc(then2[0], then2[1]).then(okOr) : null; }).then(function () {
       busy = false; toast('保存しました（' + nameOf(ctx.sid) + ' さんの有給）');
       var p2 = loadLeave(false);
       if (at && inPer(at)) p2 = p2.then(function () { return load(false); });   /* 手入力の有休はこの月分の計算にも入る（L8） */
