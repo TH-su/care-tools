@@ -18,7 +18,7 @@
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 <link rel="stylesheet" href="su-shell.css?v=2026-11-13">
 <style>
-:root{--ink:#14213d;--sub:#3d4a5c;--line:#c9d2de;--bg:#f4f6f9;--card:#fff;--field:#fafbfc;--press:#e9eef5;--sug:rgba(31,79,191,.35);--fill-in:#0b5d2a;--fill-out:#8a3600;--in:#0b5d2a;--in-bg:#e3f4e8;--out:#7a2e00;--out-bg:#fdeee3;--warn:#6b4100;--warn-bg:#fff4d6;--ng:#8a1020;--ng-bg:#fde8eb;--focus:#1f4fbf}
+:root{--ink:#14213d;--sub:#3d4a5c;--line:#c9d2de;--bg:#f4f6f9;--card:#fff;--field:#fafbfc;--press:#e9eef5;--sug:rgba(31,79,191,.35);--fill-in:#1d4ed8;--fill-out:#b91c1c;--in:#1d4ed8;--in-bg:#e8efff;--out:#b91c1c;--out-bg:#fdeaea;--warn:#6b4100;--warn-bg:#fff4d6;--ng:#8a1020;--ng-bg:#fde8eb;--focus:#1f4fbf}
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif}
 body{min-height:100vh;display:flex;flex-direction:column}
@@ -27,9 +27,9 @@ body{min-height:100vh;display:flex;flex-direction:column}
 .hdr-btn{display:inline-flex;align-items:center;min-height:44px;padding:0 14px;border:1px solid var(--line);border-radius:10px;color:var(--ink);text-decoration:none;background:var(--card);font-size:15px}
 main{flex:1;display:flex;flex-direction:column;align-items:center;padding:16px;gap:16px}
 .gate{max-width:560px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px}
-.clock{text-align:center}
-.clock .date{font-size:clamp(18px,3.2vw,26px);color:var(--sub)}
-.clock .time{font-size:clamp(56px,12vw,104px);font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.02em;line-height:1.1}
+.clock{display:flex;align-items:baseline;justify-content:center;flex-wrap:wrap;gap:4px 24px;text-align:center}
+.clock .date{font-size:clamp(18px,2.6vw,28px);color:var(--sub)}
+.clock .time{font-size:clamp(44px,7vw,80px);font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.02em;line-height:1.1}
 .panel{width:100%;max-width:520px;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px}
 .lbl{font-size:18px;margin:0 0 10px;text-align:center}
 .code{height:72px;border:2px solid var(--line);border-radius:12px;font-size:44px;text-align:center;letter-spacing:.35em;font-variant-numeric:tabular-nums;display:flex;align-items:center;justify-content:center;background:var(--field)}
@@ -67,6 +67,7 @@ button:focus-visible,a:focus-visible{outline:3px solid var(--focus);outline-offs
 .panel.tone-save .d-kind,.panel.tone-ng .d-kind{font-size:clamp(34px,8vw,56px)}
 .done .d-time{font-size:clamp(52px,14vw,104px);font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
 .done .d-sub{font-size:19px;margin-top:10px}
+.done .d-small{font-size:16px;margin-top:6px}
 .done .d-tap{font-size:16px;margin:12px 0 14px}
 .d-bar{height:8px;background:rgba(127,127,127,.3)}
 .d-bar i{display:block;height:100%;background:currentColor;transform-origin:left center;animation:k-left 4s linear forwards}
@@ -82,15 +83,97 @@ button.chip{min-height:44px;font-family:inherit;cursor:pointer}
 .qlist{width:100%;border-collapse:collapse;font-size:16px;margin:8px 0}
 .qlist td{border-bottom:1px solid var(--line);padding:6px 4px}
 .sr{position:absolute;left:-9999px}
+/* v3.1: 上に日付と時計、その下の左（約70%）＝出勤/退勤・氏名・パスコード・完了、右（約30%）＝今日の打刻。
+   幅 899px 以下（iPad 縦・iPhone）は右の履歴を左の下へ回す */
+.k-body{width:100%;display:grid;grid-template-columns:minmax(0,7fr) minmax(0,3fr);gap:16px;align-items:start}
+.k-left{min-width:0;display:flex;flex-direction:column;align-items:center;gap:12px}
+.panel.wide{max-width:none}
+.panel.bare{background:none;border:0;padding:0}
+/* 出勤（青・左）と退勤（赤・右）。白い字は地との差 6.5:1 以上。押した方が約65%に大きくなり、もう片方は約35%で残る（押すと切り替え） */
+.kinds{width:100%;display:flex;gap:12px}
+/* display を指定した箱でも hidden が効くように（ログイン前に中身を出さない・完了と確かめの間はボタンを隠す） */
+.kinds[hidden],.k-body[hidden]{display:none}
+#k-kinds .kd{flex:1 1 0;min-width:0;min-height:160px;font-size:clamp(48px,6vw,72px);font-weight:800;letter-spacing:.08em;border-radius:20px;color:#fff;font-family:inherit;cursor:pointer;touch-action:manipulation;transition:flex-grow .15s ease}
+#k-kinds .kd-in{background:var(--fill-in);border:3px solid var(--fill-in)}
+#k-kinds .kd-out{background:var(--fill-out);border:3px solid var(--fill-out)}
+#k-kinds .kd:active{filter:brightness(1.15)}
+#k-kinds .kd:disabled,.chip:disabled{opacity:.5;cursor:default;filter:none}
+#k-kinds.sel .kd.on{flex-grow:1.86;box-shadow:inset 0 0 0 4px #fff}
+#k-kinds.sel .kd.on::before{content:"✓ "}
+@media (prefers-reduced-motion: reduce){#k-kinds .kd{transition:none}}
+/* 氏名・パスコードの間（main.sel）: 日付と時計は1行の小さな帯（高さ約44px）、出勤/退勤は低く（約72px）。待受は大きいまま */
+main.sel{gap:6px;padding-top:4px;padding-bottom:4px}
+main.sel .k-left{gap:8px}
+main.sel .clock{height:44px;flex:0 0 44px;align-items:center;flex-wrap:nowrap}
+main.sel .clock .date{font-size:16px}
+main.sel .clock .time{font-size:28px;line-height:1.2}
+#k-kinds.sel .kd{min-height:72px;font-size:28px}
+#k-kinds.sel .kd.on{font-size:36px}
+.hist{min-width:0;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px 16px}
+.hist h2{font-size:20px;margin:0 0 8px}
+.hist .foot{justify-content:flex-start;margin-bottom:8px}
+.hist .foot:empty{display:none}
+.h-msg{margin:6px 0;color:var(--sub);font-size:16px}
+.h-msg.ng{color:var(--ng)}
+.h-list{list-style:none;margin:0;padding:0}
+.h-list li{display:flex;gap:10px;align-items:baseline;padding:8px 2px;border-bottom:1px solid var(--line);font-size:18px}
+.h-list .t{font-variant-numeric:tabular-nums;font-weight:700}
+.h-list .k{font-weight:700;flex:0 0 auto}
+.h-list .n{min-width:0;overflow-wrap:anywhere}
+.h-list .h-in .k{color:var(--in)}
+.h-list .h-out .k{color:var(--out)}
+@media screen and (max-width: 899px){.k-body{grid-template-columns:minmax(0,1fr)}}
+/* iPad 横: 画面の高さに収め、左と右はそれぞれの中で送る（氏名が多い時に履歴が上へ逃げないように） */
+@media screen and (min-width: 900px){
+  body{height:100vh}
+  main{min-height:0;overflow:hidden;padding-bottom:8px}
+  .k-body{flex:1 1 auto;min-height:0;grid-template-rows:minmax(0,1fr);align-items:stretch}
+  .k-left,.hist{min-height:0;overflow-y:auto}
+  .k-left{padding:2px}
+  /* パスコード・番号の画面は、左に名前と●の欄、右にテンキー（出勤/退勤のボタンの下に収める） */
+  .panel.pad{max-width:none;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:24px;align-content:start}
+  .panel.pad > *{grid-column:1}
+  .panel.pad > .keys{grid-column:2;grid-row:1 / span 8;margin-top:0}
+  /* 氏名の画面: 問い・事業所の切り替え・やめる を1行に、氏名は横6列・高さ56px・文字22px（1210×710・1194×700 で31人が送らずに収まる。名前は2行まで＝約10字までで1段の高さ） */
+  main[data-v="pick"] #k-panel{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;column-gap:12px;padding:10px}
+  main[data-v="pick"] #k-panel .pk-top{display:contents}
+  main[data-v="pick"] #k-panel .pk-q{grid-column:1;grid-row:1;font-size:22px}
+  main[data-v="pick"] #k-panel .offs{grid-column:2;grid-row:1;margin:0}
+  main[data-v="pick"] #k-panel .pk-no{grid-column:3;grid-row:1;min-height:44px}
+  main[data-v="pick"] #k-panel .off{min-height:44px;padding:0 14px;font-size:18px}
+  main[data-v="pick"] #k-panel .names,main[data-v="pick"] #k-panel > .state{grid-column:1 / -1;grid-row:2;margin-top:6px}
+  main[data-v="pick"] #k-panel .names{grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
+  main[data-v="pick"] #k-panel .names .nm{min-height:56px;padding:2px 6px;font-size:22px;line-height:1.15}
+}
+.h-code{display:block;margin:16px auto 0;min-height:48px;padding:0 20px;font-size:18px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-family:inherit;cursor:pointer}
+.pk-top{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.pk-q{flex:1;margin:0;font-size:clamp(22px,3.4vw,30px);font-weight:700}
+.q-in{color:var(--in)}
+.q-out{color:var(--out)}
+.pk-no{min-height:56px;padding:0 22px;font-size:20px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-family:inherit;cursor:pointer}
+.offs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.off{min-height:52px;padding:0 18px;font-size:19px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-family:inherit;cursor:pointer}
+.off.on{background:var(--focus);color:#fff;border-color:var(--focus);font-weight:700}
+.names{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+#k-panel .nm{min-height:76px;padding:6px 8px;font-size:24px;font-weight:700;line-height:1.2;border-radius:14px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-family:inherit;cursor:pointer;touch-action:manipulation;overflow-wrap:anywhere}
+.nm:active{background:var(--press)}
+/* 幅 899px 以下（iPad 縦・iPhone）でも打刻のボタンを決めた高さにする（su-theme.css の button{min-height:44px} の方が強いため #k-panel をつける） */
+#k-panel .keys button{min-height:72px}
+#k-panel .acts button{min-height:120px}
+#k-panel .back{min-height:56px}
+#k-panel .pk-no{min-height:56px}
+#k-panel .off{min-height:52px}
+#k-panel .h-code{min-height:48px}
 /* 暗い表示（端末の設定に合わせる）。su-theme.css が --ng・--focus・--warn-bg と見出しを上書きするので、同じ強さの指定で後から置く */
 @media screen and (prefers-color-scheme: dark){
   :root,:root[data-su-theme]:not([data-ds="ops"]){--ink:#e8ecf3;--sub:#b8c2d0;--line:#3a4556;--bg:#10151d;--card:#1a212c;--field:#141a23;--press:#26303e;--sug:rgba(143,176,255,.55);
-    --in:#7fd69a;--in-bg:#123222;--out:#ffb98a;--out-bg:#3a2214;--warn:#ffd27a;--warn-bg:#33270c;--ng:#ff9aa8;--ng-bg:#3a141a;--focus:#8fb0ff}
+    --in:#9db8ff;--in-bg:#16244d;--out:#ff9e9e;--out-bg:#3d1518;--warn:#ffd27a;--warn-bg:#33270c;--ng:#ff9aa8;--ng-bg:#3a141a;--focus:#8fb0ff}
   :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr{background:var(--card);color:var(--ink);border-bottom-color:var(--line);box-shadow:inset 0 -2px 0 var(--line)}
   :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn{background:var(--card);color:var(--ink);border-color:var(--line)}
   :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn:hover{background:var(--press)}
   .keys .k-ok{background:#2f4f9e;border-color:#2f4f9e}
   .keys .k-ok:disabled{background:#3a4556;border-color:#3a4556;color:#b8c2d0}
+  .off.on{background:#2f4f9e;border-color:#2f4f9e}
   .chip{border-color:#6b5a2a}
   .chip.ng{border-color:#7a3a44}
   /* 共通の「不具合を報告」の窓は白地のままなので、入力欄とボタンも明るい表示で描かせる（白地に白い字にしない） */
@@ -107,11 +190,24 @@ button.chip{min-height:44px;font-family:inherit;cursor:pointer}
 <main id="k-main">
   <div class="gate" id="k-gate" hidden></div>
   <div class="clock" id="k-clock" aria-hidden="true"><div class="date" id="k-date"></div><div class="time" id="k-time"></div></div>
-  <section class="panel" id="k-panel" hidden aria-live="polite"></section>
-  <div class="foot" id="k-foot"></div>
+  <div class="k-body" id="k-body" hidden>
+    <div class="k-left">
+      <div class="kinds" id="k-kinds" role="group" aria-label="出勤か退勤" hidden>
+        <button type="button" class="kd kd-in" data-g="in" aria-pressed="false">出勤</button>
+        <button type="button" class="kd kd-out" data-g="out" aria-pressed="false">退勤</button>
+      </div>
+      <section class="panel" id="k-panel" hidden aria-live="polite"></section>
+    </div>
+    <aside class="hist" aria-labelledby="k-hist-h">
+      <h2 id="k-hist-h">今日の打刻</h2>
+      <div class="foot" id="k-foot"></div>
+      <p class="h-msg" id="k-hist-msg">読んでいます…</p>
+      <ol class="h-list" id="k-hist"></ol>
+    </aside>
+  </div>
   <p class="sr" id="k-sr" role="status" aria-live="assertive"></p>
 </main>
-<script src="kintai-clock.js?v=2026-11-19"></script>
+<script src="kintai-clock.js?v=2026-11-19.5"></script>
 <script src="su-shell.js?v=2026-11-18"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 <script src="su-report.js?v=2026-11-16" data-tool="出勤・退勤の打刻"></script>

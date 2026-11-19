@@ -9,7 +9,11 @@
      6. 両画面とも Cache-Control: no-store・インラインのスクリプトを持たない
    v2（2026-11-19・凍結仕様 ROOT-v2-polish.md の C）で足したこと:
      7. 管理画面の v2 の形（要確認のタブ・要確認は needsReview にそろえる・CSV の新しい列・今の時刻で数える・
-        早出/残業の「全部」と時刻を組で送る・締めの前の読み直しと当月の止め・休止の職員・暗い表示・短い知らせ・読み込みの ?v=） */
+        早出/残業の「全部」と時刻を組で送る・締めの前の読み直しと当月の止め・休止の職員・暗い表示・短い知らせ・読み込みの ?v=）
+   v3（2026-11-19・凍結仕様 ROOT-v3-clock-flow.md）で足したこと:
+     8. 打刻画面の「出勤を押す → 氏名 → パスコード」の流れ（待受の特大ボタン・名簿の読み直し・照合 kintai_clock_check・
+        パスコード違い3回・busy は控えない・通信できない時は同じ形で控える・選んだ事業所だけ端末に残す・重ね押しの守り・寸法）。
+        3 の「localStorage に書く鍵」は、仕様が許した kintai_clock_office（UI の状態・ホワイトリスト）を足して2か所ちょうどに締め直した */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -37,7 +41,11 @@ const m = /var my = \+\+gen, item = (\{[^}]*\})/.exec(KC);
 t('控えの形は code・kind・id・at だけ', !!m && JSON.stringify(m[1].match(/(\w+):/g)) === JSON.stringify(['code:', 'kind:', 'id:', 'at:']), m && m[1]);
 t('控えを読む時も形を確かめる（壊れた控えを送らない）', /function okItem\(x\) \{ return x && KintaiCalc\.isCode\(x\.code\)/.test(KC));
 t('送れなかった控えに足すのは理由だけ（名前を足さない）', /f\.push\(\{ code: it\.code, kind: it\.kind, id: it\.id, at: it\.at, why: why \}\)/.test(KC));
-t('localStorage に書くのは控えの2つの鍵だけ', (KC.match(/localStorage\.setItem\(/g) || []).length === 1 && /localStorage\.setItem\(key, JSON\.stringify\(list\)\)/.test(KC) && /Q_KEY = 'kintai_clock_queue', F_KEY = 'kintai_clock_failed'/.test(KC));
+t('localStorage に書くのは控えの2つの鍵と、選んだ事業所（UI の状態）だけ（書く所はちょうど2か所）', (KC.match(/localStorage\.setItem\(/g) || []).length === 2 && /localStorage\.setItem\(key, JSON\.stringify\(list\)\)/.test(KC) &&
+  /Q_KEY = 'kintai_clock_queue', F_KEY = 'kintai_clock_failed', O_KEY = 'kintai_clock_office'/.test(KC) &&
+  /function saveOffice\(v\) \{ if \(!isOffice\(v\)\) return; try \{ localStorage\.setItem\(O_KEY, v\); \} catch \(_\) \{\} \}/.test(KC));
+t('事業所の読み戻しはホワイトリスト（決まった4つ以外は「全部」）', /var OFFICES = \[\['all', '全部'\], \['facility', '施設'\], \['visit', '訪問介護'\], \['day', '通所介護'\]\]/.test(KC) && /return isOffice\(v\) \? v : 'all';/.test(KC));
+t('控えに書くのは打刻の1か所だけ（名前の流れも同じ item を使う）', (KC.match(/enqueue\(/g) || []).length === 2 && (KC.match(/var my = \+\+gen, item = /g) || []).length === 1);
 
 console.log('\n— 4. 送信の打ち切りと送信中の守り —');
 t('打刻の送信は打ち切りつき（12秒）', /PUNCH_TIMEOUT_MS = 12000/.test(KC) && /withTimeout\(rpc\('kintai_clock_punch'/.test(KC));
@@ -86,6 +94,59 @@ t('暗い表示に対応（画面だけ・紙は白地）', /<meta name="color-s
 t('保存の後の短い知らせは aria-live', /<div class="toast no-print" id="g-toast" role="status" aria-live="polite" hidden><\/div>/.test(H));
 t('印刷の時だけの見出し（.ph は画面で出さない）', /\.ph\{display:none\}/.test(H) && /function printHead\(sub\)/.test(K));
 t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-19', /kintai\.js\?v=2026-11-19/.test(H) && /kintai-calc\.js\?v=2026-11-19/.test(H) && /kintai-calc\.js\?v=2026-11-19/.test(HC));
+
+console.log('\n— 8. 打刻画面の v3（出勤を押す → 氏名 → パスコード） —');
+const fn = (name, next) => KC.slice(KC.indexOf('function ' + name + '('), KC.indexOf('function ' + next + '('));
+const homeFn = fn('paintHome', 'startPick'), rosterFn = fn('loadRoster', 'paintPick'), pickFn = fn('paintPick', 'pickStaff'), passFn = fn('paintPass', 'check'), checkFn = fn('check', 'whoOf');
+const punchFn = fn('punch', 'showDone'), resetFn = fn('reset', 'homeWith');
+t('待受は「出勤」（左）「退勤」（右）と「番号で打刻」（v2 の番号の流れへ）。出勤/退勤は HTML に固定（v3.1）', /<button type="button" class="kd kd-in" data-g="in" aria-pressed="false">出勤<\/button>\s*<button type="button" class="kd kd-out" data-g="out" aria-pressed="false">退勤<\/button>/.test(HC) && /data-k="bycode">名前が出ない時は 番号で打刻</.test(homeFn) && /if \(k === 'bycode'\) \{ if \(!tooSoon\(\)\) toCode\(\); return; \}/.test(KC));
+t('待受では I・O のキーを使わない（キーが効くのはテンキーの画面と完了だけ）', /if \(view === 'code' \|\| view === 'pass'\) \{/.test(KC) && !/e\.key === '[iIoO]'/.test(KC));
+t('最初の画面（reset）は待受で、最後に読みに行ってから1分以上なら名簿を読み直す', /paintHome\(/.test(resetFn) && /if \(Date\.now\(\) - rosterTry >= ROSTER_STALE_MS\) loadRoster\(\);/.test(resetFn) && /ROSTER_MS = 5 \* 60000, ROSTER_STALE_MS = 60000, PASS_TRIES = 3/.test(KC));
+t('名簿は門番の後に読み、5分ごとに読み直す', cboot.indexOf('setInterval(loadRoster, ROSTER_MS)') > cboot.indexOf("SUAppGate.run('kintai-clock'") && cboot.indexOf('reset()') > cboot.indexOf("SUAppGate.run('kintai-clock'"));
+t('名簿は kintai_clock_roster（打ち切りつき）・名前順（ja の localeCompare）・形を確かめる・事業所はホワイトリスト', /withTimeout\(rpc\('kintai_clock_roster', \{\}\), ROSTER_TIMEOUT_MS\)/.test(rosterFn) && /a\.name\.localeCompare\(b\.name, 'ja'\)/.test(rosterFn) && /typeof s\.id === 'string'/.test(rosterFn) && /isOffice\(s\.office\)/.test(rosterFn));
+t('名簿が読めない時は前に読めた名簿を残す（失敗の時に roster を消さない）・関数が無い／通信できない時は記録しない', !/roster = null/.test(rosterFn) && /if \(!isNet\(e\) && c !== 'PGRST202'/.test(rosterFn));
+t('名簿が使えない時は「名簿を読めません。番号で打刻してください」で番号の流れへ', /var m = '名簿を読めません。番号で打刻してください。';\s*toCode\(/.test(KC));
+t('名簿・選んだ人・パスコードは localStorage に書かない（名簿の関数・照合の関数の中に localStorage が無い）', !/localStorage/.test(rosterFn + pickFn + passFn + checkFn + fn('pickStaff', 'paintPass')));
+t('氏名ボタンは id（esc を通す）で引き、名簿に無い id は選べない', /data-sid="' \+ esc\(s\.id\) \+ '">' \+ esc\(s\.name\)/.test(pickFn) && /if \(!st\) \{ paintPick\(\); return; \}/.test(KC));
+t('パスコードは●で隠す（数字を画面に出さない）', /\(code \? code\.replace\(\/\.\/g, '●'\) : '4〜6桁の番号'\)/.test(passFn));
+t('照合は kintai_clock_check(p_staff_id, p_code)・合えば v2 と同じ逆押しの確かめ → punch', /rpc\('kintai_clock_check', \{ p_staff_id: st\.id, p_code: c \}\)/.test(checkFn) && /who = whoOf\(c, r\.staff\); who\.flow = 'name';/.test(checkFn) && /if \(needAsk\(kind\)\) paintAsk\(kind\); else punch\(kind\);/.test(checkFn));
+t('パスコード違いは3回まで画面に残り、その後は待受へ', /passFails\+\+; code = '';/.test(checkFn) && /if \(passFails >= PASS_TRIES\) \{ homeWith\(/.test(checkFn) && /パスコードが違います。/.test(checkFn));
+t('照合の止め（busy）は控えずに待受へ「しばらくしてから」', /if \(r && r\.error === 'busy'\) \{ homeWith\('[^']*しばらくしてから[^']*'\); return; \}/.test(checkFn) && !/enqueue|punch\(kind\);[^}]*busy/.test(checkFn.slice(checkFn.indexOf("r.error === 'busy'"), checkFn.indexOf("r.error === 'busy'") + 160)));
+t('通信できない時は番号の流れと同じく控える（名前は確かめていないので who.name を空にする）', /if \(isNet\(e\)\) \{ who = \{ code: c, name: null, label: st\.name, state: null, why: 'net', flow: 'name' \}; view = 'who'; punch\(kind\); return; \}/.test(checkFn));
+t('名前の流れの控えの完了画面にパスコードを出さず、名前を出す（照合が合った後に送れなかった時も）', /sub: \(byName \? '' : '番号 ' \+ item\.code \+ '・'\)/.test(punchFn) && /shown = who\.label \|\| who\.name;/.test(punchFn));
+t('名前の流れの「やめる」と送れなかった時は待受へ', /if \(who\.flow === 'name'\) reset\(\); else paintWho\(false\);/.test(KC) && /if \(byName\) homeWith\(m\); else paintCode\(/.test(punchFn));
+t('画面が入れ替わった直後の重ね押しを無視する（待受・氏名・パスコード）', /function tooSoon\(\) \{ return Date\.now\(\) - paintAt < TAP_GUARD_MS; \}/.test(KC) && /if \(g\) \{\s*if \(tooSoon\(\)\) return;/.test(KC) && /if \(view === 'pick' && !tooSoon\(\)\) pickStaff\(sid\)/.test(KC) && /if \(view === 'pass' && tooSoon\(\)\) return;/.test(KC));
+t('30秒触らなければ待受へ（待受では何もしない）', /function armIdle\(\) \{ clearTimeout\(idleT\); if \(view !== 'home'\) idleT = setTimeout\(reset, IDLE_MS\); \}/.test(KC));
+t('寸法: 待受の出勤/退勤は高さ 120px 以上・文字 48px 以上、氏名は高さ 72px 以上・文字 24px（su-theme の button の 44px より強い #k-kinds・#k-panel つき）',
+  /#k-kinds \.kd\{flex:1 1 0;min-width:0;min-height:(\d+)px;font-size:clamp\((\d+)px/.test(HC) && +RegExp.$1 >= 120 && +RegExp.$2 >= 48 &&
+  /#k-panel \.nm\{min-height:(\d+)px;padding:[^;]+;font-size:(\d+)px/.test(HC) && +RegExp.$1 >= 72 && +RegExp.$2 >= 24);
+t('幅 899px 以下でもテンキー 72px・出勤/退勤と はい/やめる 120px・下のボタン 56px（#k-panel つきで su-theme の 44px より強く）', /#k-panel \.keys button\{min-height:72px\}/.test(HC) && /#k-panel \.acts button\{min-height:120px\}/.test(HC) && /#k-panel \.back\{min-height:56px\}/.test(HC));
+const pressFn = fn('press', 'updCode'), updFn = fn('updCode', 'lookup');
+t('数字・消すを押した時はテンキーを描き直さない（●の欄と決定だけ・textContent で書く。速い連打を落とさない）', /code \+= k;\s*updCode\(\);\s*\}/.test(pressFn) && !/paint(Pass|Code)\(\)/.test(pressFn) && /box\.textContent = /.test(updFn) && /ok\.disabled = !KintaiCalc\.isCode\(code\)/.test(updFn) && !/innerHTML/.test(updFn));
+t('重ね押しの守りは画面が入れ替わった時だけ（同じ画面の中では paintAt を進めない）', /function mark\(\) \{ if \(\$\('k-main'\)\.getAttribute\('data-v'\) !== view\) paintAt = Date\.now\(\);/.test(KC));
+t('kintai-clock.js の読み込みは ?v=2026-11-19.5', /<script src="kintai-clock\.js\?v=2026-11-19\.5"><\/script>/.test(HC));
+
+console.log('\n— 9. 打刻画面の v3.1（画面の並び・今日の打刻） —');
+const recentFn = fn('loadRecent', 'paintRecent'), paintRecentFn = fn('paintRecent', 'paintFoot');
+t('上に日付と時計・左（約70%）と右（約30%）・幅 899px 以下は履歴を下へ', /\.k-body\{width:100%;display:grid;grid-template-columns:minmax\(0,7fr\) minmax\(0,3fr\)/.test(HC) && /@media screen and \(max-width: 899px\)\{\.k-body\{grid-template-columns:minmax\(0,1fr\)\}\}/.test(HC) && HC.indexOf('id="k-clock"') < HC.indexOf('id="k-body"'));
+t('出勤は青・退勤は赤（完了・確かめ・履歴の字もこの色）', /--fill-in:#1d4ed8;--fill-out:#b91c1c;--in:#1d4ed8;[^;]*;--out:#b91c1c;/.test(HC));
+t('押した方を大きく（押された印 aria-pressed）・同じ方をもう一度押すと待受・もう片方は切り替え', /#k-kinds\.sel \.kd\.on\{flex-grow:1\.86;/.test(HC) && /b\.setAttribute\('aria-pressed', on \? 'true' : 'false'\)/.test(KC) && /if \(g === pickKind\) \{ reset\(\); return; \}/.test(KC));
+t('hidden が display の指定に負けない（ログイン前に中身を出さない）', /\.kinds\[hidden\],\.k-body\[hidden\]\{display:none\}/.test(HC) && /<div class="k-body" id="k-body" hidden>/.test(HC) && cboot.indexOf("$('k-body').hidden = false") > cboot.indexOf("SUAppGate.run('kintai-clock'"));
+t('今日の打刻は kintai_clock_recent（打ち切りつき）・開いた時と30秒ごと・打刻が終わった時に読む', /withTimeout\(rpc\('kintai_clock_recent', \{\}\), ROSTER_TIMEOUT_MS\)/.test(recentFn) && /var RECENT_MS = 30000/.test(KC) && /setInterval\(loadRecent, RECENT_MS\)/.test(cboot) && cboot.indexOf('loadRecent()') > cboot.indexOf("SUAppGate.run('kintai-clock'") && /chime\(o\.tone\); loadRecent\(\);/.test(KC));
+t('履歴の名前は esc を通し、種類は出勤/退勤の2つだけ・形を確かめる・50件まで', /esc\(x\.name\)/.test(paintRecentFn) && /var k = x\.kind === 'in' \? 'in' : 'out';/.test(paintRecentFn) && /x\.kind === 'in' \|\| x\.kind === 'out'/.test(recentFn) && /\.slice\(0, 50\)/.test(recentFn));
+t('履歴は端末に保存しない（localStorage を使わない）', !/localStorage/.test(recentFn + paintRecentFn));
+t('履歴が読めない時は「履歴を読めません」（打刻はそのまま）・送信待ちの件数は履歴の上', /履歴を読めません（打刻はできます）/.test(recentFn) && HC.indexOf('id="k-foot"') > HC.indexOf('id="k-hist-h"') && HC.indexOf('id="k-foot"') < HC.indexOf('id="k-hist"'));
+t('氏名・パスコードの間は時計を1行44px・出勤/退勤を72px、横の氏名は6列・56px以上・文字22px以上（Safari の見える高さ 1194×700 に31人）', /main\.sel \.clock\{height:44px;/.test(HC) && /#k-kinds\.sel \.kd\{min-height:72px;font-size:28px\}/.test(HC) && /main\.sel'?, sel\)|\$\('k-main'\)\.classList\.toggle\('sel', sel\)/.test(KC) &&
+  /main\[data-v="pick"\] #k-panel \.names\{grid-template-columns:repeat\(6,minmax\(0,1fr\)\);/.test(HC) && /main\[data-v="pick"\] #k-panel \.names \.nm\{min-height:(\d+)px;[^}]*font-size:(\d+)px/.test(HC) && +RegExp.$1 >= 44 && +RegExp.$2 >= 22 && /main\[data-v="pick"\] #k-panel \.off\{min-height:44px;/.test(HC));
+console.log('\n— 10. 審査の指摘（照合できない時の完了画面・照合の打ち切り・照合中/送信中の押せない見た目） —');
+t('照合できずに控えた時は名前を確定のように出さない（大きな名前を出さず「選んだ名前: 」を小さく添える・確かめの説明つき）・控えの形は同じ',
+  /if \(byName && !name\) \{\s*showDone\(\{ tone: 'save', kind: kind, big: label \+ 'を控えました（端末の時刻 ' \+ hm\(item\.at\) \+ '）',/.test(punchFn) &&
+  /sub: '名前とパスコードは、通信が戻ってから確かめます。合わない時は記録されないので、事務所へ伝えてください。', small: shown \? '選んだ名前: ' \+ shown : '' \}\);/.test(punchFn) &&
+  !/if \(byName && !name\) \{[^}]*name:/.test(punchFn) && /\(o\.small \? '<p class="d-small">' \+ esc\(o\.small\) \+ '<\/p>' : ''\)/.test(KC) && (KC.match(/var my = \+\+gen, item = /g) || []).length === 1);
+t('照合（kintai_clock_check）は打ち切りつき・打ち切りは通信の失敗として控える道へ', /withTimeout\(rpc\('kintai_clock_check', \{ p_staff_id: st\.id, p_code: c \}\), PUNCH_TIMEOUT_MS\)/.test(checkFn) && /if \(isNet\(e\)\) \{ who = \{ code: c, name: null,/.test(checkFn) && /timeout/.test(fn('isNet', 'friendly')));
+t('照合中・送信中は出勤/退勤を押せない見た目（disabled・aria-disabled）', /function busyView\(\) \{ return view === 'wait' \|\| view === 'sending'; \}/.test(KC) && /b\.disabled = busy; b\.setAttribute\('aria-disabled', busy \? 'true' : 'false'\);/.test(KC) && /#k-kinds \.kd:disabled,\.chip:disabled\{opacity:\.5;/.test(HC));
+t('照合中・送信中は「送れなかった打刻」を開かない（押せない見た目にもする）', /if \(k === 'failed'\) \{ if \(!busyView\(\)\) paintFailed\(\); return; \}/.test(KC) && /data-k="failed"' \+ \(busyView\(\) \? ' disabled aria-disabled="true"' : ''\)/.test(KC) && /if \(fb\) \{ fb\.disabled = busy;/.test(KC));
+t('休憩の打刻（休始・休終）は作らない', !/休始|休終|break_start|break_end/.test(KC + HC));
 
 console.log(`\n${pass} 件合格 / ${fail} 件不合格`);
 process.exit(fail ? 1 : 0);
