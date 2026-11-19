@@ -267,6 +267,10 @@ const CENSUS = {
   "equip-calc.js": [],
   "kintai-calc.js": [],
   "shift-symbols.js": [],
+  "payroll-calc.js": [],
+  "payroll-rates.js": [],
+  "payroll-tax-table.js": [],
+  "payroll-export.js": [],
   "kintai.html": [],
   "kintai-clock.html": [],
   "kintai.js": [

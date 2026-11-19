@@ -157,6 +157,11 @@
 !/kintai-clock.js
 !/kintai-calc.js
 !/shift-symbols.js
+# 給与の計算・率表・源泉徴収税額表・書き出しの純関数（2026-11-19 本人の決定・給与 v1）。規則と公表の率・税額表だけで、職員の氏名・金額・口座は含まない
+!/payroll-calc.js
+!/payroll-rates.js
+!/payroll-tax-table.js
+!/payroll-export.js
 # 収支の見通し（入居者マスタの「💴 収支の見通し」）の計算の純関数（2026-11-07 本人指示）。規則だけで、入居者の氏名・金額は含まない
 !/revenue-calc.js
 # 共通データ層（Phase 0・2026-08-13）。各アプリの通信をここへ寄せる契約とドライバ。
