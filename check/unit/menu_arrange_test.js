@@ -222,23 +222,23 @@ const OFFICE = [];
 DEF.sections.forEach(s => s.tiles.forEach(x => { if (x.officeOnly || s.officeOnly) OFFICE.push(x.href); }));
 const ADMIN = [];
 DEF.sections.forEach(s => s.tiles.forEach(x => { if (x.adminOnly) ADMIN.push(x.href); }));
-t('11a 定義で採用管理に管理者専用の印がある', ADMIN.length === 1 && ADMIN[0] === 'ats.html', ADMIN);
+t('11a 定義で採用管理と給与（2026-11-19）に管理者専用の印がある', ADMIN.join() === 'ats.html,payroll.html', ADMIN);
 t('11b 事務所専用の印のボタンが定義にある（試験の前提）', OFFICE.length >= 5, OFFICE);
 const before11 = JSON.stringify(DEF);
 for (const cfg of [null, { ver: 1 }]) {
   const tag = cfg ? '設定あり' : '設定なし';
   const va = all(M.view(DEF, cfg, 'admin')), vo = all(M.view(DEF, cfg, 'office')), vf = all(M.view(DEF, cfg, 'field'));
   const vn = all(M.view(DEF, cfg, null)), vp = all(M.view(DEF, cfg, 'pending'));
-  t('11c ' + tag + ': 管理者には全部出る', va.length === all(DEF).length && va.indexOf('ats.html') >= 0);
-  t('11d ' + tag + ': 事務所には採用管理だけ出ない', vo.length === all(DEF).length - 1 && vo.indexOf('ats.html') < 0);
+  t('11c ' + tag + ': 管理者には全部出る', va.length === all(DEF).length && ADMIN.every(h => va.indexOf(h) >= 0));
+  t('11d ' + tag + ': 事務所には管理者専用（採用管理・給与）だけ出ない', vo.length === all(DEF).length - ADMIN.length && ADMIN.every(h => vo.indexOf(h) < 0));
   t('11e ' + tag + ': 現場には事務所専用（採用管理を含む）が全部出ない', OFFICE.every(h => vf.indexOf(h) < 0) && vf.length === all(DEF).length - OFFICE.length, vf);
-  t('11f ' + tag + ': ログインしていない時は採用管理だけ出ない', vn.length === all(DEF).length - 1 && vn.indexOf('ats.html') < 0);
+  t('11f ' + tag + ': ログインしていない時は管理者専用（採用管理・給与）だけ出ない', vn.length === all(DEF).length - ADMIN.length && ADMIN.every(h => vn.indexOf(h) < 0));
   t('11g ' + tag + ': 役割が分からない間は事務所専用が出ない', OFFICE.every(h => vp.indexOf(h) < 0) && vp.length === vf.length);
   t('11h ' + tag + ': 使い方・困った時はどの役割でも出る', [va, vo, vf, vn, vp].every(v => v.indexOf('help.html') >= 0));
 }
 t('11i 元の定義を書き換えない', JSON.stringify(DEF) === before11);
 t('11j 何も削らない時は渡した形をそのまま返す', M.roleView(DEF, 'admin') === DEF);
-t('11k 知らない役割はログインしていない時と同じ（管理者専用だけ出ない）', all(M.view(DEF, null, 'guest')).indexOf('ats.html') < 0 && all(M.view(DEF, null, 'guest')).length === all(DEF).length - 1);
+t('11k 知らない役割はログインしていない時と同じ（管理者専用だけ出ない）', ADMIN.every(h => all(M.view(DEF, null, 'guest')).indexOf(h) < 0) && all(M.view(DEF, null, 'guest')).length === all(DEF).length - ADMIN.length);
 // 設定で移したボタン
 const toOff = M.view(DEF, { ver: 1, mv: { 'weight-record.html': 'sec-setup' } }, 'field');
 t('11l 事務所専用の区分へ移したボタンは現場に出ない', all(toOff).indexOf('weight-record.html') < 0);

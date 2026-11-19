@@ -37,7 +37,7 @@
 <link rel="preload" as="script" href="su-cfg-hint.js?v=2026-11-10">
 <link rel="preload" as="script" href="su-perf.js?v=2026-10-27">
 <link rel="preload" as="script" href="su-menu.js?v=2026-11-16">
-<link rel="preload" as="script" href="su-itomari.js?v=2026-11-18">
+<link rel="preload" as="script" href="su-itomari.js?v=2026-11-19">
 <link rel="preload" as="script" href="su-sync-stale.js?v=2026-10-26">
 <link rel="preload" as="script" href="su-health-calc.js?v=2026-11-14.2">
 <link rel="preload" as="script" href="su-health-badge.js?v=2026-11-14">
@@ -52,7 +52,7 @@
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-menu.js?v=2026-11-16"></script>
 <!-- メニューの毬（藤の手毬・菊かがり・麻の葉）を描く部品（2026-10-26 代表者の決定・藤の手毬は 2026-11-10 本人指示）。読めなくてもメニューは動く（毬のボタンを出さないだけ） -->
-<script src="su-itomari.js?v=2026-11-18"></script>
+<script src="su-itomari.js?v=2026-11-19"></script>
 <!-- 写しが止まっている時の札（2026-10-26 本人指示）。現場端末では何も読まない・読めなくてもメニューは動く -->
 <script src="su-sync-stale.js?v=2026-10-26"></script>
 <!-- 本番の健康の札（2026-11-14 代表者の依頼・統合 0088）。管理者（2段階認証）の事務所の端末でだけ save_health（種類・数・時刻だけ）を読み、
@@ -341,6 +341,15 @@ main {
      "note": "打刻の確かめ・直し・締め・給与への出力",
      "officeOnly": true,
      "_why": "勤怠管理（2026-11-18 本人指示）。打刻とシフトの突き合わせ・直し・月の締め・給与計算への CSV。officeOnly: 直しは事務所の権限だけ（アプリ側も現場端末では何も読まず、ログインの役割を su-app-gate.js で確かめる＝二重）"
+    },
+    {
+     "href": "payroll.html",
+     "ic": "💴",
+     "nm": "給与",
+     "note": "給与の計算・明細・振込データ",
+     "officeOnly": true,
+     "adminOnly": true,
+     "_why": "給与（2026-11-19 新設）。締めた勤怠から給与を計算し、明細・振込データ・仕訳・賃金台帳を出す。adminOnly: 金額を見られるのは管理者と給与の名簿の人だけ。名簿の事務員にタイルを見せる方法はデータベースの口ができてから決める（仮置き・それまでは管理者だけに出す）。アプリ側も su-app-gate.js と payroll_bootstrap で確かめる＝二重"
     }
    ]
   },

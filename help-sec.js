@@ -23,6 +23,7 @@
     'supplies': 'h-supplies',
     'equip-log': 'h-equip-log',
     'kintai': 'h-kintai',
+    'payroll': 'h-payroll',
     'visit-overview': 'h-visit-overview',
     'support-overview': 'h-support-overview',
     'overview-compare': 'h-overview-compare',

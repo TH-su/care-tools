@@ -284,6 +284,11 @@ const CENSUS = {
     [E, "if (el) el.innerHTML = '<div class=\"band ng\">' + esc(msgOf(e)) + '</div>'"],
     [F, "g.innerHTML = '<h2>この画面は事務所のパソコンで使います</h2><p>この端末は「現場」として設定されているため、勤怠管理は開きません。出勤・退勤の打刻は「出勤・退勤の打刻」の画面から行います。</p><p><a class=\"btn\" href=\"kintai-clock.html\">打刻の画面へ</a> <a class=\"btn\" href=\"index.html\">メニューへ戻る</a></p>'"]
   ],
+  "payroll.html": [],
+  "payroll.js": [
+    /* 給与の画面は HTML を入れる所を put の1か所に寄せた（2026-11-19）。氏名・金額・理由・サーバーの文は全部 esc を通してから組む（金額も yen の後に esc） */
+    [E, "if (el) el.innerHTML = html"]
+  ],
   "kintai-clock.js": [
     [E, "p.innerHTML = '<p class=\"lbl\" id=\"k-lbl\">打刻の番号を入れてください</p>' + (msg || '') + '<div class=\"code' + (code ? '' : ' ph') + '\" id=\"k-code\" aria-labelledby=\"k-lbl\">' + (code ? esc(code.replace(/./g, '●').slice(0, -1) + code.slice(-1)) : '4〜6桁の番号') + '</div>' + '<div class=\"keys\" role=\"group\" aria-label=\"番号のボタン\">' + [1, 2, 3, 4, 5, 6, 7, 8, 9].map(function (n) { return '<button type=\"button\" data-k=\"' + n + '\">' + n + '</button>'; }).join('') + '<button type=\"button\" class=\"k-clr\" data-k=\"clr\">消す</button><button type=\"button\" data-k=\"0\">0</button>' + '<button type=\"button\" class=\"k-ok\" data-k=\"ok\"' + (KintaiCalc.isCode(code) ? '' : ' disabled') + '>決定</button></div>' + '<button type=\"button\" class=\"back\" data-k=\"home\">最初の画面へ戻る</button>'"],
     [F, "$('k-panel').innerHTML = '<p class=\"lbl\">確かめています…</p>'"],
