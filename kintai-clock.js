@@ -1,6 +1,9 @@
 /* kintai-clock.js — タブレットの出勤・退勤の打刻（2026-11-18 新設・凍結仕様 ~/Claude/Work/勤怠管理アプリ/ROOT.md v1）
  * ════════════════════════════════════════════════════════════════
- * ・番号（4〜6桁）を入れる → 名前と「出勤」「退勤」→ 押すと3秒だけ結果を出して最初へ。30秒触らなければ最初へ
+ * ・番号（4〜6桁）を入れる → 名前と「出勤」「退勤」→ 押すと4秒だけ結果を出して最初へ（押せばすぐ次へ）。30秒触らなければ最初へ
+ * ・v2（2026-11-19・ROOT-v2-polish.md の D）: 最後の打刻が今日でない時は日付つきで出す／強調と逆（出勤中に出勤・
+ *   退勤済みに退勤）は画面の中で1回だけ確かめる／完了は枠全体を色で塗り短い音を鳴らす／画面を消さない（Wake Lock）／
+ *   番号の止め（busy）の時も控える／「消す」は画面に出した控えだけ／暗い表示。今日の予定は lookup が返さないので出さない
  * ・時刻はデータベースの時計（端末の時計を信じない）。通信できない時は端末に控え、つながったら端末の時刻の印つきで送る
  * ・端末に残すのは「番号・出勤か退勤か・控えの番号・端末の時刻」だけ（名前・名簿は残さない＝CLAUDE.md §2-5）
  * ・現場の端末でも開く（打刻のための画面）。ログインの役割は su-app-gate.js で確かめる（APPS の kintai-clock）
@@ -9,8 +12,10 @@
 (function () {
   'use strict';
   var Q_KEY = 'kintai_clock_queue', F_KEY = 'kintai_clock_failed';
-  var IDLE_MS = 30000, DONE_MS = 3000, FLUSH_MS = 30000, MAX_LEN = 6;
+  var IDLE_MS = 30000, DONE_MS = 4000, FLUSH_MS = 30000, MAX_LEN = 6, TAP_GUARD_MS = 400;
+  var SHIFT_MS = 16 * 3600000;   /* 出勤からこの時間までは勤務中とみなす（夜勤明けの退勤。超えたら退勤の押し忘れとして扱う） */
   var gen = 0, view = 'boot', code = '', who = null, idleT = null, doneT = null, flushing = false, busyPunch = false;
+  var doneAt = 0, askAt = 0, shownFail = [];
   var $ = function (id) { return document.getElementById(id); };
 
   function note(where, e) { try { if (window.SUErrors && window.SUErrors.note) window.SUErrors.note('出勤・退勤の打刻', e, 'clock:' + where); } catch (_) {} }
@@ -24,6 +29,53 @@
     var h = Array.prototype.map.call(b, function (x) { return (x + 256).toString(16).slice(1); }).join('');
     return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
   }
+  /* 日本時間の日付の差（0＝今日・1＝きのう）と、その日付の言い方 */
+  function jstDayNo(ms) { return Math.floor((ms + 9 * 3600000) / 86400000); }
+  function dayWord(ms) {
+    var n = jstDayNo(Date.now()) - jstDayNo(ms);
+    if (n === 0) return 'きょう';
+    if (n === 1) return 'きのう';
+    var d = new Date(ms + 9 * 3600000);
+    return (d.getUTCMonth() + 1) + '月' + d.getUTCDate() + '日';
+  }
+
+  /* ── 完了の音（Web Audio・外部ファイルなし・鳴らなくても何もしない）。
+     iPad は押した瞬間に作らないと鳴らないため、出勤・退勤を押した時に armAudio で用意し、結果を出す時に鳴らす ── */
+  var actx = null;
+  function armAudio() {
+    try {
+      var A = window.AudioContext || window.webkitAudioContext;
+      if (!A) return;
+      if (!actx) actx = new A();
+      if (actx.state !== 'running') {   /* iPad は中断の後 'interrupted' になる */
+        var r = actx.resume(); if (r && r['catch']) r['catch'](function () {}); }
+    } catch (_) { actx = null; }
+  }
+  function chime(kind) {
+    try {
+      if (!actx || actx.state !== 'running') return;
+      var f = kind === 'in' ? [660, 880] : [660, 440], t0 = actx.currentTime + 0.02;   /* 出勤＝上がる2音・退勤＝下がる2音 */
+      f.forEach(function (hz, i) {
+        var o = actx.createOscillator(), g = actx.createGain(), s = t0 + i * 0.16;
+        o.type = 'sine'; o.frequency.value = hz;
+        g.gain.setValueAtTime(0.0001, s); g.gain.exponentialRampToValueAtTime(0.25, s + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, s + 0.14);
+        o.connect(g); g.connect(actx.destination); o.start(s); o.stop(s + 0.15);
+      });
+    } catch (_) {}
+  }
+
+  /* ── 画面を消さない（Wake Lock API・使えない端末では何もしない・画面が戻ったら取り直す） ── */
+  var wake = null;
+  function keepAwake() {
+    try {
+      if (wake || !navigator.wakeLock || document.visibilityState !== 'visible') return;
+      navigator.wakeLock.request('screen').then(function (l) {
+        wake = l;
+        try { l.addEventListener('release', function () { wake = null; }); } catch (_) {}
+      }, function () {});
+    } catch (_) {}
+  }
+
   function deviceKey() { try { var k = localStorage.getItem('su_device_key'); return /^[0-9a-f]{8,64}$/.test(k || '') ? k : null; } catch (_) { return null; } }
 
   /* ── 端末の控え（読み書きの失敗でも画面は動かす・壊れた控えは捨てずに読み飛ばす） ── */
@@ -75,10 +127,12 @@
     if (view === 'sending') return;   /* 送信中は戻さない（打刻を落とさない・反証レビュー指摘1） */
     gen++; clearTimeout(doneT); clearTimeout(idleT); code = ''; who = null; busyPunch = false; paintCode();
   }
+  /* 枠の塗り（完了の時だけ出勤＝緑・退勤＝橙などで枠全体を塗る） */
+  function panelTone(t) { $('k-panel').className = 'panel' + (t ? ' tone-' + t : ''); }
 
   function paintCode(msg) {
     view = 'code';
-    var p = $('k-panel'); p.hidden = false;
+    var p = $('k-panel'); p.hidden = false; panelTone('');
     p.innerHTML = '<p class="lbl" id="k-lbl">打刻の番号を入れてください</p>' + (msg || '') +
       '<div class="code' + (code ? '' : ' ph') + '" id="k-code" aria-labelledby="k-lbl">' + (code ? esc(code.replace(/./g, '●').slice(0, -1) + code.slice(-1)) : '4〜6桁の番号') + '</div>' +
       '<div class="keys" role="group" aria-label="番号のボタン">' +
@@ -102,15 +156,21 @@
     $('k-panel').innerHTML = '<p class="lbl">確かめています…</p>';
     rpc('kintai_clock_lookup', { p_code: c }).then(function (r) {
       if (my !== gen) return;
+      /* 番号の止め（busy）の時も打刻は控えて、止めが解けたら送る（名前は出せない＝通信できない時と同じ画面） */
+      if (r && r.error === 'busy') { who = { code: c, name: null, state: null, why: 'busy' }; paintWho(true); return; }
       if (!r || r.ok !== true) {
-        var m = r && r.error === 'busy' ? '番号の間違いが続いたため、少しの間打刻を止めています。10分ほど待ってから入れ直してください。' : 'その番号は見つかりませんでした。番号を確かめて入れ直してください。';
+        var m = 'その番号は見つかりませんでした。番号を確かめて入れ直してください。';
         code = ''; paintCode('<p class="msg ng" role="alert">' + esc(m) + '</p>'); say(m); return;
       }
-      who = { code: c, name: r.staff.name, state: r.staff.state, last: r.staff.last_at };
+      var lastMs = r.staff.last_at ? Date.parse(r.staff.last_at) : NaN;
+      who = { code: c, name: r.staff.name, state: r.staff.state, last: r.staff.last_at,
+        today: !isNaN(lastMs) && jstDayNo(lastMs) === jstDayNo(Date.now()) };
+      /* 勤務中: 今日の出勤、または日付が変わっても出勤から16時間以内（夜勤明け） */
+      who.onShift = who.state === 'in' && (who.today || Date.now() - lastMs <= SHIFT_MS);
       paintWho(false);
     })['catch'](function (e) {
       if (my !== gen) return;
-      if (isNet(e)) { who = { code: c, name: null, state: null }; paintWho(true); return; }
+      if (isNet(e)) { who = { code: c, name: null, state: null, why: 'net' }; paintWho(true); return; }
       note('番号の確かめ', e);
       code = ''; paintCode('<p class="msg ng" role="alert">' + esc(friendly(e)) + '</p>');
     });
@@ -118,44 +178,76 @@
 
   function paintWho(offline) {
     view = 'who';
-    var sug = who.state === 'in' ? 'out' : 'in';
-    var stTxt = offline ? '' : (who.state === 'in' ? '出勤中です（' + hm(Date.parse(who.last)) + ' に出勤）' : (who.state === 'out' ? '退勤済みです（' + hm(Date.parse(who.last)) + ' に退勤）' : ''));
+    panelTone('');
+    /* 強調: 勤務中（今日の出勤・出勤から16時間以内）なら退勤、それ以外（未打刻・退勤済み・16時間を超えた出勤）は出勤 */
+    var sug = who.onShift ? 'out' : 'in';
+    var lastT = who.last ? hm(Date.parse(who.last)) : '', stTxt = '', stCls = 'state';
+    if (!offline && who.state) {
+      if (who.today) stTxt = who.state === 'in' ? '出勤中です（' + lastT + ' に出勤）' : '退勤済みです（' + lastT + ' に退勤）';
+      else if (who.onShift) stTxt = dayWord(Date.parse(who.last)) + ' ' + lastT + ' に出勤（いま勤務中）';   /* 夜勤明け: 注意の色にしない */
+      else {
+        stTxt = dayWord(Date.parse(who.last)) + ' ' + lastT + ' に' + (who.state === 'in' ? '出勤（退勤が押されていません）' : '退勤');
+        if (who.state === 'in') stCls = 'state warn';
+      }
+    }
+    var offMsg = who.why === 'busy'
+      ? '番号の間違いが続いたため、少しの間 番号の確かめを止めています。番号 ' + who.code + ' の打刻を端末に控え、あとで自動で送ります。'
+      : '通信できません。番号 ' + who.code + ' で打刻を端末に控え、つながったら送ります。';
     $('k-panel').innerHTML =
-      (offline ? '<p class="msg warn" role="alert">通信できません。番号 ' + esc(who.code) + ' で打刻を端末に控え、つながったら送ります。</p>' :
-        '<p class="who">' + esc(who.name) + ' さん</p><p class="state">' + esc(stTxt || 'どちらかを押してください') + '</p>') +
+      (offline ? '<p class="msg warn" role="alert">' + esc(offMsg) + '</p>' :
+        '<p class="who">' + esc(who.name) + ' さん</p><p class="' + stCls + '">' + esc(stTxt || 'どちらかを押してください') + '</p>') +
       '<div class="acts"><button type="button" class="b-in' + (sug === 'in' ? ' sug' : '') + '" data-p="in">出勤</button>' +
       '<button type="button" class="b-out' + (sug === 'out' ? ' sug' : '') + '" data-p="out">退勤</button></div>' +
       '<button type="button" class="back" data-k="back">番号を入れ直す</button>';
-    say(offline ? '通信できません。出勤か退勤を押すと控えます' : who.name + 'さん。出勤か退勤を押してください');
+    say(offline ? (who.why === 'busy' ? '少しの間 番号の確かめを止めています。' : '通信できません。') + '出勤か退勤を押すと控えます' : who.name + 'さん。' + (stTxt ? stTxt + '。' : '') + '出勤か退勤を押してください');
     armIdle();
     try { $('k-panel').querySelector(sug === 'in' ? '.b-in' : '.b-out').focus(); } catch (_) {}
   }
 
-  function punch(kind) {
-    if (view !== 'who' || busyPunch || !who) return;
+  /* 強調と逆を押した時（勤務中に出勤／今日すでに退勤済みに退勤）は、画面の中で1回だけ確かめる。
+     16時間を超えた出勤のあと・前の日の退勤のあと・名前が出ていない時（通信なし・busy）は確かめない */
+  function needAsk(kind) { return !!(who && who.name && who.state === kind && (kind === 'in' ? who.onShift : who.today)); }
+  function paintAsk(kind) {
+    view = 'confirm';
+    var label = kind === 'in' ? '出勤' : '退勤', lastT = (who.today ? '' : dayWord(Date.parse(who.last)) + ' ') + hm(Date.parse(who.last));
+    var q = 'もう' + label + 'しています（' + lastT + ' に' + label + '）。もう一度' + label + 'を記録しますか？';
+    $('k-panel').innerHTML = '<p class="who">' + esc(who.name) + ' さん</p><p class="msg warn ask" role="alert">' + esc(q) + '</p>' +
+      '<div class="acts"><button type="button" class="' + (kind === 'in' ? 'b-in' : 'b-out') + '" data-p="' + kind + '" data-sure="1">はい</button>' +
+      '<button type="button" class="b-no" data-k="no">やめる</button></div>';
+    say(q);
+    askAt = Date.now();
+    armIdle();
+    try { $('k-panel').querySelector('.b-no').focus(); } catch (_) {}
+  }
+
+  function punch(kind, sure) {
+    if (kind !== 'in' && kind !== 'out') return; // 種類は出勤・退勤だけ（画面に書く値を決まった2つに限る）
+    if ((view !== 'who' && view !== 'confirm') || busyPunch || !who) return;
+    if (!sure && needAsk(kind)) { paintAsk(kind); return; }
     busyPunch = true;
-    var my = ++gen, item = { code: who.code, kind: kind, id: uuid(), at: Date.now() }, name = who.name;
+    var my = ++gen, item = { code: who.code, kind: kind, id: uuid(), at: Date.now() }, name = who.name, why = who.why;
     var label = kind === 'in' ? '出勤' : '退勤';
-    var save = function () {
+    var save = function (because) {
       var okQ = enqueue(item);   /* 控えは画面の世代に関わらず必ず書く（client_id で二重にはならない） */
       if (view === 'sending') view = 'who';
       if (my !== gen) return;
-      if (!okQ) { showDone('ng', '控えられませんでした', 'この端末に控えを残せませんでした。事務所に知らせてください。'); return; }
-      showDone('save', label + 'を控えました', '番号 ' + item.code + '・' + hm(item.at) + '（端末の時刻）。つながったら自動で送ります。');
+      if (!okQ) { showDone({ tone: 'ng', big: '控えられませんでした', sub: 'この端末に控えを残せませんでした。事務所に知らせてください。' }); return; }
+      showDone({ tone: 'save', kind: kind, big: label + 'を控えました', time: hm(item.at), sub: '番号 ' + item.code + '・端末の時刻。' + ((because || why) === 'busy' ? '止めが解けたら自動で送ります。' : 'つながったら自動で送ります。') });
     };
     if (!name) { save(); return; }
     view = 'sending'; clearTimeout(idleT);
     $('k-panel').innerHTML = '<p class="lbl">記録しています…</p>';
     withTimeout(rpc('kintai_clock_punch', { p_code: item.code, p_kind: kind, p_client_id: item.id, p_client_at: new Date(item.at).toISOString(), p_offline: false, p_device: deviceKey() }), PUNCH_TIMEOUT_MS).then(function (r) {
+      if (r && r.error === 'busy') { save('busy'); return; }   /* 番号の止めの間も控えて後で送る（D-5） */
       if (view === 'sending') view = 'who';
       if (my !== gen) return;
       if (r && r.ok === true) {
-        var t = hm(Date.parse(r.at));
-        showDone(kind === 'in' ? 'ok' : 'out', (r.name || name) + ' さん　' + label + ' ' + t, r.dup ? '少し前に同じ打刻があったので、その時刻のままにしました。' : (kind === 'in' ? 'おはようございます。今日もよろしくお願いします。' : 'おつかれさまでした。'));
+        showDone({ tone: kind, kind: kind, name: (r.name || name) + ' さん', big: label, time: hm(Date.parse(r.at)),
+          sub: r.dup ? '少し前に同じ打刻があったので、その時刻のままにしました。' : (kind === 'in' ? 'おはようございます。今日もよろしくお願いします。' : 'おつかれさまでした。') });
         return;
       }
-      var why = r && r.error === 'notfound' ? 'その番号は見つかりませんでした。' : (r && r.error === 'busy' ? '番号の間違いが続いたため、少しの間打刻を止めています。10分ほど待ってから打刻してください。' : 'うまくいきませんでした。もう一度押してください。');
-      busyPunch = false; code = ''; paintCode('<p class="msg ng" role="alert">' + esc(why) + '</p>');
+      var whyTxt = r && r.error === 'notfound' ? 'その番号は見つかりませんでした。' : 'うまくいきませんでした。もう一度押してください。';
+      busyPunch = false; code = ''; paintCode('<p class="msg ng" role="alert">' + esc(whyTxt) + '</p>');
     })['catch'](function (e) {
       if (isNet(e)) { save(); return; }
       if (view === 'sending') view = 'who';
@@ -165,12 +257,20 @@
     });
   }
 
-  function showDone(kind, big, sub) {
+  /* 完了: 枠全体を塗り、名前・種類・時刻を特大で出す。4秒で最初へ（押せばすぐ次へ）。残りの秒は細い帯で見せる */
+  function showDone(o) {
     view = 'done';
-    clearTimeout(idleT);
-    $('k-panel').innerHTML = '<div class="done ' + kind + '" role="alert"><p class="big-msg">' + esc(big) + '</p><p>' + esc(sub) + '</p></div>';
-    say(big + '。' + sub);
+    clearTimeout(idleT); clearTimeout(doneT);
+    panelTone(o.tone);
+    $('k-panel').innerHTML = '<div class="done" role="alert">' +
+      (o.name ? '<p class="d-name">' + esc(o.name) + '</p>' : '') +
+      '<p class="d-kind">' + esc(o.big) + '</p>' + (o.time ? '<p class="d-time">' + esc(o.time) + '</p>' : '') +
+      '<p class="d-sub">' + esc(o.sub) + '</p><p class="d-tap">画面を押すと、すぐ次の人へ</p>' +
+      '<div class="d-bar" aria-hidden="true"><i></i></div></div>';
+    say([o.name, o.big, o.time, o.sub].filter(Boolean).join('。'));
+    if (o.tone === 'in' || o.tone === 'out') chime(o.tone);
     paintFoot();
+    doneAt = Date.now();
     doneT = setTimeout(reset, DONE_MS);
   }
 
@@ -184,7 +284,9 @@
   function paintFailed() {
     clearTimeout(doneT);
     view = 'failed';
+    panelTone('');
     var f = readList(F_KEY);
+    shownFail = f.map(function (x) { return x.id; });   /* 「消す」で消すのは、ここに出した控えだけ（出した後に増えた分は残す） */
     $('k-panel').innerHTML = '<p class="lbl">送れなかった打刻</p><p class="msg warn">事務所の管理画面で、この番号・時刻の打刻を足してください。足したら「消す」を押します。</p>' +
       '<table class="qlist"><tbody>' + f.map(function (x) {
         var d = new Date(x.at + 9 * 3600000);
@@ -223,18 +325,33 @@
   /* ── 操作 ── */
   function bind() {
     document.addEventListener('click', function (e) {
+      keepAwake();
       var b = e.target.closest ? e.target.closest('button') : null;
+      /* 完了の画面は枠のどこを押しても次の人へ（出した直後の重ね押しは無視する） */
+      if (view === 'done' && e.target.closest && e.target.closest('#k-panel')) { if (Date.now() - doneAt >= TAP_GUARD_MS) reset(); return; }
       if (!b) return;
       armIdle();
-      if (b.getAttribute('data-p')) { punch(b.getAttribute('data-p')); return; }
+      if (b.getAttribute('data-p')) {
+        var sure = b.getAttribute('data-sure') === '1';
+        if (sure && Date.now() - askAt < TAP_GUARD_MS) return;   /* 確かめを出した直後の重ね押しで「はい」にしない */
+        armAudio(); punch(b.getAttribute('data-p'), sure); return;
+      }
       var k = b.getAttribute('data-k');
       if (!k) return;
       if (k === 'back') { reset(); return; }
+      if (k === 'no') { if (view === 'confirm' && who) paintWho(false); return; }
       if (k === 'failed') { paintFailed(); return; }
-      if (k === 'clearfail') { if (confirm('送れなかった打刻を全部消します。事務所の管理画面で足し終えましたか？')) { writeList(F_KEY, []); reset(); } return; }
+      if (k === 'clearfail') {
+        var ids = shownFail.slice();
+        if (ids.length && confirm('ここに出ている送れなかった打刻 ' + ids.length + ' 件を消します。事務所の管理画面で足し終えましたか？')) {
+          if (writeList(F_KEY, readList(F_KEY).filter(function (x) { return ids.indexOf(x.id) < 0; }))) { shownFail = []; reset(); }
+        }
+        return;
+      }
       press(k);
     });
     document.addEventListener('keydown', function (e) {
+      if (view === 'done' && (e.key === 'Enter' || e.key === ' ')) { if (Date.now() - doneAt >= TAP_GUARD_MS) reset(); e.preventDefault(); return; }
       if (view === 'code') {
         if (/^[0-9]$/.test(e.key)) { press(e.key); e.preventDefault(); }
         else if (e.key === 'Backspace') { press('clr'); e.preventDefault(); }
@@ -242,6 +359,7 @@
       } else if (e.key === 'Escape' && view !== 'boot' && view !== 'gate') reset();
     });
     window.addEventListener('online', function () { flush(); });
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') keepAwake(); });
   }
 
   function boot() {
@@ -250,12 +368,13 @@
       $('k-gate').hidden = false; $('k-gate').textContent = '画面の部品を読み込めませんでした。ページを読み込み直してください。';
       return;
     }
-    window.SUAppGate.run('kintai-clock', { dirty: function () { return view === 'who'; } }).then(function (ok) {
+    window.SUAppGate.run('kintai-clock', { dirty: function () { return view === 'who' || view === 'confirm'; } }).then(function (ok) {
       if (!ok) { view = 'gate'; return; }
       bind();
       reset();
       flush();
       setInterval(flush, FLUSH_MS);
+      keepAwake();
       try { if (window.SUPerf) window.SUPerf.ready(); } catch (_) {}
     })['catch'](function (e) { note('起動', e); });
   }
