@@ -878,10 +878,50 @@
     else ask(p.name + ' さんの口座を全部消して「口座なし（振込しない）」にしますか？').then(function (ok) { if (ok && dlgCtx && dlgCtx.mode === 'bank') go(); });
   }
 
-  /* ── freee の書き出しを取り込む（管理者・ファイルは保存しない・列は仮置き） ── */
-  var HEAD = { emp: '従業員番号', name: '氏名', pay_type: '給与形態', base: '基本給', hourly: '時給', daily: '日給', board: '役員報酬', birth: '生年月日', gender: '性別', entry: '入社日', retire: '退職日',
-    hstd: '健康保険の標準報酬月額', pstd: '厚生年金保険の標準報酬月額', emp_ins: '雇用保険', hins: '健康保険', pins: '厚生年金保険', tax_col: '税額表の区分', deps: '扶養親族等の数', commute: '通勤手当',
-    bank: '銀行コード', branch: '支店コード', acct_type: '口座種別', acct_no: '口座番号', kana: '口座名義' };
+  /* ── freee の書き出しを取り込む（管理者・ファイルは保存しない） ──
+     見出しは候補の並びで探す（前から順に・最初に当たった列）。freee 公式ヘルプ（2026-11-20 確認）の
+     「従業員情報の出力」の項目名 → 「一括登録テンプレート」の見出し → 前の仮置きの名前 の順。
+     見出しは空白（全角・半角）を除き、コロン・括弧・数字の全角半角をそろえて比べる（normHead） */
+  var HEAD = {
+    emp: ['従業員番号', '社員番号'],
+    name: ['氏名'], sei: ['姓'], mei: ['名'], disp: ['freee人事労務での表示名'],
+    pay_type: ['給与方式', '給与形態'],
+    base: ['基本給'], hourly: ['時給'], daily: ['日給'], board: ['役員報酬'],
+    birth: ['生年月日'], gender: ['性別'], entry: ['入社日'], retire: ['退職日'],
+    hstd: ['健康保険標準報酬月額', '健康保険・標準報酬月額', '健康保険の標準報酬月額'],
+    pstd: ['厚生年金保険標準報酬月額', '厚生年金保険・標準報酬月額', '厚生年金保険の標準報酬月額'],
+    emp_ins: ['雇用保険に加入しているか', '雇用保険加入', '雇用保険'],
+    hins: ['健康保険に加入しているか', '健康保険加入', '健康保険'],
+    pins: ['厚生年金保険に加入しているか', '厚生年金保険加入', '厚生年金保険', '厚生年金'],
+    tax_col: ['所得税納税者区分', '納税者区分', '税額表の区分'],
+    deps: ['所得税法上の扶養親族等の数', '扶養親族等の数'],
+    commute: ['通勤費の金額', '通勤手当の金額・単価', '通勤手当'],
+    bank: ['振込先口座1：金融機関コード', '銀行コード'], branch: ['振込先口座1：支店コード', '支店コード'],
+    acct_type: ['振込先口座1：預金種類', '口座種別'], acct_no: ['振込先口座1：口座番号', '口座番号'],
+    kana: ['振込先口座1：口座名義（カナ）', '口座名義'],
+    bank_one: ['振込先口座']
+  };
+  /* 取り込みの画面の上の1行で「読めなかった」と知らせる主な項目（自前の名前だけ・CSV の見出しの文字も値も出さない） */
+  var HEAD_MAIN = [['従業員番号', ['emp']], ['氏名', ['name']], ['給与方式', ['pay_type']], ['基本給', ['base']], ['標準報酬', ['hstd', 'pstd']],
+    ['加入', ['emp_ins', 'hins', 'pins']], ['納税者区分', ['tax_col']], ['扶養', ['deps']], ['口座', ['bank', 'branch', 'acct_no', 'kana']]];
+  function normHead(s) {
+    return String(s == null ? '' : s).replace(/^﻿/, '').replace(/[\s　]/g, '').replace(/：/g, ':').replace(/（/g, '(').replace(/）/g, ')')
+      .replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); });
+  }
+  /* 見出しの行 → 項目ごとの列の番号（無ければ -1）・読めた項目の数・読めなかった主な項目・2つ目以降の口座の列（DOM にも bs にも依らない） */
+  function importCols(headRow) {
+    var head = (headRow || []).map(normHead), col = {}, k, i;
+    for (k in HEAD) {
+      col[k] = -1;
+      for (i = 0; i < HEAD[k].length && col[k] < 0; i++) col[k] = head.indexOf(normHead(HEAD[k][i]));
+    }
+    var nameOk = col.name >= 0 || (col.sei >= 0 && col.mei >= 0) || col.disp >= 0;
+    var found = Object.keys(HEAD).filter(function (x) { return col[x] >= 0 && ['name', 'sei', 'mei', 'disp', 'bank_one'].indexOf(x) < 0; }).length + (nameOk ? 1 : 0);
+    var missing = HEAD_MAIN.filter(function (m) { return m[0] === '氏名' ? !nameOk : m[1].some(function (x) { return col[x] < 0; }); }).map(function (m) { return m[0]; });
+    var more = [];
+    head.forEach(function (h, j) { if (/^振込先口座([2-9]|\d{2,}):/.test(h)) more.push(j); });
+    return { col: col, nameOk: nameOk, found: found, missing: missing, more: more };
+  }
   function parseCsv(text) {
     var rows = [], row = [], f = '', q = false, i, ch;
     for (i = 0; i < text.length; i++) {
@@ -903,24 +943,43 @@
   /* 加入の列（加入・あり・○ など／未加入・なし・× など）。分からない値は null */
   function yesNo(s) {
     s = String(s == null ? '' : s).trim();
-    if (/^(加入|加入する|あり|有|有り|対象|○|〇|はい|する|1|true|TRUE)$/.test(s)) return true;
-    if (/^(未加入|加入しない|なし|無|無し|対象外|×|✕|いいえ|しない|0|false|FALSE)$/.test(s)) return false;
+    if (/^(加入|加入する|加入している|あり|有|有り|対象|○|〇|◯|はい|する|1|true)$/i.test(s)) return true;
+    if (/^(未加入|加入しない|加入していない|なし|無|無し|対象外|×|✕|いいえ|しない|0|false)$/i.test(s)) return false;
     return null;
   }
   function toNum(s) { s = String(s || '').replace(/[,，\s円]/g, ''); return /^\d+$/.test(s) ? parseInt(s, 10) : null; }
-  function buildImport(rows) {
+  /* 給与方式の値（freee の 月給・時給・日給、「〜制」、日給月給は月給、前の仮置きの 役員） */
+  var PAY_IN = { '月給': 'monthly', '月給制': 'monthly', '日給月給': 'monthly', '時給': 'hourly', '時給制': 'hourly', '日給': 'daily', '日給制': 'daily', '役員': 'board', '役員報酬': 'board' };
+  /* 預金種類（全銀の種目: 普通1・当座2・貯蓄4） */
+  /* 納税者区分（甲欄・乙欄。丙欄は対象外） */
+  var TAX_IN = { '甲': 'kou', '甲欄': 'kou', '乙': 'otsu', '乙欄': 'otsu' };
+  var ACCT_IN = { '普通': '1', '普通預金': '1', '当座': '2', '当座預金': '2', '貯蓄': '4', '貯蓄預金': '4' };
+  /* 読んだ行 → 違いの表の行。profs は今の職員の設定（bs.profiles）、from は今の月分の始まり（DOM にも bs にも依らない・試験から呼ぶ） */
+  function buildImport(rows, profs, from) {
     if (rows.length < 2) throw new Error('行がありません');
-    var head = rows[0].map(function (h) { return String(h).trim(); }), col = {}, k;
-    for (k in HEAD) col[k] = head.indexOf(HEAD[k]);
-    if (col.name < 0 && col.emp < 0) throw new Error('見出しに「' + HEAD.emp + '」か「' + HEAD.name + '」がありません');
+    var cm = importCols(rows[0]), col = cm.col;
+    if (!cm.nameOk && col.emp < 0) throw new Error('見出しに「従業員番号」（社員番号）か「氏名」（姓・名）がありません');
+    profs = profs || [];
     var out = [];
     rows.slice(1).forEach(function (r) {
-      function g(key) { return col[key] >= 0 ? String(r[col[key]] == null ? '' : r[col[key]]).trim() : ''; }
+      function cell(key) { return col[key] >= 0 ? String(r[col[key]] == null ? '' : r[col[key]]).trim() : ''; }
+      /* 氏名は「氏名」→「姓」＋「名」→ freee人事労務での表示名 の順（照合は normName で空白を除いて比べる） */
+      function g(key) {
+        if (key !== 'name') return cell(key);
+        var sm = [cell('sei'), cell('mei')].filter(function (x) { return x; }).join(' ');
+        return cell('name') || sm || cell('disp');
+      }
       var emp = g('emp'), nm = g('name'), p = null;
-      bs.profiles.forEach(function (x) { if (emp && String(x.data.freee_emp_num || '') === emp) p = x; });
-      if (!p && nm) { var hit = bs.profiles.filter(function (x) { return normName(x.name) === normName(nm); }); if (hit.length === 1) p = hit[0]; }
-      var pt = { '月給': 'monthly', '時給': 'hourly', '日給': 'daily', '役員': 'board', '役員報酬': 'board' }[g('pay_type')] || null;
+      profs.forEach(function (x) { if (emp && String(x.data.freee_emp_num || '') === emp) p = x; });
+      if (!p && nm) { var hit = profs.filter(function (x) { return normName(x.name) === normName(nm); }); if (hit.length === 1) p = hit[0]; }
+      /* 氏名で当たった人に別の従業員番号があり、CSV の番号と違えば当てない（同名の別人に上書きしない） */
+      var empNg = !!(p && emp && String(p.data.freee_emp_num || '') !== '' && String(p.data.freee_emp_num) !== emp);
+      if (empNg) p = null;
+      var pt = PAY_IN[g('pay_type')] || null;
+      /* 時給・日給の人は専用の列（前の仮置き）に値があればそれ、無ければ基本給の列（freee の書き出しには専用の列が無い） */
+      var wage = function (k2) { var x = toNum(g(k2)); return x != null ? x : toNum(g('base')); };
       var patch = {}, ch = [];
+      if (empNg) ch.push('⚠ 従業員番号が違うので当てません');
       function setv(key, val, label, show) {
         if (val == null || val === '') return;
         var old = p ? key.split('.').reduce(function (o, k2) { return o == null ? null : o[k2]; }, p.data) : null;
@@ -930,19 +989,26 @@
       var money = function (x) { return x == null || x === '' ? '（空）' : yen(x) + '円'; };
       setv('freee_emp_num', emp || null, '従業員番号');
       setv('pay_type', pt, '給与形態', function (x) { return PAY_TYPE[x] || '（空）'; });
-      setv('base', pt === 'hourly' ? toNum(g('hourly')) : pt === 'daily' ? toNum(g('daily')) : toNum(g('base')), '基本給・時給など', money);
+      setv('base', pt === 'hourly' ? wage('hourly') : pt === 'daily' ? wage('daily') : toNum(g('base')), '基本給・時給など', money);
       setv('board_pay', toNum(g('board')), '役員報酬', money);
       setv('birth_date', toDate(g('birth')), '生年月日');
+      /* 性別の「未選択」（freee の取込の値）は空と同じ（変えない） */
       setv('gender', { '男': 'M', '男性': 'M', '女': 'F', '女性': 'F' }[g('gender')] || null, '性別');
       setv('entry_date', toDate(g('entry')), '入社日'); setv('retire_date', toDate(g('retire')), '退職日');
       setv('ins.health.std', toNum(g('hstd')), '健保の標準報酬', money); setv('ins.pension.std', toNum(g('pstd')), '厚年の標準報酬', money);
       /* 加入の印（ins.*.on）: 加入の列があればそれ、無ければ標準報酬が入っていれば加入（仮置き 2026-11-19）。どちらも無ければ決めない（計算の部品が ins_unset で知らせる） */
       var onTxt = function (x) { return x === true ? '加入' : x === false ? '加入しない' : '（空）'; };
-      var hon = yesNo(g('hins')), pon = yesNo(col.pins >= 0 ? g('pins') : (head.indexOf('厚生年金') >= 0 ? String(r[head.indexOf('厚生年金')] || '') : '')), eon = yesNo(g('emp_ins'));
+      var hon = yesNo(g('hins')), pon = yesNo(g('pins')), eon = yesNo(g('emp_ins'));
       if (hon === null && toNum(g('hstd')) > 0) hon = true;
       if (pon === null && toNum(g('pstd')) > 0) pon = true;
       setv('ins.health.on', hon, '健康保険の加入', onTxt); setv('ins.pension.on', pon, '厚生年金の加入', onTxt); setv('ins.emp.on', eon, '雇用保険の加入', onTxt);
-      setv('tax.col', { '甲': 'kou', '甲欄': 'kou', '乙': 'otsu', '乙欄': 'otsu' }[g('tax_col')] || null, '源泉の区分');
+      setv('tax.col', TAX_IN[g('tax_col')] || null, '源泉の区分');
+      /* 丙欄（日雇い）は今の甲乙の計算の対象外なので設定しない（今の値のまま） */
+      if (/^丙/.test(g('tax_col'))) ch.push('⚠ 丙欄は取り込みません');
+      /* 甲・乙・丙のどれでもない値は読めないと知らせ、甲乙・扶養は「未確認」にする（扶養の数が空の行は次の行で入る） */
+      var taxNg = !!g('tax_col') && !TAX_IN[g('tax_col')] && !/^丙/.test(g('tax_col'));
+      if (taxNg) ch.push('⚠ 納税者区分が読めません');
+      if (taxNg && toNum(g('deps')) != null) setv('tax.dependents_checked', false, '甲乙・扶養の確かめ', function (x) { return x === true ? '確かめた' : x === false ? '未確認' : '（空）'; });
       setv('tax.dependents', toNum(g('deps')), '扶養親族等の数');
       /* 扶養・甲乙の列が無い（空の）行は「未確認」で入れる（列から読めた時は今の印のまま・代表者の決定 2026-11-19） */
       if (!g('tax_col') || toNum(g('deps')) == null) setv('tax.dependents_checked', false, '甲乙・扶養の確かめ', function (x) { return x === true ? '確かめた' : x === false ? '未確認' : '（空）'; });
@@ -950,16 +1016,27 @@
       var bank = null;
       if (g('bank') || g('acct_no')) {
         var no = g('acct_no').replace(/\D/g, '');
-        bank = { bank_code: g('bank').replace(/\D/g, ''), branch_code: g('branch').replace(/\D/g, ''), type: { '普通': '1', '当座': '2', '貯蓄': '4' }[g('acct_type')] || '1', number: ('0000000' + no).slice(-7), name_kana: g('kana'), amount_or_rest: 'rest' };
+        bank = { bank_code: g('bank').replace(/\D/g, ''), branch_code: g('branch').replace(/\D/g, ''), type: ACCT_IN[g('acct_type')] || '1', number: ('0000000' + no).slice(-7), name_kana: g('kana'), amount_or_rest: 'rest' };
         if (!/^\d{4}$/.test(bank.bank_code) || !/^\d{3}$/.test(bank.branch_code) || !/^\d{1,7}$/.test(no)) { ch.push('⚠ 口座の形が違うので送りません'); bank = null; }
         else if (!bank.name_kana) { ch.push('⚠ 口座名義が無いので送りません'); bank = null; }
+        /* 預金種類の値があって分からない時は送らない（空・列なしは今のとおり普通） */
+        else if (g('acct_type') && !ACCT_IN[g('acct_type')]) { ch.push('⚠ 預金種類が分からないので送りません'); bank = null; }
         else ch.push('口座：＊＊＊' + no.slice(-4));
       }
+      /* 口座は分かれた列（振込先口座1：…）だけ使う。書き出しの「振込先口座」1列は中の形が分からないので推測して分けない */
+      else if (col.bank < 0 && col.acct_no < 0 && g('bank_one')) ch.push('⚠ 口座は1列の形なので取り込みません（口座の画面で入れてください）');
+      if (cm.more.some(function (j) { return String(r[j] == null ? '' : r[j]).trim() !== ''; })) ch.push('⚠ 2つ目以降の口座は取り込みません');
       var data = p ? applyPatch(p, patch) : null;
       if (p && !data.pay_type) ch.push('⚠ 給与形態が無いので設定は送りません');
       out.push({ name: nm || emp, staff_id: p ? p.staff_id : null, pname: p ? p.name : '', patch: patch, data: data && data.pay_type ? data : null, bank: bank, changes: ch,
-        hasNow: !!(p && period() && p.versions.some(function (x) { return x.effective_from === period().from; })), hasBank: !!(p && p.bank_last4.length) });
+        hasNow: !!(p && from && p.versions.some(function (x) { return x.effective_from === from; })), hasBank: !!(p && p.bank_last4.length) });
     });
+    /* 同じ職員に2行以上当たったら、その全部の行を送らない（後の行が前の行を黙って上書きしない） */
+    var seen = {};
+    out.forEach(function (r) { if (r.staff_id) seen[r.staff_id] = (seen[r.staff_id] || 0) + 1; });
+    out.forEach(function (r) { if (r.staff_id && seen[r.staff_id] > 1) { r.data = null; r.bank = null; r.changes.push('⚠ 同じ職員に2行当たったので送りません'); } });
+    /* 画面の上の1行に出す数（項目の名前だけ・値は持たない）。importRows と一緒に捨てる */
+    out.cols = { found: cm.found, missing: cm.missing };
     return out;
   }
   /* 今の設定に違いを当てた全体（取り込みは足すだけなので、送るのは全体） */
@@ -978,7 +1055,8 @@
     h += '<div class="row"><label for="i-file">CSV のファイル</label><input type="file" id="i-file" accept=".csv,text/csv"></div>';
     if (importErr) h += '<div class="band ng" role="alert">' + esc(importErr) + '</div>';
     if (importRows) {
-      var ok = importRows.filter(importable);
+      var ok = importRows.filter(importable), ic = importRows.cols;
+      if (ic) h += '<p class="help">見出しから読めた項目：' + esc(ic.found) + '個' + (ic.missing.length ? '（読めなかった主な項目：' + esc(ic.missing.join('・')) + '）' : '（主な項目はすべて読めました）') + '</p>';
       h += '<div class="tw"><table><thead><tr><th>CSV の氏名</th><th>この画面の職員</th><th>違い</th></tr></thead><tbody>' + importRows.map(function (r) {
         var keep = [];
         if (r.staff_id && r.data && r.hasNow) keep.push('この月分の版がもうあるので設定は書き換えません');
@@ -996,7 +1074,7 @@
     var my = gen;
     file.arrayBuffer().then(function (buf) {
       if (my !== gen) return;
-      try { importRows = buildImport(parseCsv(decode(buf))); } catch (e) { importErr = '読めませんでした：' + (e && e.message ? e.message : '形が違います') + '。freee の従業員の CSV を選んでください。'; }
+      try { var p1 = period(); importRows = buildImport(parseCsv(decode(buf)), bs ? bs.profiles : [], p1 ? p1.from : null); } catch (e) { importErr = '読めませんでした：' + (e && e.message ? e.message : '形が違います') + '。freee の従業員の CSV を選んでください。'; }
       buf = null; paint();
     }, function (e) { note('取り込みの読み込み', e); importErr = 'ファイルを読めませんでした。'; paint(); });
   }
@@ -1339,5 +1417,5 @@
   var go = function () { try { boot(); } catch (e) { note('起動', e); } };
   if (window.SUFacility && typeof window.SUFacility.onReady === 'function') window.SUFacility.onReady(go); else go();
   /* 試験だけが読む（画面の動きには使わない） */
-  window.__payrollTest = { attSame: attSame, normBoot: normBoot, figures: figures, totals: totals, parseCsv: parseCsv, missingOf: missingOf, attFromKintai: attFromKintai, toSave: toSave, qtyText: qtyText, TABS: TABS, IDLE_MS: IDLE_MS };
+  window.__payrollTest = { attSame: attSame, normBoot: normBoot, figures: figures, totals: totals, parseCsv: parseCsv, decode: decode, importCols: importCols, buildImport: buildImport, missingOf: missingOf, attFromKintai: attFromKintai, toSave: toSave, qtyText: qtyText, TABS: TABS, IDLE_MS: IDLE_MS };
 })();
