@@ -249,7 +249,7 @@ console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（
   /* iPhone の幅（640px 以下）だけの見た目の直し（2026-11-20）: 窓の欄の見出しを縦1字にしない・枠（fieldset）を窓の外へ広げない・突き合わせの表は1人ずつの並び */
   {
     const mq = (H.match(/@media \(max-width:640px\)\{[\s\S]*?\n\s*table\.mt td\.empty\{display:block\}\}/) || [''])[0];
-    t('640px 以下だけ: .row > label を折り返し・入力と選ぶ欄は幅100%まで・fieldset{min-width:0}・table.mt を1人ずつの並びに', /\.row > label\{flex-wrap:wrap;max-width:100%\}/.test(mq) && /fieldset\{min-width:0\}/.test(mq) && /table\.mt thead th:not\(:first-child\)\{display:none\}/.test(mq));
+    t('640px 以下だけ: .row > label を折り返し（ラジオ・チェックの欄は除く・直書きの最小幅も外す・隠した見出しは値の前に出す）・入力と選ぶ欄は幅100%まで・fieldset{min-width:0}・table.mt を1人ずつの並びに', /\.row > label:not\(:has\(> input\[type=radio\]\)\):not\(:has\(> input\[type=checkbox\]\)\)\{flex-wrap:wrap;max-width:100%\}/.test(mq) && /min-width:0!important/.test(mq) && /td\[data-l\]::before/.test(mq) && /fieldset\{min-width:0\}/.test(mq) && /table\.mt thead th:not\(:first-child\)\{display:none\}/.test(mq));
     t('突き合わせの2つの表に class="mt"・雇用区分は職員マスタの呼び名（パート・臨時など）', (K.match(/<table class="mt">/g) || []).length === 2 && /EMP_JA\[m\.employment_type\]/.test(K) && /part: 'パート'/.test(K));
   }
   t('.gitignore に !/kintai-leave.js（公開の opt-in）', /^!\/kintai-leave\.js$/m.test(read('.gitignore')));

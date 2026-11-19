@@ -495,7 +495,7 @@
     h += '<div class="tw"><table class="mt"><thead><tr><th>職員マスタと結べていないシフトの職員（' + unS.length + ' 人）</th><th></th></tr></thead><tbody>' +
       (unS.length ? unS.map(function (s) { return '<tr><td>' + esc(s.name) + '</td><td><button type="button" class="btn sm" data-act="m-link" data-sid="' + esc(s.staff_id) + '">職員マスタと結ぶ</button></td></tr>'; }).join('') : '<tr><td colspan="2" class="empty">ありません</td></tr>') + '</tbody></table></div>' +
       '<div class="tw" style="margin-top:8px"><table class="mt"><thead><tr><th>勤怠と結べていない職員マスタの人（' + unM.length + ' 人）</th><th>入職日</th><th>雇用形態</th><th></th></tr></thead><tbody>' +
-      (unM.length ? unM.map(function (m) { return '<tr><td>' + esc(m.name) + '</td><td>' + esc(ymdJa(m.hire_date)) + '</td><td>' + esc(EMP_JA[m.employment_type] || m.employment_type || '') + '</td>' +
+      (unM.length ? unM.map(function (m) { return '<tr><td>' + esc(m.name) + '</td><td data-l="入職日">' + esc(ymdJa(m.hire_date)) + '</td><td data-l="雇用形態">' + esc(EMP_JA[m.employment_type] || m.employment_type || '') + '</td>' +
         '<td><button type="button" class="btn sm" data-act="m-link-m" data-mid="' + esc(m.master_id) + '">シフトの職員に結ぶ</button><button type="button" class="btn sm" data-act="m-add" data-mid="' + esc(m.master_id) + '">新しい職員として足す</button></td></tr>'; }).join('') : '<tr><td colspan="4" class="empty">ありません</td></tr>') + '</tbody></table></div>' +
       (unM.length ? '<p class="help">シフトに同じ人がいれば「シフトの職員に結ぶ」、シフトに載らない人は「新しい職員として足す」を選びます。足した人は勤怠の職員になり、打刻画面の名簿にも出ます（出さない時は、足した後に「打刻画面に出さない」）。</p>' : '') + '</div>';
     return h;

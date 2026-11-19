@@ -110,8 +110,8 @@ legend{font-weight:600;padding:0 6px}
   .grid .sr{position:static;min-width:0;width:auto;box-shadow:none}
   /* iPhone の幅: 窓の中の欄（見出し＋入力）は折り返して、見出しを1字ずつの縦にしない・選ぶ欄を窓の外へはみ出させない。
      窓の中の表は枠（fieldset）ごと広がらず、表だけを横に送る。職員マスタの突き合わせの表は折り返してボタンを見える所に置く */
-  .row > label{flex-wrap:wrap;max-width:100%}
-  .row > label > input,.row > label > select{max-width:100%;min-width:0}
+  .row > label:not(:has(> input[type=radio])):not(:has(> input[type=checkbox])){flex-wrap:wrap;max-width:100%}
+  .row > label > input,.row > label > select{max-width:100%;min-width:0!important}
   fieldset{min-width:0}
   table.mt,table.mt thead,table.mt tbody,table.mt tr{display:block}
   table.mt th,table.mt td{display:inline-block;white-space:normal;border:0}
@@ -119,6 +119,7 @@ legend{font-weight:600;padding:0 6px}
   table.mt thead th{display:block;border-bottom:1px solid var(--line)}
   table.mt tbody tr{border-bottom:1px solid var(--line);padding:4px 0}
   table.mt td:last-child{display:flex;gap:6px;flex-wrap:wrap}
+  table.mt td[data-l]::before{content:attr(data-l) "：";color:var(--muted);font-size:13px}
   table.mt td.empty{display:block}}
 /* 暗い表示（端末の設定に合わせる）。su-theme.css が --ng・--focus・--warn-bg と見出しを上書きするので、同じ強さの指定で後から置く。紙は白地のまま（screen だけ） */
 @media screen and (prefers-color-scheme: dark){
