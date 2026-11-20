@@ -150,10 +150,11 @@
     sum = obj(sum);
     var a = { counts: {}, missing: [] };
     /* 欠勤の日数は半日きざみのまま持つ（欠勤の印の日に半日の休暇があると 0.5 日・再確認の反証 2026-11-20。整数の日は今までと同じ） */
-    ATT_KEYS.forEach(function (k) { var n = Number(sum[k]); if (sum[k] == null || !isFinite(n)) { a[k] = 0; a.missing.push(k); } else a[k] = Math.max(0, k === 'absentDays' ? Math.round(n * 2) / 2 : Math.round(n)); });
+    ATT_KEYS.forEach(function (k) { var n = Number(sum[k]); if (sum[k] == null || !isFinite(n)) { a[k] = 0; a.missing.push(k); } else a[k] = Math.max(0, k === 'absentDays' || k === 'paidDays' ? Math.round(n * 2) / 2 : Math.round(n)); });   /* 有休日数も半日きざみのまま（時給の有休を1日の所定時間で払う・2026-11-20。日給の額・勤怠の行の表示は整数に丸めて今と同じ） */
     var c = obj(sum.counts); Object.keys(c).forEach(function (k) { var n = Number(c[k]); if (isFinite(n) && n > 0) a.counts[k] = Math.round(n); });
     ATT_LEAVE_KEYS.forEach(function (k) { var n = Number(sum[k]); a[k] = sum[k] == null || !isFinite(n) ? 0 : Math.max(0, /Days$/.test(k) ? Math.round(n * 2) / 2 : Math.round(n)); });
     if (sum.holidayWorkDays != null && isFinite(Number(sum.holidayWorkDays))) a.holidayWorkDays = Math.max(0, Math.round(Number(sum.holidayWorkDays)));
+    if (sum.noSchedWorkMin != null && isFinite(Number(sum.noSchedWorkMin))) a.noSchedWorkMin = Math.max(0, Math.round(Number(sum.noSchedWorkMin)));   /* 予定の無い勤務の実働（月給の警告・この版より前の控えには無い＝警告を出さない） */
     if (locked === false) a.locked = false;
     return a;
   }

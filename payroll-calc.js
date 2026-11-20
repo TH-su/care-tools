@@ -310,10 +310,25 @@
     if (type === 'monthly') {
       basePaid = prorated(base);
       pay('basic', '基本給', prorate ? prorate.days : null, base, basePaid, prorate ? '日割り ' + base + '÷平均所定労働日数×' + prorate.days + '日' : '月給', { fixed: true });
+      /* 給与の額の直し（代表者の決定 2026-11-20）: 予定も前提も無い勤務は全部が法定内残業に入り、基本給も満額のまま。数え方は変えず、確かめを促す警告を出す（勤怠の「確認済み」では消えない） */
+      if (m('noSchedWorkMin') > 0) warn('no_sched_monthly', '予定の無い勤務が' + m('noSchedWorkMin') + '分あり、全部を残業として数えています。勤怠の「職員と番号」で固定時間の前提を入れてください');
     } else if (type === 'hourly') {
       var hMin = m('schedInMin') + m('paidMin');
-      basePaid = yen(qDiv(qMul(intQ(base), intQ(hMin)), Q(60)), S.round.hourly_base);
-      pay('basic', '基本給', hMin, base, basePaid, '時給×(所定内＋有休)' + hMin + '分÷60', { fixed: true });
+      /* 給与の額の直し（代表者の決定 2026-11-20）: 日で数える有休（paidMin − 時間単位の有休の効く分）は、1日の所定時間が入っている時は「有休の日数×1日の所定時間」で払う
+         （勤怠は有休1日を予定の実働か8時間で数えるので、1日4時間の人に8時間分を払っていた）。時間単位の有休の効く分はそのまま足す。
+         1日の所定時間が空の時は今の値のまま払い、警告を出す */
+      var hpDayMin = Math.max(0, m('paidMin') - m('hourlyPaidEffMin'));
+      if (hpDayMin > 0 && halfNum('paidDays') > 0 && !dayH.missing) {
+        var hpQ = qMul(qMul(mHalf('paidDays'), dayH), Q(60)), hsQ = qAdd(intQ(m('schedInMin')), qAdd(hpQ, intQ(m('hourlyPaidEffMin'))));
+        basePaid = yen(qDiv(qMul(intQ(base), hsQ), Q(60)), S.round.hourly_base);
+        hMin = Math.round(qNum(hsQ));
+        pay('basic', '基本給', hMin, base, basePaid, '時給×(所定内' + m('schedInMin') + '分＋有休' + halfNum('paidDays') + '日×1日の所定時間' + qNum(dayH) + '時間×60' +
+          (m('hourlyPaidEffMin') > 0 ? '＋時間単位の有休' + m('hourlyPaidEffMin') + '分' : '') + ')÷60', { fixed: true });
+      } else {
+        if (hpDayMin > 0 && halfNum('paidDays') > 0) needDayH();
+        basePaid = yen(qDiv(qMul(intQ(base), intQ(hMin)), Q(60)), S.round.hourly_base);
+        pay('basic', '基本給', hMin, base, basePaid, '時給×(所定内＋有休)' + hMin + '分÷60', { fixed: true });
+      }
       /* 勤怠 v5 段4（仮置き）: 時間単位の有休は効く分（その日の所定の時間のうち働かなかった分まで）が paidMin に入っているので上の基本給で払う。有給の特別休暇は時給×その分。無給の特別休暇・代休は払わない */
       if (m('specialPaidMin') > 0) {
         var spH = yen(qDiv(qMul(intQ(base), intQ(m('specialPaidMin'))), Q(60)), S.round.hourly_base);

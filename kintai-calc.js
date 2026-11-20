@@ -727,7 +727,8 @@
         absentDays: 0, uncountedMin: 0, holidayMin: 0,
         legalInOverMin: 0, over60Min: 0, nightShiftCount: 0, schedDays: 0, counts: {}, weekOverMin: 0, frameOverMin: 0,
         hourlyPaidMin: 0, specialPaidMin: 0, specialPaidDays: 0, specialUnpaidDays: 0, compDays: 0,   /* v5 段4: 休暇の種類（無い時は 0） */
-        hourlyPaidEffMin: 0, hourlyPaidOffMin: 0, specialPaidOffDays: 0, absentPartMin: 0 };   /* absentPartMin: 欠勤の印の日の休暇で埋まらない残り（半日ちょうどは absentDays に 0.5 日） */   /* 給与段4 の反証レビュー: 時間単位の有休の効く分・働いていない日の効く分・働いていない日の有給の特別休暇 */
+        hourlyPaidEffMin: 0, hourlyPaidOffMin: 0, specialPaidOffDays: 0, absentPartMin: 0,
+        noSchedWorkMin: 0, holidayWorkDays: 0 };   /* 給与の額の直し（代表者の決定 2026-11-20）: 予定の無い勤務の実働の分（月給の警告に使う）・法定休日に働いた日の数（日給の基本給の日数から除く） */   /* absentPartMin: 欠勤の印の日の休暇で埋まらない残り（半日ちょうどは absentDays に 0.5 日） */   /* 給与段4 の反証レビュー: 時間単位の有休の効く分・働いていない日の効く分・働いていない日の有給の特別休暇 */
       var leadDays = [], liDay = 0, seqOf = {};
       for (j = 0; j < dates.length; j++) {
         var date = dates[j], bl = byDate[date].sort(function (x, y) { return (x.schedStart || x.countStart || 0) - (y.schedStart || y.countStart || 0); });
@@ -754,6 +755,7 @@
           dhol += c.holidayMin; dunc += c.uncountedMin;
           if (c.absent) dabs = true;
           if (c.sched) dIn += Math.min(c.workMin, c.schedWork);   /* 予定の中で働いた分（時間単位の有休の効く分に使う） */
+          else sum.noSchedWorkMin += c.workMin;   /* 予定の無い勤務の実働（全部が法定内残業に入る分・給与が月給の人に警告を出す） */
           for (var of in c.officeShare) sum.byOffice[of] = (sum.byOffice[of] || 0) + c.workMin * c.officeShare[of];
         }
         var paidMin = paidBy[st.staff_id + '|' + date] || 0, shiftPaid = paidMin;
@@ -801,15 +803,16 @@
           else if (absPart > 0) sum.absentPartMin += absPart;
         }
         sum.holidayMin += dhol; sum.uncountedMin += dunc;
+        if (dhol > 0) sum.holidayWorkDays++;   /* 法定休日に働いた日（その日の法定休日の実働がある日・日給の基本給の日数から除く・仮置き） */
         var dayRow = { date: date, blocks: bl, paidMin: paidMin, workMin: dw, schedWorkMin: dsw, legalOverMin: legal, flags: dflags, note: dnote || null,
           paidDays: pdays, holidayMin: dhol, uncountedMin: dunc, absent: absentDay, mark: (dnote && dnote.day_mark) || null };
         if (absPart > 0) dayRow.absentPartMin = absPart;   /* 欠勤の印の日の、休暇で埋まらない残り（分・ある日だけ） */
         if (luDays && !shiftPaid) dayRow.leaveUse = { id: lu.id || null, days: luDays };   /* 手入力の有休を数えた日だけの印（無い日の形は今までどおり） */
         /* v5 段4: 休暇の種類。時間単位の有休は月の paidMin に足す（日の paidMin・paidDays・所定日数・打刻なしの日の判定は今のまま＝上で決めた値）。
            特別休暇・代休の1日の分はその日の予定の実働（無ければ1日の所定の時間）・半日は入れた分 */
-        var abl = absBy[st.staff_id + '|' + date], mks = markBy[st.staff_id + '|' + date];
+        var abl = absBy[st.staff_id + '|' + date], mks = markBy[st.staff_id + '|' + date], eff = 0, halfLv = 0;
         if (abl || mks) {
-          var hourly = 0, halfLv = 0;
+          var hourly = 0;
           (abl || []).forEach(function (a) {
             if (a.kind === 'hourly_paid') { hourly += a.minutes; return; }
             var dn = a.minutes == null ? 1 : 0.5, mm = a.minutes == null ? (dsw > 0 ? dsw : dayMinCfg) : a.minutes;
@@ -821,26 +824,31 @@
           /* 時間単位の有休が効く分（給与段4 の反証レビュー 2026-11-20・4・7）＝その日の所定の時間のうち働かなかった分まで:
              予定のある日は min(入れた分, 予定の実働−予定の中で働いた分)・予定の無い日は働いていない時だけ1日の所定の時間まで。
              効く分を paidMin（時給の基本給）に足し、hourlyPaidEffMin に持つ。働いていない日の効く分は hourlyPaidOffMin（日給はこれだけ払う）。hourlyPaidMin は入れた分のまま */
-          var eff = 0;
           if (hourly) {
             eff = dsw > 0 ? Math.min(hourly, Math.max(0, dsw - dIn)) : (dw === 0 ? Math.min(hourly, dayMinCfg) : 0);
             sum.hourlyPaidMin += hourly; sum.hourlyPaidEffMin += eff; sum.paidMin += eff; dayRow.hourlyPaidMin = hourly;
             if (dw === 0) sum.hourlyPaidOffMin += eff;
             if (eff !== hourly) dayRow.hourlyPaidEffMin = eff;
           }
-          /* 時間単位の有休の効く分と半日の特別休暇・代休の分は、その日の遅刻・早退に数えない（遅刻の分から先に差し引く・月給の遅刻早退の控除に入れない・仮置き）。
-             日の塊の遅刻・早退の印と分はそのまま（画面に出す）。差し引いて0になった日は回数からも外す */
-          /* 遅刻・早退は時計の時間（予定の休憩の時間を含む）で数えるので、休暇の分（実働の分）を、その日の働かなかった予定の実働に対する割合で時計の時間に直して差し引く
-             （休暇が働かなかった分を全部覆う日は遅刻・早退を全部差し引く。例: 9〜18時（休憩60分）の日に 9〜13時だけ働き、午後を半日の休暇にすると早退300分を全部差し引く・仮置き） */
-          var lv0 = eff + halfLv, unw = Math.max(0, dsw - dIn), off0 = 0;
-          if (lv0 > 0 && dLate + dEarly > 0) off0 = unw > 0 ? Math.round((dLate + dEarly) * Math.min(1, lv0 / unw)) : 0;
+          dayRow.absences = (abl || []).concat(mks || []);
+        }
+        /* 遅刻・早退の月の合計（月給の遅刻早退の控除）は「足りない実働」までにする（給与の額の直し・代表者の決定 2026-11-20）。
+           遅刻・早退は時計の時間（予定の休憩の時間を含む）で数えるので、その日の遅刻＋早退を
+           max(0, 予定の実働 − 予定の中で働いた分 − 手入力の有休 − 時間単位の有休の効く分 − 半日の特別休暇・代休の分) で切る。
+           シフトの有休の行のある日は有休の分を引かない（仮置き）: シフトのマスの「有 13-18」は有休の行（1日分）と働く分（13〜18時）だけの勤務の行になり、
+           遅刻・早退はもう働く分の予定で数えているため（引くと 13時より遅れた本当の遅刻まで消える）。手入力の有休はその日の予定の実働の半分・全部として数える
+           例: 9〜18時（休憩60分）の日に 13時に帰ると早退は時計で300分・足りない実働は240分。30分遅れて残業を認めて所定どおり働いた日は0分。
+           切るのは遅刻の分から先。切って0になった日は回数からも外す。日の塊の遅刻・早退の印と分はそのまま（画面に出す）。
+           休暇のある日だけ、日の行に差し引いた分（hourlyOffsetMin）を書く（休暇の無い日の日の行の形は今までどおり） */
+        if (dsw > 0 && dLate + dEarly > 0) {
+          var luIn = luDays && !shiftPaid ? paidMin : 0;   /* 予定の中の有休（手入力の有休だけ・シフトの有休の行のある日は 0） */
+          var short0 = Math.max(0, dsw - dIn - luIn - eff - halfLv), off0 = Math.max(0, dLate + dEarly - short0);
           if (off0 > 0) {
             var cutL = Math.min(off0, dLate), cutE = Math.min(off0 - cutL, dEarly);
             if (cutL) { sum.lateMin -= cutL; if (cutL === dLate) sum.lateCount -= dLateN; }
             if (cutE) { sum.earlyLeaveMin -= cutE; if (cutE === dEarly) sum.earlyLeaveCount -= dEarlyN; }
-            if (cutL || cutE) dayRow.hourlyOffsetMin = cutL + cutE;
+            if ((cutL || cutE) && (luIn + eff + halfLv > 0)) dayRow.hourlyOffsetMin = cutL + cutE;
           }
-          dayRow.absences = (abl || []).concat(mks || []);
         }
         days.push(dayRow);
       }
@@ -1072,7 +1080,8 @@
         legalInOverMin: s.legalInOverMin || 0, over60Min: s.over60Min || 0, nightShiftCount: s.nightShiftCount || 0, schedDays: s.schedDays || 0, counts: s.counts || {},   /* 0101: 給与の入力 */
         legalOverRawMin: s.legalOverRawMin || 0, holidayRawMin: s.holidayRawMin || 0,   /* v5 段3: 月の30分丸めの前の値（36協定の判定だけに使う・給与の比べには入れない） */
         hourlyPaidMin: s.hourlyPaidMin || 0, specialPaidMin: s.specialPaidMin || 0, specialPaidDays: s.specialPaidDays || 0, specialUnpaidDays: s.specialUnpaidDays || 0, compDays: s.compDays || 0,
-        hourlyPaidEffMin: s.hourlyPaidEffMin || 0, hourlyPaidOffMin: s.hourlyPaidOffMin || 0, specialPaidOffDays: s.specialPaidOffDays || 0, absentPartMin: s.absentPartMin || 0 });   /* v5 段4: 休暇の種類（hourlyPaidMin は paidMin の内数） */
+        hourlyPaidEffMin: s.hourlyPaidEffMin || 0, hourlyPaidOffMin: s.hourlyPaidOffMin || 0, specialPaidOffDays: s.specialPaidOffDays || 0, absentPartMin: s.absentPartMin || 0,   /* v5 段4: 休暇の種類（hourlyPaidMin は paidMin の内数） */
+        noSchedWorkMin: s.noSchedWorkMin || 0, holidayWorkDays: s.holidayWorkDays || 0 });   /* 給与の額の直し（2026-11-20）: 予定の無い勤務の実働・法定休日に働いた日の数（この版より前の控えには無い＝給与は今までどおりに扱う） */
     }
     return { v: 1, ym: month.ym, period: month.period, config: month.config, rows: rows };
   }
