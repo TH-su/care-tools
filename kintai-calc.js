@@ -138,9 +138,11 @@
       var st = list[i];
       if (!staffVisible(st, ym)) continue;
       var mainDiv = DIV_OFFICE[st.mainDivision] ? st.mainDivision : '施設';
-      staffOut.push({ staff_id: st.id, name: String(st.name || '').slice(0, 60) || st.id, office: DIV_OFFICE[mainDiv],
-        emp_code: st.empCode ? empNorm(String(st.empCode).slice(0, 20)) : null,
-        employment: st.employment ? String(st.employment).slice(0, 20) : null, active: true });
+      var so = { staff_id: st.id, name: String(st.name || '').slice(0, 60) || st.id, office: DIV_OFFICE[mainDiv],
+        employment: st.employment ? String(st.employment).slice(0, 20) : null, active: true };
+      /* シフトに従業員コードの無い人は欄を送らない（DB の今の値のまま＝統合 0109 で職員No から埋めた値を取り込みのたびに消して書き直さない・2026-11-20） */
+      if (st.empCode) so.emp_code = empNorm(String(st.empCode).slice(0, 20));
+      staffOut.push(so);
       var sources = [{ div: mainDiv, cells: (plan.cells || {})[st.id], nextCells: (next.cells || {})[st.id] }];
       var subs = (plan.subCells || {})[st.id] || {}, nsubs = (next.subCells || {})[st.id] || {};
       for (var dv in subs) if (DIV_OFFICE[dv]) sources.push({ div: dv, cells: subs[dv], nextCells: nsubs[dv] });
