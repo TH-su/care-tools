@@ -145,6 +145,48 @@ const OK = () => json(200, { email: 'test@example.com', role: 'office', mfa: fal
     t('★確かめ直し（recheck）だけが黙る印を渡し、開いた時（run）は渡さない',
       /function recheck\([^)]*\) \{[\s\S]{0,120}probe\(key, fresh, true\)/.test(G) && /function run\([^)]*\) \{[\s\S]{0,200}probe\(key, false\)\.then/.test(G));
     t('probe の中の記録はすべて黙る判定を通る（中で note を同じ名前で包む）', /function probe\(key, fresh, again\) \{\n    function note\(where, e\) \{ if \(!\(again && quietNet\(e\)\)\) noteNow\(where, e\); \}/.test(G));
+
+    /* 実際に動かして記録（SUErrors.note）の回数を数える（反証レビューの指摘・箱は app_gate_test と同じ作り） */
+    function gate(rpcReply) {
+      const listeners = {}, notes = [];
+      const mkEl = (tag) => ({ tag, children: [], className: '', textContent: '', attrs: {}, classList: { add() {}, remove() {} },
+        setAttribute(k, v) { this.attrs[k] = v; }, appendChild(c) { this.children.push(c); return c; }, removeChild() {}, addEventListener() {}, focus() {},
+        hasAttribute(k) { return k in this.attrs; }, removeAttribute(k) { delete this.attrs[k]; } });
+      const body = mkEl('body'), head = mkEl('head');
+      const win = { addEventListener(k, fn) { (listeners[k] = listeners[k] || []).push(fn); }, supabase: {},
+        SUErrors: { note: (k, e) => notes.push([k, e]) },
+        SUAuth: { check: () => Promise.resolve({ status: 'ok', role: 'office' }), client: () => ({ rpc: () => rpcReply.now() }) } };
+      const store = new Map([['sb-kakuu-auth-token', '{}']]);
+      const ctx = { window: win, SUErrors: win.SUErrors, Promise, JSON, Object, Array, String, Date, RegExp, Error,
+        setTimeout(fn, ms) { if (!(ms >= 5000)) setImmediate(fn); return 0; },
+        localStorage: { get length() { return store.size; }, key(i) { return [...store.keys()][i] || null; }, getItem(k) { return store.has(k) ? store.get(k) : null; } },
+        document: { body, head, documentElement: { classList: { add() {}, remove() {} } }, scripts: [], hidden: false, createElement: mkEl,
+          querySelector: () => null, querySelectorAll: () => [], addEventListener(k, fn) { (listeners['doc:' + k] = listeners['doc:' + k] || []).push(fn); } },
+        location: { pathname: '/training-plan.html', reload() {} } };
+      vm.createContext(ctx);
+      vm.runInContext(G, ctx, { filename: 'su-app-gate.js' });
+      return { G: win.SUAppGate, listeners, notes };
+    }
+    const settle = () => new Promise((r) => setTimeout(r, 20));
+    const OKR = () => Promise.resolve({ data: { ok: true, role: 'office' } });
+    const CASES = [
+      ['打ち切り（Error timeout）', () => Promise.reject(new Error('timeout')), 0],
+      ['通信の失敗（素のオブジェクト）', () => Promise.resolve({ error: { message: 'TypeError: Failed to fetch' } }), 0],
+      ['画面のコードの例外（TypeError）', () => Promise.reject(new TypeError('x is not a function')), 1],
+      ['データベースの失敗（500）', () => Promise.resolve({ error: { code: '500', message: 'boom' } }), 1]
+    ];
+    for (const [label, bad, wantRecheck] of CASES) {
+      const r = { now: bad };
+      const open = gate(r);
+      await open.G.run('training-plan', { dirty: () => false });
+      t('開いた時の ' + label + ' は記録する（1回）', open.notes.length === 1, open.notes.length);
+      const r2 = { now: OKR };
+      const L = gate(r2);
+      const opened = await L.G.run('training-plan', { dirty: () => false });
+      r2.now = bad;
+      L.listeners.storage.forEach((f) => f({ key: 'sb-kakuu-auth-token' })); await settle();
+      t((wantRecheck ? '確かめ直しの ' + label + ' は記録する（1回）' : '★確かめ直しの ' + label + ' は記録しない（0回）'), opened === true && L.notes.length === wantRecheck, { opened, n: L.notes.length });
+    }
   }
 
   console.log('\n— 4. 入居者マスタの写し返し（su-res-read.js）—');
