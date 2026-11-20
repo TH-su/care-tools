@@ -8,6 +8,9 @@
      4. 締めの解除を給与の確定で断られた時（payrolllocked）の文（1-2・仮置き）
      5. 「設定」タブの「勤怠の管理者」の欄: 管理者の時だけ出す・印刷に出さない・2つの関数（list・put）・断りの語の文・関数が無い時の文・読み終わりで画面全体を描き直さない
      6. 個人の月の schedInMin は「所定内（法定内）」と出し、CSV の「所定内」（総労働−残業・kintai-calc.js は変えない）との違いを注記する（v5 1-1 の改め・文は仮置き）
+     7. 反証レビュー（2026-11-20）: 有給の設定の初めての保存（前が null・後が既定の [] や null）で、変えた項目だけを言う／
+        日の「直す」窓の履歴と月の一覧の両方で、理由が action の名前の行は理由を空にする（describe・editsHtml・histCells を node で動かして確かめる）
+   別の版を当てる時は KINTAI_JS=<ファイル> で（直す前の版で落ちることを確かめる用）。
    ★試験のメールは架空のもの（example.com）。職員の名前は出さない。 */
 'use strict';
 const fs = require('fs');
@@ -18,7 +21,7 @@ const C = require(path.join(ROOT, 'kintai-calc.js'));
 let pass = 0, fail = 0;
 function t(n, c, e) { if (c) { pass++; console.log('  ✓ ' + n); } else { fail++; console.log('  ✗ ' + n + (e !== undefined ? '  → ' + JSON.stringify(e) : '')); } }
 
-const K = read('kintai.js');
+const K = process.env.KINTAI_JS ? fs.readFileSync(process.env.KINTAI_JS, 'utf8') : read('kintai.js');
 /* care-backend の supabase/migrations/0098〜0112 の「insert into public.kintai_edits」の action（2026-11-20 に grep で拾った全部） */
 const DB_ACTIONS = ['code_reset', 'punch_add', 'punch_void', 'day_put',                                   // 0098・0099・0101・0104
   'master_import', 'master_add', 'staff_link', 'clock_visible',                                             // 0106
@@ -30,15 +33,17 @@ const DB_ACTIONS = ['code_reset', 'punch_add', 'punch_void', 'day_put',         
 
 /* kintai.js から直しの履歴の言い方の部分と、それが使う補助を切り出して動かす（画面の DOM には触れない部分だけ） */
 function line(re) { const m = re.exec(K); if (!m) throw new Error('見つからない: ' + re); return m[0]; }
-const block = K.slice(K.indexOf('  var ACT_LABEL = {'), K.indexOf('  function editsHtml('));
+const block = K.slice(K.indexOf('  var ACT_LABEL = {'), K.indexOf('  var SET_FIELDS'));   /* editsHtml まで */
 const helpers = [
   line(/  function hm\(v\) \{[^\n]*\n/), line(/  function ms\(v\) \{[^\n]*\n/), line(/  function md\(date\) \{[^\n]*\n/),
   line(/  var WD = \[[^\n]*\n/), line(/  var WD_ORDER = \[[^\n]*\n/), line(/  function ymdSl\(d\) \{[^\n]*\n/),
   line(/  var KIND_JA = \{[^\n]*\n/),
   K.slice(K.indexOf('  function weekTxt(w) {'), K.indexOf('  function ymdSl(d)'))
 ].join('');
-const api = new Function('C', helpers + block + '\nreturn { ACT_LABEL: ACT_LABEL, describe: describe };')(C);
-const { ACT_LABEL, describe } = api;
+/* editsHtml が使う画面の値は架空のものを渡す（data.staff・esc・dispName） */
+const stubs = "var data = { staff: [{ staff_id: 'sX1', name: '試験 甲' }] };\n" + line(/  function esc\(s\) \{[^\n]*\n/) + line(/  function dispName\(s\) \{[^\n]*\n/);
+const api = new Function('C', stubs + helpers + block + "\nreturn { ACT_LABEL: ACT_LABEL, describe: describe, editsHtml: editsHtml, histCells: typeof histCells === 'function' ? histCells : null };")(C);
+const { ACT_LABEL, describe, editsHtml, histCells } = api;
 const internal = (s) => /\b[a-z]+_[a-z_]+\b/.test(String(s).replace(/[\w.+-]+@[\w.-]+/g, ''));
 
 console.log('\n— 1. 全部の action に言い方がある —');
@@ -86,9 +91,33 @@ t('今までの言い方は変えない（打刻を足した・番号を振り�
 t('番号の振り直し・打刻の番号の合わせは番号そのものを出さない', describe({ action: 'code_reset', before: { code: '1234' }, after: { code: '5678' } }).indexOf('5678') < 0
   && describe({ action: 'code_fixed', before: { code: '01234' }, after: { code: '00001' } }).indexOf('00001') < 0);
 
-console.log('\n— 3. 理由の列 —');
-const eh = K.slice(K.indexOf('  function editsHtml('), K.indexOf('  var SET_FIELDS'));
-t('理由が action の名前の行（番号の振り直し・メモの無い付与と使用）は理由の列を空にする', /esc\(e\.reason === e\.action \? '' : e\.reason\)/.test(eh));
+console.log('\n— 3. 理由の列（月の一覧と日の窓・動かして確かめる） —');
+const AT = '2026-12-03T01:00:00Z';
+const rowsOf = (html) => (html.match(/<tr><td>[\s\S]*?<\/tr>/g) || []).map((r) => (r.match(/<td>([\s\S]*?)<\/td>/g) || []).map((c) => c.replace(/<\/?td>/g, '')));
+const nameRows = [
+  { at: AT, by: 'kt-office@example.com', staff_id: 'sX1', work_date: '2026-12-03', action: 'leave_use_add', reason: 'leave_use_add', before: null, after: { use_date: '2026-12-03', days: 1 } },
+  { at: AT, by: 'kt-office@example.com', staff_id: 'sX1', work_date: null, action: 'leave_grant_add', reason: 'leave_grant_add', before: null, after: { grant_date: '2026-12-01', days: 10, kind: 'manual' } },
+  { at: AT, by: 'kt-office@example.com', staff_id: 'sX1', work_date: null, action: 'code_reset', reason: 'code_reset', before: { code: '1' }, after: { code: '2' } }];
+const listRows = rowsOf(editsHtml(nameRows.concat([{ at: AT, by: 'kt-office@example.com', staff_id: 'sX1', work_date: '2026-12-03', action: 'leave_use_add', reason: '本人の申し出', before: null, after: { days: 0.5 } }])));
+t('月の一覧: 理由が action の名前の3行は理由の列が空・ほかの行の理由はそのまま', listRows.length === 4 && listRows.slice(0, 3).every((r) => r[5] === '') && listRows[3][5] === '本人の申し出' && listRows.every((r) => !internal(r[4])), listRows);
+t('日の窓の履歴の行の関数（histCells）がある', typeof histCells === 'function');
+const dayCells = histCells ? nameRows.map(histCells) : [];
+t('日の窓: 理由が action の名前の行は理由が空で、した人だけ出す・内容も内部の名前を出さない',
+  dayCells.length === 3 && dayCells.every((c) => c[2] === '（kt-office@example.com）' && !internal(c[1]) && !/leave_|code_reset/.test(c.join('|'))), dayCells);
+t('日の窓: ふつうの理由はそのまま（理由（した人））', !!histCells && histCells({ at: AT, by: 'kt-office@example.com', action: 'punch_add', reason: '打刻忘れ', before: null, after: { kind: 'in', at: AT } })[2] === '打刻忘れ（kt-office@example.com）');
+
+console.log('\n— 3b. 有給の設定の初めての保存（前が null）—');
+/* 画面の初めての保存（leaveAct の lv-prof-save）と、移行の残りを足した時の移行日の保存（then2）は、DB の行が無い＝前が null。後は既定の値（skip_grants [] ・週の項目 null） */
+const first1 = describe({ action: 'leave_profile', before: null, after: { staff_id: 'sX1', hire_date: null, weekly_days: null, weekly_hours: null, opening_date: '2026-04-01', skip_grants: [], rev: 1 } });
+t('移行日だけを入れた初めての保存は「移行日を 2026/04/01 にした」だけ（外した・0 件にした を出さない）', first1 === '有給の設定: 移行日を 2026/04/01 にした', first1);
+const first2 = describe({ action: 'leave_profile', before: null, after: { hire_date: '', weekly_days: 3, weekly_hours: null, opening_date: null, skip_grants: '{}' } });
+t('空の文字・\'{}\'・[]・null は同じ「無し」（週の所定日数だけを言う）', first2 === '有給の設定: 週の所定日数を 3日にした', first2);
+const same0 = describe({ action: 'leave_profile', before: { weekly_days: null, skip_grants: null }, after: { weekly_days: undefined, skip_grants: [] } });
+t('無し→無しは変えた所なし（ACT_LABEL の言い方）', same0 === ACT_LABEL.leave_profile, same0);
+const off1 = describe({ action: 'leave_profile', before: { weekly_days: 4, skip_grants: ['2025-10-01'], hire_date: '2020-04-01' }, after: { weekly_days: null, skip_grants: [], hire_date: null } });
+t('有る→無しは「外した」（週の所定日数・付与しない日・入職日の上書き）', off1 === '有給の設定: 入職日の上書きを外した・週の所定日数を外した・付与しない日を外した', off1);
+const zero = describe({ action: 'leave_profile', before: null, after: { weekly_hours: 0.5 } });
+t('数は 0.5 のような値もそのまま言う', zero === '有給の設定: 週の所定時間を 0.5時間にした', zero);
 
 console.log('\n— 4. 締めの解除の断り —');
 t('payrolllocked の文（仮置き）',

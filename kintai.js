@@ -730,16 +730,27 @@
   function nOf(v) { var n = +v; return isFinite(n) ? n : null; }
   function daysJa(v) { var n = nOf(v); return n == null ? '' : n === 0.5 ? '半日' : String(n) + '日'; }
   function lenOf(v) { return Array.isArray(v) ? v.length : (nOf(v) || 0); }
-  /* 有給の設定（leave_profile）の前後で変わった所を言う */
+  /* 空の値（null・undefined・''・[]・{}・'{}'）は全部「無し」とみなす（初めての設定の保存は前の値が null・後は既定の [] や null になるため・反証レビュー 2026-11-20） */
+  function blankV(v) { return v == null || v === '' || v === '{}' || (Array.isArray(v) ? !v.length : (typeof v === 'object' && !Object.keys(v).length)); }
+  function numOrNil(v) { if (blankV(v)) return null; var n = +v; return isFinite(n) ? n : null; }
+  function valOrNil(v) { return blankV(v) ? null : v; }
+  /* 有給の設定（leave_profile）の前後で変わった所だけを言う */
   function profTxt(b, a) {
-    var parts = [], same = function (x, y) { return JSON.stringify(x == null ? null : x) === JSON.stringify(y == null ? null : y); };
-    if (!same(b.hire_date, a.hire_date)) parts.push(a.hire_date ? '入職日の上書きを ' + ymdSl(a.hire_date) + ' にした' : '入職日の上書きを外した');
-    if (!same(nOf(b.weekly_days), nOf(a.weekly_days))) parts.push(a.weekly_days != null ? '週の所定日数を ' + nOf(a.weekly_days) + '日にした' : '週の所定日数を外した');
-    if (!same(nOf(b.weekly_hours), nOf(a.weekly_hours))) parts.push(a.weekly_hours != null ? '週の所定時間を ' + nOf(a.weekly_hours) + '時間にした' : '週の所定時間を外した');
-    if (!same(b.opening_date, a.opening_date)) parts.push(a.opening_date ? '移行日を ' + ymdSl(a.opening_date) + ' にした' : '移行日を外した');
-    if (!same(b.skip_grants, a.skip_grants)) parts.push('付与しない日を ' + lenOf(a.skip_grants) + ' 件にした');
+    var parts = [], same = function (x, y) { return JSON.stringify(x) === JSON.stringify(y); };
+    var bh = valOrNil(b.hire_date), ah = valOrNil(a.hire_date), bo = valOrNil(b.opening_date), ao = valOrNil(a.opening_date);
+    var bd = numOrNil(b.weekly_days), ad = numOrNil(a.weekly_days), bw = numOrNil(b.weekly_hours), aw = numOrNil(a.weekly_hours);
+    var bs = valOrNil(b.skip_grants), as = valOrNil(a.skip_grants);
+    if (!same(bh, ah)) parts.push(ah ? '入職日の上書きを ' + ymdSl(ah) + ' にした' : '入職日の上書きを外した');
+    if (bd !== ad) parts.push(ad != null ? '週の所定日数を ' + ad + '日にした' : '週の所定日数を外した');
+    if (bw !== aw) parts.push(aw != null ? '週の所定時間を ' + aw + '時間にした' : '週の所定時間を外した');
+    if (!same(bo, ao)) parts.push(ao ? '移行日を ' + ymdSl(ao) + ' にした' : '移行日を外した');
+    if (!same(bs, as)) parts.push(as ? '付与しない日を ' + lenOf(as) + ' 件にした' : '付与しない日を外した');
     return parts.length ? '有給の設定: ' + parts.join('・') : ACT_LABEL.leave_profile;
   }
+  /* 履歴の理由の列。理由の無い口が action の名前を理由に入れた行（番号の振り直し・メモの無い付与と使用）は空にする（一覧と日の窓で同じ判定） */
+  function reasonText(e) { return !e || e.reason == null || e.reason === e.action ? '' : String(e.reason); }
+  /* 日の「直す」窓の履歴の1行（日時・内容・理由（した人））の文字 */
+  function histCells(e) { return [new Date(e.at).toLocaleString('ja-JP'), describe(e), reasonText(e) + (e.by ? '（' + e.by + '）' : '')]; }
   function kindJa(k) { return k === 'in' ? '出勤' : k === 'out' ? '退勤' : '打刻'; }
   function brTxt(v) { return v == null ? '予定どおり' : String(v); }
   /* 直しの前後の値を「退勤 16:05 を足した」「休憩 60→45 分」「確認済みにした」のように言う（C-9） */
@@ -784,7 +795,7 @@
     if (!list.length) return '<p class="empty">この月の直しはありません。</p>';
     var nm = {}; (data.staff || []).forEach(function (s) { nm[s.staff_id] = dispName(s); });
     return '<div class="tw"><table class="hist"><thead><tr><th>日時</th><th>した人</th><th>職員</th><th>日</th><th>内容</th><th>理由</th></tr></thead><tbody>' + list.map(function (e) {
-      return '<tr><td>' + esc(new Date(e.at).toLocaleString('ja-JP')) + '</td><td>' + esc(e.by) + '</td><td>' + esc(nm[e.staff_id] || e.staff_id || '') + '</td><td>' + esc(e.work_date || '') + '</td><td>' + esc(describe(e)) + '</td><td>' + esc(e.reason === e.action ? '' : e.reason) + '</td></tr>';
+      return '<tr><td>' + esc(new Date(e.at).toLocaleString('ja-JP')) + '</td><td>' + esc(e.by) + '</td><td>' + esc(nm[e.staff_id] || e.staff_id || '') + '</td><td>' + esc(e.work_date || '') + '</td><td>' + esc(describe(e)) + '</td><td>' + esc(reasonText(e)) + '</td></tr>';
     }).join('') + '</tbody></table></div>';
   }
 
@@ -995,10 +1006,10 @@
       if (!mine.length) { box.appendChild(mk('p', 'empty', 'この日の直しはまだありません。')); return; }
       var tb = mk('table', 'hist'), body = mk('tbody');
       mine.forEach(function (e) {
-        var tr = mk('tr');
-        tr.appendChild(mk('td', null, new Date(e.at).toLocaleString('ja-JP')));
-        tr.appendChild(mk('td', null, describe(e)));
-        tr.appendChild(mk('td', 'raw', (e.reason || '') + (e.by ? '（' + e.by + '）' : '')));
+        var tr = mk('tr'), cs = histCells(e);
+        tr.appendChild(mk('td', null, cs[0]));
+        tr.appendChild(mk('td', null, cs[1]));
+        tr.appendChild(mk('td', 'raw', cs[2]));
         body.appendChild(tr);
       });
       tb.appendChild(body); box.appendChild(tb);
