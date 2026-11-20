@@ -10,20 +10,23 @@
 <meta name="robots" content="noindex,nofollow">
 <meta name="referrer" content="no-referrer">
 <title>勤怠管理</title>
-<!-- 画面が黙って壊れないようにする共通部品（いちばん先に読む）→ 速さの記録 → ログインの役割の確かめ → 施設情報 → シフトの読み口 → 記号の解釈 → 勤怠の計算 → 有給の計算 → 36協定の判定 → ホームの箱 → 勤務の決まりの見張り（v5 段2・3） -->
+<!-- 画面が黙って壊れないようにする共通部品（いちばん先に読む）→ 速さの記録 → ログインの役割の確かめ → 施設情報 → 印刷（年次有給休暇管理簿の紙だけ・v5 段4）→ シフトの読み口 → 記号の解釈 → 勤怠の計算 → 有給の計算 → 管理簿の行（v5 段4）→ 36協定の判定 → ホームの箱 → 勤務の決まりの見張り（v5 段2・3） -->
 <script src="su-errors.js?v=2026-11-12"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-app-gate.js?v=2026-11-19"></script>
 <script src="su-facility.js?v=2026-11-17"></script>
+<script src="su-print.js?v=2026-11-13"></script>
 <script src="su-kv.js?v=2026-11-16"></script>
 <script src="shift-symbols.js?v=2026-11-18"></script>
-<script src="kintai-calc.js?v=2026-11-20.2"></script>
-<script src="kintai-leave.js?v=2026-11-20.2"></script>
+<script src="kintai-calc.js?v=2026-11-20.3"></script>
+<script src="kintai-leave.js?v=2026-11-20.3"></script>
+<script src="kintai-ledger.js?v=2026-11-20"></script>
 <script src="kintai-36.js?v=2026-11-20"></script>
 <script src="kintai-monitor.js?v=2026-11-20"></script>
 <script src="kintai-rules.js?v=2026-11-20"></script>
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 <link rel="stylesheet" href="su-shell.css?v=2026-11-13">
+<link rel="stylesheet" href="su-print.css?v=2026-11-13">
 <style>
 :root{--ink:#14213d;--sub:#3d4a5c;--line:#c9d2de;--bg:#f4f6f9;--card:#fff;--ok:#0b5d2a;--ok-bg:#e3f4e8;--warn:#6b4100;--warn-bg:#fff4d6;--ng:#8a1020;--ng-bg:#fde8eb;--focus:#1f4fbf;--muted:#414b5a;
   --field:#fff;--th:#eef2f7;--tag:#eef2f7;--wk:#0b3d91;--wk-bg:#e3ecfb;--skel:#e3e8ef;--toast:#14213d;--toast-tx:#fff;--pri-tx:#fff}
@@ -82,6 +85,7 @@ dialog::backdrop{background:rgba(20,33,61,.35)}
 .dlg-f{padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0}
 .row > label{display:flex;gap:6px;align-items:center}
+.row > label[hidden]{display:none}
 fieldset{border:1px solid var(--line);border-radius:10px;margin:10px 0;padding:8px 12px}
 legend{font-weight:600;padding:0 6px}
 .help{color:var(--muted);font-size:13px;margin:4px 0}
@@ -161,6 +165,21 @@ body:has(#g-gate:not([hidden])) .sui-band{display:none}
   .grid .sr{position:static;min-width:0;width:auto;box-shadow:none}.chips,.toast,.skel{display:none!important}
   .pg{break-after:page;page-break-after:always}.pg:last-child{break-after:auto;page-break-after:auto}
   body.pr-edits #g-main > :not(.pr-edits-cd){display:none!important}body.pr-edits .pr-edits-cd .no-print{display:none!important}}
+/* v5 段4: 年次有給休暇管理簿の紙（#k-ledger）。「管理簿を印刷」を押した時だけ中身を作り、印刷の後に空にする。文字の大きさは su-print が --lg-fs で収める（zoom・transform は使わない） */
+#k-ledger{display:none}
+@media print{html:has(> body.su-print-ledger),body.su-print-ledger{background:#fff!important}body.su-print-ledger #k-ledger{display:block;font-size:var(--lg-fs,11px);color:#000}}
+#k-ledger .lg{line-height:1.35}
+#k-ledger .lg-h{margin:0 0 .3em;min-height:1.6em;border-bottom:1px solid #000;padding-bottom:.2em}
+#k-ledger .lg-title{font-size:1.5em;font-weight:700;letter-spacing:.06em}
+#k-ledger .lg-c{margin:.2em 0 .6em}
+#k-ledger .lg-p{break-inside:avoid;page-break-inside:avoid;margin:0 0 .9em}
+#k-ledger .lg-n{font-size:1.15em;margin:0 0 .1em}
+#k-ledger .lg-m{margin:0 0 .2em}
+#k-ledger .lg-t{width:100%;border-collapse:collapse;table-layout:fixed}
+#k-ledger .lg-t th,#k-ledger .lg-t td{border:1px solid #000;padding:.15em .3em;font-size:1em;white-space:normal;vertical-align:top;position:static;background:none;color:#000}
+#k-ledger .lg-t th{font-weight:700}
+#k-ledger .lg-t .num{text-align:right}
+#k-ledger .lg-t th:nth-child(1){width:11%}#k-ledger .lg-t th:nth-child(2){width:8%}#k-ledger .lg-t th:nth-child(3){width:19%}#k-ledger .lg-t th:nth-child(5){width:8%}#k-ledger .lg-t th:nth-child(6){width:8%}#k-ledger .lg-t th:nth-child(7){width:12%}
 </style>
 </head>
 <body>
@@ -193,8 +212,9 @@ body:has(#g-gate:not([hidden])) .sui-band{display:none}
   <main id="g-main" role="tabpanel"></main>
 </div>
 <div class="toast no-print" id="g-toast" role="status" aria-live="polite" hidden></div>
+<div id="k-ledger" aria-hidden="true"></div>
 <dialog id="g-dlg" aria-labelledby="g-dlg-h"><div class="dlg-h" id="g-dlg-h"></div><div class="dlg-b" id="g-dlg-b"></div><div class="dlg-f" id="g-dlg-f"></div></dialog>
-<script src="kintai.js?v=2026-11-20.9"></script>
+<script src="kintai.js?v=2026-11-20.10"></script>
 <script src="su-shell.js?v=2026-11-19"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 <script src="su-intro.js?v=2026-11-18"></script>

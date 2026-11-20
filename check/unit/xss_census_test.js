@@ -290,6 +290,8 @@ const CENSUS = {
     /* v5 1-5（2026-11-20）: 勤怠の管理者の欄。mgrHtml はメール・役割・足した人・日時・断りの文を全部 esc で入れる（ほかは固定の文） */
     [E, "if (el && tab === 'settings') el.innerHTML = mgrHtml()"],
     [E, "if (gm) gm.innerHTML = mgrHtml()"],
+    /* v5 段4（2026-11-20）: 年次有給休暇管理簿の紙。ledgerHtml は氏名・日付・日数・時間を全部 esc で入れる（ほかは固定の文） */
+    [E, "if (r) r.innerHTML = ledgerHtml()"],
     [F, "g.innerHTML = '<h2>この画面は事務所のパソコンで使います</h2><p>この端末は「現場」として設定されているため、勤怠管理は開きません。出勤・退勤の打刻は「出勤・退勤の打刻」の画面から行います。</p><p><a class=\"btn\" href=\"kintai-clock.html\">打刻の画面へ</a> <a class=\"btn\" href=\"index.html\">メニューへ戻る</a></p>'"]
   ],
   "payroll.html": [],

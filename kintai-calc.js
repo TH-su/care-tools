@@ -32,11 +32,36 @@
     weekStartDow: 0,        // 週40時間を数える週の始まり（0=日曜・就業規則に定めが無ければ日曜）
     csvTime: 'hmm',
     legal_holiday: null,    // 法定休日の曜日（null＝決めない／0=日曜〜6=土曜・v2 2026-11-19。キーは凍結仕様どおりの名前）
-    close_day: 0            // 締め日（0＝月末・1〜28・0101）。期間そのものは DB が決める（計算は渡された期間を使う）。設定の保存でこの値を落とさないために持つ
+    close_day: 0,           // 締め日（0＝月末・1〜28・0101）。期間そのものは DB が決める（計算は渡された期間を使う）。設定の保存でこの値を落とさないために持つ
+    /* v5 段4（2026-11-20）: どれも既定は今の動きと同じ（丸めなし・時間単位の有休を使わない） */
+    roundUnitMin: 1,        // 丸めの単位（1・5・10・15・30分）。働いた人に有利な向きだけに効かせる（遅刻の出勤は切り捨て・早退の退勤と認めた残業の終わりは切り上げ）
+    hourlyPaidLeave: false, // 時間単位の有休を使うか（年5日分まで・労基法39条4項の労使協定がある時だけ）
+    dayHours: 8             // 1日の所定の時間（時間単位の有休の1日の換算・特別休暇の1日の時間。1時間に満たない端数は切り上げて持つ）
   };
   /* noScheduleUnit は 1 に固定（15分などで丸めると1日ごとの切り捨てになり基発150号に反する・反証レビュー指摘10） */
   var NUM_KEYS = { breakThresholdH: [0, 24], breakH: [0, 8], nightBreakH: [0, 8], earlyAlertMin: [0, 600],
-    overtimeAlertMin: [0, 600], overtimeMonthWarnH: [0, 200], weekStartDow: [0, 6] };
+    overtimeAlertMin: [0, 600], overtimeMonthWarnH: [0, 200], weekStartDow: [0, 6], dayHours: [1, 24] };
+  var ROUND_UNITS = [1, 5, 10, 15, 30];
+  /* v5 段4: 休暇の種類（DB の kintai_absences.kind）と、特別休暇の種類の初めの一覧（設定の leaveTypes が無い時・仮置き） */
+  var ABS_KINDS = ['hourly_paid', 'special', 'comp', 'swap'];
+  var LEAVE_TYPES_DEFAULT = [{ code: 'keicho', name: '慶弔', paid: true }, { code: 'summer', name: '夏季', paid: true }, { code: 'other', name: 'その他', paid: false }];
+  var LEAVE_TYPES_MAX = 20;
+  /* 特別休暇の種類の一覧の確かめ: code（英数字・_・- の1〜20字・重ならない）・name（1〜20字）・paid（真偽）の行だけを残す（最大20種類）。配列でなければ null */
+  function cleanLeaveTypes(v) {
+    if (!Array.isArray(v)) return null;
+    var out = [], seen = {};
+    for (var i = 0; i < v.length && out.length < LEAVE_TYPES_MAX; i++) {
+      var x = v[i];
+      if (!x || typeof x !== 'object' || typeof x.code !== 'string' || !/^[A-Za-z0-9_-]{1,20}$/.test(x.code) || seen[x.code]) continue;
+      var nm = typeof x.name === 'string' ? x.name.replace(/[\u0000-\u001f\u007f]/g, '').trim() : '';
+      if (!nm || nm.length > 20 || typeof x.paid !== 'boolean') continue;
+      seen[x.code] = 1;
+      out.push({ code: x.code, name: nm, paid: x.paid });
+    }
+    return out;
+  }
+  /* 今の設定で使う特別休暇の種類（設定に無い時は初めの一覧） */
+  function leaveTypesOf(cfg) { var l = cfg && cleanLeaveTypes(cfg.leaveTypes); return l || LEAVE_TYPES_DEFAULT.map(function (x) { return { code: x.code, name: x.name, paid: x.paid }; }); }
 
   /* 設定を既定で埋める（壊れた値・範囲外は既定へ戻す＝起動不能にしない） */
   function fillConfig(c) {
@@ -56,6 +81,12 @@
     if (typeof c.close_day === 'number' && c.close_day >= 0 && c.close_day <= 28 && Math.floor(c.close_day) === c.close_day) out.close_day = c.close_day;
     /* v5 段3: 36協定の設定（中身は kintai-36.js の fillAgreement が確かめる）。ここでは落とさずに写すだけ。無い時は鍵を作らない（今の出力と1バイトも変えない） */
     if (c.agreement36 && typeof c.agreement36 === 'object' && !Array.isArray(c.agreement36)) { var a36 = {}; for (k in c.agreement36) a36[k] = c.agreement36[k]; out.agreement36 = a36; }
+    /* v5 段4: 丸めの単位・時間単位の有休・1日の所定の時間（整数の時間に切り上げる）。特別休暇の種類の一覧は、配列の時だけ確かめた行を写す（無い時は鍵を作らない） */
+    if (ROUND_UNITS.indexOf(c.roundUnitMin) >= 0) out.roundUnitMin = c.roundUnitMin;
+    if (typeof c.hourlyPaidLeave === 'boolean') out.hourlyPaidLeave = c.hourlyPaidLeave;
+    out.dayHours = Math.ceil(out.dayHours);
+    var lt = cleanLeaveTypes(c.leaveTypes);
+    if (lt) out.leaveTypes = lt;
     return out;
   }
   /* 法定休日の設定の確かめ（v2）: null・undefined・'' は「決めない」、0〜6 の整数（または '0'〜'6'）は曜日。
@@ -330,8 +361,9 @@
   /* 塊1つを数える
    * day: kintai_days の行（早出・残業の承認・休憩の直し・v2 の day_mark / early_from / ot_until）
    * v2 で足したキー: working・checked・absent（真偽）、uncountedMin（打刻のうち数えなかった分）、holidayMin（法定休日の暦日に入る実働）
-   * v2 で足した印（flags）: working・not_in_yet・checked・absent（どれも要確認ではない） */
-  function countBlock(b, day, cfg, nowMs) {
+   * v2 で足した印（flags）: working・not_in_yet・checked・absent（どれも要確認ではない）
+   * hov（v5 段4・省略可）: 振替休日で法定休日を動かした日 { 'YYYY-MM-DD': true（法定休日にする）| false（法定休日にしない） } */
+  function countBlock(b, day, cfg, nowMs, hov) {
     var r = { staff_id: b.staff_id, work_date: b.work_date, sched: b.start != null,
       schedStart: b.start, schedEnd: b.end, schedBreak: b.breakMin || 0, schedWork: b.schedWork || 0,
       symbol: b.symbol || '', office: b.office || null, officeShare: b.officeShare || {}, night: !!b.night,
@@ -368,6 +400,10 @@
     var first = full[0], last = full[full.length - 1];
     var cs = first[0], ce = last[1];
     var earlyFrom = day ? toMs(day.early_from) : null, otUntil = day ? toMs(day.ot_until) : null;
+    /* v5 段4: 丸めの単位（1分なら丸めない＝今と同じ道）。働いた人に有利な向きだけ: 遅刻の出勤は単位で切り捨て（予定の開始より前にはしない）・
+       早退の退勤は単位で切り上げ（予定の終わりより後にはしない）・認めた残業の終わりは単位で切り上げ（時刻を区切って認めた時は、その時刻まで）。
+       予定の無い勤務・間の組・認めていない早出と残業は丸めない（日ごとに働いた時間を短くする向きの丸めは入れない・基発150号） */
+    var U = cfg.roundUnitMin > 1 ? cfg.roundUnitMin * MIN : 0;
     if (r.sched) {
       if (cs < b.start) {
         if (day && day.early_ok) { /* 早出を全部認めた日は打刻どおり */ }
@@ -376,15 +412,21 @@
           if ((b.start - cs) / MIN >= cfg.earlyAlertMin) r.flags.push('early');
           cs = b.start;
         }
-      } else if (cs > b.start) { r.lateMin = Math.round((cs - b.start) / MIN); r.flags.push('late'); }
+      } else if (cs > b.start) {
+        if (U) cs = Math.max(b.start, Math.floor(cs / U) * U);
+        if (cs > b.start) { r.lateMin = Math.round((cs - b.start) / MIN); r.flags.push('late'); }
+      }
       if (ce > b.end) {
-        if (day && day.overtime_ok) { /* 残業を全部認めた日は打刻どおり */ }
-        else if (otUntil != null) ce = Math.max(b.end, Math.min(ce, otUntil));   /* この時刻まで認める（予定の終わりより前にはしない・v2-4） */
+        if (day && day.overtime_ok) { /* 残業を全部認めた日は打刻どおり */ if (U) ce = Math.ceil(ce / U) * U; }
+        else if (otUntil != null) ce = Math.max(b.end, Math.min(U ? Math.ceil(ce / U) * U : ce, otUntil));   /* この時刻まで認める（予定の終わりより前にはしない・v2-4） */
         else {
           if ((ce - b.end) / MIN >= cfg.overtimeAlertMin) r.flags.push('overtime');
           ce = b.end;
         }
-      } else if (ce < b.end && !r.working) { r.earlyLeaveMin = Math.round((b.end - ce) / MIN); r.flags.push('early_leave'); }   /* 勤務中の途中の退勤は早退にしない */
+      } else if (ce < b.end && !r.working) {   /* 勤務中の途中の退勤は早退にしない */
+        if (U) ce = Math.min(b.end, Math.ceil(ce / U) * U);
+        if (ce < b.end) { r.earlyLeaveMin = Math.round((b.end - ce) / MIN); r.flags.push('early_leave'); }
+      }
     } else {
       r.flags.push('no_schedule');
     }
@@ -400,7 +442,7 @@
     for (i = 0; i < segs.length; i++) {
       bound += (segs[i][1] - segs[i][0]) / MIN; night += nightMinutes(segs[i][0], segs[i][1]);
       if (i > 0) gap += (segs[i][0] - segs[i - 1][1]) / MIN;
-      if (cfg.legal_holiday != null) hol += holidayMinutes(segs[i][0], segs[i][1], cfg.legal_holiday);
+      if (cfg.legal_holiday != null) hol += holidayMinutes(segs[i][0], segs[i][1], cfg.legal_holiday, hov);
     }
     bound = Math.round(bound); gap = Math.round(gap);
     var span = bound + gap, br;   /* span＝最初の出勤から最後の退勤まで（打刻した昼休みを含む） */
@@ -433,12 +475,13 @@
     }
     return r;
   }
-  /* その曜日（日本時間の暦日）と [s,e) の重なり（分） */
-  function holidayMinutes(s, e, dow) {
+  /* その曜日（日本時間の暦日）と [s,e) の重なり（分）。hov（v5 段4・省略可）は振替休日で法定休日を動かした日（true＝法定休日にする・false＝しない） */
+  function holidayMinutes(s, e, dow, hov) {
     if (s == null || e == null || e <= s) return 0;
     var total = 0, d = jstDate(s), last = jstDate(e - 1);
     for (var i = 0; i < 4; i++) {
-      if (new Date(jstMs(d, 12 * 60)).getUTCDay() === dow) total += overlap(s, e, jstMs(d, 0), jstMs(d, 1440));
+      var isHol = hov && hov[d] != null ? hov[d] : new Date(jstMs(d, 12 * 60)).getUTCDay() === dow;
+      if (isHol) total += overlap(s, e, jstMs(d, 0), jstMs(d, 1440));
       if (d === last) break;
       d = addDays(d, 1);
     }
@@ -503,14 +546,22 @@
   /* ── 4. 月の計算 ──
    * opts: { ym, period:{from,to}（月分の期間・省略はその月の1日〜末日）, staff:[kintai_staff], schedule:[kintai_schedule], punches:[kintai_punches], days:[kintai_days],
    *         config, now(ミリ秒・省略は今), lockedAt(締めた時刻・省略可),
-   *         leave_uses(手で入れた有休の使用 [{id, staff_id, use_date, days:0.5|1}]・省略可・v4 2026-11-20 の L8) }
+   *         leave_uses(手で入れた有休の使用 [{id, staff_id, use_date, days:0.5|1}]・省略可・v4 2026-11-20 の L8),
+   *         absences(休暇の種類の行 [{id, staff_id, date, kind, minutes, paid, type_code, link_date}]・省略可・v5 段4 2026-11-20 の DB 0113) }
    *   期間の初日の前の6日分の打刻・予定・日の行も渡すと、週40時間の週を期間をまたいで数える（前の6日分は日の一覧・合計・要確認に入れない）
    * 返す: { ym, period, config, people:[{ staff, days:[{date, blocks, paidMin, workMin, legalOverMin, flags}], sum }], totals }
    * sum の時間の区分（0101・給与の契約 CONTRACT-payroll-v1.md §2）:
    *   重ならない4つ（和が workMin）: schedInMin 所定内の実働（有休を含まない）／legalInOverMin 所定を超え法定内／
    *     legalOverMin 法定外（60時間超を含み・法定休日を含まない）／holidayMin 法定休日の実働
    *   重なる2つ: over60Min（legalOverMin のうち月60時間を超えた分）／nightMin（深夜）
-   *   ほかに overtimeMin（予定を超えた実働・今までどおり）・nightShiftCount（実際に働いた夜勤の塊の数）・schedDays（所定日数）・counts（シフトの記号ごとの回数） */
+   *   ほかに overtimeMin（予定を超えた実働・今までどおり）・nightShiftCount（実際に働いた夜勤の塊の数）・schedDays（所定日数）・counts（シフトの記号ごとの回数）
+   * v5 段4 の休暇の種類（absences。期間の中の日だけに効く・無い時は今の値のまま）:
+   *   hourly_paid 時間単位の有休 … 分を paidMin に足す（給与へ今の鍵で渡る）。paidDays には足さない（時間単位は日数に数えない）。別に hourlyPaidMin
+   *   special     特別休暇       … 有給は specialPaidMin・specialPaidDays、無給は specialUnpaidDays（paidMin・paidDays とは別）。1日の分はその日の予定の実働（無ければ dayHours）
+   *   comp        代休           … compDays（無給）
+   *   swap        振替休日       … date の日を休日にする（その日の勤務の予定を数えない＝欠勤・打刻なしに出さない）。link_date の日は働く日（法定休日の曜日なら法定休日にしない）。
+   *                                 法定休日の曜日の日と入れ替えた時は、休む日（date）を法定休日として数える
+   *   1日の特別休暇・代休の日は、打刻の無い予定の塊を打刻なし・まだ出勤していないにしない（要確認に数えない）。日の行に absences の印を付ける（無い日の形は今までどおり） */
   function computeMonth(opts) {
     var ym = opts.ym;
     if (!isYm(ym)) throw new Error('月の形が違います');
@@ -521,7 +572,36 @@
     var first = per.from, lastD = per.to, leadFirst = addDays(first, -6);
     var staff = opts.staff || [], i, j;
     var schedBy = {}, punchBy = {}, dayBy = {}, paidBy = {}, paidSym = {}, workSym = {};
+    /* v5 段4: 休暇の種類（期間の中の日だけ・取り消していない行・形の違う行は数えない） */
+    var absBy = {}, absStaff = {}, swapOff = {}, holOv = {}, markBy = {}, dayMinCfg = cfg.dayHours * 60;
+    var addMark = function (k, m) { (markBy[k] = markBy[k] || []).push(m); };
+    (Array.isArray(opts.absences) ? opts.absences : []).forEach(function (a) {
+      if (!a || a.voided_at || typeof a.staff_id !== 'string' || !isDate(a.date) || ABS_KINDS.indexOf(a.kind) < 0) return;
+      var inP = function (d) { return d >= first && d <= lastD; };
+      if (a.kind === 'swap') {
+        if (!isDate(a.link_date) || a.link_date === a.date) return;
+        if (inP(a.date)) { swapOff[a.staff_id + '|' + a.date] = a; addMark(a.staff_id + '|' + a.date, { kind: 'swap', role: 'off', id: a.id || null, link_date: a.link_date }); absStaff[a.staff_id] = 1; }
+        if (inP(a.link_date)) { addMark(a.staff_id + '|' + a.link_date, { kind: 'swap', role: 'work', id: a.id || null, date: a.date }); absStaff[a.staff_id] = 1; }
+        /* 法定休日の曜日の日を働く日にした時は、その日を法定休日にせず、休む日を法定休日にする（期間の中の日だけ） */
+        if (cfg.legal_holiday != null && new Date(jstMs(a.link_date, 12 * 60)).getUTCDay() === cfg.legal_holiday) {
+          var ov = holOv[a.staff_id] = holOv[a.staff_id] || {};
+          if (inP(a.link_date)) ov[a.link_date] = false;
+          if (inP(a.date)) ov[a.date] = true;
+        }
+        return;
+      }
+      if (!inP(a.date)) return;
+      var mn = a.minutes == null ? null : +a.minutes;
+      if (a.kind === 'hourly_paid' && !(mn > 0 && mn % 60 === 0)) return;
+      if (a.kind !== 'hourly_paid' && mn != null && !(mn > 0)) return;
+      var k0 = a.staff_id + '|' + a.date, list0 = absBy[k0] = absBy[k0] || [];
+      if (list0.some(function (x) { return x.kind === a.kind; })) return;   /* 同じ人・同じ日・同じ種類は最初の1行（DB も1行だけ） */
+      list0.push({ id: a.id || null, kind: a.kind, minutes: mn, paid: a.kind === 'hourly_paid' ? true : a.kind === 'special' ? a.paid === true : false, type_code: a.type_code || null, link_date: a.link_date || null });
+      absStaff[a.staff_id] = 1;
+    });
     (opts.schedule || []).forEach(function (r) {
+      /* v5 段4: 振替で休日にした日（期間の中）の勤務の予定は数えない（有休の行はそのまま） */
+      if ((r.kind === 'work' || r.kind === 'night') && swapOff[r.staff_id + '|' + r.work_date]) return;
       (schedBy[r.staff_id] = schedBy[r.staff_id] || []).push(r);
       if ((r.kind === 'work' || r.kind === 'night') && r.symbol && r.work_date >= first && r.work_date <= lastD) {
         var kw = r.staff_id + '|' + r.work_date, ws0 = workSym[kw] = workSym[kw] || [];
@@ -550,6 +630,7 @@
     for (var sid in punchBy) if (!known[sid]) { known[sid] = 1; extra.push({ staff_id: sid, name: sid, office: null, emp_code: null, active: false, missingStaff: true }); }
     for (sid in schedBy) if (!known[sid]) { known[sid] = 1; extra.push({ staff_id: sid, name: sid, office: null, emp_code: null, active: false, missingStaff: true }); }
     for (sid in leaveStaff) if (!known[sid]) { known[sid] = 1; extra.push({ staff_id: sid, name: sid, office: null, emp_code: null, active: false, missingStaff: true }); }
+    for (sid in absStaff) if (!known[sid]) { known[sid] = 1; extra.push({ staff_id: sid, name: sid, office: null, emp_code: null, active: false, missingStaff: true }); }
     var all = staff.concat(extra);
     for (i = 0; i < all.length; i++) {
       var st = all[i];
@@ -602,7 +683,11 @@
           if (lastOf[b.work_date] !== b) cp.ot_until = null;
           dnB = cp;
         }
-        var cb = countBlock(b, dnB, cfg, nowMs);
+        var cb = countBlock(b, dnB, cfg, nowMs, holOv[st.staff_id]);
+        /* v5 段4: 1日の特別休暇・代休の日は、打刻の無い予定の塊を打刻なし・まだ出勤していないにしない（休みの日として扱う） */
+        if (!cb.punches.length && (absBy[st.staff_id + '|' + b.work_date] || []).some(function (x) { return (x.kind === 'special' || x.kind === 'comp') && x.minutes == null; })) {
+          cb.flags = cb.flags.filter(function (f) { return f !== 'no_punch' && f !== 'not_in_yet'; });
+        }
         if (!b.start && cb.office === null) cb.office = st.office || null;
         if (!b.start && cb.office) { cb.officeShare = {}; cb.officeShare[cb.office] = 1; }
         if (lockedMs != null) for (var q = 0; q < cb.punches.length; q++) {
@@ -613,11 +698,14 @@
       }
       for (var pk in paidBy) if (pk.indexOf(st.staff_id + '|') === 0) { var pd = pk.split('|')[1]; byDate[pd] = byDate[pd] || []; }
       for (var lk1 in leaveBy) if (lk1.indexOf(st.staff_id + '|') === 0) { var ld = lk1.split('|')[1]; byDate[ld] = byDate[ld] || []; }
+      for (var ak in absBy) if (ak.indexOf(st.staff_id + '|') === 0) { var ad0 = ak.split('|')[1]; byDate[ad0] = byDate[ad0] || []; }
+      for (var mk0 in markBy) if (mk0.indexOf(st.staff_id + '|') === 0) { var md0 = mk0.split('|')[1]; byDate[md0] = byDate[md0] || []; }
       var dates = Object.keys(byDate).sort(), days = [];
       var sum = { workDays: 0, paidDays: 0, paidMin: 0, workMin: 0, schedInMin: 0, overtimeMin: 0, legalOverMin: 0, nightMin: 0,
         lateCount: 0, lateMin: 0, earlyLeaveCount: 0, earlyLeaveMin: 0, noPunchDays: 0, reviewCount: 0, byOffice: {}, warnings: [],
         absentDays: 0, uncountedMin: 0, holidayMin: 0,
-        legalInOverMin: 0, over60Min: 0, nightShiftCount: 0, schedDays: 0, counts: {}, weekOverMin: 0, frameOverMin: 0 };
+        legalInOverMin: 0, over60Min: 0, nightShiftCount: 0, schedDays: 0, counts: {}, weekOverMin: 0, frameOverMin: 0,
+        hourlyPaidMin: 0, specialPaidMin: 0, specialPaidDays: 0, specialUnpaidDays: 0, compDays: 0 };   /* v5 段4: 休暇の種類（無い時は 0） */
       var leadDays = [], liDay = 0, seqOf = {};
       for (j = 0; j < dates.length; j++) {
         var date = dates[j], bl = byDate[date].sort(function (x, y) { return (x.schedStart || x.countStart || 0) - (y.schedStart || y.countStart || 0); });
@@ -679,6 +767,20 @@
         var dayRow = { date: date, blocks: bl, paidMin: paidMin, workMin: dw, schedWorkMin: dsw, legalOverMin: legal, flags: dflags, note: dnote || null,
           paidDays: pdays, holidayMin: dhol, uncountedMin: dunc, absent: absentDay, mark: (dnote && dnote.day_mark) || null };
         if (luDays && !shiftPaid) dayRow.leaveUse = { id: lu.id || null, days: luDays };   /* 手入力の有休を数えた日だけの印（無い日の形は今までどおり） */
+        /* v5 段4: 休暇の種類。時間単位の有休は月の paidMin に足す（日の paidMin・paidDays・所定日数・打刻なしの日の判定は今のまま＝上で決めた値）。
+           特別休暇・代休の1日の分はその日の予定の実働（無ければ1日の所定の時間）・半日は入れた分 */
+        var abl = absBy[st.staff_id + '|' + date], mks = markBy[st.staff_id + '|' + date];
+        if (abl || mks) {
+          var hourly = 0;
+          (abl || []).forEach(function (a) {
+            if (a.kind === 'hourly_paid') { hourly += a.minutes; return; }
+            var dn = a.minutes == null ? 1 : 0.5, mm = a.minutes == null ? (dsw > 0 ? dsw : dayMinCfg) : a.minutes;
+            if (a.kind === 'special') { if (a.paid) { sum.specialPaidMin += mm; sum.specialPaidDays += dn; } else sum.specialUnpaidDays += dn; }
+            else if (a.kind === 'comp') sum.compDays += dn;
+          });
+          if (hourly) { sum.hourlyPaidMin += hourly; sum.paidMin += hourly; dayRow.hourlyPaidMin = hourly; }
+          dayRow.absences = (abl || []).concat(mks || []);
+        }
         days.push(dayRow);
       }
       /* 週・期間の枠を超えた分も法定外（労基法32条・指摘11）。日の法定外として数えた分は二重に数えない。
@@ -849,7 +951,7 @@
           ofs.push(officeLabel(b.office, nameOf)); syms.push(b.symbol);
         }
         var dr = [st.emp_code, d.date, jstHM(cs), jstHM(ce), br, fmtMin(wm, mode), fmtMin(nm, mode), uniq(ofs).join('・'), uniq(syms).join(' '), uniq(notes).join('・')];
-        if (ex) dr.push(st.name, jstHM(so), jstHM(se), jstHM(ri), jstHM(ro), fmtMin(ot, mode), fmtMin(d.holidayMin || 0, mode), fmtMin(d.paidMin, mode), uniq(marks).join('・'));
+        if (ex) dr.push(st.name, jstHM(so), jstHM(se), jstHM(ri), jstHM(ro), fmtMin(ot, mode), fmtMin(d.holidayMin || 0, mode), fmtMin(d.paidMin + (d.hourlyPaidMin || 0), mode), uniq(marks).join('・'));   /* v5 段4: 有休時間に時間単位の有休を含める（月の集計の有休時間と同じ） */
         D.push(csvLine(dr));
       }
     }
@@ -907,13 +1009,14 @@
         noPunchDays: s.noPunchDays, reviewCount: s.reviewCount, byOffice: s.byOffice,
         holidayMin: s.holidayMin || 0, absentDays: s.absentDays || 0, paidMin: s.paidMin || 0, uncountedMin: s.uncountedMin || 0,   /* v2: 控えから締めた月の CSV を作れるように */
         legalInOverMin: s.legalInOverMin || 0, over60Min: s.over60Min || 0, nightShiftCount: s.nightShiftCount || 0, schedDays: s.schedDays || 0, counts: s.counts || {},   /* 0101: 給与の入力 */
-        legalOverRawMin: s.legalOverRawMin || 0, holidayRawMin: s.holidayRawMin || 0 });   /* v5 段3: 月の30分丸めの前の値（36協定の判定だけに使う・給与の比べには入れない） */
+        legalOverRawMin: s.legalOverRawMin || 0, holidayRawMin: s.holidayRawMin || 0,   /* v5 段3: 月の30分丸めの前の値（36協定の判定だけに使う・給与の比べには入れない） */
+        hourlyPaidMin: s.hourlyPaidMin || 0, specialPaidMin: s.specialPaidMin || 0, specialPaidDays: s.specialPaidDays || 0, specialUnpaidDays: s.specialUnpaidDays || 0, compDays: s.compDays || 0 });   /* v5 段4: 休暇の種類（hourlyPaidMin は paidMin の内数） */
     }
     return { v: 1, ym: month.ym, period: month.period, config: month.config, rows: rows };
   }
 
   var api = {
-    DEFAULTS: DEFAULTS, FLAG_LABEL: FLAG_LABEL, REVIEW: REVIEW, DIV_OFFICE: DIV_OFFICE, OFFICE_DIV: OFFICE_DIV,
+    DEFAULTS: DEFAULTS, ROUND_UNITS: ROUND_UNITS, ABS_KINDS: ABS_KINDS, LEAVE_TYPES_DEFAULT: LEAVE_TYPES_DEFAULT, LEAVE_TYPES_MAX: LEAVE_TYPES_MAX, cleanLeaveTypes: cleanLeaveTypes, leaveTypesOf: leaveTypesOf, FLAG_LABEL: FLAG_LABEL, REVIEW: REVIEW, DIV_OFFICE: DIV_OFFICE, OFFICE_DIV: OFFICE_DIV,
     SUMMARY_HEAD: SUMMARY_HEAD, DAILY_HEAD: DAILY_HEAD, SUMMARY_EXTRA_HEAD: SUMMARY_EXTRA_HEAD, DAILY_EXTRA_HEAD: DAILY_EXTRA_HEAD,
     NOT_IN_GRACE_MIN: NOT_IN_GRACE_MIN, checkLegalHoliday: checkLegalHoliday, reviewList: reviewList, needsReview: needsReview,
     fillConfig: fillConfig, isYm: isYm, daysIn: daysIn, nextYm: nextYm, prevYm: prevYm, jstMs: jstMs, jstDate: jstDate, jstHM: jstHM,

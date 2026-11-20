@@ -5,6 +5,8 @@
  * ・残りは kintai-leave.js の balance をそのまま使う（数え方を二つに分けない）
  * ・移行の残り（kind 'opening'）は「移行の残り」として先頭に出す（その前の取得の記録は無い）
  * ・この先の予定（今日より後の使用）は「予定」として別に数える（取った日には入れない）
+ * ・時間単位の有休（v5 段4・src 'hourly'）は、同じ日の1日・半日と別の行にし（hourly: true・minutes）、取った日数（takenDays）には入れず takenHourMin（分）に数える。
+ *   残りは kintai-leave.js の balance のまま（時間単位の分を日数に直して引いた値）
  * ・画面・印刷・通信を持たない。氏名は持たない（呼ぶ側が見出しに付ける）。試験は check/unit/kintai_ledger_test.js
  */
 (function (root) {
@@ -18,16 +20,18 @@
       if (!u || u.voided_at || !L.isDate(u.use_date)) return;
       var d = +u.days;
       if (!(d > 0)) return;
+      /* 時間単位は同じ日の1日・半日と鍵を分ける（上書きし合わない・v5 段4） */
+      if (u.src === 'hourly') { var mn = +u.minutes; if (!(mn > 0)) return; by[u.use_date + '|h'] = { date: u.use_date, days: d, minutes: mn, hourly: true }; return; }
       by[u.use_date] = { date: u.use_date, days: d === 0.5 ? 0.5 : d >= 1 ? 1 : d };
     });
     return Object.keys(by).sort().map(function (k) { return by[k]; });
   }
 
   /* o: { lots: summary の lots, uses: その人の使用（usesFromMonth で合わせたもの）, asOf: 'YYYY-MM-DD', openingDate: 移行日 or null }
-     → { rows: [{ base, kind, days, expires, until, taken: [{date, days}], takenDays, planned: [{date, days}], remain }], takenTotal } */
+     → { rows: [{ base, kind, days, expires, until, taken: [{date, days, hourly?, minutes?}], takenDays, takenHourMin, planned: [{date, days}], remain }], takenTotal, takenHourTotal } */
   function ledgerOf(o) {
     var asOf = o && o.asOf, rows = [], all = cleanUses(o && o.uses), open = o && L.isDate(o.openingDate) ? o.openingDate : null;
-    if (!L.isDate(asOf)) return { rows: rows, takenTotal: 0 };
+    if (!L.isDate(asOf)) return { rows: rows, takenTotal: 0, takenHourTotal: 0 };
     var lots = (o.lots || []).filter(function (g) { return g && !g.voided_at && L.isDate(g.grant_date) && +g.days > 0 && g.grant_date <= asOf; })
       .slice().sort(function (a, b) { return a.grant_date < b.grant_date ? -1 : a.grant_date > b.grant_date ? 1 : (a.kind === 'opening' ? -1 : b.kind === 'opening' ? 1 : 0); });
     /* 基準日（同じ日の付与は1つの基準日にまとめる＝移行の残りと自動の付与が同じ日の時など） */
@@ -37,7 +41,7 @@
       if (last && last.base === g.grant_date) { last.days = half(last.days + (+g.days)); if (g.kind !== 'opening') last.kind = g.kind; if (g.expires > last.expires) last.expires = g.expires; return; }
       bases.push({ base: g.grant_date, kind: g.kind || 'manual', days: +g.days, expires: g.expires || L.expiresOf(g.grant_date) });
     });
-    var takenTotal = 0;
+    var takenTotal = 0, takenHourTotal = 0;
     bases.forEach(function (b, i) {
       var nextBase = bases[i + 1] ? bases[i + 1].base : null;
       var until = nextBase ? L.addDays(nextBase, -1) : L.addDays(L.addMonths(b.base, 12), -1);
@@ -47,13 +51,14 @@
         if (u.date < from || u.date > until) return;
         if (u.date > asOf) planned.push(u); else taken.push(u);
       });
-      var td = half(taken.reduce(function (a, u) { return a + u.days; }, 0));
-      takenTotal = half(takenTotal + td);
+      var td = half(taken.reduce(function (a, u) { return a + (u.hourly ? 0 : u.days); }, 0));
+      var th = taken.reduce(function (a, u) { return a + (u.hourly ? u.minutes : 0); }, 0);
+      takenTotal = half(takenTotal + td); takenHourTotal += th;
       var end = until < asOf ? until : asOf;
       var bal = L.balance(o.lots, o.uses, end, { openingDate: open });
-      rows.push({ base: b.base, kind: b.kind, days: b.days, expires: b.expires, until: until, taken: taken, takenDays: td, planned: planned, remain: bal.remain });
+      rows.push({ base: b.base, kind: b.kind, days: b.days, expires: b.expires, until: until, taken: taken, takenDays: td, takenHourMin: th, planned: planned, remain: bal.remain });
     });
-    return { rows: rows, takenTotal: takenTotal };
+    return { rows: rows, takenTotal: takenTotal, takenHourTotal: takenHourTotal };
   }
 
   var api = { ledgerOf: ledgerOf };
