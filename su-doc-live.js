@@ -97,7 +97,7 @@
   function loadAuth() {
     if (root.SUAuth) return Promise.resolve(root.SUAuth);
     var p = root.supabase ? Promise.resolve() : loadScript('supabase-js-2.112.4.js');
-    return p.then(function () { return root.SUAuth ? null : loadScript('su-auth.js?v=2026-11-16'); }).then(function () { return root.SUAuth || null; });
+    return p.then(function () { return root.SUAuth ? null : loadScript('su-auth.js?v=2026-11-21'); }).then(function () { return root.SUAuth || null; });
   }
 
   /* ── 印（doc_mode_get）。1分は覚える。→ {stf, adm, tenant} / 'none'（0065 の前）/ 'denied'。届かない時は例外 ── */

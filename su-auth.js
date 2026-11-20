@@ -43,10 +43,39 @@
 
   var client = null;
   var initError = null;
+
+  // ─── 発行した直後の券の「未来に発行された券」の断りを1回だけ聞き直す（2026-11-21・不具合の自動報告 reports#4・#6・#7 の原因）───
+  // 画面を開いた・PC が目覚めた直後に券を新しくすると、新しい券で最初に出した1本だけが 401（PGRST303「JWT issued at future」）で
+  // 断られることがある（本番の記録 2026-10-22〜11-19 の6回。券の発行と同じ秒・0.2秒後の同じ問い合わせは 200。サーバーどうしの時計の差）。
+  // ログインの確かめ（my_account）がこれに当たると「確かめられない」になり、勤務表は Google の写しへ戻して不具合として報告していた。
+  // ・聞き直すのはデータベースへの問い合わせ（/rest/v1/）だけ・この断りの文の時だけ・1秒待って1回だけ。2回目の答えはそのまま返す
+  // ・期限切れの券（JWT expired）・ほかの 401・403 は聞き直さない（ログインの判定はデータベースが決めるまま。誰が何を読めるかは変えない）
+  // ・断られた問い合わせはデータベースで動いていない（券を確かめる前に断る）ので、保存の問い合わせを聞き直しても二重にならない
+  var SKEW_RETRY_MS = 1000;
+  function isSkew401(res) {
+    if (!res || res.status !== 401 || typeof res.clone !== 'function') return Promise.resolve(false);
+    return res.clone().json().then(function (b) {
+      return !!b && b.code === 'PGRST303' && /issued at future/i.test(String(b.message || ''));
+    }, function () { return false; });
+  }
+  function skewFetch(input, init) {
+    var f = window.fetch;
+    var p = f(input, init);
+    var url = (typeof input === 'string') ? input : (input && typeof input.href === 'string') ? input.href : '';   // Request（本文を読み終えている）は聞き直さない
+    if (url.indexOf(URL_ + '/rest/v1/') !== 0) return p;
+    return p.then(function (res) {
+      return isSkew401(res).then(function (skew) {
+        if (!skew) return res;
+        return new Promise(function (ok) { setTimeout(ok, SKEW_RETRY_MS); }).then(function () { return window.fetch(input, init); });
+      });
+    });
+  }
+
   function sb() {
     if (client) return client;
     if (!window.supabase || !window.supabase.createClient) throw new Error('supabase-js が読み込まれていません');
     client = window.supabase.createClient(URL_, KEY, {
+      global: { fetch: skewFetch },
       auth: {
         flowType: 'pkce',          // Google から戻る時、鍵そのものではなく一度きりの引換券を URL に載せる方式
         persistSession: true,

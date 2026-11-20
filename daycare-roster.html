@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-font">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-lFTlq3RoAoAh3XixS6uitbicYl1je7mwdjFgJ5Ep6FM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4S/ciHz/NJ53+S8SvP55TjZc1QAlJHETAZfQeaWjLzU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -746,7 +746,7 @@ table.wk tr.wk-total td.wk-sum { border-top: 2px solid var(--g9); padding-top: 7
 <script src="su-kv.js?v=2026-11-16"></script>
 <!-- 入居者マスタの名簿の読み取り（getRoster）の入口。スイッチ（master_roster_read と master_care_read）が入っている時だけ、訪問日・かかりつけ病院も含めて写しから読む（切の間は今までどおり Google・段2b・2026-10-24） -->
 <script src="su-roster.js?v=2026-11-17"></script>
-<script src="su-res-read.js?v=2026-11-16"></script>
+<script src="su-res-read.js?v=2026-11-21"></script>
 <script src="su-facility.js?v=2026-11-17"></script>
 <script src="su-data.js?v=2026-11-08.2"></script>
 <script src="su-data-gas.js?v=2026-10-29"></script>
@@ -1116,7 +1116,7 @@ function dcrAuthLoad_() {
     : (has(/^supabase-js-/) ? wait(() => !!window.supabase) : load('supabase-js-2.112.4.js'));
   return p.then(() => {
     if (window.SUAuth) return null;
-    return has(/^su-auth\.js/) ? wait(() => !!window.SUAuth) : load('su-auth.js?v=2026-11-16');
+    return has(/^su-auth\.js/) ? wait(() => !!window.SUAuth) : load('su-auth.js?v=2026-11-21');
   });
 }
 /* ★起動時だけでなく、別のタブでのログイン・ログアウト（storage）と画面に戻った時（visibilitychange）にも取り直す
