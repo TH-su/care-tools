@@ -188,9 +188,21 @@ try {
   await page.fill('#in-pin', '1357'); await page.click('#b-pin');
   await page.waitForSelector('#v-app:not([hidden])', { timeout: 10000 });
   t('開き直すとタブの印（申請）を覚えている', (await page.getAttribute('#t-req', 'aria-selected')) === 'true');
-  await page.clock.fastForward(121000);
+  await page.waitForSelector('#req-list .day', { timeout: 10000 });
+  await page.clock.fastForward(110000);
+  t('2分より前は開いたまま（110秒）', await vis(page, '#v-app'));
+  await page.click('#rq-reason');   // さわると数え直す
+  await page.clock.fastForward(110000);
+  t('さわった後は、そこから2分までは開いたまま（さわってから110秒）', await vis(page, '#v-app'));
+  await page.clock.fastForward(11000);
   await page.waitForSelector('#v-pin:not([hidden])', { timeout: 5000 }).catch(() => {});
-  t('2分で暗証番号の画面へ戻る', await vis(page, '#v-pin') && /2分間/.test(await page.textContent('#pin-msg')));
+  t('さわらずに2分で暗証番号の画面へ戻る（文が出る）', await vis(page, '#v-pin') && /2分間/.test(await page.textContent('#pin-msg')));
+  const idle = await page.evaluate(() => ({ who: document.querySelector('#who').textContent, days: document.querySelector('#days-list').childElementCount,
+    head: document.querySelector('#days-head').childElementCount, leave: document.querySelector('#leave-box').childElementCount,
+    req: document.querySelector('#req-list').childElementCount, app: !document.querySelector('#v-app').hidden, ls: Object.keys(localStorage).sort() }));
+  t('2分で表示名・勤怠・有給・申請を画面から捨て、端末には鍵とタブの印だけが残る',
+    idle.who === '' && idle.days === 0 && idle.head === 0 && idle.leave === 0 && idle.req === 0 && !idle.app
+    && JSON.stringify(idle.ls) === JSON.stringify(['kintai_self_key', 'kintai_self_tab']), idle);
   t('画面のエラーなし・外への通信なし', errors.length === 0 && st.outside.length === 0, [errors, st.outside]);
   await context.close();
 
