@@ -352,10 +352,11 @@ const boom = (log, name) => function () { log.push(name); throw new TypeError('�
     t('壊れた回数は0から数え直す', F.silentBump({ n: 'x' }, 'a', 'b', 1).n === 1 && F.silentBump(null, 'a', 'b', 1).n === 1 && F.silentBump({ n: -3 }, 'a', 'b', 1).n === 1, null);
   }
   {
-    const hook = SRC_ERR.match(/hooks\[i\]\(kind, brief, where(, 'note')?\)/g) || [];
+    /* 2026-11-21: 5つ目に手がかり（hint）を渡すようになった（代表者の決定「案1」）。4つ目は今までどおり note の時だけ 'note'・report の時は undefined */
+    const hook = SRC_ERR.match(/hooks\[i\]\(kind, brief, where, (?:undefined|'note'), hint\)/g) || [];
     t('su-errors.js: note の時だけ記録先に4つ目の \'note\' を渡し、report の時は渡さない',
-      hook.length === 2 && hook.filter((h) => /'note'/.test(h)).length === 1 && /fn\(recentNotes\[j\]\[0\], recentNotes\[j\]\[1\], recentNotes\[j\]\[2\], 'note'\)/.test(SRC_ERR)
-      && /fn\(recent\[i\]\[0\], recent\[i\]\[1\], recent\[i\]\[2\]\)/.test(SRC_ERR), hook);
+      hook.length === 2 && hook.filter((h) => /'note'/.test(h)).length === 1 && /fn\(recentNotes\[j\]\[0\], recentNotes\[j\]\[1\], recentNotes\[j\]\[2\], 'note', recentNotes\[j\]\[3\]\)/.test(SRC_ERR)
+      && /fn\(recent\[i\]\[0\], recent\[i\]\[1\], recent\[i\]\[2\], undefined, recent\[i\]\[3\]\)/.test(SRC_ERR), hook);
   }
 
   console.log('\n— 3. perf-report.js の表の組み立て —');
