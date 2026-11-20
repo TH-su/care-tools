@@ -165,6 +165,7 @@
 !/kintai-36.js
 !/kintai-monitor.js
 !/kintai-rules.js
+!/kintai-ledger.js
 !/shift-symbols.js
 # 給与の計算・率表・源泉徴収税額表・書き出しの純関数（2026-11-19 本人の決定・給与 v1）。規則と公表の率・税額表だけで、職員の氏名・金額・口座は含まない
 !/payroll-calc.js
