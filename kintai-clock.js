@@ -92,7 +92,8 @@
   function readList(key) {
     try { var v = JSON.parse(localStorage.getItem(key) || '[]'); return Array.isArray(v) ? v.filter(okItem) : []; } catch (_) { return []; }
   }
-  function okItem(x) { return x && KintaiCalc.isCode(x.code) && (x.kind === 'in' || x.kind === 'out') && typeof x.id === 'string' && typeof x.at === 'number'; }
+  function okItem(x) { return x && KintaiCalc.isCode(x.code) && (x.kind === 'in' || x.kind === 'out') && typeof x.id === 'string' && typeof x.at === 'number' && (x.sid == null || isSid(x.sid)); }
+  function isSid(v) { return typeof v === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(v); }
   function writeList(key, list) { try { localStorage.setItem(key, JSON.stringify(list)); return true; } catch (e) { note('控えの保存', e); return false; } }
   function enqueue(item) {
     var q = readList(Q_KEY); q.push(item);
@@ -294,7 +295,7 @@
     })['catch'](function (e) {
       if (my !== gen) return;
       /* 通信できない時は番号の流れと同じく控える（照合は送る時にサーバーが番号で行う）。名前は選んだ名前を出すだけ */
-      if (isNet(e)) { who = { code: c, name: null, label: st.name, state: null, why: 'net', flow: 'name' }; view = 'who'; punch(kind); return; }
+      if (isNet(e)) { who = { code: c, name: null, label: st.name, sid: st.id, state: null, why: 'net', flow: 'name' }; view = 'who'; punch(kind); return; }
       note('氏名と番号の確かめ', e);
       homeWith(friendly(e));
     });
@@ -412,6 +413,8 @@
     if (!sure && needAsk(kind)) { paintAsk(kind); return; }
     busyPunch = true;
     var my = ++gen, item = { code: who.code, kind: kind, id: uuid(), at: Date.now() }, name = who.name, why = who.why;
+    /* 名前の流れで照合できなかった時だけ、選んだ人の staff_id を控えに足す（送る前にその人と番号が合うかを確かめるため・名前は控えに入れない・総点検 2026-11-20） */
+    if (who.flow === 'name' && !who.name && isSid(who.sid)) item.sid = who.sid;
     var label = kind === 'in' ? '出勤' : '退勤', byName = who.flow === 'name', shown = who.label || who.name;
     /* 送れなかった時の戻り先: 名前の流れは待受へ（知らせを出す）、番号の流れは v2 と同じく番号の画面へ */
     var back = function (m) { busyPunch = false; code = ''; if (byName) homeWith(m); else paintCode('<p class="msg ng" role="alert">' + esc(m) + '</p>'); };
@@ -421,7 +424,7 @@
       if (my !== gen) return;
       if (!okQ) { showDone({ tone: 'ng', big: '控えられませんでした', sub: 'この端末に控えを残せませんでした。事務所に知らせてください。' }); return; }
       /* 名前の流れで照合ができなかった時（名前は確かめていない）: 名前を確定のように出さず、小さく「選んだ名前」と添えるだけ（審査の指摘1）。
-         控えの形（code・kind・id・at）は変えない（照合は送る時にサーバーが番号で行う） */
+         控えには選んだ人の staff_id（sid）を足し、送る時はまずその人と番号が合うかを確かめてから送る（合わなければ送らずに「送れなかった打刻」へ・総点検 2026-11-20） */
       if (byName && !name) {
         showDone({ tone: 'save', kind: kind, big: label + 'を控えました（端末の時刻 ' + hm(item.at) + '）',
           sub: '名前とパスコードは、通信が戻ってから確かめます。合わない時は記録されないので、事務所へ伝えてください。', small: shown ? '選んだ名前: ' + shown : '' });
@@ -489,7 +492,9 @@
     $('k-hist-msg').hidden = items.length > 0;
     $('k-hist').innerHTML = items.map(function (x) {
       var k = x.kind === 'in' ? 'in' : 'out';
-      return '<li class="h-' + k + '"><span class="t">' + hm(Date.parse(x.at)) + '</span><span class="k">' + (k === 'in' ? '出勤' : '退勤') + '</span><span class="n">' + esc(x.name) + '</span></li>';
+      var ms0 = Date.parse(x.at), d0 = new Date(ms0 + 9 * 3600000);
+      var day = jstDayNo(ms0) === jstDayNo(Date.now()) ? '' : (d0.getUTCMonth() + 1) + '/' + d0.getUTCDate() + ' ';   /* 今日でない打刻は日付を添える（総点検 2026-11-20） */
+      return '<li class="h-' + k + '"><span class="t">' + day + hm(ms0) + '</span><span class="k">' + (k === 'in' ? '出勤' : '退勤') + '</span><span class="n">' + esc(x.name) + '</span></li>';
     }).join('');
   }
 
@@ -506,15 +511,21 @@
     panelTone('');
     var f = readList(F_KEY);
     shownFail = f.map(function (x) { return x.id; });   /* 「消す」で消すのは、ここに出した控えだけ（出した後に増えた分は残す） */
-    $('k-panel').innerHTML = '<p class="lbl">送れなかった打刻</p><p class="msg warn">事務所の管理画面で、この番号・時刻の打刻を足してください。足したら「消す」を押します。</p>' +
+    $('k-panel').innerHTML = '<p class="lbl">送れなかった打刻</p><p class="msg warn">事務所の管理画面で、この人（番号）・時刻の打刻を足してください。足したら「消す」を押します。</p>' +
       '<table class="qlist"><tbody>' + f.map(function (x) {
         var d = new Date(x.at + 9 * 3600000);
-        return '<tr><td>番号 ' + esc(x.code) + '</td><td>' + (x.kind === 'in' ? '出勤' : '退勤') + '</td><td>' + (d.getUTCMonth() + 1) + '/' + d.getUTCDate() + ' ' + hm(x.at) + '</td><td>' + esc(x.why || '') + '</td></tr>';
+        /* 名前で選んだ控え（sid あり）は、●で隠して入れたパスコードを出さず、選んだ名前（名簿から引く・控えには名前を入れない）を出す */
+        var st = x.sid ? (roster || []).filter(function (s) { return s.id === x.sid; })[0] : null;
+        var who1 = x.sid ? (st ? '選んだ名前 ' + esc(st.name) : '名前で選んだ打刻（番号 ' + esc(x.code) + '）') : '番号 ' + esc(x.code);   /* 名簿に居ない人（休止など）は誰の分か分かるように番号を出す */
+        return '<tr><td>' + who1 + '</td><td>' + (x.kind === 'in' ? '出勤' : '退勤') + '</td><td>' + (d.getUTCMonth() + 1) + '/' + d.getUTCDate() + ' ' + hm(x.at) + '</td><td>' + esc(x.why || '') + '</td></tr>';
       }).join('') + '</tbody></table>' +
       '<button type="button" class="back" data-k="clearfail">事務所へ伝えたので消す</button><button type="button" class="back" data-k="back">戻る</button>';
     armIdle();
   }
 
+  /* 名前で選んだ控えの照合が打ち切られた回数（メモリだけ・控えの id ごと）。3回で、この画面を開いている間はその控えの照合をやめて送信待ちに残す
+     （打ち切られてもサーバーは照合を終えて、合わない時は失敗を数えるため。共有のアカウントの止めに届かせない・反証レビュー 2026-11-20） */
+  var chkTO = {};
   function flush() {
     if (flushing || !navigator.onLine) return Promise.resolve();
     var q = readList(Q_KEY);
@@ -524,12 +535,25 @@
     var step = function () {
       if (i >= q.length) return null;
       var it = q[i];
-      return rpc('kintai_clock_punch', { p_code: it.code, p_kind: it.kind, p_client_id: it.id, p_client_at: new Date(it.at).toISOString(), p_offline: true, p_device: deviceKey() }).then(function (r) {
+      /* 名前の流れで照合できずに控えた打刻（sid あり）は、送る前に選んだ人と番号が合うかを確かめる。
+         合わない時は送らない（番号だけで送ると、打ち間違いがほかの人の番号に当たった時にその人の打刻になるため・総点検 2026-11-20） */
+      if (it.sid && (chkTO[it.id] || 0) >= 3) { i++; return step(); }   /* 照合が3回打ち切られた控えは、この画面では飛ばす（送信待ちには残す） */
+      var pre = it.sid ? withTimeout(rpc('kintai_clock_check', { p_staff_id: it.sid, p_code: it.code }), PUNCH_TIMEOUT_MS).then(function (c) {
+        if (c && c.error === 'busy') return 'busy';
+        return c && c.ok === true && c.staff ? 'ok' : 'mismatch';
+      }, function (e) { if (e && e.message === 'timeout') chkTO[it.id] = (chkTO[it.id] || 0) + 1; throw e; }) : Promise.resolve('ok');
+      return pre.then(function (pv) {
+        if (pv === 'busy') return { ok: false, error: 'busy' };
+        if (pv === 'mismatch') return { ok: false, error: 'mismatch' };
+        return withTimeout(rpc('kintai_clock_punch', { p_code: it.code, p_kind: it.kind, p_client_id: it.id, p_client_at: new Date(it.at).toISOString(), p_offline: true, p_device: deviceKey() }), PUNCH_TIMEOUT_MS);
+      }).then(function (r) {
         if (r && r.error === 'busy') return null;   /* 一時的な断り（番号の総当たりの止め）。送信待ちに残し、次の回に送り直す（指摘7） */
         var rest = readList(Q_KEY).filter(function (x) { return x.id !== it.id; });
         if (!(r && r.ok === true)) {
-          var why = r && r.error === 'stale' ? '時刻が古すぎる' : (r && r.error === 'notfound' ? '番号が見つからない' : '受け付けられない');
-          var f = readList(F_KEY); f.push({ code: it.code, kind: it.kind, id: it.id, at: it.at, why: why });
+          var why = r && r.error === 'mismatch' ? 'パスコードが選んだ名前と合わない' : r && r.error === 'stale' ? '時刻が古すぎる' : (r && r.error === 'notfound' ? '番号が見つからない' : '受け付けられない');
+          var fi = { code: it.code, kind: it.kind, id: it.id, at: it.at, why: why };
+          if (it.sid) fi.sid = it.sid;
+          var f = readList(F_KEY); f.push(fi);
           if (!writeList(F_KEY, f)) return null;   /* 送れなかった控えに書けない時は送信待ちから消さない（両方から消えないように・指摘10） */
         }
         writeList(Q_KEY, rest);
