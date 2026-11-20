@@ -279,7 +279,8 @@ const CENSUS = {
   "kintai.html": [],
   "kintai-clock.html": [],
   "kintai.js": [
-    [E, "$('g-main').innerHTML = '<div class=\"band ng\" role=\"alert\">' + esc(msgOf(e)) + '</div>'"],
+    /* 2026-11-20 夜間修復の要情報 reports#14 の直しで、帯の文を変数 bandMsg（断りの文か msgOf(e)）にした。esc を通すのは同じ */
+    [E, "$('g-main').innerHTML = '<div class=\"band ng\" role=\"alert\">' + esc(bandMsg) + '</div>'"],
     [F, "m.innerHTML = '<p class=\"empty\">読み込んでいます…</p>'"],
     [E, "m.innerHTML = bands() + f()"],
     [E, "$('g-dlg-b').innerHTML = b"],
