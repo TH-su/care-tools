@@ -83,25 +83,39 @@ console.log('\n— 2. 半日有休の日の早退・遅刻 —');
   t('月給: 半日有休＋午後勤務の月は遅刻早退の控除なし（前は 1744×240÷60＝6976円）', L(run(MONTHLY, att(r)), 'late') === undefined && run(MONTHLY, att(r)).gross === 300000, run(MONTHLY, att(r)).lines.filter((l) => l.sec === 'pay'));
 }
 
-console.log('\n— 4. 時給の人の有休を1日の所定時間で払う —');
+console.log('\n— 4. 時給の人の有休を1日の所定時間で払う（予定の無い日の有休だけ）—');
 {
-  const base = { workDays: 0, paidDays: 1, paidMin: 480, workMin: 0, schedInMin: 0, schedDays: 1 };
+  /* 反証レビュー（2026-11-21・高）で直した: 1日の所定時間で置き換えるのは予定の無い日の有休（paidNoSchedDays・paidNoSchedMin）だけ。予定のある日の有休はその日の予定の実働のまま。
+     下の材料は予定の無い日に有休1日（勤怠が480分と数えた日）の形。前の版（25ae641）は予定のある日の有休まで置き換えていた */
+  const base = { workDays: 0, paidDays: 1, paidMin: 480, workMin: 0, schedInMin: 0, schedDays: 1, paidNoSchedDays: 1, paidNoSchedMin: 480 };
   const h1 = run(HOURLY4, Object.assign({}, base));
-  t('1日4時間の時給1100円のパートの有休1日: 基本給 4400円（前は8時間分の 8800円）・警告なし', L(h1, 'basic') === 4400 && !W(h1, 'day_hours_missing'), [L(h1, 'basic'), h1.warnings]);
-  t('根拠の文は式に合わせる（有休1日×1日の所定時間4時間）', /有休1日×1日の所定時間4時間/.test(LN(h1, 'basic').basis) && LN(h1, 'basic').qty === 240, LN(h1, 'basic'));
-  const h2 = run(HOURLY4, Object.assign({}, base, { schedInMin: 1200, paidMin: 480 + 60, hourlyPaidEffMin: 60, hourlyPaidMin: 60 }));
-  t('所定内1200分＋有休1日＋時間単位の有休の効く分60分: 1100×(1200＋240＋60)÷60＝27500円（前は 1100×1740÷60＝31900円）', L(h2, 'basic') === 27500, L(h2, 'basic'));
-  const h3 = run(HOURLY4, Object.assign({}, base, { paidDays: 0.5, paidMin: 240 }));
-  t('半日の有休（0.5日）: 1100×120÷60＝2200円', L(h3, 'basic') === 2200, L(h3, 'basic'));
+  t('1日4時間の時給1100円のパートの予定の無い日の有休1日: 基本給 4400円（前は8時間分の 8800円）・警告なし', L(h1, 'basic') === 4400 && !W(h1, 'day_hours_missing'), [L(h1, 'basic'), h1.warnings]);
+  t('根拠の文は式に合わせる（予定の無い日の有休1日×1日の所定時間4時間）', /予定の無い日の有休1日×1日の所定時間4時間/.test(LN(h1, 'basic').basis) && LN(h1, 'basic').qty === 240, LN(h1, 'basic'));
+  const h2 = run(HOURLY4, Object.assign({}, base, { schedInMin: 1200, paidDays: 2, paidMin: 480 + 480 + 60, hourlyPaidEffMin: 60, hourlyPaidMin: 60 }));
+  t('所定内1200分＋予定のある日の有休480分＋時間単位60分＋予定の無い日の有休1日: 1100×(1200＋540＋240)÷60＝36300円（前は 1100×2220÷60＝40700円）', L(h2, 'basic') === 36300, L(h2, 'basic'));
+  const h3 = run(HOURLY4, Object.assign({}, base, { paidDays: 0.5, paidMin: 240, paidNoSchedDays: 0.5, paidNoSchedMin: 240 }));
+  t('予定の無い日の半日の有休（0.5日）: 1100×120÷60＝2200円', L(h3, 'basic') === 2200, L(h3, 'basic'));
   const h4 = run(HOURLY_NODH, Object.assign({}, base));
   t('1日の所定時間が空: 今の値のまま 8800円・警告 day_hours_missing', L(h4, 'basic') === 8800 && W(h4, 'day_hours_missing'), [L(h4, 'basic'), h4.warnings]);
-  const h5 = run(HOURLY_NODH, Object.assign({}, base, { paidDays: 0, paidMin: 0, schedInMin: 600 }));
+  const h4b = run(HOURLY4, Object.assign({}, base, { paidNoSchedDays: undefined, paidNoSchedMin: undefined }));
+  t('鍵の無い古い控え: 今までどおり paidMin で 8800円', L(h4b, 'basic') === 8800 && !W(h4b, 'day_hours_missing'), L(h4b, 'basic'));
+  const h4c = run(HOURLY4, Object.assign({}, base, { paidNoSchedDays: 0, paidNoSchedMin: 0 }));
+  t('予定のある日の有休1日（予定の無い日の有休0日）: 今までどおり 480分の 8800円', L(h4c, 'basic') === 8800, L(h4c, 'basic'));
+  const h5 = run(HOURLY_NODH, Object.assign({}, base, { paidDays: 0, paidMin: 0, schedInMin: 600, paidNoSchedDays: 0, paidNoSchedMin: 0 }));
   t('有休の無い月は1日の所定時間が空でも警告を足さない（今のまま）', L(h5, 'basic') === 11000 && !W(h5, 'day_hours_missing'));
-  const h6 = run(HOURLY4, Object.assign({}, base, { paidDays: 0, paidMin: 120, hourlyPaidEffMin: 120, hourlyPaidMin: 120, schedInMin: 600 }));
+  const h6 = run(HOURLY4, Object.assign({}, base, { paidDays: 0, paidMin: 120, hourlyPaidEffMin: 120, hourlyPaidMin: 120, schedInMin: 600, paidNoSchedDays: 0, paidNoSchedMin: 0 }));
   t('時間単位の有休だけの月は今のまま（1100×720÷60＝13200円）', L(h6, 'basic') === 13200 && /所定内＋有休/.test(LN(h6, 'basic').basis), L(h6, 'basic'));
+  /* 勤怠の計算から: 所定4時間の人が予定 9〜18時の日に有休1日 → 480分のまま／予定の無い日に有休1日 → 240分 */
+  const onSched = snap({ schedule: [S9(D)], leave_uses: [{ id: 'u1', staff_id: 'x', use_date: D, days: 1 }] });
+  const offSched = snap({ schedule: [S9(D)], leave_uses: [{ id: 'u2', staff_id: 'x', use_date: D2, days: 1 }] });
+  t('勤怠: 予定のある日の有休は予定の無い日の有休に数えない・予定の無い日は1日・480分', onSched.paidNoSchedDays === 0 && offSched.paidNoSchedDays === 1 && offSched.paidNoSchedMin === 480, [onSched.paidNoSchedDays, offSched.paidNoSchedDays, offSched.paidNoSchedMin]);
+  const sOn = run(HOURLY4, att(onSched)), sOff = run(HOURLY4, att(offSched));
+  t('時給: 予定 9〜18時の日の有休1日は 480分（8800円のまま）・予定の無い日の有休1日は 240分（4400円）', LN(sOn, 'basic').qty === 480 && L(sOn, 'basic') === 8800 && LN(sOff, 'basic').qty === 240 && L(sOff, 'basic') === 4400, [LN(sOn, 'basic'), LN(sOff, 'basic')]);
   t('受け口: 控えの有休日数は半日きざみのまま（0.5 → 0.5）', attFrom({ paidDays: 0.5 }).paidDays === 0.5 && attFrom({ paidDays: 2 }).paidDays === 2);
   const dl = run(DAILY, Object.assign({}, base, { workDays: 3, paidDays: 0.5, paidMin: 240 }));
-  t('日給の半日有休は日給×0.5日＝5000円（2026-11-21・前は整数に丸めて 10000円）・1日は10000円・1.5日は15000円', L(dl, 'paid_leave') === 5000 && L(run(DAILY, Object.assign({}, base, { workDays: 3 })), 'paid_leave') === 10000 && L(run(DAILY, Object.assign({}, base, { workDays: 3, paidDays: 1.5, paidMin: 720 })), 'paid_leave') === 15000, L(dl, 'paid_leave'));
+  t('日給の半日有休は日給×0.5日＝5000円（鍵の無い古い控えの道・2026-11-21・前は整数に丸めて 10000円）・1日は10000円・1.5日は15000円', L(dl, 'paid_leave') === 5000 && L(run(DAILY, Object.assign({}, base, { workDays: 3 })), 'paid_leave') === 10000 && L(run(DAILY, Object.assign({}, base, { workDays: 3, paidDays: 1.5, paidMin: 720 })), 'paid_leave') === 15000, L(dl, 'paid_leave'));
+  /* 反証レビュー（2026-11-21）: 日給は働いていない日の有休（paidOffDays）だけ払う */
+  t('日給: 働いた日の半日有休は上乗せしない（paidOffDays 0）・働いていない日の半日有休は 5000円', L(run(DAILY, Object.assign({}, base, { workDays: 3, paidDays: 0.5, paidMin: 240, paidOffDays: 0 })), 'paid_leave') === undefined && L(run(DAILY, Object.assign({}, base, { workDays: 3, paidDays: 1.5, paidMin: 720, paidOffDays: 0.5 })), 'paid_leave') === 5000);
 }
 
 console.log('\n— 5. 日給の人の法定休日の労働 —');

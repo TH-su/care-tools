@@ -210,7 +210,8 @@ const kh = new Function(cut(K, 'function isNetErr(') + '\n' + (K.match(/var DENI
   console.log('\n— 6. 配る版 —');
   /* 段4（休暇の種類）を取り込んだ時に、.30 と段4の .1x の両方と重ならない 2026-11-21 にそろえた（2026-11-21） */
   /* ★総点検（2026-11-21）: 読み直しの軽量化で kintai.js を 2026-11-21.3 に上げたので期待の版を改めた */
-  t('kintai.html の kintai.js の ?v= を上げた（2026-11-21.3）', /<script src="kintai\.js\?v=2026-11-21\.3"><\/script>/.test(read('kintai.html')));
+  /* ★反証レビュー（2026-11-21・有休の日数の鍵を控えと比べる）で kintai.js を 2026-11-21.4 に上げたので期待の版を改めた */
+  t('kintai.html の kintai.js の ?v= を上げた（2026-11-21.4）', /<script src="kintai\.js\?v=2026-11-21\.4"><\/script>/.test(read('kintai.html')));
 
   console.log('\n結果: ' + pass + ' 合格 / ' + fail + ' 不合格');
   process.exit(fail ? 1 : 0);

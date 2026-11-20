@@ -56,6 +56,28 @@ console.log('\n— A. 日給の法定休日（全部が法定休日の日だけ�
   t('土曜の日勤（法定休日にかからない）は0日', rSat.holidayWorkDays === 0 && rSat.holidayMin === 0);
 }
 
+console.log('\n— 反証レビュー（2026-11-21）: 日給の有休・休日の日給との差・勤怠の行・版の印 —');
+{
+  const S9 = (d) => ({ staff_id: 'x', work_date: d, seq: 1, office: 'facility', kind: 'work', start_at: KC.iso(at(d, '9:00')), end_at: KC.iso(at(d, '18:00')), break_min: 60, paid_min: 0, symbol: '日' });
+  const D1 = '2026-12-01', D2 = '2026-12-02';
+  /* 12/1 は 9〜13時に働いて午後を半日有休・12/2 は働かずに半日有休 */
+  const r = snap({ schedule: [S9(D1), S9(D2)], punches: [PU(D1, 'in', '9:00'), PU(D1, 'out', '13:00')], leave_uses: [{ id: 'a', staff_id: 'x', use_date: D1, days: 0.5 }, { id: 'b', staff_id: 'x', use_date: D2, days: 0.5 }] });
+  t('勤怠: 有休は1日（0.5＋0.5）・働いていない日の有休は 0.5日・予定の無い日の有休は 0日', r.paidDays === 1 && r.paidOffDays === 0.5 && r.paidNoSchedDays === 0, [r.paidDays, r.paidOffDays, r.paidNoSchedDays]);
+  const it = run(DAILY, att(r));
+  t('日給: 働いた日の半日有休は上乗せしない・働いていない日の半日有休だけ 5000円（前は有休1日の 10000円）', L(it, 'basic') === 10000 && L(it, 'paid_leave') === 5000, it.lines.filter((l) => l.sec === 'pay'));
+  t('明細の勤怠の行の有休日数は半日きざみ（0.5＋0.5＝1・0.5 は 0.5 のまま）', it.lines.find((l) => l.sec === 'att' && l.code === 'paidDays').qty === 1 && run(DAILY, { paidDays: 0.5, reviewCount: 0 }).lines.find((l) => l.sec === 'att' && l.code === 'paidDays').qty === 0.5);
+  /* 日曜（法定休日）に 9〜13時だけ働いた日給の人: 休日労働 1250×1.35×240÷60＝6750円 < 日給 10000円 → 差 3250円を足す */
+  const rs = snap({ punches: [PU('2026-12-06', 'in', '9:00'), PU('2026-12-06', 'out', '13:00')] });
+  const is = run(DAILY, att(rs));
+  t('日給: 日曜に4時間だけ働いた日は基本給0円・休日労働 6750円・休日の日給との差 3250円（合わせて日給と同じ 10000円・前は 6750円だけ）', rs.holidayWorkDays === 1 && JSON.stringify(rs.holidayDaysMin) === '[240]' && L(is, 'basic') === 0 && L(is, 'ot_holiday') === 6750 && L(is, 'holiday_gap') === 3250, is.lines.filter((l) => l.sec === 'pay'));
+  const rf = snap({ punches: [PU('2026-12-06', 'in', '9:00'), PU('2026-12-06', 'out', '18:00')] });
+  t('日曜に8時間働いた日（休日労働 13500円 ≧ 日給）は差を足さない', !run(DAILY, att(rf)).lines.some((l) => l.code === 'holiday_gap'));
+  const old = Object.assign({}, rs); delete old.holidayDaysMin;
+  t('日ごとの実働の無い古い控えは差を足さない（今までどおり）', !run(DAILY, att(old)).lines.some((l) => l.code === 'holiday_gap'));
+  t('月給・時給には差を足さない', !run({ pay_type: 'hourly', base: 1100, day_hours: 4, ins: {}, tax: { col: 'none' } }, att(rs)).lines.some((l) => l.code === 'holiday_gap'));
+  t('計算の版の印と率表の版を上げた（確定した明細の指紋で前の版と区別する）', PC.CALC_VER === 'payroll-calc-2' && PC.VERSION === 'payroll-calc-2' && Rates.VERSION === 'rates-2026-11-21' && it.fingerprint_inputs.calc_ver === 'payroll-calc-2' && it.fingerprint_inputs.rates_ver === 'rates-2026-11-21');
+}
+
 console.log('\n— B. 給与の照合で holidayWorkDays・noSchedWorkMin も比べる —');
 {
   const base = { workDays: 2, workMin: 960, holidayMin: 480, holidayWorkDays: 1, noSchedWorkMin: 0 };

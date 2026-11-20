@@ -146,7 +146,7 @@
      日数は半日きざみのまま持つ（丸めると半日の特別休暇・代休が1日になる）。hourlyPaidMin は paidMin の内数 */
   var ATT_LEAVE_KEYS = ['hourlyPaidMin', 'specialPaidMin', 'specialPaidDays', 'specialUnpaidDays', 'compDays',
     'hourlyPaidEffMin', 'hourlyPaidOffMin', 'specialPaidOffDays', 'absentPartMin'];   /* absentPartMin: 欠勤の印の日の休暇で埋まらない残り（分・再確認の反証 2026-11-20） */   /* 反証レビュー（2026-11-20）: 時間単位の有休の効く分・働いていない日の分（日給はこれで払う） */
-  var ATT_OPT_KEYS = ['holidayWorkDays', 'noSchedWorkMin'];
+  var ATT_OPT_KEYS = ['holidayWorkDays', 'noSchedWorkMin', 'paidNoSchedDays', 'paidNoSchedMin', 'paidOffDays', 'holidayDaysMin'];
   function attFromKintai(sum, locked) {
     sum = obj(sum);
     var a = { counts: {}, missing: [] };
@@ -155,7 +155,11 @@
     var c = obj(sum.counts); Object.keys(c).forEach(function (k) { var n = Number(c[k]); if (isFinite(n) && n > 0) a.counts[k] = Math.round(n); });
     ATT_LEAVE_KEYS.forEach(function (k) { var n = Number(sum[k]); a[k] = sum[k] == null || !isFinite(n) ? 0 : Math.max(0, /Days$/.test(k) ? Math.round(n * 2) / 2 : Math.round(n)); });
     if (sum.holidayWorkDays != null && isFinite(Number(sum.holidayWorkDays))) a.holidayWorkDays = Math.max(0, Math.round(Number(sum.holidayWorkDays)));
-    if (sum.noSchedWorkMin != null && isFinite(Number(sum.noSchedWorkMin))) a.noSchedWorkMin = Math.max(0, Math.round(Number(sum.noSchedWorkMin)));   /* 予定の無い勤務の実働（月給の警告・この版より前の控えには無い＝警告を出さない） */
+    if (sum.noSchedWorkMin != null && isFinite(Number(sum.noSchedWorkMin))) a.noSchedWorkMin = Math.max(0, Math.round(Number(sum.noSchedWorkMin)));
+    /* 反証レビュー（2026-11-21）: 予定の無い日の有休の日数・分、働いていない日の有休の日数（半日きざみ）、全部が法定休日の日ごとの実働。この版より前の控えには無い＝給与は今までどおりに払う */
+    if (sum.paidNoSchedMin != null && isFinite(Number(sum.paidNoSchedMin))) a.paidNoSchedMin = Math.max(0, Math.round(Number(sum.paidNoSchedMin)));
+    ['paidNoSchedDays', 'paidOffDays'].forEach(function (k) { if (sum[k] != null && isFinite(Number(sum[k]))) a[k] = Math.max(0, Math.round(Number(sum[k]) * 2) / 2); });
+    if (Array.isArray(sum.holidayDaysMin)) a.holidayDaysMin = sum.holidayDaysMin.slice(0, 31).map(function (n) { n = Number(n); return isFinite(n) ? Math.max(0, Math.round(n)) : 0; });   /* 予定の無い勤務の実働（月給の警告・この版より前の控えには無い＝警告を出さない） */
     if (locked === false) a.locked = false;
     return a;
   }
@@ -166,7 +170,7 @@
     for (var i = 0; i < ATT_KEYS.length; i++) if (a[ATT_KEYS[i]] !== b[ATT_KEYS[i]]) return false;
     for (i = 0; i < ATT_LEAVE_KEYS.length; i++) if ((a[ATT_LEAVE_KEYS[i]] || 0) !== (b[ATT_LEAVE_KEYS[i]] || 0)) return false;   /* 段4: 休暇の種類（無い控えは 0 と同じ） */
     /* 法定休日に働いた日の数・予定の無い勤務の実働（2026-11-20 に足した鍵）は、両方にある時だけ比べる（この版より前の控えには無い） */
-    for (i = 0; i < ATT_OPT_KEYS.length; i++) { var ko = ATT_OPT_KEYS[i]; if (a[ko] != null && b[ko] != null && a[ko] !== b[ko]) return false; }
+    for (i = 0; i < ATT_OPT_KEYS.length; i++) { var ko = ATT_OPT_KEYS[i]; if (a[ko] != null && b[ko] != null && JSON.stringify(a[ko]) !== JSON.stringify(b[ko])) return false; }
     var ka = Object.keys(a.counts).sort(), kb = Object.keys(b.counts).sort();
     if (ka.join('\u0001') !== kb.join('\u0001')) return false;
     for (i = 0; i < ka.length; i++) if (a.counts[ka[i]] !== b.counts[ka[i]]) return false;

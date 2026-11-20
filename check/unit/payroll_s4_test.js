@@ -110,8 +110,8 @@ console.log('\n— 6. 反証レビュー（2026-11-20）の場面: 勤怠の計�
   eq3('半日の代休＋午前だけ', row({ punches: am, absences: [{ staff_id: 'x', date: D, kind: 'comp', minutes: 240, link_date: '2026-11-29' }] }), ['basic:300000 leave_unpaid:-6976', 'basic:10000', 'basic:4400']);
   eq3('半日の有給の特別休暇＋午前だけ', row({ punches: am, absences: [{ staff_id: 'x', date: D, kind: 'special', paid: true, minutes: 240 }] }), ['basic:300000', 'basic:10000', 'basic:4400 special_paid:4400']);
   /* 給与の額の直し（代表者の決定 2026-11-20・2）: 半日有休の日の早退は有休の分を差し引く（前は 早退300分→late:-8720 を控除していた）。
-     2026-11-21: 日給の半日有休は日給×0.5日（前は整数に丸めて 10000円） */
-  eq3('手入力の半日有休＋午前だけ（早退は有休の分で埋まる＝控除なし・日給の有休は半日分）', row({ punches: am, leave_uses: [{ id: 'u', staff_id: 'x', use_date: D, days: 0.5 }] }), ['basic:300000', 'basic:10000 paid_leave:5000', 'basic:8800']);
+     2026-11-21: 日給の半日有休は日給×0.5日（前は整数に丸めて 10000円）。同じ日の反証レビュー: 働いた日の半日有休は日給に上乗せしない（前の版の paid_leave:5000 も無くした） */
+  eq3('手入力の半日有休＋午前だけ（早退は有休の分で埋まる＝控除なし・働いた日なので日給の有休は上乗せしない）', row({ punches: am, leave_uses: [{ id: 'u', staff_id: 'x', use_date: D, days: 0.5 }] }), ['basic:300000', 'basic:10000', 'basic:8800']);
   /* 日給の働いた日＋時間単位・働いていない日 */
   eq3('打刻なしの日に時間単位8時間（働いていない日）', row({ absences: [{ staff_id: 'x', date: D, kind: 'hourly_paid', minutes: 480 }] }), ['basic:300000', 'basic:0 paid_leave_hour:10000', 'basic:8800']);
   /* 夜勤（22時〜翌7時・休憩60分）を翌5時に早退して時間単位2時間。始めた日でも終わった日で入れても、その夜勤の早退から差し引く */

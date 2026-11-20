@@ -959,7 +959,7 @@
     /* v5 段4: 休暇の種類（控えに入れた鍵）。段4 より前の控えには無いので比べない（上の typeof の確かめ） */
     'hourlyPaidMin', 'specialPaidMin', 'specialPaidDays', 'specialUnpaidDays', 'compDays', 'hourlyPaidEffMin', 'hourlyPaidOffMin', 'specialPaidOffDays', 'absentPartMin',
     /* 給与の額の直し（2026-11-20）: 予定の無い勤務の実働・法定休日に働いた日の数（この版より前の控えには無いので比べない） */
-    'noSchedWorkMin', 'holidayWorkDays'];
+    'noSchedWorkMin', 'holidayWorkDays', 'paidNoSchedDays', 'paidNoSchedMin', 'paidOffDays'];   /* 反証レビュー（2026-11-21）の鍵も（日ごとの休日の実働 holidayDaysMin は数の並びなので比べない＝holidayMin・holidayWorkDays で見る） */
   /* 記号ごとの回数を比べる（0 より大きい回数だけ・給与の画面の attSame と同じ見方） */
   function countsOf(c) { var o = {}; if (c && typeof c === 'object' && !Array.isArray(c)) for (var k in c) { var n = Number(c[k]); if (isFinite(n) && n > 0) o[k] = Math.round(n); } return o; }
   function sameCounts(a, b) {

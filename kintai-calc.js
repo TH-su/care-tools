@@ -728,7 +728,8 @@
         legalInOverMin: 0, over60Min: 0, nightShiftCount: 0, schedDays: 0, counts: {}, weekOverMin: 0, frameOverMin: 0,
         hourlyPaidMin: 0, specialPaidMin: 0, specialPaidDays: 0, specialUnpaidDays: 0, compDays: 0,   /* v5 段4: 休暇の種類（無い時は 0） */
         hourlyPaidEffMin: 0, hourlyPaidOffMin: 0, specialPaidOffDays: 0, absentPartMin: 0,
-        noSchedWorkMin: 0, holidayWorkDays: 0 };   /* 給与の額の直し（代表者の決定 2026-11-20）: 予定の無い勤務の実働の分（月給の警告に使う）・法定休日に働いた日の数（日給の基本給の日数から除く） */   /* absentPartMin: 欠勤の印の日の休暇で埋まらない残り（半日ちょうどは absentDays に 0.5 日） */   /* 給与段4 の反証レビュー: 時間単位の有休の効く分・働いていない日の効く分・働いていない日の有給の特別休暇 */
+        noSchedWorkMin: 0, holidayWorkDays: 0,
+        paidNoSchedDays: 0, paidNoSchedMin: 0, paidOffDays: 0, holidayDaysMin: [] };   /* 反証レビュー（2026-11-21）: 予定の無い日の有休の日数と分（時給の有休を1日の所定時間で払う分）・働いていない日の有休の日数（日給の有休）・全部が法定休日の日ごとの実働（日給の休日の差） */   /* 給与の額の直し（代表者の決定 2026-11-20）: 予定の無い勤務の実働の分（月給の警告に使う）・法定休日に働いた日の数（日給の基本給の日数から除く） */   /* absentPartMin: 欠勤の印の日の休暇で埋まらない残り（半日ちょうどは absentDays に 0.5 日） */   /* 給与段4 の反証レビュー: 時間単位の有休の効く分・働いていない日の効く分・働いていない日の有給の特別休暇 */
       var leadDays = [], liDay = 0, seqOf = {};
       for (j = 0; j < dates.length; j++) {
         var date = dates[j], bl = byDate[date].sort(function (x, y) { return (x.schedStart || x.countStart || 0) - (y.schedStart || y.countStart || 0); });
@@ -785,6 +786,8 @@
         var pdays = 0;
         if (luDays) { pdays = luDays; sum.paidDays += pdays; sum.paidMin += paidMin; }
         else if (paidMin > 0) { pdays = paidMin / (dsw > 0 ? dsw + paidMin : 480) <= 0.5 ? 0.5 : 1; sum.paidDays += pdays; sum.paidMin += paidMin; }
+        if (pdays > 0 && dsw === 0) { sum.paidNoSchedDays += pdays; sum.paidNoSchedMin += paidMin; }   /* 予定の無い日の有休（シフトの「有」の日・手入力で予定の無い日） */
+        if (pdays > 0 && dw === 0) sum.paidOffDays += pdays;   /* 働いていない日の有休（日給は働いた日の有休を上乗せしない） */
         if (noPunchAll && bl.length && paidMin === 0) sum.noPunchDays++;
         /* 給与段4 の反証レビュー（2026-11-20・1）: 欠勤の印がある日でも、その日に休暇（特別休暇・代休・時間単位の有休）があれば欠勤に数えず、休暇として1回だけ数える */
         var ablA = absBy[st.staff_id + '|' + date];
@@ -805,7 +808,7 @@
         sum.holidayMin += dhol; sum.uncountedMin += dunc;
         /* 法定休日に働いた日＝その日の実働が全部法定休日に入る日だけ（日給の基本給の日数から除く）。一部だけかかる日（土曜22時〜日曜7時の夜勤など）は数えず、
            基本給の日数に残して、休日労働はかかった分だけ払う（多く払う側・仮置き 2026-11-21） */
-        if (dw > 0 && dhol === dw) sum.holidayWorkDays++;
+        if (dw > 0 && dhol === dw) { sum.holidayWorkDays++; sum.holidayDaysMin.push(dhol); }
         var dayRow = { date: date, blocks: bl, paidMin: paidMin, workMin: dw, schedWorkMin: dsw, legalOverMin: legal, flags: dflags, note: dnote || null,
           paidDays: pdays, holidayMin: dhol, uncountedMin: dunc, absent: absentDay, mark: (dnote && dnote.day_mark) || null };
         if (absPart > 0) dayRow.absentPartMin = absPart;   /* 欠勤の印の日の、休暇で埋まらない残り（分・ある日だけ） */
@@ -1083,7 +1086,8 @@
         legalOverRawMin: s.legalOverRawMin || 0, holidayRawMin: s.holidayRawMin || 0,   /* v5 段3: 月の30分丸めの前の値（36協定の判定だけに使う・給与の比べには入れない） */
         hourlyPaidMin: s.hourlyPaidMin || 0, specialPaidMin: s.specialPaidMin || 0, specialPaidDays: s.specialPaidDays || 0, specialUnpaidDays: s.specialUnpaidDays || 0, compDays: s.compDays || 0,
         hourlyPaidEffMin: s.hourlyPaidEffMin || 0, hourlyPaidOffMin: s.hourlyPaidOffMin || 0, specialPaidOffDays: s.specialPaidOffDays || 0, absentPartMin: s.absentPartMin || 0,   /* v5 段4: 休暇の種類（hourlyPaidMin は paidMin の内数） */
-        noSchedWorkMin: s.noSchedWorkMin || 0, holidayWorkDays: s.holidayWorkDays || 0 });   /* 給与の額の直し（2026-11-20）: 予定の無い勤務の実働・法定休日に働いた日の数（この版より前の控えには無い＝給与は今までどおりに扱う） */
+        noSchedWorkMin: s.noSchedWorkMin || 0, holidayWorkDays: s.holidayWorkDays || 0,
+        paidNoSchedDays: s.paidNoSchedDays || 0, paidNoSchedMin: s.paidNoSchedMin || 0, paidOffDays: s.paidOffDays || 0, holidayDaysMin: (s.holidayDaysMin || []).slice() });   /* 反証レビュー（2026-11-21）: この版より前の控えには無い＝給与は今までどおりに払う */   /* 給与の額の直し（2026-11-20）: 予定の無い勤務の実働・法定休日に働いた日の数（この版より前の控えには無い＝給与は今までどおりに扱う） */
     }
     return { v: 1, ym: month.ym, period: month.period, config: month.config, rows: rows };
   }
