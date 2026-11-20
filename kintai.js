@@ -317,7 +317,7 @@
     if (shiftInfo && !shiftInfo.ok) h += '<div class="band warn" role="status">' + esc(shiftInfo.why) + '</div>';
     if (shiftInfo && shiftInfo.ok && !shiftInfo.confirmed) h += '<div class="band warn" role="status">この月のシフトはまだ「確定」していません。シフトが変わると予定も変わります（開くたびに取り込み直します）。</div>';
     if (shiftInfo && shiftInfo.ok && shiftInfo.missing && shiftInfo.missing.length) h += '<div class="band warn" role="status">' + esc(shiftInfo.missing.map(function (cm) { return (+cm.slice(5)) + '月'; }).join('・')) + 'のシフトがまだ無いため、その月の日の予定は取り込んでいません。</div>';
-    if (shiftInfo && shiftInfo.ok && shiftInfo.skipped) h += '<div class="band" role="status">締めてある前の月分の日（' + esc(String(shiftInfo.skipped)) + ' 件の予定）は、シフトを取り込んでも変えていません。</div>';
+    if (shiftInfo && shiftInfo.ok && shiftInfo.skipped) h += '<div class="band" role="status">締めてある月分の日と、その前後の日（' + esc(String(shiftInfo.skipped)) + ' 件の予定）は、シフトを取り込んでも変えていません。直す時は予定の手直しを使ってください。</div>';
     if (shiftInfo && shiftInfo.ok && shiftInfo.warnings.length) h += '<div class="band warn" role="status">シフトの記号で気になる所が ' + shiftInfo.warnings.length + ' 件あります（「職員と番号」の下に一覧）。</div>';
     return h;
   }
@@ -1025,7 +1025,7 @@
     return h;
   }
   /* 直しの履歴（kintai_edits）の action の言い方。DB の勤怠の移行（0098〜0112）が書く action は全部ここに置く（内部の名前のまま出さない・v5 1-3・試験 kintai_edits_label_test） */
-  var ACT_LABEL = { sched_set: '予定を直した', sched_off: '予定を休みにした', sched_clear: '予定の手直しを外した', fixed_put: '前提の時間を入れた', fixed_void: '前提の時間を取り消した', display_name: '表示名を変えた', punch_add: '打刻を足した', punch_void: '打刻を取り消した', day_put: '承認・休憩・メモ・印', code_reset: '番号を振り直した', code_fixed: '打刻の番号を職員No に合わせた', month_lock: '月を締めた', month_unlock: '締めを解除した', settings_put: '設定を変えた', schedule_put: 'シフトを取り込んだ',
+  var ACT_LABEL = { sched_set: '予定を直した', sched_off: '予定を休みにした', sched_clear: '予定の手直しを外した', fixed_put: '前提の時間を入れた', fixed_void: '前提の時間を取り消した', display_name: '表示名を変えた', punch_add: '打刻を足した', punch_void: '打刻を取り消した', day_put: '承認・休憩・メモ・印', code_reset: '番号を振り直した', code_fixed: '打刻の番号を職員No に合わせた', month_lock: '月を締めた', month_unlock: '締めを解除した', settings_put: '設定を変えた', schedule_put: 'シフトを取り込んだ', staff_sync: 'シフトから職員を取り込んだ',
     master_import: '職員マスタと突き合わせた', master_add: '職員マスタから職員を足した', staff_link: '職員マスタとの結び付けを直した', clock_visible: '打刻画面に出す・出さないを変えた',
     leave_profile: '有給の設定を変えた', leave_grant_add: '有給の付与を足した', leave_grant_void: '有給の付与を取り消した', leave_use_add: '有休の使用を足した', leave_use_void: '有休の使用を取り消した',
     managers_add: '勤怠の管理者に足した', managers_remove: '勤怠の管理者から外した',
@@ -2568,6 +2568,7 @@
      読めない時は手元の時刻で数え直すだけ（帯は出さない・記録に残す）。届いた時に月やタブが変わっていれば捨てる */
   var quietBusy = 0, quietSeq = 0;
   var quietNetFails = 0;   /* 読み直しで続けて通信できなかった回数（読めたら0に戻す・reports#15 の直し） */
+  var quietRev = null, quietRevNo = false;   /* 最後に黙って読んだ時の月の変わりの印（どの月・どの読み込みの世代か）・印の関数がまだ無いか（総点検 2026-11-21） */
   function quietOk() {
     if (view !== 'app' || busy || !month || !data || dlgCtx || printAll || (tab !== 'home' && tab !== 'day' && tab !== 'review')) return false;
     if (document.visibilityState === 'hidden') return false;
@@ -2580,11 +2581,20 @@
        20秒で答えが来なければ諦めて次から読み直す（届いた古い答えは番号で捨てる） */
     if (quietBusy && Date.now() - quietBusy < 20000) { recompute(); paint(); return; }
     var my = gen, atYm = ym, seq = ++quietSeq; quietBusy = Date.now();
-    rpc('kintai_month_get', { p_ym: ym }).then(okOr).then(function (d) {
+    /* 総点検（2026-11-21・代表者の決定）: まず月の変わりの印（統合 0117 の kintai_month_rev・32文字）だけを聞き、前に読んだ時と同じなら
+       kintai_month_get（1回 数百KB〜2MB）を読まずに手元の時刻で数え直すだけにする。印は読み込む前に聞く（読み込みの間に変わっても次の30秒で読み直す）。
+       印が空・関数がまだ無い（0117 の前）・断られた時は今までどおり丸ごと読む（関数が無いと分かった後はこの画面では印を聞かない） */
+    var revP = quietRevNo ? Promise.resolve(null) : rpc('kintai_month_rev', { p_ym: ym })['catch'](function (e) { if (noDb(e)) quietRevNo = true; return null; });
+    var revNow = null;
+    revP.then(function (rv) {
+      revNow = typeof rv === 'string' && rv ? rv : null;
+      if (revNow && quietRev && quietRev.rev === revNow && quietRev.ym === atYm && quietRev.gen === my) return 'same';
+      return rpc('kintai_month_get', { p_ym: atYm }).then(okOr);
+    }).then(function (d) {
       if (seq !== quietSeq) return;
       quietBusy = 0; quietNetFails = 0;
       if (my !== gen || atYm !== ym || !quietOk()) return;
-      data = d;
+      if (d !== 'same') { data = d; quietRev = revNow ? { rev: revNow, ym: atYm, gen: my } : null; }
       recompute(); paint();
       sync(isLocked() ? '締め済みの月です' : '読み込みました（' + hm(Date.now()) + '）');
     })['catch'](function (e) {

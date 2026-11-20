@@ -109,7 +109,8 @@ const kh = new Function(cut(K, 'function isNetErr(') + '\n' + (K.match(/var DENI
     /* 箱: 読み直しが使う画面の状態と部品を差し替えて、quietReload を本物の本文のまま動かす */
     const box = new Function('kh', 'env', [
       'var isNetErr = kh.isNetErr, okOr = kh.okOr;',
-      'var quietBusy = 0, quietSeq = 0, quietNetFails = 0;',
+      'var quietBusy = 0, quietSeq = 0, quietNetFails = 0, quietRev = null, quietRevNo = false;',
+      'function noDb(e) { return !!(e && e.code === "PGRST202"); }',
       "var view = 'app', busy = false, month = {}, data = {}, dlgCtx = null, printAll = false, tab = 'day', gen = 1, ym = '2026-11';",
       "var document = { visibilityState: 'visible', activeElement: null };",
       'function $() { return { contains: function () { return false; } }; }',
@@ -143,6 +144,43 @@ const kh = new Function(cut(K, 'function isNetErr(') + '\n' + (K.match(/var DENI
     t('okOr の断りも今までどおり報告する', env.notes.length === 1 && env.notes[0] === '自動の読み直し', env.notes);
   }
 
+  console.log('\n— 4b. 読み直しは月の変わりの印が同じなら丸ごと読まない（総点検 2026-11-21・統合 0117 の kintai_month_rev） —');
+  {
+    const src = cut(K, 'function quietOk(') + '\n' + cut(K, 'function quietReload(');
+    const box = new Function('kh', 'env', [
+      'var isNetErr = kh.isNetErr, okOr = kh.okOr;',
+      'var quietBusy = 0, quietSeq = 0, quietNetFails = 0, quietRev = null, quietRevNo = false;',
+      'function noDb(e) { var c = e && e.code; return c === "42P01" || c === "PGRST205" || c === "PGRST202"; }',
+      "var view = 'app', busy = false, month = {}, data = {}, dlgCtx = null, printAll = false, tab = 'day', gen = 1, ym = '2026-11';",
+      "var document = { visibilityState: 'visible', activeElement: null };",
+      'function $() { return { contains: function () { return false; } }; }',
+      'function rpc(n, a) { env.calls.push(n); return env.ans[n](a); }',
+      'function note(w, e) { env.notes.push(w); }',
+      'function recompute() { env.recomputes++; }',
+      'function paint() {}', 'function sync() {}', 'function isLocked() { return false; }', 'function hm() { return ""; }',
+      src,
+      'return { reload: quietReload, data: function () { return data; }, bump: function () { gen++; } };'].join('\n'));
+    const env = { notes: [], recomputes: 0, calls: [], ans: {} };
+    const q = box(kh, env);
+    const tick = async () => { q.reload(); for (let i = 0; i < 4; i++) await new Promise((r) => setTimeout(r, 0)); };
+    const gets = () => env.calls.filter((n) => n === 'kintai_month_get').length;
+    let rev = 'r1', n = 0;
+    env.ans.kintai_month_rev = () => Promise.resolve(rev);
+    env.ans.kintai_month_get = () => Promise.resolve({ ok: true, n: ++n });
+    await tick();
+    t('初めの読み直しは印を聞いてから丸ごと読む', env.calls.join(',') === 'kintai_month_rev,kintai_month_get' && q.data().n === 1, env.calls);
+    env.calls.length = 0; const rc = env.recomputes; await tick();
+    t('印が同じなら丸ごと読まず、手元の時刻で数え直すだけ', env.calls.join(',') === 'kintai_month_rev' && q.data().n === 1 && env.recomputes === rc + 1, env.calls);
+    rev = 'r2'; env.calls.length = 0; await tick();
+    t('印が変わったら丸ごと読む', gets() === 1 && q.data().n === 2);
+    q.bump(); env.calls.length = 0; await tick();
+    t('ほかの読み込みの後（世代が変わった）は印が同じでも1回丸ごと読む', gets() === 1 && q.data().n === 3);
+    env.ans.kintai_month_rev = () => Promise.resolve(null); env.calls.length = 0; await tick(); await tick();
+    t('印が空なら毎回丸ごと読む（今までどおり）', gets() === 2);
+    env.ans.kintai_month_rev = () => Promise.reject({ code: 'PGRST202', message: 'Could not find the function' }); env.calls.length = 0; await tick(); await tick();
+    t('印の関数がまだ無い（0117 の前）時は丸ごと読み、2回目からは印を聞かない', env.calls.join(',') === 'kintai_month_rev,kintai_month_get,kintai_month_get' && env.notes.length === 0, env.calls);
+  }
+
   console.log('\n— 5. 読み込み（load）の報告の出し方 —');
   {
     const load = cut(K, 'function load(');
@@ -171,7 +209,8 @@ const kh = new Function(cut(K, 'function isNetErr(') + '\n' + (K.match(/var DENI
 
   console.log('\n— 6. 配る版 —');
   /* 段4（休暇の種類）を取り込んだ時に、.30 と段4の .1x の両方と重ならない 2026-11-21 にそろえた（2026-11-21） */
-  t('kintai.html の kintai.js の ?v= を上げた（2026-11-21）', /<script src="kintai\.js\?v=2026-11-21"><\/script>/.test(read('kintai.html')));
+  /* ★総点検（2026-11-21）: 読み直しの軽量化で kintai.js を 2026-11-21.3 に上げたので期待の版を改めた */
+  t('kintai.html の kintai.js の ?v= を上げた（2026-11-21.3）', /<script src="kintai\.js\?v=2026-11-21\.3"><\/script>/.test(read('kintai.html')));
 
   console.log('\n結果: ' + pass + ' 合格 / ' + fail + ' 不合格');
   process.exit(fail ? 1 : 0);

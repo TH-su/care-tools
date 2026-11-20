@@ -104,7 +104,7 @@ t('暗い表示に対応（画面だけ・紙は白地）', /<meta name="color-s
 t('保存の後の短い知らせは aria-live', /<div class="toast no-print" id="g-toast" role="status" aria-live="polite" hidden><\/div>/.test(H));
 t('印刷の時だけの見出し（.ph は画面で出さない）', /\.ph\{display:none\}/.test(H) && /function printHead\(sub\)/.test(K));
 /* ★v4（2026-11-20）: 中身を変えたので ?v= を 2026-11-20 に上げた（CLAUDE.md の決まり）。期待をその版に改めた */
-t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-2…（kintai.js は 2026-11-21 に上げた）', /kintai\.js\?v=2026-11-21/.test(H) && /kintai-calc\.js\?v=2026-11-20/.test(H) && /kintai-calc\.js\?v=2026-11-20/.test(HC));
+t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-2…（kintai.js は 2026-11-21 に上げた）', /kintai\.js\?v=2026-11-21/.test(H) && /kintai-calc\.js\?v=2026-11-21/.test(H) && /kintai-calc\.js\?v=2026-11-21/.test(HC));
 
 console.log('\n— 8. 打刻画面の v3（出勤を押す → 氏名 → パスコード） —');
 const pendClock = [];
@@ -299,7 +299,8 @@ t('反証レビューの指摘1:「今日」は今日のカレンダー月へ移
 /* ★給与の側の反証レビューの直し（2026-11-20）で kintai.js を ?v=2026-11-20.13、kintai-calc.js を ?v=2026-11-20.6 に上げた */
 /* ★再確認の反証の直し（2026-11-20・欠勤の印と部分の休暇）で kintai.js を ?v=2026-11-20.14、kintai-calc.js を ?v=2026-11-20.7 に上げた */
 /* ★段4 を main（夜間修復の直し .30）に取り込んだ時に、両方の版と重ならない ?v=2026-11-21 にした（2026-11-21） */
-t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-21・2026-11-20.7（両画面と給与の画面でそろえる）', /kintai\.js\?v=2026-11-21"/.test(H) && /kintai-calc\.js\?v=2026-11-20\.7"/.test(H) && /kintai-calc\.js\?v=2026-11-20\.7"/.test(HC) && /kintai-calc\.js\?v=2026-11-20\.7"/.test(read('payroll.html')));
+/* ★総点検（2026-11-21・給与の額の5件と読み直しの軽量化）で kintai.js を ?v=2026-11-21.3、kintai-calc.js を ?v=2026-11-21 に上げた */
+t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-21.3・2026-11-21（両画面と給与の画面でそろえる）', /kintai\.js\?v=2026-11-21\.3"/.test(H) && /kintai-calc\.js\?v=2026-11-21"/.test(H) && /kintai-calc\.js\?v=2026-11-21"/.test(HC) && /kintai-calc\.js\?v=2026-11-21"/.test(read('payroll.html')));
 
 const await_pending = [];   /* 動かして確かめる試験（Promise）を最後に待つ */
 console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（2026-11-20・凍結した仕様書 ROOT-v4-master-leave.md） —');
@@ -318,7 +319,7 @@ console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（
   /* ★勤怠 v5 段4 の給与の側（2026-11-20）: kintai-calc.js だけ版を 2026-11-20.5 に上げたので、その期待の版を改めた（kintai-leave.js は .4 のまま・並びの確かめは同じ） */
   /* ★給与の側の反証レビューの直し（2026-11-20）: kintai-calc.js を 2026-11-20.6 に上げたので、その期待の版を改めた */
   /* ★再確認の反証の直し（2026-11-20）: kintai-calc.js を 2026-11-20.7 に上げたので、その期待の版を改めた */
-  t('kintai-leave.js は kintai-calc.js の後・kintai.js の前に読む（?v=2026-11-20.4・反証レビューの直しで上げた）', H.indexOf('<script src="kintai-calc.js?v=2026-11-20.7"></script>') >= 0 && H.indexOf('<script src="kintai-leave.js?v=2026-11-20.4"></script>') > H.indexOf('kintai-calc.js?v=') && H.indexOf('kintai-leave.js?v=') < H.indexOf('kintai.js?v='));
+  t('kintai-leave.js は kintai-calc.js の後・kintai.js の前に読む（?v=2026-11-20.4・反証レビューの直しで上げた）', H.indexOf('<script src="kintai-calc.js?v=2026-11-21"></script>') >= 0 && H.indexOf('<script src="kintai-leave.js?v=2026-11-20.4"></script>') > H.indexOf('kintai-calc.js?v=') && H.indexOf('kintai-leave.js?v=') < H.indexOf('kintai.js?v='));
   /* iPhone の幅（640px 以下）だけの見た目の直し（2026-11-20）: 窓の欄の見出しを縦1字にしない・枠（fieldset）を窓の外へ広げない・突き合わせの表は1人ずつの並び */
   {
     const mq = (H.match(/@media \(max-width:640px\)\{[\s\S]*?\n\s*table\.mt td\.empty\{display:block\}\}/) || [''])[0];
@@ -465,7 +466,7 @@ console.log('\n— 14. 打刻の番号と従業員コードの順・日ごとの
      タブを移る時は保存していない設定の変更を確かめる（C4）ので、その呼び出しも期待に入れた。描き直す並びのタブ（REORDER_TABS）にもホームを足した */
   t('ホーム・日ごと・要確認は30秒ごとに打刻を読み直す（kintai_month_get）・画面が見えた時とタブを移った時もすぐ読む',
     /setInterval\(function \(\) \{ quietReload\(\); \}, 30000\);/.test(K) && /visibilitychange', function \(\) \{ if \(document\.visibilityState === 'visible'\) quietReload\(\); \}/.test(K)
-    && /if \(TABS\.indexOf\(t\) < 0\) t = 'home'; if \(!settingsLeaveOk\(\)\) return; tab = t; lsSet\(LS_TAB, t\); paint\(\); if \(t === 'home' \|\| t === 'day' \|\| t === 'review'\) quietReload\(\);/.test(K) && /rpc\('kintai_month_get', \{ p_ym: ym \}\)/.test(q));
+    && /if \(TABS\.indexOf\(t\) < 0\) t = 'home'; if \(!settingsLeaveOk\(\)\) return; tab = t; lsSet\(LS_TAB, t\); paint\(\); if \(t === 'home' \|\| t === 'day' \|\| t === 'review'\) quietReload\(\);/.test(K) && /rpc\('kintai_month_get', \{ p_ym: atYm \}\)/.test(q) && /rpc\('kintai_month_rev', \{ p_ym: ym \}\)/.test(q));   /* ★総点検（2026-11-21）: 先に月の変わりの印（0117）を聞いてから読む形にしたので期待を改めた */
   t('読み直しは窓・保存中・印刷中・選ぶ欄の操作中・隠れている時・ほかのタブではしない（入力を消さない）',
     /if \(view !== 'app' \|\| busy \|\| !month \|\| !data \|\| dlgCtx \|\| printAll \|\| \(tab !== 'home' && tab !== 'day' && tab !== 'review'\)\) return false;/.test(q) && /visibilityState === 'hidden'\) return false;/.test(q) && /ae\.tagName === 'SELECT'/.test(q));
   t('届いた時に読み込みの世代・月・状態が変わっていれば捨てる・答えを待つ間は手元で数え直す・20秒で諦めて古い答えは番号で捨てる・失敗は記録して手元で数え直すだけ',
