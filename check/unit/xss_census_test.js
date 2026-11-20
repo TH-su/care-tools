@@ -267,6 +267,8 @@ const CENSUS = {
   "equip-calc.js": [],
   "kintai-calc.js": [],
   "kintai-leave.js": [],   /* v4（2026-11-20）: 有給の純関数（DOM に触れない） */
+  "kintai-36.js": [],      /* v5（2026-11-20）: 36協定の判定の純関数（DOM に触れない） */
+  "kintai-monitor.js": [], /* v5（2026-11-20）: 管理者のホームの箱の純関数（DOM に触れない） */
   "shift-symbols.js": [],
   "payroll-calc.js": [],
   "payroll-rates.js": [],
