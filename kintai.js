@@ -425,7 +425,7 @@
   }
 
   function paintStaff() {
-    var list = (data.staff || []).slice().sort(function (a, b) { return (a.office || '') < (b.office || '') ? -1 : (a.office || '') > (b.office || '') ? 1 : (a.code < b.code ? -1 : 1); });
+    var list = staffSorted();
     var rows = list.map(function (s) {
       return '<tr><td>' + esc(s.name) + '</td><td>' + esc(officeName(s.office)) + '</td><td class="num"><b>' + esc(s.code) + '</b></td><td>' + esc(s.emp_code || '') + (s.emp_code ? '' : '<span class="tag rv">従業員コードなし</span>') + '</td><td>' + (s.active === false ? '<span class="tag">休止中</span>' : '') + '</td>' +
         staffMasterCells(s) +
@@ -450,7 +450,22 @@
   function ymdJa(d) { return d && L && L.isDate(d) ? (+d.slice(0, 4)) + '/' + (+d.slice(5, 7)) + '/' + (+d.slice(8, 10)) : ''; }
   function dayTxt(n) { return n === 0.5 ? '半日' : String(n) + ' 日'; }
   function staffById(sid) { return (data && data.staff || []).filter(function (s) { return s.staff_id === sid; })[0] || null; }
-  function staffSorted() { return (data && data.staff || []).slice().sort(function (a, b) { return (a.office || '') < (b.office || '') ? -1 : (a.office || '') > (b.office || '') ? 1 : (a.code < b.code ? -1 : 1); }); }
+  /* 職員の並び（2026-11-20 代表者の指示「入職順に」）: 事業所ごとに、結んだ職員マスタの入職日の古い順。
+     有給の設定の入職日の上書きは並びに使わない（有給の記録を読んだかどうかで並びが変わらないように・反証レビュー）。
+     入職日の分からない人（職員マスタと結んでいない派遣など・職員マスタをまだ読んでいない時）はその事業所の最後に、打刻の番号の順で並べる */
+  function hireDateOf(s) {
+    var m = masterOf(s);
+    return L ? L.hireOf(m && m.hire_date, null) : null;
+  }
+  function staffSorted() {
+    return (data && data.staff || []).map(function (s) { return { s: s, h: hireDateOf(s) }; }).sort(function (x, y) {
+      var a = x.s, b = y.s;
+      if ((a.office || '') !== (b.office || '')) return (a.office || '') < (b.office || '') ? -1 : 1;
+      if (x.h && y.h && x.h !== y.h) return x.h < y.h ? -1 : 1;
+      if (!!x.h !== !!y.h) return x.h ? -1 : 1;
+      return a.code < b.code ? -1 : a.code > b.code ? 1 : 0;
+    }).map(function (x) { return x.s; });
+  }
   function srcOf(s) { return s && s.source === 'master' ? 'master' : 'shift'; }
   /* 結んだ職員マスタの id（DB の master_id だけを見る。m_ の名前から読まない） */
   function masterIdOf(s) { return s && s.master_id ? String(s.master_id) : null; }   /* 外した m_ の行は master_id が空（休止）＝結んでいない */
@@ -487,13 +502,16 @@
     /* 雇用区分は職員マスタの既定の呼び名で出す（staff-master-calc.js の ENUMS.employmentType と同じ・知らない値はそのまま） */
     var EMP_JA = { regular: '正社員', contract: '契約社員', part: 'パート', officer: '役員兼使用人', temp: '臨時' };
     var lm = linkedMap();
-    var unS = (data.staff || []).filter(function (s) { return s.active !== false && srcOf(s) === 'shift' && !s.master_id; });
+    /* 打刻画面に出さない人（シフトに仮で入れた枠など・2026-11-20 代表者の指示）は、結べていない一覧に出さない（件数だけ下に添える） */
+    var unS0 = (data.staff || []).filter(function (s) { return s.active !== false && srcOf(s) === 'shift' && !s.master_id; });
+    var unS = unS0.filter(function (s) { return s.clock_visible !== false; }), unHid = unS0.length - unS.length;
     var unM = masterSt.rows.filter(function (m) { return inService(m) && !lm[m.master_id]; });
     h += '<div class="row"><button type="button" class="btn sm pri" data-act="m-import">職員マスタと突き合わせる</button><button type="button" class="btn sm" data-act="m-reload">職員マスタを読み直す</button></div>' +
       '<p class="help">「職員マスタと突き合わせる」を押すと、氏名（空白を除く）がシフトの職員と職員マスタで1人ずつだけ同じ人を結び、職員マスタで退職日を過ぎた人（職員マスタから足した人）を休止にします。同じ名前が2人以上いる人は取り違えないよう自動では結びません。結べなかった職員マスタの人は、下の表で1人ずつ「シフトの職員に結ぶ」か「新しい職員として足す」を選びます（退職日が空か今日より後の人・休職中も含む）。シフトから来た人の名前・事業所・休止はシフトの取り込みのまま変えません。</p>';
     if (importResult) h += '<div class="band ok" role="status">前回の突き合わせ: 結んだ ' + esc(importResult.linked || 0) + ' 人・休止にした ' + esc(importResult.deactivated || 0) + ' 人</div>';
     h += '<div class="tw"><table class="mt"><thead><tr><th>職員マスタと結べていないシフトの職員（' + unS.length + ' 人）</th><th></th></tr></thead><tbody>' +
       (unS.length ? unS.map(function (s) { return '<tr><td>' + esc(s.name) + '</td><td><button type="button" class="btn sm" data-act="m-link" data-sid="' + esc(s.staff_id) + '">職員マスタと結ぶ</button></td></tr>'; }).join('') : '<tr><td colspan="2" class="empty">ありません</td></tr>') + '</tbody></table></div>' +
+      (unHid ? '<p class="help">打刻画面に出さない ' + unHid + ' 人（シフトに仮で入れた枠など）は、この一覧に出していません。職員マスタと結ぶ時は、下の職員の表の「職員マスタと結ぶ」から結べます。</p>' : '') +
       '<div class="tw" style="margin-top:8px"><table class="mt"><thead><tr><th>勤怠と結べていない職員マスタの人（' + unM.length + ' 人）</th><th>入職日</th><th>雇用形態</th><th></th></tr></thead><tbody>' +
       (unM.length ? unM.map(function (m) { return '<tr><td>' + esc(m.name) + '</td><td data-l="入職日">' + esc(ymdJa(m.hire_date)) + '</td><td data-l="雇用形態">' + esc(EMP_JA[m.employment_type] || m.employment_type || '') + '</td>' +
         '<td><button type="button" class="btn sm" data-act="m-link-m" data-mid="' + esc(m.master_id) + '">シフトの職員に結ぶ</button><button type="button" class="btn sm" data-act="m-add" data-mid="' + esc(m.master_id) + '">新しい職員として足す</button></td></tr>'; }).join('') : '<tr><td colspan="4" class="empty">ありません</td></tr>') + '</tbody></table></div>' +
