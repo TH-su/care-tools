@@ -338,7 +338,7 @@ console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（
     const dn = dnSrc ? new Function(dnSrc + '\nreturn dispName;')() : null;
     t('表示名があれば表示名・無ければシフトの名前・どちらも無ければ職員ID',
       !!dn && dn({ name: '予定 架空', display_name: '架空' }) === '架空' && dn({ name: '架空 二', display_name: null }) === '架空 二' && dn({ staff_id: 'x1' }) === 'x1' && dn(null) === '');
-    t('画面に出す職員の名前は表示名（esc(s.name)・p.staff.name を出す所が「シフトの名前」の注記の1か所だけ）',
+    t('画面に出す職員の名前は表示名（esc(s.name)・p.staff.name を出す所は「シフトの名前」の注記と表示名の窓の説明の2か所だけ）',
       (K.match(/esc\(s\.name\)/g) || []).length === 2 && /シフトの名前：' \+ esc\(s\.name\)/.test(K) && !/p\.staff\.name/.test(K) && !/esc\(st\.name\)/.test(K));
     t('シフトの取り込みに送り返す名前は name のまま（表示名を送らない）', /name: String\(kn\.name \|\| st\.name \|\| st\.id\)\.slice\(0, 60\)/.test(K));
     t('「職員と番号」の表に「表示名を変える」のボタンと、表示名のある人はシフトの名前を小さく出す', /data-act="dname" data-sid="' \+ esc\(s\.staff_id\) \+ '">表示名を変える<\/button>/.test(K) && /\(s\.display_name \? '<br><span class="raw">シフトの名前：' \+ esc\(s\.name\) \+ '<\/span>' : ''\)/.test(K));
@@ -347,6 +347,19 @@ console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（
       /rpc\('kintai_staff_display_name_put', \{ p_staff_id: ctx\.sid, p_name: v, p_reason: reason \}\)/.test(saveFn) && /if \(v\.length > 60\)/.test(saveFn) && /needReason\(msg\); if \(!reason\) return;/.test(saveFn) && /return load\(false\);/.test(saveFn)
       && /id="e-dname" maxlength="60"/.test(K) && /a === 'dname'\) openDispName/.test(K) && /a === 'dname-go'\) saveDispName\(b\)/.test(K));
     t('表示名の断り（toolong）に職員向けの文がある', /toolong: '/.test(K));
+    /* 反証レビュー（2026-11-20）の指摘1: CSV の氏名の列と書き出しの後の注意も表示名。画面の writeCsv と同じ形で写しを作り、本物の buildCsv に通して確かめる */
+    {
+      const csvFn = between('function writeCsv(', 'var res = C.buildCsv(');
+      const C2 = require(path.join(ROOT, 'kintai-calc.js'));
+      t('CSV に渡す写しは、職員の名前を表示名に替えてから buildCsv に渡す', /src = Object\.assign\(\{\}, src, \{ people: \(src\.people \|\| \[\]\)\.map\(function \(p\) \{ return Object\.assign\(\{\}, p, \{ staff: Object\.assign\(\{\}, p\.staff, \{ name: dispName\(p\.staff\) \}\) \}\); \}\) \}\);/.test(csvFn));
+      const mon = C2.computeMonth({ ym: '2026-10', staff: [{ staff_id: 'x1', code: '0101', name: '予定 架空', display_name: '架空', office: 'facility', emp_code: '9901', active: true }], schedule: [], punches: [{ id: 'p1', staff_id: 'x1', kind: 'in', at: '2026-10-05T00:00:00Z' }, { id: 'p2', staff_id: 'x1', kind: 'out', at: '2026-10-05T08:00:00Z' }], days: [], config: {} });
+      const dnSrc2 = between('function dispName(', '\n');
+      const copy = new Function('src', dnSrc2 + '\n' + "src = Object.assign({}, src, { people: (src.people || []).map(function (p) { return Object.assign({}, p, { staff: Object.assign({}, p.staff, { name: dispName(p.staff) }) }); }) });\nreturn src;")(mon);
+      const out = C2.buildCsv(copy, { nameOf: (d) => d, extraCols: true });
+      t('写しの CSV の氏名は表示名・元の月の計算の職員の名前は変えない', /架空/.test(out.summary) && !/予定 架空/.test(out.summary) && mon.people[0].staff.name === '予定 架空', out.summary.split('\n').slice(0, 2));
+    }
+    t('表示名を空にして保存した時の知らせは、戻した先のシフトの名前を出す（読み直す前の古い表示名を出さない）', /'表示名を消しました（シフトの名前「' \+ \(s0 \? s0\.name : ctx\.sid\) \+ '」に戻しました）'/.test(K));
+    t('直しの記録の操作の名前に「表示名を変えた」', /display_name: '表示名を変えた'/.test(K));
   }
   t('打刻画面に出さない人は「結べていないシフトの職員」に出さず、件数だけ添える', /var unS = unS0\.filter\(function \(s\) \{ return s\.clock_visible !== false; \}\)/.test(K) && /打刻画面に出さない ' \+ unHid \+ ' 人/.test(K));
 }

@@ -161,5 +161,15 @@ t('丙欄は「読めません」とは言わない（丙欄の知らせだけ�
 const x4 = build('従業員番号,氏名,納税者区分,扶養親族等の数\nF-1,見本 一郎,甲欄,0\n');
 t('甲欄・扶養の数が読めた行は「未確認」にしない（今のとおり）', !('tax.dependents_checked' in x4[0].patch) && x4[0].patch['tax.col'] === 'kou');
 
+/* 統合 0107（2026-11-20）: 名前は勤怠の表示名・照合はシフトの名前（shift_name）でも当てる */
+{
+  const ps = [{ staff_id: 's-9', name: '見本 九', shift_name: '予定 見本 九', data: {}, versions: [], bank_last4: [] },
+              { staff_id: 's-8', name: '見本 八', shift_name: '', data: {}, versions: [], bank_last4: [] }];
+  const b9 = (nm) => P.buildImport(P.parseCsv('氏名,時給\n' + nm + ',1100\n'), ps, '2026-10-16')[0];
+  t('表示名で当たる', b9('見本 九').staff_id === 's-9');
+  t('シフトの名前（表示名を付ける前の名前）でも当たる', b9('予定 見本 九').staff_id === 's-9');
+  t('シフトの名前が空の人は空の氏名に当てない', !b9('').staff_id);
+}
+
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);

@@ -683,7 +683,7 @@
     h += '<div class="cd pr-edits-cd"><div class="ph" style="display:none"></div><h2 style="font-size:16px;margin:0 0 8px">直しの履歴</h2><div class="row no-print"><button type="button" class="btn sm" data-act="print-edits">直しの履歴を印刷</button></div><div id="g-edits">' + (editsCache ? editsHtml(editsCache) : '<button type="button" class="btn sm" data-act="edits">この月の直しの履歴を見る</button>') + '</div></div>';
     return h;
   }
-  var ACT_LABEL = { punch_add: '打刻を足した', punch_void: '打刻を取り消した', day_put: '承認・休憩・メモ・印', code_reset: '番号を振り直した', month_lock: '月を締めた', month_unlock: '締めを解除した', settings_put: '設定を変えた', schedule_put: 'シフトを取り込んだ' };
+  var ACT_LABEL = { display_name: '表示名を変えた', punch_add: '打刻を足した', punch_void: '打刻を取り消した', day_put: '承認・休憩・メモ・印', code_reset: '番号を振り直した', month_lock: '月を締めた', month_unlock: '締めを解除した', settings_put: '設定を変えた', schedule_put: 'シフトを取り込んだ' };
   function kindJa(k) { return k === 'in' ? '出勤' : k === 'out' ? '退勤' : '打刻'; }
   function brTxt(v) { return v == null ? '予定どおり' : String(v); }
   /* 直しの前後の値を「退勤 16:05 を足した」「休憩 60→45 分」「確認済みにした」のように言う（C-9） */
@@ -1140,7 +1140,8 @@
     var reason = needReason(msg); if (!reason) return;
     busy = true; var restore = pressBusy(btn, '保存しています…', $('g-dlg-f'));
     rpc('kintai_staff_display_name_put', { p_staff_id: ctx.sid, p_name: v, p_reason: reason }).then(okOr).then(function () {
-      busy = false; closeDlg(); toast('保存しました（' + (v || nameOf(ctx.sid)) + ' さん）'); return load(false);
+      var s0 = staffById(ctx.sid);   /* 空にした時は読み直す前の古い表示名でなく、戻した先のシフトの名前を出す */
+      busy = false; closeDlg(); toast(v ? '保存しました（' + v + ' さん）' : '表示名を消しました（シフトの名前「' + (s0 ? s0.name : ctx.sid) + '」に戻しました）'); return load(false);
     })['catch'](function (e) { busy = false; restore(); note('表示名を変える', e); if ($('g-dlg').open) msg.textContent = msgOf(e); else toast(msgOf(e)); });
   }
 
@@ -1364,6 +1365,8 @@
       if (sm.miss.length) extra.push('締めた時の控えに無い職員（' + sm.miss.join('・') + '）は出していません。');
       suffix = '_月の集計_締めた時の数字';
     } else suffix = kind === 'sum' ? '_月の集計' + (isLocked() ? '_今の数字' : '') : '_日ごと';
+    /* CSV の氏名の列と、書き出した後の注意の文も表示名にそろえる（写しの name だけ替える・計算と控えの数字は変えない・統合 0107） */
+    src = Object.assign({}, src, { people: (src.people || []).map(function (p) { return Object.assign({}, p, { staff: Object.assign({}, p.staff, { name: dispName(p.staff) }) }); }) });
     var res = C.buildCsv(src, { nameOf: nameOfOffice, extraCols: true });
     var text = kind === 'sum' ? res.summary : res.daily, enc = ($('g-enc') || {}).value || 'utf8', blob, unknown = [];
     if (enc === 'sjis') {

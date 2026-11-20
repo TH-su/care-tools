@@ -226,10 +226,13 @@
         none: false };
     });
     /* 給与の設定がまだ無いシフトの職員（在籍の人だけ）も並べる。計算・保存には入れない（DB が noprofile で断るため） */
+    /* 統合 0107: 名前は勤怠の表示名（無ければシフトの名前）。freee の取り込みの照合のため、シフトの名前（shift_name）も持たせる */
+    var shiftNm = {}; arr(r.staff).forEach(function (x) { if (x && typeof x.staff_id === 'string' && typeof x.shift_name === 'string') shiftNm[x.staff_id] = x.shift_name; });
+    profiles.forEach(function (p) { p.shift_name = shiftNm[p.staff_id] || ''; });
     var have = {}; profiles.forEach(function (p) { have[p.staff_id] = 1; });
     arr(r.staff).forEach(function (x) {
       if (!x || typeof x.staff_id !== 'string' || have[x.staff_id] || x.active === false) return;
-      profiles.push({ staff_id: x.staff_id, name: String(x.name || ''), rev: 0, effective_from: null, data: {}, bank_last4: [], versions: [], none: true });
+      profiles.push({ staff_id: x.staff_id, name: String(x.name || ''), shift_name: shiftNm[x.staff_id] || '', rev: 0, effective_from: null, data: {}, bank_last4: [], versions: [], none: true });
     });
     return {
       period: per,
@@ -971,7 +974,7 @@
       }
       var emp = g('emp'), nm = g('name'), p = null;
       profs.forEach(function (x) { if (emp && String(x.data.freee_emp_num || '') === emp) p = x; });
-      if (!p && nm) { var hit = profs.filter(function (x) { return normName(x.name) === normName(nm); }); if (hit.length === 1) p = hit[0]; }
+      if (!p && nm) { var hit = profs.filter(function (x) { return normName(x.name) === normName(nm) || (!!x.shift_name && normName(x.shift_name) === normName(nm)); });   /* 表示名かシフトの名前のどちらかで当たる（統合 0107） */ if (hit.length === 1) p = hit[0]; }
       /* 氏名で当たった人に別の従業員番号があり、CSV の番号と違えば当てない（同名の別人に上書きしない） */
       var empNg = !!(p && emp && String(p.data.freee_emp_num || '') !== '' && String(p.data.freee_emp_num) !== emp);
       if (empNg) p = null;
