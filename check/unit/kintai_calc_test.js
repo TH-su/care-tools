@@ -460,6 +460,8 @@ console.log('\n— 0101. 月を締め日で切る（期間・週の段・時間�
   t('例外3: 変形なしの9hの予定を予定どおり働いた日は 所定内8h・法定外1h（旧の所定内は 540）', S(h0).schedInMin === 480 && S(h0).legalOverMin === 60 && S(h0).legalInOverMin === 0 && parts(S(h0)), S(h0));
   const csvH = C.buildCsv(h0, {}).summary.split('\r\n')[1].split(',');
   t('例外3: CSV の「所定内」の列は今までどおり 総労働−残業（9:00）', csvH[C.SUMMARY_HEAD.indexOf('所定内')] === '9:00', csvH);
+  const csvG = C.buildCsv(g0, {}).summary.split('\r\n')[1].split(',');
+  t('例外3: 予定のある法定休日の10hも、CSV の「所定内」の列は今までどおり 総労働−残業（10:00・画面の所定内（法定内）は 0）', csvG[C.SUMMARY_HEAD.indexOf('所定内')] === '10:00' && csvG[C.SUMMARY_HEAD.indexOf('総労働時間')] === '10:00', csvG);
   const i0 = run('2026-12', null, sch('2026-12', { 8: '9-14' }), ['2026-12-08'], '9:00', '16:00', [{ staff_id: 'sT01', work_date: '2026-12-08', overtime_ok: true }]);
   t('法定内残業: 予定5hのパートが7h働いた日は 所定内5h・法定内残業2h・法定外0', S(i0).schedInMin === 300 && S(i0).legalInOverMin === 120 && S(i0).legalOverMin === 0 && parts(S(i0)), S(i0));
   const f0 = run('2026-12', null, [], range('2026-12-01', 20), '7:00', '20:00', [], { variableMonth: false });

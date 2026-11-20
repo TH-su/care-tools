@@ -26,6 +26,8 @@
   var dayFilter = null, officeFilter = '', printAll = false;
   /* v4: 職員マスタの一覧・突き合わせの結果・有給の記録（どれも画面の中だけ・端末に残さない） */
   var masterSt = null, masterBusy = false, importResult = null, leaveSt = null, leaveBusy = false, leaveGen = 0;
+  /* v5 1-5: 勤怠の管理者の名簿（管理者の時だけ読む・画面の中だけ・端末に残さない） */
+  var mgrSt = null, mgrBusy = false, mgrGen = 0;
   var $ = function (id) { return document.getElementById(id); };
 
   function note(where, e) { try { if (window.SUErrors && window.SUErrors.note) window.SUErrors.note('勤怠管理', e, 'kintai:' + where); } catch (_) {} }
@@ -108,12 +110,18 @@
     master: '職員マスタから足した人には、別の職員マスタの人を結べません。', badnote: 'メモが長すぎます（200字まで）。',
     linked: 'その職員マスタの人は、もう勤怠の職員と結んであります。読み直してください。', exists: 'その職員マスタの人は、もう勤怠の職員として足してあります。読み直してください。',
     retired: '職員マスタで退職日を過ぎているため足せません。', retire_unknown: '職員マスタの退職日が読めないため足せません。職員マスタの退職日を確かめてください。',
-    badid: '職員マスタの番号の形が勤怠に入りません。管理者に知らせてください。', badname: '職員マスタの氏名が空か長すぎるため足せません。職員マスタを確かめてください。' };
+    badid: '職員マスタの番号の形が勤怠に入りません。管理者に知らせてください。', badname: '職員マスタの氏名が空か長すぎるため足せません。職員マスタを確かめてください。',
+    payrolllocked: 'この月分の給与が確定（または書き出し済み）のため、締めを解除できません。先に給与の画面で確定を取り消してください。' };   /* v5 1-2（文は仮置き） */
   /* 有給の窓では、打刻向けの言い方の断り（badkind・badvalue）を有給の言葉に替える */
   var NG_LEAVE = { badkind: '付与の種類が違います（移行の残りか、手で足すかを選んでください）。', badvalue: '入れた値を受け付けられませんでした（日数・週の所定日数・時間・メモの長さを確かめてください）。',
     locked: 'その日は締めた月分に入っているため、足すことも取り消すこともできません。直す時は管理者が締めを解除してください。',
     dup: 'その日の有休の使用はもう入っています（同じ人・同じ日は1つまで）。直す時は、今の使用を取り消してから足してください。' };
   function leaveMsg(e) { return e && e.kintai && NG_LEAVE[e.kintai] ? NG_LEAVE[e.kintai] : msgOf(e); }
+  /* v5 1-5: 勤怠の管理者の名簿の窓では、名簿の言葉の断りに替える（exists・notfound・badvalue は NG に別の意味の文があるので分ける・文は仮置き） */
+  var NG_MGR = { notallowed: 'このアカウントは足せません。足せるのは、許可リストにある使える状態の事務所のアカウントだけです（現場・止めたアカウント・写し返し専用・管理者の役割は足せません）。',
+    exists: 'この人はもう勤怠の管理者に載っています。読み直してください。', notfound: 'この人は勤怠の管理者に載っていません。読み直してください。',
+    payroll: 'この人は給与の名簿に載っているため外せません（給与の画面が勤怠を読めなくなります）。', badvalue: 'メールアドレスの形が違います。', reason: '理由を書いてください。' };
+  function mgrMsg(e) { return e && e.kintai && NG_MGR[e.kintai] ? NG_MGR[e.kintai] : msgOf(e); }
   function friendly(e) {
     var code = e && e.code, m = String((e && e.message) || e || '');
     if (code === '42501' || /permission denied/i.test(m)) return 'この操作をする権限がありません（勤怠の管理は、管理者と許された事務所のアカウントだけが使えます。締めの解除と設定の保存は管理者だけです）。';
@@ -406,11 +414,13 @@
       });
     });
     return (s.warnings.length ? '<div class="band warn">' + s.warnings.map(esc).join('<br>') + '</div>' : '') +
-      '<div class="kv"><span>出勤日数</span><b>' + s.workDays + ' 日（有休 ' + s.paidDays + ' 日・' + fm(s.paidMin) + '）</b><span>総労働</span><b>' + fm(s.workMin) + '（所定内 ' + fm(s.schedInMin) + '・残業 ' + fm(s.overtimeMin) + '・法定外 ' + fm(s.legalOverMin) + '・深夜 ' + fm(s.nightMin) + '）</b>' +
+      '<div class="kv"><span>出勤日数</span><b>' + s.workDays + ' 日（有休 ' + s.paidDays + ' 日・' + fm(s.paidMin) + '）</b><span>総労働</span><b>' + fm(s.workMin) + '（所定内（法定内） ' + fm(s.schedInMin) + '・残業 ' + fm(s.overtimeMin) + '・法定外 ' + fm(s.legalOverMin) + '・深夜 ' + fm(s.nightMin) + '）</b>' +
       '<span>休日労働</span><b>' + fm(s.holidayMin) + (month.config.legal_holiday == null ? '（法定休日を決めていないため数えていません）' : '') + '</b>' +
       '<span>事業所別の実働</span><b>' + esc(officeBreakdown(s)) + '</b>' +
       '<span>遅刻・早退</span><b>遅刻 ' + s.lateCount + ' 回 ' + fm(s.lateMin) + '・早退 ' + s.earlyLeaveCount + ' 回 ' + fm(s.earlyLeaveMin) + '</b><span>欠勤・打刻なし・要確認</span><b>欠勤 ' + s.absentDays + ' 日・打刻なし ' + s.noPunchDays + ' 日・要確認 ' + s.reviewCount + ' 件</b>' +
       '<span>数えなかった時間</span><b>' + fm(s.uncountedMin) + '（打刻のうち、予定に合わせた丸めで数えなかった分）</b></div>' +
+      /* v5 1-1（2026-11-20・文は仮置き）: 画面の所定内（schedInMin）と CSV の「所定内」（総労働−残業）は中身が違うので、名前と注記で取り違えを無くす（画面だけ） */
+      '<p class="help no-print">所定内（法定内）は、予定のうち法定の1日8時間・週40時間の中で働いた時間です（法定外・休日労働は含みません）。CSV の「所定内」は予定どおり働いた時間（総労働−残業）で、法定外になった分も含みます。</p>' +
       '<div class="tw" style="margin-top:10px"><table><thead><tr><th>日</th><th>予定</th><th>打刻（そのまま）</th><th>数えた時刻</th><th class="num">休憩</th><th class="num">実働</th><th class="num">深夜</th><th>印・直し</th><th class="no-print"></th></tr></thead><tbody>' +
       (rows.join('') || '<tr><td colspan="9" class="empty">この月の予定・打刻はありません</td></tr>') + '</tbody></table></div>';
   }
@@ -712,7 +722,35 @@
     h += '<div class="cd pr-edits-cd"><div class="ph" style="display:none"></div><h2 style="font-size:16px;margin:0 0 8px">直しの履歴</h2><div class="row no-print"><button type="button" class="btn sm" data-act="print-edits">直しの履歴を印刷</button></div><div id="g-edits">' + (editsCache ? editsHtml(editsCache) : '<button type="button" class="btn sm" data-act="edits">この月の直しの履歴を見る</button>') + '</div></div>';
     return h;
   }
-  var ACT_LABEL = { sched_set: '予定を直した', sched_off: '予定を休みにした', sched_clear: '予定の手直しを外した', fixed_put: '前提の時間を入れた', fixed_void: '前提の時間を取り消した', display_name: '表示名を変えた', punch_add: '打刻を足した', punch_void: '打刻を取り消した', day_put: '承認・休憩・メモ・印', code_reset: '番号を振り直した', code_fixed: '打刻の番号を職員No に合わせた', month_lock: '月を締めた', month_unlock: '締めを解除した', settings_put: '設定を変えた', schedule_put: 'シフトを取り込んだ' };
+  /* 直しの履歴（kintai_edits）の action の言い方。DB の勤怠の移行（0098〜0112）が書く action は全部ここに置く（内部の名前のまま出さない・v5 1-3・試験 kintai_edits_label_test） */
+  var ACT_LABEL = { sched_set: '予定を直した', sched_off: '予定を休みにした', sched_clear: '予定の手直しを外した', fixed_put: '前提の時間を入れた', fixed_void: '前提の時間を取り消した', display_name: '表示名を変えた', punch_add: '打刻を足した', punch_void: '打刻を取り消した', day_put: '承認・休憩・メモ・印', code_reset: '番号を振り直した', code_fixed: '打刻の番号を職員No に合わせた', month_lock: '月を締めた', month_unlock: '締めを解除した', settings_put: '設定を変えた', schedule_put: 'シフトを取り込んだ',
+    master_import: '職員マスタと突き合わせた', master_add: '職員マスタから職員を足した', staff_link: '職員マスタとの結び付けを直した', clock_visible: '打刻画面に出す・出さないを変えた',
+    leave_profile: '有給の設定を変えた', leave_grant_add: '有給の付与を足した', leave_grant_void: '有給の付与を取り消した', leave_use_add: '有休の使用を足した', leave_use_void: '有休の使用を取り消した',
+    managers_add: '勤怠の管理者に足した', managers_remove: '勤怠の管理者から外した' };
+  function nOf(v) { var n = +v; return isFinite(n) ? n : null; }
+  function daysJa(v) { var n = nOf(v); return n == null ? '' : n === 0.5 ? '半日' : String(n) + '日'; }
+  function lenOf(v) { return Array.isArray(v) ? v.length : (nOf(v) || 0); }
+  /* 空の値（null・undefined・''・[]・{}・'{}'）は全部「無し」とみなす（初めての設定の保存は前の値が null・後は既定の [] や null になるため・反証レビュー 2026-11-20） */
+  function blankV(v) { return v == null || v === '' || v === '{}' || (Array.isArray(v) ? !v.length : (typeof v === 'object' && !Object.keys(v).length)); }
+  function numOrNil(v) { if (blankV(v)) return null; var n = +v; return isFinite(n) ? n : null; }
+  function valOrNil(v) { return blankV(v) ? null : v; }
+  /* 有給の設定（leave_profile）の前後で変わった所だけを言う */
+  function profTxt(b, a) {
+    var parts = [], same = function (x, y) { return JSON.stringify(x) === JSON.stringify(y); };
+    var bh = valOrNil(b.hire_date), ah = valOrNil(a.hire_date), bo = valOrNil(b.opening_date), ao = valOrNil(a.opening_date);
+    var bd = numOrNil(b.weekly_days), ad = numOrNil(a.weekly_days), bw = numOrNil(b.weekly_hours), aw = numOrNil(a.weekly_hours);
+    var bs = valOrNil(b.skip_grants), as = valOrNil(a.skip_grants);
+    if (!same(bh, ah)) parts.push(ah ? '入職日の上書きを ' + ymdSl(ah) + ' にした' : '入職日の上書きを外した');
+    if (bd !== ad) parts.push(ad != null ? '週の所定日数を ' + ad + '日にした' : '週の所定日数を外した');
+    if (bw !== aw) parts.push(aw != null ? '週の所定時間を ' + aw + '時間にした' : '週の所定時間を外した');
+    if (!same(bo, ao)) parts.push(ao ? '移行日を ' + ymdSl(ao) + ' にした' : '移行日を外した');
+    if (!same(bs, as)) parts.push(as ? '付与しない日を ' + lenOf(as) + ' 件にした' : '付与しない日を外した');
+    return parts.length ? '有給の設定: ' + parts.join('・') : ACT_LABEL.leave_profile;
+  }
+  /* 履歴の理由の列。理由の無い口が action の名前を理由に入れた行（番号の振り直し・メモの無い付与と使用）は空にする（一覧と日の窓で同じ判定） */
+  function reasonText(e) { return !e || e.reason == null || e.reason === e.action ? '' : String(e.reason); }
+  /* 日の「直す」窓の履歴の1行（日時・内容・理由（した人））の文字 */
+  function histCells(e) { return [new Date(e.at).toLocaleString('ja-JP'), describe(e), reasonText(e) + (e.by ? '（' + e.by + '）' : '')]; }
   function kindJa(k) { return k === 'in' ? '出勤' : k === 'out' ? '退勤' : '打刻'; }
   function brTxt(v) { return v == null ? '予定どおり' : String(v); }
   /* 直しの前後の値を「退勤 16:05 を足した」「休憩 60→45 分」「確認済みにした」のように言う（C-9） */
@@ -726,6 +764,21 @@
     if (e.action === 'sched_clear') return '予定の手直し（' + sedTxt(b) + '）を外した（シフト・前提の予定に戻した）';
     if (e.action === 'fixed_put') return '前提の時間を ' + ymdSl(a.valid_from) + ' から「' + weekTxt(a.week) + '」にした' + (e.before ? '（同じ効く日の前の版を置き換えた）' : '');
     if (e.action === 'fixed_void') return '前提の時間（' + ymdSl(b.valid_from) + ' から「' + weekTxt(b.week) + '」）を取り消した';
+    /* v5 1-3: 職員マスタ・有給・管理者の名簿の直しは、前後の値が読める時は中身も言う（読めない時は ACT_LABEL の言い方） */
+    if (e.action === 'master_import') return ACT_LABEL.master_import + '（結んだ ' + lenOf(a.linked) + ' 人・止めた ' + lenOf(a.deactivated) + ' 人）';
+    if (e.action === 'master_add') return '職員マスタから ' + lenOf(a.added) + ' 人を足した' + (lenOf(a.skipped) ? '（足せなかった ' + lenOf(a.skipped) + ' 人）' : '');
+    if (e.action === 'staff_link') {
+      var lt = (a.master_id ? (b.master_id && b.master_id !== a.master_id ? '職員マスタの別の人と結び直した' : '職員マスタの人と結んだ') : '職員マスタとの結び付けを外した');
+      return lt + (b.active !== a.active && a.active != null ? (a.active ? '（使う状態に戻した）' : '（休止にした）') : '');
+    }
+    if (e.action === 'clock_visible') return a.clock_visible === false ? '打刻画面に出さないようにした' : a.clock_visible === true ? '打刻画面に出すようにした' : ACT_LABEL.clock_visible;
+    if (e.action === 'leave_profile') return profTxt(b, a);
+    if (e.action === 'leave_grant_add') return a.days != null ? '有給の付与 ' + daysJa(a.days) + 'を足した（付与日 ' + ymdSl(a.grant_date) + (a.kind === 'opening' || a.kind === 'manual' ? '・' + KIND_JA[a.kind] : '') + '）' : ACT_LABEL.leave_grant_add;
+    if (e.action === 'leave_grant_void') return b.days != null ? '有給の付与 ' + daysJa(b.days) + '（付与日 ' + ymdSl(b.grant_date) + '）を取り消した' : ACT_LABEL.leave_grant_void;
+    if (e.action === 'leave_use_add') return a.days != null ? '有休の使用 ' + daysJa(a.days) + 'を足した' : ACT_LABEL.leave_use_add;
+    if (e.action === 'leave_use_void') return b.days != null ? '有休の使用 ' + daysJa(b.days) + 'を取り消した' : ACT_LABEL.leave_use_void;
+    if (e.action === 'managers_add') return ACT_LABEL.managers_add + (a.email ? '（' + a.email + '）' : '');
+    if (e.action === 'managers_remove') return ACT_LABEL.managers_remove + (b.email ? '（' + b.email + '）' : '');
     if (e.action !== 'day_put') return ACT_LABEL[e.action] || e.action;
     if (!!b.early_ok !== !!a.early_ok) parts.push(a.early_ok ? '早出を全部認めた' : '早出の承認（全部）を外した');
     if (ms(b.early_from) !== ms(a.early_from)) parts.push(a.early_from ? '早出を ' + hm(a.early_from) + ' から認めた' : '早出の時刻（' + hm(b.early_from) + ' から）を外した');
@@ -742,7 +795,7 @@
     if (!list.length) return '<p class="empty">この月の直しはありません。</p>';
     var nm = {}; (data.staff || []).forEach(function (s) { nm[s.staff_id] = dispName(s); });
     return '<div class="tw"><table class="hist"><thead><tr><th>日時</th><th>した人</th><th>職員</th><th>日</th><th>内容</th><th>理由</th></tr></thead><tbody>' + list.map(function (e) {
-      return '<tr><td>' + esc(new Date(e.at).toLocaleString('ja-JP')) + '</td><td>' + esc(e.by) + '</td><td>' + esc(nm[e.staff_id] || e.staff_id || '') + '</td><td>' + esc(e.work_date || '') + '</td><td>' + esc(describe(e)) + '</td><td>' + esc(e.action === 'code_reset' ? '' : e.reason) + '</td></tr>';
+      return '<tr><td>' + esc(new Date(e.at).toLocaleString('ja-JP')) + '</td><td>' + esc(e.by) + '</td><td>' + esc(nm[e.staff_id] || e.staff_id || '') + '</td><td>' + esc(e.work_date || '') + '</td><td>' + esc(describe(e)) + '</td><td>' + esc(reasonText(e)) + '</td></tr>';
     }).join('') + '</tbody></table></div>';
   }
 
@@ -766,7 +819,72 @@
     h += '<label for="s-csvTime">CSV の時間の書き方</label><span><select id="s-csvTime"><option value="hmm"' + (c.csvTime === 'hmm' ? ' selected' : '') + '>8:30</option><option value="dec"' + (c.csvTime === 'dec' ? ' selected' : '') + '>8.50</option></select></span>';
     h += '</form><div class="row"><button type="button" class="btn pri" data-act="save-set"' + (isAdmin() ? '' : ' disabled') + '>設定を保存する</button></div>' +
       '<p class="help">休憩の時間（日勤 ' + esc(c.breakH) + ' 時間・夜勤 ' + esc(c.nightBreakH) + ' 時間・拘束が ' + esc(c.breakThresholdH) + ' 時間を超えたら引く）はシフトアプリの設定を取り込んで使います（ここでは変えません）。丸めの決まり: 予定より早い出勤は予定の開始から、予定より遅い退勤は予定の終わりまで数えます。始業前・終業後に実際に働いた時は、その日を「直す」で早出・残業を認めてください（認めないまま切り捨てると賃金の未払いになります）。</p></div>';
+    /* v5 1-5: 勤怠の管理者の名簿（管理者だけに出す・画面だけで印刷しない） */
+    if (isAdmin()) {
+      if (!mgrSt && !mgrBusy) loadMgr();
+      h += '<div class="cd no-print"><h2 style="font-size:16px;margin:0 0 8px">勤怠の管理者</h2><div id="g-mgr">' + mgrHtml() + '</div></div>';
+    }
     return h;
+  }
+
+  /* ── v5 1-5: 勤怠の管理者の名簿（kintai_managers_list・kintai_managers_put（p_on で載せる・外す）。どれも二段階の管理者だけ＝DB が決める） ──
+   * 読み終わっても画面全体は描き直さない（設定のタブの入力中の値を消さない）。自分の入れ物（#g-mgr）だけを差し替え、遅れた応答は世代で捨てる */
+  var MGR_ROLE = { office: '事務所', admin: '管理者', field: '現場' };
+  function loadMgr() {
+    if (!isAdmin()) return Promise.resolve();
+    var my = ++mgrGen;
+    mgrBusy = true;
+    return rpc('kintai_managers_list', {}).then(okOr).then(function (r) {
+      if (my !== mgrGen) return;
+      mgrSt = { rows: Array.isArray(r.rows) ? r.rows.filter(function (x) { return x && typeof x.email === 'string'; }) : [] };
+    })['catch'](function (e) {
+      if (my !== mgrGen) return;
+      note('勤怠の管理者の読み込み', e);
+      mgrSt = { rows: [], err: noDb(e) ? 'データベースの更新がまだです（勤怠の管理者の名簿を画面で直す仕組みが入るまで、ここは使えません）。' : msgOf(e) };
+    }).then(function () {
+      if (my !== mgrGen) return;
+      mgrBusy = false;
+      var el = $('g-mgr'); if (el && tab === 'settings') el.innerHTML = mgrHtml();
+    });
+  }
+  function mgrHtml() {
+    if (!mgrSt) return '<p class="empty">読み込んでいます…</p>';
+    if (mgrSt.err) return '<div class="band warn" role="status">' + esc(mgrSt.err) + '</div><div class="row"><button type="button" class="btn sm" data-act="mgr-reload">読み直す</button></div>';
+    var rows = mgrSt.rows.map(function (r) {
+      var acct = r.in_allowlist ? esc(MGR_ROLE[r.role] || r.role || '') + (r.active ? '' : ' <span class="tag rv">止めてある</span>') : '<span class="tag rv">許可リストに無い</span>';
+      return '<tr><td>' + esc(r.email) + '</td><td>' + acct + '</td><td>' + (r.in_payroll ? '載っている' : '') + '</td><td>' + esc(r.added_by || '') + '</td><td>' + esc(r.added_at ? new Date(r.added_at).toLocaleString('ja-JP') : '') + '</td>' +
+        '<td>' + (r.in_payroll ? '<span class="help">給与の名簿に載っているため外せません（先に給与の画面で外します）</span>' : '<button type="button" class="btn sm" data-act="mgr-del-open" data-email="' + esc(r.email) + '">外す</button>') + '</td></tr>';
+    }).join('');
+    return '<p class="help">勤怠の管理画面を使える事務所のアカウントの名簿です。管理者（2段階認証まで済んだ人）は載せなくても使えます。足せるのは、許可リストにある使える状態の事務所のアカウントだけです。給与の名簿に載っている人は勤怠の名簿にも載せておきます（外す時は先に給与の画面で外します）。足す・外すは直しの履歴に残ります。</p>' +
+      '<div class="row"><button type="button" class="btn sm pri" data-act="mgr-add-open">足す</button><button type="button" class="btn sm" data-act="mgr-reload">読み直す</button></div>' +
+      '<div class="tw"><table><thead><tr><th>メール</th><th>許可リストの役割</th><th>給与の名簿</th><th>足した人</th><th>足した日時</th><th></th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="6" class="empty">まだ誰も載っていません</td></tr>') + '</tbody></table></div>';
+  }
+  function openMgrAdd() {
+    dlgCtx = { mode: 'mgr' };
+    openDlg('勤怠の管理者を足す', '<p>勤怠の管理画面を使えるようにする事務所のアカウントのメールアドレスを入れます。許可リストにある、使える状態の事務所のアカウントだけを足せます。</p>' +
+      '<div class="row"><label style="flex:1">メールアドレス<input type="email" id="e-mgr-email" maxlength="254" autocomplete="off" style="flex:1;min-width:16em"></label></div>' +
+      reasonRow('例: 勤怠の締めを担当するため'), false, '足す', 'mgr-add-go');
+    dlgCtx.init = formState();
+  }
+  function openMgrDel(email) {
+    if (!email) return;
+    dlgCtx = { mode: 'mgr', email: email };
+    openDlg('勤怠の管理者から外す', '<p>' + esc(email) + ' を勤怠の管理者の名簿から外します。外すと、このアカウントは勤怠の管理画面を開けなくなります（管理者の役割のアカウントを除く）。</p>' +
+      reasonRow('例: 担当を外れたため'), false, '外す', 'mgr-del-go');
+    dlgCtx.init = formState();
+  }
+  function saveMgr(btn, add) {
+    if (!dlgCtx || dlgCtx.mode !== 'mgr' || busy || !isAdmin()) return;
+    var ctx = dlgCtx, msg = $('e-msg'), email = add ? String(($('e-mgr-email') && $('e-mgr-email').value) || '').trim().toLowerCase() : ctx.email;
+    if (add && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { msg.textContent = NG_MGR.badvalue; $('e-mgr-email').focus(); return; }
+    var reason = needReason(msg); if (!reason) return;
+    busy = true; var restore = pressBusy(btn, add ? '足しています…' : '外しています…', $('g-dlg-f'));
+    rpc('kintai_managers_put', { p_email: email, p_on: !!add, p_reason: reason }).then(okOr).then(function () {
+      busy = false; closeDlg(); toast(add ? '勤怠の管理者に足しました（' + email + '）' : '勤怠の管理者から外しました（' + email + '）');
+      editsCache = null;   /* 直しの履歴に1行増えた */
+      return loadMgr();
+    })['catch'](function (e) { busy = false; restore(); note(add ? '勤怠の管理者を足す' : '勤怠の管理者から外す', e); if ($('g-dlg').open && $('e-msg') === msg) msg.textContent = mgrMsg(e); else toast(mgrMsg(e)); });
   }
 
   /* ── 窓（直す・日付を選ぶ・締めの確認・CSV の選び） ──
@@ -888,10 +1006,10 @@
       if (!mine.length) { box.appendChild(mk('p', 'empty', 'この日の直しはまだありません。')); return; }
       var tb = mk('table', 'hist'), body = mk('tbody');
       mine.forEach(function (e) {
-        var tr = mk('tr');
-        tr.appendChild(mk('td', null, new Date(e.at).toLocaleString('ja-JP')));
-        tr.appendChild(mk('td', null, describe(e)));
-        tr.appendChild(mk('td', 'raw', (e.reason || '') + (e.by ? '（' + e.by + '）' : '')));
+        var tr = mk('tr'), cs = histCells(e);
+        tr.appendChild(mk('td', null, cs[0]));
+        tr.appendChild(mk('td', null, cs[1]));
+        tr.appendChild(mk('td', 'raw', cs[2]));
         body.appendChild(tr);
       });
       tb.appendChild(body); box.appendChild(tb);
@@ -904,6 +1022,7 @@
     });
   }
   var DIRTY_MODES = { edit: 1, work: 1, leave: 1, link: 1, mimport: 1, clockvis: 1, madd: 1, dname: 1, sched: 1, fixed: 1 };   /* 0111 で予定の手直し・前提を足した */   /* 保存していない入力を確かめる窓（v4 で手入力・有給・結び付けを足した） */
+  DIRTY_MODES.mgr = 1;   /* v5 1-5: 勤怠の管理者を足す・外す窓も確かめる */
   function closeDlg() { dlgCtx = null; try { $('g-dlg').close(); } catch (_) { $('g-dlg').removeAttribute('open'); } }
   function dirty() {
     if (!dlgCtx || !DIRTY_MODES[dlgCtx.mode] || dlgCtx.init == null) return false;
@@ -1779,6 +1898,11 @@
       else if (a === 'csv-day') download('day');
       else if (a === 'edits') loadEdits();
       else if (a === 'save-set') saveSettings(b);
+      else if (a === 'mgr-reload') { mgrSt = null; var gm = $('g-mgr'); if (gm) gm.innerHTML = mgrHtml(); loadMgr(); }
+      else if (a === 'mgr-add-open') openMgrAdd();
+      else if (a === 'mgr-del-open') openMgrDel(b.getAttribute('data-email'));
+      else if (a === 'mgr-add-go') saveMgr(b, true);
+      else if (a === 'mgr-del-go') saveMgr(b, false);
       else if (a === 'print') doPrint();
       else if (a === 'print-all') printAllPeople();
       else if (a === 'print-edits') printEdits();
