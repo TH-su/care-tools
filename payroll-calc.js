@@ -341,7 +341,8 @@
       else if (m('holidayMin') > 0) warn('holiday_days_unknown', '法定休日に働いた日数が分かりません（基本給の日数から除いていません）');
       basePaid = base * wd;
       pay('basic', '基本給', wd, base, basePaid, '日給×出勤日数（法定休日を除く）', { fixed: true });
-      if (m('paidDays') > 0) pay('paid_leave', '有休（日給）', m('paidDays'), base, base * m('paidDays'), '日給×有休の日数', { fixed: true });
+      /* 有休は半日きざみのまま（日給×0.5日・2026-11-21。前は日数を整数に丸めて半日も1日分を払っていた）。整数の日は今と同じ額 */
+      if (halfNum('paidDays') > 0) pay('paid_leave', '有休（日給）', halfNum('paidDays'), base, yen(qMul(intQ(base), mHalf('paidDays')), S.round.hourly_base), '日給×有休の日数', { fixed: true });
       /* 勤怠 v5 段4（仮置き・反証レビュー 2026-11-20）: 働いた日はその日の日給をもう満額払っているので上乗せしない。働いていない日だけ、
          時間単位の有休は「効く分÷1日の所定時間×日給」（hourlyPaidOffMin）、有給の特別休暇は「日給×日数」（specialPaidOffDays）。無給の特別休暇・代休は払わない */
       if (m('hourlyPaidOffMin') > 0) {
@@ -468,9 +469,16 @@
     /* 通勤（非課税は限度まで） */
     var cm = P.commute && typeof P.commute === 'object' ? int(P.commute.monthly) : 0;
     if (cm > 0) {
-      var lim = R.commuteLimit ? R.commuteLimit(payDate, P.commute.means, Number(P.commute.distance_km)) : null;
+      var lim = R.commuteLimit ? R.commuteLimit(payDate, P.commute.means, P.commute.distance_km == null || P.commute.distance_km === '' ? NaN : Number(P.commute.distance_km), P.commute.parking_monthly) : null;
       var nt = cm;
-      if (lim == null) warn('commute_limit_unknown', '通勤手当の非課税限度が率表にありません（全額を非課税として数えました）');
+      /* 非課税限度の表は国税庁の表（payroll-rates.js の COMMUTE・支給日で選ぶ）。手段か距離が分からない人・併用の人は今の扱いのまま（全額を非課税）で知らせる（仮置き 2026-11-21） */
+      if (lim == null) {
+        var cmMeans = P.commute.means, cmKm = P.commute.distance_km;
+        warn('commute_limit_unknown', !cmMeans ? '通勤の手段が空なので、通勤手当の非課税限度を決められません（全額を非課税として数えました）' :
+          cmMeans === 'car' && (cmKm == null || cmKm === '' || !isFinite(Number(cmKm))) ? '通勤の片道の距離が空なので、通勤手当の非課税限度を決められません（全額を非課税として数えました）' :
+          cmMeans === 'mixed' ? '併用の通勤手当は非課税限度を数えていません（全額を非課税として数えました・分け方を確かめてください）' :
+          '通勤手当の非課税限度が率表にありません（全額を非課税として数えました）');
+      }
       else nt = Math.min(cm, lim);
       pay('commute', '通勤手当', null, cm, cm, nt < cm ? '非課税 ' + nt + '円・課税 ' + (cm - nt) + '円' : '非課税', { fixed: true, nontax: nt, si: true });
     }
@@ -576,6 +584,11 @@
     var taxBase = taxable - siTotal, tax = 0, col = P.tax && P.tax.col, dep = P.tax ? P.tax.dependents : 0;
     /* 甲乙・扶養の数を確かめたか（dependents_checked が true でない源泉の対象の人に知らせる・代表者の決定 2026-11-19） */
     if ((col === 'kou' || col === 'otsu') && !(P.tax && P.tax.dependents_checked === true)) warn('dependents_unchecked', '扶養の数が未確認です');
+    /* 乙欄では扶養の数を引かない（甲から乙へ変えた人の数が残るため・従たる給与の申告書の分は数えない・仮置き 2026-11-21） */
+    if (col === 'otsu') {
+      if (Math.floor(Number(dep) || 0) >= 1) warn('otsu_dependents', '乙欄では扶養の数を数えていません（従たる給与の申告書を出した方は代表者へ）');
+      dep = 0;
+    }
     if (col === 'kou' || col === 'otsu') {
       var useComputer = S.tax_method === 'computer' && col === 'kou';
       if (useComputer && payDate.slice(0, 4) === '2026') tax = taxComputerR8(taxBase, dep);

@@ -803,7 +803,9 @@
           else if (absPart > 0) sum.absentPartMin += absPart;
         }
         sum.holidayMin += dhol; sum.uncountedMin += dunc;
-        if (dhol > 0) sum.holidayWorkDays++;   /* 法定休日に働いた日（その日の法定休日の実働がある日・日給の基本給の日数から除く・仮置き） */
+        /* 法定休日に働いた日＝その日の実働が全部法定休日に入る日だけ（日給の基本給の日数から除く）。一部だけかかる日（土曜22時〜日曜7時の夜勤など）は数えず、
+           基本給の日数に残して、休日労働はかかった分だけ払う（多く払う側・仮置き 2026-11-21） */
+        if (dw > 0 && dhol === dw) sum.holidayWorkDays++;
         var dayRow = { date: date, blocks: bl, paidMin: paidMin, workMin: dw, schedWorkMin: dsw, legalOverMin: legal, flags: dflags, note: dnote || null,
           paidDays: pdays, holidayMin: dhol, uncountedMin: dunc, absent: absentDay, mark: (dnote && dnote.day_mark) || null };
         if (absPart > 0) dayRow.absentPartMin = absPart;   /* 欠勤の印の日の、休暇で埋まらない残り（分・ある日だけ） */

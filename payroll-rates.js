@@ -47,8 +47,45 @@
   /* 最低賃金（都道府県・発効日つき・時間額）。一次資料で確かめていないので空（minWage は null を返す） */
   var MIN_WAGE = [];
 
-  /* 通勤手当の非課税限度（令和8年4月1日〜）。一次資料の表を確かめていないので空（commuteLimit は null を返す） */
-  var COMMUTE = [];
+  /* 通勤手当の月の非課税限度（国税庁「通勤手当の非課税限度額の改正について」で確かめた・2026-11-21）
+     出典: https://www.nta.go.jp/users/gensen/2025tsukin/index.htm （令和7年4月1日以後に支払われるべき分・改正前の表も載っている）
+           https://www.nta.go.jp/users/gensen/2026tsukin/index.htm （令和8年4月1日以後に支払われるべき分・55km以上を刻み、駐車場の料金を月5,000円まで足す）
+     means: 'car'＝交通用具（車・自転車）を使う人の片道の距離（minKm 以上 maxKm 未満）・'public'＝公共交通（通勤定期など・月150,000円）。
+     併用（'mixed'）は交通機関と交通用具の額の分け方が分からないので表に置かない（null＝今の扱いのまま警告・仮置き）。
+     from は支払い日（支給日）で選ぶ日。改正前の表は from を古い日にして置く（支給日が令和7年3月31日以前の分） */
+  var COMMUTE = [
+    { means: 'car', from: '2014-04-01', minKm: null, maxKm: 2, limit: 0 },
+    { means: 'car', from: '2014-04-01', minKm: 2, maxKm: 10, limit: 4200 },
+    { means: 'car', from: '2014-04-01', minKm: 10, maxKm: 15, limit: 7100 },
+    { means: 'car', from: '2014-04-01', minKm: 15, maxKm: 25, limit: 12900 },
+    { means: 'car', from: '2014-04-01', minKm: 25, maxKm: 35, limit: 18700 },
+    { means: 'car', from: '2014-04-01', minKm: 35, maxKm: 45, limit: 24400 },
+    { means: 'car', from: '2014-04-01', minKm: 45, maxKm: 55, limit: 28000 },
+    { means: 'car', from: '2014-04-01', minKm: 55, maxKm: null, limit: 31600 },
+    { means: 'car', from: '2025-04-01', minKm: null, maxKm: 2, limit: 0 },
+    { means: 'car', from: '2025-04-01', minKm: 2, maxKm: 10, limit: 4200 },
+    { means: 'car', from: '2025-04-01', minKm: 10, maxKm: 15, limit: 7300 },
+    { means: 'car', from: '2025-04-01', minKm: 15, maxKm: 25, limit: 13500 },
+    { means: 'car', from: '2025-04-01', minKm: 25, maxKm: 35, limit: 19700 },
+    { means: 'car', from: '2025-04-01', minKm: 35, maxKm: 45, limit: 25900 },
+    { means: 'car', from: '2025-04-01', minKm: 45, maxKm: 55, limit: 32300 },
+    { means: 'car', from: '2025-04-01', minKm: 55, maxKm: null, limit: 38700 },
+    { means: 'car', from: '2026-04-01', minKm: null, maxKm: 2, limit: 0 },
+    { means: 'car', from: '2026-04-01', minKm: 2, maxKm: 10, limit: 4200 },
+    { means: 'car', from: '2026-04-01', minKm: 10, maxKm: 15, limit: 7300 },
+    { means: 'car', from: '2026-04-01', minKm: 15, maxKm: 25, limit: 13500 },
+    { means: 'car', from: '2026-04-01', minKm: 25, maxKm: 35, limit: 19700 },
+    { means: 'car', from: '2026-04-01', minKm: 35, maxKm: 45, limit: 25900 },
+    { means: 'car', from: '2026-04-01', minKm: 45, maxKm: 55, limit: 32300 },
+    { means: 'car', from: '2026-04-01', minKm: 55, maxKm: 65, limit: 38700 },
+    { means: 'car', from: '2026-04-01', minKm: 65, maxKm: 75, limit: 45700 },
+    { means: 'car', from: '2026-04-01', minKm: 75, maxKm: 85, limit: 52700 },
+    { means: 'car', from: '2026-04-01', minKm: 85, maxKm: 95, limit: 59600 },
+    { means: 'car', from: '2026-04-01', minKm: 95, maxKm: null, limit: 66400 },
+    { means: 'public', from: '2016-01-01', minKm: null, maxKm: null, limit: 150000 }
+  ];
+  /* 令和8年4月1日以後の交通用具の人（2km以上）が駐車場の料金を負担する時に足せる上限 */
+  var COMMUTE_PARKING = { from: '2026-04-01', minKm: 2, max: 5000 };
 
   function isYm(s) { return typeof s === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(s); }
   function isDate(s) { return typeof s === 'string' && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(s); }
@@ -110,8 +147,8 @@
     return best && typeof best.hourly === 'number' ? best.hourly : null;
   }
 
-  /* 通勤手当の月の非課税限度（means: 'transit'|'car' など・distance_km）。無ければ null */
-  function commuteLimit(date, means, distanceKm) {
+  /* 通勤手当の月の非課税限度（means: 'public'|'car'・distance_km・parking＝本人が負担する駐車場の月の料金（任意））。無ければ null */
+  function commuteLimit(date, means, distanceKm, parking) {
     if (!isDate(date)) return null;
     var best = null;
     for (var i = 0; i < COMMUTE.length; i++) {
@@ -121,7 +158,10 @@
       if (c.maxKm != null && !(distanceKm < c.maxKm)) continue;
       if (best === null || c.from > best.from) best = c;
     }
-    return best && typeof best.limit === 'number' ? best.limit : null;
+    if (!best || typeof best.limit !== 'number') return null;
+    var lim = best.limit, pk = Number(parking);
+    if (means === 'car' && pk > 0 && date >= COMMUTE_PARKING.from && distanceKm >= COMMUTE_PARKING.minKm) lim += Math.min(Math.floor(pk), COMMUTE_PARKING.max);
+    return lim;
   }
 
   var api = {

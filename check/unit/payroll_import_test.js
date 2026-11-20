@@ -24,6 +24,8 @@ const doc = { getElementById: (id) => (els[id] = els[id] || el()), addEventListe
 const store = { su_device_role: 'field' };
 const win = { localStorage: { getItem: (k) => store[k] || null, setItem: (k, v) => { store[k] = String(v); } }, addEventListener() {}, document: doc };
 win.window = win;
+/* 2026-11-21: 口座の名義は振込データと同じ字の直し（PayrollExport.zenginText）で確かめるので、画面と同じに payroll-export.js を先に読む */
+vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'payroll-export.js'), 'utf8'), win);
 vm.runInNewContext(J, Object.assign(win, { setInterval() {}, setTimeout() {}, clearTimeout() {}, Promise, JSON, Math, Date, Object, Array, String, Number, RegExp, Error, isNaN, isFinite, parseInt, TextDecoder }));
 const P = win.__payrollTest;
 t('試験の口（importCols・buildImport・decode）がある', !!P && typeof P.importCols === 'function' && typeof P.buildImport === 'function' && typeof P.decode === 'function');

@@ -101,7 +101,7 @@ console.log('\n— 4. 時給の人の有休を1日の所定時間で払う —')
   t('時間単位の有休だけの月は今のまま（1100×720÷60＝13200円）', L(h6, 'basic') === 13200 && /所定内＋有休/.test(LN(h6, 'basic').basis), L(h6, 'basic'));
   t('受け口: 控えの有休日数は半日きざみのまま（0.5 → 0.5）', attFrom({ paidDays: 0.5 }).paidDays === 0.5 && attFrom({ paidDays: 2 }).paidDays === 2);
   const dl = run(DAILY, Object.assign({}, base, { workDays: 3, paidDays: 0.5, paidMin: 240 }));
-  t('日給の有休の額は今のまま（半日も日給×整数に丸めた日数＝10000円）', L(dl, 'paid_leave') === 10000, L(dl, 'paid_leave'));
+  t('日給の半日有休は日給×0.5日＝5000円（2026-11-21・前は整数に丸めて 10000円）・1日は10000円・1.5日は15000円', L(dl, 'paid_leave') === 5000 && L(run(DAILY, Object.assign({}, base, { workDays: 3 })), 'paid_leave') === 10000 && L(run(DAILY, Object.assign({}, base, { workDays: 3, paidDays: 1.5, paidMin: 720 })), 'paid_leave') === 15000, L(dl, 'paid_leave'));
 }
 
 console.log('\n— 5. 日給の人の法定休日の労働 —');
