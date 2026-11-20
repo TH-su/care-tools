@@ -75,6 +75,11 @@ function supabaseBox() {
   t('★画面のコードの例外（TypeError）→ コードの例外', H(inBox(B, "new TypeError('x is not a function')")) === 'コードの例外|0|');
   t('関数が無い（PGRST202・404）→ 不明・HTTP 404・符号 PGRST202', H({ status: 404, code: 'PGRST202', message: 'Could not find the function' }) === '不明|404|PGRST202');
   t('文字だけ・null → 不明（番号・符号なし）', H('保存できませんでした') === '不明|0|' && H(null) === '不明|0|');
+  t('文字だけの「タイムアウト」→ 時間切れ（反証レビュー）', H('タイムアウト') === '時間切れ|0|' && H('時間切れ') === '時間切れ|0|');
+  t('Error の「タイムアウト」→ 時間切れ', H(inBox(B, "new Error('タイムアウト')")) === '時間切れ|0|');
+  t('画面が作り直した Error(network) → 通信の失敗（反証レビュー）', H(inBox(B, "new Error('network')")) === '通信の失敗|0|');
+  t('文字だけの通信の決まり文句 → 通信の失敗', H('TypeError: Failed to fetch') === '通信の失敗|0|');
+  t('文の途中にタイムアウトがあるだけの文字は 不明（決まり文句だけ）', H('保存がタイムアウトしました。見本 太郎') === '不明|0|');
   {
     const h = hintOfNote({ status: '401abc', code: '見本 太郎', name: 'X', message: '見本 太郎 様の記録 "{"name":"見本"}"' });
     t('★形の違う番号・符号は入れない（文の中身は手がかりに入らない）', h.status === 0 && h.code === '' && h.cls === '不明', h);
@@ -97,6 +102,13 @@ function supabaseBox() {
     t('403・42501 → 断り・符号 42501（supabase-js の失敗の物は status を持たない＝番号は 0）', H(den.error) === '断り|0|42501', den.error);
     t('★401・PGRST303 → 断り・符号 PGRST303', H(skew.error) === '断り|0|PGRST303', skew.error);
     t('404・PGRST202 → 不明・符号 PGRST202', H(gone.error) === '不明|0|PGRST202', gone.error);
+    const fn = (f) => mk(f).functions.invoke('su-report', { body: { x: 1 } });
+    const f401 = await fn(json(401, { msg: 'Invalid JWT' }));
+    const f500 = await fn(json(500, { error: 'boom' }));
+    const fnet = await fn(() => Promise.reject(new TypeError('Failed to fetch')));
+    t('★関数の 401（FunctionsHttpError・番号は context.status）→ 断り・HTTP 401（反証レビュー）', H(f401.error) === '断り|401|', [f401.error && f401.error.name, H(f401.error)]);
+    t('関数の 500 → サーバーの失敗・HTTP 500', H(f500.error) === 'サーバーの失敗|500|', H(f500.error));
+    t('★関数への通信の失敗（FunctionsFetchError）→ 通信の失敗', H(fnet.error) === '通信の失敗|0|', [fnet.error && fnet.error.name, H(fnet.error)]);
   }
 
   console.log('\n— 3. 記録先へ5つ目として渡る —');
@@ -157,10 +169,44 @@ function supabaseBox() {
     const lm = pad(d.getMonth() + 1) + '/' + pad(d.getDate()) + '/' + d.getFullYear() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
     t('★印の無い画面は公開時刻（document.lastModified）', mkBuild(null, lm)() === want, [mkBuild(null, lm)(), want]);
     t('印（meta build）がある画面は今までどおり印', mkBuild('2026-11-21.3', lm)() === '2026-11-21.3');
-    const nowLm = new Date(T0 + 500);
+    const nowLm = new Date();   /* 読んだ時刻（今）。開いた時刻（T0）ではなく、読んだ時刻と比べる（反証レビュー） */
     const nowStr = pad(nowLm.getMonth() + 1) + '/' + pad(nowLm.getDate()) + '/' + nowLm.getFullYear() + ' ' + pad(nowLm.getHours()) + ':' + pad(nowLm.getMinutes()) + ':' + pad(nowLm.getSeconds());
     t('最終更新の印が無く「今」が返る時は 記載なし', mkBuild(null, nowStr)() === '記載なし', mkBuild(null, nowStr)());
     t('読めない値は 記載なし', mkBuild(null, 'abc')() === '記載なし' && mkBuild(null, undefined)() === '記載なし');
+    {
+      /* 最終更新の印が無い所では、ブラウザは読むたびに「今」を返す。開いてから10秒後に起きたエラーでも 記載なし（反証レビュー） */
+      const doc = { querySelector: () => null };
+      Object.defineProperty(doc, 'lastModified', { get() { const n = new Date(); return pad(n.getMonth() + 1) + '/' + pad(n.getDate()) + '/' + n.getFullYear() + ' ' + pad(n.getHours()) + ':' + pad(n.getMinutes()) + ':' + pad(n.getSeconds()); } });
+      const b2 = new Function('document', 'T0', cut(R, 'function pad2(') + '\n' + cut(R, 'function build(') + '\nreturn build;')(doc, Date.now() - 10000);
+      t('★読むたびに「今」が返る時は、開いてから時間がたっていても 記載なし', b2() === '記載なし', b2());
+    }
+  }
+
+  console.log('\n— 7. 記録から送る本文まで（su-errors.js の note → su-report.js の受け手 → autoSend → send）—');
+  {
+    const C = errorsBox();
+    const sent = [];
+    const pick = (re) => (R.match(re) || [''])[0];
+    const code = [
+      "var TOOL = '見本の画面', FILE = 'kintai.html';",
+      pick(/var NOTE_KIND = '[^']*';/), pick(/var AUTO_NOTE_MAX = \d+;/), pick(/var AUTO_MAX_PER_LOAD = \d+;/),
+      'var ERRORS = [], NOTES = [], autoSent = 0, autoNoteSent = 0, autoNoteWhere = {};',
+      pick(/var HINT_CLS = \[[^\]]*\];/),
+      'function canSend() { return true; } function autoThrottled() { return false; }',
+      "function facts() { return ['端末: Mac / Chrome', '版: 記載なし ／ この画面を開いてから 0分']; }",
+      'function send(b) { sent.push(b); return Promise.resolve(); }',
+      cut(R, 'function errType('), cut(R, 'function cleanWhere('), cut(R, 'function pushErr('), cut(R, 'function hintLine('),
+      cut(R, 'function composeAuto('), cut(R, 'function autoSend('),
+      cut(R, 'window.SUErrors.onReport(function') + ');'
+    ].join('\n');
+    new Function('window', 'sent', code)({ SUErrors: C.E }, sent);
+    C.E.note('保存・同期の失敗', { code: 'PGRST303', message: 'JWT issued at future 見本 太郎' }, 'kintai:読み込み');
+    const body = sent[0] || '';
+    const L = body.split('\n');
+    t('★記録が受け手を通って送る本文になり、「エラー:」の次に「手がかり:」が出る', L[2] === 'エラー: 保存・同期の失敗：エラー（kintai:読み込み）' && L[3] === '手がかり: 区分 断り ／ 符号 PGRST303', L.slice(2, 4));
+    t('★送る本文のどこにも文の中身（氏名）が無い', sent.length === 1 && !/見本 太郎|issued/.test(body), body);
+    C.E.report('保存の失敗', 'ただの文字', 'kintai:保存');
+    t('手がかりの区分が 不明 の時も行は出る（区分 不明）', /\n手がかり: 区分 不明\n/.test(sent[1] || ''), sent[1]);
   }
 
   finished = true;

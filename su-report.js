@@ -117,14 +117,14 @@
   }
   /* 版（2026-11-21・代表者の決定「案1」）: 画面に build/version の印があればそれ、無ければ画面の公開時刻
      （document.lastModified＝GitHub Pages が返す最終更新の時刻）。印も時刻も無い・読めない時は「記載なし」。
-     最終更新の印が無いと、ブラウザは「今」を返すので、開いた時刻から2秒以内の値は使わない */
+     最終更新の印が無いと、ブラウザは読むたびに「今」を返すので、読んだ時刻から2秒以内の値は使わない（反証レビュー: 開いた時刻と比べると、後で起きたエラーで送る時刻が公開時刻に見えた） */
   function pad2(n) { return (n < 10 ? '0' : '') + n; }
   function build() {
     var m = document.querySelector('meta[name="build"], meta[name="version"]');
     if (m && m.content) return m.content;
     try {
       var d = new Date(document.lastModified);
-      if (isNaN(d.getTime()) || Math.abs(T0 - d.getTime()) < 2000) return '記載なし';
+      if (isNaN(d.getTime()) || Math.abs(Date.now() - d.getTime()) < 2000) return '記載なし';
       return '画面の公開 ' + d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
     } catch (e) { return '記載なし'; }
   }
