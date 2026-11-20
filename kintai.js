@@ -309,7 +309,7 @@
   function rawPunches(b) {
     return b.punches.map(function (p) { return (p.kind === 'in' ? '出' : '退') + ' ' + hm(p.at) + (p.source === 'offline' ? '（控え）' : p.source === 'office' ? '（事務所）' : ''); }).join(' / ');
   }
-  function schedText(b) { return b.sched ? esc(b.symbol) + ' ' + hm(b.schedStart) + '〜' + hm(b.schedEnd) : '<span class="raw">予定なし</span>'; }
+  function schedText(b) { return b.sched ? esc(b.symbol) + ' ' + hm(b.schedStart) + '〜' + hm(b.schedEnd) + srcTag(b.staff_id, b.work_date) : '<span class="raw">予定なし</span>' + ((schedEditOf(b.staff_id, b.work_date) || {}).off ? srcTag(b.staff_id, b.work_date) : ''); }
   function countText(b) { return b.countStart != null ? hm(b.countStart) + '〜' + hm(b.countEnd) : ''; }
   function dateList() { var p = per(), out = []; for (var d = p.from; d <= p.to; d = C.addDays(d, 1)) out.push(d); return out; }
   /* 月の選びの横に期間（例「（11/16〜12/15）」）を出す（textContent・画面だけ） */
@@ -349,7 +349,7 @@
       '<button type="button" class="btn sm" data-act="day-today"' + (selDate === today ? ' aria-pressed="true"' : '') + '>今日</button>' +
       '<button type="button" class="btn sm" data-act="day-move" data-n="1" aria-label="次の日">次の日 ▶</button>' +
       '<label>日付 <select id="g-date">' + ds.map(function (x) { return '<option value="' + x + '"' + (x === selDate ? ' selected' : '') + '>' + md(x) + '（' + wd(x) + '）</option>'; }).join('') + '</select></label>' +
-      officeSelect() + '<button type="button" class="btn sm" data-act="print">この日を印刷</button><button type="button" class="btn sm" data-act="work-open">勤務時間を手で入れる</button></div>' + chips +
+      officeSelect() + '<button type="button" class="btn sm" data-act="print">この日を印刷</button><button type="button" class="btn sm" data-act="work-open">勤務時間を手で入れる</button><button type="button" class="btn sm" data-act="sched-open">出勤予定を直す・入れる</button></div>' + chips +
       '<div class="tw"><table><thead><tr><th>氏名</th><th>事業所</th><th>予定</th><th>打刻（そのまま）</th><th>数えた時刻</th><th class="num">休憩</th><th class="num">実働</th><th>印</th><th class="no-print"></th></tr></thead><tbody>' +
       (rows.join('') || '<tr><td colspan="9" class="empty">' + (dayFilter || officeFilter ? '絞り込みに当たる人はいません' : 'この日の予定・打刻はありません') + '</td></tr>') + '</tbody></table></div>' +
       '<p class="help">「数えた時刻」は予定に合わせて丸めた時刻です（予定より早い出勤は予定の開始、予定より遅い退勤は予定の終わり）。打刻はそのまま残っています。早出・残業を認める時は「直す」から。「出勤中」は退勤の時刻がまだ来ていない人で、要確認には数えません。この画面は1分ごとに数え直します。</p></div>';
@@ -424,7 +424,7 @@
     var sel = '<label>職員 <select id="g-staff">' + month.people.map(function (p) { return '<option value="' + esc(p.staff.staff_id) + '"' + (p.staff.staff_id === selStaff ? ' selected' : '') + '>' + esc(dispName(p.staff)) + '</option>'; }).join('') + '</select></label>';
     var p = personOf(selStaff);
     if (!p) return '<div class="cd"><p class="empty">職員がいません。「職員と番号」でシフトから取り込んでください。</p></div>';
-    return printHead(dispName(p.staff) + ' さん') + '<div class="cd"><div class="row no-print">' + sel + '<button type="button" class="btn sm" data-act="addday">予定の無い日に打刻を足す</button><button type="button" class="btn sm" data-act="work-open">勤務時間を手で入れる</button><button type="button" class="btn sm" data-act="print">印刷</button><button type="button" class="btn sm" data-act="print-all">全員分を印刷（1人1ページ）</button></div>' +
+    return printHead(dispName(p.staff) + ' さん') + '<div class="cd"><div class="row no-print">' + sel + '<button type="button" class="btn sm" data-act="addday">予定の無い日に打刻を足す</button><button type="button" class="btn sm" data-act="work-open">勤務時間を手で入れる</button><button type="button" class="btn sm" data-act="sched-open">出勤予定を直す・入れる</button><button type="button" class="btn sm" data-act="fx-open" data-sid="' + esc(p.staff.staff_id) + '">前提の時間</button><button type="button" class="btn sm" data-act="print">印刷</button><button type="button" class="btn sm" data-act="print-all">全員分を印刷（1人1ページ）</button></div>' +
       personHtml(p) + '</div>';
   }
 
@@ -444,7 +444,7 @@
     var rows = list.map(function (s) {
       return '<tr><td>' + esc(dispName(s)) + (s.display_name ? '<br><span class="raw">シフトの名前：' + esc(s.name) + '</span>' : '') + '</td><td>' + esc(officeName(s.office)) + '</td><td class="num"><b>' + esc(s.code) + '</b></td><td>' + esc(s.emp_code || '') + (s.emp_code ? '' : '<span class="tag rv">従業員コードなし</span>') + '</td><td>' + (s.active === false ? '<span class="tag">休止中</span>' : '') + '</td>' +
         staffMasterCells(s) +
-        '<td class="no-print">' + (fixedCode(s) ? '' : '<button type="button" class="btn sm" data-act="recode" data-sid="' + esc(s.staff_id) + '">番号を振り直す</button>') + '<button type="button" class="btn sm" data-act="dname" data-sid="' + esc(s.staff_id) + '">表示名を変える</button>' + staffMasterBtns(s) + '</td></tr>';
+        '<td class="no-print">' + (fixedCode(s) ? '' : '<button type="button" class="btn sm" data-act="recode" data-sid="' + esc(s.staff_id) + '">番号を振り直す</button>') + '<button type="button" class="btn sm" data-act="dname" data-sid="' + esc(s.staff_id) + '">表示名を変える</button><button type="button" class="btn sm" data-act="fx-open" data-sid="' + esc(s.staff_id) + '">前提の時間</button>' + staffMasterBtns(s) + '</td></tr>';
     }).join('');
     var w = shiftInfo && shiftInfo.ok && shiftInfo.warnings.length ? '<div class="cd"><h2 style="font-size:16px;margin:0 0 8px">シフトの記号で気になる所</h2><div class="tw"><table><thead><tr><th>職員</th><th>日</th><th>内容</th></tr></thead><tbody>' +
       shiftInfo.warnings.map(function (x) { var s = (data.staff || []).filter(function (y) { return y.staff_id === x.staff_id; })[0]; return '<tr><td>' + esc(s ? dispName(s) : x.staff_id) + '</td><td>' + esc(x.date) + '</td><td>' + esc(x.msg) + '</td></tr>'; }).join('') + '</tbody></table></div></div>' : '';
@@ -465,6 +465,21 @@
   function ymdJa(d) { return d && L && L.isDate(d) ? (+d.slice(0, 4)) + '/' + (+d.slice(5, 7)) + '/' + (+d.slice(8, 10)) : ''; }
   function dayTxt(n) { return n === 0.5 ? '半日' : String(n) + ' 日'; }
   function staffById(sid) { return (data && data.staff || []).filter(function (s) { return s.staff_id === sid; })[0] || null; }
+  /* 0111: 出勤予定の手直し（sched_edits）・前提（fixed・sched_fixed_days）。古い DB では鍵が無い＝どれも空 */
+  function schedEditOf(sid, date) { return (data && Array.isArray(data.sched_edits) ? data.sched_edits : []).filter(function (e) { return e.staff_id === sid && e.work_date === date; })[0] || null; }
+  function isFixedDay(sid, date) { return (data && Array.isArray(data.sched_fixed_days) ? data.sched_fixed_days : []).some(function (x) { return x.staff_id === sid && x.work_date === date; }); }
+  function srcTag(sid, date) {
+    var e = schedEditOf(sid, date);
+    if (e) return ' <span class="tag no-print">' + (e.off ? '手直し（休み）' : '手直し') + '</span>';
+    return isFixedDay(sid, date) ? ' <span class="tag no-print">前提</span>' : '';
+  }
+  function fixedOf(sid) { return (data && Array.isArray(data.fixed) ? data.fixed : []).filter(function (f) { return f.staff_id === sid; }); }
+  var WD_ORDER = [1, 2, 3, 4, 5, 6, 0];   /* 月〜日の順に並べる（鍵は 0＝日〜6＝土） */
+  function weekTxt(w) {
+    if (!w) return '前提なし';
+    return WD_ORDER.map(function (i) { var x = w[String(i)]; return WD[i] + ' ' + (x && x.start ? x.start + '〜' + x.end + (x.break_min ? '（休憩' + x.break_min + '分）' : '') : '休み'); }).join('・');
+  }
+  function ymdSl(d) { return d ? String(d).replace(/-/g, '/') : ''; }
   /* 勤怠で出す名前（2026-11-20 代表者の指示・統合 0107）: 画面で直した表示名があればそれ、無ければシフトの名前。
      シフトの名前（name）は取り込みのたびに上書きされるので、直すのは表示名（display_name）だけ。取り込みに送り返す名前は name のまま */
   function dispName(s) { return s ? String(s.display_name || s.name || s.staff_id || '') : ''; }
@@ -697,7 +712,7 @@
     h += '<div class="cd pr-edits-cd"><div class="ph" style="display:none"></div><h2 style="font-size:16px;margin:0 0 8px">直しの履歴</h2><div class="row no-print"><button type="button" class="btn sm" data-act="print-edits">直しの履歴を印刷</button></div><div id="g-edits">' + (editsCache ? editsHtml(editsCache) : '<button type="button" class="btn sm" data-act="edits">この月の直しの履歴を見る</button>') + '</div></div>';
     return h;
   }
-  var ACT_LABEL = { display_name: '表示名を変えた', punch_add: '打刻を足した', punch_void: '打刻を取り消した', day_put: '承認・休憩・メモ・印', code_reset: '番号を振り直した', code_fixed: '打刻の番号を職員No に合わせた', month_lock: '月を締めた', month_unlock: '締めを解除した', settings_put: '設定を変えた', schedule_put: 'シフトを取り込んだ' };
+  var ACT_LABEL = { sched_set: '予定を直した', sched_off: '予定を休みにした', sched_clear: '予定の手直しを外した', fixed_put: '前提の時間を入れた', fixed_void: '前提の時間を取り消した', display_name: '表示名を変えた', punch_add: '打刻を足した', punch_void: '打刻を取り消した', day_put: '承認・休憩・メモ・印', code_reset: '番号を振り直した', code_fixed: '打刻の番号を職員No に合わせた', month_lock: '月を締めた', month_unlock: '締めを解除した', settings_put: '設定を変えた', schedule_put: 'シフトを取り込んだ' };
   function kindJa(k) { return k === 'in' ? '出勤' : k === 'out' ? '退勤' : '打刻'; }
   function brTxt(v) { return v == null ? '予定どおり' : String(v); }
   /* 直しの前後の値を「退勤 16:05 を足した」「休憩 60→45 分」「確認済みにした」のように言う（C-9） */
@@ -706,6 +721,11 @@
     var when = function (v) { if (!v) return ''; var dd = C.jstDate(Date.parse(v)); return (e.work_date && dd !== e.work_date ? md(dd) + ' ' : '') + hm(v); };
     if (e.action === 'punch_add') return kindJa(a.kind) + ' ' + when(a.at) + ' を足した';
     if (e.action === 'punch_void') return kindJa(b.kind || a.kind) + ' ' + when(b.at || a.at) + ' を取り消した';
+    var sedTxt = function (x) { return x.off ? '休み' : when(x.start_at) + '〜' + when(x.end_at) + '・休憩 ' + (x.break_min || 0) + ' 分'; };
+    if (e.action === 'sched_set' || e.action === 'sched_off') return '予定を「' + sedTxt(a) + '」にした' + (e.before ? '（前の手直し: ' + sedTxt(b) + '）' : '');
+    if (e.action === 'sched_clear') return '予定の手直し（' + sedTxt(b) + '）を外した（シフト・前提の予定に戻した）';
+    if (e.action === 'fixed_put') return '前提の時間を ' + ymdSl(a.valid_from) + ' から「' + weekTxt(a.week) + '」にした' + (e.before ? '（同じ効く日の前の版を置き換えた）' : '');
+    if (e.action === 'fixed_void') return '前提の時間（' + ymdSl(b.valid_from) + ' から「' + weekTxt(b.week) + '」）を取り消した';
     if (e.action !== 'day_put') return ACT_LABEL[e.action] || e.action;
     if (!!b.early_ok !== !!a.early_ok) parts.push(a.early_ok ? '早出を全部認めた' : '早出の承認（全部）を外した');
     if (ms(b.early_from) !== ms(a.early_from)) parts.push(a.early_from ? '早出を ' + hm(a.early_from) + ' から認めた' : '早出の時刻（' + hm(b.early_from) + ' から）を外した');
@@ -810,6 +830,8 @@
     var b = '';
     if (lk) b += '<div class="band ok">この月は締めてあるため直せません。</div>';
     if (blocks.length) b += '<p>' + blocks.map(function (x) { return schedText(x) + ' → 数えた ' + (countText(x) || '（なし）') + '・実働 ' + fm(x.workMin) + ' ' + flagTags(x.flags, x.checked); }).join('<br>') + '</p>';
+    /* 0111: この日の予定（シフト・手直し・前提）と、予定を直す窓への入口 */
+    b += '<fieldset><legend>予定（この日）</legend><p>' + schedNow(sid, date) + '</p><div class="row"><button type="button" class="btn sm" data-act="sched-day" data-sid="' + esc(sid) + '" data-date="' + esc(date) + '"' + (lk ? ' disabled' : '') + '>この日の予定を直す</button></div></fieldset>';
     b += '<fieldset><legend>打刻（前日〜翌日・太字はこの日に数えた打刻）</legend>' + (ps.length ? '<div class="tw"><table class="plist"><tbody>' + ps.map(function (x) {
       var v = !!x.voided_at, pd = C.jstDate(Date.parse(x.at)), cls = counted[x.id] && !v ? 'p-cnt' : (pd !== date ? 'p-oth' : '');
       var side = pd < date ? '<span class="tag">前日</span>' : pd > date ? '<span class="tag">翌日</span>' : '';
@@ -881,7 +903,7 @@
       note('直しの履歴', e); if (dlgCtx !== ctx || !$('e-hist')) return; var bx = $('e-hist'); bx.textContent = ''; bx.appendChild(mk('p', 'empty', '直しの履歴を読めませんでした: ' + msgOf(e)));
     });
   }
-  var DIRTY_MODES = { edit: 1, work: 1, leave: 1, link: 1, mimport: 1, clockvis: 1, madd: 1, dname: 1 };   /* 保存していない入力を確かめる窓（v4 で手入力・有給・結び付けを足した） */
+  var DIRTY_MODES = { edit: 1, work: 1, leave: 1, link: 1, mimport: 1, clockvis: 1, madd: 1, dname: 1, sched: 1, fixed: 1 };   /* 0111 で予定の手直し・前提を足した */   /* 保存していない入力を確かめる窓（v4 で手入力・有給・結び付けを足した） */
   function closeDlg() { dlgCtx = null; try { $('g-dlg').close(); } catch (_) { $('g-dlg').removeAttribute('open'); } }
   function dirty() {
     if (!dlgCtx || !DIRTY_MODES[dlgCtx.mode] || dlgCtx.init == null) return false;
@@ -1025,6 +1047,224 @@
       busy = false; note('勤務時間の手入力', e);
       if (done) { closeDlg(); load(false); alert(msgOf(e) + '（' + ops.length + ' 件のうち ' + done + ' 件は保存しました。読み直したので、残りは「直す」の窓で直してください）'); }
       else { restore(); if ($('g-dlg').open && $('e-msg') === msg) msg.textContent = msgOf(e); else toast('保存できませんでした: ' + msgOf(e)); }
+    });
+  }
+
+  /* ── 0111: 出勤予定を直す・入れる（シフトの日の手直し・シフトに載らない人の直接入力・休みにする・手直しを外す） ──
+   * 手直しは日ごとに1つ。シフトを取り込み直しても消えず、外すとシフトか前提の予定に戻る。理由は直しの履歴に残る */
+  var SCHED_REASONS = ['シフトの変更（本人と確認済み）', 'シフトに載らない職員の予定', '休みに変更', 'その他'], FX_REASONS = ['雇用契約の勤務時間', '勤務時間の変更', 'その他'];
+  var NG_SCHED = { conflict: '別の人が先にこの日の予定を直しました。読み直してから、もう一度直してください。',
+    badrow: '入れた予定の形が違います（始業はその日・終業は始業より後で24時間まで・休憩は勤務の長さより短く）。',
+    badshape: '一度に入れられるのは62日までです。', notfound: 'その職員が見つかりませんでした。読み直してください。' };
+  var NG_FIXED = { locked: '効く日か、それより後の日に締めた月分があるため、この効く日では入れられません（取り消しもできません）。締めた月分より後の日を効く日にしてください。',
+    badweek: '曜日ごとの時間の形が違います（始業と終業は別の時刻・休憩は勤務の長さより短く）。', baddate: '効く日の形が違います。',
+    conflict: '同じ効く日の版を別の人が先に直しました。読み直してから、もう一度保存してください。', notfound: '見つかりませんでした（もう取り消してあるかもしれません）。読み直してください。' };
+  function schedMsg(e) {
+    if (e && e.kintai === 'locked') return (e.date ? md(String(e.date)) + ' は' : 'その日は') + '締めた月分に入っているか、締めた月分の数えに使う日（締めた月分の初日の前の7日）のため直せません。直す時は管理者が締めを解除してください。';
+    return e && e.kintai && NG_SCHED[e.kintai] ? NG_SCHED[e.kintai] : msgOf(e);
+  }
+  function fixedMsg(e) { return e && e.kintai && NG_FIXED[e.kintai] ? NG_FIXED[e.kintai] : msgOf(e); }
+  /* 休憩が空の時の既定（シフトの取り込みと同じ決まり: 日をまたぐ勤務は夜勤の休憩・ほかは6時間を超える時だけいつもの休憩） */
+  function defBreak(span, night) {
+    var cf = (month && month.config) || C.fillConfig({});
+    if (night) return Math.round((typeof cf.nightBreakH === 'number' ? cf.nightBreakH : 2) * 60);
+    return span > cf.breakThresholdH * 60 ? Math.round(cf.breakH * 60) : 0;
+  }
+  function okOrD(r) { if (r && r.ok === true) return r; var err = new Error((r && r.error) || 'ng'); err.kintai = (r && r.error) || 'ng'; err.date = r && r.date; throw err; }
+  /* その日の予定の時刻（手直しがあればそれ・無ければ予定の勤務の最初の始業と最後の終業）を窓に入れる値に */
+  function schedPrefill(sid, date) {
+    var se = sid ? schedEditOf(sid, date) : null;
+    if (se && !se.off) return { start: hm(se.start_at), end: hm(se.end_at), br: se.break_min };
+    var r = (data && data.schedule || []).filter(function (x) { return x.staff_id === sid && x.work_date === date && (x.kind === 'work' || x.kind === 'night') && x.start_at && x.end_at; })
+      .sort(function (a, b) { return Date.parse(a.start_at) - Date.parse(b.start_at); });
+    if (!r.length) return { start: '', end: '', br: null };
+    return { start: hm(r[0].start_at), end: hm(r[r.length - 1].end_at), br: r.length === 1 ? r[0].break_min : null };
+  }
+  function schedNow(sid, date) {
+    var se = schedEditOf(sid, date), rows = (data && data.schedule || []).filter(function (x) { return x.staff_id === sid && x.work_date === date; });
+    var work = rows.filter(function (x) { return (x.kind === 'work' || x.kind === 'night') && x.start_at; }).map(function (x) { return (x.symbol ? esc(x.symbol) + ' ' : '') + hm(x.start_at) + '〜' + hm(x.end_at) + '（休憩 ' + esc(x.break_min || 0) + ' 分）'; });
+    var paid = rows.some(function (x) { return x.kind === 'paid'; });
+    var src = se ? (se.off ? '手直しで休みにしてあります' : '手直しの予定です') + '（理由: ' + esc(se.reason || '') + (se.updated_by ? '・' + esc(se.updated_by) : '') + '）' :
+      isFixedDay(sid, date) ? '前提の時間から作った予定です' : (work.length || paid ? 'シフトの予定です' : '予定はありません');
+    return (work.length ? work.join('<br>') + '<br>' : '') + (paid ? 'シフトの有休<br>' : '') + '<span class="raw">' + src + '</span>';
+  }
+  /* 窓の中で職員か始まりの日付を替えた時: 「今の予定」と、始業・終業・休憩・入れ方の初めの値をその人・その日に描き直す */
+  function schedRefill() {
+    if (!dlgCtx || dlgCtx.mode !== 'sched' || !$('sc-sid')) return;
+    var sid = $('sc-sid').value, d = $('sc-from').value, d1 = $('sc-to').value, init = dlgCtx.init, rs = $('e-reason') ? $('e-reason').value : '', from0 = dlgCtx.from0;
+    if (d1 === from0) d1 = d;   /* 1日だけの時（終わり＝前の始まり）は、終わりも一緒に動かす（知らないうちに何日分にもならない） */
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || !inPer(d)) return;
+    var dows = {}; document.querySelectorAll('#g-dlg-b input[name="sc-dow"]').forEach(function (c) { dows[c.value] = c.checked; });
+    /* 描き直しは窓を開く時と同じ道（openDlg）で行い、理由・終わりの日付・曜日の選びは残す。開いた時の値（init）も引き継ぐ＝保存していない入力の確かめは前のまま */
+    openSched(sid || null, d);
+    if (d1 && d1 >= d && inPer(d1)) $('sc-to').value = d1;
+    dlgCtx.from0 = d;
+    document.querySelectorAll('#g-dlg-b input[name="sc-dow"]').forEach(function (c) { if (dows[c.value] != null) c.checked = dows[c.value]; });
+    if ($('e-reason')) $('e-reason').value = rs;
+    dlgCtx.init = init;
+  }
+  function openSched(sid, date) {
+    if (!month || !data) return;
+    var ds = dateList(), lk = isLocked();
+    var dv = date && ds.indexOf(date) >= 0 ? date : (selDate && ds.indexOf(selDate) >= 0 ? selDate : ds[0]);
+    var opts = staffSorted().sort(function (a, b) { return dispName(a).localeCompare(dispName(b), 'ja'); }).map(function (s) {
+      return '<option value="' + esc(s.staff_id) + '"' + (s.staff_id === sid ? ' selected' : '') + '>' + esc(dispName(s)) + (s.active === false ? '（休止中）' : '') + (srcOf(s) === 'master' ? '（シフトに載らない）' : '') + '</option>';
+    }).join('');
+    var pre = sid ? schedPrefill(sid, dv) : { start: '', end: '', br: null };
+    var se = sid ? schedEditOf(sid, dv) : null;
+    var op0 = se && se.off ? 'off' : 'set';
+    dlgCtx = { mode: 'sched', preBr: pre.br != null ? String(pre.br) : '', from0: dv };
+    var b = (lk ? '<div class="band ok">この月分は締めてあるため直せません。直す時は管理者が締めを解除してください。</div>' : '') +
+      (sid ? '<fieldset><legend>今の予定（' + md(dv) + '）</legend><p id="sc-now">' + schedNow(sid, dv) + '</p></fieldset>' : '') +
+      '<fieldset' + (lk ? ' disabled' : '') + '><legend>入れる予定</legend>' +
+      '<div class="row"><label>職員 <select id="sc-sid"><option value="">選んでください</option>' + opts + '</select></label></div>' +
+      '<div class="row"><label>日付 <input type="date" id="sc-from" min="' + ds[0] + '" max="' + ds[ds.length - 1] + '" value="' + esc(dv) + '"></label><label>〜 <input type="date" id="sc-to" min="' + ds[0] + '" max="' + ds[ds.length - 1] + '" value="' + esc(dv) + '"></label></div>' +
+      '<div class="row" role="group" aria-label="入れる曜日（何日分かをまとめて入れる時）"><span>曜日</span>' + WD_ORDER.map(function (i) { return '<label><input type="checkbox" name="sc-dow" value="' + i + '" checked> ' + WD[i] + '</label>'; }).join('') + '</div>' +
+      '<div class="row" role="radiogroup" aria-label="入れ方">' +
+      '<label><input type="radio" name="sc-op" value="set"' + (op0 === 'set' ? ' checked' : '') + '> この時刻にする</label>' +
+      '<label><input type="radio" name="sc-op" value="off"' + (op0 === 'off' ? ' checked' : '') + '> 休みにする</label>' +
+      '<label><input type="radio" name="sc-op" value="clear"> 手直しを外す（シフト・前提の予定に戻す）</label></div>' +
+      '<fieldset id="sc-times"' + (op0 === 'set' ? '' : ' disabled') + ' style="border:0;padding:0;margin:0"><div class="row"><label>始業 <input type="time" id="sc-start" value="' + esc(pre.start) + '"></label><label>終業 <input type="time" id="sc-end" value="' + esc(pre.end) + '"></label>' +
+      '<label>休憩 <input type="number" id="sc-break" min="0" max="600" style="width:6em" value="' + (pre.br != null ? esc(pre.br) : '') + '"> 分</label></div></fieldset></fieldset>' +
+      '<div class="row"><label style="flex:1">理由（必ず）<input type="text" id="e-reason" maxlength="200" style="flex:1;min-width:16em" placeholder="下のボタンで選ぶか、書いてください"' + (lk ? ' disabled' : '') + '></label></div>' +
+      (lk ? '' : '<div class="presets" role="group" aria-label="よく使う理由">' + SCHED_REASONS.map(function (r) { return '<button type="button" class="btn sm" data-act="reason" data-r="' + esc(r) + '">' + esc(r) + '</button>'; }).join('') + '</div>') +
+      '<p class="help">勤怠で数える「予定」を直します。シフトを取り込み直しても、ここで直した日はそのまま残ります（印「手直し」）。「手直しを外す」とシフトの予定（シフトに無い日は前提の時間）に戻ります。' +
+      '日付を2日以上にすると、選んだ曜日の日にまとめて入れます（この月分の中・62日まで）。終業が始業より前の時は、翌日の終業（夜勤）として入れます。休憩を空にすると、シフトの取り込みと同じ決まり（日をまたぐ勤務は夜勤の休憩・ほかは6時間を超える時だけいつもの休憩）で入れます（始業・終業を変えると、今の予定から入れた休憩は空に戻ります）。締めた月分の日は断られます。打刻はここでは変わりません。</p>' +
+      '<p class="help" id="e-msg" role="alert"></p>';
+    openDlg('出勤予定を直す・入れる（' + perLabel() + '）', b, lk, '保存する', 'sched-save');
+    dlgCtx.init = formState();
+  }
+  function saveSched(btn) {
+    if (!dlgCtx || dlgCtx.mode !== 'sched' || busy) return;
+    var msg = $('e-msg'), sid = $('sc-sid').value, d0 = $('sc-from').value, d1 = $('sc-to').value || d0, op = radioVal('sc-op');
+    var reason = ($('e-reason').value || '').trim();
+    if (!sid || !staffById(sid)) { msg.textContent = '職員を選んでください。'; return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d0) || !/^\d{4}-\d{2}-\d{2}$/.test(d1) || !inPer(d0) || !inPer(d1)) { msg.textContent = 'この月分（' + perLabel() + '）の日を選んでください。'; return; }
+    if (d1 < d0) { msg.textContent = '終わりの日付が始まりの日付より前です。'; return; }
+    var dows = {}, els = document.querySelectorAll('#g-dlg-b input[name="sc-dow"]:checked');
+    for (var i = 0; i < els.length; i++) dows[els[i].value] = 1;
+    var dates = [];
+    for (var d = d0; d <= d1; d = C.addDays(d, 1)) if (d0 === d1 || dows[String(new Date(Date.parse(d + 'T12:00:00+09:00')).getUTCDay())]) dates.push(d);
+    if (!dates.length) { msg.textContent = '選んだ曜日の日がありません。'; return; }
+    if (dates.length > 62) { msg.textContent = NG_SCHED.badshape; return; }
+    var rows = [];
+    if (op === 'set') {
+      var t0 = $('sc-start').value, t1 = $('sc-end').value, brV = $('sc-break').value;
+      if (!/^\d{2}:\d{2}$/.test(t0) || !/^\d{2}:\d{2}$/.test(t1)) { msg.textContent = '始業と終業の時刻を入れてください。'; return; }
+      if (t0 === t1) { msg.textContent = '始業と終業が同じ時刻です。'; return; }
+      var br = brV === '' ? null : Math.round(+brV);
+      if (br != null && !(br >= 0 && br <= 600)) { msg.textContent = '休憩は 0〜600 分で入れてください。'; return; }
+      var span = ((+t1.slice(0, 2) * 60 + +t1.slice(3)) - (+t0.slice(0, 2) * 60 + +t0.slice(3)) + 1440) % 1440;
+      if (br == null) br = defBreak(span, t1 <= t0);
+      if (br >= span) { msg.textContent = '休憩が勤務の長さ以上です。'; return; }
+      dates.forEach(function (x) { var se = schedEditOf(sid, x); rows.push({ work_date: x, op: 'set', start_at: isoAt(x, t0), end_at: isoAt(t1 <= t0 ? C.addDays(x, 1) : x, t1), break_min: br, rev: se ? se.rev : 0 }); });
+    } else if (op === 'off') {
+      dates.forEach(function (x) { var se = schedEditOf(sid, x); rows.push({ work_date: x, op: 'off', rev: se ? se.rev : 0 }); });
+    } else if (op === 'clear') {
+      dates.forEach(function (x) { var se = schedEditOf(sid, x); if (se) rows.push({ work_date: x, op: 'clear', rev: se.rev }); });
+      if (!rows.length) { msg.textContent = '選んだ日に、外す手直しはありません。'; return; }
+    } else { msg.textContent = '入れ方を選んでください。'; return; }
+    if (!reason) { msg.textContent = '理由を書いてください（下のボタンで選べます）。'; $('e-reason').focus(); return; }
+    var st = staffById(sid);
+    if (rows.length > 1 && !confirm(dispName(st) + ' さんの ' + md(rows[0].work_date) + '〜' + md(rows[rows.length - 1].work_date) + ' の ' + rows.length + ' 日分を' + (op === 'set' ? '入れます' : op === 'off' ? '休みにします' : '手直しから外します') + '。よろしいですか？')) return;
+    busy = true; msg.textContent = '保存しています…';
+    var restore = pressBusy(btn, '保存しています…', $('g-dlg-f'));
+    rpc('kintai_sched_edit_put', { p_staff_id: sid, p_rows: rows, p_reason: reason }).then(okOrD).then(function (r) {
+      busy = false; closeDlg(); sync('保存しました');
+      toast((r.changed ? r.changed + ' 日分の予定を保存しました' : '変わった所はありませんでした') + '（' + dispName(st) + ' さん）');
+      return load(false);
+    })['catch'](function (e) {
+      busy = false; restore(); note('出勤予定の手直し', e);
+      if ($('g-dlg').open && $('e-msg') === msg) msg.textContent = schedMsg(e); else toast('保存できませんでした: ' + schedMsg(e));
+    });
+  }
+
+  /* ── 0111: 前提の時間（職員ごと・曜日ごとの始業・終業・休憩・休み。効く日つきの版で残す） ──
+   * シフトの行も手直しも無い日だけ、この時間を予定として数える。直す時は新しい版を足し、前の版は消さない */
+  var FX_DEFAULT = { '0': { off: true }, '1': { start: '09:00', end: '18:00', break_min: 60 }, '2': { start: '09:00', end: '18:00', break_min: 60 }, '3': { start: '09:00', end: '18:00', break_min: 60 },
+    '4': { start: '09:00', end: '18:00', break_min: 60 }, '5': { start: '09:00', end: '18:00', break_min: 60 }, '6': { off: true } };
+  function openFixed(sid) {
+    var st = staffById(sid); if (!st || !data) return;
+    var vs = fixedOf(sid).slice().sort(function (a, b) { return a.valid_from < b.valid_from ? 1 : a.valid_from > b.valid_from ? -1 : (String(a.created_at) < String(b.created_at) ? 1 : -1); });
+    var td = today(), act = vs.filter(function (v) { return !v.voided_at; });
+    var cur = act.filter(function (v) { return v.valid_from <= td; })[0] || act[0] || null;
+    var wk = cur && cur.week ? cur.week : FX_DEFAULT;
+    var onShift = srcOf(st) === 'shift' && (data.schedule || []).some(function (x) { return x.staff_id === sid && !isFixedDay(sid, x.work_date) && !schedEditOf(sid, x.work_date); });
+    dlgCtx = { mode: 'fixed', sid: sid, vs: vs };
+    var b = (st.active === false && act.some(function (v) { return !!v.week; }) ? '<div class="band warn" role="status">この人は休止中です。前提の版が残っている間は前提の予定が出続け、「打刻なし」になります。退職・休止の日から「この日から前提なし」の版を入れてください。</div>' : '') +
+      (onShift ? '<div class="band warn" role="status">この人はシフトに載っています。前提の時間を入れると、シフトの空いた日（休み）にも前提の予定が入り、「打刻なし」になります。前提はシフトに載らない人・シフトを作らない人に使ってください。</div>' : '') +
+      '<fieldset><legend>今までの版（新しい順）</legend>' + (vs.length ? '<div class="tw"><table class="hist"><thead><tr><th>効く日</th><th>時間</th><th>理由</th><th>入れた人</th><th></th></tr></thead><tbody>' + vs.map(function (v) {
+        var vd = !!v.voided_at;
+        return '<tr><td class="' + (vd ? 'void' : '') + '">' + esc(ymdSl(v.valid_from)) + ' から</td><td class="' + (vd ? 'void' : '') + '">' + esc(weekTxt(v.week)) + '</td><td>' + esc(v.reason || '') + (vd ? '<span class="raw">取り消し: ' + esc(v.void_reason || '') + '</span>' : '') + '</td>' +
+          '<td class="raw">' + esc(v.created_by || '') + '<br>' + esc(v.created_at ? new Date(v.created_at).toLocaleString('ja-JP') : '') + '</td>' +
+          '<td>' + (vd ? '<span class="tag">取り消し済み</span>' : '<button type="button" class="btn sm ng" data-act="fx-void" data-id="' + esc(v.id) + '">取り消す</button>') + '</td></tr>';
+      }).join('') + '</tbody></table></div>' : '<p class="empty">まだありません。</p>') + '</fieldset>' +
+      '<fieldset><legend>新しい版</legend><div class="row"><label>効く日 <input type="date" id="fx-from" value="' + esc(td) + '"></label></div>' +
+      '<div class="row" role="radiogroup" aria-label="入れ方"><label><input type="radio" name="fx-mode" value="week" checked> 曜日ごとの時間を入れる</label><label><input type="radio" name="fx-mode" value="none"> この日から前提なし</label></div>' +
+      '<fieldset id="fx-week" style="border:0;padding:0;margin:0"><div class="tw"><table class="plist"><thead><tr><th>曜日</th><th>勤務</th><th>始業</th><th>終業</th><th>休憩（分）</th></tr></thead><tbody>' + WD_ORDER.map(function (i) {
+        var x = wk[String(i)] || { off: true }, on = !!x.start;
+        return '<tr><th scope="row">' + WD[i] + '</th><td><select id="fx-k-' + i + '" aria-label="' + WD[i] + '曜日"><option value="w"' + (on ? ' selected' : '') + '>勤務</option><option value="off"' + (on ? '' : ' selected') + '>休み</option></select></td>' +
+          '<td><input type="time" id="fx-s-' + i + '" value="' + esc(on ? x.start : '') + '" aria-label="' + WD[i] + '曜日の始業"></td><td><input type="time" id="fx-e-' + i + '" value="' + esc(on ? x.end : '') + '" aria-label="' + WD[i] + '曜日の終業"></td>' +
+          '<td><input type="number" id="fx-b-' + i + '" min="0" max="600" style="width:5em" value="' + esc(on ? x.break_min : '') + '" aria-label="' + WD[i] + '曜日の休憩（分）"></td></tr>';
+      }).join('') + '</tbody></table></div><div class="row"><button type="button" class="btn sm" data-act="fx-copy">月曜の時間を火〜金に写す</button></div></fieldset></fieldset>' +
+      '<div class="row"><label style="flex:1">理由（必ず）<input type="text" id="e-reason" maxlength="200" style="flex:1;min-width:16em" placeholder="例: 雇用契約の勤務時間"></label></div>' +
+      '<div class="presets" role="group" aria-label="よく使う理由">' + FX_REASONS.map(function (r) { return '<button type="button" class="btn sm" data-act="reason" data-r="' + esc(r) + '">' + esc(r) + '</button>'; }).join('') + '</div>' +
+      '<p class="help">シフトの予定も手直しも無い日だけ、ここの時間をその日の予定として数えます（遅刻・早退・残業の判定と、給与の所定・残業の計算に使います）。効く日から次の版の効く日の前の日まで効きます。' +
+      '直す時は新しい版を足し、前の版は消さずに残ります（同じ効く日の版は置き換え、前の版には取り消しの印が付きます）。締めた月分に掛かる効く日では入れられません。終業が始業より前の曜日は、翌日の終業（夜勤）として数えます。休憩を空にすると、予定の窓と同じ決まりで入れます。祝日などの休みは「出勤予定を直す・入れる」で休みにしてください。取り消すボタンは、下の理由の欄に書いた理由で取り消します。</p>' +
+      '<p class="help" id="e-msg" role="alert"></p>';
+    openDlg(dispName(st) + ' さん　前提の時間', b, false, '新しい版を保存する', 'fx-save');
+    dlgCtx.init = formState();
+  }
+  function fixedWeek(msg) {
+    var w = {};
+    for (var k = 0; k < WD_ORDER.length; k++) {
+      var i = WD_ORDER[k];
+      if ($('fx-k-' + i).value === 'off') { w[String(i)] = { off: true }; continue; }
+      var s0 = $('fx-s-' + i).value, e0 = $('fx-e-' + i).value, bv = $('fx-b-' + i).value;
+      if (!/^\d{2}:\d{2}$/.test(s0) || !/^\d{2}:\d{2}$/.test(e0)) { msg.textContent = WD[i] + '曜日の始業と終業を入れてください（休みの曜日は「休み」を選びます）。'; return null; }
+      if (s0 === e0) { msg.textContent = WD[i] + '曜日の始業と終業が同じ時刻です。'; return null; }
+      var sp = ((+e0.slice(0, 2) * 60 + +e0.slice(3)) - (+s0.slice(0, 2) * 60 + +s0.slice(3)) + 1440) % 1440, bm = bv === '' ? defBreak(sp, e0 <= s0) : Math.round(+bv);
+      if (!(bm >= 0 && bm <= 600) || bm >= sp) { msg.textContent = WD[i] + '曜日の休憩は 0〜600 分で、勤務の長さより短くしてください。'; return null; }
+      w[String(i)] = { start: s0, end: e0, break_min: bm };
+    }
+    return w;
+  }
+  function saveFixed(btn) {
+    if (!dlgCtx || dlgCtx.mode !== 'fixed' || busy) return;
+    var ctx = dlgCtx, msg = $('e-msg'), d = $('fx-from').value, mode = radioVal('fx-mode');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) { msg.textContent = '効く日を入れてください。'; return; }
+    var week = null;
+    if (mode !== 'none') { week = fixedWeek(msg); if (!week) return; }
+    var reason = ($('e-reason').value || '').trim();
+    if (!reason) { msg.textContent = '理由を書いてください（下のボタンで選べます）。'; $('e-reason').focus(); return; }
+    var same = ctx.vs.filter(function (v) { return !v.voided_at && v.valid_from === d; })[0] || null;
+    if (same && !confirm(ymdSl(d) + ' から効く版がもうあります。置き換えますか？（前の版は取り消しの印を付けて残ります）')) return;
+    busy = true; msg.textContent = '保存しています…';
+    var restore = pressBusy(btn, '保存しています…', $('g-dlg-f'));
+    rpc('kintai_fixed_put', { p_staff_id: ctx.sid, p_valid_from: d, p_week: week, p_replace: same ? same.id : null, p_reason: reason }).then(okOr).then(function (r) {
+      busy = false; closeDlg(); sync('保存しました');
+      toast((r.changed ? '前提の時間を保存しました' : '変わった所はありませんでした') + '（' + nameOf(ctx.sid) + ' さん ' + ymdSl(d) + ' から）');
+      return load(false);
+    })['catch'](function (e) {
+      busy = false; restore(); note('前提の時間の保存', e);
+      if ($('g-dlg').open && $('e-msg') === msg) msg.textContent = fixedMsg(e); else toast('保存できませんでした: ' + fixedMsg(e));
+    });
+  }
+  function voidFixed(id, btn) {
+    if (!dlgCtx || dlgCtx.mode !== 'fixed' || busy) return;
+    var ctx = dlgCtx, msg = $('e-msg'), v = ctx.vs.filter(function (x) { return x.id === id; })[0];
+    if (!v) return;
+    var reason = ($('e-reason').value || '').trim();
+    if (!reason) { msg.textContent = '取り消す理由を、下の理由の欄に書いてください。'; $('e-reason').focus(); return; }
+    if (!confirm(ymdSl(v.valid_from) + ' からの版「' + weekTxt(v.week) + '」を取り消しますか？（記録は残ります）\n取り消す理由: ' + reason + '\n※ 下の「新しい版」に書きかけの入力は消えます。')) return;
+    busy = true; msg.textContent = '取り消しています…';
+    var restore = pressBusy(btn, '取り消しています…', $('g-dlg'));
+    rpc('kintai_fixed_void', { p_id: id, p_reason: reason }).then(okOr).then(function () {
+      busy = false; closeDlg(); toast('前提の時間の版を取り消しました（' + nameOf(ctx.sid) + ' さん）');
+      return load(false).then(function () { if (!dlgCtx && staffById(ctx.sid)) openFixed(ctx.sid); });
+    })['catch'](function (e) {
+      busy = false; restore(); note('前提の時間の取り消し', e);
+      if ($('g-dlg').open && $('e-msg') === msg) msg.textContent = fixedMsg(e); else toast('取り消せませんでした: ' + fixedMsg(e));
     });
   }
 
@@ -1497,7 +1737,7 @@
       else if (a === 'csv-snap' || a === 'csv-now') { closeDlg(); writeCsv('sum', a === 'csv-snap' ? 'snap' : 'now'); }
       else if (a === 'reason') {
         var r = b.getAttribute('data-r'), inp = $('e-reason');
-        if (inp) { if (r !== 'その他') inp.value = r; else if (REASONS.indexOf(inp.value) >= 0) inp.value = ''; inp.focus(); }
+        if (inp) { if (r !== 'その他') inp.value = r; else if (REASONS.indexOf(inp.value) >= 0 || SCHED_REASONS.indexOf(inp.value) >= 0 || FX_REASONS.indexOf(inp.value) >= 0) inp.value = ''; inp.focus(); }
       }
       else if (a === 'sched-time') {
         var sfx = b.getAttribute('data-n') || '', blk = dlgCtx && dlgCtx.blk;
@@ -1509,6 +1749,13 @@
       else if (a === 'addday') openAddDay();
       else if (a === 'work-open') openWork();
       else if (a === 'work-save') saveWork(b);
+      else if (a === 'sched-open') openSched(tab === 'person' ? selStaff : null, selDate);
+      else if (a === 'sched-day') { var sd = b.getAttribute('data-sid'), dd2 = b.getAttribute('data-date'); if (!dirty() || confirm('保存していない直しがあります。閉じて予定の窓を開きますか？')) { closeDlg(); openSched(sd, dd2); } }
+      else if (a === 'sched-save') saveSched(b);
+      else if (a === 'fx-open') openFixed(b.getAttribute('data-sid') || selStaff);
+      else if (a === 'fx-save') saveFixed(b);
+      else if (a === 'fx-void') voidFixed(b.getAttribute('data-id'), b);
+      else if (a === 'fx-copy') { var mS = $('fx-s-1'), mE = $('fx-e-1'), mB = $('fx-b-1'), mK = $('fx-k-1'); [2, 3, 4, 5].forEach(function (i) { $('fx-k-' + i).value = mK.value; $('fx-s-' + i).value = mS.value; $('fx-e-' + i).value = mE.value; $('fx-b-' + i).value = mB.value; }); }
       else if (a === 'm-import') openImport();
       else if (a === 'm-import-go') runImport(b);
       else if (a === 'm-reload') { masterSt = null; loadMaster(); paint(); }
@@ -1546,6 +1793,9 @@
       else if (id === 'g-only') { onlyReview = e.target.checked; paint(); }
       else if (id === 'g-office') { officeFilter = e.target.value; paint(); }
       else if (id === 'g-ym') setYm(e.target.value);
+      else if (e.target && e.target.name === 'sc-op' && $('sc-times')) $('sc-times').disabled = e.target.value !== 'set';
+      else if ((id === 'sc-sid' || id === 'sc-from') && dlgCtx && dlgCtx.mode === 'sched') schedRefill();
+      else if (e.target && e.target.name === 'fx-mode' && $('fx-week')) $('fx-week').disabled = e.target.value === 'none';
       else if (e.target && e.target.name === 'e-mark' && dlgCtx && dlgCtx.mode === 'edit' && e.target.value) {
         /* 確認済み・欠勤を選んだら、初めから入れておいた打刻は足さない（手で直した所は残す） */
         [['', 0], ['2', 1]].forEach(function (x) {
@@ -1556,6 +1806,8 @@
     });
     document.addEventListener('input', function (e) {
       var id = e.target && e.target.id, r;
+      /* 0111: 予定の窓で始業・終業を変えたら、前の予定から入れた休憩は空に戻す（いつもの決まりで決め直す。手で入れた休憩は残す） */
+      if ((id === 'sc-start' || id === 'sc-end') && dlgCtx && dlgCtx.mode === 'sched' && dlgCtx.preBr && $('sc-break') && $('sc-break').value === dlgCtx.preBr) { $('sc-break').value = ''; dlgCtx.preBr = ''; }
       if (id === 'e-early-from') r = document.querySelector('#g-dlg-b input[name="e-em"][value="from"]');
       else if (id === 'e-ot-until') r = document.querySelector('#g-dlg-b input[name="e-om"][value="until"]');
       if (r) r.checked = true;
