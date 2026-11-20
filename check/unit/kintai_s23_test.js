@@ -79,6 +79,30 @@ t('A5: 月の合計 実働2700分・残業300分・法定外300分・深夜300�
   t('A5 の直しの後も、出勤と退勤が別の日の予定に入る組は割る（指摘5: 12/5 退勤漏れ・12/6 出勤漏れ）', /missing_out/.test(f5('2026-12-05')) && /missing_in/.test(f5('2026-12-06')), [f5('2026-12-05'), f5('2026-12-06')]);
 }
 
+/* 反証レビュー（2026-11-20）: 1組にまとめるのは組の長さが16時間以下の時だけ。それより長い組（退勤漏れと翌日の出勤漏れ）は直す前と同じく割る */
+{
+  const one = (cells, pun, days) => {
+    const m = C.computeMonth({ ym: YM, staff: K_STAFF.slice(0, 1), schedule: build({ sT01: cells }), punches: pun, days: days || [], config: {}, now: NOW });
+    const p0 = m.people[0];
+    return { f: p0.days.map((d) => d.date.slice(8) + ':' + d.blocks.map((b) => (b.sched ? 'S' : '-') + b.workMin + '[' + b.flags.join('|') + ']').join(',')).join(' '), s: p0.sum };
+  };
+  pid = 300;
+  const r1 = one({ 5: '13-22' }, [P('sT01', 'in', '2026-12-05', '12:55'), P('sT01', 'out', '2026-12-06', '12:05')]);
+  t('16時間超: 予定 13-22 の退勤漏れと、翌日の予定の無い勤務の出勤漏れ（12:55〜翌12:05）は割る（実働0・要確認2件・直す前と同じ）', r1.f === '05:S0[missing_out] 06:-0[missing_in]' && r1.s.workMin === 0 && r1.s.reviewCount === 2, r1.f);
+  const r1b = one({ 5: '13-22' }, [P('sT01', 'in', '2026-12-05', '12:55'), P('sT01', 'out', '2026-12-06', '12:05')], [{ staff_id: 'sT01', work_date: '2026-12-05', overtime_ok: true, rev: 1 }]);
+  t('16時間超: 同じ場面で残業を全部認めても1勤務にしない（実働0・法定外0・深夜0）', r1b.s.workMin === 0 && r1b.s.legalOverMin === 0 && r1b.s.nightMin === 0, r1b.s);
+  const r2 = one({ 6: '9-18' }, [P('sT01', 'in', '2026-12-05', '19:00'), P('sT01', 'out', '2026-12-06', '18:00')]);
+  t('16時間超: 予定の無い出勤（19:00・退勤漏れ）と翌日の予定 9-18 の出勤漏れは割る', r2.f === '05:-0[missing_out] 06:S0[missing_in]' && r2.s.reviewCount === 2, r2.f);
+  const r3 = one({ 31: '13-22' }, [P('sT01', 'in', '2026-12-31', '12:55'), P('sT01', 'out', '2027-01-01', '11:00')]);
+  t('16時間超: 期間の末日の退勤漏れ（翌月のシフトが無い）は割る（末日は退勤漏れ）', r3.f === '31:S0[missing_out]' && r3.s.workMin === 0, r3.f);
+  const r4 = one({ 9: '9-17' }, [P('sT01', 'in', '2026-12-09', '9:00'), P('sT01', 'out', '2026-12-09', '22:00')]);
+  t('元の A5: 予定 9-17 に 9:00 出勤・22:00 退勤（終わりから5時間）は1組・予定まで数えて残業の確認', /^09:S\d+\[overtime\]$/.test(r4.f) && r4.s.workMin > 0 && r4.s.reviewCount === 1, r4.f);
+  const r5 = one({ 10: '早' }, [P('sT01', 'in', '2026-12-10', '7:00'), P('sT01', 'out', '2026-12-10', '23:00')]);
+  t('境目: 組の長さがちょうど16時間（7:00〜23:00）は1組・実働480分・残業の確認', r5.f === '10:S480[overtime]', r5.f);
+  const r6 = one({ 10: '早' }, [P('sT01', 'in', '2026-12-10', '7:00'), P('sT01', 'out', '2026-12-10', '23:01')]);
+  t('境目: 16時間1分（7:00〜23:01）は割る（直す前と同じ・実働0）', r6.f === '10:-0[missing_in],S0[missing_out]' && r6.s.workMin === 0, r6.f);
+}
+
 console.log('\n— 4. A6 同じ日にシフトの有休と手入力の半日 —');
 const a6Sched = build({ sT01: { 11: '有', 14: '有' } });
 const a6Uses = [{ id: 'u1', staff_id: 'sT01', use_date: '2026-12-11', days: 0.5 }, { id: 'u2', staff_id: 'sT01', use_date: '2026-12-14', days: 1 }];
@@ -278,8 +302,8 @@ console.log('\n— 6. 画面（kintai.js の関数を取り出して動かす）
   {
     t('設定タブの確かめ: タブ（setTab）・前の月／次の月・月の欄（やめたら欄を戻す）・読み直す・シフトの取り込み（2か所）・閉じる・門番', /if \(!settingsLeaveOk\(\)\) return; tab = t;/.test(K) &&
       /\$\('g-prev'\)\.addEventListener\('click', function \(\) \{ if \(settingsLeaveOk\(\)\) setYm\(C\.prevYm\(ym\)\); \}\);/.test(K) && /\$\('g-next'\)\.addEventListener\('click', function \(\) \{ if \(settingsLeaveOk\(\)\) setYm\(C\.nextYm\(ym\)\); \}\);/.test(K) &&
-      /else if \(id === 'g-ym'\) \{ if \(settingsLeaveOk\(\)\) setYm\(e\.target\.value\); else e\.target\.value = ym; \}/.test(K) && /\$\('g-reload'\)\.addEventListener\('click', function \(\) \{ if \(settingsLeaveOk\(\)\) load\(false\); \}\);/.test(K) &&
-      (K.match(/else if \(settingsLeaveOk\(\)\) load\(true\);/g) || []).length === 2 && /if \(dirty\(\) \|\| settingsDirty\(\)\) \{ e\.preventDefault\(\);/.test(K) && /SUAppGate\.run\('kintai', \{ dirty: function \(\) \{ return dirty\(\) \|\| settingsDirty\(\); \} \}\)/.test(K));
+      /else if \(id === 'g-ym'\) \{ if \(settingsLeaveOk\(\)\) setYm\(e\.target\.value\); else e\.target\.value = ym; \}/.test(K) && /\$\('g-reload'\)\.addEventListener\('click', function \(\) \{ if \(settingsLeaveOk\(\)\) \{ dropMonthCaches\(\); load\(false\); \} \}\);/.test(K) &&
+      (K.match(/else if \(settingsLeaveOk\(\)\) \{ dropMonthCaches\(\); load\(true\); \}/g) || []).length === 2 && /if \(dirty\(\) \|\| settingsDirty\(\)\) \{ e\.preventDefault\(\);/.test(K) && /SUAppGate\.run\('kintai', \{ dirty: function \(\) \{ return dirty\(\) \|\| settingsDirty\(\); \} \}\)/.test(K));
     t('窓の確かめ（dirty）は今までどおり窓だけを見る（設定タブを混ぜない）', /function dirty\(\) \{\s*if \(!dlgCtx \|\| !DIRTY_MODES\[dlgCtx\.mode\] \|\| dlgCtx\.init == null\) return false;\s*return formState\(\) !== dlgCtx\.init;\s*\}/.test(K));
     const stSrc = fnSrc('settingsState');
     t('設定の入力の控えは、設定と36協定の欄だけ（勤怠の管理者の欄は数えない）・描いた時に控える', /'#g-set input,#g-set select,#g-a36 input,#g-a36 select'/.test(stSrc) && !/g-mgr/.test(stSrc) && /setInit = tab === 'settings' && \$\('g-set'\) \? settingsState\(\) : null;/.test(K));
@@ -290,6 +314,26 @@ console.log('\n— 6. 画面（kintai.js の関数を取り出して動かす）
       setInit = settingsState(); var a = settingsLeaveOk(); ELS[0].value = '40'; var b = settingsLeaveOk(); tab = 'day'; var c = settingsLeaveOk();
       return [a, b, c, confirmed];`);
     t('設定の入力を変えていなければ確かめない・変えたら確かめて、やめたら移らない・設定タブ以外では確かめない', JSON.stringify(f(els)) === JSON.stringify([true, false, true, 1]), f([{ type: 'number', value: '30' }, { type: 'checkbox', checked: true }]));
+  }
+
+  /* 6-9 反証レビュー（2026-11-20）: 前に開いた月分の控え（monthCache）を古いまま重ねない */
+  {
+    const src = ['dropMonthCaches', 'monthsBy'].map(fnSrc).join('\n');
+    const f = new Function(`var monthCache = {}, leaveSt = null, leaveBusy = true, leaveGen = 5, month = null, ym = '2026-11';
+      ${src}
+      var out = {};
+      leaveSt = { months: [{ ym: '2026-10', tag: 'さかのぼり' }] }; monthCache['2026-10'] = { ym: '2026-10', tag: '前に開いた' };
+      out.before = monthsBy()['2026-10'].tag;
+      dropMonthCaches();
+      out.after = [Object.keys(monthCache).length, leaveSt, leaveBusy, leaveGen];
+      monthCache['2026-11'] = { ym: '2026-11', tag: '古い' }; month = { ym: '2026-11', tag: '今の' };
+      out.cur = monthsBy()['2026-11'].tag;
+      return out;`);
+    const r = f();
+    t('「読み直す」・取り込みでは月分の控えとさかのぼりの控えを捨てる（読み込み中の有給の答えは世代で捨てる・読み込み中の印も外す）', r.before === '前に開いた' && JSON.stringify(r.after) === JSON.stringify([0, null, false, 6]), r);
+    t('開いている月分は今の計算を正にする（控えより上）', r.cur === '今の');
+    t('ある月分を読み直した時はその月分の控えを新しい結果で置き換える（recompute）・さかのぼりを新しく読んだ時は前に開いた月分の控えを捨てる（loadLeave）',
+      /month\.k36 = k36Info\(data\);\s*monthCache\[ym\] = month;/.test(K) && /if \(x\.months !== keep\) monthCache = \{\};/.test(between('function loadLeave(', 'function leaveOf(')));
   }
   /* 6-8 ホーム */
   {

@@ -283,16 +283,18 @@
           var bb = blocks[jj];
           if (pp.in.at >= bb.start - FIT_MS && pp.in.at <= bb.end + FIT_MS && pp.out.at >= bb.start - FIT_MS && pp.out.at <= bb.end + FIT_MS) { fits = true; break; }
         }
-        /* どの塊にも両端が入らないのに、出勤は塊 A に、退勤は別の塊 B に入る＝退勤漏れの次の日の出勤漏れ（指摘5）。分けて合わせる。
-           片方の端だけが塊に入り、もう片方はどの塊にも入らない時は、その塊の早出・残業として1組のまま（予定の終わりから4時間を超えて残った日・
-           始まりの4時間より前に来た日を2つの組に割って実働0にしない・反証A5 2026-11-20。数えるのは予定までで、早出・残業の確認に出る） */
-        var inFit = false, outFit = false;
+        /* どの塊にも両端が入らないのに、どちらかの端は塊に近い＝退勤漏れの次の日の出勤漏れ（指摘5）。分けて合わせる。
+           ただし、出勤と退勤が別の塊に入るのではなく片方の端だけが塊に入り、組の長さ（出勤から退勤まで）が16時間（予定の無い勤務を勤務中とみなす長さ）以下の時は、
+           その塊の早出・残業として1組のまま（予定の終わりから4時間を超えて残った日・始まりの4時間より前に来た日を2つの組に割って実働0にしない・反証A5 2026-11-20。
+           数えるのは予定までで、早出・残業の確認に出る）。16時間を超える組は今までどおり割る（退勤漏れと翌日の予定の無い勤務の出勤漏れを1勤務にしない・反証レビュー 2026-11-20・仮置き） */
+        var near = false, inFit = false, outFit = false;
         for (jj = 0; jj < blocks.length && !fits; jj++) {
           var bc = blocks[jj];
+          if ((pp.in.at >= bc.start - 3 * HOUR && pp.in.at <= bc.end + 3 * HOUR) || (pp.out.at >= bc.start - 3 * HOUR && pp.out.at <= bc.end + 3 * HOUR)) near = true;
           if (pp.in.at >= bc.start - FIT_MS && pp.in.at <= bc.end + FIT_MS) inFit = true;
           if (pp.out.at >= bc.start - FIT_MS && pp.out.at <= bc.end + FIT_MS) outFit = true;
         }
-        if (!fits && inFit && outFit) { work.push({ in: pp.in, out: null }); work.push({ in: null, out: pp.out }); continue; }
+        if (!fits && ((inFit && outFit) || (near && pp.out.at - pp.in.at > WORKING_NO_SCHED_MS))) { work.push({ in: pp.in, out: null }); work.push({ in: null, out: pp.out }); continue; }
       }
       work.push(pp);
     }

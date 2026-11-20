@@ -375,6 +375,9 @@
    * 有給・36協定・締めの箱は、有給のタブと同じ読み込み（loadLeave → loadLeaveMonths）を最初の描画の後に裏で読み、読めてから出す（読む間は「読み込み中」）。
    * 読めなかった時は箱に知らせを出し、30秒ごとの読み直しで試し直さない（「読み直す」で試す）。画面だけで印刷しない */
   /* 今の設定（kintai_settings.config）。締めた月分を開いていても、36協定の上限と決まりの見張りは今の設定で見る */
+  /* v5（反証レビュー 2026-11-20）: 「読み直す」・シフトの取り込みでは、前に開いた月分の控え（monthCache）と、さかのぼりの月分の控え（有給の記録）を捨てて読み直す
+     （ほかの端末で締めた月分などを古い計算のまま出さない）。読み込み中の有給の答えは世代で捨てる。開いている月分は recompute が新しい結果で置き換える */
+  function dropMonthCaches() { monthCache = {}; leaveSt = null; leaveBusy = false; leaveGen++; }
   function rawCfg() { return (data && data.settings && data.settings.config) || {}; }
   /* 月分の締めの様子（36協定の月の列は、締めた月分は控えの値・締めていない月分は数えた値を使う） */
   function k36Info(d) {
@@ -791,6 +794,7 @@
       (Array.isArray(x.lg.profiles) ? x.lg.profiles : []).forEach(function (p) { if (p && p.staff_id) prof[p.staff_id] = p; });
       var manual = Array.isArray(x.lg.uses) ? x.lg.uses : [];
       leaveSt = { profiles: prof, grants: Array.isArray(x.lg.grants) ? x.lg.grants : [], manual: manual, uses: L.usesFromMonth(x.months, manual), months: x.months };
+      if (x.months !== keep) monthCache = {};   /* v5（反証レビュー）: さかのぼりの月分を新しく読んだ時は、前に開いた月分の控えを捨てる（古い計算を上に重ねない） */
     })['catch'](function (e) {
       if (my !== leaveGen) return;
       note('有給の読み込み', e);
@@ -2176,7 +2180,7 @@
       else if (a === 'lv-reload') { leaveSt = null; loadLeave(true); paint(); }
       else if (a === 'lv-use-add' || a === 'lv-use-void' || a === 'lv-grant-add' || a === 'lv-grant-void' || a === 'lv-prof-save') leaveAct(a, b);
       else if (a === 'recode') recode(b.getAttribute('data-sid'), b);
-      else if (a === 'import') { if (isLocked()) alert('締めた月は取り込めません。'); else if (settingsLeaveOk()) load(true); }
+      else if (a === 'import') { if (isLocked()) alert('締めた月は取り込めません。'); else if (settingsLeaveOk()) { dropMonthCaches(); load(true); } }
       else if (a === 'lock') lockMonth(b);
       else if (a === 'unlock') unlockMonth(b);
       else if (a === 'csv-sum') download('sum');
@@ -2223,8 +2227,8 @@
     });
     $('g-prev').addEventListener('click', function () { if (settingsLeaveOk()) setYm(C.prevYm(ym)); });
     $('g-next').addEventListener('click', function () { if (settingsLeaveOk()) setYm(C.nextYm(ym)); });
-    $('g-import').addEventListener('click', function () { if (isLocked()) alert('締めた月は取り込めません。'); else if (settingsLeaveOk()) load(true); });
-    $('g-reload').addEventListener('click', function () { if (settingsLeaveOk()) load(false); });
+    $('g-import').addEventListener('click', function () { if (isLocked()) alert('締めた月は取り込めません。'); else if (settingsLeaveOk()) { dropMonthCaches(); load(true); } });
+    $('g-reload').addEventListener('click', function () { if (settingsLeaveOk()) { dropMonthCaches(); load(false); } });
     /* 保存中（busy）は Esc でも閉じない（審査の指摘1） */
     $('g-dlg').addEventListener('cancel', function (e) { if (busy) { e.preventDefault(); return; } if (dirty() && !confirm('保存していない直しがあります。閉じますか？')) e.preventDefault(); else dlgCtx = null; });
     window.addEventListener('beforeunload', function (e) { if (dirty() || settingsDirty()) { e.preventDefault(); e.returnValue = ''; } });
