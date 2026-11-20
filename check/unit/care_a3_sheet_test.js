@@ -531,6 +531,17 @@ group('印刷状態が残らない');
   eq('試算中は印刷しない', /if \(SIM_ON\)/.test(P), true);
   eq('利用者が未選択なら印刷しない', /利用者が選択されていません/.test(P), true);
   eq('A3横を指定する', /size:A3 landscape/.test(P), true);
+  /* ★絵（温泉・掃除・洗濯）の読み込みを待ってから印刷を開く（1回目のプレビューで絵が抜けた・本人指示 2026-11-20） */
+  eq('印刷を開くのは開く関数（open）の中だけ',
+     /const open = function \(\) \{[\s\S]{0,200}try \{ window\.print\(\); \}/.test(P) && P.split("try { window.print(); }").length === 2, true);
+  const R = grabFn('wkImagesReady_');
+  eq('その場で開くのは絵が全部読めている時だけ', /complete && imgs\[i\]\.naturalWidth > 0\)\) return false/.test(R), true);
+  eq('待つ間に別の印刷で片付いたら開かない', /gen !== _wkPrintGen/.test(P), true);
+  eq('絵が読めていればその場で開き、読めていなければ待つ', /if \(wkImagesReady_\(box\)\) open\(\);\s*else wkWaitImages_\(box, 3000\)\.then\(open\);/.test(P), true);
+  const W = grabFn('wkWaitImages_');
+  eq('待ちには上限がある', /Promise\.race/.test(W) && /setTimeout\(r, ms\)/.test(W), true);
+  eq('読めない絵でも待ちを止める', /'error'/.test(W), true);
+  eq('起動の時に絵を先に読み込む', /_wkIconWarm\.push\(im\)/.test(SRC), true);
   /* ★共通クリーナは #wk-sheet の中身も空にするので、紙面を組む【前】に呼ばないと白紙が出る
      （実測で白紙になった経路。順序を入れ替えるとここで落ちる） */
   eq('残骸を落としてから紙面を組む',
