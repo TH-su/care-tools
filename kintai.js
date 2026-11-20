@@ -450,9 +450,9 @@
   function ymdJa(d) { return d && L && L.isDate(d) ? (+d.slice(0, 4)) + '/' + (+d.slice(5, 7)) + '/' + (+d.slice(8, 10)) : ''; }
   function dayTxt(n) { return n === 0.5 ? '半日' : String(n) + ' 日'; }
   function staffById(sid) { return (data && data.staff || []).filter(function (s) { return s.staff_id === sid; })[0] || null; }
-  /* 職員の並び（2026-11-20 代表者の指示「入職順に」）: 事業所ごとに、結んだ職員マスタの入職日の古い順。
+  /* 職員の並び（2026-11-20 代表者の指示「事業所は無視して入職順に」）: 事業所に関係なく、結んだ職員マスタの入職日の古い順。
      有給の設定の入職日の上書きは並びに使わない（有給の記録を読んだかどうかで並びが変わらないように・反証レビュー）。
-     入職日の分からない人（職員マスタと結んでいない派遣など・職員マスタをまだ読んでいない時）はその事業所の最後に、打刻の番号の順で並べる */
+     入職日の分からない人（職員マスタと結んでいない派遣など・職員マスタをまだ読んでいない時）は最後に、打刻の番号の順で並べる */
   function hireDateOf(s) {
     var m = masterOf(s);
     return L ? L.hireOf(m && m.hire_date, null) : null;
@@ -460,7 +460,6 @@
   function staffSorted() {
     return (data && data.staff || []).map(function (s) { return { s: s, h: hireDateOf(s) }; }).sort(function (x, y) {
       var a = x.s, b = y.s;
-      if ((a.office || '') !== (b.office || '')) return (a.office || '') < (b.office || '') ? -1 : 1;
       if (x.h && y.h && x.h !== y.h) return x.h < y.h ? -1 : 1;
       if (!!x.h !== !!y.h) return x.h ? -1 : 1;
       return a.code < b.code ? -1 : a.code > b.code ? 1 : 0;

@@ -310,7 +310,7 @@ console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（
   t('v4 で innerHTML の代入を増やしていない（描くのは paint と openDlg の2か所のまま）', !/innerHTML/.test(between('/* ── v4: 職員マスタとの結び付け', '/* ── 締めた時の控え') + between('/* ── v4: 勤務時間を手で入れる', '/* ── 職員・締め・出力・設定 ── */')));
   t('入職日は職員マスタ（hire_date）から・有給の設定の hire_date があればそちら（KintaiLeave.summary の hireOf）', /L\.summary\(\{ hireDate: m && m\.hire_date, profile: prof,/.test(K) && /if \(profile && isDate\(profile\.hire_date\)\) return profile\.hire_date;/.test(read('kintai-leave.js')));
   t('DB の断りの語（nomaster・masterrow・dup・locked・already・badkind・badvalue・baddate・badkey・badshape・reason・conflict・notfound）に文がある', ['nomaster', 'masterrow', 'dup', 'locked', 'already', 'badkind', 'badvalue', 'baddate', 'badkey', 'badshape', 'reason', 'conflict', 'notfound'].every((w) => new RegExp('[{ ]' + w + ": '").test(K)));
-  /* 2026-11-20 代表者の指示: 職員の並びを入職順に（事業所ごと・入職日の分からない人は最後に番号の順）。画面の関数をそのまま取り出して動かす */
+  /* 2026-11-20 代表者の指示: 職員の並びを、事業所は無視して入職順に（入職日の分からない人は最後に番号の順）。画面の関数をそのまま取り出して動かす */
   {
     const sortFn = between('function hireDateOf(', 'function srcOf(') || between('function hireDateOf(', '/* 結んだ職員マスタの id');
     const run = (staff, hires, profs) => new Function('L', 'STAFF', 'HIRES', 'PROFS', `
@@ -322,8 +322,8 @@ console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（
       { staff_id: 'a', office: 'day', code: '1000' }, { staff_id: 'b', office: 'day', code: '2000' }, { staff_id: 'c', office: 'day', code: '0500' },
       { staff_id: 'd', office: 'day', code: '0100' }, { staff_id: 'e', office: 'facility', code: '9000' }, { staff_id: 'f', office: 'facility', code: '8000' }];
     const h = { a: '2020-04-01', b: '2015-07-01', c: '2022-06-03', e: '2018-01-01', f: '2019-01-01' };
-    t('職員は事業所ごとに入職日の古い順・入職日の分からない人（d）は事業所の最後', run(st, h, null) === 'b,a,c,d,e,f', run(st, h, null));
-    t('有給の設定の入職日は並びに使わない（有給の記録を読んだかで並びが変わらない・c を 2010 に上書きしても同じ並び）', run(st, h, { c: { hire_date: '2010-01-01' } }) === 'b,a,c,d,e,f', run(st, h, { c: { hire_date: '2010-01-01' } }));
+    t('職員は事業所に関係なく入職日の古い順・入職日の分からない人（d）は最後', run(st, h, null) === 'b,e,f,a,c,d', run(st, h, null));
+    t('有給の設定の入職日は並びに使わない（有給の記録を読んだかで並びが変わらない・c を 2010 に上書きしても同じ並び）', run(st, h, { c: { hire_date: '2010-01-01' } }) === 'b,e,f,a,c,d', run(st, h, { c: { hire_date: '2010-01-01' } }));
     t('入職日の分からない人どうしは打刻の番号の順', run([{ staff_id: 'x', office: 'day', code: '3000' }, { staff_id: 'y', office: 'day', code: '0300' }], {}, null) === 'y,x');
     t('「職員と番号」の表も同じ並び（paintStaff は staffSorted を使う）', /function paintStaff\(\) \{\s*var list = staffSorted\(\);/.test(K));
   }
