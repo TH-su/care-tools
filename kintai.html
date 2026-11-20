@@ -10,15 +10,18 @@
 <meta name="robots" content="noindex,nofollow">
 <meta name="referrer" content="no-referrer">
 <title>勤怠管理</title>
-<!-- 画面が黙って壊れないようにする共通部品（いちばん先に読む）→ 速さの記録 → ログインの役割の確かめ → 施設情報 → シフトの読み口 → 記号の解釈 → 勤怠の計算 → 有給の計算 -->
+<!-- 画面が黙って壊れないようにする共通部品（いちばん先に読む）→ 速さの記録 → ログインの役割の確かめ → 施設情報 → シフトの読み口 → 記号の解釈 → 勤怠の計算 → 有給の計算 → 36協定の判定 → ホームの箱 → 勤務の決まりの見張り（v5 段2・3） -->
 <script src="su-errors.js?v=2026-11-12"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-app-gate.js?v=2026-11-19"></script>
 <script src="su-facility.js?v=2026-11-17"></script>
 <script src="su-kv.js?v=2026-11-16"></script>
 <script src="shift-symbols.js?v=2026-11-18"></script>
-<script src="kintai-calc.js?v=2026-11-20.1"></script>
+<script src="kintai-calc.js?v=2026-11-20.2"></script>
 <script src="kintai-leave.js?v=2026-11-20.2"></script>
+<script src="kintai-36.js?v=2026-11-20"></script>
+<script src="kintai-monitor.js?v=2026-11-20"></script>
+<script src="kintai-rules.js?v=2026-11-20"></script>
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 <link rel="stylesheet" href="su-shell.css?v=2026-11-13">
 <style>
@@ -96,6 +99,17 @@ legend{font-weight:600;padding:0 6px}
 .p-cnt td{font-weight:700}.p-oth td{color:var(--muted)}
 .presets{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0}
 .hist{font-size:13px}.hist td{white-space:normal}
+/* v5 段2: ホームの箱（押すとその一覧のタブへ・画面だけ）。色だけに頼らず「注意」「要対応」の語も出す */
+.hgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:12px}
+.hbox{display:block;width:100%;min-height:44px;text-align:left;padding:12px 14px;border:1px solid var(--line);border-left:6px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font:inherit;cursor:pointer}
+.hbox.wait{cursor:default}
+.hbox.ok{border-left-color:var(--ok)}.hbox.warn{border-left-color:var(--warn)}.hbox.alert{border-left-color:var(--ng)}
+.hbox .ht{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-weight:700;font-size:16px}
+.hbox .hn{font-size:24px;font-variant-numeric:tabular-nums;white-space:nowrap}.hbox .hn small{font-size:14px}
+.hbox .hv{display:inline-block;margin-top:2px;border-radius:6px;padding:1px 8px;font-size:13px;font-weight:700;background:var(--tag);color:var(--sub)}
+.hbox.warn .hv{background:var(--warn-bg);color:var(--warn)}.hbox.alert .hv{background:var(--ng-bg);color:var(--ng)}.hbox.ok .hv{background:var(--ok-bg);color:var(--ok)}
+.hbox .hl{display:block;margin-top:6px;font-size:14px;color:var(--sub);overflow-wrap:anywhere}.hbox .hl b{color:var(--ink)}
+.hbox .hnote{display:block;margin-top:6px;font-size:13px;color:var(--warn);overflow-wrap:anywhere}
 /* 読み込み中の骨組み（灰色の帯） */
 .skel{display:block;height:18px;margin:10px 0;border-radius:6px;background:var(--skel);animation:skel 1.2s ease-in-out infinite}
 .skel.w6{width:60%}.skel.w8{width:80%}.skel.w4{width:40%}
@@ -166,6 +180,7 @@ body:has(#g-gate:not([hidden])) .sui-band{display:none}
     <button type="button" class="btn sm" id="g-reload">読み直す</button>
   </div>
   <nav class="tabs no-print" role="tablist" aria-label="画面の切り替え">
+    <button type="button" role="tab" data-tab="home">ホーム</button>
     <button type="button" role="tab" data-tab="day">日ごと</button>
     <button type="button" role="tab" data-tab="review">要確認<span class="tab-n" id="g-rv-n" aria-hidden="true"></span></button>
     <button type="button" role="tab" data-tab="grid">月の一覧</button>
@@ -179,7 +194,7 @@ body:has(#g-gate:not([hidden])) .sui-band{display:none}
 </div>
 <div class="toast no-print" id="g-toast" role="status" aria-live="polite" hidden></div>
 <dialog id="g-dlg" aria-labelledby="g-dlg-h"><div class="dlg-h" id="g-dlg-h"></div><div class="dlg-b" id="g-dlg-b"></div><div class="dlg-f" id="g-dlg-f"></div></dialog>
-<script src="kintai.js?v=2026-11-20.8"></script>
+<script src="kintai.js?v=2026-11-20.9"></script>
 <script src="su-shell.js?v=2026-11-19"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 <script src="su-intro.js?v=2026-11-18"></script>

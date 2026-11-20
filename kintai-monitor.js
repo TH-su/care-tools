@@ -1,7 +1,8 @@
 /* kintai-monitor.js — 勤怠管理の管理者のホーム（勤怠モニター）の箱を作る純関数（2026-11-20 新設・仕様書 ~/Claude/Work/勤怠管理アプリ/ROOT-v5-freee.md の段2）
  * ════════════════════════════════════════════════════════════════
  * ・画面（kintai.js）とは通信も DOM も持たない。試験は check/unit/kintai_monitor_test.js
- * ・箱の順は 今日・打刻漏れと要確認・36協定・有給・締め・申請。入力が null の箱は出さない（申請は段5の後まで null＝箱なし）
+ * ・箱の順は 今日・打刻漏れと要確認・36協定・有給・締め・勤務の決まり・申請。入力が null の箱は出さない（申請は段5の後まで null＝箱なし）
+ * ・勤務の決まり（2026-11-20 足した）は kintai-rules.js の checkMonth の結果を受ける（休憩が足りない・勤務の間が短い・続けて働いた日が多い・知らせだけ）
  * ・「今日」は日ごとの画面（kintai.js の paintDay・kindsOf）と同じく塊ごとに数える（押した先のチップの数とそろえる）
  * ・氏名などの業務データを端末に残さない（このファイルは計算だけ）。試験も架空の職員だけ
  */
@@ -118,13 +119,35 @@
     return { key: 'close', title: '締めていない月分', count: rows.length, level: rows.length ? 'alert' : 'ok', tab: 'close', rows: rows };
   }
 
+  /* 勤務の決まり（kintai-rules.js の checkMonth の結果 { byStaff, totals }）: 1件以上ある人ごとに1行（月の名簿の順）。
+     続けて働いた日が上の目安（over）の人がいれば alert、ほかは warn。月分の初めの日は前の月分の勤務を見ないので、注記を付ける */
+  var RULES_NOTE = '月分の初めの日は前の月分の勤務を見ないため、勤務の間と続けて働いた日は少なく出ることがあります';
+  function rulesBox(res, month) {
+    var by = (res && res.byStaff) || {}, rows = [], level = 'ok', seen = {}, order = [];
+    ((month && month.people) || []).forEach(function (p) { if (p.staff && by[p.staff.staff_id]) { order.push({ sid: p.staff.staff_id, name: dispName(p.staff) }); seen[p.staff.staff_id] = 1; } });
+    Object.keys(by).sort().forEach(function (sid) { if (!seen[sid]) order.push({ sid: sid, name: String(sid) }); });
+    order.forEach(function (o) {
+      var r = by[o.sid], parts = [];
+      if (!r || !r.count) return;
+      if (r.breaks && r.breaks.length) parts.push('休憩が足りない日 ' + r.breaks.length + ' 件');
+      if (r.intervals && r.intervals.length) parts.push('勤務の間が短い日 ' + r.intervals.length + ' 件');
+      (r.runs || []).forEach(function (x) { parts.push('続けて ' + x.days + ' 日働いています' + (isDate(x.from) && isDate(x.to) ? '（' + md(x.from) + '〜' + md(x.to) + '）' : '')); });
+      var lv = r.over ? 'alert' : 'warn';
+      level = top(level, lv);
+      rows.push({ staff_id: o.sid, name: o.name, text: parts.join('／'), level: lv });
+    });
+    var box = { key: 'rules', title: '勤務の決まり', count: rows.length, level: level, tab: 'grid', rows: rows };
+    if (rows.length) box.note = RULES_NOTE;
+    return box;
+  }
+
   /* 申請の承認待ち（段5の後）: 件数だけ */
   function requestsBox(n) {
     var c = typeof n === 'number' && isFinite(n) && n > 0 ? Math.floor(n) : 0;
     return { key: 'requests', title: '申請の承認待ち', count: c, level: c ? 'warn' : 'ok', tab: 'requests', rows: [] };
   }
 
-  /* 箱の一覧。input: { today, month, reviewList, leaveRows, a36Rows, unlockedPast, requests }
+  /* 箱の一覧。input: { today, month, reviewList, leaveRows, a36Rows, unlockedPast, rules（KintaiRules.checkMonth の結果）, requests }
      返す: [{ key, title, count, level:'ok'|'warn'|'alert', tab, rows:[{ staff_id, name, text }] }]（今日の箱だけ counts も持つ・36協定の箱は注意がある時 note も持つ）
      a36Rows の行は { staff_id, name, items, holidayUnknown }（Kintai36.judge の items と holidayUnknown） */
   function boxes(input) {
@@ -134,6 +157,7 @@
     if (o.a36Rows != null) out.push(a36Box(o.a36Rows));
     if (o.leaveRows != null) out.push(leaveBox(o.leaveRows));
     if (o.unlockedPast != null) out.push(closeBox(o.unlockedPast));
+    if (o.rules != null) out.push(rulesBox(o.rules, o.month));
     if (o.requests != null) out.push(requestsBox(o.requests));
     return out;
   }

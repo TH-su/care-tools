@@ -7,6 +7,7 @@
      3. 要確認: reviewList の件数と行（氏名は月の名簿から・日付と印の名前）
      4. 36協定（kintai-36.js の判定から）・有給（kintai-leave.js の年5日から）・締め・申請の件数と色
      5. 箱を押した先のタブ
+     6. 勤務の決まりの箱（2026-11-20 足した・kintai-rules.js の checkMonth の結果をそのまま渡す）: 人ごとの行・色・注記・押した先は月の一覧
    ★職員は架空（試験 甲〜戊）。 */
 'use strict';
 const path = require('path');
@@ -133,6 +134,29 @@ console.log('\n— 4. 36協定・有給・締め・申請 —');
   t('締め: 0 件なら ok', box(Mo.boxes({ unlockedPast: [] }), 'close').level === 'ok');
   const rb = box(Mo.boxes({ requests: 3 }), 'requests');
   t('申請: 3 件・warn・行なし', rb.count === 3 && rb.level === 'warn' && rb.rows.length === 0 && rb.tab === 'requests');
+}
+
+
+console.log('\n— 6. 勤務の決まりの箱（kintai-rules.js）—');
+{
+  const R = require(path.join(ROOT, 'kintai-rules.js'));
+  /* 甲: 12/1 遅番（12-21）の翌日 12/2 早番（7-16）＝勤務の間10時間・12/3 は休憩0分で9時間／乙: 12/1〜12/7 の7日続けて早番／丙: 何も無し */
+  const c6 = { sT01: { 1: '遅', 2: '早', 3: '早' }, sT02: { 1: '早', 2: '早', 3: '早', 4: '早', 5: '早', 6: '早', 7: '早' }, sT03: {} };
+  const s6 = C.buildSchedule({ ym: YM, plan: { cells: c6, subCells: {} }, nextPlan: {}, staff: STAFF.slice(0, 3), symbols: Sym.DEFAULT_SYMBOLS, settings: { breakThresholdH: 6, breakH: 1, nightBreakH: 2 } }).rows;
+  const p6 = [P('sT01', 'in', '2026-12-01', '12:00'), P('sT01', 'out', '2026-12-01', '21:00'), P('sT01', 'in', '2026-12-02', '7:00'), P('sT01', 'out', '2026-12-02', '16:00'), P('sT01', 'in', '2026-12-03', '7:00'), P('sT01', 'out', '2026-12-03', '16:00')];
+  for (let d = 1; d <= 7; d++) p6.push(P('sT02', 'in', '2026-12-0' + d, '7:00'), P('sT02', 'out', '2026-12-0' + d, '16:00'));
+  const m6 = C.computeMonth({ ym: YM, staff: K_STAFF.slice(0, 3), schedule: s6, punches: p6, days: [{ staff_id: 'sT01', work_date: '2026-12-03', break_min: 0, rev: 1 }], config: {}, now: NOW });
+  const res = R.checkMonth(m6, {});
+  const rb = box(Mo.boxes({ month: m6, rules: res }), 'rules');
+  t('勤務の決まり: 甲と乙の2人・月の名簿の順・押した先は月の一覧（grid）', rb.count === 2 && rb.rows.map((r) => r.staff_id).join() === 'sT01,sT02' && rb.tab === 'grid' && rb.title === '勤務の決まり', rb);
+  t('勤務の決まり: 甲は「休憩が足りない日 1 件／勤務の間が短い日 1 件」・乙は「続けて 7 日働いています（12/1〜12/7）」', rb.rows[0].text === '休憩が足りない日 1 件／勤務の間が短い日 1 件' && rb.rows[1].text === '続けて 7 日働いています（12/1〜12/7）' && rb.rows[0].name === '試験 甲', rb.rows);
+  t('勤務の決まり: 7日（目安の warn）だけなら warn・注記あり', rb.level === 'warn' && rb.rows.every((r) => r.level === 'warn') && typeof rb.note === 'string');
+  const over = box(Mo.boxes({ month: m6, rules: R.checkMonth(m6, { consecWarnDays: 3, consecOverDays: 5 }) }), 'rules');
+  t('勤務の決まり: 続けて働いた日が上の目安（over）の人がいれば alert', over.level === 'alert' && over.rows.find((r) => r.staff_id === 'sT02').level === 'alert', over);
+  const none = box(Mo.boxes({ month: m6, rules: { byStaff: {}, totals: {} } }), 'rules');
+  t('勤務の決まり: 誰もいなければ 0 件・ok・注記なし', none.count === 0 && none.level === 'ok' && none.note === undefined);
+  const all2 = Mo.boxes({ today: TODAY, month, reviewList: review, leaveRows: [], a36Rows: [], unlockedPast: [], rules: { byStaff: {} }, requests: null });
+  t('順は 今日・要確認・36協定・有給・締め・勤務の決まり（申請は null で出さない）', all2.map((b) => b.key).join(',') === 'today,review,a36,leave,close,rules', all2.map((b) => b.key));
 }
 
 console.log(`\n${pass} 件合格 / ${fail} 件不合格`);

@@ -14,13 +14,15 @@
  * ・v4（2026-11-20 凍結した仕様書 ROOT-v4-master-leave.md）: 「職員と番号」に職員マスタとの突き合わせ（kintai_master_import・手で結ぶ・打刻画面に出す/出さない）、
  *   「勤務時間を手で入れる」窓（今の事務所の打刻 kintai_punch_add と休憩 kintai_day_put を順に呼ぶ・K6）、「有給」のタブ（計算は kintai-leave.js）。
  *   職員マスタ・有給の読み込みは、そのタブを開いた時に別に読む（読めなくても月の画面は止めない）。端末に残すのは今までどおりタブと月だけ
+ * ・v5 段2・3（2026-11-20・仕様書 ROOT-v5-freee.md）: 先頭のタブ「ホーム」（箱は kintai-monitor.js・勤務の決まりは kintai-rules.js）と36協定の判定（kintai-36.js）。
+ *   36協定の月の列は有給のタブと同じ読み込み（loadLeaveMonths）の月分を使い回す（往復を増やさない）。どれも画面の中だけで、端末に残さない
  */
 (function () {
   'use strict';
-  var C = window.KintaiCalc, L = window.KintaiLeave;
-  var TABS = ['day', 'review', 'grid', 'person', 'staff', 'leave', 'close', 'settings'];
+  var C = window.KintaiCalc, L = window.KintaiLeave, K36 = window.Kintai36, MON = window.KintaiMonitor, RUL = window.KintaiRules;
+  var TABS = ['home', 'day', 'review', 'grid', 'person', 'staff', 'leave', 'close', 'settings'];
   var LS_TAB = 'kintai_tab', LS_YM = 'kintai_ym';
-  var gen = 0, view = 'boot', tab = 'day', ym = null, data = null, month = null, shiftInfo = null;
+  var gen = 0, view = 'boot', tab = 'home', ym = null, data = null, month = null, shiftInfo = null;
   var selDate = null, selStaff = null, onlyReview = false, role = null, busy = false, editsCache = null;
   /* v2: 日ごとの札の絞り込み（working / notin / review / absent）・事業所の絞り込み・全員分の印刷（どれも端末に残さない） */
   var dayFilter = null, officeFilter = '', printAll = false;
@@ -28,6 +30,8 @@
   var masterSt = null, masterBusy = false, importResult = null, leaveSt = null, leaveBusy = false, leaveGen = 0;
   /* v5 1-5: 勤怠の管理者の名簿（管理者の時だけ読む・画面の中だけ・端末に残さない） */
   var mgrSt = null, mgrBusy = false, mgrGen = 0;
+  /* v5 段3: この画面で開いた月分の計算（36協定の月の列に使う・画面の中だけ）。v5 C4: 設定タブを描いた時の入力の値（保存していない変更を確かめる） */
+  var monthCache = {}, setInit = null;
   var $ = function (id) { return document.getElementById(id); };
 
   function note(where, e) { try { if (window.SUErrors && window.SUErrors.note) window.SUErrors.note('勤怠管理', e, 'kintai:' + where); } catch (_) {} }
@@ -267,6 +271,8 @@
     /* 今の時刻を渡す（勤務中・まだ出勤していないの印が時刻で変わる・v2） */
     /* 職員の並びは「職員と番号」の表と同じ入職順（staffSorted・2026-11-20 代表者の指示）。日ごと・要確認・月の一覧・個人の月の選択肢はこの並びになる */
     month = C.computeMonth({ ym: ym, period: data.period, staff: staffSorted(), schedule: data.schedule || [], punches: data.punches || [], days: data.days || [], leave_uses: data.leave_uses, config: cfg, lockedAt: data.month && data.month.locked_at, now: Date.now() });
+    month.k36 = k36Info(data);
+    monthCache[ym] = month;
   }
 
   /* ── 描画 ── */
@@ -300,8 +306,9 @@
     if (busy && !month) { m.innerHTML = '<p class="empty">読み込んでいます…</p>'; skel(m); m.setAttribute('aria-busy', 'true'); return; }
     m.removeAttribute('aria-busy');
     if (!month) return;
-    var f = { day: paintDay, review: paintReview, grid: paintGrid, person: paintPerson, staff: paintStaff, leave: paintLeave, close: paintClose, settings: paintSettings }[tab];
+    var f = { home: paintHome, day: paintDay, review: paintReview, grid: paintGrid, person: paintPerson, staff: paintStaff, leave: paintLeave, close: paintClose, settings: paintSettings }[tab];
     m.innerHTML = bands() + f();
+    setInit = tab === 'settings' && $('g-set') ? settingsState() : null;   /* v5 C4: 描いた時の設定の入力（保存していない変更を確かめる） */
   }
   var RED = { no_punch: 1, missing_in: 1, missing_out: 1 };
   /* 印の札。勤務中は青（赤にしない）・確認済みの塊の要確認の印は線で消して残す */
@@ -360,7 +367,152 @@
       officeSelect() + '<button type="button" class="btn sm" data-act="print">この日を印刷</button><button type="button" class="btn sm" data-act="work-open">勤務時間を手で入れる</button><button type="button" class="btn sm" data-act="sched-open">出勤予定を直す・入れる</button></div>' + chips +
       '<div class="tw"><table><thead><tr><th>氏名</th><th>事業所</th><th>予定</th><th>打刻（そのまま）</th><th>数えた時刻</th><th class="num">休憩</th><th class="num">実働</th><th>印</th><th class="no-print"></th></tr></thead><tbody>' +
       (rows.join('') || '<tr><td colspan="9" class="empty">' + (dayFilter || officeFilter ? '絞り込みに当たる人はいません' : 'この日の予定・打刻はありません') + '</td></tr>') + '</tbody></table></div>' +
-      '<p class="help">「数えた時刻」は予定に合わせて丸めた時刻です（予定より早い出勤は予定の開始、予定より遅い退勤は予定の終わり）。打刻はそのまま残っています。早出・残業を認める時は「直す」から。「出勤中」は退勤の時刻がまだ来ていない人で、要確認には数えません。この画面は1分ごとに数え直します。</p></div>';
+      '<p class="help">「数えた時刻」は予定に合わせて丸めた時刻です（予定より早い出勤は予定の開始、予定より遅い退勤は予定の終わり）。打刻はそのまま残っています。早出・残業を認める時は「直す」から。「出勤中」は退勤の時刻がまだ来ていない人で、要確認には数えません。この画面は30秒ごとに読み直して数え直します。</p></div>';
+  }
+
+  /* ── v5 段2・3: ホーム（勤怠モニター）と36協定（2026-11-20・仕様書 ROOT-v5-freee.md）──
+   * 箱は KintaiMonitor.boxes で作る（今日・要確認・36協定・有給・締め・勤務の決まり。申請の箱は段5の後まで出さない＝requests: null）。
+   * 有給・36協定・締めの箱は、有給のタブと同じ読み込み（loadLeave → loadLeaveMonths）を最初の描画の後に裏で読み、読めてから出す（読む間は「読み込み中」）。
+   * 読めなかった時は箱に知らせを出し、30秒ごとの読み直しで試し直さない（「読み直す」で試す）。画面だけで印刷しない */
+  /* 今の設定（kintai_settings.config）。締めた月分を開いていても、36協定の上限と決まりの見張りは今の設定で見る */
+  function rawCfg() { return (data && data.settings && data.settings.config) || {}; }
+  /* 月分の締めの様子（36協定の月の列は、締めた月分は控えの値・締めていない月分は数えた値を使う） */
+  function k36Info(d) {
+    var lk = !!(d && d.month && d.month.locked_at), snap = lk ? d.month.snapshot : null;
+    return { locked: lk, rows: snap && Array.isArray(snap.rows) ? snap.rows : null, snapCfg: snap && snap.config && typeof snap.config === 'object' ? snap.config : null };
+  }
+  /* 読んだ月分（有給の読み込みの月分と、この画面で開いた月分。開いている月分は今の計算） */
+  function monthsBy() {
+    var by = {}, k;
+    (leaveSt && !leaveSt.err && Array.isArray(leaveSt.months) ? leaveSt.months : []).forEach(function (m) { if (m && m.ym) by[m.ym] = m; });
+    for (k in monthCache) by[k] = monthCache[k];
+    if (month) by[ym] = month;
+    return by;
+  }
+  function hireOfStaff(s) { var m = masterOf(s), prof = leaveSt && leaveSt.profiles ? leaveSt.profiles[s.staff_id] : null; return L ? L.hireOf(m && m.hire_date, prof) : null; }
+  /* 1人分の月の行（Kintai36.judge の months の1行）。締めた月分は控えの丸める前の値（無い古い控えは丸めた値・raw36 に印）、締めていない月分は数えた値 */
+  function row36(mm, sid, ymx, old) {
+    var k = mm.k36 || {}, cfg0 = k.locked && k.snapCfg ? k.snapCfg : (mm.config || {});
+    var known = C.checkLegalHoliday(cfg0.legal_holiday).value != null, legal = 0, hol = 0;
+    if (k.locked && k.rows) {
+      var r = k.rows.filter(function (x) { return x && x.staff_id === sid; })[0];
+      if (r) {
+        legal = typeof r.legalOverRawMin === 'number' ? r.legalOverRawMin : (+r.legalOverMin || 0);
+        hol = typeof r.holidayRawMin === 'number' ? r.holidayRawMin : (+r.holidayMin || 0);
+        if (typeof r.legalOverRawMin !== 'number' && cfg0.monthRound30 === true) old.push(ymx);
+      }
+    } else {
+      var p = (mm.people || []).filter(function (x) { return x.staff && x.staff.staff_id === sid; })[0];
+      if (!p) return null;
+      legal = typeof p.sum.legalOverRawMin === 'number' ? p.sum.legalOverRawMin : p.sum.legalOverMin;
+      hol = typeof p.sum.holidayRawMin === 'number' ? p.sum.holidayRawMin : p.sum.holidayMin;
+    }
+    return { ym: ymx, legalOverMin: legal, holidayMin: hol, locked: !!k.locked, holidayKnown: known };
+  }
+  /* その月分の36協定の判定（職員ごと）。返す: { staff_id → { staff_id, name, items, holidayUnknown, agreement, old:[丸めた値で読んだ月分] } }（部品・月分が無ければ null）。
+     入職日より前の月は記録0の月として渡す（入職したばかりの人に「記録が無い」を出し続けない・仮置き） */
+  function a36Map(ymx) {
+    /* 月の列は有給の読み込みの月分が要る（読めるまでは判定しない＝帯は今の計算の警告のまま・箱は「読み込み中」） */
+    if (!K36 || !month || !leaveSt || leaveSt.err || !Array.isArray(leaveSt.months)) return null;
+    var by = monthsBy(), cur = by[ymx];
+    if (!cur) return null;
+    /* 読み込みが止まった所（予定も有休も無い月分が3つ続いた先・入職日の下限・24か月前）より前の月は、記録0の月として渡す（仮置き）。
+       見ている月分が読んだ範囲の中にある時だけ（それより古い月分を見ている時は、読んでいない月を0にしない） */
+    var lds = leaveSt.months.map(function (m) { return m && m.ym; }).filter(C.isYm).sort(), oldest = lds.length ? lds[0] : null, zeroBelow = !!oldest && ymx >= oldest;
+    var cfg = rawCfg(), td = today(), out = {}, per0 = cur.period || C.periodOf(ymx, null);
+    var partial = !(cur.k36 && cur.k36.locked) && td >= per0.from && td <= per0.to;
+    var opts = partial ? { elapsedDays: C.periodDays({ from: per0.from, to: td }), periodDays: C.periodDays(per0) } : {};
+    (cur.people || []).forEach(function (p) {
+      var s = p.staff, sid = s.staff_id, hire = hireOfStaff(s), list = [], old = [], y = ymx;
+      for (var i = 0; i < 12; i++) {
+        var mm = by[y], r = mm ? row36(mm, sid, y, old) : null;
+        if (!r && ((hire && y < hire.slice(0, 7)) || (zeroBelow && y < oldest))) r = { ym: y, legalOverMin: 0, holidayMin: 0, locked: true, holidayKnown: true };
+        if (r) { if (y === ymx) r.partial = partial; list.push(r); }
+        y = C.prevYm(y);
+      }
+      var j = K36.judge(list, ymx, cfg, opts);
+      if (j) out[sid] = { staff_id: sid, name: dispName(s), items: j.items, holidayUnknown: j.holidayUnknown, agreement: j.agreement, old: old };
+    });
+    return out;
+  }
+  function oldNote(yms) { return yms.length ? '締めた時の控えに丸める前の時間が無い月分（' + yms.map(function (y) { return (+y.slice(5, 7)) + '月分'; }).join('・') + '）は、30分で丸めた時間で見ています' : ''; }
+  /* 個人の月の警告の帯: 計算の警告（月の法定外が目安以上）は、36協定の月の目安が同じ値の時は今の文のまま出し、判定の同じ文（month_warn）を重ねない。
+     目安を36協定の設定で変えた時は計算の文を出さず、判定の文を出す */
+  function warnLines(p, a36) {
+    var w = p.sum.warnings.slice(), j = a36 && a36[p.staff.staff_id];
+    if (!j) return w;
+    var th = month.config.overtimeMonthWarnH, same = j.agreement.monthWarnH === th;
+    var calcWarn = '法定外の時間が月' + th + '時間以上です（36協定の確認）';
+    if (!same) w = w.filter(function (x) { return x !== calcWarn; });
+    j.items.forEach(function (it) { if (!(same && it.code === 'month_warn')) w.push('36協定: ' + it.text); });
+    if (j.old.length) w.push(oldNote(j.old));
+    return w;
+  }
+  /* 締めていない過去の月分（期間が今日より前で、締めておらず、記録のある月分・仮置き: 記録の無い月分は数えない） */
+  function unlockedPast(by) {
+    var td = today(), out = [];
+    for (var y in by) {
+      var mm = by[y], pr = mm.period;
+      if (!pr || pr.to >= td || (mm.k36 && mm.k36.locked)) continue;
+      if ((mm.people || []).some(function (p) { return p.days && p.days.length; })) out.push(y);
+    }
+    return out.sort();
+  }
+  /* 有給の箱の行（年5日と、期限まで90日以内の残り・仮置き） */
+  function leaveRows() {
+    var td = today();
+    return staffSorted().filter(function (s) { return s.active !== false; }).map(function (s) {
+      var x = leaveOf(s), soon = x.sm.balance.soon, near = soon && L.diffDays(td, soon.expires) <= 90;
+      return { staff_id: s.staff_id, name: dispName(s), ob: x.sm.obligation, expiringDays: near ? soon.days : 0, expires: near ? soon.expires : null };
+    });
+  }
+  var BOX_UNIT = { today: '人', review: '件', a36: '人', leave: '人', close: '月分', rules: '人' };
+  var LV_JA = { ok: 'なし', warn: '注意', alert: '要対応' };
+  function boxHtml(b, attrs, body) {
+    var rows = (b.rows || []).slice(0, 5).map(function (r) { return '<span class="hl">' + (r.name ? '<b>' + esc(r.name) + '</b> ' : '') + esc(r.text) + '</span>'; }).join('');
+    var more = (b.rows || []).length > 5 ? '<span class="hl">ほか ' + ((b.rows || []).length - 5) + ' 件（押すと一覧を開きます）</span>' : '';
+    return '<button type="button" class="hbox ' + esc(b.level) + '" ' + attrs + '><span class="ht"><span>' + esc(b.title) + '</span><span class="hn">' + b.count + ' <small>' + (BOX_UNIT[b.key] || '件') + '</small></span></span>' +
+      '<span class="hv">' + LV_JA[b.level] + '</span>' + (body || '') + rows + more + (b.note ? '<span class="hnote">' + esc(b.note) + '</span>' : '') + '</button>';
+  }
+  function waitBox(title, txt, err) {
+    return '<div class="hbox wait"><span class="ht"><span>' + esc(title) + '</span></span><span class="hl">' + esc(txt) + '</span>' + (err ? '<span class="hl"><button type="button" class="btn" data-act="lv-reload">読み直す</button></span>' : '') + '</div>';
+  }
+  function paintHome() {
+    var h = '<div class="cd no-print">';
+    if (!MON) return h + '<div class="band ng" role="alert">ホームの部品を読み込めませんでした。ページを読み込み直してください。</div></div>';
+    if (L && !leaveSt && !leaveBusy) loadLeave(false);   /* 重い読み込み（有給と36協定の月分）は最初の描画の後に裏で（読めたら描き直す） */
+    var td = today(), inP = inPer(td), lv = leaveSt && !leaveSt.err ? 'ok' : leaveSt && leaveSt.err ? 'err' : 'wait';
+    var input = { today: td, month: month, reviewList: C.reviewList(month), requests: null };
+    if (RUL) input.rules = RUL.checkMonth(month, rawCfg());
+    var a36 = null;
+    if (lv === 'ok') {
+      a36 = a36Map(ym);
+      input.leaveRows = leaveRows();
+      input.unlockedPast = unlockedPast(monthsBy());
+      if (a36) input.a36Rows = Object.keys(a36).map(function (k) { return a36[k]; });
+    }
+    var bx = MON.boxes(input), out = [];
+    bx.forEach(function (b) {
+      if (b.key === 'today') {
+        if (!inP) { out.push(boxHtml({ key: 'today', title: '今日', count: 0, level: 'ok', rows: [] }, 'data-act="day-today"', '<span class="hl">今日（' + esc(md(td)) + '）はこの月分に入っていません。押すと今日の月分を開きます。</span>')); return; }
+        var c = b.counts;
+        out.push(boxHtml(b, 'data-tab="day" data-date="' + esc(td) + '"', '<span class="hl">出勤予定 ' + c.scheduled + '・出勤済み ' + c.clockedIn + '・勤務中 ' + c.working + '・まだ出勤していない ' + c.notInYet + '</span>'));
+        return;
+      }
+      if (b.key === 'a36') {
+        var olds = []; for (var k in a36) a36[k].old.forEach(function (y) { if (olds.indexOf(y) < 0) olds.push(y); });
+        if (olds.length) b.note = (b.note ? b.note + '。' : '') + oldNote(olds.sort());
+      }
+      out.push(boxHtml(b, 'data-tab="' + esc(b.tab) + '"'));
+      if (b.key === 'review' && lv !== 'ok') {
+        /* 36協定・有給・締めの箱は読めるまで「読み込み中」（読めなかった時は知らせと「読み直す」） */
+        var t0 = lv === 'err' ? '読み込めませんでした（' + leaveSt.err + '）' : '読み込み中…（月分をさかのぼって読むため、少し時間がかかります）';
+        out.push(waitBox('36協定', t0, lv === 'err'), waitBox('有給（年5日・期限の近い残り）', t0, lv === 'err'), waitBox('締めていない月分', t0, lv === 'err'));
+      }
+      if (b.key === 'review' && lv === 'ok' && !a36) out.push(waitBox('36協定', K36 ? 'この月分の記録を読めていないため、判定できません。' : '36協定の部品を読み込めませんでした。ページを読み込み直してください。', false));
+    });
+    return h + '<h2 style="font-size:16px;margin:0 0 4px">' + esc(perLabel()) + 'のようす</h2><p class="help">箱を押すと、その一覧の画面へ移ります。今日・要確認・勤務の決まりは30秒ごとに読み直します。勤務の決まり（休憩・勤務の間・続けて働いた日）は知らせだけで、数えた時間は変えません。</p>' +
+      '<div class="hgrid">' + out.join('') + '</div></div>';
   }
 
   /* 要確認の一覧（v2・C-2）: 月の要確認を日付順に1列 */
@@ -380,12 +532,20 @@
 
   function personVisible(p) { return !officeFilter || p.staff.office === officeFilter || (p.sum.byOffice && p.sum.byOffice[officeFilter] > 0); }
   function paintGrid() {
-    var ds = dateList();
+    var ds = dateList(), a36 = a36Map(ym);
+    if (L && !leaveSt && !leaveBusy) loadLeave(false);   /* v5 段3: 36協定の印に使う月分を裏で読む（有給のタブと同じ読み込み） */
+    /* 36協定の印（画面だけ・印刷しない）。超過は赤・警告は黄。中身は個人の月の帯に出す */
+    var mark36 = function (sid) {
+      var j = a36 && a36[sid];
+      if (!j || !j.items.length) return '';
+      var over = j.items.some(function (it) { return it.level === 'over'; });
+      return ' <span class="tag ' + (over ? 'ng' : 'rv') + ' no-print" title="' + esc(j.items.map(function (it) { return it.text; }).join('／')) + '">36協定' + (over ? '超過' : '注意') + '</span>';
+    };
     var head = '<tr><th class="nm">氏名</th>' + ds.map(function (x) { return '<th class="num">' + (+x.slice(8)) + '<br><span class="raw">' + wd(x) + '</span></th>'; }).join('') +
       '<th class="num sr sr3">出勤</th><th class="num sr sr2">総労働</th><th class="num">残業</th><th class="num">法定外</th><th class="num">深夜</th><th class="num">有休</th><th class="num sr sr1">要確認</th></tr>';
     var body = month.people.filter(function (p) { return (!onlyReview || p.sum.reviewCount > 0) && personVisible(p); }).map(function (p) {
       var by = {}; p.days.forEach(function (d) { by[d.date] = d; });
-      return '<tr><td class="nm"><button type="button" class="btn sm" data-act="person" data-sid="' + esc(p.staff.staff_id) + '">' + esc(dispName(p.staff)) + '</button></td>' + ds.map(function (x) {
+      return '<tr><td class="nm"><button type="button" class="btn sm" data-act="person" data-sid="' + esc(p.staff.staff_id) + '">' + esc(dispName(p.staff)) + '</button>' + mark36(p.staff.staff_id) + '</td>' + ds.map(function (x) {
         var d = by[x];
         if (!d) return '<td></td>';
         var rvb = d.blocks.filter(function (b) { return C.needsReview(b); });
@@ -395,7 +555,7 @@
       }).join('') + '<td class="num sr sr3">' + p.sum.workDays + '</td><td class="num sr sr2">' + fm(p.sum.workMin) + '</td><td class="num">' + fm(p.sum.overtimeMin) + '</td><td class="num">' + fm(p.sum.legalOverMin) + '</td><td class="num">' + fm(p.sum.nightMin) + '</td><td class="num">' + p.sum.paidDays + '</td><td class="num sr sr1">' + p.sum.reviewCount + '</td></tr>';
     }).join('');
     return printHead('月の一覧') + '<div class="cd"><div class="row no-print"><label><input type="checkbox" id="g-only"' + (onlyReview ? ' checked' : '') + '> 要確認がある人だけ</label>' + officeSelect() + '<button type="button" class="btn sm" data-act="print">印刷</button>' +
-      '<span class="help">黄色＝要確認・赤＝打刻の漏れ／打刻なし・青＝出勤中。数字を押すとその日を直せます。事業所で絞った時も、数字はその人の月全体です。</span></div><div class="tw"><table class="grid"><thead>' + head + '</thead><tbody>' + (body || '<tr><td class="empty" colspan="40">該当する職員はいません</td></tr>') + '</tbody></table></div></div>';
+      '<span class="help">黄色＝要確認・赤＝打刻の漏れ／打刻なし・青＝出勤中。数字を押すとその日を直せます。事業所で絞った時も、数字はその人の月全体です。名前の横の「36協定」は、名前を押した個人の月の上に中身が出ます。</span></div><div class="tw"><table class="grid"><thead>' + head + '</thead><tbody>' + (body || '<tr><td class="empty" colspan="40">該当する職員はいません</td></tr>') + '</tbody></table></div></div>';
   }
 
   function personOf(sid) { return month.people.filter(function (p) { return p.staff.staff_id === sid; })[0] || null; }
@@ -403,8 +563,8 @@
     var ks = Object.keys(s.byOffice || {}).filter(function (k) { return s.byOffice[k] > 0; });
     return ks.length ? ks.map(function (k) { return (officeName(k) || k) + ' ' + fm(s.byOffice[k]); }).join('・') : 'なし';
   }
-  function personHtml(p) {
-    var s = p.sum, rows = [];
+  function personHtml(p, a36) {
+    var s = p.sum, rows = [], warns = warnLines(p, a36);
     p.days.forEach(function (d) {
       var nt = d.note ? [d.note.early_ok ? '早出を認めた' : '', d.note.early_from ? '早出を ' + hm(d.note.early_from) + ' から認めた' : '', d.note.overtime_ok ? '残業を認めた' : '', d.note.ot_until ? '残業を ' + hm(d.note.ot_until) + ' まで認めた' : '', d.note.break_min != null ? '休憩を' + d.note.break_min + '分に' : '', d.note.note || ''].filter(Boolean).join('・') : '';
       var bl = d.blocks.length ? d.blocks : [null];
@@ -413,7 +573,7 @@
           '<td class="no-print">' + (i === 0 ? '<button type="button" class="btn sm" data-act="edit" data-sid="' + esc(p.staff.staff_id) + '" data-date="' + d.date + '">直す</button>' : '') + '</td></tr>');
       });
     });
-    return (s.warnings.length ? '<div class="band warn">' + s.warnings.map(esc).join('<br>') + '</div>' : '') +
+    return (warns.length ? '<div class="band warn">' + warns.map(esc).join('<br>') + '</div>' : '') +
       '<div class="kv"><span>出勤日数</span><b>' + s.workDays + ' 日（有休 ' + s.paidDays + ' 日・' + fm(s.paidMin) + '）</b><span>総労働</span><b>' + fm(s.workMin) + '（所定内（法定内） ' + fm(s.schedInMin) + '・残業 ' + fm(s.overtimeMin) + '・法定外 ' + fm(s.legalOverMin) + '・深夜 ' + fm(s.nightMin) + '）</b>' +
       '<span>休日労働</span><b>' + fm(s.holidayMin) + (month.config.legal_holiday == null ? '（法定休日を決めていないため数えていません）' : '') + '</b>' +
       '<span>事業所別の実働</span><b>' + esc(officeBreakdown(s)) + '</b>' +
@@ -425,17 +585,19 @@
       (rows.join('') || '<tr><td colspan="9" class="empty">この月の予定・打刻はありません</td></tr>') + '</tbody></table></div>';
   }
   function paintPerson() {
+    var a36 = a36Map(ym);
+    if (L && !leaveSt && !leaveBusy) loadLeave(false);   /* v5 段3: 36協定の帯に使う月分を裏で読む */
     if (printAll) {
       /* 全員分の印刷（1人1ページ） */
       /* 休止中で記録の無い人は出さない */
-      return month.people.filter(function (p) { return p.days.length || p.staff.active !== false; }).map(function (p) { return '<div class="pg">' + printHead(dispName(p.staff) + ' さん') + '<div class="cd">' + personHtml(p) + '</div></div>'; }).join('');
+      return month.people.filter(function (p) { return p.days.length || p.staff.active !== false; }).map(function (p) { return '<div class="pg">' + printHead(dispName(p.staff) + ' さん') + '<div class="cd">' + personHtml(p, a36) + '</div></div>'; }).join('');
     }
     if (!selStaff || !personOf(selStaff)) selStaff = month.people.length ? month.people[0].staff.staff_id : null;
     var sel = '<label>職員 <select id="g-staff">' + month.people.map(function (p) { return '<option value="' + esc(p.staff.staff_id) + '"' + (p.staff.staff_id === selStaff ? ' selected' : '') + '>' + esc(dispName(p.staff)) + '</option>'; }).join('') + '</select></label>';
     var p = personOf(selStaff);
     if (!p) return '<div class="cd"><p class="empty">職員がいません。「職員と番号」でシフトから取り込んでください。</p></div>';
     return printHead(dispName(p.staff) + ' さん') + '<div class="cd"><div class="row no-print">' + sel + '<button type="button" class="btn sm" data-act="addday">予定の無い日に打刻を足す</button><button type="button" class="btn sm" data-act="work-open">勤務時間を手で入れる</button><button type="button" class="btn sm" data-act="sched-open">出勤予定を直す・入れる</button><button type="button" class="btn sm" data-act="fx-open" data-sid="' + esc(p.staff.staff_id) + '">前提の時間</button><button type="button" class="btn sm" data-act="print">印刷</button><button type="button" class="btn sm" data-act="print-all">全員分を印刷（1人1ページ）</button></div>' +
-      personHtml(p) + '</div>';
+      personHtml(p, a36) + '</div>';
   }
 
   /* 「職員と番号」の表だけは従業員コードの順（2026-11-20 代表者の指示）。従業員コードの無い人は後ろに、入職順（staffSorted）のまま */
@@ -513,7 +675,7 @@
   function masterIdOf(s) { return s && s.master_id ? String(s.master_id) : null; }   /* 外した m_ の行は master_id が空（休止）＝結んでいない */
   function masterOf(s) { var id = masterIdOf(s); return id && masterSt && masterSt.byId ? masterSt.byId[id] || null : null; }
   function inService(m) { return !!m && (!m.retire_date || m.retire_date >= today()); }
-  var REORDER_TABS = { day: 1, review: 1, grid: 1, person: 1, staff: 1, leave: 1 };
+  var REORDER_TABS = { home: 1, day: 1, review: 1, grid: 1, person: 1, staff: 1, leave: 1 };
   function loadMaster() {
     if (masterBusy && masterP) return masterP;
     masterBusy = true;
@@ -576,7 +738,9 @@
     return cfg;
   }
   function monthFor(y, d) {
-    return C.computeMonth({ ym: y, period: d.period, staff: d.staff || [], schedule: d.schedule || [], punches: d.punches || [], days: d.days || [], leave_uses: d.leave_uses, config: monthCfg(d), lockedAt: d.month && d.month.locked_at, now: Date.now() });
+    var m = C.computeMonth({ ym: y, period: d.period, staff: d.staff || [], schedule: d.schedule || [], punches: d.punches || [], days: d.days || [], leave_uses: d.leave_uses, config: monthCfg(d), lockedAt: d.month && d.month.locked_at, now: Date.now() });
+    m.k36 = k36Info(d);   /* v5 段3: 締めたか・締めた時の控え（36協定の月の列に使う） */
+    return m;
   }
   /* さかのぼる下限の月: 職員のいちばん早い入職日の月（入職日が分からない人がいれば24か月前）。24か月より前へは行かない */
   function leaveFloorYm(lg) {
@@ -634,8 +798,10 @@
     }).then(function () { return mp; }).then(function () {
       if (my !== leaveGen) return;
       leaveBusy = false;
-      if (view === 'app' && tab === 'leave' && !busy) paint();
-      if (dlgCtx && dlgCtx.mode === 'leave' && $('g-dlg').open) openLeave(dlgCtx.sid);
+      /* v5 段2・3: ホーム・月の一覧・個人の月も、有給と36協定の箱・印をこの読み込みから出す */
+      if (view === 'app' && (tab === 'leave' || tab === 'home' || tab === 'grid' || tab === 'person') && !busy && !printAll) paint();
+      /* v5 C3: 開き直した窓に、保存していない入力（今の保存で使った欄を除く）を戻す（読み直しで黙って消さない） */
+      if (dlgCtx && dlgCtx.mode === 'leave' && $('g-dlg').open) { var kp = dlgCtx.keep || null; openLeave(dlgCtx.sid); if (kp) dlgPut(kp); }
     });
   }
   function leaveOf(s) {
@@ -676,7 +842,18 @@
   }
 
   /* ── 締めた時の控え（snapshot）と今の数字 ── */
-  var SNAP_KEYS = ['workDays', 'paidDays', 'workMin', 'schedInMin', 'overtimeMin', 'legalOverMin', 'nightMin', 'lateCount', 'lateMin', 'earlyLeaveCount', 'earlyLeaveMin', 'noPunchDays', 'reviewCount', 'absentDays', 'paidMin', 'uncountedMin', 'holidayMin'];
+  /* v5（2026-11-20）: 給与が比べている legalInOverMin・over60Min・nightShiftCount・schedDays と記号ごとの回数（counts）も比べる。控えに無い鍵（古い控え）は比べない。
+     丸める前の値（legalOverRawMin・holidayRawMin）は36協定の判定だけに使うので比べない */
+  var SNAP_KEYS = ['workDays', 'paidDays', 'workMin', 'schedInMin', 'overtimeMin', 'legalOverMin', 'nightMin', 'lateCount', 'lateMin', 'earlyLeaveCount', 'earlyLeaveMin', 'noPunchDays', 'reviewCount', 'absentDays', 'paidMin', 'uncountedMin', 'holidayMin',
+    'legalInOverMin', 'over60Min', 'nightShiftCount', 'schedDays'];
+  /* 記号ごとの回数を比べる（0 より大きい回数だけ・給与の画面の attSame と同じ見方） */
+  function countsOf(c) { var o = {}; if (c && typeof c === 'object' && !Array.isArray(c)) for (var k in c) { var n = Number(c[k]); if (isFinite(n) && n > 0) o[k] = Math.round(n); } return o; }
+  function sameCounts(a, b) {
+    var x = countsOf(a), y = countsOf(b), kx = Object.keys(x).sort(), ky = Object.keys(y).sort();
+    if (kx.join('\u0001') !== ky.join('\u0001')) return false;
+    for (var i = 0; i < kx.length; i++) if (x[kx[i]] !== y[kx[i]]) return false;
+    return true;
+  }
   var SNAP_FILL = [['absentDays', '欠勤日数'], ['paidMin', '有休時間'], ['uncountedMin', '数えなかった時間'], ['holidayMin', '休日労働']];
   function snapRows() { return isLocked() && data.month.snapshot && Array.isArray(data.month.snapshot.rows) ? data.month.snapshot.rows : null; }
   function snapDiff() {
@@ -686,7 +863,7 @@
     month.people.forEach(function (p) {
       var r = byId[p.staff.staff_id];
       if (!r) { if (p.sum.workMin > 0 || p.sum.reviewCount > 0) out.push(dispName(p.staff)); return; }
-      if (SNAP_KEYS.some(function (k) { return typeof r[k] === 'number' && r[k] !== p.sum[k]; })) out.push(dispName(p.staff));
+      if (SNAP_KEYS.some(function (k) { return typeof r[k] === 'number' && r[k] !== p.sum[k]; }) || (r.counts && typeof r.counts === 'object' && !sameCounts(r.counts, p.sum.counts))) out.push(dispName(p.staff));
     });
     return out;
   }
@@ -828,7 +1005,7 @@
       WD.map(function (w, i) { return '<option value="' + i + '"' + (c.legal_holiday === i ? ' selected' : '') + '>' + w + '曜日</option>'; }).join('') + '</select> この曜日に働いた時間を「休日労働」として分けて数え、法定外の残業には重ねません（就業規則で決めた曜日を選びます）</span>';
     h += '<label for="s-monthRound30">月の残業・深夜の合計の端数</label><span><input type="checkbox" id="s-monthRound30"' + (c.monthRound30 ? ' checked' : '') + '> 1時間未満を30分で四捨五入する（就業規則に定めがある時だけ）</span>';
     h += '<label for="s-csvTime">CSV の時間の書き方</label><span><select id="s-csvTime"><option value="hmm"' + (c.csvTime === 'hmm' ? ' selected' : '') + '>8:30</option><option value="dec"' + (c.csvTime === 'dec' ? ' selected' : '') + '>8.50</option></select></span>';
-    h += '</form><div class="row"><button type="button" class="btn pri" data-act="save-set"' + (isAdmin() ? '' : ' disabled') + '>設定を保存する</button></div>' +
+    h += '</form>' + a36Form() + '<div class="row"><button type="button" class="btn pri" data-act="save-set"' + (isAdmin() ? '' : ' disabled') + '>設定を保存する</button></div>' +
       '<p class="help">休憩の時間（日勤 ' + esc(c.breakH) + ' 時間・夜勤 ' + esc(c.nightBreakH) + ' 時間・拘束が ' + esc(c.breakThresholdH) + ' 時間を超えたら引く）はシフトアプリの設定を取り込んで使います（ここでは変えません）。丸めの決まり: 予定より早い出勤は予定の開始から、予定より遅い退勤は予定の終わりまで数えます。始業前・終業後に実際に働いた時は、その日を「直す」で早出・残業を認めてください（認めないまま切り捨てると賃金の未払いになります）。</p></div>';
     /* v5 1-5: 勤怠の管理者の名簿（管理者だけに出す・画面だけで印刷しない） */
     if (isAdmin()) {
@@ -837,6 +1014,53 @@
     }
     return h;
   }
+
+  /* ── v5 段3: 36協定の上限の入力（設定の鍵 agreement36・無い時は既定＝freee の初期値・仮置き）──
+   * 月の目安は今の欄（overtimeMonthWarnH・月の法定外がこの時間以上で警告）をそのまま使い、ここに別の欄を作らない（2つの値が食い違わないように・仮置き）。
+   * 保存は上の「設定を保存する」（管理者だけ）。欄は今の設定から出す（締めた月分の控えから出さない） */
+  var A36_FIELDS = [
+    ['monthLimitH', '月の上限（法定外）', '時間（45 まで）'], ['yearLimitH', '年の上限（法定外）', '時間（360 まで）'], ['yearWarnH', '年の目安（この時間以上で知らせる）', '時間（0＝知らせない）'],
+    ['specialMonthMaxH', '特別条項: 月の上限（休日労働を含む）', '時間（100 まで）'], ['specialAvgH', '特別条項: 2〜6か月の平均の上限（休日労働を含む）', '時間（80 まで）'],
+    ['specialYearH', '特別条項: 年の上限（法定外）', '時間（720 まで）'], ['specialCountMax', '特別条項: 月の上限を超えてよい回数', '回（6 まで）']
+  ];
+  function a36Form() {
+    if (!K36) return '<div class="band warn" role="status">36協定の部品を読み込めませんでした。ページを読み込み直してください。</div>';
+    var a = K36.fillAgreement(rawCfg());
+    var h = '<h2 style="font-size:16px;margin:14px 0 8px">36協定（時間外・休日労働の協定）</h2><form id="g-a36" class="kv">' +
+      '<label for="a-startMonth">起算月（協定の年度の始まり）</label><span><select id="a-startMonth">' + Array.apply(null, Array(12)).map(function (_, i) { return '<option value="' + (i + 1) + '"' + (a.startMonth === i + 1 ? ' selected' : '') + '>' + (i + 1) + '月</option>'; }).join('') + '</select></span>';
+    A36_FIELDS.slice(0, 3).forEach(function (f) { h += '<label for="a-' + f[0] + '">' + esc(f[1]) + '</label><span><input type="number" step="any" id="a-' + f[0] + '" value="' + esc(a[f[0]]) + '" style="width:7em"> ' + esc(f[2]) + '</span>'; });
+    h += '<label for="a-special">特別条項</label><span><input type="checkbox" id="a-special"' + (a.special ? ' checked' : '') + '> 結んでいる（下の4つを使う）</span>';
+    A36_FIELDS.slice(3).forEach(function (f) { h += '<label for="a-' + f[0] + '">' + esc(f[1]) + '</label><span><input type="number" step="any" id="a-' + f[0] + '" value="' + esc(a[f[0]]) + '" style="width:7em"> ' + esc(f[2]) + '</span>'; });
+    return h + '</form><p class="help">月の目安は、上の「月の法定外がこの時間以上で警告（36協定）」を使います。法定外＋休日労働の月100時間未満と2〜6か月の平均80時間以下（労基法36条6項）は、この設定にかかわらず見ます。法定休日を決めていない時は休日労働を数えられないため、休日労働を含む上限は少なく出ます。月の30分の四捨五入を使う時も、丸める前の時間で見ます。</p>';
+  }
+  /* 入れた値を agreement36 にする。範囲の外・形の違う値は bad に欄の名前を入れる（保存しない）。今の設定の agreement36 にほかの鍵があれば残す */
+  function readA36() {
+    var cur = rawCfg().agreement36, out = {}, bad = [], k;
+    if (cur && typeof cur === 'object' && !Array.isArray(cur)) for (k in cur) out[k] = cur[k];
+    if (!$('g-a36')) return { obj: null, bad: bad };
+    out.startMonth = +$('a-startMonth').value;
+    out.special = $('a-special').checked;
+    A36_FIELDS.forEach(function (f) { var v = $('a-' + f[0]).value; if (v === '' || !isFinite(+v)) bad.push(f[1]); else out[f[0]] = +v; });
+    if (!bad.length) {
+      var filled = K36.fillAgreement({ agreement36: out });
+      ['startMonth', 'special'].concat(A36_FIELDS.map(function (f) { return f[0]; })).forEach(function (f) { if (filled[f] !== out[f]) bad.push(f === 'startMonth' ? '起算月' : f === 'special' ? '特別条項' : A36_FIELDS.filter(function (x) { return x[0] === f; })[0][1]); });
+    }
+    /* 今の設定に agreement36 が無く、入れた値が全部既定のままなら鍵を作らない（無い時と同じ動き・保存する中身を増やさない） */
+    if (!bad.length && !(cur && typeof cur === 'object')) {
+      var dflt = K36.DEFAULTS, same = ['startMonth', 'special'].concat(A36_FIELDS.map(function (f) { return f[0]; })).every(function (f) { return out[f] === dflt[f]; });
+      if (same) return { obj: null, bad: bad };
+    }
+    return { obj: out, bad: bad };
+  }
+  /* v5 C4: 設定タブの入力（勤怠の管理者の欄は除く）。描いた時の値と違えば、保存していない変更あり */
+  function settingsState() {
+    var v = [], els = document.querySelectorAll('#g-set input,#g-set select,#g-a36 input,#g-a36 select');
+    for (var i = 0; i < els.length; i++) { var e = els[i]; v.push(e.type === 'checkbox' || e.type === 'radio' ? (e.checked ? '1' : '0') : e.value); }
+    return v.join('\u0001');
+  }
+  function settingsDirty() { return view === 'app' && tab === 'settings' && setInit != null && !!$('g-set') && settingsState() !== setInit; }
+  /* タブ・月の切り替え・読み直しの前に、保存していない設定の変更を確かめる（窓の確かめ dirty とは別に持つ） */
+  function settingsLeaveOk() { return !settingsDirty() || confirm('保存していない設定の変更があります。変更を捨てて移りますか？'); }
 
   /* ── v5 1-5: 勤怠の管理者の名簿（kintai_managers_list・kintai_managers_put（p_on で載せる・外す）。どれも二段階の管理者だけ＝DB が決める） ──
    * 読み終わっても画面全体は描き直さない（設定のタブの入力中の値を消さない）。自分の入れ物（#g-mgr）だけを差し替え、遅れた応答は世代で捨てる */
@@ -1571,7 +1795,7 @@
       (p.opening_date ? '' : '<p class="help">移行の残りを足す時は、移行日（残りを数えた日・既定は今日）も一緒に設定に入れます。移行日より前の自動の付与と使用は数えません。</p>') +
       '<p class="help">今の残りを移す時は「移行の残り」で、前の年の分と今年の分を別の行で入れます（期限は付与日から2年）。下の設定の「移行日」より前の自動の付与は数えません。</p></fieldset>' +
       '<fieldset><legend>使用</legend><div class="row"><label>日付 <input type="date" id="lv-u-date"></label><label>日数 <select id="lv-u-days"><option value="1">1日</option><option value="0.5">半日</option></select></label><label>メモ <input type="text" id="lv-u-note" maxlength="200"></label><button type="button" class="btn sm" data-act="lv-use-add">使用を足す</button></div>' +
-      '<p class="help">シフトに有休の記号が無い日の有休を入れます。勤怠の月の計算でも有休の日として数えます（シフトに有休の記号がある日は、勤怠の計算はシフトの方を数えます）。締めた月分の日は足せません。</p>' +
+      '<p class="help">シフトに有休の記号が無い日の有休を入れます。勤怠の月の計算でも有休の日として数えます（シフトに有休の記号がある日に入れた時も、勤怠の計算と残りは、こちらの日数（1日・半日）で数えます）。締めた月分の日は足せません。</p>' +
       '<div class="tw"><table><thead><tr><th>日</th><th>日数</th><th>元</th><th>メモ</th><th></th></tr></thead><tbody>' + (urows || '<tr><td colspan="5" class="empty">使用はまだありません</td></tr>') + '</tbody></table></div></fieldset>' +
       '<fieldset><legend>設定</legend><div class="kv">' +
       '<label for="lv-p-hire">入職日の上書き</label><span><input type="date" id="lv-p-hire" value="' + esc(p.hire_date || '') + '"> 空＝職員マスタの入職日</span>' +
@@ -1582,7 +1806,30 @@
       '</div><div class="row"><button type="button" class="btn sm pri" data-act="lv-prof-save">設定を保存する</button></div></fieldset>' +
       '<div class="row"><label style="flex:1">理由（取り消す時と設定を保存する時は必ず）<input type="text" id="lv-reason" maxlength="200" style="flex:1;min-width:16em"></label></div><p class="help" id="e-msg" role="alert"></p>';
     openDlg(dispName(s) + ' さんの有給', b, true);
-    dlgCtx.init = formState();
+    dlgCtx.init = formState(); dlgCtx.initMap = dlgMap();
+  }
+  /* v5 C3: 窓の入力の値（id ごと・付与しない日は data-skip ごと）。保存の後の読み直しで開き直す時に、保存していない入力を戻すのに使う */
+  function dlgMap() {
+    var o = {}, els = document.querySelectorAll('#g-dlg-b input,#g-dlg-b select');
+    for (var i = 0; i < els.length; i++) {
+      var e = els[i], k = e.id || (e.hasAttribute('data-skip') ? 'skip:' + e.getAttribute('data-skip') : '');
+      if (k) o[k] = e.type === 'checkbox' || e.type === 'radio' ? (e.checked ? '1' : '0') : e.value;
+    }
+    return o;
+  }
+  function dlgPut(o) {
+    for (var k in o) {
+      var e = k.indexOf('skip:') === 0 ? document.querySelector('#g-dlg-b [data-skip="' + k.slice(5).replace(/[^0-9-]/g, '') + '"]') : $(k);
+      if (!e || !$('g-dlg-b').contains(e)) continue;
+      if (e.type === 'checkbox' || e.type === 'radio') e.checked = o[k] === '1'; else e.value = o[k];
+    }
+  }
+  /* 保存に使った欄（戻さない）。ほかの欄で、開いた時から変えた所だけを残す */
+  var LV_USED = { 'lv-use-add': /^lv-u-/, 'lv-use-void': /^lv-reason$/, 'lv-grant-add': /^(lv-g-|lv-reason$)/, 'lv-grant-void': /^lv-reason$/, 'lv-prof-save': /^(lv-p-|skip:|lv-reason$)/ };
+  function keepOf(ctx, act) {
+    var now = dlgMap(), init = ctx.initMap || {}, out = {}, used = LV_USED[act], n = 0;
+    for (var k in now) if (now[k] !== init[k] && !(used && used.test(k))) { out[k] = now[k]; n++; }
+    return n ? out : null;
   }
   /* その日の実働（分）。開いている月分と、有給のために読んだ月分の計算から探す（無ければ 0） */
   function workedMin(sid, d) {
@@ -1647,6 +1894,7 @@
       call = ['kintai_leave_profile_put', { p_staff_id: ctx.sid, p_patch: patch, p_rev: ctx.rev, p_reason: reason }];
     }
     if (!call) return;
+    ctx.keep = keepOf(ctx, act);
     busy = true; msg.textContent = '保存しています…';
     var restore = pressBusy(btn, '保存しています…', $('g-dlg-b'));
     rpc(call[0], call[1]).then(okOr).then(function () { return then2 ? rpc(then2[0], then2[1]).then(okOr) : null; }).then(function () {
@@ -1675,13 +1923,29 @@
       worked: month.people.filter(function (p) { return p.sum.workMin > 0 || p.sum.paidMin > 0; }).length, workMin: t.workMin, absent: t.absentDays };
   }
   function sameFigures(a, b) { for (var k in a) if (a[k] !== b[k]) return false; return true; }
-  function openLock(fig, changed) {
+  /* v5（反証A2・C2 2026-11-20）: 勤務中・まだ出勤していない塊がある間は締めない（期間の翌朝・夜勤の途中に締めると、その勤務が0分のまま控えに入り、
+     後で数え直した給与の照合と合わなくなるため・仮置き）。返す: [{ name, date, kind }] */
+  function lockBlockers() {
+    var out = [];
+    (month ? month.people : []).forEach(function (p) {
+      p.days.forEach(function (d) {
+        d.blocks.forEach(function (b) {
+          if (b.working) out.push({ name: dispName(p.staff), date: d.date, kind: '勤務中' });
+          else if (b.flags.indexOf('not_in_yet') >= 0) out.push({ name: dispName(p.staff), date: d.date, kind: 'まだ出勤していない' });
+        });
+      });
+    });
+    return out;
+  }
+  function openLock(fig, changed, blockers) {
     dlgCtx = { mode: 'lock', fig: fig, ym: ym };
+    var bl = blockers || [];
     openDlg(perLabel() + 'を締めます',
+      (bl.length ? '<div class="band ng" role="alert">勤務中か、まだ出勤していない人がいるため、締められません（' + bl.map(function (x) { return esc(x.name) + ' ' + esc(md(x.date)) + '・' + esc(x.kind); }).join('、') + '）。今締めると、その勤務が0分のまま控えに入ります。退勤の打刻が入るか予定の終わりを過ぎてから、もう一度締めてください。休んだ人は、その日を「直す」で欠勤の印を付けると締められます。</div>' : '') +
       (changed ? '<div class="band warn" role="alert">窓を開いた後に数字が変わったため、締めていません（' + esc(changed) + '）。新しい数字を確かめてから、もう一度「締める」を押してください。</div>' : '') +
       '<p>「締める」を押した時にもう一度読み直して数え直し、その数字を「締めた時の控え」にします。</p><div class="kv"><span>要確認の残り</span><b>' + fig.review + ' 件（' + fig.rvPeople + ' 人）</b><span>人数</span><b>' + fig.people + ' 人（働いた・有休のあった人 ' + fig.worked + ' 人）</b><span>総労働の合計</span><b>' + fm(fig.workMin) + '</b><span>欠勤の合計</span><b>' + fig.absent + ' 日</b></div>' +
       (fig.review ? '<div class="band warn" style="margin-top:10px">要確認が残っています。残ったまま締めると、その日はいまの数字（丸めた時刻）のまま給与へ渡ります。</div>' : '') +
-      '<p class="help">締めた後は、この月の打刻の足し・取り消し・承認・休憩の直し・シフトの取り込みが止まります。解除できるのは管理者だけです。</p><p class="help" id="e-msg" role="alert"></p>', false, '締める', 'lock-go');
+      '<p class="help">締めた後は、この月の打刻の足し・取り消し・承認・休憩の直し・シフトの取り込みが止まります。解除できるのは管理者だけです。</p><p class="help" id="e-msg" role="alert"></p>', bl.length > 0, '締める', 'lock-go');
   }
   function lockMonth(btn) {
     if (busy || !month) return;
@@ -1693,7 +1957,7 @@
       if (my !== gen) return;
       busy = false; restore(); data = d; recompute(); sync('読み直しました（' + hm(Date.now()) + '）'); paint();
       if (isLocked()) { toast('この月はもう締めてあります。'); return; }
-      openLock(lockFigures(), null);
+      openLock(lockFigures(), null, lockBlockers());
     })['catch'](function (e) { if (my !== gen) return; busy = false; restore(); sync(''); note('締めの前の読み直し', e); alert(msgOf(e)); });
   }
   function lockGo(btn) {
@@ -1705,7 +1969,8 @@
       if (my !== gen) return;
       data = d; recompute(); paint();
       if (isLocked()) { busy = false; closeDlg(); toast('この月はもう締めてあります。'); return; }
-      var now = lockFigures();
+      var now = lockFigures(), blk = lockBlockers();
+      if (blk.length) { busy = false; openLock(now, null, blk); return; }   /* 窓を開いた後に勤務中・まだ出勤していない塊が出た時も締めない（A2） */
       if (!sameFigures(shown, now)) {
         busy = false;
         var diff = [];
@@ -1790,8 +2055,17 @@
     var filled = C.fillConfig(cfg), dropped = [];
     for (var k in cfg) if (cfg[k] !== filled[k]) dropped.push(k);
     if (dropped.length) { alert('範囲の外の値があります。入れ直してください。'); return; }
+    /* v5 段3: 36協定の欄（範囲の外は保存しない） */
+    var a36 = readA36();
+    if (a36.bad.length) { alert('36協定の欄に範囲の外の値があります。入れ直してください: ' + a36.bad.join('、')); return; }
+    /* この画面の欄が持たない今の設定の鍵（agreement36 など）は、そのまま残して送る（DB の kintai_settings_put は送った中身で丸ごと置き換えるため・v5 段3）。
+       欄が持つ鍵は今までどおり欄の値だけ（空にした欄は送らず既定に戻す） */
+    var outCfg = {}, cur = rawCfg(), formKeys = SET_FIELDS.map(function (f) { return f[0]; }).concat(['close_day', 'variableMonth', 'monthRound30', 'csvTime', 'legal_holiday']);
+    for (k in cur) if (formKeys.indexOf(k) < 0) outCfg[k] = cur[k];
+    for (k in cfg) outCfg[k] = cfg[k];
+    if (a36.obj) outCfg.agreement36 = a36.obj;
     busy = true; var restore = pressBusy(btn, '保存しています…');
-    rpc('kintai_settings_put', { p_config: cfg, p_rev: (data.settings && data.settings.rev) || 0 }).then(okOr).then(function () { busy = false; sync('設定を保存しました'); toast('設定を保存しました'); return load(false); })['catch'](function (e) { busy = false; restore(); note('設定の保存', e); alert(msgOf(e)); });
+    rpc('kintai_settings_put', { p_config: outCfg, p_rev: (data.settings && data.settings.rev) || 0 }).then(okOr).then(function () { busy = false; sync('設定を保存しました'); toast('設定を保存しました'); return load(false); })['catch'](function (e) { busy = false; restore(); note('設定の保存', e); alert(msgOf(e)); });
   }
   /* 印刷: 見出しの日時を入れ直してから印刷する。全員分・履歴だけの印刷は、印刷が終わったら（afterprint が来なくても）元の画面に戻す */
   function stampPrint() { var s = document.querySelectorAll('.ph-at'), t = nowText(); for (var i = 0; i < s.length; i++) s[i].textContent = t; }
@@ -1831,7 +2105,7 @@
   }
 
   /* ── 操作 ── */
-  function setTab(t) { if (TABS.indexOf(t) < 0) t = 'day'; tab = t; lsSet(LS_TAB, t); paint(); if (t === 'day' || t === 'review') quietReload(); }
+  function setTab(t) { if (TABS.indexOf(t) < 0) t = 'home'; if (!settingsLeaveOk()) return; tab = t; lsSet(LS_TAB, t); paint(); if (t === 'home' || t === 'day' || t === 'review') quietReload(); }
   function setYm(v, keepAuto) { if (!C.isYm(v) || v === ym) return; if (!keepAuto) autoYm = null; ym = v; lsSet(LS_YM, v); $('g-ym').value = v; shiftInfo = null; editsCache = null; data = null; month = null; paintPer(); load(true); }
   /* 「今日」: 今日のカレンダー月へ移り、その月分の期間に今日が入っていなければ次の月分へ（読んだ後に autoYm と同じ形で決める）。
      ymFor は ±1日の移動向けなので使わない（2か月以上離れた月分から押しても今日の月分へ行く・反証レビューの指摘1） */
@@ -1854,7 +2128,7 @@
       var b = e.target.closest ? e.target.closest('button') : null;
       if (!b) return;
       var t = b.getAttribute('data-tab');
-      if (t) { setTab(t); return; }
+      if (t) { var td0 = b.getAttribute('data-date'); if (td0 && C.isDate(td0)) selDate = td0; setTab(t); return; }   /* ホームの「今日」の箱は今日の日ごとへ */
       var a = b.getAttribute('data-act');
       if (!a) return;
       if (a === 'edit') openEdit(b.getAttribute('data-sid'), b.getAttribute('data-date'), b.hasAttribute('data-bi') ? +b.getAttribute('data-bi') : null, b.getAttribute('data-rv'));
@@ -1902,7 +2176,7 @@
       else if (a === 'lv-reload') { leaveSt = null; loadLeave(true); paint(); }
       else if (a === 'lv-use-add' || a === 'lv-use-void' || a === 'lv-grant-add' || a === 'lv-grant-void' || a === 'lv-prof-save') leaveAct(a, b);
       else if (a === 'recode') recode(b.getAttribute('data-sid'), b);
-      else if (a === 'import') { if (isLocked()) alert('締めた月は取り込めません。'); else load(true); }
+      else if (a === 'import') { if (isLocked()) alert('締めた月は取り込めません。'); else if (settingsLeaveOk()) load(true); }
       else if (a === 'lock') lockMonth(b);
       else if (a === 'unlock') unlockMonth(b);
       else if (a === 'csv-sum') download('sum');
@@ -1927,7 +2201,7 @@
       else if (id === 'g-staff') { selStaff = e.target.value; paint(); }
       else if (id === 'g-only') { onlyReview = e.target.checked; paint(); }
       else if (id === 'g-office') { officeFilter = e.target.value; paint(); }
-      else if (id === 'g-ym') setYm(e.target.value);
+      else if (id === 'g-ym') { if (settingsLeaveOk()) setYm(e.target.value); else e.target.value = ym; }   /* v5 C4: 保存していない設定の変更を確かめる（やめたら月の欄を戻す） */
       else if (e.target && e.target.name === 'sc-op' && $('sc-times')) $('sc-times').disabled = e.target.value !== 'set';
       else if ((id === 'sc-sid' || id === 'sc-from') && dlgCtx && dlgCtx.mode === 'sched') schedRefill();
       else if (e.target && e.target.name === 'fx-mode' && $('fx-week')) $('fx-week').disabled = e.target.value === 'none';
@@ -1947,28 +2221,28 @@
       else if (id === 'e-ot-until') r = document.querySelector('#g-dlg-b input[name="e-om"][value="until"]');
       if (r) r.checked = true;
     });
-    $('g-prev').addEventListener('click', function () { setYm(C.prevYm(ym)); });
-    $('g-next').addEventListener('click', function () { setYm(C.nextYm(ym)); });
-    $('g-import').addEventListener('click', function () { if (isLocked()) alert('締めた月は取り込めません。'); else load(true); });
-    $('g-reload').addEventListener('click', function () { load(false); });
+    $('g-prev').addEventListener('click', function () { if (settingsLeaveOk()) setYm(C.prevYm(ym)); });
+    $('g-next').addEventListener('click', function () { if (settingsLeaveOk()) setYm(C.nextYm(ym)); });
+    $('g-import').addEventListener('click', function () { if (isLocked()) alert('締めた月は取り込めません。'); else if (settingsLeaveOk()) load(true); });
+    $('g-reload').addEventListener('click', function () { if (settingsLeaveOk()) load(false); });
     /* 保存中（busy）は Esc でも閉じない（審査の指摘1） */
     $('g-dlg').addEventListener('cancel', function (e) { if (busy) { e.preventDefault(); return; } if (dirty() && !confirm('保存していない直しがあります。閉じますか？')) e.preventDefault(); else dlgCtx = null; });
-    window.addEventListener('beforeunload', function (e) { if (dirty()) { e.preventDefault(); e.returnValue = ''; } });
+    window.addEventListener('beforeunload', function (e) { if (dirty() || settingsDirty()) { e.preventDefault(); e.returnValue = ''; } });
     window.addEventListener('storage', function (e) { if (e.key === 'su_device_role' && isField()) location.reload(); });
     window.addEventListener('pageshow', function (e) { if (e && e.persisted && isField()) location.reload(); });
     window.addEventListener('beforeprint', stampPrint);
     window.addEventListener('afterprint', endPrint);
-    /* 日ごと・要確認を開いている間は30秒ごとに打刻を読み直して数え直す（タブレットの打刻を再読み込みなしで出す・2026-11-20 代表者の指示）。
+    /* ホーム・日ごと・要確認を開いている間は30秒ごとに打刻を読み直して数え直す（タブレットの打刻を再読み込みなしで出す・2026-11-20 代表者の指示・ホームは v5 段2）。
        画面が隠れている間は休み、見えた時・日ごと／要確認のタブへ移った時はすぐ読み直す */
     setInterval(function () { quietReload(); }, 30000);
     document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') quietReload(); });
   }
 
-  /* 黙って読み直す（日ごと・要確認だけ）: 窓・保存中・印刷中・選ぶ欄の操作中・ほかの読み込み中は何もしない。
+  /* 黙って読み直す（ホーム・日ごと・要確認だけ）: 窓・保存中・印刷中・選ぶ欄の操作中・ほかの読み込み中は何もしない。
      読めない時は手元の時刻で数え直すだけ（帯は出さない・記録に残す）。届いた時に月やタブが変わっていれば捨てる */
   var quietBusy = 0, quietSeq = 0;
   function quietOk() {
-    if (view !== 'app' || busy || !month || !data || dlgCtx || printAll || (tab !== 'day' && tab !== 'review')) return false;
+    if (view !== 'app' || busy || !month || !data || dlgCtx || printAll || (tab !== 'home' && tab !== 'day' && tab !== 'review')) return false;
     if (document.visibilityState === 'hidden') return false;
     var ae = document.activeElement;
     return !(ae && ae.tagName === 'SELECT' && $('g-main').contains(ae));
@@ -2002,11 +2276,11 @@
   function boot() {
     if (isField()) { showField(); return; }
     if (!window.SUAppGate || !C) { document.body.textContent = ''; var p = document.createElement('p'); p.textContent = '画面の部品を読み込めませんでした。ページを読み込み直してください。'; document.body.appendChild(p); return; }
-    window.SUAppGate.run('kintai', { dirty: dirty }).then(function (ok) {
+    window.SUAppGate.run('kintai', { dirty: function () { return dirty() || settingsDirty(); } }).then(function (ok) {
       if (!ok) { view = 'gate'; return; }
       view = 'app';
       $('g-app').hidden = false;
-      var t = lsGet(LS_TAB); tab = TABS.indexOf(t) >= 0 ? t : 'day';
+      var t = lsGet(LS_TAB); tab = TABS.indexOf(t) >= 0 ? t : 'home';   /* v5 段2: 既定のタブはホーム（仮置き） */
       var y = lsGet(LS_YM); ym = C.isYm(y) ? y : todayYm();
       autoYm = C.isYm(y) ? null : ym;
       $('g-ym').value = ym;
