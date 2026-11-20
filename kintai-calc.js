@@ -54,6 +54,8 @@
     var lh = checkLegalHoliday(c.legal_holiday);
     if (lh.ok) out.legal_holiday = lh.value;
     if (typeof c.close_day === 'number' && c.close_day >= 0 && c.close_day <= 28 && Math.floor(c.close_day) === c.close_day) out.close_day = c.close_day;
+    /* v5 段3: 36協定の設定（中身は kintai-36.js の fillAgreement が確かめる）。ここでは落とさずに写すだけ。無い時は鍵を作らない（今の出力と1バイトも変えない） */
+    if (c.agreement36 && typeof c.agreement36 === 'object' && !Array.isArray(c.agreement36)) { var a36 = {}; for (k in c.agreement36) a36[k] = c.agreement36[k]; out.agreement36 = a36; }
     return out;
   }
   /* 法定休日の設定の確かめ（v2）: null・undefined・'' は「決めない」、0〜6 の整数（または '0'〜'6'）は曜日。
@@ -281,13 +283,18 @@
           var bb = blocks[jj];
           if (pp.in.at >= bb.start - FIT_MS && pp.in.at <= bb.end + FIT_MS && pp.out.at >= bb.start - FIT_MS && pp.out.at <= bb.end + FIT_MS) { fits = true; break; }
         }
-        /* どの塊にも両端が入らないのに、どちらかの端は塊に近い＝退勤漏れの次の日の出勤漏れ（指摘5）。分けて合わせる */
-        var near = false;
+        /* どの塊にも両端が入らないのに、どちらかの端は塊に近い＝退勤漏れの次の日の出勤漏れ（指摘5）。分けて合わせる。
+           ただし、出勤と退勤が別の塊に入るのではなく片方の端だけが塊に入り、組の長さ（出勤から退勤まで）が16時間（予定の無い勤務を勤務中とみなす長さ）以下の時は、
+           その塊の早出・残業として1組のまま（予定の終わりから4時間を超えて残った日・始まりの4時間より前に来た日を2つの組に割って実働0にしない・反証A5 2026-11-20。
+           数えるのは予定までで、早出・残業の確認に出る）。16時間を超える組は今までどおり割る（退勤漏れと翌日の予定の無い勤務の出勤漏れを1勤務にしない・反証レビュー 2026-11-20・仮置き） */
+        var near = false, inFit = false, outFit = false;
         for (jj = 0; jj < blocks.length && !fits; jj++) {
           var bc = blocks[jj];
           if ((pp.in.at >= bc.start - 3 * HOUR && pp.in.at <= bc.end + 3 * HOUR) || (pp.out.at >= bc.start - 3 * HOUR && pp.out.at <= bc.end + 3 * HOUR)) near = true;
+          if (pp.in.at >= bc.start - FIT_MS && pp.in.at <= bc.end + FIT_MS) inFit = true;
+          if (pp.out.at >= bc.start - FIT_MS && pp.out.at <= bc.end + FIT_MS) outFit = true;
         }
-        if (!fits && near) { work.push({ in: pp.in, out: null }); work.push({ in: null, out: pp.out }); continue; }
+        if (!fits && ((inFit && outFit) || (near && pp.out.at - pp.in.at > WORKING_NO_SCHED_MS))) { work.push({ in: pp.in, out: null }); work.push({ in: null, out: pp.out }); continue; }
       }
       work.push(pp);
     }
@@ -638,11 +645,18 @@
           if (c.absent) dabs = true;
           for (var of in c.officeShare) sum.byOffice[of] = (sum.byOffice[of] || 0) + c.workMin * c.officeShare[of];
         }
-        var paidMin = paidBy[st.staff_id + '|' + date] || 0;
-        /* v4（L8）: 手で入れた有休は、シフトの有休の行が無い日だけ有休に数える（ある日はシフトの方を数え、足さない）。
-           有休時間＝その日の予定の実働（無ければ480分）× 日数（半日は半分）。日数は入れた日数（0.5 か 1）のまま */
+        var paidMin = paidBy[st.staff_id + '|' + date] || 0, shiftPaid = paidMin;
+        /* v4（L8）: 手で入れた有休の日は、手入力の日数（0.5 か 1）で数える。有休時間＝その日の予定の実働（無ければ480分）× 日数（半日は半分）。
+           v5（反証A6 2026-11-20）: シフトの有休の行もある日も、日数は手入力を正にする（有給の台帳・画面の文「手入力の方を数える」とそろえる。前はシフトの日数を数えていた）。
+           シフトの行もある日の有休時間は、シフトの有休の時間のまま（下の比の式で決まるシフトの日数より手入力の日数が少ない時だけ、その割合で減らす。
+           増やす向きには変えない＝1日の時間の基準は代表者の判断待ち（A7）のため広げない）。シフトと手入力の日数が同じ日は今までと同じ値。
+           シフトの行もある日は leaveUse の印を付けない（有給の台帳がシフトの日として拾ってから手入力で置き換え、「シフトの有休もある日」と出すため） */
         var lu = leaveBy[st.staff_id + '|' + date], luDays = 0;
-        if (lu && paidBy[st.staff_id + '|' + date] === undefined) { luDays = +lu.days === 0.5 ? 0.5 : 1; paidMin = Math.round((dsw > 0 ? dsw : 480) * luDays); }
+        if (lu) {
+          luDays = +lu.days === 0.5 ? 0.5 : 1;
+          if (shiftPaid > 0) { var pdShift = shiftPaid / (dsw > 0 ? dsw + shiftPaid : 480) <= 0.5 ? 0.5 : 1; if (luDays < pdShift) paidMin = Math.round(shiftPaid * luDays / pdShift); }
+          else paidMin = Math.round((dsw > 0 ? dsw : 480) * luDays);
+        }
         (paidSym[st.staff_id + '|' + date] || []).forEach(function (sy) { sum.counts[sy] = (sum.counts[sy] || 0) + 1; });
         if (dsw > 0 || paidMin > 0) sum.schedDays++;   /* 所定日数＝働く予定か有休のある日（仮置き） */
         if (dw > 0) (workSym[st.staff_id + '|' + date] || []).forEach(function (sy) { sum.counts[sy] = (sum.counts[sy] || 0) + 1; });   /* 働いた日の予定の記号ごと */
@@ -664,7 +678,7 @@
         sum.holidayMin += dhol; sum.uncountedMin += dunc;
         var dayRow = { date: date, blocks: bl, paidMin: paidMin, workMin: dw, schedWorkMin: dsw, legalOverMin: legal, flags: dflags, note: dnote || null,
           paidDays: pdays, holidayMin: dhol, uncountedMin: dunc, absent: absentDay, mark: (dnote && dnote.day_mark) || null };
-        if (luDays) dayRow.leaveUse = { id: lu.id || null, days: luDays };   /* 手入力の有休を数えた日だけの印（無い日の形は今までどおり） */
+        if (luDays && !shiftPaid) dayRow.leaveUse = { id: lu.id || null, days: luDays };   /* 手入力の有休を数えた日だけの印（無い日の形は今までどおり） */
         days.push(dayRow);
       }
       /* 週・期間の枠を超えた分も法定外（労基法32条・指摘11）。日の法定外として数えた分は二重に数えない。
@@ -708,6 +722,9 @@
       sum.weekOverMin = weekLegal;
       sum.legalOverMin += weekLegal + sum.frameOverMin;
       for (var ko in sum.byOffice) sum.byOffice[ko] = Math.round(sum.byOffice[ko]);
+      /* v5 段3: 月の30分丸めの前の法定外と休日労働（36協定の判定に使う・反証レビュー 2026-11-20 の指摘4）。後ろの上限（総労働−休日労働）も同じに当てる。
+         丸めない時は legalOverMin と同じ値。休日労働は今も丸めないので holidayMin と同じ値 */
+      var legalRaw = Math.min(sum.legalOverMin, Math.max(0, sum.workMin - sum.holidayMin));
       if (cfg.monthRound30) { sum.overtimeMin = round30(sum.overtimeMin); sum.legalOverMin = round30(sum.legalOverMin); sum.nightMin = round30(sum.nightMin); }
       /* 重ならない4つに分ける（0101・給与の契約 §2）: 法定休日 → 法定外 → 法定内残業 → 所定内。和は workMin。
          法定内残業＝日ごとの（予定を超えた実働のうち日の法定外でない分）の合計から、週・総枠の超過を引いた分（週・総枠の超過が予定の中の時間から出た分は所定内から減る）。
@@ -716,6 +733,7 @@
       sum.legalInOverMin = Math.max(0, Math.min(liDay - weekFromLi - sum.frameOverMin, sum.overtimeMin, sum.workMin - sum.holidayMin - sum.legalOverMin));
       sum.schedInMin = sum.workMin - sum.holidayMin - sum.legalOverMin - sum.legalInOverMin;
       sum.over60Min = Math.max(0, sum.legalOverMin - 3600);
+      sum.legalOverRawMin = legalRaw; sum.holidayRawMin = sum.holidayMin;
       if (sum.legalOverMin >= cfg.overtimeMonthWarnH * 60 && cfg.overtimeMonthWarnH > 0) sum.warnings.push('法定外の時間が月' + cfg.overtimeMonthWarnH + '時間以上です（36協定の確認）');
       if (st.missingStaff) sum.warnings.push('職員の名簿に無い番号の記録です（シフトから外れた職員）');
       people.push({ staff: st, days: days, sum: sum });
@@ -888,7 +906,8 @@
         lateCount: s.lateCount, lateMin: s.lateMin, earlyLeaveCount: s.earlyLeaveCount, earlyLeaveMin: s.earlyLeaveMin,
         noPunchDays: s.noPunchDays, reviewCount: s.reviewCount, byOffice: s.byOffice,
         holidayMin: s.holidayMin || 0, absentDays: s.absentDays || 0, paidMin: s.paidMin || 0, uncountedMin: s.uncountedMin || 0,   /* v2: 控えから締めた月の CSV を作れるように */
-        legalInOverMin: s.legalInOverMin || 0, over60Min: s.over60Min || 0, nightShiftCount: s.nightShiftCount || 0, schedDays: s.schedDays || 0, counts: s.counts || {} });   /* 0101: 給与の入力 */
+        legalInOverMin: s.legalInOverMin || 0, over60Min: s.over60Min || 0, nightShiftCount: s.nightShiftCount || 0, schedDays: s.schedDays || 0, counts: s.counts || {},   /* 0101: 給与の入力 */
+        legalOverRawMin: s.legalOverRawMin || 0, holidayRawMin: s.holidayRawMin || 0 });   /* v5 段3: 月の30分丸めの前の値（36協定の判定だけに使う・給与の比べには入れない） */
     }
     return { v: 1, ym: month.ym, period: month.period, config: month.config, rows: rows };
   }

@@ -42,9 +42,11 @@ t("SUAppGate.run('kintai-clock') を通ってから動く（bind・flush は門�
 
 console.log('\n— 3. 打刻の控え —');
 const m = /var my = \+\+gen, item = (\{[^}]*\})/.exec(KC);
-t('控えの形は code・kind・id・at だけ', !!m && JSON.stringify(m[1].match(/(\w+):/g)) === JSON.stringify(['code:', 'kind:', 'id:', 'at:']), m && m[1]);
+/* ★総点検（2026-11-20）: 名前で選んで照合できなかった時だけ sid（選んだ人の staff_id）を足す形にしたので題を改めた（氏名は入れない） */
+t('控えの形は code・kind・id・at（名前で選んで照合できなかった時だけ sid を足す・氏名は入れない）', !!m && JSON.stringify(m[1].match(/(\w+):/g)) === JSON.stringify(['code:', 'kind:', 'id:', 'at:']) && /item\.sid = who\.sid;/.test(KC) && !/item\.name\s*=/.test(KC), m && m[1]);
 t('控えを読む時も形を確かめる（壊れた控えを送らない）', /function okItem\(x\) \{ return x && KintaiCalc\.isCode\(x\.code\)/.test(KC));
-t('送れなかった控えに足すのは理由だけ（名前を足さない）', /f\.push\(\{ code: it\.code, kind: it\.kind, id: it\.id, at: it\.at, why: why \}\)/.test(KC));
+/* ★総点検（2026-11-20）: 名前で選んだ控えの照合のため、送れなかった控えにも選んだ人の staff_id（sid）を足す形にした。名前を足さない点は変えない */
+t('送れなかった控えに足すのは理由と、名前で選んだ時の staff_id だけ（名前を足さない）', /var fi = \{ code: it\.code, kind: it\.kind, id: it\.id, at: it\.at, why: why \};\s*if \(it\.sid\) fi\.sid = it\.sid;\s*var f = readList\(F_KEY\); f\.push\(fi\);/.test(KC) && !/fi\.name|item\.name|label:/.test(KC.slice(KC.indexOf('function flush('), KC.indexOf('function bind('))));
 t('localStorage に書くのは控えの2つの鍵と、選んだ事業所（UI の状態）だけ（書く所はちょうど2か所）', (KC.match(/localStorage\.setItem\(/g) || []).length === 2 && /localStorage\.setItem\(key, JSON\.stringify\(list\)\)/.test(KC) &&
   /Q_KEY = 'kintai_clock_queue', F_KEY = 'kintai_clock_failed', O_KEY = 'kintai_clock_office'/.test(KC) &&
   /function saveOffice\(v\) \{ if \(!isOffice\(v\)\) return; try \{ localStorage\.setItem\(O_KEY, v\); \} catch \(_\) \{\} \}/.test(KC));
@@ -61,7 +63,8 @@ console.log('\n— 5. 管理画面が端末に残すもの —');
 const sets = K.match(/lsSet\(([A-Z_]+),/g) || [];
 t('lsSet で書く鍵は kintai_tab と kintai_ym だけ', sets.length && sets.every((x) => /LS_TAB|LS_YM/.test(x)) && /LS_TAB = 'kintai_tab', LS_YM = 'kintai_ym'/.test(K), sets);
 t('localStorage.setItem を直に呼ばない（lsSet だけ）', (K.match(/localStorage\.setItem/g) || []).length === 1);
-t('タブの読み戻しはホワイトリスト・月は形を確かめる', /tab = TABS\.indexOf\(t\) >= 0 \? t : 'day'/.test(K) && /ym = C\.isYm\(y\) \? y : todayYm\(\)/.test(K));
+/* ★v5 段2（2026-11-20・仕様書 ROOT-v5-freee.md）: 既定のタブをホーム（home）にした（仕様の仮置き）ので、知らない値の戻り先の期待を 'home' に改めた（ホワイトリストで確かめるのは同じ） */
+t('タブの読み戻しはホワイトリスト・月は形を確かめる', /tab = TABS\.indexOf\(t\) >= 0 \? t : 'home'/.test(K) && /ym = C\.isYm\(y\) \? y : todayYm\(\)/.test(K));
 
 console.log('\n— 6. 画面の頭 —');
 for (const [n, h] of [['kintai.html', H], ['kintai-clock.html', HC]]) {
@@ -72,7 +75,8 @@ for (const [n, h] of [['kintai.html', H], ['kintai-clock.html', HC]]) {
 
 console.log('\n— 7. 管理画面の v2 の形 —');
 /* ★v4（2026-11-20）: 依頼で「有給」のタブ（leave・職員と番号の次）を足したので、ホワイトリストの期待をその並びの完全一致に改めた（緩めていない） */
-t('タブのホワイトリストに要確認（日ごとの次）', /var TABS = \['day', 'review', 'grid', 'person', 'staff', 'leave', 'close', 'settings'\]/.test(K) && /data-tab="day">日ごと<\/button>\s*<button type="button" role="tab" data-tab="review">要確認/.test(H));
+/* ★v5 段2（2026-11-20）: 仕様で先頭に「ホーム」（home）のタブを足したので、ホワイトリストの期待をその並びの完全一致に改め、HTML でもホームが日ごとの前にあるかを足した（緩めていない） */
+t('タブのホワイトリストに要確認（日ごとの次）・先頭はホーム', /var TABS = \['home', 'day', 'review', 'grid', 'person', 'staff', 'leave', 'close', 'settings'\]/.test(K) && /data-tab="home">ホーム<\/button>\s*<button type="button" role="tab" data-tab="day">日ごと<\/button>\s*<button type="button" role="tab" data-tab="review">要確認/.test(H));
 t('要確認の色・件数は needsReview・reviewList・totals にそろえる（印と C.REVIEW で数えない）', /C\.needsReview\(/.test(K) && /C\.reviewList\(month\)/.test(K) && /month\.totals\.reviewCount/.test(K) && !/flags\.some\(function \(f\) \{ return C\.REVIEW\[f\]; \}\)/.test(K));
 t('CSV は新しい列つき（extraCols: true）', /C\.buildCsv\(src, \{ nameOf: nameOfOffice, extraCols: true \}\)/.test(K));
 /* 2026-11-20 の6回目（代表者の指示）: 1分ごとの手元だけの数え直しを、30秒ごとの読み直し＋数え直しに変えた（読めない時も手元で数え直す・下の 14） */
@@ -103,6 +107,7 @@ t('印刷の時だけの見出し（.ph は画面で出さない）', /\.ph\{dis
 t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-20', /kintai\.js\?v=2026-11-20/.test(H) && /kintai-calc\.js\?v=2026-11-20/.test(H) && /kintai-calc\.js\?v=2026-11-20/.test(HC));
 
 console.log('\n— 8. 打刻画面の v3（出勤を押す → 氏名 → パスコード） —');
+const pendClock = [];
 const fn = (name, next) => KC.slice(KC.indexOf('function ' + name + '('), KC.indexOf('function ' + next + '('));
 const homeFn = fn('paintHome', 'startPick'), rosterFn = fn('loadRoster', 'paintPick'), pickFn = fn('paintPick', 'pickStaff'), passFn = fn('paintPass', 'check'), checkFn = fn('check', 'whoOf');
 const punchFn = fn('punch', 'showDone'), resetFn = fn('reset', 'homeWith');
@@ -119,7 +124,56 @@ t('パスコードは●で隠す（数字を画面に出さない）', /\(code 
 t('照合は kintai_clock_check(p_staff_id, p_code)・合えば v2 と同じ逆押しの確かめ → punch', /rpc\('kintai_clock_check', \{ p_staff_id: st\.id, p_code: c \}\)/.test(checkFn) && /who = whoOf\(c, r\.staff\); who\.flow = 'name';/.test(checkFn) && /if \(needAsk\(kind\)\) paintAsk\(kind\); else punch\(kind\);/.test(checkFn));
 t('パスコード違いは3回まで画面に残り、その後は待受へ', /passFails\+\+; code = '';/.test(checkFn) && /if \(passFails >= PASS_TRIES\) \{ homeWith\(/.test(checkFn) && /パスコードが違います。/.test(checkFn));
 t('照合の止め（busy）は控えずに待受へ「しばらくしてから」', /if \(r && r\.error === 'busy'\) \{ homeWith\('[^']*しばらくしてから[^']*'\); return; \}/.test(checkFn) && !/enqueue|punch\(kind\);[^}]*busy/.test(checkFn.slice(checkFn.indexOf("r.error === 'busy'"), checkFn.indexOf("r.error === 'busy'") + 160)));
-t('通信できない時は番号の流れと同じく控える（名前は確かめていないので who.name を空にする）', /if \(isNet\(e\)\) \{ who = \{ code: c, name: null, label: st\.name, state: null, why: 'net', flow: 'name' \}; view = 'who'; punch\(kind\); return; \}/.test(checkFn));
+/* ★総点検（2026-11-20）: 選んだ人の staff_id（sid）を who に持たせる形にした（送る前の照合に使う）。名前を確かめていない点は変えない */
+t('通信できない時は番号の流れと同じく控える（名前は確かめていないので who.name を空にし、選んだ人の staff_id を持つ）', /if \(isNet\(e\)\) \{ who = \{ code: c, name: null, label: st\.name, sid: st\.id, state: null, why: 'net', flow: 'name' \}; view = 'who'; punch\(kind\); return; \}/.test(checkFn) &&
+  /if \(who\.flow === 'name' && !who\.name && isSid\(who\.sid\)\) item\.sid = who\.sid;/.test(punchFn));
+/* 総点検（2026-11-20）: 名前で選んで控えた打刻は、送る前に選んだ人と番号を照合し、合わなければ送らない（打ち間違いがほかの人の番号に当たった時にその人の打刻にしない） */
+{
+  const flushFn = fn('flush', 'bind');
+  const runFlush = (queue, checkOk, busy) => {
+    const store = { kintai_clock_queue: JSON.stringify(queue), kintai_clock_failed: '[]' }, calls = [];
+    const f = new Function('STORE', 'CALLS', 'CHECK_OK', 'BUSY', `
+      var Q_KEY = 'kintai_clock_queue', F_KEY = 'kintai_clock_failed', PUNCH_TIMEOUT_MS = 12000, flushing = false, chkTO = {};
+      var navigator = { onLine: true };
+      function readList(k) { return JSON.parse(STORE[k] || '[]'); }
+      function writeList(k, l) { STORE[k] = JSON.stringify(l); return true; }
+      function withTimeout(p) { return p; }
+      function isNet() { return false; }
+      function note() {}
+      function paintFoot() {}
+      function loadRecent() {}
+      function deviceKey() { return null; }
+      function rpc(n, a) { CALLS.push([n, a.p_staff_id || null, a.p_code]); if (n === 'kintai_clock_check') return Promise.resolve(BUSY ? { ok: false, error: 'busy' } : CHECK_OK ? { ok: true, staff: { name: 'x' } } : { ok: false, error: 'mismatch' }); return Promise.resolve({ ok: true }); }
+      ${flushFn}
+      return flush();`);
+    return f(store, calls, checkOk, busy).then(() => ({ calls, q: JSON.parse(store.kintai_clock_queue), f: JSON.parse(store.kintai_clock_failed) }));
+  };
+  const it1 = { code: '0007', kind: 'in', id: 'c1', at: 1, sid: 'sA' }, it2 = { code: '0003', kind: 'out', id: 'c2', at: 2 };
+  pendClock.push(runFlush([it1, it2], false, false).then((r) => t('名前で選んだ控えは、番号が選んだ人と合わない時は送らず「送れなかった打刻」へ（番号の流れの控えはそのまま送る）',
+    r.calls.length === 2 && r.calls[0][0] === 'kintai_clock_check' && r.calls[0][1] === 'sA' && r.calls[1][0] === 'kintai_clock_punch' && r.calls[1][2] === '0003' &&
+    r.q.length === 0 && r.f.length === 1 && r.f[0].sid === 'sA' && r.f[0].why === 'パスコードが選んだ名前と合わない' && !('name' in r.f[0]), r)));
+  pendClock.push(runFlush([it1], true, false).then((r) => t('合う時は照合の後に送る（送信待ちから消える）', r.calls.map((c) => c[0]).join() === 'kintai_clock_check,kintai_clock_punch' && r.q.length === 0 && r.f.length === 0, r)));
+  {
+    /* 照合の返事が毎回打ち切られる控えは、この画面では3回で照合をやめる（打ち切られてもサーバーは失敗を数えるため・反証レビュー 2026-11-20） */
+    const store = { kintai_clock_queue: JSON.stringify([it1]), kintai_clock_failed: '[]' }, calls = [];
+    const f = new Function('STORE', 'CALLS', `
+      var Q_KEY = 'kintai_clock_queue', F_KEY = 'kintai_clock_failed', PUNCH_TIMEOUT_MS = 12000, flushing = false, chkTO = {};
+      var navigator = { onLine: true };
+      function readList(k) { return JSON.parse(STORE[k] || '[]'); }
+      function writeList(k, l) { STORE[k] = JSON.stringify(l); return true; }
+      function withTimeout(p) { return p; }
+      function isNet() { return true; }
+      function note() {} function paintFoot() {} function loadRecent() {} function deviceKey() { return null; }
+      function rpc(n) { CALLS.push(n); return Promise.reject(new Error('timeout')); }
+      ${flushFn}
+      return flush().then(flush).then(flush).then(flush).then(flush);`);
+    pendClock.push(f(store, calls).then(() => t('照合が打ち切られ続ける控えは3回で照合をやめ、送信待ちには残す', calls.length === 3 && JSON.parse(store.kintai_clock_queue).length === 1, calls)));
+  }
+  pendClock.push(runFlush([it1], false, true).then((r) => t('照合が止め（busy）の時は送らず送信待ちに残す', r.calls.length === 1 && r.q.length === 1 && r.f.length === 0, r)));
+}
+t('控えの送信も打ち切りつき（照合・打刻とも12秒）', /withTimeout\(rpc\('kintai_clock_check', \{ p_staff_id: it\.sid, p_code: it\.code \}\), PUNCH_TIMEOUT_MS\)/.test(KC) && /return withTimeout\(rpc\('kintai_clock_punch', \{ p_code: it\.code/.test(KC));
+t('送れなかった打刻の一覧は、名前で選んだ控えのパスコードを出さず選んだ名前を出す', /var who1 = x\.sid \? \(st \? '選んだ名前 ' \+ esc\(st\.name\) : '名前で選んだ打刻（番号 ' \+ esc\(x\.code\) \+ '）'\) : '番号 ' \+ esc\(x\.code\);/.test(KC));
+t('今日の打刻は、今日でない打刻に日付を添える', /var day = jstDayNo\(ms0\) === jstDayNo\(Date\.now\(\)\) \? '' :/.test(KC));
 t('名前の流れの控えの完了画面にパスコードを出さず、名前を出す（照合が合った後に送れなかった時も）', /sub: \(byName \? '' : '番号 ' \+ item\.code \+ '・'\)/.test(punchFn) && /shown = who\.label \|\| who\.name;/.test(punchFn));
 t('名前の流れの「やめる」と送れなかった時は待受へ', /if \(who\.flow === 'name'\) reset\(\); else paintWho\(false\);/.test(KC) && /if \(byName\) homeWith\(m\); else paintCode\(/.test(punchFn));
 t('画面が入れ替わった直後の重ね押しを無視する（待受・氏名・パスコード）', /function tooSoon\(\) \{ return Date\.now\(\) - paintAt < TAP_GUARD_MS; \}/.test(KC) && /if \(g\) \{\s*if \(tooSoon\(\)\) return;/.test(KC) && /if \(view === 'pick' && !tooSoon\(\)\) pickStaff\(sid\)/.test(KC) && /if \(view === 'pass' && tooSoon\(\)\) return;/.test(KC));
@@ -131,7 +185,8 @@ t('幅 899px 以下でもテンキー 72px・出勤/退勤と はい/やめる 1
 const pressFn = fn('press', 'updCode'), updFn = fn('updCode', 'lookup');
 t('数字・消すを押した時はテンキーを描き直さない（●の欄と決定だけ・textContent で書く。速い連打を落とさない）', /code \+= k;\s*updCode\(\);\s*\}/.test(pressFn) && !/paint(Pass|Code)\(\)/.test(pressFn) && /box\.textContent = /.test(updFn) && /ok\.disabled = !KintaiCalc\.isCode\(code\)/.test(updFn) && !/innerHTML/.test(updFn));
 t('重ね押しの守りは画面が入れ替わった時だけ（同じ画面の中では paintAt を進めない）', /function mark\(\) \{ if \(\$\('k-main'\)\.getAttribute\('data-v'\) !== view\) paintAt = Date\.now\(\);/.test(KC));
-t('kintai-clock.js の読み込みは ?v=2026-11-19.5', /<script src="kintai-clock\.js\?v=2026-11-19\.5"><\/script>/.test(HC));
+/* ★総点検（2026-11-20）: 名前で選んだ控えの照合を足したので ?v= を 2026-11-20 に上げた（CLAUDE.md の決まり）。期待をその版に改めた */
+t('kintai-clock.js の読み込みは ?v=2026-11-20', /<script src="kintai-clock\.js\?v=2026-11-20"><\/script>/.test(HC));
 
 console.log('\n— 9. 打刻画面の v3.1（画面の並び・今日の打刻） —');
 const recentFn = fn('loadRecent', 'paintRecent'), paintRecentFn = fn('paintRecent', 'paintFoot');
@@ -232,8 +287,10 @@ t('反証レビューの指摘1:「今日」は今日のカレンダー月へ移
   t('見直し2: 失敗の後にもう一度「今日」→ 今日の月分（12月分）へ', b3.end === '2026-12', b3);
 }
 /* ★v4（2026-11-20）: 版を上げたので期待を新しい版の完全一致に改め、kintai-calc.js を読む給与の画面（payroll.html）も同じ版かを足した */
-/* ★反証レビューの直し（2026-11-20 の2回目）で kintai.js を ?v=2026-11-20.2、iPhone の幅の見た目の直し（2026-11-20 の3回目）で ?v=2026-11-20.3、職員の入職順の並び（4回目）で ?v=2026-11-20.4、表示名と入職順の並びの残り（5回目）で ?v=2026-11-20.5、打刻の番号と従業員コードの順・日ごとの読み直し（6回目）で ?v=2026-11-20.6 に上げた（kintai-calc.js は従業員コードの A を抜く直しで 2026-11-20.1） */
-t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-20.6・2026-11-20.1（両画面と給与の画面でそろえる）', /kintai\.js\?v=2026-11-20\.6"/.test(H) && /kintai-calc\.js\?v=2026-11-20\.1"/.test(H) && /kintai-calc\.js\?v=2026-11-20\.1"/.test(HC) && /kintai-calc\.js\?v=2026-11-20\.1"/.test(read('payroll.html')));
+/* ★反証レビューの直し（2026-11-20 の2回目）で kintai.js を ?v=2026-11-20.2、iPhone の幅の見た目の直し（2026-11-20 の3回目）で ?v=2026-11-20.3、職員の入職順の並び（4回目）で ?v=2026-11-20.4、表示名と入職順の並びの残り（5回目）で ?v=2026-11-20.5、打刻の番号と従業員コードの順・日ごとの読み直し（6回目）で ?v=2026-11-20.6、出勤予定の手直し・前提（7回目・0111）で ?v=2026-11-20.7 に上げた（kintai-calc.js は従業員コードの A を抜く直しで 2026-11-20.1）。
+   v5 段1（8回目・0112・所定内（法定内）の名前・直しの履歴の言い方・勤怠の管理者の欄）で kintai.js を ?v=2026-11-20.8 に上げた（kintai-calc.js は変えていないので 2026-11-20.1 のまま）。
+   v5 段2・3（9回目・ホーム・36協定・反証A5／A6 の計算の直し・丸める前の値）で kintai.js を ?v=2026-11-20.9、kintai-calc.js を ?v=2026-11-20.2 に上げた（給与・打刻の画面も版だけ上げた） */
+t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-20.9・2026-11-20.2（両画面と給与の画面でそろえる）', /kintai\.js\?v=2026-11-20\.9"/.test(H) && /kintai-calc\.js\?v=2026-11-20\.2"/.test(H) && /kintai-calc\.js\?v=2026-11-20\.2"/.test(HC) && /kintai-calc\.js\?v=2026-11-20\.2"/.test(read('payroll.html')));
 
 const await_pending = [];   /* 動かして確かめる試験（Promise）を最後に待つ */
 console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（2026-11-20・凍結した仕様書 ROOT-v4-master-leave.md） —');
@@ -246,7 +303,8 @@ console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（
   const loadLeaveFn = between('function loadLeave(', 'function leaveOf(');
   const leaveMonthsFn = between('function loadLeaveMonths(', 'function loadLeave(');
   t('「有給」のタブは「職員と番号」の次（HTML の並び）・パネルの関数は paintLeave', /data-tab="staff">職員と番号<\/button>\s*<button type="button" role="tab" data-tab="leave">有給<\/button>/.test(H) && /leave: paintLeave/.test(K));
-  t('kintai-leave.js は kintai-calc.js の後・kintai.js の前に読む（?v=2026-11-20.2・反証レビューの直しで上げた）', H.indexOf('<script src="kintai-calc.js?v=2026-11-20.1"></script>') >= 0 && H.indexOf('<script src="kintai-leave.js?v=2026-11-20.2"></script>') > H.indexOf('kintai-calc.js?v=') && H.indexOf('kintai-leave.js?v=') < H.indexOf('kintai.js?v='));
+  /* ★v5 段2・3（2026-11-20）: kintai-calc.js の版を上げたので、並びの確かめの kintai-calc.js の版の期待を 2026-11-20.2 に改めた */
+  t('kintai-leave.js は kintai-calc.js の後・kintai.js の前に読む（?v=2026-11-20.2・反証レビューの直しで上げた）', H.indexOf('<script src="kintai-calc.js?v=2026-11-20.2"></script>') >= 0 && H.indexOf('<script src="kintai-leave.js?v=2026-11-20.2"></script>') > H.indexOf('kintai-calc.js?v=') && H.indexOf('kintai-leave.js?v=') < H.indexOf('kintai.js?v='));
   /* iPhone の幅（640px 以下）だけの見た目の直し（2026-11-20）: 窓の欄の見出しを縦1字にしない・枠（fieldset）を窓の外へ広げない・突き合わせの表は1人ずつの並び */
   {
     const mq = (H.match(/@media \(max-width:640px\)\{[\s\S]*?\n\s*table\.mt td\.empty\{display:block\}\}/) || [''])[0];
@@ -271,8 +329,9 @@ console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（
     /'kintai_leave_profile_put', \{ p_staff_id: ctx\.sid, p_patch: patch, p_rev: ctx\.rev, p_reason: reason \}/.test(leaveActFn));
   t('設定で送るのは hire_date・weekly_days・weekly_hours・opening_date・skip_grants だけ', (leaveActFn.match(/patch\.(\w+) =/g) || []).map((x) => x.slice(6, -2)).sort().join() === 'hire_date,opening_date,skip_grants,weekly_days,weekly_hours');
   t('取り消しと設定の保存は理由が要る（needR を通る）', /'lv-use-void'\) \{\s*if \(!needR\(\)\) return;/.test(leaveActFn) && /'lv-grant-void'\) \{\s*if \(!needR\(\)\) return;/.test(leaveActFn) && /if \(!needR\(\)\) return;\s*call = \['kintai_leave_profile_put'/.test(leaveActFn));
-  /* ★反証レビュー（2026-11-20）: 空の月分1つで止まっていたのを、入職日（分からなければ24か月前）まで・空が3つ続いたら止める形に直したので期待を改めた */
-  t('シフトの有休の日は月分ごとに kintai_month_get を読み、KintaiLeave.usesFromMonth で手入力と合わせる（下限は入職日か24か月前・最大24か月分・空の月分が3つ続いたら止める）', /rpc\('kintai_month_get', \{ p_ym: y \}\)/.test(leaveMonthsFn) && /if \(n < 24 && py >= floor && \(n < 1 \|\| run < 3\)\) return back\(py, n \+ 1, run\);/.test(leaveMonthsFn) && /L\.usesFromMonth\(x\.months, manual\)/.test(loadLeaveFn) && /mp\.then\(function \(\) \{ return loadLeaveMonths\(my, lg\); \}\)/.test(loadLeaveFn));
+  /* ★反証レビュー（2026-11-20）: 空の月分1つで止まっていたのを、入職日（分からなければ24か月前）まで・空が3つ続いたら止める形に直したので期待を改めた
+     ★総点検（2026-11-20）: 速さのため同時に読む形にしたので、本文の形の確かめを新しい形にした（読む月分の並びは下の動きの試験が今までと同じ期待のまま確かめる） */
+  t('シフトの有休の日は月分ごとに kintai_month_get を読み、KintaiLeave.usesFromMonth で手入力と合わせる（下限は入職日か24か月前・最大24か月分・空の月分が3つ続いたら止める）', /rpc\('kintai_month_get', \{ p_ym: y \}\)/.test(leaveMonthsFn) && /if \(!\(n < 24 && n \+ 1 < ys\.length && \(n < 1 \|\| emptyRun < 3\)\)\) stop = true;/.test(leaveMonthsFn) && /ys\.slice\(i, i \+ \(3 - emptyRun\)\)/.test(leaveMonthsFn) && /L\.usesFromMonth\(x\.months, manual\)/.test(loadLeaveFn) && /mp\.then\(function \(\) \{ return loadLeaveMonths\(my, lg\); \}\)/.test(loadLeaveFn));
   t('反証レビュー: 移行の残りを足す時に移行日が空なら、移行日（既定は今日）も設定に入れる（付与の後に profile_put）', /if \(call\[1\]\.p_kind === 'opening' && !\(ctx\.prof && ctx\.prof\.opening_date\)\)/.test(leaveActFn) && /then2 = \['kintai_leave_profile_put', \{ p_staff_id: ctx\.sid, p_patch: \{ opening_date: od \}, p_rev: ctx\.rev,/.test(leaveActFn) && /rpc\(call\[0\], call\[1\]\)\.then\(okOr\)\.then\(function \(\) \{ return then2 \? rpc\(then2\[0\], then2\[1\]\)\.then\(okOr\) : null; \}\)/.test(leaveActFn) && /id="lv-g-open" value="' \+ esc\(td\) \+ '"/.test(K));
   t('反証レビュー: 移行日が未設定の人は一覧と窓に注意（移行の残りからみなした日を出す）', /if \(sm\.openingMissing\) hire \+= '<span class="tag rv">移行日が未設定<\/span>';/.test(K) && /sm\.openingMissing \? '<div class="band warn"[^>]*>移行日が未設定です。/.test(K));
   t('反証レビュー: 打刻（実働）がある日に手入力の有休を足す時は確かめる（止めはしない）', /var wm = workedMin\(ctx\.sid, ud\);\s*if \(wm > 0 && !confirm\([^;]*この日を有休にしますか？'\)\) return;/.test(leaveActFn));
@@ -306,7 +365,8 @@ console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（
   t('勤務時間の途中で断られたら窓を閉じて読み直す（もう一度押して打刻を二重に足さない）', /if \(done\) \{ closeDlg\(\); load\(false\);/.test(workFn));
   t('締めた月分は窓に出し、保存のボタンを出さない・締めた期間は断られる旨を書く', /openDlg\('勤務時間を手で入れる（' \+ perLabel\(\) \+ '）', b, lk, '入れる', 'work-save'\)/.test(openWorkFn) && /締めた月分の日は断られます/.test(openWorkFn));
   t('「勤務時間を手で入れる」のボタン（日ごと・個人の月）', (K.match(/data-act="work-open">勤務時間を手で入れる</g) || []).length === 2 && /a === 'work-open'\) openWork\(\)/.test(K));
-  t('保存していない入力を確かめる窓に、手入力・有給・結び付けを足した', /var DIRTY_MODES = \{ edit: 1, work: 1, leave: 1, link: 1, mimport: 1, clockvis: 1, madd: 1, dname: 1 \}/.test(K) && /if \(!dlgCtx \|\| !DIRTY_MODES\[dlgCtx\.mode\] \|\| dlgCtx\.init == null\) return false;/.test(K));
+  /* 0111（2026-11-20）で予定の手直し・前提の窓を後ろに足したので、今までの窓が全部あることを確かめ、後ろに足した窓は許す */
+  t('保存していない入力を確かめる窓に、手入力・有給・結び付けを足した', /var DIRTY_MODES = \{ edit: 1, work: 1, leave: 1, link: 1, mimport: 1, clockvis: 1, madd: 1, dname: 1(, [a-z]+: 1)* \}/.test(K) && /if \(!dlgCtx \|\| !DIRTY_MODES\[dlgCtx\.mode\] \|\| dlgCtx\.init == null\) return false;/.test(K));
   t('職員マスタ・有給の記録を端末に残さない（v4 の関数の中に localStorage が無い）', !/localStorage/.test(between('/* ── v4: 職員マスタとの結び付け', '/* ── 締めた時の控え') + between('/* ── v4: 勤務時間を手で入れる', '/* ── 職員・締め・出力・設定 ── */')));
   t('v4 で innerHTML の代入を増やしていない（描くのは paint と openDlg の2か所のまま）', !/innerHTML/.test(between('/* ── v4: 職員マスタとの結び付け', '/* ── 締めた時の控え') + between('/* ── v4: 勤務時間を手で入れる', '/* ── 職員・締め・出力・設定 ── */')));
   t('入職日は職員マスタ（hire_date）から・有給の設定の hire_date があればそちら（KintaiLeave.summary の hireOf）', /L\.summary\(\{ hireDate: m && m\.hire_date, profile: prof,/.test(K) && /if \(profile && isDate\(profile\.hire_date\)\) return profile\.hire_date;/.test(read('kintai-leave.js')));
@@ -335,7 +395,7 @@ console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（
     t('月の計算に渡す職員は staffSorted の並び（日ごと・要確認・月の一覧・個人の月の選択肢がこの並び）', /staff: staffSorted\(\),/.test(recFn) && !/staff: data\.staff \|\| \[\]/.test(recFn));
     t('番号の表（印刷）は「職員と番号」の表と同じ従業員コードの順・「結べていないシフトの職員」は入職順', /var printable = list\.filter\(/.test(K) && /var unS0 = staffSorted\(\)\.filter\(/.test(K));
     t('勤務時間を手で入れる窓の職員は名前の順のまま（表示名で並べる）', /staffSorted\(\)\.sort\(function \(a, b\) \{ return dispName\(a\)\.localeCompare\(dispName\(b\), 'ja'\); \}\)/.test(K));
-    t('読み込んだ後に職員マスタをまだ読んでいなければ裏で読み、読めたら数え直す（描き直すのは並びを出すタブだけ・締めと設定のタブは描き直さない）', /if \(!masterSt && !masterBusy\) loadMaster\(\);/.test(K) && /if \(!busy && data && !\(masterSt && masterSt\.err\)\) recompute\(\);/.test(K) && /if \(view === 'app' && !busy && REORDER_TABS\[tab\]\) paint\(\);/.test(K) && /var REORDER_TABS = \{ day: 1, review: 1, grid: 1, person: 1, staff: 1, leave: 1 \};/.test(K));
+    t('読み込んだ後に職員マスタをまだ読んでいなければ裏で読み、読めたら数え直す（描き直すのは並びを出すタブだけ・締めと設定のタブは描き直さない）', /if \(!masterSt && !masterBusy\) loadMaster\(\);/.test(K) && /if \(!busy && data && !\(masterSt && masterSt\.err\)\) recompute\(\);/.test(K) && /if \(view === 'app' && !busy && REORDER_TABS\[tab\]\) paint\(\);/.test(K) && /var REORDER_TABS = \{ home: 1, day: 1, review: 1, grid: 1, person: 1, staff: 1, leave: 1 \};/.test(K));
     const dnSrc = between('function dispName(', '\n');
     const dn = dnSrc ? new Function(dnSrc + '\nreturn dispName;')() : null;
     t('表示名があれば表示名・無ければシフトの名前・どちらも無ければ職員ID',
@@ -387,16 +447,18 @@ console.log('\n— 14. 打刻の番号と従業員コードの順・日ごとの
   t('直しの記録の名前に「打刻の番号を職員No に合わせた」（DB の code_fixed）', /code_fixed: '打刻の番号を職員No に合わせた'/.test(K));
   t('説明文に「職員No の頭に 0」と「頭の A を抜いた4桁」と「従業員コードの順」', /職員マスタの職員No の頭に 0 を付けた番号（職員No 001 なら 0001）/.test(K) && /頭の A を抜いた4桁（A001 なら 0001）/.test(K) && /この表は従業員コードの順です。/.test(K));
   const q = between('var quietBusy = 0, quietSeq = 0;', '\n  function showField(');
-  t('日ごと・要確認は30秒ごとに打刻を読み直す（kintai_month_get）・画面が見えた時とタブを移った時もすぐ読む',
+  /* ★v5 段2（2026-11-20）: 仕様「30秒ごとの読み直しは日ごと・要確認と同じ道に乗せる」でホーム（home）を足したので、タブを移った時・読み直す条件の期待を改めた。
+     タブを移る時は保存していない設定の変更を確かめる（C4）ので、その呼び出しも期待に入れた。描き直す並びのタブ（REORDER_TABS）にもホームを足した */
+  t('ホーム・日ごと・要確認は30秒ごとに打刻を読み直す（kintai_month_get）・画面が見えた時とタブを移った時もすぐ読む',
     /setInterval\(function \(\) \{ quietReload\(\); \}, 30000\);/.test(K) && /visibilitychange', function \(\) \{ if \(document\.visibilityState === 'visible'\) quietReload\(\); \}/.test(K)
-    && /tab = t; lsSet\(LS_TAB, t\); paint\(\); if \(t === 'day' \|\| t === 'review'\) quietReload\(\);/.test(K) && /rpc\('kintai_month_get', \{ p_ym: ym \}\)/.test(q));
+    && /if \(TABS\.indexOf\(t\) < 0\) t = 'home'; if \(!settingsLeaveOk\(\)\) return; tab = t; lsSet\(LS_TAB, t\); paint\(\); if \(t === 'home' \|\| t === 'day' \|\| t === 'review'\) quietReload\(\);/.test(K) && /rpc\('kintai_month_get', \{ p_ym: ym \}\)/.test(q));
   t('読み直しは窓・保存中・印刷中・選ぶ欄の操作中・隠れている時・ほかのタブではしない（入力を消さない）',
-    /if \(view !== 'app' \|\| busy \|\| !month \|\| !data \|\| dlgCtx \|\| printAll \|\| \(tab !== 'day' && tab !== 'review'\)\) return false;/.test(q) && /visibilityState === 'hidden'\) return false;/.test(q) && /ae\.tagName === 'SELECT'/.test(q));
+    /if \(view !== 'app' \|\| busy \|\| !month \|\| !data \|\| dlgCtx \|\| printAll \|\| \(tab !== 'home' && tab !== 'day' && tab !== 'review'\)\) return false;/.test(q) && /visibilityState === 'hidden'\) return false;/.test(q) && /ae\.tagName === 'SELECT'/.test(q));
   t('届いた時に読み込みの世代・月・状態が変わっていれば捨てる・答えを待つ間は手元で数え直す・20秒で諦めて古い答えは番号で捨てる・失敗は記録して手元で数え直すだけ',
     /if \(my !== gen \|\| atYm !== ym \|\| !quietOk\(\)\) return;/.test(q) && /if \(!quietOk\(\)\) return;/.test(q) && /if \(quietBusy && Date\.now\(\) - quietBusy < 20000\) \{ recompute\(\); paint\(\); return; \}/.test(q) && /if \(seq !== quietSeq\) return;\s*quietBusy = 0;/.test(q) && /note\('自動の読み直し', e\);/.test(q) && !/alert\(/.test(q));
 }
 
-Promise.all(await_pending).catch((e) => { fail++; console.log('  ✗ 動かして確かめる試験が止まった  → ' + e.message); }).then(() => {
+Promise.all(await_pending.concat(pendClock)).catch((e) => { fail++; console.log('  ✗ 動かして確かめる試験が止まった  → ' + e.message); }).then(() => {
   console.log(`\n${pass} 件合格 / ${fail} 件不合格`);
   process.exit(fail ? 1 : 0);
 });
