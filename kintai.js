@@ -139,9 +139,12 @@
      画面のコードの例外（recompute・paint の TypeError など）は Error の形で来るので、ここでは拾わない＝本物の不具合は今までどおり報告される */
   function isNetErr(e) {
     if (!e || typeof e !== 'object' || e instanceof Error) return false;
-    return /failed to fetch|networkerror|network error|load failed|fetcherror|request was aborted/i.test(String(e.message || ''));
+    return /failed to fetch|networkerror|network error|load failed/i.test(String(e.message || ''));
   }
-  function isDenied(e) { return !!e && typeof e === 'object' && !(e instanceof Error) && e.code === '42501'; }
+  /* 断りは「勤怠の DB 関数が自分で投げた文」の時だけ（kintai_can() が偽）。関数の実行権の付け外しの誤り（permission denied for function …）や
+     ログインが切れて anon で届いた時の 42501 は文が違うので拾わない＝今までどおり報告される（反証レビュー 2026-11-20 の指摘3） */
+  var DENIED_MSG = '勤怠の管理を許された事務所・管理者だけが使えます';
+  function isDenied(e) { return !!e && typeof e === 'object' && !(e instanceof Error) && e.code === '42501' && e.message === DENIED_MSG; }
   function okOr(r) { if (r && r.ok === true) return r; var err = new Error((r && r.error) || 'ng'); err.kintai = (r && r.error) || 'ng'; throw err; }
   function msgOf(e) { return e && e.kintai ? (NG[e.kintai] || 'うまくいきませんでした（' + e.kintai + '）。') : friendly(e); }
 
@@ -251,7 +254,7 @@
     }).then(function () {
       if (my !== gen) return;
       recompute();
-      busy = false; sync(isLocked() ? '締め済みの月です' : '読み込みました（' + hm(Date.now()) + '）');
+      busy = false; quietNetFails = 0; sync(isLocked() ? '締め済みの月です' : '読み込みました（' + hm(Date.now()) + '）');   /* 読めたので、読み直しの「続けての通信の失敗」を数え直す（指摘4） */
       paintPer();
       editsCache = null;
       paint();
@@ -259,14 +262,14 @@
       if (!masterSt && !masterBusy) loadMaster();
     })['catch'](function (e) {
       if (my !== gen) return;
-      /* 事務所のアカウントが「勤怠の管理者」に載っていない時の断り（42501）と通信の失敗は、画面の帯で知らせるだけにして
-         不具合の自動報告に回さない（reports#14 は載っていない事務所のアカウントの断りだった）。管理者の断りは想定外なので報告する */
+      /* 事務所のアカウントが勤怠の DB 関数に断られた時（「勤怠の管理者」に載っていない・アカウントが止まっている等）は、
+         画面の帯で知らせて管理者に確かめてもらうだけにし、不具合の自動報告に回さない（reports#14 は載っていない事務所のアカウントの断りだった）。
+         管理者の断り・通信の失敗・そのほかは今までどおり報告する（読み込みの通信の失敗は黙らせない＝反証レビュー 2026-11-20 の指摘2） */
       var denied = isDenied(e) && role !== 'admin';
-      if (!denied && !isNetErr(e)) note('読み込み', e);
+      if (!denied) note('読み込み', e);
       busy = false; data = null; month = null; sync(''); $('g-main').removeAttribute('aria-busy');
-      $('g-main').innerHTML = '<div class="band ng" role="alert">' + esc(denied
-        ? 'このアカウントは「勤怠の管理者」に載っていないため、勤怠管理を開けません。使う必要がある時は、管理者に「勤怠の管理者」への追加を頼んでください（管理者は勤怠管理の「設定」タブで追加できます）。'
-        : msgOf(e)) + '</div>';
+      var bandMsg = denied ? 'このアカウントには勤怠管理を使う許可がありません（「勤怠の管理者」に載っていない、アカウントが止まっている など）。使う必要がある時は、管理者に確かめてもらってください（管理者は勤怠管理の「設定」タブの「勤怠の管理者」で追加できます）。' : msgOf(e);
+      $('g-main').innerHTML = '<div class="band ng" role="alert">' + esc(bandMsg) + '</div>';
     });
   }
   function recompute() {

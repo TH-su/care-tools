@@ -63,7 +63,7 @@ function reportLine(kind, brief, where) {
   return String(kind || 'エラー') + '：' + rep.errType(brief) + (w ? '（' + w + '）' : '');
 }
 /* kintai.js の見分けの関数 */
-const kh = new Function(cut(K, 'function isNetErr(') + '\n' + cut(K, 'function isDenied(') + '\n' + cut(K, 'function okOr(') + '\nreturn { isNetErr: isNetErr, isDenied: isDenied, okOr: okOr };')();
+const kh = new Function(cut(K, 'function isNetErr(') + '\n' + (K.match(/var DENIED_MSG = '[^']*';/) || [''])[0] + '\n' + cut(K, 'function isDenied(') + '\n' + cut(K, 'function okOr(') + '\nreturn { isNetErr: isNetErr, isDenied: isDenied, okOr: okOr };')();
 
 (async () => {
   console.log('\n— 1. 本物の supabase-js が返す失敗の形 —');
@@ -91,7 +91,9 @@ const kh = new Function(cut(K, 'function isNetErr(') + '\n' + cut(K, 'function i
   const abortErr = { message: 'AbortError: The user aborted a request.', details: '', hint: 'Request was aborted (timeout or manual cancellation)', code: '' };
   t('通信の失敗は isNetErr', kh.isNetErr(netErr) === true);
   t('Safari の言い方（TypeError: Load failed）も isNetErr', kh.isNetErr({ message: 'TypeError: Load failed', code: '' }) === true);
-  t('42501 の断りは isDenied・isNetErr ではない', kh.isDenied(denErr) === true && kh.isNetErr(denErr) === false);
+  t('勤怠の DB 関数が投げた 42501 の断りは isDenied・isNetErr ではない', kh.isDenied(denErr) === true && kh.isNetErr(denErr) === false);
+  t('関数の実行権の誤り・anon で届いた 42501（文が違う）は isDenied にしない＝報告に残る（反証の指摘3）', kh.isDenied({ code: '42501', message: 'permission denied for function kintai_month_get' }) === false);
+  t('名前の無い投げ物から作られる「FetchError: undefined」は通信の失敗にしない（反証の指摘5）', kh.isNetErr({ message: 'FetchError: undefined', code: '' }) === false);
   t('画面のコードの例外（本物の TypeError）は、どちらでもない＝報告に残る', codeErr instanceof TypeError && kh.isNetErr(codeErr) === false && kh.isDenied(codeErr) === false);
   t('message が「Failed to fetch」の本物の TypeError（Error の形）も isNetErr にしない＝コード由来は隠さない', kh.isNetErr(new TypeError('Failed to fetch')) === false);
   t('okOr の断り（DB の答えが ok:false）は、どちらでもない', okOrErr && kh.isNetErr(okOrErr) === false && kh.isDenied(okOrErr) === false);
@@ -146,13 +148,14 @@ const kh = new Function(cut(K, 'function isNetErr(') + '\n' + cut(K, 'function i
     const load = cut(K, 'function load(');
     const tail = load.slice(load.lastIndexOf("['catch'](function (e) {"));
     t("断りの見分けは「管理者でない」時だけ（var denied = isDenied(e) && role !== 'admin'）", /var denied = isDenied\(e\) && role !== 'admin';/.test(tail));
-    t('断り（管理者でない）と通信の失敗は note しない・そのほかは note する', /if \(!denied && !isNetErr\(e\)\) note\('読み込み', e\);/.test(tail) && (tail.match(/note\(/g) || []).length === 1);
-    t('断りの時は「勤怠の管理者」に載っていないことと、頼む先を帯で出す', /denied\s*\?\s*'このアカウントは「勤怠の管理者」に載っていないため、勤怠管理を開けません。/.test(tail) && /: msgOf\(e\)\) \+ '<\/div>'/.test(tail));
+    t('断り（管理者でない）だけ note しない・通信の失敗を含むそのほかは note する（反証の指摘2）', /if \(!denied\) note\('読み込み', e\);/.test(tail) && (tail.match(/note\(/g) || []).length === 1);
+    t('断りの時は許可が無いことと、管理者に確かめてもらうことを帯で出す（断定しない言い方）', /var bandMsg = denied \? 'このアカウントには勤怠管理を使う許可がありません（/.test(tail) && /: msgOf\(e\);/.test(tail) && /esc\(bandMsg\)/.test(tail));
+    t('load が読めたら、読み直しの続けての通信の失敗を数え直す（反証の指摘4）', /busy = false; quietNetFails = 0;/.test(load));
     /* 帯の出し方を箱で動かして確かめる（note の有無と帯の文） */
     const run = (e, role) => {
       const notes = [], main = { innerHTML: '', removeAttribute() {} };
       const f = new Function('kh', 'e', 'role', 'notes', 'main', [
-        'var isNetErr = kh.isNetErr, isDenied = kh.isDenied, my = 1, gen = 1, busy, data, month;',
+        'var isNetErr = kh.isNetErr, isDenied = kh.isDenied, my = 1, gen = 1, busy, data, month, quietNetFails;',
         'function note(w) { notes.push(w); } function sync() {} function $() { return main; }',
         'function esc(s) { return String(s); } function msgOf() { return "MSG"; }',
         '(' + tail.slice("['catch'](".length, tail.lastIndexOf(')')) + ')(e);'].join('\n'));
@@ -160,9 +163,9 @@ const kh = new Function(cut(K, 'function isNetErr(') + '\n' + cut(K, 'function i
       return { notes, html: main.innerHTML };
     };
     const a = run(denErr, 'office'), b = run(denErr, 'admin'), c = run(netErr, 'office'), d = run(codeErr, 'office');
-    t('事務所の人の断り: 報告しない・載っていない旨の帯（#14 はここで止まる）', a.notes.length === 0 && /「勤怠の管理者」に載っていない/.test(a.html), a);
+    t('事務所の人の断り: 報告しない・許可が無い旨の帯（#14 はここで止まる）', a.notes.length === 0 && /勤怠管理を使う許可がありません/.test(a.html), a);
     t('管理者の断り: 想定外なので報告する・帯は今までの文', b.notes.length === 1 && /MSG/.test(b.html), b);
-    t('通信の失敗: 報告しない・帯は今までの文（通信できませんでした）', c.notes.length === 0 && /MSG/.test(c.html), c);
+    t('通信の失敗: 読み込みでは今までどおり報告する・帯は今までの文', c.notes.length === 1 && /MSG/.test(c.html), c);
     t('コードの例外: 報告する', d.notes.length === 1 && d.notes[0] === '読み込み', d);
   }
 
