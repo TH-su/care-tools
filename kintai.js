@@ -477,6 +477,7 @@
   function masterIdOf(s) { return s && s.master_id ? String(s.master_id) : null; }   /* 外した m_ の行は master_id が空（休止）＝結んでいない */
   function masterOf(s) { var id = masterIdOf(s); return id && masterSt && masterSt.byId ? masterSt.byId[id] || null : null; }
   function inService(m) { return !!m && (!m.retire_date || m.retire_date >= today()); }
+  var REORDER_TABS = { day: 1, review: 1, grid: 1, person: 1, staff: 1, leave: 1 };
   function loadMaster() {
     if (masterBusy && masterP) return masterP;
     masterBusy = true;
@@ -490,7 +491,9 @@
     }).then(function () {
       masterBusy = false; masterP = null;
       /* 入職日は職員マスタから読むので、読めたら月の並びを数え直す（どのタブでも・2026-11-20） */
-      if (view === 'app' && !busy) { if (data && !(masterSt && masterSt.err)) recompute(); paint(); }
+      /* 描き直すのは職員の並びを出すタブだけ（締め・設定のタブでは入力中の値を描き直しで消さない・審査役の指摘 2026-11-20） */
+      if (!busy && data && !(masterSt && masterSt.err)) recompute();
+      if (view === 'app' && !busy && REORDER_TABS[tab]) paint();
     });
     return masterP;
   }

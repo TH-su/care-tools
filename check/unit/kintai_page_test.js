@@ -333,7 +333,7 @@ console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（
     t('月の計算に渡す職員は staffSorted の並び（日ごと・要確認・月の一覧・個人の月の選択肢がこの並び）', /staff: staffSorted\(\),/.test(recFn) && !/staff: data\.staff \|\| \[\]/.test(recFn));
     t('番号の表（印刷）と「結べていないシフトの職員」も入職順', /var printable = staffSorted\(\)\.filter\(/.test(K) && /var unS0 = staffSorted\(\)\.filter\(/.test(K));
     t('勤務時間を手で入れる窓の職員は名前の順のまま（表示名で並べる）', /staffSorted\(\)\.sort\(function \(a, b\) \{ return dispName\(a\)\.localeCompare\(dispName\(b\), 'ja'\); \}\)/.test(K));
-    t('読み込んだ後に職員マスタをまだ読んでいなければ裏で読み、読めたら数え直す（どのタブでも）', /if \(!masterSt && !masterBusy\) loadMaster\(\);/.test(K) && /if \(data && !\(masterSt && masterSt\.err\)\) recompute\(\); paint\(\);/.test(K));
+    t('読み込んだ後に職員マスタをまだ読んでいなければ裏で読み、読めたら数え直す（描き直すのは並びを出すタブだけ・締めと設定のタブは描き直さない）', /if \(!masterSt && !masterBusy\) loadMaster\(\);/.test(K) && /if \(!busy && data && !\(masterSt && masterSt\.err\)\) recompute\(\);/.test(K) && /if \(view === 'app' && !busy && REORDER_TABS\[tab\]\) paint\(\);/.test(K) && /var REORDER_TABS = \{ day: 1, review: 1, grid: 1, person: 1, staff: 1, leave: 1 \};/.test(K));
     const dnSrc = between('function dispName(', '\n');
     const dn = dnSrc ? new Function(dnSrc + '\nreturn dispName;')() : null;
     t('表示名があれば表示名・無ければシフトの名前・どちらも無ければ職員ID',
