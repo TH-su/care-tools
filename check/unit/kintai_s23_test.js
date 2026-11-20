@@ -339,8 +339,10 @@ console.log('\n— 6. 画面（kintai.js の関数を取り出して動かす）
   }
   /* 6-8 ホーム */
   {
-    t('ホームのタブは先頭・既定のタブ・箱は KintaiMonitor.boxes（申請の箱は出さない＝requests: null）・勤務の決まりは KintaiRules.checkMonth', /var TABS = \['home', 'day'/.test(K) && /tab = TABS\.indexOf\(t\) >= 0 \? t : 'home';/.test(K) && /data-tab="home">ホーム<\/button>/.test(H) &&
-      /var input = \{ today: td, month: month, reviewList: C\.reviewList\(month\), requests: null \};/.test(K) && /input\.rules = RUL\.checkMonth\(month, rawCfg\(\)\);/.test(K) && /var bx = MON\.boxes\(input\)/.test(K));
+    /* ★v5 段5（2026-11-21・仕様書「段5」: ホームの箱に承認待ちの件数を渡す）で、申請の箱を出さない印（requests: null）を、読めた時だけ承認待ちの数を渡す形に改めた
+       （読めない・関数が無い時は今までどおり null＝箱を出さない。その形は check/unit/kintai_requests_test.js で確かめる） */
+    t('ホームのタブは先頭・既定のタブ・箱は KintaiMonitor.boxes（申請の箱は承認待ちの数を読めた時だけ）・勤務の決まりは KintaiRules.checkMonth', /var TABS = \['home', 'day'/.test(K) && /tab = TABS\.indexOf\(t\) >= 0 \? t : 'home';/.test(K) && /data-tab="home">ホーム<\/button>/.test(H) &&
+      /var input = \{ today: td, month: month, reviewList: C\.reviewList\(month\), requests: reqSum && !reqSum\.err && reqSum\.ym === ym \? reqSum\.pending : null \};/.test(K) && /input\.rules = RUL\.checkMonth\(month, rawCfg\(\)\);/.test(K) && /var bx = MON\.boxes\(input\)/.test(K));
     t('ホームは画面だけ（no-print）・有給と36協定は最初の描画の後に裏で読む（読めない時は「読み直す」・30秒ごとに試し直さない）', /function paintHome\(\) \{\s*var h = '<div class="cd no-print">';/.test(K) && /if \(L && !leaveSt && !leaveBusy\) loadLeave\(false\);   \/\* 重い読み込み/.test(K) && /waitBox\('36協定', t0, lv === 'err'\)/.test(K));
     /* ★v5 段4 の積み残しの直し（2026-11-20）: kintai-monitor.js の中身を変えて版を 2026-11-20.2 に上げたので、その部品の期待の版だけを改めた（並びと公開の確かめは同じ） */
     const VER = { 'kintai-36.js': '2026-11-20', 'kintai-monitor.js': '2026-11-20.2', 'kintai-rules.js': '2026-11-20' };
