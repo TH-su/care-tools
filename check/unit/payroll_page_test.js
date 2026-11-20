@@ -229,9 +229,11 @@ console.log('\n— 給与専用の暗証番号（統合 0110・2026-11-20 代表
 {
   const PIN = J.slice(J.indexOf('/* ── 給与専用の暗証番号'), J.indexOf('/* ── 覆い ── */'));
   t('起動は暗証番号の状態を読み、関数の無い DB（0110 の前）では今までどおり読み込む・断られたら覆い',
-    /function pinStart\(\) \{\s*return rpc\('payroll_pin_status'\)/.test(PIN) && /if \(noDb\(e\)\) \{ pinOn = false; return load\(false\); \}/.test(PIN)
+    /function pinStart\(\) \{\s*return rpc\('payroll_pin_status'\)/.test(PIN) && /if \(noDb\(e\)\) \{ pinOn = false; view = 'app'; \$\('p-app'\)\.hidden = false; return load\(false\); \}/.test(PIN)
     && /if \(e && e\.code === '42501'\) \{ showGate\(isAal\(e\) \? 'mfa' : 'denied'\); return null; \}/.test(fnBody(J, 'pinStart', 'function pinStatusThen')));
-  t('開いたままの読み込み直しでも、一度鍵をかけてから鍵の画面を出す', /if \(r && r\.unlocked\) return rpc\('payroll_pin_lock'\)/.test(PIN));
+  /* 反証レビュー（2026-11-20）: 開くたびにデータベースの鍵をかけると、同じログインのほかのタブまで鍵の画面に倒れた。鍵の画面はこの画面だけにする */
+  t('開いたままのログインでも鍵の画面を出す（データベースの鍵はかけない＝ほかのタブを巻き込まない）',
+    /pinOn = true; pinSt = r; showLock\(''\); return null;/.test(fnBody(J, 'pinStart', 'function pinStatusThen')) && !/payroll_pin_lock/.test(fnBody(J, 'pinStart', 'function pinStatusThen')));
   t('決めていない時は2回入れて決める・違えば決めない・4〜6桁の数字だけ',
     /pinIn\('p-pin1', '暗証番号（4〜6桁）'\) \+ pinIn\('p-pin2', 'もう一度'\)/.test(PIN) && /if \(a !== b2\) \{ pinSay\(/.test(PIN)
     && /PIN_RE = \/\^\[0-9\]\{4,6\}\$\//.test(PIN) && /rpc\('payroll_pin_set', \{ p_pin: a, p_old: null \}\)/.test(PIN));
@@ -249,13 +251,26 @@ console.log('\n— 給与専用の暗証番号（統合 0110・2026-11-20 代表
     /if \(e && e\.code === '42501' && !isAal\(e\) && pinRecheck\(\)\) return null;/.test(fnBody(J, 'load', 'function handleStale'))
     && /if \(e && e\.code === '42501' && pinRecheck\(\)\) return null;/.test(fnBody(J, 'fail', '/* ── 下書き保存')));
   t('鍵の画面では金額・明細・窓・印刷を消し、保存していない計算はメモリに残す（番号が合えば load(true) で続き）',
-    /function showLock\(msg\) \{\s*view = 'lock'; masked = false; maskGen\+\+; closeDlg\(\); bs = null;/.test(PIN) && !/calc = null/.test(fnBody(J, 'showLock', 'function pinVal'))
+    /function showLock\(msg\) \{\s*view = 'lock'; pinGen\+\+; masked = false; maskGen\+\+; closeDlg\(\); bs = null;/.test(PIN) && !/calc = null/.test(fnBody(J, 'showLock', 'function pinVal'))
     && /return load\(true\);/.test(fnBody(J, 'pinOpened', 'function pinSetGo')));
   t('「鍵をかける」のボタン（暗証番号がある DB の時だけ出す）・設定のタブの「暗証番号を消す（忘れた人用）」は理由を聞いてから消す',
     /id="p-lock" data-act="pin-lock" hidden>鍵をかける</.test(H) && /b\.hidden = !pinOn;/.test(PIN)
     && /data-act="pin-reset" data-i="' \+ esc\(i\) \+ '">暗証番号を消す（忘れた人用）</.test(J) && /rpc\('payroll_pin_reset', \{ p_email: email, p_reason: reason \}\)/.test(PIN));
-  t('管理者は鍵の画面から自分の番号を消して決め直せる（自分のメールはログインから読む）',
-    /st\.admin \? '<p class="help">番号を忘れた時は/.test(PIN) && /getSession\(\)/.test(fnBody(J, 'pinForgot', 'function pinReset')));
+  /* 反証レビュー（2026-11-20）: 管理者の PC が開いたままなら、別の人がボタン2つで番号を外せた。自分の番号は鍵の画面から消せない */
+  t('自分の番号は鍵の画面から消せない（ボタンを出さない・ほかの管理者に頼む案内だけ）・DB の self に文がある',
+    !/pin-forgot|pinForgot/.test(J) && /ほかの管理者に「設定」のタブで消してもらってください/.test(PIN) && /self: '/.test(PIN) && /reason: '/.test(PIN) && /badshape: '/.test(PIN));
+  t('起動は鍵が決まるまで中身の帯を出さない（view は boot・p-app は隠したまま）',
+    /view = 'boot';\s*\$\('p-app'\)\.hidden = true;/.test(fnBody(J, 'boot', 'var go = function')));
+  t('「鍵をかける」はデータベースの鍵もかけてほかのタブにも知らせ、10分さわらない時はこの画面だけ鍵にする',
+    /if \(w === 'manual'\) \{\s*rpc\('payroll_pin_lock'\)[\s\S]*?pinCh\.postMessage\('lock'\)/.test(PIN)
+    && /pinCh\.onmessage = function \(e\) \{ if \(e && e\.data === 'lock' && pinOn && view === 'app'\) pinLockNow\('manual-other'\); \};/.test(J)
+    && /new window\.BroadcastChannel\('su-payroll-pin'\)/.test(PIN));
+  t('鍵の画面の間に届いた断り・状態の答えでは描き直さない（世代 pinGen）・通信の失敗では覆いに倒さず鍵の画面のまま',
+    /if \(view === 'lock'\) return true;/.test(PIN) && /var my = pinGen;/.test(PIN) && /if \(my !== pinGen\) return null;/.test(PIN)
+    && /if \(pinSt\) \{ showLock\(msg \|\| ''\); pinSay\('通信できませんでした/.test(PIN));
+  t('決める画面の1つ目の欄の Enter は2つ目の欄へ移るだけ（欄を空にしない）', /if \(e\.target\.id === 'p-pin1' && \$\('p-pin2'\)\) \{ e\.preventDefault\(\); \$\('p-pin2'\)\.focus\(\); return; \}/.test(J));
+  t('番号を消す窓の間に鍵がかかった・金額を隠した時は送らない', /if \(x == null \|\| mg !== maskGen \|\| view !== 'app'\) return null;/.test(PIN));
+  t('戻るボタンで戻った時は鍵の画面から', /else if \(e && e\.persisted && pinOn && view === 'app'\) pinLockNow\('expired'\);/.test(J));
   t('鍵の画面の欄で Enter を押すと決める・開くを押したのと同じ（変換中は除く）', /e\.key !== 'Enter' \|\| e\.isComposing \|\| view !== 'lock'/.test(J));
   t('起動は pinStart を通る（読み込みは鍵が開いてから）', /return pinStart\(\);/.test(fnBody(J, 'boot', 'var go = function')) && !/return load\(false\);/.test(fnBody(J, 'boot', 'var go = function')));
   t('payroll.js の版を上げた（2026-11-20.4）', /payroll\.js\?v=2026-11-20\.4"/.test(H));
