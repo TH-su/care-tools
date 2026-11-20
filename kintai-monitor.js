@@ -20,17 +20,28 @@
   function hm(ms) { var d = new Date(ms + 9 * 3600000); return d.getUTCHours() + ':' + pad(d.getUTCMinutes()); }
   function dispName(s) { return s ? String(s.display_name || s.name || s.staff_id || '') : ''; }
   function labelOf(f) { return C && C.FLAG_LABEL && C.FLAG_LABEL[f] ? C.FLAG_LABEL[f] : String(f); }
+  /* 前の日（'YYYY-MM-DD' の文字の計算だけ・端末の時刻帯に関係しない） */
+  function prevDate(d) {
+    var t = Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)) - 86400000, x = new Date(t);
+    return x.getUTCFullYear() + '-' + pad(x.getUTCMonth() + 1) + '-' + pad(x.getUTCDate());
+  }
   function top(a, b) { return LEVEL_RANK[b] > LEVEL_RANK[a] ? b : a; }
 
   /* 今日: 出勤予定（予定のある塊）・出勤済み（打刻のある塊）・まだ出勤していない（not_in_yet）・勤務中（working）。
-     有休だけの日（塊が無い）は数えない。予定の無い打刻は出勤済みには入るが出勤予定には入らない。欠勤の塊は「まだ出勤していない」に入れない */
+     有休だけの日（塊が無い）は数えない。予定の無い打刻は出勤済みには入るが出勤予定には入らない。欠勤の塊は「まだ出勤していない」に入れない。
+     前の日に始まって今も勤務中の塊（夜勤など）は「勤務中」と「出勤済み」に数える（出勤予定・まだ出勤していないには入れない）。
+     前の日が月分の期間の外（今日が期間の初日）の時は、その塊は月の結果に無いので数えられない */
   function todayBox(month, today) {
     var counts = { scheduled: 0, clockedIn: 0, notInYet: 0, working: 0 }, rows = [];
-    var people = (month && month.people) || [];
+    var people = (month && month.people) || [], yday = isDate(today) ? prevDate(today) : '';
     for (var i = 0; i < people.length; i++) {
       var p = people[i], st = p.staff || {};
       var d = null;
-      for (var j = 0; j < (p.days || []).length; j++) if (p.days[j].date === today) { d = p.days[j]; break; }
+      for (var j = 0; j < (p.days || []).length; j++) {
+        var dd = p.days[j];
+        if (dd.date === today) d = dd;
+        else if (yday && dd.date === yday) (dd.blocks || []).forEach(function (yb) { if (yb.working) { counts.working++; counts.clockedIn++; } });
+      }
       if (!d) continue;
       var bl = d.blocks || [];
       for (var k = 0; k < bl.length; k++) {
@@ -57,10 +68,13 @@
     return { key: 'review', title: '打刻漏れ・要確認', count: rows.length, level: rows.length ? 'warn' : 'ok', tab: 'review', rows: rows };
   }
 
-  /* 36協定: 項目（Kintai36.judge の items）のある人。超過が1人でもいれば alert、警告だけなら warn */
+  /* 36協定: 項目（Kintai36.judge の items）のある人。超過が1人でもいれば alert、警告だけなら warn。
+     どれかの人の判定が holidayUnknown（法定休日を決めずに数えた月がある）なら、箱に注意の1行（note）を出し、少なくとも warn */
+  var A36_HOLIDAY_NOTE = '法定休日を決めていないため、休日労働を含む上限は少なく出ています';
   function a36Box(list) {
-    var rows = [], level = 'ok';
+    var rows = [], level = 'ok', unknown = false;
     (list || []).forEach(function (r) {
+      if (r && r.holidayUnknown) unknown = true;
       var its = (r && r.items) || [];
       if (!its.length) return;
       var lv = 'warn';
@@ -68,7 +82,9 @@
       level = top(level, lv);
       rows.push({ staff_id: r.staff_id, name: r.name || '', text: its.map(function (x) { return x && x.text ? x.text : ''; }).filter(Boolean).join('／'), level: lv });
     });
-    return { key: 'a36', title: '36協定', count: rows.length, level: level, tab: 'grid', rows: rows };
+    var box = { key: 'a36', title: '36協定', count: rows.length, level: level, tab: 'grid', rows: rows };
+    if (unknown) { box.note = A36_HOLIDAY_NOTE; box.level = top(level, 'warn'); }
+    return box;
   }
 
   /* 有給: 年5日の赤・黄（kintai-leave.js の obligation5 の state。level でも読む）と期限の近い残り。赤がいれば alert */
@@ -109,7 +125,8 @@
   }
 
   /* 箱の一覧。input: { today, month, reviewList, leaveRows, a36Rows, unlockedPast, requests }
-     返す: [{ key, title, count, level:'ok'|'warn'|'alert', tab, rows:[{ staff_id, name, text }] }]（今日の箱だけ counts も持つ） */
+     返す: [{ key, title, count, level:'ok'|'warn'|'alert', tab, rows:[{ staff_id, name, text }] }]（今日の箱だけ counts も持つ・36協定の箱は注意がある時 note も持つ）
+     a36Rows の行は { staff_id, name, items, holidayUnknown }（Kintai36.judge の items と holidayUnknown） */
   function boxes(input) {
     var o = input || {}, out = [];
     if (o.month != null) out.push(todayBox(o.month, isDate(o.today) ? o.today : ''));

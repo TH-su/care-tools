@@ -24,7 +24,14 @@ const codes = (r) => r.items.map((x) => x.code + ':' + x.level).join(',');
 const item = (r, code) => r.items.find((x) => x.code === code);
 /* 法定休日を決めた設定（注意を出さない）と、目安の警告 36時間を明示した設定 */
 const BASE = { legal_holiday: 0, agreement36: { monthWarnH: 36 } };
-const one = (legal, hol, cfg) => A.judge([M('2026-10', legal, hol)], '2026-10', cfg || BASE, { holidayKnown: true });
+/* 平均の窓（ym を終わりにした6か月）の無い月を0の記録で埋める。境目を見る節で「記録の無い月の警告（avg_unknown）」を混ぜないため */
+const fill = (rows, ym) => {
+  const have = new Set(rows.filter(Boolean).map((r) => r.ym)), y = +ym.slice(0, 4), m = +ym.slice(5, 7), out = rows.slice();
+  for (let k = 0; k < 6; k++) { const ix = y * 12 + m - 1 - k, v = Math.floor(ix / 12) + '-' + String(ix % 12 + 1).padStart(2, '0'); if (!have.has(v)) out.push(M(v, 0, 0)); }
+  return out;
+};
+const J = (rows, ym, cfg, opts) => A.judge(fill(rows || [], ym), ym, cfg, opts);
+const one = (legal, hol, cfg) => J([M('2026-10', legal, hol)], '2026-10', cfg || BASE, { holidayKnown: true });
 
 console.log('\n— 1. 設定 —');
 {
@@ -72,8 +79,8 @@ console.log('\n— 3. 月の法定外の境目 —');
   t('月の法定外・休日を含めた時間を返す', o45.monthLegalMin === H(45, 1) && o45.monthWithHolidayMin === H(45, 1));
   /* agreement36 の無い今の設定では、警告は今の画面と同じ 45時間以上・同じ文 */
   const legacy = C.computeMonth({ ym: '2026-10', staff: [], schedule: [], punches: [], config: {} });
-  const now45 = A.judge([M('2026-10', H(45))], '2026-10', { legal_holiday: 0 }, { holidayKnown: true });
-  const now44 = A.judge([M('2026-10', H(44, 59))], '2026-10', { legal_holiday: 0 }, { holidayKnown: true });
+  const now45 = J([M('2026-10', H(45))], '2026-10', { legal_holiday: 0 }, { holidayKnown: true });
+  const now44 = J([M('2026-10', H(44, 59))], '2026-10', { legal_holiday: 0 }, { holidayKnown: true });
   t('agreement36 が無い設定: 44時間59分は出ない・45時間で warn', now44.items.length === 0 && codes(now45) === 'month_warn:warn', [codes(now44), codes(now45)]);
   t('月の警告の文は kintai-calc.js の今の文と一字一句同じ', (item(now45, 'month_warn') || {}).text === '法定外の時間が月' + legacy.config.overtimeMonthWarnH + '時間以上です（36協定の確認）', (item(now45, 'month_warn') || {}).text);
   /* kintai-calc.js の文の型そのものを読んで確かめる（試験の中に書いた型と比べるだけにしない） */
@@ -81,11 +88,11 @@ console.log('\n— 3. 月の法定外の境目 —');
   t('kintai-calc.js の月の警告の文の型が今も同じ（「法定外の時間が月' + "'" + ' + 値 + ' + "'" + '時間以上です（36協定の確認）」）', calcSrc.indexOf("'法定外の時間が月' + cfg.overtimeMonthWarnH + '時間以上です（36協定の確認）'") >= 0);
   const calc45 = C.computeMonth({ ym: '2026-10', staff: [{ staff_id: 'sT01', name: '試験 甲', office: 'facility', emp_code: '9001' }], schedule: [], days: [], config: {}, now: Date.parse('2026-11-10T00:00:00+09:00'),
     punches: ['2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09'].reduce((a, d, i) => a.concat([{ id: 'x' + i + 'i', staff_id: 'sT01', kind: 'in', at: new Date(C.jstMs(d, 6 * 60)).toISOString(), source: 'tablet', created_at: new Date(C.jstMs(d, 6 * 60)).toISOString() }, { id: 'x' + i + 'o', staff_id: 'sT01', kind: 'out', at: new Date(C.jstMs(d, 6 * 60 + 18 * 60)).toISOString(), source: 'tablet', created_at: new Date(C.jstMs(d, 6 * 60 + 18 * 60)).toISOString() }]), []) });
-  const s45 = calc45.people[0].sum, j45 = A.judge([M('2026-10', s45.legalOverMin, s45.holidayMin)], '2026-10', {}, {});
+  const s45 = calc45.people[0].sum, j45 = J([M('2026-10', s45.legalOverMin, s45.holidayMin)], '2026-10', {}, {});
   t('computeMonth が出した月の警告と、同じ月の判定の文が一字一句同じ（法定外 ' + s45.legalOverMin + '分）', s45.legalOverMin === 45 * 60 && s45.warnings.length === 1 && (item(j45, 'month_warn') || {}).text === s45.warnings[0], [s45.warnings, j45.items]);
-  const off = A.judge([M('2026-10', H(44))], '2026-10', { legal_holiday: 0, overtimeMonthWarnH: 0 }, { holidayKnown: true });
-  t('overtimeMonthWarnH が 0（警告しない）の時は目安の警告を出さない（上限の over は出す）', off.items.length === 0 && codes(A.judge([M('2026-10', H(46))], '2026-10', { legal_holiday: 0, overtimeMonthWarnH: 0 }, { holidayKnown: true })) === 'month_over:over');
-  t('月が列に無い時は0で返す（例外を出さない）・ym の形が違えば null', A.judge([], '2026-10', BASE, {}).monthLegalMin === 0 && A.judge(null, '2026-10', BASE).items.length === 0 && A.judge([], '2026-1', BASE) === null);
+  const off = J([M('2026-10', H(44))], '2026-10', { legal_holiday: 0, overtimeMonthWarnH: 0 }, { holidayKnown: true });
+  t('overtimeMonthWarnH が 0（警告しない）の時は目安の警告を出さない（上限の over は出す）', off.items.length === 0 && codes(J([M('2026-10', H(46))], '2026-10', { legal_holiday: 0, overtimeMonthWarnH: 0 }, { holidayKnown: true })) === 'month_over:over');
+  t('月が列に無い時は0で返す（例外を出さない・出るのは記録の無い月の警告だけ）・ym の形が違えば null', A.judge([], '2026-10', BASE, {}).monthLegalMin === 0 && codes(A.judge(null, '2026-10', BASE)) === 'avg_unknown:warn' && A.judge([], '2026-1', BASE) === null, codes(A.judge(null, '2026-10', BASE)));
 }
 
 console.log('\n— 4. 法の上限（月100時間） —');
@@ -110,35 +117,59 @@ console.log('\n— 5. 2〜6か月の平均 —');
   const cross = A.judge([M('2027-03', H(50), H(35)), M('2027-04', H(50), H(30))], '2027-04', BASE, { holidayKnown: true });
   t('平均は年度をまたいで数える（3月と4月の2か月平均 82時間30分）', cross.avg.n2 === H(82, 30) && !!item(cross, 'law_avg80'), [cross.avg, codes(cross)]);
   const gap = A.judge([M('2026-08', H(90)), M('2026-10', H(70))], '2026-10', BASE, { holidayKnown: true });
-  t('窓の中に無い月がある時はその平均を null（0 で埋めない）', gap.avg.n2 === null && gap.avg.n3 === null && gap.avg.n6 === null, gap.avg);
+  /* 反証レビュー（2026-11-20）で決まりを改めた: 平均は null のままだが、黙らず「確かめられません」の warn を出す（null だけでは画面に何も出ず、超過を見落とす） */
+  t('窓の中に無い月がある時はその平均を null（0 で埋めない）・超過と決まらなければ avg_unknown の warn', gap.avg.n2 === null && gap.avg.n3 === null && gap.avg.n6 === null &&
+    codes(gap) === 'month_over:over,avg_unknown:warn' && (item(gap, 'avg_unknown') || {}).text === '5月・6月・7月・9月の記録が無いため、2〜6か月の平均を確かめられません', [gap.avg, gap.items]);
+  /* 5〜8月・10月が法定外45時間＋休日54時間（月99時間）、9月の記録なし: 6か月は9月を0としても 495時間 > 480時間＝確定の超過 */
+  const g9 = A.judge(['2026-05', '2026-06', '2026-07', '2026-08', '2026-10'].map((ym) => M(ym, H(45), H(54))), '2026-10', BASE, { holidayKnown: true });
+  t('記録の無い月を0としてもう上限を超える時は確定の over（9月なし・6か月で 495時間）', !!item(g9, 'law_avg80') && !item(g9, 'avg_unknown') && /6か月平均 82時間30分以上（記録の無い月を0として）/.test((item(g9, 'law_avg80') || {}).text) && g9.avg.n6 === null, g9.items);
+  const g9b = A.judge(['2026-05', '2026-06', '2026-07', '2026-08', '2026-10'].map((ym) => M(ym, H(45), H(50))), '2026-10', BASE, { holidayKnown: true });
+  t('0としても超えない時（月95時間・6か月で 475時間）は over にせず avg_unknown（9月）', !item(g9b, 'law_avg80') && (item(g9b, 'avg_unknown') || {}).text === '9月の記録が無いため、2〜6か月の平均を確かめられません', g9b.items);
+  const gs = A.judge(['2026-05', '2026-06', '2026-07', '2026-08', '2026-10'].map((ym) => M(ym, H(45), H(40))), '2026-10', { legal_holiday: 0, agreement36: { special: true, specialAvgH: 70 } }, { holidayKnown: true });
+  t('特別条項の平均 70 でも同じ（月85時間・9月なし・6か月で 425時間 > 420時間＝avg_special）', !!item(gs, 'avg_special') && !item(gs, 'avg_unknown'), gs.items);
   const six = A.judge(['2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10'].map((ym) => M(ym, H(44), H(36, 1))), '2026-10', BASE, { holidayKnown: true });
   t('6か月の窓まで数える（各月 80時間1分→2〜6か月すべて over）', six.avg.n6 === H(80, 1) && /6か月平均/.test((item(six, 'law_avg80') || {}).text), six.avg);
 }
 
 console.log('\n— 6. 年度の累計・特別条項 —');
 {
-  const yr = (total) => A.judge([M('2026-04', total - H(30)), M('2026-05', H(30))], '2026-05', BASE, { holidayKnown: true });
+  const yr = (total) => J([M('2026-04', total - H(30)), M('2026-05', H(30))], '2026-05', BASE, { holidayKnown: true });
   t('年度の累計 287時間59分は出ない・288時間ちょうどで warn', !item(yr(H(287, 59)), 'year_warn') && (item(yr(H(288)), 'year_warn') || {}).level === 'warn');
   t('年度の累計 360時間ちょうどは warn・360時間1分で over', item(yr(H(360)), 'year_warn') && !item(yr(H(360)), 'year_over') && (item(yr(H(360, 1)), 'year_over') || {}).level === 'over', [codes(yr(H(360))), codes(yr(H(360, 1)))]);
   const SP = { legal_holiday: 0, agreement36: { monthWarnH: 36, special: true } };
-  const s60 = A.judge([M('2026-10', H(60))], '2026-10', SP, { holidayKnown: true });
+  const s60 = J([M('2026-10', H(60))], '2026-10', SP, { holidayKnown: true });
   t('特別条項: 45時間を超えた月は warn（over でない）', codes(s60) === 'month_special:warn', codes(s60));
-  const sp100 = A.judge([M('2026-10', H(80), H(20))], '2026-10', SP, { holidayKnown: true });
+  const sp100 = J([M('2026-10', H(80), H(20))], '2026-10', SP, { holidayKnown: true });
   t('特別条項の上限 100（法と同じ）の時は法の項目だけ（二重に出さない）', codes(sp100) === 'month_special:warn,law_month100:over', codes(sp100));
   const SP90 = { legal_holiday: 0, agreement36: { monthWarnH: 36, special: true, specialMonthMaxH: 90, specialAvgH: 70 } };
-  const sp90 = A.judge([M('2026-10', H(80), H(10))], '2026-10', SP90, { holidayKnown: true });
-  t('特別条項の上限 90: 法定外＋休日 90時間ちょうどで over', codes(sp90) === 'month_special:warn,month_special_max:over', codes(sp90));
-  const spa = A.judge([M('2026-09', H(70)), M('2026-10', H(70, 1))], '2026-10', SP90, { holidayKnown: true });
+  const sp90 = J([M('2026-10', H(80), H(10))], '2026-10', SP90, { holidayKnown: true });
+  /* 反証レビュー（2026-11-20）で決まりを改めた: 協定で100時間より下げた上限は「超えたら」超過（法の「100時間未満」＝100時間以上で超過とは別の決まり） */
+  t('特別条項の上限 90: 法定外＋休日 90時間ちょうどは over でない', codes(sp90) === 'month_special:warn', codes(sp90));
+  const sp9001 = J([M('2026-10', H(80), H(10, 1))], '2026-10', SP90, { holidayKnown: true }), sp8959 = J([M('2026-10', H(80), H(9, 59))], '2026-10', SP90, { holidayKnown: true });
+  t('特別条項の上限 90: 90時間1分で over・89時間59分は over でない', codes(sp9001) === 'month_special:warn,month_special_max:over' && codes(sp8959) === 'month_special:warn', [codes(sp9001), codes(sp8959)]);
+  t('特別条項の上限 90 の文', (item(sp9001, 'month_special_max') || {}).text === '法定外＋休日労働が今月 90時間1分で、特別条項の月の上限 90時間を超えています');
+  const spa = J([M('2026-09', H(70)), M('2026-10', H(70, 1))], '2026-10', SP90, { holidayKnown: true });
   t('特別条項の平均 70: 70時間1分で over（法の80時間には届かない）', !!item(spa, 'avg_special') && !item(spa, 'law_avg80'), codes(spa));
-  const yrS = A.judge([M('2026-04', H(370))], '2026-04', SP, { holidayKnown: true });
+  const yrS = J([M('2026-04', H(370))], '2026-04', SP, { holidayKnown: true });
   t('特別条項の時の年の上限は 720時間（370時間は over でない）', !item(yrS, 'year_over'), codes(yrS));
-  const cnt = (n) => A.judge(Array.from({ length: n }, (_, i) => M('2026-' + String(4 + i).padStart(2, '0'), H(46))), '2026-' + String(3 + n).padStart(2, '0'), SP, { holidayKnown: true });
+  const cnt = (n) => J(Array.from({ length: n }, (_, i) => M('2026-' + String(4 + i).padStart(2, '0'), H(46))), '2026-' + String(3 + n).padStart(2, '0'), SP, { holidayKnown: true });
   t('特別条項: 45時間超の月が6回は over でない・7回で over', cnt(6).over45Count === 6 && !item(cnt(6), 'count_over') && cnt(7).over45Count === 7 && (item(cnt(7), 'count_over') || {}).level === 'over', [cnt(6).over45Count, codes(cnt(7))]);
-  t('特別条項でない時は回数で over にしない（月の上限の over は出る）', !item(A.judge(Array.from({ length: 7 }, (_, i) => M('2026-' + String(4 + i).padStart(2, '0'), H(46))), '2026-10', BASE, { holidayKnown: true }), 'count_over'));
+  t('特別条項でない時は回数で over にしない（月の上限の over は出る）', !item(J(Array.from({ length: 7 }, (_, i) => M('2026-' + String(4 + i).padStart(2, '0'), H(46))), '2026-10', BASE, { holidayKnown: true }), 'count_over'));
 }
 
 console.log('\n— 7. 法定休日を決めていない時 —');
 {
+  /* 月ごとの holidayKnown: 9月までは法定休日を決めずに数え、10月から決めた（後から法定休日を決めた場面） */
+  const later = (ym) => ['2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11'].map((v) => M(v, H(10), 0, { holidayKnown: v >= '2026-10' }));
+  const lk = J(later(), '2026-10', { legal_holiday: 0 }, {});
+  t('月ごと: 窓の中の9月までが holidayKnown:false なら、今の設定で決めていても holidayUnknown', lk.holidayUnknown === true, lk.holidayUnknown);
+  const lk2 = J(later(), '2026-11', { legal_holiday: 0, agreement36: { startMonth: 10 } }, {});
+  t('月ごと: 年度（起算月10＝10・11月）は全部 true でも、窓（6〜11月）に false の月があれば holidayUnknown', lk2.holidayUnknown === true && lk2.fiscalFrom === '2026-10');
+  const lk3 = A.judge(['2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10'].map((v) => M(v, H(10), 0, { holidayKnown: true })), '2026-10', {}, {});
+  t('月ごと: 判定に使う月が全部 true なら、今の設定で決めていなくても holidayUnknown でない', lk3.holidayUnknown === false);
+  const lk4 = A.judge(['2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10'].map((v) => M(v, H(80, 1), 0, { holidayKnown: v !== '2026-06' })), '2026-10', { legal_holiday: 0 }, {});
+  t('月ごと: false の月が1つあれば平均の項目に注意', lk4.holidayUnknown === true && (item(lk4, 'law_avg80') || {}).note === A.HOLIDAY_NOTE);
+  t('月ごと: 行に holidayKnown が無い月は opts の値（false）', J([M('2026-10', H(10))], '2026-10', { legal_holiday: 0 }, { holidayKnown: false }).holidayUnknown === true);
   const u = A.judge([M('2026-10', H(100))], '2026-10', { agreement36: { monthWarnH: 36 } }, { holidayKnown: false });
   t('holidayKnown:false は holidayUnknown・100時間の項目に注意', u.holidayUnknown === true && (item(u, 'law_month100') || {}).note === A.HOLIDAY_NOTE && /法定休日を決めていないため少なく出ています/.test((item(u, 'law_month100') || {}).text), u.items);
   t('休日労働を含まない月の上限の項目には注意を付けない', !(item(u, 'month_over') || {}).note);
