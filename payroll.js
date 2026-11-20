@@ -142,11 +142,15 @@
      0101 より前に締めた控えには鍵が欠けるので、欠けた鍵は 0 にして missing に名前を残す（computeAll が警告にする・0 を黙って信じない） */
   var ATT_KEYS = ['workDays', 'paidDays', 'paidMin', 'workMin', 'schedInMin', 'legalInOverMin', 'legalOverMin', 'over60Min', 'nightMin', 'holidayMin',
     'absentDays', 'lateMin', 'earlyLeaveMin', 'nightShiftCount', 'schedDays', 'reviewCount'];
+  /* 勤怠 v5 段4（休暇の種類・統合 0113）の鍵。段4 より前の控えには無いのが正しい（休暇の種類が無かった）ので、無い時は 0 で missing に入れない。
+     日数は半日きざみのまま持つ（丸めると半日の特別休暇・代休が1日になる）。hourlyPaidMin は paidMin の内数 */
+  var ATT_LEAVE_KEYS = ['hourlyPaidMin', 'specialPaidMin', 'specialPaidDays', 'specialUnpaidDays', 'compDays'];
   function attFromKintai(sum, locked) {
     sum = obj(sum);
     var a = { counts: {}, missing: [] };
     ATT_KEYS.forEach(function (k) { var n = Number(sum[k]); if (sum[k] == null || !isFinite(n)) { a[k] = 0; a.missing.push(k); } else a[k] = Math.max(0, Math.round(n)); });
     var c = obj(sum.counts); Object.keys(c).forEach(function (k) { var n = Number(c[k]); if (isFinite(n) && n > 0) a.counts[k] = Math.round(n); });
+    ATT_LEAVE_KEYS.forEach(function (k) { var n = Number(sum[k]); a[k] = sum[k] == null || !isFinite(n) ? 0 : Math.max(0, /Days$/.test(k) ? Math.round(n * 2) / 2 : Math.round(n)); });
     if (sum.holidayWorkDays != null && isFinite(Number(sum.holidayWorkDays))) a.holidayWorkDays = Math.max(0, Math.round(Number(sum.holidayWorkDays)));
     if (locked === false) a.locked = false;
     return a;
@@ -156,6 +160,7 @@
      返す形: { state: 'ok'|'ng'|'err'|'skip', names: [食い違う人の氏名] }。読めない・部品が無い時は 'err'（止める側に倒す） */
   function attSame(a, b) {
     for (var i = 0; i < ATT_KEYS.length; i++) if (a[ATT_KEYS[i]] !== b[ATT_KEYS[i]]) return false;
+    for (i = 0; i < ATT_LEAVE_KEYS.length; i++) if ((a[ATT_LEAVE_KEYS[i]] || 0) !== (b[ATT_LEAVE_KEYS[i]] || 0)) return false;   /* 段4: 休暇の種類（無い控えは 0 と同じ） */
     var ka = Object.keys(a.counts).sort(), kb = Object.keys(b.counts).sort();
     if (ka.join('\u0001') !== kb.join('\u0001')) return false;
     for (i = 0; i < ka.length; i++) if (a.counts[ka[i]] !== b.counts[ka[i]]) return false;
@@ -170,7 +175,7 @@
       var m = obj(d.month), snap = obj(m.snapshot);
       if (!m.locked_at) return { state: 'ng', names: [], unlocked: true };
       var month = K.computeMonth({ ym: ymx, period: d.period, staff: arr(d.staff), schedule: arr(d.schedule), punches: arr(d.punches), days: arr(d.days),
-        leave_uses: arr(d.leave_uses), config: obj(snap.config), lockedAt: m.locked_at, now: Date.now() });
+        leave_uses: arr(d.leave_uses), config: obj(snap.config), absences: arr(d.absences), lockedAt: m.locked_at, now: Date.now() });   /* 勤怠 v5 段4: 休暇の種類（統合 0113）も渡す（渡さないと休暇を入れた月が控えと食い違って止まる） */
       var fresh = {}, saved = {};
       arr(K.snapshotOf(month).rows).forEach(function (r) { if (r && typeof r.staff_id === 'string') fresh[r.staff_id] = attFromKintai(r); });
       arr(snap.rows).forEach(function (r) { if (r && typeof r.staff_id === 'string') saved[r.staff_id] = attFromKintai(r); });

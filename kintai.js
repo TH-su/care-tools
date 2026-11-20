@@ -853,13 +853,12 @@
   function dTxt(v, sid) { return L && L.daysHm ? L.daysHm(v, sid ? staffDayMin(sid) : lvDayMin()) : String(v) + ' 日'; }
   /* 反証レビュー（2026-11-20）: 1日の時間は人ごと（有給の設定の週の所定時間÷週の所定日数・時間に切り上げ／無い人は設定の dayHours・DB の private.kintai_day_min と同じ・仮置き） */
   function staffDayMin(sid) { return L && L.dayMinOf ? L.dayMinOf(leaveSt && leaveSt.profiles ? leaveSt.profiles[sid] : null, lvCfg().dayHours) : lvDayMin(); }
-  /* 休暇を入れられる最後の日＝今日を含む月分の次の月分の期間の終わり（DB の private.kintai_abs_max_date と同じ線・読んでいない時は締め日から数える・仮置き） */
+  /* 休暇を入れられる最後の日＝今日（日本時間）の暦の月の次の月分の期間の終わり。有給の窓が読む月分（loadLeaveMonths の todayYm の次の月分）にそろえる
+     （締め日の期間で決めない・DB の private.kintai_abs_max_date と同じ線・読んでいない時は締め日から数える・反証レビュー 2026-11-20・仮置き） */
   function absMaxDate() {
-    var td = today(), ms0 = (month ? [month] : []).concat(leaveSt && leaveSt.months || []), curYm = null, i;
-    for (i = 0; i < ms0.length; i++) if (ms0[i] && ms0[i].period && td >= ms0[i].period.from && td <= ms0[i].period.to) { curYm = ms0[i].ym; break; }
+    var td = today(), ms0 = (month ? [month] : []).concat(leaveSt && leaveSt.months || []), i;
     var cd = lvCfg().close_day || 0;
-    if (!curYm) curYm = cd && +td.slice(8, 10) > cd ? C.nextYm(td.slice(0, 7)) : td.slice(0, 7);
-    var ny = C.nextYm(curYm);
+    var ny = C.nextYm(td.slice(0, 7));
     for (i = 0; i < ms0.length; i++) if (ms0[i] && ms0[i].ym === ny && ms0[i].period) return ms0[i].period.to;
     return ny + '-' + (cd ? (cd < 10 ? '0' : '') + cd : String(C.daysIn(ny)));
   }

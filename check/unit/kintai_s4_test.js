@@ -325,8 +325,11 @@ console.log('\n— 11. 反証レビュー（2026-11-20）の直し —');
   const K = fs.readFileSync(path.join(ROOT, 'kintai.js'), 'utf8');
   const fnSrc = (name) => { const i = K.indexOf('  function ' + name + '('); if (i < 0) return ''; const j = K.indexOf('\n  }\n', i); return K.slice(i, j + 4); };
   const amax = (td, months, cfg) => new Function('C', 'MS', 'TD', 'CFG', 'var month = null, leaveSt = { months: MS }; function today() { return TD; } function lvCfg() { return CFG; }\n' + fnSrc('absMaxDate') + '\nreturn absMaxDate();')(C, months, td, cfg);
-  t('休暇を入れられる最後の日: 読んだ来月分の期間の終わり・読んでいない時は締め日（月末・15日）から数える', amax('2026-11-20', [{ ym: '2026-11', period: { from: '2026-11-01', to: '2026-11-30' } }, { ym: '2026-12', period: { from: '2026-12-01', to: '2026-12-31' } }], { close_day: 0 }) === '2026-12-31' &&
-    amax('2026-11-20', [], { close_day: 0 }) === '2026-12-31' && amax('2026-11-20', [], { close_day: 15 }) === '2027-01-15' && amax('2026-11-10', [], { close_day: 15 }) === '2026-12-15');
+  /* ★反証レビュー（2026-11-20）: 線を「今日の暦の月の次の月分」（有給の窓が読む月分・DB と同じ）にそろえたので、締め日15日で今日が締め日の後の期待を 2027-01-15 から 2026-12-15 に改めた */
+  t('休暇を入れられる最後の日: 今日の暦の月の次の月分の期間の終わり（読んだ月分・読んでいない時は締め日（月末・15日・20日）から数える・年の境目）', amax('2026-11-20', [{ ym: '2026-11', period: { from: '2026-11-01', to: '2026-11-30' } }, { ym: '2026-12', period: { from: '2026-12-01', to: '2026-12-31' } }], { close_day: 0 }) === '2026-12-31' &&
+    amax('2026-11-20', [], { close_day: 0 }) === '2026-12-31' && amax('2026-11-20', [], { close_day: 15 }) === '2026-12-15' && amax('2026-11-10', [], { close_day: 15 }) === '2026-12-15' &&
+    amax('2026-11-25', [{ ym: '2026-12', period: { from: '2026-11-21', to: '2026-12-20' } }, { ym: '2027-01', period: { from: '2026-12-21', to: '2027-01-20' } }], { close_day: 20 }) === '2026-12-20' &&
+    amax('2026-12-25', [], { close_day: 20 }) === '2027-01-20' && amax('2026-12-31', [], { close_day: 0 }) === '2027-01-31');
   const pmo = new Function('LS', 'var leaveSt = LS;\n' + fnSrc('paidMinOn') + '\nreturn paidMinOn;')({ manual: [{ staff_id: 'x', use_date: '2026-11-02', days: 0.5 }, { staff_id: 'x', use_date: '2026-11-02', days: 1, voided_at: 'z' }],
     absences: [{ staff_id: 'x', date: '2026-11-02', kind: 'hourly_paid', minutes: 60 }, { staff_id: 'x', date: '2026-11-02', kind: 'special', paid: true, minutes: null }, { staff_id: 'x', date: '2026-11-02', kind: 'special', paid: false, minutes: null }, { staff_id: 'x', date: '2026-11-02', kind: 'comp', minutes: null }] });
   t('同じ日の有給の休みの分: 手入力の有休 半日（240）＋時間単位 60＋有給の特別休暇1日（480）＝780（無給・代休・取り消しは数えない）', pmo('x', '2026-11-02', 480) === 780 && pmo('x', '2026-11-03', 480) === 0);

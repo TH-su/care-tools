@@ -717,7 +717,7 @@
       for (j = 0; j < dates.length; j++) {
         var date = dates[j], bl = byDate[date].sort(function (x, y) { return (x.schedStart || x.countStart || 0) - (y.schedStart || y.countStart || 0); });
         var dw = 0, dsw = 0, dflags = [], noPunchAll = bl.length > 0, dnote = dayBy[st.staff_id + '|' + date];
-        var dhol = 0, dunc = 0, dabs = false, dot = 0;
+        var dhol = 0, dunc = 0, dabs = false, dot = 0, dLate = 0, dEarly = 0, dLateN = 0, dEarlyN = 0;
         if (date < first) {
           /* 前の6日分（前の月分の日）は週40時間の積み上げにだけ使う（日の一覧・合計・要確認に入れない） */
           for (var lx = 0; lx < bl.length; lx++) { dw += bl[lx].workMin; dsw += bl[lx].schedWork; dhol += bl[lx].holidayMin; dot += bl[lx].overtimeMin; }
@@ -732,8 +732,8 @@
           if (c.night && c.workMin > 0) sum.nightShiftCount++;
           if (c.flags.indexOf('no_punch') < 0) noPunchAll = false;
           sum.nightMin += c.nightMin; sum.overtimeMin += c.overtimeMin;
-          if (c.lateMin > 0) { sum.lateCount++; sum.lateMin += c.lateMin; }
-          if (c.earlyLeaveMin > 0) { sum.earlyLeaveCount++; sum.earlyLeaveMin += c.earlyLeaveMin; }
+          if (c.lateMin > 0) { sum.lateCount++; sum.lateMin += c.lateMin; dLate += c.lateMin; dLateN++; }
+          if (c.earlyLeaveMin > 0) { sum.earlyLeaveCount++; sum.earlyLeaveMin += c.earlyLeaveMin; dEarly += c.earlyLeaveMin; dEarlyN++; }
           for (var fl = 0; fl < c.flags.length; fl++) if (dflags.indexOf(c.flags[fl]) < 0) dflags.push(c.flags[fl]);
           if (needsReview(c)) sum.reviewCount++;   /* 要確認は勤務（塊）ごとに1件（印の数で数えない・指摘15）。確認済みの塊は数えない（v2-3） */
           dhol += c.holidayMin; dunc += c.uncountedMin;
@@ -785,7 +785,15 @@
             if (a.kind === 'special') { if (a.paid) { sum.specialPaidMin += mm; sum.specialPaidDays += dn; } else sum.specialUnpaidDays += dn; }
             else if (a.kind === 'comp') sum.compDays += dn;
           });
-          if (hourly) { sum.hourlyPaidMin += hourly; sum.paidMin += hourly; dayRow.hourlyPaidMin = hourly; }
+          if (hourly) {
+            sum.hourlyPaidMin += hourly; sum.paidMin += hourly; dayRow.hourlyPaidMin = hourly;
+            /* 時間単位の有休で休んだ時間は、その日の遅刻・早退に数えない（遅刻の分から先に差し引く・月給の遅刻早退の控除に入れない・給与段4 2026-11-20・仮置き）。
+               日の塊の遅刻・早退の印と分はそのまま（画面に出す）。差し引いて0になった日は回数からも外す */
+            var cutL = Math.min(hourly, dLate), cutE = Math.min(hourly - cutL, dEarly);
+            if (cutL) { sum.lateMin -= cutL; if (cutL === dLate) sum.lateCount -= dLateN; }
+            if (cutE) { sum.earlyLeaveMin -= cutE; if (cutE === dEarly) sum.earlyLeaveCount -= dEarlyN; }
+            if (cutL || cutE) dayRow.hourlyOffsetMin = cutL + cutE;
+          }
           dayRow.absences = (abl || []).concat(mks || []);
         }
         days.push(dayRow);
