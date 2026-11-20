@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Cache-Control" content="no-store">
+<!-- 読み込めるのはこのサイトのファイルと、受け口 kintai-self（1つの住所）だけ。画面内に直書きのスクリプトは置かない -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https://jhbernqawjrzqwrmqrih.supabase.co/functions/v1/kintai-self; base-uri 'none'; form-action 'none'; object-src 'none'">
+<title>自分の勤怠</title>
+<!--
+  自分の勤怠（職員本人のスマホの画面・2026-11-20 新設・契約 ~/Claude/Work/勤怠管理アプリ/ROOT-v5-freee.md「段5」と「段5 の設計の改め」・care-backend 統合 0114・受け口 kintai-self）
+  ════════════════════════════════════════════════════════════════
+  目的: 職員が自分のスマホで、自分の勤怠（予定・打刻・数えた時刻・実働）・有給の残りと期限・申請（打刻の直し・残業と早出・月の勤怠の確認）を見る・出す。
+  ★ログイン（su-auth.js）・許可リスト・現場のアカウントには乗らない（この画面から入居者の画面へは入れない）。共通ログインの部品は読まない。
+  ★登録: 管理者が勤怠の画面で出した1回限り・10分の登録の番号（QR の住所の # の後ろか、8文字）と、本人が決める4桁の暗証番号を2回入れる。
+    受け口が作った鍵（32バイトの乱数）だけをこの端末に置く（localStorage）。開くたびに暗証番号を入れる。
+  ★端末に置くのは鍵とタブの印だけ。暗証番号・開いている印・勤怠・有給・申請・表示名はメモリだけで、閉じる・2分さわらない・登録を外す で捨てる。
+  ★勤怠の数え方は管理画面と同じ部品（kintai-calc.js の computeMonth・kintai-leave.js）。画面だけで印刷しない。
+  ★表示はすべて textContent と部品の組み立て（HTML の代入は使わない）。console は使わない。
+-->
+<link rel="stylesheet" href="kintai-self.css?v=2026-11-20">
+</head>
+<body>
+<header class="hdr">
+  <h1>自分の勤怠</h1>
+  <p class="who" id="who" hidden></p>
+  <button type="button" class="btn sm" id="b-close" hidden>閉じる</button>
+</header>
+
+<main id="main">
+  <section class="cd" id="v-loading" aria-live="polite">
+    <p class="muted">読み込んでいます…</p>
+  </section>
+
+  <section class="cd" id="v-broken" hidden>
+    <h2>この画面を開けませんでした</h2>
+    <p class="msg ng" role="alert">画面の部品を読み込めませんでした。ページを読み込み直してください。</p>
+  </section>
+
+  <!-- 登録（この端末に鍵が無い時） -->
+  <section class="cd" id="v-enroll" hidden>
+    <h2>このスマホを登録する</h2>
+    <p>管理者が出した「登録の番号」（8文字）を入れるか、QR をカメラで読んで開いてください。次に、この画面を開く時に使う4桁の暗証番号を決めます。</p>
+    <form id="f-enroll" novalidate>
+      <div class="fld" id="fld-code">
+        <label for="in-code">登録の番号（8文字）</label>
+        <input id="in-code" class="mono" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="32" placeholder="例 ABCD-EFGH">
+      </div>
+      <p class="msg ok" id="code-from-qr" hidden>QR の番号を読みました。暗証番号を決めてください。</p>
+      <div class="fld">
+        <label for="in-pin1">暗証番号（4桁の数字）</label>
+        <input id="in-pin1" class="mono pin" type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="4">
+      </div>
+      <div class="fld">
+        <label for="in-pin2">もう一度（確かめ）</label>
+        <input id="in-pin2" class="mono pin" type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="4">
+      </div>
+      <p class="help">打刻の番号とは別の4桁にしてください。暗証番号を忘れた時は、管理者にこのスマホの登録を取り消してもらい、登録し直します。</p>
+      <div class="msg ng" id="enroll-msg" role="alert" hidden></div>
+      <div class="acts"><button type="submit" class="btn pri wide" id="b-enroll">登録する</button></div>
+    </form>
+  </section>
+
+  <!-- 暗証番号（鍵はあるが開いていない時） -->
+  <section class="cd" id="v-pin" hidden>
+    <h2>暗証番号を入れてください</h2>
+    <form id="f-pin" novalidate>
+      <div class="fld">
+        <label for="in-pin">暗証番号（4桁の数字）</label>
+        <input id="in-pin" class="mono pin" type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="4">
+      </div>
+      <div class="msg ng" id="pin-msg" role="alert" hidden></div>
+      <div class="acts"><button type="submit" class="btn pri wide" id="b-pin">開く</button></div>
+    </form>
+    <div class="acts sub"><button type="button" class="btn link" id="b-forget-pin">このスマホの登録を外す</button></div>
+  </section>
+
+  <!-- 本体（暗証番号で開いた後） -->
+  <section id="v-app" hidden>
+    <div class="tabs" role="tablist" aria-label="表示の切り替え">
+      <button type="button" role="tab" class="tab" id="t-days" data-tab="days" aria-controls="p-days">勤怠</button>
+      <button type="button" role="tab" class="tab" id="t-leave" data-tab="leave" aria-controls="p-leave">有給</button>
+      <button type="button" role="tab" class="tab" id="t-req" data-tab="req" aria-controls="p-req">申請</button>
+    </div>
+    <div class="msg ng" id="app-msg" role="alert" hidden></div>
+
+    <div class="pane" id="p-days" role="tabpanel" aria-labelledby="t-days">
+      <div class="seg" role="group" aria-label="月分">
+        <button type="button" class="btn sm" id="b-cur" aria-pressed="true">今月分</button>
+        <button type="button" class="btn sm" id="b-prev" aria-pressed="false">前の月分</button>
+      </div>
+      <div class="cd" id="days-head"></div>
+      <div id="days-list" class="list"></div>
+    </div>
+
+    <div class="pane" id="p-leave" role="tabpanel" aria-labelledby="t-leave" hidden>
+      <div class="cd" id="leave-box"></div>
+    </div>
+
+    <div class="pane" id="p-req" role="tabpanel" aria-labelledby="t-req" hidden>
+      <form class="cd" id="f-req" novalidate>
+        <h2>申請を出す</h2>
+        <div class="fld">
+          <label for="rq-kind">申請の種類</label>
+          <select id="rq-kind">
+            <option value="punch">打刻の直し（押し忘れ・押し間違い）</option>
+            <option value="overtime">残業・早出</option>
+            <option value="month">月の勤怠の確認（確かめました）</option>
+          </select>
+        </div>
+        <div class="fld" id="g-date">
+          <label for="rq-date">勤務の日</label>
+          <input id="rq-date" type="date">
+        </div>
+        <div id="g-punch">
+          <div class="fld">
+            <label for="rq-pk">出勤か退勤か</label>
+            <select id="rq-pk"><option value="in">出勤</option><option value="out">退勤</option></select>
+          </div>
+          <div class="fld">
+            <label for="rq-time">本当の時刻</label>
+            <input id="rq-time" type="time">
+          </div>
+          <label class="chk"><input id="rq-next" type="checkbox"> 次の日の時刻（夜勤の退勤など）</label>
+        </div>
+        <div id="g-ot" hidden>
+          <div class="fld">
+            <label for="rq-ef">早出の始まり（無ければ空のまま）</label>
+            <input id="rq-ef" type="time">
+          </div>
+          <div class="fld">
+            <label for="rq-ou">残業の終わり（無ければ空のまま）</label>
+            <input id="rq-ou" type="time">
+          </div>
+          <label class="chk"><input id="rq-ou-next" type="checkbox"> 残業の終わりは次の日の時刻</label>
+        </div>
+        <div class="fld" id="g-ym" hidden>
+          <label for="rq-ym">確かめた月分</label>
+          <select id="rq-ym"></select>
+        </div>
+        <div class="fld" id="g-reason">
+          <label for="rq-reason">理由（194字まで）</label>
+          <textarea id="rq-reason" rows="3" maxlength="194"></textarea>
+        </div>
+        <div class="msg" id="rq-msg" role="status" hidden></div>
+        <div class="acts"><button type="submit" class="btn pri wide" id="b-req">申請する</button></div>
+      </form>
+      <h2 class="sh">出した申請</h2>
+      <div id="req-list" class="list"></div>
+    </div>
+
+    <div class="acts sub"><button type="button" class="btn link" id="b-forget">このスマホの登録を外す</button></div>
+  </section>
+</main>
+
+<script src="shift-symbols.js?v=2026-11-18"></script>
+<script src="kintai-calc.js?v=2026-11-20.2"></script>
+<script src="kintai-leave.js?v=2026-11-20.2"></script>
+<script src="kintai-self-calc.js?v=2026-11-20"></script>
+<script src="kintai-self.js?v=2026-11-20"></script>
+<script src="su-report.js?v=2026-11-16" data-tool="自分の勤怠"></script>
+</body>
+</html>
