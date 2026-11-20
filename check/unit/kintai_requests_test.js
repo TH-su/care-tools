@@ -10,18 +10,25 @@
      4. 「スマホを登録」は管理者（isAdmin）だけ・お休み中の人には出さない。「スマホの一覧」は勤怠の管理者ならだれでも
      5. QR の番号: 本人の画面の住所＋#c=番号 を絵にし、8文字は ABCD-EFGH の形で窓に出す。窓を閉じる（closeDlg・Esc の close）・別の窓・期限で、絵と番号を消してタイマーを止める
      6. 関数が無い（noDb）時: 申請の数・一覧・スマホの一覧に「データベースの更新がまだです」を出し、自動の報告（note）に回さず、もう聞かない
-     7. 画面の形: 申請のタブ（要確認の次）・su-qr.js を kintai.js の前に読む・新しい部品の押す所は 699px 以下で 44px・印刷に出さない（no-print） */
+     7. 画面の形: 申請のタブ（要確認の次）・su-qr.js を kintai.js の前に読む・新しい部品の押す所は 699px 以下で 44px・印刷に出さない（no-print）
+     9. 反証レビュー（2026-11-21）の直し: 一覧はタブに入る・箱から移る・読み直すで捨てて読み直し、古い答えで上書きしない／決めた後は前の数の答えを捨てる／
+        差し戻しと取り消しの書きかけは確かめる／iPhone の幅でボタンを職員の欄の下に出す／本人の画面の時間単位の有休と締める前の目安の知らせ。
+        本物の paint・setTab・bind・paintHome・dirty を偽の DOM で動かす（ホームの箱の件数・取り消しの送信も）。
+        直す前の版で落ちることは KINTAI_JS=<直す前の kintai.js> KINTAI_HTML=… KINTAI_SELF_CALC=… で回して確かめる */
 'use strict';
 const fs = require('fs');
 const path = require('path');
 const ROOT = path.join(__dirname, '..', '..');
 const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
 const C = require(path.join(ROOT, 'kintai-calc.js'));
-const S = require(path.join(ROOT, 'kintai-self-calc.js'));
+/* 直す前の版で落ちることを確かめる時は KINTAI_JS・KINTAI_HTML・KINTAI_SELF_CALC で別のファイルを渡す（ふだんは使わない） */
+const S = require(process.env.KINTAI_SELF_CALC || path.join(ROOT, 'kintai-self-calc.js'));
+const MON = require(path.join(ROOT, 'kintai-monitor.js'));
 let pass = 0, fail = 0;
 function t(n, c, e) { if (c) { pass++; console.log('  ✓ ' + n); } else { fail++; console.log('  ✗ ' + n + (e !== undefined ? '  → ' + JSON.stringify(e) : '')); } }
 
-const K = read('kintai.js'), H = read('kintai.html');
+const K = process.env.KINTAI_JS ? fs.readFileSync(process.env.KINTAI_JS, 'utf8') : read('kintai.js');
+const H = process.env.KINTAI_HTML ? fs.readFileSync(process.env.KINTAI_HTML, 'utf8') : read('kintai.html');
 function cut(src, head) {
   const i = src.indexOf(head);
   if (i < 0) throw new Error('見つからない: ' + head);
@@ -36,14 +43,17 @@ function makeDom() {
   const els = {};
   const mkEl = (id) => {
     const e = { id, tag: 'div', className: '', textContent: '', innerHTML: '', hidden: false, disabled: false, children: [], value: '', open: false, scrollTop: 0,
+      listeners: {}, parentNode: null, addEventListener(k, f) { (this.listeners[k] = this.listeners[k] || []).push(f); },
       appendChild(c) { this.children.push(c); return c; }, replaceChildren(...c) { this.children = c; this.textContent = ''; },
-      querySelector() { return null; }, querySelectorAll() { return []; }, focus() {}, setAttribute() {}, removeAttribute() {},
+      querySelector() { return null; }, querySelectorAll() { return id === 'g-dlg-b' ? [$('e-rq-note'), $('e-reason')] : []; }, focus() {}, setAttribute() {}, removeAttribute() {},
       showModal() { this.open = true; }, close() { this.open = false; } };
     return e;
   };
   const $ = (id) => els[id] || (els[id] = mkEl(id));
   const kq = mkEl('kq');
-  const document = { visibilityState: 'visible', createElement: (tag) => Object.assign(mkEl(''), { tag }),
+  const docL = {};
+  const document = { visibilityState: 'visible', createElement: (tag) => Object.assign(mkEl(''), { tag }), listeners: docL,
+    addEventListener: (k, f) => { (docL[k] = docL[k] || []).push(f); },
     querySelector: (q) => (q === '#g-dlg-b .kq' ? kq : null), querySelectorAll: () => [] };
   return { els, $, document, kq };
 }
@@ -56,15 +66,27 @@ const PARTS = [
   (K.match(/var DENIED_MSG = '[^']*';/) || [''])[0], cut(K, 'function isDenied('), cut(K, 'function okOr('), cut(K, 'function msgOf('), cut(K, 'function mk('),
   cut(K, 'function pressBusy('), cut(K, 'function hm('), cut(K, 'function ms('), cut(K, 'function md('), "var WD = ['日', '月', '火', '水', '木', '金', '土'];", cut(K, 'function wd('),
   cut(K, 'function staffById('), cut(K, 'function dispName('), cut(K, 'function reasonRow('), cut(K, 'function needReason('),
-  cut(K, 'function openDlg('), cut(K, 'function closeDlg('),
+  cut(K, 'function openDlg('), cut(K, 'function closeDlg('), cut(K, 'function formState('),
+].join('\n');
+/* opt.full: 画面の描き方（paint・paintTabs・ホーム）・タブの移り（setTab）・押す所の受け（bind）・窓の変更の確かめ（dirty）も本物を動かす。ほかのタブの描き方は空の偽物 */
+const FULL = [
+  (K.match(/  var TABS = \[[^\n]*/) || [''])[0], cut(K, 'function paint() {'), cut(K, 'function paintTabs('), cut(K, 'function setTab('), cut(K, 'function bind('),
+  cut(K, 'function paintHome('), (K.match(/  var BOX_UNIT = [^\n]*/) || [''])[0], (K.match(/  var LV_JA = [^\n]*/) || [''])[0], cut(K, 'function boxHtml('), cut(K, 'function waitBox('),
+  cut(K, 'function today()'), cut(K, 'function per()'), cut(K, 'function inPer('), (K.match(/  var DIRTY_MODES = [^\n]*/) || [''])[0], cut(K, 'function dirty('),
+  'var month = OPT.month || null, selDate = null, setInit = null, LS_TAB = "kintai_tab", L = null, RUL = null, K36 = null, leaveSt = null, leaveBusy = false;',
+  'var confirm = function (q) { LOG.confirms.push(q); return OPT.confirm ? OPT.confirm(q) : true; }, alert = function () {};',
+  'function paintDay() { return "" } function paintReview() { return "" } function paintGrid() { return "" } function paintPerson() { return "" } function paintStaff() { return "" }',
+  'function paintLeave() { return "" } function paintClose() { return reqCloseHtml(); } function paintSettings() { return "" } function bands() { return "" } function skel() {}',
+  'function settingsState() { return null; } function settingsLeaveOk() { return true; } function settingsDirty() { return false; } function lsSet() {} function quietReload() {}',
+  'function stampPrint() {} function endPrint() {} function isField() { return false; } function rawCfg() { return {}; } function loadLeave() {}',
 ].join('\n');
 function box(opt = {}) {
   const dom = makeDom();
-  const log = { rpc: [], notes: [], loads: [], drops: 0, paints: 0, toasts: [], timers: new Set(), cleared: [] };
+  const log = { rpc: [], notes: [], loads: [], drops: 0, paints: 0, toasts: [], timers: new Set(), cleared: [], confirms: [] };
   const env = {
     C, document: dom.document, $: dom.$,
     location: { href: 'https://example.invalid/care-tools/kintai.html?x=1#y' },
-    window: { SUQr: opt.noQr ? null : { svg: (text, o) => ({ tag: 'svg', text, label: o && o.label }) } },
+    window: { SUQr: opt.noQr ? null : { svg: (text, o) => ({ tag: 'svg', text, label: o && o.label }) }, addEventListener() {} }, MON, LOG: log,
     rpc: (name, args) => { log.rpc.push({ name, args }); return opt.rpc ? opt.rpc(name, args) : Promise.reject({ code: 'PGRST202', message: 'none' }); },
     note: (w) => log.notes.push(w), toast: (m) => log.toasts.push(m),
     paint: () => { log.paints++; }, paintTabs: () => {}, load: (w) => { log.loads.push(w); return Promise.resolve(); }, dropMonthCaches: () => { log.drops++; },
@@ -72,8 +94,10 @@ function box(opt = {}) {
     setInterval: (f) => { const h = { f }; log.timers.add(h); return h; }, clearInterval: (h) => { log.cleared.push(h); log.timers.delete(h); },
   };
   const names = Object.keys(env);
-  const src = PARTS + '\n' + STATE + '\nvar view = "app", ym = "2026-11", busy = false, tab = OPT.tab || "requests", printAll = false, dlgCtx = null, editsCache = null, data = OPT.data || null;\n' + BLOCK +
+  const src = PARTS + '\n' + STATE + (opt.full ? '\n' + FULL : '') + '\nvar view = "app", ym = "2026-11", busy = false, tab = OPT.tab || "requests", printAll = false, dlgCtx = null, editsCache = null, data = OPT.data || null;\n' + BLOCK +
     '\nreturn { paintRequests, reqMsg, selfMsg, selfBtns, openReqDecide, saveReqDecide, loadReqSum, loadReqs, reqCloseHtml, openEnroll, enrollTick, wipeEnroll, openDevices, closeDlg, openDlg, rqBody,' +
+    ' paint: paint, setTab: typeof setTab === "function" ? setTab : null, bind: typeof bind === "function" ? bind : null, dirty: typeof dirty === "function" ? dirty : null, openRevoke, saveRevoke,' +
+    ' get ym() { return ym; }, set ym(v) { ym = v; }, get tab() { return tab; }, set tab(v) { tab = v; }, get reqF() { return reqF; }, set reqF(v) { reqF = v; },' +
     ' get reqSt() { return reqSt; }, set reqSt(v) { reqSt = v; }, get reqSum() { return reqSum; }, set reqSum(v) { reqSum = v; }, get reqNoDb() { return reqNoDb; }, get enrollSt() { return enrollSt; }, get dlgCtx() { return dlgCtx; }, NG, NODB_REQ };';
   const api = new Function(...names, 'OPT', src)(...names.map((k) => env[k]), opt);
   return { api, dom, log, env };
@@ -261,7 +285,8 @@ const ROWS = [
   {
     t('申請のタブは要確認の次（TABS とボタン）・札 g-rq-n', /var TABS = \['home', 'day', 'review', 'requests', 'grid'/.test(K) && /data-tab="requests">申請<span class="tab-n" id="g-rq-n" aria-hidden="true"><\/span><\/button>/.test(H));
     t('su-qr.js（accounts.html と同じ版）を kintai.js の前に読む・kintai.js は 2026-11-21.5', /<script src="su-qr\.js\?v=2026-11-08"><\/script>\s*<script src="kintai\.js\?v=2026-11-21\.5"><\/script>/.test(H) && /su-qr\.js\?v=2026-11-08/.test(read('accounts.html')));
-    t('新しい部品の押す所は 699px 以下で 44px・入力の文字 16px', /@media \(max-width:699px\)\{\.btn\.k5,select\.k5,input\.k5\{min-height:44px\}select\.k5,input\.k5\{font-size:16px\}\}/.test(H));
+    /* ★反証レビュー（2026-11-21）の直し 6 で同じ @media の中に申請の一覧の並びの決まりを足したので、閉じかっこの代わりに改行で区切りを見る（44px・16px は同じ） */
+    t('新しい部品の押す所は 699px 以下で 44px・入力の文字 16px', /@media \(max-width:699px\)\{\.btn\.k5,select\.k5,input\.k5\{min-height:44px\}select\.k5,input\.k5\{font-size:16px\}\n/.test(H));
     t('箱・締めの画面から申請のタブへは承認待ち・すべての月分で開く', /if \(b\.getAttribute\('data-rq'\) === 'pending'\) reqF = \{ status: 'pending', ym: '' \};/.test(K));
     t('Esc（cancel）で閉じる時はその場で QR と番号を消す（close の知らせは後から届くため）', /else \{ dlgCtx = null; wipeEnroll\(\); \} \}\);/.test(cut(K, 'function bind(')));
     t('描く時に承認待ちの数を読みに行く（申請のタブから開いてもタブの札が出る・1分より古い時だけ）', /if \(!month\) return;\s*if \(!reqSumFresh\(\)\) loadReqSum\(false\);/.test(cut(K, 'function paint(')));
@@ -271,6 +296,161 @@ const ROWS = [
     t('管理の口の名前（統合 0114）', ['kintai_requests_list', 'kintai_requests_decide', 'kintai_self_enroll_issue', 'kintai_self_devices', 'kintai_self_device_revoke'].every((n) => BLOCK.indexOf("rpc('" + n + "'") >= 0));
   }
 
+
+  console.log('\n— 9. 反証レビュー（2026-11-21）の直しを動かして確かめる —');
+  {
+    const defer = () => { let resolve; const p = new Promise((r) => { resolve = r; }); return { p, resolve }; };
+    const per0 = C.periodOf('2026-11', null);
+    const MONTH = C.computeMonth({ ym: '2026-11', period: per0, staff: [], schedule: [], punches: [], days: [], config: {}, now: Date.now() });
+    const FRESH = () => ({ ym: '2026-11', at: Date.now(), pending: 3, monthPending: 1, confirmed: 2, active: 5 });
+    const listOf = (rows) => ({ ok: true, rows, pending: rows.length, month_confirmed: null, active_staff: 5 });
+    const tabCalls = (log) => log.rpc.filter((c) => c.name === 'kintai_requests_list' && c.args.p_ym === null);
+    const fullBox = (o = {}) => { const b = box(Object.assign({ full: true, month: MONTH, data: { staff: STAFF, period: null } }, o)); return b; };
+    const clickBtn = (b, attrs) => { const btn = { getAttribute: (k) => (k in attrs ? attrs[k] : null), hasAttribute: (k) => k in attrs }; b.dom.document.listeners.click.forEach((f) => f({ target: { closest: () => btn } })); };
+
+    /* ホームの箱に件数が出る（本物の paint → paintHome → KintaiMonitor.boxes） */
+    {
+      const b = fullBox({ tab: 'home' });
+      b.api.reqSum = FRESH();
+      b.api.paint();
+      const h = b.dom.$('g-main').innerHTML;
+      t('ホームに「申請の承認待ち」の箱（3 件・押すと承認待ちで申請のタブへ）とタブの札 3', /class="hbox warn" data-tab="requests" data-rq="pending"><span class="ht"><span>申請の承認待ち<\/span><span class="hn">3 <small>件<\/small>/.test(h) && b.dom.$('g-rq-n').textContent === '3', h.slice(-600));
+      b.api.reqSum = { ym: '2026-11', at: Date.now(), err: b.api.NODB_REQ };
+      b.api.paint();
+      const h2 = b.dom.$('g-main').innerHTML;
+      t('関数が無い時のホーム: 「申請の承認待ち」の待ちの箱に同じ文・読み直すボタンなし・数の箱は出さない', h2.indexOf('<span>申請の承認待ち</span></span><span class="hl">' + b.api.NODB_REQ) >= 0 && h2.indexOf('lv-reload') < 0 && h2.indexOf('data-tab="requests"') < 0);
+    }
+    /* 描く時に承認待ちの数を読みに行く・待つ間に月を替えたら今の月分を読み直す */
+    {
+      const d1 = defer();
+      const b = fullBox({ tab: 'grid', rpc: (n, a) => (a.p_ym === '2026-11' ? d1.p : Promise.resolve(listOf([]))) });
+      b.api.paint();
+      t('描くと（ほかのタブでも）承認待ちの数を読みに行く', b.log.rpc.some((c) => c.name === 'kintai_requests_list' && c.args.p_ym === '2026-11' && c.args.p_status === 'pending'));
+      b.api.ym = '2026-12';
+      d1.resolve(listOf([ROWS[0]]));
+      await tick(); await tick(); await tick();
+      t('待つ間に月を替えたら今の月分を読み直す（前の月分の数では描かない）', b.log.rpc.some((c) => c.args.p_ym === '2026-12') && (!b.api.reqSum || b.api.reqSum.ym === '2026-12'), b.api.reqSum);
+    }
+    /* 直し1: タブに入った時は一覧を捨てて読み直す */
+    {
+      const b = fullBox({ tab: 'home', rpc: () => Promise.resolve(listOf([ROWS[1]])) });
+      b.api.reqSum = FRESH();
+      b.api.reqSt = { key: 'pending|all', rows: [ROWS[0]] };
+      b.api.setTab('requests');
+      await tick(); await tick();
+      t('直し1: 申請のタブに入ると一覧を読み直す（前に読んだ一覧を使い回さない）', tabCalls(b.log).length === 1 && b.api.reqSt && b.api.reqSt.rows[0].id === ROWS[1].id, b.api.reqSt && b.api.reqSt.rows.map((r) => r.id));
+    }
+    {
+      const ds = [];
+      const b = fullBox({ tab: 'requests', rpc: (n, a) => { if (a.p_ym !== null) return Promise.resolve(listOf([])); const d = defer(); ds.push(d); return d.p; } });
+      b.api.reqSum = FRESH();
+      b.api.paint();
+      b.api.setTab('requests');
+      t('直し1: 読み込み中にタブへ入り直すと、新しく読み直す', ds.length === 2, ds.length);
+      if (ds[1]) ds[1].resolve(listOf([ROWS[1]]));
+      await tick(); await tick();
+      if (ds[0]) ds[0].resolve(listOf([ROWS[0]]));
+      await tick(); await tick();
+      t('直し1: 古い答え（先に出した読み込み）で上書きしない', b.api.reqSt && b.api.reqSt.rows.length === 1 && b.api.reqSt.rows[0].id === ROWS[1].id, b.api.reqSt && b.api.reqSt.rows.map((r) => r.id));
+    }
+    {
+      const b = fullBox({ tab: 'close', rpc: () => Promise.resolve(listOf([ROWS[1]])) });
+      b.api.bind();
+      b.api.reqSum = FRESH();
+      b.api.reqSt = { key: 'pending|all', rows: [ROWS[0]] };
+      clickBtn(b, { 'data-tab': 'requests', 'data-rq': 'pending' });
+      await tick(); await tick();
+      t('直し1: 締めの画面・ホームの箱の「承認待ちの申請を見る」から移ると、承認待ち・すべての月分で読み直す', b.api.tab === 'requests' && b.api.reqF.status === 'pending' && b.api.reqF.ym === '' && tabCalls(b.log).length === 1 && b.api.reqSt.rows[0].id === ROWS[1].id);
+    }
+    {
+      const ds = [];
+      const b = fullBox({ tab: 'requests', rpc: (n, a) => { if (a.p_ym !== null) return Promise.resolve(listOf([])); const d = defer(); ds.push(d); return d.p; } });
+      b.api.bind();
+      b.api.reqSum = FRESH();
+      b.api.paint();
+      b.dom.$('g-reload').listeners.click.forEach((f) => f());
+      t('直し1: 上の「読み直す」で月を読み直し、申請の一覧と数も捨てる', b.log.loads.length === 1 && b.api.reqSt === null && b.api.reqSum === null);
+      ds[0].resolve(listOf([ROWS[0]]));
+      await tick(); await tick();
+      t('直し1: 「読み直す」の前に出した読み込みの答えは捨てる', b.api.reqSt === null, b.api.reqSt);
+    }
+    /* 直し4: 承認・差し戻しの直後は、決める前に出した数の読み込みの答えを捨てる */
+    {
+      const d = defer();
+      const b = fullBox({ tab: 'requests', rpc: (n) => (n === 'kintai_requests_decide' ? Promise.resolve({ ok: true, rev: 2, status: 'approved', applied: {} }) : d.p) });
+      b.api.loadReqSum(true);
+      b.api.reqSt = { key: 'pending|all', rows: ROWS };
+      b.api.openReqDecide(ROWS[0].id, true);
+      b.api.saveReqDecide(b.dom.$('btn'));
+      await tick(); await tick();
+      d.resolve(listOf([ROWS[0], ROWS[1]]));
+      await tick(); await tick();
+      t('直し4: 決める前の数の答え（承認待ち 2）で、決めた後の数を上書きしない', !b.api.reqSum || b.api.reqSum.pending !== 2, b.api.reqSum);
+    }
+    /* 直し5: 差し戻し・承認のメモと取り消しの理由は、書きかけなら閉じる前に確かめる */
+    {
+      const b = fullBox({ tab: 'requests', confirm: () => false });
+      b.api.bind();
+      b.api.reqSt = { key: 'pending|all', rows: ROWS };
+      b.api.openReqDecide(ROWS[1].id, false);
+      t('直し5: 開いたばかりの差し戻しの窓は「書きかけ」ではない', b.api.dirty() === false);
+      b.dom.$('e-rq-note').value = '見本の書きかけ';
+      t('直し5: 差し戻しの理由を書きかけると「書きかけ」', b.api.dirty() === true);
+      clickBtn(b, { 'data-act': 'dlg-close' });
+      t('直し5: 「閉じる」は確かめを出し、やめたら窓を残す', b.log.confirms.length === 1 && b.dom.$('g-dlg').open === true && b.api.dlgCtx && b.api.dlgCtx.mode === 'rq');
+      let prevented = false;
+      b.dom.$('g-dlg').listeners.cancel.forEach((f) => f({ preventDefault() { prevented = true; } }));
+      t('直し5: Esc も確かめを出し、やめたら閉じない', prevented && b.log.confirms.length === 2 && b.api.dlgCtx && b.api.dlgCtx.mode === 'rq');
+    }
+    {
+      const b = fullBox({ tab: 'staff', rpc: () => Promise.resolve({ ok: true, devices: [{ id: 11, staff_id: 'sQ01', created_at: '2026-11-01T09:00:00+09:00', last_used_at: null, revoked_at: null, state: 'active' }], codes: [] }) });
+      b.api.openDevices('sQ01');
+      await tick(); await tick();
+      b.api.openRevoke('11');
+      t('直し5: 開いたばかりの取り消しの窓は「書きかけ」ではない', b.api.dirty() === false);
+      b.dom.$('e-reason').value = '見本の理由';
+      t('直し5: 取り消しの理由を書きかけると「書きかけ」', b.api.dirty() === true);
+      /* 取り消しの送信（理由が無ければ送らない・あれば番号の数と理由を送り、一覧へ戻る） */
+      b.dom.$('e-reason').value = '';
+      b.api.saveRevoke(b.dom.$('btn'));
+      await tick();
+      t('取り消し: 理由が無ければ送らない', !b.log.rpc.some((c) => c.name === 'kintai_self_device_revoke') && /理由/.test(b.dom.$('e-msg').textContent));
+      b.dom.$('e-reason').value = ' 見本の取り消し ';
+      b.api.saveRevoke(b.dom.$('btn'));
+      await tick(); await tick(); await tick();
+      const rv = b.log.rpc.find((c) => c.name === 'kintai_self_device_revoke');
+      t('取り消し: kintai_self_device_revoke に番号（数）と理由を送り、スマホの一覧へ戻る', rv && rv.args.p_id === 11 && rv.args.p_reason === '見本の取り消し' && b.api.dlgCtx && b.api.dlgCtx.mode === 'sp', rv && rv.args);
+    }
+    /* 窓の閉じ方（Esc の cancel・dialog の close）で QR と番号を消す */
+    {
+      const CODE = 'abcdef0123456789abcdef0123456789abcdef01';
+      const mkE = () => fullBox({ tab: 'staff', rpc: (n) => (n === 'kintai_self_enroll_issue' ? Promise.resolve({ ok: true, id: 7, code: CODE, short: 'ABCDHJKM', expiresAt: new Date(Date.now() + 600000).toISOString() }) : Promise.resolve({ ok: true, devices: [], codes: [] })) });
+      const b = mkE(); b.api.bind();
+      b.api.openEnroll('sQ01', b.dom.$('btn')); await tick(); await tick();
+      b.dom.$('g-dlg').listeners.cancel.forEach((f) => f({ preventDefault() {} }));
+      t('Esc（cancel）の受けでその場で QR と8文字を消す', b.dom.$('e-sp-qr').children.length === 0 && b.dom.$('e-sp-short').textContent === '' && b.api.enrollSt === null);
+      const b2 = mkE(); b2.api.bind();
+      b2.api.openEnroll('sQ01', b2.dom.$('btn')); await tick(); await tick();
+      b2.dom.$('g-dlg').listeners.close.forEach((f) => f());
+      t('dialog の close でも QR と8文字を消す', b2.dom.$('e-sp-qr').children.length === 0 && b2.dom.$('e-sp-short').textContent === '' && b2.api.enrollSt === null);
+    }
+    /* 直し6: iPhone の幅では行を縦に積み、「承認」「差し戻し」を職員の欄のすぐ下に出す（PC の表は変えない・並びは HTML の @media で決める） */
+    {
+      const { api } = box();
+      api.reqSt = { key: 'pending|all', rows: ROWS };
+      const h = api.paintRequests();
+      t('直し6: 職員の欄に印 rq-nm・ほかの欄に見出しの名前（data-l）・ボタンの欄 rq-btns', /<tr><td class="rq-nm">見本 一子/.test(h) && /<td data-l="中身">/.test(h) && /<td class="rq-btns"><button type="button" class="btn sm pri k5" data-act="rq-ok"/.test(h));
+      const mq = (H.match(/@media \(max-width:699px\)\{\.btn\.k5[\s\S]*?\}\}\n/) || [''])[0];
+      t('直し6: 699px 以下だけで、行を縦に積み、ボタンの欄（order:1）を職員の欄（order:0）のすぐ下に出す', /table\.rq-t tr\{display:flex;flex-direction:column/.test(mq) && /td\.rq-nm\{order:0/.test(mq) && /td\.rq-btns\{order:1;display:flex/.test(mq) && /table\.rq-t thead\{display:none\}/.test(mq) && !/table\.rq-t tr\{display:flex/.test(H.replace(mq, '')));
+    }
+    /* 本人の画面（直し2・3）: 時間単位の有休を使う施設だけ残りの近くに知らせ・締めていない月分だけ目安の知らせ */
+    {
+      t('直し2: 時間単位の有休を使う施設（どれかの月分の設定で true）だけ知らせる', S.hourlyLeaveOn && S.hourlyLeaveOn({ months: [{ ym: '2026-10', config: {} }, { ym: '2026-11', config: { hourlyPaidLeave: true } }] }) === true
+        && S.hourlyLeaveOn({ months: [{ ym: '2026-11', config: { hourlyPaidLeave: false } }] }) === false && S.hourlyLeaveOn({}) === false && S.hourlyLeaveOn(null) === false);
+      t('直し2: 文（仮置き）', S.HOURLY_NOTE === '時間単位で取った分は、ここの残りに入っていません。正しい残りは事務所で確かめてください。');
+      t('直し3: 締めていない月分だけ「締める前の数字は目安です（締めた後に事務所の数字と同じになります）」', S.draftNote && S.draftNote({ locked: false }) === '締める前の数字は目安です（締めた後に事務所の数字と同じになります）' && S.draftNote({ locked: true }) === '');
+    }
+  }
   console.log('\n' + pass + ' 件合格 / ' + fail + ' 件不合格');
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

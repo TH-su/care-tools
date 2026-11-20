@@ -209,6 +209,7 @@
     var h = S.monthHead(d, C, ym), tot = S.monthTotals(m);
     head.appendChild(el('h2', null, h.label));
     if (h.locked) head.appendChild(el('p', 'msg ok', 'この月分は締めてあります。直しが要る時は事務所に伝えてください。'));
+    if (S.draftNote(h)) head.appendChild(el('p', 'msg warn', S.draftNote(h)));   /* 締めていない月分の数字は目安（反証レビュー 2026-11-21） */
     var t = el('div', 'tot');
     [['実働の合計', S.minText(tot.workMin)], ['出勤の日数', tot.workDays + ' 日'], ['有休', tot.paidDays + ' 日'], ['予定を超えた時間', S.minText(tot.overtimeMin)]].forEach(function (x) {
       var row = el('div'); row.appendChild(el('span', null, x[0])); row.appendChild(el('b', null, x[1])); t.appendChild(row);
@@ -248,6 +249,7 @@
     if (!v) { box.appendChild(el('p', 'msg ng', '有給を数えられませんでした。ページを読み込み直してください。')); return; }
     box.appendChild(el('h2', null, '有給の残り'));
     box.appendChild(el('p', 'big', v.remain + ' 日'));
+    if (S.hourlyLeaveOn(leaveData)) box.appendChild(el('p', 'msg warn', S.HOURLY_NOTE));   /* 時間単位の有休を使う施設だけ（反証レビュー 2026-11-21） */
     if (v.soon) box.appendChild(el('p', 'msg warn', 'いちばん早く消える残り: ' + v.soon.days + ' 日（' + v.soon.expires + ' まで）'));
     if (v.ob5) box.appendChild(el('p', v.ob5Warn ? 'msg warn' : 'muted', v.ob5));
     if (v.lots.length) {

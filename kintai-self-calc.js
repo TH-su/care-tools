@@ -154,6 +154,15 @@
     var grants = Array.isArray(lv.grants) ? lv.grants : [];
     return L.summary({ hireDate: lv.hire_date || null, profile: lv.profile || null, grants: grants, uses: uses, asOf: today });
   }
+  /* 時間単位の有休を使う施設か（有給の答えの月分のどれかの設定で hourlyPaidLeave が true）。受け口の有給の答えは休暇の行を返さないので、
+     本人の画面の残りは時間単位で取った分を引けない。その施設でだけ、残りの近くに HOURLY_NOTE を出す（反証レビュー 2026-11-21・DB は変えない・文は仮置き） */
+  function hourlyLeaveOn(lv) {
+    return (lv && Array.isArray(lv.months) ? lv.months : []).some(function (m) { return !!(m && m.config && typeof m.config === 'object' && m.config.hourlyPaidLeave === true); });
+  }
+  var HOURLY_NOTE = '時間単位で取った分は、ここの残りに入っていません。正しい残りは事務所で確かめてください。';
+  /* 締めていない月分の実働は目安（本人の画面はシフトの休憩の設定を読めないため、管理画面とずれることがある）。締めた月分では出さない（文は仮置き） */
+  var DRAFT_NOTE = '締める前の数字は目安です（締めた後に事務所の数字と同じになります）';
+  function draftNote(head) { return head && !head.locked ? DRAFT_NOTE : ''; }
   /* 有給の表示の行: 残り・期限の近い残り・付与ごとの残りと期限・次の付与・年5日 */
   function leaveView(sm) {
     if (!sm) return null;
@@ -250,7 +259,7 @@
   }
 
   var api = {
-    IDLE_MS: IDLE_MS, KIND_JA: KIND_JA, STATUS_JA: STATUS_JA, ERR: ERR,
+    IDLE_MS: IDLE_MS, hourlyLeaveOn: hourlyLeaveOn, HOURLY_NOTE: HOURLY_NOTE, DRAFT_NOTE: DRAFT_NOTE, draftNote: draftNote, KIND_JA: KIND_JA, STATUS_JA: STATUS_JA, ERR: ERR,
     isDate: isDate, isYm: isYm, todayOf: todayOf, ymOf: ymOf, nextYm: nextYm, prevYm: prevYm, addDays: addDays, hm: hm, minText: minText,
     dayLabel: dayLabel, ymdJa: ymdJa, ymJa: ymJa, shortOf: shortOf, codeFromHash: codeFromHash, pinProblem: pinProblem,
     currentYm: currentYm, dayRows: dayRows, monthTotals: monthTotals, monthHead: monthHead, computeOf: computeOf,

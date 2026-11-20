@@ -1463,7 +1463,7 @@
       note('直しの履歴', e); if (dlgCtx !== ctx || !$('e-hist')) return; var bx = $('e-hist'); bx.textContent = ''; bx.appendChild(mk('p', 'empty', '直しの履歴を読めませんでした: ' + msgOf(e)));
     });
   }
-  var DIRTY_MODES = { edit: 1, work: 1, leave: 1, link: 1, mimport: 1, clockvis: 1, madd: 1, dname: 1, sched: 1, fixed: 1 };   /* 0111 で予定の手直し・前提を足した */   /* 保存していない入力を確かめる窓（v4 で手入力・有給・結び付けを足した） */
+  var DIRTY_MODES = { edit: 1, work: 1, leave: 1, link: 1, mimport: 1, clockvis: 1, madd: 1, dname: 1, rq: 1, sprv: 1, sched: 1, fixed: 1 };   /* v5 段5: 差し戻し・承認のメモ（rq）と、スマホの取り消しの理由（sprv）を足した（反証レビュー 2026-11-21） */   /* 0111 で予定の手直し・前提を足した */   /* 保存していない入力を確かめる窓（v4 で手入力・有給・結び付けを足した） */
   DIRTY_MODES.mgr = 1;   /* v5 1-5: 勤怠の管理者を足す・外す窓も確かめる */
   function closeDlg() { wipeEnroll(); dlgCtx = null; try { $('g-dlg').close(); } catch (_) { $('g-dlg').removeAttribute('open'); } }
   function dirty() {
@@ -2497,6 +2497,9 @@
   function reqKey() { return (reqF.status || 'all') + '|' + (reqF.ym ? ym : 'all'); }
   function reqSumFresh() { return !!reqSum && reqSum.ym === ym && (reqNoDb || Date.now() - reqSum.at < 60000); }
   /* 承認待ちの数（事業者の全部の月分）・この月分の承認待ち・月の確認を出した在籍の人の数と在籍の人の数（ホームの箱・タブの札・締めの画面） */
+  /* 申請の一覧・数を捨てて読み直す印。世代を進めて、読み込み中の古い答えで上書きしない（反証レビュー 2026-11-21） */
+  function reqReset() { reqSt = null; reqBusy = false; reqGen++; }
+  function reqSumReset() { reqSum = null; reqSumBusy = false; reqSumGen++; }
   function loadReqSum(force) {
     if (reqSumBusy || view !== 'app' || !ym) return;
     if (!force && reqSumFresh()) return;
@@ -2556,8 +2559,9 @@
         (r.decide_note ? '<br><span class="raw">' + (r.status === 'rejected' ? '差し戻しの理由: ' : 'メモ: ') + esc(r.decide_note) + '</span>' : '') +
         (r.applied && r.applied.noop ? '<br><span class="raw">もう認めてあったため、勤怠は変えていません</span>' : '') : '';
       var act = r.status === 'pending' && r.kind !== 'month' ? '<button type="button" class="btn sm pri k5" data-act="rq-ok" data-id="' + esc(r.id) + '">承認</button> <button type="button" class="btn sm ng k5" data-act="rq-ng" data-id="' + esc(r.id) + '">差し戻し</button>' : '';
-      return '<tr><td>' + esc(rqWho(r)) + (r.staff_active === false ? ' <span class="tag">休止中</span>' : '') + '</td><td>' + esc(RQ_KIND[r.kind] || r.kind || '') + '</td><td>' + esc(rqDate(r)) + '</td><td>' + esc(rqBody(r)) + '</td>' +
-        '<td>' + esc(r.reason || '') + '</td><td>' + esc(dtTxt(r.created_at)) + '</td><td><span class="tag ' + esc(s0[1]) + '">' + esc(s0[0]) + '</span>' + dec + '</td><td class="rq-btns">' + act + '</td></tr>';
+      /* 見出しの名前（data-l）は iPhone の幅で行を縦に積む時だけ出す（PC は今の表のまま・反証レビュー 2026-11-21） */
+      return '<tr><td class="rq-nm">' + esc(rqWho(r)) + (r.staff_active === false ? ' <span class="tag">休止中</span>' : '') + '</td><td data-l="種類">' + esc(RQ_KIND[r.kind] || r.kind || '') + '</td><td data-l="日付">' + esc(rqDate(r)) + '</td><td data-l="中身">' + esc(rqBody(r)) + '</td>' +
+        '<td data-l="本人の理由">' + esc(r.reason || '') + '</td><td data-l="出した時刻">' + esc(dtTxt(r.created_at)) + '</td><td data-l="状態"><span class="tag ' + esc(s0[1]) + '">' + esc(s0[0]) + '</span>' + dec + '</td><td class="rq-btns">' + act + '</td></tr>';
     }).join('');
     return h + '<div class="tw"><table class="rq-t"><thead><tr><th>職員</th><th>種類</th><th>日付</th><th>中身</th><th>本人の理由</th><th>出した時刻</th><th>状態</th><th></th></tr></thead><tbody>' +
       (rows || '<tr><td colspan="8" class="empty">この条件の申請はありません</td></tr>') + '</tbody></table></div>' +
@@ -2572,6 +2576,7 @@
       (approve ? '<p>承認すると、この中身で勤怠を直します（直しの履歴に「申請から: 」と本人の理由が残ります）。承認した後は月を読み直します。</p>' : '<p>差し戻すと、本人のスマホの申請の一覧に「差し戻し」と理由が出ます。勤怠は変えません。</p>') +
       '<div class="row"><label style="flex:1">' + (approve ? 'メモ（任意・200字まで）' : '差し戻しの理由（必ず・200字まで）') + '<input type="text" id="e-rq-note" class="k5" maxlength="200" style="flex:1;min-width:14em" autocomplete="off"></label></div><p class="help" id="e-msg" role="alert"></p>';
     openDlg(approve ? '申請を承認する' : '申請を差し戻す', b, false, approve ? '承認する' : '差し戻す', 'rq-go');
+    dlgCtx.init = formState();
   }
   function saveReqDecide(btn) {
     if (!dlgCtx || dlgCtx.mode !== 'rq' || busy) return;
@@ -2581,13 +2586,13 @@
     rpc('kintai_requests_decide', { p_id: ctx.id, p_rev: ctx.rev, p_approve: ctx.approve, p_note: nt || null }).then(okOr).then(function (r) {
       busy = false; closeDlg();
       toast(ctx.approve ? '承認しました' + (r.applied && r.applied.noop ? '（もう認めてあったため、勤怠は変えていません）' : '') : '差し戻しました');
-      reqSt = null; reqSum = null; editsCache = null;
+      reqReset(); reqSumReset(); editsCache = null;   /* 決める前に出した読み込みの答えは捨てる */
       if (ctx.approve) { dropMonthCaches(); return load(false); }   /* 承認は打刻・日の行を直したので月を読み直す（描き直しで申請の一覧も読み直す） */
       paint();
     })['catch'](function (e) {
       busy = false; restore();
       if (!isNetErr(e) && !reqKnown(e)) note(ctx.approve ? '申請の承認' : '申請の差し戻し', e);
-      if (e && (e.kintai === 'conflict' || e.kintai === 'notfound')) { reqSt = null; reqSum = null; if (tab === 'requests') paint(); }   /* 一覧を裏で読み直す */
+      if (e && (e.kintai === 'conflict' || e.kintai === 'notfound')) { reqReset(); reqSumReset(); if (tab === 'requests') paint(); }   /* 一覧を裏で読み直す */
       if ($('g-dlg').open && $('e-msg') === msg) msg.textContent = reqMsg(e); else toast(reqMsg(e));
     });
   }
@@ -2710,10 +2715,11 @@
     if (!sid || !/^[0-9]{1,18}$/.test(String(id || '')) || busy) return;
     var s = staffById(sid);
     openDlg('スマホの登録を取り消す', '<p>' + esc(s ? dispName(s) : '') + ' さんのスマホの登録を1台取り消します。取り消すと、そのスマホでは「自分の勤怠」を開けなくなります（もう一度使う時は登録し直します）。</p>' + reasonRow('例: スマホを替えたため・暗証番号を忘れたため'), false, '取り消す', 'sp-revoke-go');
-    dlgCtx = { mode: 'sp-rv', id: String(id), sid: sid };
+    dlgCtx = { mode: 'sprv', id: String(id), sid: sid };
+    dlgCtx.init = formState();
   }
   function saveRevoke(btn) {
-    if (!dlgCtx || dlgCtx.mode !== 'sp-rv' || busy) return;
+    if (!dlgCtx || dlgCtx.mode !== 'sprv' || busy) return;
     var ctx = dlgCtx, msg = $('e-msg'), reason = needReason(msg);
     if (!reason) return;
     busy = true; var restore = pressBusy(btn, '取り消しています…', $('g-dlg-f'));
@@ -2728,7 +2734,8 @@
   }
 
   /* ── 操作 ── */
-  function setTab(t) { if (TABS.indexOf(t) < 0) t = 'home'; if (!settingsLeaveOk()) return; tab = t; lsSet(LS_TAB, t); paint(); if (t === 'home' || t === 'day' || t === 'review') quietReload(); }
+  /* v5 段5: 申請のタブに入る時は一覧を捨てて読み直す（読み込み中の古い答えは世代で捨てる・反証レビュー 2026-11-21）。タブの移りの本体の文は変えない */
+  function setTab(t) { if (t === 'requests') reqReset(); if (TABS.indexOf(t) < 0) t = 'home'; if (!settingsLeaveOk()) return; tab = t; lsSet(LS_TAB, t); paint(); if (t === 'home' || t === 'day' || t === 'review') quietReload(); }
   function setYm(v, keepAuto) { if (!C.isYm(v) || v === ym) return; if (!keepAuto) autoYm = null; ym = v; lsSet(LS_YM, v); $('g-ym').value = v; shiftInfo = null; editsCache = null; data = null; month = null; paintPer(); load(true); }
   /* 「今日」: 今日のカレンダー月へ移り、その月分の期間に今日が入っていなければ次の月分へ（読んだ後に autoYm と同じ形で決める）。
      ymFor は ±1日の移動向けなので使わない（2か月以上離れた月分から押しても今日の月分へ行く・反証レビューの指摘1） */
@@ -2819,7 +2826,7 @@
       else if (a === 'dayf') { var f = b.getAttribute('data-f') || null; dayFilter = dayFilter === f ? null : f; paint(); }
       else if (a === 'day-move') moveDay(+b.getAttribute('data-n'));
       else if (a === 'day-today') goToday();
-      else if (a === 'rq-reload') { reqSt = null; reqSum = null; paint(); }
+      else if (a === 'rq-reload') { reqReset(); reqSumReset(); paint(); }
       else if (a === 'rq-ok' || a === 'rq-ng') openReqDecide(b.getAttribute('data-id'), a === 'rq-ok');
       else if (a === 'rq-go') saveReqDecide(b);
       else if (a === 'sp-enroll') openEnroll(b.getAttribute('data-sid'), b);
@@ -2833,7 +2840,7 @@
       else if (id === 'g-staff') { selStaff = e.target.value; paint(); }
       else if (id === 'g-only') { onlyReview = e.target.checked; paint(); }
       else if (id === 'g-office') { officeFilter = e.target.value; paint(); }
-      else if (id === 'g-rq-st' || id === 'g-rq-ym') { reqF = { status: $('g-rq-st').value, ym: $('g-rq-ym').value === 'cur' ? 'cur' : '' }; paint(); }   /* v5 段5: 絞り込みは画面の中だけ */
+      else if (id === 'g-rq-st' || id === 'g-rq-ym') { reqF = { status: $('g-rq-st').value, ym: $('g-rq-ym').value === 'cur' ? 'cur' : '' }; reqReset(); paint(); }   /* v5 段5: 絞り込みは画面の中だけ */
       else if (id === 'lv-a-kind') absKindShow();   /* v5 段4: 休暇の種類に合う欄だけを出す */
       else if (id === 'g-ym') { if (settingsLeaveOk()) setYm(e.target.value); else e.target.value = ym; }   /* v5 C4: 保存していない設定の変更を確かめる（やめたら月の欄を戻す） */
       else if (e.target && e.target.name === 'sc-op' && $('sc-times')) $('sc-times').disabled = e.target.value !== 'set';
@@ -2858,6 +2865,8 @@
     $('g-prev').addEventListener('click', function () { if (settingsLeaveOk()) setYm(C.prevYm(ym)); });
     $('g-next').addEventListener('click', function () { if (settingsLeaveOk()) setYm(C.nextYm(ym)); });
     $('g-import').addEventListener('click', function () { if (isLocked()) alert('締めた月は取り込めません。'); else if (settingsLeaveOk()) { dropMonthCaches(); load(true); } });
+    /* v5 段5: 上の「読み直す」は申請の一覧と数も捨てて読み直す（反証レビュー 2026-11-21）。月を読み直す受けより先に足し、読み込みの最初の描き直しで新しく読むようにする */
+    $('g-reload').addEventListener('click', function () { reqReset(); reqSumReset(); });
     $('g-reload').addEventListener('click', function () { if (settingsLeaveOk()) { dropMonthCaches(); load(false); } });
     /* 保存中（busy）は Esc でも閉じない（審査の指摘1） */
     $('g-dlg').addEventListener('cancel', function (e) { if (busy) { e.preventDefault(); return; } if (dirty() && !confirm('保存していない直しがあります。閉じますか？')) e.preventDefault(); else { dlgCtx = null; wipeEnroll(); } });   /* v5 段5: Esc の時はその場で QR と番号を消す（close の知らせは後から届くため） */

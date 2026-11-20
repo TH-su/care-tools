@@ -48,7 +48,8 @@ function monthOf(ym) {
               { id: 'p2', staff_id: SID, kind: 'out', at: d1 + 'T18:05:00+09:00', source: 'tablet', created_at: d1 + 'T18:05:00+09:00', voided_at: null }],
     schedule: [{ staff_id: SID, work_date: d1, seq: 0, office: 'facility', start_at: d1 + 'T09:00:00+09:00', end_at: d1 + 'T18:00:00+09:00', break_min: 60, kind: 'work', symbol: '日', paid_min: 0 },
                { staff_id: SID, work_date: d2, seq: 0, office: 'facility', start_at: null, end_at: null, break_min: 0, kind: 'paid', symbol: '有', paid_min: 480 }],
-    days: [], month: null, settings: { config: {} }, leave_uses: [],
+    /* 前の月分は締めてある月分にする（締める前の目安の知らせを出さないことを確かめる・反証レビュー 2026-11-21） */
+    days: [], month: ym === YM ? null : { locked_at: ym + '-28T10:00:00+09:00', snapshot: { config: {} } }, settings: { config: {} }, leave_uses: [],
   };
 }
 const LEAVE = {
@@ -129,6 +130,7 @@ try {
   const daysTxt = await page.textContent('#days-list');
   t('日ごとの予定・打刻・数えた時刻・実働が出る', /09:00〜18:00/.test(daysTxt) && /出 08:55/.test(daysTxt) && /退 18:05/.test(daysTxt) && /実働 8:00/.test(daysTxt) && /有休/.test(daysTxt), daysTxt.slice(0, 200));
   t('月分の見出しと合計', /月分（/.test(await page.textContent('#days-head')) && /8:00/.test(await page.textContent('#days-head')));
+  t('締めていない月分は、勤怠の表の上に「締める前の数字は目安です」を出す（反証レビュー 2026-11-21）', /締める前の数字は目安です（締めた後に事務所の数字と同じになります）/.test(await page.textContent('#days-head')));
   t('横にはみ出さない（390px）', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
   const tap = await page.evaluate(() => [...document.querySelectorAll('button:not([hidden]), input, select, textarea')].filter((e) => e.offsetParent).map((e) => { const r = e.getBoundingClientRect(); return [e.id || e.className, Math.round(r.height)]; }).filter((x) => x[1] < 44));
   t('押す所・入れる所の高さは 44px 以上', tap.length === 0, tap);
@@ -136,12 +138,16 @@ try {
   await page.click('#b-prev');
   await page.waitForFunction(() => document.querySelector('#b-prev').getAttribute('aria-pressed') === 'true');
   t('前の月分へ切り替えた（受け口へ前の月分を聞いた）', st.bodies.some((b) => b.op === 'month' && b.ym === prevYm(YM)));
+  await page.waitForFunction(() => /締めてあります/.test(document.querySelector('#days-head').textContent), null, { timeout: 10000 });
+  t('締めた月分には目安の知らせを出さない', !/締める前の数字は目安/.test(await page.textContent('#days-head')));
 
   say('— C. 有給 —');
+  LEAVE.months[0].config.hourlyPaidLeave = true;   /* 時間単位の有休を使う施設（有給の答えはまだ読んでいない＝この値で読む・反証レビュー 2026-11-21） */
   await page.click('#t-leave');
   await page.waitForFunction(() => /日/.test(document.querySelector('#leave-box').textContent) && !/読んでいます/.test(document.querySelector('#leave-box').textContent), null, { timeout: 10000 });
   const lvTxt = await page.textContent('#leave-box');
   t('有給の残り（10日−シフトの有休1日＝9日）と期限が出る', /9 日/.test(lvTxt) && /まで/.test(lvTxt), lvTxt.slice(0, 200));
+  t('時間単位の有休を使う施設では、残りの近くに「時間単位で取った分は、ここの残りに入っていません。…」を出す', /時間単位で取った分は、ここの残りに入っていません。正しい残りは事務所で確かめてください。/.test(lvTxt));
   await shot(page, 'leave');
 
   say('— D. 申請 —');

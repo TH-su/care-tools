@@ -122,7 +122,13 @@ legend{font-weight:600;padding:0 6px}
 .kq-short{font-size:28px;font-weight:700;letter-spacing:.12em;text-align:center;font-variant-numeric:tabular-nums;margin:4px 0;overflow-wrap:anywhere}
 .kq-exp{text-align:center;font-weight:600;margin:6px 0}
 .kq-url{overflow-wrap:anywhere}
-@media (max-width:699px){.btn.k5,select.k5,input.k5{min-height:44px}select.k5,input.k5{font-size:16px}}
+@media (max-width:699px){.btn.k5,select.k5,input.k5{min-height:44px}select.k5,input.k5{font-size:16px}
+  /* 申請の一覧は行ごとに縦に積み、「承認」「差し戻し」を職員の欄のすぐ下に出す（横に送らなくても押せる・PC の表は変えない・反証レビュー 2026-11-21） */
+  table.rq-t,table.rq-t tbody{display:block}table.rq-t thead{display:none}
+  table.rq-t tr{display:flex;flex-direction:column;border-bottom:1px solid var(--line);padding:6px 0}
+  table.rq-t td{display:block;order:2;border:0;padding:2px 6px;min-width:0;white-space:normal}
+  table.rq-t td.rq-nm{order:0;font-weight:700}table.rq-t td.rq-btns{order:1;display:flex;gap:8px;flex-wrap:wrap}table.rq-t td.rq-btns:empty{display:none}
+  table.rq-t td[data-l]::before{content:attr(data-l) "：";color:var(--muted);font-size:13px}}
 /* 読み込み中の骨組み（灰色の帯） */
 .skel{display:block;height:18px;margin:10px 0;border-radius:6px;background:var(--skel);animation:skel 1.2s ease-in-out infinite}
 .skel.w6{width:60%}.skel.w8{width:80%}.skel.w4{width:40%}
