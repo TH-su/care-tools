@@ -39,9 +39,12 @@ console.log('\n— 3. 払い方 —');
   const h = run(HOURLY, Object.assign({}, BASE_ATT, { paidMin: 480 + 120, hourlyPaidMin: 120, specialPaidMin: 480, specialPaidDays: 1, specialUnpaidDays: 1, compDays: 0.5 }));
   t('時給: 基本給は（所定内＋有休）＝ 時間単位の有休を含む paidMin で払う（1100×(9600+600)÷60＝187000）', L(h, 'basic') === 187000, L(h, 'basic'));
   t('時給: 有給の特別休暇は時給×分（1100×480÷60＝8800）・無給の特別休暇と代休は何も足さない（控除の行も無い）', L(h, 'special_paid') === 8800 && L(h, 'leave_unpaid') === undefined && L(h, 'paid_leave_hour') === undefined, h.lines.filter((l) => l.sec === 'pay'));
-  const d = run(DAILY, Object.assign({}, BASE_ATT, { hourlyPaidMin: 120, specialPaidDays: 1.5, specialUnpaidDays: 1, compDays: 1 }));
-  t('日給: 時間単位の有休は日給×分÷1日の所定時間（10000×120÷480＝2500）', L(d, 'paid_leave_hour') === 2500, L(d, 'paid_leave_hour'));
-  t('日給: 有給の特別休暇は日給×日数（半日きざみのまま・10000×1.5＝15000）・無給の休みは何も足さない', L(d, 'special_paid') === 15000 && L(d, 'leave_unpaid') === undefined);
+  /* ★反証レビュー（2026-11-20・4）: 日給は働いた日をもう満額払っているので、働いていない日の分（hourlyPaidOffMin・specialPaidOffDays）だけ払うことにした。材料に働いていない日の分を足し、働いた日の分だけの時は払わないことも見る */
+  const d = run(DAILY, Object.assign({}, BASE_ATT, { hourlyPaidMin: 180, hourlyPaidEffMin: 120, hourlyPaidOffMin: 120, specialPaidDays: 2, specialPaidOffDays: 1.5, specialUnpaidDays: 1, compDays: 1 }));
+  t('日給: 働いていない日の時間単位の有休は日給×効く分÷1日の所定時間（10000×120÷480＝2500）', L(d, 'paid_leave_hour') === 2500, L(d, 'paid_leave_hour'));
+  t('日給: 働いていない日の有給の特別休暇は日給×日数（半日きざみのまま・10000×1.5＝15000）・無給の休みは何も足さない', L(d, 'special_paid') === 15000 && L(d, 'leave_unpaid') === undefined);
+  const dw = run(DAILY, Object.assign({}, BASE_ATT, { hourlyPaidMin: 120, hourlyPaidEffMin: 120, hourlyPaidOffMin: 0, specialPaidDays: 0.5, specialPaidOffDays: 0 }));
+  t('日給: 働いた日の時間単位の有休・半日の有給の特別休暇は上乗せしない（行が無い）', L(dw, 'paid_leave_hour') === undefined && L(dw, 'special_paid') === undefined);
   t('日給: 今の有休（日給×有休の日数）はそのまま', L(d, 'paid_leave') === 10000);
   const m0 = run(MONTHLY, Object.assign({}, BASE_ATT));
   const m1 = run(MONTHLY, Object.assign({}, BASE_ATT, { hourlyPaidMin: 120, specialPaidMin: 480, specialPaidDays: 1 }));
@@ -50,7 +53,7 @@ console.log('\n— 3. 払い方 —');
   t('月給: 無給の特別休暇と代休は欠勤と同じに控除（単価 300000÷172＝1744 ×8h×1.5日＝20928）', L(m2, 'leave_unpaid') === -20928 && m2.gross === m0.gross - 20928, L(m2, 'leave_unpaid'));
   const m3 = PC.computeItem({ ym: '2026-12', period: PERIOD, payDate: '2027-01-25', settings: { absence_deduct: false }, profile: MONTHLY, allowanceDefs: [], att: Object.assign({}, BASE_ATT, { specialUnpaidDays: 1 }), adjustments: [] });
   t('月給: 欠勤控除をしない設定では、無給の休みも控除しない', L(m3, 'leave_unpaid') === undefined);
-  t('勤怠の行: 休暇の種類はある時だけ出す（時間単位の分・日数は半日きざみ）・無い月は出さない', LA(d, 'hourlyPaidMin') === 120 && LA(d, 'specialPaidDays') === 1.5 && LA(d, 'compDays') === 1 && LA(m0, 'compDays') === undefined && LA(m0, 'hourlyPaidMin') === undefined);
+  t('勤怠の行: 休暇の種類はある時だけ出す（時間単位の分・日数は半日きざみ）・無い月は出さない', LA(d, 'hourlyPaidMin') === 180 && LA(d, 'specialPaidDays') === 2 && LA(d, 'compDays') === 1 && LA(m0, 'compDays') === undefined && LA(m0, 'hourlyPaidMin') === undefined);
 }
 
 console.log('\n— 5. 勤怠の計算: 時間単位の有休の時間を遅刻・早退に数えない —');
@@ -70,6 +73,47 @@ console.log('\n— 5. 勤怠の計算: 時間単位の有休の時間を遅刻�
   t('月給: 時間単位の有休で休んだ遅刻・早退は遅刻早退の控除に入らない', L(mo, 'late') === undefined, mo.lines.filter((l) => l.sec === 'pay'));
 }
 
+console.log('\n— 6. 反証レビュー（2026-11-20）の場面: 勤怠の計算から給与の額まで —');
+{
+  /* 架空の職員: 月給30万（1日8時間・時間単価1744円）・日給1万円（1日8時間）・時給1100円。予定 9〜18時（休憩60分） */
+  const at = (d, hm) => KC.jstMs(d, +hm.split(':')[0] * 60 + +hm.split(':')[1]);
+  const D = '2026-12-01', D2 = '2026-12-02';
+  const S9 = (d) => ({ staff_id: 'x', work_date: d, seq: 1, office: 'facility', kind: 'work', start_at: KC.iso(at(d, '9:00')), end_at: KC.iso(at(d, '18:00')), break_min: 60, paid_min: 0, symbol: '日' });
+  const PU = (d, k, hm) => ({ id: d + k + hm, staff_id: 'x', kind: k, at: new Date(at(d, hm)).toISOString() });
+  const row = (o) => KC.snapshotOf(KC.computeMonth(Object.assign({ ym: '2026-12', staff: [{ staff_id: 'x', office: 'facility' }], schedule: [S9(D)], punches: [], days: [], config: {}, now: Date.parse('2027-01-10') }, o))).rows[0];
+  const amt = (pf, r) => { const it = run(pf, Object.assign({}, r, { reviewCount: 0 })); return it.lines.filter((l) => l.sec === 'pay').map((l) => l.code + ':' + l.amount).join(' '); };
+  const all = (r) => [amt(MONTHLY, r), amt(DAILY, r), amt(HOURLY, r)];
+  const eq3 = (nm, r, exp) => { const got = all(r); t(nm + ' → 月給「' + exp[0] + '」日給「' + exp[1] + '」時給「' + exp[2] + '」', got[0] === exp[0] && got[1] === exp[1] && got[2] === exp[2], got); };
+  const full = [PU(D, 'in', '9:00'), PU(D, 'out', '18:00')], am = [PU(D, 'in', '9:00'), PU(D, 'out', '13:00')];
+  /* 働いた日＋休暇 */
+  eq3('満額働いた日＋時間単位2時間（効かない）', row({ punches: full, absences: [{ staff_id: 'x', date: D, kind: 'hourly_paid', minutes: 120 }] }), ['basic:300000', 'basic:10000', 'basic:8800']);
+  eq3('11時に出勤（遅刻2時間）＋時間単位2時間', row({ punches: [PU(D, 'in', '11:00'), PU(D, 'out', '18:00')], absences: [{ staff_id: 'x', date: D, kind: 'hourly_paid', minutes: 120 }] }), ['basic:300000', 'basic:10000', 'basic:8800']);
+  /* 欠勤の印＋休暇（欠勤に数えず休暇として1回だけ） */
+  const ab = [{ staff_id: 'x', work_date: D, day_mark: 'absent' }];
+  eq3('欠勤の印＋無給の特別休暇', row({ days: ab, absences: [{ staff_id: 'x', date: D, kind: 'special', paid: false }] }), ['basic:300000 leave_unpaid:-13952', 'basic:0', 'basic:0']);
+  eq3('欠勤の印＋代休', row({ days: ab, absences: [{ staff_id: 'x', date: D, kind: 'comp', link_date: '2026-11-29' }] }), ['basic:300000 leave_unpaid:-13952', 'basic:0', 'basic:0']);
+  eq3('欠勤の印＋有給の特別休暇', row({ days: ab, absences: [{ staff_id: 'x', date: D, kind: 'special', paid: true }] }), ['basic:300000', 'basic:0 special_paid:10000', 'basic:0 special_paid:8800']);
+  eq3('欠勤の印＋時間単位8時間', row({ days: ab, absences: [{ staff_id: 'x', date: D, kind: 'hourly_paid', minutes: 480 }] }), ['basic:300000', 'basic:0 paid_leave_hour:10000', 'basic:8800']);
+  t('欠勤の印＋休暇の日は欠勤に数えない（absentDays 0）', row({ days: ab, absences: [{ staff_id: 'x', date: D, kind: 'special', paid: false }] }).absentDays === 0 && row({ days: ab }).absentDays === 1);
+  /* 半日の休暇＋早退（午前だけ 9〜13時） */
+  eq3('半日の無給の特別休暇＋午前だけ', row({ punches: am, absences: [{ staff_id: 'x', date: D, kind: 'special', paid: false, minutes: 240 }] }), ['basic:300000 leave_unpaid:-6976', 'basic:10000', 'basic:4400']);
+  eq3('半日の代休＋午前だけ', row({ punches: am, absences: [{ staff_id: 'x', date: D, kind: 'comp', minutes: 240, link_date: '2026-11-29' }] }), ['basic:300000 leave_unpaid:-6976', 'basic:10000', 'basic:4400']);
+  eq3('半日の有給の特別休暇＋午前だけ', row({ punches: am, absences: [{ staff_id: 'x', date: D, kind: 'special', paid: true, minutes: 240 }] }), ['basic:300000', 'basic:10000', 'basic:4400 special_paid:4400']);
+  eq3('（今のまま）手入力の半日有休＋午前だけ', row({ punches: am, leave_uses: [{ id: 'u', staff_id: 'x', use_date: D, days: 0.5 }] }), ['basic:300000 late:-8720', 'basic:10000 paid_leave:10000', 'basic:8800']);
+  /* 日給の働いた日＋時間単位・働いていない日 */
+  eq3('打刻なしの日に時間単位8時間（働いていない日）', row({ absences: [{ staff_id: 'x', date: D, kind: 'hourly_paid', minutes: 480 }] }), ['basic:300000', 'basic:0 paid_leave_hour:10000', 'basic:8800']);
+  /* 夜勤（22時〜翌7時・休憩60分）を翌5時に早退して時間単位2時間。始めた日でも終わった日で入れても、その夜勤の早退から差し引く */
+  const nsch = [{ staff_id: 'x', work_date: D, seq: 1, office: 'facility', kind: 'night', start_at: KC.iso(at(D, '22:00')), end_at: KC.iso(at(D2, '7:00')), break_min: 60, paid_min: 0, symbol: '夜' }];
+  const npun = [PU(D, 'in', '22:00'), { id: 'no', staff_id: 'x', kind: 'out', at: new Date(at(D2, '5:00')).toISOString() }];
+  const n0 = row({ schedule: nsch, punches: npun }), n1 = row({ schedule: nsch, punches: npun, absences: [{ staff_id: 'x', date: D, kind: 'hourly_paid', minutes: 120 }] }), n2 = row({ schedule: nsch, punches: npun, absences: [{ staff_id: 'x', date: D2, kind: 'hourly_paid', minutes: 120 }] });
+  t('夜勤＋時間単位2時間: 休暇なしは早退120分・始めた日で入れても終わった日で入れても早退0分・効く分120分', n0.earlyLeaveMin === 120 && n1.earlyLeaveMin === 0 && n2.earlyLeaveMin === 0 && n1.hourlyPaidEffMin === 120 && n2.hourlyPaidEffMin === 120, [n0.earlyLeaveMin, n1.earlyLeaveMin, n2.earlyLeaveMin]);
+  const mN0 = amt(MONTHLY, n0), mN2 = amt(MONTHLY, n2);
+  t('夜勤＋時間単位: 月給は休暇なしなら遅刻早退の控除があり、時間単位を入れると控除が無い（深夜の割増はそのまま）', /late:-3488/.test(mN0) && !/late:/.test(mN2) && /ot_night:2618/.test(mN2), [mN0, mN2]);
+  /* 振替の働く日に予定なし（画面で止める）は kintai_s4_test の 10 で、送らないこと（return）を確かめる */
+  const K = fs.readFileSync(path.join(ROOT, 'kintai.js'), 'utf8');
+  t('振替の働く日に予定が無い時は止める（送らない）・夜勤の日は勤務を始めた日で入れる注記', /if \(schedOnDay\(ctx\.sid, sl\) === false\) \{ msg\.textContent = '振替の働く日に出勤予定がありません。先に『予定を直す』で働く日の予定を入れてください。'; return; \}/.test(K) && /夜勤の日は勤務を始めた日で入れてください。/.test(K));
+}
+
 console.log('\n— 1・2. 締めの控えの確かめと勤怠の受け口 —');
 {
   const J = fs.readFileSync(path.join(ROOT, 'payroll.js'), 'utf8');
@@ -80,40 +124,42 @@ console.log('\n— 1・2. 締めの控えの確かめと勤怠の受け口 —')
     function rpc(name, args) { return Promise.resolve(RAW(args.p_ym)); }
     ${src}
     return { verifyKintai: verifyKintai, attFromKintai: attFromKintai, attSame: attSame };`)(KC, raw);
-  /* 架空の月: 2人・休暇あり（時間単位・特別休暇・振替）・締めた時の控えは休暇を入れて数えた控え */
+  /* ★反証レビュー（2026-11-20・8）: 控えを数え直しと同じ関数・同じ材料で作らない。架空の1人・3日の月の控えを手で数えた値で書き、
+     新しい版の数え直し（休暇を渡す）と比べて ok、休暇を渡さない数え直し（直す前の版と同じ道）で作った控えと比べて ng になることを見る。
+     12/1 9〜18時を満額・12/2 無給の特別休暇（予定あり・打刻なし）・12/3 11時に出勤（遅刻2時間）して時間単位の有休2時間 */
   const at = (d, hm) => KC.jstMs(d, +hm.split(':')[0] * 60 + +hm.split(':')[1]);
-  const sched = [], pun = [];
-  for (let d = 1; d <= 31; d++) {
-    const ds = '2026-12-' + String(d).padStart(2, '0'), w = new Date(Date.UTC(2026, 11, d)).getUTCDay();
-    if (w === 0 || w === 6) continue;
-    for (const sid of ['k1', 'k2']) {
-      sched.push({ staff_id: sid, work_date: ds, seq: 1, office: 'facility', kind: 'work', start_at: KC.iso(at(ds, '9:00')), end_at: KC.iso(at(ds, '18:00')), break_min: 60, paid_min: 0, symbol: '日' });
-      if (!(sid === 'k2' && (d === 9 || d === 18))) pun.push({ id: sid + ds + 'i', staff_id: sid, kind: 'in', at: new Date(at(ds, '9:00')).toISOString() }, { id: sid + ds + 'o', staff_id: sid, kind: 'out', at: new Date(at(ds, '18:00')).toISOString() });
-    }
-  }
-  const staff = [{ staff_id: 'k1', office: 'facility' }, { staff_id: 'k2', office: 'facility' }];
-  const absences = [{ id: 'a1', staff_id: 'k1', date: '2026-12-03', kind: 'hourly_paid', minutes: 120, paid: true }, { id: 'a2', staff_id: 'k2', date: '2026-12-18', kind: 'special', paid: false, type_code: 'other' },
-    { id: 'a3', staff_id: 'k2', date: '2026-12-09', kind: 'swap', link_date: '2026-12-13' }];
+  const D1 = '2026-12-01', D2 = '2026-12-02', D3 = '2026-12-03';
+  const S9 = (d) => ({ staff_id: 'k1', work_date: d, seq: 1, office: 'facility', kind: 'work', start_at: KC.iso(at(d, '9:00')), end_at: KC.iso(at(d, '18:00')), break_min: 60, paid_min: 0, symbol: '日' });
+  const PU = (d, k, hm) => ({ id: d + k, staff_id: 'k1', kind: k, at: new Date(at(d, hm)).toISOString() });
+  const sched = [S9(D1), S9(D2), S9(D3)], pun = [PU(D1, 'in', '9:00'), PU(D1, 'out', '18:00'), PU(D3, 'in', '11:00'), PU(D3, 'out', '18:00')];
+  const staff = [{ staff_id: 'k1', office: 'facility' }];
+  const absences = [{ id: 'a1', staff_id: 'k1', date: D2, kind: 'special', paid: false, type_code: 'other' }, { id: 'a2', staff_id: 'k1', date: D3, kind: 'hourly_paid', minutes: 120, paid: true }];
   const period = { from: '2026-12-01', to: '2026-12-31' };
-  const snapM = KC.computeMonth({ ym: '2026-12', period, staff, schedule: sched, punches: pun, days: [], absences, config: { legal_holiday: 0 }, now: Date.parse('2027-01-05') });
-  const snap = KC.snapshotOf(snapM);
-  const raw = () => ({ ok: true, period, staff, schedule: sched, punches: pun, days: [], leave_uses: [], absences, month: { ym: '2026-12', locked_at: '2027-01-05T00:00:00Z', snapshot: snap } });
-  const boot = { kintai: { locked: true }, profiles: [{ staff_id: 'k1', name: '架空 一', data: {} }, { staff_id: 'k2', name: '架空 二', data: {} }] };
-  const F = make(raw);
+  /* 手で数えた控えの1行（実働 480＋360・時間単位の有休は働かなかった2時間に効き、遅刻2時間を差し引く・無給の特別休暇の日は打刻なし・要確認にしない） */
+  const handRow = { staff_id: 'k1', emp_code: null, workDays: 2, paidDays: 0, paidMin: 120, workMin: 840, schedInMin: 840, legalInOverMin: 0, legalOverMin: 0, over60Min: 0, nightMin: 0, holidayMin: 0,
+    absentDays: 0, lateMin: 0, earlyLeaveMin: 0, nightShiftCount: 0, schedDays: 3, reviewCount: 0, counts: { '日': 2 },
+    hourlyPaidMin: 120, hourlyPaidEffMin: 120, hourlyPaidOffMin: 0, specialPaidMin: 0, specialPaidDays: 0, specialUnpaidDays: 1, specialPaidOffDays: 0, compDays: 0 };
+  const cfg0 = KC.fillConfig({});
+  const rawWith = (snapRows) => () => ({ ok: true, period, staff, schedule: sched, punches: pun, days: [], leave_uses: [], absences, month: { ym: '2026-12', locked_at: '2027-01-05T00:00:00Z', snapshot: { v: 1, ym: '2026-12', period, config: cfg0, rows: snapRows } } });
+  const boot = { kintai: { locked: true }, profiles: [{ staff_id: 'k1', name: '架空 一', data: {} }] };
+  const F = make(rawWith([handRow]));
+  /* 直す前の版と同じ道（休暇を渡さない数え直し）で作った控え */
+  const oldSnap = KC.snapshotOf(KC.computeMonth({ ym: '2026-12', period, staff, schedule: sched, punches: pun, days: [], config: {}, now: Date.parse('2027-01-05') })).rows;
   F.verifyKintai('2026-12', boot).then((r) => {
-    t('休暇を入れた月（時間単位・無給の特別休暇・振替）でも、締めの控えと同じで止まらない（ok）', r.state === 'ok' && r.names.length === 0, r);
-    t('材料の確かめ: 控えに休暇の数字が入っている（k1 の時間単位 120分・k2 の無給の特別休暇 1日）', snap.rows[0].hourlyPaidMin === 120 && snap.rows[1].specialUnpaidDays === 1);
-    /* 休暇の行が無い数え直し（直す前の画面と同じ）なら食い違う＝渡すことが要る */
-    const G = make(() => Object.assign(raw(), { absences: [] }));
-    return G.verifyKintai('2026-12', boot).then((r2) => {
-      t('（比べ）休暇の行を渡さない数え直しでは食い違って止まる（休暇を入れた2人とも）', r2.state === 'ng' && r2.names.length === 2, r2);
-      const a = F.attFromKintai({ workDays: 1, paidDays: 0.5, paidMin: 0, specialPaidDays: 1.5, compDays: 0.5, hourlyPaidMin: 120.4 });
-      t('受け口: 休暇の日数は半日きざみのまま（1.5・0.5）・分は整数', a.specialPaidDays === 1.5 && a.compDays === 0.5 && a.hourlyPaidMin === 120);
-      const old = F.attFromKintai(Object.assign({}, snap.rows[0], { hourlyPaidMin: undefined, specialPaidMin: undefined, specialPaidDays: undefined, specialUnpaidDays: undefined, compDays: undefined }));
-      t('受け口: 段4 より前の控え（休暇の鍵が無い）は 0 で、missing（古い控えの警告）に入れない', ['hourlyPaidMin', 'specialPaidMin', 'specialPaidDays', 'specialUnpaidDays', 'compDays'].every((k) => old[k] === 0 && old.missing.indexOf(k) < 0));
-      const x0 = F.attFromKintai(snap.rows[1]), x1 = F.attFromKintai(Object.assign({}, snap.rows[1], { compDays: 0.5 }));
-      t('attSame: 休暇の鍵が違えば違う・同じなら同じ', F.attSame(x0, F.attFromKintai(snap.rows[1])) && !F.attSame(x0, x1));
-    });
+    t('手で数えた控え（休暇あり）と、新しい版の数え直し（休暇を渡す）は同じ＝止まらない（ok）', r.state === 'ok' && r.names.length === 0, r);
+    return make(rawWith(oldSnap)).verifyKintai('2026-12', boot);
+  }).then((r2) => {
+    t('休暇を渡さない数え直し（直す前の版の道）で作った控えとは食い違って止まる（ng）', r2.state === 'ng' && r2.names.length === 1, r2);
+    t('材料の確かめ: 直す前の道の控えは遅刻2時間・要確認1件・有休0分（手の控えと違う所）', oldSnap[0].lateMin === 120 && oldSnap[0].reviewCount === 1 && oldSnap[0].paidMin === 0, oldSnap[0]);
+    return make(() => Object.assign(rawWith([handRow])(), { absences: [] })).verifyKintai('2026-12', boot);
+  }).then((r3) => {
+    t('（比べ）休暇の行が届かない数え直しは、手の控えと食い違って止まる（ng）', r3.state === 'ng', r3);
+    const a = F.attFromKintai({ workDays: 1, paidDays: 0.5, paidMin: 0, specialPaidDays: 1.5, compDays: 0.5, hourlyPaidMin: 120.4 });
+    t('受け口: 休暇の日数は半日きざみのまま（1.5・0.5）・分は整数', a.specialPaidDays === 1.5 && a.compDays === 0.5 && a.hourlyPaidMin === 120);
+    const old = F.attFromKintai(Object.assign({}, handRow, { hourlyPaidMin: undefined, hourlyPaidEffMin: undefined, hourlyPaidOffMin: undefined, specialPaidMin: undefined, specialPaidDays: undefined, specialUnpaidDays: undefined, specialPaidOffDays: undefined, compDays: undefined }));
+    t('受け口: 段4 より前の控え（休暇の鍵が無い）は 0 で、missing（古い控えの警告）に入れない', ['hourlyPaidMin', 'hourlyPaidEffMin', 'hourlyPaidOffMin', 'specialPaidMin', 'specialPaidDays', 'specialPaidOffDays', 'specialUnpaidDays', 'compDays'].every((k) => old[k] === 0 && old.missing.indexOf(k) < 0));
+    const x0 = F.attFromKintai(handRow), x1 = F.attFromKintai(Object.assign({}, handRow, { compDays: 0.5 })), x2 = F.attFromKintai(Object.assign({}, handRow, { hourlyPaidOffMin: 60 }));
+    t('attSame: 休暇の鍵（代休・働いていない日の時間単位の分）が違えば違う・同じなら同じ', F.attSame(x0, F.attFromKintai(handRow)) && !F.attSame(x0, x1) && !F.attSame(x0, x2));
   }).then(() => {
     console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' 件合格 / ' + fail + ' 件不合格');
     process.exit(fail ? 1 : 0);

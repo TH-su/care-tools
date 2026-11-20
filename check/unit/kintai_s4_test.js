@@ -76,14 +76,16 @@ console.log('\n— 1. 休暇の種類を使わない時は今と同じ —');
 
 console.log('\n— 2. 時間単位の有休 —');
 {
-  const m0 = month(), m1 = month({ absences: [{ id: 'h1', staff_id: 'sT02', date: ds(3), kind: 'hourly_paid', minutes: 120, paid: true }, { id: 'h2', staff_id: 'sT02', date: ds(10), kind: 'hourly_paid', minutes: 60, paid: true }] });
+  /* ★反証レビュー（2026-11-20・4）: 時間単位の有休が効くのは「その日の所定の時間のうち働かなかった分」までにしたので、材料を「打刻の無い日（18日）に2時間」と
+     「満額働いた日（10日）に1時間」に改め、paidMin に足すのは効く分（120分）だけ・hourlyPaidMin は入れた分（180分）を期待にした（前は働いた日の分も paidMin に足していた） */
+  const m0 = month(), m1 = month({ absences: [{ id: 'h1', staff_id: 'sT02', date: ds(18), kind: 'hourly_paid', minutes: 120, paid: true }, { id: 'h2', staff_id: 'sT02', date: ds(10), kind: 'hourly_paid', minutes: 60, paid: true }] });
   const a = sumOf(m0, 'sT02'), b = sumOf(m1, 'sT02');
-  t('paidMin に 180分を足す・hourlyPaidMin 180', b.paidMin === a.paidMin + 180 && b.hourlyPaidMin === 180, [a.paidMin, b.paidMin, b.hourlyPaidMin]);
+  t('paidMin には効く分だけ（打刻の無い日の120分・満額働いた日の60分は効かない）を足す・hourlyPaidMin は入れた180分・hourlyPaidEffMin 120・働いていない日の分 120', b.paidMin === a.paidMin + 120 && b.hourlyPaidMin === 180 && b.hourlyPaidEffMin === 120 && b.hourlyPaidOffMin === 120, [a.paidMin, b.paidMin, b.hourlyPaidMin, b.hourlyPaidEffMin]);
   t('paidDays・所定日数・出勤日数・総労働・法定外・打刻なしは変えない', b.paidDays === a.paidDays && b.schedDays === a.schedDays && b.workDays === a.workDays && b.workMin === a.workMin && b.legalOverMin === a.legalOverMin && b.noPunchDays === a.noPunchDays);
-  t('日の行に時間単位の有休（hourlyPaidMin と印）・日の paidMin は今のまま', dayOf(m1, 'sT02', ds(3)).hourlyPaidMin === 120 && dayOf(m1, 'sT02', ds(3)).absences[0].kind === 'hourly_paid' && dayOf(m1, 'sT02', ds(3)).paidMin === dayOf(m0, 'sT02', ds(3)).paidMin);
+  t('日の行に時間単位の有休（hourlyPaidMin と印）・日の paidMin は今のまま', dayOf(m1, 'sT02', ds(18)).hourlyPaidMin === 120 && dayOf(m1, 'sT02', ds(18)).absences[0].kind === 'hourly_paid' && dayOf(m1, 'sT02', ds(18)).paidMin === dayOf(m0, 'sT02', ds(18)).paidMin && dayOf(m1, 'sT02', ds(10)).hourlyPaidEffMin === 0);
   t('締めの控えに paidMin（時間単位を含む）と hourlyPaidMin が入る（給与へ今の鍵で渡る）', C.snapshotOf(m1).rows[1].paidMin === b.paidMin && C.snapshotOf(m1).rows[1].hourlyPaidMin === 180);
   const csv = C.buildCsv(m1, { extraCols: true });
-  t('CSV の集計の「有休時間」と日ごとの「有休時間」に時間単位を含める', /,3:00,/.test(csv.summary.split('\r\n')[2]) && csv.daily.split('\r\n').some((l) => l.indexOf('9002,2026-12-03') === 0 && /,2:00,[^,]*$/.test(l)), csv.summary.split('\r\n')[2]);
+  t('CSV の集計の「有休時間」と日ごとの「有休時間」に時間単位の効く分を含める（18日 2:00・10日は 0:00）', /,2:00,/.test(csv.summary.split('\r\n')[2]) && csv.daily.split('\r\n').some((l) => l.indexOf('9002,2026-12-18') === 0 && /,2:00,[^,]*$/.test(l)) && csv.daily.split('\r\n').some((l) => l.indexOf('9002,2026-12-10') === 0 && /,0:00,[^,]*$/.test(l)), csv.summary.split('\r\n')[2]);
   t('同じ人・同じ日・同じ種類の2行目は数えない', sumOf(month({ absences: [{ staff_id: 'sT02', date: ds(3), kind: 'hourly_paid', minutes: 120 }, { staff_id: 'sT02', date: ds(3), kind: 'hourly_paid', minutes: 240 }] }), 'sT02').hourlyPaidMin === 120);
 }
 
@@ -264,8 +266,9 @@ console.log('\n— 10. 段4 の積み残しの直し（ホームの期限の近�
   /* 振替の働く日に予定が無い時の注意（止めない） */
   const sod = (sid, d) => new Function('M', 'LS', 'SID', 'D', 'var month = M, leaveSt = LS;\n' + fnSrc('schedOnDay') + '\nreturn schedOnDay(SID, D);')(month(), null, sid, d);
   t('予定の有無: 平日（予定あり）は true・日曜（予定なし）は false・読んでいない月は null', sod('sT01', ds(14)) === true && sod('sT01', ds(13)) === false && sod('sT01', '2027-02-01') === null);
-  t('振替の働く日に予定が無い時は注意の文を出し、送るのは止めない（return しない）',
-    /if \(schedOnDay\(ctx\.sid, sl\) === false\) warnAfter = '働く日に予定がありません。出勤予定を「予定を直す」で入れてください。';\s*\} else \{ msg\.textContent = '休暇の種類を選んでください。'; return; \}[\s\S]{0,400}?call = \['kintai_absence_add', args\];/.test(K)
+  /* ★反証レビュー（2026-11-20・5）: 振替の働く日に予定が無い時は、注意でなく止める（送らない）ことにしたので、期待を「止める」に改めた */
+  t('振替の働く日に予定が無い時は止める（文を出して return・送らない）',
+    /if \(schedOnDay\(ctx\.sid, sl\) === false\) \{ msg\.textContent = '振替の働く日に出勤予定がありません。先に『予定を直す』で働く日の予定を入れてください。'; return; \}/.test(K)
     && /toast\('保存しました（' \+ nameOf\(ctx\.sid\) \+ ' さんの有給）' \+ \(warnAfter \? '。' \+ warnAfter : ''\)\)/.test(K)
     && /if \(warnAfter\) p2 = p2\.then\(function \(\) \{ if \(\$\('g-dlg'\)\.open && dlgCtx && dlgCtx\.mode === 'leave' && \$\('e-msg'\)\) \$\('e-msg'\)\.textContent = warnAfter; \}\);/.test(K));
 }

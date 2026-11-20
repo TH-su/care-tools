@@ -144,7 +144,8 @@
     'absentDays', 'lateMin', 'earlyLeaveMin', 'nightShiftCount', 'schedDays', 'reviewCount'];
   /* 勤怠 v5 段4（休暇の種類・統合 0113）の鍵。段4 より前の控えには無いのが正しい（休暇の種類が無かった）ので、無い時は 0 で missing に入れない。
      日数は半日きざみのまま持つ（丸めると半日の特別休暇・代休が1日になる）。hourlyPaidMin は paidMin の内数 */
-  var ATT_LEAVE_KEYS = ['hourlyPaidMin', 'specialPaidMin', 'specialPaidDays', 'specialUnpaidDays', 'compDays'];
+  var ATT_LEAVE_KEYS = ['hourlyPaidMin', 'specialPaidMin', 'specialPaidDays', 'specialUnpaidDays', 'compDays',
+    'hourlyPaidEffMin', 'hourlyPaidOffMin', 'specialPaidOffDays'];   /* 反証レビュー（2026-11-20）: 時間単位の有休の効く分・働いていない日の分（日給はこれで払う） */
   function attFromKintai(sum, locked) {
     sum = obj(sum);
     var a = { counts: {}, missing: [] };

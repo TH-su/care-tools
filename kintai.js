@@ -940,7 +940,7 @@
   var SNAP_KEYS = ['workDays', 'paidDays', 'workMin', 'schedInMin', 'overtimeMin', 'legalOverMin', 'nightMin', 'lateCount', 'lateMin', 'earlyLeaveCount', 'earlyLeaveMin', 'noPunchDays', 'reviewCount', 'absentDays', 'paidMin', 'uncountedMin', 'holidayMin',
     'legalInOverMin', 'over60Min', 'nightShiftCount', 'schedDays',
     /* v5 段4: 休暇の種類（控えに入れた鍵）。段4 より前の控えには無いので比べない（上の typeof の確かめ） */
-    'hourlyPaidMin', 'specialPaidMin', 'specialPaidDays', 'specialUnpaidDays', 'compDays'];
+    'hourlyPaidMin', 'specialPaidMin', 'specialPaidDays', 'specialUnpaidDays', 'compDays', 'hourlyPaidEffMin', 'hourlyPaidOffMin', 'specialPaidOffDays'];
   /* 記号ごとの回数を比べる（0 より大きい回数だけ・給与の画面の attSame と同じ見方） */
   function countsOf(c) { var o = {}; if (c && typeof c === 'object' && !Array.isArray(c)) for (var k in c) { var n = Number(c[k]); if (isFinite(n) && n > 0) o[k] = Math.round(n); } return o; }
   function sameCounts(a, b) {
@@ -2003,7 +2003,7 @@
       '<label data-ak="swap">振替で働く日 <input type="date" id="lv-a-swap"></label>' +
       '<label>メモ <input type="text" id="lv-a-note" maxlength="200"></label><button type="button" class="btn sm" data-act="lv-abs-add">休暇を入れる</button></div>' +
       '<p class="help">' + esc('休暇は来月分（' + ymdJa(absMaxDate()) + ' まで）の日付で入れられます。') + '特別休暇の種類と有給か無給かは「設定」で決めます。代休は無給で数えます。振替休日は、休む日の勤務の予定を数えず（欠勤・打刻なしにしません）、働く日が法定休日の曜日なら、休む日を法定休日として数えます。' +
-      (cfgL.hourlyPaidLeave ? '時間単位の有休は1日＝' + dh + '時間で日数に直して有給の残りから引き、1年（付与日から）に5日分（' + (dh * 5) + '時間）までです（年5日の取得義務には数えません）。' + (yr && yr.from ? '今の1年（' + ymdJa(yr.from) + '〜' + ymdJa(yr.to) + '）は ' + (yr.usedMin / 60) + '時間使っています。' : '') : '') +
+      (cfgL.hourlyPaidLeave ? '夜勤の日は勤務を始めた日で入れてください。時間単位の有休は1日＝' + dh + '時間で日数に直して有給の残りから引き、1年（付与日から）に5日分（' + (dh * 5) + '時間）までです（年5日の取得義務には数えません）。' + (yr && yr.from ? '今の1年（' + ymdJa(yr.from) + '〜' + ymdJa(yr.to) + '）は ' + (yr.usedMin / 60) + '時間使っています。' : '') : '') +
       '締めた月分の日は入れられません。一覧は有給のために読んだ月分の行です。</p>' +
       '<div class="tw"><table><thead><tr><th>日</th><th>種類</th><th>中身</th><th>メモ</th><th></th></tr></thead><tbody>' + (rows || '<tr><td colspan="5" class="empty">休暇はまだありません</td></tr>') + '</tbody></table></div></fieldset>';
   }
@@ -2111,7 +2111,8 @@
         if (sl > amax) { msg.textContent = ABS_LATE; return; }
         args.p_link_date = sl;
         /* 働く日にその人の予定が無い時は注意だけを出す（止めない・予定は「予定を直す」で手で入れる＝A・仮置き） */
-        if (schedOnDay(ctx.sid, sl) === false) warnAfter = '働く日に予定がありません。出勤予定を「予定を直す」で入れてください。';
+        /* 働く日にその人の予定が無い時は送らない（反証レビュー 2026-11-20・5・文は仮置き。前は注意だけで止めなかった） */
+        if (schedOnDay(ctx.sid, sl) === false) { msg.textContent = '振替の働く日に出勤予定がありません。先に『予定を直す』で働く日の予定を入れてください。'; return; }
       } else { msg.textContent = '休暇の種類を選んでください。'; return; }
       /* 同じ日の有給の休みが1日の時間を超える足しは止める（DB も dup で断る・反証レビュー） */
       if ((ak === 'hourly_paid' || (ak === 'special' && args.p_paid)) && paidMinOn(ctx.sid, ad, dmin) + (args.p_minutes != null ? args.p_minutes : dmin) > dmin) { msg.textContent = ABS_OVER; return; }

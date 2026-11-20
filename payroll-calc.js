@@ -314,7 +314,7 @@
       var hMin = m('schedInMin') + m('paidMin');
       basePaid = yen(qDiv(qMul(intQ(base), intQ(hMin)), Q(60)), S.round.hourly_base);
       pay('basic', '基本給', hMin, base, basePaid, '時給×(所定内＋有休)' + hMin + '分÷60', { fixed: true });
-      /* 勤怠 v5 段4（仮置き）: 時間単位の有休は paidMin に入っているので上の基本給で払う。有給の特別休暇は時給×その分。無給の特別休暇・代休は払わない */
+      /* 勤怠 v5 段4（仮置き）: 時間単位の有休は効く分（その日の所定の時間のうち働かなかった分まで）が paidMin に入っているので上の基本給で払う。有給の特別休暇は時給×その分。無給の特別休暇・代休は払わない */
       if (m('specialPaidMin') > 0) {
         var spH = yen(qDiv(qMul(intQ(base), intQ(m('specialPaidMin'))), Q(60)), S.round.hourly_base);
         pay('special_paid', '特別休暇（有給）', m('specialPaidMin'), base, spH, '時給×特別休暇' + m('specialPaidMin') + '分÷60', { fixed: true });
@@ -327,14 +327,15 @@
       basePaid = base * wd;
       pay('basic', '基本給', wd, base, basePaid, '日給×出勤日数（法定休日を除く）', { fixed: true });
       if (m('paidDays') > 0) pay('paid_leave', '有休（日給）', m('paidDays'), base, base * m('paidDays'), '日給×有休の日数', { fixed: true });
-      /* 勤怠 v5 段4（仮置き）: 時間単位の有休は「その分÷1日の所定時間×日給」、有給の特別休暇は「日給×日数」。無給の特別休暇・代休は払わない */
-      if (m('hourlyPaidMin') > 0) {
-        var dhH = needDayH(), hpD = yen(qDiv(qMul(intQ(base), intQ(m('hourlyPaidMin'))), qMul(dhH, Q(60))), S.round.hourly_base);
-        pay('paid_leave_hour', '有休（時間単位）', m('hourlyPaidMin'), base, hpD, '日給×時間単位の有休' + m('hourlyPaidMin') + '分÷60÷1日の所定時間' + qNum(dhH), { fixed: true });
+      /* 勤怠 v5 段4（仮置き・反証レビュー 2026-11-20）: 働いた日はその日の日給をもう満額払っているので上乗せしない。働いていない日だけ、
+         時間単位の有休は「効く分÷1日の所定時間×日給」（hourlyPaidOffMin）、有給の特別休暇は「日給×日数」（specialPaidOffDays）。無給の特別休暇・代休は払わない */
+      if (m('hourlyPaidOffMin') > 0) {
+        var dhH = needDayH(), hpD = yen(qDiv(qMul(intQ(base), intQ(m('hourlyPaidOffMin'))), qMul(dhH, Q(60))), S.round.hourly_base);
+        pay('paid_leave_hour', '有休（時間単位）', m('hourlyPaidOffMin'), base, hpD, '日給×働いていない日の時間単位の有休' + m('hourlyPaidOffMin') + '分÷60÷1日の所定時間' + qNum(dhH), { fixed: true });
       }
-      if (halfNum('specialPaidDays') > 0) {
-        var spD = yen(qMul(intQ(base), mHalf('specialPaidDays')), S.round.hourly_base);
-        pay('special_paid', '特別休暇（有給）', halfNum('specialPaidDays'), base, spD, '日給×特別休暇の日数', { fixed: true });
+      if (halfNum('specialPaidOffDays') > 0) {
+        var spD = yen(qMul(intQ(base), mHalf('specialPaidOffDays')), S.round.hourly_base);
+        pay('special_paid', '特別休暇（有給）', halfNum('specialPaidOffDays'), base, spD, '日給×働いていない日の特別休暇の日数', { fixed: true });
       }
     }
     if (board || Number(P.board_pay) > 0) {
