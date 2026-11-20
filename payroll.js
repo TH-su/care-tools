@@ -312,6 +312,45 @@
     return { staff_id: it.staff_id, item: o, adjustments: arr(it.adjustments) };
   }
 
+  /* ── 職員の並び（勤怠と同じ入職順・2026-11-20 代表者の指示）──
+     勤怠の staffSorted と同じ決まり: 事業所に関係なく、結んだ職員マスタの入職日の古い順。入職日の分からない人は最後に打刻の番号の順。
+     有給の設定の入職日の上書きは使わない。入職日は勤怠の職員（kintai_month_get の master_id・code）と職員マスタ（kintai_master_list）から読む。
+     読めない時は今の並び（職員ID の順）のまま（画面は止めない）。読んだ並びはメモリにだけ持つ */
+  var hireRank = null, hireBusy = false;
+  function isYmd(x) { return typeof x === 'string' && /^\d{4}-\d{2}-\d{2}/.test(x); }
+  function loadHire() {
+    if (hireBusy || !ym) return;
+    hireBusy = true;
+    Promise.all([rpc('kintai_month_get', { p_ym: ym }), rpc('kintai_master_list')]).then(function (rs) {
+      var staff = arr(rs[0] && rs[0].staff), mrows = arr(rs[1] && rs[1].rows), hire = {};
+      mrows.forEach(function (m) { if (m && typeof m.master_id === 'string' && isYmd(m.hire_date)) hire[m.master_id] = m.hire_date.slice(0, 10); });
+      var list = staff.filter(function (x) { return x && typeof x.staff_id === 'string'; }).map(function (x) { return { sid: x.staff_id, h: x.master_id ? hire[x.master_id] || null : null, code: String(x.code || '') }; });
+      list.sort(function (a, b) {
+        if (a.h && b.h && a.h !== b.h) return a.h < b.h ? -1 : 1;
+        if (!!a.h !== !!b.h) return a.h ? -1 : 1;
+        return a.code < b.code ? -1 : a.code > b.code ? 1 : 0;
+      });
+      var rk = {}; list.forEach(function (x, i) { rk[x.sid] = i; });
+      hireRank = rk; hireBusy = false;
+      if (bs) { orderBs(); if (view === 'app' && !masked) paint(); }
+    }, function (e) { hireBusy = false; note('職員の並び', e); });
+  }
+  /* 勤怠の職員の並びにそろえる（勤怠にいない人は後ろに、元の並びのまま） */
+  function orderStaff(list, sidOf) {
+    if (!hireRank || !Array.isArray(list)) return list;
+    var get = sidOf || function (x) { return x && x.staff_id; };
+    return list.map(function (x, i) { return { x: x, i: i, r: hireRank[get(x)] }; }).sort(function (a, b) {
+      var ra = a.r == null ? Infinity : a.r, rb = b.r == null ? Infinity : b.r;
+      return ra !== rb ? (ra < rb ? -1 : 1) : a.i - b.i;
+    }).map(function (o) { return o.x; });
+  }
+  function orderBs() {
+    if (!bs) return;
+    bs.profiles = orderStaff(bs.profiles); bs.items = orderStaff(bs.items);
+    if (calc && Array.isArray(calc.items)) calc.items = orderStaff(calc.items);
+    if (importRows && Array.isArray(importRows)) importRows = orderStaff(importRows);
+  }
+
   /* ── 読み込み ── */
   function load(keepCalc) {
     var my = ++gen;
@@ -321,6 +360,7 @@
       if (my !== gen) return null;
       if (r && r.ok === false) { var e = new Error(r.error || 'ng'); e.payroll = r.error; throw e; }
       bs = normBoot(r); loadErr = null;
+      orderBs(); if (!hireRank) loadHire();   /* 職員の並びは勤怠と同じ入職順（読めるまでは職員ID の順） */
       bs.kcheck = { state: bs.kintai.locked ? 'checking' : 'skip', names: [] };
       if (!keepCalc) { calc = null; adjEdits = {}; dirty = false; }
       sync(''); paint();
@@ -329,6 +369,7 @@
     }, function (e) {
       if (my !== gen) return null;
       sync('');
+      if (e && e.code === '42501' && !isAal(e) && pinRecheck()) return null;   /* 鍵がかかった（0110）か、名簿から外されたかを確かめ直す */
       if ((e && e.code === '42501') || (e && e.payroll === 'denied')) { showGate(isAal(e) ? 'mfa' : 'denied'); return null; }
       if (isAal(e)) { showGate('mfa'); return null; }
       note('読み込み', e);
@@ -348,6 +389,7 @@
     if (e && e.payroll === 'stale') return handleStale();
     if (e && (e.code === '42501') && isAal(e)) { showGate('mfa'); return null; }
     /* 名簿から外された・役割が変わった（42501）: 描いた物を消して覆いに倒す。管理者だけの操作を名簿の人が押した時は知らせだけ */
+    if (e && e.code === '42501' && pinRecheck()) return null;   /* 鍵がかかった（0110）か、名簿から外されたかを確かめ直す */
     if (e && e.code === '42501') {
       if (isAdmin() || !/管理者/.test(String(e.message || ''))) { showGate('denied'); return null; }
     }
@@ -1077,7 +1119,7 @@
     var my = gen;
     file.arrayBuffer().then(function (buf) {
       if (my !== gen) return;
-      try { var p1 = period(); importRows = buildImport(parseCsv(decode(buf)), bs ? bs.profiles : [], p1 ? p1.from : null); } catch (e) { importErr = '読めませんでした：' + (e && e.message ? e.message : '形が違います') + '。freee の従業員の CSV を選んでください。'; }
+      try { var p1 = period(); importRows = orderStaff(buildImport(parseCsv(decode(buf)), bs ? bs.profiles : [], p1 ? p1.from : null)); } catch (e) { importErr = '読めませんでした：' + (e && e.message ? e.message : '形が違います') + '。freee の従業員の CSV を選んでください。'; }
       buf = null; paint();
     }, function (e) { note('取り込みの読み込み', e); importErr = 'ファイルを読めませんでした。'; paint(); });
   }
@@ -1132,7 +1174,7 @@
     h += '<div class="cd"><h2>給与の名簿（給与の画面を使える人）</h2><p class="help">管理者のほかに使える人のメールを入れます。名簿の人は事務所のアカウントで、二段階のログインを済ませている時だけ使えます（データベースが確かめます）。加えて「アプリの使える人」でその人に「給与」を許してください。</p>';
     if (members === null) h += '<button type="button" class="btn" data-act="mem-load">名簿を読む</button>';
     else {
-      h += members.length ? '<ul>' + members.map(function (m, i) { return '<li>' + esc(m.email) + (m.active === false || (m.role && m.role !== 'office') ? ' <span class="tag warn">⚠ 事務所の有効なアカウントではありません（使えません）</span>' : '') + ' <button type="button" class="btn ng" data-act="mem-del" data-i="' + esc(i) + '">外す</button></li>'; }).join('') + '</ul>' : '<p class="help">名簿に人はいません（管理者だけが使えます）。</p>';
+      h += members.length ? '<ul>' + members.map(function (m, i) { return '<li>' + esc(m.email) + (m.active === false || (m.role && m.role !== 'office') ? ' <span class="tag warn">⚠ 事務所の有効なアカウントではありません（使えません）</span>' : '') + ' <button type="button" class="btn ng" data-act="mem-del" data-i="' + esc(i) + '">外す</button>' + (pinOn ? ' <button type="button" class="btn" data-act="pin-reset" data-i="' + esc(i) + '">暗証番号を消す（忘れた人用）</button>' : '') + '</li>'; }).join('') + '</ul>' : '<p class="help">名簿に人はいません（管理者だけが使えます）。</p>';
       h += '<div class="row"><label for="m-add">メール</label><input id="m-add" type="email" inputmode="email" autocomplete="off"><button type="button" class="btn" data-act="mem-add">名簿に足す</button></div>';
     }
     h += '</div>';
@@ -1272,7 +1314,156 @@
       return load(true);
     }, function () { done(); toast('ログインを確かめられませんでした。通信を確かめてから、もう一度押してください。'); });
   }
-  function idleCheck() { if (view === 'app' && !masked && Date.now() - lastAct > IDLE_MS) mask(); }
+  function idleCheck() { if (view === 'app' && !masked && Date.now() - lastAct > IDLE_MS) { if (pinOn) pinLockNow('idle'); else mask(); } }
+
+  /* ── 給与専用の暗証番号（統合 0110・2026-11-20 代表者の指示）──
+     開いた時・10分さわらない時・「鍵をかける」で鍵の画面を出し、番号が合った時だけ中身を読む。鍵の行の期限はデータベースが決め（10分）、
+     画面はさわった時に1分ごとに延ばす。番号は画面の入力欄にだけあり、端末にも記録にも残さない。
+     データベースに暗証番号の関数がまだ無い時（0110 の前）は、今までどおり開く（pinOn=false） */
+  var pinOn = false, pinSt = null, pinMsg = '', lastTouch = 0, pinGen = 0, PIN_RE = /^[0-9]{4,6}$/;
+  /* 同じブラウザのタブどうしで「鍵をかけた」を知らせ合う（同じログインは開いた時刻を分け合うため。番号・中身は送らない） */
+  var pinCh = null; try { if (window.BroadcastChannel) pinCh = new window.BroadcastChannel('su-payroll-pin'); } catch (_) { pinCh = null; }
+  var PIN_NG = {
+    badpin: '暗証番号は4〜6桁の数字で入れてください。',
+    wrong: '暗証番号が違います。',
+    oldpin: '今の暗証番号が違います。',
+    notset: '暗証番号がまだ決まっていません。',
+    nosession: 'ログインを確かめられませんでした。ログインの画面からログインし直してください。',
+    reason: '理由を書いてください（200字まで）。',
+    badshape: 'メールの形が違います。',
+    self: '自分の暗証番号はここでは消せません。ほかの管理者に消してもらってください。'
+  };
+  function pinHm(t) { var d = new Date(t); return isNaN(d.getTime()) ? '' : d.getHours() + ':' + ('0' + d.getMinutes()).slice(-2); }
+  function pinErr(r) {
+    var e = r && r.error;
+    if (e === 'locked') return '暗証番号を5回続けて間違えたため、' + (r.until ? pinHm(r.until) + ' まで' : 'しばらく') + '止めています。時間をおいてから入れてください。';
+    if ((e === 'wrong' || e === 'oldpin') && r.left != null) return PIN_NG[e] + '（あと ' + r.left + ' 回間違えると15分止めます）';
+    return PIN_NG[e] || 'うまくいきませんでした（' + String(e || '') + '）。';
+  }
+  /* 起動の時: 状態を読み、開いていても一度鍵をかけてから鍵の画面を出す（読み込み直しのたびに番号を入れる） */
+  function pinStart() {
+    return rpc('payroll_pin_status').then(function (r) {
+      /* 開いたままのログインでも、開くたびに番号を入れる（鍵はこの画面だけにかけ、データベースの鍵はかけない＝ほかのタブを巻き込まない） */
+      pinOn = true; pinSt = r; showLock(''); return null;
+    }, function (e) {
+      if (noDb(e)) { pinOn = false; view = 'app'; $('p-app').hidden = false; return load(false); }   /* 0110 の前の DB: 今までどおり */
+      if (e && e.code === '42501') { showGate(isAal(e) ? 'mfa' : 'denied'); return null; }
+      note('暗証番号の状態', e); showGate('error'); return null;
+    });
+  }
+  function pinStatusThen(msg) {
+    var my = pinGen;   /* 答えの前に開いた・別の鍵の画面に変わった時は捨てる */
+    return rpc('payroll_pin_status').then(function (r) { if (my !== pinGen) return null; pinSt = r; showLock(msg || ''); return null; }, function (e) {
+      if (my !== pinGen) return null;
+      if (e && e.code === '42501') { showGate(isAal(e) ? 'mfa' : 'denied'); return null; }
+      note('暗証番号の状態', e);
+      /* 通信の失敗では覆いに倒さない（保存していない計算を消さない）。鍵の画面のまま知らせる */
+      if (pinSt) { showLock(msg || ''); pinSay('通信できませんでした。電波・Wi-Fi を確かめて、もう一度入れてください。'); return null; }
+      showGate('error'); return null;
+    });
+  }
+  /* 鍵の画面。保存していない計算は画面のメモリに残す（番号が合えば続きから使える）。金額・明細・窓・印刷は消す */
+  function showLock(msg) {
+    view = 'lock'; pinGen++; masked = false; maskGen++; closeDlg(); bs = null; importRows = null; printList = null; audit = null; members = null;
+    pinMsg = msg || '';
+    $('p-app').hidden = true; put($('p-main'), ''); put($('p-print'), '');
+    var st = pinSt || {}, g = $('p-gate'); g.hidden = false;
+    var pinIn = function (id, label) {
+      /* パスワードの欄にしない（共有の PC のブラウザに番号を覚えさせない）。文字は ● で隠す */
+      return '<div class="row"><label for="' + id + '">' + esc(label) + '</label><input id="' + id + '" class="pin" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore aria-describedby="p-pin-msg"></div>';
+    };
+    var h;
+    if (!st.set) {
+      h = '<h2>給与の暗証番号を決めてください</h2><p>給与の画面は、開くたびにあなただけが知る暗証番号（4〜6桁の数字）を入れて使います。事務所の PC を使ったほかの職員が、給与を開いてしまわないためです。</p>' +
+        pinIn('p-pin1', '暗証番号（4〜6桁）') + pinIn('p-pin2', 'もう一度') +
+        '<div class="row"><button type="button" class="btn pri" data-act="pin-set">決めて開く</button></div>';
+    } else {
+      h = '<h2>給与の暗証番号を入れてください</h2><p>' + (msg === 'idle' ? '10分のあいだ操作が無かったため、鍵をかけました。' : msg === 'manual' ? '鍵をかけました。' : msg === 'manual-other' ? 'ほかのタブで鍵をかけました。' : msg === 'expired' ? '鍵がかかっています。' : '') +
+        '給与の画面を開くには、あなたの暗証番号を入れてください。</p>' + pinIn('p-pin', '暗証番号') +
+        '<div class="row"><button type="button" class="btn pri" data-act="pin-open">開く</button></div>' +
+        (st.admin ? '<p class="help">番号を忘れた時は、ほかの管理者に「設定」のタブで消してもらってください（管理者が1人の時は、代表者の手順で消します）。</p>' :
+          '<p class="help">番号を忘れた時は、管理者に「設定」のタブで暗証番号を消してもらってください。</p>');
+      if (st.locked_until) msg = 'locked';
+    }
+    h += '<p id="p-pin-msg" class="help" role="alert">' + (st.locked_until ? esc(pinErr({ error: 'locked', until: st.locked_until })) : (msg && !/^(idle|manual|manual-other|expired)$/.test(msg) ? esc(msg) : '')) + '</p>' +
+      '<p><a class="btn" href="index.html">メニューへ戻る</a></p>';
+    put(g, h);
+    var f = $('p-pin1') || $('p-pin'); if (f) try { f.focus(); } catch (_) {}
+  }
+  function pinVal(id) { var el = $(id); var x = el ? String(el.value || '').replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).trim() : ''; if (el) el.value = ''; return x; }
+  function pinSay(t) { var el = $('p-pin-msg'); if (el) el.textContent = t; }
+  function pinOpened() {
+    view = 'app'; pinGen++; $('p-gate').hidden = true; put($('p-gate'), ''); $('p-app').hidden = false;
+    lastAct = Date.now(); lastTouch = Date.now(); paintLockBtn();
+    return load(true);
+  }
+  function pinSetGo(btn) {
+    var a = pinVal('p-pin1'), b2 = pinVal('p-pin2');
+    if (!PIN_RE.test(a)) { pinSay(PIN_NG.badpin); return; }
+    if (a !== b2) { pinSay('2回入れた番号が違います。もう一度入れてください。'); return; }
+    var done = hold(btn, '決めています…');
+    rpc('payroll_pin_set', { p_pin: a, p_old: null }).then(function (r) {
+      done();
+      if (!r || r.ok !== true) { pinSay(pinErr(r)); return null; }
+      toast('暗証番号を決めました。次からは開くたびにこの番号を入れてください。');
+      return r.unlocked ? pinOpened() : pinStatusThen();
+    }, function (e) { done(); pinFail(e); });
+  }
+  function pinOpenGo(btn) {
+    var a = pinVal('p-pin');
+    if (!PIN_RE.test(a)) { pinSay(PIN_NG.badpin); return; }
+    var done = hold(btn, '確かめています…');
+    rpc('payroll_pin_unlock', { p_pin: a }).then(function (r) {
+      done();
+      if (!r || r.ok !== true) { pinSay(pinErr(r)); return null; }
+      return pinOpened();
+    }, function (e) { done(); pinFail(e); });
+  }
+  function pinFail(e) {
+    if (e && e.code === '42501') { showGate(isAal(e) ? 'mfa' : 'denied'); return; }
+    note('暗証番号', e); pinSay('通信できませんでした。電波・Wi-Fi を確かめて、もう一度押してください。');
+  }
+  /* 設定のタブ（管理者）: 名簿の人の番号を消す */
+  function pinReset(email, btn) {
+    var reason = '';
+    var p = window.SUDialog && window.SUDialog.prompt ? window.SUDialog.prompt(email + ' の暗証番号を消します。消した人は、次に給与を開く時に番号を決め直します。理由を書いてください。', '')
+      : Promise.resolve(window.prompt(email + ' の暗証番号を消します。理由を書いてください。', ''));
+    var mg = maskGen;
+    p.then(function (x) {
+      if (x == null || mg !== maskGen || view !== 'app') return null;   /* 窓の間に鍵がかかった・金額を隠した時は送らない */
+      reason = String(x).trim(); if (!reason) { say('理由を書いてください。'); return null; }
+      var done = hold(btn, '消しています…');
+      return rpc('payroll_pin_reset', { p_email: email, p_reason: reason }).then(function (r) {
+        done();
+        if (r && r.ok === true) { toast(email + ' の暗証番号を消しました。'); return null; }
+        say(r && r.error === 'notset' ? 'この人はまだ暗証番号を決めていません。' : pinErr(r));
+        return null;
+      }, function (e) { done(); fail(e, '暗証番号を消す'); });
+    });
+  }
+  /* 鍵をかける（ボタン・10分さわらない時）。保存していない計算は残す */
+  function pinLockNow(why) {
+    if (!pinOn || view !== 'app') return;
+    var w = why || 'manual';
+    /* 「鍵をかける」はデータベースの鍵もかけ、同じブラウザのほかのタブにも知らせる。10分さわらない・ほかのタブの知らせは、この画面だけ鍵の画面にする */
+    if (w === 'manual') {
+      rpc('payroll_pin_lock').then(function () { return null; }, function (e) { note('鍵をかける', e); });
+      try { if (pinCh) pinCh.postMessage('lock'); } catch (_) {}
+    }
+    pinSt = pinSt || { set: true }; pinSt.set = true; pinSt.locked_until = null;
+    showLock(w);
+  }
+  /* さわった時に1分ごとに延ばす。延ばせなかった（期限が切れた）時は鍵の画面へ */
+  function pinTouch() {
+    if (!pinOn || view !== 'app' || Date.now() - lastTouch < 60000) return;
+    lastTouch = Date.now();
+    rpc('payroll_pin_touch').then(function (r) {
+      if (view === 'app' && r && r.unlocked === false) pinRecheck();
+    }, function (e) { if (e && e.code === '42501') pinRecheck(); else note('鍵の延長', e); });
+  }
+  /* 断られた（42501）時: 鍵がかかっただけなら鍵の画面、名簿から外されたなら覆い */
+  function pinRecheck() { if (!pinOn) return false; if (view === 'lock') return true; pinStatusThen('expired'); return true; }   /* 鍵の画面の間に届いた断りでは描き直さない */
+  function paintLockBtn() { var b = $('p-lock'); if (b) b.hidden = !pinOn; }
 
   /* ── 覆い ── */
   var GATE = {
@@ -1353,6 +1544,10 @@
       else if (a === 'alw-go') alwGo(b);
       else if (a === 'aud-load') audLoad(b);
       else if (a === 'unmask') unmask(b);
+      else if (a === 'pin-set') pinSetGo(b);
+      else if (a === 'pin-open') pinOpenGo(b);
+      else if (a === 'pin-lock') pinLockNow('manual');
+      else if (a === 'pin-reset') { var m1 = members && members[+b.getAttribute('data-i')]; if (m1) pinReset(m1.email, b); }
     });
     document.addEventListener('toggle', function (e) {
       var d = e.target;
@@ -1387,13 +1582,21 @@
       e.preventDefault();
       var c0 = dlgCtx; ask('入れた内容を捨てて閉じますか？').then(function (ok) { if (ok && dlgCtx === c0) closeDlg(); });
     });
-    ['pointerdown', 'keydown', 'wheel', 'touchstart', 'input'].forEach(function (ev) { document.addEventListener(ev, function () { if (!masked) lastAct = Date.now(); }, { passive: true, capture: true }); });
+    ['pointerdown', 'keydown', 'wheel', 'touchstart', 'input'].forEach(function (ev) { document.addEventListener(ev, function () { if (!masked && view === 'app') { lastAct = Date.now(); pinTouch(); } }, { passive: true, capture: true }); });
+    /* 鍵の画面の欄で Enter を押したら、決める・開くを押したのと同じにする（かな漢字の変換中は除く） */
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' || e.isComposing || view !== 'lock' || !e.target || !e.target.classList || !e.target.classList.contains('pin')) return;
+      if (e.target.id === 'p-pin1' && $('p-pin2')) { e.preventDefault(); $('p-pin2').focus(); return; }   /* 1つ目の欄の Enter は次の欄へ */
+      var b = document.querySelector('#p-gate [data-act="pin-set"], #p-gate [data-act="pin-open"]');
+      if (b && !b.disabled) { e.preventDefault(); b.click(); }
+    });
     document.addEventListener('visibilitychange', function () { if (!document.hidden) idleCheck(); });
     window.addEventListener('focus', idleCheck);
     setInterval(idleCheck, 15000);
     window.addEventListener('beforeunload', function (e) { if (isDirty()) { e.preventDefault(); e.returnValue = ''; } });
     window.addEventListener('storage', function (e) { if (e.key === 'su_device_role' && isField()) location.reload(); });
-    window.addEventListener('pageshow', function (e) { if (e && e.persisted && isField()) location.reload(); });
+    window.addEventListener('pageshow', function (e) { if (e && e.persisted && isField()) location.reload(); else if (e && e.persisted && pinOn && view === 'app') pinLockNow('expired'); });   /* 戻るボタンで戻った時は鍵の画面から */
+    if (pinCh) pinCh.onmessage = function (e) { if (e && e.data === 'lock' && pinOn && view === 'app') pinLockNow('manual-other'); };
   }
 
   function boot() {
@@ -1407,13 +1610,14 @@
         if (st.status !== S.OK) { showGate('denied'); return null; }
         if (st.aal !== 'aal2') { showGate('mfa'); return null; }
         role = st.role;
-        view = 'app';
-        $('p-app').hidden = false;
+        /* 鍵（暗証番号）が決まるまで中身の帯を出さない・押させない（0110 の前の DB では pinStart が出す） */
+        view = 'boot';
+        $('p-app').hidden = true;
         var t = lsGet(LS_TAB); tab = TABS.indexOf(t) >= 0 && (t !== 'settings' || isAdmin()) ? t : 'run';
         ym = todayYm(); $('p-ym').value = ym;
         bind(); definePrint();
         try { if (window.SUPerf) window.SUPerf.ready(); } catch (_) {}
-        return load(false);
+        return pinStart();
       });
     })['catch'](function (e) { note('起動', e); showGate('error'); });
   }
