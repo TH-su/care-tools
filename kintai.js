@@ -428,21 +428,32 @@
       personHtml(p) + '</div>';
   }
 
+  /* 「職員と番号」の表だけは従業員コードの順（2026-11-20 代表者の指示）。従業員コードの無い人は後ろに、入職順（staffSorted）のまま */
+  function staffByEmp() {
+    return staffSorted().map(function (s, i) { return { s: s, i: i }; }).sort(function (x, y) {
+      var a = x.s.emp_code || '', b = y.s.emp_code || '';
+      if (!!a !== !!b) return a ? -1 : 1;
+      if (a && b && a !== b) { var c = a.localeCompare(b, 'ja', { numeric: true }); if (c) return c; }
+      return x.i - y.i;
+    }).map(function (x) { return x.s; });
+  }
+  /* 職員マスタの職員No から決まった番号（統合 0108: 0＋職員No）。振り直しても変わらないのでボタンを出さない */
+  function fixedCode(s) { return !!(s && s.master_id && /^0[0-9]{3,5}$/.test(String(s.code || ''))); }
   function paintStaff() {
-    var list = staffSorted();
+    var list = staffByEmp();
     var rows = list.map(function (s) {
       return '<tr><td>' + esc(dispName(s)) + (s.display_name ? '<br><span class="raw">シフトの名前：' + esc(s.name) + '</span>' : '') + '</td><td>' + esc(officeName(s.office)) + '</td><td class="num"><b>' + esc(s.code) + '</b></td><td>' + esc(s.emp_code || '') + (s.emp_code ? '' : '<span class="tag rv">従業員コードなし</span>') + '</td><td>' + (s.active === false ? '<span class="tag">休止中</span>' : '') + '</td>' +
         staffMasterCells(s) +
-        '<td class="no-print"><button type="button" class="btn sm" data-act="recode" data-sid="' + esc(s.staff_id) + '"' + (isLocked() ? '' : '') + '>番号を振り直す</button><button type="button" class="btn sm" data-act="dname" data-sid="' + esc(s.staff_id) + '">表示名を変える</button>' + staffMasterBtns(s) + '</td></tr>';
+        '<td class="no-print">' + (fixedCode(s) ? '' : '<button type="button" class="btn sm" data-act="recode" data-sid="' + esc(s.staff_id) + '">番号を振り直す</button>') + '<button type="button" class="btn sm" data-act="dname" data-sid="' + esc(s.staff_id) + '">表示名を変える</button>' + staffMasterBtns(s) + '</td></tr>';
     }).join('');
     var w = shiftInfo && shiftInfo.ok && shiftInfo.warnings.length ? '<div class="cd"><h2 style="font-size:16px;margin:0 0 8px">シフトの記号で気になる所</h2><div class="tw"><table><thead><tr><th>職員</th><th>日</th><th>内容</th></tr></thead><tbody>' +
       shiftInfo.warnings.map(function (x) { var s = (data.staff || []).filter(function (y) { return y.staff_id === x.staff_id; })[0]; return '<tr><td>' + esc(s ? dispName(s) : x.staff_id) + '</td><td>' + esc(x.date) + '</td><td>' + esc(x.msg) + '</td></tr>'; }).join('') + '</tbody></table></div></div>' : '';
-    var printable = staffSorted().filter(function (s) { return s.active !== false; });   /* 入職順（2026-11-20） */
+    var printable = list.filter(function (s) { return s.active !== false; });   /* 表と同じ従業員コードの順（2026-11-20） */
     return printHead('打刻の番号') + '<div class="print-only"><h2>打刻の番号（本人にだけ伝えてください）</h2><table><thead><tr><th>番号</th><th>氏名</th></tr></thead><tbody>' +
       printable.map(function (s) { return '<tr><td>' + esc(s.code) + '</td><td>' + esc(dispName(s)) + '</td></tr>'; }).join('') + '</tbody></table></div>' +
       masterHtml() +
       '<div class="cd no-print"><div class="row"><button type="button" class="btn sm" data-act="import">シフトから職員と予定を取り込む</button><button type="button" class="btn sm" data-act="print">番号の表を印刷（番号と名前だけ・休止中の人は出しません）</button></div>' +
-      '<p class="help">打刻の番号は職員ごとに自動で振ります。タブレットではこの番号を入れて打刻します。番号は本人にだけ伝えてください。従業員コードはシフトアプリの職員の設定（freee の従業員コード）から取り込み、給与への出力に使います。シフトアプリで退職・休職・非表示にした人は「休止中」になり、タブレットで番号を入れても見つかりません。</p>' +
+      '<p class="help">打刻の番号は、職員マスタと結んだ人は職員マスタの職員No の頭に 0 を付けた番号（職員No 001 なら 0001）です。結んでいない人・職員No の無い人には自動で番号を振ります。タブレットではこの番号を入れて打刻します。番号は本人にだけ伝えてください。従業員コードはシフトアプリの職員の設定（freee の従業員コード）から取り込み、頭の A を抜いた4桁（A001 なら 0001）にして給与への出力に使います。この表は従業員コードの順です。シフトアプリで退職・休職・非表示にした人は「休止中」になり、タブレットで番号を入れても見つかりません。</p>' +
       '<div class="tw"><table><thead><tr><th>氏名</th><th>主事業所</th><th class="num">打刻の番号</th><th>従業員コード</th><th>状態</th><th>元</th><th>職員マスタ</th><th>打刻画面</th><th class="no-print"></th></tr></thead><tbody>' + (rows || '<tr><td colspan="9" class="empty">まだ職員がいません。シフトから取り込んでください。</td></tr>') + '</tbody></table></div></div>' + (w ? '<div class="no-print">' + w + '</div>' : '');
   }
 
@@ -686,7 +697,7 @@
     h += '<div class="cd pr-edits-cd"><div class="ph" style="display:none"></div><h2 style="font-size:16px;margin:0 0 8px">直しの履歴</h2><div class="row no-print"><button type="button" class="btn sm" data-act="print-edits">直しの履歴を印刷</button></div><div id="g-edits">' + (editsCache ? editsHtml(editsCache) : '<button type="button" class="btn sm" data-act="edits">この月の直しの履歴を見る</button>') + '</div></div>';
     return h;
   }
-  var ACT_LABEL = { display_name: '表示名を変えた', punch_add: '打刻を足した', punch_void: '打刻を取り消した', day_put: '承認・休憩・メモ・印', code_reset: '番号を振り直した', month_lock: '月を締めた', month_unlock: '締めを解除した', settings_put: '設定を変えた', schedule_put: 'シフトを取り込んだ' };
+  var ACT_LABEL = { display_name: '表示名を変えた', punch_add: '打刻を足した', punch_void: '打刻を取り消した', day_put: '承認・休憩・メモ・印', code_reset: '番号を振り直した', code_fixed: '打刻の番号を職員No に合わせた', month_lock: '月を締めた', month_unlock: '締めを解除した', settings_put: '設定を変えた', schedule_put: 'シフトを取り込んだ' };
   function kindJa(k) { return k === 'in' ? '出勤' : k === 'out' ? '退勤' : '打刻'; }
   function brTxt(v) { return v == null ? '予定どおり' : String(v); }
   /* 直しの前後の値を「退勤 16:05 を足した」「休憩 60→45 分」「確認済みにした」のように言う（C-9） */
@@ -1450,7 +1461,7 @@
   }
 
   /* ── 操作 ── */
-  function setTab(t) { if (TABS.indexOf(t) < 0) t = 'day'; tab = t; lsSet(LS_TAB, t); paint(); }
+  function setTab(t) { if (TABS.indexOf(t) < 0) t = 'day'; tab = t; lsSet(LS_TAB, t); paint(); if (t === 'day' || t === 'review') quietReload(); }
   function setYm(v, keepAuto) { if (!C.isYm(v) || v === ym) return; if (!keepAuto) autoYm = null; ym = v; lsSet(LS_YM, v); $('g-ym').value = v; shiftInfo = null; editsCache = null; data = null; month = null; paintPer(); load(true); }
   /* 「今日」: 今日のカレンダー月へ移り、その月分の期間に今日が入っていなければ次の月分へ（読んだ後に autoYm と同じ形で決める）。
      ymFor は ±1日の移動向けなので使わない（2か月以上離れた月分から押しても今日の月分へ行く・反証レビューの指摘1） */
@@ -1560,14 +1571,40 @@
     window.addEventListener('pageshow', function (e) { if (e && e.persisted && isField()) location.reload(); });
     window.addEventListener('beforeprint', stampPrint);
     window.addEventListener('afterprint', endPrint);
-    /* 日ごと・要確認を開いている間は1分ごとに手元で数え直す（勤務中・まだ出勤していないは時刻で変わる。読み直しはしない） */
-    setInterval(function () {
-      if (view !== 'app' || busy || !month || dlgCtx || printAll || (tab !== 'day' && tab !== 'review')) return;
-      if (document.visibilityState === 'hidden') return;
-      var ae = document.activeElement;
-      if (ae && ae.tagName === 'SELECT' && $('g-main').contains(ae)) return;
+    /* 日ごと・要確認を開いている間は30秒ごとに打刻を読み直して数え直す（タブレットの打刻を再読み込みなしで出す・2026-11-20 代表者の指示）。
+       画面が隠れている間は休み、見えた時・日ごと／要確認のタブへ移った時はすぐ読み直す */
+    setInterval(function () { quietReload(); }, 30000);
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') quietReload(); });
+  }
+
+  /* 黙って読み直す（日ごと・要確認だけ）: 窓・保存中・印刷中・選ぶ欄の操作中・ほかの読み込み中は何もしない。
+     読めない時は手元の時刻で数え直すだけ（帯は出さない・記録に残す）。届いた時に月やタブが変わっていれば捨てる */
+  var quietBusy = 0, quietSeq = 0;
+  function quietOk() {
+    if (view !== 'app' || busy || !month || !data || dlgCtx || printAll || (tab !== 'day' && tab !== 'review')) return false;
+    if (document.visibilityState === 'hidden') return false;
+    var ae = document.activeElement;
+    return !(ae && ae.tagName === 'SELECT' && $('g-main').contains(ae));
+  }
+  function quietReload() {
+    if (!quietOk()) return;
+    /* 前の読み直しの答えがまだ来ない間は、手元の時刻で数え直すだけ（勤務中・まだ出勤していないの印を止めない）。
+       20秒で答えが来なければ諦めて次から読み直す（届いた古い答えは番号で捨てる） */
+    if (quietBusy && Date.now() - quietBusy < 20000) { recompute(); paint(); return; }
+    var my = gen, atYm = ym, seq = ++quietSeq; quietBusy = Date.now();
+    rpc('kintai_month_get', { p_ym: ym }).then(okOr).then(function (d) {
+      if (seq !== quietSeq) return;
+      quietBusy = 0;
+      if (my !== gen || atYm !== ym || !quietOk()) return;
+      data = d;
       recompute(); paint();
-    }, 60000);
+      sync(isLocked() ? '締め済みの月です' : '読み込みました（' + hm(Date.now()) + '）');
+    })['catch'](function (e) {
+      if (seq !== quietSeq) return;
+      quietBusy = 0;
+      note('自動の読み直し', e);
+      if (my === gen && atYm === ym && quietOk()) { recompute(); paint(); }
+    });
   }
 
   function showField() {

@@ -75,7 +75,8 @@ console.log('\n— 7. 管理画面の v2 の形 —');
 t('タブのホワイトリストに要確認（日ごとの次）', /var TABS = \['day', 'review', 'grid', 'person', 'staff', 'leave', 'close', 'settings'\]/.test(K) && /data-tab="day">日ごと<\/button>\s*<button type="button" role="tab" data-tab="review">要確認/.test(H));
 t('要確認の色・件数は needsReview・reviewList・totals にそろえる（印と C.REVIEW で数えない）', /C\.needsReview\(/.test(K) && /C\.reviewList\(month\)/.test(K) && /month\.totals\.reviewCount/.test(K) && !/flags\.some\(function \(f\) \{ return C\.REVIEW\[f\]; \}\)/.test(K));
 t('CSV は新しい列つき（extraCols: true）', /C\.buildCsv\(src, \{ nameOf: nameOfOffice, extraCols: true \}\)/.test(K));
-t('月の計算に今の時刻を渡し、日ごと・要確認は1分ごとに手元で数え直す', /C\.computeMonth\(\{[^}]*now: Date\.now\(\) \}\)/.test(K) && /recompute\(\); paint\(\);\s*\}, 60000\)/.test(K));
+/* 2026-11-20 の6回目（代表者の指示）: 1分ごとの手元だけの数え直しを、30秒ごとの読み直し＋数え直しに変えた（読めない時も手元で数え直す・下の 14） */
+t('月の計算に今の時刻を渡し、日ごと・要確認は30秒ごとに読み直して数え直す（読めない時も手元で数え直す）', /C\.computeMonth\(\{[^}]*now: Date\.now\(\) \}\)/.test(K) && /setInterval\(function \(\) \{ quietReload\(\); \}, 30000\)/.test(K) && /data = d;\s*recompute\(\); paint\(\);/.test(K) && /if \(my === gen && atYm === ym && quietOk\(\)\) \{ recompute\(\); paint\(\); \}/.test(K));
 t('早出・残業は「全部認める」と時刻を組で送る（両方が有効にならない）', /patch\.early_ok = em === 'all'; if \(ef != null \|\| dn\.early_from != null\) patch\.early_from = ef;/.test(K) && /patch\.overtime_ok = om === 'all'; if \(ou != null \|\| dn\.ot_until != null\) patch\.ot_until = ou;/.test(K));
 t('窓が開いただけでは未保存にしない（開いた時の値と比べる）', /dlgCtx\.init = formState\(\)/.test(K) && /return formState\(\) !== dlgCtx\.init;/.test(K));
 const lockFn = K.slice(K.indexOf('function lockMonth('), K.indexOf('function lockGo('));
@@ -231,8 +232,8 @@ t('反証レビューの指摘1:「今日」は今日のカレンダー月へ移
   t('見直し2: 失敗の後にもう一度「今日」→ 今日の月分（12月分）へ', b3.end === '2026-12', b3);
 }
 /* ★v4（2026-11-20）: 版を上げたので期待を新しい版の完全一致に改め、kintai-calc.js を読む給与の画面（payroll.html）も同じ版かを足した */
-/* ★反証レビューの直し（2026-11-20 の2回目）で kintai.js を ?v=2026-11-20.2、iPhone の幅の見た目の直し（2026-11-20 の3回目）で ?v=2026-11-20.3、職員の入職順の並び（4回目）で ?v=2026-11-20.4、表示名と入職順の並びの残り（5回目）で ?v=2026-11-20.5 に上げた（kintai-calc.js は変えていないので 2026-11-20 のまま） */
-t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-20.5・2026-11-20（両画面と給与の画面でそろえる）', /kintai\.js\?v=2026-11-20\.5"/.test(H) && /kintai-calc\.js\?v=2026-11-20"/.test(H) && /kintai-calc\.js\?v=2026-11-20"/.test(HC) && /kintai-calc\.js\?v=2026-11-20"/.test(read('payroll.html')));
+/* ★反証レビューの直し（2026-11-20 の2回目）で kintai.js を ?v=2026-11-20.2、iPhone の幅の見た目の直し（2026-11-20 の3回目）で ?v=2026-11-20.3、職員の入職順の並び（4回目）で ?v=2026-11-20.4、表示名と入職順の並びの残り（5回目）で ?v=2026-11-20.5、打刻の番号と従業員コードの順・日ごとの読み直し（6回目）で ?v=2026-11-20.6 に上げた（kintai-calc.js は従業員コードの A を抜く直しで 2026-11-20.1） */
+t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-20.6・2026-11-20.1（両画面と給与の画面でそろえる）', /kintai\.js\?v=2026-11-20\.6"/.test(H) && /kintai-calc\.js\?v=2026-11-20\.1"/.test(H) && /kintai-calc\.js\?v=2026-11-20\.1"/.test(HC) && /kintai-calc\.js\?v=2026-11-20\.1"/.test(read('payroll.html')));
 
 const await_pending = [];   /* 動かして確かめる試験（Promise）を最後に待つ */
 console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（2026-11-20・凍結した仕様書 ROOT-v4-master-leave.md） —');
@@ -245,7 +246,7 @@ console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（
   const loadLeaveFn = between('function loadLeave(', 'function leaveOf(');
   const leaveMonthsFn = between('function loadLeaveMonths(', 'function loadLeave(');
   t('「有給」のタブは「職員と番号」の次（HTML の並び）・パネルの関数は paintLeave', /data-tab="staff">職員と番号<\/button>\s*<button type="button" role="tab" data-tab="leave">有給<\/button>/.test(H) && /leave: paintLeave/.test(K));
-  t('kintai-leave.js は kintai-calc.js の後・kintai.js の前に読む（?v=2026-11-20.2・反証レビューの直しで上げた）', H.indexOf('<script src="kintai-calc.js?v=2026-11-20"></script>') >= 0 && H.indexOf('<script src="kintai-leave.js?v=2026-11-20.2"></script>') > H.indexOf('kintai-calc.js?v=') && H.indexOf('kintai-leave.js?v=') < H.indexOf('kintai.js?v='));
+  t('kintai-leave.js は kintai-calc.js の後・kintai.js の前に読む（?v=2026-11-20.2・反証レビューの直しで上げた）', H.indexOf('<script src="kintai-calc.js?v=2026-11-20.1"></script>') >= 0 && H.indexOf('<script src="kintai-leave.js?v=2026-11-20.2"></script>') > H.indexOf('kintai-calc.js?v=') && H.indexOf('kintai-leave.js?v=') < H.indexOf('kintai.js?v='));
   /* iPhone の幅（640px 以下）だけの見た目の直し（2026-11-20）: 窓の欄の見出しを縦1字にしない・枠（fieldset）を窓の外へ広げない・突き合わせの表は1人ずつの並び */
   {
     const mq = (H.match(/@media \(max-width:640px\)\{[\s\S]*?\n\s*table\.mt td\.empty\{display:block\}\}/) || [''])[0];
@@ -325,13 +326,14 @@ console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（
     t('職員は事業所に関係なく入職日の古い順・入職日の分からない人（d）は最後', run(st, h, null) === 'b,e,f,a,c,d', run(st, h, null));
     t('有給の設定の入職日は並びに使わない（有給の記録を読んだかで並びが変わらない・c を 2010 に上書きしても同じ並び）', run(st, h, { c: { hire_date: '2010-01-01' } }) === 'b,e,f,a,c,d', run(st, h, { c: { hire_date: '2010-01-01' } }));
     t('入職日の分からない人どうしは打刻の番号の順', run([{ staff_id: 'x', office: 'day', code: '3000' }, { staff_id: 'y', office: 'day', code: '0300' }], {}, null) === 'y,x');
-    t('「職員と番号」の表も同じ並び（paintStaff は staffSorted を使う）', /function paintStaff\(\) \{\s*var list = staffSorted\(\);/.test(K));
+    /* 2026-11-20 の6回目（代表者の指示）で「職員と番号」の表だけ従業員コードの順に変えた（下の 14） */
+    t('「職員と番号」の表は従業員コードの順（paintStaff は staffByEmp を使い、staffByEmp は staffSorted の並びを土台にする）', /function paintStaff\(\) \{\s*var list = staffByEmp\(\);/.test(K) && /function staffByEmp\(\) \{\s*return staffSorted\(\)/.test(K));
   }
   console.log('\n— 13. 職員の並び（入職順）と表示名（2026-11-20 代表者の指示・統合 0107）—');
   {
     const recFn = between('function recompute()', '/* ── 描画 ── */');
     t('月の計算に渡す職員は staffSorted の並び（日ごと・要確認・月の一覧・個人の月の選択肢がこの並び）', /staff: staffSorted\(\),/.test(recFn) && !/staff: data\.staff \|\| \[\]/.test(recFn));
-    t('番号の表（印刷）と「結べていないシフトの職員」も入職順', /var printable = staffSorted\(\)\.filter\(/.test(K) && /var unS0 = staffSorted\(\)\.filter\(/.test(K));
+    t('番号の表（印刷）は「職員と番号」の表と同じ従業員コードの順・「結べていないシフトの職員」は入職順', /var printable = list\.filter\(/.test(K) && /var unS0 = staffSorted\(\)\.filter\(/.test(K));
     t('勤務時間を手で入れる窓の職員は名前の順のまま（表示名で並べる）', /staffSorted\(\)\.sort\(function \(a, b\) \{ return dispName\(a\)\.localeCompare\(dispName\(b\), 'ja'\); \}\)/.test(K));
     t('読み込んだ後に職員マスタをまだ読んでいなければ裏で読み、読めたら数え直す（描き直すのは並びを出すタブだけ・締めと設定のタブは描き直さない）', /if \(!masterSt && !masterBusy\) loadMaster\(\);/.test(K) && /if \(!busy && data && !\(masterSt && masterSt\.err\)\) recompute\(\);/.test(K) && /if \(view === 'app' && !busy && REORDER_TABS\[tab\]\) paint\(\);/.test(K) && /var REORDER_TABS = \{ day: 1, review: 1, grid: 1, person: 1, staff: 1, leave: 1 \};/.test(K));
     const dnSrc = between('function dispName(', '\n');
@@ -362,6 +364,36 @@ console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（
     t('直しの記録の操作の名前に「表示名を変えた」', /display_name: '表示名を変えた'/.test(K));
   }
   t('打刻画面に出さない人は「結べていないシフトの職員」に出さず、件数だけ添える', /var unS = unS0\.filter\(function \(s\) \{ return s\.clock_visible !== false; \}\)/.test(K) && /打刻画面に出さない ' \+ unHid \+ ' 人/.test(K));
+}
+
+console.log('\n— 14. 打刻の番号と従業員コードの順・日ごとの読み直し（2026-11-20 代表者の指示・統合 0108）—');
+{
+  const between = (a, b) => { const i = K.indexOf(a), j = K.indexOf(b, i + 1); return i >= 0 && j > i ? K.slice(i, j) : ''; };
+  const byEmpSrc = between('function staffByEmp(', 'function paintStaff(');
+  const run = (staff) => new Function('STAFF', `
+    function staffSorted() { return STAFF.slice(); }
+    ${byEmpSrc}
+    return { order: staffByEmp().map(function (s) { return s.staff_id; }).join(), fixed: fixedCode };`)(staff);
+  /* 架空の職員。staffSorted（入職順）の並びは e,c,a,d,b のつもりで渡す */
+  const st = [{ staff_id: 'e', emp_code: null, code: '4100' }, { staff_id: 'c', emp_code: '0003', code: '0003', master_id: 'S3' },
+    { staff_id: 'a', emp_code: '0001', code: '0001', master_id: 'S1' }, { staff_id: 'd', emp_code: '0010', code: '5100' }, { staff_id: 'b', emp_code: '0002', code: '0002', master_id: 'S2' }];
+  const r = run(st);
+  t('従業員コードの順（0001・0002・0003・0010）・従業員コードの無い人は後ろ', r.order === 'a,b,c,d,e', r.order);
+  t('従業員コードの無い人どうし・同じ従業員コードの人どうしは入職順のまま', run([{ staff_id: 'y', emp_code: null }, { staff_id: 'x', emp_code: null }, { staff_id: 'q', emp_code: '0005' }, { staff_id: 'p', emp_code: '0005' }]).order === 'q,p,y,x');
+  t('数字の長さが違っても数の順（0009 の後に 0010・100 の後に 1000）', run([{ staff_id: 'm', emp_code: '1000' }, { staff_id: 'n', emp_code: '0010' }, { staff_id: 'o', emp_code: '0009' }]).order === 'o,n,m');
+  t('職員マスタと結んで 0 で始まる番号の人は「番号を振り直す」を出さない（結んでいない人・乱数の番号の人は出す）',
+    r.fixed({ master_id: 'S1', code: '0001' }) === true && r.fixed({ master_id: null, code: '0001' }) === false && r.fixed({ master_id: 'S1', code: '4100' }) === false && r.fixed(null) === false
+    && /\(fixedCode\(s\) \? '' : '<button type="button" class="btn sm" data-act="recode"/.test(K));
+  t('直しの記録の名前に「打刻の番号を職員No に合わせた」（DB の code_fixed）', /code_fixed: '打刻の番号を職員No に合わせた'/.test(K));
+  t('説明文に「職員No の頭に 0」と「頭の A を抜いた4桁」と「従業員コードの順」', /職員マスタの職員No の頭に 0 を付けた番号（職員No 001 なら 0001）/.test(K) && /頭の A を抜いた4桁（A001 なら 0001）/.test(K) && /この表は従業員コードの順です。/.test(K));
+  const q = between('var quietBusy = 0, quietSeq = 0;', '\n  function showField(');
+  t('日ごと・要確認は30秒ごとに打刻を読み直す（kintai_month_get）・画面が見えた時とタブを移った時もすぐ読む',
+    /setInterval\(function \(\) \{ quietReload\(\); \}, 30000\);/.test(K) && /visibilitychange', function \(\) \{ if \(document\.visibilityState === 'visible'\) quietReload\(\); \}/.test(K)
+    && /tab = t; lsSet\(LS_TAB, t\); paint\(\); if \(t === 'day' \|\| t === 'review'\) quietReload\(\);/.test(K) && /rpc\('kintai_month_get', \{ p_ym: ym \}\)/.test(q));
+  t('読み直しは窓・保存中・印刷中・選ぶ欄の操作中・隠れている時・ほかのタブではしない（入力を消さない）',
+    /if \(view !== 'app' \|\| busy \|\| !month \|\| !data \|\| dlgCtx \|\| printAll \|\| \(tab !== 'day' && tab !== 'review'\)\) return false;/.test(q) && /visibilityState === 'hidden'\) return false;/.test(q) && /ae\.tagName === 'SELECT'/.test(q));
+  t('届いた時に読み込みの世代・月・状態が変わっていれば捨てる・答えを待つ間は手元で数え直す・20秒で諦めて古い答えは番号で捨てる・失敗は記録して手元で数え直すだけ',
+    /if \(my !== gen \|\| atYm !== ym \|\| !quietOk\(\)\) return;/.test(q) && /if \(!quietOk\(\)\) return;/.test(q) && /if \(quietBusy && Date\.now\(\) - quietBusy < 20000\) \{ recompute\(\); paint\(\); return; \}/.test(q) && /if \(seq !== quietSeq\) return;\s*quietBusy = 0;/.test(q) && /note\('自動の読み直し', e\);/.test(q) && !/alert\(/.test(q));
 }
 
 Promise.all(await_pending).catch((e) => { fail++; console.log('  ✗ 動かして確かめる試験が止まった  → ' + e.message); }).then(() => {

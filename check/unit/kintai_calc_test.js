@@ -52,6 +52,10 @@ console.log('\n— 0. シフト → 予定 —');
   t('(22 と翌日 8) → 22:00〜翌8:00・夜勤の休憩120分', r[1].kind === 'night' && r[1].end_at === '2026-12-03T08:00:00+09:00' && r[1].break_min === 120, r[1]);
   t('8) の日は行を作らない・休は行なし・有は paid 480分', r.length === 3 && r[2].kind === 'paid' && r[2].paid_min === 480, r.map((x) => x.kind));
   t('名簿: 従業員コード・主事業所', s.staff[0].emp_code === '9001' && s.staff[0].office === 'facility' && s.staff[1].emp_code === null && s.staff[1].office === 'visit');
+  /* 2026-11-20 代表者の指示・統合 0108: シフトの freee の欄の A001 の形は A を抜いた4桁で送る（ほかの形は変えない） */
+  const ec = (code) => C.buildSchedule({ ym: YM, plan: { cells: {} }, nextPlan: {}, staff: [{ id: 'sT09', name: '試験 丙', mainDivision: '施設', empCode: code, active: true }], symbols: Sym.DEFAULT_SYMBOLS, settings: {} }).staff[0].emp_code;
+  t('名簿: 従業員コードの A001 → 0001・A12 → 0012・E02 と B0007 と 9001 と A12345 はそのまま・空は null',
+    ec('A001') === '0001' && ec('A12') === '0012' && ec('E02') === 'E02' && ec('B0007') === 'B0007' && ec('9001') === '9001' && ec('A12345') === 'A12345' && ec('') === null, [ec('A001'), ec('A12')]);
   const m = sched({ 31: '(22' }, {}, {}, { cells: { sT01: { 1: '8)' } } });
   t('月末の夜勤は翌月の1日の上がりで終わる', m.rows[0].end_at === '2027-01-01T08:00:00+09:00', m.rows[0]);
   const m2 = sched({ 31: '(21' });
