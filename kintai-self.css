@@ -62,6 +62,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, .btn:focus-vi
 .day dl { display: grid; grid-template-columns: 6.5em 1fr; gap: 2px 8px; margin: 6px 0 0; }
 .day dt { color: var(--mut); }
 .day dd { margin: 0; font-variant-numeric: tabular-nums; word-break: break-word; }
+.tag { display: inline-block; margin: 6px 6px 0 0; padding: 2px 8px; border-radius: 6px; background: var(--pri-l); color: var(--pri); font-size: 0.9375rem; font-weight: 700; }
 .flag { display: inline-block; margin: 6px 6px 0 0; padding: 2px 8px; border-radius: 6px; background: var(--warn-l); color: var(--warn); font-size: 0.9375rem; font-weight: 700; }
 .tot { display: grid; grid-template-columns: 1fr; gap: 4px; margin: 8px 0 0; }
 .tot div { display: flex; justify-content: space-between; gap: 6px; }

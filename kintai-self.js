@@ -224,6 +224,7 @@
       var dl = el('dl');
       [['予定', r.sched || 'なし'], ['打刻', r.punches || 'なし'], ['数えた時刻', r.counted || '—']].forEach(function (x) { dl.appendChild(el('dt', null, x[0])); dl.appendChild(el('dd', null, x[1])); });
       c.appendChild(dl);
+      r.absences.forEach(function (x) { c.appendChild(el('span', 'tag', x)); });   /* 休暇の種類の印（管理画面と同じ言い方） */
       if (!r.future) r.flags.forEach(function (f) { c.appendChild(el('span', 'flag', f)); });
       list.appendChild(c);
     });

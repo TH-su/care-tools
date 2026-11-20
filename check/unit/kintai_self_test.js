@@ -73,6 +73,38 @@ t('事務所が足した打刻（承認した直し）には印を出さない',
     punches: [{ id: 'p3', staff_id: SID, kind: 'in', at: '2022-05-10T09:00:00+09:00', source: 'office' }, { id: 'p4', staff_id: SID, kind: 'out', at: '2022-05-10T18:00:00+09:00', source: 'office' }],
     days: [], config: {}, now: Date.parse('2022-06-05T12:00:00+09:00') }), C, '2022-06-05')[0].flags.length === 0);
 
+group('2b. 休暇の種類（統合 0113・段4）');
+/* 受け口の月の答えの absences（id・date・kind・minutes・paid・type_code・link_date だけ・職員の番号なし）に自分の番号を付けて computeMonth へ渡す */
+let seen = null;
+const spyC = { computeMonth: (o) => { seen = o; return { people: [] }; } };
+S.computeOf(Object.assign({}, month, { absences: [{ id: 'a1', date: '2022-05-20', kind: 'special', minutes: null, paid: true, type_code: 'keicho', link_date: null }] }), '2022-05', spyC, 0);
+t('休暇は自分の職員の番号を付けて computeMonth へ渡す（中身は変えない）',
+  seen && Array.isArray(seen.absences) && seen.absences.length === 1 && seen.absences[0].staff_id === SID && seen.absences[0].kind === 'special' && seen.absences[0].type_code === 'keicho', seen && seen.absences);
+S.computeOf(month, '2022-05', spyC, 0);
+t('休暇の鍵が無い答え（0113 の前の受け口）でも空で渡す', seen && Array.isArray(seen.absences) && seen.absences.length === 0);
+t('今の計算の部品（休暇を数えない版）に渡しても止まらない',
+  (() => { try { S.computeOf(Object.assign({}, month, { absences: [{ id: 'a1', date: '2022-05-20', kind: 'comp', minutes: null, paid: false, type_code: null, link_date: '2022-05-15' }] }), '2022-05', C, 0); return true; } catch (e) { return false; } })());
+/* 日の行の印の言い方は、勤怠の管理画面（段4 の kintai.js の absTags）と同じ */
+const TYPES = [{ code: 'keicho', name: '慶弔', paid: true }, { code: 'other', name: 'その他', paid: false }];
+t('休暇の印の言い方は管理画面と同じ（時間単位・特別休暇・半日・無給・代休・振替の休む日と働く日）',
+  S.absLabel({ kind: 'hourly_paid', minutes: 120 }, TYPES) === '時間単位の有休 2時間'
+  && S.absLabel({ kind: 'special', minutes: null, paid: true, type_code: 'keicho' }, TYPES) === '特別休暇「慶弔」'
+  && S.absLabel({ kind: 'special', minutes: 240, paid: false, type_code: 'other' }, TYPES) === '特別休暇「その他」半日（無給）'
+  && S.absLabel({ kind: 'special', minutes: null, paid: true, type_code: 'zzz' }, TYPES) === '特別休暇「zzz」'
+  && S.absLabel({ kind: 'comp', minutes: null, link_date: '2022-05-15' }, TYPES) === '代休（05/15 の休日出勤）'
+  && S.absLabel({ kind: 'comp', minutes: 240, link_date: '2022-05-15' }, TYPES) === '代休 半日（05/15 の休日出勤）'
+  && S.absLabel({ kind: 'swap', role: 'off', link_date: '2022-05-28' }, TYPES) === '振替休日（働く日 05/28）'
+  && S.absLabel({ kind: 'swap', role: 'work', date: '2022-06-03' }, TYPES) === '振替で働く日（休む日 06/03）'
+  && S.absLabel({ kind: 'nope' }, TYPES) === '' && S.absLabel(null, TYPES) === '');
+const fakeMonth = { config: {}, people: [{ staff: { staff_id: SID }, sum: {}, days: [
+  { date: '2022-05-20', blocks: [], workMin: 0, paidDays: 0, absences: [{ kind: 'special', minutes: null, paid: true, type_code: 'keicho' }] },
+  { date: '2022-05-21', blocks: [], workMin: 0, paidDays: 0 }] }] };
+const fakeC = { FLAG_LABEL: C.FLAG_LABEL, leaveTypesOf: () => TYPES };
+const ar = S.dayRows(fakeMonth, fakeC, '2022-06-01');
+t('日の行に休暇の印を出す（設定の特別休暇の名前）・休暇の無い日は空', JSON.stringify(ar[0].absences) === JSON.stringify(['特別休暇「慶弔」']) && JSON.stringify(ar[1].absences) === '[]', ar);
+t('特別休暇の種類の一覧を読めない部品でも、印は種類の印のまま出す', JSON.stringify(S.dayRows(fakeMonth, { FLAG_LABEL: {} }, '2022-06-01')[0].absences) === JSON.stringify(['特別休暇「keicho」']));
+t('画面は休暇の印を textContent で出す（tag の部品）', /r\.absences\.forEach\(function \(x\) \{ c\.appendChild\(el\('span', 'tag', x\)\); \}\)/.test(read('kintai-self.js')));
+
 group('3. 有給（管理画面と同じ数え方）');
 const lv = {
   ok: true, staff_id: SID, hire_date: null, profile: null,

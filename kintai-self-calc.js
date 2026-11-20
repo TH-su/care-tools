@@ -74,10 +74,28 @@
   }
   /* computeMonth の結果（自分1人）から、日ごとの行を作る。
      返す: [{ date, label, sched, punches, counted, work, workMin, paid, flags:[文], future }]（期間の日付の順・予定も打刻も無い日は出さない） */
+  /* 休暇の種類（統合 0113・段4）の日の行の印。言い方は勤怠の管理画面（kintai.js の absTags）と同じ。
+     a は computeMonth が日の行に付ける absences の1つ（{kind, minutes, paid, type_code, link_date}・振替は {kind:'swap', role:'off'|'work', link_date|date}）。
+     types は特別休暇の種類の一覧（[{code, name}]・名前が無い時は印のまま） */
+  function mdOf(date) { return typeof date === 'string' ? date.slice(5).replace('-', '/') : ''; }
+  function absLabel(a, types) {
+    if (!a || typeof a !== 'object') return '';
+    if (a.kind === 'swap') return a.role === 'off' ? '振替休日（働く日 ' + mdOf(a.link_date) + '）' : '振替で働く日（休む日 ' + mdOf(a.date) + '）';
+    if (a.kind === 'hourly_paid') return '時間単位の有休 ' + ((+a.minutes || 0) / 60) + '時間';
+    if (a.kind === 'special') {
+      var nm = String(a.type_code || '');
+      (types || []).forEach(function (x) { if (x && x.code === a.type_code && x.name) nm = x.name; });
+      return '特別休暇「' + nm + '」' + (a.minutes != null ? '半日' : '') + (a.paid ? '' : '（無給）');
+    }
+    if (a.kind === 'comp') return '代休' + (a.minutes != null ? ' 半日' : '') + (a.link_date ? '（' + mdOf(a.link_date) + ' の休日出勤）' : '');
+    return '';
+  }
   function dayRows(month, C, today) {
     var p = month && month.people && month.people[0];
     if (!p) return [];
     var FL = (C && C.FLAG_LABEL) || {};
+    var types = [];
+    try { types = C && typeof C.leaveTypesOf === 'function' ? C.leaveTypesOf(month.config) : []; } catch (e) { types = []; }
     return (p.days || []).map(function (d) {
       var sched = [], punches = [], counted = [], flags = [];
       (d.blocks || []).forEach(function (b) {
@@ -91,8 +109,9 @@
         });
       });
       if (d.paidDays > 0) sched.push(d.paidDays === 0.5 ? '有休（半日）' : '有休');
+      var absences = (Array.isArray(d.absences) ? d.absences : []).map(function (a) { return absLabel(a, types); }).filter(Boolean);
       return { date: d.date, label: dayLabel(d.date), sched: sched.join('・'), punches: punches.join('　'), counted: counted.join('・'),
-        work: d.workMin > 0 ? minText(d.workMin) : '', workMin: d.workMin || 0, paid: d.paidDays || 0, flags: flags, future: !!(today && d.date > today) };
+        work: d.workMin > 0 ? minText(d.workMin) : '', workMin: d.workMin || 0, paid: d.paidDays || 0, flags: flags, absences: absences, future: !!(today && d.date > today) };
     });
   }
   /* 月の合計（実働・出勤日数・有休の日数・残業） */
@@ -109,8 +128,12 @@
   function computeOf(data, ym, C, nowMs) {
     var cfg = {}, k, sc = (data.settings && data.settings.config) || {}, snap = data.month && data.month.locked_at && data.month.snapshot && data.month.snapshot.config;
     var src = snap || sc; for (k in src) cfg[k] = src[k];
+    /* 休暇（統合 0113・自分の分だけ。受け口は職員の番号を付けないので、自分の番号を付けてから渡す）。段4 の computeMonth が日の行に印を付ける */
+    var sid = data.staff && data.staff[0] && data.staff[0].staff_id;
+    var absences = sid ? (Array.isArray(data.absences) ? data.absences : []).filter(function (a) { return a && typeof a === 'object'; })
+      .map(function (a) { var o = { staff_id: sid }, kk; for (kk in a) if (kk !== 'staff_id') o[kk] = a[kk]; return o; }) : [];
     return C.computeMonth({ ym: ym, period: data.period, staff: data.staff || [], schedule: data.schedule || [], punches: data.punches || [], days: data.days || [],
-      leave_uses: data.leave_uses, config: cfg, lockedAt: data.month && data.month.locked_at, now: nowMs });
+      leave_uses: data.leave_uses, absences: absences, config: cfg, lockedAt: data.month && data.month.locked_at, now: nowMs });
   }
 
   /* ── 有給 ──
@@ -229,7 +252,7 @@
     isDate: isDate, isYm: isYm, todayOf: todayOf, ymOf: ymOf, nextYm: nextYm, prevYm: prevYm, addDays: addDays, hm: hm, minText: minText,
     dayLabel: dayLabel, ymdJa: ymdJa, ymJa: ymJa, shortOf: shortOf, codeFromHash: codeFromHash, pinProblem: pinProblem,
     currentYm: currentYm, dayRows: dayRows, monthTotals: monthTotals, monthHead: monthHead, computeOf: computeOf,
-    leaveOf: leaveOf, leaveView: leaveView, buildRequest: buildRequest, requestRow: requestRow, errorText: errorText
+    absLabel: absLabel, leaveOf: leaveOf, leaveView: leaveView, buildRequest: buildRequest, requestRow: requestRow, errorText: errorText
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.KintaiSelfCalc = api;
