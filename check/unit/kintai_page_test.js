@@ -232,8 +232,8 @@ t('反証レビューの指摘1:「今日」は今日のカレンダー月へ移
   t('見直し2: 失敗の後にもう一度「今日」→ 今日の月分（12月分）へ', b3.end === '2026-12', b3);
 }
 /* ★v4（2026-11-20）: 版を上げたので期待を新しい版の完全一致に改め、kintai-calc.js を読む給与の画面（payroll.html）も同じ版かを足した */
-/* ★反証レビューの直し（2026-11-20 の2回目）で kintai.js を ?v=2026-11-20.2、iPhone の幅の見た目の直し（2026-11-20 の3回目）で ?v=2026-11-20.3、職員の入職順の並び（4回目）で ?v=2026-11-20.4、表示名と入職順の並びの残り（5回目）で ?v=2026-11-20.5、打刻の番号と従業員コードの順・日ごとの読み直し（6回目）で ?v=2026-11-20.6 に上げた（kintai-calc.js は従業員コードの A を抜く直しで 2026-11-20.1） */
-t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-20.6・2026-11-20.1（両画面と給与の画面でそろえる）', /kintai\.js\?v=2026-11-20\.6"/.test(H) && /kintai-calc\.js\?v=2026-11-20\.1"/.test(H) && /kintai-calc\.js\?v=2026-11-20\.1"/.test(HC) && /kintai-calc\.js\?v=2026-11-20\.1"/.test(read('payroll.html')));
+/* ★反証レビューの直し（2026-11-20 の2回目）で kintai.js を ?v=2026-11-20.2、iPhone の幅の見た目の直し（2026-11-20 の3回目）で ?v=2026-11-20.3、職員の入職順の並び（4回目）で ?v=2026-11-20.4、表示名と入職順の並びの残り（5回目）で ?v=2026-11-20.5、打刻の番号と従業員コードの順・日ごとの読み直し（6回目）で ?v=2026-11-20.6、出勤予定の手直し・前提（7回目・0111）で ?v=2026-11-20.7 に上げた（kintai-calc.js は従業員コードの A を抜く直しで 2026-11-20.1） */
+t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-20.7・2026-11-20.1（両画面と給与の画面でそろえる）', /kintai\.js\?v=2026-11-20\.7"/.test(H) && /kintai-calc\.js\?v=2026-11-20\.1"/.test(H) && /kintai-calc\.js\?v=2026-11-20\.1"/.test(HC) && /kintai-calc\.js\?v=2026-11-20\.1"/.test(read('payroll.html')));
 
 const await_pending = [];   /* 動かして確かめる試験（Promise）を最後に待つ */
 console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（2026-11-20・凍結した仕様書 ROOT-v4-master-leave.md） —');
@@ -306,7 +306,8 @@ console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（
   t('勤務時間の途中で断られたら窓を閉じて読み直す（もう一度押して打刻を二重に足さない）', /if \(done\) \{ closeDlg\(\); load\(false\);/.test(workFn));
   t('締めた月分は窓に出し、保存のボタンを出さない・締めた期間は断られる旨を書く', /openDlg\('勤務時間を手で入れる（' \+ perLabel\(\) \+ '）', b, lk, '入れる', 'work-save'\)/.test(openWorkFn) && /締めた月分の日は断られます/.test(openWorkFn));
   t('「勤務時間を手で入れる」のボタン（日ごと・個人の月）', (K.match(/data-act="work-open">勤務時間を手で入れる</g) || []).length === 2 && /a === 'work-open'\) openWork\(\)/.test(K));
-  t('保存していない入力を確かめる窓に、手入力・有給・結び付けを足した', /var DIRTY_MODES = \{ edit: 1, work: 1, leave: 1, link: 1, mimport: 1, clockvis: 1, madd: 1, dname: 1 \}/.test(K) && /if \(!dlgCtx \|\| !DIRTY_MODES\[dlgCtx\.mode\] \|\| dlgCtx\.init == null\) return false;/.test(K));
+  /* 0111（2026-11-20）で予定の手直し・前提の窓を後ろに足したので、今までの窓が全部あることを確かめ、後ろに足した窓は許す */
+  t('保存していない入力を確かめる窓に、手入力・有給・結び付けを足した', /var DIRTY_MODES = \{ edit: 1, work: 1, leave: 1, link: 1, mimport: 1, clockvis: 1, madd: 1, dname: 1(, [a-z]+: 1)* \}/.test(K) && /if \(!dlgCtx \|\| !DIRTY_MODES\[dlgCtx\.mode\] \|\| dlgCtx\.init == null\) return false;/.test(K));
   t('職員マスタ・有給の記録を端末に残さない（v4 の関数の中に localStorage が無い）', !/localStorage/.test(between('/* ── v4: 職員マスタとの結び付け', '/* ── 締めた時の控え') + between('/* ── v4: 勤務時間を手で入れる', '/* ── 職員・締め・出力・設定 ── */')));
   t('v4 で innerHTML の代入を増やしていない（描くのは paint と openDlg の2か所のまま）', !/innerHTML/.test(between('/* ── v4: 職員マスタとの結び付け', '/* ── 締めた時の控え') + between('/* ── v4: 勤務時間を手で入れる', '/* ── 職員・締め・出力・設定 ── */')));
   t('入職日は職員マスタ（hire_date）から・有給の設定の hire_date があればそちら（KintaiLeave.summary の hireOf）', /L\.summary\(\{ hireDate: m && m\.hire_date, profile: prof,/.test(K) && /if \(profile && isDate\(profile\.hire_date\)\) return profile\.hire_date;/.test(read('kintai-leave.js')));
