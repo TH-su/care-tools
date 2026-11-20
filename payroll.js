@@ -312,6 +312,45 @@
     return { staff_id: it.staff_id, item: o, adjustments: arr(it.adjustments) };
   }
 
+  /* ── 職員の並び（勤怠と同じ入職順・2026-11-20 代表者の指示）──
+     勤怠の staffSorted と同じ決まり: 事業所に関係なく、結んだ職員マスタの入職日の古い順。入職日の分からない人は最後に打刻の番号の順。
+     有給の設定の入職日の上書きは使わない。入職日は勤怠の職員（kintai_month_get の master_id・code）と職員マスタ（kintai_master_list）から読む。
+     読めない時は今の並び（職員ID の順）のまま（画面は止めない）。読んだ並びはメモリにだけ持つ */
+  var hireRank = null, hireBusy = false;
+  function isYmd(x) { return typeof x === 'string' && /^\d{4}-\d{2}-\d{2}/.test(x); }
+  function loadHire() {
+    if (hireBusy || !ym) return;
+    hireBusy = true;
+    Promise.all([rpc('kintai_month_get', { p_ym: ym }), rpc('kintai_master_list')]).then(function (rs) {
+      var staff = arr(rs[0] && rs[0].staff), mrows = arr(rs[1] && rs[1].rows), hire = {};
+      mrows.forEach(function (m) { if (m && typeof m.master_id === 'string' && isYmd(m.hire_date)) hire[m.master_id] = m.hire_date.slice(0, 10); });
+      var list = staff.filter(function (x) { return x && typeof x.staff_id === 'string'; }).map(function (x) { return { sid: x.staff_id, h: x.master_id ? hire[x.master_id] || null : null, code: String(x.code || '') }; });
+      list.sort(function (a, b) {
+        if (a.h && b.h && a.h !== b.h) return a.h < b.h ? -1 : 1;
+        if (!!a.h !== !!b.h) return a.h ? -1 : 1;
+        return a.code < b.code ? -1 : a.code > b.code ? 1 : 0;
+      });
+      var rk = {}; list.forEach(function (x, i) { rk[x.sid] = i; });
+      hireRank = rk; hireBusy = false;
+      if (bs) { orderBs(); if (view === 'app' && !masked) paint(); }
+    }, function (e) { hireBusy = false; note('職員の並び', e); });
+  }
+  /* 勤怠の職員の並びにそろえる（勤怠にいない人は後ろに、元の並びのまま） */
+  function orderStaff(list, sidOf) {
+    if (!hireRank || !Array.isArray(list)) return list;
+    var get = sidOf || function (x) { return x && x.staff_id; };
+    return list.map(function (x, i) { return { x: x, i: i, r: hireRank[get(x)] }; }).sort(function (a, b) {
+      var ra = a.r == null ? Infinity : a.r, rb = b.r == null ? Infinity : b.r;
+      return ra !== rb ? (ra < rb ? -1 : 1) : a.i - b.i;
+    }).map(function (o) { return o.x; });
+  }
+  function orderBs() {
+    if (!bs) return;
+    bs.profiles = orderStaff(bs.profiles); bs.items = orderStaff(bs.items);
+    if (calc && Array.isArray(calc.items)) calc.items = orderStaff(calc.items);
+    if (importRows && Array.isArray(importRows)) importRows = orderStaff(importRows);
+  }
+
   /* ── 読み込み ── */
   function load(keepCalc) {
     var my = ++gen;
@@ -321,6 +360,7 @@
       if (my !== gen) return null;
       if (r && r.ok === false) { var e = new Error(r.error || 'ng'); e.payroll = r.error; throw e; }
       bs = normBoot(r); loadErr = null;
+      orderBs(); if (!hireRank) loadHire();   /* 職員の並びは勤怠と同じ入職順（読めるまでは職員ID の順） */
       bs.kcheck = { state: bs.kintai.locked ? 'checking' : 'skip', names: [] };
       if (!keepCalc) { calc = null; adjEdits = {}; dirty = false; }
       sync(''); paint();
@@ -1079,7 +1119,7 @@
     var my = gen;
     file.arrayBuffer().then(function (buf) {
       if (my !== gen) return;
-      try { var p1 = period(); importRows = buildImport(parseCsv(decode(buf)), bs ? bs.profiles : [], p1 ? p1.from : null); } catch (e) { importErr = '読めませんでした：' + (e && e.message ? e.message : '形が違います') + '。freee の従業員の CSV を選んでください。'; }
+      try { var p1 = period(); importRows = orderStaff(buildImport(parseCsv(decode(buf)), bs ? bs.profiles : [], p1 ? p1.from : null)); } catch (e) { importErr = '読めませんでした：' + (e && e.message ? e.message : '形が違います') + '。freee の従業員の CSV を選んでください。'; }
       buf = null; paint();
     }, function (e) { note('取り込みの読み込み', e); importErr = 'ファイルを読めませんでした。'; paint(); });
   }

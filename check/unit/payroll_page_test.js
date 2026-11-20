@@ -200,6 +200,31 @@ t('固定残業代の欄: 手当の選択・含む時間（分）・確かめた
 t('取り込みで甲乙・扶養の列が無い（空の）行は dependents_checked=false', /if \(!g\('tax_col'\) \|\| toNum\(g\('deps'\)\) == null\) setv\('tax\.dependents_checked', false,/.test(J));
 t('手当の定義の窓に「深夜の割増を含む（夜勤手当）」（includes_night_premium）の欄', /\['includes_night_premium', '深夜の割増を含む（夜勤手当）'\]/.test(J));
 
+const pend = [];   /* 動かして確かめる試験（Promise）の待ち合わせ */
+console.log('\n— 職員の並び（勤怠と同じ入職順・2026-11-20 代表者の指示）—');
+{
+  const SEC = J.slice(J.indexOf('/* ── 職員の並び（勤怠と同じ入職順'), J.indexOf('/* ── 読み込み ── */'));
+  /* 画面の関数をそのまま動かす（rpc は架空の答えを返す） */
+  const run = (staff, masters, list) => new Function('STAFF', 'MASTERS', 'LIST', `
+    var ym = '2026-12', bs = null, calc = null, importRows = null, view = 'app', masked = false;
+    function arr(x) { return Array.isArray(x) ? x : []; } function note() {} function paint() {}
+    function rpc(name) { return Promise.resolve(name === 'kintai_month_get' ? { ok: true, staff: STAFF } : { ok: true, rows: MASTERS }); }
+    ${SEC}
+    loadHire();
+    return new Promise(function (r) { setTimeout(function () { r(orderStaff(LIST).map(function (x) { return x.staff_id; }).join()); }, 0); });`)(staff, masters, list);
+  const staff = [{ staff_id: 'a', code: '0300', master_id: 'M1' }, { staff_id: 'b', code: '0100', master_id: 'M2' }, { staff_id: 'c', code: '0200', master_id: null },
+    { staff_id: 'd', code: '0050', master_id: 'M9' }, { staff_id: 'e', code: '0400', master_id: 'M3' }];
+  const masters = [{ master_id: 'M1', hire_date: '2020-04-01' }, { master_id: 'M2', hire_date: '2015-07-01' }, { master_id: 'M3', hire_date: '2018-01-01' }, { master_id: 'M9', hire_date: null }];
+  const list = ['a', 'b', 'c', 'd', 'e', 'p:x'].map((s) => ({ staff_id: s }));
+  pend.push(run(staff, masters, list).then((got) => t('事業所に関係なく入職日の古い順・入職日の分からない人は番号の順・勤怠にいない人（p:）は最後', got === 'b,e,a,d,c,p:x', got)));
+  pend.push(new Function(`var hireRank = null; ${SEC.slice(SEC.indexOf('function orderStaff'), SEC.indexOf('function orderBs'))} return orderStaff([{staff_id:'z'},{staff_id:'y'}]).map(function(x){return x.staff_id;}).join();`)() === 'z,y'
+    ? Promise.resolve(t('並びを読めない時は今の並びのまま', true)) : Promise.resolve(t('並びを読めない時は今の並びのまま', false)));
+  t('読み込むたびに並べ直し、並びをまだ読んでいなければ読む・取り込みの比べも並べる',
+    /bs = normBoot\(r\); loadErr = null;\s*orderBs\(\); if \(!hireRank\) loadHire\(\);/.test(J) && /importRows = orderStaff\(buildImport\(/.test(J)
+    && /bs\.profiles = orderStaff\(bs\.profiles\); bs\.items = orderStaff\(bs\.items\);/.test(SEC));
+  t('並びに有給の設定の入職日の上書きを使わない・端末に残さない', !/hire_date_override|leave|localStorage|sessionStorage/.test(SEC));
+}
+
 console.log('\n— 給与専用の暗証番号（統合 0110・2026-11-20 代表者の指示）—');
 {
   const PIN = J.slice(J.indexOf('/* ── 給与専用の暗証番号'), J.indexOf('/* ── 覆い ── */'));
@@ -236,5 +261,7 @@ console.log('\n— 給与専用の暗証番号（統合 0110・2026-11-20 代表
   t('payroll.js の版を上げた（2026-11-20.4）', /payroll\.js\?v=2026-11-20\.4"/.test(H));
 }
 
-console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
-process.exit(fail ? 1 : 0);
+Promise.all(pend).catch((e) => { fail++; console.log('  ✗ 動かして確かめる試験が止まった  → ' + e.message); }).then(() => {
+  console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
+  process.exit(fail ? 1 : 0);
+});
