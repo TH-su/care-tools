@@ -271,6 +271,8 @@ const CENSUS = {
   "kintai-monitor.js": [], /* v5（2026-11-20）: 管理者のホームの箱の純関数（DOM に触れない） */
   "kintai-rules.js": [],   /* v5（2026-11-20）: 勤怠の決まりの見張り（休憩不足・勤務の間・連続勤務）の純関数（DOM に触れない・総点検） */
   "kintai-ledger.js": [],   /* 総点検（2026-11-20）: 年次有給休暇管理簿の行を作る純関数（DOM に触れない） */
+  "kintai-self-calc.js": [],  /* v5 段5（2026-11-20）: 職員本人の画面の純関数（DOM に触れない） */
+  "kintai-self.js": [],       /* v5 段5（2026-11-20）: 職員本人の画面。表示は textContent と createElement だけ（代入0か所） */
   "shift-symbols.js": [],
   "payroll-calc.js": [],
   "payroll-rates.js": [],
@@ -278,6 +280,7 @@ const CENSUS = {
   "payroll-export.js": [],
   "kintai.html": [],
   "kintai-clock.html": [],
+  "kintai-self.html": [],
   "kintai.js": [
     /* 2026-11-20 夜間修復の要情報 reports#14 の直しで、帯の文を変数 bandMsg（断りの文か msgOf(e)）にした。esc を通すのは同じ */
     [E, "$('g-main').innerHTML = '<div class=\"band ng\" role=\"alert\">' + esc(bandMsg) + '</div>'"],
