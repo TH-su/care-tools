@@ -24,8 +24,8 @@ const J = read('payroll.js'), H = read('payroll.html'), G = read('su-app-gate.js
 
 console.log('\n— 1. 入口 —');
 const boot = J.slice(J.indexOf('function boot()'), J.indexOf('var go = function () { try { boot()'));
-const iField = boot.indexOf('isField()'), iGate = boot.indexOf("SUAppGate.run('payroll'"), iAal = boot.indexOf("st.aal !== 'aal2'"), iLoad = boot.indexOf('load(false)');
-t('boot は 現場端末の止め → 門番 → 二段階のログインの確かめ → 読み込み の順', iField >= 0 && iGate > iField && iAal > iGate && iLoad > iAal, [iField, iGate, iAal, iLoad]);
+const iField = boot.indexOf('isField()'), iGate = boot.indexOf("SUAppGate.run('payroll'"), iAal = boot.indexOf("st.aal !== 'aal2'"), iLoad = boot.indexOf('pinStart()');   /* 0110: 読み込みは暗証番号の確かめ（pinStart）を通る */
+t('boot は 現場端末の止め → 門番 → 二段階のログインの確かめ → 暗証番号 → 読み込み の順', iField >= 0 && iGate > iField && iAal > iGate && iLoad > iAal, [iField, iGate, iAal, iLoad]);
 t('門番の部品が無ければ開かない', /if \(!window\.SUAppGate\) \{ showGate\('nocalc'\); return; \}/.test(boot));
 t('門番が開けないと言えば何も読まない', /if \(!ok\) \{ view = 'gate'; return null; \}/.test(boot));
 t('aal2 で無ければ二段階のログインの覆い（読み込まない）', /if \(st\.aal !== 'aal2'\) \{ showGate\('mfa'\); return null; \}/.test(boot));
@@ -199,6 +199,42 @@ t('固定残業代の欄: 手当の選択・含む時間（分）・確かめた
   && /d\.fixed_ot = \{ allowance_code: fot, covered_min: fotMin, checked: on\('f-fotok'\) \};/.test(J) && /if \(!fot\) delete d\.fixed_ot;/.test(J));
 t('取り込みで甲乙・扶養の列が無い（空の）行は dependents_checked=false', /if \(!g\('tax_col'\) \|\| toNum\(g\('deps'\)\) == null\) setv\('tax\.dependents_checked', false,/.test(J));
 t('手当の定義の窓に「深夜の割増を含む（夜勤手当）」（includes_night_premium）の欄', /\['includes_night_premium', '深夜の割増を含む（夜勤手当）'\]/.test(J));
+
+console.log('\n— 給与専用の暗証番号（統合 0110・2026-11-20 代表者の指示）—');
+{
+  const PIN = J.slice(J.indexOf('/* ── 給与専用の暗証番号'), J.indexOf('/* ── 覆い ── */'));
+  t('起動は暗証番号の状態を読み、関数の無い DB（0110 の前）では今までどおり読み込む・断られたら覆い',
+    /function pinStart\(\) \{\s*return rpc\('payroll_pin_status'\)/.test(PIN) && /if \(noDb\(e\)\) \{ pinOn = false; return load\(false\); \}/.test(PIN)
+    && /if \(e && e\.code === '42501'\) \{ showGate\(isAal\(e\) \? 'mfa' : 'denied'\); return null; \}/.test(fnBody(J, 'pinStart', 'function pinStatusThen')));
+  t('開いたままの読み込み直しでも、一度鍵をかけてから鍵の画面を出す', /if \(r && r\.unlocked\) return rpc\('payroll_pin_lock'\)/.test(PIN));
+  t('決めていない時は2回入れて決める・違えば決めない・4〜6桁の数字だけ',
+    /pinIn\('p-pin1', '暗証番号（4〜6桁）'\) \+ pinIn\('p-pin2', 'もう一度'\)/.test(PIN) && /if \(a !== b2\) \{ pinSay\(/.test(PIN)
+    && /PIN_RE = \/\^\[0-9\]\{4,6\}\$\//.test(PIN) && /rpc\('payroll_pin_set', \{ p_pin: a, p_old: null \}\)/.test(PIN));
+  t('番号の欄はパスワードの欄にしない（ブラウザに覚えさせない）・自動の補完を切る・数字のキーボード',
+    /class="pin" type="text" inputmode="numeric"[^']*autocomplete="off"/.test(PIN) && !/type="password"/.test(PIN) && /\.pin\{-webkit-text-security:disc/.test(H));
+  t('番号を端末に残さない（暗証番号の部分に localStorage・sessionStorage・console が無い）・入れた欄はすぐ空にする',
+    !/localStorage|sessionStorage|console\./.test(PIN) && /if \(el\) el\.value = '';/.test(PIN));
+  t('違い・止め・ログインが無いは、職員向けの文で出す（あと何回・何時まで）',
+    /あと ' \+ r\.left \+ ' 回間違えると15分止めます/.test(PIN) && /5回続けて間違えたため/.test(PIN) && /nosession: '/.test(PIN));
+  t('10分さわらない時は、暗証番号がある DB では鍵をかけ、無い DB では今までどおり金額を隠す',
+    /if \(view === 'app' && !masked && Date\.now\(\) - lastAct > IDLE_MS\) \{ if \(pinOn\) pinLockNow\('idle'\); else mask\(\); \}/.test(J));
+  t('さわった時に延ばすのは1分に1回まで・延ばせなかったら鍵の画面',
+    /Date\.now\(\) - lastTouch < 60000\) return;/.test(PIN) && /r\.unlocked === false\) pinRecheck\(\)/.test(PIN) && /lastAct = Date\.now\(\); pinTouch\(\);/.test(J));
+  t('読み込み・操作で断られた（42501）時は、鍵がかかっただけかを確かめ直す（名簿から外されたなら覆い）',
+    /if \(e && e\.code === '42501' && !isAal\(e\) && pinRecheck\(\)\) return null;/.test(fnBody(J, 'load', 'function handleStale'))
+    && /if \(e && e\.code === '42501' && pinRecheck\(\)\) return null;/.test(fnBody(J, 'fail', '/* ── 下書き保存')));
+  t('鍵の画面では金額・明細・窓・印刷を消し、保存していない計算はメモリに残す（番号が合えば load(true) で続き）',
+    /function showLock\(msg\) \{\s*view = 'lock'; masked = false; maskGen\+\+; closeDlg\(\); bs = null;/.test(PIN) && !/calc = null/.test(fnBody(J, 'showLock', 'function pinVal'))
+    && /return load\(true\);/.test(fnBody(J, 'pinOpened', 'function pinSetGo')));
+  t('「鍵をかける」のボタン（暗証番号がある DB の時だけ出す）・設定のタブの「暗証番号を消す（忘れた人用）」は理由を聞いてから消す',
+    /id="p-lock" data-act="pin-lock" hidden>鍵をかける</.test(H) && /b\.hidden = !pinOn;/.test(PIN)
+    && /data-act="pin-reset" data-i="' \+ esc\(i\) \+ '">暗証番号を消す（忘れた人用）</.test(J) && /rpc\('payroll_pin_reset', \{ p_email: email, p_reason: reason \}\)/.test(PIN));
+  t('管理者は鍵の画面から自分の番号を消して決め直せる（自分のメールはログインから読む）',
+    /st\.admin \? '<p class="help">番号を忘れた時は/.test(PIN) && /getSession\(\)/.test(fnBody(J, 'pinForgot', 'function pinReset')));
+  t('鍵の画面の欄で Enter を押すと決める・開くを押したのと同じ（変換中は除く）', /e\.key !== 'Enter' \|\| e\.isComposing \|\| view !== 'lock'/.test(J));
+  t('起動は pinStart を通る（読み込みは鍵が開いてから）', /return pinStart\(\);/.test(fnBody(J, 'boot', 'var go = function')) && !/return load\(false\);/.test(fnBody(J, 'boot', 'var go = function')));
+  t('payroll.js の版を上げた（2026-11-20.4）', /payroll\.js\?v=2026-11-20\.4"/.test(H));
+}
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);

@@ -329,6 +329,7 @@
     }, function (e) {
       if (my !== gen) return null;
       sync('');
+      if (e && e.code === '42501' && !isAal(e) && pinRecheck()) return null;   /* 鍵がかかった（0110）か、名簿から外されたかを確かめ直す */
       if ((e && e.code === '42501') || (e && e.payroll === 'denied')) { showGate(isAal(e) ? 'mfa' : 'denied'); return null; }
       if (isAal(e)) { showGate('mfa'); return null; }
       note('読み込み', e);
@@ -348,6 +349,7 @@
     if (e && e.payroll === 'stale') return handleStale();
     if (e && (e.code === '42501') && isAal(e)) { showGate('mfa'); return null; }
     /* 名簿から外された・役割が変わった（42501）: 描いた物を消して覆いに倒す。管理者だけの操作を名簿の人が押した時は知らせだけ */
+    if (e && e.code === '42501' && pinRecheck()) return null;   /* 鍵がかかった（0110）か、名簿から外されたかを確かめ直す */
     if (e && e.code === '42501') {
       if (isAdmin() || !/管理者/.test(String(e.message || ''))) { showGate('denied'); return null; }
     }
@@ -1132,7 +1134,7 @@
     h += '<div class="cd"><h2>給与の名簿（給与の画面を使える人）</h2><p class="help">管理者のほかに使える人のメールを入れます。名簿の人は事務所のアカウントで、二段階のログインを済ませている時だけ使えます（データベースが確かめます）。加えて「アプリの使える人」でその人に「給与」を許してください。</p>';
     if (members === null) h += '<button type="button" class="btn" data-act="mem-load">名簿を読む</button>';
     else {
-      h += members.length ? '<ul>' + members.map(function (m, i) { return '<li>' + esc(m.email) + (m.active === false || (m.role && m.role !== 'office') ? ' <span class="tag warn">⚠ 事務所の有効なアカウントではありません（使えません）</span>' : '') + ' <button type="button" class="btn ng" data-act="mem-del" data-i="' + esc(i) + '">外す</button></li>'; }).join('') + '</ul>' : '<p class="help">名簿に人はいません（管理者だけが使えます）。</p>';
+      h += members.length ? '<ul>' + members.map(function (m, i) { return '<li>' + esc(m.email) + (m.active === false || (m.role && m.role !== 'office') ? ' <span class="tag warn">⚠ 事務所の有効なアカウントではありません（使えません）</span>' : '') + ' <button type="button" class="btn ng" data-act="mem-del" data-i="' + esc(i) + '">外す</button>' + (pinOn ? ' <button type="button" class="btn" data-act="pin-reset" data-i="' + esc(i) + '">暗証番号を消す（忘れた人用）</button>' : '') + '</li>'; }).join('') + '</ul>' : '<p class="help">名簿に人はいません（管理者だけが使えます）。</p>';
       h += '<div class="row"><label for="m-add">メール</label><input id="m-add" type="email" inputmode="email" autocomplete="off"><button type="button" class="btn" data-act="mem-add">名簿に足す</button></div>';
     }
     h += '</div>';
@@ -1272,7 +1274,160 @@
       return load(true);
     }, function () { done(); toast('ログインを確かめられませんでした。通信を確かめてから、もう一度押してください。'); });
   }
-  function idleCheck() { if (view === 'app' && !masked && Date.now() - lastAct > IDLE_MS) mask(); }
+  function idleCheck() { if (view === 'app' && !masked && Date.now() - lastAct > IDLE_MS) { if (pinOn) pinLockNow('idle'); else mask(); } }
+
+  /* ── 給与専用の暗証番号（統合 0110・2026-11-20 代表者の指示）──
+     開いた時・10分さわらない時・「鍵をかける」で鍵の画面を出し、番号が合った時だけ中身を読む。鍵の行の期限はデータベースが決め（10分）、
+     画面はさわった時に1分ごとに延ばす。番号は画面の入力欄にだけあり、端末にも記録にも残さない。
+     データベースに暗証番号の関数がまだ無い時（0110 の前）は、今までどおり開く（pinOn=false） */
+  var pinOn = false, pinSt = null, pinMsg = '', lastTouch = 0, PIN_RE = /^[0-9]{4,6}$/;
+  var PIN_NG = {
+    badpin: '暗証番号は4〜6桁の数字で入れてください。',
+    wrong: '暗証番号が違います。',
+    oldpin: '今の暗証番号が違います。',
+    notset: '暗証番号がまだ決まっていません。',
+    nosession: 'ログインを確かめられませんでした。ログインの画面からログインし直してください。'
+  };
+  function pinHm(t) { var d = new Date(t); return isNaN(d.getTime()) ? '' : d.getHours() + ':' + ('0' + d.getMinutes()).slice(-2); }
+  function pinErr(r) {
+    var e = r && r.error;
+    if (e === 'locked') return '暗証番号を5回続けて間違えたため、' + (r.until ? pinHm(r.until) + ' まで' : 'しばらく') + '止めています。時間をおいてから入れてください。';
+    if ((e === 'wrong' || e === 'oldpin') && r.left != null) return PIN_NG[e] + '（あと ' + r.left + ' 回間違えると15分止めます）';
+    return PIN_NG[e] || 'うまくいきませんでした（' + String(e || '') + '）。';
+  }
+  /* 起動の時: 状態を読み、開いていても一度鍵をかけてから鍵の画面を出す（読み込み直しのたびに番号を入れる） */
+  function pinStart() {
+    return rpc('payroll_pin_status').then(function (r) {
+      pinOn = true;
+      if (r && r.unlocked) return rpc('payroll_pin_lock').then(function () { return pinStatusThen(); }, function () { return pinStatusThen(); });
+      pinSt = r; showLock(''); return null;
+    }, function (e) {
+      if (noDb(e)) { pinOn = false; return load(false); }   /* 0110 の前の DB: 今までどおり */
+      if (e && e.code === '42501') { showGate(isAal(e) ? 'mfa' : 'denied'); return null; }
+      note('暗証番号の状態', e); showGate('error'); return null;
+    });
+  }
+  function pinStatusThen(msg) {
+    return rpc('payroll_pin_status').then(function (r) { pinSt = r; showLock(msg || ''); return null; }, function (e) {
+      if (e && e.code === '42501') { showGate(isAal(e) ? 'mfa' : 'denied'); return null; }
+      note('暗証番号の状態', e); showGate('error'); return null;
+    });
+  }
+  /* 鍵の画面。保存していない計算は画面のメモリに残す（番号が合えば続きから使える）。金額・明細・窓・印刷は消す */
+  function showLock(msg) {
+    view = 'lock'; masked = false; maskGen++; closeDlg(); bs = null; importRows = null; printList = null; audit = null; members = null;
+    pinMsg = msg || '';
+    $('p-app').hidden = true; put($('p-main'), ''); put($('p-print'), '');
+    var st = pinSt || {}, g = $('p-gate'); g.hidden = false;
+    var pinIn = function (id, label) {
+      /* パスワードの欄にしない（共有の PC のブラウザに番号を覚えさせない）。文字は ● で隠す */
+      return '<div class="row"><label for="' + id + '">' + esc(label) + '</label><input id="' + id + '" class="pin" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore aria-describedby="p-pin-msg"></div>';
+    };
+    var h;
+    if (!st.set) {
+      h = '<h2>給与の暗証番号を決めてください</h2><p>給与の画面は、開くたびにあなただけが知る暗証番号（4〜6桁の数字）を入れて使います。事務所の PC を使ったほかの職員が、給与を開いてしまわないためです。</p>' +
+        pinIn('p-pin1', '暗証番号（4〜6桁）') + pinIn('p-pin2', 'もう一度') +
+        '<div class="row"><button type="button" class="btn pri" data-act="pin-set">決めて開く</button></div>';
+    } else {
+      h = '<h2>給与の暗証番号を入れてください</h2><p>' + (msg === 'idle' ? '10分のあいだ操作が無かったため、鍵をかけました。' : msg === 'manual' ? '鍵をかけました。' : msg === 'expired' ? '鍵がかかっています。' : '') +
+        '給与の画面を開くには、あなたの暗証番号を入れてください。</p>' + pinIn('p-pin', '暗証番号') +
+        '<div class="row"><button type="button" class="btn pri" data-act="pin-open">開く</button></div>' +
+        (st.admin ? '<p class="help">番号を忘れた時は、ここから自分の番号を消して決め直せます（管理者だけ）。<button type="button" class="btn" data-act="pin-forgot">暗証番号を忘れた</button></p>' :
+          '<p class="help">番号を忘れた時は、管理者に「設定」のタブで暗証番号を消してもらってください。</p>');
+      if (st.locked_until) msg = 'locked';
+    }
+    h += '<p id="p-pin-msg" class="help" role="alert">' + (st.locked_until ? esc(pinErr({ error: 'locked', until: st.locked_until })) : (msg && !/^(idle|manual|expired)$/.test(msg) ? esc(msg) : '')) + '</p>' +
+      '<p><a class="btn" href="index.html">メニューへ戻る</a></p>';
+    put(g, h);
+    var f = $('p-pin1') || $('p-pin'); if (f) try { f.focus(); } catch (_) {}
+  }
+  function pinVal(id) { var el = $(id); var x = el ? String(el.value || '').replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).trim() : ''; if (el) el.value = ''; return x; }
+  function pinSay(t) { var el = $('p-pin-msg'); if (el) el.textContent = t; }
+  function pinOpened() {
+    view = 'app'; $('p-gate').hidden = true; put($('p-gate'), ''); $('p-app').hidden = false;
+    lastAct = Date.now(); lastTouch = Date.now(); paintLockBtn();
+    return load(true);
+  }
+  function pinSetGo(btn) {
+    var a = pinVal('p-pin1'), b2 = pinVal('p-pin2');
+    if (!PIN_RE.test(a)) { pinSay(PIN_NG.badpin); return; }
+    if (a !== b2) { pinSay('2回入れた番号が違います。もう一度入れてください。'); return; }
+    var done = hold(btn, '決めています…');
+    rpc('payroll_pin_set', { p_pin: a, p_old: null }).then(function (r) {
+      done();
+      if (!r || r.ok !== true) { pinSay(pinErr(r)); return null; }
+      toast('暗証番号を決めました。次からは開くたびにこの番号を入れてください。');
+      return r.unlocked ? pinOpened() : pinStatusThen();
+    }, function (e) { done(); pinFail(e); });
+  }
+  function pinOpenGo(btn) {
+    var a = pinVal('p-pin');
+    if (!PIN_RE.test(a)) { pinSay(PIN_NG.badpin); return; }
+    var done = hold(btn, '確かめています…');
+    rpc('payroll_pin_unlock', { p_pin: a }).then(function (r) {
+      done();
+      if (!r || r.ok !== true) { pinSay(pinErr(r)); return null; }
+      return pinOpened();
+    }, function (e) { done(); pinFail(e); });
+  }
+  function pinFail(e) {
+    if (e && e.code === '42501') { showGate(isAal(e) ? 'mfa' : 'denied'); return; }
+    note('暗証番号', e); pinSay('通信できませんでした。電波・Wi-Fi を確かめて、もう一度押してください。');
+  }
+  /* 管理者が自分の番号を忘れた時（自分のメールはログインから読む） */
+  function pinForgot(btn) {
+    /* ask は鍵の画面では「やめる」になるので、窓を直接出す */
+    var q = window.SUDialog ? window.SUDialog.confirm('あなたの暗証番号を消して、新しく決め直しますか？（給与の監査に残ります）') : Promise.resolve(window.confirm('あなたの暗証番号を消して、新しく決め直しますか？'));
+    q.then(function (ok) {
+      if (!ok || view !== 'lock') return null;
+      var done = hold(btn, '消しています…');
+      return Promise.resolve().then(function () { return window.SUAuth.client().auth.getSession(); }).then(function (r) {
+        var em = r && r.data && r.data.session && r.data.session.user && r.data.session.user.email;
+        if (!em) throw new Error('nosession');
+        return rpc('payroll_pin_reset', { p_email: em, p_reason: '管理者が自分の暗証番号を忘れたため' });
+      }).then(function (r) {
+        done();
+        if (!r || r.ok !== true) { pinSay(pinErr(r)); return null; }
+        return pinStatusThen();
+      }, function (e) { done(); pinFail(e); });
+    });
+  }
+  /* 設定のタブ（管理者）: 名簿の人の番号を消す */
+  function pinReset(email, btn) {
+    var reason = '';
+    var p = window.SUDialog && window.SUDialog.prompt ? window.SUDialog.prompt(email + ' の暗証番号を消します。消した人は、次に給与を開く時に番号を決め直します。理由を書いてください。', '')
+      : Promise.resolve(window.prompt(email + ' の暗証番号を消します。理由を書いてください。', ''));
+    p.then(function (x) {
+      if (x == null) return null;
+      reason = String(x).trim(); if (!reason) { say('理由を書いてください。'); return null; }
+      var done = hold(btn, '消しています…');
+      return rpc('payroll_pin_reset', { p_email: email, p_reason: reason }).then(function (r) {
+        done();
+        if (r && r.ok === true) { toast(email + ' の暗証番号を消しました。'); return null; }
+        say(r && r.error === 'notset' ? 'この人はまだ暗証番号を決めていません。' : pinErr(r));
+        return null;
+      }, function (e) { done(); fail(e, '暗証番号を消す'); });
+    });
+  }
+  /* 鍵をかける（ボタン・10分さわらない時）。保存していない計算は残す */
+  function pinLockNow(why) {
+    if (!pinOn || view !== 'app') return;
+    var w = why || 'manual';
+    rpc('payroll_pin_lock').then(function () { return null; }, function (e) { note('鍵をかける', e); });
+    pinSt = pinSt || { set: true }; pinSt.set = true; pinSt.locked_until = null;
+    showLock(w);
+  }
+  /* さわった時に1分ごとに延ばす。延ばせなかった（期限が切れた）時は鍵の画面へ */
+  function pinTouch() {
+    if (!pinOn || view !== 'app' || Date.now() - lastTouch < 60000) return;
+    lastTouch = Date.now();
+    rpc('payroll_pin_touch').then(function (r) {
+      if (view === 'app' && r && r.unlocked === false) pinRecheck();
+    }, function (e) { if (e && e.code === '42501') pinRecheck(); else note('鍵の延長', e); });
+  }
+  /* 断られた（42501）時: 鍵がかかっただけなら鍵の画面、名簿から外されたなら覆い */
+  function pinRecheck() { if (!pinOn) return false; pinStatusThen('expired'); return true; }
+  function paintLockBtn() { var b = $('p-lock'); if (b) b.hidden = !pinOn; }
 
   /* ── 覆い ── */
   var GATE = {
@@ -1353,6 +1508,11 @@
       else if (a === 'alw-go') alwGo(b);
       else if (a === 'aud-load') audLoad(b);
       else if (a === 'unmask') unmask(b);
+      else if (a === 'pin-set') pinSetGo(b);
+      else if (a === 'pin-open') pinOpenGo(b);
+      else if (a === 'pin-forgot') pinForgot(b);
+      else if (a === 'pin-lock') pinLockNow('manual');
+      else if (a === 'pin-reset') { var m1 = members && members[+b.getAttribute('data-i')]; if (m1) pinReset(m1.email, b); }
     });
     document.addEventListener('toggle', function (e) {
       var d = e.target;
@@ -1387,7 +1547,13 @@
       e.preventDefault();
       var c0 = dlgCtx; ask('入れた内容を捨てて閉じますか？').then(function (ok) { if (ok && dlgCtx === c0) closeDlg(); });
     });
-    ['pointerdown', 'keydown', 'wheel', 'touchstart', 'input'].forEach(function (ev) { document.addEventListener(ev, function () { if (!masked) lastAct = Date.now(); }, { passive: true, capture: true }); });
+    ['pointerdown', 'keydown', 'wheel', 'touchstart', 'input'].forEach(function (ev) { document.addEventListener(ev, function () { if (!masked && view === 'app') { lastAct = Date.now(); pinTouch(); } }, { passive: true, capture: true }); });
+    /* 鍵の画面の欄で Enter を押したら、決める・開くを押したのと同じにする（かな漢字の変換中は除く） */
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' || e.isComposing || view !== 'lock' || !e.target || !e.target.classList || !e.target.classList.contains('pin')) return;
+      var b = document.querySelector('#p-gate [data-act="pin-set"], #p-gate [data-act="pin-open"]');
+      if (b && !b.disabled) { e.preventDefault(); b.click(); }
+    });
     document.addEventListener('visibilitychange', function () { if (!document.hidden) idleCheck(); });
     window.addEventListener('focus', idleCheck);
     setInterval(idleCheck, 15000);
@@ -1413,7 +1579,7 @@
         ym = todayYm(); $('p-ym').value = ym;
         bind(); definePrint();
         try { if (window.SUPerf) window.SUPerf.ready(); } catch (_) {}
-        return load(false);
+        return pinStart();
       });
     })['catch'](function (e) { note('起動', e); showGate('error'); });
   }

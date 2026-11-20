@@ -88,6 +88,8 @@ dialog::backdrop{background:rgba(20,33,61,.35)}
 .dlg-b{padding:14px 16px;max-height:65vh;overflow:auto}
 .dlg-f{padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
 .masked{max-width:640px}
+/* 給与の暗証番号の欄（統合 0110）: パスワードの欄にせず、文字を ● で隠す（共有の PC のブラウザに番号を覚えさせない） */
+.pin{-webkit-text-security:disc;font-size:20px;letter-spacing:.3em;max-width:12em}
 .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);max-width:calc(100% - 32px);padding:12px 18px;border-radius:12px;background:var(--toast);color:var(--toast-tx);box-shadow:0 4px 16px rgba(0,0,0,.25);z-index:50;font-size:16px}
 .toast[hidden]{display:none}
 .skel{display:block;height:18px;margin:10px 0;border-radius:6px;background:var(--skel);animation:skel 1.2s ease-in-out infinite}
@@ -154,6 +156,7 @@ dialog::backdrop{background:rgba(20,33,61,.35)}
     <button type="button" class="btn" id="p-next" aria-label="次の月分">次の月分 ▶</button>
     <span id="p-period" class="help"></span>
     <button type="button" class="btn" id="p-reload">読み直す</button>
+    <button type="button" class="btn" id="p-lock" data-act="pin-lock" hidden>鍵をかける</button>
   </div>
   <nav class="tabs" role="tablist" aria-label="画面の切り替え">
     <button type="button" role="tab" data-tab="run">今月の給与</button>
@@ -168,7 +171,7 @@ dialog::backdrop{background:rgba(20,33,61,.35)}
 <p class="pr-note">給与の金額は、この印刷では出しません。「給与明細」のタブの印刷のボタンから印刷してください。</p>
 <div class="toast" id="p-toast" role="status" aria-live="polite" hidden></div>
 <dialog id="p-dlg" aria-labelledby="p-dlg-h"><div class="dlg-h" id="p-dlg-h"></div><div class="dlg-b" id="p-dlg-b"></div><div class="dlg-f" id="p-dlg-f"></div></dialog>
-<script src="payroll.js?v=2026-11-20.3"></script>
+<script src="payroll.js?v=2026-11-20.4"></script>
 <script src="su-shell.js?v=2026-11-19"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 <script src="su-report.js?v=2026-11-16" data-tool="給与"></script>
