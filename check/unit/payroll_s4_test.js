@@ -95,6 +95,16 @@ console.log('\n— 6. 反証レビュー（2026-11-20）の場面: 勤怠の計�
   eq3('欠勤の印＋有給の特別休暇', row({ days: ab, absences: [{ staff_id: 'x', date: D, kind: 'special', paid: true }] }), ['basic:300000', 'basic:0 special_paid:10000', 'basic:0 special_paid:8800']);
   eq3('欠勤の印＋時間単位8時間', row({ days: ab, absences: [{ staff_id: 'x', date: D, kind: 'hourly_paid', minutes: 480 }] }), ['basic:300000', 'basic:0 paid_leave_hour:10000', 'basic:8800']);
   t('欠勤の印＋休暇の日は欠勤に数えない（absentDays 0）', row({ days: ab, absences: [{ staff_id: 'x', date: D, kind: 'special', paid: false }] }).absentDays === 0 && row({ days: ab }).absentDays === 1);
+  /* 再確認の反証（2026-11-20）: 欠勤の印の日に休暇が半日・数時間分だけの時は、休暇で埋まらない残りを欠勤に数える（半日ちょうどは 0.5 日・それ以外は分） */
+  eq3('欠勤の印だけ（休暇なし・今と同じ額）', row({ days: ab }), ['basic:300000 absence:-13952', 'basic:0', 'basic:0']);
+  eq3('欠勤の印＋時間単位4時間（残り半日を欠勤）', row({ days: ab, absences: [{ staff_id: 'x', date: D, kind: 'hourly_paid', minutes: 240 }] }), ['basic:300000 absence:-6976', 'basic:0 paid_leave_hour:5000', 'basic:4400']);
+  eq3('欠勤の印＋半日の無給の特別休暇（休暇の控除＋残り半日の欠勤）', row({ days: ab, absences: [{ staff_id: 'x', date: D, kind: 'special', paid: false, minutes: 240 }] }), ['basic:300000 absence:-6976 leave_unpaid:-6976', 'basic:0', 'basic:0']);
+  eq3('欠勤の印＋半日の有給の特別休暇（残り半日を欠勤）', row({ days: ab, absences: [{ staff_id: 'x', date: D, kind: 'special', paid: true, minutes: 240 }] }), ['basic:300000 absence:-6976', 'basic:0 special_paid:5000', 'basic:0 special_paid:4400']);
+  const r3h = row({ days: ab, absences: [{ staff_id: 'x', date: D, kind: 'hourly_paid', minutes: 180 }] });
+  eq3('欠勤の印＋時間単位3時間（残り5時間を欠勤の分で数える＝1744×300÷60）', r3h, ['basic:300000 absence:-8720', 'basic:0 paid_leave_hour:3750', 'basic:3300']);
+  t('欠勤の分は控えの absentPartMin（300分）・日数は 0・半日ちょうどは absentDays 0.5', r3h.absentPartMin === 300 && r3h.absentDays === 0 && row({ days: ab, absences: [{ staff_id: 'x', date: D, kind: 'hourly_paid', minutes: 240 }] }).absentDays === 0.5);
+  const noDed = PC.computeItem({ ym: '2026-12', period: PERIOD, payDate: '2027-01-25', settings: { absence_deduct: false }, profile: MONTHLY, allowanceDefs: [], att: Object.assign({}, r3h, { reviewCount: 0 }), adjustments: [] });
+  t('欠勤控除を切る設定では欠勤の分も引かない', !noDed.lines.some((l) => l.code === 'absence'));
   /* 半日の休暇＋早退（午前だけ 9〜13時） */
   eq3('半日の無給の特別休暇＋午前だけ', row({ punches: am, absences: [{ staff_id: 'x', date: D, kind: 'special', paid: false, minutes: 240 }] }), ['basic:300000 leave_unpaid:-6976', 'basic:10000', 'basic:4400']);
   eq3('半日の代休＋午前だけ', row({ punches: am, absences: [{ staff_id: 'x', date: D, kind: 'comp', minutes: 240, link_date: '2026-11-29' }] }), ['basic:300000 leave_unpaid:-6976', 'basic:10000', 'basic:4400']);
@@ -158,6 +168,9 @@ console.log('\n— 1・2. 締めの控えの確かめと勤怠の受け口 —')
     t('受け口: 休暇の日数は半日きざみのまま（1.5・0.5）・分は整数', a.specialPaidDays === 1.5 && a.compDays === 0.5 && a.hourlyPaidMin === 120);
     const old = F.attFromKintai(Object.assign({}, handRow, { hourlyPaidMin: undefined, hourlyPaidEffMin: undefined, hourlyPaidOffMin: undefined, specialPaidMin: undefined, specialPaidDays: undefined, specialUnpaidDays: undefined, specialPaidOffDays: undefined, compDays: undefined }));
     t('受け口: 段4 より前の控え（休暇の鍵が無い）は 0 で、missing（古い控えの警告）に入れない', ['hourlyPaidMin', 'hourlyPaidEffMin', 'hourlyPaidOffMin', 'specialPaidMin', 'specialPaidDays', 'specialPaidOffDays', 'specialUnpaidDays', 'compDays'].every((k) => old[k] === 0 && old.missing.indexOf(k) < 0));
+    t('受け口: 欠勤の日数は半日きざみのまま（0.5）・整数の日は今と同じ・古い控えに無い欠勤の分は 0（missing にしない）', F.attFromKintai({ absentDays: 0.5 }).absentDays === 0.5 && F.attFromKintai({ absentDays: 2 }).absentDays === 2 && F.attFromKintai({}).absentPartMin === 0 && F.attFromKintai({}).missing.indexOf('absentPartMin') < 0);
+    const x3 = F.attFromKintai(Object.assign({}, handRow, { absentPartMin: 300 }));
+    t('attSame: 欠勤の分が違えば違う（照合で止まる）', !F.attSame(F.attFromKintai(handRow), x3));
     const x0 = F.attFromKintai(handRow), x1 = F.attFromKintai(Object.assign({}, handRow, { compDays: 0.5 })), x2 = F.attFromKintai(Object.assign({}, handRow, { hourlyPaidOffMin: 60 }));
     t('attSame: 休暇の鍵（代休・働いていない日の時間単位の分）が違えば違う・同じなら同じ', F.attSame(x0, F.attFromKintai(handRow)) && !F.attSame(x0, x1) && !F.attSame(x0, x2));
   }).then(() => {

@@ -727,7 +727,7 @@
         absentDays: 0, uncountedMin: 0, holidayMin: 0,
         legalInOverMin: 0, over60Min: 0, nightShiftCount: 0, schedDays: 0, counts: {}, weekOverMin: 0, frameOverMin: 0,
         hourlyPaidMin: 0, specialPaidMin: 0, specialPaidDays: 0, specialUnpaidDays: 0, compDays: 0,   /* v5 段4: 休暇の種類（無い時は 0） */
-        hourlyPaidEffMin: 0, hourlyPaidOffMin: 0, specialPaidOffDays: 0 };   /* 給与段4 の反証レビュー: 時間単位の有休の効く分・働いていない日の効く分・働いていない日の有給の特別休暇 */
+        hourlyPaidEffMin: 0, hourlyPaidOffMin: 0, specialPaidOffDays: 0, absentPartMin: 0 };   /* absentPartMin: 欠勤の印の日の休暇で埋まらない残り（半日ちょうどは absentDays に 0.5 日） */   /* 給与段4 の反証レビュー: 時間単位の有休の効く分・働いていない日の効く分・働いていない日の有給の特別休暇 */
       var leadDays = [], liDay = 0, seqOf = {};
       for (j = 0; j < dates.length; j++) {
         var date = dates[j], bl = byDate[date].sort(function (x, y) { return (x.schedStart || x.countStart || 0) - (y.schedStart || y.countStart || 0); });
@@ -786,11 +786,24 @@
         if (noPunchAll && bl.length && paidMin === 0) sum.noPunchDays++;
         /* 給与段4 の反証レビュー（2026-11-20・1）: 欠勤の印がある日でも、その日に休暇（特別休暇・代休・時間単位の有休）があれば欠勤に数えず、休暇として1回だけ数える */
         var ablA = absBy[st.staff_id + '|' + date];
-        var absentDay = dabs && dw === 0 && paidMin === 0 && !(ablA && ablA.length);
+        var absentDay = dabs && dw === 0 && paidMin === 0 && !(ablA && ablA.length), absPart = 0;
         if (absentDay) sum.absentDays++;
+        else if (dabs && dw === 0 && paidMin === 0) {
+          /* 再確認の反証（2026-11-20）: 欠勤の印の日に休暇が半日・数時間分だけの時は、休暇で埋まらない残り（1日の時間−休暇の分）を欠勤に数える。
+             1日の時間はその日の予定の実働（無ければ設定の1日の所定の時間）。残りが半日ちょうどなら欠勤 0.5日、それ以外は分（absentPartMin）で持つ（仮置き） */
+          var dRef = dsw > 0 ? dsw : dayMinCfg, lvA = 0;
+          ablA.forEach(function (a) {
+            if (a.kind === 'hourly_paid') lvA += Math.min(a.minutes, dRef);
+            else if (a.kind === 'special' || a.kind === 'comp') lvA += a.minutes == null ? dRef : a.minutes;
+          });
+          absPart = Math.max(0, dRef - lvA);
+          if (absPart > 0 && absPart * 2 === dRef) sum.absentDays += 0.5;
+          else if (absPart > 0) sum.absentPartMin += absPart;
+        }
         sum.holidayMin += dhol; sum.uncountedMin += dunc;
         var dayRow = { date: date, blocks: bl, paidMin: paidMin, workMin: dw, schedWorkMin: dsw, legalOverMin: legal, flags: dflags, note: dnote || null,
           paidDays: pdays, holidayMin: dhol, uncountedMin: dunc, absent: absentDay, mark: (dnote && dnote.day_mark) || null };
+        if (absPart > 0) dayRow.absentPartMin = absPart;   /* 欠勤の印の日の、休暇で埋まらない残り（分・ある日だけ） */
         if (luDays && !shiftPaid) dayRow.leaveUse = { id: lu.id || null, days: luDays };   /* 手入力の有休を数えた日だけの印（無い日の形は今までどおり） */
         /* v5 段4: 休暇の種類。時間単位の有休は月の paidMin に足す（日の paidMin・paidDays・所定日数・打刻なしの日の判定は今のまま＝上で決めた値）。
            特別休暇・代休の1日の分はその日の予定の実働（無ければ1日の所定の時間）・半日は入れた分 */
@@ -1059,7 +1072,7 @@
         legalInOverMin: s.legalInOverMin || 0, over60Min: s.over60Min || 0, nightShiftCount: s.nightShiftCount || 0, schedDays: s.schedDays || 0, counts: s.counts || {},   /* 0101: 給与の入力 */
         legalOverRawMin: s.legalOverRawMin || 0, holidayRawMin: s.holidayRawMin || 0,   /* v5 段3: 月の30分丸めの前の値（36協定の判定だけに使う・給与の比べには入れない） */
         hourlyPaidMin: s.hourlyPaidMin || 0, specialPaidMin: s.specialPaidMin || 0, specialPaidDays: s.specialPaidDays || 0, specialUnpaidDays: s.specialUnpaidDays || 0, compDays: s.compDays || 0,
-        hourlyPaidEffMin: s.hourlyPaidEffMin || 0, hourlyPaidOffMin: s.hourlyPaidOffMin || 0, specialPaidOffDays: s.specialPaidOffDays || 0 });   /* v5 段4: 休暇の種類（hourlyPaidMin は paidMin の内数） */
+        hourlyPaidEffMin: s.hourlyPaidEffMin || 0, hourlyPaidOffMin: s.hourlyPaidOffMin || 0, specialPaidOffDays: s.specialPaidOffDays || 0, absentPartMin: s.absentPartMin || 0 });   /* v5 段4: 休暇の種類（hourlyPaidMin は paidMin の内数） */
     }
     return { v: 1, ym: month.ym, period: month.period, config: month.config, rows: rows };
   }

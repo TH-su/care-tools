@@ -296,7 +296,8 @@ t('反証レビューの指摘1:「今日」は今日のカレンダー月へ移
 /* ★勤怠 v5 段4 の給与の側（2026-11-20）: kintai-calc.js（時間単位の有休の時間を遅刻・早退に数えない）を ?v=2026-11-20.5 に上げた（kintai.js は変えていない） */
 /* ★来月分の線を暦の月にそろえた直し（2026-11-20）で kintai.js を ?v=2026-11-20.12 に上げた */
 /* ★給与の側の反証レビューの直し（2026-11-20）で kintai.js を ?v=2026-11-20.13、kintai-calc.js を ?v=2026-11-20.6 に上げた */
-t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-20.13・2026-11-20.6（両画面と給与の画面でそろえる）', /kintai\.js\?v=2026-11-20\.13"/.test(H) && /kintai-calc\.js\?v=2026-11-20\.6"/.test(H) && /kintai-calc\.js\?v=2026-11-20\.6"/.test(HC) && /kintai-calc\.js\?v=2026-11-20\.6"/.test(read('payroll.html')));
+/* ★再確認の反証の直し（2026-11-20・欠勤の印と部分の休暇）で kintai.js を ?v=2026-11-20.14、kintai-calc.js を ?v=2026-11-20.7 に上げた */
+t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-20.14・2026-11-20.7（両画面と給与の画面でそろえる）', /kintai\.js\?v=2026-11-20\.14"/.test(H) && /kintai-calc\.js\?v=2026-11-20\.7"/.test(H) && /kintai-calc\.js\?v=2026-11-20\.7"/.test(HC) && /kintai-calc\.js\?v=2026-11-20\.7"/.test(read('payroll.html')));
 
 const await_pending = [];   /* 動かして確かめる試験（Promise）を最後に待つ */
 console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（2026-11-20・凍結した仕様書 ROOT-v4-master-leave.md） —');
@@ -314,7 +315,8 @@ console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（
   /* ★反証レビューの直し（2026-11-20）: 同じ2つの部品の中身を変えて版を 2026-11-20.4 に上げたので、期待の版を改めた（並びの確かめは同じ） */
   /* ★勤怠 v5 段4 の給与の側（2026-11-20）: kintai-calc.js だけ版を 2026-11-20.5 に上げたので、その期待の版を改めた（kintai-leave.js は .4 のまま・並びの確かめは同じ） */
   /* ★給与の側の反証レビューの直し（2026-11-20）: kintai-calc.js を 2026-11-20.6 に上げたので、その期待の版を改めた */
-  t('kintai-leave.js は kintai-calc.js の後・kintai.js の前に読む（?v=2026-11-20.4・反証レビューの直しで上げた）', H.indexOf('<script src="kintai-calc.js?v=2026-11-20.6"></script>') >= 0 && H.indexOf('<script src="kintai-leave.js?v=2026-11-20.4"></script>') > H.indexOf('kintai-calc.js?v=') && H.indexOf('kintai-leave.js?v=') < H.indexOf('kintai.js?v='));
+  /* ★再確認の反証の直し（2026-11-20）: kintai-calc.js を 2026-11-20.7 に上げたので、その期待の版を改めた */
+  t('kintai-leave.js は kintai-calc.js の後・kintai.js の前に読む（?v=2026-11-20.4・反証レビューの直しで上げた）', H.indexOf('<script src="kintai-calc.js?v=2026-11-20.7"></script>') >= 0 && H.indexOf('<script src="kintai-leave.js?v=2026-11-20.4"></script>') > H.indexOf('kintai-calc.js?v=') && H.indexOf('kintai-leave.js?v=') < H.indexOf('kintai.js?v='));
   /* iPhone の幅（640px 以下）だけの見た目の直し（2026-11-20）: 窓の欄の見出しを縦1字にしない・枠（fieldset）を窓の外へ広げない・突き合わせの表は1人ずつの並び */
   {
     const mq = (H.match(/@media \(max-width:640px\)\{[\s\S]*?\n\s*table\.mt td\.empty\{display:block\}\}/) || [''])[0];

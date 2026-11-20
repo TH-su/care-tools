@@ -275,7 +275,8 @@ console.log('\n— 給与専用の暗証番号（統合 0110・2026-11-20 代表
   t('起動は pinStart を通る（読み込みは鍵が開いてから）', /return pinStart\(\);/.test(fnBody(J, 'boot', 'var go = function')) && !/return load\(false\);/.test(fnBody(J, 'boot', 'var go = function')));
   /* ★勤怠 v5 段4 の給与の側（2026-11-20）: payroll.js の中身を変えて版を 2026-11-20.5 に上げたので、期待の版を改めた */
   /* ★給与の側の反証レビューの直し（2026-11-20）: payroll.js の中身を変えて版を 2026-11-20.6 に上げたので、期待の版を改めた */
-  t('payroll.js の版を上げた（2026-11-20.6）', /payroll\.js\?v=2026-11-20\.6"/.test(H));
+  /* ★再確認の反証の直し（2026-11-20・欠勤の印と部分の休暇）: payroll.js を 2026-11-20.7 に上げたので、期待の版を改めた */
+  t('payroll.js の版を上げた（2026-11-20.7）', /payroll\.js\?v=2026-11-20\.7"/.test(H));
 }
 
 Promise.all(pend).catch((e) => { fail++; console.log('  ✗ 動かして確かめる試験が止まった  → ' + e.message); }).then(() => {

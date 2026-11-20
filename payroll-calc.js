@@ -424,11 +424,16 @@
     if (type === 'monthly' && att) {
       var dBase = base + attBaseFixed, capLeft = basePaid + attBaseFixed;
       var hu = roundQ(qDiv(intQ(dBase), avgH), S.round.deduct_unit);
-      if (S.absence_deduct && m('absentDays') > 0) {
+      /* 欠勤の日数（半日きざみ・欠勤の印の日に半日の休暇があると 0.5 日）×日額＋欠勤の分（欠勤の印の日の休暇で埋まらない残り）×時間単価（再確認の反証 2026-11-20・仮置き）。
+         欠勤の分が無い月は今までと同じ式・同じ根拠の文 */
+      var abD = halfNum('absentDays'), abP = m('absentPartMin');
+      if (S.absence_deduct && (abD > 0 || abP > 0)) {
         var dhA = needDayH();
-        var ab = Math.min(capLeft, yen(qMul(qMul(hu, dhA), intQ(m('absentDays'))), S.round.deduct));
+        var abQ = qMul(qMul(hu, dhA), mHalf('absentDays'));
+        if (abP > 0) abQ = qAdd(abQ, qDiv(qMul(hu, intQ(abP)), Q(60)));
+        var ab = Math.min(capLeft, yen(abQ, S.round.deduct));
         capLeft -= ab;
-        pay('absence', '欠勤控除', m('absentDays'), qNum(hu), -ab, '時間単価' + qNum(hu) + '×1日の所定時間' + qNum(dhA) + '×日数', { fixed: false });
+        pay('absence', '欠勤控除', abD, qNum(hu), -ab, '時間単価' + qNum(hu) + '×1日の所定時間' + qNum(dhA) + '×日数' + (abP > 0 ? '＋時間単価×欠勤の時間' + abP + '分÷60' : ''), { fixed: false });
       }
       /* 勤怠 v5 段4（仮置き）: 無給の特別休暇と代休は、欠勤と同じに日数で控除する（有給の特別休暇・時間単位の有休は控除しない。時間単位の有休の時間は勤怠の計算が遅刻・早退から除いてある） */
       var ulD = halfNum('specialUnpaidDays') + halfNum('compDays');
@@ -590,10 +595,10 @@
       [['workDays', '出勤日数'], ['paidDays', '有休日数'], ['absentDays', '欠勤日数'], ['workMin', '総労働（分）'], ['schedInMin', '所定内（分）'],
         ['legalInOverMin', '法定内残業（分）'], ['legalOverMin', '時間外（分）'], ['over60Min', '60時間超（分）'], ['nightMin', '深夜（分）'],
         ['holidayMin', '法定休日（分）'], ['lateMin', '遅刻（分）'], ['earlyLeaveMin', '早退（分）'], ['nightShiftCount', '夜勤回数']].forEach(function (k) {
-        line('att', k[0], k[1], m(k[0]), null, 0, '');
+        line('att', k[0], k[1], k[0] === 'absentDays' ? halfNum(k[0]) : m(k[0]), null, 0, '');   /* 欠勤日数は半日きざみ（整数の日は今までと同じ） */
       });
       /* 勤怠 v5 段4: 休暇の種類（ある時だけ出す＝使わない月の行は今のまま・文は仮置き） */
-      [['hourlyPaidMin', '時間単位の有休（分）'], ['specialPaidDays', '特別休暇（有給）日数'], ['specialUnpaidDays', '特別休暇（無給）日数'], ['compDays', '代休日数']].forEach(function (k) {
+      [['absentPartMin', '欠勤（分・休暇で埋まらない残り）'], ['hourlyPaidMin', '時間単位の有休（分）'], ['specialPaidDays', '特別休暇（有給）日数'], ['specialUnpaidDays', '特別休暇（無給）日数'], ['compDays', '代休日数']].forEach(function (k) {
         var v = /Days$/.test(k[0]) ? halfNum(k[0]) : m(k[0]);
         if (v > 0) line('att', k[0], k[1], v, null, 0, '');
       });

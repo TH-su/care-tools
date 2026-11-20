@@ -253,6 +253,7 @@ console.log('\n— 10. 段4 の積み残しの直し（ホームの期限の近�
   /* 締めの比べる鍵: 新しい鍵を足し、古い控え（鍵が無い）は比べない */
   const keys = new Function(between('  var SNAP_KEYS = [', '  var SNAP_FILL') + '\nreturn SNAP_KEYS;')();
   t('締めの比べる鍵に休暇の種類の鍵（hourlyPaidMin・specialPaidMin・specialPaidDays・specialUnpaidDays・compDays）を足した', NEW_SUM_KEYS.every((k) => keys.includes(k)), keys);
+  t('締めの比べる鍵に欠勤の分（absentPartMin）と時間単位の効く分の鍵も入る', ['absentPartMin', 'hourlyPaidEffMin', 'hourlyPaidOffMin', 'specialPaidOffDays'].every((k) => keys.includes(k)), keys);
   const diff = (rows, people) => new Function('ROWS', 'PEOPLE', between('  var SNAP_KEYS = [', '  var SNAP_FILL') + fnSrc('countsOf') + '\n' + fnSrc('sameCounts') + `
     function snapRows() { return ROWS; } function dispName(s) { return s.staff_id; } var month = { people: PEOPLE };
     ${fnSrc('snapDiff')}
