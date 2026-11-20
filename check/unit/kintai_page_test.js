@@ -231,8 +231,8 @@ t('反証レビューの指摘1:「今日」は今日のカレンダー月へ移
   t('見直し2: 失敗の後にもう一度「今日」→ 今日の月分（12月分）へ', b3.end === '2026-12', b3);
 }
 /* ★v4（2026-11-20）: 版を上げたので期待を新しい版の完全一致に改め、kintai-calc.js を読む給与の画面（payroll.html）も同じ版かを足した */
-/* ★反証レビューの直し（2026-11-20 の2回目）で kintai.js を ?v=2026-11-20.2、iPhone の幅の見た目の直し（2026-11-20 の3回目）で ?v=2026-11-20.3 に上げた（kintai-calc.js は変えていないので 2026-11-20 のまま） */
-t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-20.3・2026-11-20（両画面と給与の画面でそろえる）', /kintai\.js\?v=2026-11-20\.3"/.test(H) && /kintai-calc\.js\?v=2026-11-20"/.test(H) && /kintai-calc\.js\?v=2026-11-20"/.test(HC) && /kintai-calc\.js\?v=2026-11-20"/.test(read('payroll.html')));
+/* ★反証レビューの直し（2026-11-20 の2回目）で kintai.js を ?v=2026-11-20.2、iPhone の幅の見た目の直し（2026-11-20 の3回目）で ?v=2026-11-20.3、職員の入職順の並び（4回目）で ?v=2026-11-20.4 に上げた（kintai-calc.js は変えていないので 2026-11-20 のまま） */
+t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-20.4・2026-11-20（両画面と給与の画面でそろえる）', /kintai\.js\?v=2026-11-20\.4"/.test(H) && /kintai-calc\.js\?v=2026-11-20"/.test(H) && /kintai-calc\.js\?v=2026-11-20"/.test(HC) && /kintai-calc\.js\?v=2026-11-20"/.test(read('payroll.html')));
 
 const await_pending = [];   /* 動かして確かめる試験（Promise）を最後に待つ */
 console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（2026-11-20・凍結した仕様書 ROOT-v4-master-leave.md） —');
@@ -310,6 +310,24 @@ console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（
   t('v4 で innerHTML の代入を増やしていない（描くのは paint と openDlg の2か所のまま）', !/innerHTML/.test(between('/* ── v4: 職員マスタとの結び付け', '/* ── 締めた時の控え') + between('/* ── v4: 勤務時間を手で入れる', '/* ── 職員・締め・出力・設定 ── */')));
   t('入職日は職員マスタ（hire_date）から・有給の設定の hire_date があればそちら（KintaiLeave.summary の hireOf）', /L\.summary\(\{ hireDate: m && m\.hire_date, profile: prof,/.test(K) && /if \(profile && isDate\(profile\.hire_date\)\) return profile\.hire_date;/.test(read('kintai-leave.js')));
   t('DB の断りの語（nomaster・masterrow・dup・locked・already・badkind・badvalue・baddate・badkey・badshape・reason・conflict・notfound）に文がある', ['nomaster', 'masterrow', 'dup', 'locked', 'already', 'badkind', 'badvalue', 'baddate', 'badkey', 'badshape', 'reason', 'conflict', 'notfound'].every((w) => new RegExp('[{ ]' + w + ": '").test(K)));
+  /* 2026-11-20 代表者の指示: 職員の並びを、事業所は無視して入職順に（入職日の分からない人は最後に番号の順）。画面の関数をそのまま取り出して動かす */
+  {
+    const sortFn = between('function hireDateOf(', 'function srcOf(') || between('function hireDateOf(', '/* 結んだ職員マスタの id');
+    const run = (staff, hires, profs) => new Function('L', 'STAFF', 'HIRES', 'PROFS', `
+      var data = { staff: STAFF }, leaveSt = PROFS ? { profiles: PROFS } : null;
+      function masterOf(s) { return HIRES[s.staff_id] ? { hire_date: HIRES[s.staff_id] } : null; }
+      ${sortFn}
+      return staffSorted().map(function (s) { return s.staff_id; }).join();`)(require(path.join(ROOT, 'kintai-leave.js')), staff, hires, profs);
+    const st = [
+      { staff_id: 'a', office: 'day', code: '1000' }, { staff_id: 'b', office: 'day', code: '2000' }, { staff_id: 'c', office: 'day', code: '0500' },
+      { staff_id: 'd', office: 'day', code: '0100' }, { staff_id: 'e', office: 'facility', code: '9000' }, { staff_id: 'f', office: 'facility', code: '8000' }];
+    const h = { a: '2020-04-01', b: '2015-07-01', c: '2022-06-03', e: '2018-01-01', f: '2019-01-01' };
+    t('職員は事業所に関係なく入職日の古い順・入職日の分からない人（d）は最後', run(st, h, null) === 'b,e,f,a,c,d', run(st, h, null));
+    t('有給の設定の入職日は並びに使わない（有給の記録を読んだかで並びが変わらない・c を 2010 に上書きしても同じ並び）', run(st, h, { c: { hire_date: '2010-01-01' } }) === 'b,e,f,a,c,d', run(st, h, { c: { hire_date: '2010-01-01' } }));
+    t('入職日の分からない人どうしは打刻の番号の順', run([{ staff_id: 'x', office: 'day', code: '3000' }, { staff_id: 'y', office: 'day', code: '0300' }], {}, null) === 'y,x');
+    t('「職員と番号」の表も同じ並び（paintStaff は staffSorted を使う）', /function paintStaff\(\) \{\s*var list = staffSorted\(\);/.test(K));
+  }
+  t('打刻画面に出さない人は「結べていないシフトの職員」に出さず、件数だけ添える', /var unS = unS0\.filter\(function \(s\) \{ return s\.clock_visible !== false; \}\)/.test(K) && /打刻画面に出さない ' \+ unHid \+ ' 人/.test(K));
 }
 
 Promise.all(await_pending).catch((e) => { fail++; console.log('  ✗ 動かして確かめる試験が止まった  → ' + e.message); }).then(() => {
