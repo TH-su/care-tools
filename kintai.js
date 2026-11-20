@@ -590,18 +590,29 @@
   }
   function loadLeaveMonths(my, lg) {
     var cur = todayYm(), out = [], floor = leaveFloorYm(lg);
-    var one = function (y) { return rpc('kintai_month_get', { p_ym: y }).then(okOr).then(function (d) { out.push(monthFor(y, d)); return d; }); };
-    /* 今月分と前の月分は必ず読み、その後は下限の月まで（最大24か月分）。予定も手入力の使用も無い月分が3つ続いたら止める（仮置き） */
-    var back = function (y, n, emptyRun) {
-      if (my !== leaveGen) return null;
-      return one(y).then(function (d) {
-        var run = !(d.schedule || []).length && !(d.leave_uses || []).length ? emptyRun + 1 : 0;
-        var py = C.prevYm(y);
-        if (n < 24 && py >= floor && (n < 1 || run < 3)) return back(py, n + 1, run);
-        return null;
+    var get = function (y) { return rpc('kintai_month_get', { p_ym: y }).then(okOr); };
+    /* 今月分と前の月分は必ず読み、その後は下限の月まで（最大24か月分）。予定も手入力の使用も無い月分が3つ続いたら止める（仮置き）。
+       速さのため、来月分と前へさかのぼる月分を同時に読む（2026-11-20 総点検）。一度に読む数は「あと何か月分の空で止まるか」（3−続いた空の数）までにするので、
+       読む月分・止まる所・結果は1本ずつ順に読んだ時とまったく同じ（空が3つ続く所の先は読まない）。止める決まり（上の2つ）は前と同じ順で当てる */
+    var ys = [], y0 = cur, n0;
+    for (n0 = 0; n0 <= 24; n0++) { ys.push(y0); var p0 = C.prevYm(y0); if (n0 >= 24 || p0 < floor) break; y0 = p0; }
+    var nextP = get(C.nextYm(cur)).then(function (d) { return monthFor(C.nextYm(cur), d); });
+    var past = [], stop = false, emptyRun = 0;
+    var batch = function (i) {
+      if (my !== leaveGen || stop || i >= ys.length) return Promise.resolve();
+      var part = ys.slice(i, i + (3 - emptyRun));
+      return Promise.all(part.map(get)).then(function (ds) {
+        if (my !== leaveGen) return;
+        for (var k = 0; k < ds.length && !stop; k++) {
+          var n = i + k, d = ds[k];
+          past.push(monthFor(part[k], d));
+          emptyRun = !(d.schedule || []).length && !(d.leave_uses || []).length ? emptyRun + 1 : 0;
+          if (!(n < 24 && n + 1 < ys.length && (n < 1 || emptyRun < 3))) stop = true;
+        }
+        return batch(i + part.length);
       });
     };
-    return one(C.nextYm(cur)).then(function () { return back(cur, 0, 0); }).then(function () { return out; });
+    return Promise.all([nextP, batch(0)]).then(function (r) { out.push(r[0]); past.forEach(function (m) { out.push(m); }); return out; });
   }
   function loadLeave(force) {
     var my = ++leaveGen, keep = leaveSt && !leaveSt.err && !force ? leaveSt.months : null;
