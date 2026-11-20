@@ -283,6 +283,9 @@ const CENSUS = {
     [F, "$('g-edits').innerHTML = '<p class=\"empty\">読み込んでいます…</p>'"],
     [E, "if (tab === 'close' && $('g-edits')) $('g-edits').innerHTML = editsHtml(editsCache)"],
     [E, "if (el) el.innerHTML = '<div class=\"band ng\">' + esc(msgOf(e)) + '</div>'"],
+    /* v5 1-5（2026-11-20）: 勤怠の管理者の欄。mgrHtml はメール・役割・足した人・日時・断りの文を全部 esc で入れる（ほかは固定の文） */
+    [E, "if (el && tab === 'settings') el.innerHTML = mgrHtml()"],
+    [E, "if (gm) gm.innerHTML = mgrHtml()"],
     [F, "g.innerHTML = '<h2>この画面は事務所のパソコンで使います</h2><p>この端末は「現場」として設定されているため、勤怠管理は開きません。出勤・退勤の打刻は「出勤・退勤の打刻」の画面から行います。</p><p><a class=\"btn\" href=\"kintai-clock.html\">打刻の画面へ</a> <a class=\"btn\" href=\"index.html\">メニューへ戻る</a></p>'"]
   ],
   "payroll.html": [],
