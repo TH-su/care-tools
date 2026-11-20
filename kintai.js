@@ -142,6 +142,18 @@
     if (/failed to fetch|network|load failed|timeout/i.test(m)) return '通信できませんでした。電波・Wi-Fi を確かめてから、もう一度試してください。';
     return 'うまくいきませんでした。少し待ってから、もう一度試してください。';
   }
+  /* 不具合の自動報告に回さない失敗の見分け（2026-11-20・夜間修復の要情報 reports#14・#15 の原因）。
+     supabase-js は通信そのものの失敗（Wi-Fi の切り替え・スリープ明けなど）を投げずに、素のオブジェクト
+     { message: 'TypeError: Failed to fetch', code: '' } で返し、rpc() がそれを投げる。権限の断り（42501）も素のオブジェクトで来る。
+     画面のコードの例外（recompute・paint の TypeError など）は Error の形で来るので、ここでは拾わない＝本物の不具合は今までどおり報告される */
+  function isNetErr(e) {
+    if (!e || typeof e !== 'object' || e instanceof Error) return false;
+    return /failed to fetch|networkerror|network error|load failed/i.test(String(e.message || ''));
+  }
+  /* 断りは「勤怠の DB 関数が自分で投げた文」の時だけ（kintai_can() が偽）。関数の実行権の付け外しの誤り（permission denied for function …）や
+     ログインが切れて anon で届いた時の 42501 は文が違うので拾わない＝今までどおり報告される（反証レビュー 2026-11-20 の指摘3） */
+  var DENIED_MSG = '勤怠の管理を許された事務所・管理者だけが使えます';
+  function isDenied(e) { return !!e && typeof e === 'object' && !(e instanceof Error) && e.code === '42501' && e.message === DENIED_MSG; }
   function okOr(r) { if (r && r.ok === true) return r; var err = new Error((r && r.error) || 'ng'); err.kintai = (r && r.error) || 'ng'; throw err; }
   function msgOf(e) { return e && e.kintai ? (NG[e.kintai] || 'うまくいきませんでした（' + e.kintai + '）。') : friendly(e); }
 
@@ -251,7 +263,7 @@
     }).then(function () {
       if (my !== gen) return;
       recompute();
-      busy = false; sync(isLocked() ? '締め済みの月です' : '読み込みました（' + hm(Date.now()) + '）');
+      busy = false; quietNetFails = 0; sync(isLocked() ? '締め済みの月です' : '読み込みました（' + hm(Date.now()) + '）');   /* 読めたので、読み直しの「続けての通信の失敗」を数え直す（指摘4） */
       paintPer();
       editsCache = null;
       paint();
@@ -259,9 +271,14 @@
       if (!masterSt && !masterBusy) loadMaster();
     })['catch'](function (e) {
       if (my !== gen) return;
-      note('読み込み', e);
+      /* 事務所のアカウントが勤怠の DB 関数に断られた時（「勤怠の管理者」に載っていない・アカウントが止まっている等）は、
+         画面の帯で知らせて管理者に確かめてもらうだけにし、不具合の自動報告に回さない（reports#14 は載っていない事務所のアカウントの断りだった）。
+         管理者の断り・通信の失敗・そのほかは今までどおり報告する（読み込みの通信の失敗は黙らせない＝反証レビュー 2026-11-20 の指摘2） */
+      var denied = isDenied(e) && role !== 'admin';
+      if (!denied) note('読み込み', e);
       busy = false; data = null; month = null; sync(''); $('g-main').removeAttribute('aria-busy');
-      $('g-main').innerHTML = '<div class="band ng" role="alert">' + esc(msgOf(e)) + '</div>';
+      var bandMsg = denied ? 'このアカウントには勤怠管理を使う許可がありません（「勤怠の管理者」に載っていない、アカウントが止まっている など）。使う必要がある時は、管理者に確かめてもらってください（管理者は勤怠管理の「設定」タブの「勤怠の管理者」で追加できます）。' : msgOf(e);
+      $('g-main').innerHTML = '<div class="band ng" role="alert">' + esc(bandMsg) + '</div>';
     });
   }
   function recompute() {
@@ -2550,6 +2567,7 @@
   /* 黙って読み直す（ホーム・日ごと・要確認だけ）: 窓・保存中・印刷中・選ぶ欄の操作中・ほかの読み込み中は何もしない。
      読めない時は手元の時刻で数え直すだけ（帯は出さない・記録に残す）。届いた時に月やタブが変わっていれば捨てる */
   var quietBusy = 0, quietSeq = 0;
+  var quietNetFails = 0;   /* 読み直しで続けて通信できなかった回数（読めたら0に戻す・reports#15 の直し） */
   function quietOk() {
     if (view !== 'app' || busy || !month || !data || dlgCtx || printAll || (tab !== 'home' && tab !== 'day' && tab !== 'review')) return false;
     if (document.visibilityState === 'hidden') return false;
@@ -2564,7 +2582,7 @@
     var my = gen, atYm = ym, seq = ++quietSeq; quietBusy = Date.now();
     rpc('kintai_month_get', { p_ym: ym }).then(okOr).then(function (d) {
       if (seq !== quietSeq) return;
-      quietBusy = 0;
+      quietBusy = 0; quietNetFails = 0;
       if (my !== gen || atYm !== ym || !quietOk()) return;
       data = d;
       recompute(); paint();
@@ -2572,7 +2590,10 @@
     })['catch'](function (e) {
       if (seq !== quietSeq) return;
       quietBusy = 0;
-      note('自動の読み直し', e);
+      /* 1回きりの通信の失敗（Wi-Fi の切り替え・スリープ明け）は次の30秒で読み直せるので報告しない（reports#15 はこれだった）。
+         3回続けて通信できない時だけ1回報告する。通信以外（画面のコードの例外・DB の断り）は今までどおり毎回報告する */
+      if (!isNetErr(e)) note('自動の読み直し', e);
+      else if (++quietNetFails === 3) note('自動の読み直し（通信が3回続けて失敗）', e);
       if (my === gen && atYm === ym && quietOk()) { recompute(); paint(); }
     });
   }
