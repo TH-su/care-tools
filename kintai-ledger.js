@@ -34,11 +34,13 @@
     if (!L.isDate(asOf)) return { rows: rows, takenTotal: 0, takenHourTotal: 0 };
     var lots = (o.lots || []).filter(function (g) { return g && !g.voided_at && L.isDate(g.grant_date) && +g.days > 0 && g.grant_date <= asOf; })
       .slice().sort(function (a, b) { return a.grant_date < b.grant_date ? -1 : a.grant_date > b.grant_date ? 1 : (a.kind === 'opening' ? -1 : b.kind === 'opening' ? 1 : 0); });
-    /* 基準日（同じ日の付与は1つの基準日にまとめる＝移行の残りと自動の付与が同じ日の時など） */
+    /* 基準日（同じ日の付与は1つの基準日にまとめる＝移行の残りと自動の付与が同じ日の時など）。
+       反証レビュー（2026-11-20）: 基準日は自動の付与日と移行の残りの付与日だけ。手で足した付与（manual）は基準日にせず、その日を含む前の基準日の行の付与日数に足す
+       （前に基準日が無い時だけ、その付与日を基準日にする） */
     var bases = [];
     lots.forEach(function (g) {
       var last = bases[bases.length - 1];
-      if (last && last.base === g.grant_date) { last.days = half(last.days + (+g.days)); if (g.kind !== 'opening') last.kind = g.kind; if (g.expires > last.expires) last.expires = g.expires; return; }
+      if (last && (last.base === g.grant_date || g.kind === 'manual')) { last.days = half(last.days + (+g.days)); if (last.base === g.grant_date && g.kind === 'auto') last.kind = 'auto'; if (g.expires > last.expires) last.expires = g.expires; return; }
       bases.push({ base: g.grant_date, kind: g.kind || 'manual', days: +g.days, expires: g.expires || L.expiresOf(g.grant_date) });
     });
     var takenTotal = 0, takenHourTotal = 0;

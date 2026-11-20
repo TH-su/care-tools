@@ -14,6 +14,7 @@
      7. 有給の残り（kintai-leave.js）: 時間単位を1日＝所定の時間で引く・年5日の取得義務に数えない・時間単位が無い時は今と同じ・年の上限（5日分）・日数の文字
      8. 年次有給休暇管理簿（kintai-ledger.js）: 時間単位は同じ日の1日・半日と別の行・取得日数に入れず時間の列に数える
      9. 画面（kintai.js・kintai.html）: 月の計算に absences を渡す・休暇の断りの語の文・直しの履歴の言い方・設定の欄・管理簿の印刷（su-print の門）・部品の読み込み
+    10. 積み残しの直し: ホームの箱の期限の近い残りを有給の画面と同じ書き方に・締めの比べる鍵に休暇の種類の鍵（古い控えは比べない）・振替の働く日に予定が無い時の注意（止めない・A＝予定は手で入れる・仮置き）
    ★職員は架空（試験 甲・試験 乙）。 */
 'use strict';
 const fs = require('fs');
@@ -235,6 +236,105 @@ console.log('\n— 9. 画面 —');
   t('管理簿の紙の根（#k-ledger）は画面では出さない・印刷の時だけ', /#k-ledger\{display:none\}/.test(H) && /body\.su-print-ledger #k-ledger\{display:block;font-size:var\(--lg-fs,11px\)/.test(H) && /<div id="k-ledger" aria-hidden="true"><\/div>/.test(H));
   t('kintai-calc.js の版は勤怠・打刻・給与の3画面で同じ', ['kintai.html', 'kintai-clock.html', 'payroll.html'].map((f) => ver('kintai-calc.js', fs.readFileSync(path.join(ROOT, f), 'utf8'))).every((v, i, a) => v && v === a[0]));
   t('隠した休暇の欄は出さない（.row > label[hidden]）', /\.row > label\[hidden\]\{display:none\}/.test(H));
+}
+
+console.log('\n— 10. 段4 の積み残しの直し（ホームの期限の近い残り・締めの比べる鍵・振替の働く日の注意） —');
+{
+  const K = fs.readFileSync(path.join(ROOT, 'kintai.js'), 'utf8');
+  const between = (a0, b0) => { const i = K.indexOf(a0), j = K.indexOf(b0, i + 1); return i >= 0 && j > i ? K.slice(i, j) : ''; };
+  const fnSrc = (name) => { const i = K.indexOf('  function ' + name + '('); if (i < 0) return ''; const j = K.indexOf('\n  }\n', i); return K.slice(i, j + 4); };
+  const Mo = require(path.join(ROOT, 'kintai-monitor.js'));
+  const g = [{ grant_date: '2026-04-01', days: 10, kind: 'auto' }], ok = L.obligation5(g, [1, 2, 3, 4, 5].map((d) => ({ use_date: '2026-06-0' + d, days: 1 })), '2026-12-15');
+  const lb = Mo.boxes({ leaveRows: [{ staff_id: 'a', name: '試験 甲', ob: ok, expiringDays: 12.625, expiringText: L.daysHm(12.625, 480), expires: '2027-03-31' }, { staff_id: 'b', name: '試験 乙', ob: ok, expiringDays: 2.5, expires: '2027-03-31' }] }).filter((x) => x.key === 'leave')[0];
+  t('ホームの箱: 時間単位の端数は有給の画面と同じ「12 日 5 時間」・文を渡さない時は今までどおり「2.5 日」', lb.rows[0].text === '期限の近い残り 12 日 5 時間（2027年3/31 まで）' && lb.rows[1].text === '期限の近い残り 2.5 日（2027年3/31 まで）', lb.rows);
+  t('画面はホームの箱へ有給の画面と同じ書き方（dTxt）の文を渡す', /expiringText: near \? dTxt\(soon\.days, s\.staff_id\) : ''/.test(K));
+  /* 締めの比べる鍵: 新しい鍵を足し、古い控え（鍵が無い）は比べない */
+  const keys = new Function(between('  var SNAP_KEYS = [', '  var SNAP_FILL') + '\nreturn SNAP_KEYS;')();
+  t('締めの比べる鍵に休暇の種類の鍵（hourlyPaidMin・specialPaidMin・specialPaidDays・specialUnpaidDays・compDays）を足した', NEW_SUM_KEYS.every((k) => keys.includes(k)), keys);
+  const diff = (rows, people) => new Function('ROWS', 'PEOPLE', between('  var SNAP_KEYS = [', '  var SNAP_FILL') + fnSrc('countsOf') + '\n' + fnSrc('sameCounts') + `
+    function snapRows() { return ROWS; } function dispName(s) { return s.staff_id; } var month = { people: PEOPLE };
+    ${fnSrc('snapDiff')}
+    return snapDiff();`)(rows, people);
+  const mA = month({ absences: [{ id: 'h1', staff_id: 'sT01', date: ds(3), kind: 'hourly_paid', minutes: 120 }, { id: 's1', staff_id: 'sT02', date: ds(18), kind: 'special', paid: true, type_code: 'keicho' }] });
+  const snapNew = C.snapshotOf(mA).rows, snapOld = snapNew.map((r) => { const o = Object.assign({}, r); NEW_SUM_KEYS.forEach((k) => delete o[k]); return o; });
+  t('今の控えと今の数字は「違う人」なし', diff(snapNew, mA.people).length === 0);
+  t('段4 より前の控え（新しい鍵が無い）と比べても「違う」と出さない', diff(snapOld, mA.people).length === 0);
+  const bad = snapNew.map((r) => Object.assign({}, r, r.staff_id === 'sT01' ? { hourlyPaidMin: 60 } : {}));
+  t('控えの新しい鍵が今の数字と違えば「違う人」に出す（時間単位の分が変わった人）', diff(bad, mA.people).join() === 'sT01', diff(bad, mA.people));
+  /* 振替の働く日に予定が無い時の注意（止めない） */
+  const sod = (sid, d) => new Function('M', 'LS', 'SID', 'D', 'var month = M, leaveSt = LS;\n' + fnSrc('schedOnDay') + '\nreturn schedOnDay(SID, D);')(month(), null, sid, d);
+  t('予定の有無: 平日（予定あり）は true・日曜（予定なし）は false・読んでいない月は null', sod('sT01', ds(14)) === true && sod('sT01', ds(13)) === false && sod('sT01', '2027-02-01') === null);
+  t('振替の働く日に予定が無い時は注意の文を出し、送るのは止めない（return しない）',
+    /if \(schedOnDay\(ctx\.sid, sl\) === false\) warnAfter = '働く日に予定がありません。出勤予定を「予定を直す」で入れてください。';\s*\} else \{ msg\.textContent = '休暇の種類を選んでください。'; return; \}[\s\S]{0,400}?call = \['kintai_absence_add', args\];/.test(K)
+    && /toast\('保存しました（' \+ nameOf\(ctx\.sid\) \+ ' さんの有給）' \+ \(warnAfter \? '。' \+ warnAfter : ''\)\)/.test(K)
+    && /if \(warnAfter\) p2 = p2\.then\(function \(\) \{ if \(\$\('g-dlg'\)\.open && dlgCtx && dlgCtx\.mode === 'leave' && \$\('e-msg'\)\) \$\('e-msg'\)\.textContent = warnAfter; \}\);/.test(K));
+}
+
+console.log('\n— 11. 反証レビュー（2026-11-20）の直し —');
+{
+  /* 1（high）丸めで実働が短くならない: 休憩を引くかと休憩の分は丸める前の区間で決め、どの日も丸めた値 ≧ 丸めない値 */
+  const blk = (s0, e0, i0, o0, unit, extra) => {
+    const d = ds(1), sc = !s0 ? [] : extra && extra.night ? [{ staff_id: 'sT01', work_date: d, seq: 1, office: 'facility', kind: 'night', start_at: C.iso(at(d, s0)), end_at: C.iso(at(ds(2), '8:00')), break_min: 120, paid_min: 0, symbol: '夜' }] : [S('sT01', d, s0, e0)];
+    const pu = [P('sT01', 'in', d, i0), Object.assign(P('sT01', 'out', d, o0), extra && extra.nextDay ? { at: new Date(at(ds(2), o0)).toISOString() } : {})];
+    const m = C.computeMonth({ ym: YM, staff: [K_STAFF[0]], schedule: sc, punches: pu, days: extra && extra.day ? [Object.assign({ staff_id: 'sT01', work_date: d, rev: 1 }, extra.day)] : [], config: { roundUnitMin: unit, legal_holiday: extra && extra.lh != null ? extra.lh : null }, now: NOW });
+    return { b: m.people[0].days[0].blocks[0], s: m.people[0].sum };
+  };
+  let e1 = blk('8:50', '17:50', '11:52', '17:50', 1), e15 = blk('8:50', '17:50', '11:52', '17:50', 15);
+  t('例1: 予定 8:50〜17:50・11:52 出勤・17:50 退勤 → 1分 358分・休憩0／15分でも休憩0で 358分以上（前は305分・休憩60分）', e1.b.workMin === 358 && e1.b.breakMin === 0 && e15.b.breakMin === 0 && e15.b.workMin >= 358, [e1.b.workMin, e15.b.workMin, e15.b.breakMin]);
+  e1 = blk('8:50', '17:50', '8:50', '14:47', 1); e15 = blk('8:50', '17:50', '8:50', '14:47', 15);
+  t('例2: 早退（8:50 出勤・14:47 退勤）も 15分で休憩を引かず実働が短くならない', e15.b.breakMin === e1.b.breakMin && e15.b.workMin >= e1.b.workMin, [e1.b, e15.b].map((x) => [x.workMin, x.breakMin]));
+  /* 境目: 拘束6時間ちょうど・6時間1分（遅刻・早退の両方）、夜勤、認めた残業、法定休日 */
+  const cases = [];
+  for (const i0 of ['9:00', '9:01', '9:07', '11:52', '11:59', '12:00', '12:01', '12:14']) cases.push(['9:00', '18:00', i0, '18:00']);
+  for (const o0 of ['15:00', '15:01', '14:59', '14:47', '15:14', '17:59']) cases.push(['9:00', '18:00', '9:00', o0]);
+  for (const io0 of [['11:59', '17:58'], ['12:01', '18:00'], ['9:13', '15:14'], ['10:58', '16:59']]) cases.push(['9:00', '18:00', io0[0], io0[1]]);
+  let bad = [];
+  for (const unit of [5, 10, 15, 30]) {
+    for (const c of cases) for (const ex of [null, { day: { overtime_ok: true } }, { lh: 2 }]) {
+      const a0 = blk(c[0], c[1], c[2], c[3], 1, ex), a1 = blk(c[0], c[1], c[2], c[3], unit, ex);
+      if (!(a1.b.workMin >= a0.b.workMin && a1.b.breakMin === a0.b.breakMin && a1.b.nightMin >= a0.b.nightMin && a1.b.holidayMin >= a0.b.holidayMin &&
+            a1.s.legalOverMin >= a0.s.legalOverMin && a1.s.nightMin >= a0.s.nightMin && a1.s.workMin >= a0.s.workMin && a1.s.holidayMin >= a0.s.holidayMin)) bad.push([unit, c, ex, a0.b.workMin, a1.b.workMin, a0.b.breakMin, a1.b.breakMin]);
+    }
+    for (const io0 of [['22:07', '7:52'], ['23:50', '5:10'], ['22:00', '8:00']]) {
+      const a0 = blk('22:00', null, io0[0], io0[1], 1, { night: true, nextDay: true }), a1 = blk('22:00', null, io0[0], io0[1], unit, { night: true, nextDay: true });
+      if (a0 && a1 && !(a1.b.workMin >= a0.b.workMin && a1.b.nightMin >= a0.b.nightMin && a1.b.breakMin === a0.b.breakMin)) bad.push([unit, 'night', io0]);
+    }
+  }
+  t('単位 5・10・15・30 × 境目（拘束6時間ちょうど・6時間1分）・認めた残業・法定休日: 実働・休憩・深夜・休日労働・月の法定外が丸めない時以上（休憩は同じ）', bad.length === 0, bad.slice(0, 5));
+  const g0 = month(null, { legal_holiday: 0 });
+  t('架空の月全体でも、どの単位でも人ごとの総労働・法定外・深夜・休日労働が丸めない時以上', [5, 10, 15, 30].every((u) => { const g1 = month(null, { legal_holiday: 0, roundUnitMin: u }); return K_STAFF.every((st) => ['workMin', 'legalOverMin', 'nightMin', 'holidayMin', 'schedInMin'].filter((k) => k !== 'schedInMin').every((k) => sumOf(g1, st.staff_id)[k] >= sumOf(g0, st.staff_id)[k])); }));
+
+  /* 2 年の上限の1年の起点は自動の付与日だけ（手で足した付与では始まり直さない）・管理簿の基準日の行も同じ */
+  const asOf = '2026-11-20';
+  const grants = [{ id: 'm1', grant_date: '2026-11-01', days: 3, kind: 'manual' }];
+  const sm = L.summary({ hireDate: '2024-04-01', profile: {}, grants, uses: [], asOf });
+  const hu = [{ staff_id: 'sT01', use_date: '2026-10-15', days: 4, minutes: 1920, src: 'hourly' }];
+  const yr = L.hourlyYear(sm.lots, hu, '2026-11-20', 480);
+  t('手で足した付与（11/1）の後でも、1年の起点は自動の付与日（2026-10-01）のまま・10/15 の32時間を数える（上限を超えられない）', yr.from === '2026-10-01' && yr.usedMin === 1920 && yr.usedMin + 480 + 60 > yr.capMin, yr);
+  const yo = L.hourlyYear([{ grant_date: '2026-04-01', days: 8, kind: 'opening' }, { grant_date: '2026-06-01', days: 2, kind: 'manual' }], [], '2026-07-01', 480);
+  t('自動の付与が無い人は移行の残りの付与日が起点（手で足した付与では始まり直さない）', yo.from === '2026-04-01', yo);
+  const led = G.ledgerOf({ lots: sm.lots, uses: [], asOf, openingDate: null });
+  t('管理簿: 手で足した付与は基準日の行にせず、前の基準日（2026-10-01）の付与日数に足す', led.rows.map((r) => r.base).join() === '2024-10-01,2025-10-01,2026-10-01' && led.rows[2].days === 15, led.rows.map((r) => [r.base, r.days]));
+
+  /* 6 1日の時間は人ごと */
+  t('1日の時間: 週19時間÷4日→5時間（切り上げ）・週の所定が片方だけ・無い人は設定（7.5→8時間）・既定8時間', L.dayMinOf({ weekly_days: 4, weekly_hours: 19 }, 8) === 300 && L.dayMinOf({ weekly_days: 4 }, 7) === 420 && L.dayMinOf(null, 7.5) === 480 && L.dayMinOf(null, null) === 480 && L.dayMinOf({ weekly_days: 5, weekly_hours: 40 }, 6) === 480);
+  const hu2 = L.hourlyUses([{ id: 'a', staff_id: 'p5', date: '2026-11-02', kind: 'hourly_paid', minutes: 60 }, { id: 'b', staff_id: 'p8', date: '2026-11-02', kind: 'hourly_paid', minutes: 60 }], (sid) => (sid === 'p5' ? 300 : 480));
+  t('時間単位の日数への換算は人ごとの1日の時間（5時間の人は1時間＝0.2日・8時間の人は0.125日）', hu2.find((u) => u.staff_id === 'p5').days === 0.2 && hu2.find((u) => u.staff_id === 'p8').days === 0.125);
+
+  /* 3・4・6 画面: 先の日付の線・同じ日の有給の重ね・人ごとの時間 */
+  const K = fs.readFileSync(path.join(ROOT, 'kintai.js'), 'utf8');
+  const fnSrc = (name) => { const i = K.indexOf('  function ' + name + '('); if (i < 0) return ''; const j = K.indexOf('\n  }\n', i); return K.slice(i, j + 4); };
+  const amax = (td, months, cfg) => new Function('C', 'MS', 'TD', 'CFG', 'var month = null, leaveSt = { months: MS }; function today() { return TD; } function lvCfg() { return CFG; }\n' + fnSrc('absMaxDate') + '\nreturn absMaxDate();')(C, months, td, cfg);
+  t('休暇を入れられる最後の日: 読んだ来月分の期間の終わり・読んでいない時は締め日（月末・15日）から数える', amax('2026-11-20', [{ ym: '2026-11', period: { from: '2026-11-01', to: '2026-11-30' } }, { ym: '2026-12', period: { from: '2026-12-01', to: '2026-12-31' } }], { close_day: 0 }) === '2026-12-31' &&
+    amax('2026-11-20', [], { close_day: 0 }) === '2026-12-31' && amax('2026-11-20', [], { close_day: 15 }) === '2027-01-15' && amax('2026-11-10', [], { close_day: 15 }) === '2026-12-15');
+  const pmo = new Function('LS', 'var leaveSt = LS;\n' + fnSrc('paidMinOn') + '\nreturn paidMinOn;')({ manual: [{ staff_id: 'x', use_date: '2026-11-02', days: 0.5 }, { staff_id: 'x', use_date: '2026-11-02', days: 1, voided_at: 'z' }],
+    absences: [{ staff_id: 'x', date: '2026-11-02', kind: 'hourly_paid', minutes: 60 }, { staff_id: 'x', date: '2026-11-02', kind: 'special', paid: true, minutes: null }, { staff_id: 'x', date: '2026-11-02', kind: 'special', paid: false, minutes: null }, { staff_id: 'x', date: '2026-11-02', kind: 'comp', minutes: null }] });
+  t('同じ日の有給の休みの分: 手入力の有休 半日（240）＋時間単位 60＋有給の特別休暇1日（480）＝780（無給・代休・取り消しは数えない）', pmo('x', '2026-11-02', 480) === 780 && pmo('x', '2026-11-03', 480) === 0);
+  t('休暇の足し・有休の使用の前に、同じ日の重ねと来月分より先の日付を画面で止める（DB と同じ文の考え）',
+    /if \(\(ak === 'hourly_paid' \|\| \(ak === 'special' && args\.p_paid\)\) && paidMinOn\(ctx\.sid, ad, dmin\) \+ \(args\.p_minutes != null \? args\.p_minutes : dmin\) > dmin\) \{ msg\.textContent = ABS_OVER; return; \}/.test(K) &&
+    /if \(!hasU && paidMinOn\(ctx\.sid, ud, dmU\) \+ Math\.round\(\(un === 0\.5 \? 0\.5 : 1\) \* dmU\) > dmU\) \{ msg\.textContent = ABS_OVER; return; \}/.test(K) &&
+    /if \(ad > amax\) \{ msg\.textContent = ABS_LATE; return; \}/.test(K) && /if \(sl > amax\) \{ msg\.textContent = ABS_LATE; return; \}/.test(K) && /var ABS_LATE = '休暇は来月分までの日付で入れてください。';/.test(K));
+  t('時間単位の上限・1日の時間の欄・半日の分は人ごとの1日の時間（staffDayMin）', /dmin = staffDayMin\(ctx\.sid\), dhP = dmin \/ 60;/.test(K) && /dh = staffDayMin\(sid\) \/ 60/.test(K) && /L\.hourlyUses\(abs, function \(sid0\) \{ return L\.dayMinOf \? L\.dayMinOf\(prof\[sid0\], dh0\)/.test(K));
 }
 
 console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' 件合格 / ' + fail + ' 件不合格');

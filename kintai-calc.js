@@ -404,6 +404,11 @@
        早退の退勤は単位で切り上げ（予定の終わりより後にはしない）・認めた残業の終わりは単位で切り上げ（時刻を区切って認めた時は、その時刻まで）。
        予定の無い勤務・間の組・認めていない早出と残業は丸めない（日ごとに働いた時間を短くする向きの丸めは入れない・基発150号） */
     var U = cfg.roundUnitMin > 1 ? cfg.roundUnitMin * MIN : 0;
+    /* 反証レビュー（2026-11-20・high）: 丸めで数える区間が延びて休憩を引く線（拘束6時間超）を越え、実働が短くなる日があった。
+       丸める時は、まず丸めない時を数え（base0）、休憩を引くかと休憩の分は丸める前の区間の値を使う。
+       それでも丸めた実働・深夜・休日労働のどれかが丸めない時より短い日は丸めない（どの日も「丸めた値 ≧ 丸めない値」） */
+    var base0 = null;
+    if (U) { var cfg1 = {}; for (var ck in cfg) cfg1[ck] = cfg[ck]; cfg1.roundUnitMin = 1; base0 = countBlock(b, day, cfg1, nowMs, hov); }
     if (r.sched) {
       if (cs < b.start) {
         if (day && day.early_ok) { /* 早出を全部認めた日は打刻どおり */ }
@@ -451,6 +456,7 @@
     if (day && typeof day.break_min === 'number') br = Math.max(0, day.break_min - gap);
     else if (r.sched) br = span > cfg.breakThresholdH * 60 ? Math.max(0, r.schedBreak - gap) : 0;
     else br = span > cfg.breakThresholdH * 60 ? Math.max(0, Math.round(cfg.breakH * 60) - gap) : 0;
+    if (base0 && base0.countStart != null) br = base0.breakMin;   /* 丸める前の区間で決めた休憩 */
     br = Math.min(br, bound);
     r.countStart = segs.length ? segs[0][0] : null;
     r.countEnd = segs.length ? segs[segs.length - 1][1] : null;
@@ -462,6 +468,7 @@
     r.uncountedMin = Math.max(0, Math.round(raw) - bound);
     /* 法定休日は暦日（その曜日の 0:00〜24:00）。休憩は区間の長さの割合で按分（仮置き・v2-9） */
     r.holidayMin = bound > 0 ? Math.round(r.workMin * Math.round(hol) / bound) : 0;
+    if (base0 && (r.workMin < base0.workMin || r.nightMin < base0.nightMin || r.holidayMin < base0.holidayMin)) return base0;
     return markDay(r, day);
   }
   /* day_mark を当てる（v2-3）: checked＝印は残して要確認に数えない／absent＝打刻なし・未出勤を欠勤に変える */

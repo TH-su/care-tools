@@ -119,14 +119,14 @@
   /* 有給の窓では、打刻向けの言い方の断り（badkind・badvalue）を有給の言葉に替える */
   var NG_LEAVE = { badkind: '付与の種類が違います（移行の残りか、手で足すかを選んでください）。', badvalue: '入れた値を受け付けられませんでした（日数・週の所定日数・時間・メモの長さを確かめてください）。',
     locked: 'その日は締めた月分に入っているため、足すことも取り消すこともできません。直す時は管理者が締めを解除してください。',
-    dup: 'その日の有休の使用はもう入っています（同じ人・同じ日は1つまで）。直す時は、今の使用を取り消してから足してください。' };
+    dup: 'その日の有休の使用はもう入っています（同じ人・同じ日は1つまで）。または、その日の時間単位の有休・有給の特別休暇と合わせると1日の時間を超えます。直す時は、今の使用か休みを取り消してから足してください。' };   /* 反証レビュー（2026-11-20）: DB が重ねでも dup で断るので文を足した（仮置き） */
   function leaveMsg(e) { return e && e.kintai && NG_LEAVE[e.kintai] ? NG_LEAVE[e.kintai] : msgOf(e); }
   /* v5 段4: 有給の窓の「休暇」（時間単位の有休・特別休暇・代休・振替休日・統合 0113）の断りの文（文は仮置き） */
   var NG_ABS = { locked: 'その日（代休の元の日・振替の働く日を含む）は締めた月分に入っているため、入れることも取り消すこともできません。直す時は管理者が締めを解除してください。',
-    dup: 'その日のこの種類の休暇はもう入っています（同じ人・同じ日・同じ種類は1つまで）。直す時は、今の行を取り消してから入れてください。',
+    dup: 'その日のこの種類の休暇はもう入っているか、その日の有給の休み（手入力の有休・時間単位の有休・有給の特別休暇）を合わせると1日の時間を超えます。直す時は、今の行を取り消してから入れてください。',
     badkind: '休暇の種類が違います。時間単位の有休は、設定で「時間単位の有休を使う」にした時だけ入れられます。',
     badvalue: '入れた値を受け付けられませんでした（時間単位は1時間きざみで1日の所定の時間まで・特別休暇は種類を選ぶ・代休の元の日と振替の働く日は休む日と別の日・メモは200字まで）。',
-    baddate: '日付の形が違うか、受け付けられる範囲の外です（2000年1月1日から5年先まで）。',
+    baddate: '日付の形が違うか、受け付けられる範囲の外です。休暇は来月分までの日付で入れてください。',
     notfound: '見つかりませんでした（勤怠の職員にいないか、もう無い行です）。読み直してください。',
     already: 'もう取り消してあります。読み直してください。', reason: '理由を書いてください。' };
   function absMsg(e) { return e && e.kintai && NG_ABS[e.kintai] ? NG_ABS[e.kintai] : msgOf(e); }
@@ -475,7 +475,7 @@
     var td = today();
     return staffSorted().filter(function (s) { return s.active !== false; }).map(function (s) {
       var x = leaveOf(s), soon = x.sm.balance.soon, near = soon && L.diffDays(td, soon.expires) <= 90;
-      return { staff_id: s.staff_id, name: dispName(s), ob: x.sm.obligation, expiringDays: near ? soon.days : 0, expires: near ? soon.expires : null };
+      return { staff_id: s.staff_id, name: dispName(s), ob: x.sm.obligation, expiringDays: near ? soon.days : 0, expiringText: near ? dTxt(soon.days, s.staff_id) : '', expires: near ? soon.expires : null };   /* v5 段4: 有給の画面と同じ書き方の日数の文（半日きざみは「12.5 日」・時間単位の端数は「12 日 5 時間」） */
     });
   }
   var BOX_UNIT = { today: '人', review: '件', a36: '人', leave: '人', close: '月分', rules: '人' };
@@ -825,7 +825,7 @@
       (Array.isArray(x.lg.profiles) ? x.lg.profiles : []).forEach(function (p) { if (p && p.staff_id) prof[p.staff_id] = p; });
       var manual = Array.isArray(x.lg.uses) ? x.lg.uses : [];
       /* v5 段4: 時間単位の有休は、さかのぼって読んだ月分の休暇の種類の行から作り、使用に足す（1日＝設定の1日の所定の時間） */
-      var abs = absOfMonths(x.months), hourly = L.hourlyUses ? L.hourlyUses(abs, lvDayMin()) : [];
+      var dh0 = lvCfg().dayHours, abs = absOfMonths(x.months), hourly = L.hourlyUses ? L.hourlyUses(abs, function (sid0) { return L.dayMinOf ? L.dayMinOf(prof[sid0], dh0) : dh0 * 60; }) : [];   /* 1日の時間は人ごと（反証レビュー） */
       leaveSt = { profiles: prof, grants: Array.isArray(x.lg.grants) ? x.lg.grants : [], manual: manual, uses: L.usesFromMonth(x.months, manual).concat(hourly), months: x.months, absences: abs };
       if (x.months !== keep) monthCache = {};   /* v5（反証レビュー）: さかのぼりの月分を新しく読んだ時は、前に開いた月分の控えを捨てる（古い計算を上に重ねない） */
     })['catch'](function (e) {
@@ -850,9 +850,42 @@
   function lvCfg() { return C.fillConfig(rawCfg()); }
   function lvDayMin() { return lvCfg().dayHours * 60; }
   /* 日数の文字（半日きざみは今までどおり「9.5 日」・時間単位の端数がある時は「9 日 6 時間」） */
-  function dTxt(v) { return L && L.daysHm ? L.daysHm(v, lvDayMin()) : String(v) + ' 日'; }
+  function dTxt(v, sid) { return L && L.daysHm ? L.daysHm(v, sid ? staffDayMin(sid) : lvDayMin()) : String(v) + ' 日'; }
+  /* 反証レビュー（2026-11-20）: 1日の時間は人ごと（有給の設定の週の所定時間÷週の所定日数・時間に切り上げ／無い人は設定の dayHours・DB の private.kintai_day_min と同じ・仮置き） */
+  function staffDayMin(sid) { return L && L.dayMinOf ? L.dayMinOf(leaveSt && leaveSt.profiles ? leaveSt.profiles[sid] : null, lvCfg().dayHours) : lvDayMin(); }
+  /* 休暇を入れられる最後の日＝今日を含む月分の次の月分の期間の終わり（DB の private.kintai_abs_max_date と同じ線・読んでいない時は締め日から数える・仮置き） */
+  function absMaxDate() {
+    var td = today(), ms0 = (month ? [month] : []).concat(leaveSt && leaveSt.months || []), curYm = null, i;
+    for (i = 0; i < ms0.length; i++) if (ms0[i] && ms0[i].period && td >= ms0[i].period.from && td <= ms0[i].period.to) { curYm = ms0[i].ym; break; }
+    var cd = lvCfg().close_day || 0;
+    if (!curYm) curYm = cd && +td.slice(8, 10) > cd ? C.nextYm(td.slice(0, 7)) : td.slice(0, 7);
+    var ny = C.nextYm(curYm);
+    for (i = 0; i < ms0.length; i++) if (ms0[i] && ms0[i].ym === ny && ms0[i].period) return ms0[i].period.to;
+    return ny + '-' + (cd ? (cd < 10 ? '0' : '') + cd : String(C.daysIn(ny)));
+  }
+  /* その人のその日の有給の休み（分）: 手入力の有休の日数×1日の時間＋時間単位の有休＋有給の特別休暇（1日＝1日の時間）。DB の private.kintai_paid_min と同じ数え方 */
+  function paidMinOn(sid, d, dm) {
+    var n = 0;
+    (leaveSt && leaveSt.manual || []).forEach(function (u) { if (u && !u.voided_at && u.staff_id === sid && u.use_date === d) n += Math.round(+u.days * dm); });
+    (leaveSt && leaveSt.absences || []).forEach(function (a) { if (a && !a.voided_at && a.staff_id === sid && a.date === d && (a.kind === 'hourly_paid' || (a.kind === 'special' && a.paid))) n += a.kind === 'hourly_paid' ? +a.minutes : (a.minutes != null ? +a.minutes : dm); });
+    return n;
+  }
+  var ABS_OVER = 'その日の有給の休み（手入力の有休・時間単位の有休・有給の特別休暇）を合わせると1日の時間を超えます。今の休みを取り消してから入れてください。';
+  var ABS_LATE = '休暇は来月分までの日付で入れてください。';
   /* 単位なしの日数（付与の表の「使った」「残り」の列） */
-  function nTxt(v) { var n = +v; return n * 2 === Math.round(n * 2) ? String(n) : dTxt(n).replace(/ 日 /, '日 '); }
+  function nTxt(v, sid) { var n = +v; return n * 2 === Math.round(n * 2) ? String(n) : dTxt(n, sid).replace(/ 日 /, '日 '); }
+  /* その人のその日に勤務の予定があるか（開いている月分と有給のために読んだ月分の計算から）。true＝ある／false＝無い／null＝その日の月分を読んでいない */
+  function schedOnDay(sid, d) {
+    var ms0 = (month ? [month] : []).concat(leaveSt && leaveSt.months || []);
+    for (var i = 0; i < ms0.length; i++) {
+      var m = ms0[i];
+      if (!m || !m.period || d < m.period.from || d > m.period.to) continue;
+      var p = (m.people || []).filter(function (x) { return x.staff.staff_id === sid; })[0];
+      var dd = p && p.days.filter(function (x) { return x.date === d; })[0];
+      return !!(dd && dd.blocks.some(function (b) { return b.sched; }));
+    }
+    return null;
+  }
   /* 休暇の行を入れた・取り消した後に、その日（代休の元の日・振替の働く日を含む）の月分だけを読み直して、有給の読み込みの月分に入れ替える */
   function refreshAbsMonths(dates) {
     if (!leaveSt || !Array.isArray(leaveSt.months)) return Promise.resolve();
@@ -890,8 +923,8 @@
       if (sm.proportional) wk += '<span class="tag">比例付与</span>';
       if (sm.openingMissing) hire += '<span class="tag rv">移行日が未設定</span>';
       var nx = sm.next ? esc(ymdJa(sm.next.grant_date)) + '　' + esc(String(sm.next.days)) + ' 日' + (sm.next.status === 'skip' ? '<span class="tag">付与しない</span>' : '') : '<span class="raw">—</span>';
-      var rem = '<b>' + esc(dTxt(b.remain)) + '</b>' + (b.over ? '<span class="tag ng">付与の無い使用 ' + esc(dTxt(b.over)) + '</span>' : '') + (b.planned ? '<span class="raw">（この先の予定 ' + esc(dTxt(b.planned)) + '）</span>' : '');
-      var soon = b.soon ? esc(dTxt(b.soon.days)) + '（' + esc(ymdJa(b.soon.expires)) + ' まで）' : '<span class="raw">—</span>';
+      var rem = '<b>' + esc(dTxt(b.remain, s.staff_id)) + '</b>' + (b.over ? '<span class="tag ng">付与の無い使用 ' + esc(dTxt(b.over, s.staff_id)) + '</span>' : '') + (b.planned ? '<span class="raw">（この先の予定 ' + esc(dTxt(b.planned, s.staff_id)) + '）</span>' : '');
+      var soon = b.soon ? esc(dTxt(b.soon.days, s.staff_id)) + '（' + esc(ymdJa(b.soon.expires)) + ' まで）' : '<span class="raw">—</span>';
       var ob = sm.obligation;
       return '<tr><td>' + esc(dispName(s)) + '</td><td>' + hire + '</td><td>' + wk + '</td><td>' + nx + '</td><td class="num">' + rem + '</td><td>' + soon + '</td><td class="num">' + (ob.state === 'none' ? '<span class="raw">—</span>' : esc(String(ob.used)) + ' 日') + '</td><td>' + obTag(ob) + '</td>' +
         '<td class="no-print"><button type="button" class="btn sm" data-act="lv-open" data-sid="' + esc(s.staff_id) + '">開く</button></td></tr>';
@@ -906,7 +939,9 @@
   /* v5（2026-11-20）: 給与が比べている legalInOverMin・over60Min・nightShiftCount・schedDays と記号ごとの回数（counts）も比べる。控えに無い鍵（古い控え）は比べない。
      丸める前の値（legalOverRawMin・holidayRawMin）は36協定の判定だけに使うので比べない */
   var SNAP_KEYS = ['workDays', 'paidDays', 'workMin', 'schedInMin', 'overtimeMin', 'legalOverMin', 'nightMin', 'lateCount', 'lateMin', 'earlyLeaveCount', 'earlyLeaveMin', 'noPunchDays', 'reviewCount', 'absentDays', 'paidMin', 'uncountedMin', 'holidayMin',
-    'legalInOverMin', 'over60Min', 'nightShiftCount', 'schedDays'];
+    'legalInOverMin', 'over60Min', 'nightShiftCount', 'schedDays',
+    /* v5 段4: 休暇の種類（控えに入れた鍵）。段4 より前の控えには無いので比べない（上の typeof の確かめ） */
+    'hourlyPaidMin', 'specialPaidMin', 'specialPaidDays', 'specialUnpaidDays', 'compDays'];
   /* 記号ごとの回数を比べる（0 より大きい回数だけ・給与の画面の attSame と同じ見方） */
   function countsOf(c) { var o = {}; if (c && typeof c === 'object' && !Array.isArray(c)) for (var k in c) { var n = Number(c[k]); if (isFinite(n) && n > 0) o[k] = Math.round(n); } return o; }
   function sameCounts(a, b) {
@@ -1903,7 +1938,7 @@
       var st = it.auto ? ST_JA[g.status] : (v ? '取り消し: ' + (g.void_reason || '') : '数える');
       if (lot) st = lot.state === 'expired' ? '期限切れ' : lot.state === 'future' ? 'これから' : '使える';
       return '<tr><td class="' + (v ? 'void' : '') + '">' + esc(ymdJa(g.grant_date)) + '</td><td class="num ' + (v ? 'void' : '') + '">' + esc(String(+g.days)) + '</td><td>' + esc(KIND_JA[kind]) + (it.auto && g.proportional ? '（比例）' : '') + '</td><td>' + esc(ymdJa(L.expiresOf(g.grant_date))) + '</td>' +
-        '<td class="num">' + (lot ? esc(nTxt(lot.used)) : '') + '</td><td class="num">' + (lot ? esc(nTxt(lot.remain)) : '') + '</td><td>' + esc(st) + (!it.auto && g.note ? '<span class="raw">・' + esc(g.note) + '</span>' : '') + '</td>' +
+        '<td class="num">' + (lot ? esc(nTxt(lot.used, sid)) : '') + '</td><td class="num">' + (lot ? esc(nTxt(lot.remain, sid)) : '') + '</td><td>' + esc(st) + (!it.auto && g.note ? '<span class="raw">・' + esc(g.note) + '</span>' : '') + '</td>' +
         '<td>' + (!it.auto && !v ? '<button type="button" class="btn sm ng" data-act="lv-grant-void" data-id="' + esc(g.id) + '">取り消す</button>' : '') + '</td></tr>';
     }).join('');
     var voidU = leaveSt.manual.filter(function (u) { return u && u.staff_id === sid && u.voided_at; }).map(function (u) { return { use_date: u.use_date, days: +u.days, src: 'manual', id: u.id, note: u.note || '', voided: true, why: u.void_reason || '' }; });
@@ -1917,7 +1952,7 @@
     var ob = sm.obligation;
     dlgCtx = { mode: 'leave', sid: sid, rev: x.prof ? x.prof.rev || 0 : 0, prof: p };
     var b = '<div class="kv"><span>入職日</span><b>' + (sm.hire ? esc(ymdJa(sm.hire)) : '分かりません') + (x.m && x.m.hire_date ? '<span class="raw">（職員マスタ ' + esc(ymdJa(x.m.hire_date)) + '）</span>' : '') + '</b>' +
-      '<span>残り</span><b>' + esc(dTxt(bal.remain)) + (bal.soon ? '（期限の近い分 ' + esc(dTxt(bal.soon.days)) + '・' + esc(ymdJa(bal.soon.expires)) + ' まで）' : '') + (bal.over ? '<span class="tag ng">付与の無い使用 ' + esc(dTxt(bal.over)) + '</span>' : '') + '</b>' +
+      '<span>残り</span><b>' + esc(dTxt(bal.remain, sid)) + (bal.soon ? '（期限の近い分 ' + esc(dTxt(bal.soon.days, sid)) + '・' + esc(ymdJa(bal.soon.expires)) + ' まで）' : '') + (bal.over ? '<span class="tag ng">付与の無い使用 ' + esc(dTxt(bal.over, sid)) + '</span>' : '') + '</b>' +
       '<span>次の付与</span><b>' + (sm.next ? esc(ymdJa(sm.next.grant_date)) + '　' + esc(String(sm.next.days)) + ' 日' : '—') + '</b>' +
       '<span>年5日</span><b>' + (ob.state === 'none' ? '対象外（10日以上の付与がまだありません）' : esc(ymdJa(ob.grant_date)) + '〜' + esc(ymdJa(ob.end)) + ' に ' + esc(String(ob.used)) + ' 日' + (ob.planned ? '（この先の予定 ' + esc(String(ob.planned)) + ' 日）' : '') + ' ' + obTag(ob) +
         (ob.beforeOpening ? '<br><span class="help">移行日（' + esc(ymdJa(ob.beforeOpening)) + '）より前の使用は記録に無いため数えていません。その分は本人の記録で確かめてください。</span>' : '')) + '</b></div>' +
@@ -1948,7 +1983,7 @@
   /* v5 段4: 有給の窓の「休暇」（時間単位の有休・特別休暇・代休・振替休日）を入れる欄と、読んだ月分の一覧（取り消しは理由が必ず）。
      種類に合わない欄は隠す（data-ak に使う種類を並べる・absKindShow）。時間単位の有休は設定で使うにした時だけ選べる */
   function absFieldset(sid, x) {
-    var cfgL = lvCfg(), dh = cfgL.dayHours, lts = C.leaveTypesOf(cfgL), td = today();
+    var cfgL = lvCfg(), dh = staffDayMin(sid) / 60, lts = C.leaveTypesOf(cfgL), td = today();   /* 1日の時間は人ごと（反証レビュー） */
     var kinds = (cfgL.hourlyPaidLeave ? [['hourly_paid', '時間単位の有休']] : []).concat([['special', '特別休暇'], ['comp', '代休'], ['swap', '振替休日']]);
     var hrs = []; for (var hh = 1; hh <= dh; hh++) hrs.push('<option value="' + hh + '">' + hh + '時間</option>');
     var list = (leaveSt.absences || []).filter(function (a) { return a && a.staff_id === sid; }).sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; });
@@ -1968,7 +2003,7 @@
       '<label data-ak="comp">代休の元の日（休日に働いた日） <input type="date" id="lv-a-comp"></label>' +
       '<label data-ak="swap">振替で働く日 <input type="date" id="lv-a-swap"></label>' +
       '<label>メモ <input type="text" id="lv-a-note" maxlength="200"></label><button type="button" class="btn sm" data-act="lv-abs-add">休暇を入れる</button></div>' +
-      '<p class="help">特別休暇の種類と有給か無給かは「設定」で決めます。代休は無給で数えます。振替休日は、休む日の勤務の予定を数えず（欠勤・打刻なしにしません）、働く日が法定休日の曜日なら、休む日を法定休日として数えます。' +
+      '<p class="help">' + esc('休暇は来月分（' + ymdJa(absMaxDate()) + ' まで）の日付で入れられます。') + '特別休暇の種類と有給か無給かは「設定」で決めます。代休は無給で数えます。振替休日は、休む日の勤務の予定を数えず（欠勤・打刻なしにしません）、働く日が法定休日の曜日なら、休む日を法定休日として数えます。' +
       (cfgL.hourlyPaidLeave ? '時間単位の有休は1日＝' + dh + '時間で日数に直して有給の残りから引き、1年（付与日から）に5日分（' + (dh * 5) + '時間）までです（年5日の取得義務には数えません）。' + (yr && yr.from ? '今の1年（' + ymdJa(yr.from) + '〜' + ymdJa(yr.to) + '）は ' + (yr.usedMin / 60) + '時間使っています。' : '') : '') +
       '締めた月分の日は入れられません。一覧は有給のために読んだ月分の行です。</p>' +
       '<div class="tw"><table><thead><tr><th>日</th><th>種類</th><th>中身</th><th>メモ</th><th></th></tr></thead><tbody>' + (rows || '<tr><td colspan="5" class="empty">休暇はまだありません</td></tr>') + '</tbody></table></div></fieldset>';
@@ -2016,12 +2051,16 @@
   function numOrNull(v) { return v === '' || v == null ? null : +v; }
   function leaveAct(act, btn) {
     if (!dlgCtx || dlgCtx.mode !== 'leave' || busy) return;
-    var ctx = dlgCtx, msg = $('e-msg'), reason = ($('lv-reason').value || '').trim(), call = null, at = null, at2 = null, then2 = null, isAbs = false;
+    var ctx = dlgCtx, msg = $('e-msg'), reason = ($('lv-reason').value || '').trim(), call = null, at = null, at2 = null, then2 = null, isAbs = false, warnAfter = '';
     var needR = function () { if (!reason) { msg.textContent = '理由を書いてください。'; $('lv-reason').focus(); return false; } return true; };
     if (act === 'lv-use-add') {
       var ud = $('lv-u-date').value, un = +$('lv-u-days').value;
       if (!L.isDate(ud)) { msg.textContent = '使用の日付を入れてください。'; return; }
       /* 打刻（実働）がある日は確かめる（止めはしない・反証レビュー 2026-11-20） */
+      /* 同じ日の時間単位の有休・有給の特別休暇と合わせて1日の時間を超える使用は止める（DB も dup で断る・反証レビュー） */
+      var dmU = staffDayMin(ctx.sid);
+      var hasU = (leaveSt.manual || []).some(function (u) { return u && !u.voided_at && u.staff_id === ctx.sid && u.use_date === ud; });   /* 同じ日の使用がもうある時は DB の dup の文に任せる */
+      if (!hasU && paidMinOn(ctx.sid, ud, dmU) + Math.round((un === 0.5 ? 0.5 : 1) * dmU) > dmU) { msg.textContent = ABS_OVER; return; }
       var wm = workedMin(ctx.sid, ud);
       if (wm > 0 && !confirm(nameOf(ctx.sid) + ' さんは ' + md(ud) + ' に打刻があります（実働 ' + fm(wm) + '）。この日を有休にしますか？')) return;
       call = ['kintai_leave_use_add', { p_staff_id: ctx.sid, p_use_date: ud, p_days: un === 0.5 ? 0.5 : 1, p_note: ($('lv-u-note').value || '').trim() }]; at = ud;
@@ -2045,12 +2084,14 @@
       call = ['kintai_leave_grant_void', { p_id: btn.getAttribute('data-id'), p_reason: reason }];
     } else if (act === 'lv-abs-add') {
       /* v5 段4: 休暇を入れる（形の確かめは DB も同じ決まりで断る） */
-      var ak = $('lv-a-kind').value, ad = $('lv-a-date').value, cfgL = lvCfg(), dmin = cfgL.dayHours * 60;
+      var ak = $('lv-a-kind').value, ad = $('lv-a-date').value, cfgL = lvCfg(), dmin = staffDayMin(ctx.sid), dhP = dmin / 60;   /* 1日の時間は人ごと（反証レビュー） */
       var args = { p_staff_id: ctx.sid, p_date: ad, p_kind: ak, p_minutes: null, p_paid: null, p_type_code: null, p_link_date: null, p_note: ($('lv-a-note').value || '').trim() };
       if (!L.isDate(ad)) { msg.textContent = '休暇の日付（休む日）を入れてください。'; return; }
+      var amax = absMaxDate();
+      if (ad > amax) { msg.textContent = ABS_LATE; return; }
       if (ak === 'hourly_paid') {
         var hh = +$('lv-a-hours').value;
-        if (!(hh >= 1 && hh <= cfgL.dayHours && Math.floor(hh) === hh)) { msg.textContent = '時間は1時間きざみで、1日の所定の時間（' + cfgL.dayHours + '時間）までで入れてください。'; return; }
+        if (!(hh >= 1 && hh <= dhP && Math.floor(hh) === hh)) { msg.textContent = '時間は1時間きざみで、1日の所定の時間（' + dhP + '時間）までで入れてください。'; return; }
         args.p_minutes = hh * 60; args.p_paid = true;
         /* 年の上限（5日分）は画面で確かめる（付与日は画面が数えるため・仮置き） */
         var sx = staffById(ctx.sid), lx = sx ? leaveOf(sx) : null, yr = lx ? L.hourlyYear(lx.sm.lots, lx.uses, ad, dmin) : null;
@@ -2068,8 +2109,13 @@
       } else if (ak === 'swap') {
         var sl = $('lv-a-swap').value;
         if (!L.isDate(sl) || sl === ad) { msg.textContent = '振替で働く日を、休む日と別の日で入れてください。'; return; }
+        if (sl > amax) { msg.textContent = ABS_LATE; return; }
         args.p_link_date = sl;
+        /* 働く日にその人の予定が無い時は注意だけを出す（止めない・予定は「予定を直す」で手で入れる＝A・仮置き） */
+        if (schedOnDay(ctx.sid, sl) === false) warnAfter = '働く日に予定がありません。出勤予定を「予定を直す」で入れてください。';
       } else { msg.textContent = '休暇の種類を選んでください。'; return; }
+      /* 同じ日の有給の休みが1日の時間を超える足しは止める（DB も dup で断る・反証レビュー） */
+      if ((ak === 'hourly_paid' || (ak === 'special' && args.p_paid)) && paidMinOn(ctx.sid, ad, dmin) + (args.p_minutes != null ? args.p_minutes : dmin) > dmin) { msg.textContent = ABS_OVER; return; }
       call = ['kintai_absence_add', args]; at = ad; at2 = args.p_link_date; isAbs = true;
     } else if (act === 'lv-abs-void') {
       if (!needR()) return;
@@ -2100,10 +2146,12 @@
     busy = true; msg.textContent = '保存しています…';
     var restore = pressBusy(btn, '保存しています…', $('g-dlg-b'));
     rpc(call[0], call[1]).then(okOr).then(function () { return then2 ? rpc(then2[0], then2[1]).then(okOr) : null; }).then(function () {
-      busy = false; toast('保存しました（' + nameOf(ctx.sid) + ' さんの有給）');
+      busy = false; toast('保存しました（' + nameOf(ctx.sid) + ' さんの有給）' + (warnAfter ? '。' + warnAfter : ''));
       /* v5 段4: 休暇の行は月の読み出しにだけ入るので、その日の月分を読み直してから有給を数え直す */
       var p2 = isAbs ? refreshAbsMonths([at, at2]).then(function () { return loadLeave(false); }) : loadLeave(false);
       if ((at && inPer(at)) || (at2 && inPer(at2))) p2 = p2.then(function () { return load(false); });   /* 手入力の有休・休暇はこの月分の計算にも入る（L8・v5 段4） */
+      /* 開き直した窓にも注意を残す（知らせは消えるため） */
+      if (warnAfter) p2 = p2.then(function () { if ($('g-dlg').open && dlgCtx && dlgCtx.mode === 'leave' && $('e-msg')) $('e-msg').textContent = warnAfter; });
       return p2;
     })['catch'](function (e) { busy = false; restore(); note('有給の保存', e); var em = isAbs ? absMsg(e) : leaveMsg(e); if ($('g-dlg').open && $('e-msg') === msg) msg.textContent = em; else toast('保存できませんでした: ' + em); });
   }
@@ -2324,11 +2372,11 @@
       var x = leaveOf(s), sm = x.sm, led = G.ledgerOf({ lots: sm.lots, uses: x.uses, asOf: td, openingDate: sm.opening });
       var rows = led.rows.map(function (r) {
         var hourTxt = r.takenHourMin ? fm(r.takenHourMin) : '';
-        return '<tr><td>' + esc(ymdJa(r.base)) + (r.kind === 'opening' ? '<br>（移行の残り）' : '') + '</td><td class="num">' + esc(nTxt(r.days)) + '</td><td>' + esc(ymdJa(r.base)) + '〜' + esc(ymdJa(r.until)) + '</td>' +
+        return '<tr><td>' + esc(ymdJa(r.base)) + (r.kind === 'opening' ? '<br>（移行の残り）' : '') + '</td><td class="num">' + esc(nTxt(r.days, s.staff_id)) + '</td><td>' + esc(ymdJa(r.base)) + '〜' + esc(ymdJa(r.until)) + '</td>' +
           '<td class="lg-dates">' + (r.taken.length ? esc(r.taken.map(takenTxt).join('、')) : '—') + (r.planned.length ? '<br>予定: ' + esc(r.planned.map(takenTxt).join('、')) : '') + '</td>' +
-          '<td class="num">' + esc(nTxt(r.takenDays)) + '</td><td class="num">' + esc(hourTxt) + '</td><td class="num">' + esc(nTxt(r.remain)) + '</td></tr>';
+          '<td class="num">' + esc(nTxt(r.takenDays, s.staff_id)) + '</td><td class="num">' + esc(hourTxt) + '</td><td class="num">' + esc(nTxt(r.remain, s.staff_id)) + '</td></tr>';
       }).join('');
-      return '<section class="lg-p"><h3 class="lg-n">' + esc(dispName(s)) + ' さん</h3><p class="lg-m">入職日 ' + esc(sm.hire ? ymdJa(sm.hire) : '分かりません') + (sm.opening ? '・移行日 ' + esc(ymdJa(sm.opening)) + '（この日より前の取得は記録にありません）' : '') + '・今の残り ' + esc(dTxt(sm.balance.remain)) + '</p>' +
+      return '<section class="lg-p"><h3 class="lg-n">' + esc(dispName(s)) + ' さん</h3><p class="lg-m">入職日 ' + esc(sm.hire ? ymdJa(sm.hire) : '分かりません') + (sm.opening ? '・移行日 ' + esc(ymdJa(sm.opening)) + '（この日より前の取得は記録にありません）' : '') + '・今の残り ' + esc(dTxt(sm.balance.remain, s.staff_id)) + '</p>' +
         '<table class="lg-t"><thead><tr><th>基準日</th><th class="num">付与日数</th><th>期間</th><th>取得した日（時季）</th><th class="num">取得日数</th><th class="num">時間単位</th><th class="num">残り</th></tr></thead><tbody>' +
         (rows || '<tr><td colspan="7">付与はまだありません</td></tr>') + '</tbody></table></section>';
     }).join('');

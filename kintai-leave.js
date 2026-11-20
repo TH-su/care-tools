@@ -226,11 +226,12 @@
      dayMin＝1日の所定の時間（分）。日数＝分÷dayMin（例 8時間の所定で2時間は 0.25 日）。取り消した行・形の違う行は入れない。同じ id は1つ
      返す: [{ staff_id, use_date, days, minutes, src:'hourly', id, note }]（職員・日付の順） */
   function hourlyUses(absences, dayMin) {
-    var dm = num(dayMin), out = [], seen = {};
-    if (!(dm > 0)) return out;
+    /* dayMin は数か、職員ごとの1日の分を返す関数（反証レビュー 2026-11-20: 1日の時間は人ごと） */
+    var dmOf = typeof dayMin === 'function' ? function (sid) { return num(dayMin(sid)); } : function () { return num(dayMin); }, out = [], seen = {};
     (Array.isArray(absences) ? absences : []).forEach(function (a) {
       if (!a || a.voided_at || a.kind !== 'hourly_paid' || typeof a.staff_id !== 'string' || !isDate(a.date)) return;
       var mn = num(a.minutes); if (!(mn > 0 && mn % 60 === 0)) return;
+      var dm = dmOf(a.staff_id); if (!(dm > 0)) return;
       var key = a.id ? 'i:' + a.id : 'k:' + a.staff_id + '|' + a.date;
       if (seen[key]) return; seen[key] = 1;
       out.push({ staff_id: a.staff_id, use_date: a.date, days: mn / dm, minutes: mn, src: 'hourly', id: a.id || null, note: a.note || '' });
@@ -239,15 +240,24 @@
     return out;
   }
   /* v5 段4: 時間単位の有休の年の上限（5日分）の確かめ。date を含む1年（その日以前でいちばん新しい付与日から1年・付与が無ければその年の1月1日から・仮置き）の
-     時間単位の使用（分）を数える。lots は今日までの付与なので、先の日付で1年を過ぎる時は、その付与日から1年ずつ進めた年で数える（次の付与日の見込み・仮置き）。
+     時間単位の使用（分）を数える（起点は自動の付与日・無ければ移行の残りの付与日）。lots は今日までの付与なので、先の日付で1年を過ぎる時は、その付与日から1年ずつ進めた年で数える（次の付与日の見込み・仮置き）。
      返す: { from, to, usedMin, capMin }（capMin＝5×1日の所定の時間） */
   function hourlyYear(lots, uses, date, dayMin) {
-    var base = null;
-    (lots || []).forEach(function (g) { if (g && !g.voided_at && isDate(g.grant_date) && g.grant_date <= date && (!base || g.grant_date > base)) base = g.grant_date; });
+    /* 反証レビュー（2026-11-20）: 1年の起点は自動の付与日（基準日）だけ。手で足した付与（manual）では始まり直さない。
+       その日以前に自動の付与が無い人は、移行の残り（opening）の付与日を起点にする（仮置き）。uses の分は1人分・dayMin はその人の1日の分 */
+    var latest = function (kind) { var x = null; (lots || []).forEach(function (g) { if (g && !g.voided_at && g.kind === kind && isDate(g.grant_date) && g.grant_date <= date && (!x || g.grant_date > x)) x = g.grant_date; }); return x; };
+    var base = latest('auto') || latest('opening');
     var from = base || (isDate(date) ? date.slice(0, 4) + '-01-01' : null), to = from ? periodEnd(from, 12) : null, usedMin = 0;
     for (var k = 1; from && to < date && k <= 10; k++) { var b0 = base || from; from = addMonths(b0, 12 * k); to = periodEnd(b0, 12 * (k + 1)); }
     (uses || []).forEach(function (u) { if (u && u.src === 'hourly' && !u.voided_at && from && u.use_date >= from && u.use_date <= to) usedMin += num(u.minutes) || 0; });
     return { from: from, to: to, usedMin: usedMin, capMin: 5 * (num(dayMin) || 480) };
+  }
+  /* 反証レビュー（2026-11-20）: 1日の時間は人ごと。有給の設定に週の所定時間と週の所定日数がそろう人は「週の所定時間÷週の所定日数」（時間に切り上げ・1〜24・仮置き）、
+     無い人は設定の1日の所定の時間（dayHours）。返すのは分。DB の判定（private.kintai_day_min）と同じ決まり */
+  function dayMinOf(profile, dayHours) {
+    var wd = num(profile && profile.weekly_days), wh = num(profile && profile.weekly_hours), dh = num(dayHours);
+    if (wd > 0 && wh > 0) { var h = Math.ceil(Math.round(wh / wd * 1e6) / 1e6); if (h >= 1 && h <= 24) return h * 60; }
+    return (dh >= 1 && dh <= 24 ? Math.ceil(dh) : 8) * 60;
   }
   /* v5 段4: 日数（小数を含む）を「9 日 7 時間」の形にする（dayMin＝1日の分）。半日きざみの値は今までどおり「9.5 日」 */
   function daysHm(v, dayMin) {
@@ -267,7 +277,7 @@
   var api = {
     NORMAL: NORMAL, PROP: PROP, isDate: isDate, addDays: addDays, addMonths: addMonths, diffDays: diffDays, expiresOf: expiresOf,
     hireOf: hireOf, openingOf: openingOf, periodEnd: periodEnd, autoGrants: autoGrants, nextGrant: nextGrant, lotsOf: lotsOf, balance: balance, obligation5: obligation5,
-    usesFromMonth: usesFromMonth, summary: summary, needsWeekly: needsWeekly, hourlyUses: hourlyUses, hourlyYear: hourlyYear, daysHm: daysHm
+    usesFromMonth: usesFromMonth, summary: summary, needsWeekly: needsWeekly, hourlyUses: hourlyUses, hourlyYear: hourlyYear, daysHm: daysHm, dayMinOf: dayMinOf
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.KintaiLeave = api;
