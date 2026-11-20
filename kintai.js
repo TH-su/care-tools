@@ -102,6 +102,7 @@
     badperiod: 'この月分の期間を決められませんでした。管理者に知らせてください。', overlap: 'ほかの締めた月分と期間が重なるため締められません。管理者に知らせてください。',
     closeday: '締めた月分と期間が重なるため、締め日を変えられません。',
     periodchanged: 'この月分の期間が、画面を開いた後に変わりました（締め日の変更など）。読み直してから、もう一度締めてください。',
+    toolong: '表示名は60字までです。',
     dup: 'その職員マスタの人は、もう別の職員と結んであります（同じ日の有休の使用も1つまでです）。読み直してから確かめてください。', baddays: '日数の形が違います（使用は 1日か半日・付与は 0.5〜40 日）。',
     nomaster: '職員マスタにその人が見つかりませんでした。職員マスタを読み直してください。', masterrow: '職員マスタから足した職員には、別の職員マスタの人を結べません。',
     master: '職員マスタから足した人には、別の職員マスタの人を結べません。', badnote: 'メモが長すぎます（200字まで）。',
@@ -233,6 +234,8 @@
       paintPer();
       editsCache = null;
       paint();
+      /* 職員の並び（入職順）に職員マスタの入職日を使うので、まだ読んでいなければ裏で読む（読めない時は番号の順のまま） */
+      if (!masterSt && !masterBusy) loadMaster();
     })['catch'](function (e) {
       if (my !== gen) return;
       note('読み込み', e);
@@ -254,7 +257,8 @@
       for (k in br) if (typeof br[k] === 'number') cfg[k] = br[k];
     }
     /* 今の時刻を渡す（勤務中・まだ出勤していないの印が時刻で変わる・v2） */
-    month = C.computeMonth({ ym: ym, period: data.period, staff: data.staff || [], schedule: data.schedule || [], punches: data.punches || [], days: data.days || [], leave_uses: data.leave_uses, config: cfg, lockedAt: data.month && data.month.locked_at, now: Date.now() });
+    /* 職員の並びは「職員と番号」の表と同じ入職順（staffSorted・2026-11-20 代表者の指示）。日ごと・要確認・月の一覧・個人の月の選択肢はこの並びになる */
+    month = C.computeMonth({ ym: ym, period: data.period, staff: staffSorted(), schedule: data.schedule || [], punches: data.punches || [], days: data.days || [], leave_uses: data.leave_uses, config: cfg, lockedAt: data.month && data.month.locked_at, now: Date.now() });
   }
 
   /* ── 描画 ── */
@@ -325,13 +329,13 @@
     month.people.forEach(function (p) {
       var d = p.days.filter(function (x) { return x.date === selDate; })[0];
       if (!d) return;
-      if (!d.blocks.length && d.paidMin && !dayFilter && (!officeFilter || p.staff.office === officeFilter)) rows.push('<tr><td>' + esc(p.staff.name) + '</td><td>' + esc(officeName(p.staff.office)) + '</td><td>有休</td><td></td><td></td><td class="num"></td><td class="num">' + fm(0) + '</td><td></td><td></td></tr>');
+      if (!d.blocks.length && d.paidMin && !dayFilter && (!officeFilter || p.staff.office === officeFilter)) rows.push('<tr><td>' + esc(dispName(p.staff)) + '</td><td>' + esc(officeName(p.staff.office)) + '</td><td>有休</td><td></td><td></td><td class="num"></td><td class="num">' + fm(0) + '</td><td></td><td></td></tr>');
       d.blocks.forEach(function (b, bi) {
         if (officeFilter && b.office !== officeFilter) return;
         var k = kindsOf(b);
         for (var key in cnt) if (k[key]) cnt[key]++;
         if (dayFilter && !k[dayFilter]) return;
-        rows.push('<tr><td>' + esc(p.staff.name) + '</td><td>' + esc(officeName(b.office)) + '</td><td>' + schedText(b) + '</td><td class="raw">' + esc(rawPunches(b)) + '</td><td>' + countText(b) + '</td><td class="num">' + b.breakMin + '</td><td class="num">' + fm(b.workMin) + '</td><td>' + flagTags(b.flags, b.checked) + '</td>' +
+        rows.push('<tr><td>' + esc(dispName(p.staff)) + '</td><td>' + esc(officeName(b.office)) + '</td><td>' + schedText(b) + '</td><td class="raw">' + esc(rawPunches(b)) + '</td><td>' + countText(b) + '</td><td class="num">' + b.breakMin + '</td><td class="num">' + fm(b.workMin) + '</td><td>' + flagTags(b.flags, b.checked) + '</td>' +
           '<td class="no-print"><button type="button" class="btn sm" data-act="edit" data-sid="' + esc(p.staff.staff_id) + '" data-date="' + esc(selDate) + '" data-bi="' + bi + '">直す</button></td></tr>');
       });
     });
@@ -352,7 +356,7 @@
   }
 
   /* 要確認の一覧（v2・C-2）: 月の要確認を日付順に1列 */
-  function nameOf(sid) { var p = personOf(sid); return p ? p.staff.name : sid; }
+  function nameOf(sid) { var p = personOf(sid); return p ? dispName(p.staff) : sid; }
   function paintReview() {
     var list = C.reviewList(month);
     if (!list.length) return printHead('要確認の一覧') + '<div class="cd"><div class="band ok" role="status">要確認はありません。締めに進めます。</div><div class="row no-print"><button type="button" class="btn" data-tab="close">締めと出力へ</button></div></div>';
@@ -373,13 +377,13 @@
       '<th class="num sr sr3">出勤</th><th class="num sr sr2">総労働</th><th class="num">残業</th><th class="num">法定外</th><th class="num">深夜</th><th class="num">有休</th><th class="num sr sr1">要確認</th></tr>';
     var body = month.people.filter(function (p) { return (!onlyReview || p.sum.reviewCount > 0) && personVisible(p); }).map(function (p) {
       var by = {}; p.days.forEach(function (d) { by[d.date] = d; });
-      return '<tr><td class="nm"><button type="button" class="btn sm" data-act="person" data-sid="' + esc(p.staff.staff_id) + '">' + esc(p.staff.name) + '</button></td>' + ds.map(function (x) {
+      return '<tr><td class="nm"><button type="button" class="btn sm" data-act="person" data-sid="' + esc(p.staff.staff_id) + '">' + esc(dispName(p.staff)) + '</button></td>' + ds.map(function (x) {
         var d = by[x];
         if (!d) return '<td></td>';
         var rvb = d.blocks.filter(function (b) { return C.needsReview(b); });
         var rv = rvb.length > 0, np = rvb.some(function (b) { return b.flags.some(function (f) { return RED[f]; }); }), wk = d.blocks.some(function (b) { return b.working; });
         var txt = d.workMin ? fm(d.workMin) : (d.paidMin ? '有' : (d.absent ? '欠' : (np ? '✕' : (wk ? '勤' : ''))));
-        return '<td class="' + (np ? 'np' : rv ? 'rv' : wk ? 'wk' : '') + '"><button type="button" class="btn sm" style="min-height:32px;padding:0 4px;border:0;background:none;color:inherit" data-act="edit" data-sid="' + esc(p.staff.staff_id) + '" data-date="' + x + '" aria-label="' + esc(p.staff.name + ' ' + x + ' を直す') + '">' + txt + '</button></td>';
+        return '<td class="' + (np ? 'np' : rv ? 'rv' : wk ? 'wk' : '') + '"><button type="button" class="btn sm" style="min-height:32px;padding:0 4px;border:0;background:none;color:inherit" data-act="edit" data-sid="' + esc(p.staff.staff_id) + '" data-date="' + x + '" aria-label="' + esc(dispName(p.staff) + ' ' + x + ' を直す') + '">' + txt + '</button></td>';
       }).join('') + '<td class="num sr sr3">' + p.sum.workDays + '</td><td class="num sr sr2">' + fm(p.sum.workMin) + '</td><td class="num">' + fm(p.sum.overtimeMin) + '</td><td class="num">' + fm(p.sum.legalOverMin) + '</td><td class="num">' + fm(p.sum.nightMin) + '</td><td class="num">' + p.sum.paidDays + '</td><td class="num sr sr1">' + p.sum.reviewCount + '</td></tr>';
     }).join('');
     return printHead('月の一覧') + '<div class="cd"><div class="row no-print"><label><input type="checkbox" id="g-only"' + (onlyReview ? ' checked' : '') + '> 要確認がある人だけ</label>' + officeSelect() + '<button type="button" class="btn sm" data-act="print">印刷</button>' +
@@ -414,28 +418,28 @@
     if (printAll) {
       /* 全員分の印刷（1人1ページ） */
       /* 休止中で記録の無い人は出さない */
-      return month.people.filter(function (p) { return p.days.length || p.staff.active !== false; }).map(function (p) { return '<div class="pg">' + printHead(p.staff.name + ' さん') + '<div class="cd">' + personHtml(p) + '</div></div>'; }).join('');
+      return month.people.filter(function (p) { return p.days.length || p.staff.active !== false; }).map(function (p) { return '<div class="pg">' + printHead(dispName(p.staff) + ' さん') + '<div class="cd">' + personHtml(p) + '</div></div>'; }).join('');
     }
     if (!selStaff || !personOf(selStaff)) selStaff = month.people.length ? month.people[0].staff.staff_id : null;
-    var sel = '<label>職員 <select id="g-staff">' + month.people.map(function (p) { return '<option value="' + esc(p.staff.staff_id) + '"' + (p.staff.staff_id === selStaff ? ' selected' : '') + '>' + esc(p.staff.name) + '</option>'; }).join('') + '</select></label>';
+    var sel = '<label>職員 <select id="g-staff">' + month.people.map(function (p) { return '<option value="' + esc(p.staff.staff_id) + '"' + (p.staff.staff_id === selStaff ? ' selected' : '') + '>' + esc(dispName(p.staff)) + '</option>'; }).join('') + '</select></label>';
     var p = personOf(selStaff);
     if (!p) return '<div class="cd"><p class="empty">職員がいません。「職員と番号」でシフトから取り込んでください。</p></div>';
-    return printHead(p.staff.name + ' さん') + '<div class="cd"><div class="row no-print">' + sel + '<button type="button" class="btn sm" data-act="addday">予定の無い日に打刻を足す</button><button type="button" class="btn sm" data-act="work-open">勤務時間を手で入れる</button><button type="button" class="btn sm" data-act="print">印刷</button><button type="button" class="btn sm" data-act="print-all">全員分を印刷（1人1ページ）</button></div>' +
+    return printHead(dispName(p.staff) + ' さん') + '<div class="cd"><div class="row no-print">' + sel + '<button type="button" class="btn sm" data-act="addday">予定の無い日に打刻を足す</button><button type="button" class="btn sm" data-act="work-open">勤務時間を手で入れる</button><button type="button" class="btn sm" data-act="print">印刷</button><button type="button" class="btn sm" data-act="print-all">全員分を印刷（1人1ページ）</button></div>' +
       personHtml(p) + '</div>';
   }
 
   function paintStaff() {
     var list = staffSorted();
     var rows = list.map(function (s) {
-      return '<tr><td>' + esc(s.name) + '</td><td>' + esc(officeName(s.office)) + '</td><td class="num"><b>' + esc(s.code) + '</b></td><td>' + esc(s.emp_code || '') + (s.emp_code ? '' : '<span class="tag rv">従業員コードなし</span>') + '</td><td>' + (s.active === false ? '<span class="tag">休止中</span>' : '') + '</td>' +
+      return '<tr><td>' + esc(dispName(s)) + (s.display_name ? '<br><span class="raw">シフトの名前：' + esc(s.name) + '</span>' : '') + '</td><td>' + esc(officeName(s.office)) + '</td><td class="num"><b>' + esc(s.code) + '</b></td><td>' + esc(s.emp_code || '') + (s.emp_code ? '' : '<span class="tag rv">従業員コードなし</span>') + '</td><td>' + (s.active === false ? '<span class="tag">休止中</span>' : '') + '</td>' +
         staffMasterCells(s) +
-        '<td class="no-print"><button type="button" class="btn sm" data-act="recode" data-sid="' + esc(s.staff_id) + '"' + (isLocked() ? '' : '') + '>番号を振り直す</button>' + staffMasterBtns(s) + '</td></tr>';
+        '<td class="no-print"><button type="button" class="btn sm" data-act="recode" data-sid="' + esc(s.staff_id) + '"' + (isLocked() ? '' : '') + '>番号を振り直す</button><button type="button" class="btn sm" data-act="dname" data-sid="' + esc(s.staff_id) + '">表示名を変える</button>' + staffMasterBtns(s) + '</td></tr>';
     }).join('');
     var w = shiftInfo && shiftInfo.ok && shiftInfo.warnings.length ? '<div class="cd"><h2 style="font-size:16px;margin:0 0 8px">シフトの記号で気になる所</h2><div class="tw"><table><thead><tr><th>職員</th><th>日</th><th>内容</th></tr></thead><tbody>' +
-      shiftInfo.warnings.map(function (x) { var s = (data.staff || []).filter(function (y) { return y.staff_id === x.staff_id; })[0]; return '<tr><td>' + esc(s ? s.name : x.staff_id) + '</td><td>' + esc(x.date) + '</td><td>' + esc(x.msg) + '</td></tr>'; }).join('') + '</tbody></table></div></div>' : '';
-    var printable = (data.staff || []).filter(function (s) { return s.active !== false; }).slice().sort(function (a, b) { return a.code < b.code ? -1 : 1; });
+      shiftInfo.warnings.map(function (x) { var s = (data.staff || []).filter(function (y) { return y.staff_id === x.staff_id; })[0]; return '<tr><td>' + esc(s ? dispName(s) : x.staff_id) + '</td><td>' + esc(x.date) + '</td><td>' + esc(x.msg) + '</td></tr>'; }).join('') + '</tbody></table></div></div>' : '';
+    var printable = staffSorted().filter(function (s) { return s.active !== false; });   /* 入職順（2026-11-20） */
     return printHead('打刻の番号') + '<div class="print-only"><h2>打刻の番号（本人にだけ伝えてください）</h2><table><thead><tr><th>番号</th><th>氏名</th></tr></thead><tbody>' +
-      printable.map(function (s) { return '<tr><td>' + esc(s.code) + '</td><td>' + esc(s.name) + '</td></tr>'; }).join('') + '</tbody></table></div>' +
+      printable.map(function (s) { return '<tr><td>' + esc(s.code) + '</td><td>' + esc(dispName(s)) + '</td></tr>'; }).join('') + '</tbody></table></div>' +
       masterHtml() +
       '<div class="cd no-print"><div class="row"><button type="button" class="btn sm" data-act="import">シフトから職員と予定を取り込む</button><button type="button" class="btn sm" data-act="print">番号の表を印刷（番号と名前だけ・休止中の人は出しません）</button></div>' +
       '<p class="help">打刻の番号は職員ごとに自動で振ります。タブレットではこの番号を入れて打刻します。番号は本人にだけ伝えてください。従業員コードはシフトアプリの職員の設定（freee の従業員コード）から取り込み、給与への出力に使います。シフトアプリで退職・休職・非表示にした人は「休止中」になり、タブレットで番号を入れても見つかりません。</p>' +
@@ -450,6 +454,9 @@
   function ymdJa(d) { return d && L && L.isDate(d) ? (+d.slice(0, 4)) + '/' + (+d.slice(5, 7)) + '/' + (+d.slice(8, 10)) : ''; }
   function dayTxt(n) { return n === 0.5 ? '半日' : String(n) + ' 日'; }
   function staffById(sid) { return (data && data.staff || []).filter(function (s) { return s.staff_id === sid; })[0] || null; }
+  /* 勤怠で出す名前（2026-11-20 代表者の指示・統合 0107）: 画面で直した表示名があればそれ、無ければシフトの名前。
+     シフトの名前（name）は取り込みのたびに上書きされるので、直すのは表示名（display_name）だけ。取り込みに送り返す名前は name のまま */
+  function dispName(s) { return s ? String(s.display_name || s.name || s.staff_id || '') : ''; }
   /* 職員の並び（2026-11-20 代表者の指示「事業所は無視して入職順に」）: 事業所に関係なく、結んだ職員マスタの入職日の古い順。
      有給の設定の入職日の上書きは並びに使わない（有給の記録を読んだかどうかで並びが変わらないように・反証レビュー）。
      入職日の分からない人（職員マスタと結んでいない派遣など・職員マスタをまだ読んでいない時）は最後に、打刻の番号の順で並べる */
@@ -470,6 +477,7 @@
   function masterIdOf(s) { return s && s.master_id ? String(s.master_id) : null; }   /* 外した m_ の行は master_id が空（休止）＝結んでいない */
   function masterOf(s) { var id = masterIdOf(s); return id && masterSt && masterSt.byId ? masterSt.byId[id] || null : null; }
   function inService(m) { return !!m && (!m.retire_date || m.retire_date >= today()); }
+  var REORDER_TABS = { day: 1, review: 1, grid: 1, person: 1, staff: 1, leave: 1 };
   function loadMaster() {
     if (masterBusy && masterP) return masterP;
     masterBusy = true;
@@ -480,7 +488,13 @@
     })['catch'](function (e) {
       note('職員マスタの読み込み', e);
       masterSt = { rows: [], byId: {}, err: noDb(e) ? NEED_DB : msgOf(e) };
-    }).then(function () { masterBusy = false; masterP = null; if (view === 'app' && (tab === 'staff' || tab === 'leave') && !busy) paint(); });
+    }).then(function () {
+      masterBusy = false; masterP = null;
+      /* 入職日は職員マスタから読むので、読めたら月の並びを数え直す（どのタブでも・2026-11-20） */
+      /* 描き直すのは職員の並びを出すタブだけ（締め・設定のタブでは入力中の値を描き直しで消さない・審査役の指摘 2026-11-20） */
+      if (!busy && data && !(masterSt && masterSt.err)) recompute();
+      if (view === 'app' && !busy && REORDER_TABS[tab]) paint();
+    });
     return masterP;
   }
   function linkedMap() { var o = {}; (data && data.staff || []).forEach(function (s) { var id = masterIdOf(s); if (id) o[id] = s; }); return o; }
@@ -502,14 +516,14 @@
     var EMP_JA = { regular: '正社員', contract: '契約社員', part: 'パート', officer: '役員兼使用人', temp: '臨時' };
     var lm = linkedMap();
     /* 打刻画面に出さない人（シフトに仮で入れた枠など・2026-11-20 代表者の指示）は、結べていない一覧に出さない（件数だけ下に添える） */
-    var unS0 = (data.staff || []).filter(function (s) { return s.active !== false && srcOf(s) === 'shift' && !s.master_id; });
+    var unS0 = staffSorted().filter(function (s) { return s.active !== false && srcOf(s) === 'shift' && !s.master_id; });
     var unS = unS0.filter(function (s) { return s.clock_visible !== false; }), unHid = unS0.length - unS.length;
     var unM = masterSt.rows.filter(function (m) { return inService(m) && !lm[m.master_id]; });
     h += '<div class="row"><button type="button" class="btn sm pri" data-act="m-import">職員マスタと突き合わせる</button><button type="button" class="btn sm" data-act="m-reload">職員マスタを読み直す</button></div>' +
       '<p class="help">「職員マスタと突き合わせる」を押すと、氏名（空白を除く）がシフトの職員と職員マスタで1人ずつだけ同じ人を結び、職員マスタで退職日を過ぎた人（職員マスタから足した人）を休止にします。同じ名前が2人以上いる人は取り違えないよう自動では結びません。結べなかった職員マスタの人は、下の表で1人ずつ「シフトの職員に結ぶ」か「新しい職員として足す」を選びます（退職日が空か今日より後の人・休職中も含む）。シフトから来た人の名前・事業所・休止はシフトの取り込みのまま変えません。</p>';
     if (importResult) h += '<div class="band ok" role="status">前回の突き合わせ: 結んだ ' + esc(importResult.linked || 0) + ' 人・休止にした ' + esc(importResult.deactivated || 0) + ' 人</div>';
     h += '<div class="tw"><table class="mt"><thead><tr><th>職員マスタと結べていないシフトの職員（' + unS.length + ' 人）</th><th></th></tr></thead><tbody>' +
-      (unS.length ? unS.map(function (s) { return '<tr><td>' + esc(s.name) + '</td><td><button type="button" class="btn sm" data-act="m-link" data-sid="' + esc(s.staff_id) + '">職員マスタと結ぶ</button></td></tr>'; }).join('') : '<tr><td colspan="2" class="empty">ありません</td></tr>') + '</tbody></table></div>' +
+      (unS.length ? unS.map(function (s) { return '<tr><td>' + esc(dispName(s)) + '</td><td><button type="button" class="btn sm" data-act="m-link" data-sid="' + esc(s.staff_id) + '">職員マスタと結ぶ</button></td></tr>'; }).join('') : '<tr><td colspan="2" class="empty">ありません</td></tr>') + '</tbody></table></div>' +
       (unHid ? '<p class="help">打刻画面に出さない ' + unHid + ' 人（シフトに仮で入れた枠など）は、この一覧に出していません。職員マスタと結ぶ時は、下の職員の表の「職員マスタと結ぶ」から結べます。</p>' : '') +
       '<div class="tw" style="margin-top:8px"><table class="mt"><thead><tr><th>勤怠と結べていない職員マスタの人（' + unM.length + ' 人）</th><th>入職日</th><th>雇用形態</th><th></th></tr></thead><tbody>' +
       (unM.length ? unM.map(function (m) { return '<tr><td>' + esc(m.name) + '</td><td data-l="入職日">' + esc(ymdJa(m.hire_date)) + '</td><td data-l="雇用形態">' + esc(EMP_JA[m.employment_type] || m.employment_type || '') + '</td>' +
@@ -605,7 +619,7 @@
       var rem = '<b>' + esc(String(b.remain)) + ' 日</b>' + (b.over ? '<span class="tag ng">付与の無い使用 ' + esc(String(b.over)) + ' 日</span>' : '') + (b.planned ? '<span class="raw">（この先の予定 ' + esc(String(b.planned)) + ' 日）</span>' : '');
       var soon = b.soon ? esc(String(b.soon.days)) + ' 日（' + esc(ymdJa(b.soon.expires)) + ' まで）' : '<span class="raw">—</span>';
       var ob = sm.obligation;
-      return '<tr><td>' + esc(s.name) + '</td><td>' + hire + '</td><td>' + wk + '</td><td>' + nx + '</td><td class="num">' + rem + '</td><td>' + soon + '</td><td class="num">' + (ob.state === 'none' ? '<span class="raw">—</span>' : esc(String(ob.used)) + ' 日') + '</td><td>' + obTag(ob) + '</td>' +
+      return '<tr><td>' + esc(dispName(s)) + '</td><td>' + hire + '</td><td>' + wk + '</td><td>' + nx + '</td><td class="num">' + rem + '</td><td>' + soon + '</td><td class="num">' + (ob.state === 'none' ? '<span class="raw">—</span>' : esc(String(ob.used)) + ' 日') + '</td><td>' + obTag(ob) + '</td>' +
         '<td class="no-print"><button type="button" class="btn sm" data-act="lv-open" data-sid="' + esc(s.staff_id) + '">開く</button></td></tr>';
     }).join('');
     return h + '<div class="row no-print"><b>有給（' + esc(ymdJa(today())) + ' 時点）</b><button type="button" class="btn sm" data-act="lv-reload">読み直す</button><button type="button" class="btn sm" data-act="print">印刷</button></div>' +
@@ -624,8 +638,8 @@
     var byId = {}; rows.forEach(function (r) { byId[r.staff_id] = r; });
     month.people.forEach(function (p) {
       var r = byId[p.staff.staff_id];
-      if (!r) { if (p.sum.workMin > 0 || p.sum.reviewCount > 0) out.push(p.staff.name); return; }
-      if (SNAP_KEYS.some(function (k) { return typeof r[k] === 'number' && r[k] !== p.sum[k]; })) out.push(p.staff.name);
+      if (!r) { if (p.sum.workMin > 0 || p.sum.reviewCount > 0) out.push(dispName(p.staff)); return; }
+      if (SNAP_KEYS.some(function (k) { return typeof r[k] === 'number' && r[k] !== p.sum[k]; })) out.push(dispName(p.staff));
     });
     return out;
   }
@@ -635,7 +649,7 @@
     rows.forEach(function (r) { byId[r.staff_id] = r; });
     month.people.forEach(function (p) {
       var r = byId[p.staff.staff_id];
-      if (!r) { if (p.sum.workMin > 0) miss.push(p.staff.name); return; }
+      if (!r) { if (p.sum.workMin > 0) miss.push(dispName(p.staff)); return; }
       var s = {}, st = {}, k;
       for (k in p.sum) s[k] = p.sum[k];
       for (k in r) if (k !== 'staff_id' && k !== 'emp_code' && r[k] != null) s[k] = r[k];
@@ -672,7 +686,7 @@
     h += '<div class="cd pr-edits-cd"><div class="ph" style="display:none"></div><h2 style="font-size:16px;margin:0 0 8px">直しの履歴</h2><div class="row no-print"><button type="button" class="btn sm" data-act="print-edits">直しの履歴を印刷</button></div><div id="g-edits">' + (editsCache ? editsHtml(editsCache) : '<button type="button" class="btn sm" data-act="edits">この月の直しの履歴を見る</button>') + '</div></div>';
     return h;
   }
-  var ACT_LABEL = { punch_add: '打刻を足した', punch_void: '打刻を取り消した', day_put: '承認・休憩・メモ・印', code_reset: '番号を振り直した', month_lock: '月を締めた', month_unlock: '締めを解除した', settings_put: '設定を変えた', schedule_put: 'シフトを取り込んだ' };
+  var ACT_LABEL = { display_name: '表示名を変えた', punch_add: '打刻を足した', punch_void: '打刻を取り消した', day_put: '承認・休憩・メモ・印', code_reset: '番号を振り直した', month_lock: '月を締めた', month_unlock: '締めを解除した', settings_put: '設定を変えた', schedule_put: 'シフトを取り込んだ' };
   function kindJa(k) { return k === 'in' ? '出勤' : k === 'out' ? '退勤' : '打刻'; }
   function brTxt(v) { return v == null ? '予定どおり' : String(v); }
   /* 直しの前後の値を「退勤 16:05 を足した」「休憩 60→45 分」「確認済みにした」のように言う（C-9） */
@@ -695,7 +709,7 @@
   }
   function editsHtml(list) {
     if (!list.length) return '<p class="empty">この月の直しはありません。</p>';
-    var nm = {}; (data.staff || []).forEach(function (s) { nm[s.staff_id] = s.name; });
+    var nm = {}; (data.staff || []).forEach(function (s) { nm[s.staff_id] = dispName(s); });
     return '<div class="tw"><table class="hist"><thead><tr><th>日時</th><th>した人</th><th>職員</th><th>日</th><th>内容</th><th>理由</th></tr></thead><tbody>' + list.map(function (e) {
       return '<tr><td>' + esc(new Date(e.at).toLocaleString('ja-JP')) + '</td><td>' + esc(e.by) + '</td><td>' + esc(nm[e.staff_id] || e.staff_id || '') + '</td><td>' + esc(e.work_date || '') + '</td><td>' + esc(describe(e)) + '</td><td>' + esc(e.action === 'code_reset' ? '' : e.reason) + '</td></tr>';
     }).join('') + '</tbody></table></div>';
@@ -821,7 +835,7 @@
       (lk ? '' : '<div class="presets" role="group" aria-label="よく使う理由">' + REASONS.map(function (r) { return '<button type="button" class="btn sm" data-act="reason" data-r="' + esc(r) + '">' + esc(r) + '</button>'; }).join('') + '</div>') +
       '<p class="help" id="e-msg" role="alert"></p>';
     b += '<fieldset><legend>この日の直しの履歴</legend><div id="e-hist"></div></fieldset>';
-    openDlg(st.name + ' さん　' + md(date) + '（' + wd(date) + '）', b, lk);
+    openDlg(dispName(st) + ' さん　' + md(date) + '（' + wd(date) + '）', b, lk);
     if (dlgCtx.rv && !lk) addFootBtn('保存して次へ', 'dlg-save-next', 'pri');
     dlgCtx.init = formState();
     fillHist(dlgCtx, ps);
@@ -856,7 +870,7 @@
       note('直しの履歴', e); if (dlgCtx !== ctx || !$('e-hist')) return; var bx = $('e-hist'); bx.textContent = ''; bx.appendChild(mk('p', 'empty', '直しの履歴を読めませんでした: ' + msgOf(e)));
     });
   }
-  var DIRTY_MODES = { edit: 1, work: 1, leave: 1, link: 1, mimport: 1, clockvis: 1, madd: 1 };   /* 保存していない入力を確かめる窓（v4 で手入力・有給・結び付けを足した） */
+  var DIRTY_MODES = { edit: 1, work: 1, leave: 1, link: 1, mimport: 1, clockvis: 1, madd: 1, dname: 1 };   /* 保存していない入力を確かめる窓（v4 で手入力・有給・結び付けを足した） */
   function closeDlg() { dlgCtx = null; try { $('g-dlg').close(); } catch (_) { $('g-dlg').removeAttribute('open'); } }
   function dirty() {
     if (!dlgCtx || !DIRTY_MODES[dlgCtx.mode] || dlgCtx.init == null) return false;
@@ -952,8 +966,8 @@
     if (!month || !data) return;
     var ds = dateList(), dv = selDate && ds.indexOf(selDate) >= 0 ? selDate : ds[0], lk = isLocked();
     var sid0 = tab === 'person' && selStaff ? selStaff : '';
-    var opts = staffSorted().sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'ja'); }).map(function (s) {
-      return '<option value="' + esc(s.staff_id) + '"' + (s.staff_id === sid0 ? ' selected' : '') + '>' + esc(s.name) + (s.active === false ? '（休止中）' : '') + (srcOf(s) === 'master' ? '（職員マスタから）' : '') + '</option>';
+    var opts = staffSorted().sort(function (a, b) { return dispName(a).localeCompare(dispName(b), 'ja'); }).map(function (s) {
+      return '<option value="' + esc(s.staff_id) + '"' + (s.staff_id === sid0 ? ' selected' : '') + '>' + esc(dispName(s)) + (s.active === false ? '（休止中）' : '') + (srcOf(s) === 'master' ? '（職員マスタから）' : '') + '</option>';
     }).join('');
     dlgCtx = { mode: 'work' };
     var b = (lk ? '<div class="band ok">この月分は締めてあるため入れられません。直す時は管理者が締めを解除してください。</div>' : '') +
@@ -1017,7 +1031,7 @@
     busy = true; var restore = pressBusy(btn, '突き合わせています…', $('g-dlg-f'));
     rpc('kintai_master_import', { p_reason: reason }).then(okOr).then(function (r) {
       busy = false; importResult = r;
-      var nm = function (sid) { var s = staffById(sid); return s ? s.name : sid; };
+      var nm = function (sid) { var s = staffById(sid); return s ? dispName(s) : sid; };
       var mn = function (id) { var m = masterSt && masterSt.byId && masterSt.byId[id]; return m ? m.name : id; };
       var us = Array.isArray(r.unmatched_staff) ? r.unmatched_staff : [], um = Array.isArray(r.unmatched_master) ? r.unmatched_master : [];
       dlgCtx = { mode: 'mresult' };
@@ -1029,6 +1043,8 @@
     })['catch'](function (e) { busy = false; restore(); note('職員マスタの突き合わせ', e); var m = $('e-msg'); if (m && $('g-dlg').open) m.textContent = msgOf(e); else toast(msgOf(e)); });
   }
   function normName(s) { return String(s || '').replace(/[\s　]/g, ''); }
+  /* シフトの名前か表示名のどちらかが職員マスタの名前と同じ（空白を除く・2026-11-20） */
+  function sameNm(s, m) { var k = normName(m && m.name); return !!k && (normName(s && s.name) === k || normName(dispName(s)) === k); }
   /* 手で結ぶ（K2）。候補の職員マスタの人＝まだ結べていない人と、職員マスタから足した（m_ の）人。
      m_ の人をシフトの職員に寄せる時は、m_ の行を外して（休止になる）から、シフトの職員に結ぶ（2つの操作を順に・0106 の決まり） */
   function linkCands(sid) {
@@ -1039,10 +1055,10 @@
     var s = staffById(sid); if (!s || !masterSt || masterSt.err) return;
     var lm = linkedMap(), cur = s.master_id || '';
     var cand = linkCands(sid);
-    cand.sort(function (a, b) { var sa = normName(a.name) === normName(s.name) ? 0 : 1, sb = normName(b.name) === normName(s.name) ? 0 : 1; return sa - sb || String(a.kana || a.name).localeCompare(String(b.kana || b.name), 'ja'); });
+    cand.sort(function (a, b) { var sa = sameNm(s, a) ? 0 : 1, sb = sameNm(s, b) ? 0 : 1; return sa - sb || String(a.kana || a.name).localeCompare(String(b.kana || b.name), 'ja'); });
     dlgCtx = { mode: 'link', sid: sid, cur: cur || null };
-    openDlg(s.name + ' さんを職員マスタと結ぶ', '<div class="row"><label>職員マスタの人 <select id="m-sel"><option value="">' + (cur ? '結ばない（外す）' : '選んでください') + '</option>' +
-      cand.map(function (m) { var o = lm[m.master_id]; return '<option value="' + esc(m.master_id) + '"' + (m.master_id === cur ? ' selected' : '') + '>' + esc(m.name) + (m.hire_date ? '（入職 ' + esc(ymdJa(m.hire_date)) + '）' : '') + (normName(m.name) === normName(s.name) ? '・同じ名前' : '') + (o && o.staff_id !== sid ? '・今は職員マスタから足した職員' : '') + '</option>'; }).join('') + '</select></label></div>' +
+    openDlg(dispName(s) + ' さんを職員マスタと結ぶ', '<div class="row"><label>職員マスタの人 <select id="m-sel"><option value="">' + (cur ? '結ばない（外す）' : '選んでください') + '</option>' +
+      cand.map(function (m) { var o = lm[m.master_id]; return '<option value="' + esc(m.master_id) + '"' + (m.master_id === cur ? ' selected' : '') + '>' + esc(m.name) + (m.hire_date ? '（入職 ' + esc(ymdJa(m.hire_date)) + '）' : '') + (sameNm(s, m) ? '・同じ名前' : '') + (o && o.staff_id !== sid ? '・今は職員マスタから足した職員' : '') + '</option>'; }).join('') + '</select></label></div>' +
       '<p class="help">同じ職員マスタの人を2人の職員に結ぶことはできません。「今は職員マスタから足した職員」の人を選ぶと、その職員の行を外して休止にしてから、この人に結びます（その行の打刻・有給の記録は移りません）。結ぶと、有給の入職日にその人の入職日を使います。打刻・予定の記録はそのままです。</p>' + reasonRow('例: 同じ名前の人がいたため手で結んだ'), false, '保存する', 'm-link-go');
     dlgCtx.init = formState();
   }
@@ -1050,10 +1066,10 @@
   function openLinkM(mid) {
     var m = masterSt && masterSt.byId && masterSt.byId[mid]; if (!m) return;
     var list = (data.staff || []).filter(function (s) { return srcOf(s) === 'shift' && !s.master_id; });
-    list.sort(function (a, b) { var sa = normName(a.name) === normName(m.name) ? 0 : 1, sb = normName(b.name) === normName(m.name) ? 0 : 1; return sa - sb || String(a.name).localeCompare(String(b.name), 'ja'); });
+    list.sort(function (a, b) { var sa = sameNm(a, m) ? 0 : 1, sb = sameNm(b, m) ? 0 : 1; return sa - sb || dispName(a).localeCompare(dispName(b), 'ja'); });
     dlgCtx = { mode: 'link', mid: mid, cur: null };
     openDlg(m.name + ' さん（職員マスタ）をシフトの職員に結ぶ', '<div class="row"><label>シフトの職員 <select id="m-sel"><option value="">選んでください</option>' +
-      list.map(function (s) { return '<option value="' + esc(s.staff_id) + '">' + esc(s.name) + (s.active === false ? '（休止中）' : '') + (normName(s.name) === normName(m.name) ? '・同じ名前' : '') + '</option>'; }).join('') + '</select></label></div>' +
+      list.map(function (s) { return '<option value="' + esc(s.staff_id) + '">' + esc(dispName(s)) + (s.active === false ? '（休止中）' : '') + (sameNm(s, m) ? '・同じ名前' : '') + '</option>'; }).join('') + '</select></label></div>' +
       '<p class="help">選べるのは、まだ職員マスタと結んでいないシフトの職員だけです。打刻・予定の記録はそのままです。</p>' + reasonRow('例: 同じ名前の人がいたため手で結んだ'), false, '結ぶ', 'm-link-go');
     dlgCtx.init = formState();
   }
@@ -1099,7 +1115,7 @@
     var s = staffById(sid); if (!s) return;
     var show = s.clock_visible === false;
     dlgCtx = { mode: 'clockvis', sid: sid, to: show };
-    openDlg(s.name + ' さんを打刻画面に' + (show ? '出す' : '出さない'), '<p>' + (show ? '打刻画面の名簿に名前を出します（休止中の人は出ません）。' : '打刻画面の名簿に名前を出さなくなります。番号で打刻する時は今までどおり使えます。') + '</p>' + reasonRow(''), false, show ? '出す' : '出さない', 'm-vis-go');
+    openDlg(dispName(s) + ' さんを打刻画面に' + (show ? '出す' : '出さない'), '<p>' + (show ? '打刻画面の名簿に名前を出します（休止中の人は出ません）。' : '打刻画面の名簿に名前を出さなくなります。番号で打刻する時は今までどおり使えます。') + '</p>' + reasonRow(''), false, show ? '出す' : '出さない', 'm-vis-go');
     dlgCtx.init = formState();
   }
   function saveClockVis(btn) {
@@ -1109,6 +1125,27 @@
     rpc('kintai_staff_clock_visible', { p_staff_id: ctx.sid, p_visible: ctx.to, p_reason: reason }).then(okOr).then(function () {
       busy = false; closeDlg(); toast('保存しました（' + nameOf(ctx.sid) + ' さん）'); return load(false);
     })['catch'](function (e) { busy = false; restore(); note('打刻画面に出す', e); if ($('g-dlg').open) msg.textContent = msgOf(e); else toast(msgOf(e)); });
+  }
+
+  /* 表示名を変える（統合 0107・2026-11-20 代表者の指示）。空にするとシフトの名前に戻る。理由は必ず */
+  function openDispName(sid) {
+    var s = staffById(sid); if (!s) return;
+    dlgCtx = { mode: 'dname', sid: sid };
+    openDlg(dispName(s) + ' さんの表示名を変える', '<p>勤怠の画面と打刻画面に出す名前を変えます。シフトの名前（' + esc(s.name) + '）は変わりません。空にするとシフトの名前に戻ります。</p>' +
+      '<div class="row"><label style="flex:1">表示名<input type="text" id="e-dname" maxlength="60" style="flex:1;min-width:12em" value="' + esc(s.display_name || '') + '"></label></div>' +
+      reasonRow(''), false, '保存', 'dname-go');
+    dlgCtx.init = formState();
+  }
+  function saveDispName(btn) {
+    if (!dlgCtx || dlgCtx.mode !== 'dname' || busy) return;
+    var ctx = dlgCtx, msg = $('e-msg'), el = $('e-dname'), v = el ? String(el.value || '').trim() : '';
+    if (v.length > 60) { msg.textContent = '表示名は60字までです。'; return; }
+    var reason = needReason(msg); if (!reason) return;
+    busy = true; var restore = pressBusy(btn, '保存しています…', $('g-dlg-f'));
+    rpc('kintai_staff_display_name_put', { p_staff_id: ctx.sid, p_name: v, p_reason: reason }).then(okOr).then(function () {
+      var s0 = staffById(ctx.sid);   /* 空にした時は読み直す前の古い表示名でなく、戻した先のシフトの名前を出す */
+      busy = false; closeDlg(); toast(v ? '保存しました（' + v + ' さん）' : '表示名を消しました（シフトの名前「' + (s0 ? s0.name : ctx.sid) + '」に戻しました）'); return load(false);
+    })['catch'](function (e) { busy = false; restore(); note('表示名を変える', e); if ($('g-dlg').open) msg.textContent = msgOf(e); else toast(msgOf(e)); });
   }
 
   /* ── v4: 有給の窓（1人分の付与・使用・設定。足す・取り消すは1つずつ保存し、保存したら記録を読み直して窓を描き直す） ── */
@@ -1163,7 +1200,7 @@
       '<span>付与しない日</span><span>' + (sm.auto.length ? sm.auto.filter(function (g) { return g.status !== 'opening'; }).map(function (g) { return '<label style="display:inline-flex;gap:4px;margin-right:12px"><input type="checkbox" data-skip="' + esc(g.grant_date) + '"' + (g.status === 'skip' ? ' checked' : '') + '> ' + esc(ymdJa(g.grant_date)) + '（' + esc(String(g.days)) + ' 日）</label>'; }).join('') : '<span class="raw">自動の付与はまだありません</span>') + '<br><span class="help">出勤率が8割に届かなかった年など、付与しない付与日に印を付けます</span></span>' +
       '</div><div class="row"><button type="button" class="btn sm pri" data-act="lv-prof-save">設定を保存する</button></div></fieldset>' +
       '<div class="row"><label style="flex:1">理由（取り消す時と設定を保存する時は必ず）<input type="text" id="lv-reason" maxlength="200" style="flex:1;min-width:16em"></label></div><p class="help" id="e-msg" role="alert"></p>';
-    openDlg(s.name + ' さんの有給', b, true);
+    openDlg(dispName(s) + ' さんの有給', b, true);
     dlgCtx.init = formState();
   }
   /* その日の実働（分）。開いている月分と、有給のために読んだ月分の計算から探す（無ければ 0） */
@@ -1243,7 +1280,7 @@
   function recode(sid, btn) {
     if (busy) return;
     var s = (data.staff || []).filter(function (x) { return x.staff_id === sid; })[0];
-    if (!s || !confirm(s.name + ' さんの打刻の番号を振り直します。今の番号 ' + s.code + ' はタブレットで使えなくなります。よろしいですか？')) return;
+    if (!s || !confirm(dispName(s) + ' さんの打刻の番号を振り直します。今の番号 ' + s.code + ' はタブレットで使えなくなります。よろしいですか？')) return;
     busy = true; var restore = pressBusy(btn, '振り直しています…');
     rpc('kintai_staff_code_reset', { p_staff_id: sid }).then(okOr).then(function (r) {
       busy = false; alert('新しい番号は ' + r.code + ' です。本人にだけ伝えてください。'); return load(false);
@@ -1331,6 +1368,8 @@
       if (sm.miss.length) extra.push('締めた時の控えに無い職員（' + sm.miss.join('・') + '）は出していません。');
       suffix = '_月の集計_締めた時の数字';
     } else suffix = kind === 'sum' ? '_月の集計' + (isLocked() ? '_今の数字' : '') : '_日ごと';
+    /* CSV の氏名の列と、書き出した後の注意の文も表示名にそろえる（写しの name だけ替える・計算と控えの数字は変えない・統合 0107） */
+    src = Object.assign({}, src, { people: (src.people || []).map(function (p) { return Object.assign({}, p, { staff: Object.assign({}, p.staff, { name: dispName(p.staff) }) }); }) });
     var res = C.buildCsv(src, { nameOf: nameOfOffice, extraCols: true });
     var text = kind === 'sum' ? res.summary : res.daily, enc = ($('g-enc') || {}).value || 'utf8', blob, unknown = [];
     if (enc === 'sjis') {
@@ -1469,6 +1508,8 @@
       else if (a === 'm-add-go') saveAdd(b);
       else if (a === 'm-vis') openClockVis(b.getAttribute('data-sid'));
       else if (a === 'm-vis-go') saveClockVis(b);
+      else if (a === 'dname') openDispName(b.getAttribute('data-sid'));
+      else if (a === 'dname-go') saveDispName(b);
       else if (a === 'lv-open') openLeave(b.getAttribute('data-sid'));
       else if (a === 'lv-reload') { leaveSt = null; loadLeave(true); paint(); }
       else if (a === 'lv-use-add' || a === 'lv-use-void' || a === 'lv-grant-add' || a === 'lv-grant-void' || a === 'lv-prof-save') leaveAct(a, b);
