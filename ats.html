@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-fQq/fwYHHodo1nTA7E+fLj9FnB4elCfSkrRvRyv0uhI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-thS4oCT0z6lMzNJvz7EHCWrR0YX3q0N0trF6Tc5ZDn8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 書類（PDF）を左の枠に出すため、この画面だけ CSP の frame-src に blob: を足す（check/csp.mjs が読む印） -->
@@ -430,7 +430,7 @@ function authLoad_(){
     : (has(/^supabase-js-/) ? wait(function(){ return !!window.supabase; }) : load('supabase-js-2.112.4.js'));
   return p.then(function(){
     if(window.SUAuth) return null;
-    return has(/^su-auth\.js/) ? wait(function(){ return !!window.SUAuth; }) : load('su-auth.js?v=2026-11-16');
+    return has(/^su-auth\.js/) ? wait(function(){ return !!window.SUAuth; }) : load('su-auth.js?v=2026-11-21');
   });
 }
 /* データベースの窓口（読み・表への書き込み）。通信はこれと rpc_ と stfPost_ の3つだけを通す */

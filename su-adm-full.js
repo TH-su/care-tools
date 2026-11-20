@@ -116,7 +116,7 @@
   function loadAuth() {
     if (root.SUAuth) return Promise.resolve(root.SUAuth);
     var p = root.supabase ? Promise.resolve() : loadScript('supabase-js-2.112.4.js');
-    return p.then(function () { return root.SUAuth ? null : loadScript('su-auth.js?v=2026-11-16'); }).then(function () { return root.SUAuth || null; });
+    return p.then(function () { return root.SUAuth ? null : loadScript('su-auth.js?v=2026-11-21'); }).then(function () { return root.SUAuth || null; });
   }
   /* io = { gas, auth?(), now? }。返す: { skip:'理由' } か run の結果 */
   async function auto(io) {

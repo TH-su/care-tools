@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-PPx346Hlfhjf4NfvI0hRM6bweQQbE51/xfkJ0L5unvo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-MNqd0kXYBikOofWvfCUp7byktTjCaWA5fkStEztGKhI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <!-- 機微情報を含むためキャッシュ無効（入居者マスタ・職員マスタと同じ扱い。
@@ -723,11 +723,11 @@ details.dcd > .dbody > .cd > h3 { display: none; }   /* 見出しは summary に
 <script src="su-errors.js?v=2026-11-12"></script>
 <script src="su-devcfg.js?v=2026-11-16"></script>
 <script src="su-gas-auth.js?v=2026-11-17"></script>
-<script src="su-res-read.js?v=2026-11-16"></script>
+<script src="su-res-read.js?v=2026-11-21"></script>
 <script src="su-cfg-hint.js?v=2026-11-10"></script>
 <script src="su-perf.js?v=2026-11-02"></script>
 <script src="su-login-band.js?v=2026-11-16"></script>
-<script src="su-app-gate.js?v=2026-11-19"></script>
+<script src="su-app-gate.js?v=2026-11-21"></script>
 <script src="su-facility.js?v=2026-11-17"></script>
 <script src="su-data.js?v=2026-11-08.2"></script>
 <script src="su-data-gas.js?v=2026-10-29"></script>
@@ -835,7 +835,7 @@ function afAuthLoad_() {
     : (has(/^supabase-js-/) ? wait(function () { return !!window.supabase; }) : load('supabase-js-2.112.4.js'));
   return pr.then(function () {
     if (window.SUAuth) return null;
-    return has(/^su-auth\.js/) ? wait(function () { return !!window.SUAuth; }) : load('su-auth.js?v=2026-11-16');
+    return has(/^su-auth\.js/) ? wait(function () { return !!window.SUAuth; }) : load('su-auth.js?v=2026-11-21');
   });
 }
 function afResolveWho_() {

@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-gruQLV6DFUOGVeQDPt/n0QmC66m5wHldSSYUZ2vMXs0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-8bWApAIN4RqFAPt4mp8BAjaZva0yUZ1nQ86YrUUw1+4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 会議の記録（要配慮の情報）を扱うためキャッシュ無効 -->
@@ -15,11 +15,11 @@
 <script src="su-errors.js?v=2026-11-12"></script>
 <script src="su-devcfg.js?v=2026-11-16"></script>
 <script src="su-gas-auth.js?v=2026-11-17"></script>
-<script src="su-res-read.js?v=2026-11-16"></script>
+<script src="su-res-read.js?v=2026-11-21"></script>
 <script src="su-cfg-hint.js?v=2026-11-10"></script>
 <script src="su-perf.js?v=2026-11-02"></script>
 <script src="su-login-band.js?v=2026-11-16"></script>
-<script src="su-app-gate.js?v=2026-11-19"></script>
+<script src="su-app-gate.js?v=2026-11-21"></script>
 <script src="su-facility.js?v=2026-11-17"></script>
 <script src="su-print.js?v=2026-11-13"></script>
 <script src="care-meeting-calc.js?v=2026-11-17"></script>
@@ -530,7 +530,7 @@ function cmAuthLoad_(){
     : (has(/^supabase-js-/) ? wait(function(){ return !!window.supabase; }) : load('supabase-js-2.112.4.js'));
   return p.then(function(){
     if(window.SUAuth) return null;
-    return has(/^su-auth\.js/) ? wait(function(){ return !!window.SUAuth; }) : load('su-auth.js?v=2026-11-16');
+    return has(/^su-auth\.js/) ? wait(function(){ return !!window.SUAuth; }) : load('su-auth.js?v=2026-11-21');
   });
 }
 function cmAccessToken_(){

@@ -31,7 +31,7 @@
   var MEMO_KEY = 'su_devcfg_v1';
   var TTL_MS = 30 * 60 * 1000;
   var SESSION_RE = /^sb-[a-z0-9]+-auth-token$/;
-  var V_AUTH = 'su-auth.js?v=2026-11-16';
+  var V_AUTH = 'su-auth.js?v=2026-11-21';
   var V_SB = 'supabase-js-2.112.4.js';
   var KEYS = ['ws', 'ws_field', 'master', 'master_field', 'haiben', 'moushi', 'weight', 'med',
               'admission', 'training', 'staff', 'genogram', 'analyzer'];

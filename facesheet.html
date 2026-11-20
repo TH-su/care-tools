@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-i9qt5D2d72ViilON7Fp21zSGEddzjKrBeQbOlip9jNA=' 'sha256-pMwacDHeXhJ1dDfCFIn5uBqAFobzIexAx9Kmj1EaWRE=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-i9qt5D2d72ViilON7Fp21zSGEddzjKrBeQbOlip9jNA=' 'sha256-OHiRgswtC2UMXUzB1Xl/dUJH5s5DMpfUOiRUc4kXYhw=' 'sha256-XHbrw8FNNV1eJLh8PpKqnXQFNGdWwzBTmsb+7I+cLd0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 機微情報を含むためキャッシュ無効 -->
@@ -677,7 +677,7 @@ button.geno-box{width:100%; margin:0; padding:0; font:inherit; color:inherit; li
 <script src="su-errors.js?v=2026-11-12"></script>
 <script src="su-devcfg.js?v=2026-11-16"></script>
 <script src="su-gas-auth.js?v=2026-11-17"></script>
-<script src="su-res-read.js?v=2026-11-16"></script>
+<script src="su-res-read.js?v=2026-11-21"></script>
 <!-- 止めて知らせる窓（alert）の代わりに画面の中の窓を出す共通部品（2026-11-12 代表者の決定）。画面のスクリプトより前に置く -->
 <script src="su-dialog.js?v=2026-11-14.2"></script>
 <script>
@@ -3431,7 +3431,7 @@ function fsAuthLoad_(){
     : (has(/^supabase-js-/) ? wait(function(){ return !!window.supabase; }) : load('supabase-js-2.112.4.js'));
   return p.then(function(){
     if(window.SUAuth) return null;
-    return has(/^su-auth\.js/) ? wait(function(){ return !!window.SUAuth; }) : load('su-auth.js?v=2026-11-16');
+    return has(/^su-auth\.js/) ? wait(function(){ return !!window.SUAuth; }) : load('su-auth.js?v=2026-11-21');
   });
 }
 

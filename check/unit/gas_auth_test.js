@@ -113,10 +113,10 @@ const settle = (ms) => new Promise((r) => setTimeout(r, ms || 10));
     const x = load({ storage: Object.assign({}, SESS), loadAuth: okSess });
     const v = await x.A.token();
     t('ログインの部品が無ければ supabase-js → su-auth.js の順に読み込んで証明を返す', v === TOKEN &&
-      JSON.stringify(x.added) === JSON.stringify(['supabase-js-2.112.4.js', 'su-auth.js?v=2026-11-16']), { v, added: x.added });
+      JSON.stringify(x.added) === JSON.stringify(['supabase-js-2.112.4.js', 'su-auth.js?v=2026-11-21']), { v, added: x.added });
   }
   {
-    const x = load({ storage: Object.assign({}, SESS), tags: ['supabase-js-2.112.4.js', 'su-auth.js?v=2026-11-16'] });
+    const x = load({ storage: Object.assign({}, SESS), tags: ['supabase-js-2.112.4.js', 'su-auth.js?v=2026-11-21'] });
     const p = x.A.token();
     setTimeout(() => { x.win.supabase = {}; x.win.SUAuth = { client() { return { auth: { getSession: okSess } }; } }; }, 5);
     const v = await p;
