@@ -19,7 +19,7 @@
   'use strict';
   var isNode = typeof require !== 'undefined' && typeof window === 'undefined';
   var Rates = isNode ? require('./payroll-rates.js') : root.PayrollRates;
-  var CALC_VER = 'payroll-calc-1';
+  var CALC_VER = 'payroll-calc-2';   /* 2026-11-21: 時給・日給の有休、日給の法定休日の差、乙欄、通勤手当の非課税限度を直した（確定した明細の指紋で前の版と区別する） */
 
   var DEFAULTS = {
     si_month: 'next', tax_method: 'table', prefecture: '43', emp_ins_kind: 'general',
@@ -310,10 +310,24 @@
     if (type === 'monthly') {
       basePaid = prorated(base);
       pay('basic', '基本給', prorate ? prorate.days : null, base, basePaid, prorate ? '日割り ' + base + '÷平均所定労働日数×' + prorate.days + '日' : '月給', { fixed: true });
+      /* 給与の額の直し（代表者の決定 2026-11-20）: 予定も前提も無い勤務は全部が法定内残業に入り、基本給も満額のまま。数え方は変えず、確かめを促す警告を出す（勤怠の「確認済み」では消えない） */
+      if (m('noSchedWorkMin') > 0) warn('no_sched_monthly', '予定の無い勤務が' + m('noSchedWorkMin') + '分あり、全部を残業として数えています。勤怠の「職員と番号」で固定時間の前提を入れてください');
     } else if (type === 'hourly') {
       var hMin = m('schedInMin') + m('paidMin');
-      basePaid = yen(qDiv(qMul(intQ(base), intQ(hMin)), Q(60)), S.round.hourly_base);
-      pay('basic', '基本給', hMin, base, basePaid, '時給×(所定内＋有休)' + hMin + '分÷60', { fixed: true });
+      /* 給与の額の直し（代表者の決定 2026-11-20・反証レビュー 2026-11-21）: 予定の無い日の有休（シフトの「有」の日・手入力で予定の無い日）は、勤怠が1日を8時間などで数えるので、
+         1日の所定時間が入っている時は「予定の無い日の有休の日数×1日の所定時間」で払う。予定のある日の有休は今までどおりその日の予定の実働（paidMin のまま）。
+         1日の所定時間が空の時は今の値のまま払い、警告を出す。鍵（paidNoSchedDays・paidNoSchedMin）の無い古い控えは今までどおり paidMin で払う */
+      var nsD = A.paidNoSchedDays != null && A.paidNoSchedMin != null ? halfNum('paidNoSchedDays') : 0, nsM = nsD > 0 ? Math.min(m('paidNoSchedMin'), m('paidMin')) : 0;
+      if (nsD > 0 && nsM > 0 && !dayH.missing) {
+        var nsQ = qMul(qMul(mHalf('paidNoSchedDays'), dayH), Q(60)), keepMin = m('paidMin') - nsM, hsQ = qAdd(intQ(m('schedInMin') + keepMin), nsQ);
+        basePaid = yen(qDiv(qMul(intQ(base), hsQ), Q(60)), S.round.hourly_base);
+        hMin = Math.round(qNum(hsQ));
+        pay('basic', '基本給', hMin, base, basePaid, '時給×(所定内' + m('schedInMin') + '分＋有休（予定のある日・時間単位）' + keepMin + '分＋予定の無い日の有休' + nsD + '日×1日の所定時間' + qNum(dayH) + '時間×60)÷60', { fixed: true });
+      } else {
+        if (nsD > 0 && nsM > 0) needDayH();
+        basePaid = yen(qDiv(qMul(intQ(base), intQ(hMin)), Q(60)), S.round.hourly_base);
+        pay('basic', '基本給', hMin, base, basePaid, '時給×(所定内＋有休)' + hMin + '分÷60', { fixed: true });
+      }
       /* 勤怠 v5 段4（仮置き）: 時間単位の有休は効く分（その日の所定の時間のうち働かなかった分まで）が paidMin に入っているので上の基本給で払う。有給の特別休暇は時給×その分。無給の特別休暇・代休は払わない */
       if (m('specialPaidMin') > 0) {
         var spH = yen(qDiv(qMul(intQ(base), intQ(m('specialPaidMin'))), Q(60)), S.round.hourly_base);
@@ -326,7 +340,11 @@
       else if (m('holidayMin') > 0) warn('holiday_days_unknown', '法定休日に働いた日数が分かりません（基本給の日数から除いていません）');
       basePaid = base * wd;
       pay('basic', '基本給', wd, base, basePaid, '日給×出勤日数（法定休日を除く）', { fixed: true });
-      if (m('paidDays') > 0) pay('paid_leave', '有休（日給）', m('paidDays'), base, base * m('paidDays'), '日給×有休の日数', { fixed: true });
+      /* 有休は半日きざみのまま（日給×0.5日・2026-11-21。前は日数を整数に丸めて半日も1日分を払っていた）。整数の日は今と同じ額。
+         反証レビュー（2026-11-21）: 働いた日はその日の日給をもう満額払っているので、働いた日の半日有休は上乗せしない（働いていない日の有休 paidOffDays だけ払う・時間単位の有休・特別休暇と同じ）。
+         鍵の無い古い控えは今までどおり有休の日数で払う */
+      var plK = A.paidOffDays != null ? 'paidOffDays' : 'paidDays';
+      if (halfNum(plK) > 0) pay('paid_leave', '有休（日給）', halfNum(plK), base, yen(qMul(intQ(base), mHalf(plK)), S.round.hourly_base), plK === 'paidOffDays' ? '日給×働いていない日の有休の日数' : '日給×有休の日数', { fixed: true });
       /* 勤怠 v5 段4（仮置き・反証レビュー 2026-11-20）: 働いた日はその日の日給をもう満額払っているので上乗せしない。働いていない日だけ、
          時間単位の有休は「効く分÷1日の所定時間×日給」（hourlyPaidOffMin）、有給の特別休暇は「日給×日数」（specialPaidOffDays）。無給の特別休暇・代休は払わない */
       if (m('hourlyPaidOffMin') > 0) {
@@ -418,6 +436,17 @@
         var v = yen(qDiv(qMul(qMul(unit, rateQ(R_[x[0]])), intQ(mins)), Q(60)), S.round.premium);
         pay(x[2], name, mins, unitTxt, v, '単価' + unitTxt + '×' + R_[x[0]] + '×' + mins + '分÷60' + fx, {});
       });
+      /* 反証レビュー（2026-11-21・仮置き）: 日給の人が全部を法定休日に働いた日（基本給の日数から除いた日）は、その日の休日労働の額が日給より少なければ差を足す（多い方を払う）。
+         日ごとの実働は勤怠の holidayDaysMin（無い古い控えは足さない） */
+      if (type === 'daily' && Array.isArray(A.holidayDaysMin) && A.holidayDaysMin.length) {
+        var gap = 0, gapN = 0;
+        A.holidayDaysMin.forEach(function (hm) {
+          hm = Math.max(0, int(hm));
+          var pd = yen(qDiv(qMul(qMul(unit, rateQ(R_.holiday)), intQ(hm)), Q(60)), S.round.premium);
+          if (pd < base) { gap += base - pd; gapN++; }
+        });
+        if (gap > 0) pay('holiday_gap', '休日の日給との差', gapN, base, gap, '全部を法定休日に働いた日のうち、その日の休日労働の額が日給' + base + '円より少ない' + gapN + '日の差', {});
+      }
     }
 
     /* 欠勤・遅刻早退の控除（月給だけ・マイナスの支給） */
@@ -453,9 +482,16 @@
     /* 通勤（非課税は限度まで） */
     var cm = P.commute && typeof P.commute === 'object' ? int(P.commute.monthly) : 0;
     if (cm > 0) {
-      var lim = R.commuteLimit ? R.commuteLimit(payDate, P.commute.means, Number(P.commute.distance_km)) : null;
+      var lim = R.commuteLimit ? R.commuteLimit(payDate, P.commute.means, P.commute.distance_km == null || P.commute.distance_km === '' ? NaN : Number(P.commute.distance_km), P.commute.parking_monthly) : null;
       var nt = cm;
-      if (lim == null) warn('commute_limit_unknown', '通勤手当の非課税限度が率表にありません（全額を非課税として数えました）');
+      /* 非課税限度の表は国税庁の表（payroll-rates.js の COMMUTE・支給日で選ぶ）。手段か距離が分からない人・併用の人は今の扱いのまま（全額を非課税）で知らせる（仮置き 2026-11-21） */
+      if (lim == null) {
+        var cmMeans = P.commute.means, cmKm = P.commute.distance_km;
+        warn('commute_limit_unknown', !cmMeans ? '通勤の手段が空なので、通勤手当の非課税限度を決められません（全額を非課税として数えました）' :
+          cmMeans === 'car' && (cmKm == null || cmKm === '' || !isFinite(Number(cmKm))) ? '通勤の片道の距離が空なので、通勤手当の非課税限度を決められません（全額を非課税として数えました）' :
+          cmMeans === 'mixed' ? '併用の通勤手当は非課税限度を数えていません（全額を非課税として数えました・分け方を確かめてください）' :
+          '通勤手当の非課税限度が率表にありません（全額を非課税として数えました）');
+      }
       else nt = Math.min(cm, lim);
       pay('commute', '通勤手当', null, cm, cm, nt < cm ? '非課税 ' + nt + '円・課税 ' + (cm - nt) + '円' : '非課税', { fixed: true, nontax: nt, si: true });
     }
@@ -561,6 +597,11 @@
     var taxBase = taxable - siTotal, tax = 0, col = P.tax && P.tax.col, dep = P.tax ? P.tax.dependents : 0;
     /* 甲乙・扶養の数を確かめたか（dependents_checked が true でない源泉の対象の人に知らせる・代表者の決定 2026-11-19） */
     if ((col === 'kou' || col === 'otsu') && !(P.tax && P.tax.dependents_checked === true)) warn('dependents_unchecked', '扶養の数が未確認です');
+    /* 乙欄では扶養の数を引かない（甲から乙へ変えた人の数が残るため・従たる給与の申告書の分は数えない・仮置き 2026-11-21） */
+    if (col === 'otsu') {
+      if (Math.floor(Number(dep) || 0) >= 1) warn('otsu_dependents', '乙欄では扶養の数を数えていません（従たる給与の申告書を出した方は代表者へ）');
+      dep = 0;
+    }
     if (col === 'kou' || col === 'otsu') {
       var useComputer = S.tax_method === 'computer' && col === 'kou';
       if (useComputer && payDate.slice(0, 4) === '2026') tax = taxComputerR8(taxBase, dep);
@@ -595,7 +636,7 @@
       [['workDays', '出勤日数'], ['paidDays', '有休日数'], ['absentDays', '欠勤日数'], ['workMin', '総労働（分）'], ['schedInMin', '所定内（分）'],
         ['legalInOverMin', '法定内残業（分）'], ['legalOverMin', '時間外（分）'], ['over60Min', '60時間超（分）'], ['nightMin', '深夜（分）'],
         ['holidayMin', '法定休日（分）'], ['lateMin', '遅刻（分）'], ['earlyLeaveMin', '早退（分）'], ['nightShiftCount', '夜勤回数']].forEach(function (k) {
-        line('att', k[0], k[1], k[0] === 'absentDays' ? halfNum(k[0]) : m(k[0]), null, 0, '');   /* 欠勤日数は半日きざみ（整数の日は今までと同じ） */
+        line('att', k[0], k[1], k[0] === 'absentDays' || k[0] === 'paidDays' ? halfNum(k[0]) : m(k[0]), null, 0, '');   /* 欠勤日数は半日きざみ（整数の日は今までと同じ） */
       });
       /* 勤怠 v5 段4: 休暇の種類（ある時だけ出す＝使わない月の行は今のまま・文は仮置き） */
       [['absentPartMin', '欠勤（分・休暇で埋まらない残り）'], ['hourlyPaidMin', '時間単位の有休（分）'], ['specialPaidDays', '特別休暇（有給）日数'], ['specialUnpaidDays', '特別休暇（無給）日数'], ['compDays', '代休日数']].forEach(function (k) {

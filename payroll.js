@@ -146,14 +146,20 @@
      日数は半日きざみのまま持つ（丸めると半日の特別休暇・代休が1日になる）。hourlyPaidMin は paidMin の内数 */
   var ATT_LEAVE_KEYS = ['hourlyPaidMin', 'specialPaidMin', 'specialPaidDays', 'specialUnpaidDays', 'compDays',
     'hourlyPaidEffMin', 'hourlyPaidOffMin', 'specialPaidOffDays', 'absentPartMin'];   /* absentPartMin: 欠勤の印の日の休暇で埋まらない残り（分・再確認の反証 2026-11-20） */   /* 反証レビュー（2026-11-20）: 時間単位の有休の効く分・働いていない日の分（日給はこれで払う） */
+  var ATT_OPT_KEYS = ['holidayWorkDays', 'noSchedWorkMin', 'paidNoSchedDays', 'paidNoSchedMin', 'paidOffDays', 'holidayDaysMin'];
   function attFromKintai(sum, locked) {
     sum = obj(sum);
     var a = { counts: {}, missing: [] };
     /* 欠勤の日数は半日きざみのまま持つ（欠勤の印の日に半日の休暇があると 0.5 日・再確認の反証 2026-11-20。整数の日は今までと同じ） */
-    ATT_KEYS.forEach(function (k) { var n = Number(sum[k]); if (sum[k] == null || !isFinite(n)) { a[k] = 0; a.missing.push(k); } else a[k] = Math.max(0, k === 'absentDays' ? Math.round(n * 2) / 2 : Math.round(n)); });
+    ATT_KEYS.forEach(function (k) { var n = Number(sum[k]); if (sum[k] == null || !isFinite(n)) { a[k] = 0; a.missing.push(k); } else a[k] = Math.max(0, k === 'absentDays' || k === 'paidDays' ? Math.round(n * 2) / 2 : Math.round(n)); });   /* 有休日数も半日きざみのまま（時給の有休を1日の所定時間で払う・2026-11-20。日給の額・勤怠の行の表示は整数に丸めて今と同じ） */
     var c = obj(sum.counts); Object.keys(c).forEach(function (k) { var n = Number(c[k]); if (isFinite(n) && n > 0) a.counts[k] = Math.round(n); });
     ATT_LEAVE_KEYS.forEach(function (k) { var n = Number(sum[k]); a[k] = sum[k] == null || !isFinite(n) ? 0 : Math.max(0, /Days$/.test(k) ? Math.round(n * 2) / 2 : Math.round(n)); });
     if (sum.holidayWorkDays != null && isFinite(Number(sum.holidayWorkDays))) a.holidayWorkDays = Math.max(0, Math.round(Number(sum.holidayWorkDays)));
+    if (sum.noSchedWorkMin != null && isFinite(Number(sum.noSchedWorkMin))) a.noSchedWorkMin = Math.max(0, Math.round(Number(sum.noSchedWorkMin)));
+    /* 反証レビュー（2026-11-21）: 予定の無い日の有休の日数・分、働いていない日の有休の日数（半日きざみ）、全部が法定休日の日ごとの実働。この版より前の控えには無い＝給与は今までどおりに払う */
+    if (sum.paidNoSchedMin != null && isFinite(Number(sum.paidNoSchedMin))) a.paidNoSchedMin = Math.max(0, Math.round(Number(sum.paidNoSchedMin)));
+    ['paidNoSchedDays', 'paidOffDays'].forEach(function (k) { if (sum[k] != null && isFinite(Number(sum[k]))) a[k] = Math.max(0, Math.round(Number(sum[k]) * 2) / 2); });
+    if (Array.isArray(sum.holidayDaysMin)) a.holidayDaysMin = sum.holidayDaysMin.slice(0, 31).map(function (n) { n = Number(n); return isFinite(n) ? Math.max(0, Math.round(n)) : 0; });   /* 予定の無い勤務の実働（月給の警告・この版より前の控えには無い＝警告を出さない） */
     if (locked === false) a.locked = false;
     return a;
   }
@@ -163,6 +169,8 @@
   function attSame(a, b) {
     for (var i = 0; i < ATT_KEYS.length; i++) if (a[ATT_KEYS[i]] !== b[ATT_KEYS[i]]) return false;
     for (i = 0; i < ATT_LEAVE_KEYS.length; i++) if ((a[ATT_LEAVE_KEYS[i]] || 0) !== (b[ATT_LEAVE_KEYS[i]] || 0)) return false;   /* 段4: 休暇の種類（無い控えは 0 と同じ） */
+    /* 法定休日に働いた日の数・予定の無い勤務の実働（2026-11-20 に足した鍵）は、両方にある時だけ比べる（この版より前の控えには無い） */
+    for (i = 0; i < ATT_OPT_KEYS.length; i++) { var ko = ATT_OPT_KEYS[i]; if (a[ko] != null && b[ko] != null && JSON.stringify(a[ko]) !== JSON.stringify(b[ko])) return false; }
     var ka = Object.keys(a.counts).sort(), kb = Object.keys(b.counts).sort();
     if (ka.join('\u0001') !== kb.join('\u0001')) return false;
     for (i = 0; i < ka.length; i++) if (a.counts[ka[i]] !== b.counts[ka[i]]) return false;
@@ -422,20 +430,27 @@
     items().forEach(function (it) { arr(it.adjustments).forEach(function (a) { out.push({ name: it.name, what: 'その月だけ：' + (a.name || '') + ' ' + yen(a.amount) + '円（' + (a.reason || '') + '）' }); }); });
     return out;
   }
+  /* 確定できない警告（2026-11-21）: 率表・税額表・標準報酬が無い月は保険料・所得税を0円などで数えているので確定させない（最低賃金の未設定のような毎月の警告とは分ける） */
+  var BLOCK_WARN = { rate_missing: 1, emp_rate_missing: 1, tax_table_missing: 1, std_missing: 1 };
+  function blockWarns(list) { var out = []; list.forEach(function (it) { arr(it.warnings).forEach(function (w) { if (w && BLOCK_WARN[w.code]) out.push(it.name + '：' + (w.msg || w.code)); }); }); return out; }
   function openConfirm() {
     if (busy || !bs || status() !== 'draft' || dirty) return;
     var list = items(), t = totals(list), ch = changedList(), h = '';
-    var warns = []; list.forEach(function (it) { arr(it.warnings).forEach(function (w) { warns.push(it.name + '：' + (w.msg || w.code)); }); });
+    var blk = blockWarns(list);
+    var warns = []; list.forEach(function (it) { arr(it.warnings).forEach(function (w) { if (!(w && BLOCK_WARN[w.code])) warns.push(it.name + '：' + (w.msg || w.code)); }); });
     h += '<p>' + esc(periodText()) + 'の給与を確定します。確定すると、この月の明細と書き出しはこの数字で固まります。</p>';
     h += '<div class="kv"><span>人数</span><b>' + esc(t.n) + ' 人</b><span>総支給の合計</span><b>' + esc(yen(t.gross)) + ' 円</b><span>控除の合計</span><b>' + esc(yen(t.deduct)) + ' 円</b><span>差引の合計</span><b>' + esc(yen(t.net)) + ' 円</b><span>支給日</span><b>' + esc(jdate(payDate()) || '（未定）') + '</b></div>';
+    if (blk.length) h += '<div class="band ng" role="alert"><b>確定できない警告（' + esc(blk.length) + ' 件）</b><ul>' + blk.map(function (w) { return '<li>⛔ ' + esc(w) + '</li>'; }).join('') +
+      '</ul>率表・税額表・標準報酬が足りないので、保険料や所得税を正しく数えられていません。管理者が設定（率表・職員の給与設定）を直してから、計算し直してください。</div>';
     h += '<h3>残っている警告（' + esc(warns.length) + ' 件）</h3>' + (warns.length ? '<ul>' + warns.map(function (w) { return '<li>⚠ ' + esc(w) + '</li>'; }).join('') + '</ul>' : '<p>ありません。</p>');
     h += '<h3>今月変わった設定と調整（' + esc(ch.length) + ' 件）</h3>' + (ch.length ? '<ul>' + ch.map(function (c) { return '<li>' + esc(c.name) + '：' + esc(c.what) + '</li>'; }).join('') + '</ul>' : '<p>ありません。</p>');
-    if (warns.length) h += '<p><label><input type="checkbox" id="c-ack"> 警告を確かめました</label></p>';
+    if (warns.length && !blk.length) h += '<p><label><input type="checkbox" id="c-ack"> 警告を確かめました</label></p>';
     h += '<p class="help">「確定する」を押すと、もう一度データベースから読み直して数え直し、この窓の数字と同じ時だけ確定します。</p>';
-    openDlg('給与を確定する', h, '<button type="button" class="btn" data-act="dlg-close">やめる</button><button type="button" class="btn pri" data-act="confirm-go">確定する</button>', { mode: 'confirm', shown: figures(list), warn: warns.length });
+    openDlg('給与を確定する', h, '<button type="button" class="btn" data-act="dlg-close">やめる</button><button type="button" class="btn pri" data-act="confirm-go"' + (blk.length ? ' disabled' : '') + '>確定する</button>', { mode: 'confirm', shown: figures(list), warn: warns.length, block: blk.length });
   }
   function confirmGo(btn) {
     if (busy || !dlgCtx || dlgCtx.mode !== 'confirm') return;
+    if (dlgCtx.block || blockWarns(items()).length) { say('確定できない警告（率表・税額表・標準報酬が無い月）が残っているので、確定できません。設定を直してから計算し直してください。'); return; }
     if (dlgCtx.warn && !($('c-ack') && $('c-ack').checked)) { say('警告を確かめたら「警告を確かめました」に印を入れてください。'); return; }
     var shown = dlgCtx.shown, done = hold(btn, '確かめています…'), my = gen;
     rpc('payroll_bootstrap', { p_ym: ym }).then(function (r) {
@@ -462,6 +477,7 @@
         notice = { cls: 'warn', text: '読み直したら数字が変わっていました。確定していません。数字を確かめて、下書き保存してからもう一度確定してください。' };
         paint(); return null;
       }
+      if (blockWarns(now).length) { done(); closeDlg(); notice = { cls: 'ng', text: '確定していません。確定できない警告（率表・税額表・標準報酬が無い月）が残っています。設定を直してから計算し直してください。' }; paint(); return null; }
       return rpc('payroll_run_confirm', { p_ym: ym, p_rev: bs.run.rev }).then(okOr).then(function () {
         done(); closeDlg(); toast('確定しました。'); return load(false);
       });
@@ -720,6 +736,13 @@
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(function () { URL.revokeObjectURL(u); }, 1500);
   }
+  /* 書き出しの知らせの1行（どの職員か＝明細の表示名を添える・2026-11-21） */
+  var EXP_WHERE = { name: '口座の名義', bank_name: '銀行名', branch_name: '支店名', number: '口座番号', bank_code: '銀行コード', branch_code: '支店コード', type: '預金種目' };
+  function expMsg(e) {
+    if (!e || !e.msg) return '';
+    var f = /^record\d+\.(\w+)$/.exec(String(e.where || '')), w = f && EXP_WHERE[f[1]] ? EXP_WHERE[f[1]] + '：' : '';
+    return (e.who ? e.who + ' さん：' : '') + w + e.msg;
+  }
   function exportGo(kind, btn) {
     var x = X();
     if (busy || !frozen() || !x || !EXP[kind] || typeof x[kind] !== 'function') return;
@@ -754,6 +777,7 @@
     }).then(function (res) {
       done();
       if (!res) return;
+      var ws = arr(res.warnings).map(expMsg).filter(Boolean);   /* 書き出しの知らせ（下で出す） */
       if (res.ok !== false && kind === 'zengin') {
         var want = transferWant();
         if (num(res.total) !== want.total || num(res.count) !== want.parts) {
@@ -763,13 +787,15 @@
         }
       }
       if (res.ok === false) {
-        var why = arr(res.errors).slice(0, 5).map(function (e) { return (e && e.msg) || ''; }).filter(Boolean);
+        var why = arr(res.errors).slice(0, 5).map(expMsg).filter(Boolean);
         res = null;
         say(EXP[kind] + 'を作れませんでした（ファイルは作っていません）。' + (why.length ? '\n' + why.join('\n') : '') + '\n設定（振込元・仕訳の科目）と口座を確かめてください。');
         return load(true);
       }
       download(res); res = null;
       toast(EXP[kind] + 'を書き出しました。使い終わったら消してください。');
+      /* 書き出しの知らせ（名義などを桁で切った所）。ファイルは作ったので、確かめてもらう所だけを出す（2026-11-21） */
+      if (ws.length) say(EXP[kind] + 'を書き出しました。次の所を確かめてください（' + ws.length + ' 件）。\n' + ws.slice(0, 10).join('\n') + (ws.length > 10 ? '\nほか ' + (ws.length - 10) + ' 件' : ''));
       return load(true);
     })['catch'](function (e) { done(); fail(e, '書き出し'); });
   }
@@ -906,6 +932,16 @@
     h += '<div class="kv"><label for="b-reason">理由（必ず書く）</label><input id="b-reason" maxlength="200" autocomplete="off"></div>';
     openDlg('口座を入れる（下4桁だけ表示）', h, '<button type="button" class="btn" data-act="dlg-close">やめる</button><button type="button" class="btn pri" data-act="bank-go">保存する</button>', { mode: 'bank', sid: sid, dirtyCheck: true });
   }
+  /* 口座の名義（カナ）を、振込データと同じ字の直し（PayrollExport.zenginText）で確かめる。使えない字がある・半角にして30字を超える時は文を返す（保存しない・2026-11-21）。
+     保存するのは入れたままの名義（書き出しの時に同じ直しを通す） */
+  function kanaCheck(kn) {
+    var x = X();
+    if (!x || typeof x.zenginText !== 'function') return '名義（カナ）を確かめられませんでした（部品が読めません）。読み直してください。';
+    var z = x.zenginText(kn);
+    if (z.bad.length) return '名義（カナ）に振込で使えない字があります（' + z.bad.join(' ') + '）。カタカナ・英数字と ( ) - . / , で書いてください。';
+    if (z.text.length > 30) return '名義（カナ）が長すぎます（半角にして ' + z.text.length + ' 字・30字まで）。通帳の名義のとおりに、30字に収まる形で書いてください。';
+    return '';
+  }
   function bankGo(btn) {
     var p = dlgCtx && profOf(dlgCtx.sid); if (!p) return;
     var reason = v('b-reason'); if (!reason) { say(NG.reason); return; }
@@ -919,6 +955,7 @@
       acc.push({ bank_code: bk, branch_code: br, type: v('b-ty' + i), number: ('0000000' + no).slice(-7), name_kana: kn, amount_or_rest: i ? parseInt(am, 10) : 'rest' });
     }
     if (bad) { say(NG.badbank + '（2つ目からは送る額も書きます）'); return; }
+    for (i = 0; i < acc.length; i++) { var kq = kanaCheck(acc[i].name_kana); if (kq) { say('口座 ' + (i + 1) + ' の' + kq); return; } }
     if (!acc.length && !bankOf({ staff_id: p.staff_id }).length) { say('口座を1つ以上入れてください。'); return; }
     var go = function () {
     var done = hold(btn, '保存しています…');
@@ -1071,6 +1108,8 @@
         bank = { bank_code: g('bank').replace(/\D/g, ''), branch_code: g('branch').replace(/\D/g, ''), type: ACCT_IN[g('acct_type')] || '1', number: ('0000000' + no).slice(-7), name_kana: g('kana'), amount_or_rest: 'rest' };
         if (!/^\d{4}$/.test(bank.bank_code) || !/^\d{3}$/.test(bank.branch_code) || !/^\d{1,7}$/.test(no)) { ch.push('⚠ 口座の形が違うので送りません'); bank = null; }
         else if (!bank.name_kana) { ch.push('⚠ 口座名義が無いので送りません'); bank = null; }
+        /* 名義は振込データと同じ字の直しで確かめる（使えない字・半角で30字を超える時は送らない・2026-11-21） */
+        else if (kanaCheck(bank.name_kana)) { ch.push('⚠ 口座名義に振込で使えない字があるか、半角にして30字を超えるので、口座は送りません（口座の画面で入れてください）'); bank = null; }
         /* 預金種類の値があって分からない時は送らない（空・列なしは今のとおり普通） */
         else if (g('acct_type') && !ACCT_IN[g('acct_type')]) { ch.push('⚠ 預金種類が分からないので送りません'); bank = null; }
         else ch.push('口座：＊＊＊' + no.slice(-4));

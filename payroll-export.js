@@ -76,7 +76,12 @@
       var z = zenginText(v);
       if (z.bad.length) err(where, '全銀で使えない文字があります: ' + z.bad.join(' '));
       var t = z.text;
-      if (t.length > n) { if (truncWarn) warnings.push({ where: where, msg: n + '桁を超えたので切りました' }); t = t.slice(0, n); }
+      if (t.length > n) {
+        if (truncWarn) warnings.push({ where: where, msg: n + '桁を超えたので切りました' });
+        /* 濁点・半濁点（ﾞ ﾟ）は前の字と2文字で1つの音。切る所の次が濁点・半濁点なら、その前の字も残さない（ｶﾞ の ｶ だけを残さない・2026-11-21） */
+        var cut = n; if (t.charAt(n) === 'ﾞ' || t.charAt(n) === 'ﾟ') cut = n - 1;
+        t = t.slice(0, cut);
+      }
       return spad(t, n);
     }
     var kind = opt.kind === '11' || opt.kind === '12' ? opt.kind : '21';
@@ -264,17 +269,20 @@
     (Array.isArray(o.rows) ? o.rows : []).forEach(function (r, i) {
       var it = r && by[r.staff_id];
       if (!it) { skipped.push(r && r.staff_id); return; }
-      if (Number(r.net) !== Number(it.net)) { extra.push({ where: 'row' + (i + 1), msg: '確定した差引と振込の額が違います' }); return; }
+      if (Number(r.net) !== Number(it.net)) { extra.push({ where: 'row' + (i + 1), msg: '確定した差引と振込の額が違います', who: it.name || '' }); return; }
       var sp = splitAccounts(it.net, r.accounts);
-      if (sp.rest > 0) { extra.push({ where: 'row' + (i + 1), msg: '口座に振り分けられない残りがあります' }); return; }
+      if (sp.rest > 0) { extra.push({ where: 'row' + (i + 1), msg: '口座に振り分けられない残りがあります', who: it.name || '' }); return; }
       sp.parts.forEach(function (p) {
         var a = p.account || {};
-        records.push({ bank_code: a.bank_code, branch_code: a.branch_code, type: a.type, number: a.number, name_kana: a.name_kana, amount: p.amount });
+        records.push({ bank_code: a.bank_code, branch_code: a.branch_code, type: a.type, number: a.number, name_kana: a.name_kana, amount: p.amount, who: it.name || '' });
       });
     });
     var built = zenginBuild({ kind: z.kind, payDate: o.payDate, crlf: z.crlf !== false, records: records,
       from: { consignor_code: bf.consignor_code, consignor_kana: bf.consignor_kana, bank_code: bf.bank_code, bank_name_kana: bf.bank_kana,
         branch_code: bf.branch_code, branch_name_kana: bf.branch_kana, type: bf.type, number: bf.number } });
+    /* どの職員の行の知らせかを添える（who＝明細の表示名・recordN は records の並び＝口座ごと） */
+    var whoOf = function (e) { var m = /^record(\d+)\./.exec(String(e.where || '')) || /^record(\d+)$/.exec(String(e.where || '')), rc = m && records[+m[1] - 1]; if (rc && rc.who) e.who = rc.who; return e; };
+    built.errors.forEach(whoOf); built.warnings.forEach(whoOf);
     var errors = built.errors.concat(extra);
     return { ok: errors.length === 0, name: fileName('zengin', o.ym, 'txt'), bytes: errors.length ? null : built.bytes, count: built.count, total: built.total,
       errors: errors, warnings: built.warnings, skipped: skipped };

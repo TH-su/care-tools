@@ -88,13 +88,15 @@ console.log('\n— 1. 計算 → 下書き保存 → 確定 —');
        総支給 240,000＋10,000＋8,000＝258,000
        健保 260,000×10.08%÷2＝13,104・介護 260,000×1.62%÷2＝2,106・支援金 260,000×0.23%÷2＝299・厚年 260,000×18.3%÷2＝23,790
        雇保 258,000×0.5%＝1,290
-       課税対象 258,000−8,000−(13,104＋2,106＋299＋23,790＋1,290)＝209,411
+       課税対象 258,000−4,200−(13,104＋2,106＋299＋23,790＋1,290)＝213,211
+     ★総点検（2026-11-21）: 通勤手当の非課税の上限を国税庁の表で入れた（車・片道6km は月4,200円まで・令和7年4月1日以後）ので、
+       非課税は 8,000 でなく 4,200、課税対象は 209,411 から 213,211 に改めた（前は上限の表が空で通勤手当の全額を非課税にしていた）
      所得税（税額表の引き）・住民税（設定の額）は手で確かめていない値なので比べない */
   await shot(p, 'payroll.run-open.pc');
   const s01 = await p.evaluate(() => { const o = {}; document.querySelectorAll('details.it[data-sid="s-01"] tbody tr').forEach((tr) => { const td = tr.querySelectorAll('td'); if (td.length >= 3) o[td[0].textContent.trim()] = td[2].textContent.trim(); }); return o; });
   const y = (k) => Number(String(s01[k] || '').replace(/[^\d]/g, ''));
   t('手で確かめた値と一致（時間外の行なし・健保 13,104・介護 2,106・支援金 299・厚年 23,790・雇保 1,290）', !('時間外労働' in s01) && y('健康保険料') === 13104 && y('介護保険料') === 2106 && y('子ども・子育て支援金') === 299 && y('厚生年金保険料') === 23790 && y('雇用保険料') === 1290, s01);
-  t('手で確かめた値と一致（総支給 258,000・課税対象 209,411）', /258,000/.test(await p.textContent('details.it[data-sid="s-01"] > summary')) && /課税対象 209411/.test(body1), body1.slice(0, 200));
+  t('手で確かめた値と一致（総支給 258,000・課税対象 213,211）', /258,000/.test(await p.textContent('details.it[data-sid="s-01"] > summary')) && /課税対象 213211/.test(body1), body1.slice(0, 200));
   /* その月だけの調整（理由が無いと足せない） */
   await p.click('details.it[data-sid="s-01"] [data-act="adj"]');
   await p.fill('#a-name', '見本の立替');
@@ -123,8 +125,9 @@ console.log('\n— 1. 計算 → 下書き保存 → 確定 —');
   await p.waitForFunction(() => /確定済み/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
   t('確定すると確定済みになり、計算するのボタンが消える', run(o).status === 'confirmed' && (await p.locator('[data-act="compute"]').count()) === 0);
   const sv = o.routes.calls.filter((c) => c.name === 'payroll_run_save').pop();
+  /* ★2026-11-21（反証レビュー 5）: 計算の版の印を payroll-calc-2・率表の版を rates-2026-11-21 に上げたので期待を改めた */
   t('下書き保存は {staff_id, item, adjustments} の形（item に氏名・口座を入れない）・指紋は bootstrap の値＋率と計算の版', !!sv && sv.args.p_items.every((x) => Object.keys(x).sort().join() === 'adjustments,item,staff_id' && !('name' in x.item) && !('bank_last4' in x.item) && /^\d{4}-\d{2}-\d{2}$/.test(x.item.pay_date))
-    && sv.args.p_fingerprint.rates_ver === 'rates-2026-11-19' && sv.args.p_fingerprint.calc_ver === 'payroll-calc-1' && 'kintai_locked_at' in sv.args.p_fingerprint && 'allowances' in sv.args.p_fingerprint, sv && Object.keys(sv.args.p_fingerprint));
+    && sv.args.p_fingerprint.rates_ver === 'rates-2026-11-21' && sv.args.p_fingerprint.calc_ver === 'payroll-calc-2' && 'kintai_locked_at' in sv.args.p_fingerprint && 'allowances' in sv.args.p_fingerprint, sv && Object.keys(sv.args.p_fingerprint));
   t('支給日は 2026-11-27（金曜・手で確かめた値）を明細に写し、指紋にも入れた', !!sv && sv.args.p_items.every((x) => x.item.pay_date === '2026-11-27') && sv.args.p_fingerprint.pay_date === '2026-11-27');
   t('確定を押した時にもう一度読み直し、締めた勤怠も数え直した（bootstrap → kintai_month_get → 確定）', (() => { const n = o.routes.calls.map((c) => c.name); const i = n.lastIndexOf('payroll_run_confirm'); return i > 1 && n[i - 1] === 'kintai_month_get' && n[i - 2] === 'payroll_bootstrap'; })());
   t('端末に残したのは payroll_tab だけ（月分・金額・氏名なし・施設情報の共通の控えは除いて数える）', await p.evaluate(() => { const ks = []; for (let i = 0; i < localStorage.length; i++) ks.push(localStorage.key(i)); return ks.filter((k) => /payroll/.test(k)).join() === 'payroll_tab' && !ks.filter((k) => k !== 'su_facility_json_v1').some((k) => /見本 [一二三四五六七八九十]|見本銀行|\d{1,3},\d{3}/.test(localStorage.getItem(k) || '')); }));
