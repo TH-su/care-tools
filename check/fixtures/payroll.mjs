@@ -77,6 +77,7 @@ export function profileOk(d, sid) {
         if (k2 === 'monthly') { if (!(nul(v2) || yenOk(v2, 0))) return false; }
         else if (k2 === 'means') { if (!(nul(v2) || txtOk(v2, 20))) return false; }
         else if (k2 === 'distance_km') { if (!(nul(v2) || numOk(v2, 0, 1000))) return false; }
+        else if (k2 === 'parking_monthly') { if (!(nul(v2) || yenOk(v2, 0))) return false; }   /* 統合 0118 */
         else return false;
       }
     } else if (k === 'fixed_ot') {
@@ -436,6 +437,10 @@ export function routesFor(opt = {}) {
       if (!db.kintai.locked_at) return ng('notlocked');
       if (fpCore(cur.fingerprint) !== fpCore(fp(db, ym))) { cur.stale = true; audit('run_stale', ym); return ng('stale'); }
       for (const i of db.items[ym] || []) if (itemErr({ staff_id: i.staff_id, item: i.item, adjustments: i.adjustments })) return ng('badsum', { staff_id: i.staff_id });
+      /* 統合 0118: 確定できない警告（4つ）の明細があれば断る */
+      const BW = ['rate_missing', 'emp_rate_missing', 'tax_table_missing', 'std_missing'];
+      const blk = (db.items[ym] || []).filter((i) => (Array.isArray(i.item.warnings) ? i.item.warnings : []).some((w) => w && BW.includes(w.code))).map((i) => i.staff_id).sort()[0];
+      if (blk) return ng('blockwarn', { staff_id: blk });
       const t = totalsOf(db, ym);
       if (!t.count) return ng('empty');
       if (JSON.stringify(t) !== JSON.stringify(cur.totals)) return ng('badsum');
@@ -481,6 +486,11 @@ export function routesFor(opt = {}) {
       const ym = p.p_ym, cur = db.runs[ym]; if (!ymOk(ym)) return ng('badym');
       if (!cur || cur.status === 'draft') return ng('notconfirmed');
       if (!db.settings || db.settings.config.zengin_enabled !== true) return ng('zengin_off');   /* B の担当が足している印（全銀の書き出しを使う） */
+      /* 統合 0118: 前に書き出した月（exported_at がある・取り消して確定し直した月も）は、直前の確かめの記録（zengin_again・この後まだ書き出していない）がある時だけ（偽の DB は同じ人・10分を見ない） */
+      if (cur.exported_at) {
+        const li = db.audit.map((x) => x.action).lastIndexOf('export_zengin_again'), lb = db.audit.map((x) => x.action).lastIndexOf('bank_export');
+        if (!(li >= 0 && li > lb)) { audit('bank_export_again_ng', ym); return ng('exported', { exported_at: cur.exported_at }); }
+      }
       const its = db.items[ym] || [], diff = its.filter((i) => (cur.bank_fp[i.staff_id] === undefined ? null : cur.bank_fp[i.staff_id]) !== (db.bank[i.staff_id] ? db.bank[i.staff_id].rev : null)).length;
       if (diff) { audit('bank_export_stale', ym); return ng('stale', { changed: diff }); }
       const rows = its.filter((i) => i.net > 0 && db.bank[i.staff_id]).map((i) => ({ staff_id: i.staff_id, name: i.frozen.name, net: i.net, accounts: db.bank[i.staff_id].accounts }));
@@ -516,9 +526,10 @@ export function routesFor(opt = {}) {
     }
     if (name === 'payroll_export_log') {
       const ym = p.p_ym; if (!ymOk(ym)) return ng('badym');
-      if (!['zengin', 'journal', 'ledger', 'payslip', 'csv'].includes(p.p_kind)) return ng('badshape');
+      if (!['zengin', 'zengin_again', 'journal', 'ledger', 'payslip', 'csv'].includes(p.p_kind)) return ng('badshape');
       const cur = db.runs[ym]; if (!cur && p.p_kind !== 'payslip') return ng('norun');   /* 明細の印刷は月が無くても記録する */
       if (p.p_kind === 'zengin' && cur.status === 'draft') return ng('notconfirmed');
+      if (p.p_kind === 'zengin_again' && (cur.status === 'draft' || !cur.exported_at)) return ng('notexported');   /* 統合 0118 */
       db.log.push(p.p_kind); audit('export_' + p.p_kind, ym);
       return ok();
     }

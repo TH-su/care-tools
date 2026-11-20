@@ -260,22 +260,50 @@ console.log('\n— 5. 振込と書き出し —');
     t('振込元の設定が足りない時は口座を受け取らず（bank_export・記録を呼ばない）、月も書き出し済みにしない', /振込元の設定に足りない所があるので/.test(m3) && !o3.routes.calls.some((c) => c.name === 'payroll_bank_export' || c.name === 'payroll_export_log') && run(o3).status === 'confirmed', m3);
     await o3.ctx.close();
   }
+  /* 統合 0118: 書き出し済みの月をもう一度書き出す時は、確かめの窓（「いいえ」なら何も送らない・「はい」なら zengin_again を記録してから受け取る） */
+  t('1回目の書き出しで月は書き出し済み', run(o2).status === 'exported');
+  {
+    const n0 = o2.routes.calls.length;
+    await p2.click('[data-k="zengin"]');
+    const ma = await sud(p2, 'cancel');
+    t('書き出し済みの月の振込データは、二重の振込を確かめる窓を出し、「いいえ」なら何も送らない', /もう書き出しています/.test(ma) && /二重に振り込まれます/.test(ma)
+      && !o2.routes.calls.slice(n0).some((c) => c.name === 'payroll_export_log' || c.name === 'payroll_bank_export'), ma);
+    let dla = null; p2.once('download', (d) => { dla = d; });
+    await p2.click('[data-k="zengin"]');
+    await sud(p2, 'ok');
+    await p2.waitForTimeout(800);
+    const ca = o2.routes.calls.slice(n0).filter((c) => c.name === 'payroll_export_log' || c.name === 'payroll_bank_export').map((c) => c.name + ':' + (c.args.p_kind || ''));
+    t('「はい」なら zengin_again を記録してから口座を受け取り、もう一度ファイルを作る', JSON.stringify(ca) === JSON.stringify(['payroll_export_log:zengin_again', 'payroll_bank_export:']) && !!dla, ca);
+    if (dla) fs.rmSync(await dla.path(), { force: true });
+    /* 確かめの記録が DB に残らなかった（別の画面で書き出された・10分を過ぎた）として: DB は exported で断り、画面はその知らせを出す */
+    const au = o2.routes.db.audit;
+    au.push = function (x) { return x && x.action === 'export_zengin_again' ? this.length : Array.prototype.push.call(this, x); };
+    let dlx = false; p2.once('download', () => { dlx = true; });
+    await p2.click('[data-k="zengin"]');
+    await sud(p2, 'ok');
+    const mx = await sud(p2);
+    delete au.push;
+    t('DB がもう一度の書き出しを断った（exported）時は、ファイルを作らずその知らせを出す', /もう一度作る時は/.test(mx) && !dlx, mx);
+  }
   /* 確定の後に口座が直された（統合 0102 は stale で断る）: 計算し直しの知らせではなく口座の知らせ */
   /* 全銀の合計・件数が画面の振込する分と合わない（確定の後に口座の分け方が変わった・版は同じ）: ファイルを作らず知らせる */
   o2.routes.db.bank['s-01'].accounts = [o2.routes.db.bank['s-01'].accounts[0]];
   let dl9 = false; p2.once('download', () => { dl9 = true; });
   await p2.click('[data-k="zengin"]');
+  await sud(p2, 'ok');   /* 0118: もう一度の書き出しの確かめ */
   const msg9 = await sud(p2);
   t('全銀の件数が画面の振込する分と合わない時はファイルを作らず知らせる', /と合いません。ファイルは作っていません/.test(msg9) && !dl9, msg9);
   /* 確定の後に口座が直された（統合 0102 は stale で断る）: 計算し直しの知らせではなく口座の知らせ */
   o2.routes.db.bank['s-02'].rev++;
   await p2.click('[data-k="zengin"]');
+  await sud(p2, 'ok');   /* 0118: もう一度の書き出しの確かめ */
   const msg2 = await sud(p2);
   t('確定の後に口座が直されていたら、振込データを作らず口座の知らせを出す', /確定した後に振込先の口座が直されました/.test(msg2), msg2);
   /* 全銀を使わない設定（DB が zengin_off で断る）。ボタンは出ないが、DB の断りも口座の知らせと別の文にする */
   o2.routes.db.bank['s-02'].rev--;
   o2.routes.db.settings.config.zengin_enabled = false;
   await p2.click('[data-k="zengin"]');
+  await sud(p2, 'ok');   /* 0118: もう一度の書き出しの確かめ */
   const msgOff = await sud(p2);
   t('DB が全銀を使わない設定と断った（zengin_off）時は、その知らせを出す', /管理者が「設定」で使うようにするまで使えません/.test(msgOff), msgOff);
   fs.rmSync(zp, { force: true });
@@ -331,6 +359,16 @@ console.log('\n— 6. 覆い・その他 —');
   const pf = o4.routes.calls.filter((c) => c.name === 'payroll_profile_put').pop();
   t('固定残業代: 手当・含む時間（分）・確かめた を送り、DB の確かめを通る', !!pf && JSON.stringify(pf.args.p_data.fixed_ot) === JSON.stringify({ allowance_code: 'night', covered_min: 600, checked: true })
     && o4.routes.db.profiles.some((q) => q.staff_id === 's-09' && q.effective_from === '2026-10-16' && q.data.fixed_ot && q.data.fixed_ot.checked === true), pf && pf.args.p_data.fixed_ot);
+  /* 統合 0118: 通勤手当の駐車場の料金（本人が負担・月）の欄。s-01（車・片道6km）に 3000円 */
+  await o4.page.click('[data-act="prof"][data-sid="s-01"]');
+  await o4.page.fill('#f-cmp', '3000');
+  await o4.page.fill('#f-reason', '見本の駐車場');
+  await o4.page.click('[data-act="prof-go"]');
+  await o4.page.waitForFunction(() => !document.getElementById('p-dlg').open, null, { timeout: 10000 });
+  const pk = o4.routes.calls.filter((c) => c.name === 'payroll_profile_put').pop();
+  t('駐車場の料金: 通勤手当の parking_monthly で送り（手段・距離・月の額はそのまま）、DB の確かめを通る', !!pk && pk.args.p_staff_id === 's-01'
+    && JSON.stringify(pk.args.p_data.commute) === JSON.stringify({ monthly: 8000, means: 'car', distance_km: 6, parking_monthly: 3000 })
+    && o4.routes.db.profiles.some((q) => q.staff_id === 's-01' && q.effective_from === '2026-10-16' && q.data.commute.parking_monthly === 3000), pk && pk.args.p_data.commute);
   t('給与の設定の無い人には印を出す', /給与の設定なし/.test(await o4.page.textContent('#p-main')));
   /* freee の書き出しの取り込み: 画面の中だけで読み、違いの表は口座を下4桁だけ・送る時に全桁 */
   const csv = '従業員番号,氏名,給与形態,基本給,時給,口座種別,銀行コード,支店コード,口座番号,口座名義\r\nF-1,見本 一郎,月給,245000,,普通,9999,001,7654321,ﾐﾎﾝ ｲﾁﾛｳ\r\nF-9,見本 不明,時給,,1000,,,,,\r\n,見本 二子,,,,普通,9999,001,1111111,\r\n';

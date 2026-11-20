@@ -122,6 +122,10 @@
     notoffice: '給与の名簿に載せられるのは、同じ事業者の事務所のアカウントだけです（「使える人の管理」で役割を確かめてください）。',
     badrange: '期間の形が違います（400日まで）。',
     zengin_off: '振込データ（全銀形式）の書き出しは、管理者が「設定」で使うようにするまで使えません。',
+    /* 統合 0118 の断りの名前（文は仮置き 2026-11-21） */
+    blockwarn: '確定できない警告（率表・税額表・標準報酬が無い月）が残っているので、確定できません。設定を直してから計算し直してください。',
+    exported: 'この月の振込データはもう書き出していました。読み直したので、もう一度作る時は「振込データ」をもう一度押し、出てくる確かめの窓で「OK」を押してください（確かめてから10分以内）。',
+    notexported: 'この月の振込データはまだ書き出していません。読み直してください。',
     bankstale: '確定した後に振込先の口座が直されました。振込データは作りません。管理者が確定を取り消して、確かめ直してから確定し直してください。'
   };
   function friendly(e) {
@@ -759,15 +763,25 @@
         return;
       }
     }
+    /* 書き出し済みの月の振込データをもう一度作る時は、二重に振り込まないよう確かめ、確かめたことを記録してから受け取る（統合 0118・文は仮置き 2026-11-21） */
+    /* 前に書き出した月（確定を取り消して確定し直した月も・exported_at が残る）は確かめる（反証レビュー 2026-11-21） */
+    var again = kind === 'zengin' && (status() === 'exported' || !!(bs.run && bs.run.exported_at));
+    if (again) busy = true;   /* 確かめの窓の間に2回押されない */
+    (again ? ask('この月の振込データは ' + at(bs.run && bs.run.exported_at) + ' にもう書き出しています。\n銀行へもう渡していれば、もう一度渡すと二重に振り込まれます。\n前のファイルを作れなかった・なくした時だけ、もう一度作ってください。\nもう一度書き出しますか？') : Promise.resolve(true)).then(function (go) {
+    busy = false;
+    if (!go) return;
     var done = hold(btn, '作っています…');
-    rpc('payroll_export_log', { p_ym: ym, p_kind: EXP_LOG[kind] }).then(okOr).then(function () {
+    rpc('payroll_export_log', { p_ym: ym, p_kind: again ? 'zengin_again' : EXP_LOG[kind] }).then(okOr).then(function () {
       if (kind !== 'zengin') return x[kind](base);
       return rpc('payroll_bank_export', { p_ym: ym }).then(function (r) {
         /* 確定の後に口座が直された（stale）は、計算し直しの stale と別の知らせにする */
         if (r && r.ok === false && r.error === 'stale') { var e = new Error('bankstale'); e.payroll = 'bankstale'; throw e; }
         if (r && r.ok === false && r.error === 'zengin_off') { var e2 = new Error('zengin_off'); e2.payroll = 'zengin_off'; throw e2; }
+        /* 画面が古い（別のタブ・別の人が先に書き出した・前の応答が届かなかった）: 読み直して、次に押すと確かめの窓が出るようにする（反証レビュー 2026-11-21） */
+        if (r && r.ok === false && r.error === 'exported') { done(); say(NG.exported); return load(true).then(function () { return null; }); }
         return okOr(r);
       }).then(function (r) {
+        if (!r) return null;   /* exported で断って読み直した（知らせは出した） */
         var res = x.zengin(Object.assign({}, base, { rows: arr(r.rows) }));
         r.rows = null; r = null;
         zcheck = res.ok ? { ym: ym, count: num(res.count), total: num(res.total) } : null;
@@ -798,6 +812,7 @@
       if (ws.length) say(EXP[kind] + 'を書き出しました。次の所を確かめてください（' + ws.length + ' 件）。\n' + ws.slice(0, 10).join('\n') + (ws.length > 10 ? '\nほか ' + (ws.length - 10) + ' 件' : ''));
       return load(true);
     })['catch'](function (e) { done(); fail(e, '書き出し'); });
+    });
   }
 
   /* ── 職員の給与設定 ── */
@@ -852,7 +867,9 @@
     function amtOf(list, code) { var x = arr(list).filter(function (a) { return a && a.code === code; })[0]; return x ? x.amount : ''; }
     if (pays.length) h += '<p class="help">手当（月の額・空欄は無し）</p><div class="kv">' + pays.map(function (a, i) { return inp('f-al' + i, a.name || a.code, amtOf(d.allowances, a.code), NUMA); }).join('') + '</div>';
     if (deds.length) h += '<p class="help">固定の控除（月の額・空欄は無し）</p><div class="kv">' + deds.map(function (a, i) { return inp('f-de' + i, a.name || a.code, amtOf(d.deductions, a.code), NUMA); }).join('') + '</div>';
-    h += '<div class="kv">' + inp('f-cm', '通勤手当（月の額・円）', cm.monthly, NUMA) + sel('f-cmm', '通勤の手段', cm.means, [['', '（選ぶ）'], ['public', '公共交通'], ['car', '車・自転車'], ['mixed', '併用']]) + inp('f-cmd', '片道の距離（km）', cm.distance_km, ' inputmode="decimal"') + '</div>';
+    h += '<div class="kv">' + inp('f-cm', '通勤手当（月の額・円）', cm.monthly, NUMA) + sel('f-cmm', '通勤の手段', cm.means, [['', '（選ぶ）'], ['public', '公共交通'], ['car', '車・自転車'], ['mixed', '併用']]) + inp('f-cmd', '片道の距離（km）', cm.distance_km, ' inputmode="decimal"') +
+      inp('f-cmp', '駐車場の料金（本人が負担・月・円）', cm.parking_monthly, NUMA) + '</div>' +
+      '<p class="help">駐車場の料金は、車・自転車で片道2km以上の人だけ、令和8年4月1日以後に払う分の非課税の上限に月5,000円まで足します（空欄は無し）。</p>';
     /* 固定残業代（手当・含む時間（分）・確かめた）。手当を選ばなければ固定残業代なし（代表者の決定 2026-11-19・欄の位置は仮置き） */
     var fo = obj(d.fixed_ot);
     h += '<p class="help">固定残業代（手当に含む時間外の分。含む分を時間外から先に引き、超えた分だけを残業代として払います）</p><div class="kv">' +
@@ -891,6 +908,10 @@
     c.deds.forEach(function (a, i) { var x = n('f-de' + i, a.name || a.code); if (x != null && x === x) keepD.push({ code: a.code, amount: x }); });
     d.deductions = keepD;
     d.commute = Object.assign({}, obj(d.commute), { monthly: n('f-cm', '通勤手当'), means: v('f-cmm') || null, distance_km: n('f-cmd', '片道の距離') });
+    /* 駐車場の料金は、入れた時と前に値があった時だけ送る（空の人に鍵を足さない・統合 0118 より前の DB は知らない鍵を断るため） */
+    var pkv = n('f-cmp', '駐車場の料金');
+    if (pkv != null || 'parking_monthly' in obj(p.data.commute)) d.commute.parking_monthly = pkv;
+    if (d.commute.parking_monthly != null && d.commute.parking_monthly === d.commute.parking_monthly && d.commute.parking_monthly % 1) bad.push('駐車場の料金（円・整数）');
     var fot = v('f-fot'), fotMin = n('f-fotmin', '含む時間（分）');
     if (!fot) delete d.fixed_ot;
     else if (fotMin == null || fotMin !== fotMin || fotMin % 1 || fotMin < 0) bad.push('含む時間（分・0以上の整数）');
@@ -1309,7 +1330,8 @@
   /* 操作の記録（管理者だけ・統合 0102 の payroll_audit_get・直近30日）。前と後の中身は出さず、何を・いつ・だれが・理由だけ */
   var ACT_NAME = { run_save: '下書き保存', run_confirm: '確定', run_unconfirm: '確定の取り消し', run_stale: '確定の断り（入力が変わった）', profile_put: '職員の給与設定', bank_put: '口座', bank_export: '振込データの口座の受け取り',
     bank_export_stale: '振込データの断り（口座が直された）', settings_put: '給与の設定', allowance_put: '手当・控除の定義', member_add: '名簿に足す', member_remove: '名簿から外す', member_auto_remove: '名簿から自動で外す', import: 'freee からの取り込み',
-    export_zengin: '振込データの書き出し', export_journal: '仕訳の書き出し', export_ledger: '賃金台帳の書き出し', export_payslip: '明細の印刷', export_csv: '明細一覧の書き出し' };
+    export_zengin: '振込データの書き出し', export_journal: '仕訳の書き出し', export_ledger: '賃金台帳の書き出し', export_payslip: '明細の印刷', export_csv: '明細一覧の書き出し',
+    export_zengin_again: '振込データをもう一度書き出す確かめ', bank_export_again_ng: '振込データの断り（もう一度の書き出しの確かめが無い）' };
   function auditHtml() {
     var h = '<div class="cd"><h2>操作の記録（直近30日・管理者だけ）</h2><p class="help">確定・取り消し・設定や口座の変更・書き出しの記録です。口座は記録にも下4桁しか残りません。</p>';
     if (audit === null) return h + '<button type="button" class="btn" data-act="aud-load">記録を読む</button></div>';
