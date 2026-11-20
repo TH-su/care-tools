@@ -55,6 +55,7 @@
   function handleAuth(r) {
     if (r && r.error === 'nokey') { forgetLocal(); lock(''); msg('enroll-msg', S.errorText('nokey'), 'ng'); return true; }   // 先に中身を捨ててから知らせる
     if (r && r.error === 'closed') { lock(S.errorText('closed')); return true; }
+    if (r && r.error === 'inactive') { lock(S.errorText('inactive')); return true; }   // 鍵は消さず、中身を捨てて暗証番号の画面のまま止める
     return false;
   }
 

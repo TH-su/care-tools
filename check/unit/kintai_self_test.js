@@ -124,8 +124,12 @@ t('一覧の文: 種類・日・中身・状態・差し戻しの理由・取り
   && S.requestRow({ kind: 'month', ym: '2022-05', body: {}, status: 'approved' }).when === '2022年5月分', rr);
 /* データベース（統合 0114 の本人の口）と受け口が返す断りの語は、全部に職員に分かる文がある（技術の語をそのまま出さない） */
 const WORDS = ['format', 'badpin', 'limited', 'invalid', 'samecode', 'toomany', 'nokey', 'closed', 'wrong', 'locked', 'badym', 'badperiod', 'badkind',
-  'conflict', 'reason', 'badvalue', 'baddate', 'exists', 'notfound', 'server', 'net', 'origin'];
+  'conflict', 'reason', 'badvalue', 'baddate', 'exists', 'notfound', 'server', 'net', 'origin', 'inactive', 'too-large', 'method'];
 t('断りの語は全部、職員に分かる文がある', WORDS.every((w) => S.ERR[w] && !/[a-z_]{4,}/.test(S.ERR[w])), WORDS.filter((w) => !S.ERR[w]));
+t('休止中（inactive）の文（仮置き）・鍵は消さずに暗証番号の画面のまま止める（中身は捨てる）',
+  S.errorText('inactive') === '今は勤怠の名簿でお休み中になっているため、開けません。事務所に知らせてください。'
+  && /if \(r && r\.error === 'inactive'\) \{ lock\(S\.errorText\('inactive'\)\); return true; \}/.test(read('kintai-self.js'))
+  && !/error === 'inactive'[^\n]*forgetLocal/.test(read('kintai-self.js')));
 t('申請の時の locked・toomany は申請の文', S.errorText('locked', 'request') !== S.errorText('locked') && S.errorText('toomany', 'request').indexOf('20件') >= 0
   && S.errorText('who-knows') === S.ERR.server);
 
