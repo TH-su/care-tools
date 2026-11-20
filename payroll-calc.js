@@ -279,6 +279,9 @@
     if (att && Number(att.reviewCount) > 0) warn('review_left', '勤怠に要確認が残っています');
     var A = att || {};
     function m(k) { return Math.max(0, int(A[k])); }
+    /* 勤怠 v5 段4: 休暇の種類の日数は半日きざみのまま（丸めると半日が1日になる）。有理数で返す */
+    function mHalf(k) { return Q(Math.max(0, Math.round(fin(A[k]) * 2)), 2); }
+    function halfNum(k) { return Math.max(0, Math.round(fin(A[k]) * 2)) / 2; }
 
     /* 支給の集め（行ごとに属性を持つ） */
     var pays = [];   /* {amount:int, tax:bool, labor:bool, fixed:bool, nontax:int} */
@@ -311,6 +314,11 @@
       var hMin = m('schedInMin') + m('paidMin');
       basePaid = yen(qDiv(qMul(intQ(base), intQ(hMin)), Q(60)), S.round.hourly_base);
       pay('basic', '基本給', hMin, base, basePaid, '時給×(所定内＋有休)' + hMin + '分÷60', { fixed: true });
+      /* 勤怠 v5 段4（仮置き）: 時間単位の有休は効く分（その日の所定の時間のうち働かなかった分まで）が paidMin に入っているので上の基本給で払う。有給の特別休暇は時給×その分。無給の特別休暇・代休は払わない */
+      if (m('specialPaidMin') > 0) {
+        var spH = yen(qDiv(qMul(intQ(base), intQ(m('specialPaidMin'))), Q(60)), S.round.hourly_base);
+        pay('special_paid', '特別休暇（有給）', m('specialPaidMin'), base, spH, '時給×特別休暇' + m('specialPaidMin') + '分÷60', { fixed: true });
+      }
     } else if (type === 'daily') {
       /* 法定休日に働いた日は法定休日労働（×1.35 の全額）で払うので、基本給の日数から除く */
       var wd = m('workDays');
@@ -319,6 +327,16 @@
       basePaid = base * wd;
       pay('basic', '基本給', wd, base, basePaid, '日給×出勤日数（法定休日を除く）', { fixed: true });
       if (m('paidDays') > 0) pay('paid_leave', '有休（日給）', m('paidDays'), base, base * m('paidDays'), '日給×有休の日数', { fixed: true });
+      /* 勤怠 v5 段4（仮置き・反証レビュー 2026-11-20）: 働いた日はその日の日給をもう満額払っているので上乗せしない。働いていない日だけ、
+         時間単位の有休は「効く分÷1日の所定時間×日給」（hourlyPaidOffMin）、有給の特別休暇は「日給×日数」（specialPaidOffDays）。無給の特別休暇・代休は払わない */
+      if (m('hourlyPaidOffMin') > 0) {
+        var dhH = needDayH(), hpD = yen(qDiv(qMul(intQ(base), intQ(m('hourlyPaidOffMin'))), qMul(dhH, Q(60))), S.round.hourly_base);
+        pay('paid_leave_hour', '有休（時間単位）', m('hourlyPaidOffMin'), base, hpD, '日給×働いていない日の時間単位の有休' + m('hourlyPaidOffMin') + '分÷60÷1日の所定時間' + qNum(dhH), { fixed: true });
+      }
+      if (halfNum('specialPaidOffDays') > 0) {
+        var spD = yen(qMul(intQ(base), mHalf('specialPaidOffDays')), S.round.hourly_base);
+        pay('special_paid', '特別休暇（有給）', halfNum('specialPaidOffDays'), base, spD, '日給×働いていない日の特別休暇の日数', { fixed: true });
+      }
     }
     if (board || Number(P.board_pay) > 0) {
       var bp = int(P.board_pay);
@@ -406,11 +424,24 @@
     if (type === 'monthly' && att) {
       var dBase = base + attBaseFixed, capLeft = basePaid + attBaseFixed;
       var hu = roundQ(qDiv(intQ(dBase), avgH), S.round.deduct_unit);
-      if (S.absence_deduct && m('absentDays') > 0) {
+      /* 欠勤の日数（半日きざみ・欠勤の印の日に半日の休暇があると 0.5 日）×日額＋欠勤の分（欠勤の印の日の休暇で埋まらない残り）×時間単価（再確認の反証 2026-11-20・仮置き）。
+         欠勤の分が無い月は今までと同じ式・同じ根拠の文 */
+      var abD = halfNum('absentDays'), abP = m('absentPartMin');
+      if (S.absence_deduct && (abD > 0 || abP > 0)) {
         var dhA = needDayH();
-        var ab = Math.min(capLeft, yen(qMul(qMul(hu, dhA), intQ(m('absentDays'))), S.round.deduct));
+        var abQ = qMul(qMul(hu, dhA), mHalf('absentDays'));
+        if (abP > 0) abQ = qAdd(abQ, qDiv(qMul(hu, intQ(abP)), Q(60)));
+        var ab = Math.min(capLeft, yen(abQ, S.round.deduct));
         capLeft -= ab;
-        pay('absence', '欠勤控除', m('absentDays'), qNum(hu), -ab, '時間単価' + qNum(hu) + '×1日の所定時間' + qNum(dhA) + '×日数', { fixed: false });
+        pay('absence', '欠勤控除', abD, qNum(hu), -ab, '時間単価' + qNum(hu) + '×1日の所定時間' + qNum(dhA) + '×日数' + (abP > 0 ? '＋時間単価×欠勤の時間' + abP + '分÷60' : ''), { fixed: false });
+      }
+      /* 勤怠 v5 段4（仮置き）: 無給の特別休暇と代休は、欠勤と同じに日数で控除する（有給の特別休暇・時間単位の有休は控除しない。時間単位の有休の時間は勤怠の計算が遅刻・早退から除いてある） */
+      var ulD = halfNum('specialUnpaidDays') + halfNum('compDays');
+      if (S.absence_deduct && ulD > 0) {
+        var dhU = needDayH(), ulQ = qAdd(mHalf('specialUnpaidDays'), mHalf('compDays'));
+        var ul = Math.min(capLeft, yen(qMul(qMul(hu, dhU), ulQ), S.round.deduct));
+        capLeft -= ul;
+        pay('leave_unpaid', '特別休暇（無給）・代休の控除', ulD, qNum(hu), -ul, '時間単価' + qNum(hu) + '×1日の所定時間' + qNum(dhU) + '×日数', { fixed: false });
       }
       var lm = m('lateMin') + m('earlyLeaveMin');
       if (S.late_deduct && lm > 0) {
@@ -564,7 +595,12 @@
       [['workDays', '出勤日数'], ['paidDays', '有休日数'], ['absentDays', '欠勤日数'], ['workMin', '総労働（分）'], ['schedInMin', '所定内（分）'],
         ['legalInOverMin', '法定内残業（分）'], ['legalOverMin', '時間外（分）'], ['over60Min', '60時間超（分）'], ['nightMin', '深夜（分）'],
         ['holidayMin', '法定休日（分）'], ['lateMin', '遅刻（分）'], ['earlyLeaveMin', '早退（分）'], ['nightShiftCount', '夜勤回数']].forEach(function (k) {
-        line('att', k[0], k[1], m(k[0]), null, 0, '');
+        line('att', k[0], k[1], k[0] === 'absentDays' ? halfNum(k[0]) : m(k[0]), null, 0, '');   /* 欠勤日数は半日きざみ（整数の日は今までと同じ） */
+      });
+      /* 勤怠 v5 段4: 休暇の種類（ある時だけ出す＝使わない月の行は今のまま・文は仮置き） */
+      [['absentPartMin', '欠勤（分・休暇で埋まらない残り）'], ['hourlyPaidMin', '時間単位の有休（分）'], ['specialPaidDays', '特別休暇（有給）日数'], ['specialUnpaidDays', '特別休暇（無給）日数'], ['compDays', '代休日数']].forEach(function (k) {
+        var v = /Days$/.test(k[0]) ? halfNum(k[0]) : m(k[0]);
+        if (v > 0) line('att', k[0], k[1], v, null, 0, '');
       });
     }
 

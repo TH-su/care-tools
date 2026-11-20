@@ -100,7 +100,8 @@
       }
       if (typeof r.expiringDays === 'number' && r.expiringDays > 0) {
         lv = lv || 'warn';
-        parts.push('期限の近い残り ' + r.expiringDays + ' 日' + (isDate(r.expires) ? '（' + r.expires.slice(0, 4) + '年' + md(r.expires) + ' まで）' : ''));
+        /* v5 段4: 時間単位の有休の端数がある時は、有給の画面と同じ書き方の文（expiringText・「12 日 5 時間」）を呼ぶ側が渡す。無い時は今までどおり「n 日」 */
+        parts.push('期限の近い残り ' + (typeof r.expiringText === 'string' && r.expiringText ? r.expiringText : r.expiringDays + ' 日') + (isDate(r.expires) ? '（' + r.expires.slice(0, 4) + '年' + md(r.expires) + ' まで）' : ''));
       }
       if (!lv) return;
       level = top(level, lv);

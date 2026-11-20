@@ -170,7 +170,8 @@ const kh = new Function(cut(K, 'function isNetErr(') + '\n' + (K.match(/var DENI
   }
 
   console.log('\n— 6. 配る版 —');
-  t('kintai.html の kintai.js の ?v= を上げた（2026-11-20.30）', /<script src="kintai\.js\?v=2026-11-20\.30"><\/script>/.test(read('kintai.html')));
+  /* 段4（休暇の種類）を取り込んだ時に、.30 と段4の .1x の両方と重ならない 2026-11-21 にそろえた（2026-11-21） */
+  t('kintai.html の kintai.js の ?v= を上げた（2026-11-21）', /<script src="kintai\.js\?v=2026-11-21"><\/script>/.test(read('kintai.html')));
 
   console.log('\n結果: ' + pass + ' 合格 / ' + fail + ' 不合格');
   process.exit(fail ? 1 : 0);

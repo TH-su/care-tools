@@ -1,7 +1,7 @@
 /* 勤怠管理（kintai.js）の v5 段1 の試験（2026-11-20 契約 ~/Claude/Work/勤怠管理アプリ/ROOT-v5-freee.md「段1」1-2・1-3・1-5）
    実行: node check/unit/kintai_edits_label_test.js
    守りたいこと:
-     1. 直しの履歴: DB の勤怠の移行（0098〜0112）が kintai_edits に書く action は全部 ACT_LABEL に言い方がある（内部の名前のまま出る action が0）。
+     1. 直しの履歴: DB の勤怠の移行（0098〜0113）が kintai_edits に書く action は全部 ACT_LABEL に言い方がある（内部の名前のまま出る action が0）。
         一覧はこの試験の中に書く（care-backend の移行を grep で拾った 2026-11-20 の22種。DB に action を足したら、ここと ACT_LABEL に足す）
      2. 有給・職員マスタ・管理者の名簿の直しは、前後の値が読める時は中身も言う（付与 10日を足した 等）。読めない時も内部の名前を出さない
      3. 理由の無い口が action の名前を理由に入れた行（番号の振り直し・メモの無い付与と使用）は、理由の列を空にする
@@ -22,14 +22,15 @@ let pass = 0, fail = 0;
 function t(n, c, e) { if (c) { pass++; console.log('  ✓ ' + n); } else { fail++; console.log('  ✗ ' + n + (e !== undefined ? '  → ' + JSON.stringify(e) : '')); } }
 
 const K = process.env.KINTAI_JS ? fs.readFileSync(process.env.KINTAI_JS, 'utf8') : read('kintai.js');
-/* care-backend の supabase/migrations/0098〜0112 の「insert into public.kintai_edits」の action（2026-11-20 に grep で拾った全部） */
+/* care-backend の supabase/migrations/0098〜0113 の「insert into public.kintai_edits」の action（2026-11-20 に grep で拾った全部・0113 は段4 で足した） */
 const DB_ACTIONS = ['code_reset', 'punch_add', 'punch_void', 'day_put',                                   // 0098・0099・0101・0104
   'master_import', 'master_add', 'staff_link', 'clock_visible',                                             // 0106
   'leave_profile', 'leave_grant_add', 'leave_grant_void', 'leave_use_add', 'leave_use_void',                // 0106
   'display_name',                                                                                            // 0107
   'code_fixed',                                                                                              // 0108・0109
   'sched_set', 'sched_off', 'sched_clear', 'fixed_put', 'fixed_void',                                       // 0111
-  'managers_add', 'managers_remove'];                                                                       // 0112
+  'managers_add', 'managers_remove',                                                                        // 0112
+  'absence_add', 'absence_void'];                                                                           // 0113（v5 段4 で足した・2026-11-20）
 
 /* kintai.js から直しの履歴の言い方の部分と、それが使う補助を切り出して動かす（画面の DOM には触れない部分だけ） */
 function line(re) { const m = re.exec(K); if (!m) throw new Error('見つからない: ' + re); return m[0]; }
