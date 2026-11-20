@@ -270,6 +270,7 @@ const CENSUS = {
   "kintai-36.js": [],      /* v5（2026-11-20）: 36協定の判定の純関数（DOM に触れない） */
   "kintai-monitor.js": [], /* v5（2026-11-20）: 管理者のホームの箱の純関数（DOM に触れない） */
   "kintai-rules.js": [],   /* v5（2026-11-20）: 勤怠の決まりの見張り（休憩不足・勤務の間・連続勤務）の純関数（DOM に触れない・総点検） */
+  "kintai-ledger.js": [],   /* 総点検（2026-11-20）: 年次有給休暇管理簿の行を作る純関数（DOM に触れない） */
   "shift-symbols.js": [],
   "payroll-calc.js": [],
   "payroll-rates.js": [],
