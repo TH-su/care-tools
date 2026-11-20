@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-jNZKDzFUrUUHdoPOsv3CJESsD+KUbTiEEm2oIpErSDU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-T0o9/A2pe70BpwICCb2y4LqsIA7TrxeuCkEI+14gcxg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -8967,14 +8967,23 @@ function printWeeklySheet() {
      （2回目は読み込み済みで出る）。待つのは最大3秒で、過ぎたらそのまま開く。
      待つ間に別の印刷が押されて紙面が片付いた時は、この印刷を開かない（世代 _wkPrintGen で見分ける）。 */
   const gen = ++_wkPrintGen;
-  wkWaitImages_(box, 3000).then(function () {
+  const open = function () {
     if (cleaned || gen !== _wkPrintGen || !document.body.classList.contains('wk-print')) return;
     try { window.print(); }
     catch (e) {
       done();                                   /* 印刷できない環境ではその場で後始末する */
       try { showToast('この端末では印刷を開始できませんでした'); } catch (e2) {}
     }
-  });
+  };
+  /* 起動の時の先読みで絵がもう読めている時は、押したその場で開く（Safari は押してから時間がたった印刷を止めることがあるため・反証レビュー 2026-11-20） */
+  if (wkImagesReady_(box)) open();
+  else wkWaitImages_(box, 3000).then(open);
+}
+/* 紙面の中の絵が全部読み込み済みか（無い時も読み込み済みとみなす） */
+function wkImagesReady_(box) {
+  const imgs = box ? box.querySelectorAll('img') : [];
+  for (let i = 0; i < imgs.length; i++) if (!(imgs[i].complete && imgs[i].naturalWidth > 0)) return false;
+  return true;
 }
 let _wkPrintGen = 0;
 /* 紙面の中の絵が全部読み込まれる（または ms が過ぎる）まで待つ。失敗しても待ちを止めるだけで例外は出さない */
