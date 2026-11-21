@@ -259,6 +259,8 @@ console.log('\n— 5. 振込と書き出し —');
   const zp = await dz.path(), buf = fs.readFileSync(zp);
   const recs = buf.toString('latin1').split('\r\n').filter(Boolean);
   t('全銀のファイルは120バイトの行・ヘッダ→データ→トレーラ→エンドの順（本物の書き出し）', recs.length >= 4 && recs.every((r) => r.length === 120) && recs[0][0] === '1' && recs[recs.length - 2][0] === '8' && recs[recs.length - 1][0] === '9' && recs.slice(1, -2).every((r) => r[0] === '2'), recs.map((r) => r.length));
+  /* ファイルが落ちた後の読み直しと描き直し（全銀の合計の行）が済んでから画面の文を読む（読み直しの前に読むと件数の行がまだ無い・CI で1回落ちた 2026-11-21） */
+  await p2.waitForSelector('text=振込する分と一致');
   const zc = await p2.textContent('#p-main');
   const nData = recs.length - 3;
   t('口座を2つに分けた人は2件と数え、画面の振込の件数と全銀の件数が合う', new RegExp('振込 ' + nData + '件').test(zc) && new RegExp('全銀ファイルの合計（' + nData + '件）').test(zc), [nData, zc.slice(0, 400)]);
