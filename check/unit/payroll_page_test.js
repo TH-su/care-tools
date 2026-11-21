@@ -59,7 +59,8 @@ t('口座の全桁は全銀の時だけ payroll_bank_export で受け、作っ�
 /* 全銀のスイッチは給与の設定 zengin_enabled（2026-11-19 反証レビュー 10・既定は使わない・DB も zengin_off で断る） */
 t('全銀のボタンは給与の設定 zengin_enabled が true の時だけ・DB の断り zengin_off は別の知らせ', /function zenginOn\(\) \{ return cfg\(\)\.zengin_enabled === true; \}/.test(J) && /if \(zenginOn\(\)\) h \+= '<button[^']*data-k="zengin"/.test(J) && /if \(kind === 'zengin' && !zenginOn\(\)\) return;/.test(J)
   && /r\.error === 'zengin_off'/.test(J) && /c\.zengin_enabled = on\('s-zen'\);/.test(J) && !/su-backend\.json/.test(J));
-t('書き出し・印刷は記録（payroll_export_log）が通ってから・種類の名前は統合 0102 の5つ', /rpc\('payroll_export_log', \{ p_ym: ym, p_kind: EXP_LOG\[kind\] \}\)\.then\(okOr\)\.then/.test(J) && /rpc\('payroll_export_log', \{ p_ym: ym, p_kind: 'payslip' \}\)\.then\(okOr\)\.then/.test(J)
+/* ★統合 0118（2026-11-21）: 書き出し済みの月の振込データだけ、記録の種類を zengin_again にする（確かめの窓で「はい」の時）。記録が通ってから書き出す決まりは同じ */
+t('書き出し・印刷は記録（payroll_export_log）が通ってから・種類の名前は統合 0102 の5つ（もう一度の振込は 0118 の zengin_again）', /rpc\('payroll_export_log', \{ p_ym: ym, p_kind: again \? 'zengin_again' : EXP_LOG\[kind\] \}\)\.then\(okOr\)\.then/.test(J) && /rpc\('payroll_export_log', \{ p_ym: ym, p_kind: 'payslip' \}\)\.then\(okOr\)\.then/.test(J)
   && /var EXP_LOG = \{ zengin: 'zengin', journal: 'journal', ledger: 'ledger', list: 'csv' \};/.test(J));
 t('書き出しの部品が作れないと言った時（ok が false）はファイルを落とさない', /if \(res\.ok === false\) \{[\s\S]{0,400}?return load\(true\);\s*\}\s*download\(res\)/.test(J));
 t('確定の後に口座が直された（bank_export の stale）は計算し直しの stale と別の知らせ', /r\.error === 'stale'\) \{ var e = new Error\('bankstale'\); e\.payroll = 'bankstale'; throw e; \}/.test(J) && /bankstale: '確定した後に振込先の口座が直されました/.test(J));
@@ -278,7 +279,8 @@ console.log('\n— 給与専用の暗証番号（統合 0110・2026-11-20 代表
   /* ★再確認の反証の直し（2026-11-20・欠勤の印と部分の休暇）: payroll.js を 2026-11-20.7 に上げたので、期待の版を改めた */
   /* ★総点検（2026-11-21・給与の額の5件と給与の反証の直し）: payroll.js を 2026-11-21 に上げたので、期待の版を改めた */
   /* ★反証レビュー（2026-11-21・有休の日数の鍵の受け取り）: payroll.js を 2026-11-21.2 に上げたので、期待の版を改めた */
-  t('payroll.js の版を上げた（2026-11-21.2）', /payroll\.js\?v=2026-11-21\.2"/.test(H));
+  /* ★統合 0118 の受け渡し（確定できない警告の DB の断り・もう一度の書き出し・駐車場の料金・2026-11-21）で payroll.js を 2026-11-21.3 に上げたので、期待の版を改めた */
+  t('payroll.js の版を上げた（2026-11-21.3）', /payroll\.js\?v=2026-11-21\.3"/.test(H));
 }
 
 Promise.all(pend).catch((e) => { fail++; console.log('  ✗ 動かして確かめる試験が止まった  → ' + e.message); }).then(() => {
