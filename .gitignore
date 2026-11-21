@@ -127,6 +127,12 @@
 !/support-overview.html
 !/universe-sandbox
 !/index.html
+# ホーム画面に追加した時の名前とアイコン（2026-11-21 本人指示。メニューだけが読む）
+!/manifest.webmanifest
+!/app-icon-192.png
+!/app-icon-512.png
+!/app-icon-maskable-512.png
+!/apple-touch-icon.png
 !/shift-analyzer.html
 !/patch-calendar.html
 !/moushiokuri-viewer.html

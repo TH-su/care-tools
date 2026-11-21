@@ -10,6 +10,12 @@
      noindex に加えて nofollow を必ず付ける（各ツールは埋め込みトークンでGASを叩く構成）。 -->
 <meta name="robots" content="noindex,nofollow">
 <title>介護ツール メニュー</title>
+<!-- ホーム画面に追加した時の名前とアイコン（manifest.webmanifest・2026-11-21 本人指示「作って」）。
+     名前・アイコン・開き方を書くだけで、画面・保存・通信は変えない。端末に画面を残す仕組み（service worker）は入れない。
+     iPhone の「Webアプリとして開く」で開くと、Safari とは別の保存領域になる（ログイン・端末の用途・接続設定は入れ直し）。
+     これは manifest が無くても iOS 26 の既定で同じ（2026-11-21 シミュレータで実測）。 -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <!-- 端末の用途（事務所/現場）だけを見て、現場端末では事務所専用タイルを出さない。
      ★このページに氏名・記録・合言葉（トークン）を持ち込まない（読む・書く・送るのいずれも禁止）。
        読んでよいのは su_device_role と、ログインの役割・ボタンの並び・非表示（su-menu.js・2026-10-23 代表者の決定）だけ。
