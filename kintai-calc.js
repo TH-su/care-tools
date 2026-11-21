@@ -353,7 +353,8 @@
     no_punch: '打刻がありません（欠勤か打刻漏れ）', no_schedule: '予定の無い勤務',
     offline: '通信できない時の打刻（端末の時刻）', office: '事務所が足した打刻',
     late: '遅刻', early_leave: '早退', after_lock: '締めた後の打刻',
-    working: '勤務中', not_in_yet: 'まだ出勤していません', checked: '確認済み', absent: '欠勤'
+    working: '勤務中', not_in_yet: 'まだ出勤していません', checked: '確認済み', absent: '欠勤',
+    early_ng: '早出を認めなかった', ot_ng: '残業を認めなかった'   /* 0120: 認めないと決めた早出・残業（要確認ではない） */
   };
   var REVIEW = { early: 1, overtime: 1, missing_out: 1, missing_in: 1, no_punch: 1, no_schedule: 1, offline: 1, after_lock: 1 };
 
@@ -471,8 +472,12 @@
     if (base0 && (r.workMin < base0.workMin || r.nightMin < base0.nightMin || r.holidayMin < base0.holidayMin)) return base0;
     return markDay(r, day);
   }
-  /* day_mark を当てる（v2-3）: checked＝印は残して要確認に数えない／absent＝打刻なし・未出勤を欠勤に変える */
+  /* day_mark を当てる（v2-3）: checked＝印は残して要確認に数えない／absent＝打刻なし・未出勤を欠勤に変える
+   * 0120（本人指示 2026-11-21）: 日の行に早出・残業を認めない理由（early_ng・ot_ng）がある時は、早出・残業の印を「認めなかった」の印に替える
+   * （要確認から外す・数える時間は変えない＝予定の時刻で切るのは今の数え方のまま）。理由は塊の ngEarly・ngOt に写す（CSV の理由の列） */
   function markDay(r, day) {
+    if (day && day.early_ng) { var ie = r.flags.indexOf('early'); if (ie >= 0) { r.flags.splice(ie, 1, 'early_ng'); r.ngEarly = String(day.early_ng); } }
+    if (day && day.ot_ng) { var io = r.flags.indexOf('overtime'); if (io >= 0) { r.flags.splice(io, 1, 'ot_ng'); r.ngOt = String(day.ot_ng); } }
     var mk = day && day.day_mark;
     if (mk === 'checked') { r.checked = true; r.flags.push('checked'); }
     else if (mk === 'absent') {
@@ -697,7 +702,7 @@
         var b = blocks[j];
         if (b.work_date < leadFirst || b.work_date > lastD) continue;
         var dnB = dayBy[st.staff_id + '|' + b.work_date];
-        if (dnB && typeof dnB.break_min === 'number' && target[b.work_date] !== b) dnB = { early_ok: dnB.early_ok, overtime_ok: dnB.overtime_ok, day_mark: dnB.day_mark, early_from: dnB.early_from, ot_until: dnB.ot_until };
+        if (dnB && typeof dnB.break_min === 'number' && target[b.work_date] !== b) dnB = { early_ok: dnB.early_ok, overtime_ok: dnB.overtime_ok, day_mark: dnB.day_mark, early_from: dnB.early_from, ot_until: dnB.ot_until, early_ng: dnB.early_ng, ot_ng: dnB.ot_ng };
         if (dnB && ((dnB.early_from != null && firstOf[b.work_date] !== b) || (dnB.ot_until != null && lastOf[b.work_date] !== b))) {
           var cp = {}; for (var dk in dnB) cp[dk] = dnB[dk];
           if (firstOf[b.work_date] !== b) cp.early_from = null;
@@ -961,8 +966,18 @@
   /* v2-8: 末尾に足す列（buildCsv の opts.extraCols が true の時だけ出す＝既定の出力は v1 と同じ）。
      集計はこのあとに「実働_<事業所名>」を事業所ごと（施設・訪問・通所・その他の順）に足す */
   var SUMMARY_EXTRA_HEAD = ['欠勤日数', '有休時間', '数えなかった時間', '休日労働'];
-  var DAILY_EXTRA_HEAD = ['氏名', '予定の開始', '予定の終わり', '打刻の出勤（生）', '打刻の退勤（生）', '残業', '休日労働', '有休時間', '印'];
+  var DAILY_EXTRA_HEAD = ['氏名', '予定の開始', '予定の終わり', '打刻の出勤（生）', '打刻の退勤（生）', '残業', '休日労働', '有休時間', '印', '数えなかった時間', '数えなかった理由'];   /* 0120: 末尾の2列（数えなかった時間＝打刻のうち数えた区間の外の分・理由＝認めないと決めた早出・残業の理由） */
   var OFFICE_ORDER = ['facility', 'visit', 'day'];
+  /* 0120: 日の塊の「数えなかった時間」（uncountedMin の合計）と、認めないと決めた理由（早出・残業の順・同じ文は1回） */
+  function ngOf(blocks) {
+    var min = 0, why = [];
+    for (var i = 0; i < blocks.length; i++) {
+      var b = blocks[i]; min += b.uncountedMin || 0;
+      if (b.ngEarly && why.indexOf('早出：' + b.ngEarly) < 0) why.push('早出：' + b.ngEarly);
+      if (b.ngOt && why.indexOf('残業：' + b.ngOt) < 0) why.push('残業：' + b.ngOt);
+    }
+    return { min: min, why: why.join(' ／ ') };
+  }
 
   /* opts: { month: computeMonth の結果, nameOf: 区分→事業所名（省略可）, extraCols: true で v2 の列を末尾に足す（省略は v1 の列だけ） }
    * 返す: { summary, daily, warnings:[文] } （どちらも CRLF・先頭に見出し）
@@ -1001,12 +1016,12 @@
         var d = p.days[j];
         if (d.paidMin > 0 && !d.blocks.some(function (b) { return b.workMin > 0; })) {
           var pr = [st.emp_code, d.date, '', '', 0, fmtMin(0, mode), fmtMin(0, mode), '', '有', '有休 ' + fmtMin(d.paidMin, 'hmm')];
-          if (ex) pr.push(st.name, '', '', '', '', fmtMin(0, mode), fmtMin(0, mode), fmtMin(d.paidMin, mode), '');
+          if (ex) { var pu = ngOf(d.blocks); pr.push(st.name, '', '', '', '', fmtMin(0, mode), fmtMin(0, mode), fmtMin(d.paidMin, mode), '', fmtMin(pu.min, mode), pu.why); }
           D.push(csvLine(pr));
           continue;
         }
         /* 打刻の欠けた日・欠勤の日も行に出す（指摘3）。勤務中・まだ出勤していない塊は出さない */
-        var use = d.blocks.filter(function (b) { return b.countStart != null || b.absent || b.flags.some(function (fx) { return REVIEW[fx]; }); });
+        var use = d.blocks.filter(function (b) { return b.countStart != null || b.absent || b.ngEarly || b.ngOt || b.flags.some(function (fx) { return REVIEW[fx]; }); });   /* 0120: 認めないと決めた塊は、前に要確認として出ていた行のまま落とさない（理由の無い月の行は前と同じ・反証レビュー 2026-11-21） */
         if (!use.length) continue;
         var cs = null, ce = null, br = 0, wm = 0, nm = 0, ot = 0, so = null, se = null, ri = null, ro = null, notes = [], marks = [], ofs = [], syms = [];
         for (k = 0; k < use.length; k++) {
@@ -1026,6 +1041,7 @@
         }
         var dr = [st.emp_code, d.date, jstHM(cs), jstHM(ce), br, fmtMin(wm, mode), fmtMin(nm, mode), uniq(ofs).join('・'), uniq(syms).join(' '), uniq(notes).join('・')];
         if (ex) dr.push(st.name, jstHM(so), jstHM(se), jstHM(ri), jstHM(ro), fmtMin(ot, mode), fmtMin(d.holidayMin || 0, mode), fmtMin(d.paidMin + (d.hourlyPaidEffMin != null ? d.hourlyPaidEffMin : (d.hourlyPaidMin || 0)), mode), uniq(marks).join('・'));   /* v5 段4: 有休時間に時間単位の有休の効く分を含める（月の集計の有休時間と同じ） */
+        if (ex) { var nu = ngOf(use); dr.push(fmtMin(nu.min, mode), nu.why); }
         D.push(csvLine(dr));
       }
     }
