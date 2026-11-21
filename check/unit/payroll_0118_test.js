@@ -43,5 +43,9 @@ t('通勤のほかの項目は今までどおり', /monthly: n\('f-cm', '通勤�
 t('駐車場の料金は入れた時と前に値があった時だけ commute.parking_monthly に入れる（空の人に鍵を足さない）', /var pkv = n\('f-cmp', '駐車場の料金'\);\s*if \(pkv != null \|\| 'parking_monthly' in obj\(p\.data\.commute\)\) d\.commute\.parking_monthly = pkv;/.test(pg));
 t('整数でなければ止める', /parking_monthly % 1\) bad\.push\('駐車場の料金（円・整数）'\)/.test(pg));
 
+console.log('\n— 5. 取り込みの読めた項目（2026-11-21）—');
+const os = fnBody('orderStaff', 'function orderBs(');
+t('入職順の並べ直しでも、取り込みの「見出しから読めた項目」（cols）を残す', /if \(list\.cols\) out\.cols = list\.cols;\s*return out;/.test(os));
+
 console.log('\n合格 ' + pass + ' / 不合格 ' + fail);
 process.exit(fail ? 1 : 0);

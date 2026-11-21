@@ -358,10 +358,13 @@
   function orderStaff(list, sidOf) {
     if (!hireRank || !Array.isArray(list)) return list;
     var get = sidOf || function (x) { return x && x.staff_id; };
-    return list.map(function (x, i) { return { x: x, i: i, r: hireRank[get(x)] }; }).sort(function (a, b) {
+    var out = list.map(function (x, i) { return { x: x, i: i, r: hireRank[get(x)] }; }).sort(function (a, b) {
       var ra = a.r == null ? Infinity : a.r, rb = b.r == null ? Infinity : b.r;
       return ra !== rb ? (ra < rb ? -1 : 1) : a.i - b.i;
     }).map(function (o) { return o.x; });
+    /* 取り込みの表の「見出しから読めた項目」（cols）は並べ直しても残す（入職順を読めた後に消えていた・2026-11-21） */
+    if (list.cols) out.cols = list.cols;
+    return out;
   }
   function orderBs() {
     if (!bs) return;
