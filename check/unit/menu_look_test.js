@@ -29,6 +29,18 @@ const css = (/<style>([\s\S]*?)<\/style>/.exec(HTML) || [])[1] || '';
 const wide = mediaBody(css, '@media screen and (min-width: 900px)');
 const scr = mediaBody(css, '@media screen {\n  :root { --tc-navy');
 const outside = css.replace(wide || '', '').replace(scr || '', '');
+/* 画面だけの区画（@media screen で始まるもの）をすべて除いた残り＝印刷にも効く所。
+   2026-11-21 に字と地の差・暗い表示の区画（どちらも @media screen …）を足したので、2a はこちらで見る */
+function stripScreenBlocks(src) {
+  let s = src, i;
+  while ((i = s.indexOf('@media screen')) >= 0) {
+    let d = 0, j = s.indexOf('{', i), k = j;
+    for (; k < s.length; k++) { if (s[k] === '{') d++; else if (s[k] === '}') { d--; if (!d) break; } }
+    s = s.slice(0, i) + s.slice(k + 1);
+  }
+  return s;
+}
+const printSide = stripScreenBlocks(css);
 
 console.log('1 列の数');
 t('1a 既定（狭い画面）は2列のまま', /\.grid \{ display: grid; grid-template-columns: repeat\(2, 1fr\);/.test(outside), '');
@@ -36,7 +48,7 @@ t('1b 4列は幅900px以上の画面だけ', !!wide && /\.grid \{ grid-template-
 t('1c 組の行割りは狭い画面で効き、4列では左から詰める', /\.tile\.newrow \{ grid-column-start: 1; \}/.test(outside) && /\.tile\.newrow \{ grid-column-start: auto; \}/.test(wide || ''), '');
 
 console.log('2 印刷を変えない');
-t('2a 色味の決まりは @media screen の中', !!scr && /--tc-paper/.test(scr) && !/--tc-/.test(outside.replace(/\/\*[\s\S]*?\*\//g, '')), '');
+t('2a 色味の決まりは @media screen の中', !!scr && /--tc-paper/.test(scr) && !/--tc-/.test(printSide.replace(/\/\*[\s\S]*?\*\//g, '')), '');
 
 console.log('3 文字の色の濃さ');
 function lum(hex) { const c = hex.match(/\w\w/g).map((x) => parseInt(x, 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4))); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; }
