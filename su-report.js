@@ -115,9 +115,30 @@
       return '設定なし（未接続）';
     } catch (e) { return '不明'; }
   }
+  /* 版（2026-11-21・代表者の決定「案1」）: 画面に build/version の印があればそれ、無ければ画面の公開時刻
+     （document.lastModified＝GitHub Pages が返す最終更新の時刻）。印も時刻も無い・読めない時は「記載なし」。
+     最終更新の印が無いと、ブラウザは読むたびに「今」を返すので、読んだ時刻から2秒以内の値は使わない（反証レビュー: 開いた時刻と比べると、後で起きたエラーで送る時刻が公開時刻に見えた） */
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
   function build() {
     var m = document.querySelector('meta[name="build"], meta[name="version"]');
-    return m ? m.content : '記載なし';
+    if (m && m.content) return m.content;
+    try {
+      var d = new Date(document.lastModified);
+      if (isNaN(d.getTime()) || Math.abs(Date.now() - d.getTime()) < 2000) return '記載なし';
+      return '画面の公開 ' + d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+    } catch (e) { return '記載なし'; }
+  }
+  /* 手がかり（su-errors.js の hintOf が作る {cls, status, code}）を、送ってよい形だけにして1行にする（2026-11-21・代表者の決定「案1」）。
+     ★送ってよい値の allowlist: 区分は下の8つの言葉・HTTP は 100〜599 の整数・符号は5文字の英大文字と数字か PGRST と3桁。
+       形の違う値は捨てる（su-errors.js の古い版・ほかの部品から何が来ても、文の中身が報告に入らない）。区分が無ければ行を出さない */
+  var HINT_CLS = ['通信の失敗', '時間切れ', '断り', 'サーバーの失敗', 'コードの例外', '端末の保存領域', 'ブラウザが伏せた例外', '不明'];
+  function hintLine(h) {
+    if (!h || typeof h !== 'object' || HINT_CLS.indexOf(h.cls) < 0) return '';
+    var L = ['区分 ' + h.cls];
+    var st = Number(h.status);
+    if (st >= 100 && st <= 599 && Math.floor(st) === st) L.push('HTTP ' + st);
+    if (typeof h.code === 'string' && /^(?:[0-9A-Z]{5}|PGRST[0-9]{3})$/.test(h.code)) L.push('符号 ' + h.code);
+    return L.join(' ／ ');
   }
   function facts() {
     var mins = Math.round((Date.now() - T0) / 60000);
@@ -158,11 +179,13 @@
     return t;
   }
   // 自動報告の本文。職員が書く欄は無い＝エラーの種類・場所と端末の事実だけ
-  function composeAuto(type, where) {
+  function composeAuto(type, where, hint) {
     var L = [];
     L.push('【自動報告】' + new Date().toLocaleString('ja-JP'));
     L.push('ツール: ' + TOOL + '（' + FILE + '）');
     L.push('エラー: ' + type + (where ? '（' + where + '）' : ''));
+    var hl = hintLine(hint);
+    if (hl) L.push('手がかり: ' + hl);   // 「エラー:」の行は変えない（受け口が題名と束ね方をこの行から作る）
     L.push('──── 自動で付いた情報 ────');
     L = L.concat(facts());
     return L.join('\n');
@@ -319,7 +342,7 @@
     catch (e) { try { sessionStorage.setItem(AUTO_LS, json); } catch (e2) { /* どちらも書けなくても送る（1回の表示の上限で止まる） */ } }
     return false;
   }
-  function autoSend(kind, brief, where) {
+  function autoSend(kind, brief, where, hint) {
     if (!canSend()) return;                                // ログインも送信先も無い端末では何もしない
     if (autoSent >= AUTO_MAX_PER_LOAD) return;
     var type = String(kind || 'エラー') + '：' + errType(brief);   // 例「スクリプトエラー：TypeError」。文の中身は送らない
@@ -330,16 +353,16 @@
     if (autoThrottled(sig)) return;
     autoSent++;
     if (isNote) { autoNoteSent++; autoNoteWhere[w] = 1; }
-    send(composeAuto(type, w)).then(null, function () { /* 送れなくても画面には何も出さない */ });
+    send(composeAuto(type, w, hint)).then(null, function () { /* 送れなくても画面には何も出さない */ });
   }
   try {
     if (window.SUErrors && typeof window.SUErrors.onReport === 'function') {
-      window.SUErrors.onReport(function (kind, brief, where) {
+      window.SUErrors.onReport(function (kind, brief, where, from, hint) {
         try {
           var line = String(kind || 'エラー') + '：' + errType(brief) + (cleanWhere(where) ? ' @' + cleanWhere(where) : '');
           if (String(kind) === NOTE_KIND) pushErr(line, NOTES, 3); else pushErr(line);
         } catch (e) { /* 何もしない */ }
-        try { autoSend(kind, brief, where); } catch (e) { /* 何もしない */ }
+        try { autoSend(kind, brief, where, hint); } catch (e) { /* 何もしない */ }
       });
     }
   } catch (e) { /* su-errors.js が無い画面では自動報告は無い */ }
