@@ -278,6 +278,16 @@ main {
   .foot, .foot a { font-size: 0.9375rem; }
   .role-band { font-size: 0.9375rem; }
 }
+/* ── 字と地の差 7:1（2026-11-21 本人指示「直して」・ui-check の注意） ──
+   下の欄のリンクは青（--pri）で生成りの地に 6.0:1、「不具合を報告」のボタンは青の地に白い字で 6.4:1 だった。
+   どちらも藍（--tc-navy）にして 7:1 以上にする（su-theme.css の業務ツールのボタンと同じ藍）。
+   ボタンの CSS（su-report.css）は su-report.js が後から読むので、同じ強さの指定では負ける＝html body を前に付けて強くする。
+   --pri そのものは変えない（ボタンの押した時・フォーカスの色まで変わるため）。印刷は変えない（@media screen の中だけ） */
+@media screen {
+  .foot a { color: var(--tc-navy); }
+  .foot a:focus-visible { outline-color: var(--tc-navy); }
+  html body .sur-fab { background: var(--tc-navy); }
+}
 </style>
 </head>
 <body>
