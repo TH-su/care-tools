@@ -406,7 +406,10 @@ export function routesFor(opt = {}) {
   const me = role === 'office' ? 'check-office@example.invalid' : 'check-admin@example.invalid';
   const db = seed(opt);
   const calls = [];
-  const audit = (action, ym, staff_id, reason) => db.audit.push({ id: db.audit.length + 1, at: new Date().toISOString(), by: me, action, ym: ym || null, staff_id: staff_id || null, before: null, after: null, reason: reason || null });
+  /* 監査の時刻は、画面の時計（試験が固定した日）にそろえる（opt.now）。本当の今の時刻だと、画面の「直近30日」の範囲から外れて記録が出ない（2026-11-21） */
+  const t0 = Date.now();
+  const nowIso = () => (opt.now ? new Date(new Date(opt.now).getTime() + (Date.now() - t0)) : new Date()).toISOString();
+  const audit = (action, ym, staff_id, reason) => db.audit.push({ id: db.audit.length + 1, at: nowIso(), by: me, action, ym: ym || null, staff_id: staff_id || null, before: null, after: null, reason: reason || null });
   function rpc(name, p) {
     const ok = (o) => Object.assign({ ok: true }, o || {}), ng = (error, o) => Object.assign({ ok: false, error }, o || {});
     if (name === 'payroll_bootstrap') return ymOk(p.p_ym) ? bootstrap(db, p.p_ym) : ng('badym');
