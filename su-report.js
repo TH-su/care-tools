@@ -240,7 +240,7 @@
 
   // ── 画面の指摘（管理者だけ）──
   var annot = null;   // { marks: [{ n, note, sel, desc, el }], layout }
-  var ANNOT_SRC = 'su-annot.js?v=2026-10-27';
+  var ANNOT_SRC = 'su-annot.js?v=2026-11-21';
   // 管理者かどうかを聞くための部品。各画面が読む時と同じ版を書く（su-auth.js を直して ?v= を上げたら、ここも上げる）
   var AUTH_SRC = ['supabase-js-2.112.4.js', 'su-auth.js?v=2026-11-21'];
   var loading = {};
@@ -377,7 +377,7 @@
      以前は <style> を差し込んでいたが、CSP で直書きの style を禁じる画面（メニューの設定）では止まり、
      ボタンがページの途中に素のボタンで出ていた。<link> の外部 CSS は style-src 'self' で効く。中身は差し込んでいた文字列と同じ。
      ボタンは CSS が届いてから置く（届く前に置くと一瞬ページの途中に出る）。届かない・遅い時も CSS_WAIT_MS で置く＝素のボタンでも報告はできる */
-  var CSS_HREF = 'su-report.css?v=2026-10-27';
+  var CSS_HREF = 'su-report.css?v=2026-11-21';
   var CSS_WAIT_MS = 3000;
   var cssReady = false, cssWaiters = [];
   function cssDone() {
