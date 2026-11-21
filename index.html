@@ -266,7 +266,17 @@ main {
   .tile[data-fam="3"] .ic { background: #DCEFF2; }   /* 計画（浅葱） */
   .tile[data-fam="4"] .ic { background: #FBE6EC; }   /* 職員（桃） */
   .tile .nm { font-size: 0.9375rem; }
-  .tile .note { font-size: 0.8125rem; }
+  .tile .note { font-size: 0.9375rem; }
+}
+/* ── 画面の字の下限 15px（代表者の決定 2026-11-21・tokens.css の最小 15px） ──
+   見出しの下の説明・ボタンの名前と説明・期限と古さの札・節の補足・下の欄・使う人の帯の字を 15px（0.9375rem）にそろえる。
+   印刷は変えない（@media screen の中だけで上書きし、上の元の指定は印刷のために残す）。色・並び・太さは変えない */
+@media screen {
+  .hdr .sub { font-size: 0.9375rem; }
+  .tile .nm, .tile .note, .tile .due, .tile .stale, .tile .hlbad { font-size: 0.9375rem; }
+  .sec .sup { font-size: 0.9375rem; }
+  .foot, .foot a { font-size: 0.9375rem; }
+  .role-band { font-size: 0.9375rem; }
 }
 </style>
 </head>
