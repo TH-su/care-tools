@@ -124,6 +124,7 @@
     linked: 'その職員マスタの人は、もう勤怠の職員と結んであります。読み直してください。', exists: 'その職員マスタの人は、もう勤怠の職員として足してあります。読み直してください。',
     retired: '職員マスタで退職日を過ぎているため足せません。', retire_unknown: '職員マスタの退職日が読めないため足せません。職員マスタの退職日を確かめてください。',
     badid: '職員マスタの番号の形が勤怠に入りません。管理者に知らせてください。', badname: '職員マスタの氏名が空か長すぎるため足せません。職員マスタを確かめてください。',
+    review: '要確認が残っているため締められません（前の版の画面から締めようとした時など）。読み直して、要確認を1件ずつ「認める／認めない」で決めてから締めてください。',   /* 0120 */
     payrolllocked: 'この月分の給与が確定（または書き出し済み）のため、締めを解除できません。先に給与の画面で確定を取り消してください。' };   /* v5 1-2（文は仮置き） */
   /* 有給の窓では、打刻向けの言い方の断り（badkind・badvalue）を有給の言葉に替える */
   var NG_LEAVE = { badkind: '付与の種類が違います（移行の残りか、手で足すかを選んでください）。', badvalue: '入れた値を受け付けられませんでした（日数・週の所定日数・時間・メモの長さを確かめてください）。',
@@ -572,8 +573,8 @@
       return '<tr><td>' + md(r.date) + '（' + wd(r.date) + '）</td><td>' + esc(nameOf(r.staffId)) + '</td><td>' + (b ? schedText(b) : '') + '</td><td class="raw">' + (b ? esc(rawPunches(b)) : '') + '</td><td>' + flagTags(r.marks, false) + '</td>' +
         '<td class="no-print"><button type="button" class="btn sm" data-act="edit" data-sid="' + esc(r.staffId) + '" data-date="' + esc(r.date) + '" data-bi="' + r.blockIndex + '" data-rv="' + i + '">直す</button></td></tr>';
     }).join('');
-    return printHead('要確認の一覧（' + list.length + ' 件）') + '<div class="cd"><div class="row no-print"><b>要確認 ' + list.length + ' 件</b><button type="button" class="btn sm" data-act="print">印刷</button></div>' +
-      '<p class="help no-print">「直す」で開いた窓の「保存して次へ」を押すと、保存した後に次の行の窓がそのまま開きます。直す所が無い時は窓の中の「確認済みにする」を選んで保存します。</p>' +
+    return printHead('要確認の一覧（' + list.length + ' 件）') + '<div class="cd"><div class="row no-print"><b>要確認 ' + list.length + ' 件</b><button type="button" class="btn sm pri" data-act="rvd-start">1件目から決める</button><button type="button" class="btn sm" data-act="print">印刷</button></div>' +
+      '<p class="help no-print">要確認が残っている月分は締められません。「1件目から決める」を押すと、1件ずつ「認める／認めない（理由）」を決める窓が開きます（決めると次の1件が開きます）。打刻の漏れは「直す」で打刻を足すか欠勤にします。「直す」で開いた窓の「保存して次へ」を押すと、保存した後に次の行の窓がそのまま開きます。直す所が無い時は窓の中の「確認済みにする」を選んで保存します。</p>' +
       '<div class="tw"><table><thead><tr><th>日</th><th>職員</th><th>予定</th><th>打刻（そのまま）</th><th>印</th><th class="no-print"></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
   }
 
@@ -1028,7 +1029,7 @@
       (diff.length ? '<div class="band warn">締めた時の数字と今の数字が違う職員がいます（' + diff.map(esc).join('・') + '）。締めた後の打刻・計算の決まりの見直しなどが原因です。給与へ渡したのは締めた時の数字です（月の集計の CSV も締めた時の数字で出します）。</div>' : '') +
       (lk ? '<p>締めた日時: ' + esc(new Date(data.month.locked_at).toLocaleString('ja-JP')) + '</p>' + (afterLock ? '<div class="band warn">締めた後に足された打刻があります（印「締めた後の打刻」）。給与へ渡した後なら、来月の調整を検討してください。</div>' : '') +
         '<button type="button" class="btn ng" data-act="unlock"' + (isAdmin() ? '' : ' disabled') + '>締めを解除する（管理者）</button>' :
-        (review ? '<div class="band warn">要確認が ' + review + ' 件残っています。締める前に「要確認」のタブで確かめてください（残ったままでも締められます）。</div>' : '<div class="band ok">要確認はありません。</div>') +
+        (review ? '<div class="band warn">要確認が ' + review + ' 件残っているため、まだ締められません。1件ずつ「認める／認めない」を決めてください（認めない時は理由を残します）。</div><div class="row no-print"><button type="button" class="btn" data-act="rvd-start">要確認を1件目から決める</button></div>' : '<div class="band ok">要確認はありません。</div>') +
         (stop ? '<div class="band warn" role="status">' + stop + '</div>' : '') +
         '<button type="button" class="btn pri" data-act="lock"' + (stop ? ' disabled' : '') + '>この月を締める</button><p class="help">締める直前に月を読み直して数え直し、その数字を「締めた時の控え」としてデータベースに残します。締めると、この月の打刻の足し・取り消し・承認・休憩の直し・シフトの取り込みが止まります。タブレットの打刻は締めた後も記録され、「締めた後の打刻」の印が付きます。</p>') + '</div>';
     h += reqCloseHtml();   /* v5 段5: 承認待ちの申請と月の確認の数（締めは止めない・画面だけ） */
@@ -1119,6 +1120,8 @@
     if (ms(b.early_from) !== ms(a.early_from)) parts.push(a.early_from ? '早出を ' + hm(a.early_from) + ' から認めた' : '早出の時刻（' + hm(b.early_from) + ' から）を外した');
     if (!!b.overtime_ok !== !!a.overtime_ok) parts.push(a.overtime_ok ? '残業を全部認めた' : '残業の承認（全部）を外した');
     if (ms(b.ot_until) !== ms(a.ot_until)) parts.push(a.ot_until ? '残業を ' + hm(a.ot_until) + ' まで認めた' : '残業の時刻（' + hm(b.ot_until) + ' まで）を外した');
+    if ((b.early_ng || null) !== (a.early_ng || null)) parts.push(a.early_ng ? '早出を認めなかった（「' + a.early_ng + '」）' : '早出の「認めない」を外した');   /* 0120 */
+    if ((b.ot_ng || null) !== (a.ot_ng || null)) parts.push(a.ot_ng ? '残業を認めなかった（「' + a.ot_ng + '」）' : '残業の「認めない」を外した');
     var bb = b.break_min == null ? null : b.break_min, ab = a.break_min == null ? null : a.break_min;
     if (bb !== ab) parts.push('休憩 ' + brTxt(bb) + '→' + brTxt(ab) + (ab == null ? '' : ' 分'));
     if ((b.note || '') !== (a.note || '')) parts.push(a.note ? 'メモ「' + a.note + '」' : 'メモを消した');
@@ -1411,15 +1414,18 @@
       '<label><input type="radio" name="e-mark" value="checked"' + (mark === 'checked' ? ' checked' : '') + '> 確認済みにする（要確認から外す）</label>' +
       '<label><input type="radio" name="e-mark" value="absent"' + (mark === 'absent' ? ' checked' : '') + '> 欠勤にする（打刻なしを欠勤として数える）</label>' +
       '<label><input type="radio" name="e-mark" value=""' + (mark === '' ? ' checked' : '') + '> ' + (mark ? '印を外す' : '印なし') + '</label></div></fieldset>';
-    var em = dn && dn.early_ok ? 'all' : (dn && dn.early_from ? 'from' : 'none'), om = dn && dn.overtime_ok ? 'all' : (dn && dn.ot_until ? 'until' : 'none');
+    var em = dn && dn.early_ok ? 'all' : (dn && dn.early_from ? 'from' : (dn && dn.early_ng ? 'ng' : 'none')), om = dn && dn.overtime_ok ? 'all' : (dn && dn.ot_until ? 'until' : (dn && dn.ot_ng ? 'ng' : 'none'));   /* 0120: 認めないと決めた日は ng */
     var eft = dn && dn.early_from ? hm(dn.early_from) : (firstIn ? hm(firstIn.at) : ''), out = dn && dn.ot_until ? hm(dn.ot_until) : (lastOut ? hm(lastOut.at) : '');
     b += '<fieldset' + (lk ? ' disabled' : '') + '><legend>早出・残業の承認（この日）</legend>' +
-      '<div class="row" role="radiogroup" aria-label="早出"><b>早出</b><label><input type="radio" name="e-em" value="none"' + (em === 'none' ? ' checked' : '') + '> 認めない（予定の開始から数える）</label>' +
+      '<div class="row" role="radiogroup" aria-label="早出"><b>早出</b><label><input type="radio" name="e-em" value="none"' + (em === 'none' ? ' checked' : '') + '> まだ決めない（予定の開始から数える・要確認に残る）</label>' +
+      '<label><input type="radio" name="e-em" value="ng"' + (em === 'ng' ? ' checked' : '') + '> 認めない（予定の開始から数える・理由を残す）</label>' +
       '<label><input type="radio" name="e-em" value="all"' + (em === 'all' ? ' checked' : '') + '> 全部認める（打刻どおり）</label>' +
       '<label><input type="radio" name="e-em" value="from"' + (em === 'from' ? ' checked' : '') + '> この時刻から認める</label><input type="time" id="e-early-from" value="' + esc(eft) + '" aria-label="早出を認める時刻（' + md(earlyDate) + '）"><span class="raw">（' + md(earlyDate) + '）</span></div>' +
-      '<div class="row" role="radiogroup" aria-label="残業"><b>残業</b><label><input type="radio" name="e-om" value="none"' + (om === 'none' ? ' checked' : '') + '> 認めない（予定の終わりまで数える）</label>' +
+      '<div class="row" role="radiogroup" aria-label="残業"><b>残業</b><label><input type="radio" name="e-om" value="none"' + (om === 'none' ? ' checked' : '') + '> まだ決めない（予定の終わりまで数える・要確認に残る）</label>' +
+      '<label><input type="radio" name="e-om" value="ng"' + (om === 'ng' ? ' checked' : '') + '> 認めない（予定の終わりまで数える・理由を残す）</label>' +
       '<label><input type="radio" name="e-om" value="all"' + (om === 'all' ? ' checked' : '') + '> 全部認める（打刻どおり）</label>' +
       '<label><input type="radio" name="e-om" value="until"' + (om === 'until' ? ' checked' : '') + '> この時刻まで認める</label><input type="time" id="e-ot-until" value="' + esc(out) + '" aria-label="残業を認める時刻（' + md(otDate) + '）"><span class="raw">（' + md(otDate) + '）</span></div>' +
+      (dn && (dn.early_ng || dn.ot_ng) ? '<p class="help">認めなかった理由: ' + [dn.early_ng ? '早出「' + esc(dn.early_ng) + '」' : '', dn.ot_ng ? '残業「' + esc(dn.ot_ng) + '」' : ''].filter(Boolean).join('・') + '</p>' : '<p class="help">「認めない」を選んで保存すると、下の理由が認めなかった理由として残ります（CSV の日ごとの明細にも出ます）。</p>') +
       '</fieldset>';
     b += '<fieldset' + (lk ? ' disabled' : '') + '><legend>休憩・メモ（この日）</legend>' +
       '<div class="row"><label>休憩 <input type="number" id="e-break" min="0" max="600" style="width:6em" value="' + (dn && dn.break_min != null ? dn.break_min : '') + '"> 分（空＝予定どおり）</label></div>' +
@@ -1464,7 +1470,8 @@
     });
   }
   var DIRTY_MODES = { edit: 1, work: 1, leave: 1, link: 1, mimport: 1, clockvis: 1, madd: 1, dname: 1, rq: 1, sprv: 1, sched: 1, fixed: 1 };   /* v5 段5: 差し戻し・承認のメモ（rq）と、スマホの取り消しの理由（sprv）を足した（反証レビュー 2026-11-21） */   /* 0111 で予定の手直し・前提を足した */   /* 保存していない入力を確かめる窓（v4 で手入力・有給・結び付けを足した） */
-  DIRTY_MODES.mgr = 1;   /* v5 1-5: 勤怠の管理者を足す・外す窓も確かめる */
+  DIRTY_MODES.mgr = 1;
+  DIRTY_MODES.rvd = 1;   /* 0120: 締めの前の要確認を決める窓 */   /* v5 1-5: 勤怠の管理者を足す・外す窓も確かめる */
   function closeDlg() { wipeEnroll(); dlgCtx = null; try { $('g-dlg').close(); } catch (_) { $('g-dlg').removeAttribute('open'); } }
   function dirty() {
     if (!dlgCtx || !DIRTY_MODES[dlgCtx.mode] || dlgCtx.init == null) return false;
@@ -1498,9 +1505,19 @@
     /* 時刻の鍵は、時刻を入れる時か今の時刻を外す時だけ送る（前後とも無い時は送らない＝0099 の前の DB でも「全部認める」は通る） */
     if ((em === 'all') !== !!dn.early_ok || ms(ef) !== ms(dn.early_from)) { patch.early_ok = em === 'all'; if (ef != null || dn.early_from != null) patch.early_from = ef; changed = true; }
     if ((om === 'all') !== !!dn.overtime_ok || ms(ou) !== ms(dn.ot_until)) { patch.overtime_ok = om === 'all'; if (ou != null || dn.ot_until != null) patch.ot_until = ou; changed = true; }
+    /* 0120: 「認めない」に替えた時だけ理由を認めない理由として送る（もう認めないの日は前の理由のまま）。ほかへ替えた時は外す */
+    if (em === 'ng' && !dn.early_ng) { patch.early_ng = reason; changed = true; } else if ((em === 'none' || em === 'all') && dn.early_ng) { patch.early_ng = null; changed = true; }
+    if (om === 'ng' && !dn.ot_ng) { patch.ot_ng = reason; changed = true; } else if ((om === 'none' || om === 'all') && dn.ot_ng) { patch.ot_ng = null; changed = true; }
     if (br !== (dn.break_min == null ? null : dn.break_min)) { patch.break_min = br; changed = true; }
     if (nt !== (dn.note || '')) { patch.note = nt; changed = true; }
     var mark = radioVal('e-mark') || null;
+    /* 0120（反証レビュー 2026-11-21）: 早出・残業の要確認が残る日を、決めずに「確認済み」にしない（理由の無いまま締められる抜け道を閉じる） */
+    if (mark === 'checked' && dn.day_mark !== 'checked') {
+      var undec = [], bl0 = ((personOf(ctx.sid) || { days: [] }).days.filter(function (x) { return x.date === ctx.date; })[0] || { blocks: [] }).blocks;
+      if (em === 'none' && bl0.some(function (x) { return x.flags.indexOf('early') >= 0; })) undec.push('早出');
+      if (om === 'none' && bl0.some(function (x) { return x.flags.indexOf('overtime') >= 0; })) undec.push('残業');
+      if (undec.length) { msg.textContent = undec.join('・') + 'が「まだ決めない」のままでは確認済みにできません。' + undec.join('・') + 'を「認める」か「認めない（理由を残す）」に決めてから保存してください。'; return; }
+    }
     if (mark !== (dn.day_mark || null)) { patch.day_mark = mark; changed = true; }
     if (changed) ops.push({ f: 'kintai_day_put', a: { p_staff_id: ctx.sid, p_date: ctx.date, p_patch: patch, p_rev: ctx.rev, p_reason: reason } });
     if (!ops.length) { msg.textContent = '直す所がありません。'; return; }
@@ -1538,6 +1555,103 @@
     for (var i = 0; i < after.length && idx < 0; i++) if (after[i] !== cur) for (var j = 0; j < now.length; j++) if (key(now[j]) === after[i]) { idx = j; break; }
     if (idx < 0) { toast(now.length ? '一覧の最後まで直しました（要確認は残り ' + now.length + ' 件）' : '要確認はありません。締めに進めます'); return; }
     openEdit(now[idx].staffId, now[idx].date, now[idx].blockIndex, idx);
+  }
+  /* ── 0120: 締めの前の要確認を1件ずつ決める窓（本人指示 2026-11-21・文と位置は仮置き）──
+   * 要確認の一覧（C.reviewList）の i 件目の日を開く。早出・残業は「認める（打刻どおり数える）／認めない（予定の時刻で数える・理由を残す）」を選ぶ（初めはどちらも選ばない）。
+   * 早出・残業でない印（控えの打刻・予定の無い勤務・締めた後の打刻）は「認める（このまま数える＝確認済み）」を選べる。打刻の漏れ・打刻なしはここでは決めず、
+   * 「打刻・欠勤を直す」で打刻を足すか欠勤にする。数える時間は変えない（認めないは今の数え方＝予定の時刻で切る）。
+   * 認めない理由は日の行の early_ng・ot_ng と直しの履歴に残す（統合 0120）。決めると読み直して次の1件を開く */
+  var DECIDE_REASONS = ['指示・申請が無い', '業務の必要が無い', '私用', 'その他'];   /* 早出・残業の両方に入るので、どちらにも合う言い方（反証レビュー 2026-11-21・文は仮置き） */
+  var MISS = { missing_in: 1, missing_out: 1, no_punch: 1 };
+  function rvKey(r) { return r.staffId + '|' + r.date; }
+  function openDecide(i, list) {
+    if (!month || busy) return;
+    if (isLocked()) { toast('この月は締めてあるため直せません。'); return; }
+    list = list || C.reviewList(month);
+    if (!list.length) { toast('要確認はありません。締めに進めます'); return; }
+    if (!(i >= 0 && i < list.length)) i = 0;
+    var r = list[i], p = personOf(r.staffId), d = p ? p.days.filter(function (x) { return x.date === r.date; })[0] : null;
+    if (!d) return;
+    var dn = (data.days || []).filter(function (x) { return x.staff_id === r.staffId && x.work_date === r.date; })[0] || null;
+    var rvb = d.blocks.filter(function (b) { return C.needsReview(b); });
+    var withF = function (f) { return rvb.filter(function (b) { return b.flags.indexOf(f) >= 0; }); };
+    var eb = withF('early'), ob = withF('overtime'), other = [];
+    rvb.forEach(function (b) { b.flags.forEach(function (f) { if (C.REVIEW[f] && f !== 'early' && f !== 'overtime' && other.indexOf(f) < 0) other.push(f); }); });
+    var miss = other.some(function (f) { return MISS[f]; }), canCk = other.length > 0 && !miss;
+    var firstIn = function (b) { var x = b.punches.filter(function (q) { return q.kind === 'in'; }); return x.length ? x[0].at : null; };
+    var lastOut = function (b) { var x = b.punches.filter(function (q) { return q.kind === 'out'; }); return x.length ? x[x.length - 1].at : null; };
+    var gapTxt = function (a0, a1) { return a0 != null && a1 != null && a1 > a0 ? '（' + fm(Math.round((a1 - a0) / 60000)) + '）' : ''; };
+    var b = '<p><b>要確認 ' + (i + 1) + ' ／ ' + list.length + ' 件目</b></p>' +
+      '<p>' + d.blocks.map(function (x) { return schedText(x) + ' → 数えた ' + (countText(x) || '（なし）') + '・実働 ' + fm(x.workMin) + ' ' + flagTags(x.flags, x.checked); }).join('<br>') + '</p>' +
+      '<p class="raw">打刻（そのまま）: ' + esc(d.blocks.map(rawPunches).filter(Boolean).join(' / ') || 'なし') + '</p>';
+    if (eb.length) {
+      var e0 = eb[0], ei = firstIn(e0), efx = !!(dn && dn.early_from);
+      b += '<fieldset><legend>早出（始業前の打刻）</legend><p>出勤の打刻 ' + hm(ei) + '・予定の開始 ' + hm(e0.schedStart) + gapTxt(ei, e0.schedStart) + '</p>' +
+        (efx ? '<p class="help">この日はほかの勤務の早出を「' + hm(dn.early_from) + ' から」と時刻を区切って認めてあります。認める時は「打刻・欠勤を直す」で直してください（ここで認めると、区切った承認が日全体に広がるため）。</p>' : '') +
+        '<div class="row" role="radiogroup" aria-label="早出">' + (efx ? '' : '<label><input type="radio" name="d-em" value="ok"> 認める（打刻どおり数える）</label>') +
+        '<label><input type="radio" name="d-em" value="ng"> 認めない（予定の開始から数える・理由を残す）</label></div></fieldset>';
+    }
+    if (ob.length) {
+      var o0 = ob[ob.length - 1], oo = lastOut(o0), ofx = !!(dn && dn.ot_until);
+      b += '<fieldset><legend>残業（終業後の打刻）</legend><p>退勤の打刻 ' + hm(oo) + '・予定の終わり ' + hm(o0.schedEnd) + gapTxt(o0.schedEnd, oo) + '</p>' +
+        (ofx ? '<p class="help">この日はほかの勤務の残業を「' + hm(dn.ot_until) + ' まで」と時刻を区切って認めてあります。認める時は「打刻・欠勤を直す」で直してください（ここで認めると、区切った承認が日全体に広がるため）。</p>' : '') +
+        '<div class="row" role="radiogroup" aria-label="残業">' + (ofx ? '' : '<label><input type="radio" name="d-om" value="ok"> 認める（打刻どおり数える）</label>') +
+        '<label><input type="radio" name="d-om" value="ng"> 認めない（予定の終わりまで数える・理由を残す）</label></div></fieldset>';
+    }
+    if (other.length) {
+      b += '<fieldset><legend>ほかの要確認</legend><p>' + flagTags(other, false) + '</p>' + (miss ?
+        '<p class="help">打刻が欠けているため、ここでは決められません。「打刻・欠勤を直す」で打刻を足すか、欠勤の印を付けてください。</p>' :
+        '<div class="row" role="radiogroup" aria-label="ほかの要確認"><label><input type="radio" name="d-ck" value="ok"> 認める（このまま数える・確認済みにする）</label></div>' +
+        '<p class="help">数え方を変える時は「打刻・欠勤を直す」で打刻を直してください。</p>') + '</fieldset>';
+    }
+    var canSave = eb.length > 0 || ob.length > 0 || canCk;
+    /* 理由の欄は見出しの下に1行で置く（iPhone の幅で欄が細くならないように） */
+    b += '<div class="row"><label for="e-reason">理由（認めない時は必ず・200字まで）</label></div><div class="row"><input type="text" id="e-reason" maxlength="200" style="flex:1;min-width:0;width:100%" placeholder="下のボタンで選ぶか、書いてください" autocomplete="off"></div>' +
+      '<div class="presets" role="group" aria-label="よく使う理由">' + DECIDE_REASONS.map(function (x) { return '<button type="button" class="btn sm" data-act="reason" data-r="' + esc(x) + '">' + esc(x) + '</button>'; }).join('') + '</div>' +
+      '<p class="help">認めないと決めた時間は数えず、理由と一緒に CSV の日ごとの明細の「数えなかった時間」「数えなかった理由」に出ます。</p><p class="help" id="e-msg" role="alert"></p>';
+    dlgCtx = { mode: 'rvd', sid: r.staffId, date: r.date, bi: r.blockIndex, rvIndex: i, list: list, rev: dn ? dn.rev : 0, dn: dn, early: eb.length > 0, ot: ob.length > 0, ck: canCk };
+    openDlg(nameOf(r.staffId) + ' さん　' + md(r.date) + '（' + wd(r.date) + '）の要確認を決める', b, !canSave, '決めて次へ', 'rvd-save');
+    addFootBtn('打刻・欠勤を直す', 'rvd-edit');
+    if (i + 1 < list.length) addFootBtn('決めずに次へ', 'rvd-skip');
+    dlgCtx.init = formState();
+  }
+  function saveDecide(btn) {
+    if (!dlgCtx || dlgCtx.mode !== 'rvd' || busy) return;
+    var ctx = dlgCtx, msg = $('e-msg'), dn = ctx.dn || {};
+    var em = radioVal('d-em'), om = radioVal('d-om'), ck = radioVal('d-ck');
+    if (ctx.early && !em) { msg.textContent = '早出を「認める」か「認めない」かを選んでください。'; return; }
+    if (ctx.ot && !om) { msg.textContent = '残業を「認める」か「認めない」かを選んでください。'; return; }
+    if (ctx.ck && !ck) { msg.textContent = (ctx.early || ctx.ot ? 'ほかの要確認も' : '') + '「認める」を選ぶか、「打刻・欠勤を直す」で直してください。'; return; }
+    if (!ctx.early && !ctx.ot && !ctx.ck) { msg.textContent = '「打刻・欠勤を直す」で直してください。'; return; }
+    var why = ($('e-reason').value || '').trim();
+    if ((em === 'ng' || om === 'ng') && !why) { msg.textContent = '認めない理由を書いてください（下のボタンで選べます）。'; $('e-reason').focus(); return; }
+    var patch = {};
+    /* 「全部認める」と「この時刻から／まで」と「認めない」は同じ日に並ばない（DB が断る）ので、選んだ方の外は外して送る */
+    /* 認める＝その日の早出（残業）を全部認める（時刻を区切って認めてある日は窓に出さない）。認めない＝理由だけを送る
+       （区切って認めた時刻は消さない＝ほかの勤務の数えを変えない。全部認めた日は早出の要確認が出ないので、ここへは来ない・反証レビュー 2026-11-21） */
+    if (em === 'ok') { patch.early_ok = true; if (dn.early_ng) patch.early_ng = null; }
+    else if (em === 'ng') { if (dn.early_ok) patch.early_ok = false; patch.early_ng = why; }
+    if (om === 'ok') { patch.overtime_ok = true; if (dn.ot_ng) patch.ot_ng = null; }
+    else if (om === 'ng') { if (dn.overtime_ok) patch.overtime_ok = false; patch.ot_ng = why; }
+    if (ck === 'ok') patch.day_mark = 'checked';
+    busy = true; msg.textContent = '保存しています…';
+    var restore = pressBusy(btn, '保存しています…', $('g-dlg-f'));
+    rpc('kintai_day_put', { p_staff_id: ctx.sid, p_date: ctx.date, p_patch: patch, p_rev: ctx.rev, p_reason: why || '締めの前の確かめで認めた' }).then(okOr).then(function () {
+      busy = false; closeDlg(); sync('保存しました'); toast('決めました（' + nameOf(ctx.sid) + ' さん ' + md(ctx.date) + '）');
+      editsCache = null;
+      return load(false).then(function () { nextDecide(ctx); });
+    })['catch'](function (e) {
+      busy = false; restore(); note('要確認を決める', e);
+      if ($('g-dlg').open && $('e-msg') === msg) msg.textContent = msgOf(e); else toast('保存できませんでした: ' + msgOf(e));
+    });
+  }
+  /* 決めた後・決めずに次へ: 前の一覧で今の1件より後にあった日のうち、まだ要確認に残る最初の日を開く（openNext と同じ選び方） */
+  function nextDecide(ctx, skip) {
+    if (!month || dlgCtx) return;
+    var now = skip ? ctx.list : C.reviewList(month), cur = ctx.sid + '|' + ctx.date, after = ctx.list.slice(ctx.rvIndex + 1).map(rvKey), idx = -1;
+    for (var i = 0; i < after.length && idx < 0; i++) if (after[i] !== cur) for (var j = 0; j < now.length; j++) if (rvKey(now[j]) === after[i]) { idx = j; break; }
+    if (idx < 0) { toast(now.length ? '一覧の最後まで見ました（要確認は残り ' + now.length + ' 件・打刻の漏れは「直す」で直してください）' : '要確認はすべて決めました。「締めと出力」で締められます'); return; }
+    openDecide(idx, now);
   }
   /* 予定の無い日に打刻を足す（C-4: 窓の中の日付の入力欄） */
   function openAddDay() {
@@ -2232,10 +2346,11 @@
     var bl = blockers || [];
     openDlg(perLabel() + 'を締めます',
       (bl.length ? '<div class="band ng" role="alert">勤務中か、まだ出勤していない人がいるため、締められません（' + bl.map(function (x) { return esc(x.name) + ' ' + esc(md(x.date)) + '・' + esc(x.kind); }).join('、') + '）。今締めると、その勤務が0分のまま控えに入ります。退勤の打刻が入るか予定の終わりを過ぎてから、もう一度締めてください。休んだ人は、その日を「直す」で欠勤の印を付けると締められます。</div>' : '') +
+      (fig.review ? '<div class="band ng" role="alert">要確認が ' + fig.review + ' 件（' + fig.rvPeople + ' 人）残っているため、締められません。1件ずつ「認める／認めない」を決めてから締めてください（認めない時は理由を残します）。</div>' +
+        '<div class="row"><button type="button" class="btn pri" data-act="rvd-start">要確認を1件目から決める</button></div>' : '') +
       (changed ? '<div class="band warn" role="alert">窓を開いた後に数字が変わったため、締めていません（' + esc(changed) + '）。新しい数字を確かめてから、もう一度「締める」を押してください。</div>' : '') +
       '<p>「締める」を押した時にもう一度読み直して数え直し、その数字を「締めた時の控え」にします。</p><div class="kv"><span>要確認の残り</span><b>' + fig.review + ' 件（' + fig.rvPeople + ' 人）</b><span>人数</span><b>' + fig.people + ' 人（働いた・有休のあった人 ' + fig.worked + ' 人）</b><span>総労働の合計</span><b>' + fm(fig.workMin) + '</b><span>欠勤の合計</span><b>' + fig.absent + ' 日</b></div>' +
-      (fig.review ? '<div class="band warn" style="margin-top:10px">要確認が残っています。残ったまま締めると、その日はいまの数字（丸めた時刻）のまま給与へ渡ります。</div>' : '') +
-      '<p class="help">締めた後は、この月の打刻の足し・取り消し・承認・休憩の直し・シフトの取り込みが止まります。解除できるのは管理者だけです。</p><p class="help" id="e-msg" role="alert"></p>', bl.length > 0, '締める', 'lock-go');
+      '<p class="help">締めた後は、この月の打刻の足し・取り消し・承認・休憩の直し・シフトの取り込みが止まります。解除できるのは管理者だけです。</p><p class="help" id="e-msg" role="alert"></p>', bl.length > 0 || fig.review > 0, '締める', 'lock-go');   /* 0120: 要確認が残る間は締めるボタンを出さない */
   }
   function lockMonth(btn) {
     if (busy || !month) return;
@@ -2261,6 +2376,7 @@
       if (isLocked()) { busy = false; closeDlg(); toast('この月はもう締めてあります。'); return; }
       var now = lockFigures(), blk = lockBlockers();
       if (blk.length) { busy = false; openLock(now, null, blk); return; }   /* 窓を開いた後に勤務中・まだ出勤していない塊が出た時も締めない（A2） */
+      if (now.review > 0) { busy = false; openLock(now, null, blk); return; }   /* 0120: 窓を開いた後に要確認が出た時も締めない */
       if (!sameFigures(shown, now)) {
         busy = false;
         var diff = [];
@@ -2768,10 +2884,14 @@
       else if (a === 'dlg-save-next') saveEdit(b, true);
       else if (a === 'pick-open') pickOpen();
       else if (a === 'lock-go') lockGo(b);
+      else if (a === 'rvd-start') { if (dlgCtx && dlgCtx.mode === 'lock') closeDlg(); openDecide(0); }   /* 0120 */
+      else if (a === 'rvd-save') saveDecide(b);
+      else if (a === 'rvd-skip') { var dk = dlgCtx; if (dk && dk.mode === 'rvd' && (!dirty() || confirm('選んだ「認める／認めない」を保存せずに、次の1件へ進みますか？'))) { closeDlg(); nextDecide(dk, true); } }
+      else if (a === 'rvd-edit') { var dc = dlgCtx; if (dc && dc.mode === 'rvd' && (!dirty() || confirm('選んだ「認める／認めない」を保存せずに、直す窓を開きますか？'))) { closeDlg(); openEdit(dc.sid, dc.date, dc.bi, dc.rvIndex); } }
       else if (a === 'csv-snap' || a === 'csv-now') { closeDlg(); writeCsv('sum', a === 'csv-snap' ? 'snap' : 'now'); }
       else if (a === 'reason') {
         var r = b.getAttribute('data-r'), inp = $('e-reason');
-        if (inp) { if (r !== 'その他') inp.value = r; else if (REASONS.indexOf(inp.value) >= 0 || SCHED_REASONS.indexOf(inp.value) >= 0 || FX_REASONS.indexOf(inp.value) >= 0) inp.value = ''; inp.focus(); }
+        if (inp) { if (r !== 'その他') inp.value = r; else if (REASONS.indexOf(inp.value) >= 0 || DECIDE_REASONS.indexOf(inp.value) >= 0 || SCHED_REASONS.indexOf(inp.value) >= 0 || FX_REASONS.indexOf(inp.value) >= 0) inp.value = ''; inp.focus(); }
       }
       else if (a === 'sched-time') {
         var sfx = b.getAttribute('data-n') || '', blk = dlgCtx && dlgCtx.blk;

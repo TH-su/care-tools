@@ -221,7 +221,7 @@ console.log('\n— 6. 画面（kintai.js の関数を取り出して動かす）
     const goFn = between('function lockGo(', 'function unlockMonth(');
     t('締める前（窓を開く時）と「締める」を押して読み直した後の両方で止める・止めた窓には「締める」を出さない（文は仮置き）',
       /openLock\(lockFigures\(\), null, lockBlockers\(\)\);/.test(K) && goFn.indexOf('lockBlockers()') > goFn.indexOf('recompute()') && goFn.indexOf('lockBlockers()') < goFn.indexOf('sameFigures(shown, now)') && /if \(blk\.length\) \{ busy = false; openLock\(now, null, blk\); return; \}/.test(goFn) &&
-      /, bl\.length > 0, '締める', 'lock-go'\);/.test(K) && /勤務中か、まだ出勤していない人がいるため、締められません/.test(K) && goFn.indexOf("rpc('kintai_month_lock'") > goFn.indexOf('lockBlockers()'));
+      /, bl\.length > 0 \|\| fig\.review > 0, '締める', 'lock-go'\);/.test(K) && /勤務中か、まだ出勤していない人がいるため、締められません/.test(K) && goFn.indexOf("rpc('kintai_month_lock'") > goFn.indexOf('lockBlockers()'));
   }
   /* 6-3 個人の月の警告の帯 */
   {

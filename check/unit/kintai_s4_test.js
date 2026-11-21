@@ -85,7 +85,9 @@ console.log('\n— 2. 時間単位の有休 —');
   t('日の行に時間単位の有休（hourlyPaidMin と印）・日の paidMin は今のまま', dayOf(m1, 'sT02', ds(18)).hourlyPaidMin === 120 && dayOf(m1, 'sT02', ds(18)).absences[0].kind === 'hourly_paid' && dayOf(m1, 'sT02', ds(18)).paidMin === dayOf(m0, 'sT02', ds(18)).paidMin && dayOf(m1, 'sT02', ds(10)).hourlyPaidEffMin === 0);
   t('締めの控えに paidMin（時間単位を含む）と hourlyPaidMin が入る（給与へ今の鍵で渡る）', C.snapshotOf(m1).rows[1].paidMin === b.paidMin && C.snapshotOf(m1).rows[1].hourlyPaidMin === 180);
   const csv = C.buildCsv(m1, { extraCols: true });
-  t('CSV の集計の「有休時間」と日ごとの「有休時間」に時間単位の効く分を含める（18日 2:00・10日は 0:00）', /,2:00,/.test(csv.summary.split('\r\n')[2]) && csv.daily.split('\r\n').some((l) => l.indexOf('9002,2026-12-18') === 0 && /,2:00,[^,]*$/.test(l)) && csv.daily.split('\r\n').some((l) => l.indexOf('9002,2026-12-10') === 0 && /,0:00,[^,]*$/.test(l)), csv.summary.split('\r\n')[2]);
+  /* 0120: 日ごとの末尾に2列を足したので、「有休時間」は見出しの位置で読む（前は末尾から2つめの列として読んでいた） */
+  const dLines = csv.daily.split('\r\n'), pCol = dLines[0].split(',').indexOf('有休時間'), pOf = (pre) => { const l = dLines.filter((x) => x.indexOf(pre) === 0)[0]; return l ? l.split(',')[pCol] : null; };
+  t('CSV の集計の「有休時間」と日ごとの「有休時間」に時間単位の効く分を含める（18日 2:00・10日は 0:00）', /,2:00,/.test(csv.summary.split('\r\n')[2]) && pCol > 0 && pOf('9002,2026-12-18') === '2:00' && pOf('9002,2026-12-10') === '0:00', csv.summary.split('\r\n')[2]);
   t('同じ人・同じ日・同じ種類の2行目は数えない', sumOf(month({ absences: [{ staff_id: 'sT02', date: ds(3), kind: 'hourly_paid', minutes: 120 }, { staff_id: 'sT02', date: ds(3), kind: 'hourly_paid', minutes: 240 }] }), 'sT02').hourlyPaidMin === 120);
 }
 
