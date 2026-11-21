@@ -38,16 +38,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { loadPlaywright, parseArgs, ensureDir, readJson, writeJson } from './lib.mjs';
-import { baseMissingKind, baseShotReason } from './compare-calc.mjs';
+import { baseMissingKind, baseShotReason, makeAllowed } from './compare-calc.mjs';
 
 const args = parseArgs(process.argv.slice(2));
 const baseDir = path.resolve(args.base || 'check/out/base');
 const headDir = path.resolve(args.head || 'check/out/head');
 const outDir = ensureDir(path.resolve(args.out || 'check/out/compare'));
 const TOL = Math.max(0, Number(args.tol == null ? 2 : args.tol) || 0);
-const allow = new Set((args.allow ? String(args.allow).split(',') : []).map((s) => s.trim().replace(/\.html$/, '')).filter(Boolean));
-/* 帳票（<画面>__<帳票>）は、その画面を許していれば許す */
-const allowed = (name) => allow.has(name) || allow.has(String(name).split('__')[0]);
+const allow = new Set((args.allow ? String(args.allow).split(',') : []).map((s) => s.trim().replace(/\.html$/, '')).filter(Boolean));   // compare.json に残す一覧
+/* 帳票（<画面>__<帳票>）は、その画面を許していれば許す（見分けは compare-calc.mjs の makeAllowed・run.mjs の撮り直しと同じ） */
+const allowed = makeAllowed(args.allow);
 const isSheet = (name) => String(name).includes('__');
 
 const { chromium } = loadPlaywright();
