@@ -44,3 +44,25 @@ export function baseShotReason(name, sheet, view, mb) {
   const hit = list.find((e) => SHOT_FAIL_RE.test(String(e)));
   return hit ? cut(hit) : '撮影の失敗の記録なし';
 }
+
+/* 「変えてよい画面」（--allow）の見分け（2026-11-21 compare.mjs から移す・run.mjs の撮り直しと同じ見分けにするため）
+ *   makeAllowed('a.html,b') → (name) => boolean。名前の .html は外して比べる。帳票（<画面>__<帳票>）は、その画面を許していれば許す */
+export function makeAllowed(allowArg) {
+  const allow = new Set((allowArg ? String(allowArg).split(',') : []).map((s) => s.trim().replace(/\.html$/, '')).filter(Boolean));
+  return (name) => allow.has(String(name).replace(/\.html$/, '')) || allow.has(String(name).split('__')[0]);
+}
+
+/* 揺れの確かめ（run.mjs）で撮り直す画面（2026-11-21 新設）
+ *   recheckPages(first, allowArg) → { targets: ['x.html', ...], skipped: ['y.html', ...] }
+ *   first は1回目の compare.json（null なら両方とも空）。違い（違いあり・大きさが違う）の出た画面を、帳票・PDF のページの分も画面ごとに集める。
+ *   許した画面は画素の違いを合否に数えない（compare.mjs の PC・印刷・帳票・PDF のページ・印刷ページ数）ので、撮り直さず skipped に回す。
+ *   ただし撮れていない・帳票が撮れなくなった・PDF を絵にできない・読めない・画面のエラーが増えた、は許した画面でも失敗に数えるので、
+ *   許した画面のこれらは、違いが出なかった画面と同じく1回撮りの分で決まる（撮り直しで揺れを消さない）。
+ *   許していない画面は今までどおり targets に残す */
+export function recheckPages(first, allowArg) {
+  if (!first || typeof first !== 'object') return { targets: [], skipped: [] };
+  const rows = [...(Array.isArray(first.results) ? first.results : []), ...(Array.isArray(first.pageRows) ? first.pageRows : [])];
+  const pages = [...new Set(rows.filter((r) => r && (r.status === '違いあり' || r.status === '大きさが違う')).map((r) => String(r.name).split('__')[0] + '.html'))];
+  const allowed = makeAllowed(allowArg);
+  return { targets: pages.filter((p) => !allowed(p)), skipped: pages.filter((p) => allowed(p)) };
+}

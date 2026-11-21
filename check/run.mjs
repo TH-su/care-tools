@@ -7,6 +7,7 @@
  * ・撮る前に前回の撮影（out/base・out/head・out/compare）を消す（古い PNG が混ざらないように）
  * ・撮影が失敗したらそこで失敗にする（古い結果で「画素一致」と言わない）
  * ・揺れの確かめ: 1回目の比較で違いが出た画面だけ、直す前・後とも 5 回ずつ撮り直し、多数派の絵で比べ直す
+ *   （--allow で許した画面は合否に数えないので撮り直さない・2026-11-21）
  *   （画面全体を撮る時、入力欄の文字の描き方がまれに入れ替わるため）。--recheck 0 で撮り直さない
  */
 import fs from 'node:fs';
@@ -14,6 +15,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { spawnSync, execFileSync } from 'node:child_process';
 import { parseArgs, ensureDir, readJson } from './lib.mjs';
+import { recheckPages } from './compare-calc.mjs';
 
 const args = parseArgs(process.argv.slice(2));
 const repoDir = process.cwd();
@@ -56,7 +58,11 @@ try {
   cmpStatus = run('画素比較', [cmpJs, ...cmp]);
   /* ③' 揺れの確かめ: 違いの出た画面だけ 5 回ずつ撮り直して比べ直す */
   const first = readJson(path.join(out, 'compare', 'compare.json'), null);
-  const diffPages = first ? [...new Set([...first.results, ...(first.pageRows || [])].filter((r) => r.status === '違いあり' || r.status === '大きさが違う').map((r) => r.name.split('__')[0] + '.html'))] : [];   // PDF のページごとの違い（pageRows）も同じく撮り直す   // 帳票（<画面>__<帳票>）に違いが出た時は、その画面ごと撮り直す
+  /* 許した画面（--allow）は違いがあっても合否に数えないので撮り直さない（2026-11-21・全画面の共通部品の見た目を変える PR で、
+     許した 21 画面を5回ずつ撮り直して 60 分の上限を超えたため）。許していない画面は今までどおり撮り直す */
+  const { targets: diffPages, skipped: skippedAllowed } = recheckPages(first, args.allow);   // PDF のページごとの違い（pageRows）も同じく撮り直す   // 帳票（<画面>__<帳票>）に違いが出た時は、その画面ごと撮り直す
+  if (skippedAllowed.length) recheckNote = `揺れの確かめ: 許した ${skippedAllowed.length}画面（${skippedAllowed.join('、')}）は撮り直していない（上の画素の数字は1回撮りの分・画素の違いは合否に数えない）`;
+  if (diffPages.length && !(args.recheck !== '0' && wt)) recheckNote = (recheckNote ? recheckNote + '／' : '') + `揺れの確かめ: 許していない ${diffPages.length}画面（${diffPages.join('、')}）も撮り直していない（${args.recheck === '0' ? '--recheck 0' : '直す前の木が無い'}）`;
   if (diffPages.length && args.recheck !== '0' && wt) {
     const N = '5';
     const hide = args['hide-report'] === 'true' ? ['--hide-report'] : [];
@@ -65,7 +71,7 @@ try {
     if (a !== 0 || b !== 0) { dropWorktree(); fail('揺れの確かめの撮影が失敗'); }
     fs.rmSync(path.join(out, 'compare'), { recursive: true, force: true });
     cmpStatus = run('画素比較（撮り直した後）', [cmpJs, ...cmp]);
-    recheckNote = `揺れの確かめ: 1回目に違いが出た ${diffPages.length}画面（${diffPages.join('、')}）を直す前・後とも${N}回ずつ撮り直し、多数派の絵で比べた` +
+    recheckNote = (recheckNote ? recheckNote + '／' : '') + `揺れの確かめ: 1回目に違いが出た許していない ${diffPages.length}画面（${diffPages.join('、')}）を直す前・後とも${N}回ずつ撮り直し、多数派の絵で比べた` +
       ((first.pageRows || []).length ? '（帳票の PDF は撮り直しの1回目の分で比べた・PDF は多数決していない）' : '');
   }
 } finally { dropWorktree(); }
