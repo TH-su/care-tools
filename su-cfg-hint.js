@@ -112,13 +112,13 @@
       a = document.createElement('a');
       a.href = 'connection-settings.html#restore';
       a.textContent = '接続設定を開く';
-      a.style.cssText = 'background:#0b57d0;color:#fff;border-radius:8px;padding:8px 12px;text-decoration:none;min-height:40px;display:inline-flex;align-items:center';
+      a.style.cssText = 'background:#0b57d0;color:#fff;border-radius:8px;padding:8px 12px;text-decoration:none;min-height:44px;display:inline-flex;align-items:center';
     }
     var x = document.createElement('button');
     x.type = 'button';
     x.setAttribute('aria-label', '案内を閉じる');
     x.textContent = '×';
-    x.style.cssText = 'border:0;background:transparent;color:#5d4037;font-size:20px;min-width:40px;min-height:40px;cursor:pointer';
+    x.style.cssText = 'border:0;background:transparent;color:#5d4037;font-size:20px;min-width:44px;min-height:44px;cursor:pointer';
     x.addEventListener('click', function () { bar.remove(); });
     bar.appendChild(t);
     if (a) bar.appendChild(a);
