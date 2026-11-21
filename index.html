@@ -286,8 +286,10 @@ main {
 @media screen {
   .foot a { color: var(--tc-navy); }
   .foot a:focus-visible { outline-color: var(--tc-navy); }
-  html body .sur-fab { background: var(--tc-navy); }
+  html body .sur-fab { background: var(--tc-navy); color: #fff; }   /* 字の色も書く: su-report.css が届かない時の素のボタンでも藍の地に白い字で読める */
 }
+/* 印刷は暗い表示の端末でも明るい紙の色にする（color-scheme を light dark にしたので、色を書いていないリンク等が淡くならないように） */
+@media print { :root { color-scheme: light; } }
 /* ── 暗い表示（ダークモード）（2026-11-21 本人指示「直して」・ui-check の注意） ──
    OS を暗い表示にした時だけ、画面の色を暗くする。色は ~/.claude/design/tokens.css の業務ツール（ops）の暗い表示の値から取る（仮置き）。
    印刷と明るい表示は変えない（全部この @media の中）。

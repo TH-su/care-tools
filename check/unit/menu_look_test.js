@@ -40,7 +40,8 @@ function stripScreenBlocks(src) {
   }
   return s;
 }
-const printSide = stripScreenBlocks(css);
+/* コメントを先に除く（コメントの中の「@media screen」の字面から切り始めないように・反証レビューの指摘） */
+const printSide = stripScreenBlocks(css.replace(/\/\*[\s\S]*?\*\//g, ''));
 
 console.log('1 列の数');
 t('1a 既定（狭い画面）は2列のまま', /\.grid \{ display: grid; grid-template-columns: repeat\(2, 1fr\);/.test(outside), '');
