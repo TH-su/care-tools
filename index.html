@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-Z6O9GCScXxyTGqhLq3/zpdh7yqoyF/nuDnnEGH0MUnU=' 'sha256-AyAJCjB19DloRAPrv2a5oCJuKwNyEDNLqpkZskbqmMk=' 'sha256-HWUy8NZkTgvZp+3MJ7uCW+jDovd0dARWhPTK1/yXljA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="color-scheme" content="light">
+<meta name="color-scheme" content="light dark">
 <!-- 検索エンジンにこのページと配下ツールを辿らせない。
      一覧ページは「ツール名を知らない第三者が全ツールへ1クリックで到達できる」入口になるため、
      noindex に加えて nofollow を必ず付ける（各ツールは埋め込みトークンでGASを叩く構成）。 -->
@@ -287,6 +287,40 @@ main {
   .foot a { color: var(--tc-navy); }
   .foot a:focus-visible { outline-color: var(--tc-navy); }
   html body .sur-fab { background: var(--tc-navy); }
+}
+/* ── 暗い表示（ダークモード）（2026-11-21 本人指示「直して」・ui-check の注意） ──
+   OS を暗い表示にした時だけ、画面の色を暗くする。色は ~/.claude/design/tokens.css の業務ツール（ops）の暗い表示の値から取る（仮置き）。
+   印刷と明るい表示は変えない（全部この @media の中）。
+   ★--g0〜--g9・--pri は変えない: 報告の窓（su-report.css の .sur-in）はこれらを白地の上の字に使うため、変えると白地に明るい字になって読めなくなる。
+   ★報告の窓・画面の指摘の吹き出しは白地のまま。color-scheme: light で中の入力欄も明るいままにする */
+@media screen and (prefers-color-scheme: dark) {
+  :root { color-scheme: dark;
+    --tc-navy: #E9EEF2; --tc-paper: #11161B; --tc-line: #303E48; --tc-gold: #F0B45E; --tc-ink2: #B0BDC7;
+    --tc-surface: #1A2127; --tc-focus: #F3BE6F; --tc-danger: #F5919A; }
+  .tile { background: var(--tc-surface); box-shadow: none; }
+  .tile:hover:not(:active) { box-shadow: none; }
+  .tile:focus-visible, .foot a:focus-visible, .hdr .ball:focus-visible { outline-color: var(--tc-focus); }
+  /* 期限・古さの字は暗い地の上で読める淡い赤。法定・健康の札（白い字・--due-tx の地）は今のまま */
+  .tile .due:not(.legal), .tile .stale { color: var(--tc-danger); }
+  .menu-broken { background: #33280F; color: #EBB765; }
+  .role-band { --rb-bar: #586E7E; --rb-bg: var(--tc-surface); --rb-tx: var(--tc-ink2); }
+  .role-band[data-role="admin"]  { --rb-bar: #F0B45E; --rb-bg: #382914; --rb-tx: #F0B45E; }
+  .role-band[data-role="office"] { --rb-bar: #6DC1D6; --rb-bg: #112E37; --rb-tx: #7CC9DC; }
+  .role-band[data-role="field"]  { --rb-bar: #6FD292; --rb-bg: #122F1E; --rb-tx: #6FD292; }
+  /* 「不具合を報告」のボタンは暗い地の上で見えるよう明るい地に暗い字 */
+  html body .sur-fab { background: #6DC1D6; color: #062B34; }
+  .sur-dlg, .sua-pop { color-scheme: light; }
+}
+@media screen and (prefers-color-scheme: dark) and (min-width: 900px) {
+  .tile .ic { background: var(--tc-line); }
+  .tile[data-fam="0"] .ic { background: #391A1D; }   /* 記録（朱） */
+  .tile[data-fam="1"] .ic { background: #382914; }   /* くすり・もの（山吹） */
+  .tile[data-fam="2"] .ic { background: #122F1E; }   /* 入居者（若竹） */
+  .tile[data-fam="3"] .ic { background: #112E37; }   /* 計画（浅葱） */
+  .tile[data-fam="4"] .ic { background: #391A1D; }   /* 職員（桃） */
+}
+@media screen and (prefers-color-scheme: dark) and (prefers-reduced-motion: reduce) {
+  .tile:active { background: #112E37; border-color: #6DC1D6; }
 }
 </style>
 </head>
