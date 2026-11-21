@@ -34,7 +34,7 @@ function t(n, c, e) { if (c) { pass++; console.log('  ✓ ' + n); } else { fail+
 
 async function open(opt = {}) {
   const ctx = await browser.newContext({ viewport: opt.viewport || { width: 1280, height: 900 }, deviceScaleFactor: 1, locale: 'ja-JP', timezoneId: 'Asia/Tokyo', colorScheme: opt.dark ? 'dark' : 'light', acceptDownloads: true });
-  const routes = FX.routesFor(Object.assign({ ym: YM }, opt));
+  const routes = FX.routesFor(Object.assign({ ym: YM, now: CLOCK }, opt));
   const outside = [];
   await ctx.route('**/*', (route) => { const u = new URL(route.request().url()); if (u.origin === srv.url || u.origin === FX.URL) return route.fallback(); outside.push(u.origin); return route.abort(); });
   for (const r of routes) await ctx.route(r.match, r.handle);
@@ -391,6 +391,8 @@ console.log('\n— 6. 覆い・その他 —');
   t('取り込みは足すだけ（この月分の版・口座がもうある人は書き換えず、そう知らせる）', /この月分の版がもうあるので設定は書き換えません/.test(it) && /口座がもうあるので口座は書き換えません/.test(it) && o4.routes.db.profiles.filter((q) => q.staff_id === 's-01' && q.effective_from === '2026-10-16')[0].data.base === 240000);
   /* 加入の列から ins.*.on を作る（無ければ標準報酬の有無）・給与の設定が無い人（s-11）は新しい設定として足す */
   const csv2 = '従業員番号,氏名,給与形態,基本給,健康保険の標準報酬月額,厚生年金保険の標準報酬月額,健康保険,雇用保険\r\nF-11,見本 十一,月給,205000,200000,200000,加入,未加入\r\n';
+  /* 1つ目を送った後の読み直しが終わってから選ぶ（読み直しの間に読んだファイルは、画面が古いとして捨てるため・2026-11-21） */
+  await o4.page.waitForFunction(() => !document.getElementById('p-sync').textContent, null, { timeout: 10000 });
   await o4.page.setInputFiles('#i-file', { name: 'freee2.csv', mimeType: 'text/csv', buffer: Buffer.from(csv2, 'utf8') });
   await o4.page.waitForSelector('[data-act="imp-go"]');
   t('取り込み: 加入の違いを表に出す', /健康保険の加入：（空） → 加入/.test(await o4.page.textContent('#p-main')) && /雇用保険の加入：（空） → 加入しない/.test(await o4.page.textContent('#p-main')));
