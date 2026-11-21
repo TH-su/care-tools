@@ -63,6 +63,10 @@ jobs:
         if: success() || failure()
         run: node check/overview_hosp_e2e.mjs
 
+      - name: 給与の画面を通す（計算・確定・振込データ・職員の給与設定・取り込み・設定・check/payroll_e2e.mjs・2026-11-21）
+        if: success() || failure()
+        run: node check/payroll_e2e.mjs --shots check/out/flow
+
       - name: 画面の写し（架空データ）を成果物として残す
         if: failure()
         uses: actions/upload-artifact@v4
