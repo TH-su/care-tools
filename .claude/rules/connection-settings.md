@@ -2,6 +2,8 @@
 paths:
   - "connection-settings.html"
   - "check/unit/connection_*"
+  - "check/unit/cs_token_check_test.js"
+  - "check/unit/cs_wizard_test.js"
 ---
 # 接続設定 の決まり（CLAUDE.md §3 から移した・文は一字一句そのまま）
 

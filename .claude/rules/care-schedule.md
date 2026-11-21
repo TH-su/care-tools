@@ -3,6 +3,10 @@ paths:
   - "care-schedule.html"
   - "check/unit/care_schedule_*"
   - "check/care_schedule_*"
+  - "check/unit/care_a3_sheet_test.js"
+  - "check/unit/care_edited_by_test.js"
+  - "check/unit/care_field_merge_test.js"
+  - "check/unit/care_namecut_test.js"
   - "check/fixtures/care-schedule.mjs"
 ---
 # 週間計画 の決まり（CLAUDE.md §3 から移した・文は一字一句そのまま）

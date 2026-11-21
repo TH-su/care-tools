@@ -22,8 +22,9 @@ function t(name, ok, info) {
   else { fail++; console.log('  ✗ ' + name + (info !== undefined ? '  → ' + JSON.stringify(info) : '')); }
 }
 
-/* Claude のグロブ: / を含まない形はどの階層のファイル名にも当たる・/ を含む形はルートからの道。** と * と ? だけを使う */
+/* Claude のグロブ: / を含まない形はどの階層のファイル名にも当たる・/ を含む形はルートからの道（頭の / はルートの直下だけ）。** と * と ? だけを使う */
 function globRe(p) {
+  if (p.startsWith('/')) p = p.slice(1);
   const body = p.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*\/?/g, '\u0000').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]').replace(/\u0000/g, '.*');
   return new RegExp(p.includes('/') ? '^' + body + '$' : '(^|/)' + body + '$');
 }
@@ -45,14 +46,30 @@ for (const f of rules) {
   const none = globs.filter((g) => !tracked.some((p) => globRe(g).test(p)));
   t(`2 ${f}: paths のグロブがどれも公開のファイルに当たる`, globs.length > 0 && none.length === 0, none);
   t(`4 ${f}: 公開に入っている（git の管理下）`, tracked.includes('.claude/rules/' + f));
+  /* 本文に名前の出るファイルが paths に当たる（書き足した画面の取りこぼしを止める）。このサイトの外の画面と「乗らない」と書いた部品だけ除く */
+  const NOT_HERE = new Set(['medication.html', 'su-auth.js']);
+  const body = L.slice(end + 1).join('\n');
+  const named = [...new Set(body.match(/[A-Za-z0-9_./-]+\.(?:html|js|mjs|cjs|css|json|swift)\b/g) || [])].filter((n) => !NOT_HERE.has(n));
+  const uncovered = named.filter((n) => {
+    const hit = tracked.filter((p) => p === n || p.endsWith('/' + n));
+    return hit.length === 0 || !hit.some((p) => globs.some((g) => globRe(g).test(p)));
+  });
+  t(`2 ${f}: 本文に名前の出るファイルがどれも paths に当たる`, uncovered.length === 0, uncovered);
   t(`3 ${f}: CLAUDE.md の索引にある`, claude.includes('- `.claude/rules/' + f + '` … '));
 }
 const listed = [...claude.matchAll(/^- `\.claude\/rules\/([^`]+)` … /gm)].map((m) => m[1]);
 const orphan = listed.filter((f) => !rules.includes(f));
 t('3 索引のファイルがどれもある', listed.length === rules.length && orphan.length === 0, orphan);
 
-t('5 外部の AI へ送らない決まり（薬の変更候補・担当者会議の振り分け）は CLAUDE.md に残す',
-  /「薬の変更候補」は、外部の AI へ処方を送らない/.test(claude) && /NotebookLM が「◆欄名：」の印つきで出した議事録/.test(claude));
+t('5 外部の AI へ送らない決まり（薬の変更候補・担当者会議の振り分け・印の無い議事録・ほかの形の表）は CLAUDE.md に残す',
+  /「薬の変更候補」は、外部の AI へ処方を送らない/.test(claude) && /NotebookLM が「◆欄名：」の印つきで出した議事録/.test(claude) &&
+  /^- 担当者会議の記録の議事録に「◆欄名：」の印が1つも無い時は/m.test(claude) && /^- 過去の担当者会議をほかの形の表/m.test(claude));
+t('5 複数の画面に効く決まり（未送信の一覧・アレルゲンと禁食の一字一句）は CLAUDE.md に残す',
+  /^- 未送信の一覧（`unsent\.html`）は/m.test(claude) && /新しい種類の送信待ちは作らない/.test(claude) && /アレルゲン・禁食の選択肢と符号一覧は一字一句そろえる/.test(claude));
+for (const f of rules) {
+  const b = fs.readFileSync(path.join(DIR, f), 'utf8');
+  t(`5 ${f}: 外部の AI へ送らない決まりを含む行を移していない`, !/外部の AI へ(は)?(処方を)?送らない/.test(b));
+}
 t('5 勤怠管理・給与の「端末に残してよい物」は CLAUDE.md に残す',
   /^  - 端末に残してよい物: 打刻の画面は/m.test(claude) && /^  - 端末に残してよい物は開いていたタブ（payroll_tab）だけ/m.test(claude));
 t('5 §2 の絶対に守ることは CLAUDE.md に残す', /^## 2\. 絶対に守ること/m.test(claude) && /^5\. \*\*現場端末では読まない・書かない。\*\*/m.test(claude));

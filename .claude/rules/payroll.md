@@ -6,6 +6,7 @@ paths:
   - "check/fixtures/payroll*"
   - "kintai.html"
   - "kintai.js"
+  - "kintai-calc.js"
 ---
 # 給与 の決まり（CLAUDE.md §3 から移した・文は一字一句そのまま）
 

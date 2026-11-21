@@ -1,6 +1,6 @@
 ---
 paths:
-  - "index.html"
+  - "/index.html"
   - "su-menu.js"
   - "su-itomari.js"
   - "menu-settings*"
