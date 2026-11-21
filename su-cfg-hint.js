@@ -100,7 +100,7 @@
     bar.setAttribute('role', 'status');
     bar.style.cssText = 'position:fixed;left:8px;right:8px;bottom:8px;z-index:2147482000;background:#fff8e1;color:#5d4037;' +
       'border:1px solid #ffe0a3;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.18);padding:10px 12px;' +
-      'font:600 14px/1.5 -apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;' +
+      'font:600 15px/1.5 -apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;' +
       'display:flex;gap:10px;align-items:center;flex-wrap:wrap;max-width:720px;margin:0 auto';
     var t = document.createElement('span');
     t.style.cssText = 'flex:1 1 240px';
