@@ -41,9 +41,11 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
 .sup { margin: 0; }
 .sup dt { font-weight: 700; }
 .sup dd { margin: 0 0 8px; -webkit-user-select: text; user-select: text; }
-/* 画面ごとの使い方の目次のリンクは、指で押せる高さ（44px）にする（画面だけ・2026-11-13） */
-@media screen { .toc li { margin: 0; } .toc a { display: inline-flex; align-items: center; min-height: 44px; } }
-.key { display: inline-block; padding: 0 8px; border: 1px solid var(--g3); border-radius: 999px; background: var(--pri-l); white-space: nowrap; }
+/* 画面ごとの使い方の目次のリンクは、指で押せる高さ（44px）にする（画面だけ・2026-11-13）。
+   2文字の項目（体重 など）は幅も 44px 未満になっていたので、押せる幅も 44px 以上にする（字の位置は左のまま・2026-11-21） */
+@media screen { .toc li { margin: 0; } .toc a { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; } }
+/* ボタン名の囲み。行に収まらない時だけ囲みの中で折り返す（折り返し禁止のままだと iPhone 幅で画面の右へはみ出した・2026-11-21） */
+.key { display: inline-block; max-width: 100%; padding: 0 8px; border: 1px solid var(--g3); border-radius: 999px; background: var(--pri-l); }
 /* 書き方の見本（担当者会議の記録の節・2026-11-14） */
 .ex { margin: 0 0 8px; padding: 8px 12px; background: var(--g0); border: 1px solid var(--g3); border-radius: 8px; font: inherit; font-size: 0.9375rem; white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
 </style>
