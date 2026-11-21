@@ -36,8 +36,9 @@ t('5 開き方は決まった値', ['standalone', 'minimal-ui', 'browser', 'full
 t('6 色は #RRGGBB', /^#[0-9A-Fa-f]{6}$/.test(m.background_color || '') && /^#[0-9A-Fa-f]{6}$/.test(m.theme_color || ''), [m.background_color, m.theme_color]);
 
 const icons = Array.isArray(m.icons) ? m.icons : [];
-t('7 アイコンが 192 と 512 の両方ある（512 の maskable も）',
-  icons.some((i) => i.sizes === '192x192') && icons.some((i) => i.sizes === '512x512' && (i.purpose || 'any').includes('any')) &&
+const anyOf = (i) => (i.purpose || 'any').split(/\s+/).includes('any');
+t('7 アイコンが 192 と 512 の両方ある（どちらも any・512 の maskable も）',
+  icons.some((i) => i.sizes === '192x192' && anyOf(i)) && icons.some((i) => i.sizes === '512x512' && anyOf(i)) &&
   icons.some((i) => i.sizes === '512x512' && (i.purpose || '').includes('maskable')), icons.map((i) => i.sizes + ' ' + i.purpose));
 const bad = [];
 for (const i of icons) {
@@ -60,24 +61,37 @@ t('10 名前は一般の語だけ（施設名・会社名・事業所の語を�
 
 const INDEX = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8').replace(/<!--[\s\S]*?-->/g, '');
 const head = INDEX.slice(0, INDEX.search(/<\/head>/i));
+// link の属性は順も引用符も問わずに読む
+const links = (html) => [...html.matchAll(/<link\b[^>]*>/gi)].map((m) => {
+  const a = {}; for (const x of m[0].matchAll(/\b([a-z-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi)) a[x[1].toLowerCase()] = x[2] ?? x[3] ?? x[4];
+  return a;
+});
+const relIs = (a, r) => String(a.rel || '').toLowerCase().split(/\s+/).includes(r);
+const hl = links(head);
 t('11 メニューの頭が manifest と iPhone 用の絵を読む',
-  /<link\b[^>]*\brel="manifest"[^>]*\bhref="manifest\.webmanifest"/.test(head) && /<link\b[^>]*\brel="apple-touch-icon"[^>]*\bhref="apple-touch-icon\.png"/.test(head), '');
+  hl.some((a) => relIs(a, 'manifest') && a.href === 'manifest.webmanifest') && hl.some((a) => relIs(a, 'apple-touch-icon') && a.href === 'apple-touch-icon.png'), hl);
 t('12 iPhone の全画面を強める指定（apple-mobile-web-app-capable）を入れない', !/apple-mobile-web-app-capable|mobile-web-app-capable/.test(head), '');
 
-// service worker を登録しない（公開しているすべての HTML・JS を読む）
+// service worker を登録しない。介護ツールの画面・部品（直下の HTML・JS）と check/ 以外のフォルダの中も読む。
+// universe-sandbox/（three.js の実験・介護ツールとは別物・CLAUDE.md §9）は自分のフォルダの中だけに効くので除く
+const SKIP_DIRS = new Set(['.git', '.github', '.claude', 'check', 'node_modules', 'universe-sandbox', 'mailer']);
 const reg = [];
-for (const f of fs.readdirSync(ROOT)) {
-  if (!/\.(html|js)$/.test(f)) continue;
-  const s = fs.readFileSync(path.join(ROOT, f), 'utf8');
-  if (/serviceWorker\s*\.\s*register\s*\(/.test(s)) reg.push(f);
-}
-t('13 どの画面も service worker を登録しない', reg.length === 0, reg);
+(function walk(dir, rel) {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const r = rel ? rel + '/' + e.name : e.name;
+    if (e.isDirectory()) { if (!SKIP_DIRS.has(e.name)) walk(path.join(dir, e.name), r); continue; }
+    if (!/\.(html|js|mjs)$/.test(e.name)) continue;
+    const s = fs.readFileSync(path.join(dir, e.name), 'utf8');
+    if (/serviceWorker\s*\.\s*register\s*\(/.test(s)) reg.push(r);
+  }
+})(ROOT, '');
+t('13 介護ツールの画面・部品は service worker を登録しない（universe-sandbox の実験は除く）', reg.length === 0, reg);
 
 const others = [];
 for (const f of fs.readdirSync(ROOT)) {
   if (!/\.html$/.test(f) || f === 'index.html') continue;
   const s = fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/<!--[\s\S]*?-->/g, '');
-  if (/rel="manifest"/.test(s)) others.push(f);
+  if (links(s).some((a) => relIs(a, 'manifest'))) others.push(f);
 }
 t('14 manifest を読むのはメニューだけ', others.length === 0, others);
 
@@ -85,6 +99,16 @@ const gi = fs.readFileSync(path.join(ROOT, '.gitignore'), 'utf8').split('\n').ma
 const need = ['manifest.webmanifest', 'apple-touch-icon.png'].concat(icons.map((i) => i.src));
 const miss = need.filter((f) => !gi.includes('!/' + f));
 t('15 公開の白リスト（.gitignore）に全部載っている', miss.length === 0, miss);
+
+// git が使える所では、配る元（git ls-files）に実際に入っているかも見る（pages.yml は ls-files を写して配る）
+let tracked = null;
+try { tracked = require('child_process').execFileSync('git', ['ls-files', '--', ...need], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).split('\n').filter(Boolean); } catch (e) { tracked = null; }
+if (tracked) {
+  const untracked = need.filter((f) => !tracked.includes(f));
+  t('16 配る元（git ls-files）に全部入っている', untracked.length === 0, untracked);
+} else {
+  console.log('  - 16 git が使えないので、配る元に入っているかは確かめない');
+}
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);
