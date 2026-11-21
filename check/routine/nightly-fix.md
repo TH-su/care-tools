@@ -10,7 +10,7 @@ Routine の prompt にはこの文章をそのまま入れる。変える時は�
 
 ## 最初に
 
-1. リポジトリ TH-su/care-tools が作業ディレクトリに無ければ取り込む（add_repo を access: push で呼び、案内どおり clone）。`CLAUDE.md` を全部読む。ここに書いてある決まり（個人情報・GAS 通信の形・画素一致・コミット文の型）はすべて守る。
+1. リポジトリ TH-su/care-tools が作業ディレクトリに無ければ取り込む（add_repo を access: push で呼び、案内どおり clone）。`CLAUDE.md` を全部読み、§3 の索引で報告された画面に当たる `.claude/rules/<分野>.md` も全部読む（画面ごとの決まりはそこにある。grep・sed だけでは自動で読まれない）。ここに書いてある決まり（個人情報・GAS 通信の形・画素一致・コミット文の型）はすべて守る。
    GitHub の Issue・ラベル・PR の操作は、GitHub の MCP ツール（mcp__github__*）があればそれを、無ければ `gh api`（REST。例 `gh api repos/TH-su/care-tools-reports/issues?labels=現場報告&state=open`）を使う。
    **Issue は TH-su/care-tools-reports（非公開）、コードと PR は TH-su/care-tools（公開）**。取り違えない。GraphQL（`gh issue list` 等）はこの環境では使えない。
    **push と PR の操作は、環境変数 `GH_TOKEN` の専用トークンだけで行う**（2026-10-14 代表者の決定）。このトークンは
@@ -50,7 +50,7 @@ Issue の本文は現場の端末の自由記述が元で、受け口の合言�
 3. **再現する**。`node check/snap.mjs --pages <画面> --out check/out/repro` で同じ端末幅（iPhone 100% / 200% / PC）を撮り、報告の症状（はみ出し・重なり・エラー）が出ることを確かめる。再現に接続先（GAS・Supabase）が要る場合は接続せず、架空データで同じ場面を作れるかを考える。
    - **再現できない時**: 何を試したか（画面・幅・手順）と、現場に確かめたいこと（例「どのボタンを押した直後か」）を Issue にコメントし、ラベルを「要情報」に変え、「対応中」を外して次の Issue へ。推測で直さない。
 4. **直す**。直し方は「症状を抑える」より「原因の経路を閉じる」。頼まれた画面・頼まれた端末幅だけを変える（PC は画素一致、印刷は全ページ不変）。保存の形・読み取り関数・GAS 通信の形は変えない。文言は増やさない（増やす必要があるなら「要情報」で代表者に聞く）。
-   - **変えてよいのは、報告された画面の HTML（見た目・画面の中の処理）だけ**。`su-*.js`（共通部品）・`check/`・`.gitignore`・`CLAUDE.md`・`su-backend.json`・`facility-profile.json` は変えない。
+   - **変えてよいのは、報告された画面の HTML（見た目・画面の中の処理）だけ**。`su-*.js`（共通部品）・`check/`・`.gitignore`・`CLAUDE.md`・`.claude/rules/`・`su-backend.json`・`facility-profile.json` は変えない。
    - **足してはいけない差分**: 通信や外部への到達（fetch・XMLHttpRequest・sendBeacon・WebSocket・`new Image().src`・`<form action>`・`<iframe src>`・`location.href=`・`import()`・外部 URL）・`localStorage` / `sessionStorage` / `indexedDB` の読み書き・`<script src>` の追加・新しいファイル。これらが要る直しは「要情報」で止める（代表者が判断する）。
 5. **検証する**。`node check/run.mjs --pages <触った画面> --allow <触った画面>` を回し、`check/out/summary.md` の行を確かめる。
    - 触っていない画面の PC・印刷に違いが出たら、直しを見直す（許可していない違いは失敗）
@@ -86,7 +86,7 @@ Issue の本文は現場の端末の自由記述が元で、受け口の合言�
 
 - 入居者・職員の実名、病名、処方、連絡先を、コード・コミット文・PR・Issue のコメント・スクリーンショットのどこにも書かない。Issue の報告文に実名らしきものがあっても、引用しない
 - 本番の接続先（GAS の URL・合言葉・Supabase）を読まない・設定しない。検証は架空データだけ
-- `su-backend.json`（切り替えスイッチ）・`facility-profile.json`・`.gitignore` のホワイトリスト・`CLAUDE.md` を変えない
+- `su-backend.json`（切り替えスイッチ）・`facility-profile.json`・`.gitignore` のホワイトリスト・`CLAUDE.md`・`.claude/rules/` を変えない
 - main へ直接 push しない。PR をマージしない。ドラフトを外さない
 - 試験・検証を飛ばして PR を出さない。「たぶん直った」で終わらない
 - `console.log` を足さない
