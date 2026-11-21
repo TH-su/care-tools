@@ -93,7 +93,7 @@ function mk(opts) {
 
   console.log('\n— 4. 送る道は send の1本 —');
   const body = (n) => cutF(n);
-  t('自動報告は canSend で判定し send で送る', /if \(!canSend\(\)\) return;/.test(body('autoSend')) && /send\(composeAuto\(type, w\)\)/.test(body('autoSend')));
+  t('自動報告は canSend で判定し send で送る', /if \(!canSend\(\)\) return;/.test(body('autoSend')) && /send\(composeAuto\(type, w, hint\)\)/.test(body('autoSend')));
   t('手動の送信・画面の指摘も send で送る', /send\(payload\(dlg\.querySelector\('#sur-sym'\)\.value\.trim\(\)\)\)/.test(RS));
   t('post（合言葉の受け口）を直接呼ぶのは send の中だけ',
     (RS.replace(/\/\*[\s\S]*?\*\//g, '').match(/[^.\w]post\(/g) || []).length === 2, (RS.match(/[^.\w]post\(/g) || []).length);   // 定義と send の中の1回

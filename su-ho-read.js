@@ -124,7 +124,7 @@
     return p.then(function () {
       if (root.SUAuth) return null;
       if (hasTag('su-auth.js')) return waitFor(function () { return !!root.SUAuth; }, 8000);
-      return loadScript('su-auth.js?v=2026-11-16');
+      return loadScript('su-auth.js?v=2026-11-21');
     }).then(function () { return root.SUAuth || null; });
   }
 

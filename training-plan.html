@@ -2,7 +2,7 @@
 <html lang="ja" data-ds="ops" data-su-theme="keep-hdr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-kH7CDNl9vlrcYtfDZpMlJT8h5IvgFJB6FcUT/iclsgg=' 'sha256-ATq2jJn8z0BAsgukAVQ87eULrHfvDzoN2JkSoqaQYEg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-kH7CDNl9vlrcYtfDZpMlJT8h5IvgFJB6FcUT/iclsgg=' 'sha256-dPPYNKdoSzTZZ8QmTWC88XqhVIunsw4jbVSs9HVISuM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- 要配慮情報（疾患・訓練内容）を表示する画面。ブラウザキャッシュ・検索索引に残さない -->
 <meta http-equiv="Cache-Control" content="no-store">
@@ -962,10 +962,10 @@ body.blocked .sui-band{display:none}
 
 <!-- 画面が黙って壊れないようにする共通モジュール。このツールのスクリプトより前に置く
      （起動時の例外も拾うため）。記録と通知だけを行い、既存の動作は変えない。 -->
-<script src="su-errors.js?v=2026-11-12"></script>
+<script src="su-errors.js?v=2026-11-21"></script>
 <script src="su-devcfg.js?v=2026-11-16"></script>
 <script src="su-gas-auth.js?v=2026-11-17"></script>
-<script src="su-res-read.js?v=2026-11-16"></script>
+<script src="su-res-read.js?v=2026-11-21"></script>
 <!-- 止めて知らせる窓（confirm）の代わりに画面の中の窓を出す共通部品（2026-11-12 代表者の決定）。画面のスクリプトより前に置く -->
 <script src="su-dialog.js?v=2026-11-14.2"></script>
 <script src="su-tp-full.js?v=2026-11-16"></script>
@@ -973,7 +973,7 @@ body.blocked .sui-band{display:none}
 <script src="su-perf.js?v=2026-11-02"></script>
 <script src="su-login-band.js?v=2026-11-16"></script>
 <script src="su-resident-hop.js?v=2026-11-13"></script>
-<script src="su-app-gate.js?v=2026-11-19"></script>
+<script src="su-app-gate.js?v=2026-11-21"></script>
 <script src="su-data.js?v=2026-11-08.2"></script>
 <script src="su-data-gas.js?v=2026-10-29"></script>
 <script src="su-data-supabase.js?v=2026-11-16"></script>
@@ -2286,7 +2286,7 @@ function tpAuthLoad_() {
     : (has(/^supabase-js-/) ? wait(function () { return !!window.supabase; }) : load('supabase-js-2.112.4.js'));
   return p.then(function () {
     if (window.SUAuth) return null;
-    return has(/^su-auth\.js/) ? wait(function () { return !!window.SUAuth; }) : load('su-auth.js?v=2026-11-16');
+    return has(/^su-auth\.js/) ? wait(function () { return !!window.SUAuth; }) : load('su-auth.js?v=2026-11-21');
   });
 }
 function tpAccessToken_() {
@@ -9221,6 +9221,6 @@ else boot();
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
 <!-- 本番の健康（2026-11-14・統合 0088）: 新しい保存先への保存の失敗を種類と理由だけ数えて送る。保存の動きには触れない・読めなくても動く -->
 <script src="su-health.js?v=2026-11-14"></script>
-<script src="su-report.js?v=2026-11-16" data-tool="個別機能訓練計画書"></script>
+<script src="su-report.js?v=2026-11-21" data-tool="個別機能訓練計画書"></script>
 </body>
 </html>

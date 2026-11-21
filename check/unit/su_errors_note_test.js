@@ -203,7 +203,7 @@ const PAGES = [
 ];
 for (const [file, fn, tag, want] of PAGES) {
   const html = readMaster(path.join(ROOT, file));
-  const tagAt = html.indexOf('<script src="su-errors.js?v=2026-11-12"></script>');
+  const tagAt = html.indexOf('<script src="su-errors.js?v=2026-11-21"></script>');
   const defAt = html.indexOf('function ' + fn + '(');
   const firstOther = (() => {
     const re = /<script\b[^>]*>/g; let m;

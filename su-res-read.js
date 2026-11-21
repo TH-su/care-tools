@@ -333,7 +333,7 @@
   function loadAuth() {
     if (root.SUAuth) return Promise.resolve(root.SUAuth);
     var p = root.supabase ? Promise.resolve() : loadScript('supabase-js-2.112.4.js');
-    return p.then(function () { return root.SUAuth ? null : loadScript('su-auth.js?v=2026-11-16'); }).then(function () { return root.SUAuth || null; });
+    return p.then(function () { return root.SUAuth ? null : loadScript('su-auth.js?v=2026-11-21'); }).then(function () { return root.SUAuth || null; });
   }
 
   function fail(text, code) { var e = new Error(text); e.code = code || 'res_read'; return e; }
@@ -556,6 +556,11 @@
     var r = await f(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                            body: JSON.stringify({ action: 'resMirror', token: token, accessToken: at }), redirect: 'follow' });
     var j = await r.json();
+    /* Google が「ほかの保存が終わるのを待っています」で断った時は記録しない（2026-11-21・不具合の自動報告 reports#13 の原因）。
+       GAS は写し返しを1本ずつ（鍵を30秒待って取れなければこの文で断る）。本番では前の写し返しが約5分鍵を持っている間に
+       開いた画面の写し返しが断られていた（2026-11-12 18:03 に読み始め 18:07 に済んだ印）。前の写し返しと、ほかの端末・
+       1時間ごとの写し返しが同じ所から続きを写すので取りこぼさない。文の違う断り・中身のない失敗は今までどおり記録する */
+    if (j && j.ok !== true && /^(Error: )?refused: ほかの保存が終わるのを待っています。/.test(String(j.error || ''))) return j;
     if (!j || j.ok !== true) noteErr('Google が受け付けませんでした', j && j.error);
     else if (j.more === true) mirrorAgain = true;   // 1回で写しきれなかった残りは続けて送る
     return j;

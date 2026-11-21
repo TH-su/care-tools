@@ -22,7 +22,7 @@
   if (window.SUGasAuth) return;
 
   var SESSION_RE = /^sb-[a-z0-9]+-auth-token$/;
-  var V_AUTH = 'su-auth.js?v=2026-11-16';
+  var V_AUTH = 'su-auth.js?v=2026-11-21';
   var V_SB = 'supabase-js-2.112.4.js';
   var WAIT_MS = 10000;
 

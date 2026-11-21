@@ -11,9 +11,9 @@
 <meta name="referrer" content="no-referrer">
 <title>勤怠管理</title>
 <!-- 画面が黙って壊れないようにする共通部品（いちばん先に読む）→ 速さの記録 → ログインの役割の確かめ → 施設情報 → 印刷（年次有給休暇管理簿の紙だけ・v5 段4）→ シフトの読み口 → 記号の解釈 → 勤怠の計算 → 有給の計算 → 管理簿の行（v5 段4）→ 36協定の判定 → ホームの箱 → 勤務の決まりの見張り（v5 段2・3） -->
-<script src="su-errors.js?v=2026-11-12"></script>
+<script src="su-errors.js?v=2026-11-21"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
-<script src="su-app-gate.js?v=2026-11-19"></script>
+<script src="su-app-gate.js?v=2026-11-21"></script>
 <script src="su-facility.js?v=2026-11-17"></script>
 <script src="su-print.js?v=2026-11-13"></script>
 <script src="su-kv.js?v=2026-11-16"></script>
@@ -114,6 +114,21 @@ legend{font-weight:600;padding:0 6px}
 .hbox.warn .hv{background:var(--warn-bg);color:var(--warn)}.hbox.alert .hv{background:var(--ng-bg);color:var(--ng)}.hbox.ok .hv{background:var(--ok-bg);color:var(--ok)}
 .hbox .hl{display:block;margin-top:6px;font-size:14px;color:var(--sub);overflow-wrap:anywhere}.hbox .hl b{color:var(--ink)}
 .hbox .hnote{display:block;margin-top:6px;font-size:13px;color:var(--warn);overflow-wrap:anywhere}
+/* v5 段5: 申請のタブとスマホの登録の窓（画面だけ・印刷しない）。QR は白地に黒（暗い表示でも読める）。iPhone の幅（699px 以下）では新しい部品の押す所を 44px・入力の文字を 16px にする */
+.rq-t td{white-space:normal;min-width:4.5em}
+.rq-t td.rq-btns{white-space:nowrap}
+.kq-img{display:flex;justify-content:center;margin:8px 0}
+.kq-img svg{max-width:100%;height:auto}
+.kq-short{font-size:28px;font-weight:700;letter-spacing:.12em;text-align:center;font-variant-numeric:tabular-nums;margin:4px 0;overflow-wrap:anywhere}
+.kq-exp{text-align:center;font-weight:600;margin:6px 0}
+.kq-url{overflow-wrap:anywhere}
+@media (max-width:699px){.btn.k5,select.k5,input.k5{min-height:44px}select.k5,input.k5{font-size:16px}
+  /* 申請の一覧は行ごとに縦に積み、「承認」「差し戻し」を職員の欄のすぐ下に出す（横に送らなくても押せる・PC の表は変えない・反証レビュー 2026-11-21） */
+  table.rq-t,table.rq-t tbody{display:block}table.rq-t thead{display:none}
+  table.rq-t tr{display:flex;flex-direction:column;border-bottom:1px solid var(--line);padding:6px 0}
+  table.rq-t td{display:block;order:2;border:0;padding:2px 6px;min-width:0;white-space:normal}
+  table.rq-t td.rq-nm{order:0;font-weight:700}table.rq-t td.rq-btns{order:1;display:flex;gap:8px;flex-wrap:wrap}table.rq-t td.rq-btns:empty{display:none}
+  table.rq-t td[data-l]::before{content:attr(data-l) "：";color:var(--muted);font-size:13px}}
 /* 読み込み中の骨組み（灰色の帯） */
 .skel{display:block;height:18px;margin:10px 0;border-radius:6px;background:var(--skel);animation:skel 1.2s ease-in-out infinite}
 .skel.w6{width:60%}.skel.w8{width:80%}.skel.w4{width:40%}
@@ -202,6 +217,7 @@ body:has(#g-gate:not([hidden])) .sui-band{display:none}
     <button type="button" role="tab" data-tab="home">ホーム</button>
     <button type="button" role="tab" data-tab="day">日ごと</button>
     <button type="button" role="tab" data-tab="review">要確認<span class="tab-n" id="g-rv-n" aria-hidden="true"></span></button>
+    <button type="button" role="tab" data-tab="requests">申請<span class="tab-n" id="g-rq-n" aria-hidden="true"></span></button>
     <button type="button" role="tab" data-tab="grid">月の一覧</button>
     <button type="button" role="tab" data-tab="person">個人の月</button>
     <button type="button" role="tab" data-tab="staff">職員と番号</button>
@@ -214,10 +230,11 @@ body:has(#g-gate:not([hidden])) .sui-band{display:none}
 <div class="toast no-print" id="g-toast" role="status" aria-live="polite" hidden></div>
 <div id="k-ledger" aria-hidden="true"></div>
 <dialog id="g-dlg" aria-labelledby="g-dlg-h"><div class="dlg-h" id="g-dlg-h"></div><div class="dlg-b" id="g-dlg-b"></div><div class="dlg-f" id="g-dlg-f"></div></dialog>
-<script src="kintai.js?v=2026-11-21.4"></script>
+<script src="su-qr.js?v=2026-11-08"></script>
+<script src="kintai.js?v=2026-11-21.5"></script>
 <script src="su-shell.js?v=2026-11-19"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 <script src="su-intro.js?v=2026-11-18"></script>
-<script src="su-report.js?v=2026-11-16" data-tool="勤怠管理"></script>
+<script src="su-report.js?v=2026-11-21" data-tool="勤怠管理"></script>
 </body>
 </html>

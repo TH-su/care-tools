@@ -50,7 +50,7 @@
   ];
   var ROLE_LABEL = { admin: '管理者', office: '事務所', field: '現場' };
   var SESSION_RE = /^sb-[a-z0-9]+-auth-token$/;
-  var V_AUTH = 'su-auth.js?v=2026-11-16';
+  var V_AUTH = 'su-auth.js?v=2026-11-21';
   var V_SB = 'supabase-js-2.112.4.js';
   var V_CSS = 'su-app-gate.css?v=2026-10-29';
 
@@ -129,9 +129,22 @@
     return Promise.race([p, new Promise(function (ok, ng) { setTimeout(function () { ng(new Error('timeout')); }, ms); })]);
   }
   function note(where, e) { try { if (window.SUErrors && typeof SUErrors.note === 'function') SUErrors.note('アプリの使える人: ' + where, e); } catch (x) { /* 記録できなくても止めない */ } }
+  var noteNow = note;
 
-  /* 確かめる（一度だけ）。結論 {allow, why, role, src} を返す。例外は外に出さない */
-  function probe(key, fresh) {
+  /* 開いた後の確かめ直し（recheck）で、通信の都合で確かめられなかっただけの失敗か（2026-11-21・不具合の自動報告 reports#11 の原因）。
+     548分開いたままの PC が目覚めた直後の確かめ直しが15秒で打ち切られ、「確かめられない」が不具合として報告されていた。
+     確かめ直しは確かめられなくても画面を止めない（recheck の why==='error'）＝職員に見える症状は無い。
+     拾うのは、この部品が自分で作る打ち切り・読み込めない（Error の 'timeout'・'load'）と、supabase-js が通信の失敗を返す
+     素のオブジェクト（Error の形でない・message に fetch / network / load failed）だけ。画面のコードの例外（TypeError など）は拾わない。
+     開いた時の確かめ（run）は今までどおり全部記録する（覆いが出たまま＝職員に見える） */
+  function quietNet(e) {
+    if (e instanceof Error) return e.message === 'timeout' || e.message === 'load';
+    return !!e && typeof e === 'object' && /failed to fetch|network|load failed/i.test(String(e.message || ''));
+  }
+  /* 確かめる（一度だけ）。結論 {allow, why, role, src} を返す。例外は外に出さない。
+     again: 開いた後の確かめ直し（通信の都合の失敗は記録しない・上の quietNet） */
+  function probe(key, fresh, again) {
+    function note(where, e) { if (!(again && quietNet(e))) noteNow(where, e); }
     if (!appOf(key)) return Promise.resolve(decide(key, true, null, null));
     if (!hasSession()) return Promise.resolve(decide(key, false, null, null));
     var st = null;
@@ -273,7 +286,7 @@
   function recheck(key, name, opts, fresh) {
     var my = ++gen;
     lastAt = Date.now();
-    return probe(key, fresh).then(function (d) {
+    return probe(key, fresh, true).then(function (d) {
       if (my !== gen) return;
       if (d.allow) { if (box) hide(); return; }   // 開けるアカウントに戻った（入力があって覆いだけ出していた時は覆いを外す）
       if (d.why === 'error') return;               // 開いた後の一時的な通信の失敗では止めない
