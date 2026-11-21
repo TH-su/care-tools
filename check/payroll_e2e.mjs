@@ -44,7 +44,14 @@ async function open(opt = {}) {
   await page.clock.setFixedTime(CLOCK);
   const errors = [];
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
+  /* 暗証番号の状態（payroll_pin_status）は、偽の DB がわざと置いていない（統合 0110 より前の DB の真似＝鍵の画面を出さずに開く）。
+     その1つの住所の読み込みの失敗だけは画面のエラーに数えない（ほかの住所の失敗は今までどおり数える・2026-11-21） */
+  page.on('console', (m) => {
+    if (m.type() !== 'error') return;
+    const loc = (m.location && m.location().url) || '';
+    if (/^Failed to load resource/.test(m.text()) && /\/rest\/v1\/rpc\/payroll_pin_status$/.test(loc)) return;
+    errors.push('console: ' + m.text() + (loc && /^Failed to load resource/.test(m.text()) ? ' @' + loc.replace(/^https?:\/\/[^/]+/, '') : ''));
+  });
   const logs = [];
   page.on('console', (m) => { if (m.type() === 'log' || m.type() === 'info') logs.push(m.text()); });
   await page.goto(srv.url + '/payroll.html');
@@ -60,7 +67,16 @@ async function sud(page, answer = 'ok', wait = 5000) {
   return msg;
 }
 const shot = async (page, name, full = true) => { if (SHOTS) await page.screenshot({ path: path.join(SHOTS, name + '.png'), fullPage: full }); };
-const waitApp = (page) => page.waitForFunction(() => !document.getElementById('p-app').hidden && !document.querySelector('#p-main .skel'), null, { timeout: 15000 });
+/* 画面が開き、職員の並び（入職順・kintai_master_list）の読み込みと描き直しまで落ち着くのを待つ（描き直しの途中でファイルの欄などを触らない・2026-11-21） */
+/* 読み直し（読み込みの表示）と通信が落ち着くのを待つ */
+const settle = async (page) => {
+  await page.waitForFunction(() => !document.getElementById('p-sync').textContent, null, { timeout: 10000 });
+  await page.waitForLoadState('networkidle').catch(() => {});
+};
+const waitApp = async (page) => {
+  await page.waitForFunction(() => !document.getElementById('p-app').hidden && !document.querySelector('#p-main .skel'), null, { timeout: 15000 });
+  await page.waitForLoadState('networkidle').catch(() => {});
+};
 
 /* ── 1. 計算→下書き保存→確定 ── */
 console.log('\n— 1. 計算 → 下書き保存 → 確定 —');
@@ -372,6 +388,7 @@ console.log('\n— 6. 覆い・その他 —');
   t('給与の設定の無い人には印を出す', /給与の設定なし/.test(await o4.page.textContent('#p-main')));
   /* freee の書き出しの取り込み: 画面の中だけで読み、違いの表は口座を下4桁だけ・送る時に全桁 */
   const csv = '従業員番号,氏名,給与形態,基本給,時給,口座種別,銀行コード,支店コード,口座番号,口座名義\r\nF-1,見本 一郎,月給,245000,,普通,9999,001,7654321,ﾐﾎﾝ ｲﾁﾛｳ\r\nF-9,見本 不明,時給,,1000,,,,,\r\n,見本 二子,,,,普通,9999,001,1111111,\r\n';
+  await settle(o4.page);   /* 直前の設定の保存の後の読み直しが終わってから選ぶ（読み直しの間に読んだファイルは、画面が古いとして捨てる） */
   await o4.page.setInputFiles('#i-file', { name: 'freee.csv', mimeType: 'text/csv', buffer: Buffer.from(csv, 'utf8') });
   await o4.page.waitForSelector('[data-act="imp-go"]');
   const it = await o4.page.textContent('#p-main');
@@ -392,7 +409,7 @@ console.log('\n— 6. 覆い・その他 —');
   /* 加入の列から ins.*.on を作る（無ければ標準報酬の有無）・給与の設定が無い人（s-11）は新しい設定として足す */
   const csv2 = '従業員番号,氏名,給与形態,基本給,健康保険の標準報酬月額,厚生年金保険の標準報酬月額,健康保険,雇用保険\r\nF-11,見本 十一,月給,205000,200000,200000,加入,未加入\r\n';
   /* 1つ目を送った後の読み直しが終わってから選ぶ（読み直しの間に読んだファイルは、画面が古いとして捨てるため・2026-11-21） */
-  await o4.page.waitForFunction(() => !document.getElementById('p-sync').textContent, null, { timeout: 10000 });
+  await settle(o4.page);
   await o4.page.setInputFiles('#i-file', { name: 'freee2.csv', mimeType: 'text/csv', buffer: Buffer.from(csv2, 'utf8') });
   await o4.page.waitForSelector('[data-act="imp-go"]');
   t('取り込み: 加入の違いを表に出す', /健康保険の加入：（空） → 加入/.test(await o4.page.textContent('#p-main')) && /雇用保険の加入：（空） → 加入しない/.test(await o4.page.textContent('#p-main')));

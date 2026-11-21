@@ -583,6 +583,10 @@ export function routesFor(opt = {}) {
         const k = kintaiOf(db, q.p_ym);
         return json(JSON.parse(JSON.stringify(Object.assign({ ok: true }, k.raw, { month: db.kintai.locked_at ? { ym: q.p_ym, locked_at: db.kintai.locked_at, snapshot: k.snapshot, history: [] } : null, settings: { config: {}, rev: 0 } }))));
       }
+      /* 有給の入職順（loadHire）が読む勤怠の職員マスタの一覧。給与の試験では入職日を使わないので空の一覧（2026-11-21） */
+      if (/\/rest\/v1\/rpc\/kintai_master_list/.test(u)) { calls.push({ name: 'kintai_master_list', args: {} }); return json({ ok: true, rows: [] }); }
+      /* 不具合の報告先（su-report の Edge Function）。届いた報告は calls に残すだけ（2026-11-21） */
+      if (/\/functions\/v1\/su-report/.test(u)) { calls.push({ name: 'su-report', args: {} }); return json({ ok: true }); }
       const m = /\/rest\/v1\/rpc\/(payroll_[a-z_]+)/.exec(u);
       if (!m) return json({ code: 'PGRST202', message: 'check fixture: not served' }, 404);
       let p = {};
