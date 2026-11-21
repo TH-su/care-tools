@@ -55,7 +55,9 @@ export function makeAllowed(allowArg) {
 /* 揺れの確かめ（run.mjs）で撮り直す画面（2026-11-21 新設）
  *   recheckPages(first, allowArg) → { targets: ['x.html', ...], skipped: ['y.html', ...] }
  *   first は1回目の compare.json（null なら両方とも空）。違い（違いあり・大きさが違う）の出た画面を、帳票・PDF のページの分も画面ごとに集める。
- *   許した画面は違いがあっても合否に数えない（compare.mjs）ので、撮り直さず skipped に回す（撮り直しても判定が変わらない）。
+ *   許した画面は画素の違いを合否に数えない（compare.mjs の PC・印刷・帳票・PDF のページ・印刷ページ数）ので、撮り直さず skipped に回す。
+ *   ただし撮れていない・帳票が撮れなくなった・PDF を絵にできない・読めない・画面のエラーが増えた、は許した画面でも失敗に数えるので、
+ *   許した画面のこれらは、違いが出なかった画面と同じく1回撮りの分で決まる（撮り直しで揺れを消さない）。
  *   許していない画面は今までどおり targets に残す */
 export function recheckPages(first, allowArg) {
   if (!first || typeof first !== 'object') return { targets: [], skipped: [] };

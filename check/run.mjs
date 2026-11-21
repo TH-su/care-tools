@@ -61,7 +61,8 @@ try {
   /* 許した画面（--allow）は違いがあっても合否に数えないので撮り直さない（2026-11-21・全画面の共通部品の見た目を変える PR で、
      許した 21 画面を5回ずつ撮り直して 60 分の上限を超えたため）。許していない画面は今までどおり撮り直す */
   const { targets: diffPages, skipped: skippedAllowed } = recheckPages(first, args.allow);   // PDF のページごとの違い（pageRows）も同じく撮り直す   // 帳票（<画面>__<帳票>）に違いが出た時は、その画面ごと撮り直す
-  if (skippedAllowed.length) recheckNote = `揺れの確かめ: 許した ${skippedAllowed.length}画面（${skippedAllowed.join('、')}）は撮り直していない（上の数字は1回撮りの分・合否に数えない）`;
+  if (skippedAllowed.length) recheckNote = `揺れの確かめ: 許した ${skippedAllowed.length}画面（${skippedAllowed.join('、')}）は撮り直していない（上の画素の数字は1回撮りの分・画素の違いは合否に数えない）`;
+  if (diffPages.length && !(args.recheck !== '0' && wt)) recheckNote = (recheckNote ? recheckNote + '／' : '') + `揺れの確かめ: 許していない ${diffPages.length}画面（${diffPages.join('、')}）も撮り直していない（${args.recheck === '0' ? '--recheck 0' : '直す前の木が無い'}）`;
   if (diffPages.length && args.recheck !== '0' && wt) {
     const N = '5';
     const hide = args['hide-report'] === 'true' ? ['--hide-report'] : [];
