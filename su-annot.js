@@ -347,7 +347,7 @@
      (b) 取り込み前から開いたままの画面（古い su-report.js は su-report.css を読まない）。
      そこで始める前に su-report.css が効いているかを確かめ、効いていなければ自分で <link> を足して待つ。
      それでも効かなければ始めずに「今は使えません」と出す。CSS_HREF は su-report.js と同じ版にする（試験で確かめる） */
-  var CSS_HREF = 'su-report.css?v=2026-10-27';
+  var CSS_HREF = 'su-report.css?v=2026-11-21';
   var CSS_WAIT_MS = 4000;
   function cssOk() {
     try {
