@@ -7,6 +7,11 @@
      3. CLAUDE.md §3 の索引と .claude/rules/*.md が1対1（索引に無いファイル・ファイルの無い索引を作らない）
      4. .claude/rules/*.md は .gitignore で公開に入る（足し忘れるとクラウドのセッションに届かない）
      5. 横断の決まりと禁止事項を CLAUDE.md に残している（外部の AI へ送らない・端末に残してよい物）
+     6. .gitignore は決まりのファイルを1つずつ名前で公開し、*.md でまとめて開けない
+   見るのは .gitignore が公開に入れるファイルだけ。テーマの手元には公開しない内部の決まり（データの約束事・個人情報の扱い）が
+   同じフォルダにあり、それを数えると手元でだけ落ちる（2026-11-22 朝の点検の赤）。手元だけにあるファイルに頼らない。
+   ただし .gitignore が外すファイルでも、公開の決まりの形（frontmatter が paths: と "..." の並びだけ）なら落とす
+   （新しい決まりを .gitignore にも索引にも足し忘れた時に気づくため。内部の決まりは description: を持つので当たらない）。
    ファイルは書き換えず、読むだけ。 */
 'use strict';
 const fs = require('fs');
@@ -30,11 +35,32 @@ function globRe(p) {
 }
 
 const tracked = cp.execFileSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' }).split('\0').filter(Boolean);
-const rules = fs.existsSync(DIR) ? fs.readdirSync(DIR).filter((f) => f.endsWith('.md')).sort() : [];
+const allMd = fs.existsSync(DIR) ? fs.readdirSync(DIR).filter((f) => f.endsWith('.md')).sort() : [];
+/* .gitignore が外すファイル（手元だけの内部の決まり）は見ない。git の管理下のファイルは外さない */
+function ignoredSet(files) {
+  if (!files.length) return new Set();
+  try {
+    const out = cp.execFileSync('git', ['check-ignore', '-z', '--stdin'], { cwd: ROOT, encoding: 'utf8', input: files.map((f) => '.claude/rules/' + f).join('\0'), stdio: ['pipe', 'pipe', 'pipe'] });
+    return new Set(out.split('\0').filter(Boolean).map((p) => p.replace(/^\.claude\/rules\//, '')));
+  } catch (e) {
+    if (e.status === 1) return new Set(); /* 1 = どれも外れていない */
+    throw e;
+  }
+}
+const ignored = ignoredSet(allMd);
+const rules = allMd.filter((f) => !ignored.has(f));
+function publicShape(f) {
+  const L = fs.readFileSync(path.join(DIR, f), 'utf8').split('\n');
+  const end = L.indexOf('---', 1);
+  const fm = end > 0 ? L.slice(1, end) : [];
+  return L[0] === '---' && end > 1 && fm[0] === 'paths:' && fm.length > 1 && fm.slice(1).every((l) => /^  - "[^"\s]+"$/.test(l));
+}
 const claude = fs.readFileSync(path.join(ROOT, 'CLAUDE.md'), 'utf8');
 
 console.log('画面ごとの決まりの置き場');
 t('0 .claude/rules に決まりのファイルがある', rules.length > 0, rules);
+const hiddenPublic = [...ignored].filter(publicShape);
+t('4 公開の決まりの形なのに .gitignore で外れているファイルが無い（.gitignore に !/.claude/rules/<名前>.md の足し忘れ）', hiddenPublic.length === 0, hiddenPublic);
 
 for (const f of rules) {
   const L = fs.readFileSync(path.join(DIR, f), 'utf8').split('\n');
@@ -72,6 +98,11 @@ for (const f of rules) {
 }
 t('5 勤怠管理・給与の「端末に残してよい物」は CLAUDE.md に残す',
   /^  - 端末に残してよい物: 打刻の画面は/m.test(claude) && /^  - 端末に残してよい物は開いていたタブ（payroll_tab）だけ/m.test(claude));
+const gi = fs.readFileSync(path.join(ROOT, '.gitignore'), 'utf8').split('\n');
+const wild = gi.filter((l) => /^!\/?\.claude\/rules\/.*\*/.test(l.trim()));
+t('6 .gitignore は決まりのファイルを *.md でまとめて公開しない', wild.length === 0, wild);
+const named = gi.map((l) => (l.trim().match(/^!\/\.claude\/rules\/([^/*]+\.md)$/) || [])[1]).filter(Boolean).sort();
+t('6 .gitignore で名前を挙げた決まりと公開の決まりが1対1', JSON.stringify(named) === JSON.stringify([...rules].sort()), { named, rules });
 t('5 §2 の絶対に守ることは CLAUDE.md に残す', /^## 2\. 絶対に守ること/m.test(claude) && /^5\. \*\*現場端末では読まない・書かない。\*\*/m.test(claude));
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');

@@ -294,9 +294,24 @@ mailer/.DS_Store
 /.claude/hooks/*
 !/.claude/hooks/check-reply-japanese.py
 # 画面ごとの決まり（CLAUDE.md §3 から分けた・paths: の付いた .md だけ）。2026-11-07 本人指示の公開の範囲を、代表者が 2026-11-21 に rules まで広げた
+# 1つずつ名前で足す（*.md でまとめて開けない）。テーマの手元には公開しない内部の決まり（データの約束事・個人情報の扱い）が同じフォルダにあるため（2026-11-22）
 !/.claude/rules
 /.claude/rules/*
-!/.claude/rules/*.md
+!/.claude/rules/accounts.md
+!/.claude/rules/admission.md
+!/.claude/rules/ats.md
+!/.claude/rules/care-meeting.md
+!/.claude/rules/care-schedule.md
+!/.claude/rules/connection-settings.md
+!/.claude/rules/genogram.md
+!/.claude/rules/kintai.md
+!/.claude/rules/menu.md
+!/.claude/rules/moushiokuri.md
+!/.claude/rules/patch-calendar.md
+!/.claude/rules/payroll.md
+!/.claude/rules/resident-master.md
+!/.claude/rules/weight-record.md
+!/.claude/rules/work-schedule.md
 
 # ── 参考: 以下は上記ホワイトリスト外＝自動的に非公開 ──
 #  haiben-record.html / gas/haiben-api.gs → 正本は別リポ TH-su/haiben-record（テーマ内は受信ミラー）
