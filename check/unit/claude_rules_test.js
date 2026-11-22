@@ -10,6 +10,8 @@
      6. .gitignore は決まりのファイルを1つずつ名前で公開し、*.md でまとめて開けない
    見るのは .gitignore が公開に入れるファイルだけ。テーマの手元には公開しない内部の決まり（データの約束事・個人情報の扱い）が
    同じフォルダにあり、それを数えると手元でだけ落ちる（2026-11-22 朝の点検の赤）。手元だけにあるファイルに頼らない。
+   ただし .gitignore が外すファイルでも、公開の決まりの形（frontmatter が paths: と "..." の並びだけ）なら落とす
+   （新しい決まりを .gitignore にも索引にも足し忘れた時に気づくため。内部の決まりは description: を持つので当たらない）。
    ファイルは書き換えず、読むだけ。 */
 'use strict';
 const fs = require('fs');
@@ -47,10 +49,18 @@ function ignoredSet(files) {
 }
 const ignored = ignoredSet(allMd);
 const rules = allMd.filter((f) => !ignored.has(f));
+function publicShape(f) {
+  const L = fs.readFileSync(path.join(DIR, f), 'utf8').split('\n');
+  const end = L.indexOf('---', 1);
+  const fm = end > 0 ? L.slice(1, end) : [];
+  return L[0] === '---' && end > 1 && fm[0] === 'paths:' && fm.length > 1 && fm.slice(1).every((l) => /^  - "[^"\s]+"$/.test(l));
+}
 const claude = fs.readFileSync(path.join(ROOT, 'CLAUDE.md'), 'utf8');
 
 console.log('画面ごとの決まりの置き場');
 t('0 .claude/rules に決まりのファイルがある', rules.length > 0, rules);
+const hiddenPublic = [...ignored].filter(publicShape);
+t('4 公開の決まりの形なのに .gitignore で外れているファイルが無い（.gitignore に !/.claude/rules/<名前>.md の足し忘れ）', hiddenPublic.length === 0, hiddenPublic);
 
 for (const f of rules) {
   const L = fs.readFileSync(path.join(DIR, f), 'utf8').split('\n');
