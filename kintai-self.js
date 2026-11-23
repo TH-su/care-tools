@@ -291,6 +291,7 @@
     $('g-ym').hidden = k !== 'month'; $('g-reason').hidden = k === 'month';
     $('g-lvtype').hidden = k !== 'leave'; $('g-leave').hidden = k !== 'leave';
     $('rq-date-l').textContent = k === 'leave' ? '休む日' : '勤務の日';
+    $('rq-reason-l').textContent = k === 'leave' ? '理由（任意・194字まで）' : '理由（194字まで）';   /* 休暇の理由は無くてよい */
     if (k === 'leave') leaveTypeChanged();
   }
   $('rq-kind').addEventListener('change', kindChanged);
@@ -388,7 +389,7 @@
     if (my !== gen) return;
     if (r.ok !== true) {
       if (handleAuth(r)) return;
-      msg('rq-msg', S.errorText(r.error, q.kind === 'leave' ? 'leave' : 'request'), 'ng');
+      msg('rq-msg', S.errorText(r.error, q.kind === 'leave' ? 'leave' : 'request', q.body && q.body.type), 'ng');
       if (r.error !== 'net' && r.error !== 'server') lastReq = null;
       return;
     }

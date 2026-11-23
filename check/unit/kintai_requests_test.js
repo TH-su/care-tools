@@ -479,6 +479,10 @@ const ROWS = [
     t('承認の断り: 有休（1日・半日）は有給の窓の文・ほかの休暇は休暇の文・申請の語は申請の文',
       api.rqLeaveMsg(E('dup'), { type: 'paid_day' }) === api.NG_LEAVE.dup && api.rqLeaveMsg(E('dup'), { type: 'special' }) === api.NG_ABS.dup
       && api.rqLeaveMsg(E('badkind'), { type: 'hourly' }) === api.NG_ABS.badkind && api.rqLeaveMsg(E('conflict'), { type: 'paid_day' }) === api.reqMsg(E('conflict')) && api.rqLeaveMsg(E('lead'), { type: 'comp' }) === api.NG.lead);
+    t('休暇の承認の badvalue・locked は休暇の文（時刻の文を出さない）・特別休暇の種類が消えた時の文（反証 2026-11-24 の 2）',
+      api.rqLeaveMsg(E('badvalue'), { type: 'hourly' }) === api.NG_ABS.badvalue && api.rqLeaveMsg(E('badvalue'), { type: 'paid_day' }) === api.NG_LEAVE.badvalue
+      && /特別休暇の種類/.test(api.rqLeaveMsg(E('badvalue'), { type: 'special' })) && api.rqLeaveMsg(E('locked'), { type: 'comp' }) === api.NG_ABS.locked
+      && api.rqLeaveMsg(E('notfound'), { type: 'paid_day' }) === api.reqMsg(E('notfound')));
     /* 承認すると今の関数で送り、断りは休暇の文で窓に出す */
     const b3 = box({ rpc: () => Promise.resolve({ ok: false, error: 'dup' }) });
     b3.api.reqSt = { key: 'pending|all', rows: LV };

@@ -204,25 +204,45 @@
   var NOTICE_KINDS = { missing: 1, not_in: 1 };
   var NOTICE_TAIL = '事務所に伝えるか、申請から打刻の直しを出してください。';
   function mdJa(date) { return isDate(date) ? (+date.slice(5, 7)) + '月' + (+date.slice(8, 10)) + '日' : ''; }
-  /* その日の出勤・退勤の打刻（月の答えを computeOf で数えた結果の日の塊の punches・出勤は 'in'・退勤は 'out' の2つだけを見る）。
-     返す: { known, hasIn, hasOut }（その日が結果に無い＝known:false） */
+  /* その日の出勤・退勤の打刻（月の答えを computeOf で数えた結果の日の塊の punches・出勤は 'in'・退勤は 'out' の2つだけを見る）と、
+     管理画面の「知らせる」と同じ物差しの塊ごとの漏れの印（missing_in・missing_out・no_punch）、1日休む休暇の日か。
+     返す: { known, hasIn, hasOut, missIn, missOut, noPunch, offDay }（その日が結果に無い＝known:false）
+     反証 2026-11-24: 出勤・退勤が1つずつでもあれば「そろった」としていたため、昼の退勤の押し忘れ・2つ目の塊の退勤の漏れで帯が出ず、管理画面には「見た」と出た */
+  function fullLeaveDay(d) {
+    if (!d) return false;
+    if (typeof d.paidDays === 'number' && d.paidDays >= 1) return true;
+    return (Array.isArray(d.absences) ? d.absences : []).some(function (a) {
+      return a && ((a.kind === 'special' || a.kind === 'comp') && a.minutes == null || (a.kind === 'swap' && a.role === 'off'));
+    });
+  }
   function punchesOn(month, date) {
-    var p = month && month.people && month.people[0], hasIn = false, hasOut = false, known = false;
+    var p = month && month.people && month.people[0], r = { known: false, blocks: 0, hasIn: false, hasOut: false, missIn: false, missOut: false, noPunch: false, offDay: false };
     ((p && p.days) || []).forEach(function (d) {
       if (!d || d.date !== date) return;
-      known = true;
-      (d.blocks || []).forEach(function (b) { (b.punches || []).forEach(function (x) { if (x && x.kind === 'in') hasIn = true; else if (x && x.kind === 'out') hasOut = true; }); });
+      r.known = true;
+      if (fullLeaveDay(d)) r.offDay = true;
+      (d.blocks || []).forEach(function (b) {
+        r.blocks++;
+        (b.punches || []).forEach(function (x) { if (x && x.kind === 'in') r.hasIn = true; else if (x && x.kind === 'out') r.hasOut = true; });
+        var fl = Array.isArray(b.flags) ? b.flags : [];
+        if (b.checked) return;   /* 事務所が確認済みにした塊は漏れに数えない */
+        if (fl.indexOf('missing_in') >= 0) r.missIn = true;
+        if (fl.indexOf('missing_out') >= 0) r.missOut = true;
+        if (fl.indexOf('no_punch') >= 0) r.noPunch = true;
+      });
     });
-    return { known: known, hasIn: hasIn, hasOut: hasOut };
+    return r;
   }
   /* 知らせの1件 → 帯の文（出さない時は ''）。n は受け口の行 {id, kind, work_date, created_at, seen_at}、pu は punchesOn の答え（読めない時は null）。
      直った時（打刻漏れ＝出勤と退勤がそろった・まだ出勤していない＝出勤がある）は出さない */
   function noticeText(n, pu) {
     if (!n || typeof n !== 'object' || !NOTICE_KINDS[n.kind] || !isDate(n.work_date)) return '';
-    var d = mdJa(n.work_date), p = pu || { known: false, hasIn: false, hasOut: false };
+    var d = mdJa(n.work_date), p = pu || { known: false };
+    if (p.offDay) return '';   /* 1日休む休暇（有休の1日・振替・1日の特別休暇と代休）を入れた日は出さない（反証 2026-11-24 の 4） */
     if (n.kind === 'not_in') return p.hasIn ? '' : d + 'の出勤の打刻がまだありません。' + NOTICE_TAIL;
-    if (p.hasIn && p.hasOut) return '';
-    var which = p.hasIn ? 'の退勤' : p.hasOut ? 'の出勤' : '';
+    /* 打刻漏れ: その日に塊があれば、管理画面と同じ塊ごとの漏れの印で決める。結果が無い（読めない）・塊が無い（直ったか分からない）時は出す */
+    if (p.known && p.blocks > 0 && !p.missIn && !p.missOut && !p.noPunch) return '';
+    var which = p.noPunch || (p.missIn && p.missOut) ? '' : p.missOut ? 'の退勤' : p.missIn ? 'の出勤' : '';
     return d + which + 'の打刻が抜けています。' + NOTICE_TAIL;
   }
   /* 受け口の答えの行を、形の合う知らせだけ・日付の古い順・同じ日と種類は1つにする */
@@ -280,9 +300,9 @@
     }
     if (f.kind !== 'punch' && f.kind !== 'overtime' && f.kind !== 'leave') return { ok: false, msg: '申請の種類を選んでください。' };
     if (!isDate(f.date)) return { ok: false, msg: f.kind === 'leave' ? '休む日を選んでください。' : '日付を選んでください。' };
-    if (!reason) return { ok: false, msg: '理由を書いてください。' };
     if (reason.length > 194) return { ok: false, msg: '理由は194字までにしてください。' };
-    if (f.kind === 'leave') return leaveRequest(f, reason);
+    if (f.kind === 'leave') return leaveRequest(f, reason || null);   /* 休暇の理由は無くてよい（有休の取得に理由を求めない・DB 0125 と同じ） */
+    if (!reason) return { ok: false, msg: '理由を書いてください。' };
     if (f.kind === 'punch') {
       if (f.punchKind !== 'in' && f.punchKind !== 'out') return { ok: false, msg: '出勤か退勤かを選んでください。' };
       if (!timeOk(f.time)) return { ok: false, msg: '時刻を選んでください。' };
@@ -372,7 +392,8 @@
     baddate: '休む日が正しくないか、先すぎます（次の月分の終わりまで）。',
     badkind: '休暇の申請は、まだ受け付けられません（事務所の仕組みの更新待ち）。事務所に伝えてください。'
   };
-  function errorText(code, where) {
+  function errorText(code, where, leaveType) {
+    if (where === 'leave' && code === 'badkind' && leaveType === 'hourly') return '時間単位の有休は、この事業所では今は使えません。1日か半日で申請してください。';   /* 反証 2026-11-24 の 3 */
     if (where === 'leave' && ERR_LEAVE[code]) return ERR_LEAVE[code];
     if (where === 'leave') where = 'request';
     if (where === 'request' && code === 'locked') return ERR.lockedday;

@@ -174,12 +174,24 @@ group('4b. v6: 事務所からの打刻漏れの知らせ（統合 0125・op not
   t('打刻漏れの文: 打刻が無い日は「〇月〇日の打刻が抜けています」＋直し方（決まった文・仮置き）',
     S.noticeText(N('missing', '2022-05-12'), pu12) === '5月12日の打刻が抜けています。事務所に伝えるか、申請から打刻の直しを出してください。', S.noticeText(N('missing', '2022-05-12'), pu12));
   t('打刻漏れの文: 出勤だけある日は「退勤の」・退勤だけある日は「出勤の」',
-    S.noticeText(N('missing', '2022-05-12'), { known: true, hasIn: true, hasOut: false }) === '5月12日の退勤の打刻が抜けています。' + S.NOTICE_TAIL
-    && S.noticeText(N('missing', '2022-05-12'), { known: true, hasIn: false, hasOut: true }) === '5月12日の出勤の打刻が抜けています。' + S.NOTICE_TAIL);
+    S.noticeText(N('missing', '2022-05-12'), { known: true, hasIn: true, hasOut: false, missOut: true }) === '5月12日の退勤の打刻が抜けています。' + S.NOTICE_TAIL
+    && S.noticeText(N('missing', '2022-05-12'), { known: true, hasIn: false, hasOut: true, missIn: true }) === '5月12日の出勤の打刻が抜けています。' + S.NOTICE_TAIL);
   t('打刻漏れは出勤・退勤がそろったら出さない', S.noticeText(N('missing', '2022-05-10'), pu10) === '');
   t('まだ出勤していないの文・出勤があれば出さない（仮置き）',
     S.noticeText(N('not_in', '2022-05-12'), pu12) === '5月12日の出勤の打刻がまだありません。' + S.NOTICE_TAIL
     && S.noticeText(N('not_in', '2022-05-10'), pu10) === '' && S.noticeText(N('not_in', '2022-05-12'), { known: true, hasIn: true, hasOut: false }) === '');
+  /* 反証 2026-11-24 の 1: 出勤・退勤が1つずつあっても、管理画面の塊ごとの印で打刻漏れなら帯を出す（本物の computeMonth で数える） */
+  const P = (id, kind, hm) => ({ id, staff_id: SID, kind, at: '2022-05-12T' + hm + ':00+09:00', source: 'tablet', created_at: '2022-05-12T' + hm + ':00+09:00', voided_at: null });
+  const mOf = (pp) => S.computeOf(Object.assign({}, month, { punches: month.punches.concat(pp) }), '2022-05', C, Date.parse('2022-06-05T12:00:00+09:00'));
+  const puA = S.punchesOn(mOf([P('q1', 'in', '09:00'), P('q2', 'in', '13:00'), P('q3', 'out', '18:00')]), '2022-05-12');
+  const puB = S.punchesOn(mOf([P('q1', 'in', '09:00'), P('q2', 'out', '12:00'), P('q3', 'in', '13:00')]), '2022-05-12');
+  t('出勤→出勤→退勤（昼の退勤の押し忘れ）・出勤→退勤→出勤（中抜けの後の退勤の押し忘れ）でも、管理画面と同じく打刻漏れの帯を出す',
+    puA.hasIn && puA.hasOut && S.noticeText(N('missing', '2022-05-12'), puA) !== '' && puB.hasIn && puB.hasOut && S.noticeText(N('missing', '2022-05-12'), puB) !== '', [puA, puB]);
+  const mLv = S.computeOf(Object.assign({}, month, { absences: [{ id: 'a9', date: '2022-05-12', kind: 'special', minutes: null, paid: true, type_code: 'keicho', link_date: null }] }), '2022-05', C, Date.parse('2022-06-05T12:00:00+09:00'));
+  t('1日休む休暇の日（有休の1日のシフト・1日の特別休暇）は帯を出さない（反証の 4）',
+    S.noticeText(N('missing', '2022-05-11'), S.punchesOn(m, '2022-05-11')) === '' && S.noticeText(N('not_in', '2022-05-12'), S.punchesOn(mLv, '2022-05-12')) === ''
+    && S.noticeText(N('missing', '2022-05-12'), S.punchesOn(mLv, '2022-05-12')) === '');
+  t('時間単位の有休が切られた時の断りは本当の理由（反証の 3）', /時間単位の有休/.test(S.errorText('badkind', 'leave', 'hourly')) && S.errorText('badkind', 'leave', 'paid_day') === S.errorText('badkind', 'leave'));
   t('月の答えを読めない時（null）も決まった文を出す', S.noticeText(N('missing', '2022-05-12'), null) === '5月12日の打刻が抜けています。' + S.NOTICE_TAIL);
   t('知らない種類・日付の形が違う行は出さない（自由な文を持たない）', S.noticeText(N('free', '2022-05-12'), null) === '' && S.noticeText(N('missing', '2022-5-12'), null) === '' && S.noticeText(null, null) === '');
   const nr = S.noticeRows([N('missing', '2022-05-12'), N('not_in', '2022-05-11'), N('missing', '2022-05-12'), { kind: 'x', work_date: '2022-05-01' }, null, N('missing', 'zz')]);
@@ -206,7 +218,8 @@ group('4c. v6: 休暇の申請（kind leave）');
   t('代休: 休日に働いた日・半日／振替: 働く日（半日なし）', body({ leaveType: 'comp', linkDate: '2022-06-05', half: true }) === '{"type":"comp","link_date":"2022-06-05","half":true}'
     && body({ leaveType: 'swap', linkDate: '2022-06-12', half: true }) === '{"type":"swap","link_date":"2022-06-12"}' && !L1({ leaveType: 'comp' }).ok && !L1({ leaveType: 'swap', linkDate: '2022-06-10' }).ok);
   t('有休に半日・結ぶ日の鍵を付けない（当てはまる鍵だけ）', body({ leaveType: 'paid_day', half: true, linkDate: '2022-06-01', typeCode: 'keicho', hours: '3' }) === '{"type":"paid_day"}');
-  t('断り: 種類なし・日付なし・理由なし', !L1({ leaveType: '' }).ok && !L1({ leaveType: 'paid_day', date: '' }).ok && !L1({ leaveType: 'paid_day', reason: ' ' }).ok && /休む日/.test(L1({ leaveType: 'paid_day', date: '' }).msg));
+  t('断り: 種類なし・日付なし（休暇の理由は無くてよい＝DB 0125 と同じ・反証の 5）', !L1({ leaveType: '' }).ok && !L1({ leaveType: 'paid_day', date: '' }).ok && /休む日/.test(L1({ leaveType: 'paid_day', date: '' }).msg)
+    && L1({ leaveType: 'paid_day', reason: ' ' }).ok && L1({ leaveType: 'paid_day', reason: ' ' }).req.reason === null);
   t('選べる種類: 時間単位は設定が true の時だけ', S.leaveTypeOptions(false).map((x) => x[0]).join() === 'paid_day,paid_half,special,comp,swap' && S.leaveTypeOptions(true).map((x) => x[0]).join() === 'paid_day,paid_half,hourly,special,comp,swap');
   const TY = [{ code: 'keicho', name: '慶弔', paid: true }];
   t('中身の言い方（契約: 有休（1日）／有休（半日）／有休（時間 n 時間）／特別休暇（種類名・半日）／代休（休日に働いた日 M/D）／振替（働く日 M/D））',

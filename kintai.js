@@ -2767,7 +2767,9 @@
   /* v6: 休暇の申請を承認した時の断り。中から呼ぶ kintai_leave_use_add（有休の1日・半日）・kintai_absence_add（ほか）の語は、有給の窓と同じ文にする（申請の語 conflict 等は申請の文） */
   function rqLeaveMsg(e, body) {
     var k = e && e.kintai;
-    if (k && NG_REQ[k]) return NG_REQ[k];
+    /* 申請そのものの断り（先に決められた・無い・理由）だけ申請の文。badvalue・locked などは休暇の文（反証 2026-11-24 の 2: 時刻の文が出ていた） */
+    if (k && (k === 'conflict' || k === 'notfound' || k === 'reason') && NG_REQ[k]) return NG_REQ[k];
+    if (k === 'badvalue' && body && body.type === 'special') return '特別休暇の種類が設定から無くなったか、中身が合いません。設定の特別休暇の種類を確かめるか、理由を書いて差し戻してください。';
     var paid = body && (body.type === 'paid_day' || body.type === 'paid_half');
     if (k && paid && NG_LEAVE[k]) return NG_LEAVE[k];
     if (k && !paid && NG_ABS[k]) return NG_ABS[k];

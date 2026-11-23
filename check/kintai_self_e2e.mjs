@@ -276,10 +276,12 @@ try {
 
   say('— J. v6: 打刻漏れの知らせ・休暇の申請 —');
   {
-    const d1 = YM + '-01', d2 = YM + '-02';
+    /* d2 は有休（有）の日＝1日休む日は帯を出さない（反証 2026-11-24 の 4）。打刻の無い日の文は d3（予定も打刻も無い日＝直ったか分からないので出す）で見る */
+    const d1 = YM + '-01', d2 = YM + '-02', d3 = YM + '-03';
     const NT = [{ id: '00000000-0000-4000-8000-0000000000a1', kind: 'missing', work_date: d1, created_at: d1 + 'T20:00:00+09:00', seen_at: null },
                 { id: '00000000-0000-4000-8000-0000000000a2', kind: 'missing', work_date: d2, created_at: d2 + 'T20:00:00+09:00', seen_at: null },
-                { id: '00000000-0000-4000-8000-0000000000a3', kind: 'free', work_date: d2, created_at: d2 + 'T20:00:00+09:00', seen_at: null }];
+                { id: '00000000-0000-4000-8000-0000000000a3', kind: 'free', work_date: d2, created_at: d2 + 'T20:00:00+09:00', seen_at: null },
+                { id: '00000000-0000-4000-8000-0000000000a4', kind: 'missing', work_date: d3, created_at: d3 + 'T20:00:00+09:00', seen_at: null }];
     const LV6 = Object.assign({}, LEAVE, { months: [{ ym: YM, from: YM + '-01', to: YM + '-' + pad(lastDay(YM)), locked: false, config: { hourlyPaidLeave: true } }],
       absences: [{ id: 'h1', date: d1, kind: 'hourly_paid', minutes: 120, paid: true, type_code: null, link_date: null }] });
     const st4 = fake({ notices: NT, leave: LV6 });
@@ -290,13 +292,13 @@ try {
     await page.waitForSelector('#nt-box:not([hidden]) .nt', { timeout: 10000 });
     const nb = await page.textContent('#nt-box');
     const m0 = +YM.slice(5, 7);
-    t('帯: 見出し「事務所からの知らせ」と決まった文（打刻の無い日だけ・そろった日と知らない種類は出さない）', /事務所からの知らせ/.test(nb) && nb.indexOf(m0 + '月2日の打刻が抜けています。事務所に伝えるか、申請から打刻の直しを出してください。') >= 0
-      && nb.indexOf(m0 + '月1日') < 0 && (await page.$$('#nt-box .nt')).length === 1, nb);
+    t('帯: 見出し「事務所からの知らせ」と決まった文（打刻の無い日だけ・そろった日・有休の日・知らない種類は出さない）', /事務所からの知らせ/.test(nb) && nb.indexOf(m0 + '月3日の打刻が抜けています。事務所に伝えるか、申請から打刻の直しを出してください。') >= 0
+      && nb.indexOf(m0 + '月1日') < 0 && nb.indexOf(m0 + '月2日') < 0 && (await page.$$('#nt-box .nt')).length === 1, nb);
     t('知らせは開いた時に1回だけ読む（key・open だけを送る）', st4.bodies.filter((b) => b.op === 'notices').length === 1 && JSON.stringify(Object.keys(st4.bodies.find((b) => b.op === 'notices')).sort()) === '["key","op","open"]');
     await shot(page, 'notice');
     await page.click('#nt-box button');
     await page.waitForSelector('#p-req:not([hidden])');
-    t('帯から打刻の直しをその日付で開く', (await page.inputValue('#rq-kind')) === 'punch' && (await page.inputValue('#rq-date')) === d2 && (await page.inputValue('#rq-pk')) === 'in');
+    t('帯から打刻の直しをその日付で開く', (await page.inputValue('#rq-kind')) === 'punch' && (await page.inputValue('#rq-date')) === d3 && (await page.inputValue('#rq-pk')) === 'in');
     const bh = await page.evaluate(() => document.querySelector('#nt-box button').getBoundingClientRect().height);
     t('帯のボタンは 44px 以上', bh >= 44, bh);
 
