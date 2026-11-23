@@ -534,7 +534,7 @@ console.log('\n— 6. 覆い・その他 —');
 
 /* ── 7. 賞与のタブ（統合 0121・2026-11-23）── */
 /* 賞与額が空の欄に 0 を入れる・前月の給与の欄を全員「前月の給与なし」にする（代表者の答え 2026-11-23「誰も外さない」で、空の人がいると確定できないため） */
-const fillZero = async (pg) => { const ids = await pg.evaluate(() => [...document.querySelectorAll('[data-bk="amt"]')].filter((e) => !e.value).map((e) => e.id)); for (const id of ids) await pg.fill('#' + id, '0'); return ids.length; };
+const fillZero = async (pg, skip = []) => { const ids = await pg.evaluate((sk) => [...document.querySelectorAll('[data-bk="amt"]')].filter((e) => !e.value && !sk.includes(e.getAttribute('data-bsid'))).map((e) => e.id), skip); for (const id of ids) await pg.fill('#' + id, '0'); return ids.length; };
 const allNone = async (pg) => { const sids = await pg.evaluate(() => [...document.querySelectorAll('[data-bk="pm"]')].map((e) => e.getAttribute('data-bsid'))); for (const x of sids) await pg.selectOption('[data-bk="pm"][data-bsid="' + x + '"]', 'none'); return sids.length; };
 console.log('\n— 7. 賞与のタブ —');
 {
@@ -547,7 +547,7 @@ console.log('\n— 7. 賞与のタブ —');
   await o0.ctx.close();
 
   /* 11月分の給与を確定した DB（前月の給与は自社の確定した明細）・全銀のスイッチ入 */
-  const o = await open({ tab: 'bonus', start: 'confirmed', bonus: true, zengin: true });
+  const o = await open({ tab: 'bonus', start: 'confirmed', bonus: true, zengin: true, retiredStaff: true });   /* 退職済みの見本 十二（給与の設定あり・在籍でない）を足した場面 */
   const p = o.page;
   await p.waitForSelector('[data-act="b-new"]', { timeout: 15000 });
   t('賞与のタブで開く（端末に残したタブ）・回はまだ無い', await p.evaluate(() => document.querySelector('.tabs [aria-selected="true"]').getAttribute('data-tab')) === 'bonus' && /賞与の回はまだありません/.test(await p.textContent('#p-main')));
@@ -559,7 +559,7 @@ console.log('\n— 7. 賞与のタブ —');
   await p.waitForSelector('[data-act="b-compute"]', { timeout: 10000 });
   t('新しい賞与を作ると回の画面が開く（支給日・題）', /見本の冬の賞与（支給日 2026年12月24日）/.test(await p.textContent('#p-main')) && o.routes.calls.some((c) => c.name === 'payroll_bonus_create' && c.args.p_pay_date === '2026-12-24'));
   t('職員の一覧にいて在籍なのに給与の設定が無い人（s-11）を回の画面の上で知らせる（確定は止めない）', /給与の設定が無いので賞与の一覧に出ていない職員: 見本 十一（賞与の対象なら職員の給与の設定を先に入れてください）/.test(await p.textContent('#p-main')), (await p.textContent('#p-main')).slice(0, 300));
-  t('前月の給与は11月分の確定した明細から読む（入れる欄を出さない）', /給与の記録/.test(await p.textContent('#p-main')) && (await p.locator('[data-bk="pm"]').count()) === 0);
+  t('前月の給与は11月分の確定した明細から読む（入れる欄を出さない）', /給与の記録/.test(await p.textContent('#p-main')) && (await p.locator('[data-bk="pm"]:not([data-bsid="s-12"])').count()) === 0);
   const idx = async (sid) => p.evaluate((s) => { const e = document.querySelector('[data-bk="amt"][data-bsid="' + s + '"]'); return e ? e.id : null; }, sid);
   await p.fill('#' + await idx('s-01'), '300000');
   await p.fill('#' + await idx('s-03'), '200000');
@@ -583,10 +583,12 @@ console.log('\n— 7. 賞与のタブ —');
   await shot(p, 'payroll.bonus-run.pc');
   /* 賞与額が空の人がいれば、下書き保存はできるが確定できない（代表者の答え 2026-11-23「誰も外さない」） */
   await p.click('[data-act="b-save"]');
-  await p.waitForSelector('text=賞与額が空の人がいます（7人）', { timeout: 10000 });
+  /* ★空の止めの対象を在籍・支給日より前に退職していない人に絞った（反証レビュー 2026-11-23）ので、11月10日に退職した見本 五郎も外れ、空の人は7人から6人になった（期待を改めた） */
+  await p.waitForSelector('text=賞与額が空の人がいます（6人）', { timeout: 10000 });
   t('賞与額が空の人がいれば下書き保存はでき、確定は押せない（「払わない人は 0 を入れてください」）', await p.isDisabled('[data-act="b-confirm"]') && /払わない人は 0 を入れてください/.test(await p.textContent('#p-main')) && o.routes.calls.filter((c) => c.name === 'payroll_bonus_save').length === 1);
-  t('空の人がいる時の確定の止めは「見本 二子」など名前で出す', /賞与額が空の人がいます（7人）：見本 二子、/.test(await p.textContent('#p-main')));
-  await fillZero(p);
+  t('空の人がいる時の確定の止めは「見本 二子」など名前で出す', /賞与額が空の人がいます（6人）：見本 二子、/.test(await p.textContent('#p-main')));
+  t('給与の設定があって退職済みの人（見本 十二）は一覧に出るが、空の止めに数えない', (await p.locator('[data-bk="amt"][data-bsid="s-12"]').count()) === 1 && !/見本 十二/.test((await p.textContent('#p-main')).split('賞与額が空の人がいます')[1].split('払わない人は')[0]));
+  await fillZero(p, ['s-12']);   /* 退職済みの人は空のまま */
   await p.click('[data-act="b-save"]');
   await p.waitForFunction(() => { const b = document.querySelector('[data-act="b-confirm"]'); return b && !b.disabled; }, null, { timeout: 10000 });
   t('空の人に 0 を入れて保存すると確定を押せる・読み直しても 0 と出る', await p.inputValue('[data-bk="amt"][data-bsid="s-02"]') === '0');
@@ -667,7 +669,8 @@ console.log('\n— 7. 賞与のタブ —');
   await p2.waitForFunction(() => /確定できない警告/.test(document.getElementById('p-main').textContent) && !/計算した結果はまだ保存していません/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
   t('前月の給与が入っていない人がいれば、保存はできるが確定のボタンを押せない（止めの警告の一覧を出す）', await p2.isDisabled('[data-act="b-confirm"]') && /前月の給与/.test(await p2.textContent('#p-main')) && !!o2.routes.calls.find((c) => c.name === 'payroll_bonus_save'));
   await shot(p2, 'payroll.bonus-block.pc');
-  t('前月の給与の止めと一緒に、賞与額が空の人（9人）の止めも出す', /賞与額が空の人がいます（9人）/.test(await p2.textContent('#p-main')));
+  /* ★支給日より前に退職した見本 五郎を空の止めから外した（反証レビュー 2026-11-23）ので、9人から8人に改めた */
+  t('前月の給与の止めと一緒に、賞与額が空の人（8人）の止めも出す', /賞与額が空の人がいます（8人）/.test(await p2.textContent('#p-main')));
   /* 0 の人も明細なので、前月の給与の止め（DB と同じ）がかかる。0121 の確定は明細ごとに前月の給与を確かめるため、全員「前月の給与なし」にする（仮置き・要確認） */
   await fillZero(p2); await allNone(p2);
   await p2.click('[data-act="b-save"]');

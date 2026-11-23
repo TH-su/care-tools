@@ -286,7 +286,8 @@ console.log('\n— 給与専用の暗証番号（統合 0110・2026-11-20 代表
   /* ★賞与の年末調整の記録を待つ間の止め（2026-11-23）で 2026-11-23.4 に上げたので、期待の版を改めた */
   /* ★賞与の画面の反証レビューの直し（2026-11-23）で 2026-11-23.5 に上げたので、期待の版を改めた */
   /* ★賞与額が空の人の止め（2026-11-23 代表者の答え「誰も外さない」）で 2026-11-23.6 に上げたので、期待の版を改めた */
-  t('payroll.js の版を上げた（2026-11-23.6）', /payroll\.js\?v=2026-11-23\.6"/.test(H));
+  /* ★空の止めの対象の直し（反証レビュー 2026-11-23）で 2026-11-23.7 に上げたので、期待の版を改めた */
+  t('payroll.js の版を上げた（2026-11-23.7）', /payroll\.js\?v=2026-11-23\.7"/.test(H));
 }
 
 
@@ -421,12 +422,20 @@ console.log('\n— 賞与のタブ（統合 0121・2026-11-23 設計 CONTRACT-bo
     const m1 = P.bonusBlankMsg(pr, [{ staff_id: 'a', gross: 100 }]), m2 = P.bonusBlankMsg(pr, [{ staff_id: 'a' }, { staff_id: 'b', gross: 0 }, { staff_id: 'c', gross: 0 }]);
     return m1.length === 1 && m1[0] === '賞与額が空の人がいます（2人）：見本 二、見本 三。払わない人は 0 を入れてください' && m2.length === 0;
   })());
+  /* ★空の止めの対象を在籍・退職前の人に絞った（反証レビュー 2026-11-23）ので、渡す人の書き方の期待を改めた（3か所に入っていることは同じ） */
   t('賞与額が空の人の止めは、回の画面の確定のボタン・確定の窓・押した時の読み直しの3か所に入っている（下書き保存は止めない）',
-    /var blk = bonusBlocks\(bb\.items, bb\.prev\);\n      blk = bonusBlankMsg\(bb\.profiles, bb\.items\)\.concat\(blk\);/.test(BON) && /blk = bonusBlocks\(list, bb\.prev\);\n    blk = bonusBlankMsg\(bb\.profiles, list\)\.concat\(blk\);/.test(BON)
-    && /var blk = bonusBlocks\(fresh\.items, fresh\.prev\);\n      blk = bonusBlankMsg\(fresh\.profiles, fresh\.items\)\.concat\(blk\);/.test(BON) && !/bonusBlankMsg/.test(BON.slice(BON.indexOf('function bonusSave('), BON.indexOf('function bonusCfgSave('))));
+    /var blk = bonusBlocks\(bb\.items, bb\.prev\);\n      blk = bonusBlankMsg\(bonusBlankTargets\(bb\), bb\.items\)\.concat\(blk\);/.test(BON) && /blk = bonusBlocks\(list, bb\.prev\);\n    blk = bonusBlankMsg\(bonusBlankTargets\(bb\), list\)\.concat\(blk\);/.test(BON)
+    && /var blk = bonusBlocks\(fresh\.items, fresh\.prev\);\n      blk = bonusBlankMsg\(bonusBlankTargets\(fresh\), fresh\.items\)\.concat\(blk\);/.test(BON) && !/bonusBlankMsg/.test(BON.slice(BON.indexOf('function bonusSave('), BON.indexOf('function bonusCfgSave('))));
   t('賞与額 0 は計算・保存し（空だけ外す）、読み直すと 0 と出す・総支給0の人は明細の印刷・CSV に出さない', /if \(a === null\) return;/.test(BON) && /bIn\[it\.staff_id\] = \{ amt: String\(a\),/.test(BON)
     && /\.filter\(function \(it\) \{ return num\(it\.gross\) > 0; \}\);   \/\* 総支給0の人は明細/.test(BON) && /bonusPrint\(bb\.items\.filter\(function \(it\) \{ return num\(it\.gross\) > 0; \}\)\)/.test(BON)
     && P.bonusShoyoCsv([{ staff_id: 'a', name: '見本 一', gross: 0 }, { staff_id: 'b', name: '見本 二', gross: 1000 }], [], '2026-12-24', [], 'x').trim().split('\r\n').length === 2);
+  t('空の止めの対象は在籍で、退職日が無いか支給日以後の人だけ（在籍でない人・支給日より前に退職した人は外す・仮の ID の人は在籍として数える）', (() => {
+    const b = P.bonusNorm({ staff: [{ staff_id: 'a', name: '見本 一', active: true }, { staff_id: 'b', name: '見本 二', active: false }, { staff_id: 'c', name: '見本 三', active: true }, { staff_id: 'd', name: '見本 四', active: true }],
+      run: { bonus_id: '2026-12-24#1', pay_date: '2026-12-24', title: 'x' },
+      profiles: [{ staff_id: 'a', data: {} }, { staff_id: 'b', data: {} }, { staff_id: 'c', data: { retire_date: '2026-09-30' } }, { staff_id: 'd', data: { retire_date: '2026-12-24' } }, { staff_id: 'p:x', data: {} }] });
+    const ids = P.bonusBlankTargets(b).map((x) => x.staff_id).join();
+    return ids === 'a,d,p:x' && P.bonusBlankMsg(P.bonusBlankTargets(b), [{ staff_id: 'a' }, { staff_id: 'd' }, { staff_id: 'p:x' }]).length === 0;
+  })(), P.bonusBlankTargets(P.bonusNorm({})));
   t('職員の一覧にいて在籍なのに支給日の給与の設定が無い人を知らせる（止めた人は出さない・知らせだけ）', (() => {
     const b = P.bonusNorm({ staff: [{ staff_id: 'a', name: '見本 一', active: true }, { staff_id: 'b', name: '見本 二', active: true }, { staff_id: 'c', name: '見本 三', active: false }],
       run: { bonus_id: '2026-12-24#1', pay_date: '2026-12-24', title: 'x' }, profiles: [{ staff_id: 'a', name: '見本 一' }] });

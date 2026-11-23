@@ -875,7 +875,7 @@
   function bonusNorm(r) {
     r = obj(r);
     var st = obj(r.settings), run = r.run && typeof r.run === 'object' ? r.run : null, pv = obj(r.prev), ctx = obj(r.ctx);
-    var nmap = {}, act = []; arr(r.staff).forEach(function (x) { if (x && typeof x.staff_id === 'string') { nmap[x.staff_id] = String(x.name || ''); if (x.active !== false) act.push(x.staff_id); } });
+    var nmap = {}, act = [], inact = []; arr(r.staff).forEach(function (x) { if (x && typeof x.staff_id === 'string') { nmap[x.staff_id] = String(x.name || ''); if (x.active !== false) act.push(x.staff_id); else inact.push(x.staff_id); } });
     var idOk = function (v) { return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}#[1-9]$/.test(v); };
     var numMap = function (m) { var o = {}; m = obj(m); Object.keys(m).forEach(function (k) { var n = Number(m[k]); if (isFinite(n)) o[k] = n; }); return o; };
     var pitems = {}; obj(pv.items) && Object.keys(obj(pv.items)).forEach(function (k) { var x = obj(pv.items[k]); pitems[k] = { gross: typeof x.gross === 'number' ? x.gross : null, P: typeof x.P === 'number' && isFinite(x.P) ? x.P : null }; });
@@ -886,7 +886,7 @@
       }),
       settings: { config: obj(st.config), rev: num(st.rev) },
       allowances: arr(r.allowances).filter(function (a) { return a && typeof a.code === 'string'; }).map(function (a) { return Object.assign({}, obj(a.def), { code: a.code, rev: num(a.rev) }); }),
-      names: nmap, active: act,
+      names: nmap, active: act, inactive: inact,
       run: run && idOk(run.bonus_id) ? { bonus_id: run.bonus_id, pay_date: isDate(run.pay_date) ? run.pay_date : run.bonus_id.slice(0, 10), title: String(run.title || ''),
         status: BONUS_STATUS[run.status] ? run.status : 'draft', rev: num(run.rev), config: obj(run.config), totals: obj(run.totals), stale: run.stale === true,
         saved_at: run.saved_at || null, confirmed_at: run.confirmed_at || null, exported_at: run.exported_at || null } : null,
@@ -994,6 +994,13 @@
     var have = {}; arr(items).forEach(function (it) { if (it && it.staff_id) have[it.staff_id] = 1; });
     var nm = arr(profiles).filter(function (p) { return p && p.staff_id && !have[p.staff_id]; }).map(function (p) { return p.name || p.staff_id; });
     return nm.length ? ['賞与額が空の人がいます（' + nm.length + '人）：' + nm.join('、') + '。払わない人は 0 を入れてください'] : [];
+  }
+  /* 空の止めの対象（反証レビュー 2026-11-23）: 回の一覧の人のうち、職員の一覧で在籍でない人（active が false）と、給与の設定の退職日が支給日より前の人は外す。
+     外した人も一覧には出し、額を入れれば計算する（求めないだけ）。給与の側の仮の ID（p:）で職員の一覧にいない人は在籍として数える（純関数） */
+  function bonusBlankTargets(b) {
+    b = obj(b); var pd = b.run && b.run.pay_date, off = {};
+    arr(b.inactive).forEach(function (sid) { off[sid] = 1; });
+    return arr(b.profiles).filter(function (p) { var rd = obj(p && p.data).retire_date; return p && !off[p.staff_id] && !(isDate(rd) && isDate(pd) && rd < pd); });
   }
   /* 職員の一覧にいて在籍なのに、支給日に給与の設定が無い人（賞与の一覧に出ない）。知らせだけ（仮置き・純関数） */
   function bonusNoProfile(b) {
@@ -1211,7 +1218,7 @@
   function bonusOpenConfirm() {
     if (busy || !bb || !bb.run || bb.run.status !== 'draft' || bonusDirty() || bYtdWait) return;
     var list = bb.items, t = bonusTotals(list), blk = bonusBlocks(list, bb.prev);
-    blk = bonusBlankMsg(bb.profiles, list).concat(blk);
+    blk = bonusBlankMsg(bonusBlankTargets(bb), list).concat(blk);
     var B = (window.PayrollCalc && window.PayrollCalc.BONUS_BLOCK) || {};
     var warns = []; list.forEach(function (it) { arr(it.warns).forEach(function (w) { if (w && !B[w.code]) warns.push(it.name + '：' + (w.msg || w.code)); }); });
     var h = '<div class="sumbar"><div>人数<b>' + esc(t.n) + ' 人</b></div><div>総支給の合計<b>' + esc(yen(t.gross)) + ' 円</b></div><div>控除の合計<b>' + esc(yen(t.deduct)) + ' 円</b></div><div>差引の合計<b>' + esc(yen(t.net)) + ' 円</b></div></div>' +
@@ -1242,7 +1249,7 @@
         now.push({ staff_id: it.staff_id, gross: x.out.gross, deduct: x.out.deduct, net: x.out.net });
       });
       var blk = bonusBlocks(fresh.items, fresh.prev);
-      blk = bonusBlankMsg(fresh.profiles, fresh.items).concat(blk);
+      blk = bonusBlankMsg(bonusBlankTargets(fresh), fresh.items).concat(blk);
       if (fresh.run.stale || bonusFigures(now) !== ctx.shown || bonusFigures(fresh.items) !== ctx.shown || blk.length) {
         done(); closeDlg(); bb = prevBb;
         bNotice = { cls: 'warn', text: blk.length ? '確定できない警告が残っています。確定していません。' : '読み直したら数字が変わっていました。確定していません。「計算する」で計算し直し、下書き保存してから確定し直してください。' };
@@ -1456,7 +1463,7 @@
       h += '<button type="button" class="btn pri" data-act="b-compute"' + (c && !bCfgDirty ? '' : ' disabled') + '>計算する</button>';
       h += '<button type="button" class="btn" data-act="b-save"' + (c && !bCfgDirty && !bYtdWait ? '' : ' disabled') + '>下書き保存</button>';
       var blk = bonusBlocks(bb.items, bb.prev);
-      blk = bonusBlankMsg(bb.profiles, bb.items).concat(blk);
+      blk = bonusBlankMsg(bonusBlankTargets(bb), bb.items).concat(blk);
       h += '<button type="button" class="btn" data-act="b-confirm"' + (bb.items.length && !bonusDirty() && !run.stale && !blk.length && !bYtdWait ? '' : ' disabled') + '>確定する</button>';
       if (!run.exported_at) h += '<button type="button" class="btn ng" data-act="b-delete">この回を消す（下書き）</button>';
       if (!bonusDirty() && blk.length) h += '</div><div class="band ng" role="alert"><b>確定できない警告（' + esc(blk.length) + ' 件）</b><ul>' + blk.map(function (w) { return '<li>⛔ ' + esc(w) + '</li>'; }).join('') + '</ul></div><div class="row">';
@@ -2448,5 +2455,5 @@
   if (window.SUFacility && typeof window.SUFacility.onReady === 'function') window.SUFacility.onReady(go); else go();
   /* 試験だけが読む（画面の動きには使わない） */
   window.__payrollTest = { attSame: attSame, normBoot: normBoot, figures: figures, totals: totals, parseCsv: parseCsv, decode: decode, importCols: importCols, buildImport: buildImport, missingOf: missingOf, attFromKintai: attFromKintai, toSave: toSave, qtyText: qtyText, TABS: TABS, IDLE_MS: IDLE_MS,
-    bonusNorm: bonusNorm, bonusYtd: bonusYtd, bonusPrevOf: bonusPrevOf, bonusToSave: bonusToSave, bonusBlocks: bonusBlocks, bonusShoyoCsv: bonusShoyoCsv, bonusNoDb: bonusNoDb, bonusBlankMsg: bonusBlankMsg, bonusNoProfile: bonusNoProfile };
+    bonusNorm: bonusNorm, bonusYtd: bonusYtd, bonusPrevOf: bonusPrevOf, bonusToSave: bonusToSave, bonusBlocks: bonusBlocks, bonusShoyoCsv: bonusShoyoCsv, bonusNoDb: bonusNoDb, bonusBlankMsg: bonusBlankMsg, bonusNoProfile: bonusNoProfile, bonusBlankTargets: bonusBlankTargets };
 })();
