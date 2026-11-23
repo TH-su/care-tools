@@ -533,6 +533,9 @@ console.log('\n— 6. 覆い・その他 —');
 
 
 /* ── 7. 賞与のタブ（統合 0121・2026-11-23）── */
+/* 賞与額が空の欄に 0 を入れる・前月の給与の欄を全員「前月の給与なし」にする（代表者の答え 2026-11-23「誰も外さない」で、空の人がいると確定できないため） */
+const fillZero = async (pg, skip = []) => { const ids = await pg.evaluate((sk) => [...document.querySelectorAll('[data-bk="amt"]')].filter((e) => !e.value && !sk.includes(e.getAttribute('data-bsid'))).map((e) => e.id), skip); for (const id of ids) await pg.fill('#' + id, '0'); return ids.length; };
+const allNone = async (pg) => { const sids = await pg.evaluate(() => [...document.querySelectorAll('[data-bk="pm"]')].map((e) => e.getAttribute('data-bsid'))); for (const x of sids) await pg.selectOption('[data-bk="pm"][data-bsid="' + x + '"]', 'none'); return sids.length; };
 console.log('\n— 7. 賞与のタブ —');
 {
   /* 関数の無い DB（0121 の前）: 「まだ使えません」だけ出して何もしない */
@@ -544,7 +547,7 @@ console.log('\n— 7. 賞与のタブ —');
   await o0.ctx.close();
 
   /* 11月分の給与を確定した DB（前月の給与は自社の確定した明細）・全銀のスイッチ入 */
-  const o = await open({ tab: 'bonus', start: 'confirmed', bonus: true, zengin: true });
+  const o = await open({ tab: 'bonus', start: 'confirmed', bonus: true, zengin: true, retiredStaff: true });   /* 退職済みの見本 十二（給与の設定あり・在籍でない）を足した場面 */
   const p = o.page;
   await p.waitForSelector('[data-act="b-new"]', { timeout: 15000 });
   t('賞与のタブで開く（端末に残したタブ）・回はまだ無い', await p.evaluate(() => document.querySelector('.tabs [aria-selected="true"]').getAttribute('data-tab')) === 'bonus' && /賞与の回はまだありません/.test(await p.textContent('#p-main')));
@@ -555,7 +558,8 @@ console.log('\n— 7. 賞与のタブ —');
   await p.click('[data-act="b-new-go"]');
   await p.waitForSelector('[data-act="b-compute"]', { timeout: 10000 });
   t('新しい賞与を作ると回の画面が開く（支給日・題）', /見本の冬の賞与（支給日 2026年12月24日）/.test(await p.textContent('#p-main')) && o.routes.calls.some((c) => c.name === 'payroll_bonus_create' && c.args.p_pay_date === '2026-12-24'));
-  t('前月の給与は11月分の確定した明細から読む（入れる欄を出さない）', /給与の記録/.test(await p.textContent('#p-main')) && (await p.locator('[data-bk="pm"]').count()) === 0);
+  t('職員の一覧にいて在籍なのに給与の設定が無い人（s-11）を回の画面の上で知らせる（確定は止めない）', /給与の設定が無いので賞与の一覧に出ていない職員: 見本 十一（賞与の対象なら職員の給与の設定を先に入れてください）/.test(await p.textContent('#p-main')), (await p.textContent('#p-main')).slice(0, 300));
+  t('前月の給与は11月分の確定した明細から読む（入れる欄を出さない）', /給与の記録/.test(await p.textContent('#p-main')) && (await p.locator('[data-bk="pm"]:not([data-bsid="s-12"])').count()) === 0);
   const idx = async (sid) => p.evaluate((s) => { const e = document.querySelector('[data-bk="amt"][data-bsid="' + s + '"]'); return e ? e.id : null; }, sid);
   await p.fill('#' + await idx('s-01'), '300000');
   await p.fill('#' + await idx('s-03'), '200000');
@@ -577,14 +581,26 @@ console.log('\n— 7. 賞与のタブ —');
   t('計算すると賞与額を入れた3人の結果が出る', (await p.locator('details.bit').count()) === 3);
   t('下書き保存の前は確定を押せない', await p.isDisabled('[data-act="b-confirm"]'));
   await shot(p, 'payroll.bonus-run.pc');
+  /* 賞与額が空の人がいれば、下書き保存はできるが確定できない（代表者の答え 2026-11-23「誰も外さない」） */
+  await p.click('[data-act="b-save"]');
+  /* ★空の止めの対象を在籍・支給日より前に退職していない人に絞った（反証レビュー 2026-11-23）ので、11月10日に退職した見本 五郎も外れ、空の人は7人から6人になった（期待を改めた） */
+  await p.waitForSelector('text=賞与額が空の人がいます（6人）', { timeout: 10000 });
+  t('賞与額が空の人がいれば下書き保存はでき、確定は押せない（「払わない人は 0 を入れてください」）', await p.isDisabled('[data-act="b-confirm"]') && /払わない人は 0 を入れてください/.test(await p.textContent('#p-main')) && o.routes.calls.filter((c) => c.name === 'payroll_bonus_save').length === 1);
+  t('空の人がいる時の確定の止めは「見本 二子」など名前で出す', /賞与額が空の人がいます（6人）：見本 二子、/.test(await p.textContent('#p-main')));
+  t('給与の設定があって退職済みの人（見本 十二）は一覧に出るが、空の止めに数えない', (await p.locator('[data-bk="amt"][data-bsid="s-12"]').count()) === 1 && !/見本 十二/.test((await p.textContent('#p-main')).split('賞与額が空の人がいます')[1].split('払わない人は')[0]));
+  await fillZero(p, ['s-12']);   /* 退職済みの人は空のまま */
   await p.click('[data-act="b-save"]');
   await p.waitForFunction(() => { const b = document.querySelector('[data-act="b-confirm"]'); return b && !b.disabled; }, null, { timeout: 10000 });
+  t('空の人に 0 を入れて保存すると確定を押せる・読み直しても 0 と出る', await p.inputValue('[data-bk="amt"][data-bsid="s-02"]') === '0');
   const sv = o.routes.calls.filter((c) => c.name === 'payroll_bonus_save').pop();
-  t('下書き保存は 0121 の形（許された鍵だけ・指紋は bootstrap の文字・前月の給与の出どころ ok）', !!sv && typeof sv.args.p_fingerprint === 'string' && sv.args.p_items.length === 3
+  /* ★0 の人も明細にする決まり（2026-11-23）で、保存する明細は3人から10人（0 の7人を含む）に変わったので期待を改めた */
+  t('0 の人は総支給0・控除0・差引0 の明細で保存する', !!sv && sv.args.p_items.filter((x) => x.item.gross === 0).every((x) => x.item.deduct === 0 && x.item.net === 0) && sv.args.p_items.filter((x) => x.item.gross === 0).length === 7);
+  t('下書き保存は 0121 の形（許された鍵だけ・指紋は bootstrap の文字・前月の給与の出どころ ok）', !!sv && typeof sv.args.p_fingerprint === 'string' && sv.args.p_items.length === 10
     && sv.args.p_items.every((x) => Object.keys(x).sort().join() === 'item,prev_manual,staff_id' && x.item.prev_kind === 'ok' && !('raw' in x.item.std) && !('T' in x.item) && x.item.warns.every((w) => !('stop' in w))));
   await p.click('[data-act="b-confirm"]');
   const dlg = await p.textContent('#p-dlg');
-  t('確定の窓に人数・総額・支給日', /3 人/.test(dlg) && /差引の合計/.test(dlg) && /2026年12月24日/.test(dlg), dlg.slice(0, 300));
+  /* ★0 の人も明細にしたので、確定の窓の人数は3人から10人に変わった（期待を改めた） */
+  t('確定の窓に人数・総額・支給日', /10 人/.test(dlg) && /差引の合計/.test(dlg) && /2026年12月24日/.test(dlg), dlg.slice(0, 300));
   if (await p.locator('#bc-ack').count()) await p.check('#bc-ack');
   await p.click('[data-act="b-confirm-go"]');
   await p.waitForFunction(() => /確定済み/.test(document.getElementById('p-main').textContent) && document.querySelector('[data-act="b-print-all"]'), null, { timeout: 10000 });
@@ -653,10 +669,14 @@ console.log('\n— 7. 賞与のタブ —');
   await p2.waitForFunction(() => /確定できない警告/.test(document.getElementById('p-main').textContent) && !/計算した結果はまだ保存していません/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
   t('前月の給与が入っていない人がいれば、保存はできるが確定のボタンを押せない（止めの警告の一覧を出す）', await p2.isDisabled('[data-act="b-confirm"]') && /前月の給与/.test(await p2.textContent('#p-main')) && !!o2.routes.calls.find((c) => c.name === 'payroll_bonus_save'));
   await shot(p2, 'payroll.bonus-block.pc');
-  await p2.selectOption('[data-bk="pm"][data-bsid="s-01"]', 'none');
+  /* ★支給日より前に退職した見本 五郎を空の止めから外した（反証レビュー 2026-11-23）ので、9人から8人に改めた */
+  t('前月の給与の止めと一緒に、賞与額が空の人（8人）の止めも出す', /賞与額が空の人がいます（8人）/.test(await p2.textContent('#p-main')));
+  /* 0 の人も明細なので、前月の給与の止め（DB と同じ）がかかる。0121 の確定は明細ごとに前月の給与を確かめるため、全員「前月の給与なし」にする（仮置き・要確認） */
+  await fillZero(p2); await allNone(p2);
   await p2.click('[data-act="b-save"]');
   await p2.waitForFunction(() => { const b = document.querySelector('[data-act="b-confirm"]'); return b && !b.disabled; }, null, { timeout: 10000 });
   const sv2 = o2.routes.calls.filter((c) => c.name === 'payroll_bonus_save').pop();
+  sv2.args.p_items.sort((a, b) => (a.staff_id === 's-01' ? -1 : b.staff_id === 's-01' ? 1 : 0));
   t('「前月の給与なし」は prev_manual {P:null, none:true} で送り、確定を押せる', sv2.args.p_items[0].prev_manual.none === true && sv2.args.p_items[0].prev_manual.P === null && sv2.args.p_items[0].item.prev_kind === 'none');
   t('年末調整の口が無い DB でも止まらない（画面のエラー 0）', o2.errors.length === 0, o2.errors);
   await o2.ctx.close();
@@ -678,9 +698,11 @@ console.log('\n— 7. 賞与のタブ —');
   await p3.click('[data-act="b-cfg-save"]');
   await p3.waitForFunction(() => /回の設定を保存しました/.test(document.getElementById('p-toast').textContent), null, { timeout: 10000 });
   await settle(p3);
+  await fillZero(p3); await allNone(p3);
   await p3.click('[data-act="b-save"]');
   await p3.waitForFunction(() => { const b = document.querySelector('[data-act="b-confirm"]'); return b && !b.disabled; }, null, { timeout: 10000 });
   const sv3 = o3.routes.calls.filter((c) => c.name === 'payroll_bonus_save').pop();
+  sv3.args.p_items.sort((a, b) => (a.staff_id === 's-01' ? -1 : b.staff_id === 's-01' ? 1 : 0));
   t('記録から取った前月の給与は prev_manual {P:214800, source:"ytd"}・prev_kind manual で送り、確定を押せる', sv3.args.p_items[0].prev_manual.P === 214800 && sv3.args.p_items[0].prev_manual.source === 'ytd' && sv3.args.p_items[0].item.prev_kind === 'manual' && sv3.args.p_items[0].item.P === 214800);
   t('年末調整の記録: 画面のエラー 0', o3.errors.length === 0, o3.errors);
   await o3.ctx.close();
