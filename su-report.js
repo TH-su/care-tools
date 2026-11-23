@@ -637,26 +637,31 @@
     }
     return l.getAttribute('data-sur-css') === 'ok';
   }
-  /* (x, y) の真下の要素から上へたどり、縦に送られる枠を out に足す。モーダルの中なら何も足さない */
+  /* (x, y) の真下の要素から上へたどり、縦に送られる枠を out に足す。
+     見るのはこのボタンより下に重なっている要素だけ（ボタンより上のモーダル・暗幕は見ない）。浮いている部品（下のバー・モーダル＝
+     position:fixed で重ねの順が 40 以上）の中の枠は付けない。画面いっぱいの固定の入れ物（週間計画の .cal-wrap・重ねの順なし）は対象 */
   function inCollect(doc, x, y, out) {
-    var win = doc.defaultView, st = doc.elementsFromPoint(x, y), el = null, i;
-    for (i = 0; i < st.length; i++) {
-      if (st[i] === fab) continue;
-      if (win.getComputedStyle(st[i]).position === 'fixed') continue;   // 浮いている部品（下のバーなど）は枠ではない
+    var win = doc.defaultView, st = doc.elementsFromPoint(x, y), el = null, i = 0;
+    if (doc === document) { i = st.indexOf(fab) + 1; if (i <= 0) return null; }
+    for (; i < st.length; i++) {
+      if (win.getComputedStyle(st[i]).position === 'fixed') continue;
       el = st[i]; break;
     }
     if (!el || el.closest('dialog,[role="dialog"],[aria-modal="true"]')) return el;
+    var found = [];
     for (var a = el; a && a !== doc.body && a !== doc.documentElement; a = a.parentElement) {
-      var oy = win.getComputedStyle(a).overflowY;
-      if ((oy === 'auto' || oy === 'scroll') && out.indexOf(a) === -1) out.push(a);
+      var cs = win.getComputedStyle(a);
+      if (cs.position === 'fixed' && (parseInt(cs.zIndex, 10) || 0) >= 40) return el;   // モーダル・下のバー（重ねの順 40 以上）の中＝付けない
+      if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll') && out.indexOf(a) === -1) found.push(a);
     }
+    for (i = 0; i < found.length; i++) out.push(found[i]);
     return el;
   }
   function inTargets(fr) {
     var out = [], cy = (fr.top + fr.bottom) / 2, xs = [fr.left + 4, (fr.left + fr.right) / 2, fr.right - 4], frames = [], i;
     for (i = 0; i < xs.length; i++) {
       var st = document.elementsFromPoint(xs[i], cy);
-      if (st.indexOf(fab) === -1) return null;                            // ボタンが覆われている（モーダルの下など）＝見直さない
+      if (st[0] !== fab) return null;                                     // ボタンが一番上に無い（モーダル・暗幕の下など）＝見直さない
       var el = inCollect(document, xs[i], cy, out);
       if (el && el.tagName === 'IFRAME' && frames.indexOf(el) === -1) frames.push(el);
     }
