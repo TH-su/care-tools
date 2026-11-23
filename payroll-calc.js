@@ -19,7 +19,7 @@
   'use strict';
   var isNode = typeof require !== 'undefined' && typeof window === 'undefined';
   var Rates = isNode ? require('./payroll-rates.js') : root.PayrollRates;
-  var CALC_VER = 'payroll-calc-2';   /* 2026-11-21: 時給・日給の有休、日給の法定休日の差、乙欄、通勤手当の非課税限度を直した（確定した明細の指紋で前の版と区別する） */
+  var CALC_VER = 'payroll-calc-3';   /* 2026-11-23: 電算機特例に令和9年分の式を足した。 2026-11-21: 時給・日給の有休、日給の法定休日の差、乙欄、通勤手当の非課税限度を直した（確定した明細の指紋で前の版と区別する） */
 
   var DEFAULTS = {
     si_month: 'next', tax_method: 'table', prefecture: '43', emp_ins_kind: 'general',
@@ -201,15 +201,25 @@
     if (d > 7) kou = Math.max(0, kou - 1610 * (d - 7));
     return kou;
   }
-  /* 甲欄の電算機特例（令和8年分の式だけ・rates-2026.md §4） */
-  function taxComputerR8(A, dep) {
+  /* 甲欄の電算機特例（財務省告示の式・年ごと）。出典: 国税庁「月額表の甲欄を適用する給与等に対する税額の電算機計算の特例について」
+     令和8年分 https://www.nta.go.jp/publication/pamph/gensen/zeigakuhyo2026/data/denshi_01.pdf
+     令和9年分 https://www.nta.go.jp/publication/pamph/gensen/zeigakuhyo2027/data/denshi_01.pdf （令和8年4月30日財務省告示第128号・2026-11-23 に確かめた）
+     令和9年分で変わったのは、給与所得控除の最低の区分（169,444円以下は57,500円）と基礎控除の最初の区分（2,120,833円以下は51,667円）だけ。
+     表の無い年は null（呼ぶ側が税額表で数えて警告する・別の年の式で代えない） */
+  var COMPUTER = {
+    2026: { kMinMax: 158333, kMin: 54167, basicFirst: 48334 },
+    2027: { kMinMax: 169444, kMin: 57500, basicFirst: 51667 }
+  };
+  function taxComputer(A, dep, year) {
+    var Y = COMPUTER[year];
+    if (!Y) return null;
     A = Math.max(0, Math.floor(A)); var n = Math.max(0, Math.floor(Number(dep) || 0)), K;
-    if (A <= 158333) K = 54167;
+    if (A <= Y.kMinMax) K = Y.kMin;
     else if (A <= 299999) K = Number(qCeil(Q(B(A) * 3n + 66670n, 10)));
     else if (A <= 549999) K = Number(qCeil(Q(B(A) * 2n + 366670n, 10)));
     else if (A <= 708330) K = Number(qCeil(Q(B(A) + 916670n, 10)));
     else K = 162500;
-    var basic = A <= 2120833 ? 48334 : A <= 2162499 ? 40000 : A <= 2204166 ? 26667 : A <= 2245833 ? 13334 : 0;
+    var basic = A <= 2120833 ? Y.basicFirst : A <= 2162499 ? 40000 : A <= 2204166 ? 26667 : A <= 2245833 ? 13334 : 0;
     var b = Math.max(0, A - K - 31667 * n - basic);
     var steps = [[162500, 0.05105, 0], [275000, 0.1021, 8296], [579166, 0.2042, 36374], [750000, 0.23483, 54113],
       [1500000, 0.33693, 130688], [3333333, 0.4084, 237893], [Infinity, 0.45945, 408061]];
@@ -222,6 +232,8 @@
     }
     return 0;
   }
+  /* 令和8年分の式（前からの呼び名を残す） */
+  function taxComputerR8(A, dep) { return taxComputer(A, dep, 2026); }
 
   /* ── 5. 計算の本体 ── */
   function computeItem(input) {
@@ -604,9 +616,10 @@
     }
     if (col === 'kou' || col === 'otsu') {
       var useComputer = S.tax_method === 'computer' && col === 'kou';
-      if (useComputer && payDate.slice(0, 4) === '2026') tax = taxComputerR8(taxBase, dep);
+      var ct = useComputer ? taxComputer(taxBase, dep, Number(payDate.slice(0, 4))) : null;
+      if (ct !== null) tax = ct;
       else {
-        if (useComputer) warn('tax_computer_unavailable', '電算機特例の式は令和8年分しかありません（税額表で数えました）');
+        if (useComputer) warn('tax_computer_unavailable', '支給日の年の電算機特例の式がありません（税額表で数えました）');
         var T = R.taxTable(payDate);
         if (!T) warn('tax_table_missing', '支給日の年の税額表がありません（所得税を0円にしています）');
         else tax = taxTable(T, taxBase, dep, col);
@@ -694,7 +707,7 @@
     VERSION: CALC_VER, payDate: payDate,
     CALC_VER: CALC_VER, DEFAULTS: DEFAULTS, computeItem: computeItem, fillSettings: fillSettings, attrsOf: attrsOf,
     reachDate: reachDate, reachYm: reachYm, birthdayAt: birthdayAt, insCovered: insCovered, ymAdd: ymAdd, addDays: addDays,
-    empCovered: empCovered, otBaseAdd: otBaseAdd, taxTable: taxTable, taxComputerR8: taxComputerR8, round50: round50, weekdaysBetween: weekdaysBetween,
+    empCovered: empCovered, otBaseAdd: otBaseAdd, taxTable: taxTable, taxComputer: taxComputer, taxComputerR8: taxComputerR8, COMPUTER_YEARS: Object.keys(COMPUTER).map(Number), round50: round50, weekdaysBetween: weekdaysBetween,
     _q: { Q: Q, rateQ: rateQ, roundQ: roundQ, yen: yen }
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
