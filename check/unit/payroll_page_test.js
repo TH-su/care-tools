@@ -68,12 +68,13 @@ t('取り込みの CSV はメモリだけ（読んだらファイルの選びを
 t('HTML を入れるのは put の1か所だけ', (J.match(/\.innerHTML/g) || []).length === 1);
 
 console.log('\n— 4. タブの復元 —');
-/* ★賞与のタブ（2026-11-23・設計 CONTRACT-bonus-v1.md §4「payroll_tab に 'bonus' を足す」）でタブが1つ増えたので、ホワイトリストとタブの数の期待を改めた（ほかの決まりは同じ） */
-t('タブのホワイトリスト6つ（賞与を足した）', /var TABS = \['run', 'slip', 'export', 'bonus', 'profile', 'settings'\];/.test(J));
+/* ★賞与のタブ（2026-11-23・設計 CONTRACT-bonus-v1.md §4「payroll_tab に 'bonus' を足す」）と、年末調整のタブ（2026-11-23・凍結仕様 ROOT-yearend.md の C）を
+   両方足したので、ホワイトリストとタブの数の期待を7つに改めた（並びは賞与を振込と書き出しの次・年末調整を職員の給与設定の次・設定を最後。ほかの決まりは同じ） */
+t('タブのホワイトリスト7つ（賞与と年末調整を足した・設定は最後）', /var TABS = \['run', 'slip', 'export', 'bonus', 'profile', 'yearend', 'settings'\];/.test(J));
 t('読み戻しはホワイトリスト・設定は管理者だけ・それ以外は今月の給与', /tab = TABS\.indexOf\(t\) >= 0 && \(t !== 'settings' \|\| isAdmin\(\)\) \? t : 'run';/.test(boot));
 t('切り替えも同じ決まり', /if \(TABS\.indexOf\(t\) < 0 \|\| \(t === 'settings' && !isAdmin\(\)\)\) t = 'run';/.test(J));
 t('月分は端末に残さない（今日の月分から始める）', /ym = todayYm\(\); \$\('p-ym'\)\.value = ym;/.test(boot) && !/lsSet\([^)]*ym/.test(J));
-t('画面のタブは6つ（賞与を足した・設定は初めは隠す）', (H.match(/role="tab" data-tab="/g) || []).length === 6 && /data-tab="bonus">賞与</.test(H) && /data-tab="settings" hidden>設定</.test(H));
+t('画面のタブは7つ（賞与と年末調整を足した・設定は初めは隠す）', (H.match(/role="tab" data-tab="/g) || []).length === 7 && /data-tab="bonus">賞与</.test(H) && /data-tab="yearend">年末調整</.test(H) && /data-tab="settings" hidden>設定</.test(H));
 
 console.log('\n— 5. 確定の窓 —');
 const oc = fnBody(J, 'openConfirm', 'function confirmGo');
@@ -285,9 +286,268 @@ console.log('\n— 給与専用の暗証番号（統合 0110・2026-11-20 代表
   /* ★賞与のタブ（2026-11-23）で payroll.js を 2026-11-23.3 に上げたので、期待の版を改めた */
   /* ★賞与の年末調整の記録を待つ間の止め（2026-11-23）で 2026-11-23.4 に上げたので、期待の版を改めた */
   /* ★賞与の画面の反証レビューの直し（2026-11-23）で 2026-11-23.5 に上げたので、期待の版を改めた */
-  /* ★賞与額が空の人の止め（2026-11-23 代表者の答え「誰も外さない」）で 2026-11-23.6 に上げたので、期待の版を改めた */
-  /* ★空の止めの対象の直し（反証レビュー 2026-11-23）で 2026-11-23.7 に上げたので、期待の版を改めた */
-  t('payroll.js の版を上げた（2026-11-23.7）', /payroll\.js\?v=2026-11-23\.7"/.test(H));
+  /* ★賞与の空の止め（#660・2026-11-23.7）の入った main を取り込み、両方が入った payroll.js を 2026-11-23.8 に上げたので、期待の版を改めた */
+  /* ★年末調整のタブ（2026-11-23・ROOT-yearend.md の C）を賞与の入った main に取り込み、両方が入った payroll.js を 2026-11-23.6 に上げたので、期待の版を改めた */
+  t('payroll.js の版を上げた（2026-11-23.8・賞与と年末調整の両方が入った版）', /payroll\.js\?v=2026-11-23\.8"/.test(H));
+}
+
+console.log('\n— 年末調整のタブ（2026-11-23・ROOT-yearend.md の C） —');
+{
+  const U = read('payroll-yearend-ui.js');
+  /* 画面の登録（payroll.js はタブの登録と呼び口だけ） */
+  /* ★賞与のタブと一緒になったので7つの並び（年末調整は職員の給与設定の次・設定の前） */
+  t('TABS に yearend（設定の前・ホワイトリストのまま）', /var TABS = \['run', 'slip', 'export', 'bonus', 'profile', 'yearend', 'settings'\];/.test(J));
+  /* ★賞与のタブと一緒になったので7つ */
+  t('画面のタブは7つ・「年末調整」は data-tab="yearend"（設定は初めは隠す）', (H.match(/role="tab" data-tab="/g) || []).length === 7 && /<button type="button" role="tab" data-tab="yearend">年末調整<\/button>/.test(H) && /data-tab="settings" hidden>設定</.test(H));
+  const iF = H.indexOf('<script src="payroll-freee-slips.js?v='), iYR = H.indexOf('<script src="payroll-yearend-rates.js?v='), iY = H.indexOf('<script src="payroll-yearend.js?v='), iW = H.indexOf('<script src="payroll-withholding-slip.js?v='), iU = H.indexOf('<script src="payroll-yearend-ui.js?v='), iP = H.indexOf('<script src="payroll.js?v=');
+  t('新しい5つの部品を payroll.js より前に ?v= つきで読む', iF > 0 && iYR > iF && iY > iYR && iW > iY && iU > iW && iP > iU, [iF, iYR, iY, iW, iU, iP]);
+  /* ★賞与の入った main を取り込み 2026-11-23.6 に上げたので、期待の版を改めた */
+  t('payroll.js の版を上げた（2026-11-23.8）', /payroll\.js\?v=2026-11-23\.8"/.test(H));
+  t('描く物は PayrollYearEndUI.html(ctx)・無ければ「計算の部品が読み込めていません」', /else if \(tab === 'yearend'\) h = YEU\(\) \? YEU\(\)\.html\(yeCtx\(\)\) : '<div class="band ng" role="alert">計算の部品が読み込めていません。/.test(J));
+  t('出来事は ye- で始まる act だけ・金額を隠している間は渡さない', /else if \(\/\^ye-\/\.test\(a\) && YEU\(\) && view === 'app' && !masked\) YEU\(\)\.onClick\(yeCtx\(\), a, b\);/.test(J)
+    && /YEU\(\)\.onChange\(yeCtx\(\), e\.target\)/.test(J));
+  const yc = fnBody(J, 'yeCtx', '/* ── 振込と書き出し');
+  t('ctx は今ある関数を渡すだけ（rpc・esc・yen・bs・items・ym・paint・toast・openDlg・closeDlg・isAdmin・note・parseCsv・decode）', ['rpc: rpc', 'esc: esc', 'yen: yen', 'bs: bs', 'items: bs ? items() : []', 'ym: ym', 'paint: paint', 'toast: toast', 'openDlg: openDlg', 'closeDlg: closeDlg', 'isAdmin: isAdmin', 'note: note', 'parseCsv: parseCsv', 'decode: decode', 'adjOf: adjOf', 'compute: doCompute'].every((k) => yc.indexOf(k) >= 0), yc.slice(0, 300));
+  t('精算を入れるのは今の adjEdits の仕組み（確定した月は入れない）', /setAdj: function \(sid, list\) \{ if \(!frozen\(\)\) adjEdits\[sid\] = list; \}/.test(yc));
+  /* ★賞与の片付けと同じ所に並べたので、文の並びではなく「その関数の中で年末調整の物を捨てる」で確かめる（意味は同じ） */
+  t('隠す・鍵の画面・覆いでは年末調整の物（申告・累計・CSV・紙）も捨てる', /put\(\$\('p-print'\), ''\);[\s\S]*yePrint = null; yeReset\(\);/.test(fnBody(J, 'mask', 'function paintMasked'))
+    && /members = null;[\s\S]*yePrint = null; yeReset\(\);/.test(fnBody(J, 'showLock', 'function pinVal')) && /members = null;[\s\S]*yePrint = null; yeReset\(\);/.test(fnBody(J, 'showGate', 'function showField')));
+  const cg2 = fnBody(J, 'confirmGo', 'function openUnconfirm');
+  t('確定は 年末調整の確かめ（beforeConfirm・毎回）→ 読み直し → 勤怠の数え直し → 確定 の順・止めた時は読み直さず確定しない', cg2.indexOf('YEU().beforeConfirm(yeCtx())') >= 0 && cg2.indexOf('YEU().beforeConfirm(yeCtx())') < cg2.indexOf("rpc('payroll_bootstrap'") && cg2.indexOf("rpc('payroll_bootstrap'") < cg2.indexOf("rpc('payroll_run_confirm'")
+    && /if \(yng\) \{ yStop = true; done\(\); closeDlg\(\); notice = \{ cls: 'ng', text: '確定していません。' \+ yng \}; paint\(\); return null; \}/.test(cg2) && /if \(yStop\) return null;/.test(cg2));
+  t('今月の給与のタブに精算の帯・振込と書き出しに freee との差の印（止めない）', /if \(YEU\(\)\) h \+= YEU\(\)\.runBand\(yeCtx\(\)\);/.test(fnBody(J, 'runHtml', 'function itemBody')) && /if \(YEU\(\)\) h \+= YEU\(\)\.exportBadge\(yeCtx\(\)\);/.test(fnBody(J, 'exportHtml', 'function download')));
+  t('源泉徴収票の紙は SUPrint の別のビュー（#p-print・隠した時は出さない）', /window\.SUPrint\.define\('ye-slips', \{ label: '源泉徴収票', paper: 'A4 portrait'/.test(J) && /when: function \(\) \{ return !!yePrint && view === 'app' && !masked; \}/.test(J));
+  t('年末調整の部品は端末に残さない・console に出さない・HTML を入れない（put を ctx で受ける）', !/localStorage|sessionStorage|indexedDB|caches\.|console\.|\.innerHTML|outerHTML|insertAdjacentHTML/.test(U));
+  t('年は端末に残さない（payroll.js の lsSet は LS_TAB だけのまま）', (J.match(/lsSet\(([^,]+),/g) || []).filter((x) => x !== 'lsSet(k,').every((x) => /lsSet\(LS_TAB,/.test(x)));
+  t('マイナンバーの欄を作らない（欄の id・鍵の名前に無い）', !/my_?number|kojin_bango|id="[^"]*(個人番号|マイナンバー)/i.test(U));
+  const L = ['1. 給与所得者の扶養控除等（異動）申告書', '2. 給与所得者の基礎控除申告書・配偶者控除等申告書', '3. 給与所得者の保険料控除申告書', '4. 住宅借入金等特別控除申告書', '5. 前職の源泉徴収票'].map((x) => U.indexOf(x));
+  t('申告の欄は紙の順（扶養控除等 → 基礎・配偶者 → 保険料 → 住宅 → 前職）', L.every((x, i) => x > 0 && (i === 0 || x > L[i - 1])), L);
+
+  t('内訳は決まった鍵だけを決まった順に描き、fuyo_etc（扶養・障害者等の合計）は小計の行にして二重に数えない', /\['fuyo_etc', '（小計）扶養控除額及び障害者等の控除額の合計'\]/.test(U) && /DED\.forEach\(function \(x\) \{ if \(typeof dd\[x\[0\]\] === 'number'\)/.test(U) && !/Object\.keys\(dd\)/.test(U));
+  t('部品は rates → yearend → 源泉徴収票 の順に読む（.gitignore に5つとも載せる）', iYR < iY && iY < iW && ['payroll-freee-slips.js', 'payroll-yearend-rates.js', 'payroll-yearend.js', 'payroll-withholding-slip.js', 'payroll-yearend-ui.js'].every((f) => read('.gitignore').indexOf('!/' + f + '\n') >= 0));
+  /* 動かして確かめる（架空の職員・架空の金額） */
+  let lastStaff = null;
+  const mkDoc = () => { const f = {}; return { f, getElementById: (id) => f[id] || null }; };
+  const load = (opt) => {
+    const D = mkDoc();
+    const w = { document: D, Promise, JSON, Math, Date, Object, Array, String, Number, RegExp, Error, isNaN, isFinite, parseInt, Uint8Array };
+    w.window = w;
+    vm.runInNewContext(read('payroll-freee-slips.js'), w);
+    if (!opt || !opt.noParts) {
+      w.PayrollYearEnd = { computeYearEnd: (inp) => { w.lastInput = inp; return { eligible: true, pay_total: inp.rows.reduce((s, r) => s + r.data.gross, 0), withheld_total: 0, nenzei: 1000, balance: -2500, balance_settle: -2500, warnings: [], deductions: { basic: 1 } }; } };
+      w.PayrollWithholdingSlip = { slipValues: (r, s) => { lastStaff = s; return { name: s.name }; }, slipHtml: (l) => '<div class="ws">' + l.length + '</div>', summaryValues: () => ({}), toCsv: () => 'a,b' };
+    }
+    vm.runInNewContext(read('payroll-yearend-ui.js'), w);
+    return { w, D, U: w.PayrollYearEndUI };
+  };
+  const ctxOf = (o) => {
+    const calls = [], adj = {};
+    const c = Object.assign({ calls, adj, esc: (s) => String(s == null ? '' : s).replace(/[&<>"']/g, ''), yen: (n) => String(n), ym: '2026-12', frozen: false, runRev: 3, payDate: '2026-12-25', items: [],
+      bs: { profiles: [{ staff_id: 's-1', name: '見本 一', data: { freee_emp_num: 'E901' } }, { staff_id: 's-2', name: '見本 二', data: {} }] },
+      paint() { c.painted = (c.painted || 0) + 1; }, toast() {}, say(m) { c.said = m; }, ask: () => Promise.resolve(true), note() {}, put(e, h) { if (e) e.html = h; }, isAdmin: () => true,
+      openDlg(title, body, foot, x) { c.dlg = { title, body, foot, x }; }, closeDlg() { c.dlg = null; }, noDb: (e) => !!e && e.code === 'PGRST202', fail(e) { c.failed = e; },
+      adjOf: (sid) => adj[sid] || [], setAdj: (sid, l) => { adj[sid] = l; }, compute() { c.computed = (c.computed || 0) + 1; },
+      rpc: (name, args) => { calls.push({ name, args }); return Promise.resolve(c.answer ? c.answer(name, args) : { ok: true }); } }, o || {});
+    return c;
+  };
+  const DATA = { ok: true, rows: [
+    { staff_id: 's-1', pay_date: '2026-01-25', kind: 'salary', source: 'freee', data: { gross: 200000, income_tax: 4000 }, rev: 1, fp: 'f0a1' },
+    { staff_id: 's-1', pay_date: '2026-12-24', kind: 'bonus', source: 'manual', data: { gross: 300000, income_tax: 9000 }, rev: 1 }],
+    yearend: [{ staff_id: 's-1', decl: { kou: true }, result: { balance_settle: -2500 }, basis: {}, status: 'final', settle_ym: '2026-12', rev: 2 }] };
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  pend.push((async () => {
+    {
+      const { U: U0 } = load({ noParts: true });
+      const h0 = U0.html(ctxOf());
+      t('部品が無い時は「計算の部品が読み込めていません」を出して止める（読み込みもしない）', /計算の部品が読み込めていません/.test(h0) && !/freee の明細を取り込む/.test(h0));
+    }
+    {
+      const { U: U1 } = load();
+      const c = ctxOf({ answer: () => { const e = new Error('nf'); e.code = 'PGRST202'; throw e; } });
+      c.rpc = (name, args) => { c.calls.push({ name, args }); const e = new Error('nf'); e.code = 'PGRST202'; return Promise.reject(e); };
+      U1.html(c); await tick(); await tick();
+      t('既定の年は表示中の月分の年・payroll_ytd_get(p_year) を1回だけ', c.calls.length === 1 && c.calls[0].name === 'payroll_ytd_get' && JSON.stringify(c.calls[0].args) === '{"p_year":2026}', c.calls);
+      t('DB に 0122 が無い時は「まだありません」と出して止める（失敗の窓は出さない）', /データベースに年末調整の仕組みがまだありません/.test(U1.html(c)) && !c.failed);
+    }
+    const { w, D, U: Y } = load();
+    const c = ctxOf({ answer: (n) => n === 'payroll_ytd_get' ? DATA : n === 'payroll_yearend_check' ? { ok: true, rows: [{ staff_id: 's-1', match: true }] } : { ok: true } });
+    Y.html(c); await tick(); await tick();
+    const h = Y.html(c);
+    t('読めたら取り込み・比べる・一覧・精算の手順・印刷の5つの節', ['freee の明細を取り込む', 'freee と比べる', '職員ごとの累計と年末調整', '精算する月分の給与へ入れる', '源泉徴収票と合計表の値'].every((x) => h.indexOf(x) >= 0));
+    t('一覧: 累計の回数（給与1・賞与1）・支給の合計・確定の印', /給与 1・賞与 1/.test(h) && /500000/.test(h) && /✓ 確定/.test(h));
+    t('累計に1回分を手で足す: 賞与の既定の支給日は 2026-12-24', (Y.onClick(c, 'ye-manual', null), /id="ye-m-date" value="2026-12-24"/.test(c.dlg.body)) && /ye-m-income_tax/.test(c.dlg.body));
+    Object.assign(D.f, { 'ye-m-sid': { value: 's-2' }, 'ye-m-kind': { value: 'bonus' }, 'ye-m-date': { value: '2026-12-24' }, 'ye-m-gross': { value: '250,000' }, 'ye-m-taxable': { value: '' }, 'ye-m-si_health': { value: '12000' }, 'ye-m-si_care': { value: '' }, 'ye-m-si_support': { value: '' }, 'ye-m-si_pension': { value: '22000' }, 'ye-m-si_emp': { value: '1500' }, 'ye-m-income_tax': { value: '8000' } });
+    c.calls.length = 0; Y.onClick(c, 'ye-manual-go', null); await tick();
+    const put0 = c.calls.find((x) => x.name === 'payroll_ytd_put');
+    t('手で足す分は payroll_ytd_put に source=manual・課税支給が空なら総支給と同じ・新しい行は rev 0', !!put0 && put0.args.p_year === 2026 && put0.args.p_rows[0].source === 'manual' && put0.args.p_rows[0].kind === 'bonus' && put0.args.p_rows[0].data.taxable === 250000 && put0.args.p_rows[0].data.nontax === 0 && put0.args.p_rows[0].rev === 0, put0 && put0.args);
+    await tick(); await tick();
+    /* 精算（今月の給与のタブ）: もとは DB の payroll_yearend_check の行（年末調整のタブで読んだ物に頼らない）。二度押しても1行に置き換わる・額は balance_settle（負＝還付） */
+    const CHK = (rows) => (n) => n === 'payroll_yearend_check' ? { ok: true, year: 2026, rows } : { ok: true };
+    const FIN1 = { staff_id: 's-1', status: 'final', settle_ym: '2026-12', run_status: 'draft', has_item: true, tax_adjust: 0, balance_settle: -2500, state: 'diff' };
+    const c2 = ctxOf({ answer: CHK([FIN1]) });
+    const { U: Y2, D: D2 } = load();
+    c2.adj['s-1'] = [{ kind: 'pay', name: '見本の手当', amount: 1000, reason: 'x' }, { kind: 'tax_adjust', name: '前の月の直し', amount: 300, reason: '別の精算' }];
+    t('今月の給与の帯: 初めは payroll_yearend_check(年) を読む（年末調整のタブを開いていなくても）', Y2.runBand(c2) === '' && (await tick(), c2.calls.some((x) => x.name === 'payroll_yearend_check' && JSON.stringify(x.args) === '{"p_year":2026}')));
+    t('今月の給与の帯: 精算がまだ入っていない人を知らせ、ボタンを出す', /年末調整の精算を入れる/.test(Y2.runBand(c2)) && /まだこの月分に入っていない/.test(Y2.runBand(c2)));
+    Y2.onClick(c2, 'ye-settle', null); Y2.onClick(c2, 'ye-settle', null);
+    const st = c2.adj['s-1'].filter((a) => a.kind === 'tax_adjust' && a.name === '年末調整の精算');
+    t('「年末調整の精算を入れる」は名前「年末調整の精算」の行を1人1行に置き換える（二度押しで増えない・ほかの調整と別の tax_adjust は残す）・計算し直す', st.length === 1 && st[0].amount === -2500 && c2.adj['s-1'].length === 3 && c2.adj['s-1'].some((a) => a.name === '前の月の直し') && c2.computed === 2, c2.adj['s-1']);
+    t('精算の額は「年末調整の精算」の行だけで比べる（別の tax_adjust 300 円は数えない）→「入っています」', /✓ 年末調整の精算（1 人）はこの月分に入っています/.test(Y2.runBand(c2)));
+    t('確定した月（frozen）には帯を出さない', Y2.runBand(Object.assign({}, c2, { frozen: true })) === '');
+    /* 確定の前の確かめ（0122 の行の形・state） */
+    c2.calls.length = 0;
+    t('確定の前: 毎回 payroll_yearend_check(年) を呼ぶ・この月分の確定済みの人の diff で止める（氏名つき）', /見本 一/.test(await Y2.beforeConfirm(c2) || '') && c2.calls.some((x) => x.name === 'payroll_yearend_check'));
+    c2.answer = CHK([Object.assign({}, FIN1, { state: 'stale' })]);
+    t('確定の前: stale（年末調整の確定の後に明細が変わった）で止める', /年末調整を確定した後に、この月分の明細が変わりました（見本 一）/.test(await Y2.beforeConfirm(c2) || ''));
+    c2.answer = CHK([Object.assign({}, FIN1, { state: 'ok', tax_adjust: -2500 })]);
+    t('確定の前: state=ok なら通す', (await Y2.beforeConfirm(c2)) === null);
+    c2.answer = CHK([Object.assign({}, FIN1, { state: 'ok' }), { staff_id: 's-2', status: 'draft', settle_ym: '2026-12', state: 'notfinal' }, { staff_id: 'x-9', status: null, settle_ym: '2026-12', state: 'noyearend' }, { staff_id: 's-2', status: 'final', settle_ym: '2026-12', state: 'nobalance' }, { staff_id: 's-2', status: 'final', settle_ym: '2026-12', state: 'noitem', balance_settle: 3000 }]);
+    t('確定の前: notfinal・noyearend・nobalance・noitem では止めない', (await Y2.beforeConfirm(c2)) === null);
+    t('…それらは今月の給与の帯で知らせる（止めない）', /年末調整の知らせ（確定は止めません）: 見本 二（年末調整がまだ下書き）、x-9（年末調整が無いのに所得税の精算がある）、見本 二（年末調整の過不足の額が無い）/.test(Y2.runBand(c2)), Y2.runBand(c2));
+    c2.answer = CHK([Object.assign({}, FIN1, { settle_ym: '2026-11', state: 'diff' }), Object.assign({}, FIN1, { status: 'draft', state: 'diff' })]);
+    t('確定の前: ほかの月分を精算する月分にした人・下書きの人の diff では止めない', (await Y2.beforeConfirm(c2)) === null);
+    const c11 = Object.assign({}, c2, { ym: '2026-11', calls: [] }); c11.rpc = (n, a) => { c11.calls.push(n); return Promise.resolve({ ok: true, rows: [Object.assign({}, FIN1, { settle_ym: '2026-11', state: 'stale' })] }); };
+    t('確定の前: 12月分でない月も確かめ、その月分を精算する月分にした人の stale で止める', /見本 一/.test(await Y2.beforeConfirm(c11) || '') && c11.calls.indexOf('payroll_yearend_check') >= 0);
+    const cNo = Object.assign({}, c2, { rpc: () => { const e = new Error('nf'); e.code = 'PGRST202'; return Promise.reject(e); } });
+    t('確定の前: DB に確かめの関数がまだ無い（0122 の前）は今の流れのまま通す（仮置き）', (await Y2.beforeConfirm(cNo)) === null);
+    const cErr = Object.assign({}, c2, { rpc: () => Promise.reject(new Error('net')) });
+    t('確定の前: 通信の失敗は止める（安全の側）', /確かめられませんでした/.test(await Y2.beforeConfirm(cErr) || ''));
+    const cBad = Object.assign({}, c2, { rpc: () => Promise.resolve({ ok: false, error: 'badyear' }) });
+    t('確定の前: DB が ok=false を返したら止める', /確かめられませんでした（badyear）/.test(await Y2.beforeConfirm(cBad) || ''));
+    c2.answer = (n) => n === 'payroll_ytd_get' ? DATA : { ok: true };
+    Y2._test.state().data = null; Y2.html(c2); await tick(); await tick();
+    /* 計算の入力: 累計の全行（freee・manual）＋精算する月分の給与（app・tax_adjust を除く） */
+    const it12 = { staff_id: 's-1', gross: 210000, taxable: 200000, si_total: 30000, deduct: 40000, net: 170000, pay_date: '2026-12-25', lines: [{ sec: 'deduct', code: 'health', amount: 10000 }, { sec: 'deduct', code: 'pension', amount: 20000 }, { sec: 'deduct', code: 'income_tax', amount: 4000 }, { sec: 'deduct', code: 'tax_adjust', amount: -2500 }], adjustments: [] };
+    c2.items = [it12];
+    Y2._test.state().dlg = { sid: 's-1', settle_ym: '2026-12', nDep: 0, nPrev: 0 };
+    const ci = Y2._test.calcInput(c2, 's-1', { kou: true });
+    t('年末調整の rows は累計の全行（freee・manual）と12月分の給与（app）・12月分の所得税に精算を入れない', ci.input.rows.map((r) => r.source).join() === 'freee,manual,app' && ci.input.rows[2].pay_date === '2026-12-25' && ci.input.rows[2].data.income_tax === 4000 && ci.input.rows[2].data.gross === 210000, ci.input.rows);
+    t('basis は 0122 の形 {ytd:[(pay_date, kind, rev, fp)], items:[(ym, rev, gross, taxable, si, tax)]}・fp は ytd_get の値をそのまま写す', Object.keys(ci.basis).sort().join() === 'items,ytd' && JSON.stringify(ci.basis.ytd[0]) === '{"pay_date":"2026-01-25","kind":"salary","rev":1,"fp":"f0a1"}'
+      && JSON.stringify(ci.basis.items[0]) === '{"ym":"2026-12","rev":3,"gross":210000,"taxable":200000,"si":30000,"tax":4000}', ci.basis);
+    const ci11 = Y2._test.calcInput(Object.assign({}, c2, { ym: '2026-11' }), 's-1', { kou: true });
+    t('精算する月分を表示していない時は12月分を入れず、警告を出す（確定できない）', ci11.input.rows.length === 2 && ci11.basis.items.length === 0 && /精算する月分/.test(ci11.warn));
+    t('精算する月分の選びはその年の1〜12月分だけ（0122 の basis が同じ年の月分だけを受ける）・既定は12月分', Y2._test.settleOpts(2026).length === 12 && Y2._test.settleOpts(2026)[11][0] === '2026-12');
+    t('年末調整の計算に定数（rates）・prevJobs を渡さない（年で引かせる・前職は decl から）', !('rates' in ci.input) && !('prevJobs' in ci.input));
+    /* 申告の欄 → decl（0122 の白い一覧の鍵・反証レビュー 2026-11-23 で足した5つを含む） */
+    {
+      const st = Y2._test.state();
+      st.dlg = { sid: 's-1', settle_ym: '2026-12', nDep: 2, nPrev: 1, nU23: 2, decl: {} };
+      const F0 = { 'ye-kou': { checked: true }, 'ye-s-dis': { value: 'none' }, 'ye-s-wid': { value: 'none' },
+        'ye-d0-name': { value: '見本 子' }, 'ye-d0-birth': { value: '2010-04-01' }, 'ye-d0-inc': { value: '0' }, 'ye-d0-dis': { value: 'none' }, 'ye-d0-nr': { checked: true }, 'ye-d0-stu': { checked: true }, 'ye-d0-r38': { checked: true },
+        'ye-d1-name': { value: '見本 親' }, 'ye-d1-birth': { value: '1950-01-01' }, 'ye-d1-dis': { value: 'none' }, 'ye-d1-stu': { checked: true }, 'ye-d1-r38': { checked: true },
+        'ye-u0-birth': { value: '2008-05-05' }, 'ye-u0-sd': { checked: true }, 'ye-i-national_pension': { value: '200,000' }, 'ye-i-life_new_general': { value: '' },
+        'ye-h-amt': { value: '150000' }, 'ye-h-start': { value: '2020-03-01' }, 'ye-h-cnt': { value: '1' }, 'ye-h-lim': { value: '20000000' },
+        'ye-p0-payer': { value: '見本の前職' }, 'ye-p0-addr': { value: '架空の市 1-2-3' }, 'ye-p0-pay': { value: '500000' }, 'ye-p0-left': { value: '2026-03-31' }, 'ye-settle-ym': { value: '2026-12' } };
+      Object.assign(D2.f, F0);
+      const rd = Y2._test.readDecl();
+      const dd = rd.decl;
+      t('申告: 扶養親族の留学・38万円以上の送金は非居住者の時だけ入れる', rd.bad.length === 0 && dd.dependents[0].student === true && dd.dependents[0].remit38 === true && !('student' in dd.dependents[1]) && !('remit38' in dd.dependents[1]), [rd.bad, dd.dependents]);
+      t('申告: 配偶者の扶養に入れた23歳未満の子など（under23_others: birth・special_disabled）', JSON.stringify(dd.under23_others) === '[{"birth":"2008-05-05","special_disabled":true}]', dd.under23_others);
+      t('申告: 国民年金保険料等（national_pension）・住宅ローンの所得の要件（income_limit）・前職の住所（address）', dd.insurance.national_pension === 200000 && dd.housing_loan.income_limit === 20000000 && dd.prev_jobs[0].address === '架空の市 1-2-3', [dd.insurance, dd.housing_loan, dd.prev_jobs]);
+      D2.f["ye-h-lim"] = { value: "9" };
+      t('申告: 所得の要件は 1,000万・2,000万・3,000万円だけ（知らない値は既定の2,000万円）', Y2._test.readDecl().decl.housing_loan.income_limit === 20000000);
+      t('申告: マイナンバーの鍵を作らない（入れ子も）', !/my_?number|kojin|個人番号|マイナンバー/i.test(JSON.stringify(Object.keys(dd)) + JSON.stringify(dd)));
+      const dh = Y2._test.depsHtml((s0) => String(s0), [{ nonresident: false }, { nonresident: true }], 2);
+      t('扶養親族の欄: 留学・送金の印は非居住者の行だけに出す', (dh.match(/id="ye-d\d-stu"/g) || []).join() === 'id="ye-d1-stu"' && (dh.match(/id="ye-d\d-r38"/g) || []).join() === 'id="ye-d1-r38"');
+      t('所得の要件の選びの既定は2,000万円・3つ', /'ye-h-lim', '所得の要件（合計所得金額）', String\(hl\.income_limit \|\| 20000000\), \[\['10000000', '1,000万円以下'\], \['20000000', '2,000万円以下'\], \['30000000', '3,000万円以下'\]\]/.test(U));
+      st.dlg = null;
+    }
+    /* 反証レビュー（2026-11-23・画面と取り込み）の直し */
+    {
+      const S2 = Y2._test.state();
+      /* 8: 精算する月分の自社の給与と同じ暦の月の給与の行（freee・manual）が累計にあれば、二重に数えるので計算を止める */
+      const twinRow = { staff_id: 's-1', pay_date: '2026-12-10', kind: 'salary', source: 'manual', data: { gross: 210000, income_tax: 4000 }, rev: 4 };
+      S2.data.rows.push(twinRow);
+      S2.dlg = { sid: 's-1', settle_ym: '2026-12', nDep: 0, nPrev: 0, nU23: 0, decl: {} };
+      const ciT = Y2._test.calcInput(c2, 's-1', { kou: true });
+      t('二重の月: 精算する月分の給与（app）と同じ暦の月の累計の給与（manual）があれば計算の入力を作らず止める', ciT.input === null && ciT.stop.length === 1 && ciT.stop[0].pay_date === '2026-12-10', ciT);
+      D2.f['ye-res'] = {}; D2.f['ye-kou'] = { checked: true }; D2.f['ye-settle-ym'] = { value: '2026-12' };
+      c2.said = null; Y2.onClick(c2, 'ye-calc', null);
+      t('二重の月: 「計算する」は止めて知らせ、累計の行を消すボタン（理由つき）を出す', /二重に数えるので計算しません/.test(c2.said || '') && /data-act="ye-ytd-del" data-pd="2026-12-10" data-k="salary"/.test(D2.f['ye-res'].html || '') && /id="ye-del-reason"/.test(D2.f['ye-res'].html || ''));
+      D2.f['ye-del-reason'] = { value: '二重の取り込み' };
+      c2.calls.length = 0;
+      const delBtn = { disabled: false, getAttribute: (k) => ({ 'data-pd': '2026-12-10', 'data-k': 'salary' }[k] || null) };
+      Y2.onClick(c2, 'ye-ytd-del', delBtn); await tick(); await tick();
+      const dc = c2.calls.find((x) => x.name === 'payroll_ytd_delete');
+      t('二重の月: 「累計のこの行を消す」は payroll_ytd_delete（年・職員・支給日・種類・版・理由）', !!dc && JSON.stringify(dc.args) === JSON.stringify({ p_year: 2026, p_staff_id: 's-1', p_pay_date: '2026-12-10', p_kind: 'salary', p_rev: 4, p_reason: '二重の取り込み' }) && !S2.data.rows.includes(twinRow), dc && dc.args);
+      /* 9: 欄を足す時、入れかけの前職・23歳未満の子の行を落とさない */
+      S2.dlg = { sid: 's-1', settle_ym: '2026-12', nDep: 0, nPrev: 1, nU23: 1, decl: {} };
+      D2.f['ye-prevs'] = {}; D2.f['ye-u23s'] = {};
+      D2.f['ye-p0-payer'] = { value: '' }; D2.f['ye-p0-addr'] = { value: '架空の町' }; D2.f['ye-p0-pay'] = { value: '' }; D2.f['ye-u0-birth'] = { value: '' }; D2.f['ye-u0-sd'] = { checked: true };
+      Y2.onClick(c2, 'ye-prev-add', null); Y2.onClick(c2, 'ye-u23-add', null);
+      t('欄を足す: 入れかけの前職（住所だけ）と23歳未満の子（特別障害者の印だけ）を描き直しても残す', /id="ye-p0-addr" value="架空の町"/.test(D2.f['ye-prevs'].html || '') && /id="ye-p1-payer"/.test(D2.f['ye-prevs'].html || '') && /id="ye-u0-sd" checked/.test(D2.f['ye-u23s'].html || '') && /id="ye-u1-birth"/.test(D2.f['ye-u23s'].html || ''));
+      S2.dlg = null;
+      /* 5: 源泉徴収票の印刷・CSV は記録（payroll_yearend_log）が通ってからだけ */
+      c2.printSlips = (html, pages) => { c2.printed = pages; }; c2.download = (r) => { c2.dl = r; };
+      c2.calls.length = 0; c2.printed = null;
+      c2.answer = (n) => n === 'payroll_yearend_log' ? { ok: true } : { ok: true };
+      Y2.onClick(c2, 'ye-print', { getAttribute: () => 'all' }); await tick(); await tick();
+      const lg = c2.calls.find((x) => x.name === 'payroll_yearend_log');
+      t('印刷: payroll_yearend_log({p_year, p_kind:withholding_slip, p_count}) が ok の後に印刷', !!lg && JSON.stringify(lg.args) === '{"p_year":2026,"p_kind":"withholding_slip","p_count":1}' && c2.printed === 1, lg && lg.args);
+      c2.printed = null; c2.answer = (n) => n === 'payroll_yearend_log' ? { ok: false, error: 'denied' } : { ok: true };
+      Y2.onClick(c2, 'ye-print', { getAttribute: () => 'all' }); await tick(); await tick();
+      t('印刷: 記録が ok でなければ印刷しない', c2.printed === null && /記録に残せなかった/.test(c2.said || ''));
+      const rpc0 = c2.rpc; c2.rpc = (n, a) => { c2.calls.push({ name: n, args: a }); if (n === 'payroll_yearend_log') { const e = new Error('nf'); e.code = 'PGRST202'; return Promise.reject(e); } return Promise.resolve({ ok: true }); };
+      Y2.onClick(c2, 'ye-print', { getAttribute: () => 'all' }); await tick(); await tick();
+      t('印刷: 0122 の無い DB（記録の関数が無い）では止める', c2.printed === null && /記録の仕組みがまだ無い/.test(c2.said || ''));
+      c2.rpc = rpc0; c2.answer = (n) => ({ ok: true }); c2.calls.length = 0; c2.dl = null;
+      Y2.onClick(c2, 'ye-csv', null); await tick(); await tick();
+      const lg2 = c2.calls.find((x) => x.name === 'payroll_yearend_log');
+      t('CSV: payroll_yearend_log(kind=yearend_csv) の ok の後に書き出す', !!lg2 && lg2.args.p_kind === 'yearend_csv' && lg2.args.p_count === 1 && !!c2.dl && /withholding-2026\.csv/.test(c2.dl.name));
+      /* 4・10: 取り込み（必須の見出しが無いファイルは断る・同じ人・支給日・種類が2つのファイルにある時は知らせ、後のファイルを入れる） */
+      const fake = (name, text) => ({ name, size: text.length, arrayBuffer: () => Promise.resolve(text) });
+      c2.decode = (x) => x;
+      const A = '氏名,支給日,総支給額,課税支給額,所得税\n見本 一,2026/03/25,"200,000","200,000","4,000"\n';
+      const B = '氏名,支給日,総支給額,課税支給額,所得税\n見本 一,2026/03/25,"210,000","210,000","4,200"\n';
+      const Cx = '氏名,支給日,総支給額,課税支給額\n見本 二,2026/03/25,"100,000","100,000"\n';
+      const fin = S2.data.yearend[0]; fin.status = 'draft';
+      Y2.onChange(c2, { id: 'ye-files', files: [fake('a.csv', A), fake('b.csv', B), fake('c.csv', Cx)], value: 'x' }); for (let i = 0; i < 6; i++) await tick();
+      const im = S2.imp;
+      t('取り込み: 必須の見出し（所得税）が無いファイルは行を作らず断る', !!im && im.files.find((f) => f.name === 'c.csv').refused === true && !im.rows.some((r) => r.name === '見本 二'), im && im.files);
+      t('取り込み: 同じ人・支給日・種類が2つのファイル → 後のファイル（b.csv）の行を入れ、知らせを出す', !!im && im.ok.length === 1 && im.ok[0].data.gross === 210000 && im.dups.length === 1 && im.dups[0].chosen === 'b.csv' && im.dups[0].files.join() === 'a.csv,b.csv', im && [im.ok, im.dups]);
+      const hi = Y2.html(c2);
+      t('取り込み: 画面に「読めなかったファイル」（読めなかった見出し）と「2つのファイルにあり」の印', /読めなかったファイル（入れません）/.test(hi) && /c\.csv：読めなかった見出し 所得税/.test(hi) && /2つのファイルにあり・「b\.csv」の行/.test(hi) && /入れるのは「b\.csv」/.test(hi));
+      fin.status = 'final'; S2.imp = null;
+      /* 2回目の反証（2026-11-23）1: 負の値の行は赤く出し、ある間は「累計に入れる」を押せない */
+      fin.status = 'draft';
+      const N = '氏名,支給日,総支給額,課税支給額,所得税\n見本 一,2026/06/25,"200,000","200,000","-1,200"\n見本 二,2026/06/25,"180,000","180,000","3,000"\n';
+      Y2.onChange(c2, { id: 'ye-files', files: [fake('june.csv', N)], value: 'x' }); for (let i = 0; i < 6; i++) await tick();
+      const hn = Y2.html(c2);
+      t('負の値: 取り込みの一覧に人・支給日・項目つきで赤く出す（ファイル名つき）', S2.imp.neg.length === 1 && /class="band ng" role="alert"><b>⛔ 負の値があって入れられない行（1行）/.test(hn) && /見本 一・2026-06-25・給与：所得税（june\.csv）/.test(hn) && /1回分を手で足す」で差し引きした額/.test(hn), S2.imp.neg);
+      t('負の値: ある間は「累計に入れる」を押せない（ボタンは disabled・押しても送らない）', /data-act="ye-imp-go" disabled>1回分を累計に入れる/.test(hn) && (c2.calls.length = 0, Y2.onClick(c2, 'ye-imp-go', null), !c2.calls.some((x) => x.name === 'payroll_ytd_put')));
+      S2.imp = null;
+      /* 3: 500行ごとの途中の塊が断られた時は、ytd_get で読み直して入った行と入らなかった行を出す */
+      const keepData = S2.data, many = [];
+      for (let d = 0; d < 501; d++) { const sid = d < 300 ? 's-1' : 's-2', day = new Date(Date.UTC(2026, 0, 1 + (d % 300))).toISOString().slice(0, 10); many.push({ staff_id: sid, pay_date: day, kind: 'salary', source: 'freee', data: { gross: 1 }, src_fp: '', rev: 0 }); }
+      S2.imp = { files: [], rows: [], unmatched: [], ok: many.map((x) => Object.assign({}, x)), warnings: [], finalNg: [], dups: [], neg: [] };
+      let putN = 0; c2.calls.length = 0;
+      c2.answer = (n, a) => {
+        if (n === 'payroll_ytd_put') { putN++; return putN === 1 ? { ok: true, added: a.p_rows.length } : { ok: false, error: 'conflict', staff_id: 's-2' }; }
+        if (n === 'payroll_ytd_get') return { ok: true, rows: many.slice(0, 500).map((x) => Object.assign({}, x, { rev: 1, fp: 'f' })), yearend: [] };
+        return { ok: true };
+      };
+      c2.said = null;
+      Y2.onClick(c2, 'ye-imp-go', null); for (let i = 0; i < 8; i++) await tick();
+      const done = S2.imp && S2.imp.done;
+      t('途中で断られた: 2つ目の塊で断られたら ytd_get で読み直す', putN === 2 && c2.calls.some((x) => x.name === 'payroll_ytd_get') && c2.calls.filter((x) => x.name === 'payroll_ytd_put')[0].args.p_rows.length === 500);
+      t('途中で断られた: 入った行 500・入らなかった行 1 を出し、残りは入らなかった行だけ（今の版で送り直せる）', !!done && done.entered.length === 500 && done.missed.length === 1 && S2.imp.ok.length === 1 && S2.imp.ok[0].rev === 0 && /入った行 500・入らなかった行 1/.test(c2.said || ''), done && [done.entered.length, done.missed.length]);
+      t('途中で断られた: 画面に「途中で断られました」と入らなかった行の一覧', /途中で断られました（ほかの人が先に累計を変えました。読み直してください（s-2）。）/.test(Y2.html(c2)) && /入らなかった行<\/p><ul><li>見本 二・/.test(Y2.html(c2)));
+      fin.status = 'final'; S2.imp = null; S2.data = keepData; c2.answer = (n) => ({ ok: true });
+      /* 2: 源泉徴収票の乙欄の印は、給与の設定の源泉の区分（tax.col が otsu）から staffInfo.otsu で渡す */
+      const sv = []; const ws0 = Y2._test.state();
+      c2.bs.profiles[0].data.tax = { col: 'otsu' };
+      const wsl = Y2._test.slipList(c2, 'all');
+      t('源泉徴収票: 源泉の区分が乙欄の人は staffInfo.otsu=true', wsl.length === 1 && wsl[0].name === '見本 一' && lastStaff && lastStaff.otsu === true, lastStaff);
+      c2.bs.profiles[0].data.tax = { col: 'kou' }; Y2._test.slipList(c2, 'all');
+      t('源泉徴収票: 甲欄の人は otsu=false', lastStaff && lastStaff.otsu === false);
+      delete c2.bs.profiles[0].data.tax;
+    }
+    /* 振込と書き出しの印 */
+    Y2._test.state().cmp = { ym: '2026-12', res: { diffCount: 2, unmatched: [{}] } };
+    t('振込と書き出し: この月分を freee と比べて差があれば「freee と差があります（n件）」', /freee と差があります（3件）/.test(Y2.exportBadge(c2)) && Y2.exportBadge(Object.assign({}, c2, { ym: '2026-11' })) === '');
+    Y2.reset();
+    t('reset で申告・累計・取り込み・比べた結果を捨てる', Y2._test.state().data === null && Y2._test.state().cmp === null && Y2._test.state().imp === null && Y2._test.state().dlg === null);
+  })());
 }
 
 

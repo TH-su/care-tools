@@ -116,6 +116,8 @@
 !/check/fixtures/*.mjs
 # 給与の画面の確かめだけで使う「契約どおりの形の偽の部品」（2026-11-19・公開の画面は読まない）
 !/check/fixtures/payroll-calc-stub.js
+# freee の給与・賞与の明細の CSV の架空の見本（2026-11-23・payroll_freee_slips_test.js が読む）。架空の職員と架空の金額だけ
+!/check/fixtures/freee-slips-*.csv
 !/care-schedule.html
 !/facesheet.html
 !/genogram.html
@@ -191,6 +193,12 @@
 !/payroll-rates.js
 !/payroll-tax-table.js
 !/payroll-export.js
+# freee の明細の取り込み・突き合わせの純関数、令和8年分の年末調整の定数・計算・源泉徴収票の純関数と、年末調整のタブの画面（2026-11-23・ROOT-yearend.md の B・C）。申告・累計は画面のメモリだけで、ファイルに氏名・金額は含まない
+!/payroll-freee-slips.js
+!/payroll-yearend-rates.js
+!/payroll-yearend.js
+!/payroll-withholding-slip.js
+!/payroll-yearend-ui.js
 # 給与の画面（2026-11-19 新設）。コードのみ公開。給与・口座は共通ログインのデータベースの関数でだけ読み書きし、端末には開いていたタブしか残さない。
 !/payroll.html
 !/payroll.js

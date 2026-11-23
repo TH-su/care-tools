@@ -167,6 +167,7 @@ dialog::backdrop{background:rgba(20,33,61,.35)}
     <button type="button" role="tab" data-tab="export">振込と書き出し</button>
     <button type="button" role="tab" data-tab="bonus">賞与</button>
     <button type="button" role="tab" data-tab="profile">職員の給与設定</button>
+    <button type="button" role="tab" data-tab="yearend">年末調整</button>
     <button type="button" role="tab" data-tab="settings" hidden>設定</button>
   </nav>
   <main id="p-main" role="tabpanel"></main>
@@ -175,7 +176,12 @@ dialog::backdrop{background:rgba(20,33,61,.35)}
 <p class="pr-note">給与の金額は、この印刷では出しません。「給与明細」のタブの印刷のボタンから印刷してください。</p>
 <div class="toast" id="p-toast" role="status" aria-live="polite" hidden></div>
 <dialog id="p-dlg" aria-labelledby="p-dlg-h"><div class="dlg-h" id="p-dlg-h"></div><div class="dlg-b" id="p-dlg-b"></div><div class="dlg-f" id="p-dlg-f"></div></dialog>
-<script src="payroll.js?v=2026-11-23.7"></script>
+<script src="payroll-freee-slips.js?v=2026-11-23"></script>
+<script src="payroll-yearend-rates.js?v=2026-11-23"></script>
+<script src="payroll-yearend.js?v=2026-11-23"></script>
+<script src="payroll-withholding-slip.js?v=2026-11-23"></script>
+<script src="payroll-yearend-ui.js?v=2026-11-23"></script>
+<script src="payroll.js?v=2026-11-23.8"></script>
 <script src="su-shell.js?v=2026-11-19"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 <script src="su-report.js?v=2026-11-21.2" data-tool="給与"></script>
