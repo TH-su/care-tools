@@ -151,13 +151,34 @@ console.log('6. 資格を失う月');
   eq('雇用保険は在籍中に払ったのでかかる', r.ins.emp, 2500);
   const r2 = run(500000, { profile: prof({ retire_date: '2026-12-20' }) });   /* 喪失 12-21・支給 12-24 */
   t('喪失日の後に払った賞与は社保 0・印なし・標準も 0', r2.ins.health === 0 && !has(r2, 'lost_month') && r2.std.health === 0);
-  eq('喪失日の後は雇用保険もかからない', r2.ins.emp, 0);
+  /* 2026-11-23 反証レビュー（指摘4）で決まりを変えた: 退職の後に払う賞与でも、算定期間に雇用保険の資格があればかける（仮置き） */
+  t('退職の後に払う賞与でも算定期間に資格があれば雇用保険をかけ、知らせ emp_after_retire', r2.ins.emp === 2500 && has(r2, 'emp_after_retire') && !stop(r2));
+  const r2b = run(500000, { profile: prof({ retire_date: '2026-05-31' }) });   /* 喪失 06-01・算定期間 2026-06-01〜 には資格なし */
+  t('算定期間より前に退職した人には雇用保険をかけない', r2b.ins.emp === 0 && !has(r2b, 'emp_after_retire'));
+  const r2c = run(500000, { profile: prof({ retire_date: '2026-06-15' }) });
+  t('算定期間の中で退職した人にはかける（社保は0のまま）', r2c.ins.emp === 2500 && r2c.ins.health === 0 && r2c.ins.pension === 0);
   const r3 = run(500000, { profile: prof({ entry_date: '2026-12-01', retire_date: '2026-12-25' }) });
   t('同じ月に取得と喪失・その間に払った賞与はかかる', r3.ins.health === 25200 && r3.ins.pension === 45750 && !has(r3, 'lost_month'));
   const r4 = run(500000, { profile: prof({ entry_date: '2026-12-25', retire_date: '2026-12-28' }) });
   t('同じ月に取得と喪失・取得日の前に払った賞与はかからない', r4.ins.health === 0 && r4.ins.pension === 0);
   const r5 = run(500000, { profile: prof({ entry_date: '2027-01-05' }) });
   t('取得月より前に払った賞与はかからない', r5.ins.health === 0 && r5.ins.pension === 0);
+}
+
+console.log('6b. 年齢で資格を失う月（反証レビュー 2026-11-23 指摘2）');
+{
+  /* 75歳の誕生日に健保を失う: 1951-12-26 生まれは 2026-12-26 に喪失・支給 12-24 は前 */
+  const a = run(500000, { profile: prof({ birth_date: '1951-12-26' }) });
+  t('75歳で健保を失う月・失う日より前に払った賞与は健保0・標準賞与額は残す・lost_month', a.ins.health === 0 && a.ins.support === 0 && a.std.health === 500000 && has(a, 'lost_month') && !stop(a));
+  const a2 = run(500000, { profile: prof({ birth_date: '1951-12-20' }) });   /* 喪失 2026-12-20・支給 12-24 は後 */
+  t('75歳で失った日の後に払った賞与は健保0・標準も0', a2.ins.health === 0 && a2.std.health === 0);
+  const a3 = run(500000, { profile: prof({ birth_date: '1952-01-05' }) });
+  eq('75歳になる前の月は健保あり', a3.ins.health, 25200);
+  /* 70歳に達する日（誕生日の前日）に厚年を失う: 1956-12-27 生まれは 2026-12-26 に喪失・支給 12-24 は前 */
+  const b = run(500000, { profile: prof({ birth_date: '1956-12-27' }) });
+  t('70歳で厚年を失う月・失う日より前に払った賞与は厚年0・標準賞与額は残す・lost_month', b.ins.pension === 0 && b.std.pension === 500000 && has(b, 'lost_month') && b.ins.health === 25200);
+  const b2 = run(500000, { profile: prof({ birth_date: '1956-12-20' }) });   /* 喪失 2026-12-19・支給 12-24 は後 */
+  t('70歳で失った日の後に払った賞与は厚年0・標準も0', b2.ins.pension === 0 && b2.std.pension === 0);
 }
 
 console.log('7. 端数 50銭ちょうど（50銭以下は切り捨て・50銭超は切り上げ）');
@@ -234,7 +255,8 @@ console.log('11. 出す物の形・行の合計・ほかの知らせ');
   t('支給の行の和＝総支給・控除の行の和＝総控除・差引＝総支給−総控除', sum('pay') === r.gross && sum('deduct') === r.deduct && r.net === r.gross - r.deduct);
   t('住民税の行は無い', !r.lines.some((l) => l.code === 'resident_tax'));
   eq('月の給与の版は変えていない', C.CALC_VER, 'payroll-calc-3');
-  eq('止めの警告の一覧', Object.keys(C.BONUS_BLOCK).sort(), ['badinput', 'calc_error', 'emp_rate_missing', 'prev_missing', 'prev_unconfirmed', 'rate_missing', 'std_missing', 'tax_table_missing']);
+  /* 2026-11-23 反証レビュー（指摘1・3）で leave_check と tax_col を止めに足した */
+  eq('止めの警告の一覧', Object.keys(C.BONUS_BLOCK).sort(), ['badinput', 'calc_error', 'emp_rate_missing', 'leave_check', 'prev_missing', 'prev_unconfirmed', 'rate_missing', 'std_missing', 'tax_col', 'tax_table_missing']);
   t('過去12か月に4回目の賞与は知らせ four_times', has(run(500000, { extra: { count12: 2, count12Other: 1 } }), 'four_times'));
   t('3回目までは four_times なし', !has(run(500000, { extra: { count12: 1, count12Other: 1 } }), 'four_times'));
   const defs = [{ code: 'commute', sec: 'pay', name: '通勤手当' }, { code: 'loan', sec: 'deduct', name: '貸付の返済' }];
@@ -243,8 +265,21 @@ console.log('11. 出す物の形・行の合計・ほかの知らせ');
   t('賞与に通勤手当があれば知らせ commute_in_bonus', has(r2, 'commute_in_bonus') && !stop(r2));
   t('手当の定義の控除は控除の行に入る', r2.lines.some((l) => l.sec === 'deduct' && l.code === 'd:loan' && l.amount === 10000));
   t('定義の無い項目は入れずに知らせ def_missing', has(r2, 'def_missing') && r2.gross === 305000);
-  const r3 = run(500000, { profile: prof({ ins: Object.assign(ON(), { exempt: [{ from_ym: '2026-11', to_ym: '2027-02' }] }) }) });
-  t('免除の期間に掛かる賞与は自動で免除せず知らせ leave_check', has(r3, 'leave_check') && !stop(r3) && r3.ins.health === 25200);
+  /* 2026-11-23 反証レビュー（指摘1）で決まりを変えた（仮置き）: 2か月以上の記録は免除・支給月の1か月だけは止め */
+  const ex = (list) => run(500000, { profile: prof({ birth_date: '1980-05-10', ins: Object.assign(ON(), { exempt: list }) }) });
+  const r3 = ex([{ from_ym: '2026-11', to_ym: '2027-02' }]);
+  t('2か月以上の免除の期間に掛かる賞与は社保を本人・会社とも0・標準賞与額は残す・知らせ leave_exempt',
+    has(r3, 'leave_exempt') && !stop(r3) && [r3.ins.health, r3.ins.care, r3.ins.support, r3.ins.pension].every((v) => v === 0) &&
+    [r3.employer.health, r3.employer.care, r3.employer.support, r3.employer.pension, r3.employer.childcare].every((v) => v === 0) &&
+    r3.std.health === 500000 && r3.std.pension === 500000 && r3.ins.emp === 2500);
+  const r3b = ex([{ from_ym: '2026-12', to_ym: '2026-12' }]);
+  t('支給月の1か月だけの記録は止め leave_check（社保は引いたまま）', has(r3b, 'leave_check') && stop(r3b) && !has(r3b, 'leave_exempt') && r3b.ins.health === 25200);
+  const r3c = ex([{ from_ym: '2026-10' }]);
+  t('終わりが空で始まりが支給月より前の記録は免除', has(r3c, 'leave_exempt') && r3c.ins.pension === 0);
+  const r3d = ex([{ from_ym: '2026-12' }]);
+  t('終わりが空で始まりが支給月の記録は止め leave_check', has(r3d, 'leave_check') && stop(r3d));
+  const r3e = ex([{ from_ym: '2027-01', to_ym: '2027-03' }]);
+  t('支給月に掛からない記録は何もしない', !has(r3e, 'leave_exempt') && !has(r3e, 'leave_check') && r3e.ins.health === 25200);
   const r4 = C.computeBonus({ bonus: { pay_date: '2026/12/24', lines: [] } });
   t('支給日の形が違えば止め badinput', has(r4, 'badinput') && stop(r4));
   const r5 = C.computeBonus({ bonus: { pay_date: '2026-12-24', lines: [{ code: 'bonus', amount: 100000 }] }, prev: { kind: 'none' } });
@@ -255,6 +290,11 @@ console.log('11. 出す物の形・行の合計・ほかの知らせ');
   t('源泉の区分が none の人は前月の給与で止めない', !has(r5c, 'prev_missing') && !stop(r5c) && r5c.tax === 0);
   const r6 = C.computeBonus(null);
   t('入力が無くても例外を外に出さない', Array.isArray(r6.warns) && stop(r6));
+  const r8 = run(500000, { profile: prof({ tax: { dependents: 0, dependents_checked: true } }) });
+  t('源泉の区分が決まっていない時は止め tax_col（反証レビュー 指摘3）', has(r8, 'tax_col') && stop(r8));
+  const r9 = run(500000, { profile: prof({ ins: OFF, tax: { col: 'otsu', dependents: 2, dependents_checked: true } }) });
+  t('乙欄で扶養の数を捨てた時は知らせ otsu_dependents（反証レビュー 指摘5）', has(r9, 'otsu_dependents') && !stop(r9) && r9.warns.find((w) => w.code === 'otsu_dependents').msg === '乙欄では扶養の数を数えていません（従たる給与の申告書を出した方は代表者へ）');
+  t('乙欄で扶養0人なら otsu_dependents は出さない', !has(run(500000, { profile: prof({ ins: OFF, tax: { col: 'otsu', dependents: 0, dependents_checked: true } }) }), 'otsu_dependents'));
   const r7 = run(500000, { profile: prof({ pay_type: 'board' }) });
   t('役員は雇用保険を見ない', r7.ins.emp === 0 && r7.ins.health === 25200);
 }

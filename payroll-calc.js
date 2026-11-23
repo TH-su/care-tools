@@ -719,7 +719,7 @@
        月額表の方法は月額表（taxTable）だけで数え、電算機特例（taxComputer）は使わない */
   var BONUS_VER = 'payroll-bonus-1';
   /* 止めの警告（確定できない）。画面と DB はこの code で見分ける */
-  var BONUS_BLOCK = { badinput: 1, calc_error: 1, prev_unconfirmed: 1, prev_missing: 1, rate_missing: 1, tax_table_missing: 1, emp_rate_missing: 1, std_missing: 1 };
+  var BONUS_BLOCK = { badinput: 1, calc_error: 1, prev_unconfirmed: 1, prev_missing: 1, rate_missing: 1, tax_table_missing: 1, emp_rate_missing: 1, std_missing: 1, leave_check: 1, tax_col: 1 };   /* 2026-11-23 反証レビュー: leave_check（免除に当たるか分からない）・tax_col（源泉の区分が無い）も止めに足した */
   var BONUS_HEALTH_FY_CAP = 5730000, BONUS_PENSION_MONTH_CAP = 1500000;
   function computeBonus(input) {
     badNum = 0;
@@ -808,18 +808,29 @@
     var acqH = ins.health && isDate(ins.health.from) ? ins.health.from : (isDate(P.entry_date) ? P.entry_date : null);
     if (hOn && acqH && acqH > fyStart && acqH <= payDate) warn('fy_prior_unknown', '年度の途中で資格を取った方です（前の勤め先の賞与は年度の累計に入っていません）');
     /* 産休・育休の免除の記録（月の範囲）が支給月に掛かる時は、自動で免除せず知らせる（仮置き） */
-    var leave = (Array.isArray(ins.exempt) ? ins.exempt : []).some(function (x) { return x && isYm(x.from_ym) && x.from_ym <= ym && (!isYm(x.to_ym) || ym <= x.to_ym); });
-    if (leave) warn('leave_check', '産休・育休の免除の期間に払う賞与です（保険料を引いて数えました・免除になるか確かめてください）');
+    /* 免除の記録（月の範囲）が支給月に掛かる時（反証レビュー 2026-11-23・仮置き）:
+       期間が2か月以上（from_ym＜to_ym、終わりが空なら始まりが支給月より前）なら「1か月を超える休み」として社保を本人・会社とも0（標準賞与額は届のため残す）。
+       支給月の1か月だけの記録は、1か月を超えるか分からないので止める */
+    var leaveEx = false, leaveOne = false;
+    (Array.isArray(ins.exempt) ? ins.exempt : []).forEach(function (x) {
+      if (!(x && isYm(x.from_ym) && x.from_ym <= ym && (!isYm(x.to_ym) || ym <= x.to_ym))) return;
+      if (isYm(x.to_ym) ? x.from_ym < x.to_ym : x.from_ym < ym) leaveEx = true; else leaveOne = true;
+    });
+    if (leaveEx) warn('leave_exempt', '産休・育休の免除の期間に払う賞与です（社会保険料を0にしました・賞与支払届は出します）');
+    else if (leaveOne) warn('leave_check', '産休・育休の免除の記録が支給月の1か月だけです（1か月を超える休みか確かめてから記録を直してください）');
     var covH = bonusCovered(ins.health, P, payDate), covP = bonusCovered(ins.pension, P, payDate);
-    var hAge = !(birth && ym >= ymOf(birthdayAt(birth, 75))), pAge = !(birth && ym >= reachYm(birth, 70));
-    var hTarget = hOn && hAge && (covH.on || covH.lost), pTarget = pOn && pAge && (covP.on || covP.lost);
+    /* 年齢で資格を失う日（健保は75歳の誕生日・厚年は70歳に達する日＝誕生日の前日）。失う月に失う日より前に払った分は退職と同じく lost */
+    function ageCov(lossDate) { if (!lossDate || ym < ymOf(lossDate)) return 'on'; return ym === ymOf(lossDate) && payDate < lossDate ? 'lost' : 'off'; }
+    var hAgeC = ageCov(birth ? birthdayAt(birth, 75) : null), pAgeC = ageCov(birth ? reachDate(birth, 70) : null);
+    var hTarget = hOn && hAgeC !== 'off' && (covH.on || covH.lost), pTarget = pOn && pAgeC !== 'off' && (covP.on || covP.lost);
+    var hPay = hTarget && covH.on && hAgeC === 'on' && !leaveEx, pPay = pTarget && covP.on && pAgeC === 'on' && !leaveEx;
     out.std.health = hTarget ? stdH : 0;
     out.std.pension = pTarget ? stdP : 0;
-    if ((hTarget && covH.lost) || (pTarget && covP.lost)) warn('lost_month', '資格を失う月に払う賞与です（保険料は0・賞与支払届は出します）');
+    if ((hTarget && !(covH.on && hAgeC === 'on')) || (pTarget && !(covP.on && pAgeC === 'on'))) warn('lost_month', '資格を失う月に払う賞与です（保険料は0・賞与支払届は出します）');
     var rt = (hOn || pOn) ? R.health(S.prefecture, ym) : null;
     if ((hOn || pOn) && !rt) warn('rate_missing', ym + ' の社会保険料率が率表にありません');
     var si = out.ins, er = out.employer;
-    if (rt && hTarget && covH.on && stdH > 0) {
+    if (rt && hPay && stdH > 0) {
       var careOn = birth && !ins.care_exempt && ym >= reachYm(birth, 40) && ym < reachYm(birth, 65);
       [['health', rt.health], ['care', careOn ? rt.care : 0], ['support', rt.support]].forEach(function (k) {
         if (!k[1]) return;
@@ -827,7 +838,7 @@
         si[k[0]] = mine; er[k[0]] = qNum(qSub(full, intQ(mine)));
       });
     }
-    if (rt && pTarget && covP.on && stdP > 0) {
+    if (rt && pPay && stdP > 0) {
       var pfull = qMul(intQ(stdP), rateQ(rt.pension)), pm = round50(qDiv(pfull, Q(2)));
       si.pension = pm; er.pension = qNum(qSub(pfull, intQ(pm)));
       er.childcare = qNum(qMul(intQ(stdP), rateQ(rt.childcare_contrib)));
@@ -835,6 +846,15 @@
 
     /* 7. 雇用保険（支給日の率） */
     var empOn = !!(!board && ins.emp && ins.emp.on && empCovered(ins.emp, P, { from: payDate, to: payDate }));
+    /* 退職の後に払う賞与でも、賞与の算定期間に雇用保険の資格があった人にはかける（反証レビュー 2026-11-23・仮置き）。社保は0のまま */
+    if (!empOn && !board && ins.emp && ins.emp.on) {
+      var empLoss = isDate(ins.emp.to) ? ins.emp.to : (isDate(P.retire_date) ? addDays(P.retire_date, 1) : null);
+      var bpm = Number(setIn.bonus_period_months) > 6 ? 12 : 6;
+      if (empLoss && empLoss <= payDate && empCovered(ins.emp, P, { from: ymAdd(ym, -bpm) + '-01', to: payDate })) {
+        empOn = true;
+        warn('emp_after_retire', '退職の後に払う賞与です（算定期間に雇用保険の資格があったので雇用保険料をかけました）');
+      }
+    }
     if (empOn) {
       var re = R.employment(payDate, S.emp_ins_kind);
       if (!re) warn('emp_rate_missing', '支給日 ' + payDate + ' の雇用保険料率が率表にありません');
@@ -850,7 +870,10 @@
     var T = Math.max(0, taxable - social - dedSi), tax = 0;
     var col = P.tax && P.tax.col, dep = P.tax ? Math.max(0, Math.floor(Number(P.tax.dependents) || 0)) : 0;
     if ((col === 'kou' || col === 'otsu') && !(P.tax && P.tax.dependents_checked === true)) warn('dependents_unchecked', '扶養の数が未確認です');
-    if (col === 'otsu') dep = 0;
+    if (col === 'otsu') {
+      if (dep >= 1) warn('otsu_dependents', '乙欄では扶養の数を数えていません（従たる給与の申告書を出した方は代表者へ）');
+      dep = 0;
+    }
     var prev = input.prev && typeof input.prev === 'object' ? input.prev : {};
     /* 前月の給与の確かめは源泉の対象（甲・乙）の人だけ（区分 none の人を前月の給与で止めない・仮置き） */
     var taxed = col === 'kou' || col === 'otsu';
