@@ -21,15 +21,16 @@
  */
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
 export const URL = 'https://jhbernqawjrzqwrmqrih.supabase.co';
 export const match = URL + '/rest/v1/rpc/payroll_bootstrap_unused';
 const SB = URL;
 const require = createRequire(import.meta.url);
 const ROOT = new globalThis.URL('../../', import.meta.url);
-const PC = require(new globalThis.URL('payroll-calc.js', ROOT).pathname);
-const PR = require(new globalThis.URL('payroll-rates.js', ROOT).pathname);
-const KC = require(new globalThis.URL('kintai-calc.js', ROOT).pathname);
+const PC = require(fileURLToPath(new globalThis.URL('payroll-calc.js', ROOT)));
+const PR = require(fileURLToPath(new globalThis.URL('payroll-rates.js', ROOT)));
+const KC = require(fileURLToPath(new globalThis.URL('kintai-calc.js', ROOT)));
 const b64u = (o) => Buffer.from(JSON.stringify(o)).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
 function session(aal, email) {
   const jwt = b64u({ alg: 'none', typ: 'JWT' }) + '.' + b64u({ sub: '00000000-0000-4000-8000-00000000a1a1', email, role: 'authenticated', aal, exp: 4102444800 }) + '.check';
