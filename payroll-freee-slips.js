@@ -1,0 +1,314 @@
+/* payroll-freee-slips.js — freee の給与・賞与の明細の書き出し（CSV）を読む・職員に結ぶ・自社の明細と比べる・累計の行にする純関数
+ * （2026-11-23 新設・凍結仕様 ~/Claude/Work/勤怠管理アプリ/給与/ROOT-yearend.md の B1）
+ * ════════════════════════════════════════════════════════════════
+ * ・画面（payroll-yearend-ui.js）から呼ぶだけ。DOM・通信・端末への保存・console は使わない
+ * ・文字は呼ぶ側が decode した物を受ける（UTF-8 の BOM・Shift_JIS の読み分けは payroll.js の decode）
+ * ・CSV の読み方は payroll.js の parseCsv と同じ規則（引用符・中の読点・二重の引用符・CRLF・空行を捨てる）を自前で持つ
+ * ・見出しの候補は HEAD の表。前から順に最初に当たった列を使う
+ *   ★未検証（事務担当が書き出した実物で確かめる）: freee 公式ヘルプ（support.freee.co.jp）の「給与明細の CSV 出力」の記事は
+ *     2026-11-23 に取りに行ったが、自動の取得を断られて読めなかった。下の候補は freee の明細の画面の項目名からの推定
+ * ・compare / compareSlips は、自社の明細に「所得税の精算」（tax_adjust＝年末調整の還付・追徴）がある時はそれを除いた
+ *   控除の合計・差引で比べ、精算の額は別の欄（settle）に出す（freee では年末調整をしないため・代表者の決定 2026-11-23）
+ * ★試験・見本は架空の職員と架空の金額だけ
+ */
+(function (root) {
+  'use strict';
+  var VERSION = 'freee-slips-2026-11-23';
+
+  /* 見出しの候補（★未検証・上の注記）。比べる時は NFKC＋空白を除いた形で比べる */
+  var HEAD = {
+    emp_num: ['従業員番号', '社員番号', '従業員コード', '従業員ID'],
+    name: ['氏名', '従業員名', '従業員氏名', '名前', '表示名'],
+    sei: ['姓'],
+    mei: ['名'],
+    pay_date: ['支給日', '支払日', '給与支給日', '賞与支給日', '支払年月日'],
+    gross: ['総支給額', '支給合計', '支給額合計', '総支給金額', '支給総額', '賞与総支給額'],
+    taxable: ['課税支給額', '課税対象額', '課税支給合計', '課税合計'],
+    nontax: ['非課税支給額', '非課税支給合計', '非課税合計', '通勤手当(非課税)', '非課税通勤手当'],
+    si_health: ['健康保険料', '健康保険'],
+    si_care: ['介護保険料', '介護保険'],
+    si_support: ['子ども・子育て支援金', '子ども子育て支援金', '子ども・子育て支援金額'],
+    si_pension: ['厚生年金保険料', '厚生年金保険', '厚生年金'],
+    si_emp: ['雇用保険料', '雇用保険'],
+    si_total: ['社会保険料合計', '社会保険料等合計', '社会保険料計', '社保合計'],
+    income_tax: ['所得税', '源泉所得税'],
+    resident_tax: ['住民税'],
+    deduct_total: ['控除合計', '総控除額', '控除額合計', '控除計'],
+    net: ['差引支給額', '差引支給合計', '差引額']
+  };
+  var MONEY = ['gross', 'taxable', 'nontax', 'si_health', 'si_care', 'si_support', 'si_pension', 'si_emp', 'si_total', 'income_tax', 'resident_tax', 'deduct_total', 'net'];
+  var SI = ['si_health', 'si_care', 'si_support', 'si_pension', 'si_emp'];
+  /* 突き合わせの項目の並び（固定・賞与のセッションとそろえた 2026-11-23）。住民税は賞与には無い */
+  var ITEMS = [
+    ['gross', '総支給'], ['taxable', '課税の総支給'], ['si_health', '健康保険'], ['si_care', '介護保険'], ['si_support', '子ども子育て支援金'],
+    ['si_pension', '厚生年金'], ['si_emp', '雇用保険'], ['si_total', '社保等の合計'], ['income_tax', '所得税'], ['resident_tax', '住民税'],
+    ['deduct_total', '控除の合計'], ['net', '差引の支給額']
+  ];
+  /* payroll_ytd の data の鍵（DB の白い一覧と同じ） */
+  var YTD_KEYS = ['gross', 'taxable', 'nontax', 'si_health', 'si_care', 'si_support', 'si_pension', 'si_emp', 'si_other', 'income_tax', 'resident_tax'];
+  /* payroll-calc.js の明細の行の code → 項目 */
+  var LINE = { health: 'si_health', care: 'si_care', support: 'si_support', pension: 'si_pension', emp: 'si_emp', income_tax: 'income_tax', resident_tax: 'resident_tax' };
+
+  function nk(s) { s = String(s == null ? '' : s); try { s = s.normalize('NFKC'); } catch (_) {} return s.replace(/[\s　]/g, ''); }
+  function normName(s) { return String(s == null ? '' : s).replace(/[\s　]/g, ''); }
+  function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
+  function arr(v) { return Array.isArray(v) ? v : []; }
+  function int(v) { var n = Number(v); return isFinite(n) ? Math.round(n) : 0; }
+
+  function parseCsv(text) {
+    var rows = [], row = [], f = '', q = false, i, ch;
+    text = String(text == null ? '' : text).replace(/^﻿/, '');
+    for (i = 0; i < text.length; i++) {
+      ch = text[i];
+      if (q) { if (ch === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += ch; }
+      else if (ch === '"') q = true;
+      else if (ch === ',') { row.push(f); f = ''; }
+      else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(f); rows.push(row); row = []; f = ''; }
+      else f += ch;
+    }
+    if (f !== '' || row.length) { row.push(f); rows.push(row); }
+    return rows.filter(function (r) { return r.some(function (c) { return c !== ''; }); });
+  }
+
+  /* 金額を読む: 「1,234」「¥1,234」「￥1,234円」「-1,234」「△1,234」「(1,234)」「（空）」。読めなければ NaN */
+  function toYen(s) {
+    var t = nk(s);
+    if (t === '' || t === '-' || t === '—' || t === '(空)' || t === '空') return 0;
+    var neg = false;
+    if (/^\(.*\)$/.test(t)) { neg = true; t = t.slice(1, -1); }
+    t = t.replace(/[¥￥円,]/g, '').replace(/^[−ー－‐]/, '-');
+    if (/^[△▲]/.test(t)) { neg = true; t = t.slice(1); }
+    if (/^-/.test(t)) { neg = !neg; t = t.slice(1); }
+    if (!/^\d+$/.test(t)) return NaN;
+    var n = parseInt(t, 10);
+    return neg ? -n : n;
+  }
+  function toDate(s) {
+    var t = nk(s).replace(/[年月\/.]/g, '-').replace(/日$/, '');
+    var m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(t);
+    if (!m) return null;
+    var y = +m[1], mo = +m[2], d = +m[3];
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+    var dt = new Date(Date.UTC(y, mo - 1, d));
+    if (dt.getUTCMonth() !== mo - 1) return null;
+    return m[1] + '-' + ('0' + mo).slice(-2) + '-' + ('0' + d).slice(-2);
+  }
+
+  /* 見出しから列を決める（前から順に最初に当たった候補） */
+  function colsOf(head) {
+    var hn = head.map(nk), col = {}, used = {};
+    Object.keys(HEAD).forEach(function (k) {
+      col[k] = -1;
+      var cands = HEAD[k].map(nk);
+      for (var c = 0; c < cands.length && col[k] < 0; c++) { var j = hn.indexOf(cands[c]); if (j >= 0 && !used[j]) { col[k] = j; used[j] = 1; } }
+    });
+    return { col: col, used: used };
+  }
+
+  /* parse(text, opt) → { rows, cols:{found:[鍵], missing:[名前]}, kind, head }
+     opt.kind: 'salary'|'bonus'（呼ぶ側が決める）。無ければ見出しに「賞与」があれば bonus、無ければ salary */
+  function parse(text, opt) {
+    opt = opt || {};
+    var all = parseCsv(text);
+    if (!all.length) return { rows: [], cols: { found: [], missing: ['見出し'] }, kind: opt.kind || 'salary', head: [] };
+    var head = all[0], cm = colsOf(head), col = cm.col;
+    var kind = opt.kind === 'bonus' || opt.kind === 'salary' ? opt.kind : (head.some(function (h) { return /賞与/.test(nk(h)); }) ? 'bonus' : 'salary');
+    var found = Object.keys(col).filter(function (k) { return col[k] >= 0; });
+    var missing = [];
+    if (col.emp_num < 0 && col.name < 0 && !(col.sei >= 0 && col.mei >= 0)) missing.push('従業員番号・氏名');
+    if (col.pay_date < 0) missing.push('支給日');
+    if (col.gross < 0) missing.push('総支給額');
+    if (col.income_tax < 0) missing.push('所得税');
+    if (col.taxable < 0 && col.nontax < 0) missing.push('課税支給額（非課税支給額）');   /* どちらも無いと課税支給＝総支給になるので知らせる */
+    var rows = all.slice(1).map(function (r, i) {
+      var g = function (k) { return col[k] >= 0 ? String(r[col[k]] == null ? '' : r[col[k]]) : ''; };
+      var o = { line: i + 2, kind: kind, emp_num: nk(g('emp_num')), name: '', pay_date: null, bad: [], items: {}, has: {} };
+      o.name = col.name >= 0 ? String(g('name')).trim() : (String(g('sei')).trim() + ' ' + String(g('mei')).trim()).trim();
+      if (col.pay_date >= 0) { o.pay_date = toDate(g('pay_date')); if (!o.pay_date) o.bad.push(head[col.pay_date] || '支給日'); }
+      MONEY.forEach(function (k) {
+        if (col[k] < 0) { o[k] = null; return; }
+        var n = toYen(g(k));
+        if (n !== n) { o[k] = null; o.bad.push(head[col[k]]); } else { o[k] = n; o.has[k] = true; }
+      });
+      head.forEach(function (h, j) {
+        if (cm.used[j] || nk(h) === '') return;
+        var raw = r[j] == null ? '' : String(r[j]);
+        if (nk(raw) === '') return;
+        var n = toYen(raw);
+        if (n === n) o.items[String(h)] = n;
+      });
+      return o;
+    });
+    return { rows: rows, cols: { found: found, missing: missing }, kind: kind, head: head.slice() };
+  }
+
+  function empOf(s) { var v = s && (s.emp_num != null ? s.emp_num : (isObj(s.data) ? s.data.freee_emp_num : null)); return v == null ? '' : nk(v); }
+  /* match(rows, staff) → { matched:[行＋staff_id・how], unmatched:[{row, why}] }
+     従業員番号で結ぶ。当たらなければ空白を除いた氏名がちょうど1人と同じ時だけ。2人以上・0人は結ばない（勝手に作らない） */
+  function match(rows, staff) {
+    var list = arr(staff).filter(function (s) { return s && typeof s.staff_id === 'string'; });
+    var out = { matched: [], unmatched: [] };
+    arr(rows).forEach(function (r) {
+      if (!r) return;
+      var by = null, how = null;
+      if (r.emp_num) {
+        var e = list.filter(function (s) { return empOf(s) !== '' && empOf(s) === r.emp_num; });
+        if (e.length === 1) { by = e[0]; how = 'emp'; }
+        else if (e.length > 1) { out.unmatched.push({ row: r, why: 'many' }); return; }
+      }
+      if (!by) {
+        var nm = normName(r.name);
+        if (!nm) { out.unmatched.push({ row: r, why: 'nokey' }); return; }
+        var n = list.filter(function (s) { return normName(s.name) === nm; });
+        if (n.length === 1) { by = n[0]; how = 'name'; }
+        else { out.unmatched.push({ row: r, why: n.length > 1 ? 'many' : 'none' }); return; }
+      }
+      out.matched.push(Object.assign({}, r, { staff_id: by.staff_id, staff_name: by.name || '', how: how }));
+    });
+    return out;
+  }
+
+  /* 自社の明細（payroll-calc.js の item）→ 比べる形。tax_adjust は除いて settle に分ける */
+  function fromItem(it) {
+    it = isObj(it) ? it : {};
+    var o = { gross: 0, taxable: 0, si_health: 0, si_care: 0, si_support: 0, si_pension: 0, si_emp: 0, si_total: 0, income_tax: 0, resident_tax: 0, deduct_total: 0, net: 0, settle: 0 };
+    var lines = arr(it.lines);
+    if (lines.length || Array.isArray(it.lines)) {
+      lines.forEach(function (l) {
+        if (!l || l.sec !== 'deduct') return;
+        if (l.code === 'tax_adjust') { o.settle += int(l.amount); return; }
+        var k = LINE[l.code]; if (k) o[k] += int(l.amount);
+      });
+      o.gross = int(it.gross);
+      o.taxable = it.taxable != null ? int(it.taxable) : o.gross;
+      var siSum = SI.reduce(function (s, k) { return s + o[k]; }, 0);
+      o.si_total = it.si_total != null ? int(it.si_total) : siSum;
+      o.deduct_total = int(it.deduct) - o.settle;
+      o.net = int(it.net) + o.settle;
+    } else {
+      MONEY.forEach(function (k) { if (k in o && it[k] != null) o[k] = int(it[k]); });
+      if (it.si_total == null) o.si_total = SI.reduce(function (s, k) { return s + o[k]; }, 0);
+      if (it.taxable == null) o.taxable = o.gross - int(it.nontax);
+      o.settle = int(it.settle);
+    }
+    return o;
+  }
+  /* freee の行 → 比べる形（社保等の合計の列が無ければ各社保の和・課税支給が無ければ 総支給−非課税） */
+  function fromFreee(r) {
+    r = isObj(r) ? r : {};
+    var o = {};
+    ITEMS.forEach(function (x) { o[x[0]] = r[x[0]] == null ? 0 : int(r[x[0]]); });
+    if (r.si_total == null) o.si_total = SI.reduce(function (s, k) { return s + o[k]; }, 0);
+    if (r.taxable == null) o.taxable = o.gross - int(r.nontax);
+    return o;
+  }
+  function nameShort(n) { n = String(n == null ? '' : n).trim(); var p = n.split(/[\s　]+/); return p.length > 1 ? p[0] : n.slice(0, 2); }
+
+  /* compare(appItems, freeeRows, opt) → 人×項目 {app, freee, diff}・合計の行・項目ごとの一致／差ありの人数
+     appItems: [{staff_id, name, emp_num?, lines, gross, deduct, net, ...}]（payroll-calc.js の item）
+     freeeRows: match の matched（staff_id つき）。staff_id の無い行は従業員番号→氏名で自社の側に当てる */
+  function compare(appItems, freeeRows, opt) {
+    opt = opt || {};
+    var keys = ITEMS.filter(function (x) { return !(opt.kind === 'bonus' && x[0] === 'resident_tax'); });
+    var app = arr(appItems).filter(function (x) { return x && typeof x.staff_id === 'string'; });
+    var people = [], seenF = {};
+    var fr = arr(freeeRows).filter(Boolean);
+    function findF(a) {
+      var hit = -1;
+      fr.forEach(function (r, i) { if (hit < 0 && !seenF[i] && r.staff_id && r.staff_id === a.staff_id) hit = i; });
+      if (hit < 0 && a.emp_num) fr.forEach(function (r, i) { if (hit < 0 && !seenF[i] && !r.staff_id && r.emp_num && nk(r.emp_num) === nk(a.emp_num)) hit = i; });
+      if (hit < 0) {
+        var nm = normName(a.name), c = [];
+        fr.forEach(function (r, i) { if (!seenF[i] && !r.staff_id && nm && normName(r.name) === nm) c.push(i); });
+        if (c.length === 1) hit = c[0];
+      }
+      return hit;
+    }
+    app.forEach(function (a) {
+      var i = findF(a), A = fromItem(a), F = i >= 0 ? fromFreee(fr[i]) : null;
+      if (i >= 0) seenF[i] = 1;
+      var cells = {};
+      keys.forEach(function (x) { var k = x[0]; cells[k] = { app: A[k], freee: F ? F[k] : null, diff: F ? A[k] - F[k] : null }; });
+      people.push({ staff_id: a.staff_id, name: String(a.name || ''), emp_num: a.emp_num ? nk(a.emp_num) : (i >= 0 ? fr[i].emp_num || '' : ''), only: F ? null : 'app', settle: A.settle, cells: cells });
+    });
+    fr.forEach(function (r, i) {
+      if (seenF[i]) return;
+      var F = fromFreee(r), cells = {};
+      keys.forEach(function (x) { var k = x[0]; cells[k] = { app: null, freee: F[k], diff: null }; });
+      people.push({ staff_id: r.staff_id || null, name: String(r.staff_name || r.name || ''), emp_num: r.emp_num || '', only: 'freee', settle: 0, cells: cells });
+    });
+    var totals = {}, counts = {};
+    keys.forEach(function (x) {
+      var k = x[0], t = { app: 0, freee: 0, diff: 0 }, c = { same: 0, diff: 0 };
+      people.forEach(function (p) {
+        var v = p.cells[k];
+        if (v.app != null) t.app += v.app;
+        if (v.freee != null) t.freee += v.freee;
+        if (v.diff != null) { if (v.diff === 0) c.same++; else c.diff++; }
+      });
+      t.diff = t.app - t.freee; totals[k] = t; counts[k] = c;
+    });
+    var diffPeople = people.filter(function (p) { return !p.only && keys.some(function (x) { return p.cells[x[0]].diff !== 0; }); }).length;
+    var settle = people.reduce(function (s, p) { return s + int(p.settle); }, 0);
+    return { items: keys.map(function (x) { return { key: x[0], label: x[1] }; }), people: people, totals: totals, counts: counts, diffPeople: diffPeople,
+      onlyApp: people.filter(function (p) { return p.only === 'app'; }).length, onlyFreee: people.filter(function (p) { return p.only === 'freee'; }).length, settle: settle };
+  }
+
+  /* compareSlips(ours[], freeeRows[], kind) → { rows, diffCount, unmatched }（賞与のセッションとそろえた形・2026-11-23）
+     rows は1行＝1人×1項目 {staff_id, emp_num, name_short, item, ours, freee, diff, settle}。差のある行を上に（同じ差の有無の中は人・項目の並び） */
+  function compareSlips(ours, freeeRows, kind) {
+    var c = compare(ours, freeeRows, { kind: kind === 'bonus' ? 'bonus' : 'salary' });
+    var rows = [], unmatched = [];
+    c.people.forEach(function (p, pi) {
+      if (p.only) { unmatched.push({ side: p.only === 'app' ? 'ours' : 'freee', staff_id: p.staff_id, emp_num: p.emp_num, name_short: nameShort(p.name) }); return; }
+      c.items.forEach(function (x, xi) {
+        var v = p.cells[x.key];
+        rows.push({ staff_id: p.staff_id, emp_num: p.emp_num, name_short: nameShort(p.name), item: x.label, key: x.key, ours: v.app, freee: v.freee, diff: v.diff, settle: p.settle, _o: pi * 100 + xi });
+      });
+    });
+    rows.sort(function (a, b) { var da = a.diff !== 0 ? 0 : 1, db = b.diff !== 0 ? 0 : 1; return da - db || a._o - b._o; });
+    rows.forEach(function (r) { delete r._o; });
+    return { rows: rows, diffCount: rows.filter(function (r) { return r.diff !== 0; }).length, unmatched: unmatched, totals: c.totals, counts: c.counts, settle: c.settle };
+  }
+
+  /* toYtd(rows, kind) → payroll_ytd_put の p_rows（source='freee'）。返す配列に warnings・skipped を添える（送る時は配列だけが JSON になる）
+     data の鍵へ写す。課税支給が無い時は 総支給−非課税。si_other は社保等の合計の列がある時だけ、そこから各社保を引いた残り（負なら0・警告） */
+  function toYtd(rows, kind) {
+    var out = [], warnings = [], skipped = [];
+    arr(rows).forEach(function (r) {
+      if (!r) return;
+      if (!r.staff_id) { skipped.push({ line: r.line, why: 'nostaff' }); return; }
+      if (!r.pay_date) { skipped.push({ line: r.line, why: 'nodate' }); return; }
+      if (arr(r.bad).length) { skipped.push({ line: r.line, why: 'bad' }); return; }
+      var d = {};
+      YTD_KEYS.forEach(function (k) { d[k] = 0; });
+      ['gross', 'nontax', 'si_health', 'si_care', 'si_support', 'si_pension', 'si_emp', 'income_tax', 'resident_tax'].forEach(function (k) { if (r[k] != null) d[k] = int(r[k]); });
+      d.taxable = r.taxable != null ? int(r.taxable) : d.gross - d.nontax;
+      if (r.taxable != null && r.nontax == null) d.nontax = Math.max(0, d.gross - d.taxable);
+      if (r.si_total != null) {
+        var rest = int(r.si_total) - SI.reduce(function (s, k) { return s + d[k]; }, 0);
+        if (rest < 0) { warnings.push({ line: r.line, staff_id: r.staff_id, code: 'si_other_neg', msg: '社保等の合計が各社保の和より小さい（その他は0にしました）' }); rest = 0; }
+        d.si_other = rest;
+      }
+      var neg = YTD_KEYS.filter(function (k) { return d[k] < 0; });
+      if (neg.length) { skipped.push({ line: r.line, why: 'negative', keys: neg }); return; }
+      out.push({ staff_id: r.staff_id, pay_date: r.pay_date, kind: kind === 'bonus' || kind === 'salary' ? kind : (r.kind === 'bonus' ? 'bonus' : 'salary'), source: 'freee', data: d, src_fp: String(r.src_fp || '').slice(0, 16), rev: 0 });
+    });
+    out.warnings = warnings; out.skipped = skipped;
+    return out;
+  }
+  /* 自社の確定した明細 → payroll_ytd の data（source='app' の行・年末調整の rows の12月分）。tax_adjust（精算）は所得税に入れない */
+  function itemToYtd(it) {
+    var o = fromItem(it), d = {};
+    YTD_KEYS.forEach(function (k) { d[k] = 0; });
+    ['gross', 'taxable', 'si_health', 'si_care', 'si_support', 'si_pension', 'si_emp', 'income_tax', 'resident_tax'].forEach(function (k) { d[k] = Math.max(0, o[k]); });
+    d.nontax = Math.max(0, d.gross - d.taxable);
+    d.si_other = Math.max(0, o.si_total - SI.reduce(function (s, k) { return s + d[k]; }, 0));
+    return d;
+  }
+
+  var api = { VERSION: VERSION, HEAD: HEAD, ITEMS: ITEMS, YTD_KEYS: YTD_KEYS, parseCsv: parseCsv, toYen: toYen, toDate: toDate,
+    parse: parse, match: match, compare: compare, compareSlips: compareSlips, toYtd: toYtd, fromItem: fromItem, itemToYtd: itemToYtd, nameShort: nameShort };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (root) root.PayrollFreeeSlips = api;
+})(typeof window !== 'undefined' ? window : null);

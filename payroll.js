@@ -18,13 +18,13 @@
  */
 (function () {
   'use strict';
-  var TABS = ['run', 'slip', 'export', 'profile', 'settings'];
+  var TABS = ['run', 'slip', 'export', 'profile', 'yearend', 'settings'];   /* 年末調整（yearend・2026-11-23・中身は payroll-yearend-ui.js） */
   var LS_TAB = 'payroll_tab';
   var IDLE_MS = 10 * 60 * 1000;
   var gen = 0, view = 'boot', tab = 'run', ym = null, bs = null, role = null, loadErr = null;
   var calc = null, adjEdits = {}, dirty = false, busy = false, masked = false, lastAct = Date.now();
   var openSid = null, slipSid = null, importRows = null, importErr = null, members = null, zcheck = null, notice = null, audit = null;
-  var printList = null, dlgCtx = null;
+  var printList = null, dlgCtx = null, yePrint = null;
   var $ = function (id) { return document.getElementById(id); };
 
   function note(where, e) { try { if (window.SUErrors && window.SUErrors.note) window.SUErrors.note('給与', e, 'payroll:' + where); } catch (_) {} }
@@ -485,8 +485,13 @@
         paint(); return null;
       }
       if (blockWarns(now).length) { done(); closeDlg(); notice = { cls: 'ng', text: '確定していません。確定できない警告（率表・税額表・標準報酬が無い月）が残っています。設定を直してから計算し直してください。' }; paint(); return null; }
-      return rpc('payroll_run_confirm', { p_ym: ym, p_rev: bs.run.rev }).then(okOr).then(function () {
-        done(); closeDlg(); toast('確定しました。'); return load(false);
+      /* 年末調整の精算の額を payroll_yearend_check で確かめ、合っていなければ確定しない（2026-11-23・DB の確定の関数は置き換えない） */
+      return (YEU() ? YEU().beforeConfirm(yeCtx()) : Promise.resolve(null)).then(function (yng) {
+        if (my !== gen) { done(); return null; }
+        if (yng) { done(); closeDlg(); notice = { cls: 'ng', text: '確定していません。' + yng }; paint(); return null; }
+        return rpc('payroll_run_confirm', { p_ym: ym, p_rev: bs.run.rev }).then(okOr).then(function () {
+          done(); closeDlg(); toast('確定しました。'); return load(false);
+        });
       });
       });
     })['catch'](function (e) { done(); closeDlg(); return fail(e, '確定'); });
@@ -573,6 +578,7 @@
     else if (tab === 'slip') h = slipTabHtml();
     else if (tab === 'export') h = exportHtml();
     else if (tab === 'profile') h = profileHtml();
+    else if (tab === 'yearend') h = YEU() ? YEU().html(yeCtx()) : '<div class="band ng" role="alert">計算の部品が読み込めていません。ページを読み込み直してください。</div>';
     else h = isAdmin() ? settingsHtml() : '';
     put($('p-main'), bandsHtml() + h);
   }
@@ -613,6 +619,7 @@
     var kb0 = !frozen() && bs.kcheck && bs.kcheck.state !== 'checking' ? kintaiBlock() : null;
     if (kb0) h += '<div class="band ng" role="alert">⚠ ' + esc(kb0) + '</div>';
     if (!c) h += '<div class="band ng" role="alert">計算の部品を読み込めませんでした。ページを読み込み直してください。</div>';
+    if (YEU()) h += YEU().runBand(yeCtx());   /* 年末調整の精算を入れる（精算する月分だけ・2026-11-23） */
     if (dirty && calc) h += '<div class="band warn">計算した結果はまだ保存していません。「下書き保存」を押すまで、ほかの人には見えません。</div>';
     h += '<div class="row">';
     if (!frozen()) {
@@ -695,7 +702,35 @@
       pagesOf: function () { return printList ? printList.length : 1; },
       before: function () { put($('p-print'), (printList || []).map(function (it) { return slipHtml(it, true); }).join('')); },
       after: function () { put($('p-print'), ''); printList = null; } });
+    /* 源泉徴収票（年末調整のタブ・A4 に2人分。紙の中身は PayrollWithholdingSlip.slipHtml） */
+    window.SUPrint.define('ye-slips', { label: '源泉徴収票', paper: 'A4 portrait', margin: 10, root: '#p-print', allowUser: [],
+      when: function () { return !!yePrint && view === 'app' && !masked; },
+      pagesOf: function () { return yePrint ? yePrint.pages : 1; },
+      before: function () { put($('p-print'), yePrint ? yePrint.html : ''); },
+      after: function () { put($('p-print'), ''); yePrint = null; } });
     window.SUPrint.setActive(null);
+  }
+
+  function printYe(html, pages) {
+    if (!html) return;
+    if (!window.SUPrint) { toast('印刷の部品を読み込めていません。ページを読み込み直してください。'); return; }
+    var go = function () {
+      yePrint = { html: html, pages: Math.max(1, pages || 1) };
+      try { window.SUPrint.print('ye-slips'); } catch (e) { note('源泉徴収票の印刷', e); }
+      if (!document.body.classList.contains('su-printing')) yePrint = null;
+    };
+    if (!window.SUPrint.facGate) { go(); return; }
+    window.SUPrint.facGate(go, function (msg) { toast(msg); });
+  }
+
+  /* ── 年末調整のタブ（payroll-yearend-ui.js）への受け渡し（2026-11-23）。ここは今ある関数を渡すだけで、計算・保存の流れは変えない ── */
+  function YEU() { var u = window.PayrollYearEndUI; return u && typeof u.html === 'function' ? u : null; }
+  function yeReset() { try { if (YEU()) YEU().reset(); } catch (e) { note('年末調整を捨てる', e); } }
+  function yeCtx() {
+    return { rpc: rpc, esc: esc, yen: yen, bs: bs, calc: calc, items: bs ? items() : [], ym: ym, paint: paint, toast: toast, openDlg: openDlg, closeDlg: closeDlg, isAdmin: isAdmin, note: note,
+      parseCsv: parseCsv, decode: decode, put: put, say: say, ask: ask, fail: fail, noDb: noDb, download: download,
+      frozen: !!bs && frozen(), runRev: bs && bs.run ? bs.run.rev : 0, payDate: bs ? payDate() : '', corpName: corpName(),
+      adjOf: adjOf, setAdj: function (sid, list) { if (!frozen()) adjEdits[sid] = list; }, compute: doCompute, printSlips: printYe };
   }
 
   /* ── 振込と書き出し ── */
@@ -724,6 +759,7 @@
     h += '</tbody></table></div>';
     h += '<h3 style="font-size:16px">書き出す</h3><div class="row">';
     if (zenginOn()) h += '<button type="button" class="btn pri" data-act="exp" data-k="zengin"' + (x ? '' : ' disabled') + '>振込データ（全銀形式）</button>';
+    if (YEU()) h += YEU().exportBadge(yeCtx());   /* この月分を freee と比べて差があった時の印（止めない・2026-11-23） */
     h += '<button type="button" class="btn" data-act="exp" data-k="journal"' + (x ? '' : ' disabled') + '>仕訳の CSV</button>' +
       '<button type="button" class="btn" data-act="exp" data-k="ledger"' + (x ? '' : ' disabled') + '>賃金台帳の CSV</button>' +
       '<button type="button" class="btn" data-act="exp" data-k="list"' + (x ? '' : ' disabled') + '>明細一覧の CSV</button></div>';
@@ -1369,7 +1405,7 @@
   /* ── 10分操作が無ければ金額を消す ── */
   function mask() {
     if (masked || view !== 'app') return;
-    masked = true; maskGen++; closeDlg(); importRows = null; printList = null; audit = null; put($('p-print'), '');
+    masked = true; maskGen++; closeDlg(); importRows = null; printList = null; audit = null; put($('p-print'), ''); yePrint = null; yeReset();
     paint();
   }
   function paintMasked() {
@@ -1435,7 +1471,7 @@
   }
   /* 鍵の画面。保存していない計算は画面のメモリに残す（番号が合えば続きから使える）。金額・明細・窓・印刷は消す */
   function showLock(msg) {
-    view = 'lock'; pinGen++; masked = false; maskGen++; closeDlg(); bs = null; importRows = null; printList = null; audit = null; members = null;
+    view = 'lock'; pinGen++; masked = false; maskGen++; closeDlg(); bs = null; importRows = null; printList = null; audit = null; members = null; yePrint = null; yeReset();
     pinMsg = msg || '';
     $('p-app').hidden = true; put($('p-main'), ''); put($('p-print'), '');
     var st = pinSt || {}, g = $('p-gate'); g.hidden = false;
@@ -1544,7 +1580,7 @@
     error: ['ログインを確かめられませんでした', '電波・Wi-Fi を確かめてから、ページを読み込み直してください。']
   };
   function showGate(why) {
-    view = 'gate'; masked = false; closeDlg(); bs = null; calc = null; importRows = null; audit = null; members = null;
+    view = 'gate'; masked = false; closeDlg(); bs = null; calc = null; importRows = null; audit = null; members = null; yePrint = null; yeReset();
     $('p-app').hidden = true; put($('p-main'), ''); put($('p-print'), '');
     var g = GATE[why] || GATE.denied, gt = $('p-gate'); gt.hidden = false;
     put(gt, '<h2>' + esc(g[0]) + '</h2><p>' + esc(g[1]) + '</p><p><a class="btn pri" href="login.html?next=payroll.html">ログインの画面へ</a> <a class="btn" href="index.html">メニューへ戻る</a></p>');
@@ -1619,6 +1655,7 @@
       else if (a === 'pin-open') pinOpenGo(b);
       else if (a === 'pin-lock') pinLockNow('manual');
       else if (a === 'pin-reset') { var m1 = members && members[+b.getAttribute('data-i')]; if (m1) pinReset(m1.email, b); }
+      else if (/^ye-/.test(a) && YEU() && view === 'app' && !masked) YEU().onClick(yeCtx(), a, b);
     });
     document.addEventListener('toggle', function (e) {
       var d = e.target;
@@ -1638,6 +1675,7 @@
       if (id === 'p-ym') setYm(e.target.value);
       else if (id === 's-who') { slipSid = e.target.value; paint(); }
       else if (id === 'i-file') { var f = e.target.files && e.target.files[0]; importFile(f); e.target.value = ''; }
+      else if (YEU() && view === 'app' && !masked && (/^ye-/.test(id || '') || (e.target.getAttribute && e.target.getAttribute('data-ye-pick')))) YEU().onChange(yeCtx(), e.target);
     });
     document.querySelector('.tabs').addEventListener('keydown', function (e) {
       if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;

@@ -233,6 +233,10 @@ const ARGS = {
   payroll_profile_put: ['p_data', 'p_effective_from', 'p_rev', 'p_reason', 'p_staff_id'], payroll_bank_put: ['p_accounts', 'p_reason', 'p_staff_id'], payroll_bank_export: ['p_ym'],
   payroll_settings_put: ['p_config', 'p_rev'], payroll_allowance_put: ['p_def', 'p_rev'], payroll_members_get: [], payroll_members_put: ['p_email', 'p_on'],
   payroll_export_log: ['p_kind', 'p_ym'], payroll_audit_get: ['p_from', 'p_to'], payroll_import_put: ['p_payload'],
+  /* 年末調整（統合 0122・2026-11-23）。引数の名前は凍結仕様 ROOT-yearend.md の A */
+  payroll_ytd_get: ['p_year'], payroll_ytd_put: ['p_rows', 'p_year'], payroll_ytd_delete: ['p_kind', 'p_pay_date', 'p_reason', 'p_rev', 'p_staff_id', 'p_year'],
+  payroll_yearend_put: ['p_basis', 'p_decl', 'p_result', 'p_rev', 'p_settle_ym', 'p_staff_id', 'p_year'], payroll_yearend_finalize: ['p_rev', 'p_staff_id', 'p_year'],
+  payroll_yearend_unfinalize: ['p_reason', 'p_staff_id', 'p_year'], payroll_yearend_check: ['p_year'],
 };
 const ADMIN_ONLY = ['payroll_run_unconfirm', 'payroll_settings_put', 'payroll_allowance_put', 'payroll_members_get', 'payroll_members_put', 'payroll_audit_get', 'payroll_import_put'];
 
@@ -540,6 +544,71 @@ export function routesFor(opt = {}) {
       const a = Date.parse(p.p_from), b = Date.parse(p.p_to);
       if (!(a <= b) || b - a > 400 * 86400000) return ng('badrange');
       return ok({ rows: db.audit.filter((x) => Date.parse(x.at) >= a && Date.parse(x.at) < b).slice().reverse() });
+    }
+    /* 年末調整（統合 0122 の形の確かめを写した・架空の材料だけ） */
+    if (name.startsWith('payroll_ytd_') || name.startsWith('payroll_yearend_')) {
+      db.ytd = db.ytd || []; db.yearend = db.yearend || [];
+      const Y = p.p_year;
+      if (!Number.isInteger(Y)) return ng('badshape');
+      const YK = ['gross', 'taxable', 'nontax', 'si_health', 'si_care', 'si_support', 'si_pension', 'si_emp', 'si_other', 'income_tax', 'resident_tax'];
+      const MYNUM = /my_?number|kojin_bango|個人番号|マイナンバー/i;
+      const deepKeys = (v) => (isObj(v) ? Object.keys(v).concat(...Object.values(v).map(deepKeys)) : Array.isArray(v) ? [].concat(...v.map(deepKeys)) : []);
+      const yeOf = (sid) => db.yearend.find((x) => x.year === Y && x.staff_id === sid);
+      if (name === 'payroll_ytd_get') return ok({ rows: db.ytd.filter((x) => x.year === Y).map((x) => Object.assign({}, x)), yearend: db.yearend.filter((x) => x.year === Y).map((x) => Object.assign({}, x)) });
+      if (name === 'payroll_ytd_put') {
+        const R = p.p_rows;
+        if (!Array.isArray(R) || !R.length || R.length > 500) return ng('badshape');
+        for (const r of R) {
+          if (!isObj(r) || Object.keys(r).some((k) => !['staff_id', 'pay_date', 'kind', 'source', 'data', 'src_fp', 'rev'].includes(k)) || !dateOk(r.pay_date) || !['salary', 'bonus'].includes(r.kind) || !['freee', 'app', 'manual'].includes(r.source)
+            || !isObj(r.data) || Object.keys(r.data).some((k) => !YK.includes(k) || !Number.isInteger(r.data[k]) || r.data[k] < 0)) return ng('badshape', { staff_id: r && r.staff_id });
+          if (!db.staff.some((s) => s.staff_id === r.staff_id)) return ng('nostaff', { staff_id: r.staff_id });
+          if (+r.pay_date.slice(0, 4) !== Y) return ng('badyear', { staff_id: r.staff_id });
+          const y = yeOf(r.staff_id); if (y && y.status === 'final') return ng('final', { staff_id: r.staff_id });
+          const cur = db.ytd.find((x) => x.year === Y && x.staff_id === r.staff_id && x.pay_date === r.pay_date && x.kind === r.kind);
+          if ((cur ? cur.rev : 0) !== r.rev) return ng('conflict', { staff_id: r.staff_id });
+        }
+        R.forEach((r) => {
+          const cur = db.ytd.find((x) => x.year === Y && x.staff_id === r.staff_id && x.pay_date === r.pay_date && x.kind === r.kind);
+          if (cur) Object.assign(cur, r, { year: Y, rev: cur.rev + 1 }); else db.ytd.push(Object.assign({}, r, { year: Y, rev: 1 }));
+        });
+        audit('ytd_put'); return ok({ count: R.length });
+      }
+      if (name === 'payroll_yearend_put') {
+        if (!isObj(p.p_decl) || !isObj(p.p_result) || !isObj(p.p_basis) || deepKeys(p.p_decl).some((k) => MYNUM.test(k)) || !ymOk(p.p_settle_ym)) return ng('badshape', { staff_id: p.p_staff_id });
+        if (!db.staff.some((s) => s.staff_id === p.p_staff_id)) return ng('nostaff');
+        const y = yeOf(p.p_staff_id);
+        if (y && y.status === 'final') return ng('final');
+        if ((y ? y.rev : 0) !== p.p_rev) return ng('conflict');
+        const row = { year: Y, staff_id: p.p_staff_id, decl: p.p_decl, result: p.p_result, basis: p.p_basis, status: 'draft', settle_ym: p.p_settle_ym, rev: (y ? y.rev : 0) + 1, finalized_at: null };
+        if (y) Object.assign(y, row); else db.yearend.push(row);
+        audit('yearend_put'); return ok({ rev: row.rev });
+      }
+      if (name === 'payroll_yearend_finalize') {
+        const y = yeOf(p.p_staff_id); if (!y) return ng('notfound');
+        if (y.rev !== p.p_rev) return ng('conflict');
+        if (!isObj(y.basis) || !Array.isArray(y.basis.ytd) || !Array.isArray(y.basis.items)) return ng('notcalculated');
+        const now = db.ytd.filter((x) => x.year === Y && x.staff_id === p.p_staff_id).map((x) => x.pay_date + x.kind + x.rev).sort().join();
+        const was = y.basis.ytd.map((x) => x.pay_date + x.kind + x.rev).sort().join();
+        if (now !== was) return ng('stale', { detail: 'ytd' });
+        y.status = 'final'; y.finalized_at = nowIso(); audit('yearend_finalize'); return ok({ rev: y.rev });
+      }
+      if (name === 'payroll_yearend_unfinalize') {
+        if (role !== 'admin') return ng('denied');
+        if (!String(p.p_reason || '').trim()) return ng('reason');
+        const y = yeOf(p.p_staff_id); if (!y || y.status !== 'final') return ng('notfinal');
+        y.status = 'draft'; y.finalized_at = null; y.rev++; audit('yearend_unfinalize', null, p.p_staff_id, p.p_reason); return ok();
+      }
+      /* 0122 と同じ形の答え（state: ok・diff・noitem・norun・notfinal・nobalance）。精算の額は保存した明細の調整の tax_adjust の和 */
+      if (name === 'payroll_yearend_check') {
+        return ok({ year: Y, rows: db.yearend.filter((x) => x.year === Y).map((x) => {
+          const run = db.runs[x.settle_ym], it = (db.items[x.settle_ym] || []).find((i) => i.staff_id === x.staff_id);
+          const adj = it ? (it.adjustments || []).filter((a) => a && a.kind === 'tax_adjust').reduce((t, a) => t + a.amount, 0) : 0;
+          const bal = Number.isInteger(x.result && x.result.balance_settle) ? x.result.balance_settle : null;
+          const state = x.status !== 'final' ? 'notfinal' : bal === null ? 'nobalance' : !run ? 'norun' : !it ? 'noitem' : adj !== bal ? 'diff' : 'ok';
+          return { staff_id: x.staff_id, status: x.status, settle_ym: x.settle_ym, run_status: run ? run.status : null, has_item: !!it, tax_adjust: adj, balance_settle: bal, state };
+        }) });
+      }
+      return null;
     }
     if (name === 'payroll_import_put') {
       const pl = p.p_payload;

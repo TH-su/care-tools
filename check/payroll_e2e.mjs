@@ -528,6 +528,106 @@ console.log('\n— 6. 覆い・その他 —');
   }
 }
 
+/* ── 年末調整のタブ（2026-11-23・ROOT-yearend.md の C）: 開く・freee の明細を取り込む・1人を開いて計算・コンソールのエラー 0 ── */
+console.log('\n— 年末調整のタブ —');
+{
+  const o = await open({ tab: 'yearend', start: 'confirmed' });
+  const p = o.page;
+  await waitApp(p);
+  t('端末に残したタブ（yearend）で開く', await p.evaluate(() => document.querySelector('.tabs [aria-selected="true"]').getAttribute('data-tab')) === 'yearend');
+  await p.waitForFunction(() => /職員ごとの累計と年末調整/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  t('payroll_ytd_get(p_year=2026) を読み、5つの節を出す', o.routes.calls.some((c) => c.name === 'payroll_ytd_get' && c.args.p_year === 2026)
+    && await p.evaluate(() => ['freee の明細を取り込む', 'freee と比べる', '職員ごとの累計と年末調整', '精算する月分の給与へ入れる', '源泉徴収票と合計表の値'].every((x) => document.getElementById('p-main').textContent.indexOf(x) >= 0)));
+  /* 架空の freee の明細（氏名で結ぶ1人＋結べない1人） */
+  const csv = '﻿氏名,支給日,総支給額,課税支給額,健康保険料,厚生年金保険料,雇用保険料,所得税\r\n見本 一郎,2026/03/25,"250,000","242,000","13,000","23,790","1,375","5,130"\r\n居ない 人,2026/03/25,"100,000","100,000",0,0,0,0\r\n';
+  await p.setInputFiles('#ye-files', { name: 'freee-2026-03.csv', mimeType: 'text/csv', buffer: Buffer.from(csv, 'utf8') });
+  await p.waitForSelector('[data-act="ye-imp-go"]', { timeout: 10000 });
+  t('取り込みの下見: 結べた1回分・結べない行を見せる（まだ送らない）', /1回分を累計に入れる/.test(await p.textContent('[data-act="ye-imp-go"]')) && /職員に結べない行（1行/.test(await p.textContent('#p-main')) && !o.routes.calls.some((c) => c.name === 'payroll_ytd_put'));
+  await p.click('[data-act="ye-imp-go"]');
+  await p.waitForFunction(() => /給与 1・賞与 0/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  const put = o.routes.calls.find((c) => c.name === 'payroll_ytd_put');
+  t('「累計に入れる」で payroll_ytd_put（source=freee・data の鍵だけ）', !!put && put.args.p_rows.length === 1 && put.args.p_rows[0].source === 'freee' && put.args.p_rows[0].staff_id === 's-01' && put.args.p_rows[0].data.income_tax === 5130, put && put.args);
+  t('取り込んだ CSV・累計・年は端末に残さない（給与の鍵は payroll_tab だけ・値に氏名・金額なし・施設情報の共通の控えは除く）', await p.evaluate(() => { const ks = []; for (let i = 0; i < localStorage.length; i++) ks.push(localStorage.key(i)); return ks.filter((k) => /payroll|yearend|ytd/.test(k)).join() === 'payroll_tab' && localStorage.getItem('payroll_tab') === 'yearend' && !ks.filter((k) => k !== 'su_facility_json_v1').some((k) => /見本 一郎|居ない 人|5,?130|250,?000|2026/.test(localStorage.getItem(k) || '') && k !== 'sb-jhbernqawjrzqwrmqrih-auth-token'); }));
+  await p.click('[data-act="ye-open"][data-sid="s-01"]');
+  await p.waitForSelector('#p-dlg[open] #ye-kou');
+  t('申告の窓: 紙の順の5つの欄・マイナンバーの欄は無い', await p.evaluate(() => { const tx = document.getElementById('p-dlg-b').textContent; const L = ['扶養控除等（異動）申告書', '配偶者控除等申告書', '保険料控除申告書', '住宅借入金等特別控除申告書', '前職の源泉徴収票'].map((x) => tx.indexOf(x)); return L.every((x, i) => x > 0 && (i === 0 || x > L[i - 1])) && !/個人番号/.test(tx) && !document.querySelector('#p-dlg [id*="mynum"], #p-dlg [id*="my_number"]'); }));
+  await p.fill('#ye-i-life_new_general', '80000');
+  await p.click('[data-act="ye-calc"]');
+  await p.waitForFunction(() => /計算の結果|計算を止めました|年末調整の対象外/.test(document.getElementById('ye-res').textContent), null, { timeout: 5000 });
+  t('「計算する」で内訳と過不足（または止める知らせ）を窓の中に出す', /計算の結果|計算を止めました/.test(await p.textContent('#ye-res')));
+  await shot(p, 'payroll.yearend.dlg', false);
+  await p.click('#p-dlg [data-act="dlg-close"]');
+  await sud(p, 'ok', 1500);
+  await shot(p, 'payroll.yearend.pc');
+  t('年末調整のタブ: 画面のエラー 0', o.errors.length === 0, o.errors);
+  t('年末調整のタブ: 外へ通信しない', o.outside.length === 0, o.outside);
+  await o.ctx.close();
+}
+
+/* ── 年末調整の精算（今月の給与のタブ）: 確定した人の過不足を「年末調整の精算を入れる」で入れ、確定の前の確かめ（payroll_yearend_check）を通す・合わなければ止める ── */
+console.log('\n— 年末調整の精算（今月の給与） —');
+{
+  const o = await open({ tab: 'yearend', start: 'none' });
+  const p = o.page;
+  /* 架空の年末調整の確定（精算する月分を表示中の 2026-11 にした見本・還付 1,200 円） */
+  o.routes.db.yearend = [{ year: 2026, staff_id: 's-01', decl: { kou: true }, result: { eligible: true, balance: -1200, balance_settle: -1200, warnings: [] }, basis: { ytd: [], items: [] }, status: 'final', settle_ym: YM, rev: 2, finalized_at: '2026-11-20T09:00:00+09:00' }];
+  await waitApp(p);
+  await p.waitForFunction(() => /職員ごとの累計と年末調整/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  await p.click('[data-tab="run"]');
+  await p.waitForSelector('[data-act="ye-settle"]', { timeout: 10000 });
+  t('今月の給与: 精算がまだ入っていない人を知らせ「年末調整の精算を入れる」を出す', /まだこの月分に入っていない/.test(await p.textContent('#p-main')));
+  await p.click('[data-act="ye-settle"]');
+  await p.waitForFunction(() => /年末調整の精算（1 人）はこの月分に入っています/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  await p.click('[data-act="ye-settle"]');   /* 二度押し */
+  await p.click('details.it[data-sid="s-01"] > summary');
+  await p.waitForSelector('details.it[data-sid="s-01"] table');
+  const adjN = await p.evaluate(() => (document.querySelector('details.it[data-sid="s-01"]').textContent.match(/所得税の精算：年末調整の精算/g) || []).length);
+  t('「その月だけの調整」に所得税の精算が1行だけ入る（二度押しで増えない）・額は還付の −1,200', adjN === 1 && /所得税の精算：年末調整の精算 −1,200/.test(await p.textContent('details.it[data-sid="s-01"]')), adjN);
+  await p.click('[data-act="save"]');
+  await settle(p);
+  await p.click('[data-act="confirm"]');
+  await p.waitForSelector('#p-dlg[open] [data-act="confirm-go"]');
+  if (await p.$('#c-ack')) await p.check('#c-ack');
+  o.routes.calls.length = 0;
+  await p.click('[data-act="confirm-go"]');
+  await p.waitForFunction(() => /確定済み/.test(document.getElementById('p-main').textContent), null, { timeout: 15000 });
+  const iChk = o.routes.calls.findIndex((c) => c.name === 'payroll_yearend_check'), iConf = o.routes.calls.findIndex((c) => c.name === 'payroll_run_confirm');
+  t('確定は payroll_yearend_check(p_year) で合っていると確かめてから payroll_run_confirm', iChk >= 0 && iConf > iChk && o.routes.calls[iChk].args.p_year === 2026, o.routes.calls.map((c) => c.name));
+  t('精算: 画面のエラー 0', o.errors.length === 0, o.errors);
+  await o.ctx.close();
+}
+{
+  const o = await open({ tab: 'yearend', start: 'none' });
+  const p = o.page;
+  o.routes.db.yearend = [{ year: 2026, staff_id: 's-01', decl: { kou: true }, result: { eligible: true, balance: -1200, balance_settle: -1200, warnings: [] }, basis: { ytd: [], items: [] }, status: 'final', settle_ym: YM, rev: 2, finalized_at: null }];
+  await waitApp(p);
+  await p.waitForFunction(() => /職員ごとの累計と年末調整/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  await p.click('[data-tab="run"]');
+  await p.waitForSelector('[data-act="ye-settle"]', { timeout: 10000 });
+  await p.click('[data-act="compute"]');   /* 精算を入れずに計算して保存する */
+  await p.click('[data-act="save"]');
+  await settle(p);
+  await p.click('[data-act="confirm"]');
+  await p.waitForSelector('#p-dlg[open] [data-act="confirm-go"]');
+  if (await p.$('#c-ack')) await p.check('#c-ack');
+  await p.click('[data-act="confirm-go"]');
+  await p.waitForFunction(() => /確定していません。年末調整の精算の額/.test(document.getElementById('p-main').textContent), null, { timeout: 15000 });
+  t('精算が入っていない時は確定しない（payroll_run_confirm を呼ばない）', !o.routes.calls.some((c) => c.name === 'payroll_run_confirm') && (o.routes.db.runs[YM] || {}).status === 'draft');
+  t('止めた時: 画面のエラー 0', o.errors.length === 0, o.errors);
+  await o.ctx.close();
+}
+/* 年末調整のタブの iPhone 幅・暗い表示（横はみ出し 0・エラー 0） */
+for (const [nm, vp, dark] of [['yearend.ph', { width: 390, height: 844 }, false], ['yearend.dark', { width: 1280, height: 900 }, true], ['yearend.ph-dark', { width: 390, height: 844 }, true]]) {
+  const q = await open({ tab: 'yearend', start: 'confirmed', viewport: vp, dark });
+  await waitApp(q.page);
+  await q.page.waitForFunction(() => /職員ごとの累計と年末調整/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  const over = await q.page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  t(nm + ': 画面の横はみ出し 0（表は枠の中で横に送る）', over <= 0, over);
+  await shot(q.page, 'payroll.' + nm);
+  t(nm + ': 画面のエラー 0', q.errors.length === 0, q.errors);
+  await q.ctx.close();
+}
+
 await browser.close();
 await srv.close();
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
