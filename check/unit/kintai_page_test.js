@@ -106,7 +106,8 @@ t('保存の後の短い知らせは aria-live', /<div class="toast no-print" id
 t('印刷の時だけの見出し（.ph は画面で出さない）', /\.ph\{display:none\}/.test(H) && /function printHead\(sub\)/.test(K));
 /* ★v4（2026-11-20）: 中身を変えたので ?v= を 2026-11-20 に上げた（CLAUDE.md の決まり）。期待をその版に改めた */
 /* ★freee の月の集計の取り込み（2026-11-23・統合 0123）で kintai.js・kintai-calc.js を ?v=2026-11-23.1 に上げたので期待の版を改めた */
-t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-2…（kintai.js は 2026-11-23 に上げた）', /kintai\.js\?v=2026-11-23/.test(H) && /kintai-calc\.js\?v=2026-11-23/.test(H) && /kintai-calc\.js\?v=2026-11-23/.test(HC));
+/* ★v6（2026-11-24・打刻漏れの知らせと休暇の申請）で kintai.js だけを ?v=2026-11-24 に上げたので期待の版を改めた（kintai-calc.js は変えていない・23.1 のまま） */
+t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-2…（kintai.js は 2026-11-24 に上げた）', /kintai\.js\?v=2026-11-24/.test(H) && /kintai-calc\.js\?v=2026-11-23/.test(H) && /kintai-calc\.js\?v=2026-11-23/.test(HC));
 
 console.log('\n— 8. 打刻画面の v3（出勤を押す → 氏名 → パスコード） —');
 const pendClock = [];
@@ -306,7 +307,8 @@ t('反証レビューの指摘1:「今日」は今日のカレンダー月へ移
 /* ★v5 段5（2026-11-21・申請のタブとスマホの登録）で kintai.js を ?v=2026-11-21.5 に上げたので期待の版を改めた（kintai-calc.js は変えていない） */
 /* ★0120（2026-11-21・締めの前の要確認）で kintai.js を ?v=2026-11-21.6、kintai-calc.js を ?v=2026-11-21.3 に上げたので期待の版を改めた */
 /* ★freee の月の集計の取り込み（2026-11-23・統合 0123）で kintai.js・kintai-calc.js を ?v=2026-11-23.1 に上げたので期待の版を改めた */
-t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-23.1・2026-11-23.1（両画面と給与の画面でそろえる）', /kintai\.js\?v=2026-11-23\.1"/.test(H) && /kintai-calc\.js\?v=2026-11-23\.1"/.test(H) && /kintai-calc\.js\?v=2026-11-23\.1"/.test(HC) && /kintai-calc\.js\?v=2026-11-23\.1"/.test(read('payroll.html')));
+/* ★v6（2026-11-24）で kintai.js を ?v=2026-11-24 に上げたので期待の版を改めた（kintai-calc.js は 2026-11-23.1 のまま・給与の画面と同じ版） */
+t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-24・2026-11-23.1（両画面と給与の画面でそろえる）', /kintai\.js\?v=2026-11-24"/.test(H) && /kintai-calc\.js\?v=2026-11-23\.1"/.test(H) && /kintai-calc\.js\?v=2026-11-23\.1"/.test(HC) && /kintai-calc\.js\?v=2026-11-23\.1"/.test(read('payroll.html')));
 
 const await_pending = [];   /* 動かして確かめる試験（Promise）を最後に待つ */
 console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（2026-11-20・凍結した仕様書 ROOT-v4-master-leave.md） —');

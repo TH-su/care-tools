@@ -9,6 +9,8 @@
  *   4. 全部決めた後に締めると、kintai_month_lock に送る控えの要確認が全員 0
  *   5. 日ごとの CSV の末尾に「数えなかった時間」「数えなかった理由」が出て、認めなかった日に理由が入る
  *   6. 決める窓を PC・iPhone の幅（390px）・暗い表示で撮る（check/out/kintai_review/ に置く。人の目で見る）
+ *   7. v6（2026-11-24・統合 0125）: ホームの「知らせる」（まだ出勤していない・退勤の打刻漏れ・スマホ未登録）→ SUDialog の確かめ → 送る形 → 「知らせ済み」／
+ *      申請のタブの来月分の休暇の行と「承認」「差し戻し」
  * ★架空データだけ（CLAUDE.md §2-1）。
  */
 import fs from 'node:fs';
@@ -163,6 +165,85 @@ try {
   const r1 = lines.find((l) => l.indexOf('9001,2025-12-01') === 0) || '';
   t('日ごとの CSV: 末尾に「数えなかった時間」「数えなかった理由」・12/1 は 0:40 と「早出：指示・申請が無い」', iU === head.length - 2 && iW === head.length - 1 && r1.split(',')[iU] === '0:40' && r1.split(',')[iW] === '早出：指示・申請が無い', [head.slice(-3), r1]);
   t('画面の例外 0', errs.length === 0, errs);
+
+  /* ── v6（2026-11-24・統合 0125）: ホームの「知らせる」と申請のタブの休暇の行を、本物の画面と SUDialog の窓で通す ──
+     時計は 2026-01-14 10:00（予定 9:00 の15分後を過ぎた＝まだ出勤していない）。1/13 の見本 一郎は出勤だけ（退勤の打刻漏れ）。
+     スマホを登録しているのは見本 一郎だけ（ほかの人は「スマホ未登録」）。知らせ・申請・スマホの一覧は偽の口（架空の職員だけ） */
+  {
+    const YM6 = '2026-01', TD6 = '2026-01-14';
+    const notices = [], sent6 = [];
+    const ctx6 = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    await ctx6.addInitScript((st) => { try { for (const k in st) localStorage.setItem(k, st[k]); } catch (e) { /* 控えが使えない時は既定 */ } }, Object.assign({}, FX.storage, { kintai_tab: 'home', kintai_ym: YM6 }));
+    await ctx6.addInitScript((ym) => {
+      let kv;
+      Object.defineProperty(window, 'SUKv', { configurable: true, get() { return kv; }, set(v) {
+        kv = v;
+        if (v && typeof v === 'object') v.callShift = () => Promise.resolve({ ok: true, entries: { ['sched:' + ym + ':plan']: { data: { cells: {}, meta: { confirmedAt: ym + '-01T00:00:00+09:00' } } }, staff: { data: [] }, symbols: { data: [] }, settings: { data: {} } } });
+      } });
+    }, YM6);
+    const LVROW = { id: '00000000-0000-4000-8000-0000000c6e01', staff_id: 'sK02', name: '見本 二美', staff_active: true, kind: 'leave', work_date: '2026-02-03', ym: '2026-02', body: { type: 'special', type_code: 'keicho', half: true }, reason: '見本の理由', status: 'pending', rev: 1, created_at: '2026-01-13T10:00:00+09:00' };
+    for (const r of FX.routes) {
+      if (r.match === FX.URL + '/**') {
+        await ctx6.route(r.match, (route) => {
+          const req = route.request(), u = req.url();
+          const m = /\/rest\/v1\/rpc\/([a-z_0-9]+)/.exec(u), name = m ? m[1] : '';
+          let p = {}; try { p = JSON.parse(req.postData() || '{}'); } catch (e) { p = {}; }
+          const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' };
+          const json = (v) => route.fulfill({ status: 200, contentType: 'application/json', headers: cors, body: JSON.stringify(v) });
+          if (req.method() === 'OPTIONS') return r.handle(route);
+          if (name === 'kintai_month_get') {
+            const mm = FX.monthOf(p.p_ym);
+            if (mm.ok && p.p_ym === YM6) mm.punches = [P('sK01', 'in', '2026-01-13', '09:00')];
+            return json(mm);
+          }
+          if (name === 'kintai_notices_list') { sent6.push([name, p]); return json({ ok: true, rows: notices.slice() }); }
+          if (name === 'kintai_self_devices') return json({ ok: true, devices: [{ id: 1, staff_id: 'sK01', created_at: '2026-01-05T10:00:00+09:00', last_used_at: '2026-01-13T10:00:00+09:00', revoked_at: null, state: 'active' }], codes: [] });
+          if (name === 'kintai_notice_add') {
+            sent6.push([name, p]);
+            const id = '00000000-0000-4000-8000-0000000c6f0' + notices.length;
+            notices.push({ id, staff_id: p.p_staff_id, kind: p.p_kind, work_date: p.p_work_date, created_by: 'check-office@example.invalid', created_at: TD6 + 'T10:01:00+09:00', seen_at: null });
+            return json({ ok: true, id, dup: false });
+          }
+          if (name === 'kintai_requests_list') return json({ ok: true, rows: p.p_status === 'pending' || p.p_status === null ? [LVROW] : [], pending: 1, month_confirmed: p.p_ym ? 0 : null, active_staff: 3 });
+          return r.handle(route);
+        });
+      } else await ctx6.route(r.match, r.handle);
+    }
+    const pg = await ctx6.newPage();
+    await pg.clock.setFixedTime(new Date('2026-01-14T10:00:00+09:00'));
+    const errs6 = [];
+    pg.on('pageerror', (e) => errs6.push(String(e)));
+    await pg.goto(base + '/kintai.html');
+    await pg.waitForSelector('.hnt [data-act="nt-add"]', { timeout: 20000 });
+    const ntTxt = await pg.textContent('#g-main');
+    t('v6 ホーム: 見本 一郎の「まだ出勤していない」と 1/13 の退勤の打刻漏れに「知らせる」', (await pg.$('[data-act="nt-add"][data-sid="sK01"][data-kind="not_in"][data-date="2026-01-14"]')) !== null
+      && (await pg.$('[data-act="nt-add"][data-sid="sK01"][data-kind="missing"][data-date="2026-01-13"]')) !== null, ntTxt.slice(0, 300));
+    t('v6 ホーム: スマホを登録していない人は「スマホ未登録」でボタンなし', /スマホ未登録/.test(ntTxt) && (await pg.$('[data-act="nt-add"][data-sid="sK02"]')) === null);
+    await pg.screenshot({ path: path.join(OUT, 'notice_home_pc.png') });
+    await pg.click('[data-act="nt-add"][data-sid="sK01"][data-kind="not_in"]');
+    await pg.waitForSelector('dialog.sud-dlg[open]', { timeout: 10000 });
+    const dq = await pg.textContent('dialog.sud-dlg[open] .sud-msg');
+    t('v6 確かめの窓（SUDialog）: 「見本 一郎 さんの本人の画面に「1月14日の出勤の打刻がまだありません」と出します」', dq.indexOf('見本 一郎 さんの本人の画面に「1月14日の出勤の打刻がまだありません」と出します') === 0, dq);
+    await pg.screenshot({ path: path.join(OUT, 'notice_confirm_pc.png') });
+    /* 時計を止めた画面では、窓の「開いてすぐの押下は受けない」（su-dialog.js の tooSoon・performance.now）が進まないので、初めから合っている OK を Enter で押す */
+    await pg.keyboard.press('Enter');
+    await pg.waitForFunction(() => /知らせ済み/.test(document.getElementById('g-main').textContent), null, { timeout: 15000 });
+    const ad = sent6.find((x) => x[0] === 'kintai_notice_add');
+    t('v6 送る: 人・日・種類だけ → 行に「知らせ済み 10:01・まだ見ていません」と「取り消す」', ad && JSON.stringify(ad[1]) === JSON.stringify({ p_staff_id: 'sK01', p_work_date: TD6, p_kind: 'not_in' })
+      && /知らせ済み 10:01・まだ見ていません/.test(await pg.textContent('#g-main')) && (await pg.$('[data-act="nt-void"]')) !== null, ad);
+    await pg.setViewportSize({ width: 390, height: 844 });
+    const nh = await pg.evaluate(() => Math.min.apply(null, Array.from(document.querySelectorAll('.hnt button')).map((b) => b.getBoundingClientRect().height)));
+    t('v6 iPhone の幅: 「知らせる」「取り消す」は 44px 以上', nh >= 44, nh);
+    await pg.screenshot({ path: path.join(OUT, 'notice_home_iphone.png'), fullPage: true });
+    await pg.setViewportSize({ width: 1280, height: 900 });
+    await pg.click('[data-tab="requests"]');
+    await pg.waitForFunction(() => /休暇: 特別休暇/.test(document.getElementById('g-main').textContent), null, { timeout: 15000 });
+    const rq = await pg.textContent('#g-main');
+    t('v6 申請のタブ: 来月分の休暇の行「休暇: 特別休暇（慶弔・半日）」と「承認」「差し戻し」', /休暇: 特別休暇（慶弔・半日）/.test(rq) && (await pg.$('[data-act="rq-ok"]')) !== null && (await pg.$('[data-act="rq-ng"]')) !== null, rq.slice(0, 400));
+    await pg.screenshot({ path: path.join(OUT, 'leave_request_pc.png') });
+    t('v6 画面の例外 0', errs6.length === 0, errs6);
+    await ctx6.close();
+  }
 } finally {
   await browser.close();
   server.close();
