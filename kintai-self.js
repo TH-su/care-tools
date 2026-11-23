@@ -4,6 +4,8 @@
  * 2. 登録: 受け口 kintai-self へ {op:'redeem', code, pin} を送り、返った鍵だけを端末に置く（localStorage の kintai_self_key）。続けて同じ暗証番号で開く
  * 3. 開くたびに暗証番号 → 受け口が返した「開いている印」はメモリだけ。2分さわらない・「閉じる」で印・表示名・勤怠・有給・申請を捨て、画面からも消す
  * 4. 勤怠は kintai-calc.js の computeMonth、有給は kintai-leave.js で数える（管理画面と同じ部品）。申請は受け口へ出し、一覧を読み直す
+ * 5. v6（統合 0125）: 開いた時に事務所からの打刻漏れの知らせ（op notices）を1回読み、上に帯を出す（決まった文だけ・その日の打刻がそろったら出さない・帯から打刻の直しを開ける）。
+ *    申請に「休暇」（有休の1日・半日・時間単位・特別休暇・代休・振替）を足した。有給の残りは時間単位で取った分も引く（受け口が absences を返す時）
  * ★端末に置くのは鍵とタブの印（kintai_self_tab）だけ。表示はすべて textContent と createElement（HTML の代入は使わない）。console は使わない。
  */
 (function () {
@@ -35,6 +37,7 @@
   var key = lsGet(KEY_LS);
   if (key && !/^[0-9a-f]{64}$/.test(key)) { lsDel(KEY_LS); key = null; }
   var open = null, months = {}, curYm = null, viewYm = null, leaveData = null, reqRows = null, gen = 0, busy = false;
+  var notices = null;   /* v6: 知らせ（受け口の行・メモリだけ） */
   var tab = TABS.indexOf(lsGet(TAB_LS)) >= 0 ? lsGet(TAB_LS) : 'days';
   var lastReq = null;   // 送り直しの印（同じ中身の送り直しは同じ client_id）
 
@@ -63,9 +66,10 @@
   var idleTimer = null;
   function lock(text) {
     gen++;
-    open = null; months = {}; curYm = null; viewYm = null; leaveData = null; reqRows = null; lastReq = null;
+    open = null; months = {}; curYm = null; viewYm = null; leaveData = null; reqRows = null; lastReq = null; notices = null; monthWait = {};
     if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
-    ['days-head', 'days-list', 'leave-box', 'req-list'].forEach(function (id) { clear($(id)); });
+    ['days-head', 'days-list', 'leave-box', 'req-list', 'nt-box'].forEach(function (id) { clear($(id)); });
+    $('nt-box').hidden = true; $('rq-lv-remain').textContent = '';
     $('who').textContent = '';
     $('f-req').reset(); msg('rq-msg', ''); msg('app-msg', '');
     $('in-pin').value = '';
@@ -139,6 +143,7 @@
     show('app');
     touch();
     setTab(tab);
+    loadNotices();
   }
   $('f-pin').addEventListener('submit', function (e) {
     e.preventDefault();
@@ -178,22 +183,30 @@
   TABS.forEach(function (x) { $('t-' + x).addEventListener('click', function () { setTab(x); }); });
 
   // ── 勤怠 ──
+  var monthWait = {};   /* 読んでいる最中の月分（勤怠のタブと知らせが同じ月分を2回読まない・閉じた時に捨てる） */
   async function getMonth(ym, my) {
     if (months[ym]) return months[ym];
-    var r = await call('month', { key: key, open: open, ym: ym });
+    if (!monthWait[ym]) { var w = monthWait[ym] = call('month', { key: key, open: open, ym: ym }); w.then(function () { if (monthWait[ym] === w) delete monthWait[ym]; }); }
+    var r = await monthWait[ym];
     if (my !== gen) return null;
     if (r.ok !== true) { if (!handleAuth(r)) msg('app-msg', S.errorText(r.error), 'ng'); return null; }
     months[ym] = r;
     return r;
   }
+  /* 今月分（締め日で決める）を決めて読む。読めない・閉じた時は false */
+  async function ensureCur(my, today) {
+    if (curYm) return true;
+    var y0 = S.ymOf(today), d0 = await getMonth(y0, my);
+    if (!d0 || my !== gen) return false;
+    var c = S.currentYm(today, y0, d0.period);
+    if (c !== y0 && !(await getMonth(c, my))) return false;
+    if (my !== gen) return false;
+    curYm = c;
+    return true;
+  }
   async function loadDays(ym) {
     var my = gen, today = S.todayOf(Date.now());
-    if (!curYm) {
-      var y0 = S.ymOf(today), d0 = await getMonth(y0, my);
-      if (!d0) return;
-      curYm = S.currentYm(today, y0, d0.period);
-      if (curYm !== y0 && !(await getMonth(curYm, my))) return;
-    }
+    if (!(await ensureCur(my, today))) return;
     viewYm = ym || curYm;
     $('b-cur').setAttribute('aria-pressed', viewYm === curYm ? 'true' : 'false');
     $('b-prev').setAttribute('aria-pressed', viewYm !== curYm ? 'true' : 'false');
@@ -234,28 +247,36 @@
   $('b-prev').addEventListener('click', function () { if (curYm) loadDays(S.prevYm(curYm)); });
 
   // ── 有給 ──
+  /* 日数の文字（半日きざみは「9.5 日」・時間単位の端数は「9 日 6 時間」・管理画面の dTxt と同じ L.daysHm） */
+  function dTxt(n) { return L.daysHm ? L.daysHm(n, S.dayMinOfLeave(leaveData, C, L)) : n + ' 日'; }
+  async function getLeave(my) {
+    if (leaveData) return leaveData;
+    var r = await call('leave', { key: key, open: open });
+    if (my !== gen) return null;
+    if (r.ok !== true) { if (!handleAuth(r)) msg('app-msg', S.errorText(r.error), 'ng'); return null; }
+    leaveData = r;
+    return r;
+  }
   async function loadLeave() {
     var my = gen, box = $('leave-box');
     if (!leaveData) {
       clear(box); box.appendChild(el('p', 'muted', '有給の記録を読んでいます…'));
-      var r = await call('leave', { key: key, open: open });
-      if (my !== gen) return;
-      if (r.ok !== true) { clear(box); if (!handleAuth(r)) msg('app-msg', S.errorText(r.error), 'ng'); return; }
-      leaveData = r;
+      if (!(await getLeave(my))) { if (my === gen) clear(box); return; }
     }
     var v;
     try { v = S.leaveView(S.leaveOf(leaveData, C, L, S.todayOf(Date.now()))); } catch (e) { v = null; }
     clear(box);
     if (!v) { box.appendChild(el('p', 'msg ng', '有給を数えられませんでした。ページを読み込み直してください。')); return; }
     box.appendChild(el('h2', null, '有給の残り'));
-    box.appendChild(el('p', 'big', v.remain + ' 日'));
-    if (S.hourlyLeaveOn(leaveData)) box.appendChild(el('p', 'msg warn', S.HOURLY_NOTE));   /* 時間単位の有休を使う施設だけ（反証レビュー 2026-11-21） */
+    box.appendChild(el('p', 'big', dTxt(v.remain)));
+    /* 時間単位の有休を使う施設で、受け口がまだ休暇の行（absences）を返さない間だけ（反証レビュー 2026-11-21・v6 で返す後は残りから引いてあるので出さない） */
+    if (S.hourlyNoteOn(leaveData)) box.appendChild(el('p', 'msg warn', S.HOURLY_NOTE));
     if (v.soon) box.appendChild(el('p', 'msg warn', 'いちばん早く消える残り: ' + v.soon.days + ' 日（' + v.soon.expires + ' まで）'));
     if (v.ob5) box.appendChild(el('p', v.ob5Warn ? 'msg warn' : 'muted', v.ob5));
     if (v.lots.length) {
       box.appendChild(el('h2', 'sh', '付与ごとの残りと期限'));
       var ul = el('ul', 'rows');
-      v.lots.forEach(function (l) { var li = el('li'); li.appendChild(el('span', null, l.granted + ' の付与（' + l.days + ' 日）')); li.appendChild(el('b', null, '残り ' + l.remain + ' 日・' + l.expires + ' まで')); ul.appendChild(li); });
+      v.lots.forEach(function (l) { var li = el('li'); li.appendChild(el('span', null, l.granted + ' の付与（' + l.days + ' 日）')); li.appendChild(el('b', null, '残り ' + dTxt(l.remain) + '・' + l.expires + ' まで')); ul.appendChild(li); });
       box.appendChild(ul);
     }
     if (v.next) box.appendChild(el('p', 'muted', '次の付与: ' + v.next.date + '（' + v.next.days + ' 日）'));
@@ -268,8 +289,39 @@
     var k = $('rq-kind').value;
     $('g-date').hidden = k === 'month'; $('g-punch').hidden = k !== 'punch'; $('g-ot').hidden = k !== 'overtime';
     $('g-ym').hidden = k !== 'month'; $('g-reason').hidden = k === 'month';
+    $('g-lvtype').hidden = k !== 'leave'; $('g-leave').hidden = k !== 'leave';
+    $('rq-date-l').textContent = k === 'leave' ? '休む日' : '勤務の日';
+    if (k === 'leave') leaveTypeChanged();
   }
   $('rq-kind').addEventListener('change', kindChanged);
+  /* v6: 休暇の種類ごとに出す欄（時間＝時間単位・特別休暇の種類＝特別休暇・半日＝特別休暇と代休・結ぶ日＝代休と振替） */
+  function leaveTypeChanged() {
+    var t = $('rq-lt').value;
+    $('g-lv-hours').hidden = t !== 'hourly'; $('g-lv-code').hidden = t !== 'special';
+    $('g-lv-half').hidden = !(t === 'special' || t === 'comp'); $('g-lv-link').hidden = !(t === 'comp' || t === 'swap');
+    $('rq-ll-l').textContent = t === 'swap' ? '入れ替えて働く日' : '休日に働いた日';
+  }
+  $('rq-lt').addEventListener('change', leaveTypeChanged);
+  function lvCfg() { return S.leaveCfgOf(leaveData); }
+  function lvTypes() { try { return C.leaveTypesOf(lvCfg()); } catch (e) { return []; } }
+  function hourlyOn() { return !!leaveData && lvCfg().hourlyPaidLeave === true; }
+  function fillSel(sel, opts) {
+    var cur = sel.value; clear(sel);
+    opts.forEach(function (o) { var x = el('option', null, o[1]); x.value = o[0]; sel.appendChild(x); });
+    if (opts.some(function (o) { return o[0] === cur; })) sel.value = cur;
+  }
+  /* 休暇の欄の選び肢（設定で決まる）と有休の残り。有給の記録が読めない時は時間単位を出さず、特別休暇は既定の種類 */
+  function fillLeave() {
+    fillSel($('rq-lt'), S.leaveTypeOptions(hourlyOn()));
+    var hmax = Math.max(1, Math.round(S.dayMinOfLeave(leaveData, C, L) / 60) - 1), hs = [];
+    for (var h = 1; h <= hmax; h++) hs.push([String(h), h + ' 時間']);
+    fillSel($('rq-lh'), hs);
+    fillSel($('rq-lc'), lvTypes().map(function (x) { return [x.code, x.name + (x.paid ? '' : '（無給）')]; }));
+    var v = null;
+    if (leaveData) { try { v = S.leaveView(S.leaveOf(leaveData, C, L, S.todayOf(Date.now()))); } catch (e) { v = null; } }
+    $('rq-lv-remain').textContent = v ? '有休の残り: ' + dTxt(v.remain) + '（承認待ちの申請の分は、まだ引いていません）' : '';
+    leaveTypeChanged();
+  }
   function fillYm() {
     var sel = $('rq-ym'); clear(sel);
     var cy = curYm || S.ymOf(S.todayOf(Date.now()));
@@ -277,19 +329,21 @@
   }
   async function loadReqs() {
     var my = gen;
-    fillYm(); kindChanged();
+    fillYm(); fillLeave(); kindChanged();
     if (!$('rq-date').value) $('rq-date').value = S.todayOf(Date.now());
     var r = await call('requests', { key: key, open: open });
     if (my !== gen) return;
     if (r.ok !== true) { if (!handleAuth(r)) msg('app-msg', S.errorText(r.error), 'ng'); return; }
     reqRows = Array.isArray(r.rows) ? r.rows : [];
     paintReqs();
+    /* v6: 休暇の欄（時間単位・特別休暇の種類）と有休の残りは有給の記録で決める。まだ読んでいなければ一覧の後に読む */
+    if (!leaveData && (await getLeave(my)) && my === gen) { fillLeave(); paintReqs(); }
   }
   function paintReqs() {
     var list = $('req-list'); clear(list);
     if (!reqRows || !reqRows.length) { list.appendChild(el('p', 'muted', 'まだ申請はありません。')); return; }
     reqRows.forEach(function (raw) {
-      var r = S.requestRow(raw), c = el('div', 'day'), top = el('div', 'd');
+      var r = S.requestRow(raw, lvTypes()), c = el('div', 'day'), top = el('div', 'd');
       top.appendChild(el('span', null, r.kind + '　' + r.when)); top.appendChild(el('span', 'pill st-' + r.statusKey, r.status));
       c.appendChild(top);
       if (r.what) c.appendChild(el('p', null, r.what));
@@ -322,7 +376,8 @@
     e.preventDefault();
     if (busy) return;
     var b = S.buildRequest({ kind: $('rq-kind').value, date: $('rq-date').value, punchKind: $('rq-pk').value, time: $('rq-time').value, nextDay: $('rq-next').checked,
-      earlyFrom: $('rq-ef').value, otUntil: $('rq-ou').value, otNextDay: $('rq-ou-next').checked, ym: $('rq-ym').value, reason: $('rq-reason').value });
+      earlyFrom: $('rq-ef').value, otUntil: $('rq-ou').value, otNextDay: $('rq-ou-next').checked, ym: $('rq-ym').value, reason: $('rq-reason').value,
+      leaveType: $('rq-lt').value, half: $('rq-lhalf').checked, hours: $('rq-lh').value, typeCode: $('rq-lc').value, linkDate: $('rq-ll').value, hourlyOn: hourlyOn(), types: lvTypes() });
     if (!b.ok) { msg('rq-msg', b.msg, 'ng'); return; }
     var j = JSON.stringify(b.req);
     if (!lastReq || lastReq.json !== j) lastReq = { json: j, cid: newId() };
@@ -333,15 +388,63 @@
     if (my !== gen) return;
     if (r.ok !== true) {
       if (handleAuth(r)) return;
-      msg('rq-msg', S.errorText(r.error, 'request'), 'ng');
+      msg('rq-msg', S.errorText(r.error, q.kind === 'leave' ? 'leave' : 'request'), 'ng');
       if (r.error !== 'net' && r.error !== 'server') lastReq = null;
       return;
     }
     lastReq = null;
     $('rq-reason').value = ''; $('rq-time').value = ''; $('rq-ef').value = ''; $('rq-ou').value = ''; $('rq-next').checked = false; $('rq-ou-next').checked = false;
+    $('rq-lhalf').checked = false; $('rq-ll').value = '';
     msg('rq-msg', q.kind === 'month' ? '確かめたことを伝えました。' : '申請しました。事務所が承認するまで「承認待ち」と出ます。', 'ok');
     loadReqs();
   });
+
+  // ── v6: 事務所からの打刻漏れの知らせ（統合 0125）──
+  /* 開いた時に1回だけ読む（読むと事務所に「見た」が付く）。読めない時（古い受け口＝format など）は帯を出さないだけ（勤怠・申請は今のまま使える）。
+     その日の打刻は月の答えを数えた結果で見る（出勤と退勤がそろった・まだ出勤していないの知らせは出勤があれば出さない） */
+  async function loadNotices() {
+    var my = gen;
+    var r = await call('notices', { key: key, open: open });
+    if (my !== gen) return;
+    if (r.ok !== true) { handleAuth(r); return; }
+    var rows = S.noticeRows(r.rows);
+    if (!rows.length) { notices = []; paintNotices([]); return; }
+    var today = S.todayOf(Date.now()), out = [];
+    if (!(await ensureCur(my, today))) return;
+    for (var i = 0; i < rows.length; i++) {
+      var n = rows[i], ymx = curYm, d = months[curYm];
+      /* 今月分の期間より前の日は前の月分を読む（知らせは14日以内なので2つの月分で足りる） */
+      if (d && d.period && S.isDate(d.period.from) && n.work_date < d.period.from) { ymx = S.prevYm(curYm); d = await getMonth(ymx, my); if (my !== gen) return; }
+      var pu = null;
+      if (d) { try { pu = S.punchesOn(S.computeOf(d, ymx, C, Date.now()), n.work_date); } catch (e) { pu = null; } }
+      var tx = S.noticeText(n, pu);
+      if (tx) out.push({ n: n, text: tx, pk: n.kind === 'missing' && pu && pu.hasIn && !pu.hasOut ? 'out' : 'in' });
+    }
+    notices = out;
+    paintNotices(out);
+  }
+  function paintNotices(list) {
+    var box = $('nt-box'); clear(box);
+    box.hidden = !list.length;
+    if (!list.length) return;
+    box.appendChild(el('h2', null, '事務所からの知らせ'));
+    list.forEach(function (x) {
+      box.appendChild(el('p', 'nt', x.text));
+      var b = el('button', 'btn sm', '打刻の直しを出す（' + S.dayLabel(x.n.work_date) + '）'); b.type = 'button';
+      b.addEventListener('click', function () { openPunchFix(x.n.work_date, x.pk); });
+      var a = el('div', 'acts'); a.appendChild(b); box.appendChild(a);
+    });
+  }
+  /* 帯から: 申請のタブを開き、打刻の直しをその日付で出せる形にする */
+  function openPunchFix(date, pk) {
+    if (!open) return;
+    setTab('req');
+    $('rq-kind').value = 'punch'; kindChanged();
+    $('rq-date').value = date; $('rq-pk').value = pk === 'out' ? 'out' : 'in';
+    msg('rq-msg', '');
+    try { $('f-req').scrollIntoView({ block: 'start' }); } catch (e) { /* 古い端末はそのまま */ }
+    try { $('rq-time').focus(); } catch (e) { /* 何もしない */ }
+  }
 
   // ── 始め ──
   if (code) showEnroll();       // 番号を持って開いた時は登録の画面（前の鍵は、登録できた時に外す）

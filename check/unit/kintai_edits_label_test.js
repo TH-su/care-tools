@@ -31,7 +31,8 @@ const DB_ACTIONS = ['code_reset', 'punch_add', 'punch_void', 'day_put',         
   'sched_set', 'sched_off', 'sched_clear', 'fixed_put', 'fixed_void',                                       // 0111
   'managers_add', 'managers_remove',                                                                        // 0112
   'absence_add', 'absence_void',                                                                            // 0113（v5 段4 で足した・2026-11-20）
-  'month_import', 'month_import_void'];                                                                     // 0123（freee の月の集計の取り込みで足した・2026-11-23）
+  'month_import', 'month_import_void',                                                                      // 0123（freee の月の集計の取り込みで足した・2026-11-23）
+  'notice_add', 'notice_void'];                                                                             // 0125（v6 の打刻漏れの知らせで足す・契約 ROOT-v6「2」・2026-11-24）
 
 /* kintai.js から直しの履歴の言い方の部分と、それが使う補助を切り出して動かす（画面の DOM には触れない部分だけ） */
 function line(re) { const m = re.exec(K); if (!m) throw new Error('見つからない: ' + re); return m[0]; }

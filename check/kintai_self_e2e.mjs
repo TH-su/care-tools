@@ -12,6 +12,8 @@
  *   G. 暗証番号の違い: 残りの回数が出る・開かない
  *   H. 鍵が使えない（取り消し）: 登録の画面に戻り、鍵を端末から消す
  *   I. 暗い表示でも開ける・印刷には中身を出さない
+ *   J. v6（統合 0125）: 事務所からの打刻漏れの知らせの帯（打刻がそろった日は出さない・帯から打刻の直しをその日付で開く）・
+ *      休暇の申請（種類・時間単位は設定が true の時だけ・特別休暇の種類・送る形）・有給の残りから時間単位の有休を引く
  * --shots を付けると、各画面を <保存先>/kintai-self-*.png に撮る（目で確かめる用・架空データ）。
  */
 import fs from 'node:fs';
@@ -67,7 +69,8 @@ function fake(opts = {}) {
     if (b.op === 'pin') return b.pin === '1357' ? { ok: true, open: OPEN, name: '表示 架空', until: new Date(Date.now() + 300000).toISOString() } : { ok: false, error: 'wrong', left: 3 };
     if (b.open !== OPEN) return { ok: false, error: 'closed' };
     if (b.op === 'month') return monthOf(b.ym);
-    if (b.op === 'leave') return LEAVE;
+    if (b.op === 'leave') return opts.leave || LEAVE;
+    if (b.op === 'notices') return opts.notices ? { ok: true, rows: opts.notices } : { ok: false, error: 'format' };   /* 0125 の前の受け口は知らない op を format で断る */
     if (b.op === 'requests') return { ok: true, rows: st.reqs };
     if (b.op === 'request_add') { const r = { id: '00000000-0000-4000-8000-00000000e2e' + st.reqs.length, kind: b.kind, work_date: b.work_date, ym: b.ym || YM, body: b.body, reason: b.reason, status: 'pending', rev: 1, created_at: new Date().toISOString() }; st.reqs.unshift(r); return { ok: true, id: r.id, rev: 1, status: 'pending' }; }
     if (b.op === 'withdraw') { const r = st.reqs.find((x) => x.id === b.id); if (!r || r.rev !== b.rev || r.status !== 'pending') return { ok: false, error: 'conflict' }; r.status = 'withdrawn'; r.rev++; return { ok: true, rev: r.rev, status: 'withdrawn' }; }
@@ -270,6 +273,66 @@ try {
   t('印刷には中身を出さない', await page.evaluate(() => getComputedStyle(document.querySelector('main')).display === 'none'));
   t('画面のエラーなし', errors.length === 0, errors);
   await context.close();
+
+  say('— J. v6: 打刻漏れの知らせ・休暇の申請 —');
+  {
+    const d1 = YM + '-01', d2 = YM + '-02';
+    const NT = [{ id: '00000000-0000-4000-8000-0000000000a1', kind: 'missing', work_date: d1, created_at: d1 + 'T20:00:00+09:00', seen_at: null },
+                { id: '00000000-0000-4000-8000-0000000000a2', kind: 'missing', work_date: d2, created_at: d2 + 'T20:00:00+09:00', seen_at: null },
+                { id: '00000000-0000-4000-8000-0000000000a3', kind: 'free', work_date: d2, created_at: d2 + 'T20:00:00+09:00', seen_at: null }];
+    const LV6 = Object.assign({}, LEAVE, { months: [{ ym: YM, from: YM + '-01', to: YM + '-' + pad(lastDay(YM)), locked: false, config: { hourlyPaidLeave: true } }],
+      absences: [{ id: 'h1', date: d1, kind: 'hourly_paid', minutes: 120, paid: true, type_code: null, link_date: null }] });
+    const st4 = fake({ notices: NT, leave: LV6 });
+    ({ context, page, errors } = await openPage(st4, '/kintai-self.html'));
+    await page.evaluate((k) => { localStorage.setItem('kintai_self_key', k); localStorage.setItem('kintai_self_tab', 'days'); }, KEY);
+    await page.reload();
+    await page.fill('#in-pin', '1357'); await page.click('#b-pin');
+    await page.waitForSelector('#nt-box:not([hidden]) .nt', { timeout: 10000 });
+    const nb = await page.textContent('#nt-box');
+    const m0 = +YM.slice(5, 7);
+    t('帯: 見出し「事務所からの知らせ」と決まった文（打刻の無い日だけ・そろった日と知らない種類は出さない）', /事務所からの知らせ/.test(nb) && nb.indexOf(m0 + '月2日の打刻が抜けています。事務所に伝えるか、申請から打刻の直しを出してください。') >= 0
+      && nb.indexOf(m0 + '月1日') < 0 && (await page.$$('#nt-box .nt')).length === 1, nb);
+    t('知らせは開いた時に1回だけ読む（key・open だけを送る）', st4.bodies.filter((b) => b.op === 'notices').length === 1 && JSON.stringify(Object.keys(st4.bodies.find((b) => b.op === 'notices')).sort()) === '["key","op","open"]');
+    await shot(page, 'notice');
+    await page.click('#nt-box button');
+    await page.waitForSelector('#p-req:not([hidden])');
+    t('帯から打刻の直しをその日付で開く', (await page.inputValue('#rq-kind')) === 'punch' && (await page.inputValue('#rq-date')) === d2 && (await page.inputValue('#rq-pk')) === 'in');
+    const bh = await page.evaluate(() => document.querySelector('#nt-box button').getBoundingClientRect().height);
+    t('帯のボタンは 44px 以上', bh >= 44, bh);
+
+    await page.waitForFunction(() => /有休の残り/.test(document.querySelector('#rq-lv-remain').textContent), null, { timeout: 10000 });
+    await page.selectOption('#rq-kind', 'leave');
+    const opts = await page.$$eval('#rq-lt option', (o) => o.map((x) => x.value));
+    t('休暇の種類: 時間単位は設定が true の時だけ（この施設は true）', JSON.stringify(opts) === JSON.stringify(['paid_day', 'paid_half', 'hourly', 'special', 'comp', 'swap']), opts);
+    t('有休の残りを横に出す（10日−シフトの有休1日−時間単位の2時間＝8 日 6 時間）', /有休の残り: 8 日 6 時間/.test(await page.textContent('#rq-lv-remain')), await page.textContent('#rq-lv-remain'));
+    t('休む日の欄の名前・理由の欄が出る・時刻の欄は出ない', (await page.textContent('#rq-date-l')) === '休む日' && (await vis(page, '#rq-reason')) && !(await vis(page, '#rq-time')));
+    await page.selectOption('#rq-lt', 'special');
+    t('特別休暇: 種類（既定の3つ）と半日が出て、時間と結ぶ日は出ない', (await vis(page, '#rq-lc')) && (await vis(page, '#rq-lhalf')) && !(await vis(page, '#rq-lh')) && !(await vis(page, '#rq-ll'))
+      && JSON.stringify(await page.$$eval('#rq-lc option', (o) => o.map((x) => x.value))) === '["keicho","summer","other"]');
+    await page.fill('#rq-date', YM + '-20');
+    await page.fill('#rq-reason', '私用');
+    await page.click('#b-req');
+    await page.waitForFunction(() => /特別休暇（慶弔）/.test(document.querySelector('#req-list').textContent), null, { timeout: 10000 });
+    const la = st4.bodies.filter((b) => b.op === 'request_add').pop();
+    t('送る形: kind leave・休む日・{type, type_code}・理由', la && la.kind === 'leave' && la.work_date === YM + '-20' && JSON.stringify(la.body) === '{"type":"special","type_code":"keicho"}' && la.reason === '私用', la);
+    t('一覧に「休暇」と中身「特別休暇（慶弔）」・承認待ち', /休暇/.test(await page.textContent('#req-list')) && /承認待ち/.test(await page.textContent('#req-list')));
+    await page.selectOption('#rq-lt', 'hourly');
+    t('時間単位: 時間の欄が出る（1日8時間の施設は1〜7時間）', (await vis(page, '#rq-lh')) && (await page.$$('#rq-lh option')).length === 7);
+    await page.selectOption('#rq-lh', '2');
+    await page.fill('#rq-reason', '通院');
+    await page.click('#b-req');
+    await page.waitForFunction(() => /有休（時間 2 時間）/.test(document.querySelector('#req-list').textContent), null, { timeout: 10000 });
+    t('時間単位の送る形 {type:hourly, minutes:120}', JSON.stringify(st4.bodies.filter((b) => b.op === 'request_add').pop().body) === '{"type":"hourly","minutes":120}');
+    await shot(page, 'leave-request');
+    await page.click('#t-leave');
+    await page.waitForFunction(() => /有給の残り/.test(document.querySelector('#leave-box').textContent), null, { timeout: 10000 });
+    const lv6 = await page.textContent('#leave-box');
+    t('有給のタブ: 残りは時間単位を引いた「8 日 6 時間」・受け口が休暇の行を返す時は「残りに入っていません」を出さない', /8 日 6 時間/.test(lv6) && !/ここの残りに入っていません/.test(lv6), lv6.slice(0, 200));
+    const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    t('iPhone の幅で横にはみ出さない', over <= 1, over);
+    t('画面のエラーなし', errors.length === 0, errors);
+    await context.close();
+  }
 } finally {
   await browser.close();
   srv.close();
