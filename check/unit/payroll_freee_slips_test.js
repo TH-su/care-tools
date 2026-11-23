@@ -1,7 +1,7 @@
 /* freee の明細の書き出しを読む・結ぶ・比べる・累計の行にする純関数（payroll-freee-slips.js）の試験（2026-11-23 新設・ROOT-yearend.md の B1）
    実行: node check/unit/payroll_freee_slips_test.js
    守りたいこと:
-     1. parse: 見出しの揺れ（氏名／姓＋名・支給日／賞与支給日・課税支給額／課税対象額・全角の括弧）・数の書き方（1,234・¥・円・-・△・(…)・空）・数でない値は bad
+     1. parse: 見出しの揺れ（氏名／姓＋名・支給日／賞与支給日・課税支給額／課税支給額合計（課税対象額は当てない）・全角の括弧）・数の書き方（1,234・¥・円・-・△・(…)・空）・数でない値は bad
      2. 種類: 見出しに「賞与」があれば bonus・呼ぶ側の kind が勝つ
      3. match: 従業員番号で結ぶ・無ければ空白を除いた氏名がちょうど1人の時だけ・2人以上／0人は結ばない
      4. compare / compareSlips: 片方だけの人も出す・差のある行が上・tax_adjust（年末調整の精算）は除いて別の欄・賞与は住民税の項目なし
@@ -34,10 +34,23 @@ console.log('\n— 2. parse（賞与・Shift_JIS・姓＋名・見出しの揺�
 const bon = FS.parse(fx('freee-slips-bonus-2026-07.csv'));
 t('見出しの「賞与」で種類は賞与', bon.kind === 'bonus');
 t('姓＋名を空白でつなぐ・「2026年7月10日」を日付に', bon.rows[0].name === '見本 一' && bon.rows[0].pay_date === '2026-07-10', bon.rows[0]);
-t('課税対象額・健康保険・厚生年金・源泉所得税・総控除額 の揺れを読む', bon.rows[0].taxable === 300000 && bon.rows[0].si_health === 15000 && bon.rows[0].si_pension === 27450 && bon.rows[0].income_tax === 10000 && bon.rows[0].deduct_total === 57100, bon.rows[0]);
+t('課税支給額合計・健康保険・厚生年金・源泉所得税・総控除額 の揺れを読む', bon.rows[0].taxable === 300000 && bon.rows[0].si_health === 15000 && bon.rows[0].si_pension === 27450 && bon.rows[0].income_tax === 10000 && bon.rows[0].deduct_total === 57100, bon.rows[0]);
 t('数でない値（abc）は bad の印・値は null', bon.rows[1].bad.length === 1 && bon.rows[1].income_tax === null, bon.rows[1]);
 t('呼ぶ側の kind が勝つ', FS.parse(fx('freee-slips-bonus-2026-07.csv'), { kind: 'salary' }).kind === 'salary');
 t('住民税の列が無ければ null（has に無い）', bon.rows[0].resident_tax === null && !bon.rows[0].has.resident_tax);
+
+console.log('\n— 2b. parse（freee の賃金台帳の見出しの形・2026-11-23 に実物の見出しで確かめた・架空の金額） —');
+/* 実物では 課税対象額＝課税支給額合計−社会保険料等控除合計・非課税支給額合計＝通勤手当 (非課税)＋交通費。手当の名前は汎用の物だけ */
+const BOOK = '\uFEFF従業員名,従業員番号,基本給,課税支給額合計,通勤手当 (非課税),交通費,非課税支給額合計,総支給額,健康保険料,介護保険料,子ども・子育て支援金,厚生年金保険料,雇用保険料,社会保険料等控除合計,課税対象額,所得税,住民税,控除合計,差引支給金額\r\n'
+  + '見本 一,E901,"200,000","200,000","3,000","2,000","5,000","205,000","10,000","1,600",400,"18,300","1,180","31,480","168,520","3,000","5,000","39,480","165,520"\r\n';
+const book = FS.parse(BOOK), b1 = book.rows[0];
+t('課税支給は「課税支給額合計」（社保を引いた後の「課税対象額」に当てない）', b1.taxable === 200000, b1.taxable);
+t('非課税は「非課税支給額合計」（「通勤手当 (非課税)」だけに当てない）', b1.nontax === 5000, b1.nontax);
+t('社保等の合計は「社会保険料等控除合計」・差引は「差引支給金額」', b1.si_total === 31480 && b1.net === 165520, [b1.si_total, b1.net]);
+t('当てなかった「課税対象額」は items に名前のまま残る', b1.items['課税対象額'] === 168520, b1.items);
+t('支給日の列が無い書き出しは支給日を missing に出す（行の支給日は null）', book.cols.missing.indexOf('支給日') >= 0 && b1.pay_date === null, book.cols.missing);
+const onlyTaiShou = FS.parse('従業員番号,総支給額,課税対象額,所得税\r\nE901,"205,000","168,520","3,000"\r\n');
+t('「課税対象額」しか無い書き出しは課税支給に使わず、課税支給額の列が無いと断る', onlyTaiShou.refused === true && onlyTaiShou.cols.required.indexOf('課税支給額（非課税支給額）') >= 0, onlyTaiShou.cols);
 
 console.log('\n— 3. 数の書き方 —');
 t('1,234 / ¥1,234 / ￥1,234円 / 1234', FS.toYen('1,234') === 1234 && FS.toYen('¥1,234') === 1234 && FS.toYen('￥1,234円') === 1234 && FS.toYen('1234') === 1234);
