@@ -703,6 +703,217 @@
     return d;
   }
 
+  /* ── 6. 賞与（2026-11-23 足した・賞与の計算 v1 §2・CALC_VER とは別の版 BONUS_VER） ──
+     computeBonus(input) が1人・1回分の賞与（社保・雇保・源泉）を返す。computeItem（月の給与）とは別の道で、月の給与の数え方は変えない。
+     入力（形は報告と試験 check/unit/payroll_bonus_test.js に合わせる）:
+       bonus: { pay_date:'YYYY-MM-DD', lines:[{code, amount}] }  code 'bonus' は定義が無くても「賞与」（課税・社保・労保の対象）。ほかは allowanceDefs の定義に従う
+       settings（月の給与と同じ給与の設定・prefecture・emp_ins_kind・bonus_period_months（算定期間の月数・既定6・仮置き））
+       profile（支給日に有効な給与の設定・月の給与と同じ形）
+       allowanceDefs（手当・控除の定義・月の給与と同じ形）
+       prev: { kind:'db'|'ytd'|'manual'|'none'|'unconfirmed'|'missing', P（前月の社会保険料等控除後の給与・円）, manualP（任意・手入力の P・食い違いの知らせに使う）, period_months（任意） }
+       fyStdSum（同じ年度のほかの回の健保の標準賞与額の和）・fyPriorStd（この年度に他（freee など）で払った健保の標準賞与額・手入力。null は 0 として知らせる）
+       monthStdSum（同じ月のほかの回の厚年の標準賞与額の和）・count12（過去12か月のほかの回の数）・count12Other（過去12か月の他での回の数・手入力）
+       rates（率表・試験で差し替える時だけ）
+     ・保険料の率は支給日の月の率（月の給与の「徴収の月」のずらしを通さない）。雇用保険は支給日の率
+     ・源泉は算出率の表（前月の給与 P で率を引く）。前月が無い・P≦0・T が P の10倍を超える時は月額表の方法（国税庁 No.2523）。
+       月額表の方法は月額表（taxTable）だけで数え、電算機特例（taxComputer）は使わない */
+  var BONUS_VER = 'payroll-bonus-1';
+  /* 止めの警告（確定できない）。画面と DB はこの code で見分ける */
+  var BONUS_BLOCK = { badinput: 1, calc_error: 1, prev_unconfirmed: 1, prev_missing: 1, rate_missing: 1, tax_table_missing: 1, emp_rate_missing: 1, std_missing: 1 };
+  var BONUS_HEALTH_FY_CAP = 5730000, BONUS_PENSION_MONTH_CAP = 1500000;
+  function computeBonus(input) {
+    badNum = 0;
+    try { return computeBonus_(input); }
+    catch (e) {
+      return { ver: BONUS_VER, gross: 0, taxable: 0, social: 0, deduct: 0, net: 0, T: 0, tax: 0, taxMethod: null, rate: null, P: null,
+        std: { raw: 0, health: 0, pension: 0 }, ins: { health: 0, care: 0, support: 0, pension: 0, emp: 0 },
+        employer: { health: 0, care: 0, support: 0, pension: 0, childcare: 0, emp: 0 }, lines: [],
+        warns: [{ code: 'calc_error', msg: '計算できませんでした（入力の形を確かめてください）', stop: true }] };
+    }
+  }
+  /* 賞与の資格: 取得は月で見る（取得月より前の月は対象外）。喪失月に払った分は 0（喪失日の前日までに払った分は lost の印）。
+     取得と喪失が同じ月なら、取得日〜喪失日の前日に払った分は対象 */
+  function bonusCovered(ins, profile, payDate) {
+    var from = ins && isDate(ins.from) ? ins.from : (isDate(profile.entry_date) ? profile.entry_date : null);
+    var loss = ins && isDate(ins.to) ? ins.to : (isDate(profile.retire_date) ? addDays(profile.retire_date, 1) : null);
+    var ym = ymOf(payDate), acq = from ? ymOf(from) : null, lossYm = loss ? ymOf(loss) : null;
+    if (acq && ym < acq) return { on: false, lost: false };
+    if (lossYm) {
+      if (acq && acq === lossYm) return { on: ym === acq && from <= payDate && payDate < loss, lost: false };
+      if (ym > lossYm) return { on: false, lost: false };
+      if (ym === lossYm) return { on: false, lost: payDate < loss };
+    }
+    return { on: true, lost: false };
+  }
+  function computeBonus_(input) {
+    input = input || {};
+    var R = input.rates || Rates;
+    var TT = R && typeof R.bonusRate === 'function' ? R : (isNode ? require('./payroll-tax-table.js') : root.PayrollTaxTable);
+    var setIn = input.settings && typeof input.settings === 'object' ? input.settings : {};
+    var S = fillSettings(setIn);
+    var P = input.profile && typeof input.profile === 'object' ? input.profile : null;
+    var bonus = input.bonus && typeof input.bonus === 'object' ? input.bonus : {};
+    var payDate = bonus.pay_date, warns = [], lines = [];
+    function warn(code, msg) { for (var i = 0; i < warns.length; i++) if (warns[i].code === code) return; warns.push({ code: code, msg: msg, stop: !!BONUS_BLOCK[code] }); }
+    function line(sec, code, name, amount, basis) { lines.push({ sec: sec, code: code, name: name, amount: amount, basis: basis || '' }); }
+    var out = { ver: BONUS_VER, gross: 0, taxable: 0, social: 0, deduct: 0, net: 0, T: 0, tax: 0, taxMethod: null, rate: null, P: null,
+      std: { raw: 0, health: 0, pension: 0 }, ins: { health: 0, care: 0, support: 0, pension: 0, emp: 0 },
+      employer: { health: 0, care: 0, support: 0, pension: 0, childcare: 0, emp: 0 }, lines: lines, warns: warns };
+    if (!isDate(payDate)) { warn('badinput', '支給日の形が違います'); return out; }
+    /* 給与の設定が無い人は標準賞与額の対象も税の欄も決められない（止め・仮置き） */
+    if (!P || !Object.keys(P).length) { warn('std_missing', '給与の設定がありません'); return out; }
+    var ym = ymOf(payDate), board = P.pay_type === 'board';
+    var defs = {};
+    (Array.isArray(input.allowanceDefs) ? input.allowanceDefs : []).forEach(function (d) { if (d && d.code) defs[d.code] = d; });
+
+    /* 1. 支給と控除の行 */
+    var gross = 0, taxable = 0, siBase = 0, laborBase = 0, dedLines = [], dedSi = 0;
+    (Array.isArray(bonus.lines) ? bonus.lines : []).forEach(function (x) {
+      if (!x || !x.code) return;
+      var def = defs[x.code], amt = int(x.amount);
+      if (!def && x.code !== 'bonus') { warn('def_missing', '手当・控除の定義が無い項目があります（' + x.code + '）・計算に入れていません'); return; }
+      if (def && def.sec === 'deduct') {
+        var asSi = !!(def.attrs && def.attrs.social_ins === true);
+        if (asSi) dedSi += amt;
+        dedLines.push({ code: 'd:' + def.code, name: def.name || def.code, amount: amt, basis: asSi ? '定額（社会保険料として扱う）' : '定額' });
+        return;
+      }
+      var at = attrsOf(def || null), name = def ? (def.name || def.code) : '賞与';
+      if (x.code === 'commute' || (def && /通勤/.test(String(def.name || '')))) warn('commute_in_bonus', '賞与に通勤手当があります（月の給与で払うものか確かめてください）');
+      gross += amt;
+      if (at.income_tax) taxable += amt;
+      if (at.social_ins) siBase += amt;
+      if (at.labor_ins) laborBase += amt;
+      line('pay', def ? 'f' + def.code : 'bonus', name, amt, '');
+    });
+
+    /* 2. 標準賞与額（千円未満切捨て）と上限 */
+    var raw = Math.max(0, Math.floor(siBase / 1000) * 1000);
+    var fyPrior = input.fyPriorStd;
+    if (fyPrior === undefined || fyPrior === null || fyPrior === '') { fyPrior = 0; warn('fy_prior_manual', 'この年度に他（freee など）で払った賞与の標準賞与額が入っていません（0として数えました）'); }
+    var fySum = Math.max(0, int(input.fyStdSum)) + Math.max(0, int(fyPrior));
+    var stdH = Math.min(raw, Math.max(0, BONUS_HEALTH_FY_CAP - fySum));
+    var stdP = Math.min(raw, Math.max(0, BONUS_PENSION_MONTH_CAP - Math.max(0, int(input.monthStdSum))));
+    out.std.raw = raw;
+
+    /* 3〜5. 社保（支給日の月の率） */
+    var ins = P.ins && typeof P.ins === 'object' ? P.ins : {};
+    var birth = isDate(P.birth_date) ? P.birth_date : null;
+    var hOn = !!(ins.health && ins.health.on), pOn = !!(ins.pension && ins.pension.on);
+    var unset = ['health', 'pension'].concat(board ? [] : ['emp']).filter(function (k) { return !(ins[k] && typeof ins[k] === 'object' && typeof ins[k].on === 'boolean'); });
+    if (unset.length) warn('ins_unset', '加入が決まっていない保険があります（' + unset.map(function (k) { return { health: '健康保険', pension: '厚生年金', emp: '雇用保険' }[k]; }).join('・') + '・加入していないとして数えました）');
+    if ((hOn || pOn) && !birth) warn('birth_missing', '生年月日が空です（介護・年齢の判定ができません）');
+    /* 年度の途中で資格を取った人は、前の会社で受けた賞与を年度の累計に数えられない（知らせだけ・仮置き） */
+    var fyStart = (+ym.slice(5, 7) >= 4 ? ym.slice(0, 4) : String(+ym.slice(0, 4) - 1)) + '-04-01';
+    var acqH = ins.health && isDate(ins.health.from) ? ins.health.from : (isDate(P.entry_date) ? P.entry_date : null);
+    if (hOn && acqH && acqH > fyStart && acqH <= payDate) warn('fy_prior_unknown', '年度の途中で資格を取った方です（前の勤め先の賞与は年度の累計に入っていません）');
+    /* 産休・育休の免除の記録（月の範囲）が支給月に掛かる時は、自動で免除せず知らせる（仮置き） */
+    var leave = (Array.isArray(ins.exempt) ? ins.exempt : []).some(function (x) { return x && isYm(x.from_ym) && x.from_ym <= ym && (!isYm(x.to_ym) || ym <= x.to_ym); });
+    if (leave) warn('leave_check', '産休・育休の免除の期間に払う賞与です（保険料を引いて数えました・免除になるか確かめてください）');
+    var covH = bonusCovered(ins.health, P, payDate), covP = bonusCovered(ins.pension, P, payDate);
+    var hAge = !(birth && ym >= ymOf(birthdayAt(birth, 75))), pAge = !(birth && ym >= reachYm(birth, 70));
+    var hTarget = hOn && hAge && (covH.on || covH.lost), pTarget = pOn && pAge && (covP.on || covP.lost);
+    out.std.health = hTarget ? stdH : 0;
+    out.std.pension = pTarget ? stdP : 0;
+    if ((hTarget && covH.lost) || (pTarget && covP.lost)) warn('lost_month', '資格を失う月に払う賞与です（保険料は0・賞与支払届は出します）');
+    var rt = (hOn || pOn) ? R.health(S.prefecture, ym) : null;
+    if ((hOn || pOn) && !rt) warn('rate_missing', ym + ' の社会保険料率が率表にありません');
+    var si = out.ins, er = out.employer;
+    if (rt && hTarget && covH.on && stdH > 0) {
+      var careOn = birth && !ins.care_exempt && ym >= reachYm(birth, 40) && ym < reachYm(birth, 65);
+      [['health', rt.health], ['care', careOn ? rt.care : 0], ['support', rt.support]].forEach(function (k) {
+        if (!k[1]) return;
+        var full = qMul(intQ(stdH), rateQ(k[1])), mine = round50(qDiv(full, Q(2)));
+        si[k[0]] = mine; er[k[0]] = qNum(qSub(full, intQ(mine)));
+      });
+    }
+    if (rt && pTarget && covP.on && stdP > 0) {
+      var pfull = qMul(intQ(stdP), rateQ(rt.pension)), pm = round50(qDiv(pfull, Q(2)));
+      si.pension = pm; er.pension = qNum(qSub(pfull, intQ(pm)));
+      er.childcare = qNum(qMul(intQ(stdP), rateQ(rt.childcare_contrib)));
+    }
+
+    /* 7. 雇用保険（支給日の率） */
+    var empOn = !!(!board && ins.emp && ins.emp.on && empCovered(ins.emp, P, { from: payDate, to: payDate }));
+    if (empOn) {
+      var re = R.employment(payDate, S.emp_ins_kind);
+      if (!re) warn('emp_rate_missing', '支給日 ' + payDate + ' の雇用保険料率が率表にありません');
+      else {
+        var eb = Math.max(0, laborBase);
+        si.emp = round50(qMul(intQ(eb), rateQ(re.worker)));
+        er.emp = qNum(qMul(intQ(eb), rateQ(re.employer)));
+      }
+    }
+    var social = si.health + si.care + si.support + si.pension + si.emp;
+
+    /* 8. 源泉 */
+    var T = Math.max(0, taxable - social - dedSi), tax = 0;
+    var col = P.tax && P.tax.col, dep = P.tax ? Math.max(0, Math.floor(Number(P.tax.dependents) || 0)) : 0;
+    if ((col === 'kou' || col === 'otsu') && !(P.tax && P.tax.dependents_checked === true)) warn('dependents_unchecked', '扶養の数が未確認です');
+    if (col === 'otsu') dep = 0;
+    var prev = input.prev && typeof input.prev === 'object' ? input.prev : {};
+    /* 前月の給与の確かめは源泉の対象（甲・乙）の人だけ（区分 none の人を前月の給与で止めない・仮置き） */
+    var taxed = col === 'kou' || col === 'otsu';
+    var kind = prev.kind, pv = null;
+    if (kind === 'none') pv = 0;
+    else if (kind === 'db' || kind === 'ytd' || kind === 'manual') {
+      /* P を 0 に丸めない（欠けた P で黙って「前月なし」に落とさない） */
+      var pn = typeof prev.P === 'number' ? prev.P : (typeof prev.P === 'string' && prev.P !== '' ? Number(prev.P) : NaN);
+      if (isFinite(pn)) pv = Math.floor(pn);
+      else if (taxed) warn('prev_missing', '前月の給与（社会保険料等を引いた後）が入っていません');
+    } else if (kind === 'unconfirmed') { if (taxed) warn('prev_unconfirmed', '前月の給与がまだ確定していません'); }
+    else if (taxed) warn('prev_missing', '前月の給与（社会保険料等を引いた後）が入っていません');
+    if ((kind === 'db' || kind === 'ytd') && pv !== null && prev.manualP != null && prev.manualP !== '' && isFinite(Number(prev.manualP)) && Math.floor(Number(prev.manualP)) !== pv) {
+      warn('prev_mismatch', '前月の給与が手入力の値と違います（記録の値で数えました）');
+    }
+    if (Number(prev.period_months) > 1) warn('prev_period', '前月の給与の支給期が1か月ではありません（この計算の対象外です・代表者へ）');
+    out.P = pv;
+    if (col === 'kou' || col === 'otsu') {
+      var year = Number(payDate.slice(0, 4));
+      var hasRate = TT && TT.bonusRate(year, col, dep, 0) !== null;
+      if (!hasRate) warn('tax_table_missing', '支給日の年の賞与の算出率の表がありません（所得税を0円にしています）');
+      else if (pv !== null && T > 0) {
+        var monthly = pv <= 0 || T > pv * 10;
+        if (!monthly) {
+          var rate = TT.bonusRate(year, col, dep, pv);
+          out.rate = rate; out.taxMethod = 'rate';
+          tax = yen(qMul(intQ(T), rateQ(rate / 100)), 'floor');
+        } else {
+          var MT = R.taxTable(payDate);
+          var div = Number(setIn.bonus_period_months) > 6 ? 12 : 6;
+          if (!MT) warn('tax_table_missing', '支給日の年の月額表がありません（所得税を0円にしています）');
+          else {
+            if (col === 'otsu') warn('otsu_monthly', '乙欄の方を月額表の方法で数えました（確かめてください）');
+            var a = Math.floor(T / div);
+            if (pv <= 0) { out.taxMethod = 'monthly_none'; tax = taxTable(MT, a, dep, col) * div; }
+            else { out.taxMethod = 'monthly_10x'; tax = (taxTable(MT, a + pv, dep, col) - taxTable(MT, pv, dep, col)) * div; }
+          }
+        }
+      }
+    } else if (col !== 'none') warn('tax_col', '源泉の区分（甲・乙）が決まっていません');
+    tax = Math.max(0, tax);
+
+    /* 9. 控除の行 */
+    var dsum = 0;
+    function ded(code, name, amount, basis) { line('deduct', code, name, amount, basis); dsum += amount; }
+    if (si.health) ded('health', '健康保険料', si.health, '標準賞与額 ' + stdH);
+    if (si.care) ded('care', '介護保険料', si.care, '標準賞与額 ' + stdH);
+    if (si.support) ded('support', '子ども・子育て支援金', si.support, '標準賞与額 ' + stdH);
+    if (si.pension) ded('pension', '厚生年金保険料', si.pension, '標準賞与額 ' + stdP);
+    if (empOn) ded('emp', '雇用保険料', si.emp, '賃金 ' + Math.max(0, laborBase));
+    if (col === 'kou' || col === 'otsu') ded('income_tax', '所得税', tax, (col === 'otsu' ? '乙欄' : '甲欄') + ' 課税対象 ' + T + (out.rate !== null ? ' × ' + out.rate + '%' : ''));
+    dedLines.forEach(function (x) { ded(x.code, x.name, x.amount, x.basis); });
+
+    /* 10. 回数（過去12か月に4回以上は報酬の扱いの恐れ） */
+    if (Math.max(0, int(input.count12)) + Math.max(0, int(input.count12Other)) + 1 >= 4) warn('four_times', '過去12か月に4回以上の賞与です（賞与ではなく報酬として扱う恐れがあります）');
+
+    out.gross = gross; out.taxable = taxable; out.social = social; out.T = T; out.tax = tax;
+    out.deduct = dsum; out.net = gross - dsum;
+    if (out.net < 0) warn('net_negative', '差引支給額がマイナスです');
+    if (badNum) warn('bad_number', '数でない値がありました（0として数えました）');
+    return out;
+  }
+
   var api = {
     VERSION: CALC_VER, payDate: payDate,
     CALC_VER: CALC_VER, DEFAULTS: DEFAULTS, computeItem: computeItem, fillSettings: fillSettings, attrsOf: attrsOf,
@@ -710,6 +921,8 @@
     empCovered: empCovered, otBaseAdd: otBaseAdd, taxTable: taxTable, taxComputer: taxComputer, taxComputerR8: taxComputerR8, COMPUTER_YEARS: Object.keys(COMPUTER).map(Number), round50: round50, weekdaysBetween: weekdaysBetween,
     _q: { Q: Q, rateQ: rateQ, roundQ: roundQ, yen: yen }
   };
+  /* 賞与（2026-11-23 足した） */
+  api.computeBonus = computeBonus; api.BONUS_VER = BONUS_VER; api.BONUS_BLOCK = BONUS_BLOCK;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.PayrollCalc = api;
 })(typeof window !== 'undefined' ? window : this);
