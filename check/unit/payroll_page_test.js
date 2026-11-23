@@ -285,7 +285,8 @@ console.log('\n— 給与専用の暗証番号（統合 0110・2026-11-20 代表
   /* ★賞与のタブ（2026-11-23）で payroll.js を 2026-11-23.3 に上げたので、期待の版を改めた */
   /* ★賞与の年末調整の記録を待つ間の止め（2026-11-23）で 2026-11-23.4 に上げたので、期待の版を改めた */
   /* ★賞与の画面の反証レビューの直し（2026-11-23）で 2026-11-23.5 に上げたので、期待の版を改めた */
-  t('payroll.js の版を上げた（2026-11-23.5）', /payroll\.js\?v=2026-11-23\.5"/.test(H));
+  /* ★賞与額が空の人の止め（2026-11-23 代表者の答え「誰も外さない」）で 2026-11-23.6 に上げたので、期待の版を改めた */
+  t('payroll.js の版を上げた（2026-11-23.6）', /payroll\.js\?v=2026-11-23\.6"/.test(H));
 }
 
 
@@ -333,6 +334,15 @@ console.log('\n— 賞与のタブ（統合 0121・2026-11-23 設計 CONTRACT-bo
     ['前月の給与が10倍を超える（月額表の方法）', base({}), [{ code: 'bonus', amount: 2000000 }], { state: 'ok', items: { 's-1': { P: 150000 } } }, null, null],
   ];
   pend.push(import(path.join(ROOT, 'check/fixtures/payroll.mjs')).then((FX) => {
+    {
+      /* 賞与額 0 の人も明細にする: 本物の computeBonus が総支給0・控除0・差引0 を返し、0121 の形の確かめ（std は総支給の千円未満切り捨て以下）を通る */
+      const pv0 = P.bonusPrevOf({ state: 'ok', items: { s0: { P: 200000 } } }, 's0', null, null);
+      const o0 = PC.computeBonus({ bonus: { pay_date: '2026-12-24', lines: [{ code: 'bonus', amount: 0 }] }, settings: { prefecture: '43' }, profile: base({}), allowanceDefs: defs,
+        prev: { kind: pv0.kind, P: pv0.P }, fyStdSum: 0, fyPriorStd: 0, monthStdSum: 0, count12: 0, count12Other: 0 });
+      const s0 = JSON.parse(JSON.stringify(P.bonusToSave(o0, 's0', pv0)));
+      t('賞与額 0 の人: 総支給0・控除0・差引0・標準賞与額0・確定の止め無しで、0121 の形の確かめを通る', o0.gross === 0 && o0.deduct === 0 && o0.net === 0 && o0.std.health === 0 && o0.std.pension === 0
+        && !o0.warns.some((w) => w.stop) && FX.bonusItemErr(s0) === null, { o0w: o0.warns, err: FX.bonusItemErr(s0) });
+    }
     t('偽の DB の確定の止めの印は DB の直しと同じ10個', FX.BONUS_STOP.slice().sort().join() === ['prev_missing', 'prev_unconfirmed', 'rate_missing', 'tax_table_missing', 'emp_rate_missing', 'std_missing', 'badinput', 'calc_error', 'leave_check', 'tax_col'].sort().join());
     {
       const R = FX.routesFor({ bonus: true }), call = R.rpcDirect;
@@ -406,6 +416,22 @@ console.log('\n— 賞与のタブ（統合 0121・2026-11-23 設計 CONTRACT-bo
     && /if \(settled\) return; settled = true;/.test(BON) && /if \(timedOut\) \{ any = false;/.test(BON) && /\.then\(function \(r\) \{ if \(settled\) return;/.test(BON));
   t('記録が後から届いて札に変わる人は、入れかけの前月の給与の選びを外す・札の人は見えない欄の形で止めない', /if \(x && x\.pm && bonusPrevOf\(bb\.prev, sid, null, bYtd\.v\.P\[sid\]\)\.kind === 'ytd'\) \{ x\.pm = ''; x\.pP = ''; \}/.test(BON)
     && /if \(x\.pm === 'P' && k0 !== 'db' && k0 !== 'ytd' && !bonusManual\(p\.staff_id\)\)/.test(BON));
+  t('賞与額が空の人（明細の無い対象の人）: 確定を止める文を作る・全員に明細があれば止めない（0 の人も明細）', (() => {
+    const pr = [{ staff_id: 'a', name: '見本 一' }, { staff_id: 'b', name: '見本 二' }, { staff_id: 'c', name: '見本 三' }];
+    const m1 = P.bonusBlankMsg(pr, [{ staff_id: 'a', gross: 100 }]), m2 = P.bonusBlankMsg(pr, [{ staff_id: 'a' }, { staff_id: 'b', gross: 0 }, { staff_id: 'c', gross: 0 }]);
+    return m1.length === 1 && m1[0] === '賞与額が空の人がいます（2人）：見本 二、見本 三。払わない人は 0 を入れてください' && m2.length === 0;
+  })());
+  t('賞与額が空の人の止めは、回の画面の確定のボタン・確定の窓・押した時の読み直しの3か所に入っている（下書き保存は止めない）',
+    /var blk = bonusBlocks\(bb\.items, bb\.prev\);\n      blk = bonusBlankMsg\(bb\.profiles, bb\.items\)\.concat\(blk\);/.test(BON) && /blk = bonusBlocks\(list, bb\.prev\);\n    blk = bonusBlankMsg\(bb\.profiles, list\)\.concat\(blk\);/.test(BON)
+    && /var blk = bonusBlocks\(fresh\.items, fresh\.prev\);\n      blk = bonusBlankMsg\(fresh\.profiles, fresh\.items\)\.concat\(blk\);/.test(BON) && !/bonusBlankMsg/.test(BON.slice(BON.indexOf('function bonusSave('), BON.indexOf('function bonusCfgSave('))));
+  t('賞与額 0 は計算・保存し（空だけ外す）、読み直すと 0 と出す・総支給0の人は明細の印刷・CSV に出さない', /if \(a === null\) return;/.test(BON) && /bIn\[it\.staff_id\] = \{ amt: String\(a\),/.test(BON)
+    && /\.filter\(function \(it\) \{ return num\(it\.gross\) > 0; \}\);   \/\* 総支給0の人は明細/.test(BON) && /bonusPrint\(bb\.items\.filter\(function \(it\) \{ return num\(it\.gross\) > 0; \}\)\)/.test(BON)
+    && P.bonusShoyoCsv([{ staff_id: 'a', name: '見本 一', gross: 0 }, { staff_id: 'b', name: '見本 二', gross: 1000 }], [], '2026-12-24', [], 'x').trim().split('\r\n').length === 2);
+  t('職員の一覧にいて在籍なのに支給日の給与の設定が無い人を知らせる（止めた人は出さない・知らせだけ）', (() => {
+    const b = P.bonusNorm({ staff: [{ staff_id: 'a', name: '見本 一', active: true }, { staff_id: 'b', name: '見本 二', active: true }, { staff_id: 'c', name: '見本 三', active: false }],
+      run: { bonus_id: '2026-12-24#1', pay_date: '2026-12-24', title: 'x' }, profiles: [{ staff_id: 'a', name: '見本 一' }] });
+    return P.bonusNoProfile(b).join() === '見本 二' && /給与の設定が無いので賞与の一覧に出ていない職員: /.test(BON);
+  })());
   t('「もう一度読む」は保存していない入力があれば確かめの窓を出す', /if \(a === 'b-reload'\) \{ if \(bonusDirty\(\)\) \{ ask\('保存していない賞与の入力があります。捨てて読み直しますか？'\)/.test(BON));
   t('入力を残す読み直し: 回の設定の欄は人が直していなければ DB の値で作り直し、直していて DB が変わっていれば保存を止めて知らせる', /if \(!bCfgDirty\) bonusInitCfg\(\);\n        else if \(bCfgBase !== JSON\.stringify\(obj\(bb\.run && bb\.run\.config\)\)\) bCfgConflict = true;/.test(BON)
     && /if \(bCfgConflict\) \{ say\(BNG\.cfgconflict\); return; \}/.test(BON) && /data-act="b-cfg-save"' \+ \(bCfgDirty && !bCfgConflict \? '' : ' disabled'\)/.test(BON) && /cfgconflict: '回の設定がほかの人に変えられました。読み直してください/.test(BON));
