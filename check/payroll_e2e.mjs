@@ -141,9 +141,10 @@ console.log('\n— 1. 計算 → 下書き保存 → 確定 —');
   await p.waitForFunction(() => /確定済み/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
   t('確定すると確定済みになり、計算するのボタンが消える', run(o).status === 'confirmed' && (await p.locator('[data-act="compute"]').count()) === 0);
   const sv = o.routes.calls.filter((c) => c.name === 'payroll_run_save').pop();
-  /* ★2026-11-21（反証レビュー 5）: 計算の版の印を payroll-calc-2・率表の版を rates-2026-11-21 に上げたので期待を改めた */
+  /* ★2026-11-21（反証レビュー 5）: 計算の版の印を payroll-calc-2・率表の版を rates-2026-11-21 に上げたので期待を改めた
+     ★2026-11-23: 令和9年分の電算機特例と熊本の最低賃金を足して payroll-calc-3・rates-2026-11-23 に上げたので期待を改めた */
   t('下書き保存は {staff_id, item, adjustments} の形（item に氏名・口座を入れない）・指紋は bootstrap の値＋率と計算の版', !!sv && sv.args.p_items.every((x) => Object.keys(x).sort().join() === 'adjustments,item,staff_id' && !('name' in x.item) && !('bank_last4' in x.item) && /^\d{4}-\d{2}-\d{2}$/.test(x.item.pay_date))
-    && sv.args.p_fingerprint.rates_ver === 'rates-2026-11-21' && sv.args.p_fingerprint.calc_ver === 'payroll-calc-2' && 'kintai_locked_at' in sv.args.p_fingerprint && 'allowances' in sv.args.p_fingerprint, sv && Object.keys(sv.args.p_fingerprint));
+    && sv.args.p_fingerprint.rates_ver === 'rates-2026-11-23' && sv.args.p_fingerprint.calc_ver === 'payroll-calc-3' && 'kintai_locked_at' in sv.args.p_fingerprint && 'allowances' in sv.args.p_fingerprint, sv && Object.keys(sv.args.p_fingerprint));
   t('支給日は 2026-11-27（金曜・手で確かめた値）を明細に写し、指紋にも入れた', !!sv && sv.args.p_items.every((x) => x.item.pay_date === '2026-11-27') && sv.args.p_fingerprint.pay_date === '2026-11-27');
   t('確定を押した時にもう一度読み直し、締めた勤怠も数え直した（bootstrap → kintai_month_get → 確定）', (() => { const n = o.routes.calls.map((c) => c.name); const i = n.lastIndexOf('payroll_run_confirm'); return i > 1 && n[i - 1] === 'kintai_month_get' && n[i - 2] === 'payroll_bootstrap'; })());
   t('端末に残したのは payroll_tab だけ（月分・金額・氏名なし・施設情報の共通の控えは除いて数える）', await p.evaluate(() => { const ks = []; for (let i = 0; i < localStorage.length; i++) ks.push(localStorage.key(i)); return ks.filter((k) => /payroll/.test(k)).join() === 'payroll_tab' && !ks.filter((k) => k !== 'su_facility_json_v1').some((k) => /見本 [一二三四五六七八九十]|見本銀行|\d{1,3},\d{3}/.test(localStorage.getItem(k) || '')); }));

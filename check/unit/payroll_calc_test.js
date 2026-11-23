@@ -285,7 +285,15 @@ t('率表: 締め日 2027-04-01 は確かめていない → null', Rates.employ
 t('率表: 健保 2026-02 は null', Rates.health('43', '2026-02') === null);
 t('率表: 健保 2027-03 は確かめていない → null', Rates.health('43', '2027-03') === null);
 t('率表: ほかの県は null', Rates.health('13', '2026-06') === null);
-t('率表: 最低賃金は確かめていない → null', Rates.minWage('43', '2026-12-01') === null);
+/* 2026-11-23: 熊本の最低賃金を一次資料（熊本労働局の推移の表・厚労省の全国一覧）で入れたので、前の「null」の場面を発効日の境目に置き換えた */
+eq('率表: 最低賃金 熊本 2024-10-04 は表の前 → null', Rates.minWage('43', '2024-10-04'), null);
+eq('率表: 最低賃金 熊本 2024-10-05 は 952', Rates.minWage('43', '2024-10-05'), 952);
+eq('率表: 最低賃金 熊本 2025-12-31 は 952', Rates.minWage('43', '2025-12-31'), 952);
+eq('率表: 最低賃金 熊本 2026-01-01 は 1034', Rates.minWage('43', '2026-01-01'), 1034);
+eq('率表: 最低賃金 熊本 2026-11-30 は 1034', Rates.minWage('43', '2026-11-30'), 1034);
+eq('率表: 最低賃金 熊本 2026-12-01 は 1092', Rates.minWage('43', '2026-12-01'), 1092);
+eq('率表: 最低賃金 ほかの県は null', Rates.minWage('13', '2026-12-01'), null);
+eq('率表: 最低賃金 日付の形が違えば null', Rates.minWage('43', '2026/12/01'), null);
 t('率表: 通勤の非課税限度は確かめていない → null', Rates.commuteLimit('2026-12-25', 'transit', 10) === null);
 eq('等級: 62999 → 健保1（58000）', Rates.grade(62999).health.std, 58000);
 eq('等級: 63000 → 健保2（68000）', Rates.grade(63000).health.std, 68000);
@@ -428,7 +436,11 @@ console.log('11. 警告');
   t('月給 171999÷172＜1000 は最賃割れ', W(run({ pay_type: 'monthly', base: 171999, ins: {}, tax: { col: 'none' } }, {}, { rates: R2 }), 'min_wage'));
   t('月給 172000 は警告なし', !W(run({ pay_type: 'monthly', base: 172000, ins: {}, tax: { col: 'none' } }, {}, { rates: R2 }), 'min_wage'));
   t('最賃に入る手当を足して判定（171000＋1000）', !W(run({ pay_type: 'monthly', base: 171000, allowances: [{ code: 'q', amount: 1000 }], ins: {}, tax: { col: 'none' } }, {}, { rates: R2, allowanceDefs: [QUAL] }), 'min_wage'));
-  t('最賃が率表に無い → 判定できない警告', W(run({ pay_type: 'hourly', base: 1100, ins: {}, tax: { col: 'none' } }, { schedInMin: 600 }), 'min_wage_unknown'));
+  /* 2026-11-23: 出荷の率表に熊本の最低賃金を入れたので、「率表に無い」場面は表に無い県（'13'）で試す */
+  t('最賃が率表に無い（表に無い県） → 判定できない警告', W(run({ pay_type: 'hourly', base: 1100, ins: {}, tax: { col: 'none' } }, { schedInMin: 600 }, { settings: { prefecture: '13' } }), 'min_wage_unknown'));
+  t('出荷の率表: 締め 2026-12-15 の熊本は 1092 円・時給 1091 は最賃割れ', W(run({ pay_type: 'hourly', base: 1091, ins: {}, tax: { col: 'none' } }, { schedInMin: 600 }), 'min_wage'));
+  t('出荷の率表: 時給 1092 は警告なし・判定できない警告も出ない', (function (it) { return !W(it, 'min_wage') && !W(it, 'min_wage_unknown'); })(run({ pay_type: 'hourly', base: 1092, ins: {}, tax: { col: 'none' } }, { schedInMin: 600 })));
+  t('出荷の率表: 締め 2026-11-15 は 1034 円・時給 1034 は警告なし', !W(run({ pay_type: 'hourly', base: 1034, ins: {}, tax: { col: 'none' } }, { schedInMin: 600 }, { ym: '2026-11', period: { from: '2026-10-16', to: '2026-11-15' }, payDate: '2026-11-25' }), 'min_wage'));
   t('役員は最賃を見ない', !W(run({ pay_type: 'board', board_pay: 100, ins: {}, tax: { col: 'none' } }, null, { rates: R2 }), 'min_wage'));
 }
 {
@@ -465,7 +477,26 @@ console.log('12. 源泉（令和8年と9年の切り替え・乙欄・扶養7人
   eq('電算機特例の検算例（A=175000・扶養2＝210円）', C.taxComputerR8(175000, 2), 210);
   eq('電算機特例: 設定で選ぶ', L(C.computeItem({ ym: '2026-12', period: PERIOD, payDate: '2026-12-25', settings: { tax_method: 'computer' }, profile: { pay_type: 'monthly', base: 175000, ins: {}, tax: { col: 'kou', dependents: 2 } }, att: {} }), 'income_tax'), 210);
   const c9 = C.computeItem({ ym: '2027-01', period: { from: '2026-12-16', to: '2027-01-15' }, payDate: '2027-01-25', settings: { tax_method: 'computer' }, profile: { pay_type: 'monthly', base: 300000, ins: {}, tax: { col: 'kou', dependents: 0 } }, att: {} });
-  t('電算機特例は令和9年分の式が無い → 警告して税額表', W(c9, 'tax_computer_unavailable') && L(c9, 'income_tax') === 7760);
+  /* 2026-11-23: 令和9年分の式を足したので、前の「式が無い → 税額表」の場面は 2028 年の支給へ移した */
+  t('電算機特例 2027-01-25 支給は令和9年分の式（警告なし）', !W(c9, 'tax_computer_unavailable') && L(c9, 'income_tax') === 7740);   /* (300,000−96,667−51,667)×5.105%＝7,742.5→7,740（税額表なら 7,760） */
+  const c10 = C.computeItem({ ym: '2028-01', period: { from: '2027-12-16', to: '2028-01-15' }, payDate: '2028-01-25', settings: { tax_method: 'computer' }, profile: { pay_type: 'monthly', base: 300000, ins: {}, tax: { col: 'kou', dependents: 0 } }, att: {} });
+  t('電算機特例 2028 年の支給は式が無い → 警告', W(c10, 'tax_computer_unavailable'));
+  /* 国税庁 denshi_01.pdf の計算例（令和8年分・令和9年分）。扶養の数は配偶者を含めた源泉控除対象の人数 */
+  eq('令和8年分の例2（446,000・配偶者＋7人＝940）', C.taxComputer(446000, 8, 2026), 940);
+  eq('令和8年分の例3（775,200・配偶者＋2人＝59,470）', C.taxComputer(775200, 3, 2026), 59470);
+  eq('令和9年分の例1（177,000・配偶者＋1人＝110）', C.taxComputer(177000, 2, 2027), 110);
+  eq('令和9年分の例2（446,000・配偶者＋7人＝770）', C.taxComputer(446000, 8, 2027), 770);
+  eq('令和9年分の例3（775,200・配偶者＋2人＝58,790）', C.taxComputer(775200, 3, 2027), 58790);
+  /* 境目（手で数えた額）: 令和9年は 169,444 以下の給与所得控除が 57,500・2,120,833 以下の基礎控除が 51,667 */
+  eq('令和9年分 A=160,000（(160,000−57,500−51,667)×5.105%＝2,595→2,600）', C.taxComputer(160000, 0, 2027), 2600);
+  eq('令和8年分 A=160,000（控除 160,000×30%+6,667＝54,667・(160,000−54,667−48,334)×5.105%＝2,909.8→2,910）', C.taxComputer(160000, 0, 2026), 2910);
+  eq('令和9年分 A=169,444（(169,444−57,500−51,667)×5.105%＝3,077.1→3,080）', C.taxComputer(169444, 0, 2027), 3080);
+  eq('令和8年分 A=169,444（控除 ceil(57,500.2)＝57,501・(169,444−57,501−48,334)×5.105%＝3,247.2→3,250）', C.taxComputer(169444, 0, 2026), 3250);
+  eq('令和9年分 A=2,120,833（基礎控除 51,667・(2,120,833−162,500−51,667)×40.84%−237,893＝540,789.4→540,790）', C.taxComputer(2120833, 0, 2027), 540790);
+  eq('令和8年分 A=2,120,833（基礎控除 48,334・→542,150）', C.taxComputer(2120833, 0, 2026), 542150);
+  eq('令和9年分 A=2,120,834（基礎控除 40,000・両年同じ 545,550）', C.taxComputer(2120834, 0, 2027), 545550);
+  eq('式の無い年は null', C.taxComputer(300000, 0, 2028), null);
+  eq('前の呼び名 taxComputerR8 は令和8年分', C.taxComputerR8(446000, 8), 940);
   eq('電算機特例 B が0以下は0円', C.taxComputerR8(100000, 3), 0);
 }
 
