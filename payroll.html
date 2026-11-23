@@ -18,9 +18,9 @@
 <script src="su-print.js?v=2026-11-13"></script>
 <script src="su-dialog.js?v=2026-11-14.2"></script>
 <script src="kintai-calc.js?v=2026-11-23.1"></script>
-<script src="payroll-tax-table.js?v=2026-11-19"></script>
+<script src="payroll-tax-table.js?v=2026-11-23.2"></script>
 <script src="payroll-rates.js?v=2026-11-23"></script>
-<script src="payroll-calc.js?v=2026-11-23"></script>
+<script src="payroll-calc.js?v=2026-11-23.2"></script>
 <script src="payroll-export.js?v=2026-11-21"></script>
 <link rel="stylesheet" href="su-print.css?v=2026-11-13">
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
@@ -81,6 +81,9 @@ details.it > summary .num{min-width:7em;text-align:right;font-variant-numeric:ta
 details.it[open] > summary{background:var(--th)}
 .ihd{display:flex;gap:12px;font-size:15px;color:var(--muted);padding:4px;flex-wrap:wrap}
 .ihd span{min-width:7em;text-align:right}.ihd span:first-child{min-width:8em;text-align:left}
+/* 賞与のタブ（2026-11-23）: 1人ずつの結果と回の設定の開け閉め */
+details.bit{border-top:1px solid var(--line)}
+details.bit > summary,details.cd > summary{min-height:44px;padding:6px 4px;cursor:pointer}
 .split{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:8px 0}
 dialog{border:1px solid var(--line);border-radius:14px;padding:0;max-width:760px;width:calc(100% - 32px);background:var(--card);color:var(--ink)}
 dialog::backdrop{background:rgba(20,33,61,.35)}
@@ -162,6 +165,7 @@ dialog::backdrop{background:rgba(20,33,61,.35)}
     <button type="button" role="tab" data-tab="run">今月の給与</button>
     <button type="button" role="tab" data-tab="slip">給与明細</button>
     <button type="button" role="tab" data-tab="export">振込と書き出し</button>
+    <button type="button" role="tab" data-tab="bonus">賞与</button>
     <button type="button" role="tab" data-tab="profile">職員の給与設定</button>
     <button type="button" role="tab" data-tab="yearend">年末調整</button>
     <button type="button" role="tab" data-tab="settings" hidden>設定</button>
@@ -177,7 +181,7 @@ dialog::backdrop{background:rgba(20,33,61,.35)}
 <script src="payroll-yearend.js?v=2026-11-23"></script>
 <script src="payroll-withholding-slip.js?v=2026-11-23"></script>
 <script src="payroll-yearend-ui.js?v=2026-11-23"></script>
-<script src="payroll.js?v=2026-11-23"></script>
+<script src="payroll.js?v=2026-11-23.6"></script>
 <script src="su-shell.js?v=2026-11-19"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 <script src="su-report.js?v=2026-11-21.2" data-tool="給与"></script>
