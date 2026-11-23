@@ -90,7 +90,21 @@ t('tax_adjust のある明細: 控除の合計・差引・所得税は精算を�
 const bonusOurs = [{ staff_id: 's-1', name: '見本 一', gross: 300000, taxable: 300000, si_total: 47100, deduct: 57100, net: 242900, lines: [{ sec: 'deduct', code: 'health', amount: 15000 }, { sec: 'deduct', code: 'care', amount: 2400 }, { sec: 'deduct', code: 'support', amount: 600 }, { sec: 'deduct', code: 'pension', amount: 27450 }, { sec: 'deduct', code: 'emp', amount: 1650 }, { sec: 'deduct', code: 'income_tax', amount: 10000 }] }];
 const csb = FS.compareSlips(bonusOurs, FS.match(bon.rows, staff).matched.filter((r) => r.staff_id === 's-1'), 'bonus');
 t('賞与: 住民税の項目は無い（11項目）・架空の見本は全部一致', csb.rows.length === 11 && !csb.rows.some((r) => r.item === '住民税') && csb.diffCount === 0, csb.rows.filter((r) => r.diff !== 0));
-t('freee の行に staff_id が無くても従業員番号で自社の側に当てる', FS.compare([Object.assign(item('s-1', '別の 表示'), { emp_num: 'E901' })], [sal.rows[0]]).people.length === 1);
+/* 反証レビュー（2026-11-23）: 対にするのは match で結べた staff_id だけ。結べなかった freee の行は氏名・番号で自社の人に当てず「照合できません」 */
+const nm1 = FS.compareSlips([item('s-1', '見本 一')], [sal.rows[0]], 'salary');
+t('結べなかった freee の行（staff_id なし）は、同じ氏名・番号でも自社の人に当てない（自社だけ＋照合できない行）', nm1.rows.length === 0 && nm1.unmatched.length === 2 && nm1.unmatched.some((u) => u.side === 'ours' && u.staff_id === 's-1') && nm1.unmatched.some((u) => u.side === 'freee' && u.nomatch === true && !u.staff_id), nm1.unmatched);
+/* 数でない値: 差の表のその項目に印（bad）・差の数に入れる */
+const badRow = Object.assign({}, m.matched.find((r) => r.staff_id === 's-1'), { income_tax: null, bad: ['所得税'], badKeys: ['income_tax'] });
+const csBad = FS.compareSlips([item('s-1', '見本 一')], [badRow], 'salary');
+const bt = csBad.rows.find((r) => r.key === 'income_tax');
+t('freee の側の数でない値は、その項目に bad の印（freee・差は null）・差の数に入れる・上に並ぶ', bt.bad === true && bt.freee === null && bt.diff === null && csBad.diffCount === 1 && csBad.rows[0].key === 'income_tax' && csBad.counts.income_tax.diff === 1, [bt, csBad.diffCount]);
+t('数でない値の無い項目は一致のまま', csBad.rows.filter((r) => r.key !== 'income_tax').every((r) => r.diff === 0 && !r.bad));
+/* 必須の見出し: 総支給額・所得税と、課税支給額か非課税支給額。無いファイルは行を作らずに断る */
+const rf1 = FS.parse('氏名,支給日,総支給額,課税支給額\nA,2026/1/25,1,1\n'), rf2 = FS.parse('氏名,支給日,総支給額,所得税\nA,2026/1/25,1,0\n'), rf3 = FS.parse('氏名,支給日,所得税,非課税支給額\nA,2026/1/25,0,0\n');
+const okN = FS.parse('氏名,支給日,総支給額,非課税支給額,所得税\nA,2026/1/25,"100,000","5,000",0\n');
+t('必須の見出しが無いファイルは refused・行を作らない・読めなかった見出しを返す', rf1.refused && rf1.rows.length === 0 && rf1.cols.required.join() === '所得税' && rf2.refused && rf2.cols.required.join() === '課税支給額（非課税支給額）' && rf3.refused && rf3.cols.required.join() === '総支給額', [rf1.cols, rf2.cols, rf3.cols]);
+t('非課税支給額だけでも読む（課税支給＝総支給−非課税）', !okN.refused && okN.rows.length === 1 && FS.toYtd([Object.assign({ staff_id: 's-1' }, okN.rows[0])], 'salary')[0].data.taxable === 95000);
+t('見本の CSV（給与・賞与）は必須の見出しがそろう', !sal.refused && !bon.refused && sal.cols.required.length === 0);
 
 console.log('\n— 6. toYtd —');
 const ytd = FS.toYtd(m.matched.map((r) => Object.assign({ src_fp: '0123456789abcdef0011' }, r)), 'salary');

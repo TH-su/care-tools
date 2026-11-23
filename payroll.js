@@ -459,8 +459,15 @@
     if (busy || !dlgCtx || dlgCtx.mode !== 'confirm') return;
     if (dlgCtx.block || blockWarns(items()).length) { say('確定できない警告（率表・税額表・標準報酬が無い月）が残っているので、確定できません。設定を直してから計算し直してください。'); return; }
     if (dlgCtx.warn && !($('c-ack') && $('c-ack').checked)) { say('警告を確かめたら「警告を確かめました」に印を入れてください。'); return; }
-    var shown = dlgCtx.shown, done = hold(btn, '確かめています…'), my = gen;
-    rpc('payroll_bootstrap', { p_ym: ym }).then(function (r) {
+    var shown = dlgCtx.shown, done = hold(btn, '確かめています…'), my = gen, yStop = false;
+    /* 年末調整の精算を payroll_yearend_check で確かめ、この月分を精算する月分にした確定済みの人に stale・diff があれば確定しない
+       （2026-11-23・月分に関係なく毎回・DB の確定の関数は置き換えない）。読み直し → 勤怠の数え直し → 確定 の並びはこの後のまま */
+    (YEU() ? YEU().beforeConfirm(yeCtx()) : Promise.resolve(null)).then(function (yng) {
+      if (my !== gen) { yStop = true; done(); return null; }
+      if (yng) { yStop = true; done(); closeDlg(); notice = { cls: 'ng', text: '確定していません。' + yng }; paint(); return null; }
+      return rpc('payroll_bootstrap', { p_ym: ym });
+    }).then(function (r) {
+      if (yStop) return null;
       if (my !== gen) { done(); return null; }
       if (r && r.ok === false) okOr(r);
       var fresh = normBoot(r), keep = bs;
@@ -485,13 +492,8 @@
         paint(); return null;
       }
       if (blockWarns(now).length) { done(); closeDlg(); notice = { cls: 'ng', text: '確定していません。確定できない警告（率表・税額表・標準報酬が無い月）が残っています。設定を直してから計算し直してください。' }; paint(); return null; }
-      /* 年末調整の精算の額を payroll_yearend_check で確かめ、合っていなければ確定しない（2026-11-23・DB の確定の関数は置き換えない） */
-      return (YEU() ? YEU().beforeConfirm(yeCtx()) : Promise.resolve(null)).then(function (yng) {
-        if (my !== gen) { done(); return null; }
-        if (yng) { done(); closeDlg(); notice = { cls: 'ng', text: '確定していません。' + yng }; paint(); return null; }
-        return rpc('payroll_run_confirm', { p_ym: ym, p_rev: bs.run.rev }).then(okOr).then(function () {
-          done(); closeDlg(); toast('確定しました。'); return load(false);
-        });
+      return rpc('payroll_run_confirm', { p_ym: ym, p_rev: bs.run.rev }).then(okOr).then(function () {
+        done(); closeDlg(); toast('確定しました。'); return load(false);
       });
       });
     })['catch'](function (e) { done(); closeDlg(); return fail(e, '確定'); });

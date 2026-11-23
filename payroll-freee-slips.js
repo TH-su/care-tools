@@ -110,7 +110,7 @@
   function parse(text, opt) {
     opt = opt || {};
     var all = parseCsv(text);
-    if (!all.length) return { rows: [], cols: { found: [], missing: ['見出し'] }, kind: opt.kind || 'salary', head: [] };
+    if (!all.length) return { rows: [], cols: { found: [], missing: ['見出し'], required: ['見出し'] }, kind: opt.kind || 'salary', head: [], refused: true };
     var head = all[0], cm = colsOf(head), col = cm.col;
     var kind = opt.kind === 'bonus' || opt.kind === 'salary' ? opt.kind : (head.some(function (h) { return /賞与/.test(nk(h)); }) ? 'bonus' : 'salary');
     var found = Object.keys(col).filter(function (k) { return col[k] >= 0; });
@@ -120,15 +120,21 @@
     if (col.gross < 0) missing.push('総支給額');
     if (col.income_tax < 0) missing.push('所得税');
     if (col.taxable < 0 && col.nontax < 0) missing.push('課税支給額（非課税支給額）');   /* どちらも無いと課税支給＝総支給になるので知らせる */
+    /* 必須の見出し: 総支給額・所得税と、課税支給額か非課税支給額のどちらか。無いファイルは行を作らずに断る（refused） */
+    var required = [];
+    if (col.gross < 0) required.push('総支給額');
+    if (col.income_tax < 0) required.push('所得税');
+    if (col.taxable < 0 && col.nontax < 0) required.push('課税支給額（非課税支給額）');
+    if (required.length) return { rows: [], cols: { found: found, missing: missing, required: required }, kind: kind, head: head.slice(), refused: true };
     var rows = all.slice(1).map(function (r, i) {
       var g = function (k) { return col[k] >= 0 ? String(r[col[k]] == null ? '' : r[col[k]]) : ''; };
-      var o = { line: i + 2, kind: kind, emp_num: nk(g('emp_num')), name: '', pay_date: null, bad: [], items: {}, has: {} };
+      var o = { line: i + 2, kind: kind, emp_num: nk(g('emp_num')), name: '', pay_date: null, bad: [], badKeys: [], items: {}, has: {} };
       o.name = col.name >= 0 ? String(g('name')).trim() : (String(g('sei')).trim() + ' ' + String(g('mei')).trim()).trim();
       if (col.pay_date >= 0) { o.pay_date = toDate(g('pay_date')); if (!o.pay_date) o.bad.push(head[col.pay_date] || '支給日'); }
       MONEY.forEach(function (k) {
         if (col[k] < 0) { o[k] = null; return; }
         var n = toYen(g(k));
-        if (n !== n) { o[k] = null; o.bad.push(head[col[k]]); } else { o[k] = n; o.has[k] = true; }
+        if (n !== n) { o[k] = null; o.bad.push(head[col[k]]); o.badKeys.push(k); } else { o[k] = n; o.has[k] = true; }
       });
       head.forEach(function (h, j) {
         if (cm.used[j] || nk(h) === '') return;
@@ -139,7 +145,7 @@
       });
       return o;
     });
-    return { rows: rows, cols: { found: found, missing: missing }, kind: kind, head: head.slice() };
+    return { rows: rows, cols: { found: found, missing: missing, required: [] }, kind: kind, head: head.slice(), refused: false };
   }
 
   function empOf(s) { var v = s && (s.emp_num != null ? s.emp_num : (isObj(s.data) ? s.data.freee_emp_num : null)); return v == null ? '' : nk(v); }
@@ -200,6 +206,12 @@
     ITEMS.forEach(function (x) { o[x[0]] = r[x[0]] == null ? 0 : int(r[x[0]]); });
     if (r.si_total == null) o.si_total = SI.reduce(function (s, k) { return s + o[k]; }, 0);
     if (r.taxable == null) o.taxable = o.gross - int(r.nontax);
+    /* 数でなかった項目（と、それを使って出す合計）は「読めない値」にする */
+    var bad = {};
+    arr(r.badKeys).forEach(function (k) { bad[k] = 1; });
+    if (bad.si_health || bad.si_care || bad.si_support || bad.si_pension || bad.si_emp) { if (r.si_total == null) bad.si_total = 1; }
+    if (bad.nontax && r.taxable == null) bad.taxable = 1;
+    o.bad = bad;
     return o;
   }
   function nameShort(n) { n = String(n == null ? '' : n).trim(); var p = n.split(/[\s　]+/); return p.length > 1 ? p[0] : n.slice(0, 2); }
@@ -213,29 +225,24 @@
     var app = arr(appItems).filter(function (x) { return x && typeof x.staff_id === 'string'; });
     var people = [], seenF = {};
     var fr = arr(freeeRows).filter(Boolean);
+    /* 対にするのは match で結べた staff_id だけ（結べなかった freee の行は氏名で自社の人に当てず「照合できません」に出す） */
     function findF(a) {
       var hit = -1;
       fr.forEach(function (r, i) { if (hit < 0 && !seenF[i] && r.staff_id && r.staff_id === a.staff_id) hit = i; });
-      if (hit < 0 && a.emp_num) fr.forEach(function (r, i) { if (hit < 0 && !seenF[i] && !r.staff_id && r.emp_num && nk(r.emp_num) === nk(a.emp_num)) hit = i; });
-      if (hit < 0) {
-        var nm = normName(a.name), c = [];
-        fr.forEach(function (r, i) { if (!seenF[i] && !r.staff_id && nm && normName(r.name) === nm) c.push(i); });
-        if (c.length === 1) hit = c[0];
-      }
       return hit;
     }
     app.forEach(function (a) {
       var i = findF(a), A = fromItem(a), F = i >= 0 ? fromFreee(fr[i]) : null;
       if (i >= 0) seenF[i] = 1;
       var cells = {};
-      keys.forEach(function (x) { var k = x[0]; cells[k] = { app: A[k], freee: F ? F[k] : null, diff: F ? A[k] - F[k] : null }; });
+      keys.forEach(function (x) { var k = x[0], bad = !!(F && F.bad[k]); cells[k] = { app: A[k], freee: F && !bad ? F[k] : null, diff: F && !bad ? A[k] - F[k] : null, bad: bad }; });
       people.push({ staff_id: a.staff_id, name: String(a.name || ''), emp_num: a.emp_num ? nk(a.emp_num) : (i >= 0 ? fr[i].emp_num || '' : ''), only: F ? null : 'app', settle: A.settle, cells: cells });
     });
     fr.forEach(function (r, i) {
       if (seenF[i]) return;
       var F = fromFreee(r), cells = {};
-      keys.forEach(function (x) { var k = x[0]; cells[k] = { app: null, freee: F[k], diff: null }; });
-      people.push({ staff_id: r.staff_id || null, name: String(r.staff_name || r.name || ''), emp_num: r.emp_num || '', only: 'freee', settle: 0, cells: cells });
+      keys.forEach(function (x) { var k = x[0]; cells[k] = { app: null, freee: F.bad[k] ? null : F[k], diff: null, bad: !!F.bad[k] }; });
+      people.push({ staff_id: r.staff_id || null, name: String(r.staff_name || r.name || ''), emp_num: r.emp_num || '', only: 'freee', nomatch: !r.staff_id, settle: 0, cells: cells });
     });
     var totals = {}, counts = {};
     keys.forEach(function (x) {
@@ -244,11 +251,12 @@
         var v = p.cells[k];
         if (v.app != null) t.app += v.app;
         if (v.freee != null) t.freee += v.freee;
-        if (v.diff != null) { if (v.diff === 0) c.same++; else c.diff++; }
+        if (v.bad && !p.only) c.diff++;
+        else if (v.diff != null) { if (v.diff === 0) c.same++; else c.diff++; }
       });
       t.diff = t.app - t.freee; totals[k] = t; counts[k] = c;
     });
-    var diffPeople = people.filter(function (p) { return !p.only && keys.some(function (x) { return p.cells[x[0]].diff !== 0; }); }).length;
+    var diffPeople = people.filter(function (p) { return !p.only && keys.some(function (x) { return p.cells[x[0]].bad || p.cells[x[0]].diff !== 0; }); }).length;
     var settle = people.reduce(function (s, p) { return s + int(p.settle); }, 0);
     return { items: keys.map(function (x) { return { key: x[0], label: x[1] }; }), people: people, totals: totals, counts: counts, diffPeople: diffPeople,
       onlyApp: people.filter(function (p) { return p.only === 'app'; }).length, onlyFreee: people.filter(function (p) { return p.only === 'freee'; }).length, settle: settle };
@@ -260,12 +268,13 @@
     var c = compare(ours, freeeRows, { kind: kind === 'bonus' ? 'bonus' : 'salary' });
     var rows = [], unmatched = [];
     c.people.forEach(function (p, pi) {
-      if (p.only) { unmatched.push({ side: p.only === 'app' ? 'ours' : 'freee', staff_id: p.staff_id, emp_num: p.emp_num, name_short: nameShort(p.name) }); return; }
+      if (p.only) { unmatched.push({ side: p.only === 'app' ? 'ours' : 'freee', staff_id: p.staff_id, emp_num: p.emp_num, name_short: nameShort(p.name), nomatch: !!p.nomatch }); return; }
       c.items.forEach(function (x, xi) {
         var v = p.cells[x.key];
-        rows.push({ staff_id: p.staff_id, emp_num: p.emp_num, name_short: nameShort(p.name), item: x.label, key: x.key, ours: v.app, freee: v.freee, diff: v.diff, settle: p.settle, _o: pi * 100 + xi });
+        rows.push({ staff_id: p.staff_id, emp_num: p.emp_num, name_short: nameShort(p.name), item: x.label, key: x.key, ours: v.app, freee: v.freee, diff: v.diff, bad: !!v.bad, settle: p.settle, _o: pi * 100 + xi });
       });
     });
+    /* 読めない値（freee の側が数でない）は diff を null にして、差のある行として数える */
     rows.sort(function (a, b) { var da = a.diff !== 0 ? 0 : 1, db = b.diff !== 0 ? 0 : 1; return da - db || a._o - b._o; });
     rows.forEach(function (r) { delete r._o; });
     return { rows: rows, diffCount: rows.filter(function (r) { return r.diff !== 0; }).length, unmatched: unmatched, totals: c.totals, counts: c.counts, settle: c.settle };

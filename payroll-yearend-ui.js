@@ -17,7 +17,7 @@
   var VERSION = 'yearend-ui-2026-11-23';
   var SETTLE_NAME = '年末調整の精算';
   var MAX_FILE = 2 * 1024 * 1024, PUT_CHUNK = 500;
-  var S = { gen: 0, year: null, data: null, loading: null, imp: null, impErr: null, cmp: null, cmpErr: null, cmpAll: false, pick: {}, dlg: null, chk: null, busy: false };
+  var S = { gen: 0, year: null, data: null, loading: null, imp: null, impErr: null, cmp: null, cmpErr: null, cmpAll: false, pick: {}, dlg: null, chk: null, chkLoading: null, nodb: false, busy: false };
 
   function F() { return root && root.PayrollFreeeSlips || null; }
   function YE() { var y = root && root.PayrollYearEnd; return y && typeof y.computeYearEnd === 'function' ? y : null; }
@@ -37,7 +37,7 @@
   function settleOf(year, y) { return isYm(y && y.settle_ym) ? y.settle_ym : year + '-12'; }
 
   /* 捨てる（10分で隠す・鍵の画面・覆い・別の年）。遅れて届いた答えは gen で捨てる */
-  function reset() { S.gen++; S.data = null; S.loading = null; S.imp = null; S.impErr = null; S.cmp = null; S.cmpErr = null; S.cmpAll = false; S.pick = {}; S.dlg = null; S.chk = null; S.busy = false; }
+  function reset() { S.gen++; S.data = null; S.loading = null; S.imp = null; S.impErr = null; S.cmp = null; S.cmpErr = null; S.cmpAll = false; S.pick = {}; S.dlg = null; S.chk = null; S.chkLoading = null; S.busy = false; }
 
   function profiles(ctx) { return arr(ctx.bs && ctx.bs.profiles); }
   function profOf(ctx, sid) { var p = profiles(ctx); for (var i = 0; i < p.length; i++) if (p[i].staff_id === sid) return p[i]; return null; }
@@ -57,7 +57,7 @@
       if (r && r.ok === false) { S.data = { year: year, rows: [], yearend: [], err: '読めませんでした（' + String(r.error || 'ng') + '）。' }; ctx.paint(); return; }
       S.data = { year: year, err: null,
         rows: arr(r && r.rows).filter(function (x) { return x && typeof x.staff_id === 'string' && isDate(x.pay_date); }).map(function (x) {
-          return { staff_id: x.staff_id, pay_date: x.pay_date, kind: x.kind === 'bonus' ? 'bonus' : 'salary', source: String(x.source || ''), data: obj(x.data), rev: int(x.rev), src_fp: x.src_fp || '' };
+          return { staff_id: x.staff_id, pay_date: x.pay_date, kind: x.kind === 'bonus' ? 'bonus' : 'salary', source: String(x.source || ''), data: obj(x.data), rev: int(x.rev), src_fp: x.src_fp || '', fp: typeof x.fp === 'string' ? x.fp : '' };
         }).sort(function (a, b) { return a.pay_date < b.pay_date ? -1 : a.pay_date > b.pay_date ? 1 : 0; }),
         yearend: arr(r && r.yearend).filter(function (x) { return x && typeof x.staff_id === 'string'; }).map(function (x) {
           return { staff_id: x.staff_id, decl: obj(x.decl), result: obj(x.result), basis: obj(x.basis), status: x.status === 'final' ? 'final' : 'draft', settle_ym: isYm(x.settle_ym) ? x.settle_ym : year + '-12', rev: int(x.rev), finalized_at: x.finalized_at || null };
@@ -72,7 +72,7 @@
       if (ctx.fail) ctx.fail(e, '年末調整の読み込み');
     });
   }
-  function reload(ctx) { var y = yearOf(ctx); S.gen++; S.data = null; S.loading = null; S.chk = null; ensure(ctx, y); ctx.paint(); }
+  function reload(ctx) { var y = yearOf(ctx); S.gen++; S.data = null; S.loading = null; S.chk = null; S.chkLoading = null; ensure(ctx, y); ctx.paint(); }
 
   /* ── 描く ── */
   function html(ctx) {
@@ -102,9 +102,12 @@
       var by = {}, bad = 0, other = 0;
       im.rows.forEach(function (r) { if (arr(r.bad).length) bad++; if (r.pay_date && +r.pay_date.slice(0, 4) !== year) other++; });
       im.ok.forEach(function (r) { (by[r.staff_id] = by[r.staff_id] || []).push(r); });
-      h += '<p class="help">読んだファイル: ' + esc(im.files.map(function (f) { return f.name + '（' + (f.kind === 'bonus' ? '賞与' : '給与') + '・' + f.n + '行' + (f.missing.length ? '・読めなかった見出し: ' + f.missing.join('・') : '') + '）'; }).join('／')) + '</p>';
+      var okF = im.files.filter(function (f) { return !f.refused; }), ngF = im.files.filter(function (f) { return f.refused; });
+      if (ngF.length) h += '<div class="band ng" role="alert"><b>読めなかったファイル（入れません）</b><ul>' + ngF.map(function (f) { return '<li>' + esc(f.name + '：読めなかった見出し ' + f.required.join('・')) + '</li>'; }).join('') + '</ul>freee の給与・賞与の明細の CSV か確かめてください。</div>';
+      if (okF.length) h += '<p class="help">読んだファイル: ' + esc(okF.map(function (f) { return f.name + '（' + (f.kind === 'bonus' ? '賞与' : '給与') + '・' + f.n + '行' + (f.missing.length ? '・読めなかった見出し: ' + f.missing.join('・') : '') + '）'; }).join('／')) + '</p>';
+      if (arr(im.dups).length) h += '<div class="band warn"><b>同じ人・支給日・種類の明細が2つのファイルにあります（後のファイルの行を入れます）</b><ul>' + im.dups.map(function (d) { return '<li>' + esc(nameOf(ctx, d.staff_id) + '・' + d.pay_date + '・' + (d.kind === 'bonus' ? '賞与' : '給与') + '：' + d.files.join('／') + ' → 入れるのは「' + d.chosen + '」') + '</li>'; }).join('') + '</ul>違うファイルを入れたい時は、そのファイルだけ選び直してください。</div>';
       h += '<div class="tw"><table><thead><tr><th>職員</th><th>支給日・種類・総支給・所得税</th></tr></thead><tbody>' + Object.keys(by).map(function (sid) {
-        return '<tr><td class="nm">' + esc(nameOf(ctx, sid)) + '</td><td>' + by[sid].map(function (r) { return esc(r.pay_date + ' ' + (r.kind === 'bonus' ? '賞与' : '給与') + ' ' + yen(r.data.gross) + '円・税 ' + yen(r.data.income_tax) + '円' + (r.rev ? '（置き換え）' : '')); }).join('<br>') + '</td></tr>';
+        return '<tr><td class="nm">' + esc(nameOf(ctx, sid)) + '</td><td>' + by[sid].map(function (r) { return esc(r.pay_date + ' ' + (r.kind === 'bonus' ? '賞与' : '給与') + ' ' + yen(r.data.gross) + '円・税 ' + yen(r.data.income_tax) + '円' + (r.rev ? '（置き換え）' : '') + (r.dup ? '（⚠ 2つのファイルにあり・「' + r.src_name + '」の行）' : '')); }).join('<br>') + '</td></tr>';
       }).join('') + '</tbody></table></div>';
       if (im.unmatched.length) h += '<div class="band warn"><b>職員に結べない行（' + esc(im.unmatched.length) + '行・入れません）</b><ul>' + im.unmatched.map(function (u) { return '<li>' + esc((u.row.name || '（氏名なし）') + '：' + ({ many: '同じ番号・氏名の職員が2人以上', none: '番号・氏名の合う職員がいない', nokey: '番号も氏名も無い' }[u.why] || u.why)) + '</li>'; }).join('') + '</ul>従業員番号は「職員の給与設定」の取り込みで入ります。</div>';
       if (bad) h += '<div class="band warn">数でない値・読めない支給日のある行が ' + esc(bad) + ' 行あります（入れません）。</div>';
@@ -130,11 +133,12 @@
         var t = r.totals[x[0]], k = r.counts[x[0]];
         return '<tr><td>' + esc(x[1]) + '</td><td class="num">' + esc(yen(t.app)) + '</td><td class="num">' + esc(yen(t.freee)) + '</td><td class="num"' + (t.diff ? ' style="color:var(--ng);font-weight:700"' : '') + '>' + esc((t.diff ? '⚠ ' : '') + yen(t.diff)) + '</td><td class="num">' + esc(k.same) + '</td><td class="num">' + esc(k.diff) + '</td></tr>';
       }).join('') + (r.settle ? '<tr><td>年末調整の精算（自社だけ）</td><td class="num">' + esc(yen(r.settle)) + '</td><td class="num">—</td><td class="num">—</td><td></td><td></td></tr>' : '') + '</tbody></table></div>';
-    if (r.unmatched.length) h += '<div class="band warn"><b>片方だけにいる人</b><ul>' + r.unmatched.map(function (u) { return '<li>' + esc((u.side === 'ours' ? '自社だけ：' : 'freee だけ：') + (u.staff_id ? nameOf(ctx, u.staff_id) : u.name_short)) + '</li>'; }).join('') + '</ul></div>';
+    if (r.unmatched.length) h += '<div class="band warn"><b>片方だけにいる人・照合できない行</b><ul>' + r.unmatched.map(function (u) {
+      return '<li>' + esc(u.side === 'ours' ? '自社だけ：' + nameOf(ctx, u.staff_id) : u.staff_id ? 'freee だけ：' + nameOf(ctx, u.staff_id) : '照合できません（職員に結べない freee の行）：' + u.name_short) + '</li>'; }).join('') + '</ul>職員に結べない行は、従業員番号（「職員の給与設定」の取り込みで入ります）か、同じ氏名がちょうど1人の時だけ結びます。</div>';
     var rows = S.cmpAll ? r.rows : r.rows.filter(function (x) { return x.diff !== 0 || (x.key === 'income_tax' && x.settle); });
     h += '<div class="row"><label><input type="checkbox" id="ye-cmpall"' + (S.cmpAll ? ' checked' : '') + '> 一致した行も見せる</label></div>';
     h += rows.length ? '<div class="tw"><table><thead><tr><th>氏名</th><th>項目</th><th class="num">自社</th><th class="num">freee</th><th class="num">差</th><th class="num">年末調整の精算（自社だけ）</th></tr></thead><tbody>' + rows.map(function (x) {
-      return '<tr><td class="nm">' + esc(x.staff_id ? nameOf(ctx, x.staff_id) : x.name_short) + '</td><td>' + esc(x.item) + '</td><td class="num">' + esc(yen(x.ours)) + '</td><td class="num">' + esc(yen(x.freee)) + '</td><td class="num"' + (x.diff ? ' style="color:var(--ng);font-weight:700"' : '') + '>' + esc((x.diff ? '⚠ ' : '') + yen(x.diff)) + '</td><td class="num">' + esc(x.key === 'income_tax' && x.settle ? yen(x.settle) : '') + '</td></tr>';
+      return '<tr><td class="nm">' + esc(x.staff_id ? nameOf(ctx, x.staff_id) : x.name_short) + '</td><td>' + esc(x.item) + '</td><td class="num">' + esc(yen(x.ours)) + '</td><td class="num">' + esc(x.bad ? '⚠ 読めない値' : yen(x.freee)) + '</td><td class="num"' + (x.diff !== 0 ? ' style="color:var(--ng);font-weight:700"' : '') + '>' + esc(x.bad ? '⚠ 読めない値' : (x.diff ? '⚠ ' : '') + yen(x.diff)) + '</td><td class="num">' + esc(x.key === 'income_tax' && x.settle ? yen(x.settle) : '') + '</td></tr>';
     }).join('') + '</tbody></table></div>' : '<p class="help">差のある行はありません。</p>';
     return h + '<div class="row"><button type="button" class="btn" data-act="ye-cmp-clear">比べた結果を消す</button></div></div>';
   }
@@ -182,31 +186,60 @@
     return h + '</div>';
   }
 
-  /* 「今月の給与」のタブの帯（精算を入れるボタンと、合っているかの知らせ）。確定済みの月は出さない */
+  /* ── 精算する月分の給与（今月の給与のタブ）──
+     もとは DB の payroll_yearend_check(年) の行（統合 0122: staff_id・status・settle_ym・tax_adjust・balance_settle・state）。年末調整のタブで読んだ物（S.data）には頼らない。
+     state: ok・diff（額が違う）・stale（確定の後に精算する月分の明細が変わった）・noitem・norun・notfinal・nobalance・noyearend。
+     月の全員の確定を止めるのは「この月分を精算する月分にした確定済みの人」の stale と diff だけ。notfinal・noyearend・nobalance は止めずに帯で知らせる */
+  var STOP_STATE = { stale: 1, diff: 1 }, INFO_STATE = { notfinal: '年末調整がまだ下書き', noyearend: '年末調整が無いのに所得税の精算がある', nobalance: '年末調整の過不足の額が無い' };
+  function chkRows(rows, ym) { return arr(rows).filter(function (x) { return x && typeof x.staff_id === 'string' && (isYm(x.settle_ym) ? x.settle_ym : ym.slice(0, 4) + '-12') === ym; }); }
+  function stopRows(rows, ym) { return chkRows(rows, ym).filter(function (x) { return x.status === 'final' && STOP_STATE[x.state]; }); }
   function finalsFor(ctx) {
-    if (!isYm(ctx.ym)) return [];
-    var year = +ctx.ym.slice(0, 4);
-    if (!S.data || S.data.year !== year) return [];
-    return S.data.yearend.filter(function (y) { return y.status === 'final' && settleOf(year, y) === ctx.ym; });
+    if (!isYm(ctx.ym) || !S.chk || S.chk.ym !== ctx.ym) return [];
+    return chkRows(S.chk.rows, ctx.ym).filter(function (x) { return x.status === 'final' && typeof x.balance_settle === 'number'; });
   }
-  function adjSettle(list) { return arr(list).filter(function (a) { return a && a.kind === 'tax_adjust'; }).reduce(function (s, a) { return s + int(a.amount); }, 0); }
+  /* 精算の額は「所得税の精算」（kind='tax_adjust'）のうち名前が「年末調整の精算」の行だけ（ほかの tax_adjust は今の使い方のまま） */
+  function adjSettle(list) { return arr(list).filter(function (a) { return a && a.kind === 'tax_adjust' && a.name === SETTLE_NAME; }).reduce(function (s, a) { return s + int(a.amount); }, 0); }
+  function chkKey(ctx) { return ctx.ym + '|' + (ctx.runRev || 0); }
+  function loadChk(ctx) {
+    var key = chkKey(ctx), my = S.gen, ym = ctx.ym;
+    if (S.nodb || S.chkLoading === key) return;
+    S.chkLoading = key;
+    Promise.resolve().then(function () { return ctx.rpc('payroll_yearend_check', { p_year: +ym.slice(0, 4) }); }).then(function (r) {
+      if (my !== S.gen) return;
+      S.chkLoading = null;
+      S.chk = { key: key, ym: ym, rows: r && r.ok !== false ? arr(r.rows) : [], err: !!(r && r.ok === false) };
+      ctx.paint();
+    }, function (e) {
+      if (my !== S.gen) return;
+      S.chkLoading = null;
+      if (ctx.noDb && ctx.noDb(e)) { S.nodb = true; return; }
+      if (ctx.note) ctx.note('年末調整の確かめ', e);
+      S.chk = { key: key, ym: ym, rows: [], err: true };
+      ctx.paint();
+    });
+  }
   function runBand(ctx) {
-    if (ctx.frozen || !isYm(ctx.ym) || !partsOk()) return '';
-    var year = +ctx.ym.slice(0, 4);
-    if (!S.data || S.data.year !== year) { if (ctx.ym.slice(5) === '12') ensure(ctx, year); return ''; }
+    if (ctx.frozen || !isYm(ctx.ym) || S.nodb) return '';
+    if (!S.chk || S.chk.key !== chkKey(ctx)) { loadChk(ctx); if (!S.chk || S.chk.ym !== ctx.ym) return ''; }
+    var esc = ctx.esc, rows = chkRows(S.chk.rows, ctx.ym), h = '';
+    if (S.chk.err) h += '<div class="band warn" role="status">⚠ 年末調整の精算を確かめられませんでした（確定の時にもう一度確かめます）。</div>';
+    var st = rows.filter(function (x) { return x.status === 'final' && x.state === 'stale'; });
+    if (st.length) h += '<div class="band ng" role="alert">⛔ 年末調整を確定した後に、この月分の明細が変わりました（' + esc(st.map(function (x) { return nameOf(ctx, x.staff_id); }).join('、')) + '）。この月分は確定できません。管理者が年末調整の確定を取り消し、計算し直して確定し直してください。</div>';
+    var info = rows.filter(function (x) { return INFO_STATE[x.state]; });
+    if (info.length) h += '<div class="band warn" role="status">⚠ 年末調整の知らせ（確定は止めません）: ' + esc(info.map(function (x) { return nameOf(ctx, x.staff_id) + '（' + INFO_STATE[x.state] + '）'; }).join('、')) + '</div>';
     var fin = finalsFor(ctx);
-    if (!fin.length) return '';
-    var ng = fin.filter(function (y) { return adjSettle(ctx.adjOf(y.staff_id)) !== int(y.result.balance_settle); });
-    return '<div class="band ' + (ng.length ? 'warn' : 'ok') + '" role="status">' + (ng.length
-      ? '⚠ 年末調整を確定した ' + ctx.esc(fin.length) + ' 人のうち ' + ctx.esc(ng.length) + ' 人は、精算の額がまだこの月分に入っていないか、額が違います（' + ctx.esc(ng.map(function (y) { return nameOf(ctx, y.staff_id); }).join('、')) + '）。'
-      : '✓ 年末調整の精算（' + ctx.esc(fin.length) + ' 人）はこの月分に入っています。') +
+    if (!fin.length) return h;
+    var ng = fin.filter(function (y) { return adjSettle(ctx.adjOf(y.staff_id)) !== int(y.balance_settle); });
+    return h + '<div class="band ' + (ng.length ? 'warn' : 'ok') + '" role="status">' + (ng.length
+      ? '⚠ 年末調整を確定した ' + esc(fin.length) + ' 人のうち ' + esc(ng.length) + ' 人は、精算の額がまだこの月分に入っていないか、額が違います（' + esc(ng.map(function (y) { return nameOf(ctx, y.staff_id); }).join('、')) + '）。'
+      : '✓ 年末調整の精算（' + esc(fin.length) + ' 人）はこの月分に入っています。') +
       ' <button type="button" class="btn" data-act="ye-settle">年末調整の精算を入れる</button></div>';
   }
   function settle(ctx) {
     if (ctx.frozen) return;
     var fin = finalsFor(ctx), n = 0, miss = [];
     fin.forEach(function (y) {
-      var p = profOf(ctx, y.staff_id), amt = int(y.result.balance_settle);
+      var p = profOf(ctx, y.staff_id), amt = int(y.balance_settle);
       if (!p || p.none || obj(p.data).exclude === true) { if (amt !== 0) miss.push(nameOf(ctx, y.staff_id)); return; }
       var list = arr(ctx.adjOf(y.staff_id)).filter(function (a) { return !(a && a.kind === 'tax_adjust' && a.name === SETTLE_NAME); });
       if (amt !== 0) list.push({ kind: 'tax_adjust', name: SETTLE_NAME, amount: amt, reason: '令和' + reiwa(+ctx.ym.slice(0, 4)) + '年分の年末調整（' + (amt > 0 ? '不足額の徴収' : '超過額の還付') + '）' });
@@ -215,28 +248,23 @@
     if (miss.length) ctx.say('給与の設定が無い・計算から外している人には入れられませんでした（' + miss.join('、') + '）。');
     if (n) ctx.compute();
   }
-  /* 確定の前の確かめ（payroll_yearend_check）。止める時は文、通す時は null。DB にまだ仕組みが無い時（0122 の前）は通す（仮置き） */
+  /* 確定の前の確かめ。月分に関係なく毎回 payroll_yearend_check(年) を呼び、この月分を精算する月分にした確定済みの人の stale・diff だけで止める。
+     止める時は文、通す時は null。DB にまだ関数が無い時（0122 の前）は今の流れのまま通す（仮置き）。通信の失敗は止める */
   function beforeConfirm(ctx) {
     if (!isYm(ctx.ym)) return Promise.resolve(null);
-    var year = +ctx.ym.slice(0, 4), fin = finalsFor(ctx);
-    var relevant = ctx.ym.slice(5) === '12' || fin.length > 0;
-    if (!relevant) return Promise.resolve(null);
-    /* 明細の無い人（計算から外した・設定なし・退職）は精算0として比べる（額が0なら通す） */
-    var local = fin.filter(function (y) { var it = itemOf(ctx, y.staff_id); return (it ? adjSettle(it.adjustments) : 0) !== int(y.result.balance_settle); });
-    if (local.length) return Promise.resolve('年末調整の精算の額が、この月分の明細と合っていません（' + local.map(function (y) { return nameOf(ctx, y.staff_id); }).join('、') + '）。「今月の給与」の「年末調整の精算を入れる」で入れ直し、下書き保存してから確定してください。');
-    return Promise.resolve().then(function () { return ctx.rpc('payroll_yearend_check', { p_year: year }); }).then(function (r) {
+    var ym = ctx.ym, my = S.gen;
+    return Promise.resolve().then(function () { return ctx.rpc('payroll_yearend_check', { p_year: +ym.slice(0, 4) }); }).then(function (r) {
       if (r && r.ok === false) return '年末調整の精算を確かめられませんでした（' + String(r.error || 'ng') + '）。';
-      /* 統合 0122 の state: ok・diff（額が違う）・noitem（明細が無い）・norun（回が無い）・notfinal（下書き）・nobalance（額が無い）・noyearend（年末調整が無いのに精算がある）。
-         この月分の行のうち、diff・noyearend・nobalance・notfinal（仮置き）と、額が0でない noitem で止める */
-      var bad = arr(r && r.rows).filter(function (x) {
-        if (!x || (isYm(x.settle_ym) && x.settle_ym !== ctx.ym)) return false;
-        if (x.state === 'diff' || x.state === 'noyearend' || x.state === 'nobalance' || x.state === 'notfinal') return true;
-        if (x.state === 'noitem') return int(x.balance_settle) !== 0;
-        return x.match === false || x.ok === false;
-      });
-      return bad.length ? '年末調整の精算の額が、データベースの明細と合っていません（' + bad.map(function (x) { return nameOf(ctx, x.staff_id); }).join('、') + '）。「年末調整の精算を入れる」で入れ直し、下書き保存してから確定してください。' : null;
+      if (my === S.gen) S.chk = { key: chkKey(ctx), ym: ym, rows: arr(r && r.rows), err: false };
+      var bad = stopRows(r && r.rows, ym);
+      if (!bad.length) return null;
+      var st = bad.filter(function (x) { return x.state === 'stale'; }), df = bad.filter(function (x) { return x.state === 'diff'; });
+      var msg = [];
+      if (df.length) msg.push('年末調整の精算の額が、この月分の明細と合っていません（' + df.map(function (x) { return nameOf(ctx, x.staff_id); }).join('、') + '）。「年末調整の精算を入れる」で入れ直し、下書き保存してから確定してください。');
+      if (st.length) msg.push('年末調整を確定した後に、この月分の明細が変わりました（' + st.map(function (x) { return nameOf(ctx, x.staff_id); }).join('、') + '）。管理者が年末調整の確定を取り消し、計算し直して確定し直してください。');
+      return msg.join('');
     }, function (e) {
-      if (ctx.noDb && ctx.noDb(e)) return null;
+      if (ctx.noDb && ctx.noDb(e)) { S.nodb = true; return null; }
       if (ctx.note) ctx.note('年末調整の確かめ', e);
       return '年末調整の精算を確かめられませんでした。通信を確かめてから、もう一度押してください。';
     });
@@ -270,28 +298,48 @@
     readFiles(files).then(function (got) {
       if (my !== S.gen) return;
       var rows = [], fl = [];
-      got.forEach(function (g) {
+      got.forEach(function (g, gi) {
         var p = F().parse(ctx.decode(g.buf), { kind: kindSel || undefined });
         g.buf = null;
-        fl.push({ name: g.name, kind: p.kind, n: p.rows.length, missing: p.cols.missing });
-        p.rows.forEach(function (r) { r.src_fp = g.fp; r.kind = p.kind; rows.push(r); });
+        /* 必須の見出し（総支給額・所得税・課税支給額か非課税支給額）が無いファイルは、行を作らずファイルごと断る */
+        fl.push({ name: g.name, kind: p.kind, n: p.rows.length, missing: p.cols.missing, refused: !!p.refused, required: arr(p.cols.required) });
+        if (p.refused) return;
+        p.rows.forEach(function (r) { r.src_fp = g.fp; r.src_name = g.name; r.src_i = gi; r.kind = p.kind; rows.push(r); });
       });
       var m = F().match(rows, staffList(ctx));
       var inYear = m.matched.filter(function (r) { return r.pay_date && +r.pay_date.slice(0, 4) === year; });
       var ok = [], warnings = [], finalNg = {};
       ['salary', 'bonus'].forEach(function (k) {
-        var t = F().toYtd(inYear.filter(function (r) { return r.kind === k; }), k);
+        var src = inYear.filter(function (r) { return r.kind === k; });
+        var t = F().toYtd(src, k);
         arr(t.warnings).forEach(function (w) { warnings.push(w); });
-        t.forEach(function (x) { ok.push(x); });
+        /* toYtd は入れない行を飛ばすので、行のファイル名は (staff_id・支給日) の並びで当て直す */
+        t.forEach(function (x) {
+          var hit = src.filter(function (r) { return r.staff_id === x.staff_id && r.pay_date === x.pay_date && !arr(r.bad).length; });
+          var used = ok.filter(function (o) { return o.staff_id === x.staff_id && o.pay_date === x.pay_date && o.kind === x.kind; }).length;
+          var from = hit[used] || hit[hit.length - 1] || {};
+          x.src_name = from.src_name || ''; x.src_i = from.src_i || 0;
+          ok.push(x);
+        });
       });
-      /* 同じ人・同じ支給日・同じ種類が2つあれば後の方だけ（同じ明細を2つのファイルで選んだ時） */
-      var key = {}, uniq = [];
-      ok.forEach(function (x) { key[x.staff_id + '|' + x.pay_date + '|' + x.kind] = x; });
-      Object.keys(key).forEach(function (k) { uniq.push(key[k]); });
+      /* 同じ人・同じ支給日・同じ種類が2つ以上あれば、後のファイル（選んだ順）の行を入れ、知らせと一覧の印を出す */
+      var key = {}, uniq = [], dups = [];
+      ok.forEach(function (x) {
+        var k = x.staff_id + '|' + x.pay_date + '|' + x.kind, old = key[k];
+        if (old) {
+          var d = dups.filter(function (z) { return z.k === k; })[0];
+          if (!d) { d = { k: k, staff_id: x.staff_id, pay_date: x.pay_date, kind: x.kind, files: [old.src_name] }; dups.push(d); }
+          d.files.push(x.src_name);
+          if (x.src_i < old.src_i) { d.chosen = old.src_name; return; }
+          d.chosen = x.src_name;
+        }
+        key[k] = x;
+      });
+      Object.keys(key).forEach(function (k) { var x = key[k]; if (dups.some(function (z) { return z.k === k; })) x.dup = true; uniq.push(x); });
       uniq = uniq.filter(function (x) { var y = yeOf(x.staff_id); if (y && y.status === 'final') { finalNg[x.staff_id] = 1; return false; } return true; });
       uniq.forEach(function (x) { var old = rowsOf(x.staff_id).filter(function (r) { return r.pay_date === x.pay_date && r.kind === x.kind; })[0]; x.rev = old ? old.rev : 0; });
       uniq.sort(function (a, b) { return a.staff_id < b.staff_id ? -1 : a.staff_id > b.staff_id ? 1 : a.pay_date < b.pay_date ? -1 : 1; });
-      S.imp = { files: fl, rows: rows, unmatched: m.unmatched, ok: uniq, warnings: warnings, finalNg: Object.keys(finalNg) };
+      S.imp = { files: fl, rows: rows, unmatched: m.unmatched, ok: uniq, warnings: warnings, finalNg: Object.keys(finalNg), dups: dups };
       ctx.paint();
     })['catch'](function (e) { if (ctx.note) ctx.note('freee の明細の読み込み', e); S.imp = null; S.impErr = '読めませんでした。freee の給与・賞与の明細の CSV を選んでください。'; ctx.paint(); });
   }
@@ -329,6 +377,7 @@
     f.arrayBuffer().then(function (buf) {
       if (my !== S.gen) return;
       var p = F().parse(ctx.decode(buf), { kind: 'salary' }); buf = null;
+      if (p.refused) { S.cmpErr = '読めなかった見出し: ' + arr(p.cols.required).join('・') + '。freee の給与の明細の CSV を選んでください。'; ctx.paint(); return; }
       var m = F().match(p.rows, staffList(ctx));
       var pd = ctx.payDate, mon = isDate(pd) ? pd.slice(0, 7) : null;
       var fr = m.matched.concat(m.unmatched.map(function (u) { return u.row; }));
@@ -513,17 +562,19 @@
     if (ctx.ym === D.settle_ym) {
       var it = itemOf(ctx, sid), pd = it && isDate(it.pay_date) ? it.pay_date : ctx.payDate;
       if (it && isDate(pd)) {
-        var dup = rows.some(function (r) { return r.kind === 'salary' && r.pay_date === pd; });
+        /* 精算する月分の自社の給与（app）と同じ暦の月の給与の行（freee・manual）が累計にあれば二重に数えるので止める */
+        var twin = rows.filter(function (r) { return r.kind === 'salary' && r.pay_date.slice(0, 7) === pd.slice(0, 7); });
+        if (twin.length) return { input: null, basis: null, warn: null, stop: twin };
         var data = F().itemToYtd(it);
-        if (!dup) rows.push({ staff_id: sid, pay_date: pd, kind: 'salary', source: 'app', data: data, rev: 0 });
+        rows.push({ staff_id: sid, pay_date: pd, kind: 'salary', source: 'app', data: data, rev: 0 });
         /* DB（0122 の payroll_item_vals）は明細の gross・item.taxable・item.si_total・所得税の行の和と比べる */
         settle = { ym: ctx.ym, rev: ctx.runRev || 0, gross: int(it.gross), taxable: it.taxable != null ? int(it.taxable) : data.taxable, si: it.si_total != null ? int(it.si_total) : data.si_health + data.si_care + data.si_support + data.si_pension + data.si_emp + data.si_other, tax: data.income_tax };
       } else warn = ymText(D.settle_ym) + 'の給与の明細がまだ無いので、その月を含めずに数えています（「今月の給与」で計算してから計算し直してください）。';
     } else warn = '精算する月分（' + ymText(D.settle_ym) + '）を表示していないので、その月の給与を含めずに数えています。上の月分を' + ymText(D.settle_ym) + 'にしてから計算してください。';
     /* 定数（rates）は渡さない（PayrollYearEnd が年で引く）。前職は decl.prev_jobs から読ませる（prevJobs と二重に渡さない） */
     var input = { year: year, rows: rows, decl: decl };
-    /* basis の形は統合 0122 の payroll_basis_ok: {ytd:[{pay_date, kind, rev}], items:[{ym, rev, gross, taxable, si, tax}]} */
-    var basis = { ytd: rowsOf(sid).map(function (r) { return { pay_date: r.pay_date, kind: r.kind, rev: r.rev }; }), items: settle ? [settle] : [] };
+    /* basis の形は統合 0122 の payroll_basis_ok: {ytd:[{pay_date, kind, rev, fp}], items:[{ym, rev, gross, taxable, si, tax}]}。fp は ytd_get が返した DB の指紋をそのまま写す */
+    var basis = { ytd: rowsOf(sid).map(function (r) { return { pay_date: r.pay_date, kind: r.kind, rev: r.rev, fp: r.fp }; }), items: settle ? [settle] : [] };
     return { input: input, basis: basis, warn: warn };
   }
   function doCalc(ctx) {
@@ -531,12 +582,45 @@
     var rd = readDecl();
     if (rd.bad.length) { ctx.say('入れ方が違う欄があります（' + rd.bad.slice(0, 8).join('・') + '）。円は整数、日付は年月日で入れてください。'); return null; }
     var ci = calcInput(ctx, D.sid, rd.decl), res;
+    if (ci.stop) {
+      D.result = null; D.twin = ci.stop;
+      var bx = el('ye-res'); if (bx) ctx.put(bx, twinHtml(ctx, ci.stop));
+      ctx.say('精算する月分（' + ymText(D.settle_ym) + '）の給与が、累計（' + ci.stop.map(function (r) { return r.pay_date + '・' + (SRC[r.source] || r.source); }).join('、') + '）と今の月分の明細の2つにあり、二重に数えるので計算しません。下の「累計のこの行を消す」でどちらかを消してください。');
+      return null;
+    }
     try { res = YE().computeYearEnd(ci.input); } catch (e) { if (ctx.note) ctx.note('年末調整の計算', e); ctx.say('計算できませんでした（申告の形を確かめてください）。'); return null; }
     D.decl = rd.decl; D.result = obj(res); D.basis = ci.basis; D.note = ci.warn;
     var box = el('ye-res'); if (box) ctx.put(box, resultHtml(ctx, D.result, D.note));
     return { decl: rd.decl, result: D.result, basis: ci.basis };
   }
   /* 内訳は決まった鍵だけを決まった順に描く（fuyo_etc は扶養・障害者等の合計なので内訳には入れず、小計として別の行に出す＝二重に数えない） */
+  var SRC = { freee: 'freee の明細', manual: '手で足した分', app: 'この画面の給与' };
+  function twinHtml(ctx, twin) {
+    var esc = ctx.esc;
+    return '<div class="band ng" role="alert"><b>⛔ 二重に数える行があるので計算しません</b><ul>' + twin.map(function (r) {
+      return '<li>' + esc(r.pay_date + '・' + (SRC[r.source] || r.source) + '・総支給 ' + ctx.yen(r.data.gross) + '円') + ' <button type="button" class="btn ng" data-act="ye-ytd-del" data-pd="' + esc(r.pay_date) + '" data-k="' + esc(r.kind) + '">累計のこの行を消す</button></li>';
+    }).join('') + '</ul><label for="ye-del-reason">消す理由（必ず書く）</label><input id="ye-del-reason" maxlength="200" autocomplete="off" style="width:100%"></div>';
+  }
+  function ytdDelete(ctx, b) {
+    var D = S.dlg; if (!D || D.ro || S.busy || !b) return;
+    var pd = b.getAttribute('data-pd'), kind = b.getAttribute('data-k'), reason = val('ye-del-reason');
+    var row = rowsOf(D.sid).filter(function (r) { return r.pay_date === pd && r.kind === kind; })[0];
+    if (!row) return;
+    if (!reason) { ctx.say('消す理由を書いてください。'); return; }
+    var year = yearOf(ctx), my = S.gen;
+    ctx.ask(pd + ' の' + (SRC[row.source] || row.source) + 'の行を累計から消しますか？（消したことと理由は記録に残ります）').then(function (ok) {
+      if (!ok || S.dlg !== D) return;
+      S.busy = true; b.disabled = true;
+      return ctx.rpc('payroll_ytd_delete', { p_year: year, p_staff_id: D.sid, p_pay_date: pd, p_kind: kind, p_rev: row.rev, p_reason: reason }).then(function (r) {
+        S.busy = false;
+        if (my !== S.gen) return;
+        if (r && r.ok === false) { b.disabled = false; ctx.say('消せませんでした：' + ngText(r)); return; }
+        S.data.rows = S.data.rows.filter(function (x) { return x !== row; });
+        D.twin = null; var bx = el('ye-res'); if (bx) ctx.put(bx, resultHtml(ctx, null, null));
+        ctx.toast('累計から消しました。もう一度「計算する」を押してください。');
+      }, function (e) { S.busy = false; b.disabled = false; if (ctx.fail) ctx.fail(e, '累計の行を消す'); });
+    });
+  }
   var DED = [['social', '社会保険料控除'], ['small_biz', '小規模企業共済等掛金控除'], ['life', '生命保険料控除'], ['quake', '地震保険料控除'], ['spouse', '配偶者控除'], ['spouse_special', '配偶者特別控除'], ['tokutei', '特定親族特別控除'],
     ['dependents', '扶養控除'], ['disability', '障害者控除'], ['widow', '寡婦控除'], ['single_parent', 'ひとり親控除'], ['working_student', '勤労学生控除'], ['fuyo_etc', '（小計）扶養控除額及び障害者等の控除額の合計'], ['basic', '基礎控除']];
   var WHY = { not_kou: '扶養控除等申告書が出ていない（甲欄でない）', over_20m: 'その年の給与の収入が2,000万円を超える', rates_missing: 'その年の定数が無いか、確かめていない値がある', bad_input: '累計の行の形が違う', over_taxable_max: '課税給与所得が速算表の範囲を超える' };
@@ -621,13 +705,18 @@
     for (var i = 0; i < n; i++) { var p = 'ye-d' + i + '-'; out.push({ name: val(p + 'name'), kana: val(p + 'kana'), birth: val(p + 'birth'), relation: val(p + 'rel'), income: val(p + 'inc'), nonresident: on(p + 'nr'), disability: val(p + 'dis') || 'none', live_together: on(p + 'live'), student: on(p + 'stu'), remit38: on(p + 'r38') }); }
     return out;
   }
+  function rawPrev(n) {
+    var out = [];
+    for (var j = 0; j < n; j++) { var q = 'ye-p' + j + '-'; out.push({ payer: val(q + 'payer'), address: val(q + 'addr'), pay: val(q + 'pay'), si: val(q + 'si'), tax: val(q + 'tax'), left_on: val(q + 'left') }); }
+    return out;
+  }
+  function rawU23(n) { var out = []; for (var u = 0; u < n; u++) out.push({ birth: val('ye-u' + u + '-birth'), special_disabled: on('ye-u' + u + '-sd') }); return out; }
   function addRows(ctx, which) {
     var D = S.dlg; if (!D || D.ro) return;
-    var rd = readDecl(); D.decl = rd.decl;
     if (which === 'dep') { if (D.nDep >= 30) return; var raw = rawDeps(D.nDep); D.nDep++; ctx.put(el('ye-deps'), depsHtml(ctx.esc, raw, D.nDep)); }
-    else if (which === 'u23') { if (D.nU23 >= 10) return; D.nU23++; ctx.put(el('ye-u23s'), u23Html(ctx.esc, arr(D.decl.under23_others), D.nU23)); }
+    else if (which === 'u23') { if (D.nU23 >= 10) return; var ru = rawU23(D.nU23); D.nU23++; ctx.put(el('ye-u23s'), u23Html(ctx.esc, ru, D.nU23)); }
     else if (which === 'deps') ctx.put(el('ye-deps'), depsHtml(ctx.esc, rawDeps(D.nDep), D.nDep));
-    else { if (D.nPrev >= 5) return; D.nPrev++; ctx.put(el('ye-prevs'), prevHtml(ctx.esc, arr(D.decl.prev_jobs), D.nPrev)); }
+    else { if (D.nPrev >= 5) return; var rp = rawPrev(D.nPrev); D.nPrev++; ctx.put(el('ye-prevs'), prevHtml(ctx.esc, rp, D.nPrev)); }
   }
 
   /* ── 印刷と CSV ── */
@@ -640,18 +729,31 @@
     });
     return out;
   }
+  /* 印刷・書き出しは、記録（payroll_yearend_log）が通ってからだけ（給与明細の印刷と同じ順）。0122 の無い DB では止める */
+  function logThen(ctx, kind, count, go) {
+    var year = yearOf(ctx), my = S.gen;
+    Promise.resolve().then(function () { return ctx.rpc('payroll_yearend_log', { p_year: year, p_kind: kind, p_count: count }); }).then(function (r) {
+      if (my !== S.gen) return;
+      if (!r || r.ok !== true) { ctx.say('記録に残せなかったので、止めました（' + String((r && r.error) || 'ng') + '）。'); return; }
+      go();
+    }, function (e) {
+      if (ctx.noDb && ctx.noDb(e)) { ctx.say('データベースに記録の仕組みがまだ無いので、止めました（統合 0122 を入れた後に使えます）。'); return; }
+      if (ctx.fail) ctx.fail(e, '源泉徴収票の記録');
+    });
+  }
   function doPrintSlips(ctx, which) {
     var list; try { list = slipList(ctx, which); } catch (e) { if (ctx.note) ctx.note('源泉徴収票の値', e); ctx.say('源泉徴収票を作れませんでした。'); return; }
     if (!list.length) return;
     var body; try { body = WS().slipHtml(list); } catch (e2) { if (ctx.note) ctx.note('源泉徴収票の紙', e2); ctx.say('源泉徴収票を作れませんでした。'); return; }
-    ctx.printSlips(String(body || ''), Math.ceil(list.length / 2));
+    logThen(ctx, 'withholding_slip', list.length, function () { ctx.printSlips(String(body || ''), Math.ceil(list.length / 2)); body = null; });
   }
   function doCsv(ctx) {
     var w = WS(), year = yearOf(ctx);
     try {
       var vals = slipList(ctx, 'all'), sum = w.summaryValues(vals);
       var text = w.toCsv(vals, sum);
-      ctx.download({ name: 'withholding-' + year + '.csv', text: typeof text === 'string' ? text : String((text && text.text) || '') });
+      text = typeof text === 'string' ? text : String((text && text.text) || '');
+      logThen(ctx, 'yearend_csv', vals.length, function () { ctx.download({ name: 'withholding-' + year + '.csv', text: text }); text = null; });
     } catch (e) { if (ctx.note) ctx.note('合計表の CSV', e); ctx.say('CSV を作れませんでした。'); }
   }
 
@@ -668,6 +770,7 @@
     else if (act === 'ye-dep-add') addRows(ctx, 'dep');
     else if (act === 'ye-prev-add') addRows(ctx, 'prev');
     else if (act === 'ye-u23-add') addRows(ctx, 'u23');
+    else if (act === 'ye-ytd-del') ytdDelete(ctx, b);
     else if (act === 'ye-calc') doCalc(ctx);
     else if (act === 'ye-save') saveDecl(ctx, b);
     else if (act === 'ye-final') finalize(ctx, b);
@@ -695,7 +798,7 @@
   function dirty() { return !!S.imp; }
 
   var api = { VERSION: VERSION, SETTLE_NAME: SETTLE_NAME, html: html, onClick: onClick, onChange: onChange, onInput: onInput, reset: reset, runBand: runBand, beforeConfirm: beforeConfirm, exportBadge: exportBadge, dirty: dirty,
-    _test: { state: function () { return S; }, settle: settle, finalsFor: finalsFor, adjSettle: adjSettle, calcInput: calcInput, settleOpts: settleOpts, readDecl: readDecl, depsHtml: depsHtml } };
+    _test: { state: function () { return S; }, settle: settle, finalsFor: finalsFor, adjSettle: adjSettle, calcInput: calcInput, settleOpts: settleOpts, readDecl: readDecl, depsHtml: depsHtml, stopRows: stopRows, rawPrev: rawPrev, rawU23: rawU23 } };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) root.PayrollYearEndUI = api;
 })(typeof window !== 'undefined' ? window : null);

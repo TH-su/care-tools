@@ -236,7 +236,7 @@ const ARGS = {
   /* 年末調整（統合 0122・2026-11-23）。引数の名前は凍結仕様 ROOT-yearend.md の A */
   payroll_ytd_get: ['p_year'], payroll_ytd_put: ['p_rows', 'p_year'], payroll_ytd_delete: ['p_kind', 'p_pay_date', 'p_reason', 'p_rev', 'p_staff_id', 'p_year'],
   payroll_yearend_put: ['p_basis', 'p_decl', 'p_result', 'p_rev', 'p_settle_ym', 'p_staff_id', 'p_year'], payroll_yearend_finalize: ['p_rev', 'p_staff_id', 'p_year'],
-  payroll_yearend_unfinalize: ['p_reason', 'p_staff_id', 'p_year'], payroll_yearend_check: ['p_year'],
+  payroll_yearend_unfinalize: ['p_reason', 'p_staff_id', 'p_year'], payroll_yearend_check: ['p_year'], payroll_yearend_log: ['p_count', 'p_kind', 'p_year'],
 };
 const ADMIN_ONLY = ['payroll_run_unconfirm', 'payroll_settings_put', 'payroll_allowance_put', 'payroll_members_get', 'payroll_members_put', 'payroll_audit_get', 'payroll_import_put'];
 
@@ -554,7 +554,22 @@ export function routesFor(opt = {}) {
       const MYNUM = /my_?number|kojin_bango|個人番号|マイナンバー/i;
       const deepKeys = (v) => (isObj(v) ? Object.keys(v).concat(...Object.values(v).map(deepKeys)) : Array.isArray(v) ? [].concat(...v.map(deepKeys)) : []);
       const yeOf = (sid) => db.yearend.find((x) => x.year === Y && x.staff_id === sid);
-      if (name === 'payroll_ytd_get') return ok({ rows: db.ytd.filter((x) => x.year === Y).map((x) => Object.assign({}, x)), yearend: db.yearend.filter((x) => x.year === Y).map((x) => Object.assign({}, x)) });
+      /* 累計の1行の指紋（DB が作る fp の作り物。中身・版・出どころが変われば変わる） */
+      const fpOf = (x) => { const t = JSON.stringify([x.staff_id, x.pay_date, x.kind, x.source, x.rev, Object.keys(x.data || {}).sort().map((k) => k + ':' + x.data[k])]); let h = 5381; for (let i = 0; i < t.length; i++) h = ((h * 33) ^ t.charCodeAt(i)) >>> 0; return h.toString(16).padStart(8, '0'); };
+      const ytdKey = (list) => list.map((x) => x.pay_date + '|' + x.kind + '|' + x.rev + '|' + x.fp).sort().join();
+      const nowYtd = (sid) => db.ytd.filter((x) => x.year === Y && x.staff_id === sid).map((x) => Object.assign({}, x, { fp: fpOf(x) }));
+      /* 0122 の private.payroll_item_vals の写し: 保存した明細の gross・item.taxable・item.si_total・所得税の行の和（無ければ null） */
+      const itemVals = (ym, sid) => {
+        const it = (db.items[ym] || []).find((i) => i.staff_id === sid); if (!it || !db.runs[ym]) return null;
+        const item = it.item || {};
+        return { gross: it.gross, taxable: Number.isInteger(item.taxable) ? item.taxable : null, si: Number.isInteger(item.si_total) ? item.si_total : null,
+          tax: (item.lines || []).filter((l) => l && l.sec === 'deduct' && l.code === 'income_tax' && Number.isInteger(l.amount)).reduce((t, l) => t + l.amount, 0) };
+      };
+      const itemsStale = (basis, sid) => (Array.isArray(basis && basis.items) ? basis.items : []).some((b) => {
+        const v = itemVals(b.ym, sid);
+        return !v || v.taxable === null || v.si === null || ![b.gross, b.taxable, b.si, b.tax].every(Number.isInteger) || v.gross !== b.gross || v.taxable !== b.taxable || v.si !== b.si || v.tax !== b.tax;
+      });
+      if (name === 'payroll_ytd_get') return ok({ rows: db.ytd.filter((x) => x.year === Y).map((x) => Object.assign({}, x, { fp: fpOf(x) })), yearend: db.yearend.filter((x) => x.year === Y).map((x) => Object.assign({}, x)) });
       if (name === 'payroll_ytd_put') {
         const R = p.p_rows;
         if (!Array.isArray(R) || !R.length || R.length > 500) return ng('badshape');
@@ -583,14 +598,17 @@ export function routesFor(opt = {}) {
         if (y) Object.assign(y, row); else db.yearend.push(row);
         audit('yearend_put'); return ok({ rev: row.rev });
       }
+      /* 0122 の payroll_yearend_finalize と同じ判定の順: notfound → final → conflict → notcalculated → 累計の (pay_date, kind, rev) → basis.items の明細の値4つ */
       if (name === 'payroll_yearend_finalize') {
         const y = yeOf(p.p_staff_id); if (!y) return ng('notfound');
-        if (y.rev !== p.p_rev) return ng('conflict');
-        if (!isObj(y.basis) || !Array.isArray(y.basis.ytd) || !Array.isArray(y.basis.items)) return ng('notcalculated');
-        const now = db.ytd.filter((x) => x.year === Y && x.staff_id === p.p_staff_id).map((x) => x.pay_date + x.kind + x.rev).sort().join();
-        const was = y.basis.ytd.map((x) => x.pay_date + x.kind + x.rev).sort().join();
-        if (now !== was) return ng('stale', { detail: 'ytd' });
-        y.status = 'final'; y.finalized_at = nowIso(); audit('yearend_finalize'); return ok({ rev: y.rev });
+        if (y.status === 'final') return ng('final');
+        if (y.rev !== p.p_rev) return ng('conflict', { rev: y.rev });
+        if (!isObj(y.result) || !isObj(y.basis) || !Array.isArray(y.basis.ytd) || !Array.isArray(y.basis.items)) return ng('notcalculated');
+        if (y.basis.ytd.some((b) => !isObj(b) || typeof b.fp !== 'string' || !b.fp)) return ng('notcalculated');   /* fp は必須 */
+        if (ytdKey(nowYtd(p.p_staff_id)) !== ytdKey(y.basis.ytd)) return ng('stale', { detail: 'ytd' });
+        const bad = y.basis.items.find((b) => itemsStale({ items: [b] }, p.p_staff_id));
+        if (bad) return ng('stale', { detail: 'items', ym: bad.ym });
+        y.status = 'final'; y.rev++; y.finalized_at = nowIso(); audit('yearend_finalize'); return ok({ rev: y.rev });
       }
       if (name === 'payroll_yearend_unfinalize') {
         if (role !== 'admin') return ng('denied');
@@ -598,15 +616,39 @@ export function routesFor(opt = {}) {
         const y = yeOf(p.p_staff_id); if (!y || y.status !== 'final') return ng('notfinal');
         y.status = 'draft'; y.finalized_at = null; y.rev++; audit('yearend_unfinalize', null, p.p_staff_id, p.p_reason); return ok();
       }
-      /* 0122 と同じ形の答え（state: ok・diff・noitem・norun・notfinal・nobalance）。精算の額は保存した明細の調整の tax_adjust の和 */
+      /* 0122 の payroll_yearend_check と同じ形と判定の順（noyearend → notfinal → stale → nobalance → norun → noitem → diff → ok）。
+         精算の額は保存した明細の調整のうち kind='tax_adjust' かつ name='年末調整の精算' の行の和（反証レビュー 2026-11-23 で DB も同じ形に直す）。
+         stale は確定の basis.items の月分ごとに、今の明細の値4つ（finalize と同じ取り方）が違う・明細が無い時 */
       if (name === 'payroll_yearend_check') {
-        return ok({ year: Y, rows: db.yearend.filter((x) => x.year === Y).map((x) => {
-          const run = db.runs[x.settle_ym], it = (db.items[x.settle_ym] || []).find((i) => i.staff_id === x.staff_id);
-          const adj = it ? (it.adjustments || []).filter((a) => a && a.kind === 'tax_adjust').reduce((t, a) => t + a.amount, 0) : 0;
-          const bal = Number.isInteger(x.result && x.result.balance_settle) ? x.result.balance_settle : null;
-          const state = x.status !== 'final' ? 'notfinal' : bal === null ? 'nobalance' : !run ? 'norun' : !it ? 'noitem' : adj !== bal ? 'diff' : 'ok';
-          return { staff_id: x.staff_id, status: x.status, settle_ym: x.settle_ym, run_status: run ? run.status : null, has_item: !!it, tax_adjust: adj, balance_settle: bal, state };
-        }) });
+        const settleAdj = (it) => (it ? (it.adjustments || []).filter((a) => a && a.kind === 'tax_adjust' && a.name === '年末調整の精算' && Number.isInteger(a.amount)).reduce((t, a) => t + a.amount, 0) : 0);
+        const ye = db.yearend.filter((x) => x.year === Y);
+        const months = new Set(ye.map((x) => x.settle_ym).concat([Y + '-12']));
+        /* stale は basis.ytd（pay_date・kind・rev・fp）が今の累計と違う時と、basis.items の明細の値が違う時 */
+        const people = ye.map((x) => ({ staff_id: x.staff_id, status: x.status, settle_ym: x.settle_ym, balance: Number.isInteger(x.result && x.result.balance_settle) ? x.result.balance_settle : null,
+          stale: itemsStale(x.basis, x.staff_id) || ytdKey(nowYtd(x.staff_id)) !== ytdKey(Array.isArray(x.basis && x.basis.ytd) ? x.basis.ytd : []) }));
+        months.forEach((ym) => (db.items[ym] || []).forEach((i) => {
+          if (!ye.some((x) => x.staff_id === i.staff_id) && settleAdj(i) !== 0) people.push({ staff_id: i.staff_id, status: null, settle_ym: ym, balance: null, stale: false });
+        }));
+        const rows = people.map((z) => {
+          const run = db.runs[z.settle_ym], it = (db.items[z.settle_ym] || []).find((i) => i.staff_id === z.staff_id), adj = settleAdj(it);
+          const state = z.status === null ? 'noyearend' : z.status !== 'final' ? 'notfinal' : z.stale ? 'stale' : z.balance === null ? 'nobalance' : !run ? 'norun' : !it ? 'noitem' : adj !== z.balance ? 'diff' : 'ok';
+          return { staff_id: z.staff_id, status: z.status, settle_ym: z.settle_ym, run_status: run ? run.status : null, run_rev: run ? run.rev : null, has_item: !!it, tax_adjust: adj, balance_settle: z.balance, state };
+        }).sort((a, b) => (a.staff_id < b.staff_id ? -1 : 1));
+        return ok({ year: Y, rows, n_ok: rows.filter((r) => r.state === 'ok').length, n_ng: rows.filter((r) => r.state !== 'ok').length });
+      }
+      /* 源泉徴収票の印刷・合計表の CSV の記録（反証レビュー 2026-11-23 で足す口・金額は持たない） */
+      if (name === 'payroll_yearend_log') {
+        if (!['withholding_slip', 'yearend_csv'].includes(p.p_kind) || !Number.isInteger(p.p_count) || p.p_count < 1 || p.p_count > 1000) return ng('badshape');
+        db.log.push('yearend:' + p.p_kind); audit('yearend_' + p.p_kind); return ok();
+      }
+      /* 累計の取り込み違いを消す（理由必須・確定済みの人は断る・版の照合） */
+      if (name === 'payroll_ytd_delete') {
+        if (!String(p.p_reason || '').trim()) return ng('reason');
+        const y = yeOf(p.p_staff_id); if (y && y.status === 'final') return ng('final');
+        const i = db.ytd.findIndex((x) => x.year === Y && x.staff_id === p.p_staff_id && x.pay_date === p.p_pay_date && x.kind === p.p_kind);
+        if (i < 0) return ng('notfound');
+        if (db.ytd[i].rev !== p.p_rev) return ng('conflict', { rev: db.ytd[i].rev });
+        db.ytd.splice(i, 1); audit('ytd_delete', null, p.p_staff_id, p.p_reason); return ok();
       }
       return null;
     }

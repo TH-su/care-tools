@@ -556,6 +556,10 @@ console.log('\n— 年末調整のタブ —');
   await p.waitForFunction(() => /計算の結果|計算を止めました|年末調整の対象外/.test(document.getElementById('ye-res').textContent), null, { timeout: 5000 });
   t('「計算する」で内訳と過不足（または止める知らせ）を窓の中に出す', /計算の結果|計算を止めました/.test(await p.textContent('#ye-res')));
   await shot(p, 'payroll.yearend.dlg', false);
+  await p.click('[data-act="ye-save"]');
+  for (let i = 0; i < 50 && !o.routes.calls.some((c) => c.name === 'payroll_yearend_put'); i++) await p.waitForTimeout(100);
+  const yp = o.routes.calls.find((c) => c.name === 'payroll_yearend_put');
+  t('下書き保存: basis.ytd は (pay_date・kind・rev・fp) で、fp は ytd_get が返した DB の指紋をそのまま写す', !!yp && yp.args.p_basis.ytd.length === 1 && /^[0-9a-f]{8}$/.test(yp.args.p_basis.ytd[0].fp) && Object.keys(yp.args.p_basis.ytd[0]).sort().join() === 'fp,kind,pay_date,rev' && o.routes.db.yearend.length === 1, yp && yp.args.p_basis);
   await p.click('#p-dlg [data-act="dlg-close"]');
   await sud(p, 'ok', 1500);
   await shot(p, 'payroll.yearend.pc');
@@ -614,6 +618,42 @@ console.log('\n— 年末調整の精算（今月の給与） —');
   await p.waitForFunction(() => /確定していません。年末調整の精算の額/.test(document.getElementById('p-main').textContent), null, { timeout: 15000 });
   t('精算が入っていない時は確定しない（payroll_run_confirm を呼ばない）', !o.routes.calls.some((c) => c.name === 'payroll_run_confirm') && (o.routes.db.runs[YM] || {}).status === 'draft');
   t('止めた時: 画面のエラー 0', o.errors.length === 0, o.errors);
+  await o.ctx.close();
+}
+/* 反証レビュー（2026-11-23）: 年末調整の確定の後に精算する月分の明細が変わった（stale）は、今月の給与のタブで知らせ、確定を止める */
+{
+  const o = await open({ tab: 'run', start: 'none' });
+  const p = o.page;
+  o.routes.db.yearend = [{ year: 2026, staff_id: 's-01', decl: { kou: true }, result: { eligible: true, balance: 0, balance_settle: 0, warnings: [] }, basis: { ytd: [], items: [{ ym: YM, rev: 1, gross: 1, taxable: 1, si: 1, tax: 1 }] }, status: 'final', settle_ym: YM, rev: 2, finalized_at: null },
+    { year: 2026, staff_id: 's-02', decl: { kou: true }, result: {}, basis: { ytd: [], items: [] }, status: 'draft', settle_ym: YM, rev: 1, finalized_at: null }];
+  await waitApp(p);
+  await p.waitForFunction(() => /年末調整を確定した後に、この月分の明細が変わりました/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  t('stale: 今月の給与のタブに「確定した後に明細が変わった」を出す（年末調整のタブを開かなくても）・下書きの人は止めない知らせ', /見本 一郎/.test(await p.textContent('#p-main')) && /年末調整の知らせ（確定は止めません）: 見本 二子（年末調整がまだ下書き）/.test(await p.textContent('#p-main')));
+  await p.click('[data-act="compute"]');
+  await p.click('[data-act="save"]');
+  await settle(p);
+  await p.click('[data-act="confirm"]');
+  await p.waitForSelector('#p-dlg[open] [data-act="confirm-go"]');
+  if (await p.$('#c-ack')) await p.check('#c-ack');
+  await p.click('[data-act="confirm-go"]');
+  await p.waitForFunction(() => /確定していません。年末調整を確定した後に/.test(document.getElementById('p-main').textContent), null, { timeout: 15000 });
+  t('stale: 確定しない（payroll_run_confirm も読み直しも呼ばない）', !o.routes.calls.some((c) => c.name === 'payroll_run_confirm') && (o.routes.db.runs[YM] || {}).status === 'draft');
+  t('stale: 画面のエラー 0', o.errors.length === 0, o.errors);
+  await o.ctx.close();
+}
+/* 源泉徴収票の印刷は payroll_yearend_log が通ってから */
+{
+  const o = await open({ tab: 'yearend', start: 'confirmed' });
+  const p = o.page;
+  o.routes.db.yearend = [{ year: 2026, staff_id: 's-01', decl: { kou: true }, result: { eligible: false, reasons: ['not_kou'], balance: null, balance_settle: 0, warnings: [], lines: null }, basis: { ytd: [], items: [] }, status: 'final', settle_ym: '2026-12', rev: 2, finalized_at: '2026-11-20T09:00:00+09:00' }];
+  await waitApp(p);
+  await p.waitForSelector('[data-act="ye-print"][data-k="all"]:not([disabled])', { timeout: 10000 });
+  await p.evaluate(() => { window.print = function () {}; });
+  await p.click('[data-act="ye-print"][data-k="all"]');
+  await p.waitForFunction(() => document.body.classList.contains('su-printing') || /記録に残せなかった/.test(document.body.textContent), null, { timeout: 10000 }).catch(() => {});
+  const lg = o.routes.calls.find((c) => c.name === 'payroll_yearend_log');
+  t('源泉徴収票の印刷: payroll_yearend_log(withholding_slip・1人) が通ってから紙を作る', !!lg && lg.args.p_kind === 'withholding_slip' && lg.args.p_count === 1 && o.routes.db.log.includes('yearend:withholding_slip'), lg && lg.args);
+  t('源泉徴収票の印刷: 画面のエラー 0', o.errors.length === 0, o.errors);
   await o.ctx.close();
 }
 /* 年末調整のタブの iPhone 幅・暗い表示（横はみ出し 0・エラー 0） */
