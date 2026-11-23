@@ -391,6 +391,9 @@
         var q = list[j];
         if (q.at < a || q.at > z) continue;
         r.punches.push(q);
+        /* 反証レビュー（2026-11-24・medium）: 出勤と同じ分（以下）の入る・退勤と同じ分（以上）の戻るは組に使わない
+           （退勤の後の戻るが秒を切って退勤の分に並び、休憩が勤務の残り全部になるのを防ぐ。戻るを使わないので入るは開いたまま＝breakopen） */
+        if (q.kind === 'break_start' ? q.at <= a : q.at >= z) continue;
         if (q.kind === 'break_start') {
           if (open && q.at - open.at <= DUP_MS) { open = q; continue; }
           if (open) r.open = true;
@@ -399,7 +402,7 @@
           var bs = open.at, be = q.at;
           open = null;
           for (var k = 0; k < segs.length; k++) {
-            if (bs > segs[k][1] || be < segs[k][0]) continue;
+            if (bs >= segs[k][1] || be <= segs[k][0]) continue;   /* 端を含まない（区間の外に接するだけの休憩は組なし・反証レビュー 2026-11-24） */
             r.any = true;
             var s0 = Math.max(bs, segs[k][0]), e0 = Math.min(be, segs[k][1]);
             if (e0 > s0) {
@@ -778,7 +781,8 @@
     for (i = 0; i < staff.length; i++) known[staff[i].staff_id] = 1;
     /* 名簿に無いのに打刻・予定がある人も落とさない（名簿から外れた人の打刻を黙って消さない） */
     var extra = [];
-    for (var sid in punchBy) if (!known[sid]) { known[sid] = 1; extra.push({ staff_id: sid, name: sid, office: null, emp_code: null, active: false, missingStaff: true }); }
+    /* v6 反証レビュー（2026-11-24・low）: 足すのは出勤・退勤の打刻がある人だけ（休憩の打刻だけの人は足さない＝鍵が false の時に人が増えない） */
+    for (var sid in punchBy) if (!known[sid] && punchBy[sid].some(function (p) { return p && (p.kind === 'in' || p.kind === 'out'); })) { known[sid] = 1; extra.push({ staff_id: sid, name: sid, office: null, emp_code: null, active: false, missingStaff: true }); }
     for (sid in schedBy) if (!known[sid]) { known[sid] = 1; extra.push({ staff_id: sid, name: sid, office: null, emp_code: null, active: false, missingStaff: true }); }
     for (sid in leaveStaff) if (!known[sid]) { known[sid] = 1; extra.push({ staff_id: sid, name: sid, office: null, emp_code: null, active: false, missingStaff: true }); }
     for (sid in absStaff) if (!known[sid]) { known[sid] = 1; extra.push({ staff_id: sid, name: sid, office: null, emp_code: null, active: false, missingStaff: true }); }
@@ -844,8 +848,10 @@
         }
         if (!b.start && cb.office === null) cb.office = st.office || null;
         if (!b.start && cb.office) { cb.officeShare = {}; cb.officeShare[cb.office] = 1; }
-        if (lockedMs != null) for (var q = 0; q < cb.punches.length; q++) {
-          var src = (punchBy[st.staff_id] || []).filter(function (p) { return p.id === cb.punches[q].id; })[0];
+        /* v6 反証レビュー（2026-11-24・low）: 締めた後の打刻の印には、その塊の休憩の打刻（breakPunches）も入れる */
+        var lkList = cb.breakPunches && cb.breakPunches.length ? cb.punches.concat(cb.breakPunches) : cb.punches;
+        if (lockedMs != null) for (var q = 0; q < lkList.length; q++) {
+          var src = (punchBy[st.staff_id] || []).filter(function (p) { return p.id === lkList[q].id; })[0];
           if (src && toMs(src.created_at) > lockedMs && cb.flags.indexOf('after_lock') < 0) cb.flags.push('after_lock');
         }
         (byDate[b.work_date] = byDate[b.work_date] || []).push(cb);

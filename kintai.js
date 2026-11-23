@@ -1550,7 +1550,7 @@
     var addRow = function (n, sfx, p0) {
       var k = p0 ? p0.kind : '', dt = p0 ? p0.date : date, tm = p0 ? p0.time : '';
       return '<div class="row"><select id="e-kind' + sfx + '" aria-label="' + (n === 1 ? '足す打刻の種類' : '2つめの打刻') + '"><option value="">' + (n === 1 ? '足さない' : '2つめは足さない') + '</option><option value="in"' + (k === 'in' ? ' selected' : '') + '>出勤</option><option value="out"' + (k === 'out' ? ' selected' : '') + '>退勤</option>' +
-        (brkOpt ? '<option value="break_start">休憩に入る</option><option value="break_end">休憩から戻る</option>' : '') + '</select>' +
+        (brkOpt ? '<option value="break_start"' + (k === 'break_start' ? ' selected' : '') + '>休憩に入る</option><option value="break_end"' + (k === 'break_end' ? ' selected' : '') + '>休憩から戻る</option>' : '') + '</select>' +
         '<input type="date" id="e-date' + sfx + '" value="' + esc(dt) + '" aria-label="' + (n === 1 ? '日付' : '2つめの日付') + '"><input type="time" id="e-time' + sfx + '" value="' + esc(tm) + '" aria-label="' + (n === 1 ? '時刻' : '2つめの時刻') + '">' +
         '<button type="button" class="btn sm" data-act="sched-time" data-n="' + sfx + '"' + (blk && blk.sched ? '' : ' disabled') + '>予定の時刻を入れる</button></div>';
     };

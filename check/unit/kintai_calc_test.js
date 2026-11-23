@@ -628,6 +628,38 @@ console.log('\n— 10. v6 休憩の打刻（設定 breakPunch・2026-11-24 ROOT-
   t('取り消した戻るは数えない（入るだけ＝breakopen・今の休憩）', vd.breakMin === 60 && vd.flags.indexOf('breakopen') >= 0, vd);
   const sumB = sumOf(m1, 'sT01');
   t('月の合計の実働・CSV も打刻した休憩の値で出る（見出しは変えない）', sumB.workMin === m1.people[0].days.reduce((a, d) => a + d.workMin, 0) && C.buildCsv(m1, {}).summary.split('\r\n')[0] === C.SUMMARY_HEAD.join(','));
+  /* ── 反証レビュー（2026-11-24）の直し: 境目の場面 ── */
+  const sec = (d, hm, s0) => ({ at: new Date(at(d, hm) + s0 * 1000).toISOString() });
+  /* 1. 退勤と同じ分の戻る・出勤と同じ分の入るは組に使わない */
+  const e1 = bl(mm([P('sT01', 'in', D(1), '7:00'), BS('sT01', D(1), '12:00'), P('sT01', 'out', D(1), '16:00', sec(D(1), '16:00', 10)), P('sT01', 'break_end', D(1), '16:00', sec(D(1), '16:00', 40))], { breakPunch: true }), 'sT01', 1);
+  t('境目: 早 7-16・12:00 入る・16:00:10 退勤・16:00:40 戻る → 戻るは退勤と同じ分なので組を閉じない＝今の休憩（60分）で数え breakopen', e1.breakMin === 60 && e1.workMin === 480 && e1.flags.indexOf('breakopen') >= 0, e1);
+  const e1b = bl(mm([P('sT01', 'in', D(1), '7:00'), BS('sT01', D(1), '12:00'), BE('sT01', D(1), '15:59'), P('sT01', 'out', D(1), '16:00')], { breakPunch: true }), 'sT01', 1);
+  t('境目: 退勤の1分前（15:59）の戻るは組を閉じる → 休憩239分', e1b.breakMin === 239 && e1b.flags.indexOf('breakopen') < 0, e1b);
+  const e1c = bl(mm([P('sT01', 'in', D(1), '7:00', sec(D(1), '7:00', 5)), P('sT01', 'break_start', D(1), '7:00', sec(D(1), '7:00', 20)), BE('sT01', D(1), '7:30'), P('sT01', 'out', D(1), '16:00')], { breakPunch: true }), 'sT01', 1);
+  t('境目: 出勤と同じ分（7:00:20）の入るは組に入れない → 始まりの無い戻るは読み飛ばし、組なし＝今の休憩（60分）・印なし', e1c.breakMin === 60 && e1c.workMin === 480 && e1c.flags.indexOf('breakopen') < 0, e1c);
+  const e1d = bl(mm([...io(1, '7:00', '16:00'), BS('sT01', D(1), '7:01'), BE('sT01', D(1), '7:31')], { breakPunch: true }), 'sT01', 1);
+  t('境目: 出勤の1分後（7:01）の入るは組に入る → 休憩30分', e1d.breakMin === 30 && e1d.workMin === 510, e1d);
+  /* 2. 数えた区間の外に接するだけの休憩は組なし */
+  const e2 = bl(mm([...io(2, '6:00', '16:00'), BS('sT01', D(2), '6:30'), BE('sT01', D(2), '7:00')], { breakPunch: true }), 'sT01', 2);
+  t('境目: 区間の頭（7:00）に接するだけの休憩（6:30〜7:00）→ 組なし＝今の休憩（60分）・実働480分', e2.breakMin === 60 && e2.workMin === 480, e2);
+  const e2b = bl(mm([...io(1, '7:00', '17:00'), BS('sT01', D(1), '16:00'), BE('sT01', D(1), '16:30')], { breakPunch: true }), 'sT01', 1);
+  t('境目: 区間の尻（16:00・残業は認めていない）に接するだけの休憩（16:00〜16:30）→ 組なし＝今の休憩（60分）', e2b.breakMin === 60 && e2b.workMin === 480, e2b);
+  const e2c = bl(mm([...io(2, '6:00', '16:00'), BS('sT01', D(2), '6:30'), BE('sT01', D(2), '7:01')], { breakPunch: true }), 'sT01', 2);
+  t('境目: 区間に1分だけ掛かる休憩（6:30〜7:01）→ 組ありで1分', e2c.breakMin === 1 && e2c.workMin === 539, e2c);
+  /* 4. 締めた後に足した休憩の打刻にも after_lock */
+  const LK = '2027-01-03T09:00:00+09:00', late = { created_at: '2027-01-05T09:00:00+09:00' };
+  const lkPun = [...io(1, '7:00', '16:00'), P('sT01', 'break_start', D(1), '12:00', late), P('sT01', 'break_end', D(1), '12:45', late)];
+  const lkM = (cfg) => C.computeMonth({ ym: YM, staff: K_STAFF, schedule: base, punches: lkPun, days: [], config: cfg, now: NOW, lockedAt: LK });
+  t('締めた後に足した休憩の打刻だけの日も after_lock の印（設定 breakPunch の時）', bl(lkM({ breakPunch: true }), 'sT01', 1).flags.indexOf('after_lock') >= 0, bl(lkM({ breakPunch: true }), 'sT01', 1).flags);
+  const lk0 = C.computeMonth({ ym: YM, staff: K_STAFF, schedule: base, punches: lkPun.slice(0, 2), days: [], config: {}, now: NOW, lockedAt: LK });
+  t('鍵が無い時は休憩の打刻で after_lock を付けない（休憩の打刻が無い時と答えが1バイトも変わらない）', bl(lkM({}), 'sT01', 1).flags.indexOf('after_lock') < 0 && JSON.stringify(lkM({})) === JSON.stringify(lk0));
+  /* 6. 名簿に無い人は出勤・退勤の打刻がある時だけ足す */
+  const gh = [BS('sZZ', D(1), '12:00'), BE('sZZ', D(1), '12:30')];
+  const ghF = mm([...punIO, ...gh], { breakPunch: false }), ghN = mm([...punIO, ...gh], {}), ghT = mm([...punIO, ...gh], { breakPunch: true });
+  t('名簿に無い人の休憩の打刻だけでは人を足さない（鍵が false・無い時は答えが1バイトも変わらない）', JSON.stringify(ghF) === JSON.stringify(m0) && JSON.stringify(ghN) === JSON.stringify(m0) && !ghF.people.some((p) => p.staff.staff_id === 'sZZ'));
+  t('鍵が true の時も休憩の打刻だけの人は足さない', !ghT.people.some((p) => p.staff.staff_id === 'sZZ'));
+  const gh2 = mm([...punIO, ...gh, P('sZZ', 'in', D(1), '9:00'), P('sZZ', 'out', D(1), '18:00')], { breakPunch: true });
+  t('名簿に無い人も出勤・退勤の打刻があれば今どおり足す（休憩も数える）', gh2.people.some((p) => p.staff.staff_id === 'sZZ' && p.sum.warnings.length) && bl(gh2, 'sZZ', 1).breakMin === 30, bl(gh2, 'sZZ', 1));
 }
 
 console.log(`\n${pass} 件合格 / ${fail} 件不合格`);

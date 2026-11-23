@@ -106,8 +106,8 @@ t('保存の後の短い知らせは aria-live', /<div class="toast no-print" id
 t('印刷の時だけの見出し（.ph は画面で出さない）', /\.ph\{display:none\}/.test(H) && /function printHead\(sub\)/.test(K));
 /* ★v4（2026-11-20）: 中身を変えたので ?v= を 2026-11-20 に上げた（CLAUDE.md の決まり）。期待をその版に改めた */
 /* ★freee の月の集計の取り込み（2026-11-23・統合 0123）で kintai.js・kintai-calc.js を ?v=2026-11-23.1 に上げたので期待の版を改めた */
-/* ★v6 休憩の打刻（2026-11-24・ROOT-v6-break-nudge-leave.md の PR-B）で kintai.js・kintai-calc.js・kintai-clock.js を ?v=2026-11-24 に上げたので期待の版を改めた */
-t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-2…（kintai.js は 2026-11-24 に上げた）', /kintai\.js\?v=2026-11-24/.test(H) && /kintai-calc\.js\?v=2026-11-24/.test(H) && /kintai-calc\.js\?v=2026-11-24/.test(HC));
+/* ★v6 休憩の打刻（2026-11-24・ROOT-v6-break-nudge-leave.md の PR-B）で kintai.js・kintai-calc.js・kintai-clock.js を ?v=2026-12-26 に上げたので（PR #665 と同じ版にならないよう 2026-12-26・反証レビュー 2026-11-24）期待の版を改めた */
+t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-2…（kintai.js は 2026-12-26 に上げた）', /kintai\.js\?v=2026-12-26/.test(H) && /kintai-calc\.js\?v=2026-12-26/.test(H) && /kintai-calc\.js\?v=2026-12-26/.test(HC));
 
 console.log('\n— 8. 打刻画面の v3（出勤を押す → 氏名 → パスコード） —');
 const pendClock = [];
@@ -189,8 +189,8 @@ const pressFn = fn('press', 'updCode'), updFn = fn('updCode', 'lookup');
 t('数字・消すを押した時はテンキーを描き直さない（●の欄と決定だけ・textContent で書く。速い連打を落とさない）', /code \+= k;\s*updCode\(\);\s*\}/.test(pressFn) && !/paint(Pass|Code)\(\)/.test(pressFn) && /box\.textContent = /.test(updFn) && /ok\.disabled = !KintaiCalc\.isCode\(code\)/.test(updFn) && !/innerHTML/.test(updFn));
 t('重ね押しの守りは画面が入れ替わった時だけ（同じ画面の中では paintAt を進めない）', /function mark\(\) \{ if \(\$\('k-main'\)\.getAttribute\('data-v'\) !== view\) paintAt = Date\.now\(\);/.test(KC));
 /* ★総点検（2026-11-20）: 名前で選んだ控えの照合を足したので ?v= を 2026-11-20 に上げた（CLAUDE.md の決まり）。期待をその版に改めた */
-/* ★v6 休憩の打刻（2026-11-24・ROOT-v6-break-nudge-leave.md の PR-B）で kintai.js・kintai-calc.js・kintai-clock.js を ?v=2026-11-24 に上げたので期待の版を改めた */
-t('kintai-clock.js の読み込みは ?v=2026-11-24', /<script src="kintai-clock\.js\?v=2026-11-24"><\/script>/.test(HC));
+/* ★v6 休憩の打刻（2026-11-24・ROOT-v6-break-nudge-leave.md の PR-B）で kintai.js・kintai-calc.js・kintai-clock.js を ?v=2026-12-26 に上げたので（PR #665 と同じ版にならないよう 2026-12-26・反証レビュー 2026-11-24）期待の版を改めた */
+t('kintai-clock.js の読み込みは ?v=2026-12-26', /<script src="kintai-clock\.js\?v=2026-12-26"><\/script>/.test(HC));
 
 console.log('\n— 9. 打刻画面の v3.1（画面の並び・今日の打刻） —');
 const recentFn = fn('loadRecent', 'paintRecent'), paintRecentFn = fn('paintRecent', 'paintFoot');
@@ -310,8 +310,8 @@ t('反証レビューの指摘1:「今日」は今日のカレンダー月へ移
 /* ★v5 段5（2026-11-21・申請のタブとスマホの登録）で kintai.js を ?v=2026-11-21.5 に上げたので期待の版を改めた（kintai-calc.js は変えていない） */
 /* ★0120（2026-11-21・締めの前の要確認）で kintai.js を ?v=2026-11-21.6、kintai-calc.js を ?v=2026-11-21.3 に上げたので期待の版を改めた */
 /* ★freee の月の集計の取り込み（2026-11-23・統合 0123）で kintai.js・kintai-calc.js を ?v=2026-11-23.1 に上げたので期待の版を改めた */
-/* ★v6 休憩の打刻（2026-11-24・ROOT-v6-break-nudge-leave.md の PR-B）で kintai.js・kintai-calc.js・kintai-clock.js を ?v=2026-11-24 に上げたので期待の版を改めた */
-t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-24・2026-11-24（両画面と給与の画面でそろえる）', /kintai\.js\?v=2026-11-24"/.test(H) && /kintai-calc\.js\?v=2026-11-24"/.test(H) && /kintai-calc\.js\?v=2026-11-24"/.test(HC) && /kintai-calc\.js\?v=2026-11-24"/.test(read('payroll.html')));
+/* ★v6 休憩の打刻（2026-11-24・ROOT-v6-break-nudge-leave.md の PR-B）で kintai.js・kintai-calc.js・kintai-clock.js を ?v=2026-12-26 に上げたので（PR #665 と同じ版にならないよう 2026-12-26・反証レビュー 2026-11-24）期待の版を改めた */
+t('kintai.js・kintai-calc.js の読み込みは ?v=2026-12-26・2026-12-26（両画面と給与の画面でそろえる）', /kintai\.js\?v=2026-12-26"/.test(H) && /kintai-calc\.js\?v=2026-12-26"/.test(H) && /kintai-calc\.js\?v=2026-12-26"/.test(HC) && /kintai-calc\.js\?v=2026-12-26"/.test(read('payroll.html')));
 
 const await_pending = [];   /* 動かして確かめる試験（Promise）を最後に待つ */
 console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（2026-11-20・凍結した仕様書 ROOT-v4-master-leave.md） —');
@@ -331,8 +331,8 @@ console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（
   /* ★給与の側の反証レビューの直し（2026-11-20）: kintai-calc.js を 2026-11-20.6 に上げたので、その期待の版を改めた */
   /* ★再確認の反証の直し（2026-11-20）: kintai-calc.js を 2026-11-20.7 に上げたので、その期待の版を改めた */
   /* ★反証レビュー（2026-11-21）: kintai-calc.js を 2026-11-21.2 に上げたので、その期待の版を改めた */
-  /* ★v6 休憩の打刻（2026-11-24）: kintai-calc.js を 2026-11-24 に上げたので、その期待の版を改めた */
-  t('kintai-leave.js は kintai-calc.js の後・kintai.js の前に読む（?v=2026-11-20.4・反証レビューの直しで上げた）', H.indexOf('<script src="kintai-calc.js?v=2026-11-24"></script>') >= 0 && H.indexOf('<script src="kintai-leave.js?v=2026-11-20.4"></script>') > H.indexOf('kintai-calc.js?v=') && H.indexOf('kintai-leave.js?v=') < H.indexOf('kintai.js?v='));
+  /* ★v6 休憩の打刻（2026-11-24）: kintai-calc.js を 2026-12-26 に上げたので、その期待の版を改めた */
+  t('kintai-leave.js は kintai-calc.js の後・kintai.js の前に読む（?v=2026-11-20.4・反証レビューの直しで上げた）', H.indexOf('<script src="kintai-calc.js?v=2026-12-26"></script>') >= 0 && H.indexOf('<script src="kintai-leave.js?v=2026-11-20.4"></script>') > H.indexOf('kintai-calc.js?v=') && H.indexOf('kintai-leave.js?v=') < H.indexOf('kintai.js?v='));
   /* iPhone の幅（640px 以下）だけの見た目の直し（2026-11-20）: 窓の欄の見出しを縦1字にしない・枠（fieldset）を窓の外へ広げない・突き合わせの表は1人ずつの並び */
   {
     const mq = (H.match(/@media \(max-width:640px\)\{[\s\S]*?\n\s*table\.mt td\.empty\{display:block\}\}/) || [''])[0];
@@ -526,7 +526,18 @@ console.log('\n— v6. 休憩の打刻（設定 breakPunch・2026-11-24 ROOT-v6-
   /* 管理画面 */
   t('管理画面: 日ごと・個人の月・決める窓の打刻に休憩の打刻を時刻の順に混ぜて「休憩」「戻り」', /var PK_SHORT = \{ 'in': '出', out: '退', break_start: '休憩', break_end: '戻り' \};/.test(K) && /b\.punches\.concat\(b\.breakPunches\)\.sort/.test(K));
   t('管理画面: 直す窓の打刻の一覧（data.punches をそのまま読む）は休憩の行を退勤と出さない', /x\.kind === 'break_start' \? '休憩' : x\.kind === 'break_end' \? '戻り' : '退勤'/.test(K) && /x\.punches\.concat\(x\.breakPunches \|\| \[\]\)/.test(K));
-  t('管理画面: 打刻を足す窓の種類は、今の設定の breakPunch が入の時だけ休憩の2つを足す・予定の時刻の入れ込みは出勤・退勤だけ', /var brkOpt = C\.fillConfig\(rawCfg\(\)\)\.breakPunch === true;/.test(K) && /\(brkOpt \? '<option value="break_start">休憩に入る<\/option><option value="break_end">休憩から戻る<\/option>' : ''\)/.test(K) && /if \(ks\.value !== 'in' && ks\.value !== 'out'\) return;/.test(K));
+  /* ★反証レビュー（2026-11-24・low）: 休憩の option にも初めの値が break_start／break_end の時 selected を付けた（出勤・退勤と同じ形）ので、期待の形を改めた */
+  t('管理画面: 打刻を足す窓の種類は、今の設定の breakPunch が入の時だけ休憩の2つを足す（初めの値の時は selected）・予定の時刻の入れ込みは出勤・退勤だけ', /var brkOpt = C\.fillConfig\(rawCfg\(\)\)\.breakPunch === true;/.test(K) && /\(brkOpt \? '<option value="break_start"' \+ \(k === 'break_start' \? ' selected' : ''\) \+ '>休憩に入る<\/option><option value="break_end"' \+ \(k === 'break_end' \? ' selected' : ''\) \+ '>休憩から戻る<\/option>' : ''\)/.test(K) && /if \(ks\.value !== 'in' && ks\.value !== 'out'\) return;/.test(K));
+  /* 動かして確かめる: 打刻を足す窓の種類の初めの値（休憩の2つも selected が付く・切の時は休憩の option を出さない） */
+  {
+    const a0 = K.indexOf('    var addRow = function (n, sfx, p0) {'), a1 = K.indexOf('    };', a0) + 6;
+    const mkRow = (brk) => new Function('BRK', 'esc', 'var brkOpt = BRK, date = "2026-12-01", blk = null;' + K.slice(a0, a1) + 'return addRow;')(brk, (x) => String(x));
+    const sel = (h) => (h.match(/<option value="([a-z_]*)" selected>/g) || []).map((x) => x.replace(/<option value="|" selected>/g, ''));
+    const on = mkRow(true), off = mkRow(false);
+    t('打刻を足す窓: 初めの値が break_start／break_end の時はその option に selected（出勤・退勤と同じ形）・切の時は休憩の option なし',
+      sel(on(1, '', { kind: 'break_start', date: '2026-12-01', time: '12:00' })).join() === 'break_start' && sel(on(2, '2', { kind: 'break_end', date: '2026-12-01', time: '12:45' })).join() === 'break_end' &&
+      sel(on(1, '', { kind: 'in', date: '2026-12-01', time: '7:00' })).join() === 'in' && sel(on(1, '', null)).join() === '' && !/break_/.test(off(1, '', null)));
+  }
   t('管理画面: 直しの履歴の種類の名前に休憩の2つ', /k === 'break_start' \? '休憩に入る' : k === 'break_end' \? '休憩から戻る'/.test(K));
   t('設定タブ: 「休憩を打刻で数える」（既定は切・今の設定に無く切のままなら鍵を作らない・同じ保存の道）', /<label for="l-breakPunch">休憩を打刻で数える<\/label>/.test(K) && /入れると打刻の画面に休憩のボタンが出て、打刻した休憩をその日の休憩にします。打刻の無い日は今までどおりシフトの決まりで引きます/.test(K) &&
     /var LV_SET_KEYS = \['roundUnitMin', 'hourlyPaidLeave', 'dayHours', 'leaveTypes', 'breakPunch'\];/.test(K) && /put\('breakPunch', !!\$\('l-breakPunch'\)\.checked, false\)/.test(K) && /c\.breakPunch === true \? ' checked' : ''/.test(K));
