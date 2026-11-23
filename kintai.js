@@ -1018,6 +1018,138 @@
     return { month: { ym: month.ym, config: month.config, people: people, totals: month.totals }, miss: miss, filled: Object.keys(filled) };
   }
 
+  /* ── freee の月の集計の取り込み（2026-11-23・凍結仕様 ROOT-freee-month-import.md・DB 統合 0123・計算は kintai-freee-import.js と kintai-calc.js） ──
+     ファイルはメモリだけで読む（端末に残さない・読んだらファイルの選びを空にする）。突き合わせの結果（fiSt）は画面の中だけで、月を変えたら使わない。
+     使えるのは締めていない月分の管理者（二段階認証）だけ（DB も has_role('admin') と締めの判定で断る） */
+  var fiSt = null, fiGen = 0, fiSel = {};   /* fiSel: 取り消す人の選び（画面の中だけ・描き直しで消さない） */
+  var FI_NG = { reason: '理由を書いてください（200字まで）。', locked: 'この月は締めてあるため、取り込み・取り消しはできません。', notfound: '勤怠の職員にいない人か、取り消す取り込みが無い人が入っていました。読み直してください。',
+    dup: '同じ職員が2行入っていました。ファイルを確かめてください。', badvalue: '取り込む値の形が違いました（4つの時間の和が総労働と合わない など）。ファイルを確かめてください。',
+    badshape: '送った値の形が違いました。読み直してください。', toomany: '一度に取り込めるのは500人までです。', badsource: '取り込みの種類が違いました。読み直してください。', badsha: 'ファイルの指紋の形が違いました。読み直してください。',
+    badsrc: 'freee の元の欄の記録の形が違いました（欄の名前・数）。読み直して、直らない時は管理者に知らせてください。',
+    periodchanged: 'この月分の期間が、画面を開いた後に変わりました（締め日の変更など）。「読み直す」を押してから、もう一度ファイルを選んでください。' };   /* 反証レビュー 2026-11-23 */
+  function fiMsg(e) { return e && e.kintai && FI_NG[e.kintai] ? FI_NG[e.kintai] : msgOf(e); }
+  function fiCan() { return isAdmin() && !isLocked() && !!window.KintaiFreeeImport; }
+  function fiImported() { return month ? month.people.filter(function (p) { return p.sum && p.sum.imported; }) : []; }
+  function fiStaffList() {
+    return month.people.filter(function (p) { return !p.staff.missingStaff; }).map(function (p) {
+      return { staff_id: p.staff.staff_id, emp_code: p.staff.emp_code || '', schedDays: p.days.filter(function (d) { return d.schedWorkMin > 0; }).length };
+    });
+  }
+  function fiDecode(buf) {
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(buf).replace(/^﻿/, ''); } catch (_) { return new TextDecoder('shift_jis').decode(buf); }   /* payroll.js の decode と同じ（UTF-8 で読めなければ Shift_JIS） */
+  }
+  function fiSha(buf) {
+    try {
+      if (!window.crypto || !window.crypto.subtle) return Promise.resolve(null);
+      return window.crypto.subtle.digest('SHA-256', buf).then(function (h) { return Array.prototype.map.call(new Uint8Array(h), function (b) { return (b < 16 ? '0' : '') + b.toString(16); }).join(''); }, function () { return null; });
+    } catch (_) { return Promise.resolve(null); }
+  }
+  function fiRead(input) {
+    var f = input.files && input.files[0];
+    input.value = '';   /* 同じファイルを選び直せるように・端末に残さない */
+    if (!f || !fiCan() || !month) return;
+    if (f.size > 2 * 1024 * 1024) { toast('ファイルが大きすぎます（2MB まで）。'); return; }
+    var my = ++fiGen, y0 = ym;
+    f.arrayBuffer().then(function (buf) {
+      return fiSha(buf).then(function (sha) { return { text: fiDecode(buf), sha: sha }; });
+    }).then(function (r) {
+      if (my !== fiGen || y0 !== ym || !month) return;
+      var FI = window.KintaiFreeeImport, p = FI.parseFreeeMonthCsv(r.text);
+      var pr0 = per();
+      fiSt = { ym: ym, period: { from: pr0.from, to: pr0.to }, sha: r.sha, parsed: p, res: p.errors.length ? null : FI.toImport(p.rows, fiStaffList(), { period: pr0 }), none: {} };
+      paint();
+    })['catch'](function (e) { if (my !== fiGen) return; note('freee の取り込みの読み込み', e); toast('ファイルを読めませんでした。'); });
+  }
+  function fiRow(sid) { return month.people.filter(function (p) { return p.staff.staff_id === sid; })[0] || null; }
+  function fiHtml() {
+    var h = '<div class="cd no-print" id="g-fi"><h2 style="font-size:16px;margin:0 0 8px">freee の月の集計を取り込む</h2>' +
+      '<p class="help">freee人事労務の勤怠の「月の集計」（CSV）を職員ごとに取り込み、その人のこの月分の合計（総労働・所定内・法定内残業・法定外・勤務日数など）を freee の値にします。打刻は作りません。取り込んだ人は要確認から外れ、普通の締めで締められます。予定から数える項目（所定日数・記号ごとの回数・夜勤の回数）は今の予定から数えます。使えるのは締めていない月分の管理者（二段階認証）だけです。ファイルは画面の中だけで読み、端末には残しません。</p>';
+    var imp = fiImported();
+    if (isLocked()) h += '<div class="band" role="status">この月は締めてあるため、取り込み・取り消しはできません。</div>';
+    else if (!isAdmin()) h += '<div class="band" role="status">取り込み・取り消しは管理者（二段階認証）だけができます。</div>';
+    else if (!window.KintaiFreeeImport) h += '<div class="band warn" role="status">取り込みの部品を読み込めませんでした。読み直してください。</div>';
+    else {
+      /* 反証レビュー 2026-11-23: 取り込みはこの月分の期間に結び付く。期間を大きく出し、締め日が既定（月末）のままなら知らせる */
+      var pp = per(), md0 = function (d) { return (+d.slice(5, 7)) + '月' + (+d.slice(8, 10)) + '日'; };
+      h += '<p style="font-size:18px;font-weight:700;margin:8px 0">この取り込みは ' + esc(md0(pp.from)) + '〜' + esc(md0(pp.to)) + ' の分として入ります</p>';
+      if (!(data && data.period && +data.period.close_day > 0)) h += '<div class="band warn" role="status">締め日が月末のままです。freee の期間（15日締め）と合わない時は、先に設定で締め日を変えてください。</div>';
+      h += '<div class="row"><label for="fi-file">CSV のファイルを選ぶ</label><input type="file" id="fi-file" accept=".csv,text/csv" aria-label="freee の勤怠の月の集計の CSV を選ぶ"></div>';
+    }
+    if (fiCan() && fiSt && fiSt.ym === ym && fiSt.period.from === per().from && fiSt.period.to === per().to) h += fiTableHtml();
+    if (imp.length) {
+      h += '<h3 style="font-size:15px;margin:12px 0 6px">この月分に取り込んである人（' + imp.length + ' 人）</h3><div class="tw"><table><thead><tr>' + (fiCan() ? '<th>選ぶ</th>' : '') + '<th>従業員コード</th><th>職員</th><th class="num">勤務日数</th><th class="num">総労働</th><th class="num">所定内</th><th class="num">法定内残業</th><th class="num">法定外</th><th class="num">有休日数</th><th>どこから</th><th>気になる所</th></tr></thead><tbody>' +
+        imp.map(function (p) {
+          var s = p.sum, src = s.imported.source === 'none' ? '勤怠なし（0）' : s.imported.source === 'freee_api' ? 'freee（API）' : 'freee（CSV）';
+          return '<tr>' + (fiCan() ? '<td><label style="display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px"><input type="checkbox" name="fi-v" value="' + esc(p.staff.staff_id) + '"' + (fiSel[p.staff.staff_id] ? ' checked' : '') + ' aria-label="' + esc(dispName(p.staff)) + ' の取り込みを選ぶ"></label></td>' : '') +
+            '<td>' + esc(p.staff.emp_code || '') + '</td><td>' + esc(dispName(p.staff)) + '</td><td class="num">' + esc(s.workDays) + '</td><td class="num">' + fm(s.workMin) + '</td><td class="num">' + fm(s.schedInMin) + '</td><td class="num">' + fm(s.legalInOverMin) + '</td><td class="num">' + fm(s.legalOverMin) + '</td><td class="num">' + esc(s.paidDays) + '</td><td>' + esc(src) + '</td><td>' + esc(s.warnings.join('・')) + '</td></tr>';
+        }).join('') + '</tbody></table></div>' +
+        (fiCan() ? '<div class="row"><button type="button" class="btn ng" data-act="fi-void">選んだ人の取り込みを取り消す</button></div><p class="help">取り消すと、その人はふだんの打刻からの数え方に戻ります（取り込みの記録は取り消しの印を付けて残ります）。</p>' : '');
+    }
+    return h + '</div>';
+  }
+  function fiTableHtml() {
+    var p = fiSt.parsed, r = fiSt.res, h = '';
+    if (p.errors.length) return '<div class="band ng" role="alert">このファイルは取り込めません。' + p.errors.map(esc).join('') + '</div>';
+    if (r.periodError) return '<div class="band ng" role="alert">このファイルは取り込めません。' + esc(r.periodError) + '</div>';
+    var nOk = r.ok.length, nNone = Object.keys(fiSt.none).filter(function (k) { return fiSt.none[k]; }).length;
+    var wBy = {}; r.warn.forEach(function (w) { (wBy[w.staff_id] = wBy[w.staff_id] || []).push(w.why); });
+    var nameOfCode = {}; p.rows.forEach(function (x) { if (x.code && x.name) nameOfCode[x.code] = x.name; });
+    h += '<div class="band" role="status">読んだ行 ' + p.rows.length + ' 件：取り込む ' + nOk + ' 人・取り込まない ' + r.refused.length + ' 件・勤怠の職員に無い番号 ' + r.unmatched.length + ' 件・freee に無い職員 ' + r.missingStaff.length + ' 人</div>';
+    if (p.missing.length) h += '<div class="band warn" role="status">CSV に無い列は 0 として扱っています（' + esc(p.missing.join('・')) + '）。freee の勤怠の CSV にこの列が本当に無いか（0 でない人がいないか）を確かめてから取り込んでください。</div>';
+    if (p.watch.length) h += '<p class="help">名前に休暇・労働などの語がある知らない列（' + esc(p.watch.join('・')) + '）は、値が 0 でない人を取り込みません。</p>';
+    if (p.unknown.length) h += '<p class="help">使わなかった列: ' + esc(p.unknown.join('・')) + '</p>';
+    var drop = r.ok.reduce(function (n, o) { return n + window.KintaiFreeeImport.srcClean(o.src).dropped; }, 0);
+    if (drop) h += '<div class="band warn" role="status">freee の元の欄のうち ' + drop + ' 欄は、名前が長い・欄が多いなどのため記録に残しません（取り込む値には使いません）。</div>';
+    var row = function (code, name, s, cells, state, cls) {
+      return '<tr' + (cls ? ' class="' + cls + '"' : '') + '><td>' + esc(code) + '</td><td>' + esc(name) + '</td>' + cells + '<td>' + state + '</td></tr>';
+    };
+    var blank = '<td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td>';
+    h += '<div class="tw"><table><thead><tr><th>従業員コード</th><th>職員</th><th class="num">勤務日数</th><th class="num">総労働</th><th class="num">所定内</th><th class="num">法定内残業</th><th class="num">法定外</th><th>取り込み</th></tr></thead><tbody>';
+    r.ok.forEach(function (o) {
+      var pr = fiRow(o.staff_id), v = o.vals, again = pr && pr.sum.imported ? '<br><span class="help">取り込み直します（前の取り込みは取り消しの印を付けて残します）</span>' : '';
+      h += row(pr ? pr.staff.emp_code || o.emp_code : o.emp_code, pr ? dispName(pr.staff) : o.staff_id, null,
+        '<td class="num">' + esc(v.workDays) + '</td><td class="num">' + fm(v.workMin) + '</td><td class="num">' + fm(v.schedInMin) + '</td><td class="num">' + fm(v.legalInOverMin) + '</td><td class="num">' + fm(v.legalOverMin) + '</td>',
+        '取り込む' + ((wBy[o.staff_id] || []).length ? '<br><span class="tag rv">気になる所</span> ' + esc(wBy[o.staff_id].join('・')) : '') + again, (wBy[o.staff_id] || []).length ? 'fi-warn' : '');
+    });
+    r.refused.forEach(function (x) { var pr = x.staff_id ? fiRow(x.staff_id) : null; h += row(x.code, pr ? dispName(pr.staff) : (nameOfCode[x.code] || ''), null, blank, '<span class="tag ng">取り込まない</span> ' + esc(x.why), 'fi-ng'); });
+    r.unmatched.forEach(function (c) { h += row(c, nameOfCode[c] || '', null, blank, '<span class="tag ng">取り込まない</span> 勤怠の職員に、この従業員コードの人がいません（「職員と番号」の従業員コードを確かめてください）', 'fi-ng'); });
+    r.missingStaff.forEach(function (sid) {
+      var pr = fiRow(sid), on = !!fiSt.none[sid];
+      h += row(pr ? pr.staff.emp_code || '' : '', pr ? dispName(pr.staff) : sid, null, blank,
+        'freee に無い職員です（この月分に予定があります）<br><label style="display:inline-flex;align-items:center;gap:6px;min-height:44px"><input type="checkbox" name="fi-none" value="' + esc(sid) + '"' + (on ? ' checked' : '') + '> この月は勤怠なし（0）として取り込む</label>', '');
+    });
+    h += '</tbody></table></div>';
+    if (!nOk && !nNone) return h + '<p class="help">取り込める人がいません。</p>';
+    h += '<div class="row"><label>理由（直しの履歴に残ります） <input type="text" id="fi-reason" maxlength="200" style="min-width:16em" value="' + esc(fiSt.reason || '') + '"></label>' +
+      '<button type="button" class="btn pri" data-act="fi-go">' + esc((nOk + nNone) + ' 人を取り込む') + '</button><button type="button" class="btn" data-act="fi-clear">やめる</button></div>' +
+      '<p class="help" id="fi-msg" role="alert"></p>';
+    return h;
+  }
+  function fiGo(btn) {
+    if (busy || !fiCan() || !fiSt || fiSt.ym !== ym || !fiSt.res) return;
+    var reason = ($('fi-reason') && $('fi-reason').value || '').trim(), msg = $('fi-msg');
+    if (!reason) { if (msg) msg.textContent = '理由を書いてください。'; if ($('fi-reason')) $('fi-reason').focus(); return; }
+    var FI = window.KintaiFreeeImport, rows = fiSt.res.ok.map(function (o) { return { staff_id: o.staff_id, vals: o.vals, src: FI.srcClean(o.src).src }; });
+    Object.keys(fiSt.none).forEach(function (sid) { if (fiSt.none[sid] && fiSt.res.missingStaff.indexOf(sid) >= 0) rows.push({ staff_id: sid, vals: FI.zeroVals(), source: 'none' }); });
+    if (!rows.length) return;
+    busy = true; var restore = pressBusy(btn, '取り込んでいます…', $('g-fi')), y0 = ym;
+    rpc('kintai_month_import_put', { p_ym: y0, p_rows: rows, p_source: 'freee_csv', p_file_sha: fiSt.sha, p_reason: reason, p_period_from: fiSt.period.from, p_period_to: fiSt.period.to }).then(okOr).then(function (r) {
+      busy = false; fiSt = null; toast((r.count || 0) + ' 人を取り込みました');
+      if (y0 === ym) { dropMonthCaches(); return load(false); }
+    })['catch'](function (e) { busy = false; restore(); note('freee の取り込み', e); var m = $('fi-msg'); if (m) m.textContent = fiMsg(e); else toast(fiMsg(e)); });
+  }
+  function fiVoid(btn) {
+    if (busy || !fiCan()) return;
+    var ids = Array.prototype.map.call(document.querySelectorAll('#g-fi input[name="fi-v"]:checked'), function (x) { return x.value; });
+    if (!ids.length) { toast('取り消す人を選んでください。'); return; }
+    var r = prompt(ids.length + ' 人の freee の取り込みを取り消します。理由を書いてください（直しの履歴に残ります）。');
+    if (!r || !r.trim()) return;
+    busy = true; var restore = pressBusy(btn, '取り消しています…'), y0 = ym;
+    rpc('kintai_month_import_void', { p_ym: y0, p_staff_ids: ids, p_reason: r.trim() }).then(okOr).then(function (x) {
+      busy = false; fiSel = {}; toast((x.count || 0) + ' 人の取り込みを取り消しました');
+      if (y0 === ym) { dropMonthCaches(); return load(false); }
+    })['catch'](function (e) { busy = false; restore(); note('freee の取り込みの取り消し', e); alert(fiMsg(e)); });
+  }
   function paintClose() {
     var lk = isLocked(), afterLock = month.people.some(function (p) { return p.days.some(function (d) { return d.flags.indexOf('after_lock') >= 0; }); });
     var review = month.totals.reviewCount;
@@ -1025,7 +1157,7 @@
     var nx = C.addDays(per().to, 1);
     var stop = !lk && notYet() ? '期間の末日を過ぎてから締められます（' + esc(perLabel()) + 'は ' + esc((+nx.slice(5, 7)) + '月' + (+nx.slice(8, 10)) + '日') + 'から締められます）。' :
       (!lk && shiftInfo && !shiftInfo.ok ? 'シフトを取り込めていないため、まだ締められません（' + esc(shiftInfo.why) + '）。上の「シフトを取り込み直す」を押してから締めてください。' : '');
-    var h = printHead('締めと出力') + '<div class="cd"><h2 style="font-size:16px;margin:0 0 8px">月の締め</h2>' +
+    var h = printHead('締めと出力') + fiHtml() + '<div class="cd"><h2 style="font-size:16px;margin:0 0 8px">月の締め</h2>' +
       (diff.length ? '<div class="band warn">締めた時の数字と今の数字が違う職員がいます（' + diff.map(esc).join('・') + '）。締めた後の打刻・計算の決まりの見直しなどが原因です。給与へ渡したのは締めた時の数字です（月の集計の CSV も締めた時の数字で出します）。</div>' : '') +
       (lk ? '<p>締めた日時: ' + esc(new Date(data.month.locked_at).toLocaleString('ja-JP')) + '</p>' + (afterLock ? '<div class="band warn">締めた後に足された打刻があります（印「締めた後の打刻」）。給与へ渡した後なら、来月の調整を検討してください。</div>' : '') +
         '<button type="button" class="btn ng" data-act="unlock"' + (isAdmin() ? '' : ' disabled') + '>締めを解除する（管理者）</button>' :
@@ -1049,7 +1181,8 @@
     master_import: '職員マスタと突き合わせた', master_add: '職員マスタから職員を足した', staff_link: '職員マスタとの結び付けを直した', clock_visible: '打刻画面に出す・出さないを変えた',
     leave_profile: '有給の設定を変えた', leave_grant_add: '有給の付与を足した', leave_grant_void: '有給の付与を取り消した', leave_use_add: '有休の使用を足した', leave_use_void: '有休の使用を取り消した',
     managers_add: '勤怠の管理者に足した', managers_remove: '勤怠の管理者から外した',
-    absence_add: '休暇を入れた', absence_void: '休暇を取り消した' };   /* v5 段4（統合 0113） */
+    absence_add: '休暇を入れた', absence_void: '休暇を取り消した',   /* v5 段4（統合 0113） */
+    month_import: 'freee の月の集計を取り込んだ', month_import_void: 'freee の取り込みを取り消した' };   /* 統合 0123（2026-11-23） */
   /* v5 段4: 休暇の種類の言い方（直しの履歴・有給の窓の一覧・個人の月の印） */
   var ABS_JA = { hourly_paid: '時間単位の有休', special: '特別休暇', comp: '代休', swap: '振替休日' };
   function ltName(code) { try { var l = C.leaveTypesOf(C.fillConfig(rawCfg())).filter(function (x) { return x.code === code; })[0]; return l ? l.name : String(code || ''); } catch (_) { return String(code || ''); } }
@@ -1115,6 +1248,9 @@
     if (e.action === 'managers_remove') return ACT_LABEL.managers_remove + (b.email ? '（' + b.email + '）' : '');
     if (e.action === 'absence_add') return ABS_JA[a.kind] ? absTxt(a) + 'を入れた' : ACT_LABEL.absence_add;
     if (e.action === 'absence_void') return ABS_JA[b.kind] ? absTxt(b) + 'を取り消した' : ACT_LABEL.absence_void;
+    var ymT = function (y) { return typeof y === 'string' && /^\d{4}-\d{2}$/.test(y) ? (+y.slice(0, 4)) + '年' + (+y.slice(5, 7)) + '月分・' : ''; };
+    if (e.action === 'month_import') return a.count != null ? ACT_LABEL.month_import + '（' + ymT(a.ym) + a.count + ' 人' + (a.replaced ? '・うち取り込み直し ' + a.replaced + ' 人' : '') + '）' : ACT_LABEL.month_import;   /* 統合 0123 */
+    if (e.action === 'month_import_void') return a.count != null ? ACT_LABEL.month_import_void + '（' + ymT(a.ym) + a.count + ' 人）' : ACT_LABEL.month_import_void;
     if (e.action !== 'day_put') return ACT_LABEL[e.action] || e.action;
     if (!!b.early_ok !== !!a.early_ok) parts.push(a.early_ok ? '早出を全部認めた' : '早出の承認（全部）を外した');
     if (ms(b.early_from) !== ms(a.early_from)) parts.push(a.early_from ? '早出を ' + hm(a.early_from) + ' から認めた' : '早出の時刻（' + hm(b.early_from) + ' から）を外した');
@@ -2852,7 +2988,7 @@
   /* ── 操作 ── */
   /* v5 段5: 申請のタブに入る時は一覧を捨てて読み直す（読み込み中の古い答えは世代で捨てる・反証レビュー 2026-11-21）。タブの移りの本体の文は変えない */
   function setTab(t) { if (t === 'requests') reqReset(); if (TABS.indexOf(t) < 0) t = 'home'; if (!settingsLeaveOk()) return; tab = t; lsSet(LS_TAB, t); paint(); if (t === 'home' || t === 'day' || t === 'review') quietReload(); }
-  function setYm(v, keepAuto) { if (!C.isYm(v) || v === ym) return; if (!keepAuto) autoYm = null; ym = v; lsSet(LS_YM, v); $('g-ym').value = v; shiftInfo = null; editsCache = null; data = null; month = null; paintPer(); load(true); }
+  function setYm(v, keepAuto) { if (!C.isYm(v) || v === ym) return; if (!keepAuto) autoYm = null; ym = v; lsSet(LS_YM, v); $('g-ym').value = v; shiftInfo = null; editsCache = null; data = null; month = null; fiSt = null; fiSel = {}; paintPer(); load(true); }
   /* 「今日」: 今日のカレンダー月へ移り、その月分の期間に今日が入っていなければ次の月分へ（読んだ後に autoYm と同じ形で決める）。
      ymFor は ±1日の移動向けなので使わない（2か月以上離れた月分から押しても今日の月分へ行く・反証レビューの指摘1） */
   function goToday() {
@@ -2930,6 +3066,9 @@
       else if (a === 'recode') recode(b.getAttribute('data-sid'), b);
       else if (a === 'import') { if (isLocked()) alert('締めた月は取り込めません。'); else if (settingsLeaveOk()) { dropMonthCaches(); load(true); } }
       else if (a === 'lock') lockMonth(b);
+      else if (a === 'fi-go') fiGo(b);   /* 2026-11-23: freee の月の集計の取り込み */
+      else if (a === 'fi-clear') { fiSt = null; paint(); }
+      else if (a === 'fi-void') fiVoid(b);
       else if (a === 'unlock') unlockMonth(b);
       else if (a === 'csv-sum') download('sum');
       else if (a === 'csv-day') download('day');
@@ -2961,6 +3100,9 @@
       else if (id === 'g-only') { onlyReview = e.target.checked; paint(); }
       else if (id === 'g-office') { officeFilter = e.target.value; paint(); }
       else if (id === 'g-rq-st' || id === 'g-rq-ym') { reqF = { status: $('g-rq-st').value, ym: $('g-rq-ym').value === 'cur' ? 'cur' : '' }; reqReset(); paint(); }   /* v5 段5: 絞り込みは画面の中だけ */
+      else if (id === 'fi-file') fiRead(e.target);   /* 2026-11-23: freee の月の集計の CSV（メモリだけで読む） */
+      else if (e.target && e.target.name === 'fi-none' && fiSt) { fiSt.none[e.target.value] = !!e.target.checked; paint(); }
+      else if (e.target && e.target.name === 'fi-v') fiSel[e.target.value] = !!e.target.checked;
       else if (id === 'lv-a-kind') absKindShow();   /* v5 段4: 休暇の種類に合う欄だけを出す */
       else if (id === 'g-ym') { if (settingsLeaveOk()) setYm(e.target.value); else e.target.value = ym; }   /* v5 C4: 保存していない設定の変更を確かめる（やめたら月の欄を戻す） */
       else if (e.target && e.target.name === 'sc-op' && $('sc-times')) $('sc-times').disabled = e.target.value !== 'set';
@@ -2976,6 +3118,7 @@
     });
     document.addEventListener('input', function (e) {
       var id = e.target && e.target.id, r;
+      if (id === 'fi-reason' && fiSt) fiSt.reason = e.target.value;   /* 描き直しで書いた理由を消さない（画面の中だけ） */
       /* 0111: 予定の窓で始業・終業を変えたら、前の予定から入れた休憩は空に戻す（いつもの決まりで決め直す。手で入れた休憩は残す） */
       if ((id === 'sc-start' || id === 'sc-end') && dlgCtx && dlgCtx.mode === 'sched' && dlgCtx.preBr && $('sc-break') && $('sc-break').value === dlgCtx.preBr) { $('sc-break').value = ''; dlgCtx.preBr = ''; }
       if (id === 'e-early-from') r = document.querySelector('#g-dlg-b input[name="e-em"][value="from"]');
