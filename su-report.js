@@ -697,14 +697,15 @@
       if (reset) {
         inUseless = [];
         for (i = inMarks.length - 1; i >= 0; i--) {
-          var m = inMarks[i], e = m.el, top = e.scrollTop;
+          var m = inMarks[i], e = m.el, top = e.scrollTop, ed = e.ownerDocument.documentElement;
           e.classList.remove(IN_CLS);
-          var sh1 = e.scrollHeight;
+          var sh1 = e.scrollHeight, oh1 = e.offsetHeight, dsh1 = de.scrollHeight, wdsh1 = ed.scrollHeight;
           e.style.setProperty('--sur-pb', e.ownerDocument.defaultView.getComputedStyle(e).paddingBottom || '0px');
           e.classList.add(IN_CLS);
           m.added = e.scrollHeight - sh1;
           if (e.scrollTop !== top) e.scrollTop = top;
-          if (m.added <= 0) inUnmark(i);                                     // 新しい大きさでは効かない＝外す（下の判定で付け直さない）
+          /* 新しい大きさでは効かない・枠そのものが伸びる・文書の高さが変わる＝外して、次に大きさが変わるまで付けない（初めて付ける時と同じ守り） */
+          if (m.added <= 0 || e.offsetHeight !== oh1 || de.scrollHeight !== dsh1 || ed.scrollHeight !== wdsh1) { inUnmark(i); inUseless.push(e); }
         }
       }
       /* ページ全体が送られる画面は body の余白（fitPad）の受け持ち。中の枠には付けない */
