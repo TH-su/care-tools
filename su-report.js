@@ -564,13 +564,50 @@
     } catch (e) { /* 測れなくても右下に出す */ }
   }
 
+  /* ボタンを置いた画面のうち、ページ全体が縦に送られる画面だけ、本文の下にボタンぶんの余白を取る印を付ける
+     （su-report.css の body.sur-has-fab・印刷では効かない）。最後の行のボタンが右下のこのボタンの下に入って押せなくなるのを防ぐ（2026-11-23）。
+     ・中身が画面に収まる画面（打刻の画面など）に付けると、余白のぶんだけ要らない縦の送りが出るので付けない（2026-11-23 反証レビュー）
+     ・判定は「印で足した分を引いた中身の高さ」が画面の高さを超えるか。足した分は付けた直後に実測する（余白が隣の余白と重なって
+       72px より少なく増える画面もあるため）。足した分を引くので、付けた・外したで判定が往復しない
+     ・データの読み込みで後から高さが変わるので、body の大きさの変化（ResizeObserver）と resize で見直す（間引く）
+     ・測れない・例外の時は今の状態のまま（例外は外に出さない）。付けられなくてもボタンは出す */
+  var PAD_CLS = 'sur-has-fab', padAdded = 0, padUseless = false, padTimer = 0;
+  function fitPad() {
+    try {
+      var b = document.body, de = document.documentElement;
+      if (!b || !fab.isConnected) return;
+      var ih = window.innerHeight;
+      if (!b.classList.contains(PAD_CLS)) {
+        var sh0 = de.scrollHeight;
+        if (padUseless || sh0 <= ih + 1) return;                          // 中身が画面に収まる＝付けない
+        b.classList.add(PAD_CLS);
+        padAdded = de.scrollHeight - sh0;                                 // 印で実際に増えた高さ（同じ処理の中で測る＝描かれる前）
+        /* 高さの決まった画面（html,body{height:100%} など）では余白が効かず送れる所も増えない。付けたままにすると
+           判定が往復するので、すぐ外して、画面の大きさが変わるまで付けない */
+        if (padAdded <= 0) { b.classList.remove(PAD_CLS); padAdded = 0; padUseless = true; }
+      } else if (de.scrollHeight - padAdded <= ih + 1) {                 // 印で足した分を引くと収まる＝外す
+        b.classList.remove(PAD_CLS); padAdded = 0;
+      }
+    } catch (e) { /* 測れなくても今の状態のまま */ }
+  }
+  function fitPadSoon() {
+    if (padTimer) return;
+    padTimer = setTimeout(function () { padTimer = 0; fitPad(); }, 150);
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
+    try {
+      /* 画面の大きさ・body の大きさが変わったら「余白が効かない」の覚えも見直す（印の付け外しでは body の大きさは変わらない＝往復しない） */
+      var again = function () { padUseless = false; fitPadSoon(); };
+      window.addEventListener('resize', again);
+      if (typeof ResizeObserver === 'function') new ResizeObserver(again).observe(document.body);
+    } catch (e) { /* 見直せなくても置いた時の判定のまま */ }
+    setTimeout(fitPad, 1000);
+    setTimeout(fitPad, 3000);
     whenCss(function () {   // 見た目（su-report.css）が届いてから置く
       document.body.appendChild(fab);
       document.body.appendChild(dlg);
-      /* ボタンを置いた画面だけ、本文の下にボタンぶんの余白を取る印（su-report.css の body.sur-has-fab・印刷では効かない）。
-         最後の行のボタンが右下のこのボタンの下に入って押せなくなるのを防ぐ（2026-11-23）。付けられなくてもボタンは出す */
-      try { document.body.classList.add('sur-has-fab'); } catch (e) { /* 何もしない */ }
+      fitPad();
       place();
     });
     setTimeout(place, 1000);
