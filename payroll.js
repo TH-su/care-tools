@@ -1300,9 +1300,15 @@
       return rpc('payroll_bonus_confirm', { p_bonus_id: fresh.run.bonus_id, p_rev: fresh.run.rev }).then(okOr).then(function () {
         done(); closeDlg(); toast('賞与を確定しました。');
         /* 確定した明細を年末調整の累計（source='app'・kind='bonus'）へ入れる。確定は済んでいるので、ここが断られても確定は戻さない（画面に出してやり直せる） */
-        var pbid = fresh.run.bonus_id; bYtdPending = pbid;
-        return Promise.resolve(bonusLoad(false)).then(function () { return bonusYtdPut(null); })
-          .then(function (x) { if (bYtdPending === pbid) bYtdPending = null; return x; }, function (e) { if (bYtdPending === pbid) bYtdPending = null; throw e; });
+        var pbid = fresh.run.bonus_id, shown = null; bYtdPending = pbid;
+        /* 送っている途中に読み直された時は送った結果が捨てられるので、終わった後に帯が出ていなければ確かめ直す（送らない） */
+        var after = function () {
+          if (bYtdPending !== pbid) return;
+          bYtdPending = null;
+          if (bb && bb.run && bb.run.bonus_id === pbid && bonusFrozen() && bYtdPut === shown) bonusYtdPut(null, 'check');
+        };
+        return Promise.resolve(bonusLoad(false)).then(function () { shown = bYtdPut; return bonusYtdPut(null); })
+          .then(function (x) { after(); return x; }, function (e) { after(); throw e; });
       });
     })['catch'](function (e) { done(); closeDlg(); return bonusFail(e, '賞与の確定'); });
   }
@@ -1542,21 +1548,25 @@
       var plan = F.planBonusYtd(items, pd, g); items = null;
       var fin = plan.final.length ? '年末調整を確定しているので入れなかった人: ' + plan.final.map(nm).join('、') + '。' : '';
       /* 今の明細では支給が無いのに、累計に前の確定の行が残っている人（送り直しでは直らない） */
-      var stale = plan.stale.length ? '⚠ この賞与の支給が無いのに、年末調整の累計に前の確定の行が残っている人: ' + plan.stale.map(nm).join('、') + '。年末調整のタブでその人を開き「累計のこの行を消す」で消してください。' : '';
+      var stale = plan.stale.length ? '⚠ この賞与の支給が無いのに、年末調整の累計に前の確定の行が残っている人: ' + plan.stale.map(nm).join('、') + '。下の「累計の残っている行を消す」で消してください。' : '';
+      /* 消す時に要る版（rev）。画面のメモリだけ */
+      var staleRows = arr(g.rows).filter(function (r) { return r && r.kind === 'bonus' && r.pay_date === pd && r.source === 'app' && plan.stale.indexOf(r.staff_id) >= 0; })
+        .map(function (r) { return { staff_id: r.staff_id, rev: num(r.rev) }; });
+      var sx = staleRows.length ? { staleRows: staleRows, year: yr, pay_date: pd } : {};
       if (check) {
         done();
-        if (plan.rows.length) set('ng', '⚠ 年末調整の累計に、この賞与がまだ入っていない人（値の違う人を含む）が ' + plan.rows.length + ' 人います。下の「年末調整の累計に入れる」を押してください。' + stale + fin, { retry: true });
-        else if (stale) set('ng', stale + fin, { retry: true });
+        if (plan.rows.length) set('ng', '⚠ 年末調整の累計に、この賞与がまだ入っていない人（値の違う人を含む）が ' + plan.rows.length + ' 人います。下の「年末調整の累計に入れる」を押してください。' + stale + fin, Object.assign({ retry: true }, sx));
+        else if (stale) set('ng', stale + fin, Object.assign({ retry: true }, sx));
         else set(plan.final.length ? 'warn' : 'ok', '✓ 年末調整の累計には、この賞与が入っています（' + plan.same.length + ' 人）。' + fin);
         return null;
       }
-      if (!plan.rows.length) { done(); set(stale ? 'ng' : plan.final.length ? 'warn' : 'ok', (plan.same.length ? '✓ 年末調整の累計には、この賞与がもう入っています（' + plan.same.length + ' 人）。' : '累計に入れる人がいません。') + stale + fin, stale ? { retry: true } : null); return null; }
+      if (!plan.rows.length) { done(); set(stale ? 'ng' : plan.final.length ? 'warn' : 'ok', (plan.same.length ? '✓ 年末調整の累計には、この賞与がもう入っています（' + plan.same.length + ' 人）。' : '累計に入れる人がいません。') + stale + fin, stale ? Object.assign({ retry: true }, sx) : null); return null; }
       var rows = plan.rows;
       return rpc('payroll_ytd_put', { p_year: yr, p_rows: rows }).then(function (r) {
         done(); rows = null;
         if (r && r.ok === true) {
           set(stale ? 'ng' : plan.final.length ? 'warn' : 'ok', '✓ 年末調整の累計に入れました（足した ' + num(r.added) + ' 人・置き換えた ' + num(r.replaced) + ' 人' + (plan.same.length ? '・もう入っていた ' + plan.same.length + ' 人' : '') + '）。' +
-            (plan.replace.length ? '手で足した行・freee の行を置き換えた人: ' + plan.replace.map(function (x) { return nm(x.staff_id); }).join('、') + '。' : '') + stale + fin, stale ? { retry: true } : null);
+            (plan.replace.length ? '手で足した行・freee の行を置き換えた人: ' + plan.replace.map(function (x) { return nm(x.staff_id); }).join('、') + '。' : '') + stale + fin, stale ? Object.assign({ retry: true }, sx) : null);
           return null;
         }
         var code = (r && r.error) || 'ng';
@@ -1573,11 +1583,33 @@
       return null;
     });
   }
+  /* 累計に残った前の確定の賞与の行（今の明細では支給が無い人）を消す（payroll_ytd_delete・理由つき・消したことは記録に残る） */
+  function bonusYtdDel(btn) {
+    var y = bYtdPut, bid = bb && bb.run && bb.run.bonus_id;
+    if (busy || !y || y.bid !== bid || !arr(y.staleRows).length) return;
+    var list = y.staleRows.slice(), nm = function (sid) { var q = bonusProf(sid); return q ? q.name : (bb && bb.names[sid]) || sid; };
+    ask(y.pay_date + ' の賞与の累計の行を消しますか？（' + list.map(function (r) { return nm(r.staff_id); }).join('、') + '・この回の明細では支給がありません。消したことと理由は記録に残ります）').then(function (ok) {
+      if (!ok) return null;
+      var done = hold(btn, '消しています…'), ng = [];
+      return list.reduce(function (pr, r) {
+        return pr.then(function () {
+          return rpc('payroll_ytd_delete', { p_year: y.year, p_staff_id: r.staff_id, p_pay_date: y.pay_date, p_kind: 'bonus', p_rev: r.rev, p_reason: '賞与の確定し直しで支給が無くなった（賞与のタブ）' })
+            .then(function (x) { if (!x || x.ok !== true) ng.push(nm(r.staff_id) + '（' + ((x && x.error) || 'ng') + '）'); });
+        });
+      }, Promise.resolve()).then(function () {
+        done();
+        if (ng.length) say('消せなかった行があります：' + ng.join('、') + '。読み直してからもう一度押してください。');
+        else toast('累計の残っていた行を消しました。');
+        return bonusYtdPut(null, 'check');
+      });
+    })['catch'](function (e) { busy = false; if (e && (e.code === '42501' || isAal(e))) return fail(e, '賞与の累計の行を消す'); note('賞与の累計の行を消す', e); say(friendly(e)); return null; });
+  }
   function bonusYtdHtml() {
     var y = bYtdPut && bYtdPut.bid === bb.run.bonus_id ? bYtdPut : null;
     return '<div class="cd"><h2>年末調整の累計</h2><p class="help">確定した賞与は、年末調整の累計（その年に払った給与・賞与）に自動で入ります（同じ支給日の確定した回は人ごとに合算）。入らなかった時や、確定を取り消して確定し直した時は、下のボタンを押してください（何度押しても同じ値なら変わりません）。</p>' +
       (y ? '<div class="band ' + esc(y.cls) + '" role="status">' + esc(y.text) + '</div>' : '') +
-      '<div class="row"><button type="button" class="btn' + (y && y.retry ? ' pri' : '') + '" data-act="b-ytd-put">年末調整の累計に入れる</button></div></div>';
+      '<div class="row"><button type="button" class="btn' + (y && y.retry ? ' pri' : '') + '" data-act="b-ytd-put">年末調整の累計に入れる</button>' +
+      (y && arr(y.staleRows).length ? '<button type="button" class="btn ng" data-act="b-ytd-del">累計の残っている行を消す（' + esc(y.staleRows.length) + ' 人）</button>' : '') + '</div></div>';
   }
   function bonusHtml() {
     if (bNoDb) return '<div class="cd"><h2>賞与</h2><div class="band warn" role="status">賞与はまだ使えません（データベースの準備中）。</div></div>';
@@ -1727,6 +1759,7 @@
     else if (a === 'b-shoyo') bonusShoyo(b);
     else if (a === 'b-cmp-clear') { bCmp = null; paint(); }
     else if (a === 'b-ytd-put') bonusYtdPut(b);
+    else if (a === 'b-ytd-del') bonusYtdDel(b);
   }
   /* 入力欄はメモリ（bIn・bCfgIn）にだけ写す。描き直さない（打っている欄の手元を失わない）。前月の給与の選びを変えた時だけ描き直す */
   function bonusBind() {

@@ -768,6 +768,19 @@ console.log('\n— 7. 賞与のタブ —');
   await p.waitForFunction(() => /まだ入っていない人（値の違う人を含む）が 1 人います/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
   t('確定の後に累計から抜けた人がいれば、開いた時に知らせる（送らない）', o.routes.calls.filter((c) => c.name === 'payroll_ytd_put').length === nPut);
   o.routes.db.ytd.push(gone);
+  /* 確定し直して支給が無くなった（0円の）人の app の行が累計に残っていれば、賞与のタブから消せる（理由つき） */
+  const zero = o.routes.db.bonus.items[bid0].find((i) => i.gross === 0);
+  o.routes.db.ytd.push({ year: 2026, staff_id: zero.staff_id, pay_date: '2026-12-24', kind: 'bonus', source: 'app', data: { gross: 1000 }, rev: 1, src_fp: '' });
+  await p.click('#p-reload'); await settle(p);
+  await p.waitForSelector('[data-act="b-ytd-del"]', { timeout: 10000 });
+  t('累計に前の確定の行が残る人を名前つきで出し、消すボタンを出す', /前の確定の行が残っている人/.test(await p.textContent('#p-main')) && /累計の残っている行を消す（1 人）/.test(await p.textContent('[data-act="b-ytd-del"]')));
+  await p.click('[data-act="b-ytd-del"]');
+  await p.waitForSelector('dialog[open]', { timeout: 5000 }); await p.waitForTimeout(500);
+  await p.locator('dialog[open] button', { hasText: 'OK' }).click();
+  await p.waitForFunction(() => /年末調整の累計には、この賞与が入っています/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  const del = o.routes.calls.filter((c) => c.name === 'payroll_ytd_delete').pop();
+  t('消すと payroll_ytd_delete（その人・支給日・賞与・版・理由）で消え、確かめ直して「入っています」', !!del && del.args.p_staff_id === zero.staff_id && del.args.p_kind === 'bonus' && del.args.p_pay_date === '2026-12-24' && del.args.p_rev === 1 && !!del.args.p_reason
+    && !o.routes.db.ytd.some((x) => x.staff_id === zero.staff_id && x.kind === 'bonus'), del && del.args);
   /* ── freee と比べる（賞与の明細の CSV・架空の値）── */
   const HEADB = '従業員番号,氏名,賞与支給日,総支給額,課税支給額合計,健康保険料,介護保険料,子ども・子育て支援金,厚生年金保険料,雇用保険料,所得税,控除合計,差引支給額';
   const rowOf = (i, o2) => { const x = Object.assign({ date: '2026/12/24', tax: i.tax }, o2 || {}), s = i.item.ins || {};
