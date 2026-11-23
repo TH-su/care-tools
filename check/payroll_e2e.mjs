@@ -371,6 +371,20 @@ console.log('\n— 6. 覆い・その他 —');
   t('給与設定の保存: 甲乙・扶養を確かめた印（確かめた人は印が入って開く）をそのまま送る', !!pc && pc.args.p_data.tax.dependents_checked === true, pc && pc.args.p_data.tax);
   t('住民税: 前の年度より古い月（2024-06）は外し、前の年度（2025-06）と今の年度（2026-11）は残す', !!pc && !('2024-06' in pc.args.p_data.resident_tax) && pc.args.p_data.resident_tax['2025-06'] === 6000 && pc.args.p_data.resident_tax['2026-11'] === 9000, pc && pc.args.p_data.resident_tax);
   t('給与設定の保存は DB の形の確かめを通った（新しい版が足された）', o4.routes.db.profiles.some((q) => q.staff_id === 's-02' && q.effective_from === '2026-10-16' && q.data.base === 1150));
+  t('従業員番号を空のまま保存しても、鍵を足さない', !!pc && !('freee_emp_num' in pc.args.p_data));
+  /* freee に登録の無い人（契約社員）の従業員番号を「直す」で手で入れる（2026-11-23 検収の直し） */
+  await o4.page.click('[data-act="prof"][data-sid="s-02"]');
+  t('「直す」に従業員番号（freee の番号）の欄と、A9 で始まる番号は比べる対象から外す説明', (await o4.page.locator('#f-emp').count()) === 1 && /A9 で始まる番号（例 A901）/.test(await o4.page.textContent('#p-dlg')));
+  await o4.page.fill('#f-emp', 'A901');
+  await o4.page.fill('#f-reason', '見本の契約社員の番号');
+  await o4.page.click('[data-act="prof-go"]');
+  await o4.page.waitForFunction(() => !document.getElementById('p-dlg').open, null, { timeout: 10000 });
+  const pe = o4.routes.calls.filter((c) => c.name === 'payroll_profile_put').pop();
+  t('手で入れた従業員番号 A901 を送り、DB の形の確かめを通る・「比べる対象から外します」と知らせる', !!pe && pe.args.p_data.freee_emp_num === 'A901'
+    && o4.routes.db.profiles.some((q) => q.staff_id === 's-02' && q.data.freee_emp_num === 'A901') && /比べる対象から外します/.test(await o4.page.textContent('body')), pe && pe.args.p_data.freee_emp_num);
+  /* 後の取り込みの場面（従業員番号で結ぶ）に響かないよう、入れた番号を外して読み直す */
+  o4.routes.db.profiles.filter((q) => q.staff_id === 's-02').forEach((q) => { delete q.data.freee_emp_num; });
+  await o4.page.click('#p-reload'); await waitApp(o4.page);
   /* 固定残業代の欄（手当・含む時間（分）・確かめた）: s-09 の夜勤手当を固定残業代として 600分・確かめた */
   await o4.page.click('[data-act="prof"][data-sid="s-09"]');
   await o4.page.selectOption('#f-fot', 'night'); await o4.page.fill('#f-fotmin', '600'); await o4.page.check('#f-fotok');

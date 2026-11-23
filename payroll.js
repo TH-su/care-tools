@@ -1842,7 +1842,9 @@
       sel('f-fot', '固定残業代の手当', fo.allowance_code || '', [['', '（なし）']].concat(pays.map(function (a) { return [a.code, a.name || a.code]; }))) +
       inp('f-fotmin', '含む時間（分）', fo.covered_min, NUMA) + '</div>' + chk('f-fotok', '含む時間を確かめた（freee の画面か雇用契約書で）', fo.checked === true) + '</fieldset>';
     h += '<fieldset><legend>本人</legend><div class="kv">' + inp('f-birth', '生年月日', d.birth_date, ' type="date"') + sel('f-gender', '性別（賃金台帳）', d.gender === 'male' ? 'M' : d.gender === 'female' ? 'F' : d.gender, [['', '（選ぶ）'], ['M', '男'], ['F', '女']]) +
-      inp('f-entry', '入社日', d.entry_date, ' type="date"') + inp('f-retire', '退職日', d.retire_date, ' type="date"') + '</div></fieldset>';
+      inp('f-entry', '入社日', d.entry_date, ' type="date"') + inp('f-retire', '退職日', d.retire_date, ' type="date"') +
+      inp('f-emp', '従業員番号（freee の番号）', d.freee_emp_num, ' maxlength="20" spellcheck="false" autocapitalize="characters"') + '</div>' +
+      '<p class="help">従業員番号は freee の明細と比べる時の結び付けに使います。freee に登録の無い人（契約社員など）は ' + esc(EXC()) + ' で始まる番号（例 ' + esc(EXC()) + '01）を入れてください。freee に登録の無い人として、比べる対象から外して人数だけ数えます。</p></fieldset>';
     h += '<fieldset><legend>社会保険・雇用保険</legend><div class="row">' + chk('f-h-on', '健康保険に入る', obj(ins.health).on) + chk('f-p-on', '厚生年金に入る', obj(ins.pension).on) + chk('f-e-on', '雇用保険に入る', obj(ins.emp).on) + chk('f-care-ex', '介護保険の対象外', ins.care_exempt === true) + '</div>' +
       '<div class="kv">' + inp('f-h-std', '健保の標準報酬月額（円）', obj(ins.health).std, NUMA) + inp('f-p-std', '厚年の標準報酬月額（円）', obj(ins.pension).std, NUMA) + '</div></fieldset>';
     h += '<fieldset><legend>税</legend><div class="kv">' + sel('f-col', '源泉の区分', tx.col, [['', '（選ぶ）'], ['kou', '甲欄'], ['otsu', '乙欄'], ['none', '対象外']]) + inp('f-deps', '扶養親族等の数', tx.dependents, NUMA) + '</div>' + chk('f-depok', '甲乙・扶養の数を確かめた（freee の画面か本人の申告書で）', tx.dependents_checked === true) +
@@ -1854,6 +1856,8 @@
     openDlg('職員の給与設定を直す', h, '<button type="button" class="btn" data-act="dlg-close">やめる</button><button type="button" class="btn pri" data-act="prof-go">保存する</button>', { mode: 'prof', sid: sid, pays: pays, deds: deds, months: fiscalMonths(), dirtyCheck: true });
   }
   function v(id) { var e = $(id); return e ? String(e.value || '').trim() : ''; }
+  /* freee に登録の無い人の従業員番号の頭（payroll-freee-slips.js の EXCLUDE_PREFIX・部品が無ければ 'A9'） */
+  function EXC() { var f = window.PayrollFreeeSlips; return f && typeof f.EXCLUDE_PREFIX === 'string' ? f.EXCLUDE_PREFIX : 'A9'; }
   function on(id) { var e = $(id); return !!(e && e.checked); }
   function nOr(id, keep) { var s = v(id).replace(/[,，\s円]/g, ''); if (s === '') return keep === undefined ? null : keep; return /^\d+(\.\d+)?$/.test(s) ? Number(s) : NaN; }
   function profGo(btn) {
@@ -1899,13 +1903,19 @@
     Object.keys(rt).forEach(function (m) { if (!isYm(m) || m < rtMin || m > rtMax) delete rt[m]; });
     d.resident_tax = rt;
     d.no_attendance = on('f-noatt'); d.exclude = on('f-excl');
+    /* 従業員番号（freee の番号・20字まで）。空なら、前に値があった時だけ空に戻す（空の人に鍵を足さない） */
+    var empIn = v('f-emp');
+    if (empIn.length > 20) bad.push('従業員番号（20字まで）');
+    else if (empIn) d.freee_emp_num = empIn;
+    else if ('freee_emp_num' in obj(p.data)) d.freee_emp_num = null;
+    var empEx = !!(empIn && window.PayrollFreeeSlips && typeof window.PayrollFreeeSlips.excluded === 'function' && window.PayrollFreeeSlips.excluded(empIn));
     if (p.staff_id.indexOf('p:') === 0 && !d.name) d.name = p.name;
     if (bad.length) { say('数の形が違う欄があります：' + bad.filter(function (x, i) { return bad.indexOf(x) === i; }).join('・') + '（半角の数字で書いてください）'); return; }
     var done = hold(btn, '保存しています…');
     /* 同じ日付の版があれば今の版で上書き、無ければ新しい版（rev 0）で足す（統合 0102 の payroll_profile_put） */
     var from = v('f-from'), same = p.versions.filter(function (x) { return x.effective_from === from; })[0];
     rpc('payroll_profile_put', { p_staff_id: p.staff_id, p_effective_from: from, p_data: d, p_rev: same ? same.rev : 0, p_reason: reason }).then(okOr).then(function () {
-      done(); closeDlg(); toast('給与の設定を保存しました。計算し直してください。'); return load(false);
+      done(); closeDlg(); toast('給与の設定を保存しました。計算し直してください。' + (empEx ? '従業員番号が ' + EXC() + ' で始まるので、freee に登録の無い人として比べる対象から外します。' : '')); return load(false);
     })['catch'](function (e) { done(); fail(e, '給与の設定の保存'); });
   }
   function openBank(sid) {

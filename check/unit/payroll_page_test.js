@@ -741,6 +741,8 @@ console.log('\n— 賞与の「freee と比べる」と、確定した賞与を�
   t('確定の直後に送っている途中で読み直されたら、終わった後に帯が出ていなければ確かめ直す', /if \(bb && bb\.run && bb\.run\.bonus_id === pbid && bonusFrozen\(\) && bYtdPut === shown\) bonusYtdPut\(null, 'check'\);/.test(cg));
   t('読めない支給日の CSV は給与・賞与とも比べない', /pk\.why === 'baddate'/.test(cf) && /pk\.why === 'baddate'/.test(U) && /F\(\)\.pickByDate\(fr, mon, \{ month: true \}\)/.test(U));
   t('振込の所の印は対象外の人を差に数えず、比べた後に計算が変われば知らせる', /var n = c\.res\.pass \? 0 : c\.res\.diffCount \+ c\.res\.others;/.test(U) && /freee と比べた後に計算が変わりました/.test(U));
+  t('「直す」に従業員番号の欄（20字まで・空なら前に値があった時だけ空に戻す）・A9 の人は比べる対象から外すと知らせる', /inp\('f-emp', '従業員番号（freee の番号）', d\.freee_emp_num/.test(J) && /else if \(empIn\) d\.freee_emp_num = empIn;/.test(J)
+    && /else if \('freee_emp_num' in obj\(p\.data\)\) d\.freee_emp_num = null;/.test(J) && /比べる対象から外します/.test(J));
   t('部品の版を上げた（freee-slips 2026-11-23.3・yearend-ui 2026-11-23.2）', /payroll-freee-slips\.js\?v=2026-11-23\.3"/.test(H) && /payroll-yearend-ui\.js\?v=2026-11-23\.2"/.test(H));
 }
 

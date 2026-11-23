@@ -157,6 +157,9 @@ const ex3 = FS.compareSlips([a9('s-1', '見本 一', 'E901'), a9('s-a1', '契約
 t('A9 の人に結ぶ freee の行が来ても結ばない（自社だけ＝対象外・freee の行は「freee だけ」に残り合格にしない）', ex3.pass === false && ex3.unmatched.some((u) => u.side === 'ours' && u.staff_id === 's-a1' && u.excluded)
   && ex3.unmatched.some((u) => u.side === 'freee' && u.staff_id === 's-a1' && !u.excluded), ex3.unmatched);
 const ex4 = FS.compareSlips([a9('s-a1', '契約 一', 'A901')], [], 'salary');
+/* 検収（2026-11-23）: 「直す」で手で入れた A901（職員の給与設定の data.freee_emp_num）の人は、対象外になり合格が出る */
+const exM = FS.compareSlips([Object.assign(item('s-1', '見本 一'), { emp_num: 'E901' }), Object.assign(item('s-c1', '契約 一'), { emp_num: { toString() { return 'A901'; } }.toString() })], sOk, 'salary');
+t('手で入れた A901 の人は excluded・ほかが差0なら pass', exM.pass === true && exM.excluded === 1 && exM.unmatched[0].excluded === true, exM.unmatched);
 t('比べた人が0人なら合格にしない（対象外だけ・CSV が空）', ex4.pass === false && ex4.compared === 0 && ex4.excluded === 1, ex4);
 t('差が1つでもあれば合格にしない（所得税30円の差）', cs.pass === false && cs.diffCount === 1);
 t('excluded の判定: 小文字・空白も（a9 01）・A8 は対象外でない', FS.excluded('a9 01') && FS.excluded(' A902') && !FS.excluded('A801') && !FS.excluded('') && !FS.excluded(null) && FS.EXCLUDE_PREFIX === 'A9');
