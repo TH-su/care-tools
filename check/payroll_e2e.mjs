@@ -613,8 +613,9 @@ console.log('\n— 7. 賞与のタブ —');
   await settle(p);
   const [dc] = await Promise.all([p.waitForEvent('download'), p.click('[data-act="b-shoyo"]')]);
   const csv = fs.readFileSync(await dc.path(), 'utf8');
-  t('賞与支払届に写す値の CSV（見出し・保険の無い人は載せない・個人番号なし）', /^payroll-shoyo-2026-12-24\.csv$/.test(dc.suggestedFilename()) && /氏名,生年月日,支給日,賞与額,千円未満切り捨ての額,70歳以上の印,同じ月の合算の印/.test(csv)
-    && /見本 一郎,1980-05-01,2026-12-24,300000,300000/.test(csv) && !/見本 八子/.test(csv) && o.routes.db.log.includes('bonus_shoyo_csv'), csv.slice(0, 300));
+  /* ★賞与支払届の CSV は支払った人を全員載せる決まりに改めた（2026-11-23 反証レビュー 7・仮置き）ので、保険の無い人（見本 八子）も載る期待に改めた */
+  t('賞与支払届に写す値の CSV（見出し・支払った3人を全員・同じ月のほかの回が無いので合算の印なし・個人番号なし）', /^payroll-shoyo-2026-12-24\.csv$/.test(dc.suggestedFilename()) && /氏名,生年月日,支給日,賞与額,千円未満切り捨ての額,70歳以上の印,同じ月の合算の印/.test(csv)
+    && /見本 一郎,1980-05-01,2026-12-24,300000,300000,,\r\n/.test(csv) && /見本 八子,/.test(csv) && csv.trim().split('\r\n').length === 4 && o.routes.db.log.includes('bonus_shoyo_csv'), csv.slice(0, 300));
   fs.rmSync(await dc.path(), { force: true });
   t('端末に残したのは payroll_tab（bonus）だけ（金額・氏名なし）', await p.evaluate(() => { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i), v = localStorage.getItem(k); if (/見本|300000/.test(v) && !/^sb-|^su_fac/.test(k)) return false; } return localStorage.getItem('payroll_tab') === 'bonus'; }));
   /* 確定の取り消し（管理者・理由が要る） */
@@ -684,6 +685,43 @@ console.log('\n— 7. 賞与のタブ —');
   t('年末調整の記録: 画面のエラー 0', o3.errors.length === 0, o3.errors);
   await o3.ctx.close();
   /* iPhone の幅で横にはみ出さない */
+  /* 年末調整の記録の答えが来ない: 10秒で読めなかった扱いにして解き、手入力で進められる（後から届いた答えは使わない） */
+  {
+    const o5 = await open({ tab: 'bonus', start: 'none', bonus: true, ytd: [{ staff_id: 's-01', pay_date: '2026-11-25', kind: 'salary', source: 'freee', data: { taxable: 250000 } }], ytdDelay: 14000 });
+    const p5 = o5.page;
+    await p5.waitForSelector('[data-act="b-new"]', { timeout: 15000 });
+    await p5.click('[data-act="b-new"]'); await p5.fill('#bn-date', '2026-12-24'); await p5.click('[data-act="b-new-go"]');
+    await p5.waitForSelector('[data-act="b-compute"]', { timeout: 10000 });
+    const t0 = Date.now();
+    await p5.waitForFunction(() => { const b = document.querySelector('[data-act="b-save"]'); return b && !b.disabled; }, null, { timeout: 13000 });
+    const waited = Date.now() - t0;
+    t('記録の答えが来ない時は約10秒で待ちを解き、手入力の欄を出す', waited >= 8000 && waited < 13000 && (await p5.locator('[data-bk="pm"][data-bsid="s-01"]').count()) === 1, waited);
+    await p5.waitForTimeout(5000);
+    t('時間切れの後に届いた記録の答えは使わない（札に変えない）', (await p5.locator('[data-bk="pm"][data-bsid="s-01"]').count()) === 1 && !/年末調整の記録 /.test(await p5.textContent('#p-main')));
+    /* 「もう一度読む」の確かめ（保存していない入力がある時）: 読み直すのボタンと同じ窓 */
+    await p5.fill('#' + await p5.evaluate(() => document.querySelector('[data-bk="amt"][data-bsid="s-01"]').id), '1000');
+    await p5.click('#p-reload');
+    const mR = await sud(p5, 'cancel');
+    t('保存していない賞与の入力がある時の読み直しは確かめる（やめれば入力が残る）', /捨てて読み直しますか/.test(mR) && await p5.inputValue('[data-bk="amt"][data-bsid="s-01"]') === '1000', mR);
+    t('記録の答えが来ない場面: 画面のエラー 0', o5.errors.length === 0, o5.errors);
+    await o5.ctx.close();
+  }
+  /* 記録が後から届いて札に変わる人: 入れかけの「金額を入れる」の選びを外し、形の違いで止めない */
+  {
+    const o6 = await open({ tab: 'bonus', start: 'none', bonus: true, ytd: [{ staff_id: 's-01', pay_date: '2026-11-25', kind: 'salary', source: 'freee', data: { taxable: 250000 } }], ytdDelay: 3000 });
+    const p6 = o6.page;
+    await p6.waitForSelector('[data-act="b-new"]', { timeout: 15000 });
+    await p6.click('[data-act="b-new"]'); await p6.fill('#bn-date', '2026-12-24'); await p6.click('[data-act="b-new-go"]');
+    await p6.waitForSelector('[data-bk="pm"][data-bsid="s-01"]', { timeout: 10000 });
+    await p6.selectOption('[data-bk="pm"][data-bsid="s-01"]', 'P');
+    await p6.fill('#' + await p6.evaluate(() => document.querySelector('[data-bk="amt"][data-bsid="s-01"]').id), '300000');
+    await p6.waitForFunction(() => { const b = document.querySelector('[data-act="b-save"]'); return b && !b.disabled; }, null, { timeout: 15000 });
+    await p6.click('[data-act="b-compute"]');
+    const m6 = await sud(p6, 'ok', 1500);
+    t('記録が後から届いた人は札に変わり、入れかけの金額の欄で止めない（計算できる）', m6 === '' && /年末調整の記録 250,000 円/.test((await p6.textContent('#p-main')).replace(/\s+/g, ' ')) && (await p6.locator('details.bit').count()) === 1, m6);
+    t('記録が後から届く場面: 画面のエラー 0', o6.errors.length === 0, o6.errors);
+    await o6.ctx.close();
+  }
   /* 年末調整の記録の答えが遅い: 届くまで「下書き保存」「確定」を押せず、届いたら押せる */
   {
     const o4 = await open({ tab: 'bonus', start: 'none', bonus: true, ytd: [], ytdDelay: 3000 });

@@ -313,7 +313,8 @@ export function bonusItemErr(x) {
   if (it.gross !== sPay || it.deduct !== sDed || it.net !== it.gross - it.deduct) return 'badsum';
   return null;
 }
-const BONUS_STOP = ['prev_missing', 'prev_unconfirmed', 'rate_missing', 'tax_table_missing', 'emp_rate_missing', 'std_missing'];
+/* DB の直し（止めの印を computeBonus の止めにそろえて10個）に合わせた（2026-11-23） */
+export const BONUS_STOP = ['prev_missing', 'prev_unconfirmed', 'rate_missing', 'tax_table_missing', 'emp_rate_missing', 'std_missing', 'badinput', 'calc_error', 'leave_check', 'tax_col'];
 const ADMIN_ONLY = ['payroll_bonus_unconfirm', 'payroll_run_unconfirm', 'payroll_settings_put', 'payroll_allowance_put', 'payroll_members_get', 'payroll_members_put', 'payroll_audit_get', 'payroll_import_put'];
 
 /* ── 架空の材料 ── */
@@ -705,8 +706,9 @@ export function routesFor(opt = {}) {
     }
     if (name === 'payroll_bonus_create') {
       if (!dateOk(p.p_pay_date)) return ng('baddate');
-      const t = String(p.p_title || '').trim(); if (t.length < 1 || t.length > 40) return ng('badshape');
-      const n = Object.values(BB.runs).filter((r) => r.pay_date === p.p_pay_date).length + 1; if (n > 9) return ng('full');
+      const t = String(p.p_title || '').trim(); if (t.length < 1 || t.length > 40 || /[\x00-\x1f\x7f]/.test(t)) return ng('badshape');   /* 0121 と同じく制御文字は断る */
+      /* 0121 と同じく、同じ支給日の番号の最大＋1（消した回の番号を詰めない） */
+      const n = Object.values(BB.runs).filter((r) => r.pay_date === p.p_pay_date).reduce((m, r) => Math.max(m, +r.bonus_id.slice(11)), 0) + 1; if (n > 9) return ng('full');
       const nid = p.p_pay_date + '#' + n;
       BB.runs[nid] = { bonus_id: nid, pay_date: p.p_pay_date, title: t, status: 'draft', config: {}, fingerprint: null, stale: false, bank_fp: {}, totals: {}, rev: 1, saved_at: null, confirmed_at: null, exported_at: null };
       bAudit('bonus_create', nid); return ok({ bonus_id: nid, rev: 1 });
@@ -828,7 +830,7 @@ export function routesFor(opt = {}) {
       return json(JSON.parse(JSON.stringify(r)));
     },
   }, PROFILE_ROUTE];
-  out.db = db; out.calls = calls; out.opt = opt;   /* 試験が途中で deny などを変えられるように */
+  out.db = db; out.calls = calls; out.opt = opt; out.rpcDirect = rpc;   /* rpcDirect: 単体試験が偽の DB の答えを直接見る（2026-11-23） */   /* 試験が途中で deny などを変えられるように */
   return out;
 }
 export const routes = routesFor({ start: 'confirmed' });

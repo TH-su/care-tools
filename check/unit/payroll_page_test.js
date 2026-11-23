@@ -284,7 +284,8 @@ console.log('\n— 給与専用の暗証番号（統合 0110・2026-11-20 代表
   /* ★取り込みの「見出しから読めた項目」が入職順の並べ直しで消えていた直し（2026-11-21）で 2026-11-21.4 に上げたので、期待の版を改めた */
   /* ★賞与のタブ（2026-11-23）で payroll.js を 2026-11-23.3 に上げたので、期待の版を改めた */
   /* ★賞与の年末調整の記録を待つ間の止め（2026-11-23）で 2026-11-23.4 に上げたので、期待の版を改めた */
-  t('payroll.js の版を上げた（2026-11-23.4）', /payroll\.js\?v=2026-11-23\.4"/.test(H));
+  /* ★賞与の画面の反証レビューの直し（2026-11-23）で 2026-11-23.5 に上げたので、期待の版を改めた */
+  t('payroll.js の版を上げた（2026-11-23.5）', /payroll\.js\?v=2026-11-23\.5"/.test(H));
 }
 
 
@@ -312,7 +313,7 @@ console.log('\n— 賞与のタブ（統合 0121・2026-11-23 設計 CONTRACT-bo
   t('年末調整の記録の答え（届いた・失敗・無い）が決まるまで「下書き保存」「確定」を押せない（ボタン・押した時の両方）・答えが決まったら必ず描き直す',
     /data-act="b-save"' \+ \(c && !bCfgDirty && !bYtdWait \? '' : ' disabled'\)/.test(BON) && /!blk\.length && !bYtdWait \? '' : ' disabled'\)/.test(BON)
     && /function bonusSave\(btn\) \{\n    if \(busy \|\| !bb \|\| !bb\.run \|\| bonusFrozen\(\) \|\| bYtdWait\) return;/.test(BON) && /bonusDirty\(\) \|\| bYtdWait\) return;/.test(BON)
-    && /bYtdWait = !!\(bb\.run && !bonusFrozen\(\) && isDate\(bb\.run\.pay_date\)\);/.test(BON) && /rows = null; bYtdWait = false;\n      if \(any\) bCalc = null;\n      paint\(\);/.test(BON)
+    && /bYtdWait = !!\(bb\.run && !bonusFrozen\(\) && isDate\(bb\.run\.pay_date\)\);/.test(BON) && /* ★時間切れを足して答えの受け口を finish にまとめたので、描き直しの所の書き方の期待を改めた（決まりは同じ） */ /rows = null; bYtdWait = false;\n      if \(any\) \{[\s\S]*?\n      \}\n      paint\(\);\n    \};/.test(BON)
     && /Promise\.all\(\[one\(y - 1\), one\(y\)\]\)/.test(BON) && /function \(e\) \{ if \(!bonusNoDb\(e\)/.test(BON));
   t('明細の紙は SUPrint の別の名前（bonus-slips）・今の月の明細と同じ型（.slip）に「賞与明細」・施設名と印刷日の印', /define\('bonus-slips', \{ label: '賞与明細', paper: 'A4 portrait'/.test(BON) && /<section class="slip"/.test(BON) && /<h3>賞与明細　/.test(BON) && /data-su-print-head="name date"/.test(BON));
 
@@ -332,6 +333,14 @@ console.log('\n— 賞与のタブ（統合 0121・2026-11-23 設計 CONTRACT-bo
     ['前月の給与が10倍を超える（月額表の方法）', base({}), [{ code: 'bonus', amount: 2000000 }], { state: 'ok', items: { 's-1': { P: 150000 } } }, null, null],
   ];
   pend.push(import(path.join(ROOT, 'check/fixtures/payroll.mjs')).then((FX) => {
+    t('偽の DB の確定の止めの印は DB の直しと同じ10個', FX.BONUS_STOP.slice().sort().join() === ['prev_missing', 'prev_unconfirmed', 'rate_missing', 'tax_table_missing', 'emp_rate_missing', 'std_missing', 'badinput', 'calc_error', 'leave_check', 'tax_col'].sort().join());
+    {
+      const R = FX.routesFor({ bonus: true }), call = R.rpcDirect;
+      const a1 = call('payroll_bonus_create', { p_pay_date: '2026-12-24', p_title: '見本' }), a2 = call('payroll_bonus_create', { p_pay_date: '2026-12-24', p_title: '見本' });
+      call('payroll_bonus_delete', { p_bonus_id: a1.bonus_id, p_rev: 1 });
+      const a3 = call('payroll_bonus_create', { p_pay_date: '2026-12-24', p_title: '見本' }), bad = call('payroll_bonus_create', { p_pay_date: '2026-12-24', p_title: '見本\u0007' });
+      t('偽の DB の回の番号は同じ支給日の番号の最大＋1（消した番号を詰めない）・題の制御文字は断る', a1.bonus_id === '2026-12-24#1' && a2.bonus_id === '2026-12-24#2' && a3.bonus_id === '2026-12-24#3' && bad.ok === false && bad.error === 'badshape', [a1, a2, a3, bad]);
+    }
     t('偽の DB の賞与の引数の組も 0121 と同じ', Object.keys(SIG).every((n) => FX.BONUS_ARGS[n] && FX.BONUS_ARGS[n].slice().sort().join() === SIG[n].slice().sort().join()) && Object.keys(FX.BONUS_ARGS).length === 9);
     cases.forEach(([nm, prof, lines, prev, manual, ytdP]) => {
       const pv = P.bonusPrevOf(prev, 's-1', manual, ytdP);
@@ -378,12 +387,28 @@ console.log('\n— 賞与のタブ（統合 0121・2026-11-23 設計 CONTRACT-bo
     ], '2026-12-24');
     return r.P.a === 214800 && !('b' in r.P) && r.fy.a === 301000 && r.cnt.a === 2;
   })());
-  t('賞与支払届の CSV: 決めた列だけ（個人番号・基礎年金番号なし）・千円未満切り捨ては上限の前の額・70歳以上と同じ月の合算の印・保険の無い人は載せない', (() => {
+  /* ★賞与支払届の CSV の決まりを改めた（2026-11-23 反証レビュー 7・仮置き: 支払った人を全員載せる・同じ月の合算の印は回の一覧から）ので、期待を改めた */
+  t('賞与支払届の CSV: 決めた列だけ（個人番号・基礎年金番号なし）・千円未満切り捨ては上限の前の額・70歳以上の印・支払った人を全員（標準賞与額0の人も）載せる', (() => {
     const csv = P.bonusShoyoCsv([{ staff_id: 'a', name: '見本 一', gross: 1234567, std: { health: 1234000, pension: 1234000 }, warns: [] }, { staff_id: 'b', name: '見本 二', gross: 99999, std: { health: 99000, pension: 0 }, warns: [] },
-      { staff_id: 'c', name: '見本 三', gross: 50000, std: { health: 0, pension: 0 }, warns: [] }], [{ staff_id: 'a', data: { birth_date: '1950-01-01' } }, { staff_id: 'b', data: { birth_date: '1990-01-01' } }], '2026-12-24', { b: 100000 });
+      { staff_id: 'c', name: '見本 三', gross: 50000, std: { health: 0, pension: 0 }, warns: [] }], [{ staff_id: 'a', data: { birth_date: '1950-01-01' } }, { staff_id: 'b', data: { birth_date: '1990-01-01' } }], '2026-12-24',
+      [{ bonus_id: '2026-12-24#1', pay_date: '2026-12-24', status: 'confirmed' }, { bonus_id: '2026-11-30#1', pay_date: '2026-11-30', status: 'confirmed' }], '2026-12-24#1');
     const rows = csv.trim().split('\r\n');
-    return rows[0] === '氏名,生年月日,支給日,賞与額,千円未満切り捨ての額,70歳以上の印,同じ月の合算の印' && rows.length === 3 && rows[1] === '見本 一,1950-01-01,2026-12-24,1234567,1234000,1,' && rows[2] === '見本 二,1990-01-01,2026-12-24,99999,99000,,1' && !/個人番号|基礎年金/.test(csv);
+    return rows[0] === '氏名,生年月日,支給日,賞与額,千円未満切り捨ての額,70歳以上の印,同じ月の合算の印' && rows.length === 4 && rows[1] === '見本 一,1950-01-01,2026-12-24,1234567,1234000,1,' && rows[2] === '見本 二,1990-01-01,2026-12-24,99999,99000,,' && rows[3] === '見本 三,,2026-12-24,50000,50000,,' && !/個人番号|基礎年金/.test(csv);
   })());
+  t('賞与支払届の CSV: 同じ年月に支給日のある別の回（下書きを除く・先の回も後の回も）があれば合算の印を付ける', (() => {
+    const one = (runs) => P.bonusShoyoCsv([{ staff_id: 'a', name: '見本 一', gross: 100000, std: {}, warns: [] }], [], '2026-12-10', runs, '2026-12-10#1').trim().split('\r\n')[1].split(',')[6];
+    return one([{ bonus_id: '2026-12-10#1', pay_date: '2026-12-10', status: 'confirmed' }, { bonus_id: '2026-12-24#1', pay_date: '2026-12-24', status: 'confirmed' }]) === '1'
+      && one([{ bonus_id: '2026-12-10#1', pay_date: '2026-12-10', status: 'confirmed' }, { bonus_id: '2026-12-01#1', pay_date: '2026-12-01', status: 'exported' }]) === '1'
+      && one([{ bonus_id: '2026-12-10#1', pay_date: '2026-12-10', status: 'confirmed' }, { bonus_id: '2026-12-24#1', pay_date: '2026-12-24', status: 'draft' }]) === ''
+      && one([{ bonus_id: '2026-12-10#1', pay_date: '2026-12-10', status: 'confirmed' }]) === '';
+  })());
+  t('年末調整の記録の待ちは10秒で読めなかった扱いにして解く（答えが後から届いても使わない）', /BONUS_YTD_MS = 10000/.test(BON) && /setTimeout\(function \(\) \{ finish\(true\); \}, BONUS_YTD_MS\);/.test(BON)
+    && /if \(settled\) return; settled = true;/.test(BON) && /if \(timedOut\) \{ any = false;/.test(BON) && /\.then\(function \(r\) \{ if \(settled\) return;/.test(BON));
+  t('記録が後から届いて札に変わる人は、入れかけの前月の給与の選びを外す・札の人は見えない欄の形で止めない', /if \(x && x\.pm && bonusPrevOf\(bb\.prev, sid, null, bYtd\.v\.P\[sid\]\)\.kind === 'ytd'\) \{ x\.pm = ''; x\.pP = ''; \}/.test(BON)
+    && /if \(x\.pm === 'P' && k0 !== 'db' && k0 !== 'ytd' && !bonusManual\(p\.staff_id\)\)/.test(BON));
+  t('「もう一度読む」は保存していない入力があれば確かめの窓を出す', /if \(a === 'b-reload'\) \{ if \(bonusDirty\(\)\) \{ ask\('保存していない賞与の入力があります。捨てて読み直しますか？'\)/.test(BON));
+  t('入力を残す読み直し: 回の設定の欄は人が直していなければ DB の値で作り直し、直していて DB が変わっていれば保存を止めて知らせる', /if \(!bCfgDirty\) bonusInitCfg\(\);\n        else if \(bCfgBase !== JSON\.stringify\(obj\(bb\.run && bb\.run\.config\)\)\) bCfgConflict = true;/.test(BON)
+    && /if \(bCfgConflict\) \{ say\(BNG\.cfgconflict\); return; \}/.test(BON) && /data-act="b-cfg-save"' \+ \(bCfgDirty && !bCfgConflict \? '' : ' disabled'\)/.test(BON) && /cfgconflict: '回の設定がほかの人に変えられました。読み直してください/.test(BON));
   const nb = P.bonusNorm({ ok: true, runs: [{ bonus_id: '2026-12-24#1', pay_date: '2026-12-24', title: '見本', status: 'weird', count: 2, gross: 5 }, { bonus_id: 'bad' }], settings: 'x',
     run: { bonus_id: '2026-12-24#1', pay_date: '2026-12-24', title: '見本', status: 'draft', rev: 3, config: { fy_prior_std: { a: 1000 } } }, prev: { state: 'ok', ym: '2026-11', items: { a: { P: 'x' }, b: { P: 5 } } },
     items: [{ staff_id: 'a', item: { gross: 1, lines: 'x' }, prev_manual: { P: 1 } }, { staff_id: 'z' }], fingerprint: 'b1:x', ctx: { fy_std: { a: 'q', b: 3 } } });
