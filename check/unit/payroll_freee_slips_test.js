@@ -123,6 +123,12 @@ t('送る形にした時に warnings・skipped は JSON に入らない', JSON.s
 const iy = FS.itemToYtd(dec12);
 t('itemToYtd: 自社の明細 → data（tax_adjust は所得税に入れない）', iy.income_tax === 4770 && iy.gross === 215000 && iy.nontax === 5000 && iy.si_other === 0 && Object.keys(iy).sort().join() === FS.YTD_KEYS.slice().sort().join(), iy);
 
+/* 反証レビュー（2026-11-23 の2回目）: 負の値の行は入れない・画面が出せるよう人・支給日・種類・項目・ファイル名を skipped に添える */
+const negP = FS.parse('氏名,支給日,総支給額,課税支給額,所得税\n見本 一,2026/06/25,"200,000","200,000","-1,200"\n見本 二,2026/06/25,"180,000","180,000","3,000"\n');
+const negM = FS.match(negP.rows, staff).matched.map((r) => Object.assign({ src_name: 'june.csv' }, r));
+const negY = FS.toYtd(negM, 'salary');
+t('負の値（所得税 −1,200）の行は入れず、skipped に人・支給日・種類・項目・ファイル名', negY.length === 1 && negY[0].staff_id === 's-2' && negY.skipped.length === 1
+  && JSON.stringify(negY.skipped[0]) === JSON.stringify({ line: 2, why: 'negative', keys: ['income_tax'], staff_id: 's-1', pay_date: '2026-06-25', kind: 'salary', src_name: 'june.csv' }), negY.skipped);
 console.log('\n— 7. 個人情報・部品の作法 —');
 t('DOM・端末への保存・console・通信を使わない', !/document\.|localStorage|sessionStorage|indexedDB|console\.|fetch\(|XMLHttpRequest/.test(SRC));
 t('見出しの候補の表の頭に「未検証」の注記', /★未検証（事務担当が書き出した実物で確かめる）/.test(SRC) && /見出しの候補（★未検証/.test(SRC));

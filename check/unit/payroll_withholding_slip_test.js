@@ -156,6 +156,12 @@ const inj = S.toCsv([S.slipValues(otsu, { name: '=HYPERLINK("x")' }, co)]);
 t('式で始まる文字は頭に引用符', inj.indexOf("\"'=HYPERLINK(\"\"x\"\")\"") >= 0);
 t('カンマを含む文字は囲む', S.toCsv([S.slipValues(otsu, { name: 'a,b' }, co)]).indexOf('"a,b"') >= 0);
 
+/* 反証レビュー（2026-11-23 の2回目）: 乙欄の印を CSV の列にも出す（staffInfo.otsu で受ける） */
+{
+  const oc = S.toCsv([S.slipValues(otsu, { name: '見本 乙', otsu: true }, co), S.slipValues(otsu, { name: '見本 甲' }, co)]).slice(1).split('\r\n');
+  const io = oc[0].split(',').indexOf('乙欄');
+  t('CSV に乙欄の列（乙欄の人は 1・そうでない人は空）', io >= 0 && oc[1].split(',')[io] === '1' && oc[2].split(',')[io] === '');
+}
 console.log('7. 和暦');
 eq('令和元年', S.wareki('2019-05-01').text, '令和元年5月1日');
 eq('平成31年4月30日', S.wareki('2019-04-30').text, '平成31年4月30日');

@@ -318,6 +318,7 @@ console.log('\n— 年末調整のタブ（2026-11-23・ROOT-yearend.md の C）
   t('内訳は決まった鍵だけを決まった順に描き、fuyo_etc（扶養・障害者等の合計）は小計の行にして二重に数えない', /\['fuyo_etc', '（小計）扶養控除額及び障害者等の控除額の合計'\]/.test(U) && /DED\.forEach\(function \(x\) \{ if \(typeof dd\[x\[0\]\] === 'number'\)/.test(U) && !/Object\.keys\(dd\)/.test(U));
   t('部品は rates → yearend → 源泉徴収票 の順に読む（.gitignore に5つとも載せる）', iYR < iY && iY < iW && ['payroll-freee-slips.js', 'payroll-yearend-rates.js', 'payroll-yearend.js', 'payroll-withholding-slip.js', 'payroll-yearend-ui.js'].every((f) => read('.gitignore').indexOf('!/' + f + '\n') >= 0));
   /* 動かして確かめる（架空の職員・架空の金額） */
+  let lastStaff = null;
   const mkDoc = () => { const f = {}; return { f, getElementById: (id) => f[id] || null }; };
   const load = (opt) => {
     const D = mkDoc();
@@ -326,7 +327,7 @@ console.log('\n— 年末調整のタブ（2026-11-23・ROOT-yearend.md の C）
     vm.runInNewContext(read('payroll-freee-slips.js'), w);
     if (!opt || !opt.noParts) {
       w.PayrollYearEnd = { computeYearEnd: (inp) => { w.lastInput = inp; return { eligible: true, pay_total: inp.rows.reduce((s, r) => s + r.data.gross, 0), withheld_total: 0, nenzei: 1000, balance: -2500, balance_settle: -2500, warnings: [], deductions: { basic: 1 } }; } };
-      w.PayrollWithholdingSlip = { slipValues: (r, s) => ({ name: s.name }), slipHtml: (l) => '<div class="ws">' + l.length + '</div>', summaryValues: () => ({}), toCsv: () => 'a,b' };
+      w.PayrollWithholdingSlip = { slipValues: (r, s) => { lastStaff = s; return { name: s.name }; }, slipHtml: (l) => '<div class="ws">' + l.length + '</div>', summaryValues: () => ({}), toCsv: () => 'a,b' };
     }
     vm.runInNewContext(read('payroll-yearend-ui.js'), w);
     return { w, D, U: w.PayrollYearEndUI };
@@ -499,6 +500,39 @@ console.log('\n— 年末調整のタブ（2026-11-23・ROOT-yearend.md の C）
       const hi = Y2.html(c2);
       t('取り込み: 画面に「読めなかったファイル」（読めなかった見出し）と「2つのファイルにあり」の印', /読めなかったファイル（入れません）/.test(hi) && /c\.csv：読めなかった見出し 所得税/.test(hi) && /2つのファイルにあり・「b\.csv」の行/.test(hi) && /入れるのは「b\.csv」/.test(hi));
       fin.status = 'final'; S2.imp = null;
+      /* 2回目の反証（2026-11-23）1: 負の値の行は赤く出し、ある間は「累計に入れる」を押せない */
+      fin.status = 'draft';
+      const N = '氏名,支給日,総支給額,課税支給額,所得税\n見本 一,2026/06/25,"200,000","200,000","-1,200"\n見本 二,2026/06/25,"180,000","180,000","3,000"\n';
+      Y2.onChange(c2, { id: 'ye-files', files: [fake('june.csv', N)], value: 'x' }); for (let i = 0; i < 6; i++) await tick();
+      const hn = Y2.html(c2);
+      t('負の値: 取り込みの一覧に人・支給日・項目つきで赤く出す（ファイル名つき）', S2.imp.neg.length === 1 && /class="band ng" role="alert"><b>⛔ 負の値があって入れられない行（1行）/.test(hn) && /見本 一・2026-06-25・給与：所得税（june\.csv）/.test(hn) && /1回分を手で足す」で差し引きした額/.test(hn), S2.imp.neg);
+      t('負の値: ある間は「累計に入れる」を押せない（ボタンは disabled・押しても送らない）', /data-act="ye-imp-go" disabled>1回分を累計に入れる/.test(hn) && (c2.calls.length = 0, Y2.onClick(c2, 'ye-imp-go', null), !c2.calls.some((x) => x.name === 'payroll_ytd_put')));
+      S2.imp = null;
+      /* 3: 500行ごとの途中の塊が断られた時は、ytd_get で読み直して入った行と入らなかった行を出す */
+      const keepData = S2.data, many = [];
+      for (let d = 0; d < 501; d++) { const sid = d < 300 ? 's-1' : 's-2', day = new Date(Date.UTC(2026, 0, 1 + (d % 300))).toISOString().slice(0, 10); many.push({ staff_id: sid, pay_date: day, kind: 'salary', source: 'freee', data: { gross: 1 }, src_fp: '', rev: 0 }); }
+      S2.imp = { files: [], rows: [], unmatched: [], ok: many.map((x) => Object.assign({}, x)), warnings: [], finalNg: [], dups: [], neg: [] };
+      let putN = 0; c2.calls.length = 0;
+      c2.answer = (n, a) => {
+        if (n === 'payroll_ytd_put') { putN++; return putN === 1 ? { ok: true, added: a.p_rows.length } : { ok: false, error: 'conflict', staff_id: 's-2' }; }
+        if (n === 'payroll_ytd_get') return { ok: true, rows: many.slice(0, 500).map((x) => Object.assign({}, x, { rev: 1, fp: 'f' })), yearend: [] };
+        return { ok: true };
+      };
+      c2.said = null;
+      Y2.onClick(c2, 'ye-imp-go', null); for (let i = 0; i < 8; i++) await tick();
+      const done = S2.imp && S2.imp.done;
+      t('途中で断られた: 2つ目の塊で断られたら ytd_get で読み直す', putN === 2 && c2.calls.some((x) => x.name === 'payroll_ytd_get') && c2.calls.filter((x) => x.name === 'payroll_ytd_put')[0].args.p_rows.length === 500);
+      t('途中で断られた: 入った行 500・入らなかった行 1 を出し、残りは入らなかった行だけ（今の版で送り直せる）', !!done && done.entered.length === 500 && done.missed.length === 1 && S2.imp.ok.length === 1 && S2.imp.ok[0].rev === 0 && /入った行 500・入らなかった行 1/.test(c2.said || ''), done && [done.entered.length, done.missed.length]);
+      t('途中で断られた: 画面に「途中で断られました」と入らなかった行の一覧', /途中で断られました（ほかの人が先に累計を変えました。読み直してください（s-2）。）/.test(Y2.html(c2)) && /入らなかった行<\/p><ul><li>見本 二・/.test(Y2.html(c2)));
+      fin.status = 'final'; S2.imp = null; S2.data = keepData; c2.answer = (n) => ({ ok: true });
+      /* 2: 源泉徴収票の乙欄の印は、給与の設定の源泉の区分（tax.col が otsu）から staffInfo.otsu で渡す */
+      const sv = []; const ws0 = Y2._test.state();
+      c2.bs.profiles[0].data.tax = { col: 'otsu' };
+      const wsl = Y2._test.slipList(c2, 'all');
+      t('源泉徴収票: 源泉の区分が乙欄の人は staffInfo.otsu=true', wsl.length === 1 && wsl[0].name === '見本 一' && lastStaff && lastStaff.otsu === true, lastStaff);
+      c2.bs.profiles[0].data.tax = { col: 'kou' }; Y2._test.slipList(c2, 'all');
+      t('源泉徴収票: 甲欄の人は otsu=false', lastStaff && lastStaff.otsu === false);
+      delete c2.bs.profiles[0].data.tax;
     }
     /* 振込と書き出しの印 */
     Y2._test.state().cmp = { ym: '2026-12', res: { diffCount: 2, unmatched: [{}] } };

@@ -300,7 +300,7 @@
         d.si_other = rest;
       }
       var neg = YTD_KEYS.filter(function (k) { return d[k] < 0; });
-      if (neg.length) { skipped.push({ line: r.line, why: 'negative', keys: neg }); return; }
+      if (neg.length) { skipped.push({ line: r.line, why: 'negative', keys: neg, staff_id: r.staff_id, pay_date: r.pay_date, kind: kind === 'bonus' || kind === 'salary' ? kind : (r.kind === 'bonus' ? 'bonus' : 'salary'), src_name: r.src_name || '' }); return; }
       out.push({ staff_id: r.staff_id, pay_date: r.pay_date, kind: kind === 'bonus' || kind === 'salary' ? kind : (r.kind === 'bonus' ? 'bonus' : 'salary'), source: 'freee', data: d, src_fp: String(r.src_fp || '').slice(0, 16), rev: 0 });
     });
     out.warnings = warnings; out.skipped = skipped;

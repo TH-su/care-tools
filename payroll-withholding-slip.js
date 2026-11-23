@@ -197,7 +197,7 @@
 
   /* ── 4. CSV ── */
   var COLS = [
-    ['staff_id', '職員の番号'], ['name', '氏名'], ['kana', 'フリガナ'], ['adjusted', '年末調整'], ['shubetsu', '種別'], ['pay', '支払金額'], ['kyuyo_after', '給与所得控除後の金額'],
+    ['staff_id', '職員の番号'], ['name', '氏名'], ['kana', 'フリガナ'], ['adjusted', '年末調整'], ['otsu', '乙欄'], ['shubetsu', '種別'], ['pay', '支払金額'], ['kyuyo_after', '給与所得控除後の金額'],
     ['deductions_total', '所得控除の額の合計額'], ['tax', '源泉徴収税額'], ['spouse_has', '控除対象配偶者の有無'], ['spouse_elderly', '老人控除対象配偶者'],
     ['spouse_deduction', '配偶者（特別）控除の額'], ['dep_specific', '特定扶養親族の数'], ['dep_elderly', '老人扶養親族の数'], ['dep_elderly_cohabit', 'うち同居老親等'],
     ['dep_other', 'その他の控除対象扶養親族の数'], ['dep_tokutei', '特定親族の数'], ['under16', '16歳未満扶養親族の数'], ['disabled_special', '特別障害者の数'],
