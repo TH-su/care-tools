@@ -628,7 +628,9 @@ export function routesFor(opt = {}) {
     }
     /* 年末調整（統合 0122 の形の確かめを写した・架空の材料だけ） */
     if (name.startsWith('payroll_ytd_') || name.startsWith('payroll_yearend_')) {
-      db.ytd = db.ytd || []; db.yearend = db.yearend || [];
+      /* 賞与の場面（opt.ytd）の年末調整の記録も同じ累計として持つ（賞与の側は ytd_get の rows を読むだけ・2026-11-23 main の取り込みでそろえた） */
+      db.ytd = db.ytd || (opt.ytd || []).map((r) => Object.assign({ source: 'freee', rev: 1, src_fp: '' }, r, { year: +String(r.pay_date).slice(0, 4) }));
+      db.yearend = db.yearend || [];
       const Y = p.p_year;
       if (!Number.isInteger(Y)) return ng('badshape');
       const YK = ['gross', 'taxable', 'nontax', 'si_health', 'si_care', 'si_support', 'si_pension', 'si_emp', 'si_other', 'income_tax', 'resident_tax'];
