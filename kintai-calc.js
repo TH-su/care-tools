@@ -574,6 +574,61 @@
    *   swap        振替休日       … date の日を休日にする（その日の勤務の予定を数えない＝欠勤・打刻なしに出さない）。link_date の日は働く日（法定休日の曜日なら法定休日にしない）。
    *                                 法定休日の曜日の日と入れ替えた時は、休む日（date）を法定休日として数える
    *   1日の特別休暇・代休の日は、打刻の無い予定の塊を打刻なし・まだ出勤していないにしない（要確認に数えない）。日の行に absences の印を付ける（無い日の形は今までどおり） */
+  /* ── freee の月の集計の取り込み（2026-11-23・凍結仕様 ROOT-freee-month-import.md・DB 統合 0123） ──
+   * staff の行の month_import＝{ id, ym, period:{from,to}, vals, source, created_at }。取り込んだ時の期間が今の期間（per）と違えば使わない
+   *   （締め日を変えた後に別の期間へ効かせない・反証レビュー 2026-11-23。DB の kintai_month_get も同じ期間の取り込みだけを返す）。vals の鍵・範囲・4つの和は kintai-freee-import.js の valsWhy と DB と同じ決まり。
+   * 返す: null（取り込みが無い・別の月分）／{ ok:true, mi }／{ ok:false }（形が違う） */
+  var IMPORT_KEYS = ['workDays', 'workMin', 'schedInMin', 'legalInOverMin', 'legalOverMin', 'holidayMin', 'nightMin', 'over60Min', 'absentDays', 'lateMin', 'paidDays'];
+  var IMPORT_DAY = { workDays: 1, absentDays: 1, paidDays: 1 }, IMPORT_SRC = ['freee_csv', 'freee_api', 'none'];
+  function importOf(st, ym, per) {
+    var mi = st && st.month_import;
+    if (mi == null) return null;
+    if (typeof mi !== 'object' || Array.isArray(mi)) return { ok: false };
+    if (mi.ym != null && mi.ym !== ym) return null;
+    if (!mi.period || typeof mi.period !== 'object' || !per || mi.period.from !== per.from || mi.period.to !== per.to) return { ok: false };
+    var v = mi.vals;
+    if (!v || typeof v !== 'object' || IMPORT_SRC.indexOf(mi.source) < 0) return { ok: false };
+    for (var i = 0; i < IMPORT_KEYS.length; i++) {
+      var k = IMPORT_KEYS[i], n = v[k];
+      if (typeof n !== 'number' || !isFinite(n) || n < 0) return { ok: false };
+      if (IMPORT_DAY[k] ? (n > 31 || Math.round(n * 2) !== n * 2) : (n > 31 * 1440 || Math.round(n) !== n)) return { ok: false };
+    }
+    if (v.schedInMin + v.legalInOverMin + v.legalOverMin + v.holidayMin !== v.workMin || v.over60Min !== Math.max(0, v.legalOverMin - 3600)) return { ok: false };
+    if (Math.round(v.workDays) !== v.workDays) return { ok: false };   /* 勤務日数は整数だけ（給与が整数に丸めるため・DB の 0123 も同じ） */
+    if (mi.source === 'none' && IMPORT_KEYS.some(function (k0) { return v[k0] !== 0; })) return { ok: false };
+    return { ok: true, mi: mi };
+  }
+  /* 取り込んだ人の合計: 数え直した合計と同じ鍵のゼロのひな形から作る（打刻・休暇の記録・手入力の有休から数えた分を残さない＝freee の値に上乗せしない）。
+   *   表の鍵（IMPORT_KEYS）は取り込みの値・遅刻早退の分は lateMin に入れて earlyLeaveMin は 0（給与は2つの和で控除する）。
+   *   予定から数える鍵: schedDays は今の数え方（予定の働く日か有休のある日）・counts は予定の働く日の記号を「予定どおり働いた」として数え、
+   *   nightShiftCount は予定の夜勤の塊の数。勤怠なし（source 'none'）は働いていないので、counts は有休の記号だけ・夜勤の回数は 0（仮置き）。
+   *   仮置き: overtimeMin＝法定内残業＋法定外・byOffice＝主事業所に総労働の全部・legalOverRawMin と holidayRawMin（36協定の判定）は取り込みの値のまま（月の30分丸めは当てない） */
+  function importSum(mi, sum0, st, cfg, sc) {
+    var v = mi.vals, z = {}, k;
+    for (k in sum0) {
+      var x = sum0[k];
+      z[k] = Array.isArray(x) ? [] : (x && typeof x === 'object') ? {} : typeof x === 'number' ? 0 : x;
+    }
+    for (var i = 0; i < IMPORT_KEYS.length; i++) z[IMPORT_KEYS[i]] = v[IMPORT_KEYS[i]];
+    z.earlyLeaveMin = 0; z.reviewCount = 0;
+    z.overtimeMin = v.legalInOverMin + v.legalOverMin;
+    z.legalOverRawMin = v.legalOverMin; z.holidayRawMin = v.holidayMin;
+    z.schedDays = sum0.schedDays;
+    var none = mi.source === 'none', cnt = none ? sc.paidCnt : sc.schedCnt;
+    for (k in cnt) z.counts[k] = cnt[k];
+    z.nightShiftCount = none ? 0 : sc.schedNight;
+    if (st.office && v.workMin > 0) z.byOffice[st.office] = v.workMin;
+    z.warnings = [];
+    if (z.legalOverMin >= cfg.overtimeMonthWarnH * 60 && cfg.overtimeMonthWarnH > 0) z.warnings.push('法定外の時間が月' + cfg.overtimeMonthWarnH + '時間以上です（36協定の確認）');
+    if (none) {
+      if (sc.schedWorkDays > 0) z.warnings.push('この月は勤怠なし（0）として取り込みました。予定の働く日が ' + sc.schedWorkDays + ' 日あります');
+    } else {
+      if (sc.schedWorkDays !== v.workDays) z.warnings.push('予定の働く日（' + sc.schedWorkDays + '日）と、freee から取り込んだ勤務日数（' + v.workDays + '日）が違います');
+      if (v.holidayMin > 0) z.warnings.push('法定休日の労働がありますが、法定休日に働いた日の数は freee の集計から分からないため 0 にしています（日給の人は確かめてください）');
+    }
+    z.imported = { source: mi.source, id: mi.id || null };
+    return z;
+  }
   function computeMonth(opts) {
     var ym = opts.ym;
     if (!isYm(ym)) throw new Error('月の形が違います');
@@ -736,6 +791,8 @@
         noSchedWorkMin: 0, holidayWorkDays: 0,
         paidNoSchedDays: 0, paidNoSchedMin: 0, paidOffDays: 0, holidayDaysMin: [] };   /* 反証レビュー（2026-11-21）: 予定の無い日の有休の日数と分（時給の有休を1日の所定時間で払う分）・働いていない日の有休の日数（日給の有休）・全部が法定休日の日ごとの実働（日給の休日の差） */   /* 給与の額の直し（代表者の決定 2026-11-20）: 予定の無い勤務の実働の分（月給の警告に使う）・法定休日に働いた日の数（日給の基本給の日数から除く） */   /* absentPartMin: 欠勤の印の日の休暇で埋まらない残り（半日ちょうどは absentDays に 0.5 日） */   /* 給与段4 の反証レビュー: 時間単位の有休の効く分・働いていない日の効く分・働いていない日の有給の特別休暇 */
       var leadDays = [], liDay = 0, seqOf = {};
+      /* freee の月の集計を取り込んだ人の「予定から数える鍵」（2026-11-23・下の importSum だけが使う。取り込みの無い人の数には効かない） */
+      var schedCnt = {}, paidCnt = {}, schedNight = 0, schedWorkDays = 0;
       for (j = 0; j < dates.length; j++) {
         var date = dates[j], bl = byDate[date].sort(function (x, y) { return (x.schedStart || x.countStart || 0) - (y.schedStart || y.countStart || 0); });
         var dw = 0, dsw = 0, dflags = [], noPunchAll = bl.length > 0, dnote = dayBy[st.staff_id + '|' + date];
@@ -752,6 +809,7 @@
           var c = bl[x];
           dw += c.workMin; dsw += c.schedWork; dot += c.overtimeMin;
           if (c.night && c.workMin > 0) sum.nightShiftCount++;
+          if (c.night && c.schedWork > 0) schedNight++;   /* 予定の夜勤の塊（取り込んだ人だけが使う） */
           if (c.flags.indexOf('no_punch') < 0) noPunchAll = false;
           sum.nightMin += c.nightMin; sum.overtimeMin += c.overtimeMin;
           if (c.lateMin > 0) { sum.lateCount++; sum.lateMin += c.lateMin; dLate += c.lateMin; dLateN++; }
@@ -779,6 +837,9 @@
         (paidSym[st.staff_id + '|' + date] || []).forEach(function (sy) { sum.counts[sy] = (sum.counts[sy] || 0) + 1; });
         if (dsw > 0 || paidMin > 0) sum.schedDays++;   /* 所定日数＝働く予定か有休のある日（仮置き） */
         if (dw > 0) (workSym[st.staff_id + '|' + date] || []).forEach(function (sy) { sum.counts[sy] = (sum.counts[sy] || 0) + 1; });   /* 働いた日の予定の記号ごと */
+        /* 取り込んだ人だけが使う: 予定の働く日の記号を「予定どおり働いた」として数える（有休の記号は上と同じ） */
+        (paidSym[st.staff_id + '|' + date] || []).forEach(function (sy) { paidCnt[sy] = (paidCnt[sy] || 0) + 1; schedCnt[sy] = (schedCnt[sy] || 0) + 1; });
+        if (dsw > 0) { schedWorkDays++; (workSym[st.staff_id + '|' + date] || []).forEach(function (sy) { schedCnt[sy] = (schedCnt[sy] || 0) + 1; }); }
         /* 法定休日の労働は法定外残業に重ねない（v2-9）。legal_holiday が null なら dhol は 0 で従来どおり */
         var legal = Math.max(0, dw - dhol - (cfg.variableMonth ? Math.max(480, dsw) : 480));
         sum.legalOverMin += legal; sum.workMin += dw;
@@ -917,6 +978,20 @@
       sum.legalOverRawMin = legalRaw; sum.holidayRawMin = sum.holidayMin;
       if (sum.legalOverMin >= cfg.overtimeMonthWarnH * 60 && cfg.overtimeMonthWarnH > 0) sum.warnings.push('法定外の時間が月' + cfg.overtimeMonthWarnH + '時間以上です（36協定の確認）');
       if (st.missingStaff) sum.warnings.push('職員の名簿に無い番号の記録です（シフトから外れた職員）');
+      /* 2026-11-23: freee の月の集計を取り込んだ人（DB の kintai_month_get が staff の行に month_import を付ける＝その月分の効いている取り込みだけ）は、
+         合計を取り込みの値で作り直し、塊を要確認から外す（打刻は作らない・日の一覧はそのまま）。形の違う取り込みは使わない（要確認が残る＝締めない側） */
+      var imp = importOf(st, ym, per);
+      if (imp && imp.ok) {
+        sum = importSum(imp.mi, sum, st, cfg, { schedCnt: schedCnt, paidCnt: paidCnt, schedNight: schedNight, schedWorkDays: schedWorkDays });
+        for (j = 0; j < days.length; j++) {
+          days[j].flags = days[j].flags.filter(function (f) { return f !== 'working' && f !== 'not_in_yet'; });
+          for (var ib = 0; ib < days[j].blocks.length; ib++) {
+            var ibk = days[j].blocks[ib];
+            ibk.checked = true; ibk.working = false; ibk.imported = true;
+            ibk.flags = ibk.flags.filter(function (f) { return f !== 'working' && f !== 'not_in_yet'; });
+          }
+        }
+      } else if (imp) sum.warnings.push('freee から取り込んだ値の形か期間が違うため使っていません（締め日を変えた時は取り込み直してください。直らない時は管理者に知らせてください）');
       people.push({ staff: st, days: days, sum: sum });
     }
     /* 月全体の合計（v2-10・画面のまとめと CSV の事業所別の列に使う） */
@@ -1093,7 +1168,7 @@
     var rows = [];
     for (var i = 0; i < month.people.length; i++) {
       var p = month.people[i], s = p.sum;
-      rows.push({ staff_id: p.staff.staff_id, emp_code: p.staff.emp_code || null, workDays: s.workDays, paidDays: s.paidDays,
+      var row = { staff_id: p.staff.staff_id, emp_code: p.staff.emp_code || null, workDays: s.workDays, paidDays: s.paidDays,
         workMin: s.workMin, schedInMin: s.schedInMin, overtimeMin: s.overtimeMin, legalOverMin: s.legalOverMin, nightMin: s.nightMin,
         lateCount: s.lateCount, lateMin: s.lateMin, earlyLeaveCount: s.earlyLeaveCount, earlyLeaveMin: s.earlyLeaveMin,
         noPunchDays: s.noPunchDays, reviewCount: s.reviewCount, byOffice: s.byOffice,
@@ -1103,7 +1178,10 @@
         hourlyPaidMin: s.hourlyPaidMin || 0, specialPaidMin: s.specialPaidMin || 0, specialPaidDays: s.specialPaidDays || 0, specialUnpaidDays: s.specialUnpaidDays || 0, compDays: s.compDays || 0,
         hourlyPaidEffMin: s.hourlyPaidEffMin || 0, hourlyPaidOffMin: s.hourlyPaidOffMin || 0, specialPaidOffDays: s.specialPaidOffDays || 0, absentPartMin: s.absentPartMin || 0,   /* v5 段4: 休暇の種類（hourlyPaidMin は paidMin の内数） */
         noSchedWorkMin: s.noSchedWorkMin || 0, holidayWorkDays: s.holidayWorkDays || 0,
-        paidNoSchedDays: s.paidNoSchedDays || 0, paidNoSchedMin: s.paidNoSchedMin || 0, paidOffDays: s.paidOffDays || 0, holidayDaysMin: (s.holidayDaysMin || []).slice() });   /* 反証レビュー（2026-11-21）: この版より前の控えには無い＝給与は今までどおりに払う */   /* 給与の額の直し（2026-11-20）: 予定の無い勤務の実働・法定休日に働いた日の数（この版より前の控えには無い＝給与は今までどおりに扱う） */
+        paidNoSchedDays: s.paidNoSchedDays || 0, paidNoSchedMin: s.paidNoSchedMin || 0, paidOffDays: s.paidOffDays || 0, holidayDaysMin: (s.holidayDaysMin || []).slice() };   /* 反証レビュー（2026-11-21）: この版より前の控えには無い＝給与は今までどおりに払う */   /* 給与の額の直し（2026-11-20）: 予定の無い勤務の実働・法定休日に働いた日の数（この版より前の控えには無い＝給与は今までどおりに扱う） */
+      /* 2026-11-23: freee の月の集計を取り込んだ人だけ、取り込みの印（どこから・どの行か）を足す（給与の attSame は数の鍵だけを比べる＝この鍵は比べない） */
+      if (s.imported) row.imported = { source: s.imported.source, id: s.imported.id };
+      rows.push(row);
     }
     return { v: 1, ym: month.ym, period: month.period, config: month.config, rows: rows };
   }
