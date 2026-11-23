@@ -44,8 +44,10 @@
 @media screen{body.sur-has-fab{margin-bottom:calc(72px + env(safe-area-inset-bottom,0px))}}
 /* 中の枠が縦に送られる画面（html,body{height:100%} など・body の余白が効かない）は、ボタンの真下の送られる枠に su-report.js が
    sur-pad-in を付け、枠の下の内側の余白をボタンの高さ＋余白（72px）＋安全領域まで広げる（2026-11-23）。枠がもともと取っている余白は
-   --sur-pb に写してあり、それより狭くはしない（max）。画面の ID の指定に負けないよう !important。印刷には効かせない（@media screen だけ） */
-@media screen{.sur-pad-in{padding-bottom:max(var(--sur-pb,0px),calc(72px + env(safe-area-inset-bottom,0px)))!important}}
+   --sur-pb に写してあり、それより狭くはしない（max）。画面の ID の指定に負けないよう !important。印刷には効かせない（@media screen だけ）。
+   印刷部品 SUPrint が紙を組む間（body.su-printing）と、画面が自分で紙を組む間（body.printing・ワークスケジュールの盤面など）は、
+   画面のまま中身の高さを測って文字の大きさを決めるので効かせない（デイ利用表の利用表で、余白のぶん紙の文字が小さくなった・2026-11-24 実測） */
+@media screen{body:not(.su-printing):not(.printing) .sur-pad-in{padding-bottom:max(var(--sur-pb,0px),calc(72px + env(safe-area-inset-bottom,0px)))!important}}
 
 /* ── 画面の指摘（su-annot.js・管理者が「画面の場所を指して報告」を押した時だけ出る部品）── */
 .sua-root{position:fixed;inset:0;z-index:2147483000;pointer-events:none;font:15px/1.5 system-ui,sans-serif}

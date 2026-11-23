@@ -686,9 +686,27 @@
   function fitInner(reset) {
     try {
       if (!fab.isConnected || !cssReady) return;
+      if (document.body.classList.contains('su-printing') || document.body.classList.contains('printing')) return;   // 紙を組んでいる間は触らない（余白は CSS で止めてある）
+      /* body の印の見直しが待っていれば先に済ませる（「ページ全体が送られるか」の覚え padUseless を最新にしてから読む。
+         古い覚えのまま読むと、高さの決まった画面で印を一度外して次の回に付け直していた＝家族構成図で resize の時に1回往復した） */
+      if (padTimer) { clearTimeout(padTimer); padTimer = 0; fitPad(); }
       var i, b = document.body, de = document.documentElement;
       for (i = inMarks.length - 1; i >= 0; i--) if (!inMarks[i].el.isConnected) inMarks.splice(i, 1);
-      if (reset) { inUseless = []; for (i = inMarks.length - 1; i >= 0; i--) inUnmark(i); }
+      /* 画面の大きさが変わった時: 付けている枠の元の余白を読み直す。外す→読む→付け直すを同じ処理の中で行い（描かれない）、
+         外した間に送りの位置が切り詰められても元の位置へ戻す（最後まで送った状態の最後の行を、またボタンの下に入れない） */
+      if (reset) {
+        inUseless = [];
+        for (i = inMarks.length - 1; i >= 0; i--) {
+          var m = inMarks[i], e = m.el, top = e.scrollTop;
+          e.classList.remove(IN_CLS);
+          var sh1 = e.scrollHeight;
+          e.style.setProperty('--sur-pb', e.ownerDocument.defaultView.getComputedStyle(e).paddingBottom || '0px');
+          e.classList.add(IN_CLS);
+          m.added = e.scrollHeight - sh1;
+          if (e.scrollTop !== top) e.scrollTop = top;
+          if (m.added <= 0) inUnmark(i);                                     // 新しい大きさでは効かない＝外す（下の判定で付け直さない）
+        }
+      }
       /* ページ全体が送られる画面は body の余白（fitPad）の受け持ち。中の枠には付けない */
       var docScrolls = b.classList.contains(PAD_CLS) || (!padUseless && de.scrollHeight > window.innerHeight + 1);
       var want = [];
