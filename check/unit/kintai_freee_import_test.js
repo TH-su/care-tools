@@ -78,7 +78,16 @@ console.log('\n— 1. 読み口（CSV・API） —');
   const apiP = F.fromApiSummaries([{ num: '9901', summary: Object.assign({ start_date: '2026-11-01', end_date: '2026-11-30' }, { work_days: 1, total_work_mins: 480, total_normal_work_mins: 480, total_overtime_except_normal_work_mins: 0,
     total_overtime_within_statutory_work_mins: 0, total_holiday_work_mins: 0, total_latenight_work_mins: 0, num_absences: 0, num_paid_holidays: 0, total_lateness_and_early_leaving_mins: 0 }) }]);
   t('API の start_date・end_date がこの月分の期間と違えばファイルの誤り', /ファイルの期間/.test(F.toImport(apiP, [{ staff_id: 'sP1', emp_code: '9901' }], { period: PER0 }).periodError || '') && !apiP[0].err);
-  t('API の行に必須の欄が無ければその行の誤り', /欄が無い: .*num_absences/.test(F.fromApiSummaries([{ num: '9901', summary: { work_days: 1 } }])[0].err || ''));
+  /* 10月分の本物の集計で見つけた型（2026-11-23）: 有休を使い過ぎた人の残りは freee が負の値で出す。使わない欄なので行を断らない */
+  const apiNeg = F.fromApiSummaries([{ num: '9902', summary: { work_days: 1, total_work_mins: 480, total_normal_work_mins: 480, total_overtime_except_normal_work_mins: 0,
+    total_overtime_within_statutory_work_mins: 0, total_holiday_work_mins: 0, total_latenight_work_mins: 0, num_absences: 0, num_paid_holidays: 1, total_lateness_and_early_leaving_mins: 0,
+    num_paid_holidays_left: -1, num_paid_holidays_and_hours_left: { days: -1, hours: 0 }, total_excess_statutory_work_mins: 0 } }]);
+  const impNeg = F.toImport(apiNeg, [{ staff_id: 'sP2', emp_code: '9902' }], {});
+  t('API: 有休の残りが負の人も取り込める（使わない欄は読まない・src にも入れない）', !apiNeg[0].err && impNeg.ok.length === 1 && impNeg.refused.length === 0
+    && !('num_paid_holidays_left' in apiNeg[0].src) && !('num_paid_holidays_and_hours_left.days' in apiNeg[0].src), [apiNeg[0].err, impNeg.refused]);
+  const csvNeg = F.parseFreeeMonthCsv('従業員番号,勤務日数,総労働時間,所定内労働時間,所定外労働時間,法定内残業時間,法定休日労働時間,深夜労働時間,欠勤日数,有休日数,遅刻早退時間,有休残日数\r\n9902,1,8:00,8:00,0:00,0:00,0:00,0:00,0,1,0:00,-1\r\n');
+  t('CSV: 有休残日数が負でもその行の誤りにしない', csvNeg.rows.length === 1 && !csvNeg.rows[0].err, csvNeg.rows[0]);
+  t('API の行に必須の欄が無ければその行の誤り',/欄が無い: .*num_absences/.test(F.fromApiSummaries([{ num: '9901', summary: { work_days: 1 } }])[0].err || ''));
   const sc = F.srcClean(Object.assign({ ['x'.repeat(61)]: 1, Bad: 1, big: 2000000, ok_a: 1 }, ...Array.from({ length: 70 }, (_, i) => ({ ['k' + String(i).padStart(2, '0')]: i }))));
   t('srcClean: DB が受ける形だけ残す（60字以下・英小文字の名前・0〜1000000・60欄まで）・捨てた数を返す', Object.keys(sc.src).length === 60 && !('Bad' in sc.src) && !('big' in sc.src) && !(('x'.repeat(61)) in sc.src) && sc.dropped === 74 - 60, [Object.keys(sc.src).length, sc.dropped]);
   t('LF だけの改行・引用符の中のカンマ・特別休暇の列の別名', lf.rows.length === 1 && lf.rows[0].code === '99,01' && lf.rows[0].src.num_special_holidays_used === 1, lf.rows);
@@ -92,7 +101,7 @@ console.log('\n— 1. 読み口（CSV・API） —');
     { num: '9904', summary: { work_days: -1 } },
     { num: '9905', summary: null },
   ]);
-  t('API: 入れ子の日数と時間は「親.子」・複数時給は行の数・日ごとの勤怠と日付は読まない', api[0].code === '0903' && api[0].src['num_paid_holidays_and_hours.hours'] === 0 && api[0].src['num_paid_holidays_and_hours_left.hours'] === 4
+  t('API: 入れ子の日数と時間は「親.子」・複数時給は行の数・日ごとの勤怠と日付は読まない', api[0].code === '0903' && api[0].src['num_paid_holidays_and_hours.hours'] === 0 && !('num_paid_holidays_and_hours_left.hours' in api[0].src) /* ★2026-11-23: 使わない欄（有休の残り）は読まない形に変えた（負の値で行を断らないため）。前は 4 を読んでいた */
     && api[0].src['multi_hourly_wages.count'] === 0 && !('work_records' in api[0].src) && !('start_date' in api[0].src) && !('year' in api[0].src) && !api[0].err, api[0]);
   t('API: 負の数・集計の無い人はその行の誤り', /work_days/.test(api[1].err) && /月の集計がありません/.test(api[2].err), [api[1].err, api[2].err]);
   const canon = F.toCanonicalCsv([api[0]]);

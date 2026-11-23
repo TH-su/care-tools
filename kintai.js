@@ -1073,7 +1073,7 @@
       var pp = per(), md0 = function (d) { return (+d.slice(5, 7)) + '月' + (+d.slice(8, 10)) + '日'; };
       h += '<p style="font-size:18px;font-weight:700;margin:8px 0">この取り込みは ' + esc(md0(pp.from)) + '〜' + esc(md0(pp.to)) + ' の分として入ります</p>';
       if (!(data && data.period && +data.period.close_day > 0)) h += '<div class="band warn" role="status">締め日が月末のままです。freee の期間（15日締め）と合わない時は、先に設定で締め日を変えてください。</div>';
-      h += '<div class="row"><label class="btn" for="fi-file">CSV のファイルを選ぶ</label><input type="file" id="fi-file" accept=".csv,text/csv" style="position:absolute;width:1px;height:1px;opacity:0" aria-label="freee の勤怠の月の集計の CSV を選ぶ"></div>';
+      h += '<div class="row"><label for="fi-file">CSV のファイルを選ぶ</label><input type="file" id="fi-file" accept=".csv,text/csv" aria-label="freee の勤怠の月の集計の CSV を選ぶ"></div>';
     }
     if (fiCan() && fiSt && fiSt.ym === ym && fiSt.period.from === per().from && fiSt.period.to === per().to) h += fiTableHtml();
     if (imp.length) {

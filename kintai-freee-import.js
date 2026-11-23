@@ -52,6 +52,7 @@
     { k: 'num_paid_holidays_and_hours_left.hours', t: 'num', role: 'ignore', ja: [] }
   ];
   var BY_KEY = {};
+  function isIgnored(k) { return !!(BY_KEY[k] && BY_KEY[k].role === 'ignore'); }
   for (var fi = 0; fi < FIELDS.length; fi++) BY_KEY[FIELDS[fi].k] = FIELDS[fi];
   var CODE_ALIAS = ['num', 'employee_num', '従業員番号', '従業員コード', '社員番号', '社員コード'];
   var NAME_ALIAS = ['display_name', '氏名', '従業員名', '名前', '表示名'];
@@ -189,6 +190,7 @@
           (row.watch = row.watch || {})[nfkc(h.raw)] = wn == null ? NaN : wn;
         }
         else if (h.kind === 'field' && BY_KEY[h.key].req && (c >= cells.length || nfkc(v) === '' || nfkc(v) === '-')) blank.push(nfkc(h.raw));
+        else if ((h.kind === 'field' || h.kind === 'api') && isIgnored(h.key)) return;   /* 使わない欄（有休の残りなど）は読まない。freee は使い過ぎた人の残りを負の値で出すため（10月分の試し 2026-11-23） */
         else if (h.kind === 'field' || h.kind === 'api') {
           var t = h.kind === 'field' ? BY_KEY[h.key].t : (h.unit === 'min' ? 'min' : 'num');
           var n = valOf(v, t, h.unit);
@@ -213,10 +215,10 @@
       var row = { code: codeNorm(it && it.num != null ? String(it.num) : ''), src: {}, line: i + 1 }, bad = [];
       if (!s) { row.err = '月の集計がありません'; rows.push(row); return; }
       Object.keys(s).forEach(function (k) {
-        if (API_SKIP[k]) return;
+        if (API_SKIP[k] || isIgnored(k)) return;
         var v = s[k];
         if (v && typeof v === 'object' && !Array.isArray(v)) {
-          Object.keys(v).forEach(function (k2) { var n = v[k2]; if (n == null) return; if (typeof n !== 'number' || !isFinite(n) || n < 0) bad.push(k + '.' + k2); else row.src[k + '.' + k2] = n; });
+          Object.keys(v).forEach(function (k2) { var n = v[k2]; if (n == null || isIgnored(k + '.' + k2)) return; if (typeof n !== 'number' || !isFinite(n) || n < 0) bad.push(k + '.' + k2); else row.src[k + '.' + k2] = n; });
           return;
         }
         if (v == null) return;
