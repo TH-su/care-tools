@@ -490,6 +490,11 @@ export function routesFor(opt = {}) {
   const role = opt.role || 'admin', aal = opt.aal || 'aal2';
   const me = role === 'office' ? 'check-office@example.invalid' : 'check-admin@example.invalid';
   const db = seed(opt);
+  /* 給与の設定があって退職済みの職員（opt.retiredStaff・賞与の空の止めの試験だけ・在籍でない＝active false・退職日は支給日より前） */
+  if (opt.retiredStaff) {
+    db.staff.push({ staff_id: 's-12', name: '見本 十二', office: 'facility', emp_code: null, active: false });
+    db.profiles.push({ staff_id: 's-12', effective_from: '2025-04-16', rev: 1, data: Object.assign({}, db.profiles[0].data, { birth_date: '1982-02-02', retire_date: '2026-09-30', allowances: [], commute: { monthly: 0 } }) });
+  }
   const calls = [];
   /* 監査の時刻は、画面の時計（試験が固定した日）にそろえる（opt.now）。本当の今の時刻だと、画面の「直近30日」の範囲から外れて記録が出ない（2026-11-21） */
   const t0 = Date.now();
