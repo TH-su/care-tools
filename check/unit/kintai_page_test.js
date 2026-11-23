@@ -105,7 +105,8 @@ t('暗い表示に対応（画面だけ・紙は白地）', /<meta name="color-s
 t('保存の後の短い知らせは aria-live', /<div class="toast no-print" id="g-toast" role="status" aria-live="polite" hidden><\/div>/.test(H));
 t('印刷の時だけの見出し（.ph は画面で出さない）', /\.ph\{display:none\}/.test(H) && /function printHead\(sub\)/.test(K));
 /* ★v4（2026-11-20）: 中身を変えたので ?v= を 2026-11-20 に上げた（CLAUDE.md の決まり）。期待をその版に改めた */
-t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-2…（kintai.js は 2026-11-21 に上げた）', /kintai\.js\?v=2026-11-21/.test(H) && /kintai-calc\.js\?v=2026-11-21/.test(H) && /kintai-calc\.js\?v=2026-11-21/.test(HC));
+/* ★freee の月の集計の取り込み（2026-11-23・統合 0123）で kintai.js・kintai-calc.js を ?v=2026-11-23.1 に上げたので期待の版を改めた */
+t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-2…（kintai.js は 2026-11-23 に上げた）', /kintai\.js\?v=2026-11-23/.test(H) && /kintai-calc\.js\?v=2026-11-23/.test(H) && /kintai-calc\.js\?v=2026-11-23/.test(HC));
 
 console.log('\n— 8. 打刻画面の v3（出勤を押す → 氏名 → パスコード） —');
 const pendClock = [];
@@ -304,7 +305,8 @@ t('反証レビューの指摘1:「今日」は今日のカレンダー月へ移
 /* ★反証レビュー（2026-11-21・有休の日数の鍵）で kintai.js を ?v=2026-11-21.4、kintai-calc.js を ?v=2026-11-21.2 に上げたので期待の版を改めた */
 /* ★v5 段5（2026-11-21・申請のタブとスマホの登録）で kintai.js を ?v=2026-11-21.5 に上げたので期待の版を改めた（kintai-calc.js は変えていない） */
 /* ★0120（2026-11-21・締めの前の要確認）で kintai.js を ?v=2026-11-21.6、kintai-calc.js を ?v=2026-11-21.3 に上げたので期待の版を改めた */
-t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-21.6・2026-11-21.3（両画面と給与の画面でそろえる）', /kintai\.js\?v=2026-11-21\.6"/.test(H) && /kintai-calc\.js\?v=2026-11-21\.3"/.test(H) && /kintai-calc\.js\?v=2026-11-21\.3"/.test(HC) && /kintai-calc\.js\?v=2026-11-21\.3"/.test(read('payroll.html')));
+/* ★freee の月の集計の取り込み（2026-11-23・統合 0123）で kintai.js・kintai-calc.js を ?v=2026-11-23.1 に上げたので期待の版を改めた */
+t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-23.1・2026-11-23.1（両画面と給与の画面でそろえる）', /kintai\.js\?v=2026-11-23\.1"/.test(H) && /kintai-calc\.js\?v=2026-11-23\.1"/.test(H) && /kintai-calc\.js\?v=2026-11-23\.1"/.test(HC) && /kintai-calc\.js\?v=2026-11-23\.1"/.test(read('payroll.html')));
 
 const await_pending = [];   /* 動かして確かめる試験（Promise）を最後に待つ */
 console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（2026-11-20・凍結した仕様書 ROOT-v4-master-leave.md） —');
@@ -324,7 +326,7 @@ console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（
   /* ★給与の側の反証レビューの直し（2026-11-20）: kintai-calc.js を 2026-11-20.6 に上げたので、その期待の版を改めた */
   /* ★再確認の反証の直し（2026-11-20）: kintai-calc.js を 2026-11-20.7 に上げたので、その期待の版を改めた */
   /* ★反証レビュー（2026-11-21）: kintai-calc.js を 2026-11-21.2 に上げたので、その期待の版を改めた */
-  t('kintai-leave.js は kintai-calc.js の後・kintai.js の前に読む（?v=2026-11-20.4・反証レビューの直しで上げた）', H.indexOf('<script src="kintai-calc.js?v=2026-11-21.3"></script>') >= 0 && H.indexOf('<script src="kintai-leave.js?v=2026-11-20.4"></script>') > H.indexOf('kintai-calc.js?v=') && H.indexOf('kintai-leave.js?v=') < H.indexOf('kintai.js?v='));
+  t('kintai-leave.js は kintai-calc.js の後・kintai.js の前に読む（?v=2026-11-20.4・反証レビューの直しで上げた）', H.indexOf('<script src="kintai-calc.js?v=2026-11-23.1"></script>') >= 0 && H.indexOf('<script src="kintai-leave.js?v=2026-11-20.4"></script>') > H.indexOf('kintai-calc.js?v=') && H.indexOf('kintai-leave.js?v=') < H.indexOf('kintai.js?v='));
   /* iPhone の幅（640px 以下）だけの見た目の直し（2026-11-20）: 窓の欄の見出しを縦1字にしない・枠（fieldset）を窓の外へ広げない・突き合わせの表は1人ずつの並び */
   {
     const mq = (H.match(/@media \(max-width:640px\)\{[\s\S]*?\n\s*table\.mt td\.empty\{display:block\}\}/) || [''])[0];
