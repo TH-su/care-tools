@@ -68,11 +68,12 @@ t('取り込みの CSV はメモリだけ（読んだらファイルの選びを
 t('HTML を入れるのは put の1か所だけ', (J.match(/\.innerHTML/g) || []).length === 1);
 
 console.log('\n— 4. タブの復元 —');
-t('タブのホワイトリスト5つ', /var TABS = \['run', 'slip', 'export', 'profile', 'settings'\];/.test(J));
+/* ★賞与のタブ（2026-11-23・設計 CONTRACT-bonus-v1.md §4「payroll_tab に 'bonus' を足す」）でタブが1つ増えたので、ホワイトリストとタブの数の期待を改めた（ほかの決まりは同じ） */
+t('タブのホワイトリスト6つ（賞与を足した）', /var TABS = \['run', 'slip', 'export', 'bonus', 'profile', 'settings'\];/.test(J));
 t('読み戻しはホワイトリスト・設定は管理者だけ・それ以外は今月の給与', /tab = TABS\.indexOf\(t\) >= 0 && \(t !== 'settings' \|\| isAdmin\(\)\) \? t : 'run';/.test(boot));
 t('切り替えも同じ決まり', /if \(TABS\.indexOf\(t\) < 0 \|\| \(t === 'settings' && !isAdmin\(\)\)\) t = 'run';/.test(J));
 t('月分は端末に残さない（今日の月分から始める）', /ym = todayYm\(\); \$\('p-ym'\)\.value = ym;/.test(boot) && !/lsSet\([^)]*ym/.test(J));
-t('画面のタブは5つ（設定は初めは隠す）', (H.match(/role="tab" data-tab="/g) || []).length === 5 && /data-tab="settings" hidden>設定</.test(H));
+t('画面のタブは6つ（賞与を足した・設定は初めは隠す）', (H.match(/role="tab" data-tab="/g) || []).length === 6 && /data-tab="bonus">賞与</.test(H) && /data-tab="settings" hidden>設定</.test(H));
 
 console.log('\n— 5. 確定の窓 —');
 const oc = fnBody(J, 'openConfirm', 'function confirmGo');
@@ -281,7 +282,107 @@ console.log('\n— 給与専用の暗証番号（統合 0110・2026-11-20 代表
   /* ★反証レビュー（2026-11-21・有休の日数の鍵の受け取り）: payroll.js を 2026-11-21.2 に上げたので、期待の版を改めた */
   /* ★統合 0118 の受け渡し（確定できない警告の DB の断り・もう一度の書き出し・駐車場の料金・2026-11-21）で payroll.js を 2026-11-21.3 に上げたので、期待の版を改めた */
   /* ★取り込みの「見出しから読めた項目」が入職順の並べ直しで消えていた直し（2026-11-21）で 2026-11-21.4 に上げたので、期待の版を改めた */
-  t('payroll.js の版を上げた（2026-11-21.4）', /payroll\.js\?v=2026-11-21\.4"/.test(H));
+  /* ★賞与のタブ（2026-11-23）で payroll.js を 2026-11-23.3 に上げたので、期待の版を改めた */
+  t('payroll.js の版を上げた（2026-11-23.3）', /payroll\.js\?v=2026-11-23\.3"/.test(H));
+}
+
+
+console.log('\n— 賞与のタブ（統合 0121・2026-11-23 設計 CONTRACT-bonus-v1.md §4）—');
+{
+  const BON = J.slice(J.indexOf('/* ── 賞与（2026-11-23 足した'), J.indexOf('/* ── 職員の給与設定 ── */'));
+  /* 0121 の関数の見出し（care-backend の下書き PR #206 の supabase/migrations/0121_payroll_bonus.sql）の引数の名前。打ち間違えると PGRST202 で「準備中」に化けるので固定する */
+  const SIG = { payroll_bonus_bootstrap: ['p_bonus_id'], payroll_bonus_create: ['p_pay_date', 'p_title'], payroll_bonus_config_put: ['p_bonus_id', 'p_config', 'p_rev'],
+    payroll_bonus_save: ['p_bonus_id', 'p_items', 'p_fingerprint', 'p_rev'], payroll_bonus_confirm: ['p_bonus_id', 'p_rev'], payroll_bonus_unconfirm: ['p_bonus_id', 'p_reason'],
+    payroll_bonus_delete: ['p_bonus_id', 'p_rev'], payroll_bonus_bank_export: ['p_bonus_id'], payroll_bonus_export_log: ['p_bonus_id', 'p_kind'] };
+  const calls = [...BON.matchAll(/rpc\('(payroll_bonus_[a-z_]+)', \{([^}]*)\}/g)].map((m) => [m[1], m[2].split(',').map((x) => x.split(':')[0].trim()).filter(Boolean).sort().join()]);
+  t('賞与の口は9本とも 0121 の引数の名前で呼ぶ（一覧も p_bonus_id を鍵ごと送る）', Object.keys(SIG).every((n) => calls.some((c) => c[0] === n)) && calls.every((c) => SIG[c[0]] && SIG[c[0]].slice().sort().join() === c[1])
+    && /rpc\('payroll_bonus_bootstrap', \{ p_bonus_id: bSel \|\| null \}\)/.test(BON), calls);
+  t('年末調整の口は payroll_ytd_get(p_year)・無い・断られた時は黙って飛ばす', /rpc\('payroll_ytd_get', \{ p_year: yr \}\)/.test(BON) && /if \(!bonusNoDb\(e\) && !\(e && e\.code === '42501'\)\) note\('年末調整の記録', e\);/.test(BON));
+  t('関数の無い DB（42883・PGRST202 など）では「賞与はまだ使えません（データベースの準備中）」だけ出して何もしない・月の給与の noDb は変えない',
+    P.bonusNoDb({ code: '42883' }) && P.bonusNoDb({ code: 'PGRST202' }) && !P.bonusNoDb({ code: '42501' }) && /if \(bNoDb\) return '<div class="cd"><h2>賞与<\/h2><div class="band warn" role="status">賞与はまだ使えません（データベースの準備中）。<\/div><\/div>';/.test(BON)
+    && /function noDb\(e\) \{ var c = e && e\.code; return c === '42P01' \|\| c === 'PGRST205' \|\| c === 'PGRST202'; \}/.test(J));
+  t('賞与の部分に localStorage・sessionStorage・console・innerHTML が無い（タブは今の lsSet(LS_TAB) だけ）', !/localStorage|sessionStorage|console\.|innerHTML/.test(BON));
+  t('10分で隠す時・鍵の画面・覆いで賞与の紙と読んだ物を捨てる', /put\(\$\('p-print'\), ''\);\n    bPrint = null;/.test(J) && /members = null;\n    bb = null; bGen\+\+; bLoading = false; bPrint = null;/.test(J) && /members = null;\n    bGen\+\+; bLoading = false; bonusClear\(\);/.test(J));
+  t('賞与の断りの stale は賞与だけ読み直す（月の給与の handleStale に渡さない）・権限の断りは今の fail', /if \(e && e\.payroll === 'stale'\) \{ bNotice = \{ cls: 'warn', text: BNG\.stale \}; return bonusLoad\(true\); \}/.test(BON) && /if \(e && e\.code === '42501'\) return fail\(e, where\);/.test(BON) && !/handleStale/.test(BON));
+  t('全銀は種別12（設定の写しで上書き）・振込指定日は支給日・スイッチ zengin_enabled の裏', /zengin: Object\.assign\(\{\}, obj\(c\.zengin\), \{ kind: '12' \}\)/.test(BON) && /payDate: bb\.run\.pay_date/.test(BON) && /bonusCfgOf\(\)\.zengin_enabled !== true\) return;/.test(BON));
+  t('確定のボタンは止めの警告があれば押せない（一覧の画面も窓の中も）・押した時も読み直して止めを確かめ直す',
+    /data-act="b-confirm"' \+ \(bb\.items\.length && !bonusDirty\(\) && !run\.stale && !blk\.length \? '' : ' disabled'\)/.test(BON) && /data-act="b-confirm-go"' \+ \(blk\.length \? ' disabled' : ''\)/.test(BON)
+    && /var blk = bonusBlocks\(fresh\.items, fresh\.prev\);/.test(BON));
+  t('明細の紙は SUPrint の別の名前（bonus-slips）・今の月の明細と同じ型（.slip）に「賞与明細」・施設名と印刷日の印', /define\('bonus-slips', \{ label: '賞与明細', paper: 'A4 portrait'/.test(BON) && /<section class="slip"/.test(BON) && /<h3>賞与明細　/.test(BON) && /data-su-print-head="name date"/.test(BON));
+
+  /* 動かして確かめる: 本物の computeBonus の出力 → 保存の形に写す → 0121 の形の確かめの写し（check/fixtures/payroll.mjs の bonusItemErr）が通す */
+  const PC = require(path.join(ROOT, 'payroll-calc.js')), PX = require(path.join(ROOT, 'payroll-export.js'));
+  win.PayrollCalc = PC; win.PayrollExport = PX;
+  const ALLOWED = ['gross', 'deduct', 'net', 'social', 'tax', 'lines', 'std', 'ins', 'warns', 'ver', 'taxable', 'tax_base', 'P', 'employer', 'taxMethod', 'rate', 'prev_kind'];
+  const base = (o) => Object.assign({ pay_type: 'monthly', base: 250000, birth_date: '1980-05-01', entry_date: '2020-04-01', retire_date: null,
+    ins: { health: { on: true, std: 260000 }, pension: { on: true, std: 260000 }, emp: { on: true } }, tax: { col: 'kou', dependents: 0, dependents_checked: true } }, o);
+  const defs = [{ code: 'meal', name: '見本の控除', sec: 'deduct', calc: 'fixed', attrs: {} }];
+  const cases = [
+    ['甲欄・前月の給与あり（給与の記録）・控除の定義の行あり', base({}), [{ code: 'bonus', amount: 300000 }, { code: 'meal', amount: 1000 }], { state: 'ok', items: { 's-1': { P: 213211 } } }, null, null],
+    ['資格を失う月（退職の日の前に払う）', base({ retire_date: '2026-12-26' }), [{ code: 'bonus', amount: 200000 }], { state: 'ok', items: { 's-1': { P: 180000 } } }, null, null],
+    ['産休・育休の免除の期間', base({ ins: { health: { on: true, std: 260000 }, pension: { on: true, std: 260000 }, emp: { on: true }, exempt: [{ from_ym: '2026-11', to_ym: '2027-02' }] } }), [{ code: 'bonus', amount: 250000 }], { state: 'none', items: {} }, { none: true, source: 'freee' }, null],
+    ['乙欄・年末調整の記録の前月の給与', base({ tax: { col: 'otsu', dependents: 0 } }), [{ code: 'bonus', amount: 120000 }], { state: 'none', items: {} }, null, 95000],
+    ['源泉の区分 none・手入力の前月の給与', base({ tax: { col: 'none' }, ins: { health: { on: false }, pension: { on: false }, emp: { on: false } } }), [{ code: 'bonus', amount: 50000 }], { state: 'none', items: {} }, { P: 88000, source: 'paper' }, null],
+    ['前月の給与が10倍を超える（月額表の方法）', base({}), [{ code: 'bonus', amount: 2000000 }], { state: 'ok', items: { 's-1': { P: 150000 } } }, null, null],
+  ];
+  pend.push(import(path.join(ROOT, 'check/fixtures/payroll.mjs')).then((FX) => {
+    t('偽の DB の賞与の引数の組も 0121 と同じ', Object.keys(SIG).every((n) => FX.BONUS_ARGS[n] && FX.BONUS_ARGS[n].slice().sort().join() === SIG[n].slice().sort().join()) && Object.keys(FX.BONUS_ARGS).length === 9);
+    cases.forEach(([nm, prof, lines, prev, manual, ytdP]) => {
+      const pv = P.bonusPrevOf(prev, 's-1', manual, ytdP);
+      const out = PC.computeBonus({ bonus: { pay_date: '2026-12-24', lines }, settings: { prefecture: '43' }, profile: prof, allowanceDefs: defs,
+        prev: { kind: pv.kind, P: pv.P, manualP: pv.manualP }, fyStdSum: 0, fyPriorStd: 0, monthStdSum: 0, count12: 0, count12Other: 0 });
+      const sv = P.bonusToSave(out, 's-1', pv);
+      const err = FX.bonusItemErr(JSON.parse(JSON.stringify(sv)));
+      t('保存の形（' + nm + '）: 0121 の形の確かめが通す・許された鍵だけ・std.raw と T と stop を落とす', err === null && Object.keys(sv.item).every((k) => ALLOWED.includes(k)) && !('raw' in sv.item.std) && !('T' in sv.item)
+        && sv.item.warns.every((w) => !('stop' in w)) && sv.item.tax_base === out.T && out.gross > 0 && Object.keys(sv).sort().join() === 'item,prev_manual,staff_id', { err, keys: Object.keys(sv.item), warns: out.warns });
+    });
+    const badKey = P.bonusToSave(PC.computeBonus({ bonus: { pay_date: '2026-12-24', lines: [{ code: 'bonus', amount: 100000 }] }, settings: {}, profile: base({}), prev: { kind: 'none' }, fyPriorStd: 0 }), 's-1', P.bonusPrevOf({ state: 'none' }, 's-1', { none: true }, null));
+    badKey.item.std.raw = 100000;
+    t('写しの確かめは知らない鍵（std.raw）を断る（試験の確かめが効いている）', FX.bonusItemErr(badKey) === 'badshape');
+  }));
+
+  t('前月の給与: 自社の確定した明細 ＞ 年末調整の記録 ＞ 手入力（記録から取った P も prev_manual に入れて送る）', (() => {
+    const a = P.bonusPrevOf({ state: 'ok', items: { s: { P: 100 } } }, 's', { P: 90, source: 'freee' }, 95);
+    const b = P.bonusPrevOf({ state: 'ok', items: {} }, 's', { P: 90, source: 'freee' }, 95);
+    const c = P.bonusPrevOf({ state: 'none' }, 's', { P: 90, source: 'freee' }, null);
+    return a.kind === 'db' && a.P === 100 && a.prev_kind === 'ok' && a.manualP === 90 && b.kind === 'ytd' && b.P === 95 && b.prev_kind === 'manual' && b.send.source === 'ytd' && b.send.P === 95
+      && c.kind === 'manual' && c.send.P === 90 && c.prev_kind === 'manual';
+  })());
+  t('前月の給与: 「前月なし」は {P:null, none:true}・何も無ければ止め（prev_missing）・前月の給与が下書きなら手入力があっても止め', (() => {
+    const n = P.bonusPrevOf({ state: 'none' }, 's', { none: true, source: 'freee' }, null), m = P.bonusPrevOf({ state: 'none' }, 's', null, null), u = P.bonusPrevOf({ state: 'draft' }, 's', { P: 1, source: 'freee' }, 5);
+    return n.kind === 'none' && n.send.none === true && n.send.P === null && n.prev_kind === 'none' && m.kind === 'missing' && m.send === null && m.dbBlock === 'prev_missing' && m.prev_kind === null
+      && u.kind === 'unconfirmed' && u.dbBlock === 'prev_unconfirmed';
+  })());
+  const BBK = { prev_missing: 1, leave_check: 1, tax_col: 1 };
+  t('止めの警告: 画面だけの止め（leave_check など）・源泉の区分 none の人の前月の給与なし（DB と同じ）で止め、手入力があれば止めない', (() => {
+    const pvNone = { state: 'none', items: {} };
+    const a = P.bonusBlocks([{ staff_id: 's', name: '見本 一', warns: [{ code: 'leave_check', msg: 'x' }], prev_manual: { none: true } }], pvNone, BBK);
+    const b = P.bonusBlocks([{ staff_id: 's', name: '見本 一', warns: [], prev_manual: null }], pvNone, BBK);
+    const c = P.bonusBlocks([{ staff_id: 's', name: '見本 一', warns: [{ code: 'four_times' }], prev_manual: { P: 1, none: false, source: 'freee' } }], pvNone, BBK);
+    const d = P.bonusBlocks([{ staff_id: 's', name: '見本 一', warns: [], prev_manual: null }], { state: 'ok', items: { s: { P: 100 } } }, BBK);
+    return a.length === 1 && /見本 一：x/.test(a[0]) && b.length === 1 && /前月の給与/.test(b[0]) && c.length === 0 && d.length === 0;
+  })());
+  t('年末調整の記録から: 前月の給与の P・この年度に他所で払った標準賞与額（千円未満切り捨て）・過去12か月の回の数（自社の行と taxable の無い行は使わない）', (() => {
+    const r = P.bonusYtd([
+      { staff_id: 'a', pay_date: '2026-11-25', kind: 'salary', source: 'freee', data: { taxable: 250000, si_health: 12000, si_pension: 22000, si_emp: 1200 } },
+      { staff_id: 'b', pay_date: '2026-11-25', kind: 'salary', source: 'freee', data: { gross: 1 } },
+      { staff_id: 'a', pay_date: '2026-07-10', kind: 'bonus', source: 'freee', data: { gross: 301234 } },
+      { staff_id: 'a', pay_date: '2026-03-10', kind: 'bonus', source: 'freee', data: { gross: 100000 } },
+      { staff_id: 'a', pay_date: '2026-08-10', kind: 'bonus', source: 'app', data: { gross: 500000 } },
+    ], '2026-12-24');
+    return r.P.a === 214800 && !('b' in r.P) && r.fy.a === 301000 && r.cnt.a === 2;
+  })());
+  t('賞与支払届の CSV: 決めた列だけ（個人番号・基礎年金番号なし）・千円未満切り捨ては上限の前の額・70歳以上と同じ月の合算の印・保険の無い人は載せない', (() => {
+    const csv = P.bonusShoyoCsv([{ staff_id: 'a', name: '見本 一', gross: 1234567, std: { health: 1234000, pension: 1234000 }, warns: [] }, { staff_id: 'b', name: '見本 二', gross: 99999, std: { health: 99000, pension: 0 }, warns: [] },
+      { staff_id: 'c', name: '見本 三', gross: 50000, std: { health: 0, pension: 0 }, warns: [] }], [{ staff_id: 'a', data: { birth_date: '1950-01-01' } }, { staff_id: 'b', data: { birth_date: '1990-01-01' } }], '2026-12-24', { b: 100000 });
+    const rows = csv.trim().split('\r\n');
+    return rows[0] === '氏名,生年月日,支給日,賞与額,千円未満切り捨ての額,70歳以上の印,同じ月の合算の印' && rows.length === 3 && rows[1] === '見本 一,1950-01-01,2026-12-24,1234567,1234000,1,' && rows[2] === '見本 二,1990-01-01,2026-12-24,99999,99000,,1' && !/個人番号|基礎年金/.test(csv);
+  })());
+  const nb = P.bonusNorm({ ok: true, runs: [{ bonus_id: '2026-12-24#1', pay_date: '2026-12-24', title: '見本', status: 'weird', count: 2, gross: 5 }, { bonus_id: 'bad' }], settings: 'x',
+    run: { bonus_id: '2026-12-24#1', pay_date: '2026-12-24', title: '見本', status: 'draft', rev: 3, config: { fy_prior_std: { a: 1000 } } }, prev: { state: 'ok', ym: '2026-11', items: { a: { P: 'x' }, b: { P: 5 } } },
+    items: [{ staff_id: 'a', item: { gross: 1, lines: 'x' }, prev_manual: { P: 1 } }, { staff_id: 'z' }], fingerprint: 'b1:x', ctx: { fy_std: { a: 'q', b: 3 } } });
+  t('bonusNorm: 崩れた形は捨てる・P は数だけ・指紋は文字のまま', nb.runs.length === 1 && nb.runs[0].status === 'draft' && nb.run.rev === 3 && nb.prev.items.a.P === null && nb.prev.items.b.P === 5
+    && nb.items.length === 1 && Array.isArray(nb.items[0].lines) && nb.fingerprint === 'b1:x' && !('a' in nb.ctx.fy_std) && nb.ctx.fy_std.b === 3);
 }
 
 Promise.all(pend).catch((e) => { fail++; console.log('  ✗ 動かして確かめる試験が止まった  → ' + e.message); }).then(() => {

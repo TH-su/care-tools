@@ -18,7 +18,7 @@
  */
 (function () {
   'use strict';
-  var TABS = ['run', 'slip', 'export', 'profile', 'settings'];
+  var TABS = ['run', 'slip', 'export', 'bonus', 'profile', 'settings'];   /* 'bonus' は賞与（2026-11-23 足した・統合 0121） */
   var LS_TAB = 'payroll_tab';
   var IDLE_MS = 10 * 60 * 1000;
   var gen = 0, view = 'boot', tab = 'run', ym = null, bs = null, role = null, loadErr = null;
@@ -568,13 +568,14 @@
     $('p-period').textContent = bs ? periodText() : '';
     if (masked) { paintMasked(); return; }
     var h;
-    if (!bs) h = loadErr ? '<div class="band ng" role="alert">' + esc(loadErr) + '</div><button type="button" class="btn" data-act="reload">もう一度読む</button>' : '<div class="cd" aria-busy="true"><span class="skel w8"></span><span class="skel w6"></span><span class="skel w8"></span><span class="skel w4"></span></div>';
+    if (tab === 'bonus') h = bonusHtml();   /* 賞与は月の給与の読み込み（bs）と別に読む */
+    else if (!bs) h = loadErr ? '<div class="band ng" role="alert">' + esc(loadErr) + '</div><button type="button" class="btn" data-act="reload">もう一度読む</button>' : '<div class="cd" aria-busy="true"><span class="skel w8"></span><span class="skel w6"></span><span class="skel w8"></span><span class="skel w4"></span></div>';
     else if (tab === 'run') h = runHtml();
     else if (tab === 'slip') h = slipTabHtml();
     else if (tab === 'export') h = exportHtml();
     else if (tab === 'profile') h = profileHtml();
     else h = isAdmin() ? settingsHtml() : '';
-    put($('p-main'), bandsHtml() + h);
+    put($('p-main'), (tab === 'bonus' ? '' : bandsHtml()) + h);
   }
 
   function statusText() {
@@ -816,6 +817,704 @@
       return load(true);
     })['catch'](function (e) { done(); fail(e, '書き出し'); });
     });
+  }
+
+  /* ── 賞与（2026-11-23 足した・賞与の計算 v1 §4・統合 0121・文言と位置は仮置き）──
+     ・回の一覧 →「新しい賞与」→ 回を開く: 1人ずつの賞与額・前月の給与・計算の結果・警告 → 下書き保存 → 確定 → 明細の印刷・振込データ（全銀 種別12）・賞与支払届に写す値の CSV
+     ・月の給与の状態（bs・calc・ym）とは別に持ち、月の給与の関数（items・frozen・payDate・slipHtml・fail の stale）は呼ばない
+     ・計算は PayrollCalc.computeBonus。保存は 0121 の payroll_bonus_item_err が許す鍵だけに写す（bonusToSave）
+     ・前月の給与は DB の自社の確定した明細（bootstrap の prev）＞ 年末調整の記録（payroll_ytd_get・無い DB では黙って飛ばす）＞ 手入力。
+       DB の確定は「自社の明細の P が無いのに prev_manual が無い」を自分で止めるので、記録から取った P も prev_manual に入れて送る
+     ・関数の無い DB（0121 の前）では「賞与はまだ使えません（データベースの準備中）」と出して何もしない
+     ・端末に残すのはタブ（payroll_tab の 'bonus'）だけ。金額・氏名は残さない */
+  var bb = null, bErr = null, bNoDb = false, bSel = null, bIn = {}, bCfgIn = null, bCalc = null, bDirty = false, bCfgDirty = false, bGen = 0, bLoading = false;
+  var bYtd = null, bNotice = null, bPrint = null, bSlipSid = null, bCfgOpen = false;
+  /* 関数の無い DB: PostgREST の「関数が見つからない」（PGRST202）・Postgres の 42883、表の無い DB（42P01・PGRST205） */
+  function bonusNoDb(e) { var c = e && e.code; return c === '42883' || c === 'PGRST202' || c === '42P01' || c === 'PGRST205'; }
+  var BNG = {
+    stale: '計算した後に給与の設定・手当・前月の給与・ほかの賞与の回のどれかが変わりました。読み直したので「計算する」で計算し直し、下書き保存からやり直してください。',
+    conflict: '別の人が先に保存しました。読み直してから、もう一度行ってください。',
+    confirmed: 'この賞与はもう確定しています。直す時は、管理者が確定を取り消してください。',
+    notconfirmed: 'この賞与はまだ確定していません。確定してから書き出してください。',
+    norun: 'この賞与の回が見つかりません。読み直してください。',
+    badshape: '送った値の形が違いました。読み直してください。',
+    baddate: '支給日の形が違います。',
+    badsum: '保存した明細の合計が合いません。「計算する」で計算し直して、下書き保存からやり直してください。',
+    empty: '明細がありません。賞与額を入れて計算し、下書き保存してから確定してください。',
+    toobig: '送る量が大きすぎます。',
+    noprofile: '給与の設定が無い職員が入っています。「職員の給与設定」で設定してから、計算し直してください。',
+    nostaff: 'シフトの職員に見つからない人です。読み直してください。',
+    full: '同じ支給日の賞与の回は9回までです。',
+    order: '同じ年度に、この回より後の支給日の賞与がもう確定しています。先に後の回の確定を取り消してください。',
+    blockwarn: '確定できない警告（前月の給与・率表・税額表・雇用保険の率・給与の設定）が残っているので、確定できません。直してから計算し直してください。',
+    reason: '理由を書いてください。',
+    exported: 'この賞与の振込データはもう書き出していました。読み直したので、もう一度作る時は「振込データ」をもう一度押し、出てくる確かめの窓で「OK」を押してください（確かめてから10分以内）。',
+    notexported: 'この賞与の振込データはまだ書き出していません。読み直してください。',
+    zengin_off: '振込データ（全銀形式）の書き出しは、管理者が「設定」で使うようにするまで使えません。',
+    bankstale: '確定した後に振込先の口座が直されました。振込データは作りません。管理者が確定を取り消して、確かめ直してから確定し直してください。'
+  };
+  var BONUS_STATUS = { draft: '下書き', confirmed: '確定済み', exported: '確定済み・書き出し済み' };
+  function bonusMsg(e) { return e && e.payroll ? (BNG[e.payroll] || 'うまくいきませんでした（' + e.payroll + '）。') : friendly(e); }
+  /* 賞与の断りは先にここで受け、権限（42501）と二段階のログインだけを月の給与と同じ fail に渡す（fail の stale は月の給与を読み直すため渡さない） */
+  function bonusFail(e, where) {
+    if (e && e.payroll === 'stale') { bNotice = { cls: 'warn', text: BNG.stale }; return bonusLoad(true); }
+    if (e && e.code === '42501') return fail(e, where);
+    if (isAal(e)) return fail(e, where);
+    if (bonusNoDb(e)) { bNoDb = true; bb = null; paint(); return null; }
+    if (!(e && e.payroll)) note(where, e);
+    say(bonusMsg(e));
+    return null;
+  }
+  function bonusDirty() { return bDirty || bCfgDirty; }
+  function bonusClear() { bb = null; bCalc = null; bIn = {}; bCfgIn = null; bDirty = false; bCfgDirty = false; bPrint = null; bYtd = null; bNotice = null; bSlipSid = null; }
+  /* 受け取った形を確かめる（壊れた値で画面を止めない）。形は統合 0121 の payroll_bonus_bootstrap */
+  function bonusNorm(r) {
+    r = obj(r);
+    var st = obj(r.settings), run = r.run && typeof r.run === 'object' ? r.run : null, pv = obj(r.prev), ctx = obj(r.ctx);
+    var nmap = {}; arr(r.staff).forEach(function (x) { if (x && typeof x.staff_id === 'string') nmap[x.staff_id] = String(x.name || ''); });
+    var idOk = function (v) { return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}#[1-9]$/.test(v); };
+    var numMap = function (m) { var o = {}; m = obj(m); Object.keys(m).forEach(function (k) { var n = Number(m[k]); if (isFinite(n)) o[k] = n; }); return o; };
+    var pitems = {}; obj(pv.items) && Object.keys(obj(pv.items)).forEach(function (k) { var x = obj(pv.items[k]); pitems[k] = { gross: typeof x.gross === 'number' ? x.gross : null, P: typeof x.P === 'number' && isFinite(x.P) ? x.P : null }; });
+    var out = {
+      runs: arr(r.runs).filter(function (x) { return x && idOk(x.bonus_id); }).map(function (x) {
+        return { bonus_id: x.bonus_id, pay_date: isDate(x.pay_date) ? x.pay_date : x.bonus_id.slice(0, 10), title: String(x.title || ''), status: BONUS_STATUS[x.status] ? x.status : 'draft',
+          rev: num(x.rev), count: num(x.count), gross: num(x.gross), stale: x.stale === true };
+      }),
+      settings: { config: obj(st.config), rev: num(st.rev) },
+      allowances: arr(r.allowances).filter(function (a) { return a && typeof a.code === 'string'; }).map(function (a) { return Object.assign({}, obj(a.def), { code: a.code, rev: num(a.rev) }); }),
+      names: nmap,
+      run: run && idOk(run.bonus_id) ? { bonus_id: run.bonus_id, pay_date: isDate(run.pay_date) ? run.pay_date : run.bonus_id.slice(0, 10), title: String(run.title || ''),
+        status: BONUS_STATUS[run.status] ? run.status : 'draft', rev: num(run.rev), config: obj(run.config), totals: obj(run.totals), stale: run.stale === true,
+        saved_at: run.saved_at || null, confirmed_at: run.confirmed_at || null, exported_at: run.exported_at || null } : null,
+      profiles: arr(r.profiles).filter(function (p) { return p && typeof p.staff_id === 'string'; }).map(function (p) {
+        return { staff_id: p.staff_id, name: String(p.name || nmap[p.staff_id] || ''), rev: num(p.rev), data: obj(p.data), bank_last4: arr(p.bank_last4).filter(function (b) { return b && typeof b === 'object'; }) };
+      }),
+      items: arr(r.items).filter(function (x) { return x && typeof x.staff_id === 'string' && x.item && typeof x.item === 'object'; }).map(function (x) {
+        var it = Object.assign({}, x.item), fr = obj(x.frozen);
+        it.staff_id = x.staff_id; it.name = String(x.name || nmap[x.staff_id] || ''); it.lines = arr(it.lines); it.warns = arr(it.warns);
+        it.std = obj(it.std); it.ins = obj(it.ins);
+        it.prev_manual = x.prev_manual && typeof x.prev_manual === 'object' ? x.prev_manual : null;
+        ['gross', 'deduct', 'net', 'social', 'tax'].forEach(function (k) { if (x[k] != null) it[k] = num(x[k]); });
+        if (Array.isArray(fr.bank_last4)) it.bank_last4 = fr.bank_last4.filter(function (b) { return b && typeof b === 'object'; });
+        if (fr.company_name) it.company_name = String(fr.company_name);
+        return it;
+      }),
+      prev: { state: pv.state === 'ok' || pv.state === 'draft' ? pv.state : 'none', ym: isYm(pv.ym) ? pv.ym : null, items: pitems },
+      ctx: { fy_std: numMap(ctx.fy_std), month_std: numMap(ctx.month_std), count_12m: numMap(ctx.count_12m) },
+      fingerprint: typeof r.fingerprint === 'string' ? r.fingerprint : null
+    };
+    /* 確定を取り消した下書きにも DB は確定の時の写し（口座の下4桁・事業者名）を返す（0121 は写しを消さない）。下書きの間は今の値を使う */
+    if (!out.run || (out.run.status !== 'confirmed' && out.run.status !== 'exported')) out.items.forEach(function (it) { delete it.bank_last4; delete it.company_name; });
+    return out;
+  }
+  /* 年末調整の記録（payroll_ytd_get・統合 0122 の設計 ROOT-yearend.md A の形・実物はまだ無い＝形は防御的に確かめる）から、
+     前月の給与の P・この年度に他所で払った標準賞与額・過去12か月の他所の回の数を人ごとに作る（純関数）
+       P: 支給日の前の暦月に払った kind 'salary' の行（いちばん遅い1行）の taxable −（si_health＋si_care＋si_support＋si_pension＋si_emp＋si_other）。
+          taxable が数でない行は使わない（0 として「前月なし」に落とさない）。社保の鍵が無ければ 0（設計の「無い鍵は 0 扱い」）
+       fy: 同じ年度（4/1〜）で支給日より前の kind 'bonus'・source が app でない行の gross の千円未満切り捨ての和
+       cnt: 支給日の12か月前の日より後〜支給日より前の、kind 'bonus'・source が app でない・gross が1円以上の行の数（仮置き） */
+  function bonusYtd(rows, payDate) {
+    var out = { P: {}, fy: {}, cnt: {} };
+    if (!isDate(payDate)) return out;
+    var pm = shiftYm(payDate.slice(0, 7), -1), y = +payDate.slice(0, 4), m = +payDate.slice(5, 7);
+    var fyFrom = (m >= 4 ? y : y - 1) + '-04-01', from12 = (y - 1) + payDate.slice(4);
+    var latest = {};
+    var yen0 = function (v) { return typeof v === 'number' && isFinite(v) ? v : (v == null ? 0 : NaN); };
+    arr(rows).forEach(function (r) {
+      if (!r || typeof r.staff_id !== 'string' || !isDate(r.pay_date)) return;
+      var d = obj(r.data), sid = r.staff_id;
+      if (r.kind === 'salary' && r.pay_date.slice(0, 7) === pm) {
+        if (typeof d.taxable !== 'number' || !isFinite(d.taxable)) return;
+        var si = ['si_health', 'si_care', 'si_support', 'si_pension', 'si_emp', 'si_other'].reduce(function (a, k) { return a + yen0(d[k]); }, 0);
+        if (!isFinite(si)) return;
+        if (!latest[sid] || r.pay_date > latest[sid]) { latest[sid] = r.pay_date; out.P[sid] = Math.floor(d.taxable - si); }
+      } else if (r.kind === 'bonus' && r.source !== 'app' && typeof d.gross === 'number' && isFinite(d.gross) && r.pay_date < payDate) {
+        if (r.pay_date >= fyFrom) out.fy[sid] = (out.fy[sid] || 0) + Math.max(0, Math.floor(d.gross / 1000) * 1000);
+        if (r.pay_date > from12 && d.gross > 0) out.cnt[sid] = (out.cnt[sid] || 0) + 1;
+      }
+    });
+    return out;
+  }
+  /* 前月の給与の決め方（設計 §2-8・追記）: 自社の確定した明細（db）＞ 年末調整の記録（ytd）＞ 手入力（manual・「前月なし」は none）。純関数。
+     返す: { kind（computeBonus の prev.kind）, P, manualP, send（保存する prev_manual・無ければ null）, prev_kind（保存する item の prev_kind・0121 の集合）, src, dbBlock（DB が確定で止める印） }
+     manual: { none:true, source } か { P:数, source } か null（入っていない・形が違う） */
+  function bonusPrevOf(prev, sid, manual, ytdP) {
+    prev = obj(prev);
+    var m = manual && typeof manual === 'object' ? manual : null, mP = m && !m.none && typeof m.P === 'number' && isFinite(m.P) ? Math.floor(m.P) : null;
+    var src = m && m.source ? String(m.source).slice(0, 20) : null;
+    var mSend = m ? (m.none ? { P: null, none: true, source: src } : (mP !== null ? { P: mP, none: false, source: src } : null)) : null;
+    if (prev.state === 'draft') return { kind: 'unconfirmed', P: null, manualP: mP, send: mSend, prev_kind: 'unconfirmed', src: 'unconfirmed', dbBlock: 'prev_unconfirmed' };
+    var di = prev.state === 'ok' ? obj(obj(prev.items)[sid]) : {};
+    if (typeof di.P === 'number' && isFinite(di.P)) return { kind: 'db', P: di.P, manualP: mP, send: mSend, prev_kind: 'ok', src: 'db', dbBlock: null };
+    if (typeof ytdP === 'number' && isFinite(ytdP)) return { kind: 'ytd', P: ytdP, manualP: mP, send: { P: Math.floor(ytdP), none: false, source: 'ytd' }, prev_kind: 'manual', src: 'ytd', dbBlock: null };
+    if (m && m.none) return { kind: 'none', P: null, manualP: null, send: mSend, prev_kind: 'none', src: 'manual', dbBlock: null };
+    if (mP !== null) return { kind: 'manual', P: mP, manualP: mP, send: mSend, prev_kind: 'manual', src: 'manual', dbBlock: null };
+    return { kind: 'missing', P: null, manualP: null, send: null, prev_kind: null, src: 'missing', dbBlock: 'prev_missing' };
+  }
+  /* 保存する形（統合 0121 の payroll_bonus_item_err）: {staff_id, item, prev_manual}。computeBonus の出力をそのまま送らず、許された鍵だけを写す。
+     T → tax_base、std は health・pension だけ（raw は落とす）、warns は code・msg だけ（stop は落とす） */
+  var BONUS_LINE_KEYS = ['sec', 'code', 'name', 'amount', 'basis'];
+  function bonusToSave(out, sid, pv) {
+    out = obj(out); pv = obj(pv);
+    var yenI = function (v) { var n = Number(v); return isFinite(n) ? Math.round(n) : 0; };
+    var ins = obj(out.ins), std = obj(out.std), er = {};
+    Object.keys(obj(out.employer)).forEach(function (k) { if (/^[A-Za-z_]{1,30}$/.test(k)) { var n = Number(out.employer[k]); er[k] = isFinite(n) ? n : null; } });
+    var item = {
+      gross: yenI(out.gross), deduct: yenI(out.deduct), net: yenI(out.net), social: yenI(out.social), tax: yenI(out.tax),
+      lines: arr(out.lines).slice(0, 300).map(function (l) {
+        var o = {}; BONUS_LINE_KEYS.forEach(function (k) { if (l && l[k] !== undefined) o[k] = l[k]; });
+        o.code = String(o.code == null ? '' : o.code).slice(0, 48); o.name = String(o.name == null ? '' : o.name).slice(0, 60); o.basis = String(o.basis == null ? '' : o.basis).slice(0, 300);
+        if (o.sec === 'pay' || o.sec === 'deduct') o.amount = yenI(o.amount);
+        return o;
+      }),
+      std: { health: yenI(std.health), pension: yenI(std.pension) },
+      ins: { health: yenI(ins.health), care: yenI(ins.care), support: yenI(ins.support), pension: yenI(ins.pension), emp: yenI(ins.emp) },
+      warns: arr(out.warns).slice(0, 100).map(function (w) { return { code: String((w && w.code) || 'warn').slice(0, 40), msg: String((w && w.msg) || '').slice(0, 300) }; }),
+      ver: String(out.ver || 'unknown').slice(0, 40),
+      taxable: out.taxable == null ? null : yenI(out.taxable),
+      tax_base: out.T == null ? null : yenI(out.T),
+      P: typeof out.P === 'number' && isFinite(out.P) ? Math.round(out.P) : null,
+      employer: er,
+      taxMethod: out.taxMethod === 'rate' || out.taxMethod === 'monthly_none' || out.taxMethod === 'monthly_10x' ? out.taxMethod : null,
+      rate: typeof out.rate === 'number' && isFinite(out.rate) && out.rate >= 0 && out.rate <= 100 ? out.rate : null,
+      prev_kind: ['none', 'ok', 'unconfirmed', 'manual'].indexOf(pv.prev_kind) >= 0 ? pv.prev_kind : null
+    };
+    return { staff_id: sid, item: item, prev_manual: pv.send && typeof pv.send === 'object' ? pv.send : null };
+  }
+  /* 確定できない警告（画面の止め）: 明細の警告のうち computeBonus の止め（BONUS_BLOCK）と、DB が確定で自分で確かめる前月の給与の止め（源泉の区分に依らない）。
+     読み直した明細には stop の印が無いので、code で引き直す。返すのは「氏名：文」の一覧（純関数） */
+  var BONUS_DB_MSG = { prev_missing: '前月の給与（社会保険料等を引いた後）が入っていません（無い時は「前月の給与なし」を選んでください）', prev_unconfirmed: '前月の給与がまだ確定していません' };
+  function bonusBlocks(list, prev, block) {
+    var B = block || (window.PayrollCalc && window.PayrollCalc.BONUS_BLOCK) || {}, out = [];
+    arr(list).forEach(function (it) {
+      var seen = {};
+      arr(it.warns).forEach(function (w) { if (w && B[w.code] && !seen[w.code]) { seen[w.code] = 1; out.push((it.name || it.staff_id) + '：' + (w.msg || w.code)); } });
+      var dbHasP = obj(prev).state === 'ok' && typeof obj(obj(obj(prev).items)[it.staff_id]).P === 'number';
+      var code = obj(prev).state === 'draft' ? 'prev_unconfirmed' : (!dbHasP && !(it.prev_manual && typeof it.prev_manual === 'object') ? 'prev_missing' : null);
+      if (code && !seen[code]) out.push((it.name || it.staff_id) + '：' + BONUS_DB_MSG[code]);
+    });
+    return out;
+  }
+  function bonusProf(sid) { var ps = bb ? bb.profiles : []; for (var i = 0; i < ps.length; i++) if (ps[i].staff_id === sid) return ps[i]; return null; }
+  function bonusFrozen() { var s = bb && bb.run && bb.run.status; return s === 'confirmed' || s === 'exported'; }
+  function bonusItems() { if (bonusFrozen()) return bb.items; if (bCalc) return bCalc.items; return bb ? bb.items : []; }
+  function bonusCfgOf() { return (bb && bb.settings && bb.settings.config) || {}; }
+  function bonusYtdP(sid) { return bYtd && bb && bb.run && bYtd.pay_date === bb.run.pay_date && Object.prototype.hasOwnProperty.call(bYtd.v.P, sid) ? bYtd.v.P[sid] : null; }
+  /* 入力（メモリだけ）: bIn[sid] = { amt: 文字, pm: ''|'P'|'none', pP: 文字, psrc: 'freee'|'paper'|'other' }。保存した明細から初めの値を作る */
+  function bonusInitIn() {
+    bIn = {};
+    arr(bb && bb.items).forEach(function (it) {
+      var a = arr(it.lines).filter(function (l) { return l && l.sec === 'pay'; }).reduce(function (s, l) { return s + num(l.amount); }, 0);
+      var m = it.prev_manual, src = m && m.source && m.source !== 'ytd' ? String(m.source) : 'freee';
+      bIn[it.staff_id] = { amt: a ? String(a) : '', pm: m && m.source !== 'ytd' ? (m.none ? 'none' : (typeof m.P === 'number' ? 'P' : '')) : '', pP: m && m.source !== 'ytd' && typeof m.P === 'number' ? String(m.P) : '', psrc: src };
+    });
+    var c = obj(bb && bb.run && bb.run.config);
+    bCfgIn = { fy: {}, cnt: {}, months: num(c.bonus_period_months) > 6 ? '12' : '6' };
+    Object.keys(obj(c.fy_prior_std)).forEach(function (k) { bCfgIn.fy[k] = String(c.fy_prior_std[k]); });
+    Object.keys(obj(c.prior_count_12m)).forEach(function (k) { bCfgIn.cnt[k] = String(c.prior_count_12m[k]); });
+  }
+  function bonusAmt(s) { s = String(s == null ? '' : s).replace(/[,，\s円]/g, '').replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }); if (s === '') return null; return /^\d{1,9}$/.test(s) ? parseInt(s, 10) : NaN; }
+  function bonusManual(sid) {
+    var x = bIn[sid]; if (!x) return null;
+    if (x.pm === 'none') return { none: true, source: x.psrc || null };
+    if (x.pm === 'P') { var s = String(x.pP || '').replace(/[,，\s円]/g, ''); return /^-?\d{1,9}$/.test(s) ? { P: parseInt(s, 10), none: false, source: x.psrc || null } : null; }
+    return null;
+  }
+  function bonusLoad(keepIn) {
+    var my = ++bGen;
+    bLoading = true; bErr = null;
+    sync('読み込んでいます…');
+    paint();
+    return rpc('payroll_bonus_bootstrap', { p_bonus_id: bSel || null }).then(function (r) {
+      if (my !== bGen) return null;
+      bLoading = false; sync('');
+      if (r && r.ok === false && r.error === 'norun' && bSel) { bSel = null; return bonusLoad(false); }
+      if (r && r.ok === false) { var e = new Error(r.error || 'ng'); e.payroll = r.error; throw e; }
+      bNoDb = false;
+      bb = bonusNorm(r);
+      bb.profiles = orderStaff(bb.profiles); bb.items = orderStaff(bb.items);
+      if (!keepIn || !bonusDirty()) { bonusInitIn(); bDirty = false; bCfgDirty = false; bCalc = null; }
+      else bCalc = null;
+      paint();
+      if (bb.run && !bonusFrozen()) bonusLoadYtd(bb.run.pay_date, my);
+      return bb;
+    }, function (e) {
+      if (my !== bGen) return null;
+      bLoading = false; sync('');
+      if (bonusNoDb(e)) { bNoDb = true; bb = null; paint(); return null; }
+      if (e && e.code === '42501') { bb = null; return fail(e, '賞与の読み込み'); }
+      if (isAal(e)) return fail(e, '賞与の読み込み');
+      note('賞与の読み込み', e);
+      bErr = bonusMsg(e); bb = null; paint();
+      return null;
+    });
+  }
+  /* 年末調整の記録を読む（0122 の前の DB・断られた時は黙って飛ばす＝手入力で進める）。読んだ値はメモリだけ */
+  function bonusLoadYtd(pd, my) {
+    if (!isDate(pd)) return;
+    var y = +pd.slice(0, 4), rows = [], any = false;
+    var one = function (yr) {
+      return rpc('payroll_ytd_get', { p_year: yr }).then(function (r) { if (r && r.ok !== false) { any = true; rows = rows.concat(arr(r.rows)); } }, function (e) { if (!bonusNoDb(e) && !(e && e.code === '42501')) note('年末調整の記録', e); });
+    };
+    Promise.all([one(y - 1), one(y)]).then(function () {
+      if (my !== bGen || !bb || !bb.run || bb.run.pay_date !== pd) return;
+      bYtd = any ? { pay_date: pd, v: bonusYtd(rows, pd) } : null;
+      rows = null;
+      if (any) { bCalc = null; paint(); }
+    });
+  }
+  function bonusOpen(id) {
+    if (bonusDirty()) { ask('保存していない賞与の入力があります。捨ててほかの回を開きますか？').then(function (ok) { if (ok) { bDirty = false; bCfgDirty = false; bSel = id; bonusLoad(false); } }); return; }
+    bSel = id; bYtd = null; bNotice = null; bSlipSid = null; bonusLoad(false);
+  }
+  /* 1人分の計算の入力を作り、computeBonus を呼ぶ（入力は今の画面の値・config は保存した回の値） */
+  function bonusComputeOne(p, amount, manual) {
+    var c = window.PayrollCalc, run = bb.run, rc = obj(run.config), sid = p.staff_id;
+    var pv = bonusPrevOf(bb.prev, sid, manual, bonusYtdP(sid));
+    var fy = obj(rc.fy_prior_std), cnt = obj(rc.prior_count_12m);
+    var input = { bonus: { pay_date: run.pay_date, lines: [{ code: 'bonus', amount: amount }] },
+      settings: Object.assign({}, bonusCfgOf(), { bonus_period_months: num(rc.bonus_period_months) || 6 }), profile: p.data, allowanceDefs: bb.allowances,
+      prev: { kind: pv.kind, P: pv.P, manualP: pv.manualP }, fyStdSum: num(bb.ctx.fy_std[sid]), fyPriorStd: Object.prototype.hasOwnProperty.call(fy, sid) ? num(fy[sid]) : null,
+      monthStdSum: num(bb.ctx.month_std[sid]), count12: num(bb.ctx.count_12m[sid]), count12Other: num(cnt[sid]) };
+    var out;
+    try { out = c.computeBonus(input); } catch (e) { note('賞与の計算', e); out = { gross: 0, deduct: 0, net: 0, lines: [], warns: [{ code: 'calc_error', msg: '計算できませんでした' }] }; }
+    /* DB が確定で止める前月の給与（源泉の区分に依らない）を画面でも警告にする。computeBonus が同じ code を出していれば重ねない */
+    if (pv.dbBlock && !arr(out.warns).some(function (w) { return w && w.code === pv.dbBlock; })) out.warns = arr(out.warns).concat([{ code: pv.dbBlock, msg: BONUS_DB_MSG[pv.dbBlock], stop: true }]);
+    return { out: out, pv: pv };
+  }
+  function bonusCompute(silent) {
+    if (!bb || !bb.run || bonusFrozen()) return null;
+    if (!window.PayrollCalc || typeof window.PayrollCalc.computeBonus !== 'function') { toast('計算の部品を読み込めませんでした。ページを読み込み直してください。'); return null; }
+    if (bCfgDirty) { say('回の設定（他所で払った標準賞与額・回の数・算定期間）を先に保存してください。'); return null; }
+    var bad = [], list = [];
+    bb.profiles.forEach(function (p) {
+      var x = bIn[p.staff_id], a = x ? bonusAmt(x.amt) : null;
+      if (a !== a) { bad.push(p.name); return; }
+      if (!a) return;
+      if (x.pm === 'P' && !bonusManual(p.staff_id)) { bad.push(p.name + '（前月の給与）'); return; }
+      var r = bonusComputeOne(p, a, bonusManual(p.staff_id));
+      list.push(Object.assign({}, r.out, { staff_id: p.staff_id, name: p.name, prev_kind: r.pv.prev_kind, prev_src: r.pv.src, prev_P: r.pv.P, prev_manual: r.pv.send, _pv: r.pv, bank_last4: p.bank_last4 }));
+    });
+    if (bad.length) { say('数の形が違う欄があります：' + bad.join('・') + '（半角の数字で書いてください）'); return null; }
+    bCalc = { items: list, fp: bb.fingerprint, rev: bb.run.rev };
+    bDirty = true; bNotice = null;
+    paint();
+    if (!silent) toast(list.length + '人分を計算しました。確かめてから「下書き保存」を押してください。');
+    return bCalc;
+  }
+  function bonusSave(btn) {
+    if (busy || !bb || !bb.run || bonusFrozen()) return;
+    var c = bonusCompute(true); if (!c) return;
+    if (!c.items.length) { say('賞与額を入れた人がいません。'); return; }
+    var payload = c.items.map(function (it) { return bonusToSave(it, it.staff_id, it._pv); });
+    var done = hold(btn, '保存しています…');
+    rpc('payroll_bonus_save', { p_bonus_id: bb.run.bonus_id, p_items: payload, p_fingerprint: c.fp, p_rev: c.rev }).then(okOr).then(function () {
+      payload = null; done(); bDirty = false; toast('下書き保存しました。'); return bonusLoad(false);
+    })['catch'](function (e) { payload = null; done(); return bonusFail(e, '賞与の下書き保存'); });
+  }
+  function bonusCfgSave(btn) {
+    if (busy || !bb || !bb.run || bonusFrozen() || !bCfgIn) return;
+    var bad = [], cfgO = { fy_prior_std: {}, prior_count_12m: {}, bonus_period_months: bCfgIn.months === '12' ? 12 : 6 };
+    bb.profiles.forEach(function (p) {
+      var f = bonusAmt(bCfgIn.fy[p.staff_id]), n = bonusAmt(bCfgIn.cnt[p.staff_id]);
+      if (f !== f || (f != null && f % 1000 !== 0)) bad.push(p.name + '（標準賞与額は千円の倍数）');
+      else if (f != null) cfgO.fy_prior_std[p.staff_id] = f;
+      if (n !== n || (n != null && n > 12)) bad.push(p.name + '（回の数は0〜12）');
+      else if (n != null) cfgO.prior_count_12m[p.staff_id] = n;
+    });
+    if (bad.length) { say('形の違う欄があります：' + bad.join('・')); return; }
+    var done = hold(btn, '保存しています…');
+    rpc('payroll_bonus_config_put', { p_bonus_id: bb.run.bonus_id, p_config: cfgO, p_rev: bb.run.rev }).then(okOr).then(function () {
+      done(); bCfgDirty = false; toast('回の設定を保存しました。「計算する」で計算し直してください。'); return bonusLoad(true);
+    })['catch'](function (e) { done(); return bonusFail(e, '賞与の回の設定'); });
+  }
+  /* 年末調整の記録から、他所で払った標準賞与額・回の数を入力欄に埋める（保存は「回の設定を保存」） */
+  function bonusCfgFill() {
+    if (!bYtd || !bCfgIn || bonusFrozen()) return;
+    var n = 0;
+    bb.profiles.forEach(function (p) {
+      var sid = p.staff_id;
+      if (bYtd.v.fy[sid] != null) { bCfgIn.fy[sid] = String(bYtd.v.fy[sid]); n++; }
+      if (bYtd.v.cnt[sid] != null) bCfgIn.cnt[sid] = String(Math.min(12, bYtd.v.cnt[sid]));
+    });
+    bCfgDirty = true; paint();
+    toast(n ? n + '人分を年末調整の記録から埋めました。確かめてから「回の設定を保存」を押してください。' : '年末調整の記録に、この年度に他所で払った賞与はありませんでした。');
+  }
+  function bonusNew() {
+    var d0 = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
+    openDlg('新しい賞与', '<div class="kv"><label for="bn-date">支給日</label><input id="bn-date" type="date" value="' + esc(d0) + '">' +
+      '<label for="bn-title">題（40字まで）</label><input id="bn-title" maxlength="40" value="' + esc(d0.slice(0, 4) + '年' + (+d0.slice(5, 7)) + '月 賞与') + '" autocomplete="off"></div>' +
+      '<p class="help">同じ支給日に2回目を作る時も、ここから作ります。</p>',
+      '<button type="button" class="btn" data-act="dlg-close">やめる</button><button type="button" class="btn pri" data-act="b-new-go">作る</button>', { mode: 'bonus-new', dirtyCheck: true });
+  }
+  function bonusNewGo(btn) {
+    if (busy) return;
+    var d = v('bn-date'), t = v('bn-title');
+    if (!isDate(d)) { say(BNG.baddate); return; }
+    if (!t || t.length > 40) { say('題を1〜40字で書いてください。'); return; }
+    var done = hold(btn, '作っています…');
+    rpc('payroll_bonus_create', { p_pay_date: d, p_title: t }).then(okOr).then(function (r) {
+      done(); closeDlg(); toast('賞与の回を作りました。'); bSel = r.bonus_id; bonusClear(); return bonusLoad(false);
+    })['catch'](function (e) { done(); return bonusFail(e, '賞与の回の作成'); });
+  }
+  function bonusDelete(btn) {
+    if (busy || !bb || !bb.run || bonusFrozen()) return;
+    if (bb.run.exported_at) { say('一度振込データを書き出した回は消せません。'); return; }
+    ask('この賞与の回（' + bb.run.title + '・下書き）を消しますか？　入れた賞与額と下書きの明細も消えます。').then(function (ok) {
+      if (!ok) return;
+      var done = hold(btn, '消しています…');
+      rpc('payroll_bonus_delete', { p_bonus_id: bb.run.bonus_id, p_rev: bb.run.rev }).then(okOr).then(function () {
+        done(); toast('賞与の回を消しました。'); bSel = null; bonusClear(); return bonusLoad(false);
+      })['catch'](function (e) { done(); return bonusFail(e, '賞与の回の削除'); });
+    });
+  }
+  function bonusFigures(list) { return arr(list).map(function (it) { return it.staff_id + ':' + num(it.gross) + ':' + num(it.deduct) + ':' + num(it.net); }).sort().join('|'); }
+  function bonusTotals(list) { var t = { n: 0, gross: 0, deduct: 0, net: 0, warn: 0 }; arr(list).forEach(function (it) { t.n++; t.gross += num(it.gross); t.deduct += num(it.deduct); t.net += num(it.net); t.warn += arr(it.warns).length; }); return t; }
+  function bonusOpenConfirm() {
+    if (busy || !bb || !bb.run || bb.run.status !== 'draft' || bonusDirty()) return;
+    var list = bb.items, t = bonusTotals(list), blk = bonusBlocks(list, bb.prev);
+    var B = (window.PayrollCalc && window.PayrollCalc.BONUS_BLOCK) || {};
+    var warns = []; list.forEach(function (it) { arr(it.warns).forEach(function (w) { if (w && !B[w.code]) warns.push(it.name + '：' + (w.msg || w.code)); }); });
+    var h = '<div class="sumbar"><div>人数<b>' + esc(t.n) + ' 人</b></div><div>総支給の合計<b>' + esc(yen(t.gross)) + ' 円</b></div><div>控除の合計<b>' + esc(yen(t.deduct)) + ' 円</b></div><div>差引の合計<b>' + esc(yen(t.net)) + ' 円</b></div></div>' +
+      '<p>支給日 ' + esc(jdate(bb.run.pay_date)) + '　' + esc(bb.run.title) + '</p>';
+    if (blk.length) h += '<div class="band ng" role="alert"><b>確定できない警告（' + esc(blk.length) + ' 件）</b><ul>' + blk.map(function (w) { return '<li>⛔ ' + esc(w) + '</li>'; }).join('') + '</ul>直してから計算し直し、下書き保存してください。</div>';
+    h += '<h3>残っている警告（' + esc(warns.length) + ' 件）</h3>' + (warns.length ? '<ul>' + warns.map(function (w) { return '<li>⚠ ' + esc(w) + '</li>'; }).join('') + '</ul><label><input type="checkbox" id="bc-ack"> 警告を確かめました</label>' : '<p>ありません。</p>');
+    openDlg('賞与を確定しますか？', h, '<button type="button" class="btn" data-act="dlg-close">やめる</button><button type="button" class="btn pri" data-act="b-confirm-go"' + (blk.length ? ' disabled' : '') + '>確定する</button>',
+      { mode: 'bonus-confirm', warn: warns.length > 0, shown: bonusFigures(list), id: bb.run.bonus_id });
+  }
+  /* 「確定する」: 読み直して、保存した入力で数え直し、窓の数字と同じ時だけ確定（月の給与と同じ・自動で保存し直さない） */
+  function bonusConfirmGo(btn) {
+    var ctx = dlgCtx;
+    if (busy || !ctx || ctx.mode !== 'bonus-confirm') return;
+    if (ctx.warn && !($('bc-ack') && $('bc-ack').checked)) { say('警告を確かめたら「警告を確かめました」に印を入れてください。'); return; }
+    var done = hold(btn, '確かめています…'), my = ++bGen;
+    rpc('payroll_bonus_bootstrap', { p_bonus_id: ctx.id }).then(function (r) {
+      if (my !== bGen) { done(); return null; }
+      if (r && r.ok === false) { var e0 = new Error(r.error || 'ng'); e0.payroll = r.error; throw e0; }
+      var fresh = bonusNorm(r);
+      if (!fresh.run || fresh.run.status !== 'draft') { var e1 = new Error('confirmed'); e1.payroll = 'confirmed'; throw e1; }
+      var prevBb = bb; bb = fresh;
+      var now = [];
+      fresh.items.forEach(function (it) {
+        var p = bonusProf(it.staff_id), a = arr(it.lines).filter(function (l) { return l && l.sec === 'pay'; }).reduce(function (s, l) { return s + num(l.amount); }, 0);
+        if (!p) { now.push({ staff_id: it.staff_id, gross: -1, deduct: 0, net: 0 }); return; }
+        /* 保存した前月の給与（年末調整の記録から送った P も手入力として）で数え直す。DB に自社の確定した明細が増えていればそちらが先＝数字が変われば確定しない */
+        var x = bonusComputeOne(p, a, it.prev_manual);
+        now.push({ staff_id: it.staff_id, gross: x.out.gross, deduct: x.out.deduct, net: x.out.net });
+      });
+      var blk = bonusBlocks(fresh.items, fresh.prev);
+      if (fresh.run.stale || bonusFigures(now) !== ctx.shown || bonusFigures(fresh.items) !== ctx.shown || blk.length) {
+        done(); closeDlg(); bb = prevBb;
+        bNotice = { cls: 'warn', text: blk.length ? '確定できない警告が残っています。確定していません。' : '読み直したら数字が変わっていました。確定していません。「計算する」で計算し直し、下書き保存してから確定し直してください。' };
+        return bonusLoad(false);
+      }
+      return rpc('payroll_bonus_confirm', { p_bonus_id: fresh.run.bonus_id, p_rev: fresh.run.rev }).then(okOr).then(function () {
+        done(); closeDlg(); toast('賞与を確定しました。'); return bonusLoad(false);
+      });
+    })['catch'](function (e) { done(); closeDlg(); return bonusFail(e, '賞与の確定'); });
+  }
+  function bonusOpenUnconfirm() {
+    if (!isAdmin() || !bonusFrozen()) return;
+    var ex = bb.run.status === 'exported' || !!bb.run.exported_at;
+    openDlg('賞与の確定を取り消す（管理者）', (ex ? '<div class="band ng" role="alert">⚠ この賞与はもう振込データを書き出しています。銀行へ渡した後なら、取り消して作り直すと二重に振り込まれる恐れがあります。</div>' : '') +
+      '<label for="bu-reason">取り消す理由（必ず書く）</label><textarea id="bu-reason" rows="3" maxlength="200" style="width:100%"></textarea>',
+      '<button type="button" class="btn" data-act="dlg-close">やめる</button><button type="button" class="btn ng" data-act="b-unconfirm-go">確定を取り消す</button>', { mode: 'bonus-unconfirm', dirtyCheck: true });
+  }
+  function bonusUnconfirmGo(btn) {
+    if (busy || !dlgCtx || dlgCtx.mode !== 'bonus-unconfirm' || !bb || !bb.run) return;
+    var r = v('bu-reason'); if (!r) { say(BNG.reason); return; }
+    var done = hold(btn, '取り消しています…');
+    rpc('payroll_bonus_unconfirm', { p_bonus_id: bb.run.bonus_id, p_reason: r }).then(okOr).then(function () { done(); closeDlg(); toast('賞与の確定を取り消しました。'); return bonusLoad(false); })['catch'](function (e) { done(); closeDlg(); return bonusFail(e, '賞与の確定の取り消し'); });
+  }
+
+  /* 賞与の明細（画面の見本と紙）。今の月の明細と同じ型（.slip）に「賞与明細」の見出し。紙は A4 縦・1人1ページ（SUPrint の 'bonus-slips'・root #p-print） */
+  function bonusCorp(it) {
+    var c = (it && it.company_name) || bonusCfgOf().company_name;
+    if (c) return String(c);
+    try { var f = window.SUFacility && window.SUFacility.get && window.SUFacility.get(); return (f && (f.corpName || f.facilityName)) || ''; } catch (_) { return ''; }
+  }
+  function bonusSlipHtml(it, paper) {
+    var run = bb.run, draft = !bonusFrozen(), p = bonusProf(it.staff_id), std = obj(it.std);
+    var pay = arr(it.lines).filter(function (l) { return l && l.sec === 'pay'; }), ded = arr(it.lines).filter(function (l) { return l && l.sec === 'deduct'; });
+    function tbl(list, cap) { return '<table><thead><tr><th colspan="2">' + esc(cap) + '</th></tr></thead><tbody>' + (list.length ? list.map(function (l) { return '<tr><td>' + esc(l.name || '') + '</td><td class="num">' + esc(yen(l.amount)) + '</td></tr>'; }).join('') : '<tr><td colspan="2">—</td></tr>') + '</tbody></table>'; }
+    var basis = [['標準賞与額（健康保険）', yen(std.health)], ['標準賞与額（厚生年金）', yen(std.pension)], ['課税対象額', it.tax_base == null && it.T == null ? '—' : yen(it.tax_base != null ? it.tax_base : it.T)],
+      ['所得税の率', it.rate == null ? (it.taxMethod ? '月額表の方法' : '—') : it.rate + '%']];
+    var bank = bankText(it.bank_last4 != null ? it.bank_last4 : (p && p.bank_last4));
+    return '<section class="slip"' + (paper ? '' : ' aria-label="賞与明細の見本"') + '><div class="su-print-head-host"><h3>賞与明細　' + esc(run.title) + (draft ? '<span class="sl-draft">下書き（確定前）</span>' : '') + '</h3>' +
+      '<span class="su-print-head su-print-head-abs" data-su-print-head="name date"></span></div>' +
+      '<p class="sl-meta">' + esc(bonusCorp(it)) + '　支給日 ' + esc(jdate(run.pay_date)) + '</p>' +
+      '<p class="sl-meta"><b style="font-size:1.2em">' + esc(it.name) + '</b> 様</p>' +
+      '<div class="sl-grid"><div><table><thead><tr><th colspan="2">計算の根拠</th></tr></thead><tbody>' + basis.map(function (b) { return '<tr><td>' + esc(b[0]) + '</td><td class="num">' + esc(b[1]) + '</td></tr>'; }).join('') + '</tbody></table></div>' +
+      '<div>' + tbl(pay, '支給') + '</div><div>' + tbl(ded, '控除') + '</div><div><table class="sl-tot"><tbody>' +
+      '<tr><td>総支給額</td><td class="num">' + esc(yen(it.gross)) + '</td></tr><tr><td>控除の合計</td><td class="num">' + esc(yen(it.deduct)) + '</td></tr><tr><td>差引支給額</td><td class="num">' + esc(yen(it.net)) + '</td></tr>' +
+      '<tr><td>振込先</td><td>' + esc(bank || '（口座なし）') + '</td></tr></tbody></table></div></div></section>';
+  }
+  function bonusPrint(list) {
+    if (!list || !list.length || !bb || !bb.run) return;
+    if (!window.SUPrint) { toast('印刷の部品を読み込めていません。ページを読み込み直してください。'); return; }
+    bonusDefinePrint();
+    var go = function () {
+      bPrint = list;
+      try { window.SUPrint.print('bonus-slips'); } catch (e) { note('賞与明細の印刷', e); }
+      if (!document.body.classList.contains('su-printing')) bPrint = null;
+    };
+    rpc('payroll_bonus_export_log', { p_bonus_id: bb.run.bonus_id, p_kind: 'slip' }).then(okOr).then(function () {
+      if (!window.SUPrint.facGate) { go(); return; }
+      window.SUPrint.facGate(go, function (msg) { toast(msg); });
+    })['catch'](function (e) { bonusFail(e, '賞与明細の印刷の記録'); });
+  }
+  function bonusDefinePrint() {
+    if (!window.SUPrint || bonusDefinePrint.done) return;
+    bonusDefinePrint.done = true;
+    window.SUPrint.define('bonus-slips', { label: '賞与明細', paper: 'A4 portrait', margin: 12, root: '#p-print', allowUser: [],
+      when: function () { return !!bPrint && view === 'app' && !masked; },
+      pagesOf: function () { return bPrint ? bPrint.length : 1; },
+      before: function () { put($('p-print'), (bPrint || []).map(function (it) { return bonusSlipHtml(it, true); }).join('')); },
+      after: function () { put($('p-print'), ''); bPrint = null; } });
+    window.SUPrint.setActive(null);
+  }
+  /* 振込データ（全銀 種別12・振込指定日＝支給日）。種別は設定の写しで 12 に上書きし、月の給与の設定は変えない */
+  function bonusTransferWant(list) { var x = X(), w = { total: 0, parts: 0 }; arr(list).forEach(function (it) { var b = arr(it.bank_last4); if (!b.length || !(num(it.net) > 0)) return; var n = 1; try { n = x && typeof x.splitAccounts === 'function' ? x.splitAccounts(num(it.net), b).parts.length : 1; } catch (e) { note('振込の件数', e); } w.total += num(it.net); w.parts += n; }); return w; }
+  function bonusZenginBase() {
+    var c = bonusCfgOf(), list = bb.items, co = list.filter(function (it) { return it.company_name; })[0];
+    return { ym: bb.run.pay_date.slice(0, 7), period: null, payDate: bb.run.pay_date,
+      settings: Object.assign({}, c, { zengin: Object.assign({}, obj(c.zengin), { kind: '12' }), company_name: co ? co.company_name : c.company_name }),
+      items: list, profiles: bb.profiles.map(function (p) { return { staff_id: p.staff_id, data: p.data }; }) };
+  }
+  function bonusZengin(btn) {
+    var x = X();
+    if (busy || !bb || !bb.run || !bonusFrozen() || !x || typeof x.zengin !== 'function' || bonusCfgOf().zengin_enabled !== true) return;
+    var base = bonusZenginBase(), id = bb.run.bonus_id;
+    var pre = x.zengin(Object.assign({}, base, { rows: [] }));
+    if (!pre || pre.ok === false) {
+      var w0 = arr(pre && pre.errors).slice(0, 5).map(function (e) { return (e && e.msg) || ''; }).filter(Boolean);
+      say('振込元の設定に足りない所があるので、振込データを作りません。' + (w0.length ? '\n' + w0.join('\n') : '') + '\n管理者が「設定」の振込元を直してください。');
+      return;
+    }
+    var again = bb.run.status === 'exported' || !!bb.run.exported_at;
+    if (again) busy = true;
+    (again ? ask('この賞与の振込データは ' + at(bb.run.exported_at) + ' にもう書き出しています。\n銀行へもう渡していれば、もう一度渡すと二重に振り込まれます。\n前のファイルを作れなかった・なくした時だけ、もう一度作ってください。\nもう一度書き出しますか？') : Promise.resolve(true)).then(function (go) {
+      busy = false;
+      if (!go) return;
+      var done = hold(btn, '作っています…');
+      rpc('payroll_bonus_export_log', { p_bonus_id: id, p_kind: again ? 'zengin_again' : 'zengin' }).then(okOr).then(function () {
+        return rpc('payroll_bonus_bank_export', { p_bonus_id: id });
+      }).then(function (r) {
+        if (r && r.ok === false && r.error === 'stale') { var e = new Error('bankstale'); e.payroll = 'bankstale'; throw e; }
+        if (r && r.ok === false && r.error === 'exported') { done(); say(BNG.exported); return bonusLoad(true).then(function () { return null; }); }
+        return okOr(r);
+      }).then(function (r) {
+        if (!r) return null;
+        var res = x.zengin(Object.assign({}, base, { rows: arr(r.rows) }));
+        r.rows = null; r = null;
+        done();
+        var want = bonusTransferWant(base.items);
+        if (res.ok !== false && (num(res.total) !== want.total || num(res.count) !== want.parts)) {
+          var got = { total: num(res.total), count: num(res.count) }; res = null;
+          say('振込データの合計（' + yen(got.total) + '円・' + got.count + '件）が、画面の振込する分（' + yen(want.total) + '円・' + want.parts + '件）と合いません。ファイルは作っていません。管理者に知らせてください。');
+          return bonusLoad(true);
+        }
+        if (res.ok === false) {
+          var why = arr(res.errors).slice(0, 5).map(expMsg).filter(Boolean); res = null;
+          say('振込データを作れませんでした（ファイルは作っていません）。' + (why.length ? '\n' + why.join('\n') : '') + '\n設定（振込元）と口座を確かめてください。');
+          return bonusLoad(true);
+        }
+        var ws = arr(res.warnings).map(expMsg).filter(Boolean);
+        res.name = 'payroll-zengin-bonus-' + base.payDate + '.txt';
+        download(res); res = null;
+        toast('賞与の振込データを書き出しました。使い終わったら消してください。');
+        if (ws.length) say('振込データを書き出しました。次の所を確かめてください（' + ws.length + ' 件）。\n' + ws.slice(0, 10).join('\n') + (ws.length > 10 ? '\nほか ' + (ws.length - 10) + ' 件' : ''));
+        return bonusLoad(true);
+      })['catch'](function (e) { done(); bonusFail(e, '賞与の振込データ'); });
+    });
+  }
+  /* 賞与支払届に写す値の CSV（設計 §4: 氏名・生年月日・支給日・賞与額・千円未満切り捨ての額・70歳以上の印・同じ月の合算の印。個人番号・基礎年金番号は出さない）。純関数。
+     千円未満切り捨ての額は、上限（年度 573万円・同じ月 150万円）をかける前の額＝総支給の千円未満切り捨て（標準賞与額は通貨・現物の総額・設計の追記。std は上限の後のため使わない・仮置き）。
+     載せるのは健保か厚年の標準賞与額がある人と、資格を失う月・免除で保険料が0でも届を出す人（警告 lost_month・leave_exempt）。
+     70歳以上の印は、支給日に70歳に達している（誕生日の前日を過ぎた）人。同じ月の合算の印は、同じ月のほかの確定した回がある人 */
+  function bonusShoyoCsv(list, profiles, payDate, monthStd) {
+    var x = X(), cell = x && typeof x.csvCell === 'function' ? x.csvCell : function (v) { return String(v == null ? '' : v); };
+    var pm = {}; arr(profiles).forEach(function (p) { if (p && p.staff_id) pm[p.staff_id] = obj(p.data); });
+    var reach = window.PayrollCalc && window.PayrollCalc.reachDate;
+    var rows = [['氏名', '生年月日', '支給日', '賞与額', '千円未満切り捨ての額', '70歳以上の印', '同じ月の合算の印']];
+    arr(list).forEach(function (it) {
+      var std = obj(it.std), ws = arr(it.warns).map(function (w) { return w && w.code; });
+      if (!(num(std.health) > 0 || num(std.pension) > 0 || ws.indexOf('lost_month') >= 0 || ws.indexOf('leave_exempt') >= 0)) return;
+      var d = pm[it.staff_id] || {}, b = isDate(d.birth_date) ? d.birth_date : '';
+      var r70 = b && typeof reach === 'function' ? reach(b, 70) : null;
+      rows.push([it.name || '', b, payDate, num(it.gross), Math.max(0, Math.floor(num(it.gross) / 1000) * 1000), r70 && r70 <= payDate ? '1' : '', num(obj(monthStd)[it.staff_id]) > 0 ? '1' : '']);
+    });
+    return rows.map(function (r) { return r.map(cell).join(','); }).join('\r\n') + '\r\n';
+  }
+  function bonusShoyo(btn) {
+    if (busy || !bb || !bb.run || !bonusFrozen()) return;
+    var done = hold(btn, '作っています…'), run = bb.run;
+    rpc('payroll_bonus_export_log', { p_bonus_id: run.bonus_id, p_kind: 'shoyo_csv' }).then(okOr).then(function () {
+      done();
+      var text = bonusShoyoCsv(bb.items, bb.profiles, run.pay_date, bb.ctx.month_std);
+      download({ name: 'payroll-shoyo-' + run.pay_date + '.csv', text: text }); text = null;
+      toast('賞与支払届に写す値の CSV を書き出しました。使い終わったら消してください。');
+    })['catch'](function (e) { done(); bonusFail(e, '賞与支払届の CSV'); });
+  }
+
+  /* ── 賞与のタブを描く ── */
+  function bonusHtml() {
+    if (bNoDb) return '<div class="cd"><h2>賞与</h2><div class="band warn" role="status">賞与はまだ使えません（データベースの準備中）。</div></div>';
+    if (!bb) {
+      if (!bLoading && !bErr && view === 'app' && !masked) Promise.resolve().then(function () { if (!bb && !bLoading && tab === 'bonus' && view === 'app') bonusLoad(true); });
+      return bErr ? '<div class="band ng" role="alert">' + esc(bErr) + '</div><button type="button" class="btn" data-act="b-reload">もう一度読む</button>' : '<div class="cd" aria-busy="true"><span class="skel w8"></span><span class="skel w6"></span><span class="skel w4"></span></div>';
+    }
+    var h = bNotice ? '<div class="band ' + esc(bNotice.cls) + '" role="status">' + esc(bNotice.text) + '</div>' : '';
+    if (!bb.run) return h + bonusListHtml();
+    return h + bonusRunHtml();
+  }
+  function bonusListHtml() {
+    var h = '<div class="cd"><h2>賞与の回</h2><p class="help">賞与は月分の選びと関係なく、回ごとに作ります。上の月分は月の給与のタブだけに使います。</p><div class="row"><button type="button" class="btn pri" data-act="b-new">＋ 新しい賞与</button></div>';
+    if (!bb.runs.length) return h + '<p class="empty">賞与の回はまだありません。</p></div>';
+    h += '<div class="tw"><table><thead><tr><th>支給日</th><th>題</th><th>状態</th><th class="num">人数</th><th class="num">総支給の合計（円）</th><th>開く</th></tr></thead><tbody>';
+    bb.runs.forEach(function (r) {
+      h += '<tr><td class="nm">' + esc(jdate(r.pay_date)) + '</td><td>' + esc(r.title) + '</td><td>' + esc(BONUS_STATUS[r.status]) + (r.stale ? ' <span class="tag warn">⚠ 計算し直しが要る</span>' : '') + '</td>' +
+        '<td class="num">' + esc(r.count) + '</td><td class="num">' + esc(yen(r.gross)) + '</td><td><button type="button" class="btn" data-act="b-open" data-bid="' + esc(r.bonus_id) + '">開く</button></td></tr>';
+    });
+    return h + '</tbody></table></div></div>';
+  }
+  var PSRC = [['freee', 'freee の明細'], ['paper', '紙の明細'], ['other', 'そのほか']];
+  function bonusPrevCell(p, i, fz) {
+    var sid = p.staff_id, x = bIn[sid] || {};
+    if (fz) {
+      var it = bb.items.filter(function (y) { return y.staff_id === sid; })[0], k = it && it.prev_kind, m = it && it.prev_manual;
+      if (!it) return '—';
+      if (k === 'ok') return '給与の記録（確定）';
+      if (m && m.source === 'ytd') return '年末調整の記録 ' + esc(yen(m.P)) + ' 円';
+      if (m && m.none) return '前月の給与なし';
+      return m && typeof m.P === 'number' ? '手入力 ' + esc(yen(m.P)) + ' 円' : '—';
+    }
+    var pv = bonusPrevOf(bb.prev, sid, bonusManual(sid), bonusYtdP(sid));
+    if (pv.kind === 'unconfirmed') return '<span class="tag ng">⛔ 前月（' + esc(ymText(bb.prev.ym)) + '）の給与がまだ確定していません</span>';
+    if (pv.kind === 'db') return '<span class="tag ok">給与の記録</span> ' + esc(yen(pv.P)) + ' 円';
+    if (pv.kind === 'ytd') return '<span class="tag ok">年末調整の記録</span> ' + esc(yen(pv.P)) + ' 円';
+    var o = function (val, lab) { return '<option value="' + val + '"' + ((x.pm || '') === val ? ' selected' : '') + '>' + lab + '</option>'; };
+    return '<div class="row"><label for="b-pm-' + i + '" class="help">前月の給与</label><select id="b-pm-' + i + '" data-bsid="' + esc(sid) + '" data-bk="pm">' + o('', '（まだ入れていない）') + o('P', '金額を入れる') + o('none', '前月の給与なし') + '</select>' +
+      (x.pm === 'P' ? '<input id="b-pp-' + i + '" data-bsid="' + esc(sid) + '" data-bk="pP" inputmode="numeric" aria-label="' + esc(p.name) + ' さんの前月の給与（社会保険料等を引いた後・円）" value="' + esc(x.pP || '') + '" style="max-width:9em" autocomplete="off">' : '') +
+      (x.pm ? '<select id="b-ps-' + i + '" data-bsid="' + esc(sid) + '" data-bk="psrc" aria-label="' + esc(p.name) + ' さんの前月の給与の出どころ">' + PSRC.map(function (s) { return '<option value="' + s[0] + '"' + ((x.psrc || 'freee') === s[0] ? ' selected' : '') + '>' + s[1] + '</option>'; }).join('') + '</select>' : '') + '</div>';
+  }
+  function bonusRunHtml() {
+    var run = bb.run, fz = bonusFrozen(), c = window.PayrollCalc && typeof window.PayrollCalc.computeBonus === 'function';
+    var h = '<div class="cd"><div class="row"><button type="button" class="btn" data-act="b-list">← 賞与の回の一覧</button></div>' +
+      '<h2>' + esc(run.title) + '（支給日 ' + esc(jdate(run.pay_date)) + '）</h2><div class="row">状態: <span class="tag ' + (fz ? 'ok' : 'warn') + '">' + (fz ? '✓ ' : '') + esc(BONUS_STATUS[run.status]) + '</span> ' +
+      esc(at(fz ? (run.exported_at || run.confirmed_at) : run.saved_at)) + '</div>';
+    if (run.stale && !fz) h += '<div class="band warn">⚠ 保存した後に給与の設定・前月の給与・ほかの回が変わりました。「計算する」で計算し直してください。</div>';
+    if (!c) h += '<div class="band ng" role="alert">計算の部品を読み込めませんでした。ページを読み込み直してください。</div>';
+    if (bDirty && bCalc) h += '<div class="band warn">計算した結果はまだ保存していません。「下書き保存」を押すまで、ほかの人には見えません。</div>';
+    if (bCfgDirty) h += '<div class="band warn">回の設定を変えました。「回の設定を保存」を押してから計算してください。</div>';
+    h += '<div class="row">';
+    if (!fz) {
+      h += '<button type="button" class="btn pri" data-act="b-compute"' + (c && !bCfgDirty ? '' : ' disabled') + '>計算する</button>';
+      h += '<button type="button" class="btn" data-act="b-save"' + (c && !bCfgDirty ? '' : ' disabled') + '>下書き保存</button>';
+      var blk = bonusBlocks(bb.items, bb.prev);
+      h += '<button type="button" class="btn" data-act="b-confirm"' + (bb.items.length && !bonusDirty() && !run.stale && !blk.length ? '' : ' disabled') + '>確定する</button>';
+      if (!run.exported_at) h += '<button type="button" class="btn ng" data-act="b-delete">この回を消す（下書き）</button>';
+      if (bb.items.length && !bonusDirty() && blk.length) h += '</div><div class="band ng" role="alert"><b>確定できない警告（' + esc(blk.length) + ' 件）</b><ul>' + blk.map(function (w) { return '<li>⛔ ' + esc(w) + '</li>'; }).join('') + '</ul></div><div class="row">';
+    } else if (isAdmin()) h += '<button type="button" class="btn ng" data-act="b-unconfirm">確定を取り消す（管理者）</button>';
+    h += '</div></div>';
+    /* 入れる表（下書きの時だけ入力欄） */
+    h += '<div class="cd"><h2>1人ずつの賞与額と前月の給与</h2>' + (fz ? '' : '<p class="help">賞与額を入れた人だけを計算・保存します。前月の給与は、給与の記録（確定した明細）・年末調整の記録が無い人だけ入れてください（社会保険料等を引いた後の額）。</p>') +
+      '<div class="tw"><table><thead><tr><th>氏名</th><th class="num">賞与額（円）</th><th>前月の給与</th></tr></thead><tbody>';
+    bb.profiles.forEach(function (p, i) {
+      var x = bIn[p.staff_id] || {}, it = fz ? bb.items.filter(function (y) { return y.staff_id === p.staff_id; })[0] : null;
+      if (fz && !it) return;
+      h += '<tr><td class="nm">' + esc(p.name) + '</td><td class="num">' + (fz ? esc(yen(it.gross)) : '<input id="b-amt-' + i + '" data-bsid="' + esc(p.staff_id) + '" data-bk="amt" inputmode="numeric" aria-label="' + esc(p.name) + ' さんの賞与額（円）" value="' + esc(x.amt || '') + '" style="max-width:10em;text-align:right" autocomplete="off">') + '</td>' +
+        '<td>' + bonusPrevCell(p, i, fz) + '</td></tr>';
+    });
+    h += '</tbody></table></div></div>';
+    /* 回の設定（他所で払った標準賞与額・回の数・算定期間） */
+    h += '<details class="cd" id="b-cfg"' + (bCfgOpen || bCfgDirty ? ' open' : '') + '><summary><b>回の設定（他所で払った標準賞与額・過去12か月の他所の回の数・算定期間）</b></summary>' +
+      '<p class="help">この年度（4月から）に freee など他所で払った賞与の標準賞与額（健康保険・千円の倍数）と、過去12か月に他所で払った賞与の回の数を人ごとに入れます。入れていない人は 0 として数え、知らせを出します。</p>';
+    if (!fz) h += '<div class="row">' + (bYtd ? '<button type="button" class="btn" data-act="b-cfg-fill">年末調整の記録から埋める</button>' : '<span class="help">年末調整の記録が無いので、手で入れてください。</span>') +
+      '<label for="b-months">算定期間</label><select id="b-months" data-bk="months">' + [['6', '6か月以内'], ['12', '6か月を超える']].map(function (o) { return '<option value="' + o[0] + '"' + (bCfgIn && bCfgIn.months === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>' +
+      '<button type="button" class="btn pri" data-act="b-cfg-save"' + (bCfgDirty ? '' : ' disabled') + '>回の設定を保存</button></div>';
+    h += '<div class="tw"><table><thead><tr><th>氏名</th><th class="num">他所で払った標準賞与額（この年度・円）</th><th class="num">過去12か月の他所の回の数</th></tr></thead><tbody>';
+    bb.profiles.forEach(function (p, i) {
+      var f = bCfgIn ? bCfgIn.fy[p.staff_id] : '', n = bCfgIn ? bCfgIn.cnt[p.staff_id] : '';
+      h += '<tr><td class="nm">' + esc(p.name) + '</td>' + (fz ? '<td class="num">' + esc(f == null || f === '' ? '—' : yen(f)) + '</td><td class="num">' + esc(n == null || n === '' ? '—' : n) + '</td>' :
+        '<td class="num"><input id="b-fy-' + i + '" data-bsid="' + esc(p.staff_id) + '" data-bk="fy" inputmode="numeric" aria-label="' + esc(p.name) + ' さんの他所で払った標準賞与額" value="' + esc(f == null ? '' : f) + '" style="max-width:10em;text-align:right" autocomplete="off"></td>' +
+        '<td class="num"><input id="b-cn-' + i + '" data-bsid="' + esc(p.staff_id) + '" data-bk="cnt" inputmode="numeric" aria-label="' + esc(p.name) + ' さんの過去12か月の他所の回の数" value="' + esc(n == null ? '' : n) + '" style="max-width:5em;text-align:right" autocomplete="off"></td>') + '</tr>';
+    });
+    h += '</tbody></table></div></details>';
+    /* 計算の結果 */
+    var list = bonusItems();
+    if (!list.length) return h + '<div class="cd empty">' + (fz ? '確定した明細がありません。' : 'まだ計算していません。賞与額を入れて「計算する」を押してください。') + '</div>';
+    var t = bonusTotals(list);
+    h += '<div class="cd"><h2>計算の結果' + (bCalc && !fz ? '（まだ保存していません）' : '') + '</h2><div class="sumbar"><div>人数<b>' + esc(t.n) + ' 人</b></div><div>総支給の合計<b>' + esc(yen(t.gross)) + ' 円</b></div><div>控除の合計<b>' + esc(yen(t.deduct)) + ' 円</b></div><div>差引の合計<b>' + esc(yen(t.net)) + ' 円</b></div><div>警告<b>' + esc(t.warn) + ' 件</b></div></div>';
+    var B = (window.PayrollCalc && window.PayrollCalc.BONUS_BLOCK) || {};
+    list.forEach(function (it) {
+      var w = arr(it.warns), stop = w.some(function (x) { return x && B[x.code]; });
+      h += '<details class="bit"><summary class="row"><span class="nm"><b>' + esc(it.name) + '</b></span><span class="num">総支給 ' + esc(yen(it.gross)) + '</span><span class="num">控除 ' + esc(yen(it.deduct)) + '</span><span class="num">差引 <b>' + esc(yen(it.net)) + '</b></span>' +
+        (stop ? '<span class="tag ng">⛔ 確定できない警告</span>' : (w.length ? '<span class="tag warn">⚠ 警告 ' + esc(w.length) + '</span>' : '<span class="tag ok">✓</span>')) + '</summary>';
+      if (w.length) h += '<div class="band ' + (stop ? 'ng' : 'warn') + '"><ul>' + w.map(function (x) { return '<li>' + (B[x.code] ? '⛔ ' : '⚠ ') + esc(x.msg || x.code) + '</li>'; }).join('') + '</ul></div>';
+      h += '<div class="split"><div class="tw">' + linesTable(arr(it.lines).filter(function (l) { return l && l.sec === 'pay'; }), '支給') + '</div><div class="tw">' + linesTable(arr(it.lines).filter(function (l) { return l && l.sec === 'deduct'; }), '控除') + '</div></div>' +
+        '<p class="help">標準賞与額 健康保険 ' + esc(yen(obj(it.std).health)) + ' 円・厚生年金 ' + esc(yen(obj(it.std).pension)) + ' 円／課税対象額 ' + esc(it.tax_base != null ? yen(it.tax_base) : (it.T != null ? yen(it.T) : '—')) + ' 円' +
+        (it.rate != null ? '／率 ' + esc(it.rate) + '%' : (it.taxMethod ? '／月額表の方法' : '')) + '</p></details>';
+    });
+    h += '</div>';
+    /* 明細・振込・CSV（確定した回だけ。明細の見本と印刷は下書きでも出す＝紙に「下書き（確定前）」） */
+    var saved = fz ? bb.items : (bDirty ? [] : bb.items);
+    if (saved.length) {
+      if (!bSlipSid || !saved.some(function (it) { return it.staff_id === bSlipSid; })) bSlipSid = saved[0].staff_id;
+      var cur = saved.filter(function (it) { return it.staff_id === bSlipSid; })[0];
+      h += '<div class="cd"><h2>賞与明細・振込・書き出し</h2>' + (fz ? '' : '<div class="band warn">⚠ まだ確定していません。紙にも「下書き（確定前）」と出ます。振込データと CSV は確定してから出せます。</div>') +
+        '<div class="row"><label for="b-who">職員</label><select id="b-who">' + saved.map(function (it) { return '<option value="' + esc(it.staff_id) + '"' + (it.staff_id === bSlipSid ? ' selected' : '') + '>' + esc(it.name) + '</option>'; }).join('') + '</select>' +
+        '<button type="button" class="btn" data-act="b-print-one">この人の明細を印刷</button><button type="button" class="btn pri" data-act="b-print-all">全員分を印刷（' + esc(saved.length) + '枚）</button></div>';
+      if (fz) {
+        h += '<div class="row">' + (bonusCfgOf().zengin_enabled === true ? '<button type="button" class="btn pri" data-act="b-zengin"' + (X() ? '' : ' disabled') + '>振込データ（全銀形式・賞与）</button>' : '') +
+          '<button type="button" class="btn" data-act="b-shoyo">賞与支払届に写す値の CSV</button></div>';
+        if (bonusCfgOf().zengin_enabled !== true) h += '<p class="help">振込データ（全銀形式）は、管理者が「設定」の「振込データ（全銀形式）の書き出しを使う」に印を入れるまで出しません。</p>';
+        var w2 = bonusTransferWant(saved);
+        h += '<p class="help">振込する分（口座あり・差引が0より大きい人）: ' + esc(yen(w2.total)) + ' 円・' + esc(w2.parts) + ' 件。振込指定日は支給日（' + esc(jdate(run.pay_date)) + '）です。CSV には個人番号・基礎年金番号は入れません。</p>' +
+          '<div class="band warn"><b>書き出したファイルの扱い</b><ul><li>ファイルはこのパソコンの「ダウンロード」フォルダに入ります。氏名と金額（振込データは口座の番号も）が入っています。</li><li>使い終わったら、Finder の「ダウンロード」でそのファイルを選び、ごみ箱へ入れて「ごみ箱を空にする」まで行ってください。</li><li>メール・チャット・共有のフォルダには入れないでください。書き出したことは記録に残ります。</li></ul></div>';
+      }
+      h += '</div>' + bonusSlipHtml(cur, false);
+    }
+    return h;
+  }
+  /* 賞与の画面の操作（bind の click から呼ぶ） */
+  function bonusAct(a, b) {
+    if (a === 'b-reload') { bErr = null; bonusLoad(false); }
+    else if (a === 'b-new') bonusNew();
+    else if (a === 'b-new-go') bonusNewGo(b);
+    else if (a === 'b-open') bonusOpen(b.getAttribute('data-bid'));
+    else if (a === 'b-list') { if (bonusDirty()) { ask('保存していない賞与の入力があります。捨てて一覧へ戻りますか？').then(function (ok) { if (ok) { bSel = null; bonusClear(); bonusLoad(false); } }); return; } bSel = null; bonusClear(); bonusLoad(false); }
+    else if (a === 'b-compute') bonusCompute(false);
+    else if (a === 'b-save') bonusSave(b);
+    else if (a === 'b-confirm') bonusOpenConfirm();
+    else if (a === 'b-confirm-go') bonusConfirmGo(b);
+    else if (a === 'b-unconfirm') bonusOpenUnconfirm();
+    else if (a === 'b-unconfirm-go') bonusUnconfirmGo(b);
+    else if (a === 'b-delete') bonusDelete(b);
+    else if (a === 'b-cfg-save') bonusCfgSave(b);
+    else if (a === 'b-cfg-fill') bonusCfgFill();
+    else if (a === 'b-print-one') bonusPrint(bb.items.filter(function (it) { return it.staff_id === bSlipSid; }));
+    else if (a === 'b-print-all') bonusPrint(bb.items.slice());
+    else if (a === 'b-zengin') bonusZengin(b);
+    else if (a === 'b-shoyo') bonusShoyo(b);
+  }
+  /* 入力欄はメモリ（bIn・bCfgIn）にだけ写す。描き直さない（打っている欄の手元を失わない）。前月の給与の選びを変えた時だけ描き直す */
+  function bonusBind() {
+    /* 回の設定の開け閉めを覚える（描き直しで閉じない） */
+    document.addEventListener('toggle', function (e) { if (e.target && e.target.id === 'b-cfg') bCfgOpen = !!e.target.open; }, true);
+    document.addEventListener('input', function (e) {
+      var el = e.target, k = el && el.getAttribute && el.getAttribute('data-bk'), sid = el && el.getAttribute('data-bsid');
+      if (!k || !bb || tab !== 'bonus') return;
+      if (k === 'amt' || k === 'pP') { bIn[sid] = bIn[sid] || { amt: '', pm: '', pP: '', psrc: 'freee' }; bIn[sid][k] = String(el.value || ''); bDirty = true; }
+      else if ((k === 'fy' || k === 'cnt') && bCfgIn) { bCfgIn[k][sid] = String(el.value || ''); if (!bCfgDirty) { bCfgDirty = true; var sb = document.querySelector('[data-act="b-cfg-save"]'); if (sb) sb.disabled = false; } }
+    }, true);
+    document.addEventListener('change', function (e) {
+      var el = e.target, k = el && el.getAttribute && el.getAttribute('data-bk'), sid = el && el.getAttribute('data-bsid');
+      if (el && el.id === 'b-who') { bSlipSid = el.value; paint(); return; }
+      if (!k || !bb || tab !== 'bonus') return;
+      if (k === 'pm' || k === 'psrc') { bIn[sid] = bIn[sid] || { amt: '', pm: '', pP: '', psrc: 'freee' }; bIn[sid][k] = String(el.value || ''); bDirty = true; if (k === 'pm') { paint(); var f = $(el.id.replace('b-pm-', 'b-pp-')) || $(el.id); if (f) f.focus(); } }
+      else if (k === 'months' && bCfgIn) { bCfgIn.months = el.value === '12' ? '12' : '6'; bCfgDirty = true; paint(); }
+    }, true);
   }
 
   /* ── 職員の給与設定 ── */
@@ -1370,6 +2069,7 @@
   function mask() {
     if (masked || view !== 'app') return;
     masked = true; maskGen++; closeDlg(); importRows = null; printList = null; audit = null; put($('p-print'), '');
+    bPrint = null;   /* 賞与の紙の用意も捨てる（2026-11-23） */
     paint();
   }
   function paintMasked() {
@@ -1436,6 +2136,7 @@
   /* 鍵の画面。保存していない計算は画面のメモリに残す（番号が合えば続きから使える）。金額・明細・窓・印刷は消す */
   function showLock(msg) {
     view = 'lock'; pinGen++; masked = false; maskGen++; closeDlg(); bs = null; importRows = null; printList = null; audit = null; members = null;
+    bb = null; bGen++; bLoading = false; bPrint = null;   /* 賞与の読んだ物も捨てる（入れた賞与額はメモリに残す・2026-11-23） */
     pinMsg = msg || '';
     $('p-app').hidden = true; put($('p-main'), ''); put($('p-print'), '');
     var st = pinSt || {}, g = $('p-gate'); g.hidden = false;
@@ -1545,6 +2246,7 @@
   };
   function showGate(why) {
     view = 'gate'; masked = false; closeDlg(); bs = null; calc = null; importRows = null; audit = null; members = null;
+    bGen++; bLoading = false; bonusClear();   /* 賞与も捨てる（2026-11-23） */
     $('p-app').hidden = true; put($('p-main'), ''); put($('p-print'), '');
     var g = GATE[why] || GATE.denied, gt = $('p-gate'); gt.hidden = false;
     put(gt, '<h2>' + esc(g[0]) + '</h2><p>' + esc(g[1]) + '</p><p><a class="btn pri" href="login.html?next=payroll.html">ログインの画面へ</a> <a class="btn" href="index.html">メニューへ戻る</a></p>');
@@ -1572,6 +2274,7 @@
     load(false);
   }
   function bind() {
+    bonusBind();
     document.addEventListener('click', function (e) {
       var b = e.target.closest ? e.target.closest('button') : null;
       if (!b || b.disabled) return;
@@ -1619,6 +2322,7 @@
       else if (a === 'pin-open') pinOpenGo(b);
       else if (a === 'pin-lock') pinLockNow('manual');
       else if (a === 'pin-reset') { var m1 = members && members[+b.getAttribute('data-i')]; if (m1) pinReset(m1.email, b); }
+      else if (a.indexOf('b-') === 0) bonusAct(a, b);   /* 賞与（2026-11-23） */
     });
     document.addEventListener('toggle', function (e) {
       var d = e.target;
@@ -1646,7 +2350,10 @@
     });
     $('p-prev').addEventListener('click', function () { setYm(shiftYm(ym, -1)); });
     $('p-next').addEventListener('click', function () { setYm(shiftYm(ym, 1)); });
-    $('p-reload').addEventListener('click', function () { if (!isDirty()) { load(false); return; } ask('保存していない計算・調整を捨てて読み直しますか？').then(function (ok) { if (ok) load(false); }); });
+    $('p-reload').addEventListener('click', function () {
+      if (tab === 'bonus') { if (!bonusDirty()) { bonusLoad(false); return; } ask('保存していない賞与の入力を捨てて読み直しますか？').then(function (ok) { if (ok) bonusLoad(false); }); return; }   /* 賞与のタブは賞与だけ読み直す */
+      if (!isDirty()) { load(false); return; } ask('保存していない計算・調整を捨てて読み直しますか？').then(function (ok) { if (ok) load(false); });
+    });
     $('p-dlg').addEventListener('cancel', function (e) {
       if (busy) { e.preventDefault(); return; }
       if (!dlgDirty()) { closeDlg(); return; }
@@ -1664,7 +2371,7 @@
     document.addEventListener('visibilitychange', function () { if (!document.hidden) idleCheck(); });
     window.addEventListener('focus', idleCheck);
     setInterval(idleCheck, 15000);
-    window.addEventListener('beforeunload', function (e) { if (isDirty()) { e.preventDefault(); e.returnValue = ''; } });
+    window.addEventListener('beforeunload', function (e) { if (isDirty() || bonusDirty()) { e.preventDefault(); e.returnValue = ''; } });
     window.addEventListener('storage', function (e) { if (e.key === 'su_device_role' && isField()) location.reload(); });
     window.addEventListener('pageshow', function (e) { if (e && e.persisted && isField()) location.reload(); else if (e && e.persisted && pinOn && view === 'app') pinLockNow('expired'); });   /* 戻るボタンで戻った時は鍵の画面から */
     if (pinCh) pinCh.onmessage = function (e) { if (e && e.data === 'lock' && pinOn && view === 'app') pinLockNow('manual-other'); };
@@ -1673,7 +2380,7 @@
   function boot() {
     if (isField()) { showField(); return; }
     if (!window.SUAppGate) { showGate('nocalc'); return; }
-    window.SUAppGate.run('payroll', { dirty: isDirty }).then(function (ok) {
+    window.SUAppGate.run('payroll', { dirty: function () { return isDirty() || bonusDirty(); } }).then(function (ok) {
       if (!ok) { view = 'gate'; return null; }
       return window.SUAuth.check().then(function (st) {
         var S = window.SUAuth.STATUS;
@@ -1695,5 +2402,6 @@
   var go = function () { try { boot(); } catch (e) { note('起動', e); } };
   if (window.SUFacility && typeof window.SUFacility.onReady === 'function') window.SUFacility.onReady(go); else go();
   /* 試験だけが読む（画面の動きには使わない） */
-  window.__payrollTest = { attSame: attSame, normBoot: normBoot, figures: figures, totals: totals, parseCsv: parseCsv, decode: decode, importCols: importCols, buildImport: buildImport, missingOf: missingOf, attFromKintai: attFromKintai, toSave: toSave, qtyText: qtyText, TABS: TABS, IDLE_MS: IDLE_MS };
+  window.__payrollTest = { attSame: attSame, normBoot: normBoot, figures: figures, totals: totals, parseCsv: parseCsv, decode: decode, importCols: importCols, buildImport: buildImport, missingOf: missingOf, attFromKintai: attFromKintai, toSave: toSave, qtyText: qtyText, TABS: TABS, IDLE_MS: IDLE_MS,
+    bonusNorm: bonusNorm, bonusYtd: bonusYtd, bonusPrevOf: bonusPrevOf, bonusToSave: bonusToSave, bonusBlocks: bonusBlocks, bonusShoyoCsv: bonusShoyoCsv, bonusNoDb: bonusNoDb };
 })();
