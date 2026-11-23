@@ -234,7 +234,88 @@ const ARGS = {
   payroll_settings_put: ['p_config', 'p_rev'], payroll_allowance_put: ['p_def', 'p_rev'], payroll_members_get: [], payroll_members_put: ['p_email', 'p_on'],
   payroll_export_log: ['p_kind', 'p_ym'], payroll_audit_get: ['p_from', 'p_to'], payroll_import_put: ['p_payload'],
 };
-const ADMIN_ONLY = ['payroll_run_unconfirm', 'payroll_settings_put', 'payroll_allowance_put', 'payroll_members_get', 'payroll_members_put', 'payroll_audit_get', 'payroll_import_put'];
+/* ── 統合 0121（賞与・care-backend の下書き PR #206 の supabase/migrations/0121_payroll_bonus.sql）の写し（2026-11-23） ──
+   関数の引数の名前の組・1人分の明細の形の確かめ（private.payroll_bonus_item_err）・回の手入力の形（private.payroll_bonus_config_ok）。
+   opt.bonus が真の時だけ賞与の関数を出す（偽なら PostgREST と同じく 404 PGRST202＝0121 の前の DB） */
+export const BONUS_ARGS = {
+  payroll_bonus_bootstrap: ['p_bonus_id'], payroll_bonus_create: ['p_pay_date', 'p_title'], payroll_bonus_config_put: ['p_bonus_id', 'p_config', 'p_rev'],
+  payroll_bonus_save: ['p_bonus_id', 'p_items', 'p_fingerprint', 'p_rev'], payroll_bonus_confirm: ['p_bonus_id', 'p_rev'], payroll_bonus_unconfirm: ['p_bonus_id', 'p_reason'],
+  payroll_bonus_delete: ['p_bonus_id', 'p_rev'], payroll_bonus_bank_export: ['p_bonus_id'], payroll_bonus_export_log: ['p_bonus_id', 'p_kind'],
+};
+const BONUS_ID = /^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])#[1-9]$/;
+const isNull = (v) => v === null;
+export function bonusConfigOk(c) {
+  if (!isObj(c) || JSON.stringify(c).length > 65536) return false;
+  for (const [k, v] of Object.entries(c)) {
+    if (k === 'fy_prior_std' || k === 'prior_count_12m') {
+      if (!isObj(v) || Object.keys(v).length > 500) return false;
+      for (const [k2, v2] of Object.entries(v)) {
+        if (!SID.test(k2)) return false;
+        if (k === 'fy_prior_std') { if (!yenOk(v2, 0) || v2 % 1000 !== 0) return false; }
+        else if (!yenOk(v2, 0) || v2 > 12) return false;
+      }
+    } else if (k === 'bonus_period_months') { if (!yenOk(v, 1) || v > 12) return false; }
+    else return false;
+  }
+  return true;
+}
+/* 1人分の明細（要素 {staff_id, item, prev_manual}）。合えば null、違えば 'badshape' か 'badsum'（0121 の payroll_bonus_item_err と同じ順で確かめる） */
+export function bonusItemErr(x) {
+  if (!isObj(x) || !reOk(x.staff_id, SID)) return 'badshape';
+  if (Object.keys(x).some((k) => !['staff_id', 'item', 'prev_manual'].includes(k))) return 'badshape';
+  const pm = x.prev_manual;
+  if (pm !== undefined && pm !== null) {
+    if (!isObj(pm)) return 'badshape';
+    for (const [k, v] of Object.entries(pm)) {
+      if (k === 'P') { if (!(isNull(v) || yenOk(v))) return 'badshape'; }
+      else if (k === 'none') { if (typeof v !== 'boolean') return 'badshape'; }
+      else if (k === 'source') { if (!(isNull(v) || txtOk(v, 20))) return 'badshape'; }
+      else return 'badshape';
+    }
+    if (pm.none === true) { if (yenOk(pm.P)) return 'badshape'; } else if (!yenOk(pm.P)) return 'badshape';
+  }
+  const it = x.item;
+  if (!isObj(it) || JSON.stringify(it).length > 262144) return 'badshape';
+  if (!(yenOk(it.gross, 0) && yenOk(it.deduct, 0) && yenOk(it.net) && yenOk(it.social, 0) && yenOk(it.tax, 0) && Array.isArray(it.lines) && isObj(it.std) && isObj(it.ins) && Array.isArray(it.warns) && txtOk(it.ver, 40, 1))) return 'badshape';
+  let sPay = 0, sDed = 0; const sCode = {};
+  for (const [k, v] of Object.entries(it)) {
+    if (['gross', 'deduct', 'net', 'social', 'tax', 'ver'].includes(k)) continue;
+    if (['taxable', 'tax_base', 'P'].includes(k)) { if (!(isNull(v) || yenOk(v))) return 'badshape'; }
+    else if (k === 'std') { if (Object.keys(v).some((z) => !['health', 'pension'].includes(z)) || !(yenOk(v.health, 0) && yenOk(v.pension, 0))) return 'badshape'; }
+    else if (k === 'ins') { if (Object.keys(v).some((z) => !['health', 'care', 'support', 'pension', 'emp'].includes(z)) || !['health', 'care', 'support', 'pension', 'emp'].every((z) => yenOk(v[z], 0))) return 'badshape'; }
+    else if (k === 'employer') { if (!isObj(v) || Object.keys(v).length > 30 || Object.entries(v).some(([k2, v2]) => !/^[A-Za-z_]{1,30}$/.test(k2) || !(isNull(v2) || numOk(v2, -9999999999, 9999999999)))) return 'badshape'; }
+    else if (k === 'taxMethod') { if (!(isNull(v) || ['rate', 'monthly_none', 'monthly_10x'].includes(v))) return 'badshape'; }
+    else if (k === 'rate') { if (!(isNull(v) || numOk(v, 0, 100))) return 'badshape'; }
+    else if (k === 'prev_kind') { if (!(isNull(v) || ['none', 'ok', 'unconfirmed', 'manual'].includes(v))) return 'badshape'; }
+    else if (k === 'warns') { if (v.length > 100 || !v.every((e) => isObj(e) && txtOk(e.code, 40, 1) && (e.msg === undefined || txtOk(e.msg, 300)))) return 'badshape'; }
+    else if (k === 'lines') {
+      if (v.length > 300) return 'badshape';
+      for (const ln of v) {
+        if (!isObj(ln) || typeof ln.sec !== 'string' || !['pay', 'deduct', 'employer'].includes(ln.sec)) return 'badshape';
+        for (const [k2, v2] of Object.entries(ln)) {
+          if (k2 === 'sec') continue;
+          if (k2 === 'code') { if (!txtOk(v2, 48)) return 'badshape'; }
+          else if (k2 === 'name') { if (!txtOk(v2, 60)) return 'badshape'; }
+          else if (k2 === 'amount') { if (ln.sec === 'pay' || ln.sec === 'deduct' ? !yenOk(v2) : !(isNull(v2) || numOk(v2, -9999999999, 9999999999))) return 'badshape'; }
+          else if (k2 === 'basis') { if (!(isNull(v2) || txtOk(v2, 300))) return 'badshape'; }
+          else return 'badshape';
+        }
+        if (ln.sec === 'pay') sPay += ln.amount || 0;
+        else if (ln.sec === 'deduct') { sDed += ln.amount || 0; const c = ln.code || ''; sCode[c] = (sCode[c] || 0) + (ln.amount || 0); }
+      }
+    } else return 'badshape';
+  }
+  if (it.social !== it.ins.health + it.ins.care + it.ins.support + it.ins.pension + it.ins.emp) return 'badshape';
+  for (const c of ['health', 'care', 'support', 'pension', 'emp']) if ((sCode[c] || 0) !== it.ins[c]) return 'badshape';
+  if ((sCode.income_tax || 0) !== it.tax) return 'badshape';
+  const fl = Math.floor(it.gross / 1000) * 1000;
+  if (it.std.health % 1000 !== 0 || it.std.pension % 1000 !== 0 || it.std.health > fl || it.std.pension > Math.min(fl, 1500000)) return 'badshape';
+  if (it.gross !== sPay || it.deduct !== sDed || it.net !== it.gross - it.deduct) return 'badsum';
+  return null;
+}
+/* DB の直し（止めの印を computeBonus の止めにそろえて10個）に合わせた（2026-11-23） */
+export const BONUS_STOP = ['prev_missing', 'prev_unconfirmed', 'rate_missing', 'tax_table_missing', 'emp_rate_missing', 'std_missing', 'badinput', 'calc_error', 'leave_check', 'tax_col'];
+const ADMIN_ONLY = ['payroll_bonus_unconfirm', 'payroll_run_unconfirm', 'payroll_settings_put', 'payroll_allowance_put', 'payroll_members_get', 'payroll_members_put', 'payroll_audit_get', 'payroll_import_put'];
 
 /* ── 架空の材料 ── */
 const ymAdd = (ym, n) => PC.ymAdd(ym, n);
@@ -561,6 +642,149 @@ export function routesFor(opt = {}) {
       audit('import');
       return ok(Object.assign(res, { added: res.allowances.added + res.profiles.added + res.banks.added, unchanged: res.allowances.skipped + res.profiles.skipped + res.banks.skipped }));
     }
+    /* ── 賞与（統合 0121 の写し・opt.bonus の時だけ）── */
+    if (name.startsWith('payroll_bonus_')) return bonusRpc(name, p, ok, ng);
+    if (name === 'payroll_ytd_get') {
+      /* 年末調整の記録（統合 0122 の設計 ROOT-yearend.md の形・opt.ytd の行をその年の分だけ返す） */
+      if (!Number.isInteger(p.p_year)) return ng('badshape');
+      return ok({ rows: (opt.ytd || []).filter((r) => +r.pay_date.slice(0, 4) === p.p_year), yearend: [] });
+    }
+    return null;
+  }
+  const BB = db.bonus = { runs: {}, items: {} };
+  const bAudit = (action, id) => audit(action, id, null, null);
+  const fyFrom = (d) => (+d.slice(5, 7) >= 4 ? d.slice(0, 4) : String(+d.slice(0, 4) - 1)) + '-04-01';
+  const monthPay = (ym) => (db.runs[ym] && db.runs[ym].pay_date) || PC.payDate(ym, db.settings.config);
+  function bPrev(pay) {
+    const f = ymAdd(pay.slice(0, 7), -1) + '-01', t = KC.addDays(pay.slice(0, 7) + '-01', -1);
+    const cands = [ymAdd(f.slice(0, 7), -1), f.slice(0, 7), pay.slice(0, 7)].filter((ym) => db.runs[ym]).map((ym) => ({ ym, r: db.runs[ym], pd: monthPay(ym) }))
+      .filter((x) => x.pd >= f && x.pd <= t).sort((a, b) => (a.pd < b.pd ? 1 : -1));
+    const x = cands[0];
+    if (!x) return { state: 'none', from: f, to: t, items: {} };
+    if (x.r.status === 'draft') return { state: 'draft', from: f, to: t, ym: x.ym, pay_date: x.pd, status: x.r.status, rev: x.r.rev, items: {} };
+    const items = {};
+    (db.items[x.ym] || []).forEach((i) => {
+      const it = i.item, P = typeof it.tax_base === 'number' ? it.tax_base : (typeof it.taxable === 'number' && typeof it.si_total === 'number' ? it.taxable - it.si_total : null);
+      items[i.staff_id] = { gross: i.gross, taxable: typeof it.taxable === 'number' ? it.taxable : null, social: typeof it.si_total === 'number' ? it.si_total : null, emp: null, P };
+    });
+    return { state: 'ok', from: f, to: t, ym: x.ym, pay_date: x.pd, status: x.r.status, rev: x.r.rev, items };
+  }
+  const before = (r, id, pay) => r.bonus_id !== id && (r.pay_date < pay || (r.pay_date === pay && r.bonus_id < id));
+  function bCtx(id, pay) {
+    const o = { fy_from: fyFrom(pay), fy_std: {}, month_std: {}, count_12m: {} }, from12 = (+pay.slice(0, 4) - 1) + pay.slice(4);
+    Object.values(BB.runs).filter((r) => ['confirmed', 'exported'].includes(r.status) && before(r, id, pay)).forEach((r) => (BB.items[r.bonus_id] || []).forEach((i) => {
+      if (r.pay_date >= o.fy_from) o.fy_std[i.staff_id] = (o.fy_std[i.staff_id] || 0) + (i.item.std.health || 0);
+      if (r.pay_date.slice(0, 7) === pay.slice(0, 7)) o.month_std[i.staff_id] = (o.month_std[i.staff_id] || 0) + (i.item.std.pension || 0);
+      if (r.pay_date > from12 && i.gross > 0) o.count_12m[i.staff_id] = (o.count_12m[i.staff_id] || 0) + 1;
+    }));
+    return o;
+  }
+  function bFp(id) {
+    const r = BB.runs[id]; if (!r) return null;
+    const pv = bPrev(r.pay_date), profiles = {};
+    [...new Set(db.profiles.map((q) => q.staff_id))].forEach((sid) => { const q = profileAt(db, sid, r.pay_date); if (q) profiles[sid] = q.effective_from + ':' + q.rev; });
+    const others = Object.values(BB.runs).filter((o) => ['confirmed', 'exported'].includes(o.status) && before(o, id, r.pay_date)).map((o) => o.bonus_id + ':' + o.confirmed_at).sort().join(',');
+    return 'b1:' + JSON.stringify({ pay_date: r.pay_date, config: r.config, settings_rev: db.settings.rev, allowances: db.allowances.map((a) => a.code + ':' + a.rev).sort().join(','), profiles, prev: { state: pv.state, ym: pv.ym || null, rev: pv.rev || null }, others });
+  }
+  const bTotals = (id) => { const it = BB.items[id] || []; return { count: it.length, gross: it.reduce((a, x) => a + x.gross, 0), social: it.reduce((a, x) => a + x.social, 0), tax: it.reduce((a, x) => a + x.tax, 0), deduct: it.reduce((a, x) => a + x.deduct, 0), net: it.reduce((a, x) => a + x.net, 0) }; };
+  const bStale = (r) => r.stale || (r.status === 'draft' && r.fingerprint != null && r.fingerprint !== bFp(r.bonus_id));
+  function bonusRpc(name, p, ok, ng) {
+    const id = p.p_bonus_id;
+    if (name === 'payroll_bonus_bootstrap') {
+      if (id !== null && !BONUS_ID.test(String(id))) return ng('badshape');
+      const base = { ok: true, runs: Object.values(BB.runs).sort((a, b) => (a.pay_date < b.pay_date || (a.pay_date === b.pay_date && a.bonus_id < b.bonus_id) ? 1 : -1)).map((r) => ({ bonus_id: r.bonus_id, pay_date: r.pay_date, title: r.title, status: r.status, rev: r.rev, count: (r.totals || {}).count || 0, gross: (r.totals || {}).gross || 0, stale: bStale(r) })),
+        settings: { config: db.settings.config, rev: db.settings.rev }, allowances: db.allowances.map((a) => ({ code: a.code, def: a.def, rev: a.rev })),
+        staff: db.staff.map((x) => ({ staff_id: x.staff_id, name: x.name, office: x.office, emp_code: x.emp_code, active: x.active })) };
+      if (id === null) return Object.assign(base, { run: null, profiles: null, items: [], prev: null, ctx: null, fingerprint: null });
+      const r = BB.runs[id]; if (!r) return ng('norun');
+      return Object.assign(base, {
+        run: { bonus_id: r.bonus_id, pay_date: r.pay_date, title: r.title, status: r.status, rev: r.rev, config: r.config, totals: r.totals, stale: bStale(r), saved_at: r.saved_at, confirmed_at: r.confirmed_at, exported_at: r.exported_at, history: [] },
+        profiles: [...new Set(db.profiles.map((q) => q.staff_id))].sort().map((sid) => { const q = profileAt(db, sid, r.pay_date); return q ? { staff_id: sid, name: nameOf(db, sid), effective_from: q.effective_from, rev: q.rev, data: q.data, bank_last4: db.bank[sid] ? summaryOf(db.bank[sid].accounts) : [] } : null; }).filter(Boolean),
+        items: (BB.items[id] || []).map((i) => ({ staff_id: i.staff_id, name: i.frozen.name, item: i.item, prev_manual: i.frozen.prev_manual, gross: i.gross, social: i.social, tax: i.tax, deduct: i.deduct, net: i.net,
+          frozen: i.frozen.confirmed ? { pay_date: i.frozen.confirmed.pay_date, company_name: i.frozen.confirmed.company_name, settings: { config: {} }, bank_last4: i.frozen.confirmed.bank_last4 } : null })),
+        prev: bPrev(r.pay_date), ctx: bCtx(id, r.pay_date), fingerprint: bFp(id) });
+    }
+    if (name === 'payroll_bonus_create') {
+      if (!dateOk(p.p_pay_date)) return ng('baddate');
+      const t = String(p.p_title || '').trim(); if (t.length < 1 || t.length > 40 || /[\x00-\x1f\x7f]/.test(t)) return ng('badshape');   /* 0121 と同じく制御文字は断る */
+      /* 0121 と同じく、同じ支給日の番号の最大＋1（消した回の番号を詰めない） */
+      const n = Object.values(BB.runs).filter((r) => r.pay_date === p.p_pay_date).reduce((m, r) => Math.max(m, +r.bonus_id.slice(11)), 0) + 1; if (n > 9) return ng('full');
+      const nid = p.p_pay_date + '#' + n;
+      BB.runs[nid] = { bonus_id: nid, pay_date: p.p_pay_date, title: t, status: 'draft', config: {}, fingerprint: null, stale: false, bank_fp: {}, totals: {}, rev: 1, saved_at: null, confirmed_at: null, exported_at: null };
+      bAudit('bonus_create', nid); return ok({ bonus_id: nid, rev: 1 });
+    }
+    if (!BONUS_ID.test(String(id))) return ng('badshape');
+    const cur = BB.runs[id];
+    if (name === 'payroll_bonus_config_put') {
+      if (!bonusConfigOk(p.p_config)) return ng('badshape');
+      if (!cur) return ng('norun'); if (cur.status !== 'draft') return ng('confirmed'); if (p.p_rev !== cur.rev) return ng('conflict', { rev: cur.rev });
+      cur.config = p.p_config; cur.rev++; bAudit('bonus_config', id); return ok({ rev: cur.rev, fingerprint: bFp(id) });
+    }
+    if (name === 'payroll_bonus_save') {
+      const items = p.p_items;
+      if (!Array.isArray(items) || items.length < 1 || items.length > 500 || typeof p.p_fingerprint !== 'string' || p.p_fingerprint.length < 1) return ng('badshape');
+      for (const x of items) { const e = bonusItemErr(x); if (e) return ng(e, { staff_id: x && x.staff_id }); }
+      if (new Set(items.map((x) => x.staff_id)).size !== items.length) return ng('badshape', { detail: 'dup' });
+      if (!cur) return ng('norun'); if (cur.status !== 'draft') return ng('confirmed'); if (p.p_rev !== cur.rev) return ng('conflict', { rev: cur.rev });
+      const f = bFp(id); if (p.p_fingerprint !== f) return ng('stale', { fingerprint: f });
+      for (const x of items) { if (!db.staff.some((z) => z.staff_id === x.staff_id) && !x.staff_id.startsWith('p:')) return ng('nostaff', { staff_id: x.staff_id }); if (!profileAt(db, x.staff_id, cur.pay_date)) return ng('noprofile', { staff_id: x.staff_id }); }
+      const pv = bPrev(cur.pay_date);
+      BB.items[id] = items.map((x) => ({ staff_id: x.staff_id, item: x.item, gross: x.item.gross, social: x.item.social, tax: x.item.tax, deduct: x.item.deduct, net: x.item.net,
+        frozen: { name: nameOf(db, x.staff_id), prev_manual: isObj(x.prev_manual) ? x.prev_manual : null,
+          prev_db: { state: pv.state, kind: pv.state === 'draft' ? 'unconfirmed' : (pv.state === 'ok' && x.staff_id in pv.items ? 'ok' : 'missing'), item: pv.items[x.staff_id] || null } } }));
+      cur.fingerprint = p.p_fingerprint; cur.stale = false; cur.rev++; cur.saved_at = nowIso(); cur.totals = bTotals(id);
+      bAudit('bonus_save', id); return ok({ rev: cur.rev, totals: cur.totals });
+    }
+    if (name === 'payroll_bonus_confirm') {
+      if (!cur) return ng('norun'); if (cur.status !== 'draft') return ng('confirmed'); if (p.p_rev !== cur.rev) return ng('conflict', { rev: cur.rev });
+      if (cur.fingerprint == null) return ng('empty');
+      if (cur.fingerprint !== bFp(id)) { cur.stale = true; return ng('stale'); }
+      for (const i of BB.items[id] || []) if (bonusItemErr({ staff_id: i.staff_id, item: i.item })) return ng('badsum', { staff_id: i.staff_id });
+      for (const i of (BB.items[id] || []).slice().sort((a, b) => (a.staff_id < b.staff_id ? -1 : 1))) {
+        const w = i.item.warns.map((x) => x.code).filter((c) => BONUS_STOP.includes(c)).sort()[0];
+        const pd = i.frozen.prev_db, dbBlk = pd.kind === 'unconfirmed' ? 'prev_unconfirmed' : ((pd.kind !== 'ok' || !pd.item || typeof pd.item.P !== 'number') && !isObj(i.frozen.prev_manual) ? 'prev_missing' : null);
+        const code = [w, dbBlk].filter(Boolean).sort()[0];
+        if (code) return ng('blockwarn', { staff_id: i.staff_id, code });
+      }
+      const tot = bTotals(id); if (!tot.count) return ng('empty');
+      const later = Object.values(BB.runs).find((o) => ['confirmed', 'exported'].includes(o.status) && o.bonus_id !== id && before({ bonus_id: id, pay_date: cur.pay_date }, o.bonus_id, o.pay_date) && o.pay_date < (+fyFrom(cur.pay_date).slice(0, 4) + 1) + '-04-01');
+      if (later) return ng('order', { bonus_id: later.bonus_id });
+      (BB.items[id] || []).forEach((i) => { i.frozen.confirmed = { pay_date: cur.pay_date, company_name: db.settings.config.company_name || null, bank_last4: db.bank[i.staff_id] ? summaryOf(db.bank[i.staff_id].accounts) : [] }; });
+      cur.bank_fp = {}; (BB.items[id] || []).forEach((i) => { cur.bank_fp[i.staff_id] = db.bank[i.staff_id] ? db.bank[i.staff_id].rev : null; });
+      cur.status = 'confirmed'; cur.confirmed_at = nowIso(); cur.rev++; cur.totals = tot; cur.stale = false;
+      bAudit('bonus_confirm', id); return ok({ rev: cur.rev, totals: tot });
+    }
+    if (name === 'payroll_bonus_unconfirm') {
+      const reason = String(p.p_reason || '').trim(); if (!reason) return ng('reason');
+      if (!cur || cur.status === 'draft') return ng('notconfirmed');
+      const was = cur.status; cur.status = 'draft'; cur.rev++;   /* 0121 と同じく明細の確定の写し（frozen.confirmed）は消さない */
+      bAudit('bonus_unconfirm', id); return ok({ rev: cur.rev, was, warning: was === 'exported' ? 'exported' : null });
+    }
+    if (name === 'payroll_bonus_delete') {
+      if (!cur) return ng('norun'); if (cur.status !== 'draft') return ng('confirmed'); if (cur.exported_at) return ng('exported'); if (p.p_rev !== cur.rev) return ng('conflict', { rev: cur.rev });
+      delete BB.items[id]; delete BB.runs[id]; bAudit('bonus_delete', id); return ok({});
+    }
+    if (name === 'payroll_bonus_bank_export') {
+      if (!cur || cur.status === 'draft') return ng('notconfirmed');
+      if (db.settings.config.zengin_enabled !== true) { bAudit('bonus_bank_export_off', id); return ng('zengin_off'); }
+      if (cur.exported_at) {
+        const acts = db.audit.filter((x) => x.ym === id).map((x) => x.action), li = acts.lastIndexOf('bonus_export_zengin_again'), lb = acts.lastIndexOf('bonus_bank_export');
+        if (!(li >= 0 && li > lb)) { bAudit('bonus_bank_export_again_ng', id); return ng('exported', { exported_at: cur.exported_at }); }
+      }
+      const its = BB.items[id] || [];
+      if (its.some((i) => (cur.bank_fp[i.staff_id] === undefined ? null : cur.bank_fp[i.staff_id]) !== (db.bank[i.staff_id] ? db.bank[i.staff_id].rev : null))) return ng('stale', { changed: 1 });
+      const rows = its.filter((i) => i.net > 0 && db.bank[i.staff_id]).map((i) => ({ staff_id: i.staff_id, name: i.frozen.name, net: i.net, accounts: db.bank[i.staff_id].accounts }));
+      const missing = its.filter((i) => i.net > 0 && !db.bank[i.staff_id]).map((i) => i.staff_id);
+      if (cur.status === 'confirmed') { cur.status = 'exported'; cur.exported_at = nowIso(); cur.rev++; }
+      bAudit('bonus_bank_export', id); db.log.push('bonus_zengin'); return ok({ bonus_id: id, pay_date: cur.pay_date, rows, missing });
+    }
+    if (name === 'payroll_bonus_export_log') {
+      if (!['slip', 'ledger', 'zengin', 'zengin_again', 'shoyo_csv'].includes(p.p_kind)) return ng('badshape');
+      if (!cur) return ng('norun');
+      if (p.p_kind === 'zengin' && cur.status === 'draft') return ng('notconfirmed');
+      if (p.p_kind === 'zengin_again' && (cur.status === 'draft' || !cur.exported_at)) return ng('notexported');
+      bAudit('bonus_export_' + p.p_kind, id); db.log.push('bonus_' + p.p_kind); return ok({});
+    }
     return null;
   }
   const out = [{
@@ -594,17 +818,19 @@ export function routesFor(opt = {}) {
       const name = m[1];
       calls.push({ name, args: p });
       /* 引数の名前の組が違えば、PostgREST と同じく関数が見つからない */
-      const want = ARGS[name], got = Object.keys(p || {}).sort();
+      const want = ARGS[name] || (opt.bonus ? BONUS_ARGS[name] : null) || (opt.ytd && name === 'payroll_ytd_get' ? ['p_year'] : null), got = Object.keys(p || {}).sort();
       if (!want || want.slice().sort().join() !== got.join()) return json({ code: 'PGRST202', message: 'Could not find the function public.' + name + '(' + got.join(', ') + ') in the schema cache' }, 404);
       if (opt.deny) return json({ code: '42501', message: '給与を扱える人だけが使えます' }, 403);
       if (aal !== 'aal2') return json({ code: '42501', message: '給与を扱える人だけが使えます' }, 403);
       if (role !== 'admin' && ADMIN_ONLY.includes(name)) return json({ code: '42501', message: '管理者（二段階認証）だけが使えます' }, 403);
       const r = rpc(name, p);
+      /* 年末調整の記録の答えを遅らせる場面（opt.ytdDelay ミリ秒・答えが届くまで保存・確定を押せないことを見る） */
+      if (opt.ytdDelay && name === 'payroll_ytd_get' && r) return new Promise((res) => setTimeout(res, opt.ytdDelay)).then(() => json(JSON.parse(JSON.stringify(r))));
       if (r === null) return json({ code: 'PGRST202', message: 'check fixture: not served' }, 404);
       return json(JSON.parse(JSON.stringify(r)));
     },
   }, PROFILE_ROUTE];
-  out.db = db; out.calls = calls; out.opt = opt;   /* 試験が途中で deny などを変えられるように */
+  out.db = db; out.calls = calls; out.opt = opt; out.rpcDirect = rpc;   /* rpcDirect: 単体試験が偽の DB の答えを直接見る（2026-11-23） */   /* 試験が途中で deny などを変えられるように */
   return out;
 }
 export const routes = routesFor({ start: 'confirmed' });

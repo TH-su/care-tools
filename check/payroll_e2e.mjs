@@ -50,6 +50,8 @@ async function open(opt = {}) {
     if (m.type() !== 'error') return;
     const loc = (m.location && m.location().url) || '';
     if (/^Failed to load resource/.test(m.text()) && /\/rest\/v1\/rpc\/payroll_pin_status$/.test(loc)) return;
+    /* 賞与（2026-11-23）: 0121 の前の DB の真似（noBonusDb）の賞与の口と、年末調整の記録（0122）を置いていない場面のその口だけは数えない */
+    if (/^Failed to load resource/.test(m.text()) && ((opt.noBonusDb && /\/rest\/v1\/rpc\/payroll_bonus_bootstrap$/.test(loc)) || (opt.bonus && !opt.ytd && /\/rest\/v1\/rpc\/payroll_ytd_get$/.test(loc)))) return;
     errors.push('console: ' + m.text() + (loc && /^Failed to load resource/.test(m.text()) ? ' @' + loc.replace(/^https?:\/\/[^/]+/, '') : ''));
   });
   const logs = [];
@@ -527,6 +529,227 @@ console.log('\n— 6. 覆い・その他 —');
     t(nm + ': 画面のエラー 0', q.errors.length === 0, q.errors);
     await q.ctx.close();
   }
+}
+
+
+/* ── 7. 賞与のタブ（統合 0121・2026-11-23）── */
+console.log('\n— 7. 賞与のタブ —');
+{
+  /* 関数の無い DB（0121 の前）: 「まだ使えません」だけ出して何もしない */
+  const o0 = await open({ tab: 'bonus', start: 'confirmed', noBonusDb: true });
+  await o0.page.waitForSelector('text=賞与はまだ使えません（データベースの準備中）', { timeout: 15000 });
+  t('関数の無い DB では「賞与はまだ使えません（データベースの準備中）」だけ出し、ボタンを出さない', (await o0.page.locator('[data-act^="b-"]').count()) === 0);
+  t('関数の無い DB で呼んだのは一覧の読み込みだけ', o0.routes.calls.filter((c) => /^payroll_bonus_/.test(c.name)).every((c) => c.name === 'payroll_bonus_bootstrap'));
+  t('関数の無い DB: 画面のエラー 0', o0.errors.length === 0, o0.errors);
+  await o0.ctx.close();
+
+  /* 11月分の給与を確定した DB（前月の給与は自社の確定した明細）・全銀のスイッチ入 */
+  const o = await open({ tab: 'bonus', start: 'confirmed', bonus: true, zengin: true });
+  const p = o.page;
+  await p.waitForSelector('[data-act="b-new"]', { timeout: 15000 });
+  t('賞与のタブで開く（端末に残したタブ）・回はまだ無い', await p.evaluate(() => document.querySelector('.tabs [aria-selected="true"]').getAttribute('data-tab')) === 'bonus' && /賞与の回はまだありません/.test(await p.textContent('#p-main')));
+  await shot(p, 'payroll.bonus-list.pc');
+  await p.click('[data-act="b-new"]');
+  await p.fill('#bn-date', '2026-12-24');
+  await p.fill('#bn-title', '見本の冬の賞与');
+  await p.click('[data-act="b-new-go"]');
+  await p.waitForSelector('[data-act="b-compute"]', { timeout: 10000 });
+  t('新しい賞与を作ると回の画面が開く（支給日・題）', /見本の冬の賞与（支給日 2026年12月24日）/.test(await p.textContent('#p-main')) && o.routes.calls.some((c) => c.name === 'payroll_bonus_create' && c.args.p_pay_date === '2026-12-24'));
+  t('前月の給与は11月分の確定した明細から読む（入れる欄を出さない）', /給与の記録/.test(await p.textContent('#p-main')) && (await p.locator('[data-bk="pm"]').count()) === 0);
+  const idx = async (sid) => p.evaluate((s) => { const e = document.querySelector('[data-bk="amt"][data-bsid="' + s + '"]'); return e ? e.id : null; }, sid);
+  await p.fill('#' + await idx('s-01'), '300000');
+  await p.fill('#' + await idx('s-03'), '200000');
+  await p.fill('#' + await idx('s-08'), '100000');
+  /* 回の設定: 他所で払った標準賞与額（千円の倍数でないと断る） */
+  await p.click('details.cd > summary');
+  await p.fill('#' + await p.evaluate(() => document.querySelector('[data-bk="fy"][data-bsid="s-01"]').id), '301500');
+  await p.click('[data-act="b-cfg-save"]');
+  const mCfg = await sud(p);
+  t('他所で払った標準賞与額は千円の倍数でないと保存しない', /千円の倍数/.test(mCfg), mCfg);
+  await p.fill('#' + await p.evaluate(() => document.querySelector('[data-bk="fy"][data-bsid="s-01"]').id), '301000');
+  await p.click('[data-act="b-cfg-save"]');
+  await p.waitForFunction(() => /回の設定を保存しました/.test(document.getElementById('p-toast').textContent), null, { timeout: 10000 });
+  t('回の設定は config_put（fy_prior_std・算定期間）で保存した', o.routes.calls.some((c) => c.name === 'payroll_bonus_config_put' && c.args.p_config.fy_prior_std['s-01'] === 301000 && c.args.p_config.bonus_period_months === 6));
+  await settle(p);
+  t('回の設定を保存しても、入れた賞与額は残る', await p.inputValue('#' + await idx('s-01')) === '300000');
+  await p.click('[data-act="b-compute"]');
+  await p.waitForSelector('details.bit');
+  t('計算すると賞与額を入れた3人の結果が出る', (await p.locator('details.bit').count()) === 3);
+  t('下書き保存の前は確定を押せない', await p.isDisabled('[data-act="b-confirm"]'));
+  await shot(p, 'payroll.bonus-run.pc');
+  await p.click('[data-act="b-save"]');
+  await p.waitForFunction(() => { const b = document.querySelector('[data-act="b-confirm"]'); return b && !b.disabled; }, null, { timeout: 10000 });
+  const sv = o.routes.calls.filter((c) => c.name === 'payroll_bonus_save').pop();
+  t('下書き保存は 0121 の形（許された鍵だけ・指紋は bootstrap の文字・前月の給与の出どころ ok）', !!sv && typeof sv.args.p_fingerprint === 'string' && sv.args.p_items.length === 3
+    && sv.args.p_items.every((x) => Object.keys(x).sort().join() === 'item,prev_manual,staff_id' && x.item.prev_kind === 'ok' && !('raw' in x.item.std) && !('T' in x.item) && x.item.warns.every((w) => !('stop' in w))));
+  await p.click('[data-act="b-confirm"]');
+  const dlg = await p.textContent('#p-dlg');
+  t('確定の窓に人数・総額・支給日', /3 人/.test(dlg) && /差引の合計/.test(dlg) && /2026年12月24日/.test(dlg), dlg.slice(0, 300));
+  if (await p.locator('#bc-ack').count()) await p.check('#bc-ack');
+  await p.click('[data-act="b-confirm-go"]');
+  await p.waitForFunction(() => /確定済み/.test(document.getElementById('p-main').textContent) && document.querySelector('[data-act="b-print-all"]'), null, { timeout: 10000 });
+  t('確定すると確定済みになり、計算するのボタンが消える', (await p.locator('[data-act="b-compute"]').count()) === 0 && Object.values(o.routes.db.bonus.runs)[0].status === 'confirmed');
+  t('確定を押した時に読み直してから確定した（bootstrap → confirm）', (() => { const n = o.routes.calls.map((c) => c.name); const i = n.lastIndexOf('payroll_bonus_confirm'); return i > 0 && n.slice(0, i).lastIndexOf('payroll_bonus_bootstrap') > n.lastIndexOf('payroll_bonus_save'); })());
+  /* 明細の印刷（1人1枚・賞与の見出し） */
+  await p.evaluate(() => { window.print = function () {}; });
+  await p.click('[data-act="b-print-all"]');
+  await p.waitForFunction(() => document.body.classList.contains('su-printing'), null, { timeout: 10000 });
+  t('賞与明細の紙は1人1枚（3枚）・見出しは「賞与明細」・施設名と印刷日の印', (await p.locator('#p-print .slip').count()) === 3 && /賞与明細　見本の冬の賞与/.test(await p.textContent('#p-print')) && (await p.locator('#p-print [data-su-print-head="name date"]').count()) === 3);
+  t('印刷したことを記録した（種類 slip）', o.routes.db.log.includes('bonus_slip'));
+  if (SHOTS) {
+    await p.emulateMedia({ media: 'print' });
+    const pdf = path.join(SHOTS, 'payroll.bonus-slips.pdf');
+    await p.pdf({ path: pdf, preferCSSPageSize: true, printBackground: true });
+    t('賞与明細の PDF は3ページ', pdfPages(pdf) === 3);
+    await p.emulateMedia({ media: 'screen' });
+  }
+  await p.evaluate(() => document.body.classList.remove('su-printing'));
+  /* 全銀（種別12・振込指定日＝支給日） */
+  const [dz] = await Promise.all([p.waitForEvent('download'), p.click('[data-act="b-zengin"]')]);
+  const recs = fs.readFileSync(await dz.path()).toString('latin1').split('\r\n').filter(Boolean);
+  t('賞与の振込データは種別12・振込指定日は支給日（1224）・120バイトの行', /^payroll-zengin-bonus-2026-12-24\.txt$/.test(dz.suggestedFilename()) && recs.every((r) => r.length === 120) && recs[0].slice(1, 3) === '12' && recs[0].slice(54, 58) === '1224', recs[0] && recs[0].slice(0, 60));
+  fs.rmSync(await dz.path(), { force: true });
+  t('全銀は記録（zengin）の後に口座の全桁を書き出し専用の口から受け取った', o.routes.calls.some((c) => c.name === 'payroll_bonus_bank_export') && o.routes.db.log.includes('bonus_zengin'));
+  await settle(p);
+  const [dc] = await Promise.all([p.waitForEvent('download'), p.click('[data-act="b-shoyo"]')]);
+  const csv = fs.readFileSync(await dc.path(), 'utf8');
+  /* ★賞与支払届の CSV は支払った人を全員載せる決まりに改めた（2026-11-23 反証レビュー 7・仮置き）ので、保険の無い人（見本 八子）も載る期待に改めた */
+  t('賞与支払届に写す値の CSV（見出し・支払った3人を全員・同じ月のほかの回が無いので合算の印なし・個人番号なし）', /^payroll-shoyo-2026-12-24\.csv$/.test(dc.suggestedFilename()) && /氏名,生年月日,支給日,賞与額,千円未満切り捨ての額,70歳以上の印,同じ月の合算の印/.test(csv)
+    && /見本 一郎,1980-05-01,2026-12-24,300000,300000,,\r\n/.test(csv) && /見本 八子,/.test(csv) && csv.trim().split('\r\n').length === 4 && o.routes.db.log.includes('bonus_shoyo_csv'), csv.slice(0, 300));
+  fs.rmSync(await dc.path(), { force: true });
+  t('端末に残したのは payroll_tab（bonus）だけ（金額・氏名なし）', await p.evaluate(() => { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i), v = localStorage.getItem(k); if (/見本|300000/.test(v) && !/^sb-|^su_fac/.test(k)) return false; } return localStorage.getItem('payroll_tab') === 'bonus'; }));
+  /* 確定の取り消し（管理者・理由が要る） */
+  await p.click('[data-act="b-unconfirm"]');
+  await p.fill('#bu-reason', '見本の直し');
+  await p.click('[data-act="b-unconfirm-go"]');
+  await p.waitForSelector('[data-act="b-compute"]', { timeout: 10000 });
+  t('確定を取り消すと下書きに戻る（理由つき）', o.routes.calls.some((c) => c.name === 'payroll_bonus_unconfirm' && c.args.p_reason === '見本の直し'));
+  t('一度振込データを書き出した回は「消す」のボタンを出さない', (await p.locator('[data-act="b-delete"]').count()) === 0);
+  /* 0121 は取り消しても確定の写しを消さない。下書きに戻った明細の見本は今の口座・「下書き（確定前）」で出す（確定の後に口座を直した人も今の口座） */
+  o.routes.db.bank['s-01'] = { rev: 2, accounts: [{ bank_code: '9997', branch_code: '003', type: '1', number: '0009999', name_kana: 'ﾐﾎﾝ', bank_name: '見本の新銀行', amount_or_rest: 'rest' }] };
+  await p.click('#p-reload'); await settle(p);
+  await p.waitForSelector('#p-main .slip');
+  const slipD = await p.textContent('#p-main .slip');
+  t('取り消した下書きの明細の見本は「下書き（確定前）」・今の口座（＊＊＊9999）で出す', /下書き（確定前）/.test(slipD) && /＊＊＊9999/.test(slipD) && !/＊＊＊2222/.test(slipD), slipD.slice(0, 200));
+  t('賞与: 画面のエラー 0', o.errors.length === 0, o.errors);
+  t('賞与: console.log に何も出さない・外への通信 0', o.logs.length === 0 && o.outside.length === 0, [o.logs, o.outside]);
+  /* 10分で金額を隠す */
+  await p.evaluate(() => { const ev = new Event('visibilitychange'); Date.now = ((n) => () => n + 11 * 60 * 1000)(Date.now()); document.dispatchEvent(ev); });
+  await p.waitForSelector('text=金額を隠しました', { timeout: 20000 });
+  t('10分操作が無ければ賞与の金額も画面から消す', !/300,000/.test(await p.textContent('#p-main')));
+  await o.ctx.close();
+
+  /* 前月の給与が無い DB（11月分の給与がまだ無い）: 止めの警告で確定できず、「前月の給与なし」を選ぶと確定できる。年末調整の記録が無い DB では黙って飛ばす */
+  const o2 = await open({ tab: 'bonus', start: 'none', bonus: true });
+  const p2 = o2.page;
+  await p2.waitForSelector('[data-act="b-new"]', { timeout: 15000 });
+  await p2.click('[data-act="b-new"]');
+  await p2.fill('#bn-date', '2026-12-24');
+  await p2.click('[data-act="b-new-go"]');
+  await p2.waitForSelector('[data-act="b-compute"]', { timeout: 10000 });
+  const id2 = await p2.evaluate(() => document.querySelector('[data-bk="amt"][data-bsid="s-01"]').id);
+  await p2.fill('#' + id2, '300000');
+  await p2.click('[data-act="b-save"]');
+  await p2.waitForFunction(() => /確定できない警告/.test(document.getElementById('p-main').textContent) && !/計算した結果はまだ保存していません/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  t('前月の給与が入っていない人がいれば、保存はできるが確定のボタンを押せない（止めの警告の一覧を出す）', await p2.isDisabled('[data-act="b-confirm"]') && /前月の給与/.test(await p2.textContent('#p-main')) && !!o2.routes.calls.find((c) => c.name === 'payroll_bonus_save'));
+  await shot(p2, 'payroll.bonus-block.pc');
+  await p2.selectOption('[data-bk="pm"][data-bsid="s-01"]', 'none');
+  await p2.click('[data-act="b-save"]');
+  await p2.waitForFunction(() => { const b = document.querySelector('[data-act="b-confirm"]'); return b && !b.disabled; }, null, { timeout: 10000 });
+  const sv2 = o2.routes.calls.filter((c) => c.name === 'payroll_bonus_save').pop();
+  t('「前月の給与なし」は prev_manual {P:null, none:true} で送り、確定を押せる', sv2.args.p_items[0].prev_manual.none === true && sv2.args.p_items[0].prev_manual.P === null && sv2.args.p_items[0].item.prev_kind === 'none');
+  t('年末調整の口が無い DB でも止まらない（画面のエラー 0）', o2.errors.length === 0, o2.errors);
+  await o2.ctx.close();
+
+  /* 年末調整の記録がある DB: 前月の給与の P を記録から取り、prev_manual（source ytd）で送る */
+  const o3 = await open({ tab: 'bonus', start: 'none', bonus: true, ytd: [{ staff_id: 's-01', pay_date: '2026-11-25', kind: 'salary', source: 'freee', data: { taxable: 250000, si_health: 12000, si_pension: 22000, si_emp: 1200 } },
+    { staff_id: 's-01', pay_date: '2026-07-10', kind: 'bonus', source: 'freee', data: { gross: 301234 } }] });
+  const p3 = o3.page;
+  await p3.waitForSelector('[data-act="b-new"]', { timeout: 15000 });
+  await p3.click('[data-act="b-new"]');
+  await p3.fill('#bn-date', '2026-12-24');
+  await p3.click('[data-act="b-new-go"]');
+  await p3.waitForSelector('text=年末調整の記録', { timeout: 10000 });
+  t('年末調整の記録から前月の給与の P（214,800 円）を出す', /年末調整の記録 214,800 円/.test((await p3.textContent('#p-main')).replace(/\s+/g, ' ')));
+  await p3.fill('#' + await p3.evaluate(() => document.querySelector('[data-bk="amt"][data-bsid="s-01"]').id), '300000');
+  if (!(await p3.evaluate(() => document.getElementById("b-cfg").open))) await p3.click("details.cd > summary");
+  await p3.click('[data-act="b-cfg-fill"]');
+  t('「年末調整の記録から埋める」で他所で払った標準賞与額（301,000）を入れる（保存は人が押す）', await p3.inputValue('[data-bk="fy"][data-bsid="s-01"]') === '301000' && !(await p3.isDisabled('[data-act="b-cfg-save"]')));
+  await p3.click('[data-act="b-cfg-save"]');
+  await p3.waitForFunction(() => /回の設定を保存しました/.test(document.getElementById('p-toast').textContent), null, { timeout: 10000 });
+  await settle(p3);
+  await p3.click('[data-act="b-save"]');
+  await p3.waitForFunction(() => { const b = document.querySelector('[data-act="b-confirm"]'); return b && !b.disabled; }, null, { timeout: 10000 });
+  const sv3 = o3.routes.calls.filter((c) => c.name === 'payroll_bonus_save').pop();
+  t('記録から取った前月の給与は prev_manual {P:214800, source:"ytd"}・prev_kind manual で送り、確定を押せる', sv3.args.p_items[0].prev_manual.P === 214800 && sv3.args.p_items[0].prev_manual.source === 'ytd' && sv3.args.p_items[0].item.prev_kind === 'manual' && sv3.args.p_items[0].item.P === 214800);
+  t('年末調整の記録: 画面のエラー 0', o3.errors.length === 0, o3.errors);
+  await o3.ctx.close();
+  /* iPhone の幅で横にはみ出さない */
+  /* 年末調整の記録の答えが来ない: 10秒で読めなかった扱いにして解き、手入力で進められる（後から届いた答えは使わない） */
+  {
+    const o5 = await open({ tab: 'bonus', start: 'none', bonus: true, ytd: [{ staff_id: 's-01', pay_date: '2026-11-25', kind: 'salary', source: 'freee', data: { taxable: 250000 } }], ytdDelay: 14000 });
+    const p5 = o5.page;
+    await p5.waitForSelector('[data-act="b-new"]', { timeout: 15000 });
+    await p5.click('[data-act="b-new"]'); await p5.fill('#bn-date', '2026-12-24'); await p5.click('[data-act="b-new-go"]');
+    await p5.waitForSelector('[data-act="b-compute"]', { timeout: 10000 });
+    const t0 = Date.now();
+    await p5.waitForFunction(() => { const b = document.querySelector('[data-act="b-save"]'); return b && !b.disabled; }, null, { timeout: 13000 });
+    const waited = Date.now() - t0;
+    t('記録の答えが来ない時は約10秒で待ちを解き、手入力の欄を出す', waited >= 8000 && waited < 13000 && (await p5.locator('[data-bk="pm"][data-bsid="s-01"]').count()) === 1, waited);
+    await p5.waitForTimeout(5000);
+    t('時間切れの後に届いた記録の答えは使わない（札に変えない）', (await p5.locator('[data-bk="pm"][data-bsid="s-01"]').count()) === 1 && !/年末調整の記録 /.test(await p5.textContent('#p-main')));
+    /* 「もう一度読む」の確かめ（保存していない入力がある時）: 読み直すのボタンと同じ窓 */
+    await p5.fill('#' + await p5.evaluate(() => document.querySelector('[data-bk="amt"][data-bsid="s-01"]').id), '1000');
+    await p5.click('#p-reload');
+    const mR = await sud(p5, 'cancel');
+    t('保存していない賞与の入力がある時の読み直しは確かめる（やめれば入力が残る）', /捨てて読み直しますか/.test(mR) && await p5.inputValue('[data-bk="amt"][data-bsid="s-01"]') === '1000', mR);
+    t('記録の答えが来ない場面: 画面のエラー 0', o5.errors.length === 0, o5.errors);
+    await o5.ctx.close();
+  }
+  /* 記録が後から届いて札に変わる人: 入れかけの「金額を入れる」の選びを外し、形の違いで止めない */
+  {
+    const o6 = await open({ tab: 'bonus', start: 'none', bonus: true, ytd: [{ staff_id: 's-01', pay_date: '2026-11-25', kind: 'salary', source: 'freee', data: { taxable: 250000 } }], ytdDelay: 3000 });
+    const p6 = o6.page;
+    await p6.waitForSelector('[data-act="b-new"]', { timeout: 15000 });
+    await p6.click('[data-act="b-new"]'); await p6.fill('#bn-date', '2026-12-24'); await p6.click('[data-act="b-new-go"]');
+    await p6.waitForSelector('[data-bk="pm"][data-bsid="s-01"]', { timeout: 10000 });
+    await p6.selectOption('[data-bk="pm"][data-bsid="s-01"]', 'P');
+    await p6.fill('#' + await p6.evaluate(() => document.querySelector('[data-bk="amt"][data-bsid="s-01"]').id), '300000');
+    await p6.waitForFunction(() => { const b = document.querySelector('[data-act="b-save"]'); return b && !b.disabled; }, null, { timeout: 15000 });
+    await p6.click('[data-act="b-compute"]');
+    const m6 = await sud(p6, 'ok', 1500);
+    t('記録が後から届いた人は札に変わり、入れかけの金額の欄で止めない（計算できる）', m6 === '' && /年末調整の記録 250,000 円/.test((await p6.textContent('#p-main')).replace(/\s+/g, ' ')) && (await p6.locator('details.bit').count()) === 1, m6);
+    t('記録が後から届く場面: 画面のエラー 0', o6.errors.length === 0, o6.errors);
+    await o6.ctx.close();
+  }
+  /* 年末調整の記録の答えが遅い: 届くまで「下書き保存」「確定」を押せず、届いたら押せる */
+  {
+    const o4 = await open({ tab: 'bonus', start: 'none', bonus: true, ytd: [], ytdDelay: 3000 });
+    const p4 = o4.page;
+    await p4.waitForSelector('[data-act="b-new"]', { timeout: 15000 });
+    await p4.click('[data-act="b-new"]'); await p4.fill('#bn-date', '2026-12-24'); await p4.click('[data-act="b-new-go"]');
+    await p4.waitForSelector('[data-act="b-compute"]', { timeout: 10000 });
+    t('年末調整の記録を待つ間は「下書き保存」「確定」を押せない（待っている知らせを出す）', await p4.isDisabled('[data-act="b-save"]') && await p4.isDisabled('[data-act="b-confirm"]') && /年末調整の記録を確かめています/.test(await p4.textContent('#p-main')));
+    await p4.waitForFunction(() => { const b = document.querySelector('[data-act="b-save"]'); return b && !b.disabled; }, null, { timeout: 15000 });
+    t('記録の答えが届いたら「下書き保存」を押せる', !/年末調整の記録を確かめています/.test(await p4.textContent('#p-main')));
+    t('記録の答えが遅い場面: 画面のエラー 0', o4.errors.length === 0, o4.errors);
+    await o4.ctx.close();
+  }
+  const q = await open({ tab: 'bonus', start: 'confirmed', bonus: true, viewport: { width: 390, height: 844 } });
+  await q.page.waitForSelector('[data-act="b-new"]', { timeout: 15000 });
+  t('賞与（iPhone の幅・回の一覧）: 画面の横はみ出し 0', await q.page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth) <= 0);
+  /* 回の画面（入力の表・回の設定・計算の結果・明細の見本）も測る */
+  await q.page.click('[data-act="b-new"]'); await q.page.fill('#bn-date', '2026-12-24'); await q.page.click('[data-act="b-new-go"]');
+  await q.page.waitForSelector('[data-act="b-compute"]', { timeout: 10000 });
+  await q.page.fill('#' + await q.page.evaluate(() => document.querySelector('[data-bk="amt"][data-bsid="s-01"]').id), '300000');
+  await q.page.click('details.cd > summary');
+  await q.page.click('[data-act="b-save"]');
+  await q.page.waitForSelector('#p-main .slip', { timeout: 10000 });
+  await q.page.click('details.bit > summary');
+  t('賞与（iPhone の幅・回の画面と明細の見本）: 画面の横はみ出し 0（表は枠の中で横に送る）', await q.page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth) <= 0, await q.page.evaluate(() => document.documentElement.scrollWidth));
+  await shot(q.page, 'payroll.bonus-run.ph');
+  t('賞与（iPhone の幅）: 画面のエラー 0', q.errors.length === 0, q.errors);
+  await q.ctx.close();
 }
 
 await browser.close();
