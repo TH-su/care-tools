@@ -390,7 +390,7 @@
   try {
     var css = document.createElement('link');
     css.rel = 'stylesheet';
-    css.onload = cssDone;
+    css.onload = function () { cssDone(); try { fitInnerSoon(); } catch (e) { /* 何もしない */ } };   // 待ちきれずに置いた後に届いた時も、中の枠の余白を見直す
     css.onerror = cssDone;   // 読めなくてもボタンは出す
     css.href = CSS_HREF;
     document.head.appendChild(css);
@@ -622,7 +622,9 @@
   }
   /* 枠の中の画面（iframe）に su-report.css が届いているか。無ければ入れて、届いたら見直す */
   function inCssReady(doc) {
-    if (doc === document) return cssReady;
+    /* 待ちきれず（3秒）に cssReady になっていても、実際に読めていなければ（link.sheet が無い）まだ判定しない。
+       読めていないまま「効かない枠」と覚えると、画面の大きさが変わるまで戻らないため（2026-11-24 反証レビュー） */
+    if (doc === document) { try { return cssReady && !!(css && css.sheet); } catch (e) { return false; } }
     if (!CSS_ABS || !doc.head) return false;
     var l = doc.querySelector('link[data-sur-css]');
     if (!l) {
@@ -685,7 +687,7 @@
   }
   function fitInner(reset) {
     try {
-      if (!fab.isConnected || !cssReady) return;
+      if (!fab.isConnected || !inCssReady(document)) return;
       if (document.body.classList.contains('su-printing') || document.body.classList.contains('printing')) return;   // 紙を組んでいる間は触らない（余白は CSS で止めてある）
       /* body の印の見直しが待っていれば先に済ませる（「ページ全体が送られるか」の覚え padUseless を最新にしてから読む。
          古い覚えのまま読むと、高さの決まった画面で印を一度外して次の回に付け直していた＝家族構成図で resize の時に1回往復した） */
@@ -721,6 +723,8 @@
         for (i = 0; i < t.length; i++) {
           var el = t[i], k = inFindMark(el), added = k === -1 ? 0 : inMarks[k].added;
           if (inUseless.indexOf(el) !== -1 || el.clientHeight < 24) continue;
+          /* 入力の部品（高さを指定した textarea など）は枠ではない。中に余白を入れない（2026-11-24 反証レビュー） */
+          if (/^(TEXTAREA|SELECT|INPUT)$/.test(el.tagName) || el.isContentEditable) continue;
           if (el.scrollHeight - added > el.clientHeight + 1) want.push(el);   // 印で足した分を引いても送られる
         }
       }
