@@ -7,6 +7,8 @@
      4. compare / compareSlips: 片方だけの人も出す・差のある行が上・tax_adjust（年末調整の精算）は除いて別の欄・賞与は住民税の項目なし
      5. toYtd: data の鍵へ写す・課税支給が無ければ 総支給−非課税・si_other は社保等の合計の列から（負は0と警告）・結べない／bad の行は入れない
      6. 個人情報: DOM・端末への保存・console・通信を使わない
+     6b. A9 始まり（freee に登録の無い人）は対象外として別に数える・合格（1円まで一致）は比べた人1人以上・差0・対象外のほかに片方だけの人がいない時だけ
+     6c. bonusToYtd・planBonusYtd・pickByDate（賞与の確定した明細を累計の app の行に・freee の行を支給日でしぼる）
    ★架空の職員と架空の金額だけ（check/fixtures/freee-slips-*.csv） */
 'use strict';
 const fs = require('fs');
@@ -142,6 +144,61 @@ const negM = FS.match(negP.rows, staff).matched.map((r) => Object.assign({ src_n
 const negY = FS.toYtd(negM, 'salary');
 t('負の値（所得税 −1,200）の行は入れず、skipped に人・支給日・種類・項目・ファイル名', negY.length === 1 && negY[0].staff_id === 's-2' && negY.skipped.length === 1
   && JSON.stringify(negY.skipped[0]) === JSON.stringify({ line: 2, why: 'negative', keys: ['income_tax'], staff_id: 's-1', pay_date: '2026-06-25', kind: 'salary', src_name: 'june.csv' }), negY.skipped);
+console.log('\n— 6b. freee に登録の無い人（A9 始まり）と合格の帯（2026-11-23） —');
+const a9 = (sid, name, emp, o) => Object.assign(item(sid, name, o), { emp_num: emp });
+const sOk = m.matched.filter((r) => r.staff_id === 's-1');
+const ex1 = FS.compareSlips([a9('s-1', '見本 一', 'E901'), a9('s-a1', '契約 一', 'A901'), a9('s-a2', '契約 二', 'Ａ９０２')], sOk, 'salary');
+t('A9 始まり（全角も）の人は「自社だけ」・対象外として別に数え、ほかが差0なら合格', ex1.pass === true && ex1.excluded === 2 && ex1.others === 0 && ex1.compared === 1 && ex1.diffCount === 0
+  && ex1.unmatched.filter((u) => u.excluded).every((u) => u.side === 'ours'), [ex1.pass, ex1.excluded, ex1.unmatched]);
+const ex2 = FS.compareSlips([a9('s-1', '見本 一', 'E901'), a9('s-x', '番号 無し', '')], sOk, 'salary');
+t('番号が空の人は対象外にしない（自社だけの人が残るので合格にしない）', ex2.pass === false && ex2.excluded === 0 && ex2.others === 1, [ex2.pass, ex2.unmatched]);
+const frA9 = Object.assign({}, sOk[0], { staff_id: 's-a1', emp_num: 'A901' });
+const ex3 = FS.compareSlips([a9('s-1', '見本 一', 'E901'), a9('s-a1', '契約 一', 'A901')], sOk.concat([frA9]), 'salary');
+t('A9 の人に結ぶ freee の行が来ても結ばない（自社だけ＝対象外・freee の行は「freee だけ」に残り合格にしない）', ex3.pass === false && ex3.unmatched.some((u) => u.side === 'ours' && u.staff_id === 's-a1' && u.excluded)
+  && ex3.unmatched.some((u) => u.side === 'freee' && u.staff_id === 's-a1' && !u.excluded), ex3.unmatched);
+const ex4 = FS.compareSlips([a9('s-a1', '契約 一', 'A901')], [], 'salary');
+/* 検収（2026-11-23）: 「直す」で手で入れた A901（職員の給与設定の data.freee_emp_num）の人は、対象外になり合格が出る */
+const exM = FS.compareSlips([Object.assign(item('s-1', '見本 一'), { emp_num: 'E901' }), Object.assign(item('s-c1', '契約 一'), { emp_num: { toString() { return 'A901'; } }.toString() })], sOk, 'salary');
+t('手で入れた A901 の人は excluded・ほかが差0なら pass', exM.pass === true && exM.excluded === 1 && exM.unmatched[0].excluded === true, exM.unmatched);
+t('比べた人が0人なら合格にしない（対象外だけ・CSV が空）', ex4.pass === false && ex4.compared === 0 && ex4.excluded === 1, ex4);
+t('差が1つでもあれば合格にしない（所得税30円の差）', cs.pass === false && cs.diffCount === 1);
+t('excluded の判定: 小文字・空白も（a9 01）・A8 は対象外でない', FS.excluded('a9 01') && FS.excluded(' A902') && !FS.excluded('A801') && !FS.excluded('') && !FS.excluded(null) && FS.EXCLUDE_PREFIX === 'A9');
+
+console.log('\n— 6c. 賞与の確定した明細 → 累計の app の行（DB 0124 と同じ取り方） —');
+const bItem = { staff_id: 's-1', gross: 300000, taxable: 300000, social: 47100, tax: 10000, ins: { health: 15000, care: 2400, support: 600, pension: 27450, emp: 1650 } };
+const bd = FS.bonusToYtd(bItem);
+t('総支給・課税・非課税0・社保5つ（和は social）・所得税・住民税0・その他0', bd.gross === 300000 && bd.taxable === 300000 && bd.nontax === 0 && bd.si_health === 15000 && bd.si_pension === 27450 && bd.si_emp === 1650
+  && bd.si_health + bd.si_care + bd.si_support + bd.si_pension + bd.si_emp + bd.si_other === 47100 && bd.income_tax === 10000 && bd.resident_tax === 0 && bd.si_other === 0
+  && Object.keys(bd).sort().join() === FS.YTD_KEYS.slice().sort().join(), bd);
+t('課税支給が null・小数・負の時は総支給（DB と同じ）', FS.bonusToYtd(Object.assign({}, bItem, { taxable: null })).taxable === 300000 && FS.bonusToYtd(Object.assign({}, bItem, { taxable: 1.5 })).taxable === 300000
+  && FS.bonusToYtd(Object.assign({}, bItem, { taxable: -1 })).taxable === 300000 && FS.bonusToYtd(Object.assign({}, bItem, { taxable: 290000 })).nontax === 10000);
+t('ins が欠けた明細でも社保の和は social に合わせる（その他の社保に残り）', FS.bonusToYtd({ gross: 1000, social: 300, tax: 0, ins: { health: 100 } }).si_other === 200);
+const ytdNow = { rows: [{ staff_id: 's-2', pay_date: '2026-12-24', kind: 'bonus', source: 'manual', data: { gross: 1 }, rev: 3 },
+  { staff_id: 's-3', pay_date: '2026-12-24', kind: 'bonus', source: 'app', data: FS.bonusToYtd(Object.assign({}, bItem, { staff_id: 's-3' })), rev: 1 },
+  { staff_id: 's-1', pay_date: '2026-06-25', kind: 'bonus', source: 'freee', data: { gross: 5 }, rev: 1 }],
+  yearend: [{ staff_id: 's-4', status: 'final' }, { staff_id: 's-1', status: 'draft' }] };
+const plan = FS.planBonusYtd([bItem, Object.assign({}, bItem, { staff_id: 's-2' }), Object.assign({}, bItem, { staff_id: 's-2', gross: 50000, taxable: 50000, social: 0, tax: 1000, ins: {} }),
+  Object.assign({}, bItem, { staff_id: 's-3' }), Object.assign({}, bItem, { staff_id: 's-4' }), Object.assign({}, bItem, { staff_id: 's-5', gross: 0 })], '2026-12-24', ytdNow);
+const pr = (sid) => plan.rows.find((r) => r.staff_id === sid);
+t('新しい人は rev 0・形は payroll_ytd_put の p_rows（source=app・kind=bonus）', pr('s-1') && pr('s-1').rev === 0 && pr('s-1').source === 'app' && pr('s-1').kind === 'bonus' && pr('s-1').pay_date === '2026-12-24'
+  && Object.keys(pr('s-1')).sort().join() === 'data,kind,pay_date,rev,source,src_fp,staff_id', pr('s-1'));
+t('同じ支給日の2回にいる人は合算（DB と同じ）・手で足した行はその版で置き換え（replace に出す）', pr('s-2').data.gross === 350000 && pr('s-2').data.income_tax === 11000 && pr('s-2').rev === 3
+  && plan.replace.length === 1 && plan.replace[0].staff_id === 's-2' && plan.replace[0].source === 'manual', [pr('s-2'), plan.replace]);
+t('同じ値の app の行がある人は送らない（same）・年末調整を確定した人は送らない（final）・総支給0の人は送らない', !pr('s-3') && plan.same.join() === 's-3' && !pr('s-4') && plan.final.join() === 's-4' && !pr('s-5') && plan.rows.length === 2, plan);
+const pk = FS.pickByDate([{ pay_date: '2026-06-25', x: 1 }, { pay_date: '2026-12-24', x: 2 }, { pay_date: null, x: 3 }], '2026-12-24');
+t('pickByDate: 支給日が同じ行と、支給日の無い行だけ', pk.rows.map((r) => r.x).join() === '2,3' && !pk.off && pk.dates.join() === '2026-06-25,2026-12-24' && pk.nodate === 1, pk);
+const pk2 = FS.pickByDate([{ pay_date: '2026-06-25' }], '2026-12-24'), pk3 = FS.pickByDate([{ pay_date: null }, { pay_date: null }], '2026-12-24');
+t('pickByDate: 支給日がある行が1つも合わなければ off（夏の賞与の CSV で冬を比べない）・支給日の列が無ければしぼらない', pk2.off === true && pk3.off === false && pk3.rows.length === 2);
+/* 反証レビュー（2026-11-23 画面）: 読めない支給日は「支給日の無い行」にしない／給与は月でしぼる／0円にした人の古い app の行 */
+const bdP = FS.parse('氏名,賞与支給日,総支給額,課税支給額,所得税\n見本 一,R8.7.10,"300,000","300,000","10,000"\n', { kind: 'bonus' });
+const pk4 = FS.pickByDate(bdP.rows, '2026-12-24');
+t('pickByDate: 支給日の列はあるのに読めない行（R8.7.10）は badDate・比べない（off・why baddate）', bdP.rows[0].badDate === true && bdP.rows[0].pay_date === null && pk4.off === true && pk4.why === 'baddate' && pk4.baddate === 1 && pk4.rows.length === 0, pk4);
+const pk5 = FS.pickByDate([{ pay_date: '2026-11-25' }, { pay_date: '2026-12-25' }], '2026-12', { month: true }), pk6 = FS.pickByDate([{ pay_date: '2026-11-25' }], '2026-12', { month: true });
+t('pickByDate（month）: 給与は支給日の年月でしぼる・この月の行が無ければ off（前月の CSV で比べない）', pk5.rows.length === 1 && pk5.rows[0].pay_date === '2026-12-25' && !pk5.off && pk6.off === true && pk6.why === 'other');
+const plan2 = FS.planBonusYtd([Object.assign({}, bItem, { staff_id: 's-1', gross: 0 }), Object.assign({}, bItem, { staff_id: 's-3' })], '2026-12-24',
+  { rows: [{ staff_id: 's-1', pay_date: '2026-12-24', kind: 'bonus', source: 'app', data: { gross: 100000 }, rev: 1 }, ytdNow.rows[1], { staff_id: 's-9', pay_date: '2026-12-24', kind: 'bonus', source: 'manual', data: { gross: 1 }, rev: 1 }], yearend: [] });
+t('planBonusYtd: 今は0円（支給なし）なのに累計に前の確定の app の行が残る人は stale（送らない・manual の行は対象外）', plan2.stale.join() === 's-1' && plan2.rows.length === 0 && plan2.same.join() === 's-3', plan2);
+
 console.log('\n— 7. 個人情報・部品の作法 —');
 t('DOM・端末への保存・console・通信を使わない', !/document\.|localStorage|sessionStorage|indexedDB|console\.|fetch\(|XMLHttpRequest/.test(SRC));
 t('見出しの候補の表の頭に「未検証」の注記', /★未検証（事務担当が書き出した実物で確かめる）/.test(SRC) && /見出しの候補（★未検証/.test(SRC));

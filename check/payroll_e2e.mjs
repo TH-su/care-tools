@@ -371,6 +371,20 @@ console.log('\n— 6. 覆い・その他 —');
   t('給与設定の保存: 甲乙・扶養を確かめた印（確かめた人は印が入って開く）をそのまま送る', !!pc && pc.args.p_data.tax.dependents_checked === true, pc && pc.args.p_data.tax);
   t('住民税: 前の年度より古い月（2024-06）は外し、前の年度（2025-06）と今の年度（2026-11）は残す', !!pc && !('2024-06' in pc.args.p_data.resident_tax) && pc.args.p_data.resident_tax['2025-06'] === 6000 && pc.args.p_data.resident_tax['2026-11'] === 9000, pc && pc.args.p_data.resident_tax);
   t('給与設定の保存は DB の形の確かめを通った（新しい版が足された）', o4.routes.db.profiles.some((q) => q.staff_id === 's-02' && q.effective_from === '2026-10-16' && q.data.base === 1150));
+  t('従業員番号を空のまま保存しても、鍵を足さない', !!pc && !('freee_emp_num' in pc.args.p_data));
+  /* freee に登録の無い人（契約社員）の従業員番号を「直す」で手で入れる（2026-11-23 検収の直し） */
+  await o4.page.click('[data-act="prof"][data-sid="s-02"]');
+  t('「直す」に従業員番号（freee の番号）の欄と、A9 で始まる番号は比べる対象から外す説明', (await o4.page.locator('#f-emp').count()) === 1 && /A9 で始まる番号（例 A901）/.test(await o4.page.textContent('#p-dlg')));
+  await o4.page.fill('#f-emp', 'A901');
+  await o4.page.fill('#f-reason', '見本の契約社員の番号');
+  await o4.page.click('[data-act="prof-go"]');
+  await o4.page.waitForFunction(() => !document.getElementById('p-dlg').open, null, { timeout: 10000 });
+  const pe = o4.routes.calls.filter((c) => c.name === 'payroll_profile_put').pop();
+  t('手で入れた従業員番号 A901 を送り、DB の形の確かめを通る・「比べる対象から外します」と知らせる', !!pe && pe.args.p_data.freee_emp_num === 'A901'
+    && o4.routes.db.profiles.some((q) => q.staff_id === 's-02' && q.data.freee_emp_num === 'A901') && /比べる対象から外します/.test(await o4.page.textContent('body')), pe && pe.args.p_data.freee_emp_num);
+  /* 後の取り込みの場面（従業員番号で結ぶ）に響かないよう、入れた番号を外して読み直す */
+  o4.routes.db.profiles.filter((q) => q.staff_id === 's-02').forEach((q) => { delete q.data.freee_emp_num; });
+  await o4.page.click('#p-reload'); await waitApp(o4.page);
   /* 固定残業代の欄（手当・含む時間（分）・確かめた）: s-09 の夜勤手当を固定残業代として 600分・確かめた */
   await o4.page.click('[data-act="prof"][data-sid="s-09"]');
   await o4.page.selectOption('#f-fot', 'night'); await o4.page.fill('#f-fotmin', '600'); await o4.page.check('#f-fotok');
@@ -745,6 +759,73 @@ console.log('\n— 7. 賞与のタブ —');
   await p.waitForFunction(() => /確定済み/.test(document.getElementById('p-main').textContent) && document.querySelector('[data-act="b-print-all"]'), null, { timeout: 10000 });
   t('確定すると確定済みになり、計算するのボタンが消える', (await p.locator('[data-act="b-compute"]').count()) === 0 && Object.values(o.routes.db.bonus.runs)[0].status === 'confirmed');
   t('確定を押した時に読み直してから確定した（bootstrap → confirm）', (() => { const n = o.routes.calls.map((c) => c.name); const i = n.lastIndexOf('payroll_bonus_confirm'); return i > 0 && n.slice(0, i).lastIndexOf('payroll_bonus_bootstrap') > n.lastIndexOf('payroll_bonus_save'); })());
+  /* ── 確定した賞与を年末調整の累計へ（統合 0124・2026-11-23）── */
+  await p.waitForFunction(() => /年末調整の累計に入れました/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  const bid0 = Object.keys(o.routes.db.bonus.items)[0], paid = o.routes.db.bonus.items[bid0].filter((i) => i.gross > 0);
+  const yput = o.routes.calls.filter((c) => c.name === 'payroll_ytd_put').pop();
+  t('確定すると、総支給が0より大きい人だけを累計へ（source=app・kind=bonus・支給日・版0・社保の和は social・所得税は tax）', !!yput && yput.args.p_year === 2026 && yput.args.p_rows.length === paid.length
+    && yput.args.p_rows.every((r) => { const i = paid.find((x) => x.staff_id === r.staff_id); const d = r.data; return i && r.source === 'app' && r.kind === 'bonus' && r.pay_date === '2026-12-24' && r.rev === 0
+      && d.gross === i.gross && d.income_tax === i.tax && d.si_health + d.si_care + d.si_support + d.si_pension + d.si_emp + d.si_other === i.social && d.resident_tax === 0
+      && d.taxable === (Number.isInteger(i.item.taxable) ? i.item.taxable : i.gross) && d.nontax === d.gross - d.taxable; }), yput && yput.args.p_rows.map((r) => r.staff_id));
+  t('モック（0124 の照合の写し）に通り、「足した N 人」と出る', new RegExp('足した ' + paid.length + ' 人・置き換えた 0 人').test(await p.textContent('#p-main')));
+  const nPut = o.routes.calls.filter((c) => c.name === 'payroll_ytd_put').length;
+  await p.click('[data-act="b-ytd-put"]');
+  await p.waitForFunction(() => /もう入っています/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  t('もう一度押しても、同じ値が入っていれば送らない（版を上げない）', o.routes.calls.filter((c) => c.name === 'payroll_ytd_put').length === nPut);
+  /* 確定した回を開き直すと、累計に入っているかを読んで確かめる（送らない） */
+  await p.click('#p-reload'); await settle(p);
+  await p.waitForFunction(() => /年末調整の累計には、この賞与が入っています/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  t('確定した回を開き直すと累計を確かめて「入っています」（送らない）', o.routes.calls.filter((c) => c.name === 'payroll_ytd_put').length === nPut);
+  /* 累計の行を1つ消した DB で開き直すと「まだ入っていない人」を知らせる */
+  const gone = o.routes.db.ytd.splice(o.routes.db.ytd.findIndex((x) => x.staff_id === paid[0].staff_id && x.kind === 'bonus'), 1)[0];
+  await p.click('#p-reload'); await settle(p);
+  await p.waitForFunction(() => /まだ入っていない人（値の違う人を含む）が 1 人います/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  t('確定の後に累計から抜けた人がいれば、開いた時に知らせる（送らない）', o.routes.calls.filter((c) => c.name === 'payroll_ytd_put').length === nPut);
+  o.routes.db.ytd.push(gone);
+  /* 確定し直して支給が無くなった（0円の）人の app の行が累計に残っていれば、賞与のタブから消せる（理由つき） */
+  const zero = o.routes.db.bonus.items[bid0].find((i) => i.gross === 0);
+  o.routes.db.ytd.push({ year: 2026, staff_id: zero.staff_id, pay_date: '2026-12-24', kind: 'bonus', source: 'app', data: { gross: 1000 }, rev: 1, src_fp: '' });
+  await p.click('#p-reload'); await settle(p);
+  await p.waitForSelector('[data-act="b-ytd-del"]', { timeout: 10000 });
+  t('累計に前の確定の行が残る人を名前つきで出し、消すボタンを出す', /前の確定の行が残っている人/.test(await p.textContent('#p-main')) && /累計の残っている行を消す（1 人）/.test(await p.textContent('[data-act="b-ytd-del"]')));
+  await p.click('[data-act="b-ytd-del"]');
+  await p.waitForSelector('dialog[open]', { timeout: 5000 }); await p.waitForTimeout(500);
+  await p.locator('dialog[open] button', { hasText: 'OK' }).click();
+  await p.waitForFunction(() => /年末調整の累計には、この賞与が入っています/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  const del = o.routes.calls.filter((c) => c.name === 'payroll_ytd_delete').pop();
+  t('消すと payroll_ytd_delete（その人・支給日・賞与・版・理由）で消え、確かめ直して「入っています」', !!del && del.args.p_staff_id === zero.staff_id && del.args.p_kind === 'bonus' && del.args.p_pay_date === '2026-12-24' && del.args.p_rev === 1 && !!del.args.p_reason
+    && !o.routes.db.ytd.some((x) => x.staff_id === zero.staff_id && x.kind === 'bonus'), del && del.args);
+  /* ── freee と比べる（賞与の明細の CSV・架空の値）── */
+  const HEADB = '従業員番号,氏名,賞与支給日,総支給額,課税支給額合計,健康保険料,介護保険料,子ども・子育て支援金,厚生年金保険料,雇用保険料,所得税,控除合計,差引支給額';
+  const rowOf = (i, o2) => { const x = Object.assign({ date: '2026/12/24', tax: i.tax }, o2 || {}), s = i.item.ins || {};
+    return ['', i.frozen.name, x.date, i.gross, i.item.taxable != null ? i.item.taxable : i.gross, s.health || 0, s.care || 0, s.support || 0, s.pension || 0, s.emp || 0, x.tax, i.deduct - i.tax + x.tax, i.net + i.tax - x.tax].map((v) => '"' + v + '"').join(','); };
+  const csvB = (rows) => Buffer.from('﻿' + HEADB + '\r\n' + rows.join('\r\n') + '\r\n', 'utf8');
+  const up = async (buf) => { await p.setInputFiles('#b-cmpfile', { name: 'bonus.csv', mimeType: 'text/csv', buffer: buf }); await settle(p); };
+  await up(csvB(paid.map((i) => rowOf(i))));
+  await p.waitForFunction(() => /1円まで一致/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  const mainB = await p.textContent('#p-main');
+  t('賞与の CSV と全員の全項目が同じなら「1円まで一致」の帯（比べた人数・0円で freee に行の無い人は比べない）', new RegExp('比べた ' + paid.length + ' 人の全項目').test(mainB) && /賞与額0円で freee に行の無い 7 人は比べていません/.test(mainB), mainB.slice(mainB.indexOf('freee と比べる'), mainB.indexOf('freee と比べる') + 400));
+  t('比べた後もファイルの欄は空・端末に金額を残さない', await p.inputValue('#b-cmpfile') === '' && await p.evaluate(() => { for (let i = 0; i < localStorage.length; i++) { const v = localStorage.getItem(localStorage.key(i)); if (/300000|300,000/.test(v)) return false; } return true; }));
+  await up(csvB(paid.map((i, k) => rowOf(i, k === 0 ? { tax: i.tax + 1 } : null))));
+  await p.waitForFunction(() => /差あり/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  t('所得税が1円違う人がいると「差あり」（所得税・控除の合計・差引の3件）・合格の帯は出さない', /差あり 3 件/.test(await p.textContent('#p-main')) && !/1円まで一致/.test(await p.textContent('#p-main')));
+  await up(csvB(paid.map((i) => rowOf(i, { date: '2026/07/10' }))));
+  await p.waitForFunction(() => /この回の支給日（2026-12-24）がありません/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  t('支給日の違う（夏の）賞与の CSV では比べない', !/1円まで一致|差あり/.test(await p.textContent('#p-main')));
+  await up(csvB(paid.map((i) => rowOf(i, { date: 'R8.12.24' }))));
+  await p.waitForFunction(() => /支給日の読めない行が/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  t('支給日の読めない賞与の CSV（R8.12.24）は比べない（合格の帯を出さない）', !/1円まで一致|差あり/.test(await p.textContent('#p-main')));
+  /* freee に登録の無い人（従業員番号 A9 始まり）: CSV に居なくても対象外として別に数え、ほかが全部同じなら合格 */
+  const a9 = paid[paid.length - 1];
+  o.routes.db.profiles.filter((q) => q.staff_id === a9.staff_id).forEach((q) => { q.data = Object.assign({}, q.data, { freee_emp_num: 'A901' }); });
+  await p.click('#p-reload'); await settle(p);
+  await p.waitForSelector('#b-cmpfile');
+  await up(csvB(paid.filter((i) => i !== a9).map((i) => rowOf(i))));
+  await p.waitForFunction(() => /1円まで一致/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  const mainA = await p.textContent('#p-main');
+  t('A9 始まりの人は「自社だけ（freee に登録の無い人・比べる対象外）」・帯に対象外の人数', /freee に登録の無い人（比べる対象外）1 人/.test(mainA) && new RegExp('自社だけ（freee に登録の無い人・比べる対象外）：' + a9.frozen.name).test(mainA), mainA.slice(mainA.indexOf('freee と比べる'), mainA.indexOf('freee と比べる') + 600));
+  await p.click('[data-act="b-cmp-clear"]');
+  t('「比べた結果を消す」で帯が消える', !/1円まで一致/.test(await p.textContent('#p-main')));
   /* 明細の印刷（1人1枚・賞与の見出し） */
   await p.evaluate(() => { window.print = function () {}; });
   await p.click('[data-act="b-print-all"]');

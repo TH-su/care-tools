@@ -669,12 +669,24 @@ export function routesFor(opt = {}) {
           const y = yeOf(r.staff_id); if (y && y.status === 'final') return ng('final', { staff_id: r.staff_id });
           const cur = db.ytd.find((x) => x.year === Y && x.staff_id === r.staff_id && x.pay_date === r.pay_date && x.kind === r.kind);
           if ((cur ? cur.rev : 0) !== r.rev) return ng('conflict', { staff_id: r.staff_id });
+          /* 0124 の private.payroll_ytd_bonus_err の写し: 確定・書き出し済みの賞与の回で支給日が同じ回の明細を合算して照らす */
+          if (r.source === 'app' && r.kind === 'bonus') {
+            const BBx = db.bonus || { runs: {}, items: {} };
+            const its = [].concat(...Object.values(BBx.runs).filter((b) => ['confirmed', 'exported'].includes(b.status) && b.pay_date === r.pay_date)
+              .map((b) => (BBx.items[b.bonus_id] || []).filter((i) => i.staff_id === r.staff_id)));
+            const sum = (f) => its.reduce((a, i) => a + f(i), 0), d = r.data, v = (k) => d[k] || 0;
+            const g = sum((i) => i.gross), tx = sum((i) => (Number.isInteger(i.item && i.item.taxable) && i.item.taxable >= 0 ? i.item.taxable : i.gross));
+            if (!its.length || g !== v('gross') || tx !== v('taxable') || g - tx !== v('nontax') || sum((i) => i.social) !== v('si_health') + v('si_care') + v('si_support') + v('si_pension') + v('si_emp') + v('si_other')
+              || sum((i) => i.tax) !== v('income_tax') || v('resident_tax') !== 0) return ng('mismatch', { staff_id: r.staff_id, pay_date: r.pay_date });
+          }
         }
+        let added = 0, replaced = 0;
         R.forEach((r) => {
           const cur = db.ytd.find((x) => x.year === Y && x.staff_id === r.staff_id && x.pay_date === r.pay_date && x.kind === r.kind);
-          if (cur) Object.assign(cur, r, { year: Y, rev: cur.rev + 1 }); else db.ytd.push(Object.assign({}, r, { year: Y, rev: 1 }));
+          if (cur) { Object.assign(cur, r, { year: Y, rev: cur.rev + 1 }); replaced++; } else { db.ytd.push(Object.assign({}, r, { year: Y, rev: 1 })); added++; }
         });
-        audit('ytd_put'); return ok({ count: R.length });
+        /* 本物（0122）と同じ答えの形 {added, replaced}。count は前の試験のために残す */
+        audit('ytd_put'); return ok({ count: R.length, added, replaced });
       }
       if (name === 'payroll_yearend_put') {
         if (!isObj(p.p_decl) || !isObj(p.p_result) || !isObj(p.p_basis) || deepKeys(p.p_decl).some((k) => MYNUM.test(k)) || !ymOk(p.p_settle_ym)) return ng('badshape', { staff_id: p.p_staff_id });
