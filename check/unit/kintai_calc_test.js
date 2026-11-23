@@ -12,6 +12,8 @@
         時間の区分（重ならない4つの和が総労働・60時間超・夜勤の回数・所定日数・記号ごとの回数）。回帰の例外3つは節の頭に理由
      9. v4（2026-11-20）手で入れた有休の使用（leave_uses）: シフトの有休の行がある日は足さない・所定（予定の実働か480分）×日数・
         無い時は結果が1バイトも変わらない・締めの控え（paidDays・paidMin）に入る
+    10. v6（2026-11-24）休憩の打刻（設定 breakPunch）: 鍵が無い・false の時は休憩の打刻が混じっても答えと締めの控えが1バイトも変わらない・
+        数えた区間で切る・6時間ちょうど・休憩0分・区間の外・夜勤と日をまたぐ休憩・丸め・終わりの無い休憩（breakopen）・二度押し・塊をまたぐ組
    ★職員は架空（試験 甲・試験 乙）。 */
 'use strict';
 const fs = require('fs');
@@ -536,6 +538,96 @@ console.log('\n— 9. v4 手で入れた有休の使用（leave_uses・L8） —
   t('名簿に無い職員の手入力の使用も落とさない（名簿に無い記録の印）', m2.people.some((p) => p.staff.staff_id === 'sT09' && p.staff.missingStaff && p.sum.paidDays === 1));
   const m3 = mk2([U('sT01', '12', 1), U('sT01', '12', 0.5)]);
   t('同じ人・同じ日の2行目は数えない（DB も1行だけ）', dayOf(m3, 'sT01', '2026-12-12').paidDays === 1);
+}
+
+console.log('\n— 10. v6 休憩の打刻（設定 breakPunch・2026-11-24 ROOT-v6-break-nudge-leave.md の 1） —');
+{
+  const BS = (sid, d, hm) => P(sid, 'break_start', d, hm), BE = (sid, d, hm) => P(sid, 'break_end', d, hm);
+  const D = (n) => '2026-12-' + String(n).padStart(2, '0');
+  const base = sched({ 1: '早', 2: '早', 3: '(22', 4: '8)', 5: '早', 6: '早', 7: '早', 8: '早', 9: '早', 10: '早', 11: '早', 12: '早', 14: '早' }).rows;
+  const io = (d, a, z) => [P('sT01', 'in', D(d), a), P('sT01', 'out', D(d), z)];
+  /* 休憩の打刻を混ぜた架空の月（出勤・退勤は今の試験と同じ形） */
+  const punIO = [...io(1, '7:00', '16:00'), ...io(2, '6:00', '16:00'), P('sT01', 'in', D(3), '22:00'), P('sT01', 'out', D(4), '8:00'), ...io(5, '7:00', '13:00'), ...io(7, '7:10', '16:20'), ...io(9, '7:00', '16:00'),
+    P('sT02', 'in', D(1), '9:00'), P('sT02', 'out', D(1), '18:00')];
+  const punBR = [BS('sT01', D(1), '12:00'), BE('sT01', D(1), '12:45'), BS('sT01', D(2), '6:10'), BE('sT01', D(2), '6:30'), BS('sT01', D(4), '2:00'), BE('sT01', D(4), '3:30'),
+    BS('sT01', D(5), '10:00'), BE('sT01', D(5), '10:30'), BS('sT01', D(7), '12:00'), BE('sT01', D(7), '12:40'), BS('sT01', D(9), '12:00'), BS('sT02', D(1), '12:00'), BE('sT02', D(1), '13:00'), BE('sT02', D(1), '15:00')];
+  const both = [...punIO, ...punBR];
+  const mm = (pun, cfg, days, now) => C.computeMonth({ ym: YM, staff: K_STAFF, schedule: base, punches: pun, days: days || [], config: cfg || {}, now: now || NOW });
+  const bl = (m, sid, d) => { const x = dayOf(m, sid, D(d)); return x && x.blocks[0]; };
+
+  /* 不変: 鍵が無い・false の時は、休憩の打刻が混じっても答えが1つも変わらない（締めの控えも） */
+  const m0 = mm(punIO, {}), mNo = mm(both, {}), mF = mm(both, { breakPunch: false }), mS = mm(both, { breakPunch: 'yes' });
+  t('鍵が無い・false・真偽でない時は、休憩の打刻を混ぜても computeMonth の答えが1バイトも変わらない', JSON.stringify(mNo) === JSON.stringify(m0) && JSON.stringify(mF) === JSON.stringify(m0) && JSON.stringify(mS) === JSON.stringify(m0));
+  t('鍵が無い時は締めの控え（snapshotOf）も同じ・config に breakPunch の鍵を作らない', JSON.stringify(C.snapshotOf(mNo)) === JSON.stringify(C.snapshotOf(m0)) && !('breakPunch' in mNo.config) && !('breakPunch' in C.fillConfig({ breakPunch: false })) && C.fillConfig({ breakPunch: true }).breakPunch === true);
+  /* 締めた月分の数え直し: v6 より前に締めた控え（config に鍵なし）で、休憩の打刻が入った後に数え直しても snapshot.rows と同じ */
+  const snap = C.snapshotOf(m0), re = mm(both, snap.config);
+  t('締めた月分を控えの設定で数え直すと snapshot.rows と同じ（休憩の打刻が後から入っても）', JSON.stringify(C.snapshotOf(re).rows) === JSON.stringify(snap.rows));
+  /* 今の試験の場面すべての出勤・退勤に、同じ日の休憩の組を混ぜても、鍵なしなら同じ */
+  const wIO = [P('sT01', 'in', '2026-12-01', '6:50'), P('sT01', 'out', '2026-12-01', '16:10'), P('sT01', 'in', '2026-12-02', '21:55'), P('sT01', 'out', '2026-12-03', '8:05')];
+  const w0 = month(sched({ 1: '早', 2: '(22', 3: '8)' }).rows, wIO);
+  const w1 = month(sched({ 1: '早', 2: '(22', 3: '8)' }).rows, [...wIO, BS('sT01', '2026-12-01', '11:00'), BE('sT01', '2026-12-01', '11:30'), BS('sT01', '2026-12-03', '1:00')]);
+  t('別の架空の月（早出・夜勤）でも、鍵なしなら休憩の打刻は読み飛ばす', JSON.stringify(w0) === JSON.stringify(w1));
+
+  const m1 = mm(both, { breakPunch: true });
+  const b1 = bl(m1, 'sT01', 1);
+  t('早 7-16 に 12:00〜12:45 の休憩を打刻 → 休憩45分・実働495分（予定の60分は使わない）', b1.breakMin === 45 && b1.workMin === 495 && b1.flags.indexOf('breakopen') < 0, b1);
+  t('休憩の打刻は塊の breakPunches に出し、punches（出勤・退勤）には入れない', b1.breakPunches.length === 2 && b1.breakPunches[0].kind === 'break_start' && b1.punches.every((q) => q.kind === 'in' || q.kind === 'out'));
+  const b2 = bl(m1, 'sT01', 2);
+  t('休憩が数えた区間の外（認めていない早出の 6:10〜6:30）だけ → 組なしとして今の休憩（60分）', b2.breakMin === 60 && b2.workMin === 480, b2);
+  const b2b = bl(mm([...io(2, '6:00', '16:00'), BS('sT01', D(2), '6:50'), BE('sT01', D(2), '7:20')], { breakPunch: true }), 'sT01', 2);
+  t('休憩が区間の頭に掛かる（6:50〜7:20・数えるのは7:00から）→ 区間で切って20分', b2b.breakMin === 20 && b2b.workMin === 520, b2b);
+  const b3 = bl(m1, 'sT01', 3);
+  t('夜勤 22-翌8 に 2:00〜3:30 の休憩 → 休憩90分・実働510分・深夜は 420−90＝330分', b3.night && b3.breakMin === 90 && b3.workMin === 510 && b3.nightMin === 330, b3);
+  const b3b = bl(mm([P('sT01', 'in', D(3), '22:00'), BS('sT01', D(3), '23:30'), BE('sT01', D(4), '0:30'), P('sT01', 'out', D(4), '8:00')], { breakPunch: true }), 'sT01', 3);
+  t('日をまたぐ休憩（23:30〜翌0:30）→ 60分・深夜は 420−60＝360分', b3b.breakMin === 60 && b3b.workMin === 540 && b3b.nightMin === 360, b3b);
+  const b3c = bl(mm([P('sT01', 'in', D(1), '7:00'), BS('sT01', D(1), '22:15'), BE('sT01', D(1), '22:30'), P('sT01', 'out', D(1), '22:45')], { breakPunch: true }, [{ staff_id: 'sT01', work_date: D(1), overtime_ok: true }]), 'sT01', 1);
+  t('日勤の塊でも、深夜に打刻した休憩は深夜の分から引く（残業を認めた 22:00〜22:45 の45分−休憩15分＝30分）', b3c.breakMin === 15 && b3c.nightMin === 30 && b3c.workMin === 930, b3c);
+  const b5 = bl(m1, 'sT01', 5);
+  t('境目: 拘束6時間ちょうど（7:00〜13:00）に30分の休憩を打刻 → 休憩30分・実働330分（6時間の線は使わない）', b5.breakMin === 30 && b5.workMin === 330, b5);
+  const io5 = io(5, '7:00', '13:00'), b5n = bl(mm(io5, { breakPunch: true }), 'sT01', 5);
+  t('境目: 6時間ちょうどで休憩の打刻が無い日は今の決まり（引かない・360分）', b5n.breakMin === 0 && b5n.workMin === 360 && JSON.stringify(b5n) === JSON.stringify(bl(mm(io5, {}), 'sT01', 5)));
+  const z0 = bl(mm([...io(1, '7:00', '16:00'), BS('sT01', D(1), '12:00'), BE('sT01', D(1), '12:00')], { breakPunch: true }), 'sT01', 1);
+  t('境目: 休憩0分（入ると戻るが同じ分）→ 組ありとして休憩0・実働540分（休憩不足は勤務の決まりの知らせに任せる）', z0.breakMin === 0 && z0.workMin === 540, z0);
+  const R = require(path.join(ROOT, 'kintai-rules.js'));
+  const z0m = mm([...io(1, '7:00', '16:00'), BS('sT01', D(1), '12:00'), BE('sT01', D(1), '12:00')], { breakPunch: true });
+  const rr = R.checkMonth(z0m, {});
+  t('休憩0分の日は、勤務の決まりの「休憩が足りない」に載る（計算では足さない）', JSON.stringify(rr).indexOf('break_short') >= 0, rr.totals);
+  /* 丸め（15分）: 遅刻 7:07 の出勤は 7:00 に切り捨て・休憩は丸めない区間で決める */
+  const b7r = bl(mm([...io(8, '7:07', '16:00'), BS('sT01', D(8), '12:00'), BE('sT01', D(8), '12:40')], { breakPunch: true, roundUnitMin: 15 }), 'sT01', 8);
+  t('丸めあり（15分）: 7:07 の出勤 → 7:00 から・休憩40分 → 実働500分・遅刻0', b7r.breakMin === 40 && b7r.workMin === 500 && b7r.lateMin === 0, b7r);
+  const b7 = bl(m1, 'sT01', 7);
+  t('丸めなし: 遅刻 7:10〜早退ではない 16:20（残業は認めていない）・休憩40分 → 7:10〜16:00 の530分−40＝490分', b7.breakMin === 40 && b7.workMin === 490 && b7.lateMin === 10, b7);
+  /* 終わりの無い休憩 → 今の休憩で数え、要確認 breakopen */
+  const b9 = bl(m1, 'sT01', 9);
+  t('休憩に入ったまま退勤 → 今の休憩（60分）で数え、要確認 breakopen「休憩から戻る打刻がありません」', b9.breakMin === 60 && b9.workMin === 480 && b9.flags.indexOf('breakopen') >= 0 && C.needsReview(b9) && C.FLAG_LABEL.breakopen === '休憩から戻る打刻がありません', b9);
+  const rl = C.reviewList(m1).filter((x) => x.date === D(9) && x.staffId === 'sT01');
+  t('要確認の一覧（reviewList）に breakopen の印で載る', rl.length === 1 && rl[0].marks.indexOf('breakopen') >= 0, rl);
+  const M = require(path.join(ROOT, 'kintai-monitor.js'));
+  const rb = M.boxes({ month: m1, reviewList: C.reviewList(m1) }).filter((x) => x.key === 'review')[0];
+  t('ホームの「打刻漏れ・要確認」の箱に「休憩から戻る打刻がありません」の行が出る', rb.rows.some((x) => x.staff_id === 'sT01' && /12\/9 .*休憩から戻る打刻がありません/.test(x.text)), rb.rows);
+  t('確認済みの印を付けた日は要確認から外れる', !C.needsReview(bl(mm(both, { breakPunch: true }, [{ staff_id: 'sT01', work_date: D(9), day_mark: 'checked' }]), 'sT01', 9)));
+  /* 勤務中（まだ退勤していない）に休憩中 → 要確認にしない・表示には出す */
+  const wk = bl(mm([P('sT01', 'in', D(9), '7:00'), BS('sT01', D(9), '12:00')], { breakPunch: true }, [], C.jstMs(D(9), 12 * 60 + 20)), 'sT01', 9);
+  t('勤務中の休憩は breakopen にしない（表示の breakPunches には出す）', wk.working && wk.flags.indexOf('breakopen') < 0 && !C.needsReview(wk) && wk.breakPunches.length === 1, wk);
+  /* 二度押し・始まりの無い戻る・塊をまたぐ組 */
+  const s2 = bl(m1, 'sT02', 1);
+  t('始まりの無い戻る（15:00）は読み飛ばす（9:00〜18:00・休憩60分の組だけ）', s2.breakMin === 60 && s2.workMin === 480 && s2.flags.indexOf('breakopen') < 0, s2);
+  const dp = bl(mm([...io(1, '7:00', '16:00'), BS('sT01', D(1), '12:00'), BS('sT01', D(1), '12:05'), BE('sT01', D(1), '12:45')], { breakPunch: true }), 'sT01', 1);
+  t('10分以内の入るの二度押しは後の方（12:05〜12:45＝40分）', dp.breakMin === 40 && dp.flags.indexOf('breakopen') < 0, dp);
+  const cr = mm([...io(1, '7:00', '16:00'), BS('sT01', D(1), '15:50'), ...io(2, '7:00', '16:00'), BE('sT01', D(2), '7:10')], { breakPunch: true });
+  t('休憩の組が塊をまたぐ（前の日の入る→次の日の戻る）は結ばない: 前の日は breakopen・次の日は今の休憩', bl(cr, 'sT01', 1).flags.indexOf('breakopen') >= 0 && bl(cr, 'sT01', 1).breakMin === 60 && bl(cr, 'sT01', 2).breakMin === 60 && bl(cr, 'sT01', 2).flags.indexOf('breakopen') < 0);
+  /* 事務所が直した休憩（日の行の break_min）が優先・打刻した昼休み（gap）と二重にしない */
+  t('事務所が休憩を直した日（30分）は直した方を使う（仮置き）', bl(mm(both, { breakPunch: true }, [{ staff_id: 'sT01', work_date: D(1), break_min: 30 }]), 'sT01', 1).breakMin === 30);
+  const gp = bl(mm([...io(10, '7:00', '11:00'), ...io(10, '12:00', '16:00'), BS('sT01', D(10), '14:00'), BE('sT01', D(10), '14:15')], { breakPunch: true }), 'sT01', 10);
+  t('退勤と出勤の間（11:00〜12:00）は数えた区間の外なので二重に引かない: 実働 480−15＝465分', gp.breakMin === 15 && gp.workMin === 465, gp);
+  /* 法定休日（日曜 12/6）の打刻した休憩は、休日労働から時刻どおりに引く */
+  const hd = bl(mm([...io(6, '7:00', '16:00'), BS('sT01', D(6), '12:00'), BE('sT01', D(6), '12:30')], { breakPunch: true, legal_holiday: 0 }), 'sT01', 6);
+  t('法定休日の日の打刻した休憩30分 → 休日労働も 540−30＝510分', hd.breakMin === 30 && hd.holidayMin === 510 && hd.workMin === 510, hd);
+  /* 取り消した休憩の打刻は数えない */
+  const vd = bl(mm([...io(1, '7:00', '16:00'), BS('sT01', D(1), '12:00', ), Object.assign(BE('sT01', D(1), '12:45'), { voided_at: '2026-12-02T00:00:00Z' })], { breakPunch: true }), 'sT01', 1);
+  t('取り消した戻るは数えない（入るだけ＝breakopen・今の休憩）', vd.breakMin === 60 && vd.flags.indexOf('breakopen') >= 0, vd);
+  const sumB = sumOf(m1, 'sT01');
+  t('月の合計の実働・CSV も打刻した休憩の値で出る（見出しは変えない）', sumB.workMin === m1.people[0].days.reduce((a, d) => a + d.workMin, 0) && C.buildCsv(m1, {}).summary.split('\r\n')[0] === C.SUMMARY_HEAD.join(','));
 }
 
 console.log(`\n${pass} 件合格 / ${fail} 件不合格`);

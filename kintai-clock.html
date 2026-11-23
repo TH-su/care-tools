@@ -14,11 +14,11 @@
 <script src="su-errors.js?v=2026-11-21"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-app-gate.js?v=2026-11-21"></script>
-<script src="kintai-calc.js?v=2026-11-23.1"></script>
+<script src="kintai-calc.js?v=2026-11-24"></script>
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 <link rel="stylesheet" href="su-shell.css?v=2026-11-13">
 <style>
-:root{--ink:#14213d;--sub:#3d4a5c;--line:#c9d2de;--bg:#f4f6f9;--card:#fff;--field:#fafbfc;--press:#e9eef5;--sug:rgba(31,79,191,.35);--fill-in:#1d4ed8;--fill-out:#b91c1c;--in:#1d4ed8;--in-bg:#e8efff;--out:#b91c1c;--out-bg:#fdeaea;--warn:#6b4100;--warn-bg:#fff4d6;--ng:#8a1020;--ng-bg:#fde8eb;--focus:#1f4fbf}
+:root{--ink:#14213d;--sub:#3d4a5c;--line:#c9d2de;--bg:#f4f6f9;--card:#fff;--field:#fafbfc;--press:#e9eef5;--sug:rgba(31,79,191,.35);--fill-in:#1d4ed8;--fill-out:#b91c1c;--in:#1d4ed8;--in-bg:#e8efff;--out:#b91c1c;--out-bg:#fdeaea;--fill-brk:#0f766e;--fill-ret:#6d28d9;--brk:#0f766e;--brk-bg:#e3f4f0;--ret:#6d28d9;--ret-bg:#f1eafd;--warn:#6b4100;--warn-bg:#fff4d6;--ng:#8a1020;--ng-bg:#fde8eb;--focus:#1f4fbf}
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif}
 body{min-height:100vh;display:flex;flex-direction:column}
@@ -49,13 +49,19 @@ button:focus-visible,a:focus-visible{outline:3px solid var(--focus);outline-offs
 .acts button{min-height:120px;font-size:36px;font-weight:700}
 .b-in{background:var(--in-bg)!important;color:var(--in)!important;border:2px solid var(--in)!important}
 .b-out{background:var(--out-bg)!important;color:var(--out)!important;border:2px solid var(--out)!important}
+/* v6: 休憩に入る（緑青）・休憩から戻る（紫）。設定 breakPunch の時だけ出る */
+.b-brk{background:var(--brk-bg)!important;color:var(--brk)!important;border:2px solid var(--brk)!important}
+.b-ret{background:var(--ret-bg)!important;color:var(--ret)!important;border:2px solid var(--ret)!important}
+.acts.brk{margin-top:12px}
 .acts button.sug{box-shadow:0 0 0 5px var(--sug)}
 .back{margin-top:14px;width:100%;min-height:56px;font-size:20px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-family:inherit}
 .state.warn{color:var(--warn);background:var(--warn-bg);border-radius:10px;padding:8px 10px;font-weight:700}
 .acts .b-no{min-height:120px;font-size:32px;font-weight:700}
 .msg.ask{font-size:20px;font-weight:700;text-align:center}
 /* 完了: 枠全体を塗る（出勤＝緑・退勤＝橙。白い字は地との差 8:1）。控えた・控えられない は注意の色 */
-.panel.tone-in,.panel.tone-out,.panel.tone-save,.panel.tone-ng{cursor:pointer;padding:0;overflow:hidden}
+.panel.tone-in,.panel.tone-out,.panel.tone-save,.panel.tone-ng,.panel.tone-brk,.panel.tone-ret{cursor:pointer;padding:0;overflow:hidden}
+.panel.tone-brk{background:var(--fill-brk);border:3px solid var(--fill-brk);color:#fff}
+.panel.tone-ret{background:var(--fill-ret);border:3px solid var(--fill-ret);color:#fff}
 .panel.tone-in{background:var(--fill-in);border:3px solid var(--fill-in);color:#fff}
 .panel.tone-out{background:var(--fill-out);border:3px solid var(--fill-out);color:#fff}
 .panel.tone-save{background:var(--warn-bg);border:3px solid var(--warn);color:var(--warn)}
@@ -100,7 +106,15 @@ button.chip{min-height:44px;font-family:inherit;cursor:pointer}
 #k-kinds .kd:disabled,.chip:disabled{opacity:.5;cursor:default;filter:none}
 #k-kinds.sel .kd.on{flex-grow:1.86;box-shadow:inset 0 0 0 4px #fff}
 #k-kinds.sel .kd.on::before{content:"✓ "}
-@media (prefers-reduced-motion: reduce){#k-kinds .kd{transition:none}}
+/* v6: 休憩の2つ（出勤・退勤の下・少し低く）。白い字は地との差 5.4:1 以上 */
+#k-brk .kd{flex:1 1 0;min-width:0;min-height:96px;font-size:clamp(28px,3.4vw,42px);font-weight:800;border-radius:20px;color:#fff;font-family:inherit;cursor:pointer;touch-action:manipulation;transition:flex-grow .15s ease}
+#k-brk .kd-brk{background:var(--fill-brk);border:3px solid var(--fill-brk)}
+#k-brk .kd-ret{background:var(--fill-ret);border:3px solid var(--fill-ret)}
+#k-brk .kd:active{filter:brightness(1.15)}
+#k-brk .kd:disabled{opacity:.5;cursor:default;filter:none}
+#k-brk.sel .kd.on{flex-grow:1.86;box-shadow:inset 0 0 0 4px #fff}
+#k-brk.sel .kd.on::before{content:"✓ "}
+@media (prefers-reduced-motion: reduce){#k-kinds .kd,#k-brk .kd{transition:none}}
 /* 氏名・パスコードの間（main.sel）: 日付と時計は1行の小さな帯（高さ約44px）、出勤/退勤は低く（約72px）。待受は大きいまま */
 main.sel{gap:6px;padding-top:4px;padding-bottom:4px}
 main.sel .k-left{gap:8px}
@@ -109,6 +123,8 @@ main.sel .clock .date{font-size:16px}
 main.sel .clock .time{font-size:28px;line-height:1.2}
 #k-kinds.sel .kd{min-height:72px;font-size:28px}
 #k-kinds.sel .kd.on{font-size:36px}
+#k-brk.sel .kd{min-height:72px;font-size:24px}
+#k-brk.sel .kd.on{font-size:30px}
 .hist{min-width:0;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px 16px}
 .hist h2{font-size:20px;margin:0 0 8px}
 .hist .foot{justify-content:flex-start;margin-bottom:8px}
@@ -122,6 +138,8 @@ main.sel .clock .time{font-size:28px;line-height:1.2}
 .h-list .n{min-width:0;overflow-wrap:anywhere}
 .h-list .h-in .k{color:var(--in)}
 .h-list .h-out .k{color:var(--out)}
+.h-list .h-brk .k{color:var(--brk)}
+.h-list .h-ret .k{color:var(--ret)}
 @media screen and (max-width: 899px){.k-body{grid-template-columns:minmax(0,1fr)}}
 /* iPad 横: 画面の高さに収め、左と右はそれぞれの中で送る（氏名が多い時に履歴が上へ逃げないように） */
 @media screen and (min-width: 900px){
@@ -153,6 +171,8 @@ main.sel .clock .time{font-size:28px;line-height:1.2}
 .pk-q{flex:1;margin:0;font-size:clamp(22px,3.4vw,30px);font-weight:700}
 .q-in{color:var(--in)}
 .q-out{color:var(--out)}
+.q-brk{color:var(--brk)}
+.q-ret{color:var(--ret)}
 .pk-no{min-height:56px;padding:0 22px;font-size:20px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-family:inherit;cursor:pointer}
 .offs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
 .off{min-height:52px;padding:0 18px;font-size:19px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-family:inherit;cursor:pointer}
@@ -163,6 +183,7 @@ main.sel .clock .time{font-size:28px;line-height:1.2}
 /* 幅 899px 以下（iPad 縦・iPhone）でも打刻のボタンを決めた高さにする（su-theme.css の button{min-height:44px} の方が強いため #k-panel をつける） */
 #k-panel .keys button{min-height:72px}
 #k-panel .acts button{min-height:120px}
+#k-panel .acts.brk button{min-height:96px;font-size:28px}
 #k-panel .back{min-height:56px}
 #k-panel .pk-no{min-height:56px}
 #k-panel .off{min-height:52px}
@@ -170,7 +191,7 @@ main.sel .clock .time{font-size:28px;line-height:1.2}
 /* 暗い表示（端末の設定に合わせる）。su-theme.css が --ng・--focus・--warn-bg と見出しを上書きするので、同じ強さの指定で後から置く */
 @media screen and (prefers-color-scheme: dark){
   :root,:root[data-su-theme]:not([data-ds="ops"]){--ink:#e8ecf3;--sub:#b8c2d0;--line:#3a4556;--bg:#10151d;--card:#1a212c;--field:#141a23;--press:#26303e;--sug:rgba(143,176,255,.55);
-    --in:#9db8ff;--in-bg:#16244d;--out:#ff9e9e;--out-bg:#3d1518;--warn:#ffd27a;--warn-bg:#33270c;--ng:#ff9aa8;--ng-bg:#3a141a;--focus:#8fb0ff}
+    --in:#9db8ff;--in-bg:#16244d;--out:#ff9e9e;--out-bg:#3d1518;--brk:#5eead4;--brk-bg:#0f2e2a;--ret:#c4b5fd;--ret-bg:#2a1a4a;--warn:#ffd27a;--warn-bg:#33270c;--ng:#ff9aa8;--ng-bg:#3a141a;--focus:#8fb0ff}
   :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr{background:var(--card);color:var(--ink);border-bottom-color:var(--line);box-shadow:inset 0 -2px 0 var(--line)}
   :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn{background:var(--card);color:var(--ink);border-color:var(--line)}
   :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr-btn:hover{background:var(--press)}
@@ -199,6 +220,10 @@ main.sel .clock .time{font-size:28px;line-height:1.2}
         <button type="button" class="kd kd-in" data-g="in" aria-pressed="false">出勤</button>
         <button type="button" class="kd kd-out" data-g="out" aria-pressed="false">退勤</button>
       </div>
+      <div class="kinds" id="k-brk" role="group" aria-label="休憩" hidden>
+        <button type="button" class="kd kd-brk" data-g="break_start" aria-pressed="false">休憩に入る</button>
+        <button type="button" class="kd kd-ret" data-g="break_end" aria-pressed="false">休憩から戻る</button>
+      </div>
       <section class="panel" id="k-panel" hidden aria-live="polite"></section>
     </div>
     <aside class="hist" aria-labelledby="k-hist-h">
@@ -210,7 +235,7 @@ main.sel .clock .time{font-size:28px;line-height:1.2}
   </div>
   <p class="sr" id="k-sr" role="status" aria-live="assertive"></p>
 </main>
-<script src="kintai-clock.js?v=2026-11-20"></script>
+<script src="kintai-clock.js?v=2026-11-24"></script>
 <script src="su-shell.js?v=2026-11-19"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 <script src="su-report.js?v=2026-11-23" data-tool="出勤・退勤の打刻"></script>
