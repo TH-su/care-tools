@@ -134,7 +134,7 @@
       var g = function (k) { return col[k] >= 0 ? String(r[col[k]] == null ? '' : r[col[k]]) : ''; };
       var o = { line: i + 2, kind: kind, emp_num: nk(g('emp_num')), name: '', pay_date: null, bad: [], badKeys: [], items: {}, has: {} };
       o.name = col.name >= 0 ? String(g('name')).trim() : (String(g('sei')).trim() + ' ' + String(g('mei')).trim()).trim();
-      if (col.pay_date >= 0) { o.pay_date = toDate(g('pay_date')); if (!o.pay_date) o.bad.push(head[col.pay_date] || '支給日'); }
+      if (col.pay_date >= 0) { o.pay_date = toDate(g('pay_date')); if (!o.pay_date) { o.bad.push(head[col.pay_date] || '支給日'); o.badDate = true; } }   /* 列はあるが読めない（R8.7.10 など）＝支給日の無い行と分ける */
       MONEY.forEach(function (k) {
         if (col[k] < 0) { o[k] = null; return; }
         var n = toYen(g(k));
@@ -347,7 +347,7 @@
     return d;
   }
   function sameData(a, b) { a = isObj(a) ? a : {}; b = isObj(b) ? b : {}; return YTD_KEYS.every(function (k) { return int(a[k]) === int(b[k]); }); }
-  /* planBonusYtd(items, payDate, ytd) → { rows（payroll_ytd_put の p_rows）, same:[staff_id], final:[staff_id], replace:[{staff_id, source}] }
+  /* planBonusYtd(items, payDate, ytd) → { rows（payroll_ytd_put の p_rows）, same:[staff_id], final:[staff_id], replace:[{staff_id, source}], stale:[staff_id] }
      items: 同じ支給日の確定した回の明細を全部（同じ人が2回にいれば合算・DB と同じ）。ytd: payroll_ytd_get の答え {rows, yearend}
      ・年末調整を確定した人は送らない（final・DB は1件でも final があると何も書かない）
      ・累計に同じ値の app の行があれば送らない（same・版を上げて年末調整の下書きを古くしない）
@@ -363,7 +363,7 @@
     });
     var fin = {};
     arr(ytd.yearend).forEach(function (y) { if (y && y.status === 'final') fin[y.staff_id] = 1; });
-    var out = { rows: [], same: [], final: [], replace: [] };
+    var out = { rows: [], same: [], final: [], replace: [], stale: [] };
     order.forEach(function (sid) {
       if (fin[sid]) { out.final.push(sid); return; }
       var cur = arr(ytd.rows).filter(function (r) { return r && r.staff_id === sid && r.kind === 'bonus' && r.pay_date === payDate; })[0];
@@ -371,18 +371,28 @@
       if (cur && cur.source !== 'app') out.replace.push({ staff_id: sid, source: cur.source });
       out.rows.push({ staff_id: sid, pay_date: payDate, kind: 'bonus', source: 'app', data: by[sid], src_fp: '', rev: cur ? int(cur.rev) : 0 });
     });
+    /* 累計に app の賞与の行があるのに、今の確定した明細では支給が無い人（確定を取り消して0円にした・外した）。送り直しでは直らないので、人が消す */
+    arr(ytd.rows).forEach(function (r) {
+      if (r && r.kind === 'bonus' && r.pay_date === payDate && r.source === 'app' && !by[r.staff_id] && !fin[r.staff_id] && out.stale.indexOf(r.staff_id) < 0) out.stale.push(r.staff_id);
+    });
     return out;
   }
-  /* pickByDate(rows, payDate) → { rows, dates, nodate, off }。freee の行を支給日でしぼる（賞与は夏と冬が同じ額でも取り違えないように）
-     ・行に支給日がある時は payDate と同じ行だけ。1つも合わなければ off=true（比べない）
-     ・支給日の列が無い・空の行（賃金台帳の形）はしぼらずに使う（nodate に数える） */
-  function pickByDate(rows, payDate) {
-    var list = arr(rows).filter(Boolean), dated = list.filter(function (r) { return r.pay_date; }), dates = {};
+  /* pickByDate(rows, key, opt) → { rows, dates, nodate, baddate, off, why }。freee の行を支給日でしぼる（夏と冬の賞与・前月と今月の給与が同じ額でも取り違えないように）
+     ・key は支給日（YYYY-MM-DD）。opt.month が真なら key は月（YYYY-MM）で、支給日の年月で比べる（給与）
+     ・支給日の列はあるのに読めない行（badDate）が1つでもあれば off（why='baddate'・比べない＝その行がどの回か分からない）
+     ・行に支給日がある時は key と同じ行だけ。1つも合わなければ off（why='other'）
+     ・支給日の列が無い・空の行（賃金台帳の形）はしぼらずに使う（nodate に数える・画面は「人が確かめる」と出す） */
+  function pickByDate(rows, key, opt) {
+    opt = opt || {};
+    var list = arr(rows).filter(Boolean), dates = {};
+    var bad = list.filter(function (r) { return r.badDate; });
+    var dated = list.filter(function (r) { return r.pay_date; }), nod = list.filter(function (r) { return !r.pay_date && !r.badDate; });
     dated.forEach(function (r) { dates[r.pay_date] = 1; });
-    var nod = list.filter(function (r) { return !r.pay_date; });
-    if (!dated.length) return { rows: list, dates: [], nodate: nod.length, off: false };
-    var same = dated.filter(function (r) { return r.pay_date === payDate; });
-    return { rows: same.concat(nod), dates: Object.keys(dates).sort(), nodate: nod.length, off: !same.length };
+    var base = { dates: Object.keys(dates).sort(), nodate: nod.length, baddate: bad.length };
+    if (bad.length) return Object.assign(base, { rows: [], off: true, why: 'baddate' });
+    if (!dated.length) return Object.assign(base, { rows: list, off: false, why: null });
+    var same = dated.filter(function (r) { return opt.month ? r.pay_date.slice(0, 7) === key : r.pay_date === key; });
+    return Object.assign(base, { rows: same.concat(nod), off: !same.length, why: same.length ? null : 'other' });
   }
 
   var api = { VERSION: VERSION, EXCLUDE_PREFIX: EXCLUDE_PREFIX, excluded: excluded, bonusToYtd: bonusToYtd, planBonusYtd: planBonusYtd, pickByDate: pickByDate, HEAD: HEAD, ITEMS: ITEMS, YTD_KEYS: YTD_KEYS, parseCsv: parseCsv, toYen: toYen, toDate: toDate,

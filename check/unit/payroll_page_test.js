@@ -545,8 +545,13 @@ console.log('\n— 年末調整のタブ（2026-11-23・ROOT-yearend.md の C）
       delete c2.bs.profiles[0].data.tax;
     }
     /* 振込と書き出しの印 */
-    Y2._test.state().cmp = { ym: '2026-12', res: { diffCount: 2, unmatched: [{}] } };
+    /* ★比べた結果に指紋（fp）と対象外の数（others・pass）を持たせた（2026-11-23 反証の直し）ので、同じ場面（差2・片方だけ1）を今の形で作る */
+    Y2._test.state().cmp = { ym: '2026-12', fp: Y2._test.cmpFp(c2), res: { diffCount: 2, unmatched: [{}], others: 1, pass: false } };
     t('振込と書き出し: この月分を freee と比べて差があれば「freee と差があります（n件）」', /freee と差があります（3件）/.test(Y2.exportBadge(c2)) && Y2.exportBadge(Object.assign({}, c2, { ym: '2026-11' })) === '');
+    Y2._test.state().cmp.res = { diffCount: 0, unmatched: [{ excluded: true }], others: 0, pass: true };
+    t('振込と書き出し: 合格（対象外の人だけが自社だけ）なら印を出さない', Y2.exportBadge(c2) === '');
+    Y2._test.state().cmp.fp = 'old';
+    t('振込と書き出し: 比べた後に計算が変わったら「比べ直してください」', /比べた後に計算が変わりました/.test(Y2.exportBadge(c2)));
     Y2.reset();
     t('reset で申告・累計・取り込み・比べた結果を捨てる', Y2._test.state().data === null && Y2._test.state().cmp === null && Y2._test.state().imp === null && Y2._test.state().dlg === null);
   })());
@@ -722,14 +727,19 @@ console.log('\n— 賞与の「freee と比べる」と、確定した賞与を�
   t('読んだ後に ArrayBuffer を捨て、ファイルの欄を空に戻す・2MB まで', /buf = null/.test(cf) && /el\.id === 'b-cmpfile'\) \{ if \(tab === 'bonus'\) bonusCmpFile\(el\.files && el\.files\[0\]\); el\.value = ''; return; \}/.test(J) && /BONUS_CMP_MAX = 2 \* 1024 \* 1024/.test(J));
   t('比べた後に明細が変わったら古い結果（合格の帯）を出さない（指紋で見る）', /c\.fp !== bonusCmpFp\(\)/.test(ch) && /fp: bonusCmpFp\(\)/.test(cf));
   t('合格の帯は年末調整の画面と同じ cmpBand（A9 の対象外の人数も出す）', /UI\.cmpBand\(esc, r\)/.test(ch) && /cmpBand: cmpBand/.test(U) && /freee に登録の無い人（比べる対象外）/.test(U) && /✓ 1円まで一致/.test(U));
-  t('給与の比べる画面も、計算し直した後は古い結果を出さない（cmpFp）', /if \(c\.fp !== cmpFp\(ctx\)\)/.test(U) && /fp: cmpFp\(ctx\), res: F\(\)\.compareSlips\(ours, fr, 'salary'\)/.test(U));
-  t('比べた結果・累計へ入れた結果はメモリだけ（回を替える・一覧へ戻ると捨てる）', /bCmp = null; bYtdPut = null; \}/.test(J) && /bCmp = null; bYtdPut = null; bonusLoad\(false\);/.test(J));
+  t('給与の比べる画面も、計算し直した後は古い結果を出さない（cmpFp）', /if \(c\.fp !== cmpFp\(ctx\)\)/.test(U) && /fp: cmpFp\(ctx\), nodate: pk\.nodate, res: F\(\)\.compareSlips\(ours, fr, 'salary'\)/.test(U));
+  t('比べた結果・累計へ入れた結果はメモリだけ（回を替える・一覧へ戻ると捨てる）', /bCmp = null; bYtdPut = null; bYtdPending = null; \}/.test(J) && /bCmp = null; bYtdPut = null; bonusLoad\(false\);/.test(J));
   t('賞与の部分に端末への保存が無い（タブの payroll_tab のほか）', !/localStorage|sessionStorage|indexedDB/.test(cf + ch + yp));
-  t('確定に成功した後、読み直してから累計へ入れる（確定は戻さない）', /return Promise\.resolve\(bonusLoad\(false\)\)\.then\(function \(\) \{ return bonusYtdPut\(null\); \}\);/.test(cg));
+  t('確定に成功した後、読み直してから累計へ入れる（確定は戻さない）', /bYtdPending = pbid;\s*return Promise\.resolve\(bonusLoad\(false\)\)\.then\(function \(\) \{ return bonusYtdPut\(null\); \}\)/.test(cg));
   t('累計へは planBonusYtd で作った行を payroll_ytd_put に送る・同じ支給日のほかの確定した回も読んで合算', /F\.planBonusYtd\(items, pd, g\)/.test(yp) && /rpc\('payroll_ytd_put', \{ p_year: yr, p_rows: rows \}\)/.test(yp)
     && /r\.pay_date === pd && \(r\.status === 'confirmed' \|\| r\.status === 'exported'\)/.test(yp) && /rpc\('payroll_bonus_bootstrap', \{ p_bonus_id: r\.bonus_id \}\)/.test(yp));
   t('累計に入らなかった時は「確定はできましたが…入っていません」とやり直しのボタン・古い DB（badshape）は手で足す案内', /確定はできましたが、年末調整の累計には入っていません/.test(yp) && /retry: true/.test(yp) && /badshape: 'データベースがまだ賞与を累計に入れる形になっていません/.test(J) && /data-act="b-ytd-put"/.test(J) && /a === 'b-ytd-put'\) bonusYtdPut\(b\)/.test(J));
   t('年末調整の手で足す窓の説明を改めた（賞与の表とはまだつないでいない、を消した）', !/賞与の表とはまだつないでいない/.test(U) && /賞与のタブで確定すると累計に入ります/.test(U));
+  /* 反証レビュー（2026-11-23 画面）の直し */
+  t('確定した回を開くと累計に入っているかを確かめる（送らない）・確定の直後に入れている間は確かめない', /if \(bb\.run && bonusFrozen\(\) && bYtdPending !== bb\.run\.bonus_id\) bonusYtdPut\(null, 'check'\);/.test(J) && /bYtdPending = pbid;/.test(J) && /if \(check\) \{/.test(yp));
+  t('累計に前の確定の行が残る人（stale）を名前つきで出し、消し方を案内する', /plan\.stale\.length/.test(yp) && /「累計のこの行を消す」で消してください/.test(yp));
+  t('読めない支給日の CSV は給与・賞与とも比べない', /pk\.why === 'baddate'/.test(cf) && /pk\.why === 'baddate'/.test(U) && /F\(\)\.pickByDate\(fr, mon, \{ month: true \}\)/.test(U));
+  t('振込の所の印は対象外の人を差に数えず、比べた後に計算が変われば知らせる', /var n = c\.res\.pass \? 0 : c\.res\.diffCount \+ c\.res\.others;/.test(U) && /freee と比べた後に計算が変わりました/.test(U));
   t('部品の版を上げた（freee-slips 2026-11-23.3・yearend-ui 2026-11-23.2）', /payroll-freee-slips\.js\?v=2026-11-23\.3"/.test(H) && /payroll-yearend-ui\.js\?v=2026-11-23\.2"/.test(H));
 }
 

@@ -751,11 +751,23 @@ console.log('\n— 7. 賞与のタブ —');
   const yput = o.routes.calls.filter((c) => c.name === 'payroll_ytd_put').pop();
   t('確定すると、総支給が0より大きい人だけを累計へ（source=app・kind=bonus・支給日・版0・社保の和は social・所得税は tax）', !!yput && yput.args.p_year === 2026 && yput.args.p_rows.length === paid.length
     && yput.args.p_rows.every((r) => { const i = paid.find((x) => x.staff_id === r.staff_id); const d = r.data; return i && r.source === 'app' && r.kind === 'bonus' && r.pay_date === '2026-12-24' && r.rev === 0
-      && d.gross === i.gross && d.income_tax === i.tax && d.si_health + d.si_care + d.si_support + d.si_pension + d.si_emp + d.si_other === i.social && d.resident_tax === 0; }), yput && yput.args.p_rows.map((r) => r.staff_id));
+      && d.gross === i.gross && d.income_tax === i.tax && d.si_health + d.si_care + d.si_support + d.si_pension + d.si_emp + d.si_other === i.social && d.resident_tax === 0
+      && d.taxable === (Number.isInteger(i.item.taxable) ? i.item.taxable : i.gross) && d.nontax === d.gross - d.taxable; }), yput && yput.args.p_rows.map((r) => r.staff_id));
+  t('モック（0124 の照合の写し）に通り、「足した N 人」と出る', new RegExp('足した ' + paid.length + ' 人・置き換えた 0 人').test(await p.textContent('#p-main')));
   const nPut = o.routes.calls.filter((c) => c.name === 'payroll_ytd_put').length;
   await p.click('[data-act="b-ytd-put"]');
   await p.waitForFunction(() => /もう入っています/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
   t('もう一度押しても、同じ値が入っていれば送らない（版を上げない）', o.routes.calls.filter((c) => c.name === 'payroll_ytd_put').length === nPut);
+  /* 確定した回を開き直すと、累計に入っているかを読んで確かめる（送らない） */
+  await p.click('#p-reload'); await settle(p);
+  await p.waitForFunction(() => /年末調整の累計には、この賞与が入っています/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  t('確定した回を開き直すと累計を確かめて「入っています」（送らない）', o.routes.calls.filter((c) => c.name === 'payroll_ytd_put').length === nPut);
+  /* 累計の行を1つ消した DB で開き直すと「まだ入っていない人」を知らせる */
+  const gone = o.routes.db.ytd.splice(o.routes.db.ytd.findIndex((x) => x.staff_id === paid[0].staff_id && x.kind === 'bonus'), 1)[0];
+  await p.click('#p-reload'); await settle(p);
+  await p.waitForFunction(() => /まだ入っていない人（値の違う人を含む）が 1 人います/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  t('確定の後に累計から抜けた人がいれば、開いた時に知らせる（送らない）', o.routes.calls.filter((c) => c.name === 'payroll_ytd_put').length === nPut);
+  o.routes.db.ytd.push(gone);
   /* ── freee と比べる（賞与の明細の CSV・架空の値）── */
   const HEADB = '従業員番号,氏名,賞与支給日,総支給額,課税支給額合計,健康保険料,介護保険料,子ども・子育て支援金,厚生年金保険料,雇用保険料,所得税,控除合計,差引支給額';
   const rowOf = (i, o2) => { const x = Object.assign({ date: '2026/12/24', tax: i.tax }, o2 || {}), s = i.item.ins || {};
@@ -773,6 +785,9 @@ console.log('\n— 7. 賞与のタブ —');
   await up(csvB(paid.map((i) => rowOf(i, { date: '2026/07/10' }))));
   await p.waitForFunction(() => /この回の支給日（2026-12-24）がありません/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
   t('支給日の違う（夏の）賞与の CSV では比べない', !/1円まで一致|差あり/.test(await p.textContent('#p-main')));
+  await up(csvB(paid.map((i) => rowOf(i, { date: 'R8.12.24' }))));
+  await p.waitForFunction(() => /支給日の読めない行が/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  t('支給日の読めない賞与の CSV（R8.12.24）は比べない（合格の帯を出さない）', !/1円まで一致|差あり/.test(await p.textContent('#p-main')));
   /* freee に登録の無い人（従業員番号 A9 始まり）: CSV に居なくても対象外として別に数え、ほかが全部同じなら合格 */
   const a9 = paid[paid.length - 1];
   o.routes.db.profiles.filter((q) => q.staff_id === a9.staff_id).forEach((q) => { q.data = Object.assign({}, q.data, { freee_emp_num: 'A901' }); });

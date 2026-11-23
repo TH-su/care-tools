@@ -186,6 +186,15 @@ const pk = FS.pickByDate([{ pay_date: '2026-06-25', x: 1 }, { pay_date: '2026-12
 t('pickByDate: 支給日が同じ行と、支給日の無い行だけ', pk.rows.map((r) => r.x).join() === '2,3' && !pk.off && pk.dates.join() === '2026-06-25,2026-12-24' && pk.nodate === 1, pk);
 const pk2 = FS.pickByDate([{ pay_date: '2026-06-25' }], '2026-12-24'), pk3 = FS.pickByDate([{ pay_date: null }, { pay_date: null }], '2026-12-24');
 t('pickByDate: 支給日がある行が1つも合わなければ off（夏の賞与の CSV で冬を比べない）・支給日の列が無ければしぼらない', pk2.off === true && pk3.off === false && pk3.rows.length === 2);
+/* 反証レビュー（2026-11-23 画面）: 読めない支給日は「支給日の無い行」にしない／給与は月でしぼる／0円にした人の古い app の行 */
+const bdP = FS.parse('氏名,賞与支給日,総支給額,課税支給額,所得税\n見本 一,R8.7.10,"300,000","300,000","10,000"\n', { kind: 'bonus' });
+const pk4 = FS.pickByDate(bdP.rows, '2026-12-24');
+t('pickByDate: 支給日の列はあるのに読めない行（R8.7.10）は badDate・比べない（off・why baddate）', bdP.rows[0].badDate === true && bdP.rows[0].pay_date === null && pk4.off === true && pk4.why === 'baddate' && pk4.baddate === 1 && pk4.rows.length === 0, pk4);
+const pk5 = FS.pickByDate([{ pay_date: '2026-11-25' }, { pay_date: '2026-12-25' }], '2026-12', { month: true }), pk6 = FS.pickByDate([{ pay_date: '2026-11-25' }], '2026-12', { month: true });
+t('pickByDate（month）: 給与は支給日の年月でしぼる・この月の行が無ければ off（前月の CSV で比べない）', pk5.rows.length === 1 && pk5.rows[0].pay_date === '2026-12-25' && !pk5.off && pk6.off === true && pk6.why === 'other');
+const plan2 = FS.planBonusYtd([Object.assign({}, bItem, { staff_id: 's-1', gross: 0 }), Object.assign({}, bItem, { staff_id: 's-3' })], '2026-12-24',
+  { rows: [{ staff_id: 's-1', pay_date: '2026-12-24', kind: 'bonus', source: 'app', data: { gross: 100000 }, rev: 1 }, ytdNow.rows[1], { staff_id: 's-9', pay_date: '2026-12-24', kind: 'bonus', source: 'manual', data: { gross: 1 }, rev: 1 }], yearend: [] });
+t('planBonusYtd: 今は0円（支給なし）なのに累計に前の確定の app の行が残る人は stale（送らない・manual の行は対象外）', plan2.stale.join() === 's-1' && plan2.rows.length === 0 && plan2.same.join() === 's-3', plan2);
 
 console.log('\n— 7. 個人情報・部品の作法 —');
 t('DOM・端末への保存・console・通信を使わない', !/document\.|localStorage|sessionStorage|indexedDB|console\.|fetch\(|XMLHttpRequest/.test(SRC));

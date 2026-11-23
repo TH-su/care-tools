@@ -146,6 +146,7 @@
     /* 比べた後に計算し直した・読み直した時は、古い結果で合格の帯を出さない */
     if (c.fp !== cmpFp(ctx)) return h + '<div class="band warn" role="status">比べた後にこの月分の計算が変わりました。もう一度 CSV を選んで比べ直してください。</div><div class="row"><button type="button" class="btn" data-act="ye-cmp-clear">比べた結果を消す</button></div></div>';
     h += cmpBand(esc, r);
+    if (c.nodate) h += '<p class="help">⚠ 支給日の列の無い行（' + esc(c.nodate) + ' 行）は、この月分として比べました。この月分の CSV かどうかは人が確かめてください。</p>';
     h += '<div class="tw"><table><caption class="help" style="text-align:left">項目ごとの合計</caption><thead><tr><th>項目</th><th class="num">自社</th><th class="num">freee</th><th class="num">差</th><th class="num">一致の人数</th><th class="num">差ありの人数</th></tr></thead><tbody>' +
       F().ITEMS.filter(function (x) { return r.totals[x[0]]; }).map(function (x) {
         var t = r.totals[x[0]], k = r.counts[x[0]];
@@ -300,8 +301,10 @@
   function exportBadge(ctx) {
     var c = S.cmp;
     if (!c || c.ym !== ctx.ym) return '';
-    var n = c.res.diffCount + c.res.unmatched.length;
-    return n ? '<span class="tag warn">⚠ freee と差があります（' + ctx.esc(n) + '件）</span>' : '';
+    if (c.fp !== cmpFp(ctx)) return '<span class="tag warn">⚠ freee と比べた後に計算が変わりました（比べ直してください）</span>';
+    /* 対象外（freee に登録の無い人）は差に数えない */
+    var n = c.res.pass ? 0 : c.res.diffCount + c.res.others;
+    return n ? '<span class="tag warn">⚠ freee と差があります（' + ctx.esc(n) + '件）</span>' : (c.res.pass ? '' : '<span class="tag warn">⚠ freee と比べられた人がいません</span>');
   }
 
   /* ── ファイルを読む ── */
@@ -430,10 +433,13 @@
       var m = F().match(p.rows, staffList(ctx));
       var pd = ctx.payDate, mon = isDate(pd) ? pd.slice(0, 7) : null;
       var fr = m.matched.concat(m.unmatched.map(function (u) { return u.row; }));
-      if (mon) { var same = fr.filter(function (r) { return r.pay_date && r.pay_date.slice(0, 7) === mon; }); if (same.length) fr = same; }
+      /* 支給日でこの月分にしぼる。読めない支給日の行・この月分の行が1つも無い CSV は比べない（前月の CSV で合格の帯を出さない） */
+      var pk = mon ? F().pickByDate(fr, mon, { month: true }) : { rows: fr, off: false, nodate: fr.filter(function (r) { return !r.pay_date; }).length };
+      if (pk.off) { S.cmpErr = pk.why === 'baddate' ? '支給日の読めない行が ' + pk.baddate + ' 行あります（どの月分か分からないので比べません）。freee の給与の明細の CSV を選び直してください。' : 'この CSV の支給日（' + pk.dates.join('・') + '）に、この月分（' + mon + '）の支給日がありません。この月分の CSV を選んでください。'; ctx.paint(); return; }
+      fr = pk.rows;
       var ours = arr(ctx.items).map(function (it) { var q = profOf(ctx, it.staff_id); return Object.assign({}, it, { emp_num: q ? obj(q.data).freee_emp_num : null }); });
       if (!ours.length) { S.cmpErr = 'この月分の計算がまだありません。「今月の給与」で「計算する」を押してから比べてください。'; ctx.paint(); return; }
-      S.cmp = { ym: ym, fp: cmpFp(ctx), res: F().compareSlips(ours, fr, 'salary') };
+      S.cmp = { ym: ym, fp: cmpFp(ctx), nodate: pk.nodate, res: F().compareSlips(ours, fr, 'salary') };
       ctx.paint();
     })['catch'](function (e) { if (ctx.note) ctx.note('freee と比べる', e); S.cmpErr = '読めませんでした。freee の給与の明細の CSV を選んでください。'; ctx.paint(); });
   }

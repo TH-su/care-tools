@@ -868,7 +868,7 @@
   var bb = null, bErr = null, bNoDb = false, bSel = null, bIn = {}, bCfgIn = null, bCalc = null, bDirty = false, bCfgDirty = false, bGen = 0, bLoading = false;
   var bYtd = null, bNotice = null, bPrint = null, bSlipSid = null, bCfgOpen = false;
   /* freee と比べた結果（bCmp）と、確定した明細を年末調整の累計へ入れた結果（bYtdPut）。どちらも画面のメモリの中だけ（端末にもファイルにも残さない・2026-11-23） */
-  var bCmp = null, bYtdPut = null, BONUS_CMP_MAX = 2 * 1024 * 1024;
+  var bCmp = null, bYtdPut = null, bYtdPending = null, BONUS_CMP_MAX = 2 * 1024 * 1024;   /* bYtdPending: 確定の直後に累計へ入れている回（その間は開いた時の確かめをしない） */
   /* 年末調整の記録の答え（届いた・失敗・無い）が決まるまで「下書き保存」「確定」を押させない（記録が届く前に保存すると、その人が前月の給与なしで数えられるため） */
   var bYtdWait = false, BONUS_YTD_MS = 10000;   /* 記録の答えを待つのは10秒まで（過ぎたら読めなかった扱いで解く・仮置き） */
   var bCfgBase = null, bCfgConflict = false;   /* 回の設定の欄を作った時の DB の値（読み直しで、ほかの人の変更と人の直しがぶつかったかを見る） */
@@ -910,7 +910,7 @@
     return null;
   }
   function bonusDirty() { return bDirty || bCfgDirty; }
-  function bonusClear() { bb = null; bCalc = null; bIn = {}; bCfgIn = null; bDirty = false; bCfgDirty = false; bPrint = null; bYtd = null; bNotice = null; bSlipSid = null; bYtdWait = false; bCfgBase = null; bCfgConflict = false; bCmp = null; bYtdPut = null; }
+  function bonusClear() { bb = null; bCalc = null; bIn = {}; bCfgIn = null; bDirty = false; bCfgDirty = false; bPrint = null; bYtd = null; bNotice = null; bSlipSid = null; bYtdWait = false; bCfgBase = null; bCfgConflict = false; bCmp = null; bYtdPut = null; bYtdPending = null; }
   /* 受け取った形を確かめる（壊れた値で画面を止めない）。形は統合 0121 の payroll_bonus_bootstrap */
   function bonusNorm(r) {
     r = obj(r);
@@ -1109,6 +1109,8 @@
         else if (bCfgBase !== JSON.stringify(obj(bb.run && bb.run.config))) bCfgConflict = true;
       }
       paint();
+      /* 確定した回を開いた時は、年末調整の累計に入っているかを読んで確かめる（確定の直後に入れ損ねても、ここで知らせる・送らない） */
+      if (bb.run && bonusFrozen() && bYtdPending !== bb.run.bonus_id) bonusYtdPut(null, 'check');
       bYtdWait = !!(bb.run && !bonusFrozen() && isDate(bb.run.pay_date));
       if (bYtdWait) { paint(); bonusLoadYtd(bb.run.pay_date, my); }
       return bb;
@@ -1298,7 +1300,9 @@
       return rpc('payroll_bonus_confirm', { p_bonus_id: fresh.run.bonus_id, p_rev: fresh.run.rev }).then(okOr).then(function () {
         done(); closeDlg(); toast('賞与を確定しました。');
         /* 確定した明細を年末調整の累計（source='app'・kind='bonus'）へ入れる。確定は済んでいるので、ここが断られても確定は戻さない（画面に出してやり直せる） */
-        return Promise.resolve(bonusLoad(false)).then(function () { return bonusYtdPut(null); });
+        var pbid = fresh.run.bonus_id; bYtdPending = pbid;
+        return Promise.resolve(bonusLoad(false)).then(function () { return bonusYtdPut(null); })
+          .then(function (x) { if (bYtdPending === pbid) bYtdPending = null; return x; }, function (e) { if (bYtdPending === pbid) bYtdPending = null; throw e; });
       });
     })['catch'](function (e) { done(); closeDlg(); return bonusFail(e, '賞与の確定'); });
   }
@@ -1466,7 +1470,7 @@
       var staff = bb.profiles.map(function (q) { return { staff_id: q.staff_id, name: q.name, emp_num: obj(q.data).freee_emp_num }; });
       var m = F.match(p.rows, staff);
       var pk = F.pickByDate(m.matched.concat(m.unmatched.map(function (u) { return u.row; })), pd);
-      if (pk.off) { bCmp = { bid: bid, err: 'この CSV の支給日（' + pk.dates.join('・') + '）に、この回の支給日（' + pd + '）がありません。この回の賞与の明細の CSV を選んでください（夏と冬を取り違えないため、比べません）。' }; paint(); return; }
+      if (pk.off) { bCmp = { bid: bid, err: pk.why === 'baddate' ? '支給日の読めない行が ' + pk.baddate + ' 行あります（どの回の賞与か分からないので比べません）。freee の賞与の明細の CSV を選び直してください。' : 'この CSV の支給日（' + pk.dates.join('・') + '）に、この回の支給日（' + pd + '）がありません。この回の賞与の明細の CSV を選んでください（夏と冬を取り違えないため、比べません）。' }; paint(); return; }
       /* 賞与額0円の人も明細になる（#660）。freee に行の無い0円の人は比べる対象から外し、人数だけ出す（freee に0円の行があれば比べる） */
       var inF = {}; pk.rows.forEach(function (r) { if (r.staff_id) inF[r.staff_id] = 1; });
       var zero = 0;
@@ -1487,7 +1491,7 @@
     if (c.err) return h + '<div class="band ng" role="alert">' + esc(c.err) + '</div></div>';
     if (c.fp !== bonusCmpFp()) return h + '<div class="band warn" role="status">比べた後にこの回の明細が変わりました。もう一度 CSV を選んで比べ直してください。</div><div class="row"><button type="button" class="btn" data-act="b-cmp-clear">比べた結果を消す</button></div></div>';
     var r = c.res;
-    h += '<p class="help">比べたのは' + esc(c.what) + 'です。' + (c.what === '確定した明細' ? '' : '振込の前に、確定してからもう一度比べてください。') + (c.nodate ? '支給日の無い行 ' + esc(c.nodate) + ' 行は、この回の分として比べました。' : '') + (c.zero ? '賞与額0円で freee に行の無い ' + esc(c.zero) + ' 人は比べていません。' : '') + '</p>';
+    h += '<p class="help">比べたのは' + esc(c.what) + 'です。' + (c.what === '確定した明細' ? '' : '振込の前に、確定してからもう一度比べてください。') + (c.nodate ? '⚠ 支給日の列の無い行 ' + esc(c.nodate) + ' 行は、この回の分として比べました（この回の CSV かどうかは人が確かめてください）。' : '') + (c.zero ? '賞与額0円で freee に行の無い ' + esc(c.zero) + ' 人は比べていません。' : '') + '</p>';
     if (c.missing.length) h += '<p class="help">読めなかった見出し（0円として比べます）: ' + esc(c.missing.join('・')) + '</p>';
     h += UI && typeof UI.cmpBand === 'function' ? UI.cmpBand(esc, r) : '<div class="band warn" role="status">判定の部品を読み込めませんでした。ページを読み込み直してください。</div>';
     h += '<div class="tw"><table><caption class="help" style="text-align:left">項目ごとの合計</caption><thead><tr><th>項目</th><th class="num">自社</th><th class="num">freee</th><th class="num">差</th><th class="num">一致の人数</th><th class="num">差ありの人数</th></tr></thead><tbody>' +
@@ -1515,8 +1519,8 @@
     nostaff: 'シフトにも給与の設定にも見つからない人がいます。読み直してください。',
     badyear: '支給日の年が違います。'
   };
-  function bonusYtdPut(btn) {
-    var F = FS();
+  function bonusYtdPut(btn, mode) {
+    var F = FS(), check = mode === 'check';
     if (!bb || !bb.run || !bonusFrozen() || !F || typeof F.planBonusYtd !== 'function') return null;
     if (btn && busy) return null;
     var run = bb.run, bid = run.bonus_id, pd = run.pay_date, yr = +String(pd).slice(0, 4), my = bGen, items = bb.items.slice();
@@ -1537,21 +1541,31 @@
       if (!g || g.ok === false) { var e = new Error((g && g.error) || 'ng'); e.payroll = (g && g.error) || 'ng'; throw e; }
       var plan = F.planBonusYtd(items, pd, g); items = null;
       var fin = plan.final.length ? '年末調整を確定しているので入れなかった人: ' + plan.final.map(nm).join('、') + '。' : '';
-      if (!plan.rows.length) { done(); set(plan.final.length ? 'warn' : 'ok', (plan.same.length ? '✓ 年末調整の累計には、この賞与がもう入っています（' + plan.same.length + ' 人）。' : '累計に入れる人がいません。') + fin); return null; }
+      /* 今の明細では支給が無いのに、累計に前の確定の行が残っている人（送り直しでは直らない） */
+      var stale = plan.stale.length ? '⚠ この賞与の支給が無いのに、年末調整の累計に前の確定の行が残っている人: ' + plan.stale.map(nm).join('、') + '。年末調整のタブでその人を開き「累計のこの行を消す」で消してください。' : '';
+      if (check) {
+        done();
+        if (plan.rows.length) set('ng', '⚠ 年末調整の累計に、この賞与がまだ入っていない人（値の違う人を含む）が ' + plan.rows.length + ' 人います。下の「年末調整の累計に入れる」を押してください。' + stale + fin, { retry: true });
+        else if (stale) set('ng', stale + fin, { retry: true });
+        else set(plan.final.length ? 'warn' : 'ok', '✓ 年末調整の累計には、この賞与が入っています（' + plan.same.length + ' 人）。' + fin);
+        return null;
+      }
+      if (!plan.rows.length) { done(); set(stale ? 'ng' : plan.final.length ? 'warn' : 'ok', (plan.same.length ? '✓ 年末調整の累計には、この賞与がもう入っています（' + plan.same.length + ' 人）。' : '累計に入れる人がいません。') + stale + fin, stale ? { retry: true } : null); return null; }
       var rows = plan.rows;
       return rpc('payroll_ytd_put', { p_year: yr, p_rows: rows }).then(function (r) {
         done(); rows = null;
         if (r && r.ok === true) {
-          set(plan.final.length ? 'warn' : 'ok', '✓ 年末調整の累計に入れました（足した ' + num(r.added) + ' 人・置き換えた ' + num(r.replaced) + ' 人' + (plan.same.length ? '・もう入っていた ' + plan.same.length + ' 人' : '') + '）。' +
-            (plan.replace.length ? '手で足した行・freee の行を置き換えた人: ' + plan.replace.map(function (x) { return nm(x.staff_id); }).join('、') + '。' : '') + fin);
+          set(stale ? 'ng' : plan.final.length ? 'warn' : 'ok', '✓ 年末調整の累計に入れました（足した ' + num(r.added) + ' 人・置き換えた ' + num(r.replaced) + ' 人' + (plan.same.length ? '・もう入っていた ' + plan.same.length + ' 人' : '') + '）。' +
+            (plan.replace.length ? '手で足した行・freee の行を置き換えた人: ' + plan.replace.map(function (x) { return nm(x.staff_id); }).join('、') + '。' : '') + stale + fin, stale ? { retry: true } : null);
           return null;
         }
         var code = (r && r.error) || 'ng';
-        set('ng', '⚠ 確定はできましたが、年末調整の累計には入っていません：' + (BYTD_NG[code] || 'うまくいきませんでした（' + code + '）。') + (r && r.staff_id ? '（' + nm(r.staff_id) + '）' : ''), { retry: true });
+        set('ng', '⚠ 確定はできましたが、年末調整の累計には入っていません：' + (BYTD_NG[code] || 'うまくいきませんでした（' + code + '）。') + (r && r.staff_id ? '（' + nm(r.staff_id) + '）' : '') + stale, { retry: true });
         return null;
       });
     })['catch'](function (e) {
       done(); items = null;
+      if (check) { if (!(e && e.payroll) && !bonusNoDb(e)) note('賞与の年末調整の累計の確かめ', e); set('ng', '⚠ 年末調整の累計に入っているかを確かめられませんでした（' + (bonusNoDb(e) ? 'データベースの準備中' : e && e.payroll ? (BYTD_NG[e.payroll] || e.payroll) : '通信') + '）。「年末調整の累計に入れる」を押すか、読み直してください。', { retry: true }); return null; }
       if (e && (e.code === '42501' || isAal(e))) { set('ng', '⚠ 確定はできましたが、年末調整の累計には入っていません（給与の権限・二段階のログインを確かめてください）。', { retry: true }); return fail(e, '賞与を年末調整の累計へ'); }
       if (bonusNoDb(e)) { set('ng', '⚠ 確定はできましたが、年末調整の累計には入っていません：' + BYTD_NG.badshape, { retry: true }); return null; }
       if (!(e && e.payroll)) note('賞与を年末調整の累計へ', e);
