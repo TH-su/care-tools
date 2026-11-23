@@ -244,6 +244,12 @@ textarea.fi{resize:vertical;min-height:60px}
   .palette .grp{margin-bottom:0}
   .palette .grp-btns,.palette .grp-btns.col1{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:max-content}
 }
+/* iPhone（幅700px以下）だけ: 下のプロパティの欄（高さ52px）の右下に「不具合を報告」のボタン（右14px・幅約122px）が重なり、
+   欄の文が隠れていた。欄の高さに下の余白は入らないので、右にボタンの幅ぶんの余白を取ってボタンを避ける（2026-11-24・仮置き）。
+   欄と図の欄の高さは変えない。画面だけ（印刷には効かせない） */
+@media screen and (max-width:700px){
+  .props{padding-right:150px}
+}
 
 /* 動きを減らす設定への対応（2026-08-10 追加・通常表示に影響なし） */
 @media (prefers-reduced-motion: reduce) {
