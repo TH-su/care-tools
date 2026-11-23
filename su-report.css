@@ -35,6 +35,12 @@
 /* 表示200%（CSS幅200px前後）では小さめにして中身を隠しすぎない */
 @media (max-width:260px){.sur-fab{padding:8px 10px}}
 @media print{.sur-fab,.sur-dlg{display:none!important}}
+/* ボタンの下に隠れて押せない所を作らない（2026-11-23）。ボタンは右下に浮いているので、ページの最後が表だと最後の行の右端のボタン
+   （給与の年末調整の「開く」など）がボタンの下に入り、最後まで送っても押せなかった。ボタンを置いた画面だけ su-report.js が body に
+   sur-has-fab を付け、本文の下にボタンの高さ＋余白（44+14+14px）と iPhone の下の安全領域ぶんを足す。
+   padding ではなく margin にするのは、画面が自分で取っている下の余白（下のバーの分など）を上書きせずに足すため。
+   印刷には効かせない（@media screen だけ）＝印刷のページ数・帳票は変えない */
+@media screen{body.sur-has-fab{margin-bottom:calc(72px + env(safe-area-inset-bottom,0px))}}
 
 /* ── 画面の指摘（su-annot.js・管理者が「画面の場所を指して報告」を押した時だけ出る部品）── */
 .sua-root{position:fixed;inset:0;z-index:2147483000;pointer-events:none;font:15px/1.5 system-ui,sans-serif}
