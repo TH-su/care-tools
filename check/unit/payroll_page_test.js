@@ -288,7 +288,8 @@ console.log('\n— 給与専用の暗証番号（統合 0110・2026-11-20 代表
   /* ★賞与の画面の反証レビューの直し（2026-11-23）で 2026-11-23.5 に上げたので、期待の版を改めた */
   /* ★賞与の空の止め（#660・2026-11-23.7）の入った main を取り込み、両方が入った payroll.js を 2026-11-23.8 に上げたので、期待の版を改めた */
   /* ★年末調整のタブ（2026-11-23・ROOT-yearend.md の C）を賞与の入った main に取り込み、両方が入った payroll.js を 2026-11-23.6 に上げたので、期待の版を改めた */
-  t('payroll.js の版を上げた（2026-11-23.8・賞与と年末調整の両方が入った版）', /payroll\.js\?v=2026-11-23\.8"/.test(H));
+  /* ★賞与の「freee と比べる」と、確定した賞与を年末調整の累計へ入れる（2026-11-23・0124）で 2026-11-23.9 に上げたので、期待の版を改めた */
+  t('payroll.js の版を上げた（2026-11-23.9・賞与の freee と比べると累計へ入れるの入った版）', /payroll\.js\?v=2026-11-23\.9"/.test(H));
 }
 
 console.log('\n— 年末調整のタブ（2026-11-23・ROOT-yearend.md の C） —');
@@ -302,7 +303,8 @@ console.log('\n— 年末調整のタブ（2026-11-23・ROOT-yearend.md の C）
   const iF = H.indexOf('<script src="payroll-freee-slips.js?v='), iYR = H.indexOf('<script src="payroll-yearend-rates.js?v='), iY = H.indexOf('<script src="payroll-yearend.js?v='), iW = H.indexOf('<script src="payroll-withholding-slip.js?v='), iU = H.indexOf('<script src="payroll-yearend-ui.js?v='), iP = H.indexOf('<script src="payroll.js?v=');
   t('新しい5つの部品を payroll.js より前に ?v= つきで読む', iF > 0 && iYR > iF && iY > iYR && iW > iY && iU > iW && iP > iU, [iF, iYR, iY, iW, iU, iP]);
   /* ★賞与の入った main を取り込み 2026-11-23.6 に上げたので、期待の版を改めた */
-  t('payroll.js の版を上げた（2026-11-23.8）', /payroll\.js\?v=2026-11-23\.8"/.test(H));
+  /* ★賞与の「freee と比べる」と累計へ入れる（2026-11-23・0124）で 2026-11-23.9 に上げたので、期待の版を改めた */
+  t('payroll.js の版を上げた（2026-11-23.9）', /payroll\.js\?v=2026-11-23\.9"/.test(H));
   t('描く物は PayrollYearEndUI.html(ctx)・無ければ「計算の部品が読み込めていません」', /else if \(tab === 'yearend'\) h = YEU\(\) \? YEU\(\)\.html\(yeCtx\(\)\) : '<div class="band ng" role="alert">計算の部品が読み込めていません。/.test(J));
   t('出来事は ye- で始まる act だけ・金額を隠している間は渡さない', /else if \(\/\^ye-\/\.test\(a\) && YEU\(\) && view === 'app' && !masked\) YEU\(\)\.onClick\(yeCtx\(\), a, b\);/.test(J)
     && /YEU\(\)\.onChange\(yeCtx\(\), e\.target\)/.test(J));
@@ -709,6 +711,26 @@ console.log('\n— 賞与のタブ（統合 0121・2026-11-23 設計 CONTRACT-bo
     items: [{ staff_id: 'a', item: { gross: 1, lines: 'x' }, prev_manual: { P: 1 } }, { staff_id: 'z' }], fingerprint: 'b1:x', ctx: { fy_std: { a: 'q', b: 3 } } });
   t('bonusNorm: 崩れた形は捨てる・P は数だけ・指紋は文字のまま', nb.runs.length === 1 && nb.runs[0].status === 'draft' && nb.run.rev === 3 && nb.prev.items.a.P === null && nb.prev.items.b.P === 5
     && nb.items.length === 1 && Array.isArray(nb.items[0].lines) && nb.fingerprint === 'b1:x' && !('a' in nb.ctx.fy_std) && nb.ctx.fy_std.b === 3);
+}
+
+console.log('\n— 賞与の「freee と比べる」と、確定した賞与を年末調整の累計へ（2026-11-23・0124） —');
+{
+  const U = read('payroll-yearend-ui.js');
+  const cf = fnBody(J, 'bonusCmpFile', 'function bonusCmpHtml'), ch = fnBody(J, 'bonusCmpHtml', '/* ── 確定した明細を年末調整の累計へ'), yp = fnBody(J, 'bonusYtdPut', 'function bonusYtdHtml'), cg = fnBody(J, 'bonusConfirmGo', 'function bonusHtml');
+  t('賞与の CSV は kind bonus で読み・職員の給与設定の freee の番号で結び・compareSlips(…, \'bonus\')', /F\.parse\(decode\(buf\), \{ kind: 'bonus' \}\)/.test(cf) && /emp_num: obj\(q\.data\)\.freee_emp_num/.test(cf) && /F\.compareSlips\(ours, pk\.rows, 'bonus'\)/.test(cf));
+  t('freee の行は回の支給日でしぼり、1つも合わなければ比べない（夏と冬の取り違え）', /F\.pickByDate\(/.test(cf) && /if \(pk\.off\)/.test(cf));
+  t('読んだ後に ArrayBuffer を捨て、ファイルの欄を空に戻す・2MB まで', /buf = null/.test(cf) && /el\.id === 'b-cmpfile'\) \{ if \(tab === 'bonus'\) bonusCmpFile\(el\.files && el\.files\[0\]\); el\.value = ''; return; \}/.test(J) && /BONUS_CMP_MAX = 2 \* 1024 \* 1024/.test(J));
+  t('比べた後に明細が変わったら古い結果（合格の帯）を出さない（指紋で見る）', /c\.fp !== bonusCmpFp\(\)/.test(ch) && /fp: bonusCmpFp\(\)/.test(cf));
+  t('合格の帯は年末調整の画面と同じ cmpBand（A9 の対象外の人数も出す）', /UI\.cmpBand\(esc, r\)/.test(ch) && /cmpBand: cmpBand/.test(U) && /freee に登録の無い人（比べる対象外）/.test(U) && /✓ 1円まで一致/.test(U));
+  t('給与の比べる画面も、計算し直した後は古い結果を出さない（cmpFp）', /if \(c\.fp !== cmpFp\(ctx\)\)/.test(U) && /fp: cmpFp\(ctx\), res: F\(\)\.compareSlips\(ours, fr, 'salary'\)/.test(U));
+  t('比べた結果・累計へ入れた結果はメモリだけ（回を替える・一覧へ戻ると捨てる）', /bCmp = null; bYtdPut = null; \}/.test(J) && /bCmp = null; bYtdPut = null; bonusLoad\(false\);/.test(J));
+  t('賞与の部分に端末への保存が無い（タブの payroll_tab のほか）', !/localStorage|sessionStorage|indexedDB/.test(cf + ch + yp));
+  t('確定に成功した後、読み直してから累計へ入れる（確定は戻さない）', /return Promise\.resolve\(bonusLoad\(false\)\)\.then\(function \(\) \{ return bonusYtdPut\(null\); \}\);/.test(cg));
+  t('累計へは planBonusYtd で作った行を payroll_ytd_put に送る・同じ支給日のほかの確定した回も読んで合算', /F\.planBonusYtd\(items, pd, g\)/.test(yp) && /rpc\('payroll_ytd_put', \{ p_year: yr, p_rows: rows \}\)/.test(yp)
+    && /r\.pay_date === pd && \(r\.status === 'confirmed' \|\| r\.status === 'exported'\)/.test(yp) && /rpc\('payroll_bonus_bootstrap', \{ p_bonus_id: r\.bonus_id \}\)/.test(yp));
+  t('累計に入らなかった時は「確定はできましたが…入っていません」とやり直しのボタン・古い DB（badshape）は手で足す案内', /確定はできましたが、年末調整の累計には入っていません/.test(yp) && /retry: true/.test(yp) && /badshape: 'データベースがまだ賞与を累計に入れる形になっていません/.test(J) && /data-act="b-ytd-put"/.test(J) && /a === 'b-ytd-put'\) bonusYtdPut\(b\)/.test(J));
+  t('年末調整の手で足す窓の説明を改めた（賞与の表とはまだつないでいない、を消した）', !/賞与の表とはまだつないでいない/.test(U) && /賞与のタブで確定すると累計に入ります/.test(U));
+  t('部品の版を上げた（freee-slips 2026-11-23.3・yearend-ui 2026-11-23.2）', /payroll-freee-slips\.js\?v=2026-11-23\.3"/.test(H) && /payroll-yearend-ui\.js\?v=2026-11-23\.2"/.test(H));
 }
 
 Promise.all(pend).catch((e) => { fail++; console.log('  ✗ 動かして確かめる試験が止まった  → ' + e.message); }).then(() => {

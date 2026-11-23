@@ -142,15 +142,17 @@
     if (S.cmpErr) h += '<div class="band ng" role="alert">' + esc(S.cmpErr) + '</div>';
     var c = S.cmp;
     if (!c || c.ym !== ctx.ym) return h + '</div>';
-    var r = c.res, n = r.diffCount + r.unmatched.length;
-    h += n ? '<div class="band ng" role="status">⚠ 差あり ' + esc(r.diffCount) + ' 件（人×項目）・片方だけの人 ' + esc(r.unmatched.length) + ' 人</div>' : '<div class="band ok" role="status">✓ 全員の全項目が1円まで一致しました。</div>';
+    var r = c.res;
+    /* 比べた後に計算し直した・読み直した時は、古い結果で合格の帯を出さない */
+    if (c.fp !== cmpFp(ctx)) return h + '<div class="band warn" role="status">比べた後にこの月分の計算が変わりました。もう一度 CSV を選んで比べ直してください。</div><div class="row"><button type="button" class="btn" data-act="ye-cmp-clear">比べた結果を消す</button></div></div>';
+    h += cmpBand(esc, r);
     h += '<div class="tw"><table><caption class="help" style="text-align:left">項目ごとの合計</caption><thead><tr><th>項目</th><th class="num">自社</th><th class="num">freee</th><th class="num">差</th><th class="num">一致の人数</th><th class="num">差ありの人数</th></tr></thead><tbody>' +
       F().ITEMS.filter(function (x) { return r.totals[x[0]]; }).map(function (x) {
         var t = r.totals[x[0]], k = r.counts[x[0]];
         return '<tr><td>' + esc(x[1]) + '</td><td class="num">' + esc(yen(t.app)) + '</td><td class="num">' + esc(yen(t.freee)) + '</td><td class="num"' + (t.diff ? ' style="color:var(--ng);font-weight:700"' : '') + '>' + esc((t.diff ? '⚠ ' : '') + yen(t.diff)) + '</td><td class="num">' + esc(k.same) + '</td><td class="num">' + esc(k.diff) + '</td></tr>';
       }).join('') + (r.settle ? '<tr><td>年末調整の精算（自社だけ）</td><td class="num">' + esc(yen(r.settle)) + '</td><td class="num">—</td><td class="num">—</td><td></td><td></td></tr>' : '') + '</tbody></table></div>';
     if (r.unmatched.length) h += '<div class="band warn"><b>片方だけにいる人・照合できない行</b><ul>' + r.unmatched.map(function (u) {
-      return '<li>' + esc(u.side === 'ours' ? '自社だけ：' + nameOf(ctx, u.staff_id) : u.staff_id ? 'freee だけ：' + nameOf(ctx, u.staff_id) : '照合できません（職員に結べない freee の行）：' + u.name_short) + '</li>'; }).join('') + '</ul>職員に結べない行は、従業員番号（「職員の給与設定」の取り込みで入ります）か、同じ氏名がちょうど1人の時だけ結びます。</div>';
+      return '<li>' + esc(u.excluded ? '自社だけ（freee に登録の無い人・比べる対象外）：' + nameOf(ctx, u.staff_id) : u.side === 'ours' ? '自社だけ：' + nameOf(ctx, u.staff_id) : u.staff_id ? 'freee だけ：' + nameOf(ctx, u.staff_id) : '照合できません（職員に結べない freee の行）：' + u.name_short) + '</li>'; }).join('') + '</ul>職員に結べない行は、従業員番号（「職員の給与設定」の取り込みで入ります）か、同じ氏名がちょうど1人の時だけ結びます。従業員番号が ' + esc(F().EXCLUDE_PREFIX) + ' で始まる人は freee に登録が無いので比べません（差の数に入れません）。</div>';
     var rows = S.cmpAll ? r.rows : r.rows.filter(function (x) { return x.diff !== 0 || (x.key === 'income_tax' && x.settle); });
     h += '<div class="row"><label><input type="checkbox" id="ye-cmpall"' + (S.cmpAll ? ' checked' : '') + '> 一致した行も見せる</label></div>';
     h += rows.length ? '<div class="tw"><table><thead><tr><th>氏名</th><th>項目</th><th class="num">自社</th><th class="num">freee</th><th class="num">差</th><th class="num">年末調整の精算（自社だけ）</th></tr></thead><tbody>' + rows.map(function (x) {
@@ -159,6 +161,15 @@
     return h + '<div class="row"><button type="button" class="btn" data-act="ye-cmp-clear">比べた結果を消す</button></div></div>';
   }
 
+  /* 合格の帯（給与と賞与で同じ文・payroll.js の賞与のタブも window.PayrollYearEndUI.cmpBand を使う） */
+  function cmpBand(esc, r) {
+    var ex = r.excluded ? '・freee に登録の無い人（比べる対象外）' + r.excluded + ' 人' : '';
+    if (r.pass) return '<div class="band ok" role="status"><b>✓ 1円まで一致</b>（比べた ' + esc(r.compared) + ' 人の全項目' + esc(ex) + '）</div>';
+    if (!r.compared && !r.diffCount && !r.others) return '<div class="band warn" role="status">⚠ 比べられた人がいません（freee の行と自社の明細の人が結べませんでした' + esc(ex) + '）</div>';
+    return '<div class="band ng" role="status">⚠ 差あり ' + esc(r.diffCount) + ' 件（人×項目）・片方だけの人 ' + esc(r.others) + ' 人' + esc(ex) + '</div>';
+  }
+  /* 比べた時の自社の明細の指紋（計算し直し・読み直しで変われば、古い結果を出さない）。金額は画面のメモリの中だけ */
+  function cmpFp(ctx) { return arr(ctx.items).map(function (it) { return it && it.staff_id + ':' + int(it.gross) + ':' + int(it.deduct) + ':' + int(it.net); }).sort().join('|'); }
   function sumOf(rows, k) { return rows.reduce(function (s, r) { return s + int(r.data[k]); }, 0); }
   function people(ctx) {
     var seen = {}, out = [];
@@ -422,7 +433,7 @@
       if (mon) { var same = fr.filter(function (r) { return r.pay_date && r.pay_date.slice(0, 7) === mon; }); if (same.length) fr = same; }
       var ours = arr(ctx.items).map(function (it) { var q = profOf(ctx, it.staff_id); return Object.assign({}, it, { emp_num: q ? obj(q.data).freee_emp_num : null }); });
       if (!ours.length) { S.cmpErr = 'この月分の計算がまだありません。「今月の給与」で「計算する」を押してから比べてください。'; ctx.paint(); return; }
-      S.cmp = { ym: ym, res: F().compareSlips(ours, fr, 'salary') };
+      S.cmp = { ym: ym, fp: cmpFp(ctx), res: F().compareSlips(ours, fr, 'salary') };
       ctx.paint();
     })['catch'](function (e) { if (ctx.note) ctx.note('freee と比べる', e); S.cmpErr = '読めませんでした。freee の給与の明細の CSV を選んでください。'; ctx.paint(); });
   }
@@ -432,7 +443,7 @@
   function openManual(ctx) {
     var esc = ctx.esc, year = yearOf(ctx);
     var ids = people(ctx).filter(function (sid) { var y = yeOf(sid); return !(y && y.status === 'final'); });
-    var h = '<p>freee の明細に無い回（' + esc(year) + '年12月の賞与など）を累計に足します。賞与の表とはまだつないでいないので、賞与の明細の額をここに写してください。</p><div class="kv">' +
+    var h = '<p>freee の明細に無い回を累計に足します。自社の給与アプリの賞与は、賞与のタブで確定すると累計に入ります（入らなかった時は賞与のタブの「年末調整の累計に入れる」）。ここで足すのは、それ以外の回（他所で払った分など・' + esc(year) + '年）だけです。</p><div class="kv">' +
       '<label for="ye-m-sid">職員</label><select id="ye-m-sid">' + ids.map(function (sid) { return '<option value="' + esc(sid) + '">' + esc(nameOf(ctx, sid)) + '</option>'; }).join('') + '</select>' +
       '<label for="ye-m-kind">種類</label><select id="ye-m-kind"><option value="bonus">賞与</option><option value="salary">給与</option></select>' +
       '<label for="ye-m-date">支給日</label><input type="date" id="ye-m-date" value="' + esc(year + '-12-24') + '">' +
@@ -837,7 +848,8 @@
   function dirty() { return !!S.imp; }
 
   var api = { VERSION: VERSION, SETTLE_NAME: SETTLE_NAME, html: html, onClick: onClick, onChange: onChange, onInput: onInput, reset: reset, runBand: runBand, beforeConfirm: beforeConfirm, exportBadge: exportBadge, dirty: dirty,
-    _test: { state: function () { return S; }, settle: settle, finalsFor: finalsFor, adjSettle: adjSettle, calcInput: calcInput, settleOpts: settleOpts, readDecl: readDecl, depsHtml: depsHtml, stopRows: stopRows, rawPrev: rawPrev, rawU23: rawU23, slipList: slipList, splitDone: splitDone } };
+    cmpBand: cmpBand,
+    _test: { state: function () { return S; }, cmpFp: cmpFp, settle: settle, finalsFor: finalsFor, adjSettle: adjSettle, calcInput: calcInput, settleOpts: settleOpts, readDecl: readDecl, depsHtml: depsHtml, stopRows: stopRows, rawPrev: rawPrev, rawU23: rawU23, slipList: slipList, splitDone: splitDone } };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) root.PayrollYearEndUI = api;
 })(typeof window !== 'undefined' ? window : null);

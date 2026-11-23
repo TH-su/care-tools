@@ -867,6 +867,8 @@
      ・端末に残すのはタブ（payroll_tab の 'bonus'）だけ。金額・氏名は残さない */
   var bb = null, bErr = null, bNoDb = false, bSel = null, bIn = {}, bCfgIn = null, bCalc = null, bDirty = false, bCfgDirty = false, bGen = 0, bLoading = false;
   var bYtd = null, bNotice = null, bPrint = null, bSlipSid = null, bCfgOpen = false;
+  /* freee と比べた結果（bCmp）と、確定した明細を年末調整の累計へ入れた結果（bYtdPut）。どちらも画面のメモリの中だけ（端末にもファイルにも残さない・2026-11-23） */
+  var bCmp = null, bYtdPut = null, BONUS_CMP_MAX = 2 * 1024 * 1024;
   /* 年末調整の記録の答え（届いた・失敗・無い）が決まるまで「下書き保存」「確定」を押させない（記録が届く前に保存すると、その人が前月の給与なしで数えられるため） */
   var bYtdWait = false, BONUS_YTD_MS = 10000;   /* 記録の答えを待つのは10秒まで（過ぎたら読めなかった扱いで解く・仮置き） */
   var bCfgBase = null, bCfgConflict = false;   /* 回の設定の欄を作った時の DB の値（読み直しで、ほかの人の変更と人の直しがぶつかったかを見る） */
@@ -908,7 +910,7 @@
     return null;
   }
   function bonusDirty() { return bDirty || bCfgDirty; }
-  function bonusClear() { bb = null; bCalc = null; bIn = {}; bCfgIn = null; bDirty = false; bCfgDirty = false; bPrint = null; bYtd = null; bNotice = null; bSlipSid = null; bYtdWait = false; bCfgBase = null; bCfgConflict = false; }
+  function bonusClear() { bb = null; bCalc = null; bIn = {}; bCfgIn = null; bDirty = false; bCfgDirty = false; bPrint = null; bYtd = null; bNotice = null; bSlipSid = null; bYtdWait = false; bCfgBase = null; bCfgConflict = false; bCmp = null; bYtdPut = null; }
   /* 受け取った形を確かめる（壊れた値で画面を止めない）。形は統合 0121 の payroll_bonus_bootstrap */
   function bonusNorm(r) {
     r = obj(r);
@@ -1146,7 +1148,7 @@
   }
   function bonusOpen(id) {
     if (bonusDirty()) { ask('保存していない賞与の入力があります。捨ててほかの回を開きますか？').then(function (ok) { if (ok) { bDirty = false; bCfgDirty = false; bSel = id; bonusLoad(false); } }); return; }
-    bSel = id; bYtd = null; bNotice = null; bSlipSid = null; bonusLoad(false);
+    bSel = id; bYtd = null; bNotice = null; bSlipSid = null; bCmp = null; bYtdPut = null; bonusLoad(false);
   }
   /* 1人分の計算の入力を作り、computeBonus を呼ぶ（入力は今の画面の値・config は保存した回の値） */
   function bonusComputeOne(p, amount, manual) {
@@ -1294,7 +1296,9 @@
         return bonusLoad(false);
       }
       return rpc('payroll_bonus_confirm', { p_bonus_id: fresh.run.bonus_id, p_rev: fresh.run.rev }).then(okOr).then(function () {
-        done(); closeDlg(); toast('賞与を確定しました。'); return bonusLoad(false);
+        done(); closeDlg(); toast('賞与を確定しました。');
+        /* 確定した明細を年末調整の累計（source='app'・kind='bonus'）へ入れる。確定は済んでいるので、ここが断られても確定は戻さない（画面に出してやり直せる） */
+        return Promise.resolve(bonusLoad(false)).then(function () { return bonusYtdPut(null); });
       });
     })['catch'](function (e) { done(); closeDlg(); return bonusFail(e, '賞与の確定'); });
   }
@@ -1443,6 +1447,124 @@
   }
 
   /* ── 賞与のタブを描く ── */
+  /* ── freee と比べる（年末調整の画面の compareHtml・compareFile と同じ形・2026-11-23）──
+     比べる自社の明細は今の画面の物（確定した回は確定の明細・下書きは保存した明細か、保存前の計算）。金額は画面のメモリの中だけ */
+  function FS() { var f = window.PayrollFreeeSlips; return f && typeof f.compareSlips === 'function' && typeof f.pickByDate === 'function' ? f : null; }
+  function bonusCmpFp() { return (bb && bb.run ? bb.run.bonus_id : '') + '|' + bonusFigures(bonusItems()); }
+  function bonusCmpWhat() { return bonusFrozen() ? '確定した明細' : (bCalc && bDirty ? '保存前の計算' : '下書き保存した明細'); }
+  function bonusCmpFile(f) {
+    bCmp = null;
+    if (!f || !bb || !bb.run) { paint(); return; }
+    var bid = bb.run.bonus_id, pd = bb.run.pay_date, my = bGen;
+    if (f.size > BONUS_CMP_MAX) { bCmp = { bid: bid, err: 'ファイルが大きすぎます（2MB まで）。' }; paint(); return; }
+    var F = FS();
+    if (!F) { bCmp = { bid: bid, err: '比べる部品を読み込めませんでした。ページを読み込み直してください。' }; paint(); return; }
+    f.arrayBuffer().then(function (buf) {
+      if (my !== bGen || !bb || !bb.run || bb.run.bonus_id !== bid) return;
+      var p = F.parse(decode(buf), { kind: 'bonus' }); buf = null;
+      if (p.refused) { bCmp = { bid: bid, err: '読めなかった見出し: ' + arr(p.cols.required).join('・') + '。freee の賞与の明細の CSV を選んでください（見出しの候補は payroll-freee-slips.js の表にあり、足せば読めます）。' }; paint(); return; }
+      var staff = bb.profiles.map(function (q) { return { staff_id: q.staff_id, name: q.name, emp_num: obj(q.data).freee_emp_num }; });
+      var m = F.match(p.rows, staff);
+      var pk = F.pickByDate(m.matched.concat(m.unmatched.map(function (u) { return u.row; })), pd);
+      if (pk.off) { bCmp = { bid: bid, err: 'この CSV の支給日（' + pk.dates.join('・') + '）に、この回の支給日（' + pd + '）がありません。この回の賞与の明細の CSV を選んでください（夏と冬を取り違えないため、比べません）。' }; paint(); return; }
+      /* 賞与額0円の人も明細になる（#660）。freee に行の無い0円の人は比べる対象から外し、人数だけ出す（freee に0円の行があれば比べる） */
+      var inF = {}; pk.rows.forEach(function (r) { if (r.staff_id) inF[r.staff_id] = 1; });
+      var zero = 0;
+      var ours = bonusItems().filter(function (it) { if (num(it.gross) === 0 && !inF[it.staff_id]) { zero++; return false; } return true; })
+        .map(function (it) { var q = bonusProf(it.staff_id); return Object.assign({}, it, { emp_num: q ? obj(q.data).freee_emp_num : null }); });
+      if (!ours.length && !zero) { bCmp = { bid: bid, err: 'この回の計算がまだありません。賞与額を入れて「計算する」を押してから比べてください。' }; paint(); return; }
+      bCmp = { bid: bid, fp: bonusCmpFp(), what: bonusCmpWhat(), missing: p.cols.missing.slice(), nodate: pk.nodate, zero: zero, res: F.compareSlips(ours, pk.rows, 'bonus') };
+      paint();
+    })['catch'](function (e) { note('賞与を freee と比べる', e); bCmp = { bid: bid, err: '読めませんでした。freee の賞与の明細の CSV を選んでください。' }; paint(); });
+  }
+  function bonusCmpHtml() {
+    var F = FS(), UI = window.PayrollYearEndUI;
+    var h = '<div class="cd"><h2>freee と比べる</h2><p class="help">freee から書き出したこの回（支給日 ' + esc(jdate(bb.run.pay_date)) + '）の賞与の明細の CSV を選ぶと、この画面の明細と人×項目で比べます。ファイルは画面の中だけで読み、どこにも保存しません。' +
+      '従業員番号が ' + esc(F ? F.EXCLUDE_PREFIX : 'A9') + ' で始まる人は freee に登録が無いので比べません（差の数に入れず、人数だけ出します）。★賞与の CSV の見出しは、事務担当が書き出した実物でまだ確かめていません（未検証）。</p>' +
+      '<div class="row"><label for="b-cmpfile">この回の CSV</label><input type="file" id="b-cmpfile" accept=".csv,text/csv" style="max-width:100%"></div>';
+    var c = bCmp;
+    if (!c || c.bid !== bb.run.bonus_id) return h + '</div>';
+    if (c.err) return h + '<div class="band ng" role="alert">' + esc(c.err) + '</div></div>';
+    if (c.fp !== bonusCmpFp()) return h + '<div class="band warn" role="status">比べた後にこの回の明細が変わりました。もう一度 CSV を選んで比べ直してください。</div><div class="row"><button type="button" class="btn" data-act="b-cmp-clear">比べた結果を消す</button></div></div>';
+    var r = c.res;
+    h += '<p class="help">比べたのは' + esc(c.what) + 'です。' + (c.what === '確定した明細' ? '' : '振込の前に、確定してからもう一度比べてください。') + (c.nodate ? '支給日の無い行 ' + esc(c.nodate) + ' 行は、この回の分として比べました。' : '') + (c.zero ? '賞与額0円で freee に行の無い ' + esc(c.zero) + ' 人は比べていません。' : '') + '</p>';
+    if (c.missing.length) h += '<p class="help">読めなかった見出し（0円として比べます）: ' + esc(c.missing.join('・')) + '</p>';
+    h += UI && typeof UI.cmpBand === 'function' ? UI.cmpBand(esc, r) : '<div class="band warn" role="status">判定の部品を読み込めませんでした。ページを読み込み直してください。</div>';
+    h += '<div class="tw"><table><caption class="help" style="text-align:left">項目ごとの合計</caption><thead><tr><th>項目</th><th class="num">自社</th><th class="num">freee</th><th class="num">差</th><th class="num">一致の人数</th><th class="num">差ありの人数</th></tr></thead><tbody>' +
+      F.ITEMS.filter(function (x) { return r.totals[x[0]]; }).map(function (x) {
+        var tt = r.totals[x[0]], k = r.counts[x[0]];
+        return '<tr><td>' + esc(x[1]) + '</td><td class="num">' + esc(yen(tt.app)) + '</td><td class="num">' + esc(yen(tt.freee)) + '</td><td class="num"' + (tt.diff ? ' style="color:var(--ng);font-weight:700"' : '') + '>' + esc((tt.diff ? '⚠ ' : '') + yen(tt.diff)) + '</td><td class="num">' + esc(k.same) + '</td><td class="num">' + esc(k.diff) + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+    var nm = function (sid, fb) { var q = sid ? bonusProf(sid) : null; return q ? q.name : (sid && bb.names[sid]) || fb || ''; };
+    if (r.unmatched.length) h += '<div class="band warn"><b>片方だけにいる人・照合できない行</b><ul>' + r.unmatched.map(function (u) {
+      return '<li>' + esc(u.excluded ? '自社だけ（freee に登録の無い人・比べる対象外）：' + nm(u.staff_id, u.name_short) : u.side === 'ours' ? '自社だけ：' + nm(u.staff_id, u.name_short) : u.staff_id ? 'freee だけ：' + nm(u.staff_id, u.name_short) : '照合できません（職員に結べない freee の行）：' + u.name_short) + '</li>'; }).join('') +
+      '</ul>職員に結べない行は、従業員番号（「職員の給与設定」の取り込みで入ります）か、同じ氏名がちょうど1人の時だけ結びます。</div>';
+    var rows = r.rows.filter(function (x) { return x.diff !== 0; });
+    h += rows.length ? '<div class="tw"><table><thead><tr><th>氏名</th><th>項目</th><th class="num">自社</th><th class="num">freee</th><th class="num">差</th></tr></thead><tbody>' + rows.map(function (x) {
+      return '<tr><td class="nm">' + esc(nm(x.staff_id, x.name_short)) + '</td><td>' + esc(x.item) + '</td><td class="num">' + esc(yen(x.ours)) + '</td><td class="num">' + esc(x.bad ? '⚠ 読めない値' : yen(x.freee)) + '</td><td class="num" style="color:var(--ng);font-weight:700">' + esc(x.bad ? '⚠ 読めない値' : '⚠ ' + yen(x.diff)) + '</td></tr>';
+    }).join('') + '</tbody></table></div>' : '<p class="help">差のある行はありません。</p>';
+    return h + '<div class="row"><button type="button" class="btn" data-act="b-cmp-clear">比べた結果を消す</button></div></div>';
+  }
+  /* ── 確定した明細を年末調整の累計へ入れる（統合 0124・source='app'・kind='bonus'）──
+     同じ支給日の確定した回が他にもあれば、その明細も読んで人ごとに合算する（DB も合算と照らす）。年末調整を確定した人・同じ値が入っている人は送らない */
+  var BYTD_NG = {
+    mismatch: '確定した賞与の明細と合いませんでした。「読み直す」を押してから、もう一度「年末調整の累計に入れる」を押してください。',
+    final: 'その人の年末調整はもう確定しているので、累計を変えられません。年末調整の確定を管理者が取り消してから入れてください。',
+    conflict: 'ほかの人が先に累計を直しました。もう一度「年末調整の累計に入れる」を押してください。',
+    badshape: 'データベースがまだ賞与を累計に入れる形になっていません（準備中）。年末調整のタブの「累計に1回分を手で足す」で入れてください。',
+    nostaff: 'シフトにも給与の設定にも見つからない人がいます。読み直してください。',
+    badyear: '支給日の年が違います。'
+  };
+  function bonusYtdPut(btn) {
+    var F = FS();
+    if (!bb || !bb.run || !bonusFrozen() || !F || typeof F.planBonusYtd !== 'function') return null;
+    if (btn && busy) return null;
+    var run = bb.run, bid = run.bonus_id, pd = run.pay_date, yr = +String(pd).slice(0, 4), my = bGen, items = bb.items.slice();
+    var nm = function (sid) { var q = bonusProf(sid); return q ? q.name : (bb && bb.names[sid]) || sid; };
+    var others = bb.runs.filter(function (r) { return r.bonus_id !== bid && r.pay_date === pd && (r.status === 'confirmed' || r.status === 'exported'); });
+    var done = btn ? hold(btn, '入れています…') : function () {};
+    var set = function (cls, text, extra) { if (my !== bGen || !bb || !bb.run || bb.run.bonus_id !== bid) return; bYtdPut = Object.assign({ bid: bid, cls: cls, text: text }, extra || {}); paint(); };
+    return Promise.all(others.map(function (r) {
+      return rpc('payroll_bonus_bootstrap', { p_bonus_id: r.bonus_id }).then(function (x) {
+        if (x && x.ok === false) { var e = new Error(x.error || 'ng'); e.payroll = x.error; throw e; }
+        var n = bonusNorm(x);
+        return n.run && (n.run.status === 'confirmed' || n.run.status === 'exported') && n.run.pay_date === pd ? n.items : [];
+      });
+    })).then(function (lists) {
+      lists.forEach(function (l) { items = items.concat(l); });
+      return rpc('payroll_ytd_get', { p_year: yr });
+    }).then(function (g) {
+      if (!g || g.ok === false) { var e = new Error((g && g.error) || 'ng'); e.payroll = (g && g.error) || 'ng'; throw e; }
+      var plan = F.planBonusYtd(items, pd, g); items = null;
+      var fin = plan.final.length ? '年末調整を確定しているので入れなかった人: ' + plan.final.map(nm).join('、') + '。' : '';
+      if (!plan.rows.length) { done(); set(plan.final.length ? 'warn' : 'ok', (plan.same.length ? '✓ 年末調整の累計には、この賞与がもう入っています（' + plan.same.length + ' 人）。' : '累計に入れる人がいません。') + fin); return null; }
+      var rows = plan.rows;
+      return rpc('payroll_ytd_put', { p_year: yr, p_rows: rows }).then(function (r) {
+        done(); rows = null;
+        if (r && r.ok === true) {
+          set(plan.final.length ? 'warn' : 'ok', '✓ 年末調整の累計に入れました（足した ' + num(r.added) + ' 人・置き換えた ' + num(r.replaced) + ' 人' + (plan.same.length ? '・もう入っていた ' + plan.same.length + ' 人' : '') + '）。' +
+            (plan.replace.length ? '手で足した行・freee の行を置き換えた人: ' + plan.replace.map(function (x) { return nm(x.staff_id); }).join('、') + '。' : '') + fin);
+          return null;
+        }
+        var code = (r && r.error) || 'ng';
+        set('ng', '⚠ 確定はできましたが、年末調整の累計には入っていません：' + (BYTD_NG[code] || 'うまくいきませんでした（' + code + '）。') + (r && r.staff_id ? '（' + nm(r.staff_id) + '）' : ''), { retry: true });
+        return null;
+      });
+    })['catch'](function (e) {
+      done(); items = null;
+      if (e && (e.code === '42501' || isAal(e))) { set('ng', '⚠ 確定はできましたが、年末調整の累計には入っていません（給与の権限・二段階のログインを確かめてください）。', { retry: true }); return fail(e, '賞与を年末調整の累計へ'); }
+      if (bonusNoDb(e)) { set('ng', '⚠ 確定はできましたが、年末調整の累計には入っていません：' + BYTD_NG.badshape, { retry: true }); return null; }
+      if (!(e && e.payroll)) note('賞与を年末調整の累計へ', e);
+      set('ng', '⚠ 確定はできましたが、年末調整の累計には入っていません：' + (e && e.payroll ? (BYTD_NG[e.payroll] || bonusMsg(e)) : friendly(e)), { retry: true });
+      return null;
+    });
+  }
+  function bonusYtdHtml() {
+    var y = bYtdPut && bYtdPut.bid === bb.run.bonus_id ? bYtdPut : null;
+    return '<div class="cd"><h2>年末調整の累計</h2><p class="help">確定した賞与は、年末調整の累計（その年に払った給与・賞与）に自動で入ります（同じ支給日の確定した回は人ごとに合算）。入らなかった時や、確定を取り消して確定し直した時は、下のボタンを押してください（何度押しても同じ値なら変わりません）。</p>' +
+      (y ? '<div class="band ' + esc(y.cls) + '" role="status">' + esc(y.text) + '</div>' : '') +
+      '<div class="row"><button type="button" class="btn' + (y && y.retry ? ' pri' : '') + '" data-act="b-ytd-put">年末調整の累計に入れる</button></div></div>';
+  }
   function bonusHtml() {
     if (bNoDb) return '<div class="cd"><h2>賞与</h2><div class="band warn" role="status">賞与はまだ使えません（データベースの準備中）。</div></div>';
     if (!bb) {
@@ -1547,6 +1669,8 @@
         (it.rate != null ? '／率 ' + esc(it.rate) + '%' : (it.taxMethod ? '／月額表の方法' : '')) + '</p></details>';
     });
     h += '</div>';
+    h += bonusCmpHtml();
+    if (fz) h += bonusYtdHtml();
     /* 明細・振込・CSV（確定した回だけ。明細の見本と印刷は下書きでも出す＝紙に「下書き（確定前）」） */
     var saved = (fz ? bb.items : (bDirty ? [] : bb.items)).filter(function (it) { return num(it.gross) > 0; });   /* 総支給0の人は明細・振込・CSV に出さない（仮置き） */
     if (saved.length) {
@@ -1587,6 +1711,8 @@
     else if (a === 'b-print-all') bonusPrint(bb.items.filter(function (it) { return num(it.gross) > 0; }));
     else if (a === 'b-zengin') bonusZengin(b);
     else if (a === 'b-shoyo') bonusShoyo(b);
+    else if (a === 'b-cmp-clear') { bCmp = null; paint(); }
+    else if (a === 'b-ytd-put') bonusYtdPut(b);
   }
   /* 入力欄はメモリ（bIn・bCfgIn）にだけ写す。描き直さない（打っている欄の手元を失わない）。前月の給与の選びを変えた時だけ描き直す */
   function bonusBind() {
@@ -1601,6 +1727,7 @@
     document.addEventListener('change', function (e) {
       var el = e.target, k = el && el.getAttribute && el.getAttribute('data-bk'), sid = el && el.getAttribute('data-bsid');
       if (el && el.id === 'b-who') { bSlipSid = el.value; paint(); return; }
+      if (el && el.id === 'b-cmpfile') { if (tab === 'bonus') bonusCmpFile(el.files && el.files[0]); el.value = ''; return; }
       if (!k || !bb || tab !== 'bonus') return;
       if (k === 'pm' || k === 'psrc') { bIn[sid] = bIn[sid] || { amt: '', pm: '', pP: '', psrc: 'freee' }; bIn[sid][k] = String(el.value || ''); bDirty = true; if (k === 'pm') { paint(); var f = $(el.id.replace('b-pm-', 'b-pp-')) || $(el.id); if (f) f.focus(); } }
       else if (k === 'months' && bCfgIn) { bCfgIn.months = el.value === '12' ? '12' : '6'; bCfgDirty = true; paint(); }

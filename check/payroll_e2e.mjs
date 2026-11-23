@@ -745,6 +745,45 @@ console.log('\n— 7. 賞与のタブ —');
   await p.waitForFunction(() => /確定済み/.test(document.getElementById('p-main').textContent) && document.querySelector('[data-act="b-print-all"]'), null, { timeout: 10000 });
   t('確定すると確定済みになり、計算するのボタンが消える', (await p.locator('[data-act="b-compute"]').count()) === 0 && Object.values(o.routes.db.bonus.runs)[0].status === 'confirmed');
   t('確定を押した時に読み直してから確定した（bootstrap → confirm）', (() => { const n = o.routes.calls.map((c) => c.name); const i = n.lastIndexOf('payroll_bonus_confirm'); return i > 0 && n.slice(0, i).lastIndexOf('payroll_bonus_bootstrap') > n.lastIndexOf('payroll_bonus_save'); })());
+  /* ── 確定した賞与を年末調整の累計へ（統合 0124・2026-11-23）── */
+  await p.waitForFunction(() => /年末調整の累計に入れました/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  const bid0 = Object.keys(o.routes.db.bonus.items)[0], paid = o.routes.db.bonus.items[bid0].filter((i) => i.gross > 0);
+  const yput = o.routes.calls.filter((c) => c.name === 'payroll_ytd_put').pop();
+  t('確定すると、総支給が0より大きい人だけを累計へ（source=app・kind=bonus・支給日・版0・社保の和は social・所得税は tax）', !!yput && yput.args.p_year === 2026 && yput.args.p_rows.length === paid.length
+    && yput.args.p_rows.every((r) => { const i = paid.find((x) => x.staff_id === r.staff_id); const d = r.data; return i && r.source === 'app' && r.kind === 'bonus' && r.pay_date === '2026-12-24' && r.rev === 0
+      && d.gross === i.gross && d.income_tax === i.tax && d.si_health + d.si_care + d.si_support + d.si_pension + d.si_emp + d.si_other === i.social && d.resident_tax === 0; }), yput && yput.args.p_rows.map((r) => r.staff_id));
+  const nPut = o.routes.calls.filter((c) => c.name === 'payroll_ytd_put').length;
+  await p.click('[data-act="b-ytd-put"]');
+  await p.waitForFunction(() => /もう入っています/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  t('もう一度押しても、同じ値が入っていれば送らない（版を上げない）', o.routes.calls.filter((c) => c.name === 'payroll_ytd_put').length === nPut);
+  /* ── freee と比べる（賞与の明細の CSV・架空の値）── */
+  const HEADB = '従業員番号,氏名,賞与支給日,総支給額,課税支給額合計,健康保険料,介護保険料,子ども・子育て支援金,厚生年金保険料,雇用保険料,所得税,控除合計,差引支給額';
+  const rowOf = (i, o2) => { const x = Object.assign({ date: '2026/12/24', tax: i.tax }, o2 || {}), s = i.item.ins || {};
+    return ['', i.frozen.name, x.date, i.gross, i.item.taxable != null ? i.item.taxable : i.gross, s.health || 0, s.care || 0, s.support || 0, s.pension || 0, s.emp || 0, x.tax, i.deduct - i.tax + x.tax, i.net + i.tax - x.tax].map((v) => '"' + v + '"').join(','); };
+  const csvB = (rows) => Buffer.from('﻿' + HEADB + '\r\n' + rows.join('\r\n') + '\r\n', 'utf8');
+  const up = async (buf) => { await p.setInputFiles('#b-cmpfile', { name: 'bonus.csv', mimeType: 'text/csv', buffer: buf }); await settle(p); };
+  await up(csvB(paid.map((i) => rowOf(i))));
+  await p.waitForFunction(() => /1円まで一致/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  const mainB = await p.textContent('#p-main');
+  t('賞与の CSV と全員の全項目が同じなら「1円まで一致」の帯（比べた人数・0円で freee に行の無い人は比べない）', new RegExp('比べた ' + paid.length + ' 人の全項目').test(mainB) && /賞与額0円で freee に行の無い 7 人は比べていません/.test(mainB), mainB.slice(mainB.indexOf('freee と比べる'), mainB.indexOf('freee と比べる') + 400));
+  t('比べた後もファイルの欄は空・端末に金額を残さない', await p.inputValue('#b-cmpfile') === '' && await p.evaluate(() => { for (let i = 0; i < localStorage.length; i++) { const v = localStorage.getItem(localStorage.key(i)); if (/300000|300,000/.test(v)) return false; } return true; }));
+  await up(csvB(paid.map((i, k) => rowOf(i, k === 0 ? { tax: i.tax + 1 } : null))));
+  await p.waitForFunction(() => /差あり/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  t('所得税が1円違う人がいると「差あり」（所得税・控除の合計・差引の3件）・合格の帯は出さない', /差あり 3 件/.test(await p.textContent('#p-main')) && !/1円まで一致/.test(await p.textContent('#p-main')));
+  await up(csvB(paid.map((i) => rowOf(i, { date: '2026/07/10' }))));
+  await p.waitForFunction(() => /この回の支給日（2026-12-24）がありません/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  t('支給日の違う（夏の）賞与の CSV では比べない', !/1円まで一致|差あり/.test(await p.textContent('#p-main')));
+  /* freee に登録の無い人（従業員番号 A9 始まり）: CSV に居なくても対象外として別に数え、ほかが全部同じなら合格 */
+  const a9 = paid[paid.length - 1];
+  o.routes.db.profiles.filter((q) => q.staff_id === a9.staff_id).forEach((q) => { q.data = Object.assign({}, q.data, { freee_emp_num: 'A901' }); });
+  await p.click('#p-reload'); await settle(p);
+  await p.waitForSelector('#b-cmpfile');
+  await up(csvB(paid.filter((i) => i !== a9).map((i) => rowOf(i))));
+  await p.waitForFunction(() => /1円まで一致/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  const mainA = await p.textContent('#p-main');
+  t('A9 始まりの人は「自社だけ（freee に登録の無い人・比べる対象外）」・帯に対象外の人数', /freee に登録の無い人（比べる対象外）1 人/.test(mainA) && new RegExp('自社だけ（freee に登録の無い人・比べる対象外）：' + a9.frozen.name).test(mainA), mainA.slice(mainA.indexOf('freee と比べる'), mainA.indexOf('freee と比べる') + 600));
+  await p.click('[data-act="b-cmp-clear"]');
+  t('「比べた結果を消す」で帯が消える', !/1円まで一致/.test(await p.textContent('#p-main')));
   /* 明細の印刷（1人1枚・賞与の見出し） */
   await p.evaluate(() => { window.print = function () {}; });
   await p.click('[data-act="b-print-all"]');
