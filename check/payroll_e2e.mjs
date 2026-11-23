@@ -684,6 +684,19 @@ console.log('\n— 7. 賞与のタブ —');
   t('年末調整の記録: 画面のエラー 0', o3.errors.length === 0, o3.errors);
   await o3.ctx.close();
   /* iPhone の幅で横にはみ出さない */
+  /* 年末調整の記録の答えが遅い: 届くまで「下書き保存」「確定」を押せず、届いたら押せる */
+  {
+    const o4 = await open({ tab: 'bonus', start: 'none', bonus: true, ytd: [], ytdDelay: 3000 });
+    const p4 = o4.page;
+    await p4.waitForSelector('[data-act="b-new"]', { timeout: 15000 });
+    await p4.click('[data-act="b-new"]'); await p4.fill('#bn-date', '2026-12-24'); await p4.click('[data-act="b-new-go"]');
+    await p4.waitForSelector('[data-act="b-compute"]', { timeout: 10000 });
+    t('年末調整の記録を待つ間は「下書き保存」「確定」を押せない（待っている知らせを出す）', await p4.isDisabled('[data-act="b-save"]') && await p4.isDisabled('[data-act="b-confirm"]') && /年末調整の記録を確かめています/.test(await p4.textContent('#p-main')));
+    await p4.waitForFunction(() => { const b = document.querySelector('[data-act="b-save"]'); return b && !b.disabled; }, null, { timeout: 15000 });
+    t('記録の答えが届いたら「下書き保存」を押せる', !/年末調整の記録を確かめています/.test(await p4.textContent('#p-main')));
+    t('記録の答えが遅い場面: 画面のエラー 0', o4.errors.length === 0, o4.errors);
+    await o4.ctx.close();
+  }
   const q = await open({ tab: 'bonus', start: 'confirmed', bonus: true, viewport: { width: 390, height: 844 } });
   await q.page.waitForSelector('[data-act="b-new"]', { timeout: 15000 });
   t('賞与（iPhone の幅・回の一覧）: 画面の横はみ出し 0', await q.page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth) <= 0);

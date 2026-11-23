@@ -829,6 +829,8 @@
      ・端末に残すのはタブ（payroll_tab の 'bonus'）だけ。金額・氏名は残さない */
   var bb = null, bErr = null, bNoDb = false, bSel = null, bIn = {}, bCfgIn = null, bCalc = null, bDirty = false, bCfgDirty = false, bGen = 0, bLoading = false;
   var bYtd = null, bNotice = null, bPrint = null, bSlipSid = null, bCfgOpen = false;
+  /* 年末調整の記録の答え（届いた・失敗・無い）が決まるまで「下書き保存」「確定」を押させない（記録が届く前に保存すると、その人が前月の給与なしで数えられるため） */
+  var bYtdWait = false;
   /* 関数の無い DB: PostgREST の「関数が見つからない」（PGRST202）・Postgres の 42883、表の無い DB（42P01・PGRST205） */
   function bonusNoDb(e) { var c = e && e.code; return c === '42883' || c === 'PGRST202' || c === '42P01' || c === 'PGRST205'; }
   var BNG = {
@@ -866,7 +868,7 @@
     return null;
   }
   function bonusDirty() { return bDirty || bCfgDirty; }
-  function bonusClear() { bb = null; bCalc = null; bIn = {}; bCfgIn = null; bDirty = false; bCfgDirty = false; bPrint = null; bYtd = null; bNotice = null; bSlipSid = null; }
+  function bonusClear() { bb = null; bCalc = null; bIn = {}; bCfgIn = null; bDirty = false; bCfgDirty = false; bPrint = null; bYtd = null; bNotice = null; bSlipSid = null; bYtdWait = false; }
   /* 受け取った形を確かめる（壊れた値で画面を止めない）。形は統合 0121 の payroll_bonus_bootstrap */
   function bonusNorm(r) {
     r = obj(r);
@@ -1036,7 +1038,8 @@
       if (!keepIn || !bonusDirty()) { bonusInitIn(); bDirty = false; bCfgDirty = false; bCalc = null; }
       else bCalc = null;
       paint();
-      if (bb.run && !bonusFrozen()) bonusLoadYtd(bb.run.pay_date, my);
+      bYtdWait = !!(bb.run && !bonusFrozen() && isDate(bb.run.pay_date));
+      if (bYtdWait) { paint(); bonusLoadYtd(bb.run.pay_date, my); }
       return bb;
     }, function (e) {
       if (my !== bGen) return null;
@@ -1059,8 +1062,9 @@
     Promise.all([one(y - 1), one(y)]).then(function () {
       if (my !== bGen || !bb || !bb.run || bb.run.pay_date !== pd) return;
       bYtd = any ? { pay_date: pd, v: bonusYtd(rows, pd) } : null;
-      rows = null;
-      if (any) { bCalc = null; paint(); }
+      rows = null; bYtdWait = false;
+      if (any) bCalc = null;
+      paint();
     });
   }
   function bonusOpen(id) {
@@ -1103,7 +1107,7 @@
     return bCalc;
   }
   function bonusSave(btn) {
-    if (busy || !bb || !bb.run || bonusFrozen()) return;
+    if (busy || !bb || !bb.run || bonusFrozen() || bYtdWait) return;
     var c = bonusCompute(true); if (!c) return;
     if (!c.items.length) { say('賞与額を入れた人がいません。'); return; }
     var payload = c.items.map(function (it) { return bonusToSave(it, it.staff_id, it._pv); });
@@ -1171,7 +1175,7 @@
   function bonusFigures(list) { return arr(list).map(function (it) { return it.staff_id + ':' + num(it.gross) + ':' + num(it.deduct) + ':' + num(it.net); }).sort().join('|'); }
   function bonusTotals(list) { var t = { n: 0, gross: 0, deduct: 0, net: 0, warn: 0 }; arr(list).forEach(function (it) { t.n++; t.gross += num(it.gross); t.deduct += num(it.deduct); t.net += num(it.net); t.warn += arr(it.warns).length; }); return t; }
   function bonusOpenConfirm() {
-    if (busy || !bb || !bb.run || bb.run.status !== 'draft' || bonusDirty()) return;
+    if (busy || !bb || !bb.run || bb.run.status !== 'draft' || bonusDirty() || bYtdWait) return;
     var list = bb.items, t = bonusTotals(list), blk = bonusBlocks(list, bb.prev);
     var B = (window.PayrollCalc && window.PayrollCalc.BONUS_BLOCK) || {};
     var warns = []; list.forEach(function (it) { arr(it.warns).forEach(function (w) { if (w && !B[w.code]) warns.push(it.name + '：' + (w.msg || w.code)); }); });
@@ -1406,13 +1410,14 @@
     if (run.stale && !fz) h += '<div class="band warn">⚠ 保存した後に給与の設定・前月の給与・ほかの回が変わりました。「計算する」で計算し直してください。</div>';
     if (!c) h += '<div class="band ng" role="alert">計算の部品を読み込めませんでした。ページを読み込み直してください。</div>';
     if (bDirty && bCalc) h += '<div class="band warn">計算した結果はまだ保存していません。「下書き保存」を押すまで、ほかの人には見えません。</div>';
+    if (bYtdWait && !fz) h += '<div class="band warn" role="status">年末調整の記録を確かめています。終わるまで「下書き保存」と「確定する」は押せません。</div>';
     if (bCfgDirty) h += '<div class="band warn">回の設定を変えました。「回の設定を保存」を押してから計算してください。</div>';
     h += '<div class="row">';
     if (!fz) {
       h += '<button type="button" class="btn pri" data-act="b-compute"' + (c && !bCfgDirty ? '' : ' disabled') + '>計算する</button>';
-      h += '<button type="button" class="btn" data-act="b-save"' + (c && !bCfgDirty ? '' : ' disabled') + '>下書き保存</button>';
+      h += '<button type="button" class="btn" data-act="b-save"' + (c && !bCfgDirty && !bYtdWait ? '' : ' disabled') + '>下書き保存</button>';
       var blk = bonusBlocks(bb.items, bb.prev);
-      h += '<button type="button" class="btn" data-act="b-confirm"' + (bb.items.length && !bonusDirty() && !run.stale && !blk.length ? '' : ' disabled') + '>確定する</button>';
+      h += '<button type="button" class="btn" data-act="b-confirm"' + (bb.items.length && !bonusDirty() && !run.stale && !blk.length && !bYtdWait ? '' : ' disabled') + '>確定する</button>';
       if (!run.exported_at) h += '<button type="button" class="btn ng" data-act="b-delete">この回を消す（下書き）</button>';
       if (bb.items.length && !bonusDirty() && blk.length) h += '</div><div class="band ng" role="alert"><b>確定できない警告（' + esc(blk.length) + ' 件）</b><ul>' + blk.map(function (w) { return '<li>⛔ ' + esc(w) + '</li>'; }).join('') + '</ul></div><div class="row">';
     } else if (isAdmin()) h += '<button type="button" class="btn ng" data-act="b-unconfirm">確定を取り消す（管理者）</button>';

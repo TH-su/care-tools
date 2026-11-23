@@ -283,7 +283,8 @@ console.log('\n— 給与専用の暗証番号（統合 0110・2026-11-20 代表
   /* ★統合 0118 の受け渡し（確定できない警告の DB の断り・もう一度の書き出し・駐車場の料金・2026-11-21）で payroll.js を 2026-11-21.3 に上げたので、期待の版を改めた */
   /* ★取り込みの「見出しから読めた項目」が入職順の並べ直しで消えていた直し（2026-11-21）で 2026-11-21.4 に上げたので、期待の版を改めた */
   /* ★賞与のタブ（2026-11-23）で payroll.js を 2026-11-23.3 に上げたので、期待の版を改めた */
-  t('payroll.js の版を上げた（2026-11-23.3）', /payroll\.js\?v=2026-11-23\.3"/.test(H));
+  /* ★賞与の年末調整の記録を待つ間の止め（2026-11-23）で 2026-11-23.4 に上げたので、期待の版を改めた */
+  t('payroll.js の版を上げた（2026-11-23.4）', /payroll\.js\?v=2026-11-23\.4"/.test(H));
 }
 
 
@@ -306,8 +307,13 @@ console.log('\n— 賞与のタブ（統合 0121・2026-11-23 設計 CONTRACT-bo
   t('賞与の断りの stale は賞与だけ読み直す（月の給与の handleStale に渡さない）・権限の断りは今の fail', /if \(e && e\.payroll === 'stale'\) \{ bNotice = \{ cls: 'warn', text: BNG\.stale \}; return bonusLoad\(true\); \}/.test(BON) && /if \(e && e\.code === '42501'\) return fail\(e, where\);/.test(BON) && !/handleStale/.test(BON));
   t('全銀は種別12（設定の写しで上書き）・振込指定日は支給日・スイッチ zengin_enabled の裏', /zengin: Object\.assign\(\{\}, obj\(c\.zengin\), \{ kind: '12' \}\)/.test(BON) && /payDate: bb\.run\.pay_date/.test(BON) && /bonusCfgOf\(\)\.zengin_enabled !== true\) return;/.test(BON));
   t('確定のボタンは止めの警告があれば押せない（一覧の画面も窓の中も）・押した時も読み直して止めを確かめ直す',
-    /data-act="b-confirm"' \+ \(bb\.items\.length && !bonusDirty\(\) && !run\.stale && !blk\.length \? '' : ' disabled'\)/.test(BON) && /data-act="b-confirm-go"' \+ \(blk\.length \? ' disabled' : ''\)/.test(BON)
+    /data-act="b-confirm"' \+ \(bb\.items\.length && !bonusDirty\(\) && !run\.stale && !blk\.length( && !bYtdWait)? \? '' : ' disabled'\)/.test(BON) && /data-act="b-confirm-go"' \+ \(blk\.length \? ' disabled' : ''\)/.test(BON)
     && /var blk = bonusBlocks\(fresh\.items, fresh\.prev\);/.test(BON));
+  t('年末調整の記録の答え（届いた・失敗・無い）が決まるまで「下書き保存」「確定」を押せない（ボタン・押した時の両方）・答えが決まったら必ず描き直す',
+    /data-act="b-save"' \+ \(c && !bCfgDirty && !bYtdWait \? '' : ' disabled'\)/.test(BON) && /!blk\.length && !bYtdWait \? '' : ' disabled'\)/.test(BON)
+    && /function bonusSave\(btn\) \{\n    if \(busy \|\| !bb \|\| !bb\.run \|\| bonusFrozen\(\) \|\| bYtdWait\) return;/.test(BON) && /bonusDirty\(\) \|\| bYtdWait\) return;/.test(BON)
+    && /bYtdWait = !!\(bb\.run && !bonusFrozen\(\) && isDate\(bb\.run\.pay_date\)\);/.test(BON) && /rows = null; bYtdWait = false;\n      if \(any\) bCalc = null;\n      paint\(\);/.test(BON)
+    && /Promise\.all\(\[one\(y - 1\), one\(y\)\]\)/.test(BON) && /function \(e\) \{ if \(!bonusNoDb\(e\)/.test(BON));
   t('明細の紙は SUPrint の別の名前（bonus-slips）・今の月の明細と同じ型（.slip）に「賞与明細」・施設名と印刷日の印', /define\('bonus-slips', \{ label: '賞与明細', paper: 'A4 portrait'/.test(BON) && /<section class="slip"/.test(BON) && /<h3>賞与明細　/.test(BON) && /data-su-print-head="name date"/.test(BON));
 
   /* 動かして確かめる: 本物の computeBonus の出力 → 保存の形に写す → 0121 の形の確かめの写し（check/fixtures/payroll.mjs の bonusItemErr）が通す */

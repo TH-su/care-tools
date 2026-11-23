@@ -822,6 +822,8 @@ export function routesFor(opt = {}) {
       if (aal !== 'aal2') return json({ code: '42501', message: '給与を扱える人だけが使えます' }, 403);
       if (role !== 'admin' && ADMIN_ONLY.includes(name)) return json({ code: '42501', message: '管理者（二段階認証）だけが使えます' }, 403);
       const r = rpc(name, p);
+      /* 年末調整の記録の答えを遅らせる場面（opt.ytdDelay ミリ秒・答えが届くまで保存・確定を押せないことを見る） */
+      if (opt.ytdDelay && name === 'payroll_ytd_get' && r) return new Promise((res) => setTimeout(res, opt.ytdDelay)).then(() => json(JSON.parse(JSON.stringify(r))));
       if (r === null) return json({ code: 'PGRST202', message: 'check fixture: not served' }, 404);
       return json(JSON.parse(JSON.stringify(r)));
     },
