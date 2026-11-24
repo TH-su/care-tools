@@ -240,7 +240,7 @@
 
   // ── 画面の指摘（管理者だけ）──
   var annot = null;   // { marks: [{ n, note, sel, desc, el }], layout }
-  var ANNOT_SRC = 'su-annot.js?v=2026-11-23';
+  var ANNOT_SRC = 'su-annot.js?v=2026-11-23.2';
   // 管理者かどうかを聞くための部品。各画面が読む時と同じ版を書く（su-auth.js を直して ?v= を上げたら、ここも上げる）
   var AUTH_SRC = ['supabase-js-2.112.4.js', 'su-auth.js?v=2026-11-21'];
   var loading = {};
@@ -377,7 +377,7 @@
      以前は <style> を差し込んでいたが、CSP で直書きの style を禁じる画面（メニューの設定）では止まり、
      ボタンがページの途中に素のボタンで出ていた。<link> の外部 CSS は style-src 'self' で効く。中身は差し込んでいた文字列と同じ。
      ボタンは CSS が届いてから置く（届く前に置くと一瞬ページの途中に出る）。届かない・遅い時も CSS_WAIT_MS で置く＝素のボタンでも報告はできる */
-  var CSS_HREF = 'su-report.css?v=2026-11-23';
+  var CSS_HREF = 'su-report.css?v=2026-11-23.2';
   var CSS_WAIT_MS = 3000;
   var cssReady = false, cssWaiters = [];
   function cssDone() {
@@ -390,7 +390,7 @@
   try {
     var css = document.createElement('link');
     css.rel = 'stylesheet';
-    css.onload = cssDone;
+    css.onload = function () { cssDone(); try { fitInnerSoon(); } catch (e) { /* 何もしない */ } };   // 待ちきれずに置いた後に届いた時も、中の枠の余白を見直す
     css.onerror = cssDone;   // 読めなくてもボタンは出す
     css.href = CSS_HREF;
     document.head.appendChild(css);
@@ -562,6 +562,7 @@
       if (side === 'left') { fab.style.right = 'auto'; fab.style.left = '14px'; }
       else { fab.style.left = 'auto'; fab.style.right = '14px'; }
     } catch (e) { /* 測れなくても右下に出す */ }
+    fitInnerSoon();   // 中の枠の余白は間引いて別に見直す（place の中では書かない）
   }
 
   /* ボタンを置いた画面のうち、ページ全体が縦に送られる画面だけ、本文の下にボタンぶんの余白を取る印を付ける
@@ -595,11 +596,169 @@
     padTimer = setTimeout(function () { padTimer = 0; fitPad(); }, 150);
   }
 
+  /* ページ全体は送られず、中の枠が縦に送られる画面（html,body{height:100%} の週間計画・ワークスケジュール・俯瞰・デイ利用表・
+     家族構成図など）では body の余白が効かない。そこで、このボタンの真下にある「縦に送られる枠」に印 sur-pad-in を付け、
+     枠の下の内側の余白をボタンの高さ＋余白（72px）＋ iPhone の下の安全領域ぶんまで広げる（su-report.css・印刷では効かない）。
+     最後まで送った時に、枠の最後の行・ボタンがこのボタンの下に入らない（2026-11-23）。
+     ・探すのはボタンの真下（左端・中央・右端の3点）の要素から上へたどった枠だけ（画面全体はなめない）。左右比較の枠（iframe・同じサイト）は
+       中の画面へ入って探し、ボタンと同じ高さの段に並ぶ枠（左の画面）にも同じ量を足す（左右の送りの幅をそろえる）
+     ・付けるのは、印で足した分を引いても中身が枠より高い（＝もともと送られる）枠だけ。中身が収まる枠（打刻の画面など）に要らない送りを出さない
+     ・枠がもともと取っている下の余白は CSS の変数 --sur-pb に写し、広げるのは足りない時だけ（max）。付けた直後に送れる高さが増えたかを測り、
+       増えない枠（中身が絶対配置など）はすぐ外して、画面の大きさが変わるまで付けない
+     ・ページ全体が送られる画面（body の印の方）・ボタンが隠れている・モーダルの下にある時は何もしない（今の状態のまま）
+     ・変わる時だけ書く（付け外しは class と style を見張る MutationObserver を起こすので、変化が無ければ一切書かない＝往復しない）
+     ・例外は外に出さない */
+  var IN_CLS = 'sur-pad-in', inMarks = [], inUseless = [], inTimer = 0;
+  var CSS_ABS = '';
+  try { CSS_ABS = new URL(CSS_HREF, document.baseURI).href; } catch (e) { /* iframe の中へは CSS を入れられない＝印も付けない */ }
+  function inFindMark(el) {
+    for (var i = 0; i < inMarks.length; i++) if (inMarks[i].el === el) return i;
+    return -1;
+  }
+  function inUnmark(i) {
+    var m = inMarks[i];
+    try { m.el.classList.remove(IN_CLS); m.el.style.removeProperty('--sur-pb'); } catch (e) { /* 何もしない */ }
+    inMarks.splice(i, 1);
+  }
+  /* 枠の中の画面（iframe）に su-report.css が届いているか。無ければ入れて、届いたら見直す */
+  function inCssReady(doc) {
+    /* 待ちきれず（3秒）に cssReady になっていても、実際に読めていなければ（link.sheet が無い）まだ判定しない。
+       読めていないまま「効かない枠」と覚えると、画面の大きさが変わるまで戻らないため（2026-11-24 反証レビュー） */
+    if (doc === document) { try { return cssReady && !!(css && css.sheet); } catch (e) { return false; } }
+    if (!CSS_ABS || !doc.head) return false;
+    var l = doc.querySelector('link[data-sur-css]');
+    if (!l) {
+      l = doc.createElement('link');
+      l.rel = 'stylesheet';
+      l.setAttribute('data-sur-css', '');
+      l.onload = function () { l.setAttribute('data-sur-css', 'ok'); fitInnerSoon(); };
+      l.onerror = function () { l.setAttribute('data-sur-css', 'ng'); };
+      l.href = CSS_ABS;
+      doc.head.appendChild(l);
+      return false;
+    }
+    return l.getAttribute('data-sur-css') === 'ok';
+  }
+  /* (x, y) の真下の要素から上へたどり、縦に送られる枠を out に足す。
+     見るのはこのボタンより下に重なっている要素だけ（ボタンより上のモーダル・暗幕は見ない）。浮いている部品（下のバー・モーダル＝
+     position:fixed で重ねの順が 40 以上）の中の枠は付けない。画面いっぱいの固定の入れ物（週間計画の .cal-wrap・重ねの順なし）は対象 */
+  function inCollect(doc, x, y, out) {
+    var win = doc.defaultView, st = doc.elementsFromPoint(x, y), el = null, i = 0;
+    if (doc === document) { i = st.indexOf(fab) + 1; if (i <= 0) return null; }
+    for (; i < st.length; i++) {
+      if (win.getComputedStyle(st[i]).position === 'fixed') continue;
+      el = st[i]; break;
+    }
+    if (!el || el.closest('dialog,[role="dialog"],[aria-modal="true"]')) return el;
+    var found = [];
+    for (var a = el; a && a !== doc.body && a !== doc.documentElement; a = a.parentElement) {
+      var cs = win.getComputedStyle(a);
+      if (cs.position === 'fixed' && (parseInt(cs.zIndex, 10) || 0) >= 40) return el;   // モーダル・下のバー（重ねの順 40 以上）の中＝付けない
+      if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll') && out.indexOf(a) === -1) found.push(a);
+    }
+    for (i = 0; i < found.length; i++) out.push(found[i]);
+    return el;
+  }
+  function inTargets(fr) {
+    var out = [], cy = (fr.top + fr.bottom) / 2, xs = [fr.left + 4, (fr.left + fr.right) / 2, fr.right - 4], frames = [], i;
+    for (i = 0; i < xs.length; i++) {
+      var st = document.elementsFromPoint(xs[i], cy);
+      if (st[0] !== fab) return null;                                     // ボタンが一番上に無い（モーダル・暗幕の下など）＝見直さない
+      var el = inCollect(document, xs[i], cy, out);
+      if (el && el.tagName === 'IFRAME' && frames.indexOf(el) === -1) frames.push(el);
+    }
+    /* ボタンの下の枠の画面と同じ高さの段に並ぶ枠の画面（左右比較の左）も、同じ量をそろえて足す */
+    if (frames.length) {
+      var all = document.querySelectorAll('iframe');
+      for (i = 0; i < all.length; i++) {
+        var r = all[i].getBoundingClientRect();
+        if (frames.indexOf(all[i]) === -1 && r.width > 0 && r.top < fr.top && r.bottom > fr.top) frames.push(all[i]);
+      }
+    }
+    for (i = 0; i < frames.length; i++) {
+      try {
+        var f = frames[i], fd = f.contentDocument, fr2 = f.getBoundingClientRect();
+        if (!fd || !fd.body || !inCssReady(fd)) continue;
+        var lx = Math.min(fr.left + (fr.right - fr.left) / 2, fr2.right - 30) - fr2.left - f.clientLeft, ly = cy - fr2.top - f.clientTop;
+        inCollect(fd, lx, ly, out);
+      } catch (e) { /* 別のサイトの枠は見ない */ }
+    }
+    return out;
+  }
+  function fitInner(reset) {
+    try {
+      if (!fab.isConnected || !inCssReady(document)) return;
+      if (document.body.classList.contains('su-printing') || document.body.classList.contains('printing')) return;   // 紙を組んでいる間は触らない（余白は CSS で止めてある）
+      /* body の印の見直しが待っていれば先に済ませる（「ページ全体が送られるか」の覚え padUseless を最新にしてから読む。
+         古い覚えのまま読むと、高さの決まった画面で印を一度外して次の回に付け直していた＝家族構成図で resize の時に1回往復した） */
+      if (padTimer) { clearTimeout(padTimer); padTimer = 0; fitPad(); }
+      var i, b = document.body, de = document.documentElement;
+      for (i = inMarks.length - 1; i >= 0; i--) if (!inMarks[i].el.isConnected) inMarks.splice(i, 1);
+      /* 画面の大きさが変わった時: 付けている枠の元の余白を読み直す。外す→読む→付け直すを同じ処理の中で行い（描かれない）、
+         外した間に送りの位置が切り詰められても元の位置へ戻す（最後まで送った状態の最後の行を、またボタンの下に入れない） */
+      if (reset) {
+        inUseless = [];
+        for (i = inMarks.length - 1; i >= 0; i--) {
+          var m = inMarks[i], e = m.el, top = e.scrollTop, ed = e.ownerDocument.documentElement;
+          e.classList.remove(IN_CLS);
+          var sh1 = e.scrollHeight, oh1 = e.offsetHeight, dsh1 = de.scrollHeight, wdsh1 = ed.scrollHeight;
+          e.style.setProperty('--sur-pb', e.ownerDocument.defaultView.getComputedStyle(e).paddingBottom || '0px');
+          e.classList.add(IN_CLS);
+          m.added = e.scrollHeight - sh1;
+          if (e.scrollTop !== top) e.scrollTop = top;
+          /* 新しい大きさでは効かない・枠そのものが伸びる・文書の高さが変わる＝外して、次に大きさが変わるまで付けない（初めて付ける時と同じ守り） */
+          if (m.added <= 0 || e.offsetHeight !== oh1 || de.scrollHeight !== dsh1 || ed.scrollHeight !== wdsh1) { inUnmark(i); inUseless.push(e); }
+        }
+      }
+      /* ページ全体が送られる画面は body の余白（fitPad）の受け持ち。中の枠には付けない */
+      var docScrolls = b.classList.contains(PAD_CLS) || (!padUseless && de.scrollHeight > window.innerHeight + 1);
+      var want = [];
+      if (!docScrolls) {
+        var cs = window.getComputedStyle(fab);
+        if (cs.display === 'none' || cs.visibility === 'hidden') return;   // ボタンが見えていない＝今の状態のまま
+        var fr = fab.getBoundingClientRect();
+        if (!fr.width || !fr.height) return;
+        var t = inTargets(fr);
+        if (!t) return;
+        for (i = 0; i < t.length; i++) {
+          var el = t[i], k = inFindMark(el), added = k === -1 ? 0 : inMarks[k].added;
+          if (inUseless.indexOf(el) !== -1 || el.clientHeight < 24) continue;
+          /* 入力の部品（高さを指定した textarea など）は枠ではない。中に余白を入れない（2026-11-24 反証レビュー） */
+          if (/^(TEXTAREA|SELECT|INPUT)$/.test(el.tagName) || el.isContentEditable) continue;
+          if (el.scrollHeight - added > el.clientHeight + 1) want.push(el);   // 印で足した分を引いても送られる
+        }
+      }
+      for (i = inMarks.length - 1; i >= 0; i--) if (want.indexOf(inMarks[i].el) === -1) inUnmark(i);
+      for (i = 0; i < want.length; i++) {
+        var w = want[i];
+        if (inFindMark(w) !== -1) continue;
+        if (!inCssReady(w.ownerDocument)) continue;
+        var pb = w.ownerDocument.defaultView.getComputedStyle(w).paddingBottom || '0px';
+        var sh0 = w.scrollHeight, oh0 = w.offsetHeight, dsh0 = de.scrollHeight, wdsh0 = w.ownerDocument.documentElement.scrollHeight;
+        w.style.setProperty('--sur-pb', pb);
+        w.classList.add(IN_CLS);
+        var add = w.scrollHeight - sh0;                                     // 同じ処理の中で測る＝描かれる前
+        /* 効かない枠（もともと余白が足りている・中身が絶対配置）と、余白で枠そのものが伸びる枠（高さが中身で決まる枠）は付けない。
+           枠が伸びると画面全体に要らない送りが出る（家族構成図の iPhone の右の欄で 35px 出た・2026-11-23 実測） */
+        if (add <= 0 || w.offsetHeight !== oh0 || de.scrollHeight !== dsh0 || w.ownerDocument.documentElement.scrollHeight !== wdsh0) {
+          w.classList.remove(IN_CLS); w.style.removeProperty('--sur-pb'); inUseless.push(w);
+        } else inMarks.push({ el: w, added: add });
+      }
+    } catch (e) { /* 測れなくても今の状態のまま */ }
+  }
+  var inReset = false;
+  function fitInnerSoon(reset) {
+    if (reset) inReset = true;                                            // 画面の大きさが変わった＝元の余白を読み直す
+    if (inTimer) return;
+    inTimer = setTimeout(function () { var r = inReset; inTimer = 0; inReset = false; fitInner(r); }, 150);
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     try {
       /* 画面の大きさ・body の大きさが変わったら「余白が効かない」の覚えも見直す（印の付け外しでは body の大きさは変わらない＝往復しない） */
       var again = function () { padUseless = false; fitPadSoon(); };
       window.addEventListener('resize', again);
+      window.addEventListener('resize', function () { fitInnerSoon(true); });
       if (typeof ResizeObserver === 'function') new ResizeObserver(again).observe(document.body);
     } catch (e) { /* 見直せなくても置いた時の判定のまま */ }
     setTimeout(fitPad, 1000);
@@ -609,6 +768,7 @@
       document.body.appendChild(dlg);
       fitPad();
       place();
+      fitInnerSoon();
     });
     setTimeout(place, 1000);
     setTimeout(place, 3000);

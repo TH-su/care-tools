@@ -244,6 +244,13 @@ textarea.fi{resize:vertical;min-height:60px}
   .palette .grp{margin-bottom:0}
   .palette .grp-btns,.palette .grp-btns.col1{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:max-content}
 }
+/* iPhone（幅700px以下）だけ: 下のプロパティの欄（高さ52px）の右下に「不具合を報告」のボタン（右14px・幅約122px）が重なり、
+   欄の文が隠れていた。欄の高さに下の余白は入らないので、右にボタンの幅ぶんの余白を取ってボタンを避ける（2026-11-24・仮置き）。
+   欄の中の幅が 200px 未満になる狭い幅（364px 未満・iPhone の表示200% など）では欄を削らず、今までどおり重なりを許す
+   （削ると見出しが1〜2字ずつ折れて読めなくなる・2026-11-24 反証レビュー）。欄と図の欄の高さは変えない。画面だけ（印刷には効かせない） */
+@media screen and (min-width:364px) and (max-width:700px){
+  .props{padding-right:150px}
+}
 
 /* 動きを減らす設定への対応（2026-08-10 追加・通常表示に影響なし） */
 @media (prefers-reduced-motion: reduce) {
@@ -5181,6 +5188,6 @@ init();
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
 <!-- 本番の健康（2026-11-14・統合 0088）: 新しい保存先への保存の失敗を種類と理由だけ数えて送る。保存の動きには触れない・読めなくても動く -->
 <script src="su-health.js?v=2026-11-14"></script>
-<script src="su-report.js?v=2026-11-23" data-tool="ジェノグラム作成"></script>
+<script src="su-report.js?v=2026-11-23.2" data-tool="ジェノグラム作成"></script>
 </body>
 </html>
