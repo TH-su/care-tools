@@ -151,8 +151,26 @@
         config: m.config || {}, now: Date.UTC(2000, 0, 1) });
     });
     var uses = L.usesFromMonth(months, manual).filter(function (u) { return u.staff_id === sid; });
+    /* v6（統合 0125）: 有給の答えの absences（時間単位の有休の行）を、管理画面（kintai.js の loadLeave）と同じく hourlyUses で日数に直して残りから引く（v5 の積み残し (1)）。
+       1日の時間は人ごと（有給の設定の週の所定時間÷日数・無い人は設定の dayHours）。absences の無い古い受け口の答えでは今までどおり引かない */
+    if (Array.isArray(lv.absences) && L.hourlyUses) {
+      var abs = lv.absences.filter(function (a) { return a && typeof a === 'object'; }).map(function (a) { var o = { staff_id: sid }, k; for (k in a) if (k !== 'staff_id') o[k] = a[k]; return o; });
+      uses = uses.concat(L.hourlyUses(abs, dayMinOfLeave(lv, C, L)));
+    }
     var grants = Array.isArray(lv.grants) ? lv.grants : [];
     return L.summary({ hireDate: lv.hire_date || null, profile: lv.profile || null, grants: grants, uses: uses, asOf: today });
+  }
+  /* 有給の答えのいちばん新しい月分の設定（無ければ {}）。時間単位の有休・特別休暇の種類・1日の時間はこれで決める（管理画面は今の設定で決める・受け口の月分の設定は今の設定） */
+  function leaveCfgOf(lv) {
+    var ms = (lv && Array.isArray(lv.months) ? lv.months : []).filter(function (m) { return m && isYm(m.ym) && m.config && typeof m.config === 'object'; });
+    ms.sort(function (a, b) { return a.ym < b.ym ? -1 : a.ym > b.ym ? 1 : 0; });
+    return ms.length ? ms[ms.length - 1].config : {};
+  }
+  /* 1日の所定の時間（分）。管理画面の staffDayMin と同じ（L.dayMinOf・設定の dayHours） */
+  function dayMinOfLeave(lv, C, L) {
+    var dh = 8;
+    try { dh = C && C.fillConfig ? C.fillConfig(leaveCfgOf(lv)).dayHours : (+leaveCfgOf(lv).dayHours || 8); } catch (e) { dh = 8; }
+    return L && L.dayMinOf ? L.dayMinOf(lv && lv.profile, dh) : dh * 60;
   }
   /* 時間単位の有休を使う施設か（有給の答えの月分のどれかの設定で hourlyPaidLeave が true）。受け口の有給の答えは休暇の行を返さないので、
      本人の画面の残りは時間単位で取った分を引けない。その施設でだけ、残りの近くに HOURLY_NOTE を出す（反証レビュー 2026-11-21・DB は変えない・文は仮置き） */
@@ -160,6 +178,8 @@
     return (lv && Array.isArray(lv.months) ? lv.months : []).some(function (m) { return !!(m && m.config && typeof m.config === 'object' && m.config.hourlyPaidLeave === true); });
   }
   var HOURLY_NOTE = '時間単位で取った分は、ここの残りに入っていません。正しい残りは事務所で確かめてください。';
+  /* v6: 受け口が absences を返す（統合 0125 の後）なら残りに入っているので知らせを出さない。返さない古い受け口の間だけ出す */
+  function hourlyNoteOn(lv) { return hourlyLeaveOn(lv) && !(lv && Array.isArray(lv.absences)); }
   /* 締めていない月分の実働は目安（本人の画面はシフトの休憩の設定を読めないため、管理画面とずれることがある）。締めた月分では出さない（文は仮置き） */
   var DRAFT_NOTE = '締める前の数字は目安です（締めた後に事務所の数字と同じになります）';
   function draftNote(head) { return head && !head.locked ? DRAFT_NOTE : ''; }
@@ -177,8 +197,95 @@
       hireUnknown: !sm.hire };
   }
 
+  /* ── v6: 打刻漏れの知らせ（統合 0125・受け口の op notices）──
+     知らせは決まった文だけ（自由な文を持たない・契約 ROOT-v6「2」）。種類は missing（打刻漏れ）・not_in（まだ出勤していない）の2つだけで、ほかは出さない。
+     帯の文: 「{日付}の打刻が抜けています」「{日付}の出勤の打刻がまだありません」＋直し方（文は仮置き）。
+     打刻漏れで、その日に出勤だけ／退勤だけがある時は、無い方を言う（「{日付}の退勤の打刻が抜けています」） */
+  var NOTICE_KINDS = { missing: 1, not_in: 1 };
+  var NOTICE_TAIL = '事務所に伝えるか、申請から打刻の直しを出してください。';
+  function mdJa(date) { return isDate(date) ? (+date.slice(5, 7)) + '月' + (+date.slice(8, 10)) + '日' : ''; }
+  /* その日の出勤・退勤の打刻（月の答えを computeOf で数えた結果の日の塊の punches・出勤は 'in'・退勤は 'out' の2つだけを見る）と、
+     管理画面の「知らせる」と同じ物差しの塊ごとの漏れの印（missing_in・missing_out・no_punch）、1日休む休暇の日か。
+     返す: { known, hasIn, hasOut, missIn, missOut, noPunch, offDay }（その日が結果に無い＝known:false）
+     反証 2026-11-24: 出勤・退勤が1つずつでもあれば「そろった」としていたため、昼の退勤の押し忘れ・2つ目の塊の退勤の漏れで帯が出ず、管理画面には「見た」と出た */
+  function fullLeaveDay(d) {
+    if (!d) return false;
+    if (typeof d.paidDays === 'number' && d.paidDays >= 1) return true;
+    return (Array.isArray(d.absences) ? d.absences : []).some(function (a) {
+      return a && ((a.kind === 'special' || a.kind === 'comp') && a.minutes == null || (a.kind === 'swap' && a.role === 'off'));
+    });
+  }
+  function punchesOn(month, date) {
+    var p = month && month.people && month.people[0], r = { known: false, blocks: 0, hasIn: false, hasOut: false, missIn: false, missOut: false, noPunch: false, offDay: false };
+    ((p && p.days) || []).forEach(function (d) {
+      if (!d || d.date !== date) return;
+      r.known = true;
+      if (fullLeaveDay(d)) r.offDay = true;
+      (d.blocks || []).forEach(function (b) {
+        r.blocks++;
+        (b.punches || []).forEach(function (x) { if (x && x.kind === 'in') r.hasIn = true; else if (x && x.kind === 'out') r.hasOut = true; });
+        var fl = Array.isArray(b.flags) ? b.flags : [];
+        if (b.checked) return;   /* 事務所が確認済みにした塊は漏れに数えない */
+        if (fl.indexOf('missing_in') >= 0) r.missIn = true;
+        if (fl.indexOf('missing_out') >= 0) r.missOut = true;
+        if (fl.indexOf('no_punch') >= 0) r.noPunch = true;
+      });
+    });
+    return r;
+  }
+  /* 知らせの1件 → 帯の文（出さない時は ''）。n は受け口の行 {id, kind, work_date, created_at, seen_at}、pu は punchesOn の答え（読めない時は null）。
+     直った時（打刻漏れ＝出勤と退勤がそろった・まだ出勤していない＝出勤がある）は出さない */
+  function noticeText(n, pu) {
+    if (!n || typeof n !== 'object' || !NOTICE_KINDS[n.kind] || !isDate(n.work_date)) return '';
+    var d = mdJa(n.work_date), p = pu || { known: false };
+    if (p.offDay) return '';   /* 1日休む休暇（有休の1日・振替・1日の特別休暇と代休）を入れた日は出さない（反証 2026-11-24 の 4） */
+    if (n.kind === 'not_in') return p.hasIn ? '' : d + 'の出勤の打刻がまだありません。' + NOTICE_TAIL;
+    /* 打刻漏れ: その日に塊があれば、管理画面と同じ塊ごとの漏れの印で決める。結果が無い（読めない）・塊が無い（直ったか分からない）時は出す */
+    if (p.known && p.blocks > 0 && !p.missIn && !p.missOut && !p.noPunch) return '';
+    var which = p.noPunch || (p.missIn && p.missOut) ? '' : p.missOut ? 'の退勤' : p.missIn ? 'の出勤' : '';
+    return d + which + 'の打刻が抜けています。' + NOTICE_TAIL;
+  }
+  /* 受け口の答えの行を、形の合う知らせだけ・日付の古い順・同じ日と種類は1つにする */
+  function noticeRows(rows) {
+    var seen = {};
+    return (Array.isArray(rows) ? rows : []).filter(function (n) {
+      if (!n || typeof n !== 'object' || !NOTICE_KINDS[n.kind] || !isDate(n.work_date)) return false;
+      var k = n.kind + '|' + n.work_date; if (seen[k]) return false; seen[k] = 1; return true;
+    }).sort(function (a, b) { return a.work_date < b.work_date ? -1 : a.work_date > b.work_date ? 1 : 0; });
+  }
+
+  /* ── v6: 休暇の申請（統合 0125・kind 'leave'）──
+     body = { type, half?, minutes?, type_code?, link_date? }（当てはまる鍵だけ）。type は下の6つ。
+     時間単位（hourly）は設定 hourlyPaidLeave が true の時だけ・60分の倍数。特別休暇は設定 leaveTypes の種類（無い時は既定の3つ）。代休は休日に働いた日・振替は働く日が要る。
+     細かい確かめ（同じ日の重ね・1日の時間・期間の先）は承認の時にデータベースの関数がする（契約 ROOT-v6「3」） */
+  var LEAVE_TYPES = ['paid_day', 'paid_half', 'hourly', 'special', 'comp', 'swap'];
+  var LEAVE_JA = { paid_day: '有休（1日）', paid_half: '有休（半日）', hourly: '有休（時間）', special: '特別休暇', comp: '代休', swap: '振替' };
+  /* 選べる種類（時間単位は設定が true の時だけ）。返す: [[type, 名前]] */
+  function leaveTypeOptions(hourlyOn) {
+    return LEAVE_TYPES.filter(function (t) { return t !== 'hourly' || hourlyOn; }).map(function (t) { return [t, t === 'hourly' ? '有休（時間単位）' : LEAVE_JA[t]]; });
+  }
+  /* 特別休暇の種類の名前（types は [{code, name}]・無い時は印のまま） */
+  function typeName(code, types) {
+    var nm = String(code || '');
+    (types || []).forEach(function (x) { if (x && x.code === code && x.name) nm = x.name; });
+    return nm;
+  }
+  /* 休暇の申請の中身の文（本人の画面の一覧・管理画面の申請タブと同じ言い方）。
+     有休（1日）／有休（半日）／有休（時間 n 時間）／特別休暇（種類名・半日）／代休（休日に働いた日 M/D）／振替（働く日 M/D） */
+  function leaveText(b, types) {
+    b = b && typeof b === 'object' ? b : {};
+    var half = b.half === true ? '・半日' : '';
+    if (b.type === 'paid_day') return '有休（1日）';
+    if (b.type === 'paid_half') return '有休（半日）';
+    if (b.type === 'hourly') return '有休（時間 ' + ((+b.minutes || 0) / 60) + ' 時間）';
+    if (b.type === 'special') return '特別休暇（' + typeName(b.type_code, types) + half + '）';
+    if (b.type === 'comp') return '代休（休日に働いた日 ' + (isDate(b.link_date) ? (+b.link_date.slice(5, 7)) + '/' + (+b.link_date.slice(8, 10)) : '') + half + '）';
+    if (b.type === 'swap') return '振替（働く日 ' + (isDate(b.link_date) ? (+b.link_date.slice(5, 7)) + '/' + (+b.link_date.slice(8, 10)) : '') + '）';
+    return '休暇';
+  }
+
   /* ── 申請 ── */
-  var KIND_JA = { punch: '打刻の直し', overtime: '残業・早出', month: '月の勤怠の確認' };
+  var KIND_JA = { punch: '打刻の直し', overtime: '残業・早出', month: '月の勤怠の確認', leave: '休暇' };
   var STATUS_JA = { pending: '承認待ち', approved: '承認済み', rejected: '差し戻し', withdrawn: '取り下げ' };
   function isoOf(date, time) { return date + 'T' + time + ':00+09:00'; }
   function timeOk(t) { return typeof t === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(t); }
@@ -191,10 +298,11 @@
       if (!isYm(f.ym)) return { ok: false, msg: '月分を選んでください。' };
       return { ok: true, req: { kind: 'month', work_date: null, ym: f.ym, body: {}, reason: null } };
     }
-    if (f.kind !== 'punch' && f.kind !== 'overtime') return { ok: false, msg: '申請の種類を選んでください。' };
-    if (!isDate(f.date)) return { ok: false, msg: '日付を選んでください。' };
-    if (!reason) return { ok: false, msg: '理由を書いてください。' };
+    if (f.kind !== 'punch' && f.kind !== 'overtime' && f.kind !== 'leave') return { ok: false, msg: '申請の種類を選んでください。' };
+    if (!isDate(f.date)) return { ok: false, msg: f.kind === 'leave' ? '休む日を選んでください。' : '日付を選んでください。' };
     if (reason.length > 194) return { ok: false, msg: '理由は194字までにしてください。' };
+    if (f.kind === 'leave') return leaveRequest(f, reason || null);   /* 休暇の理由は無くてよい（有休の取得に理由を求めない・DB 0125 と同じ） */
+    if (!reason) return { ok: false, msg: '理由を書いてください。' };
     if (f.kind === 'punch') {
       if (f.punchKind !== 'in' && f.punchKind !== 'out') return { ok: false, msg: '出勤か退勤かを選んでください。' };
       if (!timeOk(f.time)) return { ok: false, msg: '時刻を選んでください。' };
@@ -206,14 +314,39 @@
     if (!body.early_from && !body.ot_until) return { ok: false, msg: '早出の始まりか残業の終わりの時刻を入れてください。' };
     return { ok: true, req: { kind: 'overtime', work_date: f.date, ym: null, body: body, reason: reason } };
   }
+  /* 休暇の申請の入力 → 送る形。f: { kind:'leave', date, leaveType, half, hours, typeCode, linkDate, hourlyOn, types:[{code}], maxDate } */
+  function leaveRequest(f, reason) {
+    var tp = f.leaveType, body = { type: tp };
+    if (LEAVE_TYPES.indexOf(tp) < 0) return { ok: false, msg: '休暇の種類を選んでください。' };
+    if (tp === 'hourly' && !f.hourlyOn) return { ok: false, msg: '時間単位の有休は、この事業所では使えません。' };
+    if (isDate(f.maxDate) && f.date > f.maxDate) return { ok: false, msg: '休む日は ' + ymdJa(f.maxDate) + ' までで選んでください。' };
+    if (tp === 'hourly') {
+      var h = +f.hours;
+      if (!(h >= 1 && h <= 23 && Math.floor(h) === h)) return { ok: false, msg: '時間を選んでください（1時間ずつ）。' };
+      body.minutes = h * 60;
+    }
+    if (tp === 'special') {
+      var types = Array.isArray(f.types) ? f.types : [];
+      if (!f.typeCode || !types.some(function (x) { return x && x.code === f.typeCode; })) return { ok: false, msg: '特別休暇の種類を選んでください。' };
+      body.type_code = String(f.typeCode);
+    }
+    if (tp === 'comp' || tp === 'swap') {
+      if (!isDate(f.linkDate)) return { ok: false, msg: tp === 'comp' ? '休日に働いた日を選んでください。' : '入れ替えて働く日を選んでください。' };
+      if (f.linkDate === f.date) return { ok: false, msg: tp === 'comp' ? '休日に働いた日は、休む日と別の日にしてください。' : '働く日は、休む日と別の日にしてください。' };
+      body.link_date = f.linkDate;
+    }
+    if ((tp === 'special' || tp === 'comp') && f.half) body.half = true;
+    return { ok: true, req: { kind: 'leave', work_date: f.date, ym: null, body: body, reason: reason } };
+  }
   /* 申請の一覧の1行の文 */
-  function requestRow(r) {
+  function requestRow(r, types) {
     var what = '';
     var b = (r && r.body) || {};
     var t = function (v) { var ms = Date.parse(v); return isNaN(ms) ? '' : hm(ms); };
     if (r.kind === 'punch') what = (b.kind === 'in' ? '出勤 ' : '退勤 ') + t(b.at);
     else if (r.kind === 'overtime') what = [b.early_from ? '早出 ' + t(b.early_from) + 'から' : '', b.ot_until ? '残業 ' + t(b.ot_until) + 'まで' : ''].filter(Boolean).join('・');
     else if (r.kind === 'month') what = '確かめました';
+    else if (r.kind === 'leave') what = leaveText(b, types);
     return { id: r.id, rev: r.rev, kind: KIND_JA[r.kind] || '', when: r.kind === 'month' ? ymJa(r.ym) : (isDate(r.work_date) ? dayLabel(r.work_date) : ''),
       what: what, reason: r.reason || '', status: STATUS_JA[r.status] || '', statusKey: r.status, note: r.decide_note || '', canWithdraw: r.status === 'pending' };
   }
@@ -252,7 +385,17 @@
     method: '画面の送り方が正しくありません。ページを読み込み直してください。'
   };
   /* 断りの語と、どの操作の時か（申請の時の locked・toomany は別の文） */
-  function errorText(code, where) {
+  /* v6: 休暇の申請の時の断り（時刻の文の badvalue・同じ日の exists は休暇の言い方にする・文は仮置き） */
+  var ERR_LEAVE = {
+    badvalue: '休暇の中身が正しくありません（時間は1時間ずつ・特別休暇の種類・結ぶ日を確かめてください）。',
+    exists: '同じ日の同じ休暇の申請が、もう承認待ちです。',
+    baddate: '休む日が正しくないか、先すぎます（次の月分の終わりまで）。',
+    badkind: '休暇の申請は、まだ受け付けられません（事務所の仕組みの更新待ち）。事務所に伝えてください。'
+  };
+  function errorText(code, where, leaveType) {
+    if (where === 'leave' && code === 'badkind' && leaveType === 'hourly') return '時間単位の有休は、この事業所では今は使えません。1日か半日で申請してください。';   /* 反証 2026-11-24 の 3 */
+    if (where === 'leave' && ERR_LEAVE[code]) return ERR_LEAVE[code];
+    if (where === 'leave') where = 'request';
     if (where === 'request' && code === 'locked') return ERR.lockedday;
     if (where === 'request' && code === 'toomany') return ERR.reqlimit;
     return ERR[code] || ERR.server;
@@ -263,7 +406,10 @@
     isDate: isDate, isYm: isYm, todayOf: todayOf, ymOf: ymOf, nextYm: nextYm, prevYm: prevYm, addDays: addDays, hm: hm, minText: minText,
     dayLabel: dayLabel, ymdJa: ymdJa, ymJa: ymJa, shortOf: shortOf, codeFromHash: codeFromHash, pinProblem: pinProblem,
     currentYm: currentYm, dayRows: dayRows, monthTotals: monthTotals, monthHead: monthHead, computeOf: computeOf,
-    absLabel: absLabel, leaveOf: leaveOf, leaveView: leaveView, buildRequest: buildRequest, requestRow: requestRow, errorText: errorText
+    absLabel: absLabel, leaveOf: leaveOf, leaveView: leaveView, buildRequest: buildRequest, requestRow: requestRow, errorText: errorText,
+    hourlyNoteOn: hourlyNoteOn, leaveCfgOf: leaveCfgOf, dayMinOfLeave: dayMinOfLeave,
+    NOTICE_TAIL: NOTICE_TAIL, punchesOn: punchesOn, noticeText: noticeText, noticeRows: noticeRows,
+    LEAVE_TYPES: LEAVE_TYPES, LEAVE_JA: LEAVE_JA, ERR_LEAVE: ERR_LEAVE, leaveTypeOptions: leaveTypeOptions, leaveText: leaveText, leaveRequest: leaveRequest
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.KintaiSelfCalc = api;

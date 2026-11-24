@@ -72,6 +72,12 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, .btn:focus-vi
 .pill.st-rejected { background: var(--ng-l); color: var(--ng); }
 .pill.st-withdrawn { background: var(--bg); color: var(--mut); border: 1px solid var(--line); }
 .big { font-size: 1.75rem; font-weight: 700; font-variant-numeric: tabular-nums; margin: 0; }
+/* v6: 事務所からの打刻漏れの知らせの帯（色だけで伝えない＝見出しの文「事務所からの知らせ」を必ず付ける） */
+.nt-box { background: var(--warn-l); color: var(--warn); border: 2px solid var(--warn); border-radius: 12px; padding: 12px 14px; margin: 0 0 12px; }
+.nt-box h2 { color: var(--warn); }
+.nt-box .nt { margin: 0 0 8px; font-weight: 700; }
+.nt-box .acts { margin: 4px 0 10px; }
+.nt-box .btn { background: var(--card); }
 .rows { display: grid; gap: 4px; margin: 8px 0 0; padding: 0; list-style: none; }
 .rows li { display: flex; justify-content: space-between; gap: 8px; border-top: 1px solid var(--line); padding: 6px 0 0; }
 @media print {
