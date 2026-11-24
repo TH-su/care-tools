@@ -184,8 +184,8 @@ t('9i 移したボタンは元の区分に無い', hrefs(w, 'sec-resident').inde
 t('9j 移し先が無い区分なら既定の区分に出す', hrefs(w, 'sec-resident').indexOf('supplies.html') >= 0);
 t('9k 消した区分へは移せない（既定の区分に出す）', hrefs(w, 'sec-staff').indexOf('shift-app.html') >= 0);
 t('9l 消した区分は、ボタンが残っていると消さずに出す（後から足したボタンを失わない）', !!sec(w, 'sec-kitchen'));
-const w2 = M.arrange(DEF, Object.assign({}, C9, { mv: Object.assign({}, C9.mv, { 'https://kitchen-app-9o7.pages.dev/': 'sec-staff' }) }), 'admin');
-t('9m 消した区分は、ボタンを全部移せば出ない', !sec(w2, 'sec-kitchen') && hrefs(w2, 'sec-staff').indexOf('https://kitchen-app-9o7.pages.dev/') >= 0);
+const w2 = M.arrange(DEF, Object.assign({}, C9, { mv: Object.assign({}, C9.mv, { 'https://th-su.github.io/kitchen-app/': 'sec-staff' }) }), 'admin');
+t('9m 消した区分は、ボタンを全部移せば出ない', !sec(w2, 'sec-kitchen') && hrefs(w2, 'sec-staff').indexOf('https://th-su.github.io/kitchen-app/') >= 0);
 const cs = sec(w, 'sec-staff').tiles.find(x => x.href === 'connection-settings.html');
 t('9n 事務所専用の区分（設定）から移したボタンは、移した先でも事務所専用', cs && cs.officeOnly === true);
 t('9o 移したボタンの元の定義は書き換わらない', !DEF.sections.find(s => s.id === 'sec-setup').tiles[0].officeOnly && JSON.stringify(DEF) === DEF_TEXT);
