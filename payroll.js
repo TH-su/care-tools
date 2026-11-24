@@ -1859,7 +1859,9 @@
   /* freee に登録の無い人の従業員番号の頭（payroll-freee-slips.js の EXCLUDE_PREFIX・部品が無ければ 'A9'） */
   function EXC() { var f = window.PayrollFreeeSlips; return f && typeof f.EXCLUDE_PREFIX === 'string' ? f.EXCLUDE_PREFIX : 'A9'; }
   function on(id) { var e = $(id); return !!(e && e.checked); }
-  function nOr(id, keep) { var s = v(id).replace(/[,，\s円]/g, ''); if (s === '') return keep === undefined ? null : keep; return /^\d+(\.\d+)?$/.test(s) ? Number(s) : NaN; }
+  /* 全角の数字・小数点を半角へ（「２７」「２．５」も受ける・2026-11-24） */
+  function han(x) { return String(x == null ? '' : x).replace(/[０-９．]/g, function (ch) { return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0); }); }
+  function nOr(id, keep) { var s = han(v(id)).replace(/[,，\s円]/g, ''); if (s === '') return keep === undefined ? null : keep; return /^\d+(\.\d+)?$/.test(s) ? Number(s) : NaN; }
   function profGo(btn) {
     var c = dlgCtx, p = c && profOf(c.sid); if (!p) return;
     var reason = v('f-reason'); if (!reason) { say(NG.reason); return; }
@@ -2197,7 +2199,7 @@
     var c = cfg(), ot = obj(c.ot_rates), rd = obj(c.round), bf = obj(c.bank_from), zg = obj(c.zengin);
     var RND = [['ceil', '切り上げ'], ['floor', '切り捨て'], ['round', '四捨五入']];
     var h = '<div class="cd"><h2>給与の設定（管理者だけ）</h2><p class="help">締め日は勤怠管理の設定が正本です（ここでは変えません）。空の欄は既定の値で計算します。</p>';
-    h += '<fieldset><legend>支給日・徴収</legend><div class="kv">' + inp('s-payday', '支給日（毎月 何日）', c.pay_day, NUMA) + sel('s-shift', '土日・休みの日の時', c.pay_day_shift || 'before', [['before', '前の営業日'], ['after', '後の営業日'], ['none', '寄せない']]) +
+    h += '<fieldset><legend>支給日・徴収</legend><div class="kv">' + inp('s-payday', '支給日（毎月 何日）', c.pay_day != null ? c.pay_day : 27, NUMA) + sel('s-shift', '土日・休みの日の時', c.pay_day_shift || 'before', [['before', '前の営業日'], ['after', '後の営業日'], ['none', '寄せない']]) +
       sel('s-si', '社会保険の徴収', c.si_month || 'next', [['next', '翌月徴収'], ['current', '当月徴収']]) + sel('s-tax', '所得税の出し方', c.tax_method || 'table', [['table', '税額表'], ['computer', '電算機の特例']]) +
       sel('s-night', '深夜の割増', c.night_premium || 'included', [['included', '夜勤手当に含む（不足は警告）'], ['pay', '別に払う']]) + '</div>' +
       '<label for="s-hol">支給日を寄せる休みの日（祝日など・1行に1日・例 2026-11-23）</label><br><textarea id="s-hol" rows="3" style="width:100%" autocomplete="off">' + esc(arr(c.holidays).join('\n')) + '</textarea></fieldset>';
@@ -2231,8 +2233,15 @@
     function setTxt(o, k, x) { if (x) o[k] = x; else delete o[k]; }
     var c = JSON.parse(JSON.stringify(cfg()));
     c.zengin_enabled = on('s-zen');   /* 真偽・既定は使わない（DB の payroll_settings_ok が受ける） */
-    var pd = n('s-payday', '支給日');
-    if (pd == null || pd !== pd || pd % 1 || pd < 1 || pd > 31) bad.push('支給日（1〜31）'); else c.pay_day = pd;
+    /* 支給日: 空と形の違いを分けて言い、欄へ移って赤枠にする（「27日」「２７」も 27 と読む・2026-11-24） */
+    var pdEl = $('s-payday'), pdRaw = han(v('s-payday')).replace(/[\s日]/g, ''), pd = /^\d+$/.test(pdRaw) ? Number(pdRaw) : NaN;
+    if (pdEl) pdEl.removeAttribute('aria-invalid');
+    if (!(pd >= 1 && pd <= 31)) {
+      if (pdEl) { pdEl.setAttribute('aria-invalid', 'true'); try { pdEl.focus(); } catch (_) {} }
+      say(pdRaw === '' ? '支給日が空です。毎月の支給日を 1〜31 の数で入れてください（例: 27）。' : '支給日は 1〜31 の数で入れてください（例: 27）。今の値:「' + v('s-payday') + '」');
+      return;
+    }
+    c.pay_day = pd;
     c.pay_day_shift = v('s-shift'); c.si_month = v('s-si'); c.tax_method = v('s-tax'); c.night_premium = v('s-night');
     var hol = v('s-hol').split(/[\s,、]+/).filter(Boolean);
     if (hol.some(function (d) { return !isDate(d) || isNaN(Date.parse(d + 'T00:00:00Z')) || new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) !== d; })) bad.push('休みの日（YYYY-MM-DD）');
