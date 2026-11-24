@@ -443,10 +443,27 @@ console.log('\n— 6. 覆い・その他 —');
   await o4.page.keyboard.press('Escape');
   /* 設定のタブ: 設定の保存・手当の定義・名簿・操作の記録（管理者だけ）。どれも統合 0102 の形の確かめを通る */
   await o4.page.click('[data-tab="settings"]');
+  /* 支給日の欄（2026-11-24）: 空は「空です」と言って欄へ移り赤枠・送らない／「２７日」（全角・日つき）は 27 と読む */
+  const pdKeep = await o4.page.inputValue('#s-payday');
+  const putN0 = o4.routes.calls.filter((c) => c.name === 'payroll_settings_put').length;
+  await o4.page.fill('#s-payday', '');
+  await o4.page.click('[data-act="set-go"]');
+  const pdMsg = await sud(o4.page);
+  t('支給日が空: 「支給日が空です」と知らせ、欄へ移って赤枠にし、保存を送らない', /支給日が空です/.test(pdMsg) && await o4.page.evaluate(() => document.activeElement && document.activeElement.id === 's-payday' && document.getElementById('s-payday').getAttribute('aria-invalid') === 'true')
+    && o4.routes.calls.filter((c) => c.name === 'payroll_settings_put').length === putN0, pdMsg);
+  await o4.page.fill('#s-payday', '３１日');
+  await o4.page.click('[data-act="set-go"]');
+  await o4.page.waitForFunction(() => /設定を保存しました/.test(document.getElementById('p-toast').textContent), null, { timeout: 10000 });
+  const spz = o4.routes.calls.filter((c) => c.name === 'payroll_settings_put').pop();
+  t('支給日に「３１日」（全角・日つき）: 31 と読んで送る', !!spz && spz.args.p_config.pay_day === 31, spz && spz.args.p_config.pay_day);
+  await o4.page.evaluate(() => { document.getElementById('p-toast').textContent = ''; });
+  await settle(o4.page);
+  await o4.page.click('[data-tab="settings"]');
+  await o4.page.fill('#s-payday', pdKeep);
   await o4.page.click('[data-act="set-go"]');
   await o4.page.waitForFunction(() => /設定を保存しました/.test(document.getElementById('p-toast').textContent), null, { timeout: 10000 });
   const sp = o4.routes.calls.filter((c) => c.name === 'payroll_settings_put').pop();
-  t('設定の保存: 理由の引数なし・全銀を使う印（zengin_enabled・既定は使わない）を真偽で送る・DB の確かめを通って版が上がる', !!sp && sp.args.p_config.zengin_enabled === false && o4.routes.db.settings.rev === 4 && o4.routes.db.settings.config.bank_from.bank_kana === 'ﾐﾎﾝｷﾞﾝｺｳ', sp && sp.args);
+  t('設定の保存: 理由の引数なし・全銀を使う印（zengin_enabled・既定は使わない）を真偽で送る・DB の確かめを通って版が上がる', !!sp && sp.args.p_config.zengin_enabled === false && o4.routes.db.settings.rev === 5 && o4.routes.db.settings.config.bank_from.bank_kana === 'ﾐﾎﾝｷﾞﾝｺｳ', sp && sp.args);
   /* 夜勤手当は深夜の割増を含む（代表者の答え）: 手当の定義の窓に「深夜の割増を含む（夜勤手当）」の欄があり、夜勤手当では印が入っている */
   await o4.page.click('[data-act="alw"][data-code="night"]');
   t('手当の定義に「深夜の割増を含む（夜勤手当）」の欄があり、夜勤手当は印が入っている', await o4.page.isChecked('#w-a-includes_night_premium'));
