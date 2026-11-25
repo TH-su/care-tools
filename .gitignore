@@ -69,6 +69,8 @@
 !/check/kintai_freee_payroll_e2e.mjs
 # 勤怠の日ごとの補助項目の通し試験（2026-11-25・統合 0127・関数の無い時と有る時・通信は全部偽物・架空の職員）
 !/check/kintai_extras_e2e.mjs
+!/check/kintai_views_e2e.mjs
+!/check/build-holidays-fixture.mjs
 !/check/kintai_leave_kinds_e2e.mjs
 # 給与の画面の通し試験と撮影（2026-11-19・偽のデータベースと偽の部品・架空の職員10人）
 !/check/payroll_e2e.mjs
@@ -117,6 +119,8 @@
 !/check/fixtures
 /check/fixtures/*
 !/check/fixtures/*.mjs
+# 内閣府の祝日の一覧（公開の資料・祝日の算出の答え合わせ・2026-11-25）
+!/check/fixtures/holidays-jp-cao.csv
 # 給与の画面の確かめだけで使う「契約どおりの形の偽の部品」（2026-11-19・公開の画面は読まない）
 !/check/fixtures/payroll-calc-stub.js
 # freee の給与・賞与の明細の CSV の架空の見本（2026-11-23・payroll_freee_slips_test.js が読む）。架空の職員と架空の金額だけ
@@ -184,6 +188,9 @@
 !/kintai-rules.js
 !/kintai-freee-import.js
 !/kintai-extras.js
+!/kintai-holiday.js
+!/kintai-yearly.js
+!/kintai-views.js
 !/kintai-leave-kinds.js
 !/kintai-ledger.js
 # 職員本人のスマホの勤怠の画面と純関数（2026-11-20・勤怠 v5 の段5・care-backend 統合 0114）。コードのみ公開。端末に置くのは鍵（受け口が作った乱数）とタブの印だけで、

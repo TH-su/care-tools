@@ -105,8 +105,13 @@
   function saveOffice(v) { if (!isOffice(v)) return; try { localStorage.setItem(O_KEY, v); } catch (_) {} }
 
   /* ── データベースの窓口 ── */
+  /* 端末の印は見出し x-su-device でも送る（DB 0128: 番号の打ち間違いの上限を端末ごとに数える。印が無い・送れない時は今までどおり） */
   function rpc(name, args) {
-    return Promise.resolve().then(function () { return window.SUAuth.client().rpc(name, args); }).then(function (r) {
+    return Promise.resolve().then(function () {
+      var q = window.SUAuth.client().rpc(name, args), k = deviceKey();
+      if (k && q && typeof q.setHeader === 'function') q = q.setHeader('x-su-device', k);
+      return q;
+    }).then(function (r) {
       if (r && r.error) throw r.error;
       return r ? r.data : null;
     });

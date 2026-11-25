@@ -77,7 +77,8 @@ console.log('\n— 7. 管理画面の v2 の形 —');
 /* ★v4（2026-11-20）: 依頼で「有給」のタブ（leave・職員と番号の次）を足したので、ホワイトリストの期待をその並びの完全一致に改めた（緩めていない） */
 /* ★v5 段2（2026-11-20）: 仕様で先頭に「ホーム」（home）のタブを足したので、ホワイトリストの期待をその並びの完全一致に改め、HTML でもホームが日ごとの前にあるかを足した（緩めていない） */
 /* ★v5 段5（2026-11-21）: 仕様で「申請」（requests・要確認の次）のタブを足したので、ホワイトリストの期待をその並びの完全一致に改め、HTML でも申請が要確認の次にあるかを足した（緩めていない） */
-t('タブのホワイトリストに要確認（日ごとの次）・申請（要確認の次）・先頭はホーム', /var TABS = \['home', 'day', 'review', 'requests', 'grid', 'person', 'staff', 'leave', 'close', 'settings'\]/.test(K) && /data-tab="home">ホーム<\/button>\s*<button type="button" role="tab" data-tab="day">日ごと<\/button>\s*<button type="button" role="tab" data-tab="review">要確認<span class="tab-n" id="g-rv-n" aria-hidden="true"><\/span><\/button>\s*<button type="button" role="tab" data-tab="requests">申請/.test(H));
+/* ★年別・事業所別・休日のタブ（2026-11-25・kintai-views.js）を末尾に足した（入り切りの鍵が入の時だけボタンを出す） */
+t('タブのホワイトリストに要確認（日ごとの次）・申請（要確認の次）・先頭はホーム', /var TABS = \['home', 'day', 'review', 'requests', 'grid', 'person', 'staff', 'leave', 'close', 'settings', 'year', 'site', 'holiday'\]/.test(K) && /data-tab="home">ホーム<\/button>\s*<button type="button" role="tab" data-tab="day">日ごと<\/button>\s*<button type="button" role="tab" data-tab="review">要確認<span class="tab-n" id="g-rv-n" aria-hidden="true"><\/span><\/button>\s*<button type="button" role="tab" data-tab="requests">申請/.test(H));
 t('要確認の色・件数は needsReview・reviewList・totals にそろえる（印と C.REVIEW で数えない）', /C\.needsReview\(/.test(K) && /C\.reviewList\(month\)/.test(K) && /month\.totals\.reviewCount/.test(K) && !/flags\.some\(function \(f\) \{ return C\.REVIEW\[f\]; \}\)/.test(K));
 t('CSV は新しい列つき（extraCols: true）', /C\.buildCsv\(src, \{ nameOf: nameOfOffice, extraCols: true \}\)/.test(K));
 /* 2026-11-20 の6回目（代表者の指示）: 1分ごとの手元だけの数え直しを、30秒ごとの読み直し＋数え直しに変えた（読めない時も手元で数え直す・下の 14） */
@@ -190,7 +191,7 @@ const pressFn = fn('press', 'updCode'), updFn = fn('updCode', 'lookup');
 t('数字・消すを押した時はテンキーを描き直さない（●の欄と決定だけ・textContent で書く。速い連打を落とさない）', /code \+= k;\s*updCode\(\);\s*\}/.test(pressFn) && !/paint(Pass|Code)\(\)/.test(pressFn) && /box\.textContent = /.test(updFn) && /ok\.disabled = !KintaiCalc\.isCode\(code\)/.test(updFn) && !/innerHTML/.test(updFn));
 t('重ね押しの守りは画面が入れ替わった時だけ（同じ画面の中では paintAt を進めない）', /function mark\(\) \{ if \(\$\('k-main'\)\.getAttribute\('data-v'\) !== view\) paintAt = Date\.now\(\);/.test(KC));
 /* ★総点検（2026-11-20）: 名前で選んだ控えの照合を足したので ?v= を 2026-11-20 に上げた（CLAUDE.md の決まり）。期待をその版に改めた */
-t('kintai-clock.js の読み込みは ?v=2026-11-20', /<script src="kintai-clock\.js\?v=2026-11-20"><\/script>/.test(HC));
+t('kintai-clock.js の読み込みは ?v=2026-11-25.1', /<script src="kintai-clock\.js\?v=2026-11-25\.1"><\/script>/.test(HC));
 
 console.log('\n— 9. 打刻画面の v3.1（画面の並び・今日の打刻） —');
 const recentFn = fn('loadRecent', 'paintRecent'), paintRecentFn = fn('paintRecent', 'paintFoot');
@@ -309,6 +310,7 @@ t('反証レビューの指摘1:「今日」は今日のカレンダー月へ移
 /* ★0120（2026-11-21・締めの前の要確認）で kintai.js を ?v=2026-11-21.6、kintai-calc.js を ?v=2026-11-21.3 に上げたので期待の版を改めた */
 /* ★freee の月の集計の取り込み（2026-11-23・統合 0123）で kintai.js・kintai-calc.js を ?v=2026-11-23.1 に上げたので期待の版を改めた */
 /* ★v6（2026-11-24）で kintai.js を ?v=2026-11-24 に上げたので期待の版を改めた（kintai-calc.js は 2026-11-23.1 のまま・給与の画面と同じ版） */
+/* ★年別・事業所別・休日のタブ（2026-11-25）で kintai.js を ?v=2026-11-25.1 に上げた */
 /* ★シフトの写し方の直し（2026-11-25）で kintai-calc.js を ?v=2026-11-25.2 に上げたので期待の版を改めた */
 /* ★段B（2026-11-25・休暇の種類を足した分・休業の期間）で kintai.js を ?v=2026-11-25.2 に上げたので期待の版を改めた */
 t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-25.2・2026-11-25.2（両画面と給与の画面でそろえる）', /kintai\.js\?v=2026-11-25\.2"/.test(H) && /kintai-calc\.js\?v=2026-11-25\.2"/.test(H) && /kintai-calc\.js\?v=2026-11-25\.2"/.test(HC) && /kintai-calc\.js\?v=2026-11-25\.2"/.test(read('payroll.html')));
@@ -485,6 +487,23 @@ console.log('\n— 14. 打刻の番号と従業員コードの順・日ごとの
     /if \(my !== gen \|\| atYm !== ym \|\| !quietOk\(\)\) return;/.test(q) && /if \(!quietOk\(\)\) return;/.test(q) && /if \(quietBusy && Date\.now\(\) - quietBusy < 20000\) \{ recompute\(\); paint\(\); return; \}/.test(q) && /if \(seq !== quietSeq\) return;\s*quietBusy = 0;/.test(q) && /note\('自動の読み直し', e\);/.test(q) && !/alert\(/.test(q));
 }
 
+{
+  /* 0128: 端末の印を見出し x-su-device で送る（打ち間違いの上限を端末ごとに数える）。動かして確かめる */
+  const dk = /function deviceKey\(\) \{[^\n]*\}/.exec(KC), rp = /function rpc\(name, args\) \{[\s\S]*?\n  \}\n/.exec(KC);
+  const run = (key, withSet) => {
+    const sent = []; const store = { su_device_key: key };
+    const builder = (name, args) => { const b = { name, args, h: {}, then(ok, ng) { sent.push(b); return Promise.resolve({ data: 'ok' }).then(ok, ng); } };
+      if (withSet) b.setHeader = function (k, v) { this.h[k] = v; return this; }; return b; };
+    const f = new Function('window', 'localStorage', dk[0] + '\n' + rp[0] + '\nreturn rpc;');
+    const rpc = f({ SUAuth: { client: () => ({ rpc: builder }) } }, { getItem: (k) => store[k] == null ? null : store[k] });
+    return rpc('kintai_clock_lookup', { p_code: '1234' }).then((d) => ({ d, sent }));
+  };
+  pendClock.push(Promise.all([run('0123456789abcdef0123456789abcdef', true), run('', true), run('NOT-HEX', true), run('0123456789abcdef0123456789abcdef', false)]).then((r) => {
+    t('rpc は端末の印を見出し x-su-device に付ける（引数は変えない）', !!dk && !!rp && r[0].d === 'ok' && r[0].sent[0].h['x-su-device'] === '0123456789abcdef0123456789abcdef' && JSON.stringify(r[0].sent[0].args) === '{"p_code":"1234"}');
+    t('印が無い・形の違う印の時は見出しを付けない', r[1].sent[0].h['x-su-device'] === undefined && r[2].sent[0].h['x-su-device'] === undefined);
+    t('setHeader の無い窓口でも今までどおり送れる', r[3].d === 'ok' && r[3].sent.length === 1);
+  }));
+}
 Promise.all(await_pending.concat(pendClock)).catch((e) => { fail++; console.log('  ✗ 動かして確かめる試験が止まった  → ' + e.message); }).then(() => {
   console.log(`\n${pass} 件合格 / ${fail} 件不合格`);
   process.exit(fail ? 1 : 0);
