@@ -209,7 +209,7 @@ const BIZ = [];
   t('2c 全部出ている → 27本中27本', tl.n === 27 && tl.N === 27 && JSON.stringify(tl.have) === '[5,3,6,5,8]', tl);
   const fam = h => B.familyOf(h);
   t('2d 分野の対応（例）', fam('https://th-su.github.io/care-log/') === 0 && fam('https://th-su.github.io/care-log/#/record/daycare') === 0 && fam('supplies.html') === 1
-    && fam('resident-master.html?view=bday') === 2 && fam('care-meeting.html') === 3 && fam('staff-master.html') === 4 && fam('https://kitchen-app-9o7.pages.dev/') === 1);
+    && fam('resident-master.html?view=bday') === 2 && fam('care-meeting.html') === 3 && fam('staff-master.html') === 4 && fam('https://th-su.github.io/kitchen-app/') === 1);
   t('2e 表に無いリンク先・文字でない値は「入居者」', fam('new-tool.html') === 2 && fam(undefined) === 2 && fam(42) === 2 && fam('__proto__') === 2 && fam('constructor') === 2);
   const over = B.tally(BIZ.concat(['shift-app.html', 'shift-app.html']), BIZ);
   t('2f 出ている数が全体を超えても全体で止める（min(n, N)）', over.n === 27 && over.have[4] === 8, over);

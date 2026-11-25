@@ -54,7 +54,7 @@
     'moushiokuri-viewer.html': 0,
     'patch-calendar.html': 1,
     'supplies.html': 1,
-    'https://kitchen-app-9o7.pages.dev/': 1,
+    'https://th-su.github.io/kitchen-app/': 1,
     'resident-master.html': 2,
     'facesheet.html': 2,
     'genogram.html': 2,

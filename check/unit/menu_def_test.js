@@ -31,7 +31,7 @@ const want = ['shift-app.html', 'work-schedule.html', 'shift-analyzer.html', 'st
   'facesheet.html', 'genogram.html', 'resident-master.html', 'patch-calendar.html', 'moushiokuri-viewer.html', 'resident-master.html?view=bday',
   'admission-flow.html', 'supplies.html', 'https://th-su.github.io/care-log/', 'care-meeting.html', 'equip-log.html',
   'daycare-roster.html', 'training-plan.html', 'https://th-su.github.io/care-log/#/record/daycare',
-  'https://kitchen-app-9o7.pages.dev/', 'connection-settings.html', 'help.html', 'unsent.html'];
+  'https://th-su.github.io/kitchen-app/', 'connection-settings.html', 'help.html', 'unsent.html'];
 t('行き先と並び順（入居者の区分の末尾にケアログ・担当者会議の記録・設備・修繕の記録、その次のデイの区分にデイ利用表・訓練計画・デイ（2026-10-26）、最後に help.html と未送信の一覧（2026-11-14））', tiles.map(x => x.href).join('|') === want.join('|'), tiles.map(x => x.href));
 const office = tiles.filter(x => x.officeOnly).map(x => x.href).sort().join();
 t('現場端末で出さないタイルは9枚（職員マスタ・採用管理・誕生日一覧・入居調整・訓練計画・担当者会議の記録・設備・修繕の記録 2026-11-03・勤怠管理 2026-11-18・給与 2026-11-19。打刻の画面は現場で使うので出す）＋設定の区分', office === ['admission-flow.html', 'ats.html', 'care-meeting.html', 'equip-log.html', 'kintai.html', 'payroll.html', 'resident-master.html?view=bday', 'staff-master.html', 'training-plan.html'].sort().join()

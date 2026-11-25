@@ -115,6 +115,16 @@ legend{font-weight:600;padding:0 6px}
 .hbox.warn .hv{background:var(--warn-bg);color:var(--warn)}.hbox.alert .hv{background:var(--ng-bg);color:var(--ng)}.hbox.ok .hv{background:var(--ok-bg);color:var(--ok)}
 .hbox .hl{display:block;margin-top:6px;font-size:14px;color:var(--sub);overflow-wrap:anywhere}.hbox .hl b{color:var(--ink)}
 .hbox .hnote{display:block;margin-top:6px;font-size:13px;color:var(--warn);overflow-wrap:anywhere}
+/* v6: ホームの箱の下の「本人のスマホに知らせる」の並び（画面だけ・状態は文字でも出す＝色だけで伝えない） */
+.hcell{display:grid;gap:6px;align-content:start}
+.hnt{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:8px 12px}
+.hnt .hnt-h{margin:0 0 4px;font-size:13px;font-weight:700;color:var(--sub)}
+.hnt .hnt-s{margin:4px 0 0;font-size:13px;color:var(--sub);overflow-wrap:anywhere}
+.hnt ul{list-style:none;margin:0;padding:0}
+.hnt li{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:6px 0;border-top:1px solid var(--line)}
+.hnt li:first-child{border-top:0}
+.hnt .ntn{flex:1 1 12em;font-size:14px;overflow-wrap:anywhere}.hnt .ntn b{color:var(--ink)}
+.hnt .nts{font-size:13px;font-weight:700;color:var(--sub)}
 /* v5 段5: 申請のタブとスマホの登録の窓（画面だけ・印刷しない）。QR は白地に黒（暗い表示でも読める）。iPhone の幅（699px 以下）では新しい部品の押す所を 44px・入力の文字を 16px にする */
 .rq-t td{white-space:normal;min-width:4.5em}
 .rq-t td.rq-btns{white-space:nowrap}
@@ -231,11 +241,12 @@ body:has(#g-gate:not([hidden])) .sui-band{display:none}
 <div class="toast no-print" id="g-toast" role="status" aria-live="polite" hidden></div>
 <div id="k-ledger" aria-hidden="true"></div>
 <dialog id="g-dlg" aria-labelledby="g-dlg-h"><div class="dlg-h" id="g-dlg-h"></div><div class="dlg-b" id="g-dlg-b"></div><div class="dlg-f" id="g-dlg-f"></div></dialog>
+<script src="su-dialog.js?v=2026-11-14.2"></script>
 <script src="su-qr.js?v=2026-11-08"></script>
 <script src="kintai.js?v=2026-12-26"></script>
 <script src="su-shell.js?v=2026-11-19"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 <script src="su-intro.js?v=2026-11-18"></script>
-<script src="su-report.js?v=2026-11-23" data-tool="勤怠管理"></script>
+<script src="su-report.js?v=2026-11-23.2" data-tool="勤怠管理"></script>
 </body>
 </html>

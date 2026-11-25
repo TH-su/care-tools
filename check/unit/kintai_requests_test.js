@@ -14,7 +14,9 @@
      9. 反証レビュー（2026-11-21）の直し: 一覧はタブに入る・箱から移る・読み直すで捨てて読み直し、古い答えで上書きしない／決めた後は前の数の答えを捨てる／
         差し戻しと取り消しの書きかけは確かめる／iPhone の幅でボタンを職員の欄の下に出す／本人の画面の時間単位の有休と締める前の目安の知らせ。
         本物の paint・setTab・bind・paintHome・dirty を偽の DOM で動かす（ホームの箱の件数・取り消しの送信も）。
-        直す前の版で落ちることは KINTAI_JS=<直す前の kintai.js> KINTAI_HTML=… KINTAI_SELF_CALC=… で回して確かめる */
+        直す前の版で落ちることは KINTAI_JS=<直す前の kintai.js> KINTAI_HTML=… KINTAI_SELF_CALC=… で回して確かめる
+     10. v6（2026-11-24・契約 ROOT-v6「2」「3」・統合 0125）: 申請のタブの休暇の行（言い方は本人の画面と同じ・承認と差し戻しは今のボタン・承認の断りは有給の窓の文）／
+        ホームの「知らせる」（まだ出勤していない＝not_in・打刻漏れ＝missing_in／missing_out の塊だけ・確かめの窓・送った後の「知らせ済み」「見た」・取り消し・スマホ未登録・関数が無い時） */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -67,6 +69,8 @@ const PARTS = [
   cut(K, 'function pressBusy('), cut(K, 'function hm('), cut(K, 'function ms('), cut(K, 'function md('), "var WD = ['日', '月', '火', '水', '木', '金', '土'];", cut(K, 'function wd('),
   cut(K, 'function staffById('), cut(K, 'function dispName('), cut(K, 'function reasonRow('), cut(K, 'function needReason('),
   cut(K, 'function openDlg('), cut(K, 'function closeDlg('), cut(K, 'function formState('),
+  /* v6: 休暇の申請を承認した時の断り（rqLeaveMsg）が使う有給の窓の文（NG_LEAVE・NG_ABS） */
+  between(K, '  var NG_LEAVE = {', '  /* v5 1-5: 勤怠の管理者の名簿の窓では'),
 ].join('\n');
 /* opt.full: 画面の描き方（paint・paintTabs・ホーム）・タブの移り（setTab）・押す所の受け（bind）・窓の変更の確かめ（dirty）も本物を動かす。ほかのタブの描き方は空の偽物 */
 const FULL = [
@@ -95,7 +99,7 @@ function box(opt = {}) {
   };
   const names = Object.keys(env);
   const src = PARTS + '\n' + STATE + (opt.full ? '\n' + FULL : '') + '\nvar view = "app", ym = "2026-11", busy = false, tab = OPT.tab || "requests", printAll = false, dlgCtx = null, editsCache = null, data = OPT.data || null;\n' + BLOCK +
-    '\nreturn { paintRequests, reqMsg, selfMsg, selfBtns, openReqDecide, saveReqDecide, loadReqSum, loadReqs, reqCloseHtml, openEnroll, enrollTick, wipeEnroll, openDevices, closeDlg, openDlg, rqBody,' +
+    '\nreturn { ntTargets, noticeHtml, ntLoad, ntAdd, ntVoid, ntMsg, NG_NT, NODB_NT, rqLeave, rqLeaveMsg, NG_LEAVE, NG_ABS, get ntSt() { return ntSt; }, get devSt() { return devSt; }, paintRequests, reqMsg, selfMsg, selfBtns, openReqDecide, saveReqDecide, loadReqSum, loadReqs, reqCloseHtml, openEnroll, enrollTick, wipeEnroll, openDevices, closeDlg, openDlg, rqBody,' +
     ' paint: paint, setTab: typeof setTab === "function" ? setTab : null, bind: typeof bind === "function" ? bind : null, dirty: typeof dirty === "function" ? dirty : null, openRevoke, saveRevoke,' +
     ' get ym() { return ym; }, set ym(v) { ym = v; }, get tab() { return tab; }, set tab(v) { tab = v; }, get reqF() { return reqF; }, set reqF(v) { reqF = v; },' +
     ' get reqSt() { return reqSt; }, set reqSt(v) { reqSt = v; }, get reqSum() { return reqSum; }, set reqSum(v) { reqSum = v; }, get reqNoDb() { return reqNoDb; }, get enrollSt() { return enrollSt; }, get dlgCtx() { return dlgCtx; }, NG, NODB_REQ };';
@@ -453,6 +457,135 @@ const ROWS = [
       t('直し2: 文（仮置き）', S.HOURLY_NOTE === '時間単位で取った分は、ここの残りに入っていません。正しい残りは事務所で確かめてください。');
       t('直し3: 締めていない月分だけ「締める前の数字は目安です（締めた後に事務所の数字と同じになります）」', S.draftNote && S.draftNote({ locked: false }) === '締める前の数字は目安です（締めた後に事務所の数字と同じになります）' && S.draftNote({ locked: true }) === '');
     }
+  }
+  console.log('\n— 10. v6: 休暇の申請の行・打刻漏れの知らせ（統合 0125） —');
+  {
+    const LV = [
+      { id: '00000000-0000-4000-8000-00000000l001', staff_id: 'sQ01', name: '見本 一子', staff_active: true, kind: 'leave', work_date: '2026-12-03', ym: '2026-12', body: { type: 'paid_day' }, reason: '私用', status: 'pending', rev: 1, created_at: '2026-11-20T08:00:00+09:00' },
+      { id: '00000000-0000-4000-8000-00000000l002', staff_id: 'sQ01', name: '見本 一子', staff_active: true, kind: 'leave', work_date: '2026-11-25', ym: '2026-11', body: { type: 'hourly', minutes: 120 }, reason: '通院', status: 'pending', rev: 1, created_at: '2026-11-20T09:00:00+09:00' },
+    ];
+    const { api } = box();
+    api.reqSt = { key: 'pending|all', rows: LV };
+    const h = api.paintRequests();
+    t('休暇の行: 種類「休暇」・休む日・中身「休暇: 有休（1日）」', /<td data-l="種類">休暇<\/td><td data-l="日付">12\/03（木）<\/td><td data-l="中身">休暇: 有休（1日）<\/td>/.test(h), h.slice(0, 900));
+    t('休暇の行にも今の「承認」「差し戻し」のボタン', (h.match(/data-act="rq-ok"/g) || []).length === 2 && (h.match(/data-act="rq-ng"/g) || []).length === 2);
+    const BODIES = [{ type: 'paid_day' }, { type: 'paid_half' }, { type: 'hourly', minutes: 180 }, { type: 'special', type_code: 'keicho', half: true }, { type: 'comp', link_date: '2026-11-08', half: true }, { type: 'swap', link_date: '2026-12-06' }];
+    const fb = box({ full: true, data: { staff: STAFF, period: null } }).api;
+    const TYD = C.leaveTypesOf({});
+    t('休暇の中身の言い方は本人の画面（kintai-self-calc.js の leaveText）と同じ（特別休暇の名前は設定の種類）', BODIES.every((b) => fb.rqLeave(b) === S.leaveText(b, TYD)), BODIES.map((b) => [fb.rqLeave(b), S.leaveText(b, TYD)]));
+    t('rqBody は「休暇: 」を頭に付ける', api.rqBody({ kind: 'leave', body: { type: 'swap', link_date: '2026-12-06' } }) === '休暇: 振替（働く日 12/6）');
+    const E = (k) => { const e = new Error(k); e.kintai = k; return e; };
+    const clickBtn = (b, attrs) => { const btn = { getAttribute: (k) => (k in attrs ? attrs[k] : null), hasAttribute: (k) => k in attrs }; b.dom.document.listeners.click.forEach((f) => f({ target: { closest: () => btn } })); };
+    t('承認の断り: 有休（1日・半日）は有給の窓の文・ほかの休暇は休暇の文・申請の語は申請の文',
+      api.rqLeaveMsg(E('dup'), { type: 'paid_day' }) === api.NG_LEAVE.dup && api.rqLeaveMsg(E('dup'), { type: 'special' }) === api.NG_ABS.dup
+      && api.rqLeaveMsg(E('badkind'), { type: 'hourly' }) === api.NG_ABS.badkind && api.rqLeaveMsg(E('conflict'), { type: 'paid_day' }) === api.reqMsg(E('conflict')) && api.rqLeaveMsg(E('lead'), { type: 'comp' }) === api.NG.lead);
+    t('休暇の承認の badvalue・locked は休暇の文（時刻の文を出さない）・特別休暇の種類が消えた時の文（反証 2026-11-24 の 2）',
+      api.rqLeaveMsg(E('badvalue'), { type: 'hourly' }) === api.NG_ABS.badvalue && api.rqLeaveMsg(E('badvalue'), { type: 'paid_day' }) === api.NG_LEAVE.badvalue
+      && /特別休暇の種類/.test(api.rqLeaveMsg(E('badvalue'), { type: 'special' })) && api.rqLeaveMsg(E('locked'), { type: 'comp' }) === api.NG_ABS.locked
+      && api.rqLeaveMsg(E('notfound'), { type: 'paid_day' }) === api.reqMsg(E('notfound')));
+    /* 承認すると今の関数で送り、断りは休暇の文で窓に出す */
+    const b3 = box({ rpc: () => Promise.resolve({ ok: false, error: 'dup' }) });
+    b3.api.reqSt = { key: 'pending|all', rows: LV };
+    b3.api.openReqDecide(LV[1].id, true);
+    t('休暇の承認の窓の文（有給の画面で入れた時と同じ形で入れる）', /この休暇を有給の画面で入れた時と同じ形で入れます/.test(b3.dom.$('g-dlg-b').innerHTML));
+    b3.api.saveReqDecide(b3.dom.$('btn'));
+    await tick(); await tick();
+    const d3 = b3.log.rpc.find((x) => x.name === 'kintai_requests_decide');
+    t('休暇の承認も kintai_requests_decide（今の呼び方）・断りは休暇の文を窓に出す', d3 && d3.args.p_id === LV[1].id && d3.args.p_approve === true && b3.dom.$('e-msg').textContent === b3.api.NG_ABS.dup, b3.dom.$('e-msg').textContent);
+    t('ホームの承認待ちの数（pending）は月を問わない数（0114）・来月分の休暇も入る（月の確認の数のため呼び方は月つきのまま）', /pending: num\(r\.pending\) \|\| 0/.test(cut(K, 'function loadReqSum(')) && /p_ym: reqF\.ym \? ym : null/.test(cut(K, 'function loadReqs(')));
+
+    /* ホームの「知らせる」 */
+    const TD = C.jstDate(Date.now()), YM = TD.slice(0, 7);
+    const back = (n) => { const x = new Date(Date.parse(TD + 'T00:00:00Z') - n * 86400000); return x.toISOString().slice(0, 10); };
+    const D2 = back(2), D20 = back(20);
+    const blk = (flags, extra) => Object.assign({ sched: true, schedStart: Date.parse(TD + 'T09:00:00+09:00'), schedEnd: Date.parse(TD + 'T18:00:00+09:00'), punches: [], flags, checked: false, working: false }, extra || {});
+    const NM = { people: [
+      { staff: { staff_id: 'sQ01', name: '見本 一子', active: true }, sum: { workMin: 0, warnings: [], reviewCount: 2 }, days: [
+        { date: D20, blocks: [blk(['missing_out'])] }, { date: D2, blocks: [blk(['missing_out'])] }, { date: TD, blocks: [blk(['not_in_yet'])] }] },
+      { staff: { staff_id: 'sQ02', name: '見本 二郎', active: true }, sum: { workMin: 0, warnings: [], reviewCount: 2 }, days: [
+        { date: D2, blocks: [blk(['early']), blk(['missing_in', 'late'])] }, { date: TD, blocks: [blk(['not_in_yet'])] }] }] };
+    const NOTE = { id: '00000000-0000-4000-8000-00000000a001', staff_id: 'sQ01', kind: 'not_in', work_date: TD, created_by: 'check-office@example.invalid', created_at: TD + 'T09:40:00+09:00', seen_at: TD + 'T09:52:00+09:00' };
+    const mk = (o = {}) => {
+      const b = box(Object.assign({ full: true, tab: 'home', month: NM, data: { staff: STAFF, period: null }, rpc: (n, a) => {
+        if (n === 'kintai_notices_list') return o.list ? o.list(a) : Promise.resolve({ ok: true, rows: [] });
+        if (n === 'kintai_self_devices') return o.dev ? o.dev(a) : Promise.resolve({ ok: true, devices: [{ id: 1, staff_id: 'sQ01', state: 'active', revoked_at: null }], codes: [] });
+        if (n === 'kintai_notice_add') return o.add ? o.add(a) : Promise.resolve({ ok: true, id: 'x', dup: false });
+        if (n === 'kintai_notice_void') return Promise.resolve({ ok: true });
+        return Promise.resolve({ ok: true, rows: [], pending: 0, month_confirmed: 0, active_staff: 2 });
+      } }, o.opt || {}));
+      b.api.ym = YM;
+      return b;
+    };
+    const home = async (b) => { b.api.paint(); await tick(); await tick(); await tick(); b.api.paint(); return b.dom.$('g-main').innerHTML; };
+    {
+      const b = mk();
+      const h1 = await home(b);
+      const lc = b.log.rpc.find((c) => c.name === 'kintai_notices_list'), dv = b.log.rpc.find((c) => c.name === 'kintai_self_devices');
+      t('知らせの一覧は表示中の月分で・スマホの一覧は全員分で読む', lc && lc.args.p_ym === YM && dv && dv.args.p_staff_id === null, [lc && lc.args, dv && dv.args]);
+      t('「まだ出勤していない」人に「知らせる」（not_in・今日）', h1.indexOf('data-act="nt-add" data-sid="sQ01" data-date="' + TD + '" data-kind="not_in"') >= 0, h1.slice(0, 1500));
+      t('打刻漏れ（退勤が無い）の行に「知らせる」（missing）', h1.indexOf('data-act="nt-add" data-sid="sQ01" data-date="' + D2 + '" data-kind="missing"') >= 0);
+      t('14日より前の打刻漏れには付けない（本人が見られるのは14日以内）', h1.indexOf('data-date="' + D20 + '"') < 0);
+      t('スマホを登録していない人は「スマホ未登録」でボタンなし（出勤の無い打刻漏れの行も）', h1.indexOf('data-sid="sQ02" data-date') < 0 && /見本 二郎<\/b> [0-9/]+ 出勤の打刻がありません<\/span><span class="nts">スマホ未登録<\/span>/.test(h1) && (h1.match(/スマホ未登録/g) || []).length === 2);
+      const pm = (h1.match(/<div class="hnt no-print" data-nt="missing">[\s\S]*?<\/ul>/) || [''])[0];
+      t('ほかの要確認（始業前の打刻など）だけの塊には付けない（打刻漏れの並びは出勤の無い塊と退勤の無い塊の2行だけ）', (pm.match(/<li>/g) || []).length === 2 && (pm.match(/見本 二郎/g) || []).length === 1 && pm.indexOf('始業前') < 0, pm);
+      t('箱そのものの形は今のまま（箱の button の中に入れない・升 hcell に並べる・印刷しない）', /<div class="hcell"><button type="button" class="hbox warn" data-tab="day"/.test(h1) && /<div class="hcell"><button type="button" class="hbox warn" data-tab="review"/.test(h1) && /<div class="hnt no-print" data-nt="missing">/.test(h1) && !/<button[^>]*class="hbox[^"]*"[^>]*>(?:(?!<\/button>)[\s\S])*data-act="nt-add"/.test(h1));
+      t('押す所は k5（699px 以下で 44px）', /class="btn sm k5" data-act="nt-add"/.test(h1));
+    }
+    {
+      const b = mk({ dev: () => Promise.reject({ code: 'XX', message: 'x' }) });
+      const h1 = await home(b);
+      t('スマホの一覧を読めない時は押せる形のまま（仮置き）', h1.indexOf('data-sid="sQ02" data-date="' + D2 + '" data-kind="missing"') >= 0 && h1.indexOf('スマホ未登録') < 0);
+    }
+    {
+      const b = mk({ list: () => Promise.resolve({ ok: true, rows: [NOTE, Object.assign({}, NOTE, { id: '00000000-0000-4000-8000-00000000a002', voided_at: TD + 'T10:00:00+09:00', created_at: TD + 'T10:00:00+09:00', seen_at: null })] }) });
+      const h1 = await home(b);
+      const hm0 = (v) => C.jstHM(Date.parse(v));
+      t('送った後は「知らせ済み 時刻・見た 時刻」と「取り消す」（取り消した知らせは数えない）', h1.indexOf('知らせ済み ' + hm0(NOTE.created_at) + '・見た ' + hm0(NOTE.seen_at)) >= 0 && h1.indexOf('data-act="nt-void" data-id="' + NOTE.id + '"') >= 0 && h1.indexOf('data-kind="not_in"') < 0 && h1.indexOf('a002') < 0, h1.slice(0, 1500));
+      b.env.window.SUDialog = { confirm: () => Promise.resolve(true), prompt: (q, d) => { b.log.confirms.push(q + '|' + d); return Promise.resolve(' 見本の取り消し '); } };
+      b.api.bind();
+      clickBtn(b, { 'data-act': 'nt-void', 'data-id': NOTE.id, 'data-sid': 'sQ01' });
+      await tick(); await tick(); await tick();
+      const vc = b.log.rpc.find((c) => c.name === 'kintai_notice_void');
+      t('取り消し: 理由を聞き（初めの値「押し間違い」）、kintai_notice_void に id と理由を送る', vc && vc.args.p_id === NOTE.id && vc.args.p_reason === '見本の取り消し' && /\|押し間違い$/.test(b.log.confirms[0] || ''), vc && vc.args);
+    }
+    {
+      const b = mk();
+      await home(b);
+      b.api.bind();
+      clickBtn(b, { 'data-act': 'nt-add', 'data-sid': 'sQ01', 'data-date': TD, 'data-kind': 'not_in' });
+      await tick(); await tick(); await tick();
+      const q = b.log.confirms[0] || '', ad = b.log.rpc.find((c) => c.name === 'kintai_notice_add');
+      t('確かめの窓（SUDialog が無い時は confirm）の文:「〇〇さんの本人の画面に『〇月〇日の出勤の打刻がまだありません』と出します」', q.indexOf('見本 一子 さんの本人の画面に「' + (+TD.slice(5, 7)) + '月' + (+TD.slice(8, 10)) + '日の出勤の打刻がまだありません」と出します') === 0, q);
+      t('kintai_notice_add に人・日・種類だけを送る（文は送らない）', ad && JSON.stringify(ad.args) === JSON.stringify({ p_staff_id: 'sQ01', p_work_date: TD, p_kind: 'not_in' }), ad && ad.args);
+      t('送った後は知らせの一覧を読み直す', b.log.rpc.filter((c) => c.name === 'kintai_notices_list').length >= 2 && /知らせました/.test(b.log.toasts.join()));
+      const n0 = b.log.rpc.length;
+      const b2 = mk({ opt: { confirm: () => false } });
+      await home(b2); b2.api.bind();
+      clickBtn(b2, { 'data-act': 'nt-add', 'data-sid': 'sQ01', 'data-date': D2, 'data-kind': 'missing' });
+      await tick(); await tick();
+      t('確かめで「キャンセル」なら送らない', !b2.log.rpc.some((c) => c.name === 'kintai_notice_add') && b2.log.confirms.length === 1 && /打刻が抜けています/.test(b2.log.confirms[0]) && n0 > 0);
+      const b3 = mk({ add: () => Promise.resolve({ ok: false, error: 'locked' }) });
+      await home(b3); b3.api.bind();
+      clickBtn(b3, { 'data-act': 'nt-add', 'data-sid': 'sQ01', 'data-date': D2, 'data-kind': 'missing' });
+      await tick(); await tick(); await tick();
+      t('断り（locked・toomany・notfound）は知らせの文（申請・スマホの文にしない）・自動の報告に回さない', b3.log.toasts.indexOf(b3.api.NG_NT.locked) >= 0 && b3.log.notes.length === 0
+        && b3.api.ntMsg(E('toomany')) === b3.api.NG_NT.toomany && /2件/.test(b3.api.NG_NT.toomany) && b3.api.ntMsg(E('notfound')) === b3.api.NG_NT.notfound);
+    }
+    {
+      const b = mk({ list: () => Promise.reject({ code: 'PGRST202', message: 'none' }) });
+      const h1 = await home(b);
+      const n1 = b.log.rpc.filter((c) => c.name === 'kintai_notices_list').length;
+      await home(b);
+      t('関数が無い（0125 の前）時: 並びに「データベースの更新がまだです」・ボタンなし・もう聞かない・自動の報告に回さない', h1.indexOf(b.api.NODB_NT) >= 0 && h1.indexOf('data-act="nt-add"') < 0 && n1 === 1 && b.log.rpc.filter((c) => c.name === 'kintai_notices_list').length === 1 && b.log.notes.length === 0);
+    }
+    {
+      const b = box({ full: true, tab: 'home', month: { people: [] }, data: { staff: STAFF, period: null }, rpc: () => Promise.resolve({ ok: true, rows: [], devices: [] }) });
+      const h1 = await home(b);
+      t('知らせる相手が無い時は箱だけ（今の形・升も並びも出さない）', h1.indexOf('hcell') < 0 && h1.indexOf('hnt') < 0);
+    }
+    t('管理の口の名前（統合 0125）', ['kintai_notice_add', 'kintai_notices_list', 'kintai_notice_void'].every((n) => BLOCK.indexOf("rpc('" + n + "'") >= 0));
+    t('su-dialog.js（ほかの画面と同じ版）を kintai.js の前に読む', H.indexOf('<script src="su-dialog.js?v=2026-11-14.2"></script>') >= 0 && H.indexOf('su-dialog.js?v=') < H.indexOf('kintai.js?v=') && /su-dialog\.js\?v=2026-11-14\.2/.test(read('accounts.html')));
+    t('並びの見た目は画面だけ（.hnt・.hcell）・状態は文字で出す', /\.hnt\{/.test(H) && /\.hcell\{/.test(H) && /\.hnt \.nts\{/.test(H));
   }
   console.log('\n' + pass + ' 件合格 / ' + fail + ' 件不合格');
   process.exit(fail ? 1 : 0);

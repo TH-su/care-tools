@@ -532,6 +532,7 @@
     if (L && !leaveSt && !leaveBusy) loadLeave(false);   /* 重い読み込み（有給と36協定の月分）は最初の描画の後に裏で（読めたら描き直す） */
     var td = today(), inP = inPer(td), lv = leaveSt && !leaveSt.err ? 'ok' : leaveSt && leaveSt.err ? 'err' : 'wait';
     var input = { today: td, month: month, reviewList: C.reviewList(month), requests: reqSum && !reqSum.err && reqSum.ym === ym ? reqSum.pending : null };
+    ntLoad(false); devLoad();   /* v6: 打刻漏れの知らせとスマホの登録（読めたら描き直す） */
     if (RUL) input.rules = RUL.checkMonth(month, rawCfg());
     var a36 = null;
     if (lv === 'ok') {
@@ -545,14 +546,15 @@
       if (b.key === 'today') {
         if (!inP) { out.push(boxHtml({ key: 'today', title: '今日', count: 0, level: 'ok', rows: [] }, 'data-act="day-today"', '<span class="hl">今日（' + esc(md(td)) + '）はこの月分に入っていません。押すと今日の月分を開きます。</span>')); return; }
         var c = b.counts;
-        out.push(boxHtml(b, 'data-tab="day" data-date="' + esc(td) + '"', '<span class="hl">出勤予定 ' + c.scheduled + '・出勤済み ' + c.clockedIn + '・勤務中 ' + c.working + '・まだ出勤していない ' + c.notInYet + '</span>'));
+        out.push(ntWrap(boxHtml(b, 'data-tab="day" data-date="' + esc(td) + '"', '<span class="hl">出勤予定 ' + c.scheduled + '・出勤済み ' + c.clockedIn + '・勤務中 ' + c.working + '・まだ出勤していない ' + c.notInYet + '</span>'), noticeHtml('not_in')));
         return;
       }
       if (b.key === 'a36') {
         var olds = []; for (var k in a36) a36[k].old.forEach(function (y) { if (olds.indexOf(y) < 0) olds.push(y); });
         if (olds.length) b.note = (b.note ? b.note + '。' : '') + oldNote(olds.sort());
       }
-      out.push(boxHtml(b, 'data-tab="' + esc(b.tab) + '"' + (b.key === 'requests' ? ' data-rq="pending"' : '')));
+      var bh = boxHtml(b, 'data-tab="' + esc(b.tab) + '"' + (b.key === 'requests' ? ' data-rq="pending"' : ''));
+      out.push(b.key === 'review' ? ntWrap(bh, noticeHtml('missing')) : bh);   /* v6: 打刻漏れの行に「知らせる」 */
       if (b.key === 'review' && lv !== 'ok') {
         /* 36協定・有給・締めの箱は読めるまで「読み込み中」（読めなかった時は知らせと「読み直す」） */
         var t0 = lv === 'err' ? '読み込めませんでした（' + leaveSt.err + '）' : '読み込み中…（月分をさかのぼって読むため、少し時間がかかります）';
@@ -1180,7 +1182,7 @@
     return h;
   }
   /* 直しの履歴（kintai_edits）の action の言い方。DB の勤怠の移行（0098〜0112）が書く action は全部ここに置く（内部の名前のまま出さない・v5 1-3・試験 kintai_edits_label_test） */
-  var ACT_LABEL = { sched_set: '予定を直した', sched_off: '予定を休みにした', sched_clear: '予定の手直しを外した', fixed_put: '前提の時間を入れた', fixed_void: '前提の時間を取り消した', display_name: '表示名を変えた', punch_add: '打刻を足した', punch_void: '打刻を取り消した', day_put: '承認・休憩・メモ・印', code_reset: '番号を振り直した', code_fixed: '打刻の番号を職員No に合わせた', month_lock: '月を締めた', month_unlock: '締めを解除した', settings_put: '設定を変えた', schedule_put: 'シフトを取り込んだ', staff_sync: 'シフトから職員を取り込んだ',
+  var ACT_LABEL = { notice_add: '打刻漏れを本人に知らせた', notice_void: '打刻漏れの知らせを取り消した', sched_set: '予定を直した', sched_off: '予定を休みにした', sched_clear: '予定の手直しを外した', fixed_put: '前提の時間を入れた', fixed_void: '前提の時間を取り消した', display_name: '表示名を変えた', punch_add: '打刻を足した', punch_void: '打刻を取り消した', day_put: '承認・休憩・メモ・印', code_reset: '番号を振り直した', code_fixed: '打刻の番号を職員No に合わせた', month_lock: '月を締めた', month_unlock: '締めを解除した', settings_put: '設定を変えた', schedule_put: 'シフトを取り込んだ', staff_sync: 'シフトから職員を取り込んだ',
     master_import: '職員マスタと突き合わせた', master_add: '職員マスタから職員を足した', staff_link: '職員マスタとの結び付けを直した', clock_visible: '打刻画面に出す・出さないを変えた',
     leave_profile: '有給の設定を変えた', leave_grant_add: '有給の付与を足した', leave_grant_void: '有給の付与を取り消した', leave_use_add: '有休の使用を足した', leave_use_void: '有休の使用を取り消した',
     managers_add: '勤怠の管理者に足した', managers_remove: '勤怠の管理者から外した',
@@ -2733,7 +2735,7 @@
     if (e && e.code === '42501' && e.message === SELF_ADMIN_MSG) return '登録の番号を出せるのは、管理者（2段階認証まで済んだ人）だけです。';
     return noDb(e) ? NODB_REQ : msgOf(e);
   }
-  var RQ_KIND = { punch: '打刻の直し', overtime: '残業・早出', month: '月の勤怠の確認' };
+  var RQ_KIND = { punch: '打刻の直し', overtime: '残業・早出', month: '月の勤怠の確認', leave: '休暇' };
   var RQ_ST = { pending: ['承認待ち', 'rv'], approved: ['承認済み', 'ok'], rejected: ['差し戻し', 'ng'], withdrawn: ['取り下げ', ''] };
   var RQ_ST_OPT = [['pending', '承認待ち'], ['approved', '承認済み'], ['rejected', '差し戻し'], ['withdrawn', '取り下げ'], ['', 'すべての状態']];
   function dtTxt(v) { var t = ms(v); return t == null ? '' : new Date(t).toLocaleString('ja-JP'); }
@@ -2753,7 +2755,36 @@
       return p.join('・') || '残業・早出';
     }
     if (r.kind === 'month') return (ymJa(r.ym) || 'その月分') + 'の勤怠を確かめました';
+    if (r.kind === 'leave') return '休暇: ' + rqLeave(b);
     return '';
+  }
+  /* v6（統合 0125）: 休暇の申請の中身。言い方は本人の画面（kintai-self-calc.js の leaveText）と同じ（check/unit/kintai_requests_test.js が見比べる）。
+     特別休暇の名前は今の設定の種類（C.leaveTypesOf）で引き、無い時は印のまま */
+  function rqLeave(b) {
+    b = b && typeof b === 'object' ? b : {};
+    var half = b.half === true ? '・半日' : '', mdn = function (d) { return C.isDate(d) ? (+d.slice(5, 7)) + '/' + (+d.slice(8, 10)) : ''; };
+    if (b.type === 'paid_day') return '有休（1日）';
+    if (b.type === 'paid_half') return '有休（半日）';
+    if (b.type === 'hourly') return '有休（時間 ' + ((+b.minutes || 0) / 60) + ' 時間）';
+    if (b.type === 'special') {
+      var nm = String(b.type_code || '');
+      try { C.leaveTypesOf(rawCfg()).forEach(function (x) { if (x && x.code === b.type_code && x.name) nm = x.name; }); } catch (e) { /* 印のまま */ }
+      return '特別休暇（' + nm + half + '）';
+    }
+    if (b.type === 'comp') return '代休（休日に働いた日 ' + mdn(b.link_date) + half + '）';
+    if (b.type === 'swap') return '振替（働く日 ' + mdn(b.link_date) + '）';
+    return '休暇';
+  }
+  /* v6: 休暇の申請を承認した時の断り。中から呼ぶ kintai_leave_use_add（有休の1日・半日）・kintai_absence_add（ほか）の語は、有給の窓と同じ文にする（申請の語 conflict 等は申請の文） */
+  function rqLeaveMsg(e, body) {
+    var k = e && e.kintai;
+    /* 申請そのものの断り（先に決められた・無い・理由）だけ申請の文。badvalue・locked などは休暇の文（反証 2026-11-24 の 2: 時刻の文が出ていた） */
+    if (k && (k === 'conflict' || k === 'notfound' || k === 'reason') && NG_REQ[k]) return NG_REQ[k];
+    if (k === 'badvalue' && body && body.type === 'special') return '特別休暇の種類が設定から無くなったか、中身が合いません。設定の特別休暇の種類を確かめるか、理由を書いて差し戻してください。';
+    var paid = body && (body.type === 'paid_day' || body.type === 'paid_half');
+    if (k && paid && NG_LEAVE[k]) return NG_LEAVE[k];
+    if (k && !paid && NG_ABS[k]) return NG_ABS[k];
+    return reqMsg(e);
   }
   function rqWho(r) { return String((r && (r.name || r.staff_id)) || ''); }
   function rqRow(id) { return (reqSt && Array.isArray(reqSt.rows) ? reqSt.rows : []).filter(function (r) { return r && String(r.id) === String(id); })[0] || null; }
@@ -2763,6 +2794,8 @@
   /* 申請の一覧・数を捨てて読み直す印。世代を進めて、読み込み中の古い答えで上書きしない（反証レビュー 2026-11-21） */
   function reqReset() { reqSt = null; reqBusy = false; reqGen++; }
   function reqSumReset() { reqSum = null; reqSumBusy = false; reqSumGen++; }
+  /* v6: 休暇の申請は来月分の日付が多い。ホームの承認待ちの数（pending）は統合 0114 の kintai_requests_list が月を問わず数える（p_ym は rows と月の確認の数だけを絞る）ので、
+     来月分の休暇の申請も数に入る。申請のタブの承認待ちの一覧は既定で「すべての月分」（p_ym: null）。月の確認の数（month_confirmed）に p_ym が要るので、ここは月つきのまま */
   function loadReqSum(force) {
     if (reqSumBusy || view !== 'app' || !ym) return;
     if (!force && reqSumFresh()) return;
@@ -2812,7 +2845,7 @@
     var h = '<div class="cd rq no-print"><div class="row"><label>状態 <select id="g-rq-st" class="k5">' + opt(RQ_ST_OPT, reqF.status) + '</select></label>' +
       '<label>月分 <select id="g-rq-ym" class="k5">' + opt([['', 'すべての月分'], ['cur', '表示中の月分（' + perLabel() + '）']], reqF.ym) + '</select></label>' +
       '<button type="button" class="btn sm k5" data-act="rq-reload">読み直す</button></div>' +
-      '<p class="help">職員が自分のスマホの「自分の勤怠」の画面から出した申請です。勤怠の管理者ならだれでも承認・差し戻しできます（差し戻しは理由が必ず）。承認すると、打刻の直しは事務所の打刻として足し、残業・早出は認める時刻を入れます（直しの履歴に「申請から: 」と本人の理由が残ります）。締めた月分の日の申請は承認できません。月の勤怠の確認は承認が要りません（「締めと出力」に確かめた人の数が出ます）。</p>';
+      '<p class="help">職員が自分のスマホの「自分の勤怠」の画面から出した申請です。勤怠の管理者ならだれでも承認・差し戻しできます（差し戻しは理由が必ず）。承認すると、打刻の直しは事務所の打刻として足し、残業・早出は認める時刻を入れ、休暇は有給の画面で入れた時と同じ形（有休の使用・休暇の行）で入れます（直しの履歴に「申請から: 」と本人の理由が残ります）。締めた月分の日の申請は承認できません。月の勤怠の確認は承認が要りません（「締めと出力」に確かめた人の数が出ます）。</p>';
     var st = reqSt && reqSt.key === reqKey() ? reqSt : null;
     if (!st) return h + '<p class="empty">読み込んでいます…</p></div>';
     if (st.err) return h + '<div class="band warn" role="status">' + esc(st.err) + '</div></div>';
@@ -2833,10 +2866,10 @@
   function openReqDecide(id, approve) {
     var r = rqRow(id);
     if (!r || r.status !== 'pending' || busy) return;
-    dlgCtx = { mode: 'rq', id: String(r.id), rev: +r.rev, approve: !!approve, ym: r.ym };
+    dlgCtx = { mode: 'rq', id: String(r.id), rev: +r.rev, approve: !!approve, ym: r.ym, kind: r.kind, body: r.body && typeof r.body === 'object' ? r.body : {} };
     var b = '<div class="kv"><span>職員</span><span>' + esc(rqWho(r)) + '</span><span>種類</span><span>' + esc(RQ_KIND[r.kind] || r.kind || '') + '</span><span>日付</span><span>' + esc(rqDate(r)) + '</span>' +
       '<span>中身</span><span>' + esc(rqBody(r)) + '</span><span>本人の理由</span><span>' + esc(r.reason || '') + '</span></div>' +
-      (approve ? '<p>承認すると、この中身で勤怠を直します（直しの履歴に「申請から: 」と本人の理由が残ります）。承認した後は月を読み直します。</p>' : '<p>差し戻すと、本人のスマホの申請の一覧に「差し戻し」と理由が出ます。勤怠は変えません。</p>') +
+      (approve ? '<p>' + (r.kind === 'leave' ? '承認すると、この休暇を有給の画面で入れた時と同じ形で入れます' : '承認すると、この中身で勤怠を直します') + '（直しの履歴に「申請から: 」と本人の理由が残ります）。承認した後は月を読み直します。</p>' : '<p>差し戻すと、本人のスマホの申請の一覧に「差し戻し」と理由が出ます。勤怠は変えません。</p>') +
       '<div class="row"><label style="flex:1">' + (approve ? 'メモ（任意・200字まで）' : '差し戻しの理由（必ず・200字まで）') + '<input type="text" id="e-rq-note" class="k5" maxlength="200" style="flex:1;min-width:14em" autocomplete="off"></label></div><p class="help" id="e-msg" role="alert"></p>';
     openDlg(approve ? '申請を承認する' : '申請を差し戻す', b, false, approve ? '承認する' : '差し戻す', 'rq-go');
     dlgCtx.init = formState();
@@ -2856,7 +2889,8 @@
       busy = false; restore();
       if (!isNetErr(e) && !reqKnown(e)) note(ctx.approve ? '申請の承認' : '申請の差し戻し', e);
       if (e && (e.kintai === 'conflict' || e.kintai === 'notfound')) { reqReset(); reqSumReset(); if (tab === 'requests') paint(); }   /* 一覧を裏で読み直す */
-      if ($('g-dlg').open && $('e-msg') === msg) msg.textContent = reqMsg(e); else toast(reqMsg(e));
+      var em = ctx.kind === 'leave' ? rqLeaveMsg(e, ctx.body) : reqMsg(e);   /* v6: 休暇は有給の窓と同じ断りの文 */
+      if ($('g-dlg').open && $('e-msg') === msg) msg.textContent = em; else toast(em);
     });
   }
   /* 締めの画面: 承認待ちの申請と、月の勤怠を確かめた人の数（締めは止めない・仮置き）。印刷には出さない */
@@ -2996,6 +3030,164 @@
     });
   }
 
+  /* ── v6: 打刻漏れの督促（契約 ROOT-v6「2」・care-backend 統合 0125）──
+   * ホームの「今日」の箱の「まだ出勤していない」人（not_in）と、「打刻漏れ・要確認」のうち出勤か退勤の打刻が無い塊（missing_in・missing_out だけ・ほかの要確認には付けない）に、
+   * 箱の下の並び（画面だけ・印刷しない）で「知らせる」を出す。押すと確かめの窓（SUDialog）→ kintai_notice_add。本人が「自分の勤怠」を開いた時に決まった文が出る（メール・通知は送らない）。
+   * 送った後は「知らせ済み 時刻」「見た 時刻」（kintai_notices_list）・取り消し（kintai_notice_void・理由つき）。スマホを登録していない人（kintai_self_devices の使える状態の
+   * スマホが0台）にはボタンを出さず「スマホ未登録」。スマホの一覧を読めない時は押せる形のまま（仮置き）。本人が見られるのは14日以内の知らせなので、打刻漏れは14日以内の日だけ */
+  var NODB_NT = 'データベースの更新がまだです（打刻漏れの知らせの仕組みが入るまで、知らせは送れません）。';
+  var NG_NT = { locked: 'この日は締めた月分に入っているため、知らせられません。',
+    notfound: 'この人は勤怠の名簿にいないか、お休み中（退職・休止）のため知らせられません。読み直してください。',
+    toomany: 'この人のこの日の知らせは、もう2件出しています（1人1日2件まで）。', reason: '取り消す理由を書いてください。',
+    already: 'この知らせはもう取り消してあります。読み直してください。', badkind: '知らせの種類が違います。ページを読み込み直してください。',
+    badvalue: '知らせの形が違います。ページを読み込み直してください。', baddate: '日付が正しくありません。読み直してください。' };
+  function ntMsg(e) { if (e && e.kintai && NG_NT[e.kintai]) return NG_NT[e.kintai]; return noDb(e) ? NODB_NT : msgOf(e); }
+  /* 本人の画面に出る文（決まった文・本人の画面 kintai-self-calc.js の noticeText と同じ頭の文・仮置き） */
+  var NT_TEXT = { missing: 'の打刻が抜けています', not_in: 'の出勤の打刻がまだありません' };
+  var NT_DAYS = 14, NT_MAX = 10;
+  function ntSentence(kind, date) { return (+date.slice(5, 7)) + '月' + (+date.slice(8, 10)) + '日' + NT_TEXT[kind]; }
+  function ntBack(d, n) { var x = new Date(Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)) - n * 86400000); return x.getUTCFullYear() + '-' + (x.getUTCMonth() < 9 ? '0' : '') + (x.getUTCMonth() + 1) + '-' + (x.getUTCDate() < 10 ? '0' : '') + x.getUTCDate(); }
+  var ntSt = null, ntBusy = false, ntGen = 0, ntNoDb = false;   /* 知らせの一覧 { ym, at, rows, err }（表示中の月分・30秒で古い） */
+  var devSt = null, devBusy = false, devGen = 0;                /* スマホを登録している人 { at, has:{staff_id:true}|null }（5分で古い） */
+  function ntReset() { ntSt = null; ntBusy = false; ntGen++; }
+  function ntLoad(force) {
+    if (ntBusy || view !== 'app' || !ym) return;
+    if (ntNoDb) { if (!ntSt || ntSt.ym !== ym) ntSt = { ym: ym, at: Date.now(), rows: [], err: NODB_NT }; return; }
+    if (!force && ntSt && ntSt.ym === ym && Date.now() - ntSt.at < 30000) return;
+    var atYm = ym, my = ++ntGen; ntBusy = true;
+    rpc('kintai_notices_list', { p_ym: atYm }).then(okOr).then(function (r) {
+      if (my !== ntGen) return;
+      ntSt = { ym: atYm, at: Date.now(), rows: (Array.isArray(r.rows) ? r.rows : []).filter(function (x) { return x && typeof x === 'object' && !x.voided_at && NT_TEXT[x.kind] && C.isDate(x.work_date); }) };
+    })['catch'](function (e) {
+      if (my !== ntGen) return;
+      if (noDb(e)) ntNoDb = true;
+      else if (!isNetErr(e) && !reqKnown(e)) note('知らせの読み込み', e);
+      ntSt = { ym: atYm, at: Date.now(), rows: [], err: noDb(e) ? NODB_NT : '知らせを読めませんでした: ' + ntMsg(e) };
+    }).then(function () {
+      if (my !== ntGen) return;
+      ntBusy = false;
+      if (view === 'app' && !busy && !printAll && tab === 'home') paint();
+    });
+  }
+  function devLoad() {
+    if (devBusy || view !== 'app' || reqNoDb || ntNoDb) return;
+    if (devSt && Date.now() - devSt.at < 300000) return;
+    var my = ++devGen; devBusy = true;
+    rpc('kintai_self_devices', { p_staff_id: null }).then(okOr).then(function (r) {
+      if (my !== devGen) return;
+      var has = {};
+      (Array.isArray(r.devices) ? r.devices : []).forEach(function (d) { if (d && d.state === 'active' && !d.revoked_at && typeof d.staff_id === 'string') has[d.staff_id] = true; });
+      devSt = { at: Date.now(), has: has };
+    })['catch'](function (e) {
+      if (my !== devGen) return;
+      if (!isNetErr(e) && !reqKnown(e) && !noDb(e)) note('スマホの一覧（知らせ）', e);
+      devSt = { at: Date.now(), has: null };   /* 読めない時は押せる形のまま（仮置き） */
+    }).then(function () {
+      if (my !== devGen) return;
+      devBusy = false;
+      if (view === 'app' && !busy && !printAll && tab === 'home') paint();
+    });
+  }
+  /* 知らせる相手の行。kind 'not_in'＝今日の塊に not_in_yet の印がある人（ホームの「今日」の箱と同じ）・'missing'＝要確認の一覧の missing_in／missing_out の塊（14日以内の日・新しい日から）。
+     返す: [{ sid, name, date, what }]（同じ人・同じ日は1行） */
+  function ntTargets(kind) {
+    if (!month) return [];
+    var names = {}, td = today(), out = [], seen = {};
+    (month.people || []).forEach(function (p) { if (p.staff) names[p.staff.staff_id] = dispName(p.staff); });
+    var push = function (sid, date, what) { var k = sid + '|' + date; if (seen[k]) return; seen[k] = 1; out.push({ sid: sid, name: names[sid] != null ? names[sid] : String(sid), date: date, what: what }); };
+    if (kind === 'not_in') {
+      (month.people || []).forEach(function (p) {
+        (p.days || []).forEach(function (d) {
+          if (d.date !== td) return;
+          (d.blocks || []).forEach(function (b) { if ((b.flags || []).indexOf('not_in_yet') >= 0) push(p.staff.staff_id, td, 'まだ出勤していません'); });
+        });
+      });
+      return out;
+    }
+    var lo = ntBack(td, NT_DAYS - 1);
+    C.reviewList(month).slice().reverse().forEach(function (r) {
+      if (r.date > td || r.date < lo) return;
+      var mi = r.marks.indexOf('missing_in') >= 0, mo = r.marks.indexOf('missing_out') >= 0;
+      if (mi || mo) push(r.staffId, r.date, mi && mo ? '出勤・退勤の打刻がありません' : mi ? '出勤の打刻がありません' : '退勤の打刻がありません');
+    });
+    return out;
+  }
+  /* その人・その日・その種類の取り消していない知らせ（いちばん新しい1件） */
+  function ntOf(sid, date, kind) {
+    var rows = ntSt && !ntSt.err ? ntSt.rows : [], best = null;
+    rows.forEach(function (n) { if (n.staff_id === sid && n.work_date === date && n.kind === kind && (!best || String(n.created_at) > String(best.created_at))) best = n; });
+    return best;
+  }
+  /* 時刻の文（今日なら時:分・ほかの日は月/日を添える） */
+  function ntMd(d) { return (+d.slice(5, 7)) + '/' + (+d.slice(8, 10)); }   /* ホームの箱の行と同じ「1/13」の形 */
+  function ntAt(v) { var t = ms(v); if (t == null) return ''; var d = C.jstDate(t); return (d !== today() ? ntMd(d) + ' ' : '') + hm(t); }
+  /* 箱の下の並び（無い時は ''）。印刷しない（no-print） */
+  function noticeHtml(kind) {
+    var list = ntTargets(kind);
+    if (!list.length) return '';
+    var h = '<div class="hnt no-print" data-nt="' + kind + '"><p class="hnt-h">本人のスマホに知らせる（「自分の勤怠」を開いた時に出ます）</p>';
+    if (ntNoDb) return h + '<p class="hnt-s">' + esc(NODB_NT) + '</p></div>';
+    if (ntSt && ntSt.err && ntSt.ym === ym) h += '<p class="hnt-s">' + esc(ntSt.err) + '</p>';
+    var loaded = !!ntSt && ntSt.ym === ym && !ntSt.err;
+    var rows = list.slice(0, NT_MAX).map(function (x) {
+      var n = loaded ? ntOf(x.sid, x.date, kind) : null, st = '', btn = '';
+      if (n) {
+        st = '知らせ済み ' + ntAt(n.created_at) + '・' + (n.seen_at ? '見た ' + ntAt(n.seen_at) : 'まだ見ていません');
+        btn = '<button type="button" class="btn sm k5" data-act="nt-void" data-id="' + esc(n.id) + '" data-sid="' + esc(x.sid) + '">取り消す</button>';
+      } else if (devSt && devSt.has && !devSt.has[x.sid]) {
+        st = 'スマホ未登録';
+      } else if (!ntSt || ntSt.ym !== ym) {
+        st = '読み込み中…';
+      } else {
+        btn = '<button type="button" class="btn sm k5" data-act="nt-add" data-sid="' + esc(x.sid) + '" data-date="' + esc(x.date) + '" data-kind="' + kind + '">知らせる</button>';
+      }
+      return '<li><span class="ntn"><b>' + esc(x.name) + '</b> ' + esc(ntMd(x.date)) + ' ' + esc(x.what) + '</span>' + (st ? '<span class="nts">' + esc(st) + '</span>' : '') + btn + '</li>';
+    }).join('');
+    var more = list.length > NT_MAX ? '<p class="hnt-s">ほか ' + (list.length - NT_MAX) + ' 件（上の ' + NT_MAX + ' 件の後に出します）</p>' : '';
+    return h + '<ul>' + rows + '</ul>' + more + '</div>';
+  }
+  /* 箱と並びを1つの升に入れる（並びが無い時は箱だけ＝今の形のまま） */
+  function ntWrap(boxH, ntH) { return ntH ? '<div class="hcell">' + boxH + ntH + '</div>' : boxH; }
+  function ntAsk(q) { try { if (window.SUDialog && window.SUDialog.confirm) return window.SUDialog.confirm(q); } catch (e) { /* ブラウザの窓に落とす */ } return Promise.resolve(confirm(q)); }
+  function ntPrompt(q, def) { try { if (window.SUDialog && window.SUDialog.prompt) return window.SUDialog.prompt(q, def); } catch (e) { /* ブラウザの窓に落とす */ } return Promise.resolve(window.prompt ? window.prompt(q, def) : null); }
+  function ntName(sid) { var s = staffById(sid); return s ? dispName(s) : String(sid || ''); }
+  function ntAdd(sid, date, kind, btn) {
+    if (busy || !NT_TEXT[kind] || !C.isDate(date) || !sid) return;
+    var q = ntName(sid) + ' さんの本人の画面に「' + ntSentence(kind, date) + '」と出します。よろしいですか？\n（本人が「自分の勤怠」を開いた時に出ます。メール・通知は送りません）';
+    ntAsk(q).then(function (yes) {
+      if (!yes || busy) return;
+      busy = true; var restore = pressBusy(btn, '送っています…');
+      rpc('kintai_notice_add', { p_staff_id: sid, p_work_date: date, p_kind: kind }).then(okOr).then(function (r) {
+        busy = false;
+        toast(r.dup ? 'もう知らせてあります（同じ日の同じ知らせ）' : '知らせました（本人が「自分の勤怠」を開いた時に出ます）');
+        ntReset(); paint();
+      })['catch'](function (e) {
+        busy = false; restore();
+        if (noDb(e)) ntNoDb = true;
+        else if (!isNetErr(e) && !reqKnown(e)) note('打刻漏れの知らせ', e);
+        toast(ntMsg(e));
+        if (e && e.kintai === 'notfound') { ntReset(); paint(); }
+      });
+    });
+  }
+  function ntVoid(id, sid, btn) {
+    if (busy || !/^[0-9a-f-]{36}$/i.test(String(id || ''))) return;
+    ntPrompt(ntName(sid) + ' さんへの知らせを取り消します（本人の画面から消えます）。取り消す理由を書いてください。', '押し間違い').then(function (reason) {
+      if (reason == null || busy) return;
+      reason = String(reason).trim();
+      if (!reason) { toast(NG_NT.reason); return; }
+      busy = true; var restore = pressBusy(btn, '取り消しています…');
+      rpc('kintai_notice_void', { p_id: String(id), p_reason: reason.slice(0, 200) }).then(okOr).then(function () {
+        busy = false; toast('知らせを取り消しました'); ntReset(); paint();
+      })['catch'](function (e) {
+        busy = false; restore();
+        if (!isNetErr(e) && !reqKnown(e) && !noDb(e)) note('知らせの取り消し', e);
+        toast(ntMsg(e));
+        if (e && (e.kintai === 'already' || e.kintai === 'notfound')) { ntReset(); paint(); }
+      });
+    });
+  }
+
   /* ── 操作 ── */
   /* v5 段5: 申請のタブに入る時は一覧を捨てて読み直す（読み込み中の古い答えは世代で捨てる・反証レビュー 2026-11-21）。タブの移りの本体の文は変えない */
   function setTab(t) { if (t === 'requests') reqReset(); if (TABS.indexOf(t) < 0) t = 'home'; if (!settingsLeaveOk()) return; tab = t; lsSet(LS_TAB, t); paint(); if (t === 'home' || t === 'day' || t === 'review') quietReload(); }
@@ -3024,6 +3216,8 @@
       if (t) { var td0 = b.getAttribute('data-date'); if (td0 && C.isDate(td0)) selDate = td0; if (b.getAttribute('data-rq') === 'pending') reqF = { status: 'pending', ym: '' }; setTab(t); return; }   /* v5 段5: 申請の箱・締めの画面からは承認待ち・すべての月分で開く */   /* ホームの「今日」の箱は今日の日ごとへ */
       var a = b.getAttribute('data-act');
       if (!a) return;
+      if (a === 'nt-add') { ntAdd(b.getAttribute('data-sid'), b.getAttribute('data-date'), b.getAttribute('data-kind'), b); return; }   /* v6: 打刻漏れの知らせ */
+      if (a === 'nt-void') { ntVoid(b.getAttribute('data-id'), b.getAttribute('data-sid'), b); return; }
       if (a === 'edit') openEdit(b.getAttribute('data-sid'), b.getAttribute('data-date'), b.hasAttribute('data-bi') ? +b.getAttribute('data-bi') : null, b.getAttribute('data-rv'));
       else if (a === 'person') { selStaff = b.getAttribute('data-sid'); setTab('person'); }
       else if (a === 'dlg-close') { if (!dirty() || confirm('保存していない直しがあります。閉じますか？')) closeDlg(); }

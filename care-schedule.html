@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-m+F0xaaO+QcKV1u0yacXoqgyKeK0eDq4LpDcOqNbWx4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-DdodkgckJfwv8VMcsWG6n5mAdL+FliNBM3wgxi3jSmc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -7988,10 +7988,32 @@ window.addEventListener('beforeprint', function () {
   insertPrintOmitMarks_();
   /* 下限の倍率でも予算に収まらない方だけ、盤面全体を縮める（文字が読める下限 zoomMin まで） */
   var cw = $('#cal-wrap'); if (cw) cw.style.zoom = PRINT_ZOOM < 1 ? String(PRINT_ZOOM) : '';
+  addPrintHonorific_();
 });
+/* 週ボードの紙の見出しの氏名に「様」を付ける（本人指示 2026-11-24）。
+   紙に出るのはヘッダの利用者の選択欄の文字なので、印刷の間だけ選んでいる方の文字に「様」を足し、
+   印刷の後（restoreWeekPrint_）で元の氏名に戻す。保存する氏名・名簿・ほかの紙は変えない。
+   既に「様」で終わる名前には重ねない。 */
+function addPrintHonorific_() {
+  try {
+    var sel = $('#resident-select'); if (!sel || !sel.value) return;
+    var op = sel.options[sel.selectedIndex]; if (!op || op.dataset.suOrigName != null) return;
+    var t = op.textContent || ''; if (!t || /様$/.test(t)) return;
+    op.dataset.suOrigName = t; op.textContent = t + '様';
+  } catch (e) { csNote_('週ボード印刷の様', e); }
+}
+function removePrintHonorific_() {
+  try {
+    var sel = $('#resident-select'); if (!sel) return;
+    Array.prototype.forEach.call(sel.options, function (op) {
+      if (op.dataset.suOrigName != null) { op.textContent = op.dataset.suOrigName; delete op.dataset.suOrigName; }
+    });
+  } catch (e) { csNote_('週ボード印刷の様', e); }
+}
 // 印刷後の画面復元（冪等）。afterprint 単独に依存せず、matchMedia('print') 終了・操作起点でも呼ぶ
 // ＝afterprint が発火しない環境(一部WebView/PDF)で圧縮座標が残り、クリック/ドラッグが誤時刻で保存する事故を防ぐ。
 function restoreWeekPrint_() {
+  removePrintHonorific_();
   if (!PRINT_MAP && !document.body.classList.contains('week-print')) return;   // 既に通常＝no-op
   PRINT_MAP = null; PRINT_SEGS = null; PRINT_ZOOM = 1; PRINT_PARTS = null;
   var cw = $('#cal-wrap'); if (cw) cw.style.zoom = '';
@@ -10006,6 +10028,6 @@ function csRunAction_(el, type, e) {
 <div class="srh-pop" id="cs-hop-pop" role="group" aria-label="この方の画面" hidden></div>
 <!-- 本番の健康（2026-11-14・統合 0088）: 新しい保存先への保存の失敗を種類と理由だけ数えて送る。保存の動きには触れない・読めなくても動く -->
 <script src="su-health.js?v=2026-11-14"></script>
-<script src="su-report.js?v=2026-11-23" data-tool="週間計画"></script>
+<script src="su-report.js?v=2026-11-23.2" data-tool="週間計画"></script>
 </body>
 </html>

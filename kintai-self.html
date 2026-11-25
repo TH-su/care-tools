@@ -13,7 +13,7 @@
 <!--
   自分の勤怠（職員本人のスマホの画面・2026-11-20 新設・契約 ~/Claude/Work/勤怠管理アプリ/ROOT-v5-freee.md「段5」と「段5 の設計の改め」・care-backend 統合 0114・受け口 kintai-self）
   ════════════════════════════════════════════════════════════════
-  目的: 職員が自分のスマホで、自分の勤怠（予定・打刻・数えた時刻・実働）・有給の残りと期限・申請（打刻の直し・残業と早出・月の勤怠の確認）を見る・出す。
+  目的: 職員が自分のスマホで、自分の勤怠（予定・打刻・数えた時刻・実働）・有給の残りと期限・申請（打刻の直し・残業と早出・月の勤怠の確認・休暇＝v6）を見る・出す。事務所からの打刻漏れの知らせ（v6・統合 0125）を上に出す。
   ★ログイン（su-auth.js）・許可リスト・現場のアカウントには乗らない（この画面から入居者の画面へは入れない）。共通ログインの部品は読まない。
   ★登録: 管理者が勤怠の画面で出した1回限り・10分の登録の番号（QR の住所の # の後ろか、8文字）と、本人が決める4桁の暗証番号を2回入れる。
     受け口が作った鍵（32バイトの乱数）だけをこの端末に置く（localStorage）。開くたびに暗証番号を入れる。
@@ -21,7 +21,7 @@
   ★勤怠の数え方は管理画面と同じ部品（kintai-calc.js の computeMonth・kintai-leave.js）。画面だけで印刷しない。
   ★表示はすべて textContent と部品の組み立て（HTML の代入は使わない）。console は使わない。
 -->
-<link rel="stylesheet" href="kintai-self.css?v=2026-11-20">
+<link rel="stylesheet" href="kintai-self.css?v=2026-11-24">
 </head>
 <body>
 <header class="hdr">
@@ -80,6 +80,8 @@
 
   <!-- 本体（暗証番号で開いた後） -->
   <section id="v-app" hidden>
+    <!-- v6（統合 0125）: 事務所からの打刻漏れの知らせ（決まった文だけ・開いた時に1回読む・その日の打刻がそろったら出さない） -->
+    <div id="nt-box" class="nt-box" role="status" hidden></div>
     <div class="tabs" role="tablist" aria-label="表示の切り替え">
       <button type="button" role="tab" class="tab" id="t-days" data-tab="days" aria-controls="p-days">勤怠</button>
       <button type="button" role="tab" class="tab" id="t-leave" data-tab="leave" aria-controls="p-leave">有給</button>
@@ -109,11 +111,32 @@
             <option value="punch">打刻の直し（押し忘れ・押し間違い）</option>
             <option value="overtime">残業・早出</option>
             <option value="month">月の勤怠の確認（確かめました）</option>
+            <option value="leave">休暇（有休・特別休暇・代休・振替）</option>
           </select>
         </div>
+        <div class="fld" id="g-lvtype" hidden>
+          <label for="rq-lt">休暇の種類</label>
+          <select id="rq-lt"></select>
+          <p class="help" id="rq-lv-remain" aria-live="polite"></p>
+        </div>
         <div class="fld" id="g-date">
-          <label for="rq-date">勤務の日</label>
+          <label for="rq-date" id="rq-date-l">勤務の日</label>
           <input id="rq-date" type="date">
+        </div>
+        <div id="g-leave" hidden>
+          <div class="fld" id="g-lv-hours">
+            <label for="rq-lh">時間</label>
+            <select id="rq-lh"></select>
+          </div>
+          <div class="fld" id="g-lv-code">
+            <label for="rq-lc">特別休暇の種類</label>
+            <select id="rq-lc"></select>
+          </div>
+          <label class="chk" id="g-lv-half"><input id="rq-lhalf" type="checkbox"> 半日</label>
+          <div class="fld" id="g-lv-link">
+            <label for="rq-ll" id="rq-ll-l">休日に働いた日</label>
+            <input id="rq-ll" type="date">
+          </div>
         </div>
         <div id="g-punch">
           <div class="fld">
@@ -142,7 +165,7 @@
           <select id="rq-ym"></select>
         </div>
         <div class="fld" id="g-reason">
-          <label for="rq-reason">理由（194字まで）</label>
+          <label for="rq-reason" id="rq-reason-l">理由（194字まで）</label>
           <textarea id="rq-reason" rows="3" maxlength="194"></textarea>
         </div>
         <div class="msg" id="rq-msg" role="status" hidden></div>
@@ -160,7 +183,7 @@
 <script src="kintai-calc.js?v=2026-12-26"></script>
 <script src="kintai-leave.js?v=2026-11-20.4"></script>
 <script src="kintai-self-calc.js?v=2026-12-26"></script>
-<script src="kintai-self.js?v=2026-11-20"></script>
-<script src="su-report.js?v=2026-11-23" data-tool="自分の勤怠"></script>
+<script src="kintai-self.js?v=2026-11-24"></script>
+<script src="su-report.js?v=2026-11-23.2" data-tool="自分の勤怠"></script>
 </body>
 </html>
