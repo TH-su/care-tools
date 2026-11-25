@@ -174,7 +174,7 @@ const html = read('kintai.html'), js = read('kintai.js');
 const iS = html.indexOf('kintai-shaho.js?v='), iJ = html.indexOf('kintai.js?v=');
 t('kintai.html は kintai-shaho.js を kintai.js の前に読む', iS > 0 && iJ > iS);
 t('社保のタブは初めは隠してある（hidden）', /<button type="button" role="tab" data-tab="shaho" hidden>/.test(html));
-t('kintai.js: タブの一覧に shaho・切の時はホームへ戻す・入れた時だけタブを出す', /'holiday', 'shaho'\]/.test(js) && /tab === 'shaho' && data && !shOn\(\)\) tab = 'home'/.test(js) && /shTab\.hidden = !shv/.test(js));
+t('kintai.js: タブの一覧に shaho・切の時はホームへ戻す・入れた時だけタブを出す', /'holiday', 'shaho', 'cert'\]/.test(js) && /tab === 'shaho' && data && !shOn\(\)\) tab = 'home'/.test(js) && /shTab\.hidden = !shv/.test(js));
 t('kintai.js: ホームの箱は入れた時だけ（shBoxHtml は切なら空）', /function shBoxHtml\(\) \{\n    if \(!shOn\(\)\) return '';/.test(js));
 const blk = js.slice(js.indexOf('/* ── 社会保険の加入の知らせ'), js.indexOf('/* ── 段A1'));
 t('給与の読み込みは payroll_bootstrap だけで、覆い・暗証番号の窓を出さない', /rpc\('payroll_bootstrap'/.test(blk) && !/showGate|payroll_pin|pinRecheck/.test(blk));
