@@ -598,11 +598,28 @@
     put($('p-main'), (tab === 'bonus' ? '' : bandsHtml()) + h);
   }
 
+  /* 手順の段階（2026-11-26・見せるだけ。計算・保存・確定の動きは変えない）: 勤怠の締め → 計算 → 下書き保存 → 確定。
+     済んだ段は done、最初のまだの段を cur にする。dirty（保存していない計算・調整、または保存の後に設定が変わった stale）の間は「下書き保存」を済みにしない。
+     振込・書き出しは段に入れない（全銀は既定で使わず、確定し直した月の書き出しの印と食い違うため・反証レビュー 2026-11-26） */
+  var FLOW = ['勤怠の締め', '計算', '下書き保存', '確定'];
+  function flowSteps(o) {
+    var s = o && o.status, fz = s === 'confirmed' || s === 'exported';
+    var done = [!!(o && o.locked) || fz, fz || s === 'draft' || !!(o && o.hasCalc), fz || (s === 'draft' && !(o && o.dirty)), fz];
+    var cur = done.indexOf(false);
+    return FLOW.map(function (name, i) { return { name: name, state: done[i] ? 'done' : (i === cur ? 'cur' : 'todo') }; });
+  }
+  function flowHtml() {
+    var st = flowSteps({ locked: bs.kintai.locked, hasCalc: !!calc, status: status(), dirty: dirty || !!(bs.run && bs.run.stale) });
+    return '<ol class="su-steps" aria-label="給与の手順">' + st.map(function (x) {
+      return '<li class="' + x.state + '"' + (x.state === 'cur' ? ' aria-current="step"' : '') + '>' + esc(x.name) + '<span class="su-st-s">' + (x.state === 'done' ? '済み' : x.state === 'cur' ? '次はここ' : 'まだ') + '</span></li>';
+    }).join('') + '</ol>';
+  }
   function statusText() {
     var s = status(), r = bs.run;
     if (s === 'confirmed') return '<span class="tag ok">✓ 確定済み</span> ' + esc(at(r.confirmed_at));
     if (s === 'exported') return '<span class="tag ok">✓ 確定済み・書き出し済み</span> ' + esc(at(r.exported_at || r.confirmed_at));
     if (s === 'draft') return '<span class="tag warn">下書き</span> 保存 ' + esc(at(r.saved_at));
+    if (calc) return '<span class="tag warn">計算済み・まだ保存していません</span>';   /* 手順の段階（計算 済み）と食い違わないように（2026-11-26） */
     return '<span class="tag">まだ計算していません</span>';
   }
   function sumHtml(list) {
@@ -627,7 +644,7 @@
   function lineName(l) { return l && l.sec === 'att' && /Min$/.test(String(l.code || '')) ? String(l.name || '').replace('（分）', '') : String((l && l.name) || ''); }
   function bySec(it, sec) { return arr(it.lines).filter(function (l) { return l && l.sec === sec; }); }
   function runHtml() {
-    var c = C(), h = '<div class="cd"><h2>' + esc(periodText()) + '</h2><div class="row">';
+    var c = C(), h = '<div class="cd"><h2>' + esc(periodText()) + '</h2>' + flowHtml() + '<div class="row">';
     h += bs.kintai.locked ? '<span class="tag ok">✓ 勤怠は締めてあります</span>' + esc(at(bs.kintai.locked_at)) : '<span class="tag ng">⚠ 勤怠が未締め</span><span class="help">勤怠管理で締めるまで、計算はできますが保存・確定はできません。</span><a class="btn" href="' + esc(kintaiHref()) + '">🕒 勤怠管理でこの月分を締める</a>';
     h += '</div><div class="row">状態: ' + statusText() + '</div>';
     if (bs.run && bs.run.stale && !frozen()) h += '<div class="band warn">⚠ 保存した後に勤怠・給与の設定が変わりました。「計算する」で計算し直してください。</div>';
@@ -2713,5 +2730,5 @@
   if (window.SUFacility && typeof window.SUFacility.onReady === 'function') window.SUFacility.onReady(go); else go();
   /* 試験だけが読む（画面の動きには使わない） */
   window.__payrollTest = { attSame: attSame, normBoot: normBoot, figures: figures, totals: totals, parseCsv: parseCsv, decode: decode, importCols: importCols, buildImport: buildImport, missingOf: missingOf, attFromKintai: attFromKintai, toSave: toSave, qtyText: qtyText, TABS: TABS, IDLE_MS: IDLE_MS,
-    bonusNorm: bonusNorm, bonusYtd: bonusYtd, bonusPrevOf: bonusPrevOf, bonusToSave: bonusToSave, bonusBlocks: bonusBlocks, bonusShoyoCsv: bonusShoyoCsv, bonusNoDb: bonusNoDb, bonusBlankMsg: bonusBlankMsg, bonusNoProfile: bonusNoProfile, bonusBlankTargets: bonusBlankTargets };
+    flowSteps: flowSteps, bonusNorm: bonusNorm, bonusYtd: bonusYtd, bonusPrevOf: bonusPrevOf, bonusToSave: bonusToSave, bonusBlocks: bonusBlocks, bonusShoyoCsv: bonusShoyoCsv, bonusNoDb: bonusNoDb, bonusBlankMsg: bonusBlankMsg, bonusNoProfile: bonusNoProfile, bonusBlankTargets: bonusBlankTargets };
 })();
