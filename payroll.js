@@ -35,6 +35,17 @@
   function isField() { try { return localStorage.getItem('su_device_role') === 'field'; } catch (_) { return false; } }
   function lsGet(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
   function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (_) {} }
+  /* 勤怠管理との行き来（2026-11-25 本人指示）: 勤怠管理から ?ym=YYYY-MM で来た時だけ、その月分で開く（形で確かめ、違えば今月）。
+     読んだら URL から消す。月分は端末に残さない（今までどおり再読み込みは今月で開く） */
+  function hopYm() {
+    var q = null; try { q = new URLSearchParams(location.search); } catch (_) { return null; }
+    if (!q || !q.has('ym')) return null;
+    try { history.replaceState(null, '', location.pathname + location.hash); } catch (_) {}
+    var y = q.get('ym'); return isYm(y) ? y : null;
+  }
+  /* 頭の「勤怠管理へ」: 今見ている月分の「締めと出力」のタブで開く */
+  function kintaiHref() { return 'kintai.html?ym=' + encodeURIComponent(ym || '') + '&tab=close'; }
+  function paintHop() { var a = $('p-to-kin'); if (a) a.href = kintaiHref(); }
   function isYm(v) { return typeof v === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(v); }
   function isDate(v) { return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v); }
   function shiftYm(v, n) { var y = +v.slice(0, 4), m = +v.slice(5) - 1 + n; y += Math.floor(m / 12); m = ((m % 12) + 12) % 12; return y + '-' + (m < 9 ? '0' : '') + (m + 1); }
@@ -671,7 +682,7 @@
   function bySec(it, sec) { return arr(it.lines).filter(function (l) { return l && l.sec === sec; }); }
   function runHtml() {
     var c = C(), h = '<div class="cd"><h2>' + esc(periodText()) + '</h2><div class="row">';
-    h += bs.kintai.locked ? '<span class="tag ok">✓ 勤怠は締めてあります</span>' + esc(at(bs.kintai.locked_at)) : '<span class="tag ng">⚠ 勤怠が未締め</span><span class="help">勤怠管理で締めるまで、計算はできますが保存・確定はできません。</span><a class="btn" href="kintai.html">勤怠管理へ</a>';
+    h += bs.kintai.locked ? '<span class="tag ok">✓ 勤怠は締めてあります</span>' + esc(at(bs.kintai.locked_at)) : '<span class="tag ng">⚠ 勤怠が未締め</span><span class="help">勤怠管理で締めるまで、計算はできますが保存・確定はできません。</span><a class="btn" href="' + esc(kintaiHref()) + '">🕒 勤怠管理でこの月分を締める</a>';
     h += '</div><div class="row">状態: ' + statusText() + '</div>';
     if (bs.run && bs.run.stale && !frozen()) h += '<div class="band warn">⚠ 保存した後に勤怠・給与の設定が変わりました。「計算する」で計算し直してください。</div>';
     var kb0 = !frozen() && bs.kcheck && bs.kcheck.state !== 'checking' ? kintaiBlock() : null;
@@ -2652,7 +2663,7 @@
       ask('保存していない計算・調整があります。月分を変えると捨てます。よろしいですか？').then(function (ok) { if (ok) { dirty = false; adjEdits = {}; importRows = null; calc = null; setYm(nv); } });
       return;
     }
-    ym = nv; $('p-ym').value = nv; bs = null; calc = null; adjEdits = {}; dirty = false; openSid = null; slipSid = null; importRows = null; zcheck = null; notice = null; loadErr = null;
+    ym = nv; $('p-ym').value = nv; paintHop(); bs = null; calc = null; adjEdits = {}; dirty = false; openSid = null; slipSid = null; importRows = null; zcheck = null; notice = null; loadErr = null;
     load(false);
   }
   function bind() {
@@ -2776,7 +2787,7 @@
         view = 'boot';
         $('p-app').hidden = true;
         var t = lsGet(LS_TAB); tab = TABS.indexOf(t) >= 0 && (t !== 'settings' || isAdmin()) ? t : 'run';
-        ym = todayYm(); $('p-ym').value = ym;
+        ym = hopYm() || todayYm(); $('p-ym').value = ym; paintHop();   /* 勤怠管理から来た時はその月分（2026-11-25） */
         bind(); definePrint();
         try { if (window.SUPerf) window.SUPerf.ready(); } catch (_) {}
         return pinStart();
