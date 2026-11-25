@@ -18,7 +18,7 @@
  */
 (function () {
   'use strict';
-  var TABS = ['run', 'slip', 'export', 'bonus', 'profile', 'yearend', 'settings'];   /* 'bonus' は賞与（2026-11-23 足した・統合 0121）・'yearend' は年末調整（2026-11-23・中身は payroll-yearend-ui.js） */
+  var TABS = ['run', 'slip', 'export', 'bonus', 'profile', 'yearend', 'santei', 'settings'];   /* 'bonus' は賞与（2026-11-23 足した・統合 0121）・'santei' は定時決定（2026-11-26・中身は payroll-santei-ui.js）・'yearend' は年末調整（2026-11-23・中身は payroll-yearend-ui.js） */
   var LS_TAB = 'payroll_tab';
   var IDLE_MS = 10 * 60 * 1000;
   var gen = 0, view = 'boot', tab = 'run', ym = null, bs = null, role = null, loadErr = null;
@@ -593,6 +593,7 @@
     else if (tab === 'export') h = exportHtml();
     else if (tab === 'profile') h = profileHtml();
     else if (tab === 'yearend') h = YEU() ? YEU().html(yeCtx()) : '<div class="band ng" role="alert">計算の部品が読み込めていません。ページを読み込み直してください。</div>';
+    else if (tab === 'santei') h = STU() ? STU().html(stCtx()) : '<div class="band ng" role="alert">計算の部品が読み込めていません。ページを読み込み直してください。</div>';
     else h = isAdmin() ? settingsHtml() : '';
     put($('p-main'), (tab === 'bonus' ? '' : bandsHtml()) + h);
   }
@@ -745,6 +746,14 @@
       parseCsv: parseCsv, decode: decode, put: put, say: say, ask: ask, fail: fail, noDb: noDb, download: download,
       frozen: !!bs && frozen(), runRev: bs && bs.run ? bs.run.rev : 0, payDate: bs ? payDate() : '', corpName: corpName(),
       adjOf: adjOf, setAdj: function (sid, list) { if (!frozen()) adjEdits[sid] = list; }, compute: doCompute, printSlips: printYe };
+  }
+
+  /* ── 定時決定のタブ（payroll-santei-ui.js）への受け渡し（2026-11-26）。今ある関数を渡すだけで、月の給与の計算・保存の流れは変えない ── */
+  function STU() { var u = window.PayrollSanteiUI; return u && typeof u.html === 'function' ? u : null; }
+  function stReset() { try { if (STU()) STU().reset(); } catch (e) { note('定時決定を捨てる', e); } }
+  function stCtx() {
+    return { rpc: rpc, esc: esc, yen: yen, bs: bs, ym: ym, paint: paint, toast: toast, openDlg: openDlg, closeDlg: closeDlg, isAdmin: isAdmin, note: note,
+      say: say, ask: ask, fail: fail, noDb: noDb, download: download, reloadMain: function () { if (!isDirty()) load(false); } };
   }
 
   /* ── 振込と書き出し ── */
@@ -2364,7 +2373,7 @@
     if (masked || view !== 'app') return;
     masked = true; maskGen++; closeDlg(); importRows = null; printList = null; audit = null; put($('p-print'), '');
     bPrint = null;   /* 賞与の紙の用意も捨てる（2026-11-23） */
-    yePrint = null; yeReset();   /* 年末調整の申告・累計・取り込み・紙も捨てる（2026-11-23） */
+    yePrint = null; yeReset(); stReset();   /* 年末調整の申告・累計・取り込み・紙も捨てる（2026-11-23） */
     paint();
   }
   function paintMasked() {
@@ -2432,7 +2441,7 @@
   function showLock(msg) {
     view = 'lock'; pinGen++; masked = false; maskGen++; closeDlg(); bs = null; importRows = null; printList = null; audit = null; members = null;
     bb = null; bGen++; bLoading = false; bPrint = null;   /* 賞与の読んだ物も捨てる（入れた賞与額はメモリに残す・2026-11-23） */
-    yePrint = null; yeReset();   /* 年末調整の物も捨てる（2026-11-23） */
+    yePrint = null; yeReset(); stReset();   /* 年末調整の物も捨てる（2026-11-23） */
     pinMsg = msg || '';
     $('p-app').hidden = true; put($('p-main'), ''); put($('p-print'), '');
     var st = pinSt || {}, g = $('p-gate'); g.hidden = false;
@@ -2543,7 +2552,7 @@
   function showGate(why) {
     view = 'gate'; masked = false; closeDlg(); bs = null; calc = null; importRows = null; audit = null; members = null;
     bGen++; bLoading = false; bonusClear();   /* 賞与も捨てる（2026-11-23） */
-    yePrint = null; yeReset();   /* 年末調整も捨てる（2026-11-23） */
+    yePrint = null; yeReset(); stReset();   /* 年末調整も捨てる（2026-11-23） */
     $('p-app').hidden = true; put($('p-main'), ''); put($('p-print'), '');
     var g = GATE[why] || GATE.denied, gt = $('p-gate'); gt.hidden = false;
     put(gt, '<h2>' + esc(g[0]) + '</h2><p>' + esc(g[1]) + '</p><p><a class="btn pri" href="login.html?next=payroll.html">ログインの画面へ</a> <a class="btn" href="index.html">メニューへ戻る</a></p>');
@@ -2567,7 +2576,7 @@
       ask('保存していない計算・調整があります。月分を変えると捨てます。よろしいですか？').then(function (ok) { if (ok) { dirty = false; adjEdits = {}; importRows = null; calc = null; setYm(nv); } });
       return;
     }
-    ym = nv; $('p-ym').value = nv; paintHop(); bs = null; calc = null; adjEdits = {}; dirty = false; openSid = null; slipSid = null; importRows = null; zcheck = null; notice = null; loadErr = null;
+    ym = nv; $('p-ym').value = nv; paintHop(); if (STU()) STU().onYm(); bs = null; calc = null; adjEdits = {}; dirty = false; openSid = null; slipSid = null; importRows = null; zcheck = null; notice = null; loadErr = null;
     load(false);
   }
   function bind() {
@@ -2620,6 +2629,7 @@
       else if (a === 'pin-lock') pinLockNow('manual');
       else if (a === 'pin-reset') { var m1 = members && members[+b.getAttribute('data-i')]; if (m1) pinReset(m1.email, b); }
       else if (/^ye-/.test(a) && YEU() && view === 'app' && !masked) YEU().onClick(yeCtx(), a, b);
+      else if (/^st-/.test(a) && STU() && view === 'app' && !masked) STU().onClick(stCtx(), a, b);   /* 定時決定（2026-11-26） */
       else if (a.indexOf('b-') === 0) bonusAct(a, b);   /* 賞与（2026-11-23） */
     });
     document.addEventListener('toggle', function (e) {
@@ -2641,6 +2651,7 @@
       else if (id === 's-who') { slipSid = e.target.value; paint(); }
       else if (id === 'i-file') { var f = e.target.files && e.target.files[0]; importFile(f); e.target.value = ''; }
       else if (YEU() && view === 'app' && !masked && (/^ye-/.test(id || '') || (e.target.getAttribute && e.target.getAttribute('data-ye-pick')))) YEU().onChange(yeCtx(), e.target);
+      else if (STU() && view === 'app' && !masked && (/^st-/.test(id || '') || (e.target.getAttribute && e.target.getAttribute('data-st-cc') !== null))) STU().onChange(stCtx(), e.target);   /* 定時決定（2026-11-26） */
     });
     document.querySelector('.tabs').addEventListener('keydown', function (e) {
       if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;

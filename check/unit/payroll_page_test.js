@@ -70,12 +70,12 @@ t('HTML を入れるのは put の1か所だけ', (J.match(/\.innerHTML/g) || []
 console.log('\n— 4. タブの復元 —');
 /* ★賞与のタブ（2026-11-23・設計 CONTRACT-bonus-v1.md §4「payroll_tab に 'bonus' を足す」）と、年末調整のタブ（2026-11-23・凍結仕様 ROOT-yearend.md の C）を
    両方足したので、ホワイトリストとタブの数の期待を7つに改めた（並びは賞与を振込と書き出しの次・年末調整を職員の給与設定の次・設定を最後。ほかの決まりは同じ） */
-t('タブのホワイトリスト7つ（賞与と年末調整を足した・設定は最後）', /var TABS = \['run', 'slip', 'export', 'bonus', 'profile', 'yearend', 'settings'\];/.test(J));
+t('タブのホワイトリスト8つ（賞与・年末調整・定時決定を足した・設定は最後）', /var TABS = \['run', 'slip', 'export', 'bonus', 'profile', 'yearend', 'santei', 'settings'\];/.test(J));
 t('読み戻しはホワイトリスト・設定は管理者だけ・それ以外は今月の給与', /tab = TABS\.indexOf\(t\) >= 0 && \(t !== 'settings' \|\| isAdmin\(\)\) \? t : 'run';/.test(boot));
 t('切り替えも同じ決まり', /if \(TABS\.indexOf\(t\) < 0 \|\| \(t === 'settings' && !isAdmin\(\)\)\) t = 'run';/.test(J));
 /* 2026-11-25: 勤怠管理から ?ym= で来た時だけその月分で開く（URL から読み、端末には残さない・形の確かめは hopYm） */
 t('月分は端末に残さない（勤怠管理から来た月分か、今日の月分から始める）', /ym = hopYm\(\) \|\| todayYm\(\); \$\('p-ym'\)\.value = ym;/.test(boot) && !/lsSet\([^)]*ym/.test(J));
-t('画面のタブは7つ（賞与と年末調整を足した・設定は初めは隠す）', (H.match(/role="tab" data-tab="/g) || []).length === 7 && /data-tab="bonus">賞与</.test(H) && /data-tab="yearend">年末調整</.test(H) && /data-tab="settings" hidden>設定</.test(H));
+t('画面のタブは8つ（賞与・年末調整・定時決定（2026-11-26）を足した・設定は初めは隠す）', (H.match(/role="tab" data-tab="/g) || []).length === 8 && /data-tab="santei">定時決定</.test(H) && /data-tab="bonus">賞与</.test(H) && /data-tab="yearend">年末調整</.test(H) && /data-tab="settings" hidden>設定</.test(H));
 
 console.log('\n— 5. 確定の窓 —');
 const oc = fnBody(J, 'openConfirm', 'function confirmGo');
@@ -299,9 +299,9 @@ console.log('\n— 年末調整のタブ（2026-11-23・ROOT-yearend.md の C）
   const U = read('payroll-yearend-ui.js');
   /* 画面の登録（payroll.js はタブの登録と呼び口だけ） */
   /* ★賞与のタブと一緒になったので7つの並び（年末調整は職員の給与設定の次・設定の前） */
-  t('TABS に yearend（設定の前・ホワイトリストのまま）', /var TABS = \['run', 'slip', 'export', 'bonus', 'profile', 'yearend', 'settings'\];/.test(J));
+  t('TABS に yearend・santei（設定の前・ホワイトリストのまま）', /var TABS = \['run', 'slip', 'export', 'bonus', 'profile', 'yearend', 'santei', 'settings'\];/.test(J));
   /* ★賞与のタブと一緒になったので7つ */
-  t('画面のタブは7つ・「年末調整」は data-tab="yearend"（設定は初めは隠す）', (H.match(/role="tab" data-tab="/g) || []).length === 7 && /<button type="button" role="tab" data-tab="yearend">年末調整<\/button>/.test(H) && /data-tab="settings" hidden>設定</.test(H));
+  t('画面のタブは8つ・「年末調整」は data-tab="yearend"（設定は初めは隠す・定時決定を 2026-11-26 に足した）', (H.match(/role="tab" data-tab="/g) || []).length === 8 && /<button type="button" role="tab" data-tab="yearend">年末調整<\/button>/.test(H) && /data-tab="settings" hidden>設定</.test(H));
   const iF = H.indexOf('<script src="payroll-freee-slips.js?v='), iYR = H.indexOf('<script src="payroll-yearend-rates.js?v='), iY = H.indexOf('<script src="payroll-yearend.js?v='), iW = H.indexOf('<script src="payroll-withholding-slip.js?v='), iU = H.indexOf('<script src="payroll-yearend-ui.js?v='), iP = H.indexOf('<script src="payroll.js?v=');
   t('新しい5つの部品を payroll.js より前に ?v= つきで読む', iF > 0 && iYR > iF && iY > iYR && iW > iY && iU > iW && iP > iU, [iF, iYR, iY, iW, iU, iP]);
   /* ★賞与の入った main を取り込み 2026-11-23.6 に上げたので、期待の版を改めた */

@@ -67,6 +67,10 @@ jobs:
         if: success() || failure()
         run: node check/payroll_e2e.mjs --shots check/out/flow
 
+      - name: 給与の定時決定のタブを通す（4〜6月の確定分・算定基礎届の控え・9月分からの反映・見込み・check/payroll_santei_e2e.mjs・2026-11-26）
+        if: success() || failure()
+        run: node check/payroll_santei_e2e.mjs --shots check/out/flow
+
       - name: 画面の写し（架空データ）を成果物として残す
         if: failure()
         uses: actions/upload-artifact@v4

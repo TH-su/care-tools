@@ -13,7 +13,7 @@
  */
 (function (root) {
   'use strict';
-  var VERSION = 'rates-2026-11-23';   /* 2026-11-23: 熊本の最低賃金を発効日つきで入れた。 2026-11-21: 通勤手当の非課税限度の表を埋めた */
+  var VERSION = 'rates-2026-11-23';   /* 2026-11-26: 厚生年金の上限の引き上げ（令和9年9月分から）を ym つきの grade・isStd に足した。ym なしの呼び方（今の給与の計算）の結果は変わらないので版は上げない。 2026-11-23: 熊本の最低賃金を発効日つきで入れた。 2026-11-21: 通勤手当の非課税限度の表を埋めた */
 
   /* 協会けんぽ（都道府県番号 '43'＝熊本）。from〜to は保険料の対象月（両端を含む）
      出典: 協会けんぽ 令和8年度 都道府県単位保険料率・熊本支部の料額表（R8_43kumamotoi.pdf）
@@ -43,6 +43,21 @@
   ];
   /* 厚生年金の等級1〜32＝健保の等級4〜35（等級1は93,000円未満・等級32は635,000円以上） */
   var PENSION_FROM = 4, PENSION_TO = 35;
+  /* 厚生年金の上限の引き上げ（2026-11-26 に確かめた・年金制度改正法 2025）: 令和9年9月分から 68万円（健保の等級36）・
+     令和10年9月分から 71万円（37）・令和11年9月分から 75万円（38）。from は保険料の対象月（YYYY-MM）。
+     出典: 厚労省「年金制度改正法が成立しました」 https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000147284_00024.html （月まで。日は書いていない）
+     ym を渡さない呼び方（今の給与の計算）は今までどおり PENSION_TO（65万円）で引く */
+  var PENSION_TOP = [
+    { from: '2027-09', to: 36 },
+    { from: '2028-09', to: 37 },
+    { from: '2029-09', to: 38 }
+  ];
+  function pensionTo(ym) {
+    var t = PENSION_TO;
+    if (!isYm(ym)) return t;
+    for (var i = 0; i < PENSION_TOP.length; i++) if (PENSION_TOP[i].from <= ym) t = PENSION_TOP[i].to;
+    return t;
+  }
 
   /* 最低賃金（都道府県・発効日つき・時間額・地域別最低賃金）。引く日は締め日（期間の終わり）。発効日をまたぐ期間は新しい額で判定する（厳しい側・知らせだけ）
      出典（2026-11-23 に確かめた）:
@@ -127,22 +142,23 @@
     return null;
   }
 
-  /* 報酬月額 amount の等級 { health:{grade,std}, pension:{grade,std} } */
-  function grade(amount) {
+  /* 報酬月額 amount の等級 { health:{grade,std}, pension:{grade,std} }。
+     ym（保険料の対象月・任意）を渡すと、その月の厚生年金の上限で引く（定時決定は9月分の上限）。渡さなければ今までどおり */
+  function grade(amount, ym) {
     var a = Number(amount);
     if (!isFinite(a) || a < 0) return null;
     var gi = 0;
     for (var i = 0; i < HEALTH_GRADES.length; i++) if (a >= HEALTH_GRADES[i][2]) gi = i;
     var h = HEALTH_GRADES[gi];
-    var pi = Math.min(Math.max(gi, PENSION_FROM - 1), PENSION_TO - 1);
+    var pi = Math.min(Math.max(gi, PENSION_FROM - 1), pensionTo(ym) - 1);
     return { health: { grade: h[0], std: h[1] }, pension: { grade: pi - (PENSION_FROM - 1) + 1, std: HEALTH_GRADES[pi][1] } };
   }
 
-  /* std が表にある標準報酬月額か（kind: 'health'|'pension'） */
-  function isStd(kind, std) {
+  /* std が表にある標準報酬月額か（kind: 'health'|'pension'・ym は保険料の対象月で任意＝渡さなければ今までどおり） */
+  function isStd(kind, std, ym) {
     for (var i = 0; i < HEALTH_GRADES.length; i++) {
       if (HEALTH_GRADES[i][1] !== std) continue;
-      if (kind === 'pension') return HEALTH_GRADES[i][0] >= PENSION_FROM && HEALTH_GRADES[i][0] <= PENSION_TO;
+      if (kind === 'pension') return HEALTH_GRADES[i][0] >= PENSION_FROM && HEALTH_GRADES[i][0] <= pensionTo(ym);
       return true;
     }
     return false;
@@ -178,8 +194,8 @@
 
   var api = {
     VERSION: VERSION, HEALTH: HEALTH, EMPLOYMENT: EMPLOYMENT, HEALTH_GRADES: HEALTH_GRADES,
-    MIN_WAGE: MIN_WAGE, COMMUTE: COMMUTE,
-    health: health, employment: employment, grade: grade, isStd: isStd, minWage: minWage, commuteLimit: commuteLimit,
+    MIN_WAGE: MIN_WAGE, COMMUTE: COMMUTE, PENSION_TOP: PENSION_TOP,
+    health: health, employment: employment, grade: grade, isStd: isStd, pensionTo: pensionTo, minWage: minWage, commuteLimit: commuteLimit,
     taxTable: function (payDate) {
       var T = (typeof require !== 'undefined' && typeof window === 'undefined') ? require('./payroll-tax-table.js') : root.PayrollTaxTable;
       return T ? T.forPayDate(payDate) : null;

@@ -19,7 +19,7 @@
 <script src="su-dialog.js?v=2026-11-14.2"></script>
 <script src="kintai-calc.js?v=2026-11-23.1"></script>
 <script src="payroll-tax-table.js?v=2026-11-23.2"></script>
-<script src="payroll-rates.js?v=2026-11-23"></script>
+<script src="payroll-rates.js?v=2026-11-26"></script>
 <script src="payroll-calc.js?v=2026-11-23.2"></script>
 <script src="payroll-export.js?v=2026-11-21"></script>
 <link rel="stylesheet" href="su-print.css?v=2026-11-13">
@@ -56,6 +56,10 @@ main{padding:12px 16px 40px}
 .band.ng{background:var(--ng-bg);color:var(--ng)}
 .band.ok{background:var(--ok-bg);color:var(--ok)}
 .tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
+/* 定時決定の表（2026-11-26）: 数字と等級は折り返さず、表の枠の中で横に送る。理由の文だけ折り返す */
+.st-t th,.st-t td{white-space:nowrap}
+.st-t .why{white-space:normal;min-width:12em;max-width:22em}
+.st-t tr.out td{color:var(--muted)}
 table{border-collapse:collapse;width:100%;background:var(--card)}
 th,td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
 th{background:var(--th);font-weight:600}
@@ -170,6 +174,7 @@ dialog::backdrop{background:rgba(20,33,61,.35)}
     <button type="button" role="tab" data-tab="bonus">賞与</button>
     <button type="button" role="tab" data-tab="profile">職員の給与設定</button>
     <button type="button" role="tab" data-tab="yearend">年末調整</button>
+    <button type="button" role="tab" data-tab="santei">定時決定</button>
     <button type="button" role="tab" data-tab="settings" hidden>設定</button>
   </nav>
   <main id="p-main" role="tabpanel"></main>
@@ -183,6 +188,8 @@ dialog::backdrop{background:rgba(20,33,61,.35)}
 <script src="payroll-yearend.js?v=2026-11-23"></script>
 <script src="payroll-withholding-slip.js?v=2026-11-23"></script>
 <script src="payroll-yearend-ui.js?v=2026-11-23.2"></script>
+<script src="payroll-santei.js?v=2026-11-26"></script>
+<script src="payroll-santei-ui.js?v=2026-11-26"></script>
 <script src="payroll.js?v=2026-11-25"></script>
 <script src="su-shell.js?v=2026-11-19"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
