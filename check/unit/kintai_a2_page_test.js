@@ -71,6 +71,9 @@ console.log('\n— 3b. 締めの控えに ext を入れる —');
   const go = sl(K, '  function lockGo(', '  function unlockMonth(');
   t('締め: 数え直して窓の数字と同じ時だけ、補助項目を読み直して ext を作り、控え（snapshotOf のまま）の最上段に入れて送る', go.indexOf('return a2ExtForLock(d).then(function (ext) {') > go.indexOf('sameFigures(shown, now)') && /var snap = C\.snapshotOf\(month\);\s*snap\.ext = ext;\s*return rpc\('kintai_month_lock', \{ p_ym: ym, p_snapshot: snap \}\)/.test(go));
   t('補助項目が読めない時は締めない（fail で窓に出す・世代が変われば捨てる）', /\}, function \(e\) \{ if \(my !== gen\) return; fail\(e, '締める時の補助項目の読み込み'\); \}\);/.test(go) && /a2_noextras: '補助項目が読めません。締めていません/.test(K));
+  t('会議の設定を保存していない時は締めない（窓で止める・押した時も読み直した補助項目で止める）', /if \(EX\.meetingUnsaved && EX\.meetingUnsaved\(cfg, a2LockRows\)\) throw Object\.assign\(new Error\('meetunset'\), \{ kintai: 'a2_meetunset' \}\);/.test(K) && /if \(mu\) \{ var lgo = \$\('g-dlg-f'\)\.querySelector\('\[data-act="lock-go"\]'\); if \(lgo\) lgo\.remove\(\); \}/.test(K) && /a2_meetunset: '社内会議を時間外に足すかを、設定のタブで保存してから締めてください'/.test(K));
+  const imp = sl(K, '  function importShift(my)', '  /* ── 読み込みと計算 ── */');
+  t('予定の取り込み: badrow で同行の印の行がある時だけ、印を外して1回だけ送り直す（記録 note に「同行の印を外して送り直した」）', /res\.error === 'badrow' && bt\.rows\.some\(function \(x\) \{ return x && 'companion' in x; \}\)/.test(imp) && /note\('予定の取り込み', new Error\('同行の印を外して送り直した'\)\);/.test(imp) && (imp.match(/rpc\('kintai_schedule_put'/g) || []).length === 2);
   t('関数の無い DB（0127 の前）で補助項目を保存していない時だけ、補助項目なしで数える', /if \(noDb\(e\) && !Array\.isArray\(cfg\.extraItems\)\) return EX\.buildExt\(month, \[\], d\.schedule \|\| \[\], cfg\);/.test(K));
 }
 
@@ -117,7 +120,11 @@ const ATT = (() => {
   const M = ATT.attMap(snap, true);
   t('控えの元を a.ext に（定義にある元は 0 で埋める・止めた組は埋めない）', JSON.stringify(M.sA1.ext) === JSON.stringify({ 'x:dist': 3.5, 't:meeting': 0, 'g:hayaoso': 1, 'k:commute': 0 }) && JSON.stringify(M.sA2.ext) === JSON.stringify({ 'x:dist': 0, 't:meeting': 0, 'g:hayaoso': 0, 'k:commute': 0 }), [M.sA1.ext, M.sA2.ext]);
   t('取り込みの人は記号の組・通勤回数を埋めない（給与が「控えにありません」と知らせる）・補助項目は入る', JSON.stringify(M.sA3.ext) === JSON.stringify({ 'x:dist': 1, 't:meeting': 0 }), M.sA3.ext);
-  t('会議の足し分で時間外・60時間超・休日労働を置き換え、meetingMin を持つ', M.sA1.legalOverMin === 75 && M.sA1.meetingMin === 45 && M.sA2.legalOverMin === 30 && M.sA2.meetingMin === undefined);
+  t('会議の足し分で時間外・60時間超・休日労働を置き換え、meetingMin を持つ・労働時間数（workMin）にも会議の分を足す（960＋45）', M.sA1.legalOverMin === 75 && M.sA1.meetingMin === 45 && M.sA1.workMin === 1005 && M.sA2.legalOverMin === 30 && M.sA2.meetingMin === undefined);
+  t('会議0の人は今と1分も変わらない（attFromKintai と同じ値・ext の鍵だけ足す）', (() => { const a0 = ATT.attFromKintai(snap.rows[1], true), a1 = M.sA2; return Object.keys(a0).every((k) => JSON.stringify(a0[k]) === JSON.stringify(a1[k])) && Object.keys(a1).filter((k) => !(k in a0)).join() === 'ext'; })(), M.sA2);
+  const snapNo = { rows: snap.rows.slice(0, 1), ext: { v: 1, def: Object.assign({}, def, { meetingOt: null }), rows: { sA1: { 't:meeting': 45 } } } };
+  const MN = ATT.attMap(snapNo, true);
+  t('会議の設定を保存しないまま締めた控え（def.meetingOt が null）の印（extNoMeet）・会議の足し分は当てない', MN.sA1.extNoMeet === true && MN.sA1.ext['t:meeting'] === 45 && MN.sA1.legalOverMin === 30 && MN.sA1.workMin === 960);
   const old = ATT.attMap({ rows: snap.rows }, true);
   t('ext の無い控えは今のまま（ext も meetingMin も無い）', old.sA1.ext === undefined && old.sA1.legalOverMin === 30 && old.sA1.meetingMin === undefined);
   t('attFromKintai は ext を見ない（数え直しの比べ attSame は今のまま）', ATT.attFromKintai(snap.rows[0]).ext === undefined);
@@ -159,7 +166,8 @@ const pend = [];
   }).then((rs) => {
     t('ext の無い控え: 補助項目を読まずに今までどおり比べる・期間の初日が 2026-12-16 以降で会議を足す設定なら extMissing の印（それより前は付けない）', rs[1].state === 'ok' && !rs[1].extMissing && rs[0].extMissing === true, rs);
   }));
-  t('確定を止める警告に ext_missing・meeting_src を入れる（BLOCK_WARN_SCREEN＝画面だけで止める）', /var BLOCK_WARN_SCREEN = \{ ext_missing: 1, meeting_src: 1 \};/.test(J) && /var BLOCK_WARN = \{[^}]*\bext_missing: 1, meeting_src: 1 \};/.test(J));
+  t('確定を止める警告に ext_missing・meeting_src・meeting_unset を入れる（BLOCK_WARN_SCREEN＝画面だけで止める）', /var BLOCK_WARN_SCREEN = \{ ext_missing: 1, meeting_src: 1, meeting_unset: 1 \};/.test(J) && /var BLOCK_WARN = \{[^}]*\bext_missing: 1, meeting_src: 1, meeting_unset: 1 \};/.test(J));
+  t('meeting_unset: 控えの def.meetingOt が無く、時間の補助項目の合計（t:）が0でない人', /if \(a && a\.extNoMeet && Object\.keys\(obj\(a\.ext\)\)\.some\(function \(k\) \{ return \/\^t:\/\.test\(k\) && a\.ext\[k\] > 0; \}\)\) it\.warnings = arr\(it\.warnings\)\.concat\(\[\{ code: 'meeting_unset'/.test(J));
   const ca = sl(J, '  function computeAll()', '  function doCompute()');
   t('計算: 印のある月分は警告 ext_missing（文は仕様どおり）・明細の勤怠の欄に「うち社内会議」（表示だけ・額 0）', /if \(a && bs\.kcheck && bs\.kcheck\.extMissing\) it\.warnings = arr\(it\.warnings\)\.concat\(\[\{ code: 'ext_missing', msg: 'この月分の勤怠の控えに補助項目がありません。勤怠の締めを外して締め直してください' \}\]\);/.test(ca)
     && /\{ sec: 'att', code: 'meetingMin', name: 'うち社内会議（分）', qty: a\.meetingMin, unit: null, amount: 0/.test(ca));

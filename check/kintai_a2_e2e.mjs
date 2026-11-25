@@ -32,11 +32,12 @@ const PUN = (() => { const m = FX.monthOf(YM), out = []; m.schedule.filter((r) =
 const WORKDAYS_K01 = FX.monthOf(YM).schedule.filter((r) => r.kind === 'work' && r.staff_id === 'sK01').length;
 const ITEMS = [{ code: 'dist', name: '移動距離', kind: 'number', unit: 'km', decimals: 1, active: true }, { code: 'checkup', name: '健診/有休', kind: 'count', unit: '', decimals: 0, active: true },
   { code: 'checkup_nocommute', name: '健診通勤手当なし', kind: 'count', unit: '', decimals: 0, active: true }, { code: 'meeting', name: '社内会議', kind: 'time', unit: '', decimals: 0, active: true }];
-const shiftInit = (ym) => {
+const shiftInit = (a) => {
   let kv;
+  const ym = a.ym, cells = a.cells || {}, staff = a.staff || [];
   Object.defineProperty(window, 'SUKv', { configurable: true, get() { return kv; }, set(v) {
     kv = v;
-    if (v && typeof v === 'object') v.callShift = () => Promise.resolve({ ok: true, entries: { ['sched:' + ym + ':plan']: { data: { cells: {}, meta: { confirmedAt: ym + '-01T00:00:00+09:00' } } }, staff: { data: [] }, symbols: { data: [] }, settings: { data: {} } } });
+    if (v && typeof v === 'object') v.callShift = () => Promise.resolve({ ok: true, entries: { ['sched:' + ym + ':plan']: { data: { cells, meta: { confirmedAt: ym + '-01T00:00:00+09:00' } } }, staff: { data: staff }, symbols: { data: [] }, settings: { data: {} } } });
   } });
 };
 const readDl = async (page, sel) => {
@@ -48,7 +49,7 @@ const cellsOf = (line) => { const o = []; let c = '', q = false; for (let i = 0;
 async function open(browser, st, tabName) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
   await ctx.addInitScript((s) => { try { for (const k in s) localStorage.setItem(k, s[k]); } catch (e) { /* 控えが使えない時は既定 */ } }, Object.assign({}, FX.storage, { kintai_tab: tabName, kintai_ym: YM }));
-  await ctx.addInitScript(shiftInit, YM);
+  await ctx.addInitScript(shiftInit, { ym: YM, cells: st.shiftCells || {}, staff: st.shiftStaff || [] });
   for (const r of FX.routes) {
     if (r.match === FX.URL + '/**') {
       await ctx.route(r.match, (route) => {
@@ -68,6 +69,8 @@ async function open(browser, st, tabName) {
           }
           return json(mm);
         }
+        /* 段A2（反証レビュー 2026-11-25・high）: 0129 の前の DB の真似。companion の鍵のある行は badrow で断る */
+        if (name === 'kintai_schedule_put') { st.puts = (st.puts || []).concat([p.p_rows]); if (st.rejectComp && (p.p_rows || []).some((x) => 'companion' in x)) return json({ ok: false, error: 'badrow', row: 1 }); return json({ ok: true, rows: (p.p_rows || []).length }); }
         if (name === 'kintai_month_lock') { st.locked = true; st.snapshot = p.p_snapshot; return json({ ok: true }); }
         if (name === 'kintai_settings_put') { st.config = p.p_config; st.rev++; return json({ ok: true, rev: st.rev }); }
         if (name === 'kintai_extras_get') {
@@ -154,6 +157,40 @@ try {
     t('今の「法定外」の列は会議を足す前のまま', iLo >= 0 && l1[iLo] === hm(lo0), [iLo, l1[iLo]]);
     t('補助項目の列はその前のまま（社内会議（時間）の列は 1:30）', head.indexOf('社内会議（時間）') > 0 && head.indexOf('社内会議（時間）') < head.length - 3 && l1[head.indexOf('社内会議（時間）')] === '1:30', head);
     t('書き出しの注意の窓に段A2 の注意は出ない', !alerts.some((a) => /記号の組/.test(a)), alerts);
+    t('画面の例外 0', errs.length === 0, errs);
+    await ctx.close();
+  }
+
+  console.log('\n— 5. 0129 の前の DB（同行の印を断る）でも予定の取り込みを止めない —');
+  {
+    const st5 = { base: server.url, calls: [], config: { legal_holiday: 0, csvTime: 'hmm', extraItems: ITEMS }, rev: 3, rows: [], locked: false, rejectComp: true,
+      shiftStaff: [{ id: 'sK01', name: '見本 一郎', mainDivision: '施設', empCode: '9001', active: true }], shiftCells: { sK01: { 1: '早', 2: '早/同' } } };
+    const { ctx, page, errs } = await open(browser, st5, 'person');
+    await page.waitForFunction(() => /補助項目（日ごと）/.test(document.getElementById('g-main').textContent), null, { timeout: 20000 });
+    await page.waitForTimeout(500);
+    const puts = st5.puts || [], withC = puts.filter((r) => r.some((x) => 'companion' in x)), withoutC = puts.filter((r) => r.length && !r.some((x) => 'companion' in x));
+    t('同行の印の行を断られたら、印を外して1回だけ送り直して通る（取り込みの失敗の帯を出さない）', withC.length === 1 && withoutC.length === 1 && withoutC[0].length === withC[0].length && !/シフトを取り込めませんでした/.test(await mainText(page)), [puts.length, withC.length, withoutC.length]);
+    t('送り直した行は印のほかは同じ（記号「早」の2日）', withoutC[0].filter((x) => x.symbol === '早').length === 2);
+    t('画面の例外 0', errs.length === 0, errs);
+    await ctx.close();
+    const st6 = Object.assign({}, st5, { calls: [], puts: [], rejectComp: false });
+    const o6 = await open(browser, st6, 'person');
+    await o6.page.waitForFunction(() => /補助項目（日ごと）/.test(document.getElementById('g-main').textContent), null, { timeout: 20000 });
+    t('0129 の後の DB では1回で送り、同行の印を残す', (st6.puts || []).filter((r) => r.length).length === 1 && st6.puts.filter((r) => r.length)[0].some((x) => x.companion === true));
+    await o6.ctx.close();
+  }
+
+  console.log('\n— 6. 社内会議を時間外に足すかを保存しないまま、会議の時間がある月は締めない —');
+  {
+    const st7 = { base: server.url, calls: [], config: { legal_holiday: 0, csvTime: 'hmm', extraItems: ITEMS, symbolGroups: [], commuteCount: null }, rev: 3, rows: ROWS(), locked: false };
+    const { ctx, page, errs } = await open(browser, st7, 'close');
+    await page.waitForSelector('[data-act="lock"]', { timeout: 20000 });
+    await page.waitForTimeout(800);
+    await page.click('[data-act="lock"]');
+    await page.waitForSelector('#g-dlg[open]', { timeout: 15000 });
+    const dt = await page.textContent('#g-dlg');
+    t('締めの窓に「社内会議を時間外に足すかを、設定のタブで保存してから締めてください」・締めるボタンが無い', /社内会議を時間外に足すかを、設定のタブで保存してから締めてください/.test(dt) && (await page.$('#g-dlg-f [data-act="lock-go"]')) === null, dt.slice(0, 200));
+    t('締めていない', !st7.locked && sentOf(st7, 'kintai_month_lock').length === 0);
     t('画面の例外 0', errs.length === 0, errs);
     await ctx.close();
   }

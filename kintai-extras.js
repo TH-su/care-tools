@@ -336,7 +336,9 @@
     var raw = typeof s.legalOverRawMin === 'number' ? s.legalOverRawMin : (+s.legalOverMin || 0);
     var cap = Math.max(0, (+s.workMin || 0) - (+s.holidayMin || 0)) + non, x = raw + non;
     var lo = Math.min(cfg && cfg.monthRound30 ? round30Of(x) : x, cap);
-    return { legalOverMin: lo, over60Min: Math.max(0, lo - 3600), holidayMin: (+s.holidayMin || 0) + hol, meetingMin: non + hol };
+    /* 反証レビュー（2026-11-25・low）: 上限が効いていた月は、丸め直すと足す前より少なくなることがある（例: 丸める前 70・上限 70・会議 10・30分丸めで 60）。足す前の値を下回らせない */
+    lo = Math.max(lo, +s.legalOverMin || 0);
+    return { legalOverMin: lo, over60Min: Math.max(0, lo - 3600), holidayMin: Math.max((+s.holidayMin || 0) + hol, +s.holidayMin || 0), meetingMin: non + hol };
   }
 
   /* 控えの ext を作る。month は computeMonth の結果・extrasRows は kintai_extras_get の rows・scheduleRows は kintai_month_get の schedule・config は勤怠の設定（保存した値）。
@@ -419,6 +421,14 @@
     });
     return out;
   }
+  /* 社内会議を時間外に足すかを保存しないまま締めようとしている（反証レビュー 2026-11-25・medium）: 設定に鍵 meetingOt が無く（保存していない）、
+   * その月分に初めの案の会議の項目（code meeting）か、時間の補助項目の取り消していない行（分が 0 より多い）がある時に真 */
+  function meetingUnsaved(config, extrasRows) {
+    if (config && typeof config === 'object' && config.meetingOt !== undefined) return false;
+    var tm = dict(); (itemsOf(config) || []).forEach(function (x) { if (x.kind === 'time') tm[x.code] = 1; });
+    return (Array.isArray(extrasRows) ? extrasRows : []).some(function (r) { return r && !r.voided_at && typeof r.code === 'string' && (r.code === MEETING_OT_DEFAULT.code || own(tm, r.code)) && +r.minutes > 0; });
+  }
+  var MEETING_UNSAVED_TEXT = '社内会議を時間外に足すかを、設定のタブで保存してから締めてください';
   var MEETING_OVER_TEXT = '会議の時間が、この日の数えなかった時間より多くなっています。会議の時間が打刻の中で払われていないか確かめてください';
   var MEETING_INPUT_HELP = '予定の外で、残業として認めていない会議の時間を入れます';
   /* 回数の元の名前の形（payroll-calc.js と同じ）。シフトの記号はこの形にならない（試験で確かめる） */
@@ -497,7 +507,7 @@
     GROUPS_MAX: GROUPS_MAX, GROUP_SYM_MAX: GROUP_SYM_MAX, MINUS_MAX: MINUS_MAX, SRC_RE: SRC_RE, SYMBOL_GROUPS_DEFAULT: SYMBOL_GROUPS_DEFAULT, COMMUTE_DEFAULT: COMMUTE_DEFAULT, MEETING_OT_DEFAULT: MEETING_OT_DEFAULT,
     MEETING_OVER_TEXT: MEETING_OVER_TEXT, MEETING_INPUT_HELP: MEETING_INPUT_HELP, normSym: normSym, cleanSymbolGroups: cleanSymbolGroups, cleanCommute: cleanCommute, cleanMeetingOt: cleanMeetingOt,
     groupsOf: groupsOf, commuteOf: commuteOf, meetingOtOf: meetingOtOf, defOf: defOf, cleanDef: cleanDef, isLegalHoliday: isLegalHoliday, adjOf: adjOf, buildExt: buildExt, buildExtDef: buildExtDef,
-    isExt: isExt, sameExt: sameExt, meetingOverUncounted: meetingOverUncounted, srcLabel: srcLabel, meeting36: meeting36, meetingSplitOf: meetingSplitOf, copyJson: copyJson, extCols: extCols, appendExtCsv: appendExtCsv
+    isExt: isExt, sameExt: sameExt, meetingOverUncounted: meetingOverUncounted, srcLabel: srcLabel, meeting36: meeting36, meetingSplitOf: meetingSplitOf, copyJson: copyJson, extCols: extCols, appendExtCsv: appendExtCsv, meetingUnsaved: meetingUnsaved, MEETING_UNSAVED_TEXT: MEETING_UNSAVED_TEXT
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.KintaiExtras = api;

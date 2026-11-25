@@ -94,6 +94,7 @@ console.log('\n— 1〜3. 回数の元を選ぶ → 計算 → 明細の額 → 
   const hm = (m) => Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0');
   t('時間外は会議 60分を足した後（締めた時間外 ' + row1.legalOverMin + '分＋60分）で払う', !!L['時間外労働'] && L['時間外労働'][0] === hm(row1.legalOverMin + 60) && yen(L['時間外労働'][1]) > 0, [L['時間外労働'], row1.legalOverMin]);
   t('明細の勤怠の欄に「うち社内会議 1:00」', !!L['うち社内会議'] && L['うち社内会議'][0] === '1:00', L['うち社内会議']);
+  t('労働時間数（総労働）にも会議の 60分を足す', !!L['総労働'] && L['総労働'][0] === hm(row1.workMin + 60), [L['総労働'], row1.workMin]);
   t('補助項目の読み口を読んだ（kintai_extras_get）', o.routes.calls.some((c) => c.name === 'kintai_extras_get'));
   await p.click('[data-act="save"]');
   await p.waitForFunction(() => { const b = document.querySelector('[data-act="confirm"]'); return b && !b.disabled; }, null, { timeout: 10000 });
@@ -133,6 +134,26 @@ console.log('\n— 4. 会議を足す設定なのに控えに ext が無い月�
   await p.click('[data-act="confirm"]');
   const dlg = await p.textContent('#p-dlg');
   t('確定の窓で止まる（確定できない警告に ext_missing の文・確定のボタンを押せない）', /確定できない警告/.test(dlg) && /この月分の勤怠の控えに補助項目がありません/.test(dlg) && await p.isDisabled('[data-act="confirm-go"]'), dlg.slice(0, 400));
+  t('画面の例外 0', o.errors.length === 0, o.errors);
+  await o.ctx.close();
+}
+
+console.log('\n— 5. 社内会議を時間外に足すかを保存しないまま締めた控え（def.meetingOt が null・会議の時間がある） —');
+{
+  const o = await open({ tab: 'run', start: 'none', a2: { noMeet: true }, clock: new Date('2026-11-20T09:00:00+09:00'), ym: '2026-11' });
+  const p = o.page;
+  await waitApp(p);
+  const m0 = await compute(p);
+  t('計算はできる', m0 === '', m0);
+  await p.click('details.it[data-sid="s-01"] > summary');
+  await p.waitForSelector('details.it[data-sid="s-01"] [data-act="adj"]');
+  const L = await lineOf(p, 's-01');
+  t('会議の足し分は当てない（うち社内会議の行が無い）', !L['うち社内会議'], Object.keys(L));
+  await p.click('[data-act="save"]');
+  await p.waitForFunction(() => { const b = document.querySelector('[data-act="confirm"]'); return b && !b.disabled; }, null, { timeout: 10000 });
+  await p.click('[data-act="confirm"]');
+  const dlg = await p.textContent('#p-dlg');
+  t('確定の窓で止まる（meeting_unset・画面だけ・確定のボタンを押せない）', /確定できない警告/.test(dlg) && /社内会議を時間外に足すかを勤怠の設定で保存しないまま締めた月分です/.test(dlg) && await p.isDisabled('[data-act="confirm-go"]'), dlg.slice(0, 400));
   t('画面の例外 0', o.errors.length === 0, o.errors);
   await o.ctx.close();
 }

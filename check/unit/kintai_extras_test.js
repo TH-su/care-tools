@@ -332,6 +332,19 @@ console.log('\n— 9. 会議 0 の時は computeMonth と同じ・丸め直し�
   t('60時間超は足した後の時間外で数え直す（3590＋60＝3650・60時間超 50分）', a60.legalOverMin === 3650 && a60.over60Min === 50);
   const aCap = EX.adjOf({ legalOverRawMin: 100, legalOverMin: 100, workMin: 100, holidayMin: 0 }, {}, 30, 0);
   t('上限（総労働−休日労働）に会議の分を足す（会議が削られない）', aCap.legalOverMin === 130);
+  /* 反証レビュー（2026-11-25・low）の実測の例: 丸める前 70・上限 70（総労働 70）・会議 10・30分丸め → 丸め直しは 80→60 だが、足す前の 70 を下回らせない */
+  const aMin = EX.adjOf({ legalOverRawMin: 70, legalOverMin: 70, workMin: 70, holidayMin: 0 }, { monthRound30: true }, 10, 0);
+  t('足した後の時間外は足す前（70）を下回らない（丸め直しの 60 にしない）・60時間超は直した後で数える', aMin.legalOverMin === 70 && aMin.over60Min === 0, aMin);
+  const aMin60 = EX.adjOf({ legalOverRawMin: 3650, legalOverMin: 3660, workMin: 3650, holidayMin: 0 }, { monthRound30: true }, 10, 0);
+  t('下回らせない値で60時間超を数え直す（3660→60分）', aMin60.legalOverMin === 3660 && aMin60.over60Min === 60, aMin60);
+  t('休日労働も足す前を下回らない', EX.adjOf({ legalOverRawMin: 0, legalOverMin: 0, workMin: 0, holidayMin: 30 }, {}, 0, 0).holidayMin === 30);
+  /* 社内会議の設定を保存していない月の締めの止め（反証レビュー 2026-11-25・medium） */
+  const mRows = [{ staff_id: 'sA1', date: '2026-12-04', code: 'meeting', minutes: 30 }];
+  t('会議の設定（meetingOt）を保存していない・会議の行がある → 止める', EX.meetingUnsaved({ extraItems: A2_ITEMS }, mRows) === true && EX.meetingUnsaved({}, mRows) === true);
+  t('保存してある（入・切・null）・行が無い・取り消した行だけ・分が0 → 止めない', EX.meetingUnsaved({ meetingOt: { code: 'meeting', on: false } }, mRows) === false && EX.meetingUnsaved({ meetingOt: null }, mRows) === false
+    && EX.meetingUnsaved({}, []) === false && EX.meetingUnsaved({}, [Object.assign({}, mRows[0], { voided_at: 'x' })]) === false && EX.meetingUnsaved({}, [Object.assign({}, mRows[0], { minutes: 0 })]) === false);
+  t('ほかの時間の補助項目の行でも止める（初めの案の code meeting でない時）', EX.meetingUnsaved({ extraItems: A2_ITEMS.concat([{ code: 'mt2', name: '会議2', kind: 'time', decimals: 0, active: true }]) }, [{ staff_id: 'sA1', date: '2026-12-04', code: 'mt2', minutes: 15 }]) === true);
+  t('止める文（仮置き）', EX.MEETING_UNSAVED_TEXT === '社内会議を時間外に足すかを、設定のタブで保存してから締めてください');
 }
 
 console.log('\n— 10. 控えの def から数え直すと同じ（給与の確かめ） —');

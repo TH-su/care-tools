@@ -117,7 +117,7 @@
     badtime: '時刻の形が違います。', baddate: '日付の形が違います。', badkey: '直せない項目が入っていました。',
     badvalue: '入れた値を受け付けられませんでした（休憩は 0〜600 分・メモは 400 字まで・認める時刻はその日の前日〜翌日の中）。',
     clientid: '同じ打刻がもう記録されています。', notyet: '月末を過ぎてから締められます。',
-    a2_noextras: '補助項目が読めません。締めていません（給与へ渡す記号の組・通勤回数・社内会議の数が控えに入らないため）。通信（Wi-Fi）を確かめて、もう一度「締める」を押してください。', a2_noparts: '補助項目の部品を読み込めませんでした。締めていません。ページを読み込み直してください。',   /* 段A2（文は仮置き） */
+    a2_noextras: '補助項目が読めません。締めていません（給与へ渡す記号の組・通勤回数・社内会議の数が控えに入らないため）。通信（Wi-Fi）を確かめて、もう一度「締める」を押してください。', a2_noparts: '補助項目の部品を読み込めませんでした。締めていません。ページを読み込み直してください。', a2_meetunset: '社内会議を時間外に足すかを、設定のタブで保存してから締めてください',   /* 段A2（文は仮置き） */
     badperiod: 'この月分の期間を決められませんでした。管理者に知らせてください。', overlap: 'ほかの締めた月分と期間が重なるため締められません。管理者に知らせてください。',
     closeday: '締めた月分と期間が重なるため、締め日を変えられません。',
     periodchanged: 'この月分の期間が、画面を開いた後に変わりました（締め日の変更など）。読み直してから、もう一度締めてください。',
@@ -242,6 +242,15 @@
           chain = chain.then(function (go) {
             if (!go || my !== gen) return false;   /* 待つ間に月を替えた時は、前の月の予定を送らない（指摘5） */
             return rpc('kintai_schedule_put', { p_ym: bt.cm, p_rows: bt.rows }).then(function (res) {
+              /* 段A2: 同行の印（companion）を受けない DB（統合 0129 の前）は知らない鍵を badrow で断る。印のある行がある時だけ、印を外して1回だけ送り直す
+                 （2回目も断られたら今と同じ失敗・取り込みの順に関係なく止めない） */
+              if (res && res.ok === false && res.error === 'badrow' && bt.rows.some(function (x) { return x && 'companion' in x; })) {
+                note('予定の取り込み', new Error('同行の印を外して送り直した'));
+                var plain = bt.rows.map(function (x) { var y = {}; for (var k in x) if (k !== 'companion') y[k] = x[k]; return y; });
+                return rpc('kintai_schedule_put', { p_ym: bt.cm, p_rows: plain });
+              }
+              return res;
+            }).then(function (res) {
               if (res && res.ok === false && res.error === 'locked') return true;   /* そのカレンダー月は全部締めてある＝取り込まない */
               okOr(res);
               if (res.skipped && shiftInfo) shiftInfo.skipped += res.skipped;
@@ -1784,17 +1793,26 @@
     return { text: out.text, warn: warn + (Object.keys(imp).length ? (warn ? '\n' : '') + 'freee の月の集計を取り込んだ職員の記号の組・通勤回数は数えていません（欄は空）。' : '') };
   }
   /* 締める時の控え: 補助項目を読み直して ext を作る（読めない時は締めない）。返す: Promise<ext> */
+  var a2LockRows = [];
   function a2ExtForLock(d) {
     if (!EX || typeof EX.buildExt !== 'function') return Promise.reject(Object.assign(new Error('extras'), { kintai: 'a2_noparts' }));
     var cfg = (d && d.settings && d.settings.config) || {};
+    a2LockRows = [];
     return rpc('kintai_extras_get', { p_ym: ym }).then(okOr).then(function (r) {
-      return EX.buildExt(month, Array.isArray(r.rows) ? r.rows : [], d.schedule || [], cfg);
+      a2LockRows = Array.isArray(r.rows) ? r.rows : [];
+      return EX.buildExt(month, a2LockRows, d.schedule || [], cfg);
     }, function (e) {
       /* 補助項目の関数がまだ無い DB（統合 0127 の前）で、補助項目を保存していない時だけ、補助項目なしで数える（記号の組・通勤回数は数える） */
       if (noDb(e) && !Array.isArray(cfg.extraItems)) return EX.buildExt(month, [], d.schedule || [], cfg);
       throw Object.assign(new Error('extras'), { kintai: 'a2_noextras' });
+    }).then(function (ext) {
+      /* 反証レビュー（2026-11-25・medium）: 社内会議を時間外に足すかを保存しないまま、会議の時間の行がある月分は締めない */
+      if (EX.meetingUnsaved && EX.meetingUnsaved(cfg, a2LockRows)) throw Object.assign(new Error('meetunset'), { kintai: 'a2_meetunset' });
+      return ext;
     });
   }
+  /* 締めの窓で、読んである補助項目から「会議の設定を保存していない」かを見る（読めていない時は締める時に読み直して止める） */
+  function a2MeetUnsetNow() { return !!(EX && EX.meetingUnsaved && exReady() && EX.meetingUnsaved(rawCfg(), exSt.rows)); }
 
   /* 段A2（反証レビュー1回の5）: 36協定の見張りに使う、開いている月分のほかの締めていない月分の補助項目（画面の中だけ・端末に残さない）。
      月ごとに kintai_extras_get を読む（同時に読むのは3本まで）。読み終わったら36協定を出すタブを描き直す。読めない月分は { err } のまま（足さずに知らせる） */
@@ -2897,14 +2915,16 @@
   }
   function openLock(fig, changed, blockers) {
     dlgCtx = { mode: 'lock', fig: fig, ym: ym };
-    var bl = blockers || [];
+    var bl = blockers || [], mu = typeof a2MeetUnsetNow === 'function' && a2MeetUnsetNow();   /* 段A2: 会議の設定を保存していない（反証レビュー 2026-11-25） */
     openDlg(perLabel() + 'を締めます',
+      (mu ? '<div class="band ng" role="alert">' + esc(EX.MEETING_UNSAVED_TEXT) + '（この月分に社内会議の時間が入っています）</div>' : '') +
       (bl.length ? '<div class="band ng" role="alert">勤務中か、まだ出勤していない人がいるため、締められません（' + bl.map(function (x) { return esc(x.name) + ' ' + esc(md(x.date)) + '・' + esc(x.kind); }).join('、') + '）。今締めると、その勤務が0分のまま控えに入ります。退勤の打刻が入るか予定の終わりを過ぎてから、もう一度締めてください。休んだ人は、その日を「直す」で欠勤の印を付けると締められます。</div>' : '') +
       (fig.review ? '<div class="band ng" role="alert">要確認が ' + fig.review + ' 件（' + fig.rvPeople + ' 人）残っているため、締められません。1件ずつ「認める／認めない」を決めてから締めてください（認めない時は理由を残します）。</div>' +
         '<div class="row"><button type="button" class="btn pri" data-act="rvd-start">要確認を1件目から決める</button></div>' : '') +
       (changed ? '<div class="band warn" role="alert">窓を開いた後に数字が変わったため、締めていません（' + esc(changed) + '）。新しい数字を確かめてから、もう一度「締める」を押してください。</div>' : '') +
       '<p>「締める」を押した時にもう一度読み直して数え直し、その数字を「締めた時の控え」にします。</p><div class="kv"><span>要確認の残り</span><b>' + fig.review + ' 件（' + fig.rvPeople + ' 人）</b><span>人数</span><b>' + fig.people + ' 人（働いた・有休のあった人 ' + fig.worked + ' 人）</b><span>総労働の合計</span><b>' + fm(fig.workMin) + '</b><span>欠勤の合計</span><b>' + fig.absent + ' 日</b></div>' +
       '<p class="help">締めた後は、この月の打刻の足し・取り消し・承認・休憩の直し・シフトの取り込みが止まります。解除できるのは管理者だけです。</p><p class="help" id="e-msg" role="alert"></p>', bl.length > 0 || fig.review > 0, '締める', 'lock-go');   /* 0120: 要確認が残る間は締めるボタンを出さない */
+    if (mu) { var lgo = $('g-dlg-f').querySelector('[data-act="lock-go"]'); if (lgo) lgo.remove(); }   /* 段A2: 会議の設定を保存していない月分は「締める」を出さない（押した時も止める） */
   }
   function lockMonth(btn) {
     if (busy || !month) return;

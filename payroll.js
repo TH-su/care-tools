@@ -249,10 +249,12 @@
     }
     Object.keys(er).forEach(function (k) { if (/^[xtgk]:/.test(k)) { var n = Number(er[k]); if (isFinite(n) && n > 0) e[k] = n; } });
     a.ext = e;
+    if (!d.meetingOt || typeof d.meetingOt !== 'object') a.extNoMeet = true;   /* 会議を時間外に足すかを保存しないまま締めた控え */
     var adj = obj(er.adj);
     if (!imp && isFinite(Number(adj.legalOverMin)) && isFinite(Number(adj.holidayMin)) && isFinite(Number(adj.over60Min)) && Number(adj.meetingMin) > 0) {
       a.legalOverMin = Math.max(0, Math.round(Number(adj.legalOverMin))); a.over60Min = Math.max(0, Math.round(Number(adj.over60Min))); a.holidayMin = Math.max(0, Math.round(Number(adj.holidayMin)));
       a.meetingMin = Math.round(Number(adj.meetingMin));
+      a.workMin = Math.max(0, Math.round(Number(a.workMin) || 0)) + a.meetingMin;   /* 反証レビュー（2026-11-25・low）: 労働時間数にも会議の分（法定休日の分も）を足し、時間外の内訳とそろえる */
     }
     return a;
   }
@@ -347,6 +349,7 @@
       /* 段A2（二重払いの守り）: 社内会議を時間外に足す設定で、その時間の項目（t:<code>）を手当の回数の元に選んでいる人は止める（画面だけ・文は仮置き） */
       var mSrc = meetingSrc();
       if (mSrc && arr(p.data.allowances).some(function (x) { return x && x.count_source === mSrc && bs.allowances.some(function (d) { return d.code === x.code && d.calc === 'count'; }); })) it.warnings = arr(it.warnings).concat([{ code: 'meeting_src', msg: '社内会議の時間は時間外に足しているので、手当の回数の元に選べません' }]);
+      if (a && a.extNoMeet && Object.keys(obj(a.ext)).some(function (k) { return /^t:/.test(k) && a.ext[k] > 0; })) it.warnings = arr(it.warnings).concat([{ code: 'meeting_unset', msg: '社内会議を時間外に足すかを勤怠の設定で保存しないまま締めた月分です。勤怠の設定を保存して、締め直してください' }]);
       if (a && bs.kcheck && bs.kcheck.extMissing) it.warnings = arr(it.warnings).concat([{ code: 'ext_missing', msg: 'この月分の勤怠の控えに補助項目がありません。勤怠の締めを外して締め直してください' }]);
       out.push(it);
     });
@@ -489,8 +492,8 @@
   /* 確定できない警告。DB（0118 の payroll_run_confirm）が止めるのは rate_missing・emp_rate_missing・tax_table_missing・std_missing の4つ。
      BLOCK_WARN_SCREEN は画面だけで止める（DB は止めない）: ext_missing＝社内会議を時間外に足す設定なのに控えに補助項目が無い月分（段A2 反証レビュー1回の3）・
      meeting_src＝時間外に足している社内会議の時間を手当の回数の元に選んだ（二重払いの守り・段A2） */
-  var BLOCK_WARN_SCREEN = { ext_missing: 1, meeting_src: 1 };
-  var BLOCK_WARN = { rate_missing: 1, emp_rate_missing: 1, tax_table_missing: 1, std_missing: 1, ext_missing: 1, meeting_src: 1 };
+  var BLOCK_WARN_SCREEN = { ext_missing: 1, meeting_src: 1, meeting_unset: 1 };   /* meeting_unset: 社内会議を時間外に足すかを保存しないまま締めた控えに、時間の補助項目がある（反証レビュー 2026-11-25） */
+  var BLOCK_WARN = { rate_missing: 1, emp_rate_missing: 1, tax_table_missing: 1, std_missing: 1, ext_missing: 1, meeting_src: 1, meeting_unset: 1 };
   function blockWarns(list) { var out = []; list.forEach(function (it) { arr(it.warnings).forEach(function (w) { if (w && BLOCK_WARN[w.code]) out.push(it.name + '：' + (w.msg || w.code)); }); }); return out; }
   function openConfirm() {
     if (busy || !bs || status() !== 'draft' || dirty) return;

@@ -22,7 +22,7 @@ const codes = bw ? bw[1].split(',').map((x) => x.split(':')[0].trim()).sort() : 
 const bws = /var BLOCK_WARN_SCREEN = \{([^}]*)\}/.exec(J);
 const scr = bws ? bws[1].split(',').map((x) => x.split(':')[0].trim()).sort() : [];
 const dbCodes = codes.filter((c) => scr.indexOf(c) < 0);
-t('BLOCK_WARN は DB と同じ4つ＋画面だけで止める ext_missing・meeting_src', JSON.stringify(dbCodes) === JSON.stringify(['emp_rate_missing', 'rate_missing', 'std_missing', 'tax_table_missing']) && JSON.stringify(scr) === JSON.stringify(['ext_missing', 'meeting_src']) && scr.every((c) => codes.indexOf(c) >= 0), [codes, scr]);
+t('BLOCK_WARN は DB と同じ4つ＋画面だけで止める ext_missing・meeting_src', JSON.stringify(dbCodes) === JSON.stringify(['emp_rate_missing', 'rate_missing', 'std_missing', 'tax_table_missing']) && JSON.stringify(scr) === JSON.stringify(['ext_missing', 'meeting_src', 'meeting_unset']) && scr.every((c) => codes.indexOf(c) >= 0), [codes, scr]);
 const FXP = fs.readFileSync(path.join(ROOT, 'check', 'fixtures', 'payroll.mjs'), 'utf8'), dbBw = /const BW = \[([^\]]*)\]/.exec(FXP);
 const dbList = dbBw ? dbBw[1].split(',').map((x) => x.trim().replace(/'/g, '')).sort() : [];
 t('偽の DB の確定の止め（0118 の写し）は4つのままで、画面だけの印（ext_missing・meeting_src）は入らない', JSON.stringify(dbList) === JSON.stringify(dbCodes) && scr.every((c) => dbList.indexOf(c) < 0), dbList);

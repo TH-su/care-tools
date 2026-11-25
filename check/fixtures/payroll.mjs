@@ -381,7 +381,8 @@ function kintaiOf(db, ym) {
   const lockedAt = db.kintai.locked_at;
   const month = KC.computeMonth({ ym, period: per, staff, schedule, punches, days: [], leave_uses, config: {}, lockedAt, now: Date.parse(lockedAt) });
   const snapshot = KC.snapshotOf(month);
-  if (db.a2 && db.a2.ext !== false) snapshot.ext = KX.buildExt(month, db.a2rows, schedule, A2_KCFG);
+  /* opt.a2.noMeet: 社内会議を時間外に足すかを保存しないまま締めた控えの真似（def.meetingOt が null） */
+  if (db.a2 && db.a2.ext !== false) snapshot.ext = KX.buildExt(month, db.a2rows, schedule, db.a2.noMeet ? Object.assign({}, A2_KCFG, { meetingOt: undefined }) : A2_KCFG);
   if (db.drift) snapshot.rows.forEach((r) => { if (r.staff_id === 's-02') { r.workMin += 60; r.schedInMin += 60; } });
   db.kraw[ym] = { raw: Object.assign({ period: per, staff, schedule, punches, days: [] }, db.leave ? { leave_uses } : {}), snapshot };
   return db.kraw[ym];

@@ -106,7 +106,7 @@ console.log('\n— D2. 確定できない警告 —');
 {
   const oc = between('  var BLOCK_WARN', '  function confirmGo(');
   /* ★段A2（2026-11-25）の2つの印は画面だけで止める（BLOCK_WARN_SCREEN）。DB と同じ4つは BLOCK_WARN から画面だけの印を除いた物で確かめる */
-  t('確定できない警告は rate_missing・emp_rate_missing・tax_table_missing・std_missing の4つ＋画面だけで止める ext_missing・meeting_src（最低賃金の未設定などは入れない）', /var BLOCK_WARN_SCREEN = \{ ext_missing: 1, meeting_src: 1 \};/.test(oc) && /var BLOCK_WARN = \{ rate_missing: 1, emp_rate_missing: 1, tax_table_missing: 1, std_missing: 1, ext_missing: 1, meeting_src: 1 \};/.test(oc) && !/min_wage/.test(oc));
+  t('確定できない警告は rate_missing・emp_rate_missing・tax_table_missing・std_missing の4つ＋画面だけで止める ext_missing・meeting_src（最低賃金の未設定などは入れない）', /var BLOCK_WARN_SCREEN = \{ ext_missing: 1, meeting_src: 1, meeting_unset: 1 \};/.test(oc) && /var BLOCK_WARN = \{ rate_missing: 1, emp_rate_missing: 1, tax_table_missing: 1, std_missing: 1, ext_missing: 1, meeting_src: 1, meeting_unset: 1 \};/.test(oc) && !/min_wage/.test(oc));
   t('確定の窓: 分けて出し、確定のボタンを押せなくする', /確定できない警告（/.test(oc) && /data-act="confirm-go"' \+ \(blk\.length \? ' disabled' : ''\)/.test(oc) && /block: blk\.length/.test(oc));
   const cg = between('  function confirmGo(', '  function openUnconfirm(') || between('  function confirmGo(', "    })['catch'](function (e) { done(); closeDlg(); return fail(e, '確定'); });");
   t('押された時も止める・読み直して数え直した後も止める', /if \(dlgCtx\.block \|\| blockWarns\(items\(\)\)\.length\)/.test(cg) && /if \(blockWarns\(now\)\.length\)/.test(cg) && cg.indexOf('blockWarns(now)') < cg.indexOf("rpc('payroll_run_confirm'"));
