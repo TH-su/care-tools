@@ -72,6 +72,7 @@
 !/check/kintai_views_e2e.mjs
 !/check/build-holidays-fixture.mjs
 !/check/kintai_board_e2e.mjs
+!/check/kintai_shaho_e2e.mjs
 !/check/kintai_leave_kinds_e2e.mjs
 # 給与の画面の通し試験と撮影（2026-11-19・偽のデータベースと偽の部品・架空の職員10人）
 !/check/payroll_e2e.mjs
@@ -192,6 +193,7 @@
 !/kintai-holiday.js
 !/kintai-yearly.js
 !/kintai-views.js
+!/kintai-shaho.js
 !/kintai-leave-kinds.js
 !/kintai-ledger.js
 # 職員本人のスマホの勤怠の画面と純関数（2026-11-20・勤怠 v5 の段5・care-backend 統合 0114）。コードのみ公開。端末に置くのは鍵（受け口が作った乱数）とタブの印だけで、
