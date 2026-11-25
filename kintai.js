@@ -256,6 +256,7 @@
   /* ── 読み込みと計算 ── */
   function load(withImport) {
     var my = ++gen;
+    if (typeof VW !== 'undefined' && VW) VW.drop();   /* 年別の控えは月の読み込みのたびに捨てる（ほかの月分の直し・締め・設定の保存の後に古い数字を出さない・審査 2026-11-25 M2） */
     busy = true; sync('読み込んでいます…');
     paint();
     return rpc('kintai_month_get', { p_ym: ym }).then(okOr).then(function (d) {
@@ -355,7 +356,7 @@
     if (!reqSumFresh()) loadReqSum(false);   /* v5 段5: 申請の承認待ちの数（タブの札・ホームの箱・締めの画面）。1分より古い時だけ・関数が無い時は聞かない */
     /* 年別・事業所別・休日（kintai-views.js）は設定の plusViews が入の時だけ。切・部品が無い時はタブを足さず、開こうとしたらホーム（2026-11-25） */
     var vwApi = typeof window !== 'undefined' && window.KintaiViews || null, vwIsOn = !!vwApi && vwApi.on(rawCfg()), vwT = tab === 'year' || tab === 'site' || tab === 'holiday';
-    if (vwApi) vwApi.syncTabs(vwIsOn);
+    if (vwApi) vwApi.syncTabs(vwIsOn, tab);
     if (vwT && !vwIsOn) { tab = 'home'; vwT = false; paintTabs(); }
     var f = { home: paintHome, day: paintDay, review: paintReview, requests: paintRequests, grid: paintGrid, person: paintPerson, staff: paintStaff, leave: paintLeave, close: paintClose, settings: paintSettings }[tab];
     m.innerHTML = bands() + (vwT ? vwApi.paint(tab, vwCtx()) : f());
@@ -365,20 +366,23 @@
   var VW = window.KintaiViews || null;
   function vwTab(t) { return t === 'year' || t === 'site' || t === 'holiday'; }
   /* ほかの月分の数え方は月の一覧（recompute）と同じ: 締めた月は締めた時の設定・締めていない月は今の設定にシフトの休憩の決まりを重ねる */
+  var vwBreaks = null;   /* 最後に読めたシフトの休憩の決まり（月を移っても持つ・画面の中だけ・審査 2026-11-25 m5） */
+  function vwBr() { if (shiftInfo && shiftInfo.breaks) vwBreaks = shiftInfo.breaks; return vwBreaks; }
   function vwMonth(y, d) {
-    var cfg = monthCfg(d), br = (shiftInfo && shiftInfo.breaks) || {}, k;
+    var cfg = monthCfg(d), br = vwBr() || {}, k;
     if (!(d.month && d.month.locked_at && d.month.snapshot && d.month.snapshot.config)) for (k in br) if (typeof br[k] === 'number') cfg[k] = br[k];
     return C.computeMonth({ ym: y, period: d.period, staff: d.staff || [], schedule: d.schedule || [], punches: d.punches || [], days: d.days || [], leave_uses: d.leave_uses, absences: d.absences, config: cfg, lockedAt: d.month && d.month.locked_at, now: Date.now() });
   }
   function vwCtx() {
-    return { ym: ym, month: month, cfg: rawCfg, isAdmin: isAdmin, esc: esc, fm: fm, officeName: officeName, dispName: dispName, printHead: printHead, note: note, msgOf: msgOf,
+    return { ym: ym, month: month, cfg: rawCfg, isNetErr: isNetErr, breaksKnown: function () { return !!vwBr(); }, isAdmin: isAdmin, esc: esc, fm: fm, officeName: officeName, dispName: dispName, printHead: printHead, note: note, msgOf: msgOf,
       order: function () { return month ? month.people.map(function (p) { return p.staff.staff_id; }) : []; },
       loadMonth: function (y) { return rpc('kintai_month_get', { p_ym: y }).then(okOr).then(function (d) { return vwMonth(y, d); }); },
       repaint: function () { if (view === 'app' && vwTab(tab) && !busy && !printAll) paint(); },
-      saveConfig: function (cfg, btn, msg) {
+      repaintYear: function () { if (view === 'app' && tab === 'year' && !busy && !printAll) paint(); },
+      saveConfig: function (cfg, btn, msg, onOk) {
         if (busy || !isAdmin()) return;
         busy = true; var restore = pressBusy(btn, '保存しています…');
-        rpc('kintai_settings_put', { p_config: cfg, p_rev: (data.settings && data.settings.rev) || 0 }).then(okOr).then(function () { busy = false; toast(msg || '保存しました'); return load(false); })['catch'](function (e) { busy = false; restore(); note('休日の保存', e); alert(msgOf(e)); });
+        rpc('kintai_settings_put', { p_config: cfg, p_rev: (data.settings && data.settings.rev) || 0 }).then(okOr).then(function () { busy = false; if (onOk) onOk(); toast(msg || '保存しました'); return load(false); })['catch'](function (e) { busy = false; restore(); note('休日の保存', e); alert(msgOf(e)); });
       } };
   }
   var RED = { no_punch: 1, missing_in: 1, missing_out: 1 };
@@ -3618,6 +3622,7 @@
     });
     document.addEventListener('input', function (e) {
       var id = e.target && e.target.id, r;
+      if (id && id.indexOf('vw-h-') === 0 && typeof VW !== 'undefined' && VW) VW.keep(e);   /* 会社の休日の書きかけを描き直しで消さない（審査 2026-11-25 M1） */
       if (id === 'fi-reason' && fiSt) fiSt.reason = e.target.value;   /* 描き直しで書いた理由を消さない（画面の中だけ） */
       if (id && id.indexOf('ex-s-') === 0) exTouched = true;   /* 段A1: 設定の「補助項目」の欄に書いた（反証レビュー 2026-11-25 M3） */
       /* 0111: 予定の窓で始業・終業を変えたら、前の予定から入れた休憩は空に戻す（いつもの決まりで決め直す。手で入れた休憩は残す） */
@@ -3636,6 +3641,7 @@
     $('g-dlg').addEventListener('cancel', function (e) { if (busy) { e.preventDefault(); return; } if (dirty() && !confirm('保存していない直しがあります。閉じますか？')) e.preventDefault(); else { dlgCtx = null; wipeEnroll(); } });   /* v5 段5: Esc の時はその場で QR と番号を消す（close の知らせは後から届くため） */
     $('g-dlg').addEventListener('close', function () { wipeEnroll(); });   /* v5 段5: Esc・閉じるのどれで閉じても QR と番号を消す */
     window.addEventListener('beforeunload', function (e) { if (dirty() || settingsDirty()) { e.preventDefault(); e.returnValue = ''; } });
+    window.addEventListener('beforeunload', function (e) { if (typeof VW !== 'undefined' && VW && VW.dirty()) { e.preventDefault(); e.returnValue = ''; } });   /* 会社の休日の書きかけ（2026-11-25） */
     window.addEventListener('storage', function (e) { if (e.key === 'su_device_role' && isField()) location.reload(); });
     window.addEventListener('pageshow', function (e) { if (e && e.persisted && isField()) location.reload(); });
     window.addEventListener('beforeprint', stampPrint);

@@ -144,6 +144,12 @@ try {
     await page.fill('#vw-h-from', '2025-12-29');
     await page.fill('#vw-h-to', '2026-01-03');
     await page.fill('#vw-h-name', '年末年始の休み');
+    /* 書きかけのままタブを移って戻っても、入れた値は残る（描き直しで消さない） */
+    await page.click('[data-tab="year"]');
+    await page.waitForSelector('table.mt-y', { timeout: 15000 });
+    await page.click('[data-tab="holiday"]');
+    await page.waitForSelector('#vw-h-name', { timeout: 15000 });
+    t('書きかけの会社の休日はタブを移っても残る', (await page.inputValue('#vw-h-name')) === '年末年始の休み' && (await page.inputValue('#vw-h-kind')) === 'yearly' && (await page.inputValue('#vw-h-to')) === '2026-01-03');
     await page.click('[data-act="vw-h-add"]');
     await page.waitForFunction(() => /会社の休日を足しました/.test(document.getElementById('g-toast').textContent), null, { timeout: 15000 });
     const put = sentOf(st, 'kintai_settings_put').slice(-1)[0];
@@ -152,6 +158,10 @@ try {
     t('ほかの設定の鍵は残す（legal_holiday・plusViews・csvTime）・版を送る', put[1].p_config.legal_holiday === 0 && put[1].p_config.plusViews === true && put[1].p_config.csvTime === 'hmm' && put[1].p_rev === 2, put[1]);
     await page.waitForFunction(() => /会社の休日 6 日/.test(document.getElementById('g-main').textContent), null, { timeout: 15000 });
     t('読み直した後の暦: 2025年の 1/1〜1/3 と 12/29〜12/31 の6日（1/1 は元日と同じ行なので 19＋6−1＝24 日）', /合わせて 24 日/.test(await mainText(page)), (await mainText(page)).slice(0, 300));
+    t('足した後は書きかけを空に戻す', (await page.inputValue('#vw-h-name')) === '');
+    await page.reload();
+    await page.waitForSelector('table.mt-h', { timeout: 20000 });
+    t('再読み込みでも休日のタブのまま・タブに選ばれた印', (await page.getAttribute('.tabs button[data-tab="holiday"]', 'aria-selected')) === 'true');
     await page.click('[data-act="vw-h-toggle"][data-i="0"]');
     await page.waitForFunction(() => /会社の休日を止めました/.test(document.getElementById('g-toast').textContent), null, { timeout: 15000 });
     const put2 = sentOf(st, 'kintai_settings_put').slice(-1)[0];

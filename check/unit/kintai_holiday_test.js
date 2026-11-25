@@ -70,7 +70,10 @@ t('状態が無い要素は使う・名前の前後の空白は切る', cl.items
 t('配列でない時は空', H.cleanCompany(null).items.length === 0 && H.cleanCompany({ a: 1 }).items.length === 0);
 const many = Array.from({ length: 35 }, (_, i) => ({ date: '2026-03-' + String(1 + (i % 28)).padStart(2, '0'), name: '休み' + i }));
 const cm = H.cleanCompany(many);
-t('30件まで（31件目から max）', cm.items.length === H.MAX_COMPANY && cm.bad.length === 5 && cm.bad.every((b) => b.why === 'max'));
+t('使う分は30件まで（31件目から max）', cm.items.length === H.MAX_COMPANY && cm.bad.length === 5 && cm.bad.every((b) => b.why === 'max'));
+const stopped = Array.from({ length: 15 }, (_, i) => ({ date: '2025-04-' + String(1 + i).padStart(2, '0'), name: '止めた' + i, active: false }));
+const cs = H.cleanCompany(stopped.concat(many));
+t('止めた休日は「使う30件」に数えない（止めた10件＋使う30件が通る）・止めた分を含めて40件まで', H.MAX_TOTAL === 40 && H.cleanCompany(stopped.slice(0, 10).concat(many.slice(0, 30))).items.length === 40 && cs.items.filter((x) => x.active).length === 25 && cs.items.length === 40 && cs.bad.every((b) => b.why === 'max'), [cs.items.length, cs.bad.length]);
 const days26 = H.companyDays(cl.items, 2026);
 const yearEnd = days26.filter((d) => d.name === '年末年始の休み').map((d) => d.date);
 t('毎年の年またぎ（12/29〜1/3）は、その年の 1/1〜1/3 と 12/29〜12/31', JSON.stringify(yearEnd) === JSON.stringify(['2026-01-01', '2026-01-02', '2026-01-03', '2026-12-29', '2026-12-30', '2026-12-31']), yearEnd);
@@ -92,8 +95,8 @@ const pgText = (v) => { if (Array.isArray(v)) return '[' + v.map(pgText).join(',
 const sample = { close_day: 15, csvTime: 'hmm', plusViews: true, companyHolidays: cl.items, agreement36: { startMonth: 4, special: false } };
 const pgBytes = Buffer.byteLength(pgText(sample), 'utf8');
 t('見積もりは jsonb の文字の大きさ以上（' + pgBytes + ' バイト）', H.jsonbBytes(sample) >= pgBytes, [H.jsonbBytes(sample), pgBytes]);
-const full = { companyHolidays: Array.from({ length: 30 }, (_, i) => ({ md: '12-' + String(i + 1).padStart(2, '0'), to: '01-0' + (1 + (i % 9)), name: 'あ'.repeat(16), office: 'facility', active: false })) };
-t('会社の休日を上限（30件・名前16字）まで入れても設定に入る', H.fitsConfig(full), H.jsonbBytes(full));
+const full = { companyHolidays: Array.from({ length: 40 }, (_, i) => ({ md: '12-' + String(i + 1).padStart(2, '0'), to: '01-0' + (1 + (i % 9)), name: 'あ'.repeat(16), office: 'facility', active: false })) };
+t('会社の休日を上限（40件・名前16字）まで入れても設定に入る', H.fitsConfig(full), H.jsonbBytes(full));
 t('8KB を超える設定は入らない', !H.fitsConfig({ big: 'x'.repeat(8200) }));
 
 console.log('\n— 5. 守り —');

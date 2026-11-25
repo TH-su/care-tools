@@ -95,9 +95,12 @@
       if (main === '') usedUnset = true;
       if (st.active !== false) { acc[main].active++; total.active++; }
       var w = num(s.workMin), by = s.byOffice && typeof s.byOffice === 'object' ? s.byOffice : {}, put = 0, anyWork = false;
-      OFFICES.forEach(function (o) { var v = num(by[o]); if (v > 0) { workParts[o] += v; put += v; if (v >= 1) { acc[o].worked++; anyWork = true; } } });
+      /* 事業所ごとの割合の値は計算の側で丸めてあるので、和が実働を少し超えることがある。その時はその人の分だけ割合で縮める（ほかの人の事業所から引かない・反証レビュー 2026-11-25） */
+      var raw = 0; OFFICES.forEach(function (o) { var v = num(by[o]); if (v > 0) raw += v; });
+      var scale = raw > w && raw > 0 ? w / raw : 1;
+      OFFICES.forEach(function (o) { var v = num(by[o]) * scale; if (v > 0) { workParts[o] += v; put += v; if (num(by[o]) >= 1) { acc[o].worked++; anyWork = true; } } });
       var rest = w - put;
-      if (rest > 1e-6) { workParts[main] += rest; if (main === '') usedUnset = true; if (!anyWork && rest >= 1) { acc[main].worked++; anyWork = true; } }
+      if (rest > 1e-6) { workParts[main] += rest; if (main === '') usedUnset = true; if (rest >= 1 && !(num(by[main]) >= 1)) { acc[main].worked++; anyWork = true; } }   /* 主の事業所に入った分が1分以上なら、その事業所の働いた人に数える（審査 2026-11-25 m4） */
       if (anyWork) total.worked++;
       workTotal += w;
       ITEM_KEYS.forEach(function (k) { if (k === 'workMin') return; var v = num(s[k]); acc[main][k] += v; total[k] += v; });

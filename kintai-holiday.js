@@ -6,7 +6,7 @@
  *     春分・秋分の日は前の年の2月に官報で決まるので、CSV の最後の年（CONFIRMED_THROUGH）より先は「見込み」と印を付ける。
  *     法律が変わった時は、この部品の決まりと CONFIRMED_THROUGH を直し、新しい CSV で試験を回す（check/build-holidays-fixture.mjs）。
  * ・会社の休日は設定（kintai_settings.config）の鍵 companyHolidays に持つ:
- *     [{ date:'YYYY-MM-DD' | md:'MM-DD'（毎年）, to: 同じ形（任意・31日まで）, name: 1〜16字, office: ''|'facility'|'visit'|'day', active: 真偽 }]（30件まで）
+ *     [{ date:'YYYY-MM-DD' | md:'MM-DD'（毎年）, to: 同じ形（任意・31日まで）, name: 1〜16字, office: ''|'facility'|'visit'|'day', active: 真偽 }]（使う分は30件・止めた分を含めて40件まで）
  *     消さない（止める＝active:false）。形の違う要素は読み飛ばす（DB は中身を見ないので、読む時に掃除する）
  * ・設定の保存は config 全体が 8192 バイトまで（DB の kintai_settings_put）。保存の前に jsonbBytes で見積もる。
  * ★職員の名前・入居者の情報は持たない。
@@ -15,7 +15,7 @@
   'use strict';
   var MIN_YEAR = 2000, MAX_YEAR = 2099;
   var CONFIRMED_THROUGH = 2027;   /* 内閣府の CSV に載っている最後の年（2026-11-25 に取った CSV） */
-  var MAX_COMPANY = 30, NAME_MAX = 16, RANGE_MAX = 31, CONFIG_MAX = 8192;
+  var MAX_COMPANY = 30, MAX_TOTAL = 40, NAME_MAX = 16, RANGE_MAX = 31, CONFIG_MAX = 8192;
   var OFFICES = { '': 1, facility: 1, visit: 1, day: 1 };
 
   function pad(n) { return (n < 10 ? '0' : '') + n; }
@@ -101,10 +101,10 @@
   function nameLen(s) { return Array.from(s).length; }
   /* 毎年の期間の日数（12-29〜01-03 のように年をまたいでよい・うるう年で数える） */
   function mdSpan(a, b) { var y = 2024, d0 = ymd(y, +a.slice(0, 2), +a.slice(3)), d1 = ymd(b < a ? y + 1 : y, +b.slice(0, 2), +b.slice(3)); return Math.round((Date.parse(d1) - Date.parse(d0)) / 86400000) + 1; }
-  /* 掃除: 形の違う要素は読み飛ばし、理由を bad に入れる。通った要素の先頭 30 件まで。返す: { items, bad:[{ row, why }] }
+  /* 掃除: 形の違う要素は読み飛ばし、理由を bad に入れる。通った要素のうち、使う分は先頭 30 件・止めた分を含めて 40 件まで。返す: { items, bad:[{ row, why }] }
    *   why: shape（形）・date（日付）・to（終わりの日）・name（名前）・office（事業所）・active（真偽でない）・max（件数） */
   function cleanCompany(list) {
-    var items = [], bad = [];
+    var items = [], bad = [], nOn = 0;
     if (!Array.isArray(list)) return { items: items, bad: bad };
     for (var i = 0; i < list.length; i++) {
       var x = list[i], row = i + 1;
@@ -123,7 +123,8 @@
       var of = x.office == null ? '' : x.office;
       if (typeof of !== 'string' || !Object.prototype.hasOwnProperty.call(OFFICES, of)) { bad.push({ row: row, why: 'office' }); continue; }
       if (x.active != null && typeof x.active !== 'boolean') { bad.push({ row: row, why: 'active' }); continue; }
-      if (items.length >= MAX_COMPANY) { bad.push({ row: row, why: 'max' }); continue; }
+      if (items.length >= MAX_TOTAL || (x.active !== false && nOn >= MAX_COMPANY)) { bad.push({ row: row, why: 'max' }); continue; }
+      if (x.active !== false) nOn++;
       var o = hasD ? { date: x.date } : { md: x.md };
       if (to != null) o.to = to;
       o.name = nm; o.office = of; o.active = x.active !== false;
@@ -190,7 +191,7 @@
   }
   function fitsConfig(cfg) { return jsonbBytes(cfg) <= CONFIG_MAX - 256; }
 
-  var api = { MIN_YEAR: MIN_YEAR, MAX_YEAR: MAX_YEAR, CONFIRMED_THROUGH: CONFIRMED_THROUGH, MAX_COMPANY: MAX_COMPANY, NAME_MAX: NAME_MAX, RANGE_MAX: RANGE_MAX, CONFIG_MAX: CONFIG_MAX,
+  var api = { MIN_YEAR: MIN_YEAR, MAX_YEAR: MAX_YEAR, CONFIRMED_THROUGH: CONFIRMED_THROUGH, MAX_COMPANY: MAX_COMPANY, MAX_TOTAL: MAX_TOTAL, NAME_MAX: NAME_MAX, RANGE_MAX: RANGE_MAX, CONFIG_MAX: CONFIG_MAX,
     nationalHolidays: nationalHolidays, cleanCompany: cleanCompany, companyOf: companyOf, companyDays: companyDays, yearCalendar: yearCalendar, dayInfo: dayInfo,
     jsonbBytes: jsonbBytes, fitsConfig: fitsConfig, okDate: okDate, okMd: okMd };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

@@ -71,6 +71,10 @@ function t(n, c, e) { if (c) { pass++; console.log('  ✓ ' + n); } else { fail+
   t('割合で分けきれない分は主の事業所（a の 0.3 分は施設・b の 0.4 分は訪問・c は未設定）', by.facility.workMin === 400 || by.facility.workMin === 401, sx.rows.map((r) => [r.office, r.workMin]));
   t('残業・深夜は主の事業所（a の残業は施設・c の深夜は未設定）', by.facility.overtimeMin === 30 && by.visit.overtimeMin === 0 && by[''].nightMin === 20);
   t('在籍は休止でない人を主の事業所で（通所は d だけ）・働いた人は1分以上働いた事業所（a は施設と訪問の両方）', by.day.active === 1 && by.facility.worked === 1 && by.visit.worked === 2 && by[''].worked === 1 && sx.total.active === 4 && sx.total.worked === 3, [by, sx.total]);
+  const s4 = Y.siteTable({ people: [P('a', 'facility', { workMin: 500, byOffice: { visit: 300 } })] }), b4 = {}; s4.rows.forEach((r) => { b4[r.office] = r; });
+  t('予定の無い勤務が主の事業所に入った人は、その事業所の働いた人にも数える（全体は1人）', b4.facility.worked === 1 && b4.visit.worked === 1 && s4.total.worked === 1 && b4.facility.workMin === 200, [b4, s4.total]);
+  const s5 = Y.siteTable({ people: [P('a', 'facility', { workMin: 301, byOffice: { facility: 151, visit: 151 } }), P('b', 'day', { workMin: 100, byOffice: { day: 100 } })] }), b5 = {}; s5.rows.forEach((r) => { b5[r.office] = r; });
+  t('事業所の割合の和が実働を超える人（丸め）は、その人の分だけ縮める（ほかの人の事業所から引かない）', b5.day.workMin === 100 && b5.facility.workMin + b5.visit.workMin === 301 && s5.total.workMin === 401, s5.rows.map((r) => [r.office, r.workMin]));
   t('端数の配り方: 合計がちょうど合う', JSON.stringify(Y.apportion({ a: 0.5, b: 0.5, c: 0 }, 1)) === JSON.stringify({ a: 1, b: 0, c: 0 }) && Object.values(Y.apportion({ a: 33.4, b: 33.3, c: 33.3 }, 100)).reduce((p, q) => p + q, 0) === 100);
   t('月が無い時は空の表', Y.siteTable(null).rows.length === 3 && Y.siteTable(null).total.workMin === 0);
 
@@ -79,11 +83,17 @@ function t(n, c, e) { if (c) { pass++; console.log('  ✓ ' + n); } else { fail+
   t('kintai.html は 3つの部品を kintai-calc.js の後・kintai.js の前に ?v= つきで読む', ['kintai-holiday.js', 'kintai-yearly.js', 'kintai-views.js'].every((f) => { const i = HT.indexOf('<script src="' + f + '?v='); return i > HT.indexOf('kintai-calc.js?v=') && i < HT.indexOf('<script src="kintai.js?v='); }));
   t('タブのボタンは HTML に置かない（切の時は今の画面のまま）', !/data-tab="(year|site|holiday)"/.test(HT));
   t('入り切りの鍵は plusViews が true の時だけ入', /function on\(cfg\) \{ return !!\(cfg && cfg\.plusViews === true\); \}/.test(V));
-  t('切・部品が無い時に年別などのタブを開こうとしたらホーム（描く関数の中で決める）', /var vwApi = typeof window !== 'undefined' && window\.KintaiViews \|\| null, vwIsOn = !!vwApi && vwApi\.on\(rawCfg\(\)\), vwT = tab === 'year' \|\| tab === 'site' \|\| tab === 'holiday';\s*if \(vwApi\) vwApi\.syncTabs\(vwIsOn\);\s*if \(vwT && !vwIsOn\) \{ tab = 'home'; vwT = false; paintTabs\(\); \}/.test(K) && /m\.innerHTML = bands\(\) \+ \(vwT \? vwApi\.paint\(tab, vwCtx\(\)\) : f\(\)\);/.test(K));
+  t('切・部品が無い時に年別などのタブを開こうとしたらホーム（描く関数の中で決める）', /var vwApi = typeof window !== 'undefined' && window\.KintaiViews \|\| null, vwIsOn = !!vwApi && vwApi\.on\(rawCfg\(\)\), vwT = tab === 'year' \|\| tab === 'site' \|\| tab === 'holiday';\s*if \(vwApi\) vwApi\.syncTabs\(vwIsOn, tab\);\s*if \(vwT && !vwIsOn\) \{ tab = 'home'; vwT = false; paintTabs\(\); \}/.test(K) && /m\.innerHTML = bands\(\) \+ \(vwT \? vwApi\.paint\(tab, vwCtx\(\)\) : f\(\)\);/.test(K));
   t('タブの読み戻しは決まった名前だけ（TABS に year・site・holiday）', /var TABS = \['home', 'day', 'review', 'requests', 'grid', 'person', 'staff', 'leave', 'close', 'settings', 'year', 'site', 'holiday'\];/.test(K));
   t('kintai.js の localStorage の書き込みは今までどおり lsSet の1か所', (K.match(/localStorage\.setItem/g) || []).length === 1);
   t('kintai-views.js が端末に書く鍵は kintai_vw_n と kintai_vw_item だけ（読み戻しは決まった値だけ）', (V.match(/lsSet\(/g) || []).length === 3 && /lsSet\(LS_N, String\(n\)\)/.test(V) && /if \(Y\.isItem\(e\.target\.value\)\) lsSet\(LS_ITEM/.test(V) && /var LS_N = 'kintai_vw_n', LS_ITEM = 'kintai_vw_item';/.test(V) && (V.match(/localStorage\.setItem/g) || []).length === 1);
-  t('ほかの月分の数え方は月の一覧と同じ（締めた月は控えの設定・締めていない月はシフトの休憩を重ねる）', /function vwMonth\(y, d\) \{\s*var cfg = monthCfg\(d\), br = \(shiftInfo && shiftInfo\.breaks\) \|\| \{\}, k;\s*if \(!\(d\.month && d\.month\.locked_at && d\.month\.snapshot && d\.month\.snapshot\.config\)\) for \(k in br\) if \(typeof br\[k\] === 'number'\) cfg\[k\] = br\[k\];/.test(K));
+  t('ほかの月分の数え方は月の一覧と同じ（締めた月は控えの設定・締めていない月はシフトの休憩を重ねる）', /function vwBr\(\) \{ if \(shiftInfo && shiftInfo\.breaks\) vwBreaks = shiftInfo\.breaks; return vwBreaks; \}\s*function vwMonth\(y, d\) \{\s*var cfg = monthCfg\(d\), br = vwBr\(\) \|\| \{\}, k;\s*if \(!\(d\.month && d\.month\.locked_at && d\.month\.snapshot && d\.month\.snapshot\.config\)\) for \(k in br\) if \(typeof br\[k\] === 'number'\) cfg\[k\] = br\[k\];/.test(K));
+  t('月の読み込みのたびに年別の控えを捨てる（ほかの月分の直し・締め・設定の保存の後に古い数字を出さない）', /function load\(withImport\) \{\s*var my = \+\+gen;\s*if \(typeof VW !== 'undefined' && VW\) VW\.drop\(\);/.test(K));
+  t('読み込みで描き直すのは年別を開いている時だけ・休日の書きかけは描き直しで戻し、閉じる前に確かめる', /ctx\.repaintYear\(\);/.test(V) && !/ctx\.repaint\(\);\s*next\(\);/.test(V) && /value="' \+ ctx\.esc\(dv\('vw-h-name'\)\) \+ '"/.test(V) && /if \(typeof VW !== 'undefined' && VW && VW\.dirty\(\)\) \{ e\.preventDefault\(\);/.test(K) && /if \(id && id\.indexOf\('vw-h-'\) === 0 && typeof VW !== 'undefined' && VW\) VW\.keep\(e\);/.test(K));
+  t('読めない・読み込み中の月は見出しに書き（紙にも出る）、読み込み中は印刷を押せない', /stOf\[x\.ym\] = x\.wait \? '読み込み中' : x\.err \? '読めず' : ''/.test(V) && /data-act="print"' \+ \(waitN \? ' disabled' : ''\)/.test(V));
+  t('止めた休日を使うに戻す時も、使う分が30件なら断る（31件目を黙って読み飛ばさない）', /if \(!x\.active && items\.filter\(function \(c\) \{ return c\.active; \}\)\.length >= H\.MAX_COMPANY\)/.test(V));
+  t('件数の行き止まりを解く: 外せるのは去年までの「この年だけ」で止めた休日だけ・確かめてから', /return !\(c\.active === false && c\.date && \(c\.to \|\| c\.date\)\.slice\(0, 4\) < y0\);/.test(V) && /if \(!confirm\('去年までの「この年だけ」で止めた会社の休日 '/.test(V));
+  t('年別の読み込みの通信の失敗は月分ごとに報告しない', /if \(!ctx\.isNetErr\(e\)\) ctx\.note\('年別の読み込み', e\);/.test(V));
   t('同時に読むのは3本まで・世代で古い答えを捨てる・5分で捨てる', /var CONC = 3, TTL = 5 \* 60 \* 1000;/.test(V) && /if \(my !== gen\) return;/.test(V));
   t('設定の保存は今の鍵を全部残して送る（会社の休日・入り切り）', /for \(k in cfg\) if \(Object\.prototype\.hasOwnProperty\.call\(cfg, k\)\) out\[k\] = cfg\[k\];/.test(V) && /\.concat\(vws \? vws\.keys : \[\]\)/.test(K) && /if \(vws\) for \(k in vws\.vals\) outCfg\[k\] = vws\.vals\[k\];/.test(K));
   t('保存の前に設定の大きさを確かめる', /if \(!H\.fitsConfig\(out\)\)/.test(V));
@@ -92,7 +102,7 @@ function t(n, c, e) { if (c) { pass++; console.log('  ✓ ' + n); } else { fail+
   t('画面の文に外の値を入れる所は esc を通す（名前・事業所・休日の名前）', /ctx\.esc\(ctx\.dispName\(r\.staff\)\)/.test(V) && /ctx\.esc\(x\.name\)/.test(V) && /ctx\.esc\(c\.national\.name\)/.test(V));
   t('インラインの onclick・onsubmit を書かない（CSP）', !/\son(click|submit|change)=/.test(V));
   t('kintai-yearly.js は通信・端末・画面に触れず、kintai-calc.js を変えない（呼ばない）', !/localStorage|fetch\(|document\.|rpc\(|KintaiCalc|require\(/.test(YS.replace(/\/\*[\s\S]*?\*\//g, '')));
-  t('kintai-calc.js は 0 行の変更（git の差に出ない）', require('child_process').execSync('git diff --name-only origin/main -- kintai-calc.js payroll-calc.js payroll.js', { cwd: ROOT }).toString().trim() === '');
+  /* kintai-calc.js などを変えていないことは PR の差分で確かめる（ここで git の差を見ると、後でこれらを直すほかの PR を落とすため・反証レビュー 2026-11-25） */
 
   console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' 件合格 / ' + fail + ' 件不合格');
   process.exit(fail ? 1 : 0);
