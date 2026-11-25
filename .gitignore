@@ -71,6 +71,7 @@
 !/check/kintai_extras_e2e.mjs
 !/check/kintai_views_e2e.mjs
 !/check/build-holidays-fixture.mjs
+!/check/kintai_board_e2e.mjs
 !/check/kintai_leave_kinds_e2e.mjs
 # 給与の画面の通し試験と撮影（2026-11-19・偽のデータベースと偽の部品・架空の職員10人）
 !/check/payroll_e2e.mjs
@@ -199,6 +200,10 @@
 !/kintai-self.js
 !/kintai-self-calc.js
 !/kintai-self.css
+# 段B（2026-11-25・統合 0130）: 管理者のお知らせと本人の画面からの補助項目の申請（純関数・管理画面の部品・本人の画面の部品）
+!/kintai-board-calc.js
+!/kintai-board.js
+!/kintai-self-board.js
 !/shift-symbols.js
 # 給与の計算・率表・源泉徴収税額表・書き出しの純関数（2026-11-19 本人の決定・給与 v1）。規則と公表の率・税額表だけで、職員の氏名・金額・口座は含まない
 !/payroll-calc.js

@@ -216,9 +216,9 @@ const kh = new Function(cut(K, 'function isNetErr(') + '\n' + (K.match(/var DENI
   /* ★freee の月の集計の取り込み（2026-11-23・統合 0123）で kintai.js・kintai-calc.js を ?v=2026-11-23.1 に上げたので期待の版を改めた */
   /* ★v6（2026-11-24・打刻漏れの知らせと休暇の申請）で kintai.js を ?v=2026-11-24 に上げたので期待の版を改めた */
   /* ★段A1（2026-11-25・日ごとの補助項目）で kintai.js を ?v=2026-11-25 に上げたので期待の版を改めた */
-  /* ★年別・事業所別・休日のタブ（2026-11-25）で kintai.js を ?v=2026-11-25.1 に上げたので期待の版を改めた */
-  /* ★段B（2026-11-25・休暇の種類を足した分・休業の期間）で kintai.js を ?v=2026-11-25.2 に上げたので期待の版を改めた */
-  t('kintai.html の kintai.js の ?v= を上げた（2026-11-25.2）', /<script src="kintai\.js\?v=2026-11-25\.2"><\/script>/.test(read('kintai.html')));
+  /* ★年別・事業所別・休日のタブ（2026-11-25）で .1、段B（お知らせと補助項目の申請・統合 0130）で .2 に上げたので期待の版を改めた */
+  /* ★段B（2026-11-25・休暇の種類を足した分・休業の期間・統合 0131）で kintai.js を ?v=2026-11-25.3 に上げたので期待の版を改めた */
+  t('kintai.html の kintai.js の ?v= を上げた（2026-11-25.3）', /<script src="kintai\.js\?v=2026-11-25\.3"><\/script>/.test(read('kintai.html')));
 
   console.log('\n結果: ' + pass + ' 合格 / ' + fail + ' 不合格');
   process.exit(fail ? 1 : 0);

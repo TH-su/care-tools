@@ -78,6 +78,11 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, .btn:focus-vi
 .nt-box .nt { margin: 0 0 8px; font-weight: 700; }
 .nt-box .acts { margin: 4px 0 10px; }
 .nt-box .btn { background: var(--card); }
+/* 段B（統合 0130）: 事務所からのお知らせ（自由な文）は青の帯（打刻漏れの知らせの黄色と見分ける） */
+.an-box { background: var(--pri-l); color: var(--tx); border-color: var(--pri); }
+.an-box h2 { color: var(--pri); }
+.an-box .an { margin: 0 0 2px; font-weight: 700; white-space: pre-wrap; word-break: break-word; }
+.an-box .an-d { margin: 0 0 10px; color: var(--mut); }
 .rows { display: grid; gap: 4px; margin: 8px 0 0; padding: 0; list-style: none; }
 .rows li { display: flex; justify-content: space-between; gap: 8px; border-top: 1px solid var(--line); padding: 6px 0 0; }
 @media print {
