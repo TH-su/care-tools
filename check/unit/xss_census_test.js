@@ -269,7 +269,8 @@ const CENSUS = {
   "kintai-leave.js": [],   /* v4（2026-11-20）: 有給の純関数（DOM に触れない） */
   "kintai-36.js": [],      /* v5（2026-11-20）: 36協定の判定の純関数（DOM に触れない） */
   "kintai-monitor.js": [], /* v5（2026-11-20）: 管理者のホームの箱の純関数（DOM に触れない） */
-  "kintai-rules.js": [],   /* v5（2026-11-20）: 勤怠の決まりの見張り（休憩不足・勤務の間・連続勤務）の純関数（DOM に触れない・総点検） */
+  "kintai-rules.js": [],
+  "kintai-extras.js": [],   /* 段A1（2026-11-25）: 日ごとの補助項目の純関数（掃除・合計・表示・CSV の末尾の列。DOM に触れない） */   /* v5（2026-11-20）: 勤怠の決まりの見張り（休憩不足・勤務の間・連続勤務）の純関数（DOM に触れない・総点検） */
   "kintai-freee-import.js": [],   /* 2026-11-23: freee の月の集計の取り込みの純関数（CSV の読み・突き合わせ・DOM に触れない・統合 0123） */
   "kintai-ledger.js": [],   /* 総点検（2026-11-20）: 年次有給休暇管理簿の行を作る純関数（DOM に触れない） */
   "kintai-self-calc.js": [],  /* v5 段5（2026-11-20）: 職員本人の画面の純関数（DOM に触れない） */
@@ -302,6 +303,8 @@ const CENSUS = {
     [E, "if (gm) gm.innerHTML = mgrHtml()"],
     /* v5 段4（2026-11-20）: 年次有給休暇管理簿の紙。ledgerHtml は氏名・日付・日数・時間を全部 esc で入れる（ほかは固定の文） */
     [E, "if (r) r.innerHTML = ledgerHtml()"],
+    /* 段A1（2026-11-25）: 設定の「補助項目」に空の行を足す。exSetRow(i, null, false) は行の番号（数）と固定の文だけで組む（項目の値は空・保存済みの行は描く時に esc を通す） */
+    [N, "tb.insertAdjacentHTML('beforeend', exSetRow(i, null, false))"],
     [F, "g.innerHTML = '<h2>この画面は事務所のパソコンで使います</h2><p>この端末は「現場」として設定されているため、勤怠管理は開きません。出勤・退勤の打刻は「出勤・退勤の打刻」の画面から行います。</p><p><a class=\"btn\" href=\"kintai-clock.html\">打刻の画面へ</a> <a class=\"btn\" href=\"index.html\">メニューへ戻る</a></p>'"]
   ],
   "payroll.html": [],
