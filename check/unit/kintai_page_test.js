@@ -110,7 +110,7 @@ t('印刷の時だけの見出し（.ph は画面で出さない）', /\.ph\{dis
 /* ★freee の月の集計の取り込み（2026-11-23・統合 0123）で kintai.js・kintai-calc.js を ?v=2026-11-23.1 に上げたので期待の版を改めた */
 /* ★v6（2026-11-24・打刻漏れの知らせと休暇の申請）で kintai.js だけを ?v=2026-11-24 に上げたので期待の版を改めた（kintai-calc.js は変えていない・23.1 のまま） */
 /* ★段A1（2026-11-25・日ごとの補助項目）で kintai.js を ?v=2026-11-25 に上げたので期待の版を改めた（この行と下の 311 行あたりの1つ） */
-t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-2…（kintai.js は 2026-11-25 に上げた）', /kintai\.js\?v=2026-11-25/.test(H) && /kintai-calc\.js\?v=2026-11-25/.test(H) && /kintai-calc\.js\?v=2026-11-25/.test(HC));
+t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-2…（kintai.js は main の見た目の仕上げの 2026-11-26 の次の 2026-11-26.1・kintai-calc.js は段A2 の 2026-11-25.3）', /kintai\.js\?v=2026-11-26/.test(H) && /kintai-calc\.js\?v=2026-11-25/.test(H) && /kintai-calc\.js\?v=2026-11-25/.test(HC));
 
 console.log('\n— 8. 打刻画面の v3（出勤を押す → 氏名 → パスコード） —');
 const pendClock = [];
@@ -312,8 +312,8 @@ t('反証レビューの指摘1:「今日」は今日のカレンダー月へ移
 /* ★freee の月の集計の取り込み（2026-11-23・統合 0123）で kintai.js・kintai-calc.js を ?v=2026-11-23.1 に上げたので期待の版を改めた */
 /* ★v6（2026-11-24）で kintai.js を ?v=2026-11-24 に上げたので期待の版を改めた（kintai-calc.js は 2026-11-23.1 のまま・給与の画面と同じ版） */
 /* ★シフトの写し方の直し（2026-11-25）で kintai-calc.js を ?v=2026-11-25.2 に上げたので期待の版を改めた */
-/* ★段A2（2026-11-25・記号の組・通勤回数・社内会議）で kintai.js を 2026-11-25.8（main の給与との行き来の .7 の次・main を取り込んだ時に上げた）・kintai-calc.js を 2026-11-25.3 に上げたので、期待の版を改めた */
-t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-25.8・2026-11-25.3（両画面と給与の画面でそろえる）', /kintai\.js\?v=2026-11-25\.8"/.test(H) && /kintai-calc\.js\?v=2026-11-25\.3"/.test(H) && /kintai-calc\.js\?v=2026-11-25\.3"/.test(HC) && /kintai-calc\.js\?v=2026-11-25\.3"/.test(read('payroll.html')));
+/* ★段A2（2026-11-25・記号の組・通勤回数・社内会議）で kintai.js を 2026-11-26.1（main の見た目の仕上げの 2026-11-26 の次・main を取り込んだ時に上げた）・kintai-calc.js を 2026-11-25.3 に上げたので、期待の版を改めた */
+t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-26.1・2026-11-25.3（両画面と給与の画面でそろえる）', /kintai\.js\?v=2026-11-26\.1"/.test(H) && /kintai-calc\.js\?v=2026-11-25\.3"/.test(H) && /kintai-calc\.js\?v=2026-11-25\.3"/.test(HC) && /kintai-calc\.js\?v=2026-11-25\.3"/.test(read('payroll.html')));
 
 const await_pending = [];   /* 動かして確かめる試験（Promise）を最後に待つ */
 console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（2026-11-20・凍結した仕様書 ROOT-v4-master-leave.md） —');

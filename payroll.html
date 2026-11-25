@@ -27,6 +27,7 @@
 <link rel="stylesheet" href="su-print.css?v=2026-11-13">
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 <link rel="stylesheet" href="su-shell.css?v=2026-11-13">
+<link rel="stylesheet" href="su-office.css?v=2026-11-26">
 <style>
 :root{--ink:#14213d;--sub:#3d4a5c;--line:#c9d2de;--bg:#f4f6f9;--card:#fff;--ok:#0b5d2a;--ok-bg:#e3f4e8;--warn:#6b4100;--warn-bg:#fff4d6;--ng:#8a1020;--ng-bg:#fde8eb;--focus:#1f4fbf;--muted:#414b5a;
   --field:#fff;--th:#eef2f7;--tag:#eef2f7;--wk:#0b3d91;--wk-bg:#e3ecfb;--skel:#e3e8ef;--toast:#14213d;--toast-tx:#fff;--pri-tx:#fff}
@@ -157,13 +158,17 @@ dialog::backdrop{background:rgba(20,33,61,.35)}
 </header>
 <div class="cd gate" id="p-gate" hidden></div>
 <div id="p-app" hidden>
-  <div class="bar">
-    <label>月分 <input type="month" id="p-ym" aria-label="給与の月分"></label>
-    <button type="button" class="btn" id="p-prev" aria-label="前の月分">◀ 前の月分</button>
-    <button type="button" class="btn" id="p-next" aria-label="次の月分">次の月分 ▶</button>
+  <div class="bar su-mbar">
+    <div class="su-mnav" role="group" aria-label="月分の切り替え">
+      <button type="button" class="btn" id="p-prev" aria-label="前の月分">◀ 前の月分</button>
+      <label>月分 <input type="month" id="p-ym" aria-label="給与の月分"></label>
+      <button type="button" class="btn" id="p-next" aria-label="次の月分">次の月分 ▶</button>
+    </div>
     <span id="p-period" class="help"></span>
-    <button type="button" class="btn" id="p-reload">読み直す</button>
-    <button type="button" class="btn" id="p-lock" data-act="pin-lock" hidden>鍵をかける</button>
+    <div class="su-mact">
+      <button type="button" class="btn" id="p-reload">読み直す</button>
+      <button type="button" class="btn" id="p-lock" data-act="pin-lock" hidden>鍵をかける</button>
+    </div>
   </div>
   <nav class="tabs" role="tablist" aria-label="画面の切り替え">
     <button type="button" role="tab" data-tab="run">今月の給与</button>
@@ -185,7 +190,7 @@ dialog::backdrop{background:rgba(20,33,61,.35)}
 <script src="payroll-yearend.js?v=2026-11-23"></script>
 <script src="payroll-withholding-slip.js?v=2026-11-23"></script>
 <script src="payroll-yearend-ui.js?v=2026-11-23.2"></script>
-<script src="payroll.js?v=2026-11-25.1"></script>
+<script src="payroll.js?v=2026-11-26.1"></script>
 <script src="su-shell.js?v=2026-11-19"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 <script src="su-report.js?v=2026-11-23.2" data-tool="給与"></script>

@@ -216,8 +216,8 @@ const kh = new Function(cut(K, 'function isNetErr(') + '\n' + (K.match(/var DENI
   /* ★freee の月の集計の取り込み（2026-11-23・統合 0123）で kintai.js・kintai-calc.js を ?v=2026-11-23.1 に上げたので期待の版を改めた */
   /* ★v6（2026-11-24・打刻漏れの知らせと休暇の申請）で kintai.js を ?v=2026-11-24 に上げたので期待の版を改めた */
   /* ★段A1（2026-11-25・日ごとの補助項目）で kintai.js を ?v=2026-11-25 に上げたので期待の版を改めた */
-  /* ★段A2（2026-11-25・記号の組・通勤回数・社内会議）で kintai.js を 2026-11-25.8（main の給与との行き来の .7 の次・main を取り込んだ時に上げた）・kintai-calc.js を 2026-11-25.3 に上げたので、期待の版を改めた */
-  t('kintai.html の kintai.js の ?v= を上げた（2026-11-25.8）', /<script src="kintai\.js\?v=2026-11-25\.8"><\/script>/.test(read('kintai.html')));
+  /* ★段A2（2026-11-25・記号の組・通勤回数・社内会議）で kintai.js を 2026-11-26.1（main の見た目の仕上げの 2026-11-26 の次・main を取り込んだ時に上げた）・kintai-calc.js を 2026-11-25.3 に上げたので、期待の版を改めた */
+  t('kintai.html の kintai.js の ?v= を上げた（2026-11-26.1）', /<script src="kintai\.js\?v=2026-11-26\.1"><\/script>/.test(read('kintai.html')));
 
   console.log('\n結果: ' + pass + ' 合格 / ' + fail + ' 不合格');
   process.exit(fail ? 1 : 0);
