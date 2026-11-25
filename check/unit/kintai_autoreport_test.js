@@ -218,7 +218,7 @@ const kh = new Function(cut(K, 'function isNetErr(') + '\n' + (K.match(/var DENI
   /* ★段A1（2026-11-25・日ごとの補助項目）で kintai.js を ?v=2026-11-25 に上げたので期待の版を改めた */
   /* ★年別・事業所別・休日のタブ（2026-11-25）で .1、段B（お知らせと補助項目の申請・統合 0130）で .2、社保の知らせで .3 に上げたので期待の版を改めた */
   /* ★段B（2026-11-25・休暇の種類を足した分・休業の期間・統合 0131）で kintai.js を ?v=2026-11-25.4 に上げたので期待の版を改めた */
-  t('kintai.html の kintai.js の ?v= を上げた（2026-11-25.5（代替休暇で .5））', /<script src="kintai\.js\?v=2026-11-25\.5"><\/script>/.test(read('kintai.html')));
+  t('kintai.html の kintai.js の ?v= を上げた（2026-11-25.6（資格の期限で .5・代替休暇で .6））', /<script src="kintai\.js\?v=2026-11-25\.6"><\/script>/.test(read('kintai.html')));
 
   console.log('\n結果: ' + pass + ' 合格 / ' + fail + ' 不合格');
   process.exit(fail ? 1 : 0);
