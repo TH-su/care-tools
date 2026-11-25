@@ -54,6 +54,18 @@
   function isField() { try { return localStorage.getItem('su_device_role') === 'field'; } catch (_) { return false; } }
   function lsGet(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
   function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (_) {} }
+  /* 給与の画面との行き来（2026-11-25 本人指示）: 給与から ?ym=YYYY-MM&tab=close で来た時だけ、その月分・タブで開く。
+     月分は形で、タブは決まった物だけで確かめる（ほかの値は捨てて今までどおり）。読んだら URL から消し、再読み込みは端末に残した月分・タブで開く */
+  var HOP_TABS = ['home', 'close'];
+  function hopIn() {
+    var q = null; try { q = new URLSearchParams(location.search); } catch (_) { return {}; }
+    if (!q || (!q.has('ym') && !q.has('tab'))) return {};
+    try { history.replaceState(null, '', location.pathname + location.hash); } catch (_) {}
+    var y = q.get('ym'), t = q.get('tab');
+    return { ym: C.isYm(y) ? y : null, tab: HOP_TABS.indexOf(t) >= 0 ? t : null };
+  }
+  /* 頭の「給与へ」: 給与の画面は管理者だけ開けるので、管理者の時だけ出す。今見ている月分を渡す */
+  function paintHop() { var a = $('g-to-pay'); if (!a) return; a.hidden = !isAdmin(); a.href = 'payroll.html?ym=' + encodeURIComponent(ym || ''); }
   function todayYm() { return C.jstDate(Date.now()).slice(0, 7); }
   function hm(v) { return v == null ? '' : C.jstHM(typeof v === 'number' ? v : Date.parse(v)); }
   function ms(v) { if (v == null || v === '') return null; var t = typeof v === 'number' ? v : Date.parse(v); return isNaN(t) ? null : t; }
@@ -431,7 +443,7 @@
   function countText(b) { return b.countStart != null ? hm(b.countStart) + '〜' + hm(b.countEnd) : ''; }
   function dateList() { var p = per(), out = []; for (var d = p.from; d <= p.to; d = C.addDays(d, 1)) out.push(d); return out; }
   /* 月の選びの横に期間（例「（11/16〜12/15）」）を出す（textContent・画面だけ） */
-  function paintPer() { var el = $('g-period'); if (el) el.textContent = perLabel().replace(/^.*月分/, ''); }
+  function paintPer() { var el = $('g-period'); if (el) el.textContent = perLabel().replace(/^.*月分/, ''); paintHop(); }   /* 月分が変わった時に「給与へ」の行き先も描き直す（2026-11-25） */
   var WD = ['日', '月', '火', '水', '木', '金', '土'];
   function wd(date) { return WD[new Date(Date.parse(date + 'T12:00:00+09:00')).getUTCDay()]; }
   function officeSelect() {
@@ -1225,7 +1237,8 @@
       (!lk && shiftInfo && !shiftInfo.ok ? 'シフトを取り込めていないため、まだ締められません（' + esc(shiftInfo.why) + '）。上の「シフトを取り込み直す」を押してから締めてください。' : '');
     var h = printHead('締めと出力') + fiHtml() + '<div class="cd"><h2 style="font-size:16px;margin:0 0 8px">月の締め</h2>' +
       (diff.length ? '<div class="band warn">締めた時の数字と今の数字が違う職員がいます（' + diff.map(esc).join('・') + '）。締めた後の打刻・計算の決まりの見直しなどが原因です。給与へ渡したのは締めた時の数字です（月の集計の CSV も締めた時の数字で出します）。</div>' : '') +
-      (lk ? '<p>締めた日時: ' + esc(new Date(data.month.locked_at).toLocaleString('ja-JP')) + '</p>' + (afterLock ? '<div class="band warn">締めた後に足された打刻があります（印「締めた後の打刻」）。給与へ渡した後なら、来月の調整を検討してください。</div>' : '') +
+      (lk ? '<p>締めた日時: ' + esc(new Date(data.month.locked_at).toLocaleString('ja-JP')) + '</p>' +
+        (isAdmin() ? '<p class="no-print"><a class="btn pri" href="payroll.html?ym=' + esc(encodeURIComponent(ym)) + '">💴 給与の画面でこの月分を計算する</a></p>' : '') + (afterLock ? '<div class="band warn">締めた後に足された打刻があります（印「締めた後の打刻」）。給与へ渡した後なら、来月の調整を検討してください。</div>' : '') +
         '<button type="button" class="btn ng" data-act="unlock"' + (isAdmin() ? '' : ' disabled') + '>締めを解除する（管理者）</button>' :
         (review ? '<div class="band warn">要確認が ' + review + ' 件残っているため、まだ締められません。1件ずつ「認める／認めない」を決めてください（認めない時は理由を残します）。</div><div class="row no-print"><button type="button" class="btn" data-act="rvd-start">要確認を1件目から決める</button></div>' : '<div class="band ok">要確認はありません。</div>') +
         (stop ? '<div class="band warn" role="status">' + stop + '</div>' : '') +
@@ -3999,13 +4012,15 @@
       if (!ok) { view = 'gate'; return; }
       view = 'app';
       $('g-app').hidden = false;
+      var hp = hopIn();   /* 給与の画面から来た時の月分・タブ（2026-11-25） */
+      if (hp.ym) lsSet(LS_YM, hp.ym); if (hp.tab) lsSet(LS_TAB, hp.tab);
       var t = lsGet(LS_TAB); tab = TABS.indexOf(t) >= 0 ? t : 'home';   /* v5 段2: 既定のタブはホーム（仮置き） */
       var y = lsGet(LS_YM); ym = C.isYm(y) ? y : todayYm();
       autoYm = C.isYm(y) ? null : ym;
       $('g-ym').value = ym;
       bind();
       try { if (window.SUPerf) window.SUPerf.ready(); } catch (_) {}
-      return window.SUAuth.check().then(function (st) { role = st && st.status === window.SUAuth.STATUS.OK ? st.role : null; }, function () { role = null; })
+      return window.SUAuth.check().then(function (st) { role = st && st.status === window.SUAuth.STATUS.OK ? st.role : null; paintHop(); }, function () { role = null; paintHop(); })
         .then(function () { return load(true); });
     })['catch'](function (e) { note('起動', e); });
   }
