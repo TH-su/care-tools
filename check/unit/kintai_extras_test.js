@@ -223,6 +223,6 @@ t('形を変えた項目の前の形の行: 個人の月の帯・CSV の注意�
   && /var kc = exs \? exKindChanged\(exs\.items\) : \[\];\s*if \(kc\.length && !confirm\(/.test(K) && /\(saved && exHasRows\(it\.code\) \? ' disabled/.test(K));
 t('入れる窓は保存していない入力を確かめる（DIRTY_MODES.extra）', /DIRTY_MODES\.extra = 1;/.test(K));
 /* ★年別・事業所別・休日のタブ（2026-11-25・kintai-views.js）で TABS に3つ足した。補助項目が足していないこと（端末に残す鍵）は同じに確かめる */
-t('補助項目は新しいタブ・端末に残す鍵を足していない（TABS は年別などの3つと社保の知らせの shaho を足しただけ・localStorage の鍵は今のまま）', /var TABS = \['home', 'day', 'review', 'requests', 'grid', 'person', 'staff', 'leave', 'close', 'settings', 'year', 'site', 'holiday', 'shaho'\];/.test(K) && /var LS_TAB = 'kintai_tab', LS_YM = 'kintai_ym';/.test(K) && !/localStorage\.setItem\([^)]*ex/.test(K));
+t('補助項目は新しいタブ・端末に残す鍵を足していない（TABS は年別などの3つと社保の知らせの shaho と資格の期限の cert を足しただけ・localStorage の鍵は今のまま）', /var TABS = \['home', 'day', 'review', 'requests', 'grid', 'person', 'staff', 'leave', 'close', 'settings', 'year', 'site', 'holiday', 'shaho', 'cert'\];/.test(K) && /var LS_TAB = 'kintai_tab', LS_YM = 'kintai_ym';/.test(K) && !/localStorage\.setItem\([^)]*ex/.test(K));
 console.log('\n' + pass + ' 件合格 / ' + fail + ' 件不合格');
 process.exit(fail ? 1 : 0);
