@@ -47,7 +47,7 @@ jobs:
       go: ${{ steps.head.outputs.go }}
     environment:
       name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+      url: ${{ steps.deploy.outputs.page_url || steps.deploy2.outputs.page_url }}
     steps:
       - name: リポジトリを取り出す（試験に合格した版）
         uses: actions/checkout@v4
@@ -98,8 +98,22 @@ jobs:
         with:
           path: ${{ runner.temp }}/site
 
+      # 2026-11-25: 渡した中身が GitHub の一覧に出る前（0.5秒後）に取りに行き「中身が0件」で3回続けて落ちた（中身は API で見るとあった・稼働状況は正常）。
+      #   1回目で落ちた時だけ、少し待ってもう一度配る。2回目も落ちれば実行は失敗のまま（前に配った版が公開され続ける）
       - name: 配る
         if: steps.head.outputs.go == '1'
         id: deploy
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+
+      - name: 1回目が落ちた時は、渡した中身が一覧に出るまで少し待つ
+        if: steps.head.outputs.go == '1' && steps.deploy.outcome == 'failure'
+        run: |
+          echo "::warning::1回目の配りが落ちたので、45秒待ってもう一度配ります"
+          sleep 45
+
+      - name: 配る（もう一度）
+        if: steps.head.outputs.go == '1' && steps.deploy.outcome == 'failure'
+        id: deploy2
         uses: actions/deploy-pages@v4
 
