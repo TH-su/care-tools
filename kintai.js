@@ -21,10 +21,13 @@
  *   「スマホの一覧」（kintai_self_devices・kintai_self_device_revoke）。読み込みは月の読み込みの鎖に入れず、自分の世代で捨てる。
  *   登録の番号（QR の40字と8文字）は窓の中の絵と文字にだけ持ち、窓を閉じた時・期限の時に消す（端末に残さない・印刷しない）。
  *   関数がまだ無い（0114 の前）時は、それぞれの欄に「データベースの更新がまだです」と出し、聞き直さない（自動の報告にも回さない）
+ * ・段A1（2026-11-25・仕様書 ROOT-v7-plus-parity.md「段A1 の凍結した仕様」・care-backend 統合 0127）: 日ごとの補助項目（移動距離・健診など手で入れる項目）。
+ *   定義は設定の鍵 extraItems（設定のタブの「補助項目」）・日の行は kintai_extras_get／kintai_extra_put／kintai_extra_void・純関数は kintai-extras.js。
+ *   個人の月で入れる・直す・取り消す。月の集計と日ごとの CSV の末尾に列を足す（今の列の並びは変えない）。関数がまだ無い時は補助項目の欄をどこにも出さない
  */
 (function () {
   'use strict';
-  var C = window.KintaiCalc, L = window.KintaiLeave, K36 = window.Kintai36, MON = window.KintaiMonitor, RUL = window.KintaiRules;
+  var C = window.KintaiCalc, L = window.KintaiLeave, K36 = window.Kintai36, MON = window.KintaiMonitor, RUL = window.KintaiRules, EX = window.KintaiExtras;
   var TABS = ['home', 'day', 'review', 'requests', 'grid', 'person', 'staff', 'leave', 'close', 'settings'];
   var LS_TAB = 'kintai_tab', LS_YM = 'kintai_ym';
   var gen = 0, view = 'boot', tab = 'home', ym = null, data = null, month = null, shiftInfo = null;
@@ -277,6 +280,7 @@
       paintPer();
       editsCache = null;
       paint();
+      loadExtras();   /* 段A1: 補助項目の日の行（月の読み込みの鎖の外・失敗しても月の画面は止めない） */
       /* 職員の並び（入職順）に職員マスタの入職日を使うので、まだ読んでいなければ裏で読む（読めない時は番号の順のまま） */
       if (!masterSt && !masterBusy) loadMaster();
     })['catch'](function (e) {
@@ -639,8 +643,8 @@
       var nt = d.note ? [d.note.early_ok ? '早出を認めた' : '', d.note.early_from ? '早出を ' + hm(d.note.early_from) + ' から認めた' : '', d.note.overtime_ok ? '残業を認めた' : '', d.note.ot_until ? '残業を ' + hm(d.note.ot_until) + ' まで認めた' : '', d.note.break_min != null ? '休憩を' + d.note.break_min + '分に' : '', d.note.note || ''].filter(Boolean).join('・') : '';
       var bl = d.blocks.length ? d.blocks : [null];
       bl.forEach(function (b, i) {
-        rows.push('<tr><td>' + (i === 0 ? esc(md(d.date)) + '（' + wd(d.date) + '）' : '') + '</td><td>' + (b ? schedText(b) : (d.paidMin ? '有休' : '')) + '</td><td class="raw">' + (b ? esc(rawPunches(b)) : '') + '</td><td>' + (b ? countText(b) : '') + '</td><td class="num">' + (b ? b.breakMin : '') + '</td><td class="num">' + (b ? fm(b.workMin) : '') + '</td><td class="num">' + (b ? fm(b.nightMin) : '') + '</td><td>' + (b ? flagTags(b.flags, b.checked) : '') + (i === 0 && nt ? '<span class="tag">' + esc(nt) + '</span>' : '') + (i === 0 ? absTags(d) : '') + '</td>' +
-          '<td class="no-print">' + (i === 0 ? '<button type="button" class="btn sm" data-act="edit" data-sid="' + esc(p.staff.staff_id) + '" data-date="' + d.date + '">直す</button>' : '') + '</td></tr>');
+        rows.push('<tr><td>' + (i === 0 ? esc(md(d.date)) + '（' + wd(d.date) + '）' : '') + '</td><td>' + (b ? schedText(b) : (d.paidMin ? '有休' : '')) + '</td><td class="raw">' + (b ? esc(rawPunches(b)) : '') + '</td><td>' + (b ? countText(b) : '') + '</td><td class="num">' + (b ? b.breakMin : '') + '</td><td class="num">' + (b ? fm(b.workMin) : '') + '</td><td class="num">' + (b ? fm(b.nightMin) : '') + '</td><td>' + (b ? flagTags(b.flags, b.checked) : '') + (i === 0 && nt ? '<span class="tag">' + esc(nt) + '</span>' : '') + (i === 0 ? absTags(d) + exDayTags(p.staff.staff_id, d.date) : '') + '</td>' +
+          '<td class="no-print">' + (i === 0 ? '<button type="button" class="btn sm" data-act="edit" data-sid="' + esc(p.staff.staff_id) + '" data-date="' + d.date + '">直す</button>' + exDayBtn(p.staff.staff_id, d.date) : '') + '</td></tr>');
       });
     });
     return (warns.length ? '<div class="band warn">' + warns.map(esc).join('<br>') + '</div>' : '') +
@@ -668,7 +672,7 @@
     var p = personOf(selStaff);
     if (!p) return '<div class="cd"><p class="empty">職員がいません。「職員と番号」でシフトから取り込んでください。</p></div>';
     return printHead(dispName(p.staff) + ' さん') + '<div class="cd"><div class="row no-print">' + sel + '<button type="button" class="btn sm" data-act="addday">予定の無い日に打刻を足す</button><button type="button" class="btn sm" data-act="work-open">勤務時間を手で入れる</button><button type="button" class="btn sm" data-act="sched-open">出勤予定を直す・入れる</button><button type="button" class="btn sm" data-act="fx-open" data-sid="' + esc(p.staff.staff_id) + '">前提の時間</button><button type="button" class="btn sm" data-act="print">印刷</button><button type="button" class="btn sm" data-act="print-all">全員分を印刷（1人1ページ）</button></div>' +
-      personHtml(p, a36) + '</div>';
+      personHtml(p, a36) + '</div>' + exPersonHtml(p);   /* 段A1: 補助項目（日ごと）の欄（画面だけ） */
   }
 
   /* 「職員と番号」の表だけは従業員コードの順（2026-11-20 代表者の指示）。従業員コードの無い人は後ろに、入職順（staffSorted）のまま */
@@ -1179,7 +1183,7 @@
     return h;
   }
   /* 直しの履歴（kintai_edits）の action の言い方。DB の勤怠の移行（0098〜0112）が書く action は全部ここに置く（内部の名前のまま出さない・v5 1-3・試験 kintai_edits_label_test） */
-  var ACT_LABEL = { notice_add: '打刻漏れを本人に知らせた', notice_void: '打刻漏れの知らせを取り消した', sched_set: '予定を直した', sched_off: '予定を休みにした', sched_clear: '予定の手直しを外した', fixed_put: '前提の時間を入れた', fixed_void: '前提の時間を取り消した', display_name: '表示名を変えた', punch_add: '打刻を足した', punch_void: '打刻を取り消した', day_put: '承認・休憩・メモ・印', code_reset: '番号を振り直した', code_fixed: '打刻の番号を職員No に合わせた', month_lock: '月を締めた', month_unlock: '締めを解除した', settings_put: '設定を変えた', schedule_put: 'シフトを取り込んだ', staff_sync: 'シフトから職員を取り込んだ',
+  var ACT_LABEL = { notice_add: '打刻漏れを本人に知らせた', notice_void: '打刻漏れの知らせを取り消した', sched_set: '予定を直した', sched_off: '予定を休みにした', sched_clear: '予定の手直しを外した', fixed_put: '前提の時間を入れた', fixed_void: '前提の時間を取り消した', display_name: '表示名を変えた', punch_add: '打刻を足した', punch_void: '打刻を取り消した', extra_put: '補助項目を入れた', extra_void: '補助項目を取り消した', day_put: '承認・休憩・メモ・印', code_reset: '番号を振り直した', code_fixed: '打刻の番号を職員No に合わせた', month_lock: '月を締めた', month_unlock: '締めを解除した', settings_put: '設定を変えた', schedule_put: 'シフトを取り込んだ', staff_sync: 'シフトから職員を取り込んだ',
     master_import: '職員マスタと突き合わせた', master_add: '職員マスタから職員を足した', staff_link: '職員マスタとの結び付けを直した', clock_visible: '打刻画面に出す・出さないを変えた',
     leave_profile: '有給の設定を変えた', leave_grant_add: '有給の付与を足した', leave_grant_void: '有給の付与を取り消した', leave_use_add: '有休の使用を足した', leave_use_void: '有休の使用を取り消した',
     managers_add: '勤怠の管理者に足した', managers_remove: '勤怠の管理者から外した',
@@ -1352,6 +1356,7 @@
     h += '<label for="s-monthRound30">月の残業・深夜の合計の端数</label><span><input type="checkbox" id="s-monthRound30"' + (c.monthRound30 ? ' checked' : '') + '> 1時間未満を30分で四捨五入する（就業規則に定めがある時だけ）</span>';
     h += '<label for="s-csvTime">CSV の時間の書き方</label><span><select id="s-csvTime"><option value="hmm"' + (c.csvTime === 'hmm' ? ' selected' : '') + '>8:30</option><option value="dec"' + (c.csvTime === 'dec' ? ' selected' : '') + '>8.50</option></select></span>';
     h += lvSetHtml();   /* v5 段4: 休暇と丸め（設定の欄の続き） */
+    h += exSetHtml();   /* 段A1: 補助項目（関数が無い時は出さない） */
     h += '</form>' + a36Form() + '<div class="row"><button type="button" class="btn pri" data-act="save-set"' + (isAdmin() ? '' : ' disabled') + '>設定を保存する</button></div>' +
       '<p class="help">休憩の時間（日勤 ' + esc(c.breakH) + ' 時間・夜勤 ' + esc(c.nightBreakH) + ' 時間・拘束が ' + esc(c.breakThresholdH) + ' 時間を超えたら引く）はシフトアプリの設定を取り込んで使います（ここでは変えません）。丸めの決まり: 予定より早い出勤は予定の開始から、予定より遅い退勤は予定の終わりまで数えます。始業前・終業後に実際に働いた時は、その日を「直す」で早出・残業を認めてください（認めないまま切り捨てると賃金の未払いになります）。</p></div>';
     /* v5 1-5: 勤怠の管理者の名簿（管理者だけに出す・画面だけで印刷しない） */
@@ -1408,6 +1413,220 @@
   function settingsDirty() { return view === 'app' && tab === 'settings' && setInit != null && !!$('g-set') && settingsState() !== setInit; }
   /* タブ・月の切り替え・読み直しの前に、保存していない設定の変更を確かめる（窓の確かめ dirty とは別に持つ） */
   function settingsLeaveOk() { return !settingsDirty() || confirm('保存していない設定の変更があります。変更を捨てて移りますか？'); }
+
+  /* ── 段A1（2026-11-25・凍結仕様 ROOT-v7-plus-parity.md「段A1」・統合 0127）: 日ごとの補助項目（移動距離・健診・社内会議など手で入れる項目）──
+   * 項目の定義は設定の鍵 extraItems（設定のタブの「補助項目」で足す・名前と形を直す・止める。コードは変えない・消さない。保存は「設定を保存する」）。
+   * 日の行は月分ごとに kintai_extras_get で読む（月の読み込みの鎖に入れず、自分の世代で捨てる・画面の中だけ・端末に残さない）。
+   * 関数がまだ無い（0127 の前）時は、補助項目の欄をどこにも出さず、聞き直さない（自動の報告にも回さない・CSV も今のまま）。
+   * 入れる・直す（kintai_extra_put＝同じ人・日・項目の前の行に取り消しの印を付けて足す）・取り消す（kintai_extra_void・理由が要る）は個人の月から。
+   * 締めた月分は入れる欄を出さない（DB も locked で断る）。個人の月の紙（印刷）には出さない＝紙は今のまま */
+  var exSt = null, exGen = 0, exNoDb = false;
+  function exOn() { return !!EX && !exNoDb; }
+  function exItems() { return EX ? EX.itemsOf(rawCfg()) : null; }
+  function exActive() { return EX ? EX.activeItems(rawCfg()) : []; }
+  function exItem(code) { return (exItems() || []).filter(function (x) { return x.code === code; })[0] || null; }
+  function exReady() { return exOn() && !!exSt && exSt.ym === ym && !exSt.err; }
+  function exCanInput() { return exReady() && !isLocked() && exActive().length > 0; }
+  var NG_EX = { baddate: 'その日には入れられません（来月分の期間の終わりより先の日です）。日付を確かめてください。',
+    badcode: 'この項目は使えません（設定のタブの「補助項目」をまだ保存していないか、項目を止めてあります）。保存は管理者（2段階認証まで済んだ人）が行います。読み直してから入れてください。',
+    badvalue: '入れた値を受け付けられませんでした（回数・数値は 0〜99999.99 で設定の小数の桁まで・時間は1分〜24時間・メモは200字まで）。',
+    notfound: '見つかりませんでした（勤怠の職員にいないか、もう取り消された行です）。読み直してください。',
+    locked: 'その日は締めた月分に入っているため、入れることも取り消すこともできません。直す時は管理者が締めを解除してください。',
+    reason: '取り消す理由を書いてください。', already: 'もう取り消してあります。読み直してください。' };
+  function exMsg(e) { return e && e.kintai && NG_EX[e.kintai] ? NG_EX[e.kintai] : msgOf(e); }
+  function loadExtras() {
+    if (!exOn() || !ym) return Promise.resolve();
+    var my = ++exGen, atYm = ym;
+    return rpc('kintai_extras_get', { p_ym: atYm }).then(okOr).then(function (r) {
+      if (my !== exGen) return;
+      exSt = { ym: atYm, from: r.from, to: r.to, rows: (Array.isArray(r.rows) ? r.rows : []).filter(function (x) { return x && !x.voided_at && typeof x.staff_id === 'string' && typeof x.code === 'string' && C.isDate(x.date); }) };
+    })['catch'](function (e) {
+      if (my !== exGen) return;
+      if (noDb(e)) { exNoDb = true; exSt = null; return; }
+      if (!isNetErr(e) && !isDenied(e)) note('補助項目の読み込み', e);
+      exSt = { ym: atYm, rows: [], err: '補助項目を読めませんでした: ' + exMsg(e) };
+    }).then(function () {
+      if (my !== exGen) return;
+      /* 読み終わったら、補助項目を出すタブだけ描き直す（設定のタブは保存していない変更が無い時だけ＝入れている途中の値を消さない） */
+      if (view !== 'app' || busy || printAll || !month) return;
+      if (tab === 'person' || (tab === 'settings' && !settingsDirty())) paint();
+    });
+  }
+  function exVal(r, it) { return it && it.kind === 'time' ? r.minutes : r.qty; }
+  function exRowsOf(sid, date) { return exReady() ? exSt.rows.filter(function (r) { return r.staff_id === sid && (date == null || r.date === date); }) : []; }
+  /* 個人の月の日の行の札（画面だけ・紙に出さない） */
+  function exDayTags(sid, date) {
+    var rs = exRowsOf(sid, date);
+    if (!rs.length) return '';
+    return '<span class="no-print">' + rs.map(function (r) { var it = exItem(r.code); return '<span class="tag">' + esc(it ? EX.label(it, exVal(r, it)) : r.code) + '</span>'; }).join('') + '</span>';
+  }
+  function exDayBtn(sid, date) { return exCanInput() ? '<button type="button" class="btn sm" data-act="ex-open" data-sid="' + esc(sid) + '" data-date="' + esc(date) + '">補助項目</button>' : ''; }
+  /* 個人の月の下の「補助項目（日ごと）」の欄（画面だけ・紙に出さない）。勤務の無い日（健診だけの日など）もここから入れる */
+  function exPersonHtml(p) {
+    if (!exOn()) return '';
+    var sid = p.staff.staff_id, h = '<div class="cd no-print"><h2 style="font-size:16px;margin:0 0 8px">補助項目（日ごと）</h2>';
+    if (!exSt || exSt.ym !== ym) return h + '<p class="empty">読み込んでいます…</p></div>';
+    if (exSt.err) return h + '<div class="band warn" role="status">' + esc(exSt.err) + '</div><div class="row"><button type="button" class="btn sm k5" data-act="ex-reload">読み直す</button></div></div>';
+    var items = exItems();
+    /* DB は設定に extraItems を保存するまで、どの項目も断る（初期の7つは案で、DB は持たない・統合 0127） */
+    if (!items) return h + '<p class="help">初めの7つ（' + esc(EX.EXTRA_ITEMS_DEFAULT.map(function (x) { return x.name; }).join('・')) + '）は案です。設定のタブの「補助項目」で保存すると、ここで日ごとに入れられるようになります。' +
+      (isAdmin() ? '設定のタブで中身を確かめて「設定を保存する」を押してください。' : '保存できるのは管理者（2段階認証まで済んだ人）だけです。管理者に保存を頼んでください。') + '</p></div>';
+    var act = exActive(), rs = exRowsOf(sid, null).slice().sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : a.code < b.code ? -1 : 1; });
+    var lk = isLocked(), S0 = EX.sumExtras(rs, items), sums = S0.byStaff[sid] || {}, mm = EX.mismatchText(S0.mismatch, items);
+    var tot = EX.csvItems(items, rs).map(function (it) { return EX.label(it, sums[it.code] || 0); }).join('・');   /* 使う項目と、止めた項目でもこの月分に行がある項目（CSV の列と同じ） */
+    h += '<div class="row">' + (lk ? '<span class="help">締めた月分のため、入れることも取り消すこともできません。</span>' : (act.length ? '<button type="button" class="btn sm k5" data-act="ex-open" data-sid="' + esc(sid) + '">補助項目を入れる</button>' : '<span class="help">使う項目がありません（設定のタブの「補助項目」で「使う」にします）。</span>')) + '</div>';
+    if (tot) h += '<p><b>この月分の合計:</b> ' + esc(tot) + '</p>';
+    if (mm) h += '<div class="band warn" role="status">' + esc(mm) + '</div>';   /* 形を変えた項目の前の形の行（数えない・反証レビュー 2026-11-25） */
+    var body = rs.map(function (r) {
+      var it = exItem(r.code), on = !!(it && it.active);
+      return '<tr><td>' + esc(md(r.date)) + '（' + wd(r.date) + '）</td><td>' + esc(it ? EX.nameOf(it) : r.code) + (on ? '' : ' <span class="tag">' + (it ? '止めた項目' : '設定に無い項目') + '</span>') + '</td><td class="num">' + esc(!it ? '' : exVal(r, it) == null ? '形が違う（数えていません）' : EX.fmtValue(it, exVal(r, it), 'hmm', true)) + '</td><td style="white-space:normal">' + esc(r.note || '') + '</td>' +
+        '<td>' + (lk ? '' : (on ? '<button type="button" class="btn sm k5" data-act="ex-open" data-sid="' + esc(sid) + '" data-date="' + esc(r.date) + '" data-code="' + esc(r.code) + '">直す</button>' : '') + '<button type="button" class="btn sm k5 ng" data-act="ex-void" data-id="' + esc(r.id) + '">取り消す</button>') + '</td></tr>';
+    }).join('');
+    h += '<div class="tw"><table><thead><tr><th>日</th><th>項目</th><th class="num">値</th><th>メモ</th><th></th></tr></thead><tbody>' + (body || '<tr><td colspan="5" class="empty">この月分の補助項目はまだありません</td></tr>') + '</tbody></table></div>' +
+      '<p class="help">直すと前の値には取り消しの印が付き、直しの履歴に残ります（消しません）。月の集計の CSV（給与向け）の末尾に、使う項目ごとの月の合計が出ます。</p>';
+    return h + '</div>';
+  }
+  /* 入れる・直す窓。date・code があればその日・その項目（直す時は日と項目を変えない＝別の行になるため） */
+  function openExtra(sid, date, code) {
+    if (!exCanInput() || !sid) return;
+    var act = exActive(), pp = per(), cur = code ? exRowsOf(sid, date).filter(function (r) { return r.code === code; })[0] || null : null;
+    var it0 = (code && act.filter(function (x) { return x.code === code; })[0]) || act[0];
+    var edit = !!(code && cur);
+    var b = '<p>' + esc(nameOf(sid)) + ' さん（' + esc(perLabel()) + '）</p>' +
+      '<div class="row"><label>日 <input type="date" class="k5" id="ex-date" min="' + esc(pp.from) + '" max="' + esc(pp.to) + '" value="' + esc(date && inPer(date) ? date : '') + '"' + (edit ? ' disabled' : '') + '></label>' +
+      '<label>項目 <select class="k5" id="ex-code"' + (edit ? ' disabled' : '') + '>' + act.map(function (x) { return '<option value="' + esc(x.code) + '"' + (x.code === it0.code ? ' selected' : '') + '>' + esc(EX.nameOf(x)) + '</option>'; }).join('') + '</select></label></div>' +
+      '<div class="row"><label id="ex-qty-l">値 <input type="text" class="k5" id="ex-qty" inputmode="decimal" autocomplete="off" style="width:8em" value="' + esc(cur && it0.kind !== 'time' && cur.qty != null ? EX.fmtValue(it0, cur.qty, 'hmm', false) : '') + '"> <span id="ex-unit"></span></label>' +
+      '<label id="ex-time-l">時間 <input type="number" class="k5" id="ex-h" min="0" max="24" step="1" style="width:5em" value="' + esc(cur && it0.kind === 'time' && cur.minutes != null ? Math.floor(cur.minutes / 60) : '') + '"> 時間 <input type="number" class="k5" id="ex-m" min="0" max="59" step="1" style="width:5em" value="' + esc(cur && it0.kind === 'time' && cur.minutes != null ? cur.minutes % 60 : '') + '"> 分</label></div>' +
+      '<div class="row"><label style="flex:1">メモ（なくてよい）<input type="text" class="k5" id="ex-note" maxlength="200" style="flex:1;min-width:14em" value="' + esc(cur && cur.note || '') + '"></label></div>' +
+      '<p class="help">同じ日・同じ項目にもう値がある時は、入れ直しになります（前の値には取り消しの印が付き、直しの履歴に残ります）。</p><p class="help" id="e-msg" role="alert"></p>';
+    openDlg(edit ? '補助項目を直す' : '補助項目を入れる', b, false, '保存する', 'ex-save');
+    dlgCtx = { mode: 'extra', sid: sid, edit: edit, date: edit ? date : null, code: edit ? code : null };
+    exKindShow();
+    dlgCtx.init = formState();
+  }
+  /* 選んだ項目の形に合う欄だけを出す（回数・数値＝値・時間＝時間と分） */
+  function exKindShow() {
+    var sel = $('ex-code'); if (!sel) return;
+    var it = exItem(sel.value), tm = !!(it && it.kind === 'time');
+    $('ex-qty-l').hidden = tm; $('ex-time-l').hidden = !tm;
+    $('ex-unit').textContent = it ? (it.kind === 'count' ? '回' : it.unit || '') : '';
+    $('ex-qty').setAttribute('inputmode', it && it.kind === 'count' ? 'numeric' : 'decimal');
+  }
+  var EX_WHY = { empty: '値を入れてください。', neg: '0 以上で入れてください。', int: '時間は分まで（整数）で入れてください。' };
+  function saveExtra(btn) {
+    var ctx = dlgCtx;
+    if (!ctx || ctx.mode !== 'extra' || busy) return;
+    var msg = $('e-msg'), date = ctx.edit ? ctx.date : $('ex-date').value, code = ctx.edit ? ctx.code : $('ex-code').value, it = exItem(code);
+    if (!C.isDate(date) || !inPer(date)) { msg.textContent = 'この月分（' + perLabel() + '）の日を選んでください。'; return; }
+    if (!it || !it.active) { msg.textContent = '項目を選んでください。'; return; }
+    var pv;
+    if (it.kind === 'time') {
+      var mm = EX.minutesOf($('ex-h').value, $('ex-m').value);
+      pv = mm == null ? { ok: false, why: 'empty' } : EX.parseValue(it, isNaN(mm) ? 'x' : mm);
+    } else pv = EX.parseValue(it, $('ex-qty').value);
+    if (!pv.ok) {
+      msg.textContent = EX_WHY[pv.why] || (it.kind === 'time' ? '時間は1分〜24時間で入れてください（分は 0〜59）。' : pv.why === 'decimals' ? (it.kind === 'count' ? '回数は整数で入れてください。' : '小数は ' + it.decimals + ' 桁までです（設定の「補助項目」で決めた桁）。') : '0〜99999.99 の数で入れてください。');
+      return;
+    }
+    var nt = String($('ex-note').value || '').trim();
+    if (nt.length > 200) { msg.textContent = 'メモは200字までです。'; return; }
+    busy = true; msg.textContent = '保存しています…';
+    var restore = pressBusy(btn, '保存しています…', $('g-dlg-f'));
+    rpc('kintai_extra_put', { p_staff: ctx.sid, p_date: date, p_code: code, p_qty: pv.qty, p_minutes: pv.minutes, p_note: nt || null }).then(okOr).then(function () {
+      busy = false; closeDlg(); editsCache = null;
+      toast('補助項目を保存しました（' + nameOf(ctx.sid) + ' さん ' + md(date) + ' ' + EX.label(it, it.kind === 'time' ? pv.minutes : pv.qty) + '）');
+      return loadExtras();
+    })['catch'](function (e) { busy = false; restore(); if (!isNetErr(e) && !(e && e.kintai)) note('補助項目を入れる', e); if ($('g-dlg').open && $('e-msg') === msg) msg.textContent = exMsg(e); else toast(exMsg(e)); });
+  }
+  function openExtraVoid(id) {
+    if (!exReady() || isLocked()) return;
+    var r = exSt.rows.filter(function (x) { return x.id === id; })[0];
+    if (!r) { toast(NG_EX.notfound); return; }
+    var it = exItem(r.code);
+    openDlg('補助項目を取り消す', '<p>' + esc(nameOf(r.staff_id)) + ' さん ' + esc(md(r.date)) + '（' + wd(r.date) + '）の「' + esc(it ? EX.label(it, exVal(r, it)) : r.code) + '」を取り消します。行は消さずに取り消しの印を付け、直しの履歴に残ります。</p>' +
+      reasonRow('例: 入れる日を間違えたため'), false, '取り消す', 'ex-void-go');
+    dlgCtx = { mode: 'extra', id: id, sid: r.staff_id };
+    dlgCtx.init = formState();
+  }
+  function voidExtra(btn) {
+    var ctx = dlgCtx;
+    if (!ctx || ctx.mode !== 'extra' || !ctx.id || busy) return;
+    var msg = $('e-msg'), reason = needReason(msg); if (!reason) return;
+    busy = true; var restore = pressBusy(btn, '取り消しています…', $('g-dlg-f'));
+    rpc('kintai_extra_void', { p_id: ctx.id, p_reason: reason }).then(okOr).then(function () {
+      busy = false; closeDlg(); editsCache = null; toast('補助項目を取り消しました（' + nameOf(ctx.sid) + ' さん）');
+      return loadExtras();
+    })['catch'](function (e) { busy = false; restore(); if (!isNetErr(e) && !(e && e.kintai)) note('補助項目を取り消す', e); if ($('g-dlg').open && $('e-msg') === msg) msg.textContent = exMsg(e); else toast(exMsg(e)); });
+  }
+  /* 設定のタブの「補助項目」の欄（設定の欄 #g-set の中＝保存していない変更の確かめが同じ道で数える）。保存済みのコードは変えられない・行は消さない */
+  function exSetRow(i, it, saved) {
+    var k = it ? it.kind : 'count', n = i + 1;
+    var opt = function (v, t, cur) { return '<option value="' + v + '"' + (cur === v ? ' selected' : '') + '>' + t + '</option>'; };
+    var dec = String(it ? it.decimals : 0);
+    return '<tr><td><input type="text" class="k5" id="ex-s-code-' + i + '" maxlength="20" value="' + esc(it ? it.code : '') + '"' + (saved ? ' readonly' : '') + ' aria-label="補助項目のコード ' + n + '" style="width:9em"></td>' +
+      '<td><input type="text" class="k5" id="ex-s-name-' + i + '" maxlength="20" value="' + esc(it ? it.name : '') + '" aria-label="補助項目の名前 ' + n + '" style="width:11em"></td>' +
+      '<td><select class="k5" id="ex-s-kind-' + i + '" aria-label="補助項目の形 ' + n + '"' + (saved && exHasRows(it.code) ? ' disabled title="この月分に入れた行があるため形は変えられません（止めて、新しいコードで足します）"' : '') + '>' + opt('count', '回数', k) + opt('number', '数値＋単位', k) + opt('time', '時間', k) + '</select></td>' +
+      '<td><input type="text" class="k5" id="ex-s-unit-' + i + '" maxlength="10" value="' + esc(it ? it.unit : '') + '" aria-label="補助項目の単位 ' + n + '" style="width:6em"></td>' +
+      '<td><select class="k5" id="ex-s-dec-' + i + '" aria-label="補助項目の小数の桁 ' + n + '">' + opt('0', '整数', dec) + opt('1', '1桁', dec) + opt('2', '2桁', dec) + '</select></td>' +
+      '<td><label><input type="checkbox" id="ex-s-act-' + i + '"' + (!it || it.active ? ' checked' : '') + '> 使う</label></td></tr>';
+  }
+  /* 読み込んだ月分にその項目の行があるか（あれば設定で形を変えさせない＝前の形の行が合計から消えないように・反証レビュー 2026-11-25） */
+  function exHasRows(code) { return !!exSt && !exSt.err && exSt.rows.some(function (r) { return r.code === code; }); }
+  function exSetHtml() {
+    if (!exOn() || !exSt) return '';   /* 関数がまだ無い・まだ確かめていない時は出さない（確かめ終わったら描き直す） */
+    var saved = exItems(), list = saved || EX.copyDefault();
+    return '<div style="grid-column:1/-1" class="no-print"><h2 style="font-size:16px;margin:14px 0 8px">補助項目（日ごとに手で入れる項目）</h2>' +
+      '<p class="help">個人の月で、日ごとに入れる項目です（移動距離・健診など）。月の集計の CSV（給与向け）の末尾に、使う項目ごとの月の合計の列が出ます。項目は消せません。使わなくなった項目は「使う」を外して止めます。コードは入れた行が使うので、保存した後は変えられません。単位と小数の桁は「数値＋単位」の時だけ使います（時間は時間と分で入れます）。' +
+      (saved ? 'この月分に入れた行がある項目は、形を変えられません（変える時は止めて、新しいコードで足します）。' : '<b>まだ保存していません。下は初めの案です（「設定を保存する」で決まります）。</b>') + '</p>' +
+      '<span class="tw" style="display:block"><table><thead><tr><th>コード（英数字）</th><th>名前</th><th>形</th><th>単位</th><th>小数の桁</th><th>使う</th></tr></thead><tbody id="ex-s-rows">' +
+      list.map(function (it, i) { return exSetRow(i, it, !!saved); }).join('') + '</tbody></table></span>' +
+      '<button type="button" class="btn sm k5" data-act="ex-add-row">行を足す</button> <span class="help">' + EX.MAX_ITEMS + '個まで。コードと名前を空にした新しい行は保存しません。</span></div>';
+  }
+  /* 空の行を1つ足す（画面全体は描き直さない＝入れている途中の値を消さない） */
+  function exAddRow() {
+    var tb = $('ex-s-rows'); if (!tb) return;
+    var i = 0; while ($('ex-s-code-' + i)) i++;
+    if (i >= EX.MAX_ITEMS) { toast('補助項目は' + EX.MAX_ITEMS + '個までです'); return; }
+    tb.insertAdjacentHTML('beforeend', exSetRow(i, null, false));
+    $('ex-s-code-' + i).focus();
+  }
+  var EX_BAD = { code: 'コードは英数字・_・- の20字まで', dup: 'コードがほかの行と重なっています', name: '名前は1〜20字（止める時は名前を消さずに「使う」を外します）', kind: '形を選んでください', unit: '単位は10字まで', decimals: '小数の桁は 0〜2', active: '「使う」の印が読めません', max: EX ? EX.MAX_ITEMS + '個まで' : '', shape: '形が違います' };
+  /* 入れた値を extraItems にする。{ items, bad }（欄が無い時は null＝今の設定のまま送る）。保存済みの項目は必ず残す（消さない） */
+  function readExSet() {
+    if (!$('ex-s-rows') || !EX) return null;
+    var raw = [], rowNo = [], bad = [], i;
+    for (i = 0; $('ex-s-code-' + i); i++) {
+      var ce = $('ex-s-code-' + i), code = String(ce.value || '').trim(), name = String($('ex-s-name-' + i).value || '').trim(), kind = $('ex-s-kind-' + i).value;
+      if (!ce.readOnly && !code && !name) continue;   /* 足したが使わなかった空の行 */
+      var num = kind === 'number', unit = num ? String($('ex-s-unit-' + i).value || '').trim() : '';
+      if (!name || name.length > EX.NAME_MAX) { bad.push('補助項目 ' + (i + 1) + ' 行目（' + EX_BAD.name + '）'); continue; }
+      if (unit.length > EX.UNIT_MAX) { bad.push('補助項目 ' + (i + 1) + ' 行目（' + EX_BAD.unit + '）'); continue; }
+      /* 単位と小数の桁は「数値＋単位」の時だけ送る（回数・時間は単位なし・桁 0） */
+      raw.push({ code: code, name: name, kind: kind, unit: unit, decimals: num ? +$('ex-s-dec-' + i).value : 0, active: !!$('ex-s-act-' + i).checked });
+      rowNo.push(i + 1);
+    }
+    var cl = EX.cleanExtraItems(raw);
+    cl.bad.forEach(function (b) { bad.push('補助項目 ' + (rowNo[b.row - 1] || b.row) + ' 行目（' + (EX_BAD[b.why] || '形が違います') + '）'); });
+    (exItems() || []).forEach(function (x) { if (!bad.length && !cl.items.some(function (y) { return y.code === x.code; })) bad.push('保存済みの補助項目「' + EX.nameOf(x) + '」が見つかりません。読み直してください'); });
+    return { items: cl.items, bad: bad };
+  }
+  function exKindChanged(items) {
+    var old = exItems() || [];
+    return items.filter(function (x) { var o = old.filter(function (y) { return y.code === x.code; })[0]; return o && o.kind !== x.kind; }).map(function (x) { return EX.nameOf(x); });
+  }
+  /* 月の集計・日ごとの CSV の末尾の列（列にする項目が無い・関数が無い時は null＝今の CSV のまま。項目があるのに読めていない時は false＝書き出さない） */
+  function exCsv(kind, src, text) {
+    if (!exOn()) return null;
+    if (!(exItems() || []).length) return null;   /* 項目をまだ保存していない＝行も無い（DB が断る） */
+    if (!exReady()) { alert('補助項目を読み込めていないため、書き出せません（補助項目の列が 0 のまま出るのを防ぐため）。「読み直す」を押してから、もう一度書き出してください。'); return false; }
+    /* 列は使う項目と、止めた項目でもこの月分に行がある項目（入れた数が CSV から消えないように・統合 0127 の確定） */
+    var items = EX.csvItems(exItems() || [], exSt.rows);
+    if (!items.length) return null;
+    var sums = EX.sumExtras(exSt.rows, exItems() || []);
+    var out = EX.appendCsv(text, kind, { people: (src.people || []).map(function (p) { return { staff_id: p.staff.staff_id, emp_code: p.staff.emp_code }; }), items: items, sums: sums, mode: src.config && src.config.csvTime });
+    out.warn = EX.mismatchText(sums.mismatch, exItems() || []);   /* 形を変えた項目の前の形の行は数えていない（書き出しの後の注意に出す） */
+    return out;
+  }
 
   /* ── v5 1-5: 勤怠の管理者の名簿（kintai_managers_list・kintai_managers_put（p_on で載せる・外す）。どれも二段階の管理者だけ＝DB が決める） ──
    * 読み終わっても画面全体は描き直さない（設定のタブの入力中の値を消さない）。自分の入れ物（#g-mgr）だけを差し替え、遅れた応答は世代で捨てる */
@@ -1609,7 +1828,7 @@
   }
   var DIRTY_MODES = { edit: 1, work: 1, leave: 1, link: 1, mimport: 1, clockvis: 1, madd: 1, dname: 1, rq: 1, sprv: 1, sched: 1, fixed: 1 };   /* v5 段5: 差し戻し・承認のメモ（rq）と、スマホの取り消しの理由（sprv）を足した（反証レビュー 2026-11-21） */   /* 0111 で予定の手直し・前提を足した */   /* 保存していない入力を確かめる窓（v4 で手入力・有給・結び付けを足した） */
   DIRTY_MODES.mgr = 1;
-  DIRTY_MODES.rvd = 1;   /* 0120: 締めの前の要確認を決める窓 */   /* v5 1-5: 勤怠の管理者を足す・外す窓も確かめる */
+  DIRTY_MODES.rvd = 1; DIRTY_MODES.extra = 1;   /* 0120: 締めの前の要確認を決める窓 */   /* v5 1-5: 勤怠の管理者を足す・外す窓も確かめる */
   function closeDlg() { wipeEnroll(); dlgCtx = null; try { $('g-dlg').close(); } catch (_) { $('g-dlg').removeAttribute('open'); } }
   function dirty() {
     if (!dlgCtx || !DIRTY_MODES[dlgCtx.mode] || dlgCtx.init == null) return false;
@@ -2562,6 +2781,14 @@
     src = Object.assign({}, src, { people: (src.people || []).map(function (p) { return Object.assign({}, p, { staff: Object.assign({}, p.staff, { name: dispName(p.staff) }) }); }) });
     var res = C.buildCsv(src, { nameOf: nameOfOffice, extraCols: true });
     var text = kind === 'sum' ? res.summary : res.daily, enc = ($('g-enc') || {}).value || 'utf8', blob, unknown = [];
+    /* 段A1: 末尾に補助項目の列（今の列の並びは変えない・行は足さない） */
+    var exr = exCsv(kind, src, text);
+    if (exr === false) return;
+    if (exr) {
+      text = exr.text;
+      if (exr.warn) extra.push(exr.warn);
+      if (exr.dropped) extra.push(kind === 'sum' ? '補助項目を入れてあっても月の集計に行が無い職員（勤務・打刻の無い人・従業員コードの無い人）' + exr.dropped + ' 人の補助項目は出していません。' : '補助項目を入れてあっても日ごとの明細に行が無い日（勤務・打刻の無い日など）' + exr.dropped + ' 日分は出していません（月の集計の合計には入っています）。');
+    }
     if (enc === 'sjis') {
       try { var sj = C.encodeSjis(text); blob = new Blob([sj.bytes], { type: 'text/csv' }); unknown = sj.unknown; }
       catch (e) { alert('この端末では Shift_JIS に変えられません。UTF-8 で書き出してください。'); return; }
@@ -2605,13 +2832,20 @@
     /* v5 段4: 休暇と丸めの欄（欄が無い画面では今の設定のまま） */
     var lvs = typeof readLvSet === 'function' ? readLvSet() : null;
     if (lvs && lvs.bad.length) { alert('休暇と丸めの欄を入れ直してください: ' + lvs.bad.join('、')); return; }
+    /* 段A1: 補助項目の欄（欄が無い画面では今の設定のまま・形の違う行があれば保存しない） */
+    var exs = typeof readExSet === 'function' ? readExSet() : null;
+    if (exs && exs.bad.length) { alert('補助項目の欄を入れ直してください: ' + exs.bad.join('、')); return; }
+    /* 保存済みの項目の形を変える時は、ほかの月分の前の形の行が合計と CSV に数えられなくなることを確かめる（反証レビュー 2026-11-25） */
+    var kc = exs ? exKindChanged(exs.items) : [];
+    if (kc.length && !confirm('補助項目の形を変えます（' + kc.join('・') + '）。ほかの月分に前の形で入れた行があると、その行は合計と CSV に数えられなくなります（画面と書き出しで知らせます）。変えてよいですか？\n（安全なのは、今の項目を止めて、新しいコードで足すことです）')) return;
     /* この画面の欄が持たない今の設定の鍵（agreement36 など）は、そのまま残して送る（DB の kintai_settings_put は送った中身で丸ごと置き換えるため・v5 段3）。
        欄が持つ鍵は今までどおり欄の値だけ（空にした欄は送らず既定に戻す） */
-    var outCfg = {}, cur = rawCfg(), formKeys = SET_FIELDS.map(function (f) { return f[0]; }).concat(['close_day', 'variableMonth', 'monthRound30', 'csvTime', 'legal_holiday']).concat(lvs ? LV_SET_KEYS : []);
+    var outCfg = {}, cur = rawCfg(), formKeys = SET_FIELDS.map(function (f) { return f[0]; }).concat(['close_day', 'variableMonth', 'monthRound30', 'csvTime', 'legal_holiday']).concat(lvs ? LV_SET_KEYS : []).concat(exs ? ['extraItems'] : []);
     for (k in cur) if (formKeys.indexOf(k) < 0) outCfg[k] = cur[k];
     for (k in cfg) outCfg[k] = cfg[k];
     if (a36.obj) outCfg.agreement36 = a36.obj;
     if (lvs) for (k in lvs.vals) outCfg[k] = lvs.vals[k];
+    if (exs) outCfg.extraItems = exs.items;
     busy = true; var restore = pressBusy(btn, '保存しています…');
     rpc('kintai_settings_put', { p_config: outCfg, p_rev: (data.settings && data.settings.rev) || 0 }).then(okOr).then(function () { busy = false; sync('設定を保存しました'); toast('設定を保存しました'); return load(false); })['catch'](function (e) { busy = false; restore(); note('設定の保存', e); alert(msgOf(e)); });
   }
@@ -3257,6 +3491,12 @@
       else if (a === 'lv-use-add' || a === 'lv-use-void' || a === 'lv-grant-add' || a === 'lv-grant-void' || a === 'lv-prof-save' || a === 'lv-abs-add' || a === 'lv-abs-void') leaveAct(a, b);
       else if (a === 'lv-ledger') printLedger();
       else if (a === 'lt-add') ltAddRow();
+      else if (a === 'ex-add-row') exAddRow();   /* 段A1: 補助項目 */
+      else if (a === 'ex-open') openExtra(b.getAttribute('data-sid'), b.getAttribute('data-date'), b.getAttribute('data-code'));
+      else if (a === 'ex-save') saveExtra(b);
+      else if (a === 'ex-void') openExtraVoid(b.getAttribute('data-id'));
+      else if (a === 'ex-void-go') voidExtra(b);
+      else if (a === 'ex-reload') { exSt = null; paint(); loadExtras(); }
       else if (a === 'recode') recode(b.getAttribute('data-sid'), b);
       else if (a === 'import') { if (isLocked()) alert('締めた月は取り込めません。'); else if (settingsLeaveOk()) { dropMonthCaches(); load(true); } }
       else if (a === 'lock') lockMonth(b);
@@ -3297,7 +3537,8 @@
       else if (id === 'fi-file') fiRead(e.target);   /* 2026-11-23: freee の月の集計の CSV（メモリだけで読む） */
       else if (e.target && e.target.name === 'fi-none' && fiSt) { fiSt.none[e.target.value] = !!e.target.checked; paint(); }
       else if (e.target && e.target.name === 'fi-v') fiSel[e.target.value] = !!e.target.checked;
-      else if (id === 'lv-a-kind') absKindShow();   /* v5 段4: 休暇の種類に合う欄だけを出す */
+      else if (id === 'lv-a-kind') absKindShow();
+      else if (id === 'ex-code') exKindShow();   /* 段A1: 補助項目の形に合う欄だけを出す */   /* v5 段4: 休暇の種類に合う欄だけを出す */
       else if (id === 'g-ym') { if (settingsLeaveOk()) setYm(e.target.value); else e.target.value = ym; }   /* v5 C4: 保存していない設定の変更を確かめる（やめたら月の欄を戻す） */
       else if (e.target && e.target.name === 'sc-op' && $('sc-times')) $('sc-times').disabled = e.target.value !== 'set';
       else if ((id === 'sc-sid' || id === 'sc-from') && dlgCtx && dlgCtx.mode === 'sched') schedRefill();
