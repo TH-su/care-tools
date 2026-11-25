@@ -193,6 +193,10 @@
 !/kintai-yearly.js
 !/kintai-views.js
 !/kintai-shaho.js
+# 資格の失効の警告（2026-11-25・care-backend 統合 0134）。資格の記録は共通 DB の関数だけが読み書きし、端末に残さない
+!/kintai-cert-calc.js
+!/kintai-cert.js
+!/check/kintai_cert_e2e.mjs
 !/kintai-ledger.js
 # 職員本人のスマホの勤怠の画面と純関数（2026-11-20・勤怠 v5 の段5・care-backend 統合 0114）。コードのみ公開。端末に置くのは鍵（受け口が作った乱数）とタブの印だけで、
 # 暗証番号・勤怠・有給・申請・表示名はメモリだけ。読み書きは受け口 kintai-self（service_role の本人の口）だけ

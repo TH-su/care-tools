@@ -28,7 +28,7 @@
 (function () {
   'use strict';
   var C = window.KintaiCalc, L = window.KintaiLeave, K36 = window.Kintai36, MON = window.KintaiMonitor, RUL = window.KintaiRules, EX = window.KintaiExtras, KS = window.KintaiShaho;
-  var TABS = ['home', 'day', 'review', 'requests', 'grid', 'person', 'staff', 'leave', 'close', 'settings', 'year', 'site', 'holiday', 'shaho'];   /* year・site・holiday は kintai-views.js（設定の plusViews が入の時だけ・2026-11-25）・shaho は社保の知らせ（設定の shaho が入の時だけ） */
+  var TABS = ['home', 'day', 'review', 'requests', 'grid', 'person', 'staff', 'leave', 'close', 'settings', 'year', 'site', 'holiday', 'shaho', 'cert'];   /* year・site・holiday は kintai-views.js（設定の plusViews が入の時だけ・2026-11-25）・shaho は社保の知らせ（設定の shaho が入の時だけ）・cert は資格の期限（kintai-cert.js・設定の certAlert が入の時だけ） */
   var LS_TAB = 'kintai_tab', LS_YM = 'kintai_ym';
   var gen = 0, view = 'boot', tab = 'home', ym = null, data = null, month = null, shiftInfo = null;
   var selDate = null, selStaff = null, onlyReview = false, role = null, busy = false, editsCache = null;
@@ -363,6 +363,7 @@
     reloadMonth: function () { dropMonthCaches(); load(false); } };
   function paint() {
     if (tab === 'shaho' && data && !shOn()) tab = 'home';   /* 社保の知らせを切った時・切のまま覚えていたタブはホームへ（タブの札より先に） */
+    if (tab === 'cert' && data && !((typeof CT !== 'undefined' && CT) && CT.on(rawCfg()))) tab = 'home';   /* 資格の期限（kintai-cert.js）を切った時・部品が無い時も同じ */
     paintTabs();
     var m = $('g-main');
     if (busy && !month) { m.innerHTML = '<p class="empty">読み込んでいます…</p>'; skel(m); m.setAttribute('aria-busy', 'true'); return; }
@@ -373,7 +374,8 @@
     var vwApi = typeof window !== 'undefined' && window.KintaiViews || null, vwIsOn = !!vwApi && vwApi.on(rawCfg()), vwT = tab === 'year' || tab === 'site' || tab === 'holiday';
     if (vwApi) vwApi.syncTabs(vwIsOn, tab);
     if (vwT && !vwIsOn) { tab = 'home'; vwT = false; paintTabs(); }
-    var f = { home: paintHome, day: paintDay, review: paintReview, requests: paintRequests, grid: paintGrid, person: paintPerson, staff: paintStaff, leave: paintLeave, close: paintClose, settings: paintSettings, shaho: paintShaho }[tab];
+    if ((typeof CT !== 'undefined' && CT)) CT.syncTabs(!!data && CT.on(rawCfg()), tab, ctCtx());   /* 資格の期限のタブ（入の時だけ足す） */
+    var f = { home: paintHome, day: paintDay, review: paintReview, requests: paintRequests, grid: paintGrid, person: paintPerson, staff: paintStaff, leave: paintLeave, close: paintClose, settings: paintSettings, shaho: paintShaho, cert: function () { return (typeof CT !== 'undefined' && CT) ? CT.paint(ctCtx()) : ''; } }[tab];
     var kb = typeof window !== 'undefined' && window.KintaiBoard ? window.KintaiBoard : null;   /* 段B（統合 0130・kintai-board.js）: 申請のタブの下にお知らせと補助項目の申請・締めの画面の上に補助項目の承認待ち（無ければ空） */
     m.innerHTML = bands() + (kb && tab === 'close' ? kb.closeHtml() : '') + (vwT ? vwApi.paint(tab, vwCtx()) : f()) + (kb && tab === 'requests' ? kb.html() : '');
     setInit = tab === 'settings' && $('g-set') ? settingsState() : null;   /* v5 C4: 描いた時の設定の入力（保存していない変更を確かめる） */
@@ -400,6 +402,15 @@
         busy = true; var restore = pressBusy(btn, '保存しています…');
         rpc('kintai_settings_put', { p_config: cfg, p_rev: (data.settings && data.settings.rev) || 0 }).then(okOr).then(function () { busy = false; if (onOk) onOk(); toast(msg || '保存しました'); return load(false); })['catch'](function (e) { busy = false; restore(); note('休日の保存', e); alert(msgOf(e)); });
       } };
+  }
+  /* ── 資格の期限（kintai-cert.js・2026-11-25・ROOT-v7 段C・統合 0134）: 部品が無い・設定の certAlert が切の時は何もしない ── */
+  var CT = window.KintaiCert || null;
+  function ctCtx() {
+    var c = vwCtx();
+    c.rpc = rpc; c.okOr = okOr; c.noDb = noDb; c.toast = toast; c.pressBusy = pressBusy; c.today = today;
+    c.staff = function () { return data && data.staff || []; };
+    c.repaint = function () { if (view === 'app' && !busy && !printAll && (tab === 'cert' || tab === 'home')) paint(); };
+    return c;
   }
   var RED = { no_punch: 1, missing_in: 1, missing_out: 1 };
   /* 印の札。勤務中は青（赤にしない）・確認済みの塊の要確認の印は線で消して残す */
@@ -560,7 +571,7 @@
       return { staff_id: s.staff_id, name: dispName(s), ob: x.sm.obligation, expiringDays: near ? soon.days : 0, expiringText: near ? dTxt(soon.days, s.staff_id) : '', expires: near ? soon.expires : null };   /* v5 段4: 有給の画面と同じ書き方の日数の文（半日きざみは「12.5 日」・時間単位の端数は「12 日 5 時間」） */
     });
   }
-  var BOX_UNIT = { today: '人', review: '件', a36: '人', leave: '人', close: '月分', rules: '人', shaho: '人' };
+  var BOX_UNIT = { today: '人', review: '件', a36: '人', leave: '人', close: '月分', rules: '人', shaho: '人', cert: '人' };
   var LV_JA = { ok: 'なし', warn: '注意', alert: '要対応' };
   function boxHtml(b, attrs, body) {
     var rows = (b.rows || []).slice(0, 5).map(function (r) { return '<span class="hl">' + (r.name ? '<b>' + esc(r.name) + '</b> ' : '') + esc(r.text) + '</span>'; }).join('');
@@ -610,6 +621,7 @@
     if (!reqSum || reqSum.ym !== ym) out.push(waitBox('申請の承認待ち', '読み込み中…', false));
     else if (reqSum.err) out.push(waitBox('申請の承認待ち', reqSum.err, false));
     var shb = shBoxHtml(); if (shb) out.push(shb);   /* 社保の知らせ（入れた時だけ） */
+    var ctb = (typeof CT !== 'undefined' && CT) ? CT.homeBox(ctCtx(), boxHtml, waitBox) : ''; if (ctb) out.push(ctb);   /* 資格の期限（入れた時だけ） */
     return h + '<h2 style="font-size:16px;margin:0 0 4px">' + esc(perLabel()) + 'のようす</h2><p class="help">箱を押すと、その一覧の画面へ移ります。今日・要確認・勤務の決まりは30秒ごとに読み直します。勤務の決まり（休憩・勤務の間・続けて働いた日）は知らせだけで、数えた時間は変えません。</p>' +
       '<div class="hgrid">' + out.join('') + '</div></div>';
   }
@@ -1405,6 +1417,7 @@
     if (typeof VW !== 'undefined' && VW) h += VW.setHtml(rawCfg());   /* 年別・事業所別・休日のタブの入り切り（2026-11-25・既定は切） */
     if (typeof window !== 'undefined' && window.KintaiBoard) h += window.KintaiBoard.settingsHtml(rawCfg(), isAdmin());   /* 段B（統合 0130）: 職員のスマホの画面のお知らせと補助項目の申請の入り切り */
     h += shSetHtml();   /* 社保の知らせ（部品が無い時は出さない） */
+    if ((typeof CT !== 'undefined' && CT)) h += CT.setHtml(rawCfg());   /* 資格の期限の知らせの入り切り（既定は切） */
     h += '</form>' + a36Form() + '<div class="row"><button type="button" class="btn pri" data-act="save-set"' + (isAdmin() ? '' : ' disabled') + '>設定を保存する</button></div>' +
       '<p class="help">休憩の時間（日勤 ' + esc(c.breakH) + ' 時間・夜勤 ' + esc(c.nightBreakH) + ' 時間・拘束が ' + esc(c.breakThresholdH) + ' 時間を超えたら引く）はシフトアプリの設定を取り込んで使います（ここでは変えません）。丸めの決まり: 予定より早い出勤は予定の開始から、予定より遅い退勤は予定の終わりまで数えます。始業前・終業後に実際に働いた時は、その日を「直す」で早出・残業を認めてください（認めないまま切り捨てると賃金の未払いになります）。</p></div>';
     /* v5 1-5: 勤怠の管理者の名簿（管理者だけに出す・画面だけで印刷しない） */
@@ -3038,12 +3051,13 @@
     var exs = typeof readExSet === 'function' ? readExSet() : null;
     if (exs && exs.bad.length) { alert('補助項目の欄を入れ直してください: ' + exs.bad.join('、')); return; }
     var vws = typeof VW !== 'undefined' && VW ? VW.readSet(rawCfg()) : null;   /* 年別・事業所別・休日のタブの入り切り（欄が無い時は今の設定のまま） */
+    var cts = (typeof CT !== 'undefined' && CT) ? CT.readSet(rawCfg()) : null;   /* 資格の期限の知らせの入り切り（欄が無い時は今の設定のまま） */
     /* 保存済みの項目の形を変える時は、ほかの月分の前の形の行が合計と CSV に数えられなくなることを確かめる（反証レビュー 2026-11-25） */
     var kc = exs ? exKindChanged(exs.items) : [];
     if (kc.length && !confirm('補助項目の形を変えます（' + kc.join('・') + '）。ほかの月分に前の形で入れた行があると、その行は合計と CSV に数えられなくなります（画面と書き出しで知らせます）。変えてよいですか？\n（安全なのは、今の項目を止めて、新しいコードで足すことです）')) return;
     /* この画面の欄が持たない今の設定の鍵（agreement36 など）は、そのまま残して送る（DB の kintai_settings_put は送った中身で丸ごと置き換えるため・v5 段3）。
        欄が持つ鍵は今までどおり欄の値だけ（空にした欄は送らず既定に戻す） */
-    var outCfg = {}, cur = rawCfg(), formKeys = SET_FIELDS.map(function (f) { return f[0]; }).concat(['close_day', 'variableMonth', 'monthRound30', 'csvTime', 'legal_holiday']).concat(lvs ? LV_SET_KEYS : []).concat(exs ? ['extraItems'] : []).concat(vws ? vws.keys : []).concat(shs ? ['shaho'] : []);
+    var outCfg = {}, cur = rawCfg(), formKeys = SET_FIELDS.map(function (f) { return f[0]; }).concat(['close_day', 'variableMonth', 'monthRound30', 'csvTime', 'legal_holiday']).concat(lvs ? LV_SET_KEYS : []).concat(exs ? ['extraItems'] : []).concat(vws ? vws.keys : []).concat(shs ? ['shaho'] : []).concat(cts ? cts.keys : []);
     for (k in cur) if (formKeys.indexOf(k) < 0) outCfg[k] = cur[k];
     for (k in cfg) outCfg[k] = cfg[k];
     if (a36.obj) outCfg.agreement36 = a36.obj;
@@ -3051,6 +3065,7 @@
     if (exs) outCfg.extraItems = exs.items;
     if (typeof window !== 'undefined' && window.KintaiBoard) window.KintaiBoard.readSettings(outCfg);   /* 段B（統合 0130）: 鍵 selfAnnounce・selfExtraReq（欄が無い時は今の設定のまま） */
     if (vws) for (k in vws.vals) outCfg[k] = vws.vals[k];
+    if (cts) for (k in cts.vals) outCfg[k] = cts.vals[k];
     if (shs && ('shaho' in cur || JSON.stringify(shs.vals) !== JSON.stringify(KS.fillConfig({})))) outCfg.shaho = shs.vals;   /* 触っていない・既定のままなら鍵を作らない（履歴に載せない） */
     busy = true; var restore = pressBusy(btn, '保存しています…');
     rpc('kintai_settings_put', { p_config: outCfg, p_rev: (data.settings && data.settings.rev) || 0 }).then(okOr).then(function () { busy = false; sync('設定を保存しました'); toast('設定を保存しました'); return load(false); })['catch'](function (e) { busy = false; restore(); note('設定の保存', e); alert(msgOf(e)); });
@@ -3646,6 +3661,7 @@
       var a = b.getAttribute('data-act');
       if (!a) return;
       if (a.indexOf('vw-') === 0) { if (typeof VW !== 'undefined' && VW) VW.act(a, b, vwCtx()); return; }   /* 年別・事業所別・休日（2026-11-25） */
+      if (a.indexOf('ct-') === 0) { if ((typeof CT !== 'undefined' && CT)) CT.act(a, b, ctCtx()); return; }   /* 資格の期限（2026-11-25） */
       if (a === 'nt-add') { ntAdd(b.getAttribute('data-sid'), b.getAttribute('data-date'), b.getAttribute('data-kind'), b); return; }   /* v6: 打刻漏れの知らせ */
       if (a === 'nt-void') { ntVoid(b.getAttribute('data-id'), b.getAttribute('data-sid'), b); return; }
       if (a === 'edit') openEdit(b.getAttribute('data-sid'), b.getAttribute('data-date'), b.hasAttribute('data-bi') ? +b.getAttribute('data-bi') : null, b.getAttribute('data-rv'));
@@ -3740,6 +3756,7 @@
     document.addEventListener('change', function (e) {
       var id = e.target && e.target.id;
       if (id && id.indexOf('vw-') === 0) { if (typeof VW !== 'undefined' && VW) VW.change(e, vwCtx()); return; }   /* 年別・事業所別・休日（2026-11-25） */
+      if (id && id.indexOf('ct-') === 0) { if ((typeof CT !== 'undefined' && CT)) CT.change(e, ctCtx()); return; }   /* 資格の期限（2026-11-25） */
       if (id === 'g-date') { selDate = e.target.value; paint(); }
       else if (id === 'g-staff') { selStaff = e.target.value; paint(); }
       else if (id === 'g-only') { onlyReview = e.target.checked; paint(); }
@@ -3766,6 +3783,7 @@
     document.addEventListener('input', function (e) {
       var id = e.target && e.target.id, r;
       if (id && id.indexOf('vw-h-') === 0 && typeof VW !== 'undefined' && VW) VW.keep(e);   /* 会社の休日の書きかけを描き直しで消さない（審査 2026-11-25 M1） */
+      if (id && id.indexOf('ct-') === 0 && (typeof CT !== 'undefined' && CT)) CT.keep(e);   /* 資格の書きかけを描き直しで消さない */
       if (id === 'fi-reason' && fiSt) fiSt.reason = e.target.value;   /* 描き直しで書いた理由を消さない（画面の中だけ） */
       if (id && id.indexOf('ex-s-') === 0) exTouched = true;   /* 段A1: 設定の「補助項目」の欄に書いた（反証レビュー 2026-11-25 M3） */
       /* 0111: 予定の窓で始業・終業を変えたら、前の予定から入れた休憩は空に戻す（いつもの決まりで決め直す。手で入れた休憩は残す） */
@@ -3778,13 +3796,14 @@
     $('g-next').addEventListener('click', function () { if (settingsLeaveOk()) setYm(C.nextYm(ym)); });
     $('g-import').addEventListener('click', function () { if (isLocked()) alert('締めた月は取り込めません。'); else if (settingsLeaveOk()) { dropMonthCaches(); load(true); } });
     /* v5 段5: 上の「読み直す」は申請の一覧と数も捨てて読み直す（反証レビュー 2026-11-21）。月を読み直す受けより先に足し、読み込みの最初の描き直しで新しく読むようにする */
-    $('g-reload').addEventListener('click', function () { reqReset(); reqSumReset(); if (typeof VW !== 'undefined' && VW) VW.drop(); });
+    $('g-reload').addEventListener('click', function () { reqReset(); reqSumReset(); if (typeof VW !== 'undefined' && VW) VW.drop(); if ((typeof CT !== 'undefined' && CT)) CT.drop(); });
     $('g-reload').addEventListener('click', function () { if (settingsLeaveOk()) { dropMonthCaches(); load(false); } });
     /* 保存中（busy）は Esc でも閉じない（審査の指摘1） */
     $('g-dlg').addEventListener('cancel', function (e) { if (busy) { e.preventDefault(); return; } if (dirty() && !confirm('保存していない直しがあります。閉じますか？')) e.preventDefault(); else { dlgCtx = null; wipeEnroll(); } });   /* v5 段5: Esc の時はその場で QR と番号を消す（close の知らせは後から届くため） */
     $('g-dlg').addEventListener('close', function () { wipeEnroll(); });   /* v5 段5: Esc・閉じるのどれで閉じても QR と番号を消す */
     window.addEventListener('beforeunload', function (e) { if (dirty() || settingsDirty()) { e.preventDefault(); e.returnValue = ''; } });
     window.addEventListener('beforeunload', function (e) { if (typeof VW !== 'undefined' && VW && VW.dirty()) { e.preventDefault(); e.returnValue = ''; } });   /* 会社の休日の書きかけ（2026-11-25） */
+    window.addEventListener('beforeunload', function (e) { if ((typeof CT !== 'undefined' && CT) && CT.dirty()) { e.preventDefault(); e.returnValue = ''; } });   /* 資格の書きかけ（2026-11-25） */
     window.addEventListener('storage', function (e) { if (e.key === 'su_device_role' && isField()) location.reload(); });
     window.addEventListener('pageshow', function (e) { if (e && e.persisted && isField()) location.reload(); });
     window.addEventListener('beforeprint', stampPrint);
