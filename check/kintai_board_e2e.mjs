@@ -134,7 +134,7 @@ try {
     await page.waitForSelector('#g-main .rq', { timeout: 20000 });
     await page.waitForTimeout(800);
     t('申請のタブにお知らせ・補助項目の申請の欄が無い', (await page.$('.kb-ann')) === null && (await page.$('.kb-xr')) === null);
-    t('0130 の関数を呼ばない', !st.calls.some((c) => /announce|extra_req/.test(c[0])), st.calls.map((c) => c[0]));
+    t('お知らせの関数は呼ばない・補助項目は承認待ちを聞くだけ（無ければ何も出さない）', !st.calls.some((c) => /announce/.test(c[0])) && st.calls.filter((c) => /extra_req/.test(c[0])).every((c) => c[0] === 'kintai_extra_reqs_list' && c[1].p_status === 'pending'), st.calls.map((c) => c[0]));
     await page.click('[data-tab="settings"]');
     await page.waitForSelector('#kb-s-ann', { timeout: 15000 });
     t('設定のタブに2つの入り切り（既定は外れ）', !(await page.isChecked('#kb-s-ann')) && !(await page.isChecked('#kb-s-xr')));
@@ -185,6 +185,27 @@ try {
     await page.waitForTimeout(1500);
     const okc = sent(st, 'kintai_extra_req_decide').pop();
     t('承認する: 送る → 月を読み直す', okc && okc[1].p_approve === true && okc[1].p_note === null && sent(st, 'kintai_month_get').length > getsBefore, okc && okc[1]);
+    await page.click('[data-tab="close"]');
+    await page.waitForTimeout(1500);
+    t('締めの画面の上に、この月分の補助項目の承認待ちの帯は出ない（残りは決めた・差し戻した）', (await page.$('.kb-close')) === null);
+    t('画面の例外 0', errs.length === 0, errs);
+    await ctx.close();
+  }
+
+  console.log('\n— B2. 管理画面・締めの画面と、鍵を切った後に残った承認待ち —');
+  {
+    const st = { base: server.url, calls: [], config: { extraItems: ITEMS }, rev: 3, ann: [],
+      xr: [{ id: '00000000-0000-4000-8000-0000000d0003', staff_id: 'kakuu-s1', name: '架空 甲', staff_active: true, work_date: '2025-12-10', ym: '2025-12', code: 'checkup', qty: 1, minutes: null, note: null, status: 'pending', rev: 1, created_at: '2025-12-11T00:00:00Z' }] };
+    const { ctx, page, errs } = await openAdmin(browser, st, 'close');
+    await page.waitForSelector('.kb-close', { timeout: 20000 });
+    t('締めの画面の上に、この月分の補助項目の承認待ちの帯', /承認待ちが 1 件あります/.test(await page.textContent('.kb-close')));
+    await page.click('[data-tab="requests"]');
+    await page.waitForSelector('.kb-xr', { timeout: 10000 });
+    t('鍵が切でも、残った承認待ちは申請のタブで決められる（お知らせの欄は出さない）', /切にしたため/.test(await page.textContent('.kb-xr')) && (await page.$('.kb-ann')) === null);
+    await page.click('[data-act="kb-x-ok"]');
+    await sud(page, null);
+    await page.waitForTimeout(1500);
+    t('承認すると帯も残りも消える', st.xr[0].status === 'approved' && (await page.$('.kb-xr')) === null);
     t('画面の例外 0', errs.length === 0, errs);
     await ctx.close();
   }

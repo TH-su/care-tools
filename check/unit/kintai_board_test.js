@@ -27,10 +27,10 @@ t('文が空・空白だけ・401字・タブは断る（400字は通る）',
   !B.checkAnnounce({ body: '', offices: [], from: TD, to: TD }, TD).ok && !B.checkAnnounce({ body: ' 　\n', from: TD, to: TD }, TD).ok
   && !B.checkAnnounce({ body: 'あ'.repeat(401), from: TD, to: TD }, TD).ok && !B.checkAnnounce({ body: 'a\tb', from: TD, to: TD }, TD).ok
   && B.checkAnnounce({ body: 'あ'.repeat(400), from: TD, to: TD }, TD).ok);
-t('期間: 無い・逆・366日を超える・今日より前に終わるは断る（366日ちょうどと過去から今日は通る）',
+t('期間: 無い・逆・両端を含めて366日を超える・今日より前に終わるは断る（366日ちょうどと過去から今日は通る）',
   !B.checkAnnounce({ body: 'x', from: '', to: TD }, TD).ok && !B.checkAnnounce({ body: 'x', from: '2030-04-11', to: TD }, TD).ok
-  && !B.checkAnnounce({ body: 'x', from: TD, to: B.addDays(TD, 367) }, TD).ok && !B.checkAnnounce({ body: 'x', from: '2030-04-01', to: '2030-04-09' }, TD).ok
-  && B.checkAnnounce({ body: 'x', from: TD, to: B.addDays(TD, 366) }, TD).ok && B.checkAnnounce({ body: 'x', from: '2030-04-01', to: TD }, TD).ok
+  && !B.checkAnnounce({ body: 'x', from: TD, to: B.addDays(TD, 366) }, TD).ok && !B.checkAnnounce({ body: 'x', from: '2030-04-01', to: '2030-04-09' }, TD).ok
+  && B.checkAnnounce({ body: 'x', from: TD, to: B.addDays(TD, 365) }, TD).ok && B.checkAnnounce({ body: 'x', from: '2030-04-01', to: TD }, TD).ok
   && !B.checkAnnounce({ body: 'x', from: '2030-02-30', to: TD }, TD).ok);
 t('文の上限・期間の上限はデータベース（0130）と同じ', B.BODY_MAX === 400 && B.SPAN_MAX === 366 && B.NOTE_MAX === 194);
 t('事業所の言い方（空＝全員・名前で）', B.officesText([], null) === '全員' && B.officesText(['facility', 'day'], (x) => ({ facility: '施', day: '通' })[x]) === '施・通' && B.officesText(['visit'], () => '') === 'visit');
@@ -76,10 +76,10 @@ t('3つの部品は端末に何も残さない（localStorage・sessionStorage�
 t('本人の画面の部品は鍵・開いている印を持たない（kintai-self.js が呼ぶ道の中で足す）', !/\bkey\b\s*[:=]|\bopen\s*:/.test(code(sb).replace(/autocomplete|inputMode|keep/g, ''))
   && /window\.KintaiSelfBoard\.start\(function \(op, p\) \{ var b = \{ key: key, open: open \}, k; for \(k in p\) b\[k\] = p\[k\]; return call\(op, b\); \}, handleAuth\);/.test(sj));
 t('閉じる時（lock）に本人の画面の部品の中身も捨てる', /function lock\(text\) \{[\s\S]*?window\.KintaiSelfBoard\.reset\(\);[\s\S]*?\n  \}/.test(sj));
-t('管理画面の差し込みは4か所（描く・設定の欄・設定の保存・窓口）', /m\.innerHTML = bands\(\) \+ f\(\) \+ \(tab === 'requests' && typeof window !== 'undefined' && window\.KintaiBoard \? window\.KintaiBoard\.html\(\) : ''\);/.test(kj)
+t('管理画面の差し込みは4か所（描く・設定の欄・設定の保存・窓口）', /m\.innerHTML = bands\(\) \+ \(kb && tab === 'close' \? kb\.closeHtml\(\) : ''\) \+ f\(\) \+ \(kb && tab === 'requests' \? kb\.html\(\) : ''\);/.test(kj)
   && /if \(typeof window !== 'undefined' && window\.KintaiBoard\) h \+= window\.KintaiBoard\.settingsHtml\(rawCfg\(\), isAdmin\(\)\);/.test(kj) && /if \(typeof window !== 'undefined' && window\.KintaiBoard\) window\.KintaiBoard\.readSettings\(outCfg\);/.test(kj)
   && /window\.KintaiBoardHost = \{ rpc: rpc,/.test(kj));
-t('管理画面の部品が呼ぶ関数は 0130 の5本だけ', [...code(kb).matchAll(/rpc\('([a-z_]+)'/g)].map((m) => m[1]).sort().join(',') === 'kintai_announce_add,kintai_announce_void,kintai_announces_list,kintai_extra_req_decide,kintai_extra_reqs_list',
+t('管理画面の部品が呼ぶ関数は 0130 の5本だけ', [...new Set([...code(kb).matchAll(/rpc\('([a-z_]+)'/g)].map((m) => m[1]))].sort().join(',') === 'kintai_announce_add,kintai_announce_void,kintai_announces_list,kintai_extra_req_decide,kintai_extra_reqs_list',
   [...code(kb).matchAll(/rpc\('([a-z_]+)'/g)].map((m) => m[1]));
 t('本人の画面の部品が呼ぶ受け口の op は 0130 の4つだけ', [...new Set([...code(sb).matchAll(/callFn\('([a-z_]+)'/g)].map((m) => m[1]))].sort().join(',') === 'announces,extra_add,extra_info,extra_withdraw');
 const noC = (h) => h.replace(/<!--[\s\S]*?-->/g, '');
@@ -92,10 +92,10 @@ const ver = (src, f) => (new RegExp(f.replace(/[.]/g, '\\.') + '\\?v=([^"]+)"').
 t('同じ部品の版は2つの画面で同じ', ['kintai-extras.js', 'kintai-board-calc.js'].every((f) => ver(noC(sh), f) && ver(noC(sh), f) === ver(noC(kh), f)));
 t('公開の許可（.gitignore のホワイトリスト）に3つの部品がある', ['kintai-board-calc.js', 'kintai-board.js', 'kintai-self-board.js'].every((f) => gi.indexOf('!/' + f + '\n') >= 0));
 t('本人の画面の帯と欄は初めは隠す', /<div id="an-box" class="nt-box an-box" role="status" hidden><\/div>/.test(sh) && /<div id="xr-sec" hidden><\/div>/.test(sh));
-t('管理画面の部品の欄は画面だけ（no-print）', (kb.match(/class="cd no-print kb-/g) || []).length === 2);
+t('管理画面の部品の欄と帯は画面だけ（no-print）', (kb.match(/class="cd no-print kb-/g) || []).length === 3 && /class="band warn no-print kb-close"/.test(kb) && /<div class="no-print" style="grid-column:1\/-1"><h2[^>]*>職員のスマホの画面/.test(kb));
 
 group('4. 管理画面の部品を偽の窓口で動かす');
-function runBoard(cfg, calls) {
+function runBoard(cfg, calls, pendRows) {
   const listeners = {};
   const els = {};
   const document = { addEventListener: (k, f) => { (listeners[k] = listeners[k] || []).push(f); }, getElementById: (id) => els[id] || null };
@@ -103,16 +103,27 @@ function runBoard(cfg, calls) {
   const host = { esc, cfg: () => cfg, today: () => TD, officeName: (o) => ({ facility: '施設', visit: '訪問', day: '通所' })[o], noDb: () => false, isNetErr: () => false, msgOf: () => 'x', note: () => {},
     toast: () => {}, pressBusy: () => () => {}, repaint: () => {}, okOr: (r) => r,
     rpc: (name, args) => { calls.push([name, args]); return Promise.resolve(name === 'kintai_announces_list' ? { ok: true, rows: [{ id: 'a1', body: '<b>見本</b>', offices: ['facility'], date_from: TD, date_to: TD, created_at: '2030-04-10T00:00:00Z' }] }
-      : { ok: true, rows: [{ id: 'r1', staff_id: 's1', name: '<i>架空</i>', work_date: TD, code: 'checkup', qty: 1, note: '<img>', status: 'pending', rev: 1 }], pending: 1 }); } };
+      : pendRows ? { ok: true, rows: pendRows, pending: pendRows.length }
+      : { ok: true, rows: [{ id: 'r1', staff_id: 's1', name: '<i>架空</i>', work_date: TD, ym: '2030-04', code: 'checkup', qty: 1, note: '<img>', status: 'pending', rev: 1 }], pending: 1 }); },
+    ym: () => '2030-04' };
   const win = { KintaiExtras: require(path.join(ROOT, 'kintai-extras.js')), KintaiBoardCalc: B, KintaiBoardHost: host, SUDialog: null, confirm: () => true, prompt: () => '' };
   const ctx = vm.createContext({ window: win, document, Promise, Date, String, Math, JSON, isFinite, Array, Object });
   vm.runInContext(read('kintai-board.js'), ctx, { filename: 'kintai-board.js' });
   return { K: win.KintaiBoard, els };
 }
 (async () => {
+  /* 鍵が切の時は、切る前に出された承認待ちだけを出す（データベースは切でも決められる・反証レビュー 2026-11-25 の 5）。無ければ何も描かない */
   const c0 = [];
-  const off = runBoard({ extraItems: [{ code: 'checkup', name: '健診', kind: 'count' }] }, c0);
-  t('鍵が切なら申請のタブに何も足さない・関数を呼ばない（今の画面のまま）', off.K.html() === '' && c0.length === 0);
+  const off = runBoard({ extraItems: [{ code: 'checkup', name: '健診', kind: 'count' }] }, c0, []);
+  t('鍵が切: お知らせの関数は呼ばず、補助項目の承認待ちを1回だけ聞く', off.K.html() === '' && c0.map((x) => x[0]).join(',') === 'kintai_extra_reqs_list' && JSON.stringify(c0[0][1]) === '{"p_ym":null,"p_status":"pending"}');
+  await new Promise((r) => setTimeout(r, 10));
+  t('鍵が切で承認待ちが無ければ申請のタブにも締めの画面にも何も足さない（今の画面のまま）', off.K.html() === '' && off.K.closeHtml() === '' && c0.length === 1);
+  const cL = [];
+  const left = runBoard({ extraItems: [{ code: 'checkup', name: '健診', kind: 'count' }] }, cL, [{ id: 'r9', staff_id: 's1', name: '架空', work_date: TD, ym: '2030-04', code: 'checkup', qty: 1, status: 'pending', rev: 1 }]);
+  left.K.html(); await new Promise((r) => setTimeout(r, 10));
+  const lh = left.K.html();
+  t('鍵が切で承認待ちが残っていれば、その分だけ承認・差し戻しを出す（切にした旨の帯つき）', /data-act="kb-x-ok" data-id="r9"/.test(lh) && /切にしたため/.test(lh) && !/kb-a-add/.test(lh));
+  t('締めの画面の上に、この月分の補助項目の承認待ちの帯（反証レビュー 2026-11-25 の 1）', /承認待ちが 1 件あります/.test(left.K.closeHtml()) && /no-print/.test(left.K.closeHtml()));
   const c1 = [];
   const on = runBoard({ selfAnnounce: true, selfExtraReq: true, extraItems: [{ code: 'checkup', name: '健診', kind: 'count' }] }, c1);
   t('鍵が入なら読みに行く（お知らせ・補助項目の申請の承認待ち）', on.K.html().indexOf('読み込んでいます') >= 0 && c1.map((x) => x[0]).join(',') === 'kintai_announces_list,kintai_extra_reqs_list'

@@ -348,8 +348,8 @@
   }
   /* 段B（統合 0130・kintai-board.js）に渡す窓口（この画面の部品をそのまま使わせる・鍵や中身は渡さない） */
   window.KintaiBoardHost = { rpc: rpc, okOr: okOr, esc: esc, note: note, toast: toast, pressBusy: pressBusy, msgOf: msgOf, noDb: noDb, isNetErr: isNetErr,
-    cfg: rawCfg, today: today, officeName: officeName, exOn: function () { return exOn(); },
-    repaint: function () { if (view === 'app' && !busy && !printAll && tab === 'requests') paint(); },
+    cfg: rawCfg, today: today, officeName: officeName, exOn: function () { return exOn(); }, ym: function () { return ym; },
+    repaint: function () { if (view === 'app' && !busy && !printAll && (tab === 'requests' || tab === 'close')) paint(); },
     reloadMonth: function () { dropMonthCaches(); load(false); } };
   function paint() {
     paintTabs();
@@ -359,7 +359,8 @@
     if (!month) return;
     if (!reqSumFresh()) loadReqSum(false);   /* v5 段5: 申請の承認待ちの数（タブの札・ホームの箱・締めの画面）。1分より古い時だけ・関数が無い時は聞かない */
     var f = { home: paintHome, day: paintDay, review: paintReview, requests: paintRequests, grid: paintGrid, person: paintPerson, staff: paintStaff, leave: paintLeave, close: paintClose, settings: paintSettings }[tab];
-    m.innerHTML = bands() + f() + (tab === 'requests' && typeof window !== 'undefined' && window.KintaiBoard ? window.KintaiBoard.html() : '');   /* 段B（統合 0130）: お知らせと補助項目の申請（kintai-board.js・鍵が切なら空） */
+    var kb = typeof window !== 'undefined' && window.KintaiBoard ? window.KintaiBoard : null;   /* 段B（統合 0130・kintai-board.js）: 申請のタブの下にお知らせと補助項目の申請・締めの画面の上に補助項目の承認待ち（無ければ空） */
+    m.innerHTML = bands() + (kb && tab === 'close' ? kb.closeHtml() : '') + f() + (kb && tab === 'requests' ? kb.html() : '');
     setInit = tab === 'settings' && $('g-set') ? settingsState() : null;   /* v5 C4: 描いた時の設定の入力（保存していない変更を確かめる） */
   }
   var RED = { no_punch: 1, missing_in: 1, missing_out: 1 };

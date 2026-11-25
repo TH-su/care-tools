@@ -34,7 +34,7 @@
     if (hasCtl(body)) return { ok: false, msg: 'お知らせの文に使えない文字（タブなど）が入っています。消してから出してください。' };
     if (!isDate(o.from) || !isDate(o.to)) return { ok: false, msg: '出す期間（始めの日と終わりの日）を入れてください。' };
     if (o.to < o.from) return { ok: false, msg: '終わりの日が始めの日より前です。' };
-    if (days(o.from, o.to) > SPAN_MAX) return { ok: false, msg: '出す期間は1年（' + SPAN_MAX + '日）までです。' };
+    if (days(o.from, o.to) + 1 > SPAN_MAX) return { ok: false, msg: '出す期間は1年（' + SPAN_MAX + '日）までです。' };
     if (isDate(today) && o.to < today) return { ok: false, msg: '終わりの日が今日より前です（出す前に終わってしまいます）。' };
     var uniq = OFFICES.filter(function (x) { return offs.indexOf(x) >= 0; });
     return { ok: true, args: { p_body: body, p_offices: uniq.length === OFFICES.length ? [] : uniq, p_from: o.from, p_to: o.to } };

@@ -16,7 +16,8 @@
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = String(text); return e; }
   function clear(node) { while (node && node.firstChild) node.removeChild(node.firstChild); }
   function today() { return S.todayOf(Date.now()); }
-  function hide() { var a = $('an-box'), x = $('xr-sec'); if (a) { clear(a); a.hidden = true; } if (x) { clear(x); x.hidden = true; } }
+  function hideXr() { var x = $('xr-sec'); if (x) { clear(x); x.hidden = true; } }
+  function hide() { var a = $('an-box'); if (a) { clear(a); a.hidden = true; } hideXr(); }
 
   function reset() { gen++; callFn = null; authFn = null; busy = false; items = []; rows = null; lastReq = null; hide(); }
   /* 開いた時に呼ばれる。call(op, 項目) は鍵と開いている印を足して受け口へ送る。auth(r) は鍵の断り（nokey・closed・inactive）を扱えば true */
@@ -64,6 +65,7 @@
     var keep = formValues();
     clear(sec);
     sec.appendChild(el('h2', 'sh', '補助項目の申請'));
+    var top = el('div', 'msg'); top.id = 'xr-msg2'; top.setAttribute('role', 'status'); top.hidden = true; sec.appendChild(top);
     if (!items.length && !(rows && rows.length)) { sec.appendChild(el('p', 'muted', '申請できる補助項目は、いまはありません。')); sec.hidden = false; return; }
     if (items.length) sec.appendChild(formEl(keep));
     var list = el('div', 'list'); list.id = 'xr-list';
@@ -114,7 +116,7 @@
       wrap.appendChild(fld(it.kind === 'count' ? '回数' : '値' + (it.unit ? '（' + it.unit + '）' : '') + (it.decimals ? '（小数' + it.decimals + '桁まで）' : ''), 'xr-val', v));
     }
   }
-  function say(text, kind) { var m = $('xr-msg'); if (!m) return; m.textContent = text || ''; m.hidden = !text; m.className = 'msg' + (kind ? ' ' + kind : ''); }
+  function say(text, kind) { var m = $('xr-msg') || $('xr-msg2'); if (!m) return; m.textContent = text || ''; m.hidden = !text; m.className = 'msg' + (kind ? ' ' + kind : ''); }
   function newId() {
     try { if (window.crypto && crypto.randomUUID) return crypto.randomUUID(); } catch (e) { /* 古い端末は下で作る */ }
     var b = new Uint8Array(16); crypto.getRandomValues(b); b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128;
@@ -152,7 +154,7 @@
   async function reload(my) {
     var r = await callFn('extra_info', {});
     if (!usable(r, my)) return;
-    if (r.on !== true) { hide(); return; }
+    if (r.on !== true) { hideXr(); return; }   /* 補助項目の鍵だけを切った時はお知らせの帯を残す（反証レビュー 2026-11-25 の 3） */
     items = B.itemsOf(r.items);
     rows = Array.isArray(r.rows) ? r.rows.filter(function (x) { return x && typeof x === 'object'; }) : [];
     var keep = formValues(); keep.value = ''; keep.hours = ''; keep.mins = '';
@@ -183,6 +185,7 @@
     if (r.ok !== true && authFn && authFn(r)) return;
     await reload(my);
     if (my !== gen) return;
+    btn.disabled = false;   /* 読み直せずに描き直さなかった時も押せる形に戻す（反証レビュー 2026-11-25 の 4） */
     say(r.ok === true ? '取り下げました。' : errText(r.error), r.ok === true ? 'ok' : 'ng');
   }
 

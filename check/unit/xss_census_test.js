@@ -296,7 +296,7 @@ const CENSUS = {
     [E, "$('g-main').innerHTML = '<div class=\"band ng\" role=\"alert\">' + esc(bandMsg) + '</div>'"],
     [F, "m.innerHTML = '<p class=\"empty\">読み込んでいます…</p>'"],
     /* 段B（2026-11-25・統合 0130）: 申請のタブの下にお知らせ・補助項目の申請の欄（kintai-board.js の html()・読んだ中身は全部 esc を通す・check/unit/kintai_board_test.js の4） */
-    [E, "m.innerHTML = bands() + f() + (tab === 'requests' && typeof window !== 'undefined' && window.KintaiBoard ? window.KintaiBoard.html() : '')"],
+    [E, "m.innerHTML = bands() + (kb && tab === 'close' ? kb.closeHtml() : '') + f() + (kb && tab === 'requests' ? kb.html() : '')"],
     [E, "$('g-dlg-b').innerHTML = b"],
     [F, "$('g-dlg-f').innerHTML = '<button type=\"button\" class=\"btn\" data-act=\"dlg-close\">閉じる</button>' + (lk ? '' : '<button type=\"button\" class=\"btn pri\" data-act=\"dlg-save\">保存する</button>')"],
     [F, "$('g-edits').innerHTML = '<p class=\"empty\">読み込んでいます…</p>'"],

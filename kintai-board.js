@@ -20,8 +20,13 @@
     badcode: 'この項目は設定で止めたか消したため承認できません。差し戻すか、設定の「補助項目」で使うようにしてから承認してください。',
     locked: 'この申請の日は締めた月分に入っているため承認できません。差し戻すか、管理者が締めを解除してから承認してください。',
     badym: '月の形が違います。読み直してください。' };
+  /* 補助項目の申請の承認・差し戻しで返る語（中から呼ぶ kintai_extra_put の語を含む・反証レビュー 2026-11-25 の 2） */
+  var NG_XR = { badvalue: '申請の値が今の設定の項目の形に合いません（項目の形や小数の桁を変えた後の申請です）。差し戻して、出し直してもらってください。',
+    baddate: 'この申請の日は、もう入れられない日です（来月分の期間の終わりより先）。差し戻してください。',
+    notfound: '申請か職員が見つかりませんでした（勤怠の職員にいない人の申請です）。読み直してください。', reason: '差し戻しの理由を書いてください。' };
   var ann = null, annBusy = false, annGen = 0;            /* お知らせの一覧 { at, rows, err } */
   var xr = null, xrBusy = false, xrGen = 0, xrF = 'pending'; /* 補助項目の申請の一覧 { key, rows, pending, err } */
+  var pend = null, pendBusy = false, pendGen = 0;           /* 補助項目の承認待ち（月を問わず）{ rows, n, err }。締めの画面と、鍵を切った後に残った分（反証レビュー 2026-11-25 の 1・5） */
   var noDb = false, busy = false;
   var draft = null;                                        /* お知らせの下書き（メモリだけ・描き直しで消さない） */
 
@@ -37,6 +42,7 @@
     if (h && h.noDb(e)) return NODB;
     return h ? h.msgOf(e) : 'うまくいきませんでした。';
   }
+  function xrMsg(e) { return e && e.kintai && NG_XR[e.kintai] ? NG_XR[e.kintai] : msg(e); }
   function known(e) { var h = H(); return !!(e && e.kintai) || (h && (h.isNetErr(e) || h.noDb(e))) || (!!e && e.code === '42501'); }
   function repaint() { var h = H(); if (h) h.repaint(); }
   function dtTxt(v) { var t = Date.parse(v); return isNaN(t) ? '' : new Date(t).toLocaleString('ja-JP'); }
@@ -74,7 +80,20 @@
       xr = { key: key, rows: [], pending: 0, err: h.noDb(e) ? NODB : '補助項目の申請を読めませんでした: ' + msg(e) };
     }).then(function () { if (my !== xrGen) return; xrBusy = false; repaint(); });
   }
-  function reset() { ann = null; annBusy = false; annGen++; xr = null; xrBusy = false; xrGen++; }
+  function loadPend() {
+    var h = H(); if (!h || pendBusy || noDb) return;
+    var my = ++pendGen; pendBusy = true;
+    h.rpc('kintai_extra_reqs_list', { p_ym: null, p_status: 'pending' }).then(h.okOr).then(function (r) {
+      if (my !== pendGen) return;
+      var n = +r.pending;
+      pend = { rows: (Array.isArray(r.rows) ? r.rows : []).filter(function (x) { return x && typeof x === 'object'; }), n: isFinite(n) && n >= 0 ? Math.floor(n) : 0 };
+    })['catch'](function (e) {
+      if (my !== pendGen) return;
+      if (h.noDb(e)) noDb = true; else if (!known(e)) h.note('補助項目の承認待ちの読み込み', e);
+      pend = { rows: [], n: 0, err: true };
+    }).then(function () { if (my !== pendGen) return; pendBusy = false; repaint(); });
+  }
+  function reset() { ann = null; annBusy = false; annGen++; xr = null; xrBusy = false; xrGen++; pend = null; pendBusy = false; pendGen++; }
 
   /* ── 描く（申請のタブの下に足す HTML） ── */
   function annHtml() {
@@ -85,7 +104,7 @@
     var h = '<div class="cd no-print kb-ann"><h2 style="font-size:16px;margin:0 0 8px">職員のスマホへのお知らせ</h2>' +
       '<p class="help">書いた文を、選んだ期間・事業所の職員の「自分の勤怠」の画面の上に帯で出します（メールや通知は送りません。職員が画面を開いた時に見えます）。名前・病名など、職員みんなに見せない方がよいことは書かないでください。</p>';
     if (noDb) return h + '<div class="band warn" role="status">' + esc(NODB) + '</div></div>';
-    h += '<div class="row"><label style="flex:1;min-width:14em">お知らせの文（' + B.BODY_MAX + '字まで・改行できます）<textarea id="kb-a-body" class="k5" rows="3" maxlength="' + B.BODY_MAX + '" style="width:100%;font:inherit">' + esc(d.body) + '</textarea></label></div>' +
+    h += '<div class="row"><label style="flex:1;min-width:14em">お知らせの文（' + B.BODY_MAX + '字まで・改行できます）<textarea id="kb-a-body" class="k5" rows="3" maxlength="' + B.BODY_MAX + '" style="width:100%;font:inherit;font-size:16px">' + esc(d.body) + '</textarea></label></div>' +
       '<div class="row" role="group" aria-label="出す事業所"><span>出す事業所</span>' +
       B.OFFICES.map(function (o) { return '<label><input type="checkbox" id="kb-a-o-' + o + '" data-kb-off="' + o + '"' + (d.offs[o] ? ' checked' : '') + '> ' + esc(officeName(o) || o) + '</label>'; }).join('') +
       '<span class="help">3つとも選ぶと全員（主な事業所を決めていない人も）に出します</span></div>' +
@@ -106,10 +125,10 @@
       (ann.rows.length >= 100 ? '<p class="help">新しい順に100件までを出しています。</p>' : '') + '</div>';
   }
   var XR_OPT = [['pending', '承認待ち'], ['approved', '承認済み'], ['rejected', '差し戻し'], ['withdrawn', '取り下げ'], ['', 'すべての状態']];
-  function xrRow(id) { return (xr && Array.isArray(xr.rows) ? xr.rows : []).filter(function (r) { return String(r.id) === String(id); })[0] || null; }
+  function xrRow(id) { return (xr && Array.isArray(xr.rows) ? xr.rows : []).concat(pend && Array.isArray(pend.rows) ? pend.rows : []).filter(function (r) { return String(r.id) === String(id); })[0] || null; }
   function xrDate(d) { return B.isDate(d) ? B.md(d) : ''; }
   function xrHtml() {
-    if (!xrOn()) return '';
+    if (!xrOn()) return xrLeftHtml();
     if ((!xr || xr.key !== (xrF || 'all')) && !xrBusy) loadXr();
     var its = items();
     var h = '<div class="cd no-print kb-xr"><h2 style="font-size:16px;margin:0 0 8px">補助項目の申請' + (xr && !xr.err && xr.pending ? ' <span class="tag rv">承認待ち ' + esc(String(xr.pending)) + ' 件</span>' : '') + '</h2>' +
@@ -133,6 +152,32 @@
       (rows || '<tr><td colspan="7" class="empty">この条件の申請はありません</td></tr>') + '</tbody></table></div>' +
       (st.rows.length >= 500 ? '<p class="help">新しい順に500件までを出しています。</p>' : '') + '</div>';
   }
+  /* 鍵を切った後に残った承認待ち（DB は切でも決められる）。無ければ何も描かない＝鍵が切の画面は今のまま */
+  function xrLeftHtml() {
+    if (noDb) return '';
+    if (!pend && !pendBusy) loadPend();
+    if (!pend || pend.err || !pend.rows.length) return '';
+    var its = items(), RS = { pending: 'rv' };
+    var rows = pend.rows.map(function (r) {
+      return '<tr><td class="rq-nm">' + esc(String(r.name || r.staff_id || '')) + '</td><td data-l="日付">' + esc(xrDate(r.work_date)) + '</td><td data-l="項目と値">' + esc(B.valueText(r, its)) + '</td>' +
+        '<td data-l="本人の理由">' + esc(r.note || '') + '</td><td data-l="状態"><span class="tag ' + RS.pending + '">' + esc(B.XR_ST.pending) + '</span></td>' +
+        '<td class="rq-btns"><button type="button" class="btn sm pri k5" data-act="kb-x-ok" data-id="' + esc(r.id) + '">承認</button> <button type="button" class="btn sm ng k5" data-act="kb-x-ng" data-id="' + esc(r.id) + '">差し戻し</button></td></tr>';
+    }).join('');
+    return '<div class="cd no-print kb-xr"><h2 style="font-size:16px;margin:0 0 8px">補助項目の申請 <span class="tag rv">承認待ち ' + esc(String(pend.n)) + ' 件</span></h2>' +
+      '<div class="band warn" role="status">設定の「補助項目の申請」を切にしたため、職員は新しく申請できません。切にする前に出された承認待ちだけを、ここで決めてください。</div>' +
+      '<div class="tw"><table class="rq-t"><thead><tr><th>職員</th><th>日付</th><th>項目と値</th><th>本人の理由</th><th>状態</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  }
+  /* 締めの画面の上の帯: この月分の補助項目の承認待ち（締めると承認できなくなる）。無ければ何も描かない */
+  function closeHtml() {
+    try {
+      var h = H(); if (!h || noDb) return '';
+      if (!pend && !pendBusy) loadPend();
+      if (!pend || pend.err || !pend.n) return '';
+      var ym = h.ym ? h.ym() : '', mine = pend.rows.filter(function (r) { return r.ym === ym; }).length;
+      if (!mine) return '';
+      return '<div class="band warn no-print kb-close" role="status">この月分の補助項目の申請に、承認待ちが ' + esc(String(mine)) + ' 件あります（すべての月分で ' + esc(String(pend.n)) + ' 件）。締めると承認できなくなるので、先に「申請」のタブで承認か差し戻しを決めてください。</div>';
+    } catch (e) { var hh = H(); if (hh) hh.note('補助項目の承認待ちの帯', e); return ''; }
+  }
   function html() { try { return annHtml() + xrHtml(); } catch (e) { var h = H(); if (h) h.note('お知らせの描画', e); return ''; } }
 
   /* 設定のタブの欄（#g-set の中＝保存していない変更の確かめが同じ道で数える） */
@@ -140,7 +185,7 @@
     c = c || {};
     var dis = admin ? '' : ' disabled', h = H(), ex = true;
     try { ex = !h || !h.exOn || h.exOn(); } catch (e) { ex = false; }   /* 段A1 の補助項目の関数がまだ無い（0127 の前）時は、補助項目の申請の欄を出さない（補助項目の欄と同じ） */
-    return '<div style="grid-column:1/-1"><h2 style="font-size:16px;margin:14px 0 8px">職員のスマホの画面</h2><div class="kv">' +
+    return '<div class="no-print" style="grid-column:1/-1"><h2 style="font-size:16px;margin:14px 0 8px">職員のスマホの画面</h2><div class="kv">' +
       '<label for="kb-s-ann">お知らせ</label><span><input type="checkbox" id="kb-s-ann"' + (B.on(c, B.KEY_ANN) ? ' checked' : '') + dis + '> 使う（「申請」のタブで書いたお知らせを、職員の「自分の勤怠」の画面に帯で出します）</span>' +
       (ex ? '<label for="kb-s-xr">補助項目の申請</label><span><input type="checkbox" id="kb-s-xr"' + (B.on(c, B.KEY_XR) ? ' checked' : '') + dis + '> 使う（職員が自分の画面から日ごとの補助項目を申請でき、「申請」のタブで承認します）</span>' : '') +
       '</div></div>';
@@ -216,7 +261,7 @@
       })['catch'](function (e) {
         busy = false; restore();
         if (!known(e)) h.note(approve ? '補助項目の申請の承認' : '補助項目の申請の差し戻し', e);
-        h.toast(msg(e));
+        h.toast(xrMsg(e));
         if (e && (e.kintai === 'conflict' || e.kintai === 'notfound')) { reset(); repaint(); }
       });
     });
@@ -225,6 +270,7 @@
   document.addEventListener('click', function (e) {
     var b = e.target && e.target.closest ? e.target.closest('button') : null;
     if (!b) return;
+    if (b.id === 'g-reload') { reset(); return; }   /* 上の帯の「読み直す」でも、お知らせと補助項目の申請を読み直す（審査 2026-11-25 の 3） */
     var a = b.getAttribute('data-act');
     if (a === 'rq-reload' || a === 'kb-x-reload') { reset(); if (a === 'kb-x-reload') repaint(); return; }
     if (a === 'kb-a-add') annAdd(b);
@@ -238,5 +284,5 @@
     if (t.id === 'kb-x-st') { xrF = t.value; repaint(); }
   });
 
-  window.KintaiBoard = { html: html, settingsHtml: settingsHtml, readSettings: readSettings, reset: reset };
+  window.KintaiBoard = { html: html, closeHtml: closeHtml, settingsHtml: settingsHtml, readSettings: readSettings, reset: reset };
 })();
