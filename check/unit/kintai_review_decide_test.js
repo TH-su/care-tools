@@ -158,9 +158,9 @@ console.log('\n— 3. CSV の日ごとの明細 —');
 console.log('\n— 4. 要確認の印のどれにも決める道がある —');
 {
   const K = fs.readFileSync(path.join(ROOT, 'kintai.js'), 'utf8');
-  const known = ['early', 'overtime', 'missing_out', 'missing_in', 'no_punch', 'no_schedule', 'offline', 'after_lock'];
-  t('要確認の印は8つ（増やした時はこの試験と決める窓の道を一緒に直す）', Object.keys(C.REVIEW).sort().join() === known.slice().sort().join(), Object.keys(C.REVIEW));
-  t('確認済みの印（day_mark checked）は8つのどの印も要確認から外す（打刻の漏れ・控え・予定なし・締めた後の打刻の道）',
+  const known = ['early', 'overtime', 'missing_out', 'missing_in', 'no_punch', 'no_schedule', 'offline', 'after_lock', 'ot_floor'];   /* 2026-11-25: 認めた残業の切り捨て（ot_floor）を足した＝「ほかの要確認」の「認める（確認済み）」で閉じる */
+  t('要確認の印は9つ（増やした時はこの試験と決める窓の道を一緒に直す）', Object.keys(C.REVIEW).sort().join() === known.slice().sort().join(), Object.keys(C.REVIEW));
+  t('確認済みの印（day_mark checked）は9つのどの印も要確認から外す（打刻の漏れ・控え・予定なし・締めた後の打刻・残業の切り捨ての道）',
     known.every((f) => !C.needsReview({ flags: [f, 'checked'], checked: true })) && known.every((f) => C.needsReview({ flags: [f], checked: false })));
   const mi = /var MISS = \{([^}]*)\}/.exec(K);
   const missKeys = mi ? mi[1].split(',').map((x) => x.split(':')[0].trim()).sort() : [];

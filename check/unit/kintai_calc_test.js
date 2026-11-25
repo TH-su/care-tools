@@ -580,5 +580,89 @@ console.log('\n— 10. freee の打刻で見つけた組み方の直し（2026-1
   t('間に別の塊がある日は今までどおり割る', dayOf(m9, 'sT01', '2026-12-04').blocks.length === 3 && dayOf(m9, 'sT01', '2026-12-04').blocks.some((b) => b.flags.includes('missing_out') || b.flags.includes('missing_in')), dayOf(m9, 'sT01', '2026-12-04').blocks.map((b) => b.flags));
 }
 
+console.log('\n— 認めた残業の1日ごとの切り捨て（otFloorMin・代表者の決定 2026-11-25）—');
+{
+  const sF = sched({ 1: '9-17' }).rows, sN = sched({ 10: '(22', 11: '8)' }).rows;
+  const ok = (d) => [{ staff_id: 'sT01', work_date: d, overtime_ok: true }];
+  const one = (outHm, days, cfg, d) => { d = d || '2026-12-01'; const m = month(sF, [P('sT01', 'in', d, '9:00'), P('sT01', 'out', d, outHm)], days === undefined ? ok(d) : days, cfg); return { m, b: dayOf(m, 'sT01', d).blocks[0] }; };
+  const hmOf = (ms) => C.jstHM(ms);
+  t('設定: 既定は 0（切）と 13・不正値は 0／範囲外の otFloorAlertMin は 13',
+    C.DEFAULTS.otFloorMin === 0 && C.DEFAULTS.otFloorAlertMin === 13 && C.fillConfig({ otFloorMin: 15 }).otFloorMin === 15 && C.fillConfig({ otFloorMin: 30 }).otFloorMin === 30 &&
+    [10, '15', -15, null, 60].every((v) => C.fillConfig({ otFloorMin: v }).otFloorMin === 0) && C.fillConfig({ otFloorAlertMin: 0 }).otFloorAlertMin === 0 && C.fillConfig({ otFloorAlertMin: 601 }).otFloorAlertMin === 13);
+  const keys = ['workMin', 'overtimeMin', 'nightMin', 'breakMin', 'uncountedMin', 'countStart', 'countEnd'];
+  const z0 = one('17:29', undefined, {}), z1 = one('17:29', undefined, { otFloorMin: 0, otFloorAlertMin: 13 });
+  t('切（0）の時は今と同じ: 17:29 退勤は 17:29 まで・印なし・塊に切り捨ての鍵を作らない',
+    hmOf(z0.b.countEnd) === '17:29' && keys.every((k) => z0.b[k] === z1.b[k]) && z0.b.flags.join() === z1.b.flags.join() && !('otFloorCutMin' in z0.b) && !('otFloorMin' in z0.b) && z0.b.flags.indexOf('ot_floor') < 0, [hmOf(z0.b.countEnd), z0.b.flags]);
+  const a = one('17:29', undefined, { otFloorMin: 15 });
+  t('15分・残業を認めた日・17:00 終わりで 17:29 退勤 → 17:15 まで・数えなかった 14分・ot_floor（要確認）',
+    hmOf(a.b.countEnd) === '17:15' && a.b.uncountedMin === 14 && a.b.otFloorCutMin === 14 && a.b.flags.indexOf('ot_floor') >= 0 && C.needsReview(a.b) && a.b.workMin === z0.b.workMin - 14, [hmOf(a.b.countEnd), a.b.uncountedMin, a.b.flags]);
+  t('ot_floor は月の要確認の件数と一覧に入る', sumOf(a.m, 'sT01').reviewCount === 1 && C.reviewList(a.m).some((r) => r.date === '2026-12-01' && r.marks.indexOf('ot_floor') >= 0), C.reviewList(a.m));
+  const ck = one('17:29', [{ staff_id: 'sT01', work_date: '2026-12-01', overtime_ok: true, day_mark: 'checked' }], { otFloorMin: 15 });
+  t('確認済み（day_mark checked）で ot_floor は要確認から外れる（数える時間は変えない）', !C.needsReview(ck.b) && ck.b.flags.indexOf('ot_floor') >= 0 && hmOf(ck.b.countEnd) === '17:15');
+  const b = one('17:12', undefined, { otFloorMin: 15 });
+  t('17:12 退勤 → 17:00 まで・端数 12分は 13分未満なので ot_floor は立たない', hmOf(b.b.countEnd) === '17:00' && b.b.uncountedMin === 12 && b.b.otFloorCutMin === 12 && b.b.flags.indexOf('ot_floor') < 0 && !C.needsReview(b.b), [hmOf(b.b.countEnd), b.b.flags]);
+  const c = one('17:44', undefined, { otFloorMin: 15 });
+  t('17:44 退勤 → 17:30 まで・端数 14分で ot_floor', hmOf(c.b.countEnd) === '17:30' && c.b.otFloorCutMin === 14 && c.b.uncountedMin === 14 && c.b.flags.indexOf('ot_floor') >= 0, [hmOf(c.b.countEnd), c.b.otFloorCutMin]);
+  const c30 = one('17:44', undefined, { otFloorMin: 30 });
+  t('30分: 17:44 退勤 → 17:30 まで（端数 14分で ot_floor）', hmOf(c30.b.countEnd) === '17:30' && c30.b.otFloorCutMin === 14 && c30.b.flags.indexOf('ot_floor') >= 0);
+  const iso1 = (hm) => new Date(at('2026-12-01', hm)).toISOString();
+  const d = one('17:40', [{ staff_id: 'sT01', work_date: '2026-12-01', ot_until: iso1('17:30') }], { otFloorMin: 15 });
+  t('ot_until 17:30 で 17:40 退勤 → 17:30 まで・切り捨ての端数 0（ot_floor なし・切り捨ての鍵なし）・数えなかった 10分は上限の分',
+    hmOf(d.b.countEnd) === '17:30' && !('otFloorCutMin' in d.b) && d.b.flags.indexOf('ot_floor') < 0 && d.b.uncountedMin === 10, [hmOf(d.b.countEnd), d.b.flags, d.b.uncountedMin]);
+  /* ★反証レビュー（2026-11-25 指摘3・仕様B）: 「この時刻まで認める」で時刻を決めた日は切り捨てない、に仕様が変わったので、前の「上限の後に切り捨てる（17:15）」の場面を書き直した */
+  const d2 = one('17:40', [{ staff_id: 'sT01', work_date: '2026-12-01', ot_until: iso1('17:29') }], { otFloorMin: 15 });
+  t('ot_until 17:29 で 17:40 退勤（15分）→ 17:29 まで（時刻を決めた日は切り捨てない）・ot_floor なし・切り捨ての鍵なし', hmOf(d2.b.countEnd) === '17:29' && !('otFloorCutMin' in d2.b) && d2.b.flags.indexOf('ot_floor') < 0 && d2.b.uncountedMin === 11, [hmOf(d2.b.countEnd), d2.b.uncountedMin, d2.b.flags]);
+  const d3 = one('17:40', [{ staff_id: 'sT01', work_date: '2026-12-01', ot_until: iso1('17:29') }], { otFloorMin: 15, roundUnitMin: 5 }), d3z = one('17:40', [{ staff_id: 'sT01', work_date: '2026-12-01', ot_until: iso1('17:29') }], { roundUnitMin: 5 });
+  t('ot_until の道は otFloorMin があっても今と同じ（丸めの単位 5 と併用でも切 の時と同じ値）', keys.every((k) => d3.b[k] === d3z.b[k]) && d3.b.flags.join() === d3z.b.flags.join(), [hmOf(d3.b.countEnd), hmOf(d3z.b.countEnd)]);
+  const e = one('17:29', [], { otFloorMin: 15 }), e0 = one('17:29', [], {});
+  t('認めていない残業には効かない（予定の終わり 17:00 で切る今のまま・ot_floor なし）', hmOf(e.b.countEnd) === '17:00' && keys.every((k) => e.b[k] === e0.b[k]) && e.b.flags.join() === e0.b.flags.join() && e.b.flags.indexOf('ot_floor') < 0, e.b.flags);
+  const ns = month(sF, [P('sT01', 'in', '2026-12-02', '9:00'), P('sT01', 'out', '2026-12-02', '17:29')], [], { otFloorMin: 15 }), ns0 = month(sF, [P('sT01', 'in', '2026-12-02', '9:00'), P('sT01', 'out', '2026-12-02', '17:29')], [], {});
+  t('予定の無い勤務には効かない', hmOf(dayOf(ns, 'sT01', '2026-12-02').blocks[0].countEnd) === '17:29' && dayOf(ns, 'sT01', '2026-12-02').blocks[0].workMin === dayOf(ns0, 'sT01', '2026-12-02').blocks[0].workMin);
+  const el = month(sF, [P('sT01', 'in', '2026-12-01', '8:20'), P('sT01', 'out', '2026-12-01', '16:50')], [{ staff_id: 'sT01', work_date: '2026-12-01', early_ok: true, overtime_ok: true }], { otFloorMin: 15 });
+  const elb = dayOf(el, 'sT01', '2026-12-01').blocks[0];
+  t('早出（認めた）・早退には効かない（8:20 から・16:50 まで打刻どおり）', hmOf(elb.countStart) === '08:20' && hmOf(elb.countEnd) === '16:50' && !('otFloorCutMin' in elb), [hmOf(elb.countStart), hmOf(elb.countEnd)]);
+  const lt = month(sF, [P('sT01', 'in', '2026-12-01', '9:07'), P('sT01', 'out', '2026-12-01', '17:00')], ok('2026-12-01'), { otFloorMin: 15 });
+  t('遅刻の出勤には効かない（9:07 から）', hmOf(dayOf(lt, 'sT01', '2026-12-01').blocks[0].countStart) === '09:07');
+  /* 丸めの単位（roundUnitMin）との併用。★反証レビュー（2026-11-25 指摘1・2・仕様A）: 切り捨てる時は残業の終わりの切り上げを当てず、打刻の退勤から直接切る、に仕様が変わったので、
+     前の「切り上げ→切り捨て」を期待にした場面（17:22・17:28・17:37）を書き直した。端数は実際に切った分（打刻の退勤−切った後）。守り（base0）も同じ値なので切り捨てを打ち消さない */
+  const r5 = one('17:22', undefined, { otFloorMin: 15, roundUnitMin: 5 });
+  t('roundUnitMin=5 と併用: 17:22 退勤 → 17:15（守りが 17:22・17:25 に戻さない）・実際に切った 7分・数えなかった 7分・ot_floor なし',
+    hmOf(r5.b.countEnd) === '17:15' && r5.b.otFloorCutMin === 7 && r5.b.flags.indexOf('ot_floor') < 0 && r5.b.uncountedMin === 7, [hmOf(r5.b.countEnd), r5.b.otFloorCutMin, r5.b.uncountedMin]);
+  const r5b = one('17:28', undefined, { otFloorMin: 15, roundUnitMin: 5 });
+  t('roundUnitMin=5 と併用: 17:28 退勤 → 17:15（17:30 に切り上げない）・切った 13分で ot_floor', hmOf(r5b.b.countEnd) === '17:15' && r5b.b.otFloorCutMin === 13 && r5b.b.flags.indexOf('ot_floor') >= 0, [hmOf(r5b.b.countEnd), r5b.b.otFloorCutMin]);
+  const r5c = one('17:37', undefined, { otFloorMin: 15, roundUnitMin: 5 });
+  t('roundUnitMin=5 と併用: 17:37 退勤 → 17:30（切った 7分）', hmOf(r5c.b.countEnd) === '17:30' && r5c.b.otFloorCutMin === 7, [hmOf(r5c.b.countEnd), r5c.b.otFloorCutMin]);
+  const r15 = one('17:44', undefined, { otFloorMin: 15, roundUnitMin: 15 });
+  t('roundUnitMin=15・otFloorMin=15: 17:44 退勤 → 17:30・切った 14分・ot_floor', hmOf(r15.b.countEnd) === '17:30' && r15.b.otFloorCutMin === 14 && r15.b.flags.indexOf('ot_floor') >= 0 && r15.b.uncountedMin === 14, [hmOf(r15.b.countEnd), r15.b.otFloorCutMin]);
+  const r30 = one('17:31', undefined, { otFloorMin: 30, roundUnitMin: 30 });
+  t('roundUnitMin=30・otFloorMin=30: 17:31 退勤 → 17:30・切った 1分・印なし', hmOf(r30.b.countEnd) === '17:30' && r30.b.otFloorCutMin === 1 && r30.b.flags.indexOf('ot_floor') < 0, [hmOf(r30.b.countEnd), r30.b.otFloorCutMin]);
+  const sOdd = sched({ 1: '9-16:50' }).rows;
+  const odd = month(sOdd, [P('sT01', 'in', '2026-12-01', '9:00'), P('sT01', 'out', '2026-12-01', '17:04')], ok('2026-12-01'), { otFloorMin: 15, roundUnitMin: 15 });
+  const oddb = dayOf(odd, 'sT01', '2026-12-01').blocks[0];
+  t('予定の終わり 16:50・roundUnitMin=15・otFloorMin=15: 17:04 退勤 → 16:50（予定の終わりから数えて切る・17:15 に切り上げない）・切った 14分', hmOf(oddb.countEnd) === '16:50' && oddb.otFloorCutMin === 14 && oddb.flags.indexOf('ot_floor') >= 0, [hmOf(oddb.countEnd), oddb.otFloorCutMin]);
+  const r5z = one('17:22', undefined, { roundUnitMin: 5 });
+  t('otFloorMin=0 の時は今の道（roundUnitMin=5 で 17:22 → 17:25 に切り上げ）', hmOf(r5z.b.countEnd) === '17:25' && !('otFloorCutMin' in r5z.b), hmOf(r5z.b.countEnd));
+  /* 分割勤務（7-9・17-21）は塊ごとに切る */
+  const sSp = sched({ 3: '7-9 17-21' }).rows;
+  const sp = month(sSp, [P('sT01', 'in', '2026-12-03', '7:00'), P('sT01', 'out', '2026-12-03', '9:14'), P('sT01', 'in', '2026-12-03', '17:00'), P('sT01', 'out', '2026-12-03', '21:29')], ok('2026-12-03'), { otFloorMin: 15 });
+  const spb = dayOf(sp, 'sT01', '2026-12-03').blocks;
+  t('分割勤務: 塊ごとに切る（9:14 → 9:00・切った 14分／21:29 → 21:15・切った 14分・どちらも ot_floor）',
+    spb.length === 2 && hmOf(spb[0].countEnd) === '09:00' && spb[0].otFloorCutMin === 14 && hmOf(spb[1].countEnd) === '21:15' && spb[1].otFloorCutMin === 14 && spb.every((x) => x.flags.indexOf('ot_floor') >= 0), spb.map((x) => [hmOf(x.countEnd), x.otFloorCutMin, x.flags]));
+  /* 夜勤の塊（22:00〜翌8:00）でも、認めた残業なら同じ */
+  const nt = month(sN, [P('sT01', 'in', '2026-12-10', '22:00'), P('sT01', 'out', '2026-12-11', '8:29')], ok('2026-12-10'), { otFloorMin: 15 });
+  const ntb = dayOf(nt, 'sT01', '2026-12-10').blocks[0];
+  t('夜勤の塊: 翌8:29 退勤（残業を認めた）→ 翌8:15 まで・数えなかった 14分・ot_floor', ntb.night && hmOf(ntb.countEnd) === '08:15' && ntb.uncountedMin === 14 && ntb.flags.indexOf('ot_floor') >= 0, [hmOf(ntb.countEnd), ntb.uncountedMin, ntb.flags]);
+  const n0 = one('17:29', undefined, { otFloorMin: 15, otFloorAlertMin: 0 });
+  t('otFloorAlertMin 0 では ot_floor を出さない（切り捨ては効く）', hmOf(n0.b.countEnd) === '17:15' && n0.b.flags.indexOf('ot_floor') < 0 && !C.needsReview(n0.b), n0.b.flags);
+  const n20 = one('17:29', undefined, { otFloorMin: 15, otFloorAlertMin: 15 });
+  t('otFloorAlertMin 15 では端数 14分に ot_floor を出さない', n20.b.flags.indexOf('ot_floor') < 0);
+  /* CSV: 数えなかった時間と理由（F の値を文に出す）・備考に要確認の文 */
+  const csvLineOf = (m, d) => C.buildCsv(m, { extraCols: true }).daily.split('\r\n').filter((l) => l.indexOf('9001,' + d) === 0)[0] || '';
+  const la = csvLineOf(a.m, '2026-12-01'), lb = csvLineOf(c30.m, '2026-12-01'), lz = csvLineOf(z0.m, '2026-12-01');
+  t('CSV: 切り捨てた日は数えなかった理由に「残業の15分未満の切り捨て」（30分なら「30分未満」）・備考に ot_floor の文',
+    /,0:14,残業の15分未満の切り捨て$/.test(la) && la.indexOf(C.FLAG_LABEL.ot_floor) >= 0 && /残業の30分未満の切り捨て$/.test(lb) && lz.indexOf('切り捨て') < 0, [la, lb]);
+  t('印の名前: ot_floor は要確認の印', C.REVIEW.ot_floor === 1 && /^残業の切り捨てが.*以上（事務所で確認）$/.test(C.FLAG_LABEL.ot_floor));
+}
+
 console.log(`\n${pass} 件合格 / ${fail} 件不合格`);
 process.exit(fail ? 1 : 0);

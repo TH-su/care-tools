@@ -1280,10 +1280,11 @@
     ['overtimeMonthWarnH', '月の法定外がこの時間以上で警告（36協定）', '時間'], ['weekStartDow', '週40時間を数える週の始まりの曜日（0＝日曜〜6＝土曜。下の「1か月単位の変形労働時間制」を使っていない時だけ使います）', '']
   ];
   /* ── v5 段4: 休暇と丸めの設定（設定の鍵 roundUnitMin・hourlyPaidLeave・dayHours・leaveTypes。DB は変えない）──
+   * 2026-11-25（代表者の決定）: 認めた残業の切り捨て otFloorMin（切・15・30分）と、切り捨ての端数で要確認にする分 otFloorAlertMin（0〜600）を足した
    * 欄は今の設定（rawCfg）から出す（締めた月分を開いている間の month.config は締めた時の控えなので、そのまま保存すると古い値に戻る）。
    * 特別休暇の種類は、今の行＋空の1行（足す時）。名前を空にした行は外す。保存は「設定を保存する」（管理者だけ）。
    * 欄は設定の欄（#g-set）の中に置く（保存していない変更の確かめ settingsState が同じ道で数える） */
-  var LV_SET_KEYS = ['roundUnitMin', 'hourlyPaidLeave', 'dayHours', 'leaveTypes'];
+  var LV_SET_KEYS = ['roundUnitMin', 'hourlyPaidLeave', 'dayHours', 'leaveTypes', 'otFloorMin', 'otFloorAlertMin'];
   function lvSetHtml() {
     var c = C.fillConfig(rawCfg()), lts = C.leaveTypesOf(c), extra = 1, i;
     var row = function (i, l) {
@@ -1296,6 +1297,9 @@
     return '<div style="grid-column:1/-1"><h2 style="font-size:16px;margin:14px 0 8px">休暇と丸め</h2><div class="kv">' +
       '<label for="l-roundUnitMin">丸めの単位</label><span><select id="l-roundUnitMin">' + C.ROUND_UNITS.map(function (u) { return '<option value="' + u + '"' + (c.roundUnitMin === u ? ' selected' : '') + '>' + (u === 1 ? '1分（丸めない）' : u + '分') + '</option>'; }).join('') + '</select> ' +
         '働いた人に不利な向きには丸めません（遅刻した出勤は単位で切り捨て・早退した退勤と、認めた残業の終わりは単位で切り上げ）。予定の無い勤務と、1日の働いた時間を短くする向きには丸めません</span>' +
+      '<label for="l-otFloorMin">認めた残業の切り捨て</label><span><select id="l-otFloorMin">' + C.OT_FLOORS.map(function (u) { return '<option value="' + u + '"' + (c.otFloorMin === u ? ' selected' : '') + '>' + (u === 0 ? '切' : u + '分') + '</option>'; }).join('') + '</select> ' +
+        '認めた残業を勤務ごと（分割勤務は塊ごと）に単位で切り捨てます（月の合計の30分の端数処理とは別）</span>' +
+      '<label for="l-otFloorAlertMin">切り捨ての端数がこの分以上で要確認</label><span><input type="number" id="l-otFloorAlertMin" min="0" max="600" step="1" value="' + esc(c.otFloorAlertMin) + '" style="width:6em"> 分（0 で知らせません）</span>' +
       '<label for="l-hourly">時間単位の有休</label><span><input type="checkbox" id="l-hourly"' + (c.hourlyPaidLeave ? ' checked' : '') + '> 使う（労使協定で決めた時だけ・1年に5日分まで・年5日の取得義務には数えません）</span>' +
       '<label for="l-dayHours">1日の所定の時間</label><span><input type="number" id="l-dayHours" min="1" max="24" step="1" value="' + esc(c.dayHours) + '" style="width:6em"> 時間（時間単位の有休の1日の換算・特別休暇の1日の時間。1時間に満たない端数は切り上げて入れます）</span>' +
       '<span>特別休暇の種類</span><span><span class="tw" style="display:block"><table><thead><tr><th>印（英数字）</th><th>名前</th><th>有給か</th></tr></thead><tbody id="lt-rows">' + rows.join('') + '</tbody></table></span>' +
@@ -1320,6 +1324,9 @@
     var cur = rawCfg(), d = C.DEFAULTS, vals = {}, bad = [];
     var ru = +$('l-roundUnitMin').value, dh = $('l-dayHours').value, hp = !!$('l-hourly').checked;
     if (C.ROUND_UNITS.indexOf(ru) < 0) bad.push('丸めの単位');
+    var ofm = +$('l-otFloorMin').value, ofa = $('l-otFloorAlertMin').value, ofan = +ofa;
+    if (C.OT_FLOORS.indexOf(ofm) < 0) bad.push('認めた残業の切り捨て');
+    if (ofa === '' || !(ofan >= 0 && ofan <= 600) || Math.floor(ofan) !== ofan) bad.push('切り捨ての端数で要確認にする分（0〜600 の整数）');
     var dhn = +dh; if (dh === '' || !(dhn >= 1 && dhn <= 24) || Math.floor(dhn) !== dhn) bad.push('1日の所定の時間（1〜24 の整数）');
     var lts = [], i, codes = {};
     for (i = 0; $('lt-code-' + i); i++) {
@@ -1335,6 +1342,7 @@
     var put = function (k, v, dflt) { if (k in cur || JSON.stringify(v) !== JSON.stringify(dflt)) vals[k] = v; };
     put('roundUnitMin', ru, d.roundUnitMin); put('hourlyPaidLeave', hp, d.hourlyPaidLeave); put('dayHours', dhn, d.dayHours);
     put('leaveTypes', lts, C.LEAVE_TYPES_DEFAULT);
+    put('otFloorMin', ofm, d.otFloorMin); put('otFloorAlertMin', ofan, d.otFloorAlertMin);
     return { vals: vals, bad: bad };
   }
   function paintSettings() {
