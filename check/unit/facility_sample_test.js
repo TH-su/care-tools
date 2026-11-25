@@ -99,8 +99,9 @@ function facility(profile) {
   t('取り出すのは試験に合格した版', /ref: \$\{\{ github\.event\.workflow_run\.head_sha \|\| github\.sha \}\}/.test(Y));
   const steps = Y.split('\n      - name: ').slice(1);
   const after = steps.slice(steps.findIndex(x => /^試験した版が今の main の先頭か/.test(x)) + 1);
+  /* 2026-11-25: 配るのやり直し（pages.yml の「1回目が落ちた時だけ」）は go == '1' の後ろに && で条件を足す。先頭が go == '1' で守られていることは変えずに見る */
   t('試験した版が main の先頭でなければ、その後の手順を全部飛ばす（古い版で上書きしない）',
-    /git ls-remote origin refs\/heads\/main/.test(Y) && after.length >= 5 && after.every(x => /\n        if: steps\.head\.outputs\.go == '1'\n/.test(x)), after.length);
+    /git ls-remote origin refs\/heads\/main/.test(Y) && after.length >= 5 && after.every(x => /\n        if: steps\.head\.outputs\.go == '1'( && [^\n]+)?\n/.test(x)), after.length);
   t('本番の施設情報は Secret FACILITY_PROFILE_JSON から置く', /FP: \$\{\{ secrets\.FACILITY_PROFILE_JSON \}\}/.test(Y) && /printf '%s' "\$FP" > facility-profile\.json/.test(Y));
   t('Secret が無ければ止める（前の版を残す）', /if \[ -z "\$FP" \]; then[\s\S]{0,200}exit 1/.test(Y));
   /* 2026-10-26 本人指示: 判定は check/facility-secret-check.mjs の1つの関数にまとめ、公開の手順もそれを呼ぶ（中身の試験は facility_secret_check_test.js） */
