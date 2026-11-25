@@ -133,7 +133,10 @@
   function fmtValue(item, v, mode, withUnit) {
     if (!item || v == null || v === '') return '';
     if (item.kind === 'time') return C.fmtMin(+v, mode === 'dec' ? 'dec' : 'hmm');
-    var s = (+v).toFixed(item.kind === 'number' ? item.decimals : 0);
+    /* 桁は設定の桁を最小にし、値が持つ桁（2桁まで）は切らない（桁や形を後から変えても、入れた数を黙って丸めない・反証レビュー 2026-11-25） */
+    var min = item.kind === 'number' ? item.decimals : 0, s = (Math.round(+v * 100) / 100).toFixed(2);
+    while (s.indexOf('.') >= 0 && s.split('.')[1].length > min && /0$/.test(s)) s = s.slice(0, -1);
+    if (/\.$/.test(s)) s = s.slice(0, -1);
     if (!withUnit) return s;
     return item.kind === 'count' ? s + ' 回' : (item.unit ? s + ' ' + item.unit : s);
   }
@@ -143,7 +146,8 @@
   /* CSV の見出し（項目の名前＋単位。回数は（回）・時間は（時間）） */
   function colHead(item) {
     var u = item.kind === 'count' ? '回' : item.kind === 'time' ? '時間' : item.unit;
-    return u ? nameOf(item) + '（' + u + '）' : nameOf(item);
+    var nm = nameOf(item);
+    return u && nm.slice(-(u.length + 2)) !== '（' + u + '）' ? nm + '（' + u + '）' : nm;   /* 名前が「…（時間）」なら重ねない */
   }
 
   /* CSV の列にする項目: 使う項目と、止めた項目でもこの月分に行がある項目（入れた数が CSV から消えないように・2026-11-25 DB 側の確定）。並びは定義の順 */

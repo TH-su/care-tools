@@ -63,10 +63,11 @@ async function open(browser, st, tabName) {
           if (mm.ok && p.p_ym === YM) {
             mm.punches = PUN;
             mm.settings = { config: st.config, rev: st.rev };
-            if (st.locked) mm.month = { ym: YM, locked_at: '2026-01-14T09:00:00+09:00', snapshot: null, history: [] };
+            if (st.locked) mm.month = { ym: YM, locked_at: '2026-01-14T09:00:00+09:00', snapshot: st.snapshot || null, history: [] };
           }
           return json(mm);
         }
+        if (name === 'kintai_month_lock') { st.locked = true; st.snapshot = p.p_snapshot; return json({ ok: true }); }
         if (name === 'kintai_settings_put') { st.config = p.p_config; st.rev++; return json({ ok: true, rev: st.rev }); }
         if (st.withExtras && name === 'kintai_extras_get') return json({ ok: true, from: p.p_ym + '-01', to: p.p_ym + '-31', rows: st.rows.filter((x) => !x.voided_at && x.date.slice(0, 7) === p.p_ym) });
         if (st.withExtras && name === 'kintai_extra_put') {
@@ -241,7 +242,7 @@ try {
     await page.waitForSelector('[data-act="csv-sum"]', { timeout: 15000 });
     const sum = await readDl(page, '[data-act="csv-sum"]');
     const sl = sum.split('\r\n'), sh = cellsOf(sl[0]), s1 = cellsOf(sl.find((l) => l.indexOf('9001,') === 0) || '');
-    const want = ['移動距離（km）', '日曜出勤（回）', '日曜出勤（時間）（時間）', '健診/有休（回）', '健診通勤手当なし（回）', '社内会議（時間）', '駐車場（円）'];
+    const want = ['移動距離（km）', '日曜出勤（回）', '日曜出勤（時間）', '健診/有休（回）', '健診通勤手当なし（回）', '社内会議（時間）', '駐車場（円）'];
     t('月の集計: 末尾に7列（使う項目＋行のある止めた社内会議・行の無い止めた年末年始出勤は出さない）', JSON.stringify(sh.slice(-7)) === JSON.stringify(want), sh.slice(-8));
     t('月の集計: 今の列は前のまま（先頭は 従業員コード・氏名…、末尾の前は 実働_ の列）', sh[0] === '従業員コード' && sh[1] === '氏名' && /^実働_/.test(sh[sh.length - 8]));
     t('月の集計: 9001 は 移動距離 15.5・社内会議 1:30・ほかは 0（駐車場は整数のまま 0）', JSON.stringify(s1.slice(-7)) === JSON.stringify(['15.5', '0', '0:00', '0', '0', '1:30', '0']), s1.slice(-7));
@@ -251,10 +252,17 @@ try {
     t('日ごと: 12/1 は 移動距離 15.5・12/2 は 社内会議 1:30（無い項目は空）', d1[d1.length - 7] === '15.5' && d1.slice(-6).every((x) => x === '') && d2[d2.length - 2] === '1:30', [d1.slice(-7), d2.slice(-7)]);
     t('書き出しの注意の窓は出ない（行の無い人・日が無い）', !alerts.some((a) => /補助項目/.test(a)), alerts);
 
-    /* 5. 締めた月分 */
-    st.locked = true;
+    /* 5. 締めた月分（本物の締め: 締めの窓から kintai_month_lock に控えを送る＝月の集計は「締めた時の数字」の道で書き出す） */
+    await page.click('[data-act="lock"]');
+    await page.waitForSelector('#g-dlg-f [data-act="lock-go"]', { timeout: 15000 });
+    await page.click('#g-dlg-f [data-act="lock-go"]');
+    await page.waitForFunction(() => /締めてあります/.test(document.getElementById('g-main').textContent), null, { timeout: 15000 });
+    t('締め: 控え（snapshot）の行が送られた', !!st.snapshot && Array.isArray(st.snapshot.rows) && st.snapshot.rows.length === 3, st.snapshot && st.snapshot.rows && st.snapshot.rows.length);
+    await page.waitForSelector('[data-act="csv-sum"]', { timeout: 15000 });
+    const sumL = await readDl(page, '[data-act="csv-sum"]');
+    const lh = cellsOf(sumL.split('\r\n')[0]), l1 = cellsOf(sumL.split('\r\n').find((l) => l.indexOf('9001,') === 0) || '');
+    t('締めた後の月の集計（締めた時の数字の道）: 末尾の7列と 9001 の値は同じ', JSON.stringify(lh.slice(-7)) === JSON.stringify(want) && JSON.stringify(l1.slice(-7)) === JSON.stringify(['15.5', '0', '0:00', '0', '0', '1:30', '0']), [lh.slice(-7), l1.slice(-7)]);
     await page.click('[data-tab="person"]');
-    await page.click('#g-reload');
     await page.waitForFunction(() => /締めた月分のため、入れることも取り消すこともできません/.test(document.getElementById('g-main').textContent), null, { timeout: 15000 });
     t('締めた月分: 入れる・直す・取り消すのボタンが無い（値の一覧は出る）', (await page.$('[data-act="ex-open"]')) === null && (await page.$('[data-act="ex-void"]')) === null && /移動距離 15\.5 km/.test(await mainText(page)));
     t('画面の例外 0', errs.length === 0, errs);

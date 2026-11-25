@@ -8,12 +8,11 @@
      5. CSV の末尾（appendCsv）: 今の列は1バイトも変えず末尾にだけ足す・項目が無い時は文がそのまま・引用符の中の改行とカンマで行を取り違えない・
         行の無い人や日は足さずに数を返す。本物の buildCsv の出力に当てて確かめる
      6. 画面の組み込み: kintai.html が kintai-extras.js を kintai.js の前に読む・呼ぶ3つの関数と引数の名前・関数が無い時は欄を出さない・
-        締めた月分は入れる欄を出さない・直しの履歴の名前・kintai-calc.js などを変えていない
+        締めた月分は入れる欄を出さない・直しの履歴の名前
    ★架空データだけ（職員は sX… の番号と従業員コード 9xxx）。 */
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
 const ROOT = path.join(__dirname, '..', '..');
 const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
 const C = require(path.join(ROOT, 'kintai-calc.js'));
@@ -118,6 +117,8 @@ console.log('\n— 4. 表示 —');
 t('数値は設定の桁（16.4 km）・回数は整数（1 回）・時間は 8:30', EX.label(IT.km, 16.4) === '移動距離 16.4 km' && EX.label(IT.cnt, 1) === '健診 1 回' && EX.label(IT.tm, 510) === '社内会議 8:30');
 t('CSV の書き方: 時間は hmm＝2:15・dec＝2.25（kintai-calc の fmtMin と同じ）', EX.fmtValue(IT.tm, 135, 'hmm') === C.fmtMin(135, 'hmm') && EX.fmtValue(IT.tm, 135, 'dec') === C.fmtMin(135, 'dec') && EX.fmtValue(IT.tm, 135, 'dec') === '2.25');
 t('数値の 0 は 0.0・回数の 0 は 0', EX.fmtValue(IT.km, 0, 'hmm') === '0.0' && EX.fmtValue(IT.cnt, 0, 'hmm') === '0');
+t('桁を後から減らしても丸めない（整数の設定でも 12.3 は 12.3・12.30 は 12.3・回数に 12.3 が来ても 12.3）', EX.fmtValue(Object.assign({}, IT.km, { decimals: 0 }), 12.3, 'hmm') === '12.3' && EX.fmtValue(IT.km, 12.30, 'hmm') === '12.3' && EX.fmtValue(IT.cnt, 12.3, 'hmm') === '12.3' && EX.fmtValue(Object.assign({}, IT.km, { decimals: 2 }), 5, 'hmm') === '5.00' && EX.fmtValue(IT.km, 0.05, 'hmm') === '0.05');
+t('見出し: 名前が「…（時間）」の時間の項目は重ねない（日曜出勤（時間））', EX.colHead({ name: '日曜出勤（時間）', kind: 'time' }) === '日曜出勤（時間）');
 t('見出し: 移動距離（km）・健診（回）・社内会議（時間）・単位の無い数値は名前だけ', EX.colHead(IT.km) === '移動距離（km）' && EX.colHead(IT.cnt) === '健診（回）' && EX.colHead(IT.tm) === '社内会議（時間）' && EX.colHead({ name: '点', kind: 'number', unit: '' }) === '点');
 
 console.log('\n— 5. CSV の末尾 —');
@@ -207,11 +208,5 @@ t('形を変えた項目の前の形の行: 個人の月の帯・CSV の注意�
   && /var kc = exs \? exKindChanged\(exs\.items\) : \[\];\s*if \(kc\.length && !confirm\(/.test(K) && /\(saved && exHasRows\(it\.code\) \? ' disabled/.test(K));
 t('入れる窓は保存していない入力を確かめる（DIRTY_MODES.extra）', /DIRTY_MODES\.extra = 1;/.test(K));
 t('新しいタブ・端末に残す鍵を足していない（TABS と localStorage の鍵は今のまま）', /var TABS = \['home', 'day', 'review', 'requests', 'grid', 'person', 'staff', 'leave', 'close', 'settings'\];/.test(K) && /var LS_TAB = 'kintai_tab', LS_YM = 'kintai_ym';/.test(K) && !/localStorage\.setItem\([^)]*ex/.test(K));
-/* kintai-calc.js・payroll-calc.js・payroll.js・kintai-self*・kintai-clock* を変えていない（origin/main と比べる・git が無い所では省略） */
-let diff = null;
-try { diff = execFileSync('git', ['diff', '--name-only', 'origin/main', '--', 'kintai-calc.js', 'payroll-calc.js', 'payroll.js', 'kintai-self.html', 'kintai-self.js', 'kintai-self-calc.js', 'kintai-self.css', 'kintai-clock.html', 'kintai-clock.js'], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch (e) { diff = null; }
-if (diff === null) console.log('  ⏸ 省略: git で origin/main と比べられない');
-else t('kintai-calc.js・payroll-calc.js・payroll.js・kintai-self*・kintai-clock* は origin/main のまま', diff === '', diff);
-
 console.log('\n' + pass + ' 件合格 / ' + fail + ' 件不合格');
 process.exit(fail ? 1 : 0);

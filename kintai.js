@@ -1472,7 +1472,7 @@
     if (!items) return h + '<p class="help">初めの7つ（' + esc(EX.EXTRA_ITEMS_DEFAULT.map(function (x) { return x.name; }).join('・')) + '）は案です。設定のタブの「補助項目」で保存すると、ここで日ごとに入れられるようになります。' +
       (isAdmin() ? '設定のタブで中身を確かめて「設定を保存する」を押してください。' : '保存できるのは管理者（2段階認証まで済んだ人）だけです。管理者に保存を頼んでください。') + '</p></div>';
     var act = exActive(), rs = exRowsOf(sid, null).slice().sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : a.code < b.code ? -1 : 1; });
-    var lk = isLocked(), S0 = EX.sumExtras(rs, items), sums = S0.byStaff[sid] || {}, mm = EX.mismatchText(S0.mismatch, items);
+    var lk = isLocked(), S0 = EX.sumExtras(rs, items), sums = S0.byStaff[sid] || Object.create(null), mm = EX.mismatchText(S0.mismatch, items);
     var tot = EX.csvItems(items, rs).map(function (it) { return EX.label(it, sums[it.code] || 0); }).join('・');   /* 使う項目と、止めた項目でもこの月分に行がある項目（CSV の列と同じ） */
     h += '<div class="row">' + (lk ? '<span class="help">締めた月分のため、入れることも取り消すこともできません。</span>' : (act.length ? '<button type="button" class="btn sm k5" data-act="ex-open" data-sid="' + esc(sid) + '">補助項目を入れる</button>' : '<span class="help">使う項目がありません（設定のタブの「補助項目」で「使う」にします）。</span>')) + '</div>';
     if (tot) h += '<p><b>この月分の合計:</b> ' + esc(tot) + '</p>';
@@ -1625,6 +1625,10 @@
     var sums = EX.sumExtras(exSt.rows, exItems() || []);
     var out = EX.appendCsv(text, kind, { people: (src.people || []).map(function (p) { return { staff_id: p.staff.staff_id, emp_code: p.staff.emp_code }; }), items: items, sums: sums, mode: src.config && src.config.csvTime });
     out.warn = EX.mismatchText(sums.mismatch, exItems() || []);   /* 形を変えた項目の前の形の行は数えていない（書き出しの後の注意に出す） */
+    /* 設定から消えた項目の行（コードが今の定義に無い）は列にできないので数を知らせる（ふつうは起きない＝画面で項目を消せない） */
+    var known = {}; (exItems() || []).forEach(function (x) { known['k' + x.code] = 1; });
+    var lost = exSt.rows.filter(function (r) { return !known['k' + r.code]; }).length;
+    if (lost) out.warn = (out.warn ? out.warn + '\n' : '') + '設定に無い補助項目の行が ' + lost + ' 件あります（CSV に出していません）。設定のタブの「補助項目」を確かめてください。';
     return out;
   }
 
