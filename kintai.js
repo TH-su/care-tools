@@ -347,6 +347,11 @@
   function printHead(sub) {
     return '<div class="ph"><b>' + esc(corpName()) + '　勤怠 ' + esc(perLabel()) + '</b>　' + esc(sub) + '　<span>印刷した日時: <span class="ph-at">' + esc(nowText()) + '</span></span></div>';
   }
+  /* 段B（統合 0130・kintai-board.js）に渡す窓口（この画面の部品をそのまま使わせる・鍵や中身は渡さない） */
+  window.KintaiBoardHost = { rpc: rpc, okOr: okOr, esc: esc, note: note, toast: toast, pressBusy: pressBusy, msgOf: msgOf, noDb: noDb, isNetErr: isNetErr,
+    cfg: rawCfg, today: today, officeName: officeName, exOn: function () { return exOn(); }, ym: function () { return ym; },
+    repaint: function () { if (view === 'app' && !busy && !printAll && (tab === 'requests' || tab === 'close')) paint(); },
+    reloadMonth: function () { dropMonthCaches(); load(false); } };
   function paint() {
     paintTabs();
     var m = $('g-main');
@@ -359,7 +364,8 @@
     if (vwApi) vwApi.syncTabs(vwIsOn, tab);
     if (vwT && !vwIsOn) { tab = 'home'; vwT = false; paintTabs(); }
     var f = { home: paintHome, day: paintDay, review: paintReview, requests: paintRequests, grid: paintGrid, person: paintPerson, staff: paintStaff, leave: paintLeave, close: paintClose, settings: paintSettings }[tab];
-    m.innerHTML = bands() + (vwT ? vwApi.paint(tab, vwCtx()) : f());
+    var kb = typeof window !== 'undefined' && window.KintaiBoard ? window.KintaiBoard : null;   /* 段B（統合 0130・kintai-board.js）: 申請のタブの下にお知らせと補助項目の申請・締めの画面の上に補助項目の承認待ち（無ければ空） */
+    m.innerHTML = bands() + (kb && tab === 'close' ? kb.closeHtml() : '') + (vwT ? vwApi.paint(tab, vwCtx()) : f()) + (kb && tab === 'requests' ? kb.html() : '');
     setInit = tab === 'settings' && $('g-set') ? settingsState() : null;   /* v5 C4: 描いた時の設定の入力（保存していない変更を確かめる） */
   }
   /* ── 年別・事業所別・休日のタブ（kintai-views.js・2026-11-25・ROOT-v7 段B・段C）: 部品が無い・設定の plusViews が切の時は何もしない ── */
@@ -1386,6 +1392,7 @@
     h += lvSetHtml();   /* v5 段4: 休暇と丸め（設定の欄の続き） */
     h += exSetHtml();   /* 段A1: 補助項目（関数が無い時は出さない） */
     if (typeof VW !== 'undefined' && VW) h += VW.setHtml(rawCfg());   /* 年別・事業所別・休日のタブの入り切り（2026-11-25・既定は切） */
+    if (typeof window !== 'undefined' && window.KintaiBoard) h += window.KintaiBoard.settingsHtml(rawCfg(), isAdmin());   /* 段B（統合 0130）: 職員のスマホの画面のお知らせと補助項目の申請の入り切り */
     h += '</form>' + a36Form() + '<div class="row"><button type="button" class="btn pri" data-act="save-set"' + (isAdmin() ? '' : ' disabled') + '>設定を保存する</button></div>' +
       '<p class="help">休憩の時間（日勤 ' + esc(c.breakH) + ' 時間・夜勤 ' + esc(c.nightBreakH) + ' 時間・拘束が ' + esc(c.breakThresholdH) + ' 時間を超えたら引く）はシフトアプリの設定を取り込んで使います（ここでは変えません）。丸めの決まり: 予定より早い出勤は予定の開始から、予定より遅い退勤は予定の終わりまで数えます。始業前・終業後に実際に働いた時は、その日を「直す」で早出・残業を認めてください（認めないまま切り捨てると賃金の未払いになります）。</p></div>';
     /* v5 1-5: 勤怠の管理者の名簿（管理者だけに出す・画面だけで印刷しない） */
@@ -2910,6 +2917,7 @@
     if (a36.obj) outCfg.agreement36 = a36.obj;
     if (lvs) for (k in lvs.vals) outCfg[k] = lvs.vals[k];
     if (exs) outCfg.extraItems = exs.items;
+    if (typeof window !== 'undefined' && window.KintaiBoard) window.KintaiBoard.readSettings(outCfg);   /* 段B（統合 0130）: 鍵 selfAnnounce・selfExtraReq（欄が無い時は今の設定のまま） */
     if (vws) for (k in vws.vals) outCfg[k] = vws.vals[k];
     busy = true; var restore = pressBusy(btn, '保存しています…');
     rpc('kintai_settings_put', { p_config: outCfg, p_rev: (data.settings && data.settings.rev) || 0 }).then(okOr).then(function () { busy = false; sync('設定を保存しました'); toast('設定を保存しました'); return load(false); })['catch'](function (e) { busy = false; restore(); note('設定の保存', e); alert(msgOf(e)); });

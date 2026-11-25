@@ -278,6 +278,9 @@ const CENSUS = {
   "kintai-ledger.js": [],   /* 総点検（2026-11-20）: 年次有給休暇管理簿の行を作る純関数（DOM に触れない） */
   "kintai-self-calc.js": [],  /* v5 段5（2026-11-20）: 職員本人の画面の純関数（DOM に触れない） */
   "kintai-self.js": [],       /* v5 段5（2026-11-20）: 職員本人の画面。表示は textContent と createElement だけ（代入0か所） */
+  "kintai-board-calc.js": [], /* 段B（2026-11-25）: お知らせと補助項目の申請の純関数（DOM に触れない） */
+  "kintai-board.js": [],      /* 段B（2026-11-25）: 管理画面の部品。HTML の文を返すだけで代入しない（代入は kintai.js の m.innerHTML の1か所・中身は esc） */
+  "kintai-self-board.js": [], /* 段B（2026-11-25）: 本人の画面の部品。表示は textContent と createElement だけ（代入0か所） */
   "shift-symbols.js": [],
   "payroll-calc.js": [],
   "payroll-rates.js": [],
@@ -296,7 +299,8 @@ const CENSUS = {
     [E, "$('g-main').innerHTML = '<div class=\"band ng\" role=\"alert\">' + esc(bandMsg) + '</div>'"],
     [F, "m.innerHTML = '<p class=\"empty\">読み込んでいます…</p>'"],
     /* 2026-11-25: 年別・事業所別・休日のタブ（kintai-views.js の paint）も同じ所に入れる。氏名・事業所・休日の名前は ctx.esc を通し、数・日付は部品が作った値だけ（check/unit/kintai_yearly_test.js が esc を確かめる） */
-    [E, "m.innerHTML = bands() + (vwT ? vwApi.paint(tab, vwCtx()) : f())"],
+    /* 段B（2026-11-25・統合 0130）: 申請のタブの下にお知らせ・補助項目の申請の欄、締めの画面の上に補助項目の承認待ちの帯（kintai-board.js・読んだ中身は全部 esc を通す・check/unit/kintai_board_test.js の4） */
+    [E, "m.innerHTML = bands() + (kb && tab === 'close' ? kb.closeHtml() : '') + (vwT ? vwApi.paint(tab, vwCtx()) : f()) + (kb && tab === 'requests' ? kb.html() : '')"],
     [E, "$('g-dlg-b').innerHTML = b"],
     [F, "$('g-dlg-f').innerHTML = '<button type=\"button\" class=\"btn\" data-act=\"dlg-close\">閉じる</button>' + (lk ? '' : '<button type=\"button\" class=\"btn pri\" data-act=\"dlg-save\">保存する</button>')"],
     [F, "$('g-edits').innerHTML = '<p class=\"empty\">読み込んでいます…</p>'"],
