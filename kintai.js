@@ -425,7 +425,7 @@
   /* 今の設定（kintai_settings.config）。締めた月分を開いていても、36協定の上限と決まりの見張りは今の設定で見る */
   /* v5（反証レビュー 2026-11-20）: 「読み直す」・シフトの取り込みでは、前に開いた月分の控え（monthCache）と、さかのぼりの月分の控え（有給の記録）を捨てて読み直す
      （ほかの端末で締めた月分などを古い計算のまま出さない）。読み込み中の有給の答えは世代で捨てる。開いている月分は recompute が新しい結果で置き換える */
-  function dropMonthCaches() { monthCache = {}; leaveSt = null; leaveBusy = false; leaveGen++; }
+  function dropMonthCaches() { monthCache = {}; leaveSt = null; leaveBusy = false; leaveGen++; if (typeof a2Ex36Reset === 'function') a2Ex36Reset(); }   /* 段A2: 36協定に使うほかの月分の補助項目も捨てる */
   function rawCfg() { return (data && data.settings && data.settings.config) || {}; }
   /* 月分の締めの様子（36協定の月の列は、締めた月分は控えの値・締めていない月分は数えた値を使う） */
   function k36Info(d) {
@@ -443,7 +443,7 @@
   }
   function hireOfStaff(s) { var m = masterOf(s), prof = leaveSt && leaveSt.profiles ? leaveSt.profiles[s.staff_id] : null; return L ? L.hireOf(m && m.hire_date, prof) : null; }
   /* 1人分の月の行（Kintai36.judge の months の1行）。締めた月分は控えの丸める前の値（無い古い控えは丸めた値・raw36 に印）、締めていない月分は数えた値 */
-  function row36(mm, sid, ymx, old) {
+  function row36(mm, sid, ymx, old, mmiss) {
     var k = mm.k36 || {}, cfg0 = k.locked && k.snapCfg ? k.snapCfg : (mm.config || {});
     var known = C.checkLegalHoliday(cfg0.legal_holiday).value != null, legal = 0, hol = 0;
     if (k.locked && k.rows) {
@@ -463,6 +463,12 @@
       hol = typeof p.sum.holidayRawMin === 'number' ? p.sum.holidayRawMin : p.sum.holidayMin;
       /* 段A2: 締めていない月は読んだ補助項目の時間の行から（今開いている月分だけ。ほかの締めていない月分は読んでいないので足さない・仮置き） */
       if (typeof exReady === 'function' && exReady() && ymx === ym && EX.meetingSplitOf) { var ms0 = EX.meetingSplitOf(mm, exSt.rows, rawCfg(), sid); legal += ms0.non; hol += ms0.hol; }
+      /* ほかの締めていない月分は、その月分の補助項目を読んで足す（反証レビュー1回の5）。読めない月分は足さずに知らせる（知らせだけ）。読んでいる途中は足さない（読み終わったら描き直す） */
+      else if (typeof a2Ex36Of === 'function') {
+        var xe = a2Ex36Of(ymx);
+        if (xe && xe.rows) { var ms1 = EX.meetingSplitOf(mm, xe.rows, rawCfg(), sid); legal += ms1.non; hol += ms1.hol; }
+        else if (xe && xe.err && mmiss && mmiss.indexOf(ymx) < 0) mmiss.push(ymx);
+      }
     }
     return { ym: ymx, legalOverMin: legal, holidayMin: hol, locked: !!k.locked, holidayKnown: known };
   }
@@ -480,15 +486,15 @@
     var partial = !(cur.k36 && cur.k36.locked) && td >= per0.from && td <= per0.to;
     var opts = partial ? { elapsedDays: C.periodDays({ from: per0.from, to: td }), periodDays: C.periodDays(per0) } : {};
     (cur.people || []).forEach(function (p) {
-      var s = p.staff, sid = s.staff_id, hire = hireOfStaff(s), list = [], old = [], y = ymx;
+      var s = p.staff, sid = s.staff_id, hire = hireOfStaff(s), list = [], old = [], mmiss = [], y = ymx;
       for (var i = 0; i < 12; i++) {
-        var mm = by[y], r = mm ? row36(mm, sid, y, old) : null;
+        var mm = by[y], r = mm ? row36(mm, sid, y, old, mmiss) : null;
         if (!r && ((hire && y < hire.slice(0, 7)) || (zeroBelow && y < oldest))) r = { ym: y, legalOverMin: 0, holidayMin: 0, locked: true, holidayKnown: true };
         if (r) { if (y === ymx) r.partial = partial; list.push(r); }
         y = C.prevYm(y);
       }
       var j = K36.judge(list, ymx, cfg, opts);
-      if (j) out[sid] = { staff_id: sid, name: dispName(s), items: j.items, holidayUnknown: j.holidayUnknown, agreement: j.agreement, old: old };
+      if (j) out[sid] = { staff_id: sid, name: dispName(s), items: j.items, holidayUnknown: j.holidayUnknown, agreement: j.agreement, old: old, mmiss: mmiss };
     });
     return out;
   }
@@ -503,6 +509,7 @@
     if (!same) w = w.filter(function (x) { return x !== calcWarn; });
     j.items.forEach(function (it) { if (!(same && it.code === 'month_warn')) w.push('36協定: ' + it.text); });
     if (j.old.length) w.push(oldNote(j.old));
+    if (j.mmiss && j.mmiss.length) w.push(a2MissNote(j.mmiss));   /* 段A2: 会議の時間を足せていない月分（知らせだけ） */
     return w;
   }
   /* 締めていない過去の月分（期間が今日より前で、締めておらず、記録のある月分・仮置き: 記録の無い月分は数えない） */
@@ -560,6 +567,8 @@
       if (b.key === 'a36') {
         var olds = []; for (var k in a36) a36[k].old.forEach(function (y) { if (olds.indexOf(y) < 0) olds.push(y); });
         if (olds.length) b.note = (b.note ? b.note + '。' : '') + oldNote(olds.sort());
+        var mms = []; for (var k2 in a36) (a36[k2].mmiss || []).forEach(function (y) { if (mms.indexOf(y) < 0) mms.push(y); });
+        if (mms.length) b.note = (b.note ? b.note + '。' : '') + a2MissNote(mms.sort());   /* 段A2: 会議の時間を足せていない月分 */
       }
       var bh = boxHtml(b, 'data-tab="' + esc(b.tab) + '"' + (b.key === 'requests' ? ' data-rq="pending"' : ''));
       out.push(b.key === 'review' ? ntWrap(bh, noticeHtml('missing')) : bh);   /* v6: 打刻漏れの行に「知らせる」 */
@@ -1786,6 +1795,35 @@
       throw Object.assign(new Error('extras'), { kintai: 'a2_noextras' });
     });
   }
+
+  /* 段A2（反証レビュー1回の5）: 36協定の見張りに使う、開いている月分のほかの締めていない月分の補助項目（画面の中だけ・端末に残さない）。
+     月ごとに kintai_extras_get を読む（同時に読むのは3本まで）。読み終わったら36協定を出すタブを描き直す。読めない月分は { err } のまま（足さずに知らせる） */
+  var a2Ex36 = {}, a2Ex36Gen = 0, a2Ex36Q = [], a2Ex36Run = 0;
+  function a2Ex36Reset() { a2Ex36 = {}; a2Ex36Gen++; a2Ex36Q = []; }
+  function a2Ex36Of(y) {
+    if (!EX || typeof EX.meetingSplitOf !== 'function' || !exOn()) return null;
+    var mo = EX.meetingOtOf(rawCfg());
+    if (!mo || !mo.on) return null;
+    if (!a2Ex36[y]) { a2Ex36[y] = { pending: true }; a2Ex36Q.push(y); a2Ex36Pump(); }
+    return a2Ex36[y];
+  }
+  function a2Ex36Pump() {
+    while (a2Ex36Run < 3 && a2Ex36Q.length) {
+      var y = a2Ex36Q.shift(), my = a2Ex36Gen;
+      a2Ex36Run++;
+      rpc('kintai_extras_get', { p_ym: y }).then(okOr).then(function (r) { return { rows: Array.isArray(r.rows) ? r.rows : [] }; }, function (e) {
+        if (!isNetErr(e) && !isDenied(e) && !noDb(e)) note('36協定の補助項目の読み込み', e);
+        return { err: true };
+      }).then(function (yy) { return function (res) {
+        a2Ex36Run--;
+        if (my === a2Ex36Gen) a2Ex36[yy] = res;
+        a2Ex36Pump();
+        if (my !== a2Ex36Gen || a2Ex36Run || a2Ex36Q.length) return;
+        if (view === 'app' && !busy && !printAll && month && !dlgCtx && (tab === 'home' || tab === 'grid' || tab === 'person')) paint();
+      }; }(y));
+    }
+  }
+  function a2MissNote(yms) { return '会議の時間を足せていない月があります（' + yms.map(function (y) { return (+y.slice(5, 7)) + '月分'; }).join('・') + '・36協定の見張りだけ・読み直すと足します）'; }
 
   /* ── v5 1-5: 勤怠の管理者の名簿（kintai_managers_list・kintai_managers_put（p_on で載せる・外す）。どれも二段階の管理者だけ＝DB が決める） ──
    * 読み終わっても画面全体は描き直さない（設定のタブの入力中の値を消さない）。自分の入れ物（#g-mgr）だけを差し替え、遅れた応答は世代で捨てる */

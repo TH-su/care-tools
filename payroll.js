@@ -344,6 +344,9 @@
       /* 段A2: 明細の勤怠の欄に「うち社内会議」（時間外・休日労働に足した会議の分・表示だけで額は変えない） */
       if (a && a.meetingMin > 0 && arr(it.lines).some(function (l) { return l && l.sec === 'att'; })) it.lines = arr(it.lines).concat([{ sec: 'att', code: 'meetingMin', name: 'うち社内会議（分）', qty: a.meetingMin, unit: null, amount: 0, basis: '時間外・法定休日に足した分' }]);
       /* 段A2（反証レビュー1回の3）: 勤怠の設定で社内会議を時間外に足すのに、控えに補助項目（ext）が無い月分（期間の初日が 2026-12-16 以降） */
+      /* 段A2（二重払いの守り）: 社内会議を時間外に足す設定で、その時間の項目（t:<code>）を手当の回数の元に選んでいる人は止める（画面だけ・文は仮置き） */
+      var mSrc = meetingSrc();
+      if (mSrc && arr(p.data.allowances).some(function (x) { return x && x.count_source === mSrc && bs.allowances.some(function (d) { return d.code === x.code && d.calc === 'count'; }); })) it.warnings = arr(it.warnings).concat([{ code: 'meeting_src', msg: '社内会議の時間は時間外に足しているので、手当の回数の元に選べません' }]);
       if (a && bs.kcheck && bs.kcheck.extMissing) it.warnings = arr(it.warnings).concat([{ code: 'ext_missing', msg: 'この月分の勤怠の控えに補助項目がありません。勤怠の締めを外して締め直してください' }]);
       out.push(it);
     });
@@ -483,7 +486,11 @@
     return out;
   }
   /* 確定できない警告（2026-11-21）: 率表・税額表・標準報酬が無い月は保険料・所得税を0円などで数えているので確定させない（最低賃金の未設定のような毎月の警告とは分ける） */
-  var BLOCK_WARN = { rate_missing: 1, emp_rate_missing: 1, tax_table_missing: 1, std_missing: 1, ext_missing: 1 };   /* ext_missing: 段A2（反証レビュー1回の3）・社内会議を時間外に足す設定なのに控えに補助項目が無い月分（画面だけで止める・データベースは止めない） */
+  /* 確定できない警告。DB（0118 の payroll_run_confirm）が止めるのは rate_missing・emp_rate_missing・tax_table_missing・std_missing の4つ。
+     BLOCK_WARN_SCREEN は画面だけで止める（DB は止めない）: ext_missing＝社内会議を時間外に足す設定なのに控えに補助項目が無い月分（段A2 反証レビュー1回の3）・
+     meeting_src＝時間外に足している社内会議の時間を手当の回数の元に選んだ（二重払いの守り・段A2） */
+  var BLOCK_WARN_SCREEN = { ext_missing: 1, meeting_src: 1 };
+  var BLOCK_WARN = { rate_missing: 1, emp_rate_missing: 1, tax_table_missing: 1, std_missing: 1, ext_missing: 1, meeting_src: 1 };
   function blockWarns(list) { var out = []; list.forEach(function (it) { arr(it.warnings).forEach(function (w) { if (w && BLOCK_WARN[w.code]) out.push(it.name + '：' + (w.msg || w.code)); }); }); return out; }
   function openConfirm() {
     if (busy || !bs || status() !== 'draft' || dirty) return;
@@ -1866,9 +1873,16 @@
   function sel(id, label, val, opts) { return '<label for="' + esc(id) + '">' + esc(label) + '</label><select id="' + esc(id) + '">' + opts.map(function (o) { return '<option value="' + esc(o[0]) + '"' + (String(val == null ? '' : val) === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') + '</select>'; }
   var NUMA = ' inputmode="numeric"';
   /* 段A2: 手当の回数の元の選び。元は勤怠の設定（kintai_month_get の settings.config）と締めた時の控えの定義・控えの記号の回数（counts）と今の値 */
+  /* 時間外に足している社内会議の回数の元（t:<code>）。控えの定義か今の勤怠の設定で会議を足す時だけ（無ければ null） */
+  function meetingSrc() {
+    var EXm = window.KintaiExtras; if (!EXm || typeof EXm.meetingOtOf !== 'function' || !bs) return null;
+    var mo = bs.kintai.ext_def ? EXm.cleanMeetingOt(obj(bs.kintai.ext_def).meetingOt) : null, mk = EXm.meetingOtOf(kintaiCfg0 || obj(bs.kcheck && bs.kcheck.kcfg));
+    var m = mo && mo.on ? mo : (mk && mk.on ? mk : null);
+    return m ? 't:' + m.code : null;
+  }
   function srcOpts(cur) {
     var EXm = window.KintaiExtras, kc = kintaiCfg0 || obj(bs && bs.kcheck && bs.kcheck.kcfg), out = [['manual', '手で入れる（下の回数）']], seen = { manual: 1 };
-    var add = function (v, t) { if (!seen[v]) { seen[v] = 1; out.push([v, t]); } };
+    var ms = meetingSrc(), add = function (v, t) { if (!seen[v] && v !== ms) { seen[v] = 1; out.push([v, t]); } };   /* 時間外に足している社内会議は選べない（二重払いの守り） */
     var syms = {}; Object.keys(obj(bs && bs.kintai.summary_by_staff)).forEach(function (sid) { Object.keys(obj(bs.kintai.summary_by_staff[sid].counts)).forEach(function (k) { syms[k] = 1; }); });
     Object.keys(syms).sort().forEach(function (k) { if (!(EXm && EXm.SRC_RE.test(k))) add(k, 'シフトの記号：' + k); });
     if (EXm && typeof EXm.defOf === 'function') {
@@ -1879,7 +1893,7 @@
         if (df.commute) add('k:commute', '通勤回数');
       });
     }
-    if (cur && typeof cur === 'string' && !seen[cur]) add(cur, '今の値：' + (EXm && EXm.SRC_RE.test(cur) ? EXm.srcLabel(cur, null) : 'シフトの記号：' + cur));
+    if (cur && typeof cur === 'string' && !seen[cur]) { seen[cur] = 1; out.push([cur, '今の値：' + (EXm && EXm.SRC_RE.test(cur) ? EXm.srcLabel(cur, null) : 'シフトの記号：' + cur) + (cur === ms ? '（時間外に足しているので選べません）' : '')]); }
     return out;
   }
   function openProfile(sid) {

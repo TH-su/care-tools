@@ -31,6 +31,10 @@ const ROOT = new globalThis.URL('../../', import.meta.url);
 const PC = require(fileURLToPath(new globalThis.URL('payroll-calc.js', ROOT)));
 const PR = require(fileURLToPath(new globalThis.URL('payroll-rates.js', ROOT)));
 const KC = require(fileURLToPath(new globalThis.URL('kintai-calc.js', ROOT)));
+const KX = require(fileURLToPath(new globalThis.URL('kintai-extras.js', ROOT)));
+/* 段A2（2026-11-25・opt.a2 の時だけ）: 勤怠の設定（補助項目の社内会議・記号の組の初めの案・通勤回数・会議を時間外に足す）と補助項目の行。s-01 は予定の記号を「早」にし、
+   最初の働く日に社内会議 60分を入れる。opt.a2.ext が偽なら締めの控えに ext を入れない（段A2 より前に締めた控えの真似） */
+export const A2_KCFG = { extraItems: [{ code: 'meeting', name: '社内会議', kind: 'time', unit: '', decimals: 0, active: true }], symbolGroups: KX.SYMBOL_GROUPS_DEFAULT, commuteCount: { minus: [] }, meetingOt: { code: 'meeting', on: true } };
 const b64u = (o) => Buffer.from(JSON.stringify(o)).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
 function session(aal, email) {
   const jwt = b64u({ alg: 'none', typ: 'JWT' }) + '.' + b64u({ sub: '00000000-0000-4000-8000-00000000a1a1', email, role: 'authenticated', aal, exp: 4102444800 }) + '.check';
@@ -368,7 +372,8 @@ function kintaiOf(db, ym) {
       if (first && db.leave && st.staff_id === 's-03') { first = false; leave_uses.push({ id: 'lu-' + st.staff_id + d, staff_id: st.staff_id, use_date: d, days: 1, note: '', voided_at: null }); continue; }
       if (first && (st.staff_id === 's-02' || st.staff_id === 's-07')) { first = false; schedule.push({ staff_id: st.staff_id, work_date: d, seq: 1, kind: 'paid', start_at: null, end_at: null, break_min: 0, paid_min: 480, office: 'facility', symbol: '有' }); continue; }
       first = false;
-      schedule.push({ staff_id: st.staff_id, work_date: d, seq: 1, kind: 'work', start_at: at(d, 540), end_at: at(d, 1080), break_min: 60, paid_min: 0, office: 'facility', symbol: '日' });
+      schedule.push({ staff_id: st.staff_id, work_date: d, seq: 1, kind: 'work', start_at: at(d, 540), end_at: at(d, 1080), break_min: 60, paid_min: 0, office: 'facility', symbol: db.a2 && st.staff_id === 's-01' ? '早' : '日' });
+      if (db.a2 && st.staff_id === 's-01' && !db.a2rows.length) db.a2rows.push({ id: '00000000-0000-4000-8000-0000000a2f01', staff_id: 's-01', date: d, code: 'meeting', qty: null, minutes: 60, note: null });
       punches.push({ id: 'k-' + st.staff_id + d + 'i', staff_id: st.staff_id, kind: 'in', at: at(d, 540), source: 'tablet', created_at: at(d, 540) });
       punches.push({ id: 'k-' + st.staff_id + d + 'o', staff_id: st.staff_id, kind: 'out', at: at(d, 1080), source: 'tablet', created_at: at(d, 1080) });
     }
@@ -376,6 +381,7 @@ function kintaiOf(db, ym) {
   const lockedAt = db.kintai.locked_at;
   const month = KC.computeMonth({ ym, period: per, staff, schedule, punches, days: [], leave_uses, config: {}, lockedAt, now: Date.parse(lockedAt) });
   const snapshot = KC.snapshotOf(month);
+  if (db.a2 && db.a2.ext !== false) snapshot.ext = KX.buildExt(month, db.a2rows, schedule, A2_KCFG);
   if (db.drift) snapshot.rows.forEach((r) => { if (r.staff_id === 's-02') { r.workMin += 60; r.schedInMin += 60; } });
   db.kraw[ym] = { raw: Object.assign({ period: per, staff, schedule, punches, days: [] }, db.leave ? { leave_uses } : {}), snapshot };
   return db.kraw[ym];
@@ -406,11 +412,16 @@ export function seed(opt = {}) {
     profiles: profileRows(ym0),
     bank: {},
     kintai: { locked_at: lock0 },
-    kraw: {}, drift: !!opt.kintaiDrift, leave: !!opt.kintaiLeave,
+    kraw: {}, drift: !!opt.kintaiDrift, leave: !!opt.kintaiLeave, a2: opt.a2 || null, a2rows: [],
     runs: {}, items: {}, prev: {}, audit: [], log: [],
     members: [{ email: 'check-clerk@example.invalid', added_by: 'check-admin@example.invalid', added_at: '2025-12-01T10:00:00+09:00' }],
     offices: ['check-clerk@example.invalid', 'check-office@example.invalid', 'check-new@example.invalid'],
   };
+  /* 段A2（opt.a2 の時だけ）: 回数×単価の手当を2つ（早遅手当・会議の手当）足し、s-01 に早遅手当 400円（回数の元は画面で選ぶ）を持たせる */
+  if (opt.a2) {
+    db.allowances.push({ code: 'hayaoso', def: { code: 'hayaoso', name: '早遅手当', sec: 'pay', calc: 'count', order: 4, attrs: {} }, rev: 1 }, { code: 'mtgal', def: { code: 'mtgal', name: '会議の手当', sec: 'pay', calc: 'count', order: 5, attrs: {} }, rev: 1 });
+    db.profiles.filter((p) => p.staff_id === 's-01').forEach((p) => { p.data.allowances = p.data.allowances.concat([{ code: 'hayaoso', amount: 400 }]); });
+  }
   db.profiles.forEach((p, i) => {
     if (i === 2) return;   /* s-03 は口座なし */
     const accounts = [{ bank_code: '9999', branch_code: '001', type: '1', number: '000' + String(1000 + i * 111).slice(-4), name_kana: 'ﾐﾎﾝ', bank_name: '見本銀行', amount_or_rest: 'rest' }];
@@ -936,7 +947,14 @@ export function routesFor(opt = {}) {
         if (aal !== 'aal2' || opt.deny) return json({ code: '42501', message: '事務所・管理者だけが使えます' }, 403);
         if (!ymOk(q.p_ym)) return json({ ok: false, error: 'badym' });
         const k = kintaiOf(db, q.p_ym);
-        return json(JSON.parse(JSON.stringify(Object.assign({ ok: true }, k.raw, { month: db.kintai.locked_at ? { ym: q.p_ym, locked_at: db.kintai.locked_at, snapshot: k.snapshot, history: [] } : null, settings: { config: {}, rev: 0 } }))));
+        return json(JSON.parse(JSON.stringify(Object.assign({ ok: true }, k.raw, { month: db.kintai.locked_at ? { ym: q.p_ym, locked_at: db.kintai.locked_at, snapshot: k.snapshot, history: [] } : null, settings: { config: db.a2 ? A2_KCFG : {}, rev: 0 } }))));
+      }
+      /* 段A2: 補助項目の読み口（opt.a2 の時だけ・ほかは今までどおり出さない） */
+      if (db.a2 && /\/rest\/v1\/rpc\/kintai_extras_get/.test(u)) {
+        let q = {}; try { q = JSON.parse(req.postData() || '{}'); } catch (e) { q = {}; }
+        calls.push({ name: 'kintai_extras_get', args: q });
+        kintaiOf(db, q.p_ym);
+        return json({ ok: true, from: periodOf(q.p_ym).from, to: periodOf(q.p_ym).to, rows: db.a2rows.concat(db.a2.extraRows || []) });
       }
       /* 有給の入職順（loadHire）が読む勤怠の職員マスタの一覧。給与の試験では入職日を使わないので空の一覧（2026-11-21） */
       if (/\/rest\/v1\/rpc\/kintai_master_list/.test(u)) { calls.push({ name: 'kintai_master_list', args: {} }); return json({ ok: true, rows: [] }); }

@@ -77,7 +77,8 @@ console.log('\n— 3b. 締めの控えに ext を入れる —');
 console.log('\n— 4. 36協定の見張りに会議の分を足す —');
 {
   const src = sl(K, '  function row36(', '  /* その月分の36協定の判定');
-  const run = (mm, ext0, opts) => new Function('C', 'EX', 'MM', 'O', `var ym = O.ym, exSt = O.exSt; function exReady() { return !!O.ready; } function rawCfg() { return O.cfg || {}; }\n${src}\nreturn row36(MM, 'sA1', O.ymx || '2026-12', []);`)(KC, EX, mm, opts || {});
+  const run = (mm, ext0, opts) => new Function('C', 'EX', 'MM', 'O', `var ym = O.ym, exSt = O.exSt; function exReady() { return !!O.ready; } function rawCfg() { return O.cfg || {}; }
+    ${opts && opts.other ? 'function a2Ex36Of(y) { return O.other(y); }' : ''}\n${src}\nvar miss = []; var r = row36(MM, 'sA1', O.ymx || '2026-12', [], miss); if (r) r.miss = miss; return r;`)(KC, EX, mm, opts || {});
   const lockedMM = { k36: { locked: true, rows: [{ staff_id: 'sA1', legalOverRawMin: 600, legalOverMin: 600, holidayRawMin: 30, holidayMin: 30 }], snapCfg: { legal_holiday: 0 }, ext: { v: 1, def: {}, rows: { sA1: { adj: { legalOverMin: 690, over60Min: 0, holidayMin: 90, meetingMin: 150 } } } } } };
   const r1 = run(lockedMM);
   t('締めた月: 控えの adj から（丸める前の 600＋90・休日 30＋60）', r1.legalOverMin === 690 && r1.holidayMin === 90, r1);
@@ -89,7 +90,16 @@ console.log('\n— 4. 36協定の見張りに会議の分を足す —');
   const r2 = run(live, null, { ym: '2026-12', ymx: '2026-12', ready: true, exSt: { rows: ex }, cfg: cfgOn });
   t('開いている締めていない月: 補助項目の行から（平日 40分は時間外・日曜 20分は休日）', r2.legalOverMin === 140 && r2.holidayMin === 20, r2);
   const r3 = run(live, null, { ym: '2027-01', ymx: '2026-12', ready: true, exSt: { rows: ex }, cfg: cfgOn });
-  t('ほかの締めていない月（読んでいない）は足さない（仮置き）', r3.legalOverMin === 100 && r3.holidayMin === 0, r3);
+  t('ほかの締めていない月を読む口が無い時は足さない', r3.legalOverMin === 100 && r3.holidayMin === 0, r3);
+  const r4 = run(live, null, { ym: '2027-01', ymx: '2026-12', ready: true, exSt: { rows: [] }, cfg: cfgOn, other: (y) => (y === '2026-12' ? { rows: ex } : null) });
+  t('ほかの締めていない月: その月分の補助項目を読んで足す（反証レビュー1回の5）', r4.legalOverMin === 140 && r4.holidayMin === 20 && r4.miss.length === 0, r4);
+  const r5 = run(live, null, { ym: '2027-01', ymx: '2026-12', ready: true, exSt: { rows: [] }, cfg: cfgOn, other: () => ({ err: true }) });
+  t('読めない月は足さずに知らせる月に入れる', r5.legalOverMin === 100 && JSON.stringify(r5.miss) === '["2026-12"]', r5);
+  const r6 = run(live, null, { ym: '2027-01', ymx: '2026-12', ready: true, exSt: { rows: [] }, cfg: cfgOn, other: () => ({ pending: true }) });
+  t('読んでいる途中は足さず、知らせもしない（読み終わったら描き直す）', r6.legalOverMin === 100 && r6.miss.length === 0, r6);
+  const pump = sl(K, '  function a2Ex36Of(y) {', '  function a2MissNote(');
+  t('月ごとに kintai_extras_get を読む・同時に3本まで・世代で古い答えを捨てる・会議を足す設定の時だけ・読み直し（dropMonthCaches）で捨てる', /while \(a2Ex36Run < 3 && a2Ex36Q\.length\)/.test(pump) && /rpc\('kintai_extras_get', \{ p_ym: y \}\)/.test(pump) && /if \(my === a2Ex36Gen\) a2Ex36\[yy\] = res;/.test(pump) && /if \(!mo \|\| !mo\.on\) return null;/.test(pump) && /if \(typeof a2Ex36Reset === 'function'\) a2Ex36Reset\(\);/.test(sl(K, '  function dropMonthCaches(', '\n')) && /function a2Ex36Reset\(\) \{ a2Ex36 = \{\}; a2Ex36Gen\+\+; a2Ex36Q = \[\]; \}/.test(K));
+  t('知らせの文（個人の月の帯・ホームの36協定の箱）', /'会議の時間を足せていない月があります（'/.test(K) && /if \(j\.mmiss && j\.mmiss\.length\) w\.push\(a2MissNote\(j\.mmiss\)\);/.test(K) && /b\.note = \(b\.note \? b\.note \+ '。' : ''\) \+ a2MissNote\(mms\.sort\(\)\);/.test(K));
   t('kintai-36.js は変えていない（判定の入力にだけ足す）', !/meeting|KintaiExtras|\.ext\b/.test(read('kintai-36.js')));
   t('締めの控えの様子に ext を持つ（k36Info）', /ext: snap && EX && EX\.isExt && EX\.isExt\(snap\.ext\) \? snap\.ext : null/.test(K));
 }
@@ -149,10 +159,11 @@ const pend = [];
   }).then((rs) => {
     t('ext の無い控え: 補助項目を読まずに今までどおり比べる・期間の初日が 2026-12-16 以降で会議を足す設定なら extMissing の印（それより前は付けない）', rs[1].state === 'ok' && !rs[1].extMissing && rs[0].extMissing === true, rs);
   }));
-  t('確定を止める警告に ext_missing を入れる（画面だけで止める）', /var BLOCK_WARN = \{[^}]*\bext_missing: 1 \};/.test(J));
+  t('確定を止める警告に ext_missing・meeting_src を入れる（BLOCK_WARN_SCREEN＝画面だけで止める）', /var BLOCK_WARN_SCREEN = \{ ext_missing: 1, meeting_src: 1 \};/.test(J) && /var BLOCK_WARN = \{[^}]*\bext_missing: 1, meeting_src: 1 \};/.test(J));
   const ca = sl(J, '  function computeAll()', '  function doCompute()');
   t('計算: 印のある月分は警告 ext_missing（文は仕様どおり）・明細の勤怠の欄に「うち社内会議」（表示だけ・額 0）', /if \(a && bs\.kcheck && bs\.kcheck\.extMissing\) it\.warnings = arr\(it\.warnings\)\.concat\(\[\{ code: 'ext_missing', msg: 'この月分の勤怠の控えに補助項目がありません。勤怠の締めを外して締め直してください' \}\]\);/.test(ca)
     && /\{ sec: 'att', code: 'meetingMin', name: 'うち社内会議（分）', qty: a\.meetingMin, unit: null, amount: 0/.test(ca));
+  t('二重払いの守り: 時間外に足す会議の項目（t:<code>）を回数×単価の手当の元に選んだ人は meeting_src（文は仮置き）', /var mSrc = meetingSrc\(\);/.test(ca) && /x\.count_source === mSrc && bs\.allowances\.some\(function \(d\) \{ return d\.code === x\.code && d\.calc === 'count'; \}\)/.test(ca) && /code: 'meeting_src', msg: '社内会議の時間は時間外に足しているので、手当の回数の元に選べません'/.test(ca));
 }
 
 console.log('\n— 7. 職員の給与設定の「回数の元」・読み込みの順 —');
@@ -161,11 +172,21 @@ console.log('\n— 7. 職員の給与設定の「回数の元」・読み込み�
   t('回数×単価の手当だけに回数の元の選びと回数の欄', /if \(a\.calc === 'count'\) \{ var cur = alOf\(a\.code\); x \+= sel\('f-als' \+ i, \(a\.name \|\| a\.code\) \+ ' の回数の元', cur\.count_source \|\| 'manual', srcOpts\(cur\.count_source\)\) \+ inp\('f-alc' \+ i/.test(op));
   const pg = sl(J, '  function profGo(btn)', "    d.deductions = keepD;");
   t('保存: 選びがある時だけ count_source・手で入れる時は回数（0〜9999）・今の値（Object.assign(old)）は引き継ぐ', /if \(\$\('f-als' \+ i\)\) \{/.test(pg) && /ent\.count_source = src;/.test(pg) && /cn < 0 \|\| cn > 9999/.test(pg) && /Object\.assign\(\{\}, old \|\| \{\}, \{ code: a\.code, amount: x \}\)/.test(pg));
-  const so = sl(J, '  function srcOpts(cur)', '  function openProfile(sid)');
+  const so = sl(J, '  function meetingSrc()', '  function openProfile(sid)');   /* srcOpts は meetingSrc を使う */
   const run = new Function('EXM', 'BS', 'KCFG', `var window = { KintaiExtras: EXM }, bs = BS, kintaiCfg0 = KCFG; function obj(v) { return v && typeof v === "object" && !Array.isArray(v) ? v : {}; }\n${so}\nreturn srcOpts;`);
   const bs0 = { kcheck: null, kintai: { summary_by_staff: { sA1: { counts: { '早': 2, '日1': 1 } } }, ext_def: { items: [{ code: 'old', name: '止めた回数', kind: 'count', decimals: 0, active: false }], groups: [], commute: null, meetingOt: null } } };
   const opts = run(EX, bs0, { extraItems: [{ code: 'dist', name: '移動距離', kind: 'number', unit: 'km', decimals: 1, active: true }, { code: 'sunday_time', name: '日曜出勤（時間）', kind: 'time', decimals: 0, active: true }], symbolGroups: EX.SYMBOL_GROUPS_DEFAULT, commuteCount: { minus: [] } })('早2');
   t('選び: 手で入れる・シフトの記号・補助項目（回数・時間）・控えの定義の項目・記号の組・通勤回数・今の値', JSON.stringify(opts.map((o) => o[0])) === JSON.stringify(['manual', '日1', '早', 'x:dist', 't:sunday_time', 'g:hayaoso', 'k:commute', 'x:old', '早2']) && opts[3][1] === '補助項目：移動距離' && opts[4][1] === '補助項目：日曜出勤（時間）' && opts[5][1] === '記号の組：早遅' && opts[8][1] === '今の値：シフトの記号：早2', opts);
+  const runMs = new Function('EXM', 'BS', 'KCFG', `var window = { KintaiExtras: EXM }, bs = BS, kintaiCfg0 = KCFG; function obj(v) { return v && typeof v === "object" && !Array.isArray(v) ? v : {}; }\n${so}\nreturn { meetingSrc: meetingSrc, srcOpts: srcOpts };`);
+  const kOn = { extraItems: [{ code: 'meeting', name: '社内会議', kind: 'time', decimals: 0, active: true }, { code: 'sunday_time', name: '日曜出勤（時間）', kind: 'time', decimals: 0, active: true }], meetingOt: { code: 'meeting', on: true } };
+  const bsN = { kcheck: null, kintai: { summary_by_staff: {}, ext_def: null } };
+  const mOn = runMs(EX, bsN, kOn), mOff = runMs(EX, bsN, Object.assign({}, kOn, { meetingOt: { code: 'meeting', on: false } }));
+  const oOn = mOn.srcOpts('').map((o) => o[0]), oOff = mOff.srcOpts('').map((o) => o[0]);
+  t('二重払いの守り: 会議を時間外に足す時は回数の元の一覧から t:meeting を外す（切の時は出す）', mOn.meetingSrc() === 't:meeting' && oOn.indexOf('t:meeting') < 0 && oOn.indexOf('t:sunday_time') >= 0 && mOff.meetingSrc() === null && oOff.indexOf('t:meeting') >= 0, [oOn, oOff]);
+  const keep = mOn.srcOpts('t:meeting');
+  t('今の値が t:meeting の人は黙って変えず「選べません」と出す（確定は meeting_src で止まる）', keep.some((o) => o[0] === 't:meeting' && /選べません/.test(o[1])), keep);
+  const mSnap = runMs(EX, { kcheck: null, kintai: { summary_by_staff: {}, ext_def: { items: [], groups: [], commute: null, meetingOt: { code: 'mtg2', on: true } } } }, {});
+  t('控えの定義で会議を足していればそちらを使う', mSnap.meetingSrc() === 't:mtg2');
   t('payroll.html: shift-symbols.js → kintai-calc.js → kintai-extras.js → payroll.js の順（kintai.html と同じ版）', HP.indexOf('<script src="shift-symbols.js?v=') > 0 && HP.indexOf('<script src="kintai-calc.js?v=') > HP.indexOf('<script src="shift-symbols.js?v=') && HP.indexOf('<script src="kintai-extras.js?v=') > HP.indexOf('<script src="kintai-calc.js?v=') && HP.indexOf('<script src="payroll.js?v=') > HP.indexOf('<script src="kintai-extras.js?v=')
     && (HP.match(/kintai-extras\.js\?v=[^"]+/) || [])[0] === (HK.match(/kintai-extras\.js\?v=[^"]+/) || [])[0] && (HP.match(/shift-symbols\.js\?v=[^"]+/) || [])[0] === (HK.match(/shift-symbols\.js\?v=[^"]+/) || [])[0]);
   t('console.log を足していない（kintai.js・payroll.js・kintai-extras.js）', !/console\.log/.test(K) && !/console\.log/.test(J) && !/console\.log/.test(read('kintai-extras.js')));
