@@ -13,6 +13,9 @@
  * ・現場の端末でも開く（打刻のための画面）。ログインの役割は su-app-gate.js で確かめる（APPS の kintai-clock）
  * ・データベースが現場に許すのは kintai_clock_lookup（番号→名前）・kintai_clock_roster（名簿）・kintai_clock_check（氏名と番号の照合）・
  *   kintai_clock_punch（打刻）の4つだけ
+ * ・v6（2026-11-24・ROOT-v6-break-nudge-leave.md の 1）: 名簿の答えの break_punch が true の時だけ、待受に「休憩に入る」「休憩から戻る」を足す
+ *   （出勤・退勤と違う色・音。名前を選ぶ→パスコードの流れは同じ）。break_punch はメモリだけに持ち、端末に残さない。名簿が読めない時は前に読めた値のまま
+ *   （一度も読めていなければ出さない）。false か無い時は画面も動きも今と同じ。控えは4種類を受ける（設定が切でも、控えた休憩を捨てない）
  */
 (function () {
   'use strict';
@@ -26,6 +29,19 @@
   var roster = null, rosterTry = 0, rosterP = null, pickKind = null, pickSt = null, passFails = 0, paintAt = 0;
   var OFFICES = [['all', '全部'], ['facility', '施設'], ['visit', '訪問介護'], ['day', '通所介護']];
   var office = 'all';
+  /* v6: 打刻の種類ごとの言葉と色の印（cls＝ボタン・問い・完了の塗り・履歴の色のクラスの後ろ）。出勤・退勤の言葉は今のまま */
+  var KINDS = {
+    'in': { label: '出勤', noun: '出勤', big: '出勤', cls: 'in' },
+    'out': { label: '退勤', noun: '退勤', big: '退勤', cls: 'out' },
+    'break_start': { label: '休憩に入る', noun: '休憩に入る打刻', big: '休憩', cls: 'brk' },
+    'break_end': { label: '休憩から戻る', noun: '休憩から戻る打刻', big: '戻り', cls: 'ret' }
+  };
+  var brkOn = false;   /* 名簿の答えの break_punch（メモリだけ） */
+  function isKind(k) { return k === 'in' || k === 'out' || k === 'break_start' || k === 'break_end'; }
+  function isBrk(k) { return k === 'break_start' || k === 'break_end'; }
+  /* 待受・名前の流れで選べる種類（休憩は設定が入の時だけ） */
+  function canPick(k) { return k === 'in' || k === 'out' || (brkOn && isBrk(k)); }
+  function kq(k) { return k === 'in' || k === 'out' ? KINDS[k].label + 'する人を選んでください' : KINDS[k].label + '人を選んでください'; }
   var $ = function (id) { return document.getElementById(id); };
 
   function note(where, e) { try { if (window.SUErrors && window.SUErrors.note) window.SUErrors.note('出勤・退勤の打刻', e, 'clock:' + where); } catch (_) {} }
@@ -64,7 +80,7 @@
   function chime(kind) {
     try {
       if (!actx || actx.state !== 'running') return;
-      var f = kind === 'in' ? [660, 880] : [660, 440], t0 = actx.currentTime + 0.02;   /* 出勤＝上がる2音・退勤＝下がる2音 */
+      var f = kind === 'in' ? [660, 880] : kind === 'brk' ? [523, 523] : kind === 'ret' ? [523, 784] : [660, 440], t0 = actx.currentTime + 0.02;   /* 出勤＝上がる2音・退勤＝下がる2音・休憩に入る＝低い同じ2音・休憩から戻る＝低い所から大きく上がる2音 */
       f.forEach(function (hz, i) {
         var o = actx.createOscillator(), g = actx.createGain(), s = t0 + i * 0.16;
         o.type = 'sine'; o.frequency.value = hz;
@@ -92,7 +108,7 @@
   function readList(key) {
     try { var v = JSON.parse(localStorage.getItem(key) || '[]'); return Array.isArray(v) ? v.filter(okItem) : []; } catch (_) { return []; }
   }
-  function okItem(x) { return x && KintaiCalc.isCode(x.code) && (x.kind === 'in' || x.kind === 'out') && typeof x.id === 'string' && typeof x.at === 'number' && (x.sid == null || isSid(x.sid)); }
+  function okItem(x) { return x && KintaiCalc.isCode(x.code) && isKind(x.kind) && typeof x.id === 'string' && typeof x.at === 'number' && (x.sid == null || isSid(x.sid)); }
   function isSid(v) { return typeof v === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(v); }
   function writeList(key, list) { try { localStorage.setItem(key, JSON.stringify(list)); return true; } catch (e) { note('控えの保存', e); return false; } }
   function enqueue(item) {
@@ -162,12 +178,16 @@
   function paintKinds() {
     var box = $('k-kinds'); if (!box) return;
     var sel = !!pickKind && (view === 'pick' || view === 'pass' || view === 'wait');
-    box.hidden = !(view === 'home' || sel);
-    box.classList.toggle('sel', sel);
+    /* v6: 休憩を選んだ間は休憩の2つ（#k-brk）だけ、出勤・退勤を選んだ間は出勤・退勤の2つだけを出す。休憩の2つは設定が入の時だけ */
+    var bsel = sel && isBrk(pickKind), isel = sel && !bsel, bbox = $('k-brk');
+    box.hidden = !(view === 'home' || isel);
+    box.classList.toggle('sel', isel);
+    if (bbox) { bbox.hidden = !(brkOn && (view === 'home' || bsel)); bbox.classList.toggle('sel', bsel); }
     $('k-main').classList.toggle('sel', sel);   /* 氏名・パスコードの間は上の時計の帯と出勤/退勤を低くする（Safari の見える高さに氏名を収める） */
     var busy = busyView();
-    ['in', 'out'].forEach(function (k) {
-      var b = box.querySelector('[data-g="' + k + '"]'), on = sel && pickKind === k;
+    ['in', 'out', 'break_start', 'break_end'].forEach(function (k) {
+      var b = (isBrk(k) ? bbox : box) && (isBrk(k) ? bbox : box).querySelector('[data-g="' + k + '"]'), on = sel && pickKind === k;
+      if (!b) return;
       b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
       b.disabled = busy; b.setAttribute('aria-disabled', busy ? 'true' : 'false');   /* 照合中・送信中は押せない見た目に（審査の指摘3） */
     });
@@ -198,7 +218,7 @@
   }
   /* 待受の「出勤」「退勤」→ 名簿が使えれば氏名の画面、まだ読んでいる途中なら読み終わるまで待つ、読めなければ番号の流れへ */
   function startPick(kind) {
-    if (kind !== 'in' && kind !== 'out') return;
+    if (!canPick(kind)) return;
     if (roster && roster.length) { pickKind = kind; passFails = 0; paintPick(); return; }
     if (rosterP) {
       var my = ++gen;
@@ -226,6 +246,8 @@
         .map(function (s) { return { id: s.id, name: s.name, office: isOffice(s.office) && s.office !== 'all' ? s.office : null }; });
       list.sort(function (a, b) { return a.name.localeCompare(b.name, 'ja'); });
       roster = list;
+      brkOn = r.break_punch === true;   /* v6: 休憩の打刻を使うか（メモリだけ・端末に残さない） */
+      if (view === 'home') paintKinds();
     })['catch'](function (e) {
       /* 関数がまだ無い（0100 の前）・通信できない は、番号の流れで打刻できるので記録しない */
       var c = e && e.code;
@@ -237,9 +259,9 @@
   /* ── v3: 氏名を選ぶ ── */
   function paintPick() {
     view = 'pick'; mark(); panelTone('');
-    var label = pickKind === 'in' ? '出勤' : '退勤';
+    var kd = KINDS[pickKind] || KINDS['in'], q = kq(KINDS[pickKind] ? pickKind : 'in');
     var list = (roster || []).filter(function (s) { return office === 'all' || s.office === office; });
-    $('k-panel').innerHTML = '<div class="pk-top"><p class="pk-q ' + (pickKind === 'in' ? 'q-in' : 'q-out') + '" id="k-pkq">' + esc(label + 'する人を選んでください') + '</p>' +
+    $('k-panel').innerHTML = '<div class="pk-top"><p class="pk-q q-' + kd.cls + '" id="k-pkq">' + esc(q) + '</p>' +
       '<button type="button" class="pk-no" data-k="home">やめる</button></div>' +
       '<div class="offs" role="group" aria-label="事業所">' + OFFICES.map(function (o) {
         return '<button type="button" class="off' + (o[0] === office ? ' on' : '') + '" data-o="' + o[0] + '" aria-pressed="' + (o[0] === office ? 'true' : 'false') + '">' + o[1] + '</button>';
@@ -247,7 +269,7 @@
       (list.length ? '<div class="names" role="group" aria-labelledby="k-pkq">' + list.map(function (s) {
         return '<button type="button" class="nm" data-sid="' + esc(s.id) + '">' + esc(s.name) + '</button>';
       }).join('') + '</div>' : '<p class="state">この事業所の人は名簿にいません。「全部」を押してください。</p>');
-    say(label + 'する人を選んでください');
+    say(q);
     armIdle();
   }
   function pickStaff(id) {
@@ -260,8 +282,8 @@
   /* ── v3: パスコード（＝打刻の番号。●で隠す） ── */
   function paintPass(msg) {
     view = 'pass'; mark(); panelTone('');
-    var label = pickKind === 'in' ? '出勤' : '退勤';
-    $('k-panel').innerHTML = '<p class="who"><span class="' + (pickKind === 'in' ? 'q-in' : 'q-out') + '">' + label + '</span> ' + esc(pickSt.name) + ' さん</p>' +
+    var kd = KINDS[pickKind] || KINDS['in'];
+    $('k-panel').innerHTML = '<p class="who"><span class="q-' + kd.cls + '">' + kd.label + '</span> ' + esc(pickSt.name) + ' さん</p>' +
       '<p class="lbl" id="k-lbl">パスコードを入れてください</p>' + (msg || '') +
       '<div class="code' + (code ? '' : ' ph') + '" id="k-code" aria-labelledby="k-lbl">' + (code ? code.replace(/./g, '●') : '4〜6桁の番号') + '</div>' +
       '<div class="keys" role="group" aria-label="番号のボタン">' +
@@ -307,6 +329,7 @@
       today: !isNaN(lastMs) && jstDayNo(lastMs) === jstDayNo(Date.now()) };
     /* 勤務中: 今日の出勤、または日付が変わっても出勤から16時間以内（夜勤明け） */
     w.onShift = w.state === 'in' && (w.today || Date.now() - lastMs <= SHIFT_MS);
+    w.onBreak = s.on_break === true && w.onShift;   /* v6: 休憩中（state は出勤・退勤だけで決まる。勤務中の時だけ数える） */
     return w;
   }
 
@@ -368,9 +391,11 @@
     panelTone('');
     /* 強調: 勤務中（今日の出勤・出勤から16時間以内）なら退勤、それ以外（未打刻・退勤済み・16時間を超えた出勤）は出勤 */
     var sug = who.onShift ? 'out' : 'in';
+    if (brkOn && who.onBreak) sug = 'break_end';   /* v6: 休憩中は「休憩から戻る」を強調 */
     var lastT = who.last ? hm(Date.parse(who.last)) : '', stTxt = '', stCls = 'state';
     if (!offline && who.state) {
-      if (who.today) stTxt = who.state === 'in' ? '出勤中です（' + lastT + ' に出勤）' : '退勤済みです（' + lastT + ' に退勤）';
+      if (who.onBreak) stTxt = '休憩中です（' + (who.today ? '' : dayWord(Date.parse(who.last)) + ' ') + lastT + ' に出勤）';
+      else if (who.today) stTxt = who.state === 'in' ? '出勤中です（' + lastT + ' に出勤）' : '退勤済みです（' + lastT + ' に退勤）';
       else if (who.onShift) stTxt = dayWord(Date.parse(who.last)) + ' ' + lastT + ' に出勤（いま勤務中）';   /* 夜勤明け: 注意の色にしない */
       else {
         stTxt = dayWord(Date.parse(who.last)) + ' ' + lastT + ' に' + (who.state === 'in' ? '出勤（退勤が押されていません）' : '退勤');
@@ -385,21 +410,39 @@
         '<p class="who">' + esc(who.name) + ' さん</p><p class="' + stCls + '">' + esc(stTxt || 'どちらかを押してください') + '</p>') +
       '<div class="acts"><button type="button" class="b-in' + (sug === 'in' ? ' sug' : '') + '" data-p="in">出勤</button>' +
       '<button type="button" class="b-out' + (sug === 'out' ? ' sug' : '') + '" data-p="out">退勤</button></div>' +
+      (brkOn ? '<div class="acts brk"><button type="button" class="b-brk' + (sug === 'break_start' ? ' sug' : '') + '" data-p="break_start">休憩に入る</button>' +
+        '<button type="button" class="b-ret' + (sug === 'break_end' ? ' sug' : '') + '" data-p="break_end">休憩から戻る</button></div>' : '') +
       '<button type="button" class="back" data-k="back">番号を入れ直す</button>';
     say(offline ? (who.why === 'busy' ? '少しの間 番号の確かめを止めています。' : '通信できません。') + '出勤か退勤を押すと控えます' : who.name + 'さん。' + (stTxt ? stTxt + '。' : '') + '出勤か退勤を押してください');
     armIdle();
-    try { $('k-panel').querySelector(sug === 'in' ? '.b-in' : '.b-out').focus(); } catch (_) {}
+    try { $('k-panel').querySelector('.b-' + KINDS[sug].cls).focus(); } catch (_) {}
   }
 
   /* 強調と逆を押した時（勤務中に出勤／今日すでに退勤済みに退勤）は、画面の中で1回だけ確かめる。
      16時間を超えた出勤のあと・前の日の退勤のあと・名前が出ていない時（通信なし・busy）は確かめない */
-  function needAsk(kind) { return !!(who && who.name && who.state === kind && (kind === 'in' ? who.onShift : who.today)); }
+  function needAsk(kind) { return !!askText(kind); }
+  /* 確かめの問い（確かめない時は ''）。v6: 休憩中に出勤・退勤を押した時・休憩中に休憩に入る・休憩に入っていないのに戻る・出勤していないのに休憩、も1回だけ確かめる
+     （休憩中＝答えの on_break。設定が切の施設は on_break が来ないので、出勤・退勤の問いは今のまま） */
+  function askText(kind) {
+    if (!who || !who.name) return '';
+    if (who.onBreak && kind === 'in') return '休憩中です。戻る時は「休憩から戻る」を押してください。出勤をもう一度記録しますか？';
+    if (who.onBreak && kind === 'out') return '休憩から戻る打刻がまだです。このまま退勤を記録しますか？';
+    if (kind === 'in' || kind === 'out') {
+      if (!(who.state === kind && (kind === 'in' ? who.onShift : who.today))) return '';
+      var label = KINDS[kind].label, lastT = (who.today ? '' : dayWord(Date.parse(who.last)) + ' ') + hm(Date.parse(who.last));
+      return 'もう' + label + 'しています（' + lastT + ' に' + label + '）。もう一度' + label + 'を記録しますか？';
+    }
+    if (!isBrk(kind)) return '';
+    if (!who.onShift) return '出勤の打刻がありません。' + KINDS[kind].label + 'を記録しますか？';
+    if (kind === 'break_start' && who.onBreak) return 'もう休憩に入っています（休憩から戻る打刻がまだです）。もう一度、休憩に入るを記録しますか？';
+    if (kind === 'break_end' && !who.onBreak) return '休憩に入る打刻がありません。休憩から戻るを記録しますか？';
+    return '';
+  }
   function paintAsk(kind) {
     view = 'confirm'; mark(); panelTone('');
-    var label = kind === 'in' ? '出勤' : '退勤', lastT = (who.today ? '' : dayWord(Date.parse(who.last)) + ' ') + hm(Date.parse(who.last));
-    var q = 'もう' + label + 'しています（' + lastT + ' に' + label + '）。もう一度' + label + 'を記録しますか？';
+    var q = askText(kind);
     $('k-panel').innerHTML = '<p class="who">' + esc(who.name) + ' さん</p><p class="msg warn ask" role="alert">' + esc(q) + '</p>' +
-      '<div class="acts"><button type="button" class="' + (kind === 'in' ? 'b-in' : 'b-out') + '" data-p="' + kind + '" data-sure="1">はい</button>' +
+      '<div class="acts"><button type="button" class="b-' + KINDS[kind].cls + '" data-p="' + kind + '" data-sure="1">はい</button>' +
       '<button type="button" class="b-no" data-k="no">やめる</button></div>';
     say(q);
     askAt = Date.now();
@@ -408,14 +451,14 @@
   }
 
   function punch(kind, sure) {
-    if (kind !== 'in' && kind !== 'out') return; // 種類は出勤・退勤だけ（画面に書く値を決まった2つに限る）
+    if (!isKind(kind)) return; // 種類は出勤・退勤・休憩に入る・休憩から戻るだけ（画面に書く値を決まった4つに限る。休憩のボタンは設定が入の時だけ出る）
     if ((view !== 'who' && view !== 'confirm') || busyPunch || !who) return;
     if (!sure && needAsk(kind)) { paintAsk(kind); return; }
     busyPunch = true;
     var my = ++gen, item = { code: who.code, kind: kind, id: uuid(), at: Date.now() }, name = who.name, why = who.why;
     /* 名前の流れで照合できなかった時だけ、選んだ人の staff_id を控えに足す（送る前にその人と番号が合うかを確かめるため・名前は控えに入れない・総点検 2026-11-20） */
     if (who.flow === 'name' && !who.name && isSid(who.sid)) item.sid = who.sid;
-    var label = kind === 'in' ? '出勤' : '退勤', byName = who.flow === 'name', shown = who.label || who.name;
+    var label = KINDS[kind].noun, byName = who.flow === 'name', shown = who.label || who.name;
     /* 送れなかった時の戻り先: 名前の流れは待受へ（知らせを出す）、番号の流れは v2 と同じく番号の画面へ */
     var back = function (m) { busyPunch = false; code = ''; if (byName) homeWith(m); else paintCode('<p class="msg ng" role="alert">' + esc(m) + '</p>'); };
     var save = function (because) {
@@ -441,11 +484,11 @@
       if (view === 'sending') view = 'who';
       if (my !== gen) return;
       if (r && r.ok === true) {
-        showDone({ tone: kind, kind: kind, name: (r.name || name) + ' さん', big: label, time: hm(Date.parse(r.at)),
-          sub: r.dup ? '少し前に同じ打刻があったので、その時刻のままにしました。' : (kind === 'in' ? 'おはようございます。今日もよろしくお願いします。' : 'おつかれさまでした。') });
+        showDone({ tone: KINDS[kind].cls, kind: kind, name: (r.name || name) + ' さん', big: KINDS[kind].big, time: hm(Date.parse(r.at)),
+          sub: r.dup ? '少し前に同じ打刻があったので、その時刻のままにしました。' : (kind === 'in' ? 'おはようございます。今日もよろしくお願いします。' : kind === 'break_start' ? 'ゆっくり休んでください。' : kind === 'break_end' ? 'おかえりなさい。' : 'おつかれさまでした。') });
         return;
       }
-      back(r && r.error === 'notfound' ? 'その番号は見つかりませんでした。' : 'うまくいきませんでした。もう一度押してください。');
+      back(r && r.error === 'notfound' ? 'その番号は見つかりませんでした。' : r && r.error === 'badkind' ? '休憩の打刻は使えません（設定が変わりました）。事務所に知らせてください。' : 'うまくいきませんでした。もう一度押してください。');
     })['catch'](function (e) {
       if (isNet(e)) { save(); return; }
       if (view === 'sending') view = 'who';
@@ -466,7 +509,7 @@
       '<p class="d-sub">' + esc(o.sub) + '</p>' + (o.small ? '<p class="d-small">' + esc(o.small) + '</p>' : '') + '<p class="d-tap">画面を押すと、すぐ次の人へ</p>' +
       '<div class="d-bar" aria-hidden="true"><i></i></div></div>';
     say([o.name, o.big, o.time, o.sub, o.small].filter(Boolean).join('。'));
-    if (o.tone === 'in' || o.tone === 'out') { chime(o.tone); loadRecent(); }   /* 打刻が終わったら履歴を読み直す */
+    if (o.tone === 'in' || o.tone === 'out' || o.tone === 'brk' || o.tone === 'ret') { chime(o.tone); loadRecent(); }   /* 打刻が終わったら履歴を読み直す */
     paintFoot();
     doneAt = Date.now();
     doneT = setTimeout(reset, DONE_MS);
@@ -479,7 +522,7 @@
     if (recentP) return recentP;
     recentP = withTimeout(rpc('kintai_clock_recent', {}), ROSTER_TIMEOUT_MS).then(function (r) {
       if (!r || r.ok !== true || !Array.isArray(r.items)) throw new Error('bad recent');
-      paintRecent(r.items.filter(function (x) { return x && (x.kind === 'in' || x.kind === 'out') && typeof x.name === 'string' && !isNaN(Date.parse(x.at)); }).slice(0, 50));
+      paintRecent(r.items.filter(function (x) { return x && (x.kind === 'in' || x.kind === 'out' || (brkOn && isBrk(x.kind))) && typeof x.name === 'string' && !isNaN(Date.parse(x.at)); }).slice(0, 50));   /* 休憩の行は設定が入の時だけ出す */
     })['catch'](function (e) {
       var c = e && e.code;
       if (!isNet(e) && c !== 'PGRST202' && c !== '42883' && !(e && e.message === 'bad recent')) note('今日の打刻', e);
@@ -492,9 +535,10 @@
     $('k-hist-msg').hidden = items.length > 0;
     $('k-hist').innerHTML = items.map(function (x) {
       var k = x.kind === 'in' ? 'in' : 'out';
+      if (isBrk(x.kind)) k = x.kind;   /* v6: 休憩の行（「休憩」「戻り」） */
       var ms0 = Date.parse(x.at), d0 = new Date(ms0 + 9 * 3600000);
       var day = jstDayNo(ms0) === jstDayNo(Date.now()) ? '' : (d0.getUTCMonth() + 1) + '/' + d0.getUTCDate() + ' ';   /* 今日でない打刻は日付を添える（総点検 2026-11-20） */
-      return '<li class="h-' + k + '"><span class="t">' + day + hm(ms0) + '</span><span class="k">' + (k === 'in' ? '出勤' : '退勤') + '</span><span class="n">' + esc(x.name) + '</span></li>';
+      return '<li class="h-' + KINDS[k].cls + '"><span class="t">' + day + hm(ms0) + '</span><span class="k">' + (k === 'in' ? '出勤' : k === 'out' ? '退勤' : KINDS[k].big) + '</span><span class="n">' + esc(x.name) + '</span></li>';
     }).join('');
   }
 
@@ -517,7 +561,7 @@
         /* 名前で選んだ控え（sid あり）は、●で隠して入れたパスコードを出さず、選んだ名前（名簿から引く・控えには名前を入れない）を出す */
         var st = x.sid ? (roster || []).filter(function (s) { return s.id === x.sid; })[0] : null;
         var who1 = x.sid ? (st ? '選んだ名前 ' + esc(st.name) : '名前で選んだ打刻（番号 ' + esc(x.code) + '）') : '番号 ' + esc(x.code);   /* 名簿に居ない人（休止など）は誰の分か分かるように番号を出す */
-        return '<tr><td>' + who1 + '</td><td>' + (x.kind === 'in' ? '出勤' : '退勤') + '</td><td>' + (d.getUTCMonth() + 1) + '/' + d.getUTCDate() + ' ' + hm(x.at) + '</td><td>' + esc(x.why || '') + '</td></tr>';
+        return '<tr><td>' + who1 + '</td><td>' + (KINDS[x.kind] ? KINDS[x.kind].label : '') + '</td><td>' + (d.getUTCMonth() + 1) + '/' + d.getUTCDate() + ' ' + hm(x.at) + '</td><td>' + esc(x.why || '') + '</td></tr>';
       }).join('') + '</tbody></table>' +
       '<button type="button" class="back" data-k="clearfail">事務所へ伝えたので消す</button><button type="button" class="back" data-k="back">戻る</button>';
     armIdle();
@@ -550,7 +594,7 @@
         if (r && r.error === 'busy') return null;   /* 一時的な断り（番号の総当たりの止め）。送信待ちに残し、次の回に送り直す（指摘7） */
         var rest = readList(Q_KEY).filter(function (x) { return x.id !== it.id; });
         if (!(r && r.ok === true)) {
-          var why = r && r.error === 'mismatch' ? 'パスコードが選んだ名前と合わない' : r && r.error === 'stale' ? '時刻が古すぎる' : (r && r.error === 'notfound' ? '番号が見つからない' : '受け付けられない');
+          var why = r && r.error === 'mismatch' ? 'パスコードが選んだ名前と合わない' : r && r.error === 'stale' ? '時刻が古すぎる' : (r && r.error === 'notfound' ? '番号が見つからない' : r && r.error === 'badkind' ? '休憩の打刻を使っていない' : '受け付けられない');
           var fi = { code: it.code, kind: it.kind, id: it.id, at: it.at, why: why };
           if (it.sid) fi.sid = it.sid;
           var f = readList(F_KEY); f.push(fi);

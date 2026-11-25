@@ -364,8 +364,11 @@
       return '<span class="' + cls + '">' + esc(C.FLAG_LABEL[f] || f) + '</span>';
     }).join('');
   }
+  /* v6: 休憩の打刻（設定 breakPunch の時だけ塊の breakPunches に来る）も時刻の順に混ぜて「休憩」「戻り」と出す。来ない時は今のまま */
+  var PK_SHORT = { 'in': '出', out: '退', break_start: '休憩', break_end: '戻り' };
   function rawPunches(b) {
-    return b.punches.map(function (p) { return (p.kind === 'in' ? '出' : '退') + ' ' + hm(p.at) + (p.source === 'offline' ? '（控え）' : p.source === 'office' ? '（事務所）' : ''); }).join(' / ');
+    var ps = b.breakPunches && b.breakPunches.length ? b.punches.concat(b.breakPunches).sort(function (x, y) { return x.at - y.at; }) : b.punches;
+    return ps.map(function (p) { return (PK_SHORT[p.kind] || '退') + ' ' + hm(p.at) + (p.source === 'offline' ? '（控え）' : p.source === 'office' ? '（事務所）' : ''); }).join(' / ');
   }
   function schedText(b) { return b.sched ? esc(b.symbol) + ' ' + hm(b.schedStart) + '〜' + hm(b.schedEnd) + srcTag(b.staff_id, b.work_date) : '<span class="raw">予定なし</span>' + ((schedEditOf(b.staff_id, b.work_date) || {}).off ? srcTag(b.staff_id, b.work_date) : ''); }
   function countText(b) { return b.countStart != null ? hm(b.countStart) + '〜' + hm(b.countEnd) : ''; }
@@ -1220,7 +1223,7 @@
   function reasonText(e) { return !e || e.reason == null || e.reason === e.action ? '' : String(e.reason); }
   /* 日の「直す」窓の履歴の1行（日時・内容・理由（した人））の文字 */
   function histCells(e) { return [new Date(e.at).toLocaleString('ja-JP'), describe(e), reasonText(e) + (e.by ? '（' + e.by + '）' : '')]; }
-  function kindJa(k) { return k === 'in' ? '出勤' : k === 'out' ? '退勤' : '打刻'; }
+  function kindJa(k) { return k === 'in' ? '出勤' : k === 'out' ? '退勤' : k === 'break_start' ? '休憩に入る' : k === 'break_end' ? '休憩から戻る' : '打刻'; }
   function brTxt(v) { return v == null ? '予定どおり' : String(v); }
   /* 直しの前後の値を「退勤 16:05 を足した」「休憩 60→45 分」「確認済みにした」のように言う（C-9） */
   function describe(e) {
@@ -1283,7 +1286,7 @@
    * 欄は今の設定（rawCfg）から出す（締めた月分を開いている間の month.config は締めた時の控えなので、そのまま保存すると古い値に戻る）。
    * 特別休暇の種類は、今の行＋空の1行（足す時）。名前を空にした行は外す。保存は「設定を保存する」（管理者だけ）。
    * 欄は設定の欄（#g-set）の中に置く（保存していない変更の確かめ settingsState が同じ道で数える） */
-  var LV_SET_KEYS = ['roundUnitMin', 'hourlyPaidLeave', 'dayHours', 'leaveTypes'];
+  var LV_SET_KEYS = ['roundUnitMin', 'hourlyPaidLeave', 'dayHours', 'leaveTypes', 'breakPunch'];   /* v6: breakPunch（休憩を打刻で数える）も同じ道で保存する */
   function lvSetHtml() {
     var c = C.fillConfig(rawCfg()), lts = C.leaveTypesOf(c), extra = 1, i;
     var row = function (i, l) {
@@ -1293,7 +1296,10 @@
     };
     var rows = lts.map(function (l, k) { return row(k, l); });
     for (i = 0; i < extra && lts.length + i < C.LEAVE_TYPES_MAX; i++) rows.push(row(lts.length + i, null));
-    return '<div style="grid-column:1/-1"><h2 style="font-size:16px;margin:14px 0 8px">休暇と丸め</h2><div class="kv">' +
+    /* v6（2026-11-24）: 休憩を打刻で数える（既定は切・鍵が無い時は切） */
+    return '<div style="grid-column:1/-1"><h2 style="font-size:16px;margin:14px 0 8px">休憩</h2><div class="kv">' +
+      '<label for="l-breakPunch">休憩を打刻で数える</label><span><input type="checkbox" id="l-breakPunch"' + (c.breakPunch === true ? ' checked' : '') + '> 使う（入れると打刻の画面に休憩のボタンが出て、打刻した休憩をその日の休憩にします。打刻の無い日は今までどおりシフトの決まりで引きます）</span></div></div>' +
+      '<div style="grid-column:1/-1"><h2 style="font-size:16px;margin:14px 0 8px">休暇と丸め</h2><div class="kv">' +
       '<label for="l-roundUnitMin">丸めの単位</label><span><select id="l-roundUnitMin">' + C.ROUND_UNITS.map(function (u) { return '<option value="' + u + '"' + (c.roundUnitMin === u ? ' selected' : '') + '>' + (u === 1 ? '1分（丸めない）' : u + '分') + '</option>'; }).join('') + '</select> ' +
         '働いた人に不利な向きには丸めません（遅刻した出勤は単位で切り捨て・早退した退勤と、認めた残業の終わりは単位で切り上げ）。予定の無い勤務と、1日の働いた時間を短くする向きには丸めません</span>' +
       '<label for="l-hourly">時間単位の有休</label><span><input type="checkbox" id="l-hourly"' + (c.hourlyPaidLeave ? ' checked' : '') + '> 使う（労使協定で決めた時だけ・1年に5日分まで・年5日の取得義務には数えません）</span>' +
@@ -1335,6 +1341,7 @@
     var put = function (k, v, dflt) { if (k in cur || JSON.stringify(v) !== JSON.stringify(dflt)) vals[k] = v; };
     put('roundUnitMin', ru, d.roundUnitMin); put('hourlyPaidLeave', hp, d.hourlyPaidLeave); put('dayHours', dhn, d.dayHours);
     put('leaveTypes', lts, C.LEAVE_TYPES_DEFAULT);
+    if ($('l-breakPunch')) put('breakPunch', !!$('l-breakPunch').checked, false);   /* v6: 今の設定に無く切のままなら鍵を作らない */
     return { vals: vals, bad: bad };
   }
   function paintSettings() {
@@ -1498,6 +1505,7 @@
       if (blk.flags.indexOf('no_punch') >= 0) out.push(at('in'), at('out'));
       else if (blk.flags.indexOf('missing_out') >= 0) out.push(at('out'));
       else if (blk.flags.indexOf('missing_in') >= 0) out.push(at('in'));
+      if (blk.flags.indexOf('breakopen') >= 0) out.push({ kind: 'break_end', date: blk.work_date, time: '' });   /* v6: 戻りの時刻は分からないので空（本人に確かめて入れる） */
     }
     return out;
   }
@@ -1519,7 +1527,7 @@
     var blk = blocks[bi] || blocks.filter(function (x) { return C.needsReview(x); })[0] || blocks[0] || null;
     var firstB = blocks[0] || null, lastB = blocks.length ? blocks[blocks.length - 1] : null;
     var lk = isLocked();
-    var counted = {}; blocks.forEach(function (x) { x.punches.forEach(function (q) { counted[q.id] = 1; }); });
+    var counted = {}; blocks.forEach(function (x) { x.punches.concat(x.breakPunches || []).forEach(function (q) { counted[q.id] = 1; }); });
     /* 早出の時刻はその日の最初の勤務の開始の日、残業の時刻は最後の勤務の終わりの日（夜勤は翌日）で読む */
     var earlyDate = dn && dn.early_from ? C.jstDate(Date.parse(dn.early_from)) : (firstB && firstB.schedStart != null ? C.jstDate(firstB.schedStart) : date);
     var otDate = dn && dn.ot_until ? C.jstDate(Date.parse(dn.ot_until)) : (lastB && lastB.schedEnd != null ? C.jstDate(lastB.schedEnd) : date);
@@ -1536,12 +1544,15 @@
     b += '<fieldset><legend>打刻（前日〜翌日・太字はこの日に数えた打刻）</legend>' + (ps.length ? '<div class="tw"><table class="plist"><tbody>' + ps.map(function (x) {
       var v = !!x.voided_at, pd = C.jstDate(Date.parse(x.at)), cls = counted[x.id] && !v ? 'p-cnt' : (pd !== date ? 'p-oth' : '');
       var side = pd < date ? '<span class="tag">前日</span>' : pd > date ? '<span class="tag">翌日</span>' : '';
-      return '<tr class="' + cls + '"><td class="' + (v ? 'void' : '') + '">' + esc(md(pd)) + ' ' + hm(x.at) + ' ' + side + '</td><td class="' + (v ? 'void' : '') + '">' + (x.kind === 'in' ? '出勤' : '退勤') + '</td><td class="raw">' + (x.source === 'office' ? '事務所が足した' : x.source === 'offline' ? '控え（端末の時刻）' : 'タブレット') + (v ? '・取り消し: ' + esc(x.void_reason || '') : '') + '</td><td>' +
+      return '<tr class="' + cls + '"><td class="' + (v ? 'void' : '') + '">' + esc(md(pd)) + ' ' + hm(x.at) + ' ' + side + '</td><td class="' + (v ? 'void' : '') + '">' + (x.kind === 'in' ? '出勤' : x.kind === 'break_start' ? '休憩' : x.kind === 'break_end' ? '戻り' : '退勤') + '</td><td class="raw">' + (x.source === 'office' ? '事務所が足した' : x.source === 'offline' ? '控え（端末の時刻）' : 'タブレット') + (v ? '・取り消し: ' + esc(x.void_reason || '') : '') + '</td><td>' +
         (v || lk ? '' : '<label><input type="checkbox" data-void="' + esc(x.id) + '"> 取り消す</label>') + '</td></tr>';
     }).join('') + '</tbody></table></div>' : '<p class="empty">打刻はありません</p>') + '</fieldset>';
+    /* v6: 休憩を打刻で数える設定（今の設定）の時だけ、足す打刻の種類に休憩の2つを出す */
+    var brkOpt = C.fillConfig(rawCfg()).breakPunch === true;
     var addRow = function (n, sfx, p0) {
       var k = p0 ? p0.kind : '', dt = p0 ? p0.date : date, tm = p0 ? p0.time : '';
-      return '<div class="row"><select id="e-kind' + sfx + '" aria-label="' + (n === 1 ? '足す打刻の種類' : '2つめの打刻') + '"><option value="">' + (n === 1 ? '足さない' : '2つめは足さない') + '</option><option value="in"' + (k === 'in' ? ' selected' : '') + '>出勤</option><option value="out"' + (k === 'out' ? ' selected' : '') + '>退勤</option></select>' +
+      return '<div class="row"><select id="e-kind' + sfx + '" aria-label="' + (n === 1 ? '足す打刻の種類' : '2つめの打刻') + '"><option value="">' + (n === 1 ? '足さない' : '2つめは足さない') + '</option><option value="in"' + (k === 'in' ? ' selected' : '') + '>出勤</option><option value="out"' + (k === 'out' ? ' selected' : '') + '>退勤</option>' +
+        (brkOpt ? '<option value="break_start"' + (k === 'break_start' ? ' selected' : '') + '>休憩に入る</option><option value="break_end"' + (k === 'break_end' ? ' selected' : '') + '>休憩から戻る</option>' : '') + '</select>' +
         '<input type="date" id="e-date' + sfx + '" value="' + esc(dt) + '" aria-label="' + (n === 1 ? '日付' : '2つめの日付') + '"><input type="time" id="e-time' + sfx + '" value="' + esc(tm) + '" aria-label="' + (n === 1 ? '時刻' : '2つめの時刻') + '">' +
         '<button type="button" class="btn sm" data-act="sched-time" data-n="' + sfx + '"' + (blk && blk.sched ? '' : ' disabled') + '>予定の時刻を入れる</button></div>';
     };
@@ -1700,7 +1711,7 @@
    * 「打刻・欠勤を直す」で打刻を足すか欠勤にする。数える時間は変えない（認めないは今の数え方＝予定の時刻で切る）。
    * 認めない理由は日の行の early_ng・ot_ng と直しの履歴に残す（統合 0120）。決めると読み直して次の1件を開く */
   var DECIDE_REASONS = ['指示・申請が無い', '業務の必要が無い', '私用', 'その他'];   /* 早出・残業の両方に入るので、どちらにも合う言い方（反証レビュー 2026-11-21・文は仮置き） */
-  var MISS = { missing_in: 1, missing_out: 1, no_punch: 1 };
+  var MISS = { missing_in: 1, missing_out: 1, no_punch: 1, breakopen: 1 };   /* v6: 休憩から戻る打刻の漏れも「打刻・欠勤を直す」で戻りの打刻を足す */
   function rvKey(r) { return r.staffId + '|' + r.date; }
   function openDecide(i, list) {
     if (!month || busy) return;
@@ -3227,6 +3238,7 @@
         var sfx = b.getAttribute('data-n') || '', blk = dlgCtx && dlgCtx.blk;
         if (!blk || !blk.sched) return;
         var ks = $('e-kind' + sfx); if (!ks.value) ks.value = sfx ? 'out' : 'in';
+        if (ks.value !== 'in' && ks.value !== 'out') return;   /* v6: 休憩の打刻には予定の時刻が無い */
         var v = ks.value === 'in' ? blk.schedStart : blk.schedEnd;
         $('e-date' + sfx).value = C.jstDate(v); $('e-time' + sfx).value = hm(v);
       }

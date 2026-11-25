@@ -100,7 +100,9 @@
       var sched = [], punches = [], counted = [], flags = [];
       (d.blocks || []).forEach(function (b) {
         if (b.schedStart != null && b.schedEnd != null) sched.push(hm(b.schedStart) + '〜' + hm(b.schedEnd));
-        (b.punches || []).forEach(function (x) { punches.push((x.kind === 'in' ? '出 ' : '退 ') + hm(x.at)); });
+        /* v6: 休憩の打刻（設定 breakPunch の時だけ塊の breakPunches に来る）も時刻の順に「休憩」「戻り」と出す。来ない時は今のまま */
+        var bps = b.breakPunches && b.breakPunches.length ? (b.punches || []).concat(b.breakPunches).sort(function (x, y) { return x.at - y.at; }) : (b.punches || []);
+        bps.forEach(function (x) { punches.push((x.kind === 'in' ? '出 ' : x.kind === 'break_start' ? '休憩 ' : x.kind === 'break_end' ? '戻り ' : '退 ') + hm(x.at)); });
         if (b.countStart != null && b.countEnd != null) counted.push(hm(b.countStart) + '〜' + hm(b.countEnd));
         (b.flags || []).forEach(function (f) {
           if (f === 'office') return;   /* 事務所が足した打刻は職員には印を出さない（承認した直しも含む） */

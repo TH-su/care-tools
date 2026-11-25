@@ -214,8 +214,8 @@ const kh = new Function(cut(K, 'function isNetErr(') + '\n' + (K.match(/var DENI
   /* ★v5 段5（2026-11-21・申請のタブとスマホの登録）で kintai.js を 2026-11-21.5 に上げたので期待の版を改めた */
   /* ★0120（2026-11-21・締めの前の要確認）で 2026-11-21.6 に上げたので期待の版を改めた */
   /* ★freee の月の集計の取り込み（2026-11-23・統合 0123）で kintai.js・kintai-calc.js を ?v=2026-11-23.1 に上げたので期待の版を改めた */
-  /* ★v6（2026-11-24・打刻漏れの知らせと休暇の申請）で kintai.js を ?v=2026-11-24 に上げたので期待の版を改めた */
-  t('kintai.html の kintai.js の ?v= を上げた（2026-11-24）', /<script src="kintai\.js\?v=2026-11-24"><\/script>/.test(read('kintai.html')));
+  /* ★v6 休憩の打刻（2026-11-24・ROOT-v6-break-nudge-leave.md の PR-B）で kintai.js・kintai-calc.js・kintai-clock.js を ?v=2026-12-26 に上げたので（PR #665 と同じ版にならないよう 2026-12-26・反証レビュー 2026-11-24）期待の版を改めた */
+  t('kintai.html の kintai.js の ?v= を上げた（2026-12-26）', /<script src="kintai\.js\?v=2026-12-26"><\/script>/.test(read('kintai.html')));
 
   console.log('\n結果: ' + pass + ' 合格 / ' + fail + ' 不合格');
   process.exit(fail ? 1 : 0);

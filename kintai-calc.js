@@ -87,6 +87,8 @@
     out.dayHours = Math.ceil(out.dayHours);
     var lt = cleanLeaveTypes(c.leaveTypes);
     if (lt) out.leaveTypes = lt;
+    /* v6（2026-11-24）: 休憩を打刻で数える（真偽・無い時は false と同じ）。true の時だけ鍵を作る（無い・false の施設は今の出力と1バイトも変えない＝締めの控えの config も同じ） */
+    if (c.breakPunch === true) out.breakPunch = true;
     return out;
   }
   /* 法定休日の設定の確かめ（v2）: null・undefined・'' は「決めない」、0〜6 の整数（または '0'〜'6'）は曜日。
@@ -354,9 +356,68 @@
     offline: '通信できない時の打刻（端末の時刻）', office: '事務所が足した打刻',
     late: '遅刻', early_leave: '早退', after_lock: '締めた後の打刻',
     working: '勤務中', not_in_yet: 'まだ出勤していません', checked: '確認済み', absent: '欠勤',
-    early_ng: '早出を認めなかった', ot_ng: '残業を認めなかった'   /* 0120: 認めないと決めた早出・残業（要確認ではない） */
+    early_ng: '早出を認めなかった', ot_ng: '残業を認めなかった',   /* 0120: 認めないと決めた早出・残業（要確認ではない） */
+    breakopen: '休憩から戻る打刻がありません'   /* v6: 休憩に入る打刻のあと、戻る打刻が無いまま退勤した（設定 breakPunch の時だけ出る） */
   };
-  var REVIEW = { early: 1, overtime: 1, missing_out: 1, missing_in: 1, no_punch: 1, no_schedule: 1, offline: 1, after_lock: 1 };
+  var REVIEW = { early: 1, overtime: 1, missing_out: 1, missing_in: 1, no_punch: 1, no_schedule: 1, offline: 1, after_lock: 1, breakopen: 1 };
+
+  /* ── v6（2026-11-24）: 休憩の打刻（設定 breakPunch が true の時だけ読む）──
+   * 打刻の種類 break_start（休憩に入る）・break_end（休憩から戻る）。出勤・退勤の組み（pairsOf）には入れない（今どおり読み飛ばす）。
+   * 休憩の組は、出勤と退勤のそろった組（打刻のまま）の中だけで作る（戻り忘れの休憩が翌日の戻りと結ばれて何時間もの休憩にならないように）。
+   *   入る → 入る（10分以内）は後の方（休憩を短く＝働いた人に有利な向き）。10分を超えたら前の入るは終わりの無い休憩（breakopen）。
+   *   始まりの無い戻るは読み飛ばす（仮置き）。組の中で終わりの無い入るがあれば open */
+  var BREAK_KINDS = { break_start: 1, break_end: 1 };
+  function breakPunchesOf(punches) {
+    var out = [];
+    for (var i = 0; i < (punches || []).length; i++) {
+      var p = punches[i];
+      if (!p || p.voided_at || !BREAK_KINDS[p.kind]) continue;
+      var at = toMs(p.at);
+      if (at == null) continue;
+      out.push({ id: p.id, kind: p.kind, at: Math.floor(at / MIN) * MIN, source: p.source || 'tablet' });
+    }
+    out.sort(function (a, b) { return a.at - b.at || (a.kind === b.kind ? 0 : a.kind === 'break_start' ? -1 : 1); });
+    return out;
+  }
+  /* 塊の休憩の打刻を数える。full＝そろった組 [出勤, 退勤]（打刻のまま）、segs＝数えた区間、list＝その人の休憩の打刻（breakPunchesOf）、
+   * work＝勤務中の開いた組の出勤（表示だけに使う・null 可）。
+   * 返す: { any（数えた区間に掛かる組が1つ以上・0分の組も数える）, open（終わりの無い入る）, min（数えた区間で切った休憩の分）,
+   *         night（そのうちの深夜の分）, hol（そのうちの法定休日の分・dow が null なら 0）, punches（表示に出す休憩の打刻） } */
+  function breaksOf(full, segs, list, work, dow, hov) {
+    var r = { any: false, open: false, min: 0, night: 0, hol: 0, punches: [] }, i, j;
+    for (i = 0; i < full.length; i++) {
+      var a = full[i][0], z = full[i][1], open = null;
+      for (j = 0; j < list.length; j++) {
+        var q = list[j];
+        if (q.at < a || q.at > z) continue;
+        r.punches.push(q);
+        /* 反証レビュー（2026-11-24・medium）: 出勤と同じ分（以下）の入る・退勤と同じ分（以上）の戻るは組に使わない
+           （退勤の後の戻るが秒を切って退勤の分に並び、休憩が勤務の残り全部になるのを防ぐ。戻るを使わないので入るは開いたまま＝breakopen） */
+        if (q.kind === 'break_start' ? q.at <= a : q.at >= z) continue;
+        if (q.kind === 'break_start') {
+          if (open && q.at - open.at <= DUP_MS) { open = q; continue; }
+          if (open) r.open = true;
+          open = q;
+        } else if (open) {
+          var bs = open.at, be = q.at;
+          open = null;
+          for (var k = 0; k < segs.length; k++) {
+            if (bs >= segs[k][1] || be <= segs[k][0]) continue;   /* 端を含まない（区間の外に接するだけの休憩は組なし・反証レビュー 2026-11-24） */
+            r.any = true;
+            var s0 = Math.max(bs, segs[k][0]), e0 = Math.min(be, segs[k][1]);
+            if (e0 > s0) {
+              r.min += (e0 - s0) / MIN; r.night += nightMinutes(s0, e0);
+              if (dow != null) r.hol += holidayMinutes(s0, e0, dow, hov);
+            }
+          }
+        }
+      }
+      if (open) r.open = true;
+    }
+    if (work != null) for (j = 0; j < list.length; j++) if (list[j].at >= work) r.punches.push(list[j]);
+    r.min = Math.round(r.min); r.hol = Math.round(r.hol);
+    return r;
+  }
 
 
   /* 塊1つを数える
@@ -397,7 +458,11 @@
     }
     var full = [];
     for (i = 0; i < pairs.length; i++) if (pairs[i].in && pairs[i].out) full.push([pairs[i].in.at, pairs[i].out.at]);
-    if (!full.length) return markDay(r, day);
+    if (!full.length) {
+      /* v6: 勤務中（まだ退勤していない）の休憩の打刻は、表示にだけ出す（数えるのは退勤の後） */
+      if (cfg.breakPunch && b.breaks && b.breaks.length && r.working && lastPair.in) r.breakPunches = breaksOf([], [], b.breaks, lastPair.in.at, null, null).punches;
+      return markDay(r, day);
+    }
     var first = full[0], last = full[full.length - 1];
     var cs = first[0], ce = last[1];
     var earlyFrom = day ? toMs(day.early_from) : null, otUntil = day ? toMs(day.ot_until) : null;
@@ -451,10 +516,16 @@
       if (cfg.legal_holiday != null) hol += holidayMinutes(segs[i][0], segs[i][1], cfg.legal_holiday, hov);
     }
     bound = Math.round(bound); gap = Math.round(gap);
-    var span = bound + gap, br;   /* span＝最初の出勤から最後の退勤まで（打刻した昼休みを含む） */
+    var span = bound + gap, br;
+    /* v6: 休憩の打刻（設定 breakPunch の時だけ・b.breaks は computeMonth が付ける）。数えた区間に組が1つ以上あれば、休憩＝組の合計（数えた区間で切る）。
+       予定の休憩・6時間の線・打刻の間（gap）の引き算は使わない（gap は数えた区間の外なので二重にならない）。組が無い日・終わりの無い入るがある日は今の決まり。
+       事務所が休憩を直した日（day.break_min）は直した休憩の方を使う（仮置き） */
+    var bk = cfg.breakPunch && b.breaks && b.breaks.length ? breaksOf(full, segs, b.breaks, r.working && lastPair && lastPair.in ? lastPair.in.at : null, cfg.legal_holiday, hov) : null, useBk = false;
+    if (bk) { r.breakPunches = bk.punches; if (bk.open) r.flags.push('breakopen'); }   /* span＝最初の出勤から最後の退勤まで（打刻した昼休みを含む） */
     /* 休憩は「6時間を超える時」だけ（労基法34条・ちょうど6時間は引かない・夜勤を途中で帰った日も同じ・指摘2・14）。
        昼休みを打刻した日は、打刻の間の時間がもう休憩なので、予定の休憩からその分を引く（二重に引かない・指摘1） */
     if (day && typeof day.break_min === 'number') br = Math.max(0, day.break_min - gap);
+    else if (bk && bk.any && !bk.open) { br = bk.min; useBk = true; }
     else if (r.sched) br = span > cfg.breakThresholdH * 60 ? Math.max(0, r.schedBreak - gap) : 0;
     else br = span > cfg.breakThresholdH * 60 ? Math.max(0, Math.round(cfg.breakH * 60) - gap) : 0;
     if (base0 && base0.countStart != null) br = base0.breakMin;   /* 丸める前の区間で決めた休憩 */
@@ -463,12 +534,14 @@
     r.countEnd = segs.length ? segs[segs.length - 1][1] : null;
     r.breakMin = br;
     r.workMin = Math.max(0, bound - br);
-    r.nightMin = b.night ? Math.max(0, night - br) : night;
+    /* 打刻した休憩の日は、休憩の時刻が分かるので深夜の分から休憩の深夜の分だけを引く（夜勤の塊でも日勤の塊でも同じ） */
+    r.nightMin = useBk ? Math.max(0, night - bk.night) : b.night ? Math.max(0, night - br) : night;
     r.overtimeMin = r.sched ? Math.max(0, r.workMin - r.schedWork) : r.workMin;
     /* 丸めで数えなかった分＝打刻の出勤〜退勤（組ごと）のうち数えた区間の外（休憩は数えた区間の内なので入れない・v2-5） */
     r.uncountedMin = Math.max(0, Math.round(raw) - bound);
     /* 法定休日は暦日（その曜日の 0:00〜24:00）。休憩は区間の長さの割合で按分（仮置き・v2-9） */
     r.holidayMin = bound > 0 ? Math.round(r.workMin * Math.round(hol) / bound) : 0;
+    if (useBk) r.holidayMin = Math.min(r.workMin, Math.max(0, Math.round(hol) - bk.hol));   /* 打刻した休憩の日は、休憩の時刻のうち法定休日の分を引く（按分しない） */
     if (base0 && (r.workMin < base0.workMin || r.nightMin < base0.nightMin || r.holidayMin < base0.holidayMin)) return base0;
     return markDay(r, day);
   }
@@ -708,7 +781,8 @@
     for (i = 0; i < staff.length; i++) known[staff[i].staff_id] = 1;
     /* 名簿に無いのに打刻・予定がある人も落とさない（名簿から外れた人の打刻を黙って消さない） */
     var extra = [];
-    for (var sid in punchBy) if (!known[sid]) { known[sid] = 1; extra.push({ staff_id: sid, name: sid, office: null, emp_code: null, active: false, missingStaff: true }); }
+    /* v6 反証レビュー（2026-11-24・low）: 足すのは出勤・退勤の打刻がある人だけ（休憩の打刻だけの人は足さない＝鍵が false の時に人が増えない） */
+    for (var sid in punchBy) if (!known[sid] && punchBy[sid].some(function (p) { return p && (p.kind === 'in' || p.kind === 'out'); })) { known[sid] = 1; extra.push({ staff_id: sid, name: sid, office: null, emp_code: null, active: false, missingStaff: true }); }
     for (sid in schedBy) if (!known[sid]) { known[sid] = 1; extra.push({ staff_id: sid, name: sid, office: null, emp_code: null, active: false, missingStaff: true }); }
     for (sid in leaveStaff) if (!known[sid]) { known[sid] = 1; extra.push({ staff_id: sid, name: sid, office: null, emp_code: null, active: false, missingStaff: true }); }
     for (sid in absStaff) if (!known[sid]) { known[sid] = 1; extra.push({ staff_id: sid, name: sid, office: null, emp_code: null, active: false, missingStaff: true }); }
@@ -724,6 +798,9 @@
         var f = free[j], at = (f.in || f.out).at;
         blocks.push({ staff_id: st.staff_id, work_date: jstDate(at), start: null, end: null, breakMin: 0, schedWork: 0, office: st.office || null, officeShare: {}, night: false, symbol: '', pairs: [f] });
       }
+      /* v6: 休憩の打刻（設定 breakPunch の時だけ・その人に休憩の打刻がある時だけ塊に付ける＝無い時は塊の形も今のまま） */
+      var brkList = cfg.breakPunch ? breakPunchesOf(punchBy[st.staff_id]) : null;
+      if (brkList && brkList.length) for (j = 0; j < blocks.length; j++) blocks[j].breaks = brkList;
       var byDate = {}, rawBy = {};
       for (j = 0; j < blocks.length; j++) {
         if (blocks[j].work_date < leadFirst || blocks[j].work_date > lastD) continue;
@@ -771,8 +848,10 @@
         }
         if (!b.start && cb.office === null) cb.office = st.office || null;
         if (!b.start && cb.office) { cb.officeShare = {}; cb.officeShare[cb.office] = 1; }
-        if (lockedMs != null) for (var q = 0; q < cb.punches.length; q++) {
-          var src = (punchBy[st.staff_id] || []).filter(function (p) { return p.id === cb.punches[q].id; })[0];
+        /* v6 反証レビュー（2026-11-24・low）: 締めた後の打刻の印には、その塊の休憩の打刻（breakPunches）も入れる */
+        var lkList = cb.breakPunches && cb.breakPunches.length ? cb.punches.concat(cb.breakPunches) : cb.punches;
+        if (lockedMs != null) for (var q = 0; q < lkList.length; q++) {
+          var src = (punchBy[st.staff_id] || []).filter(function (p) { return p.id === lkList[q].id; })[0];
           if (src && toMs(src.created_at) > lockedMs && cb.flags.indexOf('after_lock') < 0) cb.flags.push('after_lock');
         }
         (byDate[b.work_date] = byDate[b.work_date] || []).push(cb);
@@ -1187,7 +1266,7 @@
   }
 
   var api = {
-    DEFAULTS: DEFAULTS, ROUND_UNITS: ROUND_UNITS, ABS_KINDS: ABS_KINDS, LEAVE_TYPES_DEFAULT: LEAVE_TYPES_DEFAULT, LEAVE_TYPES_MAX: LEAVE_TYPES_MAX, cleanLeaveTypes: cleanLeaveTypes, leaveTypesOf: leaveTypesOf, FLAG_LABEL: FLAG_LABEL, REVIEW: REVIEW, DIV_OFFICE: DIV_OFFICE, OFFICE_DIV: OFFICE_DIV,
+    BREAK_KINDS: BREAK_KINDS, DEFAULTS: DEFAULTS, ROUND_UNITS: ROUND_UNITS, ABS_KINDS: ABS_KINDS, LEAVE_TYPES_DEFAULT: LEAVE_TYPES_DEFAULT, LEAVE_TYPES_MAX: LEAVE_TYPES_MAX, cleanLeaveTypes: cleanLeaveTypes, leaveTypesOf: leaveTypesOf, FLAG_LABEL: FLAG_LABEL, REVIEW: REVIEW, DIV_OFFICE: DIV_OFFICE, OFFICE_DIV: OFFICE_DIV,
     SUMMARY_HEAD: SUMMARY_HEAD, DAILY_HEAD: DAILY_HEAD, SUMMARY_EXTRA_HEAD: SUMMARY_EXTRA_HEAD, DAILY_EXTRA_HEAD: DAILY_EXTRA_HEAD,
     NOT_IN_GRACE_MIN: NOT_IN_GRACE_MIN, checkLegalHoliday: checkLegalHoliday, reviewList: reviewList, needsReview: needsReview,
     fillConfig: fillConfig, isYm: isYm, daysIn: daysIn, nextYm: nextYm, prevYm: prevYm, jstMs: jstMs, jstDate: jstDate, jstHM: jstHM,
