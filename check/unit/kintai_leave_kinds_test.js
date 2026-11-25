@@ -71,6 +71,8 @@ console.log('\n— 3. 予定も実績も無い —');
   const r3 = K.checkMonth({ month: m, absences: [], yearAbs: [], terms: [{ id: 'x', staff_id: 'sT03', kind: 'childcare', date_from: '2026-04-01', date_to: '2027-03-31' }], config: {} });
   t('休業の期間が月分にかかる人は出さない', !r3.review.some((x) => x.code === 'none_day'));
   const r4 = K.checkMonth({ month: m, absences: [{ staff_id: 'sT03', date: '2026-12-10', kind: 'child_care', voided_at: '2026-12-11T00:00:00Z' }], yearAbs: [], terms: [], config: {} });
+  const mImp = JSON.parse(JSON.stringify(m)); mImp.people.find((p) => p.staff.staff_id === 'sT03').sum.imported = { source: 'freee_csv', id: 'x' };
+  t('freee の月の集計を取り込んだ人は出さない（反証レビュー 2026-11-25）', !K.checkMonth({ month: mImp, absences: [], yearAbs: [], terms: [], config: {} }).review.some((x) => x.code === 'none_day'));
   t('取り消した休暇は数えない（出す）', r4.review.some((x) => x.code === 'none_day' && x.staff_id === 'sT03'));
 }
 
@@ -92,6 +94,19 @@ console.log('\n— 4. 休暇の残り不足 —');
   t('時間単位は1日の時間で日数に直す（1日4時間の人は4時間＝1日）', rDay.review.filter((x) => x.code === 'leave_short' && x.staff_id === 'sT01').map((x) => x.date).join() === '2026-12-04,2026-12-07');
   const rP = K.checkMonth({ month: m, absences: [], yearAbs: [], terms: [], config: {}, paidOver: { sT03: 1.5 } });
   t('有給の付与の無い使用がある人は出す', rP.review.some((x) => x.code === 'leave_short' && x.staff_id === 'sT03' && /1\.5 日/.test(x.text)));
+  /* 反証レビュー（2026-11-25）: 1時間単位を積み重ねても、5日ちょうどは出さず・超えた所で1件だけ出す（1行ずつ丸めない） */
+  const hrs = []; for (let i = 0; i < 40; i++) hrs.push(mk('sT03', '2026-12-' + String(1 + (i % 28)).padStart(2, '0') + '', 'child_care', 60));
+  hrs.forEach((x, i) => { x.id = 'h' + i; });
+  const r40 = K.checkMonth({ month: m, absences: [], yearAbs: hrs, terms: [], config: {} });
+  t('1時間×40回（1日8時間でちょうど5日）は出さない', !r40.review.some((x) => x.code === 'leave_short' && x.staff_id === 'sT03'), r40.review.filter((x) => x.staff_id === 'sT03'));
+  const r41 = K.checkMonth({ month: m, absences: [], yearAbs: hrs.concat([Object.assign(mk('sT03', '2026-12-30', 'child_care', 60), { id: 'h40' })]), terms: [], config: {} });
+  t('41時間目で1件だけ出す', r41.review.filter((x) => x.code === 'leave_short' && x.staff_id === 'sT03').length === 1);
+  const yu = K.yearUsed(hrs, 'sT03', 'child_care', '2026-12-31', {}, 480);
+  t('yearUsed は分のまま（2400分＝5日）', yu.usedMin === 2400 && yu.used === 5 && yu.cap === 5, yu);
+  t('人ごとの10日（設定 careLeave10）・載っていない人は5日', K.capOf({ careLeave10: { child_care: ['sT01'] } }, 'child_care', 'sT01') === 10 && K.capOf({ careLeave10: { child_care: ['sT01'] } }, 'child_care', 'sT02') === 5 &&
+    K.capOf({ careLeave10: { child_care: ['sT01'] } }, 'family_care', 'sT01') === 5);
+  const r10p = K.checkMonth({ month: m, absences: [], yearAbs: yearAbs, terms: [], config: { careLeave10: { child_care: ['sT01'] } } });
+  t('careLeave10 に載った人は6日目でも出さない', !r10p.review.some((x) => x.code === 'leave_short' && x.staff_id === 'sT01'));
   const rN = K.checkMonth({ month: m, absences: [], yearAbs: null, terms: [], config: {} });
   t('1年分を読めない時は子の看護等休暇・介護休暇を確かめない（yearOk false）', rN.yearOk === false && !rN.review.some((x) => x.code === 'leave_short'));
 }
@@ -159,6 +174,7 @@ console.log('\n— 8. 画面への読み込みと公開の許可 —');
   t('公開の許可（.gitignore）', /^!\/kintai-leave-kinds\.js$/m.test(G));
   t('給与の画面は読まない（給与の数え方に入らない）', fs.readFileSync(path.join(ROOT, 'payroll.html'), 'utf8').indexOf('kintai-leave-kinds.js') < 0);
   t('管理画面は月の計算に足した種類を渡さない（computeMonth の呼び方は今のまま）', !/computeMonth\([^)]*leave_terms/.test(J) && J.indexOf("rpc('kintai_leave_extra_get'") > 0);
+  t('足した表は印刷に出さない（no-print・反証レビュー 2026-11-25）', /'<div class="cd no-print"><div class="row"><b>エラー勤務 /.test(J) && /'<div class="cd no-print"><div class="row"><b>休業の期間（/.test(J) && /cd no-print"><div class="row"><b>振替休日の知らせ /.test(J));
   t('DB に関数が無い時は「準備中」と出す', /noDb\(e\)\) \{ lkSt = \{ ym: atYm, noDb: true/.test(J) && J.indexOf('データベースの準備中') > 0);
 }
 

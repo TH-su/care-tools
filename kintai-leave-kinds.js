@@ -56,10 +56,13 @@
   function kindOf(c) { return isKind(c) ? BY[c] : null; }
   function nameOf(c) { return isKind(c) ? BY[c].name : ''; }
 
-  /* 1年の日数の上限（設定 childCareDays・familyCareDays は 5 か 10。ほかの値・無い時は 5） */
-  function capOf(cfg, code) {
+  /* 1年の日数の上限（設定 childCareDays・familyCareDays は 5 か 10。ほかの値・無い時は 5）。
+     子・対象の家族が2人以上で10日の人は、設定 careLeave10 の {child_care:[staff_id…], family_care:[staff_id…]} に載せる（人ごと・反証レビュー 2026-11-25・画面の欄はまだ＝仮置き） */
+  function capOf(cfg, code, sid) {
     var k = kindOf(code);
     if (!k || !k.cap) return null;
+    var ten = cfg && cfg.careLeave10 && typeof cfg.careLeave10 === 'object' ? cfg.careLeave10[code] : null;
+    if (sid && Array.isArray(ten) && ten.indexOf(sid) >= 0) return 10;
     var v = cfg && cfg[k.cap];
     return CAP_OK.indexOf(v) >= 0 ? v : CAP_DEFAULT;
   }
@@ -141,9 +144,10 @@
 
   /* 子の看護等休暇・介護休暇の1年の使用（その日までの合計・日数） */
   function yearUsed(yearAbs, sid, code, date, cfg, dayMin) {
-    var y = yearOf(date, cfg), n = 0;
-    liveAbs(yearAbs).forEach(function (a) { if (a.staff_id === sid && a.kind === code && a.date >= y.from && a.date <= date) n += daysOf(a, dayMin); });
-    return { from: y.from, to: y.to, used: Math.round(n * 100) / 100, cap: capOf(cfg, code) };
+    /* 分のまま足して最後に1回だけ日数に直す（1行ずつ丸めると1時間単位の積み重ねで5日ちょうどが超えて見える・反証レビュー 2026-11-25） */
+    var y = yearOf(date, cfg), dm = dayMin > 0 ? dayMin : 480, m = 0;
+    liveAbs(yearAbs).forEach(function (a) { if (a.staff_id === sid && a.kind === code && a.date >= y.from && a.date <= date) m += a.minutes == null ? dm : a.minutes; });
+    return { from: y.from, to: y.to, usedMin: m, dayMin: dm, used: Math.round(m / dm * 100) / 100, cap: capOf(cfg, code, sid) };
   }
 
   /* エラー勤務の残り3種と振替の知らせ。
@@ -163,7 +167,8 @@
       var days = Array.isArray(p.days) ? p.days : [];
       /* 1. 予定も実績も無い（在籍の人だけ・月分の全部が休業の期間の人は出さない） */
       if (st.active !== false) {
-        var any = days.some(function (d) { return (d.blocks || []).some(function (b) { return b.sched || (b.punches || []).length; }) || d.paidMin > 0 || d.workMin > 0 || (d.absences || []).length; }) ||
+        var sm = p.sum || {};
+        var any = !!sm.imported || sm.workMin > 0 || sm.paidDays > 0 || days.some(function (d) { return (d.blocks || []).some(function (b) { return b.sched || (b.punches || []).length; }) || d.paidMin > 0 || d.workMin > 0 || (d.absences || []).length; }) ||
           rawLive.some(function (a) { return a.staff_id === sid && ((a.date >= per.from && a.date <= per.to) || (a.link_date && a.link_date >= per.from && a.link_date <= per.to)); }) ||
           terms.some(function (t) { return t.staff_id === sid && t.date_from <= per.to && t.date_to >= per.from; });
         if (!any) out.review.push({ staff_id: sid, date: null, code: 'none_day', text: 'この月分に、勤務の予定も打刻も休暇もありません（シフトの取り込み漏れ・退職の手続きを確かめてください）' });
@@ -182,13 +187,13 @@
       if (out.yearOk) {
         ['child_care', 'family_care'].forEach(function (code) {
           var mine = liveAbs(opts.yearAbs).filter(function (a) { return a.staff_id === sid && a.kind === code; }).sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
-          var yr = null, used = 0;
+          var yr = null, usedMin = 0;
           mine.forEach(function (a) {
             var y = yearOf(a.date, cfg);
-            if (!yr || yr.from !== y.from) { yr = y; used = 0; }
-            used = Math.round((used + daysOf(a, dm)) * 100) / 100;
-            var cap = capOf(cfg, code);
-            if (used > cap && a.date >= per.from && a.date <= per.to) out.review.push({ staff_id: sid, date: a.date, code: 'leave_short', text: nameOf(code) + 'が1年（' + md(y.from) + '〜' + md(y.to) + '）の ' + cap + ' 日を超えています（' + used + ' 日）' });
+            if (!yr || yr.from !== y.from) { yr = y; usedMin = 0; }
+            usedMin += a.minutes == null ? dm : a.minutes;   /* 分のまま足す（反証レビュー 2026-11-25） */
+            var cap = capOf(cfg, code, sid);
+            if (usedMin > cap * dm && a.date >= per.from && a.date <= per.to) out.review.push({ staff_id: sid, date: a.date, code: 'leave_short', text: nameOf(code) + 'が1年（' + md(y.from) + '〜' + md(y.to) + '）の ' + cap + ' 日を超えています（' + (Math.round(usedMin / dm * 100) / 100) + ' 日）' });
           });
         });
       }
