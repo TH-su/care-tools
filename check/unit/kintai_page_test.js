@@ -190,7 +190,7 @@ const pressFn = fn('press', 'updCode'), updFn = fn('updCode', 'lookup');
 t('数字・消すを押した時はテンキーを描き直さない（●の欄と決定だけ・textContent で書く。速い連打を落とさない）', /code \+= k;\s*updCode\(\);\s*\}/.test(pressFn) && !/paint(Pass|Code)\(\)/.test(pressFn) && /box\.textContent = /.test(updFn) && /ok\.disabled = !KintaiCalc\.isCode\(code\)/.test(updFn) && !/innerHTML/.test(updFn));
 t('重ね押しの守りは画面が入れ替わった時だけ（同じ画面の中では paintAt を進めない）', /function mark\(\) \{ if \(\$\('k-main'\)\.getAttribute\('data-v'\) !== view\) paintAt = Date\.now\(\);/.test(KC));
 /* ★総点検（2026-11-20）: 名前で選んだ控えの照合を足したので ?v= を 2026-11-20 に上げた（CLAUDE.md の決まり）。期待をその版に改めた */
-t('kintai-clock.js の読み込みは ?v=2026-11-20', /<script src="kintai-clock\.js\?v=2026-11-20"><\/script>/.test(HC));
+t('kintai-clock.js の読み込みは ?v=2026-11-25.1', /<script src="kintai-clock\.js\?v=2026-11-25\.1"><\/script>/.test(HC));
 
 console.log('\n— 9. 打刻画面の v3.1（画面の並び・今日の打刻） —');
 const recentFn = fn('loadRecent', 'paintRecent'), paintRecentFn = fn('paintRecent', 'paintFoot');
@@ -483,6 +483,23 @@ console.log('\n— 14. 打刻の番号と従業員コードの順・日ごとの
     /if \(my !== gen \|\| atYm !== ym \|\| !quietOk\(\)\) return;/.test(q) && /if \(!quietOk\(\)\) return;/.test(q) && /if \(quietBusy && Date\.now\(\) - quietBusy < 20000\) \{ recompute\(\); paint\(\); return; \}/.test(q) && /if \(seq !== quietSeq\) return;\s*quietBusy = 0;/.test(q) && /note\('自動の読み直し', e\);/.test(q) && !/alert\(/.test(q));
 }
 
+{
+  /* 0128: 端末の印を見出し x-su-device で送る（打ち間違いの上限を端末ごとに数える）。動かして確かめる */
+  const dk = /function deviceKey\(\) \{[^\n]*\}/.exec(KC), rp = /function rpc\(name, args\) \{[\s\S]*?\n  \}\n/.exec(KC);
+  const run = (key, withSet) => {
+    const sent = []; const store = { su_device_key: key };
+    const builder = (name, args) => { const b = { name, args, h: {}, then(ok, ng) { sent.push(b); return Promise.resolve({ data: 'ok' }).then(ok, ng); } };
+      if (withSet) b.setHeader = function (k, v) { this.h[k] = v; return this; }; return b; };
+    const f = new Function('window', 'localStorage', dk[0] + '\n' + rp[0] + '\nreturn rpc;');
+    const rpc = f({ SUAuth: { client: () => ({ rpc: builder }) } }, { getItem: (k) => store[k] == null ? null : store[k] });
+    return rpc('kintai_clock_lookup', { p_code: '1234' }).then((d) => ({ d, sent }));
+  };
+  pendClock.push(Promise.all([run('0123456789abcdef0123456789abcdef', true), run('', true), run('NOT-HEX', true), run('0123456789abcdef0123456789abcdef', false)]).then((r) => {
+    t('rpc は端末の印を見出し x-su-device に付ける（引数は変えない）', !!dk && !!rp && r[0].d === 'ok' && r[0].sent[0].h['x-su-device'] === '0123456789abcdef0123456789abcdef' && JSON.stringify(r[0].sent[0].args) === '{"p_code":"1234"}');
+    t('印が無い・形の違う印の時は見出しを付けない', r[1].sent[0].h['x-su-device'] === undefined && r[2].sent[0].h['x-su-device'] === undefined);
+    t('setHeader の無い窓口でも今までどおり送れる', r[3].d === 'ok' && r[3].sent.length === 1);
+  }));
+}
 Promise.all(await_pending.concat(pendClock)).catch((e) => { fail++; console.log('  ✗ 動かして確かめる試験が止まった  → ' + e.message); }).then(() => {
   console.log(`\n${pass} 件合格 / ${fail} 件不合格`);
   process.exit(fail ? 1 : 0);
