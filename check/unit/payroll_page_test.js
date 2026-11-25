@@ -73,7 +73,8 @@ console.log('\n— 4. タブの復元 —');
 t('タブのホワイトリスト7つ（賞与と年末調整を足した・設定は最後）', /var TABS = \['run', 'slip', 'export', 'bonus', 'profile', 'yearend', 'settings'\];/.test(J));
 t('読み戻しはホワイトリスト・設定は管理者だけ・それ以外は今月の給与', /tab = TABS\.indexOf\(t\) >= 0 && \(t !== 'settings' \|\| isAdmin\(\)\) \? t : 'run';/.test(boot));
 t('切り替えも同じ決まり', /if \(TABS\.indexOf\(t\) < 0 \|\| \(t === 'settings' && !isAdmin\(\)\)\) t = 'run';/.test(J));
-t('月分は端末に残さない（今日の月分から始める）', /ym = todayYm\(\); \$\('p-ym'\)\.value = ym;/.test(boot) && !/lsSet\([^)]*ym/.test(J));
+/* 2026-11-25: 勤怠管理から ?ym= で来た時だけその月分で開く（URL から読み、端末には残さない・形の確かめは hopYm） */
+t('月分は端末に残さない（勤怠管理から来た月分か、今日の月分から始める）', /ym = hopYm\(\) \|\| todayYm\(\); \$\('p-ym'\)\.value = ym;/.test(boot) && !/lsSet\([^)]*ym/.test(J));
 t('画面のタブは7つ（賞与と年末調整を足した・設定は初めは隠す）', (H.match(/role="tab" data-tab="/g) || []).length === 7 && /data-tab="bonus">賞与</.test(H) && /data-tab="yearend">年末調整</.test(H) && /data-tab="settings" hidden>設定</.test(H));
 
 console.log('\n— 5. 確定の窓 —');
@@ -290,7 +291,7 @@ console.log('\n— 給与専用の暗証番号（統合 0110・2026-11-20 代表
   /* ★年末調整のタブ（2026-11-23・ROOT-yearend.md の C）を賞与の入った main に取り込み、両方が入った payroll.js を 2026-11-23.6 に上げたので、期待の版を改めた */
   /* ★賞与の「freee と比べる」と、確定した賞与を年末調整の累計へ入れる（2026-11-23・0124）で 2026-11-23.9 に上げたので、期待の版を改めた */
   /* ★支給日の欄（既定27・全角と「日」を受ける・空の知らせ・2026-11-24）で 2026-11-24.1 に上げたので、期待の版を改めた */
-  t('payroll.js の版を上げた（2026-11-24.1・支給日の欄の直しの入った版）', /payroll\.js\?v=2026-11-24\.1"/.test(H));
+  t('payroll.js の版を上げた（2026-11-25・勤怠管理との行き来の入った版）', /payroll\.js\?v=2026-11-25"/.test(H));
 }
 
 console.log('\n— 年末調整のタブ（2026-11-23・ROOT-yearend.md の C） —');
@@ -305,7 +306,7 @@ console.log('\n— 年末調整のタブ（2026-11-23・ROOT-yearend.md の C）
   t('新しい5つの部品を payroll.js より前に ?v= つきで読む', iF > 0 && iYR > iF && iY > iYR && iW > iY && iU > iW && iP > iU, [iF, iYR, iY, iW, iU, iP]);
   /* ★賞与の入った main を取り込み 2026-11-23.6 に上げたので、期待の版を改めた */
   /* ★賞与の「freee と比べる」と累計へ入れる（2026-11-23・0124）で 2026-11-23.9 に上げたので、期待の版を改めた */
-  t('payroll.js の版を上げた（2026-11-24.1）', /payroll\.js\?v=2026-11-24\.1"/.test(H));
+  t('payroll.js の版を上げた（2026-11-25）', /payroll\.js\?v=2026-11-25"/.test(H));
   t('描く物は PayrollYearEndUI.html(ctx)・無ければ「計算の部品が読み込めていません」', /else if \(tab === 'yearend'\) h = YEU\(\) \? YEU\(\)\.html\(yeCtx\(\)\) : '<div class="band ng" role="alert">計算の部品が読み込めていません。/.test(J));
   t('出来事は ye- で始まる act だけ・金額を隠している間は渡さない', /else if \(\/\^ye-\/\.test\(a\) && YEU\(\) && view === 'app' && !masked\) YEU\(\)\.onClick\(yeCtx\(\), a, b\);/.test(J)
     && /YEU\(\)\.onChange\(yeCtx\(\), e\.target\)/.test(J));
