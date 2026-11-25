@@ -132,6 +132,13 @@ console.log('\n— 5. 日給の人の法定休日の労働 —');
   const n = mon({ punches: [PU(D, 'in', '9:00'), PU(D, 'out', '18:00')], config: cfg });
   t('法定休日に働かない月は 0日（基本給は今と同じ 10000円）', n.sum.holidayWorkDays === 0 && L(run(DAILY, att(snap({ punches: [PU(D, 'in', '9:00'), PU(D, 'out', '18:00')], config: cfg }))), 'basic') === 10000);
   t('法定休日の設定が無い月は 0日', mon(Object.assign({}, o, { config: {} })).sum.holidayWorkDays === 0);
+  /* 法定休日の週の決まり（2026-11-25）: 12/7（月）〜12/13（日）の7日を 9〜18時で働くと日曜だけが法定休日。給与の側は勤務の合計（holidayWorkDays・holidayMin）を受け取るだけ */
+  const wk7 = ['07', '08', '09', '10', '11', '12', '13'].map((d) => '2026-12-' + d);
+  const ow = { schedule: wk7.map(S9), punches: wk7.flatMap((d) => [PU(d, 'in', '9:00'), PU(d, 'out', '18:00')]), config: { legal_holiday: 'week' } };
+  const pw = mon(ow), itw = run(DAILY, att(snap(ow)));
+  t('週の決まり: 勤怠は出勤7日・法定休日に働いた日1日（日曜）・480分／日給は基本給 10000×6日・休日労働 13500円', pw.sum.workDays === 7 && pw.sum.holidayWorkDays === 1 && pw.sum.holidayMin === 480 && L(itw, 'basic') === 60000 && L(itw, 'ot_holiday') === 13500 && !W(itw, 'holiday_days_unknown'), [pw.sum.holidayWorkDays, L(itw, 'basic'), L(itw, 'ot_holiday')]);
+  const ow6 = { schedule: wk7.slice(0, 6).map(S9), punches: wk7.slice(0, 6).flatMap((d) => [PU(d, 'in', '9:00'), PU(d, 'out', '18:00')]), config: { legal_holiday: 'week' } };
+  t('週の決まり: 6日勤務の週は日給の基本給 10000×6日・休日労働なし', L(run(DAILY, att(snap(ow6))), 'basic') === 60000 && L(run(DAILY, att(snap(ow6))), 'ot_holiday') === undefined);
 }
 
 console.log('\n— 1. 予定の無い勤務のある月給の人の警告 —');

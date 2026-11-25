@@ -378,6 +378,65 @@ console.log('\n— 7. v2（2026-11-19 凍結仕様 ROOT-v2-polish.md の B）—
   for (let d = 6; d <= 12; d++) { const ds = '2026-12-' + String(d).padStart(2, '0'); wk.push(P('sT01', 'in', ds, '9:00'), P('sT01', 'out', ds, '17:00')); }
   t('B9: 変形なしの週: 7日×7h は決めない時 9h・日曜を法定休日にすると残り6日の 2h が法定外', sumOf(month([], wk, [], { variableMonth: false }), 'sT01').legalOverMin === 540 && sumOf(month([], wk, [], { variableMonth: false, legal_holiday: 0 }), 'sT01').legalOverMin === 120);
 
+  /* B-9w 法定休日の週の決まり（代表者の決定 2026-11-25）: 月曜〜日曜の週に休みが1日も無い時だけ、その週の最後の勤務日（日曜）を法定休日にする。
+     2026-12-07 は月曜・12-13 は日曜。勤務がかかるかは暦の日ごと（夜勤は 0:00 で分ける・仮置き） */
+  const A36 = require(path.join(ROOT, 'kintai-36.js'));
+  const dsW = (d) => (d > 31 ? '2027-01-' + String(d - 31).padStart(2, '0') : '2026-12-' + String(d).padStart(2, '0'));
+  const days9 = (list) => list.flatMap((d) => [P('sT01', 'in', dsW(d), '9:00'), P('sT01', 'out', dsW(d), '17:00')]);
+  t('B9w: 設定の確かめ（\'week\' は週の決まりとして通る・\'Week\'・\'w\' は不可）・fillConfig に残る', C.checkLegalHoliday('week').ok && C.checkLegalHoliday('week').value === 'week' && !C.checkLegalHoliday('Week').ok && !C.checkLegalHoliday('w').ok && C.fillConfig({ legal_holiday: 'week' }).legal_holiday === 'week');
+  const W7 = month([], days9([7, 8, 9, 10, 11, 12, 13]), [], { legal_holiday: 'week' });
+  const w7days = [7, 8, 9, 10, 11, 12, 13].map((d) => dayOf(W7, 'sT01', dsW(d)).holidayMin);
+  t('B9w: 7日続けて働いた週は日曜だけが休日労働（7h＝420分）・ほかの6日は0・法定休日に働いた日1日', w7days.join() === '0,0,0,0,0,0,420' && sumOf(W7, 'sT01').holidayMin === 420 && sumOf(W7, 'sT01').holidayWorkDays === 1 && JSON.stringify(sumOf(W7, 'sT01').holidayDaysMin) === '[420]', w7days);
+  t('B9w: 変形なしの7日×7h は日曜を曜日で決めた時と同じ（法定外 120分・控えも1バイト同じ）', JSON.stringify(C.snapshotOf(month([], days9([7, 8, 9, 10, 11, 12, 13]), [], { variableMonth: false, legal_holiday: 'week' })).rows) === JSON.stringify(C.snapshotOf(month([], days9([7, 8, 9, 10, 11, 12, 13]), [], { variableMonth: false, legal_holiday: 0 })).rows) && sumOf(month([], days9([7, 8, 9, 10, 11, 12, 13]), [], { variableMonth: false, legal_holiday: 'week' }), 'sT01').legalOverMin === 120);
+  const W6 = month([], days9([7, 8, 9, 10, 11, 12]), [], { legal_holiday: 'week' });
+  t('B9w: 6日勤務の週（日曜は休み）は休日労働0', sumOf(W6, 'sT01').holidayMin === 0 && sumOf(W6, 'sT01').holidayWorkDays === 0);
+  const W6b = month([], days9([8, 9, 10, 11, 12, 13]), [], { legal_holiday: 'week' });
+  t('B9w: 月曜が休みで火〜日の6日勤務の週も0（日曜を曜日で決めた時の420分は付かない）', sumOf(W6b, 'sT01').holidayMin === 0 && sumOf(month([], days9([8, 9, 10, 11, 12, 13]), [], { legal_holiday: 0 }), 'sT01').holidayMin === 420);
+  const W14 = month([], days9([7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]), [], { legal_holiday: 'week' });
+  t('B9w: 2週続けて働けば日曜2日（12/13・12/20）だけ', sumOf(W14, 'sT01').holidayMin === 840 && dayOf(W14, 'sT01', '2026-12-13').holidayMin === 420 && dayOf(W14, 'sT01', '2026-12-20').holidayMin === 420 && sumOf(W14, 'sT01').holidayWorkDays === 2);
+  /* 週をまたぐ夜勤: 月〜土は日勤・日曜 22時〜月曜 8時の夜勤（予定つき・夜勤の休憩120分）。日曜に勤務がかかるので7日そろい、日曜の部分（22〜24時）だけ */
+  const nW = sched({ 7: '9-17', 8: '9-17', 9: '9-17', 10: '9-17', 11: '9-17', 12: '9-17', 13: '(22', 14: '8)' }).rows;
+  const nWp = days9([7, 8, 9, 10, 11, 12]).concat([P('sT01', 'in', '2026-12-13', '22:00'), P('sT01', 'out', '2026-12-14', '8:00')]);
+  const MN = month(nW, nWp, [], { legal_holiday: 'week' });
+  t('B9w: 週をまたぐ夜勤（日22→月8）は日曜の部分だけ（2/10 の 96分）・月曜の部分は次の週', dayOf(MN, 'sT01', '2026-12-13').blocks[0].holidayMin === 96 && sumOf(MN, 'sT01').holidayMin === 96 && sumOf(MN, 'sT01').holidayWorkDays === 0, sumOf(MN, 'sT01').holidayMin);
+  t('B9w: 同じ夜勤を曜日（日曜）で決めた時と同じ分（暦の日の分け方は今のまま）', sumOf(month(nW, nWp, [], { legal_holiday: 0 }), 'sT01').holidayMin === 96);
+  /* 土曜 22時〜日曜 8時の夜勤で日曜に始まる勤務が無い週: 日曜に勤務がかかるので休みの無い週になり、日曜の 0〜8時（8/10 の 384分）が休日労働（暦の日で見る・仮置き） */
+  const sW = sched({ 7: '9-17', 8: '9-17', 9: '9-17', 10: '9-17', 11: '9-17', 12: '(22', 13: '8)' }).rows;
+  const sWp = days9([7, 8, 9, 10, 11]).concat([P('sT01', 'in', '2026-12-12', '22:00'), P('sT01', 'out', '2026-12-13', '8:00')]);
+  t('B9w: 土22→日8 の夜勤の明けだけの日曜も勤務のある日に数え、日曜の部分 384分（仮置き）', sumOf(month(sW, sWp, [], { legal_holiday: 'week' }), 'sT01').holidayMin === 384);
+  const sW2 = sched({ 7: '9-17', 8: '9-17', 9: '9-17', 10: '9-17', 11: '9-17', 12: '(22', 13: '8)' }).rows;
+  const sW2p = days9([7, 8, 9, 10]).concat([P('sT01', 'in', '2026-12-12', '22:00'), P('sT01', 'out', '2026-12-13', '8:00')]);
+  t('B9w: 金曜が休み（打刻なし）なら同じ夜勤でも0', sumOf(month(sW2, sW2p, [], { legal_holiday: 'week' }), 'sT01').holidayMin === 0);
+  /* 締めが週の途中で切れる時（16日始まり）: 期間 12/16（水）〜1/15。12/14（月）〜12/20（日）の週は、前の期間の 12/14・15 も見て決める */
+  const P16 = { from: '2026-12-16', to: '2027-01-15' };
+  const m16 = (pun, cfg) => C.computeMonth({ ym: '2027-01', period: P16, staff: K_STAFF, schedule: [], punches: pun, days: [], config: cfg, now: NOW });
+  const a16 = m16(days9([14, 15, 16, 17, 18, 19, 20]), { legal_holiday: 'week' });
+  t('B9w: 16日始まり: 前の期間の 12/14・15 も働いていれば 12/20（日）が休日労働 420分・12/14・15 は期間の外で日の一覧に出ない', sumOf(a16, 'sT01').holidayMin === 420 && dayOf(a16, 'sT01', '2026-12-20').holidayMin === 420 && !dayOf(a16, 'sT01', '2026-12-14'), sumOf(a16, 'sT01').holidayMin);
+  t('B9w: 16日始まり: 12/14 に休めば（12/15〜20 の6日）0', sumOf(m16(days9([15, 16, 17, 18, 19, 20]), { legal_holiday: 'week' }), 'sT01').holidayMin === 0);
+  t('B9w: 期間の終わりの週が途中で切れる（1/11 月〜1/17 日を働き、期間は 1/15 まで）時は、その週の日曜は次の期間で数える（0）', sumOf(m16(days9([42, 43, 44, 45, 46, 47, 48]), { legal_holiday: 'week' }), 'sT01').holidayMin === 0 && new Date(C.jstMs('2027-01-11', 720)).getUTCDay() === 1);
+  /* 期間の初日が日曜（12/20〜1/19）: 月曜 12/14 は前の日（12/13＝期間の7日前）に始まる夜勤の明けだけ。DB は7日前の打刻・予定を返すので拾う */
+  const P20 = { from: '2026-12-20', to: '2027-01-19' };
+  const pre = [P('sT01', 'in', '2026-12-13', '22:00'), P('sT01', 'out', '2026-12-14', '8:00')].concat(days9([15, 16, 17, 18, 19, 20]));
+  const a20 = C.computeMonth({ ym: '2027-01', period: P20, staff: K_STAFF, schedule: [], punches: pre, days: [], config: { legal_holiday: 'week' }, now: NOW });
+  t('B9w: 期間の初日の週の月曜が、7日前に始まる夜勤の明けだけでも勤務のある日に数える（12/20 が 420分）', sumOf(a20, 'sT01').holidayMin === 420, sumOf(a20, 'sT01').holidayMin);
+  t('B9w: 決めない時（null）・曜日で決めた時の結果は週の決まりの道を通らない（7日の週を null で数えると0・日曜で 420）', sumOf(month([], days9([7, 8, 9, 10, 11, 12, 13]), [], {}), 'sT01').holidayMin === 0 && sumOf(month([], days9([7, 8, 9, 10, 11, 12, 13]), [], { legal_holiday: 0 }), 'sT01').holidayMin === 420);
+  const swW = (lh) => C.computeMonth({ ym: YM, staff: K_STAFF, schedule: [], punches: days9([7, 8, 9, 10, 11, 12, 13]), days: [], absences: [{ id: 'w1', staff_id: 'sT01', date: '2026-12-09', kind: 'swap', link_date: '2026-12-13' }], config: { legal_holiday: lh }, now: NOW });
+  t('B9w: 振替（日曜を働く日にした）は週の決まりでは使わない（実際に働いた日で決める・12/9 は0・12/13 は 420）／日曜で決めた時は振替で 12/9 に移る（今のまま）',
+    dayOf(swW('week'), 'sT01', '2026-12-09').holidayMin === 0 && dayOf(swW('week'), 'sT01', '2026-12-13').holidayMin === 420 && dayOf(swW(0), 'sT01', '2026-12-09').holidayMin === 420 && dayOf(swW(0), 'sT01', '2026-12-13').holidayMin === 0,
+    [dayOf(swW('week'), 'sT01', '2026-12-09').holidayMin, dayOf(swW(0), 'sT01', '2026-12-09').holidayMin]);
+  /* 反証レビュー（2026-11-26）2: 期間の末日が土曜（12/12 締め）で、その夜勤（土22→日8）が日曜にかかる時は、末日の翌日の日曜も決めて、日曜の部分を休日労働に入れる */
+  const P12 = { from: '2026-11-13', to: '2026-12-12' };
+  const satN = C.computeMonth({ ym: '2026-12', period: P12, staff: K_STAFF, schedule: sched({ 7: '9-17', 8: '9-17', 9: '9-17', 10: '9-17', 11: '9-17', 12: '(22', 13: '8)' }).rows, punches: sWp.concat([P('sT01', 'in', '2026-12-11', '9:00'), P('sT01', 'out', '2026-12-11', '17:00')]).filter((x, i, a) => a.findIndex((y) => y.at === x.at && y.kind === x.kind) === i), days: [], config: { legal_holiday: 'week' }, now: NOW });
+  t('B9w: 期間の末日（土）の夜勤が日曜にかかる時は、日曜の部分 384分をこの期間で数える（日曜で決めた時と同じ）', sumOf(satN, 'sT01').holidayMin === 384, sumOf(satN, 'sT01').holidayMin);
+  const nxt = C.computeMonth({ ym: '2027-01', period: { from: '2026-12-13', to: '2027-01-12' }, staff: K_STAFF, schedule: sched({ 7: '9-17', 8: '9-17', 9: '9-17', 10: '9-17', 11: '9-17', 12: '(22', 13: '8)' }).rows, punches: sWp, days: [], config: { legal_holiday: 'week' }, now: NOW });
+  t('B9w: 同じ夜勤は次の期間（12/13 から）では数えない（前の6日の日なので二重にしない）', sumOf(nxt, 'sT01').holidayMin === 0);
+  /* 反証レビュー（2026-11-26）1: 前の6日に入る日曜（初日の前日より前）は前の月分で法定休日だったかを確かめられない。変形なしの時だけ知らせる（法定休日にせず週40時間に積む） */
+  const lw = (vm) => C.computeMonth({ ym: '2027-01', period: P16, staff: K_STAFF, schedule: [], punches: days9([7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]), days: [], config: { legal_holiday: 'week', variableMonth: vm }, now: NOW });
+  t('B9w: 変形なし・前の6日の日曜（12/13）の週に勤務がそろう時は知らせを出す／変形ありは出さない／曜日で決めた時は出さない',
+    sumOf(lw(false), 'sT01').warnings.some((w) => /週の決まり.*12\/13/.test(w)) && !sumOf(lw(true), 'sT01').warnings.some((w) => /週の決まり/.test(w)) &&
+    !sumOf(C.computeMonth({ ym: '2027-01', period: P16, staff: K_STAFF, schedule: [], punches: days9([7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]), days: [], config: { legal_holiday: 0, variableMonth: false }, now: NOW }), 'sT01').warnings.some((w) => /週の決まり/.test(w)), sumOf(lw(false), 'sT01').warnings);
+  t('B9w: 36協定の判定は週の決まりを「法定休日を決めた」扱いにする（「少なく出ています」を出さない）', A36.judge([{ ym: '2026-12', legalOverMin: 600, holidayMin: 0 }], '2026-12', { legal_holiday: 'week' }, {}).holidayUnknown === false && A36.judge([{ ym: '2026-12', legalOverMin: 600, holidayMin: 0 }], '2026-12', { legal_holiday: null }, {}).holidayUnknown === true);
+
   /* B-10 事業所別 */
   const o10 = month(sched({ 11: '9-18' }, { 11: '早' }, { sT01: { '通所': { 11: '7-9' } } }).rows, [P('sT01', 'in', '2026-12-11', '7:00'), P('sT01', 'out', '2026-12-11', '18:00'), P('sT02', 'in', '2026-12-11', '7:00'), P('sT02', 'out', '2026-12-11', '16:00')]);
   const bo = sumOf(o10, 'sT01').byOffice;

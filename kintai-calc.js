@@ -22,6 +22,7 @@
      予定の無い勤務は出勤からこの時間までを「勤務中」とみなす */
   var NOT_IN_GRACE_MIN = 15, WORKING_NO_SCHED_MS = 16 * HOUR;
 
+  var LH_WEEK = 'week';   /* 法定休日の週の決まり（代表者の決定 2026-11-25） */
   var DEFAULTS = {
     breakThresholdH: 6, breakH: 1, nightBreakH: 2,
     earlyAlertMin: 30, overtimeAlertMin: 30,
@@ -31,7 +32,7 @@
     overtimeMonthWarnH: 45,
     weekStartDow: 0,        // 週40時間を数える週の始まり（0=日曜・就業規則に定めが無ければ日曜）
     csvTime: 'hmm',
-    legal_holiday: null,    // 法定休日の曜日（null＝決めない／0=日曜〜6=土曜・v2 2026-11-19。キーは凍結仕様どおりの名前）
+    legal_holiday: null,    // 法定休日の曜日（null＝決めない／0=日曜〜6=土曜・v2 2026-11-19。キーは凍結仕様どおりの名前）／'week'＝週の決まり（月曜〜日曜の週に休みが1日も無い時だけ、その週の最後の勤務日・代表者の決定 2026-11-25）
     close_day: 0,           // 締め日（0＝月末・1〜28・0101）。期間そのものは DB が決める（計算は渡された期間を使う）。設定の保存でこの値を落とさないために持つ
     /* v5 段4（2026-11-20）: どれも既定は今の動きと同じ（丸めなし・時間単位の有休を使わない） */
     roundUnitMin: 1,        // 丸めの単位（1・5・10・15・30分）。働いた人に有利な向きだけに効かせる（遅刻の出勤は切り捨て・早退の退勤と認めた残業の終わりは切り上げ）
@@ -89,10 +90,11 @@
     if (lt) out.leaveTypes = lt;
     return out;
   }
-  /* 法定休日の設定の確かめ（v2）: null・undefined・'' は「決めない」、0〜6 の整数（または '0'〜'6'）は曜日。
-   * 返す: { ok, value:null|0〜6 } （ok=false の時 value は null＝決めないに戻す） */
+  /* 法定休日の設定の確かめ（v2）: null・undefined・'' は「決めない」、0〜6 の整数（または '0'〜'6'）は曜日、'week' は週の決まり（2026-11-25）。
+   * 返す: { ok, value:null|0〜6|'week' } （ok=false の時 value は null＝決めないに戻す） */
   function checkLegalHoliday(v) {
     if (v == null || v === '') return { ok: true, value: null };
+    if (v === LH_WEEK) return { ok: true, value: LH_WEEK };
     if (typeof v === 'string' && /^[0-6]$/.test(v)) return { ok: true, value: +v };
     if (typeof v === 'number' && v >= 0 && v <= 6 && Math.floor(v) === v) return { ok: true, value: v };
     return { ok: false, value: null };
@@ -753,9 +755,8 @@
         target[rd] = cand[0];
         for (var ci = 0; ci < cand.length; ci++) if (cand[ci].pairs.some(function (pp) { return pp.in && pp.out; })) { target[rd] = cand[ci]; break; }
       }
-      for (j = 0; j < blocks.length; j++) {
-        var b = blocks[j];
-        if (b.work_date < leadFirst || b.work_date > lastD) continue;
+      /* 塊に当てる日の行（休憩の直しは target の塊だけ・early_from／ot_until は firstOf／lastOf の塊だけ） */
+      var dnFor = function (b) {
         var dnB = dayBy[st.staff_id + '|' + b.work_date];
         if (dnB && typeof dnB.break_min === 'number' && target[b.work_date] !== b) dnB = { early_ok: dnB.early_ok, overtime_ok: dnB.overtime_ok, day_mark: dnB.day_mark, early_from: dnB.early_from, ot_until: dnB.ot_until, early_ng: dnB.early_ng, ot_ng: dnB.ot_ng };
         if (dnB && ((dnB.early_from != null && firstOf[b.work_date] !== b) || (dnB.ot_until != null && lastOf[b.work_date] !== b))) {
@@ -764,6 +765,44 @@
           if (lastOf[b.work_date] !== b) cp.ot_until = null;
           dnB = cp;
         }
+        return dnB;
+      };
+      /* 法定休日の週の決まり（代表者の決定 2026-11-25）: 月曜〜日曜の週の7日すべてに数えた勤務がかかる時だけ、その週の最後の勤務日（＝日曜）を法定休日にする。
+         勤務がかかるかは暦の日ごと（夜勤は 0:00 で分ける・holidayMinutes と同じ軸）。まず法定休日なしで数え、働いた暦の日を集めてから法定休日の日を決めて数え直す。
+         期間の初めの週は前の期間の日も見る（DB は打刻と予定を期間の7日前から返すので、7日前に始まる夜勤の明けも拾う）。曜日で決める時・決めない時はこの道を通らない */
+      var weekWarn = null;
+      if (cfg.legal_holiday === LH_WEEK) {
+        var touched = {}, wFrom = addDays(first, -7);
+        for (j = 0; j < blocks.length; j++) {
+          var bw = blocks[j];
+          if (bw.work_date < wFrom || bw.work_date > lastD) continue;
+          var cw = countBlock(bw, dnFor(bw), cfg, nowMs, null);
+          if (!(cw.workMin > 0) || cw.countStart == null || cw.countEnd == null || cw.countEnd <= cw.countStart) continue;
+          for (var td = jstDate(cw.countStart), tl = jstDate(cw.countEnd - 1), tg = 0; tg < 4; tg++) { touched[td] = 1; if (td === tl) break; td = addDays(td, 1); }
+        }
+        /* 決める日曜は、期間の初日の前日から末日の翌日まで（反証レビュー 2026-11-26）。末日の翌日の日曜は、末日（土曜）の夜勤のうち日曜にかかる部分のため
+           （次の期間ではその塊は前の6日の日なので合計に入らない）。末日の翌日に始まる勤務はこの期間の打刻に無いが、その分は次の期間で数える */
+        var wov = {}, wEnd = addDays(lastD, 1);
+        for (var sd = addDays(first, -1); sd <= wEnd; sd = addDays(sd, 1)) {
+          if (new Date(jstMs(sd, 12 * 60)).getUTCDay() !== 0) continue;   /* 週の終わり（日曜） */
+          var allW = true;
+          for (var wd0 = 6; wd0 >= 0 && allW; wd0--) if (!touched[addDays(sd, -wd0)]) allW = false;
+          if (allW) wov[sd] = true;
+        }
+        holOv[st.staff_id] = wov;
+        /* 前の6日に入る日曜（初日の前日より前）は、その週の月曜が DB の返す7日前より前にあり、前の月分で法定休日にしたかを確かめられない。
+           変形なし（週40時間を前の6日から積む）の時だけ、確かめられる日に全部勤務がかかる日曜を知らせる（法定休日にせず週40時間に積む＝多く数える側・反証レビュー 2026-11-26） */
+        if (!cfg.variableMonth) for (var ls = leadFirst; ls < addDays(first, -1); ls = addDays(ls, 1)) {
+          if (new Date(jstMs(ls, 12 * 60)).getUTCDay() !== 0) continue;
+          var seen = true;
+          for (var lw = 6; lw >= 0 && seen; lw--) { var ld0 = addDays(ls, -lw); if (ld0 >= wFrom && !touched[ld0]) seen = false; }
+          if (seen) weekWarn = '法定休日（週の決まり）: 期間の前の日曜（' + mdOf(ls) + '）が前の月分で法定休日だったかを確かめられないため、週40時間の数えに入れています（法定外を多く数えている場合があります）';
+        }
+      }
+      for (j = 0; j < blocks.length; j++) {
+        var b = blocks[j];
+        if (b.work_date < leadFirst || b.work_date > lastD) continue;
+        var dnB = dnFor(b);
         var cb = countBlock(b, dnB, cfg, nowMs, holOv[st.staff_id]);
         /* v5 段4: 1日の特別休暇・代休の日は、打刻の無い予定の塊を打刻なし・まだ出勤していないにしない（休みの日として扱う） */
         if (!cb.punches.length && (absBy[st.staff_id + '|' + b.work_date] || []).some(function (x) { return (x.kind === 'special' || x.kind === 'comp') && x.minutes == null; })) {
@@ -978,6 +1017,7 @@
       sum.legalOverRawMin = legalRaw; sum.holidayRawMin = sum.holidayMin;
       if (sum.legalOverMin >= cfg.overtimeMonthWarnH * 60 && cfg.overtimeMonthWarnH > 0) sum.warnings.push('法定外の時間が月' + cfg.overtimeMonthWarnH + '時間以上です（36協定の確認）');
       if (st.missingStaff) sum.warnings.push('職員の名簿に無い番号の記録です（シフトから外れた職員）');
+      if (weekWarn) sum.warnings.push(weekWarn);
       /* 2026-11-23: freee の月の集計を取り込んだ人（DB の kintai_month_get が staff の行に month_import を付ける＝その月分の効いている取り込みだけ）は、
          合計を取り込みの値で作り直し、塊を要確認から外す（打刻は作らない・日の一覧はそのまま）。形の違う取り込みは使わない（要確認が残る＝締めない側） */
       var imp = importOf(st, ym, per);
