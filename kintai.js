@@ -1237,6 +1237,19 @@
       if (y0 === ym) { dropMonthCaches(); return load(false); }
     })['catch'](function (e) { busy = false; restore(); note('freee の取り込みの取り消し', e); alert(fiMsg(e)); });
   }
+  /* 締めの手順の段階（2026-11-26・見せるだけ。締めの動きは変えない）: 要確認を決める → 月を締める → 給与で計算（給与の画面）。
+     済んだ段は done、最初のまだの段を cur。印刷には出さない（no-print） */
+  function closeSteps(review, locked, blocked) {
+    var done = [locked || review === 0, locked, false], cur = done.indexOf(false);
+    return [['要確認を決める', review > 0 && !locked ? '残り ' + review + ' 件' : ''], ['月を締める', !locked && blocked ? 'まだ締められません' : ''], ['給与で計算', '給与の画面']].map(function (x, i) {
+      return { name: x[0], sub: x[1], state: done[i] ? 'done' : (i === cur ? 'cur' : 'todo') };
+    });
+  }
+  function closeStepsHtml(review, locked, blocked) {
+    return '<ol class="su-steps no-print" aria-label="締めの手順">' + closeSteps(review, locked, blocked).map(function (x) {
+      return '<li class="' + x.state + '"' + (x.state === 'cur' ? ' aria-current="step"' : '') + '>' + esc(x.name) + '<span class="su-st-s">' + esc(x.sub || (x.state === 'done' ? '済み' : x.state === 'cur' ? '次はここ' : 'まだ')) + '</span></li>';
+    }).join('') + '</ol>';
+  }
   function paintClose() {
     var lk = isLocked(), afterLock = month.people.some(function (p) { return p.days.some(function (d) { return d.flags.indexOf('after_lock') >= 0; }); });
     var review = month.totals.reviewCount;
@@ -1244,7 +1257,7 @@
     var nx = C.addDays(per().to, 1);
     var stop = !lk && notYet() ? '期間の末日を過ぎてから締められます（' + esc(perLabel()) + 'は ' + esc((+nx.slice(5, 7)) + '月' + (+nx.slice(8, 10)) + '日') + 'から締められます）。' :
       (!lk && shiftInfo && !shiftInfo.ok ? 'シフトを取り込めていないため、まだ締められません（' + esc(shiftInfo.why) + '）。上の「シフトを取り込み直す」を押してから締めてください。' : '');
-    var h = printHead('締めと出力') + fiHtml() + '<div class="cd"><h2 style="font-size:16px;margin:0 0 8px">月の締め</h2>' +
+    var h = printHead('締めと出力') + fiHtml() + '<div class="cd"><h2 style="font-size:16px;margin:0 0 8px">月の締め</h2>' + closeStepsHtml(review, lk, !!stop) +
       (diff.length ? '<div class="band warn">締めた時の数字と今の数字が違う職員がいます（' + diff.map(esc).join('・') + '）。締めた後の打刻・計算の決まりの見直しなどが原因です。給与へ渡したのは締めた時の数字です（月の集計の CSV も締めた時の数字で出します）。</div>' : '') +
       (lk ? '<p>締めた日時: ' + esc(new Date(data.month.locked_at).toLocaleString('ja-JP')) + '</p>' +
         (isAdmin() ? '<p class="no-print"><a class="btn pri" href="payroll.html?ym=' + esc(encodeURIComponent(ym)) + '">💴 給与の画面でこの月分を計算する</a></p>' : '') + (afterLock ? '<div class="band warn">締めた後に足された打刻があります（印「締めた後の打刻」）。給与へ渡した後なら、来月の調整を検討してください。</div>' : '') +

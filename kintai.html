@@ -36,6 +36,7 @@
 <script src="kintai-leave-kinds.js?v=2026-11-25"></script>
 <link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
 <link rel="stylesheet" href="su-shell.css?v=2026-11-13">
+<link rel="stylesheet" href="su-office.css?v=2026-11-26">
 <link rel="stylesheet" href="su-print.css?v=2026-11-13">
 <style>
 :root{--ink:#14213d;--sub:#3d4a5c;--line:#c9d2de;--bg:#f4f6f9;--card:#fff;--ok:#0b5d2a;--ok-bg:#e3f4e8;--warn:#6b4100;--warn-bg:#fff4d6;--ng:#8a1020;--ng-bg:#fde8eb;--focus:#1f4fbf;--muted:#414b5a;
@@ -227,12 +228,17 @@ body:has(#g-gate:not([hidden])) .sui-band{display:none}
 </header>
 <div class="cd gate" id="g-gate" hidden></div>
 <div id="g-app" hidden>
-  <div class="bar no-print">
-    <label>月分 <input type="month" id="g-ym" aria-label="表示する月分（締め日で切った期間）"></label> <span id="g-period" class="raw"></span>
-    <button type="button" class="btn sm" id="g-prev" aria-label="前の月">◀ 前の月</button>
-    <button type="button" class="btn sm" id="g-next" aria-label="次の月">次の月 ▶</button>
-    <button type="button" class="btn sm" id="g-import">シフトを取り込み直す</button>
-    <button type="button" class="btn sm" id="g-reload">読み直す</button>
+  <div class="bar no-print su-mbar">
+    <div class="su-mnav" role="group" aria-label="月分の切り替え">
+      <button type="button" class="btn sm" id="g-prev" aria-label="前の月">◀ 前の月</button>
+      <label>月分 <input type="month" id="g-ym" aria-label="表示する月分（締め日で切った期間）"></label>
+      <button type="button" class="btn sm" id="g-next" aria-label="次の月">次の月 ▶</button>
+    </div>
+    <span id="g-period" class="raw"></span>
+    <div class="su-mact">
+      <button type="button" class="btn sm" id="g-import">シフトを取り込み直す</button>
+      <button type="button" class="btn sm" id="g-reload">読み直す</button>
+    </div>
   </div>
   <nav class="tabs no-print" role="tablist" aria-label="画面の切り替え">
     <button type="button" role="tab" data-tab="home">ホーム</button>
@@ -255,7 +261,7 @@ body:has(#g-gate:not([hidden])) .sui-band{display:none}
 <dialog id="g-dlg" aria-labelledby="g-dlg-h"><div class="dlg-h" id="g-dlg-h"></div><div class="dlg-b" id="g-dlg-b"></div><div class="dlg-f" id="g-dlg-f"></div></dialog>
 <script src="su-dialog.js?v=2026-11-14.2"></script>
 <script src="su-qr.js?v=2026-11-08"></script>
-<script src="kintai.js?v=2026-11-25.7"></script>
+<script src="kintai.js?v=2026-11-26"></script>
 <script src="kintai-board-calc.js?v=2026-11-25"></script>
 <script src="kintai-board.js?v=2026-11-25"></script>
 <script src="su-shell.js?v=2026-11-19"></script>
