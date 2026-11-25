@@ -137,7 +137,8 @@ try {
 
   console.log('\n— 2〜5. 関数がある時 —');
   {
-    const st = { base: server.url, calls: [], config: { legal_holiday: 0, hourlyPaidLeave: true, csvTime: 'hmm' }, rev: 3, rows: [], withExtras: true, locked: false };
+    /* ★段A2（2026-11-25）: 社内会議を時間外に足すかを保存しないまま会議のある月を締めると止まるため、会議の設定を保存済み（足さない）にした（確かめる中身は変えない） */
+    const st = { base: server.url, calls: [], config: { legal_holiday: 0, hourlyPaidLeave: true, csvTime: 'hmm', meetingOt: { code: 'meeting', on: false } }, rev: 3, rows: [], withExtras: true, locked: false };
     const { ctx, page, errs, alerts } = await open(browser, st, 'settings');
     await page.waitForSelector('#ex-s-rows', { timeout: 20000 });
     const n0 = await page.$$eval('#ex-s-rows tr', (r) => r.length);
