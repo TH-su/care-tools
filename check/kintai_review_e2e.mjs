@@ -152,6 +152,12 @@ try {
   await page.waitForFunction(() => !document.getElementById('g-dlg').open, null, { timeout: 15000 });
   const lk = sent.find((x) => x[0] === 'kintai_month_lock');
   t('締め: kintai_month_lock に送る控えの要確認が全員 0', lk && Array.isArray(lk[1].p_snapshot.rows) && lk[1].p_snapshot.rows.every((r) => r.reviewCount === 0) && lk[1].p_snapshot.rows.length === 3, lk && lk[1].p_snapshot.rows.map((r) => r.reviewCount));
+  /* 給与との行き来（2026-11-25）: 締めた月に「給与の画面でこの月分を計算する」（管理者）・頭の「給与へ」は今の月分 */
+  await page.waitForSelector('#g-main a[href="payroll.html?ym=' + YM + '"]', { timeout: 15000 }).catch(() => null);
+  t('締めた後: 「給与の画面でこの月分を計算する」が今の月分の給与へ', /給与の画面でこの月分を計算する/.test((await page.textContent('#g-main a[href="payroll.html?ym=' + YM + '"]').catch(() => '')) || ''));
+  t('頭の「給与へ」は管理者に出て、今の月分を渡す（44px 以上）', await page.isVisible('#g-to-pay') && await page.getAttribute('#g-to-pay', 'href') === 'payroll.html?ym=' + YM
+    && await page.evaluate(() => document.getElementById('g-to-pay').getBoundingClientRect().height >= 44));
+  await page.screenshot({ path: path.join(OUT, 'hop_close_locked_pc.png') });
 
   /* 日ごとの CSV（UTF-8） */
   await page.waitForSelector('[data-act="csv-day"], [data-act="csv"]', { timeout: 15000 }).catch(() => null);
@@ -242,6 +248,27 @@ try {
     t('v6 申請のタブ: 来月分の休暇の行「休暇: 特別休暇（慶弔・半日）」と「承認」「差し戻し」', /休暇: 特別休暇（慶弔・半日）/.test(rq) && (await pg.$('[data-act="rq-ok"]')) !== null && (await pg.$('[data-act="rq-ng"]')) !== null, rq.slice(0, 400));
     await pg.screenshot({ path: path.join(OUT, 'leave_request_pc.png') });
     t('v6 画面の例外 0', errs6.length === 0, errs6);
+    /* 給与からの行き来（2026-11-25）: ?ym=…&tab=close で来るとその月分の締めと出力のタブで開き、URL から消し、端末の月分・タブにも入れる */
+    const hp = await ctx6.newPage();
+    await hp.clock.setFixedTime(new Date('2026-01-14T10:00:00+09:00'));
+    const errsH = [];
+    hp.on('pageerror', (e) => errsH.push(String(e)));
+    await hp.goto(base + '/kintai.html?ym=2025-12&tab=close');
+    await hp.waitForSelector('[data-tab="close"][aria-selected="true"]', { timeout: 20000 });
+    await hp.waitForFunction(() => /月の締め/.test(document.getElementById('g-main').textContent), null, { timeout: 20000 });
+    t('給与から ?ym=2025-12&tab=close で来ると 12月分の締めと出力のタブで開く', await hp.inputValue('#g-ym') === '2025-12');
+    t('来た後は URL から消し、端末の月分・タブに入れる（再読み込みで同じ所）', await hp.evaluate(() => location.search === '' && localStorage.getItem('kintai_ym') === '2025-12' && localStorage.getItem('kintai_tab') === 'close'));
+    t('頭の「給与へ」も 12月分を渡す', await hp.getAttribute('#g-to-pay', 'href') === 'payroll.html?ym=2025-12');
+    await hp.click('#g-next');
+    await hp.waitForFunction(() => document.getElementById('g-ym').value === '2026-01', null, { timeout: 10000 });
+    t('月分を変えると「給与へ」の行き先も変わる', await hp.getAttribute('#g-to-pay', 'href') === 'payroll.html?ym=2026-01');
+    await hp.goto(base + '/kintai.html?ym=2025-13&tab=settings');
+    await hp.waitForSelector('[data-tab][aria-selected="true"]', { timeout: 20000 });
+    t('形の違う月分・決まっていないタブは捨てる（端末に残した月分・タブで開く）', await hp.inputValue('#g-ym') === YM6 && await hp.getAttribute('[data-tab][aria-selected="true"]', 'data-tab') === 'home' && await hp.evaluate(() => location.search === ''));
+    await hp.setViewportSize({ width: 390, height: 844 });
+    t('iPhone の幅: 頭に「給与へ」が入っても横はみ出し 0', await hp.evaluate(() => document.documentElement.scrollWidth - window.innerWidth) <= 0);
+    await hp.screenshot({ path: path.join(OUT, 'hop_header_iphone.png') });
+    t('給与からの行き来: 画面の例外 0', errsH.length === 0, errsH);
     await ctx6.close();
   }
 } finally {
