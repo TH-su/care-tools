@@ -2903,7 +2903,13 @@
         openLock(now, diff.join('・'));
         return;
       }
-      return rpc('kintai_month_lock', { p_ym: ym, p_snapshot: C.snapshotOf(month) }).then(okOr).then(function () { busy = false; closeDlg(); toast('締めました'); return load(false); }, function (e) { fail(e, '締め'); });
+      /* 段A2（2026-11-25）: 補助項目を読み直し、記号の組・通勤回数・会議の足し分を控えの最上段（ext）に入れる（行 rows は snapshotOf のまま）。読めない時は締めない */
+      return a2ExtForLock(d).then(function (ext) {
+        if (my !== gen) return;
+        var snap = C.snapshotOf(month);
+        snap.ext = ext;
+        return rpc('kintai_month_lock', { p_ym: ym, p_snapshot: snap }).then(okOr).then(function () { busy = false; closeDlg(); toast('締めました'); return load(false); }, function (e) { fail(e, '締め'); });
+      }, function (e) { if (my !== gen) return; fail(e, '締める時の補助項目の読み込み'); });
     }, function (e) { if (my !== gen) return; fail(e, '締める時の読み直し'); });
   }
   function unlockMonth(btn) {

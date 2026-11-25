@@ -483,7 +483,7 @@
     return out;
   }
   /* 確定できない警告（2026-11-21）: 率表・税額表・標準報酬が無い月は保険料・所得税を0円などで数えているので確定させない（最低賃金の未設定のような毎月の警告とは分ける） */
-  var BLOCK_WARN = { rate_missing: 1, emp_rate_missing: 1, tax_table_missing: 1, std_missing: 1 };
+  var BLOCK_WARN = { rate_missing: 1, emp_rate_missing: 1, tax_table_missing: 1, std_missing: 1, ext_missing: 1 };   /* ext_missing: 段A2（反証レビュー1回の3）・社内会議を時間外に足す設定なのに控えに補助項目が無い月分（画面だけで止める・データベースは止めない） */
   function blockWarns(list) { var out = []; list.forEach(function (it) { arr(it.warnings).forEach(function (w) { if (w && BLOCK_WARN[w.code]) out.push(it.name + '：' + (w.msg || w.code)); }); }); return out; }
   function openConfirm() {
     if (busy || !bs || status() !== 'draft' || dirty) return;

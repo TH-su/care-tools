@@ -66,6 +66,14 @@ console.log('\n— 3. 会議の時間の知らせ・入力の窓の案内 —');
   t('入力の窓: 時間外に足す会議の項目を選んだ時だけ案内（文は kintai-extras.js の MEETING_INPUT_HELP）', /'<p class="help" id="ex-meet-help" hidden>' \+ esc\(EX\.MEETING_INPUT_HELP \|\| ''\) \+ '<\/p>'/.test(K) && /if \(hp\) hp\.hidden = !\(mo && mo\.on && it && it\.code === mo\.code && tm\);/.test(K));
 }
 
+console.log('\n— 3b. 締めの控えに ext を入れる —');
+{
+  const go = sl(K, '  function lockGo(', '  function unlockMonth(');
+  t('締め: 数え直して窓の数字と同じ時だけ、補助項目を読み直して ext を作り、控え（snapshotOf のまま）の最上段に入れて送る', go.indexOf('return a2ExtForLock(d).then(function (ext) {') > go.indexOf('sameFigures(shown, now)') && /var snap = C\.snapshotOf\(month\);\s*snap\.ext = ext;\s*return rpc\('kintai_month_lock', \{ p_ym: ym, p_snapshot: snap \}\)/.test(go));
+  t('補助項目が読めない時は締めない（fail で窓に出す・世代が変われば捨てる）', /\}, function \(e\) \{ if \(my !== gen\) return; fail\(e, '締める時の補助項目の読み込み'\); \}\);/.test(go) && /a2_noextras: '補助項目が読めません。締めていません/.test(K));
+  t('関数の無い DB（0127 の前）で補助項目を保存していない時だけ、補助項目なしで数える', /if \(noDb\(e\) && !Array\.isArray\(cfg\.extraItems\)\) return EX\.buildExt\(month, \[\], d\.schedule \|\| \[\], cfg\);/.test(K));
+}
+
 console.log('\n— 4. 36協定の見張りに会議の分を足す —');
 {
   const src = sl(K, '  function row36(', '  /* その月分の36協定の判定');
@@ -141,6 +149,7 @@ const pend = [];
   }).then((rs) => {
     t('ext の無い控え: 補助項目を読まずに今までどおり比べる・期間の初日が 2026-12-16 以降で会議を足す設定なら extMissing の印（それより前は付けない）', rs[1].state === 'ok' && !rs[1].extMissing && rs[0].extMissing === true, rs);
   }));
+  t('確定を止める警告に ext_missing を入れる（画面だけで止める）', /var BLOCK_WARN = \{[^}]*\bext_missing: 1 \};/.test(J));
   const ca = sl(J, '  function computeAll()', '  function doCompute()');
   t('計算: 印のある月分は警告 ext_missing（文は仕様どおり）・明細の勤怠の欄に「うち社内会議」（表示だけ・額 0）', /if \(a && bs\.kcheck && bs\.kcheck\.extMissing\) it\.warnings = arr\(it\.warnings\)\.concat\(\[\{ code: 'ext_missing', msg: 'この月分の勤怠の控えに補助項目がありません。勤怠の締めを外して締め直してください' \}\]\);/.test(ca)
     && /\{ sec: 'att', code: 'meetingMin', name: 'うち社内会議（分）', qty: a\.meetingMin, unit: null, amount: 0/.test(ca));
