@@ -108,7 +108,7 @@ console.log('— 6. 画面の組み込み —');
   const iC = H.indexOf('kintai-cert-calc.js?v='), iV = H.indexOf('kintai-cert.js?v='), iJ = H.indexOf('kintai.js?v=');
   t('kintai.html は kintai-cert-calc.js → kintai-cert.js → kintai.js の順に ?v= つきで読む', iC > 0 && iV > iC && iJ > iV);
   t('タブのボタンを HTML に置かない（切の時は今の画面のまま）', !/data-tab="cert"/.test(H));
-  t('kintai.js: TABS の最後に cert・切や部品が無い時はホームへ', /'shaho', 'cert'\];/.test(J) && /if \(tab === 'cert' && data && !\(\(typeof CT !== 'undefined' && CT\) && CT\.on\(rawCfg\(\)\)\)\) tab = 'home';/.test(J));
+  t('kintai.js: TABS の社保の後に cert（代替休暇の daitai は cert の後）・切や部品が無い時はホームへ', /'shaho', 'cert'(?:, 'daitai')?\];/.test(J) && /if \(tab === 'cert' && data && !\(\(typeof CT !== 'undefined' && CT\) && CT\.on\(rawCfg\(\)\)\)\) tab = 'home';/.test(J));
   t('kintai.js: 部品が無い時は何もしない（CT はすべて typeof で確かめる）', (J.match(/\bCT\./g) || []).length > 0 && !/[^.\w]CT\s*&&|if \(CT\)|\bCT \?/.test(J.replace(/\(typeof CT !== 'undefined' && CT\)/g, '')));
   t('部品: 切の時は箱を出さず読みに行かない（homeBox の頭で on を見る）', /function homeBox\(ctx, boxHtml, waitBox\) \{\s*if \(!on\(ctx\.cfg\(\)\)\) return '';\s*load\(ctx, false\);/.test(V));
   t('部品: タブは入の時だけ足す', /if \(isOn && !b\)/.test(V) && /else if \(!isOn && b\) \{ b\.parentNode\.removeChild\(b\)/.test(V));

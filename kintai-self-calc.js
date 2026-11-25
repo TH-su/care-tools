@@ -83,7 +83,7 @@
     if (a.kind === 'swap') return a.role === 'off' ? '振替休日（働く日 ' + mdOf(a.link_date) + '）' : '振替で働く日（休む日 ' + mdOf(a.date) + '）';
     if (a.kind === 'hourly_paid') return '時間単位の有休 ' + ((+a.minutes || 0) / 60) + '時間';
     if (a.kind === 'special') {
-      var nm = String(a.type_code || '');
+      var nm = a.type_code === 'daitai' ? '代替休暇' : String(a.type_code || '');   /* 代替休暇（kintai-daitai.js の印・設定の種類には無い）は名前で出す */
       (types || []).forEach(function (x) { if (x && x.code === a.type_code && x.name) nm = x.name; });
       return '特別休暇「' + nm + '」' + (a.minutes != null ? '半日' : '') + (a.paid ? '' : '（無給）');
     }
@@ -266,7 +266,7 @@
   }
   /* 特別休暇の種類の名前（types は [{code, name}]・無い時は印のまま） */
   function typeName(code, types) {
-    var nm = String(code || '');
+    var nm = code === 'daitai' ? '代替休暇' : String(code || '');
     (types || []).forEach(function (x) { if (x && x.code === code && x.name) nm = x.name; });
     return nm;
   }
