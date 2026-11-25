@@ -28,7 +28,7 @@
 (function () {
   'use strict';
   var C = window.KintaiCalc, L = window.KintaiLeave, K36 = window.Kintai36, MON = window.KintaiMonitor, RUL = window.KintaiRules, EX = window.KintaiExtras;
-  var TABS = ['home', 'day', 'review', 'requests', 'grid', 'person', 'staff', 'leave', 'close', 'settings'];
+  var TABS = ['home', 'day', 'review', 'requests', 'grid', 'person', 'staff', 'leave', 'close', 'settings', 'shaho'];
   var LS_TAB = 'kintai_tab', LS_YM = 'kintai_ym';
   var gen = 0, view = 'boot', tab = 'home', ym = null, data = null, month = null, shiftInfo = null;
   var selDate = null, selStaff = null, onlyReview = false, role = null, busy = false, editsCache = null;
@@ -319,6 +319,13 @@
   function paintTabs() {
     var bs = document.querySelectorAll('.tabs button');
     for (var i = 0; i < bs.length; i++) bs[i].setAttribute('aria-selected', bs[i].getAttribute('data-tab') === tab ? 'true' : 'false');
+    var shTab = document.querySelector('.tabs button[data-tab="shaho"]');   /* 社保の知らせ: 入れた時だけタブを出す（札は要対応と注意の人数） */
+    if (shTab) {
+      var shv = data && shOn(); shTab.hidden = !shv;
+      var shr = shv ? shResult() : null, shn = $('g-sh-n'), shc = shr ? shr.counts.alert + shr.counts.warn : 0;
+      if (shn) shn.textContent = shc ? String(shc) : '';
+      shTab.setAttribute('aria-label', '社保' + (shr ? '（要対応と注意 ' + shc + ' 人）' : ''));
+    }
     var n = month && month.totals ? month.totals.reviewCount : 0, el = $('g-rv-n');
     if (el) {
       el.textContent = n ? String(n) : '';
@@ -347,13 +354,14 @@
     return '<div class="ph"><b>' + esc(corpName()) + '　勤怠 ' + esc(perLabel()) + '</b>　' + esc(sub) + '　<span>印刷した日時: <span class="ph-at">' + esc(nowText()) + '</span></span></div>';
   }
   function paint() {
+    if (tab === 'shaho' && data && !shOn()) tab = 'home';   /* 社保の知らせを切った時・切のまま覚えていたタブはホームへ（タブの札より先に） */
     paintTabs();
     var m = $('g-main');
     if (busy && !month) { m.innerHTML = '<p class="empty">読み込んでいます…</p>'; skel(m); m.setAttribute('aria-busy', 'true'); return; }
     m.removeAttribute('aria-busy');
     if (!month) return;
     if (!reqSumFresh()) loadReqSum(false);   /* v5 段5: 申請の承認待ちの数（タブの札・ホームの箱・締めの画面）。1分より古い時だけ・関数が無い時は聞かない */
-    var f = { home: paintHome, day: paintDay, review: paintReview, requests: paintRequests, grid: paintGrid, person: paintPerson, staff: paintStaff, leave: paintLeave, close: paintClose, settings: paintSettings }[tab];
+    var f = { home: paintHome, day: paintDay, review: paintReview, requests: paintRequests, grid: paintGrid, person: paintPerson, staff: paintStaff, leave: paintLeave, close: paintClose, settings: paintSettings, shaho: paintShaho }[tab];
     m.innerHTML = bands() + f();
     setInit = tab === 'settings' && $('g-set') ? settingsState() : null;   /* v5 C4: 描いた時の設定の入力（保存していない変更を確かめる） */
   }
@@ -516,7 +524,7 @@
       return { staff_id: s.staff_id, name: dispName(s), ob: x.sm.obligation, expiringDays: near ? soon.days : 0, expiringText: near ? dTxt(soon.days, s.staff_id) : '', expires: near ? soon.expires : null };   /* v5 段4: 有給の画面と同じ書き方の日数の文（半日きざみは「12.5 日」・時間単位の端数は「12 日 5 時間」） */
     });
   }
-  var BOX_UNIT = { today: '人', review: '件', a36: '人', leave: '人', close: '月分', rules: '人' };
+  var BOX_UNIT = { today: '人', review: '件', a36: '人', leave: '人', close: '月分', rules: '人', shaho: '人' };
   var LV_JA = { ok: 'なし', warn: '注意', alert: '要対応' };
   function boxHtml(b, attrs, body) {
     var rows = (b.rows || []).slice(0, 5).map(function (r) { return '<span class="hl">' + (r.name ? '<b>' + esc(r.name) + '</b> ' : '') + esc(r.text) + '</span>'; }).join('');
@@ -565,6 +573,7 @@
     });
     if (!reqSum || reqSum.ym !== ym) out.push(waitBox('申請の承認待ち', '読み込み中…', false));
     else if (reqSum.err) out.push(waitBox('申請の承認待ち', reqSum.err, false));
+    var shb = shBoxHtml(); if (shb) out.push(shb);   /* 社保の知らせ（入れた時だけ） */
     return h + '<h2 style="font-size:16px;margin:0 0 4px">' + esc(perLabel()) + 'のようす</h2><p class="help">箱を押すと、その一覧の画面へ移ります。今日・要確認・勤務の決まりは30秒ごとに読み直します。勤務の決まり（休憩・勤務の間・続けて働いた日）は知らせだけで、数えた時間は変えません。</p>' +
       '<div class="hgrid">' + out.join('') + '</div></div>';
   }
@@ -878,7 +887,7 @@
       if (my !== leaveGen) return;
       leaveBusy = false;
       /* v5 段2・3: ホーム・月の一覧・個人の月も、有給と36協定の箱・印をこの読み込みから出す */
-      if (view === 'app' && (tab === 'leave' || tab === 'home' || tab === 'grid' || tab === 'person') && !busy && !printAll) paint();
+      if (view === 'app' && (tab === 'leave' || tab === 'home' || tab === 'grid' || tab === 'person' || tab === 'shaho') && !busy && !printAll) paint();   /* 社保の知らせも同じ月分を使う */
       /* v5 C3: 開き直した窓に、保存していない入力（今の保存で使った欄を除く）を戻す（読み直しで黙って消さない） */
       if (dlgCtx && dlgCtx.mode === 'leave' && $('g-dlg').open) { var kp = dlgCtx.keep || null; openLeave(dlgCtx.sid); if (kp) dlgPut(kp); absKindShow(); }   /* v5 段4: 戻した休暇の種類に合う欄を出す */
     });
@@ -1357,6 +1366,7 @@
     h += '<label for="s-csvTime">CSV の時間の書き方</label><span><select id="s-csvTime"><option value="hmm"' + (c.csvTime === 'hmm' ? ' selected' : '') + '>8:30</option><option value="dec"' + (c.csvTime === 'dec' ? ' selected' : '') + '>8.50</option></select></span>';
     h += lvSetHtml();   /* v5 段4: 休暇と丸め（設定の欄の続き） */
     h += exSetHtml();   /* 段A1: 補助項目（関数が無い時は出さない） */
+    h += shSetHtml();   /* 社保の知らせ（部品が無い時は出さない） */
     h += '</form>' + a36Form() + '<div class="row"><button type="button" class="btn pri" data-act="save-set"' + (isAdmin() ? '' : ' disabled') + '>設定を保存する</button></div>' +
       '<p class="help">休憩の時間（日勤 ' + esc(c.breakH) + ' 時間・夜勤 ' + esc(c.nightBreakH) + ' 時間・拘束が ' + esc(c.breakThresholdH) + ' 時間を超えたら引く）はシフトアプリの設定を取り込んで使います（ここでは変えません）。丸めの決まり: 予定より早い出勤は予定の開始から、予定より遅い退勤は予定の終わりまで数えます。始業前・終業後に実際に働いた時は、その日を「直す」で早出・残業を認めてください（認めないまま切り捨てると賃金の未払いになります）。</p></div>';
     /* v5 1-5: 勤怠の管理者の名簿（管理者だけに出す・画面だけで印刷しない） */
@@ -1413,6 +1423,125 @@
   function settingsDirty() { return view === 'app' && tab === 'settings' && setInit != null && !!$('g-set') && settingsState() !== setInit; }
   /* タブ・月の切り替え・読み直しの前に、保存していない設定の変更を確かめる（窓の確かめ dirty とは別に持つ） */
   function settingsLeaveOk() { return !settingsDirty() || confirm('保存していない設定の変更があります。変更を捨てて移りますか？'); }
+
+  /* ── 社会保険の加入の知らせ（2026-11-25・ROOT-v7-plus-parity.md の段B・C・判定は kintai-shaho.js）──
+   * 設定の鍵 shaho（既定は切）。切の間はタブも箱も出さない（今の画面のまま）。入れると「社保」のタブとホームの箱を出す。
+   * 月分は有給・36協定と同じ読み込み（monthsBy）を使い、読めるまでは「読み込み中」。
+   * 給与の設定は、このログインで給与の鍵が開いている時だけ読める（payroll_bootstrap）。読めた時だけ加入済み・役員・月額の見込みに使い、
+   * 読めない時は覆いも暗証番号の窓も出さず「未判定」にする。読んだ答えはすぐ加入済みか・役員か・月額の見込みだけにし（ほかは捨てる）、10分で捨てる。端末に残さない。
+   * 月額は画面に「以上／未満」だけを出し、金額は出さない */
+  var KS = window.KintaiShaho, shPay = null, shPayBusy = false, shPayGen = 0;
+  var SH_PAY_TTL = 600000;
+  function shCfg() { return KS ? KS.fillConfig(rawCfg()) : null; }
+  function shOn() { var c = shCfg(); return !!(c && c.on); }
+  function shPlanOf() {
+    var o = {};
+    (month && month.people || []).forEach(function (p) { var f = KS.factsOf(month, p.staff.staff_id); if (f) o[p.staff.staff_id] = { min: f.planMin, days: f.planDays }; });
+    return o;
+  }
+  function shPayNow() { return shPay && shPay.ym === ym && Date.now() - shPay.at < SH_PAY_TTL ? shPay : null; }
+  function shPayLoad(force) {
+    if (!KS || shPayBusy || (!force && shPayNow())) return;
+    var my = ++shPayGen, at = Date.now(), y = ym; shPayBusy = true;
+    rpc('payroll_bootstrap', { p_ym: y }).then(function (r) {
+      if (r && r.ok === false) throw { payroll: r.error };
+      var d = KS.payDigest(r, shPlanOf()); r = null;
+      return d ? { digest: d } : { err: 'shape' };
+    })['catch'](function (e) {
+      if (!(e && (e.code === '42501' || e.payroll || noDb(e)))) note('社保の知らせ: 給与の設定の読み込み', e);
+      return { err: 'denied' };
+    }).then(function (x) {
+      shPayBusy = false;
+      if (my !== shPayGen) return;
+      shPay = { ym: y, at: at, digest: x.digest || null, err: x.err || null };
+      if (view === 'app' && (tab === 'shaho' || tab === 'home')) paint();
+    });
+  }
+  /* 判定の答え（月分が読めていない時は null） */
+  function shResult() {
+    if (!KS || !month || !leaveSt || leaveSt.err) return null;
+    var p = shPayNow();
+    return KS.judge({ cfg: shCfg(), curYm: ym, curOpen: notYet(), months: monthsBy(), pay: p && p.digest ? p.digest : null });
+  }
+  function shBoxHtml() {
+    if (!shOn()) return '';
+    shPayLoad(false);
+    if (leaveSt && leaveSt.err) return waitBox('社会保険の加入', '読み込めませんでした（' + leaveSt.err + '）', true);
+    var res = shResult();
+    if (!res) return waitBox('社会保険の加入', '読み込み中…（月分をさかのぼって読むため、少し時間がかかります）', false);
+    return boxHtml(KS.box(res), 'data-tab="shaho"');
+  }
+  var SH_LV = { alert: ['ng', '要対応'], warn: ['rv', '注意'], ok: ['ok', 'なし'], enrolled: ['ok', '加入済み'], exempt: ['ok', '対象外'] };
+  function shMonthCell(m) {
+    if (!m.have) return '<td class="num" data-l="' + esc(+m.ym.slice(5) + '月分') + '">読めていません</td>';
+    if (m.none) return '<td class="num" data-l="' + esc(+m.ym.slice(5) + '月分') + '">—</td>';
+    var wk = function (min) { return fm(Math.round(KS.weekMin(min))); };
+    return '<td class="num" data-l="' + esc(+m.ym.slice(5) + '月分') + '">' + (m.actHit ? '<b>' : '') + '実績 週' + wk(m.actMin) + '・' + esc(String(m.actDays)) + '日' + (m.actHit ? '</b>' : '') +
+      '<br><span class="raw">' + (m.planHit ? '<b>' : '') + '予定 週' + wk(m.planMin) + '・' + esc(String(m.planDays)) + '日' + (m.planHit ? '</b>' : '') + '</span></td>';
+  }
+  function paintShaho() {
+    var h = printHead('社会保険の加入') + '<div class="cd">';
+    if (L && !leaveSt && !leaveBusy) loadLeave(false);
+    shPayLoad(false);
+    var cfg = shCfg();
+    h += '<h2 style="font-size:16px;margin:0 0 4px">社会保険の加入の知らせ</h2><p class="help">基準: ' + esc(KS.describe(cfg)) + '。月の時間は年金機構の換算（月の時間×12÷52）で週へ直しています。' +
+      '実績が ' + cfg.months + ' か月続けて基準以上なら「要対応」（年金事務所の案内では、実際の労働時間が2か月続けて基準以上で、引き続き見込まれる時は3か月目から加入）、1か月だけ・予定だけが基準以上なら「注意」です。知らせだけで、加入の手続きと給与の計算は変えません。' +
+      '雇用の見込み（2か月を超えるか）・学生かどうかは見ていません。対象外の人（加入済み・役員・学生など）は「対象外にする」で外せます（管理者だけ）。基準は「設定」で直します。</p>';
+    if (leaveSt && leaveSt.err) return h + '<div class="band ng" role="alert">月分を読めませんでした（' + esc(leaveSt.err) + '）。<button type="button" class="btn sm" data-act="lv-reload">読み直す</button></div></div>';
+    var res = shResult();
+    if (!res) return h + '<p class="empty">読み込み中…（月分をさかのぼって読むため、少し時間がかかります）</p></div>';
+    var p = shPayNow();
+    h += '<div class="band' + (p && p.digest ? '' : ' warn') + ' no-print" role="status">' + (p && p.digest ? '給与の設定を読みました（加入済み・役員の人は外し、' + (cfg.mode === 'special' && cfg.wageMin > 0 ? '月額の見込みも見ています' : '月額は見ていません') + '）。'
+      : shPayBusy || !p ? '給与の設定を読んでいます…' : '給与の設定を読めないため、加入済みの人も並ぶことがあります' + (cfg.mode === 'special' && cfg.wageMin > 0 ? '（月額は未判定）' : '') + '。給与の画面で暗証番号を入れて開いた後に「給与の設定を読み直す」を押すと読みます。') +
+      ' <button type="button" class="btn sm" data-act="sh-pay">給与の設定を読み直す</button></div>';
+    var c = res.counts;
+    h += '<div class="chips" role="group" aria-label="社会保険の加入の知らせの数"><span class="chip">要対応 <b>' + c.alert + '</b></span><span class="chip">注意 <b>' + c.warn + '</b></span><span class="chip">なし <b>' + c.ok + '</b></span><span class="chip">加入済み <b>' + c.enrolled + '</b></span><span class="chip">対象外 <b>' + c.exempt + '</b></span></div>';
+    var head = '<tr><th class="nm">氏名</th><th>知らせ</th>' + res.yms.map(function (y) { return '<th class="num">' + esc(+y.slice(5) + '月分') + '</th>'; }).join('') + '<th class="num">' + esc(+res.next.slice(5) + '月分の予定') + '</th><th class="no-print"></th></tr>';
+    var body = res.people.map(function (r) {
+      var lv = SH_LV[r.level], cells = r.months.length ? r.months.map(shMonthCell).join('') : res.yms.map(function () { return '<td class="num">—</td>'; }).join('');
+      var nx = r.next ? '<td class="num" data-l="次の月分の予定">' + (r.next.planHit ? '<b>' : '') + '週' + fm(Math.round(KS.weekMin(r.next.planMin))) + '・' + esc(String(r.next.planDays)) + '日' + (r.next.planHit ? '</b>' : '') + '</td>' : '<td class="num" data-l="次の月分の予定">—</td>';
+      var ex = r.level === 'exempt' && r.why === '対象外にしています', canEx = r.level !== 'enrolled' && !(r.level === 'exempt' && !ex);
+      var btn = canEx ? '<button type="button" class="btn sm" data-act="sh-ex" data-sid="' + esc(r.staff_id) + '" data-on="' + (ex ? '0' : '1') + '"' + (isAdmin() ? '' : ' disabled') + '>' + (ex ? '対象外を戻す' : '対象外にする') + '</button>' : '';
+      return '<tr><td class="nm">' + esc(r.name) + '</td><td data-l="知らせ"><span class="tag ' + lv[0] + '">' + lv[1] + '</span> ' + esc(r.why) + '</td>' + cells + nx + '<td class="no-print">' + btn + '</td></tr>';
+    }).join('');
+    h += '<div class="tw"><table class="mt"><thead>' + head + '</thead><tbody>' + (body || '<tr><td class="empty" colspan="' + (res.yms.length + 4) + '">この月分の名簿に職員がいません</td></tr>') + '</tbody></table></div>';
+    h += '<p class="help">太字は基準以上の月です。実績は打刻から数えた月の実働（freee から取り込んだ月分は取り込んだ値）、予定はシフトの予定の実働です。今の月分は途中のため、まだ基準に届いていない時は前の月分から数えます。最終の判断は雇用契約と年金事務所の案内で確かめてください。</p></div>';
+    return h;
+  }
+  /* 対象外の一覧を1人足す・外す（設定の鍵 shaho.exempt だけを変えて、ほかの設定はそのまま送る・管理者だけ） */
+  function shExempt(sid, on, btn) {
+    if (busy || !isAdmin() || !KS || !sid) return;
+    if (settingsDirty()) { alert('保存していない設定の変更があります。先に設定を保存してください。'); return; }
+    var cur = rawCfg(), out = {}, k, sh = {}, s0 = cur.shaho && typeof cur.shaho === 'object' && !Array.isArray(cur.shaho) ? cur.shaho : {};
+    for (k in cur) out[k] = cur[k];
+    for (k in s0) sh[k] = s0[k];
+    var list = KS.fillConfig(cur).exempt.filter(function (x) { return x !== sid; });
+    if (on) list.push(sid);
+    sh.exempt = list; out.shaho = sh;
+    busy = true; var restore = pressBusy(btn, '保存しています…');
+    rpc('kintai_settings_put', { p_config: out, p_rev: (data.settings && data.settings.rev) || 0 }).then(okOr).then(function () { busy = false; toast(on ? '対象外にしました' : '対象外を戻しました'); return load(false); })['catch'](function (e) { busy = false; restore(); note('社保の対象外の保存', e); alert(msgOf(e)); });
+  }
+  /* 設定の欄（設定のタブ・#g-set の中・保存は「設定を保存する」） */
+  function shSetHtml() {
+    if (!KS) return '';
+    var c = shCfg(), n = function (id, v, w, st) { return '<input type="number" id="sh-' + id + '" value="' + esc(v) + '" step="' + (st || 'any') + '" style="width:' + (w || 7) + 'em">'; };
+    return '<div style="grid-column:1/-1" class="no-print"><h2 style="font-size:16px;margin:14px 0 8px">社会保険の加入の知らせ</h2><div class="kv">' +
+      '<label for="sh-on">知らせ</label><span><input type="checkbox" id="sh-on"' + (c.on ? ' checked' : '') + '> 使う（「社保」のタブとホームの箱を出す。知らせだけで、加入の手続きと給与の計算は変えません）</span>' +
+      '<label for="sh-mode">基準</label><span><select id="sh-mode"><option value="quarter"' + (c.mode === 'quarter' ? ' selected' : '') + '>4分の3基準（特定適用事業所でない時）</option><option value="special"' + (c.mode === 'special' ? ' selected' : '') + '>短時間労働者の要件（特定適用事業所の時）</option></select> ' +
+        '厚生年金の被保険者が51人以上の会社（特定適用事業所）は短時間労働者の要件、それ以外は4分の3基準です。法の改正で、2027年10月から36人以上の会社も短時間労働者の要件になります（そのあとも段階的に広がります）</span>' +
+      '<label for="sh-baseWeekH">通常の労働者の1週の所定労働時間</label><span>' + n('baseWeekH', c.baseWeekH) + ' 時間（4分の3基準で使う・就業規則の時間）</span>' +
+      '<label for="sh-baseMonthDays">通常の労働者の1月の所定労働日数</label><span>' + n('baseMonthDays', c.baseMonthDays) + ' 日（4分の3基準で使う）</span>' +
+      '<label for="sh-weekH">週の所定労働時間の基準</label><span>' + n('weekH', c.weekH) + ' 時間以上（短時間労働者の要件で使う）</span>' +
+      '<label for="sh-wageMin">月額の基準</label><span>' + n('wageMin', c.wageMin, 8, '1') + ' 円以上（短時間労働者の要件で使う・0＝見ない。月額8.8万円の要件は2026年10月1日に撤廃されたため、既定は0です。給与の設定を読める時だけ見ます）</span>' +
+      '<label for="sh-months">続けて超えた月数</label><span>' + n('months', c.months, 5, '1') + ' か月（この月数だけ実績が続けて基準以上なら「要対応」）</span>' +
+      '</div></div>';
+  }
+  /* 入れた値（欄が無い時は null＝今の設定のまま）。対象外の一覧は今のまま残す */
+  function readShSet() {
+    if (!KS || !$('sh-on')) return null;
+    return KS.readForm({ on: !!$('sh-on').checked, mode: $('sh-mode').value, weekH: $('sh-weekH').value, wageMin: $('sh-wageMin').value, months: $('sh-months').value,
+      baseWeekH: $('sh-baseWeekH').value, baseMonthDays: $('sh-baseMonthDays').value }, shCfg().exempt);
+  }
 
   /* ── 段A1（2026-11-25・凍結仕様 ROOT-v7-plus-parity.md「段A1」・統合 0127）: 日ごとの補助項目（移動距離・健診・社内会議など手で入れる項目）──
    * 項目の定義は設定の鍵 extraItems（設定のタブの「補助項目」で足す・名前と形を直す・止める。コードは変えない・消さない。保存は「設定を保存する」）。
@@ -2871,15 +3000,18 @@
     if (exs && exs.bad.length) { alert('補助項目の欄を入れ直してください: ' + exs.bad.join('、')); return; }
     /* 保存済みの項目の形を変える時は、ほかの月分の前の形の行が合計と CSV に数えられなくなることを確かめる（反証レビュー 2026-11-25） */
     var kc = exs ? exKindChanged(exs.items) : [];
+    var shs = typeof readShSet === 'function' ? readShSet() : null;
+    if (shs && shs.bad.length) { alert('社会保険の加入の知らせの欄を入れ直してください: ' + shs.bad.join('、')); return; }
     if (kc.length && !confirm('補助項目の形を変えます（' + kc.join('・') + '）。ほかの月分に前の形で入れた行があると、その行は合計と CSV に数えられなくなります（画面と書き出しで知らせます）。変えてよいですか？\n（安全なのは、今の項目を止めて、新しいコードで足すことです）')) return;
     /* この画面の欄が持たない今の設定の鍵（agreement36 など）は、そのまま残して送る（DB の kintai_settings_put は送った中身で丸ごと置き換えるため・v5 段3）。
        欄が持つ鍵は今までどおり欄の値だけ（空にした欄は送らず既定に戻す） */
-    var outCfg = {}, cur = rawCfg(), formKeys = SET_FIELDS.map(function (f) { return f[0]; }).concat(['close_day', 'variableMonth', 'monthRound30', 'csvTime', 'legal_holiday']).concat(lvs ? LV_SET_KEYS : []).concat(exs ? ['extraItems'] : []);
+    var outCfg = {}, cur = rawCfg(), formKeys = SET_FIELDS.map(function (f) { return f[0]; }).concat(['close_day', 'variableMonth', 'monthRound30', 'csvTime', 'legal_holiday']).concat(lvs ? LV_SET_KEYS : []).concat(exs ? ['extraItems'] : []).concat(shs ? ['shaho'] : []);
     for (k in cur) if (formKeys.indexOf(k) < 0) outCfg[k] = cur[k];
     for (k in cfg) outCfg[k] = cfg[k];
     if (a36.obj) outCfg.agreement36 = a36.obj;
     if (lvs) for (k in lvs.vals) outCfg[k] = lvs.vals[k];
     if (exs) outCfg.extraItems = exs.items;
+    if (shs) outCfg.shaho = shs.vals;
     busy = true; var restore = pressBusy(btn, '保存しています…');
     rpc('kintai_settings_put', { p_config: outCfg, p_rev: (data.settings && data.settings.rev) || 0 }).then(okOr).then(function () { busy = false; sync('設定を保存しました'); toast('設定を保存しました'); return load(false); })['catch'](function (e) { busy = false; restore(); note('設定の保存', e); alert(msgOf(e)); });
   }
@@ -3522,6 +3654,8 @@
       else if (a === 'dname-go') saveDispName(b);
       else if (a === 'lv-open') openLeave(b.getAttribute('data-sid'));
       else if (a === 'lv-reload') { leaveSt = null; loadLeave(true); paint(); }
+      else if (a === 'sh-pay') { shPay = null; shPayLoad(true); paint(); }
+      else if (a === 'sh-ex') shExempt(b.getAttribute('data-sid'), b.getAttribute('data-on') === '1', b);
       else if (a === 'lv-use-add' || a === 'lv-use-void' || a === 'lv-grant-add' || a === 'lv-grant-void' || a === 'lv-prof-save' || a === 'lv-abs-add' || a === 'lv-abs-void') leaveAct(a, b);
       else if (a === 'lv-ledger') printLedger();
       else if (a === 'lt-add') ltAddRow();

@@ -69,6 +69,7 @@
 !/check/kintai_freee_payroll_e2e.mjs
 # 勤怠の日ごとの補助項目の通し試験（2026-11-25・統合 0127・関数の無い時と有る時・通信は全部偽物・架空の職員）
 !/check/kintai_extras_e2e.mjs
+!/check/kintai_shaho_e2e.mjs
 # 給与の画面の通し試験と撮影（2026-11-19・偽のデータベースと偽の部品・架空の職員10人）
 !/check/payroll_e2e.mjs
 # 業務の流れを通す試験（2026-11-02・入居者マスタ→各画面・行き来の帯・週間計画→ワースケ・俯瞰・現場の守り。材料は check/fixtures/flow.mjs）
@@ -183,6 +184,7 @@
 !/kintai-rules.js
 !/kintai-freee-import.js
 !/kintai-extras.js
+!/kintai-shaho.js
 !/kintai-ledger.js
 # 職員本人のスマホの勤怠の画面と純関数（2026-11-20・勤怠 v5 の段5・care-backend 統合 0114）。コードのみ公開。端末に置くのは鍵（受け口が作った乱数）とタブの印だけで、
 # 暗証番号・勤怠・有給・申請・表示名はメモリだけ。読み書きは受け口 kintai-self（service_role の本人の口）だけ
