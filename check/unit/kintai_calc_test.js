@@ -538,5 +538,47 @@ console.log('\n— 9. v4 手で入れた有休の使用（leave_uses・L8） —
   t('同じ人・同じ日の2行目は数えない（DB も1行だけ）', dayOf(m3, 'sT01', '2026-12-12').paidDays === 1);
 }
 
+console.log('\n— 10. freee の打刻で見つけた組み方の直し（2026-11-25） —');
+{
+  /* 同じ分の退勤と出勤: 訪問の合間に 10:30 退勤・10:30 出勤（打刻の並びは出勤が先でも） */
+  const s = sched({}, { 8: '9-17' }).rows;
+  const m = month(s, [
+    P('sT02', 'in', '2026-12-08', '9:30'), P('sT02', 'in', '2026-12-08', '10:30'), P('sT02', 'out', '2026-12-08', '10:30'), P('sT02', 'out', '2026-12-08', '12:00')
+  ]);
+  const d = dayOf(m, 'sT02', '2026-12-08');
+  t('同じ分の退勤と出勤は退勤を先に組む（9:30-10:30＋10:30-12:00＝150分・漏れの印なし）', d.workMin === 150 && !d.blocks[0].flags.includes('missing_out') && !d.blocks[0].flags.includes('missing_in'), [d.workMin, d.blocks[0].flags]);
+  /* 分割の予定を1組で通した日 */
+  const s2 = sched({ 4: '7-9 17-21' }).rows;
+  const m2 = month(s2, [P('sT01', 'in', '2026-12-04', '6:31'), P('sT01', 'out', '2026-12-04', '21:10')]);
+  const d2 = dayOf(m2, 'sT01', '2026-12-04');
+  t('分割の予定 7-9・17-21 を 6:31〜21:10 の1組で通した日は 2h＋4h（間は数えない）', d2.blocks.length === 2 && d2.blocks[0].workMin === 120 && d2.blocks[1].workMin === 240, d2.blocks.map((b) => [b.workMin, b.flags]));
+  t('その日は漏れの印を出さない・打刻は前の塊に出勤・後ろの塊に退勤', d2.blocks.every((b) => !b.flags.includes('missing_out') && !b.flags.includes('missing_in')) && d2.blocks[0].punches.length === 1 && d2.blocks[0].punches[0].kind === 'in' && d2.blocks[1].punches.length === 1 && d2.blocks[1].punches[0].kind === 'out', d2.blocks.map((b) => b.punches.map((q) => q.kind)));
+  t('前の塊は予定の終わり 9:00 まで・後ろの塊は予定の始まり 17:00 から数える', C.jstHM(d2.blocks[0].countEnd) === '09:00' && C.jstHM(d2.blocks[1].countStart) === '17:00', d2.blocks.map((b) => [C.jstHM(b.countStart), C.jstHM(b.countEnd)]));
+  /* 今までどおりの道: 分割の予定でそれぞれ打刻した日は変わらない／退勤漏れ＋翌日の出勤漏れ（別の日の塊）は割る */
+  const m3 = month(s2, [P('sT01', 'in', '2026-12-04', '6:58'), P('sT01', 'out', '2026-12-04', '9:01'), P('sT01', 'in', '2026-12-04', '16:59'), P('sT01', 'out', '2026-12-04', '21:00')]);
+  t('分割の予定でそれぞれ打刻した日は今までどおり 2h＋4h', dayOf(m3, 'sT01', '2026-12-04').blocks.map((b) => b.workMin).join() === '120,240');
+  const s4 = sched({ 1: '早', 2: '早' }).rows;
+  const m4 = month(s4, [P('sT01', 'in', '2026-12-01', '7:00'), P('sT01', 'out', '2026-12-02', '16:00')]);
+  t('別の日の塊にまたがる組は今までどおり割る（1日目は退勤漏れ・2日目は出勤漏れ）', dayOf(m4, 'sT01', '2026-12-01').blocks[0].flags.includes('missing_out') && dayOf(m4, 'sT01', '2026-12-02').blocks[0].flags.includes('missing_in'));
+  /* 反証レビュー（2026-11-25）の指摘の試験 */
+  const iso4 = (hm) => new Date(at('2026-12-04', hm)).toISOString();
+  const m5 = month(s2, [P('sT01', 'in', '2026-12-04', '6:00'), P('sT01', 'out', '2026-12-04', '21:50')], [{ staff_id: 'sT01', work_date: '2026-12-04', early_from: iso4('6:00'), ot_until: iso4('21:50') }]);
+  const d5 = dayOf(m5, 'sT01', '2026-12-04');
+  t('1組で通した日も時刻で認めた早出・残業が効く（6:00-9:00＋17:00-21:50＝470分・早出/残業の印なし）', d5.workMin === 470 && d5.blocks.every((b) => !b.flags.includes('early') && !b.flags.includes('overtime')), d5.blocks.map((b) => [b.workMin, b.flags]));
+  const sE = sched({ 9: '早' }).rows;
+  const sec = (hm, s) => new Date(at('2026-12-09', hm) + s * 1000).toISOString();
+  const m6 = month(sE, [P('sT01', 'in', '2026-12-09', '7:00'), P('sT01', 'out', '2026-12-09', '16:00'), Object.assign(P('sT01', 'in', '2026-12-09', '16:20'), { at: sec('16:20', 10) }), Object.assign(P('sT01', 'out', '2026-12-09', '16:20'), { at: sec('16:20', 40) })]);
+  t('秒まである打刻は本当の順番で組む（16:20:10 出勤・16:20:40 退勤の押し直しに漏れの印を出さない）', dayOf(m6, 'sT01', '2026-12-09').blocks.every((b) => !b.flags.includes('missing_in') && !b.flags.includes('missing_out')), dayOf(m6, 'sT01', '2026-12-09').blocks.map((b) => b.flags));
+  const m7 = month(s2, [P('sT01', 'in', '2026-12-04', '8:00'), P('sT01', 'out', '2026-12-04', '18:00')]);
+  const d7f = dayOf(m7, 'sT01', '2026-12-04').blocks;
+  t('塊の途中の出勤・退勤（8:00-18:00）は今までどおり割って漏れの印を出す', d7f[0].flags.includes('missing_out') && d7f[1].flags.includes('missing_in'), d7f.map((b) => b.flags));
+  const s8 = s2.map((r) => r.staff_id === 'sT01' && r.work_date === '2026-12-04' && /T17:00/.test(new Date(Date.parse(r.start_at) + 9 * 3600e3).toISOString()) ? Object.assign({}, r, { kind: 'night', end_at: '2026-12-05T09:00:00+09:00' }) : r);
+  const m8 = month(s8, [P('sT01', 'in', '2026-12-04', '6:31'), P('sT01', 'out', '2026-12-04', '21:10')]);
+  t('片方が夜勤の塊の日は割る直しを当てない（漏れの印を出す）', dayOf(m8, 'sT01', '2026-12-04').blocks.some((b) => b.night) && dayOf(m8, 'sT01', '2026-12-04').blocks.some((b) => b.flags.includes('missing_out') || b.flags.includes('missing_in')), dayOf(m8, 'sT01', '2026-12-04').blocks.map((b) => [b.night, b.flags]));
+  const s9 = sched({ 4: '7-9 12-13 17-21' }).rows;
+  const m9 = month(s9, [P('sT01', 'in', '2026-12-04', '6:55'), P('sT01', 'out', '2026-12-04', '21:05')]);
+  t('間に別の塊がある日は今までどおり割る', dayOf(m9, 'sT01', '2026-12-04').blocks.length === 3 && dayOf(m9, 'sT01', '2026-12-04').blocks.some((b) => b.flags.includes('missing_out') || b.flags.includes('missing_in')), dayOf(m9, 'sT01', '2026-12-04').blocks.map((b) => b.flags));
+}
+
 console.log(`\n${pass} 件合格 / ${fail} 件不合格`);
 process.exit(fail ? 1 : 0);
