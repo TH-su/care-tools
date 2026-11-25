@@ -56,7 +56,7 @@ async function open(opt = {}) {
   });
   const logs = [];
   page.on('console', (m) => { if (m.type() === 'log' || m.type() === 'info') logs.push(m.text()); });
-  await page.goto(srv.url + '/payroll.html');
+  await page.goto(srv.url + '/' + (opt.path || 'payroll.html'));   /* path: 勤怠管理から来た形（payroll.html?ym=…）で開く時だけ（2026-11-25） */
   return { ctx, page, routes, errors, outside, logs };
 }
 /* 画面の中の窓（su-dialog.js）に答える。開いてすぐの押下は受けないので少し待ってから押す。出た文を返す（窓が出なければ ''） */
@@ -1009,6 +1009,33 @@ console.log('\n— 7. 賞与のタブ —');
   await shot(q.page, 'payroll.bonus-run.ph');
   t('賞与（iPhone の幅）: 画面のエラー 0', q.errors.length === 0, q.errors);
   await q.ctx.close();
+}
+
+/* ── 勤怠管理との行き来（2026-11-25 本人指示）: ?ym= で来た月分で開き、URL から消し、「勤怠管理へ」は今の月分の締めと出力のタブへ ── */
+{
+  console.log('\n— 勤怠管理との行き来 —');
+  const h = await open({ path: 'payroll.html?ym=2026-10' });
+  await h.page.waitForFunction(() => !document.getElementById('p-app').hidden && document.getElementById('p-main').textContent.length > 0, null, { timeout: 15000 });
+  t('勤怠管理から ?ym=2026-10 で来ると 2026年10月分で開く（今日は11月）', await h.page.inputValue('#p-ym') === '2026-10');
+  t('来た後は URL から月分を消す（再読み込みは今までどおり今月）', await h.page.evaluate(() => location.search) === '');
+  t('月分は端末に残さない', await h.page.evaluate(() => Object.keys(localStorage).filter((k) => /^payroll/.test(k) && k !== 'payroll_tab')) .then((x) => x.length === 0));
+  t('頭の「勤怠管理へ」は 10月分の締めと出力のタブへ', /\/?kintai\.html\?ym=2026-10&tab=close$/.test(await h.page.getAttribute('#p-to-kin', 'href')), await h.page.getAttribute('#p-to-kin', 'href'));
+  await h.page.click('#p-next');
+  await h.page.waitForFunction(() => document.getElementById('p-ym').value === '2026-11', null, { timeout: 10000 });
+  t('月分を変えると「勤怠管理へ」の行き先も変わる', /kintai\.html\?ym=2026-11&tab=close$/.test(await h.page.getAttribute('#p-to-kin', 'href')), await h.page.getAttribute('#p-to-kin', 'href'));
+  t('「勤怠管理へ」は 44px 以上の押す所', await h.page.evaluate(() => document.getElementById('p-to-kin').getBoundingClientRect().height >= 44));
+  await shot(h.page, 'payroll.hop.pc', false);
+  t('行き来の場面: 画面のエラー 0', h.errors.length === 0, h.errors);
+  await h.ctx.close();
+  const b = await open({ path: 'payroll.html?ym=2026-1x' });
+  await b.page.waitForFunction(() => !document.getElementById('p-app').hidden && document.getElementById('p-main').textContent.length > 0, null, { timeout: 15000 });
+  t('形の違う ?ym は捨てて今月（11月分）で開く', await b.page.inputValue('#p-ym') === '2026-11' && await b.page.evaluate(() => location.search) === '');
+  await b.ctx.close();
+  const ph = await open({ path: 'payroll.html?ym=2026-10', viewport: { width: 390, height: 844 } });
+  await ph.page.waitForFunction(() => !document.getElementById('p-app').hidden && document.getElementById('p-main').textContent.length > 0, null, { timeout: 15000 });
+  t('iPhone の幅: 頭に「勤怠管理へ」が入っても横はみ出し 0', await ph.page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth) <= 0);
+  await shot(ph.page, 'payroll.hop.ph', false);
+  await ph.ctx.close();
 }
 
 await browser.close();
