@@ -1623,7 +1623,20 @@
   }
   function dtResult() {
     if (!DT || !month || !leaveSt || leaveSt.err) return null;
-    return DT.ledger({ cfg: dtCfg(), months: dtMonths(), absences: leaveSt.absences || [], today: today(), dayMinOf: staffDayMin });
+    return DT.ledger({ cfg: dtCfg(), months: dtMonths(), absences: leaveSt.absences || [], today: today(), dayMinOf: staffDayMin, dayNeedOf: dtDayNeed });
+  }
+  /* 1日の代替休暇の分＝月の計算が有給の特別休暇の1日に払う時間（その日の予定の実働・無ければ設定の1日の時間＝kintai-calc.js と同じ・反証レビュー 2026-11-25）。読めていない日は null（人の1日の時間） */
+  function dtDayNeed(sid, date) {
+    var by = monthsBy(), y, mm;
+    for (y in by) {
+      mm = by[y];
+      if (!mm || !mm.period || date < mm.period.from || date > mm.period.to) continue;
+      var p = (mm.people || []).filter(function (x) { return x.staff && x.staff.staff_id === sid; })[0];
+      var d = p && (p.days || []).filter(function (x) { return x.date === date; })[0];
+      if (d && d.schedWorkMin > 0) return d.schedWorkMin;
+      return C.fillConfig(mm.config || rawCfg()).dayHours * 60;
+    }
+    return null;
   }
   function dtBoxHtml() {
     if (!dtOn()) return '';
@@ -1634,7 +1647,7 @@
     b.rows = b.rows.map(function (r) { return { name: nameOf(r.staff_id), text: r.text }; });
     return boxHtml(b, 'data-tab="daitai"');
   }
-  var DT_ST = { open: ['ok', '取れる'], soon: ['rv', '期限が近い'], expired: ['ng', '期限切れ'], used: ['ok', '使い切り'], wait: ['', 'これから'], none: ['', '—'] };
+  var DT_ST = { open: ['ok', '取れる'], soon: ['rv', '期限が近い'], expired: ['ng', '期限切れ'], used: ['ok', '使い切り'], wait: ['', 'これから'], none: ['', '—'], small: ['', '単位に満たない（割増で払う）'] };
   function paintDaitai() {
     var h = printHead('代替休暇') + '<div class="cd">';
     if (L && !leaveSt && !leaveBusy) loadLeave(false);
@@ -1642,7 +1655,8 @@
     h += '<h2 style="font-size:16px;margin:0 0 4px">代替休暇（月60時間を超えた時間外の割増の代わりの休み）</h2><p class="help">' + esc(DT.describe(cfg)) + '。' +
       '与えられる時間は（月の時間外 − 60時間）× 換算率で、締めた月分は締めた時の値、締めていない終わった月分は今の数えた値（仮）です。取るかは本人が決めます。' +
       '取った日は有給の特別休暇（代替休暇）として入り、月の計算では通常の賃金を払う休みになります。取った時間 ÷ 換算率の時間は、引き上げ分の割増が要らなくなります（下の「割増に代えた時間」）。' +
-      '取らなかった分・期限が過ぎた分は割増で払います。給与の計算にはまだつないでいません。労使協定と就業規則に決めた時だけ使ってください。設定は「設定」で直します。</p>';
+      '取らなかった分・期限が過ぎた分・取れる単位（半日）に満たない残りは割増で払います。1日の分は、その日の予定の実働（予定が無ければ設定の1日の時間）です。期限切れの知らせは期限から ' + DT.EXPIRED_SHOW + ' 日まで出します。' +
+      '換算率・期間を変えると、締めた月分の付与と期限も今の設定で数え直します（変えるのは協定を変えた時だけにしてください）。給与の計算にはまだつないでいません。労使協定と就業規則に決めた時だけ使ってください。設定は「設定」で直します。</p>';
     if (leaveSt && leaveSt.err) return h + '<div class="band ng" role="alert">月分を読めませんでした（' + esc(leaveSt.err) + '）。<button type="button" class="btn sm" data-act="lv-reload">読み直す</button></div></div>';
     var res = dtResult();
     if (!res) return h + '<p class="empty">読み込み中…（月分をさかのぼって読むため、少し時間がかかります）</p></div>';
@@ -1667,7 +1681,7 @@
       (gRows.join('') || '<tr><td class="empty" colspan="9">月60時間を超えた月分はありません</td></tr>') + '</tbody></table></div>';
     h += '<h3 style="font-size:15px;margin:14px 0 6px">取った代替休暇</h3><div class="tw"><table class="mt dt-t"><thead><tr><th class="nm">氏名</th><th>休んだ日</th><th>単位</th><th>当てた月分</th><th>確かめ</th><th class="no-print"></th></tr></thead><tbody>' +
       (uRows.join('') || '<tr><td class="empty" colspan="6">まだ取っていません</td></tr>') + '</tbody></table></div>';
-    var opts = res.people.filter(function (p) { return p.remainMin > 0; }).map(function (p) { return '<option value="' + esc(p.staff_id) + '">' + esc(nameOf(p.staff_id)) + '（残り ' + hm(p.remainMin) + '）</option>'; }).join('');
+    var opts = res.people.filter(function (p) { return p.remainMin > 0 && p.grants.some(function (g) { return g.state === 'open' || g.state === 'soon' || g.state === 'wait'; }); }).map(function (p) { return '<option value="' + esc(p.staff_id) + '">' + esc(nameOf(p.staff_id)) + '（残り ' + hm(p.remainMin) + '）</option>'; }).join('');
     var un = cfg.units;
     h += '<h3 style="font-size:15px;margin:14px 0 6px" class="no-print">代替休暇を入れる</h3>' + (opts ? '<div class="kv no-print">' +
       '<label for="dt-sid">職員</label><span><select id="dt-sid">' + opts + '</select></span>' +
@@ -1683,7 +1697,7 @@
     if (!res || !msg) return;
     var sid = $('dt-sid').value, date = $('dt-date').value, half = $('dt-len').value === '0.5', note0 = ($('dt-note').value || '').trim();
     var p = res.people.filter(function (x) { return x.staff_id === sid; })[0] || null;
-    var ng = DT.checkTake(p, cfg, date, half, today(), absMaxDate());
+    var ng = DT.checkTake(p, cfg, date, half, today(), absMaxDate(), half ? null : dtDayNeed(sid, date));
     if (ng) { msg.textContent = ng; return; }
     var dmin = staffDayMin(sid);
     if (paidMinOn(sid, date, dmin) + (half ? dmin / 2 : dmin) > dmin) { msg.textContent = ABS_OVER; return; }
@@ -1723,14 +1737,13 @@
       '<label for="dt-rateYes">取った時の割増率</label><span>' + n('rateYes', c.rateYes) + ' %（法では25%以上。換算率は2つの差）</span>' +
       '<label for="dt-units">単位</label><span><select id="dt-units">' + u('both', '1日か半日') + u('day', '1日だけ') + u('half', '半日だけ') + '</select>（半日は1日の時間の半分）</span>' +
       '<label for="dt-months">取れる期間</label><span>' + n('months', c.months, 4) + ' か月（60時間を超えた月分の終わりの翌日から・法では2か月以内）</span>' +
-      '<label for="dt-combine">足りない時</label><span><input type="checkbox" id="dt-combine"' + (c.combine ? ' checked' : '') + '> ほかの有給の休暇と合わせて1日・半日にする（協定で決めた時だけ。割増に代えられるのは代替休暇の分だけ）</span>' +
       '<label for="dt-warnDays">期限の知らせ</label><span>' + n('warnDays', c.warnDays, 4) + ' 日前から「期限が近い」を出す</span>' +
       '</div></div>';
   }
   function readDtSet() {
     if (!DT || !$('dt-on')) return null;
     return DT.readForm({ on: !!$('dt-on').checked, rateNo: $('dt-rateNo').value, rateYes: $('dt-rateYes').value, units: $('dt-units').value, months: $('dt-months').value,
-      combine: !!$('dt-combine').checked, warnDays: $('dt-warnDays').value });
+      warnDays: $('dt-warnDays').value });
   }
 
   /* ── 段A1（2026-11-25・凍結仕様 ROOT-v7-plus-parity.md「段A1」・統合 0127）: 日ごとの補助項目（移動距離・健診・社内会議など手で入れる項目）──

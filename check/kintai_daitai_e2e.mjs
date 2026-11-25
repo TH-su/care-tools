@@ -7,7 +7,7 @@
  *   2. 設定で入れて保存: daitai が送られ、ほかの設定の鍵は残る → タブとホームの箱が出る
  *   3. 一覧: 締めた 2025年12月分の60時間超（一郎 20時間・二美 8時間）から 5:00・2:00 を与え、期限は 2026/2/28（月末締め）
  *   4. 入れる: 一郎の半日 → kintai_absence_add に有給の特別休暇・印 daitai・半日の分。読み直すと「取った代替休暇」に出て残りが 1:00
- *      二美の1日は残りが足りず、送らずに断る。取り消す → kintai_absence_void に理由
+ *      二美の 2:00 と一郎の残り 1:00 は半日に満たず「取れない」（候補に出さない）。取り消す → kintai_absence_void に理由
  *   5. 特別休暇の種類に印 daitai を入れると保存しない
  *   6. 切に戻すとタブも箱も消える・iPhone の幅（390px）で横にはみ出さない・暗い表示で撮る（check/out/kintai_daitai/）
  * ★架空データだけ（CLAUDE.md §2-1）。
@@ -104,7 +104,7 @@ try {
     t('ホームに代替休暇の箱が無い', !(await page.$('.hbox[data-tab="daitai"]')));
     await page.click('[data-tab="settings"]');
     await page.waitForSelector('#dt-on', { timeout: 15000 });
-    t('設定の欄は切・50%・25%・1日か半日・2か月・合わせない・14日', !(await page.isChecked('#dt-on')) && (await page.inputValue('#dt-rateNo')) === '50' && (await page.inputValue('#dt-rateYes')) === '25' && (await page.inputValue('#dt-units')) === 'both' && (await page.inputValue('#dt-months')) === '2' && !(await page.isChecked('#dt-combine')) && (await page.inputValue('#dt-warnDays')) === '14');
+    t('設定の欄は切・50%・25%・1日か半日・2か月・14日', !(await page.isChecked('#dt-on')) && (await page.inputValue('#dt-rateNo')) === '50' && (await page.inputValue('#dt-rateYes')) === '25' && (await page.inputValue('#dt-units')) === 'both' && (await page.inputValue('#dt-months')) === '2' && (await page.inputValue('#dt-warnDays')) === '14');
 
     console.log('\n— 5. 特別休暇の種類に印 daitai —');
     const nPut0 = sentOf(st, 'kintai_settings_put').length;
@@ -132,7 +132,8 @@ try {
     await waitList(page);
     const g = await rowsOf(page, 0), g1 = g.find((x) => x.indexOf('見本 一郎') >= 0) || '', g2 = g.find((x) => x.indexOf('見本 二美') >= 0) || '';
     t('一郎: 12月分 60時間超 20:00 → 与えられる 5:00・期限 2026/2/28', /12月分/.test(g1) && /20:00/.test(g1) && /5:00/.test(g1) && /2026\/1\/1〜2026\/2\/28/.test(g1), g1);
-    t('二美: 8:00 → 2:00', /8:00/.test(g2) && /2:00/.test(g2), g2);
+    t('二美: 8:00 → 2:00 は半日に満たず「単位に満たない（割増で払う）」', /8:00/.test(g2) && /2:00/.test(g2) && /単位に満たない/.test(g2), g2);
+    t('入れる人の候補は一郎だけ（二美は取れない）', JSON.stringify(await page.$$eval('#dt-sid option', (os) => os.map((o) => o.value))) === '["sK01"]');
     t('60時間を超えない三太は出ない', !g.some((x) => x.indexOf('見本 三太') >= 0));
     await page.screenshot({ path: path.join(OUT, 'list_pc.png'), fullPage: true });
 
@@ -143,19 +144,13 @@ try {
     await page.click('[data-act="dt-add"]');
     await page.waitForFunction(() => /代替休暇を入れました/.test(document.getElementById('g-toast').textContent), null, { timeout: 15000 });
     const add = sentOf(st, 'kintai_absence_add').slice(-1)[0], a = add && add[1];
-    t('送る: 有給の特別休暇・印 daitai・半日の分', a && a.p_kind === 'special' && a.p_type_code === 'daitai' && a.p_paid === true && a.p_minutes > 0 && a.p_date === '2026-01-20' && a.p_staff_id === 'sK01', a);
+    t('送る: 有給の特別休暇・印 daitai・半日の分', a && a.p_kind === 'special' && a.p_type_code === 'daitai' && a.p_paid === true && a.p_minutes === 240 && a.p_date === '2026-01-20' && a.p_staff_id === 'sK01', a);
     await page.waitForFunction(() => /取った代替休暇/.test(document.getElementById('g-main').textContent) && document.querySelectorAll('#g-main table.dt-t')[1] && document.querySelectorAll('#g-main table.dt-t')[1].querySelector('[data-act="dt-void"]'), null, { timeout: 30000 });
     const u = await rowsOf(page, 1), u1 = u.find((x) => x.indexOf('見本 一郎') >= 0) || '';
     t('取った代替休暇に半日が出て、12月分から当てる', /半日/.test(u1) && /12月分/.test(u1) && /よい/.test(u1), u1);
     const g1b = (await rowsOf(page, 0)).find((x) => x.indexOf('見本 一郎') >= 0) || '';
     t('一郎は使った 4:00・残り 1:00・割増に代えた時間 16:00（半日 4時間÷25%）', /4:00\s*1:00\s*16:00/.test(g1b), g1b);
-    const nAdd = sentOf(st, 'kintai_absence_add').length;
-    await page.selectOption('#dt-sid', 'sK02');
-    await page.fill('#dt-date', '2026-01-21');
-    await page.selectOption('#dt-len', '1');
-    await page.click('[data-act="dt-add"]');
-    await page.waitForFunction(() => /残りが足りません/.test((document.getElementById('dt-msg') || {}).textContent || ''), null, { timeout: 10000 });
-    t('二美の1日は残りが足りず、送らずに断る', sentOf(st, 'kintai_absence_add').length === nAdd);
+    t('一郎の残り 1:00 も半日に満たず、入れる人がいなくなる', /残りのある人がいません/.test(await mainText(page)));
     await page.click('#g-main [data-act="dt-void"]');
     await answerPrompt(page, '記入の誤り（試験）');
     await page.waitForFunction(() => /代替休暇を取り消しました/.test(document.getElementById('g-toast').textContent), null, { timeout: 15000 });
