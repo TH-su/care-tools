@@ -175,12 +175,22 @@ t('時間の書き方が 8.50 の時は 1.50', EX.splitCsv(dec.text).find((r) =>
 const evil = [{ code: 'e', name: '=1+2,"x"', kind: 'count', unit: '', decimals: 0 }];
 const ev = EX.splitCsv(EX.appendCsv(res.summary, 'sum', { people, items: evil, sums: { byStaff: {}, byDay: {} } }).text)[0].cells.slice(-1)[0];
 t('項目の名前が式やカンマでも、見出しは csvCell と同じ守り（先頭に \' ・引用符で囲む）', ev === "'=1+2,\"x\"（回）", ev);
-/* 同じ従業員コードが2人（ありえないが落ちない）: 並びの順に結ぶ */
-const twin = [{ staff_id: 'a', emp_code: '1' }, { staff_id: 'b', emp_code: '1' }];
-const tw = EX.splitCsv(EX.appendCsv('h\r\n1\r\n1\r\n', 'sum', { people: twin, items: [IT.cnt], sums: { byStaff: { a: { c: 1 }, b: { c: 2 } }, byDay: {} } }).text);
-t('同じ従業員コードの2行は並びの順に結ぶ（1・2）', tw[1].cells[1] === '1' && tw[2].cells[1] === '2', tw.map((r) => r.cells));
-const twd = EX.splitCsv(EX.appendCsv('h,d\r\n1,2025-12-01\r\n1,2025-12-02\r\n1,2025-12-01\r\n', 'day', { people: twin, items: [IT.cnt], sums: { byStaff: {}, byDay: { 'a|2025-12-01': { c: 1 }, 'b|2025-12-01': { c: 2 } } } }).text);
-t('日ごと: 日付が戻ったら次の人（a の 12/1＝1・b の 12/1＝2）', twd[1].cells[2] === '1' && twd[3].cells[2] === '2', twd.map((r) => r.cells));
+/* 反証レビュー（2026-11-25）M2: 同じ従業員コードの人が2人以上いる時は、どの人の行か決められないので付けない（欄は空）・dup で知らせる */
+const twin = [{ staff_id: 'a', emp_code: '1', name: '試験 甲' }, { staff_id: 'b', emp_code: '1', name: '試験 乙' }, { staff_id: 'c', emp_code: '2', name: '試験 丙' }];
+const twR = EX.appendCsv('h\r\n1\r\n1\r\n2\r\n', 'sum', { people: twin, items: [IT.cnt], sums: EX.sumExtras([{ staff_id: 'a', date: '2025-12-01', code: 'c', qty: 1 }, { staff_id: 'b', date: '2025-12-01', code: 'c', qty: 2 }, { staff_id: 'c', date: '2025-12-01', code: 'c', qty: 3 }], [IT.cnt]) });
+const tw = EX.splitCsv(twR.text);
+t('月の集計: 同じ従業員コードの2行は空・ほかの人（2）は 3・dup に2人・dropped に数えない', tw[1].cells[1] === '' && tw[2].cells[1] === '' && tw[3].cells[1] === '3' && JSON.stringify(twR.dup.map((p) => p.staff_id)) === '["a","b"]' && twR.dropped === 0, [tw.map((r) => r.cells), twR.dup, twR.dropped]);
+const twdR = EX.appendCsv('h,d\r\n1,2025-12-01\r\n1,2025-12-02\r\n2,2025-12-01\r\n', 'day', { people: twin, items: [IT.cnt], sums: EX.sumExtras([{ staff_id: 'a', date: '2025-12-01', code: 'c', qty: 1 }, { staff_id: 'c', date: '2025-12-01', code: 'c', qty: 3 }], [IT.cnt]) });
+const twd = EX.splitCsv(twdR.text);
+t('日ごと: 同じ従業員コードの行は空・ほかの人は値・dup に2人', twd[1].cells[2] === '' && twd[2].cells[2] === '' && twd[3].cells[2] === '3' && twdR.dup.length === 2 && twdR.dropped === 0, [twd.map((r) => r.cells), twdR.dropped]);
+/* 反証の再現（t1）: 行を出さない人（勤務の無い A）と同じコードの B。csvPeople で絞れば B に正しく付く */
+const pA = { staff: { staff_id: 'A', emp_code: '0001', name: 'A' }, sum: { workMin: 0, paidMin: 0, noPunchDays: 0, reviewCount: 0, absentDays: 0 } };
+const pB = { staff: { staff_id: 'B', emp_code: '0001', name: 'B' }, sum: { workMin: 480, paidMin: 0, noPunchDays: 0, reviewCount: 0, absentDays: 0 } };
+const pN = { staff: { staff_id: 'N', emp_code: '', name: 'N' }, sum: { workMin: 480 } };
+t('csvPeople: 行を出さない人・従業員コードの無い人を外す', JSON.stringify(EX.csvPeople([pA, pB, pN]).map((p) => p.staff_id)) === '["B"]');
+const t1 = EX.appendCsv('h\r\n0001\r\n', 'sum', { people: EX.csvPeople([pA, pB]), items: [IT.km], sums: EX.sumExtras([{ staff_id: 'B', date: '2025-12-01', code: 'd', qty: 12.3 }], [IT.km]) });
+t('勤務の無い A と同じコードの B: B の行に B の値（12.3）・dup なし', EX.splitCsv(t1.text)[1].cells[1] === '12.3' && t1.dup.length === 0, t1);
+t('csvPeople は本物の buildCsv が月の集計に出す行と同じ人・同じ並び', JSON.stringify(EX.csvPeople(mon.people).map((p) => p.emp_code)) === JSON.stringify(EX.splitCsv(res.summary).slice(1).map((r) => r.cells[0])), [EX.csvPeople(mon.people).map((p) => p.emp_code), EX.splitCsv(res.summary).slice(1).map((r) => r.cells[0])]);
 
 console.log('\n— 6. 画面の組み込み —');
 const H = read('kintai.html'), K = read('kintai.js');
@@ -189,9 +199,14 @@ t('.gitignore で公開する（!/kintai-extras.js）', /^!\/kintai-extras\.js$/
 t('呼ぶ関数と引数: kintai_extras_get(p_ym)', /rpc\('kintai_extras_get', \{ p_ym: atYm \}\)/.test(K));
 t('呼ぶ関数と引数: kintai_extra_put の6つ（p_staff・p_date・p_code・p_qty・p_minutes・p_note）', /rpc\('kintai_extra_put', \{ p_staff: ctx\.sid, p_date: date, p_code: code, p_qty: pv\.qty, p_minutes: pv\.minutes, p_note: nt \|\| null \}\)/.test(K));
 t('呼ぶ関数と引数: kintai_extra_void(p_id, p_reason)・理由が要る', /rpc\('kintai_extra_void', \{ p_id: ctx\.id, p_reason: reason \}\)/.test(K) && /var msg = \$\('e-msg'\), reason = needReason\(msg\); if \(!reason\) return;/.test(K));
-const loadEx = K.slice(K.indexOf('function loadExtras()'), K.indexOf('function exVal('));
+const loadEx = K.slice(K.indexOf('function loadExtras(retry)'), K.indexOf('function exVal('));
 t('関数が無い（noDb）時は exNoDb にして聞き直さず・報告にも回さない', /if \(noDb\(e\)\) \{ exNoDb = true; exSt = null; return; \}/.test(loadEx) && loadEx.indexOf('exNoDb = true') < loadEx.indexOf("note('補助項目の読み込み'"));
-t('関数が無い時は、設定・個人の月・CSV のどこにも欄を出さない（exOn が偽なら空・null）', /function exOn\(\) \{ return !!EX && !exNoDb; \}/.test(K) && /function exSetHtml\(\) \{\s*if \(!exOn\(\) \|\| !exSt\) return '';/.test(K) && /function exPersonHtml\(p\) \{\s*if \(!exOn\(\)\) return '';/.test(K) && /function exCsv\(kind, src, text\) \{\s*if \(!exOn\(\)\) return null;/.test(K));
+t('関数が無い時は、設定・個人の月・CSV のどこにも欄を出さない（exOn が偽なら空・null）', /function exOn\(\) \{ return !!EX && !exNoDb; \}/.test(K) && /function exSetHtml\(\) \{\s*if \(!exOn\(\) \|\| !exSt\) return '';/.test(K) && /function exPersonHtml\(p\) \{\s*if \(!exOn\(\)\) return '';/.test(K) && /function exCsv\(kind, src, text\) \{\s*if \(!exOn\(\)\) \{/.test(K));
+t('反証 S1: CSV は書き出す直前に補助項目を読み直してから組み立てる（月の集計・日ごと・締めた時の数字／今の数字の窓）', /else if \(a === 'csv-sum'\) exFresh\(function \(\) \{ download\('sum'\); \}\);/.test(K) && /else if \(a === 'csv-day'\) exFresh\(function \(\) \{ download\('day'\); \}\);/.test(K) && /exFresh\(function \(\) \{ writeCsv\('sum', a === 'csv-snap' \? 'snap' : 'now'\); \}\)/.test(K) && /loadExtras\(true\)\.then\(function \(\) \{[^}]*then\(\); \}\);/.test(K));
+t('反証 S1: 個人の月を開いている間は30秒ごと・画面に戻った時に補助項目を読み直す（変わっていなければ描き直さない）', /setInterval\(function \(\) \{ exQuiet\(\); \}, 30000\);/.test(K) && /if \(document\.visibilityState === 'visible'\) exQuiet\(\);/.test(K) && /same = before != null && before === JSON\.stringify\(exSt\.rows\);/.test(K));
+t('反証 M1: 設定に extraItems があれば関数が無い印を倒して聞き直す・関数が無いのに項目がある時は CSV を止める', /if \(retry && EX && exNoDb && Array\.isArray\(rawCfg\(\)\.extraItems\)\) exNoDb = false;/.test(K) && /if \(EX && exNoDb && \(EX\.itemsOf\(rawCfg\(\)\) \|\| \[\]\)\.length\) \{ alert\('[^']*ページを読み直して/.test(K));
+t('反証 M2: 結ぶ人は csvPeople（CSV に行を出す人）・重なりは名前つきで知らせる', /people: EX\.csvPeople\(src\.people\)/.test(K) && /if \(out\.dup && out\.dup\.length\) out\.warn0 = '従業員コードが同じ職員がいるため/.test(K) && /if \(exr\.warn0\) extra\.push\(exr\.warn0\);/.test(K));
+t('反証 M3: 補助項目の欄を触った時だけ extraItems を送る・案のまま決めるボタン', /if \(!\$\('ex-s-rows'\) \|\| !EX \|\| !exTouched\) return null;/.test(K) && /data-act="ex-adopt"/.test(K) && /else if \(a === 'ex-adopt'\) \{ exTouched = true; saveSettings\(b\); \}/.test(K) && /if \(id && id\.indexOf\('ex-s-'\) === 0\) exTouched = true;/.test(K));
 t('CSV の列は使う項目＋行がある止めた項目（csvItems）', /var items = EX\.csvItems\(exItems\(\) \|\| \[\], exSt\.rows\);/.test(K));
 t('設定をまだ保存していない時は個人の月に「初めの7つは案」・管理者以外には「管理者に保存を頼んで」', /）は案です。設定のタブの「補助項目」で保存すると/.test(K) && /管理者に保存を頼んでください/.test(K));
 t('取り消すのボタンは止めた項目・設定に無い項目の行にも出す（直すは使う項目だけ）', /\(on \? '<button type="button" class="btn sm k5" data-act="ex-open"[^\n]*: ''\) \+ '<button type="button" class="btn sm k5 ng" data-act="ex-void"/.test(K));

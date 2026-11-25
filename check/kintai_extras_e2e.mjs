@@ -104,7 +104,7 @@ try {
   console.log('\n— 1. 関数がまだ無い時 —');
   {
     const st = { base: server.url, calls: [], config: { legal_holiday: 0, hourlyPaidLeave: true }, rev: 3, rows: [], withExtras: false, locked: false };
-    const { ctx, page, errs } = await open(browser, st, 'settings');
+    const { ctx, page, errs, alerts } = await open(browser, st, 'settings');
     await page.waitForSelector('#g-set', { timeout: 20000 });
     await page.waitForTimeout(800);
     t('設定のタブに「補助項目」の欄が無い', (await page.$('#ex-s-rows')) === null && !/補助項目/.test(await mainText(page)));
@@ -119,6 +119,18 @@ try {
     await page.click('#g-reload');
     await page.waitForTimeout(1500);
     t('関数が無いと分かったら読み直しても聞き直さない（kintai_extras_get は1回）', sentOf(st, 'kintai_extras_get').length === 1, sentOf(st, 'kintai_extras_get').length);
+    /* 反証 M1: 別の端末で 0127 の後に項目を保存した（設定に extraItems がある）のに、この画面では関数が無いままの時は、CSV を列なしで黙って出さない */
+    st.config = Object.assign({}, st.config, { extraItems: [{ code: 'dist', name: '移動距離', kind: 'number', unit: 'km', decimals: 1, active: true }] });
+    await page.click('#g-reload');
+    await page.waitForTimeout(1500);
+    t('設定に extraItems が入ったら、読み直しで関数を聞き直す（2回目）', sentOf(st, 'kintai_extras_get').length === 2, sentOf(st, 'kintai_extras_get').length);
+    await page.click('[data-tab="close"]');
+    await page.waitForSelector('[data-act="csv-sum"]', { timeout: 15000 });
+    const nA = alerts.length;
+    const dlP = page.waitForEvent('download', { timeout: 4000 }).then(() => true, () => false);
+    await page.click('[data-act="csv-sum"]');
+    const gotDl = await dlP;
+    t('関数が無いのに設定に項目がある時は書き出さず「ページを読み直して」と出す', !gotDl && alerts.length === nA + 1 && /ページを読み直して/.test(alerts[nA]), [gotDl, alerts.slice(nA)]);
     t('画面の例外 0', errs.length === 0, errs);
     await ctx.close();
   }
@@ -129,8 +141,16 @@ try {
     const { ctx, page, errs, alerts } = await open(browser, st, 'settings');
     await page.waitForSelector('#ex-s-rows', { timeout: 20000 });
     const n0 = await page.$$eval('#ex-s-rows tr', (r) => r.length);
-    t('設定: 初めの案の7行と「まだ保存していません」', n0 === 7 && /まだ保存していません/.test(await mainText(page)) && (await page.inputValue('#ex-s-code-0')) === 'dist' && (await page.inputValue('#ex-s-code-6')) === 'meeting', n0);
+    t('設定: 初めの案の7行と「まだ決めていません」', n0 === 7 && /まだ決めていません/.test(await mainText(page)) && (await page.inputValue('#ex-s-code-0')) === 'dist' && (await page.inputValue('#ex-s-code-6')) === 'meeting', n0);
     await page.screenshot({ path: path.join(OUT, 'settings_pc.png'), fullPage: true });
+    /* 反証 M3: 補助項目の欄を触らずにほかの設定を保存しても、初めの案は決まらない（extraItems を送らない） */
+    await page.selectOption('#s-closeDay', '0');
+    await page.click('[data-act="save-set"]');
+    await page.waitForFunction(() => /設定を保存しました/.test(document.getElementById('g-toast').textContent), null, { timeout: 15000 });
+    const put0 = sentOf(st, 'kintai_settings_put').slice(-1)[0];
+    t('補助項目の欄を触らずに保存すると extraItems は送らない（案のまま決まらない）', put0 && !('extraItems' in put0[1].p_config), put0 && Object.keys(put0[1].p_config));
+    await page.waitForSelector('#ex-s-rows', { timeout: 15000 });
+    await page.evaluate(() => { const t = document.getElementById('g-toast'); t.textContent = ''; });
     await page.click('[data-tab="person"]');
     await page.waitForFunction(() => /補助項目（日ごと）/.test(document.getElementById('g-main').textContent) && !/読み込んでいます/.test(document.getElementById('g-main').textContent), null, { timeout: 15000 });
     const pre = await mainText(page);
@@ -150,7 +170,7 @@ try {
     t('保存: extraItems は8つ（足した駐車場・円・数値）・年末年始出勤は active:false', Array.isArray(ei) && ei.length === 8 && ei[7].code === 'parking' && ei[7].kind === 'number' && ei[7].unit === '円' && ei[3].code === 'newyear' && ei[3].active === false, ei);
     t('保存: ほかの設定の鍵（legal_holiday・hourlyPaidLeave）は残す', put && put[1].p_config.legal_holiday === 0 && put[1].p_config.hourlyPaidLeave === true, put && put[1].p_config);
     await page.waitForSelector('#ex-s-code-0[readonly]', { timeout: 15000 });
-    t('保存した後: コードは変えられない（readonly）・「まだ保存していません」が消える', (await page.$$('#ex-s-rows input[readonly]')).length === 8 && !/まだ保存していません/.test(await mainText(page)));
+    t('保存した後: コードは変えられない（readonly）・「まだ決めていません」が消える', (await page.$$('#ex-s-rows input[readonly]')).length === 8 && !/まだ決めていません/.test(await mainText(page)));
 
     /* 3. 個人の月 */
     await page.click('[data-tab="person"]');
@@ -212,6 +232,11 @@ try {
     await page.click('[data-act="ex-save"]');
     await page.waitForFunction(() => /社内会議 1:30/.test(document.getElementById('g-main').textContent), null, { timeout: 15000 });
     await page.screenshot({ path: path.join(OUT, 'person_pc.png'), fullPage: true });
+    /* 反証 S1: 別の端末で入れた分が、開いたままの個人の月に届く（画面に戻った時・30秒ごとに読み直す） */
+    st.rows.push({ id: '00000000-0000-4000-8000-0000000e9001', staff_id: 'sK01', date: '2025-12-03', code: 'checkup', qty: 1, minutes: null, note: '別の端末' });
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await page.waitForFunction(() => /健診\/有休 1 回/.test(document.getElementById('g-main').textContent), null, { timeout: 15000 }).catch(() => null);
+    t('別の端末で入れた健診/有休が、画面に戻った時の読み直しで個人の月に出る', /健診\/有休 1 回/.test(await mainText(page)));
 
     /* iPhone の幅・暗い表示 */
     await page.setViewportSize({ width: 390, height: 844 });
@@ -240,12 +265,16 @@ try {
     /* 4. CSV */
     await page.click('[data-tab="close"]');
     await page.waitForSelector('[data-act="csv-sum"]', { timeout: 15000 });
+    /* 反証 S1: 画面が読み直す前に別の端末で入れた分（日曜出勤 12/4）も、書き出す直前の読み直しで CSV に入る */
+    st.rows.push({ id: '00000000-0000-4000-8000-0000000e9002', staff_id: 'sK01', date: '2025-12-04', code: 'sunday', qty: 1, minutes: null, note: null });
+    const nGet = sentOf(st, 'kintai_extras_get').length;
     const sum = await readDl(page, '[data-act="csv-sum"]');
     const sl = sum.split('\r\n'), sh = cellsOf(sl[0]), s1 = cellsOf(sl.find((l) => l.indexOf('9001,') === 0) || '');
     const want = ['移動距離（km）', '日曜出勤（回）', '日曜出勤（時間）', '健診/有休（回）', '健診通勤手当なし（回）', '社内会議（時間）', '駐車場（円）'];
     t('月の集計: 末尾に7列（使う項目＋行のある止めた社内会議・行の無い止めた年末年始出勤は出さない）', JSON.stringify(sh.slice(-7)) === JSON.stringify(want), sh.slice(-8));
     t('月の集計: 今の列は前のまま（先頭は 従業員コード・氏名…、末尾の前は 実働_ の列）', sh[0] === '従業員コード' && sh[1] === '氏名' && /^実働_/.test(sh[sh.length - 8]));
-    t('月の集計: 9001 は 移動距離 15.5・社内会議 1:30・ほかは 0（駐車場は整数のまま 0）', JSON.stringify(s1.slice(-7)) === JSON.stringify(['15.5', '0', '0:00', '0', '0', '1:30', '0']), s1.slice(-7));
+    t('月の集計: 書き出す直前に補助項目を読み直した（kintai_extras_get が1回増えた）', sentOf(st, 'kintai_extras_get').length === nGet + 1, sentOf(st, 'kintai_extras_get').length - nGet);
+    t('月の集計: 9001 は 移動距離 15.5・日曜出勤 1（直前に別の端末で入れた分）・健診/有休 1・社内会議 1:30・ほかは 0（駐車場は整数のまま 0）', JSON.stringify(s1.slice(-7)) === JSON.stringify(['15.5', '1', '0:00', '1', '0', '1:30', '0']), s1.slice(-7));
     const day = await readDl(page, '[data-act="csv-day"]');
     const dl = day.split('\r\n'), dh = cellsOf(dl[0]), d1 = cellsOf(dl.find((l) => l.indexOf('9001,2025-12-01,') === 0) || ''), d2 = cellsOf(dl.find((l) => l.indexOf('9001,2025-12-02,') === 0) || '');
     t('日ごと: 末尾に7列・「数えなかった理由」はその前のまま', JSON.stringify(dh.slice(-7)) === JSON.stringify(want) && dh[dh.length - 8] === '数えなかった理由', dh.slice(-9));
@@ -261,10 +290,25 @@ try {
     await page.waitForSelector('[data-act="csv-sum"]', { timeout: 15000 });
     const sumL = await readDl(page, '[data-act="csv-sum"]');
     const lh = cellsOf(sumL.split('\r\n')[0]), l1 = cellsOf(sumL.split('\r\n').find((l) => l.indexOf('9001,') === 0) || '');
-    t('締めた後の月の集計（締めた時の数字の道）: 末尾の7列と 9001 の値は同じ', JSON.stringify(lh.slice(-7)) === JSON.stringify(want) && JSON.stringify(l1.slice(-7)) === JSON.stringify(['15.5', '0', '0:00', '0', '0', '1:30', '0']), [lh.slice(-7), l1.slice(-7)]);
+    t('締めた後の月の集計（締めた時の数字の道）: 末尾の7列と 9001 の値は同じ', JSON.stringify(lh.slice(-7)) === JSON.stringify(want) && JSON.stringify(l1.slice(-7)) === JSON.stringify(['15.5', '1', '0:00', '1', '0', '1:30', '0']), [lh.slice(-7), l1.slice(-7)]);
     await page.click('[data-tab="person"]');
     await page.waitForFunction(() => /締めた月分のため、入れることも取り消すこともできません/.test(document.getElementById('g-main').textContent), null, { timeout: 15000 });
     t('締めた月分: 入れる・直す・取り消すのボタンが無い（値の一覧は出る）', (await page.$('[data-act="ex-open"]')) === null && (await page.$('[data-act="ex-void"]')) === null && /移動距離 15\.5 km/.test(await mainText(page)));
+    t('画面の例外 0', errs.length === 0, errs);
+    await ctx.close();
+  }
+
+  console.log('\n— 6. 案のまま使い始める —');
+  {
+    const st = { base: server.url, calls: [], config: { legal_holiday: 0 }, rev: 3, rows: [], withExtras: true, locked: false };
+    const { ctx, page, errs } = await open(browser, st, 'settings');
+    await page.waitForSelector('[data-act="ex-adopt"]', { timeout: 20000 });
+    await page.click('[data-act="ex-adopt"]');
+    await page.waitForFunction(() => /設定を保存しました/.test(document.getElementById('g-toast').textContent), null, { timeout: 15000 });
+    const put = sentOf(st, 'kintai_settings_put').slice(-1)[0], ei = put && put[1].p_config.extraItems;
+    t('「この案で補助項目を使い始める」で初めの7つが決まる（ほかの鍵は残す）', Array.isArray(ei) && ei.length === 7 && ei.map((x) => x.code).join() === 'dist,sunday,sunday_time,newyear,checkup,checkup_nocommute,meeting' && put[1].p_config.legal_holiday === 0, ei);
+    await page.waitForSelector('#ex-s-code-0[readonly]', { timeout: 15000 });
+    t('決めた後は「この案で…」のボタンが消える', (await page.$('[data-act="ex-adopt"]')) === null);
     t('画面の例外 0', errs.length === 0, errs);
     await ctx.close();
   }

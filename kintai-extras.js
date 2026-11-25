@@ -190,38 +190,48 @@
     return out;
   }
 
-  /* buildCsv の文（summary か daily）の各行の末尾に、有効な項目ごとの列を足す。
-   * ctx: { people: [{ staff_id, emp_code }]（buildCsv に渡した月の並び）, items: 有効な項目, sums: sumExtras の結果, mode: 'hmm'|'dec' }
-   * 行は従業員コード（日ごとは＋日付）で人に結ぶ。月の集計は合計（無ければ 0）、日ごとはその日の値（無ければ空）。
+  /* buildCsv が行を出す人（従業員コードがあり、働いた・有休・打刻なし・要確認・欠勤のどれかがある人）だけにする。
+   * buildCsv（kintai-calc.js・変えない）の行を出す条件と同じ（試験で本物の buildCsv の行と突き合わせる）。返す: [{ staff_id, emp_code, name }] */
+  function csvPeople(people) {
+    return (people || []).filter(function (p) {
+      var st = p && p.staff, s = p && p.sum;
+      if (!st || !st.emp_code || !s) return false;
+      return s.workMin > 0 || s.paidMin > 0 || s.noPunchDays > 0 || s.reviewCount > 0 || s.absentDays > 0;
+    }).map(function (p) { return { staff_id: p.staff.staff_id, emp_code: String(p.staff.emp_code), name: p.staff.name || p.staff.staff_id }; });
+  }
+
+  /* buildCsv の文（summary か daily）の各行の末尾に、項目ごとの列を足す。
+   * ctx: { people: csvPeople の結果（CSV に行を出す人だけ）, items: 列にする項目, sums: sumExtras の結果, mode: 'hmm'|'dec' }
+   * 行は従業員コードで人に結ぶ。月の集計は合計（無ければ 0）、日ごとはその日の値（無ければ空）。
+   * 同じ従業員コードの人が2人以上いる時は、どの人の行か決められないので、その行には何も付けない（欄は空）・dup にその人たちを返す（画面が名前つきで知らせる）。
    * 項目が1つも無い時は文をそのまま返す（今の CSV と1バイトも変わらない）。
-   * 返す: { text, dropped: CSV に行が無いため出せなかった値の数（人または日）} */
+   * 返す: { text, dropped: CSV に行が無いため出せなかった値の数（人または日・dup の人は数えない）, dup: [{ staff_id, emp_code, name }] } */
   function appendCsv(text, kind, ctx) {
     var items = (ctx && ctx.items) || [];
-    if (!items.length || typeof text !== 'string' || !text) return { text: text, dropped: 0 };
-    var recs = splitCsv(text), people = (ctx.people || []), sums = ctx.sums || { byStaff: {}, byDay: {} }, mode = ctx.mode;
-    var used = dict(), out = [], ptr = 0, lastDate = null;
+    if (!items.length || typeof text !== 'string' || !text) return { text: text, dropped: 0, dup: [] };
+    var recs = splitCsv(text), people = (ctx.people || []).filter(function (p) { return p && p.emp_code; }), sums = ctx.sums || { byStaff: dict(), byDay: dict() }, mode = ctx.mode;
+    var byEmp = dict(), cnt = dict(), dupSid = dict(), dup = [], dupSeen = dict();
+    people.forEach(function (p) { var e = String(p.emp_code); cnt[e] = (cnt[e] || 0) + 1; if (!own(byEmp, e)) byEmp[e] = p; });
+    people.forEach(function (p) { if (cnt[String(p.emp_code)] > 1) dupSid[p.staff_id] = 1; });
+    var used = dict(), out = [];
     var cellsOf = function (vals) { return vals.map(function (v) { return C.csvCell(v); }).join(','); };
-    var find = function (emp, from) { for (var k = from; k < people.length; k++) if (people[k] && String(people[k].emp_code || '') === emp) return k; return -1; };
+    var blank = items.map(function () { return ''; });
     recs.forEach(function (r, idx) {
       if (idx === 0) { out.push(r.raw + ',' + cellsOf(items.map(colHead))); return; }
-      var emp = r.cells[0] || '', sid = null;
-      if (kind === 'sum') {
-        var k = find(emp, ptr); if (k < 0) k = find(emp, 0);
-        if (k >= 0) { sid = people[k].staff_id; ptr = k + 1; }
-        var tot = sid && own(sums.byStaff, sid) ? sums.byStaff[sid] : dict();
-        if (sid) used[sid] = 1;
-        out.push(r.raw + ',' + cellsOf(items.map(function (it) { return fmtValue(it, own(tot, it.code) ? tot[it.code] : 0, mode, false); })));
+      var emp = r.cells[0] || '';
+      if (own(cnt, emp) && cnt[emp] > 1) {
+        if (!dupSeen[emp]) { dupSeen[emp] = 1; people.forEach(function (p) { if (String(p.emp_code) === emp) dup.push(p); }); }
+        out.push(r.raw + ',' + cellsOf(blank));
         return;
       }
-      var date = r.cells[1] || '';
-      var cur = people[ptr - 1];
-      if (cur && String(cur.emp_code || '') === emp && (lastDate == null || date > lastDate)) sid = cur.staff_id;
-      else {
-        var k2 = find(emp, ptr); if (k2 < 0) k2 = find(emp, 0);
-        if (k2 >= 0) { sid = people[k2].staff_id; ptr = k2 + 1; }
+      var sid = own(byEmp, emp) ? byEmp[emp].staff_id : null;
+      if (kind === 'sum') {
+        var tot = sid && own(sums.byStaff, sid) ? sums.byStaff[sid] : dict();
+        if (sid) used[sid] = 1;
+        out.push(r.raw + ',' + cellsOf(sid ? items.map(function (it) { return fmtValue(it, own(tot, it.code) ? tot[it.code] : 0, mode, false); }) : blank));
+        return;
       }
-      lastDate = date;
-      var dk = sid + '|' + date, dv = sid && own(sums.byDay, dk) ? sums.byDay[dk] : null;
+      var date = r.cells[1] || '', dk = sid + '|' + date, dv = sid && own(sums.byDay, dk) ? sums.byDay[dk] : null;
       if (dv) used[dk] = 1;
       out.push(r.raw + ',' + cellsOf(items.map(function (it) { return dv && own(dv, it.code) ? fmtValue(it, dv[it.code], mode, false) : ''; })));
     });
@@ -229,14 +239,14 @@
     var codes = dict(); items.forEach(function (it) { codes[it.code] = 1; });
     var has = function (o) { return !!o && Object.keys(o).some(function (c) { return own(codes, c) && o[c]; }); };
     var src = kind === 'sum' ? sums.byStaff : sums.byDay, dropped = 0;
-    Object.keys(src || {}).forEach(function (key) { if (!used[key] && has(src[key])) dropped++; });
-    return { text: out.join('\r\n') + '\r\n', dropped: dropped };
+    Object.keys(src || {}).forEach(function (key) { var sid0 = kind === 'sum' ? key : key.split('|')[0]; if (!used[key] && !dupSid[sid0] && has(src[key])) dropped++; });
+    return { text: out.join('\r\n') + '\r\n', dropped: dropped, dup: dup };
   }
 
   var api = {
     MAX_ITEMS: MAX_ITEMS, CODE_RE: CODE_RE, NAME_MAX: NAME_MAX, UNIT_MAX: UNIT_MAX, QTY_MAX: QTY_MAX, COUNT_MAX: COUNT_MAX, MIN_MAX: MIN_MAX, KINDS: KINDS,
     EXTRA_ITEMS_DEFAULT: EXTRA_ITEMS_DEFAULT, copyDefault: copyDefault, cleanExtraItems: cleanExtraItems, checkForm: checkForm, itemsOf: itemsOf, activeItems: activeItems, csvItems: csvItems, nameOf: nameOf, mismatchText: mismatchText,
-    parseValue: parseValue, minutesOf: minutesOf, sumExtras: sumExtras, fmtValue: fmtValue, label: label, colHead: colHead, splitCsv: splitCsv, appendCsv: appendCsv
+    parseValue: parseValue, minutesOf: minutesOf, sumExtras: sumExtras, fmtValue: fmtValue, label: label, colHead: colHead, splitCsv: splitCsv, csvPeople: csvPeople, appendCsv: appendCsv
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.KintaiExtras = api;

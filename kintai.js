@@ -280,7 +280,7 @@
       paintPer();
       editsCache = null;
       paint();
-      loadExtras();   /* 段A1: 補助項目の日の行（月の読み込みの鎖の外・失敗しても月の画面は止めない） */
+      loadExtras(true);   /* 段A1: 補助項目の日の行（月の読み込みの鎖の外・失敗しても月の画面は止めない） */
       /* 職員の並び（入職順）に職員マスタの入職日を使うので、まだ読んでいなければ裏で読む（読めない時は番号の順のまま） */
       if (!masterSt && !masterBusy) loadMaster();
     })['catch'](function (e) {
@@ -1421,6 +1421,7 @@
    * 入れる・直す（kintai_extra_put＝同じ人・日・項目の前の行に取り消しの印を付けて足す）・取り消す（kintai_extra_void・理由が要る）は個人の月から。
    * 締めた月分は入れる欄を出さない（DB も locked で断る）。個人の月の紙（印刷）には出さない＝紙は今のまま */
   var exSt = null, exGen = 0, exNoDb = false;
+  var exTouched = false, exStaleT = 0;   /* 設定の「補助項目」の欄を触ったか（触った時だけ extraItems を送る＝ほかの設定の保存で初めの案が決まらない・反証レビュー 2026-11-25 M3） */
   function exOn() { return !!EX && !exNoDb; }
   function exItems() { return EX ? EX.itemsOf(rawCfg()) : null; }
   function exActive() { return EX ? EX.activeItems(rawCfg()) : []; }
@@ -1434,12 +1435,15 @@
     locked: 'その日は締めた月分に入っているため、入れることも取り消すこともできません。直す時は管理者が締めを解除してください。',
     reason: '取り消す理由を書いてください。', already: 'もう取り消してあります。読み直してください。' };
   function exMsg(e) { return e && e.kintai && NG_EX[e.kintai] ? NG_EX[e.kintai] : msgOf(e); }
-  function loadExtras() {
+  /* retry: 関数が無いと分かった後でも、設定に extraItems が保存されていれば（別の端末で 0127 の後に保存した）聞き直す（月を開いた時・CSV の前だけ。30秒ごとの読み直しでは聞き直さない・反証レビュー 2026-11-25 M1） */
+  function loadExtras(retry) {
+    if (retry && EX && exNoDb && Array.isArray(rawCfg().extraItems)) exNoDb = false;
     if (!exOn() || !ym) return Promise.resolve();
-    var my = ++exGen, atYm = ym;
+    var my = ++exGen, atYm = ym, before = exSt && exSt.ym === atYm && !exSt.err ? JSON.stringify(exSt.rows) : null, same = false;
     return rpc('kintai_extras_get', { p_ym: atYm }).then(okOr).then(function (r) {
       if (my !== exGen) return;
-      exSt = { ym: atYm, from: r.from, to: r.to, rows: (Array.isArray(r.rows) ? r.rows : []).filter(function (x) { return x && !x.voided_at && typeof x.staff_id === 'string' && typeof x.code === 'string' && C.isDate(x.date); }) };
+      exSt = { ym: atYm, from: r.from, to: r.to, at: Date.now(), rows: (Array.isArray(r.rows) ? r.rows : []).filter(function (x) { return x && !x.voided_at && typeof x.staff_id === 'string' && typeof x.code === 'string' && C.isDate(x.date); }) };
+      same = before != null && before === JSON.stringify(exSt.rows);   /* 変わっていなければ描き直さない（30秒ごとの読み直しで画面をちらつかせない） */
     })['catch'](function (e) {
       if (my !== exGen) return;
       if (noDb(e)) { exNoDb = true; exSt = null; return; }
@@ -1448,9 +1452,24 @@
     }).then(function () {
       if (my !== exGen) return;
       /* 読み終わったら、補助項目を出すタブだけ描き直す（設定のタブは保存していない変更が無い時だけ＝入れている途中の値を消さない） */
-      if (view !== 'app' || busy || printAll || !month) return;
+      if (view !== 'app' || busy || printAll || !month || same) return;
       if (tab === 'person' || (tab === 'settings' && !settingsDirty())) paint();
     });
+  }
+  /* 30秒ごと・画面に戻った時の補助項目の読み直し（個人の月を開いている時だけ。窓を開いている・選ぶ欄を触っている間はしない・反証レビュー 2026-11-25 S1）。
+     ほかのタブ（ホーム・日ごと・要確認）は月の読み直し（quietReload）の後に読む */
+  function exQuiet() {
+    if (!exOn() || view !== 'app' || busy || dlgCtx || printAll || !month || tab !== 'person') return;
+    if (document.visibilityState === 'hidden') return;
+    var ae = document.activeElement;
+    if (ae && ae.tagName === 'SELECT' && $('g-main').contains(ae)) return;
+    loadExtras(false);
+  }
+  /* CSV を書き出す直前に補助項目を読み直し、済んでから組み立てる（別の端末で入れた分を落とさない・反証レビュー 2026-11-25 S1） */
+  function exFresh(then) {
+    if (!EX || (!exOn() && !Array.isArray(rawCfg().extraItems)) || !(exItems() || []).length) { then(); return; }
+    sync('補助項目を読み直しています…');
+    loadExtras(true).then(function () { sync(isLocked() ? '締め済みの月です' : '読み込みました（' + hm(Date.now()) + '）'); then(); });
   }
   function exVal(r, it) { return it && it.kind === 'time' ? r.minutes : r.qty; }
   function exRowsOf(sid, date) { return exReady() ? exSt.rows.filter(function (r) { return r.staff_id === sid && (date == null || r.date === date); }) : []; }
@@ -1465,6 +1484,8 @@
   function exPersonHtml(p) {
     if (!exOn()) return '';
     var sid = p.staff.staff_id, h = '<div class="cd no-print"><h2 style="font-size:16px;margin:0 0 8px">補助項目（日ごと）</h2>';
+    /* 読んでから30秒より古ければ、描いた後に裏で読み直す（タブを移った時・職員を選び直した時も新しくする・変わっていなければ描き直さない） */
+    if (exSt && exSt.ym === ym && !exSt.err && Date.now() - (exSt.at || 0) > 30000 && !exStaleT) { exStaleT = setTimeout(function () { exStaleT = 0; exQuiet(); }, 0); }
     if (!exSt || exSt.ym !== ym) return h + '<p class="empty">読み込んでいます…</p></div>';
     if (exSt.err) return h + '<div class="band warn" role="status">' + esc(exSt.err) + '</div><div class="row"><button type="button" class="btn sm k5" data-act="ex-reload">読み直す</button></div></div>';
     var items = exItems();
@@ -1574,17 +1595,19 @@
   function exHasRows(code) { return !!exSt && !exSt.err && exSt.rows.some(function (r) { return r.code === code; }); }
   function exSetHtml() {
     if (!exOn() || !exSt) return '';   /* 関数がまだ無い・まだ確かめていない時は出さない（確かめ終わったら描き直す） */
+    exTouched = false;   /* 描き直したら触っていない状態から */
     var saved = exItems(), list = saved || EX.copyDefault();
     return '<div style="grid-column:1/-1" class="no-print"><h2 style="font-size:16px;margin:14px 0 8px">補助項目（日ごとに手で入れる項目）</h2>' +
       '<p class="help">個人の月で、日ごとに入れる項目です（移動距離・健診など）。月の集計の CSV（給与向け）の末尾に、使う項目ごとの月の合計の列が出ます。項目は消せません。使わなくなった項目は「使う」を外して止めます。コードは入れた行が使うので、保存した後は変えられません。単位と小数の桁は「数値＋単位」の時だけ使います（時間は時間と分で入れます）。' +
-      (saved ? 'この月分に入れた行がある項目は、形を変えられません（変える時は止めて、新しいコードで足します）。' : '<b>まだ保存していません。下は初めの案です（「設定を保存する」で決まります）。</b>') + '</p>' +
+      (saved ? 'この月分に入れた行がある項目は、形を変えられません（変える時は止めて、新しいコードで足します）。' : '<b>まだ決めていません。下は初めの案です。案のまま使う時は下の「この案で補助項目を使い始める」を、直す時は欄を直して「設定を保存する」を押します（ほかの設定だけを保存しても、補助項目は決まりません）。</b>') + '</p>' +
       '<span class="tw" style="display:block"><table><thead><tr><th>コード（英数字）</th><th>名前</th><th>形</th><th>単位</th><th>小数の桁</th><th>使う</th></tr></thead><tbody id="ex-s-rows">' +
       list.map(function (it, i) { return exSetRow(i, it, !!saved); }).join('') + '</tbody></table></span>' +
-      '<button type="button" class="btn sm k5" data-act="ex-add-row">行を足す</button> <span class="help">' + EX.MAX_ITEMS + '個まで。コードと名前を空にした新しい行は保存しません。</span></div>';
+      '<button type="button" class="btn sm k5" data-act="ex-add-row">行を足す</button>' + (saved ? '' : ' <button type="button" class="btn sm k5 pri" data-act="ex-adopt"' + (isAdmin() ? '' : ' disabled') + '>この案で補助項目を使い始める</button>') + ' <span class="help">' + EX.MAX_ITEMS + '個まで。コードと名前を空にした新しい行は保存しません。</span></div>';
   }
   /* 空の行を1つ足す（画面全体は描き直さない＝入れている途中の値を消さない） */
   function exAddRow() {
     var tb = $('ex-s-rows'); if (!tb) return;
+    exTouched = true;
     var i = 0; while ($('ex-s-code-' + i)) i++;
     if (i >= EX.MAX_ITEMS) { toast('補助項目は' + EX.MAX_ITEMS + '個までです'); return; }
     tb.insertAdjacentHTML('beforeend', exSetRow(i, null, false));
@@ -1593,7 +1616,7 @@
   var EX_BAD = { code: 'コードは英数字・_・- の20字まで', dup: 'コードがほかの行と重なっています', name: '名前は1〜20字（止める時は名前を消さずに「使う」を外します）', kind: '形を選んでください', unit: '単位は10字まで', decimals: '小数の桁は 0〜2', active: '「使う」の印が読めません', max: EX ? EX.MAX_ITEMS + '個まで' : '', shape: '形が違います' };
   /* 入れた値を extraItems にする。{ items, bad }（欄が無い時は null＝今の設定のまま送る）。保存済みの項目は必ず残す（消さない） */
   function readExSet() {
-    if (!$('ex-s-rows') || !EX) return null;
+    if (!$('ex-s-rows') || !EX || !exTouched) return null;   /* 触っていない時は今の extraItems（無ければ無し）をそのまま残す */
     var raw = [], rowNo = [], bad = [], i;
     for (i = 0; $('ex-s-code-' + i); i++) {
       var ce = $('ex-s-code-' + i), code = String(ce.value || '').trim(), name = String($('ex-s-name-' + i).value || '').trim(), kind = $('ex-s-kind-' + i).value;
@@ -1616,14 +1639,20 @@
   }
   /* 月の集計・日ごとの CSV の末尾の列（列にする項目が無い・関数が無い時は null＝今の CSV のまま。項目があるのに読めていない時は false＝書き出さない） */
   function exCsv(kind, src, text) {
-    if (!exOn()) return null;
+    if (!exOn()) {
+      /* 関数が無いと分かった後なのに設定に項目がある（別の端末で 0127 の後に保存した）時は、列なしで黙って出さない（反証レビュー 2026-11-25 M1） */
+      if (EX && exNoDb && (EX.itemsOf(rawCfg()) || []).length) { alert('補助項目の仕組みを読み込めていないため、書き出せません（補助項目の列が抜けた CSV を出さないため）。ページを読み直して（再読み込みして）から、もう一度書き出してください。直らない時は管理者に知らせてください。'); return false; }
+      return null;
+    }
     if (!(exItems() || []).length) return null;   /* 項目をまだ保存していない＝行も無い（DB が断る） */
-    if (!exReady()) { alert('補助項目を読み込めていないため、書き出せません（補助項目の列が 0 のまま出るのを防ぐため）。「読み直す」を押してから、もう一度書き出してください。'); return false; }
+    if (!exReady()) { alert('補助項目を読み込めていないため、書き出せません（補助項目の列が 0 のまま出るのを防ぐため）。上の「読み直す」を押すか、通信（Wi-Fi）がつながっているかを確かめてから、もう一度書き出してください。' + (exSt && exSt.err ? '\n（' + exSt.err + '）' : '')); return false; }
     /* 列は使う項目と、止めた項目でもこの月分に行がある項目（入れた数が CSV から消えないように・統合 0127 の確定） */
     var items = EX.csvItems(exItems() || [], exSt.rows);
     if (!items.length) return null;
     var sums = EX.sumExtras(exSt.rows, exItems() || []);
-    var out = EX.appendCsv(text, kind, { people: (src.people || []).map(function (p) { return { staff_id: p.staff.staff_id, emp_code: p.staff.emp_code }; }), items: items, sums: sums, mode: src.config && src.config.csvTime });
+    /* 結ぶ人は CSV に行を出す人だけ（buildCsv と同じ条件・従業員コードの重なりで別の人の行に付けない・反証レビュー 2026-11-25 M2） */
+    var out = EX.appendCsv(text, kind, { people: EX.csvPeople(src.people), items: items, sums: sums, mode: src.config && src.config.csvTime });
+    if (out.dup && out.dup.length) out.warn0 = '従業員コードが同じ職員がいるため（' + out.dup.map(function (p) { return p.name + '（' + p.emp_code + '）'; }).join('・') + '）、その人たちの補助項目は CSV に付けていません（欄は空）。「職員と番号」で従業員コードを直してから書き出してください。';
     out.warn = EX.mismatchText(sums.mismatch, exItems() || []);   /* 形を変えた項目の前の形の行は数えていない（書き出しの後の注意に出す） */
     /* 設定から消えた項目の行（コードが今の定義に無い）は列にできないので数を知らせる（ふつうは起きない＝画面で項目を消せない） */
     var known = {}; (exItems() || []).forEach(function (x) { known['k' + x.code] = 1; });
@@ -2790,6 +2819,7 @@
     if (exr === false) return;
     if (exr) {
       text = exr.text;
+      if (exr.warn0) extra.push(exr.warn0);
       if (exr.warn) extra.push(exr.warn);
       if (exr.dropped) extra.push(kind === 'sum' ? '補助項目を入れてあっても月の集計に行が無い職員（勤務・打刻の無い人・従業員コードの無い人）' + exr.dropped + ' 人の補助項目は出していません。' : '補助項目を入れてあっても日ごとの明細に行が無い日（勤務・打刻の無い日など）' + exr.dropped + ' 日分は出していません（月の集計の合計には入っています）。');
     }
@@ -3456,7 +3486,7 @@
       else if (a === 'rvd-save') saveDecide(b);
       else if (a === 'rvd-skip') { var dk = dlgCtx; if (dk && dk.mode === 'rvd' && (!dirty() || confirm('選んだ「認める／認めない」を保存せずに、次の1件へ進みますか？'))) { closeDlg(); nextDecide(dk, true); } }
       else if (a === 'rvd-edit') { var dc = dlgCtx; if (dc && dc.mode === 'rvd' && (!dirty() || confirm('選んだ「認める／認めない」を保存せずに、直す窓を開きますか？'))) { closeDlg(); openEdit(dc.sid, dc.date, dc.bi, dc.rvIndex); } }
-      else if (a === 'csv-snap' || a === 'csv-now') { closeDlg(); writeCsv('sum', a === 'csv-snap' ? 'snap' : 'now'); }
+      else if (a === 'csv-snap' || a === 'csv-now') { closeDlg(); exFresh(function () { writeCsv('sum', a === 'csv-snap' ? 'snap' : 'now'); }); }   /* 段A1: 書き出す直前に補助項目を読み直す */
       else if (a === 'reason') {
         var r = b.getAttribute('data-r'), inp = $('e-reason');
         if (inp) { if (r !== 'その他') inp.value = r; else if (REASONS.indexOf(inp.value) >= 0 || DECIDE_REASONS.indexOf(inp.value) >= 0 || SCHED_REASONS.indexOf(inp.value) >= 0 || FX_REASONS.indexOf(inp.value) >= 0) inp.value = ''; inp.focus(); }
@@ -3500,7 +3530,8 @@
       else if (a === 'ex-save') saveExtra(b);
       else if (a === 'ex-void') openExtraVoid(b.getAttribute('data-id'));
       else if (a === 'ex-void-go') voidExtra(b);
-      else if (a === 'ex-reload') { exSt = null; paint(); loadExtras(); }
+      else if (a === 'ex-reload') { exSt = null; paint(); loadExtras(true); }
+      else if (a === 'ex-adopt') { exTouched = true; saveSettings(b); }   /* 段A1: 案のままで補助項目を使い始める（反証レビュー 2026-11-25 M3） */
       else if (a === 'recode') recode(b.getAttribute('data-sid'), b);
       else if (a === 'import') { if (isLocked()) alert('締めた月は取り込めません。'); else if (settingsLeaveOk()) { dropMonthCaches(); load(true); } }
       else if (a === 'lock') lockMonth(b);
@@ -3508,8 +3539,8 @@
       else if (a === 'fi-clear') { fiSt = null; paint(); }
       else if (a === 'fi-void') fiVoid(b);
       else if (a === 'unlock') unlockMonth(b);
-      else if (a === 'csv-sum') download('sum');
-      else if (a === 'csv-day') download('day');
+      else if (a === 'csv-sum') exFresh(function () { download('sum'); });   /* 段A1: 書き出す直前に補助項目を読み直す（別の端末で入れた分を落とさない） */
+      else if (a === 'csv-day') exFresh(function () { download('day'); });
       else if (a === 'edits') loadEdits();
       else if (a === 'save-set') saveSettings(b);
       else if (a === 'mgr-reload') { mgrSt = null; var gm = $('g-mgr'); if (gm) gm.innerHTML = mgrHtml(); loadMgr(); }
@@ -3542,7 +3573,8 @@
       else if (e.target && e.target.name === 'fi-none' && fiSt) { fiSt.none[e.target.value] = !!e.target.checked; paint(); }
       else if (e.target && e.target.name === 'fi-v') fiSel[e.target.value] = !!e.target.checked;
       else if (id === 'lv-a-kind') absKindShow();
-      else if (id === 'ex-code') exKindShow();   /* 段A1: 補助項目の形に合う欄だけを出す */   /* v5 段4: 休暇の種類に合う欄だけを出す */
+      else if (id === 'ex-code') exKindShow();   /* 段A1: 補助項目の形に合う欄だけを出す */
+      else if (id && id.indexOf('ex-s-') === 0) exTouched = true;   /* 段A1: 設定の「補助項目」の欄を触った */   /* v5 段4: 休暇の種類に合う欄だけを出す */
       else if (id === 'g-ym') { if (settingsLeaveOk()) setYm(e.target.value); else e.target.value = ym; }   /* v5 C4: 保存していない設定の変更を確かめる（やめたら月の欄を戻す） */
       else if (e.target && e.target.name === 'sc-op' && $('sc-times')) $('sc-times').disabled = e.target.value !== 'set';
       else if ((id === 'sc-sid' || id === 'sc-from') && dlgCtx && dlgCtx.mode === 'sched') schedRefill();
@@ -3558,6 +3590,7 @@
     document.addEventListener('input', function (e) {
       var id = e.target && e.target.id, r;
       if (id === 'fi-reason' && fiSt) fiSt.reason = e.target.value;   /* 描き直しで書いた理由を消さない（画面の中だけ） */
+      if (id && id.indexOf('ex-s-') === 0) exTouched = true;   /* 段A1: 設定の「補助項目」の欄に書いた（反証レビュー 2026-11-25 M3） */
       /* 0111: 予定の窓で始業・終業を変えたら、前の予定から入れた休憩は空に戻す（いつもの決まりで決め直す。手で入れた休憩は残す） */
       if ((id === 'sc-start' || id === 'sc-end') && dlgCtx && dlgCtx.mode === 'sched' && dlgCtx.preBr && $('sc-break') && $('sc-break').value === dlgCtx.preBr) { $('sc-break').value = ''; dlgCtx.preBr = ''; }
       if (id === 'e-early-from') r = document.querySelector('#g-dlg-b input[name="e-em"][value="from"]');
@@ -3582,6 +3615,9 @@
        画面が隠れている間は休み、見えた時・日ごと／要確認のタブへ移った時はすぐ読み直す */
     setInterval(function () { quietReload(); }, 30000);
     document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') quietReload(); });
+    /* 段A1: 個人の月を開いている間は、補助項目も30秒ごと・画面に戻った時に読み直す（別の端末で入れた分を届ける・月の読み直しとは別の時計・反証レビュー 2026-11-25 S1） */
+    setInterval(function () { exQuiet(); }, 30000);
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') exQuiet(); });
   }
 
   /* 黙って読み直す（ホーム・日ごと・要確認だけ）: 窓・保存中・印刷中・選ぶ欄の操作中・ほかの読み込み中は何もしない。
