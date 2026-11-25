@@ -23,7 +23,7 @@
   function el(id) { return document.getElementById(id); }
   function mj(ym) { return isYm(ym) ? +ym.slice(5, 7) + '月' : ''; }
   function ymJa(ym) { return isYm(ym) ? ym.slice(0, 4) + '年' + mj(ym) : ''; }
-  function reset() { S.gen++; S.data = null; S.loading = null; S.err = null; S.ov = {}; S.busy = false; S.applied = null; }
+  function reset() { S.gen++; S.data = null; S.loading = null; S.err = null; S.ov = {}; S.busy = false; S.applied = null; S.plan = null; S.edit = null; }
   function dirty() { return Object.keys(S.ov).length > 0; }
 
   function yearOf(ctx) { if (S.year) return S.year; var y = isYm(ctx.ym) ? +ctx.ym.slice(0, 4) : new Date().getFullYear(); return y; }
@@ -83,7 +83,9 @@
       applyYm = latest ? s.forecastApplyYm(latest) : null;
     }
     var cc = ccOf();
-    var src = s.fromItems({ payMonths: months, boots: S.data.boots, countCodes: Object.keys(cc).length ? cc : { __none__: false }, opts: { special: S.special }, overrides: S.ov });
+    /* 従前の版: 翌月徴収は7月分（6月分の保険料）・当月徴収は6月分の期首の版（7月の随時改定を「今」に混ぜない）。見込みは一番新しい版 */
+    var curYm = S.mode === 'teiji' ? yearOf(ctx) + (siMonth(ctx) === 'current' ? '-06' : '-07') : null;
+    var src = s.fromItems({ payMonths: months, boots: S.data.boots, countCodes: Object.keys(cc).length ? cc : { __none__: false }, opts: { special: S.special }, overrides: S.ov, curYm: curYm });
     var res = s.compute({ mode: S.mode, year: S.mode === 'teiji' ? yearOf(ctx) : null, applyYm: applyYm, people: src.people, special: S.special, nearK: S.nearK === null ? s.DEFAULTS.nearK : S.nearK });
     res.months = months; res.latest = latest; res.srcWarns = src.warns;
     return res;
@@ -143,6 +145,9 @@
       '<div>2等級以上の差<b>' + esc(c.big) + ' 人</b></div><div>回数の手当が無ければ変わる<b>' + esc(c.byCount) + ' 人</b></div><div>境目まであと少し<b>' + esc(c.near) + ' 人</b></div>' +
       '<div>要確認<b>' + esc(c.review || 0) + ' 人</b></div></div>';
     if (c.review) h += '<div class="band warn">要確認の人がいます。行の「直す」で日数・遡及の額を確かめてください。</div>';
+    arr(res.srcWarns).forEach(function (w) { h += '<div class="band warn" role="status">' + esc(w.msg) + '</div>'; });
+    var noRun = res.months.filter(function (m) { return res.people.some(function (p) { return p.months.some(function (x) { return x.ym === m && x.warns.some(function (w) { return w.code === 'run_missing'; }); }); }); });
+    if (noRun.length) h += '<div class="band warn" role="status">' + esc(noRun.map(mj).join('・')) + 'に支給した給与が画面にありません。その月の給与を確定してから「読み直す」を押してください。</div>';
     h += '<div class="row"><button type="button" class="btn" data-act="st-csv">' + (S.mode === 'teiji' ? '算定基礎届の控え（CSV）' : '見込みの一覧（CSV）') + '</button></div>' +
       '<p class="help">CSV には氏名と金額が入ります。届を書き終えたら、Finder の「ダウンロード」でそのファイルを選び、ごみ箱へ入れて「ごみ箱を空にする」まで行ってください。メール・チャット・共有のフォルダには入れないでください。</p></div>';
     return h;
@@ -159,7 +164,7 @@
         var mark = m.use ? '✓' : (m.why ? esc(m.why) : '');
         h += '<td class="num">' + (m.days !== null && m.days !== undefined ? esc(m.days) + '日' : '') + (m.why === '支給なし' ? '' : '<br>' + esc(yen(m.pay))) + (m.retro ? '<br><span class="help">遡及 ' + esc(yen(m.retro)) + '</span>' : '') + '<br><span class="help">' + mark + '</span></td>';
       });
-      if (p.status === 'out') { h += '<td colspan="7">' + esc(p.reason) + '</td><td></td><td class="why">' + TAG.out + '</td></tr>'; return; }
+      if (p.status === 'out') { h += '<td colspan="6">' + esc(p.reason) + '</td><td></td><td class="why">' + TAG.out + '</td></tr>'; return; }
       var nx = p.next || {}, nc = p.noCount, ed = p.edge;
       h += '<td class="num">' + (p.avg === null ? '—' : esc(yen(p.avg))) + (p.avgMod !== null ? '<br><span class="help">修正平均</span>' : '') + '</td>' +
         '<td>' + stdTxt(ctx, p.cur.health) + '<br>→ ' + stdTxt(ctx, nx.health) + '</td>' +
@@ -202,6 +207,8 @@
       if (!bp || bp.ok === false || !br || br.ok === false) { ctx.say('給与の設定を読めませんでした。「読み直す」を押してからもう一度行ってください。'); ctx.paint(); return; }
       var st = bp.run && bp.run.status;
       if (st !== 'confirmed' && st !== 'exported') { ctx.say(ymJa(a.prev) + '分の給与がまだ確定していません。確定してから押してください（先に版を作ると、その後に入れた設定が' + ymJa(a.runYm) + '分から元に戻ります）。'); ctx.paint(); return; }
+      var st2 = br.run && br.run.status;
+      if (st2 === 'confirmed' || st2 === 'exported') { ctx.say(ymJa(a.runYm) + '分の給与はもう確定しています。等級を変えても確定した明細の保険料は変わりません。管理者が' + ymJa(a.runYm) + '分の確定を取り消してから押すか、「職員の給与設定」で直して差額を調整で引いてください。'); ctx.paint(); return; }
       var from = br.period && br.period.from, plan = [], skip = [];
       var profs = {}; arr(br.profiles).forEach(function (p) { if (p && p.staff_id) profs[p.staff_id] = p; });
       res.people.forEach(function (p) {
@@ -249,14 +256,14 @@
     var my = S.gen, okN = 0, ng = [];
     jobs.reduce(function (pr, j) {
       return pr.then(function () {
-        if (my !== S.gen) return;
+        /* 送り始めた後は、金額を隠す覆いがかかっても最後まで送る（途中で止めると、変えた人と変えていない人が混ざったまま知らせが出ない） */
         return ctx.rpc('payroll_profile_put', { p_staff_id: j.x.p.staff_id, p_effective_from: pl.from, p_data: j.data, p_rev: j.rev, p_reason: j.reason.slice(0, 200) }).then(function (r) {
           if (r && r.ok === true) okN++; else ng.push(j.x.p.name + '（' + String(r && r.error || 'ng') + '）');
         }, function (e) { ng.push(j.x.p.name + '（送れませんでした）'); if (ctx.note) ctx.note('定時決定の反映', e); });
       });
     }, Promise.resolve()).then(function () {
       S.busy = false; S.plan = null;
-      if (my !== S.gen) return;
+      if (my !== S.gen) { ctx.toast('定時決定: ' + okN + '人の等級を変えました' + (ng.length ? '・' + ng.length + '人は変えられませんでした（「職員の給与設定」で確かめてください）' : '')); return; }   /* 覆いの間は名前を出さない */
       ctx.closeDlg();
       S.applied = { ng: ng.length > 0, msg: okN + '人の等級を ' + ymJa(pl.runYm) + '分の設定の版で変えました。' + (ng.length ? '変えられなかった人: ' + ng.join('・') + '（「職員の給与設定」で確かめてください）' : '') };
       if (ctx.reloadMain) ctx.reloadMain();
@@ -281,8 +288,8 @@
     });
     body += '</tbody></table></div>';
     if (p.warns.length) body += '<ul>' + p.warns.map(function (w) { return '<li>' + esc(w.msg) + '</li>'; }).join('') + '</ul>';
-    body += '<label><input type="checkbox" id="st-e-ack"' + (o.ackAdj ? ' checked' : '') + '> その月だけの支給の調整は遡及ではない（確かめた）</label>';
-    S.edit = { sid: sid, months: p.months.map(function (m) { return { ym: m.ym, days: m.days }; }) };
+    body += '<label><input type="checkbox" id="st-e-ack"' + (o.ackAdj ? ' checked' : '') + '> その月だけの支給の調整は遡及ではない・同じ月の2回の支給も確かめた</label><p class="help">2回の支給の月は、支払基礎日数を直しても確かめたことになります。</p>';
+    S.edit = { sid: sid, months: p.months.map(function (m) { var x = obj(mo[m.ym]); return { ym: m.ym, days: m.days, had: num(x.days) !== null }; }) };
     ctx.openDlg('日数・遡及を直す', body, '<button type="button" class="btn" data-act="st-edit-clear">元に戻す</button><button type="button" class="btn" data-act="dlg-close">やめる</button><button type="button" class="btn pri" data-act="st-edit-go">数え直す</button>');
   }
   function editGo(ctx, clear) {
@@ -294,7 +301,7 @@
       o.ackAdj = !!(el('st-e-ack') && el('st-e-ack').checked);
       e.months.forEach(function (m, i) {
         var d = num(el('st-e-d' + i) && el('st-e-d' + i).value), r = num(el('st-e-r' + i) && el('st-e-r' + i).value), x = !!(el('st-e-x' + i) && el('st-e-x' + i).checked), z = {};
-        if (d !== null && d !== m.days && d >= 0 && d <= 31) z.days = Math.round(d);
+        if (d !== null && (m.had || d !== m.days) && d >= 0 && d <= 31) z.days = Math.round(d);   /* 前に直した日数は、同じ値のままでも手直しとして残す */
         if (r !== null && r > 0) z.retro = Math.round(r);
         if (x) z.excluded = true;
         if (Object.keys(z).length) o.months[m.ym] = z;

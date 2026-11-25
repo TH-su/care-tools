@@ -41,6 +41,10 @@ function putMonth(db, ym, payDate, rows, status = 'confirmed') {
   db.items[ym] = rows.map(([sid, it]) => ({ staff_id: sid, item: it, adjustments: [], gross: it.gross, deduct: 0, net: it.gross,
     frozen: Object.assign({ name: (db.staff.find((s) => s.staff_id === sid) || {}).name || sid, settings: { config: db.settings.config }, period: per },
       status === 'draft' ? {} : { confirmed: { period: per, pay_date: payDate, bank_last4: [] } }) }));
+  /* 勤怠の締めの控え（bootstrap の kintai.summary_by_staff）も明細の勤怠に合わせる（実物は同じ締めから明細を作る。材料の有休は全部「働いていない日」の有休） */
+  const att = (it, k) => { const l = it.lines.find((x) => x.sec === 'att' && x.code === k); return l ? l.qty : 0; };
+  db.kraw[ym] = { raw: { period: per, staff: [], schedule: [], punches: [], days: [] },
+    snapshot: { rows: rows.map(([sid, it]) => ({ staff_id: sid, workDays: att(it, 'workDays'), paidDays: att(it, 'paidDays'), paidOffDays: att(it, 'paidDays'), specialPaidOffDays: 0, schedDays: 21 })) } };
   db.runs[ym] = { status, rev: 2, pay_date: payDate, fingerprint: {}, stale: false, totals: {}, bank_fp: {}, history: [], saved_at: '2027-01-01T00:00:00Z', saved_by: 'x', confirmed_at: status === 'draft' ? null : '2027-01-01T00:00:00Z', confirmed_by: 'x', exported_at: null };
 }
 function seedSantei(db) {
@@ -55,6 +59,9 @@ function seedSantei(db) {
   putMonth(db, '2027-04', '2027-04-27', [['s-01', s01], ['s-09', s09], ['s-03', s03], ['s-02', item([['basic', 158000], ['fnight', 2000]], { workDays: 15, paidDays: 1 })], ['s-08', item([['basic', 90000]], { workDays: 10, paidDays: 0 })]]);
   putMonth(db, '2027-05', '2027-05-27', [['s-01', s01], ['s-09', s09], ['s-03', s03], ['s-02', item([['basic', 160000], ['fnight', 2000]], { workDays: 15, paidDays: 0 })]]);
   putMonth(db, '2027-06', '2027-06-25', [['s-01', s01], ['s-09', s09], ['s-03', s03], ['s-02', item([['basic', 150000]], { workDays: 14, paidDays: 0 })]]);
+  /* 見本 二子は 10月分の期首（2027-09-16）に同じ中身の版がもうある（反映は rev を合わせて上書きする） */
+  const s02 = db.profiles.filter((x) => x.staff_id === 's-02').sort((a, b) => (a.effective_from < b.effective_from ? 1 : -1))[0];
+  db.profiles.push({ staff_id: 's-02', effective_from: '2027-09-16', data: JSON.parse(JSON.stringify(s02.data)), rev: 1, reason: '見本の版' });
   putMonth(db, '2027-03', '2027-03-26', [['s-01', item([['basic', 999999]], { workDays: 20 })]]);   /* 3月に支給した分は入らない */
 }
 
@@ -137,6 +144,24 @@ console.log('1. 定時決定のタブ');
   t('遡及 30,000 を除いて修正平均 280,000（4月の欄に遡及の額）', /280,000/.test(r1b) && /修正平均/.test(r1b) && /遡及 30,000/.test(r1b), r1b);
   t('手直しは保存しない（DB への書き込み0）', !o.routes.db.audit.some((a) => a.action === 'profile_put'));
 
+  await p.click('[data-act="st-edit"][data-sid="s-02"]');
+  await p.waitForSelector('#p-dlg[open] #st-e-d0');
+  await p.fill('#st-e-d0', '17');
+  await p.click('#p-dlg [data-act="st-edit-go"]');
+  await p.waitForFunction(() => !document.getElementById('p-dlg').open, null, { timeout: 5000 });
+  t('日数を17日に直すと17日の決まりで4月だけ（平均 160,000）', /17日以上/.test(await rowText(p, '見本 二子')) && /\b160,000\b/.test((await rowText(p, '見本 二子')).replace(/12等級 150,000|13等級 160,000/g, '')), await rowText(p, '見本 二子'));
+  await p.click('[data-act="st-edit"][data-sid="s-02"]');
+  await p.waitForSelector('#p-dlg[open] #st-e-r1');
+  await p.fill('#st-e-r1', '1000');
+  await p.click('#p-dlg [data-act="st-edit-go"]');
+  await p.waitForFunction(() => !document.getElementById('p-dlg').open, null, { timeout: 5000 });
+  t('2回目に遡及だけを入れても、前に直した日数（17日）は残る', /17日以上/.test(await rowText(p, '見本 二子')), await rowText(p, '見本 二子'));
+  await p.click('[data-act="st-edit"][data-sid="s-02"]');
+  await p.waitForSelector('#p-dlg[open] [data-act="st-edit-clear"]');
+  await p.click('#p-dlg [data-act="st-edit-clear"]');
+  await p.waitForFunction(() => !document.getElementById('p-dlg').open, null, { timeout: 5000 });
+  t('「元に戻す」で15日の決まりに戻る', /15日以上/.test(await rowText(p, '見本 二子')) && /161,000/.test(await rowText(p, '見本 二子')));
+
   console.log('4. 算定基礎届の控え（CSV）');
   const [dl] = await Promise.all([p.waitForEvent('download'), p.click('[data-act="st-csv"]')]);
   const csv = fs.readFileSync(await dl.path(), 'utf8');
@@ -149,6 +174,11 @@ console.log('1. 定時決定のタブ');
   const m1 = await sud(p, 'ok');
   t('9月分の給与が確定する前は止める（10月分から元に戻るため）', /2027年9月分の給与がまだ確定していません/.test(m1), m1);
   putMonth(o.routes.db, '2027-09', '2027-09-27', [], 'confirmed');
+  putMonth(o.routes.db, '2027-10', '2027-10-27', [], 'confirmed');
+  await p.click('[data-act="st-apply"]');
+  const m2 = await sud(p, 'ok');
+  t('10月分がもう確定していたら反映しない（確定した明細の保険料は変わらないため）', /2027年10月分の給与はもう確定しています/.test(m2), m2);
+  delete o.routes.db.runs['2027-10']; delete o.routes.db.items['2027-10'];
   await p.click('[data-act="st-apply"]');
   await p.waitForSelector('#p-dlg[open] [data-act="st-apply-go"]', { timeout: 10000 });
   const dlg = await p.textContent('#p-dlg');
@@ -166,7 +196,8 @@ console.log('1. 定時決定のタブ');
   t('理由に「定時決定 2027年: 9月分から」', !!v && /^定時決定 2027年: 9月分から 健保 260000→280000・厚年 260000→280000$/.test(v.reason || ''), v && v.reason);
   const putsAfter = db.audit.filter((a) => a.action === 'profile_put').length;
   t('変えたのは等級が変わる「算定」の人だけ（見本 一郎・二子。九郎・三郎は等級が同じ）', putsAfter - putsBefore === 2 && !db.profiles.some((x) => x.staff_id === 's-09' && x.effective_from === '2027-09-16') && !db.profiles.some((x) => x.staff_id === 's-03' && x.effective_from === '2027-09-16'), putsAfter - putsBefore);
-  t('見本 二子（時給）の健保・厚年は 160,000', (db.profiles.filter((x) => x.staff_id === 's-02' && x.effective_from === '2027-09-16')[0] || { data: { ins: {} } }).data.ins.health.std === 160000);
+  const v2 = db.profiles.filter((x) => x.staff_id === 's-02' && x.effective_from === '2027-09-16');
+  t('見本 二子（時給）は期首にあった版を rev を合わせて上書き（版は1つのまま・rev 2・健保と厚年 160,000）', v2.length === 1 && v2[0].rev === 2 && v2[0].data.ins.health.std === 160000 && v2[0].data.ins.pension.std === 160000, v2.map((x) => ({ rev: x.rev, ins: x.data.ins })));
   t('知らせの帯に「2人の等級を 2027年10月分の設定の版で変えました」', /2人の等級を 2027年10月分の設定の版で変えました/.test(await p.textContent('#p-main')));
 
   console.log('6. 見込み');

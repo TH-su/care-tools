@@ -42,6 +42,7 @@
     var a = Date.UTC(+from.slice(0, 4), +from.slice(5, 7) - 1, +from.slice(8, 10)), b = Date.UTC(+to.slice(0, 4), +to.slice(5, 7) - 1, +to.slice(8, 10));
     return b < a ? null : Math.round((b - a) / 86400000) + 1;
   }
+  function dayBefore(d) { var t = Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)) - 86400000, x = new Date(t); return x.getUTCFullYear() + '-' + ('0' + (x.getUTCMonth() + 1)).slice(-2) + '-' + ('0' + x.getUTCDate()).slice(-2); }
   function floorDiv(a, n) { return Math.floor(a / n); }   /* 報酬は円の整数・n は 1〜3（浮動小数の誤差は出ない） */
 
   /* 標準報酬月額 → 等級（健保の表の std の一致で引く・厚年は対象月の上限まで）。無ければ null */
@@ -88,13 +89,14 @@
       staff_id: p.staff_id, code: p.code == null ? '' : String(p.code), name: p.name == null ? '' : String(p.name),
       pay_type: p.pay_type || '', kind: 'general', rule: DAYS.general, status: 'ok', reason: '',
       months: [], used: [], total: null, totalRetro: 0, avg: null, avgRaw: null, avgMod: null,
-      cur: { health: gradeOfStd('health', p.cur && p.cur.health, applyYm), pension: gradeOfStd('pension', p.cur && p.cur.pension, applyYm) },
+      cur: { health: gradeOfStd('health', p.cur && p.cur.health, applyYm), pension: p.pensionOn === false ? null : gradeOfStd('pension', p.cur && p.cur.pension, applyYm) },
+      pensionOn: p.pensionOn !== false,
       next: null, diff: null, big: false, change: false,
       noCount: null, edge: null, warns: []
     };
     function w(code, msg) { out.warns.push({ code: code, msg: msg }); }
     if (p.cur && int(p.cur.health) && !out.cur.health) w('cur_bad', '今の健康保険の標準報酬月額が等級表にありません');
-    if (p.cur && int(p.cur.pension) && !out.cur.pension) w('cur_bad', '今の厚生年金の標準報酬月額が等級表にありません');
+    if (p.pensionOn !== false && p.cur && int(p.cur.pension) && !out.cur.pension) w('cur_bad', '今の厚生年金の標準報酬月額が等級表にありません');
     if (!p.cur || !int(p.cur.health)) w('cur_missing', '今の健康保険の標準報酬月額が空です（差を出せません）');
 
     /* 区分 */
@@ -104,16 +106,19 @@
 
     /* 対象外（定時決定だけ・見込みは加入していない人だけ外す） */
     var acq = isDate(ins.from) ? ins.from : (isDate(p.entry_date) ? p.entry_date : null);
-    var lost = [ins.to, p.retire_date].filter(isDate).sort()[0] || null;
+    /* 退職日 retire_date は最後に在籍した日・ins.to は資格の喪失日（退職日の翌日＝payroll-calc.js と同じ読み方）。どちらも「最後に在籍した日」に直して比べる */
+    var lastDay = [isDate(p.retire_date) ? p.retire_date : null, isDate(ins.to) ? dayBefore(ins.to) : null].filter(Boolean).sort()[0] || null;
+    var firstYm = arr(p.months).map(function (m) { return m && m.ym; }).filter(isYm).sort()[0] || null;
     if (ins.on !== true) { out.status = 'out'; out.reason = '健康保険に入っていない'; }
     else if (mode === 'teiji' && year && acq && acq >= year + '-06-01') { out.status = 'out'; out.reason = '6月1日以降の資格取得（届けない）'; }
-    else if (mode === 'teiji' && year && lost && lost <= year + '-06-30') { out.status = 'out'; out.reason = '7月1日より前に退職（届けない）'; }
+    else if (mode === 'teiji' && year && lastDay && lastDay <= year + '-06-30') { out.status = 'out'; out.reason = '7月1日より前に退職（届けない）'; }
+    else if (mode === 'forecast' && lastDay && firstYm && lastDay < firstYm + '-01') { out.status = 'out'; out.reason = '退職済み'; }
 
     /* 月 */
     var ms = arr(p.months).slice().sort(function (a, b) { return a.ym < b.ym ? -1 : 1; });
     ms.forEach(function (m) {
-      var d = num(m.days), row = { ym: m.ym, days: d, daysNote: m.daysNote || '', pay: int(m.pay), countPay: int(m.countPay), retro: Math.max(0, int(m.retro)), use: false, why: '', warns: arr(m.warns).slice() };
-      if (m.missing) row.why = '支給なし';
+      var d = num(m.days), row = { ym: m.ym, pays: int(m.pays) || 1, days: d, daysNote: m.daysNote || '', pay: int(m.pay), countPay: int(m.countPay), retro: Math.max(0, int(m.retro)), use: false, why: '', warns: arr(m.warns).slice() };
+      if (m.missing) { row.why = '支給なし'; if (m.noRun) row.warns.push({ code: 'run_missing', msg: m.ym + ' に支給した給与が画面にありません（その月の給与を確定してから数え直してください）' }); }
       else if (!m.confirmed) row.why = '未確定';
       else if (m.excluded) row.why = '手で外した';
       else if (m.partial) row.why = '途中入社の月';
@@ -142,7 +147,7 @@
     out.avg = retro ? out.avgMod : out.avgRaw;
     if (out.avg < 0) { out.status = 'review'; out.reason = '報酬の平均がマイナスです'; return finish(out); }
     var g = gradeOf(out.avg, applyYm);
-    out.next = g ? { health: g.health, pension: g.pension } : null;
+    out.next = g ? { health: g.health, pension: out.pensionOn ? g.pension : null } : null;
     if (!g) { out.status = 'review'; out.reason = '等級を引けません'; return finish(out); }
 
     /* 回数の手当が無かった時 */
@@ -172,7 +177,7 @@
     return out;
   }
   /* この警告があれば「要確認」（計算はするが反映の前に人が見る） */
-  var REVIEW = { unconfirmed: 1, days_missing: 1, def_missing: 1, days_absent: 1, retro_hint: 1, cur_bad: 1 };
+  var REVIEW = { unconfirmed: 1, days_missing: 1, def_missing: 1, days_absent: 1, retro_hint: 1, cur_bad: 1, run_missing: 1, two_pays: 1, days_half: 1, days_imported: 1 };
 
   function compute(input) {
     input = obj(input);
@@ -196,13 +201,16 @@
        payMonths: ['2027-04','2027-05','2027-06'],   // 平均の元にする支給の月
        boots: [ payroll_bootstrap(ym) の返り値（ok のもの）を古い順 ],
        countCodes: { '<手当の code>': true }（無ければ定義の calc で決める）, opts（DEFAULTS の形）,
+       curYm: 従前の標準報酬を読む月分（翌月徴収は7月分・当月徴収は6月分・無ければ一番新しい月分）,
        overrides: { '<staff_id>': { short:true, months: { '<支給の月>': { days, retro, excluded } } } }
      }
      返り値: { people: [person], warns: [] }
      ・支給の月は確定の写しの支給日（frozen.pay_date）。下書きは run の pay_date か月分の名前で置き「未確定」
      ・報酬＝支給の行（sec 'pay'）のうち社保の対象: 手当（'f'＋定義の code）は定義の attrs.social_ins が false なら外す・
        非課税の調整（adj_nontax:）は外す・ほか（基本給・残業代・通勤・欠勤控除のマイナス・課税の調整）は入れる
-     ・支払基礎日数: 月給・役員＝期間の暦日数（欠勤の日があれば出勤＋有休＋有給の特休で数え「要確認」）・時給と日給＝出勤＋有休＋有給の特休
+     ・支払基礎日数: 月給・役員＝期間の暦日数（欠勤・無給の特休・代休で引いた月は締めの控えの予定の日数−その日数・控えが無ければ出勤＋有休で数え「要確認」）・
+       時給と日給＝出勤＋働いていない日の有休（締めの控え bootstrap の kintai.summary_by_staff の paidOffDays。控えが無ければ出勤＋有休で、半休があれば「要確認」）。
+       freee から取り込んだ月は「要確認」・同じ月に2回支給したら報酬を足して「要確認」・その月の給与の回が無ければ「要確認」
      ・今の標準報酬と加入・生年月日・入社日は、一番新しい bootstrap の profiles（その期首の版）から読む */
   function attOf(item, code) {
     var l = arr(item && item.lines).filter(function (x) { return x && x.sec === 'att' && x.code === code; })[0];
@@ -223,16 +231,28 @@
     boots.forEach(function (b) { arr(b.staff).forEach(function (s) { if (s && s.staff_id) staffCode[s.staff_id] = s.emp_code || staffCode[s.staff_id] || ''; }); });
     var profs = {};
     boots.forEach(function (b) { arr(b.profiles).forEach(function (p) { if (p && p.staff_id && !p.none) profs[p.staff_id] = p; }); });
+    /* 従前（今）の標準報酬を読む版: curYm の月分の期首の版（翌月徴収は7月分・当月徴収は6月分＝7月の随時改定を「今」に混ぜない）。無ければ一番新しい版 */
+    var curBoot = isYm(src.curYm) ? boots.filter(function (b) { return b.ym === src.curYm; })[0] : null, profsCur = {};
+    if (curBoot) arr(curBoot.profiles).forEach(function (p) { if (p && p.staff_id && !p.none) profsCur[p.staff_id] = p; });
+    function curOf(sid) { return profsCur[sid] || profs[sid] || null; }
+    /* 支給の月ごとに給与の回があるか（無い月は「支給なし」と黙らず要確認にする） */
+    var runMonths = {};
+    boots.forEach(function (b) { if (!b.run || !b.run.status) return; var fz = arr(b.items).map(function (it) { return obj(it && it.frozen).pay_date; }).filter(isDate)[0]; var pd = fz || (isDate(b.run.pay_date) ? b.run.pay_date : null); runMonths[pd ? pd.slice(0, 7) : b.ym] = 1; });
     var people = {}, ov = obj(src.overrides);
     function personOf(sid, nm) {
       if (people[sid]) return people[sid];
-      var p = profs[sid] || {}, d = obj(p.data), ins = obj(d.ins), h = obj(ins.health), pe = obj(ins.pension), po = obj(ov[sid]);
+      var p = curOf(sid) || {}, d = obj(p.data), ins = obj(d.ins), h = obj(ins.health), pe = obj(ins.pension), po = obj(ov[sid]);
       var fr = String(d.freee_emp_num == null ? '' : d.freee_emp_num);
       people[sid] = { staff_id: sid, code: staffCode[sid] || fr, name: p.name || nm || '', pay_type: d.pay_type || '',
-        short: po.short === true, cur: { health: int(h.std), pension: int(pe.std) },
+        short: po.short === true, cur: { health: int(h.std), pension: int(pe.std) }, pensionOn: pe.on === true,
         ins: { on: h.on === true, from: h.from || null, to: h.to || null }, entry_date: d.entry_date || null, retire_date: d.retire_date || null,
         exclude: d.exclude === true, months: {} };
       return people[sid];
+    }
+    function snapRow(b, sid) {
+      var sn = obj(b.kintai && b.kintai.summary_by_staff), rows = arr(sn.rows);
+      for (var i = 0; i < rows.length; i++) if (rows[i] && rows[i].staff_id === sid) return rows[i];
+      return null;
     }
     boots.forEach(function (b) {
       var st = b.run && b.run.status, conf = st === 'confirmed' || st === 'exported';
@@ -243,59 +263,85 @@
         if (!want[pm]) return;
         var P = personOf(it.staff_id, it.name), item = obj(it.item), mw = [];
         var period = conf && fz.period && isDate(fz.period.from) ? fz.period : (b.period || {});
-        var pay = 0, cnt = 0, adjPay = false;
+        var pay = 0, cnt = 0, adjPay = false, deducted = false;
         arr(item.lines).forEach(function (l) {
           if (!l || l.sec !== 'pay') return;
           var code = String(l.code || ''), amt = int(l.amount);
+          if ((code === 'absence' || code === 'leave_unpaid') && amt !== 0) deducted = true;   /* 日で引いた控除の行（欠勤・無給の休暇） */
           if (/^adj_nontax:/.test(code)) return;
           if (/^adj:/.test(code)) adjPay = true;
-          if (/^f/.test(code) && !/^(adj|absence)/.test(code)) {
+          if (/^f/.test(code)) {   /* 手当の行は 'f'＋定義の code（payroll-calc.js の pay の呼び出し。ほかの行の code は f で始まらない） */
             var dc = code.slice(1), def = defs[dc];
             if (def) {
               if (obj(def.attrs).social_ins === false) return;
               if (isCount(dc)) cnt += amt;
-            } else if (!/^(basic|board|commute|late|leave_unpaid|paid_leave|paid_leave_hour|holiday_gap|special_paid|ot_)/.test(code)) {
-              mw.push({ code: 'def_missing', msg: '定義の無い手当の行があります（' + String(l.name || code) + '・社保の対象として数えました）' });
-            }
+            } else mw.push({ code: 'def_missing', msg: '定義の無い手当の行があります（' + String(l.name || code) + '・社保の対象として数えました）' });
           }
           pay += amt;
         });
-        var pt = (profs[it.staff_id] && obj(profs[it.staff_id].data).pay_type) || P.pay_type;
-        var wd = attOf(item, 'workDays'), pdays = attOf(item, 'paidDays') || 0, sp = attOf(item, 'specialPaidDays') || 0, ab = attOf(item, 'absentDays') || 0;
+        var pt = (curOf(it.staff_id) && obj(curOf(it.staff_id).data).pay_type) || P.pay_type;
+        var wd = attOf(item, 'workDays'), pdays = attOf(item, 'paidDays') || 0, sp = attOf(item, 'specialPaidDays') || 0;
+        var lost = (attOf(item, 'absentDays') || 0) + (attOf(item, 'specialUnpaidDays') || 0) + (attOf(item, 'compDays') || 0);   /* 日で引いた日（欠勤・無給の特休・代休＝payroll-calc.js の欠勤控除と同じ） */
+        var sr = snapRow(b, it.staff_id), srOk = !!(sr && !sr.imported && typeof sr.paidOffDays === 'number');
         var days = null, note = '';
+        if (sr && sr.imported) mw.push({ code: 'days_imported', msg: pm + ' は freee から取り込んだ勤怠の月です（支払基礎日数を確かめてください）' });
         if (pt === 'hourly' || pt === 'daily') {
-          if (wd !== null) { days = wd + pdays + sp; note = '出勤' + wd + '＋有休' + pdays + (sp ? '＋特休' + sp : ''); }
+          if (srOk && wd !== null) {
+            /* 働いた日の半休は働いた日として1日だけ数える（締めの控えの「働いていない日の有休」paidOffDays を足す） */
+            var off = sr.paidOffDays + (Number(sr.specialPaidOffDays) || 0);
+            days = wd + off; note = '出勤' + wd + '＋休んだ日の有休' + off;
+          } else if (wd !== null) {
+            days = wd + pdays + sp; note = '出勤' + wd + '＋有休' + pdays + (sp ? '＋特休' + sp : '');
+            if (pdays % 1 !== 0) mw.push({ code: 'days_half', msg: pm + ' に半休があります（働いた日の半休は1日として二重に数えない決まり・日数を確かめてください）' });
+          }
         } else {
           var cal = daysBetween(period.from, period.to);
-          if (ab > 0 && wd !== null) {
-            days = wd + pdays + sp; note = '欠勤' + ab + '日の月（出勤＋有休で数えた）';
-            mw.push({ code: 'days_absent', msg: '欠勤のある月の日数は出勤＋有休で数えました（決まりは所定労働日数−欠勤日数・確かめてください）' });
+          var sd = srOk && Number(sr.schedDays) > 0 ? sr.schedDays - lost : null;
+          if (lost > 0 && !deducted && cal !== null) { days = cal; note = '暦日数（欠勤など' + lost + '日・控除なし）'; }   /* 控除していない月は暦日数 */
+          else if (lost > 0) {
+            if (sd !== null && wd !== null && sd >= wd) { days = sd; note = '予定の日数' + sr.schedDays + '−欠勤など' + lost; }
+            else if (wd !== null) {   /* 予定の日数が無い・出勤より少ない（予定の無い勤務が多い人）時は出勤＋有休で数えて確かめてもらう */
+              days = wd + pdays + sp; note = '欠勤など' + lost + '日の月（出勤＋有休で数えた）';
+              mw.push({ code: 'days_absent', msg: '欠勤のある月の日数は出勤＋有休で数えました（決まりは所定労働日数−欠勤日数・確かめてください）' });
+            }
           } else if (cal !== null) { days = cal; note = '暦日数'; }
         }
         if (adjPay) mw.push({ code: 'retro_hint', msg: pm + ' にその月だけの支給の調整があります（3月以前の分の遡及なら遡及の額に入れてください）' });
         var entry = isDate(P.ins.from) ? P.ins.from : P.entry_date;
         var partial = !!(isDate(entry) && isDate(period.from) && entry > period.from && (!isDate(period.to) || entry <= period.to));
         var mo = obj(obj(ov[it.staff_id]).months)[pm] || {};
-        if (num(mo.days) !== null) { days = num(mo.days); note = '手で直した'; mw = mw.filter(function (x) { return x.code !== 'days_absent'; }); }
-        if (num(mo.retro) !== null) mw = mw.filter(function (x) { return x.code !== 'retro_hint'; });
-        if (mo.ackAdj === true) mw = mw.filter(function (x) { return x.code !== 'retro_hint'; });
-        P.months[pm] = { ym: pm, confirmed: conf, days: days, daysNote: note, partial: partial, excluded: mo.excluded === true,
-          pay: pay, countPay: cnt, retro: int(mo.retro), warns: mw };
+        var daysFixed = num(mo.days) !== null;
+        if (daysFixed) { days = num(mo.days); note = '手で直した'; mw = mw.filter(function (x) { return x.code !== 'days_absent' && x.code !== 'days_half' && x.code !== 'days_imported'; }); }
+        if (num(mo.retro) !== null || mo.ackAdj === true) mw = mw.filter(function (x) { return x.code !== 'retro_hint'; });
+        var prev = P.months[pm];
+        if (prev) {
+          /* 同じ月に2回支給した（支給日の寄せで2つの月分が同じ月に入った）: 報酬は足し、日数は多い方・要確認 */
+          prev.pay += pay; prev.countPay += cnt; prev.confirmed = prev.confirmed && conf; prev.pays = (prev.pays || 1) + 1;
+          if (days !== null && (prev.days === null || days > prev.days)) { prev.days = days; prev.daysNote = note; }
+          prev.partial = prev.partial && partial;
+          prev.warns = prev.warns.filter(function (x) { return !(daysFixed && x.code === 'two_pays'); }).concat(mw).concat(mo.ackAdj === true || daysFixed ? [] : [{ code: 'two_pays', msg: pm + ' に2回の支給があります（報酬は足しました・日数を確かめてください）' }]);
+        } else {
+          P.months[pm] = { ym: pm, confirmed: conf, days: days, daysNote: note, partial: partial, excluded: mo.excluded === true,
+            pay: pay, countPay: cnt, retro: int(mo.retro), warns: mw };
+        }
       });
     });
-    /* 一番新しい版で今の値を上書き（その人の明細が古い月にしか無くても今の標準報酬で比べる） */
+    /* 今の値は従前の版（curYm）か一番新しい版で上書き（その人の明細が古い月にしか無くても今の標準報酬で比べる） */
     Object.keys(people).forEach(function (sid) {
-      var P = people[sid], p = profs[sid];
-      if (p) { var d = obj(p.data), ins = obj(d.ins); P.cur = { health: int(obj(ins.health).std), pension: int(obj(ins.pension).std) }; P.ins = { on: obj(ins.health).on === true, from: obj(ins.health).from || null, to: obj(ins.health).to || null }; P.pay_type = d.pay_type || P.pay_type; P.retire_date = d.retire_date || null; P.entry_date = d.entry_date || null; P.exclude = d.exclude === true; }
+      var P = people[sid], p = curOf(sid);
+      /* 標準報酬と加入の印は従前の版（curYm）から・退職日・喪失日・入社日・取得日は一番新しい版から（後の版にだけ書いた退職を落とさない） */
+      if (p) { var d = obj(p.data), ins = obj(d.ins); P.cur = { health: int(obj(ins.health).std), pension: int(obj(ins.pension).std) }; P.pensionOn = obj(ins.pension).on === true; P.ins = { on: obj(ins.health).on === true, from: null, to: null }; P.pay_type = d.pay_type || P.pay_type; P.exclude = d.exclude === true; }
+      var nw = profs[sid] || p;
+      if (nw) { var dn = obj(nw.data), hn = obj(obj(dn.ins).health); P.ins.from = hn.from || null; P.ins.to = hn.to || null; P.retire_date = dn.retire_date || null; P.entry_date = dn.entry_date || null; }
     });
     /* 加入していて明細が1か月も無い人（例: 4〜6月に休職）も入れる */
     Object.keys(profs).forEach(function (sid) {
-      var d = obj(profs[sid].data);
-      if (!people[sid] && obj(obj(d.ins).health).on === true && d.exclude !== true) personOf(sid, profs[sid].name);
+      var d = obj((curOf(sid) || {}).data);
+      if (!people[sid] && obj(obj(d.ins).health).on === true && d.exclude !== true) personOf(sid, (curOf(sid) || {}).name);
     });
     var list = Object.keys(people).sort().map(function (sid) {
       var P = people[sid];
-      P.months = months.map(function (m) { return P.months[m] || { ym: m, missing: true }; });
+      P.months = months.map(function (m) { return P.months[m] || { ym: m, missing: true, noRun: !runMonths[m] }; });
       return P;
     }).filter(function (P) { return !P.exclude; });
     return { people: list, warns: warns };

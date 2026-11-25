@@ -158,5 +158,49 @@ t('CSV の頭に支払基礎日数・修正平均額・健保 標準報酬', /4�
 t('CSV の行（番号・平均 220000・新 220000）と式の無害化（=架空 → \'=架空）', /^T001,'=架空,一般,17日,200000,200000,31,210000,,○/.test(csv[1]) && /,660001,220000,,18,220000,15,220000,1,/.test(csv[1]), csv[1]);
 eq('今の標準報酬が等級表に無い時は要確認', run(P([mon('2027-04', 31, 200000)], { cur: { health: 123456, pension: 0 } })).status, 'review');
 
+console.log('9. 反証レビュー（2026-11-26）で見つかった場面');
+r = run(P([mon('2027-04', 31, 220000), mon('2027-05', 30, 220000), mon('2027-06', 31, 220000)], { cur: { health: 220000, pension: 0 }, pensionOn: false }));
+eq('厚年に入っていない人は健保が同じなら変わらない（厚年の欄は無し）', [r.change, r.next.pension, r.cur.pension, r.diff], [false, null, null, 0]);
+eq('喪失日 7月1日（退職日の書き込み無し）は 6月30日の退職として届けない', run(P([], { ins: { on: true, to: '2027-07-01' } })).status, 'out');
+eq('喪失日 7月2日は届ける', run(P([mon('2027-06', 31, 200000)], { ins: { on: true, to: '2027-07-02' } })).status, 'ok');
+eq('見込み: 窓の前に退職した人は退職済み', ST.person(P([mon('2027-01', 31, 200000)], { retire_date: '2026-12-15' }), { mode: 'forecast', applyYm: '2027-09' }).reason, '退職済み');
+eq('見込み: 窓の中で退職した人は数える', ST.person(P([mon('2027-01', 31, 200000)], { retire_date: '2027-01-20' }), { mode: 'forecast', applyYm: '2027-09' }).status, 'ok');
+function bootK(ym, payDate, rows, snap, status) {
+  const b = boot(ym, status || 'confirmed', payDate, rows);
+  if (snap) b.kintai = { summary_by_staff: { rows: snap } };
+  return b;
+}
+const half = item([['basic', 160000]], { workDays: 16, paidDays: 1 });   /* 働いた日の半休2回（0.5＋0.5） */
+src = ST.fromItems({ payMonths: ['2027-05'], boots: [bootK('2027-05', '2027-05-27', [['s2', half]], [{ staff_id: 's2', workDays: 16, paidDays: 1, paidOffDays: 0, specialPaidOffDays: 0, schedDays: 17 }])] });
+eq('時給: 働いた日の半休は二重に数えない（出勤16＋休んだ日の有休0＝16日）', src.people.filter(function (p) { return p.staff_id === 's2'; })[0].months[0].days, 16);
+src = ST.fromItems({ payMonths: ['2027-05'], boots: [bootK('2027-05', '2027-05-27', [['s2', item([['basic', 160000]], { workDays: 16, paidDays: 0.5 })]], null)] });
+eq('締めの控えが無く半休がある月は要確認の印', src.people.filter(function (p) { return p.staff_id === 's2'; })[0].months[0].warns.map(function (w) { return w.code; }), ['days_half']);
+src = ST.fromItems({ payMonths: ['2027-05'], boots: [bootK('2027-05', '2027-05-27', [['s1', item([['basic', 190000], ['absence', -10000]], { workDays: 17, paidDays: 0, absentDays: 1, specialUnpaidDays: 1 })]], [{ staff_id: 's1', paidOffDays: 0, schedDays: 21 }])] });
+eq('月給: 欠勤・無給の特休で引いた月は予定の日数−その日数（21−2＝19日・要確認なし）', [src.people[0].months[0].days, src.people[0].months[0].warns.length], [19, 0]);
+src = ST.fromItems({ payMonths: ['2027-05'], boots: [bootK('2027-05', '2027-05-27', [['s1', s1]], [{ staff_id: 's1', paidOffDays: 0, imported: { source: 'freee' } }])] });
+eq('freee から取り込んだ勤怠の月は要確認', src.people[0].months[0].warns.map(function (w) { return w.code; }), ['days_imported']);
+src = ST.fromItems({ payMonths: ['2027-04'], boots: [boot('2027-04', 'confirmed', '2027-04-01', [['s1', item([['basic', 100000]], { workDays: 10 })]]), boot('2027-05', 'confirmed', '2027-04-30', [['s1', item([['basic', 200000]], { workDays: 20 })]])] });
+eq('同じ月に2回支給したら報酬を足し（300,000）要確認', [src.people[0].months[0].pay, src.people[0].months[0].warns.map(function (w) { return w.code; })], [300000, ['two_pays']]);
+src = ST.fromItems({ payMonths: ['2027-04', '2027-05', '2027-06'], boots: [boot('2027-04', 'confirmed', '2027-04-27', [['s1', s1]]), boot('2027-05', 'confirmed', '2027-05-27', [['s2', s1]])] });
+a = src.people.filter(function (p) { return p.staff_id === 's1'; })[0];
+r = ST.compute({ mode: 'teiji', year: 2027, people: [a] }).people[0];
+eq('給与の回が無い6月は要確認・回はあって明細が無い5月は黙って支給なし', [r.months[1].warns.length, r.months[2].warns.map(function (w) { return w.code; }), r.status], [0, ['run_missing'], 'review']);
+const b6 = boot('2027-06', 'confirmed', '2027-06-25', [['s1', s1]]), b7 = boot('2027-07', 'confirmed', '2027-07-27', [], [{ staff_id: 's1', name: '架空花子', data: { pay_type: 'monthly', ins: { health: { on: true, std: 240000 }, pension: { on: true, std: 240000 } } } }]);
+eq('従前の版は curYm の月分（当月徴収なら6月分＝7月の改定 240,000 を「今」に混ぜない）', ST.fromItems({ payMonths: ['2027-06'], boots: [b6, b7], curYm: '2027-06' }).people.filter(function (p) { return p.staff_id === 's1'; })[0].cur.health, 220000);
+eq('curYm が無ければ一番新しい版（240,000）', ST.fromItems({ payMonths: ['2027-06'], boots: [b6, b7] }).people.filter(function (p) { return p.staff_id === 's1'; })[0].cur.health, 240000);
+
+console.log('10. 再レビュー（2026-11-26）で見つかった場面');
+src = ST.fromItems({ payMonths: ['2027-05'], boots: [bootK('2027-05', '2027-05-27', [['s1', item([['basic', 190000], ['absence', -10000]], { workDays: 20, absentDays: 1 })]], [{ staff_id: 's1', paidOffDays: 0, schedDays: 3 }])] });
+eq('月給: 予定の日数が出勤より少ない（3−1＜20）時は出勤＋有休で数え要確認', [src.people[0].months[0].days, src.people[0].months[0].warns.map(function (w) { return w.code; })], [20, ['days_absent']]);
+src = ST.fromItems({ payMonths: ['2027-05'], boots: [bootK('2027-05', '2027-05-27', [['s1', item([['basic', 200000]], { workDays: 15, absentDays: 6 })]], [{ staff_id: 's1', paidOffDays: 0, schedDays: 21 }])] });
+eq('月給: 欠勤を控除していない（控除の行が無い）月は暦日数（4/16〜5/15＝30日）', [src.people[0].months[0].days, src.people[0].months[0].warns.length], [30, 0]);
+const p6 = [{ staff_id: 's1', name: '架空花子', data: { pay_type: 'monthly', ins: { health: { on: true, std: 220000 }, pension: { on: true, std: 220000 } } } }];
+const p7 = [{ staff_id: 's1', name: '架空花子', data: { pay_type: 'monthly', retire_date: '2027-06-20', ins: { health: { on: true, std: 220000 }, pension: { on: true, std: 220000 } } } }];
+src = ST.fromItems({ payMonths: ['2027-06'], boots: [boot('2027-06', 'confirmed', '2027-06-25', [['s1', s1]], p6), boot('2027-07', 'confirmed', '2027-07-27', [], p7)], curYm: '2027-06' });
+eq('当月徴収（curYm 6月分）でも、後の版にだけ書いた6月の退職で対象外', ST.compute({ mode: 'teiji', year: 2027, people: src.people }).people[0].status, 'out');
+const two = [boot('2027-04', 'confirmed', '2027-04-01', [['s1', item([['basic', 100000]], { workDays: 10 })]]), boot('2027-05', 'confirmed', '2027-04-30', [['s1', item([['basic', 200000]], { workDays: 20 })]])];
+src = ST.fromItems({ payMonths: ['2027-04'], boots: two, overrides: { s1: { months: { '2027-04': { days: 20 } } } } });
+eq('2回の支給の月は日数を直すと要確認が消える', [src.people[0].months[0].days, src.people[0].months[0].warns.map(function (w) { return w.code; })], [20, []]);
+
 console.log('\n' + (fail ? '✗ ' + fail + ' 件 失敗（' + pass + ' 件 合格）' : '✓ ' + pass + ' 件 合格'));
 process.exit(fail ? 1 : 0);
