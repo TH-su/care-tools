@@ -222,7 +222,8 @@ t('形を変えた項目の前の形の行: 個人の月の帯・CSV の注意�
   /if \(mm\) h \+= '<div class="band warn" role="status">' \+ esc\(mm\)/.test(K) && /out\.warn = EX\.mismatchText\(sums\.mismatch, exItems\(\) \|\| \[\]\);/.test(K) && /if \(exr\.warn\) extra\.push\(exr\.warn\);/.test(K)
   && /var kc = exs \? exKindChanged\(exs\.items\) : \[\];\s*if \(kc\.length && !confirm\(/.test(K) && /\(saved && exHasRows\(it\.code\) \? ' disabled/.test(K));
 t('入れる窓は保存していない入力を確かめる（DIRTY_MODES.extra）', /DIRTY_MODES\.extra = 1;/.test(K));
-t('新しいタブ・端末に残す鍵を足していない（TABS と localStorage の鍵は今のまま）', /var TABS = \['home', 'day', 'review', 'requests', 'grid', 'person', 'staff', 'leave', 'close', 'settings'\];/.test(K) && /var LS_TAB = 'kintai_tab', LS_YM = 'kintai_ym';/.test(K) && !/localStorage\.setItem\([^)]*ex/.test(K));
+/* ★年別・事業所別・休日のタブ（2026-11-25・kintai-views.js）で TABS に3つ足した。補助項目が足していないこと（端末に残す鍵）は同じに確かめる */
+t('補助項目は新しいタブ・端末に残す鍵を足していない（TABS は年別などの3つと社保の知らせの shaho と資格の期限の cert を足しただけ・localStorage の鍵は今のまま）', /var TABS = \['home', 'day', 'review', 'requests', 'grid', 'person', 'staff', 'leave', 'close', 'settings', 'year', 'site', 'holiday', 'shaho', 'cert'\];/.test(K) && /var LS_TAB = 'kintai_tab', LS_YM = 'kintai_ym';/.test(K) && !/localStorage\.setItem\([^)]*ex/.test(K));
 
 /* ── 段A2（2026-11-25・凍結仕様 ROOT-v7-plus-parity.md「段A2」「反証レビュー1回」「2 の追記」）──
    7. 記号の組・通勤回数・社内会議の掃除と初めの案

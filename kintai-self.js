@@ -73,6 +73,7 @@
     $('who').textContent = '';
     $('f-req').reset(); msg('rq-msg', ''); msg('app-msg', '');
     $('in-pin').value = '';
+    if (window.KintaiSelfBoard) window.KintaiSelfBoard.reset();   /* 段B（統合 0130）: お知らせと補助項目の申請の中身も捨てる */
     msg('pin-msg', text || '', text ? 'warn' : null);
     if (key) show('pin'); else showEnroll();
   }
@@ -144,6 +145,8 @@
     touch();
     setTab(tab);
     loadNotices();
+    /* 段B（統合 0130・kintai-self-board.js）: お知らせと補助項目の申請。鍵と開いている印はここで足して渡す（部品には持たせない） */
+    if (window.KintaiSelfBoard) window.KintaiSelfBoard.start(function (op, p) { var b = { key: key, open: open }, k; for (k in p) b[k] = p[k]; return call(op, b); }, handleAuth);
   }
   $('f-pin').addEventListener('submit', function (e) {
     e.preventDefault();

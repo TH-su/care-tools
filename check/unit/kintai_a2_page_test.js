@@ -25,7 +25,8 @@ const sl = (S, a, b) => { const i = S.indexOf(a), j = S.indexOf(b, i + 1); retur
 
 console.log('\n— 1. 勤怠の設定のタブ —');
 {
-  t('3つの欄は補助項目の欄の後ろ・#g-set の中', /h \+= exSetHtml\(\);[^\n]*\n\s*h \+= a2SetHtml\(\);/.test(K) && K.indexOf('h += a2SetHtml();') < K.indexOf("h += '</form>' + a36Form()"));
+  /* ★main の取り込み（2026-11-25）で年別・段B・社保・資格の欄が補助項目の欄のすぐ後に入ったので、すぐ次ではなく順番で確かめる（#g-set の中であることは同じ） */
+  t('3つの欄は補助項目の欄の後ろ・#g-set の中', K.indexOf('h += exSetHtml();') > 0 && K.indexOf('h += exSetHtml();') < K.indexOf('h += a2SetHtml();') && K.indexOf('h += a2SetHtml();') < K.indexOf("h += '</form>' + a36Form()"));
   t('関数が無い（補助項目を確かめていない）時は欄を出さない', /function a2On\(\) \{ return !!EX && typeof EX\.buildExt === 'function' && exOn\(\) && !!exSt; \}/.test(K) && /function a2SetHtml\(\) \{\s*if \(!a2On\(\)\) return '';/.test(K));
   t('触った欄だけ送る（a2Touched・描き直したら触っていない状態から・id の頭 a2g-・a2c-・a2m-）', /a2Touched = \{ g: false, c: false, m: false \};   \/\* 描き直したら/.test(K) && /else if \(id && \/\^a2\[gcm\]-\/\.test\(id\)\) a2Touched\[id\.charAt\(2\)\] = true;/.test(K) && /if \(id && \/\^a2\[gcm\]-\/\.test\(id\)\) a2Touched\[id\.charAt\(2\)\] = true;/.test(K));
   const sv = sl(K, '  function saveSettings(btn)', '  /* 印刷: 見出しの日時');
