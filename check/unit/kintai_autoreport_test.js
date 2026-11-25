@@ -215,7 +215,8 @@ const kh = new Function(cut(K, 'function isNetErr(') + '\n' + (K.match(/var DENI
   /* ★0120（2026-11-21・締めの前の要確認）で 2026-11-21.6 に上げたので期待の版を改めた */
   /* ★freee の月の集計の取り込み（2026-11-23・統合 0123）で kintai.js・kintai-calc.js を ?v=2026-11-23.1 に上げたので期待の版を改めた */
   /* ★v6（2026-11-24・打刻漏れの知らせと休暇の申請）で kintai.js を ?v=2026-11-24 に上げたので期待の版を改めた */
-  t('kintai.html の kintai.js の ?v= を上げた（2026-11-24）', /<script src="kintai\.js\?v=2026-11-24"><\/script>/.test(read('kintai.html')));
+  /* ★認めた残業の切り捨て（2026-11-25）で kintai.js を ?v=2026-11-25 に上げたので期待の版を改めた */
+  t('kintai.html の kintai.js の ?v= を上げた（2026-11-25）', /<script src="kintai\.js\?v=2026-11-25"><\/script>/.test(read('kintai.html')));
 
   console.log('\n結果: ' + pass + ' 合格 / ' + fail + ' 不合格');
   process.exit(fail ? 1 : 0);

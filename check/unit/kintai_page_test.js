@@ -107,7 +107,8 @@ t('印刷の時だけの見出し（.ph は画面で出さない）', /\.ph\{dis
 /* ★v4（2026-11-20）: 中身を変えたので ?v= を 2026-11-20 に上げた（CLAUDE.md の決まり）。期待をその版に改めた */
 /* ★freee の月の集計の取り込み（2026-11-23・統合 0123）で kintai.js・kintai-calc.js を ?v=2026-11-23.1 に上げたので期待の版を改めた */
 /* ★v6（2026-11-24・打刻漏れの知らせと休暇の申請）で kintai.js だけを ?v=2026-11-24 に上げたので期待の版を改めた（kintai-calc.js は変えていない・23.1 のまま） */
-t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-2…（kintai.js は 2026-11-24・kintai-calc.js は打刻の組み方の直しで 2026-11-25 に上げた）', /kintai\.js\?v=2026-11-24/.test(H) && /kintai-calc\.js\?v=2026-11-25/.test(H) && /kintai-calc\.js\?v=2026-11-25/.test(HC));
+/* ★認めた残業の切り捨て（2026-11-25）で kintai.js を ?v=2026-11-25 に上げたので期待の版を改めた */
+t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-2…（kintai.js は認めた残業の切り捨ての欄で 2026-11-25・kintai-calc.js は 2026-11-25 に上げた）', /kintai\.js\?v=2026-11-25/.test(H) && /kintai-calc\.js\?v=2026-11-25/.test(H) && /kintai-calc\.js\?v=2026-11-25/.test(HC));
 
 console.log('\n— 8. 打刻画面の v3（出勤を押す → 氏名 → パスコード） —');
 const pendClock = [];
@@ -309,7 +310,8 @@ t('反証レビューの指摘1:「今日」は今日のカレンダー月へ移
 /* ★freee の月の集計の取り込み（2026-11-23・統合 0123）で kintai.js・kintai-calc.js を ?v=2026-11-23.1 に上げたので期待の版を改めた */
 /* ★v6（2026-11-24）で kintai.js を ?v=2026-11-24 に上げたので期待の版を改めた（kintai-calc.js は 2026-11-23.1 のまま・給与の画面と同じ版） */
 /* ★打刻の組み方の直し（2026-11-25）で kintai-calc.js を ?v=2026-11-25.1 に上げたので期待の版を改めた */
-t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-24・2026-11-25.1（両画面と給与の画面でそろえる）', /kintai\.js\?v=2026-11-24"/.test(H) && /kintai-calc\.js\?v=2026-11-25\.1"/.test(H) && /kintai-calc\.js\?v=2026-11-25\.1"/.test(HC) && /kintai-calc\.js\?v=2026-11-25\.1"/.test(read('payroll.html')));
+/* ★認めた残業の切り捨て（2026-11-25・2回目）で kintai.js を ?v=2026-11-25・kintai-calc.js を ?v=2026-11-25.2 に上げたので期待の版を改めた */
+t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-25・2026-11-25.2（両画面と給与の画面でそろえる）', /kintai\.js\?v=2026-11-25"/.test(H) && /kintai-calc\.js\?v=2026-11-25\.2"/.test(H) && /kintai-calc\.js\?v=2026-11-25\.2"/.test(HC) && /kintai-calc\.js\?v=2026-11-25\.2"/.test(read('payroll.html')));
 
 const await_pending = [];   /* 動かして確かめる試験（Promise）を最後に待つ */
 console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（2026-11-20・凍結した仕様書 ROOT-v4-master-leave.md） —');
@@ -329,7 +331,7 @@ console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（
   /* ★給与の側の反証レビューの直し（2026-11-20）: kintai-calc.js を 2026-11-20.6 に上げたので、その期待の版を改めた */
   /* ★再確認の反証の直し（2026-11-20）: kintai-calc.js を 2026-11-20.7 に上げたので、その期待の版を改めた */
   /* ★反証レビュー（2026-11-21）: kintai-calc.js を 2026-11-21.2 に上げたので、その期待の版を改めた */
-  t('kintai-leave.js は kintai-calc.js の後・kintai.js の前に読む（?v=2026-11-20.4・反証レビューの直しで上げた）', H.indexOf('<script src="kintai-calc.js?v=2026-11-25.1"></script>') >= 0 && H.indexOf('<script src="kintai-leave.js?v=2026-11-20.4"></script>') > H.indexOf('kintai-calc.js?v=') && H.indexOf('kintai-leave.js?v=') < H.indexOf('kintai.js?v='));
+  t('kintai-leave.js は kintai-calc.js の後・kintai.js の前に読む（?v=2026-11-20.4・反証レビューの直しで上げた）', H.indexOf('<script src="kintai-calc.js?v=2026-11-25.2"></script>') >= 0 && H.indexOf('<script src="kintai-leave.js?v=2026-11-20.4"></script>') > H.indexOf('kintai-calc.js?v=') && H.indexOf('kintai-leave.js?v=') < H.indexOf('kintai.js?v='));
   /* iPhone の幅（640px 以下）だけの見た目の直し（2026-11-20）: 窓の欄の見出しを縦1字にしない・枠（fieldset）を窓の外へ広げない・突き合わせの表は1人ずつの並び */
   {
     const mq = (H.match(/@media \(max-width:640px\)\{[\s\S]*?\n\s*table\.mt td\.empty\{display:block\}\}/) || [''])[0];
@@ -481,6 +483,34 @@ console.log('\n— 14. 打刻の番号と従業員コードの順・日ごとの
     /if \(view !== 'app' \|\| busy \|\| !month \|\| !data \|\| dlgCtx \|\| printAll \|\| \(tab !== 'home' && tab !== 'day' && tab !== 'review'\)\) return false;/.test(q) && /visibilityState === 'hidden'\) return false;/.test(q) && /ae\.tagName === 'SELECT'/.test(q));
   t('届いた時に読み込みの世代・月・状態が変わっていれば捨てる・答えを待つ間は手元で数え直す・20秒で諦めて古い答えは番号で捨てる・失敗は記録して手元で数え直すだけ',
     /if \(my !== gen \|\| atYm !== ym \|\| !quietOk\(\)\) return;/.test(q) && /if \(!quietOk\(\)\) return;/.test(q) && /if \(quietBusy && Date\.now\(\) - quietBusy < 20000\) \{ recompute\(\); paint\(\); return; \}/.test(q) && /if \(seq !== quietSeq\) return;\s*quietBusy = 0;/.test(q) && /note\('自動の読み直し', e\);/.test(q) && !/alert\(/.test(q));
+}
+
+console.log('\n— 認めた残業の切り捨ての設定の欄（otFloorMin・otFloorAlertMin・代表者の決定 2026-11-25）—');
+{
+  const C = require(path.join(ROOT, 'kintai-calc.js'));
+  const fnSrc = (name) => { const i = K.indexOf('  function ' + name + '('); if (i < 0) return ''; const j = K.indexOf('\n  }\n', i); return K.slice(i, j + 4); };
+  const keysM = /var LV_SET_KEYS = \[([^\]]*)\]/.exec(K);
+  t('休暇と丸めの鍵（LV_SET_KEYS）に otFloorMin・otFloorAlertMin がある（保存で今の設定から落とさない）', !!keysM && /'otFloorMin'/.test(keysM[1]) && /'otFloorAlertMin'/.test(keysM[1]), keysM && keysM[1]);
+  const lvH = fnSrc('lvSetHtml'), lvR = fnSrc('readLvSet');
+  const html = (cfg) => new Function('C', 'CFG', `function rawCfg() { return CFG; } function esc(s) { return String(s); }\n${lvH}\nreturn lvSetHtml();`)(C, cfg);
+  const h0 = html({}), h1 = html({ otFloorMin: 15, otFloorAlertMin: 20 });
+  t('欄: 「認めた残業の切り捨て」select（切／15分／30分）・「切り捨ての端数がこの分以上で要確認」number（0〜600）・説明の文',
+    /<label for="l-otFloorMin">認めた残業の切り捨て<\/label>/.test(h0) && /<option value="0" selected>切<\/option><option value="15">15分<\/option><option value="30">30分<\/option>/.test(h0) &&
+    /<label for="l-otFloorAlertMin">切り捨ての端数がこの分以上で要確認<\/label>/.test(h0) && /id="l-otFloorAlertMin" min="0" max="600" step="1" value="13"/.test(h0) &&
+    h0.indexOf('認めた残業を勤務ごと（分割勤務は塊ごと）に単位で切り捨てます（月の合計の30分の端数処理とは別）') >= 0, h0.slice(h0.indexOf('l-otFloorMin') - 20, h0.indexOf('l-otFloorMin') + 400));
+  t('欄: 今の設定の値を選んで出す（15分・20）', /<option value="15" selected>15分<\/option>/.test(h1) && /id="l-otFloorAlertMin"[^>]*value="20"/.test(h1));
+  const read = (cfg, form) => new Function('C', 'CFG', 'F', `function rawCfg() { return CFG; } function $(id) { if (id === 'l-hourly') return { checked: !!F[id] }; return id in F ? { value: F[id], checked: false } : null; }\n${lvR}\nreturn readLvSet();`)(C, cfg, form);
+  const base = { 'l-roundUnitMin': '1', 'l-dayHours': '8', 'l-otFloorMin': '0', 'l-otFloorAlertMin': '13' };
+  const r0 = read({}, base);
+  t('保存: 既定のまま（切・13）なら鍵を作らない', r0 && r0.bad.length === 0 && !('otFloorMin' in r0.vals) && !('otFloorAlertMin' in r0.vals), r0);
+  const r1 = read({}, Object.assign({}, base, { 'l-otFloorMin': '15', 'l-otFloorAlertMin': '10' }));
+  t('保存: 15分・10 を入れた時は数で送る', r1.vals.otFloorMin === 15 && r1.vals.otFloorAlertMin === 10, r1.vals);
+  const r2 = read({ otFloorMin: 15, otFloorAlertMin: 10 }, base);
+  t('保存: 今の設定にある鍵は既定に戻しても送る（切・13 に戻せる）', r2.vals.otFloorMin === 0 && r2.vals.otFloorAlertMin === 13, r2.vals);
+  const r3 = read({}, Object.assign({}, base, { 'l-otFloorAlertMin': '601' })), r4 = read({}, Object.assign({}, base, { 'l-otFloorAlertMin': '' })), r5 = read({}, Object.assign({}, base, { 'l-otFloorMin': '10' }));
+  t('保存: 範囲の外（601・空・10分）は入れ直しを求める', r3.vals === null && r4.vals === null && r5.vals === null && r3.bad.some((x) => /切り捨ての端数/.test(x)) && r5.bad.some((x) => /認めた残業の切り捨て/.test(x)), [r3.bad, r5.bad]);
+  t('kintai.js の読み込みの版を上げた（kintai.js?v=2026-11-25・kintai-calc.js?v=2026-11-25.2 を全画面でそろえる）', H.indexOf('<script src="kintai.js?v=2026-11-25"></script>') >= 0 &&
+    ['kintai.html', 'kintai-clock.html', 'kintai-self.html', 'payroll.html'].every((f) => { const x = fs.readFileSync(path.join(ROOT, f), 'utf8'); return x.indexOf('kintai-calc.js?v=2026-11-25.2') >= 0 && x.indexOf('kintai-calc.js?v=2026-11-25.1') < 0; }));
 }
 
 Promise.all(await_pending.concat(pendClock)).catch((e) => { fail++; console.log('  ✗ 動かして確かめる試験が止まった  → ' + e.message); }).then(() => {

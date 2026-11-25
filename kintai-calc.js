@@ -7,7 +7,7 @@
  * ・丸めの決まり（代表者の依頼 2026-11-18）:
  *     予定より早い出勤 → 予定の開始から数える（早出を認めた日は打刻どおり）
  *     予定より遅い退勤 → 予定の終わりまで数える（残業を認めた日は打刻どおり）
- *     遅刻・早退・予定の無い勤務は打刻どおり（1日単位の切り捨てはしない・基発150号）
+ *     遅刻・早退・予定の無い勤務は打刻どおり（1日単位の切り捨てはしない・基発150号。例外は otFloorMin＝全部認めた残業の切り捨て・代表者の決定 2026-11-25）
  *     境目（既定30分）以上ずれた打刻は「要確認」に出し、事務所が早出・残業を認めるかを決める
  *     ＝終業後・始業前に実際に働いた時間を黙って切り捨てないための口（厚労省ガイドライン）
  * ・氏名・番号などの個人情報をこのファイルに書かない（試験も架空の職員だけ）
@@ -38,12 +38,17 @@
     /* v5 段4（2026-11-20）: どれも既定は今の動きと同じ（丸めなし・時間単位の有休を使わない） */
     roundUnitMin: 1,        // 丸めの単位（1・5・10・15・30分）。働いた人に有利な向きだけに効かせる（遅刻の出勤は切り捨て・早退の退勤と認めた残業の終わりは切り上げ）
     hourlyPaidLeave: false, // 時間単位の有休を使うか（年5日分まで・労基法39条4項の労使協定がある時だけ）
-    dayHours: 8             // 1日の所定の時間（時間単位の有休の1日の換算・特別休暇の1日の時間。1時間に満たない端数は切り上げて持つ）
+    dayHours: 8,            // 1日の所定の時間（時間単位の有休の1日の換算・特別休暇の1日の時間。1時間に満たない端数は切り上げて持つ）
+    /* 代表者の決定 2026-11-25（法令のおそれを説明した上での選択）: 全部認めた残業（overtime_ok）の終わりを勤務ごと（分割勤務は塊ごと）に単位で切り捨てる。既定 0＝切らない（今と同じ）。
+       「この時刻まで認める」（ot_until）で時刻を決めた日は切り捨てない（反証レビュー 2026-11-25 指摘3） */
+    otFloorMin: 0,          // 認めた残業の切り捨ての単位（0＝切（切り捨てない）・15・30分）。認めていない残業・時刻を決めて認めた残業・予定の無い勤務・早出・遅刻・早退には効かせない
+    otFloorAlertMin: 13     // 切り捨てた端数がこの分以上の日は要確認（ot_floor）。0＝知らせない
   };
   /* noScheduleUnit は 1 に固定（15分などで丸めると1日ごとの切り捨てになり基発150号に反する・反証レビュー指摘10） */
   var NUM_KEYS = { breakThresholdH: [0, 24], breakH: [0, 8], nightBreakH: [0, 8], earlyAlertMin: [0, 600],
-    overtimeAlertMin: [0, 600], overtimeMonthWarnH: [0, 200], weekStartDow: [0, 6], dayHours: [1, 24] };
+    overtimeAlertMin: [0, 600], overtimeMonthWarnH: [0, 200], weekStartDow: [0, 6], dayHours: [1, 24], otFloorAlertMin: [0, 600] };
   var ROUND_UNITS = [1, 5, 10, 15, 30];
+  var OT_FLOORS = [0, 15, 30];   /* 認めた残業の切り捨ての単位（2026-11-25） */
   /* v5 段4: 休暇の種類（DB の kintai_absences.kind）と、特別休暇の種類の初めの一覧（設定の leaveTypes が無い時・仮置き） */
   var ABS_KINDS = ['hourly_paid', 'special', 'comp', 'swap'];
   var LEAVE_TYPES_DEFAULT = [{ code: 'keicho', name: '慶弔', paid: true }, { code: 'summer', name: '夏季', paid: true }, { code: 'other', name: 'その他', paid: false }];
@@ -86,6 +91,7 @@
     /* v5 段4: 丸めの単位・時間単位の有休・1日の所定の時間（整数の時間に切り上げる）。特別休暇の種類の一覧は、配列の時だけ確かめた行を写す（無い時は鍵を作らない） */
     if (ROUND_UNITS.indexOf(c.roundUnitMin) >= 0) out.roundUnitMin = c.roundUnitMin;
     if (typeof c.hourlyPaidLeave === 'boolean') out.hourlyPaidLeave = c.hourlyPaidLeave;
+    if (OT_FLOORS.indexOf(c.otFloorMin) >= 0) out.otFloorMin = c.otFloorMin;   /* 不正値は 0（切らない） */
     out.dayHours = Math.ceil(out.dayHours);
     var lt = cleanLeaveTypes(c.leaveTypes);
     if (lt) out.leaveTypes = lt;
@@ -381,9 +387,10 @@
     offline: '通信できない時の打刻（端末の時刻）', office: '事務所が足した打刻',
     late: '遅刻', early_leave: '早退', after_lock: '締めた後の打刻',
     working: '勤務中', not_in_yet: 'まだ出勤していません', checked: '確認済み', absent: '欠勤',
-    early_ng: '早出を認めなかった', ot_ng: '残業を認めなかった'   /* 0120: 認めないと決めた早出・残業（要確認ではない） */
+    early_ng: '早出を認めなかった', ot_ng: '残業を認めなかった',   /* 0120: 認めないと決めた早出・残業（要確認ではない） */
+    ot_floor: '残業の切り捨てが設定の分以上（事務所で確認）'   /* 2026-11-25: 認めた残業の切り捨ての端数が otFloorAlertMin 分以上（実際の分は塊の otFloorCutMin・文は仮置き） */
   };
-  var REVIEW = { early: 1, overtime: 1, missing_out: 1, missing_in: 1, no_punch: 1, no_schedule: 1, offline: 1, after_lock: 1 };
+  var REVIEW = { early: 1, overtime: 1, missing_out: 1, missing_in: 1, no_punch: 1, no_schedule: 1, offline: 1, after_lock: 1, ot_floor: 1 };
 
 
   /* 塊1つを数える
@@ -433,13 +440,17 @@
     var earlyFrom = day ? toMs(day.early_from) : null, otUntil = day ? toMs(day.ot_until) : null;
     /* v5 段4: 丸めの単位（1分なら丸めない＝今と同じ道）。働いた人に有利な向きだけ: 遅刻の出勤は単位で切り捨て（予定の開始より前にはしない）・
        早退の退勤は単位で切り上げ（予定の終わりより後にはしない）・認めた残業の終わりは単位で切り上げ（時刻を区切って認めた時は、その時刻まで）。
-       予定の無い勤務・間の組・認めていない早出と残業は丸めない（日ごとに働いた時間を短くする向きの丸めは入れない・基発150号） */
+       予定の無い勤務・間の組・認めていない早出と残業は丸めない（日ごとに働いた時間を短くする向きの丸めは入れない・基発150号。例外は下の otFloorMin だけ） */
     var U = cfg.roundUnitMin > 1 ? cfg.roundUnitMin * MIN : 0;
     /* 反証レビュー（2026-11-20・high）: 丸めで数える区間が延びて休憩を引く線（拘束6時間超）を越え、実働が短くなる日があった。
        丸める時は、まず丸めない時を数え（base0）、休憩を引くかと休憩の分は丸める前の区間の値を使う。
        それでも丸めた実働・深夜・休日労働のどれかが丸めない時より短い日は丸めない（どの日も「丸めた値 ≧ 丸めない値」） */
     var base0 = null;
-    if (U) { var cfg1 = {}; for (var ck in cfg) cfg1[ck] = cfg[ck]; cfg1.roundUnitMin = 1; base0 = countBlock(b, day, cfg1, nowMs, hov); }
+    if (U) { var cfg1 = {}; for (var ck in cfg) cfg1[ck] = cfg[ck]; cfg1.roundUnitMin = 1; base0 = countBlock(b, day, cfg1, nowMs, hov); }   /* otFloorMin も写す（丸めない時も同じ単位で切り捨てて比べる） */
+    /* 2026-11-25（代表者の決定）: 全部認めた残業の終わりを、打刻の退勤から直接、予定の終わりから F 分の単位で切り捨てる（F＝0 なら切らない）。
+       切り捨てる時は丸めの単位の切り上げを当てない（切り上げてから切ると、実際に切った分と端数がずれるため・反証レビュー 2026-11-25 指摘1・2）。otCut＝打刻の退勤−切った後 */
+    var F = cfg.otFloorMin > 0 ? cfg.otFloorMin * MIN : 0, otCut = 0;
+    var otFloor = function (x) { if (!F || x <= b.end) return x; var fl = b.end + Math.floor((x - b.end) / F) * F; otCut = x - fl; return fl; };
     if (r.sched) {
       if (cs < b.start) {
         if (day && day.early_ok) { /* 早出を全部認めた日は打刻どおり */ }
@@ -453,8 +464,8 @@
         if (cs > b.start) { r.lateMin = Math.round((cs - b.start) / MIN); r.flags.push('late'); }
       }
       if (ce > b.end) {
-        if (day && day.overtime_ok) { /* 残業を全部認めた日は打刻どおり */ if (U) ce = Math.ceil(ce / U) * U; }
-        else if (otUntil != null) ce = Math.max(b.end, Math.min(U ? Math.ceil(ce / U) * U : ce, otUntil));   /* この時刻まで認める（予定の終わりより前にはしない・v2-4） */
+        if (day && day.overtime_ok) { /* 残業を全部認めた日は打刻どおり */ if (F) ce = otFloor(ce); else if (U) ce = Math.ceil(ce / U) * U; }
+        else if (otUntil != null) ce = Math.max(b.end, Math.min(U ? Math.ceil(ce / U) * U : ce, otUntil));   /* この時刻まで認める（予定の終わりより前にはしない・v2-4・時刻を決めた日は切り捨てない） */
         else {
           if ((ce - b.end) / MIN >= cfg.overtimeAlertMin) r.flags.push('overtime');
           ce = b.end;
@@ -465,6 +476,11 @@
       }
     } else {
       r.flags.push('no_schedule');
+    }
+    /* 切り捨てた時だけ塊に端数と単位を付ける（既定の塊の形は変えない）。端数が otFloorAlertMin 分以上なら要確認 */
+    if (otCut > 0) {
+      r.otFloorMin = cfg.otFloorMin; r.otFloorCutMin = Math.floor(otCut / MIN);
+      if (cfg.otFloorAlertMin > 0 && r.otFloorCutMin >= cfg.otFloorAlertMin) r.flags.push('ot_floor');
     }
     /* 数えた区間（最初の組の頭と最後の組の尻だけを丸める・間の組は打刻どおり） */
     var segs = [];
@@ -1081,6 +1097,11 @@
       if (b.ngEarly && why.indexOf('早出：' + b.ngEarly) < 0) why.push('早出：' + b.ngEarly);
       if (b.ngOt && why.indexOf('残業：' + b.ngOt) < 0) why.push('残業：' + b.ngOt);
     }
+    /* 2026-11-25: 認めた残業を単位で切り捨てた分（理由は最後に1回） */
+    for (i = 0; i < blocks.length; i++) {
+      var fx = blocks[i].otFloorCutMin > 0 ? '残業の' + blocks[i].otFloorMin + '分未満の切り捨て' : '';
+      if (fx && why.indexOf(fx) < 0) why.push(fx);
+    }
     return { min: min, why: why.join(' ／ ') };
   }
 
@@ -1217,7 +1238,7 @@
   }
 
   var api = {
-    DEFAULTS: DEFAULTS, ROUND_UNITS: ROUND_UNITS, ABS_KINDS: ABS_KINDS, LEAVE_TYPES_DEFAULT: LEAVE_TYPES_DEFAULT, LEAVE_TYPES_MAX: LEAVE_TYPES_MAX, cleanLeaveTypes: cleanLeaveTypes, leaveTypesOf: leaveTypesOf, FLAG_LABEL: FLAG_LABEL, REVIEW: REVIEW, DIV_OFFICE: DIV_OFFICE, OFFICE_DIV: OFFICE_DIV,
+    DEFAULTS: DEFAULTS, ROUND_UNITS: ROUND_UNITS, OT_FLOORS: OT_FLOORS, ABS_KINDS: ABS_KINDS, LEAVE_TYPES_DEFAULT: LEAVE_TYPES_DEFAULT, LEAVE_TYPES_MAX: LEAVE_TYPES_MAX, cleanLeaveTypes: cleanLeaveTypes, leaveTypesOf: leaveTypesOf, FLAG_LABEL: FLAG_LABEL, REVIEW: REVIEW, DIV_OFFICE: DIV_OFFICE, OFFICE_DIV: OFFICE_DIV,
     SUMMARY_HEAD: SUMMARY_HEAD, DAILY_HEAD: DAILY_HEAD, SUMMARY_EXTRA_HEAD: SUMMARY_EXTRA_HEAD, DAILY_EXTRA_HEAD: DAILY_EXTRA_HEAD,
     NOT_IN_GRACE_MIN: NOT_IN_GRACE_MIN, checkLegalHoliday: checkLegalHoliday, reviewList: reviewList, needsReview: needsReview,
     fillConfig: fillConfig, isYm: isYm, daysIn: daysIn, nextYm: nextYm, prevYm: prevYm, jstMs: jstMs, jstDate: jstDate, jstHM: jstHM,
