@@ -538,5 +538,35 @@ console.log('\n— 9. v4 手で入れた有休の使用（leave_uses・L8） —
   t('同じ人・同じ日の2行目は数えない（DB も1行だけ）', dayOf(m3, 'sT01', '2026-12-12').paidDays === 1);
 }
 
+console.log('\n— 11. シフトの写し方の直し（2026-11-25・本番の勤務表と freee の予定で検証） —');
+{
+  const bs = (cells, opt) => C.buildSchedule({ ym: YM, plan: { cells: { sT01: cells } }, nextPlan: (opt && opt.next) || {}, staff: [Object.assign({}, STAFF[0], (opt && opt.st) || {})], symbols: Sym.DEFAULT_SYMBOLS, settings: { breakThresholdH: 6, breakH: 1, nightBreakH: 2 } });
+  const r1 = bs({ 1: '遅' }, { st: { rules: { break2h: true } } }).rows[0];
+  t('休憩2時間の職員（rules.break2h）の「遅」は予定の休憩120分', r1.break_min === 120, r1);
+  t('休憩2時間でない職員の「遅」は60分のまま', bs({ 1: '遅' }).rows[0].break_min === 60);
+  t('拘束6時間ちょうど（9-15）は休憩0（6時間を超える時だけ休憩）', bs({ 1: '9-15' }).rows[0].break_min === 0);
+  t('拘束6時間30分（9-15:30）は休憩60', bs({ 1: '9-15:30' }).rows[0].break_min === 60);
+  const m6 = month(bs({ 2: '9-15' }).rows, [P('sT01', 'in', '2026-12-02', '8:45'), P('sT01', 'out', '2026-12-02', '15:05')]);
+  t('9-15 の日に 8:45〜15:05 を打つと実働360分・残業0', dayOf(m6, 'sT01', '2026-12-02').workMin === 360 && sumOf(m6, 'sT01').legalInOverMin + sumOf(m6, 'sT01').legalOverMin === 0, dayOf(m6, 'sT01', '2026-12-02'));
+  /* 夜勤の途中の休みの書き方（本番の12月の勤務表にあった並び） */
+  const n1 = bs({ 20: '(', 21: '有)(21', 22: '7)' });
+  t('「(」→「有)(21」→「7)」: 20日に有休の行・21日に 21:00〜翌7:00 の夜勤・警告なし',
+    n1.rows.some((r) => r.work_date === '2026-12-20' && r.kind === 'paid') && n1.rows.some((r) => r.work_date === '2026-12-21' && r.kind === 'night' && /T21:00/.test(new Date(Date.parse(r.start_at) + 9 * 3600e3).toISOString()) && /2026-12-22T07:00/.test(new Date(Date.parse(r.end_at) + 9 * 3600e3).toISOString())) && n1.warnings.length === 0, n1);
+  const n2 = bs({ 26: '(22', 27: '8)(', 28: '有)' });
+  t('「8)(」→「有)」: 26日の夜勤は翌8時まで・27日に有休の行・警告なし',
+    n2.rows.some((r) => r.work_date === '2026-12-26' && r.kind === 'night' && /2026-12-27T08:00/.test(new Date(Date.parse(r.end_at) + 9 * 3600e3).toISOString())) && n2.rows.some((r) => r.work_date === '2026-12-27' && r.kind === 'paid') && n2.warnings.length === 0, n2);
+  const n3 = bs({ 5: '(', 6: '休)' });
+  t('「(」→「休)」は行を作らず警告もない', n3.rows.length === 0 && n3.warnings.length === 0, n3);
+  const w5 = bs({ 5: '(' }).warnings;
+  t('翌日に「有)」などが無い「(」は警告を出す（入りの代わりの警告）', w5.length === 1 && /入りの代わり/.test(w5[0].msg), w5);
+  const w6 = bs({ 5: '有)' }).warnings;
+  t('前の日に「(」の無い「有)」は警告を出す（黙って有休を落とさない）', w6.length === 1 && /前の日/.test(w6[0].msg), w6);
+  const n7 = bs({ 31: '(' }, { next: { cells: { sT01: { 1: '有)' } } } });
+  t('月末の「(」と翌月1日の「有)」は31日に有休の行・警告なし', n7.rows.some((r) => r.work_date === '2026-12-31' && r.kind === 'paid') && n7.warnings.length === 0, n7);
+  t('今まで読めた書き方（(22・8)(22・(有・7)(有）は今までどおり', bs({ 1: '(22', 2: '8)(22', 3: '8)' }).rows.filter((r) => r.kind === 'night').length === 2 && bs({ 1: '(有' }).warnings.length === 0 && bs({ 1: '(21', 2: '7)(有' }).rows.filter((r) => r.kind === 'night').length === 1 && bs({ 1: '(21', 2: '7)(有' }).warnings.length === 0);
+  t('休憩2時間の職員でも夜勤の休憩は設定どおり（2時間）・6時間以下の勤務は休憩0', bs({ 1: '(22', 2: '8)' }, { st: { rules: { break2h: true } } }).rows[0].break_min === 120 && bs({ 1: '9-15' }, { st: { rules: { break2h: true } } }).rows[0].break_min === 0);
+  t('読めない書き方（欠）は今までどおり警告', bs({ 1: '欠' }).warnings.length === 1);
+}
+
 console.log(`\n${pass} 件合格 / ${fail} 件不合格`);
 process.exit(fail ? 1 : 0);

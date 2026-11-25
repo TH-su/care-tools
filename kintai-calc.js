@@ -156,6 +156,31 @@
   /* ── 1. シフト → 予定の行 ──
    * opts: { ym, plan, nextPlan, staff:[シフトの職員], symbols, settings:シフトの settings }
    * 返す: { rows:[kintai_schedule の行], staff:[kintai_staff_sync の行], warnings:[{staff_id,date,msg}] } */
+  /* シフトのセルを読む。記号の部品（shift-symbols.js＝シフトアプリの原本の写し）で読めない、夜勤の途中の休みの書き方だけをここで読む
+     （2026-11-25・本番の12月の勤務表で「(」「有)」「有)(21」「8)(」「7)(」が読めず、夜勤の入りまで捨てていた）:
+     「有)」「休)」など＝夜勤の明けの代わりの休み（後ろの「(21」などはそのまま読む）／末尾の「(」＝夜勤の入りの代わり（翌日の「有)」で中身が決まる） */
+  function parseShiftCell(raw, symbols) {
+    var p = Sym.parseCell(raw, symbols);
+    if (!p.error) return p;
+    var s = Sym.normalizeCell(raw), parts = [], m = s.match(/^([^()0-9:\-]{1,3})\)(.*)$/);
+    if (m) {
+      var ap = Sym.parseCell(m[1], symbols), alt = !ap.error && ap.parts.length === 1 ? ap.parts[0] : null;
+      if (!alt || (alt.kind !== 'paidOff' && alt.kind !== 'off' && alt.kind !== 'publicOff')) return p;
+      parts.push({ kind: 'nightOutAlt', alt: alt });
+      s = m[2];
+    }
+    var tailIn = false;
+    if (s.charAt(s.length - 1) === '(') { tailIn = true; s = s.slice(0, -1); }
+    if (!m && !tailIn) return p;
+    if (s !== '') {
+      var rp = Sym.parseCell(s, symbols);
+      if (rp.error) return p;
+      parts = parts.concat(rp.parts);
+    }
+    if (tailIn) parts.push({ kind: 'nightInAlt' });
+    return { norm: Sym.normalizeCell(raw), parts: parts, error: null };
+  }
+
   function buildSchedule(opts) {
     var ym = opts.ym;
     if (!isYm(ym)) throw new Error('月の形が違います');
@@ -185,19 +210,21 @@
         for (var si = 0; si < sources.length; si++) {
           var src = sources[si], raw = cellOf(src.cells, d);
           if (!raw) continue;
-          var p = Sym.parseCell(raw, symbols);
+          var p = parseShiftCell(raw, symbols);
           if (p.error) warnings.push({ staff_id: st.id, date: date, msg: p.error });
           for (var k = 0; k < p.parts.length; k++) {
             var part = p.parts[k], row = null;
             if (part.kind === 'work' && part.startMin != null && part.endMin != null && part.endMin > part.startMin) {
               var bound = part.endMin - part.startMin;
               row = { kind: 'work', start_at: iso(jstMs(date, part.startMin)), end_at: iso(jstMs(date, part.endMin)),
-                break_min: bound >= th * 60 ? Math.round(bh * 60) : 0, paid_min: 0 };
+                /* 休憩: 拘束が設定の時間（6時間）を超える時だけ（勤務の数え方 countBlock・労基法34条・freee と同じ「超える」。前は「以上」で 9-15 に60分の休憩が入り、
+                   6時間ちょうどの日に予定の実働が5時間になって1時間の残業が出ていた）。休憩2時間の職員（シフトの rules.break2h）は2時間（シフトアプリの計算と同じ）。2026-11-25 */
+                break_min: bound > th * 60 ? Math.round(((st.rules && st.rules.break2h) ? 2 : bh) * 60) : 0, paid_min: 0 };
             } else if (part.kind === 'nightIn' && part.startMin != null) {
               var nraw = d < nd ? cellOf(src.cells, d + 1) : cellOf(src.nextCells, 1);
               var endMin = null;
               if (nraw) {
-                var np = Sym.parseCell(nraw, symbols);
+                var np = parseShiftCell(nraw, symbols);
                 for (var j = 0; j < np.parts.length; j++) if (np.parts[j].kind === 'nightOut' && np.parts[j].endMin != null) { endMin = np.parts[j].endMin; break; }
               }
               if (endMin == null) {
@@ -209,6 +236,18 @@
                 break_min: Math.round(nbh * 60), paid_min: 0 };
             } else if (part.kind === 'paidOff') {
               row = { kind: 'paid', start_at: null, end_at: null, break_min: 0, paid_min: Math.round((part.fixedWork || 8) * 60) };
+            } else if (part.kind === 'nightInAlt') {
+              /* 夜勤の入りの代わり「(」: 翌日の「有)」なら入りの日に有休の行（仮置き・2026-11-25）。休みなら行は作らない */
+              var araw = d < nd ? cellOf(src.cells, d + 1) : cellOf(src.nextCells, 1), alt = null;
+              if (araw) { var ap2 = parseShiftCell(araw, symbols); for (var aj = 0; aj < ap2.parts.length; aj++) if (ap2.parts[aj].kind === 'nightOutAlt') { alt = ap2.parts[aj].alt; break; } }
+              if (alt && alt.kind === 'paidOff') row = { kind: 'paid', start_at: null, end_at: null, break_min: 0, paid_min: Math.round((alt.fixedWork || 8) * 60) };
+              else if (!alt) warnings.push({ staff_id: st.id, date: date, msg: '夜勤の入りの代わりの「(」の翌日に「有)」などがありません' });
+            } else if (part.kind === 'nightOutAlt' && d > 1) {
+              /* 明けの代わりの「有)」「休)」は前の日の「(」と組む。前の日に「(」が無い時は書き間違い（本当は「有」など）かもしれないので知らせる（反証レビュー 2026-11-25）。
+                 月の1日は前の月を見ないので知らせない */
+              var praw = cellOf(src.cells, d - 1), pin = false;
+              if (praw) { var pp2 = parseShiftCell(praw, symbols); for (var pj = 0; pj < pp2.parts.length; pj++) if (pp2.parts[pj].kind === 'nightInAlt') { pin = true; break; } }
+              if (!pin) warnings.push({ staff_id: st.id, date: date, msg: '「' + String(raw).slice(0, 10) + '」の前の日に夜勤の入りの代わりの「(」がありません（有休なら「有」と書いてください）' });
             }
             if (!row) continue;
             seqOf[date] = (seqOf[date] || 0) + 1;
