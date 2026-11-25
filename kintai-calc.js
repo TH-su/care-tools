@@ -20,7 +20,9 @@
   var MIN = 60000, HOUR = 3600000, DAY = 86400000, JST = 9 * HOUR, DUP_MS = 10 * MIN, FIT_MS = 4 * HOUR;
   /* v2: 予定の開始からこの分を過ぎて打刻が無ければ「まだ出勤していません」（設定にしない固定値）。
      予定の無い勤務は出勤からこの時間までを「勤務中」とみなす */
-  var NOT_IN_GRACE_MIN = 15, WORKING_NO_SCHED_MS = 16 * HOUR;
+  var NOT_IN_GRACE_MIN = 15, WORKING_NO_SCHED_MS = 16 * HOUR, SPLIT_NEAR_MS = 30 * MIN;
+  /* 数えられる組（出勤と退勤がそろった組・分割の予定を1組で通した日の片方＝予定の境目で閉じる組） */
+  function fullPair(pp) { return (pp.in || pp.splitStart != null) && (pp.out || pp.splitEnd != null); }
 
   var DEFAULTS = {
     breakThresholdH: 6, breakH: 1, nightBreakH: 2,
@@ -278,10 +280,14 @@
       if (p.voided_at) continue;
       var at = toMs(p.at);
       if (at == null || (p.kind !== 'in' && p.kind !== 'out')) continue;
+      var raw = at;
       at = Math.floor(at / MIN) * MIN;   /* 秒は数えない（7:00:30 の出勤を遅刻1分にしない・指摘7） */
-      list.push({ id: p.id, kind: p.kind, at: at, source: p.source || 'tablet' });
+      list.push({ id: p.id, kind: p.kind, at: at, raw: raw, source: p.source || 'tablet' });
     }
-    list.sort(function (a, b) { return a.at - b.at; });
+    /* 秒まで同じ時刻の退勤と出勤は退勤を先に並べる（分単位の打刻の 10:30 退勤・10:30 出勤で前の組を閉じてから次の組を開く。
+       出勤が先に来ると前の組が退勤漏れ・次の組が0分になっていた・freee の打刻で検証 2026-11-25）。
+       並べるのは秒を切る前の時刻（秒まである打刻の本当の順番は変えない・反証レビュー 2026-11-25） */
+    list.sort(function (a, b) { return a.raw - b.raw || (a.kind === b.kind ? 0 : a.kind === 'out' ? -1 : 1); });
     var pairs = [], open = null;
     for (i = 0; i < list.length; i++) {
       var q = list[i];
@@ -325,6 +331,26 @@
           if (pp.in.at >= bc.start - FIT_MS && pp.in.at <= bc.end + FIT_MS) inFit = true;
           if (pp.out.at >= bc.start - FIT_MS && pp.out.at <= bc.end + FIT_MS) outFit = true;
         }
+        /* 同じ日の分割の予定（例 7-9 と 17-21）を1組の打刻（6:31 出勤・21:10 退勤）で通した日は、
+           出勤を前の塊・退勤を後ろの塊に置き、前の塊は予定の終わりまで・後ろの塊は予定の始まりから数える（間は休憩＝数えない）。
+           組を割って実働0にしない（freee の打刻で検証 2026-11-25・仮置き）。間に別の塊がある時・16時間を超える組・夜勤の塊・
+           出勤が前の塊の始まりから30分より後か退勤が後ろの塊の終わりの30分より前の組（塊の途中の打刻＝漏れの疑い）は今までどおり割る（反証レビュー 2026-11-25） */
+        if (!fits && inFit && outFit && pp.out.at - pp.in.at <= WORKING_NO_SCHED_MS) {
+          var bi = null, bo = null;
+          for (jj = 0; jj < blocks.length; jj++) {
+            var bd = blocks[jj];
+            if (bd.night) continue;
+            if (pp.in.at >= bd.start - FIT_MS && pp.in.at <= bd.start + SPLIT_NEAR_MS && (!bi || Math.abs(pp.in.at - bd.start) < Math.abs(pp.in.at - bi.start))) bi = bd;
+            if (pp.out.at >= bd.end - SPLIT_NEAR_MS && pp.out.at <= bd.end + FIT_MS && (!bo || Math.abs(pp.out.at - bd.end) < Math.abs(pp.out.at - bo.end))) bo = bd;
+          }
+          var between = false;
+          if (bi && bo) for (jj = 0; jj < blocks.length; jj++) if (blocks[jj] !== bi && blocks[jj] !== bo && blocks[jj].start >= bi.end && blocks[jj].end <= bo.start) between = true;
+          if (bi && bo && bi !== bo && bi.work_date === bo.work_date && bi.end <= bo.start && !between) {
+            work.push({ in: pp.in, out: null, splitEnd: bi.end, to: bi });
+            work.push({ in: null, out: pp.out, splitStart: bo.start, to: bo });
+            continue;
+          }
+        }
         if (!fits && ((inFit && outFit) || (near && pp.out.at - pp.in.at > WORKING_NO_SCHED_MS))) { work.push({ in: pp.in, out: null }); work.push({ in: null, out: pp.out }); continue; }
       }
       work.push(pp);
@@ -332,6 +358,7 @@
     pairs = work;
     for (i = 0; i < pairs.length; i++) {
       var pr = pairs[i], best = null, bestScore = -Infinity;
+      if (pr.to) { pr.to.pairs.push(pr); delete pr.to; continue; }
       var a = pr.in ? pr.in.at : null, z = pr.out ? pr.out.at : null;
       for (var j = 0; j < blocks.length; j++) {
         var b = blocks[j], w0 = b.start - 3 * HOUR, w1 = b.end + 3 * HOUR, score;
@@ -382,8 +409,8 @@
     for (var i = 0; i < pairs.length; i++) {
       if (pairs[i].in) r.punches.push(pairs[i].in);
       if (pairs[i].out) r.punches.push(pairs[i].out);
-      if (!pairs[i].in) r.flags.push('missing_in');
-      if (!pairs[i].out && !(r.working && pairs[i] === lastPair)) r.flags.push('missing_out');
+      if (!pairs[i].in && pairs[i].splitStart == null) r.flags.push('missing_in');
+      if (!pairs[i].out && pairs[i].splitEnd == null && !(r.working && pairs[i] === lastPair)) r.flags.push('missing_out');
     }
     if (r.working) r.flags.push('working');
     for (i = 0; i < r.punches.length; i++) {
@@ -396,7 +423,10 @@
       return markDay(r, day);
     }
     var full = [];
-    for (i = 0; i < pairs.length; i++) if (pairs[i].in && pairs[i].out) full.push([pairs[i].in.at, pairs[i].out.at]);
+    for (i = 0; i < pairs.length; i++) {
+      var pin = pairs[i].in ? pairs[i].in.at : pairs[i].splitStart, pout = pairs[i].out ? pairs[i].out.at : pairs[i].splitEnd;
+      if (pin != null && pout != null) full.push([pin, pout]);   /* 分割の予定を1組で通した日は、予定の境目までを1組として数える */
+    }
     if (!full.length) return markDay(r, day);
     var first = full[0], last = full[full.length - 1];
     var cs = first[0], ce = last[1];
@@ -738,7 +768,7 @@
            ot_until は予定の終わりがその時刻に最も近い塊（同じ近さなら早い方） */
         var ord = rawBy[rd].slice().sort(function (x, y) { return startOf(x) - startOf(y); });
         var dnA = dayBy[st.staff_id + '|' + rd];
-        var cands = ord.filter(function (x) { return x.start != null && x.pairs.some(function (pp) { return pp.in && pp.out; }); });
+        var cands = ord.filter(function (x) { return x.start != null && x.pairs.some(fullPair); });
         var nearest = function (v, key) {
           var best = null, bd = Infinity;
           for (var ni = 0; ni < cands.length; ni++) { var dd0 = Math.abs(cands[ni][key] - v); if (dd0 < bd) { bd = dd0; best = cands[ni]; } }
@@ -751,7 +781,7 @@
         if (!dn0 || typeof dn0.break_min !== 'number') continue;
         var cand = rawBy[rd].slice().sort(function (x, y) { return (x.start || ((x.pairs[0].in || x.pairs[0].out).at)) - (y.start || ((y.pairs[0].in || y.pairs[0].out).at)); });
         target[rd] = cand[0];
-        for (var ci = 0; ci < cand.length; ci++) if (cand[ci].pairs.some(function (pp) { return pp.in && pp.out; })) { target[rd] = cand[ci]; break; }
+        for (var ci = 0; ci < cand.length; ci++) if (cand[ci].pairs.some(fullPair)) { target[rd] = cand[ci]; break; }
       }
       for (j = 0; j < blocks.length; j++) {
         var b = blocks[j];
