@@ -122,6 +122,46 @@ t('形の違う答えは null', KS.payDigest(null) === null && KS.payDigest({ pr
 const dg2 = KS.payDigest({ profiles: [{ staff_id: 'sB', data: { pay_type: 'hourly', base: 1100 } }] }, {});
 t('時給で予定が無い人は未判定', dg2.sB.wage === null);
 
+console.log('\n— 4b. 反証レビュー（2026-11-25）の直し —');
+/* 1. 先の月分を開いても、本当の今の月分（途中）の実績を済んだ月として数えない */
+const per = (ym) => ({ from: ym + '-01', to: ym + '-' + String(new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).getUTCDate()).padStart(2, '0') });
+const withPer = (m) => Object.assign(m, { period: per(m.ym) });
+const fm1 = { '2026-09': withPer(mon('2026-09', [person('sA', OVER, 20, 0, 0)])), '2026-10': withPer(mon('2026-10', [person('sA', OVER, 20, 0, 0)])),
+  '2026-11': withPer(mon('2026-11', [person('sA', 40 * H, 6, 0, 0)])), '2026-12': withPer(mon('2026-12', [person('sA', 0, 0, 0, 0)])) };
+const j11 = KS.judge({ cfg: q, curYm: '2026-11', today: '2026-11-10', months: fm1 }).people[0];
+const j12 = KS.judge({ cfg: q, curYm: '2026-12', today: '2026-11-10', months: fm1 }).people[0];
+t('今日 11/10: 11月分を開いても 12月分（先）を開いても、9・10月分で要対応', j11.level === 'alert' && j12.level === 'alert' && j12.streak === 2, [j11.level, j12.level, j12.streak]);
+t('先の月分の実績は基準の判定に使わない（actHit は偽）', j12.months[j12.months.length - 1].state === 'future' && j12.months[j12.months.length - 1].actHit === false);
+/* 2. 喪失日・資格の始まり・退職日・70歳 */
+const B2 = { profiles: [
+  { staff_id: 'sL', data: { pay_type: 'monthly', base: 1, ins: { health: { on: true, to: '2026-04-01' }, pension: { on: true, to: '2026-04-01' } } } },
+  { staff_id: 'sM', data: { pay_type: 'monthly', base: 1, ins: { health: { on: true, from: '2026-12-01' }, pension: { on: true, from: '2026-12-01' } } } },
+  { staff_id: 'sN', data: { pay_type: 'monthly', base: 1, retire_date: '2026-10-31', ins: { health: { on: true }, pension: { on: true } } } },
+  { staff_id: 'sO', data: { pay_type: 'monthly', base: 1, birth_date: '1950-05-05', ins: { health: { on: true }, pension: { on: false } } } },
+  { staff_id: 'sP', data: { pay_type: 'monthly', base: 1, birth_date: '1980-05-05', ins: { health: { on: true }, pension: { on: false } } } },
+  { staff_id: 'sQ', data: { pay_type: 'monthly', base: 1, ins: { health: { on: true, to: '2026-12-01' }, pension: { on: true } } } }] };
+const d2 = KS.payDigest(B2, {}, '2026-11-25');
+t('喪失日を過ぎた人・資格の始まりが先の人・退職した人は加入済みにしない', !d2.sL.enrolled && !d2.sM.enrolled && !d2.sN.enrolled, d2);
+t('70歳以上は厚生年金を見ない（健保だけで加入済み）・70歳未満は両方が要る・喪失日が先なら今は加入済み', d2.sO.enrolled && !d2.sP.enrolled && d2.sQ.enrolled, [d2.sO, d2.sP, d2.sQ]);
+/* 3. 予定が0の時給・日給の人は月額を見込めない（0円で外さない） */
+const d3 = KS.payDigest({ profiles: [{ staff_id: 'sR', data: { pay_type: 'hourly', base: 1500 } }, { staff_id: 'sS', data: { pay_type: 'daily', base: 9000 } }] }, { sR: { min: 0, days: 0 }, sS: { min: 0, days: 0 } }, '2026-11-25');
+t('予定が0の時給・日給の人は月額は未判定（null）', d3.sR.wage === null && d3.sS.wage === null, d3);
+/* 5. 締めた月分は控えの実働を使う */
+const lk = withPer(mon('2026-10', [person('sT', UNDER, 10, 0, 0)])); lk.k36 = { locked: true, rows: [{ staff_id: 'sT', workMin: OVER, workDays: 20 }] };
+const f5 = KS.factsOf(lk, 'sT');
+t('締めた月分は締めた時の控えの実働・日数（打刻から数え直した値でなく）', f5.actMin === OVER && f5.actDays === 20 && f5.snap === true, f5);
+/* 10. 期間が暦の1か月でない月分は期間の日数で週へ */
+t('期間が 28〜31日なら ×12÷52・それ以外（例 46日）は ×7÷日数', Math.abs(KS.weekMin(Q_MIN, { from: '2026-10-01', to: '2026-10-31' }) - 30 * H) < 1e-9 && Math.abs(KS.weekMin(46 * 60 * 10, { from: '2026-10-01', to: '2026-11-15' }) - 70 * 60) < 1e-9);
+t('期間が暦の1か月でない月分は日数の基準も期間に合わせる（15日の期間は 15.75×15×12÷365≒7.8日・45日は 23.3日）',
+  KS.hitOf(q, 56 * 60 * 15 / 7, 11, null, { from: '2026-10-01', to: '2026-10-15' }) === true && KS.hitOf(q, 40 * 60 * 45 / 7, 17, null, { from: '2026-10-01', to: '2026-11-14' }) === false);
+const d75 = KS.payDigest({ profiles: [{ staff_id: 'sV', data: { pay_type: 'monthly', base: 1, birth_date: '1950-01-01', ins: { health: { on: false }, pension: { on: false } } } }] }, {}, '2026-11-25');
+t('75歳以上は健保・厚年とも見ない（後期高齢者医療）＝加入済みとして外す', d75.sV.enrolled === true, d75);
+/* 12. 打刻の画面に出さない仮の枠は出さない */
+const r12 = KS.judge({ cfg: q, curYm: '2026-11', months: { '2026-11': mon('2026-11', [person('sU', OVER, 20, 0, 0, { staff: { staff_id: 'sU', name: '架空sU', clock_visible: false } })]) } });
+t('仮の枠（clock_visible が false）は出さない', r12.people.length === 0);
+/* 9. 文は続けた月数を言い切らない */
+t('要対応の文に「3か月目」を書かない（続けた月数の設定と食い違わない）', !/3か月目/.test(j11.why), j11.why);
+
 console.log('\n— 5. ホームの箱 —');
 const b1 = KS.box(r1);
 t('箱: 要対応と注意の人だけ（6人）・要対応があれば alert・押すと社保のタブ', b1.count === 6 && b1.level === 'alert' && b1.tab === 'shaho' && b1.key === 'shaho' && /^要対応: /.test(b1.rows[0].text), b1);
@@ -138,10 +178,10 @@ t('kintai.js: タブの一覧に shaho・切の時はホームへ戻す・入れ
 t('kintai.js: ホームの箱は入れた時だけ（shBoxHtml は切なら空）', /function shBoxHtml\(\) \{\n    if \(!shOn\(\)\) return '';/.test(js));
 const blk = js.slice(js.indexOf('/* ── 社会保険の加入の知らせ'), js.indexOf('/* ── 段A1'));
 t('給与の読み込みは payroll_bootstrap だけで、覆い・暗証番号の窓を出さない', /rpc\('payroll_bootstrap'/.test(blk) && !/showGate|payroll_pin|pinRecheck/.test(blk));
-t('答えはすぐ取り出し（payDigest）にして元を捨てる・10分で捨てる', /KS\.payDigest\(r, shPlanOf\(\)\); r = null;/.test(blk) && /SH_PAY_TTL = 600000/.test(blk));
+t('答えはすぐ取り出し（payDigest）にして元を捨てる・10分で捨てる', /plan = shPlanOf\(\)/.test(blk) && /KS\.payDigest\(r, plan, td\); r = null;/.test(blk) && /setTimeout\(function \(\) \{ if \(shPay && shPay\.at === at\) shPay = null; \}, SH_PAY_TTL\)/.test(blk) && /SH_PAY_TTL = 600000;/.test(js) && /Date\.now\(\) - shPay\.at < SH_PAY_TTL/.test(blk));
 t('端末に残さない（localStorage・lsSet を使わない）', !/localStorage|lsSet\(/.test(blk));
 t('金額を画面に出さない（wage を描かない）', !/\.wage\b/.test(blk));
-t('設定の保存に shaho を入れる・欄が無い時は今の設定のまま', /if \(shs\) outCfg\.shaho = shs\.vals;/.test(js) && /\.concat\(shs \? \['shaho'\] : \[\]\)/.test(js));
+t('設定の保存に shaho を入れる・欄が無い時は今の設定のまま', /if \(shs && \('shaho' in cur \|\| JSON\.stringify\(shs\.vals\) !== JSON\.stringify\(KS\.fillConfig\(\{\}\)\)\)\) outCfg\.shaho = shs\.vals;/.test(js) && /\.concat\(shs \? \['shaho'\] : \[\]\)/.test(js));
 t('対象外の保存はほかの設定を全部残して送る（管理者だけ）', /function shExempt\(sid, on, btn\) \{\n    if \(busy \|\| !isAdmin\(\)/.test(blk) && /for \(k in cur\) out\[k\] = cur\[k\];/.test(blk));
 const ksrc = read('kintai-shaho.js');
 t('kintai-shaho.js は kintai-calc.js・payroll-calc.js を読まない・DOM と通信を持たない', !/require\(|KintaiCalc|PayrollCalc|document\.|fetch\(|XMLHttpRequest|localStorage/.test(ksrc));

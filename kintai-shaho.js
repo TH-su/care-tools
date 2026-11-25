@@ -62,8 +62,20 @@
     return { vals: bad.length ? null : vals, bad: bad };
   }
 
-  /* 月の時間（分）を週の時間（分）へ（年金機構の換算・月×12÷52） */
-  function weekMin(monthMin) { return fin(monthMin) ? monthMin * 12 / 52 : 0; }
+  /* 月の時間（分）を週の時間（分）へ。暦の1か月（28〜31日）の月分は年金機構の換算（月×12÷52）、
+     締め日を変えた月分など期間が28日未満・31日より長い時は期間の日数で割る（×7÷日数・反証レビュー 2026-11-25） */
+  function isDate(s) { return typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s); }
+  function daysOf(per) {
+    if (!per || !isDate(per.from) || !isDate(per.to)) return null;
+    var a = Date.UTC(+per.from.slice(0, 4), +per.from.slice(5, 7) - 1, +per.from.slice(8, 10)), b = Date.UTC(+per.to.slice(0, 4), +per.to.slice(5, 7) - 1, +per.to.slice(8, 10));
+    var n = Math.round((b - a) / 86400000) + 1;
+    return n > 0 ? n : null;
+  }
+  function weekMin(monthMin, per) {
+    if (!fin(monthMin)) return 0;
+    var n = daysOf(per);
+    return n && (n < 28 || n > 31) ? monthMin * 7 / n : monthMin * 12 / 52;
+  }
   /* 基準の言い方（画面の説明） */
   function fmtH(n) { return String(Math.round(n * 100) / 100); }
   function describe(cfg) {
@@ -71,14 +83,16 @@
     return '4分の3基準（週 ' + fmtH(cfg.baseWeekH * 0.75) + ' 時間以上 かつ 月 ' + fmtH(cfg.baseMonthDays * 0.75) + ' 日以上）';
   }
   /* 1か月の時間・日数が基準以上か。wage は月額の見込み（null＝未判定） */
-  function hitOf(cfg, min, days, wage) {
-    var w = weekMin(min);
+  function hitOf(cfg, min, days, wage, per) {
+    var w = weekMin(min, per);
     if (cfg.mode === 'special') {
       if (w + EPS < cfg.weekH * 60) return false;
       if (cfg.wageMin > 0 && fin(wage) && wage < cfg.wageMin) return false;
       return true;
     }
-    return w + EPS >= cfg.baseWeekH * 0.75 * 60 && (fin(days) ? days : 0) + EPS >= cfg.baseMonthDays * 0.75;
+    /* 月の所定日数の4分の3も、期間が暦の1か月でない月分は期間の長さに合わせる（日数×期間÷(365÷12)・反証レビュー 2026-11-25） */
+    var n = daysOf(per), dayEq = cfg.baseMonthDays * 0.75 * (n && (n < 28 || n > 31) ? n * 12 / 365 : 1);
+    return w + EPS >= cfg.baseWeekH * 0.75 * 60 && (fin(days) ? days : 0) + EPS >= dayEq;
   }
   /* 月の結果から1人の実績と予定（無い人は null） */
   function factsOf(month, sid) {
@@ -86,17 +100,42 @@
     for (var i = 0; i < ps.length; i++) if (ps[i] && ps[i].staff && ps[i].staff.staff_id === sid) { p = ps[i]; break; }
     if (!p) return null;
     var sum = p.sum || {}, days = Array.isArray(p.days) ? p.days : [];
+    var actMin = fin(sum.workMin) ? sum.workMin : 0;
     var actDays = fin(sum.workDays) ? sum.workDays : days.filter(function (d) { return d && d.workMin > 0; }).length;
+    /* 締めた月分は締めた時の控え（給与へ渡した値）の実働と勤務日数を使う（締めた後に届いた打刻で数字を変えない・36協定と同じ・反証レビュー 2026-11-25） */
+    var k = month.k36, snap = false;
+    if (k && k.locked && Array.isArray(k.rows)) {
+      for (var j = 0; j < k.rows.length; j++) {
+        var r = k.rows[j];
+        if (r && r.staff_id === sid && fin(r.workMin)) { actMin = r.workMin; if (fin(r.workDays)) actDays = r.workDays; snap = true; break; }
+      }
+    }
     var planMin = 0, planDays = 0;
     days.forEach(function (d) { if (d && fin(d.schedWorkMin) && d.schedWorkMin > 0) { planMin += d.schedWorkMin; planDays++; } });
-    return { actMin: fin(sum.workMin) ? sum.workMin : 0, actDays: actDays, planMin: planMin, planDays: planDays, staff: p.staff };
+    return { actMin: actMin, actDays: actDays, planMin: planMin, planDays: planDays, staff: p.staff, snap: snap };
   }
 
   /* 給与の設定（payroll_bootstrap の答え）から、1人ずつ「加入済みか・役員か・月額の見込み」だけを取り出す（ほかは捨てる）。
    * 月額の見込み＝基本給（月給）・時給×予定の時間・日給×予定の日数 ＋ 定額の手当のうち最低賃金に入る手当（通勤・精皆勤・家族手当など、所定内賃金に入らない物は
    * 手当の定義で min_wage を外しておく前提・payroll-calc.js の attrsOf と同じ既定）。形の違う人は null（未判定）。
-   * plan: { staff_id: { min, days } }（予定の月の時間と日数・時給と日給の人の見込みに使う） */
-  function payDigest(boot, plan) {
+   * plan: { staff_id: { min, days } }（予定の月の時間と日数・時給と日給の人の見込みに使う。予定が0の人は未判定）。
+   * today: 'YYYY-MM-DD'（加入しているかを、資格の始まり・終わり（喪失日）・退職日で今日に当てて見る。70歳以上は厚生年金・75歳以上は健康保険を見ない） */
+  function covered(x, d, today) {
+    if (!x || x.on !== true) return false;
+    if (!isDate(today)) return true;
+    var from = isDate(x.from) ? x.from : (isDate(d.entry_date) ? d.entry_date : null);
+    var loss = isDate(x.to) ? x.to : null;
+    if (from && from > today) return false;
+    if (loss && loss <= today) return false;
+    if (isDate(d.retire_date) && d.retire_date < today) return false;
+    return true;
+  }
+  function ageAtLeast(d, today, n) {
+    if (!isDate(d.birth_date) || !isDate(today)) return false;
+    var y = +d.birth_date.slice(0, 4) + n, bd = y + d.birth_date.slice(4);
+    return bd <= today;   /* n歳の誕生日（法の到達日はその前日・1日の差は知らせに効かない） */
+  }
+  function payDigest(boot, plan, today) {
     var out = Object.create(null);
     if (!boot || typeof boot !== 'object' || !Array.isArray(boot.profiles)) return null;
     var defs = Object.create(null);
@@ -114,7 +153,8 @@
     boot.profiles.forEach(function (p) {
       if (!p || typeof p.staff_id !== 'string') return;
       var d = p.data && typeof p.data === 'object' ? p.data : {}, ins = d.ins && typeof d.ins === 'object' ? d.ins : {};
-      var enrolled = !!(ins.health && ins.health.on === true && ins.pension && ins.pension.on === true);
+      /* 70歳以上は厚生年金、75歳以上は健康保険（後期高齢者医療へ移る）を見ない */
+      var enrolled = (covered(ins.health, d, today) || ageAtLeast(d, today, 75)) && (covered(ins.pension, d, today) || ageAtLeast(d, today, 70));
       var type = d.pay_type, base = Number(d.base), wage = null;
       var fixed = 0;
       (Array.isArray(d.allowances) ? d.allowances : []).forEach(function (a) {
@@ -125,8 +165,8 @@
       var pl = plan && own(plan, p.staff_id) ? plan[p.staff_id] : null;
       if (isFinite(base) && base >= 0 && d.base !== '' && d.base != null) {
         if (type === 'monthly') wage = Math.floor(base) + fixed;
-        else if (type === 'hourly' && pl && fin(pl.min)) wage = Math.floor(base * pl.min / 60) + fixed;
-        else if (type === 'daily' && pl && fin(pl.days)) wage = Math.floor(base * pl.days) + fixed;
+        else if (type === 'hourly' && pl && fin(pl.min) && pl.min > 0) wage = Math.floor(base * pl.min / 60) + fixed;   /* 予定が0の人は見込めない＝未判定（0円で外さない・反証レビュー） */
+        else if (type === 'daily' && pl && fin(pl.days) && pl.days > 0) wage = Math.floor(base * pl.days) + fixed;
       }
       out[p.staff_id] = { enrolled: enrolled, board: type === 'board', wage: wage };
     });
@@ -134,7 +174,8 @@
   }
 
   /* 判定。input:
-   *   cfg（fillConfig の答え）・curYm（今の月分）・curOpen（今の月分の期間がまだ終わっていない＝実績が途中）・
+   *   cfg（fillConfig の答え）・curYm（表示中の月分）・today（'YYYY-MM-DD'・本当の今日。期間が今日を含む月分は途中、今日より後に始まる月分は先の月分として実績を数えない）・
+   *   curOpen（today が無い時だけ: 表示中の月分がまだ途中）・
    *   months: { ym: computeMonth の答え }（読めた月分だけ・次の月分があれば予定だけ使う）・pay: payDigest の答え（読めない時は null）
    * 返す: { yms（古い順・今の月分まで）, people:[…], counts, payKnown } */
   function judge(input) {
@@ -146,7 +187,14 @@
     cfg.exempt.forEach(function (s) { ex[s] = 1; });
     /* 職員: 今の月分の名簿（在籍）を軸に、前の月分にだけいる人は出さない（辞めた人を知らせない） */
     var curM = by[cur], staff = [];
-    ((curM && curM.people) || []).forEach(function (p) { if (p && p.staff && p.staff.active !== false) staff.push(p.staff); });
+    /* 打刻の画面に出さない仮の枠（clock_visible が false）も出さない（職員マスタとの突き合わせと同じ・反証レビュー） */
+    ((curM && curM.people) || []).forEach(function (p) { if (p && p.staff && p.staff.active !== false && p.staff.clock_visible !== false) staff.push(p.staff); });
+    var today = isDate(input.today) ? input.today : null;
+    function stateOf(m) {
+      var per = by[m] && by[m].period;
+      if (today && per && isDate(per.from) && isDate(per.to)) return per.from > today ? 'future' : per.to >= today ? 'open' : 'done';
+      return !today && input.curOpen && m === cur ? 'open' : 'done';
+    }
     var counts = { alert: 0, warn: 0, ok: 0, exempt: 0, enrolled: 0 }, people = [];
     staff.forEach(function (st) {
       var sid = st.staff_id, pd = pay && own(pay, sid) ? pay[sid] : null;
@@ -156,20 +204,24 @@
       if (ex[sid]) { row.level = 'exempt'; row.why = '対象外にしています'; counts.exempt++; people.push(row); return; }
       if (pd && pd.enrolled) { row.level = 'enrolled'; row.why = '給与の設定で加入しています'; counts.enrolled++; people.push(row); return; }
       if (pd && pd.board) { row.level = 'exempt'; row.why = '役員です'; counts.exempt++; people.push(row); return; }
-      yms.forEach(function (m) {
+      function monthRow(m) {
         var f = by[m] ? factsOf(by[m], sid) : null;
-        row.months.push(f ? { ym: m, have: true, actMin: f.actMin, actDays: f.actDays, planMin: f.planMin, planDays: f.planDays,
-          actHit: hitOf(cfg, f.actMin, f.actDays, wage), planHit: f.planMin > 0 && hitOf(cfg, f.planMin, f.planDays, wage) }
-          : { ym: m, have: !!by[m], actMin: 0, actDays: 0, planMin: 0, planDays: 0, actHit: false, planHit: false, none: !!by[m] });
-      });
-      var nf = by[nx] ? factsOf(by[nx], sid) : null;
-      row.next = nf ? { ym: nx, planMin: nf.planMin, planDays: nf.planDays, planHit: nf.planMin > 0 && hitOf(cfg, nf.planMin, nf.planDays, wage) } : null;
-      /* 続けて超えた月数: 今の月分から前へ。今の月分が途中で、まだ超えていない時は前の月分から数える */
-      var k = row.months.length - 1, last = row.months[k];
-      if (input.curOpen && last && !last.actHit) k--;
+        var per = by[m] && by[m].period, st0 = stateOf(m);
+        return f ? { ym: m, have: true, state: st0, snap: f.snap, actMin: f.actMin, actDays: f.actDays, planMin: f.planMin, planDays: f.planDays,
+          actWeek: weekMin(f.actMin, per), planWeek: weekMin(f.planMin, per),
+          actHit: st0 !== 'future' && hitOf(cfg, f.actMin, f.actDays, wage, per), planHit: f.planMin > 0 && hitOf(cfg, f.planMin, f.planDays, wage, per) }
+          : { ym: m, have: !!by[m], state: st0, actMin: 0, actDays: 0, planMin: 0, planDays: 0, actWeek: 0, planWeek: 0, actHit: false, planHit: false, none: !!by[m] };
+      }
+      yms.forEach(function (m) { row.months.push(monthRow(m)); });
+      var nf = by[nx] ? factsOf(by[nx], sid) : null, nper = by[nx] && by[nx].period;
+      row.next = nf ? { ym: nx, planMin: nf.planMin, planDays: nf.planDays, planWeek: weekMin(nf.planMin, nper), planHit: nf.planMin > 0 && hitOf(cfg, nf.planMin, nf.planDays, wage, nper) } : null;
+      /* 続けて超えた月数: 表示中の月分から前へ。先の月分（今日より後に始まる）は飛ばし、途中の月分（今日を含む）はまだ超えていなければ飛ばす
+         （先の月分を開いても、本当の今の月分の途中の実績を「済んだ月」として数えない・反証レビュー 2026-11-25） */
+      /* 数えるのは表に出す月分に限らず、読めた月分を前へ（先の月分を開いた時に、表の左端で切れないように・最大24か月） */
+      var last = row.months[row.months.length - 1], ym0 = cur, guard = 0, mm = monthRow(ym0);
+      while (guard++ < 24 && (mm.state === 'future' || (mm.state === 'open' && !mm.actHit))) { ym0 = prevYm(ym0); mm = monthRow(ym0); }
       var streak = 0, counted = 0;
-      for (; k >= 0; k--) {
-        var mm = row.months[k];
+      for (; guard++ < 48; ym0 = prevYm(ym0), mm = monthRow(ym0)) {
         if (!mm.have || mm.none) break;   /* 読めていない月分・その月分の名簿にいない（入職前など）月分で止める＝足りない */
         counted++;
         if (!mm.actHit) break;
@@ -178,7 +230,7 @@
       row.streak = streak;
       row.short = streak < cfg.months && counted === streak;   /* 届かない月に当たらないまま、読めた月分（名簿にいた月分）が尽きた＝判定できる月分が足りない */
       var planNow = last && last.planHit, planNext = row.next && row.next.planHit;
-      if (streak >= cfg.months) { row.level = 'alert'; row.why = '実績が ' + streak + ' か月続けて基準以上（見込みが続けば3か月目から加入）'; }
+      if (streak >= cfg.months) { row.level = 'alert'; row.why = '実績が ' + streak + ' か月続けて基準以上（加入の手続きが要るか確かめてください）'; }
       else if (streak >= 1 || planNow || planNext) {
         row.level = 'warn';
         var w = [];

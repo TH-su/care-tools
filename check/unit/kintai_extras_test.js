@@ -222,6 +222,6 @@ t('形を変えた項目の前の形の行: 個人の月の帯・CSV の注意�
   /if \(mm\) h \+= '<div class="band warn" role="status">' \+ esc\(mm\)/.test(K) && /out\.warn = EX\.mismatchText\(sums\.mismatch, exItems\(\) \|\| \[\]\);/.test(K) && /if \(exr\.warn\) extra\.push\(exr\.warn\);/.test(K)
   && /var kc = exs \? exKindChanged\(exs\.items\) : \[\];\s*if \(kc\.length && !confirm\(/.test(K) && /\(saved && exHasRows\(it\.code\) \? ' disabled/.test(K));
 t('入れる窓は保存していない入力を確かめる（DIRTY_MODES.extra）', /DIRTY_MODES\.extra = 1;/.test(K));
-t('新しいタブ・端末に残す鍵を足していない（TABS と localStorage の鍵は今のまま）', /var TABS = \['home', 'day', 'review', 'requests', 'grid', 'person', 'staff', 'leave', 'close', 'settings'\];/.test(K) && /var LS_TAB = 'kintai_tab', LS_YM = 'kintai_ym';/.test(K) && !/localStorage\.setItem\([^)]*ex/.test(K));
+t('新しいタブ・端末に残す鍵を足していない（TABS は社保の知らせの shaho だけ足した・localStorage の鍵は今のまま）', /var TABS = \['home', 'day', 'review', 'requests', 'grid', 'person', 'staff', 'leave', 'close', 'settings', 'shaho'\];/.test(K) && /var LS_TAB = 'kintai_tab', LS_YM = 'kintai_ym';/.test(K) && !/localStorage\.setItem\([^)]*ex/.test(K));
 console.log('\n' + pass + ' 件合格 / ' + fail + ' 件不合格');
 process.exit(fail ? 1 : 0);
