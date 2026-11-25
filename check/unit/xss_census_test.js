@@ -271,6 +271,7 @@ const CENSUS = {
   "kintai-monitor.js": [], /* v5（2026-11-20）: 管理者のホームの箱の純関数（DOM に触れない） */
   "kintai-rules.js": [],
   "kintai-shaho.js": [],   /* 2026-11-25: 社会保険の加入の知らせの純関数（判定・箱・給与の設定の取り出し。DOM に触れない） */
+  "kintai-daitai.js": [],   /* 2026-11-25: 代替休暇の純関数（付与・期限・当て方・箱。DOM に触れない） */
   "kintai-holiday.js": [],   /* 2026-11-25: 日本の祝日の算出と会社の休日の純関数（DOM に触れない） */
   "kintai-yearly.js": [],   /* 2026-11-25: 年別・事業所別の集計の純関数（DOM に触れない） */
   "kintai-views.js": [],   /* 2026-11-25: 年別・事業所別・休日のタブの文を作るだけ（innerHTML へ入れるのは kintai.js の paint） */
