@@ -573,7 +573,7 @@
       var ps = int(ins.pension.std);
       if (!ps) warn('std_missing', '厚生年金の標準報酬月額が空です');
       else {
-        if (R.isStd && !R.isStd('pension', ps)) warn('std_bad', '厚生年金の標準報酬月額が等級表にありません');
+        if (R.isStd && !R.isStd('pension', ps, target)) warn('std_bad', '厚生年金の標準報酬月額が等級表にありません');   /* 2026-11-26: 対象月で上限を引く（令和9年9月分から 68万円・payroll-rates.js の PENSION_TOP） */
         var pfull = qMul(intQ(ps), rateQ(rt.pension)), pm = round50(qDiv(pfull, Q(2)));
         si.pension = pm;
         er.push({ code: 'er_pension', name: '厚生年金保険料（会社）', amount: qNum(qSub(pfull, intQ(pm))), basis: '標準報酬' + ps + '×' + rt.pension + '−本人分' });
