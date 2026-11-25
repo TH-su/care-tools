@@ -309,7 +309,7 @@ t('反証レビューの指摘1:「今日」は今日のカレンダー月へ移
 /* ★0120（2026-11-21・締めの前の要確認）で kintai.js を ?v=2026-11-21.6、kintai-calc.js を ?v=2026-11-21.3 に上げたので期待の版を改めた */
 /* ★freee の月の集計の取り込み（2026-11-23・統合 0123）で kintai.js・kintai-calc.js を ?v=2026-11-23.1 に上げたので期待の版を改めた */
 /* ★v6（2026-11-24）で kintai.js を ?v=2026-11-24 に上げたので期待の版を改めた（kintai-calc.js は 2026-11-23.1 のまま・給与の画面と同じ版） */
-t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-25・2026-11-23.1（両画面と給与の画面でそろえる）', /kintai\.js\?v=2026-11-25"/.test(H) && /kintai-calc\.js\?v=2026-11-23\.1"/.test(H) && /kintai-calc\.js\?v=2026-11-23\.1"/.test(HC) && /kintai-calc\.js\?v=2026-11-23\.1"/.test(read('payroll.html')));
+t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-25.1・2026-11-23.1（両画面と給与の画面でそろえる・kintai.js は段B で .1 に上げた）', /kintai\.js\?v=2026-11-25\.1"/.test(H) && /kintai-calc\.js\?v=2026-11-23\.1"/.test(H) && /kintai-calc\.js\?v=2026-11-23\.1"/.test(HC) && /kintai-calc\.js\?v=2026-11-23\.1"/.test(read('payroll.html')));
 
 const await_pending = [];   /* 動かして確かめる試験（Promise）を最後に待つ */
 console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（2026-11-20・凍結した仕様書 ROOT-v4-master-leave.md） —');
