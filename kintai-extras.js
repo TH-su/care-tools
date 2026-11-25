@@ -243,10 +243,261 @@
     return { text: out.join('\r\n') + '\r\n', dropped: dropped, dup: dup };
   }
 
+  /* ── 段A2（2026-11-25・凍結仕様 ROOT-v7-plus-parity.md「段A2」と「反証レビュー1回」・「2 の追記」）──
+   * 締める時に kintai.js が控え（snapshot）の最上段に ext として足す値を作る。給与（payroll.js）が手当の「回数の元」と時間外に使う。
+   * ・記号の組（設定の鍵 symbolGroups）: 予定の行の記号（シフトと同じ正規化）が組に入り、同行（companion: true）でない日のうち、実働が 0 より多い日の数
+   * ・通勤回数（設定の鍵 commuteCount）: 実働が 0 より多い日のうち、minus の補助項目の取り消していない行が1つも無い日の数
+   * ・社内会議を時間外に足す（設定の鍵 meetingOt）: その時間の補助項目の分を、法定休日なら休日労働に、ほかは丸める前の時間外に足した後の値（adj）
+   * ・freee の月の集計を取り込んだ人（sum.imported）は、記号の組・通勤回数・会議の足し分を入れない（日ごとの行が無い・freee の時間外に会議が入っている恐れ）
+   * ・勤怠の数え方（kintai-calc.js の computeMonth・snapshotOf）は変えない。ここは控えに足す値を作るだけ */
+  var GROUPS_MAX = 10, GROUP_SYM_MAX = 20, SYM_LEN_MAX = 40, MINUS_MAX = 20;
+  var Sym = (typeof module !== 'undefined' && module.exports) ? require('./shift-symbols.js') : root.ShiftSymbols;
+  /* 記号の正規化はシフトアプリと同じ（全角数字・括弧・コロン・波線を半角へ・空白を除く）。部品が無い時は前後の空白を切るだけ */
+  function normSym(s) { s = str(s); return Sym && typeof Sym.normalizeCell === 'function' ? Sym.normalizeCell(s) : s.replace(/[\s　]/g, ''); }
+  /* 初めの案（設定に鍵が無い時に出す・保存で確定＝保存するまで締めの控えには効かせない・仮置き）。
+     早遅の記号は、シフトアプリの freee の書き出しが「早遅手当なし」に振り分ける3つの時間帯（7-16・12-21・18-21）と、その記号（早・遅）にそろえた */
+  var SYMBOL_GROUPS_DEFAULT = [{ code: 'hayaoso', name: '早遅', symbols: ['早', '遅', '7-16', '12-21', '18-21'], active: true }];
+  var COMMUTE_DEFAULT = { minus: ['checkup', 'checkup_nocommute'] };
+  var MEETING_OT_DEFAULT = { code: 'meeting', on: true };
+  function copyJson(x) { return JSON.parse(JSON.stringify(x)); }
+
+  /* 記号の組の掃除: オブジェクト・code は英数字・_・- の20字まで・name は1〜20字・symbols は1〜20個の文字（正規化して1〜40字・重なりは1つに）・active は無い（＝使う）か真偽。
+   * 違う要素は読み飛ばす。同じ code は先勝ち。先頭10組まで。返す: { groups, bad:[{ row, why }] }（why: shape・code・name・symbols・active・dup・max） */
+  function cleanSymbolGroups(list) {
+    var groups = [], bad = [], seen = dict();
+    if (!Array.isArray(list)) return { groups: groups, bad: bad };
+    for (var i = 0; i < list.length; i++) {
+      var x = list[i];
+      if (!x || typeof x !== 'object' || Array.isArray(x)) { bad.push({ row: i + 1, why: 'shape' }); continue; }
+      var code = typeof x.code === 'string' ? x.code : '', nm = str(x.name);
+      if (!CODE_RE.test(code)) { bad.push({ row: i + 1, why: 'code' }); continue; }
+      if (!nm || nm.length > NAME_MAX) { bad.push({ row: i + 1, why: 'name' }); continue; }
+      if (x.active != null && typeof x.active !== 'boolean') { bad.push({ row: i + 1, why: 'active' }); continue; }
+      var syms = [], ss = dict(), okS = Array.isArray(x.symbols) && x.symbols.length >= 1 && x.symbols.length <= GROUP_SYM_MAX;
+      if (okS) x.symbols.forEach(function (s) { var n = typeof s === 'string' ? normSym(s) : ''; if (!n || n.length > SYM_LEN_MAX) okS = false; else if (!ss[n]) { ss[n] = 1; syms.push(n); } });
+      if (!okS) { bad.push({ row: i + 1, why: 'symbols' }); continue; }
+      if (seen[code]) { bad.push({ row: i + 1, why: 'dup' }); continue; }
+      seen[code] = 1;
+      if (groups.length >= GROUPS_MAX) { bad.push({ row: i + 1, why: 'max' }); continue; }
+      groups.push({ code: code, name: nm, symbols: syms, active: x.active !== false });
+    }
+    return { groups: groups, bad: bad };
+  }
+  /* 通勤回数の掃除: { minus: [code] }（code の形・重なりは1つに・20個まで）。形が違えば null（＝通勤回数を数えない） */
+  function cleanCommute(v) {
+    if (!v || typeof v !== 'object' || Array.isArray(v) || !Array.isArray(v.minus)) return null;
+    var out = [], seen = dict();
+    for (var i = 0; i < v.minus.length; i++) {
+      var c = v.minus[i];
+      if (typeof c !== 'string' || !CODE_RE.test(c)) return null;
+      if (!seen[c]) { seen[c] = 1; out.push(c); }
+    }
+    return out.length > MINUS_MAX ? null : { minus: out };
+  }
+  /* 社内会議を時間外に足す設定の掃除: { code, on }。形が違えば null（＝足さない） */
+  function cleanMeetingOt(v) {
+    if (!v || typeof v !== 'object' || Array.isArray(v) || typeof v.code !== 'string' || !CODE_RE.test(v.code) || typeof v.on !== 'boolean') return null;
+    return { code: v.code, on: v.on };
+  }
+  /* 設定から保存済みの値を読む（鍵が無い時は null＝まだ決めていない・画面は初めの案を出す） */
+  function groupsOf(config) { var v = config && typeof config === 'object' ? config.symbolGroups : undefined; return Array.isArray(v) ? cleanSymbolGroups(v).groups : null; }
+  function commuteOf(config) { return config && typeof config === 'object' && config.commuteCount !== undefined ? cleanCommute(config.commuteCount) : null; }
+  function meetingOtOf(config) { return config && typeof config === 'object' && config.meetingOt !== undefined ? cleanMeetingOt(config.meetingOt) : null; }
+  /* 控えに写す定義（締めた時の定義・給与の数え直しはこれで数える）。保存していない鍵は空（初めの案は効かせない） */
+  function defOf(config) {
+    return { items: itemsOf(config) || [], groups: groupsOf(config) || [], commute: commuteOf(config), meetingOt: meetingOtOf(config) };
+  }
+  /* 控えの def を掃除し直す（形の崩れた控えでも例外を出さない・2回通しても同じ＝給与の数え直しが締めた時と同じになる） */
+  function cleanDef(def) {
+    def = def && typeof def === 'object' ? def : {};
+    return { items: cleanExtraItems(def.items).items, groups: cleanSymbolGroups(def.groups).groups, commute: cleanCommute(def.commute), meetingOt: cleanMeetingOt(def.meetingOt) };
+  }
+
+  /* その日が法定休日か（kintai-calc.js の holidayMinutes と同じ決まり: 設定の曜日・振替休日で動かした日）。
+   * day は month.people[i].days の1日（無い日は曜日だけで決める）。振替の印 absences の swap: role 'off'（休む日）は、働く日（link_date）が法定休日の曜日なら法定休日にする。
+   * role 'work'（働く日）は、その日が法定休日の曜日なら法定休日にしない（仮置き・日の行は中身を確かめてから使う） */
+  function dowOf(d) { return new Date(Date.parse(d + 'T12:00:00+09:00')).getUTCDay(); }
+  function isLegalHoliday(date, day, cfg) {
+    var lh = cfg && typeof cfg.legal_holiday === 'number' ? cfg.legal_holiday : null;
+    if (lh == null || !C.isDate(date)) return false;
+    var abs = day && Array.isArray(day.absences) ? day.absences : [], v = null;
+    abs.forEach(function (a) {
+      if (!a || a.kind !== 'swap') return;
+      if (a.role === 'off' && C.isDate(a.link_date) && dowOf(a.link_date) === lh) v = true;
+      else if (a.role === 'work' && dowOf(date) === lh) v = false;
+    });
+    return v != null ? v : dowOf(date) === lh;
+  }
+  function round30Of(m) { return typeof C.round30 === 'function' ? C.round30(m) : m; }
+  /* 会議の時間を足した後の時間外・60時間超・休日労働（kintai-calc.js の computeMonth の月の合計の式と同じ順: 丸める前の時間外に足す → 月の30分丸め（入の時）→
+   * 上限（総労働−休日労働に会議の分を足した値）→ 60時間超＝時間外−3600）。会議 0 なら computeMonth の値と同じ（試験で確かめる）。
+   * s は people[i].sum・cfg は月の設定（fillConfig 済み）・non は法定休日でない日の会議の分・hol は法定休日の会議の分 */
+  function adjOf(s, cfg, non, hol) {
+    var raw = typeof s.legalOverRawMin === 'number' ? s.legalOverRawMin : (+s.legalOverMin || 0);
+    var cap = Math.max(0, (+s.workMin || 0) - (+s.holidayMin || 0)) + non, x = raw + non;
+    var lo = Math.min(cfg && cfg.monthRound30 ? round30Of(x) : x, cap);
+    return { legalOverMin: lo, over60Min: Math.max(0, lo - 3600), holidayMin: (+s.holidayMin || 0) + hol, meetingMin: non + hol };
+  }
+
+  /* 控えの ext を作る。month は computeMonth の結果・extrasRows は kintai_extras_get の rows・scheduleRows は kintai_month_get の schedule・config は勤怠の設定（保存した値）。
+   * 返す: { v:1, def:{ items, groups, commute, meetingOt }, rows:{ staff_id: { 'x:code': 数, 't:code': 分, 'g:code': 日数, 'k:commute': 日数, adj:{…} } } }
+   * 0 の値は入れない（鍵の無い元は 0）。値の無い人は rows に入れない */
+  function buildExt(month, extrasRows, scheduleRows, config) { return buildExtDef(month, extrasRows, scheduleRows, defOf(config)); }
+  function buildExtDef(month, extrasRows, scheduleRows, def0) {
+    var def = cleanDef(def0), m = month && typeof month === 'object' ? month : {}, cfg = m.config || {};
+    var per = m.period && C.isDate(m.period.from) && C.isDate(m.period.to) ? m.period : null;
+    var inP = function (d) { return !per || (d >= per.from && d <= per.to); };
+    var rowsIn = (Array.isArray(extrasRows) ? extrasRows : []).filter(function (r) { return r && !r.voided_at && typeof r.date === 'string' && inP(r.date); });
+    var S0 = sumExtras(rowsIn, def.items), out = dict(), people = Array.isArray(m.people) ? m.people : [];
+    var put = function (sid, k, v) { if (!v) return; (out[sid] || (out[sid] = dict()))[k] = v; };
+    /* 補助項目の月の合計（止めた項目も、締めた時に行があれば入る） */
+    Object.keys(S0.byStaff).forEach(function (sid) {
+      def.items.forEach(function (it) { var v = S0.byStaff[sid][it.code]; if (v) put(sid, (it.kind === 'time' ? 't:' : 'x:') + it.code, v); });
+    });
+    /* 予定の行（記号と同行の印）を職員×日に */
+    var sched = dict();
+    (Array.isArray(scheduleRows) ? scheduleRows : []).forEach(function (r) {
+      if (!r || typeof r.staff_id !== 'string' || typeof r.work_date !== 'string' || r.symbol == null) return;
+      var k = r.staff_id + '|' + r.work_date; (sched[k] || (sched[k] = [])).push({ sym: normSym(r.symbol), comp: r.companion === true });
+    });
+    var groups = def.groups.filter(function (g) { return g.active; });
+    var minus = dict(); (def.commute ? def.commute.minus : []).forEach(function (c) { minus[c] = 1; });
+    var minusDay = dict(); rowsIn.forEach(function (r) { if (typeof r.code === 'string' && own(minus, r.code) && typeof r.staff_id === 'string') minusDay[r.staff_id + '|' + r.date] = 1; });
+    var mo = def.meetingOt && def.meetingOt.on ? def.meetingOt : null;
+    var meetIt = mo ? def.items.filter(function (it) { return it.code === mo.code && it.kind === 'time'; })[0] : null;
+    people.forEach(function (p) {
+      var st = p && p.staff, sum = p && p.sum;
+      if (!st || typeof st.staff_id !== 'string' || !sum || sum.imported) return;
+      var sid = st.staff_id, days = Array.isArray(p.days) ? p.days : [], byDate = dict();
+      days.forEach(function (d) { if (d && typeof d.date === 'string') byDate[d.date] = d; });
+      var worked = days.filter(function (d) { return d && typeof d.date === 'string' && inP(d.date) && +d.workMin > 0; });
+      groups.forEach(function (g) {
+        var set = dict(); g.symbols.forEach(function (s) { set[s] = 1; });
+        put(sid, 'g:' + g.code, worked.filter(function (d) { return (sched[sid + '|' + d.date] || []).some(function (x) { return own(set, x.sym) && !x.comp; }); }).length);
+      });
+      if (def.commute) put(sid, 'k:commute', worked.filter(function (d) { return !minusDay[sid + '|' + d.date]; }).length);
+      if (meetIt) {
+        var non = 0, hol = 0;
+        Object.keys(S0.byDay).forEach(function (dk) {
+          var ix = dk.indexOf('|');
+          if (dk.slice(0, ix) !== sid) return;
+          var mv = S0.byDay[dk][meetIt.code], dt = dk.slice(ix + 1);
+          if (!mv) return;
+          if (isLegalHoliday(dt, byDate[dt], cfg)) hol += mv; else non += mv;
+        });
+        if (non + hol > 0) (out[sid] || (out[sid] = dict())).adj = adjOf(sum, cfg, non, hol);
+      }
+    });
+    var rows = {};
+    Object.keys(out).sort().forEach(function (sid) { var o = {}; Object.keys(out[sid]).sort().forEach(function (k) { o[k] = out[sid][k]; }); rows[sid] = o; });
+    return { v: 1, def: copyJson(def), rows: rows };
+  }
+  /* 2つの ext が同じか（数は 0.01 の単位で比べる・鍵の並びは問わない）。どちらかが ext の形でなければ偽 */
+  function canon(v) {
+    if (Array.isArray(v)) return '[' + v.map(canon).join(',') + ']';
+    if (v && typeof v === 'object') return '{' + Object.keys(v).sort().map(function (k) { return JSON.stringify(k) + ':' + canon(v[k]); }).join(',') + '}';
+    if (typeof v === 'number') return isFinite(v) ? String(Math.round(v * 100)) : 'NaN';
+    return JSON.stringify(v === undefined ? null : v);
+  }
+  function isExt(x) { return !!x && typeof x === 'object' && x.v === 1 && !!x.def && typeof x.def === 'object' && !!x.rows && typeof x.rows === 'object'; }
+  function sameExt(a, b) { return isExt(a) && isExt(b) && canon(a.def) === canon(b.def) && canon(a.rows) === canon(b.rows); }
+  /* 会議と残業の知らせ（反証レビュー1回の1）: その日の会議の分が、その日の「数えなかった時間」（uncountedMin）より多い日。
+   * 返す: [{ staff_id, date, meetingMin, uncountedMin }]（設定が切・会議の項目が無い時は空）。日の行は people[i].days から読む（無い日は数えなかった時間 0） */
+  function meetingOverUncounted(month, extrasRows, config) {
+    var mo = meetingOtOf(config), items = itemsOf(config) || [];
+    if (!mo || !mo.on) return [];
+    var it = items.filter(function (x) { return x.code === mo.code && x.kind === 'time'; })[0];
+    if (!it) return [];
+    var S0 = sumExtras((Array.isArray(extrasRows) ? extrasRows : []).filter(function (r) { return r && r.code === it.code; }), [it]), uc = dict(), out = [];
+    ((month && month.people) || []).forEach(function (p) {
+      if (!p || !p.staff || (p.sum && p.sum.imported)) return;
+      (p.days || []).forEach(function (d) { if (d && typeof d.date === 'string') uc[p.staff.staff_id + '|' + d.date] = Math.max(0, +d.uncountedMin || 0); });
+    });
+    Object.keys(S0.byDay).sort().forEach(function (dk) {
+      var mv = S0.byDay[dk][it.code], u = own(uc, dk) ? uc[dk] : 0, ix = dk.indexOf('|');
+      if (mv > u) out.push({ staff_id: dk.slice(0, ix), date: dk.slice(ix + 1), meetingMin: mv, uncountedMin: u });
+    });
+    return out;
+  }
+  var MEETING_OVER_TEXT = '会議の時間が、この日の数えなかった時間より多くなっています。会議の時間が打刻の中で払われていないか確かめてください';
+  var MEETING_INPUT_HELP = '予定の外で、残業として認めていない会議の時間を入れます';
+  /* 回数の元の名前の形（payroll-calc.js と同じ）。シフトの記号はこの形にならない（試験で確かめる） */
+  var SRC_RE = /^[xtgk]:[A-Za-z0-9_-]{1,20}$/;
+  /* 回数の元の表示名（給与の画面の選び・明細の根拠）。def は控えの ext.def か defOf(config) */
+  function srcLabel(src, def) {
+    if (typeof src !== 'string' || !SRC_RE.test(src)) return src;
+    var kd = src.charAt(0), code = src.slice(2), d = def || {};
+    if (kd === 'k') return '通勤回数';
+    if (kd === 'g') { var g = (d.groups || []).filter(function (x) { return x.code === code; })[0]; return '記号の組：' + (g ? g.name : code); }
+    var it = (d.items || []).filter(function (x) { return x.code === code; })[0];
+    var nm = it ? nameOf(it) : code;
+    return '補助項目：' + nm + (kd === 't' && nm.slice(-4) !== '（時間）' ? '（時間）' : '');   /* 名前が「…（時間）」なら重ねない */
+  }
+  /* 会議の足し分を 36協定の見張りの月の行に足す分（丸める前）: 締めた月は控えの adj から（休日分＝adj.holidayMin−行の holidayMin）、
+   * 締めていない月は extrasRows から数える。返す: { non, hol }（分） */
+  function meeting36(adj, row) {
+    if (!adj || typeof adj !== 'object') return { non: 0, hol: 0 };
+    var tot = Math.max(0, +adj.meetingMin || 0), hol = Math.max(0, Math.min(tot, (+adj.holidayMin || 0) - (+(row && row.holidayMin) || 0)));
+    return { non: tot - hol, hol: hol };
+  }
+  function meetingSplitOf(month, extrasRows, config, sid) {
+    var mo = meetingOtOf(config), items = itemsOf(config) || [], non = 0, hol = 0;
+    if (!mo || !mo.on) return { non: 0, hol: 0 };
+    var it = items.filter(function (x) { return x.code === mo.code && x.kind === 'time'; })[0];
+    if (!it) return { non: 0, hol: 0 };
+    var p = ((month && month.people) || []).filter(function (x) { return x && x.staff && x.staff.staff_id === sid; })[0];
+    if (!p || (p.sum && p.sum.imported)) return { non: 0, hol: 0 };
+    var by = dict(); (p.days || []).forEach(function (d) { if (d && typeof d.date === 'string') by[d.date] = d; });
+    (Array.isArray(extrasRows) ? extrasRows : []).forEach(function (r) {
+      if (!r || r.voided_at || r.staff_id !== sid || r.code !== it.code || r.minutes == null || !isFinite(+r.minutes)) return;
+      if (isLegalHoliday(r.date, by[r.date], (month && month.config) || {})) hol += Math.round(+r.minutes); else non += Math.round(+r.minutes);
+    });
+    return { non: non, hol: hol };
+  }
+
+  /* 月の集計の CSV（buildCsv の summary に補助項目の列を足した後の文）の末尾に、段A2 の列を足す（今の列の並びは変えない・行も足さない）:
+   *   使う記号の組ごとに「<組の名前>（回）」・通勤回数を数える時は「通勤回数（回）」・会議を時間外に足す時は「時間外（社内会議を含む）」
+   * ctx: { people: csvPeople の結果, ext: 控えの形（buildExt の結果）, base: { staff_id: 足す前の時間外（分） }, imported: { staff_id: 1 }, mode: 'hmm'|'dec' }
+   * 取り込みの人の記号の組・通勤回数は数えていないので空（時間外は足す前の値）。同じ従業員コードの人が2人以上いる行は空（appendCsv と同じ）。
+   * 列が1つも無い時は文をそのまま返す。返す: { text, cols: 足した列の数 } */
+  function extCols(ext) {
+    var d = isExt(ext) ? cleanDef(ext.def) : null, cols = [];
+    if (!d) return cols;
+    d.groups.filter(function (g) { return g.active; }).forEach(function (g) { cols.push({ key: 'g:' + g.code, head: g.name + '（回）', kind: 'n' }); });
+    if (d.commute) cols.push({ key: 'k:commute', head: '通勤回数（回）', kind: 'n' });
+    if (d.meetingOt && d.meetingOt.on) cols.push({ key: 'ot', head: '時間外（社内会議を含む）', kind: 't' });
+    return cols;
+  }
+  function appendExtCsv(text, ctx) {
+    var cols = extCols(ctx && ctx.ext);
+    if (!cols.length || typeof text !== 'string' || !text) return { text: text, cols: 0 };
+    var rows = ctx.ext.rows || {}, base = ctx.base || {}, imp = ctx.imported || {}, mode = ctx.mode === 'dec' ? 'dec' : 'hmm';
+    var people = (ctx.people || []).filter(function (p) { return p && p.emp_code; }), byEmp = dict(), cnt = dict(), out = [];
+    people.forEach(function (p) { var e = String(p.emp_code); cnt[e] = (cnt[e] || 0) + 1; if (!own(byEmp, e)) byEmp[e] = p; });
+    var cell = function (v) { return C.csvCell(v); };
+    splitCsv(text).forEach(function (r, idx) {
+      if (idx === 0) { out.push(r.raw + ',' + cols.map(function (c) { return cell(c.head); }).join(',')); return; }
+      var emp = r.cells[0] || '', p = own(byEmp, emp) && cnt[emp] === 1 ? byEmp[emp] : null, sid = p ? p.staff_id : null;
+      var er = sid && own(rows, sid) ? rows[sid] : {};
+      out.push(r.raw + ',' + cols.map(function (c) {
+        if (!sid) return '';
+        if (c.kind === 't') { var lo = er.adj && typeof er.adj.legalOverMin === 'number' ? er.adj.legalOverMin : (+base[sid] || 0); return cell(C.fmtMin(lo, mode)); }
+        if (own(imp, sid)) return '';
+        return cell(String(+er[c.key] || 0));
+      }).join(','));
+    });
+    return { text: out.join('\r\n') + '\r\n', cols: cols.length };
+  }
+
   var api = {
     MAX_ITEMS: MAX_ITEMS, CODE_RE: CODE_RE, NAME_MAX: NAME_MAX, UNIT_MAX: UNIT_MAX, QTY_MAX: QTY_MAX, COUNT_MAX: COUNT_MAX, MIN_MAX: MIN_MAX, KINDS: KINDS,
     EXTRA_ITEMS_DEFAULT: EXTRA_ITEMS_DEFAULT, copyDefault: copyDefault, cleanExtraItems: cleanExtraItems, checkForm: checkForm, itemsOf: itemsOf, activeItems: activeItems, csvItems: csvItems, nameOf: nameOf, mismatchText: mismatchText,
-    parseValue: parseValue, minutesOf: minutesOf, sumExtras: sumExtras, fmtValue: fmtValue, label: label, colHead: colHead, splitCsv: splitCsv, csvPeople: csvPeople, appendCsv: appendCsv
+    parseValue: parseValue, minutesOf: minutesOf, sumExtras: sumExtras, fmtValue: fmtValue, label: label, colHead: colHead, splitCsv: splitCsv, csvPeople: csvPeople, appendCsv: appendCsv,
+    /* 段A2 */
+    GROUPS_MAX: GROUPS_MAX, GROUP_SYM_MAX: GROUP_SYM_MAX, MINUS_MAX: MINUS_MAX, SRC_RE: SRC_RE, SYMBOL_GROUPS_DEFAULT: SYMBOL_GROUPS_DEFAULT, COMMUTE_DEFAULT: COMMUTE_DEFAULT, MEETING_OT_DEFAULT: MEETING_OT_DEFAULT,
+    MEETING_OVER_TEXT: MEETING_OVER_TEXT, MEETING_INPUT_HELP: MEETING_INPUT_HELP, normSym: normSym, cleanSymbolGroups: cleanSymbolGroups, cleanCommute: cleanCommute, cleanMeetingOt: cleanMeetingOt,
+    groupsOf: groupsOf, commuteOf: commuteOf, meetingOtOf: meetingOtOf, defOf: defOf, cleanDef: cleanDef, isLegalHoliday: isLegalHoliday, adjOf: adjOf, buildExt: buildExt, buildExtDef: buildExtDef,
+    isExt: isExt, sameExt: sameExt, meetingOverUncounted: meetingOverUncounted, srcLabel: srcLabel, meeting36: meeting36, meetingSplitOf: meetingSplitOf, copyJson: copyJson, extCols: extCols, appendExtCsv: appendExtCsv
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.KintaiExtras = api;

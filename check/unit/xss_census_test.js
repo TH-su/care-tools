@@ -305,6 +305,8 @@ const CENSUS = {
     [E, "if (r) r.innerHTML = ledgerHtml()"],
     /* 段A1（2026-11-25）: 設定の「補助項目」に空の行を足す。exSetRow(i, null, false) は行の番号（数）と固定の文だけで組む（項目の値は空・保存済みの行は描く時に esc を通す） */
     [N, "tb.insertAdjacentHTML('beforeend', exSetRow(i, null, false))"],
+    /* 段A2（2026-11-25）: 設定の「記号の組」に空の行を足す。a2GroupRow(i, null, false) は行の番号（数）と固定の文だけで組む（組の値は空・保存済みの組は描く時に esc を通す） */
+    [N, "tb.insertAdjacentHTML('beforeend', a2GroupRow(i, null, false))"],
     [F, "g.innerHTML = '<h2>この画面は事務所のパソコンで使います</h2><p>この端末は「現場」として設定されているため、勤怠管理は開きません。出勤・退勤の打刻は「出勤・退勤の打刻」の画面から行います。</p><p><a class=\"btn\" href=\"kintai-clock.html\">打刻の画面へ</a> <a class=\"btn\" href=\"index.html\">メニューへ戻る</a></p>'"]
   ],
   "payroll.html": [],

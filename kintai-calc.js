@@ -253,6 +253,7 @@
             seqOf[date] = (seqOf[date] || 0) + 1;
             row.staff_id = st.id; row.work_date = date; row.seq = seqOf[date];
             row.office = DIV_OFFICE[src.div]; row.symbol = String(p.norm || raw).slice(0, 40);
+            if (p.goudou === true) row.companion = true;   /* 段A2（2026-11-25）: 元のマスに「/同」（同行・早遅手当なし）がある時だけ印を足す（記号の組の回数で数えない日・統合 0129 の列）。数え方は変えない */
             rows.push(row);
           }
         }

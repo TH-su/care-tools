@@ -200,7 +200,25 @@
         if (!a && !b) return;
         if (!a || !b || !attSame(a, b)) names.push(p.name || p.staff_id);
       });
-      return { state: names.length ? 'ng' : 'ok', names: names };
+      /* 段A2（2026-11-25）: 勤怠の設定（kintai_month_get の settings.config）を持っておく（手当の回数の元の選び・控えに補助項目が無い月分の止め） */
+      var kcfg = obj(obj(d.settings).config), res = { state: names.length ? 'ng' : 'ok', names: names, kcfg: kcfg };
+      var mo = obj(kcfg.meetingOt), per0 = obj(d.period);
+      if (!snap.ext && mo.on === true && typeof per0.from === 'string' && per0.from >= '2026-12-16') res.extMissing = true;
+      /* 控えに ext がある月分だけ、補助項目（kintai_extras_get）を読み、控えの ext.def（締めた時の定義）で数え直して比べる（ext の無い月分は今までどおり） */
+      if (!snap.ext) return res;
+      var EXm = window.KintaiExtras;
+      if (!EXm || typeof EXm.buildExtDef !== 'function' || !EXm.isExt(snap.ext)) return { state: 'err', names: [] };
+      return rpc('kintai_extras_get', { p_ym: ymx }).then(function (xr) {
+        if (!xr || xr.ok === false) throw new Error('kintai_extras_get: ' + ((xr && xr.error) || 'ng'));
+        var fx = EXm.buildExtDef(month, arr(xr.rows), arr(d.schedule), snap.ext.def), one = function (e, sid) { return { v: 1, def: e.def, rows: e.rows[sid] ? { s: e.rows[sid] } : {} }; };
+        if (!EXm.sameExt({ v: 1, def: fx.def, rows: {} }, { v: 1, def: snap.ext.def, rows: {} })) return { state: 'ng', names: ['補助項目の定義'], kcfg: kcfg };
+        boot.profiles.forEach(function (p) {
+          if (p.none || p.data.exclude === true || p.data.no_attendance === true) return;
+          if (!EXm.sameExt(one(fx, p.staff_id), one(snap.ext, p.staff_id)) && names.indexOf(p.name || p.staff_id) < 0) names.push(p.name || p.staff_id);
+        });
+        res.state = names.length ? 'ng' : 'ok';
+        return res;
+      });
     })['catch'](function (e) { note('勤怠の確かめ', e); return { state: 'err', names: [] }; });
   }
   function kintaiBlock() {
@@ -213,9 +231,30 @@
   }
   /* 締めた時の控え（snapshot）→ staff_id ごとの att */
   function attMap(snap, locked) {
-    var out = {};
-    arr(obj(snap).rows).forEach(function (r) { if (r && typeof r.staff_id === 'string') out[r.staff_id] = attFromKintai(r, locked); });
+    var out = {}, ext = obj(snap).ext;
+    arr(obj(snap).rows).forEach(function (r) { if (r && typeof r.staff_id === 'string') out[r.staff_id] = attExt(attFromKintai(r, locked), r, ext); });
     return out;
+  }
+  /* 段A2（2026-11-25）: 締めの控えの ext（kintai-extras.js の buildExt）を計算の入力に当てる。
+     a.ext＝手当の回数の元（x:・t:・g:・k:）。控えの定義にある元は、0 で鍵を省いた分を 0 で埋める（毎月「控えにありません」を出さない）。
+     freee の月の集計を取り込んだ人（行の imported）の記号の組・通勤回数は数えていないので埋めない（給与が「控えにありません」と知らせる）。
+     会議の足し分（adj）がある人は、時間外・60時間超・休日労働を足した後の値で置き換え、明細の勤怠の欄に出す分（meetingMin）を持つ。ext の無い控えは何もしない */
+  function attExt(a, r, ext) {
+    if (!a || !ext || typeof ext !== 'object' || ext.v !== 1 || !ext.def || typeof ext.def !== 'object') return a;
+    var d = ext.def, rows = obj(ext.rows), er = obj(rows[r.staff_id]), e = {}, imp = !!r.imported;
+    arr(d.items).forEach(function (it) { if (it && typeof it.code === 'string') e[(it.kind === 'time' ? 't:' : 'x:') + it.code] = 0; });
+    if (!imp) {
+      arr(d.groups).forEach(function (g) { if (g && typeof g.code === 'string' && g.active !== false) e['g:' + g.code] = 0; });
+      if (d.commute && typeof d.commute === 'object') e['k:commute'] = 0;
+    }
+    Object.keys(er).forEach(function (k) { if (/^[xtgk]:/.test(k)) { var n = Number(er[k]); if (isFinite(n) && n > 0) e[k] = n; } });
+    a.ext = e;
+    var adj = obj(er.adj);
+    if (!imp && isFinite(Number(adj.legalOverMin)) && isFinite(Number(adj.holidayMin)) && isFinite(Number(adj.over60Min)) && Number(adj.meetingMin) > 0) {
+      a.legalOverMin = Math.max(0, Math.round(Number(adj.legalOverMin))); a.over60Min = Math.max(0, Math.round(Number(adj.over60Min))); a.holidayMin = Math.max(0, Math.round(Number(adj.holidayMin)));
+      a.meetingMin = Math.round(Number(adj.meetingMin));
+    }
+    return a;
   }
   /* 明細の行（DB の {staff_id, name, item, adjustments, gross, deduct, net}）を画面の形（item の中身＋staff_id・name・adjustments）にする */
   function flatItem(x) {
@@ -261,7 +300,8 @@
         return Object.assign({}, obj(a.def), { code: a.code, rev: num(a.rev) });
       }),
       profiles: profiles,
-      kintai: { locked: locked, locked_at: k.locked_at || null, period: per, summary_by_staff: attMap(k.summary_by_staff, locked) },
+      kintai: { locked: locked, locked_at: k.locked_at || null, period: per, summary_by_staff: attMap(k.summary_by_staff, locked),
+        ext_def: obj(obj(k.summary_by_staff).ext).def && typeof obj(k.summary_by_staff).ext.def === 'object' ? obj(k.summary_by_staff).ext.def : null },   /* 段A2: 締めた時の補助項目・記号の組の定義（回数の元の選びの名前） */
       run: r.run && typeof r.run === 'object' ? { status: r.run.status, rev: num(r.run.rev), stale: r.run.stale === true, saved_at: r.run.saved_at || null, saved_by: r.run.saved_by || null,
         confirmed_at: r.run.confirmed_at || null, confirmed_by: r.run.confirmed_by || null, exported_at: r.run.exported_at || null, totals: obj(r.run.totals) } : null,
       items: arr(r.items).filter(function (it) { return it && typeof it.staff_id === 'string'; }).map(flatItem),
@@ -301,6 +341,10 @@
       it = Object.assign({}, it, { staff_id: p.staff_id, name: p.name, adjustments: adjOf(p.staff_id), bank_last4: p.bank_last4, pay_date: isDate(pd) ? pd : null });
       if (!bs.kintai.locked) it.warnings = arr(it.warnings).concat([{ code: 'unlocked', msg: '勤怠が未締めです' }]);
       if (a && a.missing.length) it.warnings = arr(it.warnings).concat([{ code: 'att_old', msg: '締めた時の勤怠の控えに無い数字がありました（0として数えています・勤怠を締め直すと入ります）' }]);
+      /* 段A2: 明細の勤怠の欄に「うち社内会議」（時間外・休日労働に足した会議の分・表示だけで額は変えない） */
+      if (a && a.meetingMin > 0 && arr(it.lines).some(function (l) { return l && l.sec === 'att'; })) it.lines = arr(it.lines).concat([{ sec: 'att', code: 'meetingMin', name: 'うち社内会議（分）', qty: a.meetingMin, unit: null, amount: 0, basis: '時間外・法定休日に足した分' }]);
+      /* 段A2（反証レビュー1回の3）: 勤怠の設定で社内会議を時間外に足すのに、控えに補助項目（ext）が無い月分（期間の初日が 2026-12-16 以降） */
+      if (a && bs.kcheck && bs.kcheck.extMissing) it.warnings = arr(it.warnings).concat([{ code: 'ext_missing', msg: 'この月分の勤怠の控えに補助項目がありません。勤怠の締めを外して締め直してください' }]);
       out.push(it);
     });
     return out;
@@ -335,13 +379,14 @@
      勤怠の staffSorted と同じ決まり: 事業所に関係なく、結んだ職員マスタの入職日の古い順。入職日の分からない人は最後に打刻の番号の順。
      有給の設定の入職日の上書きは使わない。入職日は勤怠の職員（kintai_month_get の master_id・code）と職員マスタ（kintai_master_list）から読む。
      読めない時は今の並び（職員ID の順）のまま（画面は止めない）。読んだ並びはメモリにだけ持つ */
-  var hireRank = null, hireBusy = false;
+  var hireRank = null, hireBusy = false, kintaiCfg0 = null;   /* kintaiCfg0: 段A2・勤怠の設定（手当の回数の元の選びに使う・画面の中だけ） */
   function isYmd(x) { return typeof x === 'string' && /^\d{4}-\d{2}-\d{2}/.test(x); }
   function loadHire() {
     if (hireBusy || !ym) return;
     hireBusy = true;
     Promise.all([rpc('kintai_month_get', { p_ym: ym }), rpc('kintai_master_list')]).then(function (rs) {
       var staff = arr(rs[0] && rs[0].staff), mrows = arr(rs[1] && rs[1].rows), hire = {};
+      var s0 = rs[0] && rs[0].settings; kintaiCfg0 = s0 && s0.config && typeof s0.config === 'object' && !Array.isArray(s0.config) ? s0.config : null;   /* 段A2 */
       mrows.forEach(function (m) { if (m && typeof m.master_id === 'string' && isYmd(m.hire_date)) hire[m.master_id] = m.hire_date.slice(0, 10); });
       var list = staff.filter(function (x) { return x && typeof x.staff_id === 'string'; }).map(function (x) { return { sid: x.staff_id, h: x.master_id ? hire[x.master_id] || null : null, code: String(x.code || '') }; });
       list.sort(function (a, b) {
@@ -1820,6 +1865,23 @@
   function chk(id, label, on) { return '<label><input type="checkbox" id="' + esc(id) + '"' + (on ? ' checked' : '') + '> ' + esc(label) + '</label>'; }
   function sel(id, label, val, opts) { return '<label for="' + esc(id) + '">' + esc(label) + '</label><select id="' + esc(id) + '">' + opts.map(function (o) { return '<option value="' + esc(o[0]) + '"' + (String(val == null ? '' : val) === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') + '</select>'; }
   var NUMA = ' inputmode="numeric"';
+  /* 段A2: 手当の回数の元の選び。元は勤怠の設定（kintai_month_get の settings.config）と締めた時の控えの定義・控えの記号の回数（counts）と今の値 */
+  function srcOpts(cur) {
+    var EXm = window.KintaiExtras, kc = kintaiCfg0 || obj(bs && bs.kcheck && bs.kcheck.kcfg), out = [['manual', '手で入れる（下の回数）']], seen = { manual: 1 };
+    var add = function (v, t) { if (!seen[v]) { seen[v] = 1; out.push([v, t]); } };
+    var syms = {}; Object.keys(obj(bs && bs.kintai.summary_by_staff)).forEach(function (sid) { Object.keys(obj(bs.kintai.summary_by_staff[sid].counts)).forEach(function (k) { syms[k] = 1; }); });
+    Object.keys(syms).sort().forEach(function (k) { if (!(EXm && EXm.SRC_RE.test(k))) add(k, 'シフトの記号：' + k); });
+    if (EXm && typeof EXm.defOf === 'function') {
+      var defs = [EXm.defOf(kc), bs && bs.kintai.ext_def ? EXm.cleanDef(bs.kintai.ext_def) : null].filter(Boolean);
+      defs.forEach(function (df) {
+        df.items.forEach(function (it) { add((it.kind === 'time' ? 't:' : 'x:') + it.code, EXm.srcLabel((it.kind === 'time' ? 't:' : 'x:') + it.code, df)); });
+        df.groups.forEach(function (g) { add('g:' + g.code, EXm.srcLabel('g:' + g.code, df)); });
+        if (df.commute) add('k:commute', '通勤回数');
+      });
+    }
+    if (cur && typeof cur === 'string' && !seen[cur]) add(cur, '今の値：' + (EXm && EXm.SRC_RE.test(cur) ? EXm.srcLabel(cur, null) : 'シフトの記号：' + cur));
+    return out;
+  }
   function openProfile(sid) {
     var p = profOf(sid); if (!p) return;
     var d = p.data, ins = obj(d.ins), tx = obj(d.tax), cm = obj(d.commute), rt = obj(d.resident_tax), p0 = period();
@@ -1831,7 +1893,13 @@
       inp('f-amh', '月平均所定労働時間', d.avg_month_hours, ' inputmode="decimal"') + inp('f-amd', '月平均所定労働日数', d.avg_month_days, ' inputmode="decimal"') + inp('f-dh', '1日の所定時間（日給）', d.day_hours, ' inputmode="decimal"') + '</div>';
     var pays = bs.allowances.filter(function (a) { return a.sec === 'pay' && !a.hidden; }), deds = bs.allowances.filter(function (a) { return a.sec === 'deduct' && !a.hidden; });
     function amtOf(list, code) { var x = arr(list).filter(function (a) { return a && a.code === code; })[0]; return x ? x.amount : ''; }
-    if (pays.length) h += '<p class="help">手当（月の額・空欄は無し）</p><div class="kv">' + pays.map(function (a, i) { return inp('f-al' + i, a.name || a.code, amtOf(d.allowances, a.code), NUMA); }).join('') + '</div>';
+    function alOf(code) { return arr(d.allowances).filter(function (x) { return x && x.code === code; })[0] || {}; }
+    /* 段A2: 回数×単価の手当は「回数の元」を選ぶ（手で入れる＋回数／シフトの記号／補助項目／記号の組／通勤回数・今の値は引き継ぐ） */
+    if (pays.length) h += '<p class="help">手当（月の額・空欄は無し）</p><div class="kv">' + pays.map(function (a, i) {
+      var x = inp('f-al' + i, a.name || a.code, amtOf(d.allowances, a.code), NUMA);
+      if (a.calc === 'count') { var cur = alOf(a.code); x += sel('f-als' + i, (a.name || a.code) + ' の回数の元', cur.count_source || 'manual', srcOpts(cur.count_source)) + inp('f-alc' + i, (a.name || a.code) + ' の回数（手で入れる時）', cur.count, ' inputmode="decimal"'); }
+      return x;
+    }).join('') + '</div>' + (pays.some(function (a) { return a.calc === 'count'; }) ? '<p class="help">回数の元は、締めた勤怠の控えから月ごとに数えます（補助項目・記号の組・通勤回数は勤怠の設定のタブで決めます）。回数で払う通勤手当は、通勤手当の非課税の限度を確かめていません。</p>' : '');
     if (deds.length) h += '<p class="help">固定の控除（月の額・空欄は無し）</p><div class="kv">' + deds.map(function (a, i) { return inp('f-de' + i, a.name || a.code, amtOf(d.deductions, a.code), NUMA); }).join('') + '</div>';
     h += '<div class="kv">' + inp('f-cm', '通勤手当（月の額・円）', cm.monthly, NUMA) + sel('f-cmm', '通勤の手段', cm.means, [['', '（選ぶ）'], ['public', '公共交通'], ['car', '車・自転車'], ['mixed', '併用']]) + inp('f-cmd', '片道の距離（km）', cm.distance_km, ' inputmode="decimal"') +
       inp('f-cmp', '駐車場の料金（本人が負担・月・円）', cm.parking_monthly, NUMA) + '</div>' +
@@ -1874,7 +1942,18 @@
     d.base = n('f-base', '基本給'); d.board_pay = n('f-board', '役員報酬');
     d.avg_month_hours = n('f-amh', '月平均所定労働時間'); d.avg_month_days = n('f-amd', '月平均所定労働日数'); d.day_hours = n('f-dh', '1日の所定時間');
     var keepA = arr(d.allowances).filter(function (a) { return !c.pays.some(function (x) { return x.code === a.code; }); });
-    c.pays.forEach(function (a, i) { var x = n('f-al' + i, a.name || a.code); if (x != null && x === x) { var old = arr(p.data.allowances).filter(function (o) { return o.code === a.code; })[0]; keepA.push(Object.assign({}, old || {}, { code: a.code, amount: x })); } });
+    c.pays.forEach(function (a, i) {
+      var x = n('f-al' + i, a.name || a.code); if (x != null && x === x) {
+        var old = arr(p.data.allowances).filter(function (o) { return o.code === a.code; })[0], ent = Object.assign({}, old || {}, { code: a.code, amount: x });
+        /* 段A2: 回数の元（選びがある時だけ・手で入れる時は回数も。回数は 0〜9999） */
+        if ($('f-als' + i)) {
+          var src = v('f-als' + i) || 'manual', cn = nOr('f-alc' + i);
+          ent.count_source = src;
+          if (src === 'manual') { if (cn !== cn || (cn != null && (cn < 0 || cn > 9999))) bad.push((a.name || a.code) + ' の回数（0〜9999）'); else ent.count = cn; }
+        }
+        keepA.push(ent);
+      }
+    });
     d.allowances = keepA;
     var keepD = arr(d.deductions).filter(function (a) { return !c.deds.some(function (x) { return x.code === a.code; }); });
     c.deds.forEach(function (a, i) { var x = n('f-de' + i, a.name || a.code); if (x != null && x === x) keepD.push({ code: a.code, amount: x }); });
