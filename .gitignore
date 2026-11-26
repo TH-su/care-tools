@@ -73,6 +73,7 @@
 !/check/build-holidays-fixture.mjs
 !/check/kintai_board_e2e.mjs
 !/check/kintai_shaho_e2e.mjs
+!/check/kintai_lockpay_e2e.mjs
 # 給与の画面の通し試験と撮影（2026-11-19・偽のデータベースと偽の部品・架空の職員10人）
 !/check/payroll_e2e.mjs
 # 業務の流れを通す試験（2026-11-02・入居者マスタ→各画面・行き来の帯・週間計画→ワースケ・俯瞰・現場の守り。材料は check/fixtures/flow.mjs）

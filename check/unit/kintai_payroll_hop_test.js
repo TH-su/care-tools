@@ -31,7 +31,8 @@ t('給与は月分を localStorage に入れない', !/lsSet\([^)]*ym/i.test(PJ)
 t('勤怠管理は来た月分・タブを今までの鍵に入れてから読む（再読み込みで同じ所）', /var hp = hopIn\(\);[\s\S]{0,200}if \(hp\.ym\) lsSet\(LS_YM, hp\.ym\); if \(hp\.tab\) lsSet\(LS_TAB, hp\.tab\);\s*var t = lsGet\(LS_TAB\)/.test(KJ));
 
 console.log('\n— 4. 連携の案内 —');
-t('勤怠管理の締めた月に「給与の画面でこの月分を計算する」（管理者だけ・印刷に出さない）', /isAdmin\(\) \? '<p class="no-print"><a class="btn pri" href="payroll\.html\?ym=' \+ esc\(encodeURIComponent\(ym\)\) \+ '">💴 給与の画面でこの月分を計算する<\/a><\/p>' : ''/.test(fn(KJ, 'paintClose')));
+/* 2026-11-26: href は payHref（その月分＋from=kintai＝給与の画面が1回だけ自動で計算する）に、手順の3段目の名前を添えた（本人指示）。文言・管理者だけ・印刷に出さないはそのまま */
+t('勤怠管理の締めた月に「給与の画面でこの月分を計算する」（管理者だけ・印刷に出さない・行き先はその月分＋from=kintai）', /isAdmin\(\) \? '<p class="no-print su-next">[^']*<\/span><a class="btn pri" href="' \+ esc\(payHref\(ym\)\) \+ '">💴 給与の画面でこの月分を計算する<\/a><\/p>' : ''/.test(fn(KJ, 'paintClose')) && /return 'payroll\.html\?ym=' \+ encodeURIComponent\(y \|\| ''\) \+ '&from=kintai';/.test(KJ));
 t('給与の未締めの知らせに「勤怠管理でこの月分を締める」', /<a class="btn" href="' \+ esc\(kintaiHref\(\)\) \+ '">🕒 勤怠管理でこの月分を締める<\/a>/.test(fn(PJ, 'runHtml')));
 
 console.log('\n— 2・5. 受け取りを動かす —');
