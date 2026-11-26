@@ -635,7 +635,7 @@
     var shb = shBoxHtml(); if (shb) out.push(shb);   /* 社保の知らせ（入れた時だけ） */
     var ctb = (typeof CT !== 'undefined' && CT) ? CT.homeBox(ctCtx(), boxHtml, waitBox) : ''; if (ctb) out.push(ctb);   /* 資格の期限（入れた時だけ） */
     return h + '<h2 style="font-size:16px;margin:0 0 4px">' + esc(perLabel()) + 'のようす</h2><p class="help">箱を押すと、その一覧の画面へ移ります。今日・要確認・勤務の決まりは30秒ごとに読み直します。勤務の決まり（休憩・勤務の間・続けて働いた日）は知らせだけで、数えた時間は変えません。</p>' +
-      '<div class="hgrid">' + out.join('') + '</div></div>';
+      homeFlowHtml() + '<div class="hgrid">' + out.join('') + '</div></div>';
   }
 
   /* 要確認の一覧（v2・C-2）: 月の要確認を日付順に1列 */
@@ -1238,26 +1238,47 @@
       return '<li class="' + x.state + '"' + (x.state === 'cur' ? ' aria-current="step"' : '') + '>' + esc(x.name) + '<span class="su-st-s">' + esc(x.sub || (x.state === 'done' ? '済み' : x.state === 'cur' ? '次はここ' : 'まだ')) + '</span></li>';
     }).join('') + '</ol>';
   }
+  /* 締めを止めている理由の文（期間の末日の前・シフトを取り込めていない）。締めと出力とホームの進み具合で同じ判定を使う（2026-11-26・判定を2つに分けない）。
+     返す文は esc 済みの HTML（空なら締められる） */
+  function closeStop(lk) {
+    var nx = C.addDays(per().to, 1);
+    return !lk && notYet() ? '期間の末日を過ぎてから締められます（' + esc(perLabel()) + 'は ' + esc((+nx.slice(5, 7)) + '月' + (+nx.slice(8, 10)) + '日') + 'から締められます）。' :
+      (!lk && shiftInfo && !shiftInfo.ok ? 'シフトを取り込めていないため、まだ締められません（' + esc(shiftInfo.why) + '）。上の「シフトを取り込み直す」を押してから締めてください。' : '');
+  }
+  /* 給与の画面でこの月分を計算する（2026-11-26: from=kintai で給与の画面が1回だけ自動で計算する） */
+  function payHref(y) { return 'payroll.html?ym=' + encodeURIComponent(y || '') + '&from=kintai'; }
+  /* ホームの「この月分の進み具合」（2026-11-26）: 締めと出力と同じ3段（closeSteps・closeStop）と、今の段の主ボタン1つ。ホームからは締めない。印刷に出さない */
+  function homeFlowHtml() {
+    if (!month) return '';
+    var lk = isLocked(), review = month.totals.reviewCount, stop = closeStop(lk), act;
+    if (lk) act = isAdmin() ? '<a class="btn pri" href="' + esc(payHref(ym)) + '">💴 給与の画面でこの月分を計算する</a>' : '<span class="tag ok">✓ 締めてあります</span>';
+    else if (review) act = '<button type="button" class="btn pri" data-act="rvd-start">要確認を1件目から決める</button>';
+    else if (stop) act = '<span class="hf-why" role="status">' + stop + '</span>';
+    else act = '<button type="button" class="btn pri" data-tab="close">締めと出力へ進む</button>';
+    return '<section class="hflow no-print" aria-label="この月分の進み具合"><h3>この月分の進み具合</h3>' + closeStepsHtml(review, lk, !!stop) + '<div class="row hf-act">' + act + '</div></section>';
+  }
   function paintClose() {
     var lk = isLocked(), afterLock = month.people.some(function (p) { return p.days.some(function (d) { return d.flags.indexOf('after_lock') >= 0; }); });
     var review = month.totals.reviewCount;
     var diff = lk ? snapDiff() : [];
-    var nx = C.addDays(per().to, 1);
-    var stop = !lk && notYet() ? '期間の末日を過ぎてから締められます（' + esc(perLabel()) + 'は ' + esc((+nx.slice(5, 7)) + '月' + (+nx.slice(8, 10)) + '日') + 'から締められます）。' :
-      (!lk && shiftInfo && !shiftInfo.ok ? 'シフトを取り込めていないため、まだ締められません（' + esc(shiftInfo.why) + '）。上の「シフトを取り込み直す」を押してから締めてください。' : '');
+    var stop = closeStop(lk);
     var h = printHead('締めと出力') + fiHtml() + '<div class="cd"><h2 style="font-size:16px;margin:0 0 8px">月の締め</h2>' + closeStepsHtml(review, lk, !!stop) +
       (diff.length ? '<div class="band warn">締めた時の数字と今の数字が違う職員がいます（' + diff.map(esc).join('・') + '）。締めた後の打刻・計算の決まりの見直しなどが原因です。給与へ渡したのは締めた時の数字です（月の集計の CSV も締めた時の数字で出します）。</div>' : '') +
       (lk ? '<p>締めた日時: ' + esc(new Date(data.month.locked_at).toLocaleString('ja-JP')) + '</p>' +
-        (isAdmin() ? '<p class="no-print"><a class="btn pri" href="payroll.html?ym=' + esc(encodeURIComponent(ym)) + '">💴 給与の画面でこの月分を計算する</a></p>' : '') + (afterLock ? '<div class="band warn">締めた後に足された打刻があります（印「締めた後の打刻」）。給与へ渡した後なら、来月の調整を検討してください。</div>' : '') +
+        (isAdmin() ? '<p class="no-print su-next"><span class="su-next-l">次は給与の画面で計算します:</span><a class="btn pri" href="' + esc(payHref(ym)) + '">💴 給与の画面でこの月分を計算する</a></p>' : '') + (afterLock ? '<div class="band warn">締めた後に足された打刻があります（印「締めた後の打刻」）。給与へ渡した後なら、来月の調整を検討してください。</div>' : '') +
         '<button type="button" class="btn ng" data-act="unlock"' + (isAdmin() ? '' : ' disabled') + '>締めを解除する（管理者）</button>' :
-        (review ? '<div class="band warn">要確認が ' + review + ' 件残っているため、まだ締められません。1件ずつ「認める／認めない」を決めてください（認めない時は理由を残します）。</div><div class="row no-print"><button type="button" class="btn" data-act="rvd-start">要確認を1件目から決める</button></div>' : '<div class="band ok">要確認はありません。</div>') +
+        (review ? '<div class="band warn">要確認が ' + review + ' 件残っているため、まだ締められません。1件ずつ「認める／認めない」を決めてください（認めない時は理由を残します）。</div><div class="row no-print"><button type="button" class="btn pri" data-act="rvd-start">要確認を1件目から決める</button></div>' : '<div class="band ok">要確認はありません。</div>') +
         (stop ? '<div class="band warn" role="status">' + stop + '</div>' : '') +
-        '<button type="button" class="btn pri" data-act="lock"' + (stop ? ' disabled' : '') + '>この月を締める</button><p class="help">締める直前に月を読み直して数え直し、その数字を「締めた時の控え」としてデータベースに残します。締めると、この月の打刻の足し・取り消し・承認・休憩の直し・シフトの取り込みが止まります。タブレットの打刻は締めた後も記録され、「締めた後の打刻」の印が付きます。</p>') + '</div>';
+        (!stop && !review && isAdmin() ? '<button type="button" class="btn pri no-print" data-act="lock-pay">この月を締めて、給与へ渡す</button> ' : '') +   /* 2026-11-26: 締めが成功した時だけ給与の画面へ移る（締めの流れは同じ lockMonth・紙に出さない） */
+        /* 画面で塗りに見せるのは次に押す1つだけ: 要確認あり・止めあり・「給与へ渡す」を出す時は「この月を締める」に印 su-sub（画面だけ枠のボタン・紙と class の pri は今のまま） */
+        '<button type="button" class="btn pri' + (stop || review || isAdmin() ? ' su-sub' : '') + '" data-act="lock"' + (stop ? ' disabled' : '') + '>この月を締める</button>' +
+        (!stop && !review && isAdmin() ? '<p class="help no-print">「この月を締める」は締めるだけで、給与の画面へは移りません。</p>' : '') + '<p class="help">締める直前に月を読み直して数え直し、その数字を「締めた時の控え」としてデータベースに残します。締めると、この月の打刻の足し・取り消し・承認・休憩の直し・シフトの取り込みが止まります。タブレットの打刻は締めた後も記録され、「締めた後の打刻」の印が付きます。</p>') + '</div>';
     h += reqCloseHtml();   /* v5 段5: 承認待ちの申請と月の確認の数（締めは止めない・画面だけ） */
     var hist = (data.month && Array.isArray(data.month.history)) ? data.month.history : [];
     if (hist.length) h += '<div class="cd"><h2 style="font-size:16px;margin:0 0 8px">締めと解除の記録</h2><div class="tw"><table><thead><tr><th>日時</th><th>した人</th><th>内容</th><th>理由</th></tr></thead><tbody>' +
       hist.slice().reverse().map(function (x) { return '<tr><td>' + esc(x && x.at ? new Date(x.at).toLocaleString('ja-JP') : '') + '</td><td>' + esc(x && x.by) + '</td><td>' + esc(x && x.action === 'unlock' ? '締めを解除した' : x && x.action === 'lock' ? '締めた' : (x && x.action) || '') + '</td><td>' + esc(x && x.reason) + '</td></tr>'; }).join('') + '</tbody></table></div></div>';
     h += '<div class="cd"><h2 style="font-size:16px;margin:0 0 8px">給与計算への出力（CSV）</h2>' +
+      '<p class="help no-print">自社の給与の画面は、締めた勤怠をそのまま読みます（CSV の書き出し・取り込みは要りません）。この CSV は、ほかの給与ソフトへ渡す時だけ使います。</p>' +
       '<div class="row"><label>文字コード <select id="g-enc"><option value="utf8">UTF-8（BOM 付き）</option><option value="sjis">Shift_JIS（Excel・古い給与ソフト）</option></select></label></div>' +
       '<div class="row"><button type="button" class="btn" data-act="csv-sum">月の集計（1人1行）</button><button type="button" class="btn" data-act="csv-day">日ごとの明細（1人1日1行）</button></div>' +
       '<p class="help">月の集計の列: ' + esc(C.SUMMARY_HEAD.concat(C.SUMMARY_EXTRA_HEAD).join('・')) + '・実働_（事業所ごと）。日ごとの明細の列: ' + esc(C.DAILY_HEAD.concat(C.DAILY_EXTRA_HEAD).join('・')) + '。前の版の列はそのままの順で、新しい列は後ろに足してあります。従業員コードの無い職員は出しません（出せなかった人は知らせます）。時間の書き方は「設定」で 8:30／8.50 を選べます。' +
@@ -2947,8 +2968,10 @@
       '<p>「締める」を押した時にもう一度読み直して数え直し、その数字を「締めた時の控え」にします。</p><div class="kv"><span>要確認の残り</span><b>' + fig.review + ' 件（' + fig.rvPeople + ' 人）</b><span>人数</span><b>' + fig.people + ' 人（働いた・有休のあった人 ' + fig.worked + ' 人）</b><span>総労働の合計</span><b>' + fm(fig.workMin) + '</b><span>欠勤の合計</span><b>' + fig.absent + ' 日</b></div>' +
       '<p class="help">締めた後は、この月の打刻の足し・取り消し・承認・休憩の直し・シフトの取り込みが止まります。解除できるのは管理者だけです。</p><p class="help" id="e-msg" role="alert"></p>', bl.length > 0 || fig.review > 0, '締める', 'lock-go');   /* 0120: 要確認が残る間は締めるボタンを出さない */
   }
-  function lockMonth(btn) {
+  var lockAfter = null;   /* 締めが成功した後に移る先（「この月を締めて、給与へ渡す」の時だけ {ym}・2026-11-26）。普通の「この月を締める」で必ず null に戻す */
+  function lockMonth(btn, after) {
     if (busy || !month) return;
+    lockAfter = after || null;
     if (notYet()) { toast(NG.notyet); return; }
     if (shiftInfo && !shiftInfo.ok) { toast('シフトを取り込めていないため、まだ締められません。'); return; }
     var my = ++gen; busy = true; sync('締める前に読み直しています…');
@@ -2982,7 +3005,9 @@
         openLock(now, diff.join('・'));
         return;
       }
-      return rpc('kintai_month_lock', { p_ym: ym, p_snapshot: C.snapshotOf(month) }).then(okOr).then(function () { busy = false; closeDlg(); toast('締めました'); return load(false); }, function (e) { fail(e, '締め'); });
+      return rpc('kintai_month_lock', { p_ym: ym, p_snapshot: C.snapshotOf(month) }).then(okOr).then(function () { busy = false; closeDlg(); toast('締めました');
+        var go = lockAfter; lockAfter = null; if (go && go.ym === ym) location.href = payHref(go.ym);   /* 締めて給与へ渡す（成功した時だけ）。移るのを取りやめた時に締める前の画面を残さないよう、下で読み直す */
+        return load(false); }, function (e) { fail(e, '締め'); });
     }, function (e) { if (my !== gen) return; fail(e, '締める時の読み直し'); });
   }
   function unlockMonth(btn) {
@@ -3696,6 +3721,7 @@
       else if (a === 'dlg-save') saveEdit(b, false);
       else if (a === 'dlg-save-next') saveEdit(b, true);
       else if (a === 'pick-open') pickOpen();
+      else if (a === 'lock-pay') lockMonth(b, { ym: ym });   /* 2026-11-26: 締めと出力の「この月を締めて、給与へ渡す」（窓の「締める」は下の行のまま） */
       else if (a === 'lock-go') lockGo(b);
       else if (a === 'rvd-start') { if (dlgCtx && dlgCtx.mode === 'lock') closeDlg(); openDecide(0); }   /* 0120 */
       else if (a === 'rvd-save') saveDecide(b);

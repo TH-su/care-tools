@@ -405,7 +405,7 @@ export function seed(opt = {}) {
     staff: STAFF.map(([staff_id, name]) => ({ staff_id, name, office: 'facility', emp_code: null, active: true })),
     profiles: profileRows(ym0),
     bank: {},
-    kintai: { locked_at: lock0 },
+    kintai: { locked_at: opt.kintaiUnlocked ? null : lock0 },   /* kintaiUnlocked（2026-11-26）: 勤怠がまだ締めていない月分の場面 */
     kraw: {}, drift: !!opt.kintaiDrift, leave: !!opt.kintaiLeave,
     runs: {}, items: {}, prev: {}, audit: [], log: [],
     members: [{ email: 'check-clerk@example.invalid', added_by: 'check-admin@example.invalid', added_at: '2025-12-01T10:00:00+09:00' }],
