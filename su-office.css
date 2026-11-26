@@ -76,7 +76,8 @@
   :root[data-su-theme] .hgrid > .hbox.ok, :root[data-su-theme] .hgrid > .hcell:has(> .hbox.ok) { order: 1; }
 
   /* 勤怠のホームの「この月分の進み具合」（締めと出力と同じ3段＋今の段の主ボタン1つ） */
-  :root[data-su-theme] .hflow { border: 1px solid var(--line); border-radius: 12px; background: var(--card); padding: 12px 14px; margin: 8px 0 16px; min-width: 0; }
+  /* ホームでいちばん目に入る箱にする（次に押す物の箱・藍の 2px の枠と淡い地・2026-11-26） */
+  :root[data-su-theme] .hflow { border: 2px solid var(--focus); border-radius: 12px; background: color-mix(in srgb, var(--wk-bg) 60%, var(--card)); padding: 12px 14px; margin: 8px 0 16px; min-width: 0; }
   :root[data-su-theme] .hflow h3 { font-size: 16px; margin: 0 0 10px; }
   :root[data-su-theme] .hflow .su-steps { margin-bottom: 8px; }
   :root[data-su-theme] .hflow .hf-act { justify-content: center; margin: 4px 0 0; }
@@ -110,8 +111,22 @@
   :root[data-su-theme] .cd.empty { text-align: center; padding: 32px 16px; color: var(--sub); }
   :root[data-su-theme] .cd.empty p { margin: 14px 0 0; }
 
+  /* freee の取り込み: 期間の1行は画面では本文と同じ大きさで太字だけ（style 直書きの 18px を画面だけ上書き・紙はこの箱ごと出ない） */
+  :root[data-su-theme] #g-fi > p[style] { font-size: inherit !important; }
+  :root[data-su-theme] #g-fi input[type="file"] { max-width: 100%; min-width: 0; }
+
   @media (max-width: 700px) {
     :root[data-su-theme] .su-mact { margin-left: 0; }
+    /* 給与の一覧（iPhone の幅）: 1行目に氏名・差引（太字）・警告の札、2行目に総支給・控除・前月差を小見出しつきで横に（2026-11-26） */
+    :root[data-su-theme] details.it > summary { grid-template-columns: minmax(0, max-content) minmax(0, max-content) minmax(0, 1fr); grid-template-areas: "nm net tag" "g d p"; align-items: center; gap: 2px 6px; }
+    :root[data-su-theme] details.it > summary .nm { grid-area: nm; }
+    :root[data-su-theme] details.it > summary .num[data-l="差引"] { grid-area: net; font-size: 17px; }
+    :root[data-su-theme] details.it > summary .num[data-l="差引"]::before { content: none; }
+    :root[data-su-theme] details.it > summary .num[data-l="総支給"] { grid-area: g; }
+    :root[data-su-theme] details.it > summary .num[data-l="控除"] { grid-area: d; }
+    :root[data-su-theme] details.it > summary .num[data-l="前月差"] { grid-area: p; }
+    :root[data-su-theme] details.it > summary .num:not([data-l="差引"]) { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; align-items: baseline; column-gap: 4px; font-size: 15px; color: var(--sub); }
+    :root[data-su-theme] details.it > summary > .tag { grid-area: tag; justify-self: end; }
     /* 右下の「不具合を報告」が末尾の中身に被らないよう、本文の下を空ける（2026-11-26） */
     :root[data-su-theme] #g-main, :root[data-su-theme] #p-main { padding-bottom: 96px; }
     /* iPhone 幅: 「◀ 月分 ▶」を1行に収める（「月分」の字は欄の読み上げ名 aria-label に任せて見せない・欄の字は 16px） */
@@ -127,9 +142,11 @@
     :root[data-su-theme] .su-mnav > .btn { flex: 1 1 0; min-width: 0; white-space: normal; }
     :root[data-su-theme] .su-mnav > .btn:first-child { border-radius: 0 0 0 10px; }
     :root[data-su-theme] .su-mnav > .btn:last-child { border-radius: 0 0 10px 0; }
-    :root[data-su-theme] .su-steps li { font-size: 15px; }
-    :root[data-su-theme] .su-steps .su-st-s { display: none; }
-    /* 1段が狭いので、名前は今の段だけ見せる（ほかの段は番号の丸と ✓ で分かる・名前は読み上げには残る） */
-    :root[data-su-theme] .su-steps li:not(.cur) { font-size: 0; }
+    /* 手順の段は縦に並べ、全部の段の名前と状態を読めるようにする（丸を左・名前と状態を右・丸どうしを縦の線でつなぐ・読み上げの順と名前は同じ・2026-11-26） */
+    :root[data-su-theme] .su-steps { flex-direction: column; gap: 10px; }
+    :root[data-su-theme] .su-steps li { flex: none; flex-direction: row; flex-wrap: wrap; align-items: center; column-gap: 10px; row-gap: 0; text-align: left; font-size: 15px; }
+    :root[data-su-theme] .su-steps li::before { flex: none; }
+    :root[data-su-theme] .su-steps li + li::after { top: -14px; left: 14px; right: auto; width: 2px; height: 18px; }
+    :root[data-su-theme] .su-steps .su-st-s { display: inline; font-size: 15px; }
   }
 }

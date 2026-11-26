@@ -403,7 +403,7 @@ export function seed(opt = {}) {
       { code: 'meal', def: { code: 'meal', name: '食事代', sec: 'deduct', calc: 'fixed', order: 3, attrs: {} }, rev: 1 },
     ],
     staff: STAFF.map(([staff_id, name]) => ({ staff_id, name, office: 'facility', emp_code: null, active: true })),
-    profiles: profileRows(ym0),
+    profiles: opt.noProfiles ? [] : profileRows(ym0),   /* noProfiles（2026-11-26）: 給与の設定が誰にも無い月分（計算できる人が0人）の場面 */
     bank: {},
     kintai: { locked_at: opt.kintaiUnlocked ? null : lock0 },   /* kintaiUnlocked（2026-11-26）: 勤怠がまだ締めていない月分の場面 */
     kraw: {}, drift: !!opt.kintaiDrift, leave: !!opt.kintaiLeave,
