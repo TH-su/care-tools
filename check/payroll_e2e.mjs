@@ -38,6 +38,7 @@ async function open(opt = {}) {
   const outside = [];
   await ctx.route('**/*', (route) => { const u = new URL(route.request().url()); if (u.origin === srv.url || u.origin === FX.URL) return route.fallback(); outside.push(u.origin); return route.abort(); });
   for (const r of routes) await ctx.route(r.match, r.handle);
+  for (const r of (opt.extraRoutes || [])) await ctx.route(r.match, r.handle);   /* 場面だけの口（後から足した口が先に効く・2026-11-26 暗証番号の画面を通る場面） */
   await ctx.addInitScript((st) => { for (const k of Object.keys(st)) localStorage.setItem(k, st[k]); }, FX.storageFor(opt));
   const page = await ctx.newPage();
   /* 時計は固定の日（月分は 2026-11＝材料の月分）。タイマーは動かす */
@@ -1133,6 +1134,35 @@ console.log('\n— 7. 賞与のタブ —');
   await s.page.click('#p-main .cd.empty [data-tab="run"]');
   t('「今月の給与を開く」で今月の給与のタブになる', await s.page.evaluate(() => document.querySelector('.tabs [aria-selected="true"]').getAttribute('data-tab')) === 'run');
   await s.ctx.close();
+  /* 本番と同じく暗証番号の画面を通る: 鍵を開けるまでは計算せず、開けた後に1回だけ計算する。鍵をかけて開け直しても計算し直さず、帯は消える */
+  {
+    const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' };
+    const pinCalls = [];
+    const pinRoute = { match: /\/rest\/v1\/rpc\/payroll_pin_(status|unlock|touch|lock)$/, handle: (route) => {
+      const req = route.request();
+      if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+      const nm = /payroll_pin_([a-z]+)$/.exec(req.url())[1]; pinCalls.push(nm);
+      const body = nm === 'status' ? { set: true, admin: true, locked_until: null } : nm === 'unlock' ? { ok: true } : nm === 'touch' ? { unlocked: true } : { ok: true };
+      return route.fulfill({ status: 200, contentType: 'application/json', headers: cors, body: JSON.stringify(body) });
+    } };
+    const k = await open({ tab: 'slip', start: 'none', path: 'payroll.html?ym=2026-11&from=kintai', extraRoutes: [pinRoute] });
+    await k.page.waitForSelector('#p-pin', { timeout: 15000 });
+    t('鍵: 暗証番号の画面の間は計算しない（中身を出さない）・URL から from を外してある', await k.page.evaluate(() => document.getElementById('p-app').hidden) && !k.routes.calls.some((c) => c.name === 'payroll_bootstrap') && await k.page.evaluate(() => location.search) === '');
+    await k.page.fill('#p-pin', '2468');
+    await k.page.click('[data-act="pin-open"]');
+    await waitRun(k.page);
+    await k.page.waitForSelector('#p-main .kin-band', { timeout: 10000 });
+    t('鍵: 開けた後に1回だけ自動で計算し、受け取りの帯（今月の給与のタブ）', (await k.page.locator('details.it').count()) === 10 && /^勤怠管理から 10 人分/.test((await band(k.page) || {}).text || '') && await k.page.evaluate(() => document.querySelector('.tabs [aria-selected="true"]').getAttribute('data-tab')) === 'run');
+    await k.page.click('#p-lock');
+    await k.page.waitForSelector('#p-pin', { timeout: 10000 });
+    await k.page.fill('#p-pin', '2468');
+    await k.page.click('[data-act="pin-open"]');
+    await waitRun(k.page);
+    await k.page.waitForTimeout(300);
+    t('鍵: かけて開け直すと帯は消え、計算は残る（計算し直さない・保存と確定の関数を呼ばない）', !(await band(k.page)) && (await k.page.locator('details.it').count()) === 10 && JSON.stringify(await priAct(k.page)) === '["save"]' && saveCalls(k) === 0, pinCalls);
+    t('鍵: 画面のエラー 0', k.errors.length === 0, k.errors);
+    await k.ctx.close();
+  }
   /* 幅320・390・768・1280 と文字200%（ui-check と同じ見方: 根の字の大きさを 200% にする）で帯がはみ出さない */
   for (const [w, z] of [[320, 1], [390, 1], [768, 1], [1280, 1], [320, 2], [390, 2], [1280, 2]]) {
     const q = await open({ tab: 'run', start: 'none', viewport: { width: w, height: 900 }, path: 'payroll.html?ym=2026-11&from=kintai' });
