@@ -28,7 +28,7 @@ t('桁そろえは画面の中の表だけ（有給休暇管理簿 #k-ledger の
 t('どの決まりも :root[data-su-theme] から書く（画面の <style> より強く・型の画面だけ）', body.split('}').map((x) => x.split('{')[0].trim()).filter((s) => s && !/^@media/.test(s)).every((s) => s.split(',').every((p) => /^(@media[^]*\{\s*)?:root\[data-su-theme\]/.test(p.trim()))));
 
 console.log('\n— 2. 読む画面と公開 —');
-t('勤怠管理と給与が su-shell.css の次に読む（2026-11-26 の上積みで版を 2026-11-26.1、同じ版の枝と重ならないよう 2026-11-26.2 に上げた・両画面で同じ版）', /su-shell\.css\?v=2026-11-13">\n<link rel="stylesheet" href="su-office\.css\?v=2026-11-26\.2">/.test(KH) && /su-shell\.css\?v=2026-11-13">\n<link rel="stylesheet" href="su-office\.css\?v=2026-11-26\.2">/.test(PH));
+t('勤怠管理と給与が su-shell.css の次に読む（2026-11-26 の上積みで版を 2026-11-26.1、同じ版の枝と重ならないよう 2026-11-26.2・検品の残りで 2026-11-26.3 に上げた・両画面で同じ版）', /su-shell\.css\?v=2026-11-13">\n<link rel="stylesheet" href="su-office\.css\?v=2026-11-26\.3">/.test(KH) && /su-shell\.css\?v=2026-11-13">\n<link rel="stylesheet" href="su-office\.css\?v=2026-11-26\.3">/.test(PH));
 const others = fs.readdirSync(ROOT).filter((f) => /\.html$/.test(f) && f !== 'kintai.html' && f !== 'payroll.html').filter((f) => /su-office\.css/.test(read(f)));
 t('ほかの画面は読まない', others.length === 0, others);
 t('公開の許可リストに載っている', /^!\/su-office\.css$/m.test(read('.gitignore')));
@@ -102,6 +102,15 @@ console.log('\n— 6. 見た目の上積み（2026-11-26） —');
 t('押した手応え: transition は色の2つだけ（all を書かない）・120ms・押せない時は縮めない・動きを減らす設定では止める', !/transition:\s*all/.test(body) && /transition: background-color 120ms ease-out, border-color 120ms ease-out;/.test(body) && /\.btn:not\(:disabled\):active/.test(body) && /@media \(prefers-reduced-motion: reduce\) \{[^}]*transition: none;[^}]*\}\s*:root\[data-su-theme\] \.btn:not\(:disabled\):active[^{]*\{ transform: none; \}/.test(body));
 t('ホームの箱: 左の太い帯をやめ、注意・要対応は地の淡い色（色の名前から混ぜる）・並びは 要対応→注意→なし', /\.hbox \{ border-left-width: 1px;/.test(body) && /\.hbox\.warn \{ background: color-mix\(in srgb, var\(--warn-bg\)/.test(body) && /\.hbox\.alert \{ background: color-mix\(in srgb, var\(--ng-bg\)/.test(body) && /\.hcell:has\(> \.hbox\.alert\) \{ order: -2; \}/.test(body) && /\.hcell:has\(> \.hbox\.ok\) \{ order: 1; \}/.test(body));
 t('空の状態は中央寄せ・字は --sub・影は足さない', /\.cd\.empty \{ text-align: center; padding: 32px 16px; color: var\(--sub\); \}/.test(body) && !/box-shadow:(?! 0 1px 0 var\(--line\))/.test(body));
+
+console.log('\n— 7. 検品の残り（2026-11-26・画面だけ・紙は変えない） —');
+const pc2 = fn(KJ, 'paintClose');
+t('締めと出力: 締める前は freee の箱 → 月の締め（今のまま）・締めた後だけ freee の箱を月の締めの後ろへ（箱は紙に出さない no-print のまま）',
+  /printHead\('締めと出力'\) \+ \(lk \? '' : fiHtml\(\)\) \+ '<div class="cd"><h2[^>]*>月の締め<\/h2>'/.test(pc2) && /if \(lk\) h \+= fiHtml\(\);[^\n]*\n\s*h \+= reqCloseHtml\(\);/.test(pc2) && /'<div class="cd no-print" id="g-fi">/.test(fn(KJ, 'fiHtml')) && (pc2.match(/fiHtml\(\)/g) || []).length === 2);
+t('freee の箱: 期間の1行は画面では本文と同じ大きさ（style 直書きの 18px を画面だけ上書き）・ファイルの欄は箱の中に収める', /:root\[data-su-theme\] #g-fi > p\[style\] \{ font-size: inherit !important; \}/.test(body) && /#g-fi input\[type="file"\] \{ max-width: 100%; min-width: 0; \}/.test(body));
+t('ホームの進み具合: 藍の 2px の枠と淡い地（色の名前から混ぜる）', /\.hflow \{ border: 2px solid var\(--focus\);[^}]*background: color-mix\(in srgb, var\(--wk-bg\) \d+%, var\(--card\)\);/.test(body));
+t('手順の段（幅420以下）: 縦に並べて全部の段の名前と状態を出す（名前を 0px にしない・状態を隠さない）', /@media \(max-width: 420px\) \{[\s\S]*\.su-steps \{ flex-direction: column;[\s\S]*\.su-steps \.su-st-s \{ display: inline; font-size: 15px; \}/.test(body) && !/font-size: 0;\s*\}/.test(body.slice(body.indexOf('@media (max-width: 420px)'))) && !/\.su-st-s \{ display: none; \}/.test(body));
+t('給与の一覧（幅700以下）: 1行目に氏名・差引・札、2行目に総支給・控除・前月差（小見出しは2行目だけ）', /grid-template-areas: "nm net tag" "g d p";/.test(body) && /\.num\[data-l="差引"\]::before \{ content: none; \}/.test(body) && ['総支給', '控除', '前月差'].every((k) => new RegExp('\\.num\\[data-l="' + k + '"\\] \\{ grid-area: ').test(body)));
 
 console.log('\n結果: ' + pass + ' 合格 / ' + fail + ' 不合格');
 process.exit(fail ? 1 : 0);

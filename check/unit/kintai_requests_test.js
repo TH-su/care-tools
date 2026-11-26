@@ -296,8 +296,8 @@ const ROWS = [
     /* ★freee の月の集計の取り込み（2026-11-23・統合 0123）で kintai.js・kintai-calc.js を ?v=2026-11-23.1 に上げたので期待の版を改めた */
     /* ★v6（2026-11-24・打刻漏れの知らせと休暇の申請）で kintai.js を ?v=2026-11-24 に上げたので期待の版を改めた */
     /* ★段A1（2026-11-25・日ごとの補助項目）で kintai.js を ?v=2026-11-25 に上げたので期待の版を改めた */
-    /* ★段A2（2026-11-25・記号の組・通勤回数・社内会議）で kintai.js を 2026-11-26.3（main の締めて給与へ渡すの 2026-11-26.2 の次・main を取り込んだ時に上げた）・kintai-calc.js を 2026-11-25.3 に上げたので、期待の版を改めた */
-    t('su-qr.js（accounts.html と同じ版）を kintai.js の前に読む・kintai.js は 2026-11-26.3', /<script src="su-qr\.js\?v=2026-11-08"><\/script>\s*<script src="kintai\.js\?v=2026-11-26\.3"><\/script>/.test(H) && /su-qr\.js\?v=2026-11-08/.test(read('accounts.html')));
+    /* ★段A2（2026-11-25・記号の組・通勤回数・社内会議）で kintai.js を 2026-11-26.4（main の仕上げ（#691）の 2026-11-26.3 の次・main を取り込んだ時に上げた）・kintai-calc.js を 2026-11-25.3 に上げたので、期待の版を改めた */
+    t('su-qr.js（accounts.html と同じ版）を kintai.js の前に読む・kintai.js は 2026-11-26.4', /<script src="su-qr\.js\?v=2026-11-08"><\/script>\s*<script src="kintai\.js\?v=2026-11-26\.4"><\/script>/.test(H) && /su-qr\.js\?v=2026-11-08/.test(read('accounts.html')));
     /* ★反証レビュー（2026-11-21）の直し 6 で同じ @media の中に申請の一覧の並びの決まりを足したので、閉じかっこの代わりに改行で区切りを見る（44px・16px は同じ） */
     t('新しい部品の押す所は 699px 以下で 44px・入力の文字 16px', /@media \(max-width:699px\)\{\.btn\.k5,select\.k5,input\.k5\{min-height:44px\}select\.k5,input\.k5\{font-size:16px\}\n/.test(H));
     t('箱・締めの画面から申請のタブへは承認待ち・すべての月分で開く', /if \(b\.getAttribute\('data-rq'\) === 'pending'\) reqF = \{ status: 'pending', ym: '' \};/.test(K));
