@@ -119,6 +119,7 @@ try {
     t('2. 「この月を締める」のすぐ下に2つのボタンの違いの1文（紙に出さない）', diffTxt === 'help no-print|「この月を締める」は締めるだけで、給与の画面へは移りません。', diffTxt);
     const csvHelp = await p.evaluate(() => { const h = Array.from(document.querySelectorAll('#g-main .cd h2')).find((x) => /給与計算への出力（CSV）/.test(x.textContent)); const n = h && h.nextElementSibling; return n ? n.className + '|' + n.textContent : ''; });
     t('2. CSV の箱の見出しの直後に「CSV は要りません」の1行（class "help no-print"）', csvHelp === 'help no-print|自社の給与の画面は、締めた勤怠をそのまま読みます（CSV の書き出し・取り込みは要りません）。この CSV は、ほかの給与ソフトへ渡す時だけ使います。', csvHelp);
+    t('2. 締める前の並びは今のまま: freee の取り込みの箱 → 月の締め', await p.evaluate(() => { const f = document.getElementById('g-fi'), c = document.querySelector('#g-main [data-act="lock"]').closest('.cd'); return !!f && !!(f.compareDocumentPosition(c) & Node.DOCUMENT_POSITION_FOLLOWING); }));
     await shot(p, 'kintai.close.can-lock.pc', true);
     /* 1b. 紙は変えない: 足した物（給与へ渡すのボタン・2つの説明）は紙に出ず、「この月を締める」は紙では今までどおりの塗りのボタン */
     await p.emulateMedia({ media: 'print' });
@@ -169,6 +170,7 @@ try {
     const link = await p.evaluate(() => { const a = Array.from(document.querySelectorAll('#g-main a.btn.pri')).find((x) => /給与の画面でこの月分を計算する/.test(x.textContent)); return a ? { href: a.getAttribute('href'), txt: a.textContent, label: a.parentElement.textContent } : null; });
     t('5. 締めた後のリンクは「💴 給与の画面でこの月分を計算する」（文言そのまま）・href に from=kintai・3段目だと分かる', !!link && link.href === 'payroll.html?ym=2025-12&from=kintai' && link.txt === '💴 給与の画面でこの月分を計算する' && /次は給与の画面で計算します/.test(link.label), link);
     t('5. 締めた後の締めと出力: 手順は「給与で計算」が今の段', await p.evaluate(() => Array.from(document.querySelectorAll('#g-main ol.su-steps li')).map((li) => li.className[0]).join('')) === 'ddc');
+    t('5. 締めた後は freee の取り込みの箱を月の締めの後ろへ（主役は給与の画面へのリンク）', await p.evaluate(() => { const f = document.getElementById('g-fi'), c = document.querySelector('#g-main [data-act="unlock"]').closest('.cd'); return !!f && !!(c.compareDocumentPosition(f) & Node.DOCUMENT_POSITION_FOLLOWING); }));
     await shot(p, 'kintai.close.locked.pc', true);
     await p.click('.tabs [data-tab="home"]');
     await waitHome(p);
@@ -229,6 +231,15 @@ try {
     t('7. 事務所（管理者でない）には「給与へ渡す」を出さない・「この月を締める」は主ボタン', (await p.$('#g-main [data-act="lock-pay"]')) === null && await p.getAttribute('#g-main [data-act="lock"]', 'class') === 'btn pri');
     await o.ctx.close();
   }
+  /* ── 7b: 締めと出力（iPhone の幅）: freee の箱のファイルの欄が箱の中に収まり、期間の1行は本文と同じ大きさ ── */
+  for (const w of [320, 390]) {
+    const o = await open({ tab: 'close', viewport: { width: w, height: 844 } });
+    const p = o.page;
+    await p.waitForSelector('#fi-file', { timeout: 20000 });
+    const m = await p.evaluate(() => { const f = document.getElementById('fi-file'), box = document.getElementById('g-fi'), per = box.querySelector('p[style]'); const fr = f.getBoundingClientRect(), br = box.getBoundingClientRect(); return { inBox: fr.right <= br.right + 0.5, doc: document.documentElement.scrollWidth - window.innerWidth, perFs: parseFloat(getComputedStyle(per).fontSize), bodyFs: parseFloat(getComputedStyle(box).fontSize), perW: getComputedStyle(per).fontWeight }; });
+    t('7b. 幅' + w + ': ファイルの欄が箱の中・横はみ出し 0・期間の1行は本文と同じ大きさで太字', m.inBox && m.doc <= 0 && m.perFs === m.bodyFs && +m.perW >= 700, m);
+    await o.ctx.close();
+  }
   /* ── 8: 幅と文字200% ── */
   console.log('\n— 8. 幅と文字200% —');
   for (const [w, z, dark] of [[320, 1], [390, 1], [768, 1], [1280, 1], [320, 2], [390, 2], [1280, 2], [1440, 1, true]]) {
@@ -241,6 +252,9 @@ try {
       const small = Array.from(f.querySelectorAll('*')).filter((e) => e.childNodes.length && Array.from(e.childNodes).some((n) => n.nodeType === 3 && n.textContent.trim()) && e.getClientRects().length && parseFloat(getComputedStyle(e).fontSize) < 15 && getComputedStyle(e).fontSize !== '0px').map((e) => e.tagName + ':' + getComputedStyle(e).fontSize);
       return { doc: document.documentElement.scrollWidth - window.innerWidth, right: r.right - window.innerWidth, btnH: b ? b.getBoundingClientRect().height : 0, small };
     });
+    const sv = await p.evaluate(() => Array.from(document.querySelectorAll('#g-main .hflow .su-steps li')).map((li) => { const s = li.querySelector('.su-st-s'), r = li.getBoundingClientRect(); return { fs: parseFloat(getComputedStyle(li).fontSize), sub: s ? getComputedStyle(s).display !== 'none' && s.getBoundingClientRect().width > 0 : false, txt: li.textContent, top: Math.round(r.top) }; }));
+    const vert = sv.length === 3 && sv[0].top < sv[1].top && sv[1].top < sv[2].top;
+    t('8. 手順の段: 幅' + w + (z !== 1 ? '・文字200%' : '') + (dark ? '・暗い表示' : '') + ' で3段とも名前と状態が読める（字 15px 以上）' + (w <= 420 ? '・縦に並ぶ' : '・横に並ぶ'), sv.length === 3 && sv.every((x) => x.fs >= 15 && x.sub) && (w <= 420 ? vert : !vert), sv);
     t('8. 進み具合: 幅' + w + (z !== 1 ? '・文字200%' : '') + (dark ? '・暗い表示' : '') + ' で横はみ出し 0・押す所 44px 以上・字 15px 以上', m.doc <= 0 && m.right <= 0.5 && m.btnH >= 44 && m.small.length === 0, m);
     if (w === 390 && z === 1) await shot(p, 'kintai.home.can-lock.ph', true);
     if (dark) await shot(p, 'kintai.home.can-lock.dark', true);
