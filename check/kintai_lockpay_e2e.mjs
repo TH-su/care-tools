@@ -79,7 +79,11 @@ async function open(opt = {}) {
           return json(mm);
         }
         if (req.method() !== 'OPTIONS' && name === 'kintai_month_rev') return json('rev-' + (st.locked ? 'L' : '0'));
-        if (req.method() !== 'OPTIONS' && name === 'kintai_month_lock') { st.sent.push(name); st.locked = p.p_snapshot; return json({ ok: true }); }
+        if (req.method() !== 'OPTIONS' && name === 'kintai_month_lock') {
+          st.sent.push(name);
+          if (opt.lockFail && !st.failed) { st.failed = true; if (opt.lockFail === 'net') return route.abort(); return json({ ok: false, error: 'review' }); }   /* 1回目だけ断る・通信が切れる */
+          st.locked = p.p_snapshot; return json({ ok: true });
+        }
         return r.handle(route);
       });
     } else await ctx.route(r.match, r.handle);
@@ -109,20 +113,35 @@ try {
     await p.click('#g-main .hflow [data-tab="close"]');
     await p.waitForSelector('[data-act="lock"]', { timeout: 20000 });
     t('1. 「締めと出力へ進む」で締めと出力のタブへ切り替えるだけ（締めの関数は呼ばない）', await p.evaluate(() => document.querySelector('.tabs [aria-selected="true"]').getAttribute('data-tab')) === 'close' && o.st.sent.length === 0);
-    const order = await p.evaluate(() => { const g = document.querySelector('#g-main [data-act="lock-go"]'), l = document.querySelector('#g-main [data-act="lock"]'); return g && l ? { before: !!(g.compareDocumentPosition(l) & Node.DOCUMENT_POSITION_FOLLOWING), gPri: g.classList.contains('pri'), lPri: l.classList.contains('pri'), lCls: l.className, gTxt: g.textContent } : null; });
-    t('2. 主ボタン「この月を締めて、給与へ渡す」が「この月を締める」の前・「この月を締める」は塗りなし（class "btn"）', !!order && order.before && order.gPri && !order.lPri && order.lCls === 'btn' && order.gTxt === 'この月を締めて、給与へ渡す', order);
+    const order = await p.evaluate(() => { const g = document.querySelector('#g-main [data-act="lock-pay"]'), l = document.querySelector('#g-main [data-act="lock"]'); return g && l ? { before: !!(g.compareDocumentPosition(l) & Node.DOCUMENT_POSITION_FOLLOWING), gCls: g.className, lCls: l.className, gBg: getComputedStyle(g).backgroundColor, lBg: getComputedStyle(l).backgroundColor, cardBg: getComputedStyle(document.querySelector('#g-main .cd')).backgroundColor, gTxt: g.textContent } : null; });
+    t('2. 主ボタン「この月を締めて、給与へ渡す」（紙に出さない）が「この月を締める」の前・「この月を締める」は class "btn pri su-sub"（紙は今のまま）で画面では枠のボタン（地が箱と同じ）', !!order && order.before && order.gCls === 'btn pri no-print' && order.lCls === 'btn pri su-sub' && order.lBg === order.cardBg && order.gBg !== order.lBg && order.gTxt === 'この月を締めて、給与へ渡す', order);
+    const diffTxt = await p.evaluate(() => { const l = document.querySelector('#g-main [data-act="lock"]'), n = l && l.nextElementSibling; return n ? n.className + '|' + n.textContent : ''; });
+    t('2. 「この月を締める」のすぐ下に2つのボタンの違いの1文（紙に出さない）', diffTxt === 'help no-print|「この月を締める」は締めるだけで、給与の画面へは移りません。', diffTxt);
     const csvHelp = await p.evaluate(() => { const h = Array.from(document.querySelectorAll('#g-main .cd h2')).find((x) => /給与計算への出力（CSV）/.test(x.textContent)); const n = h && h.nextElementSibling; return n ? n.className + '|' + n.textContent : ''; });
-    t('2. CSV の箱の見出しの直後に「CSV は要りません」の1行（class "help"）', csvHelp === 'help|自社の給与の画面は、締めた勤怠をそのまま読みます（CSV の書き出し・取り込みは要りません）。この CSV は、ほかの給与ソフトへ渡す時だけ使います。', csvHelp);
+    t('2. CSV の箱の見出しの直後に「CSV は要りません」の1行（class "help no-print"）', csvHelp === 'help no-print|自社の給与の画面は、締めた勤怠をそのまま読みます（CSV の書き出し・取り込みは要りません）。この CSV は、ほかの給与ソフトへ渡す時だけ使います。', csvHelp);
     await shot(p, 'kintai.close.can-lock.pc', true);
+    /* 1b. 紙は変えない: 足した物（給与へ渡すのボタン・2つの説明）は紙に出ず、「この月を締める」は紙では今までどおりの塗りのボタン */
+    await p.emulateMedia({ media: 'print' });
+    const pr = await p.evaluate(() => {
+      const vis = (el) => !!el && getComputedStyle(el).display !== 'none' && !!el.getClientRects().length && !el.closest('.no-print');
+      const l = document.querySelector('#g-main [data-act="lock"]'), probe = document.createElement('button');
+      probe.className = 'btn pri'; probe.textContent = 'x'; l.parentElement.insertBefore(probe, l);
+      const same = getComputedStyle(probe).backgroundColor === getComputedStyle(l).backgroundColor && getComputedStyle(probe).color === getComputedStyle(l).color && getComputedStyle(probe).borderColor === getComputedStyle(l).borderColor;
+      probe.remove();
+      const helps = Array.from(document.querySelectorAll('#g-main p.help')).filter((x) => /CSV の書き出し・取り込みは要りません|締めるだけで、給与の画面へは移りません/.test(x.textContent));
+      return { pay: vis(document.querySelector('#g-main [data-act="lock-pay"]')), helps: helps.length, helpsVis: helps.filter(vis).length, lockVis: vis(l), same };
+    });
+    await p.emulateMedia({ media: 'screen' });
+    t('1b. 紙: 「給与へ渡す」と足した説明2つは紙に出ない・「この月を締める」は紙では塗りのボタンのまま（btn pri と同じ色）', !pr.pay && pr.helps === 2 && pr.helpsVis === 0 && pr.lockVis && pr.same, pr);
     /* 3. 窓を閉じると移らない */
-    await p.click('#g-main [data-act="lock-go"]');
+    await p.click('#g-main [data-act="lock-pay"]');
     await p.waitForSelector('#g-dlg[open] #g-dlg-f [data-act="lock-go"]', { timeout: 15000 });
     await p.click('#g-dlg [data-act="dlg-close"]');
     await p.waitForFunction(() => !document.getElementById('g-dlg').open, null, { timeout: 5000 });
     await p.waitForTimeout(500);
     t('3. 締めの窓を閉じると移らない・締めの関数を呼ばない', o.st.toPay.length === 0 && o.st.sent.length === 0 && /kintai\.html/.test(p.url()));
     /* 4. 窓の「締める」で締めの後に給与へ */
-    await p.click('#g-main [data-act="lock-go"]');
+    await p.click('#g-main [data-act="lock-pay"]');
     await p.waitForSelector('#g-dlg[open] #g-dlg-f [data-act="lock-go"]', { timeout: 15000 });
     await p.click('#g-dlg-f [data-act="lock-go"]');
     await p.waitForURL(/\/payroll\.html\?/, { timeout: 15000 });
@@ -136,8 +155,8 @@ try {
   {
     const o = await open({ tab: 'close' });
     const p = o.page;
-    await p.waitForSelector('#g-main [data-act="lock-go"]', { timeout: 20000 });
-    await p.click('#g-main [data-act="lock-go"]');   /* 先に「給与へ渡す」を押して窓を閉じる */
+    await p.waitForSelector('#g-main [data-act="lock-pay"]', { timeout: 20000 });
+    await p.click('#g-main [data-act="lock-pay"]');   /* 先に「給与へ渡す」を押して窓を閉じる */
     await p.waitForSelector('#g-dlg[open] #g-dlg-f [data-act="lock-go"]', { timeout: 15000 });
     await p.click('#g-dlg [data-act="dlg-close"]');
     await p.waitForFunction(() => !document.getElementById('g-dlg').open, null, { timeout: 5000 });
@@ -148,7 +167,7 @@ try {
     await p.waitForTimeout(500);
     t('5. 普通の「この月を締める」は締めた後も勤怠の画面のまま', o.st.sent.join(',') === 'kintai_month_lock' && o.st.toPay.length === 0 && /kintai\.html/.test(p.url()));
     const link = await p.evaluate(() => { const a = Array.from(document.querySelectorAll('#g-main a.btn.pri')).find((x) => /給与の画面でこの月分を計算する/.test(x.textContent)); return a ? { href: a.getAttribute('href'), txt: a.textContent, label: a.parentElement.textContent } : null; });
-    t('5. 締めた後のリンクは「💴 給与の画面でこの月分を計算する」（文言そのまま）・href に from=kintai・3段目だと分かる', !!link && link.href === 'payroll.html?ym=2025-12&from=kintai' && link.txt === '💴 給与の画面でこの月分を計算する' && /3 の段（給与で計算）/.test(link.label), link);
+    t('5. 締めた後のリンクは「💴 給与の画面でこの月分を計算する」（文言そのまま）・href に from=kintai・3段目だと分かる', !!link && link.href === 'payroll.html?ym=2025-12&from=kintai' && link.txt === '💴 給与の画面でこの月分を計算する' && /次は給与の画面で計算します/.test(link.label), link);
     t('5. 締めた後の締めと出力: 手順は「給与で計算」が今の段', await p.evaluate(() => Array.from(document.querySelectorAll('#g-main ol.su-steps li')).map((li) => li.className[0]).join('')) === 'ddc');
     await shot(p, 'kintai.close.locked.pc', true);
     await p.click('.tabs [data-tab="home"]');
@@ -157,6 +176,29 @@ try {
     t('5. ホームの進み具合（締めた後）: 同じリンク（from=kintai つき）', !!hl && hl.href === 'payroll.html?ym=2025-12&from=kintai' && hl.txt === '💴 給与の画面でこの月分を計算する' && hl.pri && await flowState(p) === 'ddc', hl);
     await shot(p, 'kintai.home.locked.pc', true);
     t('5. 画面のエラー 0', o.errs.length === 0, o.errs);
+    await o.ctx.close();
+  }
+  /* ── 5b: 締めが断られた・通信が切れた時は移らない（その後に普通に締めても移らない） ── */
+  for (const how of ['ng', 'net']) {
+    console.log('\n— 5b. 締めが' + (how === 'ng' ? '断られた' : '通信で失敗した') + '時 —');
+    const o = await open({ tab: 'close', lockFail: how });
+    const p = o.page;
+    await p.waitForSelector('#g-main [data-act="lock-pay"]', { timeout: 20000 });
+    await p.click('#g-main [data-act="lock-pay"]');
+    await p.waitForSelector('#g-dlg[open] #g-dlg-f [data-act="lock-go"]', { timeout: 15000 });
+    await p.click('#g-dlg-f [data-act="lock-go"]');
+    await p.waitForFunction(() => { const m = document.getElementById('e-msg'); return !!(m && m.textContent.trim()); }, null, { timeout: 15000 }).catch(() => {});
+    await p.waitForTimeout(600);
+    t('5b. ' + how + ': 締めの関数を呼んだが通らない時は給与へ移らない（勤怠の画面のまま・知らせが出る）', o.st.sent.length === 1 && o.st.toPay.length === 0 && /kintai\.html/.test(p.url()) && !o.st.locked && !!(await p.textContent('#e-msg')).trim(), [o.st.sent, await p.textContent('#e-msg').catch(() => '')]);
+    await p.click('#g-dlg [data-act="dlg-close"]').catch(() => {});
+    await p.waitForFunction(() => !document.getElementById('g-dlg').open, null, { timeout: 5000 }).catch(() => {});
+    await p.click('#g-main [data-act="lock"]');
+    await p.waitForSelector('#g-dlg[open] #g-dlg-f [data-act="lock-go"]', { timeout: 15000 });
+    await p.click('#g-dlg-f [data-act="lock-go"]');
+    await p.waitForFunction(() => !!document.querySelector('#g-main [data-act="unlock"]'), null, { timeout: 15000 });
+    await p.waitForTimeout(500);
+    t('5b. ' + how + ': その後に普通の「この月を締める」で締めても給与へ移らない', o.st.sent.length === 2 && !!o.st.locked && o.st.toPay.length === 0 && /kintai\.html/.test(p.url()));
+    t('5b. ' + how + ': 画面のエラー 0', o.errs.length === 0, o.errs);
     await o.ctx.close();
   }
   /* ── 6: 要確認が残る月分 ── */
@@ -173,7 +215,7 @@ try {
     await p.click('#g-dlg [data-act="dlg-close"]').catch(() => {});
     await p.click('.tabs [data-tab="close"]');
     await p.waitForSelector('#g-main [data-act="lock"]', { timeout: 20000 });
-    t('6. 締めと出力: 要確認が残る間は「給与へ渡す」を出さず、「この月を締める」は今までどおり主ボタン', (await p.$('#g-main [data-act="lock-go"]')) === null && await p.getAttribute('#g-main [data-act="lock"]', 'class') === 'btn pri');
+    t('6. 締めと出力: 要確認が残る間は「給与へ渡す」を出さず、塗りは「要確認を1件目から決める」・「この月を締める」は印 su-sub（紙は btn pri のまま）', (await p.$('#g-main [data-act="lock-pay"]')) === null && await p.getAttribute('#g-main [data-act="lock"]', 'class') === 'btn pri su-sub' && await p.getAttribute('#g-main .row [data-act="rvd-start"]', 'class') === 'btn pri');
     await shot(p, 'kintai.close.review.pc', true);
     t('6. 画面のエラー 0', o.errs.length === 0, o.errs);
     await o.ctx.close();
@@ -184,7 +226,7 @@ try {
     const o = await open({ tab: 'close', office: true });
     const p = o.page;
     await p.waitForSelector('#g-main [data-act="lock"]', { timeout: 20000 });
-    t('7. 事務所（管理者でない）には「給与へ渡す」を出さない・「この月を締める」は主ボタン', (await p.$('#g-main [data-act="lock-go"]')) === null && await p.getAttribute('#g-main [data-act="lock"]', 'class') === 'btn pri');
+    t('7. 事務所（管理者でない）には「給与へ渡す」を出さない・「この月を締める」は主ボタン', (await p.$('#g-main [data-act="lock-pay"]')) === null && await p.getAttribute('#g-main [data-act="lock"]', 'class') === 'btn pri');
     await o.ctx.close();
   }
   /* ── 8: 幅と文字200% ── */

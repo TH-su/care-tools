@@ -46,7 +46,7 @@
   /* 勤怠管理の「締めて給与へ渡す」・締めた後のリンクから ?ym=YYYY-MM&from=kintai で来た印（2026-11-26）。
      起動の時に1回だけ読む。from は 'kintai' と完全に同じ時だけ・ym は hopYm と同じ形の確かめを通った時だけ使い、印は「その月分」の文字1つをメモリにだけ持つ
      （端末に残さない・鍵の画面を越えて残す）。from だけの URL からも from を外す（ym があれば hopYm が外す）。使った・使えないと決まった時に消す */
-  var fromKin = null, kinBand = null, warnOnly = false;
+  var fromKin = null, kinBand = null, warnOnly = false, autoCalcRef = null;   /* autoCalcRef: 自動で計算しただけの結果（人が何も変えていない間は離れる時の確かめに数えない） */
   function hopFrom() {
     var q = null; try { q = new URLSearchParams(location.search); } catch (_) { return; }
     if (!q || !q.has('from')) return;
@@ -67,8 +67,9 @@
     if (kintaiBlock()) return;   /* 勤怠の確かめが合わない・読めない時は今の止めの文が出る */
     if (calc || isDirty() || !C()) return;
     if (status() === 'draft' && !(bs.run && bs.run.stale)) { kinBand = { cls: 'warn', text: '保存した下書きがあります（計算し直していません）。' }; paint(); return; }
-    doCompute();
+    doCompute(true);
     if (!calc) return;
+    autoCalcRef = calc;
     var n = calc.items.length, m = totals(calc.items).warn;
     kinBand = { cls: 'ok', text: '勤怠管理から ' + n + ' 人分の締めた勤怠を受け取り、計算しました（警告 ' + m + ' 件）。確かめてから「下書き保存」を押してください。' };
     paint();
@@ -361,8 +362,9 @@
     });
     return out;
   }
-  function doCompute() {
+  function doCompute(auto) {
     if (frozen()) return;
+    if (!auto) { kinBand = null; autoCalcRef = null; }   /* 人が計算し直した・調整を変えた時は受け取りの帯を消し、普通の未保存に戻す（2026-11-26） */
     var kb = kintaiBlock(); if (kb) { say(kb); return; }
     if (!C()) { toast('計算の部品を読み込めませんでした。ページを読み込み直してください。'); return; }
     var list = computeAll();
@@ -370,7 +372,7 @@
     calc.fp = fingerprint();
     dirty = true; notice = null;
     paint();
-    toast(calc.items.length + '人分を計算しました。確かめてから「下書き保存」を押してください。');
+    if (!auto) toast(calc.items.length + '人分を計算しました。確かめてから「下書き保存」を押してください。');   /* 自動の時は受け取りの帯だけ */
   }
   function figures(list) { return arr(list).map(function (it) { return it.staff_id + ':' + num(it.gross) + ':' + num(it.deduct) + ':' + num(it.net); }).sort().join('|'); }
   function totals(list) {
@@ -441,7 +443,7 @@
       bs = normBoot(r); loadErr = null;
       orderBs(); if (!hireRank) loadHire();   /* 職員の並びは勤怠と同じ入職順（読めるまでは職員ID の順） */
       bs.kcheck = { state: bs.kintai.locked ? 'checking' : 'skip', names: [] };
-      if (!keepCalc) { calc = null; adjEdits = {}; dirty = false; }
+      if (!keepCalc) { calc = null; adjEdits = {}; dirty = false; autoCalcRef = null; }
       sync(''); paint();
       var b0 = bs;
       return verifyKintai(ym, b0).then(function (k) { if (my === gen && bs === b0) { bs.kcheck = k; paint(); fromKinTry(); } return bs; });
@@ -612,7 +614,7 @@
   function formState() { var s = []; Array.prototype.forEach.call($('p-dlg-b').querySelectorAll('input,select,textarea'), function (e) { s.push(e.type === 'checkbox' ? e.checked : e.value); }); return JSON.stringify(s); }
   function dlgDirty() { return !!(dlgCtx && dlgCtx.dirtyCheck && $('p-dlg').open && formState() !== dlgCtx.init); }
   function closeDlg() { var d = $('p-dlg'); try { d.close(); } catch (_) { d.removeAttribute('open'); } put($('p-dlg-b'), ''); put($('p-dlg-f'), ''); dlgCtx = null; }
-  function isDirty() { return dirty || dlgDirty() || !!importRows; }
+  function isDirty() { return (dirty && !(autoCalcRef && calc === autoCalcRef)) || dlgDirty() || !!importRows; }   /* 自動で計算しただけの間は未保存に数えない（下書き保存の押せる条件・帯は dirty のまま・2026-11-26） */
 
   /* ── 描く ── */
   function bandsHtml() {
@@ -697,7 +699,7 @@
     if (kb0) h += '<div class="band ng" role="alert">⚠ ' + esc(kb0) + '</div>';
     if (!c) h += '<div class="band ng" role="alert">計算の部品を読み込めませんでした。ページを読み込み直してください。</div>';
     if (YEU()) h += YEU().runBand(yeCtx());   /* 年末調整の精算を入れる（精算する月分だけ・2026-11-23） */
-    if (dirty && calc) h += '<div class="band warn">計算した結果はまだ保存していません。「下書き保存」を押すまで、ほかの人には見えません。</div>';
+    if (dirty && calc && !(kinBand && kinBand.cls === 'ok')) h += '<div class="band warn">計算した結果はまだ保存していません。「下書き保存」を押すまで、ほかの人には見えません。</div>';
     h += '<div class="row">';
     if (!frozen()) {
       var na = nextAct(), pr = function (k) { return na === k ? 'btn pri' : 'btn'; };

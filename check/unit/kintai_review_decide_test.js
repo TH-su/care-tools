@@ -263,7 +263,8 @@ openDecide(0); OUT.ctx = dlgCtx;`)(C, m, dn, out);
   t('直す窓: 「まだ決めない」と「認めない（理由を残す）」を分けて出す', /まだ決めない（予定の開始から数える・要確認に残る）/.test(K) && /認めない（予定の開始から数える・理由を残す）/.test(K) && /まだ決めない（予定の終わりまで数える・要確認に残る）/.test(K));
   t('直しの履歴: 認めない理由の前後を言う', /早出を認めなかった（「' \+ a\.early_ng/.test(K) && /残業の「認めない」を外した/.test(K));
   t('console.log を足していない', K.indexOf('console.log') < 0);
-  t('締めと出力の「要確認を1件目から決める」は紙に出さない（no-print）', /<div class="row no-print"><button type="button" class="btn" data-act="rvd-start">/.test(K));
+  /* 2026-11-26: 要確認が残る間はこのボタンを画面の塗り（主ボタン）にした（検品の指摘・本人指示）。紙に出さないのはそのまま */
+  t('締めと出力の「要確認を1件目から決める」は紙に出さない（no-print）', /<div class="row no-print"><button type="button" class="btn pri" data-act="rvd-start">/.test(K));
   }
 }
 

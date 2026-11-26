@@ -38,6 +38,7 @@
   :root[data-su-theme] .su-steps li.done + li::after, :root[data-su-theme] .su-steps li.done + li.done::after { background: var(--ok); }
   :root[data-su-theme] .su-steps li.cur { color: var(--ink); font-weight: 700; }
   :root[data-su-theme] .su-steps li.cur::before { border-color: var(--focus); background: var(--focus); color: var(--pri-tx); }
+  :root[data-su-theme] .su-steps li { text-wrap: balance; }   /* 幅390 で段の名前の最後の1字だけが折れないように（2026-11-26） */
   :root[data-su-theme] .su-steps .su-st-s { display: block; font-size: 15px; font-weight: 400; color: var(--muted); }
 
   /* ── 勤怠管理のホーム: 「なし」の箱を隣の長い箱の高さまで伸ばさない（空いた大きな箱を作らない） ── */
@@ -88,6 +89,10 @@
   :root[data-su-theme] .kin-band { font-size: 15px; margin: 0 0 10px; }
   :root[data-su-theme] .wfilt { margin: 10px 0 6px; }
 
+  /* 次に押す1つだけを塗りに見せる: 印 su-sub の付いた塗りのボタンは、画面だけ枠のボタンに見せる（紙と class の pri は今のまま・2026-11-26） */
+  :root[data-su-theme] .btn.pri.su-sub { background-color: var(--card); color: var(--ink); border-color: var(--line); }
+  :root[data-su-theme] .btn.pri.su-sub:not(:disabled):hover { background-color: var(--th); }
+
   /* 押した手応え: 地の色を短く変え、押した瞬間に少し縮む（押せない時は動かさない・動きを減らす設定では縮めない） */
   :root[data-su-theme] .btn, :root[data-su-theme] .hdr-btn, :root[data-su-theme] .tabs button { transition: background-color 120ms ease-out, border-color 120ms ease-out; }
   :root[data-su-theme] .btn:not(.pri):not(:disabled):hover, :root[data-su-theme] .hdr-btn:hover, :root[data-su-theme] .tabs button:hover { background-color: var(--th); }
@@ -107,6 +112,8 @@
 
   @media (max-width: 700px) {
     :root[data-su-theme] .su-mact { margin-left: 0; }
+    /* 右下の「不具合を報告」が末尾の中身に被らないよう、本文の下を空ける（2026-11-26） */
+    :root[data-su-theme] #g-main, :root[data-su-theme] #p-main { padding-bottom: 96px; }
     /* iPhone 幅: 「◀ 月分 ▶」を1行に収める（「月分」の字は欄の読み上げ名 aria-label に任せて見せない・欄の字は 16px） */
     :root[data-su-theme] .su-mnav { width: 100%; }
     :root[data-su-theme] .su-mnav .btn { white-space: nowrap; padding: 0 10px; }

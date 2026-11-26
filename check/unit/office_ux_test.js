@@ -28,7 +28,7 @@ t('桁そろえは画面の中の表だけ（有給休暇管理簿 #k-ledger の
 t('どの決まりも :root[data-su-theme] から書く（画面の <style> より強く・型の画面だけ）', body.split('}').map((x) => x.split('{')[0].trim()).filter((s) => s && !/^@media/.test(s)).every((s) => s.split(',').every((p) => /^(@media[^]*\{\s*)?:root\[data-su-theme\]/.test(p.trim()))));
 
 console.log('\n— 2. 読む画面と公開 —');
-t('勤怠管理と給与が su-shell.css の次に読む（2026-11-26 の上積みで版を 2026-11-26.1 に上げた・両画面で同じ版）', /su-shell\.css\?v=2026-11-13">\n<link rel="stylesheet" href="su-office\.css\?v=2026-11-26\.1">/.test(KH) && /su-shell\.css\?v=2026-11-13">\n<link rel="stylesheet" href="su-office\.css\?v=2026-11-26\.1">/.test(PH));
+t('勤怠管理と給与が su-shell.css の次に読む（2026-11-26 の上積みで版を 2026-11-26.1、同じ版の枝と重ならないよう 2026-11-26.2 に上げた・両画面で同じ版）', /su-shell\.css\?v=2026-11-13">\n<link rel="stylesheet" href="su-office\.css\?v=2026-11-26\.2">/.test(KH) && /su-shell\.css\?v=2026-11-13">\n<link rel="stylesheet" href="su-office\.css\?v=2026-11-26\.2">/.test(PH));
 const others = fs.readdirSync(ROOT).filter((f) => /\.html$/.test(f) && f !== 'kintai.html' && f !== 'payroll.html').filter((f) => /su-office\.css/.test(read(f)));
 t('ほかの画面は読まない', others.length === 0, others);
 t('公開の許可リストに載っている', /^!\/su-office\.css$/m.test(read('.gitignore')));
@@ -59,14 +59,18 @@ t('勤怠: 締めの見出しの下に描き、印刷に出さない', /月の�
 
 console.log('\n— 5. 締めて給与へ渡す・受け取って計算する（2026-11-26） —');
 const pc = fn(KJ, 'paintClose'), hf = fn(KJ, 'homeFlowHtml'), lm = fn(KJ, 'lockMonth'), lg = fn(KJ, 'lockGo');
-t('勤怠: 「この月を締めて、給与へ渡す」（data-act="lock-go"・主ボタン）を「この月を締める」の前に、締められる・要確認0・管理者の時だけ出す',
-  /\(!stop && !review && isAdmin\(\) \? '<button type="button" class="btn pri" data-act="lock-go">この月を締めて、給与へ渡す<\/button> ' : ''\) \+\s*(\/\*[^*]*\*\/\s*)?'<button type="button" class="btn' \+ \(!stop && !review && isAdmin\(\) \? '' : ' pri'\) \+ '" data-act="lock"'/.test(pc));
-t('勤怠: 窓の外の lock-go は締めの流れ（lockMonth）に後処理 {ym} を渡すだけ・窓の「締める」は今までどおり lockGo', /else if \(a === 'lock-go' && !b\.closest\('#g-dlg'\)\) lockMonth\(b, \{ ym: ym \}\);/.test(KJ) && /else if \(a === 'lock-go'\) lockGo\(b\);/.test(KJ) && KJ.indexOf("a === 'lock-go' && !b.closest") < KJ.indexOf("else if (a === 'lock-go') lockGo(b);"));
+t('勤怠: 「この月を締めて、給与へ渡す」（data-act="lock-pay"・主ボタン・紙に出さない）を「この月を締める」の前に、締められる・要確認0・管理者の時だけ出す',
+  /\(!stop && !review && isAdmin\(\) \? '<button type="button" class="btn pri no-print" data-act="lock-pay">この月を締めて、給与へ渡す<\/button> ' : ''\) \+/.test(pc));
+t('勤怠: 「この月を締める」の class は今までどおり "btn pri"（紙は変えない）・要確認あり・止めあり・「給与へ渡す」を出す時だけ印 su-sub（画面だけ枠に見せる）',
+  /'<button type="button" class="btn pri' \+ \(stop \|\| review \|\| isAdmin\(\) \? ' su-sub' : ''\) \+ '" data-act="lock"'/.test(pc) && /:root\[data-su-theme\] \.btn\.pri\.su-sub \{ background-color: var\(--card\); color: var\(--ink\); border-color: var\(--line\); \}/.test(body));
+t('勤怠: 要確認が残る間は「要確認を1件目から決める」を塗りに（紙に出ない行）', /<div class="row no-print"><button type="button" class="btn pri" data-act="rvd-start">要確認を1件目から決める<\/button><\/div>/.test(pc));
+t('勤怠: 「給与へ渡す」を出す時だけ、2つの締めるボタンの違いを1文（紙に出さない）', /\(!stop && !review && isAdmin\(\) \? '<p class="help no-print">「この月を締める」は締めるだけで、給与の画面へは移りません。<\/p>' : ''\)/.test(pc));
+t('勤怠: 「締めて給与へ渡す」（lock-pay）は締めの流れ（lockMonth）に後処理 {ym} を渡すだけ・窓の「締める」（lock-go）は今までどおり lockGo で、名前を重ねない', /else if \(a === 'lock-pay'\) lockMonth\(b, \{ ym: ym \}\);/.test(KJ) && /else if \(a === 'lock-go'\) lockGo\(b\);/.test(KJ) && !/data-act="lock-go">この月を締めて/.test(KJ));
 t('勤怠: 普通の「この月を締める」で後処理を必ず消す（lockMonth の頭で lockAfter = after || null）', /if \(busy \|\| !month\) return;\s*lockAfter = after \|\| null;/.test(lm) && /else if \(a === 'lock'\) lockMonth\(b\);/.test(KJ));
-t('勤怠: 給与へ移るのは kintai_month_lock が通った後だけ（もう締めてある・数字が変わった・断られた時は移らない）', (() => { const i = lg.indexOf("rpc('kintai_month_lock'"), j = lg.indexOf('location.href = payHref(go.ym)'); return i > 0 && j > i && /var go = lockAfter; lockAfter = null; if \(go && go\.ym === ym\)/.test(lg) && lg.indexOf('location.href') === j; })());
-t('勤怠: 締めた後のリンクは文言そのまま・href に from=kintai（payHref）・3段目の名前を添える', /'<p class="no-print su-next"><span class="su-next-l">次は 3 の段（給与で計算）:<\/span><a class="btn pri" href="' \+ esc\(payHref\(ym\)\) \+ '">💴 給与の画面でこの月分を計算する<\/a><\/p>'/.test(pc) && /return 'payroll\.html\?ym=' \+ encodeURIComponent\(y \|\| ''\) \+ '&from=kintai';/.test(fn(KJ, 'payHref')));
+t('勤怠: 給与へ移るのは kintai_month_lock が通った後だけ（もう締めてある・数字が変わった・断られた時は移らない）・移る時も読み直す（取りやめた時に古い画面を残さない）', (() => { const i = lg.indexOf("rpc('kintai_month_lock'"), j = lg.indexOf('location.href = payHref(go.ym)'); return i > 0 && j > i && /var go = lockAfter; lockAfter = null; if \(go && go\.ym === ym\) location\.href = payHref\(go\.ym\);[^\n]*\n\s*return load\(false\);/.test(lg) && lg.indexOf('location.href') === j; })());
+t('勤怠: 締めた後のリンクは文言そのまま・href に from=kintai（payHref）・3段目の名前を添える', /'<p class="no-print su-next"><span class="su-next-l">次は給与の画面で計算します:<\/span><a class="btn pri" href="' \+ esc\(payHref\(ym\)\) \+ '">💴 給与の画面でこの月分を計算する<\/a><\/p>'/.test(pc) && /return 'payroll\.html\?ym=' \+ encodeURIComponent\(y \|\| ''\) \+ '&from=kintai';/.test(fn(KJ, 'payHref')));
 t('勤怠: 頭の「給与へ」（g-to-pay）には from を付けない（自動の計算は締めと出力・ホームからだけ）', !/from=kintai/.test(fn(KJ, 'paintHop')));
-t('勤怠: CSV の箱の見出しの直後に「CSV は要りません」の1行（class "help"）', /給与計算への出力（CSV）<\/h2>' \+\s*'<p class="help">自社の給与の画面は、締めた勤怠をそのまま読みます（CSV の書き出し・取り込みは要りません）。この CSV は、ほかの給与ソフトへ渡す時だけ使います。<\/p>' \+/.test(pc));
+t('勤怠: CSV の箱の見出しの直後に「CSV は要りません」の1行（class "help"・紙に出さない）', /給与計算への出力（CSV）<\/h2>' \+\s*'<p class="help no-print">自社の給与の画面は、締めた勤怠をそのまま読みます（CSV の書き出し・取り込みは要りません）。この CSV は、ほかの給与ソフトへ渡す時だけ使います。<\/p>' \+/.test(pc));
 t('勤怠: 締めを止める理由は closeStop の1つ（締めと出力とホームで同じ判定・文）', /var stop = closeStop\(lk\);/.test(pc) && /stop = closeStop\(lk\)/.test(hf) && (KJ.match(/期間の末日を過ぎてから締められます/g) || []).length === 1);
 t('勤怠: ホームの進み具合は箱の一覧の上・印刷に出さない・同じ3段（closeStepsHtml）', /homeFlowHtml\(\) \+ '<div class="hgrid">'/.test(KJ) && /<section class="hflow no-print"/.test(hf) && /closeStepsHtml\(review, lk, !!stop\)/.test(hf));
 t('勤怠: ホームの主ボタン: 要確認→rvd-start／締められる→締めと出力のタブ（ホームで締めない）／止め→理由だけ／締めた→管理者はリンク・ほかは札',
@@ -81,7 +85,7 @@ t('給与: 月分を変える・タブを変えると印を捨てる', /fromKin 
 t('給与: 未締め・確定済み・下書き（stale でない）では計算せず帯だけ・勤怠の確かめが合わない時は帯を足さない・計算や未保存の編集がある時は何もしない',
   /if \(!bs\.kintai\.locked\) \{ kinBand = \{ cls: 'warn', text: '勤怠がまだ締められていないため、自動では計算していません。' \}/.test(fk) && /if \(frozen\(\)\) \{ kinBand = \{ cls: 'warn', text: 'この月分は確定済みです（計算し直していません）。' \}/.test(fk) &&
   /if \(kintaiBlock\(\)\) return;/.test(fk) && /if \(calc \|\| isDirty\(\) \|\| !C\(\)\) return;/.test(fk) && /if \(status\(\) === 'draft' && !\(bs\.run && bs\.run\.stale\)\) \{ kinBand = \{ cls: 'warn', text: '保存した下書きがあります（計算し直していません）。' \}/.test(fk));
-t('給与: 自動では「計算する」と同じ関数（doCompute）だけを呼び、下書き保存・確定はしない', /doCompute\(\);/.test(fk) && !/saveDraft|openConfirm|confirmGo|payroll_run_/.test(fk));
+t('給与: 自動では「計算する」と同じ関数（doCompute）だけを呼び、下書き保存・確定はしない', /doCompute\(true\);\s*if \(!calc\) return;\s*autoCalcRef = calc;/.test(fk) && !/saveDraft|openConfirm|confirmGo|payroll_run_/.test(fk));
 t('給与: 受け取りの帯は手順の段階のすぐ下（flowHtml の末尾）・読み込み・鍵で消す', /'<\/ol>' \+ kinBandHtml\(\);/.test(fn(PJ, 'flowHtml')) && /kinBand = null;/.test(fn(PJ, 'load')) && /kinBand = null;/.test(fn(PJ, 'showLock')) && /role="status"/.test(fn(PJ, 'kinBandHtml')));
 const P2 = vm.createContext({ bs: null, calc: null, dirty: false }); vm.runInContext('function status() { return (bs && bs.run && bs.run.status) || null; }\n' + fn(PJ, 'nextAct'), P2);
 const na = (o) => { P2.bs = { kintai: { locked: o.locked !== false }, run: o.run || null }; P2.calc = o.calc ? {} : null; P2.dirty = !!o.dirty; return P2.nextAct(); };
@@ -90,6 +94,9 @@ t('給与: 主ボタン（塗り）は次に押す1つ: 未計算→計算する
 t('給与: 3つのボタンの文言・data-act・並び・押せる条件はそのまま（塗りだけ付け替え）', /'" data-act="compute"' \+ \(c \? '' : ' disabled'\) \+ '>計算する<\/button>';\s*h \+= '<button type="button" class="' \+ pr\('save'\) \+ '" data-act="save"' \+ \(calc && dirty && bs\.kintai\.locked \? '' : ' disabled'\) \+ '>下書き保存<\/button>';\s*h \+= '<button type="button" class="' \+ pr\('confirm'\) \+ '" data-act="confirm"' \+ \(status\(\) === 'draft' && !dirty \? '' : ' disabled'\) \+ '>確定する<\/button>';/.test(fn(PJ, 'runHtml')));
 t('給与: 警告のある人だけ（aria-pressed・件数）を合計の帯と見出しの行の間に・警告0件では出さず絞りも効かせない', /sumHtml\(list\) \+ warnFilterHtml\(list\) \+ '<div class="ihd"/.test(fn(PJ, 'runHtml')) && /var wOnly = warnOnly && warnN\(list\) > 0;/.test(fn(PJ, 'runHtml')) && /if \(!n\) return '';/.test(fn(PJ, 'warnFilterHtml')) && /aria-pressed="' \+ \(warnOnly \? 'true' : 'false'\) \+ '">警告のある人だけ（' \+ n \+ '）/.test(fn(PJ, 'warnFilterHtml')));
 t('給与: 給与明細の空の状態に「今月の給与を開く」（タブを run に切り替えるだけ）', /この月分の明細はまだありません。「今月の給与」で計算してください。<p class="no-print"><button type="button" class="btn pri" data-tab="run">今月の給与を開く<\/button><\/p><\/div>/.test(fn(PJ, 'slipTabHtml')));
+
+t('給与: 自動の計算だけの間は離れる時の確かめに数えない（人が計算し直す・調整を変えると戻る）・自動の時はトーストと橙の帯を出さない',
+  /function isDirty\(\) \{ return \(dirty && !\(autoCalcRef && calc === autoCalcRef\)\) \|\| dlgDirty\(\) \|\| !!importRows; \}/.test(PJ) && /if \(!auto\) \{ kinBand = null; autoCalcRef = null; \}/.test(fn(PJ, 'doCompute')) && /if \(!auto\) toast\(/.test(fn(PJ, 'doCompute')) && /if \(dirty && calc && !\(kinBand && kinBand\.cls === 'ok'\)\)/.test(fn(PJ, 'runHtml')));
 
 console.log('\n— 6. 見た目の上積み（2026-11-26） —');
 t('押した手応え: transition は色の2つだけ（all を書かない）・120ms・押せない時は縮めない・動きを減らす設定では止める', !/transition:\s*all/.test(body) && /transition: background-color 120ms ease-out, border-color 120ms ease-out;/.test(body) && /\.btn:not\(:disabled\):active/.test(body) && /@media \(prefers-reduced-motion: reduce\) \{[^}]*transition: none;[^}]*\}\s*:root\[data-su-theme\] \.btn:not\(:disabled\):active[^{]*\{ transform: none; \}/.test(body));
