@@ -684,5 +684,55 @@ console.log('13. 区分別の合計と指紋');
   t('支給日: 月分の形が違えば null', C.payDate('2026-13', {}) === null && C.payDate(null, {}) === null);
 }
 
+console.log('20. 段A2: 回数の元（x: 補助項目・t: 補助項目の時間・g: 記号の組・k: 通勤回数・2026-11-25）');
+{
+  const D = [{ code: 'hy', name: '早遅手当', sec: 'pay', calc: 'count', order: 1 }, { code: 'ds', name: '交通費', sec: 'pay', calc: 'count', order: 2, round: 'floor' },
+    { code: 'st', name: '日曜出勤 割増分', sec: 'pay', calc: 'count', order: 3 }, { code: 'cm', name: '通勤回数の手当', sec: 'pay', calc: 'count', order: 4 },
+    { code: 'es', name: '早出手当', sec: 'pay', calc: 'count', order: 5 }];
+  const prof = (al) => ({ pay_type: 'hourly', base: 1000, allowances: al, ins: {}, tax: { col: 'none' } });
+  const ext = { 'g:hayaoso': 7, 'x:dist': 12.35, 't:sunday_time': 125, 'k:commute': 18 };
+  const it = run(prof([{ code: 'hy', amount: 400, count_source: 'g:hayaoso' }, { code: 'ds', amount: 10, count_source: 'x:dist' }, { code: 'st', amount: 40, count_source: 't:sunday_time' },
+    { code: 'cm', amount: 300, count_source: 'k:commute' }]), { schedInMin: 600, counts: { '早': 4 }, ext }, { allowanceDefs: D });
+  eq('記号の組: 7回×400', L(it, 'fhy'), 2800);
+  eq('補助項目の数値: 12.35km×10円＝123.5→切捨て 123（端数は手当の定義の round）', L(it, 'fds'), 123);
+  eq('補助項目の時間: 125分×40÷60＝83.33→切上げ 84（分÷60×単価・0.01 の丸めを通さない）', L(it, 'fst'), 84);
+  eq('通勤回数: 18×300', L(it, 'fcm'), 5400);
+  t('時間の元の根拠は「時間（分）×単価÷60」・数量は分', it.lines.some((l) => l.code === 'fst' && l.qty === 125 && /時間（分）×単価÷60/.test(l.basis)));
+  t('通勤回数の手当は非課税の限度の知らせ', W(it, 'commute_count_limit'));
+  t('控えにある元は知らせない', !it.warnings.some((w) => /^count_src:/.test(w.code)));
+  /* 時間の元は「労働時間×単価」と同じ式（同じ分・同じ単価なら同じ額） */
+  const hr = run(prof([{ code: 'hr', amount: 40 }]), { schedInMin: 600, workMin: 125 }, { allowanceDefs: [{ code: 'hr', name: '時間手当', sec: 'pay', calc: 'hour', order: 1 }] });
+  eq('時間の元と労働時間×単価は同じ額（125分×40）', L(hr, 'fhr'), 84);
+  /* 控えに無い元: 0回で数えて知らせる（元ごとに1つ） */
+  const it2 = run(prof([{ code: 'hy', amount: 400, count_source: 'g:hayaoso' }, { code: 'ds', amount: 10, count_source: 'x:dist' }]), { schedInMin: 600, counts: {} }, { allowanceDefs: D });
+  eq('控えに無い元は 0 円', L(it2, 'fhy'), 0);
+  t('控えに無い元の知らせ（文と元の名前）', it2.warnings.some((w) => w.code === 'count_src:g:hayaoso' && w.msg === '回数の元（g:hayaoso）がこの月分の勤怠の控えにありません（0回で数えました）') && W(it2, 'count_src:x:dist'));
+  const it2b = run(prof([{ code: 'hy', amount: 400, count_source: 'g:hayaoso' }]), { schedInMin: 600, ext: { 'g:hayaoso': 0 } }, { allowanceDefs: D });
+  t('元が 0 で入っている時は知らせない', !W(it2b, 'count_src:g:hayaoso') && L(it2b, 'fhy') === 0);
+  /* 今の記号の元と manual は変わらない（ext があっても読まない） */
+  const it3 = run(prof([{ code: 'es', amount: 500, count_source: '早' }, { code: 'hy', amount: 300, count_source: 'manual', count: 2 }]), { schedInMin: 600, counts: { '早': 4 }, ext: { '早': 9, 'manual': 9 } }, { allowanceDefs: D });
+  eq('シフトの記号の元は counts のまま（4×500）', L(it3, 'fes'), 2000);
+  eq('手入力の回数のまま（2×300）', L(it3, 'fhy'), 600);
+  t('記号の元・手入力では知らせない', !it3.warnings.some((w) => /^count_src:|commute_count_limit/.test(w.code)));
+  /* 印の形に合わない元はシフトの記号として読む（今の動き） */
+  const it4 = run(prof([{ code: 'es', amount: 500, count_source: 'x:' }, { code: 'hy', amount: 500, count_source: 'y:dist' }]), { schedInMin: 600, counts: { 'x:': 1, 'y:dist': 2 }, ext: { 'x:': 5 } }, { allowanceDefs: D });
+  t('印の形に合わない元（x: だけ・y:）はシフトの記号として counts から読む', L(it4, 'fes') === 500 && L(it4, 'fhy') === 1000);
+  t('SRC_RE を出している', C.SRC_RE instanceof RegExp && C.SRC_RE.test('x:dist') && C.SRC_RE.test('k:commute') && !C.SRC_RE.test('早') && !C.SRC_RE.test('x:' + 'a'.repeat(21)));
+  /* 勤怠の無い人（no_attendance）は控えに無い知らせを出さない */
+  const it5 = C.computeItem({ ym: '2026-12', period: PERIOD, payDate: '2026-12-25', settings: {}, profile: Object.assign(prof([{ code: 'hy', amount: 400, count_source: 'g:hayaoso' }]), { no_attendance: true }), allowanceDefs: D, att: null, adjustments: [] });
+  t('勤怠を使わない人には控えに無い知らせを出さない', !W(it5, 'count_src:g:hayaoso'));
+}
+
+console.log('21. 段A2: 会議の足し分の60時間超（給与は勤怠の控えの adj で置き換えた値で数える）');
+{
+  /* payroll.js が adj で legalOverMin・over60Min・holidayMin を置き換える。計算はその値で今のまま数える（60時間超は足した後の時間外で数え直してある） */
+  const base = run({ pay_type: 'hourly', base: 1000, ins: {}, tax: { col: 'none' } }, { schedInMin: 9600, legalOverMin: 3590, over60Min: 0 });
+  const add = run({ pay_type: 'hourly', base: 1000, ins: {}, tax: { col: 'none' } }, { schedInMin: 9600, legalOverMin: 3650, over60Min: 50 });
+  eq('足す前: 時間外 3590分×1000×1.25÷60', L(base, 'ot_out'), 74792);
+  t('足す前: 60時間超は無い', L(base, 'ot_over60') === undefined);
+  eq('足した後: 時間外 3650分', L(add, 'ot_out'), 76042);
+  eq('足した後: 60時間超の上乗せ 50分×1000×0.25÷60', L(add, 'ot_over60'), 209);
+}
+
 console.log('\n' + (fail ? '✗' : '✓') + ' payroll_calc ' + pass + ' 件成功／' + fail + ' 件失敗');
 process.exit(fail ? 1 : 0);

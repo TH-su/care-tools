@@ -131,6 +131,7 @@
     badtime: '時刻の形が違います。', baddate: '日付の形が違います。', badkey: '直せない項目が入っていました。',
     badvalue: '入れた値を受け付けられませんでした（休憩は 0〜600 分・メモは 400 字まで・認める時刻はその日の前日〜翌日の中）。',
     clientid: '同じ打刻がもう記録されています。', notyet: '月末を過ぎてから締められます。',
+    a2_noextras: '補助項目が読めません。締めていません（給与へ渡す記号の組・通勤回数・社内会議の数が控えに入らないため）。通信（Wi-Fi）を確かめて、もう一度「締める」を押してください。', a2_noparts: '補助項目の部品を読み込めませんでした。締めていません。ページを読み込み直してください。', a2_meetunset: '社内会議を時間外に足すかを、設定のタブで保存してから締めてください',   /* 段A2（文は仮置き） */
     badperiod: 'この月分の期間を決められませんでした。管理者に知らせてください。', overlap: 'ほかの締めた月分と期間が重なるため締められません。管理者に知らせてください。',
     closeday: '締めた月分と期間が重なるため、締め日を変えられません。',
     periodchanged: 'この月分の期間が、画面を開いた後に変わりました（締め日の変更など）。読み直してから、もう一度締めてください。',
@@ -255,6 +256,15 @@
           chain = chain.then(function (go) {
             if (!go || my !== gen) return false;   /* 待つ間に月を替えた時は、前の月の予定を送らない（指摘5） */
             return rpc('kintai_schedule_put', { p_ym: bt.cm, p_rows: bt.rows }).then(function (res) {
+              /* 段A2: 同行の印（companion）を受けない DB（統合 0129 の前）は知らない鍵を badrow で断る。印のある行がある時だけ、印を外して1回だけ送り直す
+                 （2回目も断られたら今と同じ失敗・取り込みの順に関係なく止めない） */
+              if (res && res.ok === false && res.error === 'badrow' && bt.rows.some(function (x) { return x && 'companion' in x; })) {
+                note('予定の取り込み', new Error('同行の印を外して送り直した'));
+                var plain = bt.rows.map(function (x) { var y = {}; for (var k in x) if (k !== 'companion') y[k] = x[k]; return y; });
+                return rpc('kintai_schedule_put', { p_ym: bt.cm, p_rows: plain });
+              }
+              return res;
+            }).then(function (res) {
               if (res && res.ok === false && res.error === 'locked') return true;   /* そのカレンダー月は全部締めてある＝取り込まない */
               okOr(res);
               if (res.skipped && shiftInfo) shiftInfo.skipped += res.skipped;
@@ -491,12 +501,13 @@
   /* 今の設定（kintai_settings.config）。締めた月分を開いていても、36協定の上限と決まりの見張りは今の設定で見る */
   /* v5（反証レビュー 2026-11-20）: 「読み直す」・シフトの取り込みでは、前に開いた月分の控え（monthCache）と、さかのぼりの月分の控え（有給の記録）を捨てて読み直す
      （ほかの端末で締めた月分などを古い計算のまま出さない）。読み込み中の有給の答えは世代で捨てる。開いている月分は recompute が新しい結果で置き換える */
-  function dropMonthCaches() { monthCache = {}; leaveSt = null; leaveBusy = false; leaveGen++; if (typeof VW !== 'undefined' && VW) VW.drop(); }
+  function dropMonthCaches() { monthCache = {}; leaveSt = null; leaveBusy = false; leaveGen++; if (typeof VW !== 'undefined' && VW) VW.drop(); if (typeof a2Ex36Reset === 'function') a2Ex36Reset(); }   /* 段A2: 36協定に使うほかの月分の補助項目も捨てる */
   function rawCfg() { return (data && data.settings && data.settings.config) || {}; }
   /* 月分の締めの様子（36協定の月の列は、締めた月分は控えの値・締めていない月分は数えた値を使う） */
   function k36Info(d) {
     var lk = !!(d && d.month && d.month.locked_at), snap = lk ? d.month.snapshot : null;
-    return { locked: lk, rows: snap && Array.isArray(snap.rows) ? snap.rows : null, snapCfg: snap && snap.config && typeof snap.config === 'object' ? snap.config : null };
+    return { locked: lk, rows: snap && Array.isArray(snap.rows) ? snap.rows : null, snapCfg: snap && snap.config && typeof snap.config === 'object' ? snap.config : null,
+      ext: snap && EX && EX.isExt && EX.isExt(snap.ext) ? snap.ext : null };   /* 段A2: 締めた時の会議の足し分（36協定の見張りに足す） */
   }
   /* 読んだ月分（有給の読み込みの月分と、この画面で開いた月分。開いている月分は今の計算） */
   function monthsBy() {
@@ -508,7 +519,7 @@
   }
   function hireOfStaff(s) { var m = masterOf(s), prof = leaveSt && leaveSt.profiles ? leaveSt.profiles[s.staff_id] : null; return L ? L.hireOf(m && m.hire_date, prof) : null; }
   /* 1人分の月の行（Kintai36.judge の months の1行）。締めた月分は控えの丸める前の値（無い古い控えは丸めた値・raw36 に印）、締めていない月分は数えた値 */
-  function row36(mm, sid, ymx, old) {
+  function row36(mm, sid, ymx, old, mmiss) {
     var k = mm.k36 || {}, cfg0 = k.locked && k.snapCfg ? k.snapCfg : (mm.config || {});
     var known = C.checkLegalHoliday(cfg0.legal_holiday).value != null, legal = 0, hol = 0;
     if (k.locked && k.rows) {
@@ -517,12 +528,23 @@
         legal = typeof r.legalOverRawMin === 'number' ? r.legalOverRawMin : (+r.legalOverMin || 0);
         hol = typeof r.holidayRawMin === 'number' ? r.holidayRawMin : (+r.holidayMin || 0);
         if (typeof r.legalOverRawMin !== 'number' && cfg0.monthRound30 === true) old.push(ymx);
+        /* 段A2（反証レビュー1回の5）: 締めた月は控えの会議の足し分（丸める前・休日分は adj.holidayMin−行の holidayMin）を足す（知らせだけ・判定の式は変えない） */
+        var er = k.ext && k.ext.rows ? k.ext.rows[sid] : null, mt = er && EX.meeting36 ? EX.meeting36(er.adj, r) : null;
+        if (mt) { legal += mt.non; hol += mt.hol; }
       }
     } else {
       var p = (mm.people || []).filter(function (x) { return x.staff && x.staff.staff_id === sid; })[0];
       if (!p) return null;
       legal = typeof p.sum.legalOverRawMin === 'number' ? p.sum.legalOverRawMin : p.sum.legalOverMin;
       hol = typeof p.sum.holidayRawMin === 'number' ? p.sum.holidayRawMin : p.sum.holidayMin;
+      /* 段A2: 締めていない月は読んだ補助項目の時間の行から（今開いている月分だけ。ほかの締めていない月分は読んでいないので足さない・仮置き） */
+      if (typeof exReady === 'function' && exReady() && ymx === ym && EX.meetingSplitOf) { var ms0 = EX.meetingSplitOf(mm, exSt.rows, rawCfg(), sid); legal += ms0.non; hol += ms0.hol; }
+      /* ほかの締めていない月分は、その月分の補助項目を読んで足す（反証レビュー1回の5）。読めない月分は足さずに知らせる（知らせだけ）。読んでいる途中は足さない（読み終わったら描き直す） */
+      else if (typeof a2Ex36Of === 'function') {
+        var xe = a2Ex36Of(ymx);
+        if (xe && xe.rows) { var ms1 = EX.meetingSplitOf(mm, xe.rows, rawCfg(), sid); legal += ms1.non; hol += ms1.hol; }
+        else if (xe && xe.err && mmiss && mmiss.indexOf(ymx) < 0) mmiss.push(ymx);
+      }
     }
     return { ym: ymx, legalOverMin: legal, holidayMin: hol, locked: !!k.locked, holidayKnown: known };
   }
@@ -540,15 +562,15 @@
     var partial = !(cur.k36 && cur.k36.locked) && td >= per0.from && td <= per0.to;
     var opts = partial ? { elapsedDays: C.periodDays({ from: per0.from, to: td }), periodDays: C.periodDays(per0) } : {};
     (cur.people || []).forEach(function (p) {
-      var s = p.staff, sid = s.staff_id, hire = hireOfStaff(s), list = [], old = [], y = ymx;
+      var s = p.staff, sid = s.staff_id, hire = hireOfStaff(s), list = [], old = [], mmiss = [], y = ymx;
       for (var i = 0; i < 12; i++) {
-        var mm = by[y], r = mm ? row36(mm, sid, y, old) : null;
+        var mm = by[y], r = mm ? row36(mm, sid, y, old, mmiss) : null;
         if (!r && ((hire && y < hire.slice(0, 7)) || (zeroBelow && y < oldest))) r = { ym: y, legalOverMin: 0, holidayMin: 0, locked: true, holidayKnown: true };
         if (r) { if (y === ymx) r.partial = partial; list.push(r); }
         y = C.prevYm(y);
       }
       var j = K36.judge(list, ymx, cfg, opts);
-      if (j) out[sid] = { staff_id: sid, name: dispName(s), items: j.items, holidayUnknown: j.holidayUnknown, agreement: j.agreement, old: old };
+      if (j) out[sid] = { staff_id: sid, name: dispName(s), items: j.items, holidayUnknown: j.holidayUnknown, agreement: j.agreement, old: old, mmiss: mmiss };
     });
     return out;
   }
@@ -563,6 +585,7 @@
     if (!same) w = w.filter(function (x) { return x !== calcWarn; });
     j.items.forEach(function (it) { if (!(same && it.code === 'month_warn')) w.push('36協定: ' + it.text); });
     if (j.old.length) w.push(oldNote(j.old));
+    if (j.mmiss && j.mmiss.length) w.push(a2MissNote(j.mmiss));   /* 段A2: 会議の時間を足せていない月分（知らせだけ） */
     return w;
   }
   /* 締めていない過去の月分（期間が今日より前で、締めておらず、記録のある月分・仮置き: 記録の無い月分は数えない） */
@@ -620,6 +643,8 @@
       if (b.key === 'a36') {
         var olds = []; for (var k in a36) a36[k].old.forEach(function (y) { if (olds.indexOf(y) < 0) olds.push(y); });
         if (olds.length) b.note = (b.note ? b.note + '。' : '') + oldNote(olds.sort());
+        var mms = []; for (var k2 in a36) (a36[k2].mmiss || []).forEach(function (y) { if (mms.indexOf(y) < 0) mms.push(y); });
+        if (mms.length) b.note = (b.note ? b.note + '。' : '') + a2MissNote(mms.sort());   /* 段A2: 会議の時間を足せていない月分 */
       }
       var bh = boxHtml(b, 'data-tab="' + esc(b.tab) + '"' + (b.key === 'requests' ? ' data-rq="pending"' : ''));
       out.push(b.key === 'review' ? ntWrap(bh, noticeHtml('missing')) : bh);   /* v6: 打刻漏れの行に「知らせる」 */
@@ -642,14 +667,14 @@
   function nameOf(sid) { var p = personOf(sid); return p ? dispName(p.staff) : sid; }
   function paintReview() {
     var list = C.reviewList(month);
-    if (!list.length) return printHead('要確認の一覧') + '<div class="cd"><div class="band ok" role="status">要確認はありません。締めに進めます。</div><div class="row no-print"><button type="button" class="btn" data-tab="close">締めと出力へ</button></div></div>';
+    if (!list.length) return printHead('要確認の一覧') + '<div class="cd"><div class="band ok" role="status">要確認はありません。締めに進めます。</div>' + a2OverBand() + '<div class="row no-print"><button type="button" class="btn" data-tab="close">締めと出力へ</button></div></div>';
     var rows = list.map(function (r, i) {
       var p = personOf(r.staffId), d = p && p.days.filter(function (x) { return x.date === r.date; })[0], b = d && d.blocks[r.blockIndex];
       return '<tr><td>' + md(r.date) + '（' + wd(r.date) + '）</td><td>' + esc(nameOf(r.staffId)) + '</td><td>' + (b ? schedText(b) : '') + '</td><td class="raw">' + (b ? esc(rawPunches(b)) : '') + '</td><td>' + flagTags(r.marks, false) + '</td>' +
         '<td class="no-print"><button type="button" class="btn sm" data-act="edit" data-sid="' + esc(r.staffId) + '" data-date="' + esc(r.date) + '" data-bi="' + r.blockIndex + '" data-rv="' + i + '">直す</button></td></tr>';
     }).join('');
     return printHead('要確認の一覧（' + list.length + ' 件）') + '<div class="cd"><div class="row no-print"><b>要確認 ' + list.length + ' 件</b><button type="button" class="btn sm pri" data-act="rvd-start">1件目から決める</button><button type="button" class="btn sm" data-act="print">印刷</button></div>' +
-      '<p class="help no-print">要確認が残っている月分は締められません。「1件目から決める」を押すと、1件ずつ「認める／認めない（理由）」を決める窓が開きます（決めると次の1件が開きます）。打刻の漏れは「直す」で打刻を足すか欠勤にします。「直す」で開いた窓の「保存して次へ」を押すと、保存した後に次の行の窓がそのまま開きます。直す所が無い時は窓の中の「確認済みにする」を選んで保存します。</p>' +
+      a2OverBand() + '<p class="help no-print">要確認が残っている月分は締められません。「1件目から決める」を押すと、1件ずつ「認める／認めない（理由）」を決める窓が開きます（決めると次の1件が開きます）。打刻の漏れは「直す」で打刻を足すか欠勤にします。「直す」で開いた窓の「保存して次へ」を押すと、保存した後に次の行の窓がそのまま開きます。直す所が無い時は窓の中の「確認済みにする」を選んで保存します。</p>' +
       '<div class="tw"><table><thead><tr><th>日</th><th>職員</th><th>予定</th><th>打刻（そのまま）</th><th>印</th><th class="no-print"></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
   }
 
@@ -1466,6 +1491,7 @@
     if (typeof window !== 'undefined' && window.KintaiBoard) h += window.KintaiBoard.settingsHtml(rawCfg(), isAdmin());   /* 段B（統合 0130）: 職員のスマホの画面のお知らせと補助項目の申請の入り切り */
     h += shSetHtml();   /* 社保の知らせ（部品が無い時は出さない） */
     if ((typeof CT !== 'undefined' && CT)) h += CT.setHtml(rawCfg());   /* 資格の期限の知らせの入り切り（既定は切） */
+    h += a2SetHtml();   /* 段A2: 記号の組・通勤回数・社内会議を時間外に足す（補助項目の欄と同じく、関数が無い時は出さない） */
     h += '</form>' + a36Form() + '<div class="row"><button type="button" class="btn pri" data-act="save-set"' + (isAdmin() ? '' : ' disabled') + '>設定を保存する</button></div>' +
       '<p class="help">休憩の時間（日勤 ' + esc(c.breakH) + ' 時間・夜勤 ' + esc(c.nightBreakH) + ' 時間・拘束が ' + esc(c.breakThresholdH) + ' 時間を超えたら引く）はシフトアプリの設定を取り込んで使います（ここでは変えません）。丸めの決まり: 予定より早い出勤は予定の開始から、予定より遅い退勤は予定の終わりまで数えます。始業前・終業後に実際に働いた時は、その日を「直す」で早出・残業を認めてください（認めないまま切り捨てると賃金の未払いになります）。</p></div>';
     /* v5 1-5: 勤怠の管理者の名簿（管理者だけに出す・画面だけで印刷しない） */
@@ -1704,7 +1730,8 @@
   function exDayTags(sid, date) {
     var rs = exRowsOf(sid, date);
     if (!rs.length) return '';
-    return '<span class="no-print">' + rs.map(function (r) { var it = exItem(r.code); return '<span class="tag">' + esc(it ? EX.label(it, exVal(r, it)) : r.code) + '</span>'; }).join('') + '</span>';
+    return '<span class="no-print">' + rs.map(function (r) { var it = exItem(r.code); return '<span class="tag">' + esc(it ? EX.label(it, exVal(r, it)) : r.code) + '</span>'; }).join('') +
+      (typeof a2OverOn === 'function' && a2OverOn(sid, date) ? '<span class="tag rv">' + esc(EX.MEETING_OVER_TEXT) + '</span>' : '') + '</span>';   /* 段A2: 会議の時間がこの日の数えなかった時間より多い日の知らせ（知らせだけ・仮置き） */
   }
   function exDayBtn(sid, date) { return exCanInput() ? '<button type="button" class="btn sm" data-act="ex-open" data-sid="' + esc(sid) + '" data-date="' + esc(date) + '">補助項目</button>' : ''; }
   /* 個人の月の下の「補助項目（日ごと）」の欄（画面だけ・紙に出さない）。勤務の無い日（健診だけの日など）もここから入れる */
@@ -1746,6 +1773,7 @@
       '<div class="row"><label id="ex-qty-l">値 <input type="text" class="k5" id="ex-qty" inputmode="decimal" autocomplete="off" style="width:8em" value="' + esc(cur && it0.kind !== 'time' && cur.qty != null ? EX.fmtValue(it0, cur.qty, 'hmm', false) : '') + '"> <span id="ex-unit"></span></label>' +
       '<label id="ex-time-l">時間 <input type="number" class="k5" id="ex-h" min="0" max="24" step="1" style="width:5em" value="' + esc(cur && it0.kind === 'time' && cur.minutes != null ? Math.floor(cur.minutes / 60) : '') + '"> 時間 <input type="number" class="k5" id="ex-m" min="0" max="59" step="1" style="width:5em" value="' + esc(cur && it0.kind === 'time' && cur.minutes != null ? cur.minutes % 60 : '') + '"> 分</label></div>' +
       '<div class="row"><label style="flex:1">メモ（なくてよい）<input type="text" class="k5" id="ex-note" maxlength="200" style="flex:1;min-width:14em" value="' + esc(cur && cur.note || '') + '"></label></div>' +
+      '<p class="help" id="ex-meet-help" hidden>' + esc(EX.MEETING_INPUT_HELP || '') + '</p>' +
       '<p class="help">同じ日・同じ項目にもう値がある時は、入れ直しになります（前の値には取り消しの印が付き、直しの履歴に残ります）。</p><p class="help" id="e-msg" role="alert"></p>';
     openDlg(edit ? '補助項目を直す' : '補助項目を入れる', b, false, '保存する', 'ex-save');
     dlgCtx = { mode: 'extra', sid: sid, edit: edit, date: edit ? date : null, code: edit ? code : null };
@@ -1759,6 +1787,9 @@
     $('ex-qty-l').hidden = tm; $('ex-time-l').hidden = !tm;
     $('ex-unit').textContent = it ? (it.kind === 'count' ? '回' : it.unit || '') : '';
     $('ex-qty').setAttribute('inputmode', it && it.kind === 'count' ? 'numeric' : 'decimal');
+    /* 段A2: 社内会議（時間外に足す項目）を選んだ時だけ案内を出す（文は仮置き） */
+    var mo = EX.meetingOtOf ? EX.meetingOtOf(rawCfg()) : null, hp = $('ex-meet-help');
+    if (hp) hp.hidden = !(mo && mo.on && it && it.code === mo.code && tm);
   }
   var EX_WHY = { empty: '値を入れてください。', neg: '0 以上で入れてください。', int: '時間は分まで（整数）で入れてください。' };
   function saveExtra(btn) {
@@ -1887,6 +1918,157 @@
     if (lost) out.warn = (out.warn ? out.warn + '\n' : '') + '設定に無い補助項目の行が ' + lost + ' 件あります（CSV に出していません）。設定のタブの「補助項目」を確かめてください。';
     return out;
   }
+
+  /* ── 段A2（2026-11-25・凍結仕様 ROOT-v7-plus-parity.md「段A2」「反証レビュー1回」）: 記号の組（早遅）・通勤回数・社内会議を時間外に足す ──
+   * 設定の鍵 symbolGroups・commuteCount・meetingOt（設定のタブの3つの欄・保存は「設定を保存する」・欄を触った時だけ送る＝ほかの設定の保存で初めの案が決まらない）。
+   * 締める時に補助項目を読み直し、kintai-extras.js の buildExt で数えた値を控えの最上段（ext）に入れる（給与が手当の回数の元と時間外に使う）。
+   * 勤怠の画面の時間外の数え方・CSV の今の列は変えない（月の集計の CSV の末尾に列を足すだけ）。会議の知らせ・36協定の見張りへの足し分は知らせだけ */
+  var a2Touched = { g: false, c: false, m: false };
+  function a2On() { return !!EX && typeof EX.buildExt === 'function' && exOn() && !!exSt; }
+  /* 記号の組の1行（コードは保存した後は変えない・行は消さない＝止める） */
+  function a2GroupRow(i, g, saved) {
+    var n = i + 1;
+    return '<tr><td><input type="text" class="k5" id="a2g-code-' + i + '" maxlength="20" value="' + esc(g ? g.code : '') + '"' + (saved ? ' readonly' : '') + ' aria-label="記号の組のコード ' + n + '" style="width:9em"></td>' +
+      '<td><input type="text" class="k5" id="a2g-name-' + i + '" maxlength="20" value="' + esc(g ? g.name : '') + '" aria-label="記号の組の名前 ' + n + '" style="width:9em"></td>' +
+      '<td><input type="text" class="k5" id="a2g-syms-' + i + '" maxlength="400" value="' + esc(g ? g.symbols.join('、') : '') + '" aria-label="記号の組の記号 ' + n + '" style="width:16em"></td>' +
+      '<td><label><input type="checkbox" id="a2g-act-' + i + '"' + (!g || g.active ? ' checked' : '') + '> 使う</label></td></tr>';
+  }
+  function a2SetHtml() {
+    if (!a2On()) return '';
+    a2Touched = { g: false, c: false, m: false };   /* 描き直したら触っていない状態から */
+    var gs = EX.groupsOf(rawCfg()), gl = gs || EX.copyJson(EX.SYMBOL_GROUPS_DEFAULT), cm = EX.commuteOf(rawCfg()), cmSaved = rawCfg().commuteCount !== undefined;
+    var mo = EX.meetingOtOf(rawCfg()), moSaved = rawCfg().meetingOt !== undefined;
+    var items = exItems() || EX.copyDefault(), cnt = items.filter(function (x) { return x.kind === 'count'; }), tms = items.filter(function (x) { return x.kind === 'time'; });
+    var cmV = cmSaved ? cm : EX.copyJson(EX.COMMUTE_DEFAULT), moV = moSaved ? mo : EX.copyJson(EX.MEETING_OT_DEFAULT);
+    var h = '<div style="grid-column:1/-1" class="no-print"><h2 style="font-size:16px;margin:14px 0 8px">記号の組（早遅など・給与の手当の回数）</h2>' +
+      '<p class="help">シフトの記号の組ごとに、その記号の日に働いた日の数を締めの控えに入れます（給与の手当の「回数の元」で選べます）。同行（記号の後ろに「/同」）の日は数えません。記号は「、」か空白で区切り、時刻で書いたマス（例 12-21）も入れられます。1組20個まで・' + EX.GROUPS_MAX + '組まで。コードは保存した後は変えられません。使わなくなった組は「使う」を外して止めます。' +
+      (gs ? '' : '<b>記号の組はまだ保存していません。下は初めの案です（シフトアプリの freee の書き出しで早遅手当になる記号）。案のまま使う時は下の「この案で使い始める」を、直す時は欄を直して「設定を保存する」を押します。</b>') + '</p>' +
+      '<span class="tw" style="display:block"><table><thead><tr><th>コード（英数字）</th><th>名前</th><th>記号</th><th>使う</th></tr></thead><tbody id="a2g-rows">' + gl.map(function (g, i) { return a2GroupRow(i, g, !!gs); }).join('') + '</tbody></table></span>' +
+      '<button type="button" class="btn sm k5" data-act="a2-add-group">行を足す</button></div>';
+    h += '<div style="grid-column:1/-1" class="no-print"><h2 style="font-size:16px;margin:14px 0 8px">通勤回数（給与の手当の回数）</h2>' +
+      '<p class="help">働いた日のうち、下で選んだ補助項目（回数）が入っている日を除いた日の数を、締めの控えに入れます（健診で通勤手当を出さない日など）。夜勤は入りの日の1回です。' + (cmSaved ? '' : '<b>通勤回数はまだ保存していません。下は初めの案です。</b>') + '</p>' +
+      '<div class="row"><label><input type="checkbox" id="a2c-on"' + (cmV ? ' checked' : '') + '> 通勤回数を数える</label></div>' +
+      '<div class="row">' + (cnt.length ? cnt.map(function (x, i) { return '<label><input type="checkbox" id="a2c-m-' + i + '" data-code="' + esc(x.code) + '"' + (cmV && cmV.minus.indexOf(x.code) >= 0 ? ' checked' : '') + '> ' + esc(EX.nameOf(x)) + ' の日を除く</label>'; }).join('') : '<span class="help">回数の補助項目がありません。</span>') + '</div></div>';
+    h += '<div style="grid-column:1/-1" class="no-print"><h2 style="font-size:16px;margin:14px 0 8px">社内会議を時間外に足す（給与）</h2>' +
+      '<p class="help">選んだ時間の補助項目（社内会議）の時間を、締めの控えで時間外（法定休日の日は休日労働）に足します。給与はこの足した後の時間で払い、60時間超も足した後で数え直します。打刻した会議の時間は残業として認めず、補助項目に入れます（二重に払わないため）。勤怠の画面の時間外と CSV の今の列は変えず、月の集計の CSV の末尾に「時間外（社内会議を含む）」を足します。' + (moSaved ? '' : '<b>社内会議はまだ保存していません。下は初めの案です。</b>') + '</p>' +
+      '<div class="row"><label><input type="checkbox" id="a2m-on"' + (moV && moV.on ? ' checked' : '') + '> 時間外に足す</label><label>項目 <select class="k5" id="a2m-code">' +
+      (tms.length ? tms.map(function (x) { return '<option value="' + esc(x.code) + '"' + (moV && moV.code === x.code ? ' selected' : '') + '>' + esc(EX.nameOf(x)) + '</option>'; }).join('') : '<option value="">（時間の補助項目がありません）</option>') + '</select></label></div>' +
+      (gs && cmSaved && moSaved ? '' : '<div class="row"><button type="button" class="btn sm k5 pri" data-act="a2-adopt"' + (isAdmin() ? '' : ' disabled') + '>この案で使い始める（記号の組・通勤回数・社内会議）</button></div>') + '</div>';
+    return h;
+  }
+  function a2AddGroup() {
+    var tb = $('a2g-rows'); if (!tb) return;
+    a2Touched.g = true;
+    var i = 0; while ($('a2g-code-' + i)) i++;
+    if (i >= EX.GROUPS_MAX) { toast('記号の組は' + EX.GROUPS_MAX + '組までです'); return; }
+    tb.insertAdjacentHTML('beforeend', a2GroupRow(i, null, false));
+    $('a2g-code-' + i).focus();
+  }
+  var A2_BAD = { code: 'コードは英数字・_・- の20字まで', name: '名前は1〜20字', symbols: '記号は1〜20個（1つ40字まで）', active: '「使う」の印が読めません', dup: 'コードがほかの行と重なっています', max: EX ? EX.GROUPS_MAX + '組まで' : '', shape: '形が違います' };
+  /* 触った欄だけを { vals: { 鍵: 値 }, bad: [] } にする（触っていない欄は今の設定のまま＝送らない） */
+  function readA2Set() {
+    var vals = {}, bad = [], i;
+    if (!EX || !$('a2g-rows')) return { vals: vals, bad: bad };
+    if (a2Touched.g) {
+      var raw = [], rowNo = [];
+      for (i = 0; $('a2g-code-' + i); i++) {
+        var ce = $('a2g-code-' + i), code = String(ce.value || '').trim(), name = String($('a2g-name-' + i).value || '').trim(), sy = String($('a2g-syms-' + i).value || '').split(/[、,，\s　]+/).filter(Boolean);
+        if (!ce.readOnly && !code && !name && !sy.length) continue;   /* 足したが使わなかった空の行 */
+        raw.push({ code: code, name: name, symbols: sy, active: !!$('a2g-act-' + i).checked }); rowNo.push(i + 1);
+      }
+      var cl = EX.cleanSymbolGroups(raw);
+      cl.bad.forEach(function (b) { bad.push('記号の組 ' + (rowNo[b.row - 1] || b.row) + ' 行目（' + (A2_BAD[b.why] || '形が違います') + '）'); });
+      (EX.groupsOf(rawCfg()) || []).forEach(function (x) { if (!bad.length && !cl.groups.some(function (y) { return y.code === x.code; })) bad.push('保存済みの記号の組「' + x.name + '」が見つかりません。読み直してください'); });
+      vals.symbolGroups = cl.groups;
+    }
+    if (a2Touched.c) {
+      var minus = [];
+      for (i = 0; $('a2c-m-' + i); i++) if ($('a2c-m-' + i).checked) minus.push($('a2c-m-' + i).getAttribute('data-code'));
+      vals.commuteCount = $('a2c-on').checked ? EX.cleanCommute({ minus: minus }) : null;
+    }
+    if (a2Touched.m) {
+      var mc = $('a2m-code').value;
+      if (!mc) { if ($('a2m-on').checked) bad.push('社内会議を時間外に足す（時間の補助項目を先に足してください）'); else vals.meetingOt = null; }
+      else vals.meetingOt = { code: mc, on: !!$('a2m-on').checked };
+    }
+    return { vals: vals, bad: bad };
+  }
+  /* 会議の時間が、その日の数えなかった時間より多い日（知らせだけ・締めは止めない）。補助項目を読めていない時は空 */
+  function a2OverList() { return a2On() && exReady() && month ? EX.meetingOverUncounted(month, exSt.rows, rawCfg()) : []; }
+  function a2OverOn(sid, date) { return a2OverList().some(function (x) { return x.staff_id === sid && x.date === date; }); }
+  function a2OverBand() {
+    var ls = a2OverList();
+    if (!ls.length) return '';
+    return '<div class="band warn no-print" role="status">' + esc(EX.MEETING_OVER_TEXT) + '（' + ls.map(function (x) { return esc(nameOf(x.staff_id)) + ' ' + esc(md(x.date)) + '・会議 ' + esc(fm(x.meetingMin)) + '・数えなかった時間 ' + esc(fm(x.uncountedMin)); }).join('、') + '）。締めは止めません。</div>';
+  }
+  /* 月の集計の CSV の末尾の段A2 の列（締めた時の数字は控えの ext・今の数字は今の設定で数える）。返す: { text, warn } か null（列が無い）か false（読めていない＝書き出さない） */
+  function a2Csv(src, text, from) {
+    if (!EX || typeof EX.appendExtCsv !== 'function') return null;
+    var snapExt = from === 'snap' && isLocked() && data.month.snapshot && EX.isExt(data.month.snapshot.ext) ? data.month.snapshot.ext : null, warn = '';
+    var ext = snapExt;
+    if (!ext) {
+      var d0 = EX.defOf(rawCfg());
+      if (!d0.groups.some(function (g) { return g.active; }) && !d0.commute && !(d0.meetingOt && d0.meetingOt.on)) return null;
+      if (exOn() && !exReady()) { alert('補助項目を読み込めていないため、書き出せません（記号の組・通勤回数・社内会議の列が 0 のまま出るのを防ぐため）。上の「読み直す」を押すか、通信（Wi-Fi）がつながっているかを確かめてから、もう一度書き出してください。'); return false; }
+      ext = EX.buildExt(src, exReady() ? exSt.rows : [], (data && data.schedule) || [], rawCfg());
+      if (from === 'snap') warn = '締めた時の控えに記号の組・通勤回数・社内会議の数が無いため、その列は今の設定と今の記録で数えました。';
+    }
+    var base = {}, imp = {};
+    (src.people || []).forEach(function (p) { base[p.staff.staff_id] = p.sum.legalOverMin; if (p.sum.imported) imp[p.staff.staff_id] = 1; });
+    var out = EX.appendExtCsv(text, { people: EX.csvPeople(src.people), ext: ext, base: base, imported: imp, mode: src.config && src.config.csvTime });
+    if (!out.cols) return null;
+    return { text: out.text, warn: warn + (Object.keys(imp).length ? (warn ? '\n' : '') + 'freee の月の集計を取り込んだ職員の記号の組・通勤回数は数えていません（欄は空）。' : '') };
+  }
+  /* 締める時の控え: 補助項目を読み直して ext を作る（読めない時は締めない）。返す: Promise<ext> */
+  var a2LockRows = [];
+  function a2ExtForLock(d) {
+    if (!EX || typeof EX.buildExt !== 'function') return Promise.reject(Object.assign(new Error('extras'), { kintai: 'a2_noparts' }));
+    var cfg = (d && d.settings && d.settings.config) || {};
+    a2LockRows = [];
+    return rpc('kintai_extras_get', { p_ym: ym }).then(okOr).then(function (r) {
+      a2LockRows = Array.isArray(r.rows) ? r.rows : [];
+      return EX.buildExt(month, a2LockRows, d.schedule || [], cfg);
+    }, function (e) {
+      /* 補助項目の関数がまだ無い DB（統合 0127 の前）で、補助項目を保存していない時だけ、補助項目なしで数える（記号の組・通勤回数は数える） */
+      if (noDb(e) && !Array.isArray(cfg.extraItems)) return EX.buildExt(month, [], d.schedule || [], cfg);
+      throw Object.assign(new Error('extras'), { kintai: 'a2_noextras' });
+    }).then(function (ext) {
+      /* 反証レビュー（2026-11-25・medium）: 社内会議を時間外に足すかを保存しないまま、会議の時間の行がある月分は締めない */
+      if (EX.meetingUnsaved && EX.meetingUnsaved(cfg, a2LockRows)) throw Object.assign(new Error('meetunset'), { kintai: 'a2_meetunset' });
+      return ext;
+    });
+  }
+  /* 締めの窓で、読んである補助項目から「会議の設定を保存していない」かを見る（読めていない時は締める時に読み直して止める） */
+  function a2MeetUnsetNow() { return !!(EX && EX.meetingUnsaved && exReady() && EX.meetingUnsaved(rawCfg(), exSt.rows)); }
+
+  /* 段A2（反証レビュー1回の5）: 36協定の見張りに使う、開いている月分のほかの締めていない月分の補助項目（画面の中だけ・端末に残さない）。
+     月ごとに kintai_extras_get を読む（同時に読むのは3本まで）。読み終わったら36協定を出すタブを描き直す。読めない月分は { err } のまま（足さずに知らせる） */
+  var a2Ex36 = {}, a2Ex36Gen = 0, a2Ex36Q = [], a2Ex36Run = 0;
+  function a2Ex36Reset() { a2Ex36 = {}; a2Ex36Gen++; a2Ex36Q = []; }
+  function a2Ex36Of(y) {
+    if (!EX || typeof EX.meetingSplitOf !== 'function' || !exOn()) return null;
+    var mo = EX.meetingOtOf(rawCfg());
+    if (!mo || !mo.on) return null;
+    if (!a2Ex36[y]) { a2Ex36[y] = { pending: true }; a2Ex36Q.push(y); a2Ex36Pump(); }
+    return a2Ex36[y];
+  }
+  function a2Ex36Pump() {
+    while (a2Ex36Run < 3 && a2Ex36Q.length) {
+      var y = a2Ex36Q.shift(), my = a2Ex36Gen;
+      a2Ex36Run++;
+      rpc('kintai_extras_get', { p_ym: y }).then(okOr).then(function (r) { return { rows: Array.isArray(r.rows) ? r.rows : [] }; }, function (e) {
+        if (!isNetErr(e) && !isDenied(e) && !noDb(e)) note('36協定の補助項目の読み込み', e);
+        return { err: true };
+      }).then(function (yy) { return function (res) {
+        a2Ex36Run--;
+        if (my === a2Ex36Gen) a2Ex36[yy] = res;
+        a2Ex36Pump();
+        if (my !== a2Ex36Gen || a2Ex36Run || a2Ex36Q.length) return;
+        if (view === 'app' && !busy && !printAll && month && !dlgCtx && (tab === 'home' || tab === 'grid' || tab === 'person')) paint();
+      }; }(y));
+    }
+  }
+  function a2MissNote(yms) { return '会議の時間を足せていない月があります（' + yms.map(function (y) { return (+y.slice(5, 7)) + '月分'; }).join('・') + '・36協定の見張りだけ・読み直すと足します）'; }
 
   /* ── v5 1-5: 勤怠の管理者の名簿（kintai_managers_list・kintai_managers_put（p_on で載せる・外す）。どれも二段階の管理者だけ＝DB が決める） ──
    * 読み終わっても画面全体は描き直さない（設定のタブの入力中の値を消さない）。自分の入れ物（#g-mgr）だけを差し替え、遅れた応答は世代で捨てる */
@@ -2960,14 +3142,16 @@
   }
   function openLock(fig, changed, blockers) {
     dlgCtx = { mode: 'lock', fig: fig, ym: ym };
-    var bl = blockers || [];
+    var bl = blockers || [], mu = typeof a2MeetUnsetNow === 'function' && a2MeetUnsetNow();   /* 段A2: 会議の設定を保存していない（反証レビュー 2026-11-25） */
     openDlg(perLabel() + 'を締めます',
+      (mu ? '<div class="band ng" role="alert">' + esc(EX.MEETING_UNSAVED_TEXT) + '（この月分に社内会議の時間が入っています）</div>' : '') +
       (bl.length ? '<div class="band ng" role="alert">勤務中か、まだ出勤していない人がいるため、締められません（' + bl.map(function (x) { return esc(x.name) + ' ' + esc(md(x.date)) + '・' + esc(x.kind); }).join('、') + '）。今締めると、その勤務が0分のまま控えに入ります。退勤の打刻が入るか予定の終わりを過ぎてから、もう一度締めてください。休んだ人は、その日を「直す」で欠勤の印を付けると締められます。</div>' : '') +
       (fig.review ? '<div class="band ng" role="alert">要確認が ' + fig.review + ' 件（' + fig.rvPeople + ' 人）残っているため、締められません。1件ずつ「認める／認めない」を決めてから締めてください（認めない時は理由を残します）。</div>' +
         '<div class="row"><button type="button" class="btn pri" data-act="rvd-start">要確認を1件目から決める</button></div>' : '') +
       (changed ? '<div class="band warn" role="alert">窓を開いた後に数字が変わったため、締めていません（' + esc(changed) + '）。新しい数字を確かめてから、もう一度「締める」を押してください。</div>' : '') +
       '<p>「締める」を押した時にもう一度読み直して数え直し、その数字を「締めた時の控え」にします。</p><div class="kv"><span>要確認の残り</span><b>' + fig.review + ' 件（' + fig.rvPeople + ' 人）</b><span>人数</span><b>' + fig.people + ' 人（働いた・有休のあった人 ' + fig.worked + ' 人）</b><span>総労働の合計</span><b>' + fm(fig.workMin) + '</b><span>欠勤の合計</span><b>' + fig.absent + ' 日</b></div>' +
       '<p class="help">締めた後は、この月の打刻の足し・取り消し・承認・休憩の直し・シフトの取り込みが止まります。解除できるのは管理者だけです。</p><p class="help" id="e-msg" role="alert"></p>', bl.length > 0 || fig.review > 0, '締める', 'lock-go');   /* 0120: 要確認が残る間は締めるボタンを出さない */
+    if (mu) { var lgo = $('g-dlg-f').querySelector('[data-act="lock-go"]'); if (lgo) lgo.remove(); }   /* 段A2: 会議の設定を保存していない月分は「締める」を出さない（押した時も止める） */
   }
   var lockAfter = null;   /* 締めが成功した後に移る先（「この月を締めて、給与へ渡す」の時だけ {ym}・2026-11-26）。普通の「この月を締める」で必ず null に戻す */
   function lockMonth(btn, after) {
@@ -3006,9 +3190,15 @@
         openLock(now, diff.join('・'));
         return;
       }
-      return rpc('kintai_month_lock', { p_ym: ym, p_snapshot: C.snapshotOf(month) }).then(okOr).then(function () { busy = false; closeDlg(); toast('締めました');
-        var go = lockAfter; lockAfter = null; if (go && go.ym === ym) location.href = payHref(go.ym);   /* 締めて給与へ渡す（成功した時だけ）。移るのを取りやめた時に締める前の画面を残さないよう、下で読み直す */
-        return load(false); }, function (e) { fail(e, '締め'); });
+      /* 段A2（2026-11-25）: 補助項目を読み直し、記号の組・通勤回数・会議の足し分を控えの最上段（ext）に入れる（行 rows は snapshotOf のまま）。読めない時は締めない */
+      return a2ExtForLock(d).then(function (ext) {
+        if (my !== gen) return;
+        var snap = C.snapshotOf(month);
+        snap.ext = ext;
+        return rpc('kintai_month_lock', { p_ym: ym, p_snapshot: snap }).then(okOr).then(function () { busy = false; closeDlg(); toast('締めました');
+          var go = lockAfter; lockAfter = null; if (go && go.ym === ym) location.href = payHref(go.ym);   /* 締めて給与へ渡す（成功した時だけ）。移るのを取りやめた時に締める前の画面を残さないよう、下で読み直す */
+          return load(false); }, function (e) { fail(e, '締め'); });
+      }, function (e) { if (my !== gen) return; fail(e, '締める時の補助項目の読み込み'); });
     }, function (e) { if (my !== gen) return; fail(e, '締める時の読み直し'); });
   }
   function unlockMonth(btn) {
@@ -3053,6 +3243,12 @@
       if (exr.warn0) extra.push(exr.warn0);
       if (exr.warn) extra.push(exr.warn);
       if (exr.dropped) extra.push(kind === 'sum' ? '補助項目を入れてあっても月の集計に行が無い職員（勤務・打刻の無い人・従業員コードの無い人）' + exr.dropped + ' 人の補助項目は出していません。' : '補助項目を入れてあっても日ごとの明細に行が無い日（勤務・打刻の無い日など）' + exr.dropped + ' 日分は出していません（月の集計の合計には入っています）。');
+    }
+    /* 段A2: 月の集計の末尾に記号の組・通勤回数・時間外（社内会議を含む）の列（補助項目の列の後ろ・今の列の並びは変えない） */
+    if (kind === 'sum') {
+      var a2r = a2Csv(src, text, from);
+      if (a2r === false) return;
+      if (a2r) { text = a2r.text; if (a2r.warn) extra.push(a2r.warn); }
     }
     if (enc === 'sjis') {
       try { var sj = C.encodeSjis(text); blob = new Blob([sj.bytes], { type: 'text/csv' }); unknown = sj.unknown; }
@@ -3105,11 +3301,14 @@
     var vws = typeof VW !== 'undefined' && VW ? VW.readSet(rawCfg()) : null;   /* 年別・事業所別・休日のタブの入り切り（欄が無い時は今の設定のまま） */
     var cts = (typeof CT !== 'undefined' && CT) ? CT.readSet(rawCfg()) : null;   /* 資格の期限の知らせの入り切り（欄が無い時は今の設定のまま） */
     /* 保存済みの項目の形を変える時は、ほかの月分の前の形の行が合計と CSV に数えられなくなることを確かめる（反証レビュー 2026-11-25） */
+    /* 段A2: 記号の組・通勤回数・社内会議の欄（触った欄だけ送る・形の違う行があれば保存しない） */
+    var a2s = typeof readA2Set === 'function' ? readA2Set() : { vals: {}, bad: [] };
+    if (a2s.bad.length) { alert('記号の組・通勤回数・社内会議の欄を入れ直してください: ' + a2s.bad.join('、')); return; }
     var kc = exs ? exKindChanged(exs.items) : [];
     if (kc.length && !confirm('補助項目の形を変えます（' + kc.join('・') + '）。ほかの月分に前の形で入れた行があると、その行は合計と CSV に数えられなくなります（画面と書き出しで知らせます）。変えてよいですか？\n（安全なのは、今の項目を止めて、新しいコードで足すことです）')) return;
     /* この画面の欄が持たない今の設定の鍵（agreement36 など）は、そのまま残して送る（DB の kintai_settings_put は送った中身で丸ごと置き換えるため・v5 段3）。
        欄が持つ鍵は今までどおり欄の値だけ（空にした欄は送らず既定に戻す） */
-    var outCfg = {}, cur = rawCfg(), formKeys = SET_FIELDS.map(function (f) { return f[0]; }).concat(['close_day', 'variableMonth', 'monthRound30', 'csvTime', 'legal_holiday']).concat(lvs ? LV_SET_KEYS : []).concat(exs ? ['extraItems'] : []).concat(vws ? vws.keys : []).concat(shs ? ['shaho'] : []).concat(cts ? cts.keys : []);
+    var outCfg = {}, cur = rawCfg(), formKeys = SET_FIELDS.map(function (f) { return f[0]; }).concat(['close_day', 'variableMonth', 'monthRound30', 'csvTime', 'legal_holiday']).concat(lvs ? LV_SET_KEYS : []).concat(exs ? ['extraItems'] : []).concat(vws ? vws.keys : []).concat(shs ? ['shaho'] : []).concat(cts ? cts.keys : []).concat(Object.keys(a2s.vals));
     for (k in cur) if (formKeys.indexOf(k) < 0) outCfg[k] = cur[k];
     for (k in cfg) outCfg[k] = cfg[k];
     if (a36.obj) outCfg.agreement36 = a36.obj;
@@ -3119,6 +3318,7 @@
     if (vws) for (k in vws.vals) outCfg[k] = vws.vals[k];
     if (cts) for (k in cts.vals) outCfg[k] = cts.vals[k];
     if (shs && ('shaho' in cur || JSON.stringify(shs.vals) !== JSON.stringify(KS.fillConfig({})))) outCfg.shaho = shs.vals;   /* 触っていない・既定のままなら鍵を作らない（履歴に載せない） */
+    for (k in a2s.vals) outCfg[k] = a2s.vals[k];   /* 段A2: 切った欄は null で送る（決めた上で数えない＝次に開いても初めの案に戻さない） */
     busy = true; var restore = pressBusy(btn, '保存しています…');
     rpc('kintai_settings_put', { p_config: outCfg, p_rev: (data.settings && data.settings.rev) || 0 }).then(okOr).then(function () { busy = false; sync('設定を保存しました'); toast('設定を保存しました'); return load(false); })['catch'](function (e) { busy = false; restore(); note('設定の保存', e); alert(msgOf(e)); });
   }
@@ -3775,6 +3975,8 @@
       else if (a === 'ex-void') openExtraVoid(b.getAttribute('data-id'));
       else if (a === 'ex-void-go') voidExtra(b);
       else if (a === 'ex-reload') { exSt = null; paint(); loadExtras(true); }
+      else if (a === 'a2-add-group') a2AddGroup();   /* 段A2: 記号の組 */
+      else if (a === 'a2-adopt') { a2Touched = { g: true, c: true, m: true }; saveSettings(b); }   /* 段A2: 案のままで使い始める */
       else if (a === 'ex-adopt') { exTouched = true; saveSettings(b); }   /* 段A1: 案のままで補助項目を使い始める（反証レビュー 2026-11-25 M3） */
       else if (a === 'recode') recode(b.getAttribute('data-sid'), b);
       else if (a === 'import') { if (isLocked()) alert('締めた月は取り込めません。'); else if (settingsLeaveOk()) { dropMonthCaches(); load(true); } }
@@ -3820,6 +4022,7 @@
       else if (e.target && e.target.name === 'fi-v') fiSel[e.target.value] = !!e.target.checked;
       else if (id === 'lv-a-kind') absKindShow();
       else if (id === 'ex-code') exKindShow();   /* 段A1: 補助項目の形に合う欄だけを出す */
+      else if (id && /^a2[gcm]-/.test(id)) a2Touched[id.charAt(2)] = true;   /* 段A2: 設定の3つの欄を触った */
       else if (id && id.indexOf('ex-s-') === 0) exTouched = true;   /* 段A1: 設定の「補助項目」の欄を触った */   /* v5 段4: 休暇の種類に合う欄だけを出す */
       else if (id === 'g-ym') { if (settingsLeaveOk()) setYm(e.target.value); else e.target.value = ym; }   /* v5 C4: 保存していない設定の変更を確かめる（やめたら月の欄を戻す） */
       else if (e.target && e.target.name === 'sc-op' && $('sc-times')) $('sc-times').disabled = e.target.value !== 'set';
@@ -3838,6 +4041,7 @@
       if (id && id.indexOf('vw-h-') === 0 && typeof VW !== 'undefined' && VW) VW.keep(e);   /* 会社の休日の書きかけを描き直しで消さない（審査 2026-11-25 M1） */
       if (id && id.indexOf('ct-') === 0 && (typeof CT !== 'undefined' && CT)) CT.keep(e);   /* 資格の書きかけを描き直しで消さない */
       if (id === 'fi-reason' && fiSt) fiSt.reason = e.target.value;   /* 描き直しで書いた理由を消さない（画面の中だけ） */
+      if (id && /^a2[gcm]-/.test(id)) a2Touched[id.charAt(2)] = true;   /* 段A2: 設定の3つの欄に書いた */
       if (id && id.indexOf('ex-s-') === 0) exTouched = true;   /* 段A1: 設定の「補助項目」の欄に書いた（反証レビュー 2026-11-25 M3） */
       /* 0111: 予定の窓で始業・終業を変えたら、前の予定から入れた休憩は空に戻す（いつもの決まりで決め直す。手で入れた休憩は残す） */
       if ((id === 'sc-start' || id === 'sc-end') && dlgCtx && dlgCtx.mode === 'sched' && dlgCtx.preBr && $('sc-break') && $('sc-break').value === dlgCtx.preBr) { $('sc-break').value = ''; dlgCtx.preBr = ''; }

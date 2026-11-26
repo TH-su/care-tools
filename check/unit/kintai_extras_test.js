@@ -224,5 +224,170 @@ t('形を変えた項目の前の形の行: 個人の月の帯・CSV の注意�
 t('入れる窓は保存していない入力を確かめる（DIRTY_MODES.extra）', /DIRTY_MODES\.extra = 1;/.test(K));
 /* ★年別・事業所別・休日のタブ（2026-11-25・kintai-views.js）で TABS に3つ足した。補助項目が足していないこと（端末に残す鍵）は同じに確かめる */
 t('補助項目は新しいタブ・端末に残す鍵を足していない（TABS は年別などの3つと社保の知らせの shaho と資格の期限の cert を足しただけ・localStorage の鍵は今のまま）', /var TABS = \['home', 'day', 'review', 'requests', 'grid', 'person', 'staff', 'leave', 'close', 'settings', 'year', 'site', 'holiday', 'shaho', 'cert'\];/.test(K) && /var LS_TAB = 'kintai_tab', LS_YM = 'kintai_ym';/.test(K) && !/localStorage\.setItem\([^)]*ex/.test(K));
+
+/* ── 段A2（2026-11-25・凍結仕様 ROOT-v7-plus-parity.md「段A2」「反証レビュー1回」「2 の追記」）──
+   7. 記号の組・通勤回数・社内会議の掃除と初めの案
+   8. buildExt: 記号の組（同行の日・働いていない日・時刻で書いたマス）・通勤回数（健診の日が出勤の日／休みの日・夜勤）・会議の足し分（法定休日・丸め）・取り込みの人・0 を入れない
+   9. 会議 0 なら computeMonth の時間外・60時間超と同じ（丸めの入・切）・60時間超の数え直し
+   10. 控えの def から数え直すと同じ（sameExt・止めた項目と組も）
+   11. 記号の衝突: shift-symbols.js とシフトアプリの記号は回数の元の印の形にならない
+   12. 会議の時間が数えなかった時間を超える日の知らせ */
+const Sym = require(path.join(ROOT, 'shift-symbols.js'));
+const A2_STAFF = [{ id: 'sA1', name: '試験 一', mainDivision: '施設', empCode: '9101', active: true }, { id: 'sA2', name: '試験 二', mainDivision: '施設', empCode: '9102', active: true }];
+const A2_K = [{ staff_id: 'sA1', name: '試験 一', office: 'facility', emp_code: '9101' }, { staff_id: 'sA2', name: '試験 二', office: 'facility', emp_code: '9102' }];
+const A2_NOW = Date.parse('2027-01-10T12:00:00+09:00');
+const a2at = (d, hm) => C.jstMs(d, +hm.split(':')[0] * 60 + +hm.split(':')[1]);
+let a2pid = 0;
+const A2P = (sid, kind, d, hm) => ({ id: 'q' + (++a2pid), staff_id: sid, kind, at: new Date(a2at(d, hm)).toISOString(), source: 'tablet', created_at: new Date(a2at(d, hm)).toISOString() });
+const a2sched = (c1, c2) => C.buildSchedule({ ym: '2026-12', plan: { cells: { sA1: c1 || {}, sA2: c2 || {} } }, nextPlan: {}, staff: A2_STAFF, symbols: Sym.DEFAULT_SYMBOLS, settings: { breakThresholdH: 6, breakH: 1, nightBreakH: 2 } });
+const a2month = (rows, punches, cfg) => C.computeMonth({ ym: '2026-12', staff: A2_K, schedule: rows, punches, days: [], config: cfg || {}, now: A2_NOW });
+const work = (sid, d, a, b) => [A2P(sid, 'in', d, a), A2P(sid, 'out', d, b)];
+
+console.log('\n— 7. 段A2 の掃除と初めの案 —');
+{
+  t('早遅の初めの案は hayaoso（早・遅とシフトアプリの freee の書き出しが手当なしに振り分ける3つの時間帯）', JSON.stringify(EX.SYMBOL_GROUPS_DEFAULT) === JSON.stringify([{ code: 'hayaoso', name: '早遅', symbols: ['早', '遅', '7-16', '12-21', '18-21'], active: true }]));
+  const SA = read('shift-app.html');
+  t('初めの案の3つの時間帯は shift-app.html の同行（早遅手当なし）の振り分けと同じ（7-16・12-21・18-21）', /finalSpan\.startMin === 720 && finalSpan\.endMin === 1260\) codeW = '151'/.test(SA) && /finalSpan\.startMin === 420 && finalSpan\.endMin === 960\) codeW = '153'/.test(SA) && /finalSpan\.startMin === 1080 && finalSpan\.endMin === 1260\) codeW = '152'/.test(SA));
+  t('通勤回数の初めの案は健診の2項目・会議の初めの案は meeting を入', JSON.stringify(EX.COMMUTE_DEFAULT) === '{"minus":["checkup","checkup_nocommute"]}' && JSON.stringify(EX.MEETING_OT_DEFAULT) === '{"code":"meeting","on":true}');
+  const g = EX.cleanSymbolGroups([{ code: 'a', name: '組', symbols: ['１２－２１', ' 早 ', '早'] }, { code: 'a', name: '重なり', symbols: ['遅'] }, { code: 'b c', name: 'x', symbols: ['遅'] },
+    { code: 'n', name: '', symbols: ['遅'] }, { code: 'e', name: '空', symbols: [] }, { code: 'f', name: '印', symbols: ['遅'], active: 'no' }, 'x', { code: 's', name: '止め', symbols: ['遅'], active: false }]);
+  t('記号の組: 記号はシフトと同じ正規化・重なりは1つ・code の重なりは先勝ち・止めた組も残す', JSON.stringify(g.groups) === JSON.stringify([{ code: 'a', name: '組', symbols: ['12-21', '早'], active: true }, { code: 's', name: '止め', symbols: ['遅'], active: false }]), g.groups);
+  t('記号の組: 読み飛ばした理由（dup・code・name・symbols・active・shape）', JSON.stringify(g.bad.map((b) => b.why)) === JSON.stringify(['dup', 'code', 'name', 'symbols', 'active', 'shape']), g.bad);
+  const many = []; for (let i = 0; i < 12; i++) many.push({ code: 'g' + i, name: 'g', symbols: ['早'] });
+  t('記号の組は10組まで', EX.cleanSymbolGroups(many).groups.length === 10 && EX.cleanSymbolGroups(many).bad.filter((b) => b.why === 'max').length === 2);
+  const tooMany = []; for (let i = 0; i < 21; i++) tooMany.push('s' + i);
+  t('記号は1組20個まで・40字まで', EX.cleanSymbolGroups([{ code: 'a', name: 'a', symbols: tooMany }]).groups.length === 0 && EX.cleanSymbolGroups([{ code: 'a', name: 'a', symbols: ['x'.repeat(41)] }]).groups.length === 0);
+  t('通勤回数: 形が違えば null・重なりは1つ', EX.cleanCommute({ minus: ['checkup', 'checkup'] }).minus.length === 1 && EX.cleanCommute({ minus: ['bad code'] }) === null && EX.cleanCommute(null) === null && EX.cleanCommute({ minus: 'x' }) === null && JSON.stringify(EX.cleanCommute({ minus: [] })) === '{"minus":[]}');
+  t('会議: 形が違えば null', EX.cleanMeetingOt({ code: 'meeting', on: 'yes' }) === null && EX.cleanMeetingOt({ code: '', on: true }) === null && JSON.stringify(EX.cleanMeetingOt({ code: 'meeting', on: false, x: 1 })) === '{"code":"meeting","on":false}');
+  t('保存していない鍵は defOf で空（初めの案は締めの控えに効かせない）', JSON.stringify(EX.defOf({})) === JSON.stringify({ items: [], groups: [], commute: null, meetingOt: null }));
+}
+
+console.log('\n— 8. buildExt（架空の2人・12月分・法定休日は日曜） —');
+const A2_ITEMS = [{ code: 'dist', name: '移動距離', kind: 'number', unit: 'km', decimals: 1, active: true }, { code: 'checkup', name: '健診/有休', kind: 'count', unit: '', decimals: 0, active: true },
+  { code: 'meeting', name: '社内会議', kind: 'time', unit: '', decimals: 0, active: true }, { code: 'old', name: '止めた回数', kind: 'count', unit: '', decimals: 0, active: false }];
+const A2_CFG = { legal_holiday: 0, extraItems: A2_ITEMS, symbolGroups: EX.SYMBOL_GROUPS_DEFAULT.concat([{ code: 'stop', name: '止めた組', symbols: ['日1'], active: false }]), commuteCount: { minus: ['checkup'] }, meetingOt: { code: 'meeting', on: true } };
+/* sA1: 1日 早（働いた）・2日 早/同（同行・働いた）・3日 遅（働いていない）・4日 12-21（時刻で書いたマス・働いた）・5日 日1（組の外・働いた）・6日（日曜）日1 働いた・7日 (21 夜勤入り→8日 7) */
+const A2_ROWS = a2sched({ 1: '早', 2: '早/同', 3: '遅', 4: '12-21', 5: '日1', 6: '日1', 7: '(21', 8: '7)' }, { 1: '早' }).rows;
+const A2_PUN = [].concat(work('sA1', '2026-12-01', '7:00', '16:00'), work('sA1', '2026-12-02', '7:00', '16:00'), work('sA1', '2026-12-04', '12:00', '21:00'), work('sA1', '2026-12-05', '8:00', '17:00'),
+  work('sA1', '2026-12-06', '8:00', '17:00'), [A2P('sA1', 'in', '2026-12-07', '21:00'), { id: 'qn', staff_id: 'sA1', kind: 'out', at: new Date(a2at('2026-12-08', '7:00')).toISOString(), source: 'tablet', created_at: new Date(a2at('2026-12-08', '7:00')).toISOString() }],
+  work('sA2', '2026-12-01', '7:00', '16:00'));
+const A2_EX = [
+  { id: 'e1', staff_id: 'sA1', date: '2026-12-05', code: 'checkup', qty: 1, minutes: null },   /* 出勤の日の健診（通勤回数から除く） */
+  { id: 'e2', staff_id: 'sA1', date: '2026-12-03', code: 'checkup', qty: 1, minutes: null },   /* 働いていない日の健診（引きすぎない） */
+  { id: 'e3', staff_id: 'sA1', date: '2026-12-04', code: 'meeting', qty: null, minutes: 90 },
+  { id: 'e4', staff_id: 'sA1', date: '2026-12-06', code: 'meeting', qty: null, minutes: 60 },   /* 日曜＝法定休日 */
+  { id: 'e5', staff_id: 'sA1', date: '2026-12-04', code: 'dist', qty: 12.3, minutes: null },
+  { id: 'e6', staff_id: 'sA1', date: '2026-12-05', code: 'dist', qty: 4.1, minutes: null },
+  { id: 'e7', staff_id: 'sA1', date: '2026-12-01', code: 'old', qty: 2, minutes: null },
+  { id: 'e8', staff_id: 'sA1', date: '2026-12-09', code: 'dist', qty: 1, minutes: null, voided_at: '2026-12-10T00:00:00Z' },
+  { id: 'e9', staff_id: 'sA2', date: '2026-12-01', code: 'dist', qty: 0, minutes: null }
+];
+const A2_M = a2month(A2_ROWS, A2_PUN, A2_CFG);
+const A2_EXT = EX.buildExt(A2_M, A2_EX, A2_ROWS, A2_CFG);
+{
+  t('写しの行: 「/同」のマスだけ companion: true（ほかの行に鍵を足さない）', A2_ROWS.filter((r) => r.companion === true).map((r) => r.work_date).join() === '2026-12-02' && A2_ROWS.filter((r) => 'companion' in r).length === 1);
+  t('写しの行: 「/同」のマスも記号は剥がした後の文字（早）', A2_ROWS.filter((r) => r.work_date === '2026-12-02')[0].symbol === '早');
+  const r1 = A2_EXT.rows.sA1 || {};
+  t('ext の形: v1・def（items・groups・commute・meetingOt）・rows', A2_EXT.v === 1 && Array.isArray(A2_EXT.def.items) && A2_EXT.def.groups.length === 2 && JSON.stringify(A2_EXT.def.commute) === '{"minus":["checkup"]}' && JSON.stringify(A2_EXT.def.meetingOt) === '{"code":"meeting","on":true}');
+  t('記号の組: 早（1日）・12-21（4日）の2日。同行の2日・働いていない3日・組の外の日1・止めた組は数えない', r1['g:hayaoso'] === 2 && !('g:stop' in r1), r1);
+  t('通勤回数: 働いた日（1・2・4・5・6・7日の夜勤）6日のうち、健診の5日を除いた5日（働いていない3日の健診は引かない・夜勤は入りの日の1回）', r1['k:commute'] === 5, r1);
+  t('補助項目: 移動距離 12.3＋4.1＝16.4（取り消した行は数えない）・止めた項目も行があれば入る・時間は分', r1['x:dist'] === 16.4 && r1['x:old'] === 2 && r1['t:meeting'] === 150 && r1['x:checkup'] === 2, r1);
+  const s1 = A2_M.people.find((p) => p.staff.staff_id === 'sA1').sum;
+  t('会議の足し分: 平日の90分は時間外に・日曜の60分は休日労働に（足した後の値）', r1.adj && r1.adj.legalOverMin === s1.legalOverMin + 90 && r1.adj.holidayMin === s1.holidayMin + 60 && r1.adj.meetingMin === 150 && r1.adj.over60Min === 0, [r1.adj, s1.legalOverMin, s1.holidayMin]);
+  const r2 = A2_EXT.rows.sA2 || {};
+  t('0 の値は入れない（sA2 の移動距離 0・通勤回数は1日・組は早の1日・会議なしは adj なし）', !('x:dist' in r2) && r2['k:commute'] === 1 && r2['g:hayaoso'] === 1 && !('adj' in r2), r2);
+  /* 会議を切ると adj を入れない */
+  const off = EX.buildExt(A2_M, A2_EX, A2_ROWS, Object.assign({}, A2_CFG, { meetingOt: { code: 'meeting', on: false } }));
+  t('会議を切ると adj を入れない（t:meeting は残る）', !('adj' in off.rows.sA1) && off.rows.sA1['t:meeting'] === 150);
+  /* 予定の行に companion が無い古い行は同行でない扱い */
+  const noComp = A2_ROWS.map((r) => { const o = Object.assign({}, r); delete o.companion; return o; });
+  t('印の無い古い行は同行でない扱い（2日も数える）', EX.buildExt(A2_M, A2_EX, noComp, A2_CFG).rows.sA1['g:hayaoso'] === 3);
+  /* freee の取り込みの人: 記号の組・通勤回数・会議を入れない（補助項目は入れる） */
+  const imp = { period: A2_M.period, config: A2_M.config, people: A2_M.people.map((p) => p.staff.staff_id === 'sA1' ? Object.assign({}, p, { sum: Object.assign({}, p.sum, { imported: { source: 'freee_csv', id: 'i1' } }) }) : p) };
+  const ri = EX.buildExt(imp, A2_EX, A2_ROWS, A2_CFG).rows.sA1;
+  t('取り込みの人: 組・通勤回数・会議の足し分なし・補助項目の合計はある', !('g:hayaoso' in ri) && !('k:commute' in ri) && !('adj' in ri) && ri['x:dist'] === 16.4 && ri['t:meeting'] === 150, ri);
+  /* 保存していない設定: 何も数えない */
+  const none = EX.buildExt(A2_M, A2_EX, A2_ROWS, {});
+  t('設定を保存していない時は rows が空（ext は v1 の形で作る）', none.v === 1 && Object.keys(none.rows).length === 0);
+  /* 振替: 日曜を働く日にした時はその日を法定休日にしない */
+  const day6 = { date: '2026-12-06', absences: [{ kind: 'swap', role: 'work', date: '2026-12-10' }] }, day10 = { date: '2026-12-10', absences: [{ kind: 'swap', role: 'off', link_date: '2026-12-06' }] };
+  t('法定休日: 曜日・振替で働く日にした日曜は外す・休む日にした日は法定休日・決めていない時は無い', EX.isLegalHoliday('2026-12-06', null, { legal_holiday: 0 }) && !EX.isLegalHoliday('2026-12-06', day6, { legal_holiday: 0 }) && EX.isLegalHoliday('2026-12-10', day10, { legal_holiday: 0 }) && !EX.isLegalHoliday('2026-12-10', null, { legal_holiday: 0 }) && !EX.isLegalHoliday('2026-12-06', null, {}));
+}
+
+console.log('\n— 9. 会議 0 の時は computeMonth と同じ・丸め直し・60時間超 —');
+{
+  /* 予定の無い勤務（休憩60分）を3つ。日の法定外は8時間を超えた分。会議 0 の adjOf を、本物の computeMonth の時間外（丸めの入・切）と比べる */
+  const rowsN = a2sched({}, {}).rows;
+  const pN = [].concat(work('sA1', '2026-12-01', '9:00', '19:15'), work('sA1', '2026-12-02', '9:00', '19:20'), work('sA2', '2026-12-01', '9:00', '18:40'));
+  [false, true].forEach((r30) => {
+    const m = a2month(rowsN, pN, { monthRound30: r30 });
+    m.people.forEach((p) => {
+      const a = EX.adjOf(p.sum, m.config, 0, 0);
+      t('会議 0・月の30分丸め ' + (r30 ? '入' : '切') + '・' + p.staff.staff_id + ': 時間外・60時間超・休日労働が computeMonth と同じ（' + p.sum.legalOverMin + '分）', a.legalOverMin === p.sum.legalOverMin && a.over60Min === p.sum.over60Min && a.holidayMin === p.sum.holidayMin, [a, p.sum.legalOverMin, p.sum.legalOverRawMin]);
+    });
+  });
+  const mR = a2month(rowsN, pN, { monthRound30: true }), sR = mR.people.find((p) => p.staff.staff_id === 'sA1').sum;
+  const aR = EX.adjOf(sR, mR.config, 20, 0);
+  t('丸め直し: 丸める前の時間外に会議を足してから30分で丸める（' + sR.legalOverRawMin + '＋20分）', aR.legalOverMin === C.round30(sR.legalOverRawMin + 20), [aR, sR.legalOverRawMin]);
+  const a60 = EX.adjOf({ legalOverRawMin: 3590, legalOverMin: 3590, workMin: 12000, holidayMin: 0, over60Min: 0 }, { monthRound30: false }, 60, 0);
+  t('60時間超は足した後の時間外で数え直す（3590＋60＝3650・60時間超 50分）', a60.legalOverMin === 3650 && a60.over60Min === 50);
+  const aCap = EX.adjOf({ legalOverRawMin: 100, legalOverMin: 100, workMin: 100, holidayMin: 0 }, {}, 30, 0);
+  t('上限（総労働−休日労働）に会議の分を足す（会議が削られない）', aCap.legalOverMin === 130);
+  /* 反証レビュー（2026-11-25・low）の実測の例: 丸める前 70・上限 70（総労働 70）・会議 10・30分丸め → 丸め直しは 80→60 だが、足す前の 70 を下回らせない */
+  const aMin = EX.adjOf({ legalOverRawMin: 70, legalOverMin: 70, workMin: 70, holidayMin: 0 }, { monthRound30: true }, 10, 0);
+  t('足した後の時間外は足す前（70）を下回らない（丸め直しの 60 にしない）・60時間超は直した後で数える', aMin.legalOverMin === 70 && aMin.over60Min === 0, aMin);
+  const aMin60 = EX.adjOf({ legalOverRawMin: 3650, legalOverMin: 3660, workMin: 3650, holidayMin: 0 }, { monthRound30: true }, 10, 0);
+  t('下回らせない値で60時間超を数え直す（3660→60分）', aMin60.legalOverMin === 3660 && aMin60.over60Min === 60, aMin60);
+  t('休日労働も足す前を下回らない', EX.adjOf({ legalOverRawMin: 0, legalOverMin: 0, workMin: 0, holidayMin: 30 }, {}, 0, 0).holidayMin === 30);
+  /* 社内会議の設定を保存していない月の締めの止め（反証レビュー 2026-11-25・medium） */
+  const mRows = [{ staff_id: 'sA1', date: '2026-12-04', code: 'meeting', minutes: 30 }];
+  t('会議の設定（meetingOt）を保存していない・会議の行がある → 止める', EX.meetingUnsaved({ extraItems: A2_ITEMS }, mRows) === true && EX.meetingUnsaved({}, mRows) === true);
+  t('保存してある（入・切・null）・行が無い・取り消した行だけ・分が0 → 止めない', EX.meetingUnsaved({ meetingOt: { code: 'meeting', on: false } }, mRows) === false && EX.meetingUnsaved({ meetingOt: null }, mRows) === false
+    && EX.meetingUnsaved({}, []) === false && EX.meetingUnsaved({}, [Object.assign({}, mRows[0], { voided_at: 'x' })]) === false && EX.meetingUnsaved({}, [Object.assign({}, mRows[0], { minutes: 0 })]) === false);
+  t('ほかの時間の補助項目の行でも止める（初めの案の code meeting でない時）', EX.meetingUnsaved({ extraItems: A2_ITEMS.concat([{ code: 'mt2', name: '会議2', kind: 'time', decimals: 0, active: true }]) }, [{ staff_id: 'sA1', date: '2026-12-04', code: 'mt2', minutes: 15 }]) === true);
+  t('止める文（仮置き）', EX.MEETING_UNSAVED_TEXT === '社内会議を時間外に足すかを、設定のタブで保存してから締めてください');
+}
+
+console.log('\n— 10. 控えの def から数え直すと同じ（給与の確かめ） —');
+{
+  const back = EX.buildExtDef(A2_M, A2_EX, A2_ROWS, JSON.parse(JSON.stringify(A2_EXT.def)));
+  t('控えの def（止めた項目・止めた組を含む）から数え直すと sameExt', EX.sameExt(A2_EXT, back));
+  t('掃除を2回通しても同じ def', JSON.stringify(EX.cleanDef(EX.cleanDef(A2_EXT.def))) === JSON.stringify(A2_EXT.def));
+  const moved = A2_EX.concat([{ id: 'eX', staff_id: 'sA1', date: '2026-12-01', code: 'meeting', qty: null, minutes: 30 }]);
+  t('締めた後に会議を足すと食い違う', !EX.sameExt(A2_EXT, EX.buildExtDef(A2_M, moved, A2_ROWS, A2_EXT.def)));
+  t('鍵の並びは問わない・数は 0.01 の単位', EX.sameExt({ v: 1, def: { a: 1, b: [1] }, rows: { s: { 'x:a': 0.1 + 0.2 } } }, { v: 1, rows: { s: { 'x:a': 0.3 } }, def: { b: [1], a: 1 } }));
+  t('形の違う控えは同じにしない', !EX.sameExt(null, A2_EXT) && !EX.sameExt(A2_EXT, { v: 2, def: {}, rows: {} }));
+  t('会議 36協定の分け方: 控えの adj から（休日分＝adj.holidayMin−行の holidayMin）', JSON.stringify(EX.meeting36({ meetingMin: 150, holidayMin: 60 }, { holidayMin: 0 })) === '{"non":90,"hol":60}' && JSON.stringify(EX.meeting36(null, {})) === '{"non":0,"hol":0}');
+  t('会議 36協定の分け方: 締めていない月は補助項目の行から', JSON.stringify(EX.meetingSplitOf(A2_M, A2_EX, A2_CFG, 'sA1')) === '{"non":90,"hol":60}' && JSON.stringify(EX.meetingSplitOf(A2_M, A2_EX, Object.assign({}, A2_CFG, { meetingOt: { code: 'meeting', on: false } }), 'sA1')) === '{"non":0,"hol":0}');
+  t('回数の元の表示名', EX.srcLabel('g:hayaoso', A2_EXT.def) === '記号の組：早遅' && EX.srcLabel('x:dist', A2_EXT.def) === '補助項目：移動距離' && EX.srcLabel('t:meeting', A2_EXT.def) === '補助項目：社内会議（時間）' && EX.srcLabel('k:commute', A2_EXT.def) === '通勤回数' && EX.srcLabel('早', A2_EXT.def) === '早');
+}
+
+console.log('\n— 11. 記号の衝突（シフトの記号は回数の元の印の形にならない） —');
+{
+  const all = [];
+  Sym.DEFAULT_SYMBOLS.forEach((x) => all.push(x.code));
+  Object.keys(Sym.ALIASES).forEach((k) => { all.push(k); all.push(Sym.ALIASES[k]); });
+  Object.keys(Sym.RECOMMENDED_BY_CODE).forEach((k) => all.push(k));
+  (read('shift-app.html').match(/\{ *code: *'[^']*'/g) || []).forEach((m) => all.push(m.replace(/^\{ *code: *'/, '').replace(/'$/, '')));
+  A2_ROWS.forEach((r) => all.push(r.symbol));
+  Object.keys(A2_M.people[0].sum.counts).forEach((k) => all.push(k));
+  const hit = all.filter((c) => EX.SRC_RE.test(Sym.normalizeCell(c)) || EX.SRC_RE.test(String(c)));
+  t('shift-symbols.js・シフトアプリの全部の記号（' + all.length + ' 個）の正規化が x:・t:・g:・k: の印の形に合わない', all.length > 20 && hit.length === 0, hit);
+  t('印の形は payroll-calc.js と同じ', String(EX.SRC_RE) === String(require(path.join(ROOT, 'payroll-calc.js')).SRC_RE));
+}
+
+console.log('\n— 12. 会議の時間が数えなかった時間を超える日の知らせ —');
+{
+  const over = EX.meetingOverUncounted(A2_M, A2_EX, A2_CFG);
+  t('数えなかった時間が 0 の日の会議（4日 90分・6日 60分）は知らせる', over.map((x) => x.date + ':' + x.meetingMin + ':' + x.uncountedMin).join() === '2026-12-04:90:0,2026-12-06:60:0', over);
+  /* 予定の外の打刻（数えなかった時間）が会議より長い日は知らせない: 早 7-16 に 6:00 出勤・17:30 退勤（承認なし）＝数えなかった 150分 */
+  const rowsU = a2sched({ 1: '早' }, {}).rows, mU = a2month(rowsU, work('sA1', '2026-12-01', '6:00', '17:30'), A2_CFG);
+  const dU = mU.people.find((p) => p.staff.staff_id === 'sA1').days.find((d) => d.date === '2026-12-01');
+  const ov2 = EX.meetingOverUncounted(mU, [{ id: 'm1', staff_id: 'sA1', date: '2026-12-01', code: 'meeting', minutes: 60 }], A2_CFG);
+  const ov3 = EX.meetingOverUncounted(mU, [{ id: 'm1', staff_id: 'sA1', date: '2026-12-01', code: 'meeting', minutes: dU.uncountedMin + 1 }], A2_CFG);
+  t('数えなかった時間（' + dU.uncountedMin + '分）より短い会議は知らせない・長い会議は知らせる', dU.uncountedMin === 150 && ov2.length === 0 && ov3.length === 1, [dU.uncountedMin, ov2, ov3]);
+  t('会議を切ると知らせない', EX.meetingOverUncounted(A2_M, A2_EX, Object.assign({}, A2_CFG, { meetingOt: { code: 'meeting', on: false } })).length === 0);
+  t('知らせの文・入力の案内の文（仮置き）', EX.MEETING_OVER_TEXT === '会議の時間が、この日の数えなかった時間より多くなっています。会議の時間が打刻の中で払われていないか確かめてください' && EX.MEETING_INPUT_HELP === '予定の外で、残業として認めていない会議の時間を入れます');
+}
 console.log('\n' + pass + ' 件合格 / ' + fail + ' 件不合格');
 process.exit(fail ? 1 : 0);

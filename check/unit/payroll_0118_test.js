@@ -18,7 +18,14 @@ const fnBody = (name, next) => J.slice(J.indexOf('function ' + name + '('), J.in
 console.log('\n— 1. 確定できない警告の印 —');
 const bw = /var BLOCK_WARN = \{([^}]*)\}/.exec(J);
 const codes = bw ? bw[1].split(',').map((x) => x.split(':')[0].trim()).sort() : [];
-t('BLOCK_WARN は DB と同じ4つ', JSON.stringify(codes) === JSON.stringify(['emp_rate_missing', 'rate_missing', 'std_missing', 'tax_table_missing']), codes);
+/* ★段A2（2026-11-25）: 画面だけで止める印（BLOCK_WARN_SCREEN・ext_missing・meeting_src）を足した。DB が止めるのは今も4つで、画面だけの印は DB の止めに入らない */
+const bws = /var BLOCK_WARN_SCREEN = \{([^}]*)\}/.exec(J);
+const scr = bws ? bws[1].split(',').map((x) => x.split(':')[0].trim()).sort() : [];
+const dbCodes = codes.filter((c) => scr.indexOf(c) < 0);
+t('BLOCK_WARN は DB と同じ4つ＋画面だけで止める ext_missing・meeting_src', JSON.stringify(dbCodes) === JSON.stringify(['emp_rate_missing', 'rate_missing', 'std_missing', 'tax_table_missing']) && JSON.stringify(scr) === JSON.stringify(['ext_missing', 'meeting_src', 'meeting_unset']) && scr.every((c) => codes.indexOf(c) >= 0), [codes, scr]);
+const FXP = fs.readFileSync(path.join(ROOT, 'check', 'fixtures', 'payroll.mjs'), 'utf8'), dbBw = /const BW = \[([^\]]*)\]/.exec(FXP);
+const dbList = dbBw ? dbBw[1].split(',').map((x) => x.trim().replace(/'/g, '')).sort() : [];
+t('偽の DB の確定の止め（0118 の写し）は4つのままで、画面だけの印（ext_missing・meeting_src）は入らない', JSON.stringify(dbList) === JSON.stringify(dbCodes) && scr.every((c) => dbList.indexOf(c) < 0), dbList);
 
 console.log('\n— 2. 断りの文 —');
 const ng = J.slice(J.indexOf('var NG = {'), J.indexOf('function friendly('));

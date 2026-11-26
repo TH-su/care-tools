@@ -19,6 +19,8 @@
   'use strict';
   var isNode = typeof require !== 'undefined' && typeof window === 'undefined';
   var Rates = isNode ? require('./payroll-rates.js') : root.PayrollRates;
+  /* 段A2（2026-11-25）: 手当の回数の元の印（x: 補助項目・t: 補助項目の時間・g: 記号の組・k: 通勤回数）。シフトの記号はこの形にならない（check/unit の試験で確かめる） */
+  var SRC_RE = /^[xtgk]:[A-Za-z0-9_-]{1,20}$/;
   var CALC_VER = 'payroll-calc-3';   /* 2026-11-23: 電算機特例に令和9年分の式を足した。 2026-11-21: 時給・日給の有休、日給の法定休日の差、乙欄、通勤手当の非課税限度を直した（確定した明細の指紋で前の版と区別する） */
 
   var DEFAULTS = {
@@ -388,15 +390,26 @@
           if (at.min_wage) minWageFixed += amt;
         } else {
           if (calc === 'count') {
-            var src = a.count_source;
-            qty = src && src !== 'manual' ? Math.max(0, Number((A.counts || {})[src]) || 0) : Math.max(0, Number(a.count) || 0);
-            basis = '回数×単価';
+            var src = a.count_source, tq = false;
+            if (typeof src === 'string' && SRC_RE.test(src)) {
+              /* 段A2（2026-11-25）: 印の付いた回数の元（x: 補助項目の回数・数値／t: 補助項目の時間（分）／g: 記号の組／k: 通勤回数）は、勤怠の締めの控えの ext から読む（payroll.js が A.ext に入れる）。
+                 t: は分×単価÷60（今の「労働時間×単価」と同じ式・0.01 の丸めを通さない）。控えに無い元は 0 回で数えて知らせる。今の記号の元と manual の動きは変えない */
+              var ex = A.ext && typeof A.ext === 'object' ? A.ext : null, ev = ex && Object.prototype.hasOwnProperty.call(ex, src) ? Number(ex[src]) : NaN;
+              if (!isFinite(ev)) { if (att) warn('count_src:' + src, '回数の元（' + src + '）がこの月分の勤怠の控えにありません（0回で数えました）'); ev = 0; }
+              tq = src.charAt(0) === 't';
+              qty = tq ? Math.max(0, Math.round(ev)) : Math.max(0, ev);
+              basis = tq ? '時間（分）×単価÷60' : '回数×単価';
+              if (src === 'k:commute') warn('commute_count_limit', '回数で払う通勤手当（' + (def.name || def.code) + '）は非課税の限度を確かめていません（課税の扱いは手当の定義のまま数えました）');
+            } else {
+              qty = src && src !== 'manual' ? Math.max(0, Number((A.counts || {})[src]) || 0) : Math.max(0, Number(a.count) || 0);
+              basis = '回数×単価';
+            }
           } else if (calc === 'night_shift') { qty = m('nightShiftCount'); basis = '夜勤回数×単価'; }
           else if (calc === 'day') { qty = m('workDays'); basis = '出勤日数×単価'; }
           else if (calc === 'hour') { qty = m('workMin'); basis = '労働時間×単価'; }
           else continue;
           var rmode = ROUND_MODES[def.round] && def.round !== 'none' ? def.round : 'ceil';
-          v = calc === 'hour' ? yen(qDiv(qMul(intQ(amt), intQ(qty)), Q(60)), rmode) : yen(qMul(intQ(amt), decQ(qty)), rmode);
+          v = calc === 'hour' || (calc === 'count' && tq) ? yen(qDiv(qMul(intQ(amt), intQ(qty)), Q(60)), rmode) : yen(qMul(intQ(amt), decQ(qty)), rmode);
         }
         if (at.overtime_base && !board) otBaseAdds.push({ calc: calc, month: calc === 'fixed' ? amt : v, perHour: amt });
         if (at.includes_night_premium) { nightIncluded += v; nightAllowCount++; }
@@ -938,7 +951,7 @@
   }
 
   var api = {
-    VERSION: CALC_VER, payDate: payDate,
+    VERSION: CALC_VER, payDate: payDate, SRC_RE: SRC_RE,
     CALC_VER: CALC_VER, DEFAULTS: DEFAULTS, computeItem: computeItem, fillSettings: fillSettings, attrsOf: attrsOf,
     reachDate: reachDate, reachYm: reachYm, birthdayAt: birthdayAt, insCovered: insCovered, ymAdd: ymAdd, addDays: addDays,
     empCovered: empCovered, otBaseAdd: otBaseAdd, taxTable: taxTable, taxComputer: taxComputer, taxComputerR8: taxComputerR8, COMPUTER_YEARS: Object.keys(COMPUTER).map(Number), round50: round50, weekdaysBetween: weekdaysBetween,
