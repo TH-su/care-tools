@@ -74,6 +74,24 @@
     kinBand = { cls: 'ok', text: '勤怠管理から ' + n + ' 人分の締めた勤怠を受け取り、計算しました（警告 ' + m + ' 件）。確かめてから「下書き保存」を押してください。' };
     paint();
   }
+  /* 開いた時の自動の計算（2026-11-26 本人指示）: 勤怠管理からの印が無くても、今月の給与のタブで、締めた勤怠の確かめが決まった後に1回だけ判定する。
+     走るのは: 勤怠が締めてある・確かめが合う・確定していない・メモリに計算も未保存の編集も無い・計算の部品がある・この月分に保存した物が無い時だけ。
+     同じ読み込み（bs）では二度判定しない（autoBs）。ほかのタブ・覆い・鍵の画面では判定せず、今月の給与へ切り替えた時・読み直した後に判定する。
+     stale の下書きの計算し直しと、走らせなかった理由の帯は、印がある時だけ（fromKinTry）。下書き保存と確定は人が押す */
+  var autoBs = null;
+  function autoTry() {
+    if (!bs || view !== 'app' || masked || tab !== 'run' || autoBs === bs) return;
+    if (!bs.kcheck || bs.kcheck.state === 'checking') return;
+    if (fromKin) { fromKinTry(); if (calc) { autoBs = bs; return; } }
+    autoBs = bs;
+    if (!bs.kintai.locked || frozen() || kintaiBlock() || calc || isDirty() || !C() || status()) return;
+    doCompute(true);
+    if (!calc) return;
+    autoCalcRef = calc;
+    var n = calc.items.length, m = totals(calc.items).warn;
+    kinBand = { cls: 'ok', text: '締めた勤怠 ' + n + ' 人分を読み込み、計算しました（警告 ' + m + ' 件）。確かめてから「下書き保存」を押してください。' };
+    paint();
+  }
   function kinBandHtml() { return kinBand ? '<div class="band ' + esc(kinBand.cls) + ' kin-band" role="status">' + esc(kinBand.text) + '</div>' : ''; }
   /* 今月の給与の主ボタン（2026-11-26）: 塗り（pri）は次に押す1つだけ。文言・data-act・並び・押せる条件は変えない */
   function nextAct() {
@@ -446,7 +464,7 @@
       if (!keepCalc) { calc = null; adjEdits = {}; dirty = false; autoCalcRef = null; }
       sync(''); paint();
       var b0 = bs;
-      return verifyKintai(ym, b0).then(function (k) { if (my === gen && bs === b0) { bs.kcheck = k; paint(); fromKinTry(); } return bs; });
+      return verifyKintai(ym, b0).then(function (k) { if (my === gen && bs === b0) { bs.kcheck = k; paint(); autoTry(); } return bs; });
     }, function (e) {
       if (my !== gen) return null;
       sync('');
@@ -2627,6 +2645,7 @@
     if (TABS.indexOf(t) < 0 || (t === 'settings' && !isAdmin())) t = 'run';
     if (t !== tab) fromKin = null;   /* 来た印はタブを変えたら使わない（2026-11-26） */
     tab = t; lsSet(LS_TAB, t); paint();
+    if (t === 'run') autoTry();   /* ほかのタブで開いていた時は、今月の給与へ切り替えた時に判定する（2026-11-26） */
     var b = document.querySelector('.tabs [data-tab="' + t + '"]'); if (b && document.activeElement && document.activeElement.closest && document.activeElement.closest('.tabs')) b.focus();
   }
   function setYm(nv) {

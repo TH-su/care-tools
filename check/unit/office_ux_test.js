@@ -80,7 +80,13 @@ const hfr = fn(PJ, 'hopFrom'), fk = fn(PJ, 'fromKinTry');
 t('給与: from は起動の時に hopYm より前に1回だけ読み、kintai と完全一致・ym が形どおりの時だけ印（その月分）にする', /hopFrom\(\); if \(fromKin\) tab = 'run';[^\n]*\n\s*ym = hopYm\(\) \|\| todayYm\(\);/.test(PJ) && /if \(q\.get\('from'\) === 'kintai' && isYm\(y\)\) fromKin = y;/.test(hfr) && (PJ.match(/hopFrom\(\)/g) || []).length === 2);
 t('給与: from だけの URL からも from を外す（ym があれば hopYm が外す）', /if \(!q\.has\('ym'\)\) \{ try \{ history\.replaceState\(null, '', location\.pathname \+ location\.hash\); \} catch \(_\) \{\} \}/.test(hfr));
 t('給与: 印は端末に残さない（hopFrom・fromKinTry で localStorage・sessionStorage を使わない）・payroll_tab を書かない', !/Storage|lsSet/.test(hfr + fk));
-t('給与: 判定は締めた勤怠の確かめ（kcheck）が決まった後に1回・最初に通った時に必ず印を消す', /bs\.kcheck = k; paint\(\); fromKinTry\(\);/.test(PJ) && /if \(!fromKin\) return;\s*var y = fromKin; fromKin = null;/.test(fk));
+/* 2026-11-26: 確かめの後は autoTry（印なしでも締めた月分は自動で計算する・本人指示）を呼び、印がある時は中から今の fromKinTry を呼ぶ */
+t('給与: 判定は締めた勤怠の確かめ（kcheck）が決まった後に1回・最初に通った時に必ず印を消す', /bs\.kcheck = k; paint\(\); autoTry\(\);/.test(PJ) && /if \(fromKin\) \{ fromKinTry\(\);/.test(fn(PJ, 'autoTry')) && /if \(!fromKin\) return;\s*var y = fromKin; fromKin = null;/.test(fk));
+const at = fn(PJ, 'autoTry');
+t('給与（開いた時の自動の計算）: 今月の給与のタブ・画面が開いている・覆いと鍵の外・同じ読み込みで1回・確かめが決まった後だけ判定する', /if \(!bs \|\| view !== 'app' \|\| masked \|\| tab !== 'run' \|\| autoBs === bs\) return;\s*if \(!bs\.kcheck \|\| bs\.kcheck\.state === 'checking'\) return;/.test(at));
+t('給与（開いた時の自動の計算）: 締めてある・確かめが合う・確定していない・計算も未保存も無い・部品がある・保存した物（下書き・確定）が無い時だけ。stale の計算し直しと理由の帯は印の時だけ', /if \(!bs\.kintai\.locked \|\| frozen\(\) \|\| kintaiBlock\(\) \|\| calc \|\| isDirty\(\) \|\| !C\(\) \|\| status\(\)\) return;/.test(at) && !/kinBand = \{ cls: 'warn'/.test(at));
+t('給与（開いた時の自動の計算）: 「計算する」と同じ道（doCompute(true)）だけ・autoCalcRef に控える・保存と確定はしない・帯の文', /doCompute\(true\);\s*if \(!calc\) return;\s*autoCalcRef = calc;/.test(at) && !/saveDraft|openConfirm|confirmGo|payroll_run_/.test(at) && /'締めた勤怠 ' \+ n \+ ' 人分を読み込み、計算しました（警告 ' \+ m \+ ' 件）。確かめてから「下書き保存」を押してください。'/.test(at));
+t('給与（開いた時の自動の計算）: 今月の給与のタブへ切り替えた時にも判定する', /if \(t === 'run'\) autoTry\(\);/.test(fn(PJ, 'setTab')));
 t('給与: 月分を変える・タブを変えると印を捨てる', /fromKin = null; warnOnly = false;/.test(fn(PJ, 'setYm')) && /if \(t !== tab\) fromKin = null;/.test(fn(PJ, 'setTab')));
 t('給与: 未締め・確定済み・下書き（stale でない）では計算せず帯だけ・勤怠の確かめが合わない時は帯を足さない・計算や未保存の編集がある時は何もしない',
   /if \(!bs\.kintai\.locked\) \{ kinBand = \{ cls: 'warn', text: '勤怠がまだ締められていないため、自動では計算していません。' \}/.test(fk) && /if \(frozen\(\)\) \{ kinBand = \{ cls: 'warn', text: 'この月分は確定済みです（計算し直していません）。' \}/.test(fk) &&
