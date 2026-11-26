@@ -69,6 +69,7 @@
     if (status() === 'draft' && !(bs.run && bs.run.stale)) { kinBand = { cls: 'warn', text: '保存した下書きがあります（計算し直していません）。' }; paint(); return; }
     doCompute(true);
     if (!calc) return;
+    if (!calc.items.length) { autoUndo(); return; }   /* 計算できる人が0人の時は結果を残さず帯も出さない（反証レビュー 2026-11-26） */
     autoCalcRef = calc;
     var n = calc.items.length, m = totals(calc.items).warn;
     kinBand = { cls: 'ok', text: '勤怠管理から ' + n + ' 人分の締めた勤怠を受け取り、計算しました（警告 ' + m + ' 件）。確かめてから「下書き保存」を押してください。' };
@@ -87,11 +88,13 @@
     if (!bs.kintai.locked || frozen() || kintaiBlock() || calc || isDirty() || !C() || status()) return;
     doCompute(true);
     if (!calc) return;
+    if (!calc.items.length) { autoUndo(); return; }   /* 計算できる人が0人の時は結果を残さず帯も出さない（反証レビュー 2026-11-26） */
     autoCalcRef = calc;
     var n = calc.items.length, m = totals(calc.items).warn;
     kinBand = { cls: 'ok', text: '締めた勤怠 ' + n + ' 人分を読み込み、計算しました（警告 ' + m + ' 件）。確かめてから「下書き保存」を押してください。' };
     paint();
   }
+  function autoUndo() { calc = null; dirty = false; autoCalcRef = null; kinBand = null; paint(); }
   function kinBandHtml() { return kinBand ? '<div class="band ' + esc(kinBand.cls) + ' kin-band" role="status">' + esc(kinBand.text) + '</div>' : ''; }
   /* 今月の給与の主ボタン（2026-11-26）: 塗り（pri）は次に押す1つだけ。文言・data-act・並び・押せる条件は変えない */
   function nextAct() {
@@ -452,6 +455,7 @@
   /* ── 読み込み ── */
   function load(keepCalc) {
     var my = ++gen;
+    if (keepCalc && calc && autoCalcRef && calc === autoCalcRef) keepCalc = false;   /* 自動で計算しただけの結果は読み直しで持ち越さない（その間に別の人が保存した下書きを古い計算で上書きしないため・読み直した後は autoTry が判定し直す・反証レビュー 2026-11-26） */
     kinBand = null;   /* 受け取りの帯は読み直す・保存する・鍵の後・月分を変えた時に消す（2026-11-26） */
     sync('読み込んでいます…');
     if (!bs) paint();
@@ -774,7 +778,8 @@
     if (!list.length) return '<div class="cd empty">この月分の明細はまだありません。「今月の給与」で計算してください。<p class="no-print"><button type="button" class="btn pri" data-tab="run">今月の給与を開く</button></p></div>';
     if (!slipSid || !list.some(function (it) { return it.staff_id === slipSid; })) slipSid = list[0].staff_id;
     var cur = list.filter(function (it) { return it.staff_id === slipSid; })[0];
-    var h = '<div class="cd"><h2>給与明細（' + esc(periodText()) + '）</h2>';
+    var h = (dirty && calc ? '<div class="band warn no-print" role="status">この明細は、まだ保存していない計算の数字です。「今月の給与」で下書き保存をしてから印刷・配布してください。</div>' : '') +   /* 反証レビュー 2026-11-26・文は仮置き */
+      '<div class="cd"><h2>給与明細（' + esc(periodText()) + '）</h2>';
     if (!frozen()) h += '<div class="band warn">⚠ まだ確定していません。紙にも「下書き（確定前）」と出ます。</div>';
     h += '<div class="row"><label for="s-who">職員</label><select id="s-who">' + list.map(function (it) { return '<option value="' + esc(it.staff_id) + '"' + (it.staff_id === slipSid ? ' selected' : '') + '>' + esc(it.name) + '</option>'; }).join('') + '</select>' +
       '<button type="button" class="btn" data-act="print-one">この人の明細を印刷</button><button type="button" class="btn pri" data-act="print-all">全員分を印刷（' + esc(list.length) + '枚）</button></div>' +

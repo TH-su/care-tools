@@ -1266,7 +1266,8 @@ console.log('\n— 7. 賞与のタブ —');
     await mk(j1.page);
     t('(j) 覆いの間は金額も帯も出さない', !(await band(j1.page)) && !/\d{2,3},\d{3}/.test(await j1.page.textContent('#p-main')));
     await um(j1.page);
-    t('(j) 表示し直した後は計算を残し（10人）、計算し直さない（帯は消え・トーストなし）', (await j1.page.locator('details.it').count()) === 10 && !(await band(j1.page)) && !/人分を計算しました/.test(await toastTxt(j1.page)) && JSON.stringify(await priAct(j1.page)) === '["save"]');
+    /* 反証レビュー（2026-11-26）で変えた: 自動で計算しただけの結果は読み直しで持ち越さず、保存した物が無ければもう一度自動で計算する */
+    t('(j) 表示し直すと、自動で計算しただけの結果は持ち越さず、保存した物が無いのでもう一度自動で計算する（印なしの帯・トーストなし）', (await j1.page.locator('details.it').count()) === 10 && PLAIN.test(((await band(j1.page)) || {}).text || '') && !/人分を計算しました/.test(await toastTxt(j1.page)) && JSON.stringify(await priAct(j1.page)) === '["save"]');
     await j1.ctx.close();
     const j2 = await open({ tab: 'slip', start: 'none' });
     await waitRun(j2.page);
@@ -1275,6 +1276,55 @@ console.log('\n— 7. 賞与のタブ —');
     await j2.page.waitForSelector('#p-main .kin-band', { timeout: 10000 });
     t('(j) 明細のタブで覆い→表示し直し→今月の給与へで1回だけ計算する', PLAIN.test((await band(j2.page)).text) && (await j2.page.locator('details.it').count()) === 10);
     await j2.ctx.close();
+    /* 反証レビュー（2026-11-26・中）: 自動の計算の後に別のタブ（別の人）が調整つきの下書きを保存 → 覆いから戻ると、保存した下書きを出す（古い自動の計算で上書きしない） */
+    const r1 = await open({ tab: 'run', start: 'none' });
+    await waitRun(r1.page); await r1.page.waitForSelector('#p-main .kin-band', { timeout: 10000 });
+    const pB = await r1.ctx.newPage(); await pB.clock.setFixedTime(CLOCK);
+    await pB.goto(srv.url + '/payroll.html'); await waitRun(pB); await pB.waitForSelector('#p-main .kin-band', { timeout: 10000 });
+    await pB.click('details.it[data-sid="s-01"] > summary'); await pB.waitForSelector('details.it[data-sid="s-01"] [data-act="adj"]');
+    await pB.click('details.it[data-sid="s-01"] [data-act="adj"]');
+    await pB.fill('#a-name', '見本の立替B'); await pB.fill('#a-amt', '4000'); await pB.fill('#a-reason', '見本の理由B');
+    await pB.click('[data-act="adj-go"]'); await pB.waitForTimeout(300);
+    await pB.click('[data-act="save"]');
+    await pB.waitForFunction(() => { const x = document.querySelector('[data-act="confirm"]'); return x && !x.disabled; }, null, { timeout: 10000 });
+    await pB.close();
+    const nSave1 = saveCalls(r1);
+    await mk(r1.page); await um(r1.page);
+    await r1.page.click('details.it[data-sid="s-01"] > summary'); await r1.page.waitForTimeout(300);
+    t('(反証 i) 別の人が保存した下書きがある時は、覆いから戻ると保存した下書き（調整が残る・状態は下書き・塗りは確定する・緑の帯なし・下書き保存は押せない）', /見本の立替B/.test(await r1.page.textContent('details.it[data-sid="s-01"]')) && /下書き/.test(await r1.page.textContent('#p-main .tag.warn')) && JSON.stringify(await priAct(r1.page)) === '["confirm"]' && !(await band(r1.page)) && await r1.page.isDisabled('[data-act="save"]') && saveCalls(r1) === nSave1);
+    await r1.ctx.close();
+    /* (反証 iii) 人が「計算する」を押した後は、覆いから戻っても今までどおり計算を残す（計算し直さない・帯なし） */
+    const r3 = await open({ tab: 'run', start: 'none' });
+    await waitRun(r3.page); await r3.page.waitForSelector('#p-main .kin-band', { timeout: 10000 });
+    await r3.page.click('[data-act="compute"]'); await r3.page.waitForTimeout(300);
+    await r3.page.click('details.it[data-sid="s-01"] [data-act="adj"]').catch(async () => { await r3.page.click('details.it[data-sid="s-01"] > summary'); await r3.page.click('details.it[data-sid="s-01"] [data-act="adj"]'); });
+    await r3.page.fill('#a-name', '見本の立替C'); await r3.page.fill('#a-amt', '2000'); await r3.page.fill('#a-reason', '見本の理由C');
+    await r3.page.click('[data-act="adj-go"]'); await r3.page.waitForTimeout(300);
+    await mk(r3.page); await um(r3.page);
+    t('(反証 iii) 人が計算し・調整を足した後は、覆いから戻っても計算と調整を残す（計算し直さない・帯なし・塗りは下書き保存）', /見本の立替C/.test(await r3.page.textContent('#p-main')) && !(await band(r3.page)) && JSON.stringify(await priAct(r3.page)) === '["save"]');
+    await r3.ctx.close();
+    /* 反証レビュー（小）: 計算できる人が0人の月分は、自動の計算の結果を残さず帯も出さない（印なし・印あり） */
+    for (const pth of ['payroll.html', 'payroll.html?ym=2026-11&from=kintai']) {
+      const z = await open({ tab: 'run', start: 'none', noProfiles: true, path: pth });
+      await waitRun(z.page); await z.page.waitForTimeout(500);
+      t('(反証 0人) ' + (/from/.test(pth) ? '印あり' : '印なし') + ': 計算できる人が0人なら帯なし・段は「計算 次はここ」・塗りは「計算する」・まだ計算していません', !(await band(z.page)) && await steps(z.page) === 'dctt' && JSON.stringify(await priAct(z.page)) === '["compute"]' && /まだ計算していません/.test(await z.page.textContent('#p-main')), [await steps(z.page), await priAct(z.page)]);
+      await z.ctx.close();
+    }
+    /* 反証レビュー（小）: 保存していない計算を出している間は、給与明細のタブに「まだ保存していない計算の数字」の帯（紙に出さない） */
+    const sb = await open({ tab: 'run', start: 'none' });
+    await waitRun(sb.page); await sb.page.waitForSelector('#p-main .kin-band', { timeout: 10000 });
+    await sb.page.click('.tabs [data-tab="slip"]');
+    const slipBand = await sb.page.evaluate(() => { const b = Array.from(document.querySelectorAll('#p-main .band')).find((x) => /まだ保存していない計算の数字/.test(x.textContent)); return b ? { cls: b.className, role: b.getAttribute('role'), text: b.textContent } : null; });
+    t('(反証 明細) 自動の計算の直後は、給与明細のタブに「まだ保存していない計算」の帯（warn・role=status・紙に出さない）', !!slipBand && /band warn/.test(slipBand.cls) && /no-print/.test(slipBand.cls) && slipBand.role === 'status' && slipBand.text === 'この明細は、まだ保存していない計算の数字です。「今月の給与」で下書き保存をしてから印刷・配布してください。', slipBand);
+    await sb.page.emulateMedia({ media: 'print' });
+    t('(反証 明細) 紙（印刷の見え方）には帯が出ない', await sb.page.evaluate(() => { const b = Array.from(document.querySelectorAll('#p-main .band')).find((x) => /まだ保存していない計算の数字/.test(x.textContent)); return !b || !b.getClientRects().length || getComputedStyle(b).display === 'none' || !b.offsetParent; }));
+    await sb.page.emulateMedia({ media: 'screen' });
+    await sb.page.click('.tabs [data-tab="run"]');
+    await sb.page.click('[data-act="save"]');
+    await sb.page.waitForFunction(() => { const x = document.querySelector('[data-act="confirm"]'); return x && !x.disabled; }, null, { timeout: 10000 });
+    await sb.page.click('.tabs [data-tab="slip"]');
+    t('(反証 明細) 下書き保存の後は帯を出さない', !(await sb.page.evaluate(() => /まだ保存していない計算の数字/.test(document.getElementById('p-main').textContent))));
+    await sb.ctx.close();
   }
   /* 本番と同じく暗証番号の画面を通る: 鍵を開けるまでは計算せず、開けた後に1回だけ計算する。鍵をかけて開け直しても計算し直さず、帯は消える */
   {
@@ -1301,7 +1351,8 @@ console.log('\n— 7. 賞与のタブ —');
     await k.page.click('[data-act="pin-open"]');
     await waitRun(k.page);
     await k.page.waitForTimeout(300);
-    t('鍵: かけて開け直すと帯は消え、計算は残る（計算し直さない・保存と確定の関数を呼ばない）', !(await band(k.page)) && (await k.page.locator('details.it').count()) === 10 && JSON.stringify(await priAct(k.page)) === '["save"]' && saveCalls(k) === 0, pinCalls);
+    /* 反証レビュー（2026-11-26）で変えた: 自動の計算は開け直しで持ち越さず、保存した物が無いので印なしの自動の計算をもう一度（勤怠管理から受け取った帯は二度出ない） */
+    t('鍵: かけて開け直すと、自動の計算は持ち越さず印なしでもう一度計算する（受け取りの帯は出ない・保存と確定の関数を呼ばない）', /^締めた勤怠 10 人分を読み込み/.test(((await band(k.page)) || {}).text || '') && (await k.page.locator('details.it').count()) === 10 && JSON.stringify(await priAct(k.page)) === '["save"]' && saveCalls(k) === 0, pinCalls);
     t('鍵: 画面のエラー 0', k.errors.length === 0, k.errors);
     await k.ctx.close();
     /* (i) 印なしでも鍵の画面の間は計算せず、開けた後に1回だけ */
@@ -1315,7 +1366,7 @@ console.log('\n— 7. 賞与のタブ —');
     await k2.page.click('#p-lock'); await k2.page.waitForSelector('#p-pin', { timeout: 10000 });
     await k2.page.fill('#p-pin', '2468'); await k2.page.click('[data-act="pin-open"]');
     await waitRun(k2.page); await k2.page.waitForTimeout(300);
-    t('(i) 印なし: 鍵をかけて開け直しても計算し直さない（帯は消え・計算は残る・保存と確定は呼ばない）', !(await band(k2.page)) && (await k2.page.locator('details.it').count()) === 10 && saveCalls(k2) === 0);
+    t('(i) 印なし: 鍵をかけて開け直すと、自動の計算は持ち越さずもう一度計算する（保存と確定は呼ばない）', /^締めた勤怠 10 人分を読み込み/.test(((await band(k2.page)) || {}).text || '') && (await k2.page.locator('details.it').count()) === 10 && saveCalls(k2) === 0);
     await k2.ctx.close();
   }
   /* 幅320・390・768・1280 と文字200%（ui-check と同じ見方: 根の字の大きさを 200% にする）で帯がはみ出さない */
