@@ -169,7 +169,8 @@ const pend = [];
   }));
   t('確定を止める警告に ext_missing・meeting_src・meeting_unset を入れる（BLOCK_WARN_SCREEN＝画面だけで止める）', /var BLOCK_WARN_SCREEN = \{ ext_missing: 1, meeting_src: 1, meeting_unset: 1 \};/.test(J) && /var BLOCK_WARN = \{[^}]*\bext_missing: 1, meeting_src: 1, meeting_unset: 1 \};/.test(J));
   t('meeting_unset: 控えの def.meetingOt が無く、時間の補助項目の合計（t:）が0でない人', /if \(a && a\.extNoMeet && Object\.keys\(obj\(a\.ext\)\)\.some\(function \(k\) \{ return \/\^t:\/\.test\(k\) && a\.ext\[k\] > 0; \}\)\) it\.warnings = arr\(it\.warnings\)\.concat\(\[\{ code: 'meeting_unset'/.test(J));
-  const ca = sl(J, '  function computeAll()', '  function doCompute()');
+  /* ★main の締めて給与へ渡す（#690・2026-11-26）で doCompute に引数 auto が付いたので、切り出しの終わりの印を引数に頼らない形にした（確かめる中身は同じ） */
+  const ca = sl(J, '  function computeAll()', '  function doCompute(');
   t('計算: 印のある月分は警告 ext_missing（文は仕様どおり）・明細の勤怠の欄に「うち社内会議」（表示だけ・額 0）', /if \(a && bs\.kcheck && bs\.kcheck\.extMissing\) it\.warnings = arr\(it\.warnings\)\.concat\(\[\{ code: 'ext_missing', msg: 'この月分の勤怠の控えに補助項目がありません。勤怠の締めを外して締め直してください' \}\]\);/.test(ca)
     && /\{ sec: 'att', code: 'meetingMin', name: 'うち社内会議（分）', qty: a\.meetingMin, unit: null, amount: 0/.test(ca));
   t('二重払いの守り: 時間外に足す会議の項目（t:<code>）を回数×単価の手当の元に選んだ人は meeting_src（文は仮置き）', /var mSrc = meetingSrc\(\);/.test(ca) && /x\.count_source === mSrc && bs\.allowances\.some\(function \(d\) \{ return d\.code === x\.code && d\.calc === 'count'; \}\)/.test(ca) && /code: 'meeting_src', msg: '社内会議の時間は時間外に足しているので、手当の回数の元に選べません'/.test(ca));

@@ -38,6 +38,7 @@ async function open(opt = {}) {
   const outside = [];
   await ctx.route('**/*', (route) => { const u = new URL(route.request().url()); if (u.origin === srv.url || u.origin === FX.URL) return route.fallback(); outside.push(u.origin); return route.abort(); });
   for (const r of routes) await ctx.route(r.match, r.handle);
+  for (const r of (opt.extraRoutes || [])) await ctx.route(r.match, r.handle);   /* 場面だけの口（後から足した口が先に効く・2026-11-26 暗証番号の画面を通る場面） */
   await ctx.addInitScript((st) => { for (const k of Object.keys(st)) localStorage.setItem(k, st[k]); }, FX.storageFor(opt));
   const page = await ctx.newPage();
   /* 時計は固定の日（月分は 2026-11＝材料の月分）。タイマーは動かす */
@@ -1036,6 +1037,200 @@ console.log('\n— 7. 賞与のタブ —');
   t('iPhone の幅: 頭に「勤怠管理へ」が入っても横はみ出し 0', await ph.page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth) <= 0);
   await shot(ph.page, 'payroll.hop.ph', false);
   await ph.ctx.close();
+}
+
+/* ── 勤怠管理から締めた勤怠を受け取る（?from=kintai・2026-11-26 本人指示）: 1回だけ自動で計算し、保存・確定は人が押す ── */
+{
+  console.log('\n— 勤怠管理から受け取る（from=kintai） —');
+  const waitRun = async (pg) => { await waitApp(pg); await pg.waitForFunction(() => !/確かめています/.test(document.getElementById('p-main').textContent), null, { timeout: 15000 }).catch(() => {}); await settle(pg); };
+  const saveCalls = (o) => o.routes.calls.filter((c) => /^payroll_run_(save|confirm)$/.test(c.name)).length;
+  const band = (pg) => pg.evaluate(() => { const b = document.querySelector('#p-main .kin-band'); return b ? { cls: b.className, role: b.getAttribute('role'), text: b.textContent } : null; });
+  const priAct = (pg) => pg.evaluate(() => Array.from(document.querySelectorAll('#p-main [data-act="compute"],#p-main [data-act="save"],#p-main [data-act="confirm"]')).filter((b) => b.classList.contains('pri')).map((b) => b.getAttribute('data-act')));
+  /* (a) 締めた月分・下書きなし・端末に残したタブは「給与明細」でも、今月の給与で開いて自動で計算する */
+  const a = await open({ tab: 'slip', start: 'none', path: 'payroll.html?ym=2026-11&from=kintai' });
+  await waitRun(a.page);
+  await a.page.waitForSelector('#p-main .kin-band', { timeout: 10000 });
+  const ba = await band(a.page);
+  t('(a) 今月の給与のタブで開く（端末のタブより先）・端末のタブは書き換えない', await a.page.evaluate(() => document.querySelector('.tabs [aria-selected="true"]').getAttribute('data-tab')) === 'run' && await a.page.evaluate(() => localStorage.getItem('payroll_tab')) === 'slip');
+  t('(a) 自動で計算して10人分の行が出る', (await a.page.locator('details.it').count()) === 10);
+  t('(a) 受け取りの帯（ok・role=status）が手順の段階のすぐ下に「10 人分…計算しました（警告 M 件）」', !!ba && /band ok/.test(ba.cls) && ba.role === 'status' && /^勤怠管理から 10 人分の締めた勤怠を受け取り、計算しました（警告 \d+ 件）。確かめてから「下書き保存」を押してください。$/.test(ba.text)
+    && await a.page.evaluate(() => { const b = document.querySelector('#p-main .kin-band'); return !!b && b.previousElementSibling && b.previousElementSibling.matches('ol.su-steps'); }), ba);
+  t('(a) 主ボタン（塗り）は「下書き保存」の1つだけ', JSON.stringify(await priAct(a.page)) === '["save"]', await priAct(a.page));
+  t('(a) URL に from も ym も残さない', await a.page.evaluate(() => location.search) === '');
+  t('(f) 自動で下書き保存・確定の関数を呼ばない', saveCalls(a) === 0);
+  await shot(a.page, 'payroll.from-kintai.pc', false);
+  /* 警告のある人だけ（B2） */
+  const wn = await a.page.evaluate(() => document.querySelectorAll('details.it .tag.warn').length);
+  const wb = a.page.locator('[data-act="warn-only"]');
+  t('警告のある人だけ: 件数つきの切り替え（aria-pressed=false）が合計の帯と見出しの行の間に出る', wn > 0 && (await wb.count()) === 1 && await wb.getAttribute('aria-pressed') === 'false' && (await wb.textContent()) === '警告のある人だけ（' + wn + '）'
+    && await a.page.evaluate(() => { const r = document.querySelector('.wfilt'); return !!r && r.previousElementSibling.matches('.sumbar') && r.nextElementSibling.matches('.ihd'); }), wn);
+  await wb.click();
+  t('警告のある人だけ: 押すと警告のある人だけになり aria-pressed=true・合計の帯は全員分のまま', (await a.page.locator('details.it').count()) === wn && await a.page.getAttribute('[data-act="warn-only"]', 'aria-pressed') === 'true' && /10 人/.test(await a.page.textContent('.sumbar')));
+  await a.page.click('[data-act="warn-only"]');
+  t('警告のある人だけ: もう一度押すと全員に戻る', (await a.page.locator('details.it').count()) === 10);
+  /* 下書き保存 → 帯が消え、主ボタンは「確定する」 */
+  await a.page.click('[data-act="save"]');
+  await a.page.waitForFunction(() => { const b = document.querySelector('[data-act="confirm"]'); return b && !b.disabled; }, null, { timeout: 10000 });
+  await settle(a.page);
+  t('下書き保存の後: 受け取りの帯は消え、主ボタンは「確定する」', !(await band(a.page)) && JSON.stringify(await priAct(a.page)) === '["confirm"]', await priAct(a.page));
+  await shot(a.page, 'payroll.from-kintai-saved.pc', false);
+  t('(a) 画面のエラー 0', a.errors.length === 0, a.errors);
+  await a.ctx.close();
+  /* (b) 自動で計算した後に読み込み直す: 自動では計算しない（確かめの窓が出ても受けて進む） */
+  const b = await open({ tab: 'run', start: 'none', path: 'payroll.html?ym=2026-11&from=kintai' });
+  await waitRun(b.page);
+  await b.page.waitForSelector('#p-main .kin-band', { timeout: 10000 });
+  b.page.on('dialog', (d) => d.accept().catch(() => {}));
+  await b.page.reload();
+  await waitRun(b.page);
+  t('(b) 読み込み直しても自動では計算しない（帯なし・行なし）・URL に from が無い', !(await band(b.page)) && (await b.page.locator('details.it').count()) === 0 && await b.page.evaluate(() => location.search) === '');
+  t('(b) 計算する前は主ボタンが「計算する」', JSON.stringify(await priAct(b.page)) === '["compute"]', await priAct(b.page));
+  await b.ctx.close();
+  /* (c) 確定済みの月分 */
+  const c = await open({ tab: 'run', start: 'confirmed', path: 'payroll.html?ym=2026-11&from=kintai' });
+  await waitRun(c.page);
+  await c.page.waitForSelector('#p-main .kin-band', { timeout: 10000 });
+  const bc = await band(c.page);
+  t('(c) 確定済みの月分では計算せず「確定済み」の帯（warn）', !!bc && /band warn/.test(bc.cls) && bc.text === 'この月分は確定済みです（計算し直していません）。' && saveCalls(c) === 0, bc);
+  await shot(c.page, 'payroll.from-kintai-confirmed.pc', false);
+  await c.ctx.close();
+  /* (d) from の値が違う */
+  const d = await open({ tab: 'run', start: 'none', path: 'payroll.html?ym=2026-11&from=xyz' });
+  await waitRun(d.page);
+  await d.page.waitForTimeout(300);
+  t('(d) from=xyz では何も起きない（計算しない・帯なし）・URL から消す', !(await band(d.page)) && (await d.page.locator('details.it').count()) === 0 && await d.page.evaluate(() => location.search) === '');
+  await d.ctx.close();
+  const d2 = await open({ tab: 'run', start: 'none', path: 'payroll.html?from=kintai' });
+  await waitRun(d2.page);
+  await d2.page.waitForTimeout(300);
+  t('(d) 月分の無い from=kintai では何も起きない・URL から from を消す', !(await band(d2.page)) && (await d2.page.locator('details.it').count()) === 0 && await d2.page.evaluate(() => location.search) === '');
+  await d2.ctx.close();
+  /* (e) 勤怠が未締め */
+  const e = await open({ tab: 'run', start: 'none', kintaiUnlocked: true, path: 'payroll.html?ym=2026-11&from=kintai' });
+  await waitRun(e.page);
+  await e.page.waitForSelector('#p-main .kin-band', { timeout: 10000 });
+  const be = await band(e.page);
+  t('(e) 未締めでは計算せず「まだ締められていない」の帯', !!be && /band warn/.test(be.cls) && be.text === '勤怠がまだ締められていないため、自動では計算していません。' && (await e.page.locator('details.it').count()) === 0 && saveCalls(e) === 0, be);
+  await e.ctx.close();
+  /* 下書きがあって stale でない */
+  const g = await open({ tab: 'run', start: 'none' });
+  await waitRun(g.page);
+  await g.page.click('[data-act="compute"]');
+  await g.page.click('[data-act="save"]');
+  await g.page.waitForFunction(() => { const x = document.querySelector('[data-act="confirm"]'); return x && !x.disabled; }, null, { timeout: 10000 });
+  await settle(g.page);
+  const nSave = saveCalls(g);
+  await g.page.goto(srv.url + '/payroll.html?ym=2026-11&from=kintai');
+  await waitRun(g.page);
+  await g.page.waitForSelector('#p-main .kin-band', { timeout: 10000 });
+  const bg = await band(g.page);
+  t('下書きがある月分では計算し直さず「保存した下書きがあります」の帯・主ボタンは「確定する」', !!bg && bg.text === '保存した下書きがあります（計算し直していません）。' && JSON.stringify(await priAct(g.page)) === '["confirm"]' && saveCalls(g) === nSave, [bg, await priAct(g.page)]);
+  await g.ctx.close();
+  /* 給与明細の空の状態から今月の給与へ */
+  const s = await open({ tab: 'slip', start: 'none' });
+  await waitRun(s.page);
+  t('給与明細の空の状態に「今月の給与を開く」', /この月分の明細はまだありません/.test(await s.page.textContent('#p-main .cd.empty')) && (await s.page.locator('#p-main .cd.empty [data-tab="run"]').count()) === 1);
+  await shot(s.page, 'payroll.slip-empty.pc', false);
+  await s.page.click('#p-main .cd.empty [data-tab="run"]');
+  t('「今月の給与を開く」で今月の給与のタブになる', await s.page.evaluate(() => document.querySelector('.tabs [aria-selected="true"]').getAttribute('data-tab')) === 'run');
+  await s.ctx.close();
+  /* 自動の計算の直後は緑の帯だけ（橙の帯・トーストなし）・自動の計算だけなら離れる時に止めない・人が計算すると今までどおり（2026-11-26 検品・反証レビュー） */
+  {
+    const m = await open({ tab: 'run', start: 'none', path: 'payroll.html?ym=2026-11&from=kintai' });
+    await waitRun(m.page);
+    await m.page.waitForSelector('#p-main .kin-band', { timeout: 10000 });
+    const st0 = await m.page.evaluate(() => ({ warnBand: Array.from(document.querySelectorAll('#p-main .band.warn')).some((b) => /計算した結果はまだ保存していません/.test(b.textContent)), toast: (document.getElementById('p-toast') || {}).textContent || '' }));
+    t('6. 自動の計算の直後: 橙の「まだ保存していません」の帯とトーストを出さない（緑の受け取りの帯だけ）', !st0.warnBand && !/人分を計算しました/.test(st0.toast), st0);
+    const dlgs = [];
+    m.page.on('dialog', (d) => { dlgs.push(d.type()); d.dismiss().catch(() => {}); });
+    await m.page.click('#p-next');
+    await m.page.waitForFunction(() => document.getElementById('p-ym').value === '2026-12', null, { timeout: 5000 }).catch(() => {});
+    t('8. 自動の計算だけなら月分を変えても確かめの窓を出さない', await m.page.inputValue('#p-ym') === '2026-12' && !(await m.page.$('dialog.sud-dlg[open]')));
+    await m.page.click('#p-prev');
+    await waitRun(m.page);
+    await m.page.click('#p-to-kin');
+    await m.page.waitForURL(/kintai\.html/, { timeout: 10000 }).catch(() => {});
+    t('8. 自動の計算だけなら「勤怠管理へ」で離れる時の確かめ（beforeunload）が出ない', /kintai\.html/.test(m.page.url()) && !dlgs.includes('beforeunload'), [m.page.url(), dlgs]);
+    await m.ctx.close();
+    const h = await open({ tab: 'run', start: 'none', path: 'payroll.html?ym=2026-11&from=kintai' });
+    await waitRun(h.page);
+    await h.page.waitForSelector('#p-main .kin-band', { timeout: 10000 });
+    await h.page.click('[data-act="compute"]');
+    await h.page.waitForTimeout(200);
+    const st1 = await h.page.evaluate(() => ({ band: !!document.querySelector('#p-main .kin-band'), warnBand: Array.from(document.querySelectorAll('#p-main .band.warn')).some((b) => /計算した結果はまだ保存していません/.test(b.textContent)), toast: (document.getElementById('p-toast') || {}).textContent || '' }));
+    t('7. 人が「計算する」を押すと受け取りの帯が消え、トーストと橙の帯は今までどおり出る', !st1.band && st1.warnBand && /10人分を計算しました/.test(st1.toast), st1);
+    const hd = [];
+    h.page.on('dialog', (d) => { hd.push(d.type()); d.dismiss().catch(() => {}); });
+    await h.page.click('#p-to-kin');
+    await h.page.waitForTimeout(1200);
+    t('8. 人が計算した後は今までどおり離れる時に確かめる（beforeunload で止まる）', hd.includes('beforeunload') && /payroll\.html/.test(h.page.url()), [hd, h.page.url()]);
+    await h.ctx.close();
+    /* 調整を足して計算し直すと受け取りの帯が消え、普通の未保存に戻る */
+    const a2 = await open({ tab: 'run', start: 'none', path: 'payroll.html?ym=2026-11&from=kintai' });
+    await waitRun(a2.page);
+    await a2.page.waitForSelector('#p-main .kin-band', { timeout: 10000 });
+    await a2.page.click('details.it[data-sid="s-01"] > summary');
+    await a2.page.waitForSelector('details.it[data-sid="s-01"] [data-act="adj"]');
+    await a2.page.click('details.it[data-sid="s-01"] [data-act="adj"]');
+    await a2.page.fill('#a-name', '見本の立替'); await a2.page.fill('#a-amt', '3000'); await a2.page.fill('#a-reason', '見本の理由');
+    await a2.page.click('[data-act="adj-go"]');
+    await a2.page.waitForTimeout(300);
+    t('7. 調整を足して計算し直すと受け取りの帯が消える', !(await a2.page.$('#p-main .kin-band')) && /見本の立替/.test(await a2.page.textContent('details.it[data-sid="s-01"]')));
+    await a2.ctx.close();
+    /* 印を使う前に月分を変えた時は走らない（締めた勤怠の確かめの答えを遅らせ、その間に次の月分へ） */
+    const slow = { match: FX.URL + '/rest/v1/rpc/kintai_month_get', handle: async (route) => { if (route.request().method() !== 'OPTIONS') await new Promise((r) => setTimeout(r, 2500)); return route.fallback(); } };
+    const y = await open({ tab: 'run', start: 'none', path: 'payroll.html?ym=2026-11&from=kintai', extraRoutes: [slow] });
+    await y.page.waitForFunction(() => !document.getElementById('p-app').hidden && /確かめています|2026年11月分/.test(document.getElementById('p-main').textContent), null, { timeout: 15000 });
+    t('（前提）締めた勤怠を確かめている間は、まだ計算していない', (await y.page.locator('details.it').count()) === 0 && !(await y.page.$('#p-main .kin-band')));
+    await y.page.click('#p-next');
+    await y.page.waitForTimeout(6000);
+    await settle(y.page);
+    t('印を使う前に月分を変えると、どの月分でも自動では計算しない（帯なし・行なし・トーストなし）', await y.page.inputValue('#p-ym') === '2026-12' && !(await y.page.$('#p-main .kin-band')) && (await y.page.locator('details.it').count()) === 0 && !/人分を計算しました/.test((await y.page.textContent('#p-toast').catch(() => '')) || ''));
+    await y.page.click('#p-prev');
+    await y.page.waitForTimeout(6000);
+    t('戻っても自動では計算しない（印は捨ててある）', await y.page.inputValue('#p-ym') === '2026-11' && !(await y.page.$('#p-main .kin-band')) && (await y.page.locator('details.it').count()) === 0);
+    await y.ctx.close();
+  }
+  /* 本番と同じく暗証番号の画面を通る: 鍵を開けるまでは計算せず、開けた後に1回だけ計算する。鍵をかけて開け直しても計算し直さず、帯は消える */
+  {
+    const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' };
+    const pinCalls = [];
+    const pinRoute = { match: /\/rest\/v1\/rpc\/payroll_pin_(status|unlock|touch|lock)$/, handle: (route) => {
+      const req = route.request();
+      if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+      const nm = /payroll_pin_([a-z]+)$/.exec(req.url())[1]; pinCalls.push(nm);
+      const body = nm === 'status' ? { set: true, admin: true, locked_until: null } : nm === 'unlock' ? { ok: true } : nm === 'touch' ? { unlocked: true } : { ok: true };
+      return route.fulfill({ status: 200, contentType: 'application/json', headers: cors, body: JSON.stringify(body) });
+    } };
+    const k = await open({ tab: 'slip', start: 'none', path: 'payroll.html?ym=2026-11&from=kintai', extraRoutes: [pinRoute] });
+    await k.page.waitForSelector('#p-pin', { timeout: 15000 });
+    t('鍵: 暗証番号の画面の間は計算しない（中身を出さない）・URL から from を外してある', await k.page.evaluate(() => document.getElementById('p-app').hidden) && !k.routes.calls.some((c) => c.name === 'payroll_bootstrap') && await k.page.evaluate(() => location.search) === '');
+    await k.page.fill('#p-pin', '2468');
+    await k.page.click('[data-act="pin-open"]');
+    await waitRun(k.page);
+    await k.page.waitForSelector('#p-main .kin-band', { timeout: 10000 });
+    t('鍵: 開けた後に1回だけ自動で計算し、受け取りの帯（今月の給与のタブ）', (await k.page.locator('details.it').count()) === 10 && /^勤怠管理から 10 人分/.test((await band(k.page) || {}).text || '') && await k.page.evaluate(() => document.querySelector('.tabs [aria-selected="true"]').getAttribute('data-tab')) === 'run');
+    await k.page.click('#p-lock');
+    await k.page.waitForSelector('#p-pin', { timeout: 10000 });
+    await k.page.fill('#p-pin', '2468');
+    await k.page.click('[data-act="pin-open"]');
+    await waitRun(k.page);
+    await k.page.waitForTimeout(300);
+    t('鍵: かけて開け直すと帯は消え、計算は残る（計算し直さない・保存と確定の関数を呼ばない）', !(await band(k.page)) && (await k.page.locator('details.it').count()) === 10 && JSON.stringify(await priAct(k.page)) === '["save"]' && saveCalls(k) === 0, pinCalls);
+    t('鍵: 画面のエラー 0', k.errors.length === 0, k.errors);
+    await k.ctx.close();
+  }
+  /* 幅320・390・768・1280 と文字200%（ui-check と同じ見方: 根の字の大きさを 200% にする）で帯がはみ出さない */
+  for (const [w, z] of [[320, 1], [390, 1], [768, 1], [1280, 1], [320, 2], [390, 2], [1280, 2]]) {
+    const q = await open({ tab: 'run', start: 'none', viewport: { width: w, height: 900 }, path: 'payroll.html?ym=2026-11&from=kintai' });
+    await waitRun(q.page);
+    await q.page.waitForSelector('#p-main .kin-band', { timeout: 10000 });
+    if (z !== 1) await q.page.evaluate(() => document.documentElement.style.setProperty('font-size', '200%', 'important'));
+    const ov = await q.page.evaluate(() => { const b = document.querySelector('#p-main .kin-band'); const r = b.getBoundingClientRect(); return { doc: document.documentElement.scrollWidth - window.innerWidth, right: r.right - window.innerWidth, fs: parseFloat(getComputedStyle(b).fontSize) }; });
+    t('受け取りの帯: 幅' + w + (z !== 1 ? '・文字' + (z * 100) + '%' : '') + ' で横はみ出し 0・字 15px 以上', ov.doc <= 0 && ov.right <= 0.5 && ov.fs >= 15, ov);
+    if (w === 390 && z === 1) await shot(q.page, 'payroll.from-kintai.ph', false);
+    await q.ctx.close();
+  }
 }
 
 await browser.close();
