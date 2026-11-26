@@ -43,6 +43,52 @@
     try { history.replaceState(null, '', location.pathname + location.hash); } catch (_) {}
     var y = q.get('ym'); return isYm(y) ? y : null;
   }
+  /* 勤怠管理の「締めて給与へ渡す」・締めた後のリンクから ?ym=YYYY-MM&from=kintai で来た印（2026-11-26）。
+     起動の時に1回だけ読む。from は 'kintai' と完全に同じ時だけ・ym は hopYm と同じ形の確かめを通った時だけ使い、印は「その月分」の文字1つをメモリにだけ持つ
+     （端末に残さない・鍵の画面を越えて残す）。from だけの URL からも from を外す（ym があれば hopYm が外す）。使った・使えないと決まった時に消す */
+  var fromKin = null, kinBand = null, warnOnly = false, autoCalcRef = null;   /* autoCalcRef: 自動で計算しただけの結果（人が何も変えていない間は離れる時の確かめに数えない） */
+  function hopFrom() {
+    var q = null; try { q = new URLSearchParams(location.search); } catch (_) { return; }
+    if (!q || !q.has('from')) return;
+    var y = q.get('ym');
+    if (q.get('from') === 'kintai' && isYm(y)) fromKin = y;
+    if (!q.has('ym')) { try { history.replaceState(null, '', location.pathname + location.hash); } catch (_) {} }
+  }
+  /* 印がある時に、画面が開き bootstrap と締めた勤怠の確かめ（kcheck）が決まった後で1回だけ判定する。最初に通った時に必ず印を消す。
+     自動で計算するのは: 勤怠が締めてある・kcheck が合う・確定していない・メモリに計算も未保存の編集も無い・計算の部品がある・下書きが無いか stale の時だけ。
+     下書き保存と確定は自動でしない（人が押す） */
+  function fromKinTry() {
+    if (!fromKin) return;
+    var y = fromKin; fromKin = null;
+    if (y !== ym || !bs || view !== 'app' || masked) return;
+    kinBand = null;
+    if (!bs.kintai.locked) { kinBand = { cls: 'warn', text: '勤怠がまだ締められていないため、自動では計算していません。' }; paint(); return; }
+    if (frozen()) { kinBand = { cls: 'warn', text: 'この月分は確定済みです（計算し直していません）。' }; paint(); return; }
+    if (kintaiBlock()) return;   /* 勤怠の確かめが合わない・読めない時は今の止めの文が出る */
+    if (calc || isDirty() || !C()) return;
+    if (status() === 'draft' && !(bs.run && bs.run.stale)) { kinBand = { cls: 'warn', text: '保存した下書きがあります（計算し直していません）。' }; paint(); return; }
+    doCompute(true);
+    if (!calc) return;
+    autoCalcRef = calc;
+    var n = calc.items.length, m = totals(calc.items).warn;
+    kinBand = { cls: 'ok', text: '勤怠管理から ' + n + ' 人分の締めた勤怠を受け取り、計算しました（警告 ' + m + ' 件）。確かめてから「下書き保存」を押してください。' };
+    paint();
+  }
+  function kinBandHtml() { return kinBand ? '<div class="band ' + esc(kinBand.cls) + ' kin-band" role="status">' + esc(kinBand.text) + '</div>' : ''; }
+  /* 今月の給与の主ボタン（2026-11-26）: 塗り（pri）は次に押す1つだけ。文言・data-act・並び・押せる条件は変えない */
+  function nextAct() {
+    if (calc && dirty && bs.kintai.locked) return 'save';
+    if (bs.run && bs.run.stale) return 'compute';
+    if (status() === 'draft' && !dirty) return 'confirm';
+    return 'compute';
+  }
+  /* 一覧の「警告のある人だけ」（2026-11-26・メモリだけ・月分を変えたら戻す）。警告が0件の時は出さず、絞りも効かせない */
+  function warnN(list) { return list.filter(function (it) { return arr(it.warnings).length > 0; }).length; }
+  function warnFilterHtml(list) {
+    var n = warnN(list);
+    if (!n) return '';
+    return '<div class="row wfilt"><button type="button" class="btn" data-act="warn-only" aria-pressed="' + (warnOnly ? 'true' : 'false') + '">警告のある人だけ（' + n + '）</button></div>';
+  }
   /* 頭の「勤怠管理へ」: 今見ている月分の「締めと出力」のタブで開く */
   function kintaiHref() { return 'kintai.html?ym=' + encodeURIComponent(ym || '') + '&tab=close'; }
   function paintHop() { var a = $('p-to-kin'); if (a) a.href = kintaiHref(); }
@@ -316,8 +362,9 @@
     });
     return out;
   }
-  function doCompute() {
+  function doCompute(auto) {
     if (frozen()) return;
+    if (!auto) { kinBand = null; autoCalcRef = null; }   /* 人が計算し直した・調整を変えた時は受け取りの帯を消し、普通の未保存に戻す（2026-11-26） */
     var kb = kintaiBlock(); if (kb) { say(kb); return; }
     if (!C()) { toast('計算の部品を読み込めませんでした。ページを読み込み直してください。'); return; }
     var list = computeAll();
@@ -325,7 +372,7 @@
     calc.fp = fingerprint();
     dirty = true; notice = null;
     paint();
-    toast(calc.items.length + '人分を計算しました。確かめてから「下書き保存」を押してください。');
+    if (!auto) toast(calc.items.length + '人分を計算しました。確かめてから「下書き保存」を押してください。');   /* 自動の時は受け取りの帯だけ */
   }
   function figures(list) { return arr(list).map(function (it) { return it.staff_id + ':' + num(it.gross) + ':' + num(it.deduct) + ':' + num(it.net); }).sort().join('|'); }
   function totals(list) {
@@ -387,6 +434,7 @@
   /* ── 読み込み ── */
   function load(keepCalc) {
     var my = ++gen;
+    kinBand = null;   /* 受け取りの帯は読み直す・保存する・鍵の後・月分を変えた時に消す（2026-11-26） */
     sync('読み込んでいます…');
     if (!bs) paint();
     return rpc('payroll_bootstrap', { p_ym: ym }).then(function (r) {
@@ -395,10 +443,10 @@
       bs = normBoot(r); loadErr = null;
       orderBs(); if (!hireRank) loadHire();   /* 職員の並びは勤怠と同じ入職順（読めるまでは職員ID の順） */
       bs.kcheck = { state: bs.kintai.locked ? 'checking' : 'skip', names: [] };
-      if (!keepCalc) { calc = null; adjEdits = {}; dirty = false; }
+      if (!keepCalc) { calc = null; adjEdits = {}; dirty = false; autoCalcRef = null; }
       sync(''); paint();
       var b0 = bs;
-      return verifyKintai(ym, b0).then(function (k) { if (my === gen && bs === b0) { bs.kcheck = k; paint(); } return bs; });
+      return verifyKintai(ym, b0).then(function (k) { if (my === gen && bs === b0) { bs.kcheck = k; paint(); fromKinTry(); } return bs; });
     }, function (e) {
       if (my !== gen) return null;
       sync('');
@@ -566,7 +614,7 @@
   function formState() { var s = []; Array.prototype.forEach.call($('p-dlg-b').querySelectorAll('input,select,textarea'), function (e) { s.push(e.type === 'checkbox' ? e.checked : e.value); }); return JSON.stringify(s); }
   function dlgDirty() { return !!(dlgCtx && dlgCtx.dirtyCheck && $('p-dlg').open && formState() !== dlgCtx.init); }
   function closeDlg() { var d = $('p-dlg'); try { d.close(); } catch (_) { d.removeAttribute('open'); } put($('p-dlg-b'), ''); put($('p-dlg-f'), ''); dlgCtx = null; }
-  function isDirty() { return dirty || dlgDirty() || !!importRows; }
+  function isDirty() { return (dirty && !(autoCalcRef && calc === autoCalcRef)) || dlgDirty() || !!importRows; }   /* 自動で計算しただけの間は未保存に数えない（下書き保存の押せる条件・帯は dirty のまま・2026-11-26） */
 
   /* ── 描く ── */
   function bandsHtml() {
@@ -612,7 +660,7 @@
     var st = flowSteps({ locked: bs.kintai.locked, hasCalc: !!calc, status: status(), dirty: dirty || !!(bs.run && bs.run.stale) });
     return '<ol class="su-steps" aria-label="給与の手順">' + st.map(function (x) {
       return '<li class="' + x.state + '"' + (x.state === 'cur' ? ' aria-current="step"' : '') + '>' + esc(x.name) + '<span class="su-st-s">' + (x.state === 'done' ? '済み' : x.state === 'cur' ? '次はここ' : 'まだ') + '</span></li>';
-    }).join('') + '</ol>';
+    }).join('') + '</ol>' + kinBandHtml();
   }
   function statusText() {
     var s = status(), r = bs.run;
@@ -652,18 +700,21 @@
     if (kb0) h += '<div class="band ng" role="alert">⚠ ' + esc(kb0) + '</div>';
     if (!c) h += '<div class="band ng" role="alert">計算の部品を読み込めませんでした。ページを読み込み直してください。</div>';
     if (YEU()) h += YEU().runBand(yeCtx());   /* 年末調整の精算を入れる（精算する月分だけ・2026-11-23） */
-    if (dirty && calc) h += '<div class="band warn">計算した結果はまだ保存していません。「下書き保存」を押すまで、ほかの人には見えません。</div>';
+    if (dirty && calc && !(kinBand && kinBand.cls === 'ok')) h += '<div class="band warn">計算した結果はまだ保存していません。「下書き保存」を押すまで、ほかの人には見えません。</div>';
     h += '<div class="row">';
     if (!frozen()) {
-      h += '<button type="button" class="btn pri" data-act="compute"' + (c ? '' : ' disabled') + '>計算する</button>';
-      h += '<button type="button" class="btn" data-act="save"' + (calc && dirty && bs.kintai.locked ? '' : ' disabled') + '>下書き保存</button>';
-      h += '<button type="button" class="btn" data-act="confirm"' + (status() === 'draft' && !dirty ? '' : ' disabled') + '>確定する</button>';
+      var na = nextAct(), pr = function (k) { return na === k ? 'btn pri' : 'btn'; };
+      h += '<button type="button" class="' + pr('compute') + '" data-act="compute"' + (c ? '' : ' disabled') + '>計算する</button>';
+      h += '<button type="button" class="' + pr('save') + '" data-act="save"' + (calc && dirty && bs.kintai.locked ? '' : ' disabled') + '>下書き保存</button>';
+      h += '<button type="button" class="' + pr('confirm') + '" data-act="confirm"' + (status() === 'draft' && !dirty ? '' : ' disabled') + '>確定する</button>';
     } else if (isAdmin()) h += '<button type="button" class="btn ng" data-act="unconfirm">確定を取り消す（管理者）</button>';
     h += '</div></div>';
     var list = items();
     if (!list.length) return h + '<div class="cd empty">' + (frozen() ? '確定した明細がありません。' : 'まだ計算していません。「計算する」を押してください。') + '</div>';
-    h += '<div class="cd">' + sumHtml(list) + '<div class="ihd" aria-hidden="true"><span>氏名</span><span>総支給</span><span>控除</span><span>差引</span><span>前月差</span><span>警告</span></div>';
+    var wOnly = warnOnly && warnN(list) > 0;
+    h += '<div class="cd">' + sumHtml(list) + warnFilterHtml(list) + '<div class="ihd" aria-hidden="true"><span>氏名</span><span>総支給</span><span>控除</span><span>差引</span><span>前月差</span><span>警告</span></div>';
     list.forEach(function (it) {
+      if (wOnly && !arr(it.warnings).length) return;   /* 警告のある人だけ（2026-11-26） */
       var pv = prevOf(it.staff_id), diff = pv ? num(it.net) - pv.net : null, w = arr(it.warnings);
       h += '<details class="it" data-sid="' + esc(it.staff_id) + '"' + (openSid === it.staff_id ? ' open' : '') + '><summary><span class="nm">' + esc(it.name) + '</span>' +
         '<span class="num" aria-label="総支給" data-l="総支給">' + esc(yen(it.gross)) + '</span><span class="num" aria-label="控除" data-l="控除">' + esc(yen(it.deduct)) + '</span><span class="num" aria-label="差引" data-l="差引"><b>' + esc(yen(it.net)) + '</b></span>' +
@@ -703,7 +754,7 @@
   }
   function slipTabHtml() {
     var list = items();
-    if (!list.length) return '<div class="cd empty">この月分の明細はまだありません。「今月の給与」で計算してください。</div>';
+    if (!list.length) return '<div class="cd empty">この月分の明細はまだありません。「今月の給与」で計算してください。<p class="no-print"><button type="button" class="btn pri" data-tab="run">今月の給与を開く</button></p></div>';
     if (!slipSid || !list.some(function (it) { return it.staff_id === slipSid; })) slipSid = list[0].staff_id;
     var cur = list.filter(function (it) { return it.staff_id === slipSid; })[0];
     var h = '<div class="cd"><h2>給与明細（' + esc(periodText()) + '）</h2>';
@@ -2456,7 +2507,7 @@
   }
   /* 鍵の画面。保存していない計算は画面のメモリに残す（番号が合えば続きから使える）。金額・明細・窓・印刷は消す */
   function showLock(msg) {
-    view = 'lock'; pinGen++; masked = false; maskGen++; closeDlg(); bs = null; importRows = null; printList = null; audit = null; members = null;
+    view = 'lock'; pinGen++; masked = false; maskGen++; closeDlg(); bs = null; kinBand = null; importRows = null; printList = null; audit = null; members = null;
     bb = null; bGen++; bLoading = false; bPrint = null;   /* 賞与の読んだ物も捨てる（入れた賞与額はメモリに残す・2026-11-23） */
     yePrint = null; yeReset(); stReset();   /* 年末調整の物も捨てる（2026-11-23） */
     pinMsg = msg || '';
@@ -2583,6 +2634,7 @@
   /* ── 操作 ── */
   function setTab(t) {
     if (TABS.indexOf(t) < 0 || (t === 'settings' && !isAdmin())) t = 'run';
+    if (t !== tab) fromKin = null;   /* 来た印はタブを変えたら使わない（2026-11-26） */
     tab = t; lsSet(LS_TAB, t); paint();
     var b = document.querySelector('.tabs [data-tab="' + t + '"]'); if (b && document.activeElement && document.activeElement.closest && document.activeElement.closest('.tabs')) b.focus();
   }
@@ -2593,6 +2645,7 @@
       ask('保存していない計算・調整があります。月分を変えると捨てます。よろしいですか？').then(function (ok) { if (ok) { dirty = false; adjEdits = {}; importRows = null; calc = null; setYm(nv); } });
       return;
     }
+    fromKin = null; warnOnly = false;   /* 来た印・警告の絞りは月分を変えたら捨てる（2026-11-26） */
     ym = nv; $('p-ym').value = nv; paintHop(); if (STU()) STU().onYm(); bs = null; calc = null; adjEdits = {}; dirty = false; openSid = null; slipSid = null; importRows = null; zcheck = null; notice = null; loadErr = null;
     load(false);
   }
@@ -2608,6 +2661,7 @@
       if (a === 'dlg-close') { if (busy) return; if (!dlgDirty()) closeDlg(); else { var c0 = dlgCtx; ask('入れた内容を捨てて閉じますか？').then(function (ok) { if (ok && dlgCtx === c0) closeDlg(); }); } }
       else if (a === 'reload') load(false);
       else if (a === 'compute') doCompute();
+      else if (a === 'warn-only') { warnOnly = !warnOnly; paint(); }
       else if (a === 'save') saveDraft(b);
       else if (a === 'confirm') openConfirm();
       else if (a === 'confirm-go') confirmGo(b);
@@ -2719,6 +2773,7 @@
         view = 'boot';
         $('p-app').hidden = true;
         var t = lsGet(LS_TAB); tab = TABS.indexOf(t) >= 0 && (t !== 'settings' || isAdmin()) ? t : 'run';
+        hopFrom(); if (fromKin) tab = 'run';   /* 勤怠管理から来た時は今月の給与のタブで開く（端末のタブより先・payroll_tab は書かない・2026-11-26） */
         ym = hopYm() || todayYm(); $('p-ym').value = ym; paintHop();   /* 勤怠管理から来た時はその月分（2026-11-25） */
         bind(); definePrint();
         try { if (window.SUPerf) window.SUPerf.ready(); } catch (_) {}
