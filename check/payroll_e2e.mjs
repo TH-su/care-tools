@@ -1383,6 +1383,31 @@ console.log('\n— 7. 賞与のタブ —');
     if (w <= 700) {
       const rows = await q.page.evaluate(() => { const all = Array.from(document.querySelectorAll('details.it')); window.scrollTo(0, all[0].getBoundingClientRect().top + window.scrollY); const H = window.innerHeight; return { fit: all.filter((d) => { const b = d.getBoundingClientRect(); return b.top >= -1 && b.bottom <= H + 1; }).length, h: Math.round(all[0].querySelector('summary').getBoundingClientRect().height), over: document.documentElement.scrollWidth - window.innerWidth, small: Array.from(document.querySelectorAll('details.it > summary .num')).some((e) => parseFloat(getComputedStyle(e).fontSize) < 15) }; });
       t('一覧（幅' + w + (z !== 1 ? '・文字200%' : '') + '）: 横はみ出し 0・押す所 44px 以上・字 15px 以上' + (w === 390 && z === 1 ? '・390×900 に 10人全部が入る（直す前は5人・行の高さ 148px）' : ''), rows.over <= 0 && rows.h >= 44 && !rows.small && (!(w === 390 && z === 1) || rows.fit === 10), rows);
+      if (w === 390) {
+        /* 2026-11-27: 2行目は行の幅を使って間を空ける（隣どうし 12px 以上）・7桁も小見出しと同じ行・1行目は氏名・差引（17px）・札が右端・長い氏名でも欠けない・390×844 に10人 */
+        const l2 = await q.page.evaluate(() => {
+          const all = Array.from(document.querySelectorAll('details.it')), top0 = all[0].getBoundingClientRect().top;
+          let minGap = 1e9; const wrapped = [];
+          all.forEach((d) => {
+            const s = d.querySelector('summary'), g = (l) => s.querySelector('.num[data-l="' + l + '"]').getBoundingClientRect();
+            const a = g('総支給'), b = g('控除'), c = g('前月差');
+            minGap = Math.min(minGap, b.left - a.right, c.left - b.right);
+            [a, b, c].forEach((r, i) => { if (r.height > 26) wrapped.push(i); });
+          });
+          const f = all[0].querySelector('summary'), fr = f.getBoundingClientRect(), r = (sel) => f.querySelector(sel).getBoundingClientRect();
+          const mid = (x) => (x.top + x.bottom) / 2, row1 = Math.abs(mid(r('.nm')) - mid(r('.num[data-l="差引"]'))) < 8 && Math.abs(mid(r('.tag')) - mid(r('.nm'))) < 8 && fr.right - r('.tag').right <= 6 && r('.num[data-l="差引"]').bottom < r('.num[data-l="総支給"]').top;
+          const pRight = fr.right - r('.num[data-l="前月差"]').right, gLeft = r('.num[data-l="総支給"]').left - fr.left;
+          const fit844 = all.filter((d) => d.getBoundingClientRect().bottom - top0 <= 844).length;
+          const hs = all.map((d) => d.querySelector('summary').getBoundingClientRect().height);
+          const s1 = all[1].querySelector('summary'); s1.querySelector('.nm').textContent = '見本見本見本見本見本';
+          const sr = s1.getBoundingClientRect(), nt = s1.querySelector('.num[data-l="差引"]').getBoundingClientRect(), tg = s1.querySelector('.tag').getBoundingClientRect();
+          const longOk = nt.right <= sr.right + 0.5 && tg.right <= sr.right + 0.5 && nt.right <= tg.left && nt.width > 40;
+          return { minGap: Math.round(minGap), wrapped: wrapped.length, row1, pRight: Math.round(pRight), gLeft: Math.round(gLeft), fit844, maxH: Math.round(Math.max(...hs)), netFs: getComputedStyle(f.querySelector('.num[data-l="差引"]')).fontSize, longOk, over: document.documentElement.scrollWidth - window.innerWidth };
+        });
+        t('一覧の2行目（幅390' + (z !== 1 ? '・文字200%' : '') + '）: 隣どうしの間 12px 以上・7桁の総支給と前月差も折れない・総支給は左・前月差は右端', l2.minGap >= 12 && l2.wrapped === 0 && l2.gLeft <= 4 && l2.pRight <= 4, l2);
+        t('一覧の1行目（幅390' + (z !== 1 ? '・文字200%' : '') + '）: 氏名・差引（17px）・警告の札が右端・全角10字の氏名でも差引と札が欠けない・横はみ出し 0', l2.row1 && l2.netFs === '17px' && l2.longOk && l2.over <= 0, l2);
+        t('一覧（幅390' + (z !== 1 ? '・文字200%' : '') + '）: 390×844 に10人が入る（1人 68px まで）', l2.fit844 === 10 && l2.maxH <= 68, l2);
+      }
     }
     if (w === 390 && z === 1) await shot(q.page, 'payroll.from-kintai.ph', false);
     await q.ctx.close();
