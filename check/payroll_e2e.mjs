@@ -1228,6 +1228,13 @@ console.log('\n— 7. 賞与のタブ —');
     if (z !== 1) await q.page.evaluate(() => document.documentElement.style.setProperty('font-size', '200%', 'important'));
     const ov = await q.page.evaluate(() => { const b = document.querySelector('#p-main .kin-band'); const r = b.getBoundingClientRect(); return { doc: document.documentElement.scrollWidth - window.innerWidth, right: r.right - window.innerWidth, fs: parseFloat(getComputedStyle(b).fontSize) }; });
     t('受け取りの帯: 幅' + w + (z !== 1 ? '・文字' + (z * 100) + '%' : '') + ' で横はみ出し 0・字 15px 以上', ov.doc <= 0 && ov.right <= 0.5 && ov.fs >= 15, ov);
+    const sv = await q.page.evaluate(() => Array.from(document.querySelectorAll('#p-main .su-steps li')).map((li) => { const x = li.querySelector('.su-st-s'); return { fs: parseFloat(getComputedStyle(li).fontSize), sub: !!x && getComputedStyle(x).display !== 'none' && x.getBoundingClientRect().width > 0, top: Math.round(li.getBoundingClientRect().top) }; }));
+    const vert = sv.length === 4 && sv.every((x, i) => i === 0 || x.top > sv[i - 1].top);
+    t('手順の段: 幅' + w + (z !== 1 ? '・文字200%' : '') + ' で4段とも名前と状態が読める（字 15px 以上）' + (w <= 420 ? '・縦に並ぶ' : ''), sv.length === 4 && sv.every((x) => x.fs >= 15 && x.sub) && (w > 420 || vert), sv);
+    if (w <= 700) {
+      const rows = await q.page.evaluate(() => { const all = Array.from(document.querySelectorAll('details.it')); window.scrollTo(0, all[0].getBoundingClientRect().top + window.scrollY); const H = window.innerHeight; return { fit: all.filter((d) => { const b = d.getBoundingClientRect(); return b.top >= -1 && b.bottom <= H + 1; }).length, h: Math.round(all[0].querySelector('summary').getBoundingClientRect().height), over: document.documentElement.scrollWidth - window.innerWidth, small: Array.from(document.querySelectorAll('details.it > summary .num')).some((e) => parseFloat(getComputedStyle(e).fontSize) < 15) }; });
+      t('一覧（幅' + w + (z !== 1 ? '・文字200%' : '') + '）: 横はみ出し 0・押す所 44px 以上・字 15px 以上' + (w === 390 && z === 1 ? '・390×900 に 10人全部が入る（直す前は5人・行の高さ 148px）' : ''), rows.over <= 0 && rows.h >= 44 && !rows.small && (!(w === 390 && z === 1) || rows.fit === 10), rows);
+    }
     if (w === 390 && z === 1) await shot(q.page, 'payroll.from-kintai.ph', false);
     await q.ctx.close();
   }
