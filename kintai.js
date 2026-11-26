@@ -1262,7 +1262,7 @@
     var review = month.totals.reviewCount;
     var diff = lk ? snapDiff() : [];
     var stop = closeStop(lk);
-    var h = printHead('締めと出力') + fiHtml() + '<div class="cd"><h2 style="font-size:16px;margin:0 0 8px">月の締め</h2>' + closeStepsHtml(review, lk, !!stop) +
+    var h = printHead('締めと出力') + (lk ? '' : fiHtml()) + '<div class="cd"><h2 style="font-size:16px;margin:0 0 8px">月の締め</h2>' + closeStepsHtml(review, lk, !!stop) +
       (diff.length ? '<div class="band warn">締めた時の数字と今の数字が違う職員がいます（' + diff.map(esc).join('・') + '）。締めた後の打刻・計算の決まりの見直しなどが原因です。給与へ渡したのは締めた時の数字です（月の集計の CSV も締めた時の数字で出します）。</div>' : '') +
       (lk ? '<p>締めた日時: ' + esc(new Date(data.month.locked_at).toLocaleString('ja-JP')) + '</p>' +
         (isAdmin() ? '<p class="no-print su-next"><span class="su-next-l">次は給与の画面で計算します:</span><a class="btn pri" href="' + esc(payHref(ym)) + '">💴 給与の画面でこの月分を計算する</a></p>' : '') + (afterLock ? '<div class="band warn">締めた後に足された打刻があります（印「締めた後の打刻」）。給与へ渡した後なら、来月の調整を検討してください。</div>' : '') +
@@ -1273,6 +1273,7 @@
         /* 画面で塗りに見せるのは次に押す1つだけ: 要確認あり・止めあり・「給与へ渡す」を出す時は「この月を締める」に印 su-sub（画面だけ枠のボタン・紙と class の pri は今のまま） */
         '<button type="button" class="btn pri' + (stop || review || isAdmin() ? ' su-sub' : '') + '" data-act="lock"' + (stop ? ' disabled' : '') + '>この月を締める</button>' +
         (!stop && !review && isAdmin() ? '<p class="help no-print">「この月を締める」は締めるだけで、給与の画面へは移りません。</p>' : '') + '<p class="help">締める直前に月を読み直して数え直し、その数字を「締めた時の控え」としてデータベースに残します。締めると、この月の打刻の足し・取り消し・承認・休憩の直し・シフトの取り込みが止まります。タブレットの打刻は締めた後も記録され、「締めた後の打刻」の印が付きます。</p>') + '</div>';
+    if (lk) h += fiHtml();   /* 締めた後は取り込めないので、freee の箱は月の締めの後ろへ（箱は紙に出さない no-print・締める前の並びは今のまま・2026-11-26） */
     h += reqCloseHtml();   /* v5 段5: 承認待ちの申請と月の確認の数（締めは止めない・画面だけ） */
     var hist = (data.month && Array.isArray(data.month.history)) ? data.month.history : [];
     if (hist.length) h += '<div class="cd"><h2 style="font-size:16px;margin:0 0 8px">締めと解除の記録</h2><div class="tw"><table><thead><tr><th>日時</th><th>した人</th><th>内容</th><th>理由</th></tr></thead><tbody>' +
