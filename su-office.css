@@ -38,6 +38,7 @@
   :root[data-su-theme] .su-steps li.done + li::after, :root[data-su-theme] .su-steps li.done + li.done::after { background: var(--ok); }
   :root[data-su-theme] .su-steps li.cur { color: var(--ink); font-weight: 700; }
   :root[data-su-theme] .su-steps li.cur::before { border-color: var(--focus); background: var(--focus); color: var(--pri-tx); }
+  :root[data-su-theme] .su-steps li { text-wrap: balance; }   /* 幅390 で段の名前の最後の1字だけが折れないように（2026-11-26） */
   :root[data-su-theme] .su-steps .su-st-s { display: block; font-size: 15px; font-weight: 400; color: var(--muted); }
 
   /* ── 勤怠管理のホーム: 「なし」の箱を隣の長い箱の高さまで伸ばさない（空いた大きな箱を作らない） ── */
@@ -56,8 +57,63 @@
   :root[data-su-theme] .sumbar > div { display: flex; flex-direction: column; gap: 2px; font-size: 15px; color: var(--sub); }
   :root[data-su-theme] .sumbar b { font-size: 22px; color: var(--ink); }
 
+  /* ── 2026-11-26 の上積み ── */
+  /* 勤怠のホームの箱: 左の太い色の帯をやめ、状態は札（言葉）＋箱の地の淡い色＋並び（要対応 → 注意 → なし）で伝える。「なし」の箱は低くまとめる */
+  :root[data-su-theme] .hbox { border-left-width: 1px; border-left-color: var(--line); }
+  :root[data-su-theme] .hbox.warn { background: color-mix(in srgb, var(--warn-bg) 55%, var(--card)); }
+  :root[data-su-theme] .hbox.alert { background: color-mix(in srgb, var(--ng-bg) 55%, var(--card)); }
+  :root[data-su-theme] .hbox.ok { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; padding-top: 8px; padding-bottom: 8px; }
+  /* 「なし」の箱は 題・札・件数 を1行に（題の行の箱 .ht をほどいて並べ直す・行の説明 .hl は下の行のまま） */
+  :root[data-su-theme] .hbox.ok .ht { display: contents; }
+  :root[data-su-theme] .hbox.ok .ht > span:first-child { order: 1; }
+  :root[data-su-theme] .hbox.ok .hv { order: 2; margin-top: 0; }
+  :root[data-su-theme] .hbox.ok .hn { order: 3; margin-left: auto; font-size: 22px; }
+  :root[data-su-theme] .hbox.ok .hl, :root[data-su-theme] .hbox.ok .hnote { order: 4; flex-basis: 100%; }
+  :root[data-su-theme] .hbox .hn { font-size: 26px; line-height: 1.1; }
+  :root[data-su-theme] .hbox .hn small { font-size: 15px; font-weight: 600; color: var(--sub); }
+  :root[data-su-theme] .hgrid > .hbox.alert, :root[data-su-theme] .hgrid > .hcell:has(> .hbox.alert) { order: -2; }
+  :root[data-su-theme] .hgrid > .hbox.warn, :root[data-su-theme] .hgrid > .hcell:has(> .hbox.warn) { order: -1; }
+  :root[data-su-theme] .hgrid > .hbox.ok, :root[data-su-theme] .hgrid > .hcell:has(> .hbox.ok) { order: 1; }
+
+  /* 勤怠のホームの「この月分の進み具合」（締めと出力と同じ3段＋今の段の主ボタン1つ） */
+  :root[data-su-theme] .hflow { border: 1px solid var(--line); border-radius: 12px; background: var(--card); padding: 12px 14px; margin: 8px 0 16px; min-width: 0; }
+  :root[data-su-theme] .hflow h3 { font-size: 16px; margin: 0 0 10px; }
+  :root[data-su-theme] .hflow .su-steps { margin-bottom: 8px; }
+  :root[data-su-theme] .hflow .hf-act { justify-content: center; margin: 4px 0 0; }
+  :root[data-su-theme] .hflow .hf-why { font-size: 15px; color: var(--warn); overflow-wrap: anywhere; }
+  /* 締めと出力: 締めた後の「給与の画面でこの月分を計算する」が手順の3段目だと分かるように、段の名前を添える */
+  :root[data-su-theme] .su-next { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+  :root[data-su-theme] .su-next-l { font-size: 15px; font-weight: 600; color: var(--sub); }
+
+  /* 給与: 勤怠管理から受け取った時の帯・警告のある人だけ */
+  :root[data-su-theme] .kin-band { font-size: 15px; margin: 0 0 10px; }
+  :root[data-su-theme] .wfilt { margin: 10px 0 6px; }
+
+  /* 次に押す1つだけを塗りに見せる: 印 su-sub の付いた塗りのボタンは、画面だけ枠のボタンに見せる（紙と class の pri は今のまま・2026-11-26） */
+  :root[data-su-theme] .btn.pri.su-sub { background-color: var(--card); color: var(--ink); border-color: var(--line); }
+  :root[data-su-theme] .btn.pri.su-sub:not(:disabled):hover { background-color: var(--th); }
+
+  /* 押した手応え: 地の色を短く変え、押した瞬間に少し縮む（押せない時は動かさない・動きを減らす設定では縮めない） */
+  :root[data-su-theme] .btn, :root[data-su-theme] .hdr-btn, :root[data-su-theme] .tabs button { transition: background-color 120ms ease-out, border-color 120ms ease-out; }
+  :root[data-su-theme] .btn:not(.pri):not(:disabled):hover, :root[data-su-theme] .hdr-btn:hover, :root[data-su-theme] .tabs button:hover { background-color: var(--th); }
+  :root[data-su-theme] .hbox:not(.wait):hover { border-color: var(--muted); }
+  :root[data-su-theme] .btn:not(:disabled):active, :root[data-su-theme] .hdr-btn:active, :root[data-su-theme] .tabs button:active { transform: scale(.97); }
+  @media (prefers-reduced-motion: reduce) {
+    :root[data-su-theme] .btn, :root[data-su-theme] .hdr-btn, :root[data-su-theme] .tabs button { transition: none; }
+    :root[data-su-theme] .btn:not(:disabled):active, :root[data-su-theme] .hdr-btn:active, :root[data-su-theme] .tabs button:active { transform: none; }
+  }
+
+  /* 箱の間と区画の見出しの下をそろえる（影は足さない・枠線のまま） */
+  :root[data-su-theme] .cd { margin-bottom: 14px; }
+  :root[data-su-theme] .cd > h2 { margin-bottom: 10px; }
+  /* 空の状態: 中央に寄せ、上下を広く */
+  :root[data-su-theme] .cd.empty { text-align: center; padding: 32px 16px; color: var(--sub); }
+  :root[data-su-theme] .cd.empty p { margin: 14px 0 0; }
+
   @media (max-width: 700px) {
     :root[data-su-theme] .su-mact { margin-left: 0; }
+    /* 右下の「不具合を報告」が末尾の中身に被らないよう、本文の下を空ける（2026-11-26） */
+    :root[data-su-theme] #g-main, :root[data-su-theme] #p-main { padding-bottom: 96px; }
     /* iPhone 幅: 「◀ 月分 ▶」を1行に収める（「月分」の字は欄の読み上げ名 aria-label に任せて見せない・欄の字は 16px） */
     :root[data-su-theme] .su-mnav { width: 100%; }
     :root[data-su-theme] .su-mnav .btn { white-space: nowrap; padding: 0 10px; }

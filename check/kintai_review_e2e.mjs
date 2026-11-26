@@ -154,7 +154,8 @@ try {
   t('締め: kintai_month_lock に送る控えの要確認が全員 0', lk && Array.isArray(lk[1].p_snapshot.rows) && lk[1].p_snapshot.rows.every((r) => r.reviewCount === 0) && lk[1].p_snapshot.rows.length === 3, lk && lk[1].p_snapshot.rows.map((r) => r.reviewCount));
   /* 給与との行き来（2026-11-25）: 締めた月に「給与の画面でこの月分を計算する」（管理者）・頭の「給与へ」は今の月分 */
   await page.waitForSelector('#g-main a[href="payroll.html?ym=' + YM + '"]', { timeout: 15000 }).catch(() => null);
-  t('締めた後: 「給与の画面でこの月分を計算する」が今の月分の給与へ', /給与の画面でこの月分を計算する/.test((await page.textContent('#g-main a[href="payroll.html?ym=' + YM + '"]').catch(() => '')) || ''));
+  /* 2026-11-26: 行き先に from=kintai を足した（給与の画面が1回だけ自動で計算する・本人指示） */
+  t('締めた後: 「給与の画面でこの月分を計算する」が今の月分の給与へ（from=kintai つき）', /給与の画面でこの月分を計算する/.test((await page.textContent('#g-main a[href="payroll.html?ym=' + YM + '&from=kintai"]').catch(() => '')) || ''));
   t('頭の「給与へ」は管理者に出て、今の月分を渡す（44px 以上）', await page.isVisible('#g-to-pay') && await page.getAttribute('#g-to-pay', 'href') === 'payroll.html?ym=' + YM
     && await page.evaluate(() => document.getElementById('g-to-pay').getBoundingClientRect().height >= 44));
   await page.screenshot({ path: path.join(OUT, 'hop_close_locked_pc.png') });
