@@ -370,6 +370,22 @@ try {
     await page.waitForTimeout(900);
     const go = await page.evaluate((d) => { const c = document.querySelector('#days-list .day[data-date="' + d + '"]'); const r = c.getBoundingClientRect(); return { top: Math.round(r.top), inView: r.top >= -2 && r.top < window.innerHeight / 2, focus: document.activeElement === c }; }, pm + '-01');
     t('帯を押すと、確かめが要る最初の日の箱へ送る', go.inView && go.focus, go);
+    /* 審査役の指摘（2026-11-27）: 送った先の日付の行が、上に貼り付く見出しの下に隠れない（幅390 と幅320・根の字200%） */
+    const hidden = async (w, big) => {
+      await page.setViewportSize({ width: w, height: 844 });
+      await page.click('#t-days'); await page.waitForTimeout(300);
+      await page.evaluate((b) => { if (b) document.documentElement.style.setProperty('font-size', '200%', 'important'); else document.documentElement.style.removeProperty('font-size'); window.scrollTo(0, 0); }, big);
+      await page.waitForTimeout(300);
+      await page.click('#need-box .need');
+      await page.waitForTimeout(1000);
+      return page.evaluate((d) => { const c = document.querySelector('#days-list .day[data-date="' + d + '"]'), top = c.querySelector('.d').getBoundingClientRect().top, hb = document.querySelector('.hdr').getBoundingClientRect().bottom; return { dateTop: Math.round(top), hdrBottom: Math.round(hb), ok: top >= hb }; }, pm + '-01');
+    };
+    for (const [w, big] of [[390, false], [320, false], [320, true]]) {
+      const r = await hidden(w, big);
+      t('帯で送った先の日付の行は、見出しの下に隠れない（幅' + w + (big ? '・根の字200%' : '') + '）', r.ok, r);
+    }
+    await page.evaluate(() => document.documentElement.style.removeProperty('font-size'));
+    await page.setViewportSize({ width: 390, height: 844 });
     await page.click('#t-req');
     await page.waitForSelector('#f-req');
     const chk = await page.evaluate(() => Array.from(document.querySelectorAll('#f-req label.chk')).filter((l) => l.offsetParent).map((l) => Math.round(l.getBoundingClientRect().height)));
@@ -384,7 +400,8 @@ try {
     await page.waitForFunction(() => /有給の残り/.test(document.querySelector('#leave-box').textContent), null, { timeout: 10000 });
     const lot = await page.evaluate(() => Array.from(document.querySelectorAll('#leave-box li.lot')).map((li) => ({ e: li.querySelector('.lot-e').textContent, dateLines: li.querySelector('.lot-e .nw').getClientRects().length, sameRow: Math.abs(li.querySelector('.lot-g').getBoundingClientRect().top - li.querySelector('.lot-r').getBoundingClientRect().top) < 4 })));
     t('有給の付与ごと: 1行目に付与日と残り・2行目に「期限 … まで」・日付は折れない', lot.length >= 1 && lot.every((x) => /^期限 .+ まで$/.test(x.e) && x.dateLines === 1 && x.sameRow), lot);
-    t('有給の黄の箱は「いちばん早く消える残り」だけ', await page.evaluate(() => Array.from(document.querySelectorAll('#leave-box .msg.warn')).every((x) => /いちばん早く消える残り/.test(x.textContent))));
+    /* 審査役の指摘（2026-11-27）で、時間単位の有休の注意は黄の箱に戻した（残りの数を読み違えないため）。黄の箱はこの2つまで */
+    t('有給の黄の箱は「いちばん早く消える残り」と時間単位の有休の注意だけ', await page.evaluate(() => Array.from(document.querySelectorAll('#leave-box .msg.warn')).every((x) => /いちばん早く消える残り|時間単位で取った分は、ここの残りに入っていません/.test(x.textContent))));
     await context.close();
     /* 予定も打刻も無い月: 合計の箱を出さず空の状態の箱だけ */
     const st6 = fake({ month: (ym) => Object.assign(monthOf(ym), { punches: [], schedule: [] }) });

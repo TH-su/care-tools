@@ -226,6 +226,9 @@
     var chk = fl.checked;
     return rows.filter(function (r) { return !r.future && r.flags.some(function (f) { return labels[f]; }) && r.flags.indexOf(chk) < 0; });
   }
+  /* 上に貼り付く見出しの高さを CSS の --hdr-h に写す（送った先の日の箱が見出しの下に隠れないように・見出しが2段に折れても追従・審査役の指摘 2026-11-27） */
+  function syncHdr() { var h = document.querySelector('.hdr'); if (h) document.documentElement.style.setProperty('--hdr-h', Math.ceil(h.getBoundingClientRect().height) + 'px'); }
+  try { if (window.ResizeObserver) new ResizeObserver(syncHdr).observe(document.querySelector('.hdr')); else window.addEventListener('resize', syncHdr); } catch (e) { /* 測れない端末は CSS の既定の値 */ }
   function md(date) { return (+date.slice(5, 7)) + '/' + (+date.slice(8, 10)); }
   function paintNeed(need) {
     var box = $('need-box');
@@ -235,7 +238,7 @@
     var shown = need.slice(0, 3).map(function (r) { return md(r.date); }).join('・') + (need.length > 3 ? ' ほか ' + (need.length - 3) + ' 日' : '');
     var b = el('button', 'need', '確かめが要る日が ' + need.length + ' 日あります（' + shown + '）');
     b.type = 'button';
-    b.addEventListener('click', function () { var t = document.querySelector('#days-list .day[data-date="' + need[0].date + '"]'); if (t) { t.scrollIntoView({ block: 'start', behavior: 'smooth' }); try { t.focus({ preventScroll: true }); } catch (e) { /* 焦点を移せない時は送るだけ */ } } });
+    b.addEventListener('click', function () { var t = document.querySelector('#days-list .day[data-date="' + need[0].date + '"]'); if (t) { syncHdr(); t.scrollIntoView({ block: 'start', behavior: 'smooth' }); try { t.focus({ preventScroll: true }); } catch (e) { /* 焦点を移せない時は送るだけ */ } } });
     box.appendChild(b);
   }
   function paintDays(d, ym, today) {
@@ -296,7 +299,7 @@
     box.appendChild(el('h2', null, '有給の残り'));
     box.appendChild(el('p', 'big', dTxt(v.remain)));
     /* 時間単位の有休を使う施設で、受け口がまだ休暇の行（absences）を返さない間だけ（反証レビュー 2026-11-21・v6 で返す後は残りから引いてあるので出さない） */
-    if (S.hourlyNoteOn(leaveData)) box.appendChild(el('p', 'help', S.HOURLY_NOTE));   /* 説明は箱なしの注記（黄で残すのは期限が近くて消える残りだけ・2026-11-27） */
+    if (S.hourlyNoteOn(leaveData)) box.appendChild(el('p', 'msg warn', S.HOURLY_NOTE));   /* 大きく出ている残りが時間単位で使った分だけ多く見える知らせなので、黄の箱に戻す（審査役の指摘 2026-11-27） */
     if (v.soon) box.appendChild(el('p', 'msg warn', 'いちばん早く消える残り: ' + v.soon.days + ' 日（' + v.soon.expires + ' まで）'));
     if (v.ob5) box.appendChild(el('p', v.ob5Warn ? 'help em' : 'muted', v.ob5));
     if (v.lots.length) {
