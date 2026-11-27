@@ -190,6 +190,8 @@
 # 設備・修繕の記録の画面と純関数（2026-11-03 本人の決定）。コードのみ公開。設備・対応の記録は共通ログインのデータベース（事務所・管理者だけ）にあり、端末には残さない
 !/equip-log.html
 !/equip-calc.js
+!/hospital-visit.html
+!/hospital-visit-calc.js
 # 勤怠管理の画面・打刻の画面・純関数（2026-11-18 本人指示）。コードのみ公開。職員・打刻の記録は共通ログインのデータベースにあり、
 # 端末には UI の状態と、通信できない時の打刻の控え（番号・種類・時刻だけ・名前なし）しか残さない。shift-symbols.js はシフトアプリの記号の解釈の写し
 !/kintai.html
@@ -450,3 +452,5 @@ mailer/.DS_Store
 !/su-health-calc.js
 !/su-health.js
 !/su-health-badge.js
+!/su-office-look.css
+!/su-office-look.js
