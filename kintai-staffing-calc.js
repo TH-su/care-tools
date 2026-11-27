@@ -73,7 +73,28 @@
     raw.forEach(function (x, i) { var c = checkRule(x); if (c.rule) items.push(c.rule); else bad.push({ i: i + 1, why: c.why }); });
     return { items: items, bad: bad };
   }
-  function fitsConfig(cfg) { try { return JSON.stringify(cfg).length <= CFG_MAX; } catch (e) { return false; } }
+  /* DB の octet_length(config::text) の見積もり（kintai-cert-calc.js・kintai-holiday.js と同じ数え方。jsonb の「: 」「, 」と UTF-8 のバイト数・余白 256 バイト） */
+  function byteLen(s) {
+    var n = 0;
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charCodeAt(i);
+      if (c < 0x80) n += 1; else if (c < 0x800) n += 2;
+      else if (c >= 0xd800 && c <= 0xdbff) { n += 4; i++; } else n += 3;
+    }
+    return n;
+  }
+  function jsonbBytes(v) {
+    var enc = function (x) { return byteLen(JSON.stringify(x)); };
+    var walk = function (x) {
+      if (x === null || typeof x === 'boolean' || typeof x === 'number') return String(x).length + 2;
+      if (typeof x === 'string') return enc(x);
+      if (Array.isArray(x)) { var n = 2; x.forEach(function (e, i) { n += walk(e) + (i ? 2 : 0); }); return n; }
+      if (typeof x === 'object') { var m = 2, i = 0; for (var k in x) { if (!own(x, k) || x[k] === undefined) continue; m += enc(k) + 2 + walk(x[k]) + (i ? 2 : 0); i++; } return m; }
+      return 4;
+    };
+    return walk(v);
+  }
+  function fitsConfig(cfg) { try { return jsonbBytes(cfg) <= CFG_MAX - 256; } catch (e) { return false; } }
 
   /* シフトの職員1人がその決まりの数える人に当たるか（st が無い＝シフトの職員にいない人は false） */
   function matches(rule, st) {
@@ -125,7 +146,7 @@
      返す: { on, rules（使った決まり）, bad（崩れた決まりの行）, rows: [行], short（足りない行の数）, staffOk }
      行: { idx（決まりの番号・0から）, office, label, need, who, from, to, date（時間帯の始まりの日）, startMs, endMs, overnight, phase: 'later'|'now'|'past',
            plan（予定のいちばん少ない人数・unknown の時は null）, planAt（その時刻）, now（いまの人数・時間帯の途中でない時は null）, missing（シフトの職員にいない人の数）,
-           partial（月分の外の日の塊を数えていない）, level: 'ok'|'warn'|'alert'|'unknown', why（unknown の理由: staff・period） } */
+           partial（月分の外の日の塊を数えていない）, nowUnknown（いまの人数を確かめられない＝月分の外の日に始まった勤務の打刻を読んでいない）, level: 'ok'|'warn'|'alert'|'unknown', why（unknown の理由: staff・period） } */
   function evaluate(inp) {
     var cfg = inp && inp.cfg, ru = rulesOf(cfg), res = { on: on(cfg), rules: ru.items, bad: ru.bad, rows: [], short: 0, staffOk: Array.isArray(inp && inp.staff) };
     var td = inp && isDate(inp.today) ? inp.today : null, nowMs = inp && typeof inp.nowMs === 'number' ? inp.nowMs : null;
@@ -143,14 +164,15 @@
       });
     });
     /* 人と日ごとの「その日は数えない」（欠勤の印・1日の特別休暇・代休で打刻の無い日）と「打刻がある」 */
-    var off = {}, punched = {};
+    var off = {}, punched = {}, part = {};
     Object.keys(byDate).forEach(function (d) {
       var per0 = {};
       byDate[d].forEach(function (x) { var k = x.sid + '|' + d; (per0[k] = per0[k] || []).push(x); });
       Object.keys(per0).forEach(function (k) {
         var xs = per0[k], np = !xs.some(function (x) { return (x.b.punches || []).length; }), day = xs[0].day;
         if (!np) punched[k] = true;
-        if (xs.some(function (x) { return x.b.absent; }) || (np && (dayOff(day) || (day && day.mark === 'absent')))) off[k] = true;   /* 欠勤の印は始まりの前でも外す（kintai-calc.js は始まりの後に塊へ当てる） */
+        if (xs.some(function (x) { return x.b.absent; }) || (np && (dayOff(day) || (day && day.mark === 'absent') || (day && day.leaveUse && day.leaveUse.days >= 1)))) off[k] = true;   /* 1日の有休（手入力・申請の承認）の日も外す（シフトの予定の行は残るため・反証レビュー 2026-11-28） */
+        if (np && day && day.leaveUse && day.leaveUse.days > 0 && day.leaveUse.days < 1) part[k] = true;   /* 半日の有休は、その日の予定を丸ごとは信じない（下で予定に数えない） */   /* 欠勤の印は始まりの前でも外す（kintai-calc.js は始まりの後に塊へ当てる） */
       });
     });
     /* 予定の行（kintai_month_get の schedule）。働く行（work・night）だけ */
@@ -171,10 +193,11 @@
           phase: nowMs < s ? 'later' : nowMs >= e ? 'past' : 'now', plan: null, planAt: null, now: null, missing: 0, partial: false, level: 'unknown', why: '' };
         /* 時間帯にかかる塊は、始まりの日の前の日〜終わりの日の塊（夜勤の塊は始まった日にある） */
         var dates = [addDays(sd, -1), sd]; if (over) dates.push(addDays(sd, 1));
+        var allDates = dates.slice();   /* 予定の行は月分の初日の7日前から届く（kintai_month_get）ので、月分の外の日も数える */
         if (per && (sd < per.from || sd > per.to)) { row.why = 'period'; res.rows.push(row); return; }
         if (!res.staffOk) { row.why = 'staff'; res.rows.push(row); return; }
         /* 開いている月分の外の日（初日の前の日・終わりの日の次の日）の塊は読んでいない。その日は数えず、partial の印を付ける（画面が一言添える） */
-        if (per) dates = dates.filter(function (d) { var o = d >= per.from && d <= per.to; if (!o) row.partial = true; return o; });
+        if (per) dates = dates.filter(function (d) { var o = d >= per.from && d <= per.to; if (!o && !sched) row.partial = true; return o; });   /* 予定の行がある時は、月分の外の日の予定も数えられる */
         var plan = {}, act = {}, miss = {};
         var take = function (sid, add) {   /* シフトの職員にいる・数える人に当たる時だけ add を呼ぶ */
           var st = sById[sid];
@@ -185,21 +208,30 @@
            通所の応援など別の事業所の時間を拾えない）。無い時は塊の事業所と予定の時刻で数える */
         if (sched) {
           sched.forEach(function (x) {
-            if (x.office !== r.office || dates.indexOf(x.date) < 0 || off[x.sid + '|' + x.date]) return;
+            if (x.office !== r.office || allDates.indexOf(x.date) < 0 || off[x.sid + '|' + x.date] || part[x.sid + '|' + x.date]) return;
+            if (x.e <= s || x.s >= e) return;   /* 時間帯にかからない行は見ない（シフトにいない人の数にも入れない） */
             take(x.sid, function () { (plan[x.sid] = plan[x.sid] || []).push([x.s, x.e]); });
           });
         }
         dates.forEach(function (d) {
           (byDate[d] || []).forEach(function (x) {
             var b = x.b, k = x.sid + '|' + d;
-            var mine = b.office === r.office || !!(b.officeShare && b.officeShare[r.office] > 0);   /* 兼務の塊は、その事業所の分がある時は数える */
+            var mine = b.office === r.office || !!(b.officeShare && b.officeShare[r.office] > 0);
             if (!mine) return;
             var bs = b.sched && typeof b.schedStart === 'number' && typeof b.schedEnd === 'number' && b.schedEnd > b.schedStart;
+            var sp = actualSpans(b, nowMs);
+            var lo = bs ? b.schedStart : (sp.length ? sp[0][0] : null), hi = bs ? b.schedEnd : (sp.length ? sp[sp.length - 1][1] : null);
+            if (lo == null || hi <= s || lo >= e) return;   /* 時間帯にかからない塊は見ない */
             take(x.sid, function () {
-              if (!sched && bs && !off[k] && b.office === r.office) (plan[x.sid] = plan[x.sid] || []).push([b.schedStart, b.schedEnd]);
-              if (row.phase !== 'now') return;
-              var sp = actualSpans(b, nowMs);
-              if (sp.length) act[x.sid] = (act[x.sid] || []).concat(sp);
+              if (!sched && bs && !off[k] && !part[k] && b.office === r.office) (plan[x.sid] = plan[x.sid] || []).push([b.schedStart, b.schedEnd]);
+              if (row.phase !== 'now' || !sp.length) return;
+              /* いま: 兼務の人は、いまの時刻にその事業所の予定の行がある時だけ数える（ほかの事業所の時間に両方へ数えない・反証レビュー 2026-11-28）。
+                 いまの時刻にどの予定の行も無い人（予定の外の勤務）と、予定の行を渡されない時は、塊の主の事業所だけで数える */
+              if (sched) {
+                var rowsNow = sched.filter(function (y) { return y.sid === x.sid && y.s <= nowMs && nowMs < y.e; });
+                if (rowsNow.length ? !rowsNow.some(function (y) { return y.office === r.office; }) : b.office !== r.office) return;
+              } else if (b.office !== r.office) return;
+              act[x.sid] = (act[x.sid] || []).concat(sp);
             });
           });
         });
@@ -213,7 +245,9 @@
         }
         var pp = Object.keys(plan).map(function (k) { return plan[k]; }), mc = minCover(pp, s, e);
         row.plan = mc.min; row.planAt = mc.at; row.missing = Object.keys(miss).length;
-        if (row.phase === 'now') {
+        /* 月分の外の日（初日の前の日）に始まった、この事業所の予定の行が今の時刻を含む時は、その人の打刻を読んでいないので、いまの人数は確かめられない（反証レビュー 2026-11-28） */
+        if (row.phase === 'now' && sched && per && sched.some(function (y) { return y.office === r.office && y.date < per.from && y.s <= nowMs && nowMs < y.e && !off[y.sid + '|' + y.date] && sById[y.sid] && matches(r, sById[y.sid]); })) { row.nowUnknown = true; }
+        if (row.phase === 'now' && !row.nowUnknown) {
           var n = 0;
           Object.keys(act).forEach(function (k) { if (act[k].some(function (x) { return x[0] <= nowMs && nowMs < x[1]; })) n++; });
           row.now = n;

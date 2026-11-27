@@ -203,8 +203,8 @@ try {
         /* 読めない時の「読み直す」も 44px 以上 */
         st.shiftNg = true;
         await page.evaluate(() => { const b = document.getElementById('g-reload'); if (b) b.click(); });
-        await page.waitForSelector('[data-act="sf-reload"]', { timeout: 20000 });
-        const h = await page.$eval('[data-act="sf-reload"]', (e) => e.getBoundingClientRect().height);
+        /* 読み直しの最中は描き直しが続き、測る間にボタンが差し替わることがある。見えている時の高さを同じ呼び出しの中で測る */
+        const h = await (await page.waitForFunction(() => { const b = document.querySelector('[data-act="sf-reload"]'); const v = b ? b.getBoundingClientRect().height : 0; return v > 0 ? v : false; }, null, { timeout: 20000 })).jsonValue();
         t('読めない時の「読み直す」も 44px 以上（' + Math.round(h) + 'px）', h >= 44);
         st.shiftNg = false;
       }

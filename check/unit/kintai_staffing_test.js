@@ -131,6 +131,47 @@ console.log('\n— 3b. 兼務（別の事業所の応援）は予定の行で数
   t('兼務の無い日は、予定の行で数えても塊で数えても同じ', JSON.stringify(ev(mm, '2026-12-15T06:00:00+09:00', rr, { schedule: rs }).rows.map((x) => [x.label, x.plan, x.planAt])) === JSON.stringify(ev(mm, '2026-12-15T06:00:00+09:00', rr).rows.map((x) => [x.label, x.plan, x.planAt])));
 }
 
+console.log('\n— 3c. 反証レビュー（2026-11-28）の場面 —');
+{
+  /* 1. 兼務の人をいまで両方に数えない: 乙は施設 7:00〜12:00 と通所の応援 12:00〜17:00（続くので1つの勤務にまとまる）。丁・戊は通所 9:00〜17:00（日3 ではなく日2 8:30〜17:30） */
+  const plan = { cells: { sS02: { 15: '早' }, sS04: { 15: '日2' }, sS05: { 15: '日2' } }, subCells: {} };
+  const rows = C.buildSchedule({ ym: YM, plan, nextPlan: {}, staff: STAFF, symbols: Sym.DEFAULT_SYMBOLS, settings: SET }).rows
+    .map((x) => (x.staff_id === 'sS02' ? Object.assign({}, x, { end_at: new Date(at(TODAY, '12:00')).toISOString() }) : x));
+  rows.push({ staff_id: 'sS02', work_date: TODAY, seq: 2, office: 'day', start_at: new Date(at(TODAY, '12:00')).toISOString(), end_at: new Date(at(TODAY, '17:00')).toISOString(), break_min: 0, kind: 'work', symbol: '応', paid_min: 0 });
+  const pun = [P('sS02', 'in', TODAY, '6:58'), P('sS04', 'in', TODAY, '8:25')];
+  const m = C.computeMonth({ ym: YM, staff: K_STAFF, schedule: rows, punches: pun, days: [], config: {}, now: Date.parse('2026-12-15T10:30:00+09:00') });
+  const blk = m.people.find((p) => p.staff.staff_id === 'sS02').days.find((d) => d.date === TODAY).blocks;
+  t('前提: 乙は1つの勤務（主は施設・通所の分あり）', blk.length === 1 && blk[0].office === 'facility' && blk[0].officeShare.day > 0, blk.map((b) => [b.office, b.officeShare]));
+  const r1 = ev(m, '2026-12-15T10:30:00+09:00', [R('day', '通所', '09:00', '17:00', 2, 'all')], { schedule: rows }).rows[0];
+  t('10:30 の通所: 乙は施設の時間なので通所のいまに数えない（丁だけ＝1人・戊は打刻なしで15分を過ぎた）→ いま足りない', r1.now === 1 && r1.level === 'alert', r1);
+  const m2 = C.computeMonth({ ym: YM, staff: K_STAFF, schedule: rows, punches: pun, days: [], config: {}, now: Date.parse('2026-12-15T14:00:00+09:00') });
+  const r2 = ev(m2, '2026-12-15T14:00:00+09:00', [R('facility', '施設', '13:00', '17:00', 1, 'all'), R('day', '通所', '09:00', '17:00', 2, 'all')], { schedule: rows }).rows;
+  t('14:00 の施設: 通所の応援の時間の乙は施設のいまに数えない（0人）', r2.find((x) => x.label === '施設').now === 0, r2);
+  t('14:00 の通所: 乙は通所の行の時間なので数える（乙・丁の2人）', r2.find((x) => x.label === '通所').now === 2, r2);
+  /* 2. 1日の有休（手入力・申請の承認）の人は予定に数えない・打刻待ちにも数えない */
+  const sch2 = sch({ sS01: { 15: '早' }, sS02: { 15: '早' } });
+  const lu = [{ id: 'u1', staff_id: 'sS01', use_date: TODAY, days: 1, note: '', created_at: '2026-12-01T10:00:00+09:00', voided_at: null }];
+  const m3 = C.computeMonth({ ym: YM, staff: K_STAFF, schedule: sch2, punches: [], days: [], leave_uses: lu, config: {}, now: Date.parse('2026-12-15T07:05:00+09:00') });
+  const lr = (sch) => ev(m3, '2026-12-15T07:05:00+09:00', [R('facility', '早', '07:00', '12:00', 2, 'all')], sch ? { schedule: sch2 } : {}).rows[0];
+  t('前提: 手入力の1日の有休は日の行の leaveUse', m3.people.find((p) => p.staff.staff_id === 'sS01').days.find((d) => d.date === TODAY).leaveUse.days === 1);
+  t('1日の有休の人は予定にもいま（打刻待ち）にも数えない＝予定1・いま1 → 予定で足りない（予定の行・塊のどちらで数えても）', [lr(true), lr(false)].every((x) => x.plan === 1 && x.now === 1 && x.level !== 'ok'), [lr(true), lr(false)]);
+  const lu2 = [{ id: 'u2', staff_id: 'sS01', use_date: TODAY, days: 0.5, note: '', created_at: '2026-12-01T10:00:00+09:00', voided_at: null }];
+  const m4 = C.computeMonth({ ym: YM, staff: K_STAFF, schedule: sch2, punches: [], days: [], leave_uses: lu2, config: {}, now: Date.parse('2026-12-15T06:00:00+09:00') });
+  t('半日の有休の日の予定も数えない（足りているとは言わない側）', ev(m4, '2026-12-15T06:00:00+09:00', [R('facility', '早', '07:00', '12:00', 2, 'all')], { schedule: sch2 }).rows[0].plan === 1);
+  /* 4. 月分の初日の朝: 前の月分の夜勤（甲 11/30 21:00〜12/1 7:00）は予定の行で数え、いまは確かめられない（足りないと言わない） */
+  const nov = C.buildSchedule({ ym: '2026-11', plan: { cells: { sS01: { 30: '(21' } }, subCells: {} }, nextPlan: { cells: { sS01: { 1: '7)' } }, subCells: {} }, staff: STAFF, symbols: Sym.DEFAULT_SYMBOLS, settings: SET }).rows;
+  const dec = sch({ sS02: { 1: '早' } });
+  const m5 = C.computeMonth({ ym: YM, staff: K_STAFF, schedule: dec, punches: [], days: [], config: {}, now: Date.parse('2026-12-01T06:30:00+09:00') });
+  const r5 = ev(m5, '2026-12-01T06:30:00+09:00', [R('facility', '朝', '06:00', '09:00', 1, 'all')], { today: '2026-12-01', schedule: nov.concat(dec) }).rows[0];
+  t('月分の初日 6:30: 前の月分の夜勤を予定に数え（6:00〜7:00 は甲・7:00〜 は乙＝1人）、いまは確かめられない（いま足りないと言わない）', r5.plan === 1 && r5.now === null && r5.nowUnknown === true && r5.level === 'ok' && !r5.partial, r5);
+  /* 5. 設定の大きさは DB と同じバイト数で数える（日本語は3バイト） */
+  const big = { staffRules: Array(20).fill(R('day', 'あ'.repeat(20), '09:00', '10:00', 1, 'job', 'い'.repeat(20))), pad: 'x'.repeat(4000) };
+  t('日本語の多い設定は、文字数で8KB以下でもバイト数で超えれば偽', JSON.stringify(big).length <= 8192 && S.fitsConfig(big) === false);
+  /* 8. シフトにいない人の数は、時間帯にかかる人だけ */
+  const m6 = month({ sS01: { 14: '早', 15: '早' } }, [], '2026-12-15T06:00:00+09:00');
+  t('前の日の日勤（時間帯にかからない）の人は、シフトにいない人の数に入れない', ev(m6, '2026-12-15T06:00:00+09:00', [R('facility', '夜', '21:00', '23:00', 1, 'all')], { staff: STAFF.filter((x) => x.id !== 'sS01'), schedule: sch({ sS01: { 14: '早', 15: '早' } }) }).rows.every((x) => x.missing === 0));
+}
+
 console.log('\n— 4. いまの数え方 —');
 {
   /* 10:00。甲は 7:00 出勤で勤務中・乙は 7:00〜9:30 で退勤済み・丙は日3（9:00〜）で打刻なし（15分を過ぎた）。時間帯 9:00〜12:00 は必要2 */

@@ -73,12 +73,13 @@
       stt = '<span class="tds dn">' + (r.why === 'period' ? 'この月分の外の日のため確かめられません' : '確かめられません') + '</span>';
     } else {
       plan = esc(r.plan) + '<small>名</small>';   /* 必要な人数は左の列だけに出す（同じ数を2か所に出さない） */
-      now = r.now == null ? '—' : esc(r.now) + '<small>名</small>';
+      now = r.nowUnknown ? '<small>確かめられません</small>' : r.now == null ? '—' : esc(r.now) + '<small>名</small>';
       if (r.level === 'alert') stt = '<span class="tag ng">いま足りない</span>';
       else if (r.level === 'warn') stt = '<span class="tag rv">予定で足りない</span><small class="sfat">' + esc(hmText(r.planAt)) + ' に ' + esc(r.plan) + '名</small>';
       else stt = '<span class="tds">足りている</span>';
       if (r.missing) stt += '<small class="sfat">シフトにいない ' + esc(r.missing) + '名は数えていません</small>';
       if (r.partial) stt += '<small class="sfat">月分の外の日の予定は数えていません</small>';
+      if (r.nowUnknown) stt += '<small class="sfat">前の月分から続く勤務の打刻は、この月分では読めません</small>';
     }
     var lv = r.level === 'alert' ? ' sfx sfa' : r.level === 'warn' ? ' sfx' : '';
     return '<li><div class="sfr' + lv + '">' + name + '<span class="sfp">' + esc(tm) + (r.phase === 'now' ? '<small>いま</small>' : r.phase === 'past' ? '<small>終わり</small>' : '') + '</span>' +
@@ -91,8 +92,9 @@
     var rows = raw.slice(0, K.MAX_RULES), n = Math.min(K.MAX_RULES, rows.length + BLANK_ROWS), h = '';
     h += '<label for="s-staffCheck" class="no-print">今日の人員配置の知らせ</label><span class="no-print"><input type="checkbox" id="s-staffCheck"' + (on(cfg) ? ' checked' : '') + '> 出す（ホームの今日の出勤状況の下。知らせだけで、勤怠の計算・給与は変えません）</span>';
     h += '<span class="sfs-lb no-print">人員配置の決まり</span><div class="sfs no-print"><p class="help">時間帯を通して、その事業所の予定に入っている人が必要な人数より少ない時刻があれば「予定で足りない」、時間帯の途中で打刻のある人が少なければ「いま足りない」と出します。終わりが始まり以前なら翌日の時刻です（例 21:00〜7:00）。表示名を空にした行は保存しません。' +
-      '数える人: 全員／介護職員＝看護師・准看護師でない人（シフトのデイの人数確認欄と同じ分け方）／看護職員＝看護師・准看護師／介護の資格＝介護福祉士・実務者研修・初任者研修のどれか／サ責＝シフトの職員のサービス提供責任者の印／職種の語＝シフトの職員の「職種（様式1）」にその語を含む人（生活相談員・機能訓練指導員など）。' +
+      '数える人: 全員／介護職員＝看護師・准看護師でない人（シフトのデイの人数確認欄と同じ分け方）／看護職員＝看護師・准看護師／介護の資格＝介護福祉士・実務者研修・初任者研修のどれか／サ責＝シフトの職員のサービス提供責任者の印／職種の語＝シフトの職員マスタの「職種（様式1）」の欄に書いた語を含む人（生活相談員・機能訓練指導員など。欄が空の時に様式1が自動で入れる職種は見ません）。1日の有休・欠勤の印の人は予定に数えず、半日の有休の日の予定も数えません。' +
       '介護職員の数（利用者の数で決まる）などは、ここに必要な人数そのものを入れます。一人が二つの決まりに当たる時（看護師を看護職員と機能訓練指導員の両方など）は両方に数え、兼務の可否や加算の専従の要件は判定しません。</p>' +
+      (raw.length > K.MAX_RULES || (ru.bad.length && ru.bad[0].i === 0) ? '<p class="sfb-why">決まりが ' + esc(K.MAX_RULES) + ' 行を超えているか形が崩れているため、どの行も使っていません。保存すると、ここに出ている行だけになります。</p>' : '') +
       (ru.bad.length && !(ru.bad[0].i === 0) ? '<p class="sfb-why">読めない行: ' + esc(ru.bad.map(function (b) { return b.i + '行目（' + (WHY_JA[b.why] || b.why) + '）'; }).join('・')) + '</p>' : '') +
       '<div class="sfs-t" role="group" aria-label="人員配置の決まり">';
     for (var i = 0; i < n; i++) h += ruleRow(i, rows[i] || null, admin, nameOf);
