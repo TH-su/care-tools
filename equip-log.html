@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-hlQZR9FfBvWoOm+QYxcmCZmcIHgSz6/9kTGrs2eGSSU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-lH8IZi4o5ZxI6zzIWe7EBVkaEVCL+OWz8l6dy4tMdPU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
@@ -958,14 +958,18 @@ function vqCancel_(id){
   return true;
 }
 /* 名前だけで業者を保存し、選んだ状態に戻す。記録の入力は閉じない・消さない */
+/* 業者を送っている間の印（2回押して同じ業者が2件入るのを止める）。押したボタンも送り終えるまで押せなくする */
+var vqBusy=false;
+function vqBtn_(id,on){ var w=$(id+'-w'), b=w&&w.querySelector?w.querySelector('[data-act="vq-save"]'):null; if(b){ b.disabled=!!on||!canWrite_(); if(on) b.setAttribute('aria-disabled','true'); else b.removeAttribute('aria-disabled'); } }
 function vqSave_(id){
-  if(!VQ_LABEL[id]||vqOpen!==id||!form||form.busy) return Promise.resolve(false);
+  if(vqBusy||!VQ_LABEL[id]||vqOpen!==id||!form||form.busy) return Promise.resolve(false);
   var m=$('d-vq-msg'), name=val_('d-vq-name').trim();
   function say(t,k){ if(m){ m.className='msg '+k; m.textContent=t; } }
   if(!canWrite_()){ say(dbState==='nodb'?NODB_TEXT:'読み込めていないため保存できません。','ng'); return Promise.resolve(false); }
   if(!name){ say('業者の名前を入れてください','ng'); return Promise.resolve(false); }
   var my=gen, f=form;
   say('業者を保存しています…','busy');
+  vqBusy=true; vqBtn_(id,true);
   return rpc_('eq_save_vendor',{p_row:{name:name,field:'',phone:'',contact:'',note:'',disabled:false},p_rev:null}).then(function(d){
     if(my!==gen||form!==f) return false;
     if(!d||d.ok!==true||!d.row){ say(ngAnswer_('eq_save_vendor',d),'ng'); return false; }
@@ -978,7 +982,7 @@ function vqSave_(id){
     if(my!==gen||form!==f) return false;
     eqNote_('業者のその場の追加', e);
     say(friendly_(e),'ng'); return false;
-  });
+  }).then(function(v){ vqBusy=false; vqBtn_(id,false); return v; });
 }
 function vendorOptions_(cur){
   return [['','（業者なし）']].concat(data.vendors.filter(function(v){ return !v.disabled||String(v.id)===String(cur); }).map(function(v){ return [String(v.id),String(v.name||'')]; }));
