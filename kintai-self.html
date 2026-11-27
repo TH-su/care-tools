@@ -21,7 +21,7 @@
   ★勤怠の数え方は管理画面と同じ部品（kintai-calc.js の computeMonth・kintai-leave.js）。画面だけで印刷しない。
   ★表示はすべて textContent と部品の組み立て（HTML の代入は使わない）。console は使わない。
 -->
-<link rel="stylesheet" href="kintai-self.css?v=2026-11-25">
+<link rel="stylesheet" href="kintai-self.css?v=2026-11-27.1">
 </head>
 <body>
 <header class="hdr">
@@ -96,6 +96,7 @@
         <button type="button" class="btn sm" id="b-cur" aria-pressed="true">今月分</button>
         <button type="button" class="btn sm" id="b-prev" aria-pressed="false">前の月分</button>
       </div>
+      <div id="need-box" class="need-box" role="status" hidden></div>
       <div class="cd" id="days-head"></div>
       <div id="days-list" class="list"></div>
     </div>
@@ -187,7 +188,7 @@
 <script src="kintai-calc.js?v=2026-11-23.1"></script>
 <script src="kintai-leave.js?v=2026-11-20.4"></script>
 <script src="kintai-self-calc.js?v=2026-11-24"></script>
-<script src="kintai-self.js?v=2026-11-25"></script>
+<script src="kintai-self.js?v=2026-11-27.1"></script>
 <script src="kintai-extras.js?v=2026-11-25"></script>
 <script src="kintai-board-calc.js?v=2026-11-25"></script>
 <script src="kintai-self-board.js?v=2026-11-25"></script>
