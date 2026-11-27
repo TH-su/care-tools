@@ -28,7 +28,7 @@
 (function () {
   'use strict';
   var C = window.KintaiCalc, L = window.KintaiLeave, K36 = window.Kintai36, MON = window.KintaiMonitor, RUL = window.KintaiRules, EX = window.KintaiExtras, KS = window.KintaiShaho;
-  var TABS = ['home', 'day', 'review', 'requests', 'grid', 'person', 'staff', 'leave', 'close', 'settings', 'year', 'site', 'holiday', 'shaho', 'cert'];   /* year・site・holiday は kintai-views.js（設定の plusViews が入の時だけ・2026-11-25）・shaho は社保の知らせ（設定の shaho が入の時だけ）・cert は資格の期限（kintai-cert.js・設定の certAlert が入の時だけ） */
+  var TABS = ['home', 'day', 'review', 'requests', 'grid', 'list', 'shift', 'person', 'staff', 'leave', 'close', 'settings', 'year', 'site', 'holiday', 'shaho', 'cert'];   /* year・site・holiday は kintai-views.js（設定の plusViews が入の時だけ・2026-11-25）・shaho は社保の知らせ（設定の shaho が入の時だけ）・cert は資格の期限（kintai-cert.js・設定の certAlert が入の時だけ） */
   var LS_TAB = 'kintai_tab', LS_YM = 'kintai_ym';
   var gen = 0, view = 'boot', tab = 'home', ym = null, data = null, month = null, shiftInfo = null;
   var selDate = null, selStaff = null, onlyReview = false, role = null, busy = false, editsCache = null;
@@ -387,10 +387,27 @@
     if (vwApi) vwApi.syncTabs(vwIsOn, tab);
     if (vwT && !vwIsOn) { tab = 'home'; vwT = false; paintTabs(); }
     if ((typeof CT !== 'undefined' && CT)) CT.syncTabs(!!data && CT.on(rawCfg()), tab, ctCtx());   /* 資格の期限のタブ（入の時だけ足す） */
+    var KLI = typeof window !== 'undefined' && window.KintaiList || null, klT = !!KLI && KLI.isTab(tab);   /* 勤怠一覧・シフト表（kintai-list.js・2026-11-28）: 部品が無い時はタブを足さず、開こうとしたらホーム */
+    if (KLI) { KLI.syncTabs(tab); KLI.bind(klCtx, function () { if (view === 'app' && KLI.isTab(tab) && !busy && !printAll) paint(); }); }
+    else if (tab === 'list' || tab === 'shift') { tab = 'home'; paintTabs(); }
     var f = { home: paintHome, day: paintDay, review: paintReview, requests: paintRequests, grid: paintGrid, person: paintPerson, staff: paintStaff, leave: paintLeave, close: paintClose, settings: paintSettings, shaho: paintShaho, cert: function () { return (typeof CT !== 'undefined' && CT) ? CT.paint(ctCtx()) : ''; } }[tab];
     var kb = typeof window !== 'undefined' && window.KintaiBoard ? window.KintaiBoard : null;   /* 段B（統合 0130・kintai-board.js）: 申請のタブの下にお知らせと補助項目の申請・締めの画面の上に補助項目の承認待ち（無ければ空） */
-    m.innerHTML = bands() + (kb && tab === 'close' ? kb.closeHtml() : '') + (vwT ? vwApi.paint(tab, vwCtx()) : f()) + (kb && tab === 'requests' ? kb.html() : '');
+    m.innerHTML = bands() + (kb && tab === 'close' ? kb.closeHtml() : '') + (vwT ? vwApi.paint(tab, vwCtx()) : klT ? KLI.paint(tab, klCtx()) : f()) + (kb && tab === 'requests' ? kb.html() : '');
     setInit = tab === 'settings' && $('g-set') ? settingsState() : null;   /* v5 C4: 描いた時の設定の入力（保存していない変更を確かめる） */
+  }
+  /* ── 勤怠一覧・シフト表（kintai-list.js・2026-11-28 本人指示）: 数え方は月の一覧の month のまま渡す ── */
+  function klCtx() {
+    if (!masterSt && !masterBusy) loadMaster();
+    return { ym: ym, month: month, locked: isLocked(), esc: esc, fm: fm, wd: wd, dateList: dateList, printHead: printHead, dispName: dispName,
+      officeName: officeName, period: function () { var p = per(); return p && p.from ? p : null; }, hm: function (v) { return v == null ? '' : C.jstHM(typeof v === 'number' ? v : Date.parse(v)); },
+      jd: function (d) { return d ? (+d.slice(0, 4)) + '年' + (+d.slice(5, 7)) + '月' + (+d.slice(8, 10)) + '日' : ''; },
+      masterOf: masterOf,
+      leaveRemain: function (s) {
+        if (!L) return null;
+        if (!leaveSt) { if (!leaveBusy) loadLeave(false); return null; }
+        if (leaveSt.err) return null;
+        try { var b = leaveOf(s).sm.balance; return b && b.remain != null ? dTxt(b.remain, s.staff_id) : null; } catch (e) { note('勤怠一覧の有給', e); return null; }
+      } };
   }
   /* ── 年別・事業所別・休日のタブ（kintai-views.js・2026-11-25・ROOT-v7 段B・段C）: 部品が無い・設定の plusViews が切の時は何もしない ── */
   var VW = window.KintaiViews || null;
@@ -843,7 +860,7 @@
   function masterIdOf(s) { return s && s.master_id ? String(s.master_id) : null; }   /* 外した m_ の行は master_id が空（休止）＝結んでいない */
   function masterOf(s) { var id = masterIdOf(s); return id && masterSt && masterSt.byId ? masterSt.byId[id] || null : null; }
   function inService(m) { return !!m && (!m.retire_date || m.retire_date >= today()); }
-  var REORDER_TABS = { home: 1, day: 1, review: 1, grid: 1, person: 1, staff: 1, leave: 1 };
+  var REORDER_TABS = { home: 1, day: 1, review: 1, grid: 1, list: 1, shift: 1, person: 1, staff: 1, leave: 1 };
   function loadMaster() {
     if (masterBusy && masterP) return masterP;
     masterBusy = true;
@@ -971,7 +988,7 @@
       if (my !== leaveGen) return;
       leaveBusy = false;
       /* v5 段2・3: ホーム・月の一覧・個人の月も、有給と36協定の箱・印をこの読み込みから出す */
-      if (view === 'app' && (tab === 'leave' || tab === 'home' || tab === 'grid' || tab === 'person' || tab === 'shaho') && !busy && !printAll) paint();   /* 社保の知らせも同じ月分を使う */
+      if (view === 'app' && (tab === 'leave' || tab === 'home' || tab === 'grid' || tab === 'list' || tab === 'shift' || tab === 'person' || tab === 'shaho') && !busy && !printAll) paint();   /* 社保の知らせも同じ月分を使う */
       /* v5 C3: 開き直した窓に、保存していない入力（今の保存で使った欄を除く）を戻す（読み直しで黙って消さない） */
       if (dlgCtx && dlgCtx.mode === 'leave' && $('g-dlg').open) { var kp = dlgCtx.keep || null; openLeave(dlgCtx.sid); if (kp) dlgPut(kp); absKindShow(); }   /* v5 段4: 戻した休暇の種類に合う欄を出す */
     });

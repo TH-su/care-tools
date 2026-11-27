@@ -78,7 +78,7 @@ console.log('\n— 7. 管理画面の v2 の形 —');
 /* ★v5 段2（2026-11-20）: 仕様で先頭に「ホーム」（home）のタブを足したので、ホワイトリストの期待をその並びの完全一致に改め、HTML でもホームが日ごとの前にあるかを足した（緩めていない） */
 /* ★v5 段5（2026-11-21）: 仕様で「申請」（requests・要確認の次）のタブを足したので、ホワイトリストの期待をその並びの完全一致に改め、HTML でも申請が要確認の次にあるかを足した（緩めていない） */
 /* ★年別・事業所別・休日のタブ（2026-11-25・kintai-views.js）と社保の知らせ（shaho）を末尾に足した（入り切りの鍵が入の時だけボタンを出す） */
-t('タブのホワイトリストに要確認（日ごとの次）・申請（要確認の次）・先頭はホーム', /var TABS = \['home', 'day', 'review', 'requests', 'grid', 'person', 'staff', 'leave', 'close', 'settings', 'year', 'site', 'holiday', 'shaho', 'cert'\]/.test(K) && /data-tab="home">ホーム<\/button>\s*<button type="button" role="tab" data-tab="day">日ごと<\/button>\s*<button type="button" role="tab" data-tab="review">要確認<span class="tab-n" id="g-rv-n" aria-hidden="true"><\/span><\/button>\s*<button type="button" role="tab" data-tab="requests">申請/.test(H));
+t('タブのホワイトリストに要確認（日ごとの次）・申請（要確認の次）・先頭はホーム', /var TABS = \['home', 'day', 'review', 'requests', 'grid', 'list', 'shift', 'person', 'staff', 'leave', 'close', 'settings', 'year', 'site', 'holiday', 'shaho', 'cert'\]/.test(K) && /data-tab="home">ホーム<\/button>\s*<button type="button" role="tab" data-tab="day">日ごと<\/button>\s*<button type="button" role="tab" data-tab="review">要確認<span class="tab-n" id="g-rv-n" aria-hidden="true"><\/span><\/button>\s*<button type="button" role="tab" data-tab="requests">申請/.test(H));
 t('要確認の色・件数は needsReview・reviewList・totals にそろえる（印と C.REVIEW で数えない）', /C\.needsReview\(/.test(K) && /C\.reviewList\(month\)/.test(K) && /month\.totals\.reviewCount/.test(K) && !/flags\.some\(function \(f\) \{ return C\.REVIEW\[f\]; \}\)/.test(K));
 t('CSV は新しい列つき（extraCols: true）', /C\.buildCsv\(src, \{ nameOf: nameOfOffice, extraCols: true \}\)/.test(K));
 /* 2026-11-20 の6回目（代表者の指示）: 1分ごとの手元だけの数え直しを、30秒ごとの読み直し＋数え直しに変えた（読めない時も手元で数え直す・下の 14） */
@@ -109,7 +109,7 @@ t('印刷の時だけの見出し（.ph は画面で出さない）', /\.ph\{dis
 /* ★freee の月の集計の取り込み（2026-11-23・統合 0123）で kintai.js・kintai-calc.js を ?v=2026-11-23.1 に上げたので期待の版を改めた */
 /* ★v6（2026-11-24・打刻漏れの知らせと休暇の申請）で kintai.js だけを ?v=2026-11-24 に上げたので期待の版を改めた（kintai-calc.js は変えていない・23.1 のまま） */
 /* ★段A1（2026-11-25・日ごとの補助項目）で kintai.js を ?v=2026-11-25 に上げたので期待の版を改めた（この行と下の 311 行あたりの1つ） */
-t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-2…（kintai.js は 2026-11-25 に上げた・社保の知らせで .3・資格の期限で .5（#679 が .4）・社保の説明文の esc で .6・給与との行き来で .7・見た目の仕上げで 2026-11-26・今日の出勤状況で 2026-11-27.3）', /kintai\.js\?v=2026-11-27/.test(H) && /kintai-calc\.js\?v=2026-11-23/.test(H) && /kintai-calc\.js\?v=2026-11-23/.test(HC));
+t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-2…（kintai.js は 2026-11-25 に上げた・社保の知らせで .3・資格の期限で .5（#679 が .4）・社保の説明文の esc で .6・給与との行き来で .7・見た目の仕上げで 2026-11-26・今日の出勤状況で 2026-11-27.3）', /kintai\.js\?v=2026-11-28/.test(H) && /kintai-calc\.js\?v=2026-11-23/.test(H) && /kintai-calc\.js\?v=2026-11-23/.test(HC));
 
 console.log('\n— 8. 打刻画面の v3（出勤を押す → 氏名 → パスコード） —');
 const pendClock = [];
@@ -311,7 +311,7 @@ t('反証レビューの指摘1:「今日」は今日のカレンダー月へ移
 /* ★freee の月の集計の取り込み（2026-11-23・統合 0123）で kintai.js・kintai-calc.js を ?v=2026-11-23.1 に上げたので期待の版を改めた */
 /* ★v6（2026-11-24）で kintai.js を ?v=2026-11-24 に上げたので期待の版を改めた（kintai-calc.js は 2026-11-23.1 のまま・給与の画面と同じ版） */
 /* ★年別・事業所別・休日のタブ（2026-11-25）で kintai.js を ?v=2026-11-25.1、段B（統合 0130）で .2、社保の知らせで .3、資格の期限で .5（#679 が .4） に上げた */
-t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-27.3（今日の出勤状況で上げた）・2026-11-23.1（両画面と給与の画面でそろえる・締めて給与へ渡すで .1）', /kintai\.js\?v=2026-11-27\.3"/.test(H) && /kintai-calc\.js\?v=2026-11-23\.1"/.test(H) && /kintai-calc\.js\?v=2026-11-23\.1"/.test(HC) && /kintai-calc\.js\?v=2026-11-23\.1"/.test(read('payroll.html')));
+t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-27.3（今日の出勤状況で上げた）・2026-11-23.1（両画面と給与の画面でそろえる・締めて給与へ渡すで .1）', /kintai\.js\?v=2026-11-28"/.test(H) && /kintai-calc\.js\?v=2026-11-23\.1"/.test(H) && /kintai-calc\.js\?v=2026-11-23\.1"/.test(HC) && /kintai-calc\.js\?v=2026-11-23\.1"/.test(read('payroll.html')));
 
 const await_pending = [];   /* 動かして確かめる試験（Promise）を最後に待つ */
 console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（2026-11-20・凍結した仕様書 ROOT-v4-master-leave.md） —');
@@ -422,7 +422,7 @@ console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（
     t('月の計算に渡す職員は staffSorted の並び（日ごと・要確認・月の一覧・個人の月の選択肢がこの並び）', /staff: staffSorted\(\),/.test(recFn) && !/staff: data\.staff \|\| \[\]/.test(recFn));
     t('番号の表（印刷）は「職員と番号」の表と同じ従業員コードの順・「結べていないシフトの職員」は入職順', /var printable = list\.filter\(/.test(K) && /var unS0 = staffSorted\(\)\.filter\(/.test(K));
     t('勤務時間を手で入れる窓の職員は名前の順のまま（表示名で並べる）', /staffSorted\(\)\.sort\(function \(a, b\) \{ return dispName\(a\)\.localeCompare\(dispName\(b\), 'ja'\); \}\)/.test(K));
-    t('読み込んだ後に職員マスタをまだ読んでいなければ裏で読み、読めたら数え直す（描き直すのは並びを出すタブだけ・締めと設定のタブは描き直さない）', /if \(!masterSt && !masterBusy\) loadMaster\(\);/.test(K) && /if \(!busy && data && !\(masterSt && masterSt\.err\)\) recompute\(\);/.test(K) && /if \(view === 'app' && !busy && REORDER_TABS\[tab\]\) paint\(\);/.test(K) && /var REORDER_TABS = \{ home: 1, day: 1, review: 1, grid: 1, person: 1, staff: 1, leave: 1 \};/.test(K));
+    t('読み込んだ後に職員マスタをまだ読んでいなければ裏で読み、読めたら数え直す（描き直すのは並びを出すタブだけ・締めと設定のタブは描き直さない）', /if \(!masterSt && !masterBusy\) loadMaster\(\);/.test(K) && /if \(!busy && data && !\(masterSt && masterSt\.err\)\) recompute\(\);/.test(K) && /if \(view === 'app' && !busy && REORDER_TABS\[tab\]\) paint\(\);/.test(K) && /var REORDER_TABS = \{ home: 1, day: 1, review: 1, grid: 1, list: 1, shift: 1, person: 1, staff: 1, leave: 1 \};/.test(K));
     const dnSrc = between('function dispName(', '\n');
     const dn = dnSrc ? new Function(dnSrc + '\nreturn dispName;')() : null;
     t('表示名があれば表示名・無ければシフトの名前・どちらも無ければ職員ID',

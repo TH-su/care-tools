@@ -277,7 +277,9 @@ const CENSUS = {
   "kintai-cert.js": [],        /* 2026-11-25: 資格のタブとホームの箱。HTML の文を返すだけで代入しない（代入は kintai.js の m.innerHTML の1か所・中身は ctx.esc） */   /* 2026-11-25: 社会保険の加入の知らせの純関数（判定・箱・給与の設定の取り出し。DOM に触れない） */
   "kintai-holiday.js": [],   /* 2026-11-25: 日本の祝日の算出と会社の休日の純関数（DOM に触れない） */
   "kintai-yearly.js": [],   /* 2026-11-25: 年別・事業所別の集計の純関数（DOM に触れない） */
-  "kintai-views.js": [],   /* 2026-11-25: 年別・事業所別・休日のタブの文を作るだけ（innerHTML へ入れるのは kintai.js の paint） */
+  "kintai-views.js": [],
+  "kintai-list.js": [],   /* 2026-11-28: 勤怠一覧・シフト表の文を作るだけ（innerHTML へ入れるのは kintai.js の paint・外からの値は esc を通す） */
+  "payroll-list.js": [],   /* 2026-11-28: 給与明細一覧・賞与の表の上の段の文を作るだけ（入れるのは payroll.js の put・外からの値は esc を通す） */   /* 2026-11-25: 年別・事業所別・休日のタブの文を作るだけ（innerHTML へ入れるのは kintai.js の paint） */
   "kintai-extras.js": [],   /* 段A1（2026-11-25）: 日ごとの補助項目の純関数（掃除・合計・表示・CSV の末尾の列。DOM に触れない） */   /* v5（2026-11-20）: 勤怠の決まりの見張り（休憩不足・勤務の間・連続勤務）の純関数（DOM に触れない・総点検） */
   "kintai-freee-import.js": [],   /* 2026-11-23: freee の月の集計の取り込みの純関数（CSV の読み・突き合わせ・DOM に触れない・統合 0123） */
   "kintai-ledger.js": [],   /* 総点検（2026-11-20）: 年次有給休暇管理簿の行を作る純関数（DOM に触れない） */
@@ -305,7 +307,8 @@ const CENSUS = {
     [F, "m.innerHTML = '<p class=\"empty\">読み込んでいます…</p>'"],
     /* 2026-11-25: 年別・事業所別・休日のタブ（kintai-views.js の paint）も同じ所に入れる。氏名・事業所・休日の名前は ctx.esc を通し、数・日付は部品が作った値だけ（check/unit/kintai_yearly_test.js が esc を確かめる） */
     /* 段B（2026-11-25・統合 0130）: 申請のタブの下にお知らせ・補助項目の申請の欄、締めの画面の上に補助項目の承認待ちの帯（kintai-board.js・読んだ中身は全部 esc を通す・check/unit/kintai_board_test.js の4） */
-    [E, "m.innerHTML = bands() + (kb && tab === 'close' ? kb.closeHtml() : '') + (vwT ? vwApi.paint(tab, vwCtx()) : f()) + (kb && tab === 'requests' ? kb.html() : '')"],
+    /* 2026-11-28: 勤怠一覧・シフト表（kintai-list.js の paint）も同じ所に入れる。氏名・番号・事業所・雇用形態・探す文字は ctx.esc を通し、数は月の集計の値だけ */
+    [E, "m.innerHTML = bands() + (kb && tab === 'close' ? kb.closeHtml() : '') + (vwT ? vwApi.paint(tab, vwCtx()) : klT ? KLI.paint(tab, klCtx()) : f()) + (kb && tab === 'requests' ? kb.html() : '')"],
     [E, "$('g-dlg-b').innerHTML = b"],
     [F, "$('g-dlg-f').innerHTML = '<button type=\"button\" class=\"btn\" data-act=\"dlg-close\">閉じる</button>' + (lk ? '' : '<button type=\"button\" class=\"btn pri\" data-act=\"dlg-save\">保存する</button>')"],
     [F, "$('g-edits').innerHTML = '<p class=\"empty\">読み込んでいます…</p>'"],

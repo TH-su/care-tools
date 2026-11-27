@@ -244,6 +244,7 @@
 !/payroll.js
 !/payroll-list.js
 !/office-list.css
+!/kintai-list.js
 # 収支の見通し（入居者マスタの「💴 収支の見通し」）の計算の純関数（2026-11-07 本人指示）。規則だけで、入居者の氏名・金額は含まない
 !/revenue-calc.js
 # 共通データ層（Phase 0・2026-08-13）。各アプリの通信をここへ寄せる契約とドライバ。
