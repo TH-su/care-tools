@@ -68,7 +68,7 @@ function fake(opts = {}) {
     if (b.key !== KEY || opts.nokey) return { ok: false, error: 'nokey' };
     if (b.op === 'pin') return b.pin === '1357' ? { ok: true, open: OPEN, name: '表示 架空', until: new Date(Date.now() + 300000).toISOString() } : { ok: false, error: 'wrong', left: 3 };
     if (b.open !== OPEN) return { ok: false, error: 'closed' };
-    if (b.op === 'month') return monthOf(b.ym);
+    if (b.op === 'month') return opts.month ? opts.month(b.ym) : monthOf(b.ym);
     if (b.op === 'leave') return opts.leave || LEAVE;
     if (b.op === 'notices') return opts.notices ? { ok: true, rows: opts.notices } : { ok: false, error: 'format' };   /* 0125 の前の受け口は知らない op を format で断る */
     if (b.op === 'requests') return { ok: true, rows: st.reqs };
@@ -333,6 +333,70 @@ try {
     const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     t('iPhone の幅で横にはみ出さない', over <= 1, over);
     t('画面のエラーなし', errors.length === 0, errors);
+    await context.close();
+  }
+
+  say('— K. 2026-11-27: 確かめが要る日・塗りは1つ・有給の期限・申請の窓のチェック・0件の月・下の余白 —');
+  {
+    /* 前の月分（締めた月分）に、予定はあるのに打刻の無い日を4日（1日〜4日）。今月分は今までの材料（確かめが要る日なし） */
+    const pm = prevYm(YM);
+    const monthK = (ym) => {
+      if (ym !== pm) return monthOf(ym);
+      const m = monthOf(ym);
+      m.punches = [];
+      m.schedule = [1, 2, 3, 4].map((n) => ({ staff_id: SID, work_date: ym + '-0' + n, seq: 0, office: 'facility', start_at: ym + '-0' + n + 'T09:00:00+09:00', end_at: ym + '-0' + n + 'T18:00:00+09:00', break_min: 60, kind: 'work', symbol: '日', paid_min: 0 }));
+      return m;
+    };
+    const st5 = fake({ month: monthK });
+    ({ context, page, errors } = await openPage(st5, '/kintai-self.html'));
+    await page.evaluate((k) => { localStorage.setItem('kintai_self_key', k); localStorage.setItem('kintai_self_tab', 'days'); }, KEY);
+    await page.reload();
+    await page.fill('#in-pin', '1357'); await page.click('#b-pin');
+    await page.waitForSelector('#days-list .day', { timeout: 10000 });
+    t('確かめが要る日が無い月分（今月分）には帯を出さない', await page.evaluate(() => document.getElementById('need-box').hidden));
+    const fills = await page.evaluate(() => { const pri = getComputedStyle(document.querySelector('.tab[aria-selected="true"]')).backgroundColor; return Array.from(document.querySelectorAll('#v-app .tab, #v-app .seg .btn')).filter((b) => getComputedStyle(b).backgroundColor === pri).map((b) => b.textContent.trim()); });
+    t('塗りに見えるのは上のタブ「勤怠」の1つだけ（月の切り替えは淡い地と下線）', fills.length === 1 && fills[0] === '勤怠', fills);
+    t('「締める前の数字は目安です」は箱なしの注記（黄の箱にしない・文はそのまま）', await page.evaluate(() => { const p = Array.from(document.querySelectorAll('#days-head p')).find((x) => /締める前の数字は目安です/.test(x.textContent)); return !!p && !p.classList.contains('msg') && parseFloat(getComputedStyle(p).fontSize) >= 15; }));
+    const padB = await page.evaluate(() => parseFloat(getComputedStyle(document.getElementById('main')).paddingBottom));
+    t('本文の外枠の下の余白は 96px 以上（右下の「不具合を報告」が末尾に重ならない）', padB >= 96, padB);
+    await page.click('#b-prev');
+    await page.waitForSelector('#need-box:not([hidden]) .need', { timeout: 10000 });
+    const nb = await page.textContent('#need-box');
+    const m0 = +pm.slice(5, 7);
+    t('帯: 「確かめが要る日が 4 日あります（M/1・M/2・M/3 ほか 1 日）」（日付は3つまで）', nb === '確かめが要る日が 4 日あります（' + m0 + '/1・' + m0 + '/2・' + m0 + '/3 ほか 1 日）', nb);
+    t('帯は月の合計の箱の上', await page.evaluate(() => !!(document.getElementById('need-box').compareDocumentPosition(document.getElementById('days-head')) & Node.DOCUMENT_POSITION_FOLLOWING)));
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.click('#need-box .need');
+    await page.waitForTimeout(900);
+    const go = await page.evaluate((d) => { const c = document.querySelector('#days-list .day[data-date="' + d + '"]'); const r = c.getBoundingClientRect(); return { top: Math.round(r.top), inView: r.top >= -2 && r.top < window.innerHeight / 2, focus: document.activeElement === c }; }, pm + '-01');
+    t('帯を押すと、確かめが要る最初の日の箱へ送る', go.inView && go.focus, go);
+    await page.click('#t-req');
+    await page.waitForSelector('#f-req');
+    const chk = await page.evaluate(() => Array.from(document.querySelectorAll('#f-req label.chk')).filter((l) => l.offsetParent).map((l) => Math.round(l.getBoundingClientRect().height)));
+    t('申請の窓のチェックの欄はラベル全体が押せる行で、高さ 44px 以上', chk.length >= 1 && chk.every((h) => h >= 44), chk);
+    await page.click('#f-req label.chk:has(#rq-next)', { position: { x: 200, y: 22 } });   /* チェックの四角ではなく、ラベルの文の所を押す */
+    t('ラベルの文を押してもチェックが入る', await page.evaluate(() => document.getElementById('rq-next').checked));
+    await page.selectOption('#rq-kind', 'overtime');
+    const chk2 = await page.evaluate(() => Array.from(document.querySelectorAll('#f-req label.chk')).filter((l) => l.offsetParent).map((l) => Math.round(l.getBoundingClientRect().height)));
+    t('残業の窓の「残業の終わりは次の日の時刻」も 44px 以上', chk2.length >= 1 && chk2.every((h) => h >= 44), chk2);
+    t('「出した申請」の見出しの上の余白は 24px', await page.evaluate(() => parseFloat(getComputedStyle(document.querySelector('#p-req > h2.sh')).marginTop)) === 24);
+    await page.click('#t-leave');
+    await page.waitForFunction(() => /有給の残り/.test(document.querySelector('#leave-box').textContent), null, { timeout: 10000 });
+    const lot = await page.evaluate(() => Array.from(document.querySelectorAll('#leave-box li.lot')).map((li) => ({ e: li.querySelector('.lot-e').textContent, dateLines: li.querySelector('.lot-e .nw').getClientRects().length, sameRow: Math.abs(li.querySelector('.lot-g').getBoundingClientRect().top - li.querySelector('.lot-r').getBoundingClientRect().top) < 4 })));
+    t('有給の付与ごと: 1行目に付与日と残り・2行目に「期限 … まで」・日付は折れない', lot.length >= 1 && lot.every((x) => /^期限 .+ まで$/.test(x.e) && x.dateLines === 1 && x.sameRow), lot);
+    t('有給の黄の箱は「いちばん早く消える残り」だけ', await page.evaluate(() => Array.from(document.querySelectorAll('#leave-box .msg.warn')).every((x) => /いちばん早く消える残り/.test(x.textContent))));
+    await context.close();
+    /* 予定も打刻も無い月: 合計の箱を出さず空の状態の箱だけ */
+    const st6 = fake({ month: (ym) => Object.assign(monthOf(ym), { punches: [], schedule: [] }) });
+    ({ context, page, errors } = await openPage(st6, '/kintai-self.html'));
+    await page.evaluate((k) => { localStorage.setItem('kintai_self_key', k); localStorage.setItem('kintai_self_tab', 'days'); }, KEY);
+    await page.reload();
+    await page.fill('#in-pin', '1357'); await page.click('#b-pin');
+    await page.waitForFunction(() => /まだありません/.test(document.getElementById('days-head').textContent), null, { timeout: 10000 });
+    const emp = await page.evaluate(() => ({ tot: !!document.querySelector('#days-head .tot'), txt: document.getElementById('days-head').textContent, list: document.getElementById('days-list').childElementCount, need: document.getElementById('need-box').hidden }));
+    t('予定も打刻も無い月: 合計の箱（0 の並び）を出さず「この月分の予定と打刻はまだありません。」の箱だけ', !emp.tot && /この月分の予定と打刻はまだありません。/.test(emp.txt) && emp.list === 0 && emp.need, emp);
+    await shot(page, 'empty-month');
+    t('K. 画面のエラーなし', errors.length === 0, errors);
     await context.close();
   }
 } finally {

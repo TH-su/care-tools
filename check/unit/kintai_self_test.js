@@ -302,5 +302,18 @@ for (const [nm, set] of [['明るい表示', light], ['暗い表示', dark]]) {
   t(nm + ': 文字と地の差はどれも 4.5:1 以上', bad.length === 0, bad);
 }
 
+say('— 2026-11-27: 確かめが要る日・見た目の直し —');
+{
+  const J = read('kintai-self.js'), CSS = read('kintai-self.css'), H = read('kintai-self.html');
+  t('確かめが要る日は、日の札（S.dayRows の flags）と計算の部品の C.REVIEW・C.FLAG_LABEL から数える（計算の部品を変えず、判定を2つに分けない）・確認済みの日と先の日は数えない',
+    /function needDays\(rows\) \{[\s\S]*?\(C && C\.REVIEW\)[\s\S]*?\(C && C\.FLAG_LABEL\)[\s\S]*?!r\.future && r\.flags\.some[\s\S]*?r\.flags\.indexOf\(chk\) < 0/.test(J) && /paintNeed\(needDays\(rows\)\);/.test(J));
+  t('帯は日付を3つまで・それ以上は「ほか n 日」・押すとその日の箱へ（画面の中だけの印 data-date）・textContent の部品で作る',
+    /need\.slice\(0, 3\)/.test(J) && /' ほか ' \+ \(need\.length - 3\) \+ ' 日'/.test(J) && /'確かめが要る日が ' \+ need\.length \+ ' 日あります（' \+ shown \+ '）'/.test(J) && /c\.setAttribute\('data-date', r\.date\)/.test(J) && !/innerHTML/.test(J));
+  t('帯の箱は月の合計の箱の上（月の切り替えの下）・閉じる時に捨てる', /<div id="need-box" class="need-box" role="status" hidden><\/div>\s*<div class="cd" id="days-head"><\/div>/.test(H) && /clear\(\$\('need-box'\)\); \$\('need-box'\)\.hidden = true;/.test(J));
+  t('予定も打刻も無い月は合計を出さずに空の箱だけ', /if \(!rows\.length\) \{ head\.appendChild\(el\('p', 'muted empty', 'この月分の予定と打刻はまだありません。'\)\); return; \}/.test(J));
+  t('月の切り替えは塗らない（淡い地と下線）・塗りは上のタブだけ', /\.seg \.btn\[aria-pressed="true"\] \{ background: var\(--pri-l\);/.test(CSS) && !/\.seg \.btn\[aria-pressed="true"\] \{ background: var\(--pri\);/.test(CSS));
+  t('有給: 黄の箱は「いちばん早く消える残り」だけ（時間単位の注意・年5日は注記）', (J.match(/'msg warn'/g) || []).length === 1 && /el\('p', 'msg warn', 'いちばん早く消える残り: '/.test(J));
+}
+
 say('\n' + (ng ? '✗ 失敗 ' + ng + ' 件' : '✓ 全部合格') + '（' + ok + ' 件合格）');
 process.exit(ng ? 1 : 0);
