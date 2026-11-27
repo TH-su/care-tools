@@ -1117,6 +1117,61 @@ const regMsg = (L, id) => String(L.ctx.reg[id || UID(1)] && L.ctx.reg[id || UID(
     t('詳細を閉じたら左の書類も閉じ、メモリの blob の URL を捨てる', L.els['a-viewer'].hidden && (L.ctx.revoked || []).includes('blob:kakuu-1'));
   }
 
+  group('14. 保存の穴（連打の止め・最初の連絡の時刻の知らせ・戻るで復元した時の守り・2026-11-28）');
+  {
+    const row0 = app({ first_contact_at: null, stage: 'applied' });
+    const okPut = (a) => ({ ok: true, row: Object.assign({}, row0, a.p_row, { rev: row0.rev + 1 }) });
+    const inserts = (L) => L.reads().filter((x) => x.table === 'ats_contacts' && x.ops.some((o) => o[0] === 'insert')).length;
+    const setC = (L) => { L.el('c-sum').value = '架空の連絡'; L.el('c-dir').value = 'out'; L.el('c-ch').value = 'tel'; };
+    {
+      const L = await opened({ row: row0, tables: { ats_applicants: [row0], ats_interviews: [], ats_settings: [], staff_names: [], ats_contacts: [] }, rpc: { ats_put: okPut } });
+      setC(L);
+      const p1 = L.ctx.addContact_(), p2 = L.ctx.addContact_();
+      const r = await Promise.all([p1, p2]); await settle();
+      t('「連絡を記録」を2回続けて押しても連絡は1行だけ入る（2回目は送らない）', inserts(L) === 1 && r[0] === true && r[1] === false, { ins: inserts(L), r });
+      t('最初の連絡の時刻を付けられた時は「連絡を記録しました。」', L.els['d-msg'].textContent === '連絡を記録しました。' && /ok/.test(L.els['d-msg'].className), L.els['d-msg'].textContent);
+      setC(L);
+      await L.ctx.addContact_(); await settle();
+      t('送り終えた後はもう一度記録できる（送信中の印が戻る）', inserts(L) === 2 && L.ctx.contactBusy === false, inserts(L));
+    }
+    for (const [label, put, re] of [
+      ['ok でない（受け付けない）', () => ({ ok: false }), /入りませんでした/],
+      ['他で直された（conflict）', () => ({ ok: false, conflict: true }), /他で直されていた/],
+      ['確かめ中（pending）', () => ({ ok: false, reason: 'pending' }), /確かめ中/],
+      ['通信の失敗（投げた）', () => ({ __error: { message: 'Failed to fetch' } }), /入りませんでした/]]) {
+      const L = await opened({ row: row0, tables: { ats_applicants: [row0], ats_interviews: [], ats_settings: [], staff_names: [], ats_contacts: [] }, rpc: { ats_put: put } });
+      setC(L);
+      const r = await L.ctx.addContact_(); await settle();
+      const m = L.els['d-msg'].textContent;
+      t('最初の連絡の時刻が ' + label + ' の時は「時刻は入っていない」と知らせる（連絡の行は入ったと伝え、「記録しました」だけで終えない）', r === true && inserts(L) === 1 && /^連絡を記録しました。最初の連絡の時刻は/.test(m) && re.test(m) && /warn/.test(L.els['d-msg'].className), m);
+      t('… ' + label + ' の後も送信中の印が戻る', L.ctx.contactBusy === false);
+    }
+    {
+      const L = await opened({ row: row0, tables: { ats_applicants: [row0], ats_interviews: [], ats_settings: [], staff_names: [], ats_contacts: [] }, tableErr: { ats_contacts: { message: 'Failed to fetch' } } });
+      setC(L);
+      const r = await L.ctx.addContact_(); await settle();
+      t('連絡の行が入らなかった時は「記録しました」と出さず、送信中の印を戻す', r === false && !/記録しました/.test(L.els['d-msg'].textContent) && L.ctx.contactBusy === false, L.els['d-msg'].textContent);
+    }
+    {
+      const L = await opened({ row: row0, tables: { ats_applicants: [row0], ats_interviews: [], ats_settings: [], staff_names: [], ats_contacts: [] }, rpc: { ats_put: okPut } });
+      L.el('f-name').value = '甲野 一郎';
+      const n0 = L.rpcs().filter((x) => x.name === 'ats_put').length;
+      const r = await Promise.all([L.ctx.saveBasic_(), L.ctx.saveBasic_()]); await settle();
+      const n1 = L.rpcs().filter((x) => x.name === 'ats_put').length;
+      t('「基本情報を保存」を2回続けて押しても送るのは1回だけ（2回目は busy で送らない）', n1 - n0 === 1 && r[0] === 'ok' && r[1] === 'busy', { sent: n1 - n0, r });
+      t('… 送り終えた後は送信中の印が戻る', L.ctx.basicBusy === false);
+    }
+    {
+      const L = await opened({ row: row0, tables: { ats_applicants: [row0], ats_interviews: [], ats_settings: [], staff_names: [], ats_contacts: [] }, rpc: { ats_put: () => ({ __error: { message: 'Failed to fetch' } }) } });
+      L.el('f-name').value = '甲野 一郎';
+      const r = await L.ctx.saveBasic_(); await settle();
+      t('基本情報の保存が通信の失敗でも送信中の印が戻る（押し直せる）', r === 'error' && L.ctx.basicBusy === false, r);
+    }
+    t('送っている間はボタンも押せなくする（基本情報・連絡の記録）', /basicBusy=true; actBusy_\('save-basic',true\)/.test(S) && /contactBusy=true; actBusy_\('add-contact',true\)/.test(S) && /function actBusy_\(act,on\)\{[^\n]*\.disabled=!!on/.test(S));
+    t('戻るで復元した時（pageshow の persisted）に現場用なら、端末の用途の切り替えと同じ道（onStorage_）で読み込み直す',
+      /window\.addEventListener\('pageshow',function\(e\)\{ try\{ if\(e&&e\.persisted&&isField\(\)\) onStorage_\(\{key:DEVICE_KEY,newValue:'field'\}\); \}catch\(err\)\{ atsNote_\(/.test(S));
+  }
+
   say('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
   process.exit(fail ? 1 : 0);
 })().catch((e) => { say('  ✗ 試験が途中で止まりました: ' + (e && e.stack || e)); process.exit(1); });

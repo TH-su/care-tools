@@ -842,6 +842,25 @@ const allPanels = (L) => { const out = []; for (const tb of CALC.TABS) { L.ctx.t
     t('紙の CSS は印刷の時だけ紙の根を出す（ふだんは出さない）', /#e-print\{display:none\}/.test(HTML) && /@media print\{ body\.su-print-evlist\{background:#fff !important; padding:0 !important\} body\.su-print-evlist #e-print\{display:block; font-size:var\(--ep-fs,12px\)\} \}/.test(HTML));
   }
 
+  group('17. 業者のその場の追加の連打の止め（2026-11-28）');
+  {
+    const vstore = {};
+    const L = await opened({ rpc: { eq_list: okList(), eq_save_vendor: saver(vstore) } });
+    L.ctx.openEvent_(null, 'room:101', 'a1');
+    L.ctx.act_('vq-open', { getAttribute: (k) => (k === 'data-for' ? 'v-vendor' : null) });
+    L.el('d-vq-name').value = '架空の連打の業者';
+    const r = await Promise.all([L.ctx.vqSave_('v-vendor'), L.ctx.vqSave_('v-vendor')]); await settle();
+    t('「業者を足して選ぶ」を2回続けて押しても業者は1件だけ（2回目は送らない）', L.rpcs('eq_save_vendor').length === 1 && L.ctx.data.vendors.filter((v) => v.name === '架空の連打の業者').length === 1 && r[0] === true && r[1] === false, { n: L.rpcs('eq_save_vendor').length, r });
+    t('… 送り終えた後は送信中の印が戻る', L.ctx.vqBusy === false);
+    const N = await opened({ rpc: { eq_list: okList(), eq_save_vendor: () => ({ __error: { code: '500', message: 'Failed to fetch' } }) } });
+    N.ctx.openEvent_(null, 'room:101', 'a1');
+    N.ctx.act_('vq-open', { getAttribute: (k) => (k === 'data-for' ? 'v-vendor' : null) });
+    N.el('d-vq-name').value = '架空';
+    await N.ctx.vqSave_('v-vendor'); await settle();
+    t('保存できなかった時も送信中の印が戻り、押し直せる', N.ctx.vqBusy === false && N.ctx.vqOpen === 'v-vendor');
+    t('送っている間はボタンも押せなくする（書けない時は押せないまま）', /vqBusy=true; vqBtn_\(id,true\)/.test(HTML) && /b\.disabled=!!on\|\|!canWrite_\(\)/.test(HTML));
+  }
+
   say('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
   process.exit(fail ? 1 : 0);
 })().catch((e) => { say('  ✗ 試験が途中で止まりました: ' + (e && e.stack || e)); process.exit(1); });
