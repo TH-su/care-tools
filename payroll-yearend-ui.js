@@ -477,15 +477,38 @@
     var data = { gross: d.gross, taxable: d.taxable, nontax: d.gross - d.taxable, si_other: 0, resident_tax: 0 };
     ['si_health', 'si_care', 'si_support', 'si_pension', 'si_emp', 'income_tax'].forEach(function (k) { data[k] = d[k] || 0; });
     var old = rowsOf(sid).filter(function (r) { return r.pay_date === pd && r.kind === kind; })[0];
-    S.busy = true; if (btn) btn.disabled = true;
+    S.busy = true; if (btn) btn.disabled = true; dlgNgClear();
     var my = S.gen;
     ctx.rpc('payroll_ytd_put', { p_year: year, p_rows: [{ staff_id: sid, pay_date: pd, kind: kind, source: 'manual', data: data, src_fp: '', rev: old ? old.rev : 0 }] }).then(function (r) {
       S.busy = false; if (btn) btn.disabled = false;
       if (my !== S.gen) return;
       if (r && r.ok === false) { ctx.say('足せませんでした：' + ngText(r)); return; }
       ctx.closeDlg(); ctx.toast('累計に足しました。'); reload(ctx);
-    }, function (e) { S.busy = false; if (btn) btn.disabled = false; ctx.closeDlg(); if (ctx.fail) ctx.fail(e, '累計に足す'); });
+    }, function (e) {
+      S.busy = false; if (btn) btn.disabled = false;
+      if (my === S.gen && keepOnThrow(e)) { if (ctx.note) ctx.note('累計に足す', e); dlgNg(ctx, NET_NG); return; }   /* 通信切れでは窓を残す（入れた数を捨てない） */
+      ctx.closeDlg(); if (ctx.fail) ctx.fail(e, '累計に足す');
+    });
   }
+
+  /* 送信が投げた時、通信の失敗（通信切れ・時間切れ）なら窓を閉じずに入力を残す。鍵（42501）・2段階認証・画面の決まった断り・
+     データベースの断りなど通信でない失敗は、今までどおり窓を閉じて ctx.fail に任せる（理由の文は ctx.fail が出す） */
+  function keepOnThrow(e) {
+    if (e && (e.code === '42501' || e.payroll || /aal2|mfa/i.test(String(e.message || '')))) return false;
+    var off = false; try { off = typeof navigator !== 'undefined' && navigator.onLine === false; } catch (_) {}
+    return off || /failed to fetch|networkerror|network|load failed|timeout|fetch/i.test(String((e && e.message) || e || ''));
+  }
+  /* 窓の中の上に断りの帯を1つだけ出す（入れた内容はそのまま・窓が無い時は止めて知らせる窓） */
+  var NET_NG = '保存できませんでした（通信が切れたか、時間がかかりすぎました）。入れた内容は残っています。つながってから、もう一度押してください。';
+  function dlgNg(ctx, text) {
+    var b = document.getElementById('p-dlg-b');
+    if (!b || !document.getElementById('p-dlg').open) { ctx.say(text); return; }
+    var el = document.getElementById('ye-dlg-ng');
+    if (!el) { el = document.createElement('div'); el.id = 'ye-dlg-ng'; el.className = 'band ng'; el.setAttribute('role', 'alert'); b.insertBefore(el, b.firstChild); }
+    el.textContent = text;
+    try { if (el.scrollIntoView) el.scrollIntoView({ block: 'nearest' }); } catch (_) {}   /* 長い窓の下のボタンを押した時も知らせが見えるように */
+  }
+  function dlgNgClear() { var el = document.getElementById('ye-dlg-ng'); if (el && el.parentNode) el.parentNode.removeChild(el); }
 
   /* ── 1人を開く（申告の入力・計算・下書き保存・確定） ── */
   var DIS = [['none', 'なし'], ['general', '一般の障害者'], ['special', '特別障害者'], ['special_cohabit', '同居特別障害者']];
@@ -708,7 +731,7 @@
     var D = S.dlg; if (!D || D.ro || S.busy) return;
     var c = doCalc(ctx); if (!c) return;
     var year = yearOf(ctx), my = S.gen;
-    S.busy = true; if (btn) btn.disabled = true;
+    S.busy = true; if (btn) btn.disabled = true; dlgNgClear();
     ctx.rpc('payroll_yearend_put', { p_year: year, p_staff_id: D.sid, p_decl: c.decl, p_result: c.result, p_basis: c.basis, p_settle_ym: D.settle_ym, p_rev: D.rev }).then(function (r) {
       S.busy = false; if (btn) btn.disabled = false;
       if (my !== S.gen || S.dlg !== D) return;
@@ -717,7 +740,11 @@
       var y = yeOf(D.sid), row = { staff_id: D.sid, decl: c.decl, result: c.result, basis: c.basis, status: 'draft', settle_ym: D.settle_ym, rev: D.rev, finalized_at: null };
       if (y) Object.assign(y, row); else S.data.yearend.push(row);
       if (then) then(c); else { ctx.toast('下書き保存しました。'); ctx.paint(); }
-    }, function (e) { S.busy = false; if (btn) btn.disabled = false; ctx.closeDlg(); S.dlg = null; if (ctx.fail) ctx.fail(e, '年末調整の下書き保存'); });
+    }, function (e) {
+      S.busy = false; if (btn) btn.disabled = false;
+      if (my === S.gen && S.dlg === D && keepOnThrow(e)) { if (ctx.note) ctx.note('年末調整の下書き保存', e); dlgNg(ctx, NET_NG); return; }   /* 通信切れでは窓を残す（申告の入力を捨てない） */
+      ctx.closeDlg(); S.dlg = null; if (ctx.fail) ctx.fail(e, '年末調整の下書き保存');
+    });
   }
   function finalize(ctx, btn) {
     var D = S.dlg; if (!D || D.ro || S.busy) return;

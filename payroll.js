@@ -196,6 +196,11 @@
     var pr; try { pr = window.SUDialog ? window.SUDialog.confirm(msg) : Promise.resolve(window.confirm(msg)); } catch (e) { note('確かめの窓', e); pr = Promise.resolve(false); }
     return pr.then(function (ok) { return !!ok && mg === maskGen && !masked && view === 'app'; });
   }
+  /* 保存の後の読み直し（load(false)）は、保存していない「その月だけの調整」を捨てる。調整がある時だけ先に確かめる（残すなら先に下書き保存してもらう・月分を変える時の確かめと同じ作法） */
+  function adjAsk() {
+    if (!Object.keys(adjEdits).length) return Promise.resolve(true);
+    return ask('保存していない「その月だけの調整」があります。ここで保存すると読み直すので、その調整は捨てます。よろしいですか？\n（調整を残す時は「キャンセル」を押し、先に今月の給与で「下書き保存」をしてください）');
+  }
   var toastT = null;
   function toast(t) {
     var el = $('p-toast'); if (!el) return;
@@ -2053,12 +2058,16 @@
     var empEx = !!(empIn && window.PayrollFreeeSlips && typeof window.PayrollFreeeSlips.excluded === 'function' && window.PayrollFreeeSlips.excluded(empIn));
     if (p.staff_id.indexOf('p:') === 0 && !d.name) d.name = p.name;
     if (bad.length) { say('数の形が違う欄があります：' + bad.filter(function (x, i) { return bad.indexOf(x) === i; }).join('・') + '（半角の数字で書いてください）'); return; }
+    var c0 = dlgCtx;
+    adjAsk().then(function (go) {
+    if (!go || dlgCtx !== c0) return;
     var done = hold(btn, '保存しています…');
     /* 同じ日付の版があれば今の版で上書き、無ければ新しい版（rev 0）で足す（統合 0102 の payroll_profile_put） */
     var from = v('f-from'), same = p.versions.filter(function (x) { return x.effective_from === from; })[0];
     rpc('payroll_profile_put', { p_staff_id: p.staff_id, p_effective_from: from, p_data: d, p_rev: same ? same.rev : 0, p_reason: reason }).then(okOr).then(function () {
       done(); closeDlg(); toast('給与の設定を保存しました。計算し直してください。' + (empEx ? '従業員番号が ' + EXC() + ' で始まるので、freee に登録の無い人として比べる対象から外します。' : '')); return load(false);
     })['catch'](function (e) { done(); fail(e, '給与の設定の保存'); });
+    });
   }
   function openBank(sid) {
     var p = profOf(sid); if (!p) return;
@@ -2321,7 +2330,7 @@
     });
     if (!payload.profiles.length) delete payload.profiles;
     if (!payload.banks.length) delete payload.banks;
-    ask(rows.length + '人分の設定（口座を含む）を送ります。よろしいですか？').then(function (ok) {
+    adjAsk().then(function (go) { return go ? ask(rows.length + '人分の設定（口座を含む）を送ります。よろしいですか？') : false; }).then(function (ok) {
     if (!ok || !importRows) { payload = null; return; }
     var done = hold(btn, '送っています…');
     rpc('payroll_import_put', { p_payload: payload }).then(okOr).then(function (r) {
@@ -2407,8 +2416,11 @@
     c.zengin = Object.assign({}, obj(c.zengin), { kind: v('s-zk') });
     setTxt(c, 'company_name', v('s-co'));
     if (bad.length) { say('形の違う欄があります：' + bad.filter(function (x, i) { return bad.indexOf(x) === i; }).join('・')); return; }
+    adjAsk().then(function (go) {
+    if (!go || !bs) return;
     var done = hold(btn, '保存しています…');
     rpc('payroll_settings_put', { p_config: c, p_rev: bs.settings.rev }).then(okOr).then(function () { done(); toast('設定を保存しました。'); return load(false); })['catch'](function (e) { done(); fail(e, '設定の保存'); });
+    });
   }
 
   /* 手当・控除の定義（管理者だけ・統合 0102 の payroll_allowance_put。消さずに「隠す」） */
