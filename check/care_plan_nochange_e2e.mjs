@@ -15,9 +15,11 @@
  * 足されていないことと、年表の窓を開いて閉じるだけでは保存データが変わらないことも確かめる。
  *
  * 時刻と乱数は両方で同じ値になるよう固定する（時計は Playwright の clock.setFixedTime・乱数は決まった並びの擬似乱数）。
- * 比べる時に除く項目: 今の画面の側が送った本文の最上位の csAppVer（版の印・2026-11-27）だけ。editedAt・新しい予定の id は固定した時計と乱数で
- *   両方同じ値になるので、そのまま比べる。端末の控えの care_schedule_v2 と、偽のサーバーが保存した中身には csAppVer が無いことも確かめる
- *   （偽のサーバーは本物と同じく保存の前に最上位の csAppVer を取り除く）。
+ * 共通 DB の口 cs_plan_gate（移行 0136）の有る無しで2回流す（反証 F1・2026-11-27）:
+ *   口が無い（0136 より前の本番を真似る: 口が無く、kv_put は門を持たず csAppVer を取り除かずに保存する）… 今の画面が送った本文は、改修の前の画面と
+ *     【何も除かずに】一字一句同じ（版の印も無い）。偽のサーバーが保存した中身にも印が無い
+ *   口がある（0136 の門の偽物）… 送った本文には版の印（2026112701）が付き、その最上位の csAppVer だけを除くと改修の前と一字一句同じ
+ * editedAt・新しい予定の id は固定した時計と乱数で両方同じ値になるので、そのまま比べる。端末の控えの care_schedule_v2 には csAppVer が無いことも確かめる。
  * 比べないもの: care_schedule_v2 以外の端末の控え（世代の控え・土台・書き手の印など。中身でなく端末の作業用）。
  * データはすべて架空（check/fixtures/care-schedule.mjs の38名・版の項目は1つも持たない）。通信は全部横取りし、外へは出ない。
  */
@@ -78,9 +80,10 @@ const PLAN_KEYS = ['planGen', 'planFrom', 'planLevel', 'planNote', 'nextPlans', 
 const browser = await chromium.launch();
 
 /* 1回の台本＝1つのブラウザの文脈（端末1台）。dir の画面に流し、各段の控えと送った本文を返す */
-async function runScript(dir, label, isNow, planOn = true) {
+/* gate … 口 cs_plan_gate が答えるか（偽ならサーバーは 0136 より前の形＝GATE.kvPutPre0136） */
+async function runScript(dir, label, isNow, planOn = true, gate = false) {
   const srv = await startServer(dir);
-  const st = { kv: { data: CS.careDb(), rev: 3 }, puts: [], vers: [], ext: [], errors: [] };
+  const st = { kv: { data: CS.careDb(), rev: 3 }, puts: [], raw: [], vers: [], ext: [], errors: [] };
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, timezoneId: 'Asia/Tokyo', locale: 'ja-JP' });
   await context.clock.setFixedTime(FIXED);
   await context.addInitScript(({ s }) => {
@@ -107,17 +110,19 @@ async function runScript(dir, label, isNow, planOn = true) {
     kv_head: (b) => { const revs = {}; (b.p_keys || []).forEach((k) => { revs[k] = k === 'care_schedule_v2' ? st.kv.rev : 0; }); return { revs }; },
     kv_put: (b) => {
       if (b.p_key !== 'care_schedule_v2') return { ok: true, rev: 1 };
-      /* 比べる本文は最上位の csAppVer（版の印）を除いた物。付いていた印は別に控える */
+      /* raw は何も除かない本文。puts は最上位の csAppVer（版の印）だけを除いた物。付いていた印は別に控える */
+      const rawBody = JSON.stringify(b.p_data);
       const body = Object.assign({}, b.p_data); st.vers.push(body.csAppVer === undefined ? null : body.csAppVer); delete body.csAppVer;
-      st.puts.push(JSON.stringify(body));
-      /* 共通 DB の門の偽物（版の印・中身の確かめ planstale・競合・印を外して保存・check/fixtures/care-plan-gate.mjs）を通す */
-      const r = GATE.kvPut(st.kv, b);
-      if (r.conflict) st.puts[st.puts.length - 1] = 'conflict:' + st.puts[st.puts.length - 1];
-      else if (!r.ok) st.puts[st.puts.length - 1] = (r.error || 'ng') + ':' + st.puts[st.puts.length - 1];
+      st.puts.push(JSON.stringify(body)); st.raw.push(rawBody);
+      /* 口がある時は共通 DB の門の偽物（版の印・中身の確かめ planstale・競合・印を外して保存）、無い時は 0136 より前の形（印を除かずに保存）。check/fixtures/care-plan-gate.mjs */
+      const r = (gate ? GATE.kvPut : GATE.kvPutPre0136)(st.kv, b);
+      const tag = r.conflict ? 'conflict:' : (!r.ok ? (r.error || 'ng') + ':' : '');
+      if (tag) { st.puts[st.puts.length - 1] = tag + st.puts[st.puts.length - 1]; st.raw[st.raw.length - 1] = tag + st.raw[st.raw.length - 1]; }
       return r;
     },
     cs_plan_status: () => ({ ok: true, enabled: planOn, minAppVer: 2026112701, lastUnstampedAt: null, lastStampedAt: null }),
   };
+  if (gate) rpc.cs_plan_gate = () => GATE.csPlanGate();
   await context.route('**/*', async (route) => {
     const req = route.request();
     const u = req.url();
@@ -270,7 +275,10 @@ async function runScript(dir, label, isNow, planOn = true) {
       t(label + ': どの利用者にも版の項目（' + PLAN_KEYS.join('・') + '）が足されていない（端末の控え・送った本文とも）', added.length === 0, added.slice(0, 10));
       t(label + ': 端末の控えの care_schedule_v2 に版の印（csAppVer）が無い', !(await ls()).includes('csAppVer'));
       t(label + ': 偽のサーバーが保存した中身に版の印が紛れ込まない', !JSON.stringify(st.kv.data).includes('csAppVer'));
-      t(label + ': 送った本文には版の印（2026112701）が付いている', st.vers.length > 0 && st.vers.every((v) => v === 2026112701), st.vers);
+      /* 口がある時: 予約の無い中身は確かめの答えを待たずに送る（反証 F1 の仕様）ので、読み込み直した直後の送信が答えより先なら印なしが正しい。
+         「必ず付く」は予約ありで待ちが効く場面（care_plan_oldtab_e2e の G2・care_plan_daycare_e2e・care_plan_e2e の (11)）が受け持つ */
+      if (gate) t(label + ': 送った本文の版の印は 2026112701 か無しのどちらかで、1本以上に付いている', st.vers.length > 0 && st.vers.every((v) => v === 2026112701 || v === null) && st.vers.some((v) => v === 2026112701), st.vers);
+      else t(label + ': 口が無いので、送った本文に版の印が1本も付いていない', st.vers.length > 0 && st.vers.every((v) => v === null), st.vers);
     }
   } finally {
     t(label + ': 画面のエラー（pageerror）なし', st.errors.length === 0, st.errors);
@@ -278,14 +286,14 @@ async function runScript(dir, label, isNow, planOn = true) {
     await context.close();
     await srv.close();
   }
-  return { snaps, puts: st.puts };
+  return { snaps, puts: st.puts, raw: st.raw };
 }
 
 console.log('\n— 予約を使わない端末で、改修の前（' + BASE_REF + '）と後の保存データ・送信の中身が同じ —');
 t('比べる元（' + BASE_REF + '）と今の画面の care-schedule.html が違う（同じなら比べる元と同じなので比べになっていません）', !sameAsBase, sameAsBase ? '比べる元と同じなので比べになっていません' : undefined);
 t('直す前の画面に care-plan-calc.js は置かない', true, calcInBefore ? '比べる元にあったので外した' : undefined);
 const A = await runScript(beforeDir, '直す前', false);
-const B = await runScript(NOW_DIR, '今の画面', true);
+const B = await runScript(NOW_DIR, '今の画面（口が無い＝0136 より前）', true);
 t('台本の段の数が同じ（' + A.snaps.length + '段）', A.snaps.length === B.snaps.length);
 for (let i = 0; i < Math.min(A.snaps.length, B.snaps.length); i++) {
   const a = A.snaps[i], b = B.snaps[i];
@@ -297,6 +305,12 @@ for (let i = 0; i < Math.min(A.snaps.length, B.snaps.length); i++) {
 t('送った本文の列（' + A.puts.length + '本）が一字一句同じ', A.puts.length === B.puts.length && A.puts.every((p, i) => p === B.puts[i]),
   A.puts.map((p, i) => p === B.puts[i]).map((ok, i) => ok ? null : i).filter((x) => x !== null));
 t('送った本文が1本以上ある（比べた物が空でない）', A.puts.length > 0, A.puts.length);
+t('口が無い: 送った本文の列を何も除かずに比べても（版の印を含めて）一字一句同じ', A.raw.length === B.raw.length && A.raw.every((p, i) => p === B.raw[i]),
+  A.raw.map((p, i) => p === B.raw[i]).map((ok, i) => ok ? null : i).filter((x) => x !== null));
+/* 口がある（0136 の門の偽物）: 印が付く以外は同じ */
+const Bg = await runScript(NOW_DIR, '今の画面（口がある＝0136 あり）', true, true, true);
+t('口がある: 各段の端末の care_schedule_v2 が直す前と一字一句同じ', Bg.snaps.length === A.snaps.length && Bg.snaps.every((x, i) => x.ls === A.snaps[i].ls && x.puts === A.snaps[i].puts));
+t('口がある: 送った本文の列が、版の印だけを除くと直す前と一字一句同じ', Bg.puts.length === A.puts.length && Bg.puts.every((p, i) => p === A.puts[i]));
 /* 予約を使わないので、使い始めのスイッチ（cs_plan_status の enabled）が切でも同じ結果になる（2026-11-27） */
 const Boff = await runScript(NOW_DIR, '今の画面（スイッチ切）', 'off', false);
 t('スイッチ切: 各段の端末の care_schedule_v2 がスイッチ入と一字一句同じ', Boff.snaps.length === B.snaps.length && Boff.snaps.every((x, i) => x.ls === B.snaps[i].ls && x.puts === B.snaps[i].puts));

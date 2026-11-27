@@ -225,7 +225,10 @@ console.log('■ mergePlans（A3）');
   const P1 = cp(base), P2 = cp(base);
   P2.planFrom = '2026-06-01'; P2.events = [ev('e7', 4, '13:00', '13:30')]; P2.careLevel = '要介護1'; P2.planNote = '架空の別の計画';
   const m8 = C.mergePlans(P1, P2);
-  t('5-18 同じ世代・開始日が違う: 開始日の新しい自分を丸ごと採る（予定を id で混ぜない）', m8.tookGen === 'mine' && J(m8.res.events) === J(P2.events) && m8.res.planFrom === '2026-06-01' && m8.res.careLevel === '要介護1' && m8.res.planNote === '架空の別の計画' && m8.droppedMine === 0, m8.tookGen);
+  /* 5-18 の期待は 2026-11-27 反証 F2 で「開始日の新しい自分を採る」から「いつもサーバー」に変えた。共通 DB の門（planstale）は
+     同じ世代（1以上）で開始日の違う保存を必ず断るので、自分を採ると統合した結果も断られ、その端末の保存が二度と通らなくなるため。
+     載せなかった自分の予定（e7 の1件）は droppedMine で数える */
+  t('5-18 同じ世代・開始日が違う: 開始日が新しくても自分は採らず、サーバーを丸ごと採って捨てた自分の予定を数える（予定を id で混ぜない）', m8.tookGen === 'server' && J(m8.res.events) === J(P1.events) && m8.res.planFrom === '2026-04-01' && m8.res.careLevel === P1.careLevel && m8.res.planNote === P1.planNote && m8.droppedMine === 1, [m8.tookGen, m8.droppedMine]);
   const m9 = C.mergePlans(P2, P1);
   t('5-19 同じ世代・開始日が違う: 開始日の新しいサーバーを丸ごと採り、捨てた自分の予定を数える', m9.tookGen === 'server' && J(m9.res.events) === J(P2.events) && m9.res.planFrom === '2026-06-01' && m9.droppedMine === 2, [m9.tookGen, m9.droppedMine]);
   const P3 = cp(base); P3.planFrom = '';
@@ -235,6 +238,27 @@ console.log('■ mergePlans（A3）');
   t('5-21 同じ世代・開始日の片方が読めない時はサーバー（逆向き）', m11.tookGen === 'server' && m11.res.planFrom === '2026-04-01');
   const P4 = cp(base), P5 = cp(base); delete P4.planFrom; P5.planFrom = '';
   t('5-22 開始日が両方とも無い・空は同じ扱い（今までどおり same）', C.mergePlans(P4, P5).tookGen === 'same' && C.mergePlans(resNoPlan(), resNoPlan()).tookGen === 'same');
+  const P6 = cp(base), P7 = cp(base); P6.planFrom = 20260401; P7.planFrom = '';
+  t('5-22b 開始日が文字でない時は空と読む（共通 DB の門と同じ読み方）', C.mergePlans(P6, P7).tookGen === 'same');
+
+  /* 2台が同じ世代を別の開始日で作った（反証 F2）: 世代0の同じ方に、端末 X は 12-01 の予約、端末 Y は 12-05 の予約をそれぞれ作り、
+     どちらも共通 DB に送る前に自分の端末で切り替えた（どちらも世代1）。X が先に送って通った後、Y が統合して送り直す */
+  const g0 = resNoPlan(); g0.planGen = 0; g0.planFrom = ''; g0.nextPlans = [];
+  const x0 = cp(g0); x0.nextPlans = [plan('pl_x', '2026-12-01', '要介護3', '要介護2', [ev('ex1', 2, '10:00', '10:30')])];
+  const y0 = cp(g0); y0.nextPlans = [plan('pl_y', '2026-12-05', '要介護1', '要介護2', [ev('ey1', 4, '13:00', '13:30'), ev('ey2', 5, '15:00', '15:30')])];
+  const X = C.applyDue(x0, '2026-12-06').res, Y = C.applyDue(y0, '2026-12-06').res;
+  t('5-23a 材料: どちらも世代1・開始日が違う', X.planGen === 1 && Y.planGen === 1 && X.planFrom === '2026-12-01' && Y.planFrom === '2026-12-05');
+  const yAfter = C.mergePlans(X, Y);   /* Y の端末: サーバー（X が送った物）と自分を統合する */
+  t('5-23b Y の統合はサーバー（X の計画）を丸ごと採る', yAfter.tookGen === 'server' && J(yAfter.res.events) === J(X.events) && yAfter.res.planFrom === '2026-12-01' && yAfter.res.planGen === 1, yAfter.tookGen);
+  t('5-23c 載せなかった Y の予定（ey1・ey2 の2件）を droppedMine で返す（画面が知らせる）', yAfter.droppedMine === 2, yAfter.droppedMine);
+  /* 統合した結果は門（0136 の planstale: 世代が下がる・同じ世代で開始日が違う・取り消した予約が戻る）に断られない＝送り直しが通る */
+  const pf = (r) => (typeof r.planFrom === 'string' ? r.planFrom : '');
+  const goneIds = new Set((X.planGone || []).map((g) => g.id));
+  const staleAgainstX = (r) => r.planGen < X.planGen || (r.planGen === X.planGen && X.planGen >= 1 && pf(r) !== pf(X)) || (r.nextPlans || []).some((p) => goneIds.has(p.id));
+  t('5-23d 統合した結果は門に断られない（同じ世代・同じ開始日・使った予約 pl_x が戻らない）', !staleAgainstX(yAfter.res), { gen: yAfter.res.planGen, from: yAfter.res.planFrom, next: (yAfter.res.nextPlans || []).map((p) => p.id) });
+  t('5-23e （対照）直す前の決まり（開始日の新しい自分を採る）なら門に断られる形になる', staleAgainstX(Y));
+  const xAfter = C.mergePlans(Y, X);   /* 逆に Y が先に通った時の X の端末も同じくサーバーを採る */
+  t('5-23f 逆向き（Y が先に通った）でも X の端末はサーバー（Y の計画）を採る', xAfter.tookGen === 'server' && xAfter.res.planFrom === '2026-12-05' && xAfter.droppedMine === 1 && !(xAfter.res.planGen < Y.planGen), [xAfter.tookGen, xAfter.droppedMine]);
 }
 
 console.log('■ diffEvents');

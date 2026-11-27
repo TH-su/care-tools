@@ -107,6 +107,8 @@ async function makeEnv({ db, flags = F.FLAGS_OFF, rpc = {}, sbDb = null, localDb
       return r;
     },
     cs_plan_status: () => ({ ok: true, enabled: planOn, minAppVer: 2026112701, lastUnstampedAt: null, lastStampedAt: null }),
+    /* 移行 0136 の有る無しを知る口（画面はこれが答えた時だけ版の印を付ける・反証 F1） */
+    cs_plan_gate: () => GATE.csPlanGate(),
   };
   await context.route('**/*', async (route) => {
     const req = route.request();
@@ -530,6 +532,32 @@ if (run(8)) {
     t('(8) 写し返しは1回', env.st.req.filter((r) => r.to === 'sync' && r.action === 'put' && r.body && r.body.mirror === true).length === 1);
     await page.close();
   } finally { endChecks(env, '(8)'); await env.context.close(); }
+}
+
+/* ═════ (11) 版の印: 送る時にまだ確かめていない時は、予約ありの中身なら口 cs_plan_gate の答えを待って印を付ける（反証 F1・2026-11-27） ═════ */
+if (run(11)) {
+  console.log('\n— (11) 送る時にまだ確かめていない・答えが0.8秒遅れる・予約あり → 答えを待って版の印を付ける —');
+  const plan = { id: 'pl_w', from: LATER, careLevel: '', baseLevel: '要介護1', note: '', events: [], updatedAt: '2026-11-01T00:00:00.000Z' };
+  const env = await makeEnv({ db: baseDb((me) => { me.nextPlans = [plan]; }), flags: ROUTED, rpc: {
+    cs_plan_gate: async () => { await sleep(800); return GATE.csPlanGate(); },
+  } });
+  try {
+    const page = await openCs(env);
+    await waitFor(() => env.st.rpc.some((r) => r.fn === 'cs_plan_gate'), 15000);
+    await sleep(2000);
+    const n0 = env.st.rpc.filter((r) => r.fn === 'kv_put').length;
+    const ms = await page.evaluate(async () => {
+      const r = DB.residents.find((x) => x.id === 'fl01'); r.events[0].notes = '待ちの架空の直し'; saveDB();
+      if (SYNC._pushTimer) { clearTimeout(SYNC._pushTimer); SYNC._pushTimer = null; }
+      csPlanGate_ = { yes: false, noAt: 0, p: null };   /* 送る時にまだ確かめていない形にする */
+      const t0 = Date.now(); await SYNC.push(); return Date.now() - t0;
+    });
+    const sent = env.st.rpc.filter((r) => r.fn === 'kv_put').slice(n0);
+    t('(11) 答えを待ってから送り（' + ms + 'ミリ秒）、送った本文に版の印（2026112701）が付いて門を通る', sent.length >= 1 && sent[0].body.p_data.csAppVer === 2026112701 && ms >= 750 && !env.st.oldapp
+      && env.st.sbKv.data.residents.find((x) => x.id === 'fl01').events[0].notes === '待ちの架空の直し', { ms, ver: sent[0] && sent[0].body.p_data.csAppVer, oldapp: env.st.oldapp });
+    t('(11) 端末の控え・サーバーに保存した中身に版の印が入らない', !(await lsRaw(page)).includes('csAppVer') && !JSON.stringify(env.st.sbKv.data).includes('csAppVer'));
+    await page.close();
+  } finally { endChecks(env, '(11)'); await env.context.close(); }
 }
 
 await browser.close();

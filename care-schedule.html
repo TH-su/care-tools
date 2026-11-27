@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-qKtBU+qlxJ0cZdaOpiRnSRC5paU38k0lEPXm5PT2kjM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-Blj0REom7D6ZRbVpAd8SyRdPAls6bzk1S++jFrZKXOM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -3313,6 +3313,7 @@ function csFieldChangeText_() {
    相手にしか居ない利用者だけは丸ごと足す（消失より復活）。 */
 function csMergeEventsFrom_(other, mine) {
   const out = JSON.parse(JSON.stringify(mine));
+  if (out && typeof out === 'object' && Object.prototype.hasOwnProperty.call(out, 'csAppVer')) delete out.csAppVer;   /* 版の印は持ち回さない（反証 F1） */
   if (!other || !Array.isArray(other.residents) || !Array.isArray(out.residents)) return out;
   const merged = csRebaseEdits(other, mine);     // 既存の規則（id単位・入浴の和・3-way）で events を作る
   const byId = {};
@@ -3351,6 +3352,7 @@ function csAbsorbForeignWrite_() {
   if (!raw) return none;
   let other = null;
   try { other = JSON.parse(raw); } catch (e) { return none; }
+  if (other && typeof other === 'object' && Object.prototype.hasOwnProperty.call(other, 'csAppVer')) delete other.csAppVer;   /* 版の印は持ち込まない（反証 F1） */
   if (!other || typeof other !== 'object' || !Array.isArray(other.residents)) return none;
   if (typeof csPlanPartsMissing_ === 'function' && csPlanPartsMissing_(other, DB)) { csAppBand_('計画の部品を読めませんでした。読み込み直してください'); return none; }   /* 2026-11-27 */
   _csAbsorbing = true;
@@ -3620,6 +3622,7 @@ function csMergeLocalBeforePush_() {
   if (!raw) return 0;
   let other = null;
   try { other = JSON.parse(raw); } catch (e) { return 0; }
+  if (other && typeof other === 'object' && Object.prototype.hasOwnProperty.call(other, 'csAppVer')) delete other.csAppVer;   /* 版の印は持ち込まない（反証 F1） */
   if (!other || typeof other !== 'object' || !Array.isArray(other.residents)) return 0;
   if (typeof csPlanPartsMissing_ === 'function' && csPlanPartsMissing_(other, DB)) return 0;   /* 部品が無い端末は統合しない（2026-11-27） */
   const before = csCountEventsAll_(DB.residents);
@@ -4146,6 +4149,7 @@ function loadDB() {
       const p = JSON.parse(raw);
       if (p && typeof p === 'object') {
         DB = { ...DB, ...p };
+        delete DB.csAppVer;   /* 版の印は持ち込まない（端末の控えに紛れていても・反証 F1。控えは次に書く時に消える） */
       } else {
         console.warn('loadDB: 不正なデータ形式（オブジェクト以外）。デフォルトを使用します');
       }
@@ -4239,6 +4243,7 @@ function saveDB() {
      更新され、送信前マージ（csMergeLocalBeforePush_）も二度と発火しなくなる。 */
   try { csAbsorbForeignWrite_(); } catch(e){ csNote_('別タブの取り込み', e); }
   try {
+    if (DB && typeof DB === 'object' && Object.prototype.hasOwnProperty.call(DB, 'csAppVer')) delete DB.csAppVer;   /* 端末の控えに版の印を書かない（反証 F1） */
     const json = JSON.stringify(DB);
     try { csStampWriter_(); } catch(e){ csNote_('書き手の印', e); }   // 書く直前に版を名乗る（相手の誤警告を防ぐ・失敗しても保存は止めない）
     localStorage.setItem(LS_KEY, json);
@@ -4551,12 +4556,25 @@ const SYNC = {
          今は現場のアカウントだけを「使える」にしている（現場のアカウントは週間計画を書けない＝今までと同じ断り） */
       if (this._liveHint && !this.target().endpoint && payload && payload.action === 'put') return { ok: false, error: 'forbidden' };
       if (window.SUKv && SUKv.handles(payload)) {
-        /* 版の印（2026-11-27 データ保護の反証レビュー）: 週間計画を新しい保存先へ送る時の写しにだけ、最上位に csAppVer を足す。
-           DB・端末の控え・Google へ送る本文には入れない（Google へ流れる時は下の素通しの入口で必ず外す）。
-           印は計画の版の部品（care-plan-calc.js）が読めた画面だけが付ける＝古い画面・部品の無い端末は共通 DB の門に断られる */
+        /* 版の印（2026-11-27 データ保護の反証レビュー・反証 F1）: 週間計画を新しい保存先へ送る時の写しにだけ、最上位に csAppVer を足す。
+           付けるのは、計画の版の部品（care-plan-calc.js）が読めた画面で、共通 DB の口 cs_plan_gate が答えた（移行 0136 がある）と分かっている時だけ。
+           0136 より前の共通 DB は印を除かずに保存し、開いたままの古い版のタブが取り込んで送り返すと門が効かなくなるため。
+           まだ確かめていない・確かめられない時は印を付けない（＝今までと同じ本文）。予約か世代1以上の方がいる中身の時だけ、確かめの答えを最大3秒待つ。
+           印を付けない時も、写しに紛れた印は必ず外して送る。DB・端末の控え・Google へ送る本文には入れない（Google へ流れる時は下の素通しの入口で必ず外す） */
         let pl = payload;
-        if (payload.action === 'put' && payload.key === 'care_schedule_v2' && payload.data && typeof payload.data === 'object' && typeof CarePlanCalc !== 'undefined') {
-          pl = Object.assign({}, payload, { data: Object.assign({}, payload.data, { csAppVer: CS_APP_VER }) });
+        if (payload.action === 'put' && payload.key === 'care_schedule_v2' && payload.data && typeof payload.data === 'object') {
+          const d0 = Object.assign({}, payload.data);
+          delete d0.csAppVer;
+          let stamp = false;
+          if (typeof CarePlanCalc !== 'undefined') {
+            const pr = csPlanGateProbe_();
+            stamp = csPlanGate_.yes;
+            if (!stamp && csPlanDataHasPlans_(d0)) stamp = await csPlanGateWait_(pr);
+          }
+          if (stamp) d0.csAppVer = CS_APP_VER;
+          pl = Object.assign({}, payload, { data: d0 });
+        } else if (typeof CarePlanCalc !== 'undefined') {
+          csPlanGateProbe_();   /* 起動の取得・巡回の時に裏で確かめを始めておく（答えを待たない） */
         }
         return SUKv.call(pl, (p) => {
           if (p && p.data && typeof p.data === 'object' && Object.prototype.hasOwnProperty.call(p.data, 'csAppVer')) {
@@ -5223,6 +5241,37 @@ function csStripAppVerResp_(j) {
   } catch (e) { csNote_('版の印を外す', e); }
   return j;
 }
+/* 共通 DB の移行 0136 の有る無し（2026-11-27 反証 F1）。口 cs_plan_gate（引数なし・ログインしていれば役割を問わず {ok:true, minAppVer}）が
+   ok:true を返した時だけ「あり」と覚える（メモリだけ・このタブの間。あり は覚えたまま）。答えが「なし」・エラーの時は5分後に確かめ直す。
+   ログインの部品が無い・新しい保存先へ切り替えていない時は呼ばず、「まだ確かめていない」のまま（5分待たない・仮置き）。同時の確かめは1本にまとめる */
+var CS_PLAN_GATE_RECHECK_MS = 5 * 60 * 1000;
+var CS_PLAN_GATE_WAIT_MS = 3000;
+var csPlanGate_ = { yes: false, noAt: 0, p: null };
+function csPlanGateProbe_() {
+  try {
+    if (csPlanGate_.yes) return Promise.resolve(true);
+    if (csPlanGate_.p) return csPlanGate_.p;
+    if (csPlanGate_.noAt && Math.abs(Date.now() - csPlanGate_.noAt) < CS_PLAN_GATE_RECHECK_MS) return Promise.resolve(false);
+    if (!(window.SUKv && typeof SUKv.routed === 'function' && SUKv.routed(LS_KEY))) return Promise.resolve(false);
+  } catch (e) { csNote_('新しい保存先の版の確かめ', e); return Promise.resolve(false); }
+  const p = csAuthLoad_().then(() => {
+    const sb = (window.SUAuth && typeof SUAuth.client === 'function') ? SUAuth.client() : null;
+    if (!sb || typeof sb.rpc !== 'function') return false;   /* 呼べない＝まだ確かめていないまま */
+    return Promise.resolve(sb.rpc('cs_plan_gate')).then((r) => {
+      if (r && !r.error && r.data && typeof r.data === 'object' && r.data.ok === true) { csPlanGate_.yes = true; return true; }
+      csPlanGate_.noAt = Date.now(); return false;
+    }, (e) => { csPlanGate_.noAt = Date.now(); csNote_('新しい保存先の版の確かめ', e); return false; });
+  }, (e) => { csNote_('新しい保存先の版の確かめ（ログインの部品）', e); return false; })
+    .then((v) => { csPlanGate_.p = null; return v === true; }, () => { csPlanGate_.p = null; return false; });
+  csPlanGate_.p = p;
+  return p;
+}
+/* 確かめの答えを最大3秒待つ（来なければ印なし＝false） */
+function csPlanGateWait_(pr) {
+  let tm = null;
+  const late = new Promise((ok) => { tm = setTimeout(() => ok(false), CS_PLAN_GATE_WAIT_MS); });
+  return Promise.race([Promise.resolve(pr).then((v) => v === true, () => false), late]).then((v) => { clearTimeout(tm); return v; });
+}
 /* 計画の版の項目を持つ利用者がいるか（世代1以上・予約が空でない） */
 function csPlanDataHasPlans_(db) {
   return !!(db && Array.isArray(db.residents) && db.residents.some(r => r && ((typeof r.planGen === 'number' && r.planGen >= 1) || (Array.isArray(r.nextPlans) && r.nextPlans.length > 0))));
@@ -5270,6 +5319,7 @@ function csRebaseEdits(server, mine) {
   var PLAN_KEYS_ = ['planFrom', 'planGen', 'planLevel', 'planNote', 'nextPlans', 'planGone'];
   var hasKey_ = function (o, k) { return !!o && Object.prototype.hasOwnProperty.call(o, k); };
   var out = JSON.parse(JSON.stringify(server));
+  if (Object.prototype.hasOwnProperty.call(out, 'csAppVer')) delete out.csAppVer;   /* 土台に紛れた版の印は持ち回さない（反証 F1） */
   var byId = {}, i;
   for (i = 0; i < out.residents.length; i++) byId[out.residents[i].id] = out.residents[i];
   for (var m = 0; m < mine.residents.length; m++) {
@@ -5399,6 +5449,7 @@ function csPlanDroppedNotify_() {
 function saveLocalOnly() {
   if (SIM_ON) { SIM.persist(); return; }
   try {
+    if (DB && typeof DB === 'object' && Object.prototype.hasOwnProperty.call(DB, 'csAppVer')) delete DB.csAppVer;   /* 端末の控えに版の印を書かない（反証 F1） */
     const json = JSON.stringify(DB);
     try { csStampWriter_(); } catch(e){ csNote_('書き手の印', e); }   /* saveDB と同じ＝どちらの経路で書いても版を名乗る */
     localStorage.setItem(LS_KEY, json);
@@ -11169,6 +11220,7 @@ function csScheduleStorageAdopt_(delay) {
     try {
       const raw_ = localStorage.getItem(LS_KEY);
       const other_ = raw_ ? JSON.parse(raw_) : null;
+      if (other_ && typeof other_ === 'object' && Object.prototype.hasOwnProperty.call(other_, 'csAppVer')) delete other_.csAppVer;   /* 別タブの書いた中身に版の印が紛れていても持ち込まない（反証 F1） */
       if (typeof csPlanOlderThanMine_ === 'function' && csPlanOlderThanMine_(other_, DB)) {
         /* 書き手の指紋（CS_LOCAL_FP_KEY）はタブの間で共有なので、別タブが書いた後も「自分が書いた」と見える。指紋に頼らず、ここで直接統合する */
         const before_ = JSON.stringify(DB);

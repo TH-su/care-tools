@@ -225,11 +225,13 @@
     if (!mOk) return { res: clone(serverRes), tookGen: 'server', droppedMine: 0 };
     var gs = gen(serverRes), gm = gen(mineRes);
     var out = clone(serverRes), tookGen = gs > gm ? 'server' : (gm > gs ? 'mine' : 'same'), dropped = 0;
-    /* 世代が同じで現行の開始日（planFrom）が違う時は、別の計画どうし。予定を id で混ぜず、開始日の新しい方を丸ごと採る
-       （両方とも実在する日付の時だけ比べる。片方でも読めない時はサーバー・段1から持ち越した判断 2026-11-27） */
+    /* 世代が同じで現行の開始日（planFrom）が違う時は、別の計画どうし。予定を id で混ぜず、いつもサーバーを丸ごと採る
+       （2026-11-27 反証 F2: 共通 DB の門 planstale は「同じ世代（1以上）で開始日が違う」保存を必ず断るので、自分を採ると
+       その端末の保存が二度と通らない。載せなかった自分の予定は droppedMine で数えて知らせる。世代が違う時の「大きい方」は変えない） */
     if (tookGen === 'same') {
-      var pfS = str(serverRes.planFrom), pfM = str(mineRes.planFrom);
-      if (pfS !== pfM) tookGen = (isYmd(pfS) && isYmd(pfM) && pfM > pfS) ? 'mine' : 'server';
+      /* 開始日の読み方は門と同じ（文字の時だけその値・それ以外は空） */
+      var pfS = typeof serverRes.planFrom === 'string' ? serverRes.planFrom : '', pfM = typeof mineRes.planFrom === 'string' ? mineRes.planFrom : '';
+      if (pfS !== pfM) tookGen = 'server';
     }
     var sPlans = Array.isArray(serverRes.nextPlans) ? serverRes.nextPlans : [];
     var mPlans = Array.isArray(mineRes.nextPlans) ? mineRes.nextPlans : [];

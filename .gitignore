@@ -55,6 +55,8 @@
 !/check/care_plan_nochange_e2e.mjs
 # 古い版の週間計画のタブと新しい版のタブが同じ端末にある時に、切り替えた後の計画へ前の計画が混ざらないことを確かめる通し試験（架空データ）
 !/check/care_plan_oldtab_e2e.mjs
+# デイ利用表が週間計画を送る時の版の印（共通 DB の口が答えた時だけ付ける）を確かめる通し試験（架空データ）
+!/check/care_plan_daycare_e2e.mjs
 !/check/res-read-gas-sync.mjs
 !/check/name-guard.mjs
 !/check/run.mjs

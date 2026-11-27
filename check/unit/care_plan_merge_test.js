@@ -410,5 +410,27 @@ group('8. 決まりの変更（2026-11-27 反証レビュー B2・B3）');
   t('8-8 （対照）切り替わっただけ（自分は何もしていない）は0件', B.csPlanDropped_ === 0);
 }
 
+group('9. 2台が同じ世代を別の開始日で作った（反証 F2・2026-11-27）');
+{
+  /* 世代0の同じ方に、端末 X は 12-01 の予約、端末 Y は 12-05 の予約を作り、どちらも送る前に自分で切り替えた（どちらも世代1）。
+     X が先に通った後、Y が統合する。共通 DB の門は同じ世代（1以上）で開始日の違う保存を必ず断るので、Y はサーバー（X の計画）を採る */
+  const g0 = { id: 'r1', name: '架空 一郎', careLevel: '要介護2', events: [ev('e1', 1, '09:00', '09:30')], planGen: 0, planFrom: '', nextPlans: [] };
+  const x0 = cp(g0); x0.nextPlans = [{ id: 'pl_x', from: '2026-12-01', careLevel: '要介護3', baseLevel: '要介護2', note: '', events: [ev('ex1', 2, '10:00', '10:30')], updatedAt: '2026-11-01T00:00:00.000Z' }];
+  const y0 = cp(g0); y0.nextPlans = [{ id: 'pl_y', from: '2026-12-05', careLevel: '要介護1', baseLevel: '要介護2', note: '', events: [ev('ey1', 4, '13:00', '13:30')], updatedAt: '2026-11-01T00:00:00.000Z' }];
+  const X = C.applyDue(x0, '2026-12-06').res, Y = C.applyDue(y0, '2026-12-06').res;
+  B.CS_FIELD_BASE = null; delete B.__store.cs_field_base_v1; B.csFieldBaseSet_(B.csFieldBaseBuild_(db(g0)));
+  B.SYNC._dirty = true; B.toasts.length = 0;
+  const out = B.csRebaseEdits(db(X, other()), db(Y, other()));
+  const r = out.residents.find((x) => x.id === 'r1');
+  t('9-1 Y の統合はサーバー（X の計画: 開始日 12-01・予定 ex1）を丸ごと採る', r.planGen === 1 && r.planFrom === '2026-12-01' && J(r.events) === J(X.events) && B.csPlanTook_.r1 === 'server', { gen: r.planGen, from: r.planFrom, took: B.csPlanTook_.r1 });
+  t('9-2 使った予約 pl_x は戻らない・Y が使った pl_y も戻らない', !(r.nextPlans || []).some((p) => p.id === 'pl_x' || p.id === 'pl_y'), (r.nextPlans || []).map((p) => p.id));
+  t('9-3 載せなかった Y の予定（ey1）を数えて知らせる', B.csPlanDropped_ === 1 && B.csPlanDroppedNotify_() === true && /未送信の変更 1件は反映していません/.test(B.toasts[0] || ''), [B.csPlanDropped_, B.toasts]);
+  B.SYNC._dirty = false;
+  /* 統合の土台（サーバー）の最上位に版の印が紛れていても、統合の結果に持ち回さない（反証 F1 の守り） */
+  const sv = db(cp(X)); sv.csAppVer = 2026112701;
+  const o2 = B.csRebaseEdits(sv, db(cp(X)));
+  t('9-4 サーバーの中身に版の印（csAppVer）が紛れていても、統合の結果に入れない', !Object.prototype.hasOwnProperty.call(o2, 'csAppVer'));
+}
+
 process.stdout.write('\n────────── 合計: ' + ok + ' 件成功 / ' + ng + ' 件失敗 ──────────\n');
 process.exit(ng ? 1 : 0);

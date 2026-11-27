@@ -14,6 +14,8 @@
  *   D  切替の後に開いた古いタブ（切替後の中身）が今の計画を1件直して書き、新しいタブが運ぶ → 正当な直しとして通る
  *   E  予約を1件も使っていない時: 古いタブが送れない（通信を止める）まま未送信を抱え、別のタブがその中身を運ぶ。「古い版どうし」と「古い版＋新しい版」で
  *      サーバーの結果が同じ（editedAt・editedBy・updatedAt は時刻とログインで変わるので除いて比べる）
+ *   G  版の印（反証 F1）: 口 cs_plan_gate が無い（0136 より前・印を除かずに保存するサーバー）時は送った本文に csAppVer が無く、口がある時は付く。
+ *      取得した中身・別タブの書いた控えに csAppVer が入っていても、DB・端末の控え・次の送信に持ち回さない
  * 期待（A・B・A2）: サーバーの切り替えた方の予定は「切替後の計画＋新しいタブでの正当な直し」だけ（前の計画の予定・入浴が混ざらない）・世代が下がらない・使った予約が戻らない。
  * どの場面でも、古いタブ自身の送信は oldapp で断られて未送信のまま止まる（E は予約を使っていないので断られない）。データはすべて架空。
  */
@@ -82,7 +84,9 @@ const PLAN_IDS = ['fl0_d1', 'p_new'];
 const srv = await startServer(root);
 const browser = await chromium.launch();
 
-async function makeEnv({ db, blockOld = false }) {
+/* gate … 共通 DB の口 cs_plan_gate（移行 0136）が答えるか。pre0136 … 0136 より前の本番を真似る（cs_plan_gate・cs_plan_status・cs_plan_switch が無く、
+   kv_put は門を持たず最上位の csAppVer を取り除かずに保存する・check/fixtures/care-plan-gate.mjs の kvPutPre0136） */
+async function makeEnv({ db, blockOld = false, gate = true, pre0136 = false }) {
   const st = { kv: { data: JSON.parse(JSON.stringify(db)), rev: 5, log: [] }, ext: [], errors: [], pages: new Map(), switched: 0 };
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, timezoneId: 'Asia/Tokyo', locale: 'ja-JP' });
   await context.addInitScript(({ s }) => {
@@ -111,7 +115,7 @@ async function makeEnv({ db, blockOld = false }) {
   const rpc = {
     kv_get: () => ({ rev: st.kv.rev, data: st.kv.data, mode: 'live', updatedAt: '' }),
     kv_head: (b) => { const revs = {}; (b.p_keys || []).forEach((k) => { revs[k] = k === 'care_schedule_v2' ? st.kv.rev : 0; }); return { revs }; },
-    kv_put: (b, tag) => { const r = GATE.kvPut(st.kv, b); st.kv.log[st.kv.log.length - 1].tag = tag; return r; },
+    kv_put: (b, tag) => { const r = (pre0136 ? GATE.kvPutPre0136 : GATE.kvPut)(st.kv, b); st.kv.log[st.kv.log.length - 1].tag = tag; return r; },
     cs_plan_status: () => ({ ok: true, enabled: true, minAppVer: 2026112701, lastUnstampedAt: null, lastStampedAt: null }),
     cs_plan_switch: () => {
       let n = 0;
@@ -120,6 +124,8 @@ async function makeEnv({ db, blockOld = false }) {
       return { ok: true, switched: n, rev: st.kv.rev };
     },
   };
+  if (gate && !pre0136) rpc.cs_plan_gate = () => GATE.csPlanGate();
+  if (pre0136) { delete rpc.cs_plan_status; delete rpc.cs_plan_switch; }
   await context.route('**/*', async (route) => {
     const req = route.request();
     const u = req.url();
@@ -340,6 +346,58 @@ if (run('E')) {
   }
   t('E: 古い版どうし と 古い版＋新しい版 でサーバーの結果が同じ（editedAt・editedBy・updatedAt・版の印を除く）', same, same ? undefined : firstDiff);
   results.push({ mode: 'E', same, carriedByOld: outs.old.carried, carriedByNew: outs.new.carried, oldLog: outs.old.log, newLog: outs.new.log });
+}
+
+/* ═════ G ═════ */
+if (run('G')) {
+  console.log('\n— G 版の印は共通 DB の口 cs_plan_gate が答えた時だけ付く（0136 より前の本番に印を残さない・反証 F1） —');
+  const lastNew = (env) => env.st.kv.log.filter((l) => l.tag === 'new').pop();
+  const lsHas = (page) => page.evaluate(() => String(localStorage.getItem('care_schedule_v2') || '').includes('csAppVer'));
+  const editPush = (page, note) => page.evaluate((n) => { const r = DB.residents.find((x) => x.id === 'fl03'); if (r.events[0]) r.events[0].notes = n; saveDB(); if (SYNC._pushTimer) { clearTimeout(SYNC._pushTimer); SYNC._pushTimer = null; } return SYNC.push(); }, note);
+  for (const c of [
+    { k: 'G1', title: '0136 より前（口が無い・印を除かずに保存する）・予約あり', gate: false, pre0136: true, dirty: false, want: null },
+    { k: 'G2', title: '0136 あり（口が答える）・予約あり', gate: true, pre0136: false, dirty: false, want: 2026112701 },
+    { k: 'G3', title: '0136 より前の本番に印が保存されていた（取得した中身に csAppVer）・口が無い', gate: false, pre0136: true, dirty: true, want: null },
+    { k: 'G4', title: '取得した中身に csAppVer があり、口は答える', gate: true, pre0136: false, dirty: true, want: 2026112701 },
+  ]) {
+    const db = planDb(); if (c.dirty) db.csAppVer = 2026112701;
+    const env = await makeEnv({ db, gate: c.gate, pre0136: c.pre0136 });
+    try {
+      const nw = await openTab(env, 'new', 'new');
+      await sleep(1500);
+      t(c.k + ' ' + c.title + ': 取り込んだ中身（DB）と端末の控えに版の印が無い', !(await nw.evaluate(() => Object.prototype.hasOwnProperty.call(DB, 'csAppVer'))) && !(await lsHas(nw)));
+      const n0 = env.st.kv.log.length;
+      await editPush(nw, c.k + ' の架空の直し');
+      await settle(nw, 15000);
+      const sent = env.st.kv.log.slice(n0).filter((l) => l.tag === 'new');
+      const ok = sent.filter((l) => l.result === 'ok');
+      t(c.k + ': 送った本文の版の印は ' + (c.want === null ? '無い' : c.want) + '（送った ' + sent.length + '本すべて）', sent.length > 0 && sent.every((l) => l.ver === c.want), sent.map((l) => [l.ver, l.result]));
+      t(c.k + ': 保存が通り、直しがサーバーに入る', ok.length > 0 && srvRes(env, 'fl03').events[0].notes === c.k + ' の架空の直し', sent.map((l) => l.result));
+      if (c.pre0136) t(c.k + ': 0136 より前のサーバー（印を除かない）に版の印が残らない', !Object.prototype.hasOwnProperty.call(env.st.kv.data, 'csAppVer'));
+      else t(c.k + ': サーバーの中身に版の印が残らない', !JSON.stringify(env.st.kv.data).includes('csAppVer'));
+      t(c.k + ': 送った後も端末の控えに版の印が無い', !(await lsHas(nw)));
+      if (c.k === 'G3') {
+        /* 別タブが印つきの中身を端末の控えに書いた時も、取り込み・次の送信に持ち回さない */
+        const tab2 = await env.context.newPage();
+        await tab2.goto(srv.url + '/new/su-backend.json');
+        await tab2.evaluate(() => { const d = JSON.parse(localStorage.getItem('care_schedule_v2')); d.csAppVer = 2026112701; const r = d.residents.find((x) => x.id === 'fl02'); r.events[0].notes = '別タブの架空のメモ'; localStorage.setItem('care_schedule_v2', JSON.stringify(d)); });
+        await tab2.close();
+        await sleep(2000);
+        const n1 = env.st.kv.log.length;
+        await editPush(nw, 'G3 の2回目の架空の直し');
+        await settle(nw, 15000);
+        const sent2 = env.st.kv.log.slice(n1).filter((l) => l.tag === 'new');
+        t('G3: 別タブが印つきで書いた中身を取り込んでも、DB・端末の控えに印が無い', !(await nw.evaluate(() => Object.prototype.hasOwnProperty.call(DB, 'csAppVer'))) && !(await lsHas(nw)));
+        t('G3: 次の送信にも印が無い（' + sent2.length + '本）', sent2.length > 0 && sent2.every((l) => l.ver === null), sent2.map((l) => [l.ver, l.result]));
+        t('G3: 別タブの直しも取り込んで送っている', srvRes(env, 'fl02').events[0].notes === '別タブの架空のメモ');
+      }
+      results.push({ mode: c.k, log: env.st.kv.log.map((l) => (l.tag || '?') + ':' + l.result + ':' + l.ver) });
+    } finally {
+      t(c.k + ': 画面のエラーなし', env.st.errors.length === 0, env.st.errors);
+      t(c.k + ': 横取りしていない外への通信なし', env.st.ext.length === 0, env.st.ext);
+      await env.context.close();
+    }
+  }
 }
 
 console.log('\n── 場面ごとのサーバーの最後の中身（要約） ──');
