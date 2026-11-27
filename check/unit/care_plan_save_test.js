@@ -3,7 +3,7 @@
    守りたいこと:
      1. 端末への保存（csPlanCommit_）が失敗した時は「…からの計画（予約）を保存しました」を出さない
      2. 失敗した時も、作った予約は画面のメモリ（DB）に残る（「💾 保存」で書き直せる・編集が消えない）。描き直しはする。
-        砂場の控えは閉じた時に消えるので、未送信の印（SYNC.markDirty）を立てて裏の取得が上書きしないようにする
+        砂場の控えは閉じた時に消えるので、メモリだけの未送信の印（SYNC._dirty）を立てて裏の取得が上書きしないようにする
      3. 保存できた時は今までどおり「保存しました」を出す
    やり方: HTML から savePlan の本文だけを切り出し、周りの関数を偽物にして vm で動かす（データは架空・氏名なし）。 */
 'use strict';
@@ -33,7 +33,7 @@ function run(commitOk) {
     csPlanSaveBlock_: () => '',
     SUDialog: { alert: (m) => { log.push('alert:' + m); return Promise.resolve(); } },
     csPlanServerRes_: () => Promise.resolve({ ok: false }),
-    SYNC: { _dirty: false, hasTarget: () => false, pull: () => Promise.resolve(), markDirty() { this._dirty = true; log.push('markDirty'); } },
+    SYNC: { _dirty: false, hasTarget: () => false, pull: () => Promise.resolve(), markDirty() { log.push('markDirty'); } },
     csWho_: () => 'x',
     csPlanNewId_: () => 'p1',
     csPlanCommit_: (what) => { log.push('commit:' + what); return commitOk; },
@@ -59,11 +59,11 @@ function run(commitOk) {
     const p = r.db.residents[0].nextPlans;
     t('… 作った予約は画面のメモリに残る（「💾 保存」で書き直せる・編集が消えない）', p.length === 1 && p[0].from === '2026-12-01' && p[0].events[0].id === 'e9', p);
     t('… 描き直しはする（画面のメモリの予約を見せる）', r.log.indexOf('render') > r.log.indexOf('commit:予約を保存'), r.log);
-    t('… 未送信の印を立てる（砂場の控えは消えているので、裏の取得が古い姿でメモリの予約を上書きしないように）', r.dirty === true && r.log.indexOf('markDirty') > r.log.indexOf('commit:予約を保存'), r.log);
+    t('… メモリだけの未送信の印を立てる（砂場の控えは消えているので、裏の取得が古い姿でメモリの予約を上書きしないように・端末に残る印 markDirty は使わない）', r.dirty === true && r.log.indexOf('markDirty') < 0, r.log);
   }
   {
     const r = await run(true);
-    t('保存できた時は今までどおり「2026-12-01からの計画（予約）を保存しました」を出す（未送信の印はここでは立てない＝送る道は今までどおり）', r.toasts.length === 1 && r.toasts[0] === '2026-12-01からの計画（予約）を保存しました。その日から今の計画になります' && r.log.indexOf('markDirty') < 0, r.toasts);
+    t('保存できた時は今までどおり「2026-12-01からの計画（予約）を保存しました」を出す（未送信の印はここでは立てない＝送る道は今までどおり）', r.toasts.length === 1 && r.toasts[0] === '2026-12-01からの計画（予約）を保存しました。その日から今の計画になります' && r.dirty === false, r.toasts);
   }
   console.log(`\n${pass} 件合格 / ${fail} 件不合格`);
   process.exit(fail ? 1 : 0);
