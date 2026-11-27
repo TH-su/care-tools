@@ -1,0 +1,93 @@
+/* office-list.css — 給与（給与明細一覧・賞与明細一覧）と勤怠管理（勤怠一覧・シフト表）の一覧の見た目（2026-11-28 本人指示）
+ * ・人事労務ソフトの一覧の並び（題・期間・確定後の手続き・合計金額の開け閉め・フィルタと探す欄と件数・1人1行の表）に寄せる
+ * ・全部 @media screen の中。印刷の紙は変えない。色は画面の色の名前（--ink・--line・--th・--muted・--ng ほか）だけを使う
+ * ・899px 以下（iPhone・iPad 縦）は、足した列（.pl-pc）を出さず、今の並びのまま
+ */
+@media screen {
+  .pl-ttl{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 24px;margin:0 0 6px}
+  .pl-ttl h2{font-size:22px;margin:0}
+  .pl-meta{margin:0;display:flex;gap:16px;flex-wrap:wrap;color:var(--ink);font-size:15px}
+  .pl-meta small{font-size:13px;color:var(--muted)}
+  .pl-info{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);background:var(--th);border-radius:8px;padding:12px 14px;margin:12px 0 4px;font-size:15px}
+  .pl-i{flex:none;width:22px;height:22px;border-radius:50%;background:var(--muted);color:var(--card);font-weight:700;font-size:13px;display:inline-flex;align-items:center;justify-content:center}
+  .pl-lk{font:inherit;background:none;border:0;padding:0;color:var(--focus);text-decoration:underline;cursor:pointer;min-height:0}
+  .pl-lk:disabled{color:var(--muted);text-decoration:none;cursor:not-allowed}
+  .pl-sub{font-size:15px;color:var(--muted);margin:14px 0 6px;font-weight:700}
+  .pl-proc{display:flex;flex-direction:column;gap:8px}
+  .pl-card{display:block;width:100%;text-align:left;font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.08);cursor:pointer;padding:0}
+  button.pl-card,.pl-card>summary{display:flex;align-items:center;gap:14px;min-height:56px;padding:8px 16px;list-style:none}
+  .pl-card>summary::-webkit-details-marker{display:none}
+  .pl-card b{font-size:17px;white-space:nowrap}
+  .pl-ci{width:24px;text-align:center;font-size:18px}
+  .pl-cd{flex:1;font-size:15px;color:var(--sub)}
+  .pl-due{font-size:15px;white-space:nowrap}
+  .pl-go{font-size:22px;color:var(--muted)}
+  details.pl-card[open] .pl-go{transform:rotate(90deg)}
+  .pl-cb{padding:4px 16px 12px 54px;cursor:auto}
+  .pl-cb table{width:auto;min-width:320px}
+  .pl-cb th,.pl-cb td{padding:6px 12px;border-bottom:1px solid var(--line);text-align:left}
+  .pl-cb td.num{text-align:right}
+  .pl-sum{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:12px}
+  .pl-sum>summary{min-height:52px;display:flex;align-items:center;padding:0 16px;cursor:pointer;font-size:16px;list-style:none;justify-content:space-between}
+  .pl-sum>summary::-webkit-details-marker{display:none}
+  .pl-sum>summary::after{content:"⌄";font-size:22px;color:var(--muted);line-height:1}
+  .pl-sum[open]>summary::after{transform:rotate(180deg)}
+  .pl-sum>.sumbar{padding:0 16px 12px}
+  .pl-tool{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin:0 0 8px}
+  .pl-tool .pl-sp{flex:1}
+  .pl-q{width:15em;max-width:100%}
+  .pl-tx{border-color:transparent;background:none;font-weight:700}
+  .pl-fp{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;background:var(--th);border-radius:8px;padding:8px 12px;margin:0 0 8px}
+  .pl-fp label{display:flex;align-items:center;gap:6px}
+  .pl-pg{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin:0 0 8px}
+  .pl-tool .wfilt{margin:0;display:contents}
+  .pl-cnt{font-size:15px;color:var(--sub);font-variant-numeric:tabular-nums}
+  .pl-d{font-size:14px;color:var(--sub);font-weight:400}
+  .pl-d.neg{color:var(--ng)}
+  .pl-rep{border:1px solid var(--line);border-radius:8px;padding:4px 12px 10px;margin:0 0 10px}
+  .pl-st{margin-right:4px}
+  .pl-stw{display:inline-flex;gap:4px;flex-wrap:wrap}
+  .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+}
+/* PC: 1人1行の表の列（DOM の並びは今のまま・CSS の order で人事労務ソフトの並びにする） */
+@media screen and (min-width:900px) {
+  html:root[data-su-theme] #p-main .pl-g.pl-g.ihd,html:root[data-su-theme] #p-main details.it.pl-g.pl-g>summary{display:grid;grid-template-columns:minmax(5.5em,1.2fr) 4.6em minmax(3em,1fr) 3.8em minmax(6.4em,1fr) minmax(6.4em,1fr) minmax(6.4em,1fr) 7.6em 5.4em 5.8em;gap:0 8px;align-items:center;flex-wrap:nowrap}
+  html:root[data-su-theme] #p-main .pl-g.pl-g.ihd{padding:8px 4px;font-size:14px}
+  .pl-g.ihd span{min-width:0;text-align:left}
+  .pl-g>summary>*,.pl-g.ihd>*{min-width:0}
+  details.it.pl-g>summary .num{min-width:0}
+  .pl-g .nm{order:1}.pl-g .pl-code,.pl-g.ihd span:nth-child(2){order:2}.pl-g .pl-of,.pl-g.ihd span:nth-child(3){order:3}.pl-g .pl-pt,.pl-g.ihd span:nth-child(4){order:4}
+  .pl-g [data-l="差引"],.pl-g.ihd span:nth-child(7){order:5}.pl-g [data-l="総支給"],.pl-g.ihd span:nth-child(5){order:6}.pl-g [data-l="控除"],.pl-g.ihd span:nth-child(6){order:7}
+  .pl-g .pl-at,.pl-g.ihd span:nth-child(9){order:8}.pl-g .pl-stw{order:9}.pl-g>summary>.tag{order:10;justify-self:start}.pl-g.ihd span:nth-child(10){order:9;grid-column:span 2}
+  .pl-g.ihd span:nth-child(5),.pl-g.ihd span:nth-child(6),.pl-g.ihd span:nth-child(7){text-align:right}
+  .pl-g .pl-ph,.pl-g.ihd span:nth-child(8){display:none}
+  .pl-g .pl-code,.pl-g .pl-at{font-variant-numeric:tabular-nums;font-size:15px}
+  .pl-g .pl-of,.pl-g .pl-pt{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pl-g .pl-d{display:block;line-height:1.2}
+  details.it.pl-g>summary{min-height:46px;padding:2px 4px}
+}
+/* PC: 賞与の入れる表（1人1行・折り返さない） */
+@media screen and (min-width:900px) {
+  .pl-btab th,.pl-btab td{white-space:nowrap;padding-top:3px;padding-bottom:3px;vertical-align:middle}
+  .pl-btab input{max-width:8.5em!important;min-height:40px}
+  .pl-btab td:last-child{white-space:normal}
+  .pl-bhd{margin-top:6px}
+}
+/* PC: 手順の段を1行の印（✓ 勤怠の締め 済み ✓ 計算 済み …）にして、上の段を低くする（人事労務ソフトの「✓計算完了 ✓確定」の並び） */
+@media screen and (min-width:900px) {
+  html:root[data-su-theme] #p-main .pl-hd + .su-steps{display:flex;flex-wrap:wrap;gap:6px 22px;margin:6px 0 8px}
+  html:root[data-su-theme] #p-main .pl-hd + .su-steps li{flex:none;flex-direction:row;align-items:center;gap:6px;text-align:left}
+  html:root[data-su-theme] #p-main .pl-hd + .su-steps li::before{width:24px;height:24px;font-size:13px}
+  html:root[data-su-theme] #p-main .pl-hd + .su-steps li + li::after{content:none}
+  html:root[data-su-theme] #p-main .pl-hd + .su-steps .su-st-s{display:inline}
+}
+@media screen and (max-width:899px) {
+  .pl-pc{display:none!important}
+  button.pl-card,.pl-card>summary{flex-wrap:wrap;gap:4px 10px;padding:10px 12px}
+  .pl-card b{white-space:normal;flex:1}
+  .pl-cd{flex:1 1 100%;order:5}
+  .pl-cb{padding:4px 12px 12px}
+  .pl-cb table{min-width:0;width:100%}
+  .pl-q{width:100%}
+  .pl-ttl h2{font-size:19px}
+}
