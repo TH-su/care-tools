@@ -51,7 +51,7 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
 .ex { margin: 0 0 8px; padding: 8px 12px; background: var(--g0); border: 1px solid var(--g3); border-radius: 8px; font: inherit; font-size: 0.9375rem; white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
 </style>
 <!-- 見た目の共通の型（画面だけ・印刷は変えない・代表者の決定 2026-11-02） -->
-<link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
+<link rel="stylesheet" href="su-theme.css?v=2026-11-27">
 </head>
 <body>
 <header class="hdr">
@@ -90,6 +90,7 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
       <li><a href="#h-care-meeting">担当者会議の記録</a></li>
       <li><a href="#h-supplies">消耗品管理</a></li>
       <li><a href="#h-equip-log">設備・修繕の記録</a></li>
+      <li><a href="#h-hospital-visit">受診連絡</a></li>
       <li><a href="#h-kintai">勤怠管理・出勤退勤の打刻</a></li>
       <li><a href="#h-payroll">給与</a></li>
       <li><a href="#h-visit-overview">訪問 週間俯瞰</a></li>
@@ -173,9 +174,28 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
       <li><span class="key">🧪 試算</span> を押すと、今の予定を変えずに盤面を試せます。試した内容は <span class="key">✅ 実装</span> を押すまで、ワークスケジュール・デイ利用表には届きません。</li>
       <li><span class="key">↩ 元に戻す</span> で直前の操作を取り消し、<span class="key">💾 保存</span> で今すぐ保存します。<span class="key">🖨</span> で週ボードを印刷します。</li>
       <li>事務所PCで使う画面です。</li>
+      <li><strong>次の計画を先に作る</strong>：<span class="key">🗓 計画の履歴・予約</span> → <span class="key">＋ 次の計画を作る</span> で、適用開始日・この計画の介護度を決めて作ります。見出しが藍色の間は予約の編集で、<span class="key">💾 予約を保存</span> を押すまでどこにも届きません。保存すると、適用開始日から自動で今の計画に替わります。ワークスケジュールは、適用開始日以降の日からこの内容で出ます（それより前の日は今の計画のまま）。</li>
+      <li><strong>前の計画を見る</strong>：<span class="key">🗓 計画の履歴・予約</span> の「過去の計画」の <span class="key">見る</span> で、前の計画を盤面に出します（見るだけで、動かせません）。<span class="key">写して次の計画を作る</span> で、それを元に次の計画を作れます。</li>
+      <li><strong>いつ・誰が変えたかを見る</strong>：<span class="key">🗓 計画の履歴・予約</span> の「変更の記録」に、日時・人・足した／変えた／消した予定が新しい順に出ます。</li>
     </ul>
     <p><strong>よくある困りごと</strong></p>
     <dl class="sup">
+      <dt>「〇〇さんの △月△日からの計画が、まだ切り替わっていません」と出た</dt>
+      <dd>適用開始日を過ぎたのに、自動の切り替えがまだ届いていません。帯を押して <span class="key">今すぐ切り替える</span> を押すと、この画面から切り替わり、ほかの端末とワークスケジュールにも届きます。</dd>
+      <dt>「この計画は △△ で作られています。入居者マスタは □□ です」と出た</dt>
+      <dd>予約を作った時の介護度と、入居者マスタの介護度が違います。単位は入居者マスタの介護度で計算しています。計画の見直しが要るか確かめ、そのままでよければ帯を押して <span class="key">今の介護度のままでよい</span> を押すと消えます。</dd>
+      <dt>「この機能は、ログインしている事務所の端末で使えます」と出て、次の計画を作れない</dt>
+      <dd>次の計画を作る・直す・取り消す・切り替えるは、事務所の端末で事務所か管理者としてログインしている時だけ使えます。今ある予約と今の計画は見ることができます。</dd>
+      <dt>「この機能はまだ使い始めていません（準備ができたら使えるようになります）」と出た</dt>
+      <dd>次の計画（予約）の機能は、管理者が使い始めの準備を済ませるまで使えません。今ある予約と今の計画は見ることができます。</dd>
+      <dt>「切り替えた後の計画を、前の計画で上書きすることはできません。読み込み直してから直してください」と出た</dt>
+      <dd>この端末の内容が、切り替わる前の計画のままです。強制保存はできません。画面を読み込み直して今の計画を出してから、直してください。</dd>
+      <dt>「ほかの端末で計画が切り替わっています。読み込み直してください」と出た</dt>
+      <dd>保存の途中で、ほかの端末か自動の切り替えで計画が切り替わりました。画面を読み込み直してください。それまでの変更はこの端末に残っています。</dd>
+      <dt>「この画面は古い版です。読み込み直してください」「計画の部品を読めませんでした。読み込み直してください」と出た</dt>
+      <dd>画面を読み込み直してください。それまでの変更はこの端末に残っていて、読み込み直した後に送られます。</dd>
+      <dt>「変更の記録」「過去の計画」に「記録を読めません」と出た</dt>
+      <dd>ログインしていない時や、事務所・管理者でないアカウントの時は記録を読めません。予約と今の計画はそのまま使えます。</dd>
       <dt>「この端末は現場用に設定されています」と出て開けない</dt>
       <dd>週間計画は事務所PCで使う画面です。事務所PCで開いてください。端末の用途（事務所PC・現場の端末）は管理者が決めています。</dd>
       <dt>「🔒 ロック中です。動かすには「🔒 ロック中」を押して解除してください」と出て、枠が動かない</dt>
@@ -482,6 +502,28 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
       <dd>今のログインでは保存できません。事務所・管理者のアカウントでログインし直してください。</dd>
       <dt>「予定はまだありません。」と出て、予定が並ばない</dt>
       <dd>予定は、点検・清掃の周期と次回予定日から出します。設備を開いて <span class="key">直す</span> から「点検・清掃の周期（月）」か「次回予定日」を入れると、ここに並びます。</dd>
+    </dl>
+  </section>
+  <section class="cd" id="sec-hospital-visit" aria-labelledby="h-hospital-visit">
+    <h2 id="h-hospital-visit" tabindex="-1">受診連絡</h2>
+    <p><strong>できること</strong></p>
+    <ul>
+      <li>入居者を選ぶと、左に <span class="key">前回の受診</span>（その時の手紙と結果）と <span class="key">服薬中の薬</span>（入居者マスタの定期薬）が出ます。見比べながら、右で今回の手紙と結果を書きます。</li>
+      <li><span class="key">手紙</span> のタブで宛先の病院を選び、本文を書きます。本文が空の時は <span class="key">前回の薬で書き始める</span> で、前回の受診前・受診後の薬を写して始められます。</li>
+      <li><span class="key">手紙を印刷</span> で、病院あての手紙（身体状況のご報告・A4 縦）を印刷します。<span class="key">紙の見本</span> のタブで刷る前の形を確かめられます。</li>
+      <li>受診の後は、同じ受診を開いて <span class="key">受診の結果</span> に診察内容・結果・追加薬・次回の受診日を書きます。受診前と受診後で薬が変わると、増えた薬・無くなった薬が色の線つきで出ます。</li>
+      <li>入居者を選ぶ前の画面に、結果がまだ書かれていない受診が先に並びます。</li>
+      <li><span class="key">病院の台帳</span> で宛先の病院・科・医師を、<span class="key">設定</span> で手紙の定型文・署名・選択肢を変えられます。</li>
+      <li>事務所PCで、事務所・管理者のアカウントで使う画面です。</li>
+    </ul>
+    <p><strong>よくある困りごと</strong></p>
+    <dl class="sup">
+      <dt>「入居者マスタを読めませんでした。」と出た</dt>
+      <dd>今のログインでは入居者マスタを読めません。事務所・管理者のアカウントでログインし直してから、画面を読み込み直してください。</dd>
+      <dt>「ほかの人（または別の画面）がこの受診を先に直しました。」と出た</dt>
+      <dd>同じ受診が別の画面で先に直されています。書いた内容を控えてから <span class="key">読み直す</span> を押し、今の内容に書き足してください。</dd>
+      <dt>手紙の最後に施設長の名前が出ない</dt>
+      <dd><span class="key">設定</span> の「署名の2行目（肩書と氏名）」に入れてください。1行目が空の時は、施設情報の施設の呼び名を刷ります。</dd>
     </dl>
   </section>
 
@@ -841,7 +883,7 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
 
 <!-- この端末の番号（端末の印の頭の8文字だけ・2026-11-08 代表者の決定 段3 案A）。この画面では送らない・印を作らない -->
 <!-- 住所の ?sec=<画面> から画面ごとの節へ飛ぶ（対応表 SEC にある値だけ・2026-11-13） -->
-<script src="help-sec.js?v=2026-11-19"></script>
+<script src="help-sec.js?v=2026-11-28"></script>
 <script src="su-device-role.js?v=2026-11-08" data-mode="show"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 <script src="su-report.js?v=2026-11-23.2" data-tool="使い方・困った時"></script>

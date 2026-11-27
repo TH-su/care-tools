@@ -101,7 +101,7 @@ console.log('\n— 7. 画面の頭 —');
 t('Cache-Control: no-store', /<meta http-equiv="Cache-Control" content="no-store">/.test(H));
 t('インラインのスクリプトが無い・CSP は script-src self', !/<script(?![^>]*\bsrc=)[^>]*>/.test(H) && /data-su-csp content="default-src 'self'; script-src 'self';/.test(H));
 t('su-errors.js がいちばん先', H.indexOf('<script src="su-errors.js') >= 0 && H.indexOf('<script src="su-errors.js') < H.indexOf('<script src="su-app-gate.js'));
-t('su-report・su-shell・su-net を他の画面と同じく最後に読む', /<script src="su-shell\.js\?v=2026-11-19"><\/script>/.test(H) && /<script src="su-report\.js\?v=[^"]+" data-tool="給与"><\/script>/.test(H) && /<script src="su-net\.js/.test(H));
+t('su-report・su-shell・su-net を他の画面と同じく最後に読む', /<script src="su-shell\.js\?v=2026-11-28"><\/script>/.test(H) && /<script src="su-report\.js\?v=[^"]+" data-tool="給与"><\/script>/.test(H) && /<script src="su-net\.js/.test(H));
 t('計算と書き出しの部品は本物の名前で読む（偽の部品の名前を画面に書かない）', /<script src="payroll-calc\.js\?v=/.test(H) && /<script src="payroll-export\.js\?v=/.test(H) && !/stub/.test(H));
 t('拡大縮小を禁止しない', /<meta name="viewport" content="width=device-width,initial-scale=1">/.test(H));
 t('ボタンを通らない印刷（Cmd/Ctrl+P）は金額を紙に出さない', /body:not\(\.su-printing\) #p-app/.test(H) && /給与の金額は、この印刷では出しません/.test(H));
@@ -299,6 +299,7 @@ console.log('\n— 年末調整のタブ（2026-11-23・ROOT-yearend.md の C）
   const U = read('payroll-yearend-ui.js');
   /* 画面の登録（payroll.js はタブの登録と呼び口だけ） */
   /* ★賞与のタブと一緒になったので7つの並び（年末調整は職員の給与設定の次・設定の前） */
+  t('左のメニューの「定時決定」に絵を付ける（画面だけ・ほかのタブと同じ --sul-ic・2026-11-28）', /@media screen\{\n  html:root\[data-su-theme\] \.tabs > button\[data-tab="santei"\]\{--sul-ic:url\("data:image\/svg\+xml,/.test(H));
   t('TABS に yearend・santei（設定の前・ホワイトリストのまま）', /var TABS = \['run', 'slip', 'export', 'bonus', 'profile', 'yearend', 'santei', 'settings'\];/.test(J));
   /* ★賞与のタブと一緒になったので7つ */
   t('画面のタブは8つ・「年末調整」は data-tab="yearend"（設定は初めは隠す・定時決定を 2026-11-26 に足した）', (H.match(/role="tab" data-tab="/g) || []).length === 8 && /<button type="button" role="tab" data-tab="yearend">年末調整<\/button>/.test(H) && /data-tab="settings" hidden>設定</.test(H));

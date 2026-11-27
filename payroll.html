@@ -13,7 +13,7 @@
 <!-- 画面が黙って壊れないようにする共通部品（いちばん先に読む）→ 速さの記録 → ログインの役割の確かめ → 施設情報 → 印刷 → 給与の計算と書き出し -->
 <script src="su-errors.js?v=2026-11-21"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
-<script src="su-app-gate.js?v=2026-11-27"></script>
+<script src="su-app-gate.js?v=2026-11-28"></script>
 <script src="su-facility.js?v=2026-11-17"></script>
 <script src="su-print.js?v=2026-11-13"></script>
 <script src="su-dialog.js?v=2026-11-14.2"></script>
@@ -23,7 +23,7 @@
 <script src="payroll-calc.js?v=2026-11-23.2"></script>
 <script src="payroll-export.js?v=2026-11-21"></script>
 <link rel="stylesheet" href="su-print.css?v=2026-11-13">
-<link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
+<link rel="stylesheet" href="su-theme.css?v=2026-11-27">
 <link rel="stylesheet" href="su-shell.css?v=2026-11-13">
 <link rel="stylesheet" href="su-office.css?v=2026-11-27">
 <style>
@@ -148,7 +148,14 @@ dialog::backdrop{background:rgba(20,33,61,.35)}
   #p-print .slip th,#p-print .slip td{padding:2px 4px;font-size:11px}
   .toast,.su-shell-role{display:none!important}
 }
+/* 左のメニューの「定時決定」の絵（段を上がる等級）。ほかのタブの絵と同じ書き方（su-office-look.css の --sul-ic）・画面だけ */
+@media screen{
+  html:root[data-su-theme] .tabs > button[data-tab="santei"]{--sul-ic:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 20h18M4 20v-4h5v-4h5V8h6v12'/%3E%3Cpath d='M15 4l2.5-2 2.5 2'/%3E%3C/svg%3E")}
+}
 </style>
+<!-- 事務所の管理画面の PC の並び（左の縦のメニュー・題の帯・パンくず・丸い月の並び）と色（2026-11-27 本人指示） -->
+<link rel="stylesheet" href="su-office-look.css?v=2026-11-27">
+<script src="su-office-look.js?v=2026-11-27" defer></script>
 </head>
 <body>
 <header class="hdr su-shell-hdr">
@@ -196,7 +203,7 @@ dialog::backdrop{background:rgba(20,33,61,.35)}
 <script src="payroll-santei.js?v=2026-11-26"></script>
 <script src="payroll-santei-ui.js?v=2026-11-26"></script>
 <script src="payroll.js?v=2026-11-27.1"></script>
-<script src="su-shell.js?v=2026-11-19"></script>
+<script src="su-shell.js?v=2026-11-28"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 <script src="su-report.js?v=2026-11-23.2" data-tool="給与"></script>
 </body>
