@@ -31,7 +31,10 @@ const t = (n, c, e) => { if (c) { pass++; console.log('  ✓ ' + n); } else { fa
 
 const FIXED = new Date('2026-01-14T09:00:00+09:00');
 const at = (hm) => '2026-01-14T' + hm + ':00+09:00';
-const STAFF = [['s1', '見本 一郎', 'facility'], ['s2', '見本 二美', 'facility'], ['s3', '見本 三太', 'visit'], ['s4', '見本 四子', 'day'], ['s5', '見本 長谷川左衛門次郎', 'facility']];   /* s5 は長い名前（全角10字＋空白） */
+const STAFF = [['s1', '見本 一郎', 'facility'], ['s2', '見本 二美', 'facility'], ['s3', '見本 三太', 'visit'], ['s4', '見本 四子', 'day'], ['s5', '見本 甲乙丙丁戊己庚辛', 'facility']];   /* s5 は長い名前（全角10字＋空白・記号の漢字だけ） */
+/* 31人の架空の名簿（「見本 …」の形・名の長さは1〜3字。1210×710・1194×700 の iPad 横で、氏名を選ぶ画面に送らずに入る決まり 83699af を確かめる） */
+const GIVEN = ['甲', '甲一', '甲四己', '乙', '乙二', '乙五庚', '丙', '丙三', '丙六辛', '丁', '丁四', '丁七壬', '戊', '戊五', '戊八癸', '己', '己六', '己九甲', '庚', '庚七', '庚十乙', '辛', '辛八', '辛一丙', '壬九', '癸十', '甲二', '乙三', '壬二丁', '癸三戊', '甲四庚'];   /* 記号の漢字だけで作った架空の名（十干＋数の漢字・1〜3字）。実在の名前に当たらないように */
+const STAFF31 = GIVEN.map((g, i) => ['m' + (i + 1), '見本 ' + g, ['facility', 'visit', 'day'][i % 3]]);
 const CODES = { '1234': 's1', '2345': 's2', '5678': 's5' };   /* s2 は今日 08:58 に出勤済み（勤務中） */
 const RECENT = [['in', '見本 二美', '08:58'], ['in', '見本 三太', '08:51'], ['out', '見本 四子', '08:30']];
 /* 直した覆いの決まり（:where(#su-app-gate).sug）を、直す前の形（裸の .sug）へ戻したもの。覆いの絵の見比べと --old-css に使う */
@@ -58,7 +61,7 @@ async function open(vp, o = {}) {
     let p = {}; try { p = JSON.parse(req.postData() || '{}'); } catch (e) { p = {}; }
     const json = (v) => route.fulfill({ status: 200, contentType: 'application/json', headers: cors, body: JSON.stringify(v) });
     const who = (sid) => { const s = STAFF.find((x) => x[0] === sid); return { name: s[1], state: sid === 's2' ? 'in' : null, last_at: sid === 's2' ? at('08:58') : null }; };
-    if (name === 'roster') return json({ ok: true, staff: STAFF.map(([id, nm, off]) => ({ id, name: nm, office: off })) });
+    if (name === 'roster') return json({ ok: true, staff: (o.roster || STAFF).map(([id, nm, off]) => ({ id, name: nm, office: off })) });
     if (name === 'check') { st.checks.push(p); return json(CODES[p.p_code] === p.p_staff_id ? { ok: true, staff: who(p.p_staff_id) } : { ok: false, error: 'notfound' }); }
     if (name === 'lookup') return json(CODES[p.p_code] ? { ok: true, staff: who(CODES[p.p_code]) } : { ok: false, error: 'notfound' });
     if (name === 'punch') {
@@ -188,10 +191,16 @@ try {
     await tap(o.page, '[data-g="in"]');
     await o.page.waitForSelector('#k-panel [data-sid="s5"]', { timeout: 10000 });
     const names = await linesOf(o.page, '#k-panel .nm');
-    /* 名前の途中で折れていない＝折れた所の前後をつなぐと空白（姓と名の間）だけ */
-    const nmTxt = await o.page.evaluate(() => Array.from(document.querySelectorAll('#k-panel .nm')).map((e) => e.textContent));
-    const midBreak = names.map((ls, i) => ({ ls, full: nmTxt[i] })).filter((x) => x.ls.length > 1 && x.ls.join(' ') !== x.full.replace(/\s+/g, ' ').trim());
-    t('E ' + vn + ': 氏名を選ぶ札は、名前の途中で折れない（折れるのは姓と名の間の空白だけ）', names.length === 5 && midBreak.length === 0, { names, midBreak });
+    /* 名前の途中で折れない＝折れた所の前後をつなぐと空白（姓と名の間）だけ。ただし、札の中身の幅より広い1語（例 8字の名）は、どう並べても1行に入らないので途中で折れてよい
+       （2026-11-27 審査役の指摘で iPad 横の列は6列のまま＝31人が1画面の決まり。札の幅は変えない） */
+    const nmInfo = await o.page.evaluate(() => Array.from(document.querySelectorAll('#k-panel .nm')).map((e) => {
+      const cs = getComputedStyle(e), inner = e.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      const probe = document.createElement('span'); probe.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap;font:' + cs.font; document.body.appendChild(probe);
+      const wide = e.textContent.trim().split(/\s+/).some((w) => { probe.textContent = w; return probe.getBoundingClientRect().width > inner + 0.5; });
+      probe.remove(); return { full: e.textContent, wide };
+    }));
+    const midBreak = names.map((ls, i) => ({ ls, full: nmInfo[i].full, wide: nmInfo[i].wide })).filter((x) => !x.wide && x.ls.length > 1 && x.ls.join(' ') !== x.full.replace(/\s+/g, ' ').trim());
+    t('E ' + vn + ': 氏名を選ぶ札は、名前の途中で折れない（折れるのは姓と名の間の空白だけ・札の中身より広い1語だけは除く）', names.length === 5 && midBreak.length === 0, { names, midBreak, wide: nmInfo.filter((x) => x.wide).map((x) => x.full) });
     await tap(o.page, '#k-panel [data-sid="s5"]');
     await o.page.waitForSelector('#k-panel .who', { timeout: 10000 });
     const pw = await linesOf(o.page, '#k-panel .who');
@@ -227,6 +236,25 @@ try {
     });
     t('E ' + vn + ': 打刻した直後の「画面を押すと、すぐ次の人へ」は 15px 以上・地との差 4.5:1 以上', dt.fs >= 15 && dt.ratio >= 4.5 && +dt.opacity === 1, dt);
     t('E ' + vn + ': 画面の例外 0', o.errors.length === 0, o.errors);
+    await o.ctx.close();
+  }
+
+  /* ── F. 31人が送らずに1画面（83699af の決まり・審査役の指摘 2026-11-27）: 氏名を選ぶ画面は6列のまま ── */
+  for (const vp of [{ width: 1210, height: 710 }, { width: 1194, height: 700 }]) {
+    const o = await open(vp, { roster: STAFF31 });
+    await tap(o.page, '[data-g="in"]');
+    await o.page.waitForSelector('#k-panel [data-sid="m31"]', { timeout: 10000 });
+    const f = await o.page.evaluate(() => {
+      const nm = Array.from(document.querySelectorAll('#k-panel .nm')), last = nm.reduce((m, e) => Math.max(m, e.getBoundingClientRect().bottom), 0);
+      const cols = new Set(nm.map((e) => Math.round(e.getBoundingClientRect().left))).size;
+      return { n: nm.length, cols, lastBottom: Math.round(last), vh: window.innerHeight, scroll: document.documentElement.scrollHeight - window.innerHeight, maxH: Math.round(Math.max(...nm.map((e) => e.getBoundingClientRect().height))) };
+    });
+    t('F ' + vp.width + '×' + vp.height + ': 氏名を選ぶ画面の31人が送らずに1画面に入る（6列・いちばん下の札の下端が画面の高さ以内・札は2行の高さのまま）', f.n === 31 && f.cols === 6 && f.lastBottom <= f.vh && f.maxH <= 58, f);
+    const ls = await linesOf(o.page, '#k-panel .nm');
+    const txt = await o.page.evaluate(() => Array.from(document.querySelectorAll('#k-panel .nm')).map((e) => e.textContent));
+    const bad = ls.map((l, i) => ({ l, full: txt[i] })).filter((x) => x.l.length > 2 || (x.l.length > 1 && x.l.join(' ') !== x.full.replace(/\s+/g, ' ').trim()));
+    t('F ' + vp.width + '×' + vp.height + ': 名（1〜3字）は途中で折れない（2行までで、折れるのは姓と名の間の空白だけ）', bad.length === 0, bad.slice(0, 5));
+    await shot(o.page, 'clock-pick31-' + vp.width);
     await o.ctx.close();
   }
 

@@ -33,9 +33,15 @@ t('su-app-gate.js が読む css の版は 2026-11-27 以降（直した css を�
 console.log('\n— 見た目の共通の型（su-theme.css）の中の覆いの決まり —');
 /* su-theme.css は覆いの地・字の色を型にそろえる決まりを持つ。そこでも裸の .sug（後ろが - でない）を覆いの箱の id なしで書かない（打刻の画面の勧めるボタンに当たるため・2026-11-27） */
 const theme = fs.readFileSync(path.join(ROOT, 'su-theme.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
-const sugLines = theme.split('\n').filter((l) => /\.sug(?![-\w])/.test(l));
-t('su-theme.css に覆いの箱の決まりがある（見張る相手がいる）', sugLines.length >= 1, sugLines.length);
-t('su-theme.css の裸の .sug は、覆いの箱の id（#su-app-gate）と一緒にだけ書く', sugLines.every((l) => /#su-app-gate\)?\.sug(?![-\w])/.test(l)), sugLines.filter((l) => !/#su-app-gate\)?\.sug(?![-\w])/.test(l)).map((x) => x.trim().slice(0, 80)));
+/* 選び方（セレクタ）をカンマで分けて1つずつ見る（1行に覆いの箱の id があっても、裸の .sug を並べた選び方は見逃さない・審査役の指摘 2026-11-27） */
+const themeBody = theme.replace(/@keyframes[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, '');
+const themeHeads = [];
+const re2 = /(?:^|[{};])\s*([^{};]+?)\s*\{/g;
+let m2;
+while ((m2 = re2.exec(themeBody))) { if (!/^@/.test(m2[1])) themeHeads.push(m2[1]); re2.lastIndex = m2.index + m2[0].length - 1; }
+const sugSels = [].concat(...themeHeads.map((h) => h.split(',').map((x) => x.trim()))).filter((x) => /\.sug(?![-\w])/.test(x));
+t('su-theme.css に覆いの箱の決まりがある（見張る相手がいる）', sugSels.length >= 1, sugSels.length);
+t('su-theme.css の裸の .sug は、選び方ごとに覆いの箱の id（#su-app-gate）と一緒にだけ書く', sugSels.every((x) => /#su-app-gate\)?\.sug(?![-\w])/.test(x)), sugSels.filter((x) => !/#su-app-gate\)?\.sug(?![-\w])/.test(x)));
 
 console.log('\n結果: ' + pass + ' 合格 / ' + fail + ' 不合格');
 process.exit(fail ? 1 : 0);

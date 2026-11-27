@@ -184,7 +184,7 @@ main.sel .clock .time{font-size:28px;line-height:1.2}
 }
 /* 検品の指摘の直し 2026-11-27（今ある決まりは書き換えず、ここで上書きする・画面の作り（kintai-clock.js）は変えない）
    ・名前の行は空白の所でだけ折り、1字だけ残る折れ方をしない（balance）
-   ・氏名を選ぶ札は名前の途中で折らない（姓と名の間の空白でだけ折る）。iPad 横は3列、狭い幅は札を 200px 以上にして入れる
+   ・氏名を選ぶ札は名前の途中で折らない（姓と名の間の空白でだけ折る）。列の数は今のまま（iPad 横の6列＝31人が送らずに1画面の決まり 83699af を守る）
    ・「名前が出ない時は 番号で打刻」は幅 280px 以上・高さ 48px 以上
    ・パスコードの画面の「やめる」は、ほかのボタンと 16px 以上離し、色を弱める */
 #k-panel .who{word-break:keep-all;overflow-wrap:anywhere;text-wrap:balance}
@@ -192,12 +192,7 @@ main.sel .clock .time{font-size:28px;line-height:1.2}
 #k-panel .h-code{min-width:min(280px,100%);min-height:48px}
 main[data-v="pass"] #k-panel .back{margin-top:24px;color:var(--sub);border-style:dashed}
 @media screen and (min-width: 900px){
-  main[data-v="pick"] #k-panel .names{grid-template-columns:repeat(3,minmax(0,1fr))}
   main[data-v="pass"] #k-panel .who{font-size:clamp(24px,3.2vw,34px)}
-}
-@media screen and (max-width: 899px){
-  /* 札は 200px 以上（iPhone の幅では1列・名前を途中で折らずに入れる） */
-  #k-panel .names{grid-template-columns:repeat(auto-fill,minmax(min(100%,200px),1fr))}
 }
 </style>
 </head>
