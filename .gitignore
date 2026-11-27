@@ -87,6 +87,7 @@
 # 給与の画面の通し試験と撮影（2026-11-19・偽のデータベースと偽の部品・架空の職員10人）
 !/check/payroll_e2e.mjs
 !/check/payroll_santei_e2e.mjs
+!/check/payroll_zuiji_e2e.mjs
 # 業務の流れを通す試験（2026-11-02・入居者マスタ→各画面・行き来の帯・週間計画→ワースケ・俯瞰・現場の守り。材料は check/fixtures/flow.mjs）
 !/check/flow_e2e.mjs
 !/check/revenue_e2e.mjs
@@ -246,6 +247,7 @@
 !/payroll-yearend-ui.js
 !/payroll-santei.js
 !/payroll-santei-ui.js
+!/payroll-zuiji.js
 # 給与の画面（2026-11-19 新設）。コードのみ公開。給与・口座は共通ログインのデータベースの関数でだけ読み書きし、端末には開いていたタブしか残さない。
 !/payroll.html
 !/payroll.js
