@@ -1,5 +1,6 @@
 /* 覆いの見た目（su-app-gate.css）が、覆いの箱の外の部品に当たらないことの試験（2026-11-27 新設）
    実行: node check/unit/app_gate_css_scope_test.js
+   見張る相手: su-app-gate.css の全部と、su-theme.css の中の覆いの決まり（.sug を含む行・2026-11-27 に足した）
    守りたいこと:
      su-app-gate.css は su-app-gate.js を読む全画面に足される。決まりの頭（選び方）は、覆いの箱の id（#su-app-gate）・
      覆っている間の印（html.sug-on）・部品の接頭辞つきの名前（.sug-…）だけで書く（箱の id は :where() で包み、su-theme.css の型の色が上に効く強さのままにする）。
@@ -28,6 +29,19 @@ t('頭は html.sug-on・#su-app-gate・.sug- で始まる名前だけ（裸の�
 t('覆いの箱（全画面・最前面）は id で絞って書く（:where(#su-app-gate).sug＝強さは前の .sug のまま）', /:where\(#su-app-gate\)\.sug\s*\{[^}]*position:\s*fixed;[^}]*inset:\s*0;/.test(body));
 t('裸の .sug（すぐ後が - でない）を頭に使わない', !sels.some((s) => /(^|[\s>+~,])\.sug(?![-\w])/.test(s) && !/#su-app-gate\)?\.sug(?![-\w])/.test(s)), sels.filter((s) => /\.sug(?![-\w])/.test(s)));
 t('su-app-gate.js が読む css の版は 2026-11-27 以降（直した css を端末が読み直す）', /V_CSS = 'su-app-gate\.css\?v=(\d{4}-\d{2}-\d{2})/.test(fs.readFileSync(path.join(ROOT, 'su-app-gate.js'), 'utf8')) && RegExp.$1 >= '2026-11-27');
+
+console.log('\n— 見た目の共通の型（su-theme.css）の中の覆いの決まり —');
+/* su-theme.css は覆いの地・字の色を型にそろえる決まりを持つ。そこでも裸の .sug（後ろが - でない）を覆いの箱の id なしで書かない（打刻の画面の勧めるボタンに当たるため・2026-11-27） */
+const theme = fs.readFileSync(path.join(ROOT, 'su-theme.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+/* 選び方（セレクタ）をカンマで分けて1つずつ見る（1行に覆いの箱の id があっても、裸の .sug を並べた選び方は見逃さない・審査役の指摘 2026-11-27） */
+const themeBody = theme.replace(/@keyframes[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, '');
+const themeHeads = [];
+const re2 = /(?:^|[{};])\s*([^{};]+?)\s*\{/g;
+let m2;
+while ((m2 = re2.exec(themeBody))) { if (!/^@/.test(m2[1])) themeHeads.push(m2[1]); re2.lastIndex = m2.index + m2[0].length - 1; }
+const sugSels = [].concat(...themeHeads.map((h) => h.split(',').map((x) => x.trim()))).filter((x) => /\.sug(?![-\w])/.test(x));
+t('su-theme.css に覆いの箱の決まりがある（見張る相手がいる）', sugSels.length >= 1, sugSels.length);
+t('su-theme.css の裸の .sug は、選び方ごとに覆いの箱の id（#su-app-gate）と一緒にだけ書く', sugSels.every((x) => /#su-app-gate\)?\.sug(?![-\w])/.test(x)), sugSels.filter((x) => !/#su-app-gate\)?\.sug(?![-\w])/.test(x)));
 
 console.log('\n結果: ' + pass + ' 合格 / ' + fail + ' 不合格');
 process.exit(fail ? 1 : 0);
